@@ -224,6 +224,8 @@ const VOCABULARIO = Object.freeze({
   site: Object.freeze({ url: 'aceptada' }),
   // el umbral de la sesión callada de la oficina de /office: el freno no lo usa, pero lo acepta
   office: Object.freeze({ quiet_minutes: 'aceptada' }),
+  // los topes de archivos del camino corto (sólo del perfil del equipo): el freno no los usa, pero los acepta
+  short_path: Object.freeze({ coordinator_max_files: 'aceptada', max_files: 'aceptada' }),
   // los interruptores que la organización enciende desde el sitio: el freno no los usa, pero los acepta
   switches: Object.freeze({
     test_scope_guard: 'aceptada', session_guard: 'aceptada', pr_one_per_repo: 'aceptada',
@@ -1408,7 +1410,7 @@ function cli(argv) {
   }
   if (cmd === 'get') {
     const clave = argv[1];
-    if (!clave || !/^[a-z]+\.[a-z_]+$/.test(clave)) { process.stderr.write(`${usage}\n`); process.exit(2); }
+    if (!clave || !/^[a-z][a-z_]*\.[a-z_]+$/.test(clave)) { process.stderr.write(`${usage}\n`); process.exit(2); }
     let c;
     try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }
     const val = valor(c, clave);

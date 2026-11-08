@@ -141,6 +141,42 @@ test('CupoAlDeclarar_SobreCupoSinNumero_ConservaLoElegido @story-8.181 @ac-14', 
   assert.equal(gate.cupoAlDeclarar({ pedido: 3, via: 'click' }), 3);
 });
 
+// 🔴 Falla con: un cupo delegado que sigue clavado en 5 aunque la organización lo bajó, o un carril sin número que guarda
+// el 8 de fábrica en vez del tope de la organización.
+test('T15 CupoDelegado_RespetaElTopeQueRecibe @story-8.182 @ac-13 @ac-15 @ac-22', () => {
+  const topes = { delegado: 3, maximo: 10 };
+  assert.equal(gate.cupoDelegado(5, 3), 3);
+  assert.equal(gate.cupoDelegado(2, 3), 2, 'pedir menos que el tope queda en lo pedido');
+  assert.equal(gate.cupoDelegado(5), 5, 'sin tope, el de fábrica');
+  assert.equal(gate.cupoAlDeclarar({ pedido: 5, via: 'delegacion', topes }), 3);
+  assert.equal(gate.cupoAlDeclarar({ via: 'avisado', topes }), 3, 'sin número, por delegación: el tope delegado');
+  assert.equal(gate.cupoAlDeclarar({ via: 'ventana', topes }), 10, 'sin número, con una persona: el tope de la organización');
+  assert.equal(gate.cupoAlDeclarar({ via: 'ventana' }), 8, 'sin topes, los de fábrica');
+  // un carril sin número legible se mide con el tope que le pasan
+  assert.equal(gate.cupoDelCarril({ maxFiles: 'abc' }, 10), 10);
+  assert.equal(gate.cupoDelCarril({ maxFiles: 4 }, 10), 4, 'el suyo manda');
+  assert.equal(gate.cupoDelCarril({}), 8);
+  // AC 22: el tope configurado más alto (6) no abre lo sensible ni el riesgo alto de un carril delegado
+  const delegado = { reason: 'arreglo delegado', via: 'delegacion', maxFiles: gate.cupoAlDeclarar({ pedido: 6, via: 'delegacion', topes: { delegado: 6, maximo: 12 } }), files: [] };
+  assert.equal(delegado.maxFiles, 6);
+  const sensible = gate.computeStoryGate({ ...BASE, filePath: `${REPO}/scripts/lib/signatures.js`, adhoc: delegado, adhocRepoRoot: REPO, sensitiveCheck: (rel) => rel === 'scripts/lib/signatures.js' });
+  assert.deepStrictEqual([sensible.action, sensible.kind], ['block', 'adhoc-sensitive']);
+  const alto = gate.computeStoryGate({ ...BASE, filePath: `${REPO}/database/x.sql`, adhoc: delegado, adhocRepoRoot: REPO, sensitiveCheck: () => false, riesgoAlto: { value: true, rule: 'sql', reason: 'migración' } });
+  assert.equal(alto.action, 'block', JSON.stringify(alto));
+});
+
+test('T16 StoryGate_MensajeDelTope_DiceElValor @story-8.182 @ac-18 — con un tope de 10, el mensaje dice 10 en los dos perfiles', () => {
+  for (const harness of [true, false]) {
+    const m = gate.textoDelTope({ harness, tocados: 10, cupo: 10, archivos: [] });
+    assert.match(m, /cupo 10\b/, `harness=${harness}`);
+    assert.doesNotMatch(m, /\b8\b/, `harness=${harness}: ningún 8 escrito a mano`);
+  }
+  // el portón sin carril nombra el cupo de la organización, no el de fábrica
+  const nl = gate.blockMessage({ kind: 'no-lane' }, { filePath: BASE.filePath, repoRoot: REPO, topes: { delegado: 3, maximo: 10 } });
+  assert.match(nl, /Cupo de la organización: 10 archivos/);
+  assert.match(gate.blockMessage({ kind: 'no-lane' }, { filePath: BASE.filePath, repoRoot: REPO }), /Cupo de la organización: 8 archivos/, 'sin topes, el de fábrica');
+});
+
 test('T16 StoryGate_RepoDelArnesConCarril_FrenaAlPasarElTope @story-8.181 @ac-7', () => {
   const adhoc = { reason: 'arreglo en el arnés', maxFiles: 8, files: OCHO };
   // un clon del arnés puede no tener `.tycon/`: igual rige el tope

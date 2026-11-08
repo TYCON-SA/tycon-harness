@@ -5961,7 +5961,7 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 // tiene prioridad sobre él aunque siga existiendo.
 // ============================================================
 // el cupo más grande que declara la designada por otra pestaña: uno mayor lo aprueba el dueño en su ventana
-const { DELEGATED_ADHOC_MAX_FILES: ADHOC_TOPE_DELEGADO, cupoAlDeclarar } = require('./lib/story-gate.js');
+const { cupoAlDeclarar } = require('./lib/story-gate.js');
 const ADHOC_MOTIVO_MAX = 200;
 const ADHOC_CUPO_MAX = 50;
 // la respuesta al abrir un camino corto: ¿cambia de dónde salen los datos o quién los ve? (Casos: story-gate-cli.test.js)
@@ -6154,7 +6154,7 @@ function cmdAdhoc(sub, payloadJson) {
     } else {
       try { payload = JSON.parse(payloadJson || ''); } catch (err) {
         console.error('marker.js adhoc set: payload JSON inválido —', err.message);
-        console.error('  Uso: marker.js adhoc set \'{"reason":"<qué y por qué>","maxFiles":8}\'');
+        console.error('  Uso: marker.js adhoc set \'{"reason":"<qué y por qué>","maxFiles":<N>}\'');
         process.exit(2);
       }
     }
@@ -6228,14 +6228,16 @@ function cmdAdhoc(sub, payloadJson) {
       process.exit(2);
     }
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+    // los topes del camino corto de la organización, leídos una vez: la firma, el cupo y los textos dicen el mismo número
+    const topes = io.topesDelCaminoCorto({ stateDir: STATE_DIR, sessionId: destino });
     // en la terminal el dueño ve este resumen: el motivo y el cupo, como en la ventana
-    const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos de implementación, sin pruebas ni guías` : 'el cupo de siempre (8 archivos de implementación, o el que ya tenía)';
+    const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos de implementación, sin pruebas ni guías` : `el cupo de la organización (${topes.maximo} archivos de implementación, o el que ya tenía)`;
     // por delegación, el dueño se entera antes de la constancia, por los canales del perfil: sin entrega, no hay arreglo
     const antes = (viaPedida, registro) => {
       if (viaPedida !== 'delegacion') return null;
       const so = require('./lib/save-ok.js');
       const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
-      const cupo = cupoAlDeclarar({ pedido: payload.maxFiles, existing: actual, via: viaPedida });
+      const cupo = cupoAlDeclarar({ pedido: payload.maxFiles, existing: actual, via: viaPedida, topes });
       // el de una pestaña sin permisos lo abrió la propia sesión, sin firma: «hecho y avisado»
       const quien = registro && registro.via === 'avisado' ? `la sesión ${registro.sesion} abrió sin firma (pestaña sin permisos)` : 'la coordinadora abrió';
       const a = so.avisar({ texto: `Arreglo rápido: ${quien} el de la sesión ${destino}: «${reason}» · hasta ${cupo} archivos, sin tocar lo sensible.`,
@@ -6251,7 +6253,7 @@ function cmdAdhoc(sub, payloadJson) {
     if (maqueta) console.error(`marker.js adhoc set: anota la maqueta ${enUnRenglon(maqueta.file)}, aprobada por «${enUnRenglon(maqueta.approval)}», con el motivo «${enUnRenglon(reason)}».`);
     const firmas = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js'));
     // la misma regla que mira el freno: pasar el tope es otra firma
-    const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4));
+    const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo);
     const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`arreglo rápido de la sesión ${destino}${conMaqueta}: «${reason}» · ${cupoPedido}`),
       propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), antes });
     if (r.codigo !== 0) {
@@ -6280,12 +6282,12 @@ function cmdAdhoc(sub, payloadJson) {
     const via = r.via;
     const by = r.sesion || SID;
     const existing = io.readAdhoc(STATE_DIR, destino);
-    const pedido = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : 8);
-    const maxFiles = cupoAlDeclarar({ pedido: payload.maxFiles, existing, via });
+    const pedido = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : topes.maximo);
+    const maxFiles = cupoAlDeclarar({ pedido: payload.maxFiles, existing, via, topes });
     // la marca del sobre cupo: la pone la firma nueva y se conserva mientras el cupo siga por encima del tope. Un carril
-    // anterior con más de 8 no la tiene: termina con su número, sin pedirla
+    // anterior con más que el tope no la tiene: termina con su número, sin pedirla
     const sobreCupo = firmaDelPedido === firmas.SOBRE_CUPO ? { sobreCupo: true, cupoPedido: maxFiles, eligio: 'persona' }
-      : existing && existing.sobreCupo && maxFiles > firmas.TOPE ? { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio } : {};
+      : existing && existing.sobreCupo && maxFiles > topes.maximo ? { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio } : {};
     const obj = {
       reason, maxFiles,
       files: existing ? (existing.files || []) : [],
@@ -6325,7 +6327,7 @@ function cmdAdhoc(sub, payloadJson) {
     if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     if (maxFiles < pedido) {
       const antes = Number(payload.maxFiles) > 0 ? `pediste ${pedido}` : `tenía ${pedido}`;
-      console.error(`⚠ marker.js adhoc set: por la delegación el cupo queda en hasta ${ADHOC_TOPE_DELEGADO} archivos (${antes}); uno mayor lo aprueba una persona en su ventana.`);
+      console.error(`⚠ marker.js adhoc set: por la delegación el cupo queda en hasta ${maxFiles} archivos (${antes}); uno mayor lo aprueba una persona en su ventana.`);
     }
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     process.exit(0);

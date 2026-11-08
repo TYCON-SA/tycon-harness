@@ -276,8 +276,8 @@ Hooks: `on-prompt.js` (intención de story, conflicto cross-sesión, "listo" con
 ## 🔒 Portón de carril
 
 En un repo del arnés, un archivo de CÓDIGO no se edita sin (a) pipeline activo o (b) carril ad-hoc:
-`marker.js adhoc set '{"reason":"<qué y por qué>","datos":"sin-cambio"}'` (cupo 8), que el dueño
-aprueba en ventana de permiso, click o «aprobado» (firma `adhoc-lane`; o `--terminal`). Más de 8: click del dev en su
+`marker.js adhoc set '{"reason":"<qué y por qué>","datos":"sin-cambio"}'` (cupo), que el dueño
+aprueba en ventana de permiso, click o «aprobado» (firma `adhoc-lane`; o `--terminal`). Más del cupo: click del dev en su
 pestaña o terminal (`adhoc-lane:sobre-cupo`). Si cambia de dónde sale un dato: historia salvo click del dueño;
 ante la duda, historia. La designada lo declara por otra pestaña con
 `--for-session <id>` si el perfil lo delega. Sin plan aprobado no se edita código. Escribir en

@@ -90,7 +90,7 @@ const SIN_DELEGACION = () => ({ ok: false, motivo: 'sin delegación en la prueba
 // sin `aprobador`, el texto de un repo del arnés: el de verdad mira el remoto de la carpeta del evento
 const { APPROVERS } = require(path.join(__dirname, '..', 'lib', 'approver.js'));
 const DEL_ARNES = () => APPROVERS.maintainers;
-const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES, aprobaciones: o.aprobaciones });
+const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES, aprobaciones: o.aprobaciones, topes: o.topes });
 const registros =(casa) => { try { return fs.readdirSync(ow.carpeta(casa)); } catch (_) { return []; } };
 const vigentes = (casa) => registros(casa).filter((f) => f.endsWith('.json'));
 const gates = (casa) => { try { return fs.readFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
@@ -2556,7 +2556,7 @@ const aprobacionesDePrueba = ({ coordinadora = null } = {}) => ({
 });
 const pedirSinVentana = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, { ...DE_LA_COORD, permission_mode: 'bypassPermissions', ...(o.evento || {}) }),
   escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION,
-  clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(o) });
+  clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(o), topes: o.topes });
 const anotarAprobacion = (casa, sesion, extra = {}) => oaReal.anotar(casa, { tipo: 'mensaje', sesion, ts: new Date(AHORA - 60000).toISOString(), texto: 'Aprobado',
   herramienta: { pid: 100, inicio: INICIO }, ...extra });
 const PERDIDA = `node ${MARKER} clear-session ses-a --lost`;
@@ -2685,6 +2685,81 @@ const DE_LA_PROPIA = { session_id: 'ses-a' };
 test('T1 AdhocSet_MasDeOcho_PideLaFirmaDeSobreCupo @story-8.181 @ac-1', (t) => {
   assert.deepStrictEqual(ow.firmasDelComando(pedidoDe(9)), [SOBRE_CUPO]);
   assert.deepStrictEqual(pedir(casaNueva(t), pedidoDe(9)).firmas, [SOBRE_CUPO]);
+});
+
+// ── los topes del camino corto configurados por la organización (@story-8.182) ──────────────────────────────────────
+// 🔴 Falla con: un freno que sigue con el 5 o el 8 escritos aunque el perfil diga otro tope, o que nombra otro número.
+const TOPES_3_10 = { delegado: 3, maximo: 10 };
+
+test('T12 Ventana_DelegadoConfigurado_NiegaNombrandoElValor @story-8.182 @ac-13 @ac-18 — tope delegado 3: pedir 4 se niega y dice 3', (t) => {
+  const pide4 = `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":4}' --for-session ses-a`;
+  const r = pedirConDelegacion(casaNueva(t), pide4, { topes: TOPES_3_10 });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /supera los 3 archivos/);
+  // pedir 3 sigue delegando
+  const tres = pedirConDelegacion(casaNueva(t), `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":3}' --for-session ses-a`, { topes: TOPES_3_10 });
+  assert.notStrictEqual(tres.decision, 'deny', tres.texto);
+  // una pestaña sin permisos, «hecho y avisado»: lo mismo
+  const avisado = pedirSinVentana(casaNueva(t), `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":4}'`, { evento: { session_id: 'ses-a' }, topes: TOPES_3_10 });
+  assert.strictEqual(avisado.decision, 'deny', avisado.texto);
+  assert.match(avisado.texto, /supera los 3 archivos/);
+  // un perfil leído de verdad: la misma lectura que usa el freno
+  const { copiaConPerfil } = require('./lib/profile-harness-copy.js');
+  const io = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-gate-io.js'));
+  const arbol = copiaConPerfil(t, { short_path: { coordinator_max_files: 3, max_files: 10 } });
+  assert.deepStrictEqual((({ delegado, maximo }) => ({ delegado, maximo }))(io.topesDelCaminoCorto({ arnes: arbol.raiz })), TOPES_3_10);
+});
+
+test('T13 Ventana_SobreCupoConfigurado_PideElClick @story-8.182 @ac-14 — tope 10: pedir 10 es la firma común, 11 el sobre cupo', (t) => {
+  assert.deepStrictEqual(ow.firmasDelComando(pedidoDe(10), TOPES_3_10), ['adhoc-lane']);
+  assert.deepStrictEqual(ow.firmasDelComando(pedidoDe(11), TOPES_3_10), [SOBRE_CUPO]);
+  assert.deepStrictEqual(ow.firmasDelComando(`node ${MARKER} adhoc set '{"reason":"arreglo del sp"}'`, TOPES_3_10), ['adhoc-lane'], 'sin número, la común');
+  assert.deepStrictEqual(pedir(casaNueva(t), pedidoDe(11), { topes: TOPES_3_10 }).firmas, [SOBRE_CUPO]);
+  assert.deepStrictEqual(pedir(casaNueva(t), pedidoDe(10), { topes: TOPES_3_10 }).firmas, ['adhoc-lane']);
+  // el techo técnico no cambia: 51 sigue siendo sobre cupo para el freno y el guion lo niega
+  assert.deepStrictEqual(ow.firmasDelComando(pedidoDe(51), TOPES_3_10), [SOBRE_CUPO]);
+  // sin topes configurados, los de fábrica: 8 común, 9 sobre cupo
+  assert.deepStrictEqual(ow.firmasDelComando(pedidoDe(8), { delegado: 5, maximo: 8 }), ['adhoc-lane']);
+  assert.deepStrictEqual(ow.firmasDelComando(pedidoDe(9), { delegado: 5, maximo: 8 }), [SOBRE_CUPO]);
+});
+
+test('T14 Ventana_SinNumero_DiceElValorConfigurado @story-8.182 @ac-18 — tope 10 y un pedido sin número: el resumen de la firma dice 10', (t) => {
+  const { copiaConPerfil } = require('./lib/profile-harness-copy.js');
+  const { conVentana } = require('./lib/window-passed.js');
+  const arbol = copiaConPerfil(t, { short_path: { max_files: 10 } });
+  const casa = casaNueva(t);
+  const r = spawnSync(process.execPath, [arbol.marker, 'adhoc', 'set', '{"reason":"arreglo del sp de deudas","datos":"sin-cambio"}'],
+    { encoding: 'utf8', env: conVentana({ ...process.env, HOME: casa, USERPROFILE: casa, CLAUDE_CODE_SESSION_ID: 'ses-a' }) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(JSON.parse(r.stdout).maxFiles, 10);
+  const firma = gates(casa).find((g) => g.name === 'adhoc-lane-signed');
+  assert.ok(firma, JSON.stringify(gates(casa)));
+  assert.match(firma.resumen, /10 archivos/);
+  assert.doesNotMatch(firma.resumen, /\b8 archivos/);
+  // el cuadro que firma el dueño (la ventana, el cuadro de opciones y la lista de firmas) dice el mismo número
+  const fuentes = require('../lib/signature-sources.js');
+  const sinNumero = ['marker.js', 'adhoc', 'set', '{"reason":"arreglo del sp de deudas","datos":"sin-cambio"}'];
+  const cuadro = fuentes.partesDe({ firma: 'adhoc-lane', palabras: sinNumero, topes: { delegado: 5, maximo: 10 } }).queHace[0];
+  assert.match(cuadro, /10 archivos/);
+  assert.doesNotMatch(cuadro, /\b8 archivos/);
+  // y leído del perfil de un arnés copiado, sin pasarle los topes
+  const r2 = spawnSync(process.execPath, ['-e', `const f=require(${JSON.stringify(path.join(arbol.raiz, 'scripts', 'lib', 'signature-sources.js'))});process.stdout.write(f.partesDe({firma:'adhoc-lane',palabras:${JSON.stringify(sinNumero)}}).queHace[0])`],
+    { encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa } });
+  assert.strictEqual(r2.status, 0, r2.stderr);
+  assert.match(r2.stdout, /10 archivos/);
+  // el cuadro que arma el freno (cuadroPara) le pasa a la fuente los topes con que decide
+  const owCopia = JSON.stringify(path.join(arbol.raiz, 'scripts', 'lib', 'owner-window.js'));
+  const r3 = spawnSync(process.execPath, ['-e', `const ow=require(${owCopia});process.stdout.write(JSON.stringify(ow.cuadroPara({firma:'adhoc-lane',comando:${JSON.stringify(sinNumero.join(' '))},palabras:${JSON.stringify(sinNumero)},cwd:process.cwd(),casa:${JSON.stringify(casa)}})))`],
+    { encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa } });
+  assert.strictEqual(r3.status, 0, r3.stderr);
+  assert.match(r3.stdout, /10 archivos/);
+  assert.doesNotMatch(r3.stdout, /\b8 archivos/);
+  // si la lectura de los topes no carga, la fuente cae a los de fábrica: nunca a uno más alto
+  fs.writeFileSync(path.join(arbol.raiz, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-gate-io.js'), "throw new Error('lectura rota');\n");
+  const r4 = spawnSync(process.execPath, ['-e', `const f=require(${JSON.stringify(path.join(arbol.raiz, 'scripts', 'lib', 'signature-sources.js'))});process.stdout.write(f.partesDe({firma:'adhoc-lane',palabras:${JSON.stringify(sinNumero)}}).queHace[0])`],
+    { encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa } });
+  assert.strictEqual(r4.status, 0, r4.stderr);
+  assert.match(r4.stdout, /\b8 archivos/);
 });
 
 test('T2 AdhocSet_OchoJustos_SiguePidiendoLaFirmaComun @story-8.181 @ac-1', () => {

@@ -44,7 +44,8 @@
 const AMBOS = Object.freeze(['dev', 'mant']);
 const MANT = Object.freeze(['mant']);
 
-// el tope del camino corto: hasta acá alcanza la firma común; más lo elige la persona con su click
+// el tope del camino corto DE FÁBRICA: hasta acá alcanza la firma común; más lo elige la persona con su click. Cada
+// organización lo cambia en su perfil (`short_path.max_files`), y el que rige le llega a firmaDelPedidoAdhoc del borde
 const TOPE = 8;
 const ADHOC = 'adhoc-lane';
 const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
@@ -267,7 +268,7 @@ const SIGNATURES = Object.freeze([
   { id: 'adversarial-skip', approves: 'saltear el pase adversarial con constancia', command: 'marker.js sign-adversarial-skip --story <S> --reason <R>', otherSession: 'no', terminal: 'marker.js sign-adversarial-skip --story <S> --reason <R> --terminal' },
   { id: 'pending-approval', approves: 'abrir un pendiente nuevo en la lista de pendientes', command: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta>', otherSession: 'yes', terminal: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal' },
   { id: 'adhoc-lane', approves: 'abrir el arreglo rápido de una sesión, sin historia', command: "marker.js adhoc set '<json>'", otherSession: 'yes', terminal: 'marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --terminal --for-session <id>' },
-  { id: 'adhoc-lane:sobre-cupo', approves: 'abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia', command: "marker.js adhoc set '<json con maxFiles mayor que 8>'", otherSession: 'no', terminal: 'marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --terminal --for-session <id>',
+  { id: 'adhoc-lane:sobre-cupo', approves: 'abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia', command: "marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'", otherSession: 'no', terminal: 'marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --terminal --for-session <id>',
     soloClick: true, descripciones: Object.freeze(['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.', 'No se abre el arreglo, y el trabajo va por una historia.']) },
   // dejar pasar el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente;
   // nunca un «aprobado» escrito, la delegación ni la ventana de permiso
@@ -348,12 +349,14 @@ const REQUIERE_SENSIBLE = Object.freeze(['signatures.js', 'owner-window.js', 'de
 /**
  * La firma que pide un `adhoc set`, para que el freno y el guion nunca discrepen. `args`: lo que sigue a `set`, cada palabra
  * como texto (ya leída) o como `{ texto, literal }`. Una palabra que no se lee hasta correr, o un cupo que no se entiende,
- * cuenta como sobre cupo. Sin número sigue la firma común: conserva el cupo que tenía el carril.
+ * cuenta como sobre cupo. Sin número sigue la firma común: conserva el cupo que tenía el carril. `tope`: el de la
+ * organización (lo lee el borde, una vez, para el freno y el guion); sin él, el de fábrica.
  */
-function firmaDelPedidoAdhoc(args = []) {
+function firmaDelPedidoAdhoc(args = [], tope = TOPE) {
   if (args.some((w) => w && typeof w === 'object' && !w.literal)) return SOBRE_CUPO;
   const a = args.map((w) => String(w && typeof w === 'object' ? w.texto : w));
-  const dentro = (n) => Number.isInteger(n) && n <= TOPE;
+  const limite = Number.isInteger(tope) && tope > 0 ? tope : TOPE;
+  const dentro = (n) => Number.isInteger(n) && n <= limite;
   if (String(a[0] || '').startsWith('--')) {
     if (a.some((w) => w.startsWith('--max-files='))) return SOBRE_CUPO;
     const i = a.indexOf('--max-files');

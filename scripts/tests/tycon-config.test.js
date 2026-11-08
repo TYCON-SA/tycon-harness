@@ -1930,7 +1930,7 @@ test('8.63 · RelaySession_SoloDesdeElPerfil @story-8.63 @ac-11', () => {
   const r = cli(['set', 'approvals.relay_session', 'yo-mismo'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files']);
 });
 
 // ── Una persona marca cada criterio como probado a mano (qa.manual_check) ──────────────────────────────
@@ -2047,7 +2047,7 @@ test('8.88 T47 · Config_DelegatedSigning_MachineFileSetAndExplain @story-8.88 @
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
   assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /approvals\.delegated_signing = (off|sin valor).*vale sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files']);
 });
 
 // ── Qué firmas se delegan y en qué máquinas (approvals.delegated_signing en lista, approvals.delegated_machines) ──────
@@ -2532,4 +2532,117 @@ test('Llave_SignatureList_ValidaOnYOff (T16) — @story-8.153 @ac-16', () => {
   assert.strictEqual(cargar({ home: casa(), arnes, env: {} }).valores.approvals.signature_list, 'on');
   // la copia del freno de producción la acepta: si no, leería como roto un perfil que la trae
   assert.deepEqual(require(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js')).cargar({ home: casa(), arnes, env: {} }).errores, []);
+});
+
+// ── Los topes del camino corto (short_path) se configuran en el perfil del equipo (@story-8.182) ─────────────────────
+// El de la coordinadora (`coordinator_max_files`, de 1 a 6, de fábrica 5) y el de una persona (`max_files`, de 1 a 12, de
+// fábrica 8). Valen sólo desde el perfil: si la máquina o una variable pudieran decirlos, el agente se subiría el tope.
+
+test('T1 Config_SinShortPath_DaCincoYOcho @story-8.182 @ac-1 @ac-21 — sin la sección, 5 y 8 con origen sin-valor', () => {
+  const c = cargar({ home: casa(), arnes: arnesCon({ coordination: { max_working: 4 } }) });
+  assert.deepEqual(c.errores, []);
+  const t = lib().caminoCorto(c);
+  assert.deepEqual(t.coordinator_max_files, { value: 5, origin: 'sin-valor' });
+  assert.deepEqual(t.max_files, { value: 8, origin: 'sin-valor' });
+  assert.equal(t.delegado, 5, 'el cupo delegado que rige');
+  // sin perfil del todo, lo mismo
+  const nada = lib().caminoCorto(cargar({ home: casa(), arnes: arnesCon(null) }));
+  assert.equal(nada.delegado, 5);
+  assert.equal(nada.max_files.value, 8);
+});
+
+test('T2 Config_ShortPathValido_DaLoDelPerfil @story-8.182 @ac-2 — 3 y 10 en el perfil son los topes de la organización', () => {
+  const c = cargar({ home: casa(), arnes: arnesCon({ short_path: { coordinator_max_files: 3, max_files: 10 } }) });
+  assert.deepEqual(c.errores, []);
+  const t = lib().caminoCorto(c);
+  assert.deepEqual(t.coordinator_max_files, { value: 3, origin: 'perfil' });
+  assert.deepEqual(t.max_files, { value: 10, origin: 'perfil' });
+  assert.equal(t.delegado, 3);
+  // los máximos son los que decidió el dueño (D1 y D2), y salen de una constante
+  assert.deepEqual(lib().SHORT_PATH_MAX, { coordinator_max_files: 6, max_files: 12 });
+  // los dos máximos justos valen
+  const tope = lib().caminoCorto(cargar({ home: casa(), arnes: arnesCon({ short_path: { coordinator_max_files: 6, max_files: 12 } }) }));
+  assert.equal(tope.delegado, 6);
+  assert.equal(tope.max_files.value, 12);
+});
+
+// 🔴 Falla con: `get` que rechaza una clave cuya sección lleva guion bajo (short_path) con el texto de uso.
+test('T2b Config_GetDeLaConsola_LeeLosTopes @story-8.182 @ac-2 — `tycon-config.js get short_path.max_files` desde un arnés con su perfil da 10', (t) => {
+  const { copiaConPerfil } = require('./lib/profile-harness-copy.js');
+  const arbol = copiaConPerfil(t, { short_path: { coordinator_max_files: 3, max_files: 10 } });
+  const home = casa();
+  const get = (clave) => spawnSync(process.execPath, [path.join(arbol.raiz, 'scripts', 'lib', 'tycon-config.js'), 'get', clave],
+    { encoding: 'utf8', cwd: os.tmpdir(), env: Object.assign({}, ENV_LIMPIO, { HOME: home, USERPROFILE: home }) });
+  const max = get('short_path.max_files');
+  assert.equal(max.status, 0, max.stderr);
+  assert.equal(max.stdout.trim(), '10');
+  assert.equal(get('short_path.coordinator_max_files').stdout.trim(), '3');
+});
+
+test('T3 Config_DelegadoFueraDeRango_ProblemaYCinco @story-8.182 @ac-3 — 0, 7 o un texto: problema con la ruta de la clave y rige 5', () => {
+  for (const malo of [0, 7, 'cinco']) {
+    const c = cargar({ home: casa(), arnes: arnesCon({ short_path: { coordinator_max_files: malo, max_files: 10 } }) });
+    assert.deepEqual(c.errores.map((e) => e.clave), ['short_path.coordinator_max_files'], `con ${JSON.stringify(malo)}`);
+    const t = lib().caminoCorto(c);
+    assert.deepEqual(t.coordinator_max_files, { value: 5, origin: 'sin-valor' }, `con ${JSON.stringify(malo)}`);
+    assert.equal(t.max_files.value, 10, 'la otra clave sana sigue valiendo');
+  }
+});
+
+test('T4 Config_MaximoFueraDeRango_ProblemaYOcho @story-8.182 @ac-4 — 0, 13 o un texto: problema con la ruta de la clave y rige 8', () => {
+  for (const malo of [0, 13, 'doce']) {
+    const c = cargar({ home: casa(), arnes: arnesCon({ short_path: { max_files: malo } }) });
+    assert.deepEqual(c.errores.map((e) => e.clave), ['short_path.max_files'], `con ${JSON.stringify(malo)}`);
+    assert.deepEqual(lib().caminoCorto(c).max_files, { value: 8, origin: 'sin-valor' }, `con ${JSON.stringify(malo)}`);
+  }
+});
+
+test('T5 Config_DelegadoMayorQueMaximo_ProblemaYMenorRige @story-8.182 @ac-5 — 6 con 4 es un problema y el 6 no cuenta; sólo max_files 3 deja el cupo delegado en 3', () => {
+  const c = cargar({ home: casa(), arnes: arnesCon({ short_path: { coordinator_max_files: 6, max_files: 4 } }) });
+  assert.deepEqual(c.errores.map((e) => e.clave), ['short_path.coordinator_max_files']);
+  assert.match(c.errores[0].motivo, /max_files/);
+  const t = lib().caminoCorto(c);
+  assert.deepEqual(t.coordinator_max_files, { value: 5, origin: 'sin-valor' }, 'el 6 no cuenta: rige el de fábrica');
+  assert.equal(t.max_files.value, 4);
+  assert.equal(t.delegado, 4, 'el de fábrica pasa del máximo: rige el menor de los dos');
+  // sólo max_files, más chico que el 5 de fábrica: no es un problema, y el cupo delegado es el menor
+  const s = cargar({ home: casa(), arnes: arnesCon({ short_path: { max_files: 3 } }) });
+  assert.deepEqual(s.errores, []);
+  assert.equal(lib().caminoCorto(s).delegado, 3);
+});
+
+test('T6 Config_MaquinaYVariable_NoCuentan @story-8.182 @ac-6 — la clave en la máquina o en el ambiente no cuenta, y set se niega', () => {
+  const home = casa();
+  maquina(home, { short_path: { coordinator_max_files: 6, max_files: 12 } });
+  const env = { TYCON_SHORT_PATH_MAX_FILES: '12', TYCON_SHORT_PATH_DELEGATED_MAX_FILES: '6' };
+  const c = cargar({ home, env, arnes: arnesCon({ short_path: { coordinator_max_files: 2, max_files: 7 } }) });
+  assert.deepEqual(c.errores, []);
+  const t = lib().caminoCorto(c);
+  assert.deepEqual(t.coordinator_max_files, { value: 2, origin: 'perfil' });
+  assert.deepEqual(t.max_files, { value: 7, origin: 'perfil' });
+  assert.equal(c.shadowed['short_path.max_files'].by, 'solo-perfil', 'lo de la máquina queda tapado y explain lo dice');
+  // sin perfil, la máquina tampoco da nada: rige la fábrica
+  const sinPerfil = lib().caminoCorto(cargar({ home, env, arnes: arnesCon(null) }));
+  assert.equal(sinPerfil.max_files.value, 8);
+  assert.equal(sinPerfil.delegado, 5);
+  // TYCON_PROFILE tampoco: las claves sólo del perfil salen del perfil del árbol
+  const otro = arnesCon({ short_path: { max_files: 12 } });
+  const conVariable = cargar({ home: casa(), env: { TYCON_PROFILE: path.join(otro, 'perfil-equipo.json') }, arnes: arnesCon({ short_path: { max_files: 6 } }) });
+  assert.equal(lib().caminoCorto(conVariable).max_files.value, 6);
+  // set se niega para las dos claves
+  for (const clave of ['short_path.max_files', 'short_path.coordinator_max_files']) {
+    const out = cli(['set', clave, '3'], { home: casa(), env: { TYCON_PROFILE: '0' } });
+    assert.notEqual(out.status, 0, clave);
+    assert.match(out.stderr + out.stdout, /sólo desde el perfil del equipo/, clave);
+  }
+});
+
+test('T25 CopiaDelFreno_AceptaLasClaves @story-8.182 @ac-11 — un perfil con short_path, leído con la copia del freno, no se invalida', () => {
+  const arnes = arnesCon({ short_path: { coordinator_max_files: 4, max_files: 10 } });
+  const copia = require(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js'));
+  assert.deepEqual(copia.cargar({ home: casa(), arnes, env: {} }).errores, []);
+  // y la máquina con la clave tampoco la rompe para el freno (allí no se usa, pero no se lee como rota)
+  const home = casa();
+  maquina(home, { short_path: { max_files: 10 } });
+  assert.deepEqual(copia.cargar({ home, arnes: arnesCon(null), env: {} }).errores, []);
 });

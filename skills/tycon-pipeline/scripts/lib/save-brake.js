@@ -1156,7 +1156,8 @@ function frenoDelTope(a, sid, home, repos, sinSeguir = false, registrar = true, 
       io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: m });
     }
   }
-  const cupo = gate.cupoDelCarril(a);
+  // el suyo; sin uno que se pueda leer, el tope de la organización (la misma lectura que el portón y la ventana)
+  const cupo = gate.cupoDelCarril(a, null) ?? io.topesDelCaminoCorto({ home, ...(registrar ? { stateDir: dir, sessionId: sid } : {}) }).maximo;
   if (c.archivos.length <= cupo) return null;
   if (registrar) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto: ${c.archivos.length} archivos de implementación con cupo ${cupo}`, archivos: c.archivos.slice(0, gate.TOPE_DE_NOMBRES) });
   const harness = (() => { try { return io.isHarnessRepo(c.archivos[0]); } catch (_) { return true; } })();

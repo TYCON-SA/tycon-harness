@@ -289,7 +289,7 @@ vuelve a pedir la firma del dueño.
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
 | `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --terminal --for-session <id>` |
-| `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que 8>'` | no, en la pestaña de esa sesión | `marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --terminal --for-session <id>` |
+| `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'` | no, en la pestaña de esa sesión | `marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --terminal --for-session <id>` |
 | `adhoc-lane:datos` | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>` | no, en la pestaña de esa sesión | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué> --terminal --for-session <id>` |
 | `save` | guardar la story: commit, push y los pull requests | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
 | `designation-confirm` | confirmar qué sesión es la coordinadora de esta máquina | `delegated-signing.js confirm-designation` | no, en la pestaña de esa sesión | `delegated-signing.js confirm-designation --terminal` |
@@ -401,7 +401,8 @@ ventana sólo si se cumple todo esto:
 - la sesión que la corre es la designada, y el dueño confirmó la designación (con su click en esa pestaña, o en su terminal);
 - la sesión destino no es la propia, ni trabaja la misma story que una ejecución abierta de la sesión designada.
 
-Pasar el tope de 8 archivos del camino corto es otra firma, `adhoc-lane:sobre-cupo`: la elige el dev con su click en el
+Pasar el tope de 8 archivos del camino corto (por defecto) es otra firma, `adhoc-lane:sobre-cupo`: la elige el dev con su
+click en el
 cuadro de la pestaña que hace el trabajo, o en su terminal, y queda anotado. Un «aprobado» escrito no la da, ni un click en
 otra pestaña, ni la delegación. Cuentan sólo los archivos de implementación, sin pruebas ni guías. Su renglón en el registro
 es `adhoc-lane:sobre-cupo-signed`, y abre el portón igual que `adhoc-lane-signed`.
@@ -419,11 +420,17 @@ La maqueta aprobada de un arreglo que toca una pantalla se compara con lo constr
 detalle está en `guides/coordination.md`.
 
 El arreglo rápido de otra pestaña (`adhoc-lane`) se declara así desde la sesión designada de la misma máquina, con
-`marker.js adhoc set '<json>' --for-session <sesión>`; por esta vía el cupo es de 5 archivos como mucho (pedir más se niega, y
+`marker.js adhoc set '<json>' --for-session <sesión>`; por esta vía el cupo es de 5 archivos como mucho por defecto (pedir más se niega, y
 el freno da el cuadro para que lo apruebe una persona), el arreglo nunca toca lo sensible de `scripts/lib/signatures.js` y, antes de abrirlo, al dueño le llega una línea por los canales
 de los avisos, como el ok de guardar (sin entrega, no hay arreglo). La
 coordinadora de otra máquina no lo declara: se lo pide a la designada de la máquina destino (`guides/coordination.md`).
 No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nombra.
+
+Quién cambia los topes del camino corto: cada organización, en el perfil del equipo (`short_path.coordinator_max_files`,
+de 1 a 6, y `short_path.max_files`, de 1 a 12; por defecto, 5 y 8), desde la sección «Los topes del camino corto» del sitio
+o con un pedido al repo del perfil. Ese cambio no pide firma, pero nunca se aplica solo: lo aprueba una persona que no sea
+quien lo propone. Ni la máquina ni una variable los cambian. Subir el máximo (el 6 o el 12) es un cambio de control
+(`control-change`), sólo del dueño.
 
 Un pendiente nuevo de otra sesión (`pending-approval`) se aprueba así desde la sesión designada, con
 `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --for-session <sesión>`. La delegación vale sólo si la

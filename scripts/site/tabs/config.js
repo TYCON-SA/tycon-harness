@@ -608,14 +608,19 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   // nunca la del cambio que se propone (así prenderla nunca se aplica sola)
   const aplicarSolo = () => { const c = fuentes.config(); return Boolean(c && isObject(c.site) && c.site.auto_apply === true); };
 
+  // una sección que nunca se aplica sola (`noSeAplicaSola` en la lista de secciones de este servidor, nunca lo que manda
+  // el navegador): se propone como si la organización no tuviera la opción, así la política de main exige un revisor que
+  // no sea quien propone
+  const aplicaSoloLaSeccion = (s) => !(s && s.noSeAplicaSola) && aplicarSolo();
+
   async function estadoProponer(repo) {
     const cred = cfg.escritura && cfg.escritura[repo];
     if (!cred) return { habilitado: false, motivo: M('config.sinIdentidad') };
     const remote = remoteDe(repo);
     if (!remote.platform) return { habilitado: false, motivo: M('config.sinPlataforma') };
-    const una = async (archivo) => {
+    const una = async (archivo, conLaOpcion = true) => {
       try {
-        const solo = aplicarSolo();
+        const solo = conLaOpcion && aplicarSolo();
         const p = await RP.politicaDeRevision({ remote, credencial: cred, urlBase, fetch, archivo, aplicarSolo: solo });
         // el código viaja: un repo sin política que pida revisión es un aviso de seguridad, no una frase al costado
         if (!p.ok) return { habilitado: false, motivo: p.message, codigo: p.codigo || null };
@@ -632,7 +637,21 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const todos = Object.values(porArchivo);
     // con la opción de aplicar solo, el repo entero «se aplica solo» sólo si cada archivo se aplica solo
     const r = todos.length && todos.every((x) => x.habilitado) ? (todos.find((x) => x.aplicaSolo === false) || todos[0]) : (todos.find((x) => !x.habilitado) || await una(null));
-    return { ...r, porArchivo };
+    // cada sección que nunca se aplica sola, con su propio estado: sin la opción, y diciéndolo si la organización la tiene
+    const porSeccion = {};
+    for (const s of ORG.SECCIONES.filter((x) => x.repo === repo && x.noSeAplicaSola)) {
+      // con el archivo que resuelve la sección (un repo del perfil puede usar todavía el nombre de antes), el mismo contra
+      // el que después se propone
+      let archivo = s.archivo;
+      try {
+        const cl = clones();
+        const dir = repo === 'perfil' ? cl.perfil && cl.perfil.dir : cl.operaciones && cl.operaciones.dir;
+        if (dir) archivo = archivoDe(s, dir);
+      } catch (_) { /* sin el clon, el nombre de hoy: es el que se propone en un repo nuevo */ }
+      const e = await una(archivo, false);
+      porSeccion[s.id] = e.habilitado && aplicarSolo() ? { ...e, aplicaSolo: false, motivoAplicar: M('config.noSeAplicaSola') } : e;
+    }
+    return { ...r, porArchivo, ...(Object.keys(porSeccion).length ? { porSeccion } : {}) };
   }
 
   // un nombre con un «%» que no es de URL se muestra tal cual y queda anotado (una vez por nombre)
@@ -1092,7 +1111,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const r = await RP.proponer({
       clon: dir, ...(archivos ? { archivos } : { archivo: v.archivo, contenido: texto, oidEsperado: body.oid }), idCorto: s.idCorto,
       secciones: [s.titulo], quien: norm(ctx.sesion.email), credencial: cred, remote, urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
-      now: new Date(ahora()), fetch, log, aplicarSolo: aplicarSolo(), marca: body.marca || null,
+      now: new Date(ahora()), fetch, log, aplicarSolo: aplicaSoloLaSeccion(s), marca: body.marca || null,
     });
     if (!r || r.codigo !== 'cambio') return r;
     // lo que cambió en main fue la capa, no el archivo de la sección: no se mezcla, se pide abrir de nuevo

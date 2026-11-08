@@ -376,6 +376,39 @@ function appendLog(stateDir, fileName, sessionId, obj) {
  * @returns {{ verdict: {action, kind?, reason}, message: string|null, ctx: object }}
  */
 /**
+ * Los topes del camino corto que rigen: `{ delegado, maximo, origen }`. Es la ÚNICA lectura, para que el freno, el
+ * guion y los mensajes no discrepen. Salen del perfil del equipo del árbol del arnés (`short_path`, sólo del perfil: ni
+ * la máquina ni una variable los cambian). Si el lector no carga o el perfil del árbol no se puede leer, rigen los de
+ * fábrica (5 y 8) y queda un renglón en gates.log; un valor que el lector rechaza cae a fábrica en esa clave y también
+ * se anota. Nunca tira. `arnes`: otra raíz del árbol, para las pruebas.
+ */
+function topesDelCaminoCorto({ home, arnes, stateDir, sessionId } = {}) {
+  const fabrica = { delegado: gate.DELEGATED_ADHOC_MAX_FILES, maximo: gate.DEFAULT_ADHOC_MAX_FILES, origen: 'fabrica' };
+  const anotar = (reason) => { if (stateDir) appendLog(stateDir, 'gates.log', sessionId || null, { name: 'short-path-caps', status: 'unknown', reason }); };
+  const rigen = `rigen ${fabrica.delegado} y ${fabrica.maximo}, los de fábrica`;
+  let TC;
+  try { TC = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'tycon-config.js')); } catch (e) {
+    anotar(`no cargué el lector de configuración (${e.message}): ${rigen}`);
+    return fabrica;
+  }
+  try {
+    const c = TC.cargar({ ...(home ? { home } : {}), ...(arnes ? { arnes } : {}) });
+    // sólo cuenta el perfil del ÁRBOL: una variable que apunta a otro perfil no puede llevar los topes a los de fábrica
+    const delArbol = TC.perfilDelArbol(arnes || TC.RAIZ_ARNES).ruta;
+    const roto = c.errores.find((e) => e.clave === null && delArbol && e.archivo === delArbol);
+    if (roto) { anotar(`el perfil del equipo no se puede leer (${roto.motivo}): ${rigen}`); return fabrica; }
+    const malas = c.errores.filter((e) => String(e.clave || '').startsWith('short_path'));
+    const t = TC.caminoCorto(c);
+    if (malas.length) anotar(`los topes del perfil tienen un problema (${malas.map((e) => `${e.clave}: ${e.motivo}`).join('; ')}): rigen ${t.delegado} y ${t.max_files.value}`);
+    const deFabrica = t.coordinator_max_files.origin === 'sin-valor' && t.max_files.origin === 'sin-valor';
+    return { delegado: t.delegado, maximo: t.max_files.value, origen: deFabrica ? 'fabrica' : 'perfil' };
+  } catch (e) {
+    anotar(`no pude leer los topes (${e.message}): ${rigen}`);
+    return fabrica;
+  }
+}
+
+/**
  * El carril con la lista de archivos que suma para el tope al editar: de implementación, que existen y dentro de un repo.
  * Sólo se filtra cuando la lista cruda ya llegó al cupo: por debajo no puede frenar, y así una edición no suma llamadas a git.
  * Si git no contesta, el archivo cuenta.
@@ -421,7 +454,11 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   const marker = readMarker(stateDir, sessionId);
   const declarado = readAdhoc(stateDir, sessionId);
   const firma = firmaDelAdhoc(stateDir, sessionId, declarado);
-  const adhoc = firma.ok ? carrilQueCuenta(declarado) : null;
+  // un carril sin un número que se pueda leer se mide con el tope de la organización, no con el de fábrica: se lee sólo
+  // en ese caso, así una edición común no paga la lectura
+  const conCupo = firma.ok && declarado && gate.cupoDelCarril(declarado, null) === null
+    ? { ...declarado, maxFiles: topesDelCaminoCorto({ stateDir, sessionId }).maximo } : declarado;
+  const adhoc = firma.ok ? carrilQueCuenta(conCupo) : null;
   // una declaración sin firma reconocida no abre, y el bloqueo dice por qué (no es lo mismo que no haber declarado)
   const adhocSinFirma = declarado && !firma.ok ? firma.motivo : null;
 
@@ -481,7 +518,9 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     story: marker ? marker.storyId : null, reason: verdict.reason, ...(adhocSinFirma ? { adhocSinFirma } : {}),
   });
   let message = gate.blockMessage(verdict, { filePath: abs, repoRoot: repo.repoRoot, marker, otherMarkers, via,
-    harness: verdict.kind === 'adhoc-high-risk' || verdict.kind === 'adhoc-cap' ? isHarnessRepo(abs) : true });
+    harness: verdict.kind === 'adhoc-high-risk' || verdict.kind === 'adhoc-cap' ? isHarnessRepo(abs) : true,
+    // el mensaje sin carril nombra el tope de la organización: se lee sólo cuando frena por eso
+    ...(verdict.kind === 'no-lane' ? { topes: topesDelCaminoCorto({ stateDir, sessionId }) } : {}) });
   if (adhocSinFirma && verdict.kind === 'no-lane') {
     message += `\n\n  ⚠️ Hay una declaración del arreglo rápido para esta sesión, pero sin su firma: ${adhocSinFirma}. No abre el\n`
       + '     portón. Si la persona quiere el arreglo rápido, se vuelve a declarar con `marker.js adhoc set`, que ella aprueba en la ventana.';
@@ -492,5 +531,5 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
 module.exports = {
   DEFAULT_STATE_DIR, STALE_HOURS, WAIT_TURN_MAX_MS,
   waitingTurn, savePruned, readPruned, readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, anotarRutaDelCarril, archivosQueSuman, adhocPath, listOtherMarkers,
-  repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots,
+  repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots, topesDelCaminoCorto,
 };
