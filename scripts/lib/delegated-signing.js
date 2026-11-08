@@ -21,8 +21,14 @@ const path = require('path');
 
 const PIPELINE_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const CONFIRMED = 'relay-designation-confirmed';
-// nombrar y retirar a la coordinadora: aunque el perfil las liste, no tienen vía delegada
-const NUNCA_DELEGABLES = new Set(['designation-set', 'designation-withdraw']);
+// lo que no tiene vía delegada aunque el perfil lo liste, con el motivo que se dice: nombrar y retirar a la coordinadora,
+// y mergear salteando la CI (es lo mismo que aflojar todos los controles juntos). El motivo dice «sólo del dueño»: la
+// ventana lo calla, porque no delegar es lo normal (owner-window.js)
+const NUNCA_DELEGABLES = new Map([
+  ['designation-set', 'nombrar o retirar a la coordinadora lo firma el dueño con su click en la pestaña de esa sesión: no se delega'],
+  ['designation-withdraw', 'nombrar o retirar a la coordinadora lo firma el dueño con su click en la pestaña de esa sesión: no se delega'],
+  ['escape:merge-bypass', 'mergear salteando la cola y la CI de main es sólo del dueño: no se delega'],
+]);
 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const safeSid = (s) => String(s).replace(/[/\\]/g, '_');
@@ -133,7 +139,7 @@ function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, pe
   if (!sesion || !destino) return no('sin la sesión del pedido y la destino no se delega');
   // su constancia nombra al dueño en la huella: aunque el perfil la liste, no tiene vía delegada
   if (firma === 'adversarial-skip') return no('saltear el pase adversarial es sólo del dueño: no se delega');
-  if (NUNCA_DELEGABLES.has(firma)) return no('nombrar o retirar a la coordinadora lo firma el dueño con su click en la pestaña de esa sesión: no se delega');
+  if (NUNCA_DELEGABLES.has(firma)) return no(NUNCA_DELEGABLES.get(firma));
   if (destino === sesion) {
     // la coordinadora que aprueba un pendiente sin nombrar la sesión que lo abrió ve por qué le toca la ventana
     if (SOBRE_UN_REPO.has(firma) && esLaDesignada(estado, sesion)) return no('un pendiente se aprueba por delegación con --for-session <la sesión que lo abrió>');

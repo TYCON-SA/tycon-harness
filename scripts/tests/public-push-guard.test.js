@@ -957,6 +957,8 @@ test('T22_WhenTheRemoteDoesNotAnswer_NothingIsTakenAsPublished_AndItIsSaid', (t)
   const fx = lab(t);
   git(fx.work, ['remote', 'add', 'publico', 'https://github.com/acme/widgets.git']);
   git(fx.work, ['update-ref', 'refs/remotes/publico/main', git(fx.work, ['rev-parse', 'main'])]);
+  // la rama principal del remoto la sabe el clon (como la deja `git clone`): si no, sin respuesta no se sabe y frena
+  git(fx.work, ['symbolic-ref', 'refs/remotes/publico/HEAD', 'refs/remotes/publico/main']);
   commitOn(fx, 'una-mas', { 'guides/c.md': 'limpio\n' });
   const r = guard(fx, branchLine(fx, 'una-mas'), { remote: 'publico', url: 'https://github.com/acme/widgets.git' });
   assertPassed(r);
@@ -2159,4 +2161,55 @@ test(`${T79} — status: «git falló» no es «git no tiene carpeta global de h
   const absent = run({ PATH: nodeOnly });
   assert.strictEqual(absent.status, 1, absent.stdout + absent.stderr);
   assert.match(absent.stdout, /no pude leer la carpeta global de hooks de git/);
+});
+
+// ── la rama principal del arnés público entra por la cola ────────────────────────────────────────────────
+
+const QUEUE = /entra por la cola: abrí un pedido y `gh pr merge <n> --merge`/;
+
+test('T11 EmpujeAMain_DelPublico_Frena @story-8.241 @ac-7', (t) => {
+  const fx = lab(t);
+  const sha = commitOn(fx, 'feat/x', { 'notas.md': 'un cambio limpio\n' });
+  const base = git(fx.work, ['rev-parse', 'main']);
+  const blocked = (r, what) => {
+    assert.strictEqual(r.status, 1, `${what}: tenía que frenar (1), salió ${r.status}\n${r.all}`);
+    assert.strictEqual(r.json && r.json.verdict, 'main', `${what}: ${r.all}`);
+    assert.match(r.json.reason, QUEUE, what);
+  };
+  // HEAD:main desde una rama de trabajo, y main:main
+  blocked(guard(fx, line('refs/heads/feat/x', sha, base, 'refs/heads/main')), 'HEAD:main');
+  // sin --json, el mensaje que lee la persona
+  const said = guard(fx, line('refs/heads/feat/x', sha, base, 'refs/heads/main'), { args: [] });
+  assert.strictEqual(said.status, 1, said.all);
+  assert.match(said.stderr, QUEUE);
+  blocked(guard(fx, line('refs/heads/main', sha, base, 'refs/heads/main')), 'main:main');
+  // borrar la rama principal tampoco se hace desde acá
+  blocked(guard(fx, line('(delete)', ZERO, base, 'refs/heads/main')), 'borrar main');
+  // la rama principal que informa el remoto, aunque no se llame main
+  git(fx.work, ['push', '--quiet', 'origin', 'main:trunk']);
+  git(fx.root, ['--git-dir', fx.publicUrl, 'symbolic-ref', 'HEAD', 'refs/heads/trunk']);
+  blocked(guard(fx, line('refs/heads/feat/x', sha, ZERO, 'refs/heads/trunk')), 'la principal del remoto');
+  // un destino sin main con el remoto que no contesta: no se sabe cuál es la principal, y no pasa
+  const lost = path.join(fx.publicDir, 'no-existe.git');
+  const r = guard(fx, line('refs/heads/feat/x', sha, ZERO, 'refs/heads/feat/x'), { remote: lost, url: lost });
+  assert.strictEqual(r.status, 2, r.all);
+  assert.strictEqual(r.json && r.json.verdict, 'blind', r.all);
+  assert.match(r.all, /no pude mirar/);
+});
+
+test('T12 EmpujeAOtraRamaOMarca_Pasa @story-8.241 @ac-7', (t) => {
+  const fx = lab(t);
+  const sha = commitOn(fx, 'feat/x', { 'notas.md': 'un cambio limpio\n' });
+  // una rama de trabajo
+  assertPassed(guard(fx, branchLine(fx, 'feat/x')));
+  // una marca
+  git(fx.work, ['tag', 'v9.9.9', sha]);
+  const tag = guard(fx, line('refs/tags/v9.9.9', sha));
+  assert.strictEqual(tag.status, 0, tag.all);
+  assert.notStrictEqual(tag.json && tag.json.verdict, 'main', tag.all);
+  // un remoto de Azure DevOps con destino main: no es asunto de esta regla
+  const ado = 'https://dev.azure.com/acme/proyecto/_git/repo';
+  const r = guard(fx, line('refs/heads/feat/x', sha, ZERO, 'refs/heads/main'), { remote: ado, url: ado });
+  assert.strictEqual(r.status, 0, r.all);
+  assert.strictEqual(r.json && r.json.remote, 'private', r.all);
 });

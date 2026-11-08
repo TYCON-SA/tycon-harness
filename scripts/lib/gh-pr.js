@@ -333,6 +333,9 @@ function leerGh(propias, resto, corte, cuerpos, lugar) {
     ini += 1;
   }
   resto = resto.slice(ini);
+  // las palabras de este `gh` desde el grupo, como las ve quien las tiene que leer entera (scripts/lib/ci-bypass.js):
+  // el texto (con el cuerpo de un bloque ya puesto) y si la terminal lo arma (`literal: false`)
+  const palabras = resto.map((f) => ({ texto: leer(f.texto), literal: !f.expande }));
 
   // grupo y verbo: los que vienen PEGADOS a `gh` (`gh pr create`). Buscar «el primer argumento que no es una opción»
   // dejaría elegir el verbo desde un valor: `gh pr create --title view …` se leía como `gh pr view`, de lectura. Si en
@@ -587,7 +590,7 @@ function leerGh(propias, resto, corte, cuerpos, lugar) {
     textos, archivos, ilegible, otros: lugar.otros || 0, resumen: ['gh', g, v].filter(Boolean).join(' '),
     base: ramas.base, head: ramas.head, baseDesconocida: ramas.baseDesconocida, headDesconocida: ramas.headDesconocida,
     simulacro: grupo === 'pr' && enSeco, cortado, verboTrasOpciones: verbo || verboTrasElRepo(grupo, llevaVerbo, resto),
-    porOtroPrograma: false, loLanzaOtro: false };
+    porOtroPrograma: false, loLanzaOtro: false, lanzadoPor: null, enSustitucion: false, palabras };
 }
 
 /**
@@ -613,7 +616,7 @@ function oculto(lugar, motivo) {
     cds: [...lugar.cds], cdIncierto: lugar.cdIncierto, cwdDesconocido: lugar.cwdDesconocido,
     textos: [], archivos: [], ilegible: [motivo], otros: lugar.otros || 0, resumen: 'gh (no se puede leer)',
     base: null, head: null, baseDesconocida: false, headDesconocida: false, simulacro: false, cortado: false,
-    verboTrasOpciones: null, porOtroPrograma: false, loLanzaOtro: false };
+    verboTrasOpciones: null, porOtroPrograma: false, loLanzaOtro: false, lanzadoPor: null, enSustitucion: false, palabras: [] };
 }
 
 /** ¿Estas fichas tienen la forma de un `gh` que publica con grupo y verbo (`pr create …`, `issue comment …`)? */
@@ -947,6 +950,7 @@ function comandosGh(cmd, nivel = 0, opts = {}) {
         // buscador) del que otro LANZA (`xargs gh`, `timeout 30 gh`, el `then gh` de un `if`)
         c.porOtroPrograma = true;
         c.loLanzaOtro = CORRE_A_OTRO.has(String(nombre || '').toLowerCase()) || AGRUPADORES.has(nombre);
+        c.lanzadoPor = nombre === null ? null : String(nombre);
         // …y si no trae argumentos y le llega algo por una tubería, se los da ese otro (`echo "pr create …" | xargs gh`):
         // ahí un `gh` a secas no es la ayuda. Sin tubería sigue siendo sólo un nombre (`which gh`, `brew install gh`).
         if (seg.length === donde + 1 && antes.includes('|')) { c.lectura = false; c.ilegible.push('otro programa le pasa los argumentos al `gh` (por la entrada): no se sabe qué corre'); }
@@ -1026,6 +1030,8 @@ function comandosGh(cmd, nivel = 0, opts = {}) {
       if (lugar.cds.length || lugar.cwdDesconocido) c.cwdDesconocido = true;
       if (!c.repo && (lugar.repo || lugar.repoDesconocido)) c.repoDesconocido = true;
       c.otros += lugar.otros;
+      // lo que devuelve corre adentro de otro comando: quien juzga si se puede firmar lo necesita saber
+      c.enSustitucion = true;
       out.push(c);
     }
   }
@@ -1049,4 +1055,4 @@ function pareceGh(cmd) {
   return PARECE.test(plano) || PARECE_OCULTO.test(plano) || PARECE.test(conRutas);
 }
 
-module.exports = { comandosGh, pareceGh, repoDe, repoDeRuta, GRUPOS_DE_LECTURA, VERBOS_DE_LECTURA };
+module.exports = { comandosGh, pareceGh, repoDe, repoDeRuta, GRUPOS_DE_LECTURA, VERBOS_DE_LECTURA, ARMADO };

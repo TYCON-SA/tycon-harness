@@ -130,9 +130,10 @@ const FRENOS = {
   // El freno antes de publicar (scripts/hooks/public-push-guard.js). Anota cada empuje a un remoto
   // público desde un árbol del arnés y cada `gh` que publica ahí, también los `paso`: el denominador es «veces que algo
   // iba a salir al público». No tiene `escape`: ninguna variable lo apaga. `generic-only` = pasó sin lista (una máquina
-  // que no es del equipo). Sin huella del comando: el cuerpo de un pedido viaja en él.
+  // que no es del equipo). `main-branch` = el empuje iba a la rama principal del arnés público (entra por la cola). Sin
+  // huella del comando: el cuerpo de un pedido viaja en él.
   'public-push-guard': {
-    reglas: ['finding', 'could-not-look', 'unreadable-text', 'clean', 'generic-only'],
+    reglas: ['finding', 'could-not-look', 'unreadable-text', 'clean', 'generic-only', 'main-branch'],
     veredictos: ['bloqueo', 'paso'],
   },
   // El control de historia interna en la prosa que se publica (scripts/publishing/internal-history.js), desde que frena.
@@ -222,7 +223,7 @@ const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
 const ESCAPES_CON_NOMBRE = ['TYCON_SAFETY_OFF', 'TYCON_PROD_LINT', 'TYCON_NEW_NAMES', 'set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda',
   'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt',
-  'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado'];
+  'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado', 'merge-bypass'];
 const SESION = /^[\w-]{1,80}$/;
 
 function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape, motivo } = {}) {

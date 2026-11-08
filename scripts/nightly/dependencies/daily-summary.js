@@ -49,8 +49,9 @@
  * ── USO ─────────────────────────────────────────────────────────────────────────────────────────
  *   node daily-summary.js build    --source dependencies|vigilante --today <YYYY-MM-DD> [--json]
  *   node daily-summary.js deliver  --source dependencies|vigilante --today <YYYY-MM-DD> [--dry-run] [--extra <archivo>]
- *     --extra: la línea de otro paso que va al FINAL del mismo mensaje (los PR abiertos). Sólo se toma su
- *       primera línea, y sólo si es la cantidad («PR abiertos hace más de 2 días: N»)
+ *     --extra: la línea de otro paso que va al FINAL del mismo mensaje; se puede repetir, una línea por archivo (los PR
+ *       abiertos, las entradas a la rama principal sin su CI). Sólo se toma su primera línea, y sólo si tiene su forma
+ *       («PR abiertos hace más de 2 días: N», «Main sin su CI (72 h): GitHub N · Azure N · reglas al día»)
  *     --weekly: el informe de la revisión de la semana (`.dashboard/weekly-review/latest.json` del clon de
  *       mantenimiento): las dos mañanas siguientes a su semana, cuántas propuestas por forma, dónde se deciden y la línea en
  *       llano del patrón más repetido (filtrada de nombres); fuera de esa ventana, nada
@@ -865,18 +866,33 @@ function escribirConstancia(archivo, resumen) {
 }
 
 /**
- * La sección que otro paso dejó en un archivo (`open-prs.js`), para el FINAL del mismo mensaje.
- * 🔴 Si el archivo no está o no se puede leer, el mensaje sale igual pero LO DICE: que el paso de los PR haya
- * fallado antes de escribir no puede leerse como «no hay PR trabados». No toca rubros, comparación ni snapshot.
+ * Las líneas que otros pasos dejan en un archivo para el FINAL del mismo mensaje (`--extra`, que se puede repetir), cada
+ * una con su forma: sólo números. Los pedidos abiertos (`open-prs.js`): la cantidad, con el plazo que se haya pedido
+ * (`--days N`) y, si los hay, los que no se pudieron medir. Las entradas a la rama principal sin su CI (`main-entries.js`).
  */
-function seccionExtra(archivo) {
-  const SIN = 'PR abiertos: ? (no se pudo consultar)';
+const FORMAS_EXTRA = [
+  { inicio: /^PR abiertos\b/, sin: () => 'PR abiertos: ? (no se pudo consultar)',
+    forma: /^PR abiertos hace más de \d+ días: (\d+( \(\+\d+ sin fecha legible\))?|\? \((no se pudo consultar|Azure DevOps apagado|GitHub todavía no se lee)\))$/ },
+  { inicio: /^Main sin su CI\b/, sin: (l) => `${(/^Main sin su CI \(\d+ h\)/.exec(l) || ['Main sin su CI'])[0]}: ? (no se pudo consultar)`,
+    forma: /^Main sin su CI \(\d+ h\): GitHub (\d+|\?) · Azure (\d+|\?) · reglas (al día|cambiaron|\?)$/ },
+];
+
+/**
+ * La línea que otro paso dejó en un archivo. Una lista (repos, títulos, autores, motivos) no entra al mensaje aunque
+ * venga en el archivo: sólo la primera línea, y sólo si tiene su forma. La que empieza como una de las formas y no la
+ * tiene sale con «?» y sin su texto.
+ * 🔴 Si el archivo no está o no se puede leer, el mensaje sale igual pero LO DICE: que el paso haya fallado antes de
+ * escribir no puede leerse como «no había nada». El primer `--extra` es el de los pedidos abiertos (como antes de que se
+ * pudiera repetir). No toca rubros, comparación ni snapshot.
+ */
+function seccionExtra(archivo, posicion = 0) {
+  const sinArchivo = posicion === 0 ? FORMAS_EXTRA[0].sin('') : 'Línea de otro paso: ? (no se pudo consultar)';
   let t;
-  try { t = fs.readFileSync(archivo, 'utf8'); } catch { return SIN; }
-  // sólo la cantidad, con el plazo que se haya pedido (`open-prs.js --days N`) y, si los hay, los PR que no se
-  // pudieron medir. Una lista (repos, títulos, autores) no entra al mensaje aunque venga en el archivo.
+  try { t = fs.readFileSync(archivo, 'utf8'); } catch { return sinArchivo; }
   const primera = String(t).split('\n')[0].trim();
-  return /^PR abiertos hace más de \d+ días: (\d+( \(\+\d+ sin fecha legible\))?|\? \((no se pudo consultar|Azure DevOps apagado|GitHub todavía no se lee)\))$/.test(primera) ? primera : SIN;
+  for (const f of FORMAS_EXTRA) if (f.forma.test(primera)) return primera;
+  for (const f of FORMAS_EXTRA) if (f.inicio.test(primera)) return f.sin(primera);
+  return sinArchivo;
 }
 
 /**
@@ -1433,7 +1449,7 @@ function entregar(a) {
   }
   // lo que va después del cuerpo, igual en todos los canales
   let cola = '';
-  if (a.extra !== null) cola = `${cola}\n\n${seccionExtra(a.extra)}`;
+  if (a.extra !== null) cola = `${cola}\n\n${a.extra.map((f, i) => seccionExtra(f, i)).join('\n')}`;
   if (a.retros !== null) cola = `${cola}\n${lineaRetros(a.retros)}`;
   if (a.pruebasSinCi !== null) cola = `${cola}\n${lineaPruebasSinCi(a.pruebasSinCi)}`;
   // la línea de las ejecuciones va en su lugar con una marca: el mensaje aparte de los canales que no editan no la lleva
@@ -1599,7 +1615,7 @@ function parseArgs(argv) {
     else if (v === '--summary-config') a.resumenConfig = valor(++i);
     else if (v === '--watcher-out') a.vigOut = valor(++i);
     else if (v === '--deps-out') a.depsOut = valor(++i);
-    else if (v === '--extra') a.extra = valor(++i);
+    else if (v === '--extra') a.extra = [...(a.extra || []), valor(++i)];
     else if (v === '--retros') a.retros = valor(++i);
     else if (v === '--tests-without-ci') a.pruebasSinCi = valor(++i);
     else if (v === '--runs-review') a.runsReview = valor(++i);

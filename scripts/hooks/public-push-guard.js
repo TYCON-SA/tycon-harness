@@ -1012,6 +1012,38 @@ function concernsHarness({ repo, top, lines, url, env }) {
   return false;
 }
 
+const MAIN_REF = 'refs/heads/main';
+const QUEUE_REASON = 'main del arnés público entra por la cola: abrí un pedido y `gh pr merge <n> --merge`';
+
+/** El empuje a la rama principal del arnés público: frena (1) y lo anota. Un administrador la podría saltear en GitHub. */
+function mainBlocked(result) {
+  result.verdict = 'main';
+  result.reason = QUEUE_REASON;
+  record('main-branch', 'bloqueo');
+  return { code: 1, result };
+}
+
+/**
+ * La rama principal del remoto, como lista de nombres: primero lo que el clon ya sabe (`refs/remotes/<remoto>/HEAD`); si
+ * no, se le pregunta al remoto qué tiene (`git ls-remote`) y son las ramas cuya punta es la de su `HEAD` (si dos
+ * coinciden, cuentan las dos: ante la duda, frena). null si no se puede saber.
+ */
+function mainOfRemote(top, remoteName, url) {
+  if (remoteName && /^[A-Za-z0-9._-]+$/.test(remoteName)) {
+    const r = git(top, ['symbolic-ref', '--quiet', `refs/remotes/${remoteName}/HEAD`]);
+    const m = !r.error && r.status === 0 ? /^refs\/remotes\/[^/]+\/(.+)$/.exec(String(r.stdout).trim()) : null;
+    if (m) return [m[1]];
+  }
+  const r = spawnSync('git', ['-C', top, 'ls-remote', String(url)], { encoding: 'utf8', timeout: REMOTE_ANSWER_MS, windowsHide: true,
+    maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+  if (r.error || r.status !== 0) return null;
+  const refs = String(r.stdout).split('\n').map((l) => l.split('\t')).filter((p) => p.length === 2);
+  const head = refs.find(([, ref]) => ref === 'HEAD');
+  if (!head) return null;
+  const ramas = refs.filter(([sha, ref]) => sha === head[0] && ref.startsWith('refs/heads/')).map(([, ref]) => ref.slice('refs/heads/'.length));
+  return ramas.length ? ramas : null;
+}
+
 /** El modo `pre-push`. `input`: lo que git manda (null si no se pudo leer). Devuelve `{ code, result }`. */
 function prePush({ remoteName, url, input, cwd = process.cwd(), env = process.env }) {
   const result = { verdict: 'skip', remote: null, reason: null, findings: [], looked: { commits: 0, objects: 0, refs: 0, tags: 0 }, list: null, generic_only: false };
@@ -1026,8 +1058,11 @@ function prePush({ remoteName, url, input, cwd = process.cwd(), env = process.en
     const lines = parseLines(input);
     if (!concernsHarness({ repo, top, lines, url: target, env })) { result.reason = 'no es un empuje del arnés'; return { code: 0, result }; }
     result.verdict = 'pass';
-    if (!lines.some((l) => !ZERO.test(l.localSha))) return { code: 0, result };   // nada que publicar (o sólo borrados)
+    // la rama principal del arnés público entra por la cola, también para borrarla: un empuje que la nombra no sale
+    const aMain = lines.some((l) => l.remoteRef === MAIN_REF);
+    if (!lines.some((l) => !ZERO.test(l.localSha))) return aMain ? mainBlocked(result) : { code: 0, result };   // nada que publicar (o sólo borrados)
     gitLanguage();   // sin la biblioteca del idioma de git, el freno no puede leer lo que git le diga: no deja pasar
+    if (aMain) return mainBlocked(result);
     const list = resolveList(top, env, { pushing: true });
     result.list = { source: list.source };
     result.generic_only = list.generic;
@@ -1043,6 +1078,12 @@ function prePush({ remoteName, url, input, cwd = process.cwd(), env = process.en
     if (r.publicProblem.length) result.publicProblem = r.publicProblem;
     if (r.partial) result.partial = r.partial;
     if (r.findings.length) { result.verdict = 'findings'; record('finding', 'bloqueo'); return { code: 1, result }; }
+    // la rama principal que el remoto informa, aunque no se llame main: sólo si se empuja alguna rama
+    if (lines.some((l) => l.remoteRef.startsWith('refs/heads/'))) {
+      const principal = mainOfRemote(repo, remoteName, target);
+      if (principal === null) throw new Blind('no pude mirar cuál es la rama principal del remoto (no contestó, o no hay credencial), y la principal del arnés público entra por la cola');
+      if (lines.some((l) => principal.some((p) => l.remoteRef === `refs/heads/${p}`))) return mainBlocked(result);
+    }
     record(list.generic ? 'generic-only' : 'clean', 'paso');
     return { code: 0, result };
   } catch (e) {
@@ -1068,6 +1109,11 @@ function prePushMessage(result) {
     if (result.history === false) L.push(`   (los números de pedido en mensajes y nombres de rama NO se miraron: falta ${HISTORY_PATH})`);
     if (result.looked.askedRemote === false) L.push('   (el remoto no contestó qué tiene: se miró todo lo que este empuje alcanza, no sólo lo nuevo)');
     L.push(...stale());
+    return L;
+  }
+  if (result.verdict === 'main') {
+    L.push(`⛔ EMPUJE FRENADO — ${result.reason}.`);
+    L.push('   Nada salió. La rama principal del arnés público no se empuja ni se borra desde acá: un cambio entra por un pedido que pasa la cola y la CI.');
     return L;
   }
   if (result.verdict === 'blind') {

@@ -1518,3 +1518,38 @@ test('RunsReview_SinEfectos_SinToken: el token llega a la revisión sólo con ef
   const RR = fs.readFileSync(path.join(ROOT, 'scripts', 'nightly', 'runs-review', 'runs-review.js'), 'utf8');
   assert.match(RR, /noWorkItems: argv\.includes\('--no-work-items'\)/);
 });
+
+test('ProductionWatch_EntradasAMain_PasoYLinea: sin parámetros no corre; con ellos, la línea va al resumen aunque el paso no la escriba @story-8.241 @ac-14', () => {
+  const y = read(PW);
+  const on = "or(ne(parameters.mainEntriesGithubRepo, ''), ne(parameters.mainEntriesAzureRepo, ''))";
+  // los cinco parámetros, vacíos en el modelo público: sin nombres en el núcleo
+  for (const p of ['mainEntriesGithubRepo', 'mainEntriesGithubWorkflow', 'mainEntriesAzureProject', 'mainEntriesAzureRepo', 'mainEntriesRequiredBuilds']) {
+    assert.match(y, new RegExp(`- name: ${p}\\n(?:\\s+\\S.*\\n)*?\\s+default: ''`), `${p} vacío`);
+  }
+  // el paso existe sólo con los parámetros, y su caída no corta la noche
+  const paso = y.indexOf(`\${{ if ${on} }}:`);
+  assert.ok(paso > 0, 'el paso va bajo la condición de los parámetros');
+  const bloque = y.slice(paso, y.indexOf('displayName', paso) + 200);
+  assert.match(bloque, /main-entries\.js "\$\{ARGS\[@\]\}" --hours 72 --out "\$\(Agent\.TempDirectory\)\/main-sin-ci\.txt"/);
+  assert.match(bloque, /continueOnError: true/);
+  // el resumen: los pedidos abiertos siempre; la de main con el paso configurado, y si falta, «?» con la forma del guion
+  const resumen = steps(y).find((s) => /daily-summary\.js deliver/.test(s));
+  assert.match(resumen, /EX=\(--extra "\$\(Agent\.TempDirectory\)\/prs-abiertos\.txt"\)/);
+  assert.match(resumen, new RegExp(`MAIN_ENTRIES_ON: \\$\\{\\{ ${on.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\}\\}`));
+  const { linea } = require(path.join(ROOT, 'scripts', 'nightly', 'main-entries', 'main-entries.js'));
+  assert.ok(resumen.includes(`echo "${linea(72, null, null, null)}" > "$MAIN_TXT"`), 'la línea de respaldo es la del guion, con «?»');
+  // corrido de verdad: sin el archivo del paso, la línea sale con «?»; con el archivo, sale la suya
+  const frag = (resumen.match(/if \[ "\$\{MAIN_ENTRIES_ON:-\}" = "True" \]; then\n[\s\S]*?\n\s+fi\n/) || [''])[0];
+  assert.ok(frag, 'el bloque de la línea de main');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-main-'));
+  try {
+    const correr = (on2) => spawnSync('bash', ['-c', `set -u; EX=(); ${frag.split('$(Agent.TempDirectory)').join(tmp)} printf '%s\\n' "\${EX[@]+"\${EX[@]}"}"`],
+      { encoding: 'utf8', env: { ...process.env, MAIN_ENTRIES_ON: on2 } });
+    assert.strictEqual(correr('False').stdout, '\n', 'sin el paso, no hay línea');
+    assert.match(correr('True').stdout, /main-sin-ci\.txt/);
+    assert.strictEqual(fs.readFileSync(path.join(tmp, 'main-sin-ci.txt'), 'utf8').trim(), linea(72, null, null, null));
+    fs.writeFileSync(path.join(tmp, 'main-sin-ci.txt'), `${linea(72, 0, 0, 'al día')}\n`);
+    correr('True');
+    assert.strictEqual(fs.readFileSync(path.join(tmp, 'main-sin-ci.txt'), 'utf8').trim(), linea(72, 0, 0, 'al día'), 'la del paso no se pisa');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});

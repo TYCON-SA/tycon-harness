@@ -1573,6 +1573,22 @@ reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/de
 reset_srv ok:1; entregar "$D" dependencias "$HOY" >/dev/null
 [ -z "$(linea_apr)" ] && ok "4.7-T30 sin la opción, sin línea" || no "4.7-T30 sin opción: «$(linea_apr)»"
 
+# T21 Resumen_DosExtras @story-8.241 @ac-14
+# 🔴 Falla con: un segundo --extra que pisa al primero, una línea sin su forma que sale tal cual (puede traer un motivo
+#    que nombra la organización), o la de las entradas a main con la forma de los pedidos abiertos.
+D="$TMP/t21x"; mundo "$D"; snap "$D" "$HOY" '{}'; vsnap "$D" "$HOY" '{}'
+printf 'PR abiertos hace más de 2 días: 3\n#1 Acme/Repo — Autor — 9 días\n' > "$D/prs.txt"
+printf 'Main sin su CI (72 h): GitHub 1 · Azure 0 · reglas al día\n' > "$D/main.txt"
+reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/prs.txt" --extra "$D/main.txt")
+COLA=$(ultimo 'j.text.split("\n").slice(-3).join("|")')
+[ "$RC" = 0 ] && [ "$COLA" = "PR abiertos hace más de 2 días: 3|Main sin su CI (72 h): GitHub 1 · Azure 0 · reglas al día|sitio: sin configurar" ] \
+  && ok "T21 Resumen_DosExtras @story-8.241 @ac-14 — las dos líneas al final, cada una con su forma" || no "T21 dos extras: rc=${RC} · «${COLA}» · $(head -c 300 "$D/entregar.txt")"
+printf 'Main sin su CI (72 h): GitHub uno · motivo de acme-org\n' > "$D/main-mala.txt"
+vsnap "$D" "$HOY" '{}'; reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/prs.txt" --extra "$D/main-mala.txt")
+COLA=$(ultimo 'j.text.split("\n").slice(-3, -1).join("|")')
+[ "$RC" = 0 ] && [ "$COLA" = "PR abiertos hace más de 2 días: 3|Main sin su CI (72 h): ? (no se pudo consultar)" ] && ! grep -q 'acme-org' <<<"$(ultimo 'j.text')" \
+  && ok "T21 Resumen_DosExtras @story-8.241 @ac-14 — la línea sin su forma sale con «?», sin su texto" || no "T21 línea mala: rc=${RC} · «${COLA}»"
+
 echo
 if [ "$FALLOS" -eq 0 ]; then echo "✅ resumen-diario: $TOTAL/$TOTAL"; exit 0; fi
 echo "❌ resumen-diario: $FALLOS de $TOTAL en rojo"; exit 1

@@ -2205,8 +2205,10 @@ test('8.139 T4 TyconConfig_DelegatedSigning_IdsYGrupos', () => {
   }
   // la tabla de equivalencias: escape-phrases son todos los escapes; los demás grupos, su propia firma
   // escape-phrases son los escapes que se piden con la frase: los que tienen su guion se delegan sólo nombrándolos
+  // (y mergear salteando la CI no entra al grupo: nunca se delega)
   const porSuGuion = ['escape:force-manual', 'escape:trust-ran'];
-  assert.deepEqual(catalogo().expand('escape-phrases'), catalogo().ids().filter((id) => id.startsWith('escape:') && !porSuGuion.includes(id)));
+  const nuncaDelegable = ['escape:merge-bypass'];
+  assert.deepEqual(catalogo().expand('escape-phrases'), catalogo().ids().filter((id) => id.startsWith('escape:') && !porSuGuion.includes(id) && !nuncaDelegable.includes(id)));
   assert.deepEqual(catalogo().expand('lost-run'), ['lost-run']);
   assert.deepEqual(catalogo().expand('escape:trust-ran'), ['escape:trust-ran']);
   assert.deepEqual(catalogo().expand('off'), []);
