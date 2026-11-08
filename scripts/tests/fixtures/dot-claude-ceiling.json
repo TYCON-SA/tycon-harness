@@ -2,10 +2,10 @@
   "__doc": "Story 8.23 (AC 4): el techo de «.claude» en el código. Por archivo, cuántas veces aparece «.claude» fuera de los enchufes de Claude Code (clase B: settings.json, settings.local.json, CLAUDE.md, skills/, agents/, commands/, projects/, plugins/, channels/, ~/.claude.json) y fuera de los archivos de legacy-home-names.json. Barrido: los archivos rastreados de scripts/, skills/, agents/, build/ y adapters/, sin pruebas (tests/, *.test.*, fixtures/, controls-bench/cases/) ni prosa (.md); los comentarios cuentan. La regla: el techo SÓLO BAJA. Un archivo que sube frena nombrando sus líneas (pedile la ruta a scripts/setup/harness/tycon-home.js); uno que baja frena pidiendo bajar el techo. Re-medir: node scripts/tests/tycon-home.test.js --measure > scripts/tests/fixtures/dot-claude-ceiling.json. Lo compara scripts/tests/tycon-home.test.js (T3). El cero se exige en la tanda E.",
   "__last_change": {
     "date": "2026-11-08",
-    "direction": "baja en diecisiete archivos",
-    "reason": "Story 8.150: los hooks en shell y los escritores y lectores en JS de los registros sueltos (el freno, el guardián de pruebas, la grabadora de instintos, los medidores y sus avisos, el tablero, la auditoría, la subida al buzón, la prueba de fuego) piden su carpeta a scripts/lib/state-dir.sh o scripts/lib/loose-logs.js. safety-guard-pre.sh 28 → 26 y test-scope-guard-pre.sh 1 → 0, como promete el AC 12; nadie sube. state-dir.sh entra a las entries de legacy-home-names.json. Y el aplicador toma la carpeta del estado del ayudante (tanda B): install-tycon-hooks.sh 38 → 22. Total 829 → 794."
+    "direction": "baja en dieciséis archivos",
+    "reason": "Story 8.150: los hooks en shell y los escritores y lectores en JS de los registros sueltos (el freno, el guardián de pruebas, la grabadora de instintos, los medidores y sus avisos, el tablero, la auditoría, la subida al buzón, la prueba de fuego) piden su carpeta a scripts/lib/state-dir.sh o scripts/lib/loose-logs.js. safety-guard-pre.sh 28 → 26 y test-scope-guard-pre.sh 1 → 0, como promete el AC 12; nadie sube. state-dir.sh entra a las entries de legacy-home-names.json. Y el aplicador toma la carpeta del estado del ayudante (tanda B): install-tycon-hooks.sh 38 → 22. retro-staleness-notice.js queda igual (3): copiado suelto, sin la biblioteca, sella donde siempre. Total 829 → 795."
   },
-  "total": 794,
+  "total": 795,
   "files": {
     "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
     "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
@@ -62,7 +62,7 @@
     "scripts/hooks/prod-firewall-close.js": 1,
     "scripts/hooks/production-notice.js": 1,
     "scripts/hooks/retro-pending.js": 3,
-    "scripts/hooks/retro-staleness-notice.js": 2,
+    "scripts/hooks/retro-staleness-notice.js": 3,
     "scripts/hooks/safety-guard-pre.sh": 26,
     "scripts/hooks/session-collision-guard.js": 1,
     "scripts/install-tycon-hooks.ps1": 15,
