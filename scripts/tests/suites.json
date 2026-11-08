@@ -1870,7 +1870,37 @@
     },
     {
       "raiz": "arnes",
-      "ruta": "tests/office.test.js",
+      "ruta": "tests/office-photo.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-hours.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-board.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-tables.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-page.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-conversation.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-split.test.js",
       "requiere": []
     },
     {
