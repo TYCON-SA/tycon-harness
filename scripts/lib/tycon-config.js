@@ -261,6 +261,11 @@ const VOCABULARIO = Object.freeze({
   // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
   // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
   office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
+  // Los topes de archivos del camino corto (el arreglo rápido sin historia). `coordinator_max_files`: lo que se abre sin
+  // una persona (la coordinadora por delegación, o una pestaña sin permisos); `max_files`: hasta dónde alcanza la firma
+  // común, y más es la firma de sobre cupo. Sin valor, 5 y 8. Los rangos salen de SHORT_PATH_MAX. Valen SÓLO desde el
+  // perfil del equipo (PROFILE_ONLY): si la máquina o una variable pudieran decirlos, el agente se subiría el tope.
+  short_path: Object.freeze({ coordinator_max_files: 'entero:1-6', max_files: 'entero:1-12' }),
   // La dirección del sitio de la organización, la que abre el comando de barra org-site. Vale SÓLO desde el perfil del
   // equipo (PROFILE_ONLY): es una para toda la organización, y si la máquina pudiera decirla, el agente podría mandar a
   // la persona a otra página. Sin valor, el comando dice cómo cargarla (desde el sitio o con un pedido al perfil).
@@ -323,7 +328,14 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files']);
+// Hasta dónde puede subir cada tope del camino corto. El delegado, hasta 6: sube lo
+// mínimo, porque con riesgo normal ese carril no lleva revisores ni pase adversarial, y una historia de 6 archivos ya deja
+// de saltearse el pase. El de la firma común, hasta 12: evita el click aparte en un arreglo de 9 archivos y lo mantiene en
+// los de 13 o más. Subir un máximo es un cambio de control; lo de adentro del máximo se cambia en el perfil.
+const SHORT_PATH_MAX = Object.freeze({ coordinator_max_files: 6, max_files: 12 });
+// Los topes de fábrica, cuando el perfil no los dice. Son los mismos de story-gate.js, que rigen si el lector falla.
+const SHORT_PATH_FACTORY = Object.freeze({ coordinator_max_files: 5, max_files: 8 });
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
 // Los canales por los que sale un aviso; la misma lista que `CANALES` del módulo de avisos (lo fija T27).
@@ -960,6 +972,14 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       plano[ruta] = normalizarValor(tipo, valor, home, ruta);
     }
   }
+  // Los dos topes del camino corto: lo que se abre sin una persona no puede pasar de lo que alcanza la firma común. Es un
+  // error del perfil y el delegado escrito no cuenta (rige el de fábrica, recortado al máximo). Va acá y no en cargar()
+  // para que el sitio rechace el mismo perfil que las máquinas.
+  if (esPerfil && tiene(plano, 'short_path.coordinator_max_files') && tiene(plano, 'short_path.max_files')
+    && plano['short_path.coordinator_max_files'] > plano['short_path.max_files']) {
+    errores.push({ archivo, clave: `${comoVino('short_path')}.coordinator_max_files`, motivo: `${plano['short_path.coordinator_max_files']} pasa de short_path.max_files (${plano['short_path.max_files']}): lo que se abre sin una persona no puede tener más archivos que lo que alcanza la firma común` });
+    delete plano['short_path.coordinator_max_files'];
+  }
   // Una firma delegada y sólo del dueño a la vez: gana el dueño. La lista de delegadas se lee rota (no delega nada) y el
   // error nombra la firma; la de sólo del dueño vale igual. Si la de sólo del dueño está rota, también: no se sabe qué
   // se reservó el dueño. Va acá y no en cargar() para que el sitio (parse) rechace el mismo perfil que las máquinas.
@@ -1456,6 +1476,22 @@ function coordinacion(config) {
     : { value: v[clave], origin: o[`coordination.${clave}`] });
   return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null) };
 }
+/**
+ * Los topes del camino corto, según una configuración YA cargada: `{ coordinator_max_files: { value, origin }, max_files:
+ * { value, origin }, delegado }`. Sin valor (o con un valor que el lector rechazó), 5 y 8 con origen `sin-valor`.
+ * `delegado` es el cupo que rige para lo que se abre sin una persona: el menor de los dos, porque un carril delegado no
+ * puede tener más que uno firmado.
+ */
+function caminoCorto(config) {
+  const v = (config && config.valores && config.valores.short_path) || {};
+  const o = (config && config.origenes) || {};
+  const con = (clave) => (Number.isInteger(v[clave])
+    ? { value: v[clave], origin: o[`short_path.${clave}`] }
+    : { value: SHORT_PATH_FACTORY[clave], origin: 'sin-valor' });
+  const coordinator_max_files = con('coordinator_max_files');
+  const max_files = con('max_files');
+  return { coordinator_max_files, max_files, delegado: Math.min(coordinator_max_files.value, max_files.value) };
+}
 function respuesta(config) {
   const r = config.valores.response;
   const o = config.origenes;
@@ -1897,7 +1933,7 @@ const KEYS = Object.freeze(Object.keys(VOCABULARIO).map((s) => enArchivo(s)));
 
 module.exports = {
   parse, KEYS, motivoPaquetes, paquetesDeTexto, CANALES_DE_AVISO,
-  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, coordinacion, temasDeSesion, sessionNames, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
+  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, SHORT_PATH_MAX, SHORT_PATH_FACTORY, caminoCorto, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, coordinacion, temasDeSesion, sessionNames, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
   esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, delegaFirma, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, guardKnows, guardAccepts, cli,
@@ -2016,7 +2052,7 @@ function cli(argv) {
   }
   if (cmd === 'get') {
     const clave = argv[1];
-    if (!clave || !/^[a-z]+\.[a-z_]+$/.test(clave)) { process.stderr.write(`${usage}\n`); process.exit(2); }
+    if (!clave || !/^[a-z][a-z_]*\.[a-z_]+$/.test(clave)) { process.stderr.write(`${usage}\n`); process.exit(2); }
     let c;
     try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }
     const val = valor(c, clave);

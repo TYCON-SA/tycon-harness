@@ -1553,7 +1553,12 @@ function skillDataDoctor({ home = os.homedir(), env = process.env, tree, team = 
       }
       // la casa que se resolvió, como `warn`: así una diferencia entre lo que mira el arnés
       // y lo que mira la skill —otra BIZUIT_SDD_HOME en la sesión— se ve en cada doctor
-      items.push({ level: 'warn', text: `${name}: la casa de sus datos es ${dh.file} (${exists(dh.file) ? 'existe' : 'todavía no existe'}${dh.from === 'env' ? `, por ${e.dataHome.env}` : ''})${dh.ignored ? ` — ${dh.ignored}` : ''}` });
+      // y qué hacer en cada caso, no sólo dónde está
+      const has = exists(dh.file);
+      const todo = dh.ignored ? `${dh.ignored}; poné una ruta absoluta o sacala`
+        : has ? `no hay nada que hacer; si la skill usa otra conexión, mirá ${e.dataHome.env} en esa sesión`
+          : 'no hay nada que hacer: la skill te pide la conexión la primera vez que la usás y la guarda ahí';
+      items.push({ level: 'warn', text: `${name}: la casa de sus datos es ${dh.file} (${has ? 'existe' : 'todavía no existe'}${dh.from === 'env' ? `, por ${e.dataHome.env}` : ''}) — ${todo}` });
       if (extrasReviewDue(e, now)) items.push({ level: 'warn', text: `la skill ${name} tiene su revisión vencida (${e.review.next}): quien la revisa corre la fecha ${e.review.every_months} meses o decide el retiro (primero el repo del equipo, después la versión)` });
     }
   } catch (err) {

@@ -779,6 +779,33 @@ test('A2c Review_UnreadableIsSaid_KeptStraysNoLinksUserOnlyBudget_CompareFailure
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
 });
 
+// la línea de la casa dice qué hacer en cada caso: sin conexión, con conexión y con la variable mal puesta
+test('T-235 HomeLine_SaysWhatToDo_MissingExistingAndRelativeVariable', () => {
+  const E = EXTRAS.entries[0];
+  const lab = casa('t235-casa');
+  const home = path.join(lab, 'home');
+  const env = { TYCON_HOME: path.join(home, '.tycon') };
+  const tree = path.join(home, '.tycon', 'harness');
+  const skillMdTxt = '---\nname: bizuit-sdd\ndescription: de juguete\n---\n';
+  fs.mkdirSync(path.join(tree, E.skill), { recursive: true });
+  fs.writeFileSync(path.join(tree, E.skill, 'SKILL.md'), skillMdTxt);
+  fs.writeFileSync(path.join(tree, TEAM.MANIFEST_NAME), JSON.stringify({ schema: 1, repo: 'acme/equipo', commit: SHA(7), files: [
+    { path: `${E.skill}/SKILL.md`, mode: '100644', blob: TEAM.blobOf(Buffer.from(skillMdTxt)) }] }));
+  const line = (e) => {
+    const its = TEAM.skillDataDoctor({ home, env: e, tree }).items.filter((i) => /la casa de sus datos es/.test(i.text));
+    assert.equal(its.length, 1, JSON.stringify(its));
+    assert.equal(its[0].level, 'warn');
+    return its[0].text;
+  };
+  try {
+    assert.match(line(env), /todavía no existe\) — no hay nada que hacer: la skill te pide la conexión la primera vez/);
+    assert.match(line({ ...env, [E.dataHome.env]: 'relativa' }), /no es una ruta absoluta: se ignora; poné una ruta absoluta o sacala/);
+    const dh = TEAM.dataHomeOf(E, { home, env });
+    fs.mkdirSync(dh.dir, { recursive: true }); fs.writeFileSync(dh.file, 'active: dev\n');
+    assert.match(line(env), new RegExp(`\\(existe\\) — no hay nada que hacer; si la skill usa otra conexión, mirá ${E.dataHome.env}`));
+  } finally { fs.rmSync(lab, { recursive: true, force: true }); }
+});
+
 // ── casos de regresión: cada uno con la prueba que lo reproduce ─────────────────────
 test('A2c Adversarial_CaseFoldedWhitelist_WindowsSafeCharsAndDepth_RealDates_BomSensitive_KeptOnlyWithLayer_UnsafeStrayNamesSaid', () => {
   const E = EXTRAS.entries[0];

@@ -102,21 +102,27 @@ const NEVER_CODE_SEGMENTS = new Set([
 // scripts/tests/fixtures/harness-place-names.json → recognizers).
 const HARNESS_REPO_SEGMENTS = new Set(['agent-skills', 'tycon-claude-guides', 'tycon-harness']);
 
+// Los topes de FÁBRICA del camino corto. Cada organización los cambia en su perfil (`short_path`, tycon-config.js); éstos
+// rigen sin perfil o cuando el lector no se puede leer. Esta biblioteca no lee archivos: el tope que rige le llega del
+// borde (story-gate-io.js → topesDelCaminoCorto).
 const DEFAULT_ADHOC_MAX_FILES = 8;
 // el arreglo rápido que abre la coordinadora por delegación: más chico que el que firma una persona
 const DELEGATED_ADHOC_MAX_FILES = 5;
-const cupoDelegado = (pedido) => Math.min(pedido, DELEGATED_ADHOC_MAX_FILES);
+const cupoDelegado = (pedido, tope = DELEGATED_ADHOC_MAX_FILES) => Math.min(pedido, tope);
 /**
- * El cupo que queda al declarar: el pedido, el que ya tenía o el de siempre. Lo hecho por delegación o en una pestaña sin
- * permisos va con el cupo delegado. Pedir sin número no achica lo que la persona ya eligió con su click: trabaría el arreglo.
+ * El cupo que queda al declarar: el pedido, el que ya tenía o el de la organización. Lo hecho por delegación o en una
+ * pestaña sin permisos va con el cupo delegado. Pedir sin número no achica lo que la persona ya eligió con su click:
+ * trabaría el arreglo. `topes`: `{ delegado, maximo }` de la organización; sin ellos, los de fábrica.
  */
-function cupoAlDeclarar({ pedido, existing, via }) {
-  const cupo = pedido !== undefined ? pedido : (existing ? existing.maxFiles : DEFAULT_ADHOC_MAX_FILES);
+function cupoAlDeclarar({ pedido, existing, via, topes }) {
+  const delegado = topes && Number.isInteger(topes.delegado) ? topes.delegado : DELEGATED_ADHOC_MAX_FILES;
+  const maximo = topes && Number.isInteger(topes.maximo) ? topes.maximo : DEFAULT_ADHOC_MAX_FILES;
+  const cupo = pedido !== undefined ? pedido : (existing ? existing.maxFiles : maximo);
   const porDelegacion = via === 'delegacion' || via === 'avisado';
-  return porDelegacion && !(pedido === undefined && existing && existing.sobreCupo) ? cupoDelegado(cupo) : cupo;
+  return porDelegacion && !(pedido === undefined && existing && existing.sobreCupo) ? cupoDelegado(cupo, delegado) : cupo;
 }
-/** El cupo de un carril: el suyo, o el de siempre si no trae uno que se pueda leer. */
-const cupoDelCarril = (adhoc) => (Number.isFinite(Number(adhoc && adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0 ? Number(adhoc.maxFiles) : DEFAULT_ADHOC_MAX_FILES);
+/** El cupo de un carril: el suyo, o `defecto` (el tope de la organización) si no trae uno que se pueda leer. */
+const cupoDelCarril = (adhoc, defecto = DEFAULT_ADHOC_MAX_FILES) => (Number.isFinite(Number(adhoc && adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0 ? Number(adhoc.maxFiles) : defecto);
 // la ruta de marker.js bajo la carpeta de la persona: `node ${MARKER_JS} …` imprime `node "$HOME/…"`, que anda también en
 // PowerShell; una firma se imprime con la ruta absoluta (signatureCommand), porque la forma de la firma exige un literal
 const MARKER_REL = '.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
@@ -408,7 +414,9 @@ function textoDelTope({ harness = true, tocados, cupo, archivos = [], ibaA = nul
   ].filter((l) => l !== '').join('\n');
 }
 
-function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, harness = true } = {}) {
+function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, harness = true, topes = null } = {}) {
+  // el tope de la organización que nombra el mensaje (lo lee el borde); sin él, el de fábrica
+  const maximo = topes && Number.isInteger(topes.maximo) ? topes.maximo : DEFAULT_ADHOC_MAX_FILES;
   const f = norm(filePath);
   const viaLine = via ? `  (detectado en ${via})\n` : '';
   if (r.kind === 'adhoc-high-risk') {
@@ -574,7 +582,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
     '       "datos": "sin-cambio" sólo si el cambio no cambia de dónde sale un dato ni quién lo puede ver; si lo cambia, va',
     '       por historia, aunque sea corta. Ante la duda, historia.',
     '       Lo aprueba una persona en la ventana de permiso, que le muestra el motivo y el cupo: corré el comando solo, en',
-    `       su forma exacta. Cupo por default: ${DEFAULT_ADHOC_MAX_FILES} archivos de implementación distintos (ajustable con "maxFiles"). Queda en adhoc.log.`,
+    `       su forma exacta. Cupo de la organización: ${maximo} archivos de implementación distintos (ajustable con "maxFiles"). Queda en adhoc.log.`,
     ...resume,
     '',
     '  🔴 QUIÉN ELIGE: el USER. Si YA lo dijo —"hablar con Barry"/quick-dev, "un hotfix", "arreglá esto',

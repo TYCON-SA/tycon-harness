@@ -1752,3 +1752,36 @@ test('T36 Papeles_EntranPorSuPropioIn — laboratorio: sin su «in», el papel s
     assert.ok(papersWithoutIn(sin).includes(paper), `sin el «in» que toma ${paper}, la prueba tenía que nombrarlo`);
   }
 });
+
+// ── Los topes del camino corto los configura cada organización (@story-8.182) ───────────────────────────────────────
+// Los papeles son fijos y no leen la configuración: un número del tope sin «por defecto» le promete a una organización
+// que lo cambió un valor que no rige.
+const MENCION_DEL_TOPE = /\b(?:hasta|más de|up to|more than|tope de|cap of|limit of)\s+[58]\s+(?:archivos|files)\b|\bcupo (?:es de )?[58]\b|maxFiles (?:mayor que|greater than) [58]\b|\b[Mm]ás de [58]:|\b[58] archivos como mucho|\b[58] files at most|\bat most [58] files\b/;
+const POR_DEFECTO = /por defecto|de fábrica|by default|factory/i;
+
+// 🔴 Falla con: un diagrama de la portada que vuelve a decir «hasta 5» u «hasta 8», o un texto que pierde el «por defecto».
+test('T21 Portada_DiagramaSinNumeros_YPorDefectoEnElTexto @story-8.182 @ac-20', () => {
+  const dicen = { es: /por defecto, 5 y 8/, en: /by default, 5 and 8/ };
+  for (const lang of ['es', 'en']) {
+    const texto = readPaper(README[lang]);
+    const diagramas = [...texto.matchAll(/```mermaid\n([\s\S]*?)```/g)].map((m) => m[1]);
+    assert.ok(diagramas.length > 0, `${README[lang]}: tiene sus diagramas`);
+    for (const d of diagramas) assert.doesNotMatch(d, /\b(?:hasta|up to) [58]\b/, `${README[lang]}: un diagrama no trae el número del tope`);
+    assert.match(texto, dicen[lang], `${README[lang]}: el texto dice «por defecto»`);
+  }
+});
+
+// 🔴 Falla con: una guía que nombra el 5 o el 8 del camino corto como un número fijo.
+test('T23 Guias_NombranElTope_DicenPorDefecto @story-8.182 @ac-19', () => {
+  const guias = ['guides/coordination.md', 'guides/coordination.en.md', 'guides/firmas-del-arnes.md', 'guides/que-hace-el-arnes.md', 'skills/tycon-pipeline/SKILL.md'];
+  for (const g of guias) {
+    const renglones = readPaper(g).split('\n');
+    const sinPorDefecto = renglones.map((l, i) => [i + 1, l]).filter(([, l]) => MENCION_DEL_TOPE.test(l) && !POR_DEFECTO.test(l));
+    assert.deepStrictEqual(sinPorDefecto.map(([n, l]) => `${g}:${n}: ${l.trim().slice(0, 140)}`), [], `${g}: cada mención del tope dice «por defecto»`);
+  }
+  // el control encuentra lo que busca
+  assert.ok(MENCION_DEL_TOPE.test('el cupo es de 5 archivos como mucho'));
+  assert.ok(MENCION_DEL_TOPE.test('Asking for more than 8 files is the signature'));
+  assert.ok(MENCION_DEL_TOPE.test('the quota is at most 5 files (asking for more is denied'));
+  assert.ok(!MENCION_DEL_TOPE.test('El tope es `coordination.max_working`, de 1 a 20'));
+});
