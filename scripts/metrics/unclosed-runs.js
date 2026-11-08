@@ -19,8 +19,9 @@
  *   4. arrancó hace más de 24 h.
  *
  * El volcado no inventa nada: trae la story, el repo, el arranque del nombre, los renglones del `gates.log`, los
- * hallazgos, los revisores y las aprobaciones que el run dir tenga; lo que falta va en `no_medido` con el motivo. La
- * sesión sale del `gates.log`; sin renglones, un identificador propio (`sin-cerrar-<huella>`), dicho en `no_medido`.
+ * hallazgos y los revisores que el run dir tenga, y las firmas de su sesión del registro común (`run-signatures.js`);
+ * lo que falta va en `no_medido` con el motivo. La sesión sale del `gates.log`; sin renglones, un identificador propio
+ * (`sin-cerrar-<huella>`), dicho en `no_medido`.
  *
  * Uso: node scripts/metrics/unclosed-runs.js [--json]   → lista las corridas sin cerrar (sólo lee)
  *      node scripts/metrics/unclosed-runs.js --write    → además deja sus volcados en timing-history/
@@ -148,6 +149,15 @@ function findUnclosed(opts = {}) {
     byRepo.get(k).push({ g, t });
   }
   const gatesOf = (repo) => byRepo.get(keyOf(repo)) || [];
+  // y por sesión, en orden de hora: de ahí sale la corrida siguiente de una sesión, que cierra la ventana de sus firmas
+  const porSesion = new Map();
+  for (const g of gates) {
+    const t = Date.parse(g && g.ts);
+    if (!g || typeof g.sessionId !== 'string' || !Number.isFinite(t)) continue;
+    if (!porSesion.has(g.sessionId)) porSesion.set(g.sessionId, []);
+    porSesion.get(g.sessionId).push({ g, t });
+  }
+  for (const filas of porSesion.values()) filas.sort((a, b) => a.t - b.t);
 
   const repos = opts.repos || require(path.join(__dirname, '..', 'lib', 'repos-root.js')).sessionRepos({ home, projectsDir: opts.projectsDir, tmp: opts.tmp, env: opts.env, platform });
   const runs = [];
@@ -177,7 +187,7 @@ function findUnclosed(opts = {}) {
       if (live.some((x) => String(x.storyId) === key && sameRepo(realOr(x.repoPath), realOr(repo), platform))) continue;
       const c = closesOf(key);
       if (c.unreadable || c.starts.some((t) => Math.abs(t - start) <= CLOSE_TOLERANCE_MS)) continue;
-      runs.push({ repo, dir: path.join(base, name), name, key, start, gates: mine, why: mine.length ? 'gates.log' : 'nunca entró a git' });
+      runs.push({ repo, dir: path.join(base, name), name, key, start, gates: mine, why: mine.length ? 'gates.log' : 'nunca entró a git', porSesion });
     }
   }
   return { runs, problems };
@@ -187,8 +197,28 @@ function readIfThere(file, parse) {
   try { const t = fs.readFileSync(file, 'utf8'); return { ok: true, value: parse(t) }; } catch (e) { return { ok: false, why: e.code === 'ENOENT' ? 'el run dir no lo trae' : `ilegible (${e.message})` }; }
 }
 
-/** El volcado de una corrida sin cerrar: sólo lo que hay; lo que falta, en `no_medido` con el motivo. */
-function buildDump(run) {
+const nombraStory = (g) => Boolean(g && (g.storyId || g.story || g.storyPath));
+
+/**
+ * Las firmas de la sesión de una corrida sin cerrar: desde su arranque hasta lo primero de su arranque más
+ * GATES_WINDOW_MS o el primer renglón de la misma sesión que nombra OTRA story (la corrida siguiente). Un renglón que no
+ * nombra ninguna story no corta: `gateIsStory` también da falso con él. `timing-history/` no se abre para esto.
+ */
+function firmasDe(run, sessionId, sesionDesconocida, casas) {
+  const RS = require(path.join(__dirname, '..', 'lib', 'run-signatures.js'));
+  if (sesionDesconocida) return { estado: 'no_medido', motivo: RS.SIN_SESION };
+  let hasta = run.start + GATES_WINDOW_MS;
+  const filas = (run.porSesion && run.porSesion.get(sessionId)) || [];
+  const siguiente = filas.find((x) => x.t > run.start && nombraStory(x.g) && !gateIsStory(x.g, run.key));
+  if (siguiente && siguiente.t - 1 < hasta) hasta = siguiente.t - 1;
+  return RS.deCorrida({ sesiones: [sessionId], desde: run.start, hasta, casas });
+}
+
+/**
+ * El volcado de una corrida sin cerrar: sólo lo que hay; lo que falta, en `no_medido` con el motivo. `casasFirmas`: las
+ * casas del registro común de firmas (las pruebas pasan unas temporales; sin ellas, las de `run-signatures.js`).
+ */
+function buildDump(run, { casasFirmas } = {}) {
   const no = {
     pasos: 'ejecución sin cerrar: el marcador desapareció sin su cierre, que es lo que anota los pasos',
     consumo: 'ejecución sin cerrar: el consumo se rescata al cerrar el marcador',
@@ -203,7 +233,8 @@ function buildDump(run) {
     no.sesion = 'el gates.log de esta máquina no tiene renglones de esta ejecución: la sesión no se conoce; el identificador sale del repo y del run dir';
   }
   // Lo que sale de la máquina es una lista cerrada de campos, como en un cierre normal: nada de texto libre de la carpeta
-  // de corrida (motivos, citas de aprobaciones) ni renglones de otras sesiones de la misma story.
+  // de corrida (motivos, citas de aprobaciones) ni renglones de otras sesiones de la misma story. Las firmas salen del
+  // registro común, con los mismos ocho campos saneados y el mismo tope que en un cierre (`run-signatures.js`).
   const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o && (typeof o[k] === 'string' || typeof o[k] === 'number' || typeof o[k] === 'boolean')).map((k) => [k, o[k]]));
   const gates = run.gates.filter((g) => g.sessionId === sessionId)
     .map((g) => pick(g, ['ts', 'sessionId', 'repoPath', 'storyPath', 'check', 'status', 'provenance', 'name', 'action', 'mode', 'verdict']));
@@ -232,8 +263,7 @@ function buildDump(run) {
   const roster = r.ok && r.value && (Array.isArray(r.value) ? r.value : r.value.reviewers || r.value.roster || r.value.revisores);
   if (Array.isArray(roster)) dump.revisores = roster.map((x) => (typeof x === 'string' ? x : x && (x.agent || x.advisor || x.name))).filter((x) => typeof x === 'string');
   else no.revisores = r.ok ? 'el review-roster.json del run dir no trae una lista de revisores' : r.why;
-  const a = readIfThere(path.join(run.dir, 'approvals.jsonl'), (t) => t.split('\n').filter((l) => l.trim()).length);
-  if (a.ok) dump.aprobaciones = a.value; else no.aprobaciones = a.why;
+  dump.firmas = firmasDe(run, sessionId, no.sesion !== undefined, casasFirmas);
   dump.no_medido = no;
   return dump;
 }

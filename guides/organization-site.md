@@ -189,6 +189,17 @@ sólo si la organización decidió bajar las conversaciones (sección «Conversa
 
 ![El detalle de una ejecución: la línea de tiempo, los controles, los revisores y el consumo](sitio-de-la-organizacion/capturas/corridas-detalle.png)
 
+El detalle trae también la tarjeta **«Las firmas»**: qué se firmó en esa ejecución, cuándo (en UTC), quién y cómo. Las
+firmas salen del **registro común de firmas** de la máquina: las de la sesión de la ejecución, desde su arranque hasta su
+cierre. Arriba, la cuenta; después, una fila por firma, con una de tres marcas: **«Tuya»** (la firmaste vos, en la
+ventana, la terminal, un click o un «aprobado» escrito), **«Por delegación»** (la dio la coordinadora en tu nombre; va con
+su propio color y el glifo ⇄) o **«Hecha y avisada»** (una sesión sin permisos lo hizo y te avisó: no es una firma tuya).
+Una firma pedida por otra sesión lo dice, con los primeros 8 caracteres de esa sesión. Una firma anotada en el registro
+de otra carpeta (la de HOME, cuando no es la de la cuenta) lo dice también. Los textos suben saneados (sin rutas, correos
+ni credenciales), con tope de largo, sin ningún id de sesión entero y con un tope de 200 firmas por ejecución; las que
+quedan afuera se cuentan. Si la tarjeta no tiene filas, dice por qué: la ejecución es anterior a la tarjeta, la máquina
+no tenía el registro, no hubo firmas o no se pudieron leer.
+
 **Qué hacer:** una ejecución que «quedó en el 4» puede estar en curso o abandonada; su detalle dice hasta dónde llegó.
 Una persona ve sólo las ejecuciones de sus máquinas confirmadas; quien mantiene ve todas.
 
