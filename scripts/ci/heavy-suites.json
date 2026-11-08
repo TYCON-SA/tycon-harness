@@ -215,6 +215,13 @@
         "scripts/tests/harness-rollback.test.sh"
       ]
     },
+    "harness-failures.test.sh": {
+      "why": "Suite del laboratorio del instalador (los cortes a la mitad y las copias de respaldo que quedan abiertas). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado). Sus patrones son los del grupo más su propio archivo.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-failures.test.sh"
+      ]
+    },
     "installer-repeated-hooks.test.sh": {
       "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
       "group": "installer",

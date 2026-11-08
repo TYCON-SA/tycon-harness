@@ -115,7 +115,9 @@ function add(ctx, state, H) {
     const st = fresh.state;
     const log = (l) => R.log(ctx.home, `install --tool: ${l}`);
     const snap = H.takeSnapshot(ctx, tree, { reason: 'tool', from: version(st), log, state: st, force: true });
-    const fail = (why) => { H.finishSnapshot(ctx, snap, log); return { code: 1, lines: [`${head}: ${why} — detalle en ${S.paths(ctx.home).log}`, ...notes] }; };
+    // un error con el proceso vivo cierra la copia como «failed»; enchufar no corre el aplicador completo, así que ni
+    // saliendo bien cierra las copias abiertas de un corte anterior
+    const fail = (why) => { H.finishSnapshot(ctx, snap, log, { outcome: 'failed' }); return { code: 1, lines: [`${head}: ${why} — detalle en ${S.paths(ctx.home).log}`, ...notes] }; };
     let report = []; let shared = []; let out = '';
     if (adding.includes('claude')) {
       // los enchufes propios de Claude Code que no pone su instalador: el lugar, el enlace de las skills, la línea de
@@ -255,7 +257,7 @@ function remove(ctx, state, H) {
     st.tools = T.TOOLS.filter((t) => left.includes(t) || still.includes(t));
     clearUnpluggedNotice(st, R);
     S.write(ctx.home, st);
-    H.finishSnapshot(ctx, snap, log);
+    H.finishSnapshot(ctx, snap, log, errors.length ? { outcome: 'failed' } : {});
     log(`desenchufado: ${removing.join(', ')} · quedan: ${st.tools.join(', ')} · errores: ${errors.length}`);
     if (errors.length) return { code: 1, lines: [...lines, ...errors.map((e) => `  ✗ ${e}`), `${head}: quedó a medias — harness.js uninstall --tool ${still.join(' --tool ')} --yes lo reintenta`] };
     return { code: 0, lines: [...lines, `herramientas enchufadas: ${T.names(st.tools)}`, `deja: el arnés (${st.tree}) — ${total} pieza(s) revisada(s); la copia de antes, en ${snap && snap.dir ? snap.dir : 'las copias de seguridad del mecanismo'}`] };

@@ -69,6 +69,7 @@
     { "path": "scripts/tests/windows-probe.test.js", "member": "la copia fija y el import de la máquina de antes", "why": "la sonda modela una máquina instalada antes de la 8.19 (bootstrap viejo y la línea de import vieja)" },
     { "path": "scripts/tests/windows-rehearsal.test.js", "member": "la línea de arranque y la guía de antes", "why": "el ensayo modela la máquina Windows de antes de la 8.19, con sus líneas medidas" },
     { "path": "scripts/tests/harness-bootstrap.test.sh", "member": "el enlace del laboratorio", "why": "modela una máquina del equipo que tiene el nombre viejo: la copia fija lo tiene que seguir encontrando" },
+    { "path": "scripts/tests/harness-failures.test.sh", "member": "el enlace del laboratorio de T2", "why": "el corte con el aplicador real arma la máquina como T9 de harness-install: un clon existente enlazado por el nombre viejo" },
     { "path": "scripts/tests/harness-install.test.sh", "member": "máquinas con el nombre viejo", "why": "el instalador sobre máquinas del equipo que ya tienen el nombre viejo (re-apuntar, otro clon, línea vieja, el orden inverso)" },
     { "path": "scripts/tests/harness-startup-line.test.js", "member": "las líneas de arranque viejas", "why": "reconoce las líneas de arranque viejas escritas en las máquinas" },
     { "path": "scripts/tests/harness-state.test.js", "member": "hooks por el nombre viejo", "why": "el estado de una máquina cuyos hooks quedaron registrados por el nombre viejo" },

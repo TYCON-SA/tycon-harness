@@ -58,6 +58,11 @@ function clock(startIso = '2026-10-02T12:00:00Z') {
   let t = Date.parse(startIso);
   return () => { const d = new Date(t); t += 60 * 1000; return d; };
 }
+/**
+ * La copia de una operación que TERMINÓ: tomada y cerrada, como la deja el instalador (una copia abierta es un cambio
+ * cortado y la retención no la poda). Las pruebas de retención modelan operaciones terminadas.
+ */
+const takeDone = (S, opts) => { const r = S.take(opts); S.close(r.dir, { closedBy: opts.reason }); return r; };
 
 // ─── T20 · Snapshot_ManifestFixedListDedupRetention5_InstallPinned ────────────────────────────────────────────────
 
@@ -174,10 +179,10 @@ test('T20 · siete cambios tras install: quedan 5 más la install más vieja; do
   assert.strictEqual(S.countBak({ home, env: {}, tree }), 3, 'cuenta sólo los .bak al lado de los archivos de la lista');
 
   write(settings, 'v0\n');
-  const install = S.take({ home, env: {}, tree, reason: 'install', from: null, to: 'v0', now: now() });
+  const install = takeDone(S, { home, env: {}, tree, reason: 'install', from: null, to: 'v0', now: now() });
   assert.strictEqual(install.created, true);
   // el mismo conjunto otra vez: no crea otra, devuelve la misma
-  const same = S.take({ home, env: {}, tree, reason: 'startup', from: 'v0', to: 'v0', now: now() });
+  const same = takeDone(S, { home, env: {}, tree, reason: 'startup', from: 'v0', to: 'v0', now: now() });
   assert.strictEqual(same.created, false, 'el mismo conjunto no crea otra copia');
   assert.strictEqual(same.dir, install.dir, 'devuelve la copia más reciente');
 
@@ -185,11 +190,11 @@ test('T20 · siete cambios tras install: quedan 5 más la install más vieja; do
   for (let i = 1; i <= 7; i++) {
     write(settings, `v${i}\n`);
     // la segunda también es `install` (una reinstalación): cuenta dentro de las 5, no queda fija
-    const r = S.take({ home, env: {}, tree, reason: i === 1 ? 'install' : 'update', from: `v${i - 1}`, to: `v${i}`, now: now() });
+    const r = takeDone(S, { home, env: {}, tree, reason: i === 1 ? 'install' : 'update', from: `v${i - 1}`, to: `v${i}`, now: now() });
     assert.strictEqual(r.created, true, `cambio ${i}: tenía que crear copia`);
     made.push(r.dir);
     // dos iguales seguidos: el segundo no duplica
-    const again = S.take({ home, env: {}, tree, reason: 'apply', from: `v${i}`, to: `v${i}`, now: now() });
+    const again = takeDone(S, { home, env: {}, tree, reason: 'apply', from: `v${i}`, to: `v${i}`, now: now() });
     assert.strictEqual(again.created, false, `cambio ${i} repetido: no tenía que duplicar`);
     assert.strictEqual(again.dir, r.dir);
   }
@@ -307,7 +312,7 @@ test('T20 · F9 · con el reloj corregido hacia atrás, la copia recién tomada 
   const settings = path.join(home, '.claude', 'settings.json');
   for (let i = 0; i < 6; i++) {
     write(settings, `futuro ${i}\n`);
-    S.take({ home, env: {}, tree, reason: i === 0 ? 'install' : 'apply', now: Date.UTC(2027, 0, 1, 0, 0, i) });
+    takeDone(S, { home, env: {}, tree, reason: i === 0 ? 'install' : 'apply', now: Date.UTC(2027, 0, 1, 0, 0, i) });
   }
   write(settings, 'ahora\n');
   const r = S.take({ home, env: {}, tree, reason: 'apply', now: Date.UTC(2026, 9, 2, 12) });
@@ -344,7 +349,7 @@ test('T23 · take({ force: true }) crea una copia nueva aunque el conjunto sea i
   const home = makeHome('c-force'); const tree = makeTree('c-force', []);
   write(path.join(home, '.claude', 'settings.json'), '{"a":1}\n');
   const now = clock();
-  const first = S.take({ home, env: {}, tree, reason: 'startup', now: now() });
+  const first = takeDone(S, { home, env: {}, tree, reason: 'startup', now: now() });
   const same = S.take({ home, env: {}, tree, reason: 'update', now: now() });
   assert.deepStrictEqual([same.created, same.dir], [false, first.dir], 'sin force, el mismo conjunto no duplica (como en la B)');
   const forced = S.take({ home, env: {}, tree, reason: 'update', force: true, now: now() });
@@ -384,9 +389,9 @@ test('REG-H5 · la retención no poda la copia de antes de la versión instalada
   const v1 = { harness: '1'.repeat(40), agent_skills: '2'.repeat(40) };
   const v2 = { harness: '3'.repeat(40), agent_skills: '2'.repeat(40) };
   write(settings, '{"v":1}\n');
-  const pre = S.take({ home, env: {}, tree, reason: 'update', force: true, sources: v1, now: now() });
+  const pre = takeDone(S, { home, env: {}, tree, reason: 'update', force: true, sources: v1, now: now() });
   // seis arranques de la versión nueva, cada uno con settings.json cambiado (Claude Code escribe permisos)
-  for (let i = 0; i < 6; i++) { write(settings, `{"v":2,"i":${i}}\n`); S.take({ home, env: {}, tree, reason: 'startup', sources: v2, now: now() }); }
+  for (let i = 0; i < 6; i++) { write(settings, `{"v":2,"i":${i}}\n`); takeDone(S, { home, env: {}, tree, reason: 'startup', sources: v2, now: now() }); }
   const dirs = S.list(home).map((b) => b.dir);
   assert.ok(dirs.includes(pre.dir), 'la copia con sources de la versión anterior sobrevive a la retención');
   assert.strictEqual(S.list(home).filter((b) => b.manifest.reason === 'startup').length, 5, 'las demás rotan como siempre: 5 más nuevas');
@@ -399,10 +404,218 @@ test('REG-H9 · take({ protect }) no poda la copia protegida (el destino de un r
   const now = clock();
   const v = { harness: '4'.repeat(40) };
   const made = [];
-  for (let i = 0; i < 5; i++) { write(settings, `{"i":${i}}\n`); made.push(S.take({ home, env: {}, tree, reason: 'apply', sources: v, now: now() }).dir); }
+  for (let i = 0; i < 5; i++) { write(settings, `{"i":${i}}\n`); made.push(takeDone(S, { home, env: {}, tree, reason: 'apply', sources: v, now: now() }).dir); }
   const target = made[0];   // la quinta más nueva: la próxima copia la podaría
   S.take({ home, env: {}, tree, reason: 'before-rollback', force: true, sources: v, protect: [target], now: now() });
   assert.ok(fs.existsSync(target), 'la copia destino sigue');
+});
+
+// ─── La copia abierta: nace abierta, la cierra su operación, la poda la respeta, el aviso la nombra ──────────────────
+
+const ROLLBACK = path.join(RAIZ, 'scripts', 'setup', 'harness', 'rollback.js');
+const setManifest = (dir, patch) => {
+  const m = manifestOf(dir);
+  fs.writeFileSync(path.join(dir, 'manifest.json'), `${JSON.stringify(Object.assign(m, patch), null, 2)}\n`);
+};
+const nameOf = (dir) => path.basename(dir);
+
+test('T1 Snapshot_OpenUntilFinish_PruneKeepsOpen @story-8.224 @ac-1 — abierta hasta su cierre, también la reusada; la poda no la borra', () => {
+  const S = snapshot();
+  const home = makeHome('t1-open'); const tree = makeTree('t1-open', []);
+  const settings = path.join(home, '.claude', 'settings.json');
+  const now = clock();
+  write(settings, '{"v":0}\n');
+  const first = S.take({ home, env: {}, tree, reason: 'update', now: now() });
+  assert.strictEqual(manifestOf(first.dir).open, true, 'la copia nueva no nació abierta');
+  assert.strictEqual(S.isOpen(manifestOf(first.dir)), true);
+  // su operación termina bien: cerrada, con quién la cerró
+  S.finish(first.dir, { home, env: {}, closedBy: 'update' });
+  const closed = manifestOf(first.dir);
+  assert.deepStrictEqual([closed.open, closed.closed_by], [false, 'update']);
+  const after = closed.files.find((f) => f.path === settings).sha256_after;
+  assert.strictEqual(after, sha('{"v":0}\n'));
+  // la reusada (mismo conjunto que la anterior, cerrada): se reabre sin tocar su sha256_after, y su cierre tampoco
+  const reused = S.take({ home, env: {}, tree, reason: 'startup', now: now() });
+  assert.deepStrictEqual([reused.created, reused.dir], [false, first.dir], 'el mismo conjunto no reusó la copia');
+  const reopened = manifestOf(first.dir);
+  assert.strictEqual(reopened.open, true, 'la reusada no se reabrió: un corte después no tendría aviso');
+  assert.strictEqual(reopened.files.find((f) => f.path === settings).sha256_after, after, 'reabrir pisó el «después» de su operación');
+  S.close(first.dir, { closedBy: 'startup' });
+  const reclosed = manifestOf(first.dir);
+  assert.deepStrictEqual([reclosed.open, reclosed.closed_by], [false, 'startup']);
+  assert.strictEqual(reclosed.files.find((f) => f.path === settings).sha256_after, after, 'el cierre de la reusada pisó el «después»');
+  // un cierre no pisa a otro: la operación que la cerró primero queda anotada (la actualización adentro del arranque)
+  S.close(first.dir, { closedBy: 'otra' });
+  assert.strictEqual(manifestOf(first.dir).closed_by, 'startup', 'un segundo cierre pisó al primero');
+  // una copia sin el campo (anterior a la marca) cuenta cerrada
+  setManifest(first.dir, { open: undefined, closed_by: undefined });
+  assert.strictEqual(S.isOpen(manifestOf(first.dir)), false, 'sin el campo no cuenta cerrada');
+  // la más nueva ABIERTA (un corte) no se reusa aunque el conjunto sea el mismo: la operación nueva toma la suya
+  write(settings, '{"v":1}\n');
+  const cut = S.take({ home, env: {}, tree, reason: 'update', now: now() });
+  // la abierta de ESTE proceso es la de la operación en curso: una operación de adentro la reusa sin reabrirla ni cerrarla
+  const inner = S.take({ home, env: {}, tree, reason: 'repoint', now: now() });
+  assert.deepStrictEqual([inner.created, inner.nested, inner.dir], [false, true, cut.dir], 'la operación de adentro no reusó la copia de la que la lanzó');
+  assert.strictEqual(manifestOf(cut.dir).open, true);
+  // la abierta por OTRO proceso (que ya no está) es un corte
+  setManifest(cut.dir, { opened_by: 'otro-proceso' });
+  const next = S.take({ home, env: {}, tree, reason: 'startup', now: now() });
+  assert.strictEqual(next.created, true, 'reusó la copia de un corte: su cierre le sacaría el aviso');
+  assert.notStrictEqual(next.dir, cut.dir);
+  S.close(next.dir, { closedBy: 'failed' });
+  assert.strictEqual(manifestOf(cut.dir).open, true, 'la copia del corte quedó cerrada por otra operación');
+  // la poda: una abierta vieja sobrevive a más copias que KEEP, y también la destino de una before-rollback abierta
+  write(settings, '{"v":2}\n');
+  const target = takeDone(S, { home, env: {}, tree, reason: 'update', now: now() });
+  write(settings, '{"v":2.5}\n');
+  const before = S.take({ home, env: {}, tree, reason: 'before-rollback', force: true, rollbackTo: nameOf(target.dir), now: now() });
+  for (let i = 0; i < S.KEEP + 2; i++) {
+    write(settings, `{"v":3,"i":${i}}\n`);
+    takeDone(S, { home, env: {}, tree, reason: 'startup', now: now() });
+  }
+  assert.ok(fs.existsSync(cut.dir), 'la poda borró una copia abierta');
+  assert.strictEqual(manifestOf(cut.dir).open, true);
+  assert.ok(fs.existsSync(before.dir), 'la poda borró la before-rollback abierta');
+  assert.ok(fs.existsSync(target.dir), 'la poda borró la copia a la que vuelve una before-rollback abierta');
+  // sin la before-rollback abierta, la destino rota como cualquier otra
+  S.close(before.dir, { closedBy: 'rollback' });
+  write(settings, '{"v":4}\n');
+  takeDone(S, { home, env: {}, tree, reason: 'startup', now: now() });
+  assert.ok(!fs.existsSync(target.dir), 'la destino quedó protegida aunque la before-rollback ya está cerrada');
+});
+
+test('T7 OpenCopy_ClosedByRollbackOrLaterFinish_NoMoreNotice @story-8.224 @ac-1 @ac-2 — la cierra la vuelta atrás o una operación que reescribió todo; el aviso no vuelve', () => {
+  const S = snapshot();
+  const home = makeHome('t7-closed'); const tree = makeTree('t7-closed', []);
+  const settings = path.join(home, '.claude', 'settings.json');
+  const now = clock();
+  write(settings, '{"v":0}\n');
+  const cut = S.take({ home, env: {}, tree, reason: 'update', now: now() });   // se cortó: nadie la cerró
+  assert.match(S.openCopyNotice(S.list(home), { cmd: 'harness.js' }) || '', new RegExp(nameOf(cut.dir)));
+  // (a) la vuelta atrás a esa copia termina bien y la cierra
+  S.close(cut.dir, { closedBy: 'rollback' });
+  assert.deepStrictEqual([manifestOf(cut.dir).open, manifestOf(cut.dir).closed_by], [false, 'rollback']);
+  assert.strictEqual(S.openCopyNotice(S.list(home), { cmd: 'harness.js' }), null, 'cerrada por la vuelta atrás, el aviso sigue');
+  // (b) otra cortada; un finish posterior que NO reescribió todo (older: false) la deja abierta
+  write(settings, '{"v":1}\n');
+  const cut2 = S.take({ home, env: {}, tree, reason: 'update', now: now() });
+  write(settings, '{"v":2}\n');
+  const partial = S.take({ home, env: {}, tree, reason: 'tool', force: true, now: now() });
+  S.finish(partial.dir, { home, env: {}, closedBy: 'tool', older: false });
+  assert.strictEqual(manifestOf(cut2.dir).open, true, 'una operación que no reescribió todo cerró la copia de un corte');
+  // una que falló tampoco
+  const failed = S.take({ home, env: {}, tree, reason: 'startup', force: true, now: now() });
+  S.close(failed.dir, { closedBy: 'failed', home, older: false });
+  assert.strictEqual(manifestOf(cut2.dir).open, true, 'una operación que falló cerró la copia de un corte');
+  // (c) una que reescribió todo (older: true) la cierra con su nombre
+  write(settings, '{"v":3}\n');
+  const later = S.take({ home, env: {}, tree, reason: 'startup', force: true, now: now() });
+  S.finish(later.dir, { home, env: {}, closedBy: 'startup', older: true });
+  assert.deepStrictEqual([manifestOf(cut2.dir).open, manifestOf(cut2.dir).closed_by], [false, nameOf(later.dir)]);
+  assert.strictEqual(S.openCopyNotice(S.list(home), { cmd: 'harness.js' }), null);
+  // (d) un finish posterior NO cierra una before-rollback abierta: ésa la cierra la vuelta atrás o un cambio de versión
+  const br = S.take({ home, env: {}, tree, reason: 'before-rollback', force: true, rollbackTo: nameOf(cut.dir), now: now() });
+  write(settings, '{"v":4}\n');
+  const later2 = S.take({ home, env: {}, tree, reason: 'startup', force: true, now: now() });
+  S.finish(later2.dir, { home, env: {}, closedBy: 'startup', older: true });
+  assert.strictEqual(manifestOf(br.dir).open, true, 'un finish cerró la before-rollback de una vuelta atrás cortada');
+  // (e) la vuelta atrás que termina cierra las before-rollback más viejas; un cambio de versión, como «superseded»
+  const br2 = S.take({ home, env: {}, tree, reason: 'before-rollback', force: true, rollbackTo: nameOf(cut.dir), now: now() });
+  S.finish(br2.dir, { home, env: {}, closedBy: 'rollback', older: true, beforeRollback: 'rollback' });
+  assert.deepStrictEqual([manifestOf(br.dir).open, manifestOf(br.dir).closed_by], [false, 'rollback']);
+  const br3 = S.take({ home, env: {}, tree, reason: 'before-rollback', force: true, rollbackTo: nameOf(cut.dir), now: now() });
+  write(settings, '{"v":5}\n');
+  const upd = S.take({ home, env: {}, tree, reason: 'update', force: true, now: now() });
+  S.finish(upd.dir, { home, env: {}, closedBy: 'update', older: true, beforeRollback: 'superseded' });
+  assert.deepStrictEqual([manifestOf(br3.dir).open, manifestOf(br3.dir).closed_by], [false, 'superseded']);
+  // (e2) la operación lanzada por otra (la mudanza que hace el arranque) no cierra la copia de la que la lanzó: sigue en
+  // curso y la cierra ella, con su «después»; la de un corte anterior, sí
+  write(settings, '{"v":6}\n');
+  const cut4 = S.take({ home, env: {}, tree, reason: 'apply', force: true, now: now() });
+  const launcher = S.take({ home, env: {}, tree, reason: 'startup', force: true, now: now() });
+  const moved = S.take({ home, env: {}, tree, reason: 'migrate', force: true, now: now() });
+  S.finish(moved.dir, { home, env: {}, closedBy: 'migrate', older: true, spare: launcher.dir });
+  assert.strictEqual(manifestOf(launcher.dir).open, true, 'la mudanza cerró la copia del arranque que la lanzó');
+  assert.deepStrictEqual([manifestOf(cut4.dir).open, manifestOf(cut4.dir).closed_by], [false, nameOf(moved.dir)]);
+  S.finish(launcher.dir, { home, env: {}, closedBy: 'startup' });
+  assert.deepStrictEqual([manifestOf(launcher.dir).closed_by, manifestOf(launcher.dir).files.every((f) => 'sha256_after' in f)], ['startup', true]);
+  // (f) el aviso guardado en state.notice sale cuando ya no vale, sin tocar los otros avisos
+  const noticeBefore = `retención: algo · ${S.CUT_NOTICE_PREFIX}un cambio del arnés se cortó · finales de línea: árbol sucio`;
+  assert.strictEqual(S.stripCutNotice(noticeBefore), 'retención: algo · finales de línea: árbol sucio');
+  assert.strictEqual(S.stripCutNotice(`${S.CUT_NOTICE_PREFIX}un cambio del arnés se cortó`), null);
+  assert.strictEqual(S.stripCutNotice('retención: algo'), 'retención: algo');
+  assert.strictEqual(S.stripCutNotice(null), null);
+});
+
+test('T6 RollbackHint_NamesExistingCopy @story-8.224 @ac-2 @ac-3 — el aviso da una copia que existe y que la vuelta atrás acepta; sin --to se saltan las abiertas o se retoma la vuelta atrás', () => {
+  const S = snapshot();
+  const RB = require(ROLLBACK);
+  const home = makeHome('t6-hint'); const tree = makeTree('t6-hint', []);
+  const settings = path.join(home, '.claude', 'settings.json');
+  const now = clock();
+  const v0 = { harness: 'a'.repeat(40) }; const v1 = { harness: 'b'.repeat(40) }; const v2 = { harness: 'c'.repeat(40) };
+  write(settings, '{"v":0}\n');
+  const old = S.take({ home, env: {}, tree, reason: 'update', sources: v0, now: now() });
+  write(settings, '{"v":0.5}\n');
+  S.finish(old.dir, { home, env: {}, closedBy: 'update' });
+  write(settings, '{"v":1}\n');
+  const cutOld = S.take({ home, env: {}, tree, reason: 'update', sources: v1, now: now() });   // abierta, otra versión
+  write(settings, '{"v":2}\n');
+  const cutNew = S.take({ home, env: {}, tree, reason: 'update', sources: v2, now: now() });   // abierta, la instalada
+  // el aviso: nombra la más nueva abierta, la carpeta existe, dice «por piezas» y cuenta la otra abierta
+  const n = S.openCopyNotice(S.list(home), { cmd: 'harness.js' });
+  const name = nameOf(cutNew.dir);
+  assert.match(n, new RegExp(`harness\\.js rollback --to ${name}`));
+  assert.ok(fs.existsSync(path.join(backupsDir(home), name)), 'la copia que da el aviso no existe');
+  assert.match(n, /por piezas/);
+  assert.match(n, /hay 1 copia\(s\) abierta\(s\) más \(harness\.js rollback --list\)/, n);
+  assert.ok(n.startsWith(S.CUT_NOTICE_PREFIX), n);
+  // la vuelta atrás acepta ese --to, aunque esté abierta
+  const withTo = RB.pickTarget(S.list(home), { to: name, currentSources: v2 });
+  assert.strictEqual(withTo.copy && withTo.copy.dir, cutNew.dir, JSON.stringify(withTo));
+  // sin --to salta las dos abiertas (la de sources iguales a los actuales y la de distintos) y elige la cerrada
+  const noTo = RB.pickTarget(S.list(home), { currentSources: v2 });
+  assert.strictEqual(noTo.copy && noTo.copy.dir, old.dir, `eligió ${noTo.copy && noTo.copy.name}: ${noTo.reason}`);
+  // la salud pendiente del arranque (openToo) elige como antes: la abierta de la actualización cortada
+  const health = RB.pickTarget(S.list(home), { currentSources: v2, openToo: true });
+  assert.strictEqual(health.copy && health.copy.dir, cutOld.dir, `openToo eligió ${health.copy && health.copy.name}: ${health.reason}`);
+  // una reusada abierta conserva el sha256_after de su operación anterior: el aviso no promete «por piezas»
+  S.close(cutOld.dir, { closedBy: 'update' });
+  S.finish(cutNew.dir, { home, env: {}, closedBy: 'update' });
+  const reused = S.take({ home, env: {}, tree, reason: 'startup', sources: v2, now: now() });
+  assert.strictEqual(reused.created, false);
+  const nr = S.openCopyNotice(S.list(home), { cmd: 'harness.js' });
+  assert.match(nr, new RegExp(`rollback --to ${nameOf(reused.dir)}`));
+  assert.doesNotMatch(nr, /por piezas/, 'prometió «por piezas» con una copia que tiene su «después»');
+  assert.doesNotMatch(nr, /abierta\(s\) más/, 'contó copias abiertas que no hay');
+  S.close(reused.dir, { closedBy: 'startup' });
+  // una before-rollback abierta: «una vuelta atrás se cortó» y el --to de su destino, nunca el de ella misma
+  write(settings, '{"v":3}\n');
+  const br = S.take({ home, env: {}, tree, reason: 'before-rollback', force: true, sources: v2, rollbackTo: nameOf(old.dir), now: now() });
+  assert.strictEqual(manifestOf(br.dir).rollback_to, nameOf(old.dir));
+  const nb = S.openCopyNotice(S.list(home), { cmd: 'harness.js' });
+  assert.match(nb, /una vuelta atrás se cortó/);
+  assert.match(nb, new RegExp(`harness\\.js rollback --to ${nameOf(old.dir)}`));
+  assert.doesNotMatch(nb, new RegExp(`--to ${nameOf(br.dir)}`), 'mandó a volver a la before-rollback');
+  // sin --to, con los sources ya vueltos a los del destino: retoma la vuelta atrás por su rollback_to, no «nada que hacer»
+  const resume = RB.pickTarget(S.list(home), { currentSources: v0 });
+  assert.strictEqual(resume.copy && resume.copy.dir, old.dir, `no retomó la vuelta atrás: ${resume.reason}`);
+  // openToo no retoma una before-rollback
+  const healthBr = RB.pickTarget(S.list(home), { currentSources: v2, openToo: true });
+  assert.strictEqual(healthBr.copy && healthBr.copy.dir, cutOld.dir, `openToo no eligió por los sources: ${healthBr.reason}`);
+  // dos before-rollback abiertas con destinos distintos: la más nueva manda, y su destino puede estar ABIERTO
+  write(settings, '{"v":4}\n');
+  const cut3 = S.take({ home, env: {}, tree, reason: 'update', sources: v1, now: now() });   // el corte que nombró el aviso
+  write(settings, '{"v":5}\n');
+  const br2 = S.take({ home, env: {}, tree, reason: 'before-rollback', force: true, sources: v2, rollbackTo: nameOf(cut3.dir), now: now() });
+  const two = RB.pickTarget(S.list(home), { currentSources: v2 });
+  assert.strictEqual(two.copy && two.copy.dir, cut3.dir, `con dos before-rollback no eligió el destino de la más nueva: ${two.reason}`);
+  // el destino que ya no está: no elige nada y dice a dónde mirar
+  fs.rmSync(cut3.dir, { recursive: true, force: true });
+  const gone = RB.pickTarget(S.list(home), { currentSources: v2 });
+  assert.strictEqual(gone.copy, null, `eligió ${gone.copy && gone.copy.name} con el destino borrado`);
+  assert.match(gone.reason, new RegExp(`la vuelta atrás cortada iba a ${nameOf(cut3.dir)}, que ya no está: harness\\.js rollback --list muestra a dónde volver`));
+  assert.ok(fs.existsSync(br2.dir));
 });
 
 // ─── T21 · Applier_NoLegacyBakUnderHarness_YesStandalone (la parte del install-tycon-hooks.sh) ─────────────────────
@@ -527,4 +740,91 @@ test('Manifest_PathsOutsideHome_NotTouched — un manifiesto tocado a mano no es
   assert.ok(tycon in base.map, 'el archivo sano de la copia tiene que seguir en la base');
   assert.ok(!(path.join(home, 'enlace', 'victima.txt') in base.map), 'uninstall tomó una ruta que un enlace lleva fuera de la HOME');
   assert.ok(base.skipped.includes(victima) && base.skipped.includes(path.join(home, 'enlace', 'victima.txt')), `uninstall no anotó lo que salteó: ${base.skipped}`);
+});
+
+// ─── T8 · cada camino de error de los módulos que toman una copia la cierra como «failed» ─────────────────────────────
+
+const HARNESS_DIR = path.join(RAIZ, 'scripts', 'setup', 'harness');
+const hmod = (name) => require(path.join(HARNESS_DIR, `${name}.js`));
+
+/**
+ * Los ayudantes `H` que harness.js le pasa a cada módulo, con `finishSnapshot` espía: anota con qué opciones se cerró
+ * cada copia. `applier` y `health` dicen cómo sale cada uno.
+ */
+function spyHelpers({ applier = true, health = true } = {}) {
+  const closed = [];
+  const H = {
+    takeSnapshot: () => ({ dir: path.join(BASE, 'copia-de-juguete'), created: true }),
+    finishSnapshot: (ctx, snap, log, opts = {}) => { if (snap) closed.push(Object.assign({}, opts)); },
+    runApplier: () => (applier ? { ok: true, report: [], shared: [], out: '' } : { ok: false, reason: 'el aplicador de juguete falló' }),
+    runClaudeApplier: () => (applier ? { ok: true, report: [], shared: [], out: '', warnings: [] } : { ok: false, reason: 'el aplicador de juguete falló' }),
+    runHealth: () => (health ? { ok: true, failures: [] } : { ok: false, failures: ['la salud de juguete no pasó'] }),
+    recordPieces: () => {},
+    ensureLink: () => ({ ok: true }),
+    ensureImport: () => false,
+    settingsPath: (ctx) => path.join(ctx.home, '.claude', 'settings.json'),
+    busy: () => ({ code: 3, lines: ['ocupado'] }),
+  };
+  return { H, closed };
+}
+const failedClose = (c) => c.outcome === 'failed';
+
+test('T8 FailedPaths_CloseAsFailed_KeepOlderOpen @story-8.224 @ac-1 — tool-change y la vuelta atrás de la versión bajada: con error, «failed»; bien, sin él, y rewroteAll sólo donde corrió el aplicador completo', () => {
+  const ST = hmod('state');
+  // (a) install --tool claude sobre una máquina con Codex: el aplicador en error, la salud en rojo y el que sale bien
+  for (const [label, opts, wantFailed] of [['aplicador en error', { applier: false }, true], ['salud en rojo', { health: false }, true], ['sale bien', {}, false]]) {
+    const home = makeHome(`t8-tool-${wantFailed ? 'f' : 'ok'}`); const tree = makeTree(`t8-tool-${label.length}`, []);
+    const st = ST.defaults({ tree, sources: [], mode: 'managed' });
+    st.tools = ['codex'];
+    ST.write(home, st);
+    const { H, closed } = spyHelpers(opts);
+    const ctx = { home, env: {}, platform: process.platform, opts: { tool: 'claude', yes: true } };
+    const r = hmod('tool-change').add(ctx, ST.read(home).state, H);
+    assert.strictEqual(closed.length, 1, `${label}: la copia no se cerró una vez (${JSON.stringify(closed)}; ${r.lines.join(' · ')})`);
+    assert.strictEqual(failedClose(closed[0]), wantFailed, `${label}: cerró con ${JSON.stringify(closed[0])} (salió ${r.code}: ${r.lines.join(' · ')})`);
+    assert.notStrictEqual(closed[0].rewroteAll, true, `${label}: install --tool no corre el aplicador completo y pidió cerrar las viejas`);
+  }
+  // (b) la vuelta atrás de una versión bajada: con el aplicador en error o la salud en rojo devuelve ok, pero falló
+  for (const [label, opts, wantFailed] of [['aplicador en error', { applier: false }, true], ['salud en rojo', { health: false }, true], ['sale bien', {}, false]]) {
+    const home = makeHome(`t8-rel-${wantFailed ? 'f' : 'ok'}`); const tree = makeTree(`t8-rel-${label.length}`, []);
+    const own = hmod('tycon-home').ownPathsOf({ home, env: {} });
+    fs.mkdirSync(own.harness, { recursive: true }); fs.mkdirSync(own.previous, { recursive: true });
+    const st = ST.defaults({ tree, sources: [{ kind: 'release', name: 'harness', version: '2.0.0', commit: 'a'.repeat(40) }], mode: 'managed' });
+    st.version = { number: '2.0.0' };
+    const { H, closed } = spyHelpers(opts);
+    const r = hmod('release').rollback({ home, env: {}, platform: process.platform, opts: {} }, st, H, { log: () => {} });
+    assert.strictEqual(closed.length, 1, `${label}: la copia de la vuelta atrás no se cerró una vez (${JSON.stringify(closed)}; ${(r.lines || []).join(' · ')})`);
+    assert.strictEqual(failedClose(closed[0]), wantFailed, `${label}: cerró con ${JSON.stringify(closed[0])}`);
+    assert.strictEqual(closed[0].rewroteAll === true, !wantFailed, `${label}: rewroteAll ${closed[0].rewroteAll} (corrió el aplicador completo: sólo bien lo pide)`);
+    if (!wantFailed) assert.strictEqual(closed[0].closedBy, 'rollback', `la vuelta atrás que terminó no cerró con «rollback»: ${JSON.stringify(closed[0])}`);
+  }
+});
+
+// ─── T15 · una copia que no se pudo cerrar lo dice: nunca queda abierta en silencio ─────────────────────────────────
+
+test('T15 Close_CannotClose_SaysSo @story-8.224 @ac-1 — close con el manifiesto ilegible y closeOlder con una vieja que no se deja escribir: lo dicen por el log y no tiran', () => {
+  const S = snapshot();
+  const home = makeHome('t15'); const tree = makeTree('t15', []);
+  const settings = path.join(home, '.claude', 'settings.json');
+  const now = clock();
+  // (a) close sobre una copia con el manifiesto roto
+  write(settings, '{"v":0}\n');
+  const broken = S.take({ home, env: {}, tree, reason: 'update', now: now() });
+  fs.writeFileSync(path.join(broken.dir, 'manifest.json'), '{roto');
+  const said = [];
+  assert.strictEqual(S.close(broken.dir, { closedBy: 'failed', log: (l) => said.push(l) }), null);
+  assert.ok(said.some((l) => l.includes(nameOf(broken.dir)) && /no pude/.test(l)), `close no dijo que no pudo cerrar ${nameOf(broken.dir)}: ${JSON.stringify(said)}`);
+  // (b) closeOlder: la vieja abierta está en una carpeta que no se deja escribir
+  if (typeof process.getuid === 'function' && process.getuid() === 0) return;   // root escribe igual: no se puede medir
+  write(settings, '{"v":1}\n');
+  const old = S.take({ home, env: {}, tree, reason: 'update', now: now() });
+  write(settings, '{"v":2}\n');
+  const later = S.take({ home, env: {}, tree, reason: 'startup', force: true, now: now() });
+  fs.chmodSync(old.dir, 0o555);
+  const said2 = [];
+  try {
+    assert.doesNotThrow(() => S.finish(later.dir, { home, env: {}, closedBy: 'startup', older: true, log: (l) => said2.push(l) }));
+  } finally { fs.chmodSync(old.dir, 0o755); }
+  assert.strictEqual(manifestOf(old.dir).open, true, 'la vieja se cerró aunque su carpeta no se dejaba escribir');
+  assert.ok(said2.some((l) => l.includes(nameOf(old.dir)) && /sigue abierta/.test(l)), `closeOlder no dijo que ${nameOf(old.dir)} sigue abierta: ${JSON.stringify(said2)}`);
 });
