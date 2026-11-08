@@ -109,6 +109,19 @@ t('repo relativo se rechaza (contrato con retro-pending)', () => {
   assert.ok(v.errors.some((e) => e.includes('ABSOLUTO')));
 });
 
+t('repo absoluto de Windows pasa en cualquier sistema; uno relativo de Windows no', () => {
+  for (const repo of ['C:/Users/dev/acme/Backend', 'D:\\workspace\\acme', '\\\\servidor\\compartido\\acme']) {
+    const d = base();
+    d.repo = repo;
+    assert.ok(!validate(d).errors.some((e) => e.includes('ABSOLUTO')), repo);
+  }
+  for (const repo of ['C:acme', 'acme\\Backend']) {
+    const d = base();
+    d.repo = repo;
+    assert.ok(validate(d).errors.some((e) => e.includes('ABSOLUTO')), repo);
+  }
+});
+
 t('métrica faltante se rechaza en modo estricto y pasa en laxo', () => {
   const d = base();
   delete d.metrics.advisor_rerun_loop_iterations;
