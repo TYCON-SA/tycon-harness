@@ -2572,6 +2572,8 @@ function cmdMarkTestsNotScoped(motivo) {
  *     sola salió verde); con el resumen de la suite sola y la foto de su carpeta, la suma a lo guardado de la completa
  *     roja, con su cobertura; con `--result <tests-result.json> [--story-id <id>] [--sealed <copia>] [--inherited]`,
  *     saca su falla de la constancia de esa completa (lib/failed-first.js `rewriteResult`, con la `full_ts` de la lista);
+ *     con `--full-suite-by <quién>` (la corrida está acotada: la completa la corre la CI del pedido) y sin lo guardado de la
+ *     completa roja, si era la última roja y la constancia queda en verde, deja el check `tests` en verde;
  *   · `record` acepta `--full-ts <ts>`: la hora de la completa, que cada suite de la lista guarda;
  *   · `pending --suites <suites.json> --gate <test-gate.sh> --repo <repo> [--story <story>]`: saca las rutas que ya no
  *     están en suites.json (y lo dice); si queda alguna, nombra cada una con su comando y sale 76;
@@ -2585,7 +2587,7 @@ const TESTS_FAILED_PENDING = 76;
 function cmdTestsFailed(argv) {
   const accion = argv[0];
   const opt = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
-  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> [--full-ts <ts>] | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] [--result <f> [--story-id <id>] [--sealed <f>] [--inherited]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] --repo <r> | red-full --repo <r> | drop-red --repo <r>';
+  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> [--full-ts <ts>] | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] [--result <f> [--story-id <id>] [--sealed <f>] [--inherited] [--full-suite-by <quién>]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] --repo <r> | red-full --repo <r> | drop-red --repo <r>';
   if (!['record', 'clear', 'pending', 'save-red', 'red-full', 'drop-red'].includes(accion) || !opt('--repo')
     || (accion === 'record' && !opt('--summary')) || (accion === 'clear' && !opt('--path'))
     || (accion === 'pending' && (!opt('--suites') || !opt('--gate')))
@@ -2671,13 +2673,29 @@ function cmdTestsFailed(argv) {
     }
     const quedan = lista.filter((x) => x.ruta !== ruta);
     // la constancia de la completa (y su copia que viaja) deja de nombrar esta falla: el revisor de pruebas la lee
+    let constanciaVerde = false;
     if (opt('--result')) {
       try {
         const hecho = ff.rewriteResult(opt('--result'), { raiz: propia.raiz || null, ruta }, {
           fullTs: propia.full_ts || null, storyId: opt('--story-id'), inherited: argv.includes('--inherited'), sealed: opt('--sealed') });
         process.stderr.write(`[test-gate] constancia: ${hecho.reason}\n`);
+        if (hecho.written) {
+          try {
+            const c = JSON.parse(fs.readFileSync(opt('--result'), 'utf8'));
+            constanciaVerde = c.suite_green === true && c.suite_green_by === 'repeticiones';
+          } catch (e) { process.stderr.write(`[test-gate] ⚠️  no pude leer la constancia reescrita (${e.message}): el check tests queda como estaba\n`); }
+        }
       } catch (e) { process.stderr.write(`[test-gate] ⚠️  no pude reescribir la constancia (${e.message}): queda como la dejó la completa\n`); }
     }
+    // La última roja repetida en verde deja `tests` en verde, con la constancia de la completa en verde por las
+    // repeticiones, sólo en una corrida acotada (`--full-suite-by`: la completa la corre después la CI del pedido) y sin
+    // lo guardado de la completa roja, de éste o de otro repo (con eso, la próxima completa cierra y vuelve a correr lo
+    // que el arreglo cambió).
+    // No tapa otro rojo: ni otra suite en la lista (de este repo o de otro), ni una ausente o sin medir, ni un repo
+    // hermano rojo (la constancia no queda verde), ni una corrida de `tests` posterior a esa completa.
+    const porRepeticiones = constanciaVerde && !!opt('--full-suite-by') && !roja && otrasRojas.length === 0 && quedan.length === 0 && ajenas.length === 0
+      && /^red\b/.test(String((marker.checks || {}).tests)) && (marker.checksProvenance || {}).tests === 'test-gate'
+      && Date.parse((marker.checksAt || {}).tests) <= Date.parse(propia.at);
     // con lo guardado de la completa roja, la repetición verde se suma con la foto de la carpeta en que corrió
     if (roja && opt('--summary') && opt('--tree')) {
       try {
@@ -2688,7 +2706,18 @@ function cmdTestsFailed(argv) {
     }
     marker.testsFailed = [...ajenas, ...quedan];
     marker.lastTouch = nowIso();
+    const rojoAntes = porRepeticiones ? marker.checks.tests : null;
+    if (porRepeticiones) {
+      marker.checks.tests = 'green';
+      marker.checksAt = { ...(marker.checksAt || {}), tests: marker.lastTouch };
+      marker.checksProvenance = { ...(marker.checksProvenance || {}), tests: 'test-gate' };
+    }
     writeMarker(marker);
+    if (porRepeticiones) {
+      appendLog('gates.log', { name: 'tests', status: 'green', by: 'repeticiones', story: marker.storyId || null, repo,
+        before: rojoAntes, full_ts: propia.full_ts || null, full_suite_by: opt('--full-suite-by') });
+      process.stderr.write(`[test-gate] ✅ no queda ninguna roja y la constancia de la completa quedó en verde: el check tests pasa a verde (la completa la corre ${opt('--full-suite-by')})\n`);
+    }
     process.stderr.write(`[test-gate] ${ruta} salió verde: fuera de la lista${quedan.length ? ` (quedan ${quedan.length})` : ' (no queda ninguna: la corrida completa ya puede arrancar)'}\n`);
     return;
   }
