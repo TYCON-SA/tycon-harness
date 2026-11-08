@@ -150,8 +150,11 @@ function todoEnIdioma(idioma, valor) {
     if (Array.isArray(v)) return v.map((x) => recorrer(x, LISTAS_DE_LA_CASA.has(clave) ? 'nombre' : clave));
     if (v && typeof v === 'object') {
       const deAfuera = RAMAS_DE_AFUERA.get(clave);
-      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deAfuera && deAfuera.has(k) ? x
+      const o = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deAfuera && deAfuera.has(k) ? x
         : LISTAS_DE_LA_CASA.has(clave) && typeof x === 'string' ? enIdioma(idioma, x) : recorrer(x, k)]));
+      // una firma trae qué se firmó en los dos idiomas: el cliente no sabe en cuál está la página, así que se elige acá
+      if (typeof o.que_en === 'string' && o.que_en && Object.prototype.hasOwnProperty.call(o, 'que')) o.que = o.que_en;
+      return o;
     }
     return v;
   };
@@ -638,6 +641,64 @@ function revisionPreviaDe(d) {
   };
 }
 
+// Las firmas de la corrida: vienen del registro común, que la máquina ya saneó. Acá se vuelven a sanear
+// (`limpio`), porque el volcado pudo escribirlo el guion de otra máquina, y los ids de sesión se acortan ANTES: `sanear`
+// cambia todo id entero por «<sesión>». La razón va en `razon`, nunca en `motivo`, que es una clave de la casa y se
+// traduce con sus moldes (CLAVES_DE_LA_CASA).
+const FIRMA_ID = /^[\w.:-]{1,60}$/;
+const VIA_ID = /^[a-z-]{1,20}$/;
+const UUID_EN_TEXTO = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const sinIdsEnteros = (s) => String(s).replace(UUID_EN_TEXTO, (u) => u.slice(0, 8));
+// corta contando por letra: con .slice un emoji puede quedar partido
+const textoDeFirma = (v, n) => (v === null || v === undefined || v === '' ? null : Array.from(String(limpio(sinIdsEnteros(v)))).slice(0, n).join(''));
+let catalogoDeFirmas = null;
+/** Qué se firmó, en palabras del catálogo (`approves` y `approvesEn`): primero las firmas de hoy, después los niveles. */
+function queSeFirmo(id) {
+  if (!catalogoDeFirmas) {
+    catalogoDeFirmas = new Map();
+    try {
+      const s = require('../../lib/signatures.js');
+      for (const x of [...(s.LEVELS || []), ...(s.SIGNATURES || [])]) if (x && x.id && x.approves) catalogoDeFirmas.set(x.id, { es: x.approves, en: x.approvesEn || null });
+    } catch (_e) { /* sin el catálogo, la firma sale con su id */ }
+  }
+  return catalogoDeFirmas.get(id) || { es: id, en: null };
+}
+function firmasDe(d) {
+  const f = d && d.firmas;
+  if (f === undefined || f === null) {
+    const n = d && d.aprobaciones;
+    return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? { estado: 'solo_cuenta', cuenta: n } : { estado: 'sin_campo' };
+  }
+  if (typeof f !== 'object' || Array.isArray(f)) return { estado: 'no_medido', motivo: 'las firmas que subió la ejecución no se entienden' };
+  if (f.estado === 'ausente') return { estado: 'ausente' };
+  if (f.estado === 'no_medido') return { estado: 'no_medido', motivo: textoDeFirma(f.motivo, 300) || 'las firmas no se midieron' };
+  if (f.estado !== 'leido') return { estado: 'no_medido', motivo: 'las firmas que subió la ejecución traen un estado que no se conoce' };
+  // «leído» sin una lista no es «ninguna firma»: no se entiende qué subió
+  if (!Array.isArray(f.lineas)) return { estado: 'no_medido', motivo: 'las firmas que subió la ejecución no se entienden' };
+  const cuenta = (x) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
+  let ilegibles = cuenta(f.ilegibles);
+  const lineas = [];
+  for (const l of f.lineas) {
+    const t = l && typeof l === 'object' && !Array.isArray(l) ? Date.parse(l.cuando || '') : NaN;
+    // el id de la firma se acorta y se sanea como los textos, y después tiene que seguir siendo un id
+    const id = Number.isFinite(t) && typeof l.firma === 'string' && FIRMA_ID.test(l.firma) ? textoDeFirma(l.firma, 60) : null;
+    if (!id || !FIRMA_ID.test(id)) { ilegibles += 1; continue; }
+    const que = queSeFirmo(id);
+    const pide = textoDeFirma(l.pedida_por, 160);
+    const linea = {
+      cuando: new Date(t).toISOString(), firma: id, que: que.es, que_en: que.en,
+      nivel: Number.isInteger(l.nivel) ? l.nivel : null,
+      via: typeof l.via === 'string' && VIA_ID.test(l.via) ? l.via : 'desconocida',
+      delegada: l.delegada === true,
+      quien: textoDeFirma(l.quien, 160), pedida_por: pide, razon: textoDeFirma(l.razon, 300),
+    };
+    if (l.otra_casa === true) linea.otra_casa = true;
+    lineas.push(linea);
+  }
+  lineas.sort((a, b) => Date.parse(a.cuando) - Date.parse(b.cuando));
+  return { estado: 'leido', lineas, ilegibles, recortadas: cuenta(f.recortadas) };
+}
+
 function modeloDeCorrida(d, nombresPasos) {
   const m = d.marker || {};
   const ini = Date.parse(m.startedAt || '');
@@ -864,6 +925,7 @@ function modeloDeCorrida(d, nombresPasos) {
     revisores,
     validador,
     revision_previa: revisionPreviaDe(d),
+    firmas: firmasDe(d),
   };
 }
 
@@ -1775,6 +1837,8 @@ tr.abierta td{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent)
 .np-t{font-family:"IBM Plex Mono",monospace;color:var(--ink-3)}
 .np-n{color:var(--ink-2)}.np-n b{color:var(--ink)}.np-n i{font-style:normal;font-family:"IBM Plex Mono",monospace;color:var(--ink-3);font-size:10.5px}
 .np-m{grid-column:2;color:var(--ink-2);line-height:1.35}.np-m.falta{color:var(--ink-3);font-style:italic}
+.firma-marca{font-weight:600;font-size:11px;margin-left:4px}.firma-tuya{color:var(--ink-2)}.firma-avisada{color:var(--ink-3)}
+.firma-delegada .firma-marca,b.firma-delegada{color:var(--warn)}
 .np-r{grid-column:2;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
 .np-s{grid-column:2;margin:2px 0 0;padding:6px 8px;background:var(--surface-2);border-left:2px solid var(--crit);font-family:"IBM Plex Mono",monospace;font-size:10px;line-height:1.45;color:var(--ink-2);max-height:150px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 .np-x{text-decoration:none;font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--ink);background:var(--surface-2);border:1px solid var(--line-strong);border-radius:3px;padding:0 4px}
@@ -2165,6 +2229,45 @@ const CLIENTE_FUENTE = String.raw`(function () {
       + '</div>';
   }
 
+  // story 2.78: las firmas de la ejecución, del registro común. Sin datos, la tarjeta dice por qué: nunca vacía.
+  function tarjetaFirmas(c) {
+    var f = c.firmas || { estado: 'sin_campo' };
+    var nota = function (frase) { return '<div class="mini blind ancha"><h4>' + T('firmasTitulo') + '</h4><p>' + frase + '</p></div>'; };
+    if (f.estado === 'sin_campo') return nota(T('firmasAnterior'));
+    if (f.estado === 'solo_cuenta') return nota(T('firmasSoloCuenta', { n: f.cuenta }));
+    if (f.estado === 'ausente') return nota(T('firmasAusente'));
+    if (f.estado !== 'leido') return nota(esc(f.motivo || T('firmasNoMedido')));
+    var ls = f.lineas || [];
+    var pie = (f.ilegibles ? '<p>' + T('firmasIlegibles', { n: f.ilegibles }) + '</p>' : '')
+      + (f.recortadas ? '<p>' + T('firmasRecortadas', { n: f.recortadas }) + '</p>' : '');
+    if (!ls.length) return '<div class="mini blind ancha"><h4>' + T('firmasTitulo') + '</h4><p>' + T('firmasNinguna') + '</p>' + pie + '</div>';
+    var clase = function (l) { return l.delegada ? 'delegada' : l.via === 'notified' ? 'avisada' : ['window', 'terminal', 'click', 'message', 'command'].indexOf(l.via) >= 0 ? 'tuya' : 'otra'; };
+    var n = { tuya: 0, delegada: 0, avisada: 0, otra: 0 };
+    ls.forEach(function (l) { n[clase(l)] += 1; });
+    var partes = [];
+    if (n.tuya) partes.push(T('firmasTuyas', { n: n.tuya }));
+    if (n.delegada) partes.push(T('firmasDelegadas', { n: n.delegada }));
+    if (n.avisada) partes.push(T('firmasAvisadas', { n: n.avisada }));
+    if (n.otra) partes.push(T('firmasOtraVia', { n: n.otra }));
+    var marca = function (l) {
+      var k = clase(l);
+      if (k === 'delegada') return '<b class="firma-marca firma-delegada">⇄ ' + T('marcaDelegada') + '</b>' + (l.via === 'review' ? ' <i>' + T('firmaConRevision') + '</i>' : '');
+      if (k === 'avisada') return '<b class="firma-marca firma-avisada">' + T('marcaAvisada') + '</b>';
+      if (k === 'tuya') return '<b class="firma-marca firma-tuya">' + T('marcaTuya') + '</b>';
+      return '<b class="firma-marca">' + T('marcaOtraVia', { v: esc(l.via) }) + '</b>';
+    };
+    return '<div class="mini ancha"><h4>' + T('firmasTitulo') + ' — ' + T('firmasN', { n: ls.length }) + ': ' + partes.join(', ') + '</h4>'
+      + '<ul class="nopaso firmas">' + ls.map(function (l) {
+        return '<li class="' + (clase(l) === 'delegada' ? 'firma-delegada' : '') + '"><span class="np-t">' + esc(String(l.cuando).slice(11, 16)) + ' UTC</span>'
+          + '<span class="np-n">' + esc(l.que || l.firma) + ' ' + marca(l) + '</span>'
+          + (l.quien ? '<span class="np-m">' + esc(l.quien) + '</span>' : '')
+          + (l.pedida_por ? '<span class="np-m">' + T('firmaPedidaPor', { s: esc(l.pedida_por) }) + '</span>' : '')
+          + (l.razon ? '<span class="np-m">' + esc(l.razon) + '</span>' : '')
+          + (l.otra_casa ? '<span class="np-m falta">' + T('firmaOtraCasa') + '</span>' : '')
+          + '</li>';
+      }).join('') + '</ul>' + pie + '</div>';
+  }
+
   function tarjetaLoQueEncontraron(c) {
     if (!c.controles) return '';
     var g = c.eventos_agrupados;
@@ -2423,7 +2526,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
       + '<p class="tlnota">' + T('ejeNota1') + ' <b>' + T('ejeNota2') + '</b> ' + T('ejeNota3')
       + notaTiempos(c)
       + (c.motivo_tramos ? ' <b>' + esc(c.motivo_tramos) + '.</b>' : '') + '</p>'
-      + '<div class="minis">' + tarjetaLoQueEncontraron(c) + tarjetaControles(c) + tarjetaAgentes(c) + tarjetaConsumo(c) + '</div>'
+      + '<div class="minis">' + tarjetaLoQueEncontraron(c) + tarjetaControles(c) + tarjetaAgentes(c) + tarjetaConsumo(c) + tarjetaFirmas(c) + '</div>'
       + tarjetaCambios(c, idx) + '</div>';
   }
   if (typeof window !== 'undefined') { window.__detalle = detalle; }

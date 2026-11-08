@@ -2856,6 +2856,20 @@ function cmdSetCheck(name, status, flag) {
  * está (arnés atrasado), NO se guarda la salida cruda: queda `cola_motivo` y el veredicto no cambia.
  * En verde no se guarda nada.
  */
+/**
+ * Las firmas de la corrida para su volcado (`run-signatures.js` del arnés, con su saneador). Sin el arnés o sin el
+ * guion, `no_medido` con el motivo: nunca tira, y nunca sube un texto sin sanear.
+ */
+function firmasDelVolcado(dump) {
+  try {
+    const { dir: guias, aviso } = require('./lib/harness-path.js').rutaArnesHook();
+    if (!guias) return { estado: 'no_medido', motivo: `${aviso}: las firmas no se subieron` };
+    return require(path.join(guias, 'scripts', 'lib', 'run-signatures.js')).deVolcado(dump);
+  } catch (e) {
+    return { estado: 'no_medido', motivo: `no pude cargar run-signatures.js del arnés (${e.code || 'error'}): las firmas no se subieron` };
+  }
+}
+
 function colaParaElRegistro(crudo) {
   try {
     const { dir: guias, aviso } = require('./lib/harness-path.js').rutaArnesHook();   // La variable o el enlace, nunca una carpeta escrita a mano
@@ -4420,6 +4434,9 @@ function cmdClear(rest = []) {
         archivedAt: nowIso(), marker, gates, costo, ...(repo ? { repo } : {}),
         revision_previa: revisionPrevia, ...(revisionPrevia ? {} : { revision_previa_nota: notaPrevia }),
       };
+      // Las firmas de la corrida, del registro común: las de sus sesiones entre el arranque y este cierre. Que falle no
+      // frena el archivo: queda `no_medido` con su motivo.
+      dump.firmas = firmasDelVolcado(dump);
       const safeStory = String(marker.storyId).replace(/[^\w.-]/g, '_');
       const ts = nowIso().replace(/[:.]/g, '').slice(0, 15);
       // 1) Historia global (sobrevive aunque el repo no exista).

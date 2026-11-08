@@ -138,7 +138,10 @@ test('T2 Volcado_NoInventa @story-2.67 @ac-2: trae lo del run dir y del gates.lo
   gate(p, r3, '5.3', 's-otra', 46);
   const d3 = U.buildDump(U.findUnclosed(opts(p)).runs[0]);
   assert.deepStrictEqual(d3.hallazgos, [{ rule_id: 'SEC-W8', severity: 'WARNING', disposition: 'fixed' }]);
-  assert.strictEqual(d3.aprobaciones, 1, 'sólo cuántas, sin las citas');
+  // las firmas salen del registro común, no de approvals.jsonl; ni la cuenta ni su ausencia se anotan
+  assert.ok(!('aprobaciones' in d3), 'ya no sube la cuenta de approvals.jsonl');
+  assert.ok(!('aprobaciones' in d3.no_medido), JSON.stringify(d3.no_medido));
+  assert.ok(d3.firmas && typeof d3.firmas.estado === 'string', JSON.stringify(d3.firmas));
   assert.deepStrictEqual(d3.revisores, ['tycon-story-validator']);
   assert.ok(d3.gates.every((g) => g.sessionId === d3.marker.sessionId && !('reason' in g)), JSON.stringify(d3.gates));
   assert.ok(name);
@@ -303,4 +306,48 @@ test('T28 Tablero_VolcadoViejo_Incompleta @story-8.93 @ac-14: un volcado sin cie
   assert.strictEqual(por['7.1'].cierre, 'incompleta');
   assert.strictEqual(por['7.1'].terminada, false);
   assert.strictEqual(por['7.2'].cierre, 'completa', 'el cierre de la historia, después del merge, no cuenta como pendiente');
+});
+
+test('T7 2.78-SinCerrar_MismaForma @story-2.78 @ac-7 @ac-13: las firmas de su sesión hasta su corrida siguiente, del registro común', (t) => {
+  const { logPath } = require(path.join(ROOT, 'scripts', 'lib', 'signature-log.js'));
+  const S = 'bbbbbbbb-0000-4000-8000-0000000000b7';
+  const m = machine();
+  const r = repo(m, 'firmas', { ignored: true });
+  session(m, r, 's-1');
+  runDir(r, '5.1', 48);
+  gate(m, r, '5.1', S, 47);
+  // un renglón de la misma sesión que no nombra ninguna story: no corta la ventana
+  fs.appendFileSync(path.join(m.state, 'gates.log'), `${JSON.stringify({ ts: new Date(NOW - 45.5 * H).toISOString(), sessionId: S, repoPath: r, check: 'lint', status: 'green' })}\n`);
+  // la corrida siguiente de la sesión: un renglón que nombra otra story
+  gate(m, r, '5.9', S, 40);
+  // un cierre ilegible de OTRA story: closesOf abre sólo los de la story de cada corrida
+  fs.writeFileSync(path.join(m.state, 'timing-history', '5.9-roto.json'), '{ esto no es json');
+  // otra corrida sin cerrar, sin renglones: su sesión no se conoce
+  const n = machine();
+  const r2 = repo(n, 'otra', { ignored: true });
+  session(n, r2, 's-1');
+  runDir(r2, '5.2', 48);
+
+  const casa = tmp('ucr-firmas-');
+  t.after(() => fs.rmSync(casa, { recursive: true, force: true }));
+  const log = logPath(casa);
+  fs.mkdirSync(path.dirname(log), { recursive: true });
+  const firma = (hoursAgo, reason) => JSON.stringify({ ts: new Date(NOW - hoursAgo * H).toISOString(), signature: 'extra-round', level: 1, covers: ['extra-round'],
+    via: 'delegation', delegated: true, signer: 'coordinadora (sesión dddddddd-0000-4000-8000-0000000000d1)', ordered_by: 'dddddddd-0000-4000-8000-0000000000d1', target: S, machine: 'm', reason, source: 'pipeline.js' });
+  fs.writeFileSync(log, [firma(46.5, `vuelta extra, ver ${path.join(os.homedir(), 'secreto.txt')}`), firma(45, 'después del renglón sin story'), firma(39, 'de la corrida siguiente')].join('\n') + '\n');
+
+  const runs = U.findUnclosed(opts(m)).runs;
+  assert.deepStrictEqual(runs.map((x) => x.key), ['5.1'], JSON.stringify(runs.map((x) => x.key)));
+  const d = U.buildDump(runs[0], { casasFirmas: [casa] });
+  assert.strictEqual(d.firmas.estado, 'leido', JSON.stringify(d.firmas));
+  assert.deepStrictEqual(d.firmas.lineas.map((l) => l.razon.replace(/<ruta>.*$/, '<ruta>')), ['vuelta extra, ver <ruta>', 'después del renglón sin story']);
+  assert.ok(!JSON.stringify(d.firmas).includes(os.homedir()), 'saneada');
+  assert.strictEqual(d.firmas.lineas[0].delegada, true);
+  assert.ok(!('aprobaciones' in d) && !('aprobaciones' in d.no_medido));
+  assert.ok(d.gates.every((g) => !('reason' in g) && !('motivo' in g)), 'los portones siguen sin motivos');
+
+  const d2 = U.buildDump(U.findUnclosed(opts(n)).runs[0], { casasFirmas: [casa] });
+  assert.strictEqual(d2.firmas.estado, 'no_medido');
+  assert.match(d2.firmas.motivo, /la sesión no se conoce/);
+  assert.ok(!('aprobaciones' in d2) && !('aprobaciones' in d2.no_medido));
 });

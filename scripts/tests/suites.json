@@ -4191,6 +4191,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.78: las firmas de una ejecución, tomadas del registro común (scripts/lib/run-signatures.js). Elige por sesión (la propia, la adoptada y la restaurada) y por ventana; lee la casa de la cuenta y la de HOME, con la repetida una vez; ocho campos por línea, ids de sesión acortados (también en el id de la firma), textos saneados y cortados sin partir un emoji; tope de 200 líneas y 64 KB con las más recientes; cada renglón roto cuenta; sin registro «ausente», y sin saber la casa de la cuenta, sin permiso o sin saneador «no medido» con su motivo. Casas de juguete en carpetas temporales; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/run-signatures.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.78: el cierre (marker.js clear) pone las firmas de la ejecución en su volcado y no falla por ellas (sin hora de arranque: «no medido»). HOME de prueba por caso; el registro de la cuenta no cambia. Sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/marker-archive-signatures.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.67 (tanda B): la carpeta de los repos puede ser más de una y estar fuera de la carpeta personal. Fuera del home votan todos los ancestros menos la raíz del disco; rutas.repos y TYCON_REPOS_ROOT aceptan varias y `set` guarda la lista; root es la primera de roots; las sesiones dan una raíz por grupo (desde la segunda, con al menos dos repos); las repetidas o anidadas se sacan; sin raíz, el motivo trae el comando; los que recorren repos ven los de todas. Hogares, configuraciones y repos de juguete; sin red.",
       "raiz": "arnes",
       "ruta": "tests/repos-roots.test.js",

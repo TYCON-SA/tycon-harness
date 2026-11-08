@@ -191,6 +191,17 @@ organization chose to download the conversations ("Run conversations" section).
 
 ![A run's detail: the timeline, the controls, the reviewers and the usage](sitio-de-la-organizacion/capturas/corridas-detalle.png)
 
+The detail also has the **«Signatures»** card: what was signed in that run, when (in UTC), who and how. The signatures
+come from the machine's **common signature log**: those of the run's session, from its start to its close. At the top,
+the count; then one row per signature, with one of three marks: **«Yours»** (you signed it, in the window, the
+terminal, a click or a written "approved"), **«By delegation»** (the coordinator gave it on your behalf; it has its own
+color and the ⇄ glyph) or **«Done and notified»** (a session without permissions did it and told you: it is not your
+signature). A signature requested by another session says so, with the first 8 characters of that session. A signature
+recorded in the log of another folder (the HOME one, when it is not the account's) says so too. The texts are uploaded
+sanitized (no paths, emails or credentials), capped in length, without any full session id, and capped at 200
+signatures per run; those left out are counted. If the card has no rows, it says why: the run predates the card, the
+machine did not have the log, there were no signatures, or they could not be read.
+
 **What to do:** a run that "stayed at 4" may be in progress or abandoned; its detail says how far it
 got. A person sees only the runs of their confirmed machines; a maintainer sees them all.
 

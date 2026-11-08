@@ -2476,6 +2476,98 @@ node -e "const t=require(process.argv[1]); const m=Object.entries(t.TEXTOS||t).f
 rm -f "${T}.err"
 rm -rf "${T}"
 
+# ── 2.78-T8 · la tarjeta «Las firmas»: la cuenta, una fila por firma en orden, su marca y lo que dice ──
+# 🔴 Falla con: sin `firmasDe` en el modelo o sin `tarjetaFirmas` en el detalle → no está la tarjeta; con los ids sin
+#    acortar antes de sanear → «pedida por la sesión <sesión>»; con la frase del catálogo sin `que_en` → la página en
+#    inglés dice «qué se firmó» en castellano; con la razón bajo la clave `motivo` → la página en inglés la traduce.
+T=$(mktemp -d)
+COORD="dddddddd-0000-4000-8000-0000000000d1"
+volcado "${T}/r" "${S1}" "" '{"firmas":{"estado":"leido","ilegibles":0,"recortadas":0,"lineas":[
+ {"cuando":"2026-08-15T06:30:00.000Z","firma":"extra-round","nivel":1,"via":"delegation","delegada":true,"quien":"coordinadora (sesión dddddddd)","pedida_por":"dddddddd","razon":"vuelta extra 4 de revisores"},
+ {"cuando":"2026-08-15T06:00:00.000Z","firma":"plan-approval","nivel":1,"via":"click","delegada":false,"quien":"persona","pedida_por":null,"razon":"siguió recibiendo después de la mudanza"},
+ {"cuando":"2026-08-15T07:00:00.000Z","firma":"pending-approval","nivel":1,"via":"notified","delegada":false,"quien":"sesión dddddddd, en una pestaña sin permisos (hecho y avisado)","pedida_por":"dddddddd","razon":"un pendiente nuevo"},
+ {"cuando":"2026-08-15T07:30:00.000Z","firma":"save","nivel":1,"via":"window","delegada":false,"quien":"persona","pedida_por":null,"razon":"guardar","otra_casa":true}]}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+D="$(cliente "${T}/o.html" detail 0)"
+grep -q 'Las firmas' <<< "${D}" && ok "2.78-T8 el detalle trae la tarjeta «Las firmas»" || mal "2.78-T8 no está la tarjeta de las firmas: ${D:0:300}"
+grep -q '4 firmas: 2 tuyas, 1 por delegación, 1 hecha y avisada' <<< "${D}" && ok "2.78-T8 la cuenta de las firmas" || mal "2.78-T8 la cuenta no está"
+ORDEN="$(python3 -c "import re,sys; m=re.search(r'<ul class=\"nopaso firmas\">([\s\S]*?)</ul>', sys.argv[1]); print(','.join(re.findall(r'(\d\d:\d\d) UTC', m.group(1) if m else '')))" "${D}")"
+[ "${ORDEN}" = "06:00,06:30,07:00,07:30" ] && ok "2.78-T8 cuatro filas en orden de hora" || mal "2.78-T8 el orden de las filas: ${ORDEN}"
+grep -q 'aprobar el plan de una story' <<< "${D}" && ok "2.78-T8 qué se firmó, en palabras del catálogo" || mal "2.78-T8 no dice qué se firmó con el catálogo"
+grep -q 'firma-delegada' <<< "${D}" && grep -q 'Por delegación' <<< "${D}" && grep -q '⇄' <<< "${D}" && ok "2.78-T8 la delegada con su marca, su glifo y su color" || mal "2.78-T8 la marca de delegación"
+grep -q 'Hecha y avisada' <<< "${D}" && grep -q 'Tuya' <<< "${D}" && ok "2.78-T8 las otras dos marcas" || mal "2.78-T8 faltan las marcas «Tuya» o «Hecha y avisada»"
+grep -q 'pedida por la sesión dddddddd' <<< "${D}" && ok "2.78-T8 «pedida por la sesión» con 8 caracteres" || mal "2.78-T8 no dice quién la pidió"
+grep -q 'anotada en el registro de otra carpeta (la de HOME)' <<< "${D}" && ok "2.78-T8 la nota de «otra carpeta»" || mal "2.78-T8 no dice «otra carpeta»"
+grep -q "${COORD}" "${T}/o.html" && mal "2.78-T8 un id de sesión entero llegó a la página" || ok "2.78-T8 ningún id de sesión entero en la página"
+node -e '
+const V = require(process.argv[1]);
+const M = V.modelo(process.argv[2], { sinHilos: true });
+const en = V.todoEnIdioma("en", V.paraDetalle(M.corridas[0]));
+const l = en.firmas.lineas;
+const plan = l.find((x) => x.firma === "plan-approval");
+if (plan.que !== "approve a story'"'"'s plan") { console.error("que en inglés: " + plan.que); process.exit(1); }
+if (plan.razon !== "siguió recibiendo después de la mudanza") { console.error("la razón se tradujo: " + plan.razon); process.exit(1); }
+' "${RAIZ}/scripts/nightly/dashboard/runs.js" "${T}/r" 2>"${T}/err" \
+  && ok "2.78-T8 en inglés, «qué se firmó» del catálogo en inglés y la razón tal cual" || mal "2.78-T8 en inglés: $(cat "${T}/err")"
+rm -rf "${T}"
+
+# ── 2.78-T9 · sin datos, la tarjeta lo dice: nunca vacía ───────────────────────────────────────
+# 🔴 Falla con: una tarjeta vacía para cualquiera de las siete formas, o la misma frase para «no se sabe» y «no hubo»
+#    (también «leído» con una lista que no es lista: no es «ninguna firma»).
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-15T05:00:00Z" '{}'
+volcado "${T}/r" "${S2}" "2026-08-16T05:00:00Z" '{"aprobaciones":3,"sinCerrar":true}'
+volcado "${T}/r" "${S3}" "2026-08-17T05:00:00Z" '{"firmas":{"estado":"ausente"}}'
+volcado "${T}/r" "44444444-4444-4444-8444-444444444444" "2026-08-18T05:00:00Z" '{"firmas":{"estado":"leido","lineas":[],"ilegibles":0,"recortadas":0}}'
+volcado "${T}/r" "55555555-5555-4555-8555-555555555555" "2026-08-19T05:00:00Z" '{"firmas":{"estado":"no_medido","motivo":"MOTIVO_DE_LAS_FIRMAS no pude leer el registro común de firmas (EACCES)"}}'
+volcado "${T}/r" "66666666-6666-4666-8666-666666666666" "2026-08-20T05:00:00Z" '{"firmas":{"estado":"leido","lineas":[],"ilegibles":2,"recortadas":0}}'
+volcado "${T}/r" "77777777-7777-4777-8777-777777777777" "2026-08-21T05:00:00Z" '{"firmas":{"estado":"leido","lineas":"no es una lista","ilegibles":0,"recortadas":0}}'
+volcado "${T}/r" "88888888-8888-4888-8888-888888888888" "2026-08-22T05:00:00Z" '{"firmas":{"estado":"raro"}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+J="$(modelo_json "${T}/r")"
+for par in "2026-08-15|esta ejecución es anterior: no subió sus firmas" "2026-08-16|subió sólo cuántas aprobaciones anotó: 3" "2026-08-17|esta máquina no tenía el registro común de firmas" \
+  "2026-08-18|la ejecución no tuvo firmas" "2026-08-19|MOTIVO_DE_LAS_FIRMAS" "2026-08-20|2 renglones del registro no se pudieron leer: alguno podría ser de esta ejecución" \
+  "2026-08-21|las firmas que subió la ejecución no se entienden" "2026-08-22|las firmas que subió la ejecución traen un estado que no se conoce"; do
+  DIA="${par%%|*}"; FRASE="${par#*|}"
+  IDX="$(python3 -c "import json,sys; c=json.loads(sys.argv[1])['corridas']; print([i for i,x in enumerate(c) if x['inicio'].startswith(sys.argv[2])][0])" "${J}" "${DIA}")"
+  D="$(cliente "${T}/o.html" detail "${IDX}")"
+  grep -qF "${FRASE}" <<< "${D}" && ok "2.78-T9 la tarjeta dice «${FRASE:0:50}»" || mal "2.78-T9 falta «${FRASE}» en la ejecución del ${DIA}"
+done
+rm -rf "${T}"
+
+# ── 2.78-T10 · se resanea, se escapa, la línea mala se cuenta y la lista no lleva firmas ─────────
+# 🔴 Falla con: dibujar la razón sin `limpio` o sin `esc`; dibujar una línea sin `cuando`; sumar `firmas` a `paraLista`;
+#    dejar pasar un id de sesión entero dentro del id de la firma.
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "" '{"firmas":{"estado":"leido","ilegibles":0,"recortadas":0,"lineas":[
+ {"cuando":"2026-08-15T06:00:00.000Z","firma":"plan-approval","nivel":1,"via":"click","delegada":false,"quien":"persona","pedida_por":null,"razon":"<script>alert(1)</script> en /Users/dev/SourceCode/Cliente Grande SA/x.md"},
+ {"cuando":"2026-08-15T06:10:00.000Z","firma":"x-dddddddd-0000-4000-8000-0000000000d1","nivel":1,"via":"click","delegada":false,"quien":"persona","pedida_por":null,"razon":"id en la firma"},
+ {"cuando":"2026-08-15T06:20:00.000Z","firma":"save","nivel":1,"via":"click","delegada":false,"quien":"persona","pedida_por":null,"razon":"'"$(python3 -c 'print("\U0001F600" * 400)')"'"},
+ {"firma":"save","nivel":1,"via":"window","delegada":false,"quien":"persona","pedida_por":null,"razon":"sin hora"}]}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+D="$(cliente "${T}/o.html" detail 0)"
+grep -q 'Cliente Grande' "${T}/o.html" && mal "2.78-T10 la ruta del cliente llegó a la página" || ok "2.78-T10 la ruta sale tapada"
+grep -q '<script>alert' <<< "${D}" && mal "2.78-T10 el texto se dibujó sin escapar" || ok "2.78-T10 el texto sale escapado"
+grep -q 'sin hora' <<< "${D}" && mal "2.78-T10 la línea sin hora se dibujó" || ok "2.78-T10 la línea sin hora no se dibuja"
+grep -q '1 renglón del registro no se pudo leer' <<< "${D}" && ok "2.78-T10 la línea mala se cuenta y se dice" || mal "2.78-T10 la línea mala no se contó"
+grep -q 'dddddddd-0000-4000-8000-0000000000d1' "${T}/o.html" && mal "2.78-T10 el id de la firma llevó un id de sesión entero a la página" || ok "2.78-T10 el id de la firma sale con el id de sesión acortado"
+node -e '
+const V = require(process.argv[1]);
+const M = V.modelo(process.argv[2], { sinHilos: true });
+const c = M.corridas[0];
+if (!c.firmas || !Array.isArray(c.firmas.lineas)) { console.error("el modelo no trae firmas"); process.exit(1); }
+if ("firmas" in V.paraLista(c)) { console.error("paraLista trae firmas"); process.exit(1); }
+' "${RAIZ}/scripts/nightly/dashboard/runs.js" "${T}/r" 2>"${T}/err" \
+  && ok "2.78-T10 paraLista no lleva firmas aunque el modelo las traiga" || mal "2.78-T10 paraLista: $(cat "${T}/err")"
+node -e '
+const V = require(process.argv[1]);
+const l = V.modelo(process.argv[2], { sinHilos: true }).corridas[0].firmas.lineas.find((x) => x.cuando === "2026-08-15T06:20:00.000Z");
+if (!l || Array.from(l.razon).length !== 300) { console.error("la razón larga no se cortó a 300 letras: " + (l && Array.from(l.razon).length)); process.exit(1); }
+if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(l.razon)) { console.error("quedó medio emoji"); process.exit(1); }
+' "${RAIZ}/scripts/nightly/dashboard/runs.js" "${T}/r" 2>"${T}/err" \
+  && ok "2.78-T10 la razón larga se corta por letra, sin partir un emoji" || mal "2.78-T10 el corte: $(cat "${T}/err")"
+rm -rf "${T}"
+
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────
 # 🔴 sale rojo si un caso genera sobre artifacts/ en vez de sobre un temporal.
 [ "$(huella "${ENTREGABLE_CORRIDAS}")" = "${HUELLA_CORRIDAS_ANTES}" ] && ok "T15 la suite no escribió artifacts/runs-dashboard.html (no se commitea)" || mal "T15 la suite ESCRIBIÓ artifacts/runs-dashboard.html"
