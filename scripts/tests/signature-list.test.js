@@ -2,7 +2,7 @@
 /**
  * signature-list.test.js — la lista de lo que espera a la persona: el registro, lo que lo cierra, la pasada de a una
  * (`owner-next`), el rechazo y la llave. Todo con una casa de juguete: nada lee la casa real. Lo que pide los andamios del
- * freno (T1 a T3, T11) vive en owner-window.test.js; el aviso, en coordination-notice.test.js; la oficina, en office.test.js.
+ * freno (T1 a T3, T11) vive en owner-window.test.js; el aviso, en coordination-notice.test.js; la oficina, en sus pruebas por zona (office-<zona>.test.js).
  * stable-data: el reloj sólo fecha un candado viejo y mide cuánto tardó uno; ninguna prueba depende del día.
  */
 const test = require('node:test');

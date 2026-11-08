@@ -1,7 +1,7 @@
 'use strict';
 // office-task-numbers.test.js — the board command (board.js) and what the office does with the task numbers: every row
 // gets a short fixed number, the board is written only through the command, and it moves by itself with the facts.
-// office.test.js is at the size the gate can read, so these cases live here. Nothing reads the real HOME: every case
+// The rest of the office cases live in the office tests by zone (office-<zone>.test.js). Nothing reads the real HOME: every case
 // gets its own toy state folder.
 // stable-data: every date comes in by argument.
 
@@ -332,7 +332,7 @@ const office = require(OFFICE);
 const { buildOffice, buildBoard } = office;
 const ONOW = Date.parse('2026-11-04T14:00:00.000Z');
 
-// A /wip result with one row per entry, as office.test.js builds it.
+// A /wip result with one row per entry, as the shared library of the office tests builds it.
 function wip(entries, more = {}) {
   return {
     rows: entries.map((e) => ({ work: e.work || `Story ${e.session}`, state: e.state || 'en curso', end: e.end || '15:00', session: e.session, folder: 'repo-a', ...(e.meanwhile ? { meanwhile: e.meanwhile } : {}) })),

@@ -2250,7 +2250,8 @@ test('Regresion_SuitesDeLaOficina_SeAislanDelSitio: con site.url en el perfil, l
     const r = await run('--test', ['--test-name-pattern=^T(8|10|14) ', suite], envOf(m));
     assert.strictEqual(r.status, 0, r.stdout.slice(-1500));
   } finally { applySite({ url: null }); }
-  for (const file of ['office.test.js', 'office-live.smoke.js']) {
+  // las pruebas de la oficina corren su comando con la biblioteca que comparten sus partes
+  for (const file of [path.join('lib', 'office-fixtures.js'), 'office-live.smoke.js']) {
     assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'tests', file), 'utf8'), /TYCON_OFFICE_LINK: '0'/, file);
   }
 });
