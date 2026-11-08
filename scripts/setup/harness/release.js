@@ -1550,7 +1550,7 @@ function cmdInstall(ctx, H) {
     const snap = H.takeSnapshot(ctx, tree, { reason: 'install', from: existing && existing.version ? existing.version.number : null, log, state: existing });
     // 4. el cambio: la versión bajada pasa a ser harness/
     const sw = swap(ctx, { incomingDir: d.dir, version: target.version, log });
-    if (!sw.ok) { H.finishSnapshot(ctx, snap, log); undoOwnHome(); return { code: 1, lines: [`harness.js install: ${sw.reason}`] }; }
+    if (!sw.ok) { H.finishSnapshot(ctx, snap, log, { outcome: 'failed' }); undoOwnHome(); return { code: 1, lines: [`harness.js install: ${sw.reason}`] }; }
     notes.push(...(sw.kept || []));
     pieces.push('tree');
     // 5. los enlaces de hoy, al árbol nuevo: el lugar y agent-skills. Son enchufes de Claude Code (viven en su carpeta):
@@ -1558,7 +1558,7 @@ function cmdInstall(ctx, H) {
     if (withClaude) {
       // el lugar apunta a ~/.tycon/harness aunque hoy apunte a otro clon válido: `link` lo fuerza (como `install --local`)
       const l = H.ensureLink(ctx, tree, { link: tree, prefer: tree });
-      if (!l.ok) return { code: 2, lines: [`harness.js install: no pude asegurar el enlace: ${l.out || l.err}`] };
+      if (!l.ok) { H.finishSnapshot(ctx, snap, log, { outcome: 'failed' }); return { code: 2, lines: [`harness.js install: no pude asegurar el enlace: ${l.out || l.err}`] }; }
       pieces.push('link');
       const skillsLink = TH.installedSkillsDir(ctx.home);
       try {
@@ -1608,13 +1608,13 @@ function cmdInstall(ctx, H) {
     if (ctx.opts.profile && H.machineProfile(ctx) !== ctx.opts.profile) {
       let sk;
       try { sk = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js')).setKey(ctx.home, PR.KEY, ctx.opts.profile, { env: ctx.env }); } catch (e) { sk = { ok: false, reason: e.message }; }
-      if (!sk || !sk.ok) { S.write(ctx.home, state); return { code: 2, lines: [`harness.js install: no pude escribir el perfil en ${TH.configFile(ctx.home)}: ${sk ? sk.reason : 'sin escritor'}. No corrí el aplicador`] }; }
+      if (!sk || !sk.ok) { S.write(ctx.home, state); H.finishSnapshot(ctx, snap, log, { outcome: 'failed' }); return { code: 2, lines: [`harness.js install: no pude escribir el perfil en ${TH.configFile(ctx.home)}: ${sk ? sk.reason : 'sin escritor'}. No corrí el aplicador`] }; }
       if (sk.warning) notes.push(sk.warning);
       pieces.push('profile');
     }
     if (asked.writes && asked.writes.length) {
       const wa = H.writeAnswers(ctx, tree, asked.writes);
-      if (!wa.ok) { S.write(ctx.home, state); return { code: 2, lines: [`harness.js install: no pude escribir tus respuestas: ${wa.reason}. No corrí el aplicador`] }; }
+      if (!wa.ok) { S.write(ctx.home, state); H.finishSnapshot(ctx, snap, log, { outcome: 'failed' }); return { code: 2, lines: [`harness.js install: no pude escribir tus respuestas: ${wa.reason}. No corrí el aplicador`] }; }
       notes.push(...wa.warnings);
       pieces.push('config');
     }
@@ -1625,7 +1625,7 @@ function cmdInstall(ctx, H) {
       state.last_health = null;
       state.failed = { commit: target.version, sources: { harness: target.commit }, at: nowIso(), log: S.paths(ctx.home).log, reason: 'applier', stage: 'install' };
       S.write(ctx.home, state);
-      H.finishSnapshot(ctx, snap, log);
+      H.finishSnapshot(ctx, snap, log, { outcome: 'failed' });
       return { code: 1, lines: [`harness.js install: ${withClaude ? 'el aplicador' : 'el enchufe de Codex'} falló (${a.reason}) — detalle en ${S.paths(ctx.home).log}`, ...notes] };
     }
     if (withClaude) pieces.push('applier');
@@ -1650,7 +1650,7 @@ function cmdInstall(ctx, H) {
       state.failed = { commit: target.version, sources: { harness: target.commit }, at: nowIso(), log: S.paths(ctx.home).log, reason: 'health', stage: 'install' };
       state.last_health = null;
       S.write(ctx.home, state);
-      H.finishSnapshot(ctx, snap, log);
+      H.finishSnapshot(ctx, snap, log, { outcome: 'failed' });
       return { code: 1, lines: [`harness.js install: la comprobación de salud no pasó: ${h.failures.join(' · ')} — detalle en ${S.paths(ctx.home).log}`, ...notes] };
     }
     state.failed = null;
@@ -1660,7 +1660,9 @@ function cmdInstall(ctx, H) {
     const moved = TEAM.moveSkillData({ home: ctx.home, env: ctx.env, team: state.team, harnessDir: tree, migrateHome: existing && existing.migrate_home, previousDir: TH.ownPathsOf(ctx).previous });
     for (const l of moved.lines) { notes.push(l); log(l); }
     S.write(ctx.home, state);
-    H.finishSnapshot(ctx, snap, log);
+    // reescribió todo (aplicador y salud en verde): cierra también las copias abiertas de un corte anterior, y con otra
+    // versión, las vueltas atrás cortadas que ya no tienen sentido
+    H.finishSnapshot(ctx, snap, log, { rewroteAll: true, supersede: Boolean(existing && existing.version && existing.version.number !== target.version) });
     // una instalación que salió bien deja la máquina al día: el aviso «no se pudo actualizar desde …» de antes ya no vale
     R.clearUpdateFailure(ctx.home);
     // las carpetas que Claude Code lee sin preguntar, con la misma línea que el resumen de la instalación desde un clon
@@ -1977,7 +1979,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   const snap = snapshot && snapshot.created ? snapshot : H.takeSnapshot(ctx, own.harness, { reason: 'update', from: before, to: `harness@${sha7(t.commit)}`, log, force: true, state });
   const sw = swap(ctx, { incomingDir: d.dir, version: t.version, log });
   if (!sw.ok) {
-    H.finishSnapshot(ctx, snap, log);
+    H.finishSnapshot(ctx, snap, log, { outcome: 'failed' });
     if (sw.waiting && sw.convert) {
       // la conversión a la forma con enlaces trabada: la versión quedó en versions/, la máquina en la de antes
       const own0 = TH.ownPathsOf(ctx);
@@ -2012,7 +2014,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
     const text = back.ok ? `volvió sola a ${previousSrc.version}` : `NO pudo volver sola (${back.reason}): harness.js rollback`;
     R.setNotice(state, `la actualización ${before} → ${t.version} no quedó sana (${failures[0]}): ${text}; esa versión no se reintenta sola (cuando cambie la punta, o con ${H.releaseApplyHint}) — detalle en ${S.paths(ctx.home).log}`);
     if (log) log(`update: ${reason}: ${failures.join(' · ')} · ${back.ok ? 'vuelta hecha' : back.reason}`);
-    H.finishSnapshot(ctx, snap, log);
+    H.finishSnapshot(ctx, snap, log, { outcome: 'failed' });
     if (back.ok) {
       // los enchufes de la versión que quedó; lo que agregó la que falló (un gancho que ya no tiene su archivo) se va
       const again = H.runApplier(ctx, own.harness, { log, snapshotDir: snap && snap.dir });
@@ -2034,7 +2036,8 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   state.version.installed_at = nowIso();
   markHealth(state);
   H.copyBootstrap(ctx, own.harness, state, { version: t.version });
-  H.finishSnapshot(ctx, snap, log);
+  // reescribió todo y cambió de versión: cierra las copias abiertas de un corte anterior y las vueltas atrás cortadas
+  H.finishSnapshot(ctx, snap, log, { rewroteAll: true, supersede: true });
   // la conexión vieja de una skill de la lista: después del cambio sano (previous/ sigue ahí), una vez por skill
   const moved = require('./team.js').moveSkillData({ home: ctx.home, env: ctx.env, team: state.team, harnessDir: own.harness, migrateHome: state.migrate_home, previousDir: own.previous });
   for (const l of moved.lines) if (log) log(`update: ${l}`);
@@ -2058,7 +2061,7 @@ function rollback(ctx, state, H, { log = null } = {}) {
   const undone = src.version;
   const snap = H.takeSnapshot(ctx, own.harness, { reason: 'before-rollback', from: undone, to: prevManifest ? prevManifest.version : null, log, force: true, state });
   const back = swapBack(ctx, { log, reason: 'rollback' });
-  if (!back.ok) { H.finishSnapshot(ctx, snap, log); return { ok: false, lines: [`harness.js rollback: ${back.reason}`] }; }
+  if (!back.ok) { H.finishSnapshot(ctx, snap, log, { outcome: 'failed' }); return { ok: false, lines: [`harness.js rollback: ${back.reason}`] }; }
   const m = readManifest(own.harness);
   if (m) Object.assign(src, { ref: m.ref || src.ref, commit: m.commit, tree: m.tree, version: m.version, previous: null });
   state.version.number = m ? m.version : (prevManifest ? prevManifest.version : state.version.number);
@@ -2071,13 +2074,17 @@ function rollback(ctx, state, H, { log = null } = {}) {
   state.last_apply = nowIso();
   const lines = [`vuelta atrás a ${state.version.number} (lo deshecho, ${undone}, queda en previous/: otro rollback lo vuelve a poner)`];
   if (teamSyncProblem) lines.push(`capa del equipo: ${teamSyncProblem}`);
+  let healthy = false;
   if (!a.ok) lines.push(`el aplicador falló (${a.reason}): harness.js doctor lo detalla`);
   else {
     H.recordPieces(ctx, state, a.report, a.shared);
     const h = H.runHealth(ctx, state, { report: a.report, applierOut: a.out, log });
-    if (h.ok) markHealth(state); else lines.push(`la comprobación de salud no pasó (${h.failures[0]}): harness.js doctor lo detalla`);
+    if (h.ok) { markHealth(state); healthy = true; } else lines.push(`la comprobación de salud no pasó (${h.failures[0]}): harness.js doctor lo detalla`);
   }
-  H.finishSnapshot(ctx, snap, log);
+  // los árboles volvieron igual (devuelve ok), pero con el aplicador en error o la salud en rojo la vuelta atrás falló:
+  // su copia queda «failed» y no cierra las de un corte anterior. Sana, cierra la suya, las vueltas atrás cortadas y,
+  // como reescribió todo, las demás abiertas más viejas
+  H.finishSnapshot(ctx, snap, log, healthy ? { closedBy: 'rollback', rewroteAll: true } : { outcome: 'failed' });
   return { ok: true, lines, undone, snap };
 }
 
@@ -2135,7 +2142,7 @@ const FETCH_RETRY_MS = 10 * 60 * 1000;
  * cambio a medias, mira según la política (con sus ventanas), aplica si corresponde, corre el aplicador SIEMPRE, limpia
  * lo diferido y deja el aviso. Devuelve `{ code: 0, lines }` (el arranque sale 0 siempre).
  */
-function startup(ctx, state, H, { log, snapshot = null }) {
+function startup(ctx, state, H, { log, snapshot = null, cutNotice = null }) {
   const own = TH.ownPathsOf(ctx);
   let line = null;
   let notice = null;
@@ -2144,7 +2151,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   // un cambio que quedó a medias y no se pudo reparar: el arranque no toca más nada y lo dice
   if (exists(own.journal) || exists(own.linkJournal)) {
     const text = `el cambio de versión quedó a medias y no se pudo reparar (${rep.lines[0] || 'ver el diario'}): detalle en ${S.paths(ctx.home).log}`;
-    R.setNotice(state, text); S.write(ctx.home, state);
+    R.setNotice(state, cutNotice ? `${text} · ${cutNotice}` : text); S.write(ctx.home, state);
     return { code: 0, lines: [text] };
   }
   // la conversión a la forma con enlaces: se intenta en silencio en cada
@@ -2271,6 +2278,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   if (sw.notice) notice = notice || sw.notice;
   const a = H.runApplier(ctx, applierTree, { log, snapshotDir: ((sw.snap || snap) && (sw.snap || snap).dir) || null });
   state.last_apply = nowIso();
+  let healthRed = false;
   if (!a.ok) { const text = `el aplicador falló (${a.reason}): detalle en ${S.paths(ctx.home).log}`; notice = notice || text; log(`startup: ${text}`); line = line || text; }
   else {
     const dropped = sw.switching ? H.dropForProfile(ctx, state, applierTree, a, (l) => log(`startup: ${l}`), sw.profile.value) : true;
@@ -2283,8 +2291,13 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     const sh = startupHealth(ctx, state, H, a, { log, force: Boolean(ctx.opts && ctx.opts.force) });
     // un fallo de salud no se pierde detrás de otro aviso del arranque: se suma
     if (sh.line) { notice = notice ? `${notice} · ${sh.line}` : sh.line; line = line ? `${line} · ${sh.line}` : sh.line; }
+    healthRed = sh.ran && !sh.ok;
   }
-  H.finishSnapshot(ctx, sw.snap, log);
+  // el arranque corre el aplicador completo: sano, reescribió todo y cierra las copias de un corte anterior; con el
+  // aplicador en error o la salud en rojo, sus copias quedan «failed» y el aviso del corte sigue
+  const closing = !a.ok || healthRed ? { outcome: 'failed' } : { rewroteAll: true };
+  H.finishSnapshot(ctx, sw.snap, log, closing);
+  H.finishSnapshot(ctx, snap, log, closing);
   // la limpieza diferida: sólo con la salud en verde después del último cambio
   const cl = cleanupDeferred(ctx, state, { log });
   for (const l of cl.lines) log(`startup: limpieza: ${l}`);
@@ -2305,10 +2318,14 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   }
   // el Node del arnés: mientras no lo pudo bajar, se dice en cada arranque, sin pisar otro aviso
   if (typeof H.harnessNodeNotice === 'function') notice = H.harnessNodeNotice(notice, a);
+  // el aviso de una copia abierta (un cambio que se cortó) es de ESTE arranque: lo calculó harness.js antes de tomar
+  // ninguna copia y se dice una vez aunque este arranque la cierre; el de un arranque anterior, arrastrado con el aviso
+  // viejo, no sigue
+  notice = require('./snapshot.js').stripCutNotice(notice);
+  if (cutNotice) notice = notice ? `${notice} · ${cutNotice}` : cutNotice;
   if (notice) R.setNotice(state, notice); else R.clearNotice(state);
   S.write(ctx.home, state);
   R.clearUpdateFailure(ctx.home, { kind: 'busy' });
-  H.finishSnapshot(ctx, snap, log);
   return { code: 0, lines: line ? [line] : [] };
 }
 

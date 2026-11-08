@@ -817,18 +817,19 @@ function forward(ctx, state, o) {
   const at = nowIso();
   const snap = o.backup ? o.backup('repoint', `agent_skills@${sha7(target)}`) : null;
   if (!snap) return cleanStop({ cause: 'no-backup', reason: 'no pude tomar la copia de seguridad de antes de mover', transient: true });
-  const finish = () => { if (o.finish) o.finish(snap); };
+  // `finish('failed')` en cada salida con error: la copia queda «failed» y no cierra las de un corte anterior
+  const finish = (outcome = null) => { if (o.finish) o.finish(snap, outcome ? { outcome } : {}); };
   const kept = state.repoint && state.repoint.blocked;
   state.repoint = { pending: { step: 'forward', from: fromRec, to: toRec, at } };
   try { if (o.write) o.write(); } catch (e) {
     if (e && e.code === LOCK_LOST) throw e;
     state.repoint = kept ? { blocked: kept } : undefined; tidy(state); if (state.repoint === undefined) delete state.repoint;
-    finish();
+    finish('failed');
     return cleanStop({ cause: 'state', reason: `no pude anotar la mudanza en el estado (${e.code || e.message})`, transient: true });
   }
   const fail = (step, why) => {
     const u = undo(skills, fromRec, { env, to: target });
-    finish();
+    finish('failed');
     if (u.ok) {
       delete state.repoint;
       return stop({ cause: `failed-${step}`, reason: `${why} — el clon quedó como estaba`, transient: BUSY.test(why) });
@@ -921,17 +922,18 @@ function back(ctx, state, o) {
 
   const snap = o.backup ? o.backup('repoint-back', `agent_skills@${sha7(from.commit)}`) : null;
   if (!snap) return stop({ cause: 'no-backup', reason: 'no pude tomar la copia de seguridad de antes de mover', transient: true });
-  const finish = () => { if (o.finish) o.finish(snap); };
+  // `finish('failed')` en cada salida con error: la copia queda «failed» y no cierra las de un corte anterior
+  const finish = (outcome = null) => { if (o.finish) o.finish(snap, outcome ? { outcome } : {}); };
   state.repoint = { applied, pending: { step: 'back', from, to: applied.to, at: nowIso() } };
   try { if (o.write) o.write(); } catch (e) {
     if (e && e.code === LOCK_LOST) throw e;
     state.repoint = { applied };
-    finish();
+    finish('failed');
     return stop({ cause: 'state', reason: `no pude anotar la mudanza en el estado (${e.code || e.message})`, transient: true });
   }
   const u = undo(skills, from, { env });
   if (!u.ok) {
-    finish();
+    finish('failed');
     const text = `una mudanza del clon de skills (${dir}) quedó a medias (la vuelta al repo viejo: ${u.reason}): el próximo arranque lo vuelve a intentar; ya: ${UPDATE_CMD}`;
     log(`repoint: ${text}`);
     return { status: 'blocked', proceed: false, lines: [text], notice: text };
@@ -952,7 +954,7 @@ function back(ctx, state, o) {
  * Lo que `startup` y `update` corren ANTES de mirar si hay versión nueva. `want`: el valor de la llave (`unified` |
  * `separate`). `apply: false`: la política es `ask` y nadie dijo `--yes` → no se muda nada, se avisa. `manual`: lo corre
  * una persona (`update`): reintenta aunque la causa anotada sea la misma. `dryRun`: dice qué haría. `backup(reason, to)`
- * toma la copia de seguridad y devuelve algo, o `null`; `finish(copia)` la cierra; `write()` graba el estado.
+ * toma la copia de seguridad y devuelve algo, o `null`; `finish(copia, { outcome })` la cierra (`outcome: 'failed'` si la mudanza falló); `write()` graba el estado.
  * Cambia `state` en memoria (y lo graba con `write` en los dos puntos que importan si la sesión muere).
  * @returns {{ status: string, proceed: boolean, lines: string[], notice: string|null }}  `proceed: false` = ninguna
  *   fuente se mueve en esta corrida

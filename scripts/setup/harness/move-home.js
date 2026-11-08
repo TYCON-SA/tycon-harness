@@ -1137,13 +1137,13 @@ function migrate(ctx, H, { log = null, auto = false, state: given = null } = {})
       if (!st.ok) {
         // si el apilado falla, tampoco queda la caché que esta mudanza acaba de crear
         if (!teamFetched.fromCache) { try { fs.rmSync(teamFetched.cacheDir, { recursive: true, force: true }); } catch (_) { /* queda: la próxima bajada la reemplaza */ } }
-        undo(ctx, j, H, { log: realLog, why: `no pude apilar la capa del equipo (${st.reason})` }); H.finishSnapshot(ctx, snap, realLog); return { code: 1, lines: [`${HEAD}: ${st.reason}`], precondition: true };
+        undo(ctx, j, H, { log: realLog, why: `no pude apilar la capa del equipo (${st.reason})` }); H.finishSnapshot(ctx, snap, realLog, { outcome: 'failed' }); return { code: 1, lines: [`${HEAD}: ${st.reason}`], precondition: true };
       }
       j.team = require('./team.js').stateEntry(st.manifest);
       writeStage(ctx, j, 'start', realLog);
     }
     const sw = REL.swap(ctx, { incomingDir: d.dir, version: target.version, log: realLog });
-    if (!sw.ok) { undo(ctx, j, H, { log: realLog, why: `no pude instalar la versión (${sw.reason})` }); H.finishSnapshot(ctx, snap, realLog); return { code: 1, lines: [`${HEAD}: ${sw.reason}`], precondition: true }; }
+    if (!sw.ok) { undo(ctx, j, H, { log: realLog, why: `no pude instalar la versión (${sw.reason})` }); H.finishSnapshot(ctx, snap, realLog, { outcome: 'failed' }); return { code: 1, lines: [`${HEAD}: ${sw.reason}`], precondition: true }; }
     j.incoming = null;
     writeStage(ctx, j, 'installed', realLog);
     const r = advance(ctx, j, H, { log: realLog, snap });
@@ -1155,10 +1155,12 @@ function migrate(ctx, H, { log = null, auto = false, state: given = null } = {})
       const notice = markFailed(st, r.reason);
       if (!auto) { R.setNotice(st, notice); S.write(ctx.home, st); }
       else if (given) { given.migrate_home = st.migrate_home; }
-      H.finishSnapshot(ctx, snap, realLog);
+      H.finishSnapshot(ctx, snap, realLog, { outcome: 'failed' });
       return { code: 1, lines: [`${HEAD}: ${notice}`], failed: true, notice };
     }
-    H.finishSnapshot(ctx, snap, realLog);
+    // la mudanza corrió el aplicador completo con la salud en verde (`stageReplugged`): reescribió todo y cierra las
+    // copias abiertas de un corte anterior; la versión es otra, así que también las vueltas atrás cortadas
+    H.finishSnapshot(ctx, snap, realLog, { rewroteAll: true, supersede: true });
     return { code: 0, lines: r.lines, migrated: true };
   };
   if (auto) return body();   // el arranque ya tiene el candado

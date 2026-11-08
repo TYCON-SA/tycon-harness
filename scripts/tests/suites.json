@@ -3495,6 +3495,12 @@
       "requiere": []
     },
     {
+      "__nota": "las copias de respaldo que quedan abiertas tras un corte: un apply con el aplicador real cortado con kill -9 entre settings.json y los bloques del CLAUDE.md, y una vuelta atrás cortada después de mover un árbol; el arranque siguiente nombra la copia abierta y da el comando que vuelve (o que termina la vuelta atrás). Cada operación que falla deja su copia «failed» y la del corte abierta; sólo la que reescribió todo la cierra. Dos install a la vez: uno aplica, el otro sale 3. Los cortes se eligen desde afuera, nunca con ganchos en el aplicador.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-failures.test.sh",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/harness-health.test.sh",
       "requiere": []

@@ -6,7 +6,12 @@
 // que se tomó antes de mover los árboles—; las copias de `startup`/`apply` posteriores, de la misma versión, no cuentan. Así
 // un segundo `rollback` vuelve a la copia `before-rollback` del primero: un rollback se deshace con otro. Basta con que
 // difiera UNA fuente: un hook nuevo de agent-skills no cambia el número de versión (sale del arnés) y también se deshace.
-// Si ninguna copia tiene `sources` (sin ese dato), la más nueva y sólo archivos, y se dice.
+// Si ninguna copia tiene `sources` (sin ese dato), la más nueva y sólo archivos, y se dice. Sin `--to` no elige nunca una
+// copia abierta (`open: true`: la de un cambio que se cortó, o la que la operación en curso acaba de tomar), salvo una
+// excepción: si hay una `before-rollback` abierta, es una vuelta atrás que se cortó, y se retoma yendo a su `rollback_to`
+// (la más nueva, si hay varias), sin mirar los `sources` y aunque ese destino esté abierto. Con `--to` acepta cualquiera,
+// abierta o no: es el comando que da el aviso de un corte. `openToo` (la salud pendiente del arranque) elige como antes
+// de la marca: la copia que necesita es justo la abierta de la actualización que se cortó.
 //
 // La restauración (`restore`), en este orden:
 //   (1) cada archivo de la copia cuyo hash actual es su `sha256_after` (nadie lo tocó desde el cambio) vuelve ENTERO a como
@@ -52,6 +57,8 @@ const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
 const pieceKey = (p) => `${p.kind}\u0000${p.where}\u0000${p.id}`;
 const seqOf = (c) => (c && c.manifest && Number.isInteger(c.manifest.seq) && c.manifest.seq > 0 ? c.manifest.seq : null);
 const hasSources = (c) => Boolean(c && c.manifest && isObject(c.manifest.sources) && Object.keys(c.manifest.sources).length);
+/** Abierta: su operación no la cerró (la marca de snapshot.js; sin el campo cuenta cerrada). */
+const isOpen = (c) => Boolean(c && c.manifest && c.manifest.open === true);
 
 /** Más nueva primero por `seq`; las que no lo tienen (sin ese dato) van debajo, en el orden en que vinieron. */
 function newestFirst(copies) {
@@ -72,20 +79,37 @@ function differs(copySources, current) {
 
 /**
  * A qué copia vuelve `rollback`. `copies` es `snapshot.list()` (`[{ dir, name, manifest }]`, en cualquier orden);
- * `to` = el nombre de la carpeta, su `seq` o su ruta; `currentSources` = `{ <fuente>: <HEAD> }`.
+ * `to` = el nombre de la carpeta, su `seq` o su ruta; `currentSources` = `{ <fuente>: <HEAD> }`; `openToo` = elegir también
+ * entre las abiertas y no retomar una vuelta atrás cortada (la salud pendiente del arranque).
  * @returns {{ copy: object|null, filesOnly: boolean, reason: string }}  `copy: null` = nada que hacer (y `reason` dice por qué)
  */
-function pickTarget(copies, { to = null, currentSources = {} } = {}) {
+function pickTarget(copies, { to = null, currentSources = {}, openToo = false } = {}) {
   const list = newestFirst((Array.isArray(copies) ? copies : []).filter((c) => c && isObject(c.manifest)));
+  const named = (hit, why) => {
+    if (!hasSources(hit)) return { copy: hit, filesOnly: true, reason: `la copia ${hit.name} no tiene sources (es anterior a la tanda C): sólo restauro archivos, los árboles no se mueven` };
+    return { copy: hit, filesOnly: false, reason: `la copia ${hit.name} (seq ${seqOf(hit) || '—'}, ${hit.manifest.reason || 'sin motivo'})${why}` };
+  };
   if (to !== null && to !== undefined && String(to) !== '') {
     const want = String(to);
     const hit = list.find((c) => c.name === want)
       || list.find((c) => String(seqOf(c)) === want)
       || list.find((c) => c.dir && path.resolve(c.dir) === path.resolve(want));
     if (!hit) return { copy: null, filesOnly: false, reason: `no hay una copia «${want}» (harness.js rollback --list las muestra)` };
-    if (!hasSources(hit)) return { copy: hit, filesOnly: true, reason: `la copia ${hit.name} no tiene sources (es anterior a la tanda C): sólo restauro archivos, los árboles no se mueven` };
-    return { copy: hit, filesOnly: false, reason: `la copia ${hit.name} (seq ${seqOf(hit) || '—'}, ${hit.manifest.reason || 'sin motivo'})` };
+    return named(hit, '');
   }
+  if (openToo) return pickClosed(list, currentSources);
+  // una vuelta atrás que se cortó: se termina yendo a donde iba, aunque los árboles ya hayan vuelto
+  const cut = list.find((c) => isOpen(c) && c.manifest.reason === 'before-rollback' && typeof c.manifest.rollback_to === 'string' && c.manifest.rollback_to);
+  if (cut) {
+    const dest = list.find((c) => c.name === cut.manifest.rollback_to);
+    if (!dest) return { copy: null, filesOnly: false, reason: `la vuelta atrás cortada iba a ${cut.manifest.rollback_to}, que ya no está: harness.js rollback --list muestra a dónde volver` };
+    return named(dest, `: retomo la vuelta atrás que se cortó (copia ${cut.name})`);
+  }
+  return pickClosed(list.filter((c) => !isOpen(c)), currentSources);
+}
+
+/** Sin `--to`: la más nueva de `list` cuyos `sources` difieren de los instalados (o la más nueva, sin ese dato). */
+function pickClosed(list, currentSources) {
   if (!list.length) return { copy: null, filesOnly: false, reason: 'no hay copias de seguridad: no hay a qué volver' };
   if (!list.some(hasSources)) {
     const c = list[0];

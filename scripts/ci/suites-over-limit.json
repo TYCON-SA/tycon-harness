@@ -67,6 +67,13 @@
         "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (78 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
       }
     },
+    "harness-failures.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (los cortes con kill -9 a la mitad de una actualización o de una vuelta atrás, y las copias de respaldo que quedan abiertas). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: 264 s medidos en la Mac, porque entró a main sin peso medido en el agente (la medición final lo corrige). Son 126 verificaciones que instalan, cortan y vuelven a arrancar sobre el laboratorio, una de ellas con el aplicador real, y la no-regresión de cinco casos de otras suites del laboratorio; armar el laboratorio no es lo caro."
+      }
+    },
     "harness-rollback.test.sh": {
       "exception": {
         "signed_by": "el dueño del arnés",
