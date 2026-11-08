@@ -159,6 +159,17 @@ El resultado de los chequeos (`branch`, `branch_guard_passed`, `cross_session_pa
 parte de este paso. Se pasa a «Validar la historia» sólo con `branch_guard_passed: true` (o `had_main_override: true`
 con confirmación explícita) Y `cross_session_passed: true` (o la opción b/c de PIPE-C0).
 
+**En una historia paraguas** (varias tandas en `pipelines`), la ejecución que entrega UNA tanda la anota después del
+arranque:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-batch <nombre de la tanda>
+```
+
+Desde ahí «Preparar el commit» le pide la evidencia en vivo de esa tanda, no la de todas. Se anota una vez: el mismo
+nombre otra vez no cambia nada, y otro nombre o `--clear` se niegan. Una tanda mal anotada se arregla con otra ejecución
+(`marker.js clear` y arrancar de nuevo). Una tanda `done` no se anota. `marker.js set` no escribe la tanda.
+
 ## 🔀 Las partes opcionales corren MIENTRAS el validador ya está en vuelo
 
 «Validar la historia» tarda 1-7 min y no depende de nada que las partes opcionales produzcan (no lee

@@ -1077,6 +1077,12 @@
       "requiere": []
     },
     {
+      "__nota": "en una historia paraguas la tanda se anota una vez (set-batch), «Preparar el commit» mide sólo esa tanda, y el control del commit mide todas al pasar a review y la que se cierra al cerrar una tanda. Comandos reales con HOME temporal (8.239)",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/matrix-by-batch.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la matriz juzga la evidencia contra el commit: un cambio de rama no la vence si el archivo no cambió. Laboratorios con repos de git de verdad.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/evidence-vs-commit.test.js",
@@ -1864,7 +1870,37 @@
     },
     {
       "raiz": "arnes",
-      "ruta": "tests/office.test.js",
+      "ruta": "tests/office-photo.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-hours.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-board.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-tables.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-page.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-conversation.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-split.test.js",
       "requiere": []
     },
     {
@@ -1963,6 +1999,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/background-question-guard.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/coordination-writes.test.js",
       "requiere": []
     },
     {

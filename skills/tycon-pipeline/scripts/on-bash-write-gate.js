@@ -3396,11 +3396,166 @@ function ejecucionPerdida(event) {
   return { block: or.cartel(p, { markerJs: path.join(__dirname, 'marker.js') }) + '\n' };
 }
 
+// Lo que la coordinadora escribe o borra por la consola y el lector de destinos de siempre no ve: el origen de un `mv`,
+// los comandos que tocan lo que nombran, las descargas, `find -delete` y los `git` que cambian el árbol de trabajo (éstos,
+// como la carpeta del repo entera). `[{ raw, base? }]`, sin resolver.
+const TOCAN_LO_QUE_NOMBRAN = new Set(['mv', 'touch', 'mkdir', 'rmdir', 'shred', 'trash', 'install', 'rsync', 'ditto', 'ln', 'truncate', 'chmod', 'chown', 'chgrp', 'vi', 'vim', 'nvim', 'nano', 'emacs', 'ed', 'ex']);
+// de éstos, el primer argumento es el modo o el dueño, no una ruta
+const PRIMERO_NO_ES_RUTA = new Set(['chmod', 'chown', 'chgrp']);
+const OPCION_CON_VALOR = /^-(?:m|o|g|t|e|-mode|-owner|-group|-target-directory|-rsh|-exclude|-include|-chmod|-suffix)$/;
+// los subcomandos de git que cambian el árbol de trabajo; commits, empujes y merges quedan fuera (los cubre la guía)
+const GIT_CAMBIA_EL_ARBOL = new Set(['reset', 'clean', 'checkout', 'switch', 'stash', 'restore', 'mv', 'rm']);
+const FIND_QUE_ESCRIBE = new Set(['rm', 'mv', 'sed', 'perl', 'truncate', 'shred', 'chmod', 'chown', 'cp', 'tee', 'dd']);
+function destinosDeLaCoordinadora(cmd) {
+  const out = [];
+  for (const tramo of tramos(cmd)) {
+    const limpio = tramo.replace(/(^|\s)#.*$/, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+    const words = palabras(limpio.trim().replace(PREFIJO, '')).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
+    if (!words.length) continue;
+    const c = path.basename(words[0].replace(/^\\/, '')).toLowerCase().replace(/\.exe$/, '');
+    const resto = words.slice(1);
+    const args = [];
+    for (let i = 0; i < resto.length; i++) {
+      if (resto[i] === '--') { args.push(...resto.slice(i + 1)); break; }
+      if (resto[i].startsWith('-')) { if (OPCION_CON_VALOR.test(resto[i])) i++; continue; }
+      args.push(resto[i]);
+    }
+    const poner = (raw, base) => { if (raw) out.push({ raw, ...(base ? { base } : {}) }); };
+    if (TOCAN_LO_QUE_NOMBRAN.has(c)) { for (const a of PRIMERO_NO_ES_RUTA.has(c) ? args.slice(1) : args) poner(a); continue; }
+    if (c === 'gsed' && resto.some((w) => /^-i/.test(w) || w.startsWith('--in-place'))) {
+      for (const a of resto.includes('-e') || resto.includes('-f') ? args : args.slice(1)) poner(a);
+      continue;
+    }
+    if ((c === 'awk' || c === 'gawk') && resto.join(' ').includes('-i inplace')) { for (const a of args.filter((w) => w !== 'inplace').slice(1)) poner(a); continue; }
+    if (c === 'curl') {
+      resto.forEach((w, i) => {
+        if (w === '-o' || w === '--output') poner(resto[i + 1]);
+        else if (/^-o\S/.test(w)) poner(w.slice(2));
+        else if (w === '-O' || w === '--remote-name' || /^-[a-zA-Z]*O$/.test(w)) poner('.');
+      });
+      continue;
+    }
+    if (c === 'wget') {
+      const o = resto.findIndex((w) => w === '-O' || w === '--output-document');
+      const p = resto.findIndex((w) => w === '-P' || w === '--directory-prefix');
+      if (o >= 0) { if (resto[o + 1] !== '-') poner(resto[o + 1]); } else poner(p >= 0 ? resto[p + 1] : '.');
+      continue;
+    }
+    if (c === 'dd') { for (const w of resto) if (/^of=/.test(w)) poner(w.slice(3)); continue; }
+    if (c === 'find') {
+      const exec = resto.findIndex((w) => ['-exec', '-execdir', '-ok', '-okdir'].includes(w));
+      const escribe = resto.includes('-delete') || (exec >= 0 && FIND_QUE_ESCRIBE.has(path.basename(String(resto[exec + 1] || ''))));
+      if (!escribe) continue;
+      const raices = [];
+      for (const w of resto) { if (w.startsWith('-') || w === '(' || w === '!') break; raices.push(w); }
+      for (const r of raices.length ? raices : ['.']) poner(r);
+      continue;
+    }
+    if (c === 'git') {
+      let i = 0;
+      let base = null;
+      while (i < resto.length && resto[i].startsWith('-')) {
+        if (resto[i] === '-C') { base = base ? `${base}/${resto[i + 1]}` : resto[i + 1]; i += 2; continue; }
+        if (['-c', '--git-dir', '--work-tree', '--namespace'].includes(resto[i])) { i += 2; continue; }
+        i++;
+      }
+      const sub = resto[i];
+      const deSub = resto.slice(i + 1);
+      if (!GIT_CAMBIA_EL_ARBOL.has(sub)) continue;
+      if (sub === 'reset' && !deSub.some((w) => /^--(?:hard|merge|keep)$/.test(w))) continue;
+      if (sub === 'clean' && deSub.some((w) => w === '-n' || w === '--dry-run')) continue;
+      if (sub === 'stash' && ['list', 'show', 'create'].includes(deSub[0])) continue;
+      poner('.', base);
+    }
+  }
+  return out;
+}
+
+// Lo que no es una redirección aunque lleve `>`: una cuenta `$((1>2))`, un `\>`, un valor `${x:-a>b}` y la entrada de
+// otro comando `>(…)` (queda como `$(…)`: su destino no se resuelve sin ejecutar).
+function sinMayoresQueNoRedirigen(cmd) {
+  return String(cmd).replace(/\$\(\([\s\S]*?\)\)/g, ' ').replace(/\\>/g, ' ').replace(/\$\{[^}]*>[^}]*\}/g, '"$__SIN_RESOLVER__"').replace(/>\(/g, '$(');
+}
+
+// El `cd` en otro renglón, con `|| exit` o con `cd --` es el mismo `cd`: así lo ven las carpetas del comando.
+function conLosCdDeSiempre(cmd) {
+  const CD = String.raw`(\bcd[ \t]+(?:'[^']*'|"[^"]*"|[^\s;&|()<>'"` + '`' + String.raw`]+))`;
+  return String(cmd)
+    .replace(/\bcd[ \t]+--[ \t]+/g, 'cd ')
+    .replace(new RegExp(`${CD}[ \\t]*\\|\\|[ \\t]*(?:exit|return)\\b[^;&\\n]*`, 'g'), '$1')
+    .replace(new RegExp(`${CD}[ \\t]*\\n`, 'g'), '$1 && ');
+}
+
+// ¿Algún `cd` del comando va a una carpeta armada con una variable o un comando (`cd "$TMPDIR"`, `cd "$(mktemp -d)"`)?
+// Las carpetas del comando no siguen ese `cd`: lo relativo de después no se sabe dónde cae.
+function cdSinResolver(cmd) {
+  for (const m of String(cmd).matchAll(/\bcd[ \t]+(?:--[ \t]+)?(?:'([^']*)'|"([^"]*)"|([^\s;&|()<>'"]+))/g)) {
+    if (/[`$]/.test(m[2] ?? m[3] ?? '')) return true;
+  }
+  return false;
+}
+
+// La coordinadora no cambia archivos de los repos (scripts/lib/coordination-writes.js): lo que el comando escribe o
+// borra, con cada carpeta donde puede caer una escritura relativa. Lo que no se resuelve sin ejecutar pasa (también lo
+// relativo detrás de un `cd` a una carpeta sin resolver), y lo que escribe un guion guardado en un archivo no se mira:
+// los guiones del arnés que corre la coordinadora escriben su estado.
+function coordinadoraPorConsola(event, opts = {}) {
+  if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
+  const original = event?.tool_input?.command;
+  if (!original) return null;
+  const cmd = sinMayoresQueNoRedirigen(original);
+  const baseCwd = nativePath(event?.cwd || process.cwd());
+  const archivos = () => {
+    const out = [];
+    const soloAbsolutos = cdSinResolver(cmd);
+    const absoluta = (raw) => {
+      const v = String(expandirRuta(cmd, raw).valor);
+      return path.isAbsolute(v) || /^~(?:\/|$)/.test(v) || /^\$\{?HOME\}?(?:\/|$)/.test(v);
+    };
+    const resolverEn = (cwd, d) => {
+      const ruta = expandirRuta(cmd, d.raw);
+      if (ruta.sinResolver.length) return null;
+      let base = cwd;
+      if (d.base) {
+        const b = expandirRuta(cmd, d.base);
+        if (b.sinResolver.length) return null;
+        if (soloAbsolutos && !absoluta(d.base)) return null;
+        base = resolveTarget(b.valor, cwd, process.platform, { homeVariable: true });
+      } else if (soloAbsolutos && !absoluta(d.raw)) return null;
+      return resolveTarget(ruta.valor, base, process.platform, { homeVariable: true });
+    };
+    for (const cwd of carpetasDelComando(conLosCdDeSiempre(cmd), baseCwd)) {
+      for (const d of destinosResueltos(cmd, cwd, process.platform, { keep: () => true })) {
+        if (d.sinResolver.length || (soloAbsolutos && !absoluta(d.raw))) continue;
+        out.push(d.abs);
+      }
+      for (const d of destinosBorrados(cmd)) {
+        const abs = resolverEn(cwd, d);
+        // `git checkout <nombre>` sin `--`: si no hay un archivo con ese nombre, es una rama (la cuenta la regla de git)
+        if (abs && !(d.quizas && !fs.existsSync(abs))) out.push(abs);
+      }
+      for (const d of destinosDeLaCoordinadora(cmd)) {
+        const abs = resolverEn(cwd, d);
+        if (abs) out.push(abs);
+      }
+    }
+    return [...new Set(out)];
+  };
+  return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'coordination-writes.js')).judge({
+    sessionId: event.session_id, files: archivos, home: opts.home, stateDir: opts.stateDir, installedRoots: opts.installedRoots,
+  });
+}
+
 function handle(event, opts = {}) {
   {
     let perdida = null;
     try { perdida = ejecucionPerdida(event); } catch (e) { logHookError(e); perdida = { block: `🔴 EJECUCIÓN PERDIDA — no pude revisar las piezas de la ejecución (${e.message}): frena hasta poder mirarlas.\n` }; }
     if (perdida) return perdida;
+  }
+  {
+    let coordinadora = null;
+    try { coordinadora = coordinadoraPorConsola(event, opts); } catch (e) { logHookError(e); coordinadora = null; }
+    if (coordinadora) return coordinadora;
   }
   let deprecado = null;
   try {

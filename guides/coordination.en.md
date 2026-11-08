@@ -771,7 +771,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | A red is not left behind | nadie | The controls stop your own; someone else's red is seen by whoever finds it. |
 | Do not loosen a review, do not do paperwork | nadie | It is a judgment call: no data separates a review from paperwork. |
 | Check a message for the team | nadie | The message goes out outside the machine. |
-| The coordinator does not change code or guides itself | nadie | Nothing tells the coordinator apart from a session that writes today; the brake is a separate story. |
+| The coordinator does not change code or guides itself | freno | The designated session does not write, edit or delete files of a repo or of the installed copy of the harness, through Edit, Write or the console: the brake tells it to hand the change to a session. Its memory and what is outside the repos pass. Limit, by choice: what a script saved in a file writes from inside is not looked at, because the harness scripts the coordinator runs write its state. |
 | A plan for the owner first goes through a separate reviewer | nadie | It is a judgment call: no data separates a plan from any other message. |
 | State only what was checked, and measure use before removing something | nadie | It is the coordinator's judgment call. |
 | Measure a speed change on a loaded day | nadie | Which change promises speed is said in the message, not in a piece of data. |
