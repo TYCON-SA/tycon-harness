@@ -1731,3 +1731,27 @@ test('Papeles_Referencia_SeccionDePalabras', async (t) => {
     });
   }
 });
+
+// Cada papel sale por la lista blanca desde su lugar: lo toma un «in» del núcleo. La clasificación del exportador —la que
+// usan el freno de nombres y el de historia interna— decide con esa lista qué sale y qué se mira. Un papel que ningún
+// «in» toma no lo mira nadie, y LICENSE o NOTICE en la raíz quedan sin clasificar.
+const { coincide } = require(path.join(PUBLISHING, 'export.js'));
+const corePublicIn = () => {
+  const list = JSON.parse(fs.readFileSync(path.join(PUBLISHING, 'allowlist.json'), 'utf8'));
+  return (((list.packages || {}).core || {}).arnes || {}).in || [];
+};
+const papersWithoutIn = (globs) => PAPERS.filter((p) => !globs.some((g) => coincide(g, p)));
+
+test('T36 Papeles_EntranPorSuPropioIn — a cada papel lo toma un «in» del núcleo, en su lugar', () => {
+  const globs = corePublicIn();
+  assert.ok(globs.length > 0, 'la lista blanca no trae «in» del núcleo: la prueba no estaría mirando nada');
+  assert.deepStrictEqual(papersWithoutIn(globs), [], 'papeles que ningún «in» del núcleo toma (van a la lista blanca, en scripts/publishing/allowlist.json)');
+});
+
+test('T36 Papeles_EntranPorSuPropioIn — laboratorio: sin su «in», el papel se nombra', () => {
+  const globs = corePublicIn();
+  for (const paper of ['LICENSE', 'getting-started/mac.md', '.github/workflows/ci.yml']) {
+    const sin = globs.filter((g) => !coincide(g, paper));
+    assert.ok(papersWithoutIn(sin).includes(paper), `sin el «in» que toma ${paper}, la prueba tenía que nombrarlo`);
+  }
+});
