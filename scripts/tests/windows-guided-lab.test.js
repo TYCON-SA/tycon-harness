@@ -49,8 +49,9 @@ const NO_HOOKS = path.join(os.tmpdir(), 'windows-guided-no-git-hooks');
 const SKIP = (process.platform === 'win32' && 'el recorrido de juguete es del modo de laboratorio: en Windows corre el ensayo de verdad')
   || (!has('git') && 'NO MEDIDO — sin git')
   || (!has('pwsh') && 'NO MEDIDO — sin pwsh: la página pide PowerShell 7')
-  || (!require(path.join(DIR, 'npx-probe.js')).npmProgram('npm') && `NO MEDIDO — este Node (${process.execPath}) no trae npm a su lado: sin npm no se arma el paquete que corre la línea npx`)
-  || (!fs.existsSync(path.join(ROOT, 'getting-started', 'windows.md')) && 'NO MEDIDO — este árbol no trae la página pública de instalación');
+  || (!require(path.join(DIR, 'npx-probe.js')).npmProgram('npm') && `NO MEDIDO — este Node (${process.execPath}) no trae npm a su lado: sin npm no se arma el paquete que corre la línea npx`);
+// la página vive en su lugar: si falta, la suite falla nombrándola, no se saltea
+if (!fs.existsSync(path.join(ROOT, 'getting-started', 'windows.md'))) throw new Error('falta la página pública de instalación: getting-started/windows.md');
 const git = (args, cwd) => spawnSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.com', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', '-c', `core.hooksPath=${NO_HOOKS}`, ...args], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 const node = (args, opts = {}) => spawnSync(process.execPath, args, Object.assign({ encoding: 'utf8', timeout: 20 * 60 * 1000, maxBuffer: 64 * 1024 * 1024 }, opts));
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));

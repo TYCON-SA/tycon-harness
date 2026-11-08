@@ -469,7 +469,8 @@ test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — los
 const REMOTOS = 'scripts/setup/public-remotes.json';
 
 test('Export_PublicRemotes_ShipsWithThePublicName — el archivo en su lugar y la lista blanca que lo toma',
-  { skip: !fs.existsSync(path.join(RAIZ, REMOTOS)) && 'NO MEDIDO — este árbol no trae scripts/setup/public-remotes.json' }, () => {
+  () => {
+    assert.ok(fs.existsSync(path.join(RAIZ, REMOTOS)), `falta ${REMOTOS}: el papel vive en su lugar`);
     const datos = JSON.parse(fs.readFileSync(path.join(RAIZ, REMOTOS), 'utf8'));
     assert.ok(Array.isArray(datos.remotes) && datos.remotes.length === 1, 'el contrato con el programa de instalación: una lista «remotes» con UN remoto');
     assert.match(datos.remotes[0], /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'el remoto es una URL de GitHub con el nombre puesto');
@@ -559,7 +560,8 @@ const ENTRY_SCRIPTS = ['scripts/setup/get-harness.sh', 'scripts/setup/get-harnes
 const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
 test('Export_GetHarness_InPlace_WithThePublicName — los dos guiones en su lugar, con el nombre declarado y sin sintético',
-  { skip: !fs.existsSync(path.join(RAIZ, REMOTOS)) && 'NO MEDIDO — este árbol no trae scripts/setup/public-remotes.json' }, () => {
+  () => {
+    assert.ok(fs.existsSync(path.join(RAIZ, REMOTOS)), `falta ${REMOTOS}: el papel vive en su lugar`);
     const real = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'allowlist.json'), 'utf8'));
     const { coincide } = require(EXPORTAR);
     const publico = JSON.parse(fs.readFileSync(path.join(RAIZ, REMOTOS), 'utf8')).remotes[0].replace(/^https:\/\/github\.com\//, '');
