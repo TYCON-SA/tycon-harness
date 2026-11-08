@@ -1747,7 +1747,7 @@ test('T1 2.77-Armado_GuardaLaVistaEntera @story-2.77 @ac-1 @ac-2', async () => {
     await vista.listo();
     const servida = (await h.pedir('/api/corridas', { cookie: lead })).json;
     const g = leerGuardada(datos);
-    assert.strictEqual(g.formato, 1);
+    assert.strictEqual(g.formato, TAB().FORMATO_VISTA);
     assert.strictEqual(g.generado, servida.generado, 'la fecha del armado');
     assert.strictEqual(g.ejecuciones.corridas.length, servida.corridas.length);
     assert.ok(g.informados && g.informados.maquinas && g.informados.maquinas['maq-a'], 'con lo informado de la misma bajada');
@@ -1944,7 +1944,8 @@ test('T7 2.77-Guardada_Ilegible_NoSeSirve @story-2.77 @ac-10', async () => {
   const buena = leerGuardada(datosOk);
   const casos = [
     ['json roto', (d) => fs.writeFileSync(VISTA_GUARDADA(d), '{ esto no')],
-    ['otro formato', (d) => fs.writeFileSync(VISTA_GUARDADA(d), JSON.stringify({ ...buena, formato: 2 }))],
+    // el formato de antes del vigente: una vista guardada antes de un cambio de forma (como el que sumó las firmas)
+    ['otro formato', (d) => fs.writeFileSync(VISTA_GUARDADA(d), JSON.stringify({ ...buena, formato: TAB().FORMATO_VISTA - 1 }))],
     ['sin ejecuciones', (d) => fs.writeFileSync(VISTA_GUARDADA(d), JSON.stringify({ ...buena, ejecuciones: null }))],
   ];
   if (!(process.getuid && process.getuid() === 0)) casos.push(['sin permiso de lectura', (d) => { fs.writeFileSync(VISTA_GUARDADA(d), JSON.stringify(buena)); fs.chmodSync(VISTA_GUARDADA(d), 0o000); }]);
@@ -2052,7 +2053,7 @@ test('T10 2.77-Lectura_NoFrenaHealthz @story-2.77 @ac-12', async () => {
 test('T11 2.77-Guardada_EscrituraAtomica @story-2.77 @ac-1', async () => {
   const datos = tmp('site-runs-datos-');
   const { espejo, servida } = await primerArranque(datos);
-  fs.writeFileSync(`${VISTA_GUARDADA(datos)}.tmp-12345`, '{ "formato": 1, "generado": "2099');
+  fs.writeFileSync(`${VISTA_GUARDADA(datos)}.tmp-12345`, `{ "formato": ${TAB().FORMATO_VISTA}, "generado": "2099`);
   const fuentes = fuentesCon({ espejo, informados: null });
   fuentes.bajada = { completo: false, generacion: 0 };
   await conPestana({ fuentes, datos, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
@@ -2072,7 +2073,7 @@ test('T14 2.77-Guardada_PermisosYSinRuta @story-2.77 @ac-16', async () => {
     for (const ruta of ['/runs-view.json', '/corridas/runs-view.json', '/static/runs-view.json', '/api/corridas/runs-view.json']) {
       const r = await h.pedir(ruta, { cookie: lead });
       assert.ok(r.status === 404, `${ruta}: ${r.status}`);
-      assert.doesNotMatch(r.texto || '', /"formato"\s*:\s*1/);
+      assert.doesNotMatch(r.texto || '', new RegExp(`"formato"\\s*:\\s*${TAB().FORMATO_VISTA}\\b`));
     }
   });
 });
@@ -2240,4 +2241,37 @@ test('2.79-Corridas_SemanaEnElIdioma @story-2.79 @ac-34 (complemento de T40) —
   // el cliente arma lo visible con la letra del idioma, nunca con la clave guardada
   const fuente = fs.readFileSync(RUNS, 'utf8');
   assert.match(fuente, /var semanaVisible = function \(k\) \{ return k\.slice\(0, 5\) \+ T\('letraSemana'\)/);
+});
+
+// ── las firmas de cada ejecución, por el mismo camino que el resto del detalle ───────────────────────────────────
+// rojo si: las firmas no llegan al detalle; el detalle ajeno deja de contestar 404 sin cuerpo; la vista guardada sigue
+// con el formato de antes de las firmas.
+test('T11 2.78-Sitio_FirmasSoloDeLoTuyo @story-2.78 @ac-11', async () => {
+  const lineas = (razon) => ({ firmas: { estado: 'leido', ilegibles: 0, recortadas: 0, lineas: [
+    { cuando: '2026-08-05T09:30:00.000Z', firma: 'plan-approval', nivel: 1, via: 'click', delegada: false, quien: 'persona', pedida_por: null, razon },
+  ] } });
+  const espejo = tmp('site-runs-espejo-');
+  escribir(path.join(espejo, 'maq-a'), 'a1.json', volcado(SID.a1, '2026-08-05T09:00:00.000Z', { marker: { storyId: '3.1' }, ...lineas('firma de la máquina de A') }));
+  escribir(path.join(espejo, 'maq-b'), 'b1.json', volcado(SID.b1, '2026-08-06T09:00:00.000Z', { marker: { storyId: '4.1' }, ...lineas('firma de la máquina de B') }));
+  const datos = tmp('site-runs-datos-');
+  await conPestana({ fuentes: fuentesCon({ espejo }), datos }, async ({ h, entrar, vista }) => {
+    await vista.listo();
+    const lead = await entrar(LEAD);
+    const todas = (await h.pedir('/api/corridas', { cookie: lead })).json.corridas;
+    const idDe = (story) => todas.find((c) => c.story === story).id;
+    for (const c of todas) assert.ok(!('firmas' in c), 'la lista no lleva firmas');
+    for (const [story, razon] of [['3.1', 'firma de la máquina de A'], ['4.1', 'firma de la máquina de B']]) {
+      const det = (await h.pedir(`/api/corridas/${idDe(story)}`, { cookie: lead })).json;
+      assert.strictEqual(det.firmas.lineas[0].razon, razon, `quien mantiene ve las firmas de ${story}`);
+    }
+    const dev = await entrar(DEV_A);
+    const propia = await h.pedir(`/api/corridas/${idDe('3.1')}`, { cookie: dev });
+    assert.strictEqual(propia.status, 200);
+    assert.strictEqual(propia.json.firmas.lineas[0].razon, 'firma de la máquina de A');
+    const ajena = await h.pedir(`/api/corridas/${idDe('4.1')}`, { cookie: dev });
+    assert.strictEqual(ajena.status, 404);
+    assert.strictEqual(ajena.texto || '', '', '404 sin cuerpo');
+    assert.strictEqual(TAB().FORMATO_VISTA, 2, 'la vista guardada cambió de forma con las firmas');
+    assert.strictEqual(leerGuardada(datos).formato, 2);
+  });
 });

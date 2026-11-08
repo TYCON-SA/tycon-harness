@@ -46,7 +46,8 @@ const TOPE_CACHE_BYTES = 200 * 1024 * 1024;
 const FRASE_SIN_BUZON = 'sin depósito configurado: no medido';
 // la vista guardada en el disco del sitio, y el número de su forma: cambia cuando cambia lo que se guarda
 const ARCHIVO_VISTA = 'runs-view.json';
-const FORMATO_VISTA = 1;
+// 2: el modelo de cada ejecución trae sus firmas; una vista guardada de antes no las trae y no se sirve
+const FORMATO_VISTA = 2;
 const NO_EXISTE = { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' };
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 // el código de un error, con forma de código: nunca su mensaje (trae rutas del disco)
@@ -664,4 +665,4 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
   return rutas;
 }
 
-module.exports = { crearRutas, crearVista, armarEnWorker, armarEnElHilo, huellaDelEspejo, vistaUsable, FRASE_FALLA, FRASE_SIN_BUZON, ARCHIVO_VISTA };
+module.exports = { crearRutas, crearVista, armarEnWorker, armarEnElHilo, huellaDelEspejo, vistaUsable, FRASE_FALLA, FRASE_SIN_BUZON, ARCHIVO_VISTA, FORMATO_VISTA };
