@@ -847,7 +847,9 @@ function arrancarOficinas(){
     const chip=(n,t,c)=>{const s=el("span","stat"+(c&&n?" "+c:""));s.append(el("b",null,String(n)),document.createTextNode(t));return s};
     f.stats.replaceChildren(chip(r.sesiones,r.sesiones===1?"sesión":"sesiones"),chip(r.trabajando,"trabajando"),chip(r.firma,"esperan tu firma","firma"),chip(r.esperanOLibres,"esperan o libres"));
     if(r.coordina){const s=el("span","stat");s.append("coordina ",el("b",null,r.coordina));f.stats.append(s)}
-    if(o.sinConexionDesde)f.stats.append(el("span","stat apagada","sin conexión desde "+hhmmDe(o.sinConexionDesde)));
+    // el sitio se reinició y esta máquina estaba: todavía no volvió a conectarse (no desapareció)
+    if(o.reconectando)f.stats.append(el("span","stat apagada","reconectando: el sitio se reinició"));
+    else if(o.sinConexionDesde)f.stats.append(el("span","stat apagada","sin conexión desde "+hhmmDe(o.sinConexionDesde)));
     // conectada pero sin foto nueva: lo que se ve es de esa hora, no de ahora
     else if(o.fotoDesde)f.stats.append(el("span","stat firma","foto de las "+hhmmDe(o.fotoDesde)+": no llegan fotos nuevas"));
     if(o.foto&&o.foto.meta&&o.foto.meta.recorte)f.stats.append(el("span","stat",o.foto.meta.recorte));

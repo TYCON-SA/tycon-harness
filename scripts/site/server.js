@@ -719,6 +719,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       bandaRefresco: st.bandaRefresco || null,
       bandaConfig: quien.rol === 'maintainer' ? (st.bandaConfig || null) : null,
       avisoVariable: quien.rol === 'maintainer' && quien.variableSobrante,
+      // la noche dijo que el sitio corre una imagen por etiqueta: no se actualiza solo hasta fijarlo por huella
+      avisoEtiqueta: quien.rol === 'maintainer' && Boolean(modelo && modelo.instalacion && modelo.instalacion.porEtiqueta),
       avisoSesiones: !demo && quien.rol === 'maintainer' && !cerradas.verificable(),
       enlaceOperaciones: quien.rol === 'maintainer' ? enlaceOperaciones : null,
       // cuántas fichas de una fuente esperan decisión, con la cuenta de la pestaña que las decide (Inicio muestra el

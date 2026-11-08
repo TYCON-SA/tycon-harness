@@ -385,6 +385,7 @@ function layout(ctx, titulo, cuerpo, lede = null) {
     ctx && ctx.bandaConfig ? banda(T('banda.config', { desde: hora(ctx.bandaConfig.desde, idioma), motivo: ctx.bandaConfig.motivo })) : '',
     ctx && ctx.bandaRefresco ? banda(T('banda.refresco', { desde: hora(ctx.bandaRefresco.desde, idioma), motivo: fraseDeCodigo(ctx.bandaRefresco.estado, idioma) || ctx.bandaRefresco.estado })) : '',
     ctx && ctx.avisoVariable ? banda(T('banda.variable')) : '',
+    ctx && ctx.avisoEtiqueta ? banda(T('banda.etiqueta')) : '',
     ctx && ctx.avisoSesiones ? banda(T('banda.sesiones')) : '',
     cartelVersionNueva(ctx),
   ].join('');

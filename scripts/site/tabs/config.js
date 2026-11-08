@@ -560,6 +560,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const { c, informados, pers } = contextoPersonas(base2);
       extras.porConfirmar = informados ? people.maquinasPorConfirmar(c) : [];
       extras.sinActividad = informados ? people.maquinasSinActividad(c) : [];
+      // las ocultas salen de la configuración: se listan aunque no se haya leído lo informado
+      extras.ocultas = people.maquinasOcultas(c);
       const reglas = access.crearReglas({ config: base2, modelo: fuentes.modelo(), personas: pers });
       // Las personas salen de «Quién entra al sitio» (por su primer correo), más quien ya tenga algo declarado: con las
       // máquinas confirmadas, quien todavía no tiene máquina no aparecía. Sin lista de acceso, las de las máquinas.
@@ -590,7 +592,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       extras.personas = correos.map((correo) => {
         // todos sus correos: sus máquinas y lo declarado pueden estar a nombre de cualquiera de ellos
         const suyos = new Set([correo, ...people.correosDe(correo, c)]);
-        const suyas = Object.entries(c.machines).filter(([, e]) => isObject(e) && suyos.has(norm(e.person))).map(([m]) => m);
+        // una oculta no cuenta: esconder la máquina de laboratorio de alguien no lo vuelve «caído»
+        const suyas = Object.entries(c.machines).filter(([m, e]) => isObject(e) && suyos.has(norm(e.person)) && people.estadoDeMaquina(m, c).estado !== 'oculta').map(([m]) => m);
         // la pantalla edita la clave que ya existe (con su grafía), así no crea una segunda para la misma persona
         const clave = Object.keys(declarados).find((k) => !k.startsWith('_') && suyos.has(norm(k))) || correo;
         const comparteCon = [...new Set([...suyos].flatMap((x) => [...(comparten.get(x) || [])]))].filter((x) => !suyos.has(x)).sort();
@@ -845,6 +848,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const opsDoc = cl.operaciones ? docDe((leerDe(cl.operaciones.dir, 'operations.json').texto) || '') : null;
     const machines = (opsDoc || fuentes.config() || {}).people;
     const quien = Object.fromEntries(Object.entries(isObject(machines) && isObject(machines.machines) ? machines.machines : {}).filter(([, e]) => isObject(e)).map(([m, e]) => [m, norm(e.person)]));
+    const ocultas = ocultasDe(machines);
     const prods = productos(cl.operaciones && cl.operaciones.dir, opsDoc);
     let versionesMotivo = null;
     try { fs.readdirSync(fuentes.dirBuzon); } catch (e) { if (e && e.code !== 'ENOENT') versionesMotivo = M('config.espejoIlegible', { codigo: e.code || 'error' }); }
@@ -855,8 +859,14 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       reposDeProducto: reposDeProducto(),
       productosEnlace: enlaceArchivo('scripts/nightly/dependencies/repos.json'),
       contenido: contenidoDelPerfil(cl.perfil && cl.perfil.dir, (rel) => RP.enlaceArchivo(remoteDe('perfil'), rel)),
-      versiones: ORG.versionesDeMaquinas({ espejo: fuentes.dirBuzon, versionImagen, ahora: ahora(), personas: quien }),
+      versiones: ORG.versionesDeMaquinas({ espejo: fuentes.dirBuzon, versionImagen, ahora: ahora(), personas: quien, ocultas }),
     };
+  }
+
+  /** Las máquinas ocultas de `people` (`hidden_machines`), sin las claves de comentario. */
+  function ocultasDe(peopleDoc) {
+    const h = isObject(peopleDoc) && isObject(peopleDoc.hidden_machines) ? peopleDoc.hidden_machines : {};
+    return new Set(Object.keys(h).filter((k) => !k.startsWith('__') && isObject(h[k])));
   }
 
   // ── revisar ──
@@ -906,6 +916,16 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       peopleDoc.machines = isObject(peopleDoc.machines) ? peopleDoc.machines : {};
       // el correo informado nunca se escribe en claro: la huella, normalizada
       peopleDoc.machines[borrador.maquina] = { person: norm(borrador.person || correo || ''), reported_sha256: correo ? people.huellaDeCorreo(correo) : null, confirmed_by: norm(ctx.sesion.email), confirmed_on: dia() };
+      borrador = { people: peopleDoc };
+    }
+    // «No es del equipo», «Ocultar» y «Mostrar»: un renglón de people.hidden_machines, con quién y cuándo; la entrada de
+    // people.machines, si la tiene, no se toca (al mostrarla vuelve confirmada). La carpeta del buzón no se borra nunca
+    if (s.id === 'personas' && isObject(borrador) && ['not_team', 'hide', 'show'].includes(borrador.accion) && typeof borrador.maquina === 'string') {
+      const peopleDoc = clone(isObject(borrador.people) ? borrador.people : ((docDe(v.texto || '') || {}).people || {}));
+      const ocultas = isObject(peopleDoc.hidden_machines) ? peopleDoc.hidden_machines : {};
+      if (borrador.accion === 'show') delete ocultas[borrador.maquina];
+      else ocultas[borrador.maquina] = { reason: borrador.accion === 'not_team' ? 'not_team' : 'hidden', hidden_by: norm(ctx.sesion.email), hidden_on: dia() };
+      if (Object.keys(ocultas).length) peopleDoc.hidden_machines = ocultas; else delete peopleDoc.hidden_machines;
       borrador = { people: peopleDoc };
     }
     if (s.id === 'sitio') {
@@ -1009,7 +1029,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const opsDoc = cl.operaciones ? docDe((leerDe(cl.operaciones.dir, 'operations.json').texto) || '') : null;
     const machines = (opsDoc || fuentes.config() || {}).people;
     const quien = Object.fromEntries(Object.entries(isObject(machines) && isObject(machines.machines) ? machines.machines : {}).filter(([, e]) => isObject(e)).map(([m, e]) => [m, norm(e.person)]));
-    return { maquinas: ORG.versionesDeMaquinas({ espejo: fuentes.dirBuzon, versionImagen, ahora: ahora(), personas: quien }), motivo: null };
+    // una oculta no frena subir la versión mínima: no es parte del equipo
+    return { maquinas: ORG.versionesDeMaquinas({ espejo: fuentes.dirBuzon, versionImagen, ahora: ahora(), personas: quien, ocultas: ocultasDe(machines) }), motivo: null };
   }
   /**
    * La capa que acompaña a un cambio de team-profile.json (ORG.capaQueSube), leída del clon `dir`: null, `{ archivo,

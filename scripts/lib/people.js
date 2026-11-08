@@ -177,6 +177,7 @@ function contexto({ operations, informados }) {
   for (const e of acceso.entradas) for (const m of e.emails) if (!personaDe.has(m)) personaDe.set(m, e);
   return {
     machines: sinComentarios(people.machines),
+    hidden: sinComentarios(people.hidden_machines),
     projects: sinComentarios(people.projects),
     acceso,
     personaDe,
@@ -195,8 +196,34 @@ function correosDe(sesion, c) {
 
 const uniones = (c) => ((c.informados && c.informados.uniones && c.informados.uniones.carpetas) || {});
 
-/** El estado de una máquina: `{ estado, motivo, person?, antes_de? }`. */
+/** La marca de una máquina oculta (`people.hidden_machines`): `{ razon, por, el }`, o null. */
+function ocultaDe(maquina, c) {
+  const h = c.hidden && Object.prototype.hasOwnProperty.call(c.hidden, maquina) ? c.hidden[maquina] : null;
+  if (!h || typeof h !== 'object' || Array.isArray(h)) return null;
+  return { razon: h.reason === 'not_team' ? 'not_team' : 'hidden', por: normalizarCorreo(h.hidden_by) || null, el: typeof h.hidden_on === 'string' ? h.hidden_on : null };
+}
+
+/**
+ * ¿La máquina está oculta? La marca propia sale de la configuración: vale aunque lo informado no se haya leído, cuando
+ * `estadoDeMaquina` todavía no se puede calcular. Una carpeta vieja unida a una nueva oculta la hereda sólo si la unión
+ * vale (lo decide `estadoDeMaquina`, que la descarta como «compartida»): así la regla y el estado dicen lo mismo.
+ */
+function estaOculta(maquina, c) {
+  if (ocultaDe(maquina, c)) return true;
+  const u = uniones(c)[maquina];
+  if (!(u && u.estado === 'unida' && u.nueva && ocultaDe(u.nueva, c))) return false;
+  // sin lo que informa cada carpeta no se puede juzgar la unión: la vieja no hereda nada
+  if (!(c.informados && c.informados.maquinas)) return false;
+  return estadoDeMaquina(maquina, c).estado === 'oculta';
+}
+
+/**
+ * El estado de una máquina: `{ estado, motivo, person?, antes_de? }`. Una oculta gana sobre cualquier otro estado:
+ * sale de la configuración, no de lo que informa la máquina, así que vale aunque todavía no se sepa quién es quién.
+ */
 function estadoDeMaquina(maquina, c) {
+  const oculta = ocultaDe(maquina, c);
+  if (oculta) return { estado: 'oculta', motivo: oculta.razon === 'not_team' ? 'no es del equipo' : 'oculta por quien mantiene el sitio', ...oculta };
   const u = uniones(c)[maquina];
   if (u && u.estado === 'unida' && u.nueva) {
     // una vieja se une a UNA carpeta nueva, que no es a su vez una vieja: una cadena (o un ciclo) no la confirma (falla
@@ -238,9 +265,11 @@ function estadoDeMaquina(maquina, c) {
 function puedeVer(sesion, maquina, c) {
   const suyos = correosDe(sesion, c);
   if (!suyos.length) return false;
+  // una oculta no se muestra a nadie, tampoco a quien mantiene
+  const e = maquina ? estadoDeMaquina(maquina, c) : null;
+  if (e && e.estado === 'oculta') return false;
   if (suyos.some((m) => c.maintainers.has(m))) return true;
   if (!maquina) return false;
-  const e = estadoDeMaquina(maquina, c);
   return e.estado === 'confirmada' && suyos.includes(e.person);
 }
 
@@ -291,6 +320,17 @@ function maquinasPorConfirmar(c) {
   return candidatasAConfirmar(c).filter((x) => !x.sinActividad);
 }
 
+/**
+ * Las máquinas ocultas, para la lista «Ocultas» de quien mantiene: `{ maquina, razon, por, el, confirmada }`, por nombre.
+ * `confirmada`: tiene su entrada en `people.machines` (al mostrarla, vuelve confirmada).
+ */
+function maquinasOcultas(c) {
+  return Object.keys(c.hidden || {}).sort()
+    .map((m) => ({ m, o: ocultaDe(m, c) }))
+    .filter((x) => x.o)
+    .map(({ m, o }) => ({ maquina: m, ...o, confirmada: Object.prototype.hasOwnProperty.call(c.machines, m) }));
+}
+
 /** Las máquinas sin ninguna señal (ver `sinActividad`), con su nombre: para mostrarlas aparte, sin «Confirmar». */
 function maquinasSinActividad(c) {
   return candidatasAConfirmar(c).filter((x) => x.sinActividad).map((x) => ({ maquina: x.maquina }));
@@ -307,7 +347,7 @@ function candidatasAConfirmar(c) {
   for (const [m, inf] of Object.entries(c.informados.maquinas).sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
     if (unidaDeVerdad(m)) continue;
     const e = estadoDeMaquina(m, c);
-    if (e.estado === 'confirmada') continue;
+    if (e.estado === 'confirmada' || e.estado === 'oculta') continue;
     const correo = inf.estado === 'informa' ? inf.correo : null;
     const otras = correo ? confirmadas.filter((o) => o !== m && (() => {
       const ent = c.machines[o];
@@ -453,7 +493,7 @@ function dondeTrabaja(sesion, c, datos = {}) {
 function vistaDePersona(sesion, c, datos = {}) {
   const suyos = correosDe(sesion, c);
   const maquinas = Object.entries(c.machines)
-    .filter(([m, e]) => e && suyos.includes(normalizarCorreo(e.person)) && !(uniones(c)[m]))
+    .filter(([m, e]) => e && suyos.includes(normalizarCorreo(e.person)) && !(uniones(c)[m]) && !ocultaDe(m, c))
     .map(([m]) => ({ maquina: m, estado: estadoDeMaquina(m, c).estado }))
     .sort((a, b) => (a.maquina < b.maquina ? -1 : 1));
   const d = dondeTrabaja(sesion, c, datos);
@@ -462,5 +502,5 @@ function vistaDePersona(sesion, c, datos = {}) {
 
 module.exports = {
   normalizarCorreo, huellaDeCorreo, leerCorreosInformados, contexto, listaDeAcceso, cambiosDeAcceso, textoDeCambios, correosDe, estadoDeMaquina, puedeVer, esPersona,
-  estadoDeLaConfiguracion, maquinasPorConfirmar, maquinasSinActividad, dondeTrabaja, vistaDePersona, PLAZO_MS,
+  estadoDeLaConfiguracion, maquinasPorConfirmar, maquinasSinActividad, maquinasOcultas, estaOculta, dondeTrabaja, vistaDePersona, PLAZO_MS,
 };

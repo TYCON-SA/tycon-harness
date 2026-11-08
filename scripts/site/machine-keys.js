@@ -54,6 +54,10 @@ function crearLlaves({ dataDir, ahora = Date.now, log = () => {}, topes = {} }) 
   const oyentes = [];
   let doc = { schema: 1, claves: mapa({}), bajas: mapa({}), marcas: mapa({}) };
   let noGuarda = false;
+  // cuándo se escribió el disco por última vez (en memoria): `tocar` lo mira para escribir a lo sumo una vez por hora
+  let guardadoEl = 0;
+  // cuándo intentó `tocar` escribirlo por última vez: con el disco sin escritura, no reintenta en cada revisión
+  let tocarIntentoEl = 0;
 
   /** Lo que no se entiende se aparta en vez de pisarlo: quien mantiene puede recuperar las aprobaciones. */
   function apartar() {
@@ -77,6 +81,7 @@ function crearLlaves({ dataDir, ahora = Date.now, log = () => {}, topes = {} }) 
       fs.writeFileSync(tmp, JSON.stringify(doc), { mode: 0o600 });
       fs.renameSync(tmp, archivo);
       noGuarda = false;
+      guardadoEl = ahora();
     } catch (e) {
       noGuarda = true;
       log(`oficinas: las claves no se pudieron guardar (${e.code || e.message}): siguen en memoria hasta el reinicio`);
@@ -150,14 +155,25 @@ function crearLlaves({ dataDir, ahora = Date.now, log = () => {}, topes = {} }) 
     return { codigo: null, clave: c };
   }
 
-  /** Una conexión abierta cuenta como conectada: se anota, sin escribir el disco en cada latido. */
+  /**
+   * Una conexión abierta cuenta como conectada: se anota en memoria en cada revisión, y el disco se escribe cuando pasó
+   * más de una hora desde la última escritura. Así la hora que sobrevive a un reinicio tiene a lo sumo una hora.
+   */
   function tocar(fingerprint) {
     const c = doc.claves[fingerprint];
     if (!c || c.estado !== 'aprobada') return;
     const t = ahora();
-    const antes = c.ultimaConexion || 0;
     c.ultimaConexion = t;
-    if (t - antes > HORA) guardar();
+    if (t - guardadoEl > HORA && t - tocarIntentoEl > HORA) { tocarIntentoEl = t; guardar(); }
+  }
+
+  /** Las máquinas aprobadas, no de baja, con su última conexión desde `desde`: las que estaban conectadas. */
+  function recientes(desde) {
+    const out = new Set();
+    for (const c of Object.values(doc.claves)) {
+      if (c.estado === 'aprobada' && c.maquina && !doc.bajas[c.maquina] && (c.ultimaConexion || 0) >= desde) out.add(c.maquina);
+    }
+    return [...out].sort();
   }
 
   function vencerClave(c, t) {
@@ -372,7 +388,7 @@ function crearLlaves({ dataDir, ahora = Date.now, log = () => {}, topes = {} }) 
   }
 
   return {
-    pedir, alConectar, tocar, vencer, emparejar, deBajaSegun, aprobar, rechazar, confirmarHuella, darDeBaja, reactivar, retirar, anotarDesplazamiento, borrarMarca, vista,
+    pedir, alConectar, tocar, recientes, vencer, emparejar, deBajaSegun, aprobar, rechazar, confirmarHuella, darDeBaja, reactivar, retirar, anotarDesplazamiento, borrarMarca, vista,
     clave: (fingerprint) => doc.claves[fingerprint] || null,
     deBaja: (maquina) => Boolean(doc.bajas[maquina]),
     copiada: (maquina) => Boolean(doc.marcas[maquina] && doc.marcas[maquina].copiada),

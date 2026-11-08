@@ -1072,8 +1072,10 @@ const CARPETA_CON_FECHA = /^v(\d{4})(\d{2})(\d{2})T\d{6}\d{3}Z$/;
  * El día: el de la carpeta con fecha; con el place.json suelto (la forma que deja el buzón), su `day` si es una fecha
  * real y no posterior a mañana; si no, la fecha del archivo. Una carpeta vieja que `.carpetas-de-maquina.json` (la
  * unión que deja el bajador) declara `unida` a su carpeta nueva no es otra fila; sin ese archivo, cada carpeta cuenta.
+ * `ocultas` (un Set de `people.hidden_machines`): no arman fila, ni su carpeta vieja unida. Como estas filas son las que
+ * `capaQueSube` mira, una oculta tampoco frena subir la versión mínima del arnés: no es parte del equipo.
  */
-function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), personas = null }) {
+function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), personas = null, ocultas = null }) {
   let maquinas = [];
   try { maquinas = fs.readdirSync(espejo, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name).sort(); } catch { return []; }
   // vieja → nueva; la vieja sale de la tabla sólo si su nueva tiene fila (abajo)
@@ -1095,6 +1097,7 @@ function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), person
   const esArchivo = (p) => { try { return fs.lstatSync(p).isFile(); } catch { return false; } };
   const out = [];
   for (const m of maquinas) {
+    if (ocultas && (ocultas.has(m) || (unidas.has(m) && ocultas.has(unidas.get(m))))) continue;
     const reg = path.join(espejo, m, 'registros');
     try { if (fs.lstatSync(reg).isSymbolicLink()) continue; } catch { /* sin registros: lo dice el listado de abajo */ }
     let carpetas = [];
@@ -2176,6 +2179,18 @@ ${trabajandoJs}
       render();
     });
   }
+  /** «No es del equipo», «Ocultar» y «Mostrar» de una máquina: revisa y deja en su renglón el pedido, como «Confirmar». */
+  function ocultarMaquina(s, d, maquina, accion) {
+    if (S.proponiendo[s.id]) return;
+    S.fila = { maquina: maquina, persona: '' };
+    S.notas[s.id] = null;
+    return revisarSeccion(s, { accion: accion, maquina: maquina, people: d.people }).then(function (r) {
+      if (!r || !r.ok || !S.fila || S.fila.maquina !== maquina) return;
+      S.marcas[s.id] = nuevaMarca();
+      S.notas[s.id] = { confirmar: true, ok: true, text: T(accion === 'show' ? 'pantalla.estoAbreUnPedidoMostrar' : 'pantalla.estoAbreUnPedidoOcultar', { maquina: maquina }) };
+      render();
+    });
+  }
   /** Lo de la confirmación en curso, para su renglón: la propuesta con su botón, «proponiendo…», o el resultado. */
   function resultadoDeLaFila(s) {
     var caja = el('div', { class: 'fila-resultado', role: 'status' });
@@ -2271,7 +2286,8 @@ ${trabajandoJs}
       var mia = enCurso && enCurso.maquina === m.maquina;
       var persona = el('input', { value: mia ? enCurso.persona : (m.correo || ''), placeholder: T('pantalla.correoDeLaPersona'), 'aria-label': T('pantalla.correoDeLaPersona2') });
       var li = el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? T('pantalla.diceSerDe') + m.correo : T('pantalla.noDiceDeQuienEs')) + T('pantalla.ultimaNoticia') + (m.dia || T('pantalla.sinFecha')) + ' · ' + (m.corridas == null ? T('pantalla.corridasSinContar') : m.corridas + (m.corridas === 1 ? T('pantalla.unaCorrida') : T('pantalla.corridas'))) }),
-        el('span', { class: 'acc' }, persona, botonQueTrabaja('confirmar:' + m.maquina, T('pantalla.revisando'), { text: T('pantalla.confirmar') }, function () { return confirmarMaquina(s, d, m.maquina, valorDe(persona)); }, { muestraSuError: true })));
+        el('span', { class: 'acc' }, persona, botonQueTrabaja('confirmar:' + m.maquina, T('pantalla.revisando'), { text: T('pantalla.confirmar') }, function () { return confirmarMaquina(s, d, m.maquina, valorDe(persona)); }, { muestraSuError: true }),
+          botonQueTrabaja('no-es:' + m.maquina, T('pantalla.revisando'), { class: 'sec', text: T('pantalla.noEsDelEquipo') }, function () { return ocultarMaquina(s, d, m.maquina, 'not_team'); }, { muestraSuError: true })));
       if (mia) li.appendChild(resultadoDeLaFila(s));
       pc.appendChild(li);
     });
@@ -2286,12 +2302,28 @@ ${trabajandoJs}
       box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.sinActividad') + ex.sinActividad.length + ')' }),
         el('p', { class: 'muted', text: T('pantalla.carpetasDelBuzonQueNunca') }), sa));
     }
+    // las ocultas: no se ven en ningún lado del sitio; «Mostrar» las devuelve (la confirmada, confirmada)
+    var ocultas = ex.ocultas || [];
+    var deOcultas = {};
+    ocultas.forEach(function (m) { deOcultas[m.maquina] = true; });
+    if (ocultas.length) {
+      var ol = el('ul', { class: 'renglones' });
+      ocultas.forEach(function (m) {
+        var oli = el('li', {}, el('span', { class: 'quien', text: m.maquina }),
+          el('span', { class: 'dato', text: T(m.razon === 'not_team' ? 'pantalla.noEsDelEquipoDato' : 'pantalla.ocultaDato') + T('pantalla.ocultadaPor') + (m.por || T('pantalla.sinDato')) + T('pantalla.el') + (m.el || T('pantalla.sinFecha')) }),
+          el('span', { class: 'acc' }, botonQueTrabaja('mostrar:' + m.maquina, T('pantalla.revisando'), { class: 'sec', text: T('pantalla.mostrar') }, function () { return ocultarMaquina(s, d, m.maquina, 'show'); }, { muestraSuError: true })));
+        ol.appendChild(oli);
+      });
+      box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.ocultas') + ocultas.length + ')' }), ol));
+    }
     if (ex.oficinas) box.appendChild(bloqueOficinas(s, ex.oficinas));
     var machines = d.people.machines || {};
     var conf = el('ul', { class: 'renglones' });
     Object.keys(machines).forEach(function (m) {
       var e = machines[m] || {};
-      var li = el('li', {}, el('span', { class: 'quien', text: m }), el('span', { class: 'dato', text: T('pantalla.de') + (e.person || T('pantalla.sinPersona')) + T('pantalla.confirmadaPor2') + (e.confirmed_by || T('pantalla.sinDato')) + T('pantalla.el') + (e.confirmed_on || T('pantalla.sinFecha')) }), el('span', { class: 'acc' }, quitar(function () { delete machines[m]; if (!Object.keys(machines).length) delete d.people.machines; render(); })));
+      if (deOcultas[m]) return;
+      var li = el('li', {}, el('span', { class: 'quien', text: m }), el('span', { class: 'dato', text: T('pantalla.de') + (e.person || T('pantalla.sinPersona')) + T('pantalla.confirmadaPor2') + (e.confirmed_by || T('pantalla.sinDato')) + T('pantalla.el') + (e.confirmed_on || T('pantalla.sinFecha')) }),
+        el('span', { class: 'acc' }, botonQueTrabaja('ocultar:' + m, T('pantalla.revisando'), { class: 'sec', text: T('pantalla.ocultar') }, function () { return ocultarMaquina(s, d, m, 'hide'); }, { muestraSuError: true }), quitar(function () { delete machines[m]; if (!Object.keys(machines).length) delete d.people.machines; render(); })));
       problemasEn(pr, 'people.machines.' + m).concat(problemasEn(pr, 'people.machines.' + m + '.confirmed_on')).forEach(function (x) { li.appendChild(el('span', { class: 'err', text: x.message })); });
       conf.appendChild(li);
     });

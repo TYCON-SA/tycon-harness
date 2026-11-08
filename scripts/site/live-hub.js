@@ -43,7 +43,9 @@ const TOPES = Object.freeze({
   charlasPorOficina: 30, bytesCharlasPorOficina: 1024 * 1024,
 });
 // latidoNavegadorMs: el sitio le escribe a cada navegador aunque nada cambie, así la página se entera de una conexión muerta
-const PLAZOS = Object.freeze({ saludoMs: 5000, cierreMs: 2000, repartoMs: 500, revisionMs: 60000, sinLatidoMs: 3 * 60 * 1000, fotoMs: 24 * 60 * 60 * 1000, latidoNavegadorMs: 25000 });
+// reconectandoMs: después de un reinicio, cuánto se ve «reconectando» una máquina que estaba (las máquinas reintentan en
+// menos de 5 minutos); estabaMs: qué tan reciente tiene que ser su última conexión en disco (se escribe cada hora)
+const PLAZOS = Object.freeze({ saludoMs: 5000, cierreMs: 2000, repartoMs: 500, revisionMs: 60000, sinLatidoMs: 3 * 60 * 1000, fotoMs: 24 * 60 * 60 * 1000, latidoNavegadorMs: 25000, reconectandoMs: 10 * 60 * 1000, estabaMs: 2 * 60 * 60 * 1000 });
 const CIERRE_MUY_GRANDE = 1009;
 const CIERRE_PROBA_DESPUES = 1013;
 const NONCE_BYTES = 32;
@@ -162,8 +164,19 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     const config = fuentes.config();
     return access.crearReglas({ config, modelo: fuentes.modelo ? fuentes.modelo() : {}, personas: fuentes.personas ? fuentes.personas() : null });
   };
-  // sin saber quién es quién, «no sé» no es «desconfirmada»: pasa tras un reinicio, hasta leer el buzón
-  const desconfirmada = (reglas, id) => reglas.quienEsQuienMedido && reglas.maquina(id).estado !== 'confirmada';
+  // sin saber quién es quién, «no sé» no es «desconfirmada»: pasa tras un reinicio, hasta leer el buzón. Una oculta sí
+  // se sabe sin eso (sale de la configuración): se corta igual
+  const oculta = (reglas, id) => Boolean(reglas.oculta) && reglas.oculta(id);
+  const desconfirmada = (reglas, id) => oculta(reglas, id) || (reglas.quienEsQuienMedido && reglas.maquina(id).estado !== 'confirmada');
+  // las máquinas que estaban conectadas antes de arrancar (lo único que sobrevive: la hora de las claves en disco); por
+  // un rato se ven «reconectando» en vez de desaparecer
+  // (las de la foto del arranque, cruzadas en cada reparto con las claves vigentes: una clave retirada o vencida en el
+  // rato deja de contar, y una máquina que recién conectó después del arranque no entra)
+  const arranque = ahora();
+  const recientesDesde = () => new Set(llaves.recientes ? llaves.recientes(arranque - P.estabaMs) : []);
+  const alArrancar = recientesDesde();
+  const estaban = () => { const vigentes = recientesDesde(); return [...alArrancar].filter((id) => vigentes.has(id)); };
+  const reconectandoAhora = () => ahora() - arranque < P.reconectandoMs;
   const visibilidadAhora = () => {
     const site = (fuentes.config() || {}).site;
     return (site && site.offices && site.offices.visibility) || 'maintainers';
@@ -190,19 +203,28 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     if (!navegadores.size) return;
     const reglas = reglasAhora();
     const perilla = visibilidadAhora();
+    // las que estaban antes del reinicio y todavía no volvieron, mientras dura el rato (ni de baja, ni desconfirmadas)
+    const volviendo = reconectandoAhora() ? estaban().filter((id) => !oficinas.has(id) && !llaves.deBajaSegun(id, reglas) && !desconfirmada(reglas, id)) : [];
     for (const nav of navegadores) {
       const ve = access.oficinasQueVe(nav.quien, reglas, perilla);
       const mantiene = nav.quien.rol === 'maintainer';
       const cambiadas = [];
       const fuera = [];
+      const visibles = new Set();
       for (const [id, o] of oficinas) {
         if (ve(id)) {
+          visibles.add(id);
           const firma = `${o.version}|${o.sinConexionDesde}|${o.fotoVieja}|${maquinas.has(id)}|${mantiene}|${mantiene && llaves.copiada(id)}|${mantiene ? reglas.maquina(id).person : ''}`;
           if (nav.vistas.get(id) !== firma) { nav.vistas.set(id, firma); cambiadas.push(oficinaPara(id, o, mantiene, reglas)); }
         }
       }
+      for (const id of volviendo) {
+        if (!ve(id)) continue;
+        visibles.add(id);
+        if (nav.vistas.get(id) !== 'reconectando') { nav.vistas.set(id, 'reconectando'); cambiadas.push({ id, reconectando: true, conectada: false, marcas: [], ...(mantiene ? { person: reglas.maquina(id).person || null } : {}) }); }
+      }
       for (const id of nav.vistas.keys()) {
-        if (!oficinas.has(id) || !ve(id)) { nav.vistas.delete(id); fuera.push(id); }
+        if (!visibles.has(id)) { nav.vistas.delete(id); fuera.push(id); }
       }
       if (nav.entera) { nav.entera = false; mandar(nav, { type: 'oficinas', entera: true, oficinas: cambiadas, fuera: [] }); continue; }
       if (cambiadas.length || fuera.length) mandar(nav, { type: 'oficinas', oficinas: cambiadas, fuera });

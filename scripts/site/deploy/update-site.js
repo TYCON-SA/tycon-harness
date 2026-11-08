@@ -59,8 +59,20 @@ const MOTIVOS = Object.freeze([
   'no se pudieron comparar las versiones',
   'la imagen que corre cambió durante la ejecución',
   'no se pudo leer el estado del actualizador',
+  'instalado por etiqueta',
 ]);
 const HUELLA = /^sha256:[0-9a-f]{64}$/;
+// la imagen que corre está fijada por una etiqueta, no por huella: la actualización no la puede comparar ni cambiar sin
+// pisar lo que alguien instaló a mano, así que lo dice con qué hacer (el sitio lo muestra a quien lo administra)
+const POR_ETIQUETA = 'instalado por etiqueta: fijalo por huella (con la imagen <registro/repo>@sha256:…) para que se actualice solo';
+// un nombre de imagen con etiqueta: `[registro[:puerto]/]repo:etiqueta`, sin huella; otra salida no se adivina
+const CON_ETIQUETA = /^(?:[a-z0-9.-]+(?::\d+)?\/)?[a-z0-9]+(?:[._/-][a-z0-9]+)*:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/;
+/** Lo que dijo la plataforma sobre la imagen que corre, sin huella: por etiqueta (un nombre de imagen) u otra falla. */
+const sinHuella = (r) => {
+  const s = String((r && r.stdout) || '').trim();
+  // una huella cortada (`sha256:…`) tiene la forma de un nombre con etiqueta, y no lo es
+  return CON_ETIQUETA.test(s) && !/^sha256:/.test(s) ? POR_ETIQUETA : 'no se pudo leer la imagen que corre (no está fijada por huella)';
+};
 
 const dia = (t) => new Date(t).toISOString().slice(0, 10);
 /** Lo que recuerda el actualizador. Sin el archivo, vacío; un archivo que no se lee es `ilegible` (y no se pisa). */
@@ -112,7 +124,7 @@ function plataformaDe(o) {
       actual() {
         const r = correr(['containerapp', 'show', '-g', a.grupo, '-n', a.app, '--query', 'properties.template.containers[0].image', '-o', 'tsv', ...sub]);
         const h = r && r.status === 0 ? huellaDe(r.stdout) : null;
-        return h ? { huella: h } : { error: `no se pudo leer la imagen que corre (${r && r.status === 0 ? 'no está fijada por huella' : breve(r)})` };
+        return h ? { huella: h } : { error: r && r.status === 0 ? sinHuella(r) : `no se pudo leer la imagen que corre (${breve(r)})` };
       },
       aplicar(ref) {
         const r = correr(['containerapp', 'update', '-g', a.grupo, '-n', a.app, '--image', ref, '-o', 'none', ...sub]);
@@ -152,7 +164,7 @@ function plataformaDe(o) {
         if (!id) return { error: `no se pudo leer la imagen que corre (${ps && ps.status === 0 ? 'el contenedor no corre' : breve(ps)})` };
         const r = correr(['inspect', '--format', '{{.Config.Image}}', id]);
         const h = r && r.status === 0 ? huellaDe(r.stdout) : null;
-        return h ? { huella: h } : { error: `no se pudo leer la imagen que corre (${r && r.status === 0 ? 'no está fijada por huella' : breve(r)})` };
+        return h ? { huella: h } : { error: r && r.status === 0 ? sinHuella(r) : `no se pudo leer la imagen que corre (${breve(r)})` };
       },
       aplicar(ref) {
         const env = { ...process.env, SITE_IMAGE: ref };
