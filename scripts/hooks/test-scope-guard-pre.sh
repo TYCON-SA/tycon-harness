@@ -174,7 +174,15 @@ fi
 # o en el corte simple sin Node. Un prefijo de más (el comando pasaría sin él) o un texto que lo nombra no la escriben.
 # La revisión nocturna cuenta el prefijo leyendo la conversación, no esta línea.
 anotar_full_suite() {
-  local dir="$HOME/.claude/.tycon-pipeline"
+  # la carpeta del estado, con la regla de tycon-home.js (scripts/lib/state-dir.sh). Sin el ayudante (un árbol a medias)
+  # no se sabe dónde anotar: se dice por stderr, así el escape no queda sin constancia y sin aviso
+  local sd dir
+  sd="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/state-dir.sh"
+  if ! { [ -f "$sd" ] && . "$sd" 2>/dev/null; }; then
+    echo "⚠️  TYCON test-scope-guard: no anoté la suite completa en bypass.log: falta scripts/lib/state-dir.sh (el árbol del arnés está incompleto)" >&2
+    return 0
+  fi
+  dir="$(tycon_state_dir)"
   mkdir -p "$dir" 2>/dev/null || true
   printf '{"ts":"%s","type":"FULL_SUITE_RUN","command":%s}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(echo "$CMD" | head -c 300 | to_json_text)" \

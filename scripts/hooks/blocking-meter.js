@@ -36,7 +36,11 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const STATE_DIR = path.join(os.homedir(), '.claude', 'blocking-meter');
+// la carpeta de los registros sueltos (scripts/lib/loose-logs.js): la del estado en una máquina que vive en la casa
+// propia del arnés, la de siempre en las demás. Sin ella (un árbol sin tycon-home.js) el medidor no mide: `main` sale
+// antes de usar estas rutas.
+const LOOSE_DIR = (() => { try { return require('../lib/loose-logs.js').looseLogsDir(); } catch (_) { return null; } })();
+const STATE_DIR = path.join(LOOSE_DIR || '', 'blocking-meter');
 const LOG_PATH = path.join(STATE_DIR, 'log.jsonl');
 const PENDING_DIR = path.join(STATE_DIR, 'pending');
 const PROBE_PATH = path.join(STATE_DIR, 'input-shape.json');
@@ -264,6 +268,7 @@ function orgSwitchOn(name) {
 function main() {
   const args = process.argv.slice(2);
   if (args.includes('--selftest')) return selftest();
+  if (!LOOSE_DIR) { if (args.includes('--report')) console.log('No sé dónde están las mediciones: falta scripts/setup/harness/tycon-home.js en este árbol.'); return; }
   if (args.includes('--report')) return report(args.includes('--all'));
   if (process.env.TYCON_BLOCKING_METER === '0') return;
   if (!orgSwitchOn('blocking_meter')) return;

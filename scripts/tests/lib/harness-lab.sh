@@ -162,8 +162,12 @@ done
 [ "${LAB_APPLIER_NO_REPORT:-0}" = "1" ] && REPORT=""
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 S="${TYCON_SETTINGS_PATH:-$HOME/.claude/settings.json}"
+# el estado, como el real: con el ayudante del árbol si lo trae (scripts/lib/state-dir.sh, story 8.150)
 ST="$HOME/.claude/.tycon-pipeline"
-RUN_LINE="run check=$CHECK lock_held=${TYCON_HARNESS_LOCK_HELD:-} snapshot_dir=${TYCON_HARNESS_SNAPSHOT_DIR:-} shared_done=${TYCON_HARNESS_SHARED_DONE:-} git_bash_health=${TYCON_HARNESS_GIT_BASH_HEALTH:-} tree=$(cd "$AQUI/.." && pwd) version=$(cat "$AQUI/../VERSION" 2>/dev/null) at=$(date +%s)"
+[ -f "$AQUI/lib/state-dir.sh" ] && . "$AQUI/lib/state-dir.sh" && ST="$(tycon_state_dir)"
+# el modo sin Claude Code (story 8.150, tanda C): no toca la carpeta de Claude Code, sólo lo de fondo
+CLAUDE_OFF=0; [ "${TYCON_HARNESS_CLAUDE:-}" = off ] && CLAUDE_OFF=1
+RUN_LINE="run check=$CHECK lock_held=${TYCON_HARNESS_LOCK_HELD:-} snapshot_dir=${TYCON_HARNESS_SNAPSHOT_DIR:-} shared_done=${TYCON_HARNESS_SHARED_DONE:-} git_bash_health=${TYCON_HARNESS_GIT_BASH_HEALTH:-} claude=${TYCON_HARNESS_CLAUDE:-on} tree=$(cd "$AQUI/.." && pwd) version=$(cat "$AQUI/../VERSION" 2>/dev/null) at=$(date +%s)"
 # LAB_APPLIER_INTEG=1 (story 8.25, A1b · T10): anota lo que el aplicador REAL evalúa para registrar los hooks de las
 # integraciones —la salida de `tycon-config.js integrations` del árbol desde el que corre—: así se mide que el aplicador de
 # un arranque ya lee el perfil que ese mismo arranque refrescó
@@ -177,7 +181,8 @@ if [ "$CHECK" = "1" ]; then
   # --check no escribe nada en la HOME (story 8.7, AC 24; story 8.16, AC 3): su corrida se anota fuera, en el laboratorio
   [ -n "${LAB_APPLIER_CHECK_LOG:-}" ] && echo "$RUN_LINE" >> "$LAB_APPLIER_CHECK_LOG"
 else
-  mkdir -p "$ST" "$(dirname "$S")"
+  mkdir -p "$ST"
+  [ "$CLAUDE_OFF" = 1 ] || mkdir -p "$(dirname "$S")"
   echo "$RUN_LINE" >> "$ST/lab-applier.log"
 fi
 [ "${TYCON_NO_AUTOINSTALL:-0}" = "1" ] && exit 0   # como el real: apagado, sale sin escribir nada (ni reporte)
@@ -191,6 +196,21 @@ fi
 [ "$CHECK" = "1" ] && [ "${LAB_APPLIER_CHECK_FAIL:-0}" = "1" ] && { echo "lab-applier: --check FALLÓ a propósito" >&2; exit 1; }
 [ "$CHECK" = "1" ] && [ -n "${PLAN:-}" ] && [ "${LAB_APPLIER_BAD_PLAN:-0}" = "1" ] && { printf '{ roto\n' > "$PLAN"; exit 0; }   # plan-json
 [ "$CHECK" = "1" ] && [ -z "${PLAN:-}" ] && exit 0
+# sin Claude Code (story 8.150, tanda C): sólo el pre-push de juguete (con la marca del real, la que mira
+# git-hooks-path.js) y el sello del día; nada en la carpeta de Claude Code. Con --check, el plan con esa pieza.
+if [ "$CLAUDE_OFF" = 1 ]; then
+  GH="${TYCON_GIT_HOOKS_DIR:-$HOME/.git-hooks}"
+  PIECES="[]"; PLANNED="[]"
+  if [ "${TYCON_NO_GIT_HOOKS:-0}" != "1" ]; then
+    PIECES="[{\"kind\":\"git-hook\",\"where\":\"$GH/pre-push\",\"id\":\"pre-push\"}]"
+    PLANNED="[{\"kind\":\"git-hook\",\"where\":\"$GH/pre-push\",\"id\":\"pre-push\",\"action\":\"add\"}]"
+    if [ "$CHECK" != "1" ]; then mkdir -p "$GH"; printf '#!/usr/bin/env bash\n# git-pre-push-global.sh (de juguete)\nexit 0\n' > "$GH/pre-push"; chmod +x "$GH/pre-push"; fi
+  fi
+  if [ "$CHECK" = "1" ]; then printf '%s\n' "$PLANNED" > "$PLAN"; exit 0; fi
+  [ -n "$REPORT" ] && printf '%s\n' "$PIECES" > "$REPORT"
+  touch "$ST/lab-daily-$(date +%F)"
+  exit 0
+fi
 # >>> plan-json — lo mismo que haría abajo, como acciones, sin escribir nada más que el plan (story 8.16, AC 11). El
 # aplicador VIEJO de harness_lab_old_applier es este archivo sin las líneas que nombran la opción y sin este bloque.
 if [ "$CHECK" = "1" ]; then
@@ -417,6 +437,15 @@ harness() { node "$LAB_TREE/scripts/setup/harness.js" "$@"; }
 harness_lab_old_applier() {
   local f="$LAB_TREE/scripts/install-tycon-hooks.sh"
   sed -e '/# >>> plan-json/,/# <<< plan-json/d' -e '/plan-json/d' "$f" > "$f.old" && mv "$f.old" "$f" && chmod +x "$f"
+}
+
+# harness_lab_applier_without_claude_off [<árbol>]  — el aplicador de juguete pasa a ser uno anterior al modo sin Claude Code: no
+# nombra TYCON_HARNESS_CLAUDE y, sin Claude Code, haría todo como con él. Por defecto el árbol de LAB_TREE; para una
+# versión publicada, el del autor (LAB_AUTHOR_TREE) antes de harness_lab_publish_stable.
+harness_lab_applier_without_claude_off() {
+  local f="${1:-$LAB_TREE}/scripts/install-tycon-hooks.sh"
+  sed -e 's/^CLAUDE_OFF=0; .*$/CLAUDE_OFF=0/' -e 's/ claude=\${TYCON_HARNESS_CLAUDE:-on}/ claude=sin-modo/' "$f" > "$f.old" && mv "$f.old" "$f" && chmod +x "$f"
+  ! grep -q 'TYCON_HARNESS_CLAUDE' "$f"
 }
 
 # harness_lab_publish <tree|skills> <mensaje> [<archivo relativo> <contenido>]  — una versión nueva en el remoto

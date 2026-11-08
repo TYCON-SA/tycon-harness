@@ -154,6 +154,17 @@ function plan(ctx, state) {
     const p = path.join(claude, s.name);
     if (lexists(p)) keep.push(`${s.what} ${p}${s.dir ? `/ — para borrarlo: rm -rf "${p}"` : ''}`);
   }
+  // en una máquina que vive en la casa propia, los hooks guardan esos registros en la carpeta del estado
+  // (scripts/lib/loose-logs.js), y desinstalar la quita entera (harness.js uninstall): se dicen con ella
+  const goesWithState = [];
+  const TH = require('./tycon-home.js');
+  if (TH.livesInOwnHome(home)) {
+    const own = TH.ownStateDir(home);
+    for (const s of HOOK_STORES) {
+      const p = path.join(own, s.name);
+      if (lexists(p)) goesWithState.push(`${s.what} ${p}${s.dir ? '/' : ''} — se va con la carpeta del estado`);
+    }
+  }
   for (const k of dry.kept) if (!k.error) keep.push(k.why);
   keep.push('engram, sqlite3 y node: herramientas del sistema, cada una con su instalador');
   // el Node propio del arnés: se deja, como node, engram y sqlite3, con el comando para borrarlo
@@ -184,7 +195,7 @@ function plan(ctx, state) {
   if (rr.root) pointers = findPointers(rr.root);
   else keep.push('sin raíz de repos conocida (TYCON_REPOS_ROOT, o rutas.repos en ~/.claude/tycon.json): no busqué AGENTS.md puntero en los repos de producto');
 
-  return { remove, retry, failing: failing.map((k) => k.why), keep, review, pointers, tree, treeMissing, nothing: false, baseline: base.map, afterSha: base.after, stateFile, home };
+  return { remove, retry, failing: failing.map((k) => k.why), keep, goesWithState, review, pointers, tree, treeMissing, nothing: false, baseline: base.map, afterSha: base.after, stateFile, home };
 }
 
 /** Las piezas por archivo, en una línea cada uno: «settings.json (<ruta>): 38 hooks, la línea de arranque, env.X». */
@@ -233,6 +244,7 @@ function describePlan(p) {
   L.push('quita (sólo lo registrado):');
   for (const l of summarize(p.remove, { home: p.home })) L.push(`  - ${l}`);
   L.push(`  - el estado ${p.stateFile}`);
+  for (const l of p.goesWithState || []) L.push(`  - ${l}`);
   if (p.failing && p.failing.length) {
     L.push('no se pueden quitar ahora (se reintentan; si siguen fallando, quedan en el estado para otra ejecución):');
     for (const w of p.failing) L.push(`  ✗ ${w}`);

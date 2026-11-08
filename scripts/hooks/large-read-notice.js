@@ -15,7 +15,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const PENDING_DIR = path.join(os.homedir(), '.claude', 'lectura-grande', 'pending');
+// donde lo deja large-read-meter.js: la carpeta de los registros sueltos (scripts/lib/loose-logs.js); sin ella, null
+const LOOSE_DIR = (() => { try { return require('../lib/loose-logs.js').looseLogsDir(); } catch (_) { return null; } })();
+const PENDING_DIR = LOOSE_DIR ? path.join(LOOSE_DIR, 'lectura-grande', 'pending') : null;
 
 // 🔇 Sandbox de EVALS: las corridas del banco spawnean `claude -p` y cada hook UserPromptSubmit le
 // inyecta su reminder AL PROMPT del agente simulado, que lo lee como parte de la conversación. Eso
@@ -51,6 +53,7 @@ function main() {
   } catch { return; }
 
   const sessionId = event.session_id || event.sessionId || '_nosession';
+  if (!PENDING_DIR) return;
   const file = path.join(PENDING_DIR, `${sessionId}.json`);
   if (!fs.existsSync(file)) return;
 
