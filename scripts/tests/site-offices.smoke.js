@@ -10,7 +10,8 @@
 //
 //   node scripts/tests/site-offices.smoke.js [--shots <carpeta>]    sale 0 si todo pasó; 1 si algo no; 2 si no hay navegador
 //
-// Con --shots deja las capturas de cada estado. Sólo datos de juguete: ningún nombre real.
+// Con --shots deja las capturas de cada estado; con --card corre sólo la tarjeta de una persona y la tecla Espacio.
+// Sólo datos de juguete: ningún nombre real.
 
 const fs = require('fs');
 const path = require('path');
@@ -131,10 +132,12 @@ async function delSitio(browser) {
     await m.page.waitForFunction(() => !document.querySelector('.oficina.on'));
     check(await m.page.locator('.crewblock[data-id="maquina-b"]').isVisible() && await m.page.locator('#back').isHidden(), '«Volver a todas» vuelve');
 
-    // tocar una tarjeta agranda su oficina y abre a esa persona
+    // tocar una tarjeta abre la ventana de esa persona, como en la oficina local
     await m.page.locator('.crewblock[data-id="maquina-a"] .card', { hasText: 'Boro' }).click();
-    await m.page.waitForSelector('.oficina.on[data-id="maquina-a"] .panel3:not([hidden])', { timeout: ESPERA_MS });
-    check((await m.page.locator('.oficina.on .panel3 h3').innerText()) === 'Boro', 'tocar una tarjeta abre a esa persona');
+    await m.page.waitForSelector('#ventana:not([hidden])', { timeout: ESPERA_MS });
+    check((await m.page.locator('#ventana h3').innerText()) === 'Boro', 'tocar una tarjeta abre a esa persona');
+    await m.page.keyboard.press('Escape');
+    await m.page.waitForSelector('#ventana', { state: 'hidden' });
 
     // la política, en toda la visita de quien mantiene
     check((await sinFrenos(m.page)).length === 0, `la política no frenó nada: ${await sinFrenos(m.page)}`);
@@ -266,13 +269,60 @@ async function deLaDemo(browser) {
   } finally { await sitio.cerrar(); fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
+// E4: la tarjeta de una persona abre su ventana con la foto de SU oficina, y la página vuelve a la suya en el mismo
+// toque; Espacio abre la tarjeta como Enter. Sobre la demo: la foto de una oficina de ejemplo trae los tokens de una
+// persona y un kanban propio, que se ven sólo si la ventana leyó esa foto y que la página no tiene que quedarse.
+async function tarjetaYEspacio(browser) {
+  const dir = tmp('demo-tarjeta-');
+  const sitio = crearSitioDemo({ env: { SITE_DEMO: '1' }, dir, log: () => {} });
+  await sitio.iniciar();
+  await new Promise((r) => sitio.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${sitio.server.address().port}`;
+  try {
+    const d = await nuevaPagina(await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' }));
+    await d.page.route('**/offices/demo.json', async (route) => {
+      const res = await route.fetch();
+      const json = await res.json();
+      const ana = (json.oficinas || []).find((o) => o.id === 'mac-ana');
+      if (ana && ana.foto) {
+        ana.foto.tokens = { Eros: { contexto: '84k de 200k · 42 %', consumidos: 'Read 31k', agentes: 2 } };
+        ana.foto.kanban = { columnas: [{ id: 'curso', nombre: 'En curso', tarjetas: [{ titulo: 'sólo de la oficina de Ana' }] }] };
+      }
+      await route.fulfill({ response: res, json });
+    });
+    await d.page.goto(`${base}/offices`);
+    await d.page.waitForSelector('.crewblock[data-id="mac-ana"] .card', { timeout: ESPERA_MS });
+    const antes = await d.page.evaluate(() => JSON.stringify(window.tablero.kanban()));
+    await d.page.locator('.crewblock[data-id="mac-ana"] .card', { hasText: 'Eros' }).click();
+    await d.page.waitForSelector('#ventana:not([hidden])', { timeout: ESPERA_MS });
+    check((await d.page.locator('#ventana h3').innerText()) === 'Eros', 'E4: tocar la tarjeta de Eros abre su ventana');
+    check(/84k de 200k/.test(await d.page.locator('#ventana').innerText()), 'E4: la ventana lee la foto de su oficina (sus tokens)');
+    // con la ventana abierta, la página ya volvió a su foto: el cambio dura lo que tarda en abrirse
+    const abierta = await d.page.evaluate(() => JSON.stringify(window.tablero.kanban()));
+    check(abierta === antes && !/oficina de Ana/.test(abierta), `E4: la página vuelve a su foto al abrir la ventana (${antes} → ${abierta})`);
+    await d.page.keyboard.press('Escape');
+    await d.page.waitForSelector('#ventana', { state: 'hidden' });
+    await d.page.locator('.crewblock[data-id="mac-ana"] .card', { hasText: 'Gael' }).focus();
+    await d.page.keyboard.press('Space');
+    const abrio = await d.page.waitForSelector('#ventana:not([hidden])', { timeout: 5000 }).then(() => true, () => false);
+    check(abrio, 'E4: Espacio abre la ventana');
+    check(abrio && (await d.page.locator('#ventana h3').innerText()) === 'Gael', 'E4: Espacio abre la tarjeta de Gael');
+    check(d.problemas.length === 0, `E4: sin errores en la página: ${d.problemas.join(' | ')}`);
+    await d.context.close();
+  } finally { await sitio.cerrar(); fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
 async function main() {
   const playwright = PINNED_PW.load();
   if (!playwright) { console.error(`sin navegador: ${PINNED_PW.locate().why}`); return 2; }
   const browser = await playwright.chromium.launch({ args: ['--use-angle=swiftshader'] });
   try {
-    await delSitio(browser);
-    await deLaDemo(browser);
+    if (process.argv.includes('--card')) await tarjetaYEspacio(browser);
+    else {
+      await delSitio(browser);
+      await deLaDemo(browser);
+      await tarjetaYEspacio(browser);
+    }
   } catch (e) { await contarLoQueVieron(); throw e; } finally { await browser.close(); }
   if (fails.length) { console.log(`\n${fails.length} sin pasar`); return 1; }
   console.log('\ntodo pasó');
