@@ -479,6 +479,69 @@ test('T14 AdhocSet_SobreCupoAprobado_QuedaAnotadoQueLoEligioElDev @story-8.181 @
   assert.deepStrictEqual((({ sobreCupo, cupoPedido, eligio, maxFiles }) => [sobreCupo, cupoPedido, eligio, maxFiles])(JSON.parse(sigue.stdout)), [true, 9, 'persona', 9]);
 });
 
+// ── los topes del camino corto configurados por la organización (@story-8.182) ──────────────────────────────────────
+// `marker.js` corre desde una copia del arnés con su perfil: las claves sólo del perfil salen del perfil del árbol.
+const { copiaConPerfil } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'profile-harness-copy.js'));
+const markerDe = (arbol, home, sid, args) => spawnSync('node', [arbol.marker, ...args], {
+  encoding: 'utf8', env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid }),
+});
+const gatesDe = (home) => { try { return fs.readFileSync(path.join(estadoDe(home), 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
+
+// 🔴 Falla con: un carril sin número que guarda el 8 de fábrica en vez del tope de la organización.
+test('T17 AdhocSet_SinNumero_GuardaElTopeDeLaOrganizacion @story-8.182 @ac-15', (t) => {
+  const arbol = copiaConPerfil(t, { short_path: { max_files: 10 } });
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const r = markerDe(arbol, home, 'sess-a', ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","datos":"sin-cambio"}']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).maxFiles, 10);
+  assert.equal(declaracion(home, 'sess-a').maxFiles, 10);
+  // pedir 10 justos sigue siendo la firma común (la ventana alcanza); 11 ya no
+  const once = markerDe(arbol, home, 'sess-b', ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":11,"datos":"sin-cambio"}']);
+  assert.equal(once.status, 1, once.stderr);
+  assert.match(once.stderr, /sólo el click de la persona o su terminal/);
+  assert.equal(markerDe(arbol, home, 'sess-c', ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":10,"datos":"sin-cambio"}']).status, 0);
+});
+
+// 🔴 Falla con: bajar el tope en el perfil que achica o traba un carril ya abierto, o que le pide la firma de sobre cupo.
+test('T18 AdhocSet_CarrilAbierto_ConservaSuNumero @story-8.182 @ac-16', (t) => {
+  const arbol = copiaConPerfil(t, { short_path: { max_files: 5 } });
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  fs.mkdirSync(path.dirname(io.adhocPath(estadoDe(home), 'sess-a')), { recursive: true });
+  fs.writeFileSync(io.adhocPath(estadoDe(home), 'sess-a'), JSON.stringify({ reason: 'arreglo del sp de deudas', maxFiles: 8, files: [], datos: 'sin-cambio' }));
+  // volver a declararlo sin número: la firma común (con la ventana alcanza) y sigue con 8
+  const r = markerDe(arbol, home, 'sess-a', ['adhoc', 'set', '{"reason":"arreglo del sp de deudas, sigue"}']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).maxFiles, 8);
+  assert.ok(!gatesDe(home).some((g) => g.name === 'adhoc-lane:sobre-cupo-signed'), 'sin la firma de sobre cupo');
+  // y el portón de edición lo mide con su 8, no con el 5 del perfil
+  const repo = '/w/MiRepo';
+  const files = Array.from({ length: 6 }, (_, i) => `${repo}/src/f${i}.cs`);
+  const v = gate.computeStoryGate({ filePath: `${repo}/src/f6.cs`, stateDir: estadoDe(home), homeDir: home, repoRoot: repo, repoHasTycon: true, repoHasStories: false, marker: null, adhoc: { reason: 'x', maxFiles: 8, files } });
+  assert.equal(v.action, 'pass', 'seis archivos entran en su 8');
+});
+
+// 🔴 Falla con: un perfil ilegible que deja el freno sin tope, o que lo deja callado sin anotar nada.
+test('T19 Topes_LectorRoto_DaCincoYOcho @story-8.182 @ac-17', (t) => {
+  const arbol = copiaConPerfil(t, '{ "short_path": { "max_files": 3 ');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const estado = estadoDe(home);
+  const leidos = io.topesDelCaminoCorto({ arnes: arbol.raiz, stateDir: estado, sessionId: 'sess-a' });
+  assert.deepStrictEqual([leidos.delegado, leidos.maximo], [5, 8]);
+  const renglon = gatesDe(home).find((g) => g.name === 'short-path-caps');
+  assert.ok(renglon, 'queda en gates.log');
+  assert.match(renglon.reason, /5 y 8/);
+  // el guion, desde ese árbol, abre con el 8 de fábrica y lo anota
+  const r = markerDe(arbol, home, 'sess-b', ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","datos":"sin-cambio"}']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).maxFiles, 8);
+  assert.ok(gatesDe(home).filter((g) => g.name === 'short-path-caps').length >= 2, 'el guion también lo anota');
+  // un perfil sano con un valor fuera de rango: rige el de fábrica en esa clave y también queda anotado
+  const fuera = copiaConPerfil(t, { short_path: { max_files: 13 } });
+  const f = io.topesDelCaminoCorto({ arnes: fuera.raiz, stateDir: estado, sessionId: 'sess-c' });
+  assert.equal(f.maximo, 8);
+  assert.ok(gatesDe(home).some((g) => g.name === 'short-path-caps' && g.sessionId === 'sess-c'));
+});
+
 test('T15 AdhocClear_SobreCupo_AnotaLosArchivosTocados @story-8.181 @ac-6', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));

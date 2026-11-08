@@ -335,13 +335,27 @@ function deLaVuelta(palabras, m) {
   return { queHace: lineas, completo: ruta, fuente: texto };
 }
 
-/** El arreglo rápido: el cupo es lo que se firma; el motivo lo escribió la sesión y va como cita. */
-function delArreglo(palabras) {
+// Los topes cuando el que arma el cuadro no los pasa: la lectura de story-gate-io.js, o los de fábrica si no carga
+function topesLeidos() {
+  const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
+  try { return require(path.join(lib, 'story-gate-io.js')).topesDelCaminoCorto(); } catch (_) {
+    const g = require(path.join(lib, 'story-gate.js'));
+    return { delegado: g.DELEGATED_ADHOC_MAX_FILES, maximo: g.DEFAULT_ADHOC_MAX_FILES, origen: 'fabrica' };
+  }
+}
+
+/**
+ * El arreglo rápido: el cupo es lo que se firma; el motivo lo escribió la sesión y va como cita. Sin número, el cupo es
+ * el tope de la organización (`topes`, o la misma lectura que usan el guion y el freno): el cuadro dice lo que se abre.
+ */
+function delArreglo(palabras, topes = null) {
   if (!palabras || palabras[1] !== 'adhoc' || palabras[2] !== 'set') return null;
   let p = null;
   try { p = JSON.parse(palabras[3] || ''); } catch (_) { p = null; }
   if (!p || typeof p !== 'object') return null;
-  const cupo = Number.isFinite(Number(p.maxFiles)) && Number(p.maxFiles) > 0 ? `hasta ${Number(p.maxFiles)} archivos de implementación, sin pruebas ni guías` : 'el cupo de siempre (8 archivos de implementación, o el que ya tenía)';
+  const conNumero = Number.isFinite(Number(p.maxFiles)) && Number(p.maxFiles) > 0;
+  const maximo = conNumero ? null : (topes || topesLeidos()).maximo;
+  const cupo = conNumero ? `hasta ${Number(p.maxFiles)} archivos de implementación, sin pruebas ni guías` : `el cupo de la organización (${maximo} archivos de implementación, o el que ya tenía)`;
   const datos = { 'sin-cambio': 'La sesión declara que no cambia de dónde salen los datos ni quién los ve', cambian: 'La sesión declara que cambia de dónde salen los datos o quién los ve' }[p.datos];
   return { queHace: [`Abre un arreglo rápido sin historia, con ${cupo}`, ...(datos ? [datos] : [])], fuente: palabras[3], cita: String(p.reason || '') || null };
 }
@@ -385,7 +399,7 @@ function deLaDesignacion(firma, destino, cwd) {
   return { queHace: lineas, fuente: lineas.join('\n') };
 }
 
-function partesDe({ firma, palabras, cwd, marcador, estado, destino } = {}) {
+function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {}) {
   if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd);
   if (!palabras) return null;
   if (firma === 'plan-approval') return delPlan(palabras, marcador, { estado, destino });
@@ -393,7 +407,7 @@ function partesDe({ firma, palabras, cwd, marcador, estado, destino } = {}) {
   if (firma === 'manual-test') return deLaPruebaAMano(palabras, marcador);
   if (firma === 'critical-waiver') return delCritico(palabras, marcador);
   if (firma === 'extra-round') return deLaVuelta(palabras, marcador);
-  if (firma === 'adhoc-lane' || firma === 'adhoc-lane:sobre-cupo') return delArreglo(palabras);
+  if (firma === 'adhoc-lane' || firma === 'adhoc-lane:sobre-cupo') return delArreglo(palabras, topes);
   if (firma === 'adhoc-lane:datos' && estado && destino) return delFrenoDeDatos(palabras, estado, destino);
   return null;
 }

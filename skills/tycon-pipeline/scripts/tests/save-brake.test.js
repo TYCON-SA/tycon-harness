@@ -595,6 +595,28 @@ test('T22 SaveBrake_MasArchivosQueElCupo_NoGuarda @story-8.181 @ac-11', (t) => {
   assert.doesNotMatch(r.texto, /cupo mayor/);
 });
 
+// 🔴 Falla con: un carril sin número legible que se mide con el 8 de fábrica aunque la organización configuró otro tope, o
+// un mensaje que dice un número escrito a mano.
+test('T20 SaveBrake_MensajeDelTope_DiceElValor @story-8.182 @ac-18 — un carril sin número se mide con el tope de la organización', (t) => {
+  const io = require(path.join(SCRIPTS, 'lib', 'story-gate-io.js'));
+  const leer = io.topesDelCaminoCorto;
+  io.topesDelCaminoCorto = () => ({ delegado: 5, maximo: 10, origen: 'perfil' });
+  t.after(() => { io.topesDelCaminoCorto = leer; });
+  const d = repoConOrigin(t);
+  const h = home(t);
+  commitDeArchivos(d, 'a', 10);
+  carril(h, { maxFiles: null });
+  assert.equal(guardar(d, h) && elTope.test(guardar(d, h).texto || ''), false, 'diez archivos entran en un tope de 10');
+  commitDeArchivos(d, 'b', 1);
+  const r = guardar(d, h);
+  assert.ok(r && r.texto, JSON.stringify(r));
+  assert.match(r.texto, elTope);
+  assert.match(r.texto, /cupo 10\b/, 'dice el tope de la organización');
+  // con su número, el carril manda
+  carril(h, { maxFiles: 12 });
+  assert.doesNotMatch((guardar(d, h) || {}).texto || '', elTope);
+});
+
 test('T23 SaveBrake_ArchivoQueElConteoNoVio_TambienCuenta @story-8.181 @ac-11', (t) => {
   const d = repoConOrigin(t);
   const h = home(t);

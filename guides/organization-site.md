@@ -790,6 +790,16 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   sí, y su lista gana sobre la del perfil. La carpeta donde quedan las firmas del dueño es de cada máquina y no se pone acá.
   Queda en `team-profile.json` → `coordination.max_working` y `coordination.session_names`; la receta entera está en
   `guides/coordination.md`.
+- **Los topes del camino corto**: cuántos archivos de implementación puede cambiar un arreglo rápido sin historia. Dos
+  campos: lo que se abre sin una persona, la coordinadora por delegación o una pestaña sin permisos (de 1 a 6; sin valor,
+  5), y hasta dónde alcanza la firma común (de 1 a 12; sin valor, 8): más pide el click aparte de la persona. Subir el
+  primero deja más archivos sin revisores ni pase adversarial cuando el riesgo es normal; subir el segundo saca el click
+  aparte en arreglos más grandes. Lo sensible, el riesgo alto y el aviso a la persona no cambian, y el primero no puede
+  pasar del segundo. Un campo vacío saca la clave del perfil. **Esta sección nunca se aplica sola**, aunque la
+  organización tenga prendida «Los cambios de un mantenedor»: abre el pedido y lo aprueba una persona que no sea quien lo
+  propone. Si la rama principal del repo del perfil no exige un revisor así, «Proponer» queda apagado y dice por qué.
+  Ni la máquina ni una variable cambian los topes. Queda en `team-profile.json` → `short_path.coordinator_max_files` y
+  `short_path.max_files`; quién firma qué, en `guides/firmas-del-arnes.md`.
 - **La oficina de /office**: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que la oficina diga
   «sin novedades desde las HH:MM» (de 1 a 1440; sin valor, 15). Lo mide la página con su propio reloj, sin preguntarle
   nada a la máquina; una sesión en un paso largo sigue viva y sólo se marca callada. Queda en `team-profile.json` →

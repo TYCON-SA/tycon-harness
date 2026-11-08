@@ -812,6 +812,16 @@ be, to copy it and open the request by hand.
   itself, and its list wins over the profile's. The folder where the owner's signatures are left belongs to each
   machine and is not set here. It lives in `team-profile.json` → `coordination.max_working` and
   `coordination.session_names`; the whole recipe is in `guides/coordination.en.md`.
+- **The short path limits**: how many implementation files a quick fix without a story can change. Two fields: what
+  opens without a person, the coordinator by delegation or a tab without permissions (1 to 6; empty means 5), and how far
+  the regular signature goes (1 to 12; empty means 8): more needs the person's separate click. Raising the first leaves
+  more files without reviewers or the adversarial pass when the risk is normal; raising the second removes the separate
+  click on larger fixes. Sensitive files, high risk and the notice to the person do not change, and the first cannot
+  exceed the second. An empty field removes the key from the profile. **This section never applies by itself**, even if
+  the organization has «A maintainer's changes» turned on: it opens the request and a person other than the one who
+  proposes it approves it. If the profile repo's main branch does not require such a reviewer, «Propose» stays off and
+  says why. Neither the machine nor a variable changes the limits. It lives in `team-profile.json` →
+  `short_path.coordinator_max_files` and `short_path.max_files`; who signs what is in `guides/firmas-del-arnes.md`.
 - **The /office office**: how many minutes without news a working session has to go before the office says «no news
   since HH:MM» (1 to 1440; empty means 15). The page measures it with its own clock, without asking the machine
   anything; a session in a long step is still alive and is only marked as quiet. It lives in `team-profile.json` →

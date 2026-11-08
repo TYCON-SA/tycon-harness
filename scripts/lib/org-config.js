@@ -71,6 +71,10 @@ const SECCIONES = Object.freeze([
   // máquina, con su variable); un medidor se enciende o se apaga. La variable puesta en una máquina gana
   Object.freeze({ id: 'interruptores', titulo: 'Frenos y medidores', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['switches'], idCorto: 'profile', necesita: ['switches'] }),
   Object.freeze({ id: 'coordinacion', titulo: 'Las sesiones de cada máquina', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['coordination'], rutas: Object.freeze(['coordination.max_working', 'coordination.session_names']), idCorto: 'profile', necesita: ['coordination'] }),
+  // los topes de archivos del camino corto (short_path; valen sólo desde el perfil, dentro de su máximo). `noSeAplicaSola`:
+  // un cambio de esta sección nunca se completa solo con «los cambios de un mantenedor se aplican solos»: lo aprueba una
+  // persona que no sea quien lo propone (scripts/site/tabs/config.js lo calcula en el servidor con esta lista)
+  Object.freeze({ id: 'caminoCorto', titulo: 'Los topes del camino corto', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['short_path'], rutas: Object.freeze(['short_path.coordinator_max_files', 'short_path.max_files']), idCorto: 'profile', necesita: ['short_path'], noSeAplicaSola: true }),
   // cuándo la oficina de /office dice que una sesión que trabaja está callada
   Object.freeze({ id: 'oficina', titulo: 'La oficina de /office', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['office'], rutas: Object.freeze(['office.quiet_minutes']), idCorto: 'profile', necesita: ['office'] }),
   // cómo se pone al día el freno de producción de cada máquina (guard.update): con la contraseña de su persona
@@ -412,6 +416,12 @@ const SESSION_NAMES_SINCE = '2026.11.02.3';
  */
 const OFFICE_SINCE = '2026.11.02.10';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `short_path` en el perfil del equipo (los topes del camino corto).
+ * Provisoria hasta la etiqueta del merge que la trae, como SITE_SINCE: una versión que todavía no existe, para que el
+ * sitio frene de más en vez de dejar que una máquina anterior rechace el perfil entero.
+ */
+const SHORT_PATH_SINCE = '2026.11.08.99';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `approvals.signature_list` (la lista de lo que espera a la persona):
  * la etiqueta del merge que la trae, como LEVELS_SINCE. Un lector anterior la leería como una clave desconocida, y una
  * clave rota de `approvals` deja sin ninguna firma delegada.
@@ -480,7 +490,7 @@ function timeTrackingLayer({ layerText, actual, doc }) {
 function pedidasDelPerfil({ doc, actual }) {
   const cambia = (k) => !isObject(actual) || canonico(actual[k]) !== canonico(isObject(doc) ? doc[k] : undefined);
   // las claves del perfil que una versión anterior no sabe leer, con la versión que las lee y su mensaje
-  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite'], ['office', OFFICE_SINCE, 'org.capaSinOffice']]
+  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite'], ['office', OFFICE_SINCE, 'org.capaSinOffice'], ['short_path', SHORT_PATH_SINCE, 'org.capaSinShortPath']]
     .filter(([k]) => isObject(doc) && doc[k] !== undefined && cambia(k));
   // una clave nueva dentro de una sección que ya se leía: la pide sólo si el pedido la trae
   const firma = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_signing : undefined;
@@ -1702,6 +1712,7 @@ ${trabajandoJs}
     interruptores: { t: T('pantalla.interruptoresTitulo'), d: T('pantalla.interruptoresDescripcion'), corto: T('pantalla.interruptoresTitulo') },
     coordinacion: { t: T('pantalla.coordinacionTitulo'), d: T('pantalla.coordinacionDescripcion'), corto: T('pantalla.coordinacionTitulo') },
     oficina: { t: T('pantalla.oficinaTitulo'), d: T('pantalla.oficinaDescripcion'), corto: T('pantalla.oficinaTitulo') },
+    caminoCorto: { t: T('pantalla.caminoCortoTitulo'), d: T('pantalla.caminoCortoDescripcion'), corto: T('pantalla.caminoCortoTitulo') },
     frenoProduccion: { t: T('pantalla.frenoProduccionTitulo'), d: T('pantalla.frenoProduccionDescripcion'), corto: T('pantalla.frenoProduccionTitulo') },
     integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
     ado: { t: 'Azure DevOps', d: T('pantalla.laOrganizacionDeLaPlataforma', { plataforma: 'Azure DevOps' }), corto: 'Azure DevOps' },
@@ -1715,7 +1726,7 @@ ${trabajandoJs}
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'oficina', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial', 'revisionDelPlan', 'conQueRevisa'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'caminoCorto', 'oficina', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial', 'revisionDelPlan', 'conQueRevisa'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -2952,6 +2963,17 @@ ${trabajandoJs}
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.coordinacionAyuda') }));
     return box;
   }
+  // los dos topes del camino corto: un campo por tope, con su valor por defecto y su máximo; vacío saca la clave. El
+  // máximo y el cruce entre los dos los valida el mismo lector de la máquina al revisar
+  function editorCaminoCorto(s, d, pr) {
+    var sp = d.short_path || {};
+    var box = el('div', { class: 'pila' },
+      campo(T('pantalla.caminoCortoDelegado'), sp.coordinator_max_files, function (v) { hoja(d, 'short_path', 'coordinator_max_files', v === '' ? '' : numOTexto(v)); }, 'short_path.coordinator_max_files', pr, { inputmode: 'numeric' }),
+      campo(T('pantalla.caminoCortoMaximo'), sp.max_files, function (v) { hoja(d, 'short_path', 'max_files', v === '' ? '' : numOTexto(v)); }, 'short_path.max_files', pr, { inputmode: 'numeric' }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.caminoCortoAyuda') }));
+    box.appendChild(aviso('warn', T('pantalla.caminoCortoNoSeAplicaSola')));
+    return box;
+  }
   function editorOficina(s, d, pr) {
     var box = el('div', { class: 'pila' }, campo(T('pantalla.oficinaCallada'), (d.office || {}).quiet_minutes, function (v) { hoja(d, 'office', 'quiet_minutes', v === '' ? '' : numOTexto(v)); }, 'office.quiet_minutes', pr, { inputmode: 'numeric' }));
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.oficinaAyuda') }));
@@ -4081,7 +4103,7 @@ ${trabajandoJs}
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, revisionSemanal: editorRevisionSemanal, paseAdversarial: editorPaseAdversarial, revisionDelPlan: editorRevisionDelPlan, conQueRevisa: editorConQueRevisa, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, oficina: editorOficina, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, revisionSemanal: editorRevisionSemanal, paseAdversarial: editorPaseAdversarial, revisionDelPlan: editorRevisionDelPlan, conQueRevisa: editorConQueRevisa, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, caminoCorto: editorCaminoCorto, oficina: editorOficina, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -4356,7 +4378,9 @@ ${trabajandoJs}
     var n = S.notas[s.id];
     var prop = S.extras.proponer && S.extras.proponer[s.repo];
     // story 2.30: con una política con filtro de ruta, el estado del archivo de la sección manda sobre el del repo
-    if (prop && prop.porArchivo && prop.porArchivo[s.archivo]) prop = prop.porArchivo[s.archivo];
+    // una sección que nunca se aplica sola trae su propio estado, que manda sobre el del archivo
+    if (prop && prop.porSeccion && prop.porSeccion[s.id]) prop = prop.porSeccion[s.id];
+    else if (prop && prop.porArchivo && prop.porArchivo[s.archivo]) prop = prop.porArchivo[s.archivo];
     var habilitado = prop && prop.habilitado;
     // la confirmación de una máquina se dibuja en su renglón (editorPersonas): acá no va nada de ella.
     var enLaFila = s.id === 'personas' && !!S.fila;
@@ -4634,7 +4658,7 @@ ${trabajandoJs}
 
 module.exports = {
   extrasDeAprobaciones, nombreDeMaquina,
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, REVIEW_RUNNER_SINCE, PLAN_REVIEW_SINCE, DEEP_REVIEW_MATRIX_SINCE, REVIEW_SEVERITY_SINCE, WEEKLY_REVIEW_SINCE, STORY_INDEX_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SIGNATURE_LIST_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, REVIEW_RUNNER_SINCE, PLAN_REVIEW_SINCE, DEEP_REVIEW_MATRIX_SINCE, REVIEW_SEVERITY_SINCE, WEEKLY_REVIEW_SINCE, STORY_INDEX_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SHORT_PATH_SINCE, SIGNATURE_LIST_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,
