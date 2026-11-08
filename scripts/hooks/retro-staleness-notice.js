@@ -79,7 +79,9 @@ try {
   if (staleDays <= thresholdDays) process.exit(0);
 
   // Throttle 24h por máquina.
-  const stateFile = path.join(os.homedir(), '.claude', '.tycon-retro-staleness-last-notice');
+  // el sello va a la carpeta de los registros sueltos (scripts/lib/loose-logs.js); sin ella, el aviso sale sin sello
+  const looseDir = (() => { try { return require(path.join(__dirname, '..', 'lib', 'loose-logs.js')).looseLogsDir(); } catch { return null; } })();
+  const stateFile = looseDir ? path.join(looseDir, '.tycon-retro-staleness-last-notice') : null;
   try {
     const last = Number(fs.readFileSync(stateFile, 'utf8').trim());
     if (Number.isFinite(last) && Date.now() - last < 86400000) process.exit(0);

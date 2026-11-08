@@ -18,7 +18,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const PENDING_DIR = path.join(os.homedir(), '.claude', 'response-style', 'pending');
+// donde lo deja response-style-meter.js: la carpeta de los registros sueltos (scripts/lib/loose-logs.js); sin ella, null
+const LOOSE_DIR = (() => { try { return require('../lib/loose-logs.js').looseLogsDir(); } catch (_) { return null; } })();
+const PENDING_DIR = LOOSE_DIR ? path.join(LOOSE_DIR, 'response-style', 'pending') : null;
 
 function emitReminder(text) {
   process.stdout.write(`<system-reminder>\n${text.trim()}\n</system-reminder>\n`);
@@ -51,6 +53,7 @@ function main() {
   } catch { return; }
 
   const sessionId = event.session_id || event.sessionId || '_nosession';
+  if (!PENDING_DIR) return;
   const file = path.join(PENDING_DIR, `${sessionId}.json`);
   if (!fs.existsSync(file)) return;
 

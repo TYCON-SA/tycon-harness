@@ -47,7 +47,10 @@ const { spawnSync } = require('child_process');
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 // Observations son LOCALES por máquina (no van al repo).
 // Setup 50/50 multi-máquina: cada máquina analiza su propio JSONL.
-const OBS_DIR = process.env.TYCON_INSTINCT_OBS_DIR || path.join(os.homedir(), '.claude', 'tycon-observations');
+// Dónde: la carpeta de los registros sueltos (scripts/lib/loose-logs.js), la misma en la que graba la grabadora.
+// Sin esa carpeta (un árbol sin tycon-home.js) no hay observaciones que leer.
+const OBS_DIR = process.env.TYCON_INSTINCT_OBS_DIR
+  || (() => { try { const d = require('../lib/loose-logs.js').looseLogsDir(); return d ? path.join(d, 'tycon-observations') : null; } catch (_) { return null; } })();
 // Pending/promoted/archived/drafts viven en el buzón: `inbox/instincts/` del árbol si el árbol lo trae (ahí cruzan
 // máquinas vía git), o la casa de la persona si no (un arnés instalado, la copia pública). `descartados/` es lo que la
 // revisión descartó por repetir algo que ya existe: constancia local para quien revisa en esta máquina.
@@ -102,6 +105,7 @@ function monthsToRead() {
 
 function loadObservations() {
   const obs = [];
+  if (!OBS_DIR) return obs;
   for (const month of monthsToRead()) {
     const p = path.join(OBS_DIR, `${month}.jsonl`);
     if (!fs.existsSync(p)) continue;
@@ -1193,7 +1197,7 @@ function main() {
 module.exports = {
   buildPrompt, catalogoDetallado, instintosYaDecididos, topeDecididos, promptDeRevision, leerRevision,
   citaVerificada, decidirDescarte, contextoOllama, migrarDescartadosViejos, maybeNotify,
-  extractYamlArray, instinctHash, existingHashes,
+  extractYamlArray, instinctHash, existingHashes, loadObservations,
 };
 
 if (require.main === module) main();

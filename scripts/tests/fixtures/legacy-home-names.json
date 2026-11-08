@@ -9,6 +9,13 @@
       "retired_by": "8.24"
     },
     {
+      "path": "scripts/lib/state-dir.sh",
+      "why": "la misma definición que tycon-home.js, dicha en shell para los hooks que no pueden pagar el arranque de Node en cada comando (story 8.150): la única copia de la ruta en shell; su paridad con tycon-home.js la mide scripts/tests/state-dir-parity.test.js",
+      "retire_with": "8.23 tanda E (el nombre viejo sale)",
+      "retire_after": "2026-12-07",
+      "retired_by": "8.24"
+    },
+    {
       "path": "scripts/setup/harness/bootstrap.js",
       "why": "la copia fija de arranque: corre fuera del árbol y no hace ningún require del árbol (lo durable no viaja por el camino roto)",
       "retire_with": "8.23 tanda D (la mudanza) y tanda E",

@@ -155,6 +155,9 @@ function namedStores(file) {
   const names = new Set();
   for (const m of text.matchAll(/homedir\(\),\s*'\.claude',\s*'([^']+)'/g)) names.add(m[1]);
   for (const m of text.matchAll(/HOME\/\.claude\/([A-Za-z0-9._-]+)/g)) names.add(m[1]);
+  // la carpeta pedida a scripts/lib/loose-logs.js: la de siempre, ~/.claude/<nombre>, en una máquina
+  // que no vive en la casa propia
+  for (const m of text.matchAll(/path\.join\(\s*LOOSE_DIR(?:\s*\|\|\s*'')?\s*,\s*'([^']+)'/g)) names.add(m[1]);
   return [...names].filter((n) => !NOT_A_STORE.includes(n));
 }
 

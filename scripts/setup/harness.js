@@ -584,8 +584,12 @@ function runApplierOnly(ctx, treeGiven, { log, snapshotDir = null, tools = undef
   const hn = ensureHarnessNode(ctx, tree, log);
   const withClaude = !tools || tools.includes('claude');
   const withCodex = Boolean(tools && tools.includes('codex'));
-  const a = withClaude
-    ? runClaudeApplier(ctx, tree, { log, snapshotDir, codex: tools ? (withCodex ? 'done' : 'off') : null, env: hn.env })
+  // sin Claude Code el aplicador corre en su modo sin Claude Code (lo de fondo: los hooks de git, el buzón, la
+  // recolección; nada en la carpeta de Claude Code). No corre, como antes, en Windows (el .ps1 todavía no tiene ese modo)
+  // ni con un árbol cuyo aplicador no lo conoce (una vuelta atrás, `install --version` de una anterior): ése instalaría
+  // todo Claude Code
+  const a = withClaude || (!isWin(ctx) && applierKnowsClaudeOff(applierPath(ctx, tree)))
+    ? runClaudeApplier(ctx, tree, { log, snapshotDir, codex: tools ? (withCodex ? 'done' : 'off') : null, env: hn.env, claude: withClaude })
     : { ok: true, status: 0, out: '', report: [], shared: [], warnings: [], reason: null };
   a.harnessNode = hn.result;
   if (!a.ok || !withCodex) return a;
@@ -598,7 +602,17 @@ function runApplierOnly(ctx, treeGiven, { log, snapshotDir = null, tools = undef
   return a;
 }
 
-function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, env: baseEnv = ctx.env }) {
+/** Variable con que se le dice al aplicador que la máquina no tiene Claude Code: `off` (lo de fondo, y nada en la carpeta de Claude Code). */
+const CLAUDE_BY_HARNESS_ENV = 'TYCON_HARNESS_CLAUDE';
+/** ¿El aplicador del árbol conoce el modo sin Claude Code? Uno anterior no nombra la variable y la ignoraría. */
+function applierKnowsClaudeOff(script) {
+  try { return fs.readFileSync(script, 'utf8').includes(CLAUDE_BY_HARNESS_ENV); } catch (_) { return false; }
+}
+/**
+ * `claude: false` corre el aplicador en su modo sin Claude Code: sin piezas compartidas ni reglas de lectura (son de
+ * settings.json) y con `TYCON_HARNESS_SHARED_DONE=1`, para que él tampoco las haga.
+ */
+function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, env: baseEnv = ctx.env, claude = true }) {
   const script = applierPath(ctx, tree);
   if (!fs.existsSync(script)) return { ok: false, status: null, out: '', report: null, shared: [], reason: `sin aplicador en ${script}` };
   // Un clon de Windows anterior a `.gitattributes` conserva `\r\n` en lo que el pull no toca, y un
@@ -626,7 +640,9 @@ function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, en
   // lo de Codex: `done` = lo enchufa este programa, salteá tu bloque; `off` = esta máquina no lo
   // enchufa. Nunca se hereda de quien nos lanzó: sin lista de herramientas escrita, el aplicador decide como siempre
   if (codex) env[CODEX_BY_HARNESS_ENV] = codex; else delete env[CODEX_BY_HARNESS_ENV];
-  const settingsThere = fs.existsSync(settingsPath(ctx));
+  // el modo sin Claude Code tampoco se hereda: sólo lo pone quien sabe que la máquina no lo tiene
+  if (claude) delete env[CLAUDE_BY_HARNESS_ENV]; else { env[CLAUDE_BY_HARNESS_ENV] = 'off'; env[SHARED_DONE_ENV] = '1'; }
+  const settingsThere = claude && fs.existsSync(settingsPath(ctx));
   // las reglas de lectura van después del aplicador (crea los enlaces que cubren): acá, sin ellas
   let shared = settingsThere ? sharedPieces(ctx, tree, { log, snapshotDir, reads: false }) : null;
   if (shared) env[SHARED_DONE_ENV] = '1';
@@ -656,9 +672,9 @@ function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, en
     } else if (ok && log) log('aplicador: salió 0 sin escribir el reporte de piezas (el registro queda como estaba)');
     try { fs.rmSync(reportDir, { recursive: true, force: true }); } catch (_) { /* el temporal ya no está */ }
   }
-  if (!settingsThere && ok) shared = sharedPieces(ctx, tree, { log, snapshotDir, reads: false });
+  if (claude && !settingsThere && ok) shared = sharedPieces(ctx, tree, { log, snapshotDir, reads: false });
   // las reglas de lectura del arnés, con los enlaces ya hechos; van con las compartidas al registro
-  const reads = ok ? readPieces(ctx, tree, { log, snapshotDir }) : { pieces: [], notes: [] };
+  const reads = ok && claude ? readPieces(ctx, tree, { log, snapshotDir }) : { pieces: [], notes: [] };
   if (ok) shared = [...(shared || []), ...reads.pieces];
   // los avisos del aplicador para la persona: el registro se queda con las últimas tres líneas, y un
   // aviso de más arriba se perdería; `install` los repite tal cual
@@ -697,14 +713,21 @@ function applierKnowsPlan(script) {
  */
 function applierPlan(ctx, tree) {
   if (ctx.env.TYCON_NO_AUTOINSTALL === '1') return { ok: true, known: true, pieces: [], off: true };
-  // una máquina que no enchufa a Claude Code no corre el aplicador, tampoco para preguntarle su plan
+  // una máquina que no enchufa a Claude Code pregunta el plan del modo sin Claude Code (los hooks de git); en Windows
+  // ese modo no existe todavía y el aplicador no corre, tampoco para preguntarle su plan
+  let claudeOff = false;
   {
     const st = loadState(ctx);
     const T = mod('tools');
-    if (st.state && T.recorded(st.state) && !T.plugged(st.state, { home: ctx.home, env: ctx.env }).includes('claude')) return { ok: true, known: true, pieces: [] };
+    if (st.state && T.recorded(st.state) && !T.plugged(st.state, { home: ctx.home, env: ctx.env }).includes('claude')) {
+      if (isWin(ctx)) return { ok: true, known: true, pieces: [] };
+      claudeOff = true;
+    }
   }
   const script = applierPath(ctx, tree);
   if (!fs.existsSync(script)) return { ok: false, reason: `sin aplicador en ${script}` };
+  // un aplicador que no conoce el modo sin Claude Code no corre en una máquina sin Claude Code: su plan es vacío
+  if (claudeOff && !applierKnowsClaudeOff(script)) return { ok: true, known: true, pieces: [] };
   if (!applierKnowsPlan(script)) return { ok: true, known: false, pieces: [] };
   // el mismo paso que antes de aplicar: un aplicador con `\r\n` (un clon de Windows viejo) no corre ni para dar su plan
   normalizeTreeEol(ctx, tree);
@@ -713,7 +736,8 @@ function applierPlan(ctx, tree) {
   const file = path.join(dir, 'plan.json');
   // el plan es el de una corrida suelta: nada de lo que un padre le pasaría a una instalación de verdad
   const env = Object.assign({}, ctx.env);
-  for (const k of ['TYCON_HARNESS_LOCK_HELD', 'TYCON_HARNESS_SNAPSHOT_DIR', SHARED_DONE_ENV, CODEX_BY_HARNESS_ENV, 'TYCON_REPORT_PIECES', 'TYCON_PLAN_PIECES']) delete env[k];
+  for (const k of ['TYCON_HARNESS_LOCK_HELD', 'TYCON_HARNESS_SNAPSHOT_DIR', SHARED_DONE_ENV, CODEX_BY_HARNESS_ENV, CLAUDE_BY_HARNESS_ENV, 'TYCON_REPORT_PIECES', 'TYCON_PLAN_PIECES']) delete env[k];
+  if (claudeOff) env[CLAUDE_BY_HARNESS_ENV] = 'off';
   const [bin, args] = isWin(ctx)
     ? ['pwsh', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Check', '-PlanJson', file]]
     : ['bash', [script, '--check', '--plan-json', file]];
@@ -4800,7 +4824,9 @@ function cmdUninstall(ctx) {
           lines.push(`quitado: ${own.versions}`);
         }
       } catch (e) { lines.push(`no pude quitar todo ${own.versions} (${e.code || e.message}): si un programa tiene abierta una versión, cerralo y borrala a mano`); }
-      for (const l of [linkPath(ctx.home), mod('tycon-home').installedSkillsDir(ctx.home)]) {
+      // también el enlace de la carpeta del estado de siempre al estado propio, el que deja sumar Claude Code a una máquina
+      // en la casa propia: con el estado propio quitado, quedaría colgado
+      for (const l of [linkPath(ctx.home), mod('tycon-home').installedSkillsDir(ctx.home), mod('tycon-home').legacyStateDir(ctx.home)]) {
         try {
           const st = fs.lstatSync(l);
           // a dónde APUNTA (readlink), no a dónde resuelve: con harness/ ya quitada el enlace cuelga y realpath no contesta

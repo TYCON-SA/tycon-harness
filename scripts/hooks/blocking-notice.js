@@ -16,7 +16,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const PENDING_DIR = path.join(os.homedir(), '.claude', 'blocking-meter', 'pending');
+// donde lo deja blocking-meter.js: la carpeta de los registros sueltos (scripts/lib/loose-logs.js); sin ella, null
+const LOOSE_DIR = (() => { try { return require('../lib/loose-logs.js').looseLogsDir(); } catch (_) { return null; } })();
+const PENDING_DIR = LOOSE_DIR ? path.join(LOOSE_DIR, 'blocking-meter', 'pending') : null;
 
 function fmt(ms) {
   if (ms >= 60000) return `${Math.round(ms / 60000)} min`;
@@ -62,6 +64,7 @@ function main() {
 
   if (process.env.TYCON_BLOCKING_METER === '0') return;
   if (!orgSwitchOn('blocking_meter')) return;
+  if (!PENDING_DIR) return;
 
   const file = path.join(PENDING_DIR, `${sessionId}.json`);
   if (!fs.existsSync(file)) return;

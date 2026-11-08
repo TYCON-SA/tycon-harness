@@ -17,10 +17,13 @@
 // skills de terceros. El resto (hooks de `settings.json`, ajustes, bloques, el `@import`, la línea de arranque, enlaces,
 // comandos, y lo que su instalador deja en git y en las tareas del sistema) es de Claude Code.
 //
-// Los dos límites que quedan para la mudanza, dichos y con salida 2:
-//   · una máquina que NACIÓ sin Claude Code vive en `~/.tycon`, y el instalador de Claude Code (shell) tiene escrito el
-//     lugar de siempre: sumarle Claude Code espera a la mudanza;
-//   · una instalación desde un CLON vive en la carpeta de Claude Code: ahí Claude Code no se saca.
+// Una máquina que NACIÓ sin Claude Code vive en `~/.tycon`: sumarle Claude Code deja la carpeta de siempre del estado
+// como enlace al estado propio (como la mudanza), y su instalador escribe el estado con scripts/lib/state-dir.sh. Los
+// dos límites que quedan, dichos y con salida 2:
+//   · en Windows, sumar Claude Code a esa máquina: el instalador de Windows (.ps1) todavía tiene escrito el lugar de
+//     siempre;
+//   · una instalación desde un CLON vive en la carpeta de Claude Code: ahí Claude Code no se saca; primero se muda
+//     (`harness.js migrate --to-home`).
 //
 // Contrato: `add(ctx, state, H)` y `remove(ctx, state, H)` → `{ code, lines }`. `H` son las piezas de harness.js que
 // ya existen (`takeSnapshot`, `finishSnapshot`, `runClaudeApplier`, `runHealth`, `recordPieces`, `ensureLink`,
@@ -42,6 +45,9 @@ function ownerOf(piece, fixedDir) {
   if (!piece || typeof piece.kind !== 'string') return null;
   if (piece.kind === 'codex') return 'codex';
   if (piece.kind === 'third-party') return null;
+  // los hooks globales de git los pone el aplicador con o sin Claude Code: son de las dos herramientas, y
+  // sacar una no los quita (se van con `uninstall` entero)
+  if (piece.kind === 'git-hook') return null;
   if (piece.kind === 'file' && typeof piece.where === 'string' && (path.dirname(piece.where) === fixedDir || piece.where.startsWith(fixedDir + path.sep))) return null;
   return 'claude';
 }
@@ -95,8 +101,11 @@ function add(ctx, state, H) {
     return { code: 0, lines: [`${T.names(opt.tools)} ya ${plural(opt.tools, 'está enchufada', 'están enchufadas')}: nada que hacer`, `herramientas enchufadas: ${T.names(plugged)}`] };
   }
   const wanted = T.TOOLS.filter((t) => plugged.includes(t) || adding.includes(t));
-  if (adding.includes('claude') && TH.livesInOwnHome(ctx.home) && !TH.ownHomeStale(ctx.home)) {
-    return { code: 2, lines: [`${head}: esta máquina vive en la casa propia del arnés (${TH.ownStateDir(ctx.home)}): se instaló sin Claude Code, y su instalador todavía tiene escrito el lugar de antes. Sumarle Claude Code llega con la mudanza (tanda D de la story 8.23). No escribí nada`] };
+  const ownHome = TH.livesInOwnHome(ctx.home) && !TH.ownHomeStale(ctx.home);
+  // el aplicador de Windows (.ps1) todavía escribe su estado en la carpeta de siempre: ahí sumar Claude Code a una
+  // máquina que vive en la casa propia sigue esperando: su aplicador (.ps1) no tiene la carpeta del estado propia
+  if (adding.includes('claude') && ownHome && ctx.platform === 'win32') {
+    return { code: 2, lines: [`${head}: esta máquina vive en la casa propia del arnés (${TH.ownStateDir(ctx.home)}) y en Windows el instalador de Claude Code todavía escribe su estado en el lugar de antes. Sumarle Claude Code en Windows todavía no se puede. No escribí nada`] };
   }
   const tree = state.tree;
   const detected = T.detect({ home: ctx.home, env: ctx.env, platform: ctx.platform });
@@ -118,6 +127,19 @@ function add(ctx, state, H) {
     const fail = (why) => { H.finishSnapshot(ctx, snap, log); return { code: 1, lines: [`${head}: ${why} — detalle en ${S.paths(ctx.home).log}`, ...notes] }; };
     let report = []; let shared = []; let out = '';
     if (adding.includes('claude')) {
+      // en una máquina que vive en la casa propia, la carpeta de siempre del estado queda como enlace al estado propio,
+      // el mismo que deja la mudanza: los guiones que todavía nombran esa ruta a propósito (legacy-home-names.json)
+      // escriben en el mismo estado. Una carpeta real ahí no se toca: se dice.
+      if (ownHome) {
+        const legacy = TH.legacyStateDir(ctx.home);
+        if (!exists(legacy)) {
+          try { TH.makeLink(TH.ownStateDir(ctx.home), legacy, { platform: ctx.platform }); log(`${legacy} queda como enlace a ${TH.ownStateDir(ctx.home)}`); }
+          catch (e) { return fail(`no pude dejar ${legacy} como enlace a ${TH.ownStateDir(ctx.home)} (${e.code || e.message})`); }
+        } else if (TH.linkTarget(legacy) !== path.resolve(TH.ownStateDir(ctx.home))) {
+          // una carpeta real, o un enlace colgado o que lleva a otra casa: no se toca, se dice
+          notes.push(`ojo: ${legacy} ya existe y no es un enlace a ${TH.ownStateDir(ctx.home)}: lo dejo como está, y lo que todavía escribe en esa ruta queda ahí`);
+        }
+      }
       // los enchufes propios de Claude Code que no pone su instalador: el lugar, el enlace de las skills, la línea de
       // arranque y el @import (los mismos pasos de `install --version`)
       const l = H.ensureLink(ctx, tree, { link: tree, prefer: tree });
@@ -176,7 +198,8 @@ function removal(ctx, state, tool, H, { codexStays = false } = {}) {
     const root = TH.ownPathsOf(ctx).root;
     const roots = [root];
     try { const real = fs.realpathSync(root); if (real !== root) roots.push(real); } catch (_) { /* la casa no está */ }
-    for (const l of [H.linkPath(ctx.home), TH.installedSkillsDir(ctx.home)]) {
+    // y el enlace de la carpeta del estado de siempre al estado propio, el que deja sumar Claude Code
+    for (const l of [H.linkPath(ctx.home), TH.installedSkillsDir(ctx.home), TH.legacyStateDir(ctx.home)]) {
       try {
         if (!fs.lstatSync(l).isSymbolicLink()) continue;
         const to = path.resolve(path.dirname(l), fs.readlinkSync(l));
@@ -209,7 +232,7 @@ function remove(ctx, state, H) {
     return { code: 2, lines: [`${head}: ${T.names(removing)} ${plural(plugged, 'es la única herramienta enchufada', 'son todas las herramientas enchufadas')}: sacarla es quitar el arnés — harness.js uninstall. No toqué nada`] };
   }
   if (removing.includes('claude') && !S.isRelease(state)) {
-    return { code: 2, lines: [`${head}: esta instalación es desde un clon, que vive en la carpeta de Claude Code: ahí Claude Code no se saca solo. La mudanza a ~/.tycon (tanda D de la story 8.23) es la que separa al arnés de esa carpeta. No toqué nada`] };
+    return { code: 2, lines: [`${head}: esta instalación es desde un clon, que vive en la carpeta de Claude Code: sacar Claude Code dejaría al arnés sin casa. Primero mudate a ~/.tycon con harness.js migrate --to-home (separa al arnés de esa carpeta, sin tocar tu clon), y después volvé a correr harness.js uninstall --tool claude. No toqué nada`] };
   }
   const U = require('./uninstall.js');
   const RM = require('./remove.js');

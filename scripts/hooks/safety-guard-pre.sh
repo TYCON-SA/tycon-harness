@@ -22,7 +22,8 @@
 #     lib/harness-sign.js) y el freno deja pasar ese texto exacto una vez, por 30 minutos. `TYCON_SAFETY_OFF=1`, en el
 #     ambiente o como prefijo del comando, ya no apaga nada: el cartel lo dice.
 #   - Off completo: remové el hook de settings.json.
-#   - Log de bloqueos en ~/.claude/safety-guard.log para retro/audit.
+#   - Log de bloqueos en safety-guard.log, en la carpeta de los registros sueltos (scripts/lib/state-dir.sh), para
+#     retro/audit.
 #   - Fail-open: si el script crashea por cualquier motivo, NO bloquea
 #     (mejor permitir que romper toda la sesión por un bug del hook).
 #
@@ -361,8 +362,14 @@ _PS_END='["'"'"']?([[:space:]]|[;|)]|$)'
 # ============================================================
 # Helper: bloquear con motivo + log
 # ============================================================
-LOGFILE="$HOME/.claude/safety-guard.log"
-mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true
+# El registro va a la carpeta de los registros sueltos (scripts/lib/state-dir.sh): la del estado en una máquina que vive
+# en la casa propia del arnés, la de siempre en las demás. Sin el ayudante (una copia rota) no hay registro y el freno
+# decide igual: el registro es ayuda, no evidencia.
+LOGFILE=""
+_sd="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/state-dir.sh"
+if [ -f "$_sd" ] && . "$_sd" 2>/dev/null; then LOGFILE="$(tycon_logs_dir)/safety-guard.log"; fi
+unset _sd
+if [ -n "$LOGFILE" ]; then mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true; fi
 
 # Constancia de la decisión. Es AYUDA, NO EVIDENCIA: nunca cambia el código de
 # salida ni lo que este freno decide. El comando va por STDIN — por argv lo vería cualquier
@@ -396,11 +403,13 @@ block() {
   fi
   local ts
   ts="$(date '+%Y-%m-%d %H:%M:%S')"
-  {
-    echo "[$ts] BLOCK rule=$rule cwd=$CWD"
-    echo "  cmd: $CMD_SHOWN"
-    echo "  reason: $reason"
-  } >> "$LOGFILE" 2>/dev/null || true
+  if [ -n "$LOGFILE" ]; then
+    {
+      echo "[$ts] BLOCK rule=$rule cwd=$CWD"
+      echo "  cmd: $CMD_SHOWN"
+      echo "  reason: $reason"
+    } >> "$LOGFILE" 2>/dev/null || true
+  fi
 
   {
     echo "🛑 TYCON safety-guard BLOCK [$rule]"

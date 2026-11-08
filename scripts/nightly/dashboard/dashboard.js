@@ -349,7 +349,10 @@ const noLeido = (buzon) => noMedida(`el nocturno no pudo leer el buzón (${buzon
 //    para este lector — una lista negra fallaría con el primer campo que nadie previó.
 // 🔴 Y se rotula SIEMPRE como "en esta máquina": presentarlo como el equipo sería la mentira de
 //    la máquina que no reportó leída como cero.
-const HOME_TYCON = path.join(require('os').homedir(), '.claude');
+// Los registros sueltos de los hooks (el del freno, los medidores) viven en la carpeta que dice scripts/lib/loose-logs.js:
+// la del estado en una máquina que vive en la casa propia del arnés, la de siempre en las demás. Sin ella, null: lo que
+// se lee de ahí sale como «falta».
+const HOME_TYCON = (() => { try { return require('../../lib/loose-logs.js').looseLogsDir(); } catch (_) { return null; } })();
 
 // Contador explícito. El idioma habitual para acumular usa el mismo atajo que convierte un dato
 // ausente en un cero, y un chequeo textual no puede distinguirlos. Un control que hay que aflojar
@@ -514,8 +517,8 @@ function local(buzon = { estado: 'no_aplica' }) {
   }
 
   // 3 · Freno de mano: bloqueos por regla (texto plano, se extrae SÓLO el identificador de regla).
-  const sg = path.join(HOME_TYCON, 'safety-guard.log');
-  m.freno = !fs.existsSync(sg) ? falta('el registro del freno de mano') : (() => {
+  const sg = HOME_TYCON ? path.join(HOME_TYCON, 'safety-guard.log') : null;
+  m.freno = !sg || !fs.existsSync(sg) ? falta('el registro del freno de mano') : (() => {
     try {
       const txt = fs.readFileSync(sg, 'utf8');
       const reglas = {};
@@ -543,8 +546,8 @@ function local(buzon = { estado: 'no_aplica' }) {
 
   // 5 · Los dos medidores de conducta.
   const medidor = (rel, campo, etiqueta) => {
-    const r = path.join(HOME_TYCON, rel);
-    if (!fs.existsSync(r)) return falta(`el medidor de ${etiqueta}`);
+    const r = HOME_TYCON ? path.join(HOME_TYCON, rel) : null;
+    if (!r || !fs.existsSync(r)) return falta(`el medidor de ${etiqueta}`);
     try {
       const ls = leerJsonl(r).filter(Boolean);
       if (!ls.length) return noMedida(`el medidor de ${etiqueta} no tiene ninguna medición`);
@@ -1821,5 +1824,5 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { colectar, render, equipo, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues, fichaVueltasAtras,
+module.exports = { colectar, render, equipo, local, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues, fichaVueltasAtras,
   DENOMINADORES: require('./common').DENOMINADORES };

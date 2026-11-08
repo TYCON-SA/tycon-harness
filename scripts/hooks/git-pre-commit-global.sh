@@ -125,7 +125,19 @@ harness_dir() {
   done
   printf '%s' "${HOME:-}/.claude/tycon-harness"
 }
+# Una máquina sin Claude Code tiene el arnés en su casa propia: <TYCON_HOME>/harness (la variable, si es una ruta
+# absoluta) o ~/.tycon/harness. Se mira DESPUÉS de los dos nombres de siempre, a propósito: donde están, siguen mandando.
+# Va aparte de `harness_dir`, que es la misma función, letra por letra, que la de .githooks/pre-commit-checks.
+harness_own_home() {
+  _ho="$(printf '%s' "${TYCON_HOME:-}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  case "$_ho" in /*) ;; *) _ho="${HOME:-}/.tycon" ;; esac
+  if [ -d "$_ho/harness/scripts" ]; then printf '%s' "$_ho/harness"; fi
+}
 _TCG_DIR="$(harness_dir)"
+if [ -z "${TYCON_GUIDES_DIR:-}" ] && [ ! -d "$_TCG_DIR/scripts" ]; then
+  _ho_dir="$(harness_own_home)"
+  [ -n "$_ho_dir" ] && _TCG_DIR="$_ho_dir"
+fi
 # el Node del arnés: el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH ni exporta
 # nada: el .githooks/pre-commit del repo del dev sigue corriendo con su Node
 # con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
