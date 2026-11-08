@@ -6,8 +6,9 @@
  * Una corrida completa de la puerta (la de arriba, sin `--suite`) que sale roja anota en el marcador las suites que
  * fallaron (`testsFailed`). Mientras quede alguna, la corrida completa no lanza nada: sale 76 y da el comando para
  * repetir cada una sola. `test-gate.sh <repo> --suite <ruta>` corre sólo esa suite, con el ambiente de la completa, y
- * en verde la saca de la lista; nunca escribe `checks.tests`, y de `tests-result.json` sólo saca su falla si la
- * constancia es de la misma completa (casos «RepetirVerdeConSuite_ReescribeLaConstancia»).
+ * en verde la saca de la lista; no escribe `checks.tests` (salvo la última roja de una corrida acotada, casos
+ * «UltimaRojaRepetida_AcotadaDejaTestsVerde»), y de `tests-result.json` sólo saca su falla si la constancia es de la
+ * misma completa (casos «RepetirVerdeConSuite_ReescribeLaConstancia»).
  *
  * Todo corre sobre un repo de prueba con su propio `scripts/tests/suites.json` (dos suites de bash que salen con el
  * código que diga un archivo de estado) y una HOME de prueba con un marcador falso por sesión.
@@ -855,4 +856,143 @@ test('RepetirVerdeConSuite_ReescribeLaConstancia (copia) @story-8.230 @ac-12 —
   const h = JSON.parse(fs.readFileSync(g, 'utf8'));
   assert.equal(h.suite_green, false);
   assert.match(h.suite_green_pending.join(' '), /hermano/);
+});
+
+// ── La última roja repetida en verde, en una corrida acotada ─────────────────────────────────────────────────────────
+// Con la última roja repetida en verde y la constancia en verde por las repeticiones, `checks.tests` pasa a verde. Sin
+// eso, el freno de cierre, el del commit y el de guardar piden otra completa entera.
+// 🔴 Falla con: dejar `tests` como estaba al sacar la última roja acotada · ponerlo en verde con otra roja en la lista
+//    (de este repo o de otro), con una ausente, con una corrida de `tests` posterior, sin estar acotada, o con lo
+//    guardado de la completa roja (ahí cierra la próxima completa, que vuelve a correr lo que cambió).
+const FULL_TS = '2026-11-08T16:36:00Z';
+const STOP_GATE = path.join(SCRIPTS, 'on-stop-dod-gate.js');
+const gatesLog = (l) => { try { return fs.readFileSync(path.join(l.home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8'); } catch (_) { return ''; } };
+
+/** Una completa roja escrita a mano: su constancia, y el marcador con `tests` en rojo y la lista de las rojas. */
+function rojoAMano({ rojas = [A], checksAt = '2026-11-08T17:51:16.000Z', at = '2026-11-08T17:51:17.000Z', ajenas = [], totals = {} } = {}) {
+  const l = lab();
+  fs.mkdirSync(path.dirname(artefacto(l)), { recursive: true });
+  fs.writeFileSync(artefacto(l), JSON.stringify({ ts: FULL_TS, runner: 'suites-json', suite_exit: 1, suite_green: false, halted: false,
+    totals: { suites: 2, passed: 2 - rojas.length, failed: rojas.length, missing: 0, failures: rojas.map((r) => path.basename(r)),
+      failure_entries: rojas.map((ruta) => ({ raiz: 'arnes', ruta })), missing_paths: [], ...totals } }));
+  const m = marcador(l);
+  Object.assign(m, { autonomous: true, checks: { tests: 'red:exit=1' }, checksAt: { tests: checksAt }, checksProvenance: { tests: 'test-gate' },
+    testsFailed: [...rojas.map((ruta) => ({ ruta, raiz: 'arnes', repo: l.repo, at, full_ts: FULL_TS })), ...ajenas] });
+  fs.writeFileSync(markerFile(l), JSON.stringify(m));
+  return l;
+}
+const sacar = (l, ruta, conQuien = true) => marker(l, ['tests-failed', 'clear', '--path', ruta, '--repo', l.repo, '--result', artefacto(l),
+  ...(conQuien ? ['--full-suite-by', 'la CI de prueba'] : [])], { TYCON_TEST_GATE: '1' });
+const frenoDeCierre = (l) => spawnSync(process.execPath, [STOP_GATE], { cwd: l.repo, encoding: 'utf8', env: entorno(l),
+  input: JSON.stringify({ session_id: SID, cwd: l.repo, last_assistant_message: 'sigo' }), timeout: 30000 }).stdout;
+
+test('UltimaRojaRepetida_AcotadaDejaTestsVerde (a) — la última roja en verde, acotada: tests en verde, anotado, y el freno de cierre deja cerrar', () => {
+  const l = rojoAMano();
+  assert.match(frenoDeCierre(l), /"decision":"block"/, 'el freno no frenaba con tests en rojo: el laboratorio no reproduce el caso');
+  const r = sacar(l, A);
+  assert.equal(r.status, 0, r.out);
+  const m = marcador(l);
+  assert.equal(m.checks.tests, 'green', r.out);
+  assert.equal(m.checksProvenance.tests, 'test-gate');
+  assert.ok(Math.abs(Date.now() - Date.parse(m.checksAt.tests)) < 60000, `la hora del verde no es la de la repetición: ${m.checksAt.tests}`);
+  assert.match(r.out, /el check tests pasa a verde \(la completa la corre la CI de prueba\)/);
+  const linea = gatesLog(l).split('\n').filter(Boolean).map((x) => JSON.parse(x)).find((x) => x.name === 'tests' && x.by === 'repeticiones');
+  assert.ok(linea, 'el verde por las repeticiones no quedó en gates.log');
+  assert.equal(linea.before, 'red:exit=1');
+  assert.doesNotMatch(frenoDeCierre(l), /"decision":"block"/, 'el freno de cierre siguió frenando');
+});
+
+test('UltimaRojaRepetida_AcotadaDejaTestsVerde (b) — sin estar acotada, la repetición no toca tests', () => {
+  const l = rojoAMano();
+  const r = sacar(l, A, false);
+  assert.equal(r.status, 0, r.out);
+  assert.equal(JSON.parse(fs.readFileSync(artefacto(l), 'utf8')).suite_green, true, 'la constancia no quedó en verde');
+  assert.equal(marcador(l).checks.tests, 'red:exit=1', 'una corrida sin acotar cerró con una suite sola');
+});
+
+test('UltimaRojaRepetida_AcotadaDejaTestsVerde (c) — con otra roja sin repetir sigue en rojo; con las dos repetidas, verde', () => {
+  const l = rojoAMano({ rojas: [A, B] });
+  sacar(l, A);
+  assert.equal(marcador(l).checks.tests, 'red:exit=1', 'una repetición tapó la roja que no se repitió');
+  sacar(l, B);
+  assert.equal(marcador(l).checks.tests, 'green');
+});
+
+test('UltimaRojaRepetida_AcotadaDejaTestsVerde (d) — una ausente en la completa, una roja pendiente de otro repo o una corrida posterior: sigue en rojo', () => {
+  const aus = rojoAMano({ totals: { missing: 1, missing_paths: ['/x/scripts/tests/c.test.sh'] } });
+  sacar(aus, A);
+  assert.equal(marcador(aus).checks.tests, 'red:exit=1', 'una ausente quedó tapada');
+  const otro = rojoAMano({ ajenas: [{ ruta: B, raiz: 'arnes', repo: '/otro/repo', at: '2026-11-08T17:00:00.000Z' }] });
+  sacar(otro, A);
+  assert.equal(marcador(otro).checks.tests, 'red:exit=1', 'una roja de otro repo quedó tapada');
+  assert.deepEqual(marcador(otro).testsFailed.map((x) => x.repo), ['/otro/repo']);
+  const tarde = rojoAMano({ checksAt: '2026-11-08T18:00:00.000Z' });
+  sacar(tarde, A);
+  assert.equal(marcador(tarde).checks.tests, 'red:exit=1', 'una corrida de tests posterior a la completa quedó tapada');
+});
+
+test('UltimaRojaRepetida_AcotadaDejaTestsVerde (f) — un rojo que no es del portón, un rótulo que no es rojo o un hermano rojo: no lo toca', () => {
+  const manual = rojoAMano();
+  const m = marcador(manual); m.checksProvenance.tests = 'manual'; fs.writeFileSync(markerFile(manual), JSON.stringify(m));
+  sacar(manual, A);
+  assert.equal(marcador(manual).checks.tests, 'red:exit=1', 'un rojo declarado a mano pasó a verde');
+  const turno = rojoAMano();
+  const t = marcador(turno); t.checks.tests = 'sin-turno'; fs.writeFileSync(markerFile(turno), JSON.stringify(t));
+  sacar(turno, A);
+  assert.equal(marcador(turno).checks.tests, 'sin-turno', 'un «sin turno» pasó a verde sin medir');
+  const hermano = rojoAMano();
+  const c = JSON.parse(fs.readFileSync(artefacto(hermano), 'utf8'));
+  c.companions = [{ root: '/otro/hermano', green: false }];
+  fs.writeFileSync(artefacto(hermano), JSON.stringify(c));
+  sacar(hermano, A);
+  assert.equal(JSON.parse(fs.readFileSync(artefacto(hermano), 'utf8')).suite_green, false);
+  assert.equal(marcador(hermano).checks.tests, 'red:exit=1', 'un repo hermano rojo quedó tapado');
+  // lo guardado de la completa roja de otro repo: su próxima completa cierra, la repetición de éste no lo adelanta
+  const guardadoAjeno = rojoAMano();
+  const g = marcador(guardadoAjeno); g.testsRedFull = [{ repo: '/otro/repo', dir: '/nada', hash: 'x', at: '2026-11-08T17:00:00.000Z' }];
+  fs.writeFileSync(markerFile(guardadoAjeno), JSON.stringify(g));
+  sacar(guardadoAjeno, A);
+  assert.equal(marcador(guardadoAjeno).checks.tests, 'red:exit=1', 'lo guardado de otro repo quedó tapado');
+});
+
+test('UltimaRojaRepetida_AcotadaDejaTestsVerde (g) — por la puerta, la corrida cruzada (la historia en otro repo) cuenta como acotada', () => {
+  // la historia vive en otro repo (el privado) y la suite corre en éste, que no tiene .test-gate.yaml
+  const l = rojoAMano();
+  const privado = tmp('ff-privado-');
+  git(privado, 'init', '-q'); git(privado, 'config', 'user.email', 'prueba@ejemplo.invalid'); git(privado, 'config', 'user.name', 'prueba');
+  fs.mkdirSync(path.join(privado, 'specs'));
+  const story = path.join(privado, 'specs', 'story-9.1-prueba.md');
+  fs.writeFileSync(story, '---\nstory: 9.1\ntitle: prueba\nstatus: in-progress\n---\n# prueba\n');
+  git(privado, 'add', '-A'); git(privado, 'co' + 'mmit', '-q', '-m', 'base');
+  const r = puerta(l, [story, '--suite', A]);
+  assert.equal(r.status, 0, r.out);
+  assert.equal(marcador(l).checks.tests, 'green', r.out);
+  assert.match(r.out, /la corrida cruzada se acota a lo tocado/);
+  // la misma repetición sin la historia de otro repo, en un repo que no acota: no lo toca
+  const n = rojoAMano();
+  assert.equal(puerta(n, ['--suite', A]).status, 0);
+  assert.equal(marcador(n).checks.tests, 'red:exit=1', 'sin acotar, la repetición cerró el paso');
+});
+
+test('UltimaRojaRepetida_AcotadaDejaTestsVerde (e) — por la puerta: el repo que acota sin lo guardado pasa a verde; con lo guardado, o sin acotar, no', () => {
+  // sin lo guardado de la completa roja (se borró): la segunda repetición deja tests en verde
+  const l = conRojoAcotado();
+  const d = marker(l, ['tests-failed', 'drop-red', '--repo', l.repo], { TYCON_TEST_GATE: '1' });
+  assert.equal(d.status, 0, d.out);
+  assert.equal(guardado(l), null);
+  estado(l, { a: 0, b: 0 });
+  assert.equal(puerta(l, ['--suite', A]).status, 0);
+  assert.match(String(marcador(l).checks.tests), /^red/, 'con B sin repetir, tests pasó a verde');
+  const r = puerta(l, ['--suite', B]);
+  assert.equal(r.status, 0, r.out);
+  assert.equal(marcador(l).checks.tests, 'green', r.out);
+  // con lo guardado, cierra la próxima completa (corre lo que cambió): la repetición no lo adelanta
+  const g = conRojoAcotado();
+  repetirVerdes(g);
+  assert.match(String(marcador(g).checks.tests), /^red/, 'con lo guardado, la repetición se salteó la completa que cierra');
+  // un repo que no acota: una suite sola nunca cierra
+  const n = conRojo();
+  estado(n, { a: 0, b: 0 });
+  for (const s of [A, B]) assert.equal(puerta(n, ['--suite', s]).status, 0);
+  assert.match(String(marcador(n).checks.tests), /^red/, 'un repo sin acotar cerró con suites solas');
 });
