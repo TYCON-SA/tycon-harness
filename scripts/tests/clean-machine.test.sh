@@ -974,7 +974,7 @@ else
   MODE=internal
   # pedida a mano (TYCON_CLEAN_MACHINE=1) en el árbol de mantenimiento: no hay copia que armar, y se dice cómo medir
   if maintenance_tree "${ROOT}"; then unable "${MAINTENANCE_WHY}"; fi
-  for need in scripts/publishing/export.js scripts/publishing/allowlist.json scripts/publishing/replacements.json scripts/publishing/public-files/LICENSE; do
+  for need in scripts/publishing/export.js scripts/publishing/allowlist.json scripts/publishing/replacements.json LICENSE; do
     [ -e "${ROOT}/${need}" ] || unable "modo interno sin exportador (falta ${need}): en el repo público va con TYCON_CLEAN_MACHINE_SOURCE=<raíz>"
   done
   # «No pude mirar» no es «no hay»: si la biblioteca tira (su vecina está y no carga), se dice la causa; no se lee como

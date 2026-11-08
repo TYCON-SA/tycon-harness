@@ -138,8 +138,8 @@ test('T3 Layer_ComplementByBlobs_TransformedOnlyFromVersionJson_PublicWins_Publi
   });
 
   await t.test('sólo afuera: lo que el exportador agrega sólo a la copia sale de la lista blanca del commit interno, sin la lista a mano', () => {
-    // Sin esto, un papel nuevo de public-files/ (getting-started/*.md) que llega a la lista blanca sin sumarse
-    // a layer-public-only.json hace que cada máquina con capa vea «sólo en la copia y sin declarar».
+    // Sin esto, un archivo nuevo que el exportador agrega sólo a la copia (un sintético) y que llega a la lista blanca
+    // sin sumarse a layer-public-only.json hace que cada máquina con capa vea «sólo en la copia y sin declarar».
     // Lo que el exportador agrega sólo a la copia —los `synthetic`, los `generated` y la carpeta nueva de cada
     // `skillRenames`— se lee de la lista blanca de ESE commit interno: la lista a mano queda vacía a propósito
     const dir = path.join(LAB, 'interno-papeles');
@@ -147,13 +147,13 @@ test('T3 Layer_ComplementByBlobs_TransformedOnlyFromVersionJson_PublicWins_Publi
     git(dir, ['init', '-q']);
     write(dir, 'README.md', '# arnés de juguete\n');
     write(dir, 'skills/viejo-nombre/SKILL.md', 'una skill que la copia publica con otro nombre\n');
-    write(dir, 'scripts/publishing/public-files/getting-started/mac.md', 'un papel de la copia\n');
+    write(dir, 'scripts/publishing/sample-papers/getting-started/mac.md', 'un papel de la copia\n');
     git(dir, ['add', '-A']);
     git(dir, ['commit', '-q', '-m', 'sin lista blanca']);
     const bare = git(dir, ['rev-parse', 'HEAD']);
     const lista = JSON.parse(fs.readFileSync(path.join(FIXTURES, 'layer-lab-allowlist.json'), 'utf8'));
     Object.assign(lista, {
-      synthetic: [{ target: 'getting-started/mac.md', from: 'scripts/publishing/public-files/getting-started/mac.md', packages: ['core'], reason: 'un papel de la copia' }],
+      synthetic: [{ target: 'getting-started/mac.md', from: 'scripts/publishing/sample-papers/getting-started/mac.md', packages: ['core'], reason: 'un papel de la copia' }],
       generated: [{ target: 'version.json', reason: 'la versión numerada de la copia' }],
       skillRenames: [{ source: 'agent-skills', from: 'skills/viejo-nombre', to: 'skills/nuevo-nombre', why: 'otro nombre', reason: 'de juguete' }],
     });
@@ -161,7 +161,7 @@ test('T3 Layer_ComplementByBlobs_TransformedOnlyFromVersionJson_PublicWins_Publi
     git(dir, ['add', '-A']);
     git(dir, ['commit', '-q', '-m', 'con lista blanca']);
     const listed = git(dir, ['rev-parse', 'HEAD']);
-    const copy = exportToy({ internalDir: dir, outDir: path.join(LAB, 'publico-papeles'), leaveOut: ['skills/viejo-nombre/', 'scripts/publishing/public-files/'],
+    const copy = exportToy({ internalDir: dir, outDir: path.join(LAB, 'publico-papeles'), leaveOut: ['skills/viejo-nombre/', 'scripts/publishing/sample-papers/'],
       onlyPublic: { 'getting-started/mac.md': 'un papel de la copia\n', 'skills/nuevo-nombre/SKILL.md': 'la skill con su nombre nuevo\n', 'extra/x.txt': 'sin declarar\n' } });
     const run = (commit) => L.computeLayer({ internalDir: dir, internalCommit: commit, publicDir: copy.dir, publicCommit: copy.commit, publicOnly: [], publishable: () => null });
 
@@ -380,4 +380,22 @@ test('T3 Layer_ComplementByBlobs_TransformedOnlyFromVersionJson_PublicWins_Publi
     assert.strictEqual(fs.readFileSync(path.join(tree, 'guides', 'publica.md'), 'utf8'), 'el contenido público\n');
     fs.rmSync(box, { recursive: true, force: true });
   });
+});
+
+// Los papeles del repo público (la licencia, los avisos, las guías de cada sistema, lo de .github y los guiones de
+// entrada) viven sólo en la copia y no llegan por un sintético: «sólo afuera» los acepta desde la lista a mano.
+test('T4 CopyOnly_PapersFromHandList — los papeles en su lugar los acepta la lista a mano, sin sintéticos', () => {
+  const L = requireLayer();
+  const PAPERS = ['LICENSE', 'NOTICE', 'getting-started/mac.md', 'getting-started/windows.md', 'getting-started/linux.md',
+    '.github/CODE_OF_CONDUCT.md', '.github/CONTRIBUTING.md', '.github/SECURITY.md', '.github/workflows/ci.yml',
+    'scripts/setup/get-harness.sh', 'scripts/setup/get-harness.ps1', 'scripts/setup/public-remotes.json'];
+  const hand = L.loadPatterns(L.DEFAULT_LISTS.publicOnly);
+  // sin lo que el exportador agrega sólo a la copia (`copyOnly: []`): lo que se acepta sale de la lista a mano
+  const accepts = (patterns) => L.outsideMatcher({ internalDir: INTERNAL, publicOnly: patterns, copyOnly: [] });
+  const outside = accepts(hand);
+  assert.deepStrictEqual(PAPERS.filter((p) => !outside(p)), [], 'papeles que la lista a mano (fixtures/layer-public-only.json) no acepta');
+  // la prueba ve fallar: sin la entrada de las guías de cada sistema, la portada de Mac es un hallazgo
+  const withoutPages = hand.filter((p) => !L.matcher([p])('getting-started/mac.md'));
+  assert.ok(withoutPages.length < hand.length, 'la lista a mano trae una entrada para getting-started/');
+  assert.ok(!accepts(withoutPages)('getting-started/mac.md'), 'sin la entrada de getting-started/, la guía de Mac tenía que quedar sin aceptar');
 });

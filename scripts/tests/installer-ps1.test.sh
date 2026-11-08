@@ -1679,28 +1679,21 @@ w4_defects_section
 # sin que el valor salga en pantalla, y que un permiso que no vale sale 1. Correrlo en Windows de punta a punta queda
 # para la validación en Windows (acá corre el bloque del clon).
 get_harness_ps1_section() {
-  local src="$ROOT/scripts/publishing/public-files/scripts/setup/get-harness.ps1" gl="$T/get-harness" gh h rc floor
-  # en el repo interno es un papel con marcadores (public-files/…); en la copia pública ya está en scripts/setup/ con el
-  # nombre real del repo puesto por el exportador (el mismo que trae su línea $Repo). El
-  # guion NO clona: baja la versión por la API de GitHub (acá, el «GitHub» de juguete) y corre install --version latest.
-  local copy=0 pub=""
-  if [ ! -f "$src" ] && [ -f "$ROOT/scripts/setup/get-harness.ps1" ]; then copy=1; src="$ROOT/scripts/setup/get-harness.ps1"; fi
+  local src="$ROOT/scripts/setup/get-harness.ps1" gl="$T/get-harness" gh h rc floor
+  # el guion vive en scripts/setup/, con el nombre real del repo en su línea $Repo. NO clona: baja la versión por la API
+  # de GitHub (acá, el «GitHub» de juguete) y corre install --version latest.
+  local pub=""
   [ -f "$src" ] || { no "get-harness.ps1 · no existe ${src#"$ROOT"/}"; return; }
   mkdir -p "$gl/bin-notar" "$gl/bin-oldnode" "$gl/bin-full" "$gl/remotes"
   gh="$gl/get-harness.ps1"
-  if [ "$copy" = 0 ]; then
-    # los marcadores, como los pone el exportador (con un nombre inventado); el BOM queda
-    sed -e 's/{{public-org}}/example-org/g' -e 's/{{public-repo}}/example-harness/g' "$src" > "$gh"
-  else
-    pub="$(node -e 'const r=require(process.argv[1]).remotes[0];console.log(r.replace(/^https:\/\/github\.com\//,""))' "$ROOT/scripts/setup/public-remotes.json" 2>/dev/null)"
-    [ -n "$pub" ] || { no "get-harness.ps1 · (copia) no hay scripts/setup/public-remotes.json con el remoto público"; return; }
-    if grep -q '{{public-' "$src"; then no "get-harness.ps1 · (copia) quedan marcadores sin reemplazar: $(grep -n '{{public-' "$src" | head -2 | tr '\n' ' ')"
-    elif grep -qxF "\$Repo = '${pub}'" "$src"; then ok "get-harness.ps1 · (copia) los marcadores vienen puestos: \$Repo es ${pub}"
-    else no "get-harness.ps1 · (copia) la dirección de fábrica no es la del remoto público (${pub}): $(grep -n '^\$Repo = ' "$src" | head -1)"; fi
-    # el nombre real se cambia por el inventado (el BOM queda)
-    sed -e "s#^\\\$Repo = '${pub//./\\.}'#\$Repo = 'example-org/example-harness'#" "$src" > "$gh"
-    grep -qxF "\$Repo = 'example-org/example-harness'" "$gh" || { no "get-harness.ps1 · (copia) no pude ponerle el nombre inventado (¿cambió la forma de su línea \$Repo?)"; return; }
-  fi
+  pub="$(node -e 'const r=require(process.argv[1]).remotes[0];console.log(r.replace(/^https:\/\/github\.com\//,""))' "$ROOT/scripts/setup/public-remotes.json" 2>/dev/null)"
+  [ -n "$pub" ] || { no "get-harness.ps1 · no hay scripts/setup/public-remotes.json con el remoto público"; return; }
+  if grep -q '{{public-' "$src"; then no "get-harness.ps1 · quedan marcadores sin reemplazar: $(grep -n '{{public-' "$src" | head -2 | tr '\n' ' ')"
+  elif grep -qxF "\$Repo = '${pub}'" "$src"; then ok "get-harness.ps1 · la dirección de fábrica es la del remoto público: \$Repo es ${pub}"
+  else no "get-harness.ps1 · la dirección de fábrica no es la del remoto público (${pub}): $(grep -n '^\$Repo = ' "$src" | head -1)"; fi
+  # el nombre real se cambia por el inventado (el BOM queda)
+  sed -e "s#^\\\$Repo = '${pub//./\\.}'#\$Repo = 'example-org/example-harness'#" "$src" > "$gh"
+  grep -qxF "\$Repo = 'example-org/example-harness'" "$gh" || { no "get-harness.ps1 · no pude ponerle el nombre inventado (¿cambió la forma de su línea \$Repo?)"; return; }
   # (la ruta `/git/ref/heads/<rama>` de la API de GitHub no es una invocación de git: se descuenta antes de mirar)
   # (la primera línea trae el BOM UTF-8 antes del `#`: se saca antes de descontar los comentarios)
   # (y los nombres de las rutas públicas —`<repo>.git/info/refs`, `git-upload-pack`— tampoco)

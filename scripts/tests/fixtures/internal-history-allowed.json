@@ -143,19 +143,19 @@
       "file": "getting-started/reference.es.md",
       "form": "story-bare",
       "value": "la 5.1",
-      "reason": "la versión de un programa que trae el sistema, no el número de una story: el único falso de la forma en la muestra de la tanda G1 (tasks/measurement-8.26-tanda-g/false-positives.md). El archivo se declara con la ruta con que sale; en el repo del equipo es un papel de scripts/publishing/public-files/"
+      "reason": "la versión de un programa que trae el sistema, no el número de una story: el único falso de la forma en la muestra de la tanda G1 (tasks/measurement-8.26-tanda-g/false-positives.md)."
     },
     {
       "file": "getting-started/mac.md",
       "form": "story-bare",
       "value": "la 1.20.0",
-      "reason": "la versión de engram que el paso manda a bajar, no el número de una story (el falso típico de la forma). El archivo se declara con la ruta con que sale; en el repo del equipo es un papel de scripts/publishing/public-files/"
+      "reason": "la versión de engram que el paso manda a bajar, no el número de una story (el falso típico de la forma)."
     },
     {
       "file": "getting-started/linux.md",
       "form": "story-bare",
       "value": "la 1.20.0",
-      "reason": "la versión de engram que el paso manda a bajar, no el número de una story (el falso típico de la forma). El archivo se declara con la ruta con que sale; en el repo del equipo es un papel de scripts/publishing/public-files/"
+      "reason": "la versión de engram que el paso manda a bajar, no el número de una story (el falso típico de la forma)."
     },
     {
       "file": "guides/maintaining/publicacion-espejo.md",
@@ -233,12 +233,6 @@
       "file": "guides/maintaining/publicacion-espejo.md",
       "form": "team-path",
       "value": "scripts/nightly/dependencies/repos.json",
-      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
-    },
-    {
-      "file": "guides/maintaining/publicacion-espejo.md",
-      "form": "team-path",
-      "value": "scripts/publishing/public-files",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {

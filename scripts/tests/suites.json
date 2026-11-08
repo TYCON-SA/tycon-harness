@@ -3946,7 +3946,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.16, tanda E (T54, T55, T57): el guion de entrada de la portada (get-harness.sh, en public-files/scripts/setup/), por ejecución en una HOME de juguete con un remoto bare y la red cerrada (GIT_ALLOW_PROTOCOL=file): sin opciones clona en ~/<repo> y la pregunta de la instalación llega a la terminal de juguete; con --dir y -- <opciones>, las opciones llegan tal cual; un requisito que falta o un node viejo sale 1 con un comando sugerido que nadie corre; una carpeta ajena no se toca, el clon propio no se actualiza, un clon que falla no deja la carpeta; las tres líneas de la portada pasan el freno de comandos y la variante con tubería sale con SUP-C1. ~5 s.",
+      "__nota": "story 8.16, tanda E (T54, T55, T57): el guion de entrada de la portada (scripts/setup/get-harness.sh), por ejecución en una HOME de juguete con un remoto bare y la red cerrada (GIT_ALLOW_PROTOCOL=file): sin opciones clona en ~/<repo> y la pregunta de la instalación llega a la terminal de juguete; con --dir y -- <opciones>, las opciones llegan tal cual; un requisito que falta o un node viejo sale 1 con un comando sugerido que nadie corre; una carpeta ajena no se toca, el clon propio no se actualiza, un clon que falla no deja la carpeta; las tres líneas de la portada pasan el freno de comandos y la variante con tubería sale con SUP-C1. ~5 s.",
       "raiz": "arnes",
       "ruta": "tests/get-harness.test.sh",
       "requiere": []

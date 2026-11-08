@@ -474,9 +474,8 @@ lea entero, y corre con el bash 3.2 de una Mac. El de PowerShell lleva BOM UTF-8
 no lea antes del chequeo de versión: corrido con `powershell`, dice que pide PowerShell 7 en vez de cortar con un error
 de sintaxis.
 
-En el repo del equipo viven aparte, con la dirección por marcadores (`{{public-org}}` y
-`{{public-repo}}`) y llegan a `scripts/setup/` de la copia por dos sintéticos de `allowlist.json`; en los repos internos
-no existen ahí, y ningún archivo interno escribe el nombre del repo público. El guion se baja sin credencial (el repo es
+Viven en `scripts/setup/` del repo público, con la dirección del repo ya puesta (la misma que declara
+`scripts/setup/public-remotes.json`), y la lista blanca los toma como a cualquier archivo de `scripts/`. El guion se baja sin credencial (el repo es
 público) de `raw.githubusercontent.com/<org>/<repo>/main/scripts/setup/`, no de la API: es la primera línea de la
 portada, nunca lleva la cabecera del permiso y no gasta del tope de 60 consultas por hora de la API sin credencial, que
 antes dejaba a una máquina nueva sin poder empezar. La dirección por rama queda hasta 5 minutos en caché: justo después

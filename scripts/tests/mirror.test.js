@@ -82,7 +82,8 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 // ── la configuración sintética ─────────────────────────────────────────────────────────────────────────────────────
 // El nombre público de mentira: el de verdad vive en un archivo que no viaja, y acá no se escribe.
 const PUBLIC = { __doc: 'nombre público de mentira', org: 'example-org', repo: 'example-harness' };
-const PAPERS_DIR = 'scripts/publishing/public-files';
+// la carpeta de juguete de los papeles: el repo de mentira los guarda ahí y llegan a su destino por un sintético
+const PAPERS_DIR = 'scripts/publishing/sample-papers';
 const PAPERS = {
   LICENSE: '                                 Apache License\n                           Version 2.0, January 2004\n\n   (texto de prueba)\n',
   NOTICE: 'Arnés de mentira\n',

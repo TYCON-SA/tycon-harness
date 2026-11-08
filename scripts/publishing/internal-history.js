@@ -15,7 +15,7 @@
 //     pruebas, datos y YAML no son de este control: ahí sigue valiendo scripts/tests/internal-history.test.js (sin
 //     números de pull request en nada de lo publicado).
 //   · Qué se publica: en el repo del equipo (trae `team-profile.json`, o `perfil-equipo.json`) lo dice el exportador (`whatShips`, como el freno
-//     de nombres) y se lee el texto COMO SALE —sin los bloques internos, un papel de public-files/ con la ruta de su
+//     de nombres) y se lee el texto COMO SALE —sin los bloques internos, el origen de un sintético con la ruta de su
 //     destino, y también lo que un paquete deja pendiente para la copia que une los paquetes—; en el repo público, todo
 //     lo versionado. Con el perfil y sin la tabla privada es «no pude mirar»: un clon del equipo incompleto no es el
 //     repo público.

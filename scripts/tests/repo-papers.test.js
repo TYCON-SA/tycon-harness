@@ -9,9 +9,8 @@
  * `.github/SECURITY.md`, la CI (`.github/workflows/ci.yml`), las tres páginas de primeros pasos (`getting-started/`), el
  * guion de entrada (`scripts/setup/get-harness.{sh,ps1}`) y la lista de remotos públicos
  * (`scripts/setup/public-remotes.json`).
- * En el repo privado son plantillas (`scripts/publishing/public-files/<destino>`, con la
- * dirección del repo por marcadores) que el exportador pone en su lugar; acá se escriben en su ruta
- * real, con la dirección ya puesta. Esta suite los lee en esa ruta (`RAIZ/<destino>`) y los compara contra lo que existe
+ * Se escriben en su ruta real, con la dirección del repo ya puesta. Esta suite los lee en esa ruta (`RAIZ/<destino>`) y
+ * los compara contra lo que existe
  * en este mismo repo: el manifiesto de terceros, la lista de hooks, la lista de efectos, el instalador, las skills y los
  * paquetes (en el repo unido viven en `skills/` y `packs/`, no en un clon aparte). No usa red ni herramientas de afuera.
  *
@@ -27,11 +26,11 @@
  *     actualiza» con los comandos, la retención, los números de versión y la copia fija; el permiso de lectura; las 6
  *     horas; Node 22. Por palabras clave, en los dos idiomas, cada una con su espejo.
  *   · T35 — la guía de publicación dice qué recibe la publicación, punto por punto.
+ *   · T36 — a cada papel lo toma un «in» del núcleo de la lista blanca, en su lugar.
  *
- * Lo que la versión del privado medía y acá no está, porque es de la tubería privada de publicación y no existe en este
- * repo: que los repos internos no lleven `LICENSE`, el contacto permitido en `denylist.json`, los sintéticos de
- * `allowlist.json` que traían cada papel desde `public-files/`, `public-repos.json` (acá el nombre público lo declara
- * `scripts/setup/public-remotes.json`) y la evidencia de la historia de publicación en `specs/`. Cada lugar lo dice donde estaba.
+ * Lo que no se mide acá, porque es de la tubería privada de publicación y no existe en este repo: el contacto permitido
+ * en `denylist.json`, `public-repos.json` (acá el nombre público lo declara `scripts/setup/public-remotes.json`) y la
+ * evidencia de la historia de publicación en `specs/`.
  */
 
 const test = require('node:test');
@@ -45,8 +44,7 @@ const { spawnSync } = require('child_process');
 const RAIZ = path.resolve(__dirname, '..', '..');
 const PUBLISHING = path.join(RAIZ, 'scripts', 'publishing');
 
-// Los papeles, por la ruta donde viven en este repo. Son los catorce que en el privado eran plantillas de
-// scripts/publishing/public-files/<destino>, uno a uno.
+// Los catorce papeles, por la ruta donde viven en este repo.
 const PAPERS = [
   '.github/CODE_OF_CONDUCT.md', '.github/CONTRIBUTING.md', 'README.es.md', 'README.md', '.github/SECURITY.md',
   '.github/workflows/ci.yml', 'LICENSE', 'NOTICE', 'getting-started/linux.md', 'getting-started/mac.md',
@@ -454,8 +452,7 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
     }
   }
 
-  // y cada pedido existe como papel, en su ruta. (El privado medía además su sintético en allowlist.json, el que lo traía
-  // desde public-files/: era la tubería privada de publicación, y acá el papel ya está en su lugar.)
+  // y cada pedido existe como papel, en su ruta
   for (const guided of GUIDED_PAPERS) {
     assert.ok(exists(path.join(RAIZ, guided)), `${guided}: el papel no existe`);
     // la dirección del repo (la de raw.githubusercontent.com que baja el guion) es la declarada, y la bajada no va por la API

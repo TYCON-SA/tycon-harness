@@ -32,10 +32,8 @@ const { spawn, spawnSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..', '..');
 const DIR = path.join(ROOT, 'scripts', 'tests', 'windows');
 const FIXTURES = path.join(ROOT, 'scripts', 'tests', 'fixtures', 'windows');
-// la página pública de instalación: en su lugar (getting-started/windows.md, en el repo público y en el árbol del equipo
-// con lo público encima); los papeles viejos del exportador (scripts/publishing/public-files/), sólo si no está ahí
-const PAGE_REL = ['getting-started/windows.md', 'scripts/publishing/public-files/getting-started/windows.md'].find((r) => fs.existsSync(path.join(ROOT, r))) || 'getting-started/windows.md';
-const PAGE = path.join(ROOT, PAGE_REL);
+// la página pública de instalación, en su lugar (en el repo público y en el árbol del equipo con lo público encima)
+const PAGE = path.join(ROOT, 'getting-started', 'windows.md');
 const PIPELINE = path.join(ROOT, 'pipelines', 'azure-pipelines-windows.yml');
 const L = require(path.join(DIR, 'lab.js'));
 const T = require(path.join(DIR, 'team-lab.js'));
@@ -66,7 +64,11 @@ const TOY_REMOTES = '{ "remotes": ["https://github.com/acme-lab/arnes-lab"] }\n'
 
 // ═══ T1 · la página se lee por su marca ════════════════════════════════════════════════════════════════════════
 
-test('GuidedPage_RealPage_BlockIsReadByItsMark', { skip: !fs.existsSync(PAGE) && 'NO MEDIDO — este árbol no trae la página pública de instalación' }, () => {
+// la página vive en su lugar en el repo público y en el árbol armado: si falta, es un rojo que la nombra
+const assertPage = () => assert.ok(fs.existsSync(PAGE), `falta la página pública de instalación: ${path.relative(ROOT, PAGE)}`);
+
+test('GuidedPage_RealPage_BlockIsReadByItsMark', () => {
+  assertPage();
   const text = fs.readFileSync(PAGE, 'utf8');
   const m = G.loadManifest();
   const block = L.coverBlock(text, m.page.mark, m.page.fence);
@@ -208,17 +210,14 @@ test('GuidedSteps_Manifest_HasItsShape', () => {
 
 // ═══ T3 · cada comando de la ficha está en el bloque marcado ═══════════════════════════════════════════════════
 
-test('GuidedSteps_EveryCommand_IsInTheMarkedBlock', { skip: !fs.existsSync(PAGE) && 'NO MEDIDO — este árbol no trae la página pública de instalación' }, () => {
+test('GuidedSteps_EveryCommand_IsInTheMarkedBlock', () => {
+  assertPage();
   const m = G.loadManifest();
   const block = G.readBlock(fs.readFileSync(PAGE, 'utf8'), m).block;
-  // la página en su lugar trae el nombre público ya puesto, el que dice el archivo de los remotos públicos: los
-  // marcadores de la ficha se reemplazan con él antes de comparar, como en una copia publicada. Los papeles viejos del
-  // exportador traían los marcadores, como la ficha: contra ellos se compara sin reemplazar.
-  let names = null;
-  if (!PAGE_REL.startsWith('scripts/publishing/')) {
-    names = G.namesOf(fs.readFileSync(path.join(ROOT, m.needs.names), 'utf8'));
-    assert.strictEqual(names.problem, undefined, `${m.needs.names}: ${names.problem}`);
-  }
+  // la página trae el nombre público ya puesto, el que dice el archivo de los remotos públicos: los marcadores de la
+  // ficha se reemplazan con él antes de comparar
+  const names = G.namesOf(fs.readFileSync(path.join(ROOT, m.needs.names), 'utf8'));
+  assert.strictEqual(names.problem, undefined, `${m.needs.names}: ${names.problem}`);
   const checked = G.checkPage(m, block, { names });
   assert.deepStrictEqual(checked.problems, []);
   assert.strictEqual(checked.ok, true);
@@ -236,9 +235,9 @@ test('GuidedPage_NpxOrNpmLineTheManifestDoesNotKnow_IsACommand', () => {
   // es un comando (no prosa) y el ensayo lo nombra
   for (const line of ['   npx --yes @otro/paquete --dry-run', '   npm install -g @openai/codex', '      npx @tyconsa/harness@latest --audience me']) assert.strictEqual(G.looksLikeCommand(line), true, `«${line.trim()}» es un comando`);
   for (const line of ['   npx no anda en esta red: pará y avisame', '   npm es un paquete aparte en algunas distribuciones']) assert.strictEqual(G.looksLikeCommand(line), false, `«${line.trim()}» es prosa`);
-  if (!fs.existsSync(PAGE)) return;
+  assertPage();
   const m = G.loadManifest();
-  const names = PAGE_REL.startsWith('scripts/publishing/') ? null : G.namesOf(fs.readFileSync(path.join(ROOT, m.needs.names), 'utf8'));
+  const names = G.namesOf(fs.readFileSync(path.join(ROOT, m.needs.names), 'utf8'));
   const lines = G.readBlock(fs.readFileSync(PAGE, 'utf8'), m).block.split('\n');
   const at = lines.findIndex((l) => l.trim() === 'git config --global --get core.hooksPath');
   assert.ok(at > 0, 'el paso de los hooks de git trae su comando');

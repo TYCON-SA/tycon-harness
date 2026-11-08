@@ -512,7 +512,7 @@ test('T15 SuiteDeps_OwnGateRulesOverDeps — una suite con gate_only_when_touchi
 
 test('T11 SuitesForChange_MdDoesNotChoose_ExceptHeavyThatReadsMd — un README de la copia no arrastra las pesadas del instalador', { skip: NO_RULE }, () => {
   const dir = depsRepo({ heavy: true });
-  const p = depsPlan(dir, ['scripts/ci/x.js'], { docs: ['scripts/ci/x.js', 'scripts/publishing/public-files/README.md', 'guides/nueva.md'] });
+  const p = depsPlan(dir, ['scripts/ci/x.js'], { docs: ['scripts/ci/x.js', 'scripts/publishing/sample-papers/README.md', 'guides/nueva.md'] });
   assert.ok(p.run.includes('export-real.test.sh'), `la copia pública mira los .md que viajan: corre\n${p.err}`);
   assert.ok(p.skip.some((s) => s.startsWith('SKIP\tharness-install.test.sh\t')), `la del instalador no corre por un README ni por una guía\n${p.skip.join('\n')}\n${p.err}`);
   // la copia corre por el .md aunque la lista de código no le toque nada

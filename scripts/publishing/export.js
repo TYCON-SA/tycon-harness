@@ -2289,7 +2289,7 @@ function whatShips(ctx) {
       kind: traduccion(clave) ? 'translation' : synthetic.has(clave) ? 'synthetic' : 'copy',
     }]));
     // el `from` de cada sintético que aplica también sale —con el contenido de su destino—, así los
-    // frenos de nombres miran un papel de public-files/ aunque esa carpeta no viaje
+    // frenos de nombres miran el origen de un sintético aunque su carpeta no viaje
     const desde = new Map();
     for (const s of ctx.placedSynthetics || []) {
       const clave = `arnes/${s.from}`;

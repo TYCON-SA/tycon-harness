@@ -643,8 +643,8 @@ if [ -f "$YAML" ]; then
       g17 -C "$W" remote add origin "$L17/$1-origin.git" && g17 -C "$W" add -A && g17 -C "$W" commit -q -m base \
         && g17 -C "$W" push -q origin main && g17 -C "$W" checkout -q -b pr
     }
-    if { base17 manual-md && printf "# dev\n" > "$L17/manual-md/guides/dev.md" && mkdir -p "$L17/manual-md/scripts/publishing/public-files" \
-        && printf "# x\n" > "$L17/manual-md/scripts/publishing/public-files/x.md" && g17 -C "$L17/manual-md" add -A && g17 -C "$L17/manual-md" commit -q -m md \
+    if { base17 manual-md && printf "# dev\n" > "$L17/manual-md/guides/dev.md" && mkdir -p "$L17/manual-md/scripts/publishing/sample-papers" \
+        && printf "# x\n" > "$L17/manual-md/scripts/publishing/sample-papers/x.md" && g17 -C "$L17/manual-md" add -A && g17 -C "$L17/manual-md" commit -q -m md \
       && base17 manual-two && printf "// cambio\n" >> "$L17/manual-two/scripts/lab-pub/lab-tool.js" && g17 -C "$L17/manual-two" commit -q -am uno \
         && printf "# otra\n" > "$L17/manual-two/guides/otra.md" && g17 -C "$L17/manual-two" add -A && g17 -C "$L17/manual-two" commit -q -m dos \
       && base17 manual-skill && printf "seis\n" >> "$L17/manual-skill/skills/lab-skill/SKILL.md" && g17 -C "$L17/manual-skill" commit -q -am skill; } > "$L17/arm.txt" 2>&1; then
