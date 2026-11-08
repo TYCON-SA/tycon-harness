@@ -1719,3 +1719,163 @@ test('T49 Sitio_LaCharlaTieneTopes_PorOficinaPorSegundoYPorLargo — @story-8.17
     assert.ok(h.registro.some((l) => l.includes('mensajes por segundo')));
   } finally { await h.cerrar(); }
 });
+
+// ── Las máquinas ocultas y el reinicio ──────────────────────────────────────────────────────────────────────────
+
+const oculta = (reason = 'hidden') => ({ reason, hidden_by: LEAD, hidden_on: '2026-11-08' });
+
+test('T23 SiteAccess_Confirmada_SeOcultaYSeMuestra @story-8.234 @ac-23 — el centro corta a una oculta, también sin saber todavía quién es quién', async () => {
+  const reloj = { t: Date.now() };
+  const h = await montar({ reloj });
+  try {
+    const { ka, ma, mb } = await dosMaquinasConectadas(h);
+    await hasta(() => h.centro.oficina('maquina-a') && h.centro.oficina('maquina-a').foto, 2000, 'su foto');
+    // sin lo informado (un sitio recién arrancado): ocultar sale de la configuración y corta igual
+    h.fuentes.st.personas = { informados: null, repos: null };
+    h.fuentes.st.config = { ...ops(), people: { ...ops().people, hidden_machines: { 'maquina-a': oculta() } } };
+    h.centro.revisar();
+    await hasta(() => ma.cerro !== null, 2000, 'el corte de la oculta');
+    assert.strictEqual(ma.cerro, F.CLOSE.revoked);
+    assert.strictEqual(h.centro.oficina('maquina-a'), null, 'su última foto no sigue a la vista');
+    assert.strictEqual(mb.cerro, null, 'la otra sigue');
+    // y no vuelve a entrar al reconectar: no recibe ack
+    reloj.t += MIN;
+    const otra = await maquinaCruda(h, ka);
+    assert.strictEqual(otra.msgs.some((m) => m.type === 'ack'), false, 'no recibe ack');
+    await hasta(() => otra.cerro !== null, 2000, 'el cierre al reconectar');
+    assert.strictEqual(otra.cerro, F.CLOSE.revoked);
+    mb.ws.close();
+  } finally { await h.cerrar(); }
+});
+
+/** La configuración con tres máquinas confirmadas (a y b de A, c de B), y lo que informan. */
+const opsTres = () => ops({ machines: { 'maquina-a': confirmada(A), 'maquina-b': confirmada(A), 'maquina-c': confirmada(B) } });
+const personasTres = () => ({ informados: H.informados({ 'maquina-a': A, 'maquina-b': A, 'maquina-c': B }), repos: null });
+const HORA_MS = 60 * MIN;
+const reglasTres = () => access.crearReglas({ config: opsTres(), modelo: {}, personas: personasTres() });
+
+/** Una máquina conectada sin cortes durante `minutos`: cada minuto manda su ping y corre la revisión del centro. */
+async function conectadaSinCortes(h, reloj, c, minutos) {
+  for (let i = 0; i < minutos; i += 1) {
+    reloj.t += MIN;
+    const antes = c.msgs.filter((m) => m.type === 'pong').length;
+    c.ws.send(JSON.stringify({ type: 'ping' }));
+    await hasta(() => c.msgs.filter((m) => m.type === 'pong').length > antes, 2000, 'el pong');
+    h.centro.revisar();
+  }
+}
+const enDisco = (h, fp) => JSON.parse(fs.readFileSync(path.join(h.dir, 'office', 'machine-keys.json'), 'utf8')).claves[fp];
+
+test('T25 Site_Reinicio_Reconectando @story-8.234 @ac-25 — la hora de una conectada sin cortes llega al disco cada hora, y al reiniciar sólo la reciente dice «reconectando»', async () => {
+  // stable-data: el reloj del sitio arranca 184 min atrás (los 180 de la conexión y los 5 después del reinicio) para
+  // terminar un minuto adelante de la hora real: el emisor de identidad firma con la hora real, y el ingreso de los
+  // navegadores, después del reinicio, sólo vale con el reloj del sitio cerca de esa hora
+  const reloj = { t: Date.now() - 184 * MIN };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'disco-reconectando-'));
+  const h = await montar({ reloj, config: opsTres(), personas: personasTres(), dataDir: dir });
+  try {
+    const [ka, kb, kc] = [par(), par(), par()];
+    pedir(h.llaves, ka); pedir(h.llaves, kb, '10.0.0.2'); pedir(h.llaves, kc, '10.0.0.3');
+    h.fuentes.st.huellas = huellasDe({ 'maquina-a': [ka.fingerprint], 'maquina-b': [kb.fingerprint], 'maquina-c': [kc.fingerprint] });
+    const ctx = () => ({ huellas: h.fuentes.st.huellas, reglas: reglasTres(), conBuzon: true });
+    for (const k of [ka, kb, kc]) { const r = h.llaves.aprobar(k.fingerprint, LEAD, ctx()); assert.strictEqual(r.ok, true, `no se pudo aprobar: ${r.motivo}`); }
+    // b se aprobó y no volvió a conectar: su última conexión queda 3 h atrás
+    const ma = await maquinaCruda(h, ka);
+    await conectadaSinCortes(h, reloj, ma, 180);
+    const a = enDisco(h, ka.fingerprint);
+    assert.ok(reloj.t - a.ultimaConexion <= HORA_MS + MIN, `el disco tiene una hora de la última hora (tiene ${(reloj.t - a.ultimaConexion) / MIN} min)`);
+    // c conectó hace poco pero está de baja
+    const mc = await maquinaCruda(h, kc);
+    h.llaves.darDeBaja('maquina-c', LEAD);
+    mc.ws.close(); ma.ws.close();
+    // el reinicio: a los 5 minutos, «reconectando» sólo la que estaba
+    await h.reiniciar();
+    reloj.t += 5 * MIN;
+    h.centro.revisar();
+    const lead = await navegador(h, LEAD);
+    await hasta(() => oficinas(lead).has('maquina-a'), 3000, 'la oficina reconectando');
+    const o = oficinas(lead).get('maquina-a');
+    assert.strictEqual(o.reconectando, true);
+    assert.ok(!oficinas(lead).has('maquina-b'), 'la de hace 3 h no');
+    assert.ok(!oficinas(lead).has('maquina-c'), 'la de baja no');
+    // la persona la ve igual que su oficina; otra persona no
+    const dev = await navegador(h, A);
+    await hasta(() => oficinas(dev).has('maquina-a'), 3000, 'la de A, para A');
+    const otro = await navegador(h, B);
+    await pausa(120);
+    assert.ok(!oficinas(otro).has('maquina-a'), 'B no ve la de A');
+    lead.ws.close(); dev.ws.close(); otro.ws.close();
+  } finally { await h.cerrar(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('T26 Site_PasadoElRato_SinConexion @story-8.234 @ac-26 — a los 10 minutos la que no volvió deja de verse; la que volvió antes, con su foto', async () => {
+  const reloj = { t: Date.now() };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'disco-pasado-'));
+  const h = await montar({ reloj, config: opsTres(), personas: personasTres(), dataDir: dir });
+  try {
+    const [ka, kb] = [par(), par()];
+    pedir(h.llaves, ka); pedir(h.llaves, kb, '10.0.0.2');
+    h.fuentes.st.huellas = huellasDe({ 'maquina-a': [ka.fingerprint], 'maquina-b': [kb.fingerprint] });
+    for (const k of [ka, kb]) { const r = h.llaves.aprobar(k.fingerprint, LEAD, { huellas: h.fuentes.st.huellas, reglas: reglasTres(), conBuzon: true }); assert.strictEqual(r.ok, true, `no se pudo aprobar: ${r.motivo}`); }
+    (await maquinaCruda(h, ka)).ws.close();
+    (await maquinaCruda(h, kb)).ws.close();
+    await h.reiniciar();
+    const lead = await navegador(h, LEAD);
+    await hasta(() => oficinas(lead).has('maquina-a') && oficinas(lead).has('maquina-b'), 3000, 'las dos reconectando');
+    // b vuelve a los 3 minutos con su foto
+    reloj.t += 3 * MIN;
+    const mb = await maquinaCruda(h, kb);
+    mb.ws.send(JSON.stringify({ type: 'foto', data: FOTO('Sesion de vuelta') }));
+    await hasta(() => { const o = oficinas(lead).get('maquina-b'); return o && !o.reconectando && o.foto; }, 3000, 'b con su foto');
+    // a los 11 minutos, a deja de verse; b sigue
+    reloj.t += 8 * MIN;
+    h.centro.revisar();
+    await hasta(() => !oficinas(lead).has('maquina-a'), 3000, 'que a deje de verse');
+    assert.ok(oficinas(lead).has('maquina-b'));
+    assert.strictEqual(PLAZOS.reconectandoMs, 10 * MIN, 'el número fijo');
+    mb.ws.close(); lead.ws.close();
+  } finally { await h.cerrar(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Regresion_DiscoSinEscritura_TocarNoReintentaCadaMinuto @story-8.234 @ac-25 — con el disco sin escritura, tocar intenta a lo sumo una vez por hora, no en cada revisión', (t) => {
+  if (process.platform === 'win32') { t.diagnostic('NO MEDIDO: en Windows una carpeta convertida en archivo se comporta distinto'); return; }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'disco-roto-'));
+  const reloj = { t: Date.now() };
+  const registro = [];
+  try {
+    const llaves = crearLlaves({ dataDir: dir, ahora: () => reloj.t, log: (l) => registro.push(l) });
+    const k = par();
+    pedir(llaves, k);
+    const huellas = huellasDe({ 'maquina-a': [k.fingerprint] });
+    assert.strictEqual(llaves.aprobar(k.fingerprint, LEAD, { huellas, reglas: reglasDe(), conBuzon: true }).ok, true);
+    // el disco deja de aceptar escrituras: la carpeta de la oficina pasa a ser un archivo
+    fs.rmSync(path.join(dir, 'office'), { recursive: true, force: true });
+    fs.writeFileSync(path.join(dir, 'office'), 'no es una carpeta');
+    const antes = registro.length;
+    for (let i = 0; i < 180; i += 1) { reloj.t += MIN; llaves.tocar(k.fingerprint); }
+    const fallas = registro.slice(antes).filter((l) => /no se pudieron guardar/.test(l)).length;
+    assert.ok(fallas >= 1 && fallas <= 4, `intentos fallidos en 3 h: ${fallas} (uno por hora, no uno por minuto)`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Regresion_ClaveRetirada_DejaDeReconectar @story-8.234 @ac-25 — una clave retirada durante el rato deja de verse «reconectando»', async () => {
+  const reloj = { t: Date.now() };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'disco-retirada-'));
+  const h = await montar({ reloj, config: opsTres(), personas: personasTres(), dataDir: dir });
+  try {
+    const ka = par();
+    pedir(h.llaves, ka);
+    h.fuentes.st.huellas = huellasDe({ 'maquina-a': [ka.fingerprint] });
+    const r = h.llaves.aprobar(ka.fingerprint, LEAD, { huellas: h.fuentes.st.huellas, reglas: reglasTres(), conBuzon: true });
+    assert.strictEqual(r.ok, true, `no se pudo aprobar: ${r.motivo}`);
+    (await maquinaCruda(h, ka)).ws.close();
+    await h.reiniciar();
+    const lead = await navegador(h, LEAD);
+    await hasta(() => oficinas(lead).has('maquina-a'), 3000, 'la oficina reconectando');
+    h.llaves.retirar('maquina-a', LEAD, reglasTres());
+    reloj.t += MIN;
+    h.centro.revisar();
+    await hasta(() => !oficinas(lead).has('maquina-a'), 3000, 'que deje de verse al retirar su clave');
+    lead.ws.close();
+  } finally { await h.cerrar(); fs.rmSync(dir, { recursive: true, force: true }); }
+});

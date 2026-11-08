@@ -925,3 +925,79 @@ test('Memoria_BajadaQueSeCae_CambiaElEspejoYLaSiguienteVerifica', async () => {
     assert.strictEqual(cuenta.bajadas[2].confiarIndice, false, 'la siguiente verifica el disco entero');
   } finally { fs.rmSync(dataDir, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true }); }
 });
+
+// ── El sitio instalado por etiqueta: el aviso a quien administra ──────────────────────────────────────────────────
+
+/** Un clon de operaciones con los resultados de la actualización de la noche dados (`{ ruta: resultado }`). */
+function clonConActualizacion(resultados) {
+  const raiz = tmp('site-etiqueta-');
+  const clon = path.join(raiz, 'operaciones');
+  const escribir = (rel, c) => { fs.mkdirSync(path.dirname(path.join(clon, rel)), { recursive: true }); fs.writeFileSync(path.join(clon, rel), typeof c === 'string' ? c : JSON.stringify(c)); };
+  for (const [rel, c] of Object.entries(H.archivosDeOperaciones())) escribir(rel, c);
+  for (const [rel, c] of Object.entries(resultados)) escribir(`.dashboard/site-update/${rel}`, c);
+  return { raiz, clon };
+}
+const resultado = (plataforma, dia, resultado, motivo = null) => ({ version: 1, plataforma, resultado, desde: null, hacia: '2026.10.15.1', hora: `${dia}T04:00:00Z`, motivo });
+const ETIQUETA = 'instalado por etiqueta: fijalo por huella (con la imagen @sha256:…)';
+
+async function inicioDe(modelo, email) {
+  const emisor = await arrancarEmisor();
+  let h = null;
+  try {
+    const config = { version: 1, owners: { default: 'lead@acme.example' }, site: { access: [{ role: 'maintainer', emails: ['lead@acme.example'] }, { role: 'dev', emails: ['dev.a@acme.example'] }] } };
+    h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config, modelo }) });
+    const s = (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true })).sesion;
+    return (await h.pedir('/', { cookie: s })).texto;
+  } finally { if (h) await h.cerrar(); await emisor.cerrar(); }
+}
+
+test('T27 Site_InstaladoPorEtiqueta_Avisa @story-8.234 @ac-27 — el sitio: el último resultado de Azure dice «instalado por etiqueta» y el Inicio de quien administra lo avisa, no el de una persona', async () => {
+  const { raiz, clon } = clonConActualizacion({ 'site-update-2026-10-14.json': resultado('azure', '2026-10-14', 'al_dia'), 'site-update-2026-10-15.json': resultado('azure', '2026-10-15', 'no_pudo', ETIQUETA) });
+  try {
+    const m = sources.construirDesdeClon(clon, { ahora: T0, log: () => {} });
+    assert.deepStrictEqual(m.instalacion, { porEtiqueta: true, dia: '2026-10-15' });
+    const lead = await inicioDe(m, 'lead@acme.example');
+    assert.match(lead, /instalado por etiqueta/i);
+    assert.match(lead, /huella/);
+    const dev = await inicioDe(m, 'dev.a@acme.example');
+    assert.doesNotMatch(dev, /instalado por etiqueta/i, 'una persona no ve el aviso');
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+test('T28 Site_FijadoPorHuella_NoAvisa @story-8.234 @ac-28 — el sitio: por huella, otro motivo, el del demo o uno de Render más nuevo no avisan', async () => {
+  const casos = [
+    { 'site-update-2026-10-15.json': resultado('azure', '2026-10-15', 'al_dia') },
+    { 'site-update-2026-10-15.json': resultado('azure', '2026-10-15', 'no_pudo', 'no se pudo leer stable (sin red)') },
+    { 'demo/site-update-2026-10-15.json': resultado('azure', '2026-10-15', 'no_pudo', ETIQUETA), 'site-update-2026-10-14.json': resultado('azure', '2026-10-14', 'al_dia') },
+    { 'site-update-2026-10-14.json': resultado('azure', '2026-10-14', 'al_dia'), 'site-update-2026-10-15.json': resultado('render', '2026-10-15', 'no_pudo', 'falta el hook de Render') },
+    { 'site-update-2026-10-15.json': '{ roto' },
+    {},
+  ];
+  for (const c of casos) {
+    const { raiz, clon } = clonConActualizacion(c);
+    try {
+      const m = sources.construirDesdeClon(clon, { ahora: T0, log: () => {} });
+      assert.ok(!m.instalacion || m.instalacion.porEtiqueta === false, JSON.stringify(Object.keys(c)));
+    } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+  }
+  assert.doesNotMatch(await inicioDe({ instalacion: { porEtiqueta: false, dia: '2026-10-15' } }, 'lead@acme.example'), /instalado por etiqueta/i);
+});
+
+test('Regresion_ResultadosIlegibles_SeRegistran @story-8.234 @ac-27 — la carpeta de la actualización que no se puede leer se dice en el registro; la que no existe, no', (t) => {
+  if (process.getuid && process.getuid() === 0) { t.diagnostic('NO MEDIDO: corriendo como root, una carpeta sin permisos se lee igual'); return; }
+  if (process.platform === 'win32') { t.diagnostic('NO MEDIDO: en Windows chmod no saca la lectura'); return; }
+  const { raiz, clon } = clonConActualizacion({ 'site-update-2026-10-15.json': resultado('azure', '2026-10-15', 'no_pudo', ETIQUETA) });
+  const dir = path.join(clon, '.dashboard', 'site-update');
+  try {
+    fs.chmodSync(dir, 0o000);
+    const registro = [];
+    const m = sources.construirDesdeClon(clon, { ahora: T0, log: (l) => registro.push(l) });
+    assert.strictEqual(m.instalacion, null);
+    assert.ok(registro.some((l) => /actualización del sitio/.test(l) && /no se pudo leer/.test(l)), registro.join(' | '));
+    fs.chmodSync(dir, 0o755);
+    fs.rmSync(dir, { recursive: true, force: true });
+    const sinCarpeta = [];
+    sources.construirDesdeClon(clon, { ahora: T0, log: (l) => sinCarpeta.push(l) });
+    assert.ok(!sinCarpeta.some((l) => /actualización del sitio/.test(l)), 'sin la carpeta no hay nada que decir');
+  } finally { try { fs.chmodSync(dir, 0o755); } catch { /* ya no está */ } fs.rmSync(raiz, { recursive: true, force: true }); }
+});

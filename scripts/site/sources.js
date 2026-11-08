@@ -359,6 +359,37 @@ const DIR_SEGURO = /^(\.|[A-Za-z0-9_-][A-Za-z0-9._-]*(\/[A-Za-z0-9_-][A-Za-z0-9.
 // como mucho dos `*`: muchos comodines encadenados dan una expresión con retroceso catastrófico sobre los nombres
 const PATRON_SEGURO = /^(?!(?:[^*]*\*){3})[A-Za-z0-9._*-]{1,80}$/;
 
+/**
+ * Cómo quedó instalado el sitio, según las actualizaciones de la noche (`.dashboard/site-update/`, que guarda el
+ * nocturno de operaciones): `{ porEtiqueta, dia }`, o null sin ningún resultado que se pueda leer. Se mira el último
+ * resultado de CADA plataforma que aparece ahí (el campo `plataforma`, sin nombrar ninguna): una plataforma que no sabe
+ * qué imagen corre nunca dice «instalado por etiqueta», y su resultado más nuevo no tapa el de otra. El del demo va en
+ * su propia carpeta (`demo/`), que no se lee. Del resultado sólo sale si el motivo es «instalado por etiqueta».
+ */
+function instalacionDelSitio(dash, clon, log) {
+  const dir = path.join(dash, 'site-update');
+  let nombres = [];
+  try { nombres = fs.readdirSync(dir).filter((n) => /^site-update-\d{4}-\d{2}-\d{2}\.json$/.test(n)).sort().reverse(); } catch (e) {
+    // sin la carpeta, no hay nada que decir; una que no se puede leer se dice (el aviso de la etiqueta faltaría callado)
+    if (!e || e.code !== 'ENOENT') log(`la carpeta de la actualización del sitio no se pudo leer (${(e && e.code) || 'error'})`);
+    return null;
+  }
+  const vistas = new Set();
+  let out = null;
+  for (const n of nombres) {
+    const ruta = path.join(dir, n);
+    if (!dentroDe(clon, ruta)) continue;
+    const r = leerJsonDe(ruta);
+    if (!r.doc) { log(`la actualización del sitio del ${n.slice(12, 22)} no se pudo leer`); continue; }
+    if (!isObject(r.doc) || typeof r.doc.plataforma !== 'string' || vistas.has(r.doc.plataforma)) continue;
+    vistas.add(r.doc.plataforma);
+    const dia = n.slice(12, 22);
+    if (typeof r.doc.motivo === 'string' && r.doc.motivo.startsWith('instalado por etiqueta')) return { porEtiqueta: true, dia };
+    if (!out) out = { porEtiqueta: false, dia };
+  }
+  return out;
+}
+
 // ── El modelo (lista blanca), desde un clon del repo de operaciones ───────────────────────────────────────────────
 function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin_buzon'), carpetas = null, fichas, log: logCrudo = () => {} } = {}) {
   const log = (l) => logCrudo(limpiarLinea(l));   // los nombres de archivo del repo pueden traer saltos de línea
@@ -582,6 +613,7 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
   m.stateAgeDays = stateAgeDaysProjected(sourcesCfg.params);
   m.corridas = corridas;
   m.carpetas = carpetasProyectadas(carpetas);
+  m.instalacion = instalacionDelSitio(dash, clon, log);
   // las fichas del tablero nocturno, ya calculadas aparte (refrescarUnaVez → calcularFichas). `null` = todavía no
   // se calcularon; sin la clave (las pruebas que no las piden) el modelo no las trae.
   if (fichas !== undefined) m.fichas = fichas;

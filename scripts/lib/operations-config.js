@@ -59,6 +59,11 @@
 //           "reported_sha256": <64 hexadecimales> | null,    la huella del correo que informaba la máquina al confirmar
 //           "confirmed_by": <correo>,                        quién la confirmó
 //           "confirmed_on": "AAAA-MM-DD" } },                y qué día
+//       "hidden_machines": { "<máquina>": {                  opcional — las máquinas que el sitio no muestra
+//           "reason": "not_team" | "hidden",                 no es del equipo (nunca se confirmó) u ocultada
+//           "hidden_by": <correo>,                           quién la ocultó
+//           "hidden_on": "AAAA-MM-DD" } },                   y qué día. Su carpeta del buzón y su entrada de
+//                                                            `machines`, si tiene, quedan como están
 //       "projects": { "<correo>": {                          opcional — en qué productos trabaja cada persona
 //           "add": [<producto>, …],                          los productos que ve: sólo los declarados acá
 //           "remove": [<producto>, …] } } } }              se sigue leyendo sin efecto; el sitio lo limpia al proponer
@@ -141,8 +146,10 @@ const SECRET_KEY = /token|secret|sas|password|passwd|pwd|key|credential/i;
 // Una identidad: sin espacios ni controles; un principalName de Azure (usuario@dominio) o un usuario de GitHub.
 const IDENTITY = /^[^\s@]+(@[^\s@]+)?$/;
 // Quién es quién
-const PEOPLE_KEYS = ['machines', 'projects'];
+const PEOPLE_KEYS = ['machines', 'hidden_machines', 'projects'];
 const MACHINE_KEYS = ['person', 'reported_sha256', 'confirmed_by', 'confirmed_on'];
+const HIDDEN_KEYS = ['reason', 'hidden_by', 'hidden_on'];
+const HIDDEN_REASONS = ['not_team', 'hidden'];
 const PROJECT_KEYS = ['add', 'remove'];
 // El nombre de la carpeta de una máquina en el buzón. COPIADA de scripts/metrics/upload-runs.js (no se importa: este
 // lector viaja solo y no carga nada fuera de fs). T23 de scripts/tests/team-repos.test.js exige que las dos sean iguales.
@@ -359,7 +366,21 @@ function dayProblems(v, at) {
 function peopleProblems(people) {
   if (!isObject(people)) return [{ path: 'people', message: 'tiene que ser un objeto { "machines": …, "projects": … }' }];
   const problems = [...unknownKeys(people, PEOPLE_KEYS, 'people')];
-  const { machines, projects } = people;
+  const { machines, projects, hidden_machines: hidden } = people;
+  if (hidden !== undefined) {
+    if (!isObject(hidden)) problems.push({ path: 'people.hidden_machines', message: 'tiene que ser un objeto { "<máquina>": { reason, hidden_by, hidden_on } }' });
+    else for (const [name, entry] of Object.entries(hidden)) {
+      if (comment(name)) continue;
+      const at = `people.hidden_machines.${name}`;
+      if (!FORMA_MAQUINA.test(name)) problems.push({ path: at, message: `«${name}» no es un nombre de máquina: el de su carpeta en el buzón, en minúsculas, sin espacios` });
+      if (!isObject(entry)) { problems.push({ path: at, message: 'tiene que ser un objeto { reason, hidden_by, hidden_on }' }); continue; }
+      problems.push(...unknownKeys(entry, HIDDEN_KEYS, at));
+      for (const k of HIDDEN_KEYS) if (entry[k] === undefined) problems.push({ path: `${at}.${k}`, message: 'falta' });
+      if (entry.reason !== undefined && !HIDDEN_REASONS.includes(entry.reason)) problems.push({ path: `${at}.reason`, message: `tiene que ser ${HIDDEN_REASONS.join(' o ')}` });
+      if (entry.hidden_by !== undefined) problems.push(...emailProblems(entry.hidden_by, `${at}.hidden_by`));
+      if (entry.hidden_on !== undefined) problems.push(...dayProblems(entry.hidden_on, `${at}.hidden_on`));
+    }
+  }
   if (machines !== undefined) {
     if (!isObject(machines)) problems.push({ path: 'people.machines', message: 'tiene que ser un objeto { "<máquina>": { person, reported_sha256, confirmed_by, confirmed_on } }' });
     else for (const [name, entry] of Object.entries(machines)) {
@@ -596,7 +617,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, OFFICES_KEYS, OFFICES_VISIBILITY, INVITATION_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, FINDINGS_KEYS, RESOLVE_AFTER_MIN, RESOLVE_AFTER_MAX, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, OFFICES_KEYS, OFFICES_VISIBILITY, INVITATION_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, HIDDEN_KEYS, HIDDEN_REASONS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, FINDINGS_KEYS, RESOLVE_AFTER_MIN, RESOLVE_AFTER_MAX, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

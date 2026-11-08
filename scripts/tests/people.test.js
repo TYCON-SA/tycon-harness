@@ -447,3 +447,60 @@ test('2.28 T41 CarpetaVieja_CompartidaSoloMantenedores_EntradaViejaNoCuenta', ()
   assert.equal(P.puedeVer('dev-b@ejemplo.test', 'maq-b', c2), true);
   assert.equal(P.estadoDeMaquina('maq-b', c2).antes_de, 'maq-b-1a2b3c4d');
 });
+
+// ── T23 · SiteAccess_Confirmada_SeOcultaYSeMuestra (la regla) ── 🔴 Falla si una máquina oculta (descartada o
+//    confirmada y escondida) vuelve a salir por confirmar, cuenta para su persona, deja ver sus corridas a alguien, o si
+//    «Mostrar» pierde la confirmación de antes.
+test('T23 SiteAccess_Confirmada_SeOcultaYSeMuestra @story-8.234 @ac-23 — la regla de people.js: oculta gana sobre todo estado y vuelve sólo al sacarla', () => {
+  const dir = espejo(tmp(), {
+    'maq-a': informa('dev.a@ejemplo.test'),
+    'maq-lab': informa('dev.a@ejemplo.test'),
+    'maq-ajena': informa('alguien@otro.example'),
+    'maq-b': informa('dev-b@ejemplo.test', '2026-10-13'),
+    'maq-b-1a2b3c4d': informa('dev-b@ejemplo.test', '2026-10-15', { name: 'maq-b-1a2b3c4d', code: '1a2b3c4d', previous_folder: 'maq-b', moved_on: '2026-10-15', previous_runs_sha256: HUELLA_VACIA }),
+  }, { 'maq-ajena': 3, 'maq-lab': 1 });
+  const machines = {
+    'maq-a': conf('dev.a@ejemplo.test', sha('dev.a@ejemplo.test')),
+    'maq-lab': conf('dev.a@ejemplo.test', sha('dev.a@ejemplo.test')),
+    'maq-b-1a2b3c4d': conf('dev-b@ejemplo.test', sha('dev-b@ejemplo.test')),
+  };
+  const ocultas = {
+    'maq-ajena': { reason: 'not_team', hidden_by: 'jefa@acme.example', hidden_on: '2026-11-08' },
+    'maq-lab': { reason: 'hidden', hidden_by: 'jefa@acme.example', hidden_on: '2026-11-08' },
+    'maq-b-1a2b3c4d': { reason: 'hidden', hidden_by: 'jefa@acme.example', hidden_on: '2026-11-08' },
+  };
+  const ctxCon = (hidden) => P.contexto({ operations: { people: { machines, ...(hidden ? { hidden_machines: hidden } : {}) }, site: { maintainers: ['jefa@acme.example'] } }, informados: P.leerCorreosInformados(dir) });
+  const c = ctxCon(ocultas);
+  // el estado: oculta, con quién y cuándo; gana sobre «por confirmar» y sobre «confirmada»
+  for (const m of ['maq-ajena', 'maq-lab', 'maq-b-1a2b3c4d']) assert.equal(P.estadoDeMaquina(m, c).estado, 'oculta', m);
+  assert.deepEqual({ ...P.estadoDeMaquina('maq-ajena', c), motivo: undefined }, { estado: 'oculta', motivo: undefined, razon: 'not_team', por: 'jefa@acme.example', el: '2026-11-08' });
+  assert.equal(P.estadoDeMaquina('maq-a', c).estado, 'confirmada', 'la que no se ocultó, igual');
+  // la carpeta vieja unida sigue a su nueva oculta
+  assert.equal(P.estadoDeMaquina('maq-b', c).estado, 'oculta');
+  // no sale por confirmar ni sin actividad, y sí en la lista «Ocultas», ordenada
+  const por = P.maquinasPorConfirmar(c).map((x) => x.maquina);
+  assert.ok(!por.includes('maq-ajena') && !por.includes('maq-lab'), JSON.stringify(por));
+  assert.deepEqual(P.maquinasOcultas(c), [
+    { maquina: 'maq-ajena', razon: 'not_team', por: 'jefa@acme.example', el: '2026-11-08', confirmada: false },
+    { maquina: 'maq-b-1a2b3c4d', razon: 'hidden', por: 'jefa@acme.example', el: '2026-11-08', confirmada: true },
+    { maquina: 'maq-lab', razon: 'hidden', por: 'jefa@acme.example', el: '2026-11-08', confirmada: true },
+  ]);
+  // nadie ve sus corridas, ni quien administra; su persona no la tiene entre las suyas
+  for (const quien of ['dev.a@ejemplo.test', 'jefa@acme.example']) assert.equal(P.puedeVer(quien, 'maq-lab', c), false, quien);
+  assert.equal(P.puedeVer('jefa@acme.example', 'maq-a', c), true);
+  assert.deepEqual(P.vistaDePersona('dev.a@ejemplo.test', c).maquinas.map((x) => x.maquina), ['maq-a']);
+  // «dónde trabaja» no cuenta sus corridas
+  const repos = { version: 1, repos: [{ project: 'Alfa', repo: 'alfa-front', producto: 'Alfa' }] };
+  const datos = { repos, corridas: [{ maquina: 'maq-lab', cambio: { repos: [{ proyecto: 'Alfa', nombre: 'alfa-front', principal: true }] } }] };
+  assert.deepEqual(P.dondeTrabaja('dev.a@ejemplo.test', c, datos).productos, []);
+  // «Mostrar»: sin su renglón vuelve a lo de antes, con su confirmación intacta
+  const c2 = ctxCon({ 'maq-ajena': ocultas['maq-ajena'] });
+  assert.equal(P.estadoDeMaquina('maq-lab', c2).estado, 'confirmada');
+  assert.equal(P.puedeVer('dev.a@ejemplo.test', 'maq-lab', c2), true);
+  assert.equal(P.estadoDeMaquina('maq-b', c2).estado, 'confirmada');
+  // sin la clave, ninguna oculta; una entrada que no es un objeto no oculta nada; las claves __ no cuentan
+  assert.deepEqual(P.maquinasOcultas(ctxCon(null)), []);
+  const raro = ctxCon({ 'maq-a': 'sí', __doc: { reason: 'hidden' } });
+  assert.equal(P.estadoDeMaquina('maq-a', raro).estado, 'confirmada');
+  assert.deepEqual(P.maquinasOcultas(raro), []);
+});

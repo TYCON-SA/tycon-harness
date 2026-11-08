@@ -6739,3 +6739,145 @@ test('SiteConfig_LasOpcionesDelPaseAdversarial (T38) @story-8.221 @ac-28 @ac-45 
   assert.match(TEXTOS['pantalla.vueltasDeRevisoresAyuda'].es, /revisan y corrigen.*rechazar su plan/);
   assert.match(TEXTOS['pantalla.vueltasDeRevisoresAyuda'].en, /review and fix.*plan can be rejected/);
 });
+
+// ── Las máquinas que no son del equipo: «No es del equipo», «Ocultar» y «Mostrar» ─────────────────────────────────────
+
+/** La pantalla de Configuración en un DOM falso, con botones que se pueden tocar; `revisar` contesta /api/config/revisar. */
+async function pantallaPersonas(seccion, revisar = () => new Promise(() => {})) {
+  const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, on: {}, setAttribute(k, v) { n.attrs[k] = String(v); }, getAttribute(k) { return k in n.attrs ? n.attrs[k] : null; }, removeAttribute(k) { delete n.attrs[k]; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener(e, f) { n.on[e] = f; }, replaceChildren(...cs) { n.hijos = cs; } }; return n; };
+  const app = nodo('div');
+  const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : null), createElement: (tg) => nodo(tg) };
+  const respuesta = { ok: true, secciones: [seccion], proponer: { operaciones: { habilitado: true }, perfil: { habilitado: true } }, versiones: [], productos: [] };
+  const pedidos = [];
+  const fetch = (ruta, o) => {
+    const cuerpo = o && o.body ? JSON.parse(o.body) : null;
+    pedidos.push({ ruta, cuerpo });
+    if (ruta === '/api/config') return Promise.resolve({ status: 200, json: () => Promise.resolve(respuesta) });
+    if (ruta === '/api/config/revisar') return Promise.resolve({ status: 200, json: () => Promise.resolve(revisar(cuerpo)) });
+    return new Promise(() => {});
+  };
+  new Function('document', 'fetch', ORG.pantalla('es'))(document, fetch);
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  const todo = (n) => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(n); return out; };
+  const renglon = (maquina) => todo(app).filter((n) => n.tag === 'li' && todo(n).some((x) => x.textContent === maquina)).pop();
+  const botones = (n) => todo(n || app).filter((x) => x.tag === 'button').map((b) => b.textContent);
+  const tocar = async (maquina, texto) => { const b = todo(renglon(maquina)).filter((x) => x.tag === 'button' && x.textContent === texto).pop(); assert.ok(b, `«${texto}» en ${maquina}`); b.on.click({}); for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  return { renglon, botones, tocar, pedidos };
+}
+const SEC_PERSONAS = (extras, people) => ({ id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, borrador: { people }, problems: [], avisos: [], extras });
+const esTexto = (k) => require(path.join(ROOT, 'scripts', 'site', 'texts.js')).t('es', k);
+
+test('T21 SiteAccess_PorConfirmar_TieneNoEsDelEquipo @story-8.234 @ac-21 — la máquina por confirmar trae «Confirmar» y «No es del equipo»; la confirmada, «Ocultar»; la oculta, «Mostrar»', async () => {
+  const people = { machines: { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } }, hidden_machines: { 'maq-lab': { reason: 'hidden', hidden_by: LEAD, hidden_on: '2026-11-01' } } };
+  const extras = {
+    porConfirmar: [{ maquina: 'maq-c', estado: 'sin_confirmar', correo: 'dev.c@ejemplo.test', dia: '2026-10-15', corridas: 2, otras: [] }],
+    ocultas: [{ maquina: 'maq-lab', razon: 'hidden', por: LEAD, el: '2026-11-01', confirmada: true }],
+  };
+  const p = await pantallaPersonas(SEC_PERSONAS(extras, people), () => ({ ok: true, texto: '{}\n', diferencia: [], resumen: [], problems: [], avisos: [], borrador: { people } }));
+  assert.deepStrictEqual(p.botones(p.renglon('maq-c')), [esTexto('pantalla.confirmar'), esTexto('pantalla.noEsDelEquipo')]);
+  assert.ok(p.botones(p.renglon('maq-a')).includes(esTexto('pantalla.ocultar')), 'la confirmada se puede ocultar');
+  assert.ok(p.botones(p.renglon('maq-lab')).includes(esTexto('pantalla.mostrar')), 'la oculta se puede mostrar');
+  // cada botón pide su borrador por el mismo camino que «Confirmar»
+  await p.tocar('maq-c', esTexto('pantalla.noEsDelEquipo'));
+  const q = await pantallaPersonas(SEC_PERSONAS(extras, people), () => ({ ok: true, texto: '{}\n', diferencia: [], resumen: [], problems: [], avisos: [], borrador: { people } }));
+  await q.tocar('maq-a', esTexto('pantalla.ocultar'));
+  const r = await pantallaPersonas(SEC_PERSONAS(extras, people), () => ({ ok: true, texto: '{}\n', diferencia: [], resumen: [], problems: [], avisos: [], borrador: { people } }));
+  await r.tocar('maq-lab', esTexto('pantalla.mostrar'));
+  const accion = (x) => x.pedidos.filter((y) => y.ruta === '/api/config/revisar').map((y) => [y.cuerpo.borrador.accion, y.cuerpo.borrador.maquina]);
+  assert.deepStrictEqual([...accion(p), ...accion(q), ...accion(r)], [['not_team', 'maq-c'], ['hide', 'maq-a'], ['show', 'maq-lab']]);
+});
+
+test('T22 SiteAccess_NoEsDelEquipo_SeOcultaSinBorrar @story-8.234 @ac-22 — el borrador anota quién y cuándo en hidden_machines, el lector lo valida y la carpeta sigue', async () => {
+  const ops = clon({ 'operations.json': opsBase() });
+  const espejo = tmp('site-config-ocultas-');
+  fs.mkdirSync(path.join(espejo, 'maq-c', 'registros'), { recursive: true });
+  const inf = H.informados({ 'maq-c': 'dev.c@ejemplo.test' });
+  await conPestana({ fuentes: fuentesCon({ ops, informados: inf, espejo }), opciones: { hoy: () => HOY } }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    const r = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { accion: 'not_team', maquina: 'maq-c', people: {} } })).json;
+    assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+    const doc = JSON.parse(r.texto);
+    assert.deepStrictEqual(doc.people.hidden_machines, { 'maq-c': { reason: 'not_team', hidden_by: LEAD, hidden_on: HOY } });
+    assert.ok(!doc.people.machines || !doc.people.machines['maq-c'], 'no la confirma');
+    assert.ok(fs.existsSync(path.join(espejo, 'maq-c')), 'la carpeta del buzón sigue');
+    // con el pedido aplicado, no sale por confirmar y sí en «Ocultas»
+    const aplicado = opsBase({ people: doc.people });
+    const fuentes2 = fuentesCon({ ops: clon({ 'operations.json': aplicado }), config: aplicado, informados: inf, espejo });
+    await conPestana({ fuentes: fuentes2 }, async ({ h: h2, entrar: e2 }) => {
+      const vista = (await h2.pedir('/api/config', { cookie: await e2(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+      assert.deepStrictEqual(vista.extras.porConfirmar, []);
+      assert.deepStrictEqual(vista.extras.ocultas.map((x) => [x.maquina, x.razon, x.por, x.el]), [['maq-c', 'not_team', LEAD, HOY]]);
+    });
+    // el lector: una razón fuera de la lista, un correo o un día mal escritos, una clave desconocida, no pasan
+    const malas = [
+      [{ reason: 'otra', hidden_by: LEAD, hidden_on: HOY }, 'people.hidden_machines.maq-c.reason'],
+      [{ reason: 'hidden', hidden_by: 'no-es-correo', hidden_on: HOY }, 'people.hidden_machines.maq-c.hidden_by'],
+      [{ reason: 'hidden', hidden_by: LEAD, hidden_on: '2026-13-40' }, 'people.hidden_machines.maq-c.hidden_on'],
+      [{ reason: 'hidden', hidden_by: LEAD, hidden_on: HOY, extra: 1 }, 'people.hidden_machines.maq-c'],
+      [{ reason: 'hidden', hidden_by: LEAD }, 'people.hidden_machines.maq-c.hidden_on'],
+    ];
+    for (const [entrada, ruta] of malas) {
+      const m = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { people: { hidden_machines: { 'maq-c': entrada } } } })).json;
+      assert.strictEqual(m.ok, false, JSON.stringify(entrada));
+      assert.ok(m.problems.some((x) => x.path === ruta || x.path.startsWith(`${ruta}.`)), `${ruta}: ${JSON.stringify(m.problems)}`);
+    }
+    const nombreMalo = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { people: { hidden_machines: { 'Maq C': { reason: 'hidden', hidden_by: LEAD, hidden_on: HOY } } } } })).json;
+    assert.strictEqual(nombreMalo.ok, false);
+  });
+});
+
+test('T23 SiteAccess_Confirmada_SeOcultaYSeMuestra @story-8.234 @ac-23 — Configuración: ocultar deja la confirmación, mostrar la devuelve; caida y «Versiones» no la cuentan', async () => {
+  const machines = { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' }, 'maq-lab': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }] }, people: { machines } });
+  const inf = H.informados({ 'maq-a': null, 'maq-lab': null });
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': config }), config, informados: inf }), opciones: { hoy: () => HOY } }, async ({ entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    const o = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { accion: 'hide', maquina: 'maq-lab', people: { machines } } })).json;
+    assert.strictEqual(o.ok, true, JSON.stringify(o.problems));
+    const doc = JSON.parse(o.texto);
+    assert.deepStrictEqual(doc.people.machines, machines, 'la confirmación queda intacta');
+    assert.deepStrictEqual(doc.people.hidden_machines, { 'maq-lab': { reason: 'hidden', hidden_by: LEAD, hidden_on: HOY } });
+    const m = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { accion: 'show', maquina: 'maq-lab', people: doc.people } })).json;
+    assert.strictEqual(m.ok, true, JSON.stringify(m.problems));
+    const doc2 = JSON.parse(m.texto);
+    assert.deepStrictEqual(doc2.people.machines, machines);
+    assert.ok(!doc2.people.hidden_machines, 'sin ocultas, la clave sale');
+  });
+  // la persona con todas sus máquinas ocultas o en orden no figura «caída»: una oculta no cuenta
+  const conOculta = opsBase({ site: config.site, people: { machines, hidden_machines: { 'maq-lab': { reason: 'hidden', hidden_by: LEAD, hidden_on: HOY } } } });
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': conOculta }), config: conOculta, informados: inf }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    assert.strictEqual(p.extras.personas.find((x) => x.correo === DEV).caida, false);
+  });
+  const soloOculta = opsBase({ site: config.site, people: { machines: { 'maq-lab': machines['maq-lab'] }, hidden_machines: { 'maq-lab': { reason: 'hidden', hidden_by: LEAD, hidden_on: HOY } } } });
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': soloOculta }), config: soloOculta, informados: inf }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    assert.strictEqual(p.extras.personas.find((x) => x.correo === DEV).caida, false, 'esconder su única máquina no la vuelve caída');
+  });
+  // «Versiones»: la oculta no arma fila, así que tampoco frena subir la versión mínima del arnés
+  const espejo = tmp('site-config-versiones-');
+  for (const [m, v] of [['maq-a', '2026.10.15.48'], ['maq-lab', '2026.09.01.1']]) {
+    fs.mkdirSync(path.join(espejo, m, 'registros'), { recursive: true });
+    fs.writeFileSync(path.join(espejo, m, 'registros', 'place.json'), JSON.stringify({ day: '2026-10-15', install: { version: v } }));
+  }
+  const AHORA_V = Date.parse('2026-10-16T12:00:00Z');
+  const todas = ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.15.48', ahora: AHORA_V });
+  assert.deepStrictEqual(todas.map((x) => x.maquina), ['maq-a', 'maq-lab']);
+  const sinOculta = ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.15.48', ahora: AHORA_V, ocultas: new Set(['maq-lab']) });
+  assert.deepStrictEqual(sinOculta.map((x) => x.maquina), ['maq-a']);
+});
+
+test('T24 SiteAccess_NoAdministrador_SinBotones @story-8.234 @ac-24 — una persona no recibe Configuración, ni sus botones ni hidden_machines', async () => {
+  const conOculta = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }] }, people: { machines: {}, hidden_machines: { 'maq-lab': { reason: 'not_team', hidden_by: LEAD, hidden_on: HOY } } } });
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': conOculta }), config: conOculta, informados: H.informados({ 'maq-lab': null }) }) }, async ({ h, entrar, token, escribir }) => {
+    const dev = await entrar(DEV);
+    const r = await h.pedir('/api/config', { cookie: dev });
+    assert.strictEqual(r.status, 403);
+    assert.ok(!String(r.texto || '').includes('hidden_machines') && !String(r.texto || '').includes('maq-lab'));
+    const tok = await token(dev).catch(() => null);
+    const w = await escribir('/api/config/revisar', dev, tok, { seccion: 'personas', borrador: { accion: 'not_team', maquina: 'maq-x', people: {} } });
+    assert.strictEqual(w.status, 403);
+  });
+});
