@@ -206,7 +206,7 @@ al terminar, ves que quedó con sólo mirar el resultado y sus pruebas, sin una 
 
 | | Riesgo normal | Riesgo alto |
 |---|---|---|
-| **Camino rápido** | Lo abre la sesión coordinadora, con la lista de archivos, y te avisa. Hasta 5 archivos | Lo abrís vos. Corren los revisores que aplican y el pase adversarial. Hasta 8 archivos |
+| **Camino rápido** | Lo abre la sesión coordinadora, con la lista de archivos, y te avisa. Hasta 5 archivos por defecto; lo configura cada organización | Lo abrís vos. Corren los revisores que aplican y el pase adversarial. Hasta 8 archivos por defecto; lo configura cada organización |
 | **Historia** | El plan lo aprueba la sesión coordinadora, sólo si la revisión automática del plan dio «aprobado» | El plan lo aprobás vos |
 
 Sin sesión coordinadora, porque trabajás solo o tu equipo no la usa, lo de la sesión coordinadora lo aprobás vos. El plan
@@ -751,7 +751,7 @@ frase.
 | **desvío** (*drift*) | cuando el código y la spec quedan desincronizados |
 | **SDD** | *spec-driven development*: la spec antes que el código, y el código la sirve |
 | **BMAD** | el framework de agentes que produce y mantiene las specs |
-| **sesión coordinadora** | una sesión de agente, no una persona, que tu equipo puede usar para aprobar lo de rutina: con riesgo normal abre el camino rápido (hasta 5 archivos, y te avisa) y aprueba el plan si la revisión automática dio «aprobado»; sin ella, lo aprobás vos. Lo delicado lo aprobás siempre vos |
+| **sesión coordinadora** | una sesión de agente, no una persona, que tu equipo puede usar para aprobar lo de rutina: con riesgo normal abre el camino rápido (hasta 5 archivos por defecto, y te avisa) y aprueba el plan si la revisión automática dio «aprobado»; sin ella, lo aprobás vos. Lo delicado lo aprobás siempre vos |
 | **camino rápido** | algo chico, sin historia: el motivo en una línea y la lista de archivos |
 | **ADO** | Azure DevOps, donde viven los work items |
 | **banco de pruebas** | los casos que disparan los controles reales para verificar que bloquean lo que dicen |

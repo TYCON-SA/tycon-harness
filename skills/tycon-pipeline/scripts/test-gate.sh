@@ -887,9 +887,11 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # la completa no lanza nada: sale 76 y da el comando para repetir cada una sola. Relanzar todas para ver si se arregló
   # una cuesta la suite entera cada vez. «Completa» es la de arriba sin `--suite`, con los recortes que la puerta pone
   # sola (lo tocado, la liviana, la cruzada); una parte o un repo hermano no anotan ni se niegan.
-  # `--suite <ruta>` corre esa sola en el check `tests-suite`: en verde la saca de la lista, y nunca escribe el check
-  # `tests` (una suite sola no es la corrida completa). De tests-result.json, la constancia de la completa que lee el
-  # revisor de pruebas, sólo saca su falla si es de esa misma completa: ver `tests-failed clear`.
+  # `--suite <ruta>` corre esa sola en el check `tests-suite`: en verde la saca de la lista. Una suite sola no es la
+  # corrida completa: no escribe el check `tests`, salvo en una corrida acotada (la completa la corre la CI del pedido),
+  # sin lo guardado de la completa roja, cuando saca la última roja y la constancia queda en verde. De tests-result.json,
+  # la constancia de la completa que lee el revisor de pruebas, sólo saca su falla si es de esa misma completa: ver
+  # `tests-failed clear`.
   # Repetir solas cierra (story 8.208), sólo en un repo que acota el portón y fuera del árbol armado del privado: con la
   # lista vacía, la próxima completa no siempre corre todo. Si la carpeta no cambió desde la completa roja ni desde cada
   # repetición, cierra con lo guardado sin correr ninguna suite (la carpeta no cambió). Si cambió entre la completa y las
@@ -937,8 +939,22 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
       if [[ -n "$STORY_ARG" && -z "${TYCON_EVIDENCE_KEY_FAILED:-}" ]]; then
         _TG_SEALED="${TYCON_EVIDENCE_DIR:-$REPO/.advisors/dod-runtime}/${TYCON_EVIDENCE_KEY:-$STORY_ID}-tests-result.json"
       fi
+      # Quién corre la completa si esta corrida está acotada (la cruzada, el árbol armado del privado o el repo que acota
+      # en .test-gate.yaml): con eso, sacar la última roja con la constancia en verde deja el check `tests` en verde.
+      _TG_ONE_BY=""
+      if [[ "$TG_CROSS" == "1" ]]; then _TG_ONE_BY="la CI del pedido (la corrida cruzada se acota a lo tocado)"
+      elif [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then _TG_ONE_BY="la CI del pedido y el nocturno (árbol armado del privado)"
+      else
+        # salida 10: el repo no acota (lo normal); otra salida no acota y se dice, con el motivo que imprimió arriba
+        _tg_one_rc=0
+        _TG_ONE_BY="$(node "$SCRIPT_DIR/lib/test-gate-scope.js" "$REPO_RUN")" || _tg_one_rc=$?
+        if [[ "$_tg_one_rc" != "0" ]]; then
+          [[ "$_tg_one_rc" == "10" ]] || echo "[test-gate] ⚠️  no pude leer test_gate de .test-gate.yaml (salió $_tg_one_rc): la repetición no deja el check tests en verde" >&2
+          _TG_ONE_BY=""
+        fi
+      fi
       ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed clear --path "$SUITE_ONLY" --repo "$REPO_STORY" ${_TG_ONE_TREE:+--summary "$RESULTS_DIR/suites.json" --tree "$_TG_ONE_TREE" --coverage-file "$RESULTS_DIR/coverage/lcov.info"} \
-          --result "$OUT_FILE" --story-id "$STORY_ID" ${_TG_SEALED:+--sealed "$_TG_SEALED"} ${_TG_ONE_INHERITED:+--inherited} ) \
+          --result "$OUT_FILE" --story-id "$STORY_ID" ${_TG_SEALED:+--sealed "$_TG_SEALED"} ${_TG_ONE_INHERITED:+--inherited} ${_TG_ONE_BY:+--full-suite-by "$_TG_ONE_BY"} ) \
         || echo "[test-gate] ⚠️  $SUITE_ONLY salió verde pero no pude sacarla de la lista de las que fallaron: la corrida completa la va a seguir pidiendo" >&2
     fi
     borrar_arbol_privado; trap - EXIT; exit "$_tg_rc"

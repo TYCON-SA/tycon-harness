@@ -167,7 +167,9 @@ function validate(doc, { strict = true } = {}) {
       errors.push(`falta el campo de identidad \`${k}\``);
     }
   }
-  if (doc.repo && !path.isAbsolute(String(doc.repo))) {
+  // absoluta en cualquiera de los dos sistemas: el archivo de una máquina Windows también se valida en el agente Linux
+  // de la noche, donde `path.isAbsolute` no reconoce `C:/...`
+  if (doc.repo && !path.posix.isAbsolute(String(doc.repo)) && !path.win32.isAbsolute(String(doc.repo))) {
     errors.push('`repo` tiene que ser un path ABSOLUTO (contrato con retro-pending)');
   }
   if (doc.merge_commit && String(doc.merge_commit).trim().length < 7) {

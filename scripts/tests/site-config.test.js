@@ -3710,6 +3710,160 @@ test('8.122 T9 · Config_CoordinationCap_SectionAndRequest @story-8.122 @ac-9', 
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
 });
 
+// ── Los topes del camino corto (short_path, @story-8.182) ──────────────────────────────────────────────────────────────
+// Los configura cada organización dentro de un máximo (6 y 12). La sección nunca se aplica sola: un cambio de estos topes
+// lo aprueba una persona que no sea quien lo propone.
+
+test('T7 Sitio_SeccionCaminoCorto_ExisteConSusTextos @story-8.182 @ac-7', async () => {
+  const s = ORG.seccionPorId('caminoCorto');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita, s.noSeAplicaSola],
+    ['team-profile.json', 'perfil', 'harness-config', ['short_path'], ['short_path.coordinator_max_files', 'short_path.max_files'], ['short_path'], true]);
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['pantalla.caminoCortoTitulo', 'pantalla.caminoCortoDescripcion', 'pantalla.caminoCortoDelegado', 'pantalla.caminoCortoMaximo', 'pantalla.caminoCortoAyuda', 'pantalla.caminoCortoNoSeAplicaSola', 'pantalla.para.caminoCorto', 'org.capaSinShortPath']) {
+      assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+    }
+    // los textos dicen el valor por defecto y el máximo de cada tope
+    assert.match(textos.t(idioma, 'pantalla.caminoCortoDelegado'), /5/); assert.match(textos.t(idioma, 'pantalla.caminoCortoDelegado'), /6/);
+    assert.match(textos.t(idioma, 'pantalla.caminoCortoMaximo'), /8/); assert.match(textos.t(idioma, 'pantalla.caminoCortoMaximo'), /12/);
+    // y qué pasa al subirlos: el primero deja más archivos sin revisores, el segundo saca el click aparte
+    const ayuda = textos.t(idioma, 'pantalla.caminoCortoAyuda');
+    assert.match(ayuda, idioma === 'es' ? /Subir el primero[^.]*revisores/ : /Raising the first[^.]*reviewers/);
+    assert.match(ayuda, idioma === 'es' ? /Subir el segundo[^.]*click/ : /Raising the second[^.]*click/);
+    assert.match(ORG.pantalla(idioma), /caminoCorto: editorCaminoCorto/);
+  }
+  const p = await pantallaFalsa([seccionPerfil('caminoCorto', {})]);
+  assert.strictEqual(p.error, null);
+  const campos = p.todo(p.sec('caminoCorto')).filter((n) => n.tag === 'input').map((n) => n.attrs['data-path']);
+  assert.deepStrictEqual(campos, ['short_path.coordinator_max_files', 'short_path.max_files'], 'los dos campos');
+  assert.match(p.textoDe('caminoCorto'), /nunca se aplica sola/i);
+});
+
+test('T8 Sitio_FueraDeRango_NoSePropone @story-8.182 @ac-8', () => {
+  const rev = (borrador) => ORG.revisar({ seccion: 'caminoCorto', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ short_path: { coordinator_max_files: 4, max_files: 10 } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, short_path: { coordinator_max_files: 4, max_files: 10 } }));
+  assert.strictEqual(rev({ short_path: { coordinator_max_files: 7 } }).ok, false, 'el delegado pasa de 6');
+  assert.strictEqual(rev({ short_path: { max_files: 13 } }).ok, false, 'el máximo pasa de 12');
+  assert.strictEqual(rev({ short_path: { max_files: 0 } }).ok, false);
+  const cruzado = rev({ short_path: { coordinator_max_files: 6, max_files: 4 } });
+  assert.strictEqual(cruzado.ok, false, 'el delegado no pasa del otro');
+  assert.ok(cruzado.problems.some((x) => /coordinator_max_files/.test(x.path)), JSON.stringify(cruzado.problems));
+});
+
+test('T9 Sitio_CapaVieja_PideVersion @story-8.182 @ac-9', () => {
+  const CON = { ...PERFIL_TYCON, short_path: { max_files: 10 } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
+  assert.match(bajo, /todavía no se puede proponer/);
+  assert.match(bajo, /short_path/);
+  assert.ok(bajo.includes(`>= ${ORG.SHORT_PATH_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SHORT_PATH_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+  // un perfil que no trae la sección no pide la versión
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', actual: PERFIL_TYCON, doc: PERFIL_TYCON }), null);
+});
+
+test('T10 Sitio_CampoVacio_SacaLaClave @story-8.182 @ac-10', async () => {
+  const PERFIL = { ...PERFIL_TYCON, short_path: { coordinator_max_files: 3, max_files: 10 } };
+  const rev = (borrador) => ORG.revisar({ seccion: 'caminoCorto', texto: ORG.formatJson(PERFIL), borrador, lectores: { 'harness-config': TC } });
+  const uno = rev({ short_path: { coordinator_max_files: 3 } });
+  assert.strictEqual(uno.ok, true, JSON.stringify(uno.problems));
+  assert.strictEqual(uno.texto, ORG.formatJson({ ...PERFIL_TYCON, short_path: { coordinator_max_files: 3 } }), 'la clave vacía sale, no queda en blanco');
+  const ninguno = rev({});
+  assert.strictEqual(ninguno.ok, true, JSON.stringify(ninguno.problems));
+  assert.strictEqual(ninguno.texto, ORG.formatJson(PERFIL_TYCON), 'sin las dos claves, la sección sale entera');
+  // en la pantalla: vaciar el campo saca la clave de lo que se revisa
+  const pedidos = [];
+  const p = await pantallaFalsa([seccionPerfil('caminoCorto', { short_path: { coordinator_max_files: 3, max_files: 10 } })], { '/api/config/revisar': (cuerpo) => { pedidos.push(cuerpo); return { ok: true, problems: [] }; } });
+  const campo = p.todo(p.sec('caminoCorto')).find((n) => n.tag === 'input' && n.attrs['data-path'] === 'short_path.max_files');
+  campo.on.input({ target: { value: '' } });
+  await p.click('Revisar cambios', 'caminoCorto');
+  assert.deepStrictEqual(pedidos.pop().borrador.short_path, { coordinator_max_files: 3 });
+});
+
+/** El perfil del equipo por HTTP con Azure de juguete que deja completar, y la organización con «se aplican solos». */
+async function conPerfilQueSeAplicaSolo({ politica }, fn) {
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  let ado; let r; let dir;
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'perfil' });
+    ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: politica === 'autor', scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+    ({ r, dir } = await opsPorHttp({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.SHORT_PATH_SINCE), 'team-repos.json': TR_BASE }));
+    ado.st.permitirCompletar = true;
+    ado.st.alCompletar = (p) => { const s = r.ref(p.sourceRefName); spawnSync('git', ['update-ref', 'refs/heads/main', s], { cwd: r.bare }); };
+    const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
+    const config = opsBase({ site: { maintainers: [LEAD], auto_apply: true } });
+    const espejo = buzonConMaquinas({ 'mac-1': '2026.11.08.99', 'mac-2': '2026.11.08.99' });
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': config }), perfil: dir, config, espejo }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
+      const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
+      const estado = async () => (await ctx.h.pedir('/api/config', { cookie: lead })).json;
+      const revisar = async (id, borrador) => (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: id, borrador })).json;
+      const proponer = async (id, texto) => { const s = (await estado()).secciones.find((x) => x.id === id); return (await ctx.escribir('/api/config/proponer', lead, tok, { seccion: id, texto, oid: s.oid })).json; };
+      await fn({ ...ctx, ado, r, estado, revisar, proponer });
+    });
+  } finally { await cerrarTodos(ado, r); }
+}
+
+test('T11 Sitio_AutoAplicar_EstaSeccionEspera @story-8.182 @ac-12', { skip: SIN_BACKEND, timeout: 120000 }, async () => {
+  // la rama deja que quien propone apruebe: las demás secciones se aplican solas; ésta queda con «Proponer» apagado
+  await conPerfilQueSeAplicaSolo({ politica: 'autor' }, async ({ estado, revisar, proponer, ado, r }) => {
+    const e = await estado();
+    const p = e.proponer.perfil;
+    assert.ok(p.porSeccion && p.porSeccion.caminoCorto, JSON.stringify(p));
+    assert.strictEqual(p.porSeccion.caminoCorto.habilitado, false, JSON.stringify(p.porSeccion.caminoCorto));
+    assert.match(p.porSeccion.caminoCorto.motivo, /Allow requestors to approve their own changes/);
+    const rev = await revisar('caminoCorto', { short_path: { max_files: 10 } });
+    assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
+    const antes = r.ref('refs/heads/main');
+    const no = await proponer('caminoCorto', rev.texto);
+    assert.strictEqual(no.ok, false, JSON.stringify(no));
+    assert.strictEqual(r.ref('refs/heads/main'), antes, 'main no cambió');
+    // la otra sección del mismo archivo sí se aplica sola
+    const otra = await revisar('oficina', { office: { quiet_minutes: 20 } });
+    const si = await proponer('oficina', otra.texto);
+    assert.strictEqual(si.codigo, 'aplicado', JSON.stringify(si));
+    assert.strictEqual(ado.st.pedidos.length, 1);
+  });
+  // la rama pide un revisor que no sea quien propone: abre el pedido, no lo completa, y la pantalla dice que espera
+  await conPerfilQueSeAplicaSolo({ politica: 'otro' }, async ({ estado, revisar, proponer, ado, r }) => {
+    const p = (await estado()).proponer.perfil.porSeccion.caminoCorto;
+    assert.deepStrictEqual([p.habilitado, p.aplicaSolo], [true, false], JSON.stringify(p));
+    assert.match(p.motivoAplicar, /nunca se aplica sola/i);
+    const rev = await revisar('caminoCorto', { short_path: { max_files: 10 } });
+    const antes = r.ref('refs/heads/main');
+    const abierto = await proponer('caminoCorto', rev.texto);
+    assert.strictEqual(abierto.ok, true, JSON.stringify(abierto));
+    assert.notStrictEqual(abierto.codigo, 'aplicado');
+    assert.strictEqual(ado.llamadas.filter((l) => l.method === 'PATCH').length, 0, 'nadie lo completó');
+    assert.strictEqual(r.ref('refs/heads/main'), antes);
+    assert.strictEqual(JSON.parse(r.archivoEn(ado.st.pedidos[0].sourceRefName, 'team-profile.json')).short_path.max_files, 10);
+  });
+});
+
+// 🔴 Falla con: el estado de «Proponer» de la sección que nunca se aplica sola consultado con el nombre de hoy del perfil
+// cuando el repo todavía usa el de antes: una política con filtro de ruta a perfil-equipo.json lo apagaba, y el servidor
+// igual aceptaba la propuesta (hallazgo del pase adversarial, prueba promovida).
+test('T11b Sitio_SeccionQueEspera_ConElNombreViejoDelPerfil @story-8.182 @ac-12', { skip: SIN_BACKEND, timeout: 120000 }, async () => {
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  let ado; let r; let dir;
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'perfil' });
+    ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Required reviewers' },
+      settings: { minimumApproverCount: 1, creatorVoteCounts: false, addedFilesOnly: false, requiredReviewerIds: ['grupo'], filenamePatterns: ['/perfil-equipo.json'], scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+    ({ r, dir } = await opsPorHttp({ 'perfil-equipo.json': {}, 'team-layer.json': capa(ORG.SHORT_PATH_SINCE), 'team-repos.json': TR_BASE }));
+    const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
+    const config = opsBase();
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': config }), perfil: dir, config }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
+      const lead = await ctx.entrar(LEAD);
+      const e = (await ctx.h.pedir('/api/config', { cookie: lead })).json;
+      assert.strictEqual(e.secciones.find((x) => x.id === 'caminoCorto').archivo, 'perfil-equipo.json');
+      const p = e.proponer.perfil.porSeccion.caminoCorto;
+      assert.strictEqual(p.habilitado, true, JSON.stringify(p));
+    });
+  } finally { await cerrarTodos(ado, r); }
+});
+
 // ── Los nombres de las sesiones nuevas (coordination.session_names) ─────────────────────────────────────────────────────
 // El sitio elige para la organización «como hoy» o un tema de fábrica; la lista propia de cada dev va en su máquina y la
 // arma su sesión. Una lista escrita a mano en el perfil se muestra y no se pisa.

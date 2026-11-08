@@ -412,7 +412,8 @@ y sus constancias, que valen mientras no cambie lo que miden. Una tarea nueva en
   `marker.js adhoc set '<json>' --for-session <sesión>`. Corre sin ventana sólo si el perfil delega `adhoc-lane` (no
   entra en ningún grupo: hay que nombrarla), la máquina está en la lista y el dueño confirmó la designación; si no, sale
   la ventana en la pestaña de la designada. Por esta vía tiene tres límites, y el guion y el freno de edición los
-  comprueban: el cupo es de 5 archivos como mucho (pedir más se niega, y el freno da el cuadro para el dueño); el arreglo nunca toca lo sensible (la lista de
+  comprueban: el cupo es de 5 archivos como mucho por defecto, y lo configura cada organización (`short_path` en el perfil
+  del equipo; pedir más se niega, y el freno da el cuadro para el dueño); el arreglo nunca toca lo sensible (la lista de
   `scripts/lib/signatures.js`: firmas, frenos, avisos, permisos, el perfil), que va con la firma del dueño; y antes de
   abrirlo le llega al dueño una línea por los canales de los avisos, con la sesión, el motivo y el cupo: sin
   entrega, no hay arreglo. La designada no se lo declara a sí misma.
@@ -421,7 +422,8 @@ y sus constancias, que valen mientras no cambie lo que miden. Una tarea nueva en
   designación que el dueño confirmó. Sin designada en la máquina destino, el atajo se aprueba en la ventana de la
   pestaña destino.
 
-**Pasar el tope no pasa por vos.** Pedir más de 8 archivos es la firma `adhoc-lane:sobre-cupo`, y la elige el dev: con su
+**Pasar el tope no pasa por vos.** Pedir más de 8 archivos (por defecto; lo configura cada organización) es la firma
+`adhoc-lane:sobre-cupo`, y la elige el dev: con su
 click en el cuadro de la pestaña que hace el trabajo, o en su terminal. Un click en tu pestaña no vale, ni un «aprobado»
 reenviado, ni la delegación; por eso una sesión de fondo sin nadie mirando sólo puede hacerlo por la terminal. Cuentan sólo
 los archivos de implementación que el arreglo cambió: lo traído de `main`, las pruebas, las guías y las sondas no suman. Al

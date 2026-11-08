@@ -469,6 +469,21 @@ test('T26 2.79-Guia_PestanasYBloquesComoElSitio @story-2.79 @ac-23 — pestañas
   }
 });
 
+test('T13 2.78-Guia_TarjetaDeFirmas @story-2.78 @ac-12 — la tarjeta de las firmas, en la pestaña de ejecuciones de las dos guías', () => {
+  // 🔴 rojo: falta la tarjeta, de dónde salen las firmas, alguna de las tres marcas, la nota de otra carpeta o lo del
+  //    saneado con tope, en cualquiera de las dos guías.
+  const sub = (t, titulo) => { const i = t.indexOf(`\n### ${titulo}\n`); if (i < 0) return ''; const j = t.indexOf('\n### ', i + 5); return t.slice(i, j < 0 ? undefined : j); };
+  const casos = [
+    [GUIA, 'Ejecuciones', [/«Las firmas»/, /registro común de firmas/, /«Tuya»/, /«Por delegación»/, /«Hecha y avisada»/, /otra carpeta/, /saneado/, /tope/, /8 caracteres/]],
+    [GUIA_EN, 'Runs', [/«Signatures»/, /common signature log/, /«Yours»/, /«By delegation»/, /«Done and notified»/, /another folder/, /sanitized/, /capped/, /8 characters/]],
+  ];
+  for (const [guia, titulo, exige] of casos) {
+    const s = sub(leer(guia), titulo);
+    assert.ok(s, `${path.basename(guia)}: no está la sección «${titulo}»`);
+    for (const re of exige) assert.match(s, re, `${path.basename(guia)} «${titulo}»: falta ${re}`);
+  }
+});
+
 test('T52 2.79-Guia_SinElIdDeLaFicha @story-2.79 @ac-42 — las dos guías no muestran el id «corridas» como texto; la dirección /corridas se queda', () => {
   // 🔴 rojo: vuelve «(`corridas`)» junto a la ficha de la duración de una ejecución, en cualquiera de las dos guías.
   for (const guia of [GUIA, GUIA_EN]) {

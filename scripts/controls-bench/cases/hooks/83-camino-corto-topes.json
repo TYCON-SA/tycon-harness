@@ -1,0 +1,49 @@
+{
+  "__doc": "T24 Banco_TopesDelCaminoCorto @story-8.182 @ac-16 @ac-17 @ac-21. Los topes del camino corto los configura cada organización en su perfil (short_path); el banco no puede poner un perfil en la carpeta del arnés que corre, así que mide los de fábrica: un carril sin número se mide con el tope que rige (8 sin perfil), el mensaje dice ese número, y un carril con su número conserva el suyo aunque el tope sea otro. Los topes configurados, el cupo delegado y la firma de sobre cupo los cubren tycon-config.test.js, owner-window.test.js y story-gate-cli.test.js con un arnés copiado con su perfil; lo sensible y el riesgo alto, adhoc-high-risk.test.js y adhoc-two-profiles.test.js, que no cambian.",
+  "hooks": [
+    {
+      "hook": "on-pre-commit.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "camino-corto-topes-carril-sin-numero-frena-con-el-tope-que-rige",
+          "type": "must-block",
+          "_por_que": "un carril sin número legible con nueve archivos de implementación: se mide con el tope que rige (8 sin perfil) y el mensaje lo nombra.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "mkdir -p src && for i in 1 2 3 4 5 6 7 8 9; do echo x > src/a$i.js; done && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm nueve",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-topes.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-topes\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-topes", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "exit": 2, "stderr_re": ["PASÓ EL TOPE", "cupo 8\\b"] }
+        },
+        {
+          "id": "camino-corto-topes-carril-sin-numero-dentro-del-tope-pregunta",
+          "type": "must-emit",
+          "_por_que": "el mismo carril sin número con ocho archivos: entra en el tope que rige y pregunta como siempre.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "mkdir -p src && for i in 1 2 3 4 5 6 7 8; do echo x > src/a$i.js; done && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm ocho",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-topes.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-topes\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-topes", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "stdout_re": ["\"permissionDecision\":\"ask\""], "stdout_not_re": ["PASÓ EL TOPE"] }
+        },
+        {
+          "id": "camino-corto-topes-carril-con-su-numero-lo-conserva",
+          "type": "must-emit",
+          "_por_que": "un carril abierto con su número (10, elegido por la persona) y nueve archivos: termina con su número aunque el tope que rige sea otro.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "mkdir -p src && for i in 1 2 3 4 5 6 7 8 9; do echo x > src/a$i.js; done && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm nueve",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":10,\"sobreCupo\":true,\"cupoPedido\":10,\"eligio\":\"persona\",\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-topes.json\"; printf '{\"name\":\"adhoc-lane:sobre-cupo-signed\",\"status\":\"ok\",\"destino\":\"bench-topes\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-topes", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "stdout_re": ["\"permissionDecision\":\"ask\""], "stdout_not_re": ["PASÓ EL TOPE"] }
+        }
+      ]
+    }
+  ]
+}
