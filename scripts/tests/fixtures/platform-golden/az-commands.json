@@ -45,6 +45,9 @@
   "guides/produccion-con-permiso.md": [
     "- `az rest` con el método delete, o con un método que sale de una variable: la dirección puede ser un grupo o un"
   ],
+  "guides/safety-guard.md": [
+    "| **GIT-C5** | Mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: `gh pr merge … --admin`; `gh api` que escribe un merge (`pulls/<n>/merge`, `merges`, `mergePullRequest`, `mergeBranch`), mueve una rama (`git/refs/heads/<rama>` con PATCH, `updateRef`), una regla (`rulesets`) o la protección de una rama; `az repos pr update\\|create --bypass-policy` cierto; `az repos policy … create\\|update\\|delete`; `az devops security permission update` con los bits 128, 32768, 2048 u 8192; `az rest` o `az devops invoke` que escriben sobre pedidos, políticas o permisos. Lo lee `scripts/lib/ci-bypass.js` | La cuenta del agente puede ser administradora: sin este freno, la CI y la constancia de los controles dejan de ser la segunda llave. Pide la firma `merge-bypass` (`escape:merge-bypass`, nivel 3) en la ventana o, sin ventana, con un click o un «aprobado»: vale para ese comando, una vez, y nunca por delegación (en Codex, por la terminal). Lo que el lector no entiende entero frena sin ventana: escondida (`bash -c`, `eval`, `$(…)`, una variable, `xargs`, `find -exec`, un cuerpo que no se lee), lanzada por un programa que no es una envoltura conocida (`arch`, `flock`, `sudo -E`), o con una palabra que arma la terminal donde puede ir la forma; si el lector no carga, frena. Leer y el camino normal (`gh pr merge <n> --merge`) pasan. El empuje directo a main del arnés público lo frena el freno de publicación, sin salida para el agente |"
+  ],
   "guides/workflow-orchestration.md": [
     "`shared/` entra sin CI; se verifica con `az pipelines runs show` (el commit no aparece en NINGÚN"
   ],
@@ -113,6 +116,14 @@
     "* un `az repos pr \\<salto> create` esquivaría el filtro y con él al hook entero. Y NO nombra al binario a",
     "// Una sustitución de comandos ES un comando: `PR=$(az repos pr create …)` tiene que juzgarse",
     "// abierta que se traga el `az repos pr create` de la línea siguiente."
+  ],
+  "scripts/lib/ci-bypass.js": [
+    "*     `az devops security permission update` con los bits 128, 32768, 2048 u 8192 (o un `--allow-bit` que no se lee);",
+    "*     `az rest` o `az devops invoke` que escriben sobre pedidos, políticas o permisos. Vale igual con la ruta completa",
+    "*   · az-bypass: `az repos pr update|create --bypass-policy` cierto; `az repos policy … create|update|delete`;",
+    "if (cuerpo && !cuerpo.literal) return escondido('el cuerpo de `az rest` no se puede leer (sale de un archivo o lo arma la terminal): escribilo tal cual', 'az-bypass');",
+    "if (resto.some((f) => f.esBandera && /^--in-file(=|$)/.test(f.texto))) return escondido('el cuerpo de `az devops invoke` sale de un archivo (--in-file) y no se puede leer', 'az-bypass');",
+    "return /^\\$|dev\\.azure\\.com|visualstudio\\.com|_apis/i.test(uri.texto) ? escondido('la dirección de `az rest` que escribe la arma la terminal: escribila tal cual', 'az-bypass') : null;"
   ],
   "scripts/nightly/dependencies/work-items.js": [
     "*    explícitos en cada llamada: el default de `az devops configure` apunta a un proyecto que ya no"
