@@ -664,16 +664,6 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/tests-without-ci.test.sh`
 
-## scripts/ci/control-size.js
-
-**Qué es:** Lista los controles del arnés del más grande al más chico, con sus letras, cuántos subcomandos leen de sus argumentos y cuántos archivos los nombran. Avisa cuando uno pasa las 90.000 letras y cuando `marker.js`, `pipeline.js` o el freno de guiones cargan más módulos de los que ese freno recorre.
-
-**Por qué existe:** Un control muy grande cuesta demostrar que anda solo y junto a los demás, y deja ciego al freno de guiones. El freno tiene dos cortes, que el guion lee de su texto, nunca copiados. Desde el módulo 21 de cada cuenta del comando (los del arnés y los demás llevan cuentas aparte), el módulo no entra. Lo que cargan los módulos del nivel 2 no se mira. Si el texto cambia y no los encuentra, lo dice («no medido»). La cuenta es por comando: con dos de estos archivos en el mismo comando, el tope llega antes.
-
-**Quién la usa:** La CI pública, en cada pedido: el paso `control-size` de `public-ci.sh` avisa sólo por lo que el pedido toca y nunca frena (si no puede medir, también lo dice como aviso). A mano, sin argumentos, lista todo.
-
-**Dónde se prueba:** `scripts/tests/control-size.test.js` y `scripts/tests/public-ci.test.sh`
-
 ## skills/tycon-pipeline/scripts/lib/first-story.js — la primera historia de la máquina
 
 **Qué es:** Dice si una historia es la primera que cierra la máquina, por evidencia, y al cerrarla ofrece una sola vez la instalación completa en tres renglones.
