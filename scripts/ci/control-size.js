@@ -133,7 +133,8 @@ function subcomandosJs(texto) {
 // sólo el nivel de arriba del guion (sin sangría): dentro de una función, `$1` es el argumento de la función
 function subcomandosSh(texto) {
   const vars = new Set(['1']);
-  for (const m of texto.matchAll(/^(\w+)=["']?\$\{?1(?::-[^}]*)?\}?["']?\s*$/gm)) vars.add(m[1]);
+  // `X=$1`, `X="${1:-…}"`, `X="${1:?…}"; shift` …
+  for (const m of texto.matchAll(/^(\w+)=["']?\$\{?1(?::?[-?=+][^}]*)?\}?["']?\s*(?:;.*)?$/gm)) vars.add(m[1]);
   const vistos = new Set();
   const lineas = texto.split('\n');
   for (let i = 0; i < lineas.length; i++) {
@@ -151,12 +152,23 @@ const subcomandos = (ruta, texto) => (ruta.endsWith('.sh') ? subcomandosSh(texto
 
 // ── quién llama ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Por nombre de guion, cuántos archivos versionados lo nombran. Una sola pasada por archivo. */
+const ultimasDos = (rel) => `${path.posix.basename(path.posix.dirname(rel))}/${path.posix.basename(rel)}`;
+
+/**
+ * Cuántos archivos versionados nombran a cada guion. Una sola pasada por archivo. Un nombre que se repite en el árbol
+ * (dos archivos `x.js` en carpetas distintas) cuenta sólo cuando la mención trae su carpeta (`ci/x.js`, o una ruta
+ * relativa que lleva a él); suelto no se sabe de cuál habla y no cuenta. La clave es el nombre, o `carpeta/nombre` si se
+ * repite (`claveDe`).
+ */
 function llamadores(root) {
   const r = git(root, ['ls-files', '-z']);
   if (!r.ok) return { motivo: `no medido: sin git (${r.motivo})` };
+  const lista = r.out.split('\0').filter(Boolean);
+  const repetidos = new Map();
+  for (const rel of lista) repetidos.set(path.posix.basename(rel), (repetidos.get(path.posix.basename(rel)) || 0) + 1);
+  const claveDe = (rel) => ((repetidos.get(path.posix.basename(rel)) || 0) > 1 ? ultimasDos(rel) : path.posix.basename(rel));
   const cuenta = new Map();
-  for (const rel of r.out.split('\0').filter(Boolean)) {
+  for (const rel of lista) {
     if (/\.md$/i.test(rel) || /(^|\/)tests?\//.test(rel) || /\.test\./.test(rel)) continue;
     let texto;
     try {
@@ -166,12 +178,18 @@ function llamadores(root) {
       texto = fs.readFileSync(abs, 'utf8');
     } catch { continue; }
     if (texto.includes('\0')) continue;
-    const propio = path.basename(rel);
-    const nombres = new Set();
-    for (const m of texto.matchAll(/(?<![\w.-])[\w.-]+\.(?:js|cjs|mjs|sh)(?![\w-])/g)) if (m[0] !== propio) nombres.add(m[0]);
-    for (const n of nombres) cuenta.set(n, (cuenta.get(n) || 0) + 1);
+    const claves = new Set();
+    for (const m of texto.matchAll(/(?<![\w.-])((?:[\w.-]+\/)*)([\w.-]+\.(?:js|cjs|mjs|sh))(?![\w-])/g)) {
+      const nombre = m[2];
+      if ((repetidos.get(nombre) || 0) <= 1) { claves.add(nombre); continue; }
+      // relativa al archivo que la nombra (`./x.js`, `../ci/x.js`) o con su carpeta adelante
+      const ruta = /^\.\.?\//.test(m[1]) ? path.posix.join(path.posix.dirname(rel), m[1] + nombre) : m[1] + nombre;
+      if (ruta.includes('/')) claves.add(ultimasDos(ruta));
+    }
+    claves.delete(claveDe(rel));
+    for (const k of claves) cuenta.set(k, (cuenta.get(k) || 0) + 1);
   }
-  return { cuenta };
+  return { cuenta, claveDe };
 }
 
 // ── el recorrido del freno ─────────────────────────────────────────────────────────────────────────────────────────
@@ -209,20 +227,26 @@ function importsLocales(abs, texto) {
   return out;
 }
 
-/** Cuántos módulos locales alcanza un despachador y en cuántos niveles, sin tope; y qué archivos recorre. */
+/**
+ * Cuántos módulos locales alcanza un despachador y en cuántos niveles, sin tope; y qué archivos recorre. Los niveles se
+ * miden como los recorre el freno: en profundidad, en el orden de los `require`, y cada módulo con el nivel en que se lo
+ * ve por primera vez. En anchura cada módulo tendría su camino más corto, y eso da menos niveles de los que el freno
+ * recorre de verdad.
+ */
 function recorrido(abs) {
   const inicio = fs.realpathSync(abs);
-  const nivel = new Map([[inicio, 0]]);
-  const cola = [inicio];
-  while (cola.length) {
-    const actual = cola.shift();
+  const nivel = new Map();
+  let maximo = 0;
+  const visitar = (archivo, hondo) => {
+    if (nivel.has(archivo)) return;
+    nivel.set(archivo, hondo);
+    if (hondo > maximo) maximo = hondo;
     let texto;
-    try { texto = fs.readFileSync(actual, 'utf8'); } catch { continue; }
-    for (const r of importsLocales(actual, texto)) {
-      if (!nivel.has(r)) { nivel.set(r, nivel.get(actual) + 1); cola.push(r); }
-    }
-  }
-  return { modulos: nivel.size - 1, niveles: Math.max(...nivel.values()), archivos: [...nivel.keys()] };
+    try { texto = fs.readFileSync(archivo, 'utf8'); } catch { return; }
+    for (const r of importsLocales(archivo, texto)) visitar(r, hondo + 1);
+  };
+  visitar(inicio, 0);
+  return { modulos: nivel.size - 1, niveles: maximo, archivos: [...nivel.keys()] };
 }
 
 // ── medir ──────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -247,22 +271,32 @@ function medir(o) {
     }
   }
   const ll = llamadores(o.root);
-  for (const c of controles) c.llamadores = ll.cuenta ? ll.cuenta.get(path.basename(c.ruta)) || 0 : null;
+  for (const c of controles) c.llamadores = ll.cuenta ? ll.cuenta.get(ll.claveDe(c.ruta)) || 0 : null;
   controles.sort((a, b) => b.letras - a.letras || a.ruta.localeCompare(b.ruta));
 
-  // el rango: qué tocó y cuánto medía cada control en la base
+  // el rango: qué tocó y cuánto medía cada control en la base. Las rutas, relativas a --root aunque no sea la raíz de
+  // git (`--relative`); un archivo movido o renombrado se compara con su ruta de antes (`-M`), no como si fuera nuevo
   let tocados = null;
   let rangoMotivo = null;
   let base = null;
+  const rutaDeAntes = new Map();
   if (o.range) {
     const partes = o.range.split('...');
     const mb = partes.length === 2 ? git(o.root, ['merge-base', partes[0], partes[1]]) : { ok: false, motivo: 'el rango es <base>...<punta>' };
-    const d = mb.ok ? git(o.root, ['diff', '--name-only', o.range]) : mb;
-    if (d.ok) { tocados = new Set(d.out.split('\n').filter(Boolean)); base = mb.out.trim(); }
-    else rangoMotivo = `no medido: no pude leer el rango ${o.range} (${d.motivo}); aviso como sin rango`;
+    const d = mb.ok ? git(o.root, ['diff', '--relative', '--name-status', '-M', o.range]) : mb;
+    if (d.ok) {
+      tocados = new Set();
+      for (const linea of d.out.split('\n').filter(Boolean)) {
+        const campos = linea.split('\t');
+        const ahora = campos[campos.length - 1];
+        tocados.add(ahora);
+        if (/^[RC]/.test(campos[0]) && campos.length === 3) rutaDeAntes.set(ahora, campos[1]);
+      }
+      base = mb.out.trim();
+    } else rangoMotivo = `no medido: no pude leer el rango ${o.range} (${d.motivo}); aviso como sin rango`;
   }
   const letrasEnLaBase = (ruta) => {
-    const r = git(o.root, ['show', `${base}:${ruta}`]);
+    const r = git(o.root, ['show', `${base}:./${rutaDeAntes.get(ruta) || ruta}`]);
     return r.ok ? letrasDe(r.out) : null;
   };
 
@@ -295,7 +329,7 @@ function medir(o) {
       if (tocadosReales && !d.archivos.some((a) => tocadosReales.has(a))) continue;
       avisos.push(`${d.ruta} carga ${d.modulos} módulos locales en ${d.niveles} niveles; el freno de guiones no suma`
         + ` módulos pasado el módulo ${freno.tope.modulos} de cada cuenta del comando y no mira lo que cargan los del`
-        + ` nivel ${freno.tope.niveles} (aviso desde ${String(umbral.modulos).replace('.', ',')} módulos o`
+        + ` nivel ${freno.tope.niveles} (aviso con más de ${String(umbral.modulos).replace('.', ',')} módulos o más de`
         + ` ${String(umbral.niveles).replace('.', ',')} niveles, no frena)`);
     }
   }

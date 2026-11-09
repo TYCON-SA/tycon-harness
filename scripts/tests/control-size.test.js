@@ -199,6 +199,75 @@ test('T9 ControlSize_Unreadable_NotMeasured — @story-8.163 @ac-9: lo que no se
   assert.match(r.out, /no medido[^\n]*roto\.js|roto\.js[^\n]*no se pudo leer/);
 });
 
+// ── regresiones del pase adversarial ─────────────────────────────────────────────────────────────────────────────
+
+test('ControlSize_GateDepth_DepthFirstLikeTheGate — @story-8.163 @ac-2: los niveles se miden como los recorre el freno, en profundidad', () => {
+  // el freno entra a b.js por a→c→e→b (nivel 4) y no sigue lo que carga: f.js queda en el nivel 5, fuera de su vista.
+  // En anchura b.js estaría en el nivel 1 y el recorrido daría 3 niveles, por debajo del umbral (4 × 0,75 = 3)
+  const root = arbol({
+    [`${PIPE}/on-bash-write-gate.js`]: FRENO(4, 20),
+    [`${PIPE}/marker.js`]: "require('./lib/a.js');\nrequire('./lib/b.js');\n",
+    [`${PIPE}/lib/a.js`]: "require('./c.js');\n",
+    [`${PIPE}/lib/c.js`]: "require('./e.js');\n",
+    [`${PIPE}/lib/e.js`]: "require('./b.js');\n",
+    [`${PIPE}/lib/b.js`]: "require('./f.js');\n",
+    [`${PIPE}/lib/f.js`]: '',
+  });
+  const j = datos(root);
+  const marker = j.recorrido.despachadores.find((x) => x.ruta === `${PIPE}/marker.js`);
+  assert.deepStrictEqual({ modulos: marker.modulos, niveles: marker.niveles }, { modulos: 5, niveles: 5 });
+  assert.ok(j.avisos.some((a) => a.includes('marker.js') && /5 módulos locales en 5 niveles/.test(a)), j.avisos.join('\n'));
+});
+
+test('ControlSize_Range_RenameIsNotGrowth — @story-8.163 @ac-2: un control que sólo se mueve no avisa como si hubiera crecido', () => {
+  const root = arbol({ 'scripts/hooks/grande.js': relleno('// grande', 95000), 'scripts/ci/otro.js': '// la carpeta destino existe\n' });
+  git(root, 'commit', '-q', '-m', 'base');
+  git(root, 'tag', 'base');
+  git(root, 'mv', 'scripts/hooks/grande.js', 'scripts/ci/grande.js');
+  git(root, 'commit', '-q', '-m', 'lo mueve sin cambiarlo');
+  const j = datos(root, '--range', 'base...HEAD');
+  assert.deepStrictEqual(j.avisos.filter((a) => /letras/.test(a)), []);
+});
+
+test('ControlSize_Range_RootBelowGitTop — @story-8.163 @ac-2: con --root debajo de la raíz de git, el rango igual encuentra lo tocado', () => {
+  const top = arbol({ 'arnes/scripts/ci/crece.js': relleno('// crece', 91000), 'otro/leeme.txt': 'x\n' });
+  git(top, 'commit', '-q', '-m', 'base');
+  git(top, 'tag', 'base');
+  escribir(top, 'arnes/scripts/ci/crece.js', relleno('// crece', 93000));
+  git(top, 'commit', '-q', '-am', 'el pedido');
+  const j = datos(path.join(top, 'arnes'), '--range', 'base...HEAD');
+  const deTamano = j.avisos.filter((a) => /letras/.test(a));
+  assert.strictEqual(deTamano.length, 1, deTamano.join('\n'));
+  assert.match(deTamano[0], /scripts\/ci\/crece\.js.*93\.000/);
+});
+
+test('ControlSize_Subcommands_ShellRequiredArgForm — @story-8.163 @ac-1: en un .sh cuenta la forma `X="${1:?…}"; shift`', () => {
+  const root = arbol({
+    'scripts/ci/pide.sh': 'cmd="${1:?uso: pide.sh <uno|dos>}"; shift\ncase "$cmd" in\n  uno) ;;\n  dos) ;;\nesac\n',
+  });
+  assert.strictEqual(control(datos(root), 'scripts/ci/pide.sh').subcomandos, 2);
+});
+
+test('ControlSize_Callers_SameNameElsewhereDoesNotCount — @story-8.163 @ac-1: otro archivo con el mismo nombre no suma llamadores', () => {
+  const root = arbol({
+    'scripts/hooks/chico.js': '// un control\n',
+    'vendor/chico.js': '// otro archivo, mismo nombre\n',
+    'config/hooks.json': '{ "command": "node scripts/hooks/chico.js" }\n',
+    'otra/usa.json': '["vendor/chico.js"]\n',
+  });
+  assert.strictEqual(control(datos(root), 'scripts/hooks/chico.js').llamadores, 1);
+});
+
+test('ControlSize_WarningText_SaysAboveThreshold — @story-8.163 @ac-2: el aviso dice «más de» el umbral, que es lo que el código mide', () => {
+  const root = arbol({
+    [`${PIPE}/on-bash-write-gate.js`]: FRENO(2, 4),
+    [`${PIPE}/marker.js`]: "require('./lib/m1.js');\nrequire('./lib/m2.js');\nrequire('./lib/m3.js');\nrequire('./lib/m4.js');\n",
+    [`${PIPE}/lib/m1.js`]: '', [`${PIPE}/lib/m2.js`]: '', [`${PIPE}/lib/m3.js`]: '', [`${PIPE}/lib/m4.js`]: '',
+  });
+  const a = datos(root).avisos.find((x) => x.includes('marker.js'));
+  assert.match(a, /con más de 3 módulos o más de 1,5 niveles/);
+});
+
 test('ControlSize_BadArgument — un argumento que no entiende sale 2 y lo dice', () => {
   const root = arbol({ 'scripts/ci/uno.js': '' });
   const r = correr(root, '--unknown-flag');
