@@ -12,6 +12,8 @@
 #     (`TYCON_HARNESS_SHARED_DONE=1`) las saltea y no las reporta; con sólo `TYCON_HARNESS_LOCK_HELD=1` (un programa
 #     viejo, que no conoce esa variable) las sigue haciendo.
 #   - Opt-out via env var: `TYCON_NO_AUTOINSTALL=1` → exit 0 silencioso.
+#   - Sin Claude Code (`TYCON_HARNESS_CLAUDE=off`, lo pone harness.js): sólo lo de fondo de una lista cerrada, y nada
+#     en ~/.claude (ver «Sin Claude Code», más abajo).
 #   - Atomic write (tmp + mv).
 #   - Cross-platform: bash + python3 + node (sin dependencia de jq).
 #
@@ -120,6 +122,28 @@ if ! python3 -c 'pass' >/dev/null 2>&1; then
 fi
 
 # ============================================================
+# La carpeta del estado (el candado, los sellos, los registros de lo de fondo)
+# ============================================================
+# La dice scripts/lib/state-dir.sh, con la regla de tycon-home.js: en una máquina que vive en la casa propia del arnés,
+# <casa>/state; si no, la carpeta del mecanismo de siempre. Sin el ayudante (un árbol a medias) se queda con la de
+# siempre, como antes de que existiera.
+_SD_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/state-dir.sh"
+if [[ -f "$_SD_LIB" ]] && . "$_SD_LIB" 2>/dev/null; then STATE_DIR="$(tycon_state_dir)"
+else STATE_DIR="${HOME}/.claude/.tycon-pipeline"; fi
+unset _SD_LIB
+
+# ============================================================
+# Sin Claude Code: lo de fondo y nada más
+# ============================================================
+# `TYCON_HARNESS_CLAUDE=off` lo pone harness.js en una máquina que instaló el arnés sin Claude Code (sólo Codex). En
+# ese modo corre una lista cerrada: el candado, el reporte y el plan; la lectura de la configuración y del perfil; los
+# tres hooks globales de git y la mirada al core.hooksPath local de los clones; la recolección de hallazgos y el buzón.
+# Todo lo demás —el lugar del arnés, los enlaces, settings.json, las skills, los bloques de CLAUDE.md, los comandos, el
+# rescate del hilo (lee conversaciones de Claude Code), el banco, las métricas— no corre, y nada se escribe en
+# ~/.claude. Cada bloque saltado lleva la guarda `CLAUDE_OFF`.
+CLAUDE_OFF=0; [[ "${TYCON_HARNESS_CLAUDE:-}" == "off" ]] && CLAUDE_OFF=1
+
+# ============================================================
 # Lock anti-concurrencia
 # ============================================================
 # Con el mantenimiento corriendo desde el arranque de LAS DOS herramientas, abrir Claude Code y Codex juntos lanza
@@ -130,7 +154,7 @@ fi
 # Lanzado por `scripts/setup/harness.js` el candado ya lo tiene el padre (TYCON_HARNESS_LOCK_HELD=1) y acá no se toma
 # otro; corrido suelto lo toma.
 if [[ "$CHECK_ONLY" != "1" && "${TYCON_HARNESS_LOCK_HELD:-0}" != "1" ]]; then
-  INSTALL_LOCK="$HOME/.claude/.tycon-pipeline/install-tycon-hooks.lock"
+  INSTALL_LOCK="$STATE_DIR/install-tycon-hooks.lock"
   mkdir -p "$(dirname "$INSTALL_LOCK")" 2>/dev/null || true
   _lock_stale() { [[ -n "$(find "$INSTALL_LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]]; }
   if ! mkdir "$INSTALL_LOCK" 2>/dev/null; then
@@ -274,6 +298,9 @@ _skills_dir() { # _skills_dir read|write <campo>
 # `legacy_env`, así el nombre en castellano sigue apagando hasta su retiro. Sin la biblioteca, sólo el nombre nuevo.
 if [[ -f "$SCRIPT_DIR/lib/legacy-names.sh" ]]; then . "$SCRIPT_DIR/lib/legacy-names.sh"; else legacy_env() { :; }; fi
 
+# ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (el lugar del arnés, los enlaces, settings.json y las skills) no corre
+if [[ "$CLAUDE_OFF" != "1" ]]; then
+
 # ── El lugar del arnés: ~/.claude/tycon-harness, y el nombre viejo ─────────────────────────────────────────
 # Los prompts de revisores, pasos y skills nombran al arnés por este lugar (un prompt no lee una
 # variable) y el clon puede vivir en cualquier carpeta. La regla de nacimiento vive en canonical-path.js: el lugar nace
@@ -406,7 +433,7 @@ _repo_links entries
 # Las skills de terceros que quedaron en su lugar, según el estado del paso (entradas completas cuyo destino existe).
 # Apagado el paso (TYCON_THIRD_PARTY=0), no se anotan: decidió no tocarlas.
 if [[ -n "$REPORT_PIECES_TMP" && "${TYCON_THIRD_PARTY:-1}" != "0" ]]; then
-  python3 - "$HOME/.claude/.tycon-pipeline/third-party-state.json" "$AGENT_SKILLS_REPO" >> "$REPORT_PIECES_TMP" 2>/dev/null <<'PY' || true
+  python3 - "$STATE_DIR/third-party-state.json" "$AGENT_SKILLS_REPO" >> "$REPORT_PIECES_TMP" 2>/dev/null <<'PY' || true
 import json, os, sys
 try:
     entries = json.load(open(sys.argv[1], encoding="utf-8")).get("entries") or {}
@@ -424,7 +451,7 @@ if [[ -n "$PLAN_PIECES_TMP" && "${TYCON_THIRD_PARTY:-1}" != "0" && -f "$SCRIPT_D
   # dónde mira si ya está (el clon, en el repo único sin el enlace todavía) y con qué ruta la anota: la del reporte y el
   # estado, ~/.claude/agent-skills/…, aunque el enlace todavía no exista
   _TP_WHERE="$AGENT_SKILLS_REPO"; [[ -n "${_CHECK_IN_CLONE:-}" ]] && _TP_WHERE="$HOME/.claude/agent-skills"
-  python3 - "$SCRIPT_DIR/publishing/third-party-skills.json" "$HOME/.claude/.tycon-pipeline/third-party-state.json" "${_CHECK_IN_CLONE:-$AGENT_SKILLS_REPO}" "$_TP_WHERE" >> "$PLAN_PIECES_TMP" 2>/dev/null <<'PY' || PLAN_INCOMPLETE=1
+  python3 - "$SCRIPT_DIR/publishing/third-party-skills.json" "$STATE_DIR/third-party-state.json" "${_CHECK_IN_CLONE:-$AGENT_SKILLS_REPO}" "$_TP_WHERE" >> "$PLAN_PIECES_TMP" 2>/dev/null <<'PY' || PLAN_INCOMPLETE=1
 import json, os, sys
 manifest, state_file, repo, where_root = sys.argv[1:5]
 try:
@@ -445,6 +472,9 @@ for e in wanted:
     print("third-party\t%s\t%s\t%s" % (os.path.join(where_root, target), os.path.basename(target), "keep" if done else "add"))
 PY
 fi
+
+fi
+# ▲ CLAUDE_OFF
 
 # ============================================================
 # Integraciones — cada una tiene su llave en la configuración del arnés
@@ -547,6 +577,11 @@ esac
 # full de verdad: lo que sólo trae full se hace (sin valor también es full); minimal o no saber, no
 PROFILE_FULL=0; [[ "$PROFILE_STATE" == "ok" && "$TYCON_PROFILE_VALUE" != "minimal" ]] && PROFILE_FULL=1
 PROFILE_IS_MINIMAL=0; [[ "$PROFILE_STATE" == "ok" && "$TYCON_PROFILE_VALUE" == "minimal" ]] && PROFILE_IS_MINIMAL=1
+
+# ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (los hooks de settings.json, los nombres viejos, las suites rápidas, el
+# lado Codex de este archivo, el AGENTS.md puntero, el banco, el examen, los bloques de CLAUDE.md, los comandos, la
+# paridad, los chequeos de engram y las métricas de etapa) no corre
+if [[ "$CLAUDE_OFF" != "1" ]]; then
 # ============================================================
 # Los hooks de settings.json
 # ============================================================
@@ -583,7 +618,7 @@ _APPLY_ARGS=(--settings "$SETTINGS" --hooks-dir "$TCG_HOOKS_DIR" --skills "$AGEN
 node "$SCRIPT_DIR/setup/apply-hooks.js" "${_APPLY_ARGS[@]}"
 
 # ── El mecanismo de instalación ─────────────────────────────────────────────────────────────────────
-# En una máquina que todavía no tiene estado (`~/.claude/.tycon-pipeline/harness-state.json`), este
+# En una máquina que todavía no tiene estado (`harness-state.json` en la carpeta del estado), este
 # aplicador —que la línea de arranque vieja SÍ llama— crea el estado sobre el clon, el enlace y el
 # agent-skills que ya están, copia el arranque fijo y migra la línea de arranque una sola vez (si el
 # `node` de la sesión alcanza el piso; si no, `harness.js` lo dice y deja la línea vieja). Va DESPUÉS
@@ -592,7 +627,7 @@ node "$SCRIPT_DIR/setup/apply-hooks.js" "${_APPLY_ARGS[@]}"
 # llama. Desde la sesión siguiente actualiza `harness.js startup`, por la copia fija.
 # Lanzado POR harness.js (TYCON_HARNESS_LOCK_HELD=1) no se llama: el estado lo escribe quien lo lanzó, y durante su
 # `install` el estado todavía no existe — se escribiría dos veces y quedaría una copia de seguridad de más.
-if [[ "$CHECK_ONLY" != "1" && "${TYCON_HARNESS_LOCK_HELD:-0}" != "1" && -f "$SCRIPT_DIR/setup/harness.js" && ! -f "$HOME/.claude/.tycon-pipeline/harness-state.json" ]] && command -v node >/dev/null 2>&1; then
+if [[ "$CHECK_ONLY" != "1" && "${TYCON_HARNESS_LOCK_HELD:-0}" != "1" && -f "$SCRIPT_DIR/setup/harness.js" && ! -f "$STATE_DIR/harness-state.json" ]] && command -v node >/dev/null 2>&1; then
   TYCON_HARNESS_LOCK_HELD=1 node "$SCRIPT_DIR/setup/harness.js" install --from-existing || true
 fi
 
@@ -748,7 +783,7 @@ if [[ -n "$UT_SKILLS" ]]; then
   for t in "${UNIT_TESTS[@]}"; do [[ -f "$t" ]] && UT_PRESENT+=("$t"); done
 fi
 # Con --check no corren (--check no escribe): sobre una HOME vacía, estas suites
-# dejan ~/.claude/.tycon-pipeline/file-events/ y story-dirs-cache.json. El aviso no se pierde: lo da la corrida normal de
+# dejan file-events/ y story-dirs-cache.json en la carpeta del estado. El aviso no se pierde: lo da la corrida normal de
 # cada arranque.
 # 🔴 Por `quick-suite-run.js`, nunca con un `node --test` suelto: corre sólo si cambió lo que prueban desde la última
 # corrida verde, con tope de la mitad de los núcleos y una sola corrida por máquina. Suelto, cada sesión que abría
@@ -804,7 +839,7 @@ fs.renameSync(tmp, `${out}/${kind}.json`);
 NODE
 }
 
-BACKFILL_STAMP="$HOME/.claude/.tycon-pipeline/backfill-tests-last-run"
+BACKFILL_STAMP="$STATE_DIR/backfill-tests-last-run"
 BF_PRESENT=()
 
 # ============================================================
@@ -1082,7 +1117,7 @@ PL
 fi
 
 BENCH_RUNNER="$TCG_HOOKS_DIR/../controls-bench/runner.js"
-BENCH_STAMP="$HOME/.claude/.tycon-pipeline/controls-bench-last-run"
+BENCH_STAMP="$STATE_DIR/controls-bench-last-run"
 if [[ "${TYCON_BENCH_DAILY:-1}" != "0" ]] && command -v node >/dev/null 2>&1 && [[ -f "$BENCH_RUNNER" ]]; then
   TODAY_CB="$(date +%Y-%m-%d)"
   LAST_CB="$(cat "$BENCH_STAMP" 2>/dev/null || true)"
@@ -1090,7 +1125,7 @@ if [[ "${TYCON_BENCH_DAILY:-1}" != "0" ]] && command -v node >/dev/null 2>&1 && 
   # sellar, corrido EN LÍNEA, se lleva puesto el arranque: la extensión de VS Code, que se rinde a los 60 s, deja de
   # abrir. Dos decisiones: el arranque no espera a ninguna batería, y un rojo se reintenta UNA VEZ POR DÍA en vez de en
   # cada sesión. El aviso no se pierde — lo cobra bench-notice.js al arranque siguiente, leyendo el reporte de .bench/.
-  BENCH_TRY_STAMP="$HOME/.claude/.tycon-pipeline/controls-bench-last-try"
+  BENCH_TRY_STAMP="$STATE_DIR/controls-bench-last-try"
   LAST_TRY_CB="$(cat "$BENCH_TRY_STAMP" 2>/dev/null || true)"
   # 🔴 El banco determinista NO se lanza desde las máquinas. Corre de noche en Azure DevOps
   # (pipelines/azure-pipelines-banco.yml) sobre lo publicado en main, y su reporte viaja por git:
@@ -1121,7 +1156,7 @@ if [[ "${TYCON_BENCH_DAILY:-1}" != "0" ]] && command -v node >/dev/null 2>&1 && 
       # `runner.js --tool both` corre en ADO con el resto del banco (ver arriba). Lo único que tiene que correr en una
       # máquina es el disparo REAL dentro de Codex — y con su PROPIO sello diario: si heredara el sello verde del banco,
       # un rojo cualquiera lo dejaría viejo y esto se relanzaría en cada arranque de sesión.
-      LIVE_FIRE_STAMP="$HOME/.claude/.tycon-pipeline/live-fire-codex-last-try"
+      LIVE_FIRE_STAMP="$STATE_DIR/live-fire-codex-last-try"
       if [[ "$(cat "$LIVE_FIRE_STAMP" 2>/dev/null || true)" != "$TODAY_CB" ]]; then
         echo "$TODAY_CB" > "$LIVE_FIRE_STAMP" 2>/dev/null || true
         nohup "$HNODE" "$TCG_HOOKS_DIR/../controls-bench/live-fire.js" --tool codex >/dev/null 2>&1 &
@@ -1317,10 +1352,10 @@ fi
 # override con TYCON_METRICS_SCAN_ROOT. Off: TYCON_STAGE_METRICS=0.
 # ============================================================
 STAGE_METRICS_JS="$SCRIPT_DIR/metrics/sdlc-stage-metrics.js"
-STAGE_STAMP="$HOME/.claude/.tycon-pipeline/stage-metrics-last-run"
+STAGE_STAMP="$STATE_DIR/stage-metrics-last-run"
 STAGE_ROOT="${TYCON_METRICS_SCAN_ROOT:-$(dirname "$(dirname "$SCRIPT_DIR")")}"
 # con --check no se sella ni se lanza el barrido (--check no escribe: dejaría el sello en
-# ~/.claude/.tycon-pipeline/ y lanzaría el respaldo, que escribe su punto del día en el clon)
+# la carpeta del estado y lanzaría el respaldo, que escribe su punto del día en el clon)
 # 🔴 Sólo donde el arnés corre desde un CLON: en una versión instalada el árbol no es un clon, la foto del
 # día nunca está en `<árbol>/.dashboard/` y este respaldo correría todos los días, barriendo una carpeta sin repos y
 # dejando una foto vacía con el nombre de la del nocturno. La pregunta vive en scripts/lib/meter-backup.sh.
@@ -1350,6 +1385,18 @@ if [[ "$CHECK_ONLY" != "1" && "${TYCON_STAGE_METRICS:-1}" == "1" && "$PROFILE_FU
   fi
 fi
 
+fi
+# ▲ CLAUDE_OFF
+
+# ── El historial viejo de los hooks, a la carpeta del estado ─────────────────────────────────────────────────────────
+# En una máquina que vive en la casa propia, los registros que los hooks dejaron en la carpeta de Claude Code antes de
+# pedir su casa se mudan una vez a la carpeta del estado, donde los buscan sus lectores: sin esto quedarían sin leer. Nunca
+# pisa ni borra: lo que ya tiene destino queda donde está y se dice. En otra máquina no hace nada. Corre también sin
+# Claude Code; con --check no se llama. Detalle: scripts/lib/loose-logs.js (`moveOld`).
+if [[ "$CHECK_ONLY" != "1" && -f "$SCRIPT_DIR/lib/loose-logs.js" ]] && command -v node >/dev/null 2>&1; then
+  node "$SCRIPT_DIR/lib/loose-logs.js" --move-old || true
+fi
+
 # ============================================================
 # Rescate del hilo y el consumo de las ejecuciones del pipeline.
 #
@@ -1372,18 +1419,18 @@ fi
 #   · `upload-runs.js` sube lo nuevo o lo que creció, bajo la carpeta de esta máquina, con la llave de
 #     SÓLO ESCRITURA commiteada en scripts/metrics/corridas-buzon.json. Todas las máquinas suben; nada
 #     que configurar. Va después del barrido para que lo rescatado en este arranque suba en este arranque.
-#   · `download-runs.js` baja lo de todo el equipo a ~/.claude/.tycon-pipeline/corridas-buzon/, con la
+#   · `download-runs.js` baja lo de todo el equipo a corridas-buzon/ de la carpeta del estado, con la
 #     sesión de az de la persona. Sólo DevA y DevB tienen el rol de lectura: en cualquier otra máquina
 #     no hace nada, no crea la carpeta y nunca abre un login. Va después de la subida para que la vista
 #     de esta máquina incluya lo de hoy.
 #
 # Y ENTRE el barrido y la subida, la recolección de HALLAZGOS:
 #   · `collect-findings.js` recorre los repos de esta máquina (dos niveles bajo la raíz de repos),
-#     proyecta cada hallazgo de los revisores a seis claves y deja ~/.claude/.tycon-pipeline/hallazgos.jsonl,
+#     proyecta cada hallazgo de los revisores a seis claves y deja hallazgos.jsonl en la carpeta del estado,
 #     que la subida sube como un registro más. Va ANTES de la subida para que lo de hoy suba hoy. Tiene su
 #     propio sello diario: en el segundo arranque del día contesta «ya lo hice» y no recorre nada.
 #   🔴 No depende de la subida: el cruce de poda de ESTA máquina lo lee aunque la subida esté apagada.
-# Registros: ~/.claude/.tycon-pipeline/{collect-findings,upload-runs,download-runs}.log
+# Registros: {collect-findings,upload-runs,download-runs}.log, en la carpeta del estado
 #            (se agregan; pasado ~512 KB, el viejo va a .1) y thread-rescue.log (el del barrido: se reescribe)
 #   🔴 Los registros con nombre en castellano se copian ANTES de abrirlos: los abre bash con `>>` antes de que corra
 #      node (`legacy-names.js --prepare-state`, una sola llamada, también de fondo); el viejo queda intacto hasta el
@@ -1401,7 +1448,8 @@ legacy_env TYCON_NO_THREAD_RESCUE; legacy_env TYCON_NO_UPLOAD_RUNS
 legacy_env TYCON_NO_DOWNLOAD_RUNS; legacy_env TYCON_NO_COLLECT_FINDINGS
 if [[ "$CHECK_ONLY" != "1" ]] && command -v node >/dev/null 2>&1; then
   # el rescate y la recolección son de full; la subida y la bajada, de su integración (en los dos perfiles)
-  [[ "${TYCON_NO_THREAD_RESCUE:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$TOKENS_DIGEST_JS" ]] && _RESCATAR=1
+  # el rescate lee las conversaciones de Claude Code: sin Claude Code no corre
+  [[ "${TYCON_NO_THREAD_RESCUE:-0}" != "1" && "$PROFILE_FULL" == "1" && "$CLAUDE_OFF" != "1" && -f "$TOKENS_DIGEST_JS" ]] && _RESCATAR=1
   # el buzón sólo con su llave prendida: sin la llave del buzón, ni subida ni bajada — y se ve en el resumen
   [[ "$TYCON_INTEG_MAILBOX" == "1" && "${TYCON_NO_UPLOAD_RUNS:-0}" != "1" && -f "$SUBIR_CORRIDAS_JS" ]] && _SUBIR=1
   [[ "$TYCON_INTEG_MAILBOX" == "1" && "${TYCON_NO_DOWNLOAD_RUNS:-0}" != "1" && -f "$BAJAR_CORRIDAS_JS" ]] && _BAJAR=1
@@ -1414,9 +1462,9 @@ if [[ "${TF_BUILD:-}" =~ ^[Tt][Rr][Uu][Ee]$ ]] && [[ "$_RESCATAR" == "1" || "$_S
   echo "tycon: dentro de una ejecución de Azure DevOps (TF_BUILD) — el rescate del hilo, la recolección de hallazgos y la subida/bajada de ejecuciones no se lanzan: un agente de CI no es una máquina del equipo" >&2
   _RESCATAR=0; _SUBIR=0; _BAJAR=0; _RECOLECTAR=0
 fi
-if [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECTAR" == "1" ]] && ! mkdir -p "$HOME/.claude/.tycon-pipeline" 2>/dev/null; then
+if [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECTAR" == "1" ]] && ! mkdir -p "$STATE_DIR" 2>/dev/null; then
   # 🔴 Sin esa carpeta los registros no se pueden escribir y el fondo no dejaría rastro: se dice acá.
-  echo "⚠ tycon: no se pudo crear $HOME/.claude/.tycon-pipeline — el rescate del hilo, la recolección de hallazgos y la subida/bajada de ejecuciones NO se lanzan en este arranque" >&2
+  echo "⚠ tycon: no se pudo crear $STATE_DIR — el rescate del hilo, la recolección de hallazgos y la subida/bajada de ejecuciones NO se lanzan en este arranque" >&2
   _RESCATAR=0; _SUBIR=0; _BAJAR=0; _RECOLECTAR=0
 fi
 if [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECTAR" == "1" ]]; then
@@ -1455,7 +1503,7 @@ if [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECT
     if [ "$8" = 1 ]; then rotar "$4/collect-findings.log"; "$N" "$9" --budget-ms 60000 >> "$4/collect-findings.log" 2>&1 < /dev/null; fi
     if [ "$5" = 1 ]; then rotar "$4/upload-runs.log"; "$N" "$3" --budget-ms 90000 >> "$4/upload-runs.log" 2>&1; fi
     if [ "$6" = 1 ]; then rotar "$4/download-runs.log"; "$N" "$7" --no-threads --budget-ms 120000 >> "$4/download-runs.log" 2>&1 < /dev/null; fi
-  ' _ "$_RESCATAR" "$TOKENS_DIGEST_JS" "$SUBIR_CORRIDAS_JS" "$HOME/.claude/.tycon-pipeline" "$_SUBIR" "$_BAJAR" "$BAJAR_CORRIDAS_JS" \
+  ' _ "$_RESCATAR" "$TOKENS_DIGEST_JS" "$SUBIR_CORRIDAS_JS" "$STATE_DIR" "$_SUBIR" "$_BAJAR" "$BAJAR_CORRIDAS_JS" \
     "$_RECOLECTAR" "$RECOLECTAR_JS" "$LEGACY_NAMES_JS" "$HNODE" \
     >/dev/null 2>&1 &
 fi
@@ -1688,7 +1736,8 @@ if [[ "${TYCON_NO_GIT_HOOKS:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$GIT_HO
   #                                          → tampoco se toca, y se dice.
   # Sólo lo que no está en el disco NI en el repo, o está con puros *.sample, es vestigial. Ninguna rama corta el
   # aplicador. Lo cuida scripts/tests/installer-repeated-hooks.test.sh (HOOKSPATH); el .ps1 lleva la misma regla.
-  for repo in "$AGENT_SKILLS_REPO" "$(dirname "$SCRIPT_DIR")"; do
+  # sin Claude Code no hay skills que buscar (AGENT_SKILLS_REPO no se resuelve): sólo se revisa el clon del arnés
+  for repo in "${AGENT_SKILLS_REPO:-}" "$(dirname "$SCRIPT_DIR")"; do
     [[ -d "$repo/.git" ]] || continue
     lhp="$(git -C "$repo" config --local core.hooksPath 2>/dev/null)" || true
     [[ -z "$lhp" ]] && continue
@@ -1742,8 +1791,9 @@ fi
 # hook la ignora. Off: TYCON_NO_AZ_PROJECTS_REFRESH=1.
 # Sólo con Azure DevOps prendida (ado.org configurada): afuera, con `az` instalado por otro motivo,
 # el instalador no le pregunta a ninguna organización. La organización se le pasa: la del lector, no la de `az devops configure`.
-if [[ "$TYCON_INTEG_ADO" == "1" && "${TYCON_NO_AZ_PROJECTS_REFRESH:-0}" != "1" && "$CHECK_ONLY" != "1" ]] && command -v az >/dev/null 2>&1; then
-  AZ_CACHE="$HOME/.claude/.tycon-pipeline/az-projects.json"
+# Sin Claude Code no corre: la lista la lee un hook de Claude Code.
+if [[ "$CLAUDE_OFF" != "1" && "$TYCON_INTEG_ADO" == "1" && "${TYCON_NO_AZ_PROJECTS_REFRESH:-0}" != "1" && "$CHECK_ONLY" != "1" ]] && command -v az >/dev/null 2>&1; then
+  AZ_CACHE="$STATE_DIR/az-projects.json"
   if [[ ! -f "$AZ_CACHE" ]] || [[ -n "$(find "$AZ_CACHE" -mtime +7 2>/dev/null)" ]]; then
     _ORG_REFRESCO="$(node "$SCRIPT_DIR/lib/tycon-config.js" get ado.org 2>/dev/null)" || _ORG_REFRESCO=""
     ( node "$SCRIPT_DIR/hooks/failed-query-notice.js" --refresh ${_ORG_REFRESCO:+--org "$_ORG_REFRESCO"} >/dev/null 2>&1 & ) 2>/dev/null

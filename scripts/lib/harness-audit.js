@@ -975,7 +975,9 @@ function checkLearningLoop() {
 
   // (b) Si mining está prendido, debe haber observations recientes (<14d).
   if (miningRegistered && miningOn) {
-    const obsDir = path.join(HOME, '.claude/tycon-observations');
+    // donde graba la grabadora: la variable gana, como en la grabadora; si no, la carpeta de los registros sueltos
+    const sueltos = (() => { try { return require('./loose-logs.js').looseLogsDir(HOME); } catch (_) { return null; } })();
+    const obsDir = process.env.TYCON_INSTINCT_OBS_DIR || (sueltos ? path.join(sueltos, 'tycon-observations') : '');
     let fresh = false;
     try {
       fresh = fs.readdirSync(obsDir).some((f) => {
@@ -1147,7 +1149,7 @@ function render(result) {
 // Los helpers del pin del project name se exportan para que su test los ejerza sin correr
 // el scorecard entero (que mide la máquina real y por eso no es determinístico). El guard
 // `require.main` mantiene intacto el uso como CLI.
-module.exports = { scanEngramRepos, pinDe, engramDirsWithMultipleProjects, engramUnexportedByRepo, engramChunksSinIndexar, CROSS_CUTTING_PROJECTS, checkAdvisorCoverage, checkPipelineWiring };
+module.exports = { scanEngramRepos, pinDe, engramDirsWithMultipleProjects, engramUnexportedByRepo, engramChunksSinIndexar, CROSS_CUTTING_PROJECTS, checkAdvisorCoverage, checkPipelineWiring, checkLearningLoop };
 
 if (require.main === module) {
   const result = audit();

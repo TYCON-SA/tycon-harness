@@ -737,9 +737,13 @@ function prepararInstintos({ destino, dia, maquina, folder, registro, destinoBuz
     }
   } catch (_) { /* sin registro: nada subido */ }
   const tope = Number(process.env.TYCON_INSTINCTS_MAX_SIZE);
+  // donde graba la grabadora: la carpeta de los registros sueltos (scripts/lib/loose-logs.js)
+  const sueltos = (() => { try { return require('../lib/loose-logs.js').looseLogsDir(); } catch (_) { return null; } })();
+  const obsDir = process.env.TYCON_INSTINCT_OBS_DIR || (sueltos && path.join(sueltos, 'tycon-observations'));
+  if (!obsDir) { limpiar(); return { estado: 'no_medido', motivo: 'no sé dónde graba la grabadora (falta loose-logs.js o tycon-home.js en este árbol)' }; }
   try {
     return armado.prepareDays({
-      obsDir: process.env.TYCON_INSTINCT_OBS_DIR || path.join(os.homedir(), '.claude', 'tycon-observations'),
+      obsDir,
       outDir: dir, seal: sello, org, today: dia, folder: folder ? folder.name : maquina, uploaded: subidos,
       ...(Number.isInteger(tope) && tope > 0 ? { maxBytes: tope } : {}),
     }).coverage;

@@ -81,7 +81,9 @@ function seal(stateDir, data) {
 /** Anota un fallo del aviso en el registro de la grabadora; si tampoco se puede, queda callado. */
 function noteFailure(home, motivo) {
   try {
-    const dir = process.env.TYCON_INSTINCT_OBS_DIR || path.join(home, '.claude', 'tycon-observations');
+    const loose = require('../../../scripts/lib/loose-logs.js').looseLogsDir(home);
+    const dir = process.env.TYCON_INSTINCT_OBS_DIR || (loose && path.join(loose, 'tycon-observations'));
+    if (!dir) return;
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'instinct-observe.errors.log'), `${new Date().toISOString()} instincts-notice: ${motivo}\n`);
   } catch (_) { /* sin dónde anotarlo */ }

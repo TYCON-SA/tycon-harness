@@ -310,7 +310,8 @@ blob "${T}/b" "equipo-deva/2.1-2026-09-01T1000.json"
 
 # ── T9 · el instalador: barrido → subida → bajada, cada llave apaga sólo lo suyo ────────
 # Se extrae del instalador REAL el bloque «Rescate del hilo…» (hasta el siguiente bloque) y se corre con
-# SCRIPT_DIR en un temporal donde tres dobles anotan el orden en que los llaman. Correr el instalador
+# SCRIPT_DIR en un temporal donde tres dobles anotan el orden en que los llaman. La carpeta del estado la resuelve el
+# instalador más arriba (scripts/lib/state-dir.sh): acá es un dato de entrada, STATE_DIR. Correr el instalador
 # entero en un temporal arrastra decenas de dependencias ajenas a este caso.
 # 🔴 Falla con: bajar antes de subir → la página propia sale sin lo de hoy; sin la bajada en el bloque,
 #    quienes leen el buzón nunca ven lo del resto del equipo.
@@ -337,7 +338,7 @@ instalar9() {  # <líneas esperadas> <VAR=valor>...
   : > "${T}/orden.txt"; rm -rf "${T}/home/.claude"
   # TYCON_INTEG_MAILBOX=1: el bloque extraído lee la llave del buzón que el instalador resuelve más arriba; acá es un
   # dato de entrada, y el caso de abajo la apaga para probar que apaga sólo lo suyo.
-  env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 PROFILE_FULL=1 "$@" \
+  env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" STATE_DIR="${T}/home/.claude/.tycon-pipeline" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 PROFILE_FULL=1 "$@" \
     bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
   local n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge "${esperadas}" ] && break; sleep 0.25; n=$((n+1)); done
   sleep 1   # por si aparece algo que no debía
@@ -389,13 +390,13 @@ rm -f "${T}/scripts/metrics/collect-findings.js"   # los casos que siguen miden 
 #    agente, y la carpeta de la máquina efímera del agente llega al buzón del equipo.
 printf "setTimeout(() => require('fs').appendFileSync(process.env.ORDER_LOG, 'recoleccion\\\\n'), 200);\n" > "${T}/scripts/metrics/collect-findings.js"
 : > "${T}/orden.txt"; rm -rf "${T}/home/.claude"
-env HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 PROFILE_FULL=1 TF_BUILD=True bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
+env HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" STATE_DIR="${T}/home/.claude/.tycon-pipeline" CHECK_ONLY=0 PROFILE_FULL=1 TF_BUILD=True bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 sleep 2
 [ ! -s "${T}/orden.txt" ] && [ ! -e "${T}/home/.claude/.tycon-pipeline/upload-runs.log" ] && grep -q 'ejecución de Azure DevOps' "${T}/inst.log" \
   && ok "2.12-T14 InstaladorEnCi_NoLanzaLaTanda: con TF_BUILD=True el bloque no lanza barrido, recolección, subida ni bajada, y lo dice por stderr" \
   || mal "2.12-T14 InstaladorEnCi_NoLanzaLaTanda con TF_BUILD=True se lanzó: $(tr '\n' '|' < "${T}/orden.txt") · salida: $(head -c 200 "${T}/inst.log")"
 : > "${T}/orden.txt"; rm -rf "${T}/home/.claude"
-env HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 PROFILE_FULL=1 TF_BUILD=true bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
+env HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" STATE_DIR="${T}/home/.claude/.tycon-pipeline" CHECK_ONLY=0 PROFILE_FULL=1 TF_BUILD=true bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 sleep 2
 [ ! -s "${T}/orden.txt" ] && ok "2.12-T14 también con TF_BUILD=true en minúsculas" || mal "2.12-T14 con TF_BUILD=true se lanzó: $(tr '\n' '|' < "${T}/orden.txt")"
 rm -f "${T}/scripts/metrics/collect-findings.js"
@@ -436,7 +437,7 @@ grep -q 'const esFallaDeRegistro = (x) => REGISTROS.some(' "${RAIZ}/scripts/metr
 mkdir -p "${T}/home/.claude/.tycon-pipeline"; : > "${T}/orden.txt"
 echo "LINEA-DE-LA-SESION-ANTERIOR" > "${T}/home/.claude/.tycon-pipeline/upload-runs.log"
 echo "LINEA-DE-LA-SESION-ANTERIOR" > "${T}/home/.claude/.tycon-pipeline/download-runs.log"
-env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
+env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" STATE_DIR="${T}/home/.claude/.tycon-pipeline" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 # Sin PROFILE_FULL el bloque lanza la subida y la bajada, no el barrido: son DOS líneas. Esperar tres agota los 10 s del
 # tope en cada una de estas dos corridas.
 n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge 2 ] && break; sleep 0.25; n=$((n+1)); done; sleep 1
@@ -445,7 +446,7 @@ grep -q 'LINEA-DE-LA-SESION-ANTERIOR' "${T}/home/.claude/.tycon-pipeline/upload-
 # pasado el tope (~512 KB) el registro viejo se mueve a .1 y el nuevo arranca de cero
 # 🔴 Falla con: sin rotación, un registro que se agrega crece para siempre.
 : > "${T}/orden.txt"; head -c 600000 /dev/zero | tr '\0' 'x' > "${T}/home/.claude/.tycon-pipeline/upload-runs.log"
-env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
+env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" STATE_DIR="${T}/home/.claude/.tycon-pipeline" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge 2 ] && break; sleep 0.25; n=$((n+1)); done; sleep 1
 [ "$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log.1" 2>/dev/null | tr -d ' ')" = "600000" ] && [ "$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log" | tr -d ' ')" -lt 1000 ] && ok "T9 registro de más de 512 KB → pasa a .1 entero y el nuevo arranca chico" || mal "T9 rotación: .1=$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log.1" 2>/dev/null) actual=$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log")"
 
