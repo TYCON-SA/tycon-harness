@@ -1131,7 +1131,12 @@ test('Nightly_CountsRemoved_MissingPhotoOnTheMachineThatWaits_IsSaid @story-8.24
   // la máquina que espera los nocturnos, con la noche publicada sin la foto de las constancias
   const lab = machine({ published: night(at, { 'scripts/controls-bench/ultimo-constancias.json': null }) });
   const s = startup(lab);
-  assert.match(line(s, /constancias del dueño/), /no hay ninguna foto|no sé si corrió/, s.bench);
+  // con la foto del banco de esa noche, la que falta es sólo la de la cuenta: «no medido», sin decir que no hay fotos
+  assert.match(line(s, /constancias del dueño/), /no medido — la noche dejó la foto del banco y no la de esta cuenta/, s.bench);
+  assert.doesNotMatch(line(s, /constancias del dueño/), /no hay ninguna foto/, s.bench);
+  // sin ninguna foto de la noche, lo de siempre
+  const nada = startup(machine({ published: night(at, { 'scripts/controls-bench/ultimo-constancias.json': null, [BANCO]: null }) }));
+  assert.match(line(nada, /constancias del dueño/), /no hay ninguna foto|no sé si corrió/, nada.bench);
   // con la foto fresca y sin borrados sin firma, calla
   assert.strictEqual(line(startup(machine({})), /constancias del dueño/), '');
 });

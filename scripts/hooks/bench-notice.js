@@ -215,7 +215,14 @@ function estadoDeLasConstancias() {
   const QUE = 'constancias del dueño que salieron de main';
   const foto = fotoDeLasConstancias();
   const rep = foto.rep;
-  if (!rep) return foto.espera ? [sinFoto(QUE, foto)] : [];
+  if (!rep && !foto.espera) return [];
+  if (!rep) {
+    // la noche dejó la foto del banco y no la de la cuenta: el pipeline del banco no la corrió, o falló antes de guardarla
+    if (foto.estado !== 'ilegible' && fotoDelBanco().rep) {
+      return [`🟠 ${QUE}: no medido — la noche dejó la foto del banco y no la de esta cuenta (el pipeline del banco no la corrió o falló antes de guardarla)${foto.nota}`];
+    }
+    return [sinFoto(QUE, foto)];
+  }
   const t = rep.ts ? Date.parse(rep.ts) : NaN;
   const fecha = rep.ts ? limpio(String(rep.ts).slice(0, 10)) : '?';
   if (Number.isNaN(t) || (Date.now() - t) > BANCO_VEJEZ_MS) {
