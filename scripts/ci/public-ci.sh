@@ -32,7 +32,11 @@
 #                          --root <root> --base <base> --tip <punta>: los casos, la línea de base y el corredor de la base
 #                          sobre los ganchos de la punta; un freno que se afloja pide la firma del dueño. Si la base todavía
 #                          no trae el guion (el pedido que lo introduce), no aplica y lo dice
-#   8 spanish-names        sólo con --range: node scripts/publishing/spanish-names.js --range <rango>
+#   7c control-size        node scripts/ci/control-size.js (con --range <rango> si lo hay): el tamaño de cada control y lo
+#                          que recorre el freno de guiones. AVISA Y NUNCA FRENA: cada aviso sube como `::warning::` del
+#                          pedido, neutralizado; sin el guion o si falla, lo dice como aviso («no pude medir») y sigue
+#                          verde. Es la excepción declarada a «un paso que no pudo correr es rojo»: es un aviso
+#   8 spanish-names       sólo con --range: node scripts/publishing/spanish-names.js --range <rango>
 #   9 repo-lint            sólo con --range: los controles del pre-commit (.githooks/pre-commit-checks, con la punta
 #                          como arnés y sin el chequeo de vida de un revisor tocado, que pide una sesión) sobre lo que trae el
 #                          rango, como si se commiteara: en una copia de trabajo aparte de la punta, con el índice en la
@@ -255,6 +259,8 @@ run_step() {
     [ "${name}" != repo-lint ] || grep -E '^(⚠️ base-controls|✅ base-controls: cambio de control aprobado|base-controls: reglas que cambia|   [^ ]|      [-+~] )' "${log}" | ci_neutral | sed 's/^/     /'
     # el banco de la base en verde dice si no aplicó, o qué aflojamiento quedó firmado
     [ "${name}" != controls-bench-base ] || grep -E '^(controls-bench-base:|✅ con la constancia del dueño)' "${log}" | ci_neutral | sed 's/^/     /'
+    # los avisos del tamaño suben como avisos del pedido: el prefijo lo pone este guion, sobre el texto ya neutralizado
+    [ "${name}" != control-size ] || grep -E '^⚠️ control-size: ' "${log}" | ci_neutral | sed 's/^/::warning::/'
   elif [ "${kind}" = "own" ] && [ "${rc}" -eq "${BLOCKED_EXIT}" ]; then
     blocked "${name}" "$(tail -n 1 "${log}" | sed 's/^no pude correr: //')"
   else
@@ -580,6 +586,22 @@ bench_against_base() {
   node "${bab}" --root "${ROOT}" --base "${BASE_ARG}" --tip "${RANGE_TIP}" --out "${OUT}/bench-base" < /dev/null
 }
 
+# ── paso 7c · el tamaño de los controles ──────────────────────────────────────────────────────────────────────────────
+# Casos: scripts/tests/public-ci.test.sh (T2 de control-size) y scripts/tests/control-size.test.js
+# Avisa y nunca frena: un aviso nuevo se mide antes de volverlo freno. Por eso sale 0 aunque no pueda medir, y lo dice.
+control_size() {
+  local rc
+  if [ ! -f "${ROOT}/scripts/ci/control-size.js" ]; then echo "⚠️ control-size: no pude medir: falta scripts/ci/control-size.js"; return 0; fi
+  if ! command -v node >/dev/null 2>&1; then echo "⚠️ control-size: no pude medir: no encuentro node en el PATH"; return 0; fi
+  if [ "${WITH_RANGE}" -eq 1 ]; then
+    node "${ROOT}/scripts/ci/control-size.js" --root "${ROOT}" --range "${RANGE}" < /dev/null; rc=$?
+  else
+    node "${ROOT}/scripts/ci/control-size.js" --root "${ROOT}" < /dev/null; rc=$?
+  fi
+  [ "${rc}" -eq 0 ] || echo "⚠️ control-size: no pude medir: el guion salió ${rc}"
+  return 0
+}
+
 # ── paso 10 · la versión ──────────────────────────────────────────────────────────────────────────
 # Con la marca `numbering: "merge-tag"` en el version.json de la base, el número lo pone la etiqueta del merge y el pedido
 # no lo toca; sin la marca (antes de la transición), el número de la punta tiene que ser mayor. La regla vive en
@@ -651,6 +673,7 @@ wants portable-suites && run_step portable-suites file scripts/tests/portable-su
 wants agent-skills-suites && run_step agent-skills-suites own scripts/tests/suites.json "bash node" agent_skills_suites
 wants controls-bench && run_step controls-bench file scripts/controls-bench/runner.js "node" node scripts/controls-bench/runner.js --tool both --baseline check --json "${OUT}/bench.json"
 [ -z "${BASE_ARG}" ] || ! wants controls-bench-base || run_step controls-bench-base own "" "git node" bench_against_base
+wants control-size && run_step control-size own "" "" control_size
 [ "${WITH_RANGE}" -eq 0 ] || ! wants spanish-names || run_step spanish-names own scripts/publishing/spanish-names.js "git node" spanish_names
 if [ -n "${BASE_ARG}" ]; then
   # con --base el pre-commit del árbol puede faltar (el pedido lo borró): lo que tiene que existir es la base

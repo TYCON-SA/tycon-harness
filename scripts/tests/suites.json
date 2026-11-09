@@ -236,6 +236,12 @@
       "requiere": []
     },
     {
+      "__nota": "el tamaño de los controles (scripts/ci/control-size.js): el orden por tamaño, la cuenta de subcomandos y de quién llama, el aviso por tamaño y por recorrido del freno (con el tope leído del freno real), el rango y lo que no se puede leer. Árboles de juguete con su propio git; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/control-size.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/label-prs.test.sh",
       "requiere": []
