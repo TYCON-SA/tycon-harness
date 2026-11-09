@@ -1004,6 +1004,10 @@
   ],
   "allowed": [
     {
+      "words": ["reedit", "pathspec", "textconv", "forc", "int", "inc", "onl", "patc"],
+      "reason": "opciones de git (--reedit-message, --pathspec-from-file, --no-textconv) y abreviaturas de opciones de git (--forc, --int, --inc, --onl, --patc) que el freno del guardado ajeno reconoce y que sus pruebas escriben a propósito: son de git, no se traducen; decidido por el dueño el 2026-11-09"
+    },
+    {
       "words": ["arreglar"],
       "reason": "valor de la acción «Arreglar» guardado en las decisiones del repo de operaciones, que lee la noche: no se puede renombrar; decidido por el dueño el 2026-11-01"
     },
