@@ -49,8 +49,9 @@ const NO_HOOKS = path.join(os.tmpdir(), 'windows-guided-no-git-hooks');
 const SKIP = (process.platform === 'win32' && 'el recorrido de juguete es del modo de laboratorio: en Windows corre el ensayo de verdad')
   || (!has('git') && 'NO MEDIDO — sin git')
   || (!has('pwsh') && 'NO MEDIDO — sin pwsh: la página pide PowerShell 7')
-  || (!require(path.join(DIR, 'npx-probe.js')).npmProgram('npm') && `NO MEDIDO — este Node (${process.execPath}) no trae npm a su lado: sin npm no se arma el paquete que corre la línea npx`)
-  || (!fs.existsSync(path.join(ROOT, 'getting-started', 'windows.md')) && !fs.existsSync(path.join(ROOT, 'scripts', 'publishing', 'public-files', 'getting-started', 'windows.md')) && 'NO MEDIDO — este árbol no trae la página pública de instalación');
+  || (!require(path.join(DIR, 'npx-probe.js')).npmProgram('npm') && `NO MEDIDO — este Node (${process.execPath}) no trae npm a su lado: sin npm no se arma el paquete que corre la línea npx`);
+// la página vive en su lugar: si falta, la suite falla nombrándola, no se saltea
+if (!fs.existsSync(path.join(ROOT, 'getting-started', 'windows.md'))) throw new Error('falta la página pública de instalación: getting-started/windows.md');
 const git = (args, cwd) => spawnSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.com', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', '-c', `core.hooksPath=${NO_HOOKS}`, ...args], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 const node = (args, opts = {}) => spawnSync(process.execPath, args, Object.assign({ encoding: 'utf8', timeout: 20 * 60 * 1000, maxBuffer: 64 * 1024 * 1024 }, opts));
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -85,25 +86,19 @@ function toyPublishedTree(base) {
     copied++;
   }
   assert.ok(copied > 1000, `sólo ${copied} archivos copiados: el árbol de juguete no es el arnés`);
-  // la página y el guion de entrada: en su lugar (el repo público, o el árbol del equipo con lo público encima) traen el
+  // la página y el guion de entrada, en su lugar (el repo público, o el árbol del equipo con lo público encima), traen el
   // nombre público puesto, «<organización>/<repo>» como lo dice scripts/setup/public-remotes.json, y se cambia por el de
-  // juguete; los papeles viejos del exportador (scripts/publishing/public-files/) traían en su lugar dos marcadores, y se
-  // leen sólo si la página no está en su lugar
-  const placed = fs.existsSync(path.join(ROOT, 'getting-started', 'windows.md'));
-  const source = placed ? ROOT : path.join(ROOT, 'scripts', 'publishing', 'public-files');
-  let named = (text) => text.split('{{public-org}}').join(TOY.org).split('{{public-repo}}').join(TOY.repo);
-  if (placed) {
-    const real = G.namesOf(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'public-remotes.json'), 'utf8'));
-    assert.strictEqual(real.problem, undefined, `scripts/setup/public-remotes.json: ${real.problem}`);
-    const from = `${real.org}/${real.repo}`;
-    named = (text) => { assert.ok(text.includes(from), `el nombre público (${from}) no está donde se lo busca`); return text.split(from).join(`${TOY.org}/${TOY.repo}`); };
-  }
+  // juguete
+  const real = G.namesOf(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'public-remotes.json'), 'utf8'));
+  assert.strictEqual(real.problem, undefined, `scripts/setup/public-remotes.json: ${real.problem}`);
+  const from = `${real.org}/${real.repo}`;
+  const named = (text) => { assert.ok(text.includes(from), `el nombre público (${from}) no está donde se lo busca`); return text.split(from).join(`${TOY.org}/${TOY.repo}`); };
   const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(tree, rel)), { recursive: true }); fs.writeFileSync(path.join(tree, rel), text); };
   put('version.json', `{ "version": "${TOY.version}" }\n`);
-  put('getting-started/windows.md', named(fs.readFileSync(path.join(source, 'getting-started', 'windows.md'), 'utf8')));
-  put('scripts/setup/get-harness.ps1', named(fs.readFileSync(path.join(source, 'scripts', 'setup', 'get-harness.ps1'), 'utf8')));
+  put('getting-started/windows.md', named(fs.readFileSync(path.join(ROOT, 'getting-started', 'windows.md'), 'utf8')));
+  put('scripts/setup/get-harness.ps1', named(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'get-harness.ps1'), 'utf8')));
   // el instalador del paquete trae el repo público de fábrica: en el árbol de juguete, el de juguete
-  if (placed) put('scripts/setup/npm/index.js', named(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'npm', 'index.js'), 'utf8')));
+  put('scripts/setup/npm/index.js', named(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'npm', 'index.js'), 'utf8')));
   put('scripts/setup/public-remotes.json', `{ "remotes": ["https://github.com/${TOY.org}/${TOY.repo}"] }\n`);
   assert.strictEqual(git(['init', '-q', '-b', 'main'], tree).status, 0);
   assert.strictEqual(git(['add', '-A'], tree).status, 0);

@@ -1916,7 +1916,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupharnessquestionsjs)
 
-## scripts/publishing/public-files/scripts/setup/get-harness.sh y get-harness.ps1
+## scripts/setup/get-harness.sh y get-harness.ps1
 
 **Qué es:** Los guiones `get-harness.sh` y `get-harness.ps1`, la puerta de entrada de la portada pública.
 
@@ -1928,7 +1928,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [mecanismo-de-instalacion.md](maintaining/mecanismo-de-instalacion.md)
 
-**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptspublishingpublic-filesscriptssetupget-harnesssh-y-get-harnessps1)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptssetupget-harnesssh-y-get-harnessps1)
 
 ## scripts/tools/tycon-backfill-followups.js
 

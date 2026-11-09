@@ -8,9 +8,8 @@
 #         versionado (un `.js` roto sin versionar no lo rompe; versionado, sí). No corta en el primer rojo. Las suites
 #         que piden agent-skills corren cada una en su HOME vacía, sin las herramientas del vocabulario en el PATH, y su
 #         veredicto queda en `agent-skills-suites.tsv`. Sirve en los dos layouts: repo único y dos repos.
-#   T22 · PublicCi_Workflow_Seguro — `scripts/ci/check-public-workflow.js` deja pasar el `ci.yml` real (adentro
-#         vive en `scripts/publishing/public-files/.github/workflows/`; en la copia pública, en `.github/workflows/`) y
-#         da rojo, nombrando la regla, con cada copia alterada: una alteración por regla, y una por cada forma de
+#   T22 · PublicCi_Workflow_Seguro — `scripts/ci/check-public-workflow.js` deja pasar el `ci.yml` real (en
+#         `.github/workflows/`) y da rojo, nombrando la regla, con cada copia alterada: una alteración por regla, y una por cada forma de
 #         escribir lo prohibido que las reglas con nombre no ven (ahí la roja es `shape`, la forma exacta del archivo).
 #         Entre ellas, la regla `after-queue`: cada job se saltea en el push a main de la cola de merge y
 #         sólo en ése; una condición que saltea de más, o un job sin ella, es rojo.
@@ -686,17 +685,13 @@ is "T21 el repo de quien llama queda idéntico después de toda la suite (mismo 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # T22 · PublicCi_Workflow_Seguro — el `ci.yml` real pasa el control; cada copia alterada es roja nombrando su regla
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
-CI_YML=""; FOUND=0
-for f in "${ROOT}/scripts/publishing/public-files/.github/workflows/ci.yml" "${ROOT}/.github/workflows/ci.yml"; do
-  [ -f "${f}" ] || continue
-  FOUND=$((FOUND + 1)); [ -n "${CI_YML}" ] || CI_YML="${f}"
-  node "${CHECK}" "${f}" > "${T}/check.out" 2>&1; RC=$?
-  if [ "${RC}" -eq 0 ]; then ok "T22 el ci.yml real pasa el control (${f#${ROOT}/})"
-  else no "T22 el ci.yml real NO pasa el control (${f#${ROOT}/}, exit ${RC}): $(tr '\n' ' ' < "${T}/check.out")"; fi
-done
-if [ "${FOUND}" -eq 0 ]; then
-  no "T22 no hay ci.yml: ni en scripts/publishing/public-files/.github/workflows/ (el repo del equipo) ni en .github/workflows/ (la copia pública)"
+CI_YML="${ROOT}/.github/workflows/ci.yml"
+if [ ! -f "${CI_YML}" ]; then
+  no "T22 no hay ci.yml: falta .github/workflows/ci.yml"
 else
+  node "${CHECK}" "${CI_YML}" > "${T}/check.out" 2>&1; RC=$?
+  if [ "${RC}" -eq 0 ]; then ok "T22 el ci.yml real pasa el control (.github/workflows/ci.yml)"
+  else no "T22 el ci.yml real NO pasa el control (.github/workflows/ci.yml, exit ${RC}): $(tr '\n' ' ' < "${T}/check.out")"; fi
   mkdir -p "${T}/alt"
   # altered <nombre> <reglas CON NOMBRE esperadas, separadas por espacio> <cuerpo JS: recibe `t` (el texto) y devuelve el alterado>
   #   Toda alteración del código rompe además `shape` (la forma exacta del archivo): se espera siempre, sin escribirla.

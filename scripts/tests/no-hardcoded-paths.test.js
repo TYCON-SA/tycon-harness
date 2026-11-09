@@ -560,9 +560,9 @@ const EXTENSIONES = /\.(js|mjs|cjs|sh|py|ps1|md|json|ya?ml|txt|command)$/;
 const EXCEPCIONES = [
   { archivo: 'scripts/nightly/dashboard/runs.js', patron: /SourceCode[-|]/, motivo: 'regex que reconoce «SourceCode-» en nombres de carpeta codificados de OTRAS máquinas (dato de entrada, no un default)' },
   { archivo: 'scripts/publishing/public-repos.json', patron: /"(?:team|maintainers)":/, motivo: 'las URLs de los repos PRIVADOS del equipo: `team`, el de la capa (story 8.25, AC 23), y `maintainers`, el de mantenimiento, que harness-repo.js lee para reconocer ese clon como del arnés (story 8.26, AC 21). Viven en la organización del equipo a propósito y este archivo es la lista interna de repos, que el exportador no publica (export-real T16 lo mide). Una excepción por archivo: el lector toma la primera', noViaja: true },
-  { archivo: 'scripts/publishing/public-files/getting-started/mac.md', patron: /SourceCode/, motivo: 'instrucciones de instalación para una persona: le RECOMIENDAN dónde clonar el arnés (una carpeta dentro de ~/SourceCode); es un consejo que el lector sigue o cambia, no una ruta que el arnés supone' },
-  { archivo: 'scripts/publishing/public-files/getting-started/linux.md', patron: /SourceCode/, motivo: 'instrucciones de instalación para una persona: le RECOMIENDAN dónde clonar el arnés (una carpeta dentro de ~/SourceCode); es un consejo que el lector sigue o cambia, no una ruta que el arnés supone' },
-  { archivo: 'scripts/publishing/public-files/getting-started/windows.md', patron: /SourceCode/, motivo: 'instrucciones de instalación para una persona: le RECOMIENDAN dónde clonar el arnés (una carpeta dentro de ~/SourceCode); es un consejo que el lector sigue o cambia, no una ruta que el arnés supone' },
+  { archivo: 'getting-started/mac.md', patron: /SourceCode/, motivo: 'instrucciones de instalación para una persona: le RECOMIENDAN dónde clonar el arnés (una carpeta dentro de ~/SourceCode); es un consejo que el lector sigue o cambia, no una ruta que el arnés supone' },
+  { archivo: 'getting-started/linux.md', patron: /SourceCode/, motivo: 'instrucciones de instalación para una persona: le RECOMIENDAN dónde clonar el arnés (una carpeta dentro de ~/SourceCode); es un consejo que el lector sigue o cambia, no una ruta que el arnés supone' },
+  { archivo: 'getting-started/windows.md', patron: /SourceCode/, motivo: 'instrucciones de instalación para una persona: le RECOMIENDAN dónde clonar el arnés (una carpeta dentro de ~/SourceCode); es un consejo que el lector sigue o cambia, no una ruta que el arnés supone' },
 ];
 
 /** Alcance del arnés: el código ejecutable del núcleo, en los dos repos. */
@@ -791,10 +791,7 @@ function orphanExceptions(list, root, skillsRoot) {
   for (const x of list) {
     const abs = x.archivo.startsWith('skills/') ? path.join(skillsRoot, x.archivo) : path.join(root, x.archivo);
     if (x.archivo.startsWith('skills/') && !fs.existsSync(path.join(skillsRoot, 'skills', 'tycon-pipeline'))) continue;
-    // los papeles de scripts/publishing/public-files/ viajan a la RAÍZ de la copia pública (ahí la plantilla no está):
-    // la excepción vale si el archivo está en cualquiera de los dos lugares (export-real T23)
-    const enDestino = x.archivo.startsWith('scripts/publishing/public-files/') && fs.existsSync(path.join(root, x.archivo.slice('scripts/publishing/public-files/'.length)));
-    if (fs.existsSync(abs) || enDestino) continue;
+    if (fs.existsSync(abs)) continue;
     if (x.noViaja && publicCopy) continue;
     out.push(x.archivo);
   }

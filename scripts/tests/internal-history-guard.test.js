@@ -340,7 +340,7 @@ const TEAM_LIST = {
     core: {
       arnes: {
         in: ['README.md', 'guides/**', 'scripts/**', 'adapters/**'],
-        out: [{ glob: 'guides/fuera.md', reason: 'prueba: queda afuera' }, { glob: 'scripts/publishing/public-files/**', reason: 'prueba: los papeles llegan por un sintético' },
+        out: [{ glob: 'guides/fuera.md', reason: 'prueba: queda afuera' }, { glob: 'scripts/publishing/sample-papers/**', reason: 'prueba: los papeles llegan por un sintético' },
           { glob: 'scripts/publishing/replacements.json', reason: 'prueba: privada' }],
       },
       'agent-skills': { in: ['agents/*.md', 'skills/tycon-*/**'], out: [{ glob: 'packs/**', reason: 'prueba: viajan con su paquete' }] },
@@ -355,7 +355,7 @@ const TEAM_LIST = {
   casesOutside: [],
   empty: {},
   readerConventions: [{ path: 'tasks/todo.md', reason: 'prueba' }, { path: 'specs', reason: 'prueba' }],
-  synthetic: [{ target: 'getting-started/mac.md', from: 'scripts/publishing/public-files/getting-started/mac.md', packages: ['core'], reason: 'prueba: un papel' }],
+  synthetic: [{ target: 'getting-started/mac.md', from: 'scripts/publishing/sample-papers/getting-started/mac.md', packages: ['core'], reason: 'prueba: un papel' }],
 };
 function teamLab() {
   const dir = tmp('internal-history-team');
@@ -372,7 +372,7 @@ function teamLab() {
     'scripts/publishing/allowlist.json': TEAM_LIST,
     'scripts/publishing/replacements.json': { pares: [], afuera: [] },
     'scripts/publishing/denylist.json': { terminos: [], permitidos: [] },
-    'scripts/publishing/public-files/getting-started/mac.md': '# En Mac\n\nPrimeros pasos.\n',
+    'scripts/publishing/sample-papers/getting-started/mac.md': '# En Mac\n\nPrimeros pasos.\n',
     'tasks/plan.md': '# Plan\n',
     'tasks/todo.md': '# Pendientes\n',
     'specs/story-1.md': '# Story\n',
@@ -432,10 +432,10 @@ test('InternalHistoryGuard_Team_OnlyWhatShips_AsItShips — mira lo que sale, co
 
 test('InternalHistoryGuard_Team_PaperCountsWithItsDestination — un papel es prosa por la ruta de su destino', () => {
   const l = teamLab();
-  stage(l.repo, { 'scripts/publishing/public-files/getting-started/mac.md': `# En Mac\n\n${RED['batch-code']}\n` });
+  stage(l.repo, { 'scripts/publishing/sample-papers/getting-started/mac.md': `# En Mac\n\n${RED['batch-code']}\n` });
   const r = guard(l);
   assert.strictEqual(r.code, 1, `scripts/… no es prosa, pero sale como getting-started/mac.md\n${r.out}`);
-  assert.match(r.out, /scripts\/publishing\/public-files\/getting-started\/mac\.md:3\b[^\n]*batch-code/, 'informa el archivo que hay que editar');
+  assert.match(r.out, /scripts\/publishing\/sample-papers\/getting-started\/mac\.md:3\b[^\n]*batch-code/, 'informa el archivo que hay que editar');
 });
 
 test('InternalHistoryGuard_Team_FileThatStartsShipping_IsLookedAtWhole — sacar un «out» publica el archivo entero', () => {
@@ -1027,7 +1027,7 @@ test('InternalHistoryGuard_Team_NonUtf8_IsTwo_ParentWithoutConfig_IsAllNew — l
 
 test('InternalHistoryGuard_Team_SameFileShippedUnderAnotherPath_IsNotNew_AndDeclaredByItsShippedPath — cambiar la ruta con que sale no lo hace nuevo', () => {
   const l = teamLab();
-  stage(l.repo, { 'scripts/publishing/public-files/getting-started/mac.md': `# En Mac\n\n${RED['batch-code']}\n` });
+  stage(l.repo, { 'scripts/publishing/sample-papers/getting-started/mac.md': `# En Mac\n\n${RED['batch-code']}\n` });
   commit(l.repo, 'el papel ya la trae (entró antes del control)');
   const list = JSON.parse(JSON.stringify(TEAM_LIST));
   list.synthetic[0].target = 'getting-started/macos.md';
@@ -1038,7 +1038,7 @@ test('InternalHistoryGuard_Team_SameFileShippedUnderAnotherPath_IsNotNew_AndDecl
   git(l.repo, ['reset', '-q', '--hard']);
   const value = ih.scan(RED['debt-id'], 'prose')[0].value;
   stage(l.repo, {
-    'scripts/publishing/public-files/getting-started/mac.md': `# En Mac\n\n${RED['batch-code']}\n${RED['debt-id']}\n`,
+    'scripts/publishing/sample-papers/getting-started/mac.md': `# En Mac\n\n${RED['batch-code']}\n${RED['debt-id']}\n`,
     [ALLOWED]: { allowed: [{ file: 'getting-started/mac.md', form: 'debt-id', value, reason: 'prueba: un dato de un papel' }] },
   });
   const declared = guard(l);
@@ -1085,14 +1085,14 @@ test('InternalHistoryGuard_Team_TranslationIsInTheCopy_AndPaperFromAnotherFile_I
   assert.strictEqual(translation.code, 0, `una traducción a Codex se regenera, pero está en la copia\n${translation.out}`);
   commit(l.repo, 'la guía');
   // el destino del papel es el mismo, pero ahora lo llena OTRO archivo, que ya existía y el commit no toca
-  stage(l.repo, { 'scripts/publishing/public-files/getting-started/otro.md': `# En Mac\n\n${RED['owner-decision']}\n` });
+  stage(l.repo, { 'scripts/publishing/sample-papers/getting-started/otro.md': `# En Mac\n\n${RED['owner-decision']}\n` });
   commit(l.repo, 'otro papel, todavía sin colocar (entra antes del control)');
   const list = JSON.parse(JSON.stringify(TEAM_LIST));
-  list.synthetic[0].from = 'scripts/publishing/public-files/getting-started/otro.md';
+  list.synthetic[0].from = 'scripts/publishing/sample-papers/getting-started/otro.md';
   stage(l.repo, { 'scripts/publishing/allowlist.json': list });
   const r = guard(l);
   assert.strictEqual(r.code, 1, `lo que sale en esa ruta cambió aunque nadie tocó el archivo\n${r.out}`);
-  assert.match(r.out, /public-files\/getting-started\/otro\.md:3\b[^\n]*owner-decision[^\n]*sale como getting-started\/mac\.md/);
+  assert.match(r.out, /sample-papers\/getting-started\/otro\.md:3\b[^\n]*owner-decision[^\n]*sale como getting-started\/mac\.md/);
 });
 
 // ══ T28 · el cableado ═════════════════════════════════════════════════════════════════════════════════════════════
@@ -1497,10 +1497,9 @@ test('InternalHistoryGuard_RealRepo_AllRuns_NoStaleDeclarations — sobre este r
 
 // ══ las guías y las portadas, en cero (T26) ═══════════════════════════════════
 
-// Lo que queda en cero, por la ruta con que el control nombra cada archivo: en el repo del equipo un papel
-// figura con su ruta de `scripts/publishing/public-files/`; en el público, con la de su destino.
+// Lo que queda en cero, por la ruta con que el control nombra cada archivo
 const isGuideOrCover = (file) => /^guides\//.test(file) || /^(README|INSTALL|story-format)\.md$/.test(file)
-  || /^(getting-started|\.github)\//.test(file) || /^scripts\/publishing\/public-files\//.test(file);
+  || /^(getting-started|\.github)\//.test(file);
 const MEASUREMENT = path.join(RAIZ, 'tasks', 'measurement-8.26-tanda-g');
 // El registro de incidentes de verdad vive sólo en el repo del equipo; la copia trae una página en su lugar.
 const TEAM_LOG = fs.existsSync(path.join(RAIZ, 'scripts', 'publishing', 'public-repos.json')) ? path.join(RAIZ, 'guides', 'maintaining', 'incident-log.md') : null;
@@ -1554,7 +1553,10 @@ test('PublishedGuidesAndCovers_CountBeforeAfter (T26) — la cuenta de antes y d
   assert.strictEqual(sum(m.before.files), m.before.total, 'la cuenta de antes suma lo que dice');
   assert.strictEqual(m.after.total, 0, 'después: cero en guías y portadas');
   assert.deepStrictEqual(m.after.files, {}, 'después: ningún archivo con formas');
-  for (const f of Object.keys(m.before.files)) assert.ok(isGuideOrCover(f), `${f}: la cuenta de la tanda es de guías y portadas`);
+  // la cuenta se escribió cuando dos páginas de primeros pasos vivían como plantillas en una carpeta de
+  // scripts/publishing/: la registra con esa ruta, que es historia y no se reescribe
+  const wasGuideOrCover = (f) => isGuideOrCover(f) || /^scripts\/publishing\/[^/]+\/getting-started\/[^/]+\.md$/.test(f);
+  for (const f of Object.keys(m.before.files)) assert.ok(wasGuideOrCover(f), `${f}: la cuenta de la tanda es de guías y portadas`);
   // lo que el control no ve a sabiendas: contado antes y después, y lo que queda dice por qué
   assert.ok(m.unseen && m.unseen.before.total >= m.unseen.after.total, 'lo que el control no ve también se contó antes y después');
   assert.strictEqual((m.unseen.kept || []).reduce((a, k) => a + k.count, 0), m.unseen.after.total, 'cada aparición que queda está anotada');
@@ -1649,8 +1651,7 @@ test('PublishedGuidesAndCovers_MeasurementScripts (T26) — los dos guiones de l
 const LOG_PAGE = j('incident', '-log.md');
 function logPagesThatTravel(root) {
   const viaja = ih.travels(root);
-  return [`guides/maintaining/${LOG_PAGE}`, `scripts/publishing/public-files/guides/maintaining/${LOG_PAGE}`]
-    .filter((rel) => fs.existsSync(path.join(root, rel)) && viaja(rel));
+  return [`guides/maintaining/${LOG_PAGE}`].filter((rel) => fs.existsSync(path.join(root, rel)) && viaja(rel));
 }
 
 test('T26b NoPublicLogPage_OnlyWhatTravels — en el árbol armado, la página del privado no cuenta; la del público sí', (t) => {

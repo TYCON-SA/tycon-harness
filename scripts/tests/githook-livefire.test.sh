@@ -1041,38 +1041,38 @@ else
 fi
 
 # ── C-30 · T16 GithookLivefire_PapelesPasanLosFrenos ──────────────────────────────────────────
-# Los papeles de la copia pública viven en scripts/publishing/public-files/, que queda afuera por un «out», y llegan a su
-# destino por un sintético. Para los dos frenos, el `from` de un sintético sale (whatShips lo cuenta): un nombre real en un
-# papel, o un ejecutable con nombre en castellano que un sintético publica, NO entran. Rojo si el `from` no cuenta
+# En el laboratorio, los papeles viven en una carpeta que queda afuera por un «out» y llegan a su destino por un
+# sintético. Para los dos frenos, el `from` de un sintético sale (whatShips lo cuenta): un nombre real en un papel, o un
+# ejecutable con nombre en castellano que un sintético publica, NO entran. Rojo si el `from` no cuenta
 # como algo que sale: los dos commits se crean.
 papeles_lista() {   # $1=T $2=lista JSON de sintéticos — la lista blanca del laboratorio con los papeles afuera
-  printf '%s\n' "{\"packages\":{\"core\":{\"arnes\":{\"in\":[\"guides/**\",\"scripts/**\",\".githooks/**\"],\"out\":[{\"glob\":\"scripts/publishing/public-files/**\",\"reason\":\"prueba: llegan por un sintético\"}]},\"agent-skills\":{\"in\":[\"skills/tycon-*/**\"],\"out\":[{\"glob\":\"packs/**\",\"reason\":\"prueba\"}]}}},\"synthetic\":$2}" \
+  printf '%s\n' "{\"packages\":{\"core\":{\"arnes\":{\"in\":[\"guides/**\",\"scripts/**\",\".githooks/**\"],\"out\":[{\"glob\":\"scripts/publishing/sample-papers/**\",\"reason\":\"prueba: llegan por un sintético\"}]},\"agent-skills\":{\"in\":[\"skills/tycon-*/**\"],\"out\":[{\"glob\":\"packs/**\",\"reason\":\"prueba\"}]}}},\"synthetic\":$2}" \
     > "$1/repo/scripts/publishing/allowlist.json"
 }
-PAPEL='{"target":".github/SECURITY.md","from":"scripts/publishing/public-files/.github/SECURITY.md","packages":["core"],"reason":"prueba"}'
+PAPEL='{"target":".github/SECURITY.md","from":"scripts/publishing/sample-papers/.github/SECURITY.md","packages":["core"],"reason":"prueba"}'
 T=$(mktemp -d); montar_castellano "$T"
-mkdir -p "$T/repo/scripts/publishing/public-files/.github" "$T/repo/scripts/publishing/public-files/scripts"
-printf '# Security\n\nReport privately.\n' > "$T/repo/scripts/publishing/public-files/.github/SECURITY.md"
+mkdir -p "$T/repo/scripts/publishing/sample-papers/.github" "$T/repo/scripts/publishing/sample-papers/scripts"
+printf '# Security\n\nReport privately.\n' > "$T/repo/scripts/publishing/sample-papers/.github/SECURITY.md"
 papeles_lista "$T" "[${PAPEL}]"
 ( cd "$T/repo" && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m "los papeles del laboratorio" )
 ANTES=$(cuantos "$T")
-printf '# Security\n\nReport privately.\nAsk AcmeCorp first.\n' > "$T/repo/scripts/publishing/public-files/.github/SECURITY.md"
+printf '# Security\n\nReport privately.\nAsk AcmeCorp first.\n' > "$T/repo/scripts/publishing/sample-papers/.github/SECURITY.md"
 ( cd "$T/repo" && git add -A )
 RC=$(commitear_nombres "$T" "un nombre real en un papel")
-if [ "$RC" != "0" ] && [ "$(cuantos "$T")" = "$ANTES" ] && grep -q 'public-files/.github/SECURITY.md' "$T/out.txt" && grep -q '«Ceibo»' "$T/out.txt"; then
-  ok "C-30 T16 GithookLivefire_PapelesPasanLosFrenos: un nombre real en un papel de public-files/, el freno de nombres NO deja crear el commit y dice dónde"
+if [ "$RC" != "0" ] && [ "$(cuantos "$T")" = "$ANTES" ] && grep -q 'sample-papers/.github/SECURITY.md' "$T/out.txt" && grep -q '«Ceibo»' "$T/out.txt"; then
+  ok "C-30 T16 GithookLivefire_PapelesPasanLosFrenos: un nombre real en un papel de sample-papers/, el freno de nombres NO deja crear el commit y dice dónde"
 else
   mal "C-30 T16 nombre real en un papel: exit $RC · commits ${ANTES}→$(cuantos "$T") — el commit entró o no dijo dónde"; sed -n '1,12p' "$T/out.txt"
 fi
 ( cd "$T/repo" && git reset -q --hard HEAD && git clean -qfd )
 ANTES=$(cuantos "$T")
-mkdir -p "$T/repo/scripts/publishing/public-files/scripts"   # el `git clean` de arriba se lleva la carpeta vacía
-printf '#!/usr/bin/env bash\necho ok\n' > "$T/repo/scripts/publishing/public-files/scripts/${C_FILE}.sh"
-chmod +x "$T/repo/scripts/publishing/public-files/scripts/${C_FILE}.sh"
-papeles_lista "$T" "[${PAPEL},{\"target\":\"scripts/load-data.sh\",\"from\":\"scripts/publishing/public-files/scripts/${C_FILE}.sh\",\"packages\":[\"core\"],\"reason\":\"prueba\"}]"
+mkdir -p "$T/repo/scripts/publishing/sample-papers/scripts"   # el `git clean` de arriba se lleva la carpeta vacía
+printf '#!/usr/bin/env bash\necho ok\n' > "$T/repo/scripts/publishing/sample-papers/scripts/${C_FILE}.sh"
+chmod +x "$T/repo/scripts/publishing/sample-papers/scripts/${C_FILE}.sh"
+papeles_lista "$T" "[${PAPEL},{\"target\":\"scripts/load-data.sh\",\"from\":\"scripts/publishing/sample-papers/scripts/${C_FILE}.sh\",\"packages\":[\"core\"],\"reason\":\"prueba\"}]"
 ( cd "$T/repo" && git add -A )
 RC=$(commitear_nombres "$T" "un ejecutable en castellano en los papeles")
-if [ "$RC" != "0" ] && [ "$(cuantos "$T")" = "$ANTES" ] && grep -q "public-files/scripts/${C_FILE}.sh" "$T/out.txt" && grep -q 'en castellano' "$T/out.txt"; then
+if [ "$RC" != "0" ] && [ "$(cuantos "$T")" = "$ANTES" ] && grep -q "sample-papers/scripts/${C_FILE}.sh" "$T/out.txt" && grep -q 'en castellano' "$T/out.txt"; then
   ok "C-30 T16 un ejecutable con nombre en castellano que un sintético publica: el freno de castellano NO deja crear el commit y dice dónde"
 else
   mal "C-30 T16 ejecutable en castellano en los papeles: exit $RC · commits ${ANTES}→$(cuantos "$T") — el commit entró o no dijo dónde"; sed -n '1,14p' "$T/out.txt"
