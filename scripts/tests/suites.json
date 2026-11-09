@@ -2211,6 +2211,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.248: la cuenta de la noche de las constancias del dueño que salieron de main (scripts/ci/approvals-removed.js, que usa run-base-controls.sh removed-approvals): un borrado firmado y uno sin firma dan 1 y 1 con sus nombres, cero se dice cero y una historia que no se lee es «no medido»; y el freno local sigue sin dejar escribir una constancia a mano. Repos de juguete con git, sin red. ~5 s. Viaja.",
+      "raiz": "arnes",
+      "ruta": "tests/approvals-removed.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.152: el banco de un pedido corre los casos, la línea de base y el corredor de la BASE contra los ganchos del pedido (scripts/ci/bench-against-base.js), sobre repos de juguete con git de verdad y el corredor real del banco, sin red: aflojar un gancho pide la firma del dueño aunque el pedido cambie también su caso, su línea de base o el corredor; endurecer o sumar casos no; la firma del dueño anclada al blob pasa y la delegación no; lo que no se pudo medir es rojo. ~1 min. Viaja.",
       "raiz": "arnes",
       "ruta": "tests/bench-against-base.test.js",

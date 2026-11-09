@@ -203,6 +203,44 @@ function fotoNocturna(nombre, variable) {
 }
 const fotoDelBanco = () => fotoNocturna('ultimo-banco.json', 'TYCON_BENCH_REPORT');
 const fotoDeLasSuites = () => fotoNocturna('ultimo-suites.json', 'TYCON_SUITES_REPORT');
+const fotoDeLasConstancias = () => fotoNocturna('ultimo-constancias.json', 'TYCON_APPROVALS_REPORT');
+
+/**
+ * Las constancias del dueño que salieron de main sin su firma (scripts/ci/approvals-removed.js). Calla sólo con una foto
+ * fresca, medida y sin borrados sin firma. En la máquina que espera los nocturnos, sin foto o con una ilegible lo dice;
+ * una foto vieja dice que no se sabe si la cuenta corrió (sus «cero» ya no son el estado de hoy), y una que no se pudo
+ * medir, o con la lista mal formada, dice «no medido», nunca cero.
+ */
+function estadoDeLasConstancias() {
+  const QUE = 'constancias del dueño que salieron de main';
+  const foto = fotoDeLasConstancias();
+  const rep = foto.rep;
+  if (!rep && !foto.espera) return [];
+  if (!rep) {
+    // la noche dejó la foto del banco y no la de la cuenta: el pipeline del banco no la corrió, o falló antes de guardarla
+    if (foto.estado !== 'ilegible' && fotoDelBanco().rep) {
+      return [`🟠 ${QUE}: no medido — la noche dejó la foto del banco y no la de esta cuenta (el pipeline del banco no la corrió o falló antes de guardarla)${foto.nota}`];
+    }
+    return [sinFoto(QUE, foto)];
+  }
+  const t = rep.ts ? Date.parse(rep.ts) : NaN;
+  const fecha = rep.ts ? limpio(String(rep.ts).slice(0, 10)) : '?';
+  if (Number.isNaN(t) || (Date.now() - t) > BANCO_VEJEZ_MS) {
+    // como las demás fotos de la noche: con la copia del clon vieja no se sabe; con la copia fresca, dejó de correr
+    const vieja = copiaVieja(foto, t);
+    if (vieja) return [`🟠 ${QUE}: no sé si la cuenta corrió — su última foto es del ${fecha} y ${vieja}${foto.nota}`];
+    const dias = Number.isNaN(t) ? null : Math.floor((Date.now() - t) / 86400000);
+    return [`🔕 la cuenta de las ${QUE} NO ESTÁ CORRIENDO desde el ${fecha}${dias === null ? ' (fecha ilegible)' : ` (hace ${dias} día(s))`}`
+      + ' — su «cero» ya no es el estado de hoy · revisar el pipeline "Banco de controles (nocturno)" en Azure DevOps' + foto.nota];
+  }
+  if (rep.medido !== true) return [`🟠 ${QUE} (${fecha}): no medido — ${limpio(rep.motivo || 'la foto no dice por qué')}${foto.nota}`];
+  const sin = rep.sin_firma;
+  if (!Array.isArray(sin)) return [`🟠 ${QUE} (${fecha}): no medido — la foto no trae la lista de las que salieron sin firma${foto.nota}`];
+  if (!sin.length) return [];
+  const nombres = sin.slice(0, 3).map((x) => limpio((x && x.path) || '?')).join(' · ');
+  return [`🔴 constancias del dueño que salieron de main (${fecha}): ${sin.length} sin su firma — ${nombres}${sin.length > 3 ? ` (+${sin.length - 3} más)` : ''}`
+    + ` · el registro de lo que firmó se perdió: revisá esos commits${foto.nota}`];
+}
 /** En la máquina que espera los nocturnos, «no hay foto» y «la foto no se lee» se dicen, cada una con su texto. */
 function sinFoto(que, foto) {
   if (foto.estado === 'ilegible') return `🔴 ${que}: la foto está en el clon de mantenimiento y no se puede leer${foto.nota}`;
@@ -552,6 +590,11 @@ if (NOCTURNOS) {
     for (const l of estadoDeLasSuitesNocturnas()) console.log(l);
   } catch (e) {
     console.log(`suites nocturnas: no pude evaluar si están corriendo (${limpio(e && e.message)}) — asumilo NO medido`);
+  }
+  try {
+    for (const l of estadoDeLasConstancias()) console.log(l);
+  } catch (e) {
+    console.log(`constancias del dueño que salieron de main: no pude evaluarlas (${limpio(e && e.message)}) — asumilo NO medido`);
   }
 }
 

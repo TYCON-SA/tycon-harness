@@ -118,7 +118,9 @@ su motivo y ese número:
 node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason "<por qué>" --request <número>
 ```
 
-La terminal muestra el comando antes de pedir «firmo». Nadie lo retipea: sus comillas y sus barras no llegan iguales
+La terminal muestra qué se firma (el motivo y el comando) y pregunta «¿Firmás? (s/n)»: firma con `s`, `si` o `sí`, y
+cualquier otra respuesta es «no», también `y` o `yes`. En Windows no hay una terminal que se pueda leer: el comando se abre
+en una ventana nueva y ahí se escriben las tres palabras al azar que muestra. Nadie retipea el comando: sus comillas y sus barras no llegan iguales
 desde PowerShell, cmd o bash. Deja un permiso de un solo uso que vence a los 30 minutos; el agente repite el comando
 tal cual y el freno lo deja pasar una vez. Otro texto, aunque difiera en un espacio, sigue frenado. El número también
 vence a los 30 minutos, y uno usado o vencido no sirve. La firma queda en el registro común de firmas, con quién la dio

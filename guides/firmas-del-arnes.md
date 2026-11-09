@@ -144,8 +144,9 @@ firmar, y en la columna tu situación:
 - **Espera** quiere decir que nadie firma. El sistema no mira la hora: pide la firma igual y, si nadie contesta, la
   sesión queda frenada en ese paso.
 - **La emergencia** (`emergency`) es la única salida para pasar por encima del freno de seguridad: la persona la firma en
-  su terminal con `harness.js sign emergency`, con su motivo (cómo, en el párrafo de arriba). El agente no la puede
-  correr.
+  su terminal con `harness.js sign emergency`, con su motivo (cómo, en el párrafo de arriba). La terminal muestra qué se
+  firma y pregunta «¿Firmás? (s/n)»: firma con `s`, `si` o `sí`, y cualquier otra respuesta es «no». En Windows se abre una
+  ventana nueva y ahí se escriben tres palabras al azar. El agente no la puede correr.
 - En los repos del arnés, el dueño ocupa el lugar del dev (ver «Quién aprueba»).
 - «En la ventana» vale para Claude Code. Codex no tiene ventana de permiso, y el click y el «aprobado» no valen ahí: en
   Codex todo se firma en la terminal (`guides/safety-guard.md`, y abajo, «En Codex»).
