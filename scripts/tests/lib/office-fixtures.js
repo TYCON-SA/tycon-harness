@@ -143,8 +143,10 @@ function drawKanban(data) {
   assert.ok(fn && el, 'la página trae la función y el ayudante');
   const { document, byId } = tinyDom();
   const state = (html.match(/function estadoDeHora\(i\)[^\n]*\n/) || [''])[0];
-  new Function('document', 'DATA', `const el=${el};${state}${fn};renderBoard();`)(document, data);
-  return { html, fn, body: byId.boardBody, sec: byId.board };
+  // lo abierto del kanban vive fuera de la función, para que una foto nueva no lo cierre; `redraw` dibuja otra foto
+  const open = (html.match(/const historiasAbiertas=new Set\(\);\n/) || [''])[0];
+  const { redraw } = new Function('document', 'DATA', `const el=${el};${open}${state}${fn};renderBoard();return {redraw:(d)=>{DATA=d;renderBoard();}};`)(document, data);
+  return { html, fn, body: byId.boardBody, sec: byId.board, redraw };
 }
 
 // ---------- el archivo de estado de cada sesión ----------

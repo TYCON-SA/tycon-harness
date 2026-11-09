@@ -75,7 +75,8 @@ manda sólo el título. Sin modelo, el tema sale de los títulos de los pedidos 
 
 Las historias en curso, en revisión o listas de tus proyectos (donde abriste una sesión o hiciste un commit propio en los
 últimos 7 días) salen solas: en «Pendientes», bajo «De tus proyectos», una fila por proyecto, y en el kanban, en «Sin
-sesión», las que no tienen una ejecución en esta máquina. Se leen de fondo, de la rama principal traída de cada repo, sin
+sesión», las que no tienen una ejecución en esta máquina, plegadas en una sola línea «Historias de tus proyectos · N»
+después de las demás tarjetas: se abre con un toque o el teclado y sigue abierta con cada foto nueva. Se leen de fondo, de la rama principal traída de cada repo, sin
 red, sólo con la página abierta y a lo sumo cada media hora. Una historia que se programa en otra máquina dice «sin
 asignar». No viajan al sitio de la organización. Leerlas a mano: `node scripts/tools/office/project-stories.js --refresh`.
 
