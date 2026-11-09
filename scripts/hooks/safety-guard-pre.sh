@@ -501,7 +501,7 @@ else
   _esc_cmd="${_esc_fuente//[\"\'\\\`]/}"
 fi
 
-# ESC-C3, `harness.js sign`: la firma en la terminal mira que haya una terminal y que alguien escriba «firmo», y un agente
+# ESC-C3, `harness.js sign`: la firma en la terminal mira que haya una terminal y que alguien conteste «s», y un agente
 # que se abre una terminal propia (`script`, un pty, `expect`) pasaría. La corre sólo la persona en su terminal, donde
 # no hay freno: acá se niega siempre, sin ventana (la emergencia nunca va por la ventana), igual que la biblioteca de la
 # emergencia (lib/harness-sign.js), que la consumiría. Mira el comando sin comillas (`si''gn` es `sign`), con `sign`

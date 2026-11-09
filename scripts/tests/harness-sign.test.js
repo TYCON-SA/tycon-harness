@@ -6,7 +6,7 @@
  *
  *   T1 · un id que no está en el catálogo se rechaza, sin registro ni permiso.
  *   T2 · la firma se da en la terminal de la persona: sin terminal no firma nada.
- *   T3 · sin «firmo», no firma.
+ *   T3 · sin s, no firma.
  *   T4 · la rutina firmada queda en el registro, por la vía `command`, con quién, quién la pidió, sobre qué y el motivo.
  *   T5 · una excepción (nivel 2) pide motivo; y la organización puede subir el nivel, nunca bajarlo.
  *   T6 · si el registro no escribe, el comando lo dice y sale con error; la emergencia no queda vigente.
@@ -44,7 +44,7 @@ function casaNueva(t) {
 }
 
 // la terminal de la persona: contesta lo que se le diga; `hay: false` es la consola del agente
-function terminal(respuesta = 'firmo', { hay = true } = {}) {
+function terminal(respuesta = 's', { hay = true } = {}) {
   const preguntas = [];
   return { preguntas, hay: () => hay, preguntar: (m) => { preguntas.push(m); return respuesta; } };
 }
@@ -87,13 +87,13 @@ test('T1 · un id que no está en el catálogo se rechaza, sin registro ni permi
 test('T2 · sin terminal no firma nada', (t) => {
   const casa = casaNueva(t);
   const reg = registro();
-  const r = firmar(casa, { id: 'plan-approval', append: reg.append, tty: terminal('firmo', { hay: false }) });
+  const r = firmar(casa, { id: 'plan-approval', append: reg.append, tty: terminal('s', { hay: false }) });
   assert.strictEqual(r.code, 2);
   assert.match(r.lines.join('\n'), /terminal/);
   assert.strictEqual(reg.renglones.length, 0);
 });
 
-test('T3 · sin «firmo», no firma', (t) => {
+test('T3 · sin s, no firma', (t) => {
   const casa = casaNueva(t);
   const reg = registro();
   const r = firmar(casa, { id: 'plan-approval', append: reg.append, tty: terminal('no') });
@@ -112,7 +112,7 @@ test('T4 · la rutina firmada queda en el registro con quién, quién la pidió,
     { ...reg.renglones[0], home: undefined },
     { signature: 'plan-approval', via: 'command', signer: 'el-dev', orderedBy: 'coordinadora', target: 'ses-a', reason: 'plan revisado', source: 'harness sign', home: undefined },
   );
-  // la terminal dice qué se firma y su nivel antes de pedir «firmo»
+  // la terminal dice qué se firma y su nivel antes de preguntar s o n
   assert.match(tty.preguntas[0], /aprobar el plan/);
   assert.match(tty.preguntas[0], /nivel 1/);
 });
@@ -176,7 +176,7 @@ test('T7 · la emergencia pide motivo y el número del pedido; deja un permiso d
   const tty = terminal();
   r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta de pruebas colgada', request: n, append: reg.append, tty });
   assert.strictEqual(r.code, 0, r.lines.join('\n'));
-  assert.match(tty.preguntas[0], /Comando: rm -rf \/tmp\/x/, 'la terminal muestra el comando antes del «firmo»');
+  assert.match(tty.preguntas[0], /Comando: rm -rf \/tmp\/x/, 'la terminal muestra el comando antes de preguntar s o n');
   assert.deepStrictEqual([reg.renglones[0].signature, reg.renglones[0].via, reg.renglones[0].target, reg.renglones[0].reason],
     ['emergency', 'command', 'rm -rf /tmp/x', 'borrar la carpeta de pruebas colgada']);
   const usado = sign.consumir({ casa, comando: 'rm -rf /tmp/x', ahora: AHORA + MIN });
@@ -354,7 +354,7 @@ test('T15 · la emergencia queda en el registro común de firmas de verdad', (t)
     [['emergency', 3, 'command', 'rm -rf /tmp/x', 'borrar la carpeta colgada', 'harness sign']]);
 });
 
-// La firma en la terminal mira que haya una terminal y que alguien escriba «firmo»: un agente que se abre una terminal
+// La firma en la terminal mira que haya una terminal y que alguien conteste «s»: un agente que se abre una terminal
 // propia (`script`, un pty de python, `expect`) pasaría. Por eso el agente no corre `sign` nunca: lo frena el freno de
 // seguridad, sin ventana, y lo corre la persona en su terminal, donde no hay freno.
 // 🔴 rojo: sin la regla, el agente se firma la emergencia solo.
@@ -445,7 +445,7 @@ test('T19 · sign no firma si lo lanzó la herramienta del agente, ni sin poder 
 });
 
 // El comando del pedido lo elige el agente: con saltos de línea, retornos o códigos de pantalla podría tapar parte de
-// lo que la persona lee antes de «firmo». Se muestra entero, con lo invisible escrito, y con un aviso.
+// lo que la persona lee antes de contestar. Se muestra entero, con lo invisible escrito, y con un aviso.
 // 🔴 rojo: mostrarlo crudo deja que un \r o un código de pantalla esconda el principio del comando.
 test('T20 · la terminal muestra el comando entero, con lo que no se ve escrito y un aviso', (t) => {
   const casa = casaNueva(t);
@@ -482,4 +482,121 @@ test('T12 · por la consola: un id desconocido sale 2 y la ayuda nombra sign', (
   assert.deepStrictEqual([p.cmd, p.args, p.opts.reason, p.opts.request], ['sign', ['emergency'], 'motivo', 'ab12cd34']);
   assert.strictEqual(parse(['sign', 'emergency', '--reason', 'motivo', '--commit']).opts.commit, true);
   assert.match(parse(['sign', 'emergency', '--reason', 'motivo', '--', 'git commit']).error, /opción desconocida/);
+});
+
+// ── Una sola forma de confirmar en la terminal: s o n ────────────────────────────────────────────────────────────────
+const PREGUNTA = '¿Firmás? (s/n)';
+
+test('Sign_RespuestasQueFirman @story-8.248 @ac-13 @ac-14', (t) => {
+  for (const respuesta of ['s', 'S', 'si', 'Sí', ' s ']) {
+    const casa = casaNueva(t);
+    const reg = registro();
+    const tty = terminal(respuesta);
+    const r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', request: pedido(casa, 'rm -rf /tmp/x'), append: reg.append, tty });
+    assert.strictEqual(r.code, 0, `«${respuesta}»: ${r.lines.join('\n')}`);
+    assert.strictEqual(reg.renglones.length, 1, `«${respuesta}» firma`);
+    const q = tty.preguntas[0];
+    // primero qué se firma (la firma, el nivel, el motivo y el comando), y la pregunta al final
+    for (const parte of ['Firma: ', 'nivel 3', 'Motivo: borrar la carpeta colgada', 'Comando: rm -rf /tmp/x']) {
+      assert.ok(q.indexOf(parte) >= 0 && q.indexOf(parte) < q.indexOf(PREGUNTA), `«${parte}» antes de la pregunta: ${q}`);
+    }
+    assert.ok(q.trimEnd().endsWith(PREGUNTA), `la pregunta va al final: ${q}`);
+    assert.doesNotMatch(q, /firmo/, 'ya no pide escribir «firmo»');
+  }
+});
+
+test('Sign_RespuestasQueNoFirman @story-8.248 @ac-13', (t) => {
+  for (const respuesta of ['n', 'no', '', 'firmo', 'sip', 'y', 'yes', 'ss', 's i']) {
+    const casa = casaNueva(t);
+    const reg = registro();
+    const r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', request: pedido(casa, 'rm -rf /tmp/x'), append: reg.append, tty: terminal(respuesta) });
+    assert.strictEqual(r.code, 1, `«${respuesta}» no firma`);
+    assert.match(r.lines.join('\n'), /no se firmó/);
+    assert.deepStrictEqual([reg.renglones.length, sign.permisos(casa).length], [0, 0], `«${respuesta}» no escribe nada`);
+  }
+  // la misma pregunta para todo id que se firma con `harness.js sign`
+  const casa = casaNueva(t);
+  const reg = registro();
+  const tty = terminal('s');
+  assert.strictEqual(firmar(casa, { id: 'plan-approval', append: reg.append, tty }).code, 0);
+  assert.ok(tty.preguntas[0].trimEnd().endsWith(PREGUNTA), tty.preguntas[0]);
+  // el renglón del registro no cambia: los mismos campos y la vía de siempre
+  assert.deepStrictEqual(Object.keys(reg.renglones[0]).sort(), ['home', 'orderedBy', 'reason', 'signature', 'signer', 'source', 'target', 'via']);
+  assert.strictEqual(reg.renglones[0].via, 'command');
+});
+
+// Sin terminal no se firma, y una «s» por la entrada estándar no cuenta: la respuesta se lee de la terminal. El proceso
+// corre en una sesión propia (detached), sin terminal de control, aunque la prueba la lance una persona desde la suya.
+test('Sign_SinTerminal_NoFirma @story-8.248 @ac-15', async (t) => {
+  const casa = casaNueva(t);
+  const env = { ...process.env, HOME: casa, TYCON_HARNESS_NODE: '0' };
+  const hijo = require('child_process').spawn(process.execPath, [HARNESS, 'sign', 'plan-approval', '--reason', 'prueba sin terminal'], { env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  let salida = '';
+  hijo.stdout.on('data', (d) => { salida += d; });
+  hijo.stderr.on('data', (d) => { salida += d; });
+  hijo.stdin.end('s\n');
+  const code = await new Promise((resolve) => hijo.on('close', resolve));
+  assert.strictEqual(code, 2, salida);
+  assert.match(salida, /terminal/);
+  assert.doesNotMatch(salida, /firmado/);
+  assert.strictEqual(fs.existsSync(require('../lib/signature-log.js').logPath(casa)), false, 'no escribió el registro');
+});
+
+test('Sign_DesdeLaHerramienta_NiegaAntes @story-8.248 @ac-16', (t) => {
+  const casa = casaNueva(t);
+  const reg = registro();
+  const tty = terminal('s');
+  const arbol = [
+    { pid: 1, ppid: 0, inicio: 'x', comando: '/sbin/launchd' },
+    { pid: 50, ppid: 1, inicio: 'x', comando: 'claude --dangerously-skip-permissions' },
+    { pid: process.pid, ppid: 50, inicio: 'x', comando: 'node harness.js sign emergency' },
+  ];
+  const r = firmar(casa, { id: 'emergency', reason: 'limpiar', request: pedido(casa, 'rm -rf /tmp/x'), append: reg.append, tty, origen: undefined, arbol });
+  assert.strictEqual(r.code, 2);
+  assert.match(r.lines.join('\n'), /herramienta del agente/);
+  assert.strictEqual(tty.preguntas.length, 0, 'niega antes de preguntar');
+  assert.strictEqual(reg.renglones.length, 0);
+});
+
+test('Sign_SinClaveYGuiasAlDia @story-8.248 @ac-17 @ac-18 @ac-20', () => {
+  const leer = (...p) => fs.readFileSync(path.join(RAIZ, ...p), 'utf8');
+  // ninguna clave para elegir cómo se confirma: ni el lector de la configuración ni el sitio
+  const CLAVE = /forma[_ ]de[_ ]confirmar|confirm(ation)?[_-]?(style|mode|form|kind)/i;
+  assert.doesNotMatch(leer('scripts', 'lib', 'tycon-config.js'), CLAVE);
+  // ni el lector del perfil del equipo (team-repos.js valida sus claves)
+  assert.doesNotMatch(leer('scripts', 'lib', 'team-repos.js'), CLAVE);
+  for (const f of fs.readdirSync(path.join(RAIZ, 'scripts', 'site')).filter((x) => x.endsWith('.js'))) {
+    assert.doesNotMatch(leer('scripts', 'site', f), CLAVE, f);
+  }
+  // las guías dicen s o n para la emergencia y las tres palabras en Windows
+  const firmas = leer('guides', 'firmas-del-arnes.md');
+  const freno = leer('guides', 'safety-guard.md');
+  for (const [nombre, texto] of [['firmas-del-arnes.md', firmas], ['safety-guard.md', freno]]) {
+    assert.ok(texto.includes(PREGUNTA), `${nombre} no dice la pregunta «${PREGUNTA}»`);
+    assert.match(texto, /tres palabras/, `${nombre} no dice las tres palabras de Windows`);
+    assert.doesNotMatch(texto, /«firmo»/, `${nombre} todavía nombra «firmo»`);
+  }
+  // los comentarios del guion de la firma y del freno
+  // («firmo» como la palabra que se pedía escribir; «sin eso no firmo» es otra cosa)
+  assert.doesNotMatch(leer('scripts', 'lib', 'harness-sign.js'), /«firmo»|'firmo'/);
+  const esc = leer('scripts', 'hooks', 'safety-guard-pre.sh').split('\n').filter((l) => /ESC-C3/.test(l)).join('\n');
+  assert.ok(esc, 'el freno no tiene el comentario de ESC-C3');
+  assert.doesNotMatch(esc, /«firmo»/, esc);
+});
+
+test('Sign_Windows_TresPalabras @story-8.248 @ac-19', (t) => {
+  const casa = casaNueva(t);
+  const reg = registro();
+  const n = pedido(casa, 'Remove-Item -Recurse -Force C:\\proj\\bin');
+  // adentro de la ventana: se piden las tres palabras; un C:\dev\tty creado por un agente con «s» no cuenta
+  const frases = [];
+  const preguntas = [];
+  const adentro = (ok) => ({ windows: true, enVentana: () => true, hay: () => true, dentro: () => {},
+    confirmarFrase: () => { frases.push(true); return ok; }, preguntar: (m) => { preguntas.push(m); return 's'; } });
+  let r = firmar(casa, { id: 'emergency', reason: 'limpiar', request: n, append: reg.append, tty: adentro(false) });
+  assert.strictEqual(r.code, 1, 'con «s» en la terminal y sin las tres palabras no firma');
+  assert.deepStrictEqual([frases.length, preguntas.length], [1, 0], 'pide las tres palabras y no la pregunta s/n');
+  r = firmar(casa, { id: 'emergency', reason: 'limpiar', request: n, append: reg.append, tty: adentro(true) });
+  assert.strictEqual(r.code, 0, r.lines.join('\n'));
+  assert.strictEqual(reg.renglones.length, 1);
 });

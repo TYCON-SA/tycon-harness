@@ -86,6 +86,7 @@ function night(at, over = {}) {
     'scripts/controls-bench/ultimo-banco.json': JSON.stringify({ ts: iso(at), tool: 'both', ran: 12, failed: 0, skipped: 0, nomedido: 0, parityBreaks: 0, baselineRegressions: 0, origen: 'azure-pipelines', estado: 'completo' }),
     'scripts/controls-bench/ultimo-suites.json': JSON.stringify({ kind: 'bash-tests', ts: iso(at), origen: 'azure-pipelines', corridas: 3, failures: [], motivos: {}, unmeasured: [], complete: true, ran: ['a.test.js', 'b.test.sh', 'c.test.js'], disappeared: [] }),
     'artifacts/tablero-del-arnes.html': SEAL(iso(at)),
+    'scripts/controls-bench/ultimo-constancias.json': JSON.stringify({ kind: 'constancias-borradas', ts: iso(at), ref: 'main', tip: 'a'.repeat(40), medido: true, con_firma: [], sin_firma: [] }),
   };
   for (const [k, v] of Object.entries(over)) { if (v === null) delete files[k]; else files[k] = v; }
   return files;
@@ -239,7 +240,9 @@ test('T85 NoPhoto_AndUnreadablePhoto_AreSaid_EachWithItsOwnText', () => {
   const n = perNightly(none);
   for (const k of ['dependencias', 'vigilante', 'banco', 'suites']) assert.match(n[k], /^🔴 .*no hay ninguna foto/, `${k} sin foto calla o dice otra cosa:\n${none.all}`);
   assert.match(n.tablero, /no está publicado/, none.all);
-  assert.strictEqual(none.lines.length, 5, none.all);
+  // la sexta es la foto de las constancias del dueño que salieron de main, que tampoco está
+  assert.match(line(none, /constancias del dueño/), /no hay ninguna foto/, none.all);
+  assert.strictEqual(none.lines.length, 6, none.all);
 
   const broken = startup(machine({ published: night(at, { [BANCO]: '{', [SUITES]: 'esto no es JSON', [depsFile(at)]: 'null', [vigFile(at)]: '[' }) }));
   const b = perNightly(broken);
@@ -1093,4 +1096,42 @@ test('SuitesRed_NoGreenNightInTheHistory_SaysNothingMore', () => {
   const base = night(at);
   const s = startup(machine({ published: { ...base, [SUITES]: edit(base, SUITES, (j) => { j.failures = ['a.test.js']; }) } }));
   assert.doesNotMatch(s.bench, /desde su última noche verde/, s.bench);
+});
+
+// ── las constancias del dueño que salieron de main: el aviso lee su foto ──────────────────────────────────────────────
+test('Nightly_CountsRemoved_NoticeSaysTheUnsigned @story-8.248 @ac-9', () => {
+  const at = Date.now() - HOUR;
+  const lab = machine({});
+  const datos = path.join(lab.base, 'constancias');
+  let n = 0;
+  const foto = (j) => { n += 1; const f = path.join(datos, `foto-${n}.json`); write(f, JSON.stringify(j)); return f; };
+  const base = { kind: 'constancias-borradas', ts: iso(at), ref: 'main', desde: iso(at - 24 * HOUR) };
+  const sinFirma = startup(lab, { TYCON_APPROVALS_REPORT: foto({ ...base, medido: true, con_firma: [{ commit: 'a'.repeat(40), path: '.github/control-changes/aaa.json' }], sin_firma: [{ commit: 'b'.repeat(40), path: '.github/control-changes/bbb.json' }] }) });
+  const l = line(sinFirma, /constancias del dueño/);
+  assert.match(l, /1 sin su firma/, sinFirma.bench);
+  assert.match(l, /\.github\/control-changes\/bbb\.json/, l);
+  assert.doesNotMatch(l, /aaa\.json/, 'la que tiene la firma del dueño no se cobra');
+  const noMedido = startup(lab, { TYCON_APPROVALS_REPORT: foto({ ...base, medido: false, motivo: 'git log falló', con_firma: [], sin_firma: [] }) });
+  const nm = line(noMedido, /constancias del dueño/);
+  assert.match(nm, /no medido/, noMedido.bench);
+  assert.match(nm, /git log falló/, nm);
+  assert.doesNotMatch(nm, /\b0 sin/, 'no medido nunca se dice como cero');
+  const cero = startup(lab, { TYCON_APPROVALS_REPORT: foto({ ...base, medido: true, con_firma: [], sin_firma: [] }) });
+  assert.strictEqual(line(cero, /constancias del dueño/), '', 'sin borrados sin firma, el aviso calla');
+  // una foto vieja ya no es el estado de hoy: no se lee como cero
+  const vieja = startup(lab, { TYCON_APPROVALS_REPORT: foto({ ...base, ts: iso(at - 5 * 24 * HOUR), medido: true, con_firma: [], sin_firma: [] }) });
+  assert.match(line(vieja, /constancias del dueño/), /NO ESTÁ CORRIENDO/, vieja.bench);
+  // una lista mal formada es «no medido», nunca cero
+  const rota = startup(lab, { TYCON_APPROVALS_REPORT: foto({ ...base, medido: true, con_firma: [], sin_firma: 'nada' }) });
+  assert.match(line(rota, /constancias del dueño/), /no medido/, rota.bench);
+});
+
+test('Nightly_CountsRemoved_MissingPhotoOnTheMachineThatWaits_IsSaid @story-8.248 @ac-9', () => {
+  const at = Date.now() - HOUR;
+  // la máquina que espera los nocturnos, con la noche publicada sin la foto de las constancias
+  const lab = machine({ published: night(at, { 'scripts/controls-bench/ultimo-constancias.json': null }) });
+  const s = startup(lab);
+  assert.match(line(s, /constancias del dueño/), /no hay ninguna foto|no sé si corrió/, s.bench);
+  // con la foto fresca y sin borrados sin firma, calla
+  assert.strictEqual(line(startup(machine({})), /constancias del dueño/), '');
 });

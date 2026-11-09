@@ -333,7 +333,8 @@ function emergencia({ dir, env, rec }) {
   const marca = `sonda_${Date.now()}`;
   // la sonda hace de persona: el registro de mentira y el origen dado por bueno (en Windows el árbol no se mira)
   const nadie = { append: () => ({ ok: true, path: '(sonda)' }), signer: 'sonda', levels: {}, origen: () => ({ ok: true }) };
-  const firmo = (opts) => S.sign({ ...nadie, ...opts, tty: { hay: () => true, preguntar: () => 'firmo' } });
+  // la terminal de mentira contesta «s» a «¿Firmás? (s/n)»
+  const firmo = (opts) => S.sign({ ...nadie, ...opts, tty: { hay: () => true, preguntar: () => 's' } });
   const limpiar = () => {
     for (const d of [S.carpeta(), path.join(S.carpeta(), 'pedidos')]) {
       let fs0 = [];

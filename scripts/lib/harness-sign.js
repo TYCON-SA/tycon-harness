@@ -13,7 +13,8 @@
  * terminal, nunca la ventana ni la delegación, con motivo. Nadie retipea el comando, porque sus comillas y sus barras no
  * llegan iguales desde PowerShell, cmd o bash:
  *   · cuando el freno de seguridad frena, guarda el texto exacto que leyó como un pedido con número (`pedir`) y el cartel
- *     da `--request <número>`; la terminal muestra ese comando antes del «firmo»;
+ *     da `--request <número>`; la terminal muestra ese comando antes de preguntar «¿Firmás? (s/n)» (en Windows, las tres
+ *     palabras al azar de la ventana nueva);
  *   · `--commit` es para el control de los servidores de producción, que corre adentro del commit: vale para el próximo
  *     commit en el repo de la carpeta donde se firma (`consumirCommit`).
  * El pedido y el permiso viven en `emergency/` dentro de la carpeta de estado de la casa de la cuenta. Los dos vencen a
@@ -44,6 +45,10 @@ const EMERGENCIA = 'emergency';
 const VENCE_MIN = 30;
 const COMMIT = 'git commit';
 const NUMERO = /^[0-9a-f]{8}$/;
+// La respuesta que firma: s, si o sí, en mayúscula o minúscula. Lo demás es «no», también «y» y «yes»: un programa que
+// contesta que sí a todo (`yes |`) no firma. Lo que frena a un agente no es la respuesta, es mirar quién lanzó el comando
+// (`origenDeVerdad`), que va antes de preguntar
+const SI = /^s[ií]?$/i;
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const una = (s, n) => { const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n)}…` : t; };
 const esCommit = (comando) => /^git\s+commit(\s|$)/.test(String(comando));
@@ -203,8 +208,8 @@ function pedidoVigente({ casa, numero, ahora }) {
 }
 
 /**
- * Firma `id` en la terminal y lo anota. Devuelve `{ code, lines }`: 0 firmó, 1 no firmó (la persona no escribió
- * «firmo», o el registro no escribió), 2 uso mal hecho o sin terminal (nada escrito).
+ * Firma `id` en la terminal y lo anota. Devuelve `{ code, lines }`: 0 firmó, 1 no firmó (la persona no contestó «s», o el
+ * registro no escribió), 2 uso mal hecho o sin terminal (nada escrito).
  * La emergencia lleva `request` (el número del cartel del freno) o `commit`.
  * `levels`: lo que sube el perfil (`approvals.levels`); null si el perfil no se pudo leer (se pide motivo igual).
  * `via`: por dónde llega el pedido; en esta etapa, sólo `terminal` firma.
@@ -260,7 +265,7 @@ function sign({ id, reason = '', request = null, commit = false, target = null, 
   try {
     // en Windows la ventana dice qué se firma antes de pedir las tres palabras
     if (t.windows) { process.stderr.write(`\n${que}\n`); ok = t.confirmarFrase({}); }
-    else ok = String(t.preguntar(`\n${que}\nPara firmar, escribí «firmo»: `) || '').trim().toLowerCase() === 'firmo';
+    else ok = SI.test(String(t.preguntar(`\n${que}\n¿Firmás? (s/n) `) || '').trim());
   } catch (err) { return no(2, `harness sign: no pude leer tu terminal (${err.message})`); }
   if (!ok) return no(1, 'harness sign: no se firmó');
 
