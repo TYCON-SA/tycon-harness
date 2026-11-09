@@ -233,30 +233,83 @@ function siblingStoryRepos(repo) {
   return out;
 }
 
+/**
+ * El repo de historias que declara el repo, ya comprobado: `null` sin declaración, o `{ abs }` (la carpeta, que puede ser
+ * el mismo repo). Frena si lo declarado no es un repo al lado de este o no está clonado.
+ */
+function declaredStoriesPlace(repo) {
+  const declared = declaredStoriesRepo(repo);
+  if (!declared) return null;
+  const abs = path.resolve(repo, declared.repo);
+  // lo declarado es un repo del mismo producto: al lado de este o dentro de su carpeta, nunca cualquier carpeta del disco
+  const rel = path.relative(path.dirname(repo), abs);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Refusal(`\`.tycon/advisors.yaml\` dice que las historias están en ${shown(declared.repo)}, que no es un repo al lado de este. Declará la ruta del repo de historias del producto (por ejemplo ../Project).`);
+  }
+  if (abs !== repo && !fs.existsSync(path.join(abs, '.git'))) {
+    throw new Refusal(`Las historias de este producto están en ${shown(declared.remote || declared.repo)}, y no está clonado en ${abs}: clonalo ahí o decime dónde está. No creo la historia en este repo.`);
+  }
+  return { abs };
+}
+
 /** Dónde ya hay historias de este producto: `{ places, siblingsOnly }`. Frena si el repo declarado no está clonado. */
 function storyPlaces(repo, { thisRepo = false } = {}) {
   const places = [];
   const own = storiesOf(repo);
   if (own.ids.length && !own.ids.every((id) => FIRST_TIME_ID.test(id))) places.push(placeOf(repo, own));
-  const declared = declaredStoriesRepo(repo);
+  const declared = declaredStoriesPlace(repo);
   if (declared) {
-    const abs = path.resolve(repo, declared.repo);
-    // lo declarado es un repo del mismo producto: al lado de este o dentro de su carpeta, nunca cualquier carpeta del disco
-    const rel = path.relative(path.dirname(repo), abs);
-    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
-      throw new Refusal(`\`.tycon/advisors.yaml\` dice que las historias están en ${shown(declared.repo)}, que no es un repo al lado de este. Declará la ruta del repo de historias del producto (por ejemplo ../Project).`);
-    }
-    if (abs !== repo) {
-      if (!fs.existsSync(path.join(abs, '.git'))) {
-        throw new Refusal(`Las historias de este producto están en ${shown(declared.remote || declared.repo)}, y no está clonado en ${abs}: clonalo ahí o decime dónde está. No creo la historia en este repo.`);
-      }
-      places.push(placeOf(abs));
-    }
+    if (declared.abs !== repo) places.push(placeOf(declared.abs));
     return { places, siblingsOnly: false };
   }
   if (thisRepo) return { places, siblingsOnly: false };
   const siblings = siblingStoryRepos(repo);
   return { places: places.concat(siblings), siblingsOnly: places.length === 0 && siblings.length > 0 };
+}
+
+/**
+ * La carpeta de historias de BMAD que declara el repo (`_bmad/bmm/config.yaml → implementation_artifacts`, con
+ * `{project-root}` por la raíz), o null: sin la clave, o con un archivo que no se puede leer, es «no declarado».
+ */
+function implementationArtifactsDir(repo) {
+  let txt;
+  try { txt = fs.readFileSync(path.join(repo, BMAD_CONFIG), 'utf8'); } catch { return null; }
+  const m = /^implementation_artifacts\s*:\s*(.+?)\s*(?:#.*)?$/m.exec(txt);
+  if (!m) return null;
+  const v = m[1].trim().replace(/^(['"])(.*)\1$/, '$2').replace(/\{project-root\}/g, repo);
+  return v ? path.resolve(repo, v) : null;
+}
+
+/**
+ * Dónde están las historias de un repo para la oficina: los mismos lugares que `storyPlaces`, sin el filtro de la
+ * primera vez (un repo cuyas historias son todas de la primera épica también da su carpeta) y con la carpeta de
+ * BMAD, que manda sobre `specs/` o `stories/`. Nunca tira: `{ places, problem }`. `storyPlaces` queda igual para crear
+ * historias.
+ */
+function projectStoryPlaces(repo) {
+  try {
+    const own = (r) => {
+      const bmadDir = implementationArtifactsDir(r);
+      if (bmadDir) return { repo: r, dir: bmadDir, count: null, bmad: true };
+      const s = storiesOf(r);
+      return s.ids.length ? placeOf(r, s) : null;
+    };
+    const places = [];
+    const mine = own(repo);
+    if (mine) places.push(mine);
+    const declared = declaredStoriesPlace(repo);
+    if (declared) {
+      if (declared.abs !== repo) places.push(own(declared.abs) || placeOf(declared.abs));
+      return { places: places.filter((p) => p.dir), problem: null };
+    }
+    for (const p of siblingStoryRepos(repo)) {
+      const o = own(p.repo);
+      if (o || p.dir) places.push(o || p);
+    }
+    return { places: places.filter((p) => p.dir), problem: null };
+  } catch (e) {
+    return { places: [], problem: (e && e.message) || String(e) };
+  }
 }
 
 /** Lo que el agente le dice a la persona cuando ya hay historias: dónde están y, con más de un lugar, la pregunta. */
@@ -540,6 +593,6 @@ function main(argv) {
   }
 }
 
-module.exports = { nextStory, problems, render, verifyCommands, isBmad, RECORD_DIR };
+module.exports = { nextStory, problems, render, verifyCommands, isBmad, RECORD_DIR, storyPlaces, projectStoryPlaces };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

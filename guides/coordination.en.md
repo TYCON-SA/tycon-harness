@@ -577,6 +577,22 @@ says so once under «No se pudo leer». A badly written row is not saved: `board
 «Terminados» is what was done today, with its time; anything older, or with no `realIso`, goes to the «Hechos» table. «En
 curso» goes by end time: what ends first on top, what has no time after, and the coordinator last.
 
+### The stories of your projects
+
+A story that is in progress, in review or ready **shows up on its own**: it does not need a board row. These are the
+stories of the projects you worked on in the last 7 days, because you opened a session there or made a commit of your own.
+
+- They go to «Sin sesión», in the «Historias» group, after the board rows and sorted by priority. The «Pendientes» table
+  has one row per project, under «De tus proyectos», that opens to show its stories.
+- They are read in the background, from the fetched main branch of each repo, without going to the network. It runs only
+  while the office is open, at most every half hour. Each project's line says when something was last fetched from that
+  repo («traído hace 3 h»), even if it was another branch.
+- A story with a run on this machine adds no card: it goes on its session's card. One that already names an open board row
+  (`historia`) adds none either: the row stays, with its number.
+- What has no story (a loose fix, a decision, something from outside) stays on the board, with `board.js`.
+- Limit: «who» comes only from the runs on this machine. A story someone is coding on another machine says «sin asignar».
+  These rows and cards do not travel to the organization site: they belong to each machine.
+
 ### The number of each task
 
 Every row has a short fixed number, `T-41`, shown on its card, in the works of the tables and above the detail. The

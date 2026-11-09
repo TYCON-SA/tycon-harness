@@ -52,6 +52,9 @@ const { designacionVigente } = require(path.join(ROOT, 'skills', 'tycon-pipeline
 const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS } = require('./work-in-progress.js');
 const topics = require(path.join(__dirname, 'office', 'topics.js'));
 const boardTool = require(path.join(__dirname, 'office', 'board.js'));
+const PS = require(path.join(__dirname, 'office', 'project-stories.js'));
+// el estado de una historia de los proyectos, en palabras
+const STORY_STATE_WORD = { 'ready-for-dev': 'lista', 'in-progress': 'en curso', review: 'en revisión' };
 // la fila escrita a mano sin numerar
 const NO_NUMBER = 'sin número';
 const signatureList = require(path.join(ROOT, 'scripts', 'lib', 'signature-list.js'));
@@ -368,7 +371,7 @@ function stuckGroups(agents, coordinatorName) {
  * Devuelve `{ data, promises }`, con las promesas ya al día para guardarlas.
  */
 function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorName = null, promises = {}, nowMs = Date.now(),
-  sessionFiles = [], codexNames: cxNames = new Map(), runningAgents = new Map(), quietMin = QUIET_DEFAULT_MIN, isAlive, board = null, prAnswers = new Map(), transcripts = null, lastWrites = new Map(), processes = null, openPrs = [], openPrsNote = null, waitingPrs = null, testSessions = new Set(), personSessions = new Set(), otherProjects = new Set(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro' } = {}) {
+  sessionFiles = [], codexNames: cxNames = new Map(), runningAgents = new Map(), quietMin = QUIET_DEFAULT_MIN, isAlive, board = null, prAnswers = new Map(), transcripts = null, lastWrites = new Map(), processes = null, openPrs = [], openPrsNote = null, waitingPrs = null, testSessions = new Set(), personSessions = new Set(), otherProjects = new Set(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro', projectStories = null } = {}) {
   const kept = {};
   for (const [k, p] of Object.entries(promises || {})) {
     if (p && Number.isFinite(p.at) && Number.isFinite(p.seen) && nowMs - p.seen < PROMISE_KEEP_MS) kept[k] = p;
@@ -737,6 +740,14 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   const kanban = buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures: signatureCards.filter((s) => !s.conTarjeta), board, prAnswers, openPrs, openPrsNote, nowMs, projectOf, projectOfRepo, sidOf });
   if (halfwayUnknown) kanban.medioCaminoNoSe = halfwayUnknown === 1 ? 'De un trabajo de una sesión cerrada no se pudo saber si dejó algo sin terminar.' : `De ${halfwayUnknown} trabajos de sesiones cerradas no se pudo saber si dejaron algo sin terminar.`;
   if (kanban.medioCamino.length || kanban.medioCaminoNoSe) kanban.medioCaminoLeido = `Leído a las ${hhmm(wip.halfwayReadAt || nowMs)}`;
+  // las historias de los proyectos de la persona, de la lectura de fondo (`{ snap, nota, runs }`): van al final de «Sin
+  // sesión», después de las filas del tablero, y sus filas de «Pendientes» se guardan para las tablas
+  if (projectStories) {
+    const names = new Map((wip.details || []).map((d, i) => [d && d.sid, wip.rows && wip.rows[i] ? wip.rows[i].session : null]));
+    const v = PS.view({ ...projectStories, filas: (board && board.filas) || [], nameOf: (sid) => names.get(sid) || null, wordOf: (e) => STORY_STATE_WORD[e] || e, now: nowMs });
+    kanban.columnas.find((c) => c.id === 'sinEmpezar').tarjetas.push(...v.cards);
+    kanban.historias = { filas: v.rows, pie: v.pie, ...(projectStories.nota ? { nota: projectStories.nota } : {}) };
+  }
   const meta = {
     actualizado: hhmm(nowMs),
     teToca,
@@ -1229,7 +1240,8 @@ const halfwayWorks = (kanban) => (kanban.medioCamino || []).map((m) => ({ titulo
 
 /** Lo que hay que clasificar de la foto: el título de cada trabajo, y de lo que quedó a medio camino, el del trabajo que era. */
 function workCards(kanban) {
-  const cards = kanban.columnas.flatMap((c) => c.tarjetas || []);
+  // las tarjetas de historia de los proyectos no se clasifican: ya dicen de qué proyecto son
+  const cards = kanban.columnas.flatMap((c) => c.tarjetas || []).filter((c) => c.local !== true);
   return [...cards, ...halfwayWorks(kanban).filter((c) => c.trabajo).map((c) => ({ ...c, titulo: c.trabajo }))];
 }
 
@@ -1245,9 +1257,13 @@ function doneTable(kanban) {
  * `sinModelo` y `prs`, el respaldo por títulos de pedidos; `nota`, lo que la tabla tiene que decir una vez del modelo.
  */
 function buildTables({ kanban, nowMs, temas = {}, sinModelo = false, prs = [], nota = null }) {
-  const cards = (id) => ((kanban.columnas.find((c) => c.id === id) || {}).tarjetas || []);
+  // las tarjetas de historia de los proyectos no son trabajos de un tema: tienen sus propias filas, después
+  const column = (id) => ((kanban.columnas.find((c) => c.id === id) || {}).tarjetas || []);
+  const cards = (id) => column(id).filter((c) => c.local !== true);
   const entriesOf = (ids) => ids.flatMap(([id]) => cards(id).map((card) => ({ id, card })));
-  const inKanban = (ids) => ids.map(([id, nombre]) => `${cards(id).length} ${nombre.toLowerCase()}`).join(' · ');
+  const stories = kanban.historias || null;
+  // «En el kanban, de a uno» cuenta la columna entera, como la ve la persona: con las tarjetas de historia
+  const inKanban = (ids) => ids.map(([id, nombre]) => `${column(id).length} ${nombre.toLowerCase()}`).join(' · ');
   const cross = (say) => `Agrupa por tema: una fila puede juntar varios trabajos. En el kanban, de a uno: ${say}.`;
   const armada = `Armada a las ${hhmm(nowMs)}`;
   const ctx = { temas, sinModelo, prs };
@@ -1257,10 +1273,11 @@ function buildTables({ kanban, nowMs, temas = {}, sinModelo = false, prs = [], n
     pendientes: {
       titulo: TABLES.pendientes.titulo,
       columnas: TABLES.pendientes.columnas,
-      filas: rowsByTopic([...entriesOf(TABLES.pendientes.ids), ...halfway.map((card) => ({ id: 'medio', card }))], ctx, pendingLine, nowMs),
+      filas: [...rowsByTopic([...entriesOf(TABLES.pendientes.ids), ...halfway.map((card) => ({ id: 'medio', card }))], ctx, pendingLine, nowMs), ...((stories && stories.filas) || [])],
       escrito: armada,
       cruce: cross(`${inKanban(TABLES.pendientes.ids)} · ${halfway.length} a medio camino`),
       vacio: 'No hay pendientes',
+      ...(stories && stories.pie.length ? { pie: stories.pie } : {}),
     },
     hechos: doneTable(kanban),
   };
@@ -2107,7 +2124,9 @@ async function collect(opts = {}) {
   const waitingPrs = await askWaitingPrs(wip, open, { ...opts, sessionPrs: rowPrsAfter.sesiones }, remembered.prsEnded);
   const testSessions = wip.testSids || new Set();
   const personSessions = new Set([...sessions].filter(([, s]) => s.kind === 'interactive').map(([sid]) => String(sid)));
-  const { data, promises, facts, factsComplete } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf), projectOf, projectOfRepo });
+  // las historias de tus proyectos: lo que dejó la lectura de fondo, que la foto no espera, y las ejecuciones de esta máquina
+  const projectStories = { ...PS.readSnapshot(sdir, nowMs), runs: PS.runsOfThisMachine({ stateDir: sdir, now: nowMs }) };
+  const { data, promises, facts, factsComplete } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf), projectOf, projectOfRepo, projectStories });
   // el tablero se mueve solo con los hechos de esta foto: lo hace sólo quien tiene el candado de la oficina, con board.js
   if (opts.syncBoard && board.board && !opts.readOnly) syncBoardFromPhoto(sdir, facts, factsComplete && open.measured !== false, problems, { now: nowMs, home, sync: opts.boardSync });
   // sólo con la oficina abierta: la primera pasada lee conversaciones enteras, y la foto fija y `--json` empezarían de cero cada vez

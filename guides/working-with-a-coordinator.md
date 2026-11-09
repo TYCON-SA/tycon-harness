@@ -105,7 +105,9 @@ Los tres comandos sólo miran, no cambian nada.
 - **`/coordinate`**, en su pestaña: quién trabaja contra el tope, quién espera, las firmas pendientes y las sesiones sin
   nombre. En cualquier otra sesión te dice que esa sesión no coordina.
 - **`/office`**, en cualquier sesión: la oficina en 3D, con una persona por sesión, su estado y su hora de fin. Si ella
-  lleva su tablero de pendientes, aparece en un panel aparte.
+  lleva su tablero de pendientes, aparece en un panel aparte. Una historia en curso o lista de tus proyectos sale sola en
+  sus pendientes: ella no tiene que anotarla. Lo que no tiene historia lo anota con `board.js`. Una historia que alguien
+  programa en otra máquina dice «sin asignar»: la oficina sólo ve las ejecuciones de esta.
 - **`/wip`**, en cualquier sesión: lo mismo, en una tabla.
 
 ## Si se traba, o después de un `/clear`

@@ -247,14 +247,19 @@ select.corto.bad{border-color:var(--bad);color:var(--bad-ink)}
 .invitar input.productos{min-width:36ch}
 @media (max-width:560px){.invitar input.productos{min-width:0;width:100%}}
 /* Quién firma cada cosa: la firma y, al lado, cada una de sus formas con cómo se pide y su selector */
-.tabla2.firmas{grid-template-columns:minmax(0,1fr) minmax(0,1.6fr)}
+.tabla2.firmas{grid-template-columns:minmax(0,1fr) minmax(9em,13em) minmax(0,1.6fr)}
+/* el nivel de cada cosa que cubre la firma (story 2.79, AC 71): un selector; con varias, cada una con su nombre arriba */
+.tabla2.firmas .r > .nivel{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;align-content:center}
+.tabla2.firmas .r > .nivel .forma{display:grid;gap:2px}
+.tabla2.firmas .r > .nivel .muted{font-size:12.5px;overflow-wrap:anywhere}
+/* las filas de lo que el lector rechaza: el botón ocupa el nivel y quién firma */
+.tabla2.firmas .r > .sel{grid-column:2/-1}
 .tabla2.firmas .r > .formas{display:grid;grid-template-columns:minmax(0,1fr) minmax(9em,14em);gap:4px 10px;align-items:center}
 .tabla2.firmas .r > .formas .forma{display:contents}
 .tabla2.firmas .r > .formas .muted{font-size:12.5px;overflow-wrap:anywhere}
 /* «Quién firma cada cosa» por nivel (story 2.79): la cabeza de cada bloque ocupa el renglón entero, con su frase abajo */
 .tabla2.firmas .r.nivel-cab > .nivel-t{grid-column:1/-1;flex-direction:column;align-items:flex-start;gap:2px;padding:14px 0 6px;border-bottom:1px solid var(--line-strong)}
 .tabla2.firmas .r.nivel-cab .muted{font-size:13px}
-.tabla2.niveles{grid-template-columns:minmax(0,1fr) minmax(9em,14em)}
 /* la matriz corta de la guía: cinco columnas; más ancha que un teléfono, se corre dentro de su caja */
 .matriz-scroll{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:6px 0}
 .matriz{display:grid;grid-template-columns:minmax(12em,1.6fr) repeat(5,minmax(7.5em,1fr));min-width:48em;font-size:13.5px;border-top:1px solid var(--line)}
@@ -410,9 +415,10 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
   .tabla2.repos .r > .edit,.tabla2.repos .r > .err-fila{grid-area:auto;grid-column:1/-1}
   .tabla2 .edit .fila.repo{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .tabla2.integ{grid-template-columns:minmax(0,1fr)}
-  /* las firmas y sus niveles, a una columna: qué se firma arriba, cada forma con su selector abajo */
-  .tabla2.firmas,.tabla2.niveles{grid-template-columns:minmax(0,1fr)}
-  .tabla2.firmas .r > .que,.tabla2.niveles .r > .que{border-bottom:0;padding-bottom:0}
+  /* las firmas a una columna: qué se firma arriba, su nivel y cada forma con su selector abajo */
+  .tabla2.firmas{grid-template-columns:minmax(0,1fr)}
+  .tabla2.firmas .r > .que,.tabla2.firmas .r > .nivel{border-bottom:0;padding-bottom:0}
+  .tabla2.firmas .r > .sel{grid-column:auto}
   .tabla2.firmas .r > .formas{grid-template-columns:minmax(0,1fr)}
   .tabla2.firmas .r > .formas .muted{padding-top:4px}
   .tabla2.integ .r > .que{border-bottom:0;padding-bottom:0}

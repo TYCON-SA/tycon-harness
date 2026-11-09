@@ -6444,7 +6444,8 @@ test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — por nivel,
   }
 });
 
-// la parte con navegador: a 1280 los encabezados en columnas; a 390, en los dos temas, sin desplazarse de costado
+// la parte con navegador: a 1280 los encabezados en columnas; a 390, en los dos temas, sin desplazarse de costado. Desde el
+// AC 71 la tabla de firmas lleva también el nivel (tres columnas) y la de niveles aparte ya no está: eso lo mide la T78
 test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — en el navegador: encabezados en columnas y sin desplazamiento a 390 px', { skip: SIN_PLAYWRIGHT, timeout: 180000 }, async () => {
   assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
   const SERVER = require(path.join(ROOT, 'scripts', 'site', 'server.js'));
@@ -6462,14 +6463,116 @@ test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — en el nave
       await page.locator('#seccion-aprobaciones').scrollIntoViewIfNeeded();
       const m = await page.evaluate(() => {
         const cab = (sel) => [...document.querySelectorAll(`${sel} [role=columnheader]`)].filter((x) => x.getBoundingClientRect().height > 0).map((x) => Math.round(x.getBoundingClientRect().top));
-        return { firmas: cab('.tabla2.firmas'), niveles: cab('.tabla2.niveles'), ancho: document.documentElement.scrollWidth, vista: document.documentElement.clientWidth };
+        return { firmas: cab('.tabla2.firmas'), ancho: document.documentElement.scrollWidth, vista: document.documentElement.clientWidth };
       });
       assert.ok(m.ancho <= m.vista, `${ancho} ${tema}: la página mide ${m.ancho} de ancho contra ${m.vista} visibles`);
       if (ancho === 1280) {
-        for (const t of ['firmas', 'niveles']) {
-          assert.strictEqual(m[t].length, 2, `${t}: dos encabezados a la vista`);
-          assert.strictEqual(new Set(m[t]).size, 1, `${t}: los encabezados en columnas, a la misma altura (${m[t]})`);
-        }
+        assert.strictEqual(m.firmas.length, 3, 'firmas: tres encabezados a la vista (firma, nivel y quién la firma)');
+        assert.strictEqual(new Set(m.firmas).size, 1, `firmas: los encabezados en columnas, a la misma altura (${m.firmas})`);
+      }
+      await ctx.close();
+    }
+  } finally {
+    await navegador.close();
+    await sitio.cerrar();
+  }
+});
+
+// 2.79-Firmas_UnaSolaTablaConNivel
+// 🔴 Falla con: la tabla «El nivel de cada firma» todavía aparte, una cosa cubierta sin su selector de nivel o con dos
+//    (`save:sensible`, que nunca se delega, o `emergency`, que no tiene firma del catálogo), la misma firma con un nombre en
+//    la fila y otro en su selector de nivel, o subir el nivel que deja «Delegada» en el selector de quién firma de la fila.
+test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — una tabla con firma, nivel y quién; un selector por cada nivel; subir a 2 saca «Delegada» en la fila', async () => {
+  const SIG = SIGS_79();
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const clase = (n, c) => new RegExp(`(^| )${c}( |$)`).test(n.attrs.class || '');
+  const nombre = (idioma, pref, id, porDefecto) => { const v = TX.t(idioma, `${pref}${id}`); return v === `${pref}${id}` ? porDefecto : v; };
+  const valores = (sel) => sel.hijos.map((o) => o.attrs.value);
+  for (const idioma of ['es', 'en']) {
+    const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'extra-round'] } })], {}, idioma);
+    assert.strictEqual(p.error, null);
+    const nodos = () => p.todo(p.sec('aprobaciones'));
+    assert.ok(!nodos().some((n) => clase(n, 'tabla2') && clase(n, 'niveles')), `${idioma}: ya no está la tabla de niveles aparte`);
+    const tablas = nodos().filter((n) => clase(n, 'tabla2') && clase(n, 'firmas'));
+    assert.strictEqual(tablas.length, 1, `${idioma}: una sola tabla de firmas`);
+    const cab = p.todo(tablas[0]).filter((n) => n.attrs.role === 'columnheader').map((n) => n.textContent);
+    assert.deepStrictEqual(cab, ['pantalla.firmasColFirma', 'pantalla.nivelesColNivel', 'pantalla.firmasColQuien'].map((k) => TX.t(idioma, k)), `${idioma}: tres columnas, la firma, su nivel y quién la firma`);
+    const dentro = p.todo(tablas[0]);
+    const filas = dentro.filter((n) => n.attrs.role === 'row');
+    const filaDe = (sel) => filas.find((r) => r !== filas[0] && p.todo(r).includes(sel));
+    for (const l of SIG.LEVELS) {
+      const sels = nodos().filter((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.nivel.${l.id}`);
+      assert.strictEqual(sels.length, 1, `${idioma}: ${l.id}, exactamente un selector de nivel`);
+      assert.ok(dentro.includes(sels[0]), `${idioma}: ${l.id}, en la tabla única`);
+      assert.deepStrictEqual(valores(sels[0]), ['1', '2', '3'].slice(l.level - 1), `${idioma}: ${l.id}, sólo desde su nivel para arriba`);
+    }
+    // lo que nunca se delega, en la fila de su firma; lo cubierto sin firma del catálogo, en su fila y sin grupo
+    const sel = (id) => nodos().find((n) => n.tag === 'select' && n.attrs['data-path'] === id);
+    assert.strictEqual(filaDe(sel('approvals.nivel.save:sensible')).attrs['data-firma-grupo'], 'save,save:sensible', `${idioma}: guardar algo sensible, en la fila de guardar`);
+    const suelta = filaDe(sel('approvals.nivel.emergency'));
+    assert.strictEqual(suelta.attrs['data-nivel-suelto'], 'emergency', `${idioma}: la emergencia, en su fila`);
+    assert.strictEqual(suelta.attrs['data-firma-grupo'], undefined, `${idioma}: sin grupo de firma`);
+    // la misma firma con un solo nombre: en una fila que cubre una sola cosa, el selector de nivel se llama como la fila
+    const grupos = new Map();
+    for (const f of SIG.SIGNATURES) { const k = f.covers.join(','); grupos.set(k, [...(grupos.get(k) || []), f]); }
+    for (const [k, fs] of grupos) {
+      const cubre = k.split(',');
+      const cabeza = fs.find((f) => f.id === k) || fs[0];
+      const suNombre = nombre(idioma, 'pantalla.firmaQue.', cabeza.id, cabeza.approves);
+      const fila = filas.find((r) => r.attrs['data-firma-grupo'] === k);
+      assert.ok(fila, `${idioma}: la fila de ${k}`);
+      if (cubre.length !== 1) continue;
+      const nivel = p.todo(fila).find((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.nivel.${cubre[0]}`);
+      assert.strictEqual(nivel.attrs['aria-label'], suNombre, `${idioma}: ${k}, el selector de nivel se llama como su fila`);
+      const otro = nombre(idioma, 'pantalla.nivelQue.', cubre[0], null);
+      if (otro && otro !== suNombre) assert.ok(!p.todo(fila).some((n) => n.textContent === otro), `${idioma}: ${k}, sin un segundo nombre a la vista («${otro}»)`);
+    }
+    // subir a 2 saca «Delegada» del selector de quién firma de esa fila, sin volver a cargar
+    assert.ok(valores(sel('approvals.firma.plan-approval')).includes('delegada'), `${idioma}: la rutina se ofrece para delegar`);
+    sel('approvals.nivel.plan-approval').on.change({ target: { value: '2' } });
+    // la pantalla se vuelve a dibujar: las filas se leen de nuevo
+    const filasNuevas = p.todo(nodos().find((n) => clase(n, 'tabla2') && clase(n, 'firmas'))).filter((n) => n.attrs.role === 'row');
+    const fila = filasNuevas.find((r) => p.todo(r).includes(sel('approvals.nivel.plan-approval')));
+    assert.strictEqual(fila.attrs['data-firma-grupo'], 'plan-approval', `${idioma}: el nivel y quién firma, en la misma fila`);
+    assert.ok(!valores(p.todo(fila).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.firma.plan-approval')).includes('delegada'), `${idioma}: subida a 2, ya no se ofrece para delegar`);
+    // el borrador se lee con el botón en castellano (borradorAlRevisar lo busca por su texto)
+    if (idioma === 'es') {
+      const b = await borradorAlRevisar(p);
+      assert.deepStrictEqual(b.approvals.levels, { 'plan-approval': 2 }, 'el nivel subido se guarda');
+      assert.deepStrictEqual(b.approvals.delegated_signing, ['extra-round'], 'y sale de lo delegado en el mismo cambio');
+    }
+  }
+});
+
+// la parte con navegador: la tabla única a 1280 y a 390 px, en los dos temas, sin la de niveles y sin desplazarse de costado
+test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — en el navegador: una tabla de tres columnas, sin la de niveles y sin desplazamiento', { skip: SIN_PLAYWRIGHT, timeout: 180000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const SERVER = require(path.join(ROOT, 'scripts', 'site', 'server.js'));
+  const sitio = SERVER.crearSitioDemo({ env: { SITE_DEMO: '1' }, dir: tmp('demo-tabla-unica-'), log: () => {} });
+  await sitio.iniciar();
+  await new Promise((r) => sitio.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${sitio.server.address().port}`;
+  const navegador = await PLAYWRIGHT.chromium.launch();
+  try {
+    for (const [ancho, tema] of [[1280, 'light'], [1280, 'dark'], [390, 'light'], [390, 'dark']]) {
+      const ctx = await navegador.newContext({ viewport: { width: ancho, height: 900 }, colorScheme: tema });
+      const page = await ctx.newPage();
+      await page.goto(`${base}/configuracion#seccion-aprobaciones`);
+      await page.locator('.tabla2.firmas').first().waitFor({ state: 'attached', timeout: 60000 });
+      await page.locator('#seccion-aprobaciones').scrollIntoViewIfNeeded();
+      const m = await page.evaluate(() => ({
+        cab: [...document.querySelectorAll('.tabla2.firmas [role=columnheader]')].filter((x) => x.getBoundingClientRect().height > 0).map((x) => Math.round(x.getBoundingClientRect().top)),
+        niveles: document.querySelectorAll('.tabla2.niveles').length,
+        selectores: document.querySelectorAll('.tabla2.firmas select[data-path^="approvals.nivel."]').length,
+        ancho: document.documentElement.scrollWidth,
+        vista: document.documentElement.clientWidth,
+      }));
+      assert.strictEqual(m.niveles, 0, `${ancho} ${tema}: sin la tabla de niveles aparte`);
+      assert.ok(m.selectores > 0, `${ancho} ${tema}: los selectores de nivel, en la tabla de firmas`);
+      assert.ok(m.ancho <= m.vista, `${ancho} ${tema}: la página mide ${m.ancho} de ancho contra ${m.vista} visibles`);
+      if (ancho === 1280) {
+        assert.strictEqual(m.cab.length, 3, `${tema}: tres encabezados a la vista`);
+        assert.strictEqual(new Set(m.cab).size, 1, `${tema}: en columnas, a la misma altura (${m.cab})`);
       }
       await ctx.close();
     }

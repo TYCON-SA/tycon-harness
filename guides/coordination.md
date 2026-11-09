@@ -560,6 +560,22 @@ aparte para `save --from` va fuera de la carpeta de estado. Si algo lo cambió s
 «Terminados» es lo hecho hoy, con su hora; lo anterior, o sin `realIso`, va a la tabla «Hechos». «En curso» va por hora de
 fin: lo que sale primero arriba, lo que no tiene hora después y la coordinadora al final.
 
+### Las historias de tus proyectos
+
+Una historia en curso, en revisión o lista **sale sola**: no hace falta una fila del tablero para ella. Son las de los
+proyectos donde trabajaste en los últimos 7 días, porque abriste una sesión o hiciste un commit propio.
+
+- Van a «Sin sesión», en el grupo «Historias», después de las filas del tablero y ordenadas por prioridad. En la tabla
+  «Pendientes» va una fila por proyecto, bajo «De tus proyectos», que se abre y muestra sus historias.
+- Se leen de fondo, de la rama principal traída de cada repo, sin salir a la red. Corre sólo con la oficina abierta, a lo
+  sumo cada media hora. La línea de cada proyecto dice cuándo se trajo algo de ese repo por última vez («traído hace 3 h»),
+  aunque haya sido otra rama.
+- Una historia con una ejecución en esta máquina no suma tarjeta: va en la de su sesión. Una que ya nombra una fila abierta
+  del tablero (`historia`) tampoco: queda la fila, con su número.
+- Lo que no tiene historia (un arreglo suelto, una decisión, algo de afuera) sigue en el tablero, con `board.js`.
+- Límite: «quién» sale sólo de las ejecuciones de esta máquina. Una historia que alguien programa en otra máquina dice «sin
+  asignar». Estas filas y tarjetas no viajan al sitio de la organización: son de cada máquina.
+
 ### El número de cada tarea
 
 Cada fila tiene un número corto y fijo, `T-41`, que se ve en su tarjeta, en los trabajos de las tablas y arriba del detalle.

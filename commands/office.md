@@ -73,6 +73,12 @@ una vez el modelo de la noche de la organización, de fondo y sólo con la pági
 manda sólo el título. Sin modelo, el tema sale de los títulos de los pedidos recientes. Si un tema quedó mal, se corrige con
 `tema` en la fila del tablero. Cuánto gastó: `node scripts/tools/office/topics.js --report`.
 
+Las historias en curso, en revisión o listas de tus proyectos (donde abriste una sesión o hiciste un commit propio en los
+últimos 7 días) salen solas: en «Pendientes», bajo «De tus proyectos», una fila por proyecto, y en el kanban, en «Sin
+sesión», las que no tienen una ejecución en esta máquina. Se leen de fondo, de la rama principal traída de cada repo, sin
+red, sólo con la página abierta y a lo sumo cada media hora. Una historia que se programa en otra máquina dice «sin
+asignar». No viajan al sitio de la organización. Leerlas a mano: `node scripts/tools/office/project-stories.js --refresh`.
+
 La sala se dibuja con ritmo para no cargar la máquina: más rápido mientras la tocás, a un ritmo tranquilo si hay personas que se
 mueven, muy de vez en cuando si nadie se mueve, y nada si no se ve.
 
