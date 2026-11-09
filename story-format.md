@@ -176,10 +176,24 @@ pipelines:
 - Cuando todos los pipelines tienen `status: done`, el `status` global de la story DEBE ser `done`.
 - Dos tandas sin terminar que nombran el mismo archivo tienen que decir, cada una, qué entrega sola (`delivers`); si ninguna sirve sola, se juntan en una → **VAL-W19 WARNING** si alguna no lo dice.
 
-**La tanda de la ejecución.** La ejecución que entrega una tanda la anota con `marker.js set-batch <name>` (una vez, y la
-tanda no puede estar `done`). Desde ahí, «Preparar el commit» le pide la evidencia en vivo de los criterios de esa tanda
-(`acs` ∪ `acs_pending`) más los de ninguna tanda, no la de todas. Cerrar una tanda (`status: done`) pide la evidencia de
-la que se cierra. Pasar la historia a `review` o `done` pide la de todas.
+**La tanda de la ejecución.** La ejecución que entrega una tanda arranca con `pipeline.js start --batch <name>`, o la
+anota con `marker.js set-batch <name>` (una vez, y la tanda no puede estar `done`). Desde ahí, «Preparar el commit» le
+pide la evidencia en vivo de los criterios de esa tanda (`acs` ∪ `acs_pending`) más los de ninguna tanda, no la de
+todas. Cerrar una tanda (`status: done`) pide la evidencia de la que se cierra. Pasar la historia a `review` o `done`
+pide la de todas.
+
+**Atar un archivo a una tanda.** La historia ata un archivo a una tanda de tres formas: el comentario de su renglón en
+`files_to_modify` / `files_to_create` que nombra la tanda (`# tanda <letra o nombre>`), una fila de la tabla
+de pruebas de esa tanda (`tests` / `tests_pending`) que lo nombra, o una tarea de esa tanda (`tasks` / `tasks_pending`)
+que lo nombra. Si la corrida de una tanda cambia un archivo atado SÓLO a otra tanda, los criterios de esa otra vuelven a
+la matriz: la corrida tocó lo que esa tanda entrega, y su evidencia se pide. Un archivo que nombra también la tanda de
+la corrida, o que no nombra ninguna, no devuelve nada.
+
+```yaml
+files_to_modify:
+  - src/api/orders.js        # tanda <la del backend>
+  - web/src/OrdersPanel.tsx  # tanda <la de la pantalla>
+```
 
 **Tracking cruzado por `tycon-deferral-tracker`**:
 
@@ -755,6 +769,27 @@ Para auto-generar la tabla desde el frontmatter:
 node ~/.claude/tycon-harness/scripts/tools/tycon-backfill-followups.js \
   --dir specs/stories --story <N.M> --render-table
 ```
+
+### 12. Cambios de comportamiento (cuando la historia cambia lo que hace un comando que ya existía)
+
+Si la historia modifica un comando que existe en `main`, «Probar en vivo» lo corre con la versión de `main` y con el
+cambio, y compara las dos salidas (`smoke-run.sh --compare`, ver `steps/step-10-live-check.md`). Una diferencia que la
+historia no declara frena «Preparar el commit». Se declara en esta sección, un renglón por comando:
+
+```markdown
+## Cambios de comportamiento
+
+- node {raiz}/scripts/tool.js get: ahora el saludo lleva signo de exclamación
+- node {raiz}/scripts/tool.js : la ayuda nombra el subcomando nuevo
+```
+
+La regla para emparejar: un renglón declara el comando de un humo si el texto antes del «:» es ese comando (lo que va
+después de `--` en el humo, tal como lo guarda el registro, con `{raiz}` literal) o un prefijo suyo que termina en un
+espacio. Puede ir entre comillas invertidas. Declarar es papeleo: no dispara la vuelta de revisores.
+
+La exención de un comando que no se puede comparar **no va en el frontmatter**: una línea `compare_exempt:` no exime.
+Va por `marker.js compare-waiver --story <historia> --command <candidato> --reason "<por qué>"`, que pide la firma
+`compare-waiver` (nivel 1: del dueño, o de la coordinadora si el perfil del equipo la delega).
 
 ---
 

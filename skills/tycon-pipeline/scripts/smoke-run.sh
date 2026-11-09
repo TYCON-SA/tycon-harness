@@ -74,6 +74,11 @@ fi
 
 ACS=""
 MUTATES=0
+# --compare (historia 8.167): además del humo de siempre, el comando se corre con main y con el cambio, aislados y sin
+# red, y el resultado queda en compare-previous.json de la corrida. --covers <archivo>[:<subcomando>],…: los
+# candidatos que cubre un humo que corre un laboratorio con {raiz}; va sólo con --compare.
+COMPARE=0
+COVERS=""; COVERS_SET=0
 PASA_SI=""; PASA_SI_SET=0
 FALLA_SI=""; FALLA_SI_SET=0
 CAPTURE=""; CAPTURE_SET=0
@@ -95,6 +100,13 @@ while true; do
       fi
       ACS="$2"; shift 2 ;;
     --mutates) MUTATES=1; shift ;;
+    --compare) COMPARE=1; shift ;;
+    --covers)
+      if [ $# -lt 2 ] || [ "$2" = "--" ]; then
+        echo "smoke-run.sh: --covers necesita los candidatos que cubre (ej: --covers skills/x/marker.js:adhoc)" >&2
+        exit 2
+      fi
+      COVERS="$2"; COVERS_SET=1; shift 2 ;;
     # La expectativa, escrita antes de correr. Texto libre: no la evalúa este envoltorio (para eso
     # están `curl -f` / `jq -e` dentro del comando); la lee el revisor de cierre contra la salida guardada
     # (DODRT-W4). Vacía, sólo blancos, o con `--` como «valor» → exit 2 sin correr nada.
@@ -120,6 +132,23 @@ if [ "${1:-}" != "--" ]; then
   exit 2
 fi
 shift
+if [ "$COVERS_SET" = 1 ] && [ "$COMPARE" != 1 ]; then
+  echo "smoke-run.sh: --covers va con --compare: declara qué candidatos cubre un humo comparado — no se corre." >&2
+  exit 2
+fi
+
+# ── `{raiz}` en el comando (historia 8.167, decisión 13) ──
+# El humo de siempre lo corre con la raíz real del repo del candidato (la de los --covers, o la del archivo que corre);
+# la comparación, con la de cada clon. El registro guarda el comando con `{raiz}` literal.
+COMPARE_JS="$(cd "$(dirname "$0")" && pwd)/lib/compare-previous.js"
+RUN_CMD=("$@")
+case " $* " in
+  *"{raiz}"*)
+    RAIZ_REAL="$(node "$COMPARE_JS" raiz --covers "$COVERS" -- "$@" 2>/dev/null || true)"
+    [ -n "$RAIZ_REAL" ] || RAIZ_REAL="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+    RUN_CMD=()
+    for a in "$@"; do RUN_CMD+=("${a//\{raiz\}/$RAIZ_REAL}"); done ;;
+esac
 # Obligatorio para todo humo con criterios. Un humo que dice cubrir un AC
 # sin decir qué esperaba es el que convierte «verificado corriendo» en «terminó con 0».
 if [ -n "$ACS" ] && [ "$PASA_SI_SET" != 1 ]; then
@@ -191,7 +220,7 @@ if [ -n "$SALIDA_TMP" ]; then
   # mantiene abierta la salida de error de quien llamó a smoke-run.sh (su error queda igual en `.rc`).
   # El `.rc` se escribe sólo si el temporal sigue ahí: con un proceso de fondo, `tee` termina después de que el trap
   # ya borró los dos, y escribirlo igual dejaría un archivo suelto en $TMPDIR.
-  "$@" > >(exec sh -c 'tee "$1"; rc=$?; [ -e "$1" ] && echo "$rc" > "$2"' smoke-run-tee "$SALIDA_TMP" "$SALIDA_TMP.rc" 2>/dev/null) 2>&1
+  "${RUN_CMD[@]}" > >(exec sh -c 'tee "$1"; rc=$?; [ -e "$1" ] && echo "$rc" > "$2"' smoke-run-tee "$SALIDA_TMP" "$SALIDA_TMP.rc" 2>/dev/null) 2>&1
   EXIT=$?
   ESPERA=0
   while [ ! -s "$SALIDA_TMP.rc" ] && [ "$ESPERA" -lt 50 ]; do sleep 0.1; ESPERA=$((ESPERA + 1)); done
@@ -208,7 +237,7 @@ if [ -n "$SALIDA_TMP" ]; then
   fi
 else
   echo "[smoke-run] ⚠️ no pude crear un temporal para la salida: el humo corre igual y queda con output: null (la matriz no lo cuenta)." >&2
-  "$@"
+  "${RUN_CMD[@]}"
   EXIT=$?
 fi
 
@@ -310,16 +339,31 @@ TARGET_JSON="$(node -e 'const [r,c,e,o,x,h]=process.argv.slice(1);const t={repo:
 # sin node que conteste, la línea igual tiene que ser JSON válido: la procedencia queda «no se pudo anotar» (null)
 [ -n "$TARGET_JSON" ] || TARGET_JSON=null
 
-ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke-run.sh"%s,"v":2%s,"target":%s}' \
-  "$TS" "$STORY_ID" "$ACS_JSON" "$CMD_JSON" "$EXIT" "$MUT_FIELD" "$LEDGER_EXTRA" "$TARGET_JSON")
+# ── La procedencia (historia 8.161) ──
+# De qué corrida es, qué árbol probó (el sello del repo de la evidencia, o `tree: null` con `tree_error`), en qué
+# entorno y quién lo corrió. La matriz cuenta un humo con sello sólo si lo declarado es igual en su sello y en lo que se
+# guarda. Va al registro y al espejo; sin node que conteste, el renglón sigue sin ella (como uno de antes).
+PROV="$(node "$(cd "$(dirname "$0")" && pwd)/lib/frozen-tree.js" procedencia "$REPO_PATH" smoke-run.sh 2>/dev/null || true)"
+PROV_FIELD=""
+[ -n "$PROV" ] && PROV_FIELD=",$PROV"
+
+ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke-run.sh"%s,"v":2%s%s,"target":%s}' \
+  "$TS" "$STORY_ID" "$ACS_JSON" "$CMD_JSON" "$EXIT" "$MUT_FIELD" "$LEDGER_EXTRA" "$PROV_FIELD" "$TARGET_JSON")
 
 printf '%s\n' "$ENTRY" >> "$EVIDENCE_DIR/$STORY_ID-smoke-ledger.jsonl"
 
 MIRROR_DIR="$HOME/.claude/.tycon-pipeline"
 mkdir -p "$MIRROR_DIR"
 # la procedencia también va al espejo (fuera del repo): editarla en el registro del repo se nota al compararlos
-printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s,"v":2%s,"target":%s}\n' \
-  "$TS" "$REPO_JSON" "$STORY_ID" "$ACS_JSON" "$EXIT" "$MUT_FIELD" "$MIRROR_EXTRA" "$TARGET_JSON" >> "$MIRROR_DIR/gates.log"
+printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s,"v":2%s%s,"target":%s}\n' \
+  "$TS" "$REPO_JSON" "$STORY_ID" "$ACS_JSON" "$EXIT" "$MUT_FIELD" "$MIRROR_EXTRA" "$PROV_FIELD" "$TARGET_JSON" >> "$MIRROR_DIR/gates.log"
 
 echo "[smoke-run] story=$STORY_ID acs=$ACS exit=$EXIT mutates=$MUTATES → ledger + gates.log" >&2
+
+# ── El humo comparado (historia 8.167) ──
+# Después del humo de siempre, que es la evidencia: el comando con main y con el cambio, aislados. Su resultado no cambia
+# la salida de este humo; lo juzga «Preparar el commit».
+if [ "$COMPARE" = 1 ]; then
+  node "$COMPARE_JS" humo --covers "$COVERS" --cmd-json "$CMD_JSON" -- "$@" || echo "[smoke-run] ⚠️ la comparación no pudo correr: el humo queda sin comparar." >&2
+fi
 exit $EXIT

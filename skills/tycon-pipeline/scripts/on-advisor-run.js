@@ -146,7 +146,17 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
       // sirve para auditar qué se revisó (el commit base no coincide con el contenido de los
       // archivos que toca la story). Medido acá: ~130 ms por spawn en repos reales, y null
       // limpio cuando no se puede — nunca un sello inventado.
-      const treeSha = roster.treeShaDe(repo);
+      // Con la vuelta congelada (historia 8.161), el sello es el de su lanzamiento: lo que leyeron los revisores. Sin
+      // vuelta congelada (lanzada fuera de `pipeline.js advisors`), el de la carpeta, como antes.
+      let treeSha = null;
+      try {
+        const ft = require('./lib/frozen-tree.js');
+        const v = ft.ultimaVuelta(require('./lib/state-dir.js').stateDir(require('os').homedir()), String(sessionId || '').replace(/[/\\]/g, '_'), 'revisores');
+        const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+        const delRepo = v && (v.repos || []).find((r) => real(r.repo) === real(repo));
+        if (delRepo) treeSha = delRepo.tree;
+      } catch { treeSha = null; }
+      if (!treeSha) treeSha = roster.treeShaDe(repo);
       roster.write(runDir, {
         lines,
         story: String(story),

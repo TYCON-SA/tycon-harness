@@ -26,7 +26,7 @@ const GUIA = path.join(RAIZ, 'guides', 'firmas-del-arnes.md');
 // todas las firmas que piden los frenos hoy, escritas a mano para que una que se pierda del catálogo se note: cada escape
 // es su propia entrada
 const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'control-change', 'critical-waiver',
-  'runtime-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'adhoc-lane', 'adhoc-lane:sobre-cupo', 'adhoc-lane:datos',
+  'runtime-waiver', 'compare-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'adhoc-lane', 'adhoc-lane:sobre-cupo', 'adhoc-lane:datos',
   'escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'escape:TYCON_NEW_NAMES', 'escape:TYCON_TEST_GATE',
   'escape:DOD_BYPASS', 'escape:TYCON_NO_DEEP_REVIEW', 'escape:TYCON_STATUS_GATE',
   'escape:story-skill-bypass', 'escape:set-autonomous', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda',
@@ -76,7 +76,7 @@ test('8.139 T1 SignaturesGuide_UnaFilaPorFirma', () => {
     assert.strictEqual(grupos[i][1], cat.GROUPS[g].map((id) => `\`${id}\``).join(', '), g);
   }
   assert.ok(!Object.keys(cat.GROUPS).includes('off'), '«off» no es un grupo');
-  assert.strictEqual(Object.keys(cat.GROUPS).length, 11);
+  assert.strictEqual(Object.keys(cat.GROUPS).length, 12);
 });
 
 // T2 SignaturesGuide_DiceLoDelegadoNoEstaProtegido @story-8.139 @ac-2
@@ -222,7 +222,7 @@ test('8.141 T17 SignaturesGuide_TraeAdhocLane', () => {
 const TABLA_DE_NIVELES = [
   ['plan-approval', 1, ['dev', 'mant']], ['extra-round', 1, ['dev', 'mant']], ['pending-approval', 1, ['dev', 'mant']],
   ['save', 1, ['dev', 'mant']], ['browser-test:prepare', 1, ['dev', 'mant']], ['adhoc-lane', 1, ['dev', 'mant']],
-  ['refresh-after-main', 1, ['mant']],
+  ['compare-waiver', 1, ['dev', 'mant']], ['refresh-after-main', 1, ['mant']],
   ['save:sensible', 2, ['dev', 'mant']], ['adhoc-lane:datos', 2, ['dev', 'mant']], ['adhoc-lane:sobre-cupo', 2, ['dev', 'mant']], ['escape:DOD_BYPASS', 2, ['dev', 'mant']],
   ['critical-waiver', 2, ['dev', 'mant']], ['runtime-waiver', 2, ['dev', 'mant']], ['manual-test', 2, ['dev', 'mant']],
   ['browser-test:no', 2, ['dev', 'mant']], ['adversarial-skip', 2, ['dev', 'mant']], ['lost-run', 2, ['dev', 'mant']],
@@ -254,7 +254,7 @@ test('niveles T1 Catalogo_TablaDeNiveles', () => {
   const cat = require(CATALOGO);
   assert.deepStrictEqual(cat.LEVELS.map((l) => [l.id, l.level, [...l.profiles]]), TABLA_DE_NIVELES);
   const cuenta = [1, 2, 3].map((n) => cat.LEVELS.filter((l) => l.level === n).length);
-  assert.deepStrictEqual(cuenta, [7, 19, 6], '7 de rutina, 19 de excepción, 6 irreversibles');
+  assert.deepStrictEqual(cuenta, [8, 19, 6], '8 de rutina, 19 de excepción, 6 irreversibles');
   for (const l of cat.LEVELS) assert.ok(typeof l.approves === 'string' && l.approves.trim(), `${l.id}: falta qué aprueba`);
 });
 
@@ -281,7 +281,7 @@ test('niveles T2 Catalogo_CadaFirmaApuntaASuNivel', () => {
 test('niveles T3 Catalogo_NivelPorDelegacion', () => {
   const cat = require(CATALOGO);
   const esperado = { 'save': 1, 'adhoc-lane': 1, 'plan-approval': 1, 'refresh-after-main': 1, 'pending-approval': 1,
-    'extra-round': 1, 'browser-test': 2, 'runtime-waiver': 2, 'escape:force-manual': 2, 'escape:trust-ran': 2,
+    'extra-round': 1, 'compare-waiver': 1, 'browser-test': 2, 'runtime-waiver': 2, 'escape:force-manual': 2, 'escape:trust-ran': 2,
     'escape:no-deep-review': 2, 'control-change': 3, 'escape:TYCON_SAFETY_OFF': 3 };
   for (const [id, n] of Object.entries(esperado)) assert.strictEqual(cat.delegatedLevel(id), n, id);
   assert.strictEqual(cat.delegatedLevel('no-existe'), null);

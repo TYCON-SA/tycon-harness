@@ -282,12 +282,53 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
 
   const cuentaPorPrueba = (ajena) => ({ cuenta: true, regla: 6, commit: ajena.commit, historia: ajena.historia });
 
+  // El sello de lo que se guarda, por repo: el árbol de ahora (lib/frozen-tree.js). Una sola vez por cálculo.
+  const sellosDeAhora = new Map();
+  function selloDeAhora(raiz) {
+    if (!sellosDeAhora.has(raiz)) sellosDeAhora.set(raiz, require('./frozen-tree.js').seal(raiz).tree || null);
+    return sellosDeAhora.get(raiz);
+  }
+
+  /**
+   * La regla del sello (historia 8.161, decisión 5), antes que las otras: un humo que trae el sello del árbol que probó
+   * cuenta si el archivo declarado es igual en ese sello y en lo que se guarda; si difiere, es de otra versión de lo
+   * declarado. Vale sólo para el repo de la evidencia: los hermanos siguen con su ancla. Las pruebas siguen la regla 6.
+   * Un humo sin sello, o con un sello que este clon no tiene (se escribió en otra máquina), sigue las reglas de siempre.
+   * Devuelve el veredicto o null para seguir.
+   */
+  function reglaDelSello(archivo, evidencia) {
+    const s = evidencia.sello;
+    if (!s) return null;
+    const raizArchivo = raizDe(path.dirname(archivo));
+    const raizEvidencia = raizDe(path.dirname(evidencia.ruta));
+    if (!raizArchivo || !raizEvidencia || raizArchivo !== raizEvidencia) return null;
+    let real = archivo;
+    try { real = require('fs').realpathSync(archivo); } catch (_) { /* un archivo a crear: su ruta tal cual */ }
+    const rel = path.relative(raizArchivo, real).split(path.sep).join('/');
+    if (!rel || rel.startsWith('..') || isTestPath(rel)) return null;
+    if (!s.tree) return NO_CUENTA('sin-sello', 'sello', { error: s.error || null });
+    if (preguntar(raizArchivo, ['cat-file', '-e', `${s.tree}^{tree}`]).codigo !== 0) return null;
+    const ahora = selloDeAhora(raizArchivo);
+    if (!ahora) return SIN_RESPUESTA('sello');
+    const blob = (t) => {
+      const r = preguntar(raizArchivo, ['rev-parse', '--verify', '-q', `${t}:${rel}`]);
+      return r.codigo === 0 ? r.salida.trim() : r.codigo === 1 ? null : undefined;
+    };
+    const antes = blob(s.tree);
+    const despues = blob(ahora);
+    if (antes === undefined || despues === undefined) return SIN_RESPUESTA('sello');
+    if (antes === despues) return { cuenta: true, regla: 'sello' };
+    return NO_CUENTA('otra-version', 'sello', { tree: s.tree });
+  }
+
   /**
    * `archivo`: ruta absoluta · `mtimeMs`: su fecha en disco · `evidencia`: `{ ruta, tsMs, linea }`, con `linea` la línea
    * entera del registro si es un humo: el `ts` solo no identifica una corrida, porque puede haber dos en un segundo.
    * Devuelve `{ cuenta, regla, motivo?, commit? }`.
    */
   function vigencia({ archivo, mtimeMs, evidencia }) {
+    const porSello = reglaDelSello(archivo, evidencia);
+    if (porSello) return porSello;
     if (!Number.isFinite(evidencia.tsMs)) return NO_CUENTA('sin-hora', 1);
     if (mtimeMs <= evidencia.tsMs) return { cuenta: true, regla: 1 };
 
@@ -355,8 +396,10 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
 }
 
 /** Por qué no cuenta, en una frase para el aviso de la matriz. Sin rutas ni texto de git: la matriz viaja por git. */
-function motivoEnPalabras({ motivo, commit, sinFusion }) {
+function motivoEnPalabras({ motivo, commit, sinFusion, tree, error }) {
   switch (motivo) {
+    case 'otra-version': return `hay un humo de otra versión de lo declarado (${String(tree || '').slice(0, 12)})`;
+    case 'sin-sello': return `el humo no pudo sellar el árbol que probó${error ? ` (${String(error).split('\n')[0].slice(0, 160)})` : ''}: no cuenta como de la versión actual`;
     case 'cambio-posterior': return `lo cambió el commit ${commit || '(sin identificar)'} después de guardarse la evidencia`;
     case 'otro-repo': {
       const causa = `está en otro repo y su commit ${commit} es posterior al de la evidencia (entre repos sólo se pueden comparar horas)`;

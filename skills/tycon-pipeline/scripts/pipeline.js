@@ -3335,6 +3335,88 @@ function computeSpecStaleness(fm, hoyMs) {
   };
 }
 
+/**
+ * Congela la vuelta de revisores (historia 8.161): sella el repo de la historia y el del código y arma la copia de sólo
+ * lectura de cada uno en la carpeta de estado (lib/frozen-tree.js). `{ repos }` o `{ error }`: sin sello o sin copia la
+ * vuelta no se lanza, nunca se revisa la carpeta viva en silencio. Una ruta fuera de todo repo de git no tiene árbol
+ * que sellar: no suma copia.
+ */
+function congelarVuelta({ story, repo, iter }) {
+  const ft = require('./lib/frozen-tree.js');
+  const { repos, error } = ft.reposDe([story, repo]);
+  if (error) return { error };
+  if (!repos.length) return { repos: [] };
+  let storyId = null;
+  try { storyId = story ? parseFrontmatterPipeline(readText(story)).story || null : null; } catch { storyId = null; }
+  return ft.sealAndFreeze({
+    stateDir: stateDirOf(os.homedir()), sid: sessionIdFileKey(), etiqueta: `rev-iter${iter || 1}`, repos, tipo: 'revisores', story: storyId,
+  });
+}
+
+/** Suma al contexto de los revisores (el compartido y los recortados) la copia y el sello de cada repo. */
+function contextoConLaCopia(ctx, repos) {
+  if (!ctx || !repos.length) return;
+  const seccion = require('./lib/frozen-tree.js').seccionDelContexto(repos);
+  for (const f of [ctx.context_file, ...Object.values(ctx.overrides || {})].filter(Boolean)) {
+    try { fs.appendFileSync(f, seccion, 'utf8'); } catch { /* el contexto es best-effort; la copia ya está y la salida la nombra */ }
+  }
+}
+
+// El marker.js que corre el arranque: el instalado, no el del repo.
+const markerInstalado = () => path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+
+/** Anota la tanda en el marcador de esta sesión con `marker.js set-batch`. `{ ok, motivo }`; nunca tira. */
+function anotarTanda(nombre) {
+  const { execFileSync } = require('child_process');
+  try {
+    execFileSync(process.execPath, [markerInstalado(), 'set-batch', nombre], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, motivo: String((e.stderr || e.message || e)).trim().split('\n')[0] };
+  }
+}
+
+/** La pausa de una tanda que no se pudo anotar: el comando a mano y lo que mide la matriz mientras tanto. */
+const pausaSinTanda = (nombre, motivo) => ({
+  id: 'PIPE-C4-batch-failed',
+  detail: `No pude anotar la tanda ${nombre} (${motivo}). Anotala a mano: node ${markerInstalado()} set-batch ${nombre}. `
+    + 'Hasta anotarla, la matriz mide todas las tandas.',
+});
+
+/**
+ * `start --batch <tanda>`, antes de tocar nada: la tanda tiene que estar en el bloque `pipelines`, sin estar hecha y sin
+ * nombres repetidos. La misma sesión con su ejecución abierta de esta historia no rearranca: con la misma tanda sale
+ * sin cambios, con otra pausa, y sin tanda anotada la anota. Devuelve `{ salida }` cuando el arranque termina acá, o
+ * `{ nombre }` para seguir.
+ */
+function tandaDelArranque(content, storyId, storyPath, nombre) {
+  const tandas = require('./lib/story-checks.js').parsePipelinesBlock(content);
+  const lista = tandas.map((t) => `${t.name} (${t.status || 'sin estado'})`).join(', ') || '(la historia no tiene bloque pipelines)';
+  const nombres = tandas.map((t) => t.name);
+  const repetidos = [...new Set(nombres.filter((n, i) => nombres.indexOf(n) !== i))];
+  const t = tandas.find((x) => x.name === nombre);
+  const motivo = !nombre ? 'falta el nombre de la tanda'
+    : repetidos.length ? `el bloque pipelines tiene nombres repetidos (${repetidos.join(', ')}): no sé cuál es la tanda ${nombre}`
+      : !t ? `la tanda «${nombre}» no está en la historia`
+        : String(t.status || '').toLowerCase() === 'done' ? `la tanda ${nombre} está done: una tanda hecha no se entrega de nuevo` : null;
+  const pausa = (id, detail) => ({ salida: { ready: false, story_id: storyId, pauses: [{ id, detail }], actions_done: [], note: 'NADA mutado. Resolvé la pausa y re-corré start.' } });
+  if (motivo) return pausa('PIPE-C0-batch', `${motivo}. Tandas: ${lista}. No arranqué nada.`);
+  const propio = readSessionMarker();
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const suya = propio && propio.storyPath
+    ? (path.isAbsolute(propio.storyPath) ? propio.storyPath : path.join(propio.repoPath || process.cwd(), propio.storyPath)) : null;
+  if (!propio || String(propio.storyId) !== String(storyId) || !suya || real(suya) !== real(storyPath)) return { nombre };
+  if (propio.batch) {
+    if (String(propio.batch) === nombre) {
+      return { salida: { ready: true, story_id: storyId, actions_done: [`TANDA: esta ejecución ya tenía anotada la tanda ${nombre}; no cambié nada.`], next: 'pipeline.js next te dice el próximo paso' } };
+    }
+    return pausa('PIPE-C0-batch-other', `Esta ejecución ya anotó la tanda ${propio.batch}; para otra tanda, marker.js clear y arrancar de nuevo. No cambié nada.`);
+  }
+  const r = anotarTanda(nombre);
+  if (!r.ok) return { salida: { ready: false, story_id: storyId, pauses: [pausaSinTanda(nombre, r.motivo)], actions_done: [] } };
+  return { salida: { ready: true, story_id: storyId, actions_done: [`TANDA: anoté la tanda ${nombre} en la ejecución abierta de esta sesión.`], next: 'pipeline.js next te dice el próximo paso' } };
+}
+
 function computeStart(args) {
   const { execFileSync } = require('child_process');
   const storyPath = args.story;
@@ -3355,6 +3437,11 @@ function computeStart(args) {
   const storyId = fm.story;
   const pauses = [];
   const actions = [];
+
+  // `--batch`: la tanda de una historia paraguas. Se valida antes de tocar nada; la misma sesión que la vuelve a pedir
+  // no rearranca su ejecución (ver tandaDelArranque).
+  const tanda = args.batch != null ? tandaDelArranque(content, storyId, storyPath, String(args.batch)) : null;
+  if (tanda && tanda.salida) return tanda.salida;
 
   // PIPE-C0: cross-session conflict.
   // «La misma story» es el mismo número Y la misma ruta dentro de su repo: en los repos que numeran por
@@ -3386,6 +3473,8 @@ function computeStart(args) {
         if (!m || String(m.storyId) !== String(storyId)) continue;
         const suRuta = m.storyPath ? rutaEnRepo(m.storyPath, m.repoPath) : null;
         if (suRuta && miRuta && suRuta !== miRuta) continue; // otra story con el mismo número
+        // con tanda, la otra sesión que entrega otra tanda de la paraguas no choca; la misma tanda, o sin tanda, sí
+        if (tanda && m.batch && String(m.batch) !== tanda.nombre) continue;
         others.push({ sessionId: m.sessionId, lastTouch: m.lastTouch, stepsCompleted: m.stepsCompleted });
       } catch { /* ignore */ }
     }
@@ -3477,8 +3566,8 @@ function computeStart(args) {
     });
   }
 
-  // PIPE-C5 (lectura): pipeline abandonado.
-  if (fm.status === 'in-progress' && !others.length) {
+  // PIPE-C5 (lectura): pipeline abandonado. Una paraguas en curso con su tanda no lo es: otra tanda la arrancó antes.
+  if (fm.status === 'in-progress' && !others.length && !tanda) {
     pauses.push({
       id: 'PIPE-C5-abandoned',
       detail: `La story ya está status: in-progress sin pipeline activo en otra sesión — probable pipeline abandonado (sesión que murió sin cerrar).`,
@@ -3565,7 +3654,8 @@ function computeStart(args) {
   actions.push(`TAMAÑO: corrida ${runSize.size} (${runSize.reason}) · estimado ${runSize.estimate_min} min (${runSize.estimate_source})`);
 
   // PIPE-C4: marker set (vía marker.js — único owner de writes del marker).
-  const markerJs = path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  const markerJs = markerInstalado();
+  let tandaFallida = null;
   // Una ejecución nueva nace con los pasos por nombre (esquema 2). Retomar la misma story sobre un marcador viejo lo
   // deja viejo: no se reescribe a mitad de ejecución.
   const previo = readSessionMarker();
@@ -3621,6 +3711,12 @@ function computeStart(args) {
       return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude anotar la apertura de la ejecución (${e.message}); el marcador quedó puesto, pero sin apertura no se vería al faltar` }], actions_done: actions };
     }
     actions.push(`PIPE-C4: marker seteado (Arranque cerrado${sigueVieja ? '; sigue el marcador viejo de esta ejecución' : ''})`);
+    // la tanda, después del marcador: si no se puede anotar, el marcador queda sin tanda y la salida lo pausa
+    if (tanda) {
+      const r = anotarTanda(tanda.nombre);
+      if (r.ok) actions.push(`TANDA: anotada ${tanda.nombre} (marker.js set-batch)`);
+      else tandaFallida = pausaSinTanda(tanda.nombre, r.motivo);
+    }
   } catch (e) {
     return { ready: false, story_id: storyId, pauses: [{ id: 'marker-set-failed', detail: String(e.message || e) }], actions_done: actions };
   }
@@ -3654,7 +3750,9 @@ function computeStart(args) {
   if (stale) actions.push(`⚠️ SPEC-STALE — ${stale.aviso}`);
 
   return {
-    ready: true,
+    // la tanda que no se pudo anotar: el arranque quedó hecho, y la salida pausa con el comando a mano
+    ready: !tandaFallida,
+    ...(tandaFallida ? { pauses: [tandaFallida] } : {}),
     story_id: storyId,
     branch,
     run_size: runSize,
@@ -5752,55 +5850,14 @@ function deriveStoryId(storyPath) {
   return String(fm.story || path.basename(storyPath, '.md')).trim() || null;
 }
 
-// La clave con que se nombra la carpeta de corrida, con el MOTIVO si no se puede calcular: `resolveRunDir` devuelve
-// null en los dos casos («no hay carpeta» y «no hay clave»), y quien tiene que explicarle al dev qué pasó pregunta acá.
+// La clave y la carpeta de la corrida viven en `lib/run-dir.js` (módulos livianos las piden sin cargar el pipeline);
+// acá quedan con los mismos nombres para quien ya las usa.
 function runDirKey(storyId, storyPath) {
-  return require('./lib/evidence-key.js').keyInfoOr(storyPath, storyId);
+  return require('./lib/run-dir.js').runDirKey(storyId, storyPath);
 }
 
-// Resuelve el dir de la corrida: el más reciente `<clave>-*` (o exactamente `<clave>`, o
-// `story-<clave>-*`) bajo <repo>/.advisors/pipeline-runs/. Con create=true y ninguno → crea
-// `<clave>-<UTC-stamp>`. Sin create y ninguno → null.
-// La clave es la de la evidencia (`lib/evidence-key.js`): el número solo si es único en el repo de la
-// story, `<tema>__<número>` si se repite. Con número repetido, otra story del mismo número tiene SU carpeta y retomar
-// por el número elegiría la más nueva de las dos. Sin `storyPath` (quien sólo tiene el número) es el número.
-// Con `storyPath` y sin poder calcular la clave → null: no se elige ni se crea una carpeta a ciegas.
 function resolveRunDir(repo, storyId, create, storyPath) {
-  const runsBase = path.join(repo, '.advisors', 'pipeline-runs');
-  const { key } = runDirKey(storyId, storyPath);
-  if (!key) return null;
-  const { ownsName } = require('./lib/evidence-key.js');
-  let names = [];
-  try {
-    names = fs.readdirSync(runsBase, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name)
-      .filter((n) => ownsName(n, key, storyId));
-  } catch { names = []; }
-  if (names.length) {
-    // Puntuar por [tiene-archivos, mtime del archivo interno más reciente] — así un dir vacío/stray
-    // (ej. creado por un `mkdir` accidental con RUNDIR sin resolver) PIERDE contra el dir que tiene
-    // los reportes reales del run. Sin esto, "el dir con mtime más nuevo" elegiría la carpeta equivocada.
-    let best = null; let bestHas = -1; let bestM = -1;
-    for (const n of names) {
-      const p = path.join(runsBase, n);
-      let has = 0; let newest = 0;
-      try {
-        for (const f of fs.readdirSync(p)) {
-          has = 1;
-          try { newest = Math.max(newest, fs.statSync(path.join(p, f)).mtimeMs); } catch { /* ignore */ }
-        }
-      } catch { /* ignore */ }
-      if (!has) { try { newest = fs.statSync(p).mtimeMs; } catch { newest = 0; } }
-      if (has > bestHas || (has === bestHas && newest > bestM)) { bestHas = has; bestM = newest; best = p; }
-    }
-    return best;
-  }
-  if (!create) return null;
-  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14); // YYYYMMDDHHMMSS
-  const dir = path.join(runsBase, `${key}-${stamp}`);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
+  return require('./lib/run-dir.js').resolveRunDir(repo, storyId, create, storyPath);
 }
 
 // El marcador de la sesión, con su estado: `ausente` (no existe), `ilegible` (existe y no se puede leer como objeto) u `ok`.
@@ -6742,6 +6799,7 @@ function parseArgs(argv) {
     else if (t === '--deep-review-fable') a.deepReviewFable = true; // hunters en Fable — SOLO con autorización explícita del user
     else if (t === '--ultracode') a.ultracode = true;             // el orquestador lo pasa si ultracode está ON
     else if (t === '--brief') a.breve = true;                      // start: salida recortada + ruta del JSON entero
+    else if (t === '--batch') a.batch = nn(argv[++i], '');         // start: la tanda de una historia paraguas
     else if (t === '--session-model') a.sessionModel = nn(argv[++i], '');   // start / model-hint: el modelo de la sesión
     else if (t === '--codex-session') a.codexSession = parseCodexSession(argv[++i]); // start: la sesión de Codex (proveedor y modelo)
     else if (t === '--run-dir') a.runDir = argv[++i];              // write-findings/findings-status: dir de la corrida (default: auto-resolve)
@@ -6965,7 +7023,16 @@ function main() {
     // Contexto compartido: UN artefacto por iteración con
     // digest de story + file list + hunks. Los advisors lo reciben como input
     // primario en vez de re-leer story completa + re-correr git diff cada uno.
+    // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
+    const congelada = congelarVuelta({ story: args.story, repo: args.repo, iter: args.iter });
+    if (congelada.error) {
+      process.stderr.write(`🛑 pipeline.js advisors: la vuelta no se lanza — ${congelada.error}. Los revisores no leen la carpeta viva.\n`);
+      process.exitCode = 2;
+      return;
+    }
+    set.frozen = congelada.repos;
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
+    contextoConLaCopia(ctx, congelada.repos);
     // El estado de la sección «Reglas para revisores» del repo (el orquestador avisa al
     // dev en una línea si no está `presente`; nunca frena — guía del paso de revisores §Reglas del repo).
     set.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));
@@ -7070,7 +7137,16 @@ function main() {
       result.mech_findings = disc.mech_findings;
       result.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — al reporte del paso de hallazgos.`;
     }
+    // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
+    const congelada = congelarVuelta({ story: args.story, repo: args.repo, iter: args.iter });
+    if (congelada.error) {
+      process.stderr.write(`🛑 pipeline.js smart-reloop: la vuelta no se lanza — ${congelada.error}. Los revisores no leen la carpeta viva.\n`);
+      process.exitCode = 2;
+      return;
+    }
+    result.frozen = congelada.repos;
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
+    contextoConLaCopia(ctx, congelada.repos);
     result.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));
     if (ctx) {
       result.context_file = ctx.context_file;
@@ -7863,6 +7939,40 @@ function main() {
       process.stderr.write(`evidence-key: ${e.message}\n`);
       process.exit(2);
     }
+  }
+  if (cmd === 'compare-candidates') {
+    // Los comandos que la historia modifica y existen en main (historia 8.167): cada uno necesita un humo comparado que
+    // lo cubra (`smoke-run.sh --compare`) o una exención firmada (`marker.js compare-waiver`). Por candidato, su repo y
+    // los subcomandos o funciones que el cambio toca. Los repos salen de la corrida de la sesión (lib/save-ok.js); sin
+    // corrida, de `--repo a,b`, o del de la historia. `--json` da la lista entera.
+    if (!args.story) { process.stderr.write('uso: pipeline.js compare-candidates --story <spec.md> [--repo <repo>[,<repo>]] [--json]\n'); process.exit(2); }
+    const storyAbs = path.resolve(args.story);
+    let repos;
+    try {
+      const m = readSessionMarker();
+      const so = require('./lib/save-ok.js');
+      if (process.argv.includes('--repo')) repos = String(args.repo).split(',').map((r) => path.resolve(r.trim())).filter(Boolean);
+      else if (args.filesDeclarado) repos = [...new Set(args.files.map((f) => so.raizDe(path.resolve(f))).filter(Boolean))];
+      else if (m && m.storyPath) {
+        const hermanos = require('./lib/companion-repos.js').companionRoots(path.resolve(m.repoPath || process.cwd()), storyAbs);
+        repos = so.reposDeLaCorrida({ marker: { ...m, storyPath: path.isAbsolute(m.storyPath) ? m.storyPath : path.resolve(m.repoPath || process.cwd(), m.storyPath) }, hermanos });
+      } else repos = [so.raizDe(storyAbs)].filter(Boolean);
+    } catch (e) { process.stderr.write(`compare-candidates: no pude calcular los repos de la corrida (${e.message})\n`); process.exit(2); }
+    const r = require('./lib/compare-previous.js').candidatos({ storyPath: storyAbs, repos });
+    if (process.argv.includes('--json')) { process.stdout.write(JSON.stringify({ repos, ...r }, null, 2) + '\n'); process.exit(0); }
+    for (const a of r.avisos) process.stderr.write(`⚠️  ${a}\n`);
+    // lo que no se pudo mirar no es «sin candidatos»
+    for (const n of r.noMedidos || []) process.stdout.write(`· ${n.archivo} (${path.basename(n.repo)}) — no medido: ${n.motivo}\n`);
+    if (!r.candidatos.length && !r.sinRepo.length) {
+      if (!(r.noMedidos || []).length) process.stdout.write('sin candidatos: la historia no modifica comandos que existen en main. No hay nada que comparar.\n');
+      process.exit(0);
+    }
+    for (const c of r.candidatos) {
+      const que = c.sinSubcomando ? 'el cambio cae fuera de todo subcomando: cubre cualquier humo que corra el archivo' : `subcomandos o funciones que el cambio toca: ${c.subcomandos.join(', ')}`;
+      process.stdout.write(`· ${c.archivo} (${path.basename(c.repo)}) — ${que}\n`);
+    }
+    for (const s of r.sinRepo) process.stdout.write(`· ${s.archivo} — no comparado: sin repo (no está en ningún repo de la corrida): pide exención\n`);
+    process.exit(0);
   }
   if (cmd === 'run-dir') {
     // La carpeta de la corrida de ESTA story: `.advisors/pipeline-runs/<clave>-<sello>/`, la misma que

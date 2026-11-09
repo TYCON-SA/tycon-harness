@@ -374,19 +374,22 @@ function blockedScreenTouched(content, repoRoot, changed) {
  * Ante cualquier duda, `active` es `story`. Con `changed` (los archivos que cambió el commit o la corrida), un archivo
  * de pantalla entre ellos deja la baja sin efecto: lo declarado no alcanza si el commit cambia la pantalla.
  */
-function screenScope(content, repoRoot, { changed } = {}) {
+function screenScope(content, repoRoot, { changed, batches } = {}) {
   const story = storyTouchesUi(content, repoRoot);
   const same = { story, active: story, blocked: [], note: null };
   if (!story) return same;
   const sc = require('./story-checks.js');
   const tandas = sc.parsePipelinesBlock(content);
-  if (!tandas.some((t) => t.status === 'blocked')) return same;
+  // Con tanda (la medida más las que volvieron) y con la lista de cambios: la pantalla de otra tanda no se pide
+  const medidas = Array.isArray(batches) && batches.length && Array.isArray(changed) ? batches.map(String) : null;
+  if (!medidas && !tandas.some((t) => t.status === 'blocked')) return same;
   const f = fmOf(content);
   const segs = batchLines(f);
   if (segs.length !== tandas.length) return same;
   const hit = frontHit(f, repoRoot);
   const nombraPantalla = (seg) => batchNamesScreen(seg, hit);
   const conPantalla = tandas.map((t, i) => ({ ...t, ui: nombraPantalla(segs[i]) }));
+  if (medidas) return screenScopeDeTanda(content, { story, same, medidas, conPantalla, changed, hit, sc });
   const bloqueadas = conPantalla.filter((t) => t.status === 'blocked' && t.ui);
   if (!bloqueadas.length || conPantalla.some((t) => t.status !== 'blocked' && t.ui)) return same;
   const pendientes = new Set(tandas.filter((t) => t.status === 'blocked').flatMap((t) => t.acsPending));
@@ -409,6 +412,33 @@ function screenScope(content, repoRoot, { changed } = {}) {
     story, active: false, blocked,
     note: `ℹ️  La pantalla de la story es de la tanda bloqueada ${blocked.join(', ')}: esta corrida no pide su prueba `
       + 'de navegador ni su revisión. Se piden cuando la tanda deje de estar bloqueada.',
+  };
+}
+
+/**
+ * La baja de pantalla de una corrida por tanda: las líneas de las tandas medidas no nombran pantalla y las de otra sí,
+ * ningún criterio que mide la corrida (los de sus tandas y los de ninguna tanda) es de pantalla, y ningún archivo de la
+ * lista lo es. Si alguna condición falla, se pide como siempre (`same`).
+ */
+function screenScopeDeTanda(content, { story, same, medidas, conPantalla, changed, hit, sc }) {
+  if (medidas.some((n) => !conPantalla.some((t) => t.name === n))) return same;
+  const deLaCorrida = conPantalla.filter((t) => medidas.includes(t.name));
+  const otras = conPantalla.filter((t) => !medidas.includes(t.name) && t.ui);
+  if (!otras.length || deLaCorrida.some((t) => t.ui)) return same;
+  // los criterios de otras tandas que NO son también de las medidas: uno compartido sigue siendo de esta corrida
+  const propios = new Set(deLaCorrida.flatMap((t) => [...t.acs, ...t.acsPending]));
+  const ajenos = new Set(conPantalla.filter((t) => !medidas.includes(t.name)).flatMap((t) => [...t.acs, ...t.acsPending]).filter((n) => !propios.has(n)));
+  const universo = new Set(sc.parseAcsFromSpec(content));
+  for (const row of sc.parseTestsTable(content).rows) for (const n of row.acRefs) universo.add(n);
+  const textos = sc.acTextsFromSpec(content, { maxChars: Infinity });
+  const { esDePantalla } = require('../runtime-matrix.js');
+  if ([...universo].some((n) => !ajenos.has(n) && esDePantalla(textos[n], true))) return same;
+  if (changed.some((c) => UI_EXT_RE.test(String(c)) || hit(String(c)))) return same;
+  const nombres = otras.map((t) => t.name);
+  return {
+    story, active: false, blocked: [], otherBatches: nombres,
+    note: `ℹ️  La pantalla de la story es de la tanda ${nombres.join(', ')}; esta corrida, de la tanda ${medidas.join(', ')}, `
+      + 'no pide su prueba de navegador.',
   };
 }
 
@@ -437,8 +467,8 @@ function changedFiles(repoRoot, base) {
   return out;
 }
 
-function applyScreenRule(content, repoRoot, rule = 'ui', { scope, changed } = {}) {
-  const ui = scope === 'active' ? screenScope(content, repoRoot, { changed }).active : storyTouchesUi(content, repoRoot);
+function applyScreenRule(content, repoRoot, rule = 'ui', { scope, changed, batches } = {}) {
+  const ui = scope === 'active' ? screenScope(content, repoRoot, { changed, batches }).active : storyTouchesUi(content, repoRoot);
   if (!ui || rule === 'ui') return { ui, note: null };
   if (rule === 'off') {
     return { ui: false, note: 'ℹ️  La story toca pantalla, pero la organización no exige la prueba E2E de pantalla (screen_test: off).' };

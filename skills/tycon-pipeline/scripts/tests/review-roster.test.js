@@ -186,6 +186,7 @@ test('treeShaDe: mismo árbol → mismo sello; árbol distinto → sello distint
   const sucio3 = R.treeShaDe(d);
 
   assert.ok(sucio1, 'con cambios tiene que dar una huella');
+  assert.match(sucio1, /^[0-9a-f]{40}$/, 'el sello completo, el mismo con que se congela la vuelta (historia 8.161)');
   assert.equal(sucio1, sucio2, 'el mismo árbol da la misma huella (si no, no sirve para auditar)');
   assert.notEqual(sucio1, sucio3, 'otro contenido, otra huella');
   assert.notEqual(sucio1, limpio, 'el árbol limpio y el revisado no pueden dar lo mismo');

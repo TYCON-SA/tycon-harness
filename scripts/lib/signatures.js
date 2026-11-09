@@ -58,6 +58,7 @@ const LEVELS_EN = Object.freeze({
   'save': 'save: commit, push and pull requests, if no commit touches anything sensitive',
   'browser-test:prepare': 'prepare the browser test',
   'adhoc-lane': 'open a quick fix without a story, within the quota',
+  'compare-waiver': 'exempt a command the story modifies from the comparison with main',
   'refresh-after-main': 're-sign the controls after pulling main, with no change of your own',
   'save:sensible': 'save when a commit touches something sensitive',
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended (only implementation files count, not tests or guides)',
@@ -94,6 +95,7 @@ const LEVELS = Object.freeze([
   ['save', 1, AMBOS, 'guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible'],
   ['browser-test:prepare', 1, AMBOS, 'preparar la prueba con navegador'],
   ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
+  ['compare-waiver', 1, AMBOS, 'eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
   ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
   ['save:sensible', 2, AMBOS, 'guardar cuando un commit toca algo de lo sensible'],
   ['adhoc-lane:datos', 2, AMBOS, 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño)'],
@@ -192,6 +194,7 @@ const SI_SALE_MAL = Object.freeze({
   'refresh-after-main': 'queda firmado un control con lo que trajo main; se revierte con otro pedido',
   'control-change': 'un control queda cambiado y lo que frenaba puede pasar; se revierte con otro pedido',
   'critical-waiver': 'un hallazgo crítico entra sin arreglar',
+  'compare-waiver': 'el cambio de ese comando entra sin compararse con la versión de main, y una diferencia que nadie declaró puede llegar a main',
   'runtime-waiver': 'un criterio queda sin probar en vivo, y un error puede llegar a producción',
   'manual-test': 'un criterio queda como probado sin una prueba automática que lo repita',
   'browser-test': 'se prepara la prueba con navegador, o queda sin ella y un error de pantalla puede pasar',
@@ -217,6 +220,7 @@ const APPROVES_EN = {
   'refresh-after-main': 'sign the controls again after bringing in main, with no change of its own',
   'control-change': "approve a change to the repo's controls",
   'critical-waiver': "waive a reviewers' critical finding",
+  'compare-waiver': 'exempt a command the story modifies from the comparison with main',
   'runtime-waiver': 'accept a criterion that cannot be tested live',
   'manual-test': 'mark a criterion as tested by hand',
   'browser-test': 'set up the browser test, or say no to it',
@@ -262,6 +266,7 @@ const SIGNATURES = Object.freeze([
   { id: 'control-change', approves: 'aprobar un cambio de los controles del repo', command: 'run-base-controls.sh approve', otherSession: 'yes', terminal: 'run-base-controls.sh approve --terminal' },
   { id: 'critical-waiver', approves: 'eximir un hallazgo crítico de los revisores', command: 'marker.js waive-critical', otherSession: 'yes', terminal: 'marker.js waive-critical --terminal' },
   { id: 'runtime-waiver', approves: 'aceptar un criterio imposible de probar en vivo', command: 'marker.js runtime-waiver', otherSession: 'yes', terminal: 'marker.js runtime-waiver <historia> --terminal' },
+  { id: 'compare-waiver', approves: 'eximir de la comparación con main a un comando que la historia modifica', command: 'marker.js compare-waiver --story <S> --command <candidato> --reason <R>', otherSession: 'yes', terminal: 'marker.js compare-waiver --story <S> --command <candidato> --reason <R> --terminal' },
   { id: 'manual-test', approves: 'marcar un criterio como probado a mano', command: 'marker.js mark-tested --acs', otherSession: 'yes', terminal: 'marker.js mark-tested --acs --terminal' },
   { id: 'browser-test', approves: 'preparar la prueba con navegador, o decirle que no', command: 'e2e-setup.js prepare (o defer --no)', otherSession: 'yes', terminal: 'e2e-setup.js prepare --terminal (o defer --no --terminal)' },
   { id: 'lost-run', approves: 'dar por perdida una ejecución y cerrarla', command: 'marker.js clear-session --lost (o restore)', otherSession: 'yes', terminal: 'marker.js clear-session --lost --terminal (o restore --terminal)' },
@@ -306,7 +311,7 @@ const FUERA_DEL_GRUPO = Object.freeze(['merge-bypass']);
 const ESCAPES_DEL_GRUPO = ESCAPES.filter((id) => !POR_GUION.includes(id.slice('escape:'.length)) && !FUERA_DEL_GRUPO.includes(id.slice('escape:'.length)));
 
 const GROUPS = Object.freeze(Object.fromEntries(['refresh-after-main', 'adversarial-skip', 'critical-waiver', 'escape-phrases',
-  'plan-approval', 'browser-test', 'runtime-waiver', 'manual-test', 'extra-round', 'control-change', 'lost-run']
+  'plan-approval', 'browser-test', 'runtime-waiver', 'compare-waiver', 'manual-test', 'extra-round', 'control-change', 'lost-run']
   .map((g) => [g, Object.freeze(g === 'escape-phrases' ? ESCAPES_DEL_GRUPO : [g])])));
 
 /**
@@ -330,6 +335,9 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/lib/runtime-waiver.js', 'skills/tycon-pipeline/scripts/test-gate.sh',
   'skills/tycon-pipeline/scripts/lib/test-gate-*.js', 'skills/tycon-pipeline/scripts/lib/test-scope.js',
   'scripts/lib/test-scope.js', 'scripts/lib/test-scope-options.json', '.test-gate.yaml',
+  // lo que decide si se frena al guardar lo no revisado y qué evidencia en vivo cuenta
+  'skills/tycon-pipeline/scripts/lib/frozen-tree.js', 'skills/tycon-pipeline/scripts/runtime-matrix.js',
+  'skills/tycon-pipeline/scripts/smoke-run.sh',
   // lo que decide si el dueño se entera
   'scripts/lib/notify.js', 'scripts/lib/notify-mail.js', 'scripts/lib/tycon-*-notify.sh',
   'scripts/lib/integrations.js', 'scripts/lib/tycon-config.js',

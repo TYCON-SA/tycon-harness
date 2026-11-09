@@ -197,6 +197,8 @@ const PARA_OTRA_SESION = {
     si: (a) => (a[3] === 'approve-plan' || a[3] === '3') && ['--approved', '--mockup-approved', '--terminal'].some((f) => a.includes(f)) },
   'approve-mockup': { firma: 'plan-approval', marcador: true },
   'waive-critical': { firma: 'critical-waiver', marcador: true },
+  // eximir un comando de la comparación con main (historia 8.167): sobre la corrida abierta del destino
+  'compare-waiver': { firma: 'compare-waiver', marcador: true },
   'mark-tested': { firma: 'manual-test', marcador: true },
   // un control declarado a mano y un criterio que no se prueba en vivo: los firma la persona, en la ventana o la terminal
   'set-check': { firma: 'escape:force-manual', marcador: true, si: (a) => a.includes('--force-manual') },
@@ -823,6 +825,80 @@ function cmdSet(payloadJson) {
 // Por eso, antes de escribir, se pregunta si hay CÓDIGO con hora posterior al último lanzamiento de
 // revisores, y la tabla de decisión de abajo manda. Kill-switch: TYCON_SNAPSHOT_GUARD=0 (y queda la
 // segunda capa, el corte de `computeSmartReloop`).
+/**
+ * La última vuelta congelada de esta sesión (lib/frozen-tree.js), con cada copia comprobada contra su sello: si una no
+ * coincide, el comando frena con el repo y el sello. null si no hay vuelta congelada (una corrida de antes de la 8.161).
+ */
+function vueltaCongeladaComprobada(tipo, quien) {
+  const ft = require('./lib/frozen-tree.js');
+  const v = ft.ultimaVuelta(STATE_DIR, SID, tipo);
+  if (!v) return null;
+  for (const r of v.repos || []) {
+    const c = ft.verify(r.repo, r.copy, r.tree);
+    if (!c.ok) {
+      appendLog('gates.log', { name: 'frozen-copy', status: 'blocked', quien, repo: r.repo, tree: r.tree });
+      console.error(`marker.js ${quien} BLOQUEADO — ${c.error}.`);
+      console.error('  La copia que leyeron los revisores cambió después de armarla: relanzá la vuelta, que arma otra copia desde su sello.');
+      process.exit(2);
+    }
+  }
+  return v;
+}
+
+/**
+ * Lo que se guarda, ¿es lo revisado? (historia 8.161, decisión 3). Sella cada repo de la última vuelta de revisores
+ * (nunca la del pase) y compara con su sello: los archivos distintos, sin el papeleo, frenan con el comando de la
+ * vuelta (`reviewed-tree-mismatch`). Una vuelta sin sello (de antes) no se compara: se dice y queda en gates.log.
+ */
+function comprobarLoRevisado(marker, quien) {
+  const ft = require('./lib/frozen-tree.js');
+  const v = vueltaCongeladaComprobada('revisores', quien);
+  if (!v || !(v.repos || []).length) {
+    appendLog('gates.log', { name: 'reviewed-tree', status: 'no-medido', story: marker.storyId || null, quien, motivo: 'la vuelta no tiene sello' });
+    console.error(`ℹ️  ${quien}: la vuelta no tiene sello: no se pudo comparar lo que se guarda con lo revisado (no medido, no «igual»).`);
+    return;
+  }
+  const storyAbs = resolveStoryPath(marker.storyPath, marker);
+  const realDe = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
+  const distintos = [];
+  const papeleo = [];
+  const huellas = [];
+  const frenar = (motivo) => {
+    appendLog('gates.log', { name: 'reviewed-tree-mismatch', status: 'blocked', story: marker.storyId || null, quien, motivo });
+    console.error(`marker.js ${quien} BLOQUEADO — ${motivo}`);
+    process.exit(2);
+  };
+  for (const r of v.repos) {
+    const ahora = ft.seal(r.repo);
+    if (ahora.error) frenar(`no pude sellar lo que se guarda para compararlo con lo revisado (${ahora.error}).`);
+    const rel = storyAbs ? path.relative(realDe(r.repo), realDe(storyAbs)) : null;
+    const c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null });
+    if (c.error) frenar(`no pude comparar lo que se guarda con lo revisado (${c.error}).`);
+    for (const f of c.files) distintos.push({ repo: r.repo, f });
+    for (const f of c.papeleo) papeleo.push(f);
+    huellas.push(`${path.basename(r.repo)} ${r.tree.slice(0, 12)}`);
+  }
+  if (distintos.length) {
+    appendLog('gates.log', { name: 'reviewed-tree-mismatch', status: 'blocked', story: marker.storyId || null, quien, vuelta: v.etiqueta, files: distintos.length });
+    const iter = (parseInt(String(v.etiqueta || '').replace(/\D/g, ''), 10) || 1) + 1;
+    console.error(`marker.js ${quien} BLOQUEADO — lo que se guarda no es lo revisado: cambió después de la última vuelta de revisores (${v.etiqueta}):`);
+    for (const d of distintos) console.error(`   · ${d.f} (${path.basename(d.repo)})`);
+    console.error(`  Corré otra vuelta: pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'} --repo ${marker.repoPath || '<repo>'} --iter ${iter} --files "<el diff completo, como hoy>".`);
+    console.error('  La vuelta re-revisa lo que cambió desde su foto; con el sello nuevo, este paso sigue.');
+    process.exit(2);
+  }
+  appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length });
+  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}.`);
+}
+
+/** `{ sellos, copias }` por repo de una vuelta congelada. */
+function sellosDe(v) {
+  const sellos = {};
+  const copias = {};
+  for (const r of (v && v.repos) || []) { sellos[r.repo] = r.tree; copias[r.repo] = r.copy; }
+  return { sellos, copias };
+}
+
 function cmdSnapshotIter(nRaw, flags) {
   const fecharAlUltimo = Array.isArray(flags) && flags.includes('--date-at-last-reviewer');
   const n = parseInt(nRaw, 10);
@@ -835,6 +911,8 @@ function cmdSnapshotIter(nRaw, flags) {
     console.error('marker.js snapshot-iter: no hay marker activo para esta sesión');
     process.exit(1);
   }
+  // el sello de la vuelta es el de su lanzamiento: la foto lo copia, nunca lo recalcula sobre la carpeta viva
+  const congelada = vueltaCongeladaComprobada('revisores', 'snapshot-iter');
   marker.iterations = marker.iterations || {};
   // Los probes transitorios del pase adversarial NO entran a la foto: son archivos `__probe*`/`_probe_*`
   // que nadie escribió y se borran solos. Contaminan el insumo del re-loop y hacen parecer sano un
@@ -876,6 +954,7 @@ function cmdSnapshotIter(nRaw, flags) {
       ts,
       filesSnapshot: foto,
       ...(probesFuera ? { probes_excluidos: probesFuera } : {}),
+      ...(congelada ? { ...sellosDe(congelada), vuelta: congelada.etiqueta } : {}),
     };
     marker.lastTouch = nowIso();
     writeMarker(marker);
@@ -1346,6 +1425,9 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  Corré los revisores sobre lo cambiado (`pipeline.js next` dice cómo) y volvé a cerrar.');
       process.exit(2);
     }
+    // Y lo que se guarda es lo revisado: el sello de la última vuelta contra el de ahora (historia 8.161). Convive con
+    // el de arriba, que decide con los eventos de edición; éste decide con el sello.
+    comprobarLoRevisado(marker, `complete-step ${n}`);
   }
 
   // ── «Aprobar el plan» — lo aprueba una persona, o la coordinadora con la revisión automática ──
@@ -1778,6 +1860,40 @@ function cmdCompleteStep(nRaw, flags) {
         appendLog('gates.log', { name: 'undeclared-changes', action: 'verde', story: marker.storyId || null, deletes: r.borrados.length });
       }
     }
+    // La comparación con main (historia 8.167): cada comando existente que la historia modifica necesita un humo comparado
+    // que lo cubra o una exención firmada, y una diferencia con main se declara en «Cambios de comportamiento». Va junto
+    // al de cambios sin declarar y sale 1 como él; no vuelve a «Hallazgos» (sería un bucle de revisores). Sin candidatos,
+    // nada: ni comparaciones ni renglón.
+    {
+      const storyAbs = resolveStoryPath(marker.storyPath, marker);
+      let f = null;
+      let noMedido = null;
+      if (storyAbs) {
+        try {
+          const rdc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs);
+          f = require('./lib/compare-previous.js').freno({ storyPath: storyAbs, repos: reposParaComparar(marker), runDir: rdc, stateDir: STATE_DIR, story: marker.storyId });
+        } catch (e) { noMedido = String(e.message || e).split('\n')[0]; }
+      } else {
+        noMedido = `no encuentro la historia (${marker.storyPath || 'el marcador no la nombra'})`;
+      }
+      if (f && !f.medido) noMedido = f.motivo;
+      if (noMedido) {
+        // no poder mirarlo no es «no hay candidatos»: se dice y se anota
+        console.error(`⚠️  complete-step ${n}: comparación con main: no medido (${noMedido}). No es «no hay nada que comparar»: es «no lo pude mirar».`);
+        appendLog('gates.log', { name: 'compare-previous-gate', action: 'no-medido', story: marker.storyId || null, motivo: noMedido });
+      } else if (f && (f.candidatos.length || (f.sinRepo || []).length)) {
+        for (const a of f.avisos) console.error(`⚠️  complete-step ${n}: ${a}`);
+        if (f.bloquea) {
+          appendLog('gates.log', { name: 'compare-previous-gate', action: 'bloqueo', story: marker.storyId || null,
+            faltan: f.juicio.faltan.map((x) => x.archivo), noDeclaradas: f.juicio.noDeclaradas.map((x) => x.cmd) });
+          console.error(`marker.js complete-step ${n} BLOQUEADO — ${f.lineas[0]}`);
+          for (const l of f.lineas.slice(1)) console.error(l.startsWith('comparación con main') ? `   ${l}` : l);
+          process.exit(1);
+        }
+        for (const l of f.lineas) console.error(`   ${l.trim()}`);
+        appendLog('gates.log', { name: 'compare-previous-gate', action: 'verde', story: marker.storyId || null, candidatos: f.candidatos.map((x) => x.archivo), avisos: f.juicio.avisos.length });
+      }
+    }
     // Un crítico de seguridad o de datos abierto o diferido no cierra callado: lo arregla una vuelta (extra, si se llegó al
     // tope, con el ok de una persona) o lo exime una persona (waive-critical). Venga del revisor o del pase adversarial.
     {
@@ -1978,14 +2094,19 @@ function cmdCompleteStep(nRaw, flags) {
       } else {
         let matrix;
         try {
-          // en una historia paraguas, la tanda que anotó `set-batch`: la matriz mide sus criterios
-          matrix = require('./runtime-matrix.js').compute({ storyPath, batch: marker.batch || null });
+          // en una historia paraguas, la tanda que anotó `set-batch`, con la lista de lo que cambió el repo del código
+          // desde el arranque: la matriz mide sus criterios y los de las tandas que la corrida tocó
+          const rmx = require('./runtime-matrix.js');
+          matrix = rmx.compute({ storyPath, ...rmx.opcionesDeTandaDelMarcador({ ...marker, storyPath }, storyPath) });
         } catch (e) {
           blocked = 'acmatrix-error';
           console.error(`marker.js complete-step ${n} BLOQUEADO — la matriz runtime no computó (fail-closed): ${e.message}`);
         }
         if (matrix && matrix.batch) {
-          console.error(`marker.js complete-step ${n}: la matriz mide la tanda ${matrix.batch}${matrix.fueraDeTanda.length ? `; fuera de esta tanda: ${matrix.fueraDeTanda.join(' · ')}` : ''}. Pasar la historia a review las pide todas.`);
+          console.error(`marker.js complete-step ${n}: la matriz mide la tanda ${matrix.batch}${matrix.fueraDeTanda.length ? `; fuera de esta tanda: ${matrix.fueraDeTanda.join(' · ')}` : ''}${(matrix.returnedBy || []).length ? `; vuelven a la matriz: ${matrix.returnedBy.join(' · ')}` : ''}. Pasar la historia a review las pide todas.`);
+        } else if (matrix && marker.batch && !matrix.structuralError) {
+          const sinLista = (matrix.warnings || []).find((w) => /sin la lista de cambios de la corrida no achico/.test(w));
+          if (sinLista) console.error(`marker.js complete-step ${n}: ${sinLista}`);
         }
         if (matrix && matrix.structuralError) {
           blocked = 'acmatrix-struct';
@@ -2002,7 +2123,8 @@ function cmdCompleteStep(nRaw, flags) {
           }
           if ((matrix.notVerifiable || []).length) {
             console.error(`  🟪 imposibles-declarados (esperan waiver del USUARIO): ${matrix.notVerifiable.map((n) => '#' + n).join(', ')}`);
-            console.error(`     ${signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} runtime-waiver ${storyPath}`);
+            // con tanda anotada, la firma nombra la sesión: así la terminal mide la misma tanda que esta matriz
+            console.error(`     ${signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} runtime-waiver ${storyPath}${matrix.batch && SID !== '_nosession' ? ` --for-session ${SID}` : ''}`);
           }
           // La firma que existe pero se descartó se DICE: sin esto, «esperan waiver» parece que el dev no firmó.
           for (const l of require('./runtime-matrix.js').avisoFirmasDescartadas(matrix, storyPath)) console.error(`  ${l}`);
@@ -2496,10 +2618,12 @@ function markerScreenRule(marker, opts) {
     const content = fs.readFileSync(p, 'utf8');
     const ui = require(path.join(__dirname, 'lib', 'ui-signal.js'));
     const repo = (marker && marker.repoPath) || process.cwd();
-    // la baja de una tanda bloqueada se cruza con lo que cambió la corrida desde su arranque
+    // la baja de una tanda bloqueada se cruza con lo que cambió la corrida desde su arranque; con tanda anotada, la
+    // pantalla mira las mismas tandas que la matriz
     const changed = opts.scope === 'active' ? ui.changedFiles(repo, marker.baseSha) : undefined;
+    const batches = opts.scope === 'active' ? tandasMedidasDe(marker) : null;
     // qué cuenta como pantalla lo dice la regla screen_test de la organización (ui de fábrica, react u off)
-    return ui.applyScreenRule(content, repo, screenRule(), { ...opts, changed }).ui;
+    return ui.applyScreenRule(content, repo, screenRule(), { ...opts, changed, batches }).ui;
   } catch (e) {
     // no deja la exigencia de pantalla apagada en silencio
     console.error(`⚠️  no pude decidir si la story toca pantalla (${e && e.message ? e.message : e}): se trata como sin pantalla`);
@@ -2509,6 +2633,23 @@ function markerScreenRule(marker, opts) {
 
 function screenRule() {
   try { return require(path.join(__dirname, 'lib', 'stack-config.js')).orgRules().rules.screen_test.value; } catch (_e) { return 'ui'; }
+}
+
+// Las tandas que mide la corrida (la anotada más las que volvieron), con la matriz de «Preparar el commit»; null sin
+// tanda, sin lista o con el marcador de otra historia. Se calcula una vez por comando: la pantalla la pregunta varias.
+const TANDAS_MEDIDAS = new Map();
+function tandasMedidasDe(marker) {
+  const storyPath = marker && resolveStoryPath(marker.storyPath, marker);
+  if (!marker || !marker.batch || !storyPath) return null;
+  if (TANDAS_MEDIDAS.has(storyPath)) return TANDAS_MEDIDAS.get(storyPath);
+  let out = null;
+  try {
+    const rmx = require(path.join(__dirname, 'runtime-matrix.js'));
+    const op = rmx.opcionesDeTandaDelMarcador({ ...marker, storyPath }, storyPath);
+    if (op.batch && Array.isArray(op.changed)) out = rmx.compute({ storyPath, ...op }).measuredBatches || null;
+  } catch (_e) { out = null; }
+  TANDAS_MEDIDAS.set(storyPath, out);
+  return out;
 }
 
 // La baja de pantalla nunca es muda. Si la story dejó de contar como de pantalla porque la
@@ -2525,7 +2666,7 @@ function avisarBajaDePantalla(marker) {
     if (linea) console.error(linea);
     // la pantalla de una tanda bloqueada no se pide en esta corrida, y se dice
     const repo = marker.repoPath || process.cwd();
-    const tanda = ui.screenScope(content, repo, { changed: ui.changedFiles(repo, marker.baseSha) }).note;
+    const tanda = ui.screenScope(content, repo, { changed: ui.changedFiles(repo, marker.baseSha), batches: tandasMedidasDe(marker) }).note;
     if (tanda) console.error(tanda);
     // con screen_test: off, el cierre dice que la prueba de pantalla no se exigió
     const regla = ui.applyScreenRule(content, marker.repoPath || process.cwd(), screenRule()).note;
@@ -3532,6 +3673,40 @@ function cmdMarkModelsWarned(keys) {
 // Guard anti-doble-lanzamiento: re-llamar DESDE LA MISMA SESIÓN es un bug del
 // orquestador (el pase corre UNA vez por ejecución) → exit 2. El campo NO se borra al
 // completar el pase (deepReviewDone=true) — queda como evidencia de auditoría.
+/**
+ * Sella y congela los repos de la corrida para el pase adversarial (lib/frozen-tree.js). Sin sello o sin copia, el
+ * comando frena: el pase no lee la carpeta viva.
+ */
+function congelarPase(marker, etiqueta, quien) {
+  const ft = require('./lib/frozen-tree.js');
+  const rutas = ft.reposDe([resolveStoryPath(marker.storyPath, marker) || marker.storyPath, marker.repoPath]);
+  const congelada = rutas.error ? rutas
+    : rutas.repos.length ? ft.sealAndFreeze({ stateDir: STATE_DIR, sid: SID, etiqueta, repos: rutas.repos, tipo: 'pase', story: marker.storyId || null })
+      : { repos: [] };
+  if (congelada.error) {
+    appendLog('gates.log', { name: 'frozen-copy', status: 'blocked', quien, motivo: congelada.error });
+    console.error(`marker.js ${quien} BLOQUEADO — ${congelada.error}. El pase no lee la carpeta viva: no se anotó nada.`);
+    process.exit(2);
+  }
+  return congelada;
+}
+
+// `freeze-adversarial`: congela lo que va a mirar el pase ANTES de lanzarlo, para pasarle sus sellos (y sus copias) en
+// los args. `mark-adversarial-launched` usa estos mismos sellos; el resultado del pase los tiene que devolver.
+function cmdFreezeAdversarial() {
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js freeze-adversarial: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  const congelada = congelarPase(marker, `pase-${Date.now()}`, 'freeze-adversarial');
+  const { sellos, copias } = sellosDe(congelada);
+  if (Object.keys(sellos).length) marker.adversarialFrozen = { sellos, copias, at: nowIso() };
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  process.stdout.write(JSON.stringify({ sellos, copias }, null, 2) + '\n');
+}
+
 function cmdMarkAdversarialLaunched(runId, stepRaw) {
   if (!runId) {
     console.error('marker.js mark-adversarial-launched: runId requerido (1er argumento posicional)');
@@ -3576,12 +3751,20 @@ function cmdMarkAdversarialLaunched(runId, stepRaw) {
       `runId ${marker.adversarial.runId}) → overwrite con relanzamiento de esta sesión\n`
     );
   }
+  // Lo que mira el pase, congelado por repo (historia 8.161): un sello y una copia de sólo lectura de cada repo de la
+  // corrida. Los de `freeze-adversarial`, si se congeló antes de lanzar (así el pase los recibe en sus args); si no, se
+  // congela acá. El resultado del pase tiene que traer estos sellos; sin sello o sin copia, el pase no se anota lanzado.
+  const previa = marker.adversarialFrozen && marker.adversarialFrozen.sellos && Object.keys(marker.adversarialFrozen.sellos).length
+    ? { sellos: marker.adversarialFrozen.sellos, copias: marker.adversarialFrozen.copias || {} } : null;
+  const congelada = previa ? null : congelarPase(marker, `pase-${String(runId).replace(/[^\w.-]/g, '_')}`, 'mark-adversarial-launched');
+  delete marker.adversarialFrozen;
   marker.adversarial = {
     // 4 = lanzamiento temprano (cierre de «Correr las pruebas») · '5b' = fallback / relanzamiento.
     launchedAtStep: stepArg === '5b' ? '5b' : 4,
     runId: String(runId),
     sessionId: SID,
     launchedAt: nowIso(),
+    ...(previa || (congelada.repos.length ? sellosDe(congelada) : {})),
   };
   marker.lastTouch = nowIso();
   writeMarker(marker);
@@ -3838,7 +4021,37 @@ function cmdMarkAdversarialResult(countRaw) {
       console.error(`marker.js mark-adversarial-result: --result ${abs}: no lo pude leer como JSON (${e.message.split('\n')[0]}) — no se anotó nada.`);
       process.exit(2);
     }
-    const lanz = corrida && corrida.adversarial && typeof corrida.adversarial === 'object' ? Date.parse(corrida.adversarial.launchedAt) : NaN;
+    // El resultado tiene que ser de lo que se congeló al lanzar el pase: los mismos sellos, repo por repo, y las copias
+    // intactas (historia 8.161). Un lanzamiento sin sellos (de antes) no se compara.
+    const lanzado = corrida && corrida.adversarial && typeof corrida.adversarial === 'object' ? corrida.adversarial : null;
+    if (tipo === '5b' && lanzado && lanzado.sellos && Object.keys(lanzado.sellos).length) {
+      const traidos = obj.sellos && typeof obj.sellos === 'object' && !Array.isArray(obj.sellos) ? obj.sellos : null;
+      const motivoSellos = !traidos ? 'no trae `sellos` (los del lanzamiento, repo por repo)'
+        : (() => {
+          const faltan = Object.keys(lanzado.sellos).filter((r) => !(r in traidos));
+          const sobran = Object.keys(traidos).filter((r) => !(r in lanzado.sellos));
+          const otros = Object.keys(lanzado.sellos).filter((r) => r in traidos && traidos[r] !== lanzado.sellos[r]);
+          if (faltan.length) return `le falta el sello de ${faltan.join(', ')}`;
+          if (sobran.length) return `trae el sello de un repo que no se lanzó: ${sobran.join(', ')}`;
+          if (otros.length) return `trae otro sello para ${otros.map((r) => `${r} (${traidos[r]}, se lanzó ${lanzado.sellos[r]})`).join(', ')}`;
+          return null;
+        })();
+      if (motivoSellos) {
+        console.error(`marker.js mark-adversarial-result: --result ${abs} ${motivoSellos}: no es el resultado de lo que se congeló al lanzar el pase — no se anotó nada.`);
+        process.exit(2);
+      }
+      const ft = require('./lib/frozen-tree.js');
+      for (const [repo, tree] of Object.entries(lanzado.sellos)) {
+        const copia = (lanzado.copias || {})[repo];
+        const c = copia ? ft.verify(repo, copia, tree) : { ok: false, error: `la copia de la vuelta no está anotada: repo ${repo}, sello ${tree}` };
+        if (!c.ok) {
+          appendLog('gates.log', { name: 'frozen-copy', status: 'blocked', quien: 'mark-adversarial-result', repo, tree });
+          console.error(`marker.js mark-adversarial-result BLOQUEADO — ${c.error}. No se anotó nada.`);
+          process.exit(2);
+        }
+      }
+    }
+    const lanz = lanzado ? Date.parse(lanzado.launchedAt) : NaN;
     // la prueba de cada lente limpia se mira en disco: junto al resultado, de este pase (desde su lanzamiento)
     try { medicion = medicionDelResultado(obj, { resultado: abs, repo: (corrida && corrida.repoPath) || process.cwd(), desde: lanz }); } catch (e) {
       console.error(`marker.js mark-adversarial-result: --result ${abs}: ${e.message} — no se anotó nada.`);
@@ -4534,6 +4747,10 @@ function cmdClear(rest = []) {
     cerrarEjecucion(SID, marcadorAntes, { registrar: false, estado: 'abortada', motivo: 'clear: no pude archivar la ejecución ni calcular cómo terminó' });
   }
   clearMarker();
+  // las copias congeladas de la corrida (historia 8.161): se les devuelve el permiso y se borran
+  try { require('./lib/frozen-tree.js').remove(STATE_DIR, SID); } catch (e) { process.stderr.write(`[marker] no pude borrar las copias congeladas de la corrida (${e.message}): las barre la próxima vuelta\n`); }
+  // y los clones de los humos comparados (historia 8.167)
+  try { require('./lib/compare-previous.js').limpiar(STATE_DIR, SID); } catch (e) { process.stderr.write(`[marker] no pude borrar los clones de los humos comparados (${e.message}): los barre la próxima comparación\n`); }
   syncSessionState(SID);
 }
 
@@ -5168,7 +5385,6 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
  */
 function runtimeWaiverConOk(storyPath, argv, m) {
   const waiver = require('./lib/runtime-waiver.js');
-  const rm = require('./runtime-matrix.js');
   const { val } = opcionesDe(argv);
   let pedidos = [...new Set(String(val('--acs') || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))];
   // lo firma la persona que vio el criterio: el ok reenviado por otra sesión no vale acá
@@ -5183,8 +5399,14 @@ function runtimeWaiverConOk(storyPath, argv, m) {
     console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en ${SID !== PROPIA ? `la sesión ${SID}` : 'esta sesión'}${m && m.storyPath ? ` (${m.storyPath})` : ''}.`);
     process.exit(2);
   }
-  const matrix = rm.compute({ storyPath });
+  // la matriz de «Preparar el commit»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma
+  const matrix = wd.matrixForSignature(storyPath, m);
   if (matrix.structuralError) { console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`); process.exit(2); }
+  const deOtraTanda = matrix.batch ? pedidos.filter((n) => !matrix.acs.includes(n)) : [];
+  if (deOtraTanda.length) {
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — AC ${deOtraTanda.join(', ')} no es de la tanda medida (${matrix.batch}): se firma en la corrida de su tanda.`);
+    process.exit(2);
+  }
   const notRun = matrix.notRun || [];
   if (notRun.length) {
     console.error(`🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC ${notRun.map((n) => '#' + n).join(', ')}. Los corre el agente.`);
@@ -5426,6 +5648,102 @@ function cmdWaiveCritical(argv) {
   process.exit(0);
 }
 
+// Los repos de la corrida de un marcador, para la comparación con main (lib/save-ok.js). Lanza si no se pueden calcular.
+function reposParaComparar(m) {
+  const so = require('./lib/save-ok.js');
+  return so.reposDeLaCorrida({ marker: { ...m, storyPath: resolveStoryPath(m.storyPath, m) || m.storyPath }, hermanos: hermanosDeLaCorrida(m) });
+}
+
+// `compare-waiver --story <historia> --command <candidato> --reason "<motivo>" [--terminal]`: la constancia de que una
+// persona eximió a un candidato de la comparación con main (historia 8.167, lib/compare-waiver.js). Pide la firma
+// `compare-waiver` (nivel 1): el dueño en la ventana o en su terminal, o la coordinadora si el perfil del equipo la
+// delega. Un comando que no es candidato de la historia se niega antes de pedir la firma.
+function cmdCompareWaiver(argv) {
+  const cw = require('./lib/compare-waiver.js');
+  const { val, tiene } = opcionesDe(argv);
+  const command = (val('--command') || '').trim();
+  const reason = (val('--reason') || '').trim();
+  if (!command || !reason) {
+    console.error('marker.js compare-waiver: faltan --command <candidato> y --reason "<por qué>" (y --story <historia>).');
+    process.exit(2);
+  }
+  const m = readMarker();
+  if (!m) { console.error('marker.js compare-waiver: no hay marker activo para esta sesión'); process.exit(1); }
+  const storyAbs = resolveStoryPath(val('--story') || m.storyPath, m);
+  const deLaCorrida = resolveStoryPath(m.storyPath, m);
+  if (!storyAbs || !deLaCorrida || path.resolve(storyAbs) !== path.resolve(deLaCorrida)) {
+    console.error(`marker.js compare-waiver: la historia ${val('--story') || '(ninguna)'} no es la de la corrida abierta (${m.storyPath || 'sin historia'}). No se pidió la firma.`);
+    process.exit(2);
+  }
+  // el candidato, antes de la firma: una exención de algo que no es candidato no exime nada y gastaría la firma
+  let c;
+  try { c = require('./lib/compare-previous.js').candidatos({ storyPath: storyAbs, repos: reposParaComparar(m) }); } catch (e) {
+    console.error(`marker.js compare-waiver: no pude calcular los candidatos (${e.message}). No se pidió la firma.`);
+    process.exit(2);
+  }
+  const nombres = [...c.candidatos.map((x) => x.archivo), ...c.sinRepo.map((x) => x.archivo)];
+  if (!nombres.includes(command)) {
+    const noMedido = (c.noMedidos || []).find((x) => x.archivo === command);
+    if (noMedido) {
+      console.error(`marker.js compare-waiver: «${command}» no se pudo mirar (${noMedido.motivo}): el freno lo da «no medido», no pide exención. No se pidió la firma.`);
+      process.exit(2);
+    }
+    console.error(`marker.js compare-waiver: «${command}» no es candidato de la comparación de esta historia. Los candidatos: ${nombres.length ? nombres.join(', ') : '(ninguno)'}. No se pidió la firma.`);
+    process.exit(2);
+  }
+  let runDir = null;
+  try { runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs); } catch (e) {
+    console.error(`marker.js compare-waiver: no pude calcular la carpeta de la corrida (${e.message})`);
+    process.exit(2);
+  }
+  if (!runDir) { console.error('marker.js compare-waiver: la historia no da una clave para su carpeta de corrida'); process.exit(2); }
+  const resumen = `eximir ${command} de la comparación con main en ${m.storyId}: ${reason}`;
+  let entrada;
+  let firmaDada = null;
+  if (tiene('--terminal')) {
+    const waiver = require('./lib/runtime-waiver.js');
+    if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
+      console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+      const v = waiver.abrirVentana({ script: __filename, args: ['compare-waiver', ...argv] });
+      if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js compare-waiver: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se eximió nada.`); process.exit(1); }
+      process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+    }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
+    if (!waiver.hasTty()) {
+      console.error('🔒 marker.js compare-waiver --terminal BLOQUEADO — necesita una terminal de verdad: lo corre el dev, no el agente.');
+      process.exit(2);
+    }
+    let resp;
+    try {
+      resp = waiver.promptTty(`\n════════ EXIMIR DE LA COMPARACIÓN CON MAIN · story ${m.storyId} ════════\nComando: ${command}\nPor qué: ${reason}\n\n¿Lo eximís? El cambio de ese comando entra sin compararse con la versión de main. (si / no) > `);
+    } catch (e) { console.error(`🔒 ${e.message}`); process.exit(2); }
+    if (!/^s(i|í)?$/i.test(String(resp || '').trim())) { console.error('marker.js compare-waiver: no lo eximiste — el candidato sigue pidiendo su humo comparado.'); process.exit(1); }
+    if (waiver.esWindows() && !waiver.confirmarFrase()) { console.error('🔒 marker.js compare-waiver: la frase no coincide — no se eximió nada.'); process.exit(1); }
+    const quien = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'tty-user';
+    firmaDada = firmadoEnLaTerminal('compare-waiver', resumen);
+    entrada = { tipo: 'manual', quien, via: 'compare-waiver (terminal)' };
+  } else {
+    const firma = firmaDelDueno('compare-waiver', resumen);
+    firmaDada = firma;
+    const q = quienFirmo(firma, process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona');
+    entrada = { ...q, via: `compare-waiver (${q.via})` };
+  }
+  const constancia = { ts: nowIso(), story: String(m.storyId), command, reason, ...entrada };
+  const mala = cw.constanciaInvalida(constancia);
+  if (mala) { console.error(`🚫 marker.js compare-waiver: no se eximió ${command} — la constancia no vale (${mala}).`); process.exit(2); }
+  // primero el renglón del registro del arnés (que el agente no escribe): es lo que hace valer la constancia
+  appendLog('gates.log', cw.renglonDelRegistro(constancia));
+  if (cw.fueraDelRegistro(constancia, { stateDir: STATE_DIR, story: m.storyId })) {
+    console.error(`🚫 marker.js compare-waiver: no se eximió ${command} — no pude dejar el renglón en el registro del arnés. Sin él la exención no vale.`);
+    process.exit(2);
+  }
+  cw.anotar(runDir, constancia);
+  anotarAprobacion(m, { que: `exencion de la comparacion ${command}`, via: entrada.via, tipo: entrada.tipo, quien: entrada.quien, ...porDe(firmaDada),
+    ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}) });
+  console.error(`✅ ${command} eximido de la comparación con main (${constancia.tipo === 'manual' ? 'manual' : 'por delegación'}, ${constancia.quien}). «Preparar el commit» lo avisa, y el texto del pedido también.`);
+  process.exit(0);
+}
+
 // `sign-adversarial-skip --story S --reason R [--terminal]`: la firma del dueño que saltea el pase adversarial de la
 // ejecución de S (lib/adversarial-skip.js). La ejecución y el camino salen de la última muestra de S que anotó el
 // pedido; sin muestra sale 1 sin escribir nada. La firma va por la ventana de permiso o por la terminal del dueño; la
@@ -5563,6 +5881,8 @@ function cmdApproveSave(argv) {
     console.error(`🔒 marker.js approve-save: no pude saber qué repos guarda la corrida (${e.message}): sin eso no hay ok de guardar.`);
     process.exit(2);
   }
+  // lo que se firma, ¿es lo revisado? (historia 8.161): se dice, y si cambió después de la última vuelta, no se firma
+  comprobarLoRevisado(m, 'approve-save');
   let previo = null;
   let ok = null;
   const antes = (via) => {
@@ -5815,7 +6135,6 @@ function cmdMarkTested(argv) {
 // terminal. El agente NO puede ejecutar esto con éxito. Ver lib/runtime-waiver.js.
 function cmdRuntimeWaiver(storyArg, argv = []) {
   const waiver = require('./lib/runtime-waiver.js');
-  const rm = require('./runtime-matrix.js');
 
   // Resolver el path de la story (arg explícito o del marker de la sesión).
   const m = readMarker();
@@ -5866,12 +6185,15 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
       : '🔒 marker.js runtime-waiver BLOQUEADO — acá no hay una terminal de una persona (/dev/tty): el agente no puede firmar.');
     console.error('   Un criterio que no se puede probar en vivo lo firma una persona, de una de estas dos formas:');
     console.error('   (a) Desde la sesión: el agente corre este comando sin --terminal y vos lo aprobás en la ventana de permiso.');
-    console.error(`   (b) En tu terminal: node ${__filename} runtime-waiver ${storyPath} --terminal${waiver.esWindows() ? '  (en Windows abre una ventana para firmar)' : ''}`);
+    // con tanda anotada, la terminal mide esa tanda sólo si nombra la sesión de la corrida
+    const conSesion = m && m.batch && SID !== '_nosession' ? ` --for-session ${SID}` : '';
+    console.error(`   (b) En tu terminal: node ${__filename} runtime-waiver ${storyPath} --terminal${conSesion}${waiver.esWindows() ? '  (en Windows abre una ventana para firmar)' : ''}`);
     console.error(`   Versión del arnés: ${version}. Si no está al día (en Windows la firma por ventana llegó el 2026-10-15), actualizalo con /tycon-harness.`);
     process.exit(2);
   }
 
-  const matrix = rm.compute({ storyPath });
+  // con --for-session, el marcador de esa sesión: la matriz mide su tanda, como «Preparar el commit»
+  const matrix = require('./lib/waiver-display.js').matrixForSignature(storyPath, m);
   if (matrix.structuralError) {
     console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`);
     process.exit(2);
@@ -5892,6 +6214,9 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
     console.error('   El agente debe correrlos (E2E/smoke) — o, si de verdad son imposibles,');
     console.error('   declararlos en el frontmatter `runtime_not_verifiable:` (reason + covered_by test).');
     console.error('   El waiver es SÓLO para lo declarado-imposible, no para lo no-corrido.');
+    // sin tanda medida, los sin correr pueden ser de otras tandas: la firma de una corrida por tanda nombra su sesión
+    const pista = matrix.batch ? null : require('./lib/waiver-display.js').pistaDeSesion({ stateDir: STATE_DIR, storyPath });
+    if (pista) console.error(`   ${pista}`);
     process.exit(2);
   }
 
@@ -6600,6 +6925,9 @@ switch (cmd) {
   case 'waive-critical':
     cmdWaiveCritical(process.argv.slice(3));
     break;
+  case 'compare-waiver':
+    cmdCompareWaiver(process.argv.slice(3));
+    break;
   case 'sign-adversarial-skip':
     cmdSignAdversarialSkip(process.argv.slice(3));
     break;
@@ -6635,6 +6963,9 @@ switch (cmd) {
     break;
   case 'mark-adversarial-launched':
     cmdMarkAdversarialLaunched(arg1, arg2);
+    break;
+  case 'freeze-adversarial':
+    cmdFreezeAdversarial();
     break;
   case 'mark-adversarial-result':
     cmdMarkAdversarialResult(arg1);
