@@ -130,8 +130,8 @@ function add(ctx, state, H) {
     let report = []; let shared = []; let out = '';
     if (adding.includes('claude')) {
       // en una máquina que vive en la casa propia, la carpeta de siempre del estado queda como enlace al estado propio,
-      // el mismo que deja la mudanza: los guiones que todavía nombran esa ruta a propósito (legacy-home-names.json)
-      // escriben en el mismo estado. Una carpeta real ahí no se toca: se dice.
+      // el mismo que deja la mudanza: los guiones que todavía nombran esa ruta a propósito escriben en el mismo estado.
+      // Una carpeta real ahí no se toca: se dice.
       if (ownHome) {
         const legacy = TH.legacyStateDir(ctx.home);
         if (!exists(legacy)) {
