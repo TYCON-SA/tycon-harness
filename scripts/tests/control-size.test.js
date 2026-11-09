@@ -197,6 +197,16 @@ test('T9 ControlSize_Unreadable_NotMeasured — @story-8.163 @ac-9: lo que no se
   const r = correr(root);
   assert.strictEqual(r.code, 0);
   assert.match(r.out, /no medido[^\n]*roto\.js|roto\.js[^\n]*no se pudo leer/);
+  // y sale como aviso: la CI pública sólo levanta los renglones «⚠️ control-size: »
+  assert.match(r.out, /^⚠️ control-size: no medido: scripts\/ci\/roto\.js/m);
+});
+
+test('ControlSize_NotMeasured_ReachesTheCi — @story-8.163 @ac-9: cada «no medido» sale con el prefijo que levanta la CI', () => {
+  const root = arbol({ 'scripts/ci/uno.js': '// uno\n' });
+  git(root, 'commit', '-q', '-m', 'base');
+  const r = correr(root, '--range', 'no-existe...HEAD');
+  assert.strictEqual(r.code, 0);
+  assert.match(r.out, /^⚠️ control-size: no medido: no pude leer el rango no-existe\.\.\.HEAD/m);
 });
 
 // ── regresiones del pase adversarial ─────────────────────────────────────────────────────────────────────────────
@@ -277,7 +287,7 @@ test('ControlSize_Callers_UnreadableFileIsSaid — @story-8.163 @ac-9: un archiv
   try {
     const j = datos(root);
     assert.match(String(j.llamadores_motivo), /1 archivo\(s\) que no se pudieron leer/);
-    assert.match(correr(root).out, /no se pudieron leer/);
+    assert.match(correr(root).out, /^⚠️ control-size: no medido del todo: quién llama — 1 archivo\(s\) que no se pudieron leer/m);
   } finally { fs.chmodSync(path.join(root, 'config', 'cerrado.json'), 0o644); }
 });
 
@@ -314,6 +324,39 @@ test('ControlSize_Walk_MissingDispatcherIsSaid — @story-8.163 @ac-9: un despac
   const j = datos(root);
   assert.deepStrictEqual(j.recorrido.faltan, [`${PIPE}/pipeline.js`]);
   assert.ok(j.avisos.some((a) => /no medido: falta el despachador .*pipeline\.js/.test(a)), j.avisos.join('\n'));
+});
+
+test('ControlSize_Range_DispatcherOnlyWhenItsWalkIsTouched — @story-8.163 @ac-2: con --range, el despachador avisa sólo si el pedido toca su recorrido', () => {
+  const root = arbol({
+    [`${PIPE}/on-bash-write-gate.js`]: FRENO(2, 2),
+    [`${PIPE}/marker.js`]: "require('./lib/m1.js');\nrequire('./lib/m2.js');\n",
+    [`${PIPE}/lib/m1.js`]: '// uno\n', [`${PIPE}/lib/m2.js`]: '// dos\n',
+    [`${PIPE}/pipeline.js`]: '',
+    'otro/leeme.txt': 'x\n',
+  });
+  git(root, 'commit', '-q', '-m', 'base');
+  git(root, 'tag', 'base');
+  escribir(root, 'otro/leeme.txt', 'y\n');
+  git(root, 'commit', '-q', '-am', 'no toca el recorrido');
+  git(root, 'tag', 'ajeno');
+  const delRecorrido = (j) => j.avisos.filter((a) => a.includes('marker.js carga'));
+  assert.deepStrictEqual(delRecorrido(datos(root, '--range', 'base...ajeno')), []);
+  escribir(root, `${PIPE}/lib/m2.js`, '// dos, cambiado\n');
+  git(root, 'commit', '-q', '-am', 'toca un módulo del recorrido');
+  assert.strictEqual(delRecorrido(datos(root, '--range', 'ajeno...HEAD')).length, 1);
+});
+
+test('ControlSize_Gate_UnreadableIsNotMeasured — @story-8.163 @ac-9: un freno que no se puede leer deja el recorrido «no medido»', () => {
+  const root = arbol({ 'scripts/ci/uno.js': '// uno\n' });
+  const j = datos(root, '--gate', path.join(root, 'no-existe.js'));
+  assert.strictEqual(j.recorrido.tope, null);
+  assert.match(j.recorrido.motivo, /no medido: no pude leer el freno \(no-existe\.js: ENOENT\)/);
+});
+
+test('ControlSize_Letters_CountsCharactersNotBytes — @story-8.163 @ac-1: las letras son caracteres, no bytes', () => {
+  // «ñ» ocupa dos bytes y cuenta como una letra
+  const root = arbol({ 'scripts/ci/acentos.js': '// ñandú\n' });
+  assert.strictEqual(control(datos(root), 'scripts/ci/acentos.js').letras, 9);
 });
 
 test('ControlSize_BadArgument — un argumento que no entiende sale 2 y lo dice', () => {

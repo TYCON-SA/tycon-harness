@@ -354,6 +354,13 @@ function medir(o) {
         + ` ${String(umbral.niveles).replace('.', ',')} niveles, no frena)`);
     }
   }
+  // todo «no medido» también es un aviso: la CI pública sólo levanta los renglones de aviso
+  const noMedidoComoAviso = [
+    ...noMedidos.map((n) => `no medido: ${n.ruta} — ${n.motivo}`),
+    ...(ll.motivo ? [`no medido del todo: quién llama — ${ll.motivo}`] : []),
+    ...(rangoMotivo ? [rangoMotivo] : []),
+  ];
+  avisos.unshift(...noMedidoComoAviso);
   return {
     limite: TOPE_LETRAS,
     controles,
@@ -389,7 +396,6 @@ function texto(j) {
     l.push(`recorrido del freno (${r.freno}): no mira lo que cargan los del nivel ${r.tope.niveles}; no suma módulos pasado el ${r.tope.modulos} de cada cuenta del comando`);
     for (const d of r.despachadores) l.push(`  ${d.ruta}: ${d.modulos} módulos locales en ${d.niveles} niveles`);
   }
-  if (j.rango_motivo) l.push(j.rango_motivo);
   for (const a of j.avisos) l.push(`⚠️ control-size: ${a}`);
   return `${l.join('\n')}\n`;
 }
