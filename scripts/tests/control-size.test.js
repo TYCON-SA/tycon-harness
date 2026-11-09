@@ -268,6 +268,54 @@ test('ControlSize_WarningText_SaysAboveThreshold — @story-8.163 @ac-2: el avis
   assert.match(a, /con más de 3 módulos o más de 1,5 niveles/);
 });
 
+// ── regresiones de los revisores: lo que no se pudo leer se dice, nunca sale como medido ───────────────────────────
+const comoRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+
+test('ControlSize_Callers_UnreadableFileIsSaid — @story-8.163 @ac-9: un archivo que no se pudo leer al buscar quién llama se dice', { skip: comoRoot && 'como root todo se lee' }, () => {
+  const root = arbol({ 'scripts/hooks/chico.js': '// un control\n', 'config/cerrado.json': '{ "c": "scripts/hooks/chico.js" }\n' });
+  fs.chmodSync(path.join(root, 'config', 'cerrado.json'), 0o000);
+  try {
+    const j = datos(root);
+    assert.match(String(j.llamadores_motivo), /1 archivo\(s\) que no se pudieron leer/);
+    assert.match(correr(root).out, /no se pudieron leer/);
+  } finally { fs.chmodSync(path.join(root, 'config', 'cerrado.json'), 0o644); }
+});
+
+test('ControlSize_Walk_UnreadableModuleIsSaid — @story-8.163 @ac-9: un módulo que no se pudo leer deja el recorrido «no medido»', { skip: comoRoot && 'como root todo se lee' }, () => {
+  const root = arbol({
+    [`${PIPE}/on-bash-write-gate.js`]: FRENO(2, 20),
+    [`${PIPE}/marker.js`]: "require('./lib/cerrado.js');\n",
+    [`${PIPE}/lib/cerrado.js`]: "require('./otro.js');\n",
+    [`${PIPE}/lib/otro.js`]: '',
+    [`${PIPE}/pipeline.js`]: '',
+  });
+  fs.chmodSync(path.join(root, PIPE, 'lib', 'cerrado.js'), 0o000);
+  try {
+    const j = datos(root);
+    const marker = j.recorrido.despachadores.find((x) => x.ruta === `${PIPE}/marker.js`);
+    assert.deepStrictEqual(marker.no_leidos, [`${PIPE}/lib/cerrado.js`]);
+    assert.ok(j.avisos.some((a) => /no medido: .*marker\.js.*lib\/cerrado\.js/.test(a)), j.avisos.join('\n'));
+  } finally { fs.chmodSync(path.join(root, PIPE, 'lib', 'cerrado.js'), 0o644); }
+});
+
+test('ControlSize_Folder_UnreadableIsNotMeasured — @story-8.163 @ac-9: una carpeta de controles que no se puede leer es «no medido»', { skip: comoRoot && 'como root todo se lee' }, () => {
+  const root = arbol({ 'scripts/hooks/uno.js': '// uno\n', 'scripts/ci/dos.js': '// dos\n' });
+  fs.chmodSync(path.join(root, 'scripts', 'hooks'), 0o000);
+  try {
+    const j = datos(root);
+    const n = j.no_medidos.find((x) => x.ruta === 'scripts/hooks');
+    assert.ok(n, JSON.stringify(j.no_medidos));
+    assert.match(n.motivo, /no se pudo leer la carpeta/);
+  } finally { fs.chmodSync(path.join(root, 'scripts', 'hooks'), 0o755); }
+});
+
+test('ControlSize_Walk_MissingDispatcherIsSaid — @story-8.163 @ac-9: un despachador que falta se dice, no desaparece', () => {
+  const root = arbol({ [`${PIPE}/on-bash-write-gate.js`]: FRENO(2, 20), [`${PIPE}/marker.js`]: '' });
+  const j = datos(root);
+  assert.deepStrictEqual(j.recorrido.faltan, [`${PIPE}/pipeline.js`]);
+  assert.ok(j.avisos.some((a) => /no medido: falta el despachador .*pipeline\.js/.test(a)), j.avisos.join('\n'));
+});
+
 test('ControlSize_BadArgument — un argumento que no entiende sale 2 y lo dice', () => {
   const root = arbol({ 'scripts/ci/uno.js': '' });
   const r = correr(root, '--unknown-flag');

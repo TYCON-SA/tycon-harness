@@ -31,7 +31,9 @@
  *     siguen sus `require`). Hay dos cuentas por comando entero, la de los módulos del arnés y la de los demás: con dos
  *     despachadores en el mismo comando el tope llega antes, así que lo medido acá por despachador es el caso más
  *     favorable.
- * Si el texto del freno no trae esos dos números, el aviso dice «no medido»: nunca calla. Por cada despachador
+ * Si el texto del freno no trae esos dos números, el aviso dice «no medido»: nunca calla. Un despachador que falta, o un
+ * módulo suyo que no se puede leer, también se dice («no medido»). Un `require` local que no resuelve a un archivo no se
+ * sigue, igual que en el freno: los dos ven el mismo árbol. Por cada despachador
  * (marker.js, pipeline.js y el freno mismo) se mide cuántos módulos locales alcanza y en cuántos niveles, sin tope, y se
  * avisa desde el tope por 0,75 (en niveles o en módulos, lo que llegue primero).
  *
@@ -168,6 +170,7 @@ function llamadores(root) {
   for (const rel of lista) repetidos.set(path.posix.basename(rel), (repetidos.get(path.posix.basename(rel)) || 0) + 1);
   const claveDe = (rel) => ((repetidos.get(path.posix.basename(rel)) || 0) > 1 ? ultimasDos(rel) : path.posix.basename(rel));
   const cuenta = new Map();
+  let sinLeer = 0;
   for (const rel of lista) {
     if (/\.md$/i.test(rel) || /(^|\/)tests?\//.test(rel) || /\.test\./.test(rel)) continue;
     let texto;
@@ -176,7 +179,11 @@ function llamadores(root) {
       const st = fs.statSync(abs);
       if (!st.isFile() || st.size > TOPE_LLAMADOR) continue;
       texto = fs.readFileSync(abs, 'utf8');
-    } catch { continue; }
+    } catch (e) {
+      // borrado en el árbol y todavía en el índice: no hay nada que leer; cualquier otro error se cuenta y se dice
+      if (e.code !== 'ENOENT') sinLeer++;
+      continue;
+    }
     if (texto.includes('\0')) continue;
     const claves = new Set();
     for (const m of texto.matchAll(/(?<![\w.-])((?:[\w.-]+\/)*)([\w.-]+\.(?:js|cjs|mjs|sh))(?![\w-])/g)) {
@@ -189,7 +196,8 @@ function llamadores(root) {
     claves.delete(claveDe(rel));
     for (const k of claves) cuenta.set(k, (cuenta.get(k) || 0) + 1);
   }
-  return { cuenta, claveDe };
+  const motivo = sinLeer ? `${sinLeer} archivo(s) que no se pudieron leer: la columna puede quedar corta` : null;
+  return { cuenta, claveDe, motivo };
 }
 
 // ── el recorrido del freno ─────────────────────────────────────────────────────────────────────────────────────────
@@ -236,17 +244,19 @@ function importsLocales(abs, texto) {
 function recorrido(abs) {
   const inicio = fs.realpathSync(abs);
   const nivel = new Map();
+  const noLeidos = [];
   let maximo = 0;
   const visitar = (archivo, hondo) => {
     if (nivel.has(archivo)) return;
     nivel.set(archivo, hondo);
     if (hondo > maximo) maximo = hondo;
     let texto;
-    try { texto = fs.readFileSync(archivo, 'utf8'); } catch { return; }
+    // un módulo que no se lee deja el recorrido sin medir de ahí para abajo: se anota, no se calla
+    try { texto = fs.readFileSync(archivo, 'utf8'); } catch { noLeidos.push(archivo); return; }
     for (const r of importsLocales(archivo, texto)) visitar(r, hondo + 1);
   };
   visitar(inicio, 0);
-  return { modulos: nivel.size - 1, niveles: maximo, archivos: [...nivel.keys()] };
+  return { modulos: nivel.size - 1, niveles: maximo, archivos: [...nivel.keys()], noLeidos };
 }
 
 // ── medir ──────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -256,7 +266,11 @@ function medir(o) {
   const noMedidos = [];
   for (const carpeta of CARPETAS) {
     let nombres;
-    try { nombres = fs.readdirSync(path.join(o.root, carpeta)); } catch { continue; }
+    try { nombres = fs.readdirSync(path.join(o.root, carpeta)); } catch (e) {
+      // una carpeta que no está no tiene controles; una que está y no se lee es «no medido»
+      if (e.code !== 'ENOENT') noMedidos.push({ ruta: carpeta, motivo: `no se pudo leer la carpeta (${e.code || e.message})` });
+      continue;
+    }
     for (const n of nombres) {
       if (!EXTENSIONES.test(n) || /\.test\./.test(n)) continue;
       const ruta = `${carpeta}/${n}`;
@@ -313,14 +327,21 @@ function medir(o) {
 
   const freno = topeDelFreno(o.gate);
   const despachadores = [];
+  const faltan = [];
   for (const ruta of DESPACHADORES) {
     const abs = path.join(o.root, ruta);
-    if (!fs.existsSync(abs)) continue;
+    if (!fs.existsSync(abs)) { faltan.push(ruta); continue; }
     const r = recorrido(abs);
-    despachadores.push({ ruta, modulos: r.modulos, niveles: r.niveles, archivos: r.archivos });
+    const relativa = (a) => path.relative(fs.realpathSync(o.root), a).split(path.sep).join('/');
+    despachadores.push({ ruta, modulos: r.modulos, niveles: r.niveles, archivos: r.archivos, no_leidos: r.noLeidos.map(relativa) });
   }
   if (!freno.tope) avisos.push(freno.motivo);
   else {
+    // lo que no se pudo medir se dice: un despachador que falta o un módulo que no se leyó
+    for (const ruta of faltan) avisos.push(`no medido: falta el despachador ${ruta}; no se mide su recorrido`);
+    for (const d of despachadores) {
+      if (d.no_leidos.length) avisos.push(`no medido: el recorrido de ${d.ruta} queda corto; no se pudo leer ${d.no_leidos.join(', ')}`);
+    }
     const umbral = { modulos: freno.tope.modulos * FRACCION_AVISO, niveles: freno.tope.niveles * FRACCION_AVISO };
     const real = (p) => { try { return fs.realpathSync(path.join(o.root, p)); } catch { return null; } };
     const tocadosReales = tocados ? new Set([...tocados].map(real).filter(Boolean)) : null;
@@ -343,6 +364,7 @@ function medir(o) {
       tope: freno.tope,
       motivo: freno.motivo || null,
       despachadores: despachadores.map(({ archivos, ...d }) => d),
+      faltan,
     },
     rango: o.range && !rangoMotivo ? o.range : null,
     rango_motivo: rangoMotivo,
