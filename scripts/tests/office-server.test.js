@@ -411,6 +411,74 @@ test('T30 Snapshot_NeverWaitsOrLaunches @story-8.184 @ac-11: la foto fija y --js
   assert.ok(!fs.existsSync(path.join(m.sdir, 'office', 'topics-pending.json')));
 });
 
+test('Regresion_LecturaDeProyectosQueSeCae_LoDice @story-8.185 @ac-15: si la lectura de fondo sale con error, la oficina lo dice una vez', async () => {
+  const m = toy();
+  const script = path.join(m.home, 'proyectos-que-falla.js');
+  fs.writeFileSync(script, `require('fs').appendFileSync(${JSON.stringify(`${script}.log`)}, 'x\\n');\nprocess.exit(3);\n`);
+  openSync(m, { TYCON_OFFICE_PROJECTS_READ: script, TYCON_OFFICE_PROJECTS_MS: '60000' });
+  const p = page(readLock(m));
+  await p.next();
+  assert.ok(await until(() => p.fotos.some((f) => f.data && (f.data.unreadable || []).some((u) => /las historias de tus proyectos no se pudieron leer: .*3/.test(u))), PLAZO), 'llega la foto con el aviso y el código de salida');
+  p.close();
+});
+
+test('T21 Server_ReadsOnlyWithAPage_Every30 @story-8.185 @ac-19: las historias de tus proyectos se leen sólo con una página, cada tanto; la foto fija y --json no las lanzan', async () => {
+  // un lector de juguete: anota cada vez que corre y deja una lectura con una historia lista
+  const fakeReader = (m) => {
+    const script = path.join(m.home, 'proyectos-falso.js');
+    const out = path.join(m.sdir, 'office', 'project-stories.json');
+    fs.writeFileSync(script, `const fs = require('fs');
+fs.appendFileSync(${JSON.stringify(`${script}.log`)}, process.argv[2] + '\\n');
+fs.mkdirSync(${JSON.stringify(path.dirname(out))}, { recursive: true });
+fs.writeFileSync(${JSON.stringify(out)}, JSON.stringify({ at: new Date().toISOString(), proyectos: [{ nombre: 'Acme', traidoAt: null, deTuCopia: true, sinLeer: 0, historias: [{ id: '9.9', archivo: 'story-9.9-x.md', titulo: 'La que espera', estado: 'ready-for-dev' }] }], sinHistorias: [] }));`);
+    return { script, out, runs: () => { try { return fs.readFileSync(`${script}.log`, 'utf8').trim().split('\n'); } catch { return []; } } };
+  };
+  const m = toy();
+  const f = fakeReader(m);
+  openSync(m, { TYCON_OFFICE_PROJECTS_READ: f.script, TYCON_OFFICE_PROJECTS_MS: '600' });
+  const lock = readLock(m);
+  await sleep(900);
+  assert.deepStrictEqual(f.runs(), [], 'sin páginas no se lee nada');
+  const p = page(lock);
+  await p.next();
+  const tarjeta = () => {
+    const last = p.fotos[p.fotos.length - 1];
+    const c = last && last.data && last.data.kanban ? last.data.kanban.columnas.find((x) => x.id === 'sinEmpezar') : null;
+    return c ? c.tarjetas.find((t) => t.local === true) : null;
+  };
+  assert.ok(await until(() => tarjeta(), PLAZO), 'la lectura corre de fondo y la foto nueva trae la historia');
+  assert.strictEqual(tarjeta().titulo, '9.9 · La que espera');
+  assert.deepStrictEqual(f.runs()[0], '--refresh');
+  await sleep(1500);
+  const during = f.runs().length;
+  assert.ok(during >= 2 && during <= 5, `se renueva mientras está abierta, sin apurarse (${during})`);
+  p.close();
+  await sleep(300);
+  const closed = f.runs().length;
+  await sleep(1000);
+  assert.strictEqual(f.runs().length, closed, 'sin páginas deja de leer');
+  // una lectura de hace menos de media hora no se repite
+  const n = toy();
+  const g = fakeReader(n);
+  fs.mkdirSync(path.dirname(g.out), { recursive: true });
+  fs.writeFileSync(g.out, JSON.stringify({ at: new Date().toISOString(), proyectos: [], sinHistorias: [] }));
+  openSync(n, { TYCON_OFFICE_PROJECTS_READ: g.script });
+  const q = page(readLock(n));
+  await q.next();
+  await sleep(600);
+  assert.deepStrictEqual(g.runs(), [], 'con la lectura fresca no corre');
+  q.close();
+  // la foto fija y --json leen lo que hay y no lanzan nada
+  const o = toy();
+  const h = fakeReader(o);
+  for (const args of [['--json'], ['--out', path.join(o.home, 'foto.html')]]) {
+    const r = spawnSync('node', [OFFICE, ...args], { input: '', env: envOf(o.home, { TYCON_OFFICE_PROJECTS_READ: h.script }), encoding: 'utf8', timeout: 20000 });
+    assert.strictEqual(r.status, 0, r.stderr);
+  }
+  assert.deepStrictEqual(h.runs(), []);
+  assert.ok(!fs.existsSync(h.out) && !fs.existsSync(path.join(o.sdir, 'office', 'project-stories.lock')));
+});
+
 test('T9 Remote_QueriedAtMostOncePerMinute: los pedidos se preguntan una vez por minuto', async () => {
   const { cachedQuery } = require(SERVER);
   let calls = 0;

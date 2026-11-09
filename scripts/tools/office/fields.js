@@ -107,7 +107,13 @@ const LOCAL_ONLY = Object.freeze({
   'kanban.anteriores': 'lo terminado otros días llega ya armado en `tablas`, que viaja',
   'kanban.columnas.tarjetas.cls': 'el color de la hora de una tarjeta lo calcula la página desde `hora`; la clase no se usa',
   'tablero.actualizado': 'la hora en que se escribió el tablero llega en `kanban.escrito`, que viaja',
-  'tablero.teToca': 'lo que te toca llega en `meta.teToca`, que lo junta con las firmas y viaja',});
+  'tablero.teToca': 'lo que te toca llega en `meta.teToca`, que lo junta con las firmas y viaja',
+  // las historias de los proyectos de la persona son de cada máquina: ni sus tarjetas ni sus filas ni sus avisos salen
+  'kanban.historias': 'las filas y los avisos de las historias de los proyectos de esta máquina: en el sitio no dicen nada de la máquina que mira',
+  'kanban.columnas.tarjetas.local': 'marca la tarjeta de una historia de los proyectos de esta máquina, que no viaja entera',
+  'tablas.pendientes.pie': 'los avisos de la lectura de las historias de esta máquina: sus filas tampoco viajan',
+  'tablas.pendientes.filas.local': 'marca la fila de un proyecto de esta máquina, que no viaja entera',
+  'tablas.pendientes.filas.seccion': 'el título «De tus proyectos» va sólo con las filas de proyecto, que no viajan',});
 
 // La conversación de una sesión: lo que devuelve la ruta local de la conversación (`readConversation`), con cada texto
 // hasta CHARLA_TEXT_MAX. `recortada`: no entraba en 64 KB y se sacaron los mensajes más viejos.
@@ -168,9 +174,12 @@ function cleaned(spec, value, home, sanitize) {
       return value.map((v) => cleaned(spec.of, v, home, sanitize)).filter((v) => v !== undefined && v !== null);
     case 'object':
       if (typeof value !== 'object' || Array.isArray(value)) return undefined;
+      // lo marcado `local` es de esta máquina (las tarjetas de historia de sus proyectos): no sale
+      if (value.local === true) return null;
       return pickFields(spec.fields, value, home, sanitize);
     case 'tableRow': {
       if (typeof value !== 'object' || Array.isArray(value)) return undefined;
+      if (value.local === true) return null;
       const row = pickFields(spec.fields, value, home, sanitize);
       if (value.otro !== true) return row;
       // en una fila mezclada se tapa el trabajo que corresponde; la frase de la fila junta títulos, así que se tapa siempre. De

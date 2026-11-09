@@ -108,7 +108,9 @@ All three commands only look; they change nothing.
 - **`/coordinate`**, in her tab: who is working against the cap, who is waiting, pending signatures and unnamed sessions.
   In any other session it tells you that session does not coordinate.
 - **`/office`**, in any session: the office in 3D, with one person per session, its state and its end time. If she keeps
-  her board of pending items, it shows in a separate panel.
+  her board of pending items, it shows in a separate panel. A story of your projects that is in progress or ready
+  shows up on its own in the pending items: she does not have to write it down. What has no story she writes down with `board.js`.
+  A story someone is coding on another machine says «sin asignar»: the office only sees the runs on this one.
 - **`/wip`**, in any session: the same, in a table.
 
 ## If she gets stuck, or after a `/clear`

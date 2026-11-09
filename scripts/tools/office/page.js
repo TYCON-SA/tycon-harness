@@ -32,6 +32,8 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
   const cols=el("div","cols");
   (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro).length));
     if(c.nota)col.appendChild(el("p","none",c.nota));
+    // si las historias de tus proyectos no se pudieron leer, o la lectura es vieja, «Sin sesión» lo dice
+    const notaHistorias=c.id==="sinEmpezar"&&DATA.kanban.historias?DATA.kanban.historias.nota:"";if(notaHistorias)col.appendChild(el("p","none",notaHistorias));
     if(!list.length)col.appendChild(el("p","none","Nada"));
     list.forEach(i=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero));if(typeof numeroMarcado==="string"&&i.numero===numeroMarcado)card.classList.add("marcada")}card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · "),quienEs=(DATA.agents||[]).find(a=>a.nombre===String(i.quien||"").split(" · ")[0]),mod=quienEs&&(quienEs.modelo||quienEs.esfuerzo)?(quienEs.modelo||"sin dato")+" · "+(quienEs.esfuerzo||"sin dato"):"";if(mod)card.appendChild(el("span","m mod",mod));if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
       [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});if(i.mano)card.appendChild(el("span","mano "+i.mano,"✋ "+(i.mano==="coordinadora"?"Espera a la Coordinadora":"Espera tu firma")));col.appendChild(card)});
@@ -104,18 +106,22 @@ function buscarTarea(texto){const aviso=document.getElementById("buscarAviso"),n
 const temasAbiertos=new Set();
 function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tablas,activo=document.activeElement,foco=activo&&activo.dataset?activo.dataset.tema:null;sec.replaceChildren();if(!ts)return;
   ["hoy","pendientes","hechos"].forEach(k=>{const t=ts[k];if(!t)return;const d=el("div","una");d.appendChild(el("h2",null,t.titulo));d.appendChild(el("span","escrito",[t.escrito,t.cruce].filter(Boolean).join(" · ")));
-    if(!(t.filas||[]).length){d.appendChild(el("p","none",t.vacio||"Nada"));sec.appendChild(d);return;}
-    const tb=el("table"),hd=el("tr");t.columnas.forEach(c=>hd.appendChild(el("th",null,c)));const th=el("thead");th.appendChild(hd);tb.appendChild(th);const bd=el("tbody");
+    // los avisos de la lectura de las historias de tus proyectos van abajo, haya filas o no
+    const pie=()=>(t.pie||[]).forEach(p=>d.appendChild(el("p","none",p)));
+    if(!(t.filas||[]).length){d.appendChild(el("p","none",t.vacio||"Nada"));pie();sec.appendChild(d);return;}
+    const tb=el("table"),hd=el("tr");t.columnas.forEach(c=>hd.appendChild(el("th",null,c)));const th=el("thead");th.appendChild(hd);tb.appendChild(th);const bd=el("tbody");let seccion="";
     t.filas.forEach(r=>{const tr=el("tr");
+      // las filas de tus proyectos van después de las de tema, bajo su título
+      if((r.seccion||"")!==seccion){seccion=r.seccion||"";if(seccion){const st=el("tr","seccionFila"),sh=el("th",null,seccion);sh.colSpan=3;st.appendChild(sh);bd.appendChild(st)}}
       if(!(r.trabajos||[]).length){[r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));bd.appendChild(tr);return;}
-      const id=k+"|"+r.grupo,b=el("button","temaBoton",r.grupo),primera=el("td"),det=el("tr","temaTrabajos"),dd=el("td"),ul=el("ul");
+      const id=k+"|"+seccion+"|"+r.grupo,b=el("button","temaBoton",r.grupo),primera=el("td"),det=el("tr","temaTrabajos"),dd=el("td"),ul=el("ul");
       b.type="button";b.dataset.tema=id;primera.appendChild(b);tr.className="temaFila";tr.appendChild(primera);[r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));
       r.trabajos.forEach(w=>{const li=el("li");if(typeof w.numero==="string")li.appendChild(el("span","num",w.numero));li.appendChild(el("b",null,w.titulo));li.appendChild(el("span",null,[w.quien,w.como].filter(Boolean).join(" · ")));ul.appendChild(li)});
       dd.colSpan=3;dd.appendChild(ul);det.appendChild(dd);
       const pintar=()=>{const abierta=temasAbiertos.has(id);det.hidden=!abierta;b.setAttribute("aria-expanded",String(abierta))};
       tr.addEventListener("click",()=>{if(temasAbiertos.has(id))temasAbiertos.delete(id);else temasAbiertos.add(id);pintar()});pintar();
       bd.appendChild(tr);bd.appendChild(det);if(foco===id)b.focus();});
-    tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);sec.appendChild(d);})}
+    tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);pie();sec.appendChild(d);})}
 function renderCrew(){const crew=document.getElementById("crew");pintarTarjetas(crew,agents,abrirSesion);renderCerradas(cerradasJunto(crew),DATA.cerradas||[])}
 // «Cerradas», al final de «Las sesiones»: las de Claude cuyo proceso ya no existe. «Quitar» borra su archivo de estado y
 // está sólo en la oficina viva de la máquina: en el sitio la foto no trae el id

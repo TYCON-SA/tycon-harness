@@ -62,6 +62,8 @@ const QUERY_TTL_MS = 60 * 1000;
 const PR_PHOTO_MS = 3 * 60 * 1000;
 const TOPICS_MS = 60 * 1000;
 const HALFWAY_MS = 15 * 60 * 1000;
+// las historias de los proyectos de la persona se leen de fondo, a lo sumo una vez cada media hora
+const PROJECTS_MS = 30 * 60 * 1000;
 const HALFWAY_OPEN_FRESH_MS = 60 * 1000;
 const MAX_PAYLOAD = 1024;
 const MAX_EVENT_BYTES = 256;
@@ -272,7 +274,7 @@ async function serve() {
   const { sessionsBySid } = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
   const testing = process.env.TYCON_OFFICE_TEST === '1';
   const token = crypto.randomBytes(16).toString('hex');
-  const counters = { reads: 0, sends: 0, intervals: 0, prRefreshes: 0, topicRuns: 0 };
+  const counters = { reads: 0, sends: 0, intervals: 0, prRefreshes: 0, topicRuns: 0, projectReads: 0 };
   // en las pruebas, cada reloj que repite queda contado: el proceso no consulta cada tanto
   if (testing) {
     const every = global.setInterval;
@@ -400,6 +402,35 @@ async function serve() {
     if (age >= prEveryMs) refreshPrPhoto();
     prTimer = setTimeout(prTick, age >= prEveryMs ? prEveryMs : prEveryMs - age);
     prTimer.unref();
+  };
+
+  // las historias de los proyectos de la persona, de fondo, sólo mientras alguien mira y a lo sumo cada media hora: la foto no
+  // la espera, lee lo que dejó la última. En las pruebas sólo corre el guion que ellas le den
+  const projectsReader = testing ? process.env.TYCON_OFFICE_PROJECTS_READ : path.join(__dirname, 'project-stories.js');
+  const projectsEveryMs = numEnv('TYCON_OFFICE_PROJECTS_MS', PROJECTS_MS);
+  let projectsTimer = null;
+  let projectsRunning = false;
+  const projectsAge = () => { try { return Date.now() - fs.statSync(path.join(sdir, 'office', 'project-stories.json')).mtimeMs; } catch { return Infinity; } };
+  const readProjects = () => {
+    if (projectsRunning || !projectsReader) return;
+    projectsRunning = true;
+    counters.projectReads += 1;
+    const child = spawn(process.execPath, [projectsReader, '--refresh'], { stdio: 'ignore', windowsHide: true, timeout: 5 * 60 * 1000 });
+    child.on('error', (e) => { projectsRunning = false; noteOnce(`las historias de tus proyectos no se pudieron leer: ${e.message}`); });
+    // un lector que se cae, o al que corta el tope, se dice: si no, la oficina mostraría la lectura vieja sin motivo
+    child.on('exit', (code, signal) => {
+      projectsRunning = false;
+      if (code !== 0) noteOnce(`las historias de tus proyectos no se pudieron leer: el proceso terminó con ${signal || `el código ${code}`}`);
+      schedule();
+    });
+    child.unref();
+  };
+  const projectsTick = () => {
+    if (!clients.size) { projectsTimer = null; return; }
+    const age = projectsAge();
+    if (age >= projectsEveryMs) readProjects();
+    projectsTimer = setTimeout(projectsTick, age >= projectsEveryMs ? projectsEveryMs : projectsEveryMs - age);
+    projectsTimer.unref();
   };
 
   // el tema de los trabajos nuevos, de fondo y a lo sumo una vez por minuto: armar la foto no espera al modelo. Sólo con una
@@ -580,6 +611,7 @@ async function serve() {
       clients.add(ws);
       reviewLife();
       if (!prTimer) prTick();
+      if (!projectsTimer) projectsTick();
       if (!topicsTimer) topicsTick();
       halfwayOnOpen();
       // el canal de vuelta está cerrado: un mensaje cierra la conexión sin leerse
@@ -587,7 +619,7 @@ async function serve() {
       // un mensaje de más de 1 KB lo corta la librería sola, con 1009, antes de leerlo
       // sólo el corte por tamaño es un mensaje de la página; un corte de red no lo es (lo dice el `close`)
       ws.on('error', (e) => { if (e && e.code === 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH') noteOnce(BACK_CHANNEL); });
-      ws.on('close', () => { clients.delete(ws); reviewLife(); if (!clients.size) { clearTimeout(prTimer); prTimer = null; clearTimeout(topicsTimer); topicsTimer = null; clearTimeout(halfwayTimer); halfwayTimer = null; } });
+      ws.on('close', () => { clients.delete(ws); reviewLife(); if (!clients.size) { clearTimeout(prTimer); prTimer = null; clearTimeout(projectsTimer); projectsTimer = null; clearTimeout(topicsTimer); topicsTimer = null; clearTimeout(halfwayTimer); halfwayTimer = null; } });
       ready.then(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'foto', data: last })); })
         .catch((e) => { noteOnce(`una página no recibió la foto: ${e.message}`); try { ws.close(1011, 'sin foto'); } catch { /* ya cerrada */ } });
     });

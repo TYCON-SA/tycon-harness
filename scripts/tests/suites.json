@@ -1925,6 +1925,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-project-stories.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/hour-notice.test.js",
       "requiere": []
     },

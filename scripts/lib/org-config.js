@@ -2709,12 +2709,54 @@ ${trabajandoJs}
       box.appendChild(el('p', { class: 'muted' }, el('strong', { text: T('pantalla.' + par[0]) + ': ' }), el('span', { text: T('pantalla.' + par[1]) })));
     });
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaAviso') }));
-    problemasEn(pr, 'approvals.delegated_signing').concat(problemasEn(pr, 'approvals.owner_only')).forEach(function (x) { box.appendChild(el('p', { class: 'err', text: x.message })); });
+    problemasEn(pr, 'approvals.delegated_signing').concat(problemasEn(pr, 'approvals.owner_only'), problemasEn(pr, 'approvals.levels')).forEach(function (x) { box.appendChild(el('p', { class: 'err', text: x.message })); });
     if (!CAT.length) box.appendChild(el('p', { class: 'err', text: ex.firmasMotivo ? T('pantalla.firmasSinCatalogoPor', { motivo: ex.firmasMotivo }) : T('pantalla.firmasSinCatalogo') }));
     else {
       box.appendChild(matrizCorta());
-      var t = tabla('firmas', T('pantalla.firmasTitulo'), [T('pantalla.firmasColFirma'), T('pantalla.firmasColQuien')]);
+      // el nivel va en la misma tabla (story 2.79, AC 71): qué es cada nivel y quién lo firma, arriba de la tabla
+      box.appendChild(el('p', { class: 'sub-d' }, el('strong', { text: T('pantalla.nivelesTitulo') + ': ' }), el('span', { text: T('pantalla.nivelesAyuda') })));
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.nivelesQuienFirma') }));
+      var t = tabla('firmas', T('pantalla.firmasTitulo'), [T('pantalla.firmasColFirma'), T('pantalla.nivelesColNivel'), T('pantalla.firmasColQuien')]);
       var queDe = function (f) { var q = T('pantalla.firmaQue.' + f.id); return q === 'pantalla.firmaQue.' + f.id ? f.approves : q; };
+      var nivelQue = function (id) { var q = T('pantalla.nivelQue.' + id); if (q !== 'pantalla.nivelQue.' + id) return q; var l = NIVELES.filter(function (x) { return x.id === id; })[0]; return l ? l.approves : id; };
+      // subir el nivel de lo que cubre «id» (approvals.levels): el selector empieza en el nivel de la tabla, así que sólo
+      // deja subir, y volver al de la tabla saca el id del perfil. Lo delegado que deja de ser rutina sale de la lista en el
+      // mismo cambio, como hace el lector al leerlo; el resto queda en su forma
+      function cambiarNivel(id, base, x) {
+        var n = numOTexto(x);
+        var nuevo = {};
+        Object.keys(subidos).forEach(function (k) { if (k !== id) nuevo[k] = subidos[k]; });
+        if (n > base) nuevo[id] = n;
+        hoja(d, 'approvals', 'levels', Object.keys(nuevo).length ? nuevo : '');
+        var porId = {}; CAT.forEach(function (f) { porId[f.id] = f; });
+        var quedan = []; var salio = false;
+        firmas.forEach(function (v) {
+          var ids = abre(v);
+          var malos = ids.filter(function (k) { return porId[k] && nivelDelegado(porId[k], nuevo) >= 2; });
+          if (!malos.length) { quedan.push(v); return; }
+          salio = true;
+          ids.forEach(function (k) { if (malos.indexOf(k) < 0 && quedan.indexOf(k) < 0) quedan.push(k); });
+        });
+        if (salio) hoja(d, 'approvals', 'delegated_signing', quedan.length ? quedan : '');
+        render();
+      }
+      // la celda del nivel: un selector por cada cosa que cubre la fila, con todo lo que cubre (también lo que nunca se
+      // delega, que igual se puede subir). Con una sola cosa, el selector se llama como la fila: la firma tiene un solo
+      // nombre; con varias, cada una dice qué es
+      function celdaDeNivel(ids, nombreDeLaFila) {
+        var celda = el('div', { class: 'nivel', role: 'cell' });
+        var mios = [];
+        ids.forEach(function (id) {
+          var l = NIVELES.filter(function (x) { return x.id === id; })[0];
+          if (!l) return;
+          var opciones = [1, 2, 3].filter(function (n) { return n >= l.level; }).map(function (n) { return [String(n), T('pantalla.nivel' + n)]; });
+          var solo = ids.length === 1;
+          var c = corto(solo ? nombreDeLaFila : nivelQue(id), String(efectivo(id)), opciones, function (x) { cambiarNivel(id, l.level, x); }, 'approvals.nivel.' + id, pr);
+          mios = mios.concat(c.mios);
+          celda.appendChild(solo ? c.sel : el('div', { class: 'forma' }, el('span', { class: 'muted', text: nivelQue(id) }), c.sel));
+        });
+        return { celda: celda, mios: mios };
+      }
       // una fila por firma: sus formas (el guion y la frase del freno que cubren lo mismo) adentro, cada una con cómo se
       // pide y su propio selector, porque cada forma se delega o se reserva por separado
       var grupos = [];
@@ -2725,11 +2767,22 @@ ${trabajandoJs}
       });
       // por nivel, como la matriz: cada firma en el bloque del mayor nivel de sus formas, y cada bloque con su frase
       grupos.forEach(function (g) { g.nivel = Math.max.apply(null, g.formas.map(function (f) { return nivelDelegado(f); })); });
+      // lo que la tabla de niveles cubre y ninguna firma del catálogo (la emergencia): su fila, sólo con el nivel
+      var cubiertos = [];
+      grupos.forEach(function (g) { g.clave.split(',').forEach(function (c) { cubiertos.push(c); }); });
+      NIVELES.forEach(function (l) { if (cubiertos.indexOf(l.id) < 0) grupos.push({ clave: l.id, suelto: true, formas: [], nivel: efectivo(l.id) }); });
       var bloque = 0;
       grupos.slice().sort(function (a, b) { return a.nivel - b.nivel; }).forEach(function (g) {
         if (g.nivel !== bloque) {
           bloque = g.nivel;
           t.appendChild(el('div', { class: 'r nivel-cab', role: 'row', 'data-nivel-bloque': String(bloque) }, el('div', { class: 'nivel-t', role: 'cell' }, el('b', { text: T('pantalla.firmasNivel' + bloque) }), el('span', { class: 'muted', text: T('pantalla.firmasNivel' + bloque + 'Frase') }))));
+        }
+        if (g.suelto) {
+          var sn = celdaDeNivel([g.clave], nivelQue(g.clave));
+          var suelta = renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: nivelQue(g.clave) })), sn.celda, el('div', { class: 'formas', role: 'cell' })], sn.mios);
+          suelta.setAttribute('data-nivel-suelto', g.clave);
+          t.appendChild(suelta);
+          return;
         }
         var cabeza = g.formas.filter(function (f) { return f.id === g.clave; })[0] || g.formas[0];
         var formas = el('div', { class: 'formas', role: 'cell' });
@@ -2752,7 +2805,8 @@ ${trabajandoJs}
           var nota = estado === 'dueno' ? (rutina ? T('pantalla.firmaSoloDuenoNoSeDelega') : '') : (!rutina ? (nivelDelegado(f) !== g.nivel ? T('pantalla.firmaNoRutina', { nivel: nivelDelegado(f) }) : '') : (f.otherSession !== 'yes' ? T(estado === 'delegada' ? 'pantalla.firmaDelegadaNoDesdeOtraSesion' : 'pantalla.firmaNoDesdeOtraSesion') : ''));
           formas.appendChild(el('div', { class: 'forma' }, el('span', { class: 'muted', text: como + (nota ? ' · ' + nota : '') }), c.sel));
         });
-        var fila = renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: queDe(cabeza) })), formas], mios);
+        var cn = celdaDeNivel(g.clave.split(','), queDe(cabeza));
+        var fila = renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: queDe(cabeza) })), cn.celda, formas], cn.mios.concat(mios));
         fila.setAttribute('data-firma-grupo', g.clave);
         t.appendChild(fila);
       });
@@ -2796,7 +2850,6 @@ ${trabajandoJs}
       });
       box.appendChild(t);
     }
-    box.appendChild(editorNiveles(NIVELES, subidos, efectivo, nivelDelegado, CAT, firmas, abre, d, pr));
     if (delegadas.indexOf('refresh-after-main') >= 0) box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaCosto') }));
     if (delegadas.length && !rol) box.appendChild(el('p', { class: 'err', text: T('pantalla.firmaDelegadaSinSesion') }));
     box.appendChild(editorMaquinasDelegadas(ap, ex, d, pr, delegadas.length > 0));
@@ -2826,42 +2879,6 @@ ${trabajandoJs}
       m.appendChild(r);
     });
     return el('div', { class: 'sub matriz-caja' }, el('p', { class: 'sub-t', text: C('titulo') }), el('p', { class: 'muted', text: C('intro') }), el('div', { class: 'matriz-scroll' }, m), el('p', { class: 'muted', text: C('nota') }));
-  }
-  // el nivel de cada firma (approvals.levels): una fila por id de la tabla, con un selector que empieza en el nivel de la
-  // tabla, así que sólo deja subir. Volver al de la tabla saca el id del perfil. Subir una firma a 2 o más la saca de lo
-  // delegado en el mismo cambio, como hace el lector al leerlo
-  function editorNiveles(NIVELES, subidos, efectivo, nivelDelegado, CAT, firmas, abre, d, pr) {
-    var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.nivelesTitulo') }), el('p', { class: 'sub-d', text: T('pantalla.nivelesAyuda') }), el('p', { class: 'muted', text: T('pantalla.nivelesQuienFirma') }));
-    problemasEn(pr, 'approvals.levels').forEach(function (x) { box.appendChild(el('p', { class: 'err', text: x.message })); });
-    if (!NIVELES.length) return box;
-    var t = tabla('niveles', T('pantalla.nivelesTitulo'), [T('pantalla.firmasColFirma'), T('pantalla.nivelesColNivel')]);
-    NIVELES.forEach(function (l) {
-      var opciones = [1, 2, 3].filter(function (n) { return n >= l.level; }).map(function (n) { return [String(n), T('pantalla.nivel' + n)]; });
-      var que = T('pantalla.nivelQue.' + l.id);
-      if (que === 'pantalla.nivelQue.' + l.id) que = l.approves;
-      var c = corto(que, String(efectivo(l.id)), opciones, function (x) {
-        var n = numOTexto(x);
-        var nuevo = {};
-        Object.keys(subidos).forEach(function (k) { if (k !== l.id) nuevo[k] = subidos[k]; });
-        if (n > l.level) nuevo[l.id] = n;
-        hoja(d, 'approvals', 'levels', Object.keys(nuevo).length ? nuevo : '');
-        // lo delegado que deja de ser rutina sale de la lista; el resto queda en su forma
-        var porId = {}; CAT.forEach(function (f) { porId[f.id] = f; });
-        var quedan = []; var salio = false;
-        firmas.forEach(function (v) {
-          var ids = abre(v);
-          var malos = ids.filter(function (id) { return porId[id] && nivelDelegado(porId[id], nuevo) >= 2; });
-          if (!malos.length) { quedan.push(v); return; }
-          salio = true;
-          ids.forEach(function (id) { if (malos.indexOf(id) < 0 && quedan.indexOf(id) < 0) quedan.push(id); });
-        });
-        if (salio) hoja(d, 'approvals', 'delegated_signing', quedan.length ? quedan : '');
-        render();
-      }, 'approvals.nivel.' + l.id, pr);
-      t.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: que })), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
-    });
-    box.appendChild(t);
-    return box;
   }
   // en qué máquinas vale lo delegado (approvals.delegated_machines): de fábrica, en ninguna. Las que el buzón de corridas
   // vio con su huella se agregan con un botón; otra, escribiendo su huella

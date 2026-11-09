@@ -438,9 +438,86 @@ async function talkToSession(playwright) {
   }
 }
 
+// Las historias de tus proyectos (8.185) en la oficina de verdad: una sesión abierta en un repo con una historia lista en su
+// rama principal traída; la lectura de fondo de verdad corre con la página abierta, y la historia sale sola en «Pendientes»
+// (bajo «De tus proyectos», se abre y sigue abierta con la foto nueva) y en el kanban, en «Sin sesión». Deja las capturas en
+// OFFICE_8185_SHOTS (una carpeta), si está.
+async function projectPending(playwright) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-8185-'));
+  const sdir = stateDir(home);
+  for (const d of ['active', 'adhoc', 'doing']) fs.mkdirSync(path.join(sdir, d), { recursive: true });
+  const sessions = path.join(claudeDir(home), 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  // un repo con dos historias: una lista y una terminada; la rama principal traída es la que manda
+  const repo = path.join(home, 'SourceCode', 'acme');
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  const story = (id, status, title) => `---\nstory: "${id}"\ntitle: "${title}"\nstatus: ${status}\npriority: P1\n---\n\n# Story ${id}\n`;
+  fs.writeFileSync(path.join(repo, 'specs', 'story-3.1-lista.md'), story('3.1', 'ready-for-dev', 'Exportar el informe mensual'));
+  fs.writeFileSync(path.join(repo, 'specs', 'story-3.2-hecha.md'), story('3.2', 'done', 'Ya terminada'));
+  const git = (...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'user.email=ana@acme.example', '-c', 'user.name=Ana', '-c', 'commit.gpgsign=false', '-C', repo, ...a], { encoding: 'utf8' });
+  git('init', '-q');
+  git('add', '-A');
+  git('commit', '-qm', 'historias');
+  git('remote', 'add', 'origin', 'https://github.com/acme/acme.git');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  // la persona abrió una sesión de Claude en ese repo hace un rato
+  const conv = path.join(claudeDir(home), 'projects', 'acme');
+  fs.mkdirSync(conv, { recursive: true });
+  fs.writeFileSync(path.join(conv, 'c1.jsonl'), `${JSON.stringify({ cwd: repo, entrypoint: 'cli' })}\n`);
+  fs.writeFileSync(path.join(sessions, 's1.json'), JSON.stringify({ pid: process.pid, sessionId: 's1', name: 'Alfa', status: 'busy', statusUpdatedAt: Date.now() }));
+  fs.writeFileSync(path.join(sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: 'arreglo de la oficina', declaredAt: new Date().toISOString() }));
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_LINK: '0', TYCON_OFFICE_TEST: '1', TYCON_REPOS_ROOT: path.join(home, 'SourceCode'), TYCON_OFFICE_PROJECTS_READ: path.join(ROOT, 'scripts', 'tools', 'office', 'project-stories.js') };
+  const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env, encoding: 'utf8', timeout: 20000 });
+  const url = (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0];
+  check(open.status === 0 && Boolean(url), 'E12 (8.185): la oficina abrió');
+  if (!url) return;
+  const lock = JSON.parse(fs.readFileSync(path.join(sdir, 'office', 'server.json'), 'utf8'));
+  const shots = process.env.OFFICE_8185_SHOTS;
+  if (shots) fs.mkdirSync(shots, { recursive: true });
+  const browser = await playwright.chromium.launch({ args: ['--disable-3d-apis'] });
+  try {
+    for (const scheme of ['light', 'dark']) {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, colorScheme: scheme });
+      await page.goto(url);
+      // la lectura corre de fondo con la página abierta; la foto no la espera: llega con la siguiente
+      await page.waitForFunction(() => [...document.querySelectorAll('#tablas .seccionFila')].some((t) => t.textContent === 'De tus proyectos'), null, { timeout: 30000 });
+      if (scheme === 'light') check(true, 'E12 (8.185): «Pendientes» trae «De tus proyectos», sin que nadie anote la historia');
+      const pend = page.locator('#tablas .una', { has: page.locator('h2', { hasText: 'Pendientes' }) });
+      const row = pend.locator('.temaFila', { hasText: 'acme' });
+      const line = await row.innerText();
+      if (scheme === 'light') check(/1 sin asignar/.test(line) && /Exportar el informe mensual/.test(line) && !/Ya terminada/.test(line), `E12 (8.185): la fila del proyecto cuenta la lista y no la terminada (${line.replace(/\s+/g, ' ')})`);
+      await row.locator('.temaBoton').click();
+      const detail = pend.locator('.temaTrabajos:not([hidden])');
+      const opened = await detail.innerText();
+      if (scheme === 'light') check(/3\.1/.test(opened) && /sin asignar · lista/.test(opened), 'E12 (8.185): al tocarla se abren sus historias, con número, quién y estado');
+      // una foto nueva: cambia algo y la fila sigue abierta
+      fs.writeFileSync(path.join(sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: `arreglo de la oficina, ${scheme}`, declaredAt: new Date().toISOString() }));
+      await page.waitForFunction((s) => [...document.querySelectorAll('.item, td, li')].some((n) => n.textContent.includes(`arreglo de la oficina, ${s}`)), scheme, { timeout: 8000 });
+      if (scheme === 'light') check(await pend.locator('.temaTrabajos:not([hidden])').count() === 1, 'E12 (8.185): una foto nueva no la cierra');
+      if (shots) await page.locator('#tablas').screenshot({ path: path.join(shots, `pendientes-${scheme}.png`) });
+      // el kanban: la historia en «Sin sesión», en el grupo «Historias»
+      await page.locator('input[name="vista"][value="kanban"]').check({ force: true });
+      const card = page.locator('#board .item', { hasText: '3.1 · Exportar el informe mensual' });
+      await card.waitFor({ timeout: 8000 });
+      if (scheme === 'light') check(/sin asignar · Historias/.test(await card.innerText()), 'E12 (8.185): el kanban tiene su tarjeta en «Sin sesión», sin asignar, en «Historias»');
+      if (shots) await page.locator('#board').screenshot({ path: path.join(shots, `kanban-${scheme}.png`) });
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+    try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }
+  }
+}
+
 async function main() {
   const playwright = PINNED_PW.load();
   if (!playwright) { console.error(`sin navegador: ${PINNED_PW.locate().why}`); return 2; }
+  // sólo las historias de tus proyectos (8.185), con su propia oficina de juguete
+  if (process.argv.includes('--project-pending')) {
+    await projectPending(playwright);
+    console.log(fails.length ? `8.185: FALLA (${fails.length})` : '8.185: OK');
+    return fails.length ? 1 : 0;
+  }
   if (process.argv.includes('--messages')) {
     await talkToSession(playwright);
     console.log(fails.length ? `E1-E6 (8.183): FALLA (${fails.length})` : 'E1-E6 (8.183): OK');
