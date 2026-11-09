@@ -43,6 +43,10 @@ const A = (typeof args === 'string')
   : (args || {})
 
 const REPO = (A && A.repo) || '.'
+// Los sellos de lo que se congeló al lanzar el pase (marker.js mark-adversarial-launched): vuelven tal cual en el
+// resultado, y `mark-adversarial-result` los compara con los del lanzamiento, repo por repo.
+const SELLOS = (A && A.sellos && typeof A.sellos === 'object' && !Array.isArray(A.sellos)) ? A.sellos : null
+const conSellos = (r) => (SELLOS ? { ...r, sellos: SELLOS } : r)
 const FILES = (A && Array.isArray(A.files)) ? A.files : []
 const STORY = (A && A.storyPath) || '(no provista)'
 const DECISIONS = (A && A.decisions) || '(ninguna declarada — usá el criterio: no re-flaggees lo que el diff documenta como decisión intencional)'
@@ -719,13 +723,13 @@ confidence}. Reportá sólo lo que tiene evidencia; si la lente está limpia, fi
 
 if (FILES.length === 0) {
   log('adversarial-verify: sin archivos de código en args.files → nada que auditar (pase NO MEDIDO).')
-  return { confirmed: [], all_lenses: [], lentes: [], lentes_sin_medir: [], detalle: [], medido: false,
-    aviso: 'adversarial-verify: 🔴 pase NO MEDIDO — sin archivos de código en args.files, no se revisó nada.' }
+  return conSellos({ confirmed: [], all_lenses: [], lentes: [], lentes_sin_medir: [], detalle: [], medido: false,
+    aviso: 'adversarial-verify: 🔴 pase NO MEDIDO — sin archivos de código en args.files, no se revisó nada.' })
 }
 if (!BASE_VALIDA) {
   const aviso = 'adversarial-verify: 🔴 pase NO MEDIDO — falta args.base, o no es un hash (git merge-base HEAD origin/main después de git fetch origin main): sin base, cada cazador elige contra qué comparar.'
   log(aviso)
-  return { confirmed: [], all_lenses: [], lentes: [], lentes_sin_medir: [], detalle: [], medido: false, aviso }
+  return conSellos({ confirmed: [], all_lenses: [], lentes: [], lentes_sin_medir: [], detalle: [], medido: false, aviso })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -791,12 +795,12 @@ if (todos.length === 0) {
   if (lentesSinMedir.length) {
     const aviso = avisoNoMedido(lentesSinMedir, 0, motivosDeLentes)
     log(aviso)
-    return { confirmed: [], probes_dir: PROBES_DIR, all_lenses: [], lentes, lentes_sin_medir: lentesSinMedir, detalle: [], medido: false, aviso,
-      hallazgos: 0, clases: 0, agentes_ahorrados: 0, sin_veredicto: 0, hallazgos_sin_veredicto: 0, a_verificar_aparte: 0 }
+    return conSellos({ confirmed: [], probes_dir: PROBES_DIR, all_lenses: [], lentes, lentes_sin_medir: lentesSinMedir, detalle: [], medido: false, aviso,
+      hallazgos: 0, clases: 0, agentes_ahorrados: 0, sin_veredicto: 0, hallazgos_sin_veredicto: 0, a_verificar_aparte: 0 })
   }
   log(`adversarial-verify: ${LENSES.length} lentes medidas y limpias, nada que verificar.`)
-  return { confirmed: [], probes_dir: PROBES_DIR, all_lenses: lentes.map((l) => ({ lens: l.lens, count: 0 })), lentes, lentes_sin_medir: [], detalle: [], medido: true,
-    hallazgos: 0, clases: 0, agentes_ahorrados: 0, sin_veredicto: 0, hallazgos_sin_veredicto: 0, a_verificar_aparte: 0 }
+  return conSellos({ confirmed: [], probes_dir: PROBES_DIR, all_lenses: lentes.map((l) => ({ lens: l.lens, count: 0 })), lentes, lentes_sin_medir: [], detalle: [], medido: true,
+    hallazgos: 0, clases: 0, agentes_ahorrados: 0, sin_veredicto: 0, hallazgos_sin_veredicto: 0, a_verificar_aparte: 0 })
 }
 
 // Fase 1b — agrupar por causa. Con el agrupamiento apagado, cada hallazgo es su propia clase y el
@@ -1006,4 +1010,5 @@ return {
   // cuántos verificadores (uno por lente o uno por hallazgo) y las respuestas que no se usaron, con su motivo
   verificadores: VERIFIERS,
   respuestas_descartadas: descartadas,
+  ...(SELLOS ? { sellos: SELLOS } : {}),
 }

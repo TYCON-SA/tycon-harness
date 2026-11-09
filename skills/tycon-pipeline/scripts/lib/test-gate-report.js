@@ -539,6 +539,9 @@ function informe(argv) {
       meets_threshold: null,
     },
     provenance: 'test-gate.sh (run real, exit code capturado por marker.js run-check)',
+    // la procedencia de la corrida (historia 8.161): corrida, sello del árbol probado, commit, entorno y quién
+    cmd: runner, exit: suiteExit,
+    ...require('./frozen-tree.js').procedencia(repoRun || repo, { proceso: 'test-gate.sh' }),
     // Huella del código medido — la lee `suite-freshness.js check` («Revisores, otra vuelta») para saber si este verde sigue
     // describiendo el working tree o quedó viejo tras iteraciones de fix.
     code_state: codeState,

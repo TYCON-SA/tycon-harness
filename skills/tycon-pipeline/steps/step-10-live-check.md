@@ -526,6 +526,55 @@ anti-pattern de la parte 2.1 / abajo).
 de TODOS los casos como si se hubieran verificado, y racionalizar el gate Playwright con
 "E2E diferido al merge gate" deja la verificación driven sin correr hasta que alguien la exige.
 
+### Parte 3, comparación — Comparar con la versión de main los comandos que la historia modifica
+
+**Cuándo hay que comparar.** `pipeline.js compare-candidates --story <spec.md>` lista los candidatos: los archivos de
+`files_to_modify` que son un comando (`require.main === module` o cabecera `#!`), existen en `main` y la historia
+cambió. Las pruebas no son candidatos (lo de una carpeta `tests/` o terminado en `.test.js`). Por candidato dice su repo
+(sale de la corrida) y los subcomandos o funciones que el cambio toca. Sin candidatos, no se compara nada. Con
+candidatos, cada uno necesita un humo comparado que lo cubra, o una exención firmada; si no, «Preparar el commit» frena.
+Un archivo que no se pudo mirar (su versión de `main`, su diff o el archivo de ahora no se leen) sale «no medido» con
+su motivo: no frena, y no es «sin candidatos».
+
+```bash
+bash <skill>/scripts/smoke-run.sh <dir> <spec.md> --compare -- node {raiz}/<archivo> <subcomando> …
+```
+
+`--compare` corre el comando dos veces, con la versión de `main` y con el cambio, cada una en su propio clon local, y
+compara el código de salida y la salida. El resultado queda en `compare-previous.json` de la corrida: «igual»,
+«distinto» (con los dos códigos de salida y las primeras 20 líneas que difieren), «nuevo, no se compara» o «no
+comparado» con su causa. Sólo cumplen «igual» y «distinto»; un «distinto» hay que declararlo (ver
+`step-11-prepare-commit.md`). «No comparado», por la causa que sea, cuenta como si no hubiera humo. Un humo comparado
+cuenta sólo para la versión del código sobre la que corrió: si después cambia algo que no es papeleo, hay que volver a
+correrlo.
+
+- **El humo comparado corre el guion por la ruta del clon, no por el arnés instalado bajo `$HOME`.** Escribí `{raiz}`
+  en el comando: cada corrida lo cambia por la raíz de su clon, y el humo de siempre por la raíz real del repo.
+- **Un humo cubre un candidato** si corre su archivo y nombra, por palabra completa, uno de los subcomandos que el
+  cambio toca (`get` no se encuentra dentro de `forget`). Si el cambio cae fuera de todo subcomando, alcanza con correr
+  el archivo. Límite: una función que nadie llama por su nombre (o que se llama de forma dinámica) cuenta como fuera de
+  todo subcomando. Un guion de laboratorio que llama a los comandos por dentro los declara con
+  `--covers <archivo>[:<subcomando>]` (sólo con `{raiz}` en el comando y si están en la lista); quedan «cubierto por
+  declaración», y «Preparar el commit» lo avisa como a una exención.
+- **Topes**: hasta 10 humos comparados por corrida (`TYCON_COMPARE_MAX`), 60 segundos por cada una de las dos corridas
+  (`TYCON_COMPARE_TIMEOUT_MS`; después `SIGTERM` y a los 5 segundos `SIGKILL`) y 5 minutos en total
+  (`TYCON_COMPARE_TOTAL_MS`). Pasado cualquiera: «no comparado: tope». De la salida de cada lado se compara hasta 1 MB:
+  si alguna pasa y lo comparado da igual, el resultado es «no comparado» (la diferencia podría estar después del corte). Los dos clones de cada repo se reusan entre los
+  humos de la corrida y se borran al cerrarla.
+- **Lo que se niega a comparar**, sin correrlo: un comando que nombra la raíz del repo real o la casa real por ruta
+  absoluta (también el arnés instalado), o que empieza con `sudo`. Da «no comparado: toca lo real».
+- **La red, cortada**: `git push`, `fetch`, `pull`, `clone`, `ls-remote`, `remote` y `submodule`, y `gh`, `az`, `curl`,
+  `wget` y `ssh`, no salen; tampoco la red de Node. Un humo que lo intenta da «no comparado: usa la red».
+- **Lo que sigue sin aislar**: las corridas ejecutan código fuera de los ganchos de seguridad, y el freno de mano no las
+  ve. Sin el encierro del sistema, un programa que abre la red sin Node, sin el proxy ni los reemplazos llega a la red,
+  y uno que escribe por ruta absoluta fuera de los clones y las casas escribe. Con `sandbox-exec` (macOS) esa escritura
+  se corta; con `unshare` (Linux) o sin encierro, no. El informe dice qué encierro hubo. Tampoco se cuidan la CPU ni la
+  memoria más allá del tiempo.
+- **La exención**, cuando un candidato no se puede comparar (por ejemplo, porque usa la red y nunca da «igual»):
+  `node <skill>/scripts/marker.js compare-waiver --story <spec.md> --command <candidato> --reason "<por qué>"`. Pide la
+  firma `compare-waiver` (nivel 1) en la ventana del dueño, o la de la coordinadora si el perfil del equipo la suma a
+  `approvals.delegated_signing`. No va en el frontmatter: una línea `compare_exempt:` no exime.
+
 ### Parte 4 — Persistir evidencia
 
 **🔒 NOTA de provenance (hook `on-dod-evidence-guard.js`)**: la evidencia de **run real**
@@ -655,13 +704,19 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/runtime-matrix.js --story <abs spec.md>
 ```
 
-**En una historia paraguas** (varias tandas en `pipelines`), si la ejecución anotó su tanda (`marker.js set-batch`, ver
-«Arranque»), sumá `--batch <la tanda>`, copiada del campo `batch` de `marker.js get`. La matriz mide los criterios de esa
-tanda más los de ninguna tanda, y dice cuáles quedaron afuera («fuera de esta tanda: …»). «Preparar el commit» mide lo
-mismo con la tanda del marcador. Pasar la historia a review las pide todas.
+**En una historia paraguas** (varias tandas en `pipelines`), si la ejecución anotó su tanda (`start --batch` o
+`marker.js set-batch`, ver «Arranque»), el comando de arriba la lee solo del marcador de la sesión: no hace falta
+copiarla. La primera línea dice qué tanda mide. La matriz mide los criterios de esa tanda más los de ninguna tanda, y
+dice cuáles quedaron afuera («fuera de esta tanda: …»). Si la corrida cambió un archivo que la historia ata sólo a otra
+tanda, los criterios de esa tanda vuelven a la matriz y se dice por qué archivo («vuelven a la matriz: …»). «Preparar
+el commit» mide lo mismo. Pasar la historia a review las pide todas.
 
-Límite: en una paraguas, un criterio de la propia tanda declarado imposible de probar no se puede firmar todavía. Los
-comandos de firma miden la historia entera y se niegan por los criterios sin correr de las otras tandas.
+Sin marcador (otra sesión, la terminal), `--batch <tanda> --code-repo <repo del código> [--base <sha>]` da la tanda y
+la lista de cambios; `--batch` solo, sin lista, mide todas las tandas y lo dice. `--all-batches` mide todas aunque el
+marcador tenga tanda.
+
+Un criterio de la propia tanda declarado imposible de probar se firma como cualquier otro: la firma mide la misma
+tanda que «Preparar el commit». Por terminal, con `--for-session <la sesión de la corrida>`.
 
 - **VERDE** → todos los ACs tienen evidencia runtime (gate E2E / smokes vía
   `smoke-run.sh`) o son imposibles-declarados con la firma del dev vigente → avanzar.

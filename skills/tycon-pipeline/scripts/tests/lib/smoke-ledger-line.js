@@ -46,6 +46,12 @@ function lines(o) {
   if (o.repoPath) mirror.repoPath = o.repoPath;
   Object.assign(mirror, { story: o.story, acs, exit });
   if (o.mutates) { ledger.mutates = true; mirror.mutates = true; }
+  // el sello del árbol probado (historia 8.161): `{ tree }`, o `{ tree: null, tree_error }`; va a los dos lados
+  if (o.sello) {
+    ledger.tree = o.sello.tree === undefined ? null : o.sello.tree;
+    mirror.tree = ledger.tree;
+    if (o.sello.tree_error) { ledger.tree_error = o.sello.tree_error; mirror.tree_error = o.sello.tree_error; }
+  }
   if (o.v2) {
     const v = o.v2;
     ledger.v = 2; mirror.v = 2;

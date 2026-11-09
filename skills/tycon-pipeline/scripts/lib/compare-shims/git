@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# git de las corridas comparadas (historia 8.167): corta los subcomandos que hablan con un remoto o lo cambian
+# (push, fetch, pull, clone, ls-remote, remote, submodule). Sale 97 con «compare: sin red» y deja su marca en
+# TYCON_COMPARE_MARKS: el resultado de la comparación es «no comparado: usa la red». El resto va al git de verdad.
+args=("$@")
+i=0
+# las opciones globales van antes del subcomando; algunas llevan su valor aparte
+while [ $i -lt ${#args[@]} ]; do
+  a="${args[$i]}"
+  case "$a" in
+    -C|-c|--git-dir|--work-tree|--namespace|--exec-path|--config-env) i=$((i + 2)) ;;
+    -*) i=$((i + 1)) ;;
+    *) break ;;
+  esac
+done
+sub="${args[$i]:-}"
+case "$sub" in
+  push|fetch|pull|clone|ls-remote|remote|submodule)
+    [ -n "${TYCON_COMPARE_MARKS:-}" ] && printf 'git %s\n' "$sub" >> "$TYCON_COMPARE_MARKS"
+    echo "compare: sin red (git $sub)" >&2
+    exit 97 ;;
+esac
+exec "${TYCON_COMPARE_REAL_GIT:-/usr/bin/git}" "$@"

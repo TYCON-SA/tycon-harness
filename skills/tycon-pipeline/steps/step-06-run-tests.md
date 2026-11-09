@@ -209,9 +209,16 @@ resueltos, lanzar.**
    retorna un no-op instantáneo y el lanzamiento se quema (el guard bloquea relanzar sin `--relaunch`). La lista debe
    ser **EXACTAMENTE la misma que después se pasa a `pipeline.js advisors` en «Revisores»**: si divergen, el pase
    audita otro diff que los revisores, en silencio.
-4. Invocar la tool `Workflow` (args idénticos a `step-08-adversarial-pass.md` §Acción, incluido `runDir`, el RUN_DIR de
-   esta ejecución: sin él las pruebas que confirman los hallazgos caen en una carpeta genérica) e **INMEDIATAMENTE
-   después (mismo turno)** registrar el estado con el runId que devolvió la tool:
+4. Congelar lo que va a mirar el pase, y pasarle sus sellos:
+   ```bash
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js freeze-adversarial
+   ```
+   Sella cada repo de la corrida y arma su copia de sólo lectura en la carpeta de estado; devuelve `{ sellos, copias }`.
+   Sale 2 si no puede sellar o copiar: el pase no se lanza sobre la carpeta viva. Invocar la tool `Workflow` (args
+   idénticos a `step-08-adversarial-pass.md` §Acción, incluido `runDir`, el RUN_DIR de esta ejecución, y los `sellos`
+   de arriba: sin `runDir` las pruebas que confirman los hallazgos caen en una carpeta genérica, y sin `sellos` su
+   resultado no se anota) e **INMEDIATAMENTE después (mismo turno)** registrar el estado con el runId que devolvió la
+   tool:
    ```bash
    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId> 4
    ```

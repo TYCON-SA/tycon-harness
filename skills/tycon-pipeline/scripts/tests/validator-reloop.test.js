@@ -373,7 +373,9 @@ test('T14 · runStoryChecks y mech-check no ganan VAL-*; parsePipelinesBlock só
   const res = checks.runStoryChecks({ repo, storyPath: s, files: ['src/a.js'] });
   assert.ok(!res.findings.some((f) => /^VAL-/.test(f.rule)), `runStoryChecks no puede traer VAL-*: ${JSON.stringify(res.findings)}`);
   const p = checks.parsePipelinesBlock(fs.readFileSync(s, 'utf8'));
-  assert.deepEqual(Object.keys(p[0]).sort(), ['acs', 'acsPending', 'blockedBy', 'name', 'pendingItems', 'status']);
+  // la 8.240 suma a propósito las tareas y las pruebas de cada tanda (`tasks`, `tests` y sus pendientes): la matriz las
+  // usa para atar un archivo a su tanda; el parser sigue sin traer reglas del validador
+  assert.deepEqual(Object.keys(p[0]).sort(), ['acs', 'acsPending', 'blockedBy', 'name', 'pendingItems', 'status', 'tasks', 'tasksPending', 'tests', 'testsPending']);
   assert.deepEqual([p[0].name, p[0].status, p[0].blockedBy], ['B-front', 'blocked', null]);
   const mc = spawnSync(process.execPath, [PIPELINE, 'mech-check', '--repo', repo, '--story', s, '--files', 'src/a.js'], { encoding: 'utf8', env: { ...process.env, HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'valrl-mc-')) } });
   const j = JSON.parse(mc.stdout);

@@ -2052,7 +2052,7 @@ test('8.88 T47 · Config_DelegatedSigning_MachineFileSetAndExplain @story-8.88 @
 
 // ── Qué firmas se delegan y en qué máquinas (approvals.delegated_signing en lista, approvals.delegated_machines) ──────
 const FIRMAS = ['refresh-after-main', 'adversarial-skip', 'critical-waiver', 'escape-phrases', 'plan-approval', 'browser-test',
-  'runtime-waiver', 'manual-test', 'extra-round', 'control-change', 'lost-run'];
+  'runtime-waiver', 'compare-waiver', 'manual-test', 'extra-round', 'control-change', 'lost-run'];
 const MAQUINAS = [{ id: '0123456789abcdef', label: 'Mac de ejemplo' }, { id: 'fedcba9876543210', label: 'Portátil de ejemplo' }];
 
 // T27 TyconConfig_DelegatedMachines_SoloDelPerfil @story-8.116 @ac-25
@@ -2189,7 +2189,7 @@ test('8.139 T4 TyconConfig_DelegatedSigning_IdsYGrupos', () => {
     const c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: [v] } }) });
     assert.deepEqual(c.errores, [], v);
   }
-  assert.deepEqual([...catalogo().groupNames()].sort(), [...FIRMAS].sort(), 'los grupos son los 11 de la 8.116');
+  assert.deepEqual([...catalogo().groupNames()].sort(), [...FIRMAS].sort(), 'los grupos son los 11 de la 8.116 y compare-waiver (8.167)');
   let c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: 'escape:force-manual' } }) });
   assert.deepEqual(c.errores, [], 'un id suelto vale');
   c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: ['plan-approval', 'escape:trust-ran', 'escape-phrases'] } }) });

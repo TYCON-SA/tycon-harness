@@ -34,6 +34,11 @@ El script además:
 - **`context_file`**: digest de story + file list + diff con hunks, generado en
   `~/.claude/.tycon-pipeline/advisor-context/<sid>-iter<N>.md`. Es el **INPUT PRIMARIO**
   de cada advisor — pasalo en el prompt en vez de hacer que cada subagente re-lea todo.
+- **`frozen`**: lo que se revisa, congelado (historia 8.161). Al lanzar la vuelta, `advisors` y `smart-reloop` sellan el
+  repo de la historia y el del código y arman una copia de sólo lectura de cada uno en la carpeta de estado del
+  pipeline: `[{ repo, tree, copy }]`. El `context_file` nombra cada copia y su sello: **los revisores leen la copia, no
+  la carpeta viva**. Si no se puede sellar o copiar, la vuelta no se lanza (sale 2 con el motivo). La foto de la vuelta
+  (`snapshot-iter`) guarda ese sello, y «Preparar el commit» compara lo que se guarda contra él.
   Los que necesitan la story completa (`story_path_para` de la salida: el spec-first del núcleo
   y los revisores de paquetes con `needsStory`) reciben **además** `story_path`.
 - **`context_file_overrides`** (2026-07-28): mapa `{advisor: path}`. **Si un advisor figura

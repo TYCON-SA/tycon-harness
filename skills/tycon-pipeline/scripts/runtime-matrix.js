@@ -131,29 +131,31 @@ function avisoDeLoQueContó({ rel, via, fusion, commit, historia }) {
  * nombran están bloqueadas: uno que nombra también la que se entrega, o ninguna, sigue sin poder leerse.
  */
 function tandasBloqueadasDe(content, rel) {
+  const atadas = tandasQueNombran(content, rel);
+  if (!atadas.length || atadas.some((t) => t.status !== 'blocked')) return null;
+  return atadas.map((t) => t.name);
+}
+
+const sinPunto = (r) => r.replace(/^\.\//, '');
+// Los renglones de lista del frontmatter (`- ruta  # comentario`), con la ruta como la lee la lista (entre comillas o no).
+function renglonesDeLista(fm) {
+  return fm.split(/\r?\n/).map((l) => l.match(/^\s*-\s+(?:(["'])(.*?)\1|([^\s#]+))(.*)$/)).filter(Boolean)
+    .map((m) => ({ ruta: sinPunto((m[2] !== undefined ? m[2] : m[3]).trim()), resto: m[4] }));
+}
+
+/**
+ * Las tandas a las que la historia ata un archivo, cualquiera sea su estado: el comentario de su renglón en la lista
+ * (`# tanda` y su nombre o su letra), una fila de la tabla de pruebas de esa tanda (`tests` / `tests_pending`) o una
+ * tarea de esa tanda (`tasks` / `tasks_pending`) que lo nombra. Las tandas salen de `parsePipelinesBlock`, que lee
+ * el bloque en forma de lista y de mapa. Devuelve `[{ name, status }]`.
+ */
+function tandasQueNombran(content, rel) {
   const fm = (String(content).match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
   const cuerpo = String(content).slice(fm.length);
-  const lineas = fm.split(/\r?\n/);
-  const tandas = [];
-  const inicio = lineas.findIndex((l) => /^pipelines\s*:\s*$/.test(l));
-  for (let i = inicio + 1; inicio >= 0 && i < lineas.length; i++) {
-    const l = lineas[i];
-    if (/^\S/.test(l) && !/^-\s/.test(l)) break;
-    const nombre = l.match(/^\s*-\s*name\s*:\s*["']?([\w-]+)/);
-    if (nombre) { tandas.push({ name: nombre[1], status: null, tests: [], tasks: [] }); continue; }
-    const t = tandas[tandas.length - 1];
-    if (!t) continue;
-    const estado = l.match(/^\s+status\s*:\s*["']?([\w-]+)/);
-    if (estado) t.status = estado[1];
-    const pruebas = l.match(/^\s+tests_pending\s*:\s*\[(.*)\]/);
-    if (pruebas) t.tests = pruebas[1].split(',').map((s) => s.replace(/["'\s]/g, '')).filter(Boolean);
-    const tareas = l.match(/^\s+tasks_pending\s*:\s*\[(.*)\]/);
-    if (tareas) t.tasks = (tareas[1].match(/\d+/g) || []).map(Number);
-  }
-  if (!tandas.some((t) => t.status === 'blocked')) return null;
-  const sinPunto = (r) => r.replace(/^\.\//, '');
-  const items = lineas.map((l) => l.match(/^\s*-\s+(?:(["'])(.*?)\1|([^\s#]+))(.*)$/)).filter(Boolean)
-    .map((m) => ({ ruta: sinPunto((m[2] !== undefined ? m[2] : m[3]).trim()), resto: m[4] }));
+  const tandas = require(path.join(__dirname, 'lib', 'story-checks.js')).parsePipelinesBlock(content)
+    .map((t) => ({ name: t.name, status: t.status, tests: [...t.tests, ...t.testsPending], tasks: [...t.tasks, ...t.tasksPending] }));
+  if (!tandas.length) return [];
+  const items = renglonesDeLista(fm);
   // el nombre del archivo, entero: ni pegado a otra palabra ni seguido de otra extensión (un punto final sí lo cierra).
   // Si otro archivo declarado se llama igual, el nombre solo no dice cuál es: hace falta la ruta entera.
   const gemelos = items.filter((it) => path.basename(it.ruta) === path.basename(rel) && it.ruta !== sinPunto(rel)).length;
@@ -179,8 +181,25 @@ function tandasBloqueadasDe(content, rel) {
     const tarea = bloque.match(/^\s*-\s*\[.\][^\n]*?\bTask\s+(\d+)\b/);
     if (tarea && nombra(bloque.split(/\r?\n(?=\s*(?:#|\r?$))/m)[0])) for (const t of tandas) if (t.tasks.includes(Number(tarea[1]))) atadas.add(t);
   }
-  if (!atadas.size || [...atadas].some((t) => t.status !== 'blocked')) return null;
-  return [...atadas].map((t) => t.name);
+  return [...atadas].map((t) => ({ name: t.name, status: t.status }));
+}
+
+/**
+ * Las tandas a las que la historia ata un archivo que cambió la corrida. `c` es la ruta que da git, relativa a
+ * `codeRepo`; la historia puede escribirla desde otro lugar (la carpeta de arriba, un hermano): se comparan como rutas
+ * reales absolutas contra cada renglón de la lista resuelto desde `lugares`. Para las filas y las tareas, la regla de
+ * `nombra` de siempre, con la ruta de git y con la del renglón que le corresponde.
+ */
+function tandasDelCambio(content, c, { codeRepo, lugares, real }) {
+  const fm = (String(content).match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
+  const abs = real(path.resolve(codeRepo, c));
+  const rutas = new Set([sinPunto(String(c))]);
+  for (const it of renglonesDeLista(fm)) {
+    if (lugares.some((l) => real(path.resolve(l, it.ruta)) === abs)) rutas.add(it.ruta);
+  }
+  const nombres = new Set();
+  for (const r of rutas) for (const t of tandasQueNombran(content, r)) nombres.add(t.name);
+  return [...nombres];
 }
 
 // ---------------------------------------------------------------- parsing helpers
@@ -792,6 +811,12 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // El ancla cuenta sólo si una línea confirmada del espejo trae la misma: el registro viaja con el código y se edita.
       const delRegistro = e.target && Array.isArray(e.target.hermanos) ? JSON.stringify(e.target.hermanos) : null;
       const ancla = delRegistro && confirmadas.some((l) => l.includes(`"hermanos":${delRegistro}`)) ? e.target.hermanos : undefined;
+      // El sello del árbol probado (historia 8.161), confirmado por el espejo como el ancla. Uno que el espejo no confirma
+      // (editado en el registro) no da versión actual; un renglón sin sello sigue las reglas de siempre.
+      const sello = e.tree === undefined ? undefined
+        : confirmadas.some((l) => l.includes(`"tree":${JSON.stringify(e.tree)}`))
+          ? { tree: e.tree, ...(e.tree_error ? { error: e.tree_error } : {}) }
+          : { tree: null, error: 'el sello del registro no es el del espejo' };
       // (DODRT-C8) `--mutates` declarado en smoke-run.sh: cuenta SOLO si una línea
       // confirmada del espejo trae el flag. Es la vía de mutación para productos sin superficie
       // HTTP ni navegador.
@@ -804,7 +829,7 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // La imagen que el humo guardó con `--capture`, verificada contra el espejo como la salida.
       const imagen = mirrored ? imagenDelHumo(e, dir, confirmadas) : { ruta: null, problema: null };
       // `linea`: la línea entera, para encontrar en git el commit de ESTA corrida; un checkout puede dejarle el `\r`.
-      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, mutatesOk, evidenceKind: classifyCmd(e.cmd),
+      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, sello, mutatesOk, evidenceKind: classifyCmd(e.cmd),
         v2, salidaProblema, visual: imagen.ruta, visualProblema: imagen.problema });
     }
   }
@@ -1077,6 +1102,21 @@ function compute(opts) {
   // el universo son sus criterios (`acs` ∪ `acs_pending`) más los de ninguna tanda; los de las otras salen y se dice.
   // Un nombre que no existe, una tanda de la ejecución ya `done` o nombres repetidos son un error estructural: medir
   // otra cosa que la pedida sería peor que no medir.
+  // El repo de la historia, el de arriba y los hermanos declarados (con su copia en la rama de la historia): donde se
+  // busca el código declarado, para la frescura y para atar un archivo cambiado a su tanda.
+  // `opts.repoRoot` existe para el caller que computa sobre una COPIA tmp del spec (on-pre-commit.js, contenido
+  // staged): ahí la discovery desde el path no ve el repo real y degradaría a fail-closed con la evidencia en disco.
+  const repoRoot = opts.repoRoot ? path.resolve(opts.repoRoot) : discoverRepoRoot(storyPath);
+  const wsRoot = opts.workspaceRoot || discoverWorkspaceRoot(storyPath);
+  const evCfg = parseEvidenceConfig(repoRoot);
+  // Cada hermano declarado cuenta también en su worktree de la rama de la story: es el mismo repo, y es donde el portón
+  // lo corre (lib/companion-repos.js). Sin esto, su evidencia saldría «de un repo NO declarado» y no contaría.
+  const companionLib = require(path.join(__dirname, 'lib', 'companion-repos.js'));
+  const rama = repoRoot ? companionLib.ramaDe(repoRoot) : null;
+  // sin rama (la cabeza suelta), el worktree se busca igual por el número de la historia
+  const numeroDeLaHistoria = /\d/.test(sid) ? sid : null;
+  const enRama = repoRoot && (rama || numeroDeLaHistoria) ? evCfg.roots.map((r) => companionLib.enLaMismaRama(companionLib.real(r), rama, numeroDeLaHistoria)) : [];
+
   const tandas = sc.parsePipelinesBlock(content);
   const pedidas = opts.batch != null ? [String(opts.batch)]
     : (Array.isArray(opts.closingBatches) && opts.closingBatches.length ? opts.closingBatches.map(String) : null);
@@ -1106,12 +1146,37 @@ function compute(opts) {
     }
     if (!propios.size) avisosDeTanda.push(`La tanda ${pedidas.join(', ')} no declara criterios (acs / acs_pending): mido todas las tandas.`);
   }
-  const midiendoTanda = pedidas !== null && propios.size > 0;
+  // Con tanda, la lista de lo que cambió la corrida la pasa quien llama (`opts.changed`): no se saca del git del repo de
+  // la historia. Sin la lista (falta, o `null` porque git no respondió), no se sabe si la corrida tocó otra tanda: no se
+  // achica.
+  const sinLista = pedidas !== null && propios.size > 0 && !Array.isArray(opts.changed);
+  if (sinLista) avisosDeTanda.push('Se pidió la tanda, pero sin la lista de cambios de la corrida no achico: mido todas las tandas.');
+  const midiendoTanda = pedidas !== null && propios.size > 0 && !sinLista;
+  // Un archivo que cambió la corrida y la historia ata SÓLO a otras tandas devuelve sus criterios, cualquiera sea su
+  // estado: la corrida tocó lo que esas tandas entregan. Uno que nombra también la tanda medida, o ninguna, no devuelve.
+  const vuelven = new Map();
+  if (midiendoTanda) {
+    const codeRepo = opts.codeRepo ? path.resolve(opts.codeRepo) : repoRoot;
+    const lugares = [...new Set([repoRoot, wsRoot, ...evCfg.roots, ...enRama, codeRepo].filter(Boolean))];
+    for (const c of opts.changed) {
+      const atadas = tandasDelCambio(content, String(c), { codeRepo: codeRepo || '.', lugares, real: companionLib.real });
+      if (!atadas.length || atadas.some((n) => pedidas.includes(n))) continue;
+      for (const n of atadas) vuelven.set(n, [...new Set([...(vuelven.get(n) || []), String(c)])]);
+    }
+  }
+  const returnedAcs = new Set();
+  const returnedBy = [];
+  for (const t of tandas) {
+    if (!vuelven.has(t.name)) continue;
+    const suyos = deTanda(t).filter((a) => !propios.has(a) && acSet.has(a));
+    for (const a of suyos) returnedAcs.add(a);
+    if (suyos.length) returnedBy.push(`${t.name} (AC ${suyos.join(', ')}), porque la corrida cambió ${vuelven.get(t.name).join(', ')}`);
+  }
   const outOfBatchAcs = new Set();
   const fueraDeTanda = [];
   if (midiendoTanda) {
     for (const t of tandas) {
-      if (pedidas.includes(t.name) || String(t.status || '').toLowerCase() === 'blocked') continue;
+      if (pedidas.includes(t.name) || vuelven.has(t.name) || String(t.status || '').toLowerCase() === 'blocked') continue;
       const ajenos = deTanda(t).filter((a) => !propios.has(a) && acSet.has(a));
       for (const a of ajenos) outOfBatchAcs.add(a);
       if (ajenos.length) fueraDeTanda.push(`${t.name} (AC ${ajenos.join(', ')})`);
@@ -1129,7 +1194,6 @@ function compute(opts) {
   // Lo declarado no alcanza: si el commit (o la corrida, desde `opts.baseSha`) cambia un archivo de pantalla de una
   // tanda bloqueada, sus criterios vuelven a la matriz, con la misma regla que la baja de la pantalla
   // (`ui-signal.js → blockedScreenTouched`). `opts.changed` da la lista; sin ella sale de git.
-  const repoRoot = opts.repoRoot ? path.resolve(opts.repoRoot) : discoverRepoRoot(storyPath);
   const uiSignal = require(path.join(__dirname, 'lib', 'ui-signal.js'));
   const changed = Array.isArray(opts.changed) ? opts.changed : (repoRoot ? uiSignal.changedFiles(repoRoot, opts.baseSha) : null);
   const touched = uiSignal.blockedScreenTouched(content, repoRoot, changed);
@@ -1137,7 +1201,7 @@ function compute(opts) {
   const blockedByPipeline = [];
   const blockedBack = [];
   for (const p of tandas) {
-    if (midiendoTanda && pedidas.includes(p.name)) continue;
+    if (midiendoTanda && (pedidas.includes(p.name) || vuelven.has(p.name))) continue;
     const pendientes = p.acsPending.filter((n) => !propios.has(n));
     if (p.status === 'blocked' && pendientes.length && touched.names.includes(p.name)) {
       blockedBack.push(`${p.name || '(sin nombre)'}: ACs ${pendientes.join(',')}`);
@@ -1160,6 +1224,7 @@ function compute(opts) {
     warnings.push(`ACs de tanda blocked que VUELVEN al gate porque el commit cambia su pantalla (${lista}): ${blockedBack.join(' · ')}.`);
   }
   warnings.push(...avisosDeTanda);
+  if (returnedBy.length) warnings.push(`Se mide la tanda ${pedidas.join(', ')}, y vuelven a la matriz: ${returnedBy.join(' · ')}.`);
   if (fueraDeTanda.length) {
     warnings.push(`Se mide la tanda ${pedidas.join(', ')}: fuera de esta tanda: ${fueraDeTanda.join(' · ')}. Pasar la historia a review las pide todas.`);
   }
@@ -1175,20 +1240,7 @@ function compute(opts) {
     if (onlyTable.length) warnings.push(`ACs que aporta SOLO la tabla de Tests, no la sección AC: ${onlyTable.join(', ')}. La cobertura de acá abajo los incluye igual (la tabla también vota). Antes de tocar la story, descartar que sea el parser: \`node -e "console.log(require(require('os').homedir()+'/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/story-checks.js').parseAcsFromSpec(require('fs').readFileSync('<story>','utf8')))"\` — si eso cuenta menos ACs de los que la sección declara a simple vista, el bug es del parser, no del formato.`);
   }
 
-  const wsRoot = opts.workspaceRoot || discoverWorkspaceRoot(storyPath);
-  // Atribución: la evidencia sale del repo git que CONTIENE la story +
-  // companions declarados. `opts.repoRoot` existe para el caller que computa sobre una COPIA
-  // tmp del spec (on-pre-commit.js, contenido staged) — ahí la discovery desde el path no ve
-  // el repo real y sin el opt degradaría a fail-closed con la evidencia intacta en disco.
-  const evCfg = parseEvidenceConfig(repoRoot);
   const fePaths = evCfg.fePaths;
-  // Cada hermano declarado cuenta también en su worktree de la rama de la story: es el mismo repo, y es donde el portón
-  // lo corre (lib/companion-repos.js). Sin esto, su evidencia saldría «de un repo NO declarado» y no contaría.
-  const companionLib = require(path.join(__dirname, 'lib', 'companion-repos.js'));
-  const rama = repoRoot ? companionLib.ramaDe(repoRoot) : null;
-  // sin rama (la cabeza suelta), el worktree se busca igual por el número de la historia
-  const numeroDeLaHistoria = /\d/.test(sid) ? sid : null;
-  const enRama = repoRoot && (rama || numeroDeLaHistoria) ? evCfg.roots.map((r) => companionLib.enLaMismaRama(companionLib.real(r), rama, numeroDeLaHistoria)) : [];
   const evidenceRoots = repoRoot ? [...new Set([repoRoot, ...evCfg.roots, ...enRama])] : [];
   // Cómo se resolvió cada hermano que no está al lado del repo (la raíz de repos), o por qué no: nunca en silencio.
   warnings.push(...evCfg.warnings);
@@ -1314,7 +1366,7 @@ function compute(opts) {
     return vigencias.get(ev);
   };
   const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts, ancla: g.ancla });
-  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla });
+  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla, sello: e.sello });
   // Un archivo de un hermano que no tiene copia en la rama de la historia se juzga en el declarado: el aviso dice contra
   // qué se comparó y qué se buscó, porque puede ser el clon compartido, sin el código de la historia. «No tomé» y no «no
   // hay»: también es el caso de dos copias que nombran la historia, o de git que no pudo listarlas (lo dicen los avisos
@@ -1438,7 +1490,9 @@ function compute(opts) {
     const v = vigenciaHumo(e);
     warnings.push(noLeido(v)
       ? `Smoke ${e.ts} → no cuenta: no pude leer ${v.rel}.`
-      : `Smoke ${e.ts} anterior al último edit de código ${porQueVencio(v)} → no cuenta. Re-correlo vía smoke-run.sh.`);
+      : v.regla === 'sello'
+        ? `Smoke ${e.ts} (AC ${(e.acs || []).join(',')}) ${porQueVencio(v)} → no cuenta: re-correlo vía smoke-run.sh sobre la versión que se guarda.`
+        : `Smoke ${e.ts} anterior al último edit de código ${porQueVencio(v)} → no cuenta. Re-correlo vía smoke-run.sh.`);
   }
   // La imagen del humo que no es la que se selló al correr no cuenta: el humo sigue valiendo, sin imagen.
   for (const e of ledger.filter((x) => x.mirrored && x.visualProblema)) {
@@ -1787,6 +1841,10 @@ function compute(opts) {
     // la tanda medida (la de la ejecución, o las que cierra el commit) y los criterios de las otras que quedaron afuera
     batch: midiendoTanda ? pedidas.join(', ') : null, outOfBatchAcs: [...outOfBatchAcs].sort((a, b) => a - b),
     blockedAcs: [...blockedAcs].sort((a, b) => a - b), fueraDeTanda,
+    // los criterios de otras tandas que vuelven porque la corrida tocó un archivo suyo, y por qué, por tanda
+    returnedAcs: [...returnedAcs].sort((a, b) => a - b), returnedBy,
+    // las tandas que mide la corrida (la pedida más las que volvieron); null sin tanda: la pantalla mira las mismas
+    measuredBatches: midiendoTanda ? [...new Set([...pedidas, ...vuelven.keys()])] : null,
     // la hora del último cambio de código declarado: la evidencia anterior no cuenta
     codeMtime: maxCodeMtime,
     // el código declarado que no está en ningún lugar de búsqueda: deja la matriz en rojo
@@ -1822,6 +1880,7 @@ function renderMd(r) {
   L.push(`**Cobertura**: ${r.stats.runtime}/${r.stats.total} ACs corridos en runtime · ${sinCorrer.length} sin correr (bloquean)${sinImagenTxt}${parcialTxt} · ${r.stats.notVerifiable} imposibles-declarados (esperan waiver)${waivedTxt}${exentoTxt}`);
   if (r.batch) {
     L.push(`**Tanda medida**: ${r.batch}${(r.fueraDeTanda || []).length ? ` · fuera de esta tanda: ${r.fueraDeTanda.join(' · ')}` : ''} (pasar la historia a review las pide todas)`);
+    if ((r.returnedBy || []).length) L.push(`**Vuelven a la matriz**: ${r.returnedBy.join(' · ')}`);
   }
   L.push('');
   L.push('| AC | Veredicto | Evidencia runtime | Evidencia código | Razón (si imposible) |');
@@ -2001,6 +2060,50 @@ function primaryEvidenceDir(r) {
 
 // ---------------------------------------------------------------- CLI
 
+/** ¿La historia tiene bloque `pipelines` con alguna tanda? */
+function tieneTandas(storyPath) {
+  try {
+    return require(path.join(__dirname, 'lib', 'story-checks.js')).parsePipelinesBlock(fs.readFileSync(storyPath, 'utf8')).length > 0;
+  } catch { return false; }
+}
+
+/**
+ * La tanda que mide la línea de comando. Sale del marcador de la sesión cuando es de la misma historia; `--batch`
+ * distinta de la del marcador es un error, igual que `--base` sin `--code-repo` o `--batch` con `--all-batches`.
+ * `--code-repo <dir> [--base <sha>]` da la lista de cambios sin marcador (o en lugar de la del marcador).
+ * Devuelve `{ batch, changed?, codeRepo?, porQueTodas? }` o `{ error }`; `porQueTodas` dice por qué no hay tanda.
+ */
+function tandaDeLaLinea(argv, opt, storyPath) {
+  const todas = argv.includes('--all-batches');
+  const pedida = opt('--batch');
+  const repoDelCodigo = opt('--code-repo') ? path.resolve(opt('--code-repo')) : null;
+  const base = opt('--base');
+  if (base && !repoDelCodigo) return { error: '--base sin --code-repo: no sé en qué repo está esa base.' };
+  if (todas && pedida) return { error: '--batch y --all-batches a la vez: elegí una.' };
+  if (todas) return { batch: null };
+  const lista = () => require(path.join(__dirname, 'lib', 'ui-signal.js')).changedFiles(repoDelCodigo, base);
+  const sid = require(path.join(__dirname, 'lib', 'session-id.js')).sessionIdFileKey();
+  let marker = null;
+  if (sid !== '_nosession') {
+    try {
+      const dir = require(path.join(__dirname, 'lib', 'state-dir.js')).stateDir(require('os').homedir());
+      marker = JSON.parse(fs.readFileSync(path.join(dir, 'active', `${sid}.json`), 'utf8'));
+    } catch { marker = null; }
+  }
+  const op = opcionesDeTandaDelMarcador(marker, storyPath);
+  if (op.batch) {
+    if (pedida && pedida !== op.batch) return { error: `--batch ${pedida} no es la tanda del marcador de esta sesión (${op.batch}): no mido.` };
+    return repoDelCodigo ? { batch: op.batch, changed: lista(), codeRepo: repoDelCodigo } : { batch: op.batch, changed: op.changed, codeRepo: op.codeRepo };
+  }
+  if (repoDelCodigo) return { batch: pedida, changed: lista(), codeRepo: repoDelCodigo };
+  if (pedida) return { batch: pedida };
+  const porQueTodas = sid === '_nosession' ? 'sin sesión no leo la tanda del marcador'
+    : op.otraHistoria ? 'el marcador de esta sesión es de otra historia'
+      : marker && marker.storyId ? 'el marcador de esta sesión no tiene tanda anotada'
+        : 'esta sesión no tiene marcador de esta historia';
+  return { batch: null, porQueTodas };
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const opt = (name) => {
@@ -2009,17 +2112,22 @@ function main() {
   };
   const storyPath = opt('--story');
   if (!storyPath) {
-    console.error('uso: runtime-matrix.js --story <abs .md> [--batch <tanda>] [--workspace-root <dir>] [--evidence-dir <dir>] [--json] [--no-write]');
+    console.error('uso: runtime-matrix.js --story <abs .md> [--batch <tanda> | --all-batches] [--code-repo <dir> [--base <sha>]] [--workspace-root <dir>] [--evidence-dir <dir>] [--json] [--no-write]');
     process.exit(2);
   }
   const evidenceDir = opt('--evidence-dir');
-  // `--batch`: la tanda de la ejecución en una historia paraguas, la misma que anotó `marker.js set-batch`
-  const batch = opt('--batch');
+  const tanda = tandaDeLaLinea(argv, opt, path.resolve(storyPath));
+  if (tanda.error) {
+    console.error(`runtime-matrix: ${tanda.error}`);
+    process.exit(2);
+  }
   const r = compute({
     storyPath: path.resolve(storyPath),
     workspaceRoot: opt('--workspace-root'),
     evidenceDirs: evidenceDir ? [path.resolve(evidenceDir)] : undefined,
-    batch,
+    batch: tanda.batch,
+    ...(tanda.changed !== undefined ? { changed: tanda.changed } : {}),
+    ...(tanda.codeRepo ? { codeRepo: tanda.codeRepo } : {}),
   });
 
   if (r.structuralError) {
@@ -2045,17 +2153,40 @@ function main() {
   if (argv.includes('--json')) {
     console.log(JSON.stringify(r, null, 2));
   } else {
+    const sinAchicar = (r.warnings || []).find((w) => /mido todas las tandas/.test(w));
     if (r.batch) console.log(`runtime-matrix: mide la tanda ${r.batch}${r.fueraDeTanda.length ? `; fuera de esta tanda: ${r.fueraDeTanda.join(' · ')}` : ''}`);
+    else if (sinAchicar) console.log(`runtime-matrix: ${sinAchicar}`);
+    else if (tanda.porQueTodas && tieneTandas(path.resolve(storyPath))) console.log(`runtime-matrix: ${tanda.porQueTodas}: mido todas las tandas.`);
     console.log(md);
   }
   // exitCode y no exit(): con exit() una salida grande por pipe se trunca.
   process.exitCode = r.green ? 0 : 1;
 }
 
+/**
+ * Las opciones de tanda que salen del marcador de una ejecución: la tanda anotada, la lista de lo que cambió el repo
+ * del código desde el arranque (lo commiteado durante la corrida y lo nuevo sin rastrear) y ese repo. Una sola función
+ * para la matriz de «Preparar el commit», la de la línea de comando y la de la firma. La tanda vale sólo si el marcador
+ * es de la misma historia (la misma ruta real); con el de otra, `{ batch: null, otraHistoria: true }`. Sin `repoPath` o
+ * sin `baseSha` no hay lista (`changed: null`): la matriz mide todas las tandas y lo dice.
+ */
+function opcionesDeTandaDelMarcador(marker, storyPath) {
+  if (!marker || !marker.batch || !storyPath) return { batch: null };
+  const real = require(path.join(__dirname, 'lib', 'companion-repos.js')).real;
+  const suya = marker.storyPath
+    ? (path.isAbsolute(marker.storyPath) ? marker.storyPath : path.resolve(marker.repoPath || process.cwd(), marker.storyPath))
+    : null;
+  if (!suya || real(suya) !== real(path.resolve(storyPath))) return { batch: null, otraHistoria: true };
+  const changed = marker.repoPath && marker.baseSha
+    ? require(path.join(__dirname, 'lib', 'ui-signal.js')).changedFiles(marker.repoPath, marker.baseSha)
+    : null;
+  return { batch: String(marker.batch), changed, codeRepo: marker.repoPath || null };
+}
+
 // `acEsDeAccion` se exporta para poder testear la heurística de DODRT-C8 como función PURA
 // (mismo criterio que lib/atdd-order.js): sus falsos positivos se miden con texto de ACs
 // reales, no armando un workspace entero.
-module.exports = { isCodeFile, compute, renderMd, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM, SIMULATED_SERVER_FROM, readSmokeLedger, defaultGatesLog };
+module.exports = { isCodeFile, compute, renderMd, opcionesDeTandaDelMarcador, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM, SIMULATED_SERVER_FROM, readSmokeLedger, defaultGatesLog };
 
 if (require.main === module) {
   main();

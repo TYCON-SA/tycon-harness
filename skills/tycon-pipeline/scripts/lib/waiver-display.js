@@ -62,6 +62,41 @@ function leerMarcador(stateDir, sessionId) {
   return JSON.parse(txt);
 }
 
+/**
+ * La matriz de una firma: la de «Preparar el commit» (la tanda, la lista de cambios y el repo del código del marcador),
+ * para que los criterios sin correr de las otras tandas no nieguen la firma de uno de la tanda. La tanda vale sólo si el
+ * marcador es de esa misma historia; con el de otra, o sin marcador, mide todas.
+ */
+function matrixForSignature(storyPath, marker) {
+  const rm = require('../runtime-matrix.js');
+  const delMarcador = marker && marker.storyPath
+    ? { ...marker, storyPath: path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(marker.repoPath || process.cwd(), marker.storyPath) }
+    : null;
+  const op = rm.opcionesDeTandaDelMarcador(delMarcador, storyPath);
+  return rm.compute({ storyPath, ...(op.batch ? op : {}) });
+}
+
+/**
+ * La pista para firmar por terminal la historia de una corrida con tanda: `--for-session` con la sesión de cada marcador
+ * abierto de esa historia que tiene tanda, o el lugar de la sesión si no hay ninguno. null si la historia no tiene tandas.
+ */
+function pistaDeSesion({ stateDir, storyPath }) {
+  let tandas = [];
+  try { tandas = require('./story-checks.js').parsePipelinesBlock(fs.readFileSync(storyPath, 'utf8')); } catch (_) { tandas = []; }
+  if (!tandas.length) return null;
+  const sesiones = [];
+  let nombres = [];
+  try { nombres = fs.readdirSync(path.join(stateDir, 'active')).filter((f) => f.endsWith('.json')); } catch (_) { nombres = []; }
+  for (const f of nombres) {
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(stateDir, 'active', f), 'utf8'));
+      if (m && m.batch && esLaDelMarcador(storyPath, m)) sesiones.push(String(m.sessionId || f.replace(/\.json$/, '')));
+    } catch (_) { /* un marcador ilegible no da pista */ }
+  }
+  const quien = sesiones.length ? sesiones.join(' o ') : '<la sesión de la corrida>';
+  return `Si la corrida es de una tanda, la firma por terminal mide esa tanda con --for-session ${quien}.`;
+}
+
 /** Los datos de cada criterio pedido que está pendiente de firma (declarado imposible), con la huella de su declaración. */
 function criteriosDe(storyPath, acs, calculada = null) {
   const matrix = calculada || require('../runtime-matrix.js').compute({ storyPath });
@@ -95,7 +130,7 @@ function preparar({ sessionId, stateDir, storyPath, acs }) {
   if (!marker || !marker.storyId) return null;
   const abs = path.isAbsolute(storyPath) ? storyPath : path.join(marker.repoPath || process.cwd(), storyPath);
   if (!fs.existsSync(abs) || !esLaDelMarcador(abs, marker)) return null;
-  const c = criteriosDe(abs, acs);
+  const c = criteriosDe(abs, acs, matrixForSignature(abs, marker));
   if (c.error) return { reminder: `no pude armar los criterios para mostrarlos (la matriz no computa: ${c.error}): así no se pueden firmar hasta arreglarlo.` };
   const storyId = String(c.matrix.sid || marker.storyId);
   const faltan = c.lista.filter((x) => { const v = mostrado({ stateDir, sessionId, storyId, ac: x.ac, sha: x.sha }); return !v || v.error; });
@@ -170,4 +205,4 @@ function handle(event, opts = {}) {
   return r ? { systemMessage: r.systemMessage, alMostrar: r.anotar } : null;
 }
 
-module.exports = { PEDIDO, mostrado, huella, bloque, criteriosDe, esLaDelMarcador, pedidosDelComando, paraMostrar, handle };
+module.exports = { PEDIDO, mostrado, huella, bloque, criteriosDe, matrixForSignature, pistaDeSesion, preparar, esLaDelMarcador, pedidosDelComando, paraMostrar, handle };

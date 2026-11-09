@@ -239,9 +239,12 @@ test('T69 TestGate_NodeReport_EqualsThePythonReport_WorksWithoutPython3 — el i
     const caso = armarCaso(n);
     const { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { PATH: sinPython });
     assert.strictEqual(rc, 0, `${n}: el informe salió ${rc}\n${stderr}`);
-    // lo único que el bloque de Python no escribía es de dónde salió el umbral y la entrada de suites.json de cada falla
-    // (la repetición verde busca por ella, lib/failed-first.js); el resto, igual
+    // lo único que el bloque de Python no escribía es de dónde salió el umbral, la entrada de suites.json de cada falla
+    // (la repetición verde busca por ella, lib/failed-first.js) y la procedencia de la corrida (historia 8.161); el
+    // resto, igual
     for (const art of [got.tests_result, got.sellada]) {
+      // `run_error` es parte de la procedencia: dice por qué no hay `run` (sin sesión, sin marcador)
+      if (art) for (const k of ['cmd', 'exit', 'run', 'run_error', 'tree', 'tree_error', 'commit', 'env', 'by']) delete art[k];
       if (art && art.totals && Array.isArray(art.totals.failure_entries)) delete art.totals.failure_entries;
       if (!art || !art.coverage) continue;
       assert.ok(['maquina', 'organizacion', 'por_defecto'].includes(art.coverage.threshold_source), `${n}: threshold_source ${art.coverage.threshold_source}`);

@@ -1552,6 +1552,29 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-batch.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.161: la copia congelada de lo que revisa cada vuelta (sello, copia de sólo lectura, comparación con lo que se guarda) y la procedencia de cada prueba. Repos de juguete en una carpeta temporal, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/frozen-tree.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.167 (T1-T11, T19-T23, T29, T30, T32, T33): el humo comparado con main, en dos clones locales sin remoto, con casas vacías y la red cortada por capas. Repos de juguete con su origin desnudo, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/compare-previous.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.167 (T12-T16, T24-T28, T31, T34): los candidatos, el freno de «Preparar el commit», la exención firmada y la cobertura por declaración. Repos de juguete, la firma por la ventana de prueba, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/compare-previous-gate.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/preflight-missing.test.js",
       "requiere": []
     },
@@ -4230,6 +4253,12 @@
       "__nota": "story 8.164 (T2, T3): los textos que le muestran al agente cómo abrir un pedido en Azure DevOps (los tres del freno de pedidos y el paso de cierre) traen --delete-source-branch al lado de --auto-complete true --squash false; la guía de commits trae la tarea humana de GitHub («Automatically delete head branches») con su ruta. Sólo lee archivos.",
       "raiz": "arnes",
       "ruta": "tests/machine-cleanup-guides.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.167 (T17, T18): los pasos 10 y 11, el formato de las historias y la guía de firmas dicen cuándo comparar con main, cómo se resuelve una diferencia y cómo se pide la exención. Sólo lee archivos.",
+      "raiz": "arnes",
+      "ruta": "tests/compare-previous-guides.test.js",
       "requiere": []
     },
     {
