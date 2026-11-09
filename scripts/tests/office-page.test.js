@@ -12,7 +12,7 @@ const os = require('os');
 const path = require('path');
 const {
   OFFICE, PAGE_CODE, NOW, STEPS, run, BOARD, mixedOffice, shape, wip, toyHome, collectWith, pageClock, buildOffice,
-  page, importMap, MODULES, stateDir, openFile, deskSlots, collect
+  page, importMap, MODULES, stateDir, openFile, deskSlots, collect, drawKanban, buildTables
 } = require('./lib/office-fixtures.js');
 
 test('T24 Oficina_EstadoNuevo_EnLaLista @story-8.195 @ac-24 — «cerrar» está en AGENT_STATES y en la página, con su texto', () => {
@@ -448,4 +448,95 @@ test('T313 Card_OpensWindow: tocar la tarjeta de una persona abre su ventana, ig
   assert.strictEqual(v.hidden, false, 'la ventana se abre');
   assert.deepStrictEqual(box.kids[0], { tag: 'h3', t: 'Ana' });
   assert.deepStrictEqual(fichas, [[ana, box]]);
+});
+
+// ---------- 8.251: las historias de tus proyectos, plegadas en una línea de «Sin sesión» ----------
+
+const OFFICE_8251 = require(OFFICE);
+const FIELDS_8251 = require(path.join(path.dirname(OFFICE), 'office', 'fields.js'));
+const nodes8251 = (n, out = []) => { out.push(n); (n.children || []).forEach((c) => nodes8251(c, out)); return out; };
+const text8251 = (n) => (n.textContent || '') + (n.children || []).map(text8251).join('');
+/** La lectura de fondo de la 8.185, ya hecha, con un proyecto y sus historias: `[id, prioridad]`. */
+const reading8251 = (stories) => ({
+  at: new Date(NOW - 10 * 60e3).toISOString(),
+  proyectos: [{ nombre: 'Acme', traidoAt: new Date(NOW - 3 * 3600e3).toISOString(), deTuCopia: false, sinLeer: 0,
+    historias: stories.map(([id, prioridad = null]) => ({ id, archivo: `story-${id}-x.md`, titulo: `La historia ${id}`, estado: 'ready-for-dev', prioridad, trabajo: null })) }],
+  sinHistorias: [], commitsPropios: { medido: true },
+});
+/** La foto de la oficina: dos filas del tablero sin sesión y lo que traiga la lectura (`projectStories`). */
+const office8251 = (projectStories, extraRow = null) => buildOffice({
+  wip: wip([]), nowMs: NOW,
+  board: OFFICE_8251.buildBoard({ pendientes: [
+    { id: 'T-1', titulo: 'Fila uno', estado: 'espera', grupo: 'Hoy', orden: 1 },
+    { id: 'T-2', titulo: 'Fila dos', estado: 'espera', grupo: 'Hoy', orden: 2 },
+    ...(extraRow ? [extraRow] : []),
+  ] }),
+  ...(projectStories !== undefined ? { projectStories } : {}),
+}).data;
+const THREE_8251 = [['9.3', 'P2'], ['9.1'], ['9.2', 'P0']];
+/** La columna «Sin sesión» dibujada, con su línea plegada y su lista (si las hay). */
+function column8251(body) {
+  const col = nodes8251(body).find((n) => n.className === 'col' && n.children.some((h) => h.tag === 'h3' && /^Sin sesión · /.test(h.textContent)));
+  assert.ok(col, 'la columna «Sin sesión» se dibuja');
+  const fold = col.children.find((n) => n.tag === 'button' && n.className === 'plegadas');
+  const list = col.children.find((n) => n.className === 'plegadas-lista');
+  return { col, fold, list };
+}
+const titleOf8251 = (card) => text8251(card.children.find((x) => x.tag === 'b'));
+
+test('T1 Kanban_StoriesFolded_OneLine @story-8.251 @ac-1 — las filas como tarjetas; las tres historias en una línea cerrada, después', () => {
+  const { body } = drawKanban(office8251({ snap: reading8251(THREE_8251), runs: [] }));
+  const { col, fold, list } = column8251(body);
+  const cards = col.children.filter((n) => /\bitem\b/.test(n.className));
+  assert.deepStrictEqual(cards.map(titleOf8251), ['Fila uno', 'Fila dos'], 'las demás tarjetas, como hoy');
+  assert.ok(fold, 'hay una línea plegada');
+  assert.strictEqual(fold.textContent, 'Historias de tus proyectos · 3');
+  assert.strictEqual(fold.attrs['aria-expanded'], 'false', 'cerrada al principio');
+  assert.strictEqual(list.hidden, true, 'su lista no se ve');
+  assert.ok(col.children.indexOf(fold) > col.children.indexOf(cards[cards.length - 1]), 'va después de las demás tarjetas');
+  assert.strictEqual(col.children.indexOf(list), col.children.indexOf(fold) + 1, 'la lista va debajo de la línea');
+});
+
+test('T2 Kanban_FoldOpens_InOrder @story-8.251 @ac-2 — se toca y se ven las tres en el orden de la 8.185; otra vez y se cierra', () => {
+  const { body } = drawKanban(office8251({ snap: reading8251(THREE_8251), runs: [] }));
+  const { fold, list } = column8251(body);
+  fold.onclick();
+  assert.strictEqual(list.hidden, false, 'se abre');
+  assert.strictEqual(fold.attrs['aria-expanded'], 'true', 'la línea dice que está abierta');
+  assert.strictEqual(fold.type, 'button', 'es un botón: Enter y Espacio la abren igual');
+  assert.deepStrictEqual(list.children.map(titleOf8251), ['9.2 · La historia 9.2', '9.3 · La historia 9.3', '9.1 · La historia 9.1'], 'P0, P2, sin prioridad');
+  fold.onclick();
+  assert.strictEqual(list.hidden, true, 'se cierra');
+  assert.strictEqual(fold.attrs['aria-expanded'], 'false');
+});
+
+test('T3 Kanban_FoldStaysOpen_NewPhoto @story-8.251 @ac-3 — abierta, una foto nueva no la cierra', () => {
+  const { body, redraw } = drawKanban(office8251({ snap: reading8251(THREE_8251), runs: [] }));
+  column8251(body).fold.onclick();
+  redraw(office8251({ snap: reading8251([...THREE_8251, ['9.4']]), runs: [] }, { id: 'T-3', titulo: 'Fila tres', estado: 'espera', grupo: 'Hoy', orden: 3 }));
+  const { fold, list } = column8251(body);
+  assert.strictEqual(fold.textContent, 'Historias de tus proyectos · 4', 'es la foto nueva');
+  assert.strictEqual(list.hidden, false, 'sigue abierta');
+  assert.strictEqual(fold.attrs['aria-expanded'], 'true');
+});
+
+test('T4 Kanban_NoStories_NoFold @story-8.251 @ac-4 — sin tarjetas de historia no hay línea, y el aviso de la lectura se ve', () => {
+  const nota = 'No pude leer los pendientes de tus proyectos';
+  for (const [name, projectStories] of [['sin lectura', { snap: null, nota, runs: [] }], ['sin historias', { snap: reading8251([]), runs: [] }], ['sin la parte de la lectura', undefined]]) {
+    const { body } = drawKanban(office8251(projectStories));
+    const { col, fold, list } = column8251(body);
+    assert.strictEqual(fold, undefined, `${name}: no hay línea plegada`);
+    assert.strictEqual(list, undefined, `${name}: ni su lista`);
+    if (name === 'sin lectura') assert.ok(col.children.some((n) => n.textContent === nota), 'el aviso se ve como hoy');
+  }
+});
+
+test('T5 Kanban_CountsUnchanged @story-8.251 @ac-5 — el encabezado y «En el kanban, de a uno» cuentan la columna entera; las historias no viajan', () => {
+  const data = office8251({ snap: reading8251(THREE_8251), runs: [] });
+  const { body } = drawKanban(data);
+  assert.ok(column8251(body).col.children.some((n) => n.tag === 'h3' && n.textContent === 'Sin sesión · 5'), 'el encabezado cuenta las cinco');
+  data.tablas = buildTables({ kanban: data.kanban, nowMs: NOW, sinModelo: true });
+  assert.match(data.tablas.pendientes.cruce, /\b5 sin sesión\b/, 'la línea del kanban cuenta la columna entera');
+  const sent = FIELDS_8251.pick(data, '/home/nadie');
+  assert.deepStrictEqual(sent.kanban.columnas.find((c) => c.id === 'sinEmpezar').tarjetas.map((c) => c.titulo), ['Fila uno', 'Fila dos'], 'al sitio no viajan, como hoy');
 });

@@ -440,20 +440,40 @@ async function talkToSession(playwright) {
 
 // Las historias de tus proyectos (8.185) en la oficina de verdad: una sesión abierta en un repo con una historia lista en su
 // rama principal traída; la lectura de fondo de verdad corre con la página abierta, y la historia sale sola en «Pendientes»
-// (bajo «De tus proyectos», se abre y sigue abierta con la foto nueva) y en el kanban, en «Sin sesión». Deja las capturas en
+// (bajo «De tus proyectos», se abre y sigue abierta con la foto nueva) y en el kanban, en «Sin sesión», plegada en la línea
+// «Historias de tus proyectos» que se abre y sigue abierta con la foto nueva (8.251). Deja las capturas en
 // OFFICE_8185_SHOTS (una carpeta), si está.
 async function projectPending(playwright) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-8185-'));
+  // un repo con dos historias: una lista y una terminada; la rama principal traída es la que manda
+  const o = openProjectOffice('office-8185-', { '3.1-lista': ['3.1', 'ready-for-dev', 'Exportar el informe mensual'], '3.2-hecha': ['3.2', 'done', 'Ya terminada'] });
+  check(Boolean(o.url), 'E12 (8.185): la oficina abrió');
+  if (!o.url) return;
+  const { sdir, url, lock } = o;
+  const shots = process.env.OFFICE_8185_SHOTS;
+  if (shots) fs.mkdirSync(shots, { recursive: true });
+  const browser = await playwright.chromium.launch({ args: ['--disable-3d-apis'] });
+  try {
+    for (const scheme of ['light', 'dark']) {
+      await projectPendingIn(browser, scheme, sdir, url, shots);
+    }
+  } finally {
+    await browser.close();
+    try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }
+  }
+}
+
+// Una oficina de juguete con un repo de historias (`stories`: `{ nombre-del-archivo: [id, estado, título] }`), una sesión
+// abierta en ese repo y la lectura de fondo de verdad. Devuelve `{ home, sdir, url, lock }`; sin `url` si no abrió.
+function openProjectOffice(prefix, stories) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const sdir = stateDir(home);
   for (const d of ['active', 'adhoc', 'doing']) fs.mkdirSync(path.join(sdir, d), { recursive: true });
   const sessions = path.join(claudeDir(home), 'sessions');
   fs.mkdirSync(sessions, { recursive: true });
-  // un repo con dos historias: una lista y una terminada; la rama principal traída es la que manda
   const repo = path.join(home, 'SourceCode', 'acme');
   fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
   const story = (id, status, title) => `---\nstory: "${id}"\ntitle: "${title}"\nstatus: ${status}\npriority: P1\n---\n\n# Story ${id}\n`;
-  fs.writeFileSync(path.join(repo, 'specs', 'story-3.1-lista.md'), story('3.1', 'ready-for-dev', 'Exportar el informe mensual'));
-  fs.writeFileSync(path.join(repo, 'specs', 'story-3.2-hecha.md'), story('3.2', 'done', 'Ya terminada'));
+  for (const [file, [id, status, title]] of Object.entries(stories)) fs.writeFileSync(path.join(repo, 'specs', `story-${file}.md`), story(id, status, title));
   const git = (...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'user.email=ana@acme.example', '-c', 'user.name=Ana', '-c', 'commit.gpgsign=false', '-C', repo, ...a], { encoding: 'utf8' });
   git('init', '-q');
   git('add', '-A');
@@ -468,15 +488,14 @@ async function projectPending(playwright) {
   fs.writeFileSync(path.join(sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: 'arreglo de la oficina', declaredAt: new Date().toISOString() }));
   const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_LINK: '0', TYCON_OFFICE_TEST: '1', TYCON_REPOS_ROOT: path.join(home, 'SourceCode'), TYCON_OFFICE_PROJECTS_READ: path.join(ROOT, 'scripts', 'tools', 'office', 'project-stories.js') };
   const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env, encoding: 'utf8', timeout: 20000 });
-  const url = (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0];
-  check(open.status === 0 && Boolean(url), 'E12 (8.185): la oficina abrió');
-  if (!url) return;
+  const url = open.status === 0 ? (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0] : undefined;
+  if (!url) return { home, sdir };
   const lock = JSON.parse(fs.readFileSync(path.join(sdir, 'office', 'server.json'), 'utf8'));
-  const shots = process.env.OFFICE_8185_SHOTS;
-  if (shots) fs.mkdirSync(shots, { recursive: true });
-  const browser = await playwright.chromium.launch({ args: ['--disable-3d-apis'] });
-  try {
-    for (const scheme of ['light', 'dark']) {
+  return { home, sdir, url, lock };
+}
+
+// Lo de las historias de tus proyectos en un tema (claro u oscuro): «Pendientes», y el kanban con su línea plegada.
+async function projectPendingIn(browser, scheme, sdir, url, shots) {
       const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, colorScheme: scheme });
       await page.goto(url);
       // la lectura corre de fondo con la página abierta; la foto no la espera: llega con la siguiente
@@ -495,14 +514,50 @@ async function projectPending(playwright) {
       await page.waitForFunction((s) => [...document.querySelectorAll('.item, td, li')].some((n) => n.textContent.includes(`arreglo de la oficina, ${s}`)), scheme, { timeout: 8000 });
       if (scheme === 'light') check(await pend.locator('.temaTrabajos:not([hidden])').count() === 1, 'E12 (8.185): una foto nueva no la cierra');
       if (shots) await page.locator('#tablas').screenshot({ path: path.join(shots, `pendientes-${scheme}.png`) });
-      // el kanban: la historia en «Sin sesión», en el grupo «Historias»
+      // el kanban: la historia en «Sin sesión», en el grupo «Historias», plegada en su línea (8.251)
       await page.locator('input[name="vista"][value="kanban"]').check({ force: true });
+      const fold = page.locator('#board button.plegadas');
+      await fold.waitFor({ timeout: 8000 });
       const card = page.locator('#board .item', { hasText: '3.1 · Exportar el informe mensual' });
+      // los chequeos de la línea plegada corren en los dos temas: el estilo es distinto en cada uno
+      check(/Historias de tus proyectos · 1/.test(await fold.innerText()) && await fold.getAttribute('aria-expanded') === 'false' && !(await card.isVisible()), `E1 (8.251, ${scheme}): la historia va plegada en «Historias de tus proyectos · 1», cerrada`);
+      if (shots) await page.locator('#board').screenshot({ path: path.join(shots, `kanban-plegado-${scheme}.png`) });
+      await fold.click();
       await card.waitFor({ timeout: 8000 });
+      check(await fold.getAttribute('aria-expanded') === 'true' && await card.isVisible(), `E1 (8.251, ${scheme}): al tocarla se abre y dice que está abierta`);
       if (scheme === 'light') check(/sin asignar · Historias/.test(await card.innerText()), 'E12 (8.185): el kanban tiene su tarjeta en «Sin sesión», sin asignar, en «Historias»');
+      // otra foto nueva: la línea sigue abierta. Se espera el texto nuevo en una tarjeta del kanban, no en la tabla:
+      // así la espera prueba que el kanban se volvió a dibujar
+      fs.writeFileSync(path.join(sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: `kanban de la oficina, ${scheme}`, declaredAt: new Date().toISOString() }));
+      await page.waitForFunction((s) => [...document.querySelectorAll('#board .item')].some((n) => n.textContent.includes(`kanban de la oficina, ${s}`)), scheme, { timeout: 8000 });
+      check(await fold.getAttribute('aria-expanded') === 'true' && await card.isVisible(), `E1 (8.251, ${scheme}): una foto nueva no la cierra`);
+      // los números siguen contando la columna entera, con la historia plegada: el encabezado y la línea del kanban
+      const header = await page.locator('#board .col h3', { hasText: 'Sin sesión' }).innerText();
+      const cruce = await pend.locator('.escrito').innerText();
+      check(/^Sin sesión · 1$/.test(header.trim()) && /\b1 sin sesión\b/.test(cruce), `E1 (8.251, ${scheme}): el encabezado y «En el kanban, de a uno» cuentan la columna entera (${header.trim()} · ${cruce.replace(/\s+/g, ' ')})`);
       if (shots) await page.locator('#board').screenshot({ path: path.join(shots, `kanban-${scheme}.png`) });
       await page.close();
-    }
+}
+
+// Sin historias abiertas en tus proyectos (la única está terminada): la lectura corre y el kanban no tiene línea plegada.
+async function noProjectStories(playwright) {
+  const o = openProjectOffice('office-8251-', { '4.1-hecha': ['4.1', 'done', 'Ya terminada'] });
+  check(Boolean(o.url), 'E1 (8.251): la oficina sin historias abiertas abrió');
+  if (!o.url) return;
+  const { sdir, url, lock } = o;
+  const browser = await playwright.chromium.launch({ args: ['--disable-3d-apis'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
+    await page.goto(url);
+    // se espera que la lectura de fondo termine, y una foto nueva que ya la traiga, dibujada en el kanban
+    const snap = path.join(sdir, 'office', 'project-stories.json');
+    for (let i = 0; i < 120 && !fs.existsSync(snap); i += 1) await sleep(250);
+    check(fs.existsSync(snap), 'E1 (8.251): la lectura de las historias de tus proyectos corrió');
+    fs.writeFileSync(path.join(sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: 'sin historias abiertas', declaredAt: new Date().toISOString() }));
+    await page.waitForFunction(() => [...document.querySelectorAll('#board .item')].some((n) => n.textContent.includes('sin historias abiertas')), null, { timeout: 8000 });
+    await page.locator('input[name="vista"][value="kanban"]').check({ force: true });
+    const header = (await page.locator('#board .col h3', { hasText: 'Sin sesión' }).innerText()).trim();
+    check(await page.locator('#board button.plegadas').count() === 0 && await page.locator('#board .plegadas-lista').count() === 0 && header === 'Sin sesión · 0', `E1 (8.251): sin historias abiertas no hay línea plegada (${header})`);
   } finally {
     await browser.close();
     try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }
@@ -515,6 +570,7 @@ async function main() {
   // sólo las historias de tus proyectos (8.185), con su propia oficina de juguete
   if (process.argv.includes('--project-pending')) {
     await projectPending(playwright);
+    await noProjectStories(playwright);
     console.log(fails.length ? `8.185: FALLA (${fails.length})` : '8.185: OK');
     return fails.length ? 1 : 0;
   }
