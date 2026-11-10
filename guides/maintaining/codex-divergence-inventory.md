@@ -420,3 +420,19 @@ Codex y Ollama.
 
 **Lo que Codex NO cubre con esos modelos, dicho y no prometido**: los revisores que usan servidores MCP (el índice de
 código, la memoria) trabajan sin ellos. Caso: `scripts/tests/ollama-tools-probe.test.js`.
+
+## La ventana del pull request — ③ asimetría DECLARADA (2026-11-10)
+
+**Claude Code**: la persona aprueba el pull request, no el commit (`lib/save-brake.js`). El commit y el empuje de la
+rama de trabajo no preguntan. El pull request y el empuje a una rama compartida frenan sin «Preparar el pull request» o
+con el código cambiado desde su foto, y si no, abren la ventana de permiso (`permissionDecision: 'ask'`) con la
+evidencia.
+
+**Codex**: registra el mismo `on-pre-commit.js` (`adapters/codex/hooks.json`), y los frenos (salida 2) valen igual: un
+pull request sin preparar o con el código cambiado no sale. La pregunta no: Codex no tiene reglas `ask` equivalentes (ver
+«Freno de producción»), y el banco de controles no puede medir qué hace Codex con esa salida, porque sólo mira la del
+gancho. Es el mismo hueco que ya tenía el «¿guardo?» del commit.
+
+**Lo que Codex NO cubre, dicho y no prometido**: que una persona diga que sí antes de que el pull request preparado
+salga. Casos: T18 de `skills/tycon-pipeline/scripts/tests/save-brake.test.js` (el gancho registrado en Codex frena un
+pull request sin preparar). Qué hace Codex con `ask` queda por medir en una sesión de Codex.

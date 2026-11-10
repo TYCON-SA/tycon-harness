@@ -49,7 +49,7 @@ const { spawn, spawnSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 const { designacionVigente } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
-const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS } = require('./work-in-progress.js');
+const { OVERDUE_HOUR: OVERDUE, wipNow, sessionsBySid, codexNames, realState, replacedByNewer, hourVerdict, readPrs, offQueueOf, identityOf, remoteOfFolder, SAFE_SID, LOOSE_STALE_MS, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK } = require('./work-in-progress.js');
 const topics = require(path.join(__dirname, 'office', 'topics.js'));
 const boardTool = require(path.join(__dirname, 'office', 'board.js'));
 const PS = require(path.join(__dirname, 'office', 'project-stories.js'));
@@ -177,7 +177,7 @@ function sentenceOf(estado, x, row) {
     const step = (x.steps || []).find((s) => s.id === x.current);
     return step ? `Va por el paso «${step.name}».` : 'Implementa su historia.';
   }
-  if (x.kind === 'finished') return x.saveOk ? 'Terminó: ya tiene el ok para guardar.' : 'Terminó: espera el ok para guardar.';
+  if (x.kind === 'finished') return x.saveOk ? `${SAVE_OK}.` : `${SAVE_WAITS}.`;
   if (x.kind === 'entering') return 'Terminó: sus cambios están entrando a los repos.';
   if (x.kind === 'stalled') {
     return /choca con main/.test(row.state || '')
@@ -314,7 +314,7 @@ function cardsOfSignatures(signatures, agents, sidOf) {
     const quien = agent ? agent.nombre : plain(first.nombre) || plain(sid.slice(0, 8));
     const waits = Boolean(agent) && agent.estado === 'firma';
     cards.push({ titulo: `${isPermission ? '' : 'Firma: '}${plain(first.title)}${more}`, quien, at: first.at, conTarjeta: waits, sid,
-      yaAvisada: waits && (agent.espera === 'que apruebes el plan' || agent.espera === 'el ok para guardar'),
+      yaAvisada: waits && (agent.espera === 'que apruebes el plan' || agent.espera === SAVE_WAIT),
       linea: `${isPermission ? '' : 'Firmar: '}${plain(first.title)}${more} (${quien})` });
   }
   return cards;
@@ -469,7 +469,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     if (!replacesClosed && x0.storyId) storyOfAgent.set(a, String(x0.storyId));
     // al dueño le toca lo que le espera a él: aprobar un plan o dar el ok de guardar
     if (a.espera === 'que apruebes el plan') toldOwner.push(`Aprobar el plan: ${titulo || haciendo} (${row.session})`);
-    if (a.espera === 'el ok para guardar') toldOwner.push(`Dar el ok para guardar: ${titulo || haciendo} (${row.session})`);
+    if (a.espera === SAVE_WAIT) toldOwner.push(`${SAVE_ASK}: ${titulo || haciendo} (${row.session})`);
     if (estado === 'pregunta') toldOwner.push(`Contestar: ${titulo || haciendo} (${row.session})`);
     // la promesa que la corrida anotó al arrancar; sin estimado, es también la hora de fin de la que sigue trabajando.
     // La que terminó y espera entrar no la toma: su hora es la de la cola, y sin ella no hay hora (como en /wip)
@@ -626,13 +626,13 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
       const works = Boolean(f.step) || (f.sentence && f.sentence !== sessionState.NO_PIPELINE) || f.busy === true || Boolean(awaits) || Boolean(mark);
       a.estado = ASKS_OWNER.has(real.estado) ? real.estado : works ? real.estado : 'libre';
       if (a.estado === 'pregunta') toldOwner.push(`Contestar: ${a.haciendo || 'su pregunta'} (${a.nombre})`);
-      a.haciendo = works ? (awaits === 'save' ? 'Terminó: espera el ok para guardar.' : f.sentence) : f.waitingForOwner ? (f.sentence || 'Sin trabajo') : 'Sin trabajo';
+      a.haciendo = works ? (awaits === 'save' ? `${SAVE_WAITS}.` : f.sentence) : f.waitingForOwner ? (f.sentence || 'Sin trabajo') : 'Sin trabajo';
       if (real.espera) a.espera = real.espera;
       if (a.estado === 'parada') a.parada = real.parada;
       if (f.step) a.paso = f.step;
-      if (a.espera === 'que apruebes el plan' || a.espera === 'el ok para guardar') {
+      if (a.espera === 'que apruebes el plan' || a.espera === SAVE_WAIT) {
         a.titulo = h ? unnumbered(h.text) : a.haciendo;
-        toldOwner.push(`${a.espera === 'el ok para guardar' ? 'Dar el ok para guardar' : 'Aprobar el plan'}: ${a.titulo} (${a.nombre})`);
+        toldOwner.push(`${a.espera === SAVE_WAIT ? SAVE_ASK : 'Aprobar el plan'}: ${a.titulo} (${a.nombre})`);
       }
       if (h && h.storyId) storyOfAgent.set(a, String(h.storyId));
       if (a.estado !== 'libre') {
@@ -707,7 +707,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     // el de una corrida es el título de su historia: lo escribió una persona y queda entero
     const titulo = (h.kind === 'run' ? unnumbered(h.text) : plain(h.text)) || 'Un trabajo sin nombre';
     const proyecto = h.sid != null && otherProjects.has(String(h.sid)) ? 'otro' : projectOf(((h.left || [])[0] || {}).folder);
-    const espera = h.awaits === 'plan' ? 'que apruebes el plan' : h.awaits === 'save' ? 'el ok para guardar' : null;
+    const espera = h.awaits === 'plan' ? 'que apruebes el plan' : h.awaits === 'save' ? SAVE_WAIT : null;
     if (espera || h.mark) {
       // la que espera tu firma dice de qué sesión es, para encontrarla; la marcada va a «Sin sesión», y ahí el id corto de una
       // sesión cerrada no le dice nada a nadie: su nombre, si lo tuvo
@@ -715,7 +715,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
       const it = { titulo, quien, estado: espera ? 'firma' : 'espera', estimadaIso: null, pronosticoIso: null, fin: null, ...(h.mark ? { marca: h.mark } : {}), ...(espera ? { espera } : {}) };
       items.push(it);
       halfwayCards.push({ columna: espera ? 'firma' : 'sinEmpezar', card: { titulo, quien, hora: '', ...(espera ? { espera } : {}), ...(h.mark ? { marca: h.mark } : {}) }, storyId: h.storyId, sid: h.sid, proyecto });
-      if (espera) toldOwner.push(`${h.awaits === 'save' ? 'Dar el ok para guardar' : 'Aprobar el plan'}: ${titulo} (${it.quien})`);
+      if (espera) toldOwner.push(`${h.awaits === 'save' ? SAVE_ASK : 'Aprobar el plan'}: ${titulo} (${it.quien})`);
       continue;
     }
     if (h.kind === 'note') continue;

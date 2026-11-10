@@ -79,7 +79,9 @@ function carril(h, extra = {}) {
 }
 const leerCarril = (h) => JSON.parse(fs.readFileSync(path.join(estado(h), 'adhoc', `${SID}.json`), 'utf8'));
 const conMaqueta = (f) => ({ file: f, sha256: problemaDeLaMaqueta(f).sha256, approval: 'la aprobó Ana en el chat' });
-const decidir = (h, cwd, command = 'git commit -m x') => brake.decidir({ command, cwd, sid: SID, home: h });
+// por defecto, un pedido: los frenos del carril lo miran como al commit, y es lo que pregunta (desde que la persona
+// aprueba el pedido y no el commit, el commit del carril pasa sin pregunta)
+const decidir = (h, cwd, command = 'gh pr create --fill') => brake.decidir({ command, cwd, sid: SID, home: h });
 function cli(h, args, { ventana = false } = {}) {
   const env = { ...process.env, HOME: h, USERPROFILE: h, CLAUDE_CODE_SESSION_ID: SID };
   delete env.NODE_OPTIONS;
@@ -403,13 +405,18 @@ test('una pantalla en una carpeta que se llama test sigue siendo una pantalla', 
   }
 });
 
-// 🔴 Falla con: la ventana sin las dos rutas juntas.
+// 🔴 Falla con: la ventana sin las dos rutas juntas, o el commit sin pregunta que deja de mostrarlas.
 test('con las tres: la ventana muestra la maqueta y la captura juntas', (t) => {
   const { r, h, m, c } = completo(t);
-  for (const cmd of ['git commit -m x', 'git push', 'gh pr create --fill']) {
-    const d = decidir(h, r, cmd);
-    assert.ok(d.pregunta, `«${cmd}» pregunta`);
-    assert.ok(d.pregunta.includes(`Maqueta: ${m} · captura: ${c}.`), d.pregunta);
+  const d = decidir(h, r, 'gh pr create --fill');
+  assert.ok(d.pregunta, 'el pedido pregunta');
+  assert.ok(d.pregunta.includes(`Maqueta: ${m} · captura: ${c}.`), d.pregunta);
+  // el commit y el empuje de la rama de trabajo no preguntan: las rutas salen en el aviso de pantalla
+  // el empuje nombra su rama: sin destino escrito ni rama de empuje configurada no se sabe adónde va y pregunta
+  for (const cmd of ['git commit -m x', 'git push origin story/combo']) {
+    const a = decidir(h, r, cmd);
+    assert.ok(a && a.aviso && !a.pregunta && !a.texto, `«${cmd}»: ${JSON.stringify(a)}`);
+    assert.ok(a.aviso.includes(`Maqueta: ${m} · captura: ${c}.`), a.aviso);
   }
 });
 
@@ -597,8 +604,9 @@ test('otro repo no es de este carril', (t) => {
   const h = home(t);
   carril(h, { files: [escribir(a, 'src/Combo.tsx')] });
   escribir(b, 'src/Otra.tsx');
-  assert.strictEqual(decidir(h, b), null);
-  assert.ok(decidir(h, a).texto);
+  // el commit mide el repo de lo que guarda: el de otro repo pasa, el de este carril frena por su pantalla
+  assert.strictEqual(decidir(h, b, 'git commit -m x'), null);
+  assert.ok(decidir(h, a, 'git commit -m x').texto);
 });
 
 // 🔴 Falla con: un carril recién abierto, sin archivos anotados, que guarda una pantalla sin medirla.

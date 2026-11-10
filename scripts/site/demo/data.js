@@ -487,7 +487,7 @@ Un renglón por hallazgo: regla, archivo y línea, y qué cambiar. Sin hallazgos
 function oficinasDeEjemplo(ahora = Date.now()) {
   const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   const fin = (min) => ({ hora: hhmm(ahora + min * 60000), dif: '', cls: 'ontime' });
-  const PASOS = ['Arranque', 'Validar la historia', 'Armar el plan', 'Aprobar el plan', 'Implementar', 'Correr las pruebas', 'Revisores', 'Pase adversarial', 'Hallazgos', 'Probar en vivo', 'Preparar el commit'];
+  const PASOS = ['Arranque', 'Validar la historia', 'Armar el plan', 'Aprobar el plan', 'Implementar', 'Correr las pruebas', 'Revisores', 'Pase adversarial', 'Hallazgos', 'Probar en vivo', 'Preparar el pull request'];
   const pasos = (hechos) => PASOS.map((name, i) => ({ name, done: i < hechos }));
   const sesion = (nombre, estado, extra = {}) => ({ nombre, estado, ...extra });
   const foto = (agents) => ({

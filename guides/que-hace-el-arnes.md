@@ -212,9 +212,11 @@ al terminar, ves que quedó con sólo mirar el resultado y sus pruebas, sin una 
 Sin sesión coordinadora, porque trabajás solo o tu equipo no la usa, lo de la sesión coordinadora lo aprobás vos. El plan
 nunca se aprueba solo.
 
-**3. Guardar.** Es un click en el cuadro de opciones o un «Aprobado» escrito, en los dos caminos. Antes de cada commit,
-push y pull request el agente pregunta «¿guardo?». Si tu pestaña pide permisos, el sí va en la ventana de permiso. No
-hay firma ni comando.
+**3. Abrir el pull request.** Es un click en el cuadro de opciones o un «Aprobado» escrito, en los dos caminos. El
+agente commitea y empuja su rama solo; la persona aprueba el pull request, y cada empuje a una rama compartida, con la
+evidencia de la ejecución adelante (las pruebas, los revisores, el pase y los hallazgos). Si tu pestaña pide permisos, el
+sí va en la ventana de permiso. No hay firma ni comando. El pull request no sale sin preparar, ni con código que cambió
+después de prepararlo.
 
 **4. La revisión.** En una historia corren los revisores que elige un script según lo que toca el cambio, y el pase
 adversarial. El pase también corre en las partes chicas de una historia grande. No corre en una historia chica de
@@ -384,7 +386,7 @@ Pase adversarial       → un segundo grupo intenta romper lo que el primero apr
                          la prueba con la que lo rompió entra a la suite como regresión
 ⏸ Hallazgos            → reporte consolidado; un hallazgo crítico lo decide una persona
 Probar en vivo         → portón de "listo" de verdad: ¿esto ANDA, o sólo compila?
-Preparar el commit     → no lo ejecuta
+Preparar el pull request → toma la foto; commit y empuje sin pregunta, el pull request con tu sí
 Cierre en ADO          → cierra el work item (aparte, después del merge)
 ```
 

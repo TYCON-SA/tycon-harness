@@ -443,7 +443,7 @@ import json,sys; p=json.loads(sys.argv[1])['pasos']
 assert p['fuente']=='tabla', p
 n=p['nombres']
 assert len(n)==10, n
-assert n[0]=='Arranque' and n[4]=='Implementar' and n[5]=='Correr las pruebas' and n[6]=='Implementar + pruebas' and n[7]=='Revisores' and n[9]=='Preparar el commit', n
+assert n[0]=='Arranque' and n[4]=='Implementar' and n[5]=='Correr las pruebas' and n[6]=='Implementar + pruebas' and n[7]=='Revisores' and n[9]=='Preparar el pull request', n
 assert 'TITULO_VIEJO' not in json.dumps(n), n
 " "${J}" && ok "T13 (7.23-T5) los pasos se llaman como en lib/steps.js, no como el título de su archivo" || mal "T13 (7.23-T5) los nombres no salen de lib/steps.js: ${J:0:300}"
 R="$(node -e "const p=require('${RAIZ}/scripts/nightly/dashboard/runs.js').nombresDePasos('${T}/nada/steps.js');console.log(p.fuente+' · '+p.nombres.join(',')+' · '+p.motivo)")"

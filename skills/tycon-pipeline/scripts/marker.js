@@ -2222,12 +2222,32 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  // La foto del código al preparar el commit: el ok de guardar por delegación exige que nada cambie después.
-  if (ids.includes('prepare-commit')) {
+  // La foto del pedido: lo que sale hacia el equipo (el pedido, el empuje a una rama compartida) tiene que ser lo de esta
+  // foto (lib/save-brake.js), y el ok de guardar por delegación exige lo mismo. Antes de tomarla corren los controles del
+  // commit en sólo lectura: un pre-commit que regeneraría un archivo y lo sumaría al commit la vencería después, sin que
+  // nadie tocara nada. La foto anterior sale primero: un re-cierre que falla no deja la vieja para comparar. En un
+  // marcador del esquema viejo el paso se cierra con su número (el 8): también toma la foto.
+  if (STEPS_LIB.closesStep(marker, ids, 'prepare-commit')) {
+    delete marker.prepareCommitHuellas;
+    const so = require('./lib/save-ok.js');
+    let foto;
     try {
-      const so = require('./lib/save-ok.js');
-      marker.prepareCommitHuellas = so.huellas(so.reposDeLaCorrida({ marker, hermanos: hermanosDeLaCorrida(marker) }));
-    } catch (e) { console.error(`⚠️  complete-step prepare-commit: no pude tomar la foto del código para el ok de guardar (${e.message}).`); }
+      const repos = so.reposDeLaCorrida({ marker, hermanos: hermanosDeLaCorrida(marker) });
+      foto = repos.length ? so.fotoDelPedido({ repos }) : { codigo: 2, motivo: 'no pude ubicar los repos de la corrida para la foto del pull request (ninguno)' };
+    } catch (e) {
+      foto = { codigo: 2, motivo: `no pude ubicar los repos de la corrida para la foto del pull request (${e.message})` };
+    }
+    if (foto.codigo) {
+      // lo único que queda escrito es que ya no hay foto: el resto del cierre no pasó. Sin foto el pull request no sale,
+      // así que el paso tampoco cierra
+      const enDisco = readMarker();
+      if (enDisco && enDisco.prepareCommitHuellas) { delete enDisco.prepareCommitHuellas; writeMarker(enDisco); }
+      else if (!enDisco) console.error('⚠️  complete-step prepare-commit: no pude leer el marcador para sacar la foto anterior.');
+      appendLog('gates.log', { name: 'prepare-commit-controls', status: 'blocked', story: marker.storyId || null, motivo: String(foto.motivo).slice(0, 300) });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${foto.motivo}`);
+      process.exit(2);
+    }
+    marker.prepareCommitHuellas = foto.huellas;
   }
 
   // El marcador viejo guarda sus pasos principales como números; el nuevo, por nombre.

@@ -376,7 +376,9 @@ function carrilFirmado(h, a) {
   fs.appendFileSync(path.join(estado, 'gates.log'), `${JSON.stringify({ ts, name: 'adhoc-lane-signed', status: 'ok', destino: SID })}\n`);
   return path.join(estado, 'adhoc', `${SID}.json`);
 }
-const guardar = (d, h) => brake().decidir({ command: 'git commit -m x', cwd: d, sid: SID, home: h });
+// un pedido: los frenos del carril lo miran como al commit, y es lo que pregunta (desde que la persona aprueba el pedido
+// y no el commit, el commit del carril pasa sin pregunta)
+const guardar = (d, h) => brake().decidir({ command: 'gh pr create --fill', cwd: d, sid: SID, home: h });
 
 // 🔴 Falla con: el riesgo que frena antes que los datos, o el click de los datos que también saltea el riesgo.
 test('T16 SaveBrake_DatosAntesQueElRiesgo_YElClickNoSalteaElRiesgo @story-8.196 @ac-13 @ac-14', (t) => {

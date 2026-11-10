@@ -39,7 +39,7 @@ const TABLA = [
   [8, 'adversarial-pass', 'Pase adversarial', 'step-08-adversarial-pass.md'],
   [9, 'findings', 'Hallazgos', 'step-09-findings.md'],
   [10, 'live-check', 'Probar en vivo', 'step-10-live-check.md'],
-  [11, 'prepare-commit', 'Preparar el commit', 'step-11-prepare-commit.md'],
+  [11, 'prepare-commit', 'Preparar el pull request', 'step-11-prepare-commit.md'],
 ];
 const CIERRE = ['close-work-item', 'Cerrar la historia', 'close-work-item.md'];
 // Los quince archivos de paso del esquema viejo: ninguna ruta nueva puede ser igual a una de éstas.

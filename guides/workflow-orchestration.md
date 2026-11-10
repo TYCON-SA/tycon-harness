@@ -156,9 +156,12 @@ Responder con "probablemente...", "creo que...", o referenciar archivos/métodos
 
 ### Commit/push sin consentimiento
 
-Ejecutar `git commit` o `git push` sin autorización explícita del usuario. Aplica incluso cuando todo está verde y el trabajo parece completo.
+Abrir el pull request o empujar a una rama compartida sin autorización explícita del usuario, o commitear y empujar
+fuera de una ejecución sin ella. Aplica incluso cuando todo está verde y el trabajo parece completo.
 
-**Correcto:** preparar el commit (staging, mensaje), mostrarlo al usuario, esperar aprobación.
+**Correcto:** en una ejecución, el agente commitea y empuja su rama de trabajo; la persona aprueba el pull request en la
+ventana de permiso, con la evidencia adelante. Fuera de una ejecución, preparar el commit (staging, mensaje), mostrarlo al
+usuario, esperar aprobación.
 
 ---
 
@@ -384,7 +387,7 @@ Lifecycle:
 - **El paso «Arranque» (preflight, PIPE-C4)** setea el marker.
 - **Cada `complete-step <paso>`** actualiza `stepsCompleted` y `stepsPending`.
 - **Cada Edit/Write** appende `file_path` a `filesTouched` (via hook `on-edit.js`).
-- **El paso «Preparar el commit»** o el cierre en ADO limpian el marker.
+- **El paso «Preparar el pull request»** o el cierre en ADO limpian el marker.
 
 Utility: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js <cmd> [arg]`.
 
@@ -449,10 +452,10 @@ Lifecycle del `status:` orquestado por el pipeline:
 | Transición | Paso | Cómo |
 |---|---|---|
 | `ready-for-dev` → `in-progress` | «Arranque», PIPE-C5 | `marker.js update-story-status <path> "in-progress"` |
-| `in-progress` → `review` | «Preparar el commit» | `marker.js update-story-status <path> "review"` |
+| `in-progress` → `review` | «Preparar el pull request» | `marker.js update-story-status <path> "review"` |
 | `review` → `done` | el cierre en ADO | `marker.js update-story-status <path> "done"` |
 
-Si una sesión muere sin completar «Preparar el commit» ni el cierre en ADO → próxima sesión que abra `tycon-pipeline` lee `status: in-progress` y trata como "pipeline abandonado": ofrece (a) retomar / (b) reset a `ready-for-dev`.
+Si una sesión muere sin completar «Preparar el pull request» ni el cierre en ADO → próxima sesión que abra `tycon-pipeline` lee `status: in-progress` y trata como "pipeline abandonado": ofrece (a) retomar / (b) reset a `ready-for-dev`.
 
 ### Regla 9.6 — PreToolUse hook `on-write-collision.js` como defense-in-depth (2026-05-20)
 

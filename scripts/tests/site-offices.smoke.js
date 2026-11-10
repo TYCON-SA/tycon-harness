@@ -32,7 +32,7 @@ async function shot(page, name) {
   await page.screenshot({ path: path.join(shotsAt, `${name}.png`), fullPage: true });
 }
 
-const PASOS = ['Arranque', 'Validar la historia', 'Armar el plan', 'Aprobar el plan', 'Implementar', 'Correr las pruebas', 'Revisores', 'Pase adversarial', 'Hallazgos', 'Probar en vivo', 'Preparar el commit'];
+const PASOS = ['Arranque', 'Validar la historia', 'Armar el plan', 'Aprobar el plan', 'Implementar', 'Correr las pruebas', 'Revisores', 'Pase adversarial', 'Hallazgos', 'Probar en vivo', 'Preparar el pull request'];
 const pasos = (n) => PASOS.map((name, i) => ({ name, done: i < n }));
 const sesion = (nombre, estado, extra = {}) => ({ nombre, estado, titulo: `Trabajo de ${nombre}`, haciendo: 'Va por sus pasos', fin: { hora: '18:30', dif: '', cls: 'ontime' }, avance: 45, pasos: pasos(5), ...extra });
 const foto = (agents) => ({ agents, meta: { actualizado: '16:40', teToca: [] }, rows: [], free: [], unreadable: [] });

@@ -1111,11 +1111,13 @@ function main() {
 
   const command = event.tool_input?.command || '';
 
-  // Guardar se autoriza en la ventana de permiso (lib/save-brake.js): en una corrida, antes del commit, el push y los
-  // pedidos, la persona dice que sí. Va antes de mirar si es un commit, porque pregunta también por push y pedidos. La
-  // pregunta sale por la salida estándar y el gancho sigue: si otro control frena después, frena. En una pestaña que no
-  // pide permisos la ventana se aprobaría sola: guarda sin preguntar y lo dice. Si el freno no carga o falla, un comando
-  // que parece guardar frena dentro de una corrida (o sin poder saberlo) y fuera pasa con un aviso.
+  // La persona aprueba el pedido, no el commit (lib/save-brake.js): en una corrida, el commit y el empuje de la rama de
+  // trabajo no preguntan; el pedido y el empuje a una rama compartida frenan si no se preparó («Preparar el pedido») o si el código
+  // cambió desde su foto, y si no, preguntan en la ventana de permiso con la evidencia. Va antes de mirar si es un
+  // commit, porque juzga también push y pedidos. La pregunta sale por la salida estándar y el gancho sigue: si otro
+  // control frena después, frena. Un aviso sale por la salida de error. En una pestaña que no pide permisos la ventana
+  // se aprobaría sola: guarda sin preguntar y lo dice, y los frenos frenan igual. Si el freno no carga o falla, un
+  // comando que parece guardar frena dentro de una corrida (o sin poder saberlo) y fuera pasa con un aviso.
   {
     let sid = null;
     let freno;
@@ -1137,6 +1139,7 @@ function main() {
       process.stderr.write(freno.texto + '\n');
       process.exit(2);
     }
+    if (freno && freno.aviso) process.stderr.write(`⚠️  ${freno.aviso}\n`);
     if (freno && freno.pregunta) {
       // los modos de la herramienta en los que la ventana le llega a una persona; sin el dato, se pregunta
       const modo = event.permission_mode == null ? null : String(event.permission_mode);

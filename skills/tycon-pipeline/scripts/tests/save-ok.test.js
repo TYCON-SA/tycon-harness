@@ -351,7 +351,7 @@ test('PrepareCommit_GuardarEnLaVentana (T15) @story-8.143 @ac-9', () => {
   const texto = fs.readFileSync(path.join(__dirname, '..', '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');
   assert.doesNotMatch(texto, /save-check|approve-save/, 'sin la constancia del ok');
   assert.match(texto, /ventana de permiso/i);
-  assert.match(texto, /cada pedido/i);
+  assert.match(texto, /cada pull request/i);
   assert.match(texto, /otra sesión no saltean la ventana/i);
   assert.match(texto, /marker\.js clear[^\n]*después del último push/i);
 });
@@ -749,4 +749,129 @@ test('ControlesDelCommit_ConAlgoPreparado_MiraLoPreparado', (t) => {
   const n = SO.controlesDelCommit({ repos: [a] });
   assert.strictEqual(n.codigo, 2);
   assert.match(n.motivo, /lo preparado/);
+});
+
+// ── la foto del pedido y su evidencia ───────────────────────────────────────────────────────────────────────────────
+
+// 🔴 Falla con: la foto del pull request que mira sólo lo preparado (la memoria, que el cierre prepara antes) y deja
+// cerrar el paso con código que el commit va a frenar.
+test('8.242-FotoDelPedido_ConSoloLaMemoriaPreparada_MiraTodoElDisco @story-8.242 @ac-20', (t) => {
+  const a = repo(t);
+  gancho(t, a, 'if git diff --cached -U0 | grep -q PROHIBIDO; then echo "datos estables: PROHIBIDO en el código" >&2; exit 1; fi');
+  escribir(a, 'a.js', '// PROHIBIDO\n');
+  escribir(a, '.engram/manifest.json', '{"chunks":[]}\n');
+  sh(a, 'add', '.engram/manifest.json');
+  const f = SO.fotoDelPedido({ repos: [a] });
+  assert.strictEqual(f.codigo, 2, JSON.stringify(f));
+  assert.match(f.motivo, /PROHIBIDO/);
+  // la firma de guardar sí mira sólo lo preparado (un cambio que entra en dos commits)
+  assert.strictEqual(SO.controlesDelCommit({ repos: [a] }).codigo, 0);
+});
+
+// 🔴 Falla con: una foto que no dice en qué commit estaba la rama, y un empuje que no se puede atar a lo preparado.
+test('8.242-Huella_DiceElCommitDeLaRama_YElArbolDeUnCommit @story-8.242 @ac-2', (t) => {
+  const a = repo(t);
+  escribir(a, 'app.js', 'x\n');
+  const h = SO.huella(a);
+  assert.strictEqual(h.cabeza, sh(a, 'rev-parse', 'HEAD'));
+  // el árbol de un commit, sin el papeleo, como la huella: commiteado igual da el mismo
+  sh(a, 'add', '-A');
+  sh(a, 'commit', '-q', '-m', 'app');
+  const c = SO.arbolDelCommit(a, 'HEAD');
+  assert.strictEqual(c.arbol, h.arbol);
+  assert.strictEqual(c.commit, sh(a, 'rev-parse', 'HEAD'));
+  assert.ok(SO.arbolDelCommit(a, 'no-existe').error, 'una rama que no existe no se mide');
+});
+
+// 🔴 Falla con: cambiar el estado de la historia en el sprint, la evidencia o la memoria después de preparar el pedido
+// vence la foto, y el pedido frena por papeleo que no es código.
+/**
+ * Un git que falla con 128 («no pude», no «no está») cuando sus argumentos contienen `patron`; para el resto, el de
+ * verdad. Vale hasta el final de la prueba.
+ */
+function gitQueFalla(t, patron) {
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-falla-'));
+  fs.writeFileSync(path.join(dir, 'git'), `#!/bin/sh\ncase " $* " in *"${patron}"*) echo "fatal: falla de prueba" >&2; exit 128;; esac\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  const antes = process.env.PATH;
+  process.env.PATH = `${dir}${path.delimiter}${antes}`;
+  t.after(() => { process.env.PATH = antes; fs.rmSync(dir, { recursive: true, force: true }); });
+}
+
+// 🔴 Falla con: una falla de git (no «no existe») leída como falta de dato: la foto sale sin `cabeza` y lo que se empuja
+// no se compara con ella, o los controles del commit miran el árbol vacío en lugar de frenar.
+test('8.242-Rev_FallaDeGit_NoEsFaltaDeDato @story-8.242 @ac-2 @ac-20', { skip: process.platform === 'win32' }, (t) => {
+  const a = repo(t);
+  escribir(a, 'app.js', 'x\n');
+  // lo que el repo no tiene es falta; un repo que git no puede leer no lo es
+  assert.strictEqual(SO.arbolDelCommit(a, 'no-existe').falta, true);
+  const fuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-fuera-')));
+  t.after(() => fs.rmSync(fuera, { recursive: true, force: true }));
+  const r = SO.arbolDelCommit(fuera, 'HEAD');
+  assert.ok(r.error, 'fuera de un repo no se mide');
+  assert.ok(!r.falta, 'fuera de un repo no es «no existe»');
+  gitQueFalla(t, '--verify --quiet HEAD ');
+  const h = SO.huella(a);
+  assert.ok(h.error, `si no pude leer HEAD, la foto no sale: ${JSON.stringify(h)}`);
+  const c = SO.controlesDelCommit({ repos: [a], para: 'pedido' });
+  assert.strictEqual(c.codigo, 2, `los controles no miran el árbol vacío: ${JSON.stringify(c)}`);
+});
+
+// 🔴 Falla con: la ventana del pull request que muestra «0» de algo que no se midió: un hallazgo con una severidad que
+// no es CRITICAL ni WARNING desaparece, y un pase sin su número dice «0 confirmados».
+test('8.242-Rev_Evidencia_NoInventaCeros @story-8.242 @ac-3', () => {
+  const e = SO.evidenciaDelPedido({ marker: { adversarial: true, adversarialPasses: [{ tipo: '5b' }] }, findings: [{ severity: 'HIGH' }, { severity: 'CRITICAL' }, {}] });
+  assert.match(e, /Pase: cerrado, sin el número de confirmados/, e);
+  assert.match(e, /Hallazgos: 1 crítico, 0 avisos, 2 sin clasificar/, e);
+  const limpio = SO.evidenciaDelPedido({ marker: { adversarial: true, adversarialPasses: [{ tipo: '5b', confirmados: 0 }] }, findings: [] });
+  assert.match(limpio, /Pase: cerrado con 0 confirmados · Hallazgos: 0 críticos, 0 avisos$/, limpio);
+});
+
+test('8.242-Huella_ElPapeleoNoLaVence (T27) @story-8.242 @ac-19', (t) => {
+  const a = repo(t, { 'LEEME.md': 'hola\n', 'specs/sprint-status.yaml': 'x: ready-for-dev\n', 'app.js': '1\n' });
+  const antes = SO.huella(a).arbol;
+  escribir(a, 'specs/sprint-status.yaml', 'x: review\n');
+  escribir(a, '.advisors/dod-runtime/9.99-runtime-matrix.md', '# matriz\n');
+  escribir(a, '.engram/chunks/abc.jsonl.gz', 'trozo');
+  assert.strictEqual(SO.huella(a).arbol, antes, 'el estado del sprint, la evidencia y la memoria son papeleo');
+  // un .yaml que no es el estado del sprint sigue siendo código o configuración
+  escribir(a, 'specs/pipeline.yaml', 'trigger: main\n');
+  assert.notStrictEqual(SO.huella(a).arbol, antes, 'otro .yaml de specs/ no es papeleo');
+  fs.rmSync(path.join(a, 'specs', 'pipeline.yaml'));
+  escribir(a, 'sprint-status.yaml', 'x\n');
+  assert.notStrictEqual(SO.huella(a).arbol, antes, 'el estado del sprint fuera de specs/ no es papeleo');
+  fs.rmSync(path.join(a, 'sprint-status.yaml'));
+  escribir(a, 'app.js', '2\n');
+  assert.notStrictEqual(SO.huella(a).arbol, antes, 'el código vence la foto');
+});
+
+// 🔴 Falla con: una evidencia que inventa un número donde la corrida no midió nada, que no separa los eximidos, o que
+// lee los hallazgos sólo como lista.
+test('EvidenciaDelPedido_PartesEnOrden_YNoMedido @story-8.242 @ac-3', () => {
+  const vacio = SO.evidenciaDelPedido({ marker: { storyId: '9.99' }, findings: null });
+  for (const parte of ['Pruebas', 'Revisores', 'Pase', 'Hallazgos']) assert.match(vacio, new RegExp(`${parte}: no medido`), vacio);
+  assert.doesNotMatch(vacio, /\d/, `sin números inventados: ${vacio}`);
+  const m = corridaLimpia([os.tmpdir()], {
+    iterations: { 1: { ts: ANTES }, 2: { ts: DESPUES } },
+    stepTimings: { reviewers: { startedAt: ANTES, completedAt: DESPUES } },
+  });
+  const findings = [
+    { rule_id: 'A-C1', severity: 'CRITICAL', disposition: 'waived' },
+    { rule_id: 'A-W1', severity: 'WARNING', disposition: 'open' },
+    { rule_id: 'A-W2', severity: 'WARNING', disposition: 'fixed' },
+  ];
+  const e = SO.evidenciaDelPedido({ marker: m, findings });
+  const orden = ['Pruebas', 'Revisores', 'Pase', 'Hallazgos'].map((p) => e.indexOf(`${p}:`));
+  assert.deepStrictEqual([...orden].sort((x, y) => x - y), orden, `en orden: ${e}`);
+  assert.match(e, /Pruebas: en verde \(test-gate\)/);
+  assert.match(e, /Revisores: 2 vueltas/);
+  assert.match(e, /Pase: cerrado con 2 confirmados/);
+  assert.match(e, /Hallazgos: 1 crítico, 2 avisos; eximidos: 1/);
+  // el archivo de hallazgos también se escribe como objeto
+  assert.strictEqual(SO.evidenciaDelPedido({ marker: m, findings: { findings } }), e);
+  // el pase salteado y las pruebas sin verde dicen lo que hay
+  const s = SO.evidenciaDelPedido({ marker: { ...m, adversarial: null, adversarialPasses: [], adversarialSkip: { motivo: 'LOW', at: DESPUES }, checks: { tests: 'red' } }, findings: [] });
+  assert.match(s, /Pruebas: red/);
+  assert.match(s, /Pase: salteado por la regla/);
+  assert.match(s, /Hallazgos: 0 críticos, 0 avisos/);
 });

@@ -21,7 +21,7 @@
         },
         {
           "id": "camino-corto-tope-pruebas-y-guias-no-suman",
-          "type": "must-emit",
+          "type": "must-stay-quiet",
           "_por_que": "dos archivos de implementación con cupo 2, más pruebas y guías: pregunta como siempre, sin el tope.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
@@ -29,11 +29,11 @@
             "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":2,\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-tope.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-tope\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
           ],
           "stdin": { "session_id": "bench-tope", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
-          "expect": { "stdout_re": ["\"permissionDecision\":\"ask\""], "stdout_not_re": ["PASÓ EL TOPE"] }
+          "expect": { "stdout_not_re": ["permissionDecision", "PASÓ EL TOPE"], "stderr_not_re": ["PASÓ EL TOPE"] }
         },
         {
           "id": "camino-corto-tope-lo-traido-de-main-no-suma",
-          "type": "must-emit",
+          "type": "must-stay-quiet",
           "_por_que": "la rama trajo main con tres archivos ajenos: suma sólo el propio.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git checkout -q -b arreglo && mkdir -p src && echo x > src/propio.js && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm propio",
@@ -41,7 +41,7 @@
             "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":2,\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-tope.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-tope\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
           ],
           "stdin": { "session_id": "bench-tope", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
-          "expect": { "stdout_re": ["\"permissionDecision\":\"ask\""], "stdout_not_re": ["PASÓ EL TOPE"] }
+          "expect": { "stdout_not_re": ["permissionDecision", "PASÓ EL TOPE"], "stderr_not_re": ["PASÓ EL TOPE"] }
         }
       ]
     },

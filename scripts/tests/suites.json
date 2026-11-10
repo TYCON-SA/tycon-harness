@@ -1904,6 +1904,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/pr-signature-texts.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-hours.test.js",
       "requiere": []
     },

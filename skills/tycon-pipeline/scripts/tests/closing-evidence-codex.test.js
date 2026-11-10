@@ -150,13 +150,13 @@ test('NarratedStep_WithoutRecord_IsNotDone @story-8.97 @ac-7', () => {
     const r = stop(e, event);
     const msg = (r.out && (r.out.systemMessage || r.out.reason)) || '';
     assert.match(msg, /Hallazgos/, `${tool}: la línea no nombra «Hallazgos»: ${JSON.stringify(r.out)}`);
-    assert.match(msg, /Preparar el commit/, `${tool}: la línea no nombra «Preparar el commit»`);
+    assert.match(msg, /Preparar el pull request/, `${tool}: la línea no nombra «Preparar el pull request»`);
     assert.ok(!r.out || r.out.decision !== 'block', `${tool}: la línea es un aviso, no frena el cierre`);
   }
   // un evento sin mensaje (Codex sin texto): la línea sale igual
   const e1 = mkEnv();
   const r1 = stop(e1, { turn_id: 'turn-1', transcript_path: null });
-  assert.match((r1.out && r1.out.systemMessage) || '', /Preparar el commit/, 'sin mensaje en el evento la línea tenía que salir');
+  assert.match((r1.out && r1.out.systemMessage) || '', /Preparar el pull request/, 'sin mensaje en el evento la línea tenía que salir');
 
   // sin afirmación de cierre, en una pausa normal: no sale
   const e2 = mkEnv();
@@ -165,9 +165,9 @@ test('NarratedStep_WithoutRecord_IsNotDone @story-8.97 @ac-7', () => {
   for (const frase of ['La story quedó terminada.', 'Story cerrada, ya commiteé.']) {
     const ef = mkEnv();
     const rf = stop(ef, codexEvent(frase));
-    assert.match((rf.out && rf.out.systemMessage) || '', /Preparar el commit/, `«${frase}» no disparó la línea`);
+    assert.match((rf.out && rf.out.systemMessage) || '', /Preparar el pull request/, `«${frase}» no disparó la línea`);
   }
-  assert.ok(!r2.out || !/Preparar el commit/.test(r2.out.systemMessage || ''), 'la línea salió en una pausa sin afirmación de cierre');
+  assert.ok(!r2.out || !/Preparar el pull request/.test(r2.out.systemMessage || ''), 'la línea salió en una pausa sin afirmación de cierre');
 
   // el freno real: «Preparar el commit» se niega con un paso anterior abierto
   const e3 = mkEnv();

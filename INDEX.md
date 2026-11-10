@@ -121,7 +121,9 @@ aplica. Setup (opcional, por dev): `guides/integrations/codegraph-mcp.md`.
 - Review: `bmad-code-review`, `security-review`, advisors `tycon-plugin-*`.
 - Merge a main: `/tycon-merge-to-main`. Drift de stories: `/check-story-drift`.
 - Engram (si la integración está prendida): siempre con `project:` (nombres canónicos en `guides/integrations/engram-workflow.md`).
-- **Commits: el agente NUNCA commitea ni pushea sin autorización explícita.**
+- **Commits: en una ejecución, el agente commitea y empuja su rama de trabajo solo; la persona aprueba el pull request y cada
+  empuje a una rama compartida, en la ventana de permiso. Fuera de una ejecución, NUNCA commitea ni empuja sin
+  autorización explícita.**
 
 ---
 

@@ -386,7 +386,7 @@ test('T16 (7.23) Board_ReadsBothSchemes @story-7.23 @ac-16 — el marker nuevo y
   assert.strictEqual(t.split('\n')[1], 'Arranque: hecho, con aviso: no se pudo abrir el registro de horas');
   assert.ok(t.includes('| 1. Arranque | hecho, con aviso |'), t);
   assert.ok(t.includes('| 7. Revisores (vuelta 2) | falta otra vuelta |'), t);
-  assert.ok(t.includes('| 11. Preparar el commit | pendiente | — |'), t);
+  assert.ok(t.includes('| 11. Preparar el pull request | pendiente | — |'), t);
   assert.ok(!t.includes(OLD_RUN_TEXT), 'el marker nuevo no lleva la nota del viejo');
   // Hallazgos: espera sólo cuando de verdad preguntó (waitStartedAt), aun sin modo autónomo
   const hall = (extra) => readRun(nuevo({ autonomous: false, stepsCompleted: hasta('adversarial-pass'), stepsPending: NOMBRES.slice(8), ...extra }), NOW);

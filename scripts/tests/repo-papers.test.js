@@ -882,7 +882,8 @@ const GUIDED_INSTALL_KEYWORDS = [
     both: ['harness.js uninstall'], en: ['removes only what the mechanism recorded', 'It leaves'], es: ['quita sólo lo que el mecanismo registró', 'Deja'],
   }),
   keywordPoint('AC 6 · primer uso', IN_FIRST_USE, {
-    both: ['harness.js doctor', 'implementemos la story'], en: ['never commits'], es: ['nunca commitea'],
+    // la persona aprueba el pull request, no el commit: lo que el agente nunca hace sin permiso es abrirlo
+    both: ['harness.js doctor', 'implementemos la story'], en: ['never opens a pull request'], es: ['nunca abre un pull request'],
   }),
   keywordPoint('AC 6 · toda la salida está sólo en castellano (portada en inglés)', IN_WHAT_IT_IS, { en: ['are in Spanish only today'] }),
   // qué pone un repo bajo el arnés

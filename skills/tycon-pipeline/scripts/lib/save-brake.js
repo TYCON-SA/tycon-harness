@@ -1,11 +1,13 @@
 'use strict';
 /**
  * save-brake.js — el freno de guardar: dentro de una corrida o de un camino rápido (el carril firmado de `marker.js
- * adhoc set`), antes de un commit, un push o un pedido, la sesión le
- * pregunta a la persona en la ventana de permiso, y con el sí guarda. Lo llama `on-pre-commit.js` en cada comando de
- * consola; en una pestaña que no pide permisos (la ventana se aprobaría sola) guarda sin preguntar y lo dice en pantalla.
- * No hay firma ni constancia del ok: lo delicado (frenos, firmas, controles, producción) lo cubre la firma de control del
- * pedido, que no cambia.
+ * adhoc set`), la persona aprueba lo que sale hacia el equipo, no cada commit. El commit y el empuje de la rama de
+ * trabajo son del agente: no preguntan. El pedido (crearlo o mergearlo) y el empuje a una rama compartida (`main`,
+ * `master`, `dev`, `release/*`) preguntan en la ventana de permiso, y en una corrida, además, frenan si el paso
+ * «Preparar el pull request» no cerró o si el código ya no es el de su foto, y la pregunta trae la evidencia. Lo llama
+ * `on-pre-commit.js` en cada comando de consola; en una pestaña que no pide permisos (la ventana se aprobaría sola) guarda
+ * sin preguntar y lo dice en pantalla, y los frenos frenan igual. No hay firma ni constancia del ok: la constancia es el
+ * pedido, y lo delicado (frenos, firmas, controles, producción) lo cubre la firma de control del pedido, que no cambia.
  *
  *   · comandosQueGuardan  los `git commit`, `git push` y los pedidos que se crean o se mergean (los comandos con `pr`
  *                         que declaran los conectores de plataforma en `rawCommands`) de verdad del comando, con su repo;
@@ -19,8 +21,9 @@
  *                         del shell (`~/.claude/shell-snapshots`) se leen como lo que corren. Los comentarios y los
  *                         heredocs con comillas no corren: se sacan antes de leer. Las redirecciones de la salida no
  *                         son una duda. Durante una corrida, una duda pregunta;
- *   · decidir             null (pasa), `{ pregunta }` (el texto de la ventana) o `{ texto }` (no guarda: un camino rápido al
- *                         que le faltan los revisores y el pase, o la maqueta y la captura de su pantalla). Sin una
+ *   · decidir             null (pasa), `{ aviso }` (pasa y lo dice en pantalla), `{ pregunta }` (el texto de la ventana)
+ *                         o `{ texto }` (no guarda: un pedido sin preparar o con el código cambiado, o un camino rápido
+ *                         al que le faltan los revisores y el pase, o la maqueta y la captura de su pantalla). Sin una
  *                         corrida ni un camino rápido abierto, o sin un comando que guarda ni una duda, no lee nada.
  *
  * Ninguna frase, opción ni variable saltea la ventana. El texto nombra la forma (`git push`, `… pr create`…) y el repo,
@@ -759,18 +762,28 @@ function pedidoDe(ps, cmd, pedidos) {
 
 // la rama actual dicha por otro comando (`$(git branch --show-current)`, el `git_current_branch` de oh-my-zsh)
 const RAMA_ACTUAL = /^(?:\$\(|`)\s*(?:git_current_branch|git branch --show-current|git rev-parse --abbrev-ref HEAD|git symbolic-ref (?:-q )?--short(?: -q)? HEAD)\s*(?:\)|`)$/;
-// el destino de cada refspec de un push: la rama, sin `+` ni `refs/heads/` (`@` y la rama actual son `HEAD`)
+// el destino de cada refspec de un push: la rama, sin `+` ni `refs/heads/` ni `heads/`, que git completa igual
+// (`@` y la rama actual son `HEAD`)
 const ramaDe = (refspec) => {
   const destino = refspec.includes(':') ? refspec.slice(refspec.indexOf(':') + 1) : refspec;
-  const rama = destino.replace(/^\+/, '').replace(/^refs\/heads\//, '') || null;
+  const rama = destino.replace(/^\+/, '').replace(/^refs\/heads\//, '').replace(/^heads\//, '') || null;
   return rama === '@' || RAMA_ACTUAL.test(rama || '') ? 'HEAD' : rama;
 };
+// lo que empuja un refspec (sin `+`): la izquierda de `:`, o el refspec entero si no tiene; un borrado no empuja nada
+const origenDe = (refspec) => {
+  const o = refspec.includes(':') ? refspec.slice(0, refspec.indexOf(':')) : refspec;
+  if (!o) return null;
+  return o === '@' || RAMA_ACTUAL.test(o) ? 'HEAD' : o;
+};
+// una opción larga escrita entera o acortada sin ambigüedad (git pide al menos dos letras después de `--`)
+const acorta = (w, opcion) => w.startsWith('--') && !w.includes('=') && w.length >= 4 && opcion.startsWith(w);
+const VALOR_SUBMODULOS = /^(check|on-demand|only|no)$/;
 
 const OPACO = 'un comando que no se puede leer';
 
 /**
- * Los comandos que guardan: `[{ tipo: 'commit'|'push'|'pr'|'opaco', forma, dir, remoto, rama, opaco, incierto,
- * escritos }]`. `forma` es la forma (`git push`), sin el texto del comando. `remoto` y `rama` del push, si se escribieron
+ * Los comandos que guardan: `[{ tipo: 'commit'|'push'|'pr'|'opaco', forma, dir, remoto, rama, opaco, incierto, borrado,
+ * escritos }]`. `borrado`: el push borra la rama (`:rama`, `--delete`, `-d`). `forma` es la forma (`git push`), sin el texto del comando. `remoto` y `rama` del push, si se escribieron
  * (sin ellos los completa `destinoDelPush`); un push con varias ramas da uno por rama, y `--all`/`--mirror` uno que no es
  * la rama del ok. `incierto`: el comando cambia antes a dónde empuja (la rama, la configuración, la refspec `:`, lo que
  * agrega `xargs`). `escritos`: los archivos o carpetas que el comando cambia antes de guardar.
@@ -916,26 +929,42 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
     if (dudoso) { opaco(ctx.dirs[0]); return; }
     for (const dir of g.dirs) {
       if (sub === 'commit') { guardar({ tipo: 'commit', forma: 'git commit', dir }); continue; }
-      // `-o`/`--push-option` y `--repo` llevan valor aparte: su valor no es el remoto
+      // `-o`/`--push-option` y `--repo` llevan valor aparte: su valor no es el remoto. `--recurse-submodules` también,
+      // cuando lo que sigue es uno de sus valores
       const conValor = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec']);
       const limpios = [];
       let todas = false;
+      let borraTodo = false;
       for (let k = 0; k < resto.length; k++) {
-        if (conValor.has(resto[k])) { k += 1; continue; }
-        if (['--all', '--mirror', '--branches'].includes(resto[k])) todas = true;
-        if (!resto[k].startsWith('-')) limpios.push(resto[k]);
+        const w = resto[k];
+        if (conValor.has(w) || (w === '--recurse-submodules' && VALOR_SUBMODULOS.test(resto[k + 1] || ''))) { k += 1; continue; }
+        // git acepta una opción larga acortada mientras no sea ambigua (`--al`, `--del`), y las cortas juntas
+        // (`-fd`): un borrado o «todas las ramas» escritos así son lo mismo
+        if (['--all', '--mirror', '--branches'].some((o) => acorta(w, o))) todas = true;
+        if (acorta(w, '--delete') || /^-[A-Za-z]*d[A-Za-z]*$/.test(w)) borraTodo = true;
+        if (!w.startsWith('-')) limpios.push(w);
       }
       const [remoto, ...refspecs] = limpios;
+      // un patrón (`refs/heads/*:refs/heads/*`, `*:*`, `ma*`): git lo abre en todas las ramas que coinciden, main incluida
+      if (refspecs.some((r) => r.includes('*'))) todas = true;
       // sin una rama escrita, o con `HEAD`, el destino sale del estado de antes del comando: si el comando cambió la
       // rama, ya no es ése
       const sinRamaEscrita = !refspecs.length || refspecs.some((r) => ramaDe(r) === 'HEAD');
       // una rama que sale de otro comando o de una variable que no se conoce: no se sabe cuál es
       const ramaArmada = refspecs.some((r) => /[$`]/.test(ramaDe(r) || ''));
       const incierto = g.cambiaDestino || !!ctx.xargs || refspecs.includes(':') || ramaArmada || (cambioLaRama && sinRamaEscrita);
-      const push = (rama) => guardar({ tipo: 'push', forma: 'git push', dir, remoto: remoto || null, rama, ...(incierto ? { incierto: true } : {}) });
-      if (todas) push('todas las ramas (--all o --mirror)');
-      else if (!refspecs.length) push(null);
-      else for (const r of refspecs) push(r === ':' ? null : ramaDe(r));
+      // un borrado (`:rama`, `+:rama`, `--delete`, `-d`) no es un empuje común a esa rama: cambia la rama del equipo.
+      // `origen`: lo que se empuja (la rama o el commit de la izquierda del refspec; sin refspec, la rama actual)
+      const push = (rama, borra, origen) => guardar({ tipo: 'push', forma: 'git push', dir, remoto: remoto || null, rama,
+        origen: borra ? null : origen, ...(incierto ? { incierto: true } : {}), ...(borra ? { borrado: true } : {}) });
+      if (todas) push(TODAS_LAS_RAMAS, borraTodo, null);
+      else if (!refspecs.length) push(null, borraTodo, 'HEAD');
+      else {
+        for (const r of refspecs) {
+          const sinMas = r.replace(/^\+/, '');
+          push(r === ':' ? null : ramaDe(r), borraTodo || (sinMas.startsWith(':') && sinMas !== ':'), origenDe(sinMas));
+        }
+      }
     }
   }
 }
@@ -954,25 +983,175 @@ function reposDe(marker) {
 // ── la decisión ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const COMO_SE_AUTORIZA = 'Antes de guardar, el arnés le pregunta a la persona en la ventana de permiso; con el sí, guarda.';
-function pregunta(c, repo, story) {
-  return `¿GUARDO? «${c.forma}»${repo ? ` sobre ${repo}` : ''}, de la corrida de ${story}. ${COMO_SE_AUTORIZA}`;
-}
-// lo que no se lee con certeza, durante una corrida: no se sabe qué guardaría ni a dónde, y se pregunta igual
+// lo que no se lee con certeza, durante una corrida y antes de «Preparar el pull request»: no se sabe qué guardaría ni a dónde, y se
+// pregunta igual
 function preguntaNoLeo(story) {
   return `¿GUARDO? no pude leer este comando; si guarda, es de la corrida de ${story}. ${COMO_SE_AUTORIZA}`;
 }
 
+// ── a dónde va un empuje ────────────────────────────────────────────────────────────────────────────────────────────
+
+// Las ramas que comparte el equipo: lo que se empuja ahí sale hacia el equipo igual que un pedido, aunque no haya
+// pedido (hay productos que commitean en `dev` y lo empujan). Las mismas que cuida GIT-C1 en el freno de la sesión
+// (scripts/hooks/safety-guard-pre.sh). Otra rama es de trabajo.
+const RAMAS_COMPARTIDAS = Object.freeze(['main', 'master', 'dev']);
+const esCompartida = (rama) => RAMAS_COMPARTIDAS.includes(rama) || /^release\//.test(rama);
+const TODAS_LAS_RAMAS = 'todas las ramas (--all o --mirror)';
+function gitEn(dir, args) {
+  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+  return r.status === 0 ? String(r.stdout || '').trim() : null;
+}
+// Una clave de la configuración de git: su valor, null si no está (salida 1) o undefined si git no pudo decirlo.
+function configDe(dir, args) {
+  const r = spawnSync('git', ['-C', dir, 'config', ...args], { encoding: 'utf8' });
+  if (r.status === 0) return String(r.stdout || '').trim();
+  return r.status === 1 ? null : undefined;
+}
 /**
- * ¿Pregunta? null (pasa) o `{ pregunta }`: el texto de la ventana de permiso. Dentro de una corrida (el marcador de la
- * sesión), un commit o un push sobre un repo de la corrida, todo pedido y lo que no se puede leer con certeza preguntan.
- * Un marcador que existe y no es el de una corrida también pregunta. Sin corrida, pregunta un camino rápido abierto
- * (`decidirCarril`); sin ninguno de los dos, nada pregunta. No hay ok que
- * guardar: lo que toca algo delicado lo cubre la firma de control del pedido.
+ * La rama de destino de un push: `{ rama, compartida, pista }`. La escrita en el comando; `HEAD` (`HEAD`, `@` o la rama
+ * actual dicha por otro comando) es la rama actual de antes del comando; sin destino escrito, la rama de empuje de la
+ * actual (`@{push}`), que puede no ser la actual (`push.default upstream` lleva `dev` a `main`). Lo que no se lee con
+ * certeza (un borrado, todas las ramas, un destino `incierto`, HEAD suelto o un `@{push}` que no se resuelve) se juzga
+ * compartido: lo que no se leyó no sale sin la foto. `pista`: el destino no se leyó y escribirlo lo resuelve.
+ */
+function destinoDelEmpuje(c) {
+  const compartida = (pista) => ({ rama: null, compartida: true, pista });
+  if (c.borrado || c.rama === TODAS_LAS_RAMAS) return compartida(false);
+  if (c.incierto) return compartida(true);
+  let rama = c.rama;
+  if (rama === 'HEAD' || rama === null) {
+    const actual = c.dir ? gitEn(c.dir, ['symbolic-ref', '--short', '-q', 'HEAD']) : null;
+    if (!actual) return compartida(true);
+    if (rama === 'HEAD') rama = actual;
+    else {
+      // sin destino escrito, la configuración del repo puede llevar el empuje a varias ramas (main incluida), y `@{push}`
+      // nombra una sola: `push.default matching`, un `remote.<r>.push` o un `remote.<r>.mirror`. Una configuración que no
+      // se pudo leer puede ser cualquiera de esas
+      const porDefecto = configDe(c.dir, ['--get', 'push.default']);
+      const remotos = configDe(c.dir, ['--get-regexp', '^remote\\..*\\.(push|mirror)$']);
+      if (porDefecto === undefined || remotos === undefined || porDefecto === 'matching') return compartida(true);
+      if (remotos && remotos.split('\n').some((l) => /\.push\s/.test(l) || /\.mirror\s+true$/i.test(l.trim()))) return compartida(true);
+      const empuje = gitEn(c.dir, ['rev-parse', '--abbrev-ref', '@{push}']);
+      const remoto = gitEn(c.dir, ['for-each-ref', '--format=%(push:remotename)', `refs/heads/${actual}`]);
+      if (!empuje || !remoto || !empuje.startsWith(`${remoto}/`)) return compartida(true);
+      rama = empuje.slice(remoto.length + 1);
+    }
+  }
+  return { rama, compartida: esCompartida(rama), pista: false };
+}
+
+// ── el pedido preparado ─────────────────────────────────────────────────────────────────────────────────────────────
+
+// El paso «Preparar el pull request»: al cerrarlo, `marker.js` toma la foto del árbol de cada repo de la corrida
+// (`prepareCommitHuellas`) después de las verificaciones del cierre. Lo que sale hacia el equipo tiene que ser lo de esa
+// foto: así las verificaciones valen para lo que sale, sin repetirlas acá.
+const PASO_PREPARAR = 'prepare-commit';
+const cerrarPaso11 = () => `node ${require('./story-gate.js').MARKER_JS} complete-step prepare-commit`;
+const textoSinPreparar = () => `🔒 el pull request sale después de preparar: cerrá «Preparar el pull request» (${cerrarPaso11()}).`;
+const textoCambio = (repo) => `🔒 el código cambió después de preparar el pull request (${repo}): volvé a correr los revisores de lo que cambió y ${cerrarPaso11()}.`;
+const textoNoComprobado = (motivo) => `🔒 no pude comprobar que el código es el que se preparó (${motivo}): repetí «Preparar el pull request».`;
+const textoFueraDeLaFoto = (repo) => `🔒 ${repo} cambió después de preparar y no está en la foto: repetí «Preparar el pull request».`;
+const TEXTO_MARCADOR = '🔒 no pude leer el marcador de la corrida: no sé si el pull request está preparado.';
+const PISTA_DESTINO = ' Si el empuje va a tu rama de trabajo, escribí el destino: `git push -u origin <rama>`.';
+const textoEscribe = (que) => `🔒 este comando cambia el código antes de que salga (${que}): corré el cambio aparte y, si cambió el código, volvé a preparar el pull request.`;
+// el paso cerrado, por su nombre (también en un marcador sin el número de esquema) o, en el esquema viejo, por su
+// número de entonces (el 8)
+const pasoPreparado = (m) => (Array.isArray(m.stepsCompleted) && m.stepsCompleted.map(String).includes(PASO_PREPARAR))
+  || require('./steps.js').isDone(m, PASO_PREPARAR);
+
+/**
+ * ¿Lo que sale es lo que se preparó? `{ ok, repos }` o `{ texto }`. «Preparar el pull request» cerrado, su foto presente y medible, cada
+ * repo de la foto en su rama y con su árbol (sin commitear, o commiteado igual: la misma comparación que `vigente` de
+ * save-ok.js), y ningún repo de la corrida con cambios fuera de la foto. Lo que no se mide no pasa.
+ * `salientes`: lo que manda cada comando (`{ dir, origen }`): el commit de `origen` tiene que ser el de la foto (lo de
+ * antes de preparar, sin commitear todavía) o tener su mismo árbol (lo preparado, commiteado). Otra rama, o un commit
+ * que el disco ya no muestra, no es lo preparado aunque el disco lo sea.
+ */
+function preparado(m, salientes = []) {
+  if (!pasoPreparado(m)) return { texto: textoSinPreparar() };
+  const fotos = m.prepareCommitHuellas;
+  // una foto vacía es la de una toma que falló al cerrar el paso: falta, no «no hay nada»
+  if (!Array.isArray(fotos) || !fotos.length) return { texto: textoNoComprobado('falta la foto de «Preparar el pull request»') };
+  const so = SO();
+  for (const f of fotos) {
+    if (!f || !f.repo || !f.arbol) return { texto: textoNoComprobado(`${(f && f.repo) || 'un repo'}: la foto no lo midió${f && f.error ? `, ${f.error}` : ''}`) };
+    const ahora = so.huella(f.repo);
+    if (ahora.error) return { texto: textoNoComprobado(`${f.repo}: ${ahora.error}`) };
+    if (ahora.rama !== f.rama || ahora.arbol !== f.arbol) return { texto: textoCambio(f.repo) };
+  }
+  let repos;
+  try { repos = reposDe(m); } catch (e) { return { texto: textoNoComprobado(`los repos de la corrida: ${e.message}`) }; }
+  const enLaFoto = new Set(fotos.map((f) => f.repo));
+  for (const r of repos) if (!enLaFoto.has(r) && so.tieneCambios(r)) return { texto: textoFueraDeLaFoto(r) };
+  for (const s of salientes) {
+    if (!s || !s.origen) continue;
+    let raiz = null;
+    try { raiz = s.dir ? so.raizDe(s.dir) : null; } catch (_) { raiz = null; }
+    // un pull request sale del repo donde se abre; sin ubicarlo, de cualquiera de la foto
+    const deLaFoto = fotos.filter((f) => !raiz || f.repo === raiz);
+    for (const f of deLaFoto.length ? deLaFoto : fotos) {
+      // una foto sin el campo `cabeza` es de antes de este control: se mide sólo el disco, como cuando se tomó. Con el
+      // campo en null (la rama no tenía commits), lo que se empuja se compara por el árbol
+      if (!Object.prototype.hasOwnProperty.call(f, 'cabeza')) continue;
+      const c = so.arbolDelCommit(f.repo, s.origen);
+      // lo que no existe en el repo no sale (git rechaza el empuje); lo que no se pudo medir, no pasa. El texto no
+      // repite lo escrito en el comando
+      if (c.falta) continue;
+      if (c.error) return { texto: textoNoComprobado(`${f.repo}: no pude medir lo que se empuja`) };
+      if (!(f.cabeza && c.commit === f.cabeza) && c.arbol !== f.arbol) return { texto: textoCambio(f.repo) };
+    }
+  }
+  return { ok: true, repos: fotos.map((f) => f.repo) };
+}
+
+// Lo que el mismo comando cambia antes de guardar (`escritos` del lector), sin el papeleo: un archivo de la historia, del
+// sprint, de la evidencia o de la memoria no es código. Null si no cambia nada.
+function escribeCodigo(c) {
+  const so = SO();
+  for (const p of (c && c.escritos) || []) {
+    let raiz = null;
+    try { raiz = so.raizDe(fs.existsSync(p) && fs.statSync(p).isDirectory() ? p : path.dirname(p)); } catch (_) { raiz = null; }
+    const rel = raiz ? path.relative(raiz, p).split(path.sep).join('/') : '';
+    if (rel && !rel.startsWith('..') && so.esPapeleoDeLaHuella(rel, '100644')) continue;
+    return rel || path.basename(p);
+  }
+  return null;
+}
+
+// Los hallazgos de la corrida (`findings.json` de su carpeta), o null si no se ubica o no se lee: la evidencia dice
+// «no medido».
+function findingsDe(m) {
+  try {
+    const story = m.storyPath ? path.resolve(m.storyPath) : undefined;
+    const rd = require('./run-dir.js').resolveRunDir(path.resolve(m.repoPath || process.cwd()), String(m.storyId), false, story);
+    return rd ? JSON.parse(fs.readFileSync(path.join(rd, 'findings.json'), 'utf8')) : null;
+  } catch (_) { return null; }
+}
+
+const COMO_SALE_EL_PEDIDO = 'Antes de que salga, el arnés le pregunta a la persona en la ventana de permiso; con el sí, sale.';
+/** La ventana del pedido: qué sale, de qué historia y con qué evidencia; nunca el comando. Hasta 1000 caracteres. */
+function preguntaDelPedido({ forma, m, repos, noLeo = false }) {
+  const nombres = (repos || []).map((r) => path.basename(r)).join(', ');
+  const que = noLeo
+    ? `no pude leer este comando; si abre un pull request o empuja a una rama compartida, es de la historia ${m.storyId}`
+    : `«${forma}», de la historia ${m.storyId}${nombres ? ` (${nombres})` : ''}`;
+  const t = `¿ABRO EL PULL REQUEST? ${que}. ${SO().evidenciaDelPedido({ marker: m, findings: findingsDe(m) })}. ${COMO_SALE_EL_PEDIDO}`;
+  return t.length > 1000 ? `${t.slice(0, 999)}…` : t;
+}
+
+/**
+ * Null (pasa), `{ aviso }` (pasa y lo dice en pantalla), `{ pregunta }` (el texto de la ventana de permiso) o `{ texto }`
+ * (no guarda). Dentro de una corrida (el marcador de la sesión): el commit no pregunta y queda en el registro del freno;
+ * el empuje de la rama de trabajo pasa antes de «Preparar el pull request», y después sólo con el código de su foto; el pedido y el empuje
+ * a una rama compartida frenan sin «Preparar el pull request» o con el código cambiado, y si no, preguntan con la evidencia. Lo que no
+ * se lee con certeza pregunta como siempre antes de «Preparar el pull request», y después se juzga como un pedido. Un marcador que existe
+ * y no se lee deja pasar el commit con un aviso y frena lo que sale hacia el equipo. Sin corrida, decide el camino
+ * rápido abierto (`decidirCarril`); sin ninguno de los dos, nada pregunta. Lo delicado lo cubre la firma de control.
  */
 function decidir({ command, cwd, sid, home }) {
-  // sin una corrida, pregunta sólo un camino rápido abierto
+  const markerPath = require('./open-runs.js').markerPath(sid, home);
   let crudo = null;
-  try { crudo = fs.readFileSync(require('./open-runs.js').markerPath(sid, home), 'utf8'); } catch (e) {
+  try { crudo = fs.readFileSync(markerPath, 'utf8'); } catch (e) {
     if (e.code === 'ENOENT') return decidirCarril({ command, cwd, sid, home });
   }
   const { cs, dudas } = leerComando(command, cwd || process.cwd(), 0, [], home);
@@ -981,18 +1160,59 @@ function decidir({ command, cwd, sid, home }) {
   let m = null;
   try { m = crudo === null ? null : JSON.parse(crudo); } catch (_) { m = null; }
   if (!m || typeof m !== 'object' || Array.isArray(m) || !m.storyId) {
-    return { pregunta: `¿GUARDO? «${c0.forma}»: el marcador de la corrida no se puede leer o no dice de qué story es. ${COMO_SE_AUTORIZA}` };
+    const haciaElEquipo = dudas.length || cs.some((c) => c.opaco || c.tipo === 'pr' || (c.tipo === 'push' && destinoDelEmpuje(c).compartida));
+    if (haciaElEquipo) return { texto: TEXTO_MARCADOR };
+    return { aviso: `el marcador de la corrida no se puede leer o no dice de qué historia es: «${c0.forma}» guarda sin preguntar; un pull request no sale hasta arreglarlo.` };
   }
-  if (dudas.length || cs.some((c) => c.opaco)) return { pregunta: preguntaNoLeo(m.storyId) };
-  let repos;
-  try { repos = reposDe(m); } catch (e) { return { pregunta: pregunta(c0, null, m.storyId) }; }
+  const pasoCerrado = pasoPreparado(m);
+  // lo que manda cada comando que sale: el pull request, la rama actual; el empuje, su origen
+  const salientes = cs.filter((c) => c.tipo === 'pr' || (c.tipo === 'push' && c.origen)).map((c) => ({ dir: c.dir, origen: c.tipo === 'pr' ? 'HEAD' : c.origen }));
+  let prep = null;
+  const prepDe = () => { prep = prep || preparado(m, salientes); return prep; };
+  if (dudas.length || cs.some((c) => c.opaco)) {
+    if (!pasoCerrado) return { pregunta: preguntaNoLeo(m.storyId) };
+    const p = prepDe();
+    return p.texto ? { texto: p.texto } : { pregunta: preguntaDelPedido({ m, repos: p.repos, noLeo: true }) };
+  }
+  let repos = null;
+  try { repos = reposDe(m); } catch (_) { repos = null; }
+  // sin poder ubicar el repo de un comando, o los de la corrida, se juzga como de la corrida; una carpeta que no es un
+  // repo no guarda nada
+  const deLaCorrida = (c) => {
+    if (!repos) return true;
+    try { const r = SO().raizDe(c.dir); return !!r && repos.includes(r); } catch (_) { return true; }
+  };
+  let haciaElEquipo = null;
+  let pista = false;
+  let commits = 0;
+  // con el paso cerrado, la foto se compara con el árbol de antes del comando: un comando que cambia el código y en la
+  // misma línea empuja o abre el pull request mandaría lo que nadie preparó
+  if (pasoCerrado) {
+    for (const c of cs) {
+      if (c.tipo !== 'pr' && c.tipo !== 'push') continue;
+      const escrito = escribeCodigo(c);
+      if (escrito) return { texto: textoEscribe(escrito) };
+    }
+  }
   for (const c of cs) {
     // un pedido se juzga contra toda la corrida
-    if (c.tipo === 'pr') return { pregunta: pregunta(c, null, m.storyId) };
-    let r;
-    // la carpeta sale del comando: no vuelve en el texto
-    try { r = SO().raizDe(c.dir); } catch (_) { return { pregunta: pregunta(c, null, m.storyId) }; }
-    if (r && repos.includes(r)) return { pregunta: pregunta(c, r, m.storyId) };
+    if (c.tipo === 'pr') { haciaElEquipo = haciaElEquipo || c; continue; }
+    if (!deLaCorrida(c)) continue;
+    if (c.tipo === 'commit') { commits += 1; continue; }
+    if (c.tipo !== 'push') continue;
+    const d = destinoDelEmpuje(c);
+    if (d.compartida) { haciaElEquipo = haciaElEquipo || c; pista = pista || d.pista; continue; }
+    // la rama de trabajo: antes de «Preparar el pull request» pasa; después, sólo con el código de la foto
+    if (pasoCerrado) { const p = prepDe(); if (p.texto) return { texto: p.texto }; }
+  }
+  if (haciaElEquipo) {
+    const p = prepDe();
+    if (p.texto) return { texto: `${p.texto}${pista ? PISTA_DESTINO : ''}` };
+    return { pregunta: preguntaDelPedido({ forma: haciaElEquipo.forma, m, repos: p.repos }) };
+  }
+  if (commits) {
+    const dir = path.dirname(path.dirname(markerPath));
+    require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'ok', reason: `commit local, sin pregunta (historia ${m.storyId})` });
   }
   return null;
 }
@@ -1016,22 +1236,27 @@ function carrilAbierto(sid, home) {
 }
 
 /**
- * Sin corrida, con un camino rápido abierto: pregunta como una corrida. Su repo es el de los archivos que el carril
- * anotó; si todavía no anotó ninguno, cualquier repo pregunta. Un pedido y lo que no se lee con certeza preguntan.
- * Sin carril, nada pregunta, como siempre fuera de una corrida.
+ * Sin corrida, con un camino rápido abierto: sus cuatro frenos (tope, pantalla, datos, riesgo) miran todo lo que guarda.
+ * El pedido, el empuje a una rama compartida y lo que no se lee con certeza preguntan; el commit y el empuje de la rama
+ * de trabajo no (con lo que la pregunta mostraba como `{ aviso }`). No hay «Preparar el pull request» ni foto: el riesgo del carril ya mide
+ * lo que se guarda. Su repo es el de los archivos que el carril anotó; si todavía no anotó ninguno, cualquier repo. Sin
+ * carril, nada pregunta, como siempre fuera de una corrida.
  */
 function decidirCarril({ command, cwd, sid, home }) {
   let a = null;
   let ilegible = null;
   try { a = carrilAbierto(sid, home); } catch (e) { a = null; ilegible = e; }
   if (ilegible) {
-    // un registro del carril que no se puede leer no es «no hay carril»: si lo que viene guarda, se pregunta y se anota
+    // un registro del carril que no se puede leer no es «no hay carril»: lo que sale hacia el equipo pregunta, el commit y
+    // el empuje de la rama de trabajo pasan con un aviso, y todo se anota
     const { cs, dudas } = leerComando(command, cwd || process.cwd(), 0, [], home);
     if (!cs.length && !dudas.length) return null;
     try {
       const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
       require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'unknown', reason: `registro del camino rápido ilegible: ${ilegible.message}` });
     } catch (_) { /* el aviso de abajo igual sale */ }
+    const haciaElEquipo = dudas.length || cs.some((c) => c.opaco || c.tipo === 'pr' || (c.tipo === 'push' && destinoDelEmpuje(c).compartida));
+    if (!haciaElEquipo) return { aviso: `no pude leer el registro del camino rápido de esta sesión (${ilegible.message}): «${cs[0].forma}» guarda sin preguntar.` };
     return { pregunta: `¿GUARDO? no pude leer el registro del camino rápido de esta sesión (${ilegible.message}): no sé si le faltan los revisores. ${COMO_SE_AUTORIZA}` };
   }
   if (!a) return null;
@@ -1081,13 +1306,20 @@ function decidirCarril({ command, cwd, sid, home }) {
   const de = `del camino rápido «${String(a.reason).slice(0, 160)}»`;
   const como = [pantalla && pantalla.mostrar, datos && datos.mostrar, COMO_SE_AUTORIZA].filter(Boolean).join(' ');
   if (dudas.length || cs.some((c) => c.opaco)) return { pregunta: `¿GUARDO? no pude leer este comando; si guarda, es ${de}. ${como}` };
+  // el pedido y el empuje a una rama compartida preguntan; el commit y el empuje de la rama de trabajo no, y lo que la
+  // pregunta mostraba (la maqueta, el aviso de los datos) sale en pantalla
+  let guarda = false;
   for (const c of cs) {
     if (c.tipo === 'pr') return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${como}` };
     let r = null;
     try { r = raiz(c.dir); } catch (_) { return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${como}` }; }
-    if (!repos.length || (r && repos.includes(r))) return { pregunta: `¿GUARDO? «${c.forma}»${r ? ` sobre ${r}` : ''}, ${de}. ${como}` };
+    if (!repos.length || (r && repos.includes(r))) {
+      if (c.tipo === 'push' && destinoDelEmpuje(c).compartida) return { pregunta: `¿GUARDO? «${c.forma}»${r ? ` sobre ${r}` : ''}, ${de}. ${como}` };
+      guarda = true;
+    }
   }
-  return null;
+  const mostrar = [pantalla && pantalla.mostrar, datos && datos.mostrar].filter(Boolean);
+  return guarda && mostrar.length ? { aviso: mostrar.join(' ') } : null;
 }
 
 // ── el tope del camino corto ────────────────────────────────────────────────────────────────────────────────────────
@@ -1410,4 +1642,4 @@ function decidirRiesgo(a, sid, home, { medida: m, alDia, registrar }) {
   return { texto: textoFaltanRevisoresYPase({ harness, regla: marca.regla, archivo: marca.archivo }) };
 }
 
-module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir, textoFaltanRevisoresYPase, textoDeLaMaqueta, frenoDelRiesgo, frenoDeDatos };
+module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, comandosQueGuardan, leerComando, decidir, destinoDelEmpuje, preparado, RAMAS_COMPARTIDAS, textoFaltanRevisoresYPase, textoDeLaMaqueta, frenoDelRiesgo, frenoDeDatos };

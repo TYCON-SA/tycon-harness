@@ -1592,7 +1592,8 @@ test('HowItWorks_CloseChecks_ShownAsBlocks @story-8.127 @ac-9 — cada paso mues
   }
   assert.match(TX().t('es', S.STEP_CLOSE_CHECKS.find((r) => r.shownIn === 'reviewers').textKey), /conteo real de revisores/);
   const pase = S.STEP_CLOSE_CHECKS.find((r) => r.shownIn === 'adversarial-pass');
-  assert.match(TX().t('es', pase.textKey), /commit/);
+  // el pase frena el paso que prepara el pull request
+  assert.match(TX().t('es', pase.textKey), /preparar el pull request/);
   assert.match(TX().t('es', pase.textKey), /resultado/);
   // el del pase dice en qué paso se revisa
   assert.ok(itemDe(seccionDe(html, 'adversarial-pass'), TX().t('es', pase.textKey)).includes(TX().t('es', 'paso.prepare-commit')), 'dice que frena al preparar el commit');

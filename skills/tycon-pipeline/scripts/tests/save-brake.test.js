@@ -205,37 +205,40 @@ const con = (cmd, a) => cmd.replace(/\{a\}/g, a);
 // la forma que se corre desde otra carpeta: el repo lo nombra el comando
 const desdeOtra = (forma) => /-C |--git-dir|--work-tree|cd \{a\}|GIT_DIR=/.test(forma);
 
-// T1 Pregunta_Commit_CadaForma
-// 🔴 Falla con: una forma de commit que el freno no lee (otro directorio, la variable delante, un shell envuelto, un
-// encadenado) guarda sin que la persona lo autorice en la ventana.
-test('Pregunta_Commit_CadaForma (T1) @story-8.151 @ac-1', (t) => {
+// T1 Commit_CadaForma_SeLee
+// Desde la 8.242 el commit no pregunta: lo que cuida esta prueba es que el lector siga viendo cada forma de commit (y
+// la anota en el registro del freno), y que el gancho no commitee nada.
+// 🔴 Falla con: una forma de commit que el freno deja de leer (otro directorio, la variable delante, un shell envuelto,
+// un encadenado, un alias).
+test('Commit_CadaForma_SeLee (T1) @story-8.151 @ac-1', (t) => {
   const h = home(t);
   const a = repoConOrigin(t);
   abrir(h, corrida(a));
+  // la copia del shell antes de la primera lectura: el lector la recuerda por proceso
+  copiaDelShell(h);
   const otro = tmp(t, 'freno-cwd-');
   const head = sh(a, 'rev-parse', 'HEAD');
   // un alias de git del repo
   sh(a, 'config', 'alias.ci', 'commit');
   for (const forma of [...COMMITS, 'git ci -m x']) {
     const cmd = con(forma, a);
-    const r = gancho(h, cmd, { cwd: desdeOtra(forma) ? otro : a });
-    assert.match(r.stdout, VENTANA, `«${cmd}» abre la ventana: ${r.stdout}${r.stderr}`);
-    assert.match(r.stdout, /«git commit»/, `«${cmd}» nombra la forma`);
-    assert.doesNotMatch(r.stdout + r.stderr, /approve-save/, `«${cmd}» ya no pide approve-save`);
+    const cwd = desdeOtra(forma) ? otro : a;
+    assert.ok(brake().comandosQueGuardan(cmd, cwd, h).some((c) => c.tipo === 'commit' && c.forma === 'git commit'), `«${cmd}» se lee como commit`);
+    const r = gancho(h, cmd, { cwd });
+    assert.strictEqual(r.status, 0, `«${cmd}»: ${r.stderr}`);
+    assert.doesNotMatch(r.stdout + r.stderr, /approve-save/, `«${cmd}» no pide approve-save`);
   }
-  // el repo se nombra con su ruta
-  assert.ok(gancho(h, 'git commit -m x', { cwd: a }).stdout.includes(JSON.stringify(a).slice(1, -1)), 'nombra el repo');
   assert.strictEqual(sh(a, 'rev-parse', 'HEAD'), head, 'el gancho no commitea nada');
   // desde la carpeta de la corrida: la variable sin exportar (o exportada en un subshell, o en otro shell) no cambia el
   // repo, `--work-tree` sin `--git-dir` tampoco, la forma con guion de git corre el mismo commit, y el alias del shell
-  copiaDelShell(h);
   const vacia = tmp(t, 'freno-vacia-');
   for (const cmd of [`GIT_DIR=${otro}/.git; git commit -m x`, `(export GIT_DIR=${otro}/.git); git commit -m x`,
     `bash -c 'export GIT_DIR=${otro}/.git'; git commit -m x`, `git --work-tree=${vacia} commit -m x`, `GIT_WORK_TREE=${vacia} git commit -m x`,
     `${sh(a, '--exec-path')}/git-commit -m x`, 'git-commit -m x', "gcam 'x'"]) {
-    const d = brake().decidir({ command: cmd, cwd: a, sid: SID, home: h });
-    assert.ok(d && d.pregunta, `«${cmd}» pregunta: ${JSON.stringify(d)}`);
-    assert.match(d.pregunta, /«git commit»/, `«${cmd}» nombra la forma`);
+    const cs = brake().comandosQueGuardan(cmd, a, h);
+    const raiz = (d) => { try { return require(path.join(SCRIPTS, 'lib', 'save-ok.js')).raizDe(d); } catch (_) { return null; } };
+    assert.ok(cs.some((c) => c.tipo === 'commit' && raiz(c.dir) === a), `«${cmd}» es un commit del repo de la corrida: ${JSON.stringify(cs)}`);
+    assert.strictEqual(brake().decidir({ command: cmd, cwd: a, sid: SID, home: h }), null, `«${cmd}» no pregunta`);
   }
 });
 
@@ -245,29 +248,35 @@ test('Pregunta_Commit_CadaForma (T1) @story-8.151 @ac-1', (t) => {
 test('Pregunta_PushYPedidos (T2) @story-8.151 @ac-2', (t) => {
   const h = home(t);
   const a = repoConOrigin(t);
-  abrir(h, corrida(a));
+  // desde la 8.242, el pedido y el empuje a una rama compartida preguntan con «Preparar el pull request» cerrado y el código de su foto;
+  // el empuje de la rama de trabajo pasa
   const otro = tmp(t, 'freno-cwd-');
   sh(a, 'config', 'alias.sube', '!git push');
   copiaDelShell(h);
+  abrir(h, preparada(a));
+  const COMPARTIDOS = new Set([`git push origin ${RAMA} main`, 'git push --all origin', 'echo . | xargs -n 1 git push', 'echo main | xargs git push origin']);
   // el alias del shell, el alias propio de `gh pr create`, la forma con guion de git, y la rama que agrega `xargs`
   for (const forma of [...PUSHES, ...PEDIDOS, 'git sube', 'gp', 'gpo HEAD', 'subir HEAD', 'gh pr new --fill', `${sh(a, '--exec-path')}/git-push`,
     'echo main | xargs git push origin']) {
     const cmd = con(forma, a);
     const r = gancho(h, cmd, { cwd: desdeOtra(forma) ? otro : a });
     assert.strictEqual(r.status, 0, `«${cmd}» no frena: ${r.stderr}`);
-    assert.match(r.stdout, VENTANA, `«${cmd}» abre la ventana`);
-    // la forma es la que declara el conector: el alias `pr new` es una forma propia
-    assert.match(r.stdout, /«(git push|gh pr create|gh pr new|gh pr merge|az repos pr create)»/, `«${cmd}» nombra la forma`);
+    if (PEDIDOS.includes(forma) || COMPARTIDOS.has(forma) || forma === 'gh pr new --fill') {
+      assert.match(r.stdout, VENTANA, `«${cmd}» abre la ventana`);
+      // la forma es la que declara el conector: el alias `pr new` es una forma propia
+      assert.match(r.stdout, /«(git push|gh pr create|gh pr new|gh pr merge|az repos pr create)»/, `«${cmd}» nombra la forma`);
+      assert.match(r.stdout, ABRO, `«${cmd}» pregunta por el pedido`);
+    }
   }
   // el texto nombra la forma y el repo, nunca el comando: un comando puede traer una credencial
   const MARCA = 'MARCA-QUE-NO-SALE';
   // ni la carpeta que sale del comando
   fs.mkdirSync(path.join(a, MARCA));
-  for (const cmd of [`git push https://u:${MARCA}@example.com/x.git ${RAMA}`, `gh pr create --title t --body "${MARCA}"`,
+  abrir(h, preparada(a));
+  for (const cmd of [`git push https://u:${MARCA}@example.com/x.git main`, `gh pr create --title t --body "${MARCA}"`,
     `git commit -m "${MARCA}"`, `az repos pr create --title ${MARCA}`, `$G push ${MARCA}`, `git -C ${a}/${MARCA} commit -m x`,
-    `cd ${a}/${MARCA} && git push`, `git push origin ${MARCA}`, `git push origin HEAD:${MARCA}`]) {
+    `cd ${a}/${MARCA} && git push origin main`, `git push origin ${MARCA}`, `git push origin HEAD:${MARCA}`]) {
     const r = gancho(h, cmd, { cwd: a });
-    assert.match(r.stdout, VENTANA, `«${cmd}» abre la ventana: ${r.stderr}`);
     assert.ok(!(r.stdout + r.stderr).includes(MARCA), `el texto no repite el comando: ${r.stdout}${r.stderr}`);
   }
 });
@@ -298,20 +307,22 @@ test('Freno_NoEsComando_Pasa (T3) @story-8.151 @ac-3', (t) => {
 test('PestanaQuePregunta_Y_PestanaSinPreguntas (T4) @story-8.151 @ac-4', (t) => {
   const h = home(t);
   const a = repoConOrigin(t);
-  abrir(h, corrida(a));
+  // desde la 8.242 lo que pregunta es el pedido preparado
+  abrir(h, preparada(a));
   for (const modo of ['default', 'acceptEdits', 'plan', undefined]) {
-    const r = gancho(h, `git push origin ${RAMA}`, { cwd: a, modo });
+    const r = gancho(h, 'gh pr create --fill', { cwd: a, modo });
     assert.strictEqual(r.status, 0, `${modo}: ${r.stderr}`);
     assert.match(r.stdout, VENTANA, `${modo || 'sin el dato'}: abre la ventana`);
   }
   for (const modo of ['bypassPermissions', 'dontAsk']) {
-    const r = gancho(h, `git push origin ${RAMA}`, { cwd: a, modo });
+    const r = gancho(h, 'gh pr create --fill', { cwd: a, modo });
     assert.strictEqual(r.status, 0, `${modo}: guarda sin trabarse: ${r.stderr}`);
     assert.strictEqual(r.stdout, '', `${modo}: no abre la ventana`);
     assert.match(r.stderr, /no pide permisos/, `${modo}: lo dice en pantalla`);
-    assert.match(r.stderr, /«git push»/, `${modo}: dice qué guarda`);
+    assert.match(r.stderr, /«gh pr create»/, `${modo}: dice qué guarda`);
   }
-  // lo que no se lee con certeza, igual: pregunta donde se pregunta, y pasa con aviso donde no
+  // lo que no se lee con certeza, antes de «Preparar el pull request», igual que hoy: pregunta donde se pregunta, y pasa con aviso donde no
+  abrir(h, corrida(a));
   const duda = 'G=git; $G push';
   assert.match(gancho(h, duda, { cwd: a, modo: 'default' }).stdout, VENTANA);
   const b = gancho(h, duda, { cwd: a, modo: 'bypassPermissions' });
@@ -334,7 +345,11 @@ test('Freno_RepoAjeno_Pasa_PedidoPregunta (T5) @story-8.151 @ac-5', (t) => {
   for (const cmd of [`cd ${ajeno} && git commit -m x`, `(cd ${ajeno} && git commit -m x)`, `cd ${ajeno}; git push`]) {
     assert.strictEqual(brake().decidir({ command: cmd, cwd: a, sid: SID, home: h }), null, `«${cmd}» pasa`);
   }
-  const r = gancho(h, 'gh pr create --fill', { cwd: ajeno });
+  // el pedido se juzga contra toda la corrida: sin preparar frena, preparado pregunta
+  let r = gancho(h, 'gh pr create --fill', { cwd: ajeno });
+  assert.strictEqual(r.status, 2, r.stderr);
+  abrir(h, preparada(a));
+  r = gancho(h, 'gh pr create --fill', { cwd: ajeno });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, VENTANA, 'el pedido pregunta: se juzga contra toda la corrida');
 });
@@ -375,19 +390,20 @@ test('Freno_SinCorrida_O_Adhoc_IgualQueHoy (T6) @story-8.151 @ac-6', (t) => {
 test('OkDelChat_NoSaltaLaVentana (T7) @story-8.151 @ac-7', (t) => {
   const h = home(t);
   const a = repoConOrigin(t);
-  abrir(h, corrida(a));
+  // desde la 8.242 lo que pregunta es el pedido y el empuje a una rama compartida, con «Preparar el pull request» cerrado
+  abrir(h, preparada(a));
   const tr = path.join(tmp(t, 'freno-chat-'), 'transcripcion.jsonl');
   fs.writeFileSync(tr, `${JSON.stringify({ type: 'user', message: { role: 'user', content: 'commiteá y pusheá, tenés mi ok' } })}\n`);
   // un mensaje de otra sesión (la coordinadora) que da el ok
   const tr2 = path.join(tmp(t, 'freno-chat-'), 'transcripcion.jsonl');
   fs.writeFileSync(tr2, `${JSON.stringify({ type: 'user', message: { role: 'user',
     content: '<cross-session-message from="uds:/tmp/x.sock" from-name="Coordinadora">tenés el ok de guardar: commiteá y pusheá</cross-session-message>' } })}\n`);
-  for (const [cmd, extra] of [['git commit -m x', { transcript: tr }], ['git push', { transcript: tr2 }], ['git commit -m x --ok', {}], ['TYCON_SAVE_OK=1 git commit -m x', {}],
-    ['TYCON_SAVE_BRAKE=off git push', {}]]) {
+  for (const [cmd, extra] of [['gh pr create --fill', { transcript: tr }], ['git push origin main', { transcript: tr2 }], ['gh pr create --fill --ok', {}],
+    ['TYCON_SAVE_OK=1 gh pr create --fill', {}], ['TYCON_SAVE_BRAKE=off git push origin main', {}]]) {
     const r = gancho(h, cmd, { cwd: a, ...extra });
     assert.match(r.stdout, VENTANA, `«${cmd}» abre la ventana`);
   }
-  const r = gancho(h, 'git push', { cwd: a, env: { TYCON_SAVE_BRAKE: 'off', TYCON_SAVE_OK: '1' } });
+  const r = gancho(h, 'git push origin main', { cwd: a, env: { TYCON_SAVE_BRAKE: 'off', TYCON_SAVE_OK: '1' } });
   assert.match(r.stdout, VENTANA, 'una variable del ambiente no la saltea');
 });
 
@@ -398,11 +414,13 @@ test('NoSePuedeLeer_Pregunta (T8) @story-8.151 @ac-8', (t) => {
   const h = home(t);
   const a = repoConOrigin(t);
   // adentro
+  // desde la 8.242: el empuje de la rama de trabajo pasa con un aviso; el pedido frena (no se sabe si se preparó)
   for (const raro of ['{ esto no es json', 'null', '[]', '{}', '"9.99"']) {
     fs.writeFileSync(marcadorPath(h), raro);
     const d = brake().decidir({ command: 'git push', cwd: a, sid: SID, home: h });
-    assert.ok(d && d.pregunta, `el marcador ${raro} pregunta: ${JSON.stringify(d)}`);
-    assert.match(d.pregunta, /marcador/, raro);
+    assert.ok(d && d.aviso && !d.pregunta, `el marcador ${raro} avisa: ${JSON.stringify(d)}`);
+    assert.match(d.aviso, /marcador/, raro);
+    assert.match((brake().decidir({ command: 'gh pr create --fill', cwd: a, sid: SID, home: h }) || {}).texto || '', /no pude leer el marcador/, raro);
   }
   abrir(h, corrida(a));
   // el comando, o su repo, que no se puede leer: una variable, una carpeta que sale de una variable, un alias o una
@@ -483,7 +501,7 @@ test('PrepareCommit_LaVentanaConOrden (T12) @story-8.151 @ac-12', () => {
   assert.doesNotMatch(texto, /si el usuario dice\W+commite/i, 'sin el camino «si el usuario dice commiteá»');
   assert.doesNotMatch(texto, /approve-save/, 'sin approve-save');
   assert.match(texto, /ventana de permiso/, 'dice que guardar se autoriza en la ventana');
-  const orden = ['exportar la memoria', 'commitear', 'empujar', 'abrir los pedidos', 'marker.js clear'];
+  const orden = ['exportar la memoria', 'commitear', 'empujar', 'abrir los pull requests', 'marker.js clear'];
   const i = texto.search(/El orden del cierre/i);
   assert.ok(i >= 0, 'nombra el orden del cierre');
   let desde = i;
@@ -500,7 +518,8 @@ test('PrepareCommit_LaVentanaConOrden (T12) @story-8.151 @ac-12', () => {
 test('Freno_PedidosDeLosConectores (T13)', (t) => {
   const h = home(t);
   const a = repoConOrigin(t);
-  abrir(h, corrida(a));
+  // desde la 8.242 el pedido pregunta con «Preparar el pull request» cerrado
+  abrir(h, preparada(a));
   const conectores = tmp(t, 'freno-conectores-');
   escribir(conectores, 'otra/integration.json', JSON.stringify({ __doc: 'de prueba', name: 'otra', label: 'Otra', kind: 'platform',
     connector: 'scripts/connector.js', operations: ['ci.read'], capabilities: {}, rawCommands: ['otra pr create', 'otra pr merge', 'otra pr list', 'otra issue create'] }));
@@ -543,11 +562,11 @@ test('CambioAUnControl_SiguePidiendoLaFirmaDeControl (T14)', (t) => {
   const freno = 'skills/tycon-pipeline/scripts/lib/save-brake.js';
   fs.appendFileSync(path.join(copia, freno), '// un cambio al freno de guardar\n');
   sh(copia, 'commit', '-q', '-am', 'toca el freno');
-  // guardar, dentro de una corrida, pregunta en la ventana: no firma ni saltea nada
+  // abrir el pedido, dentro de una corrida, frena sin preparar o pregunta en la ventana: no firma ni saltea nada
   const h = home(t);
   abrir(h, corrida(copia));
-  const d = brake().decidir({ command: 'git push origin pedido', cwd: copia, sid: SID, home: h });
-  assert.ok(d && d.pregunta, `guardar pregunta: ${JSON.stringify(d)}`);
+  const d = brake().decidir({ command: 'gh pr create --fill', cwd: copia, sid: SID, home: h });
+  assert.ok(d && (d.texto || d.pregunta), `el pedido no pasa solo: ${JSON.stringify(d)}`);
   // y el pedido sigue pidiendo la firma de control por ese archivo
   const r = spawnSync('bash', [path.join(copia, 'scripts', 'ci', 'run-base-controls.sh'), 'pending', '--root', copia, '--base', 'base', '--range', 'base...pedido'],
     { encoding: 'utf8', env: { ...SIN_SESION, HOME: h, USERPROFILE: h } });
@@ -606,7 +625,7 @@ test('T20 SaveBrake_MensajeDelTope_DiceElValor @story-8.182 @ac-18 — un carril
   const h = home(t);
   commitDeArchivos(d, 'a', 10);
   carril(h, { maxFiles: null });
-  assert.equal(guardar(d, h) && elTope.test(guardar(d, h).texto || ''), false, 'diez archivos entran en un tope de 10');
+  assert.equal(elTope.test((guardar(d, h) || {}).texto || ''), false, 'diez archivos entran en un tope de 10');
   commitDeArchivos(d, 'b', 1);
   const r = guardar(d, h);
   assert.ok(r && r.texto, JSON.stringify(r));
@@ -636,7 +655,7 @@ test('T24 SaveBrake_PruebasYDocumentos_NoCuentan @story-8.181 @ac-10 @ac-11', (t
   sh(d, 'commit', '-q', '-m', 'pruebas y guías');
   carril(h, { maxFiles: 8 });
   const r = guardar(d, h);
-  assert.ok(r && !r.texto, `no frena por el tope: ${JSON.stringify(r)}`);
+  assert.ok(!(r && r.texto), `no frena por el tope: ${JSON.stringify(r)}`);
 });
 
 test('T25 SaveBrake_CerrarYReabrirEnLaMismaRama_NoEmpiezaDeCero @story-8.181 @ac-11', (t) => {
@@ -872,7 +891,8 @@ test('SaveBrake_ComandoQueNoSeLee_SeMideDondeCorre @story-8.181 @ac-11', (t) => 
   }
   // un guardado de verdad en otra carpeta, con un `cd` que el lector asegura, ya no cobra la rama de la sesión (8.190)
   const r = brake().decidir({ command: `cd ${fuera} && git init -q && git add -A && git commit -m x`, cwd: d, sid: SID, home: h });
-  assert.ok(r && r.pregunta && !r.texto, JSON.stringify(r));
+  // guarda: no frena (desde la 8.242 el commit del carril tampoco pregunta)
+  assert.ok(!(r && r.texto), JSON.stringify(r));
 });
 
 // 🔴 Falla con: `git diff HEAD` en un repo sin su primer commit, leído como «no pude medir»: el commit que lo arregla queda frenado.
@@ -883,7 +903,8 @@ test('SaveBrake_RepoSinCommits_GuardaElPrimero @story-8.181 @ac-13', (t) => {
   const h = home(t);
   carril(h, { maxFiles: 8, bases: { [fs.realpathSync(d)]: { sha: null, traida: false, motivo: 'sin origin', origen: null } } });
   const r = brake().decidir({ command: 'git add -A && git commit -m init', cwd: d, sid: SID, home: h });
-  assert.ok(r && r.pregunta && !r.texto, JSON.stringify(r));
+  // guarda: no frena (desde la 8.242 el commit del carril tampoco pregunta)
+  assert.ok(!(r && r.texto), JSON.stringify(r));
 });
 
 // 🔴 Falla con: el freno anotado dos veces, o uno que no ocurrió: el tablero de la noche los cuenta como frenos.
@@ -1141,17 +1162,23 @@ test('CaminoRapido_PreguntaComoUnaCorrida (T15)', (t) => {
   const ajeno = repoConOrigin(t, 'ajeno');
   escribir(a, 'app.js', 'module.exports = 1;\n');
   carril(h);
-  // con el carril abierto y firmado, commit, push y pedido preguntan en la ventana, con el motivo del carril
-  for (const cmd of ['git commit -m x', `git push origin ${RAMA}`, 'gh pr create --fill']) {
+  // con el carril abierto y firmado, el pedido y el empuje a una rama compartida preguntan en la ventana, con el motivo
+  // del carril; desde la 8.242, el commit y el empuje de la rama de trabajo no
+  for (const cmd of ['gh pr create --fill', 'git push origin main']) {
     const r = gancho(h, cmd, { cwd: a, modo: 'default' });
     assert.strictEqual(r.status, 0, `${cmd}: ${r.stderr}`);
     assert.match(r.stdout, VENTANA, `«${cmd}» abre la ventana`);
     assert.match(r.stdout, /camino rápido «el combo muestra el nombre completo»/, `«${cmd}» dice de qué camino rápido es`);
   }
+  for (const cmd of ['git commit -m x', `git push origin ${RAMA}`]) {
+    const r = gancho(h, cmd, { cwd: a, modo: 'default' });
+    assert.strictEqual(r.status, 0, `${cmd}: ${r.stderr}`);
+    assert.doesNotMatch(r.stdout, VENTANA, `«${cmd}» no abre la ventana`);
+  }
   // lo que no se lee con certeza también pregunta
   assert.match(gancho(h, 'G=git; $G push', { cwd: a, modo: 'default' }).stdout, VENTANA);
   // en una pestaña que no pide permisos guarda y lo dice
-  const b = gancho(h, `git push origin ${RAMA}`, { cwd: a, modo: 'bypassPermissions' });
+  const b = gancho(h, 'gh pr create --fill', { cwd: a, modo: 'bypassPermissions' });
   assert.strictEqual(b.status, 0, b.stderr);
   assert.strictEqual(b.stdout, '', 'no abre la ventana');
   assert.match(b.stderr, /no pide permisos/);
@@ -1159,14 +1186,556 @@ test('CaminoRapido_PreguntaComoUnaCorrida (T15)', (t) => {
   assert.strictEqual(brake().decidir({ command: 'git status', cwd: a, sid: SID, home: h }), null);
   // con archivos anotados, el carril es de su repo: el trabajo de otro repo pasa, el pedido pregunta
   carril(h, { files: [path.join(a, 'app.js')] });
-  assert.ok(brake().decidir({ command: 'git commit -m x', cwd: a, sid: SID, home: h }), 'el repo del carril pregunta');
   assert.strictEqual(brake().decidir({ command: 'git commit -m x', cwd: ajeno, sid: SID, home: h }), null, 'otro repo pasa');
   assert.ok(brake().decidir({ command: 'gh pr create --fill', cwd: ajeno, sid: SID, home: h }), 'el pedido pregunta');
   // sin firma, o vencido, no es un carril: no pregunta
   const h2 = home(t);
   carril(h2, { firmado: false });
-  assert.strictEqual(brake().decidir({ command: 'git commit -m x', cwd: a, sid: SID, home: h2 }), null, 'sin firma no pregunta');
+  assert.strictEqual(brake().decidir({ command: 'gh pr create --fill', cwd: a, sid: SID, home: h2 }), null, 'sin firma no pregunta');
   const h3 = home(t);
   carril(h3, { lastTouch: '2026-01-01T00:00:00.000Z' });
-  assert.strictEqual(brake().decidir({ command: 'git commit -m x', cwd: a, sid: SID, home: h3 }), null, 'vencido no pregunta');
+  assert.strictEqual(brake().decidir({ command: 'gh pr create --fill', cwd: a, sid: SID, home: h3 }), null, 'vencido no pregunta');
+});
+
+// ── la persona firma el pedido, no el commit ────────────────────────────────────────────────────────────────────────
+// El commit y el empuje de la rama de trabajo no preguntan. El pedido y el empuje a una rama compartida frenan sin el
+// «Preparar el pull request» cerrado o con el código distinto de su foto (`prepareCommitHuellas`), y si no, preguntan con la evidencia.
+
+const SO_LIB = path.join(SCRIPTS, 'lib', 'save-ok.js');
+const HASTA_EL_11 = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'prepare-commit'];
+const ABRO = /¿ABRO EL PULL REQUEST\?/;
+const SIN_PREPARAR = /el pull request sale después de preparar/;
+const CAMBIO = /el código cambió después de preparar el pull request/;
+const decide = (h, command, cwd) => brake().decidir({ command, cwd, sid: SID, home: h });
+const gatesDe = (h) => {
+  try { return fs.readFileSync(path.join(estado(h), 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; }
+};
+/** La corrida con «Preparar el pull request» cerrado y la foto de ahora de sus repos; `extra` pisa lo que haga falta. */
+function preparada(a, extra = {}) {
+  const so = require(SO_LIB);
+  const m = corrida(a, {
+    stepsCompleted: HASTA_EL_11, stepsPending: [], checks: { tests: 'green' }, checksProvenance: { tests: 'test-gate' },
+    iterations: { 1: { ts: ANTES } }, stepTimings: { reviewers: { startedAt: ANTES, completedAt: ANTES } },
+    adversarialSkip: { motivo: 'LOW', at: ANTES }, ...extra,
+  });
+  return 'prepareCommitHuellas' in extra ? m : { ...m, prepareCommitHuellas: so.huellas(so.reposDeLaCorrida({ marker: m })) };
+}
+
+// 🔴 Falla con: un commit dentro de una corrida que todavía abre la ventana, una forma de commit que el lector deja de
+// leer, o el commit que pasa sin quedar en el registro del freno.
+test('8.242-Commit_DeLaCorrida_NoPregunta (T1) @story-8.242 @ac-1', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const otro = tmp(t, 'freno-cwd-');
+  for (const m of [corrida(a), preparada(a)]) {
+    abrir(h, m);
+    for (const forma of COMMITS) {
+      const cmd = con(forma, a);
+      const cwd = desdeOtra(forma) ? otro : a;
+      assert.ok(brake().comandosQueGuardan(cmd, cwd, h).some((c) => c.tipo === 'commit'), `«${cmd}» se lee como commit`);
+      assert.strictEqual(decide(h, cmd, cwd), null, `«${cmd}» no pregunta`);
+    }
+    const r = gancho(h, 'git commit -m x', { cwd: a, modo: 'default' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stdout, VENTANA, 'el gancho no abre la ventana');
+  }
+  const l = gatesDe(h).filter((x) => x.name === 'save-brake');
+  assert.ok(l.length, 'el freno anota el commit');
+  for (const x of l) {
+    assert.strictEqual(x.status, 'ok', JSON.stringify(x));
+    assert.match(x.reason, /commit local, sin pregunta/);
+  }
+});
+
+// 🔴 Falla con: el camino corto que pierde sus frenos al dejar de preguntar en el commit, lo que la pregunta mostraba
+// que se pierde, o un registro del carril ilegible que deja de preguntar por el pedido.
+test('8.242-Commit_DelCaminoCorto_SinPreguntaConSusFrenos (T2) @story-8.242 @ac-1 @ac-10', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, { maxFiles: 8 });
+  commitDeArchivos(d, 'a', 3);
+  for (const cmd of ['git commit -m x', `git push origin ${RAMA}`]) assert.strictEqual(decide(h, cmd, d), null, `«${cmd}» dentro del tope`);
+  assert.match((decide(h, 'gh pr create --fill', d) || {}).pregunta || '', /¿GUARDO\?/, 'el pedido del carril pregunta como hoy');
+  assert.match((decide(h, 'git push origin main', d) || {}).pregunta || '', /¿GUARDO\?/, 'la rama compartida del carril pregunta como hoy');
+  commitDeArchivos(d, 'b', 7);
+  for (const cmd of ['git commit -m x', `git push origin ${RAMA}`]) assert.match((decide(h, cmd, d) || {}).texto || '', elTope, `«${cmd}» pasa el tope`);
+  // un nombre de archivo que habla de roles o permisos: el aviso sale en pantalla, sin pregunta
+  const d2 = repoConOrigin(t, 'datos');
+  const h2 = home(t);
+  carril(h2, { maxFiles: 8 });
+  escribir(d2, 'src/roles.js', 'module.exports = 1;\n');
+  sh(d2, 'add', '-A');
+  sh(d2, 'commit', '-q', '-m', 'roles');
+  const r = decide(h2, 'git commit -m x', d2);
+  assert.ok(r && r.aviso && !r.pregunta && !r.texto, JSON.stringify(r));
+  assert.match(r.aviso, /roles o permisos/);
+  // el registro del carril que no se lee: el commit pasa con un aviso, el pedido pregunta como hoy
+  const h3 = home(t);
+  fs.mkdirSync(path.join(estado(h3), 'adhoc'), { recursive: true });
+  fs.writeFileSync(path.join(estado(h3), 'adhoc', `${SID}.json`), '{ no es json');
+  const c = decide(h3, 'git commit -m x', d);
+  assert.ok(c && c.aviso && !c.pregunta && !c.texto, JSON.stringify(c));
+  assert.match(c.aviso, /no pude leer el registro del camino rápido/);
+  assert.match((decide(h3, 'gh pr create --fill', d) || {}).pregunta || '', /no pude leer el registro del camino rápido/);
+});
+
+// 🔴 Falla con: el empuje de la rama de trabajo que vuelve a preguntar, o que frena con el árbol igual a la foto.
+test('8.242-EmpujeRamaDeTrabajo_NoPregunta (T3) @story-8.242 @ac-2', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const cmd of [`git push origin ${RAMA}`, 'git push', 'git push -u origin HEAD']) assert.strictEqual(decide(h, cmd, a), null, `antes de «Preparar el pull request»: «${cmd}»`);
+  // la foto con el cambio sin commitear; commiteado igual, sigue siendo la foto
+  escribir(a, 'app.js', 'module.exports = 2;\n');
+  abrir(h, preparada(a));
+  sh(a, 'add', '-A');
+  sh(a, 'commit', '-q', '-m', 'el cambio');
+  for (const cmd of [`git push origin ${RAMA}`, 'git push']) assert.strictEqual(decide(h, cmd, a), null, `con la foto: «${cmd}»`);
+  const r = gancho(h, `git push origin ${RAMA}`, { cwd: a, modo: 'default' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, VENTANA);
+});
+
+// 🔴 Falla con: un empuje de la rama de trabajo que lleva código que nadie revisó después de preparar.
+test('8.242-EmpujeRamaDeTrabajo_CambioDespuesDePreparar_Frena (T4) @story-8.242 @ac-2', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, preparada(a));
+  escribir(a, 'app.js', 'module.exports = 3;\n');
+  sh(a, 'add', '-A');
+  sh(a, 'commit', '-q', '-m', 'después de preparar');
+  const d = decide(h, `git push origin ${RAMA}`, a);
+  assert.ok(d && d.texto, JSON.stringify(d));
+  assert.match(d.texto, CAMBIO);
+  assert.ok(d.texto.includes(a), 'nombra el repo');
+  assert.match(d.texto, /complete-step prepare-commit/);
+  const r = gancho(h, `git push origin ${RAMA}`, { cwd: a });
+  assert.strictEqual(r.status, 2, r.stderr);
+  // en otra rama, también
+  const b = repoConOrigin(t, 'otra');
+  abrir(h, preparada(b));
+  sh(b, 'checkout', '-q', '-b', 'story/otra');
+  assert.match((decide(h, 'git push origin story/otra', b) || {}).texto || '', CAMBIO);
+});
+
+// 🔴 Falla con: un pedido preparado que no pregunta, que pregunta sin la evidencia o en otro orden, o un texto que
+// repite el comando (puede traer una credencial).
+test('8.242-Pedido_Preparado_PreguntaConLaEvidencia (T5) @story-8.242 @ac-3', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const carpeta = path.join(a, '.advisors', 'pipeline-runs', '9.99-20991231120000');
+  fs.mkdirSync(carpeta, { recursive: true });
+  fs.writeFileSync(path.join(carpeta, 'findings.json'), JSON.stringify([{ rule_id: 'X-W1', severity: 'WARNING', disposition: 'open' }]));
+  abrir(h, preparada(a, { iterations: { 1: { ts: ANTES }, 2: { ts: ANTES } }, adversarialSkip: undefined,
+    adversarial: { runId: 'r', launchedAt: ANTES }, adversarialPasses: [{ ts: ANTES, tipo: '5b', confirmados: 1, veredicto: 'listo' }] }));
+  const CUERPO = 'cuerpo-del-pedido-de-prueba';
+  for (const [cmd, forma] of [[`gh pr create --fill --body ${CUERPO}`, 'gh pr create'], [`az repos pr create --title ${CUERPO}`, 'az repos pr create']]) {
+    const r = gancho(h, cmd, { cwd: a, modo: 'default' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.match(r.stdout, VENTANA, `«${cmd}» abre la ventana`);
+    const texto = JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+    assert.match(texto, ABRO);
+    assert.ok(texto.includes(`«${forma}»`), texto);
+    assert.match(texto, /de la historia 9\.99/);
+    const orden = ['Pruebas:', 'Revisores:', 'Pase:', 'Hallazgos:'].map((p) => texto.indexOf(p));
+    assert.ok(orden.every((i, k) => i > 0 && (k === 0 || i > orden[k - 1])), `las cuatro partes en orden: ${texto}`);
+    assert.match(texto, /Pruebas: en verde \(test-gate\)/);
+    assert.match(texto, /Revisores: 2 vueltas/);
+    assert.match(texto, /Pase: cerrado con 1 confirmado/);
+    assert.match(texto, /Hallazgos: 0 críticos, 1 aviso/);
+    assert.ok(texto.length <= 1000, `${texto.length} caracteres`);
+    assert.ok(!texto.includes(CUERPO), 'sin el comando');
+  }
+});
+
+// 🔴 Falla con: una evidencia que inventa números donde la corrida no midió.
+test('8.242-Pedido_SinMedir_DiceNoMedido (T6) @story-8.242 @ac-3', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  // un marcador sin pruebas, sin vueltas de revisores anotadas, sin pase y sin carpeta de la corrida (hallazgos)
+  abrir(h, preparada(a, { checks: {}, checksProvenance: {}, iterations: {}, stepTimings: {}, adversarialSkip: undefined,
+    stepsCompleted: HASTA_EL_11.filter((p) => p !== 'reviewers') }));
+  const d = decide(h, 'gh pr create --fill', a);
+  assert.ok(d && d.pregunta, JSON.stringify(d));
+  for (const parte of ['Pruebas', 'Revisores', 'Pase', 'Hallazgos']) assert.match(d.pregunta, new RegExp(`${parte}: no medido`), d.pregunta);
+  const evidencia = d.pregunta.slice(d.pregunta.indexOf('Pruebas:'));
+  assert.doesNotMatch(evidencia.replace(/«Preparar el pull request»/g, ''), /\d/, `sin números inventados: ${evidencia}`);
+});
+
+// 🔴 Falla con: un pedido que sale sin haber preparado: código sin revisar, cambios sin declarar o evidencia vieja.
+test('8.242-Pedido_SinPreparar_Frena (T7) @story-8.242 @ac-4', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const cmd of PEDIDOS) {
+    const d = decide(h, con(cmd, a), a);
+    assert.ok(d && d.texto, `«${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.texto, SIN_PREPARAR, cmd);
+    assert.match(d.texto, /complete-step prepare-commit/);
+  }
+  const r = gancho(h, 'gh pr create --fill', { cwd: a, modo: 'bypassPermissions' });
+  assert.strictEqual(r.status, 2, 'frena en cualquier pestaña');
+  assert.match(r.stderr, SIN_PREPARAR);
+});
+
+// 🔴 Falla con: un pedido que sale con código distinto del que se preparó: sin commitear, sin seguir o commiteado.
+test('8.242-Pedido_CodigoCambiado_Frena (T8) @story-8.242 @ac-4', (t) => {
+  const h = home(t);
+  for (const cambiar of [
+    (a) => escribir(a, 'LEEME.md', 'otra cosa\n'),
+    (a) => escribir(a, 'nuevo.js', 'module.exports = 1;\n'),
+    (a) => { escribir(a, 'LEEME.md', 'commiteado\n'); sh(a, 'commit', '-q', '-am', 'otro contenido'); },
+  ]) {
+    const a = repoConOrigin(t);
+    abrir(h, preparada(a));
+    cambiar(a);
+    const d = decide(h, 'gh pr create --fill', a);
+    assert.ok(d && d.texto, JSON.stringify(d));
+    assert.match(d.texto, CAMBIO);
+    assert.ok(d.texto.includes(a));
+  }
+});
+
+// 🔴 Falla con: un pedido que pasa cuando la foto no se puede comparar (falta, vacía, un repo que ya no está) o cuando
+// un repo de la corrida con cambios no está en la foto.
+test('8.242-Pedido_FotoQueNoSeMide_Frena (T9) @story-8.242 @ac-7', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  for (const sinFoto of [{ prepareCommitHuellas: undefined }, { prepareCommitHuellas: [] }]) {
+    abrir(h, preparada(a, sinFoto));
+    const d = decide(h, 'gh pr create --fill', a);
+    assert.ok(d && d.texto, JSON.stringify(d));
+    assert.match(d.texto, /no pude comprobar que el código es el que se preparó/);
+    assert.match(d.texto, /repetí «Preparar el pull request»/);
+    assert.doesNotMatch(d.texto, /ok de guardar/, 'no pide un ok de guardar');
+  }
+  const borrado = path.join(tmp(t, 'freno-borrado-'), 'ya-no-esta');
+  abrir(h, preparada(a, { prepareCommitHuellas: [...require(SO_LIB).huellas([a]), { repo: borrado, rama: RAMA, base: null, arbol: 'abc' }] }));
+  assert.match((decide(h, 'gh pr create --fill', a) || {}).texto || '', /no pude comprobar que el código es el que se preparó \(.*ya-no-esta/);
+  // un repo hermano con cambios que la foto no tiene
+  const b = repoConOrigin(t, 'hermano');
+  escribir(b, 'cambio.js', 'module.exports = 1;\n');
+  abrir(h, preparada(a, { prepareCommitHuellas: require(SO_LIB).huellas([a]), fileEvents: [{ path: path.join(b, 'cambio.js'), ts: ANTES, code: true }] }));
+  const d = decide(h, 'gh pr create --fill', a);
+  assert.ok(d && d.texto, JSON.stringify(d));
+  assert.ok(d.texto.includes(b), d.texto);
+  assert.match(d.texto, /no está en la foto/);
+});
+
+// 🔴 Falla con: un empuje a una rama compartida (escrita, por `@{push}`, todas, un borrado o un destino que no se lee)
+// que sale sin preparar o sin preguntar.
+test('8.242-EmpujeRamaCompartida_ComoUnPedido (T10) @story-8.242 @ac-5', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const COMPARTIDAS = ['git push origin HEAD:main', 'git push origin dev', 'git push origin release/1.2', `git push origin ${RAMA} main`,
+    'git push --all origin', 'git push --mirror origin', `git push origin :${RAMA}`, `git push --delete origin ${RAMA}`, `git push -d origin ${RAMA}`,
+    'git push origin :', 'git push origin $DESTINO', 'echo main | xargs git push origin'];
+  abrir(h, corrida(a));
+  for (const cmd of COMPARTIDAS) assert.match((decide(h, cmd, a) || {}).texto || '', SIN_PREPARAR, `sin preparar: «${cmd}»`);
+  abrir(h, preparada(a));
+  for (const cmd of COMPARTIDAS) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta && !d.texto, `preparado: «${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, ABRO);
+    assert.match(d.pregunta, /«git push»/);
+  }
+  // `HEAD`, `@` y el empuje sin destino desde `dev`: la rama de verdad es la compartida
+  const b = repoConOrigin(t, 'en-dev');
+  sh(b, 'checkout', '-q', '-b', 'dev');
+  sh(b, 'push', '-q', '-u', 'origin', 'dev');
+  abrir(h, corrida(b));
+  for (const cmd of ['git push origin HEAD', 'git push origin @', 'git push']) assert.match((decide(h, cmd, b) || {}).texto || '', SIN_PREPARAR, `en dev: «${cmd}»`);
+  abrir(h, preparada(b));
+  for (const cmd of ['git push origin HEAD', 'git push']) assert.match((decide(h, cmd, b) || {}).pregunta || '', ABRO, `en dev, preparado: «${cmd}»`);
+  // una rama sin upstream y sin destino escrito: no se lee, y el texto dice cómo escribirlo
+  const c = repoConOrigin(t, 'sin-upstream');
+  sh(c, 'checkout', '-q', '-b', 'story/nueva');
+  abrir(h, corrida(c));
+  const s = decide(h, 'git push', c);
+  assert.match((s || {}).texto || '', SIN_PREPARAR);
+  assert.match(s.texto, /git push -u origin <rama>/);
+});
+
+// 🔴 Falla con: lo que no se lee que deja de preguntar, o que pasa con el código cambiado después de preparar.
+test('8.242-ComandoIlegible_PreguntaOFrena (T11) @story-8.242 @ac-6', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const cmd = 'bash -c "$X"';
+  abrir(h, corrida(a));
+  let d = decide(h, cmd, a);
+  assert.ok(d && d.pregunta, JSON.stringify(d));
+  assert.match(d.pregunta, NO_LEO);
+  abrir(h, preparada(a));
+  d = decide(h, cmd, a);
+  assert.ok(d && d.pregunta, JSON.stringify(d));
+  assert.match(d.pregunta, ABRO);
+  assert.match(d.pregunta, /no pude leer este comando; si abre un pull request o empuja a una rama compartida, es de la historia 9\.99/);
+  assert.match(d.pregunta, /Pruebas:/);
+  escribir(a, 'LEEME.md', 'cambió\n');
+  assert.match((decide(h, cmd, a) || {}).texto || '', CAMBIO);
+});
+
+// 🔴 Falla con: una pestaña sin permisos que deja de decir lo que guarda, o en la que los frenos dejan de frenar.
+test('8.242-PestanaSinPermisos_GuardaYAvisaPeroFrena (T12) @story-8.242 @ac-9', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, preparada(a));
+  let r = gancho(h, 'gh pr create --fill', { cwd: a, modo: 'bypassPermissions' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /permissionDecision/);
+  assert.match(r.stderr, ABRO);
+  assert.match(r.stderr, /Pruebas:/);
+  assert.match(r.stderr, /no pide permisos/);
+  escribir(a, 'LEEME.md', 'cambió\n');
+  r = gancho(h, 'gh pr create --fill', { cwd: a, modo: 'bypassPermissions' });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, CAMBIO);
+});
+
+// 🔴 Falla con: un marcador que no se lee leído como «no hay corrida»: el pedido saldría sin saber si se preparó.
+test('8.242-MarcadorIlegible_ElPedidoFrena (T13) @story-8.242 @ac-8', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  fs.writeFileSync(marcadorPath(h), '{ esto no es json');
+  const c = decide(h, 'git commit -m x', a);
+  assert.ok(c && c.aviso && !c.pregunta && !c.texto, JSON.stringify(c));
+  assert.match(c.aviso, /marcador/);
+  for (const cmd of ['gh pr create --fill', 'git push origin main']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.texto, `«${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.texto, /no pude leer el marcador de la corrida: no sé si el pull request está preparado/);
+  }
+  let r = gancho(h, 'git commit -m x', { cwd: a });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stderr, /marcador/);
+  r = gancho(h, 'gh pr create --fill', { cwd: a });
+  assert.strictEqual(r.status, 2, r.stderr);
+});
+
+// 🔴 Falla con: el lado Codex sin el mismo freno: un pedido sin preparar saldría desde Codex.
+test('8.242-Codex_MismoGancho (T18) @story-8.242 @ac-13', (t) => {
+  const RAIZ = path.resolve(SCRIPTS, '..', '..', '..');
+  const hooks = fs.readFileSync(path.join(RAIZ, 'adapters', 'codex', 'hooks.json'), 'utf8');
+  assert.match(hooks, /tycon-pipeline\/scripts\/on-pre-commit\.js/, 'Codex registra el mismo gancho');
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  const ev = { session_id: SID, turn_id: 'turn-1', model: 'gpt-x', tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' }, cwd: a };
+  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify(ev), cwd: a, encoding: 'utf8', env: { ...SIN_SESION, ...GIT_ENV, HOME: h, USERPROFILE: h }, timeout: 60000 });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, SIN_PREPARAR);
+});
+
+// 🔴 Falla con: el freno que no carga dejando pasar un pedido dentro de una corrida.
+test('8.242-FrenoQueNoCarga_EnCorridaFrena (T20) @story-8.242 @ac-11', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, preparada(a));
+  const r = gancho(h, 'gh pr create --fill', { cwd: a, preload: frenoRoto(t) });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /el freno de guardar no pudo correr/);
+});
+
+// 🔴 Falla con: lo que se trajo de `main` después de preparar que sale en el pedido sin pasar por «Preparar el pull request».
+test('8.242-TraerMain_VenceLaFotoYSeVuelveAPreparar (T28) @story-8.242 @ac-19', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, preparada(a));
+  assert.match((decide(h, 'gh pr create --fill', a) || {}).pregunta || '', ABRO, 'preparado, pregunta');
+  // en main entra otro archivo, y la rama lo trae
+  sh(a, 'checkout', '-q', 'main');
+  escribir(a, 'de-main.js', 'module.exports = 1;\n');
+  sh(a, 'add', '-A');
+  sh(a, 'commit', '-q', '-m', 'en main');
+  sh(a, 'push', '-q', 'origin', 'main');
+  sh(a, 'checkout', '-q', RAMA);
+  sh(a, 'merge', '-q', '--no-edit', 'origin/main');
+  assert.match((decide(h, 'gh pr create --fill', a) || {}).texto || '', CAMBIO, 'lo de main vence la foto');
+  // con «Preparar el pull request» cerrado otra vez (la foto nueva), pregunta
+  abrir(h, preparada(a));
+  assert.match((decide(h, 'gh pr create --fill', a) || {}).pregunta || '', ABRO);
+});
+
+// ── lo que confirmó el pase adversarial ─────────────────────────────────────────────────────────────────────────────
+
+// 🔴 Falla con: un marcador del esquema de números que cerró el paso 8 y frena todo pull request para siempre.
+test('8.242-Pase_EsquemaViejo_ElPaso8CuentaComoPreparado @story-8.242 @ac-4', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const viejo = preparada(a, { stepScheme: undefined, stepsCompleted: ['0', '0b', '0c', '1', '2', '3', '4', '5', '5b', '6', '7', '7b', '7c', '8'] });
+  const so = require(SO_LIB);
+  abrir(h, { ...viejo, prepareCommitHuellas: so.huellas(so.reposDeLaCorrida({ marker: viejo })) });
+  for (const cmd of ['gh pr create --fill', 'git push origin HEAD:main']) {
+    assert.match((decide(h, cmd, a) || {}).pregunta || '', ABRO, `«${cmd}» con el 8 cerrado pregunta`);
+  }
+  // sin el 8, frena
+  abrir(h, { ...viejo, stepsCompleted: ['0', '1', '2', '3', '4', '5', '6', '7'] });
+  assert.match((decide(h, 'gh pr create --fill', a) || {}).texto || '', SIN_PREPARAR);
+});
+
+// 🔴 Falla con: un destino que git resuelve a main (una abreviatura o un patrón) leído como una rama de trabajo.
+test('8.242-Pase_DestinoAbreviadoOConPatron_EsCompartido @story-8.242 @ac-5', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const cmd of ['git push origin HEAD:heads/main', 'git push origin feature:heads/dev', 'git push origin HEAD:refs/heads/main',
+    "git push origin 'refs/heads/*:refs/heads/*'", "git push origin '*:*'", "git push origin 'story/*:*'", 'git push origin "ma*"']) {
+    assert.match((decide(h, cmd, a) || {}).texto || '', SIN_PREPARAR, `«${cmd}» llega a una rama compartida`);
+  }
+  // la rama de trabajo, también escrita con su forma larga o abreviada, sigue siendo de trabajo
+  for (const cmd of [`git push origin ${RAMA}`, `git push origin HEAD:heads/${RAMA}`, `git push origin HEAD:refs/heads/${RAMA}`]) {
+    assert.strictEqual(decide(h, cmd, a), null, `«${cmd}» es la rama de trabajo`);
+  }
+});
+
+// 🔴 Falla con: un borrado o «todas las ramas» escritos con banderas juntas o acortadas, leídos como un empuje común.
+test('8.242-Pase_BorradoYTodasLasRamas_ConBanderasJuntasOAcortadas @story-8.242 @ac-5', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const cmd of [`git push -fd origin ${RAMA}`, `git push -df origin ${RAMA}`, `git push -ud origin ${RAMA}`, `git push origin +:${RAMA}`,
+    `git push --del origin ${RAMA}`, `git push --dele origin ${RAMA}`]) {
+    const c = brake().comandosQueGuardan(cmd, a, h).find((x) => x.tipo === 'push');
+    assert.ok(c && c.borrado, `«${cmd}» se lee como borrado: ${JSON.stringify(c)}`);
+    assert.match((decide(h, cmd, a) || {}).texto || '', SIN_PREPARAR, `«${cmd}» borra una rama del equipo`);
+  }
+  for (const cmd of ['git push --al origin', 'git push --bra origin']) {
+    assert.match((decide(h, cmd, a) || {}).texto || '', SIN_PREPARAR, `«${cmd}» empuja todas las ramas`);
+  }
+  // una bandera corta sin la d no es un borrado
+  assert.strictEqual(decide(h, `git push -fu origin ${RAMA}`, a), null);
+});
+
+// 🔴 Falla con: `--recurse-submodules <valor>` cuyo valor se lee como el remoto, y el empuje a dev como de trabajo.
+test('8.242-Pase_RecurseSubmodulesConElValorAparte @story-8.242 @ac-5', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  sh(a, 'checkout', '-q', '-b', 'dev');
+  sh(a, 'push', '-q', '-u', 'origin', 'dev');
+  abrir(h, corrida(a));
+  const c = brake().comandosQueGuardan('git push --recurse-submodules check origin', a, h).find((x) => x.tipo === 'push');
+  assert.strictEqual(c.remoto, 'origin', JSON.stringify(c));
+  assert.strictEqual(c.rama, null, JSON.stringify(c));
+  assert.match((decide(h, 'git push --recurse-submodules check origin', a) || {}).texto || '', SIN_PREPARAR, 'dev es compartida');
+  assert.match((decide(h, 'git push --recurse-submodules=check origin', a) || {}).texto || '', SIN_PREPARAR);
+});
+
+// 🔴 Falla con: un empuje sin destino escrito que el repo lleva a varias ramas (por su configuración), leído como el de
+// la rama actual.
+test('8.242-Pase_EmpujeConfiguradoEnElRepo_EsCompartido @story-8.242 @ac-5', (t) => {
+  const h = home(t);
+  for (const [clave, valor] of [['push.default', 'matching'], ['remote.origin.push', 'refs/heads/*:refs/heads/*'], ['remote.origin.mirror', 'true']]) {
+    const a = repoConOrigin(t);
+    abrir(h, corrida(a));
+    assert.strictEqual(decide(h, 'git push', a), null, 'sin configuración, es la rama de trabajo');
+    sh(a, 'config', clave, valor);
+    for (const cmd of ['git push', 'git push origin']) {
+      assert.match((decide(h, cmd, a) || {}).texto || '', SIN_PREPARAR, `con ${clave}=${valor}, «${cmd}» puede llegar a main`);
+    }
+    // con el destino escrito, la configuración no cambia a dónde va
+    assert.strictEqual(decide(h, `git push origin ${RAMA}`, a), null, `con ${clave}, el destino escrito manda`);
+  }
+});
+
+// 🔴 Falla con: un empuje que manda otra cosa que lo preparado (otra rama, o un commit que el disco ya no muestra) y
+// pregunta como si fuera lo revisado.
+test('8.242-Pase_LoQueSeEmpujaEsLoPreparado @story-8.242 @ac-2 @ac-3', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  escribir(a, 'app.js', 'module.exports = 1;\n');
+  abrir(h, preparada(a));
+  // sin commitear todavía, lo que sale es lo de antes de preparar: pregunta
+  assert.match((decide(h, 'gh pr create --fill', a) || {}).pregunta || '', ABRO, 'sin commitear, pregunta');
+  // otra rama con código sin revisar, empujada a main
+  sh(a, 'branch', 'otra');
+  sh(a, 'checkout', '-q', 'otra');
+  escribir(a, 'sin-revisar.js', 'x\n');
+  sh(a, 'add', 'sin-revisar.js');
+  sh(a, 'commit', '-q', '-m', 'sin revisar');
+  sh(a, 'checkout', '-q', RAMA);
+  assert.match((decide(h, 'git push origin otra:main', a) || {}).texto || '', CAMBIO, 'otra rama no es lo preparado');
+  // un commit que el disco ya no muestra
+  escribir(a, 'nuevo.js', 'y\n');
+  sh(a, 'add', 'nuevo.js');
+  sh(a, 'commit', '-q', '-m', 'nuevo');
+  sh(a, 'rm', '-q', '--cached', 'nuevo.js');
+  fs.renameSync(path.join(a, 'nuevo.js'), path.join(tmp(t, 'afuera-'), 'nuevo.js'));
+  assert.match((decide(h, 'git push origin HEAD:main', a) || {}).texto || '', CAMBIO, 'el commit trae código fuera de la foto');
+  // lo preparado, commiteado: pregunta
+  const b = repoConOrigin(t, 'b');
+  escribir(b, 'app.js', 'module.exports = 1;\n');
+  abrir(h, preparada(b));
+  sh(b, 'add', '-A');
+  sh(b, 'commit', '-q', '-m', 'lo preparado');
+  assert.match((decide(h, 'git push origin HEAD:main', b) || {}).pregunta || '', ABRO, 'commiteado igual, pregunta');
+  assert.strictEqual(decide(h, `git push origin ${RAMA}`, b), null, 'la rama de trabajo, commiteada igual, pasa');
+  // una foto de antes de este control (sin `cabeza`) se mide sólo por el disco: no frena a una ejecución en vuelo
+  const c = repoConOrigin(t, 'c');
+  escribir(c, 'app.js', 'module.exports = 1;\n');
+  const pc = preparada(c);
+  abrir(h, { ...pc, prepareCommitHuellas: pc.prepareCommitHuellas.map(({ cabeza, ...f }) => f) });
+  assert.match((decide(h, 'git push origin HEAD:main', c) || {}).pregunta || '', ABRO, 'la foto vieja pregunta como antes');
+});
+
+// 🔴 Falla con: un comando que cambia el código y en la misma línea abre el pull request o empuja, juzgado con el árbol
+// de antes de correr.
+/**
+ * Un git que falla con 128 («no pude», no «no está») cuando sus argumentos contienen `patron`; para el resto, el de
+ * verdad. Vale hasta el final de la prueba; uno nuevo reemplaza al anterior.
+ */
+function gitQueFalla(t, patron) {
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-falla-'));
+  fs.writeFileSync(path.join(dir, 'git'), `#!/bin/sh\ncase " $* " in *"${patron}"*) echo "fatal: falla de prueba" >&2; exit 128;; esac\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  const antes = process.env.PATH;
+  process.env.PATH = `${dir}${path.delimiter}${antes}`;
+  t.after(() => { process.env.PATH = antes; fs.rmSync(dir, { recursive: true, force: true }); });
+}
+
+// 🔴 Falla con: una falla de git leída como falta de dato: lo que se empuja sale sin compararlo con la foto, una foto
+// sin commit (`cabeza: null`) tomada por una de antes de este control, o una configuración que no se pudo leer tomada
+// por la de siempre.
+test('8.242-Rev_FallaDeGit_NoEsFaltaDeDato_Frena @story-8.242 @ac-2 @ac-5', { skip: process.platform === 'win32' }, (t) => {
+  const h = home(t);
+  // una foto sin commit se compara por el árbol: otra rama con código sin revisar no es lo preparado
+  const a = repoConOrigin(t);
+  escribir(a, 'app.js', 'module.exports = 1;\n');
+  const pa = preparada(a);
+  abrir(h, { ...pa, prepareCommitHuellas: pa.prepareCommitHuellas.map((f) => ({ ...f, cabeza: null })) });
+  sh(a, 'branch', 'otra');
+  sh(a, 'checkout', '-q', 'otra');
+  escribir(a, 'sin-revisar.js', 'x\n');
+  sh(a, 'add', 'sin-revisar.js');
+  sh(a, 'commit', '-q', '-m', 'sin revisar');
+  sh(a, 'checkout', '-q', RAMA);
+  assert.match((decide(h, 'git push origin otra:main', a) || {}).texto || '', CAMBIO, 'una foto con cabeza null no se saltea');
+  // no poder medir lo que se empuja frena
+  const b = repoConOrigin(t, 'b');
+  escribir(b, 'app.js', 'module.exports = 1;\n');
+  abrir(h, preparada(b));
+  sh(b, 'add', '-A');
+  sh(b, 'commit', '-q', '-m', 'lo preparado');
+  gitQueFalla(t, 'HEAD^{commit}');
+  assert.match((decide(h, 'git push origin HEAD:main', b) || {}).texto || '', /no pude comprobar/, 'git falló: no es «no existe»');
+  // una configuración del empuje que no se pudo leer: el destino puede ser main
+  const c = repoConOrigin(t, 'c');
+  abrir(h, corrida(c));
+  gitQueFalla(t, 'config --get push.default');
+  assert.match((decide(h, 'git push', c) || {}).texto || '', SIN_PREPARAR, 'sin poder leer push.default, es compartido');
+});
+
+test('8.242-Pase_ComandoQueCambiaElCodigoAntesDeSalir_Frena @story-8.242 @ac-2 @ac-19', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  escribir(a, 'app.js', 'module.exports = 1;\n');
+  abrir(h, preparada(a));
+  for (const cmd of ['echo z > app.js && git commit -am x && gh pr create --fill', 'git merge --no-edit origin/main && gh pr create --fill',
+    "sed -i '' s/1/2/ app.js && git commit -am x && git push origin HEAD:main", `git pull && git push origin ${RAMA}`]) {
+    assert.match((decide(h, cmd, a) || {}).texto || '', /cambia el código antes de que salga/, `«${cmd}» frena`);
+  }
+  // commitear lo preparado y empujar en la misma línea es el cierre normal: pregunta
+  assert.match((decide(h, 'git add -A && git commit -m x && git push origin HEAD:main', a) || {}).pregunta || '', ABRO);
+  // antes de preparar, el empuje de la rama de trabajo no se mira
+  abrir(h, corrida(a));
+  assert.strictEqual(decide(h, `echo z > app.js && git commit -am x && git push origin ${RAMA}`, a), null);
 });

@@ -172,7 +172,7 @@ del tablero de la noche: la duración y los pasos de una ejecución (medianas) y
 Más abajo está **«Ejecución por ejecución»**: una fila por ejecución, de la más nueva a la más vieja. La barra de cada fila
 reparte el tiempo entre los pasos del pipeline, con los colores de la leyenda: Arranque, Validar la historia, Armar el
 plan, Aprobar el plan, Implementar, Correr las pruebas, Implementar + pruebas (las ejecuciones viejas, que los tenían
-juntos), Revisores, Hallazgos y Preparar el commit. Son los pasos de Cómo trabaja, por nombre y sin número: el Pase
+juntos), Revisores, Hallazgos y Preparar el pull request. Son los pasos de Cómo trabaja, por nombre y sin número: el Pase
 adversarial va dentro de Revisores y Probar en vivo dentro de Hallazgos. «Sin marca» es un tramo que la ejecución no
 anotó.
 
@@ -747,11 +747,14 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   frenada en ese paso. Con Codex, que no tiene ventana, todo se firma en la terminal. La matriz completa
   está en `guides/firmas-del-arnes.md`, «Quién firma cada nivel».
 
+  El commit y el empuje de la rama de trabajo los hace el agente sin preguntar: la persona aprueba el pull request, y
+  cada empuje a una rama compartida, en la ventana de permiso.
+
   **¿Quién firma? En corto.** Para saber quién firma algo en tu máquina, se mira esto:
 
   | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás | La revisión automática |
   |---|---|---|---|---|---|
-  | Guardar el trabajo · 1 | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
+  | Abrir el pull request · 1 | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
   | Pedir otra revisión · 1 | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
   | Aprobar el plan · 1 | vos | espera | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | obligatoria para la coordinadora |
   | Aprobar el plan de una story delicada · 2 | vos | espera | vos | espera | ataca y avisa, nunca aprueba |

@@ -451,8 +451,12 @@ function enteringEnd(marker, entry, nowMs, info = {}) {
 
 const ENTERING = 'Entrando a los repos';
 const STALLED = 'Pedidos sin encolar';
-const SAVE_WAITS = 'Terminó: espera el ok para guardar';
-const SAVE_OK = 'Terminó: ya tiene el ok para guardar';
+// Lo que una corrida terminada espera de la persona: su sí para abrir el pedido (el commit no pregunta). La oficina y
+// el tablero comparan `espera` con SAVE_WAIT, así que se cambia acá y en ningún otro lado.
+const SAVE_WAIT = 'abrir el pull request';
+const SAVE_ASK = 'Abrir el pull request';
+const SAVE_WAITS = 'Terminó: espera tu sí para abrir el pull request';
+const SAVE_OK = 'Terminó: ya tiene tu sí para abrir el pull request';
 const WAITING_STATUS = /wait|input|permission/i;
 // cómo anota una sesión que abrió una pregunta (scripts/hooks/session-state.js), y cómo se dice
 const ANSWER_DIALOG = 'una respuesta';
@@ -484,7 +488,7 @@ function realState(x, d, f) {
   // terminado sin cerrar: falta cerrarlo. Si la sesión está ocupada, trabaja (en otra cosa, o en cerrarlo) y lo dice
   if (x.finishedOpen) return busy === true ? { estado: 'trabajando' } : { estado: 'cerrar' };
   // terminada sin nada que guardar (`nothingToSave`: una marcada con el árbol limpio) no espera ningún ok
-  if (x.kind === 'finished') return busy === false && !x.saveOk && !x.nothingToSave ? { estado: 'firma', espera: 'el ok para guardar' } : { estado: 'trabajando' };
+  if (x.kind === 'finished') return busy === false && !x.saveOk && !x.nothingToSave ? { estado: 'firma', espera: SAVE_WAIT } : { estado: 'trabajando' };
   if (busy === false) {
     if (x.kind === 'pipeline' && x.current === 'approve-plan') return { estado: 'firma', espera: 'que apruebes el plan' };
     const at = codex ? Date.parse(f.updatedAt) : Number(d && d.statusAt);
@@ -1685,7 +1689,7 @@ function promiseNote(x, nowMs) {
 function stateNote(x, d, f) {
   const r = realState(x, d, f);
   if (r.estado === 'pregunta') return `Te pregunta: ${r.espera}`;
-  if (r.estado === 'firma') return x.kind === 'finished' && r.espera === 'el ok para guardar' && !x.mark ? '' : `Tu firma: ${r.espera}`;
+  if (r.estado === 'firma') return x.kind === 'finished' && r.espera === SAVE_WAIT && !x.mark ? '' : `Tu firma: ${r.espera}`;
   return x.mark || x.kind === 'finished' ? '' : r.parada || '';
 }
 
@@ -1785,4 +1789,4 @@ if (require.main === module) {
 // el nombre de una sesión como lo deja `sessionsBySid`: quien lo compara con uno guardado lo recorta igual
 const listedName = (s) => cut(s, NAME_MAX);
 
-module.exports = { listedName, buildWip, wipNow, renderRetired, retiredNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };
+module.exports = { SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName, buildWip, wipNow, renderRetired, retiredNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };

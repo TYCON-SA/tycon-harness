@@ -175,7 +175,7 @@ dashboard: how long a run takes and how many steps it has (medians), and how man
 Further down is **"Run by run"**: one row per run, newest first. Each row's bar splits the time
 among the pipeline steps, with the legend's colors: Start, Validate the story, Build the plan, Approve the plan,
 Implement, Run the tests, Implement + tests (older runs, which had them together), Reviewers, Findings and Prepare the
-commit. They are the steps of How it works, by name and without a number: the Adversarial pass goes inside Reviewers and
+pull request. They are the steps of How it works, by name and without a number: the Adversarial pass goes inside Reviewers and
 Live check inside Findings. "No mark" is a stretch the run did not record.
 
 ![The step legend and the "Run by run" table](sitio-de-la-organizacion/capturas/corridas-leyenda.png)
@@ -763,11 +763,14 @@ be, to copy it and open the request by hand.
   session stays stopped at that step. With Codex, which has no window, everything is signed at the terminal. The full matrix
   is in `guides/firmas-del-arnes.md`.
 
+  The agent commits and pushes its working branch without asking: the person approves the pull request, and every push
+  to a shared branch, in the permission window.
+
   **Who signs? In short.** To know who signs something on your machine, look here:
 
   | What has to be signed | No coordinator, you are there | No coordinator, you are away | Coordinator, you are there | Coordinator, you are away | The automatic review |
   |---|---|---|---|---|---|
-  | Save the work · 1 | you | waits | the coordinator \* | the coordinator \* | does not apply |
+  | Open the pull request · 1 | you | waits | the coordinator \* | the coordinator \* | does not apply |
   | Ask for another review · 1 | you | waits | the coordinator \* | the coordinator \* | does not apply |
   | Approve the plan · 1 | you | waits | the coordinator, only with the approved verdict of the review she launches \*\* | the coordinator, only with the approved verdict of the review she launches \*\* | required for the coordinator |
   | Approve the plan of a sensitive story · 2 | you | waits | you | waits | attacks and warns, never approves |

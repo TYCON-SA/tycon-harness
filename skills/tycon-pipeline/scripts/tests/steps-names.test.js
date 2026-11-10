@@ -35,12 +35,12 @@ const ESPERADOS = {
   'adversarial-pass': 'Pase adversarial',
   findings: 'Hallazgos',
   'live-check': 'Probar en vivo',
-  'prepare-commit': 'Preparar el commit',
+  'prepare-commit': 'Preparar el pull request',
   'close-work-item': 'Cerrar la historia',
 };
 const VIEJOS = { 0: 'Arranque', '0b': 'Arranque', '0c': 'Arranque', 1: 'Validar la historia', 2: 'Armar el plan', 3: 'Aprobar el plan',
   4: 'Implementar + pruebas', 5: 'Revisores', '5b': 'Pase adversarial', 6: 'Hallazgos', 7: 'Hallazgos', '7b': 'Revisores', '7c': 'Probar en vivo',
-  8: 'Preparar el commit', 9: 'Cerrar la historia' };
+  8: 'Preparar el pull request', 9: 'Cerrar la historia' };
 
 // Un paso nombrado por su número: «Step 5», «step 4», «steps 1-2», «paso 8», «sub-paso 4.0», «5b», «7c»…
 const POR_NUMERO = /\bsteps? ?\d|\bsub-?pasos? ?\d|\bpasos? \d|\b(?:0b|0c|5b|7b|7c)\b/i;
@@ -114,7 +114,7 @@ test('T1 Display_PlainNamesOnly — lo que ve el dueño nombra cada paso por su 
   }
   assert.strictEqual(S.stepName('zz'), null, 'un id que no existe: null, no un nombre inventado');
   assert.strictEqual(S.stepName('reviewers', 2), 'Revisores, vuelta 2');
-  assert.strictEqual(S.stepNames([5, '5b', 8]), 'Revisores, Pase adversarial, Preparar el commit');
+  assert.strictEqual(S.stepNames([5, '5b', 8]), 'Revisores, Pase adversarial, Preparar el pull request');
   assert.strictEqual(S.stepNames(['reviewers', 'findings']), 'Revisores, Hallazgos');
   assert.strictEqual(S.stepNames([6, 7]), 'Hallazgos', 'los dos viejos de Hallazgos, una vez');
   assert.strictEqual(S.stepNames([3, 'zz']), 'Aprobar el plan, «zz»', 'un id desconocido se muestra tal cual, marcado');

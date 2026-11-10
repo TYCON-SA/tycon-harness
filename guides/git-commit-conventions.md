@@ -6,7 +6,13 @@ Guía única para commits, merges y push en todos los repos TYCON (FRESNO, Ebano
 
 ## Regla #0 — Autorización explícita (NO COMMIT / NO PUSH sin consentimiento)
 
-**POR NINGÚN MOTIVO ejecutar `git commit` o `git push` sin consentimiento explícito del usuario.**
+**En una ejecución del pipeline o en un camino rápido firmado, la persona aprueba el pull request, no el commit.** El
+agente commitea y empuja su rama de trabajo sin preguntar, después de cerrar «Preparar el pull request»; el gancho lo
+deja en `gates.log`. Abrir o mergear un pull request, y empujar a una rama compartida (`main`, `master`, `dev`,
+`release/*`), pregunta en la ventana de permiso, con la evidencia de la ejecución, y frena si el pull request no está
+preparado o si el código cambió desde entonces.
+
+**Fuera de eso, POR NINGÚN MOTIVO ejecutar `git commit` o `git push` sin consentimiento explícito del usuario.**
 
 - NUNCA ejecutar `git commit` automáticamente al terminar de implementar.
 - NUNCA ejecutar `git push` sin que el usuario lo pida con esas palabras.

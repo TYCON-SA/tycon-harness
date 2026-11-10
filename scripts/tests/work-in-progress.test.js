@@ -130,7 +130,7 @@ test('T4 Fin_SinDatos_LoDice: sin mediana del paso 8 no hay hora', () => {
   marker(m, 'eeeeeeee-5', { storyId: '9.5', storyPath: story(m.root, '9.5', 't'), stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5, 8] });
   session(m, process.pid, 'eeeeeeee-5', 'x');
   const row = run(m).rows[0];
-  assert.strictEqual(row.end, 'sin datos (Preparar el commit)');
+  assert.strictEqual(row.end, 'sin datos (Preparar el pull request)');
 });
 
 test('T5 Sesion_NombreIdCortoYMedioCamino: sólo lo vivo en la tabla; lo demás abajo, con cómo limpiarlo', () => {
@@ -1666,7 +1666,7 @@ test('wip · PasoConBandera_EsElQueSigue: con «Probar en vivo» sin hacer, el e
   session(m, process.pid, 'viv00000-1', 'x');
   assert.strictEqual(run(m).rows[0].state, 'Probar en vivo');
   marker(m, 'viv00000-1', { ...base, dodRuntimeChecked: true });
-  assert.strictEqual(run(m).rows[0].state, 'Preparar el commit');
+  assert.strictEqual(run(m).rows[0].state, 'Preparar el pull request');
 });
 
 test('wip · PedidoFueraDeLaCola_NoSigueEntrando: con todos los pedidos fuera de la cola o en borrador, espera que lo encolen', { skip: onWindows }, () => {

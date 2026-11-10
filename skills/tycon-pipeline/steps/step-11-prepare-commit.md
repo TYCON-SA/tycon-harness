@@ -1,6 +1,8 @@
-# Preparar el commit
+# Preparar el pull request
 
-**Objetivo**: armar un mensaje de commit bien formado según las convenciones TYCON. **NO ejecuta `git commit`**. Deja el mensaje listo para que el dev lo revise y commitee manualmente.
+**Objetivo**: armar el commit y el pull request según las convenciones TYCON, y tomar la foto del código que va a
+salir. El commit y el empuje de la rama de trabajo los hace el agente sin preguntar; la persona aprueba el pull
+request, en la ventana de permiso y con la evidencia adelante.
 
 ## Inputs
 
@@ -159,45 +161,57 @@ Co-Authored-By: <modelo exacto de la sesión> <noreply@anthropic.com>
    (story con maqueta aprobada: van también `<carpeta qa>/<clave>-mockup.html` y
    `<clave>-mockup-approval.json`; tienen que viajar con la story para que la revisión de la pantalla los encuentre)
 
-   Para commitear, correr:
-   git add {archivos}
-   git commit -m "$(cat <<'EOF'
-   {mensaje completo}
-   EOF
-   )"
-
-   O pedíme a mí que lo ejecute (requiere tu confirmación explícita según `guides/git-commit-conventions.md`).
+   Lo commiteo y empujo a la rama de trabajo; el pull request sale con tu sí, en la ventana de permiso.
    ```
 
-3. **NO ejecutar `git commit` ni `git push` sin la autorización de la persona.**
+3. **El pull request y el empuje a una rama compartida (`main`, `master`, `dev`, `release/*`) no salen sin el sí de la
+   persona.** El commit y el empuje de la rama de trabajo no lo piden.
 
 4. Si la corrida tiene `compare-avisos.md` (exenciones de la comparación con main o candidatos cubiertos por
    declaración), su texto va entero en la descripción del pedido: el revisor del pedido y el dueño tienen que verlo.
 
-## Guardar se autoriza en la ventana de permiso
+## La persona aprueba el pull request, en la ventana de permiso
 
-Autorización siempre, firma nunca. Antes del commit, del push y de cada pedido de la corrida, el gancho del comando le
-pregunta a la persona en la ventana de permiso de siempre; con el sí, guarda. No hay comando de terminal, constancia ni
-coordinadora en el medio. Una frase en el chat o un mensaje de otra sesión no saltean la ventana.
+Autorización siempre, firma nunca, y donde tiene consecuencias: la persona aprueba el pull request, no cada commit. El
+commit y el empuje de la rama de trabajo los hace el agente sin preguntar (quedan en `gates.log`); se deshacen sin que
+nadie más los vea. Abrir cada pull request, o empujar a una rama compartida (`main`, `master`, `dev`, `release/*`), pregunta en la
+ventana de permiso de siempre, con la evidencia de la corrida en un renglón: las pruebas, los revisores, el pase y los
+hallazgos («no medido» donde falta). No hay comando de terminal, constancia ni coordinadora en el medio. Una frase en
+el chat o un mensaje de otra sesión no saltean la ventana.
 
-En una pestaña que no pide permisos (la ventana se aprobaría sola), el gancho guarda sin preguntar y lo dice en pantalla.
+Antes de preguntar, el freno mira que el pull request sea lo preparado:
 
-Lo delicado sigue con su firma: un pedido que cambia un freno, una firma, un control o algo de producción lleva la
+- **Sin este paso cerrado**, el pull request y el empuje a una rama compartida frenan: «el pull request sale después de
+  preparar».
+- **Con el código cambiado desde la foto** (la que toma el cierre de este paso, en cada repo de la corrida), frenan:
+  hay que volver a correr los revisores de lo que cambió y cerrar este paso otra vez. El papeleo (la historia, su
+  `sprint-status.yaml`, la evidencia, la memoria) no vence la foto. Traer `main` sí la vence: `main` se trae antes de
+  los revisores.
+- **Si no pudo comprobarlo**, frena y lo dice: no poder mirar no es verde.
+
+El cierre de este paso, antes de la foto, corre los controles del commit de cada repo en sólo lectura: si uno frenaría
+el commit o regeneraría un archivo, el paso no cierra y dice cuál; se commitea lo regenerado y se vuelve a cerrar.
+
+En una pestaña que no pide permisos (la ventana se aprobaría sola), el gancho abre el pull request sin preguntar y lo dice
+en pantalla, con la misma evidencia.
+
+Lo delicado sigue con su firma: un pull request que cambia un freno, una firma, un control o algo de producción lleva la
 firma de control del dueño, que no cambia.
 
 ### El orden del cierre
 
 1. Primero, **exportar la memoria** del proyecto (y sumarla al stage), si el proyecto la usa.
-2. **commitear** con el mensaje: la ventana de permiso pregunta.
-3. Después, **empujar** la rama.
-4. Recién ahí, **abrir los pedidos**.
-5. Al final, **`marker.js clear`**, después del último push y del último pedido.
+2. **Cerrar este paso** (`marker.js complete-step prepare-commit`): corre los controles del commit y toma la foto.
+3. **commitear** con el mensaje: no pregunta.
+4. Después, **empujar** la rama de trabajo: tampoco pregunta.
+5. Recién ahí, **abrir los pull requests**: la ventana de permiso pregunta, con la evidencia.
+6. Al final, **`marker.js clear`**, después del último push y del último pull request.
 
 ## Decisiones
 
-- **Con el sí de la persona**: ejecutar `git commit` con el mensaje, después el push y los pedidos, en el orden de arriba.
+- **Commit y empuje de la rama de trabajo**: los hace el agente, en el orden de arriba.
 - **Si el usuario pide cambiar el mensaje**: editar y re-mostrar.
-- **Sin el sí**: esperar. No hacer nada proactivo.
+- **El pull request sin el sí**: esperar. No hacer nada proactivo.
 
 ## Post-commit
 
@@ -237,14 +251,14 @@ con las tres el step está cerrado.
 
 ## 🚨 CRITICAL — NO cerrar el registro de horas
 
-**El pipeline NO cierra el registro de horas al finalizar «Preparar el commit».** Este es un error
+**El pipeline NO cierra el registro de horas al finalizar «Preparar el pull request».** Este es un error
 recurrente que rompe el tracking de horas reales.
 
 **Reglas explícitas (NO violar):**
 
 1. **NO emitir** `work-signal stop` ni cerrar la entrada a mano con la herramienta de horas al final del pipeline. El
    registro queda **abierto**.
-2. **NO borrar** el estado local de la integración de horas al terminar «Preparar el commit»: refleja que sigue abierto.
+2. **NO borrar** el estado local de la integración de horas al terminar «Preparar el pull request»: refleja que sigue abierto.
 3. El registro **solo se cierra** en estas 4 condiciones, en este orden de precedencia:
    - **(a)** El usuario lo cierra explícitamente con lo que su integración le da (su skill o su comando).
    - **(b)** El usuario arranca otra tarea o invoca otra story con `tycon-pipeline` → el `start` del nuevo flujo
@@ -333,7 +347,7 @@ guardar, se cierra igual al final.
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear
 ```
 
-Si el flujo sigue sin pausa a «Cerrar la historia» (`close-work-item.md`), el clear ocurre allá. Si el flujo termina en «Preparar el commit» (el dev decide commitear o no manualmente), clear acá.
+Si el flujo sigue sin pausa a «Cerrar la historia» (`close-work-item.md`), el clear ocurre allá. Si el flujo termina en «Preparar el pull request» (el agente commitea y empuja a su rama, y la persona aprueba el pull request), clear acá, después de abrirlo.
 
 ### Si el cierre ofreció la instalación completa
 
@@ -365,7 +379,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story
   "$STORY_PATH" "review"
 ```
 
-**Por qué**: si el flujo termina en «Preparar el commit» (no llega a «Cerrar la historia»), la story queda lista para review pero el `status:` previo (`in-progress`) reflejaría mal el estado real. Otra sesión que abra `tycon-pipeline` sobre esta story va a leer `review` y NO va a re-arrancar el Arranque (PIPE-C5 lo detecta).
+**Por qué**: si el flujo termina en «Preparar el pull request» (no llega a «Cerrar la historia»), la story queda lista para review pero el `status:` previo (`in-progress`) reflejaría mal el estado real. Otra sesión que abra `tycon-pipeline` sobre esta story va a leer `review` y NO va a re-arrancar el Arranque (PIPE-C5 lo detecta).
 
 **Si «Cerrar la historia» sigue inmediatamente** después de este paso: el `status: review` se sobreescribe a `done` allá. NO es opcional saltearlo — siempre mutá `review` acá aunque vayas a «Cerrar la historia» después; el costo del double-write es trivial y deja el log de mutación más auditable.
 

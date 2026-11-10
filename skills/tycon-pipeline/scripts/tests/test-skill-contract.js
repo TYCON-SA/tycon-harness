@@ -230,7 +230,7 @@ function verificar(skillPath) {
   const cuerpo = sinFrontmatter(skill);
   if (!/test-gate[\s\S]{0,400}\b4\b[^\n]*(FRENO|frena)/i.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el exit 4 (FRENO) del test-gate');
   // los pasos, por su nombre llano: «Preparar el commit» es el Step 8; «Hallazgos», el 7
-  if (!/Preparar el commit[^\n]*marker\.js clear[^\n]*review/i.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el cierre de «Preparar el commit» (`marker.js clear` + story en review)');
+  if (!/Preparar el pull request[^\n]*marker\.js clear[^\n]*review/i.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el cierre de «Preparar el pull request» (`marker.js clear` + story en review)');
   if (!/Corrido de verdad: N de T/.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el resumen de la matriz en «Hallazgos» («Corrido de verdad: N de T…»)');
 
   return fallas;

@@ -530,10 +530,16 @@ test('T27 Paso8_NiLanzadoNiSalteado_Bloquea @story-1.8 @ac-20', () => {
 test('T28 Paso8_DodBypass_NoAbreEsteFreno @story-1.8 @ac-21', () => {
   // Fixture: sin storyPath (el freno del findings.json queda en «no pude mirar», que no bloquea), story no-UI y
   // `dodRuntimeChecked: false` → el único otro freno es el de DoD no-UI, que DOD_BYPASS=1 abre. Lo único que
-  // decide el exit es ESTE freno.
+  // decide el exit es ESTE freno. El repo tiene un commit: el cierre del paso toma la foto del pull request, y sin un
+  // repo que medir no cierra.
   const home = casa(); const SID = 't28';
+  const repo = mkRepo();
+  spawnSync('git', ['-C', repo, 'add', '-A']);
+  spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, '-c', 'user.name=p', '-c', 'user.email=p@p', 'commit', '-qm', 'base'], {
+    env: { ...process.env, GIT_AUTHOR_DATE: '2026-01-01T10:00:00', GIT_COMMITTER_DATE: '2026-01-01T10:00:00' },
+  });
   writeFakeMarker(home, SID, {
-    repoPath: os.tmpdir(), storyPath: null, stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7], stepsPending: [8],
+    repoPath: repo, storyPath: null, stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7], stepsPending: [8],
     dodRuntimeChecked: false, adversarial: lanzamiento('wf_BYP'),
   });
   const r = correr(home, SID, ['complete-step', '8'], { env: { DOD_BYPASS: '1' } });
