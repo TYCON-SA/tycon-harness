@@ -59,8 +59,9 @@ function world() {
 const hook = (w, payload, extra = {}) => spawnSync(process.execPath, [HOOK], {
   input: typeof payload === 'string' ? payload : JSON.stringify(payload), env: cleanEnv(w.home, extra), encoding: 'utf8',
 });
+// en la carpeta personal de prueba, que no es un repo: abrir un camino corto no trae la base de ningún repo de verdad
 const marker = (w, sid, args, extra = {}) => spawnSync(process.execPath, [MARKER, ...args], {
-  input: '', env: cleanEnv(w.home, { CLAUDE_CODE_SESSION_ID: sid, ...extra }), encoding: 'utf8',
+  input: '', cwd: w.home, env: cleanEnv(w.home, { CLAUDE_CODE_SESSION_ID: sid, ...extra }), encoding: 'utf8',
 });
 const fileOf = (w, sid) => path.join(w.sdir, 'sessions', `${sid}.json`);
 const stateOf = (w, sid) => { try { return JSON.parse(fs.readFileSync(fileOf(w, sid), 'utf8')); } catch { return null; } };
@@ -192,7 +193,7 @@ test('T20 SessionFile_AdhocSetAndClear @story-2.81 @ac-20 — el trabajo suelto 
   const w = world();
   lib().update(w.sdir, 's-ad', {}, { create: true, tool: 'claude' });
   const reason = '2.44 · Arreglo el aviso del pedido !812';
-  let r = marker(w, 's-ad', ['adhoc', 'set', JSON.stringify({ reason, datos: 'sin-cambio' })], conVentana({}));
+  let r = marker(w, 's-ad', ['adhoc', 'set', JSON.stringify({ reason, datos: 'sin-cambio', allowedFiles: ['src/a.js'] })], conVentana({}));
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   const { plain } = require(OFFICE);
   const st = stateOf(w, 's-ad');

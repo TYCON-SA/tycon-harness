@@ -60,7 +60,7 @@ if ( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b node "$SKILL/marker.js" a
 elif [ -f "$H/.claude/.tycon-pipeline/adhoc/s874b.json" ]; then mal "sin la firma quedó escrita la declaración"
 else ok "sin la firma del dueño, el ajuste puntual no se declara"; fi
 AD="$( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b NODE_OPTIONS="--require $ROOT/scripts/tests/lib/window-passed.js" \
-  node "$SKILL/marker.js" adhoc set '{"reason":"es un ajuste chico, sin story","datos":"sin-cambio"}' 2>&1 )" \
+  node "$SKILL/marker.js" adhoc set '{"reason":"es un ajuste chico, sin story","datos":"sin-cambio","allowedFiles":["src/formato.js"]}' 2>&1 )" \
   || mal "no se pudo declarar el ajuste puntual con la firma: $(head -c 300 <<<"$AD")"
 editar s874b "$R/src/formato.js"
 pasa && ok "con el ajuste puntual firmado, la edición pasa" || mal "el ajuste puntual firmado no pasó: rc=$RC $(head -c 300 <<<"$OUT")"

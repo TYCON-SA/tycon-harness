@@ -781,7 +781,7 @@ test('Delicado_AprobadoQueNoNombraEstaFirmaOEstaSesion_NoPasa', (t) => {
 
 test('Carril_ConAprobadoDelDueno_SeDeclara', (t) => {
   const lab = laboratorio(t);
-  const json = JSON.stringify({ reason: 'el arreglo de la prueba', maxFiles: 3, datos: 'sin-cambio' });
+  const json = JSON.stringify({ reason: 'el arreglo de la prueba', maxFiles: 3, datos: 'sin-cambio', allowedFiles: ['src/a.js'] });
   const args = ['adhoc', 'set', json, '--for-session', DESTINO];
   const cmd = `node ${MARKER} adhoc set '${json}' --for-session ${DESTINO}`;
   aprobadoDelDueno(lab, preguntaDe(lab, cmd, 'adhoc-lane'));

@@ -112,7 +112,8 @@ chico o grande. Las cuatro celdas, con sus valores de fábrica:
 
 **El corte es configurable**: un cambio es chico hasta `deep_review.small_max_files` archivos de código (de fábrica 6);
 también cuenta como grande uno chico pero denso, o uno que `risk-class` da NORMAL por otro criterio que el tamaño (una
-migración, el alcance firmado, un camino sensible, un freno). Con `ask`, el portón da `run: false` con `decision: 'ask'`
+migración, el alcance firmado, un camino sensible, un freno). El portón usa el riesgo de la historia entera, no el que
+`risk-class` da para la parte anotada con `set-batch`: con una parte, cambia sólo quién aprueba el plan. Con `ask`, el portón da `run: false` con `decision: 'ask'`
 y la pregunta, y sale 0: antes de preguntar, `marker.js review-ask --kind code`; con la respuesta,
 `marker.js review-answer --kind code --choice review|skip|wait`. Con `wait`, `decision: 'wait'`. Una celda `skip` no
 pide la firma del dueño: es la configuración, no un pedido. El dueño cuenta como ausente con la marca de ausente

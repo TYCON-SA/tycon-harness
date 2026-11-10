@@ -1,0 +1,51 @@
+{
+  "__doc": "T10 Banco_GuardadoAjeno @story-8.236 @ac-10. Un camino corto marcado de riesgo alto, sin los revisores ni el pase, en ../carril; el guardado de este repo (ajeno al carril) frena con el pedido del click; con el permiso que deja el click, pasa una vez; el guardado del propio carril frena como siempre, sin ofrecer el click. El click mismo (sólo la persona, una vez, para lo que se vio) lo cubre adhoc-foreign-save.test.js.",
+  "hooks": [
+    {
+      "hook": "on-pre-commit.js (guardado ajeno al camino corto)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "guardado-ajeno-sin-permiso-frena-con-el-pedido",
+          "type": "must-block",
+          "_por_que": "lo ajeno no guarda mientras el carril espera sus revisores, pero el freno anota el pedido y dice cómo se pide el click.",
+          "setup": [
+            "git init -q --bare -b main ../carril-origen.git && git init -q -b main ../carril && cd ../carril && git remote add origin ../carril-origen.git && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git push -q origin main && mkdir -p src/auth && echo x > src/auth/x.ts && git add -A",
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && mkdir -p docs && echo ok > docs/c.md && git add -A",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(cd ../carril && pwd -P); B=$(git -C ../carril rev-parse HEAD); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/auth/x.ts\"],\"files\":[\"%s/src/auth/x.ts\"],\"rutas\":[\"%s/src/auth/x.ts\"],\"bases\":{\"%s\":{\"sha\":\"%s\",\"traida\":true,\"ts\":\"%s\"}},\"riesgoAlto\":{\"regla\":\"rutas-sensibles\",\"archivo\":\"%s/src/auth/x.ts\"},\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$D\" \"$D\" \"$B\" \"$T\" \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-ajeno.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-ajeno\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-ajeno", "tool_name": "Bash", "tool_input": { "command": "git commit -m docs" } },
+          "expect": { "exit": 2, "stderr_re": ["el combo muestra el nombre", "adhoc allow-foreign-save"] }
+        },
+        {
+          "id": "guardado-ajeno-con-el-permiso-del-click-pasa",
+          "type": "must-not-block",
+          "_por_que": "con el permiso que deja el click de una persona, sobre la huella del pedido, el mismo comando pasa una vez.",
+          "setup": [
+            "git init -q --bare -b main ../carril-origen.git && git init -q -b main ../carril && cd ../carril && git remote add origin ../carril-origen.git && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git push -q origin main && mkdir -p src/auth && echo x > src/auth/x.ts && git add -A",
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && mkdir -p docs && echo ok > docs/c.md && git add -A",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(cd ../carril && pwd -P); B=$(git -C ../carril rev-parse HEAD); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/auth/x.ts\"],\"files\":[\"%s/src/auth/x.ts\"],\"rutas\":[\"%s/src/auth/x.ts\"],\"bases\":{\"%s\":{\"sha\":\"%s\",\"traida\":true,\"ts\":\"%s\"}},\"riesgoAlto\":{\"regla\":\"rutas-sensibles\",\"archivo\":\"%s/src/auth/x.ts\"},\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$D\" \"$D\" \"$B\" \"$T\" \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-ajeno.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-ajeno\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\"",
+            "node -e 'const L=process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/\";const fs=require(\"fs\");const S=process.env.HOME+\"/.claude/.tycon-pipeline\";require(L+\"save-brake.js\").decidir({command:\"git commit -m docs\",cwd:process.cwd(),sid:\"bench-ajeno\",home:process.env.HOME});const p=JSON.parse(fs.readFileSync(S+\"/adhoc/bench-ajeno.json\",\"utf8\")).guardadoAjeno;if(!p)process.exit(3);fs.writeFileSync(require(L+\"adhoc-foreign-save.js\").permisoPath(S,\"bench-ajeno\"),JSON.stringify({huella:p.huella,comando:p.comando,cwd:p.cwd,repo:p.repo,via:\"click\",by:\"bench\",at:new Date().toISOString()}));' 2>/dev/null"
+          ],
+          "stdin": { "session_id": "bench-ajeno", "tool_name": "Bash", "tool_input": { "command": "git commit -m docs" } },
+          "expect": { "exit": 0, "stderr_not_re": ["faltan los revisores", "allow-foreign-save"] }
+        },
+        {
+          "id": "guardado-del-carril-frena-sin-ofrecer-el-click",
+          "type": "must-block",
+          "_por_que": "el guardado del propio carril no se ofrece al click: faltan los revisores y el pase, como siempre.",
+          "setup": [
+            "git init -q --bare -b main ../carril-origen.git && git init -q -b main ../carril && cd ../carril && git remote add origin ../carril-origen.git && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git push -q origin main && mkdir -p src/auth && echo x > src/auth/x.ts && git add -A",
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(cd ../carril && pwd -P); B=$(git -C ../carril rev-parse HEAD); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/auth/x.ts\"],\"files\":[\"%s/src/auth/x.ts\"],\"rutas\":[\"%s/src/auth/x.ts\"],\"bases\":{\"%s\":{\"sha\":\"%s\",\"traida\":true,\"ts\":\"%s\"}},\"riesgoAlto\":{\"regla\":\"rutas-sensibles\",\"archivo\":\"%s/src/auth/x.ts\"},\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$D\" \"$D\" \"$B\" \"$T\" \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-ajeno.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-ajeno\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\"",
+            "node -e 'const fs=require(\"fs\");const p=process.env.HOME+\"/.claude/.tycon-pipeline/adhoc/bench-ajeno.json\";const a=JSON.parse(fs.readFileSync(p,\"utf8\"));const h=require(process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/adhoc-base.js\").huellaDelCarril(a);a.pruebas={comando:\"npm test\",codigo:0,at:new Date().toISOString(),huella:h,salida:\"ok\"};fs.writeFileSync(p,JSON.stringify(a));'"
+          ],
+          "stdin": { "session_id": "bench-ajeno", "tool_name": "Bash", "tool_input": { "command": "git -C ../carril commit -m x" } },
+          "expect": { "exit": 2, "stderr_re": ["faltan los revisores y el pase"], "stderr_not_re": ["allow-foreign-save"] }
+        }
+      ]
+    }
+  ]
+}

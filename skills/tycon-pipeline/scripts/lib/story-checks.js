@@ -428,6 +428,10 @@ function parsePipelinesBlock(specContent) {
     (raw.match(/-?\d+/g) || []).map(Number); // "[0, 1, 2]" → [0,1,2]; tolera comentario inline
   const out = [];
   let current = null;
+  // la lista que se está leyendo de la entrada (`files:` o `sensible:` sin valor en el renglón): sus ítems no son pendientes
+  let lista = null;
+  const limpio = (s) => String(s).replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
+  const enLinea = (v) => v.replace(/^\[|\]$/g, '').split(',').map(limpio).filter(Boolean);
   for (let i = start + 1; i < lines.length; i++) {
     const line = lines[i];
     if (line.trim() === '') continue;
@@ -437,11 +441,30 @@ function parsePipelinesBlock(specContent) {
     // (`- texto`) para no tragarse el `- name:` como un ítem pendiente.
     const listNameM = line.match(/^\s*-\s*name\s*:\s*["']?([\w-]+)/);
     const nueva = (name) => ({ name, status: null, blockedBy: null, acs: [], acsPending: [], tasks: [], tasksPending: [], tests: [], testsPending: [], pendingItems: [] });
-    if (listNameM) { current = nueva(listNameM[1]); out.push(current); continue; }
+    if (listNameM) { current = nueva(listNameM[1]); out.push(current); lista = null; continue; }
     // (b) MAPA: `  X:` (indent 2, valor vacío) abre una entrada.
     const mapNameM = line.match(/^\s{2}([\w-]+)\s*:\s*$/);
-    if (mapNameM && indent === 2) { current = nueva(mapNameM[1]); out.push(current); continue; }
+    if (mapNameM && indent === 2) { current = nueva(mapNameM[1]); out.push(current); lista = null; continue; }
     if (!current) continue;
+    // `files:` y `sensible:` de la parte (8.168): en el renglón (`[a, b]` o un valor) o como lista debajo
+    const parteM = line.match(/^(\s+)(files|sensible)\s*:\s*(.*?)\s*$/);
+    if (parteM) {
+      // el `\s*` de la clave ya se comió el espacio: un `#` al principio del valor es un comentario, no un valor
+      const v = parteM[3].replace(/(^|\s+)#.*$/, '').trim();
+      const campo = parteM[2];
+      if (!v) { current[campo] = []; lista = { campo, indent: parteM[1].length }; } else {
+        current[campo] = v.startsWith('[') ? enLinea(v) : (campo === 'files' ? [limpio(v)] : limpio(v));
+        lista = null;
+      }
+      continue;
+    }
+    if (lista) {
+      // un comentario o un renglón en blanco entre los ítems no corta la lista
+      if (/^\s*(#.*)?$/.test(line)) continue;
+      const it = line.match(/^(\s*)-\s*(.+?)\s*$/);
+      if (it && it[1].length >= lista.indent) { current[lista.campo].push(limpio(it[2])); continue; }
+      lista = null;
+    }
     const statusM = line.match(/^\s+status\s*:\s*["']?([\w-]+)/);
     if (statusM) { current.status = statusM[1]; continue; }
     // `title`: el nombre de la tanda que dice /office. Entre comillas se toma entero; sin comillas, sin el comentario.

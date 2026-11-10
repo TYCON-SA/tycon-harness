@@ -1152,16 +1152,20 @@ function compute(opts) {
   const sinLista = pedidas !== null && propios.size > 0 && !Array.isArray(opts.changed);
   if (sinLista) avisosDeTanda.push('Se pidió la tanda, pero sin la lista de cambios de la corrida no achico: mido todas las tandas.');
   const midiendoTanda = pedidas !== null && propios.size > 0 && !sinLista;
-  // Un archivo que cambió la corrida y la historia ata SÓLO a otras tandas devuelve sus criterios, cualquiera sea su
-  // estado: la corrida tocó lo que esas tandas entregan. Uno que nombra también la tanda medida, o ninguna, no devuelve.
+  // Un archivo que cambió la corrida y la historia ata SÓLO a otras tandas devuelve sus criterios: la corrida tocó lo
+  // que esas tandas entregan. Uno que nombra también la tanda medida, o ninguna, no devuelve. Un archivo que nombran
+  // sólo tandas bloqueadas las devuelve: alguien está construyendo lo bloqueado. Uno que nombra también una tanda que
+  // no está bloqueada no devuelve las bloqueadas: es un archivo compartido, y el cambio es de la otra.
   const vuelven = new Map();
   if (midiendoTanda) {
     const codeRepo = opts.codeRepo ? path.resolve(opts.codeRepo) : repoRoot;
     const lugares = [...new Set([repoRoot, wsRoot, ...evCfg.roots, ...enRama, codeRepo].filter(Boolean))];
+    const bloqueadas = new Set(tandas.filter((t) => String(t.status || '').toLowerCase() === 'blocked').map((t) => t.name));
     for (const c of opts.changed) {
       const atadas = tandasDelCambio(content, String(c), { codeRepo: codeRepo || '.', lugares, real: companionLib.real });
       if (!atadas.length || atadas.some((n) => pedidas.includes(n))) continue;
-      for (const n of atadas) vuelven.set(n, [...new Set([...(vuelven.get(n) || []), String(c)])]);
+      const activas = atadas.filter((n) => !bloqueadas.has(n));
+      for (const n of activas.length ? activas : atadas) vuelven.set(n, [...new Set([...(vuelven.get(n) || []), String(c)])]);
     }
   }
   const returnedAcs = new Set();

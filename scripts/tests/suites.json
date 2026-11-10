@@ -1630,6 +1630,54 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.174, tanda A2: la lista de archivos del camino rápido — se declara y se valida antes de la firma, el motivo que no se delega, uno delegado por repo, fuera de la lista frena en el portón y al guardar, por la ruta real.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-list.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.174, tanda A3: las pruebas y la rama del camino rápido — adhoc test corre y anota, sin pruebas en verde con la huella de hoy no guarda, y un carril que pasó el tope no guarda en la rama principal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-tests-and-branch.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.168: el riesgo se mide por la parte — set-batch valida la parte; con una parte válida, el riesgo, la delicada y el tamaño del plan miden la parte más lo que el cambio toca; el pase, su modelo y la revisión de la historia siguen por la historia entera; la revisión del plan lleva la parte.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/risk-by-batch.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.168: el plan delegado queda atado a la lista de su parte (batch-out-of-list, congelada al aprobar), la parte anotada tarde reabre el plan, y al cerrar se mide el diff entero.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/batch-plan-gate.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.168: las dos señales del riesgo como aviso (ninguna prueba lo ataja, concurrencia declarada), sin cambiar el riesgo ni el pase.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/risk-signals.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.168: el formato y el lint de files: y sensible: por parte, y lo que dicen las guías del plan de una parte.",
+      "raiz": "arnes",
+      "ruta": "tests/risk-by-batch-guides.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.174: lo que las guías dicen del camino rápido (la lista, y en la A3 las pruebas y la rama).",
+      "raiz": "arnes",
+      "ruta": "tests/adhoc-guides.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/installed-tree.test.js",
       "requiere": []

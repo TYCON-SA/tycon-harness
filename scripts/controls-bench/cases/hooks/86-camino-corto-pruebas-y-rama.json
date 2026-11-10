@@ -1,0 +1,78 @@
+{
+  "__doc": "T47 Banco_CaminoRapidoPruebasYRama @story-8.174 @ac-44. Las pruebas y la rama del camino rápido con lista: un commit sin pruebas no guarda; con la corrida en verde y la huella de hoy, pregunta como siempre; editar el código después la vence; con la marca sobreCupo, en la rama principal no guarda («creá una rama»); el mismo en otra rama, con las pruebas en verde, pregunta. La corrida la anota marker.js adhoc test; acá se escribe con la huella que calcula la misma medida (adhoc-base.js).",
+  "hooks": [
+    {
+      "hook": "on-pre-commit.js (camino corto: pruebas y rama)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "camino-corto-pruebas-commit-sin-pruebas-frena",
+          "type": "must-block",
+          "_por_que": "un carril con lista que cambió código, sin una corrida de pruebas: no guarda y da el comando.",
+          "setup": [
+            "git init -q --bare -b main ../origen-pruebas.git && git init -q -b main . && git remote add origin ../origen-pruebas.git && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git push -q origin main && git remote set-head origin main && git checkout -q -b arreglo",
+            "mkdir -p src && echo x > src/a.js && git add -A",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); B=$(git rev-parse HEAD); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/a.js\"],\"files\":[\"%s/src/a.js\"],\"bases\":{\"%s\":{\"sha\":\"%s\",\"traida\":true,\"ts\":\"%s\"}},\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$D\" \"$B\" \"$T\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-pruebas.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-pruebas\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-pruebas", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "exit": 2, "stderr_re": ["faltan las pruebas", "adhoc test --"] }
+        },
+        {
+          "id": "camino-corto-pruebas-en-verde-pregunta",
+          "type": "must-emit",
+          "_por_que": "el mismo carril con la corrida en verde y la huella de lo que se guarda: pregunta como siempre.",
+          "setup": [
+            "git init -q --bare -b main ../origen-pruebas.git && git init -q -b main . && git remote add origin ../origen-pruebas.git && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git push -q origin main && git remote set-head origin main && git checkout -q -b arreglo",
+            "mkdir -p src && echo x > src/a.js && git add -A",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); B=$(git rev-parse HEAD); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/a.js\"],\"files\":[\"%s/src/a.js\"],\"bases\":{\"%s\":{\"sha\":\"%s\",\"traida\":true,\"ts\":\"%s\"}},\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$D\" \"$B\" \"$T\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-pruebas.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-pruebas\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\"",
+            "node -e 'const fs=require(\"fs\");const p=process.env.HOME+\"/.claude/.tycon-pipeline/adhoc/bench-pruebas.json\";const a=JSON.parse(fs.readFileSync(p,\"utf8\"));const h=require(process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/adhoc-base.js\").huellaDelCarril(a);a.pruebas={comando:\"npm test\",codigo:0,at:new Date().toISOString(),huella:h,salida:\"ok\"};fs.writeFileSync(p,JSON.stringify(a));'"
+          ],
+          "stdin": { "session_id": "bench-pruebas", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "stdout_re": ["\"permissionDecision\":\"ask\""], "stdout_not_re": ["faltan las pruebas"] }
+        },
+        {
+          "id": "camino-corto-pruebas-editar-despues-frena",
+          "type": "must-block",
+          "_por_que": "con la corrida en verde, editar el código después la vence: vuelve a frenar.",
+          "setup": [
+            "git init -q --bare -b main ../origen-pruebas.git && git init -q -b main . && git remote add origin ../origen-pruebas.git && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git push -q origin main && git remote set-head origin main && git checkout -q -b arreglo",
+            "mkdir -p src && echo x > src/a.js && git add -A",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); B=$(git rev-parse HEAD); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/a.js\"],\"files\":[\"%s/src/a.js\"],\"bases\":{\"%s\":{\"sha\":\"%s\",\"traida\":true,\"ts\":\"%s\"}},\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$D\" \"$B\" \"$T\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-pruebas.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-pruebas\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\"",
+            "node -e 'const fs=require(\"fs\");const p=process.env.HOME+\"/.claude/.tycon-pipeline/adhoc/bench-pruebas.json\";const a=JSON.parse(fs.readFileSync(p,\"utf8\"));const h=require(process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/adhoc-base.js\").huellaDelCarril(a);a.pruebas={comando:\"npm test\",codigo:0,at:new Date().toISOString(),huella:h,salida:\"ok\"};fs.writeFileSync(p,JSON.stringify(a));'",
+            "echo cambio > src/a.js && git add -A"
+          ],
+          "stdin": { "session_id": "bench-pruebas", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "exit": 2, "stderr_re": ["faltan las pruebas", "cambi[oó] despu[eé]s"] }
+        },
+        {
+          "id": "camino-corto-rama-sobre-cupo-en-main-frena",
+          "type": "must-block",
+          "_por_que": "un carril que pasó el tope (sobreCupo), con las pruebas en verde, commiteando en la rama principal del remoto: «creá una rama».",
+          "setup": [
+            "git init -q --bare -b main ../origen-pruebas.git && git init -q -b main . && git remote add origin ../origen-pruebas.git && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git push -q origin main && git remote set-head origin main",
+            "mkdir -p src && echo x > src/a.js && git add -A",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); B=$(git rev-parse HEAD); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"maxFiles\":9,\"sobreCupo\":true,\"cupoPedido\":9,\"eligio\":\"persona\",\"allowedFiles\":[\"%s/src/a.js\"],\"files\":[\"%s/src/a.js\"],\"bases\":{\"%s\":{\"sha\":\"%s\",\"traida\":true,\"ts\":\"%s\"}},\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$D\" \"$B\" \"$T\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-pruebas.json\"; printf '{\"name\":\"adhoc-lane:sobre-cupo-signed\",\"status\":\"ok\",\"destino\":\"bench-pruebas\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\"",
+            "node -e 'const fs=require(\"fs\");const p=process.env.HOME+\"/.claude/.tycon-pipeline/adhoc/bench-pruebas.json\";const a=JSON.parse(fs.readFileSync(p,\"utf8\"));const h=require(process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/adhoc-base.js\").huellaDelCarril(a);a.pruebas={comando:\"npm test\",codigo:0,at:new Date().toISOString(),huella:h,salida:\"ok\"};fs.writeFileSync(p,JSON.stringify(a));'"
+          ],
+          "stdin": { "session_id": "bench-pruebas", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "exit": 2, "stderr_re": ["creá una rama", "git switch -c"] }
+        },
+        {
+          "id": "camino-corto-rama-sobre-cupo-en-otra-rama-pregunta",
+          "type": "must-emit",
+          "_por_que": "el mismo carril sobre cupo en otra rama, con las pruebas en verde: pregunta como siempre.",
+          "setup": [
+            "git init -q --bare -b main ../origen-pruebas.git && git init -q -b main . && git remote add origin ../origen-pruebas.git && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git push -q origin main && git remote set-head origin main && git checkout -q -b arreglo-grande",
+            "mkdir -p src && echo x > src/a.js && git add -A",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); B=$(git rev-parse HEAD); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"maxFiles\":9,\"sobreCupo\":true,\"cupoPedido\":9,\"eligio\":\"persona\",\"allowedFiles\":[\"%s/src/a.js\"],\"files\":[\"%s/src/a.js\"],\"bases\":{\"%s\":{\"sha\":\"%s\",\"traida\":true,\"ts\":\"%s\"}},\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$D\" \"$B\" \"$T\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-pruebas.json\"; printf '{\"name\":\"adhoc-lane:sobre-cupo-signed\",\"status\":\"ok\",\"destino\":\"bench-pruebas\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\"",
+            "node -e 'const fs=require(\"fs\");const p=process.env.HOME+\"/.claude/.tycon-pipeline/adhoc/bench-pruebas.json\";const a=JSON.parse(fs.readFileSync(p,\"utf8\"));const h=require(process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/adhoc-base.js\").huellaDelCarril(a);a.pruebas={comando:\"npm test\",codigo:0,at:new Date().toISOString(),huella:h,salida:\"ok\"};fs.writeFileSync(p,JSON.stringify(a));'"
+          ],
+          "stdin": { "session_id": "bench-pruebas", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "stdout_re": ["\"permissionDecision\":\"ask\""], "stdout_not_re": ["creá una rama", "faltan las pruebas"] }
+        }
+      ]
+    }
+  ]
+}

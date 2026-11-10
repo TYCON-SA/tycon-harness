@@ -387,3 +387,21 @@ test('T49 FilesToModify_DentroDeUnCommit_OtroRepoNoContesta: el repo del GIT_DIR
   assert.notStrictEqual(r.code, 0, r.out);
   assert.match(r.out, /Inventado\.cs/);
 });
+
+// 🔴 Falla con: un comentario en el renglón de `files:` o entre `files:` y su primer ítem, que el lint tomaba como «no es
+// una lista» y frenaba una historia que el lector del bloque acepta.
+test('Q18 FilesDeParte_ComentarioAntesDeLosItems_NoFrena: el lint lee la lista como el lector del bloque', () => {
+  const { filesDeParteMalos } = require(LINT);
+  const { parsePipelinesBlock } = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-checks.js'));
+  const bloques = [
+    'pipelines:\n  - name: A\n    files:\n      # el código de la parte\n\n      - src/a.js\n',
+    'pipelines:\n  - name: A\n    files:   # los de la tanda A\n      - src/a.js\n',
+    'pipelines:\n  - name: A\n    files: # el código de la parte\n      # y un comentario más\n      - src/a.js\n',
+  ];
+  for (const fm of bloques) {
+    assert.deepStrictEqual(filesDeParteMalos(fm), [], fm);
+    assert.deepStrictEqual(parsePipelinesBlock(`---\n${fm}---\n`)[0].files, ['src/a.js'], fm);
+  }
+  // un comentario sin ítems debajo sigue sin ser una lista
+  assert.deepStrictEqual(filesDeParteMalos('pipelines:\n  - name: A\n    files: # nada\n    status: pending\n'), ['A']);
+});

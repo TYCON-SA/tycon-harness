@@ -1170,6 +1170,16 @@ function main() {
       process.stderr.write(or.cartel(p, { markerJs: path.join(__dirname, 'marker.js') }) + '\n');
       process.exit(2);
     }
+    // con el plan aprobado por la coordinadora, un commit por fuera del paso de cerrar también mide el diff entero
+    let cierre = null;
+    try {
+      const mp = or.markerPath(sessionId);
+      cierre = require('./lib/batch-scope.js').frenoDelCierre({ markerPath: mp, estado: path.dirname(path.dirname(mp)), sid: sessionId });
+    } catch (e) { cierre = { texto: `🔒 cierre: no pude medir el diff entero (${e.message}); con el plan aprobado por la coordinadora, no guarda.` }; }
+    if (cierre) {
+      process.stderr.write(cierre.texto + '\n');
+      process.exit(2);
+    }
   }
 
   // `git add X && git commit` en una sola línea: el freno corre antes que el comando entero, así que lo
