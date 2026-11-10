@@ -208,11 +208,11 @@ test('T3 TandaA_MarkerAndHooksUnchanged — el marcador viejo sigue andando: las
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   const nuevo = JSON.parse(fs.readFileSync(E.activo(sid), 'utf8'));
   // las claves que deja `start`, más las cuatro del tamaño de la ejecución (size, size_reason, estimate_min,
-  // estimate_source) y el esquema de los pasos, y ni una más. `modelsWarned` lo deja `start` sólo si avisó algo de los
+  // estimate_source), el esquema de los pasos y la carpeta de la ejecución (runDir), y ni una más. `modelsWarned` lo deja `start` sólo si avisó algo de los
   // modelos, y eso depende de la configuración de la máquina: no es parte de la forma
   assert.deepStrictEqual(Object.keys(nuevo).filter((k) => k !== 'modelsWarned').sort(), [
     'autonomous', 'baseSha', 'checks', 'estimate_min', 'estimate_source', 'evidenceDir', 'fileEvents', 'filesTouched',
-    'filesTouchedAt', 'iter', 'iterations', 'lastFailures', 'lastTouch', 'noProgressStreak', 'repoPath', 'sessionId',
+    'filesTouchedAt', 'iter', 'iterations', 'lastFailures', 'lastTouch', 'noProgressStreak', 'repoPath', 'runDir', 'sessionId',
     'size', 'size_reason', 'sprint', 'startedAt', 'stepScheme', 'stepTimings', 'stepsCompleted', 'stepsPending', 'storyId', 'storyPath',
   ]);
   // un marcador viejo, como el de una ejecución en vuelo al actualizar el arnés

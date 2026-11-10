@@ -414,10 +414,11 @@ function readMarker() {
 
 // La carpeta de la corrida, creada si falta. En el chequeo antes de la ventana no se crea: alcanza con que la story dé
 // su clave (la crea el comando de verdad, después de la firma). Null si la story no da clave.
-function carpetaParaLaFirma(repo, storyId, storyAbs) {
+// `marker`: el de la corrida que se firma (puede ser de otra sesión, con --for-session): su carpeta es la de la regla.
+function carpetaParaLaFirma(repo, storyId, storyAbs, marker) {
   const pl = require('./pipeline.js');
-  if (!PREVIO) return pl.resolveRunDir(repo, storyId, true, storyAbs);
-  return pl.resolveRunDir(repo, storyId, false, storyAbs) || (pl.runDirKey(storyId, storyAbs).key ? path.join(repo, '.advisors', 'pipeline-runs') : null);
+  if (!PREVIO) return pl.resolveRunDir(repo, storyId, true, storyAbs, { marker: marker || null });
+  return pl.resolveRunDir(repo, storyId, false, storyAbs, { marker: marker || null }) || (pl.runDirKey(storyId, storyAbs).key ? path.join(repo, '.advisors', 'pipeline-runs') : null);
 }
 
 function sinFirmaNoSeEscribe() {
@@ -644,6 +645,9 @@ function cmdSet(payloadJson) {
       // la otra vuelta de revisores es de los cambios de la corrida: heredada, la story nueva pediría revisar lo de la vieja
       otraVuelta,
       stepsCompleted, stepsPending, startedAt, evidenceDir, baseSha,
+      // la carpeta de la corrida es de la corrida: heredada, la story nueva escribiría su constancia en la de la vieja;
+      // y la otra sesión en paralelo es de la story
+      runDir, parallelWith,
       // el esquema de los pasos y los avisos del Arranque son de la corrida
       stepScheme, startWarnings,
       // Los arranques y fines de paso son de la corrida. Heredarlos le daría a la story
@@ -754,6 +758,19 @@ function cmdSet(payloadJson) {
     // re-correr `start` sobre la misma story (retomar) no puede mover la base al HEAD de ahora, o lo
     // commiteado durante la corrida dejaría de contar como tocado.
     baseSha: at(existing, 'baseSha') || payload.baseSha || null,
+    // La carpeta de la corrida (`.advisors/pipeline-runs/<clave>-<sello>`), que crea `pipeline.js start`: la piden todos
+    // los que escriben o leen la constancia de esta corrida (lib/run-dir.js). Como la base, gana la EXISTENTE: retomar
+    // la misma story no abre otra carpeta. Es estado de corrida: el bloque de arriba la descarta al cambiar de story.
+    // La existente gana mientras siga en disco y sea del mismo repo que la que trae el pedido; si ya no está (o es de
+    // otro repo), la que abrió `start` la reemplaza: si no, la carpeta nueva quedaría sin marcador que la nombre.
+    runDir: (() => {
+      const vieja = at(existing, 'runDir');
+      const nueva = payload.runDir;
+      // por la ruta real: un enlace (/var y /private/var en macOS) no hace de la misma carpeta una de otro repo
+      const real = (p) => { try { return fs.realpathSync(path.dirname(path.resolve(p))); } catch (_e) { return path.dirname(path.resolve(p)); } };
+      const sigue = !!vieja && fs.existsSync(vieja) && (!nueva || real(vieja) === real(nueva));
+      return sigue ? vieja : (nueva || vieja || null);
+    })(),
     sprint: nn(payload.sprint, nn(at(existing, 'sprint'), null)),
     sessionId: SID,
     startedAt: at(existing, 'startedAt') || nowIso(),
@@ -790,6 +807,8 @@ function cmdSet(payloadJson) {
     // `reviewers-run`)
     ...(payload.sessionModel !== undefined ? { sessionModel: payload.sessionModel } : {}),
     ...(payload.codexSession !== undefined ? { codexSession: payload.codexSession } : {}),
+    // la otra sesión de la misma story que trabaja en otra copia y otra rama (PIPE-C0 por hechos, `pipeline.js start`)
+    ...(payload.parallelWith !== undefined ? { parallelWith: payload.parallelWith } : {}),
     // la hora de este paso sigue valiendo si se retoma la misma story; una story nueva no la hereda
     ...(at(existing, 'horaDelPaso') ? { horaDelPaso: at(existing, 'horaDelPaso') } : {}),
   };
@@ -1153,7 +1172,7 @@ function planDeLaCorrida(marker) {
     const repo = marker.repoPath || process.cwd();
     const storyAbs = resolveStoryPath(marker.storyPath, marker) || undefined;
     // con la carpeta creada, como anotarAprobacion: si todavía no existe, el mensaje dice dónde va el plan
-    const runDir = require('./pipeline.js').resolveRunDir(repo, String(marker.storyId), true, storyAbs);
+    const runDir = require('./pipeline.js').resolveRunDir(repo, String(marker.storyId), true, storyAbs, { marker });
     return runDir ? { file: path.join(runDir, PLAN_FILE) } : { error: 'la story no da una clave para su carpeta de corrida' };
   } catch (e) { return { error: e.message }; }
 }
@@ -1208,7 +1227,7 @@ function anotarAprobacion(marker, entrada) {
     const approvals = require('./lib/approvals.js');
     const repo = marker.repoPath || process.cwd();
     const storyAbs = resolveStoryPath(marker.storyPath, marker) || undefined;
-    const runDir = require('./pipeline.js').resolveRunDir(repo, String(marker.storyId), true, storyAbs);
+    const runDir = require('./pipeline.js').resolveRunDir(repo, String(marker.storyId), true, storyAbs, { marker });
     if (!runDir) throw new Error('no pude calcular la carpeta de la corrida (clave de la story)');
     let commit = null;
     try {
@@ -1352,6 +1371,10 @@ function cmdCompleteStep(nRaw, flags) {
 
   // El aviso de una parte del Arranque que falló sale en el resumen del cierre: queda a la vista hasta el final.
   if (controles.has('commit')) for (const l of STEPS_LIB.startWarningLines(marker)) console.error(`⚠️  ${l}`);
+  // Cada prueba vieja que estaba en rojo y se editó llega al mensaje del commit con su razón (note-red-test).
+  if (controles.has('commit')) {
+    for (const l of require('./lib/red-test-edit.js').renglonesParaElCommit(marker)) console.error(`📌 El mensaje de commit lleva esta línea: ${l}`);
+  }
 
   // Un rojo esperado (`expect-red`) vale sólo en una ejecución en deuda: sin la deuda escrita es un rojo como cualquiera.
   if (controles.has('commit')) {
@@ -1416,6 +1439,11 @@ function cmdCompleteStep(nRaw, flags) {
   // Un cambio de código posterior al último cierre de los revisores (la regla de `next`, lib/steps.js) pide otra vuelta
   // antes: lo que se commitea es lo revisado. Una prueba o un texto no la piden. `--out-of-order` no lo saltea: no es
   // el orden, es lo que se commitea. Con Hallazgos abierto también frena: `next` espera a que cierre, este paso no.
+  // ── con el plan aprobado por la coordinadora, el diff entero se vuelve a medir al cerrar ──
+  if (nuevo && ids.includes('prepare-commit')) {
+    const cierre = require('./lib/batch-scope.js').frenoDelCierre({ markerPath: markerFilePath(SID), estado: STATE_DIR, sid: SID });
+    if (cierre) { console.error(`marker.js complete-step ${n} BLOQUEADO — ${cierre.texto.replace(/^🔒 cierre: /, '')}`); process.exit(2); }
+  }
   if (nuevo && ids.includes('prepare-commit')) {
     const vuelta = STEPS_LIB.reviewersRound(marker, { aunConHallazgos: true });
     if (vuelta) {
@@ -1780,7 +1808,7 @@ function cmdCompleteStep(nRaw, flags) {
     let motivo = null;
     try {
       const storyAbs78 = resolveStoryPath(marker.storyPath, marker) || undefined;
-      rd = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs78);
+      rd = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs78, { marker });
       if (!rd) motivo = 'no encontré la carpeta de la corrida';
     } catch (e) { motivo = `no pude calcular la carpeta de la corrida (${e.message || e})`; }
     // Un salteo firmado del pase (mark-adversarial-skipped o set-size liviana) se sostiene sólo si su constancia sigue
@@ -1870,7 +1898,7 @@ function cmdCompleteStep(nRaw, flags) {
       let noMedido = null;
       if (storyAbs) {
         try {
-          const rdc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs);
+          const rdc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs, { marker });
           f = require('./lib/compare-previous.js').freno({ storyPath: storyAbs, repos: reposParaComparar(marker), runDir: rdc, stateDir: STATE_DIR, story: marker.storyId });
         } catch (e) { noMedido = String(e.message || e).split('\n')[0]; }
       } else {
@@ -1900,7 +1928,7 @@ function cmdCompleteStep(nRaw, flags) {
       const rr = require('./lib/review-rounds.js');
       let rd8 = null;
       let noMirado = null;
-      try { rd8 = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, resolveStoryPath(marker.storyPath, marker) || undefined); } catch (e) { noMirado = `no pude calcular la carpeta de la corrida (${e.message || e})`; }
+      try { rd8 = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, resolveStoryPath(marker.storyPath, marker) || undefined, { marker }); } catch (e) { noMirado = `no pude calcular la carpeta de la corrida (${e.message || e})`; }
       const h = rr.hallazgosDe(rd8);
       // «no pude mirar» no es «no quedó nada abierto»: sin poder calcular la carpeta no se cierra. Un findings.json que
       // falta o no se lee lo frena el control de findings.json que sigue, con su propio mensaje.
@@ -2011,7 +2039,7 @@ function cmdCompleteStep(nRaw, flags) {
       let error = null;
       try {
         const pl = require('./pipeline.js');
-        const runDir = storyAbs ? pl.resolveRunDir(codeRepo, String(marker.storyId), false, storyAbs) : null;
+        const runDir = storyAbs ? pl.resolveRunDir(codeRepo, String(marker.storyId), false, storyAbs, { marker }) : null;
         r = pl.aprobacionesEnElRepoDeLaStory({ runDir, storyPath: storyAbs, storyId: String(marker.storyId), codeRepo, maquetaAprobada: !!marker.mockupApproval });
       } catch (e) { error = String(e.message || e).slice(0, 200); }
       if (error) {
@@ -2075,7 +2103,9 @@ function cmdCompleteStep(nRaw, flags) {
       // Setear `marker.dodRuntimeChecked` a mano con `set` no es una exención válida: esta es la forma.
       // Queda escrito como exención (evidencePath «exenta: …») y sólo vale para una story sin UI.
       console.error('  (b) Story exenta (sin UI ni endpoints — «Probar en vivo»): eximirla lo decide la');
-      console.error('      persona (marker.js sign-file dod_runtime_exempt <historia>), con dod_runtime_exempt_reason en el frontmatter. Después:');
+      console.error('      persona, con dod_runtime_exempt_reason en el frontmatter. La firma:');
+      for (const l of formasDeFirmarArchivo('dod_runtime_exempt', resolveStoryPath(marker.storyPath, marker) || null, SID)) console.error(`        · ${l}`);
+      console.error('      Después:');
       console.error('      marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <razón>"}\'');
     }
     // DODRT-C6 — la matriz
@@ -2161,7 +2191,7 @@ function cmdCompleteStep(nRaw, flags) {
     if (!blocked && qaStoryPath) {
       try {
         const esPantalla = markerStoryHasScreens(marker) || !!(marker.mockupApproval && maqueta.compare);
-        const rdMc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, qaStoryPath);
+        const rdMc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, qaStoryPath, { marker });
         const f = require('./lib/manual-checks.js').freno({ storyPath: qaStoryPath, storyId: String(marker.storyId), runDir: rdMc, stateDir: STATE_DIR, esPantalla });
         appendLog('gates.log', { name: 'manual-checks', status: f.status, story: marker.storyId, ...(f.faltan.length ? { faltan: f.faltan } : {}) });
         if (f.status === 'blocked') {
@@ -2493,12 +2523,26 @@ function cmdSetBatch(nombre) {
     console.error(`marker.js set-batch: la tanda ${nombre} está done: una tanda hecha no se entrega de nuevo. Tandas: ${lista}`);
     process.exit(2);
   }
+  // ¿la parte vale para medir el riesgo? Se anota igual (la matriz mide sus criterios); si no vale, el riesgo, la
+  // delicada y el tamaño del plan se miden por la historia entera
+  const scope = require('./lib/batch-scope.js');
+  const valida = scope.validarParte(texto, nombre);
+  // con el plan ya aprobado sin parte, anotarla lo deja pendiente otra vez: la aprobación era de otra cosa
+  const conPlan = require('./lib/steps.js').isDone(marker, 'approve-plan');
+  if (conPlan) {
+    scope.volverAlPlan(marker);
+    appendLog('gates.log', { name: 'plan-reopened', status: 'ok', story: marker.storyId || null, batch: nombre, motivo: 'se anotó la parte con el plan ya aprobado sin parte' });
+  }
   marker.batch = nombre;
   marker.batchSetAt = nowIso();
+  marker.batchValid = !!valida.valid;
+  if (valida.valid) delete marker.batchInvalidReason; else marker.batchInvalidReason = valida.reason;
   marker.lastTouch = marker.batchSetAt;
   writeMarker(marker);
-  appendLog('gates.log', { name: 'set-batch', story: marker.storyId || null, batch: nombre, ts: marker.batchSetAt });
+  appendLog('gates.log', { name: 'set-batch', story: marker.storyId || null, batch: nombre, valid: marker.batchValid, ...(valida.valid ? {} : { reason: valida.reason }), ts: marker.batchSetAt });
   process.stdout.write(`batch: ${nombre}\n`);
+  if (!valida.valid) process.stdout.write(`batch: la parte no vale para medir el riesgo (${valida.reason}): el plan se mide por la historia entera\n`);
+  if (conPlan) process.stdout.write('batch: el plan estaba aprobado sin parte: «Aprobar el plan» queda pendiente otra vez\n');
 }
 
 // `tests-suite`: una suite sola de suites.json, repetida con `test-gate.sh --suite` después de un rojo. Nunca vale como
@@ -3533,6 +3577,30 @@ function cmdExpectRed(args) {
   process.stdout.write(`${check}: rojo-esperado:exit=${m[1]} (${tests.join(', ')}) — deuda ${marker.cierre.deuda}\n`);
 }
 
+// Una prueba que ya existía y estaba en rojo se edita con su razón: `note-red-test --test <ruta> --reason "<motivo>"`.
+// La nota deja pasar el freno on-red-test-edit.js, va al contexto de los revisores y al mensaje del commit. La prueba de
+// un control no pasa con una nota: la firma el dueño (red-control-test-edit).
+function cmdNoteRedTest(args) {
+  const prueba = opcion(args, 'test');
+  const motivo = motivoDe(args);
+  if (!prueba || !motivo) {
+    console.error('marker.js note-red-test: uso: note-red-test --test <ruta de la prueba> --reason "<por qué la prueba está mal>"');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js note-red-test: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  const abs = path.resolve(prueba);
+  const notas = (Array.isArray(marker.redTestNotes) ? marker.redTestNotes : []).filter((n) => n && n.test !== abs);
+  marker.redTestNotes = [...notas, { test: abs, reason: motivo, at: nowIso() }];
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'red-test-edit', status: 'noted', story: nn(marker.storyId, null), file: abs, reason: motivo });
+  process.stdout.write(`nota anotada: ${abs} — ${motivo}\n`);
+}
+
 // Forzar el tamaño de la corrida a mano: `set-size liviana|completa --reason "<texto>"`. Sin motivo no se
 // escribe nada (nadie sabría después por qué se saltó el pase). Forzar a liviana una story que declara código queda en
 // bypass.log: es apagar el pase adversarial a sabiendas.
@@ -3601,7 +3669,7 @@ function hermanosDeLaCorrida(marker) {
 function carpetaDeLaCorrida(marker) {
   try {
     const story = resolveStoryPath(marker.storyPath, marker) || undefined;
-    const rd = require('./pipeline.js').resolveRunDir(path.resolve(marker.repoPath || process.cwd()), String(marker.storyId), false, story);
+    const rd = require('./pipeline.js').resolveRunDir(path.resolve(marker.repoPath || process.cwd()), String(marker.storyId), false, story, { marker });
     return rd ? require('./lib/adversarial-skip.js').carpetaReal(rd) : rd;
   } catch (e) {
     console.error(`⚠️  no pude calcular la carpeta de la ejecución (${String(e.message || e).split('\n')[0]})`);
@@ -4723,13 +4791,15 @@ function cmdClear(rest = []) {
           const clave = ki.key;
           // Sin clave el volcado cae en la raíz de pipeline-runs/ (como cuando no hay carpeta), pero se DICE por qué.
           if (!clave) process.stderr.write(`[marker] el volcado de tiempos va suelto a ${runsDir}: no pude calcular la clave de la carpeta de la story (${ki.error}).\n`);
-          const candidates = (clave ? fs.readdirSync(runsDir) : [])
-            .filter((d) => d.startsWith(`${clave}-`))
-            .sort();
-          if (candidates.length) target = path.join(runsDir, candidates[candidates.length - 1]);
-        } catch { /* sin runs dir */ }
+          // la carpeta de la corrida que se limpia (su `runDir`, o la de su apertura): la misma regla que todos
+          // (lib/run-dir.js); sin ninguna, la de la regla sin marcador
+          if (clave) target = require('./pipeline.js').resolveRunDir(marker.repoPath, String(marker.storyId), false, sp || undefined, { marker }) || null;
+        } catch (e) {
+          process.stderr.write(`[marker] no pude calcular la carpeta de la corrida para el volcado de tiempos (${e.message}): va suelto a ${runsDir}.\n`);
+        }
         if (!target) {
           target = runsDir;
+          process.stderr.write(`[marker] el volcado de tiempos va suelto a ${runsDir}: no encontré la carpeta de la corrida de la story ${marker.storyId}.\n`);
           fs.mkdirSync(target, { recursive: true });
         }
         fs.writeFileSync(path.join(target, `timing-dump-${ts}.json`), JSON.stringify(dumpFinal, null, 2), 'utf8');
@@ -5609,7 +5679,7 @@ function cmdWaiveCritical(argv) {
   let runDir = null;
   try {
     const storyAbs = resolveStoryPath(m.storyPath, m) || undefined;
-    runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs);
+    runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs, m);
   } catch (e) { console.error(`marker.js waive-critical: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2); }
   if (!runDir) { console.error('marker.js waive-critical: la story no da una clave para su carpeta de corrida'); process.exit(2); }
   let entrada;
@@ -5712,7 +5782,7 @@ function cmdCompareWaiver(argv) {
     process.exit(2);
   }
   let runDir = null;
-  try { runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs); } catch (e) {
+  try { runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs, m); } catch (e) {
     console.error(`marker.js compare-waiver: no pude calcular la carpeta de la corrida (${e.message})`);
     process.exit(2);
   }
@@ -6086,7 +6156,7 @@ function cmdMarkTested(argv) {
   const storyAbs = resolveStoryPath(m.storyPath, m);
   if (!storyAbs) { console.error('marker.js mark-tested: no encontré la story de la corrida'); process.exit(2); }
   let runDir = null;
-  try { runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs); } catch (e) {
+  try { runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs, m); } catch (e) {
     console.error(`marker.js mark-tested: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2);
   }
   if (!runDir) { console.error('marker.js mark-tested: la story no da una clave para su carpeta de corrida'); process.exit(2); }
@@ -6463,6 +6533,62 @@ function cmdAdhocAllowDataChange(io) {
   process.exit(0);
 }
 
+/**
+ * `adhoc allow-foreign-save`: lo que sigue al freno de un guardado ajeno al carril (save-brake.js `guardadoAjeno`, que
+ * anotó el pedido). Muestra entero lo que guarda y pide la firma `adhoc-lane:guardado-ajeno`, que aprueba sólo el click
+ * de una persona (en esta pestaña o en la de la coordinadora) o su terminal. Con ella deja un permiso de un uso, atado a
+ * la huella del pedido, por 30 minutos desde el click. Sin pedido anotado no pide nada.
+ */
+function cmdAdhocAllowForeignSave(io) {
+  const args = process.argv.slice(4);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--terminal') continue;
+    if (args[i] === '--for-session') { i++; continue; }
+    console.error(`marker.js adhoc allow-foreign-save: no conozco «${String(args[i]).slice(0, 60)}». Uso: marker.js adhoc allow-foreign-save`);
+    process.exit(2);
+  }
+  const a = io.readAdhoc(STATE_DIR, SID);
+  if (!a) { console.error('marker.js adhoc allow-foreign-save: no hay un camino corto abierto en esta sesión.'); process.exit(1); }
+  const p = a.guardadoAjeno;
+  if (!p || !p.huella) { console.error('marker.js adhoc allow-foreign-save: no hay un guardado ajeno frenado en este carril: lo anota el freno de guardar cuando frena. No pido nada.'); process.exit(1); }
+  const fa = require('./lib/adhoc-foreign-save.js');
+  // la lista entera, antes del cuadro: el cuadro muestra hasta cinco nombres
+  if (process.env[require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).PRECHEQUEO] !== '1') {
+    process.stdout.write(['Lo que guarda, entero:', ...fa.lineasDe(p, { todo: true }).map((l) => `  ${l}`)].join('\n') + '\n');
+  }
+  const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const { enUnRenglon } = require('./lib/adhoc-screen.js');
+  const r = ow.exigir({ firma: 'adhoc-lane:guardado-ajeno', argv: process.argv.slice(1),
+    resumen: enUnRenglon(`dejar pasar una vez el guardado ajeno de la sesión ${SID}: ${p.comando} en ${p.repo} (rama ${p.rama})`),
+    propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
+  if (r.codigo !== 0) {
+    console.error(`🔒 marker.js adhoc allow-foreign-save: una persona no lo dejó pasar — ${r.motivo}`);
+    console.error('   Lo deja pasar sólo el click de una persona, en esta pestaña o en la de la coordinadora, o en su terminal:');
+    console.error(`     node ${citar(__filename)} adhoc allow-foreign-save --terminal --for-session ${citar(SID)}`);
+    process.exit(r.codigo === 2 ? 2 : 1);
+  }
+  if (!['click', 'terminal'].includes(r.via)) {
+    console.error(`🔒 marker.js adhoc allow-foreign-save: esto lo aprueba sólo el click de una persona o su terminal, y volvió por ${r.via}; no anoté nada.`);
+    process.exit(1);
+  }
+  // el click vale para el pedido que mostró el cuadro: si cambió mientras tanto, no se anota
+  const ahora = io.readAdhoc(STATE_DIR, SID);
+  if (!ahora || !ahora.guardadoAjeno || ahora.guardadoAjeno.huella !== p.huella) {
+    console.error('🔒 marker.js adhoc allow-foreign-save: el pedido cambió entre el cuadro y ahora; no anoté nada. Repetí el guardado y pedí el click de nuevo.');
+    process.exit(1);
+  }
+  const at = nowIso();
+  const permiso = { huella: p.huella, comando: p.comando, cwd: p.cwd, repo: p.repo, via: r.via, by: r.sesion || SID, at };
+  const f = fa.permisoPath(STATE_DIR, SID);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  const tmp = `${f}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(permiso, null, 2), 'utf8');
+  fs.renameSync(tmp, f);
+  appendLog('adhoc.log', { kind: 'ADHOC_FOREIGN_SAVE_ALLOWED', huella: p.huella, comando: p.comando, repo: p.repo, rama: p.rama, guarda: fa.lineasDe(p, { todo: true }), via: r.via, by: r.sesion || SID });
+  process.stdout.write('adhoc: una persona dejó pasar este guardado una vez. Repetí el mismo comando en los próximos 30 minutos, sin cambiar nada.\n');
+  process.exit(0);
+}
+
 function cmdAdhoc(sub, payloadJson) {
   if (sub === 'clear-orphan') return cmdAdhocClearOrphan(payloadJson);
   const io = require('./lib/story-gate-io.js');
@@ -6487,6 +6613,36 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(`adhoc: termina ${String(payloadJson).trim()}\n`);
     process.exit(0);
   }
+  // `adhoc test -- <comando>`: corre las pruebas del camino corto y anota en el carril el final de la salida, la hora, el
+  // código y la huella de lo que se probó (la de la medida única). No pide firma; el freno de guardar mide que la corrida
+  // esté en verde y con la huella de hoy. Sale con el código del comando. Sin carril abierto, no corre nada.
+  if (sub === 'test') {
+    const i = process.argv.indexOf('--');
+    const comando = i >= 0 ? process.argv.slice(i + 1) : [];
+    if (!comando.length) { console.error('marker.js adhoc test: uso — adhoc test -- <comando de pruebas> (por ejemplo: adhoc test -- npm test -- src/combo)'); process.exit(2); }
+    const a = io.readAdhoc(STATE_DIR, SID);
+    if (!a || !io.adhocFirmado(STATE_DIR, SID, a)) {
+      console.error('marker.js adhoc test: esta sesión no tiene un camino corto abierto: no corrí nada.');
+      process.exit(2);
+    }
+    const adhocBase = require('./lib/adhoc-base.js');
+    // la huella antes de correr: es lo que se probó, aunque las pruebas escriban algo
+    const huella = adhocBase.huellaDelCarril(a);
+    // en Windows `npm`, `npx` o `yarn` son `.cmd` y sólo corren por la consola: ahí va con su shell, cada palabra citada
+    const enWindows = process.platform === 'win32';
+    const citarWin = (w) => (/[\s"&|<>^]/.test(w) ? `"${String(w).replace(/"/g, '""')}"` : w);
+    const r = require('child_process').spawnSync(enWindows ? citarWin(comando[0]) : comando[0], enWindows ? comando.slice(1).map(citarWin) : comando.slice(1),
+      { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024, shell: enWindows });
+    if (r.stdout) process.stdout.write(r.stdout);
+    if (r.stderr) process.stderr.write(r.stderr);
+    const codigo = r.error ? 127 : (r.status === null ? 1 : r.status);
+    const salida = `${r.stdout || ''}${r.stderr || ''}${r.error ? `\n${r.error.message}` : ''}`.slice(-4000);
+    const pruebas = { comando: comando.join(' '), codigo, at: nowIso(), huella, salida };
+    io.writeAdhoc(STATE_DIR, SID, { ...(io.readAdhoc(STATE_DIR, SID) || a), pruebas });
+    appendLog('adhoc.log', { kind: 'ADHOC_TEST', comando: pruebas.comando, codigo, huella });
+    console.error(codigo === 0 ? 'marker.js adhoc test: en verde; anotado en el camino corto.' : `marker.js adhoc test: salió con ${codigo}; anotado: así no guarda.`);
+    process.exit(codigo);
+  }
   // `adhoc capture <imagen>`: la captura de la pantalla construida. No pide firma: no aprueba nada, y el freno de guardar
   // mide que sea posterior al último cambio.
   if (sub === 'capture') {
@@ -6502,6 +6658,7 @@ function cmdAdhoc(sub, payloadJson) {
     process.exit(0);
   }
   if (sub === 'allow-data-change') return cmdAdhocAllowDataChange(io);
+  if (sub === 'allow-foreign-save') return cmdAdhocAllowForeignSave(io);
   if (sub === 'clear') {
     // sin mirar si venció: el que pasó el tope deja su cuenta aunque lleve horas sin tocarse
     let existing = io.readAdhoc(STATE_DIR, SID);
@@ -6512,6 +6669,7 @@ function cmdAdhoc(sub, payloadJson) {
         if (e.code !== 'ENOENT') ilegible = `declaración ilegible: ${e.code || e.message}`;
       }
     }
+    require('./lib/adhoc-foreign-save.js').borrarPermiso(STATE_DIR, SID);
     try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (e) {
       // sólo «no existe» es estar cerrado: otro error deja el atajo abierto, y eso se dice
       if (e.code !== 'ENOENT') { console.error(`marker.js adhoc clear: no pude borrar la declaración (${e.code || e.message}); el arreglo rápido sigue abierto.`); process.exit(1); }
@@ -6538,7 +6696,7 @@ function cmdAdhoc(sub, payloadJson) {
       const p = require('./lib/adhoc-screen.js').pedidoPorBanderas(process.argv.slice(4));
       if (p.problema) {
         console.error(`marker.js adhoc set: ${p.problema}.`);
-        console.error('  Uso: marker.js adhoc set --reason "<qué y por qué>" [--max-files N] --data sin-cambio|cambian --terminal --for-session <id>');
+        console.error('  Uso: marker.js adhoc set --reason "<qué y por qué>" [--max-files N] --data sin-cambio|cambian --file <ruta> [--file <ruta> …] --terminal --for-session <id>');
         process.exit(2);
       }
       payload = p.payload;
@@ -6557,6 +6715,20 @@ function cmdAdhoc(sub, payloadJson) {
     // la ventana y la terminal muestran el motivo hasta 200 caracteres y el cupo: lo que se guarda es lo que el dueño ve
     if (reason.length > ADHOC_MOTIVO_MAX) {
       console.error(`marker.js adhoc set: "reason" de hasta ${ADHOC_MOTIVO_MAX} caracteres: la ventana no muestra más, y la persona firmaría un recorte.`);
+      process.exit(2);
+    }
+    // el motivo en un renglón, firme quien firme: antes de `exigir`, así también lo mira el chequeo previo de la ventana
+    const LISTA = require('./lib/adhoc-list.js');
+    // los rechazos de la lista en los dos perfiles: en un producto hablan de vos; sin poder leer el repo, el del arnés
+    // se lee recién al rechazar: leerlo avisa cuando el arnés no está instalado, y un pedido que pasa no lo necesita
+    let perfilDelArnes;
+    const enElArnes = () => {
+      if (perfilDelArnes === undefined) { try { perfilDelArnes = io.isHarnessRepo(path.join(process.cwd(), '.')) !== false; } catch (_) { perfilDelArnes = true; } }
+      return perfilDelArnes;
+    };
+    const malMotivo = /[\r\n]/.test(reason) ? LISTA.problemaDelMotivo(reason, { harness: enElArnes() }) : null;
+    if (malMotivo) {
+      console.error(`marker.js adhoc set: ${malMotivo}.`);
       process.exit(2);
     }
     if (payload.maxFiles !== undefined && !(Number.isInteger(payload.maxFiles) && payload.maxFiles >= 1 && payload.maxFiles <= ADHOC_CUPO_MAX)) {
@@ -6621,11 +6793,71 @@ function cmdAdhoc(sub, payloadJson) {
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
     // los topes del camino corto de la organización, leídos una vez: la firma, el cupo y los textos dicen el mismo número
     const topes = io.topesDelCaminoCorto({ stateDir: STATE_DIR, sessionId: destino });
+    // la lista de archivos: todo camino corto la lleva, cerrada, y se valida antes de pedir la firma
+    const pedidaLista = LISTA.normalizar(payload.allowedFiles, { cwd: process.cwd() });
+    if (pedidaLista.problema) {
+      console.error(`marker.js adhoc set: ${LISTA.rechazoDeLaLista(pedidaLista.problema, { harness: enElArnes() })}`);
+      process.exit(2);
+    }
+    const allowedFiles = pedidaLista.lista;
+    // una lista fuera de todo repo casi siempre es un pedido desde otra carpeta: cada edición real va a frenar
+    if (pedidaLista.sinRepo && pedidaLista.sinRepo.length) {
+      console.error(`⚠️  marker.js adhoc set: ${pedidaLista.sinRepo.length} archivo(s) de la lista no caen dentro de ningún repo desde ${process.cwd()}: ${pedidaLista.sinRepo.slice(0, 5).join(', ')}. Si no es lo que querías, pedila de nuevo desde la carpeta del repo.`);
+    }
+    const deCodigo = LISTA.contar(allowedFiles).codigo;
+    if (payload.maxFiles !== undefined && deCodigo > payload.maxFiles) {
+      console.error(`marker.js adhoc set: la lista nombra ${deCodigo} archivos de código y pedís un cupo de ${payload.maxFiles}: achicá la lista o pedí un cupo mayor.`);
+      process.exit(2);
+    }
+    if (deCodigo > ADHOC_CUPO_MAX) {
+      console.error(`marker.js adhoc set: la lista nombra ${deCodigo} archivos de código; el camino corto llega hasta ${ADHOC_CUPO_MAX}: esto va por historia.`);
+      process.exit(2);
+    }
+    // una lista con más código que el tope de la organización es pasar el tope: el cupo sube a lo que nombra la lista
+    if (payload.maxFiles === undefined && deCodigo > topes.maximo) payload.maxFiles = deCodigo;
+    const cupoDeLaLista = payload.maxFiles !== undefined ? payload.maxFiles : (actual ? actual.maxFiles : topes.maximo);
+    const malosTopes = LISTA.problemaDeTopes(allowedFiles, cupoDeLaLista);
+    if (malosTopes) {
+      console.error(`marker.js adhoc set: ${LISTA.rechazoDeLaLista(malosTopes, { harness: enElArnes() })}`);
+      process.exit(2);
+    }
+    const relLista = allowedFiles.map((f) => path.relative(process.cwd(), f) || f);
+    // una ruta de riesgo alto en la lista: la firma de una persona lo dice, y sin una persona no se abre
+    const riesgoDeLaLista = LISTA.riesgoDeLaLista(allowedFiles);
+    // adelante en el resumen: se corta a los 200 caracteres, y el riesgo alto es lo primero que tiene que leer quien firma
+    const conRiesgo = riesgoDeLaLista ? `${LISTA.textoDelRiesgo(riesgoDeLaLista)} · ` : '';
+    const renglon = require('./lib/adhoc-screen.js').enUnRenglon;
+    console.error(`marker.js adhoc set: la lista (${allowedFiles.length} archivos): ${relLista.map(renglon).join(', ')}`);
     // en la terminal el dueño ve este resumen: el motivo y el cupo, como en la ventana
     const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos de implementación, sin pruebas ni guías` : `el cupo de la organización (${topes.maximo} archivos de implementación, o el que ya tenía)`;
     // por delegación, el dueño se entera antes de la constancia, por los canales del perfil: sin entrega, no hay arreglo
     const antes = (viaPedida, registro) => {
-      if (viaPedida !== 'delegacion') return null;
+      // «hecho y avisado» (pestaña sin permisos) cuenta como delegado: tampoco lo leyó una persona
+      if (viaPedida !== 'delegacion' && viaPedida !== 'avisado' && !(registro && registro.via === 'avisado')) return null;
+      // lo que no abre nadie más que una persona, antes del aviso: una ruta de riesgo alto, varios temas o un motivo vago
+      if (riesgoDeLaLista) {
+        const quien = enElArnes() ? 'no lo abre la coordinadora por delegación: lo abre una persona' : 'lo abrís vos, en tu ventana';
+        return { codigo: 1, motivo: `la lista nombra una ruta de ${LISTA.textoDelRiesgo(riesgoDeLaLista)}: un camino corto de riesgo alto ${quien}` };
+      }
+      const sinPersona = LISTA.sinUnaPersona({ reason }) ? LISTA.sinUnaPersona({ reason, harness: enElArnes() }) : null;
+      if (sinPersona) return { codigo: 1, motivo: sinPersona };
+      // ampliar por delegación: la lista nueva contiene entera la firmada
+      const faltan = actual && Array.isArray(actual.allowedFiles) ? actual.allowedFiles.filter((f) => !allowedFiles.includes(f)) : [];
+      if (faltan.length) return { codigo: 1, motivo: LISTA.textoDeAmpliar(faltan.map((f) => path.relative(process.cwd(), f) || f), { harness: enElArnes() }) };
+      // un solo carril delegado por repo: dos a la vez se pisan las cuentas
+      const mios = new Set(allowedFiles.map(LISTA.raizDe).filter(Boolean));
+      let otros = [];
+      try { otros = fs.readdirSync(path.join(STATE_DIR, 'adhoc')).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)); } catch (e) {
+        // sin la carpeta no hay otros carriles; una que no se lee no deja saber si ya hay uno delegado en el repo
+        if (!e || e.code !== 'ENOENT') return { codigo: 1, motivo: `no pude leer los otros caminos cortos de la máquina (${String(e && e.message || e).split('\n')[0]}): sin saber si ya hay uno delegado en este repo, no se abre por delegación` };
+      }
+      for (const sid of otros) {
+        if (sid === destino) continue;
+        const o = io.readAdhoc(STATE_DIR, sid);
+        if (!o || (o.via !== 'delegacion' && o.via !== 'avisado') || !Array.isArray(o.allowedFiles)) continue;
+        const comun = o.allowedFiles.map(LISTA.raizDe).find((r) => r && mios.has(r));
+        if (comun) return { codigo: 1, motivo: LISTA.textoOtroCarril(sid, comun, { harness: enElArnes() }) };
+      }
       const so = require('./lib/save-ok.js');
       const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
       const cupo = cupoAlDeclarar({ pedido: payload.maxFiles, existing: actual, via: viaPedida, topes });
@@ -6645,18 +6877,22 @@ function cmdAdhoc(sub, payloadJson) {
     const firmas = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js'));
     // la misma regla que mira el freno: pasar el tope es otra firma
     const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo);
-    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`arreglo rápido de la sesión ${destino}${conMaqueta}: «${reason}» · ${cupoPedido}`),
+    const enLaLista = `${allowedFiles.length} archivo${allowedFiles.length === 1 ? '' : 's'} (${relLista.slice(0, 2).join(', ')}${relLista.length > 2 ? ', …' : ''})`;
+    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`${conRiesgo}arreglo rápido de la sesión ${destino}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
       propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), antes });
     if (r.codigo !== 0) {
       // la forma con JSON sólo si hace falta: la maqueta no entra en la otra, y hay motivos que no se pueden citar en ella
       const screen = require('./lib/adhoc-screen.js');
       const sinJson = screen.motivoSeCita(reason) && (porBanderas || (!maqueta && require('./lib/runtime-waiver.js').esWindows()));
       const pedidoEnJson = porBanderas ? JSON.stringify(payload) : String(payloadJson);
-      const pedidoEnTerminal = sinJson ? `--reason "${reason}"${payload.maxFiles !== undefined ? ` --max-files ${payload.maxFiles}` : ''}${payload.datos ? ` --data ${payload.datos}` : ''}` : `'${pedidoEnJson.replace(/'/g, "'\\''")}'`;
+      const conLista = relLista.map((f) => ` --file ${/^[\w./-]+$/.test(f) ? f : `"${f}"`}`).join('');
+      const pedidoEnTerminal = sinJson ? `--reason "${reason}"${payload.maxFiles !== undefined ? ` --max-files ${payload.maxFiles}` : ''}${payload.datos ? ` --data ${payload.datos}` : ''}${conLista}` : `'${pedidoEnJson.replace(/'/g, "'\\''")}'`;
       console.error(`🔒 marker.js adhoc set: la persona no lo aprobó — ${r.motivo}`);
       console.error('   El arreglo rápido lo aprueba una persona, no el agente: en la ventana de permiso, corriendo este comando solo y en su forma');
       console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
-      console.error(`     node ${__filename} adhoc set ${pedidoEnTerminal} --terminal --for-session ${destino}`);
+      // con la carpeta: la lista va relativa a ella, y la terminal de la persona puede estar en otra
+      const irALaCarpeta = process.platform === 'win32' ? `cd /d "${process.cwd()}"` : `cd ${citar(process.cwd())}`;
+      console.error(`     ${irALaCarpeta} && node ${__filename} adhoc set ${pedidoEnTerminal} --terminal --for-session ${destino}`);
       console.error('   Si la persona no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
       process.exit(r.codigo === 2 ? 2 : 1);
     }
@@ -6681,6 +6917,8 @@ function cmdAdhoc(sub, payloadJson) {
       : existing && existing.sobreCupo && maxFiles > topes.maximo ? { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio } : {};
     const obj = {
       reason, maxFiles,
+      // la lista cerrada de archivos: el portón y el freno de guardar no dejan pasar lo que no nombra
+      allowedFiles,
       files: existing ? (existing.files || []) : [],
       declaredAt: existing ? existing.declaredAt : nowIso(),
       lastTouch: nowIso(),
@@ -6703,10 +6941,20 @@ function cmdAdhoc(sub, payloadJson) {
       ...(existing && existing.untilAt ? { untilAt: existing.untilAt } : {}),
       // las rutas anotadas, la marca de riesgo y las constancias, con el motivo que sea: valen por su huella, y declarar
       // el carril de nuevo no las vence
-      ...(existing ? Object.fromEntries(['rutas', 'riesgoAlto', 'revisoresEsperados', 'revisores', 'pase']
+      ...(existing ? Object.fromEntries(['rutas', 'riesgoAlto', 'revisoresEsperados', 'revisores', 'pase', 'pruebas']
         .filter((k) => existing[k] !== undefined).map((k) => [k, existing[k]])) : {}),
     };
+    // abrir trae la base de cada repo de la lista, como el primer toque: sin red abre igual, con la base «sin traer» y el
+    // aviso. Un repo que ya tiene la suya la conserva
+    const adhocBase = require('./lib/adhoc-base.js');
+    for (const repo of [...new Set(allowedFiles.map(LISTA.raizDe).filter(Boolean))]) {
+      const b = adhocBase.conBase(obj, repo);
+      if (b.adhoc.bases) obj.bases = b.adhoc.bases;
+      if (b.aviso) console.error(`⚠ ${b.aviso}`);
+    }
     io.writeAdhoc(STATE_DIR, destino, obj);
+    // declarar el carril de nuevo no conserva el pedido ni el permiso de un guardado ajeno
+    require('./lib/adhoc-foreign-save.js').borrarPermiso(STATE_DIR, destino);
     syncSessionState(destino);
     avisarOficina(destino);
     // el portón de edición apagado no apaga la firma; queda igual en bypass.log, que la revisión de la noche cuenta
@@ -6714,7 +6962,7 @@ function cmdAdhoc(sub, payloadJson) {
     const maquina = r.registro && r.registro.maquina ? r.registro.maquina : null;
     appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null,
       files: obj.files.length, cwd: process.cwd(), via, by, destino, ...sobreCupo, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }),
-      ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}), ...(obj.datos ? { datos: obj.datos } : {}) });
+      ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}), ...(obj.datos ? { datos: obj.datos } : {}), allowedFiles });
     if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     if (maxFiles < pedido) {
       const antes = Number(payload.maxFiles) > 0 ? `pediste ${pedido}` : `tenía ${pedido}`;
@@ -6723,8 +6971,20 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     process.exit(0);
   }
-  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N,"mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}\' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc allow-data-change --changed "…" --recommends pasar|historia|descartar --why "…" | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
+  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N,"mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}\' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc allow-data-change --changed "…" --recommends pasar|historia|descartar --why "…" | adhoc allow-foreign-save | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
   process.exit(2);
+}
+
+/**
+ * Las dos formas de pedir una firma sobre un archivo, cada una dicha para quién es (scripts/lib/owner-window.js, la
+ * única fuente). Sin esa biblioteca, el renglón dice qué firma pedir sin escribir el comando.
+ */
+function formasDeFirmarArchivo(firma, archivo, sesion) {
+  try {
+    return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).formasDeFirmar(firma, archivo, sesion).renglones;
+  } catch (e) {
+    return [`la firma de archivo ${firma}${archivo ? ` sobre ${archivo}` : ''}, en la ventana de permiso (no pude armar el comando: ${e.message})`];
+  }
 }
 
 // Escape consciente del freno de STORY A MANO (lib/story-skill-gate.js): deja la misma
@@ -6735,7 +6995,8 @@ function cmdStorySkillBypass() {
   // Escribir una historia sin la skill lo decide la persona, y este comando ya no deja constancia: un modelo frenado lo
   // corrió solo con una razón inventada («el usuario lo pidió»). La firma se pide sobre el archivo, en la ventana.
   console.error('🚫 marker.js story-skill-bypass: no deja constancia — escribir la historia sin la skill lo decide la persona.');
-  console.error('   Usá la skill tycon-create-story. Si la persona la quiere sin la skill, la firma en la ventana: marker.js sign-file story-skill-bypass <archivo>.');
+  console.error('   Usá la skill tycon-create-story. Si la persona la quiere sin la skill, la firma sobre el archivo:');
+  for (const l of formasDeFirmarArchivo('story-skill-bypass', null, SID)) console.error(`     · ${l}`);
   process.exit(1);
 }
 
@@ -6753,7 +7014,7 @@ function cmdSignFile(firma, archivo) {
   // en la terminal del dueño no hay sesión: sin --for-session la constancia no la usaría ninguna escritura
   if (SID === '_nosession' && process.argv.includes('--terminal')) {
     console.error('🔒 marker.js sign-file: sin --for-session no sé qué sesión va a escribir el archivo, y la firma no le serviría a ninguna.');
-    console.error(`   Corré: marker.js sign-file ${firma} ${archivo} --terminal --for-session <id de la sesión del agente>`);
+    console.error(`   Corré: ${ow.comoSeFirmaEnLaTerminal(firma, archivo, '<id de la sesión del agente>')}`);
     process.exit(2);
   }
   const r = firmaDelDueno(`escape:${firma}`, `${firma} sobre ${archivo}`);
@@ -6812,7 +7073,7 @@ function cmdRethink(argv) {
       console.error(`marker.js rethink: no pude leer la story ${storyPath}, así que no sé en qué carpeta guardar la nota.`);
       process.exit(2);
     }
-    runDir = resolveRunDir(repo, storyId, !runDirArg, storyPath);
+    runDir = resolveRunDir(repo, storyId, !runDirArg, storyPath, { marker: marker || null });
     if (!runDir) {
       console.error(runDirArg
         ? `marker.js rethink: --run-dir ${runDirArg} no es la carpeta de corrida de esta story (${storyId}): esta story todavía no tiene carpeta de corrida. Quitá --run-dir.`
@@ -6924,6 +7185,9 @@ switch (cmd) {
     break;
   case 'expect-red':
     cmdExpectRed(process.argv.slice(3));
+    break;
+  case 'note-red-test':
+    cmdNoteRedTest(process.argv.slice(3));
     break;
   case 'set-size':
     cmdSetSize(process.argv.slice(3));

@@ -53,9 +53,28 @@ test('io.gateEnabledForRepo: lee lo COMMITEADO — el yaml del working tree no a
 // ── marker.js complete-step: orden, Step 3, Step 5 ───────────────────────────────────────────────
 // Las firmas del dueño (el plan, el arreglo rápido) las da en la ventana de permiso; acá se dan por pasada
 // (window-passed.js).
+// Todo camino corto nuevo lleva su lista de archivos (8.174): los pedidos de estas pruebas la suman si no la traen. Corren
+// en la carpeta personal de prueba, que no es un repo: abrir no trae la base de ningún repo de verdad.
+function conLista(args) {
+  if (args[0] !== 'adhoc' || args[1] !== 'set') return args;
+  const out = [...args];
+  if (String(out[2] || '').trim().startsWith('{')) {
+    try {
+      const p = JSON.parse(out[2]);
+      if (p && typeof p === 'object' && !('allowedFiles' in p)) out[2] = JSON.stringify({ ...p, allowedFiles: ['src/a.js'] });
+    } catch (_) { /* un pedido roto queda como está: es lo que prueba */ }
+    return out;
+  }
+  if (out.includes('--reason') && !out.includes('--file')) {
+    const i = out.indexOf('--terminal');
+    out.splice(i >= 0 ? i : out.length, 0, '--file', 'src/a.js');
+  }
+  return out;
+}
+
 function markerCli(home, sid, args, extraEnv = {}) {
-  return spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], {
-    encoding: 'utf8',
+  return spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...conLista(args)], {
+    encoding: 'utf8', cwd: home,
     env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, ...extraEnv }),
   });
 }
@@ -217,7 +236,7 @@ const declaracion = (home, sid) => { try { return JSON.parse(fs.readFileSync(io.
 function markerSinVentana(home, sid, args, extraEnv = {}) {
   const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, ...extraEnv };
   delete env.NODE_OPTIONS;
-  return spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env });
+  return spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...conLista(args)], { encoding: 'utf8', env, cwd: home });
 }
 
 // marker.js con una terminal de verdad: una pseudo-terminal propia (Python, `pty.fork`), que contesta `respuesta` cuando
@@ -248,7 +267,7 @@ function markerEnTerminal(home, args, respuesta) {
   const env = { ...process.env, HOME: home, USERPROFILE: home, RESPUESTA_TTY: respuesta };
   // la firma por la terminal se niega dentro de la CI: la terminal simulada no hereda sus variables
   for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'NODE_OPTIONS', 'CI', 'TF_BUILD', 'GITHUB_ACTIONS']) delete env[k];
-  const r = spawnSync('python3', ['-c', CON_TERMINAL, process.execPath, path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env, timeout: 60000 });
+  const r = spawnSync('python3', ['-c', CON_TERMINAL, process.execPath, path.join(SCRIPTS, 'marker.js'), ...conLista(args)], { encoding: 'utf8', env, timeout: 60000, cwd: home });
   return r.error ? null : r;
 }
 
@@ -299,7 +318,7 @@ test('8.141 T9 AdhocSet_SinFirma_NoEscribe', () => {
   let r = markerSinVentana(home, sid, SET);
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /la persona no lo aprobó/);
-  assert.match(r.stderr, /adhoc set '\{"reason":"arreglo del sp de deudas","maxFiles":3,"datos":"sin-cambio"\}' --terminal --for-session sess-t9/, 'dice el comando de la terminal entero');
+  assert.match(r.stderr, /adhoc set '\{"reason":"arreglo del sp de deudas","maxFiles":3,"datos":"sin-cambio","allowedFiles":\["src\/a\.js"\]\}' --terminal --for-session sess-t9/, 'dice el comando de la terminal entero');
   assert.equal(declaracion(home, sid), null, 'sin firma no escribe');
   assert.equal(adhocLog(home).filter((e) => e.kind === 'ADHOC_SET').length, 0);
   r = markerCli(home, sid, SET);
@@ -375,7 +394,7 @@ test('AdhocSet_PorBanderas_SoloEnLaTerminal_YQuedaIgualQueConJson', () => {
   const banderas = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'arreglo del sp de deudas', '--max-files', '3', '--data', 'sin-cambio', '--terminal', '--for-session', 'sess-b'], 'firmo');
   if (!banderas) { console.log('⏭ la firma por banderas en la terminal: NO MEDIDO — sin Python (o en Windows) para abrir una terminal'); return; }
   assert.equal(banderas.status, 0, `${banderas.stdout}${banderas.stderr}`);
-  assert.match(banderas.stdout, /«arreglo del sp de deudas» · hasta 3 archivos/, 'la terminal muestra el motivo y el cupo que se firman');
+  assert.match(banderas.stdout, /«arreglo del sp de deudas» · 1 archivo \(src\/a\.js\) · hasta 3 archivos/, 'la terminal muestra el motivo, la lista y el cupo que se firman');
   const json = markerEnTerminal(home, ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3,"datos":"sin-cambio"}', '--terminal', '--for-session', 'sess-j'], 'firmo');
   assert.equal(json.status, 0, `${json.stdout}${json.stderr}`);
   // lo único que cambia entre las dos es la sesión y la hora
@@ -385,7 +404,7 @@ test('AdhocSet_PorBanderas_SoloEnLaTerminal_YQuedaIgualQueConJson', () => {
   const no = markerEnTerminal(home, ['adhoc', 'set', '--reason', 'otro arreglo chico', '--data', 'sin-cambio', '--terminal', '--for-session', 'sess-no'], 'no');
   assert.equal(no.status, 1, `${no.stdout}${no.stderr}`);
   assert.equal(declaracion(home, 'sess-no'), null);
-  assert.match(`${no.stdout}${no.stderr}`, /adhoc set --reason "otro arreglo chico" --data sin-cambio --terminal --for-session sess-no/, 'dice el comando en la misma forma');
+  assert.match(`${no.stdout}${no.stderr}`, /adhoc set --reason "otro arreglo chico" --data sin-cambio --file src\/a\.js --terminal --for-session sess-no/, 'dice el comando en la misma forma');
 });
 
 // En Windows la consola de la persona no se lleva bien con el JSON: el aviso da la forma sin él, salvo que no se pueda.
@@ -394,14 +413,14 @@ test('AdhocSet_EnWindows_ElAvisoDaLaFormaSinJson', () => {
   const win = { TYCON_WAIVER_PLATFORM: 'win32' };
   let r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":3,"datos":"sin-cambio"}'], win);
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /adhoc set --reason "arreglo del sp de deudas" --max-files 3 --data sin-cambio --terminal --for-session sess-w/);
+  assert.match(r.stderr, /adhoc set --reason "arreglo del sp de deudas" --max-files 3 --data sin-cambio --file src\/a\.js --terminal --for-session sess-w/);
   r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"arreglo con \\"comillas\\" adentro","datos":"sin-cambio"}'], win);
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /adhoc set '\{"reason":"arreglo con \\"comillas\\" adentro","datos":"sin-cambio"\}' --terminal/, 'un motivo con comillas no se puede citar en esa forma');
+  assert.match(r.stderr, /adhoc set '\{"reason":"arreglo con \\"comillas\\" adentro","datos":"sin-cambio","allowedFiles":\["src\/a\.js"\]\}' --terminal/, 'un motivo con comillas no se puede citar en esa forma');
   // 🔴 Falla con: un comando sugerido que su propia forma rechaza al pegarlo, o que la consola rompe
   r = markerSinVentana(home, 'sess-w', ['adhoc', 'set', '{"reason":"-fix del boton rojo","datos":"sin-cambio"}'], win);
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /adhoc set '\{"reason":"-fix del boton rojo","datos":"sin-cambio"\}' --terminal/, 'un motivo con «-» adelante, la forma con banderas lo rechaza');
+  assert.match(r.stderr, /adhoc set '\{"reason":"-fix del boton rojo","datos":"sin-cambio","allowedFiles":\["src\/a\.js"\]\}' --terminal/, 'un motivo con «-» adelante, la forma con banderas lo rechaza');
   const { motivoSeCita, pedidoPorBanderas } = require('../lib/adhoc-screen.js');
   for (const motivo of ['arreglo del sp de deudas', 'con ñ, acentos y a/b']) {
     assert.equal(motivoSeCita(motivo), true, motivo);
@@ -441,9 +460,9 @@ test('8.141 T11 AdhocSet_ForSession_Delegada_SinAviso_NoDeclara', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const coord = 'sess-coord';
   const destino = 'sess-dest';
-  const args = ['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":7,"datos":"sin-cambio"}', '--for-session', destino];
+  const args = conLista(['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":7,"datos":"sin-cambio"}', '--for-session', destino]);
   const env = conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: coord }, { delegadaPor: coord });
-  const r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env });
+  const r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env, cwd: home });
   assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sin aviso a la persona, la coordinadora no abre el arreglo rápido/);
   assert.equal(declaracion(home, destino), null, 'la destino sin declaración');
@@ -482,8 +501,8 @@ test('T14 AdhocSet_SobreCupoAprobado_QuedaAnotadoQueLoEligioElDev @story-8.181 @
 // ── los topes del camino corto configurados por la organización (@story-8.182) ──────────────────────────────────────
 // `marker.js` corre desde una copia del arnés con su perfil: las claves sólo del perfil salen del perfil del árbol.
 const { copiaConPerfil } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'profile-harness-copy.js'));
-const markerDe = (arbol, home, sid, args) => spawnSync('node', [arbol.marker, ...args], {
-  encoding: 'utf8', env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid }),
+const markerDe = (arbol, home, sid, args) => spawnSync('node', [arbol.marker, ...conLista(args)], {
+  encoding: 'utf8', cwd: home, env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid }),
 });
 const gatesDe = (home) => { try { return fs.readFileSync(path.join(estadoDe(home), 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
 

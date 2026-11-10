@@ -79,10 +79,10 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **A.i**: siempre corren los advisors aplicables; no hay flag para saltear advisors individuales.
 - **H.ii — pase adversarial** (`steps/step-08-adversarial-pass.md`): reproduce-or-refute que
   EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre (de fondo, sin preguntar); LOW o
-  liviana → skip. Apagarlo lo firma el dueño (`marker.js sign-adversarial-skip`). Overrides: `deep_review: always|auto`,
-  `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable` no se ofrece ni se
-  pregunta**: sólo con `--deep-review-fable`, a pedido. UNA vez por corrida. Se lanza temprano al cerrar la implementación (`early_launch`; kill-switch `TYCON_5B_EARLY=0`)
-  y su paso es el JOIN. Los CONFIRMED se foldean a «Hallazgos» y disparan D.i. La prueba que confirmó cada hallazgo
+  liviana → skip. El portón usa el riesgo de la historia entera, no el que `risk-class` da para la parte. Apagarlo lo firma el dueño (`marker.js sign-adversarial-skip`). Overrides: `deep_review: always|auto`,
+  `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable`** sólo con
+  `--deep-review-fable`. UNA vez por corrida. Se lanza al cerrar lo implementado (`TYCON_5B_EARLY=0` lo apaga);
+  su paso es el JOIN; los CONFIRMED van a «Hallazgos». La prueba que confirmó cada hallazgo
   se promueve a la suite: `marker.js promote-probe`; `mark-adversarial-result` exige `--tests k`
   (+ `--own p --in <rutas>`, `--deferred d --reason`), k+p+d=N. El pase se cierra con constancia
   (`mark-adversarial-result` / `mark-adversarial-skipped`), nunca a mano; `prepare-commit` frena si el

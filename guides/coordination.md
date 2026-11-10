@@ -267,7 +267,9 @@ una, la coordinadora:
   revisor de la organización), y anota el resultado con `--result`.
 - **Aprueba en nombre del dueño sólo con «aprobado»** sobre ese mismo plan, con `plan_review.coordinator_approves`
   (O4) en sí y `plan-approval` delegado. Rechazado o sin veredicto, el plan espera; un plan delicado lo firma siempre el
-  dueño.
+  dueño. **El plan que aprueba es el de una parte**: si la ejecución anotó su tanda (`set-batch`) y la parte vale, la
+  delicada se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide
+  el diff entero; si sale delicado, el plan vuelve al dueño. El pase adversarial sigue por la historia entera.
 - **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta la pregunta en su
   nombre según la celda (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la propia
   sesión con su turno, como siempre.
@@ -407,6 +409,15 @@ firma de control del pull request, que es del dueño. A la coordinadora le llega
 El arreglo rápido (un cambio de código sin historia) es la firma `adhoc-lane`: la pestaña que lo necesita corre
 `marker.js adhoc set '<json>'` y el dueño lo aprueba en la ventana, que le muestra el motivo y el cupo de archivos.
 
+**Se pide con su lista.** El JSON nombra los archivos que va a tocar, uno por uno, y un motivo de un solo tema:
+
+```bash
+marker.js adhoc set '{"reason":"el combo de clientes no filtra por sucursal","datos":"sin-cambio","allowedFiles":["src/clientes/combo.ts","src/clientes/filtro.ts"]}'
+```
+
+La prueba de cada archivo de la lista no hace falta nombrarla. Fuera de la lista no se edita ni se guarda; ampliarla es
+otra firma. El detalle (qué motivo no se delega, uno delegado por repo) está en `guides/firmas-del-arnes.md`.
+
 **Declararlo de nuevo conserva todo.** Con otro cupo o con otro motivo, el carril sigue con su lista, su marca de riesgo
 y sus constancias, que valen mientras no cambie lo que miden. Una tarea nueva en la misma sesión va en una rama nueva desde
 `main`: en la rama de la anterior, sus commits cuentan para el cupo.
@@ -449,6 +460,19 @@ línea, qué cambió de verdad y qué recomienda. La firma es `adhoc-lane:datos`
 pestaña o en la tuya: «Sí, aprobar» la deja pasar, y «No» manda a la sesión a escribir la historia, o a descartar lo del
 carril si el dueño lo dice. No vale un «aprobado» escrito, la ventana ni la delegación. El click cubre esas señales: otra
 línea con una señal frena de nuevo. Ante la duda, historia.
+
+**Un guardado ajeno, con el carril esperando sus revisores, pide el click.** Mientras un camino corto de riesgo alto espera
+sus revisores y el pase, la sesión no guarda nada, tampoco en otro repo u otro worktree. Si lo que guarda no es del carril
+y se puede ver entero, el freno anota el pedido y le da a la sesión `marker.js adhoc allow-foreign-save`. Ese comando
+muestra el comando, el repo, la rama, lo que guarda (los archivos del commit, o los commits del push), los hooks que
+corren y la configuración de la máquina que corre programas, y pide la firma `adhoc-lane:guardado-ajeno`. La aprueba
+sólo el click del dueño, en la pestaña de la sesión o en la tuya, o su terminal: no vale la delegación, «hecho y avisado»
+ni un «aprobado» escrito. Pasa una vez ese mismo comando, en esa carpeta y con el repo como estaba, por 30 minutos desde
+el click; cualquier cambio vuelve a frenar. No se ofrece el click, y frena como siempre, para lo que no se ve entero o
+puede tocar la rama del carril: un guardado del carril, un pedido, su propia ruta de riesgo alto, más de un repo,
+`--amend`, un push a un remoto del carril, a una ruta o con `--force` y sus parientes, opciones de git que corren
+programas, un hook que no es del repo, una clave de la configuración del repo que corre un programa, o un comando de más
+de 160 caracteres o con caracteres que no se ven. Ahí, corré los revisores y el pase del carril.
 
 **Con la maqueta y la captura, lo construido se compara con la maqueta.** Compara textos, no el dibujo: si un texto de la
 maqueta no está en las pantallas del carril ni en las demás de sus repos, no guarda. Un texto que ya existe en otra pantalla

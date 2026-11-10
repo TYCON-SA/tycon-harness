@@ -579,6 +579,12 @@
       "requiere": []
     },
     {
+      "__nota": "una prueba que ya existía y estaba en rojo no se edita en silencio: pide la nota o, si es de un control, la firma del dueño.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/red-test-edit.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-headings.test.js",
       "requiere": []
@@ -1636,6 +1642,54 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.174, tanda A2: la lista de archivos del camino rápido — se declara y se valida antes de la firma, el motivo que no se delega, uno delegado por repo, fuera de la lista frena en el portón y al guardar, por la ruta real.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-list.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.174, tanda A3: las pruebas y la rama del camino rápido — adhoc test corre y anota, sin pruebas en verde con la huella de hoy no guarda, y un carril que pasó el tope no guarda en la rama principal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-tests-and-branch.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.168: el riesgo se mide por la parte — set-batch valida la parte; con una parte válida, el riesgo, la delicada y el tamaño del plan miden la parte más lo que el cambio toca; el pase, su modelo y la revisión de la historia siguen por la historia entera; la revisión del plan lleva la parte.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/risk-by-batch.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.168: el plan delegado queda atado a la lista de su parte (batch-out-of-list, congelada al aprobar), la parte anotada tarde reabre el plan, y al cerrar se mide el diff entero.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/batch-plan-gate.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.168: las dos señales del riesgo como aviso (ninguna prueba lo ataja, concurrencia declarada), sin cambiar el riesgo ni el pase.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/risk-signals.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.168: el formato y el lint de files: y sensible: por parte, y lo que dicen las guías del plan de una parte.",
+      "raiz": "arnes",
+      "ruta": "tests/risk-by-batch-guides.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.174: lo que las guías dicen del camino rápido (la lista, y en la A3 las pruebas y la rama).",
+      "raiz": "arnes",
+      "ruta": "tests/adhoc-guides.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/installed-tree.test.js",
       "requiere": []
@@ -1886,6 +1940,12 @@
       "ruta": "tests/smoke-expectation.test.sh",
       "requiere": [],
       "__nota": "story 1.19 (2026-10-15): un humo por terminal dejaba sólo el código de salida, y en otro arnés el agente insertó a mano el resultado que la prueba debía encontrar. Mide que smoke-run.sh pide --pass-if a todo humo con --acs (y no a la siembra sin --acs), que la expectativa y la salida se guardan tapadas con su sha256 en el espejo, el tope de 8 KB, que el código de salida sobrevive al tee, los bytes que no son texto, el tapado caído, la carpeta de salidas bloqueada, dos humos del mismo segundo y un humo cortado a mitad sin dejar el temporal; y que el paso 7c dice la regla de sembrar el «Given»."
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/parallel-runs.test.sh",
+      "requiere": [],
+      "__nota": "una corrida, una carpeta: start crea la suya y la anota en el marcador (runDir); lo que pide la carpeta de esa story recibe la del marcador; la constancia de otra corrida no se pisa; otra copia y otra rama de la misma story no es un choque."
     },
     {
       "raiz": "arnes",
@@ -2753,6 +2813,12 @@
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los carteles que piden una firma sobre un archivo: las dos formas (ventana y terminal) de una sola fuente, ningún comando de firma escrito a mano, cada forma destraba su freno en el laboratorio, los subcomandos nombrados existen, y el banco clasifica cómo frena cada cartel. Corre los guiones con la HOME aislada; unos segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/notice-commands.test.js",
       "requiere": []
     },
     {

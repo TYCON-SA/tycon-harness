@@ -28,9 +28,18 @@ horas. Mostrar la alerta (sesión, fecha de arranque, último toque, repo, pasos
   (`mem_search project="<proyecto>" query="Story X.Y.Z session_summary"`), mirar `git status`, adoptar el marcador con
   `marker.js adopt-session <sessionId>` (copia completa) y seguir desde el primer paso pendiente.
 - **(b) Limpiar** (la otra sesión murió): `marker.js clear-session <sessionId>` y arrancar de nuevo.
-- **(c) Paralelo intencional** (raro; implica ramas distintas): dejarlo escrito en engram, poner `notes='paralelo
-  intencional con <sessionId>'` en el marcador y seguir.
+- **(c) Trabajarla en paralelo**: en otra copia del repo (otro clon o worktree) y en otra rama. Desde ahí, `start` no
+  pausa: mira la raíz y la rama de la otra sesión, y si las dos son distintas sigue, lo dice en `actions_done` y anota
+  `parallelWith` (la sesión y la rama de la otra) en el marcador. La misma copia, o la misma rama en otra copia, pausa
+  como siempre; si no puede leer la rama de la otra sesión (su copia ya no está, o no tiene git), pausa y lo dice.
 - **Cancelar**: terminar el pipeline.
+
+**Una corrida, una carpeta**: `start` crea la carpeta de la corrida (`.advisors/pipeline-runs/<clave>-<sello>/`) aunque
+la story ya tenga otras (otra tanda, o la story reabierta), y la anota en el marcador (`runDir`). Lo que pide la carpeta
+de esa story (`write-findings`, `run-dir`, el registro de revisores, el cruce del commit, `marker.js clear`) recibe la del
+marcador, y la constancia de una corrida anterior no se pisa. Re-correr `start` sobre la misma story en la misma sesión
+reusa su carpeta y no pausa por PIPE-C5. Si no puede crear la carpeta (sin clave calculable o sin permiso de escritura),
+pausa sin escribir el marcador.
 
 **Stories DISTINTAS en paralelo sobre el mismo repo**: PIPE-C0 no las detecta (compara por id de story) y el árbol
 compartido las contamina: un solo HEAD, el `git diff HEAD` arma mal el set de revisores y `.advisors/tests-result.json`

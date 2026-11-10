@@ -1505,9 +1505,11 @@ test('8.242-MarcadorIlegible_ElPedidoFrena (T13) @story-8.242 @ac-8', (t) => {
     assert.ok(d && d.texto, `«${cmd}»: ${JSON.stringify(d)}`);
     assert.match(d.texto, /no pude leer el marcador de la corrida: no sé si el pull request está preparado/);
   }
+  // en el gancho, el freno de guardar sólo avisa en el commit; otro control (el del plan aprobado, que tampoco puede
+  // leer el marcador) puede frenarlo por su lado, nunca con el texto del pull request
   let r = gancho(h, 'git commit -m x', { cwd: a });
-  assert.strictEqual(r.status, 0, r.stderr);
-  assert.match(r.stderr, /marcador/);
+  assert.match(r.stderr, /el marcador de la corrida no se puede leer[^\n]*«git commit» guarda sin preguntar/, r.stderr);
+  assert.doesNotMatch(r.stderr, /no sé si el pull request está preparado/);
   r = gancho(h, 'gh pr create --fill', { cwd: a });
   assert.strictEqual(r.status, 2, r.stderr);
 });

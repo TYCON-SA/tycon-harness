@@ -121,7 +121,7 @@ function storyDe(marker) {
 /** El plan escrito de la corrida: `{ file, texto }`; `texto` es null si no está escrito. */
 function planDe(marker) {
   const repo = (marker && marker.repoPath) || process.cwd();
-  const runDir = pipeline().resolveRunDir(repo, String(marker.storyId), false, storyDe(marker) || undefined);
+  const runDir = pipeline().resolveRunDir(repo, String(marker.storyId), false, storyDe(marker) || undefined, { marker });
   if (!runDir) return { file: null, texto: null };
   const file = path.join(runDir, PLAN_FILE);
   let texto = null;
@@ -129,6 +129,21 @@ function planDe(marker) {
   try { texto = fs.readFileSync(file, 'utf8'); } catch (e) { texto = null; if (e.code !== 'ENOENT') error = e.code || e.message; }
   return { file, texto, runDir, error };
 }
+
+/**
+ * La parte de la corrida (la tanda que anotó `set-batch`), como la ve la revisión del plan: `{ nombre, valida, files,
+ * huella }`, o null sin parte. Se vuelve a calcular con la historia de ahora: la del marcador no se usa para medir.
+ */
+function parteDe(marker, storyTexto) {
+  if (!marker || !marker.batch) return null;
+  const scope = require('./batch-scope.js');
+  const p = scope.validarParte(storyTexto || '', marker.batch);
+  const files = p.files || [];
+  return { nombre: String(marker.batch), valida: !!(p.valid && !p.done), files, huella: scope.huellaDeLaLista(files) };
+}
+/** El argumento de la parte para medir la delicada: sólo si vale. */
+const batchDe = (parte) => (parte && parte.valida ? parte.nombre : undefined);
+const mismaParte = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
 
 const corridaDe = (m) => ({ storyId: String(m.storyId), startedAt: m.startedAt || null });
 const mismaCorrida = (a, b) => !!(a && b && a.storyId === b.storyId && a.startedAt === b.startedAt);
@@ -179,16 +194,18 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   const storyFile = storyDe(marker);
   let storyTexto;
   try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (e) { return no(`no pude leer la story de la corrida (${storyFile}: ${e.code || e.message})`); }
-  const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto });
+  // la parte: el revisor la ve con su lista, y la delicada se mide con ella si vale
+  const parte = parteDe(marker, storyTexto);
+  const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto, batch: batchDe(parte) });
   const cfg = config || configDeLaOrganizacion().values;
   // el número al azar que ata el resultado del pase a esta revisión: un resultado sin él, o con el de otra, no se anota
   const numero = crypto.randomBytes(16).toString('hex');
   const corte = cfg.review.blocking_severity;
   const args = { modo: 'plan', repo: marker.repoPath || path.dirname(storyFile), storyTexto, planTexto: plan.texto, model: MODELO, runDir: plan.runDir, pedido: numero,
-    lenses: cfg.plan_review.lenses.slice(), verifiers: cfg.review_runner.verifiers, blocking_severity: corte };
+    lenses: cfg.plan_review.lenses.slice(), verifiers: cfg.review_runner.verifiers, blocking_severity: corte, ...(parte ? { parte } : {}) };
   const pedido = {
     numero, lanzo: lanza, destino: dest, informativa, corte, corrida: corridaDe(marker), storyId: String(marker.storyId), planFile: plan.file, storyFile,
-    huellas: { plan: sha(plan.texto), story: sha(storyTexto) }, delicate, hora: new Date().toISOString(),
+    huellas: { plan: sha(plan.texto), story: sha(storyTexto) }, delicate, hora: new Date().toISOString(), ...(parte ? { parte } : {}),
   };
   escribirDeUnaVez(rutaPedido(estado, lanza, dest), `${JSON.stringify(pedido, null, 2)}\n`);
   const argsFile = path.join(carpetaDe(estado, lanza), `${dest}.args.json`);
@@ -257,6 +274,8 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, modelo = MO
     notas: confirmados.filter((h) => !blocks(h.adjusted_severity || h.severity, corte)).map(aHallazgo),
     corte, modelo, proveedor, hora: new Date(ahora).toISOString(), lanzo: lanza, destino: dest,
     corrida: pedido.corrida, storyId: pedido.storyId, huellas: pedido.huellas, delicate: pedido.delicate,
+    // la parte y su lista, congeladas: el portón lee de acá la lista que vale con el plan aprobado por delegación
+    ...(pedido.parte ? { parte: pedido.parte } : {}),
   };
   const texto = `${JSON.stringify(constancia, null, 2)}\n`;
   escribirDeUnaVez(rutaConstancia(estado, lanza, dest), texto);
@@ -453,7 +472,8 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   const storyFile = storyDe(marker);
   let storyTexto = null;
   try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
-  const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '' });
+  const parte = parteDe(marker, storyTexto);
+  const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parte) });
   if (delicate.value) return no(`plan delicado (nivel 2): lo aprueba el dev, no la coordinadora (${delicate.reason})`);
   const cfg = config || configDeLaOrganizacion().values;
   if (!cfg.plan_review.coordinator_approves) return no(`el perfil no deja que la coordinadora apruebe el plan (plan_review.coordinator_approves: false): ${ESPERA}`);
@@ -474,6 +494,8 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   if (!plan.texto || sha(plan.texto) !== c.huellas.plan) return no(`el plan cambió después de la revisión: ${ESPERA}`);
   if (storyTexto === null || sha(storyTexto) !== c.huellas.story) return no(`la story cambió después de la revisión: ${ESPERA}`);
   if (c.delicate.value !== delicate.value) return no(`la story era delicada cuando se revisó y ya no lo es: ${ESPERA}`);
+  // la coordinadora aprueba lo que se revisó: la misma parte, igual de válida y con la misma lista
+  if (!mismaParte(c.parte, parte)) return no(`la parte o su lista cambiaron desde la revisión (${c.parte ? c.parte.nombre : 'sin parte'} → ${parte ? parte.nombre : 'sin parte'}): ${ESPERA}`);
   if (eligioSeguir({ estado, destino, huellaPlan: c.huellas.plan })) return no(`para este plan se eligió seguir sin revisión: lo firma una persona`);
   if (!APROBADOS.includes(c.veredicto)) return no(`${ESPERA} (la revisión dijo ${c.veredicto})`);
   return { codigo: 0, via: 'revision', constancia: c };
@@ -496,7 +518,9 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   const plan = planDe(marker);
   if (!plan.texto || !plan.texto.trim()) return { decision: null, reason: 'todavía no hay plan escrito' };
   const huellaPlan = sha(plan.texto);
-  const delicate = pipeline().computeDelicate({ story: storyDe(marker), repo: marker.repoPath, planText: plan.texto });
+  let storyTexto = '';
+  try { storyTexto = fs.readFileSync(storyDe(marker), 'utf8'); } catch (_) { storyTexto = ''; }
+  const delicate = pipeline().computeDelicate({ story: storyDe(marker), repo: marker.repoPath, planText: plan.texto, batch: batchDe(parteDe(marker, storyTexto)) });
   // lo que no se pudo leer se decide del lado conservador (sin coordinadora, dueño presente) y se dice en el motivo
   const avisos = [];
   let coordinadora = null;
@@ -550,4 +574,5 @@ module.exports = {
   CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, huellaDe, designadaDeVerdad, sha,
+  tieneRenglon, parteDe,
 };

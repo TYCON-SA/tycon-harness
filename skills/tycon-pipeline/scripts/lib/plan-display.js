@@ -68,7 +68,7 @@ function mostrar({ sessionId, stateDir, home = os.homedir(), archivo = null }) {
   if (require('./steps.js').isDone(marker, 'approve-plan')) return null;
   const story = rutaDeLaStory(marker);
   const repo = marker.repoPath || process.cwd();
-  const runDir = require('../pipeline.js').resolveRunDir(repo, String(marker.storyId), false, story || undefined);
+  const runDir = require('../pipeline.js').resolveRunDir(repo, String(marker.storyId), false, story || undefined, { marker });
   if (!runDir) return null;
   if (archivo && !mismaRuta(archivo, path.join(runDir, PLAN_FILE))) return null;
   let planTxt = '';

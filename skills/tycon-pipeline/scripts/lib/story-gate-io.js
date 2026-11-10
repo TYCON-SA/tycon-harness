@@ -431,6 +431,35 @@ function archivosQueSuman(files) {
   });
 }
 
+/**
+ * La lista de la parte con la que la coordinadora aprobó el plan: `{ parte, lista, repoRoot }`, `{ problema }` o null.
+ * Sale de la constancia de la revisión del plan, verificada contra su renglón de gates.log y contra la aprobación del
+ * marcador; nunca del marcador ni de la historia de ahora. Sin plan delegado, o con una parte que la constancia anota
+ * como inválida, null. Con una parte anotada y la constancia que no se puede leer, o que no la trae, `problema`: en duda,
+ * la implementación no sigue.
+ */
+function listaDelPlanDelegado(stateDir, sessionId, marker) {
+  const ap = marker && marker.storyId && marker.planApproval;
+  if (!ap || ap.mode !== 'revision') return null;
+  const conParte = (motivo) => (marker.batch ? { problema: `no pude leer la lista de la parte con la que se aprobó el plan (${motivo})` } : null);
+  const lanzo = ap.revision && ap.revision.lanzo;
+  if (!lanzo) return conParte('la aprobación no dice qué sesión lanzó la revisión');
+  let pr;
+  try { pr = require('./plan-review.js'); } catch (e) { return conParte(e.message); }
+  const r = pr.leerConstancia({ estado: stateDir, lanza: lanzo, destino: sessionId });
+  if (!r.ok) return conParte(r.ausente ? 'no está la constancia de la revisión' : r.motivo);
+  if (!pr.tieneRenglon(stateDir, lanzo, sessionId, r.texto)) return conParte('la constancia no tiene su renglón en gates.log');
+  const c = r.constancia;
+  if (ap.revision.id && c.id !== ap.revision.id) return conParte('la constancia no es la de la aprobación');
+  // una parte que no vale (una historia sin `files:` por parte, por ejemplo) la revisión la midió con la historia entera:
+  // no ata ninguna lista. Sin la parte en la constancia, o una válida sin su lista, con una parte anotada en la corrida,
+  // es un problema que se dice
+  if (c.parte && c.parte.valida === false) return null;
+  if (!c.parte || !c.parte.valida || !Array.isArray(c.parte.files)) return conParte('la constancia no trae la parte con su lista');
+  const raiz = marker.repoPath || null;
+  return { parte: c.parte.nombre, lista: c.parte.files.map((f) => path.resolve(raiz || process.cwd(), f)), repoRoot: raiz };
+}
+
 function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR, installedRoots }) {
   const abs = path.isAbsolute(String(filePath)) ? String(filePath) : path.resolve(cwd || process.cwd(), String(filePath));
   // Una ejecución abierta a la que le falta una pieza frena antes que nada: ni el carril, ni un ad-hoc, ni
@@ -479,9 +508,18 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
       }
     }
   }
+  // la lista del camino corto se compara con la raíz real del repo del archivo, y la del carril de una persona se apaga
+  // con el portón del repo (la del delegado, no)
+  let listGateEnabled = true;
+  if (adhoc && Array.isArray(adhoc.allowedFiles)) {
+    if (!adhocRepoRoot) adhocRepoRoot = repoContext(abs).repoRoot;
+    listGateEnabled = gateEnabledForRepo(adhocRepoRoot);
+  }
+  // con el plan de una parte aprobado por delegación, la lista congelada al aprobar (de la constancia, no del marcador)
+  const batchList = listaDelPlanDelegado(stateDir, sessionId, marker);
   const hipotetico = (isHarness) => gate.computeStoryGate({
     filePath: abs, stateDir, homeDir: os.homedir(), repoRoot: '/__unknown__', repoHasTycon: true, repoHasStories: true,
-    marker, adhoc, isHarness, realFilePath, installedRoots: roots, realStateDir, adhocRepoRoot, riesgoAlto,
+    marker, adhoc, isHarness, realFilePath, installedRoots: roots, realStateDir, adhocRepoRoot, riesgoAlto, listGateEnabled, batchList,
   });
   let pre = hipotetico(false);
   let esDelArnes = false;
@@ -495,7 +533,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     // el tope en un repo del arnés se reevalúa como tal: con `isHarness: false`, un clon sin `.tycon/` dejaría pasar
     verdict = gate.computeStoryGate({
       filePath: abs, stateDir, homeDir: os.homedir(), ...repo, marker, adhoc, isHarness: esDelArnes,
-      realFilePath, installedRoots: roots, realStateDir,
+      realFilePath, installedRoots: roots, realStateDir, adhocRepoRoot, listGateEnabled, batchList,
       gateEnabled: gateEnabledForRepo(repo.repoRoot),
     });
   }
@@ -518,7 +556,8 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     story: marker ? marker.storyId : null, reason: verdict.reason, ...(adhocSinFirma ? { adhocSinFirma } : {}),
   });
   let message = gate.blockMessage(verdict, { filePath: abs, repoRoot: repo.repoRoot, marker, otherMarkers, via,
-    harness: verdict.kind === 'adhoc-high-risk' || verdict.kind === 'adhoc-cap' ? isHarnessRepo(abs) : true,
+    // los mensajes del camino corto con dos perfiles: en un producto hablan de vos y no nombran la delegación
+    harness: ['adhoc-high-risk', 'adhoc-cap', 'adhoc-out-of-list'].includes(verdict.kind) ? isHarnessRepo(abs) : true,
     // el mensaje sin carril nombra el tope de la organización: se lee sólo cuando frena por eso
     ...(verdict.kind === 'no-lane' ? { topes: topesDelCaminoCorto({ stateDir, sessionId }) } : {}) });
   if (adhocSinFirma && verdict.kind === 'no-lane') {

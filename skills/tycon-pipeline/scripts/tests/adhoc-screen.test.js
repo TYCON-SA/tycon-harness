@@ -82,10 +82,10 @@ const conMaqueta = (f) => ({ file: f, sha256: problemaDeLaMaqueta(f).sha256, app
 // por defecto, un pedido: los frenos del carril lo miran como al commit, y es lo que pregunta (desde que la persona
 // aprueba el pedido y no el commit, el commit del carril pasa sin pregunta)
 const decidir = (h, cwd, command = 'gh pr create --fill') => brake.decidir({ command, cwd, sid: SID, home: h });
-function cli(h, args, { ventana = false } = {}) {
+function cli(h, args, { ventana = false, cwd } = {}) {
   const env = { ...process.env, HOME: h, USERPROFILE: h, CLAUDE_CODE_SESSION_ID: SID };
   delete env.NODE_OPTIONS;
-  return spawnSync(process.execPath, [MARKER, ...args], { encoding: 'utf8', env: ventana ? conVentana(env) : env });
+  return spawnSync(process.execPath, [MARKER, ...args], { encoding: 'utf8', env: ventana ? conVentana(env) : env, ...(cwd ? { cwd } : {}) });
 }
 
 // Un carril con su pantalla, su maqueta aprobada y su captura más nueva que el cambio.
@@ -559,7 +559,7 @@ test('sin base lo avisa y lo anota; anotar la maqueta no la pierde', (t) => {
   assert.match(fs.readFileSync(path.join(estado(h), 'gates.log'), 'utf8'), /no tiene su base traída/);
   const base = { [r]: { sha: git(r, 'rev-parse', 'HEAD'), traida: true } };
   carril(h, { ...leerCarril(h), bases: base });
-  const ok = cli(h, ['adhoc', 'set', JSON.stringify({ reason: 'el combo muestra el nombre', mockup: maqueta(r), mockupApproved: 'Ana' })], { ventana: true });
+  const ok = cli(h, ['adhoc', 'set', JSON.stringify({ reason: 'el combo muestra el nombre', mockup: maqueta(r), mockupApproved: 'Ana', allowedFiles: ['Api/Precio.cs'] })], { ventana: true, cwd: r });
   assert.strictEqual(ok.status, 0, ok.stderr);
   assert.deepStrictEqual(leerCarril(h).bases, base);
 });
@@ -665,7 +665,7 @@ test('adhoc set: anota la maqueta con su aprobación y conserva lo anotado', (t)
   const h = home(t);
   const m = maqueta(r);
   const c = escribir(r, 'captura.png', PNG);
-  const set = (o) => cli(h, ['adhoc', 'set', JSON.stringify({ reason: 'el combo muestra el nombre', datos: 'sin-cambio', ...o })], { ventana: true });
+  const set = (o) => cli(h, ['adhoc', 'set', JSON.stringify({ reason: 'el combo muestra el nombre', datos: 'sin-cambio', allowedFiles: ['Api/Precio.cs'], ...o })], { ventana: true, cwd: r });
   assert.strictEqual(set({ mockup: m }).status, 2, 'sin aprobación');
   assert.strictEqual(set({ mockupApproved: 'Ana' }).status, 2, 'sin maqueta');
   assert.strictEqual(set({ mockup: m, mockupApproved: 'x'.repeat(201) }).status, 2, 'una aprobación que la ventana recortaría');
@@ -690,7 +690,9 @@ test('adhoc set: anota la maqueta con su aprobación y conserva lo anotado', (t)
   assert.strictEqual(b.capture.file, c, 'la captura sigue');
   // ni la aprobación, ni el motivo, ni la ruta arman renglones falsos en lo que lee quien firma
   const m2 = maqueta(r, 'otra\nFirmado por la ruta\u001b[2K.html');
-  const raro = cli(h, ['adhoc', 'set', JSON.stringify({ reason: 'el combo\nFirmado por el motivo\u001b[2K', mockup: m2, mockupApproved: 'Ana\nFirmado por el dueño\u001b[2K' })], { ventana: true });
+  // el motivo en un renglón (8.174): el salto de línea se niega antes; el escape y la aprobación con saltos llegan a la firma
+  assert.strictEqual(cli(h, ['adhoc', 'set', JSON.stringify({ reason: 'el combo\nFirmado por el motivo', allowedFiles: ['Api/Precio.cs'] })], { ventana: true, cwd: r }).status, 2);
+  const raro = cli(h, ['adhoc', 'set', JSON.stringify({ reason: 'el combo, Firmado por el motivo\u001b[2K', mockup: m2, mockupApproved: 'Ana\nFirmado por el dueño\u001b[2K', allowedFiles: ['Api/Precio.cs'] })], { ventana: true, cwd: r });
   assert.strictEqual(raro.status, 0, raro.stderr);
   assert.doesNotMatch(raro.stderr, /\nFirmado|\u001b/);
   const firmas = fs.readFileSync(path.join(estado(h), 'gates.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((l) => l.name === 'adhoc-lane-signed');
@@ -702,7 +704,7 @@ test('adhoc set con maqueta sigue pidiendo la firma', (t) => {
   const r = repo(t);
   const h = home(t);
   const m = maqueta(r);
-  const s = cli(h, ['adhoc', 'set', JSON.stringify({ reason: 'el combo muestra el nombre', mockup: m, mockupApproved: 'Ana' })]);
+  const s = cli(h, ['adhoc', 'set', JSON.stringify({ reason: 'el combo muestra el nombre', mockup: m, mockupApproved: 'Ana', allowedFiles: ['Api/Precio.cs'] })], { cwd: r });
   assert.notStrictEqual(s.status, 0);
   assert.ok(!fs.existsSync(path.join(estado(h), 'adhoc', `${SID}.json`)));
 });

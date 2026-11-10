@@ -2905,6 +2905,8 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       '',
       // los del repo que están deprecados, marcados (los de un hermano se leen con la lista de su propio repo)
       require('./lib/deprecated.js').seccionParaRevisores({ repo, files: shownFiles.filter((f) => !f.startsWith('(')) }),
+      // las pruebas viejas que estaban en rojo y se editaron, cada una con su razón (marker.js note-red-test)
+      require('./lib/red-test-edit.js').bloqueParaRevisores(marcadorDeLaCorrida),
       '## Story digest (frontmatter + ACs + Tests + Tasks + verificación)',
       '',
       digest || '(sin story)',
@@ -3475,15 +3477,44 @@ function computeStart(args) {
         if (suRuta && miRuta && suRuta !== miRuta) continue; // otra story con el mismo número
         // con tanda, la otra sesión que entrega otra tanda de la paraguas no choca; la misma tanda, o sin tanda, sí
         if (tanda && m.batch && String(m.batch) !== tanda.nombre) continue;
-        others.push({ sessionId: m.sessionId, lastTouch: m.lastTouch, stepsCompleted: m.stepsCompleted });
+        others.push({ sessionId: m.sessionId, lastTouch: m.lastTouch, stepsCompleted: m.stepsCompleted, repoPath: m.repoPath || null });
       } catch { /* ignore */ }
     }
   } catch { /* ignore */ }
+  // PIPE-C0 por hechos: la otra sesión de la misma story en OTRA copia del repo (otra raíz git) y en OTRA rama es otra
+  // tanda que trabaja en paralelo, no un choque: no pausa y queda dicho (`parallelWith` en el marcador). La misma copia,
+  // o la misma rama en otra copia, pausa como siempre; si no se puede leer la rama de la otra, pausa y lo dice.
+  let parallelWith = null;
+  let ramaSinLeer = null;
   if (others.length) {
+    const gitDe = (dir, ...a) => {
+      try { return execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch { return null; }
+    };
+    const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+    const miRaiz = gitDe(repo, 'rev-parse', '--show-toplevel');
+    const miRama = gitDe(repo, 'rev-parse', '--abbrev-ref', 'HEAD');
+    const vistas = others.map((o) => {
+      const raiz = o.repoPath && fs.existsSync(o.repoPath) ? gitDe(o.repoPath, 'rev-parse', '--show-toplevel') : null;
+      return { sessionId: o.sessionId, repoPath: o.repoPath, raiz, rama: raiz ? gitDe(o.repoPath, 'rev-parse', '--abbrev-ref', 'HEAD') : null };
+    });
+    const sinLeer = vistas.filter((v) => !v.raiz || !v.rama);
+    if (!miRaiz || !miRama) {
+      ramaSinLeer = `la de esta sesión (${repo})`;
+    } else if (sinLeer.length) {
+      ramaSinLeer = sinLeer.map((v) => `${v.sessionId} (${v.repoPath || 'sin repo en su marcador'})`).join(', ');
+    } else if (miRaiz && miRama && vistas.every((v) => real(v.raiz) !== real(miRaiz) && v.rama !== miRama)) {
+      const lista = vistas.map((v) => ({ sessionId: v.sessionId, branch: v.rama }));
+      parallelWith = lista.length === 1 ? lista[0] : lista;
+      actions.push(`PIPE-C0: la story ${storyId} también la trabaja ${lista.map((v) => `la sesión ${v.sessionId} en la rama ${v.branch}`).join(' y ')}, `
+        + 'en otra copia del repo: es otra tanda en paralelo, no un choque.');
+    }
+  }
+  if (others.length && !parallelWith) {
     pauses.push({
       id: 'PIPE-C0-cross-session',
-      detail: `Story ${storyId} YA tiene pipeline activo en otra sesión: ${JSON.stringify(others)}`,
-      options: 'retomar con `marker.js adopt-session <sid>` (copia el estado completo) / clear-session / paralelo intencional / cancelar',
+      detail: `Story ${storyId} YA tiene pipeline activo en otra sesión: ${JSON.stringify(others)}`
+        + (ramaSinLeer ? `. No pude leer la rama de la otra sesión (${ramaSinLeer}): ante la duda, pauso.` : ''),
+      options: 'retomar con `marker.js adopt-session <sid>` (copia el estado completo) / clear-session / trabajarla en otra copia del repo y otra rama / cancelar',
     });
   }
 
@@ -3566,8 +3597,10 @@ function computeStart(args) {
     });
   }
 
-  // PIPE-C5 (lectura): pipeline abandonado. Una paraguas en curso con su tanda no lo es: otra tanda la arrancó antes.
-  if (fm.status === 'in-progress' && !others.length && !tanda) {
+  // PIPE-C5 (lectura): pipeline abandonado. Una paraguas en curso con su tanda no lo es: otra tanda la arrancó antes. Y el
+  // marcador propio de esta misma story tampoco: es la corrida viva que se retoma (re-correr `start`).
+  const propioDeEstaStory = (() => { const p = readSessionMarker(); return !!p && String(p.storyId) === String(storyId); })();
+  if (fm.status === 'in-progress' && !others.length && !tanda && !propioDeEstaStory) {
     pauses.push({
       id: 'PIPE-C5-abandoned',
       detail: `La story ya está status: in-progress sin pipeline activo en otra sesión — probable pipeline abandonado (sesión que murió sin cerrar).`,
@@ -3662,9 +3695,23 @@ function computeStart(args) {
   const sigueVieja = !!previo && String(previo.storyId) === String(storyId) && STEPS_TABLE.schemeOf(previo) === 1;
   // La carpeta de la ejecución nace acá: guarda la copia de la apertura (lib/open-runs.js). Sin carpeta no hay apertura,
   // y una ejecución sin apertura no se vería al perder el marcador: el arranque frena.
+  // Una corrida, una carpeta: retomar la misma story reusa la de su marcador (o la de su apertura, si el marcador es de
+  // antes de anotarla); si no, la corrida nueva crea la suya, aunque la story ya tenga otras (otra tanda, o reabierta).
+  // Sin carpeta no se escribe el marcador: no arranca una corrida sin carpeta propia.
   let runDir = null;
-  try { runDir = resolveRunDir(repo, storyId, true, storyPath); } catch (e) {
-    return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude crear la carpeta de la ejecución (${e.message}); sin ella la ejecución no queda anotada como abierta` }], actions_done: actions };
+  const rdLib = require('./lib/run-dir.js');
+  if (previo && String(previo.storyId) === String(storyId)) {
+    const d = rdLib.carpetaDelMarcador(previo, storyId, repo, { create: true });
+    if (d.dir) runDir = d.dir;
+    else if (d.motivo) actions.push(`CARPETA: ${d.motivo}; abro una nueva`);
+  }
+  if (!runDir) {
+    try { runDir = rdLib.createRunDir(repo, storyId, storyPath); } catch (e) {
+      return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude crear la carpeta de la ejecución (${e.message}); sin ella la ejecución no queda anotada como abierta. No escribí el marcador.` }], actions_done: actions };
+    }
+    if (!runDir) {
+      return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude calcular la clave de la carpeta de la ejecución (${runDirKey(storyId, storyPath).error || 'sin motivo'}); sin carpeta propia la ejecución no arranca. No escribí el marcador.` }], actions_done: actions };
+    }
   }
   const esquema = sigueVieja
     ? { stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8], arranque: '0' }
@@ -3700,6 +3747,7 @@ function computeStart(args) {
       // sesión con su proveedor: los revisores que lanza `reviewers-run` corren con el mismo
       ...(args.sessionModel ? { sessionModel: args.sessionModel } : {}),
       ...(args.codexSession ? { codexSession: args.codexSession } : {}),
+      ...(parallelWith ? { parallelWith } : {}),
     })], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     execFileSync(process.execPath, [markerJs, 'complete-step', esquema.arranque], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     logRunStart(storyId);
@@ -3866,7 +3914,9 @@ function computeRunSize(args) {
   const repo = args.repo && fs.existsSync(args.repo) ? args.repo : null;
   // Lo declarado Y lo que el cambio toca de verdad (`--files`, el diff): una story que declara un .md y toca código no
   // puede salir liviana (pase adversarial). Sin story no hay tamaño: sólo con el diff no se sabe qué faltó declarar.
-  const declared = runSizeLib.declaredFiles(content);
+  // con una parte válida (sólo como argumento explícito: el plan), lo declarado es su lista
+  const parte = parteDelArg(args);
+  const declared = parte ? parte.files : runSizeLib.declaredFiles(content);
   const rel = (f) => (repo && path.isAbsolute(f) && !path.relative(repo, f).startsWith('..') ? path.relative(repo, f) : f);
   const touched = Array.isArray(args.files) ? args.files.map(rel) : [];
   if (!declared.length) return runSizeLib.classifyStory({ files: [] });
@@ -3877,6 +3927,38 @@ function computeRunSize(args) {
     deepReviewCfg: repo ? deepReviewConfig(repo) : null,
     roots: repo ? [repo] : [],
   });
+}
+
+/**
+ * La parte con la que se mide (lib/batch-scope.js), sólo si viene como argumento explícito (`args.batch`): la pasan el
+ * comando `risk-class` y la revisión del plan, nadie más. Sin ella, o con una que no vale, null: la historia entera.
+ */
+function parteDelArg(args) {
+  if (!args || !args.batch) return null;
+  return require('./lib/batch-scope.js').parteMedible(args.story, args.batch);
+}
+
+/** Las dos señales de lib/batch-scope.js, con el repo de la story y sus compañeros; lo que no se puede leer, nada. */
+function senalesDe(story, repoArg, batch) {
+  try {
+    if (!story || !fs.existsSync(story)) return [];
+    const repo = repoDeLaStory(story, repoArg && fs.existsSync(repoArg) ? repoArg : null);
+    if (!repo) return [];
+    let raices;
+    try { raices = [repo, ...companionLib.companionRoots(repo, story, { onMissing: () => {} })]; } catch (e) {
+      // sin los compañeros, «ninguna prueba lo ataja» avisaría por pruebas que viven en ellos: no se mide, y se dice
+      const sinCompaneros = require('./lib/batch-scope.js').senales({ story, repo, batch, raices: [repo] }).filter((w) => !w.startsWith('ninguna prueba lo ataja: '));
+      return [...sinCompaneros, `ninguna prueba lo ataja: no medido, no pude leer los repos compañeros (${String(e.message || e).split('\n')[0]})`];
+    }
+    return require('./lib/batch-scope.js').senales({ story, repo, batch, raices });
+  } catch (e) { return [`ninguna prueba lo ataja: no medido, las señales fallaron (${String(e.message || e).split('\n')[0]})`]; }
+}
+
+/** La parte anotada en el marcador de esta sesión, si es de la misma story; si no, undefined. La lee sólo `risk-class`. */
+function batchDelMarcador(storyPath) {
+  const m = readSessionMarker();
+  if (!m || !m.batch || !storyDelMarcador(m)) return undefined;
+  return esLaStoryDelMarcador(storyPath, m) ? m.batch : undefined;
 }
 
 /** El tamaño forzado a mano en el marcador de esta sesión, si es de la misma story: `{ size, reason }` o null. */
@@ -3894,9 +3976,13 @@ function computeRiskClass(args) {
   }
   const content = readText(storyPath);
   const fm = parseFrontmatterPipeline(content);
-  const scopeFiles = args.files && args.files.length
-    ? args.files
-    : [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')];
+  // con una parte válida, su lista MÁS lo que el cambio toca (une); sin ella, `--files` reemplaza lo declarado, como siempre
+  const parte = parteDelArg(args);
+  const scopeFiles = parte
+    ? [...new Set([...parte.files, ...(args.files || [])])]
+    : args.files && args.files.length
+      ? args.files
+      : [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')];
 
   const criteria = [];
   const add = (name, pass, detail) => criteria.push({ name, pass, detail });
@@ -3916,8 +4002,12 @@ function computeRiskClass(args) {
   }
   add('sin-paths-sensibles', !scopeFiles.some((f) => /auth|security|payment|crypto|secret|credential/i.test(f)),
     'archivos de auth/seguridad/pagos siempre plan HITL');
-  add('sin-pipelines-multi-tanda', !/^pipelines:/m.test(content),
-    'stories con entregas en tandas tienen interdependencias — plan HITL');
+  if (parte) {
+    add('sin-pipelines-multi-tanda', true, `la parte ${parte.nombre} es válida: la dependencia entre partes la dice blocked_by`);
+  } else {
+    add('sin-pipelines-multi-tanda', !/^pipelines:/m.test(content),
+      'stories con entregas en tandas tienen interdependencias — plan HITL');
+  }
   // un freno del repo (lo que nombra su manifiesto de controles) no es una historia chica; sin manifiesto, no aplica
   const repoDeLosFrenos = args.repo && fs.existsSync(args.repo) ? args.repo : repoDeLaStory(storyPath);
   const frenos = frenosDelManifiesto(repoDeLosFrenos);
@@ -3936,6 +4026,7 @@ function computeRiskClass(args) {
     run_size: runSize.size,
     criteria,
     delicate: computeDelicate(args),
+    ...(args.batch ? { batch: parte ? { name: parte.nombre, valid: true } : { name: args.batch, valid: false, reason: 'la parte no vale: se mide la historia entera' } } : {}),
     note: allPass
       ? 'LOW-risk: la revisión adversarial de la story se saltea. El plan lo aprueba una persona, o la coordinadora con la revisión automática.'
       : 'NORMAL: «Aprobar el plan» con la persona, o la coordinadora con la revisión automática si la story no es delicada.',
@@ -4028,10 +4119,14 @@ function computeDelicate(args) {
     // un compañero declarado que no está en disco: sus controles no se pueden mirar
     if (faltan.length) return noPude(`el repo declara ${faltan.join(', ')} y no está en disco`);
   }
-  const files = [...new Map([
-    ...(args.files && args.files.length ? args.files : [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')]),
+  const deLaHistoria = [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')];
+  // con una parte válida (argumento explícito), su lista MÁS lo que el cambio toca; sin ella, como siempre
+  const parte = parteDelArg(args);
+  const comparables = (lista) => [...new Map(lista.map((f) => rutaComparable(f, raices)).filter((x) => x.rel).map((x) => [x.rel, x])).values()];
+  const files = comparables([
+    ...(parte ? [...parte.files, ...(args.files || [])] : args.files && args.files.length ? args.files : deLaHistoria),
     ...rutasDelPlan(args.planText),
-  ].map((f) => rutaComparable(f, raices)).filter((x) => x.rel).map((x) => [x.rel, x])).values()];
+  ]);
   const fmTexto = ((content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
   // la decisión escrita en la historia gana sobre las reglas por archivo: lo que la máquina no lee (plata, clientes…)
   const porDecision = riskPaths.leerRiesgoAltoPor(fmTexto);
@@ -4043,12 +4138,21 @@ function computeDelicate(args) {
     if (!decl) return null;
     const valor = decl[1].replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '').trim();
     const lista = fmTexto.slice(decl.index + decl[0].length).match(/^\r?\n[ \t]+-[ \t]*(\S.*)$/m);
-    return (valor && valor !== '[]') || (!valor && lista) ? si('sensible', `la story declara sensible: ${valor || lista[1]}`) : null;
+    if ((valor && valor !== '[]') || (!valor && lista)) return si('sensible', `la story declara sensible: ${valor || lista[1]}`);
+    return null;
   };
-  const r = riskPaths.riesgoDeArchivos(files, { repo, raices, superficie: tocaSuperficieCompartida, antesDeLosControles: sensibleDeclarado });
+  // el de arriba marca todas las partes y una parte no lo deshace; sin él, el de la parte marca sólo esa
+  const sensibleDeLaParte = () => {
+    const arriba = sensibleDeclarado();
+    if (arriba || !parte) return arriba;
+    const v = require('./lib/batch-scope.js').sensibleDeclarado(parte.sensible);
+    return v ? si('sensible', `la parte ${parte.nombre} declara sensible: ${v}`) : null;
+  };
+  const r = riskPaths.riesgoDeArchivos(files, { repo, raices, superficie: tocaSuperficieCompartida, antesDeLosControles: sensibleDeLaParte });
   if (r.value) return { value: true, rule: r.rule, reason: r.reason };
-  // un archivo de dependencias puede traer una dependencia nueva: ante la duda, riesgo alto
-  const dep = files.find((f) => riskPaths.esManifiesto(f.rel));
+  // un archivo de dependencias puede traer una dependencia nueva: ante la duda, riesgo alto. Es de la historia entera:
+  // con una parte, también cuentan los de las otras
+  const dep = (parte ? comparables([...deLaHistoria, ...files.map((f) => f.rel)]) : files).find((f) => riskPaths.esManifiesto(f.rel));
   if (dep) return si('dependencias', `${dep.rel} (archivo de dependencias)`);
   return { value: false, rule: null, reason: 'ninguna' };
 }
@@ -4805,7 +4909,7 @@ function ejecucionDeLaCorrida(args, corrida) {
   const { carpetaReal } = require('./lib/adversarial-skip.js');
   if (!esLaStoryDelMarcador(args.story, corrida)) return null;
   const repo = corrida.repoPath || args.repo;
-  const rd = repo ? resolveRunDir(path.resolve(repo), corrida.storyId, false, storyDelMarcador(corrida) || args.story) : null;
+  const rd = repo ? resolveRunDir(path.resolve(repo), corrida.storyId, false, storyDelMarcador(corrida) || args.story, { marker: corrida }) : null;
   const carpeta = rd ? carpetaReal(rd) : null;
   return { story: String(corrida.storyId), carpeta, ejecucion: corrida.startedAt };
 }
@@ -5856,8 +5960,9 @@ function runDirKey(storyId, storyPath) {
   return require('./lib/run-dir.js').runDirKey(storyId, storyPath);
 }
 
-function resolveRunDir(repo, storyId, create, storyPath) {
-  return require('./lib/run-dir.js').resolveRunDir(repo, storyId, create, storyPath);
+// `opts` ({ marker, sessionId }) va tal cual: es el que decide qué marcador mira la regla (lib/run-dir.js)
+function resolveRunDir(repo, storyId, create, storyPath, opts) {
+  return require('./lib/run-dir.js').resolveRunDir(repo, storyId, create, storyPath, opts);
 }
 
 // El marcador de la sesión, con su estado: `ausente` (no existe), `ilegible` (existe y no se puede leer como objeto) u `ok`.
@@ -6063,7 +6168,7 @@ function rethinkGate(args) {
   const storyArg = args.story || (marcador && typeof marcador.storyPath === 'string' && marcador.storyPath) || null;
   const storyAbs = storyArg ? (path.isAbsolute(storyArg) ? storyArg : path.join(repoAbs, storyArg)) : null;
   const storyId = storyAbs ? deriveStoryId(storyAbs) : null;
-  const propia = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs) : null;
+  const propia = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs, { marker: marcador || null }) : null;
   // El freno es de las corridas del pipeline: hay corrida si el marcador trae story, o si --story resuelve una carpeta de
   // corrida. Fuera de una corrida no hay vueltas que contar: --iter ausente, 1 o 2 pasa como siempre; desde la tercera (la que pide nota) frena.
   const marcadorConStory = !!(marcador && typeof marcador.storyPath === 'string' && marcador.storyPath);
@@ -6123,7 +6228,7 @@ function rethinkGate(args) {
     return `🛑 --run-dir ${ajena} no es la carpeta de corrida de esta story${storyId ? ` (${storyId})` : ''}: quitá --run-dir o pasá la carpeta de .advisors/pipeline-runs/ de esta story.\n`;
   }
   // Pasó: se anota la vuelta servida en la carpeta de la corrida (la crea si todavía no existe).
-  const donde = runDir || (storyId && !ajena ? resolveRunDir(repoAbs, storyId, true, storyAbs) : null);
+  const donde = runDir || (storyId && !ajena ? resolveRunDir(repoAbs, storyId, true, storyAbs, { marker: marcador || null }) : null);
   if (donde) {
     const anotada = rt.recordServed(donde, iter);
     if (!anotada.ok) return `🛑 No pude anotar la vuelta ${iter} en la carpeta de la corrida (${rt.servedPath(donde)}): ${anotada.reason}. Sin ese registro la próxima vuelta no se puede contar, y ante la duda no devuelvo el set.\n`;
@@ -6476,6 +6581,18 @@ function writeFindings(args) {
   const normWarnings = [];
   // 🔴 El run dir y el roster se resuelven ANTES de normalizar: el firmante se valida contra los
   // revisores de ESTA corrida, y un finding con firmante inválido no tiene que llegar a escribirse.
+  // Sin una corrida abierta de esta story en la sesión, la carpeta que da la regla es la de OTRA corrida: su
+  // findings.json no se reemplaza sin nombrarla a propósito (`--run-dir`).
+  if (!args.runDir) {
+    const propio = readSessionMarker();
+    if (!propio || String(propio.storyId) !== String(storyId)) {
+      const ya = resolveRunDir(args.repo, storyId, false, args.story, { marker: null });
+      if (ya && exists(path.join(ya, 'findings.json'))) {
+        return { error: `sin una corrida abierta de la story ${storyId} en esta sesión no reemplazo ${path.join(ya, 'findings.json')}: `
+          + `es la constancia de otra corrida. Si es la que querés reemplazar, nombrala a propósito con --run-dir ${ya}.` };
+      }
+    }
+  }
   const runDir = args.runDir || resolveRunDir(args.repo, storyId, true, args.story);
   if (!runDir) return { error: 'no se pudo resolver/crear el run dir bajo .advisors/pipeline-runs/ (si el número de la story se repite en su repo, la carpeta lleva la clave: `pipeline.js evidence-key --story <ruta>` dice por qué no se pudo calcular)' };
   fs.mkdirSync(runDir, { recursive: true });
@@ -6949,7 +7066,7 @@ function main() {
     const storyArg = args.story || (marcador && marcador.storyPath) || null;
     const storyAbs = storyArg ? (path.isAbsolute(storyArg) ? storyArg : path.join(repoAbs, storyArg)) : null;
     const storyId = storyAbs ? deriveStoryId(storyAbs) : null;
-    const runDir = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs) : null;
+    const runDir = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs, { marker: marcador || null }) : null;
     const tope = rr.tope({ repo: repoAbs });
     const h = rr.hallazgosDe(runDir);
     const pre = rr.prefijos();
@@ -7665,7 +7782,13 @@ function main() {
     // Tampoco un archivo que no está ni en el disco ni en HEAD (la lista con comas). Un borrado pasa.
     const fantasmaErr = archivosFantasma(args);
     if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
-    const result = computeRiskClass({ ...args, runSize: runSizeDelMarcador(args.story) });
+    // la parte anotada mide el plan; sólo este comando y la revisión del plan la pasan (el pase, el modelo y la revisión
+    // de la historia siguen por la historia entera)
+    const batch = args.batch || batchDelMarcador(args.story);
+    const result = computeRiskClass({ ...args, runSize: runSizeDelMarcador(args.story), batch });
+    // las dos señales, como aviso: no cambian el riesgo ni la delicada
+    const avisos = senalesDe(args.story, args.repo, batch);
+    if (avisos.length) result.warnings = [...(result.warnings || []), ...avisos];
     // Una story con pantalla pide aprobar la maqueta con el plan. `computeRiskClass` es pura (no sabe la raíz del
     // repo): la maqueta se suma acá, sin tocar el riesgo.
     if (storyNeedsMockup(args.story)) {
@@ -7807,6 +7930,11 @@ function main() {
       } catch (e) {
         process.stderr.write(`deep-review-gate: no pude ver si hay otro pase adversarial en vuelo o una ejecución grande de pruebas (${String(e.message).split('\n')[0]})\n`);
       }
+    }
+    // las dos señales, como aviso y por la historia entera: no cambian el pase
+    if (result && typeof result === 'object') {
+      const avisos = senalesDe(args.story, args.repo, undefined);
+      if (avisos.length) result.warnings = [...(result.warnings || []), ...avisos];
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     if (result && result.waiting_turn === true) {

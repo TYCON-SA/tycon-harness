@@ -951,8 +951,20 @@ if [[ -n "$_c5_esc" ]]; then
   if [[ -n "$_c5_esc" ]]; then
     _c5_sid="$(read_field session_id 2>/dev/null)" || _c5_sid=""
     # por la consola frena siempre: la firma de la ventana (marker.js sign-file) la consume sólo el Edit o Write, porque
-    # de un comando de consola no se sabe con certeza a qué archivo escribe
-    ESC_CARTEL="Esto lo decide la persona, no el agente: explicale qué falta y por qué. Si quiere darlo, lo firma en la ventana de permiso con marker.js sign-file ${_c5_esc} <archivo>, y la escritura va después con Edit o Write, nunca por la consola. Cómo lo da ella está en guides/safety-guard.md."
+    # de un comando de consola no se sabe con certeza a qué archivo escribe. Las dos formas de pedirla salen de
+    # owner-window.js (sign-forms), la misma fuente que los ganchos: este cartel no escribe el comando.
+    _c5_formas=""
+    _c5_ow="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/owner-window.js" || _c5_ow=""
+    if [[ -n "$_c5_ow" && -f "$_c5_ow" ]] && command -v "$HNODE" >/dev/null 2>&1; then
+      _c5_args=(sign-forms --signature "$_c5_esc")
+      [[ -n "$_c5_sid" ]] && _c5_args+=(--session "$_c5_sid")
+      _c5_out="$("$HNODE" "$_c5_ow" "${_c5_args[@]}" 2>/dev/null)" || _c5_out=""
+      _c5_lv="$(printf '%s\n' "$_c5_out" | sed -n 's/^line_window=//p')"
+      _c5_lt="$(printf '%s\n' "$_c5_out" | sed -n 's/^line_terminal=//p')"
+      [[ -n "$_c5_lv" && -n "$_c5_lt" ]] && _c5_formas="${_c5_lv}; ${_c5_lt}"
+    fi
+    [[ -n "$_c5_formas" ]] || _c5_formas="la firma de archivo ${_c5_esc}, en la ventana de permiso (no pude armar el comando: owner-window.js no dio las dos formas)"
+    ESC_CARTEL="Esto lo decide la persona, no el agente: explicale qué falta y por qué. Si quiere darlo, lo firma ${_c5_formas}. La escritura va después con Edit o Write, nunca por la consola. Cómo lo da ella está en guides/safety-guard.md."
     if [[ "$_c5_esc" == "ALLOW_DOD_EVIDENCE_WRITE" ]]; then
       block "ESC-C5" \
         "El permiso ALLOW_DOD_EVIDENCE_WRITE deja escribir a mano la evidencia de la prueba en vivo, que tiene que salir de una prueba que corrió." \

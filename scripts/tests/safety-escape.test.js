@@ -1828,11 +1828,12 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['adhoc-lane', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido"}']],
     ['adhoc-lane:sobre-cupo', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido","maxFiles":9}']],
     ['adhoc-lane:datos', ['node', M, 'adhoc', 'allow-data-change', '--changed', 'el botón pide al proceso', '--recommends', 'pasar', '--why', 'autorizo el cambio']],
+    ['adhoc-lane:guardado-ajeno', ['node', M, 'adhoc', 'allow-foreign-save']],
     ['designation-confirm', ['node', D, 'confirm-designation']],
     // nombrar y retirar a la coordinadora con un click
     ['designation-set', ['node', M, 'designate-relay']],
     ['designation-withdraw', ['node', M, 'withdraw-relay']],
-    ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'cambiar-el-estado']
+    ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'cambiar-el-estado', 'red-control-test-edit']
       .map((n) => [`escape:${n}`, ['node', M, 'sign-file', n, '/r/specs/story-9.99.md']]),
   ];
   // todas las del catálogo que ya tienen comando están en la lista

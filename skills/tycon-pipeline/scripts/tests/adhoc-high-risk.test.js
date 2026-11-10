@@ -4,7 +4,10 @@
  * adhoc-high-risk.test.js — el riesgo alto en el camino rápido.
  *
  *   T1  una sola regla de riesgo por ruta (lib/risk-paths.js), con el resultado de computeDelicate de antes
- *   T4  el carril delegado no escribe una ruta de riesgo alto (adhoc-high-risk), por la herramienta y por la consola
+ *   T2  por delegación, una lista con una migración o un archivo de control se niega con la regla, antes del aviso
+ *   T3  por delegación, una lista con `auth/` se niega
+ *   T5  con el sí de una persona se abre y la firma dice «riesgo alto» y la regla; sin una persona, el freno lo niega
+ *   T4 el carril delegado no escribe una ruta de riesgo alto (adhoc-high-risk), por la herramienta y por la consola
  *   T6  el carril queda marcado con la regla y el archivo al escribirla o al commitearla
  *   T7  marcado y sin constancias: commit, push y pedido frenan con «faltan los revisores y el pase»
  *   T8  advisors, check-count, deep-review-gate y mark-adversarial-result con --adhoc
@@ -218,6 +221,76 @@ test('T15 Base_LaTraeLaFuncion_SinRedAvisa — @story-8.174 @ac-14', () => {
 });
 
 // ── T4 ───────────────────────────────────────────────────────────────────────────────────────────
+
+// ── T2, T3, T5: lo que no se abre sin una persona ───────────────────────────────────────────────
+
+const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
+const ow = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+/** `marker.js adhoc set` con la lista, por delegación o con la ventana de una persona. */
+function abrir(home, sid, cwd, allowedFiles, { delegadaPor } = {}) {
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid };
+  delete env.NODE_OPTIONS;
+  const pedido = JSON.stringify({ reason: 'arreglo del combo de clientes', datos: 'sin-cambio', allowedFiles });
+  return spawnSync(process.execPath, [MARKER, 'adhoc', 'set', pedido], { cwd, encoding: 'utf8', env: conVentana(env, delegadaPor ? { delegadaPor } : {}) });
+}
+const carrilEscrito = (home, sid) => fs.existsSync(path.join(home, '.claude', '.tycon-pipeline', 'adhoc', `${sid}.json`));
+
+test('T2 Delegado_ListaConMigracion_SeNiega_EnElArnes — @story-8.174 @ac-2', () => {
+  const raiz = tmp('t2b-');
+  const arnes = repoConOrigen(raiz, 'tycon-harness');
+  for (const [lista, re] of [[['scripts/x.sql'], /x\.sql/], [['scripts/lib/signatures.js'], /signatures\.js/]]) {
+    const h = tmp('home-');
+    const r = abrir(h, 'del', arnes, lista, { delegadaPor: 'coord' });
+    assert.notEqual(r.status, 0, lista[0]);
+    assert.match(r.stderr, /riesgo alto \(regla: [a-z-]+/, r.stderr);
+    assert.match(r.stderr, re);
+    // antes del aviso a la persona y sin escribir el carril
+    assert.doesNotMatch(r.stderr, /sin aviso a la persona/);
+    assert.ok(!carrilEscrito(h, 'del'));
+  }
+  // en un producto, el mismo carril lo abre el dev con su sí, y la firma dice «riesgo alto» y la regla
+  const prod = repoConOrigen(raiz, 'producto');
+  const h = tmp('home-');
+  const r = abrir(h, 'per', prod, ['db/migrations/001.sql']);
+  assert.equal(r.status, 0, r.stderr);
+  const firma = fs.readFileSync(path.join(h, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse)
+    .find((g) => g.name === 'adhoc-lane-signed');
+  assert.ok(firma && /riesgo alto \(regla: porton-instalador-migracion/.test(firma.resumen), JSON.stringify(firma));
+});
+
+test('T3 Delegado_ListaConAuth_SeNiega_EnElArnes — @story-8.174 @ac-2', () => {
+  const raiz = tmp('t3b-');
+  const arnes = repoConOrigen(raiz, 'tycon-harness');
+  const h = tmp('home-');
+  const r = abrir(h, 'del', arnes, ['skills/a/auth/b.js'], { delegadaPor: 'coord' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /riesgo alto \(regla: rutas-sensibles, skills\/a\/auth\/b\.js\)/, r.stderr);
+  assert.ok(!carrilEscrito(h, 'del'));
+  // sin riesgo alto, la lista no se niega por esto (llega al aviso, que en la prueba no tiene canal)
+  const otra = abrir(tmp('home-'), 'del', arnes, ['skills/a/combo/b.js'], { delegadaPor: 'coord' });
+  assert.doesNotMatch(otra.stderr, /riesgo alto/);
+});
+
+test('T5 Persona_AbreRiesgoAlto_AvisaLaRegla — @story-8.174 @ac-2 @ac-4', () => {
+  const raiz = tmp('t5b-');
+  const arnes = repoConOrigen(raiz, 'tycon-harness');
+  // con el sí de una persona se abre, y el resumen de la firma dice «riesgo alto» y la regla
+  const h = tmp('home-');
+  const r = abrir(h, 'per', arnes, ['skills/a/auth/b.js']);
+  assert.equal(r.status, 0, r.stderr);
+  const firma = fs.readFileSync(path.join(h, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse)
+    .find((g) => g.name === 'adhoc-lane-signed');
+  assert.ok(firma && /riesgo alto \(regla: rutas-sensibles/.test(firma.resumen), JSON.stringify(firma));
+  // por «hecho y avisado» (una pestaña sin permisos) y por la delegación, el freno lo niega antes del cuadro
+  const palabras = [MARKER, 'adhoc', 'set', JSON.stringify({ reason: 'arreglo del combo de clientes', datos: 'sin-cambio', allowedFiles: ['skills/a/auth/b.js'] })];
+  const rutina = ow.rutinaSinPermisos({ guion: 'adhoc-lane', pendientes: ['adhoc-lane'], palabras, destino: 'per', casa: tmp('home-'), topes: { delegado: 5, maximo: 8 }, cwd: arnes });
+  assert.equal(rutina.ok, false);
+  assert.match(rutina.motivo, /riesgo alto \(regla: rutas-sensibles/);
+  assert.match(ow.pasaDelCupoDelegado(palabras, 5, arnes), /riesgo alto/);
+  // sin la ruta de riesgo alto, no
+  const sin = [MARKER, 'adhoc', 'set', JSON.stringify({ reason: 'arreglo del combo de clientes', datos: 'sin-cambio', allowedFiles: ['skills/a/combo/b.js'] })];
+  assert.equal(ow.pasaDelCupoDelegado(sin, 5, arnes), null);
+});
 
 test('T4 Delegado_EditaRiesgoAlto_Frena — @story-8.174 @ac-3', () => {
   const raiz = tmp('t4-');
@@ -828,7 +901,12 @@ test('T21 RepoAjeno_NoEntraAlCarrilAlGuardar', () => {
   const f = path.join(dir, 'src/auth/x.ts');
   escribir(dir, 'src/auth/x.ts', 'propio\n');
   const state = conCarril(home, 's21', { rutas: [propio, f], bases: { [dir]: adhocBase.traerBase(dir) }, riesgoAlto: marcaDe(f) });
-  assert.ok(guardar(ajeno.dir, 's21', home).texto);
+  // un commit en el repo ajeno (un pull request siempre es del carril)
+  const d = saveBrake.decidir({ command: 'git commit -m x', cwd: ajeno.dir, sid: 's21', home });
+  assert.ok(d.texto);
+  // sigue frenando, ahora con el pedido del click anotado (8.236)
+  assert.match(d.texto, /adhoc allow-foreign-save/);
+  assert.ok(leerCarril(state, 's21').guardadoAjeno, 'el pedido queda en el carril');
   assert.deepStrictEqual(Object.keys(leerCarril(state, 's21').bases), [dir]);
 });
 

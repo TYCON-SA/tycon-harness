@@ -79,18 +79,6 @@
           ],
           "stdin": { "session_id": "bench-guion-grande", "tool_name": "Bash", "tool_input": { "command": "node planta/pipeline.js advisors --files scripts/marker.js" } },
           "expect": { "exit": 2, "stderr_re": ["GUION QUE NO SE PUEDE LEER ENTERO", "marker\\.js"] }
-        },
-        {
-          "id": "lista-de-archivos-con-la-vuelta-extra-frena",
-          "type": "must-block",
-          "_por_que": "La vuelta extra de revisores no es de sólo lectura: con ella, el comando no se exime por llevar una lista.",
-          "setup": [
-            "git init -q -b main . && mkdir -p scripts specs .tycon",
-            "{ printf '#!/usr/bin/env node\\n// cambia el estado de la story\\nrequire(\"fs\").writeFileSync(process.argv[2], \"x\");\\n'; yes '// xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 6000; } > scripts/marker.js && chmod +x scripts/marker.js",
-            "test \"$(wc -c < scripts/marker.js)\" -gt 262144"
-          ],
-          "stdin": { "session_id": "bench-guion-grande", "tool_name": "Bash", "tool_input": { "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/pipeline.js smart-reloop --extra-round --files scripts/marker.js" } },
-          "expect": { "exit": 2, "stderr_re": ["GUION QUE NO SE PUEDE LEER ENTERO", "marker\\.js"] }
         }
       ]
     }

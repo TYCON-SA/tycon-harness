@@ -205,6 +205,9 @@ const CHAINS = {
     // pipeline si no se tocó ningún test antes. Las capas post-mortem (complete-step run-tests, commit)
     // detectan; ésta impide. Ver on-atdd-preedit.js + lib/atdd-preedit.js.
     { name: 'on-atdd-preedit', path: path.join(PIPELINE_SCRIPTS, 'on-atdd-preedit.js'), steps: ['implement'], effect: 'blocks' },
+    // Una prueba que ya existía y está en rojo en el último reporte de esta sesión no se edita sin decir por qué: pide
+    // la nota (`marker.js note-red-test`) o, si es la prueba de un control, la firma del dueño. Ver lib/red-test-edit.js.
+    { name: 'on-red-test-edit', path: path.join(PIPELINE_SCRIPTS, 'on-red-test-edit.js'), steps: ['all'], effect: 'blocks' },
     { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js'), steps: ['implement'], effect: 'warns' },
     { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['plan'], effect: 'warns' },
     // Código deprecado del repo (lib/deprecated.js): con `deprecated.edit: block`, editarlo sin una historia que lo pida
