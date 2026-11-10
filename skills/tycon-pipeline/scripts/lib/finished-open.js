@@ -22,7 +22,10 @@ const TOPE_MS = 5000;
 const FOTO_MS = 10 * 60000;
 const MAX_LINEAS = 5;
 const POOL = 8;
-const SIN_TIEMPO = `se acabó el tope de ${TOPE_MS / 1000} s`;
+// un camino corto de una sesión que ya no está, sin tocarse hace más de esto, sólo se cuenta: mirarlo cuesta git
+const VIEJO_DIAS = 7;
+const sinTiempo = (ms) => `se acabó el tope de ${ms / 1000} s`;
+const SIN_TIEMPO = sinTiempo(TOPE_MS);
 const RAMAS_PRINCIPALES = ['main', 'master'];
 const PREFIJO = '🔔 [tycon-pipeline] ';
 const RAIZ = path.join(__dirname, '..', '..', '..', '..');
@@ -158,11 +161,11 @@ function adhocState(adhoc, ctx) {
   return falla ? { error: falla, ...(sinTiempo ? { sinTiempo: true } : {}) } : null;
 }
 
-function contexto({ home, stateDir, now, env }) {
+function contexto({ home, stateDir, now, env, topeMs = TOPE_MS }) {
   const sdir = stateDir || stateDirOf(home);
   const fotoFile = path.join(sdir, 'finished-open-prs.json');
   const f = leer(fotoFile);
-  return { sdir, fotoFile, foto: f.data && typeof f.data === 'object' ? f.data : {}, now, env: env || process.env, until: Date.now() + TOPE_MS, cambio: false };
+  return { sdir, fotoFile, foto: f.data && typeof f.data === 'object' ? f.data : {}, now, env: env || process.env, until: Date.now() + topeMs, cambio: false };
 }
 
 /** Lo ya dicho, por sesión, día y caso: true si hay que decirlo ahora (y lo anota). */
@@ -216,13 +219,27 @@ function comoSeCierra(vida, comando) {
   return { vive: false, texto: `su sesión ya no está: ${comando}` };
 }
 
+/** La última vez que se tocó un camino corto, como lo cuenta `adhoc clear-orphan`: lastTouch, declaredAt o la del archivo. */
+function tocadoDe(adhoc, file) {
+  const t = [adhoc && adhoc.lastTouch, adhoc && adhoc.declaredAt].map((v) => Date.parse(v || '')).find(Number.isFinite);
+  if (t !== undefined) return t;
+  try { return fs.statSync(file).mtimeMs; } catch { return null; }
+}
+
 /**
  * Lo de toda la máquina, para el arranque: `{ items, lines }`. Cada item: { sid, tipo, texto }. `lines`: hasta cinco
- * y «y N más». `markerJs`: la ruta con que se nombran los comandos.
+ * y «y N más», más lo que sólo se contó. `markerJs`: la ruta con que se nombran los comandos.
+ *
+ * Todo el recorrido tiene un tope (`topeMs`, 5 s): lo que no se llegó a mirar se cuenta como no medido. Los caminos cortos
+ * de sesiones que ya no están, sin tocarse hace más de 7 días, no se miran uno por uno: se cuentan, y su lista queda en
+ * `finished-open-viejos.txt` de la carpeta de estado para cerrarlos con un comando.
  */
-function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJs = 'marker.js', isAlive } = {}) {
-  const ctx = contexto({ home, stateDir, now, env });
+function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJs = 'marker.js', isAlive, topeMs = TOPE_MS } = {}) {
+  const ctx = contexto({ home, stateDir, now, env, topeMs });
   const items = [];
+  const sinMirar = { ejecuciones: 0, caminos: 0 };
+  const viejos = [];
+  const tarde = () => Date.now() >= ctx.until;
   // una carpeta que no existe es «nada»; una que no se puede leer se dice
   const nombres = (dir, que) => {
     try { return fs.readdirSync(dir).filter((n) => n.endsWith('.json')).sort(); } catch (e) {
@@ -237,6 +254,7 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
     try { hacer(); } catch (e) { items.push({ sid: null, tipo: 'ilegible', texto: `no pude mirar ${que} ${legible(n)} (${causa(String(e.message || e).split('\n')[0])})` }); }
   };
   for (const n of nombres(path.join(ctx.sdir, 'active'), 'las ejecuciones')) cadaUno(n, 'la ejecución', () => {
+    if (tarde()) { sinMirar.ejecuciones += 1; return; }
     const sid = path.basename(n, '.json');
     const m = leer(path.join(ctx.sdir, 'active', n));
     if (m.error) { items.push({ sid, tipo: 'ilegible', texto: `no pude leer la ejecución de la sesión ${legible(sid)} (${m.error})` }); return; }
@@ -258,8 +276,17 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
   });
   for (const n of nombres(path.join(ctx.sdir, 'adhoc'), 'los caminos cortos')) cadaUno(n, 'el camino corto', () => {
     const sid = path.basename(n, '.json');
-    const a = leer(path.join(ctx.sdir, 'adhoc', n));
+    const file = path.join(ctx.sdir, 'adhoc', n);
+    const a = leer(file);
     if (a.error) { items.push({ sid, tipo: 'ilegible', texto: `no pude leer el camino corto de la sesión ${legible(sid)} (${a.error})` }); return; }
+    // viejo y de una sesión que ya no está (o sin registro, como Codex): se cuenta sin mirar sus repos. Si no se sabe si
+    // vive, se mira como siempre
+    const tocado = a.data && tocadoDe(a.data, file);
+    if (tocado !== null && now - tocado > VIEJO_DIAS * 86400000 && SID_SEGURO.test(sid)) {
+      const vida = vidaDe(sid);
+      if (!vida.unknown && !vida.alive) { viejos.push(sid); return; }
+    }
+    if (tarde()) { sinMirar.caminos += 1; return; }
     const s = a.data && adhocState(a.data, ctx);
     if (!s) return;
     const quien = `camino corto «${motivo(a.data)}» (sesión ${legible(corto(sid))})`;
@@ -270,7 +297,26 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
   if (ctx.cambio) escribir(ctx.fotoFile, ctx.foto);
   const lines = items.slice(0, MAX_LINEAS).map((i) => i.texto);
   if (items.length > MAX_LINEAS) lines.push(`y ${items.length - MAX_LINEAS} más`);
-  return { items, lines };
+  // lo que sólo se contó va siempre, fuera del tope de cinco: callarlo sería decir «nada abierto»
+  const contados = [];
+  if (viejos.length) {
+    const quienes = `${viejos.length} camino${viejos.length === 1 ? '' : 's'} corto${viejos.length === 1 ? '' : 's'} de sesiones que ya no están, sin tocar hace más de ${VIEJO_DIAS} días (no los miro uno por uno)`;
+    if (viejos.length === 1) contados.push({ sid: viejos[0], tipo: 'viejos', texto: `${quienes}: ${node} adhoc clear-orphan ${viejos[0]}` });
+    else {
+      const lista = path.join(ctx.sdir, 'finished-open-viejos.txt');
+      let guardada = null;
+      try { fs.writeFileSync(lista, viejos.join('\n') + '\n', 'utf8'); } catch (e) { guardada = causa(e.code || e.message); }
+      contados.push({ sid: null, tipo: 'viejos', texto: guardada
+        ? `${quienes}: no pude guardar su lista (${guardada}); de a uno con ${node} adhoc clear-orphan <sesión>`
+        : `${quienes}: xargs -n1 ${node} adhoc clear-orphan < ${rutaParaLaConsola(lista)}` });
+    }
+  }
+  if (sinMirar.ejecuciones || sinMirar.caminos) {
+    const que = [sinMirar.caminos && `${sinMirar.caminos} camino${sinMirar.caminos === 1 ? '' : 's'} corto${sinMirar.caminos === 1 ? '' : 's'}`,
+      sinMirar.ejecuciones && `${sinMirar.ejecuciones} ejecuci${sinMirar.ejecuciones === 1 ? 'ón' : 'ones'}`].filter(Boolean).join(' y ');
+    contados.push({ sid: null, tipo: 'sin-medir', texto: `no medido: ${que} (${sinTiempo(topeMs)})` });
+  }
+  return { items: [...items, ...contados], lines: [...lines, ...contados.map((i) => i.texto)] };
 }
 
 /**
