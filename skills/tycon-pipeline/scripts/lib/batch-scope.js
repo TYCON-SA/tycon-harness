@@ -192,7 +192,7 @@ function frenoDelCierre({ markerPath, estado, sid }) {
     texto: [
       `🔒 cierre: el diff entero sale delicado — ${r.delicado.reason}.`,
       '  El plan lo aprobó la coordinadora para una parte; con este diff lo aprueba una persona. «Aprobar el plan» volvió a',
-      '  pendiente con el dueño, y el código queda en la rama.',
+      '  pendiente, y el código queda en la rama.',
       '  Salidas (de una persona): aprobar el plan para el diff entero, o cerrar la historia como deuda con marker.js close-as-debt.',
     ].join('\n'),
   };

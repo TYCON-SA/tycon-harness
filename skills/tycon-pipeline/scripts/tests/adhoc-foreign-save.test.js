@@ -842,7 +842,9 @@ test('T9 GuardadoAjeno_DosPerfiles @story-8.236 @ac-9', () => {
   const arnes = fa.textoDelPedido({ ...base, harness: true });
   assert.match(producto, /\bvos\b/);
   for (const w of [/dueño/i, /coordinadora/i, /delegaci/i, /constancia/i]) assert.doesNotMatch(producto, w);
-  assert.match(arnes, /dueño/);
+  // quien firma es «una persona», como todo mensaje que lee el agente (approver.test.js T7)
+  assert.match(arnes, /una persona/);
+  assert.doesNotMatch(arnes, /dueño/);
   assert.match(arnes, /coordinadora/);
   assert.match(arnes, /delegación/);
   assert.match(arnes, /constancias/);

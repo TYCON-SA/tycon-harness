@@ -479,7 +479,7 @@ function textoDelPedido({ harness, motivoDelCarril, archivo, regla, pedido, mark
   return (harness ? [
     `🔒 GUARDAR: esto no es del camino corto ${carril}, pero ese carril espera sus revisores y el pase por una ruta de riesgo alto (${archivo}, regla: ${regla}), y mientras tanto no guarda nada.`,
     `  Lo que guarda: ${pedido.comando} en ${pedido.repo} (rama ${pedido.rama}).`,
-    '  Si es ajeno al carril, lo deja pasar una vez el click del dueño, con lo que guarda a la vista, en esta pestaña o en la',
+    '  Si es ajeno al carril, lo deja pasar una vez el click de una persona, con lo que guarda a la vista, en esta pestaña o en la',
     '  de la coordinadora (o su terminal). No vale por delegación ni por un «aprobado» escrito. Pedilo con:',
     `    node ${marker} adhoc allow-foreign-save`,
     '  Después repetí el mismo comando, sin cambiar nada. Si no, corré los revisores y el pase del carril, con sus dos constancias.',

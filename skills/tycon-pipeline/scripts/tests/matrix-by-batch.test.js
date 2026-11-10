@@ -537,3 +537,36 @@ test('T19 RuntimeWaiver_Terminal_ForSession_ReadsBatch @story-8.240 @ac-12 — l
   assert.match(salida(r), MATRIZ_ROJA, salida(r));
   assert.match(salida(r), /runtime-waiver \S+ --for-session s-a19/, salida(r));
 });
+
+// ── 8.245: una tanda bloqueada no vuelve por un archivo que comparte ─────────────────────────────────────────────────
+
+test('T7 TandaBloqueada_ArchivoCompartido_NoVuelve_SuPantallaSi @story-8.245 @ac-7 — vuelve la hecha; la bloqueada, sólo por un archivo que nombra sólo ella', () => {
+  const E = entorno();
+  // la segunda tanda bloqueada (con su pendiente) y la tercera hecha; src/comun.js atado a las dos, no a la medida
+  const texto = historia({ estados: { [C]: 'done' }, archivos: ['  - src/comun.js  # tanda B, tanda C', '  - web/src/Panel.tsx  # tanda B'] })
+    .replace(`status: pending\n    acs: [2]`, 'status: blocked\n    blocked_by: "la reemplaza otra historia"\n    acs_pending: [2]')
+    // la regla de la pantalla de hoy: la tanda bloqueada se nombra como de pantalla
+    .split(B).join(B_PANT).replace('**Then** resultado.', '**Then** resultado. @sin-pantalla');
+  fs.writeFileSync(E.story, texto);
+  fs.mkdirSync(path.join(E.repo, 'web', 'src'), { recursive: true });
+  fs.writeFileSync(path.join(E.repo, 'src', 'comun.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(E.repo, 'web', 'src', 'Panel.tsx'), 'export const Panel = 1;\n');
+  E.git('add', '.');
+  E.git('commit', '-qm', 'el archivo compartido y la pantalla de la bloqueada');
+  const base = E.git('rev-parse', 'HEAD').trim();
+  E.humo([1]);
+  // la corrida cambia el archivo compartido: vuelve la hecha (AC 3) y la bloqueada queda afuera, con su aviso
+  fs.writeFileSync(path.join(E.repo, 'src', 'comun.js'), 'module.exports = 2;\n');
+  E.git('commit', '-qam', 'toca el archivo compartido');
+  let r = cli(E, ['--batch', A, '--code-repo', E.repo, '--base', base], 's-otra');
+  assert.match(r.stdout, new RegExp(`vuelven a la matriz: ${C} \\(AC 3\\)`), r.stdout + r.stderr);
+  assert.doesNotMatch(r.stdout, new RegExp(`${B_PANT} \\(AC 2\\), porque la corrida cambió`), r.stdout);
+  assert.match(r.stdout, new RegExp(`EXCLUIDOS del gate por tanda blocked[^\\n]*${B_PANT}: ACs 2`), r.stdout);
+  assert.doesNotMatch(r.stdout, /\| #2 \| 🔴/, r.stdout);
+  // la corrida cambia también un archivo que sólo nombra la bloqueada (su pantalla): sus criterios vuelven, como antes
+  fs.writeFileSync(path.join(E.repo, 'web', 'src', 'Panel.tsx'), 'export const Panel = 2;\n');
+  E.git('commit', '-qam', 'toca la pantalla de la bloqueada');
+  r = cli(E, ['--batch', A, '--code-repo', E.repo, '--base', base], 's-otra');
+  assert.match(r.stdout, new RegExp(`${B_PANT} \\(AC 2\\), porque la corrida cambió web/src/Panel\\.tsx`), r.stdout + r.stderr);
+  assert.match(r.stdout, /\| #2 \| 🔴/, r.stdout);
+});
