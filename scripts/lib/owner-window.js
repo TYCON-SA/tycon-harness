@@ -485,6 +485,8 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null) {
     if (sub === 'adhoc' && a[0] === 'set') return firmaDelPedidoAdhoc(args.slice(1), (topes || topesDelCaminoCorto()).maximo);
     // dejar pasar el freno de los datos; recomendar la historia o descartar no firma nada
     if (sub === 'adhoc' && a[0] === 'allow-data-change') return opaca || (a.includes('--recommends') && a[a.indexOf('--recommends') + 1] === 'pasar') ? 'adhoc-lane:datos' : null;
+    // dejar pasar una vez un guardado ajeno al carril que espera sus revisores
+    if (sub === 'adhoc' && a[0] === 'allow-foreign-save') return 'adhoc-lane:guardado-ajeno';
     if (sub === 'adhoc' && /[$`]/.test(a[0] || '')) return SOBRE_CUPO;
     if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
     // la firma en una variable puede ser cualquiera de las cuatro: cuenta como una, y la forma canónica la niega
@@ -794,7 +796,7 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   if (!partes) partes = { queHace: [detalleDe(firma, texto, palabras, cwd, casa)], fuente: '' };
   // la huella ata el click a lo que se mostró: el comando y la fuente de la pregunta
   const huella = sha256(`${texto}\0${partes.fuente || ''}`).slice(0, 8);
-  return require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHace, nota: partes.nota, archivos: partes.archivos,
+  return require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
     completo: partes.completo, revision: partes.revision, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones });
 }
 
@@ -950,9 +952,12 @@ const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control
   // nombrar sin id de sesión, o retirar desde una sesión que no es la coordinadora, se niega sin gastar el click
   'designation-set', 'designation-withdraw',
   // dejar pasar el freno de los datos sin un freno anotado, o con un texto que el guion no acepta
-  'adhoc-lane:datos']);
-// las de sólo click cuyo chequeo corre antes de dar el cuadro (el de pasar el tope corre después del click)
-const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw', 'adhoc-lane:datos']);
+  'adhoc-lane:datos',
+  // dejar pasar un guardado ajeno sin un pedido anotado
+  'adhoc-lane:guardado-ajeno']);
+// las de sólo click cuyo chequeo corre antes de dar el cuadro: un pedido que el guion niega igual (un motivo en dos
+// renglones, una lista inválida) no gasta el click
+const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', SOBRE_CUPO]);
 // lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
 // 210 s (lib/save-ok.js)
 const PLAZO_DEL_CHEQUEO = { save: 240000 };
@@ -987,7 +992,7 @@ const AVISA_SU_GUION = new Set(['save', 'adhoc-lane']);
  * ¿La firma pedida en una pestaña sin permisos es de rutina? `{ ok }` o `{ ok: false, motivo }`. Va sola, sin escapes;
  * un arreglo rápido que ya existe no sube su tope (el que se pide sin `maxFiles` conserva el que tenía).
  */
-function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, topes = null }) {
+function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, topes = null, cwd = null }) {
   if (!guion || !RUTINA_SIN_PERMISOS.has(guion) || pendientes.length !== 1 || pendientes[0] !== guion) return { ok: false, motivo: null };
   if (guion !== 'adhoc-lane') return { ok: true };
   let pedido;
@@ -999,7 +1004,7 @@ function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, to
   if (existente && pedido && pedido.maxFiles !== undefined && Number(pedido.maxFiles) > Number(existente.maxFiles)) {
     return { ok: false, motivo: `subir el tope del arreglo rápido (de ${existente.maxFiles} a ${pedido.maxFiles} archivos) sigue siendo una firma` };
   }
-  const pasa = pasaDelCupoDelegado(palabras, (topes || topesDelCaminoCorto(casa)).delegado);
+  const pasa = pasaDelCupoDelegado(palabras, (topes || topesDelCaminoCorto(casa)).delegado, cwd);
   return pasa ? { ok: false, motivo: pasa } : { ok: true };
 }
 
@@ -1008,11 +1013,25 @@ function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, to
  * Recortarlo callado le daría un arreglo que no pidió: se niega, y el freno da el cuadro para que lo apruebe una persona.
  * `tope`: el cupo delegado de la organización; sin él, se lee.
  */
-function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado) {
+function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado, cwd = null) {
   if (!palabras || palabras[1] !== 'adhoc' || palabras[2] !== 'set') return null;
   let pedido;
   try { pedido = JSON.parse(palabras[3]); } catch (_) { return null; }
-  return pedido && Number(pedido.maxFiles) > tope ? `pedir ${Number(pedido.maxFiles)} archivos supera los ${tope} archivos que se abren sin una persona` : null;
+  if (!pedido || typeof pedido !== 'object') return null;
+  if (Number(pedido.maxFiles) > tope) return `pedir ${Number(pedido.maxFiles)} archivos supera los ${tope} archivos que se abren sin una persona`;
+  const L = require(path.join(LIB, 'adhoc-list.js'));
+  // sin lista no se abre: `adhoc set` la niega igual, y sin una persona no se delega un pedido que se va a negar
+  if (!Array.isArray(pedido.allowedFiles) || !pedido.allowedFiles.length) return 'falta la lista de archivos ("allowedFiles"): sin ella el camino corto no se abre';
+  // la lista: su código cuenta como el cupo pedido, y el motivo con varios temas o vago no se abre sin una persona
+  const codigo = Array.isArray(pedido.allowedFiles) ? pedido.allowedFiles.filter((f) => typeof f === 'string' && L.esCodigoRel(f)).length : 0;
+  if (codigo > tope) return `la lista nombra ${codigo} archivos de código y sin una persona se abren hasta ${tope}`;
+  // una ruta de riesgo alto en la lista: sin una persona no se abre (con la carpeta del pedido; sin ella, lo dice el guion)
+  if (cwd) {
+    const n = L.normalizar(pedido.allowedFiles, { cwd });
+    const riesgo = n.lista ? L.riesgoDeLaLista(n.lista) : null;
+    if (riesgo) return `la lista nombra una ruta de ${L.textoDelRiesgo(riesgo, { cwd })}: un camino corto de riesgo alto lo abre una persona`;
+  }
+  return L.sinUnaPersona({ reason: pedido.reason });
 }
 
 /**
@@ -1137,7 +1156,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     // una firma que el perfil delega y no se delegó lleva su motivo a la ventana; la que no se delega, no (es lo normal)
     else sinDelegar = rs.map((r) => r && !r.ok && r.motivo).find((m) => m && !/no delega|sólo del dueño|la sesión que implementa/.test(m)) || null;
   } catch (e) { return negar(`no se pudo consultar la delegación del perfil (${e.message})`, pendientes); }
-  const fueraDelCupo = delegada && firmaGuion === 'adhoc-lane' ? pasaDelCupoDelegado(can && can.palabras, topes.delegado) : null;
+  const fueraDelCupo = delegada && firmaGuion === 'adhoc-lane' ? pasaDelCupoDelegado(can && can.palabras, topes.delegado, evento.cwd || null) : null;
   if (fueraDelCupo) { delegada = null; sinDelegar = fueraDelCupo; }
   // una pestaña que no pide permisos aprueba sola lo que se manda a la ventana: el renglón quedaría a nombre del dueño
   // sin su Sí. Lo que afloja un control se niega ahí, con el comando de la terminal; lo de rutina se hace y queda en el
@@ -1160,7 +1179,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
       sinAprobacion = a.motivo;
       // sin aprobación: lo de rutina en una pestaña sin permisos sigue «hecho y avisado»; lo demás se niega y dice cómo
       // aprobarlo. En una sesión de fondo no hay «hecho y avisado»: nadie ve el aviso en la pestaña
-      const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa, topes });
+      const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa, topes, cwd: evento.cwd || null });
       // nombrar o retirar a la coordinadora: lo que el guion negaría se dice antes del cuadro, sin gastar el click
       if (CHEQUEO_ANTES_DEL_CUADRO.has(firmaGuion)) {
         let c = null;
@@ -1658,7 +1677,8 @@ function quienFirmo({ via, sesion } = {}, persona) {
 }
 
 module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
-  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, esAnfitrionDeFondoDe, negarSinVentana };
+  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, esAnfitrionDeFondoDe, negarSinVentana,
+  CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

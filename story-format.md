@@ -167,6 +167,15 @@ pipelines:
 | `acs_pending` | int[] | cuando `status: blocked` o `status: pending` — ACs que NO se cubren en esa tanda. |
 | `tasks_pending` | int[] | cuando `status: blocked` o `status: pending` — tasks que NO se cubren. |
 | `tests_pending` | string[] | cuando `status: blocked` o `status: pending` — IDs de tests (`T36`, `T40`, etc.) que quedan sin cobertura. |
+| `files` | string[] | opcional. Los archivos de la parte, uno por renglón (`- ruta`) o `[a, b]`. Con ella, el riesgo del plan se mide por la parte (ver abajo). El lint frena un `files:` que no es una lista. |
+| `sensible` | como el de arriba | opcional. Marca delicada sólo esta parte. El `sensible:` de arriba de la historia marca todas y una parte no lo deshace. |
+
+**La parte que vale.** La tanda que anota `marker.js set-batch` es la parte que se hace. Vale si declara `files:` no
+vacío, cada archivo suyo está en `files_to_create` o `files_to_modify` de la historia, y ningún archivo de código suyo
+está en `files:` de otra parte abierta (una guía, `suites.json` o `sprint-status.yaml` compartidos no la invalidan). Con
+una parte que vale, el riesgo, la marca de delicada y el tamaño del plan miden la parte más lo que el cambio toca, y la
+regla «tiene tandas» no cuenta. El pase adversarial, su modelo y la revisión de la historia siguen por la historia
+entera. Una parte sin `files:`, o que no vale, se mide como la historia entera, como antes.
 
 **Reglas de consistencia** (verificadas por `tycon-story-validator`):
 

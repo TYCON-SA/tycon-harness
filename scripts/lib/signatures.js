@@ -62,6 +62,7 @@ const LEVELS_EN = Object.freeze({
   'save:sensible': 'save when a commit touches something sensitive',
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended (only implementation files count, not tests or guides)',
   'adhoc-lane:datos': 'let a quick fix that changes where a piece of data comes from, or who can see it, go through without a story (only the owner\'s click)',
+  'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view (only a person\'s click or terminal)',
   'escape:DOD_BYPASS': 'skip every control of the commit',
   'critical-waiver': 'waive a critical finding',
   'runtime-waiver': 'accept a criterion that cannot be tested live, or exempt the whole story',
@@ -97,6 +98,7 @@ const LEVELS = Object.freeze([
   ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
   ['save:sensible', 2, AMBOS, 'guardar cuando un commit toca algo de lo sensible'],
   ['adhoc-lane:datos', 2, AMBOS, 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño)'],
+  ['adhoc-lane:guardado-ajeno', 2, AMBOS, 'dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista (sólo el click o la terminal de una persona)'],
   ['adhoc-lane:sobre-cupo', 2, AMBOS, 'abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia (cuentan sólo los archivos de implementación, sin pruebas ni guías)'],
   ['escape:DOD_BYPASS', 2, AMBOS, 'saltear todos los controles del commit'],
   ['critical-waiver', 2, AMBOS, 'eximir un hallazgo crítico'],
@@ -201,6 +203,7 @@ const SI_SALE_MAL = Object.freeze({
   'adhoc-lane': 'la sesión escribe código sin historia; se cierra el arreglo, y nada entra a main sin revisión',
   'adhoc-lane:sobre-cupo': 'un cambio grande entra sin el plan ni las pruebas de una historia; se cierra el arreglo, y nada entra a main sin revisión',
   'adhoc-lane:datos': 'un cambio de permisos o de la fuente de un dato llega a producción sin que nadie revise quién lo ve, y una persona sin permiso puede quedar trabada',
+  'adhoc-lane:guardado-ajeno': 'se guarda una vez algo que no es del camino corto mientras el carril espera sus revisores; si en verdad era del carril, entra sin ellos y se revierte con otro commit',
   save: 'se guarda en el repo y se abre el pedido; se revierte con otro commit',
   'designation-confirm': 'esa sesión firma en tu nombre lo que el perfil delega, hasta que se designe otra',
   'designation-set': 'una sesión que no querías firma en tu nombre lo que el perfil delega, hasta que la retires o nombres otra',
@@ -226,6 +229,7 @@ const APPROVES_EN = {
   'adhoc-lane': "open a session's quick fix, with no story",
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended',
   'adhoc-lane:datos': 'let a quick fix that changes where a piece of data comes from, or who can see it, go through without a story',
+  'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view',
   save: 'save the story: commit, push and the pull requests',
   'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
   'escape:TYCON_PROD_LINT': 'turn off the production query control for one command',
@@ -267,14 +271,19 @@ const SIGNATURES = Object.freeze([
   { id: 'lost-run', approves: 'dar por perdida una ejecución y cerrarla', command: 'marker.js clear-session --lost (o restore)', otherSession: 'yes', terminal: 'marker.js clear-session --lost --terminal (o restore --terminal)' },
   { id: 'adversarial-skip', approves: 'saltear el pase adversarial con constancia', command: 'marker.js sign-adversarial-skip --story <S> --reason <R>', otherSession: 'no', terminal: 'marker.js sign-adversarial-skip --story <S> --reason <R> --terminal' },
   { id: 'pending-approval', approves: 'abrir un pendiente nuevo en la lista de pendientes', command: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta>', otherSession: 'yes', terminal: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal' },
-  { id: 'adhoc-lane', approves: 'abrir el arreglo rápido de una sesión, sin historia', command: "marker.js adhoc set '<json>'", otherSession: 'yes', terminal: 'marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --terminal --for-session <id>' },
-  { id: 'adhoc-lane:sobre-cupo', approves: 'abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia', command: "marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'", otherSession: 'no', terminal: 'marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --terminal --for-session <id>',
+  { id: 'adhoc-lane', approves: 'abrir el arreglo rápido de una sesión, sin historia', command: "marker.js adhoc set '<json>'", otherSession: 'yes', terminal: 'marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --file <ruta> --terminal --for-session <id>' },
+  { id: 'adhoc-lane:sobre-cupo', approves: 'abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia', command: "marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'", otherSession: 'no', terminal: 'marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --file <ruta> --terminal --for-session <id>',
     soloClick: true, descripciones: Object.freeze(['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.', 'No se abre el arreglo, y el trabajo va por una historia.']) },
   // dejar pasar el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente;
   // nunca un «aprobado» escrito, la delegación ni la ventana de permiso
   { id: 'adhoc-lane:datos', approves: 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia', command: 'marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>', otherSession: 'no',
     terminal: 'marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué> --terminal --for-session <id>',
     clickDelDueno: true, descripciones: Object.freeze(['Dejar pasar: sigue por camino corto, con este cambio de datos o de permisos.', 'No pasa: la sesión escribe la historia; o descarta lo del carril, si lo decís por la coordinadora.']) },
+  // dejar pasar una vez un guardado ajeno al carril que espera sus revisores: sólo el click de una persona, en la pestaña
+  // que trabaja o en la de la coordinadora, o su terminal; nunca la delegación, «hecho y avisado» ni un «aprobado» escrito
+  { id: 'adhoc-lane:guardado-ajeno', approves: 'dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista', command: 'marker.js adhoc allow-foreign-save', otherSession: 'no',
+    terminal: 'marker.js adhoc allow-foreign-save --terminal --for-session <id>',
+    clickDelDueno: true, descripciones: Object.freeze(['Pasa una vez: este comando, tal como se ve, sin esperar los revisores del carril.', 'No pasa: la sesión espera los revisores y el pase del carril.']) },
   { id: 'save', approves: 'guardar la story: commit, push y los pull requests', command: 'marker.js approve-save [--for-session <D>]', otherSession: 'yes', terminal: 'marker.js approve-save --terminal --for-session <D>' },
   { id: 'designation-confirm', approves: 'confirmar qué sesión es la coordinadora de esta máquina', command: 'delegated-signing.js confirm-designation', otherSession: 'no', terminal: 'delegated-signing.js confirm-designation --terminal' },
   // nombrar y retirar a la coordinadora: el click del dueño en la pestaña de esa sesión, nunca por delegación
@@ -324,6 +333,8 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/lib/story-skill-gate*.js', 'skills/tycon-pipeline/scripts/e2e-setup.js',
   // los frenos
   'scripts/hooks/safety-guard*', 'skills/tycon-pipeline/scripts/lib/marker-command.js', 'scripts/production/**',
+  // el portón de carril: lo que deja editar sin historia
+  'skills/tycon-pipeline/scripts/lib/story-gate.js', 'skills/tycon-pipeline/scripts/lib/story-gate-io.js',
   // lo que decide si la story está limpia: el pase, los hallazgos, las exenciones y el portón de pruebas
   'skills/tycon-pipeline/scripts/marker.js', 'skills/tycon-pipeline/scripts/pipeline.js',
   'skills/tycon-pipeline/scripts/lib/adversarial-verdict.js', 'skills/tycon-pipeline/scripts/lib/critical-waivers.js',
@@ -357,14 +368,25 @@ function firmaDelPedidoAdhoc(args = [], tope = TOPE) {
   const a = args.map((w) => String(w && typeof w === 'object' ? w.texto : w));
   const limite = Number.isInteger(tope) && tope > 0 ? tope : TOPE;
   const dentro = (n) => Number.isInteger(n) && n <= limite;
+  // la lista de archivos cuenta como el cupo pedido: más código que el tope es pasar el tope, aunque no diga maxFiles.
+  // Si no se puede contar (falta el módulo de la lista), cuenta como sobre cupo
+  const codigoDe = (rutas) => {
+    try {
+      const L = require(require('path').join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'adhoc-list.js'));
+      return rutas.filter((f) => typeof f === 'string' && L.esCodigoRel(f)).length;
+    } catch (_) { return Infinity; }
+  };
   if (String(a[0] || '').startsWith('--')) {
-    if (a.some((w) => w.startsWith('--max-files='))) return SOBRE_CUPO;
+    if (a.some((w) => w.startsWith('--max-files=') || w.startsWith('--file='))) return SOBRE_CUPO;
+    const lista = a.flatMap((w, i) => (w === '--file' ? [a[i + 1]] : []));
+    if (lista.length && !dentro(codigoDe(lista))) return SOBRE_CUPO;
     const i = a.indexOf('--max-files');
     return i < 0 || (/^\d+$/.test(a[i + 1] || '') && dentro(Number(a[i + 1]))) ? ADHOC : SOBRE_CUPO;
   }
   let p;
   try { p = JSON.parse(a[0]); } catch (_) { return SOBRE_CUPO; }
   if (!p || typeof p !== 'object') return SOBRE_CUPO;
+  if (Array.isArray(p.allowedFiles) && !dentro(codigoDe(p.allowedFiles))) return SOBRE_CUPO;
   return p.maxFiles === undefined || dentro(p.maxFiles) ? ADHOC : SOBRE_CUPO;
 }
 

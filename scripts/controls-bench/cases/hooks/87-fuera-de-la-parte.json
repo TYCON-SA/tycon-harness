@@ -1,0 +1,55 @@
+{
+  "__doc": "T29 Banco_EditFueraDeLaParte_Frena @story-8.168 @ac-18. Con el plan de una parte aprobado por la coordinadora (la revisión automática y su constancia), editar un archivo de implementación fuera de la lista congelada al aprobar frena (batch-out-of-list); uno de la lista pasa. La lista sale de la constancia, no del marcador.",
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js (plan de una parte)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "fuera-de-la-parte-con-plan-delegado-frena",
+          "type": "must-block",
+          "_por_que": "el plan de la parte A lo aprobó la coordinadora: src/grilla.js es de la parte B y no está en la lista.",
+          "setup": [
+            "git init -q -b feat/x . && mkdir -p .tycon",
+            "node -e \"const fs=require('fs'),path=require('path'); const S=process.env.SKILLS+'/skills/tycon-pipeline/scripts/lib/'; const repo=fs.realpathSync('.'); fs.mkdirSync('specs',{recursive:true});fs.mkdirSync('src',{recursive:true}); const story=path.join(repo,'specs','story-9.7-partes.md'); fs.writeFileSync(story,['---','story: \"9.7\"','title: \"partes\"','status: in-progress','files_to_modify:','  - src/combo.js','  - src/grilla.js','pipelines:','  - name: A-el-combo','    status: pending','    acs: [1]','    files:','      - src/combo.js','  - name: B-la-grilla','    status: pending','    acs: [2]','    files:','      - src/grilla.js','---','# Story 9.7',''].join('\\n')); const run=path.join(repo,'.advisors','pipeline-runs','9.7-20261109000000');fs.mkdirSync(run,{recursive:true}); fs.writeFileSync(path.join(run,'step-02-bmad-plan.md'),'# Plan\\n\\nCambiar src/combo.js.\\n'); const estado=path.join(process.env.HOME,'.claude','.tycon-pipeline');fs.mkdirSync(path.join(estado,'active'),{recursive:true}); const m={storyId:'9.7',storyPath:story,repoPath:repo,startedAt:'2026-11-09T00:00:00.000Z',batch:'A-el-combo',batchValid:true,stepScheme:2,stepsCompleted:['start','validate-story','plan','approve-plan'],stepsPending:['implement','run-tests']}; const mp=path.join(estado,'active','bench-parte.json');fs.writeFileSync(mp,JSON.stringify(m)); const pr=require(S+'plan-review.js'); const p=pr.preparar({lanza:'coord',destino:'bench-parte',estado,designada:()=>'coord'}); if(p.codigo){console.error(p.motivo);process.exit(1);} const pedido=JSON.parse(fs.readFileSync(p.pedido,'utf8')); const c=pr.anotar({lanza:'coord',destino:'bench-parte',estado,resultado:{medido:true,modo:'plan',confirmed:[],pedido:pedido.numero}}); m.planApproval={mode:'revision',text:'revisión automática',at:new Date().toISOString(),revision:{id:c.id,veredicto:c.veredicto,modelo:c.modelo,lanzo:'coord'}}; fs.writeFileSync(mp,JSON.stringify(m));\""
+          ],
+          "stdin": {
+            "session_id": "bench-parte",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/grilla.js"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "FUERA DE LA PARTE",
+              "A-el-combo"
+            ]
+          }
+        },
+        {
+          "id": "fuera-de-la-parte-dentro-de-la-lista-pasa",
+          "type": "must-not-block",
+          "_por_que": "el archivo de la lista de la parte: pasa.",
+          "setup": [
+            "git init -q -b feat/x . && mkdir -p .tycon",
+            "node -e \"const fs=require('fs'),path=require('path'); const S=process.env.SKILLS+'/skills/tycon-pipeline/scripts/lib/'; const repo=fs.realpathSync('.'); fs.mkdirSync('specs',{recursive:true});fs.mkdirSync('src',{recursive:true}); const story=path.join(repo,'specs','story-9.7-partes.md'); fs.writeFileSync(story,['---','story: \"9.7\"','title: \"partes\"','status: in-progress','files_to_modify:','  - src/combo.js','  - src/grilla.js','pipelines:','  - name: A-el-combo','    status: pending','    acs: [1]','    files:','      - src/combo.js','  - name: B-la-grilla','    status: pending','    acs: [2]','    files:','      - src/grilla.js','---','# Story 9.7',''].join('\\n')); const run=path.join(repo,'.advisors','pipeline-runs','9.7-20261109000000');fs.mkdirSync(run,{recursive:true}); fs.writeFileSync(path.join(run,'step-02-bmad-plan.md'),'# Plan\\n\\nCambiar src/combo.js.\\n'); const estado=path.join(process.env.HOME,'.claude','.tycon-pipeline');fs.mkdirSync(path.join(estado,'active'),{recursive:true}); const m={storyId:'9.7',storyPath:story,repoPath:repo,startedAt:'2026-11-09T00:00:00.000Z',batch:'A-el-combo',batchValid:true,stepScheme:2,stepsCompleted:['start','validate-story','plan','approve-plan'],stepsPending:['implement','run-tests']}; const mp=path.join(estado,'active','bench-parte.json');fs.writeFileSync(mp,JSON.stringify(m)); const pr=require(S+'plan-review.js'); const p=pr.preparar({lanza:'coord',destino:'bench-parte',estado,designada:()=>'coord'}); if(p.codigo){console.error(p.motivo);process.exit(1);} const pedido=JSON.parse(fs.readFileSync(p.pedido,'utf8')); const c=pr.anotar({lanza:'coord',destino:'bench-parte',estado,resultado:{medido:true,modo:'plan',confirmed:[],pedido:pedido.numero}}); m.planApproval={mode:'revision',text:'revisión automática',at:new Date().toISOString(),revision:{id:c.id,veredicto:c.veredicto,modelo:c.modelo,lanzo:'coord'}}; fs.writeFileSync(mp,JSON.stringify(m));\""
+          ],
+          "stdin": {
+            "session_id": "bench-parte",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/combo.js"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    }
+  ]
+}

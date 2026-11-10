@@ -37,7 +37,7 @@ const rutaReal = (p) => { try { return fs.realpathSync(p); } catch (_) { return 
 const enUnRenglon = (s) => String(s).replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '');
 
 /**
- * El pedido de `adhoc set --reason <motivo> [--max-files N] [--data sin-cambio|cambian] --terminal [--for-session <id>]`, la forma sin JSON para la
+ * El pedido de `adhoc set --reason <motivo> [--max-files N] [--data sin-cambio|cambian] --file <ruta>… --terminal [--for-session <id>]`, la forma sin JSON para la
  * consola de la persona: el PowerShell que viene con Windows rompe las comillas del JSON al pasarlo. `args` son los
  * argumentos después de `set`. `{ payload }` o `{ problema }`. Va sólo con `--terminal`: la ventana de permiso, la
  * delegación y el tope leen el JSON. Un motivo que empieza con `-` se rechaza, para que no se haga pasar por una bandera.
@@ -49,7 +49,12 @@ function pedidoPorBanderas(args) {
     const a = args[i];
     if (a === '--terminal') terminal = true;
     else if (a === '--for-session') i++;
-    else if (a === '--reason' || a === '--max-files' || a === '--data') {
+    else if (a === '--file') {
+      // la lista de archivos, una bandera por archivo
+      const v = args[++i];
+      if (v === undefined || v.startsWith('-')) return { problema: '--file necesita una ruta, y no puede empezar con «-»' };
+      (payload.allowedFiles = payload.allowedFiles || []).push(v);
+    } else if (a === '--reason' || a === '--max-files' || a === '--data') {
       const clave = { '--reason': 'reason', '--max-files': 'maxFiles', '--data': 'datos' }[a];
       const v = args[++i];
       if (clave in payload) return { problema: `${a} va una sola vez` };

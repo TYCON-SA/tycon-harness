@@ -474,6 +474,23 @@ test('T27 Buscar_ClickDelDueno_ValeEnLaCoordinadoraVigente_NoElMensaje @story-8.
   assert.match(c.pregunta, /«Sí, aprobar»: Dejar pasar: sigue\. «No»: No pasa: historia\. Sólo vale tu click\./);
   assert.strictEqual(c.clickDelDueno, true);
   assert.strictEqual(c.descripciones, undefined, 'las descripciones van en la pregunta, no aparte');
+  // dejar pasar un guardado ajeno (8.236): el mismo cuadro de sólo el click de una persona, con sus dos opciones
+  const s = require(path.join(__dirname, '..', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === 'adhoc-lane:guardado-ajeno');
+  const g = oa.cuadroDe({ firma: s.id, destino: 'ses-a', que: s.approves, siSaleMal: s.ifWrong, huella: 'h2', clickDelDueno: s.clickDelDueno, descripciones: s.descripciones });
+  assert.match(g.pregunta, /«Sí, aprobar»: Pasa una vez: este comando, tal como se ve.*«No»: No pasa: la sesión espera los revisores.*Sólo vale tu click\./);
+  assert.strictEqual(g.clickDelDueno, true);
+  // 🔴 Falla con: el destino del push, los hooks y la configuración que corre, escondidos en «y 3 más» (pase de la 8.245,
+  // clase 17): el guardado ajeno muestra todo lo que hace, sin recorte
+  // stable-data: «git commit» es el texto de un renglón del cuadro; la prueba no corre git ni crea commits
+  const seis = ['Comando: git commit -m x && git push origin main', 'En: /x/ajeno · rama feat', 'Commit de 1 archivo(s): src/a.js',
+    'Push a origin (git@host.example:acme/ajeno.git), rama main', 'Hooks que corren al guardar: pre-commit, pre-push',
+    'Configuración de la máquina que corre programas: core.sshcommand=ssh (global)'];
+  const todo = oa.cuadroDe({ firma: s.id, destino: 'ses-a', que: s.approves, queHace: seis, todoQueHace: true, siSaleMal: s.ifWrong, huella: 'h3', clickDelDueno: true, descripciones: s.descripciones });
+  for (const l of seis) assert.ok(todo.pregunta.includes(l), l);
+  assert.doesNotMatch(todo.pregunta, /y 3 más/);
+  // las demás firmas siguen con su recorte a la vista
+  const recortado = oa.cuadroDe({ firma: s.id, destino: 'ses-a', que: s.approves, queHace: seis, siSaleMal: s.ifWrong, huella: 'h3' });
+  assert.match(recortado.pregunta, /y 3 más/);
 });
 
 test('T13 Cuadro_SobreCupo_OtraDescripcion_NoVale @story-8.181 @ac-5', (t) => {

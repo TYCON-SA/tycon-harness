@@ -180,6 +180,7 @@ function frenoDeComando(command, opts = {}) {
   fs.writeFileSync(guion, `#!/usr/bin/env node\n// cambia el estado de la story\nrequire('fs').writeFileSync(process.argv[2], 'x');\n` + relleno.repeat(1600));
   fs.chmodSync(guion, 0o755);
   if (opts.plantado) fs.writeFileSync(path.join(dir, 'scripts', 'plantado.js'), 'process.exit(0);\n');
+  if (opts.copiaDePipeline) fs.copyFileSync(PIPELINE, path.join(dir, 'scripts', 'pipeline.js'));
   return conEnv(ENV, () => {
     const r = bash.handle({ tool_name: 'Bash', session_id: 'sesion-guion-grande', cwd: dir, tool_input: { command } }, { stateDir: estado, installedRoots: [RAIZ_ARNES] });
     return r && r.block ? r.block.split('\n').find((l) => l.trim()).trim() : '';
@@ -207,7 +208,52 @@ test('T9 BigScript_RunCheckOfReadOnlyList_OnlyNamesIt', () => {
   assert.strictEqual(frenoDeComando(`node ${MARKER} run-check advisors -- ./scripts/marker.js specs/x.md`), FRENO, 'otro programa detrás del --');
   assert.strictEqual(frenoDeComando(`node ${MARKER} run-check advisors -- node scripts/marker.js specs/x.md`), FRENO, 'otro guion detrás del --');
   assert.strictEqual(frenoDeComando(`node scripts/plantado.js run-check advisors -- node ${PIPELINE} check-count ${lista}`, { plantado: true }), FRENO, 'un marker que no es el instalado');
-  assert.strictEqual(frenoDeComando(`node ${MARKER} run-check advisors -- node ${PIPELINE} smart-reloop --extra-round ${lista}`), FRENO, 'la vuelta extra');
+  // la vuelta extra con su lista ya no es un guion que corre (8.235 G): su firma la sigue pidiendo el freno de firmas
+  assert.strictEqual(frenoDeComando(`node ${MARKER} run-check advisors -- node ${PIPELINE} smart-reloop --extra-round ${lista}`), '', 'la vuelta extra');
   assert.strictEqual(frenoDeComando(`node ${MARKER} run-check advisors -- node ${PIPELINE} complete-step reviewers ${lista}`), FRENO, 'un subcomando que no es de sólo lectura');
   assert.strictEqual(frenoDeComando(`node ${MARKER} run-check $PASO -- node ${PIPELINE} check-count ${lista}`), FRENO, 'un paso que no se lee');
+});
+
+// ── la vuelta extra con guiones grandes en --files ──────────────────────────────────────────────
+
+// 8.235 T4 BashWrite_ExtraRoundConGuionesGrandesEnFiles_Pasa
+// 🔴 Falla con: leer como guiones que corren los archivos de la lista de la vuelta extra, o dejar de pedir su firma.
+test('8.235 T4 BashWrite_ExtraRoundConGuionesGrandesEnFiles_Pasa @story-8.235 @ac-4', () => {
+  for (const cmd of [
+    `node ${PIPELINE} smart-reloop --extra-round --files scripts/marker.js ${MARKER} ${PIPELINE}`,
+    `node ${PIPELINE} smart-reloop --files scripts/marker.js ${MARKER} --extra-round`,
+  ]) assert.strictEqual(frenoDeComando(cmd), '', cmd);
+  const ow = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  assert.match(JSON.stringify(ow.firmasDelComando(`node ${PIPELINE} smart-reloop --extra-round --files scripts/marker.js ${MARKER}`)), /extra-round/, 'la firma de la vuelta extra sigue');
+  // la bandera escondida (una variable, un `$(…)`) sigue sin exención
+  for (const cmd of [`F=--extra-round; node ${PIPELINE} smart-reloop --files scripts/marker.js $F`, `node ${PIPELINE} smart-reloop --files scripts/marker.js $(echo --extra-round)`]) {
+    assert.strictEqual(frenoDeComando(cmd), FRENO, cmd);
+  }
+});
+
+// 8.235 T5 BashWrite_GuionGrandeQueCorre_FrenaComoHoy
+// 🔴 Falla con: eximir un guion grande que corre porque otro comando con lista pasa.
+test('8.235 T5 BashWrite_GuionGrandeQueCorre_FrenaComoHoy @story-8.235 @ac-5', () => {
+  const { estado, dir } = repo('specs');
+  guionGrande(dir, "ruta = 'specs/story-1.1.md'\n");
+  assert.strictEqual(freno(estado, dir), FRENO);
+  assert.strictEqual(frenoDeComando('node scripts/marker.js specs/x.md'), FRENO, 'el marker.js grande editado a mano, como programa que corre');
+});
+
+// 8.235 T6 BashWrite_FilesDeOtroPrograma_ComoHoy
+// 🔴 Falla con: eximir por el nombre del archivo: un programa ajeno con --files, o una copia de pipeline.js fuera del arnés.
+test('8.235 T6 BashWrite_FilesDeOtroPrograma_ComoHoy @story-8.235 @ac-6', () => {
+  assert.strictEqual(frenoDeComando('node scripts/plantado.js smart-reloop --extra-round --files scripts/marker.js', { plantado: true }), FRENO, 'un programa ajeno con --files');
+  // una copia de pipeline.js fuera del arnés: no es el instalado, por su ruta real y no por el nombre
+  assert.strictEqual(frenoDeComando('node scripts/pipeline.js smart-reloop --extra-round --files scripts/marker.js', { copiaDePipeline: true }), FRENO, 'la copia de pipeline.js');
+  assert.strictEqual(frenoDeComando('node scripts/pipeline.js smart-reloop --files scripts/marker.js', { copiaDePipeline: true }), FRENO, 'la copia, aun sin la vuelta extra');
+});
+
+// 8.235 T7 BashWrite_PipelineLista_SubcomandosExisten
+// 🔴 Falla con: una lista de subcomandos de sólo lectura que nombra uno que pipeline.js ya no tiene.
+test('8.235 T7 BashWrite_PipelineLista_SubcomandosExisten @story-8.235 @ac-7', () => {
+  const lista = bash.PIPELINE_LISTA;
+  assert.ok(lista && lista.size > 0, 'on-bash-write-gate.js exporta PIPELINE_LISTA');
+  const texto = fs.readFileSync(PIPELINE, 'utf8');
+  for (const sub of lista) assert.match(texto, new RegExp(`cmd === '${sub}'`), sub);
 });
