@@ -914,4 +914,4 @@ if (require.main === module) {
     process.exit(3);
   });
 }
-module.exports = { main, resolveWorkers, launchGate, pool, failedCases, capOutput, saveFullOutput, FULL_OUTPUT_MAX, RUN_OUTPUT_MAX };
+module.exports = { main, resolveWorkers, launchGate, pool, failedCases, capOutput, saveFullOutput, FULL_OUTPUT_MAX, RUN_OUTPUT_MAX, resolveSkillsRoot };

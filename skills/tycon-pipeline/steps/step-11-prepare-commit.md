@@ -132,6 +132,8 @@ Incluir:
 - Si «Hallazgos» auto-fluyó con warnings (`auto_flowed_with_warnings: true`): sección **"Warnings auto-waived"** listando cada warning (rule ID + archivo + razón del waive: `auto_waive` list / fuera del diff). Visibilidad sin fricción.
 - Si la ejecución quedó en deuda (`close-as-debt`): la línea `Deuda: <DEF-id> — <motivo>`, tal como la imprime
   `complete-step prepare-commit` (📌), y los controles en rojo esperado con sus pruebas.
+- Si se editó una prueba vieja que estaba en rojo (`marker.js note-red-test`): un renglón por prueba, con su razón, tal
+  como lo imprime `complete-step prepare-commit` (📌 «Prueba en rojo editada: …»).
 
 ### Trailers
 

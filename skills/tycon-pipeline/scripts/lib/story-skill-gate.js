@@ -205,8 +205,26 @@ function computeStorySkillGate({
   };
 }
 
+/**
+ * Las formas de pedir la firma sobre el archivo, como las armó story-skill-gate-io.js (`firma.renglones`, de
+ * owner-window.js con la sesión del evento). Este archivo no arma el comando: sin las formas, dice qué firma pedir.
+ */
+function renglonesDeLaFirma(firma, filePath) {
+  // sin lo que dijo la ventana, las dos formas salen igual de owner-window.js (sin sesión: la de la terminal no se da)
+  let renglones = firma && Array.isArray(firma.renglones) && firma.renglones.length ? firma.renglones : null;
+  if (!renglones) {
+    try {
+      renglones = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'))
+        .formasDeFirmar('story-skill-bypass', filePath, null).renglones;
+    } catch (e) {
+      renglones = [`la firma de archivo story-skill-bypass sobre ${filePath}, en la ventana de permiso (no pude armar el comando: ${e.message})`];
+    }
+  }
+  return renglones.map((l) => `       · ${l}`);
+}
+
 /** Texto del bloqueo: qué pasó, por qué frena, y la salida concreta. */
-// `firma`: lo que dijo la ventana (`{ comando, motivo }`): el cartel nombra el comando que pide la firma sobre el archivo.
+// `firma`: lo que dijo la ventana (`{ comando, comandoTerminal, renglones, motivo }`): el cartel da las dos formas.
 function blockMessage(r, { filePath, via, byName = false, firma = null } = {}) {
   const rel = path.basename(String(filePath || ''));
   if (/-sin-revision$/.test(r.kind)) return mensajeSinRevision(r, { filePath, via, firma });
@@ -235,9 +253,9 @@ function blockMessage(r, { filePath, via, byName = false, firma = null } = {}) {
       : '   (a) Escribila con `status: draft`. Después corré el validador de historias (tycon-story-validator) sobre ese\n' +
         '       archivo y, si pasa, pasala a ready-for-dev. La skill tycon-create-story hace esos pasos en orden.',
     '',
-    '   (b) Saltear el validador lo decide la persona, no vos. Si te lo pide, la firma en la ventana de permiso:',
-    `       corré ${(firma && firma.comando) || `marker.js sign-file story-skill-bypass ${filePath}`} y, con su «Sí»,`,
-    '       repetí esta escritura con Edit o Write. La firma vale una vez y queda anotada.',
+    '   (b) Saltear el validador lo decide la persona, no vos. Si te lo pide, la firma:',
+    ...renglonesDeLaFirma(firma, filePath),
+    '       y, con su «Sí», repetí esta escritura con Edit o Write. La firma vale una vez y queda anotada.',
     firma && firma.motivo ? `       (No hay firma: ${firma.motivo}.)` : '',
   ].filter((l) => l !== '').join('\n');
 }
@@ -260,9 +278,9 @@ function mensajeSinRevision(r, { filePath, via, firma }) {
     '       Si el portón de la revisión dice que no corresponde (`run: false`), anotá ese salteo como dice la skill.',
     '       Después volvé a hacer este cambio. La skill tycon-create-story hace esos pasos en orden.',
     '',
-    '   (b) Saltear la revisión lo decide la persona, no vos. Si te lo pide, la firma en la ventana de permiso:',
-    `       corré ${(firma && firma.comando) || `marker.js sign-file story-skill-bypass ${filePath}`} y, con su «Sí»,`,
-    '       repetí esta escritura con Edit o Write. La firma vale una vez y queda anotada.',
+    '   (b) Saltear la revisión lo decide la persona, no vos. Si te lo pide, la firma:',
+    ...renglonesDeLaFirma(firma, filePath),
+    '       y, con su «Sí», repetí esta escritura con Edit o Write. La firma vale una vez y queda anotada.',
     firma && firma.motivo ? `       (No hay firma: ${firma.motivo}.)` : '',
   ].filter((l) => l !== '').join('\n');
 }

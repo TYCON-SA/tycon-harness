@@ -1061,7 +1061,7 @@ if (require.main === module) {
         const m = JSON.parse(fs.readFileSync(path.join(stateDir, 'active', `${seguro(sid)}.json`), 'utf8'));
         const repo = m.repoPath || process.cwd();
         const story = m.storyPath ? (path.isAbsolute(m.storyPath) ? m.storyPath : path.resolve(repo, m.storyPath)) : undefined;
-        runDir = m.runDir || (m.storyId ? require('../pipeline.js').resolveRunDir(repo, String(m.storyId), true, story) : null);
+        runDir = m.runDir || (m.storyId ? require('../pipeline.js').resolveRunDir(repo, String(m.storyId), true, story, { marker: m }) : null);
       } catch (_) { runDir = null; }
     }
     if (!runDir) {

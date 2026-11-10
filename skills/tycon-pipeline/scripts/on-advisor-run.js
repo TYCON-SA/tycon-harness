@@ -128,7 +128,8 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
     // misma ruta sirve después para proyectar la corrida al repo de la story.
     const m = require('./lib/repo-attrib.js').readMarkerFile(sessionId);
     const storyPath = m && m.storyPath ? (path.isAbsolute(m.storyPath) ? m.storyPath : path.join(m.repoPath || repo, m.storyPath)) : null;
-    const runDir = resolveRunDir(repo, String(story), true, storyPath || undefined);
+    // la carpeta de ESTA corrida: la del marcador de la sesión que lanzó al revisor (lib/run-dir.js)
+    const runDir = resolveRunDir(repo, String(story), true, storyPath || undefined, { marker: m });
     if (!runDir) {
       const k = storyPath ? require('./lib/evidence-key.js').keyInfoOr(storyPath, String(story)) : null;
       motivo = k && k.error ? `run dir no resuelto: sin clave de la story (${String(k.error).slice(0, 160)})` : 'run dir no resuelto';

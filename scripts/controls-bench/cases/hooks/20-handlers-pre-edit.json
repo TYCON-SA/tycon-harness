@@ -185,6 +185,67 @@
           }
         }
       ]
+    },
+    {
+      "hook": "hook-pre-edit.js → on-red-test-edit (una prueba vieja en rojo no se edita en silencio)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "on-red-test-edit-frena-sin-la-nota",
+          "type": "must-block",
+          "_por_que": "8.166: una prueba que ya existía en origin/main y está en rojo en el reporte de esta sesión no se edita para que pase sin anotar por qué.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p scripts/tests .advisors",
+            "printf -- \"test('T1 algo', () => {});\\n\" > scripts/tests/viejo.test.js",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git update-ref refs/remotes/origin/main HEAD",
+            "printf -- '{\"by\":{\"session\":\"bench-rt1\"},\"totals\":{\"failed\":1,\"failure_entries\":[{\"raiz\":\"arnes\",\"ruta\":\"tests/viejo.test.js\"}]}}' > .advisors/tests-result.json",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-rt1.json',JSON.stringify({sessionId:'bench-rt1',storyId:'3.1',repoPath:process.env.FIXTURE,stepScheme:2,stepsCompleted:['start','validate-story','plan','approve-plan'],fileEvents:[],lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-rt1",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/scripts/tests/viejo.test.js",
+              "old_string": "algo",
+              "new_string": "otra cosa"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "PRUEBA EN ROJO",
+              "note-red-test --test"
+            ]
+          }
+        },
+        {
+          "id": "on-red-test-edit-pasa-con-la-nota",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p scripts/tests .advisors",
+            "printf -- \"test('T1 algo', () => {});\\n\" > scripts/tests/viejo.test.js",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git update-ref refs/remotes/origin/main HEAD",
+            "printf -- '{\"by\":{\"session\":\"bench-rt2\"},\"totals\":{\"failed\":1,\"failure_entries\":[{\"raiz\":\"arnes\",\"ruta\":\"tests/viejo.test.js\"}]}}' > .advisors/tests-result.json",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-rt2.json',JSON.stringify({sessionId:'bench-rt2',storyId:'3.1',repoPath:process.env.FIXTURE,stepScheme:2,stepsCompleted:['start','validate-story','plan','approve-plan'],fileEvents:[],redTestNotes:[{test:process.env.FIXTURE+'/scripts/tests/viejo.test.js',reason:'dependía de la hora',at:new Date().toISOString()}],lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-rt2",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/scripts/tests/viejo.test.js",
+              "old_string": "algo",
+              "new_string": "otra cosa"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
     }
   ]
 }

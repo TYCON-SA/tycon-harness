@@ -121,7 +121,7 @@ function storyDe(marker) {
 /** El plan escrito de la corrida: `{ file, texto }`; `texto` es null si no está escrito. */
 function planDe(marker) {
   const repo = (marker && marker.repoPath) || process.cwd();
-  const runDir = pipeline().resolveRunDir(repo, String(marker.storyId), false, storyDe(marker) || undefined);
+  const runDir = pipeline().resolveRunDir(repo, String(marker.storyId), false, storyDe(marker) || undefined, { marker });
   if (!runDir) return { file: null, texto: null };
   const file = path.join(runDir, PLAN_FILE);
   let texto = null;

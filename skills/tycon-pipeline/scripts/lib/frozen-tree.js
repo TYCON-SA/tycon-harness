@@ -327,7 +327,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
         const repoM = marcador.repoPath || process.cwd();
         const story = marcador.storyPath ? (path.isAbsolute(marcador.storyPath) ? marcador.storyPath : path.resolve(repoM, marcador.storyPath)) : undefined;
         // de `run-dir.js`, no de `pipeline.js`: el tablero del sitio carga esto y su imagen no lleva el pipeline entero
-        run = require('./run-dir.js').resolveRunDir(repoM, String(marcador.storyId), false, story) || null;
+        run = require('./run-dir.js').resolveRunDir(repoM, String(marcador.storyId), false, story, { marker: marcador }) || null;
         if (!run) runError = 'la historia del marcador todavía no tiene carpeta de corrida';
       } catch (e) { runError = `no pude calcular la carpeta de la corrida (${String(e.message || e).split('\n')[0]})`; }
     } else if (!run) runError = 'el marcador no nombra una historia';
