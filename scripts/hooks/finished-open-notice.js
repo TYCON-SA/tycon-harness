@@ -10,7 +10,9 @@
 // para un camino corto); si su ejecución está perdida, `clear-session <sesión> --lost`, que firma una persona; si no se sabe
 // si vive (Codex no deja registro de sesión), lo dice y no da comando. Nada se cierra solo: el aviso sólo mira.
 //
-// La consulta del pedido de un camino corto tiene un tope de 5 s para todos juntos y una foto de 10 minutos.
+// Todo el recorrido tiene un tope de 5 s (lo que no se llegó a mirar se dice como no medido) y la consulta del pedido de
+// un camino corto, una foto de 10 minutos. Los caminos cortos de sesiones que ya no están, sin tocarse hace más de 7
+// días, sólo se cuentan, con el comando para cerrarlos.
 // Nunca rompe el arranque: sale 0 siempre. Off: TYCON_FINISHED_OPEN_NOTICE=0 (todo) o TYCON_UNSAVED_FOLDERS=0 (las carpetas). TYCON_FINISHED_OPEN_NOW fija la hora (pruebas).
 const fs = require('fs');
 const os = require('os');

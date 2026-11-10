@@ -338,3 +338,52 @@ test('T29 BorradoAutomatico_MarcadorViejo_SinCambios @story-8.195 @ac-29 — un 
   assert.equal(r.status, 0, r.stderr);
   assert.equal(fs.existsSync(f), false, 'pruneStale lo borró como hoy');
 });
+
+test('T30 Arranque_MuchosCaminosCortosViejos_NoPasaDelTope — los de sesiones que ya no están, sin tocar hace más de 7 días, se cuentan sin mirar sus repos y el aviso no pasa del tope', () => {
+  const C = casa();
+  const { repo, adhoc } = repoConRama();
+  // cada carril anota archivos que ya no están: mirarlo en detalle pregunta a git por cada uno
+  const rutas = ['x1.js', 'x2.js', 'x3.js'].map((f) => path.join(repo, f));
+  const viejo = { ...adhoc, rutas, declaredAt: HACE(9 * 1440), lastTouch: HACE(8 * 1440) };
+  const N = 80;
+  const sids = [];
+  for (let i = 0; i < N; i += 1) {
+    const sid = `${String(i).padStart(8, '0')}-viejo`;
+    sids.push(sid);
+    C.carril(sid, viejo);
+    // la mitad murió con registro; la otra mitad no dejó registro (como Codex)
+    if (i % 2) C.sesion(sid, false);
+  }
+  // uno viejo pero con la sesión viva sí se mira
+  C.carril('vvvvvvvv-viva', viejo);
+  C.sesion('vvvvvvvv-viva', true);
+  const t0 = Date.now();
+  const m = F.machine({ home: C.home, stateDir: C.sdir, now: AHORA, env: ghCon([]), markerJs: '/x/marker.js' });
+  const ms = Date.now() - t0;
+  assert.ok(ms < F.TOPE_MS, `el aviso tardó ${ms} ms: pasa del tope de ${F.TOPE_MS} ms`);
+  const out = m.lines.join('\n');
+  const lista = path.join(C.sdir, 'finished-open-viejos.txt');
+  assert.match(out, new RegExp(`${N} caminos cortos de sesiones que ya no están, sin tocar hace más de 7 días \\(no los miro uno por uno\\): xargs -n1 node /x/marker\\.js adhoc clear-orphan < ${lista.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.deepEqual(fs.readFileSync(lista, 'utf8').trim().split('\n'), sids);
+  assert.doesNotMatch(out, /no medido/, 'todo se miró o se contó');
+  assert.doesNotMatch(fs.readFileSync(lista, 'utf8'), /vvvvvvvv-viva/, 'el de la sesión viva no se cuenta como viejo');
+  // uno solo lleva su comando directo
+  const D = casa();
+  D.carril('11111111-viejo', viejo);
+  assert.match(F.machine({ home: D.home, stateDir: D.sdir, now: AHORA, env: ghCon([]), markerJs: '/x/marker.js' }).lines.join('\n'),
+    /1 camino corto de sesiones que ya no están, sin tocar hace más de 7 días \(no los miro uno por uno\): node \/x\/marker\.js adhoc clear-orphan 11111111-viejo/);
+});
+
+test('T31 Arranque_SeAcaboElTope_DiceLoNoMedido — lo que no se llegó a mirar se cuenta como no medido, nunca se calla como «nada abierto»', () => {
+  const C = casa();
+  const { adhoc } = repoConRama({ entro: true });
+  for (let i = 0; i < 4; i += 1) C.carril(`${i}0000000-fresco`, adhoc);
+  C.marcador('s-31', terminada());
+  const sinTiempo = F.machine({ home: C.home, stateDir: C.sdir, now: AHORA, env: ghCon([]), markerJs: '/x/marker.js', topeMs: 0 });
+  assert.deepEqual(sinTiempo.lines, ['no medido: 4 caminos cortos y 1 ejecución (se acabó el tope de 0 s)']);
+  assert.equal(sinTiempo.items.at(-1).tipo, 'sin-medir');
+  // con el tope entero se miran todos
+  const conTiempo = F.machine({ home: C.home, stateDir: C.sdir, now: AHORA, env: ghCon([]), markerJs: '/x/marker.js' });
+  assert.doesNotMatch(conTiempo.lines.join('\n'), /no medido/);
+  assert.equal(conTiempo.items.filter((i) => i.tipo === 'camino-corto').length, 4);
+});
