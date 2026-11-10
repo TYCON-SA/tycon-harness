@@ -51,9 +51,9 @@
  *        y, si algún trabajo publicó las dos pasadas de sus rojas, retries.json con las de todos ({} si ninguno)
  *   node scripts/ci/suites-shard.js jobs  --max <n> --weight-set pr [--budget <s>]
  *        cuántos trabajos hacen falta para las suites del plan (un número, entre 1 y <n>); el porqué, por stderr
- *   node scripts/ci/suites-shard.js caps  [--weight-set pr] [--only <archivo>]
+ *   node scripts/ci/suites-shard.js caps  [--weight-set pr] [--only <archivo>] [--measured <carpeta>]
  *        el tope de cada suite, una por línea: «<suite>\t<segundos>» (ver «EL TOPE DE CADA SUITE», abajo); sin juego,
- *        el del nocturno
+ *        el del nocturno. Con --measured, una tercera columna dice de dónde sale (ver «LOS TOPES MEDIDOS»)
  *   node scripts/ci/suites-shard.js matrix --of <n>
  *        la matriz del job de suites para Azure, en una línea: {"shard_1":{"SUITES_SHARD":"1","SUITES_OF":"<n>"},…}
  *   node scripts/ci/suites-shard.js of --matrix '<la matriz>'
@@ -94,14 +94,25 @@
  * regla es el `suite_cap` de arriba del archivo de pesos, con `per_suite` para la suite cuyo tiempo depende de su
  * resultado (export-real: ~405 s con la copia verde, ~17 min más con la roja).
  *
+ * LOS TOPES MEDIDOS (`caps --measured <carpeta>`): los pesos se escriben a mano, casi siempre medidos en otra máquina,
+ * y en el agente de Azure una suite puede tardar el doble: su tope caía justo en su duración normal y la cortaba
+ * cualquier corrida un poco más lenta. Con la carpeta de los `suite-times.jsonl` que publicaron las últimas validaciones,
+ * el tope de cada suite es `factor` × la mediana de sus `last` primeras pasadas más nuevas (origen `ci-azure`), entre el
+ * piso y el techo `max`; con menos de `min` mediciones, el de siempre; `per_suite` sigue ganando. La regla es
+ * `suite_cap.measured` del juego pedido. La tercera columna dice de dónde salió cada tope (`medido:<n>`, `peso` o
+ * `propio`) y la salida de error, el resumen. Sin `--measured`, la salida de siempre, byte por byte: el banco nocturno no
+ * cambia. La suite cortada en la validación ya no queda no medida de entrada: su trabajo la reintenta una vez, sola y con
+ * el doble de tope (`retries.json` la anota con `primera: "cortada"`).
+ *
  * Lo que cada trabajo deja en su carpeta `suites-shard-<i>-a<intento>/`: `ran.txt` (las que corrió, una por línea),
  * `failures.txt` (las rojas, las «(ausente)» y las «(no-medida)» que cortó su tope), `red-output/<suite>.txt` (la salida
  * de cada roja, o el motivo de cada no medida), `done.txt` (sólo la validación: cada suite que terminó, de cualquier
  * forma; en un trabajo cortado separa las que quedaron a medio correr) y `finished` (la
  * marca de que pasó por toda su lista, con su cuenta: «<corridas> <fallas>») y, sólo en la validación de los pedidos de
  * merge —que reintenta una vez cada roja—, `retries.json`: por suite roja en la 1ª pasada, `{ primera: "rojo",
- * segunda: "rojo" | "verde" }`. Una «rojo» en la 2ª es firme y está entre las fallas; una «verde» pasó al reintento y no
- * lo está. Un trabajo reintentado desde Azure
+ * segunda: "rojo" | "verde" }`, y por suite que pasó su tope, `{ primera: "cortada", segunda: "rojo" | "verde", tope }`.
+ * Una «rojo» en la 2ª es firme y está entre las fallas; una «verde» pasó al reintento y no lo está. Un trabajo
+ * reintentado desde Azure
  * publica otra carpeta, con el intento siguiente: `merge` lee la del intento más alto.
  *
  * 🔴 A lo publicado no se le cree sin mirar: a una carpeta a la que le falta un archivo, que nombra suites ajenas o
@@ -138,7 +149,7 @@ const USAGE = 'uso: suites-shard.js list --shard <i> --of <n> --skills <dir> --s
   + '     suites-shard.js merge --of <n> --artifacts <dir> --out <dir>\n'
   + '     suites-shard.js jobs --max <n> [--budget <segundos>]\n'
   + '     suites-shard.js long --of <n> [--minutes <40>] [--long-minutes <100>]\n'
-  + '     suites-shard.js caps [--weight-set <nombre>]\n'
+  + '     suites-shard.js caps [--weight-set <nombre>] [--measured <carpeta con suite-times.jsonl>]\n'
   + '     suites-shard.js matrix --of <n>\n'
   + '     suites-shard.js of --matrix <la matriz>\n'
   + '     opciones: --suites <suites.json> · --weights <pesos.json> · --scripts <raíz scripts del arnés> · --only <archivo>\n'
@@ -251,7 +262,21 @@ function readCapRule(rule, label) {
   if (!perSuite || typeof perSuite !== 'object' || Array.isArray(perSuite) || !Object.values(perSuite).every(positive)) {
     throw new Refused(`${label} trae «suite_cap.per_suite» y no es { suite: segundos } con números mayores que 0: ${JSON.stringify(rule.per_suite)}`);
   }
-  return { factor: rule.factor, floor: rule.floor, perSuite };
+  return { factor: rule.factor, floor: rule.floor, perSuite, measured: readMeasuredRule(rule.measured, label) };
+}
+
+/**
+ * La regla de los topes medidos (`suite_cap.measured`): `runs` y `scan` (cuántas corridas baja quien trae los
+ * tiempos), `last` (cuántas pasadas, las más nuevas, entran en la mediana), `min` (con menos, la suite usa su peso) y
+ * `max` (el techo). Enteros mayores que 0, con `min` no mayor que `last`. No está: null. Está y no cumple: pedido negado.
+ */
+function readMeasuredRule(rule, label) {
+  if (rule === undefined) return null;
+  const whole = (n) => Number.isInteger(n) && n > 0;
+  const ok = rule && typeof rule === 'object' && !Array.isArray(rule)
+    && ['runs', 'scan', 'last', 'min', 'max'].every((k) => whole(rule[k])) && rule.min <= rule.last;
+  if (!ok) throw new Refused(`${label} trae «suite_cap.measured» y no es { runs, scan, last, min, max } con enteros mayores que 0 y min ≤ last: ${JSON.stringify(rule)}`);
+  return { last: rule.last, min: rule.min, max: rule.max };
 }
 
 /**
@@ -428,7 +453,7 @@ function commandLong(argv, write, complain) {
  * suites.json. Sin `suite_cap` en el juego pedido no hay tope que adivinar: pedido negado (quien llama corre sin tope y
  * lo dice).
  */
-function commandCaps(argv, write) {
+function commandCaps(argv, write, complain) {
   const { suites, weights } = load(argv);
   if (weights.cap === null) throw new Refused('el juego de pesos no trae «suite_cap» (la regla del tope de cada suite): el tope no se adivina');
   // Un tope propio para una suite que no está en suites.json (un renombre, un error de tipeo) frena: si no, la suite de
@@ -437,7 +462,71 @@ function commandCaps(argv, write) {
   const known = new Set(readSuites(option(argv, '--suites') || path.join(scriptsRoot, 'tests', 'suites.json')).map((s) => s.name));
   const stale = Object.keys(weights.cap.perSuite).filter((name) => !known.has(name));
   if (stale.length) throw new Refused(`«suite_cap.per_suite» le da tope propio a suites que no están en suites.json: ${stale.join(' ')} — renombrá o borrá su entrada en el archivo de pesos`);
-  write(`${suites.map((suite) => `${suite.name}\t${capOf(suite, weights)}`).join('\n')}\n`);
+  if (!argv.includes('--measured')) {
+    write(`${suites.map((suite) => `${suite.name}\t${capOf(suite, weights)}`).join('\n')}\n`);
+    return;
+  }
+  const measured = readMeasured(argv, weights);
+  const counts = { medido: 0, peso: 0, propio: 0 };
+  const rows = suites.map((suite) => {
+    const [cap, kind] = measuredCapOf(suite, weights, measured.byName);
+    counts[kind.replace(/:.*/, '')] += 1;
+    return `${suite.name}\t${cap}\t${kind}`;
+  });
+  const bad = measured.unreadable;
+  complain(`topes: ${counts.medido} medido(s) (de ${measured.runs} registro(s) de Azure), ${counts.peso} por peso, ${counts.propio} propio(s); `
+    + `${bad} ${bad === 1 ? 'renglón ilegible' : 'renglones ilegibles'}${measured.others ? `, ${measured.others} de otro origen` : ''}\n`);
+  write(`${rows.join('\n')}\n`);
+}
+
+/**
+ * Lo medido en la validación de Azure (`--measured <carpeta>`, los `suite-times.jsonl` que bajó Validar): por suite, la
+ * duración de su 1ª pasada en cada registro de origen `ci-azure`, de la más vieja a la más nueva. Un renglón ilegible o
+ * de otro origen no cuenta y se cuenta. El lector de tiempos se carga recién acá: hay pruebas que copian este guion solo
+ * a un repo de juguete, sin las skills, y lo usan con los demás subcomandos.
+ */
+function readMeasured(argv, weights) {
+  const folder = option(argv, '--measured');
+  if (!folder || folder.startsWith('--')) throw new Refused('--measured viene sin carpeta: sin ella no hay tiempos medidos que leer');
+  let isDir = false;
+  try { isDir = fs.statSync(folder).isDirectory(); } catch (_) { isDir = false; }
+  if (!isDir) throw new Refused(`--measured: la carpeta de tiempos (${folder}) no existe o no es una carpeta`);
+  if (!weights.cap.measured) throw new Refused('el juego de pesos no trae «suite_cap.measured» (la regla de los topes medidos): el tope medido no se adivina');
+  let times;
+  try {
+    times = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'suite-times.js'));
+  } catch (e) {
+    throw new Refused(`--measured: no pude cargar el lector de tiempos (skills/tycon-pipeline/scripts/lib/suite-times.js: ${e.code || e.message})`);
+  }
+  const read = times.readSources([folder]);
+  const azure = times.filterRuns(read.runs, { origen: 'ci-azure' });
+  const byName = new Map();
+  for (const run of azure) {
+    for (const x of run.suites) {
+      if (!x || typeof x.s !== 'string' || typeof x.ms !== 'number' || !Number.isFinite(x.ms) || x.ms < 0) continue;
+      const name = path.posix.basename(x.s.replace(/\\/g, '/'));
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(x.ms);
+    }
+  }
+  return { byName, runs: azure.length, unreadable: read.unreadable + read.missing.length, others: read.runs.filter((r) => r.origen !== 'ci-azure').length };
+}
+
+/**
+ * El tope medido de una suite y de dónde sale: el propio si lo tiene (`propio`); con `min` mediciones o más, `factor` ×
+ * la mediana de sus `last` más nuevas, entre el piso y el techo (`medido:<n>`); con menos, el de siempre (`peso`). Una
+ * pasada que cortó su tope cuenta con lo que tardó hasta el corte: así el tope sube solo hasta que la suite entra.
+ */
+function measuredCapOf(suite, weights, byName) {
+  const rule = weights.cap.measured;
+  if (Object.prototype.hasOwnProperty.call(weights.cap.perSuite, suite.name)) return [capOf(suite, weights), 'propio'];
+  const last = (byName.get(suite.name) || []).slice(-rule.last);
+  if (last.length < rule.min) return [capOf(suite, weights), 'peso'];
+  const sorted = [...last].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const medianMs = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  const seconds = Math.min(rule.max, Math.max(weights.cap.floor, (weights.cap.factor * medianMs) / 1000));
+  return [Math.ceil(seconds), `medido:${last.length}`];
 }
 
 const MATRIX_KEY = (i) => `shard_${i}`;
@@ -592,8 +681,9 @@ function readRetries(file, { expected, ran, red }) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return { problem: `${RETRIES_FILE} no es un objeto` };
   for (const [name, passes] of Object.entries(data)) {
     if (!expected.includes(name) || !ran.includes(name)) return { problem: `${name} no corrió en este trabajo` };
-    const second = passes && passes.primera === 'rojo' ? passes.segunda : null;
-    if (second !== 'rojo' && second !== 'verde') return { problem: `${name}: las pasadas no dicen «rojo» y después «rojo» o «verde»` };
+    // La 1ª pasada: roja, o cortada por su tope (se reintenta sola con el doble). Las reglas de cuadre son las mismas.
+    const second = passes && (passes.primera === 'rojo' || passes.primera === 'cortada') ? passes.segunda : null;
+    if (second !== 'rojo' && second !== 'verde') return { problem: `${name}: las pasadas no dicen «rojo» o «cortada» y después «rojo» o «verde»` };
     if ((second === 'rojo') !== red.includes(name)) return { problem: `${name}: ${second === 'rojo' ? 'firme y no figura entre las fallas' : 'pasó al reintento y figura entre las fallas'}` };
   }
   return { value: data };
