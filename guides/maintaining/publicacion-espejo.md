@@ -683,12 +683,15 @@ Los pasos, en orden y con una línea cada uno: `node --check` de cada `.js` vers
 disco) · `build/check.js` · `build/generate.js --check` · `suites-coverage.test.js` · `portable-suites.test.sh` · las
 suites de `suites.json` que piden exactamente `["agent-skills"]` (de a cuatro, cada una en su HOME vacía y sin las
 herramientas del vocabulario en el PATH, como las portables) · el banco de controles (`--tool both --baseline check`,
-como el nocturno) · con `--range`, `spanish-names.js --range` · con `--clean-machine`, `clean-machine.test.sh` en su
+como el nocturno) · el tamaño de los controles (`control-size.js`, con `--range` si lo hay: cada aviso sube como aviso
+del pedido) · con `--range`, `spanish-names.js --range` · con `--clean-machine`, `clean-machine.test.sh` en su
 modo público (`TYCON_CLEAN_MACHINE=1` y `TYCON_CLEAN_MACHINE_SOURCE=<raíz>`: pedida de forma explícita y sobre ese repo).
 
 - **No corta en el primer rojo**: corre todos y sale 1 si alguno no quedó verde; 0 sólo con todos verdes.
 - **Un paso que no pudo correr es rojo**, con «no pude correr» y el motivo —falta su archivo o su herramienta, la
-  historia no alcanza para `--range`, no hay ninguna suite que correr—. Nunca un salto.
+  historia no alcanza para `--range`, no hay ninguna suite que correr—. Nunca un salto. La excepción declarada es el
+  tamaño de los controles: es un aviso y nunca frena, así que si no puede medir lo dice como aviso («no pude medir») y
+  sigue verde.
 - **No corre el detector** (necesita la lista privada, que no viaja) y no lee ningún secreto.
 - **Sirve en los dos layouts**: en el repo único las skills son `<raíz>/skills`; en el repo del equipo se ubican con
   `scripts/lib/skills-dir.js`. En los dos exporta `TYCON_GUIDES_DIR` y `TYCON_SKILLS_DIR` para toda la corrida.

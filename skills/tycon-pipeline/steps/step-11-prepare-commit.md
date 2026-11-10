@@ -23,18 +23,41 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
   «y N más»>. Corré los revisores sobre lo cambiado (`pipeline.js next` dice cómo) y volvé a cerrar». Si los revisores
   vuelven a cerrar después de este paso, `next` lo pide otra vez («lo preparado ya no es lo revisado»), y cerrarlo de
   nuevo retoma la foto del código. Recién entonces `next` dice que se cierre la ejecución.
+- **Lo que se guarda no es lo revisado** (`reviewed-tree-mismatch`, después del anterior; no se abre con
+  `--out-of-order`): sella cada repo de la última vuelta de revisores (nunca el del pase) y lo compara con el sello de
+  esa vuelta. Cualquier archivo distinto frena, también una prueba o un texto, salvo el papeleo: el que no cuenta para
+  el ok de guardar, `tasks/todo.md`, y de la historia de la corrida su estado, sus tildes, su Change Log, su Dev Agent
+  Record y sus «Cambios de comportamiento». Sale 2, nombra cada archivo y el `smart-reloop` de la vuelta siguiente (con `--files` del diff completo, como
+  siempre). Igual sin cambios: «lo que se guarda es lo revisado (<sellos>)». Antes comprueba que la copia de la vuelta
+  siga siendo la de su sello. Una vuelta sin sello (de una corrida anterior) no se compara: lo dice y queda en
+  `gates.log` como no medido. El ok de guardar hace la misma comparación antes de la firma.
 - **Cambios sin declarar** (`undeclared-changes`, va primero y no se abre con `DOD_BYPASS`): lo que cambió en el repo
   contra el commit de arranque (más lo no rastreado) y no pasó por Edit/Write ni está en `files_to_create`,
   `files_to_modify` o el File List del Dev Agent Record. Un lock cuenta si su manifiesto está declarado. La salida es
   nombrarlo en el File List o revertirlo. Lo borrado por la terminal (node_modules) sale como aviso; sin git o sin
   commit de arranque dice «no medido» y no frena.
+- **La comparación con main** (`compare-previous-gate`, después de los cambios sin declarar; sale 1): sólo si la
+  historia tiene candidatos (`pipeline.js compare-candidates`, ver `step-10-live-check.md`). Frena por dos cosas:
+  un candidato sin humo comparado que lo cubra ni exención firmada (también si su único humo dio «no comparado»), y una
+  diferencia con main que la historia no declara (el comando, los dos códigos de salida y las líneas que difieren).
+  Una diferencia se resuelve de una de dos formas: declarándola en la sección `## Cambios de comportamiento` de la
+  historia, con un renglón `<comando>: qué cambia` (el comando del humo, o un prefijo suyo que termina en espacio,
+  seguido de «:»), o arreglando el código. Declarar es papeleo: no dispara la vuelta de revisores. Arreglar el código
+  sí, como todo arreglo después de «Hallazgos». Un candidato sin humo se resuelve con un humo que lo cubra o con la
+  exención (`marker.js compare-waiver`); una línea `compare_exempt:` en el frontmatter no exime. Cada exención y cada
+  candidato «cubierto por declaración» sale como aviso (el candidato, el motivo y quién firmó; o el humo y su
+  `--covers`), y queda en `compare-avisos.md` de la corrida para el texto del pedido.
 - **Un control en rojo** (`red-check`, y `expected-red` para el rojo esperado): sin la ejecución en deuda frena. Las
   salidas son arreglarlo y volver a correr el control, o `marker.js close-as-debt` con el permiso de la persona; en deuda
   pasa y lo dice.
 - **Matriz de verificación en ejecución** (`checks.acmatrix`, DODRT-C6): tiene que estar en verde con `provenance:
   run-check` (`marker.js run-check acmatrix -- node <skill>/scripts/runtime-matrix.js --story <abs spec.md>`, que se
   puebla en `step-10-live-check.md`). Con una tanda anotada (`marker.js set-batch`), el freno mide sólo esa tanda y
-  dice qué tanda midió y qué dejó afuera.
+  dice qué tanda midió y qué dejó afuera; las tandas cuyos archivos cambió la corrida vuelven a la matriz. La prueba
+  con navegador también mira esas tandas: si la pantalla es de otra tanda, no se pide y se dice en una línea. Un
+  criterio de la tanda declarado imposible de probar se firma con la misma matriz: el comando que muestra el freno
+  lleva `--for-session <la sesión>`, para que la firma por terminal mida la misma tanda. Un criterio de otra tanda no
+  se firma en esta corrida.
 - **`findings.json` presente** (insumo del `tycon-retrospective-capturer`): si el run dir existe y el archivo falta o no
   es un array, bloquea. Se escribe con `pipeline.js write-findings` y después `write-followups`
   (`step-09-findings.md`); verlo antes: `pipeline.js findings-status --story <story_path> --repo <repo>` (exit 3 = falta).
@@ -147,6 +170,9 @@ Co-Authored-By: <modelo exacto de la sesión> <noreply@anthropic.com>
    ```
 
 3. **NO ejecutar `git commit` ni `git push` sin la autorización de la persona.**
+
+4. Si la corrida tiene `compare-avisos.md` (exenciones de la comparación con main o candidatos cubiertos por
+   declaración), su texto va entero en la descripción del pedido: el revisor del pedido y el dueño tienen que verlo.
 
 ## Guardar se autoriza en la ventana de permiso
 

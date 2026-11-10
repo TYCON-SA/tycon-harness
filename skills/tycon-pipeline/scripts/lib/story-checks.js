@@ -440,10 +440,11 @@ function parsePipelinesBlock(specContent) {
     // (a) LISTA: `  - name: X` abre una entrada. Se chequea ANTES que el pendingItem genérico
     // (`- texto`) para no tragarse el `- name:` como un ítem pendiente.
     const listNameM = line.match(/^\s*-\s*name\s*:\s*["']?([\w-]+)/);
-    if (listNameM) { current = { name: listNameM[1], status: null, blockedBy: null, acs: [], acsPending: [], pendingItems: [] }; out.push(current); lista = null; continue; }
+    const nueva = (name) => ({ name, status: null, blockedBy: null, acs: [], acsPending: [], tasks: [], tasksPending: [], tests: [], testsPending: [], pendingItems: [] });
+    if (listNameM) { current = nueva(listNameM[1]); out.push(current); lista = null; continue; }
     // (b) MAPA: `  X:` (indent 2, valor vacío) abre una entrada.
     const mapNameM = line.match(/^\s{2}([\w-]+)\s*:\s*$/);
-    if (mapNameM && indent === 2) { current = { name: mapNameM[1], status: null, blockedBy: null, acs: [], acsPending: [], pendingItems: [] }; out.push(current); lista = null; continue; }
+    if (mapNameM && indent === 2) { current = nueva(mapNameM[1]); out.push(current); lista = null; continue; }
     if (!current) continue;
     // `files:` y `sensible:` de la parte (8.168): en el renglón (`[a, b]` o un valor) o como lista debajo
     const parteM = line.match(/^(\s+)(files|sensible)\s*:\s*(.*?)\s*$/);
@@ -480,6 +481,14 @@ function parsePipelinesBlock(specContent) {
     if (acsM) { current.acs = parseIntArray(acsM[1]); continue; }
     const acsPendM = line.match(/^\s+acs_pending\s*:\s*(\[.*\])/);
     if (acsPendM) { current.acsPending = parseIntArray(acsPendM[1]); continue; }
+    // las tareas son números; las pruebas, texto: `["T36", "T40b"]` da `T36` y `T40b`, no `36`
+    const tareasM = line.match(/^\s+(tasks|tasks_pending)\s*:\s*(\[.*\])/);
+    if (tareasM) { current[tareasM[1] === 'tasks' ? 'tasks' : 'tasksPending'] = parseIntArray(tareasM[2].replace(/\s+#.*$/, '')); continue; }
+    const pruebasM = line.match(/^\s+(tests|tests_pending)\s*:\s*\[(.*)\]/);
+    if (pruebasM) {
+      current[pruebasM[1] === 'tests' ? 'tests' : 'testsPending'] = pruebasM[2].split(',').map((s) => s.replace(/["'\s]/g, '')).filter(Boolean);
+      continue;
+    }
     const itemM = line.match(/^\s+-\s*(.+?)\s*$/);
     if (itemM) current.pendingItems.push(itemM[1].replace(/^["']|["']$/g, ''));
   }

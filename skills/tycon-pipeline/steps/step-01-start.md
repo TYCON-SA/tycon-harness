@@ -159,16 +159,27 @@ El resultado de los chequeos (`branch`, `branch_guard_passed`, `cross_session_pa
 parte de este paso. Se pasa a «Validar la historia» sólo con `branch_guard_passed: true` (o `had_main_override: true`
 con confirmación explícita) Y `cross_session_passed: true` (o la opción b/c de PIPE-C0).
 
-**En una historia paraguas** (varias tandas en `pipelines`), la ejecución que entrega UNA tanda la anota después del
-arranque:
+**En una historia paraguas** (varias tandas en `pipelines`), la ejecución que entrega UNA tanda arranca con ella:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js start --story <abs story.md> --repo <repo> --batch <nombre de la tanda> --brief
+```
+
+`start --batch` valida la tanda antes de tocar nada (que exista, que no esté `done`, sin nombres repetidos) y la anota
+después del marcador. Una paraguas `in-progress` no pausa como abandonada: otra tanda la arrancó antes. Otra sesión
+sobre la misma historia sólo choca si entrega la misma tanda, o si no anotó ninguna. La misma sesión que lo corre otra
+vez: con la misma tanda no cambia nada, con otra pausa, y sin tanda anotada la anota. Si la tanda no se pudo anotar,
+`start` sale 1 con el comando a mano; hasta anotarla, la matriz mide todas las tandas.
+
+Desde ahí «Preparar el commit» le pide la evidencia en vivo de esa tanda, no la de todas. Una ejecución que arrancó sin
+`--batch` la anota a mano, una vez:
 
 ```bash
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-batch <nombre de la tanda>
 ```
 
-Desde ahí «Preparar el commit» le pide la evidencia en vivo de esa tanda, no la de todas. Se anota una vez: el mismo
-nombre otra vez no cambia nada, y otro nombre o `--clear` se niegan. Una tanda mal anotada se arregla con otra ejecución
-(`marker.js clear` y arrancar de nuevo). Una tanda `done` no se anota. `marker.js set` no escribe la tanda.
+El mismo nombre otra vez no cambia nada, y otro nombre o `--clear` se niegan. Una tanda mal anotada se arregla con otra
+ejecución (`marker.js clear` y arrancar de nuevo). Una tanda `done` no se anota. `marker.js set` no escribe la tanda.
 
 ## 🔀 Las partes opcionales corren MIENTRAS el validador ya está en vuelo
 

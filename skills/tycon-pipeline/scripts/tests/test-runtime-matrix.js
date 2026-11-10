@@ -2031,7 +2031,7 @@ withWaiverLog(() => {
   {
     const f = paraguas(AB);
     writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1, 3]);
-    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera' });
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera', changed: [] });
     check('T1 Matrix_Batch_OnlyItsAcs @story-8.239 @ac-1',
       !r.structuralError && JSON.stringify(r.acs) === '[1,3]' && r.green === true && r.batch === 'A-la-primera',
       JSON.stringify({ e: r.structuralError, acs: r.acs, green: r.green, notRun: r.notRun, batch: r.batch }));
@@ -2039,7 +2039,7 @@ withWaiverLog(() => {
   {
     const f = paraguas([...AB, '  - name: C-la-bloqueada', '    status: blocked', '    blocked_by: "espera a la A"', '    acs_pending: [3]']);
     writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1]);
-    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera' });
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera', changed: [] });
     const md = r.structuralError ? '' : rm.renderMd(r);
     check('T2 Matrix_Batch_OtherPendingOut_Said @story-8.239 @ac-2',
       JSON.stringify(r.acs) === '[1]' && JSON.stringify(r.outOfBatchAcs) === '[2]'
@@ -2051,7 +2051,7 @@ withWaiverLog(() => {
   {
     const f = paraguas(['  - name: A-la-primera', '    status: done', '    acs: [1]', '  - name: B-la-segunda', '    status: pending', '    acs: [2]']);
     writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [2, 3]);
-    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'B-la-segunda' });
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'B-la-segunda', changed: [] });
     check('T3 Matrix_Batch_DoneOut @story-8.239 @ac-2',
       JSON.stringify(r.acs) === '[2,3]' && r.green === true && r.warnings.some((w) => w.includes('fuera de esta tanda: A-la-primera (AC 1)')),
       JSON.stringify({ e: r.structuralError, acs: r.acs, w: r.warnings }));
@@ -2091,7 +2091,7 @@ withWaiverLog(() => {
   }
   {
     const f = paraguas(['  - name: A-la-primera', '    status: pending', '    acs: [1]', '  - name: B-la-segunda', '    status: blocked', '    blocked_by: "espera"', '    acs_pending: [2]']);
-    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'B-la-segunda' });
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'B-la-segunda', changed: [] });
     check('T7 Matrix_Batch_OwnBlockedMeasured @story-8.239 @ac-1',
       JSON.stringify(r.acs) === '[2,3]' && !(r.blockedAcs || []).includes(2),
       JSON.stringify({ e: r.structuralError, acs: r.acs, blocked: r.blockedAcs }));
@@ -2102,14 +2102,135 @@ withWaiverLog(() => {
     const gl = path.join(require(path.join(__dirname, '..', 'lib', 'state-dir.js')).stateDir(home), 'gates.log');
     fs.mkdirSync(path.dirname(gl), { recursive: true });
     writeMirroredSmoke(f.dodDir, gl, '9.9', [1, 3]);
+    // un repo git de verdad: sin marcador, la lista de cambios sale de --code-repo (8.240 AC 8)
+    fs.rmSync(path.join(f.repo, '.git'), { recursive: true, force: true });
+    const git = (...a) => require('child_process').execFileSync('git', ['-C', f.repo, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a],
+      { stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: '2026-11-08T10:00:00Z', GIT_COMMITTER_DATE: '2026-11-08T10:00:00Z' } });
+    git('init', '-q');
+    git('add', '.');
+    git('commit', '-qm', 'inicio');
     const cli = (extra) => require('child_process').spawnSync(process.execPath,
       [path.join(__dirname, '..', 'runtime-matrix.js'), '--story', f.storyPath, '--no-write', ...extra],
       { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home } });
-    const con = cli(['--batch', 'A-la-primera']);
+    const con = cli(['--batch', 'A-la-primera', '--code-repo', f.repo]);
     const sin = cli([]);
     check('T8 MatrixCli_BatchFlag @story-8.239 @ac-7',
       con.status === 0 && /tanda A-la-primera/.test(con.stdout.split('\n')[0]) && sin.status === 1 && !/tanda A-la-primera/.test(sin.stdout.split('\n')[0]),
       JSON.stringify({ con: con.status, l: con.stdout.split('\n')[0], err: con.stderr.slice(0, 300), sin: sin.status }));
+  }
+}
+
+// Historia paraguas con archivos atados a tandas (8.240): la corrida que toca un archivo de otra tanda devuelve sus
+// criterios a la matriz. `archivos`: los renglones de files_to_modify; `cuerpo`: renglones extra (tareas, filas).
+{
+  const atada = (pipelines, archivos = [], cuerpo = [], filas = []) => {
+    const f = makeWorkspace();
+    const viejo = new Date(Date.now() - 60 * 60 * 1000);
+    for (const n of ['a.js', 'b.js', 'c.js', 'd.js', 'e.js', 'x.js']) {
+      const p = path.join(f.repo, 'src', n);
+      fs.writeFileSync(p, '// code\n');
+      fs.utimesSync(p, viejo, viejo);
+    }
+    fs.writeFileSync(f.storyPath, [
+      '---', 'story: 9.9', 'status: in-progress', 'files_to_modify:', '  - src/Feature.cs', ...archivos, 'pipelines:', ...pipelines, '---', '',
+      '## Acceptance Criteria', '',
+      '1. **Given** algo, **When** pasa, **Then** resultado.',
+      '2. **Given** otra cosa, **Then** otro resultado.',
+      '3. **Given** una tercera, **Then** su resultado.',
+      '4. **Given** una cuarta, **Then** su resultado.', '',
+      '### Tests', '',
+      '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|',
+      '| T1 | `FeatureTests.Caso1` | 1 | integration | x | y |',
+      '| T2 | `FeatureTests.Caso2` | 2 | integration | x | y |',
+      '| T3 | `FeatureTests.Caso3` | 3 | integration | x | y |',
+      '| T4 | `FeatureTests.Caso4` | 4 | integration | x | y |', ...filas, '',
+      '## Tasks / Subtasks', '', ...cuerpo, '',
+    ].join('\n'));
+    return f;
+  };
+  const LISTA = ['  - name: A-la-primera', '    status: pending', '    acs: [1]',
+    '  - name: B-la-segunda', '    status: pending', '    acs: [2]', '    tasks_pending: [5]', '    tests_pending: ["T9"]'];
+  const MAPA = ['  A-la-primera:', '    status: pending', '    acs: [1]',
+    '  B-la-segunda:', '    status: pending', '    acs: [2]', '    tasks_pending: [5]', '    tests_pending: ["T9"]'];
+  const TAREA = ['- [ ] [SEQ] Task 5: cambia `src/c.js` (AC: 2)'];
+  const FILA = ['| T9 | `src/d.js::caso` | 2 | unit | x | y |'];
+  const B_ARCH = ['  - src/b.js  # tanda B'];
+  const correr = (f, changed, batch = 'A-la-primera') => rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch, changed, codeRepo: f.repo });
+
+  {
+    const f = atada(LISTA, B_ARCH);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1, 3, 4]);
+    const r = correr(f, ['src/b.js']);
+    const md = r.structuralError ? '' : rm.renderMd(r);
+    check('T1 Matrix_Batch_TouchedOtherBatchFile_ReturnsItsAcs @story-8.240 @ac-1',
+      !r.structuralError && r.acs.includes(2) && JSON.stringify(r.returnedAcs) === '[2]' && !(r.outOfBatchAcs || []).includes(2)
+        && /B-la-segunda/.test((r.returnedBy || []).join(' '))
+        && r.warnings.some((w) => /vuelven a la matriz: B-la-segunda \(AC 2\)/.test(w) && w.includes('src/b.js'))
+        && /vuelven a la matriz/.test(md) && !(r.fueraDeTanda || []).some((t) => /B-la-segunda/.test(t)),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, ret: r.returnedAcs, by: r.returnedBy, out: r.outOfBatchAcs, w: r.warnings }));
+  }
+  {
+    const f = atada(LISTA, [], TAREA, FILA);
+    const porTarea = correr(f, ['src/c.js']);
+    const porFila = correr(f, ['src/d.js']);
+    check('T2 Matrix_Batch_ReturnByTaskAndTestRow @story-8.240 @ac-1',
+      JSON.stringify(porTarea.returnedAcs) === '[2]' && JSON.stringify(porFila.returnedAcs) === '[2]',
+      JSON.stringify({ tarea: porTarea.structuralError || porTarea.returnedAcs, fila: porFila.structuralError || porFila.returnedAcs }));
+  }
+  {
+    const f = atada(['  - name: A-la-primera', '    status: pending', '    acs: [1]',
+      '  - name: C-hecha', '    status: done', '    acs: [3]',
+      '  - name: D-frenada', '    status: blocked', '    blocked_by: "espera a la A"', '    acs_pending: [4]'],
+    ['  - src/c.js  # tanda C', '  - src/e.js  # tanda D']);
+    const r = correr(f, ['src/c.js', 'src/e.js']);
+    check('T3 Matrix_Batch_TouchedDoneOrBlockedBatch_Returns @story-8.240 @ac-1',
+      !r.structuralError && JSON.stringify(r.returnedAcs) === '[3,4]' && r.acs.includes(3) && r.acs.includes(4) && !(r.blockedAcs || []).includes(4),
+      JSON.stringify({ e: r.structuralError, acs: r.acs, ret: r.returnedAcs, blocked: r.blockedAcs }));
+  }
+  {
+    const f = atada(LISTA, ['  - src/b.js  # tanda A, tanda B', '  - src/x.js']);
+    const compartido = correr(f, ['src/b.js', 'src/x.js']);
+    const vacia = correr(f, []);
+    check('T4 Matrix_Batch_SharedOrUnattributedFile_NoReturn @story-8.240 @ac-2',
+      !compartido.structuralError && (compartido.returnedAcs || []).length === 0 && JSON.stringify(compartido.acs) === JSON.stringify(vacia.acs),
+      JSON.stringify({ c: compartido.structuralError || compartido.returnedAcs, acs: compartido.acs, vacia: vacia.acs }));
+  }
+  {
+    const f = atada(LISTA, B_ARCH);
+    const sin = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera' });
+    const nula = correr(f, null);
+    const vacia = correr(f, []);
+    const dice = (r) => r.warnings.some((w) => /sin la lista de cambios de la corrida no achico: mido todas las tandas/.test(w));
+    check('T5 Matrix_Batch_NoChangedList_MeasuresAll @story-8.240 @ac-3',
+      sin.batch === null && nula.batch === null && dice(sin) && dice(nula) && sin.acs.includes(2)
+        && vacia.batch === 'A-la-primera' && !vacia.acs.includes(2),
+      JSON.stringify({ sin: [sin.batch, sin.acs], nula: [nula.batch, nula.acs], vacia: [vacia.batch, vacia.acs] }));
+  }
+  {
+    const lista = atada(LISTA, B_ARCH, TAREA, FILA);
+    const mapa = atada(MAPA, B_ARCH, TAREA, FILA);
+    const iguales = ['src/b.js', 'src/c.js', 'src/d.js'].every((c) => JSON.stringify(correr(lista, [c]).returnedAcs) === '[2]'
+      && JSON.stringify(correr(mapa, [c]).returnedAcs) === '[2]');
+    check('T9 Matrix_Batch_MapFormPipelines @story-8.240 @ac-6', iguales,
+      JSON.stringify(['src/b.js', 'src/c.js', 'src/d.js'].map((c) => [c, correr(mapa, [c]).structuralError || correr(mapa, [c]).returnedAcs])));
+  }
+  {
+    const f = atada(['  A-la-primera:', '    status: pending', '    acs: [1]',
+      '  B-frenada:', '    status: blocked', '    blocked_by: "espera a la A"', '    acs_pending: [2]'],
+    ['  - src/nueva-de-b.js  # tanda B']);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('T10 Matrix_BlockedFileNotCreated_MapForm @story-8.240 @ac-6',
+      r.warnings.some((w) => /Todavía sin crear, de una tanda bloqueada: src\/nueva-de-b\.js/.test(w)),
+      JSON.stringify(r.warnings));
+  }
+  {
+    const f = atada(LISTA, B_ARCH);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1, 3]);
+    const sin = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    const con = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, changed: ['src/b.js'], codeRepo: f.repo });
+    check('T25 Matrix_NoBatch_WithChanged_AsBefore @story-8.240 @ac-16',
+      JSON.stringify(sin.acs) === JSON.stringify(con.acs) && sin.green === con.green && sin.hash === con.hash && (con.returnedAcs || []).length === 0,
+      JSON.stringify({ sin: [sin.acs, sin.green, sin.hash], con: [con.acs, con.green, con.hash] }));
   }
 }
 

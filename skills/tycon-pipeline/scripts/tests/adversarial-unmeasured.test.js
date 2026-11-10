@@ -420,7 +420,9 @@ test('T12 8.56-Paso8_NoMedido_Frena @story-8.56 @ac-10 @ac-11', () => {
   // Relanzado y medido: destraba.
   const re = correr(home, SID, ['mark-adversarial-launched', 'wf_B', '5b', '--relaunch']);
   assert.equal(re.status, 0, re.stderr);
-  assert.equal(correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b', '--result', resultado(home, MEDIDO(home), 'otro.json')]).status, 0);
+  // el resultado trae los sellos de lo que se congeló al lanzar (historia 8.161)
+  const { sellos } = JSON.parse(re.stdout);
+  assert.equal(correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b', '--result', resultado(home, { ...MEDIDO(home), sellos }, 'otro.json')]).status, 0);
   correr(home, SID, ['complete-step', '8']);
   assert.equal(lineaDelFreno(home).at(-1).status, 'ok');
 });
@@ -459,9 +461,12 @@ test('T15 8.56-SalidaAprobada_PuntaAPunta @story-8.56 @ac-14', () => {
   assert.equal(lineaDelFreno(home).at(-1).motivo, 'pase-no-medido');
 
   // 2) Relanzado con agentes de Claude: el guion deja los pedidos; los agentes escriben sus respuestas.
-  assert.equal(correr(home, SID, ['mark-adversarial-launched', 'claude-1', '5b', '--relaunch']).status, 0);
+  const lanzado = correr(home, SID, ['mark-adversarial-launched', 'claude-1', '5b', '--relaunch']);
+  assert.equal(lanzado.status, 0, lanzado.stderr);
+  // los sellos del lanzamiento van en los args del pase, que los devuelve en su resultado (historia 8.161)
+  const { sellos } = JSON.parse(lanzado.stdout);
   const agentes = path.join(dir, 'agentes');
-  const vuelta = () => correrPase(dir, {}, ['--agents-dir', agentes]);
+  const vuelta = () => correrPase(dir, {}, ['--agents-dir', agentes], { sellos });
   const pedidos = () => JSON.parse(fs.readFileSync(path.join(agentes, 'PEDIDOS.json'), 'utf8')).pendientes;
   const h = hallazgo('scripts/x0.js', 'devuelve undefined con un objeto vacío');
 

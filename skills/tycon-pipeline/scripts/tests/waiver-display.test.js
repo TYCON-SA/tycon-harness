@@ -213,3 +213,41 @@ test('CriteriosDe_ConLaMatrizYaCalculada_NoLaVuelveACalcular', () => {
   assert.equal(c.matrix, matrix);
   assert.deepEqual(c.lista.map((x) => x.ac), [1]);
 });
+
+test('WaiverDisplay_UsesMarkerBatchMatrix @story-8.240 @ac-11 — la ventana muestra el criterio de la tanda con la matriz del marcador', () => {
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  const base = tmp('wd-tanda-');
+  const repo = path.join(base, 'repo');
+  const stateDir = path.join(base, 'state');
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  const git = (...a) => execFileSync('git', ['-C', repo, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { encoding: 'utf8', env: GIT_ENV });
+  git('init', '-q');
+  const story = path.join(repo, 'specs', 'story-9.95-paraguas.md');
+  fs.writeFileSync(story, ['---', 'story: "9.95"', 'title: "paraguas"', 'status: in-progress', 'runtime_not_verifiable:', '  - ac: 1',
+    `    reason: "${RAZON}"`, '    covered_by: T1', 'pipelines:', '  - name: A-la-primera', '    status: pending', '    acs: [1]',
+    '  - name: B-la-segunda', '    status: pending', '    acs: [2]', '---', '', '# Story 9.95', '', '## Acceptance Criteria', '',
+    `1. **Given** un pedido **Then** ${TEXTO}.`, '2. **Given** otro pedido **Then** otro resultado.', '', '### Tests', '',
+    '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
+    '| T1 | `Aviso_QuedaRegistrado` | 1 | unit | x | y |', '| T2 | `Otro_Resultado` | 2 | unit | x | y |', ''].join('\n'));
+  git('add', '.');
+  git('commit', '-qm', 'base');
+  const marker = { storyId: '9.95', storyPath: story, repoPath: repo, batch: 'A-la-primera', baseSha: git('rev-parse', 'HEAD').trim() };
+  fs.mkdirSync(path.join(repo, '.advisors'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.advisors', 'tests-result.json'), JSON.stringify({ ts: new Date().toISOString(), story_id: '9.95', suite_green: true }));
+  fs.writeFileSync(path.join(repo, '.gitignore'), '.advisors/\n');
+  git('add', '.gitignore');
+  git('commit', '-qm', 'ignora .advisors');
+  marker.baseSha = git('rev-parse', 'HEAD').trim();
+  fs.mkdirSync(path.join(stateDir, 'active'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'active', 's-wdt.json'), JSON.stringify(marker));
+  // la matriz de la firma es la de la tanda: el criterio de la otra no entra
+  const m = wd.matrixForSignature(story, marker);
+  assert.equal(m.batch, 'A-la-primera', JSON.stringify(m.warnings));
+  assert.ok(!m.acs.includes(2), `la otra tanda queda afuera: ${m.acs}`);
+  // la ventana muestra el criterio de la tanda con su razón
+  const muestra = wd.preparar({ sessionId: 's-wdt', stateDir, storyPath: story, acs: [1] });
+  assert.ok(muestra && muestra.systemMessage, `muestra el criterio: ${JSON.stringify(muestra)}`);
+  assert.match(muestra.systemMessage, new RegExp(RAZON));
+  // con el marcador de otra historia, la firma mide todas
+  assert.equal(wd.matrixForSignature(story, { ...marker, storyPath: path.join(repo, 'specs', 'otra.md') }).batch, null);
+});

@@ -236,6 +236,12 @@
       "requiere": []
     },
     {
+      "__nota": "el tamaño de los controles (scripts/ci/control-size.js): el orden por tamaño, la cuenta de subcomandos y de quién llama, el aviso por tamaño y por recorrido del freno (con el tope leído del freno real), el rango y lo que no se puede leer. Árboles de juguete con su propio git; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/control-size.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/label-prs.test.sh",
       "requiere": []
@@ -1552,6 +1558,29 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-batch.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.161: la copia congelada de lo que revisa cada vuelta (sello, copia de sólo lectura, comparación con lo que se guarda) y la procedencia de cada prueba. Repos de juguete en una carpeta temporal, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/frozen-tree.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.167 (T1-T11, T19-T23, T29, T30, T32, T33): el humo comparado con main, en dos clones locales sin remoto, con casas vacías y la red cortada por capas. Repos de juguete con su origin desnudo, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/compare-previous.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.167 (T12-T16, T24-T28, T31, T34): los candidatos, el freno de «Preparar el commit», la exención firmada y la cobertura por declaración. Repos de juguete, la firma por la ventana de prueba, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/compare-previous-gate.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/preflight-missing.test.js",
       "requiere": []
     },
@@ -2227,6 +2256,12 @@
       "__nota": "story 1.20: la revisión de un pedido corre los controles de la BASE (scripts/ci/run-base-controls.sh) sobre repos de juguete armados con git, sin red: un pedido que vacía el pre-commit, borra el guion de un control, suma su excepción o baja un modo sale rojo; un control nuevo del pedido corre igual; endurecer entra solo y aflojar pide la constancia del dueño; la base que no se lee es «no pude correr»; el inventario real cuadra con el pre-commit; la alarma a posteriori y la lista de excepciones que se suman. ~40 s. Viaja.",
       "raiz": "arnes",
       "ruta": "tests/base-controls.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.248: la cuenta de la noche de las constancias del dueño que salieron de main (scripts/ci/approvals-removed.js, que usa run-base-controls.sh removed-approvals): un borrado firmado y uno sin firma dan 1 y 1 con sus nombres, cero se dice cero y una historia que no se lee es «no medido»; y el freno local sigue sin dejar escribir una constancia a mano. Repos de juguete con git, sin red. ~5 s. Viaja.",
+      "raiz": "arnes",
+      "ruta": "tests/approvals-removed.test.js",
       "requiere": []
     },
     {
@@ -4289,6 +4324,12 @@
       "__nota": "story 8.164 (T2, T3): los textos que le muestran al agente cómo abrir un pedido en Azure DevOps (los tres del freno de pedidos y el paso de cierre) traen --delete-source-branch al lado de --auto-complete true --squash false; la guía de commits trae la tarea humana de GitHub («Automatically delete head branches») con su ruta. Sólo lee archivos.",
       "raiz": "arnes",
       "ruta": "tests/machine-cleanup-guides.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.167 (T17, T18): los pasos 10 y 11, el formato de las historias y la guía de firmas dicen cuándo comparar con main, cómo se resuelve una diferencia y cómo se pide la exención. Sólo lee archivos.",
+      "raiz": "arnes",
+      "ruta": "tests/compare-previous-guides.test.js",
       "requiere": []
     },
     {

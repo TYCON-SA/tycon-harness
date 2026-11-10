@@ -419,8 +419,8 @@ function storyRequiresRuntimeEvidence(specContent) {
 // en el spec; nombres declarados en .tycon/advisors.yaml → evidence.fe_paths). Nada de productos acá.
 // La pantalla de una tanda bloqueada no se pide en este commit (`screenScope`, la misma regla que marker.js), salvo
 // que el commit cambie un archivo de pantalla (`changed`, lo preparado para commitear).
-function storyIsUiStory(specContent, repoRoot, changed) {
-  return require('./lib/ui-signal.js').screenScope(specContent, repoRoot, { changed }).active;
+function storyIsUiStory(specContent, repoRoot, changed, batches) {
+  return require('./lib/ui-signal.js').screenScope(specContent, repoRoot, { changed, batches }).active;
 }
 
 // ¿Alguna evidencia de la story, posterior al último cambio de código, trae el bloque «## Playwright Run» con veredicto
@@ -447,10 +447,10 @@ function playwrightVerdeDespuesDelCodigo(cwd, specAbs, storyId, codeMtime) {
 
 // La baja de pantalla se dice al cerrar: una línea por stderr y por story, sin
 // bloquear. El texto lo arma lib/ui-signal.js.
-function avisoBajaDePantalla(specContent, repoRoot, changed) {
+function avisoBajaDePantalla(specContent, repoRoot, changed, batches) {
   try {
     const ui = require('./lib/ui-signal.js');
-    return ui.proseDropNotice(ui.uiSignalDetail(specContent, repoRoot)) || ui.screenScope(specContent, repoRoot, { changed }).note;
+    return ui.proseDropNotice(ui.uiSignalDetail(specContent, repoRoot)) || ui.screenScope(specContent, repoRoot, { changed, batches }).note;
   } catch (_e) { return null; }   // el aviso nunca rompe el cierre: es informativo y el veredicto ya se decidió
 }
 
@@ -1541,9 +1541,14 @@ function main() {
         // repoRoot explícito: el cómputo corre sobre una COPIA tmp del spec (contenido staged)
         // y la discovery de repo desde /tmp no puede ver el repo real — sin esto, la matriz
         // degradaría a fail-closed (0 evidencia) con la evidencia intacta en disco.
-        out = { rm, specAbs, matrix: rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot: rm.discoverRepoRoot(specAbs),
-          closingBatches: tandasQueCierran.has(specRel) ? tandasQueCierran.get(specRel).nombres : null,
-          closingAcsBefore: tandasQueCierran.has(specRel) ? tandasQueCierran.get(specRel).antes : null }) };
+        // Al cerrar una tanda, la lista de lo que cambia este commit y el repo que commitea: un archivo del commit atado
+        // sólo a otra tanda devuelve sus criterios. Sin cierre de tanda, la matriz se computa como siempre.
+        const repoRoot = rm.discoverRepoRoot(specAbs);
+        const cierra = tandasQueCierran.has(specRel);
+        out = { rm, specAbs, matrix: rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot,
+          closingBatches: cierra ? tandasQueCierran.get(specRel).nombres : null,
+          closingAcsBefore: cierra ? tandasQueCierran.get(specRel).antes : null,
+          ...(cierra ? { changed: diffFiles, codeRepo: repoRoot } : {}) }) };
       } finally {
         try { fs.unlinkSync(tmpSpec); } catch { /* best effort */ }
       }
@@ -1696,8 +1701,10 @@ function main() {
 
     if (!statusTransition && !pipelineTransition) continue;
 
+    // Al cerrar una tanda, la pantalla mira las mismas tandas que la matriz (las que se cierran más las que volvieron)
+    const tandasDePantalla = tandasQueCierran.has(specRel) ? ((matrizDe(specRel, staged).matrix || {}).measuredBatches || null) : null;
     {
-      const baja = avisoBajaDePantalla(staged, cwd, diffFiles);
+      const baja = avisoBajaDePantalla(staged, cwd, diffFiles, tandasDePantalla);
       if (baja) process.stderr.write(`[on-pre-commit] ${specRel}: ${baja}\n`);
     }
 
@@ -1760,7 +1767,7 @@ function main() {
     // Cuenta también un bloque «## Playwright Run» en verde de CUALQUIER evidencia de la story posterior al último cambio
     // de código: un `-cierre.md` más nuevo que el gate E2E no lo tapa.
     // La prueba con navegador que la persona dejó pendiente, con sus dos marcas (lib/browser-test.js): no frena, se dice.
-    const deudaNavegador = storyIsUiStory(staged, cwd, diffFiles) && !/playwright|tests\/e2e\/|@story-/i.test(evidence.content)
+    const deudaNavegador = storyIsUiStory(staged, cwd, diffFiles, tandasDePantalla) &&!/playwright|tests\/e2e\/|@story-/i.test(evidence.content)
       && !playwrightVerdeDespuesDelCodigo(cwd, specAbs, storyId, (matrizDe(specRel, staged).matrix || {}).codeMtime)
       ? require('./lib/browser-test.js').debtDeclared({ stateDir: stateDirOf(os.homedir()), storyPath: path.resolve(cwd, specRel), content: staged })
       : null;

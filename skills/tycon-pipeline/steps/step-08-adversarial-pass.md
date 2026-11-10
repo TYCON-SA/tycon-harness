@@ -184,10 +184,16 @@ Workflow({
     runDir:    "<abs RUN_DIR — .advisors/pipeline-runs/<clave>-<sello>/ de ESTA corrida>",
     base:      "<el hash de: git -C <repo> fetch origin main && git -C <repo> merge-base HEAD origin/main — si el fetch falla, no se lanza: se dice>",
     agrupar:   <false SÓLO si TYCON_5B_GROUP vale 0 — leela con la biblioteca del arnés, que acepta también su nombre viejo:
-               `. "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/legacy-names.sh"; legacy_env TYCON_5B_GROUP; echo "${TYCON_5B_GROUP:-}"`; si no, omitirlo>
+               `. "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/legacy-names.sh"; legacy_env TYCON_5B_GROUP; echo "${TYCON_5B_GROUP:-}"`; si no, omitirlo>,
+    sellos:    <los `sellos` que devolvió `marker.js freeze-adversarial`, tal cual: { "<repo>": "<sello>" }>
   }
 })
 ```
+
+`sellos` ata el resultado a lo que se congeló antes de lanzar (historia 8.161): `freeze-adversarial` sella cada repo de
+la corrida y arma su copia de sólo lectura, el pase devuelve los mismos `sellos` en su resultado, y
+`mark-adversarial-result` sale 2 si no los trae, si le falta un repo o si alguno es otro, y si una copia cambió después
+de armarla. Un relanzamiento vuelve a correr `freeze-adversarial` antes del `Workflow`.
 
 `runDir` es donde el verificador **guarda la prueba que confirmó** cada hallazgo:
 `<RUN_DIR>/step-05b-probes/<lente>-<n>/` con los archivos de la prueba (con `.txt` agregado al

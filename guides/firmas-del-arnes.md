@@ -48,6 +48,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `save` | 1 · rutina | dev y mantenimiento | guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible | `save` |
 | `browser-test:prepare` | 1 · rutina | dev y mantenimiento | preparar la prueba con navegador | `browser-test` |
 | `adhoc-lane` | 1 · rutina | dev y mantenimiento | abrir un arreglo rápido sin historia, dentro del cupo | `adhoc-lane` |
+| `compare-waiver` | 1 · rutina | dev y mantenimiento | eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing) | `compare-waiver` |
 | `refresh-after-main` | 1 · rutina | sólo mantenimiento | refirmar los controles tras traer main, sin cambio propio | `refresh-after-main` |
 | `save:sensible` | 2 · excepción | dev y mantenimiento | guardar cuando un commit toca algo de lo sensible | `save` |
 | `adhoc-lane:datos` | 2 · excepción | dev y mantenimiento | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño) | `adhoc-lane:datos` |
@@ -93,6 +94,7 @@ firmar, y en la columna tu situación:
 | 1 · rutina | **Guardar el trabajo** (`save`): commit y push a tu rama, y los pull requests. Es rutina porque se deshace; si un commit toca algo sensible, pasa a `save:sensible`, de nivel 2. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
 | 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
 | 1 · rutina | **Aprobar el plan** (`plan-approval`) de una story que no es delicada. Es rutina porque decide qué se construye antes de construirlo, y se cambia. | vos | espera | vos, o la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | obligatoria para la coordinadora: la lanza ella y su «aprobado» es lo único con que firma |
+| 1 · rutina | **Eximir un comando de la comparación con main** (`compare-waiver`): un comando que la historia modifica y que no se puede comparar con su versión de `main` (por ejemplo, porque usa la red). La firma es delegable sólo cuando el perfil del equipo la suma a `approvals.delegated_signing`, con un pedido al perfil que firma el dueño: amplía lo que firma la coordinadora. Hasta entonces, es tuya. | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
 | 2 · excepción | **Aprobar el plan de una story delicada** (`plan-approval` cuando `risk-class` dice `delicate`) | vos | espera | vos | espera | puede correr: ataca el plan y avisa, nunca aprueba |
 | 2 · excepción | **Saltear un control** o aceptar un problema grave sin arreglarlo (`critical-waiver`, `escape:…` y las demás de nivel 2) | vos | espera | vos | espera | no aplica |
 | 2 · excepción | **Aceptar un criterio imposible de probar en vivo** (`runtime-waiver`). Antes de la ventana, el arnés te muestra el criterio en pantalla: su texto, por qué no se puede probar en vivo y qué prueba lo cubre. | vos | espera | vos | espera | no aplica |
@@ -143,8 +145,9 @@ firmar, y en la columna tu situación:
 - **Espera** quiere decir que nadie firma. El sistema no mira la hora: pide la firma igual y, si nadie contesta, la
   sesión queda frenada en ese paso.
 - **La emergencia** (`emergency`) es la única salida para pasar por encima del freno de seguridad: la persona la firma en
-  su terminal con `harness.js sign emergency`, con su motivo (cómo, en el párrafo de arriba). El agente no la puede
-  correr.
+  su terminal con `harness.js sign emergency`, con su motivo (cómo, en el párrafo de arriba). La terminal muestra qué se
+  firma y pregunta «¿Firmás? (s/n)»: firma con `s`, `si` o `sí`, y cualquier otra respuesta es «no». En Windows se abre una
+  ventana nueva y ahí se escriben tres palabras al azar. El agente no la puede correr.
 - En los repos del arnés, el dueño ocupa el lugar del dev (ver «Quién aprueba»).
 - «En la ventana» vale para Claude Code. Codex no tiene ventana de permiso, y el click y el «aprobado» no valen ahí: en
   Codex todo se firma en la terminal (`guides/safety-guard.md`, y abajo, «En Codex»).
@@ -284,6 +287,7 @@ vuelve a pedir la firma del dueño.
 | `control-change` | aprobar un cambio de los controles del repo | `run-base-controls.sh approve` | sí | `run-base-controls.sh approve --terminal` |
 | `critical-waiver` | eximir un hallazgo crítico de los revisores | `marker.js waive-critical` | sí | `marker.js waive-critical --terminal` |
 | `runtime-waiver` | aceptar un criterio imposible de probar en vivo | `marker.js runtime-waiver` | sí | `marker.js runtime-waiver <historia> --terminal` |
+| `compare-waiver` | eximir de la comparación con main a un comando que la historia modifica | `marker.js compare-waiver --story <S> --command <candidato> --reason <R>` | sí | `marker.js compare-waiver --story <S> --command <candidato> --reason <R> --terminal` |
 | `manual-test` | marcar un criterio como probado a mano | `marker.js mark-tested --acs` | sí | `marker.js mark-tested --acs --terminal` |
 | `browser-test` | preparar la prueba con navegador, o decirle que no | `e2e-setup.js prepare (o defer --no)` | sí | `e2e-setup.js prepare --terminal (o defer --no --terminal)` |
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
@@ -319,8 +323,8 @@ vuelve a pedir la firma del dueño.
 
 ## Los grupos de la 8.116
 
-Antes de este catálogo, `approvals.delegated_signing` aceptaba estos once nombres, y los sigue aceptando. Cada uno
-vale por las firmas de su fila. `off` no es un grupo: quiere decir «ninguna». `adversarial-skip` es válido, pero no
+Antes de este catálogo, `approvals.delegated_signing` aceptaba once de estos nombres, y los sigue aceptando;
+`compare-waiver` se sumó con la comparación con main (historia 8.167). Cada uno vale por las firmas de su fila. `off` no es un grupo: quiere decir «ninguna». `adversarial-skip` es válido, pero no
 delega nada: saltear el pase lo firma sólo el dueño.
 
 `escape-phrases` no trae `escape:force-manual` ni `escape:trust-ran`: esas dos se piden con su propio guion, también
@@ -337,6 +341,7 @@ reserva va por su id.
 | `plan-approval` | `plan-approval` |
 | `browser-test` | `browser-test` |
 | `runtime-waiver` | `runtime-waiver` |
+| `compare-waiver` | `compare-waiver` |
 | `manual-test` | `manual-test` |
 | `extra-round` | `extra-round` |
 | `control-change` | `control-change` |

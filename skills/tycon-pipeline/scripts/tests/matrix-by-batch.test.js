@@ -24,10 +24,10 @@ const B = 'B-la-segunda';
 const C = 'C-la-tercera';
 
 // Una paraguas de juguete: tres tandas, un criterio cada una (1, 2 y 3), cada uno con su fila de pruebas.
-function historia({ estados = {}, status = 'ready-for-dev' } = {}) {
+function historia({ estados = {}, status = 'ready-for-dev', archivos = [] } = {}) {
   const st = (n, def) => estados[n] || def;
   return [
-    '---', 'story: "9.9"', 'title: "paraguas"', `status: ${status}`, 'files_to_modify:', '  - src/a.js',
+    '---', 'story: "9.9"', 'title: "paraguas"', `status: ${status}`, 'files_to_modify:', '  - src/a.js', ...archivos,
     'pipelines:',
     `  - name: ${A}`, `    status: ${st(A, 'pending')}`, '    acs: [1]',
     `  - name: ${B}`, `    status: ${st(B, 'pending')}`, '    acs: [2]',
@@ -273,4 +273,267 @@ test('T12 PreCommit_BatchToDone_MeasuresThatBatch @story-8.239 @ac-9 — cerrar 
   r = commitear(E, historia({ estados: { [A]: 'done' } }), 's-t12h');
   assert.notStrictEqual(r.status, 0, salida(r));
   assert.match(salida(r), /no pude leer las tandas de la historia en HEAD/, salida(r));
+});
+
+// ── 8.240: la tanda se ata a lo que la corrida toca ──────────────────────────────────────────────────────────────
+
+const B_ARCH = ['  - src/b.js  # tanda B'];
+const VUELVE_B = new RegExp(`vuelven a la matriz: ${B} \\(AC 2\\)`);
+
+// La historia con el archivo de la segunda tanda, ya commiteada antes del arranque de la corrida.
+function conArchivoDeB(E, extra = {}) {
+  fs.writeFileSync(E.story, historia({ archivos: B_ARCH, ...extra }));
+  E.git('commit', '-qam', 'la historia ata src/b.js a la segunda tanda');
+}
+
+test('T6 PrepareCommit_Batch_CommittedMidRunFile_Returns @story-8.240 @ac-4 — un archivo de otra tanda commiteado a mitad de la corrida devuelve sus criterios', () => {
+  const E = entorno();
+  conArchivoDeB(E);
+  E.arrancar('s-a6');
+  assert.strictEqual(E.correr('marker.js', ['set-batch', A], 's-a6').status, 0);
+  hastaPrepararElCommit(E, 's-a6');
+  E.humo([1]);
+  fs.writeFileSync(path.join(E.repo, 'src', 'b.js'), 'module.exports = 2;\n');
+  E.git('add', 'src/b.js');
+  E.git('commit', '-qm', 'la corrida toca la segunda tanda');
+  const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-a6');
+  assert.match(r.stderr, MATRIZ_ROJA, r.stderr);
+  assert.match(r.stderr, /SIN CORRER[^\n]*#2/, r.stderr);
+  assert.match(r.stderr + r.stdout, VUELVE_B, r.stderr);
+});
+
+test('T7 PrepareCommit_Batch_NoBaseSha_MeasuresAll @story-8.240 @ac-4 — sin baseSha no hay lista: mide todas y lo dice', () => {
+  const E = entorno();
+  E.arrancar('s-a7');
+  assert.strictEqual(E.correr('marker.js', ['set-batch', A], 's-a7').status, 0);
+  hastaPrepararElCommit(E, 's-a7');
+  const m = E.leer('s-a7');
+  delete m.baseSha;
+  E.escribir('s-a7', m);
+  E.humo([1]);
+  const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-a7');
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, MATRIZ_ROJA, r.stderr);
+  assert.match(r.stderr + r.stdout, /sin la lista de cambios de la corrida no achico: mido todas las tandas/, r.stderr);
+  assert.match(r.stderr, /SIN CORRER[^\n]*#2[^\n]*#3/, r.stderr);
+});
+
+test('T8 Matrix_Batch_CrossRepoPaths_Match @story-8.240 @ac-5 — historia en un repo y código en otro: la ruta se ata igual', () => {
+  const rm = require(path.join(SCRIPTS, 'runtime-matrix.js'));
+  const E = entorno();
+  // el repo del código, hermano del de la historia
+  const C = path.join(path.dirname(E.repo), 'codigo');
+  fs.mkdirSync(path.join(C, 'src'), { recursive: true });
+  const gitC = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-C', C, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  gitC('init', '-q', '-b', 'feat/x'); gitC('config', 'user.email', 't@t'); gitC('config', 'user.name', 't');
+  fs.writeFileSync(path.join(C, 'src', 'b.js'), 'module.exports = 1;\n');
+  gitC('add', '.'); gitC('commit', '-qm', 'inicio');
+  for (const renglon of ['  - codigo/src/b.js  # tanda B', '  - src/b.js  # tanda B']) {
+    fs.writeFileSync(E.story, historia({ archivos: [renglon] }));
+    const r = rm.compute({ storyPath: E.story, batch: A, changed: ['src/b.js'], codeRepo: C });
+    assert.deepStrictEqual(r.returnedAcs, [2], `${renglon}: ${JSON.stringify(r.structuralError || r.warnings)}`);
+  }
+  // un marcador cuyo repo del código es C: «Preparar el commit» toma la lista de C
+  fs.writeFileSync(E.story, historia({ archivos: ['  - src/b.js  # tanda B'] }));
+  E.git('commit', '-qam', 'la historia con el archivo de C');
+  E.arrancar('s-a8');
+  assert.strictEqual(E.correr('marker.js', ['set-batch', A], 's-a8').status, 0);
+  hastaPrepararElCommit(E, 's-a8');
+  const base = gitC('rev-parse', 'HEAD').trim();
+  E.escribir('s-a8', { ...E.leer('s-a8'), repoPath: C, baseSha: base });
+  E.humo([1]);
+  fs.writeFileSync(path.join(C, 'src', 'b.js'), 'module.exports = 2;\n');
+  gitC('commit', '-qam', 'la corrida toca la segunda tanda en el repo del código');
+  const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-a8');
+  assert.match(r.stderr + r.stdout, VUELVE_B, r.stderr);
+});
+
+test('T11 PreCommit_BatchToDone_TouchesOtherBatch_Returns @story-8.240 @ac-7 — cerrar una tanda con un archivo de otra en el commit pide la otra', () => {
+  const E = entorno();
+  conArchivoDeB(E);
+  // el humo de la primera, posterior al cambio del archivo de la segunda: la evidencia de A sigue contando
+  // stable-data: la hora del humo va en segundos; el archivo, un minuto antes, para que la evidencia sea posterior
+  fs.writeFileSync(path.join(E.repo, 'src', 'b.js'), 'module.exports = 2;\n');
+  const antes = new Date(Date.now() - 60 * 1000);
+  fs.utimesSync(path.join(E.repo, 'src', 'b.js'), antes, antes);
+  E.git('add', 'src/b.js');
+  E.humo([1]);
+  let r = commitear(E, historia({ archivos: B_ARCH, estados: { [A]: 'done' } }), 's-a11');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r) + salida(r), /#2\b/, salida(r));
+  // sin src/b.js en el commit, cerrar la primera no pide la segunda
+  const E2 = entorno();
+  fs.writeFileSync(path.join(E2.repo, 'src', 'b.js'), 'module.exports = 2;\n');
+  fs.utimesSync(path.join(E2.repo, 'src', 'b.js'), antes, antes);
+  E2.git('add', 'src/b.js');
+  conArchivoDeB(E2);
+  E2.humo([1]);
+  r = commitear(E2, historia({ archivos: B_ARCH, estados: { [A]: 'done' } }), 's-a11b');
+  assert.strictEqual(r.status, 0, salida(r));
+});
+
+// La línea de comando de la matriz, con el HOME y la sesión de la corrida.
+function cli(E, args, sid, sinSesion = false) {
+  const env = { ...process.env, HOME: E.home, USERPROFILE: E.home, TYCON_HOME: '' };
+  delete env.CLAUDE_CODE_SESSION_ID; delete env.TYCON_SESSION_ID; delete env.CODEX_SESSION_ID;
+  if (!sinSesion) env.CLAUDE_CODE_SESSION_ID = sid;
+  return spawnSync(process.execPath, [path.join(SCRIPTS, 'runtime-matrix.js'), '--story', E.story, '--no-write', ...args], { encoding: 'utf8', env, cwd: E.repo });
+}
+const primera = (r) => r.stdout.split('\n')[0];
+
+test('T12 MatrixCli_ReadsMarkerBatch @story-8.240 @ac-8 — la línea de comando lee la tanda del marcador de la misma historia', () => {
+  const E = entorno();
+  E.arrancar('s-a12');
+  assert.strictEqual(E.correr('marker.js', ['set-batch', A], 's-a12').status, 0);
+  E.humo([1]);
+  let r = cli(E, [], 's-a12');
+  assert.match(primera(r), new RegExp(`mide la tanda ${A}`), r.stdout + r.stderr);
+  // el marcador de otra historia: mide todas
+  E.escribir('s-a12', { ...E.leer('s-a12'), storyPath: path.join(E.repo, 'specs', 'otra.md') });
+  r = cli(E, [], 's-a12');
+  assert.doesNotMatch(primera(r), /mide la tanda/, r.stdout);
+});
+
+test('T13 MatrixCli_BatchFlags @story-8.240 @ac-8 — --batch, --all-batches, --code-repo y --base', () => {
+  const E = entorno();
+  conArchivoDeB(E);
+  E.arrancar('s-a13');
+  assert.strictEqual(E.correr('marker.js', ['set-batch', A], 's-a13').status, 0);
+  E.humo([1]);
+  // otra tanda que la del marcador: sale 2 sin medir
+  let r = cli(E, ['--batch', B], 's-a13');
+  assert.strictEqual(r.status, 2, r.stdout + r.stderr);
+  // --all-batches: todas
+  r = cli(E, ['--all-batches'], 's-a13');
+  assert.doesNotMatch(primera(r), /mide la tanda/, r.stdout);
+  assert.match(r.stdout, /NOT-RUN/, r.stdout);
+  // sin marcador (otra sesión), con --code-repo y --base: mide A con la vuelta de B
+  const base = E.git('rev-parse', 'HEAD').trim();
+  fs.writeFileSync(path.join(E.repo, 'src', 'b.js'), 'module.exports = 2;\n');
+  E.git('add', 'src/b.js');
+  E.git('commit', '-qm', 'toca la segunda tanda');
+  r = cli(E, ['--batch', A, '--code-repo', E.repo, '--base', base], 's-otra');
+  assert.match(primera(r), new RegExp(`mide la tanda ${A}`), r.stdout + r.stderr);
+  assert.match(r.stdout, VUELVE_B, r.stdout);
+  // --base sin --code-repo: sale 2
+  r = cli(E, ['--base', base], 's-otra');
+  assert.strictEqual(r.status, 2, r.stdout + r.stderr);
+  // --batch sin marcador ni --code-repo: mide todas y lo dice
+  r = cli(E, ['--batch', A], 's-otra');
+  assert.match(primera(r), /mido todas las tandas/, r.stdout);
+  // sin sesión, con el marcador en A: mide todas y lo dice
+  r = cli(E, [], 's-a13', true);
+  assert.match(primera(r), /mido todas las tandas/, r.stdout);
+});
+
+// La historia con la pantalla en la segunda tanda: su nombre la nombra y su .tsx está declarado y commiteado, viejo. En
+// una historia de pantalla un criterio sin marca es de pantalla: el de la primera tanda lleva `@sin-pantalla`.
+const B_PANT = 'B-frontend';
+const historiaConPantalla = (o = {}) => historia({ ...o, archivos: ['  - web/src/Panel.tsx  # tanda B'] }).split(B).join(B_PANT)
+  .replace('**Then** resultado.', '**Then** resultado. @sin-pantalla');
+function conPantallaEnB(E) {
+  const tsx = path.join(E.repo, 'web', 'src', 'Panel.tsx');
+  fs.mkdirSync(path.dirname(tsx), { recursive: true });
+  fs.writeFileSync(tsx, 'export const Panel = 1;\n');
+  // stable-data: el código, una hora antes, para que el humo de ahora sea posterior
+  const viejo = new Date(Date.now() - 60 * 60 * 1000);
+  fs.utimesSync(tsx, viejo, viejo);
+  fs.writeFileSync(E.story, historiaConPantalla());
+  E.git('add', '.');
+  E.git('commit', '-qm', 'la pantalla es de la segunda tanda');
+}
+const BAJA_A = new RegExp(`tanda ${B_PANT}; esta corrida, de la tanda ${A}`, 'g');
+
+test('T15 PrepareCommit_Batch_ScreenInOtherBatch_NoBrowserBlock @story-8.240 @ac-9 — la pantalla de otra tanda no pide la prueba con navegador', () => {
+  const E = entorno();
+  conPantallaEnB(E);
+  E.arrancar('s-a15');
+  assert.strictEqual(E.correr('marker.js', ['set-batch', A], 's-a15').status, 0);
+  hastaPrepararElCommit(E, 's-a15');
+  // la guía del tester se sigue pidiendo (es de los criterios, no de la pantalla): lista y commiteada antes de la base,
+  // para que el cierre llegue a la matriz
+  const qa = path.join(E.repo, 'specs', 'qa');
+  fs.mkdirSync(qa, { recursive: true });
+  fs.writeFileSync(path.join(qa, 'story-9.9-paraguas-guia-qa.html'), '<!doctype html><title>guía</title>\n');
+  fs.writeFileSync(path.join(qa, '9.9-pasos.md'), ['Usuario por defecto: administrador', '', '## AC 1', 'Probar el primero.', '',
+    '## AC 2', 'Probar el segundo.', '', '## AC 3', 'Probar el tercero.', ''].join('\n'));
+  fs.writeFileSync(path.join(qa, '9.9-legibilidad.md'), 'veredicto: OK\n');
+  E.git('add', '.');
+  E.git('commit', '-qm', 'la guía del tester');
+  E.escribir('s-a15', { ...E.leer('s-a15'), repoPath: E.repo, baseSha: E.git('rev-parse', 'HEAD').trim() });
+  E.humo([1]);
+  const r =E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-a15');
+  const out = r.stderr + r.stdout;
+  assert.doesNotMatch(out, /story de UI sin el gate/, out);
+  assert.strictEqual((out.match(BAJA_A) || []).length, 1, `la baja se dice una vez:\n${out}`);
+  // la matriz llega a medir la tanda (la revisión de la pantalla de la guía del tester no es de esta historia)
+  assert.match(out, new RegExp(`la matriz mide la tanda ${A}`), out);
+  assert.doesNotMatch(out, MATRIZ_ROJA, out);
+});
+
+test('T16 PreCommit_BatchToDone_ScreenOfClosingBatch @story-8.240 @ac-10 — cerrar la tanda de backend no pide la evidencia de navegador', () => {
+  const E = entorno();
+  conPantallaEnB(E);
+  E.humo([1]);
+  let r = commitear(E, historiaConPantalla({ estados: { [A]: 'done' } }), 's-a16');
+  assert.doesNotMatch(salida(r), /DODRT-C5\.1/, salida(r));
+  assert.strictEqual(r.status, 0, salida(r));
+  // pasar la historia a review: la pide
+  const E2 = entorno();
+  conPantallaEnB(E2);
+  E2.humo([1, 2, 3]);
+  r = commitear(E2, historiaConPantalla({ status: 'review' }), 's-a16b');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /DODRT-C5\.1/, salida(r));
+});
+
+// El criterio de la primera tanda declarado imposible de probar en vivo, cubierto por su prueba; la corrida, en esa tanda.
+const historiaConFirma = (o = {}) => historia(o).replace('pipelines:', ['runtime_not_verifiable:', '  - ac: 1',
+  '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1', 'pipelines:'].join('\n'));
+function conFirmaEnA(E, sid) {
+  fs.writeFileSync(E.story, historiaConFirma());
+  E.git('commit', '-qam', 'el criterio de la primera tanda no se prueba en vivo');
+  E.arrancar(sid);
+  assert.strictEqual(E.correr('marker.js', ['set-batch', A], sid).status, 0);
+  E.escribir(sid, { ...E.leer(sid), repoPath: E.repo, baseSha: E.git('rev-parse', 'HEAD').trim() });
+  // la suite en verde: la prueba que cubre el criterio declarado cuenta como su evidencia de código
+  fs.mkdirSync(path.join(E.repo, '.advisors'), { recursive: true });
+  fs.writeFileSync(path.join(E.repo, '.advisors', 'tests-result.json'), JSON.stringify({ ts: new Date().toISOString(), story_id: '9.9', suite_green: true }));
+}
+const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
+
+test('T17 RuntimeWaiver_Session_Batch_SignsOwnCriterion @story-8.240 @ac-11 — la firma en la ventana mide la tanda del marcador', () => {
+  const E = entorno();
+  conFirmaEnA(E, 's-a17');
+  const ventana = conVentana({});
+  // un criterio de otra tanda: sale 2 sin firmar
+  let r = E.correr('marker.js', ['runtime-waiver', E.story, '--acs', '2', '--approved-by', 'Dev de Prueba'], 's-a17', ventana);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /no es de la tanda medida/, salida(r));
+  // el de la tanda: firma, aunque la otra tanda no tenga evidencia
+  r = E.correr('marker.js', ['runtime-waiver', E.story, '--acs', '1', '--approved-by', 'Dev de Prueba'], 's-a17', ventana);
+  assert.strictEqual(r.status, 0, salida(r));
+  // la firma se ancla a la declaración: la matriz sin tanda la cuenta
+  const todas = require(path.join(SCRIPTS, 'runtime-matrix.js')).compute({ storyPath: E.story });
+  assert.strictEqual(todas.perAc[1].verdict, 'WAIVED-USER', JSON.stringify(todas.perAc[1]));
+});
+
+test('T19 RuntimeWaiver_Terminal_ForSession_ReadsBatch @story-8.240 @ac-12 — la firma por terminal lee la tanda de la sesión nombrada', () => {
+  const E = entorno();
+  conFirmaEnA(E, 's-a19');
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  const m = E.leer('s-a19');
+  assert.strictEqual(wd.matrixForSignature(E.story, m).batch, A);
+  // con el marcador de otra historia, o sin marcador, mide todas
+  for (const x of [wd.matrixForSignature(E.story, { ...m, storyPath: path.join(E.repo, 'specs', 'otra.md') }), wd.matrixForSignature(E.story, null)]) {
+    assert.strictEqual(x.batch, null);
+    assert.ok((x.notRun || []).length, 'las otras tandas quedan sin correr');
+  }
+  // el rechazo por las otras tandas nombra --for-session con la sesión de la corrida
+  assert.match(String(wd.pistaDeSesion({ stateDir: E.dir(), storyPath: E.story })), /--for-session s-a19/);
+  // «Preparar el commit» con la matriz roja por el criterio de la tanda: el comando de la firma lleva la sesión
+  hastaPrepararElCommit(E, 's-a19');
+  const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-a19');
+  assert.match(salida(r), MATRIZ_ROJA, salida(r));
+  assert.match(salida(r), /runtime-waiver \S+ --for-session s-a19/, salida(r));
 });

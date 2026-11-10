@@ -56,6 +56,9 @@
 #       Windows), y un pedido que cambia el juez o la ventana sin poner a prueba lo que afloja es rojo sin la constancia
 #   T9 (8.152) BaseControls_BenchAgainstBase_IsARule — el inventario real tiene el guion del banco de la base como regla
 #       con «sign_on_change», y un pedido que lo cambia sin la constancia es rojo
+#   Las constancias del dueño (por nombre): borrar o reescribir una del ancestro es rojo y pide la firma, con ella pasa;
+#       en el jsonl cuenta el renglón que falta y no el agregado; mudarla tal cual no cuenta; una carpeta que no se lista
+#       es «no pude medir»; sin carpeta la firma de un renglón borrado no tiene dónde ir
 #
 # T12, T13 y T14 están en public-ci.test.sh (el workflow y el guion de la CI) y en la prueba de la 170 del repo de
 # mantenimiento (el yml que sólo existe ahí).
@@ -1426,6 +1429,140 @@ run "${R}" "${T}/ruta-run.out"
 is "T4 CiRejection_KeepsRelativePath: afloja sin constancia: rojo" "1" "${RC}"
 has "T4 …el comando sigue relativo, con --root <repo> sin comillas" "${T}/ruta-run.out" "bash scripts/ci/run-base-controls.sh approve --root <repo>"
 lacks "T4 …sin la ruta de esta máquina" "${T}/ruta-run.out" "bash ${SELF_Q} approve"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# Borrar o reescribir una constancia del dueño es un cambio de control: entra a lo que se firma
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+GH='.github/control-changes/'
+JSONL='.tycon/control-changes.jsonl'
+VIEJA='[{"path":"scripts/ci/toy-rules.json","blob":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]'; HV="$(hash_de "${VIEJA}")"
+OTRA='[{"path":"scripts/ci/toy-names.json","blob":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]'
+NUEVA='[{"path":"scripts/ci/toy-names.json","blob":"cccccccccccccccccccccccccccccccccccccccc"}]'; HN="$(hash_de "${NUEVA}")"
+# constancias_base <carpeta>: el inventario con las dos carpetas y el jsonl; en el ancestro, una constancia del dueño en la
+# carpeta, una que no se lee y un renglón en el jsonl. Abre la rama del pedido
+constancias_base() {
+  local r="$1"; make_base "${r}"; inv "${r}" "j.approvals=[\"${CARPETA}\",\"${GH}\",\"${JSONL}\"]"
+  mkdir -p "${r}/${CARPETA}"; firma "${VIEJA}" > "${r}/${CARPETA}${HV}.json"; printf '{ no es json\n' > "${r}/${CARPETA}rota.json"
+  firma "${OTRA}" > "${r}/${JSONL}"
+  commit "${r}" "constancias del dueño"; pr "${r}"
+}
+entries_de() { sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "$1" | head -n 1; }
+# cambiar_campo <archivo> <campo> <valor>: la misma constancia con un campo cambiado, en una línea
+cambiar_campo() { node -e 'const fs=require("fs");const l=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));l[process.argv[2]]=process.argv[3];fs.writeFileSync(process.argv[1],JSON.stringify(l)+"\n")' "$1" "$2" "$3"; }
+
+# DeletedApproval_IsRed @story-8.248 @ac-3
+R="${T}/c1"; constancias_base "${R}"
+lab_git -C "${R}" rm -q "${CARPETA}${HV}.json"; commit "${R}" "borra una constancia"
+run "${R}" "${T}/c1.out"
+is "DeletedApproval_IsRed: borrar una constancia del ancestro es rojo" "1" "${RC}"
+has "DeletedApproval_IsRed: …nombra la constancia" "${T}/c1.out" "${CARPETA}${HV}.json"
+has "DeletedApproval_IsRed: …y da el comando de la firma del dueño" "${T}/c1.out" "approve --root <repo>"
+pendiente "${R}" "${T}/c1.pending"; E1C="$(entries_de "${T}/c1.pending")"
+case "${E1C}" in *"{\"path\":\"${CARPETA}${HV}.json\",\"blob\":\"borrado\"}"*) ok "DeletedApproval_IsRed: …lo que se firma es la constancia, borrada";; *) no "DeletedApproval_IsRed: las entradas no traen la constancia borrada: ${E1C}";; esac
+
+# DeletedApproval_WithOwnerConstancia_Green @story-8.248 @ac-4
+firma "${E1C}" > "${R}/${CARPETA}$(hash_de "${E1C}").json"; commit "${R}" "la firma del dueño para el borrado"
+run "${R}" "${T}/c2.out"
+is "DeletedApproval_WithOwnerConstancia_Green: con la constancia del dueño, verde" "0" "${RC}"
+has "DeletedApproval_WithOwnerConstancia_Green: …como cambio de control aprobado" "${T}/c2.out" "cambio de control aprobado: "
+
+# RewrittenApproval_AsksSignature @story-8.248 @ac-5: el mismo nombre con otro contenido
+R="${T}/c3"; constancias_base "${R}"
+cambiar_campo "${R}/${CARPETA}${HV}.json" at 2026-11-08; commit "${R}" "reescribe una constancia"
+run "${R}" "${T}/c3.out"
+is "RewrittenApproval_AsksSignature: reescribir una constancia del ancestro pide la firma (rojo)" "1" "${RC}"
+has "RewrittenApproval_AsksSignature: …nombrándola" "${T}/c3.out" "${CARPETA}${HV}.json"
+has "RewrittenApproval_AsksSignature: …con el comando de la firma" "${T}/c3.out" "approve --root <repo>"
+
+# Jsonl_RemovedLine_Red_AppendedLine_Green @story-8.248 @ac-6
+R="${T}/c4a"; constancias_base "${R}"
+: > "${R}/${JSONL}"; commit "${R}" "saca un renglón del registro"
+run "${R}" "${T}/c4a.out"
+is "Jsonl_RemovedLine_Red: un renglón del ancestro que falta es rojo" "1" "${RC}"
+has "Jsonl_RemovedLine_Red: …nombra el registro" "${T}/c4a.out" "${JSONL}"
+R="${T}/c4b"; constancias_base "${R}"
+firma "${NUEVA}" >> "${R}/${JSONL}"; commit "${R}" "suma un renglón al final"
+run "${R}" "${T}/c4b.out"
+is "Jsonl_AppendedLine_Green: un renglón agregado al final pasa como hoy" "0" "${RC}"
+lacks "Jsonl_AppendedLine_Green: …sin pedir firma" "${T}/c4b.out" "approve --root"
+# sin carpeta en el inventario la firma de un renglón borrado no tiene dónde ir: se dice, y approve no la escribe en el jsonl
+R="${T}/c4c"; make_base "${R}"; mkdir -p "${R}/.tycon"; firma "${OTRA}" > "${R}/${JSONL}"; commit "${R}" "un renglón"; pr "${R}"
+: > "${R}/${JSONL}"; commit "${R}" "saca el renglón"
+run "${R}" "${T}/c4c.out"
+is "Jsonl_NoFolder: sin carpeta de constancias, rojo" "1" "${RC}"
+has "Jsonl_NoFolder: …y dice que la firma va en una carpeta" "${T}/c4c.out" "va en una carpeta de constancias"
+pendiente "${R}" "${T}/c4c.pending"
+has "Jsonl_NoFolder: pending lo dice" "${T}/c4c.pending" "va en una carpeta de constancias"
+lacks "Jsonl_NoFolder: …sin un comando de firma que no cuadraría" "${T}/c4c.pending" "approve --root"
+E4C="[{\"path\":\"${JSONL}\",\"blob\":\"$(lab_git -C "${R}" rev-parse "pedido:${JSONL}")\"}]"
+cp "${R}/${JSONL}" "${T}/c4c-antes.jsonl"
+( cd "${R}" && bash "${SCRIPT}" approve --root "${R}" --out "${JSONL}" --entries "${E4C}" < /dev/null ) > "${T}/c4c-approve.out" 2>&1; RC=$?
+is "Jsonl_NoFolder: approve al mismo jsonl no firma (exit)" "1" "${RC}"
+has "Jsonl_NoFolder: …y dice por qué" "${T}/c4c-approve.out" "va en una carpeta de constancias"
+cmp -s "${T}/c4c-antes.jsonl" "${R}/${JSONL}" && ok "Jsonl_NoFolder: …sin tocar el registro" || no "Jsonl_NoFolder: approve escribió en el registro"
+
+# OwnApprovalReplaced_Green @story-8.248 @ac-7: una constancia nueva del pedido, y su reemplazo
+R="${T}/c5"; constancias_base "${R}"
+firma "${NUEVA}" > "${R}/${CARPETA}${HN}.json"; commit "${R}" "una constancia nueva"
+run "${R}" "${T}/c5a.out"
+is "OwnApprovalReplaced_Green: agregar una constancia nueva es verde" "0" "${RC}"
+cambiar_campo "${R}/${CARPETA}${HN}.json" at 2026-11-08; commit "${R}" "la refirma de la propia"
+run "${R}" "${T}/c5b.out"
+is "OwnApprovalReplaced_Green: reemplazar una propia que no estaba en el ancestro es verde" "0" "${RC}"
+lacks "OwnApprovalReplaced_Green: …sin pedir firma" "${T}/c5b.out" "approve --root"
+
+# MovedApproval_SameBlob_NotDeleted_FieldChanged_AsksSignature @story-8.248 @ac-8 @ac-3
+R="${T}/c6a"; constancias_base "${R}"
+mkdir -p "${R}/${GH}"; lab_git -C "${R}" mv "${CARPETA}${HV}.json" "${GH}${HV}.json"; commit "${R}" "muda la constancia tal cual"
+run "${R}" "${T}/c6a.out"
+is "MovedApproval_SameBlob: mudada con el mismo contenido, verde" "0" "${RC}"
+R="${T}/c6b"; constancias_base "${R}"
+mkdir -p "${R}/${GH}"; lab_git -C "${R}" mv "${CARPETA}${HV}.json" "${GH}${HV}.json"; cambiar_campo "${R}/${GH}${HV}.json" by otro; commit "${R}" "muda y cambia"
+run "${R}" "${T}/c6b.out"
+is "MovedApproval_FieldChanged: mudada con «by» cambiado pide la firma (rojo)" "1" "${RC}"
+has "MovedApproval_FieldChanged: …nombra la de origen" "${T}/c6b.out" "${CARPETA}${HV}.json"
+R="${T}/c6c"; constancias_base "${R}"
+lab_git -C "${R}" rm -q "${CARPETA}rota.json"; commit "${R}" "borra la constancia que no se lee"
+run "${R}" "${T}/c6c.out"
+is "MovedApproval_Unreadable: borrar una constancia del ancestro que no se lee también pide la firma (rojo)" "1" "${RC}"
+has "MovedApproval_Unreadable: …y la nombra" "${T}/c6c.out" "${CARPETA}rota.json"
+
+# RewrittenInPlace_WithCopyElsewhere_AsksSignature @story-8.248 @ac-5 @ac-8 (pase adversarial, clase 6): reescribir una
+# constancia en su ruta y dejar una copia de la vieja en otra carpeta no es una mudanza
+R="${T}/c6d"; constancias_base "${R}"
+mkdir -p "${R}/${GH}"; cp "${R}/${CARPETA}${HV}.json" "${R}/${GH}${HV}.json"; cambiar_campo "${R}/${CARPETA}${HV}.json" at 2026-11-08
+commit "${R}" "reescribe y deja la vieja en otra carpeta"
+run "${R}" "${T}/c6d.out"
+is "RewrittenInPlace_WithCopyElsewhere: pide la firma (rojo)" "1" "${RC}"
+has "RewrittenInPlace_WithCopyElsewhere: …nombrando la reescrita" "${T}/c6d.out" "${CARPETA}${HV}.json"
+
+# Jsonl_InventoryWithFolderAfter_SignsInTheFolder @story-8.248 @ac-6 (pase adversarial, clases 8 y 12): con el registro
+# primero y una carpeta después en el inventario, la firma va a la carpeta, no «no se puede firmar»
+R="${T}/c4d"; make_base "${R}"; inv "${R}" "j.approvals=[\"${JSONL}\",\"${CARPETA}\"]"; mkdir -p "${R}/.tycon"; firma "${OTRA}" > "${R}/${JSONL}"
+commit "${R}" "registro primero"; pr "${R}"
+: > "${R}/${JSONL}"; commit "${R}" "saca el renglón"
+pendiente "${R}" "${T}/c4d.pending"
+has "Jsonl_InventoryWithFolderAfter: la firma va a la carpeta" "${T}/c4d.pending" "--out '${CARPETA}'"
+lacks "Jsonl_InventoryWithFolderAfter: …sin decir que no se puede firmar" "${T}/c4d.pending" "no se puede firmar"
+run "${R}" "${T}/c4d.out"
+is "Jsonl_InventoryWithFolderAfter: sin la firma, rojo" "1" "${RC}"
+has "Jsonl_InventoryWithFolderAfter: …con el comando de la firma" "${T}/c4d.out" "approve --root <repo>"
+
+# UnreadableApprovals_NotMeasured @story-8.248 @ac-10: una carpeta de constancias que git no puede listar
+R="${T}/c9"; make_base "${R}"; inv "${R}" "j.approvals=[\"../afuera/\",\"${JSONL}\"]"; commit "${R}" "una carpeta que no se lista"; pr "${R}"
+printf 'otra cosa\n' > "${R}/docs/otra.txt"; commit "${R}"
+run "${R}" "${T}/c9.out"
+[ "${RC}" -ne 0 ] && ok "UnreadableApprovals_NotMeasured: nunca verde (rc ${RC})" || no "UnreadableApprovals_NotMeasured: salió verde"
+has "UnreadableApprovals_NotMeasured: …dice que no pudo medir las constancias" "${T}/c9.out" "no pude medir las constancias"
+
+# WorkflowsAndDeletions_OtherChecksUnchanged @story-8.248 @ac-11
+R="${T}/c10"; constancias_base "${R}"
+lab_git -C "${R}" rm -q scripts/ci/toy-names.json
+printf '%s\n' 'name: ci' 'jobs: { ci: { steps: [ { run: "echo nada" } ] } }' > "${R}/.github/workflows/ci.yml"; commit "${R}" "borra una regla y saca la marca"
+run "${R}" "${T}/c10.out"
+is "WorkflowsAndDeletions_OtherChecksUnchanged: rojo, como hoy" "1" "${RC}"
+has "WorkflowsAndDeletions_OtherChecksUnchanged: …el borrado de la regla" "${T}/c10.out" "el pedido borra scripts/ci/toy-names.json, que la base tiene"
+has "WorkflowsAndDeletions_OtherChecksUnchanged: …y la marca del workflow" "${T}/c10.out" "ya no trae la base (falta «run-base-controls»)"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi

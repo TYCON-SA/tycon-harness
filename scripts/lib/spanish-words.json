@@ -1591,6 +1591,10 @@
       "reason": "de git, no un nombre del arnés: la opción `--ignore-submodules=none` de `git diff-tree`. Sin ella git obedece el `ignore` del `.gitmodules` del árbol y saltea el submódulo, y el freno antes de publicar (scripts/hooks/public-push-guard.js) lo daba por limpio (story 8.26, tanda F2, pase adversarial). Sumada el 2026-10-10 con el plan de la tanda aprobado, a confirmar por el dueño; precedentes iguales del 2026-10-03 y de la tanda F1."
     },
     {
+      "words": ["hardlinks", "submodule"],
+      "reason": "de git, no nombres del arnés: la opción `git clone --no-hardlinks`, que separa el clon de la comparación con main del repo real (lib/compare-previous.js), y el subcomando `git submodule`, que el reemplazo de git corta en las corridas sin red (lib/compare-shims/git). Historia 8.167, paquete 8.243. Aprobadas por el dueño el 2026-11-09."
+    },
+    {
       "words": ["cov", "junit", "junitfile", "junitxml"],
       "reason": "nombres de herramientas de prueba ajenas: el formato de reporte JUnit, las opciones `--junitxml` y `--cov` de pytest (pytest-cov) y `--junitfile` de gotestsum. Aprobadas por el dueño el 2026-10-19 (story 8.48, tanda B1)."
     },

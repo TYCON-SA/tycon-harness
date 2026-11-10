@@ -69,7 +69,8 @@ function pipelineViejo(sha) {
   const shaCompleto = git(RAIZ, ['rev-parse', `${sha}^{commit}`]).trim();
   const dir = tmp('equiv-viejo-');
   const tar = path.join(dir, 'viejo.tar');
-  const r = spawnSync('git', ['-C', RAIZ, 'archive', '-o', tar, shaCompleto, 'skills/tycon-pipeline/scripts'], { encoding: 'utf8' });
+  // con `scripts/lib`: el pipeline sella el árbol de cada vuelta con bibliotecas de ahí (clean-git-env.js)
+  const r = spawnSync('git', ['-C', RAIZ, 'archive', '-o', tar, shaCompleto, 'skills/tycon-pipeline/scripts', 'scripts/lib'], { encoding: 'utf8' });
   if (r.error) throw new Error(`git no se pudo ejecutar (${r.error.code || r.error.message})`);
   if (r.status !== 0) throw new Error(`git archive ${sha}: ${r.stderr}`);
   const t = spawnSync('tar', ['-xf', tar, '-C', dir], { encoding: 'utf8' });
