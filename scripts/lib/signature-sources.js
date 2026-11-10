@@ -390,6 +390,22 @@ function delFrenoDeDatos(palabras, estado, destino) {
 }
 
 /**
+ * Dejar pasar una vez un guardado ajeno al carril: lo que guarda, del pedido que anotó el freno de guardar (el comando,
+ * el repo, la rama, hasta cinco nombres y cuántos más, los hooks y la configuración de la máquina que corre programas).
+ * El código del cuadro sale de la huella del pedido: con otro pedido, otro cuadro. Sin pedido, no hay nada que firmar.
+ */
+function delGuardadoAjeno(estado, destino) {
+  let a = null;
+  try { a = JSON.parse(fs.readFileSync(path.join(estado, 'adhoc', `${destino}.json`), 'utf8')); } catch (_) { a = null; }
+  const p = a && a.guardadoAjeno;
+  if (!p || !p.huella) return { error: 'no hay un guardado ajeno frenado en ese carril: lo anota el freno de guardar cuando frena' };
+  const fa = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'adhoc-foreign-save.js'));
+  const lineas = fa.lineasDe(p, { todo: true });
+  // el destino, los hooks y la configuración que corre van en el cuadro que se clickea: no se recortan
+  return { queHace: lineas, todoQueHace: true, fuente: `${p.huella}\n${lineas.join('\n')}` };
+}
+
+/**
  * Nombrar o retirar a la coordinadora: qué sesión, en qué carpeta. El id solo no le dice nada al dueño; la carpeta sí.
  * El rol es el que nombra el perfil del equipo (`approvals.relay_session`).
  */
@@ -413,6 +429,7 @@ function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {
   if (firma === 'extra-round') return deLaVuelta(palabras, marcador);
   if (firma === 'adhoc-lane' || firma === 'adhoc-lane:sobre-cupo') return delArreglo(palabras, topes);
   if (firma === 'adhoc-lane:datos' && estado && destino) return delFrenoDeDatos(palabras, estado, destino);
+  if (firma === 'adhoc-lane:guardado-ajeno') return estado && destino ? delGuardadoAjeno(estado, destino) : { error: 'no sé de qué sesión es el guardado ajeno' };
   return null;
 }
 

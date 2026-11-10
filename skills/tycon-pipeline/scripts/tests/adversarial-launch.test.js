@@ -501,10 +501,23 @@ const CASOS_FOTO = [
   { nombre: 'pesada-interruptor', repo: { pesada: true }, files: 'todos', env: { TYCON_NO_DEEP_REVIEW: '1' } },
 ];
 
+/**
+ * Las dos señales del riesgo por parte salen en `warnings` como aviso y no cambian nada más: la foto se compara sin ellas,
+ * y cada aviso tiene que ser una de las dos.
+ */
+function sinSenales(salida) {
+  if (!salida || !Array.isArray(salida.warnings)) return salida;
+  for (const w of salida.warnings) {
+    assert.match(w, /^(ninguna prueba lo ataja|concurrencia): /, `un aviso que no es una señal: ${w}`);
+  }
+  const { warnings, ...resto } = salida;
+  return resto;
+}
+
 function correrFoto(home, c) {
   const repo = mkRepo(c.repo);
   const r = pipe(home, ['deep-review-gate', '--repo', repo.dir, '--story', repo.story, '--files', ...repo.rutas, ...(c.flags || [])], c.env);
-  return { status: r.status, salida: r.status === 0 ? JSON.parse(r.stdout) : null, stderr: r.stderr };
+  return { status: r.status, salida: r.status === 0 ? sinSenales(JSON.parse(r.stdout)) : null, stderr: r.stderr };
 }
 
 if (process.env.TYCON_GATE_SNAPSHOT === 'escribir') {

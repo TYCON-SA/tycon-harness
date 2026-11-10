@@ -275,7 +275,10 @@ the coordinator:
   organization's reviewer), and records the result with `--result`.
 - **Approves on the owner's behalf only with «approved»** on that same plan, with `plan_review.coordinator_approves`
   (O4) on and `plan-approval` delegated. Rejected or without a verdict, the plan waits; a delicate plan is always signed
-  by the owner.
+  by the owner. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is
+  valid, «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at
+  the close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
+  still goes by the whole story.
 - **Gives the code pass its turn.** She launches nothing for the code: with the owner away, she answers the question on
   the owner's behalf according to the cell (`review-answer --for-session`, with «owner away» as the reason), and the
   session itself launches the pass with its turn, as always.
@@ -417,6 +420,16 @@ control signature, which is the owner's.
 The quick fix (a code change with no story) is the `adhoc-lane` signature: the tab that needs it runs
 `marker.js adhoc set '<json>'` and the owner approves it in the window, which shows the reason and the file quota.
 
+**It is asked for with its list.** The JSON names the files it will touch, one by one, and a reason with a single topic:
+
+```bash
+marker.js adhoc set '{"reason":"the customer combo does not filter by branch","datos":"sin-cambio","allowedFiles":["src/customers/combo.ts","src/customers/filter.ts"]}'
+```
+
+The test of each file on the list does not need to be named. Outside the list nothing is edited or saved; widening it is
+another signature. The details (which reasons are not delegated, one delegated fix per repo) are in
+`guides/firmas-del-arnes.md`.
+
 **Declaring it again keeps everything.** With another quota or another reason, the lane keeps its list, its high-risk mark
 and its records, which hold while what they measured does not change. A new task in the same session goes on a new branch
 from `main`: on the previous task's branch, its commits count toward the quota.
@@ -461,6 +474,20 @@ with the line's text, what really changed and what it recommends. The signature 
 owner's click approves it, in their tab or in yours: «Sí, aprobar» lets it through, and «No» sends the session to write the
 story, or to discard what the lane did if the owner says so. A written «aprobado», the permission window and delegation do
 not count. The click covers those signals: another line with a signal stops it again. When in doubt, a story.
+
+**A foreign save, while the lane waits for its reviewers, asks for the click.** While a high-risk short path waits for its
+reviewers and the pass, the session saves nothing, not in another repo or another worktree either. If what it saves is
+not part of the lane and can be seen whole, the brake writes down the request and gives the session `marker.js adhoc
+allow-foreign-save`. That command shows the command, the repo, the branch, what it saves (the commit's files, or the
+push's commits), the hooks that run and the machine's configuration that runs programs, and asks for the signature
+`adhoc-lane:guardado-ajeno`. Only the owner's click approves it, in the session's tab or in yours, or their terminal:
+delegation, «hecho y avisado» and a written «aprobado» do not count. It lets that same command through once, in that
+folder and with the repo as it was, for 30 minutes from the click; any change stops it again. The click is not offered,
+and it stops as always, for what cannot be seen whole or can touch the lane's branch: a save of the lane, a pull request,
+its own high-risk path, more than one repo, `--amend`, a push to a remote of the lane, to a path or with `--force` and its
+relatives, git options that run programs, a hook that is not the repo's, a key of the repo's configuration that runs a
+program, or a command longer than 160 characters or with characters that cannot be seen. There, run the lane's reviewers
+and pass.
 
 **With the mockup and the screenshot, what was built is compared with the mockup.** It compares texts, not the drawing: if a
 text of the mockup is not in the fix's screens or in the other screens of its repos, it does not save. A text that already

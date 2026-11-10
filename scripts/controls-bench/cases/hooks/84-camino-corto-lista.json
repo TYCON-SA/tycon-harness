@@ -1,0 +1,85 @@
+{
+  "__doc": "T39 Banco_CaminoRapidoLista @story-8.174 @ac-25 @ac-30 @ac-32 @ac-36. Todo camino rápido lleva su lista cerrada de archivos (allowedFiles): editar fuera frena (también un .md, en un repo sin .tycon/), por la herramienta de edición y por la consola; dentro pasa, y la prueba del archivo pasa sin nombrarla; al guardar, un archivo fuera de la lista frena y se nombra. Lo que se abre sin una persona (delegado sin lista, motivo con varios temas o vago) necesita un perfil con delegación que el banco no puede poner en la carpeta del arnés que corre: lo cubren adhoc-list.test.js (T28, T30, T31, T35, T37) y owner-window.test.js.",
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js (camino corto con lista)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "camino-corto-lista-dentro-pasa",
+          "type": "must-not-block",
+          "_por_que": "el archivo está en la lista del carril: pasa.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo x > src/a.js && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/a.js\"],\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-lista.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-lista\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-lista", "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/src/a.js" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "camino-corto-lista-md-fuera-frena",
+          "type": "must-block",
+          "_por_que": "una guía que no está en la lista, en un repo sin .tycon/: frena con la lista y el comando para ampliarla.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo x > src/a.js && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/a.js\"],\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-lista.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-lista\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-lista", "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/docs/notas.md" } },
+          "expect": { "exit": 2, "stderr_re": ["FUERA DE LA LISTA", "allowedFiles"] }
+        },
+        {
+          "id": "camino-corto-lista-prueba-del-archivo-pasa",
+          "type": "must-not-block",
+          "_por_que": "la prueba de un archivo de la lista, en el mismo repo y con su nombre: pasa sin nombrarla.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo x > src/a.js && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/a.js\"],\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-lista.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-lista\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-lista", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/tests/a.test.js", "content": "x" } },
+          "expect": { "exit": 0 }
+        }
+      ]
+    },
+    {
+      "hook": "on-bash-write-gate.js (camino corto con lista)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "camino-corto-lista-consola-afuera-frena",
+          "type": "must-block",
+          "_por_que": "por la consola, con lo que la puerta ya lee (una redirección): un archivo fuera de la lista frena.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo x > src/a.js && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/a.js\"],\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-lista.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-lista\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-lista", "tool_name": "Bash", "tool_input": { "command": "echo x > src/otro.js" } },
+          "expect": { "exit": 2, "stderr_re": ["FUERA DE LA LISTA"] }
+        }
+      ]
+    },
+    {
+      "hook": "on-pre-commit.js (camino corto con lista)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "camino-corto-lista-guardar-fuera-frena",
+          "type": "must-block",
+          "_por_que": "un commit del carril con un archivo fuera de la lista, dentro del cupo: no guarda y lo nombra.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
+            "mkdir -p src && echo x > src/a.js && echo x > src/otro.js && git add -A",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/a.js\"],\"files\":[\"%s/src/a.js\"],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-lista.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-lista\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-lista", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "exit": 2, "stderr_re": ["no están en la lista", "src/otro\\.js"] }
+        }
+      ]
+    }
+  ]
+}

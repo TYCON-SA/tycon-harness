@@ -3347,8 +3347,11 @@ function tramoQueSoloNombra(cmd, tramo, esGuionInstalado) {
   const llamadas = mc.llamadas(envuelto ? p.map((x) => (/\s/.test(x.texto) ? `'${x.texto.replace(/'/g, '')}'` : x.texto)).join(' ') : texto, { shell: 'bash' });
   const l = llamadas[0];
   if (llamadas.length !== 1 || l.guion !== 'pipeline' || !PIPELINE_LISTA.has(l.sub) || !p[2] || p[2].texto !== l.sub) return false;
-  // las banderas se leen como las lee el freno de firmas: una que no se ve puede ser la que pide una firma
-  if (l.envFile || l.porXargs || mc.escapeDe(l, null) || mc.lectorDeBanderas(l)('--extra-round')) return false;
+  // las banderas se leen como las lee el freno de firmas: una que no se ve puede ser la que pide una firma. La vuelta
+  // extra escrita tal cual sí se exime (su firma la pide el freno de firmas, aparte); la que llega por una variable o
+  // por lo que no se ve, no
+  const sinLaVueltaALaVista = { ...l, args: (l.args || []).filter((a) => !(a.literal && a.texto === '--extra-round')) };
+  if (l.envFile || l.porXargs || mc.escapeDe(l, null) || mc.lectorDeBanderas(sinLaVueltaALaVista)('--extra-round')) return false;
   // una variable que no se sabe queda escrita en la ruta, y esa ruta no existe
   return esGuionInstalado(expandirRuta(cmd, p[1].texto).valor, 'pipeline.js');
 }
@@ -3804,8 +3807,9 @@ function handleCarrilEHistoria(event, opts = {}) {
     const passedCode = [];
     // un carril delegado no escribe una ruta de riesgo alto aunque no sea código (`.tycon/production.json`): sus
     // destinos ya leídos van todos al portón, que decide
+    // (y un carril con lista no deja escribir lo que no nombra, sea código o no: también van todos)
     let delegado = false;
-    try { const a = io.readAdhoc(stateDir, sessionId); delegado = !!(a && a.via === 'delegacion'); } catch (e) { logHookError(e); }
+    try { const a = io.readAdhoc(stateDir, sessionId); delegado = !!(a && (a.via === 'delegacion' || Array.isArray(a.allowedFiles))); } catch (e) { logHookError(e); }
     // un destino armado que no se lee puede ser cualquier archivo: se le pregunta al portón como si fuera código de la
     // carpeta donde corre, y frena lo que no tiene carril y la ejecución a la que le falta una pieza (no dependen del
     // archivo). Con un carril o una ejecución sana pasa: no se sabe qué archivo es, y no se gasta el cupo con uno inventado
@@ -3958,7 +3962,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory };
+module.exports = { handle, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA };
 
 if (require.main === module) {
   const cruda = leerEntrada();

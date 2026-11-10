@@ -219,8 +219,11 @@ test('T6 ExtraRoundAndEscapes_NotExempted', () => {
   const c = corral();
   const freno = juzgador(c);
   const P = `node ${c.pipeline}`;
+  // la vuelta extra escrita a la vista, con su lista: no es un guion que corre (8.235 G); la firma la pide el freno de firmas
+  for (const extra of [`${P} smart-reloop --extra-round --files ${M}`, `${P} smart-reloop --files ${M} --extra-round`, `${P} advisors --extra-round --files ${M}`]) {
+    assert.notStrictEqual(freno(extra), GRANDE, extra);
+  }
   for (const raro of [
-    `${P} smart-reloop --extra-round --files ${M}`, `${P} smart-reloop --files ${M} --extra-round`, `${P} advisors --extra-round --files ${M}`,
     `F=--extra-round; ${P} smart-reloop --files ${M} $F`, `${P} smart-reloop --files ${M} "$F"`, `${P} smart-reloop --files ${M} $(echo --extra-round)`,
     `${P} check-count --trust-ran --files ${M}`, `${P} deep-review-gate --no-deep-review --files ${M}`,
     `node --env-file=x ${c.pipeline} deep-review-gate --files ${M}`,

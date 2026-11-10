@@ -1,0 +1,58 @@
+{
+  "__doc": "T12 Banco_CaminoRapidoRiesgoAlto @story-8.174 @ac-11. El riesgo alto en el camino rápido: el carril delegado no escribe una ruta de riesgo alto (auth/), y un carril de una persona marcado no guarda sin los revisores y el pase; con las dos constancias, guarda con el sí de siempre. La cuarta forma del AC 11 (un pedido delegado con una migración en la lista se niega) necesita un perfil con delegación que el banco no puede poner en la carpeta del arnés que corre: la cubren adhoc-high-risk.test.js (T2, T3 y T5) y owner-window.test.js.",
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js (camino corto de riesgo alto)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "camino-corto-riesgo-alto-delegado-edita-auth-frena",
+          "type": "must-block",
+          "_por_que": "un carril abierto por delegación, con auth/ en su lista: no escribe la ruta de riesgo alto.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src/auth && echo x > src/auth/x.ts && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"via\":\"delegacion\",\"by\":\"coord\",\"allowedFiles\":[\"%s/src/auth/x.ts\"],\"files\":[],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-riesgo.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-riesgo\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-riesgo", "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/src/auth/x.ts" } },
+          "expect": { "exit": 2, "stderr_re": ["RIESGO ALTO", "rutas-sensibles"] }
+        }
+      ]
+    },
+    {
+      "hook": "on-pre-commit.js (camino corto de riesgo alto)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "camino-corto-riesgo-alto-marcado-sin-constancias-frena",
+          "type": "must-block",
+          "_por_que": "un carril de una persona marcado de riesgo alto, sin los revisores ni el pase: el commit no guarda.",
+          "setup": [
+            "git init -q --bare -b main ../origen-riesgo.git && git init -q -b main . && git remote add origin ../origen-riesgo.git && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git push -q origin main",
+            "mkdir -p src/auth && echo x > src/auth/x.ts && git add -A",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); B=$(git rev-parse HEAD); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/auth/x.ts\"],\"files\":[\"%s/src/auth/x.ts\"],\"rutas\":[\"%s/src/auth/x.ts\"],\"bases\":{\"%s\":{\"sha\":\"%s\",\"traida\":true,\"ts\":\"%s\"}},\"riesgoAlto\":{\"regla\":\"rutas-sensibles\",\"archivo\":\"%s/src/auth/x.ts\"},\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$D\" \"$D\" \"$B\" \"$T\" \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-riesgo.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-riesgo\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\"",
+            "node -e 'const fs=require(\"fs\");const p=process.env.HOME+\"/.claude/.tycon-pipeline/adhoc/bench-riesgo.json\";const a=JSON.parse(fs.readFileSync(p,\"utf8\"));const h=require(process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/adhoc-base.js\").huellaDelCarril(a);a.pruebas={comando:\"npm test\",codigo:0,at:new Date().toISOString(),huella:h,salida:\"ok\"};fs.writeFileSync(p,JSON.stringify(a));'"
+          ],
+          "stdin": { "session_id": "bench-riesgo", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "exit": 2, "stderr_re": ["faltan los revisores y el pase"] }
+        },
+        {
+          "id": "camino-corto-riesgo-alto-con-constancias-pregunta",
+          "type": "must-emit",
+          "_por_que": "el mismo carril con las dos constancias sobre lo que se guarda: pregunta como todo guardado, sin pedir revisores.",
+          "setup": [
+            "git init -q --bare -b main ../origen-riesgo.git && git init -q -b main . && git remote add origin ../origen-riesgo.git && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git push -q origin main",
+            "mkdir -p src/auth && echo x > src/auth/x.ts && git add -A",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); B=$(git rev-parse HEAD); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/auth/x.ts\"],\"files\":[\"%s/src/auth/x.ts\"],\"rutas\":[\"%s/src/auth/x.ts\"],\"bases\":{\"%s\":{\"sha\":\"%s\",\"traida\":true,\"ts\":\"%s\"}},\"riesgoAlto\":{\"regla\":\"rutas-sensibles\",\"archivo\":\"%s/src/auth/x.ts\"},\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$D\" \"$D\" \"$B\" \"$T\" \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-riesgo.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-riesgo\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\"",
+            "node -e 'const fs=require(\"fs\");const p=process.env.HOME+\"/.claude/.tycon-pipeline/adhoc/bench-riesgo.json\";const a=JSON.parse(fs.readFileSync(p,\"utf8\"));const h=require(process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/adhoc-base.js\").huellaDelCarril(a);const t=new Date().toISOString();a.revisores={huella:h,at:t};a.pase={huella:h,at:t,confirmados:0};a.pruebas={comando:\"npm test\",codigo:0,at:t,huella:h,salida:\"ok\"};fs.writeFileSync(p,JSON.stringify(a));'"
+          ],
+          "stdin": { "session_id": "bench-riesgo", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "expect": { "stdout_re": ["\"permissionDecision\":\"ask\""], "stdout_not_re": ["faltan los revisores"] }
+        }
+      ]
+    }
+  ]
+}

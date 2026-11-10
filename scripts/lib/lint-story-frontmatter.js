@@ -474,6 +474,34 @@ function inRemoteMain(root, p) {
   } catch { return 'unknown'; }
 }
 
+/**
+ * Las partes del bloque `pipelines:` cuyo `files:` no es una lista: un valor suelto en el renglón (`files: src/a.js`), o
+ * una clave vacía sin ítems debajo. `files: [a, b]` y la lista con `- ruta` valen. Devuelve los nombres de las partes.
+ */
+function filesDeParteMalos(fm) {
+  const lineas = String(fm || '').split(/\r?\n/);
+  const inicio = lineas.findIndex((l) => /^pipelines\s*:\s*$/.test(l));
+  if (inicio < 0) return [];
+  const malas = [];
+  let parte = null;
+  for (let i = inicio + 1; i < lineas.length; i++) {
+    const l = lineas[i];
+    if (!l.trim()) continue;
+    if (/^\S/.test(l) && !/^-\s/.test(l)) break;
+    const nombre = l.match(/^\s*-\s*name\s*:\s*["']?([\w-]+)/);
+    if (nombre) { parte = nombre[1]; continue; }
+    const f = l.match(/^(\s+)files\s*:\s*(.*?)\s*$/);
+    if (!f) continue;
+    // el `\s*` de la clave ya se comió el espacio: un `#` al principio del valor es un comentario, no un valor
+    const v = f[2].replace(/(^|\s+)#.*$/, '').trim();
+    if (v) { if (!/^\[.*\]$/.test(v)) malas.push(parte || '(sin nombre)'); continue; }
+    // como el lector del bloque: un comentario o un renglón en blanco entre `files:` y sus ítems no corta la lista
+    const sig = lineas.slice(i + 1).find((x) => x.trim() && !/^\s*#/.test(x));
+    if (!sig || !new RegExp(`^\\s{${f[1].length},}-\\s*\\S`).test(sig) || /^\s*-\s*name\s*:/.test(sig)) malas.push(parte || '(sin nombre)');
+  }
+  return malas;
+}
+
 /** `{ missing, unsure }` de una story: las rutas que no existen y las que no se pueden juzgar. */
 function checkStory(storyFile, content) {
   const text = (content === undefined ? fs.readFileSync(storyFile, 'utf8') : content).replace(/^﻿/, '');
@@ -630,6 +658,18 @@ function main() {
       console.error(`⚠️  ${rel}: no encontré la regla de riesgo (lib/risk-paths.js del skill tycon-pipeline): \`riesgo_alto_por:\` no se revisó.`);
     }
 
+    // 8. `files:` y `sensible:` de una parte (story-format.md §1.1): `files:` es una lista de rutas. Uno que no se puede
+    //    leer como lista frena: la parte se mediría por la historia entera sin que nadie lo sepa.
+    const malas = filesDeParteMalos(parsed.fm);
+    if (malas.length) {
+      errors.push({
+        rel, problema: `\`files:\` de la parte ${malas.join(', ')} no es una lista de rutas`,
+        efecto: 'la parte no vale y su riesgo se mide por la historia entera',
+        arreglo: '`files:` con un renglón `- ruta` por archivo, o `files: [a, b]`',
+      });
+      continue;
+    }
+
     // 4. La causa del reproceso. El por qué de cada rama, en la cabecera del archivo.
     if (!vocab.motivo) {
       const lista = vocab.causas.join(' · ');
@@ -750,7 +790,7 @@ function main() {
 // Exportado para que OTROS controles usen EL MISMO criterio de "esto es una story" en vez de
 // escribir el suyo (dos detectores del mismo concepto terminan divergiendo: uno aparte podría tomar por story rota
 // un reporte de medición que declara `story:` en el cuerpo, sin frontmatter).
-module.exports = { frontmatterZone, looksLikeStory, DECLARES_STORY, NOT_A_STORY_NAME, STORY_SHAPED, errorRiesgoAltoPor, mensajeRiesgoAltoPor };
+module.exports = { frontmatterZone, looksLikeStory, DECLARES_STORY, NOT_A_STORY_NAME, STORY_SHAPED, errorRiesgoAltoPor, mensajeRiesgoAltoPor, filesDeParteMalos };
 
 // 🔴 `process.exitCode`, NO `process.exit()`: en Node las escrituras a una tubería son
 // ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Medido con

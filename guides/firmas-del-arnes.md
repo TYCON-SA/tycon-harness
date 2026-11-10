@@ -52,6 +52,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `refresh-after-main` | 1 · rutina | sólo mantenimiento | refirmar los controles tras traer main, sin cambio propio | `refresh-after-main` |
 | `save:sensible` | 2 · excepción | dev y mantenimiento | guardar cuando un commit toca algo de lo sensible | `save` |
 | `adhoc-lane:datos` | 2 · excepción | dev y mantenimiento | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño) | `adhoc-lane:datos` |
+| `adhoc-lane:guardado-ajeno` | 2 · excepción | dev y mantenimiento | dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista (sólo el click o la terminal de una persona) | `adhoc-lane:guardado-ajeno` |
 | `adhoc-lane:sobre-cupo` | 2 · excepción | dev y mantenimiento | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia (cuentan sólo los archivos de implementación, sin pruebas ni guías) | `adhoc-lane:sobre-cupo` |
 | `escape:DOD_BYPASS` | 2 · excepción | dev y mantenimiento | saltear todos los controles del commit | `escape:DOD_BYPASS` |
 | `critical-waiver` | 2 · excepción | dev y mantenimiento | eximir un hallazgo crítico | `critical-waiver` |
@@ -224,7 +225,7 @@ En Windows firmás con un click en el cuadro de opciones o con un «aprobado» e
 consola Bash. El freno niega el comando la primera vez y le da al agente el cuadro para mostrarte; con tu click, el agente
 repite el mismo comando. La otra salida es `--terminal`, que abre una ventana nueva donde escribís tres palabras al azar.
 Para un arreglo rápido, ese comando es `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio
---terminal --for-session <id>`, sin JSON.
+--file <ruta> [--file <ruta> …] --terminal --for-session <id>`, sin JSON.
 
 Esto no firma en Windows:
 
@@ -293,9 +294,10 @@ vuelve a pedir la firma del dueño.
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
-| `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --terminal --for-session <id>` |
-| `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'` | no, en la pestaña de esa sesión | `marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --terminal --for-session <id>` |
+| `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --file <ruta> --terminal --for-session <id>` |
+| `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'` | no, en la pestaña de esa sesión | `marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --file <ruta> --terminal --for-session <id>` |
 | `adhoc-lane:datos` | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>` | no, en la pestaña de esa sesión | `marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué> --terminal --for-session <id>` |
+| `adhoc-lane:guardado-ajeno` | dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista | `marker.js adhoc allow-foreign-save` | no, en la pestaña de esa sesión | `marker.js adhoc allow-foreign-save --terminal --for-session <id>` |
 | `save` | guardar la story: commit, push y los pull requests | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
 | `designation-confirm` | confirmar qué sesión es la coordinadora de esta máquina | `delegated-signing.js confirm-designation` | no, en la pestaña de esa sesión | `delegated-signing.js confirm-designation --terminal` |
 | `designation-set` | nombrar a esta sesión coordinadora de la máquina | `marker.js designate-relay` | no, en la pestaña de esa sesión | `marker.js designate-relay --terminal` |
@@ -432,6 +434,42 @@ el freno da el cuadro para que lo apruebe una persona), el arreglo nunca toca lo
 de los avisos, como el ok de guardar (sin entrega, no hay arreglo). La
 coordinadora de otra máquina no lo declara: se lo pide a la designada de la máquina destino (`guides/coordination.md`).
 No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nombra.
+
+**La lista de archivos.** Todo camino rápido nuevo se abre con su lista cerrada de archivos (`"allowedFiles"` en el
+JSON; en la terminal, `--file <ruta>` por cada uno): rutas relativas, una por una, sin comodines, sin carpetas y sin
+`..`. Sin lista, o con una inválida, `adhoc set` se niega antes de pedir la firma, la pida quien la pida. La ventana
+muestra la lista en el comando y el resumen dice cuántos archivos son. Editar fuera de la lista frena, y ampliarla es
+otra firma del mismo tipo; por delegación, la lista nueva contiene entera la firmada. Pasan sin nombrarlas la prueba de
+un archivo de la lista, la evidencia de `.advisors/` y la memoria de `.engram/`.
+
+Lo que no se delega (ni lo abre «hecho y avisado» una pestaña sin permisos), y entonces lo abre una persona:
+
+- un motivo con un salto de línea (eso se niega siempre: la ventana muestra un renglón), vago («varios», «arreglos»,
+  «pendientes», «etc.») o con varios temas («;», «+», varias comas, o una coma y después una «y»);
+- un segundo camino rápido delegado sobre el mismo repo: hay uno por repo;
+- un camino rápido que toca una ruta de riesgo alto.
+
+El límite de la consola: el portón de edición ve las herramientas de edición y lo que lee de la consola; lo que no ve
+(un archivo movido o generado por un programa) lo frena el freno de guardar, que compara todo lo que cambió contra la
+lista y nombra lo que sobra. Un carril delegado, además, no guarda nada de lo sensible.
+
+**El plan de una parte.** Cuando la ejecución anota su tanda con `marker.js set-batch` y la parte vale (declara `files:`,
+sus archivos están en la historia y no pisa el código de otra parte abierta), la marca de delicada del plan se mide
+por la parte más lo que el cambio toca. Es lo único que afloja: una parte que no es delicada la aprueba la coordinadora
+con la revisión automática, en vez del dueño (medido el 31/10: 82 de 115 partes recientes dejan de ser delicadas). Ese
+plan queda atado a la lista de la parte, la que quedó al aprobar: editar código fuera de ella frena, y al cerrar se
+mide el diff entero; si sale delicado, «Aprobar el plan» vuelve al dueño y el código queda en la rama. El pase
+adversarial, su modelo y la revisión de la historia siguen por la historia entera. Una historia cuyas partes no
+declaran `files:` se sigue midiendo entera: la ganancia llega cuando las historias declaran sus partes.
+
+**Las pruebas y la rama del camino rápido.** Dos reglas más, para todo camino rápido con su lista:
+
+- Si cambiaste código, no guarda sin una ejecución de pruebas en verde sobre lo que guardás. La corrés vos con
+  `marker.js adhoc test -- <el comando de las pruebas>`, que anota el resultado y la huella de lo probado. Si cambiás
+  código después, esa ejecución se vence y hay que repetirla. Si sólo tocaste guías o datos, no la pide.
+- Si pasaste el tope de archivos con tu click, el código no se guarda en la rama principal del repo (la que el remoto
+  tiene por defecto; si no se puede leer, `main` y `master`): creá vos una rama con `git switch -c <nombre>` y guardá
+  ahí, con las pruebas en verde. Dentro del tope, esta regla no mira la rama.
 
 Quién cambia los topes del camino corto: cada organización, en el perfil del equipo (`short_path.coordinator_max_files`,
 de 1 a 6, y `short_path.max_files`, de 1 a 12; por defecto, 5 y 8), desde la sección «Los topes del camino corto» del sitio

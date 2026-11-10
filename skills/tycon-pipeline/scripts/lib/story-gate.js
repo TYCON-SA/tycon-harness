@@ -234,7 +234,7 @@ function signedRecordKind(p) {
 function computeStoryGate({
   filePath, stateDir, homeDir, repoRoot, repoHasTycon, repoHasStories, gateEnabled = true, marker, adhoc,
   isHarness, realFilePath = null, installedRoots = [], realStateDir = null, sensitiveCheck = null,
-  adhocRepoRoot = null, riesgoAlto = null,
+  adhocRepoRoot = null, riesgoAlto = null, listGateEnabled = true, batchList = null,
 }) {
   if (!filePath) return { action: 'pass', reason: 'sin file_path' };
   // la ruta real (por los enlaces) la resuelve el borde; sin ella, la escrita
@@ -301,8 +301,58 @@ function computeStoryGate({
       reason: `el camino rápido delegado no escribe una ruta de riesgo alto (${archivo}: ${riesgoAlto.reason})`,
     };
   }
+  // La lista del camino corto: lo que no nombra no se edita, sea código o no, en el arnés y en un producto. Con una
+  // corrida abierta manda la corrida. El carril delegado (o de una pestaña sin permisos) frena aunque el portón del repo
+  // esté apagado; el de una persona, sólo con el portón prendido. La comparación vive en `lib/adhoc-list.js`.
+  if (adhoc && adhoc.reason && Array.isArray(adhoc.allowedFiles) && !(marker && marker.storyId)) {
+    const delegado = adhoc.via === 'delegacion' || adhoc.via === 'avisado';
+    if (delegado || listGateEnabled !== false) {
+      const fuera = require('./adhoc-list.js').fueraDeLaLista({
+        lista: adhoc.allowedFiles, filePath, real, repoRoot: adhocRepoRoot, home: homeDir, delegado,
+      });
+      if (fuera) {
+        return {
+          action: 'block', kind: 'adhoc-out-of-list', archivo: fuera.archivo, lista: adhoc.allowedFiles,
+          reason: `${fuera.archivo}: ${fuera.motivo} del camino corto «${adhoc.reason}»`,
+        };
+      }
+    }
+  }
 
   if (gateEnabled === false) return { action: 'pass', reason: 'gate apagado (env o config commiteada del repo)' };
+  // Con el plan de una parte aprobado por delegación, la implementación se queda en la lista congelada al aprobar (la de
+  // la constancia de la revisión, que el borde verificó): antes del pase del arnés, que es donde aprueba la coordinadora,
+  // y con la regla de código por extensión (la de las historias): el código dentro de `.advisors/` también cuenta. Una
+  // guía o una configuración fuera de la lista no frena acá: la mide el cierre. La prueba de un archivo de la lista y el
+  // papeleo pasan.
+  // se mira la ruta dentro del repo: un repo puesto bajo una carpeta `tests/` o `specs/` no hace pasar todo por prueba
+  const relDeLaCorrida = () => {
+    const raiz = (batchList && batchList.repoRoot) || (marker && marker.repoPath) || null;
+    if (!raiz) return filePath;
+    for (const [r, f] of [[raiz, filePath], [raiz, real]]) {
+      if (f && isInside(r, f)) return path.relative(r, f).split(path.sep).join('/');
+    }
+    try {
+      const rr = require('fs').realpathSync(raiz);
+      if (real && isInside(rr, real)) return path.relative(rr, real).split(path.sep).join('/');
+    } catch (_) { /* sin raíz real, la ruta como vino */ }
+    return filePath;
+  };
+  const esCodigoDeLaParte = () => { const rel = relDeLaCorrida(); return isImplPath(rel) && require('./story-checks.js').isCodeFile(rel); };
+  // dentro del repo de la corrida, por la ruta escrita o por la real (una carpeta temporal con enlaces, en Mac)
+  const enElRepoDeLaCorrida = !marker || !marker.repoPath || isInside(marker.repoPath, filePath) || isInside(marker.repoPath, real);
+  if (marker && marker.storyId && batchList && esCodigoDeLaParte() && enElRepoDeLaCorrida) {
+    if (batchList.problema) {
+      return { action: 'block', kind: 'batch-out-of-list', archivo: filePath, lista: [], parte: marker.batch || null, reason: batchList.problema };
+    }
+    const fuera = require('./adhoc-list.js').fueraDeLaLista({ lista: batchList.lista, filePath, real, repoRoot: batchList.repoRoot || null, delegado: true });
+    if (fuera) {
+      return {
+        action: 'block', kind: 'batch-out-of-list', archivo: fuera.archivo, lista: batchList.lista, parte: batchList.parte,
+        reason: `${fuera.archivo} no está en la lista de la parte ${batchList.parte}, la que quedó al aprobar el plan por delegación`,
+      };
+    }
+  }
   if (!isCodeFile(filePath)) return { action: 'pass', reason: 'no es código' };
   // `isHarness` booleano = el borde ya leyó el remoto; sin él decide la carpeta (respaldo).
   const harness = typeof isHarness === 'boolean' ? isHarness : isHarnessPath(filePath);
@@ -437,6 +487,37 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  Este cambio lo aprobás vos: abrí el camino rápido con tu sí en la ventana de permiso. Antes de guardar corren',
       '  los revisores y el pase adversarial sobre su diff.',
     ]).filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'batch-out-of-list') {
+    const lista = (Array.isArray(r.lista) ? r.lista : []).slice(0, TOPE_DE_NOMBRES);
+    return [
+      '⛔ tycon-pipeline — FUERA DE LA PARTE',
+      viaLine.replace(/\n$/, ''),
+      `  ${r.reason}.`,
+      ...(lista.length ? ['  La lista de la parte, como quedó al aprobar el plan:', ...lista.map((a) => `   · ${a}`)] : []),
+      '  El plan lo aprobó la coordinadora para esa parte: la implementación se queda en su lista. Agregar el archivo a',
+      '  `files:` de la parte en la historia, o a otra lista, no la amplía.',
+      '  Salida: que una persona apruebe el plan para lo que hace falta (con «Aprobar el plan» pendiente otra vez), o',
+      '  dejá ese cambio para su parte.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'adhoc-out-of-list') {
+    // los dos perfiles: en un producto amplía la lista el dev con su sí; en el arnés, una persona o la delegación
+    // (que no saca entradas firmadas). Un producto no nombra las piezas de la capa de mantenimiento.
+    const lista = (Array.isArray(r.lista) ? r.lista : []).slice(0, TOPE_DE_NOMBRES);
+    const pedido = `${signatureCommand(MARKER_REL)} adhoc set '{"reason":"<el mismo motivo>","datos":"sin-cambio","allowedFiles":[<la lista de antes>, "<el archivo nuevo>"]}'`;
+    return [
+      '⛔ camino corto — FUERA DE LA LISTA',
+      viaLine.replace(/\n$/, ''),
+      `  ${r.archivo || f} no está en la lista de archivos de este camino corto. La lista:`,
+      ...lista.map((a) => `   · ${a}`),
+      ...(Array.isArray(r.lista) && r.lista.length > TOPE_DE_NOMBRES ? [`   · y ${r.lista.length - TOPE_DE_NOMBRES} más`] : []),
+      harness
+        ? '  Para tocarlo, ampliá la lista: es otra autorización del mismo tipo que abrir, que da una persona (por delegación, la lista nueva contiene entera la firmada):'
+        : '  Para tocarlo, ampliá la lista: lo aprobás vos con tu sí, como al abrir:',
+      `   ${pedido}`,
+      '  Si el arreglo creció, la salida es una historia: `Skill(skill="tycon-create-story", …)`.',
+    ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'state-dir' && BOARD_FILE.test(String(f))) {
     // el tablero de la oficina tiene su comando: valida cada fila y pone el número

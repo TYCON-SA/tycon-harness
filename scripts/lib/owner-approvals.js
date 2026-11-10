@@ -151,7 +151,7 @@ function archivosALaVista(archivos) {
  * aprueba un click en la sesión que trabaja, y el cuadro se muestra con sus `descripciones`. Con `clickDelDueno`, lo aprueba
  * sólo un click, también en la pestaña de la coordinadora, y lo que hace cada opción va en la pregunta.
  */
-function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHace = [], nota = null, archivos = [], completo = null, revision = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null }) {
+function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHace = [], todoQueHace = false, nota = null, archivos = [], completo = null, revision = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null }) {
   const sello = `firma ${firma} · sesión ${destino} · código ${huella}`;
   const lo = una(que, 200);
   const partes = [`¿${lo.charAt(0).toUpperCase()}${lo.slice(1)}?`];
@@ -161,8 +161,12 @@ function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHac
   else if (destino) partes.push(`Sesión ${ses}.`);
   const nums = [...new Set((criterios || []).map(Number).filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b);
   if (nums.length) partes.push(`Criterios: AC ${nums.length > 1 ? `${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}` : nums[0]}.`);
-  const lineas = (queHace || []).map((l) => sinPunto(una(l, LARGO_DE_LINEA))).filter(Boolean);
-  if (lineas.length) partes.push(`Qué hace: ${masDe(lineas, LINEAS_QUE_HACE, ' · ')}${nota ? ` ${sinPunto(una(nota, LARGO_DE_LINEA))}` : ''}.`);
+  // con `todoQueHace` ningún renglón se corta ni se le juntan los espacios: la fuente ya garantiza que entra entero, en
+  // un renglón y sin caracteres que no se ven, y se muestra tal cual se guarda
+  const lineas = (queHace || []).map((l) => (todoQueHace ? String(l == null ? '' : l) : sinPunto(una(l, LARGO_DE_LINEA)))).filter(Boolean);
+  // `todoQueHace`: la fuente promete que todo lo que se aprueba está a la vista (el guardado ajeno: comando, destino,
+  // hooks y configuración que corre), y no se recorta
+  if (lineas.length) partes.push(`Qué hace: ${todoQueHace ? lineas.join(' · ') : masDe(lineas, LINEAS_QUE_HACE, ' · ')}${nota ? ` ${sinPunto(una(nota, LARGO_DE_LINEA))}` : ''}.`);
   const vistos = archivosALaVista(archivos);
   if (vistos) partes.push(`Archivos: ${vistos}.`);
   const todo = enUnRenglon(completo);
