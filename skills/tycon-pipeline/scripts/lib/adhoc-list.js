@@ -115,7 +115,7 @@ function problemaDeTopes(lista, cupo, opciones) {
 function problemaDelMotivo(reason, { harness = true } = {}) {
   if (!/[\r\n]/.test(String(reason || ''))) return null;
   return harness
-    ? 'el motivo va en una línea: la ventana muestra un renglón, y una persona aprueba sólo lo que ve'
+    ? 'el motivo va en una línea: la ventana muestra un renglón, y ni una persona ni la coordinadora por delegación aprueban lo que no ven'
     : 'el motivo va en una línea: la ventana te muestra un renglón, y vos aprobás sólo lo que ves';
 }
 
