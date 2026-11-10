@@ -341,6 +341,32 @@ if [ -f "$YAML" ]; then
     || ok "V14c: el banco no se reintenta (sólo las suites)"
 fi
 
+# ── V14d (T8). Verdict_CutThenGreen_NamedAsSlow_DoesNotBlock ─────────────────────────────────────
+# La suite que pasó su tope acompañada se reintenta sola con el doble. `merge` acepta las dos pasadas («cortada» y
+# después «verde» o «rojo»), con las mismas reglas de cuadre que las rojas. El veredicto nombra la lenta en sus avisos
+# (no frena y no es una intermitente) y la que salió roja sola es una roja como cualquiera.
+L14="$TMP/v14d"; A14="$L14/artifacts"; mkdir -p "$A14/suites-shard-1-a1/red-output" "$A14/suites-shard-2-a1/red-output" "$L14/out"
+printf '{"diarias":[{"raiz":"arnes","ruta":"tests/lenta.test.sh"},{"raiz":"arnes","ruta":"tests/colgada.test.sh"}]}\n' > "$L14/suites.json"
+printf '{"default":1,"weights":{"lenta.test.sh":10,"colgada.test.sh":5}}\n' > "$L14/weights.json"
+printf 'lenta.test.sh\n' > "$A14/suites-shard-1-a1/ran.txt"; : > "$A14/suites-shard-1-a1/failures.txt"; echo '1 0' > "$A14/suites-shard-1-a1/finished"
+printf '{"lenta.test.sh":{"primera":"cortada","segunda":"verde","tope":180}}\n' > "$A14/suites-shard-1-a1/retries.json"
+printf 'colgada.test.sh\n' > "$A14/suites-shard-2-a1/ran.txt"; printf 'colgada.test.sh\n' > "$A14/suites-shard-2-a1/failures.txt"; echo '1 1' > "$A14/suites-shard-2-a1/finished"
+printf 'MAL — sola también falla\n' > "$A14/suites-shard-2-a1/red-output/colgada.test.sh.txt"
+printf '{"colgada.test.sh":{"primera":"cortada","segunda":"rojo","tope":180}}\n' > "$A14/suites-shard-2-a1/retries.json"
+node "$AQUI/scripts/ci/suites-shard.js" merge --of 2 --artifacts "$A14" --out "$L14/out" --suites "$L14/suites.json" --weights "$L14/weights.json" > "$L14/merge.txt" 2>&1
+RC14M=$?
+node "$AQUI/scripts/ci/suites-report.js" --rep "$L14/report.json" --build 1 --runs "$(grep -c . "$L14/out/ran.txt")" \
+  --failures "$(tr '\n' ' ' < "$L14/out/failures.txt")" --detail "$L14/out/red-output" --retries "$L14/out/retries.json" --ran "$L14/out/ran.txt" > "$L14/report.txt" 2>&1
+FOTO14="$TMP/foto14.json"; suites "$FOTO14" "$(hoy)"
+rc=$(corre --suites-actual "$L14/report.json" --suites-snapshot "$FOTO14")
+{ [ "$RC14M" = 0 ] && ! grep -q 'no terminó' "$L14/merge.txt" && [ "$rc" = 1 ] \
+  && grep -q 'LENTA en el agente: lenta.test.sh (pasó su tope de 180 s acompañada; verde sola con 360 s)' "$TMP/out.txt" \
+  && ! grep -q 'INTERMITENTE en el agente: lenta' "$TMP/out.txt" \
+  && grep -q 'ROJO NUEVO (no está en la foto nocturna): suite colgada.test.sh' "$TMP/out.txt" \
+  && grep -q '1 lenta(s)' "$TMP/out.txt"; } \
+  && ok "V14d (T8): merge acepta cortada→verde y cortada→rojo; la lenta se nombra (no frena, no es intermitente) y la roja frena como roja nueva" \
+  || no "V14d (T8): merge=$RC14M rc=$rc · $(tr '\n' ' ' < "$L14/merge.txt" | cut -c1-200) · $(tr '\n' ' ' < "$TMP/out.txt" | cut -c1-500)"
+
 # ── V15. R6_Pipelines_TemplatesRegexGlobsCensus (T40) ───────────────────────────
 # Los yml del arnés viven en pipelines/ y la plantilla en pipelines/templates/.
 # 🔴 (a) El regex de «Qué trae este cambio» tiene que contar como código la carpeta de plantillas y los yml de la
@@ -821,6 +847,7 @@ if [ -f "$YAML" ]; then
   run18() { # [VAR=valor…] → corre el paso; deja la salida en $L18/out.txt y los segundos que tardó en $L18/secs
     local t0; t0=$(date +%s)
     ( cd "$L18/repo" && unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE SUITES_NO_RETRY_AFTER HARNESS_SUITES_BLOCK BUILD_REPOSITORY_PROVIDER \
+        SUITES_JOB_STARTED SUITES_JOB_MINUTES SUITES_JOB_MARGIN SUITES_MIN_START \
       && env HOME="$L17/home" XDG_CONFIG_HOME="$L17/home/.config" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
          TYCON_SKILLS_DIR="$L18/repo/as" SUITES_JOBS=2 "$@" bash "$L18/step.sh" ) > "$L18/out.txt" 2>&1
     echo $(( $(date +%s) - t0 )) > "$L18/secs"
@@ -830,13 +857,26 @@ if [ -f "$YAML" ]; then
   FOTO18='{"kind":"bash-tests","ts":"2026-10-06T00:00:00Z","failures":["red-old.test.sh","red-new.test.sh(ausente)","green.test.sh(no-medida)"],"complete":true}'
   if toy18 "$FOTO18" > "$L18/arm.txt" 2>&1 && [ -s "$L18/step.sh" ]; then
     run18; RC18=$?; SECS18="$(cat "$L18/secs")"
-    # T21 — PrSuites_SuiteOverItsCap_NotMeasuredAndJobGoesOn
+    # T21 — PrSuites_SuiteOverItsCap_NotMeasuredAndJobGoesOn. 🔴 La plantilla del privado decide qué se espera: con el
+    # reintento de la cortada (la marca `cut.txt`) la dormida se corta dos veces —2 s acompañada y 4 s sola— y sale no
+    # medida; sin él (el privado de main antes de que entre), se corta una vez y no se reintenta. El público entra
+    # primero y no puede dejar roja la validación de los demás pedidos privados.
+    if grep -q 'cut.txt' "$L18/step.sh"; then
+    { grep -q '⏳ sleeper.test.sh — pasó el tope de 2 s; se reintenta sola con 4 s' "$L18/out.txt" && grep -q '^✅ green.test.sh' "$L18/out.txt" \
+      && grep -qx 'sleeper.test.sh(no-medida)' "$SH18/failures.txt" && grep -q 'pasó su tope dos veces: 2 s acompañada y 4 s sola' "$SH18/red-output/sleeper.test.sh(no-medida).txt" \
+      && [ -f "$SH18/finished" ] && [ "$SECS18" -lt 25 ] && ! grep -q 'sleeper.test.sh (1ª pasada)' "$L18/out.txt" \
+      && node -e 'const r=require(process.argv[1]);process.exit(r["sleeper.test.sh"]===undefined?0:1)' "$SH18/retries.json" \
+      && [ "$(sort "$SH18/done.txt" 2>/dev/null | tr '\n' ' ')" = 'green.test.sh red-new.test.sh red-old.test.sh sleeper.test.sh ' ]; } \
+      && ok "V18a (T21, T11): la suite que pasa su tope se corta a los 2 s, se reintenta sola con 4 s, se corta de nuevo y sale «NO se midió» (${SECS18} s)" \
+      || no "V18a (T21, T11): rc=$RC18 · ${SECS18} s · fallas: $(tr '\n' ' ' < "$SH18/failures.txt" 2>/dev/null) · $(grep -E 'sleeper|green|tope' "$L18/out.txt" | tr '\n' ' ' | cut -c1-300)"
+    else
     { grep -q '⏳ sleeper.test.sh — NO se midió: pasó el tope de 2 s' "$L18/out.txt" && grep -q '^✅ green.test.sh' "$L18/out.txt" \
       && grep -qx 'sleeper.test.sh(no-medida)' "$SH18/failures.txt" && grep -q 'pasó el tope de 2 s' "$SH18/red-output/sleeper.test.sh(no-medida).txt" \
       && [ -f "$SH18/finished" ] && [ "$SECS18" -lt 20 ] && ! grep -q 'sleeper.test.sh (1ª pasada)' "$L18/out.txt" \
       && [ "$(sort "$SH18/done.txt" 2>/dev/null | tr '\n' ' ')" = 'green.test.sh red-new.test.sh red-old.test.sh sleeper.test.sh ' ]; } \
       && ok "V18a (T21): la suite que pasa su tope se corta a los 2 s, sale «NO se midió» sin reintento y el trabajo sigue (${SECS18} s)" \
       || no "V18a (T21): rc=$RC18 · ${SECS18} s · fallas: $(tr '\n' ' ' < "$SH18/failures.txt" 2>/dev/null) · $(grep -E 'sleeper|green|tope' "$L18/out.txt" | tr '\n' ' ' | cut -c1-300)"
+    fi
     # T22 — PrSuites_RedInNightly_NotRetried
     { [ "$(passes18 red-old)" = 1 ] && grep -q 'red-old.test.sh — roja también en el nocturno: no se reintenta' "$L18/out.txt" \
       && grep -qx 'red-old.test.sh' "$SH18/failures.txt" && [ -s "$SH18/red-output/red-old.test.sh.txt" ] \

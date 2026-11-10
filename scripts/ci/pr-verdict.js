@@ -59,7 +59,9 @@
  * que el cambio no hizo — la misma enfermedad que este guion existe para evitar, un piso más
  * abajo. La bandera es TEMPORAL y se saca cuando se mida la tasa: el reporte de cada corrida
  * anota las dos pasadas de cada suite roja (`reintentos`) justamente para poder decidirlo.
- * El rojo del banco NO se reintenta y sigue frenando.
+ * El rojo del banco NO se reintenta y sigue frenando. La suite que pasó su tope acompañada se reintenta sola con el
+ * doble (`primera: "cortada"`): verde así, es LENTA (se nombra en los avisos, no frena ni es intermitente); roja así,
+ * es una roja como cualquiera.
  *
  * Salida: 0 midió y no hay rojo NUEVO que frene (puede haber avisos) · 1 hay rojo nuevo · 2 no pude decidir.
  * Casos: scripts/tests/pr-verdict.test.sh
@@ -242,7 +244,7 @@ function main() {
 
   // `nuevos` frena; `nuevosQueAvisan` es lo mismo pero sin frenar (hoy, las suites).
   // `rojosSinFoto`: los rojos de una sección cuya foto no se leyó (no se sabe si son nuevos; la corrida sale 2).
-  const salida = { nuevos: [], nuevosQueAvisan: [], viejos: [], avisos: [], nomedidos: [], intermitentes: [], suitesSinMedir: [], noCorrieron: [], noViajan: [], sinFoto: [], rojosSinFoto: [] };
+  const salida = { nuevos: [], nuevosQueAvisan: [], viejos: [], avisos: [], nomedidos: [], intermitentes: [], lentas: [], suitesSinMedir: [], noCorrieron: [], noViajan: [], sinFoto: [], rojosSinFoto: [] };
   const renombres = cargarRenombres(salida.avisos);
 
   // ── suites ──
@@ -275,10 +277,16 @@ function main() {
     const sinMedir = foto.ok ? noMedidasDeSuites(fotoUnida).length : 0;
     if (sinMedir) salida.avisos.push(`suites: la foto nocturna quedó incompleta — ${sinMedir} suite(s) no se midieron anoche (un trabajo del nocturno no terminó): un rojo en ellas cuenta como NUEVO, no como «ya estaba rojo»`);
     if (SUITES_AVISAN) salida.avisos.push('suites: EN MODO AVISO (el interruptor del freno de suites está apagado) — un rojo nuevo de suite no frena; el banco sí. Las dos pasadas de cada suite roja quedan en el reporte (`reintentos`).');
-    // Lo que el reintento distingue: `rojo→rojo` es una suite firme, `rojo→verde` una intermitente.
+    // Lo que el reintento distingue: `rojo→rojo` es una suite firme, `rojo→verde` una intermitente. La que pasó su
+    // tope acompañada y salió verde sola con el doble (`cortada→verde`) es lenta: un dato para su próximo tope, no una
+    // falla ni una intermitente. `cortada→rojo` ya está entre las fallas: es una roja como cualquiera.
     const re = (ahora.datos && ahora.datos.reintentos && typeof ahora.datos.reintentos === 'object') ? ahora.datos.reintentos : {};
     for (const [n, x] of Object.entries(re)) {
-      if (x && x.segunda === 'verde') salida.intermitentes.push(`${n} (roja en la 1ª pasada, verde en la 2ª)`);
+      if (x && x.primera === 'rojo' && x.segunda === 'verde') salida.intermitentes.push(`${n} (roja en la 1ª pasada, verde en la 2ª)`);
+      if (x && x.primera === 'cortada' && x.segunda === 'verde') {
+        const tope = Number.isFinite(x.tope) && x.tope > 0 ? x.tope : null;
+        salida.lentas.push(tope ? `${n} (pasó su tope de ${tope} s acompañada; verde sola con ${tope * 2} s)` : `${n} (pasó su tope acompañada; verde sola con el doble)`);
+      }
     }
   }
 
@@ -336,6 +344,9 @@ function main() {
   for (const n of salida.intermitentes) {
     aviso('warning', '🟠', `INTERMITENTE en el agente: ${n} — el reintento la vio verde, no es un veredicto`, 'INTERMITENTE en el agente (roja en la 1ª pasada, verde en la 2ª): el nombre, en el registro');
   }
+  for (const n of salida.lentas) {
+    aviso('warning', '🐢', `LENTA en el agente: ${n} — no frena; su próximo tope sale de lo medido`, 'LENTA en el agente (pasó su tope acompañada, verde sola con el doble): el nombre, en el registro');
+  }
   for (const n of salida.nuevosQueAvisan) {
     aviso('warning', '🟠', `ROJO NUEVO (no está en la foto nocturna): ${n} — en MODO AVISO: no frena`, 'ROJO NUEVO de suite, en MODO AVISO: no frena (el nombre, en el registro)');
   }
@@ -353,6 +364,7 @@ function main() {
   const cola = `${salida.viejos.length} ya estaban rojos en main`
     + (salida.nuevosQueAvisan.length ? ` · ${salida.nuevosQueAvisan.length} rojo(s) nuevo(s) de suite EN MODO AVISO` : '')
     + (salida.intermitentes.length ? ` · ${salida.intermitentes.length} intermitente(s)` : '')
+    + (salida.lentas.length ? ` · ${salida.lentas.length} lenta(s)` : '')
     + (salida.nomedidos.length ? ` · ${salida.nomedidos.length} no medido(s)` : '')
     + (salida.suitesSinMedir.length ? ` · ${salida.suitesSinMedir.length} suite(s) sin medir` : '')
     + (salida.noCorrieron.length ? ` · ${salida.noCorrieron.length} no ${salida.noCorrieron.length === 1 ? 'corrió' : 'corrieron'} (el cambio no toca lo que mide${salida.noCorrieron.length === 1 ? '' : 'n'})` : '')

@@ -229,6 +229,8 @@ function bash(dir, script, name, env = {}) {
       // el repo propio y el interruptor del freno los fija cada caso (esta suite corre también en
       // una corrida de Azure, que trae los suyos)
       BUILD_REPOSITORY_PROVIDER: '', HARNESS_SUITES_BLOCK: '', HARNESS_PRIVATE_REPO: '', SYSTEM_PULLREQUEST_ISFORK: '',
+      // el plazo del trabajo de verdad, si esta suite corre dentro de uno, no es el del caso
+      SUITES_JOB_STARTED: '', SUITES_JOB_MINUTES: '', SUITES_JOB_MARGIN: '', SUITES_MIN_START: '',
       // el git de juguete del clon va primero: contesta la foto nocturna y delega el resto (ver toyGit)
       [PATH_KEY]: `${path.join(dir, 'bin')}${path.delimiter}${process.env[PATH_KEY] || ''}`,
       ...env,
@@ -592,6 +594,202 @@ test('T5 PrShards_EachJobRecordsSuiteTimes_WithoutTheCommandSaysSo — cada trab
   const at = (re) => template.search(re);
   assert.ok(at(/CARGA0="\$\(node -e/) >= 0 && at(/CARGA0="\$\(node -e/) < at(/xargs -P "\$JOBS"/), 'la carga se mide antes de la primera suite');
   assert.match(template, /record [^\n]*\\\n[^\n]*--carga "\$CARGA0"/, 'y es la que recibe record');
+});
+
+// ── la suite que pasa su tope: se reintenta sola con el doble; y ningún pase pasa el plazo del trabajo ──────────────
+// 🔴 Estas pruebas corren la plantilla del PRIVADO (pipelines/templates/run-suites.yml), y la validación cruza el público
+// de main con el privado del pedido. Mientras el privado no traiga el reintento de la cortada (la marca `cut.txt`), se
+// saltean: el público entra primero y no puede dejar rojas las validaciones de los demás pedidos privados.
+const CUT_RETRY = template.includes('cut.txt');
+const NO_CUT_RETRY = NO_BASH || (!CUT_RETRY && 'NO MEDIDO — la plantilla del privado todavía no reintenta la cortada (pipelines/templates/run-suites.yml sin cut.txt)');
+const nowMs = 'node -e "process.stdout.write(String(Date.now()))"';
+/** Una suite de juguete que anota cuándo arranca y cuándo termina cada pasada, y duerme `seconds` (o lo de su pasada). */
+const timed = (seconds, { exit = 0, then = null } = {}) => [
+  'N=$(basename "$0"); C="@DIR@/count.$N"; n=$(cat "$C" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$C"',
+  `echo "start $N $n $(${nowMs})" >> "@DIR@/events"`,
+  then ? `if [ "$n" -ge 2 ]; then ${then}; fi` : '',
+  `sleep ${seconds}`,
+  `echo "end $N $n $(${nowMs})" >> "@DIR@/events"`,
+  `echo "pasada $n de $N"; exit ${exit}`, ''].join('\n');
+/**
+ * Un trabajo de suites de juguete con lo que `Validar` le dejó: la lista (todas las suites del juguete que tienen
+ * cuerpo) y, si se pasa, `caps.tsv`. Copia run-capped.js y el registro de tiempos al juguete, como en el árbol de verdad.
+ */
+function cutJob(suites, { caps = null, extraRegistry = [], times = false } = {}) {
+  const dir = toy([...suites, ...extraRegistry.map((n) => [n, null])]);
+  const repo = path.join(dir, 'repo');
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'ci', 'run-capped.js'), path.join(repo, 'scripts', 'ci', 'run-capped.js'));
+  if (times) {
+    fs.mkdirSync(path.join(repo, 'scripts', 'tools'), { recursive: true });
+    fs.symlinkSync(path.join(ROOT, 'scripts', 'tools', 'suite-times.js'), path.join(repo, 'scripts', 'tools', 'suite-times.js'));
+  }
+  const plan = path.join(workspace(dir), 'suites-plan', 'suites-plan-a1');
+  fs.mkdirSync(plan, { recursive: true });
+  fs.writeFileSync(path.join(plan, 'run.txt'), suites.filter(([, b]) => b !== null).map(([n]) => `${n}\n`).join(''));
+  if (caps) fs.writeFileSync(path.join(plan, 'caps.tsv'), Object.entries(caps).map(([n, s]) => `${n}\t${s}\tmedido:5\n`).join(''));
+  return dir;
+}
+/** Las variables del plazo: el trabajo arrancó hace un rato y le quedan `left` segundos (sin margen). */
+const deadline = (left, minStart = 2) => ({ SUITES_JOB_STARTED: String(Math.floor(Date.now() / 1000) - 60 + left), SUITES_JOB_MINUTES: '1', SUITES_JOB_MARGIN: '0', SUITES_MIN_START: String(minStart) });
+const events = (dir) => (fs.existsSync(path.join(dir, 'events')) ? fs.readFileSync(path.join(dir, 'events'), 'utf8') : '').split('\n').filter(Boolean)
+  .map((l) => { const [kind, name, pass, ms] = l.split(' '); return { kind, name, pass: Number(pass), ms: Number(ms) }; });
+const shardFile = (r, f) => (fs.existsSync(path.join(r.artifact, f)) ? fs.readFileSync(path.join(r.artifact, f), 'utf8') : '');
+
+test('T9 RunSuites_CutSuite_RetriedAloneWithDoubleCap_Green — la cortada se reintenta al final, sola y con el doble', { skip: NO_CUT_RETRY }, () => {
+  const dir = cutJob([['lab-slow.test.sh', timed(3)], ['lab-one.test.sh', timed(1)], ['lab-two.test.sh', timed(1)]],
+    { caps: { 'lab-slow.test.sh': 2, 'lab-one.test.sh': 60, 'lab-two.test.sh': 60 } });
+  const r = runShard(dir, 1, 1);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /⏳ lab-slow\.test\.sh — pasó el tope de 2 s; se reintenta sola con 4 s/);
+  assert.match(r.out, /✅ lab-slow\.test\.sh — verde sola con 4 s/);
+  assert.ok(!shardFile(r, 'failures.txt').includes('lab-slow'), shardFile(r, 'failures.txt'));
+  assert.deepStrictEqual(JSON.parse(shardFile(r, 'retries.json')), { 'lab-slow.test.sh': { primera: 'cortada', segunda: 'verde', tope: 2 } });
+  assert.ok(fs.existsSync(path.join(r.artifact, 'finished')), r.out);
+  const ev = events(dir);
+  const retry = ev.find((e) => e.kind === 'start' && e.name === 'lab-slow.test.sh' && e.pass === 2);
+  assert.ok(retry, `hubo reintento\n${JSON.stringify(ev)}`);
+  const others = ev.filter((e) => e.name !== 'lab-slow.test.sh');
+  assert.ok(others.every((e) => e.ms <= retry.ms), 'arranca después de que terminan todas las demás');
+  assert.ok(!ev.some((e) => e.kind === 'start' && e.ms > retry.ms && e.name !== 'lab-slow.test.sh'), 'y nada más corre mientras tanto');
+  assert.ok(shardFile(r, 'done.txt').includes('lab-slow.test.sh'), 'terminó: va a done.txt');
+});
+
+test('T10 RunSuites_CutThenRed_IsRedWithRetryOutput — si sola sale roja, es roja, con la salida del reintento', { skip: NO_CUT_RETRY }, () => {
+  const dir = cutJob([['lab-cut-red.test.sh', timed(3, { then: 'echo "MAL — sola también falla"; exit 1' })], ['lab-one.test.sh', timed(0)]],
+    { caps: { 'lab-cut-red.test.sh': 2, 'lab-one.test.sh': 60 } });
+  const r = runShard(dir, 1, 1);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean), ['lab-cut-red.test.sh']);
+  assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', 'lab-cut-red.test.sh.txt'), 'utf8'), /sola también falla/, 'la salida es la del reintento');
+  assert.deepStrictEqual(JSON.parse(shardFile(r, 'retries.json')), { 'lab-cut-red.test.sh': { primera: 'cortada', segunda: 'rojo', tope: 2 } });
+  assert.strictEqual(events(dir).filter((e) => e.kind === 'start' && e.name === 'lab-cut-red.test.sh').length, 2, 'no hay tercera pasada');
+});
+
+test('T11 RunSuites_CutTwice_NotMeasured — cortada dos veces: no medida, con los dos topes', { skip: NO_CUT_RETRY }, () => {
+  const dir = cutJob([['lab-hang.test.sh', timed(10)]], { caps: { 'lab-hang.test.sh': 2 } });
+  const t0 = Date.now();
+  const r = runShard(dir, 1, 1);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.ok(Date.now() - t0 < 15000, `se corta las dos veces (${Date.now() - t0} ms)`);
+  assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean), ['lab-hang.test.sh(no-medida)']);
+  assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', 'lab-hang.test.sh(no-medida).txt'), 'utf8'), /pasó su tope dos veces: 2 s acompañada y 4 s sola/);
+  assert.deepStrictEqual(JSON.parse(shardFile(r, 'retries.json')), {}, 'no entra en las dos pasadas');
+});
+
+test('T12 RunSuites_NoTimeForRetry_NotMeasured — sin tiempo para el tope doble, no se reintenta', { skip: NO_CUT_RETRY }, () => {
+  // tope 3: arranca con 5 a 7 s de plazo (según lo que tardó la preparación), se corta en 3, y no quedan 6
+  const dir = cutJob([['lab-hang.test.sh', timed(10)]], { caps: { 'lab-hang.test.sh': 3 } });
+  const r = runShard(dir, 1, 1, { env: deadline(8, 1) });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(events(dir).filter((e) => e.kind === 'start').length, 1, 'una sola pasada');
+  assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean), ['lab-hang.test.sh(no-medida)']);
+  assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', 'lab-hang.test.sh(no-medida).txt'), 'utf8'),
+    /pasó su tope de 3 s y no quedaba tiempo en el trabajo para reintentarla sola con 6 s/);
+});
+
+test('T13 RunSuites_PassCappedByJobDeadline — ninguna pasada pasa el plazo del trabajo', { skip: NO_CUT_RETRY }, () => {
+  // de a una: la primera se come el plazo, y la segunda llega sin tiempo
+  const dir = cutJob([['lab-a-long.test.sh', timed(10)], ['lab-b-late.test.sh', timed(0)]], { caps: { 'lab-a-long.test.sh': 60, 'lab-b-late.test.sh': 60 } });
+  const t0 = Date.now();
+  const r = runShard(dir, 1, 1, { env: { ...deadline(6), SUITES_JOBS: '1' } });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.ok(Date.now() - t0 < 12000, `la primera se corta en el plazo, no en su tope de 60 s (${Date.now() - t0} ms)`);
+  assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean).sort(), ['lab-a-long.test.sh(no-medida)', 'lab-b-late.test.sh(no-medida)']);
+  for (const n of ['lab-a-long.test.sh', 'lab-b-late.test.sh']) {
+    assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', `${n}(no-medida).txt`), 'utf8'), /sin tiempo en el trabajo/, n);
+  }
+  assert.ok(!events(dir).some((e) => e.name === 'lab-b-late.test.sh'), 'la segunda no arranca');
+  assert.ok(fs.existsSync(path.join(r.artifact, 'finished')), 'el trabajo termina y publica');
+  // Sin caps.tsv y sin poder calcularlo (el juguete no trae las suites con tope propio del juego pr): sin tope propio,
+  // la pasada queda acotada por el plazo.
+  const bare = cutJob([['lab-a-long.test.sh', timed(10)]]);
+  const t1 = Date.now();
+  const rb = runShard(bare, 1, 1, { env: deadline(6) });
+  assert.strictEqual(rb.code, 0, rb.out);
+  assert.ok(Date.now() - t1 < 10000, `sin tope, el plazo la corta (${Date.now() - t1} ms)`);
+  assert.match(rb.out, /no llegaron los topes de Validar: los calculo por peso/);
+  assert.deepStrictEqual(shardFile(rb, 'failures.txt').split('\n').filter(Boolean), ['lab-a-long.test.sh(no-medida)']);
+  assert.ok(fs.existsSync(path.join(rb.artifact, 'finished')), rb.out);
+});
+
+test('T14 RunSuites_CapsFromValidar_UsedOrFallback — usa los topes de Validar; sin ellos, los de peso y lo dice', { skip: NO_CUT_RETRY }, () => {
+  // El juguete trae las dos suites con tope propio del juego pr: así el tope por peso se puede calcular.
+  const registry = ['clean-machine.test.sh', 'instinct-executor.test.sh'];
+  const withCaps = cutJob([['lab-x.test.sh', timed(3)]], { caps: { 'lab-x.test.sh': 2 }, extraRegistry: registry });
+  const r = runShard(withCaps, 1, 1);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /uso los topes de Validar/);
+  assert.match(r.out, /⏳ lab-x\.test\.sh — pasó el tope de 2 s/, 'el tope de caps.tsv, no el de su peso (180 s)');
+  assert.doesNotMatch(r.out, /no llegaron los topes de Validar/);
+  assert.doesNotMatch(r.out, /sin línea en los topes de Validar/);
+  // una suite que caps.tsv no trae corre sin tope propio, sólo con el plazo: se dice
+  const partial = cutJob([['lab-x.test.sh', timed(0)], ['lab-y.test.sh', timed(0)]], { caps: { 'lab-x.test.sh': 60 }, extraRegistry: registry });
+  const rp = runShard(partial, 1, 1);
+  assert.strictEqual(rp.code, 0, rp.out);
+  assert.match(rp.out, /##vso\[task\.logissue type=warning\]suites \(trabajo 1\): 1 suite\(s\) sin línea en los topes de Validar: corren sin tope propio, sólo con el plazo del trabajo/);
+  const without = cutJob([['lab-x.test.sh', timed(3)]], { extraRegistry: registry });
+  const r2 = runShard(without, 1, 1);
+  assert.strictEqual(r2.code, 0, r2.out);
+  assert.match(r2.out, /##vso\[task\.logissue type=warning\]suites \(trabajo 1\): no llegaron los topes de Validar: los calculo por peso/);
+  assert.match(r2.out, /^✅ lab-x\.test\.sh/m, 'con el tope de su peso (180 s) entra');
+  assert.doesNotMatch(r2.out, /⏳ lab-x/);
+});
+
+test('T19 RunSuites_DeadlineCutPass_NotInTimes — al registro de tiempos sólo va lo que midió a la suite', { skip: NO_CUT_RETRY }, () => {
+  // de a una: verde, cortada por su tope, recortada por el plazo, y una que llega sin tiempo
+  const dir = cutJob([['lab-a-green.test.sh', timed(0)], ['lab-b-cut.test.sh', timed(10)], ['lab-c-deadline.test.sh', timed(10)], ['lab-d-late.test.sh', timed(0)]],
+    { caps: { 'lab-a-green.test.sh': 60, 'lab-b-cut.test.sh': 2, 'lab-c-deadline.test.sh': 60, 'lab-d-late.test.sh': 60 }, times: true });
+  const r = runShard(dir, 1, 1, { env: { ...deadline(10), SUITES_JOBS: '1' } });
+  assert.strictEqual(r.code, 0, r.out);
+  const tsv = shardFile(r, 'times.tsv').split('\n').filter(Boolean).map((l) => l.split('\t')).map(([n, , e]) => [n, e]);
+  assert.deepStrictEqual(tsv.sort(), [['lab-a-green.test.sh', '0'], ['lab-b-cut.test.sh', '124']]);
+  const [entry] = shardFile(r, 'suite-times.jsonl').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.deepStrictEqual(entry.suites.map((x) => [x.s, x.exit]).sort(), [['tests/lab-a-green.test.sh', 0], ['tests/lab-b-cut.test.sh', 124]]);
+});
+
+test('T22 RunSuites_RedRetry_RespectsJobDeadline — la 2ª pasada de una roja tampoco pasa el plazo', { skip: NO_CUT_RETRY }, () => {
+  // Roja en la 1ª y su 2ª más larga que lo que queda: la corta el plazo y la roja queda firme con la salida de la 1ª.
+  const dir = cutJob([['lab-red-long.test.sh', timed(0, { exit: 1, then: 'sleep 10' })]], { caps: { 'lab-red-long.test.sh': 60 } });
+  const r = runShard(dir, 1, 1, { env: deadline(8) });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean), ['lab-red-long.test.sh']);
+  assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', 'lab-red-long.test.sh.txt'), 'utf8'), /pasada 1 de/, 'la salida es la de la 1ª');
+  assert.deepStrictEqual(JSON.parse(shardFile(r, 'retries.json')), { 'lab-red-long.test.sh': { primera: 'rojo', segunda: 'rojo' } });
+  // Roja que termina con menos de lo mínimo para arrancar: no se reintenta, y no entra en las dos pasadas.
+  // La suite espera hasta 1 s antes del plazo (lo lee de las variables del trabajo, que hereda) y sale roja.
+  const UNTIL_LATE = 'D=$((SUITES_JOB_STARTED + SUITES_JOB_MINUTES * 60 - 1)); while [ "$(date +%s)" -lt "$D" ]; do sleep 0.2; done\necho "MAL — tarde"; exit 1\n';
+  const late = cutJob([['lab-red-late.test.sh', UNTIL_LATE]], { caps: { 'lab-red-late.test.sh': 60 } });
+  const r2 = runShard(late, 1, 1, { env: deadline(6) });
+  assert.strictEqual(r2.code, 0, r2.out);
+  assert.match(r2.out, /lab-red-late\.test\.sh — no quedaba tiempo en el trabajo para reintentarla/);
+  assert.deepStrictEqual(shardFile(r2, 'failures.txt').split('\n').filter(Boolean), ['lab-red-late.test.sh']);
+  assert.deepStrictEqual(JSON.parse(shardFile(r2, 'retries.json')), {});
+  for (const x of [r, r2]) assert.doesNotMatch(shardFile(x, 'failures.txt'), /no-medida/, 'una roja medida nunca sale no medida');
+});
+
+test('T17 PrShards_ValidarFetchesTimesAndPublishesCaps — Validar baja los tiempos y publica los topes; cada trabajo sabe su plazo', { skip: !CUT_RETRY && 'NO MEDIDO — la plantilla del privado todavía no reintenta la cortada (pipelines/templates/run-suites.yml sin cut.txt)' }, () => {
+  const all = jobs();
+  const step = stepBody('Los topes medidos de cada suite');
+  assert.match(step, /node scripts\/ci\/run-capped\.js --seconds 150 --mark "[^"]+" -- node scripts\/ci\/fetch-suite-times\.js --timeout 120 \$\{FETCH_ARG\[@\]\+"\$\{FETCH_ARG\[@\]\}"\} --out "\$TIMES"/,
+    'baja los tiempos con su tope de 120 s y el de afuera, más largo, de respaldo');
+  // cuántas corridas baja y cuántas mira salen de la regla del archivo de pesos, no de los números del guion
+  assert.match(step, /suite_cap\.measured/, 'lee runs y scan de pr.suite_cap.measured');
+  assert.match(step, /FETCH_ARG=\(--runs "\$_RUNS" --scan "\$_SCAN"\)/);
+  assert.ok(step.indexOf('fetch-suite-times.js') < step.indexOf('suites-shard.js caps'), 'baja antes de calcular');
+  assert.match(step, /if node scripts\/ci\/run-capped\.js[^\n]*; then\n\s*MEASURED_ARG=\(--measured "\$TIMES"\)/, 'los tiempos sólo si la bajada salió 0');
+  assert.match(step, /##vso\[task\.logissue type=warning\]no pude bajar los tiempos medidos: los topes salen del peso, como antes/);
+  assert.match(step, /> "\$OUT\/caps\.tsv"/, 'caps.tsv va en la carpeta de suites-plan');
+  const validar = all.Validar;
+  assert.ok(validar.indexOf("displayName: 'Los topes medidos de cada suite'") < validar.indexOf("artifact: 'suites-plan-a$(System.JobAttempt)'"), 'antes de publicar suites-plan');
+  assert.match(validar, /displayName: 'Los topes medidos de cada suite'\n(?: {8}.*\n)*? {8}env:\n {10}SYSTEM_ACCESSTOKEN: \$\(System\.AccessToken\)\n/, 'con el token de la corrida');
+  for (const [name, minutes] of [['Bench', 40], ['Suites', 40], ['SuitesLargo', 100]]) {
+    const job = all[name];
+    assert.match(job, new RegExp(`\\n {4}timeoutInMinutes: ${minutes}\\n`), `${name}: su tope no cambia`);
+    assert.match(job, new RegExp(`\\n {6}SUITES_JOB_MINUTES: ${minutes}\\n`), `${name}: el plazo que ve la plantilla es su tope`);
+    const steps = job.slice(job.indexOf('\n    steps:\n')).split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+    assert.match(steps, /^\n {4}steps:\n {6}- script: echo "##vso\[task\.setvariable variable=SUITES_JOB_STARTED\]\$\(date \+%s\)"\n {8}displayName: 'La hora de arranque del trabajo'\n {6}- checkout: self\n/,
+      `${name}: la hora de arranque, primero, antes del checkout, y sin correr nada del árbol`);
+  }
 });
 
 // Cada suite se anota como viva, espera un segundo, cuenta cuántas hay vivas en ese momento y se borra.
