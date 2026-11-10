@@ -28,6 +28,7 @@ const NUNCA_DELEGABLES = new Map([
   ['designation-set', 'nombrar o retirar a la coordinadora lo firma el dueño con su click en la pestaña de esa sesión: no se delega'],
   ['designation-withdraw', 'nombrar o retirar a la coordinadora lo firma el dueño con su click en la pestaña de esa sesión: no se delega'],
   ['escape:merge-bypass', 'mergear salteando la cola y la CI de main es sólo del dueño: no se delega'],
+  ['escape:red-control-test-edit', 'editar la prueba de un control que estaba en rojo es sólo del dueño: no se delega'],
 ]);
 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');

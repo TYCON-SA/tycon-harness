@@ -324,7 +324,7 @@ function planDe(casa, destino) {
     const m = ow().marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`));
     if (!m || !m.storyId || require(path.join(SKILL_LIB, 'steps.js')).isDone(m, 'approve-plan')) return {};
     const storyPath = m.storyPath && !path.isAbsolute(m.storyPath) ? path.join(m.repoPath || process.cwd(), m.storyPath) : m.storyPath;
-    const run = require(path.join(SKILL_LIB, '..', 'pipeline.js')).resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), false, storyPath || undefined);
+    const run = require(path.join(SKILL_LIB, '..', 'pipeline.js')).resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), false, storyPath || undefined, { marker: m });
     if (!run) return {};
     const { PLAN_FILE } = require(path.join(SKILL_LIB, 'plan-display.js'));
     const txt = fs.readFileSync(path.join(run, PLAN_FILE), 'utf8');

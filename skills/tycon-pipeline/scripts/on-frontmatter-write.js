@@ -105,11 +105,24 @@ const esHistoria = (c) => /^(?:story|status):/m.test(fmBlock(c));
  * `{ ok: true, constancia }` la consume; `{ ok: false, motivo }` si no la hay. `casa`: la de las pruebas.
  */
 function firmaDeLaVentana(firma, event, filePath, casa) {
+  const renglones = comoSeFirmaAca(firma, filePath, event.session_id);
   try {
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-    return { ...ow.consumirArchivo({ firma, sesion: event.session_id, archivo: filePath, cwd: event.cwd, casa }), comando: ow.comoSeFirma(firma, filePath) };
+    return { ...ow.consumirArchivo({ firma, sesion: event.session_id, archivo: filePath, cwd: event.cwd, casa }), renglones };
   } catch (e) {
-    return { ok: false, motivo: `no pude consultar la ventana (${e.message})`, comando: `marker.js sign-file ${firma} ${filePath}` };
+    return { ok: false, motivo: `no pude consultar la ventana (${e.message})`, renglones };
+  }
+}
+
+/**
+ * Cómo se firma `firma` sobre `filePath`: las dos formas, cada una dicha para quién es, de la misma fuente que los demás
+ * frenos (scripts/lib/owner-window.js). Si esa biblioteca no carga, el cartel dice qué firma pedir sin escribir el comando.
+ */
+function comoSeFirmaAca(firma, filePath, sesion) {
+  try {
+    return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).formasDeFirmar(firma, filePath, sesion).renglones;
+  } catch (e) {
+    return [`la firma de archivo ${firma} sobre ${filePath}, en la ventana de permiso (no pude armar el comando: ${e.message})`];
   }
 }
 
@@ -140,7 +153,8 @@ function exencionNueva(event, oldContent, newContent, casa) {
       titulo,
       '',
       'Eximir una historia lo decide la persona, no el agente, también mientras se escribe. Si la persona quiere,',
-      `la firma en la ventana de permiso: corré ${r.comando} y, con su «Sí», repetí esta escritura.`,
+      'la firma, y con su «Sí» se repite esta escritura:',
+      ...r.renglones.map((l) => `  · ${l}`),
       'El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda',
       '(marker.js close-as-debt).',
       `(No hay firma: ${r.motivo}.)`,
@@ -438,8 +452,8 @@ function estadoAMano(event, filePath, oldContent, newContent, casa) {
       '  · /tycon-pipeline close <id> para pasarla a done después del merge',
       'Si el comando frena porque la ejecución está en rojo, cerrarla igual lo decide la persona; si la historia no',
       'se puede terminar, la salida es dejarla como deuda (marker.js close-as-debt).',
-      `Escribirla a mano lo decide la persona: la firma en la ventana de permiso con ${r.comando},`,
-      'y con su «Sí» se repite esta escritura.',
+      'Escribirla a mano lo decide la persona: la firma, y con su «Sí» se repite esta escritura:',
+      ...r.renglones.map((l) => `  · ${l}`),
     ].join('\n') + '\n',
   };
 }
@@ -633,7 +647,8 @@ function handle(event, { casa } = {}) {
       pl.push('Por default corre los specs SCOPED a la story (two-tier 2026-06-09); la suite');
       pl.push('COMPLETA corre 1 vez en /tycon-merge-to-main. Exit !=0 si hay rojos → fix antes de done.');
       pl.push('');
-      pl.push('Única salida sin correrla: eximir la story (sólo si NO tiene UI/E2E reales), que lo decide la persona: lo firma con marker.js sign-file dod_runtime_exempt <historia>.');
+      pl.push('Única salida sin correrla: eximir la story (sólo si NO tiene UI/E2E reales), que lo decide la persona y lo firma:');
+      for (const l of comoSeFirmaAca('dod_runtime_exempt', filePath, event.session_id)) pl.push(`  · ${l}`);
       pl.push('');
       pl.push('Caso disparador: Ceibo Stories 4.2 + 4.3.1 (2026-05-20) — E2E declarados "PASS"');
       pl.push('sin correrse / con mocks. Freshness agregada 2026-06-09 (evidencia vieja');
@@ -666,7 +681,8 @@ function handle(event, { casa } = {}) {
   lines.push('  (a) Invocar tycon-dod-runtime-checker advisor (auto-captura evidencia).');
   lines.push('  (b) Ejecutar E2E specs + capturar log → escribir manualmente el archivo.');
   lines.push('  (c) Si la story NO tiene UI/E2E reales: eximirla de la prueba en vivo lo decide la persona,');
-  lines.push('      no el agente (lo firma con marker.js sign-file dod_runtime_exempt <historia>).');
+  lines.push('      no el agente. Lo firma:');
+  for (const l of comoSeFirmaAca('dod_runtime_exempt', filePath, event.session_id)) lines.push(`      · ${l}`);
   lines.push('');
   lines.push('Caso disparador: Ceibo Story 4.2 2026-05-20 — Claude marcó done sin');
   lines.push('ejecutar E2E. Este hook es la infra que lo enforce. Docs:');

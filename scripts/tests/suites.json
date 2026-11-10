@@ -579,6 +579,12 @@
       "requiere": []
     },
     {
+      "__nota": "una prueba que ya existía y estaba en rojo no se edita en silencio: pide la nota o, si es de un control, la firma del dueño.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/red-test-edit.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-headings.test.js",
       "requiere": []
@@ -1931,6 +1937,12 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/parallel-runs.test.sh",
+      "requiere": [],
+      "__nota": "una corrida, una carpeta: start crea la suya y la anota en el marcador (runDir); lo que pide la carpeta de esa story recibe la del marcador; la constancia de otra corrida no se pisa; otra copia y otra rama de la misma story no es un choque."
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/run-dir-key.test.sh",
       "requiere": [],
       "__nota": "story 1.17.1 (2026-10-06): la 1.17 separó por tema la evidencia de cierre, pero la carpeta de los revisores, la guía del tester, las aprobaciones de la matriz y el aviso de sesiones cruzadas seguían por el número solo: una story podía pasar a done con la carpeta de revisores de otra del mismo número. Mide que las cuatro usan la clave de la 1.17, que lo viejo bajo un número compartido no se toca, no cuenta y se nombra, y que con número único los nombres son los de siempre."
@@ -2790,6 +2802,12 @@
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los carteles que piden una firma sobre un archivo: las dos formas (ventana y terminal) de una sola fuente, ningún comando de firma escrito a mano, cada forma destraba su freno en el laboratorio, los subcomandos nombrados existen, y el banco clasifica cómo frena cada cartel. Corre los guiones con la HOME aislada; unos segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/notice-commands.test.js",
       "requiere": []
     },
     {

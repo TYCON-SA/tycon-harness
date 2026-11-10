@@ -518,13 +518,14 @@ function firmantesDeFindings(runDir) {
   return [...vistos.values()];
 }
 
-function revisarRosterLocal(cwd, storyId, storyPath) {
+// `sessionId`: la del evento del commit; su marcador decide la carpeta de la corrida (lib/run-dir.js)
+function revisarRosterLocal(cwd, storyId, storyPath, sessionId) {
   let roster; let runDir; let vistos;
   try {
     const rlib = require('./lib/review-roster.js');
     const { resolveRunDir } = require('./pipeline.js');
     const { query } = require('./lib/advisor-ledger.js');
-    runDir = resolveRunDir(cwd, String(storyId), false, storyPath);   // por la clave de la story
+    runDir = resolveRunDir(cwd, String(storyId), false, storyPath, { sessionId: sessionId || undefined });   // por la clave de la story
     if (!runDir) return null; // sin run dir la regla anterior ya habló
     try { roster = rlib.read(runDir); } catch (e) { return { reason: 'roster-ilegible', runDir, detalle: String(e.message).slice(0, 160) }; }
     // 🔴 `query()` devuelve un OBJETO ({spawns, vivos, archivo, advisores…}), no una lista. Tratarlo
@@ -1092,6 +1093,18 @@ function prepararIndiceConLosAdd(command, cwd) {
   }
   process.env.GIT_INDEX_FILE = copia;
   notaAlFrenar(`\nℹ️  Evaluado sobre lo que quedaría stageado después de los \`git add\` de este mismo comando (${plan.adds.map((a) => `git add ${a.join(' ')}`).join(' · ')}).\n`);
+}
+
+/**
+ * Las dos formas de firmar la exención de la prueba en vivo sobre una historia (scripts/lib/owner-window.js, la única
+ * fuente), con la sesión del evento. Sin esa biblioteca, el renglón dice qué firma pedir sin escribir el comando.
+ */
+function formasDeFirmarLaHistoria(sesion) {
+  try {
+    return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).formasDeFirmar('dod_runtime_exempt', null, sesion).renglones;
+  } catch (e) {
+    return [`la firma de archivo dod_runtime_exempt sobre la historia, en la ventana de permiso (no pude armar el comando: ${e.message})`];
+  }
 }
 
 // ============================================================
@@ -1674,7 +1687,7 @@ function main() {
       // rastro): `"sin_testigo": "<motivo>"` dentro del propio roster — viaja en el diff del PR,
       // se ve, y se puede contar. Kill-switch de emergencia: TYCON_ROSTER_GATE=off.
       if (process.env.TYCON_ROSTER_GATE !== 'off') {
-        const rg = revisarRosterLocal(cwd, storyId, rutaDeSpec(specRel));
+        const rg = revisarRosterLocal(cwd, storyId, rutaDeSpec(specRel), event.session_id);
         if (rg && rg.aviso) {
           // Habla, no frena — y con el mismo nombre de regla que el portón, para que el dev pueda
           // buscar una sola cosa. Lo que no se puede es callarlo: el punto de la pieza es que esto
@@ -2054,7 +2067,8 @@ function main() {
   lines.push('      → escribir .advisors/dod-runtime/<storyId>-<timestamp>.md con');
   lines.push('      el log + screenshots/curl outputs');
   lines.push('  (c) Story sin UI/E2E (puro docs/config): eximirla de la prueba en vivo lo decide la persona,');
-  lines.push('      no el agente (lo firma con marker.js sign-file dod_runtime_exempt <historia>).');
+  lines.push('      no el agente. La firma, sobre la historia:');
+  for (const l of formasDeFirmarLaHistoria(event.session_id)) lines.push(`        · ${l}`);
   lines.push('  (d) Bypass excepcional (NO recomendado, queda flag en stderr):');
   lines.push('        git commit --no-verify');
   lines.push('');

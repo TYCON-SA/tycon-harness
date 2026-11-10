@@ -2905,6 +2905,8 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       '',
       // los del repo que están deprecados, marcados (los de un hermano se leen con la lista de su propio repo)
       require('./lib/deprecated.js').seccionParaRevisores({ repo, files: shownFiles.filter((f) => !f.startsWith('(')) }),
+      // las pruebas viejas que estaban en rojo y se editaron, cada una con su razón (marker.js note-red-test)
+      require('./lib/red-test-edit.js').bloqueParaRevisores(marcadorDeLaCorrida),
       '## Story digest (frontmatter + ACs + Tests + Tasks + verificación)',
       '',
       digest || '(sin story)',
@@ -3475,15 +3477,44 @@ function computeStart(args) {
         if (suRuta && miRuta && suRuta !== miRuta) continue; // otra story con el mismo número
         // con tanda, la otra sesión que entrega otra tanda de la paraguas no choca; la misma tanda, o sin tanda, sí
         if (tanda && m.batch && String(m.batch) !== tanda.nombre) continue;
-        others.push({ sessionId: m.sessionId, lastTouch: m.lastTouch, stepsCompleted: m.stepsCompleted });
+        others.push({ sessionId: m.sessionId, lastTouch: m.lastTouch, stepsCompleted: m.stepsCompleted, repoPath: m.repoPath || null });
       } catch { /* ignore */ }
     }
   } catch { /* ignore */ }
+  // PIPE-C0 por hechos: la otra sesión de la misma story en OTRA copia del repo (otra raíz git) y en OTRA rama es otra
+  // tanda que trabaja en paralelo, no un choque: no pausa y queda dicho (`parallelWith` en el marcador). La misma copia,
+  // o la misma rama en otra copia, pausa como siempre; si no se puede leer la rama de la otra, pausa y lo dice.
+  let parallelWith = null;
+  let ramaSinLeer = null;
   if (others.length) {
+    const gitDe = (dir, ...a) => {
+      try { return execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch { return null; }
+    };
+    const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+    const miRaiz = gitDe(repo, 'rev-parse', '--show-toplevel');
+    const miRama = gitDe(repo, 'rev-parse', '--abbrev-ref', 'HEAD');
+    const vistas = others.map((o) => {
+      const raiz = o.repoPath && fs.existsSync(o.repoPath) ? gitDe(o.repoPath, 'rev-parse', '--show-toplevel') : null;
+      return { sessionId: o.sessionId, repoPath: o.repoPath, raiz, rama: raiz ? gitDe(o.repoPath, 'rev-parse', '--abbrev-ref', 'HEAD') : null };
+    });
+    const sinLeer = vistas.filter((v) => !v.raiz || !v.rama);
+    if (!miRaiz || !miRama) {
+      ramaSinLeer = `la de esta sesión (${repo})`;
+    } else if (sinLeer.length) {
+      ramaSinLeer = sinLeer.map((v) => `${v.sessionId} (${v.repoPath || 'sin repo en su marcador'})`).join(', ');
+    } else if (miRaiz && miRama && vistas.every((v) => real(v.raiz) !== real(miRaiz) && v.rama !== miRama)) {
+      const lista = vistas.map((v) => ({ sessionId: v.sessionId, branch: v.rama }));
+      parallelWith = lista.length === 1 ? lista[0] : lista;
+      actions.push(`PIPE-C0: la story ${storyId} también la trabaja ${lista.map((v) => `la sesión ${v.sessionId} en la rama ${v.branch}`).join(' y ')}, `
+        + 'en otra copia del repo: es otra tanda en paralelo, no un choque.');
+    }
+  }
+  if (others.length && !parallelWith) {
     pauses.push({
       id: 'PIPE-C0-cross-session',
-      detail: `Story ${storyId} YA tiene pipeline activo en otra sesión: ${JSON.stringify(others)}`,
-      options: 'retomar con `marker.js adopt-session <sid>` (copia el estado completo) / clear-session / paralelo intencional / cancelar',
+      detail: `Story ${storyId} YA tiene pipeline activo en otra sesión: ${JSON.stringify(others)}`
+        + (ramaSinLeer ? `. No pude leer la rama de la otra sesión (${ramaSinLeer}): ante la duda, pauso.` : ''),
+      options: 'retomar con `marker.js adopt-session <sid>` (copia el estado completo) / clear-session / trabajarla en otra copia del repo y otra rama / cancelar',
     });
   }
 
@@ -3566,8 +3597,10 @@ function computeStart(args) {
     });
   }
 
-  // PIPE-C5 (lectura): pipeline abandonado. Una paraguas en curso con su tanda no lo es: otra tanda la arrancó antes.
-  if (fm.status === 'in-progress' && !others.length && !tanda) {
+  // PIPE-C5 (lectura): pipeline abandonado. Una paraguas en curso con su tanda no lo es: otra tanda la arrancó antes. Y el
+  // marcador propio de esta misma story tampoco: es la corrida viva que se retoma (re-correr `start`).
+  const propioDeEstaStory = (() => { const p = readSessionMarker(); return !!p && String(p.storyId) === String(storyId); })();
+  if (fm.status === 'in-progress' && !others.length && !tanda && !propioDeEstaStory) {
     pauses.push({
       id: 'PIPE-C5-abandoned',
       detail: `La story ya está status: in-progress sin pipeline activo en otra sesión — probable pipeline abandonado (sesión que murió sin cerrar).`,
@@ -3662,9 +3695,23 @@ function computeStart(args) {
   const sigueVieja = !!previo && String(previo.storyId) === String(storyId) && STEPS_TABLE.schemeOf(previo) === 1;
   // La carpeta de la ejecución nace acá: guarda la copia de la apertura (lib/open-runs.js). Sin carpeta no hay apertura,
   // y una ejecución sin apertura no se vería al perder el marcador: el arranque frena.
+  // Una corrida, una carpeta: retomar la misma story reusa la de su marcador (o la de su apertura, si el marcador es de
+  // antes de anotarla); si no, la corrida nueva crea la suya, aunque la story ya tenga otras (otra tanda, o reabierta).
+  // Sin carpeta no se escribe el marcador: no arranca una corrida sin carpeta propia.
   let runDir = null;
-  try { runDir = resolveRunDir(repo, storyId, true, storyPath); } catch (e) {
-    return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude crear la carpeta de la ejecución (${e.message}); sin ella la ejecución no queda anotada como abierta` }], actions_done: actions };
+  const rdLib = require('./lib/run-dir.js');
+  if (previo && String(previo.storyId) === String(storyId)) {
+    const d = rdLib.carpetaDelMarcador(previo, storyId, repo, { create: true });
+    if (d.dir) runDir = d.dir;
+    else if (d.motivo) actions.push(`CARPETA: ${d.motivo}; abro una nueva`);
+  }
+  if (!runDir) {
+    try { runDir = rdLib.createRunDir(repo, storyId, storyPath); } catch (e) {
+      return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude crear la carpeta de la ejecución (${e.message}); sin ella la ejecución no queda anotada como abierta. No escribí el marcador.` }], actions_done: actions };
+    }
+    if (!runDir) {
+      return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude calcular la clave de la carpeta de la ejecución (${runDirKey(storyId, storyPath).error || 'sin motivo'}); sin carpeta propia la ejecución no arranca. No escribí el marcador.` }], actions_done: actions };
+    }
   }
   const esquema = sigueVieja
     ? { stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8], arranque: '0' }
@@ -3700,6 +3747,7 @@ function computeStart(args) {
       // sesión con su proveedor: los revisores que lanza `reviewers-run` corren con el mismo
       ...(args.sessionModel ? { sessionModel: args.sessionModel } : {}),
       ...(args.codexSession ? { codexSession: args.codexSession } : {}),
+      ...(parallelWith ? { parallelWith } : {}),
     })], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     execFileSync(process.execPath, [markerJs, 'complete-step', esquema.arranque], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     logRunStart(storyId);
@@ -4861,7 +4909,7 @@ function ejecucionDeLaCorrida(args, corrida) {
   const { carpetaReal } = require('./lib/adversarial-skip.js');
   if (!esLaStoryDelMarcador(args.story, corrida)) return null;
   const repo = corrida.repoPath || args.repo;
-  const rd = repo ? resolveRunDir(path.resolve(repo), corrida.storyId, false, storyDelMarcador(corrida) || args.story) : null;
+  const rd = repo ? resolveRunDir(path.resolve(repo), corrida.storyId, false, storyDelMarcador(corrida) || args.story, { marker: corrida }) : null;
   const carpeta = rd ? carpetaReal(rd) : null;
   return { story: String(corrida.storyId), carpeta, ejecucion: corrida.startedAt };
 }
@@ -5912,8 +5960,9 @@ function runDirKey(storyId, storyPath) {
   return require('./lib/run-dir.js').runDirKey(storyId, storyPath);
 }
 
-function resolveRunDir(repo, storyId, create, storyPath) {
-  return require('./lib/run-dir.js').resolveRunDir(repo, storyId, create, storyPath);
+// `opts` ({ marker, sessionId }) va tal cual: es el que decide qué marcador mira la regla (lib/run-dir.js)
+function resolveRunDir(repo, storyId, create, storyPath, opts) {
+  return require('./lib/run-dir.js').resolveRunDir(repo, storyId, create, storyPath, opts);
 }
 
 // El marcador de la sesión, con su estado: `ausente` (no existe), `ilegible` (existe y no se puede leer como objeto) u `ok`.
@@ -6119,7 +6168,7 @@ function rethinkGate(args) {
   const storyArg = args.story || (marcador && typeof marcador.storyPath === 'string' && marcador.storyPath) || null;
   const storyAbs = storyArg ? (path.isAbsolute(storyArg) ? storyArg : path.join(repoAbs, storyArg)) : null;
   const storyId = storyAbs ? deriveStoryId(storyAbs) : null;
-  const propia = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs) : null;
+  const propia = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs, { marker: marcador || null }) : null;
   // El freno es de las corridas del pipeline: hay corrida si el marcador trae story, o si --story resuelve una carpeta de
   // corrida. Fuera de una corrida no hay vueltas que contar: --iter ausente, 1 o 2 pasa como siempre; desde la tercera (la que pide nota) frena.
   const marcadorConStory = !!(marcador && typeof marcador.storyPath === 'string' && marcador.storyPath);
@@ -6179,7 +6228,7 @@ function rethinkGate(args) {
     return `🛑 --run-dir ${ajena} no es la carpeta de corrida de esta story${storyId ? ` (${storyId})` : ''}: quitá --run-dir o pasá la carpeta de .advisors/pipeline-runs/ de esta story.\n`;
   }
   // Pasó: se anota la vuelta servida en la carpeta de la corrida (la crea si todavía no existe).
-  const donde = runDir || (storyId && !ajena ? resolveRunDir(repoAbs, storyId, true, storyAbs) : null);
+  const donde = runDir || (storyId && !ajena ? resolveRunDir(repoAbs, storyId, true, storyAbs, { marker: marcador || null }) : null);
   if (donde) {
     const anotada = rt.recordServed(donde, iter);
     if (!anotada.ok) return `🛑 No pude anotar la vuelta ${iter} en la carpeta de la corrida (${rt.servedPath(donde)}): ${anotada.reason}. Sin ese registro la próxima vuelta no se puede contar, y ante la duda no devuelvo el set.\n`;
@@ -6532,6 +6581,18 @@ function writeFindings(args) {
   const normWarnings = [];
   // 🔴 El run dir y el roster se resuelven ANTES de normalizar: el firmante se valida contra los
   // revisores de ESTA corrida, y un finding con firmante inválido no tiene que llegar a escribirse.
+  // Sin una corrida abierta de esta story en la sesión, la carpeta que da la regla es la de OTRA corrida: su
+  // findings.json no se reemplaza sin nombrarla a propósito (`--run-dir`).
+  if (!args.runDir) {
+    const propio = readSessionMarker();
+    if (!propio || String(propio.storyId) !== String(storyId)) {
+      const ya = resolveRunDir(args.repo, storyId, false, args.story, { marker: null });
+      if (ya && exists(path.join(ya, 'findings.json'))) {
+        return { error: `sin una corrida abierta de la story ${storyId} en esta sesión no reemplazo ${path.join(ya, 'findings.json')}: `
+          + `es la constancia de otra corrida. Si es la que querés reemplazar, nombrala a propósito con --run-dir ${ya}.` };
+      }
+    }
+  }
   const runDir = args.runDir || resolveRunDir(args.repo, storyId, true, args.story);
   if (!runDir) return { error: 'no se pudo resolver/crear el run dir bajo .advisors/pipeline-runs/ (si el número de la story se repite en su repo, la carpeta lleva la clave: `pipeline.js evidence-key --story <ruta>` dice por qué no se pudo calcular)' };
   fs.mkdirSync(runDir, { recursive: true });
@@ -7005,7 +7066,7 @@ function main() {
     const storyArg = args.story || (marcador && marcador.storyPath) || null;
     const storyAbs = storyArg ? (path.isAbsolute(storyArg) ? storyArg : path.join(repoAbs, storyArg)) : null;
     const storyId = storyAbs ? deriveStoryId(storyAbs) : null;
-    const runDir = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs) : null;
+    const runDir = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs, { marker: marcador || null }) : null;
     const tope = rr.tope({ repo: repoAbs });
     const h = rr.hallazgosDe(runDir);
     const pre = rr.prefijos();

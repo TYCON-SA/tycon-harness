@@ -129,7 +129,8 @@ function escribir(L, hallazgos) {
   const home = path.join(L.d, 'home');
   fs.mkdirSync(home, { recursive: true });
   try {
-    const out = execFileSync('node', [PIPELINE, 'write-findings', '--repo', L.d, '--story', L.spec, '--findings', '-'],
+    // sin una corrida abierta, reescribir la constancia de la carpeta se pide nombrándola (--run-dir)
+    const out = execFileSync('node', [PIPELINE, 'write-findings', '--repo', L.d, '--story', L.spec, '--run-dir', L.runDir, '--findings', '-'],
       { encoding: 'utf8', input: JSON.stringify(hallazgos), env: { ...process.env, HOME: home, USERPROFILE: home } });
     return { exit: 0, out };
   } catch (e) {

@@ -191,12 +191,21 @@ function evaluate({ absPath, content, edit, nameHint = false, sessionId, via, ev
   let firma = null;
   if (verdict.action === 'block' && !isCodex) {
     const porEdicion = !!event && ['Edit', 'Write', 'MultiEdit'].includes(event.tool_name);
-    try {
-      const ow = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-      firma = porEdicion ? ow.consumirArchivo({ firma: 'story-skill-bypass', sesion: event.session_id, archivo: abs, cwd: event.cwd, casa })
-        : { ok: false, motivo: 'por la consola no vale: escribila con Edit o Write' };
-      firma.comando = ow.comoSeFirma('story-skill-bypass', abs);
-    } catch (e) { firma = { ok: false, motivo: `no pude consultar la ventana (${e.message})`, comando: `marker.js sign-file story-skill-bypass ${abs}` }; }
+    // las dos formas salen de owner-window.js, con la sesión del evento: story-skill-gate.js sólo las imprime
+    const sesionDelEvento = (event && event.session_id) || sessionId;
+    let ow = null;
+    try { ow = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js')); } catch (e) {
+      firma = { ok: false, motivo: `no pude consultar la ventana (${e.message})`, comando: null, comandoTerminal: null,
+        renglones: [`la firma de archivo story-skill-bypass sobre ${abs}, en la ventana de permiso (no pude armar el comando: ${e.message})`] };
+    }
+    if (ow) {
+      const formas = ow.formasDeFirmar('story-skill-bypass', abs, sesionDelEvento);
+      try {
+        firma = porEdicion ? ow.consumirArchivo({ firma: 'story-skill-bypass', sesion: event.session_id, archivo: abs, cwd: event.cwd, casa })
+          : { ok: false, motivo: 'por la consola no vale: escribila con Edit o Write' };
+      } catch (e) { firma = { ok: false, motivo: `no pude consultar la ventana (${e.message})` }; }
+      Object.assign(firma, { comando: formas.ventana, comandoTerminal: formas.terminal, renglones: formas.renglones });
+    }
     if (firma.ok) {
       io.appendLog(stateDir, 'bypass.log', sessionId, { repoPath: repo.repoRoot || null, kind: 'STORY_SKILL_BYPASS_USED', file: abs, via: firma.constancia.via });
       return { verdict: { action: 'pass', kind: 'persona', reason: `la persona la firmó sin la skill (${firma.constancia.via})` }, message: null };

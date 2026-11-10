@@ -76,6 +76,7 @@ const LEVELS_EN = Object.freeze({
   'escape:TYCON_TEST_GATE': 'skip only the test gate of the commit',
   'escape:TYCON_STATUS_GATE': "change a story's status by hand",
   'escape:story-skill-bypass': 'write a story without the story skill',
+  'escape:red-control-test-edit': "edit a control's old test that was failing",
   'escape:set-autonomous': 'change the autonomous mode of a run',
   'designation-confirm': 'confirm which session is the coordinator of this machine',
   'designation-set': "name a session as this machine's coordinator, with a click in its tab",
@@ -114,6 +115,7 @@ const LEVELS = Object.freeze([
   ['escape:TYCON_TEST_GATE', 2, AMBOS, 'saltear sólo el portón de pruebas del commit'],
   ['escape:TYCON_STATUS_GATE', 2, AMBOS, 'cambiar a mano el estado de una historia'],
   ['escape:story-skill-bypass', 2, AMBOS, 'escribir una historia sin la skill de historias'],
+  ['escape:red-control-test-edit', 2, AMBOS, 'editar una prueba vieja de un control que estaba en rojo'],
   ['escape:set-autonomous', 2, AMBOS, 'cambiar el modo autónomo de una ejecución'],
   ['designation-confirm', 2, AMBOS, 'confirmar qué sesión es la coordinadora de esta máquina'],
   ['designation-set', 2, AMBOS, 'nombrar a una sesión coordinadora de esta máquina, con un click en su pestaña'],
@@ -158,6 +160,7 @@ const POR_VARIABLE = [
 
 const CON_NOMBRE = [
   ['story-skill-bypass', 'escribir una story sin la skill de stories', 'file'],
+  ['red-control-test-edit', 'editar una prueba vieja de un control que estaba en rojo', 'file'],
   ['set-autonomous', 'cambiar el modo autónomo de una ejecución', 'marker.js set-autonomous'],
   ['cerrar-la-ejecucion', 'cerrar una ejecución con un control en rojo', 'marker.js clear'],
   ['cerrar-como-deuda', 'cerrar una ejecución dejando lo que falta como deuda', 'marker.js close-as-debt'],
@@ -183,6 +186,7 @@ const SI_SALE_MAL = Object.freeze({
   'escape:TYCON_STATUS_GATE': 'la historia cambia de estado sin los controles del orquestador, y puede quedar como hecha sin estarlo',
   'escape:cambiar-el-estado': 'el estado de la historia se escribe a mano, y puede quedar como hecha sin estarlo',
   'escape:story-skill-bypass': 'la historia se escribe sin el validador ni la revisión previa, y puede llegar al plan con huecos',
+  'escape:red-control-test-edit': 'la prueba de un control se corrige para que pase, y el control puede quedar apagado sin que nadie lo decida',
   'escape:set-autonomous': 'la ejecución cambia cómo se frena sola ante un control en rojo',
   'escape:cerrar-la-ejecucion': 'la ejecución se cierra con un control en rojo, y lo que frenaba queda sin arreglar',
   'escape:cerrar-como-deuda': 'la ejecución se cierra y lo que falta queda anotado como deuda, sin hacer',
@@ -243,6 +247,7 @@ const APPROVES_EN = {
   'escape:TYCON_NO_DEEP_REVIEW': "turn off a run's adversarial pass",
   'escape:TYCON_STATUS_GATE': "change a story's status by hand",
   'escape:story-skill-bypass': 'write a story without the story skill',
+  'escape:red-control-test-edit': "edit a control's old test that was failing",
   'escape:set-autonomous': "change a run's autonomous mode",
   'escape:cerrar-la-ejecucion': 'close a run with a control in red',
   'escape:cerrar-como-deuda': 'close a run leaving what is missing as debt',
@@ -300,7 +305,8 @@ const SIGNATURES = Object.freeze([
     id: `escape:${nombre}`, approves, command: `${nombre}=${valor} <comando>`, otherSession: 'no', terminal: `${nombre}=${valor} <comando>`,
   })),
   ...CON_NOMBRE.map(([nombre, approves, command]) => {
-    if (command === 'file') return { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: 'no', terminal: `${sobreArchivo(nombre)} --terminal` };
+    // la terminal de la persona no tiene la sesión en el ambiente: sin --for-session la constancia no la usaría nadie
+    if (command === 'file') return { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: 'no', terminal: `${sobreArchivo(nombre)} --terminal --for-session <sesión del agente>` };
     if (POR_GUION.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'yes', terminal: `${command.replace(' [--for-session <D>]', '')} --terminal` };
     return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando' };
   }),
@@ -316,7 +322,7 @@ const SIGNATURES = Object.freeze([
 
 const ESCAPES = SIGNATURES.filter((s) => s.id.startsWith('escape:')).map((s) => s.id);
 // lo que nunca se delega (delegated-signing.js NUNCA_DELEGABLES) tampoco entra al grupo que se delega junto
-const FUERA_DEL_GRUPO = Object.freeze(['merge-bypass']);
+const FUERA_DEL_GRUPO = Object.freeze(['merge-bypass', 'red-control-test-edit']);
 const ESCAPES_DEL_GRUPO = ESCAPES.filter((id) => !POR_GUION.includes(id.slice('escape:'.length)) && !FUERA_DEL_GRUPO.includes(id.slice('escape:'.length)));
 
 const GROUPS = Object.freeze(Object.fromEntries(['refresh-after-main', 'adversarial-skip', 'critical-waiver', 'escape-phrases',
