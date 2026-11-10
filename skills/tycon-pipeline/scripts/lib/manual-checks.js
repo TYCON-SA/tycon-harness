@@ -121,7 +121,7 @@ function storyDe(marker) {
   return fs.existsSync(p) ? p : null;
 }
 function carpetaDeLaCorrida(marker) {
-  return require('../pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyDe(marker) || undefined);
+  return require('../pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyDe(marker) || undefined, { marker });
 }
 
 // Arma la muestra, si corresponde. La constancia la escribe quien muestra, después de mostrar (`anotar`).

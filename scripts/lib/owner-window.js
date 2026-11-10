@@ -980,7 +980,10 @@ function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env, via = nu
     env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', [PRECHEQUEO_VIA]: via || '', ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
   if (r.error || r.status === null) return null;
   if (r.status === 0) return String(r.stdout).split('\n').includes(PRECHEQUEO_OK) ? { ok: true } : null;
-  return { niega: String(r.stderr || r.stdout || `salió ${r.status}`).trim() };
+  // lo que dijo, sin los renglones informativos («ℹ️ …»): el cuadro tiene lugar para el motivo del rechazo, no para avisos
+  // (si todo lo que dijo era informativo, va entero: mejor un aviso de más que un rechazo sin su motivo)
+  const dijo = (t) => String(t || '').split('\n').filter((l) => !/^\s*ℹ️/.test(l)).join('\n').trim();
+  return { niega: dijo(r.stderr) || dijo(r.stdout) || String(r.stderr || r.stdout || '').trim() || `salió ${r.status}` };
 }
 
 // lo que en una pestaña sin permisos se hace sin firma y queda «hecho y avisado»: autorizaciones de rutina, no lo que
@@ -1497,11 +1500,46 @@ function confirmarConsumos(lista, { paso = true } = {}) {
   return errores;
 }
 
-/** El renglón que dice cómo se pide una firma sobre un archivo: lo usan los carteles de los frenos de escritura. */
+// la ruta como la lee la consola: entre comillas simples si leería otra cosa (espacios, `$`, `;`, comillas, paréntesis…)
+const rutaParaLaConsola = (archivo) => (archivo
+  ? (/^[A-Za-z0-9_./:@%+=,-]+$/.test(archivo) ? archivo : `'${String(archivo).replace(/'/g, "'\\''")}'`) : '<archivo>');
+
+/**
+ * La forma de la ventana de una firma sobre un archivo: la corre el agente y la persona dice que sí en la ventana de
+ * permiso. Lo usan los carteles de los frenos de escritura.
+ */
 function comoSeFirma(firma, archivo) {
-  // entre comillas simples si la consola leería otra cosa (espacios, `$`, `;`, comillas, paréntesis…)
-  const ruta = archivo ? (/^[A-Za-z0-9_./:@%+=,-]+$/.test(archivo) ? archivo : `'${String(archivo).replace(/'/g, "'\\''")}'`) : '<archivo>';
-  return `marker.js sign-file ${firma} ${ruta}`;
+  return `marker.js sign-file ${firma} ${rutaParaLaConsola(archivo)}`;
+}
+
+/** Por qué un cartel no da la forma de la terminal. */
+const SIN_SESION_TERMINAL = 'la forma de tu terminal necesita la sesión del agente, que este freno no conoce';
+const sesionConocida = (sesion) => typeof sesion === 'string' && sesion !== '' && sesion !== '_nosession';
+
+/**
+ * La forma de la terminal de la persona: la sesión va siempre, porque la terminal no la tiene en el ambiente. Sin una
+ * sesión conocida, `null` (el cartel dice SIN_SESION_TERMINAL).
+ */
+function comoSeFirmaEnLaTerminal(firma, archivo, sesion) {
+  if (!sesionConocida(sesion)) return null;
+  return `${comoSeFirma(firma, archivo)} --terminal --for-session ${sesion}`;
+}
+
+/**
+ * Las dos formas, cada una dicha para quién es: `{ ventana, terminal, renglones }`. Los carteles imprimen `renglones`
+ * (con la sangría que quieran), así ninguno escribe el comando a mano.
+ */
+function formasDeFirmar(firma, archivo, sesion) {
+  const ventana = comoSeFirma(firma, archivo);
+  const terminal = comoSeFirmaEnLaTerminal(firma, archivo, sesion);
+  return {
+    ventana,
+    terminal,
+    renglones: [
+      `en la ventana de permiso (la corre el agente y vos decís que sí): ${ventana}`,
+      terminal ? `o en tu terminal: ${terminal}` : `o en tu terminal: ${SIN_SESION_TERMINAL}`,
+    ],
+  };
 }
 
 function ttyDeVerdad() {
@@ -1678,8 +1716,8 @@ function quienFirmo({ via, sesion } = {}, persona) {
 }
 
 module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
-  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, esAnfitrionDeFondoDe, negarSinVentana,
-  CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos };
+  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, formasDeFirmar,
+  SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
@@ -1698,6 +1736,18 @@ if (require.main === module) {
     } catch (e) { r = negarCon(`no pude decidir la firma (${e.message})`, escapes.filter((id) => firmaDe(id))); }
     const ask = r.decision === 'ask' ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: r.texto } }) : undefined;
     lineas({ decision: r.decision, firma: (r.firmas || [])[0], via: r.via, relevo: r.relevo, texto: r.texto, json: ask });
+    process.exit(0);
+  }
+  if (sub === 'sign-forms') {
+    // para los carteles de consola: `sign-forms --signature <firma> [--file <archivo>] [--session <sesión>]` imprime las
+    // dos formas de firmar ese archivo (`window=…`, `terminal=…` o `terminal_missing=…`) y los dos renglones del cartel,
+    // cada uno dicho para quién es (`line_window=…`, `line_terminal=…`), de la misma fuente que los ganchos
+    const val = (n) => { const k = argv.indexOf(n); return k > 0 ? argv[k + 1] : undefined; };
+    const firma = val('--signature');
+    if (!firma) { process.stderr.write('uso: owner-window.js sign-forms --signature <firma> [--file <archivo>] [--session <sesión>]\n'); process.exit(2); }
+    const f = formasDeFirmar(firma, val('--file'), val('--session'));
+    lineas({ window: f.ventana, terminal: f.terminal, terminal_missing: f.terminal ? undefined : SIN_SESION_TERMINAL,
+      line_window: f.renglones[0], line_terminal: f.renglones[1] });
     process.exit(0);
   }
   if (sub === 'sweep') {

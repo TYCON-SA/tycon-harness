@@ -207,6 +207,11 @@ Skill(
 )
 ```
 
+Una prueba que ya existía y estaba en rojo no se edita para que pase: se para y se dice por qué. Si lo que está mal es
+la prueba (no el código), la razón se anota con `marker.js note-red-test --test <ruta> --reason "<motivo>"` y llega a los
+revisores y al mensaje del commit; si es la prueba de un control, la edición la firma el dueño
+(`red-control-test-edit`). El freno `on-red-test-edit.js` lo pide en cualquier paso de la corrida.
+
 El skill BMAD se encarga de:
 - Escribir/modificar archivos
 - Ejecutar tests unitarios que correspondan

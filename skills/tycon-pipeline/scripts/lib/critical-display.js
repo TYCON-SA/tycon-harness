@@ -146,7 +146,7 @@ function carpetaDeLaCorrida(marker) {
     const p = path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(repo, marker.storyPath);
     if (fs.existsSync(p)) story = p;
   }
-  return require('../pipeline.js').resolveRunDir(repo, String(marker.storyId), false, story);
+  return require('../pipeline.js').resolveRunDir(repo, String(marker.storyId), false, story, { marker });
 }
 
 // Arma la muestra de un crítico, si corresponde. La constancia la escribe quien muestra, después de mostrar (`anotar`).

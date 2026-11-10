@@ -463,6 +463,19 @@ function checkExpect(expect, res, vars, failures) {
   }
 }
 
+/**
+ * Cómo frena un cartel, en este orden: `comando` si nombra un `.js` o un `.sh` seguido de un subcomando (un comando de
+ * firma incluido); si no, `llano` si trae un renglón de salida («Usá», «Corré», «Pedile», «Alternativa:», «Salida:»,
+ * «Si querés»); si no, `callejon`. Es una heurística: un cartel que da su salida con otras palabras cuenta como callejón,
+ * y se acepta porque sólo se mide.
+ */
+function clasificarCartel(texto) {
+  const t = String(texto || '');
+  if (/[\w./-]+\.(?:js|sh)["']? [a-z][a-z0-9-]*/.test(t)) return 'comando';
+  if (/^[\s>·•*(-]*(?:Usá|Corré|Pedile|Alternativa:|Salida:|Si querés)/mi.test(t)) return 'llano';
+  return 'callejon';
+}
+
 function runCase(tool, hookDef, caseDef, ctx) {
   const sandbox = fs.mkdtempSync(path.join(sandboxRoot(ctx), 'tycon-bench-'));
   const SANDBOX_HOME = path.join(sandbox, 'home');
@@ -584,7 +597,9 @@ function runCase(tool, hookDef, caseDef, ctx) {
       failures.push(why);
     }
   }
-  return { pass: failures.length === 0, failures, exit: res.status };
+  // cómo frena el cartel de un caso que frena: se mide, no se juzga
+  const cartel = caseDef.type === 'must-block' && res ? clasificarCartel(`${res.stderr || ''}\n${res.stdout || ''}`) : undefined;
+  return { pass: failures.length === 0, failures, exit: res.status, ...(cartel ? { cartel } : {}) };
 }
 
 /** Devuelve a cada carpeta de `dir` el permiso de entrar y escribir (sin seguir enlaces). Nunca tira. */
@@ -642,6 +657,9 @@ function main(ctx) {
   const tools = TOOL === 'both' ? ['claude', 'codex'] : [TOOL];
   const results = {}; // caseKey -> { tool -> {pass, failures} }
   let ran = 0, failed = 0, skipped = 0, nomedido = 0, known = 0;
+  // cómo frenan los carteles de los casos que frenan (una vez por caso, aunque corra en las dos herramientas)
+  const carteles = { comando: 0, llano: 0, callejon: 0 };
+  const cartelesContados = new Set();
   const declared = knownGaps(ctx);
   if (declared.problem) console.log(`⚠️ known-gaps.json no se pudo leer (${declared.problem}): ningún rojo cuenta como conocido.`);
   if (declared.invalid.length) console.log(`⚠️ known-gaps.json: ${declared.invalid.length} hueco(s) mal declarado(s) —sin la tanda que lo cierra (closes) o sin el motivo con que falla (match)— no tapan nada: ${declared.invalid.join(', ')}`);
@@ -684,6 +702,12 @@ function main(ctx) {
         const r = runCase(t, h, c, ctx);
         results[key].tools[t] = r;
         ran++;
+        if (r.cartel && !cartelesContados.has(key)) {
+          cartelesContados.add(key);
+          carteles[r.cartel]++;
+          // una medición, no un rojo: se nombra para que alguien le agregue la salida
+          if (r.cartel === 'callejon') console.log(`callejón sin salida: ${h.__file} · ${c.id}`);
+        }
         // NO MEDIDO va a su propio balde: no es rojo (no dice nada del control) y no es verde
         // (tampoco dice que ande). Se cuenta y se dice, como los `skip-con-asimetría`.
         // Un rojo es «conocido» sólo si el caso está declarado Y falla por el motivo declarado: todos sus motivos.
@@ -759,6 +783,7 @@ function main(ctx) {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const report = {
     ts: new Date().toISOString(), tool: TOOL, ran, failed, skipped, nomedido, parityBreaks, baselineRegressions,
+    carteles,
     results,
   };
   if (platform === 'win32') Object.assign(report, { knownGaps: known, staleGaps });
@@ -781,7 +806,7 @@ function main(ctx) {
 // script que no hace nada — un caso que pasa igual no prueba nada. Dos ejecutores del mismo caso
 // serían el drift de mañana.
 // Lo de Windows se exporta para probarlo con la plataforma inyectada (scripts/tests/bench-portable.test.js).
-module.exports = { runCase, loadCaseFiles, main, interpreterFor, isolationEnv, setupEnv, hookEnv, forBash, pathShapes, benchShell, sandboxRoot, fileVars, missingOnPath, cannotMeasure };
+module.exports = { runCase, loadCaseFiles, main, clasificarCartel, interpreterFor, isolationEnv, setupEnv, hookEnv, forBash, pathShapes, benchShell, sandboxRoot, fileVars, missingOnPath, cannotMeasure };
 
 // 🔴 `process.exitCode`, NO `process.exit()`. Este guión lo ejecuta otro proceso y le parsea la
 // salida; en Node las escrituras a una tubería son ASINCRÓNICAS y `process.exit()` mata el proceso

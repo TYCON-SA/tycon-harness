@@ -5846,9 +5846,10 @@ test('ProyeccionDelRunDirAlRepoDeLaStory_SoloRosterYFindings', () => {
   assert.equal(projectRunToStoryRepo(runDir, path.join(codeRepo, 'specs-x.md')).projected, false);
   assert.equal(mismo.projected, false);
 
-  // write-findings de verdad, con la story en otro repo: proyecta y lo dice.
+  // write-findings de verdad, con la story en otro repo: proyecta y lo dice. Sin una corrida abierta, la carpeta que ya
+  // tiene su findings.json se nombra a propósito (--run-dir).
   const out = JSON.parse(execFileSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'write-findings',
-    '--story', story, '--repo', codeRepo, '--findings', '-'], { encoding: 'utf8', input: '[]' }));
+    '--story', story, '--repo', codeRepo, '--run-dir', runDir, '--findings', '-'], { encoding: 'utf8', input: '[]' }));
   assert.ok(out.wrote && out.projected_to_story_repo, `write-findings proyecta al repo de la story: ${JSON.stringify(out)}`);
   assert.ok(fs.existsSync(path.join(out.projected_to_story_repo, 'findings.json')));
 

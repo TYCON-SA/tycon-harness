@@ -64,7 +64,11 @@ function historiaDe(m) {
 /** La carpeta de la corrida de la sesión del marcador, sin crearla; null sin corrida o sin clave. */
 function carpetaDeLaCorrida(m) {
   if (!m || !m.storyId) return null;
-  try { return require(PIPELINE).resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), false, rutaDeLaHistoria(m) || undefined); } catch (_) { return null; }
+  try { return require(PIPELINE).resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), false, rutaDeLaHistoria(m) || undefined, { marker: m }); } catch (e) {
+    // sin carpeta, las firmas de esa corrida no se listan: se dice, para que la lista corta no parezca completa
+    process.stderr.write(`⚠️  no pude calcular la carpeta de la ejecución de la historia ${m.storyId} (${e.message}): sus firmas no entran en la lista.\n`);
+    return null;
+  }
 }
 
 /** El cuerpo de la sección `## <titulo>` del markdown, sin el título; null si no está. */

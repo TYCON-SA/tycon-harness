@@ -66,6 +66,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `escape:TYCON_TEST_GATE` | 2 · excepción | dev y mantenimiento | saltear sólo el portón de pruebas del commit | `escape:TYCON_TEST_GATE` |
 | `escape:TYCON_STATUS_GATE` | 2 · excepción | dev y mantenimiento | cambiar a mano el estado de una historia | `escape:TYCON_STATUS_GATE`, `escape:cambiar-el-estado` |
 | `escape:story-skill-bypass` | 2 · excepción | dev y mantenimiento | escribir una historia sin la skill de historias | `escape:story-skill-bypass` |
+| `escape:red-control-test-edit` | 2 · excepción | dev y mantenimiento | editar una prueba vieja de un control que estaba en rojo | `escape:red-control-test-edit` |
 | `escape:set-autonomous` | 2 · excepción | dev y mantenimiento | cambiar el modo autónomo de una ejecución | `escape:set-autonomous` |
 | `designation-confirm` | 2 · excepción | dev y mantenimiento | confirmar qué sesión es la coordinadora de esta máquina | `designation-confirm` |
 | `designation-set` | 2 · excepción | dev y mantenimiento | nombrar a una sesión coordinadora de esta máquina, con un click en su pestaña | `designation-set` |
@@ -308,16 +309,17 @@ vuelve a pedir la firma del dueño.
 | `escape:DOD_BYPASS` | saltear los controles del commit (queda anotado) | `DOD_BYPASS=1 <comando>` | no, en la pestaña de esa sesión | `DOD_BYPASS=1 <comando>` |
 | `escape:TYCON_NO_DEEP_REVIEW` | apagar el pase adversarial de una ejecución | `TYCON_NO_DEEP_REVIEW=1 <comando>` | no, en la pestaña de esa sesión | `TYCON_NO_DEEP_REVIEW=1 <comando>` |
 | `escape:TYCON_STATUS_GATE` | cambiar a mano el estado de una story | `TYCON_STATUS_GATE=off <comando>` | no, en la pestaña de esa sesión | `TYCON_STATUS_GATE=off <comando>` |
-| `escape:story-skill-bypass` | escribir una story sin la skill de stories | `marker.js sign-file story-skill-bypass <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file story-skill-bypass <archivo> --terminal` |
+| `escape:story-skill-bypass` | escribir una story sin la skill de stories | `marker.js sign-file story-skill-bypass <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file story-skill-bypass <archivo> --terminal --for-session <sesión del agente>` |
+| `escape:red-control-test-edit` | editar una prueba vieja de un control que estaba en rojo | `marker.js sign-file red-control-test-edit <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file red-control-test-edit <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:set-autonomous` | cambiar el modo autónomo de una ejecución | `marker.js set-autonomous` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:cerrar-la-ejecucion` | cerrar una ejecución con un control en rojo | `marker.js clear` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:cerrar-como-deuda` | cerrar una ejecución dejando lo que falta como deuda | `marker.js close-as-debt` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:force-manual` | marcar a mano el estado de un control | `marker.js set-check <control> <estado> --force-manual [--for-session <D>]` | sí | `marker.js set-check <control> <estado> --force-manual --terminal` |
 | `escape:trust-ran` | contar los revisores sin la constancia de que corrieron | `pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]` | sí | `pipeline.js check-count --repo <r> --story <s> --trust-ran --terminal` |
-| `escape:ALLOW_DOD_EVIDENCE_WRITE` | escribir a mano la evidencia de la prueba en vivo | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo> --terminal` |
-| `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file dod_runtime_exempt <archivo> --terminal` |
+| `escape:ALLOW_DOD_EVIDENCE_WRITE` | escribir a mano la evidencia de la prueba en vivo | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo> --terminal --for-session <sesión del agente>` |
+| `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file dod_runtime_exempt <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, en la pestaña de esa sesión | `el mismo comando` |
-| `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file cambiar-el-estado <archivo> --terminal` |
+| `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file cambiar-el-estado <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:merge-bypass` | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama | `gh pr merge <n> --admin (o un merge, una regla o una política por la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
 <!-- fin: firmas -->
 

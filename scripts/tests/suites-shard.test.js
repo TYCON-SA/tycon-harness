@@ -472,8 +472,12 @@ test('SuitesWeights_NightlySetMeasuredAndCapped', () => {
 
 test('SuitesWeights_PrSetHasTheConfirmedSuiteCap', () => {
   const pr = JSON.parse(fs.readFileSync(REAL_WEIGHTS, 'utf8')).pr;
-  const { per_suite: own, ...rule } = pr.suite_cap;
+  const { per_suite: own, measured, ...rule } = pr.suite_cap;
   assert.deepStrictEqual(rule, { factor: 2, floor: 180 }, 'la regla que confirmó el dueño: el doble del peso, con piso de 3 min');
+  // Los topes medidos: la mediana de las 5 primeras pasadas más nuevas de cada suite en Azure, de hasta 10 corridas que
+  // publicaron tiempos entre las 30 últimas; con menos de 3 mediciones, el peso. El techo, 1110 s: lo más que deja
+  // reintentar con el doble dentro de un trabajo de 40 min ((2400 − 180) / 2).
+  assert.deepStrictEqual(measured, { runs: 10, scan: 30, last: 5, min: 3, max: 1110 });
   // Los únicos topes propios de la validación: dos suites que corren solas y ahí tardan 1 y 3 s. Con el piso de 180 s
   // cada una, el trabajo del banco no entra en sus 40 min (pr-suites-shards, T48). Un tope propio más es una decisión
   // aparte, no un atajo para que una suite lenta deje de cortarse.
@@ -482,6 +486,132 @@ test('SuitesWeights_PrSetHasTheConfirmedSuiteCap', () => {
   // ~870 y ~275 s. Su tope tiene que pasar lo que tardan.
   assert.ok(pr.weights['harness-update.test.sh'] * pr.suite_cap.factor > 1373, `harness-update: ${pr.weights['harness-update.test.sh']}`);
   assert.ok(pr.weights['harness-doctor.test.sh'] * pr.suite_cap.factor > 416, `harness-doctor: ${pr.weights['harness-doctor.test.sh']}`);
+});
+
+// ── los topes medidos (`caps --measured`) ───────────────────────────────────────────────────────────────────────
+const MEASURED_RULE = { runs: 10, scan: 30, last: 5, min: 3, max: 1110 };
+const measuredLab = (capExtra = {}) => lab({ weights: { ...LAB_WEIGHTS, pr: { runs: [1], default: 2,
+  suite_cap: { factor: 2, floor: 180, measured: MEASURED_RULE, ...capExtra }, weights: { 'a-slow.test.sh': 151 } } } });
+/**
+ * Una carpeta de tiempos bajados: `files` es una lista de archivos, cada uno una lista de corridas; cada corrida es
+ * [hora, { nombre: [ms, exit] }, origen?]. Escribe cada archivo como `suite-times.jsonl`, uno debajo del otro.
+ */
+function timesDir(dir, files, extraLines = {}) {
+  const out = path.join(dir, 'times');
+  files.forEach((runs, i) => {
+    const d = path.join(out, `run-${i}`);
+    fs.mkdirSync(d, { recursive: true });
+    const lines = runs.map(([ts, suites, origen = 'ci-azure']) => JSON.stringify({ v: 1, ts, origen, repo: 'r', workers: 2, nucleos: 2, carga: 1, wall_ms: 1,
+      suites: Object.entries(suites).map(([name, [seconds, exit = 0]]) => ({ s: `tests/${name}`, ms: seconds * 1000, exit })) }));
+    fs.writeFileSync(path.join(d, 'suite-times.jsonl'), `${[...lines, ...(extraLines[i] || [])].join('\n')}\n`);
+  });
+  return out;
+}
+const capsMeasured = (dir, times, names) => run(['caps', '--only', onlyFile(dir, names), '--weight-set', 'pr', '--measured', times,
+  '--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json')]);
+const at = (day) => `2026-11-${String(day).padStart(2, '0')}T10:00:00.000Z`;
+
+test('T1 Caps_Measured_MedianOfLastFiveTimesFactor — la mediana de las 5 pasadas más nuevas, por el factor', () => {
+  const dir = measuredLab();
+  // 7 mediciones en 3 archivos, desordenadas: las 2 más viejas (10 y 20 s) bajarían la mediana a 301 si contaran.
+  const times = timesDir(dir, [
+    [[at(9), { 'a-slow.test.sh': [303] }], [at(1), { 'a-slow.test.sh': [10] }]],
+    [[at(5), { 'a-slow.test.sh': [301] }], [at(2), { 'a-slow.test.sh': [20] }], [at(7), { 'a-slow.test.sh': [290] }]],
+    [[at(8), { 'a-slow.test.sh': [303] }], [at(6), { 'a-slow.test.sh': [310] }]],
+  ]);
+  const r = capsMeasured(dir, times, ['a-slow.test.sh']);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.deepStrictEqual(r.lines, ['a-slow.test.sh\t606\tmedido:5'], 'mediana de 301, 303, 303, 290 y 310 = 303; por 2 = 606');
+  assert.match(r.err, /topes: 1 medido\(s\) \(de 7 registro\(s\) de Azure\), 0 por peso, 0 propio\(s\); 0 renglones ilegibles/);
+  // con 3 o 4 mediciones, la mediana de las que hay (de 4: el promedio de las dos del medio, redondeado arriba)
+  const four = timesDir(measuredLab(), [[[at(1), { 'a-slow.test.sh': [200] }], [at(2), { 'a-slow.test.sh': [201] }], [at(3), { 'a-slow.test.sh': [300] }], [at(4), { 'a-slow.test.sh': [400] }]]]);
+  assert.deepStrictEqual(capsMeasured(dir, four, ['a-slow.test.sh']).lines, ['a-slow.test.sh\t501\tmedido:4']);
+});
+
+test('T2 Caps_Measured_CutCountsWithItsTime — la pasada cortada por su tope cuenta con lo que tardó hasta el corte', () => {
+  const dir = measuredLab();
+  const times = timesDir(dir, [[
+    [at(1), { 'a-slow.test.sh': [181, 124] }], [at(2), { 'a-slow.test.sh': [181, 124] }], [at(3), { 'a-slow.test.sh': [181, 124] }],
+    [at(4), { 'a-slow.test.sh': [209] }], [at(5), { 'a-slow.test.sh': [209] }],
+  ]]);
+  const r = capsMeasured(dir, times, ['a-slow.test.sh']);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.deepStrictEqual(r.lines, ['a-slow.test.sh\t362\tmedido:5'], '2 × 181: el tope sube solo hasta que la suite entra');
+});
+
+test('T3 Caps_Measured_PerSuiteWins — el tope propio gana aunque haya mediciones', () => {
+  const dir = measuredLab({ per_suite: { 'b-fast.test.js': 60 } });
+  const times = timesDir(dir, [[1, 2, 3, 4, 5].map((d) => [at(d), { 'b-fast.test.js': [3] }])]);
+  const r = capsMeasured(dir, times, ['b-fast.test.js']);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.deepStrictEqual(r.lines, ['b-fast.test.js\t60\tpropio']);
+  assert.match(r.err, /0 medido\(s\) .*0 por peso, 1 propio\(s\)/);
+});
+
+test('T4 Caps_Measured_FewerThanThree_UsesWeight — con menos de 3 mediciones, el tope de siempre', () => {
+  const dir = measuredLab();
+  const times = timesDir(dir, [[[at(1), { 'a-slow.test.sh': [900] }], [at(2), { 'a-slow.test.sh': [900] }]]]);
+  const r = capsMeasured(dir, times, ['a-slow.test.sh', 'b-fast.test.js']);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.deepStrictEqual(r.lines, ['a-slow.test.sh\t302\tpeso', 'b-fast.test.js\t180\tpeso'],
+    'a-slow: 2 × 151; b-fast, sin mediciones (nueva o renombrada): el piso');
+});
+
+test('T5 Caps_Measured_FloorStays — una suite rápida no baja del piso', () => {
+  const dir = measuredLab();
+  const times = timesDir(dir, [[1, 2, 3, 4, 5].map((d) => [at(d), { 'b-fast.test.js': [20] }])]);
+  assert.deepStrictEqual(capsMeasured(dir, times, ['b-fast.test.js']).lines, ['b-fast.test.js\t180\tmedido:5']);
+});
+
+test('T18 Caps_Measured_CeilingStops — una suite colgada no duplica su tope en cada corrida', () => {
+  const dir = measuredLab();
+  const times = timesDir(dir, [[1, 2, 3, 4, 5].map((d) => [at(d), { 'a-slow.test.sh': [900, 124] }])]);
+  assert.deepStrictEqual(capsMeasured(dir, times, ['a-slow.test.sh']).lines, ['a-slow.test.sh\t1110\tmedido:5']);
+});
+
+test('T6 Caps_Measured_IgnoresOtherOriginsAndBadLines — otro origen y un renglón roto no cuentan, y se dicen', () => {
+  const dir = measuredLab();
+  const times = timesDir(dir, [[
+    ...[1, 2, 3].map((d) => [at(d), { 'a-slow.test.sh': [400] }]),
+    ...[4, 5, 6].map((d) => [at(d), { 'a-slow.test.sh': [10] }, 'portable']),
+  ]], { 0: ['{"v":1,"ts":"2026-11-07T10:00:00.000Z","suites":'] });
+  const r = capsMeasured(dir, times, ['a-slow.test.sh']);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.deepStrictEqual(r.lines, ['a-slow.test.sh\t800\tmedido:3'], 'las tres de la Mac (10 s) no bajan el tope del agente');
+  assert.match(r.err, /1 renglón ilegible/);
+  assert.match(r.err, /3 de otro origen/);
+});
+
+test('T7 Caps_WithoutMeasured_SameBytesAsBefore — sin --measured, la salida de siempre, en dos columnas', () => {
+  // La salida de antes, escrita a mano: el banco nocturno la usa y no cambia.
+  const plain = lab({ weights: { ...LAB_WEIGHTS, suite_cap: { factor: 2, floor: 90 }, pr: { runs: [1], default: 2, suite_cap: { factor: 2, floor: 180 }, weights: { 'a-slow.test.sh': 151 } } } });
+  const withRule = lab({ weights: { ...LAB_WEIGHTS, suite_cap: { factor: 2, floor: 90 }, pr: { runs: [1], default: 2, suite_cap: { factor: 2, floor: 180, measured: MEASURED_RULE }, weights: { 'a-slow.test.sh': 151 } } } });
+  const BEFORE_PR = 'a-slow.test.sh\t302\nb-fast.test.js\t180\nc-skill.test.js\t180\nd-medium.test.sh\t180\ne-fast.test.js\t180\nf-new-without-weight.test.js\t180\ng-weekly.test.sh\t180\n';
+  const BEFORE_NIGHTLY = 'a-slow.test.sh\t200\nb-fast.test.js\t90\nc-skill.test.js\t90\nd-medium.test.sh\t90\ne-fast.test.js\t90\nf-new-without-weight.test.js\t90\ng-weekly.test.sh\t90\n';
+  for (const dir of [plain, withRule]) {
+    const files = ['--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json')];
+    const pr = run(['caps', '--weight-set', 'pr', ...files]);
+    const nightly = run(['caps', ...files]);
+    assert.strictEqual(pr.code, 0, pr.err);
+    assert.strictEqual(pr.out, BEFORE_PR, 'el juego pr, byte por byte');
+    assert.strictEqual(nightly.out, BEFORE_NIGHTLY, 'el del nocturno, byte por byte');
+    assert.strictEqual(pr.err, '', 'sin --measured no dice nada de los topes medidos');
+  }
+});
+
+test('Caps_Measured_Refusals — lo que se niega con --measured: sale 2, sin lista', () => {
+  const dir = measuredLab();
+  const files = ['--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json')];
+  refuses(run(['caps', '--weight-set', 'pr', '--measured', ...files]), /--measured/, '--measured sin carpeta');
+  refuses(run(['caps', '--weight-set', 'pr', '--measured', path.join(dir, 'no-existe'), ...files]), /--measured/, 'una carpeta que no existe');
+  const noRule = lab({ weights: { ...LAB_WEIGHTS, pr: { runs: [1], default: 2, suite_cap: { factor: 2, floor: 180 }, weights: {} } } });
+  refuses(run(['caps', '--weight-set', 'pr', '--measured', timesDir(noRule, [[]]), '--suites', path.join(noRule, 'suites.json'), '--weights', path.join(noRule, 'weights.json')]),
+    /suite_cap\.measured/, 'un juego sin la regla de los topes medidos');
+  for (const [rule, why] of [[{ ...MEASURED_RULE, last: 0 }, 'last en 0'], [{ ...MEASURED_RULE, min: 6 }, 'min mayor que last'], [{ ...MEASURED_RULE, max: 'mucho' }, 'un techo que no es número'], [[5], 'una lista']]) {
+    const broken = measuredLab({ measured: rule });
+    refuses(run(['caps', '--weight-set', 'pr', '--measured', timesDir(broken, [[]]), '--suites', path.join(broken, 'suites.json'), '--weights', path.join(broken, 'weights.json')]),
+      /suite_cap\.measured/, why);
+  }
 });
 
 // ── merge: juntar lo que dejó cada trabajo ───────────────────────────────────────────────────────────────────────

@@ -414,10 +414,11 @@ function readMarker() {
 
 // La carpeta de la corrida, creada si falta. En el chequeo antes de la ventana no se crea: alcanza con que la story dé
 // su clave (la crea el comando de verdad, después de la firma). Null si la story no da clave.
-function carpetaParaLaFirma(repo, storyId, storyAbs) {
+// `marker`: el de la corrida que se firma (puede ser de otra sesión, con --for-session): su carpeta es la de la regla.
+function carpetaParaLaFirma(repo, storyId, storyAbs, marker) {
   const pl = require('./pipeline.js');
-  if (!PREVIO) return pl.resolveRunDir(repo, storyId, true, storyAbs);
-  return pl.resolveRunDir(repo, storyId, false, storyAbs) || (pl.runDirKey(storyId, storyAbs).key ? path.join(repo, '.advisors', 'pipeline-runs') : null);
+  if (!PREVIO) return pl.resolveRunDir(repo, storyId, true, storyAbs, { marker: marker || null });
+  return pl.resolveRunDir(repo, storyId, false, storyAbs, { marker: marker || null }) || (pl.runDirKey(storyId, storyAbs).key ? path.join(repo, '.advisors', 'pipeline-runs') : null);
 }
 
 function sinFirmaNoSeEscribe() {
@@ -644,6 +645,9 @@ function cmdSet(payloadJson) {
       // la otra vuelta de revisores es de los cambios de la corrida: heredada, la story nueva pediría revisar lo de la vieja
       otraVuelta,
       stepsCompleted, stepsPending, startedAt, evidenceDir, baseSha,
+      // la carpeta de la corrida es de la corrida: heredada, la story nueva escribiría su constancia en la de la vieja;
+      // y la otra sesión en paralelo es de la story
+      runDir, parallelWith,
       // el esquema de los pasos y los avisos del Arranque son de la corrida
       stepScheme, startWarnings,
       // Los arranques y fines de paso son de la corrida. Heredarlos le daría a la story
@@ -754,6 +758,19 @@ function cmdSet(payloadJson) {
     // re-correr `start` sobre la misma story (retomar) no puede mover la base al HEAD de ahora, o lo
     // commiteado durante la corrida dejaría de contar como tocado.
     baseSha: at(existing, 'baseSha') || payload.baseSha || null,
+    // La carpeta de la corrida (`.advisors/pipeline-runs/<clave>-<sello>`), que crea `pipeline.js start`: la piden todos
+    // los que escriben o leen la constancia de esta corrida (lib/run-dir.js). Como la base, gana la EXISTENTE: retomar
+    // la misma story no abre otra carpeta. Es estado de corrida: el bloque de arriba la descarta al cambiar de story.
+    // La existente gana mientras siga en disco y sea del mismo repo que la que trae el pedido; si ya no está (o es de
+    // otro repo), la que abrió `start` la reemplaza: si no, la carpeta nueva quedaría sin marcador que la nombre.
+    runDir: (() => {
+      const vieja = at(existing, 'runDir');
+      const nueva = payload.runDir;
+      // por la ruta real: un enlace (/var y /private/var en macOS) no hace de la misma carpeta una de otro repo
+      const real = (p) => { try { return fs.realpathSync(path.dirname(path.resolve(p))); } catch (_e) { return path.dirname(path.resolve(p)); } };
+      const sigue = !!vieja && fs.existsSync(vieja) && (!nueva || real(vieja) === real(nueva));
+      return sigue ? vieja : (nueva || vieja || null);
+    })(),
     sprint: nn(payload.sprint, nn(at(existing, 'sprint'), null)),
     sessionId: SID,
     startedAt: at(existing, 'startedAt') || nowIso(),
@@ -790,6 +807,8 @@ function cmdSet(payloadJson) {
     // `reviewers-run`)
     ...(payload.sessionModel !== undefined ? { sessionModel: payload.sessionModel } : {}),
     ...(payload.codexSession !== undefined ? { codexSession: payload.codexSession } : {}),
+    // la otra sesión de la misma story que trabaja en otra copia y otra rama (PIPE-C0 por hechos, `pipeline.js start`)
+    ...(payload.parallelWith !== undefined ? { parallelWith: payload.parallelWith } : {}),
     // la hora de este paso sigue valiendo si se retoma la misma story; una story nueva no la hereda
     ...(at(existing, 'horaDelPaso') ? { horaDelPaso: at(existing, 'horaDelPaso') } : {}),
   };
@@ -1153,7 +1172,7 @@ function planDeLaCorrida(marker) {
     const repo = marker.repoPath || process.cwd();
     const storyAbs = resolveStoryPath(marker.storyPath, marker) || undefined;
     // con la carpeta creada, como anotarAprobacion: si todavía no existe, el mensaje dice dónde va el plan
-    const runDir = require('./pipeline.js').resolveRunDir(repo, String(marker.storyId), true, storyAbs);
+    const runDir = require('./pipeline.js').resolveRunDir(repo, String(marker.storyId), true, storyAbs, { marker });
     return runDir ? { file: path.join(runDir, PLAN_FILE) } : { error: 'la story no da una clave para su carpeta de corrida' };
   } catch (e) { return { error: e.message }; }
 }
@@ -1208,7 +1227,7 @@ function anotarAprobacion(marker, entrada) {
     const approvals = require('./lib/approvals.js');
     const repo = marker.repoPath || process.cwd();
     const storyAbs = resolveStoryPath(marker.storyPath, marker) || undefined;
-    const runDir = require('./pipeline.js').resolveRunDir(repo, String(marker.storyId), true, storyAbs);
+    const runDir = require('./pipeline.js').resolveRunDir(repo, String(marker.storyId), true, storyAbs, { marker });
     if (!runDir) throw new Error('no pude calcular la carpeta de la corrida (clave de la story)');
     let commit = null;
     try {
@@ -1352,6 +1371,10 @@ function cmdCompleteStep(nRaw, flags) {
 
   // El aviso de una parte del Arranque que falló sale en el resumen del cierre: queda a la vista hasta el final.
   if (controles.has('commit')) for (const l of STEPS_LIB.startWarningLines(marker)) console.error(`⚠️  ${l}`);
+  // Cada prueba vieja que estaba en rojo y se editó llega al mensaje del commit con su razón (note-red-test).
+  if (controles.has('commit')) {
+    for (const l of require('./lib/red-test-edit.js').renglonesParaElCommit(marker)) console.error(`📌 El mensaje de commit lleva esta línea: ${l}`);
+  }
 
   // Un rojo esperado (`expect-red`) vale sólo en una ejecución en deuda: sin la deuda escrita es un rojo como cualquiera.
   if (controles.has('commit')) {
@@ -1785,7 +1808,7 @@ function cmdCompleteStep(nRaw, flags) {
     let motivo = null;
     try {
       const storyAbs78 = resolveStoryPath(marker.storyPath, marker) || undefined;
-      rd = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs78);
+      rd = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs78, { marker });
       if (!rd) motivo = 'no encontré la carpeta de la corrida';
     } catch (e) { motivo = `no pude calcular la carpeta de la corrida (${e.message || e})`; }
     // Un salteo firmado del pase (mark-adversarial-skipped o set-size liviana) se sostiene sólo si su constancia sigue
@@ -1913,7 +1936,7 @@ function cmdCompleteStep(nRaw, flags) {
       let noMedido = null;
       if (storyAbs) {
         try {
-          const rdc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs);
+          const rdc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs, { marker });
           f = require('./lib/compare-previous.js').freno({ storyPath: storyAbs, repos: reposParaComparar(marker), runDir: rdc, stateDir: STATE_DIR, story: marker.storyId });
         } catch (e) { noMedido = String(e.message || e).split('\n')[0]; }
       } else {
@@ -1943,7 +1966,7 @@ function cmdCompleteStep(nRaw, flags) {
       const rr = require('./lib/review-rounds.js');
       let rd8 = null;
       let noMirado = null;
-      try { rd8 = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, resolveStoryPath(marker.storyPath, marker) || undefined); } catch (e) { noMirado = `no pude calcular la carpeta de la corrida (${e.message || e})`; }
+      try { rd8 = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, resolveStoryPath(marker.storyPath, marker) || undefined, { marker }); } catch (e) { noMirado = `no pude calcular la carpeta de la corrida (${e.message || e})`; }
       const h = rr.hallazgosDe(rd8);
       // «no pude mirar» no es «no quedó nada abierto»: sin poder calcular la carpeta no se cierra. Un findings.json que
       // falta o no se lee lo frena el control de findings.json que sigue, con su propio mensaje.
@@ -2054,7 +2077,7 @@ function cmdCompleteStep(nRaw, flags) {
       let error = null;
       try {
         const pl = require('./pipeline.js');
-        const runDir = storyAbs ? pl.resolveRunDir(codeRepo, String(marker.storyId), false, storyAbs) : null;
+        const runDir = storyAbs ? pl.resolveRunDir(codeRepo, String(marker.storyId), false, storyAbs, { marker }) : null;
         r = pl.aprobacionesEnElRepoDeLaStory({ runDir, storyPath: storyAbs, storyId: String(marker.storyId), codeRepo, maquetaAprobada: !!marker.mockupApproval });
       } catch (e) { error = String(e.message || e).slice(0, 200); }
       if (error) {
@@ -2118,7 +2141,9 @@ function cmdCompleteStep(nRaw, flags) {
       // Setear `marker.dodRuntimeChecked` a mano con `set` no es una exención válida: esta es la forma.
       // Queda escrito como exención (evidencePath «exenta: …») y sólo vale para una story sin UI.
       console.error('  (b) Story exenta (sin UI ni endpoints — «Probar en vivo»): eximirla lo decide la');
-      console.error('      persona (marker.js sign-file dod_runtime_exempt <historia>), con dod_runtime_exempt_reason en el frontmatter. Después:');
+      console.error('      persona, con dod_runtime_exempt_reason en el frontmatter. La firma:');
+      for (const l of formasDeFirmarArchivo('dod_runtime_exempt', resolveStoryPath(marker.storyPath, marker) || null, SID)) console.error(`        · ${l}`);
+      console.error('      Después:');
       console.error('      marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <razón>"}\'');
     }
     // DODRT-C6 — la matriz
@@ -2204,7 +2229,7 @@ function cmdCompleteStep(nRaw, flags) {
     if (!blocked && qaStoryPath) {
       try {
         const esPantalla = markerStoryHasScreens(marker) || !!(marker.mockupApproval && maqueta.compare);
-        const rdMc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, qaStoryPath);
+        const rdMc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, qaStoryPath, { marker });
         const f = require('./lib/manual-checks.js').freno({ storyPath: qaStoryPath, storyId: String(marker.storyId), runDir: rdMc, stateDir: STATE_DIR, esPantalla });
         appendLog('gates.log', { name: 'manual-checks', status: f.status, story: marker.storyId, ...(f.faltan.length ? { faltan: f.faltan } : {}) });
         if (f.status === 'blocked') {
@@ -3570,6 +3595,30 @@ function cmdExpectRed(args) {
   process.stdout.write(`${check}: rojo-esperado:exit=${m[1]} (${tests.join(', ')}) — deuda ${marker.cierre.deuda}\n`);
 }
 
+// Una prueba que ya existía y estaba en rojo se edita con su razón: `note-red-test --test <ruta> --reason "<motivo>"`.
+// La nota deja pasar el freno on-red-test-edit.js, va al contexto de los revisores y al mensaje del commit. La prueba de
+// un control no pasa con una nota: la firma el dueño (red-control-test-edit).
+function cmdNoteRedTest(args) {
+  const prueba = opcion(args, 'test');
+  const motivo = motivoDe(args);
+  if (!prueba || !motivo) {
+    console.error('marker.js note-red-test: uso: note-red-test --test <ruta de la prueba> --reason "<por qué la prueba está mal>"');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js note-red-test: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  const abs = path.resolve(prueba);
+  const notas = (Array.isArray(marker.redTestNotes) ? marker.redTestNotes : []).filter((n) => n && n.test !== abs);
+  marker.redTestNotes = [...notas, { test: abs, reason: motivo, at: nowIso() }];
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'red-test-edit', status: 'noted', story: nn(marker.storyId, null), file: abs, reason: motivo });
+  process.stdout.write(`nota anotada: ${abs} — ${motivo}\n`);
+}
+
 // Forzar el tamaño de la corrida a mano: `set-size liviana|completa --reason "<texto>"`. Sin motivo no se
 // escribe nada (nadie sabría después por qué se saltó el pase). Forzar a liviana una story que declara código queda en
 // bypass.log: es apagar el pase adversarial a sabiendas.
@@ -3638,7 +3687,7 @@ function hermanosDeLaCorrida(marker) {
 function carpetaDeLaCorrida(marker) {
   try {
     const story = resolveStoryPath(marker.storyPath, marker) || undefined;
-    const rd = require('./pipeline.js').resolveRunDir(path.resolve(marker.repoPath || process.cwd()), String(marker.storyId), false, story);
+    const rd = require('./pipeline.js').resolveRunDir(path.resolve(marker.repoPath || process.cwd()), String(marker.storyId), false, story, { marker });
     return rd ? require('./lib/adversarial-skip.js').carpetaReal(rd) : rd;
   } catch (e) {
     console.error(`⚠️  no pude calcular la carpeta de la ejecución (${String(e.message || e).split('\n')[0]})`);
@@ -4760,13 +4809,15 @@ function cmdClear(rest = []) {
           const clave = ki.key;
           // Sin clave el volcado cae en la raíz de pipeline-runs/ (como cuando no hay carpeta), pero se DICE por qué.
           if (!clave) process.stderr.write(`[marker] el volcado de tiempos va suelto a ${runsDir}: no pude calcular la clave de la carpeta de la story (${ki.error}).\n`);
-          const candidates = (clave ? fs.readdirSync(runsDir) : [])
-            .filter((d) => d.startsWith(`${clave}-`))
-            .sort();
-          if (candidates.length) target = path.join(runsDir, candidates[candidates.length - 1]);
-        } catch { /* sin runs dir */ }
+          // la carpeta de la corrida que se limpia (su `runDir`, o la de su apertura): la misma regla que todos
+          // (lib/run-dir.js); sin ninguna, la de la regla sin marcador
+          if (clave) target = require('./pipeline.js').resolveRunDir(marker.repoPath, String(marker.storyId), false, sp || undefined, { marker }) || null;
+        } catch (e) {
+          process.stderr.write(`[marker] no pude calcular la carpeta de la corrida para el volcado de tiempos (${e.message}): va suelto a ${runsDir}.\n`);
+        }
         if (!target) {
           target = runsDir;
+          process.stderr.write(`[marker] el volcado de tiempos va suelto a ${runsDir}: no encontré la carpeta de la corrida de la story ${marker.storyId}.\n`);
           fs.mkdirSync(target, { recursive: true });
         }
         fs.writeFileSync(path.join(target, `timing-dump-${ts}.json`), JSON.stringify(dumpFinal, null, 2), 'utf8');
@@ -5646,7 +5697,7 @@ function cmdWaiveCritical(argv) {
   let runDir = null;
   try {
     const storyAbs = resolveStoryPath(m.storyPath, m) || undefined;
-    runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs);
+    runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs, m);
   } catch (e) { console.error(`marker.js waive-critical: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2); }
   if (!runDir) { console.error('marker.js waive-critical: la story no da una clave para su carpeta de corrida'); process.exit(2); }
   let entrada;
@@ -5749,7 +5800,7 @@ function cmdCompareWaiver(argv) {
     process.exit(2);
   }
   let runDir = null;
-  try { runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs); } catch (e) {
+  try { runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs, m); } catch (e) {
     console.error(`marker.js compare-waiver: no pude calcular la carpeta de la corrida (${e.message})`);
     process.exit(2);
   }
@@ -6123,7 +6174,7 @@ function cmdMarkTested(argv) {
   const storyAbs = resolveStoryPath(m.storyPath, m);
   if (!storyAbs) { console.error('marker.js mark-tested: no encontré la story de la corrida'); process.exit(2); }
   let runDir = null;
-  try { runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs); } catch (e) {
+  try { runDir = carpetaParaLaFirma(m.repoPath || process.cwd(), String(m.storyId), storyAbs, m); } catch (e) {
     console.error(`marker.js mark-tested: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2);
   }
   if (!runDir) { console.error('marker.js mark-tested: la story no da una clave para su carpeta de corrida'); process.exit(2); }
@@ -6942,6 +6993,18 @@ function cmdAdhoc(sub, payloadJson) {
   process.exit(2);
 }
 
+/**
+ * Las dos formas de pedir una firma sobre un archivo, cada una dicha para quién es (scripts/lib/owner-window.js, la
+ * única fuente). Sin esa biblioteca, el renglón dice qué firma pedir sin escribir el comando.
+ */
+function formasDeFirmarArchivo(firma, archivo, sesion) {
+  try {
+    return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).formasDeFirmar(firma, archivo, sesion).renglones;
+  } catch (e) {
+    return [`la firma de archivo ${firma}${archivo ? ` sobre ${archivo}` : ''}, en la ventana de permiso (no pude armar el comando: ${e.message})`];
+  }
+}
+
 // Escape consciente del freno de STORY A MANO (lib/story-skill-gate.js): deja la misma
 // marca que dejaría la invocación de tycon-create-story, pero con skill:'bypass' + la razón, y queda
 // en bypass.log (STORY_SKILL_BYPASS). La razón tiene que venir del USER (mismo contrato que
@@ -6950,7 +7013,8 @@ function cmdStorySkillBypass() {
   // Escribir una historia sin la skill lo decide la persona, y este comando ya no deja constancia: un modelo frenado lo
   // corrió solo con una razón inventada («el usuario lo pidió»). La firma se pide sobre el archivo, en la ventana.
   console.error('🚫 marker.js story-skill-bypass: no deja constancia — escribir la historia sin la skill lo decide la persona.');
-  console.error('   Usá la skill tycon-create-story. Si la persona la quiere sin la skill, la firma en la ventana: marker.js sign-file story-skill-bypass <archivo>.');
+  console.error('   Usá la skill tycon-create-story. Si la persona la quiere sin la skill, la firma sobre el archivo:');
+  for (const l of formasDeFirmarArchivo('story-skill-bypass', null, SID)) console.error(`     · ${l}`);
   process.exit(1);
 }
 
@@ -6968,7 +7032,7 @@ function cmdSignFile(firma, archivo) {
   // en la terminal del dueño no hay sesión: sin --for-session la constancia no la usaría ninguna escritura
   if (SID === '_nosession' && process.argv.includes('--terminal')) {
     console.error('🔒 marker.js sign-file: sin --for-session no sé qué sesión va a escribir el archivo, y la firma no le serviría a ninguna.');
-    console.error(`   Corré: marker.js sign-file ${firma} ${archivo} --terminal --for-session <id de la sesión del agente>`);
+    console.error(`   Corré: ${ow.comoSeFirmaEnLaTerminal(firma, archivo, '<id de la sesión del agente>')}`);
     process.exit(2);
   }
   const r = firmaDelDueno(`escape:${firma}`, `${firma} sobre ${archivo}`);
@@ -7027,7 +7091,7 @@ function cmdRethink(argv) {
       console.error(`marker.js rethink: no pude leer la story ${storyPath}, así que no sé en qué carpeta guardar la nota.`);
       process.exit(2);
     }
-    runDir = resolveRunDir(repo, storyId, !runDirArg, storyPath);
+    runDir = resolveRunDir(repo, storyId, !runDirArg, storyPath, { marker: marker || null });
     if (!runDir) {
       console.error(runDirArg
         ? `marker.js rethink: --run-dir ${runDirArg} no es la carpeta de corrida de esta story (${storyId}): esta story todavía no tiene carpeta de corrida. Quitá --run-dir.`
@@ -7139,6 +7203,9 @@ switch (cmd) {
     break;
   case 'expect-red':
     cmdExpectRed(process.argv.slice(3));
+    break;
+  case 'note-red-test':
+    cmdNoteRedTest(process.argv.slice(3));
     break;
   case 'set-size':
     cmdSetSize(process.argv.slice(3));

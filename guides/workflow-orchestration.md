@@ -82,6 +82,11 @@ Ante errores de compilación, tests fallando, o bugs detectados, el agente DEBE:
 
 **NO preguntar** "¿querés que arregle el error?" — arreglarlo. Solo pedir guía si el fix cambia el scope de la tarea original, hay múltiples approaches válidos que el usuario debe decidir, o el error revela un problema de diseño que requiere replanificación.
 
+Una prueba que ya existía y estaba en rojo no se edita para que pase: se para y se dice por qué. Si lo que está mal es
+la prueba, la razón se anota (`marker.js note-red-test --test <ruta> --reason "<motivo>"`) y viaja a los revisores y al
+mensaje del commit; si es la prueba de un control, la edición la firma el dueño. El freno `on-red-test-edit.js` lo pide
+dentro de una ejecución del pipeline.
+
 ---
 
 ## 3. Estructura `tasks/`
