@@ -266,6 +266,14 @@ test('Roster_RevisorDeLaPruebaEnVivo_Firma @story-8.63 @ac-10', () => {
     assert.equal(r.status, 0, r.stderr);
   };
   spawn('tycon-silent-failure-hunter');   // completa y sella la ronda
+  // lo que contestó el revisor, como lo anota el gancho del fin del subagente: sin su reporte, write-findings frena
+  const transcript = path.join(base, 'revisor.jsonl');
+  fs.writeFileSync(transcript, `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Sin hallazgos.\nVeredicto: limpio' }] } })}\n`);
+  const fin = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-advisor-done.js')], {
+    cwd: repo, env, encoding: 'utf8',
+    input: JSON.stringify({ hook_event_name: 'SubagentStop', session_id: sid, agent_id: 'ag-1', agent_type: 'tycon-silent-failure-hunter', agent_transcript_path: transcript }),
+  });
+  assert.equal(fin.status, 0, fin.stderr);
   spawn('tycon-dod-runtime-checker');     // el paso 7c, después del sello
   const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '1.1', false, story);
   const roster = R.read(runDir);

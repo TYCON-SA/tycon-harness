@@ -320,6 +320,13 @@
       ]
     },
     {
+      "log": "SubagentStop · on-advisor-done.js (claude) — SIN equivalente en Codex: lo hace reviewers-run",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-10): en Claude Code el revisor lo lanza el agente, de fondo, y lo que contestó se lee de su transcripción cuando termina (SubagentStop). En Codex los revisores los lanza el pipeline (pipeline.js reviewers-run), que lee el reporte al cerrar cada proceso y lo anota en el mismo registro de críticos reportados (lib/reported-criticals.js): no hace falta gancho. Un revisor que en Codex lanza el modelo con collaborationspawn_agent deja su lanzamiento (on-advisor-run.js) y ningún reporte, y el cierre dice «no pude leer lo que reportó»: nunca «no reportó nada».",
+      "scripts": [
+        "on-advisor-done.js"
+      ]
+    },
+    {
       "log": "SessionStart · harness-maintain.sh — SOLO Codex (no lo registra ningún instalador del lado Claude)",
       "verdict": "ASIMETRÍA A PROPÓSITO (2026-08-23): en Claude el mantenimiento lo dispara el SessionStart de onboarding llamando directo a install-tycon-hooks.sh; en Codex hace falta este envoltorio porque el instalador tarda (pull+suites+despliegues) y colgado del arranque bloquearía cada sesión — termina al instante (doble fork, exit 0), hermético para el banco vía TYCON_MAINTAIN_CMD. Detalle en el header del script. No hay contraparte en Claude — es correcto que falte de ese lado.",
       "scripts": [

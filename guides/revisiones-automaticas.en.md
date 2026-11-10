@@ -73,6 +73,28 @@ Only a confirmed finding with severity at the cut `review.blocking_severity` (bu
 CRITICAL in the code; the rest confirmed are notes or warnings. The rounds cap `review.max_rounds` (built-in 3) applies
 to both reviews; a repo adjusts it in its `.tycon/advisors.yaml`, by commit. There is no per-machine adjustment.
 
+## The harness records the reviewers' criticals
+
+The agent writes `findings.json` from what the reviewers said, but it is not the only one listening. Every reviewer of
+the «Reviewers» step ends its answer with a fixed line: `Veredicto: limpio`, or `Veredicto: hallazgos (SEC-C1, SEC-C1,
+SEC-W2) · bloquea: sí`, with the rule once per finding. When the reviewer finishes, the harness reads that line from the
+reviewer's own answer and records how many criticals it gave for each rule. It records them in the machine's state, in a
+zone the agent cannot write. In Claude Code the hook that runs when a subagent ends reads it; in Codex, the reviewers'
+launcher.
+
+When the findings are written and when the «Findings» step closes, the harness compares `findings.json` with what it
+recorded, and stops if:
+
+- a critical is missing, or shows up with a lower severity;
+- a critical is marked as fixed without a later round of the same reviewer that no longer reports it;
+- a critical is marked as refuted without the verifier's record;
+- a reviewer of the set left no line that can be read.
+
+An unreadable reviewer never counts as «no criticals». It is run again, or a person waives it: `marker.js
+waive-critical --rule SIN-REPORTE --file <reviewer> --reason '<why>'`. A delegated waiver is not enough to call something
+fixed: a new round of the reviewer or the owner closes it. A run with nothing recorded (for example, from before this
+check) says so in one line and goes on.
+
 ## The options
 
 | Option | What it does | Key | Values | Built-in | When to change it |

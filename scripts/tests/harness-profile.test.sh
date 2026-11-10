@@ -173,9 +173,9 @@ if corre T32; then
   applier "$H" "$TREE" "$T/t32/install.out"
   [ "$RC" = 0 ] || mal "T32 el aplicador en minimal salió ${RC}: $(tail -n 3 "$T/t32/install.out" | tr '\n' ' ')"
   harness_hooks "$H" "$TREE" > "$T/t32/hooks.txt"; minimal_hooks > "$T/t32/want.txt"
-  # doce: ocho que anotan, el que dice los avisos de los paquetes, el que tapa los secretos, el freno de comandos y el portón de edición
-  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 12 ] && ok "T32 la lista de efectos marca doce hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no doce"
-  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los doce hooks de minimal" \
+  # trece: nueve que anotan, el que dice los avisos de los paquetes, el que tapa los secretos, el freno de comandos y el portón de edición
+  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 13 ] && ok "T32 la lista de efectos marca trece hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no trece"
+  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los trece hooks de minimal" \
     || mal "T32 hooks registrados distintos de los de minimal: $(diff "$T/t32/want.txt" "$T/t32/hooks.txt" | grep '^[<>]' | head -6 | tr '\n' ' ')"
   # el freno de comandos destructivos y el portón de edición están en los dos perfiles (sin el portón, el agente puede
   # implementar una historia sin recorrido y nadie se entera); los demás, sólo en full

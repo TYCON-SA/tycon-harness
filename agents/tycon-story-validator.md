@@ -259,14 +259,16 @@ detalle— termina con **exactamente uno** de estos renglones, solo, sin viñeta
 
 ```text
 Veredicto: limpio
-Veredicto: hallazgos (VAL-W15, VAL-C8) · bloquea: sí
+Veredicto: hallazgos (VAL-C8, VAL-C8, VAL-W15) · bloquea: sí
 ```
 
 - `limpio` sólo con **cero hallazgos abiertos de tu catálogo** (VAL-*). Confirmar que lo reportado antes
   quedó arreglado es `limpio`. Una nota sobre algo fuera de tu alcance (un detalle de código, un test
   lento) no es un hallazgo tuyo: no cambia el veredicto.
-- `hallazgos (...)` lista los identificadores de los **hallazgos**, nunca los de un chequeo que salió bien.
-  `bloquea: sí` si alguno es CRITICAL; si no, `bloquea: no`.
+- `hallazgos (...)` lista el identificador de cada **hallazgo, una vez por hallazgo**: dos VAL-C8 en dos
+  lugares son «VAL-C8, VAL-C8». Nunca los de un chequeo que salió bien. `bloquea: sí` si alguno es
+  CRITICAL; si no, `bloquea: no`. El arnés cuenta los críticos de este renglón y no deja cerrar la historia
+  si los hallazgos anotados son menos.
 - Nada de `limpio (VAL-...)`: un renglón que dice limpio y cita una regla se lee como inconsistente.
 - Sin viñeta ni corchete: el banco de controles cuenta como hallazgo todo renglón `- [VAL-…]`.
 

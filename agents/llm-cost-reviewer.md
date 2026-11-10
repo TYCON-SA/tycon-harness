@@ -75,6 +75,20 @@ corchetes** al inicio.
 
 Si no hay findings → `**Status**: ✅ OK` y omitir las secciones CRITICAL/WARNING.
 
+## 🔴 El último renglón es SIEMPRE el veredicto
+
+Tu respuesta termina con **exactamente uno** de estos renglones, solo, sin viñeta ni negrita adelante, con la regla de
+cada hallazgo una vez por hallazgo (dos del mismo tipo, dos veces); también sin hallazgos:
+
+```text
+Veredicto: limpio
+Veredicto: hallazgos (LLMCOST-C1, LLMCOST-C1, LLMCOST-W2) · bloquea: sí
+```
+
+Lo lee el arnés: anota cada regla crítica con cuántas veces la reportaste, y no deja cerrar la historia si los hallazgos
+anotados son menos. Sin el renglón, tu reporte queda como no leído y la historia no cierra. No lo escribas a un archivo:
+va en tu respuesta.
+
 ## Notas
 
 - El advisor NO simula llamadas reales — usa heurísticas (tokens estimados por longitud de strings).

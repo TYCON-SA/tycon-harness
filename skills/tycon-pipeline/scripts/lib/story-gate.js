@@ -221,13 +221,19 @@ function isLaunchedSessionsRecord(p) { return LAUNCHED_SESSIONS_FILE.test(norm(S
 // mano es fingir un mensaje de la persona, y borrar lo usado devuelve uno ya gastado. Sólo en el estado de la cuenta
 const OFFICE_MAILBOX = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/office\/(?:(?:inbox|tomados|usados|vigilantes)(\/|$)|messages\.jsonl(?:\.1)?$)/i;
 function isOfficeMailboxRecord(p) { return OFFICE_MAILBOX.test(norm(String(p || ''))); }
-/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `launched-sessions`, `office-mailbox` o null. */
+// El registro de los críticos que reportó cada revisor (lib/reported-criticals.js): lo escriben sólo el gancho del fin
+// del revisor, el de su lanzamiento y `reviewers-run`. Escribirlo es inventar o borrar lo que dijo un revisor. Sólo en el
+// estado de la cuenta, en una de sus dos carpetas (la carpeta misma también)
+const REPORTED_CRITICALS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/reported-criticals(\/|$)/i;
+function isReportedCriticalsRecord(p) { return REPORTED_CRITICALS_DIR.test(norm(String(p || ''))); }
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `launched-sessions`, `office-mailbox`, `reported-criticals` o null. */
 function signedRecordKind(p) {
   if (isControlApproval(p)) return 'control-approvals';
   if (isPendingApprovalsRecord(p)) return 'pending-approvals';
   if (isOwnerApprovalsRecord(p)) return 'owner-approvals';
   if (isLaunchedSessionsRecord(p)) return 'launched-sessions';
   if (isOfficeMailboxRecord(p)) return 'office-mailbox';
+  if (isReportedCriticalsRecord(p)) return 'reported-criticals';
   return isAdversarialSkipRecord(p) ? 'adversarial-skip-record' : null;
 }
 
@@ -271,6 +277,9 @@ function computeStoryGate({
   }
   if (isOfficeMailboxRecord(filePath) || isOfficeMailboxRecord(real)) {
     return { action: 'block', kind: 'office-mailbox', reason: 'escritura a mano del buzón de la oficina' };
+  }
+  if (isReportedCriticalsRecord(filePath) || isReportedCriticalsRecord(real)) {
+    return { action: 'block', kind: 'reported-criticals', reason: 'escritura a mano del registro de críticos reportados' };
   }
   // El arreglo rápido que abrió la coordinadora por delegación no toca lo sensible: eso lo firma el dueño. Antes del
   // portón apagado y del pase de los repos del arnés, que es donde están esos archivos. La lista de lo sensible vive en el
@@ -601,6 +610,16 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  escribe desde la oficina o en su pestaña.',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'reported-criticals') {
+    return [
+      '⛔ el registro de críticos reportados no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escriben sólo el arnés al lanzar un revisor y al leer lo que contestó: escribirlo o borrarlo es cambiar lo que dijo',
+      '  un revisor. Si un revisor no se pudo leer, se vuelve a correr; si un crítico no aplica, va en findings.json con su',
+      '  motivo, o lo exime una persona (marker.js waive-critical).',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'pending-approvals') {
     return [
       '⛔ el registro de aprobaciones de pendientes no se escribe a mano',
@@ -759,7 +778,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };

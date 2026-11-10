@@ -1049,6 +1049,12 @@
       "requiere": []
     },
     {
+      "__nota": "los críticos que reporta cada revisor los anota el arnés (reviewers-run en Codex, el gancho on-advisor-done.js en Claude Code) en una zona del estado que el agente no toca, y write-findings y el cierre de «Hallazgos» cruzan findings.json contra eso por regla y cantidad: lo que falta, lo rebajado, lo «arreglado» sin otra vuelta, el «refutado» sin constancia, el revisor sin reporte legible, la corrida sin registro, el freno de escritura y que los revisores del núcleo pidan el renglón de veredicto. Todo en un HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/reported-criticals.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "bajo Codex lo que imprime el pipeline nombra el lanzador de revisores: el comando reviewers-run en la salida de advisors y smart-reloop y en el error de check-count, y las guías dicen que los revisores necesitan red. Bajo Claude Code, igual que siempre. Todo en un HOME temporal.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/codex-launch-texts.test.js",

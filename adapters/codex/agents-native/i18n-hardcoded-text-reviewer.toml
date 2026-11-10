@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/i18n-hardcoded-text-reviewer.md
-# source_sha256: f35b1119ae22d8fc80c439d78150007e6408de66c0da43e54524ea2236e6a35f
+# source_sha256: 342aa8bf5cb8261982fc10e0435fb7e59cb1df7f3c4b8e57072c1da00f4440ee
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/i18n-hardcoded-text-reviewer.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "i18n-hardcoded-text-reviewer").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -124,6 +124,20 @@ Formato **markdown** (consistente con los advisors Core — el consolidator del 
 ```
 
 Si el proyecto no declara `i18n.required: true` → `**Status**: ✅ OK (proyecto sin i18n.required — advisor no aplica)` y terminar. Si aplica pero no hay findings → `**Status**: ✅ OK`.
+
+## 🔴 El último renglón es SIEMPRE el veredicto
+
+Tu respuesta termina con **exactamente uno** de estos renglones, solo, sin viñeta ni negrita adelante, con la regla de
+cada hallazgo una vez por hallazgo (dos del mismo tipo, dos veces); también sin hallazgos:
+
+```text
+Veredicto: limpio
+Veredicto: hallazgos (I18N-C1, I18N-C1, I18N-W2) · bloquea: sí
+```
+
+Lo lee el arnés: anota cada regla crítica con cuántas veces la reportaste, y no deja cerrar la historia si los hallazgos
+anotados son menos. Sin el renglón, tu reporte queda como no leído y la historia no cierra. No lo escribas a un archivo:
+va en tu respuesta.
 
 ## Notas para el reviewer humano
 

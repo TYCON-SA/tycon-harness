@@ -1,0 +1,21 @@
+{
+  "agent": "tycon-silent-failure-hunter",
+  "file": "agents/tycon-silent-failure-hunter.md",
+  "hash": "ba2a8de964d2ad649a201a475312c82932169d08",
+  "passed": 5,
+  "total": 5,
+  "score": 1,
+  "baseline": {
+    "passed": 3,
+    "total": 3,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-silent-failure-hunter::silent-c1-catch-vacio-cs": true,
+    "tycon-silent-failure-hunter::silent-w1-catch-default-ts": true,
+    "tycon-silent-failure-hunter::limpio-log-y-rethrow-sin-c1": true,
+    "tycon-silent-failure-hunter::silent-w7-bool-con-dos-causas-colapsado-a-un-404": true,
+    "tycon-silent-failure-hunter::limpio-predicado-isvalidpassword-con-dos-ramas-sin-w7": true
+  }
+}

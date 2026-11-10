@@ -1,0 +1,20 @@
+{
+  "agent": "tycon-plugin-security-basics",
+  "file": "agents/tycon-plugin-security-basics.md",
+  "hash": "3fc174969eddeba4bd7a7001943da0153e4775d8",
+  "passed": 4,
+  "total": 4,
+  "score": 1,
+  "baseline": {
+    "passed": 4,
+    "total": 4,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-plugin-security-basics::sec-c2-secreto-hardcoded": true,
+    "tycon-plugin-security-basics::sec-c9-fallback-silencioso": true,
+    "tycon-plugin-security-basics::sec-c6-random-para-token": true,
+    "tycon-plugin-security-basics::limpio-failfast-sin-c9": true
+  }
+}

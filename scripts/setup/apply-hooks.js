@@ -58,8 +58,10 @@ const SETUP_DIR = __dirname;
 const SCRIPTS_DIR = path.dirname(SETUP_DIR);
 
 // `Notification` y `SessionEnd` sirven al aviso de espera: el pedido de permiso y la sesión que se cierra.
-// `PermissionRequest` anota en el momento qué permiso se pide; su matcher nunca alcanza al cuadro de firmas
-const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd', 'PermissionRequest'];
+// `PermissionRequest` anota en el momento qué permiso se pide; su matcher nunca alcanza al cuadro de firmas.
+// `SubagentStop` lee lo que contestó un revisor cuando termina (los revisores corren de fondo: el gancho de después de la
+// herramienta vuelve al lanzar, sin la respuesta)
+const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd', 'PermissionRequest', 'SubagentStop'];
 // `time:<integración>`: un hook de una integración de horas, que va sólo si es la elegida (los suma loadList de su
 // manifiesto en integrations/)
 const WHEN_RE = /^(always|integration:[a-z]+|time:[a-z0-9-]+|optin:TYCON_[A-Z_]+)$/;

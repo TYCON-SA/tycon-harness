@@ -2404,6 +2404,7 @@ const TEXTOS = {
   'comoTrabaja.evento.SessionStart': { es: 'al abrir la sesión', en: 'when the session opens' },
   'comoTrabaja.evento.Notification': { es: 'cuando el agente pide permiso', en: 'when the agent asks for permission' },
   'comoTrabaja.evento.SessionEnd': { es: 'al cerrar la sesión', en: 'when the session closes' },
+  'comoTrabaja.evento.SubagentStop': { es: 'cuando termina un revisor', en: 'when a reviewer finishes' },
   'pestana.comoTrabaja': { es: 'Cómo trabaja', en: 'How it works' },
   // los nombres de los pasos (los de steps.js, en los dos idiomas)
   'paso.start': { es: 'Arranque', en: 'Start' },
@@ -2520,6 +2521,7 @@ const TEXTOS = {
   'control.waiver-display': { es: 'Antes de firmar un criterio que no se puede probar en vivo, te lo muestra en pantalla; lo firmás en la ventana de permiso; donde no llega, con un click o un «aprobado»; o en tu terminal.', en: 'Before a criterion that cannot be tested live is signed off, shows it to you on screen; you sign it in the permission window; where it does not reach, with a click or an "aprobado"; or at your terminal.' },
   'control.plan-display': { es: 'Antes de aprobar el plan, te muestra en pantalla su título, cuántos pasos tiene y dónde está, sin depender del agente.', en: 'Before approval, shows you on screen the plan\'s title, how many steps it has and where it is, without relying on the agent to relay it.' },
   'control.tycon-pipeline/scripts/on-advisor-run.js': { es: 'Anota qué revisores se lanzaron de verdad y le avisa al asistente cuando un lanzamiento es improvisado.', en: 'Records which reviewers were actually launched and warns the assistant when a launch is ad hoc.' },
+  'control.tycon-pipeline/scripts/on-advisor-done.js': { es: 'Anota los críticos que reportó cada revisor, de sus propias palabras: el cierre de los hallazgos frena si el agente no los anotó todos.', en: 'Records the criticals each reviewer reported, from its own words: closing the findings stops if the agent didn’t record them all.' },
   'control.tycon-pipeline/scripts/reviewer-launch-gate.js': { es: 'No deja lanzar los revisores mientras el pase adversarial que corresponde no esté en marcha, y pide lanzarlo primero.', en: 'Holds back the reviewers until the adversarial pass they need is under way, and asks to launch it first.' },
   'control.tycon-pipeline/scripts/on-bash-write-gate.js': { es: 'Frena escribir código por la terminal para esquivar el control de edición.', en: 'Blocks writing code through the terminal to get around the edit control.' },
   'control.tycon-pipeline/scripts/on-pre-commit.js': { es: 'Frena commitear una historia terminada sin la evidencia de que funciona en ejecución.', en: 'Blocks committing a finished story that lacks evidence it works when run.' },

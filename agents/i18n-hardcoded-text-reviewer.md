@@ -113,6 +113,20 @@ Formato **markdown** (consistente con los advisors Core — el consolidator del 
 
 Si el proyecto no declara `i18n.required: true` → `**Status**: ✅ OK (proyecto sin i18n.required — advisor no aplica)` y terminar. Si aplica pero no hay findings → `**Status**: ✅ OK`.
 
+## 🔴 El último renglón es SIEMPRE el veredicto
+
+Tu respuesta termina con **exactamente uno** de estos renglones, solo, sin viñeta ni negrita adelante, con la regla de
+cada hallazgo una vez por hallazgo (dos del mismo tipo, dos veces); también sin hallazgos:
+
+```text
+Veredicto: limpio
+Veredicto: hallazgos (I18N-C1, I18N-C1, I18N-W2) · bloquea: sí
+```
+
+Lo lee el arnés: anota cada regla crítica con cuántas veces la reportaste, y no deja cerrar la historia si los hallazgos
+anotados son menos. Sin el renglón, tu reporte queda como no leído y la historia no cierra. No lo escribas a un archivo:
+va en tu respuesta.
+
 ## Notas para el reviewer humano
 
 - I18N-C1/C2 son **bloqueantes salvo waive explícito** en Step 7 (no auto-fail del build). Para un falso positivo legítimo (texto que NO es user-facing, o que debe quedar inline por razón concreta) → agregar `// @i18n-allow: <razón>` en la línea; el advisor lo respeta en runs futuros.

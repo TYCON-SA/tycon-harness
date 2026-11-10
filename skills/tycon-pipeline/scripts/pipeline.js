@@ -6583,6 +6583,28 @@ function writeFindings(args) {
         note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
     }
   }
+  // Los críticos que reportó cada revisor los anotó el arnés (lib/reported-criticals.js): findings.json tiene que traerlos
+  // a todos, por regla y cantidad, y lo que da por cerrado tiene que tener con qué. Acá los `refuted` ya pasaron por la
+  // constancia del verificador (normalizeFindingRecord los deja `open` sin ella). Una corrida sin registro lo dice en su
+  // propio campo: no es un aviso sobre los hallazgos.
+  let reportedNote = null;
+  {
+    const rcLib = require('./lib/reported-criticals.js');
+    const marcador = readSessionMarker();
+    const since = marcador && String(marcador.storyId) === String(storyId) ? marcador.startedAt : null;
+    const cruce = rcLib.checkRun({ stateDir: stateDirOf(os.homedir()), story: storyId, since, findings: records, runDir });
+    if (cruce.error) {
+      return { error: `no pude leer el registro de críticos reportados (${cruce.error}): no sé qué reportaron los revisores, y eso no es «nada»`,
+        run_dir: runDir, note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
+    }
+    if (cruce.problemas.length) {
+      const lineas = ['findings.json no trae lo que reportaron los revisores:', ...rcLib.renglones(cruce, { marker: path.join(__dirname, 'marker.js') })];
+      return { error: lineas.join('\n'), criticos_reportados: cruce.problemas, run_dir: runDir,
+        note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
+    }
+    if (cruce.sinRegistro) reportedNote = rcLib.NO_REGISTRY_NOTE;
+    if (cruce.unreadable) normWarnings.push(`el registro de críticos reportados tiene ${cruce.unreadable} renglón(es) ilegible(s): no cuentan`);
+  }
   const outPath = path.join(runDir, 'findings.json');
   fs.writeFileSync(outPath, JSON.stringify(records, null, 2) + '\n', 'utf8');
   // Story en otro repo → el portón de CI de ESE repo va a pedir esta constancia.
@@ -6629,6 +6651,7 @@ function writeFindings(args) {
     wrote: true, path: outPath, story_id: storyId, total: records.length, counts,
     ...(rethink ? { rethink } : {}),
     ...(sinMedir.length ? { sin_medir: sinMedir } : {}),
+    ...(reportedNote ? { reported_criticals: reportedNote } : {}),
     ...(marcados.length ? { reviewers_flagged: marcados.map((t) => t.reviewer) } : {}),
     ...(proyeccion.projected ? { projected_to_story_repo: proyeccion.dest } : {}),
     ...(proyeccion.reason && proyeccion.reason.startsWith('no se pudo') ? { warnings: [...normWarnings, `proyección al repo de la story: ${proyeccion.reason}`] } : (normWarnings.length ? { warnings: normWarnings } : {})),

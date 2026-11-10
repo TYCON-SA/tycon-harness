@@ -222,7 +222,7 @@ test('PS1b HooksLists_BashOnlyRow_IsRed — un registro con «Bash» solo da roj
 // Las mismas reglas que esas suites: los textos, los del lector del sitio (`readControls`: un despachador no lleva texto
 // propio, cada control de su cadena sí; uno de una integración lo trae su manifiesto); la tabla, un par (evento, guion)
 // por registro, con los de las integraciones escritos `integrations/<n>/…`.
-const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification', 'SessionEnd', 'PermissionRequest'];
+const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification', 'SessionEnd', 'PermissionRequest', 'SubagentStop'];
 const MORE = { effects: 'scripts/setup/install-effects.json', texts: 'scripts/site/texts.js', install: 'INSTALL.md' };
 const tableName = (spec) => spec.replace(/^@tcg:/, '').replace(/^@int:/, 'integrations/');
 
