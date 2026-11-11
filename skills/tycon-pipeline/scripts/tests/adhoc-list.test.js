@@ -185,6 +185,13 @@ test('T30 Motivo_VariosTemas_NoPorDelegacion — @story-8.174 @ac-28', () => {
   assert.equal(per.status, 0, per.stderr);
 });
 
+test('T30b Motivo_ComaYLetra_LaLetraVaSuelta — una «y», «e» u «o» después de una coma cuenta sólo con un espacio antes', () => {
+  const L = lista();
+  for (const m of ['combo, y login', 'combo, login e índice', 'combo, menú o login', 'combo, login y']) assert.ok(L.variosTemas(m), m);
+  // pegada a la coma o adentro de otra palabra no es una enumeración
+  for (const m of ['combo,y login', 'combo, ya hecho', 'arreglo del combo y su prueba', 'combo, login']) assert.ok(!L.variosTemas(m), m);
+});
+
 test('T31 Motivo_Vago_NoPorDelegacion — @story-8.174 @ac-29', () => {
   const L = lista();
   for (const m of ['ARREGLOS varios', 'pendiente del combo', 'cosas del login', 'combo etc.', 'otros del combo']) assert.ok(L.sinUnaPersona({ reason: m }), m);

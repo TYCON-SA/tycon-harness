@@ -637,7 +637,7 @@ function main(argv) {
     const rels = [...new Set([codePath(s), ...own].filter(Boolean))];
     if (!rels.length) return false;
     if (depsSel.structural) {
-      let whole = true;
+      let whole;
       try { whole = depsSel.D.suiteDeps(repoRoot, codePath(s), depsSel.cache).wholeRepo; } catch (_) { whole = true; }
       if (whole) return false;
     }

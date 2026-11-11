@@ -367,6 +367,7 @@ async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = pro
   // sólo un repo principal (`.git` carpeta): sus worktrees salen de su lista, estén donde estén
   const principales = [...new Set(repos.filter((r) => { try { return fs.statSync(path.join(r, '.git')).isDirectory(); } catch { return false; } }).map(real))];
   let sinMirar = 0;
+  const items = [];
   const carpetas = new Map();
   for (const [i, l] of (await enTanda(principales, (r) => gitRaw(r, ['worktree', 'list', '--porcelain']))).entries()) {
     if (l.tarde) { sinMirar += 1; continue; }
@@ -382,7 +383,6 @@ async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = pro
   }
   const lista = [...carpetas.values()];
   const estados = await enTanda(lista, (c) => gitRaw(c.dir, ['status', '--porcelain', '-z', '--untracked-files=normal']));
-  const items = [];
   lista.forEach((c, k) => {
     const st = estados[k];
     if (st.tarde) { sinMirar += 1; return; }
