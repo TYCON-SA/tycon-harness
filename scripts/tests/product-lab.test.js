@@ -533,17 +533,22 @@ function gitQueCuenta(registro, { fallaEn } = {}) {
 }
 const cuantas = (registro, sub) => (fs.existsSync(registro)
   ? fs.readFileSync(registro, 'utf8').split('\n').filter((l) => new RegExp(`(^| )${sub}( |$)`).test(l)).length : 0);
-/** La misma cuenta, como expresión para el código del hijo: `{ init, clone }` en ese momento. */
-const CUENTA_EN_EL_HIJO = (registro) => `(() => { const l = fs.readFileSync(${JSON.stringify(registro)}, 'utf8').split('\\n');
+/** La misma cuenta, como expresión para el código del hijo: `{ init, clone }` del registro `DATOS.registro` en ese momento. */
+const CUENTA_EN_EL_HIJO = `(() => { const l = fs.readFileSync(DATOS.registro, 'utf8').split('\\n');
   const n = (s) => l.filter((x) => new RegExp('(^| )' + s + '( |$)').test(x)).length; return { init: n('init'), clone: n('clone') }; })()`;
 
-/** El guion del hijo: `lab` cargado, y dos casos de juguete que dicen con qué copia, arnés y tope corrieron. */
+/**
+ * El guion del hijo: `lab` cargado, y dos casos de juguete que dicen con qué copia, arnés y tope corrieron. Las rutas de
+ * cada prueba le llegan en `DATOS`, por el ambiente: el código del hijo no las lleva escritas.
+ */
 function guionDelHijo(codigo) {
   const guion = path.join(carpeta(), 'hijo.js');
   fs.writeFileSync(guion, `'use strict';
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const DATOS = JSON.parse(process.env.LAB_DATA || '{}');
+delete process.env.LAB_DATA;
 const lab = require(${JSON.stringify(LAB)});
 const marca = (c) => path.join(c.repos['Lab-Backend'], 'marca.txt');
 const casos = [
@@ -555,16 +560,17 @@ ${codigo}
 `);
   return guion;
 }
-const entornoDelHijo = (dirGit, tmpdir) => ({ ...process.env, PATH: `${dirGit}${path.delimiter}${process.env.PATH}`, TMPDIR: tmpdir });
+const entornoDelHijo = (dirGit, tmpdir, datos) => ({ ...process.env, PATH: `${dirGit}${path.delimiter}${process.env.PATH}`, TMPDIR: tmpdir,
+  LAB_DATA: JSON.stringify(datos || {}) });
 
-function hijoLab(codigo, { dirGit, tmpdir }) {
-  return spawnSync(process.execPath, [guionDelHijo(codigo)], { encoding: 'utf8', timeout: 180000, env: entornoDelHijo(dirGit, tmpdir) });
+function hijoLab(codigo, { dirGit, tmpdir, datos }) {
+  return spawnSync(process.execPath, [guionDelHijo(codigo)], { encoding: 'utf8', timeout: 180000, env: entornoDelHijo(dirGit, tmpdir, datos) });
 }
 
 /** El hijo arma la plantilla, dice «listo» y queda vivo; recibe `senal` en ese momento. Un hijo que no termina da `colgado`. */
-function hijoLabVivo(codigo, { dirGit, tmpdir }, senal) {
+function hijoLabVivo(codigo, { dirGit, tmpdir, datos }, senal) {
   return new Promise((resolve) => {
-    const p = spawn(process.execPath, [guionDelHijo(codigo)], { env: entornoDelHijo(dirGit, tmpdir) });
+    const p = spawn(process.execPath, [guionDelHijo(codigo)], { env: entornoDelHijo(dirGit, tmpdir, datos) });
     let out = '';
     let err = '';
     let colgado = false;
@@ -582,11 +588,11 @@ test('T57 Lab_Plantilla_SeArmaUnaVezYCadaCasoLaCopia @story-8.230 @ac-6', () => 
   const registro = path.join(carpeta(), 'git.log');
   const tmpdir = carpeta();
   const tmp = carpeta();
-  const r = hijoLab(`const primera = lab.correrCasos({ casos, tmp: ${JSON.stringify(tmp)} }).resultados;
-const tras1 = ${CUENTA_EN_EL_HIJO(registro)};
-const segunda = lab.correrCasos({ casos, tmp: ${JSON.stringify(tmp)} }).resultados;
-console.log(JSON.stringify({ llamadas: [primera, segunda], tras1, tras2: ${CUENTA_EN_EL_HIJO(registro)} }));`,
-  { dirGit: gitQueCuenta(registro), tmpdir });
+  const r = hijoLab(`const primera = lab.correrCasos({ casos, tmp: DATOS.tmp }).resultados;
+const tras1 = ${CUENTA_EN_EL_HIJO};
+const segunda = lab.correrCasos({ casos, tmp: DATOS.tmp }).resultados;
+console.log(JSON.stringify({ llamadas: [primera, segunda], tras1, tras2: ${CUENTA_EN_EL_HIJO} }));`,
+  { dirGit: gitQueCuenta(registro), tmpdir, datos: { tmp, registro } });
   assert.strictEqual(r.status, 0, r.stderr);
   const { llamadas, tras1, tras2 } = JSON.parse(r.stdout);
   for (const resultados of llamadas) {
@@ -604,8 +610,8 @@ test('T58 Lab_Plantilla_FallaGuardada_MismoMotivoSinReintentar @story-8.230 @ac-
   const registro = path.join(carpeta(), 'git.log');
   const tmpdir = carpeta();
   const tmp = carpeta();
-  const r = hijoLab(`const out = [0, 1].map(() => lab.correrCasos({ casos, tmp: ${JSON.stringify(tmp)} }).resultados);
-console.log(JSON.stringify({ out, quedan: fs.readdirSync(os.tmpdir()) }));`, { dirGit: gitQueCuenta(registro, { fallaEn: 'init' }), tmpdir });
+  const r = hijoLab(`const out = [0, 1].map(() => lab.correrCasos({ casos, tmp: DATOS.tmp }).resultados);
+console.log(JSON.stringify({ out, quedan: fs.readdirSync(os.tmpdir()) }));`, { dirGit: gitQueCuenta(registro, { fallaEn: 'init' }), tmpdir, datos: { tmp } });
   assert.strictEqual(r.status, 0, r.stderr);
   const { out, quedan } = JSON.parse(r.stdout);
   const todos = out.flat();
@@ -623,14 +629,14 @@ test('T59 Lab_Plantilla_ClaveEsElPath_LoDeCadaLlamadaNoQuedaGuardado @story-8.23
   const tmpdir = carpeta();
   const [ha, hb, ta, tb] = [carpeta(), carpeta(), carpeta(), carpeta()];
   const otro = gitQueCuenta(registro);
-  const r = hijoLab(`const reg = ${JSON.stringify(registro)};
+  const r = hijoLab(`const reg = DATOS.registro;
 const inits = () => fs.readFileSync(reg, 'utf8').split('\\n').filter((l) => / init /.test(' ' + l + ' ')).length;
-const a = lab.correrCasos({ casos, harness: ${JSON.stringify(ha)}, tmp: ${JSON.stringify(ta)}, topeMs: 1111 }).resultados;
-const b = lab.correrCasos({ casos, harness: ${JSON.stringify(hb)}, tmp: ${JSON.stringify(tb)}, topeMs: 2222 }).resultados;
+const a = lab.correrCasos({ casos, harness: DATOS.ha, tmp: DATOS.ta, topeMs: 1111 }).resultados;
+const b = lab.correrCasos({ casos, harness: DATOS.hb, tmp: DATOS.tb, topeMs: 2222 }).resultados;
 const despuesDeDos = inits();
-process.env.PATH = ${JSON.stringify(otro)} + path.delimiter + process.env.PATH;
-const c = lab.correrCasos({ casos, tmp: ${JSON.stringify(ta)} }).resultados;
-console.log(JSON.stringify({ a, b, c, despuesDeDos, alFinal: inits() }));`, { dirGit: gitQueCuenta(registro), tmpdir });
+process.env.PATH = DATOS.otro + path.delimiter + process.env.PATH;
+const c = lab.correrCasos({ casos, tmp: DATOS.ta }).resultados;
+console.log(JSON.stringify({ a, b, c, despuesDeDos, alFinal: inits() }));`, { dirGit: gitQueCuenta(registro), tmpdir, datos: { registro, ha, hb, ta, tb, otro } });
   assert.strictEqual(r.status, 0, r.stderr);
   const { a, b, c, despuesDeDos, alFinal } = JSON.parse(r.stdout);
   assert.strictEqual(despuesDeDos, 3, 'otro arnés, otro tope u otra carpeta armaron otra base');
@@ -648,11 +654,12 @@ console.log(JSON.stringify({ a, b, c, despuesDeDos, alFinal: inits() }));`, { di
 });
 
 test('T60 Lab_Plantilla_SeBorraConError_YConSenal @story-8.230 @ac-6', async () => {
-  const armarYEsperar = (tmp) => `lab.correrCasos({ casos: [], tmp: ${JSON.stringify(tmp)} });\nconsole.log('listo');\nsetInterval(() => {}, 1000);`;
+  const armarYEsperar = `lab.correrCasos({ casos: [], tmp: DATOS.tmp });\nconsole.log('listo');\nsetInterval(() => {}, 1000);`;
   // un error después de armar: sale 1 y no deja la plantilla
   {
     const tmpdir = carpeta();
-    const r = await hijoLabVivo(`lab.correrCasos({ casos: [], tmp: ${JSON.stringify(carpeta())} });\nthrow new Error('a propósito');`, { dirGit: gitQueCuenta(path.join(carpeta(), 'git.log')), tmpdir });
+    const r = await hijoLabVivo(`lab.correrCasos({ casos: [], tmp: DATOS.tmp });\nthrow new Error('a propósito');`,
+      { dirGit: gitQueCuenta(path.join(carpeta(), 'git.log')), tmpdir, datos: { tmp: carpeta() } });
     assert.ok(!r.colgado, 'el hijo no terminó');
     assert.strictEqual(r.code, 1, r.err);
     assert.match(r.err, /a propósito/);
@@ -661,7 +668,7 @@ test('T60 Lab_Plantilla_SeBorraConError_YConSenal @story-8.230 @ac-6', async () 
   // cada señal: el hijo termina por esa señal y no deja la plantilla
   for (const senal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     const tmpdir = carpeta();
-    const r = await hijoLabVivo(armarYEsperar(carpeta()), { dirGit: gitQueCuenta(path.join(carpeta(), 'git.log')), tmpdir }, senal);
+    const r = await hijoLabVivo(armarYEsperar, { dirGit: gitQueCuenta(path.join(carpeta(), 'git.log')), tmpdir, datos: { tmp: carpeta() } }, senal);
     assert.ok(!r.colgado, `${senal}: el hijo no terminó`);
     assert.strictEqual(r.signal, senal, `${senal}: terminó de otra forma (código ${r.code}) ${r.err}`);
     assert.deepStrictEqual(fs.readdirSync(tmpdir), [], `${senal}: quedó la plantilla`);
@@ -670,8 +677,8 @@ test('T60 Lab_Plantilla_SeBorraConError_YConSenal @story-8.230 @ac-6', async () 
   {
     const tmpdir = carpeta();
     const anotada = path.join(carpeta(), 'anotada');
-    const r = await hijoLabVivo(`process.on('SIGTERM', () => { fs.writeFileSync(${JSON.stringify(anotada)}, 'x'); process.exit(0); });\n${armarYEsperar(carpeta())}`,
-      { dirGit: gitQueCuenta(path.join(carpeta(), 'git.log')), tmpdir }, 'SIGTERM');
+    const r = await hijoLabVivo(`process.on('SIGTERM', () => { fs.writeFileSync(DATOS.anotada, 'x'); process.exit(0); });\n${armarYEsperar}`,
+      { dirGit: gitQueCuenta(path.join(carpeta(), 'git.log')), tmpdir, datos: { tmp: carpeta(), anotada } }, 'SIGTERM');
     assert.ok(!r.colgado, 'con su propio manejador, el hijo no terminó');
     assert.ok(fs.existsSync(anotada), 'el manejador propio no corrió');
     assert.strictEqual(r.code, 0, r.err);
@@ -700,8 +707,8 @@ test('T61 Lab_ConBase_UnaArmadaYCopiaAislada @story-8.230 @ac-6', () => {
   const tmp = carpeta();
   const r = hijoLab(`const vistos = [];
 let tras1;
-for (let i = 0; i < 3; i++) lab.conBase({ tmp: ${JSON.stringify(tmp)} }, (base) => {
-  if (i === 0) tras1 = ${CUENTA_EN_EL_HIJO(registro)};
+for (let i = 0; i < 3; i++) lab.conBase({ tmp: DATOS.tmp }, (base) => {
+  if (i === 0) tras1 = ${CUENTA_EN_EL_HIJO};
   const back = base.repos['Lab-Backend'];
   vistos.push({ back, ve: base.git(back, ['log', '--format=%s']).includes('propio de la primera') });
   if (i === 0) { fs.writeFileSync(path.join(back, 'propio.txt'), 'x'); base.git(back, ['add', '-A']); base.git(back, ['commit', '-q', '-m', 'propio de la primera']); }
@@ -709,8 +716,8 @@ for (let i = 0; i < 3; i++) lab.conBase({ tmp: ${JSON.stringify(tmp)} }, (base) 
 const sigue = vistos.map((v) => fs.existsSync(v.back));
 const mira = { id: 'mira-propio', ac: 0, prepara() { return {}; }, corre(c) { return { ve: fs.existsSync(path.join(c.repos['Lab-Backend'], 'propio.txt')) }; },
   juzga(s) { return s.ve ? { ok: false, motivo: 've lo de conBase' } : { ok: true }; } };
-const caso = lab.correrCasos({ casos: [mira], tmp: ${JSON.stringify(tmp)} }).resultados[0];
-console.log(JSON.stringify({ vistos, sigue, caso, tras1, alFinal: ${CUENTA_EN_EL_HIJO(registro)} }));`, { dirGit: gitQueCuenta(registro), tmpdir });
+const caso = lab.correrCasos({ casos: [mira], tmp: DATOS.tmp }).resultados[0];
+console.log(JSON.stringify({ vistos, sigue, caso, tras1, alFinal: ${CUENTA_EN_EL_HIJO} }));`, { dirGit: gitQueCuenta(registro), tmpdir, datos: { tmp, registro } });
   assert.strictEqual(r.status, 0, r.stderr);
   const { vistos, sigue, caso, tras1, alFinal } = JSON.parse(r.stdout);
   assert.strictEqual(new Set(vistos.map((v) => v.back)).size, 3, 'dos llamadas recibieron la misma carpeta');

@@ -6683,7 +6683,7 @@ const WR_LIMITES = () => TR.weeklyReviewProblems({ budget_usd: 0, max_chars: 10 
   .flatMap((p) => (p.message.replace(/\(es [^)]*\)/, '').match(/\d+/g) || []).map(Number)).filter((n) => n > 0);
 const WR_GRAFIAS = (n) => [String(n), n.toLocaleString('de-DE'), n.toLocaleString('en-US')];
 const WR_REPITE_LIMITE = (t) => WR_LIMITES().flatMap(WR_GRAFIAS)
-  .find((g) => new RegExp(`(?<![\\d.,])${g.replace(/[.,]/g, '\\$&')}(?![\\d.,])`).test(t));
+  .find((g) => new RegExp(`(?<![\\d.,])${g.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\d.,])`).test(t));
 // en castellano «merge» no va en ninguna forma; en inglés «merged» sí, «merge» y «merges» como palabra no
 const WR_MERGE = { es: /\bmerge\w*/i, en: /\bmerges?\b/i };
 
