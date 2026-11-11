@@ -242,7 +242,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `session-state.js` | SessionEnd | La sesión se cerró: su archivo de estado se borra | No | full | `TYCON_SESSION_STATE=0` |
 | `blocking-meter.js` | Stop | Mide la herramienta bloqueante más larga del turno y los mensajes que quedaron esperando | No | full | `TYCON_BLOCKING_METER=0` |
 | `blocking-notice.js` | UserPromptSubmit | Cobra el veredicto del medidor de bloqueo del turno anterior | No | full | `TYCON_BLOCKING_METER=0` |
-| `coordination-notice.js` | UserPromptSubmit | Sólo en la sesión coordinadora: avisa cuando la máquina está en el tope de sesiones trabajando o lo pasó, y una vez por día de las firmas que esperan hace más de un día | No | full | `TYCON_COORDINATION_NOTICE=0` |
+| `coordination-notice.js` | UserPromptSubmit | Sólo en la sesión coordinadora: avisa una vez cuando la máquina llega al tope de sesiones trabajando, lo pasa o cambia cuántas trabajan, y una vez por día de las firmas que esperan hace más de un día | No | full | `TYCON_COORDINATION_NOTICE=0` |
 | `coordination-notice.js` | SessionStart | Después de compactar o de limpiar la conversación, le pide a la sesión coordinadora que lea sus reglas otra vez; si limpiarla le quitó la designación, le dice cómo recuperarla | No | full | `TYCON_COORDINATION_NOTICE=0` |
 | `why-blocked-notice.js` | UserPromptSubmit | Cuando preguntás por qué te frenó el arnés, le pasa al asistente el último freno de la sesión para que te lo explique en llano | No | full | `TYCON_WHY_BLOCKED_NOTICE=0` |
 | `large-read-meter.js` | Stop | Mide cuánto se leyó de un solo archivo en el turno; anota y no avisa | No | full | `TYCON_READ_METER=0` |
@@ -261,6 +261,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `unclosed-runs-notice.js` | SessionStart | Dice una vez por día si alguna corrida del pipeline quedó sin cerrar, de qué stories y qué hacer; esas corridas se suben marcadas | No | minimal y full | `TYCON_UNCLOSED_NOTICE=0`; integración del buzón (`TYCON_MAILBOX=0`) |
 | `production-notice.js` | SessionStart | Regenera el índice de servidores de producción declarados y, en las máquinas autorizadas, avisa si el freno de producción falta | No | full | `TYCON_PRODUCTION_NOTICE=0` |
 | `guard-update-notice.js` | SessionStart | En las máquinas con el freno de producción, compara el permiso de actualizarlo sin contraseña con lo que eligió la organización y da el comando para corregirlo | No | full | `TYCON_GUARD_UPDATE_NOTICE=0` |
+| `guard-auto-update.js` | SessionStart | En las máquinas con el freno de producción y el permiso de actualizarlo sin contraseña, si la organización eligió que se actualice solo y quedó viejo, lanza la actualización de fondo; no reintenta una versión que ya falló | No | full | `TYCON_GUARD_AUTO_UPDATE=0` |
 | `lane-llm-notice.js` | SessionStart | Cuenta los arreglos rápidos de los últimos 7 días y cómo se firmaron, si hubo alguno nuevo | No | full | `TYCON_LANE_LLM_NOTICE=0` |
 | `engram-drift-notice.js` | SessionStart | Revisa la memoria de engram una vez por día: proyectos sin nombre fijo, memoria repartida, observaciones sin exportar | No | minimal y full | `TYCON_ENGRAM_DRIFT=0`; integración engram (`TYCON_ENGRAM=0`) |
 | `unpushed-work-notice.js` | SessionStart | Avisa las ramas del repo y de su grupo con commits que no están en el remoto | No | full | `TYCON_UNPUSHED_NOTICE=0` |
@@ -311,6 +312,13 @@ Si alguno falla, revisá:
 - Los enlaces `~/.claude/skills` y `~/.claude/agents` (paso 3): `harness.js doctor` dice si falta alguno
 - La actualización (paso 4): `harness.js version` muestra la versión instalada y el canal; `harness.js doctor` dice si
   algo quedó mal
+
+Para trabajar con una coordinadora, el paso guiado dice qué le falta a la máquina, de a una y con su comando (las
+carpetas principales que aprobar, el freno de producción, la confirmación de la coordinadora). Sólo lee:
+
+```bash
+node ~/.tycon/harness/scripts/tools/prepare-machine.js --repo <repo> [--repo <otro repo>]
+```
 
 ### 6. Cómo llegan las actualizaciones
 

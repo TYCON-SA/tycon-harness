@@ -98,6 +98,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/guard-auto-update.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/context-size-notice.js"
           },
           {

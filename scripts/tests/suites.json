@@ -2134,6 +2134,16 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/prepare-machine.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/guard-auto-update.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/one-minute.test.js",
       "requiere": []
     },

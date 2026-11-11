@@ -91,6 +91,7 @@
     { "kind": "hook", "id": "SessionStart:@tcg:unclosed-runs-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:mailbox", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:production-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:guard-update-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
+    { "kind": "hook", "id": "SessionStart:@tcg:guard-auto-update.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:lane-llm-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:engram-drift-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:engram", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:unpushed-work-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },

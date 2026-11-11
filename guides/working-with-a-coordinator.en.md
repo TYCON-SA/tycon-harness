@@ -48,6 +48,18 @@ That is all. `/coordinate` shows you the state of the machine whenever you want 
 
 There is one coordinator per machine. If you designate another, it replaces the previous one.
 
+**Before the first session she opens, get the machine ready.** Run, from the harness folder:
+
+```bash
+node scripts/tools/prepare-machine.js --repo <repo> [--repo <another repo>]
+```
+
+It says one at a time what is missing, with the command for each: open each repo's main folder once (`cd '<repo>' &&
+claude` and accept), update the production guard if the machine has one, and confirm the coordinator if your
+organization uses her to sign. You do what is missing: the script only reads, approves nothing and does not ask for your
+password. When you run it again and nothing is missing, it says «lista» (ready). With the main folder approved, the
+sessions the coordinator opens in copies of the repo start without asking you anything.
+
 ## A working day
 
 1. **You ask her for something**, in her tab and in your own words: "fix the province combo", "continue the holidays story".

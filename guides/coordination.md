@@ -109,16 +109,20 @@ aprobación es de una persona: el agente no la escribe. Las otras fallas tambié
 está instalado, el primer renglón de su error, o que no volvió en 30 segundos. Una apertura que falló no cuenta para el
 tope.
 
-**Límite medido:** la aprobación de una carpeta no cubre las de adentro:
-cada worktree nuevo pide su propia aprobación. En la práctica, la primera vez que la coordinadora abre una sesión en un worktree nuevo, `open` contesta
-que falta aprobar la carpeta.
+**Con `--repo <repo>` en lugar de `--cwd`, `open` arma la carpeta solo.** Crea una copia hermana del repo,
+`<repo>--wt-<nombre>`, desde la punta de `origin/main`, en la rama `wt/<nombre>` (o la de `--branch`), y abre la sesión
+ahí. Claude Code la acepta sin pedir nada si la carpeta principal del repo ya está aprobada: el dueño aprueba una vez
+cada repo, no cada carpeta. Va al lado y no adentro por un **límite medido**: la aprobación de una carpeta no cubre las
+de adentro, así que cada worktree nuevo pide su propia aprobación. Si la copia o la rama ya existen, `open` se niega en una línea y no pisa lo que hay. Si no
+puede traer `main` o crear la copia, dice el primer renglón del error y no abre: nunca arranca desde una punta vieja sin
+decirlo. Si el lanzador contesta que la carpeta no está aprobada, `open` borra la copia y la rama que acaba de crear,
+nombra la carpeta principal para abrirla una vez y agrega que, si ya está aprobada, se puede abrir con `--slot`. El
+encargo le dice a la sesión que, al terminar, deje todo commiteado, empujado y con su pedido abierto. La copia no se
+borra al cerrar la sesión: la saca el barrido de copias, como a cualquier otra, cuando su rama ya entró a `main`.
 
-**Por eso, los puestos fijos.** Con `--repo <repo>` en lugar de `--cwd`, `open` no usa una carpeta nueva: toma un puesto
-libre del repo y abre la sesión ahí, en la rama del trabajo (`--branch <rama>`, o `wt/<nombre>`). Hay tantos puestos
-como el tope y siempre son las mismas carpetas, así que el dueño los aprueba una sola vez:
-`node scripts/tools/work-slots.js pending-trust` le lista los que faltan, cada uno con su `cd`. Sin puesto libre, `open`
-lo dice y no abre. El encargo le dice a la sesión cómo soltar el puesto al terminar; si el lanzador falla, el puesto
-vuelve a quedar libre. Cómo son los puestos: `guides/git-worktrees.md` §8.
+Para dejar lista una máquina antes de la primera apertura, `node scripts/tools/prepare-machine.js --repo <repo>` dice de
+a una qué falta (la carpeta principal sin aprobar, el freno viejo, la confirmación de la coordinadora) y con qué
+comando. Sólo lee: no aprueba nada ni pide la contraseña.
 
 **Sin medir todavía, queda como prueba del dueño:** cuánto tarda en aparecer una sesión abierta de fondo, y qué título
 muestra la pestaña del editor después de `/rename`. La guía no da por hecho ninguna de las dos.
@@ -143,6 +147,17 @@ con el nombre contestan que no la encuentran (medido el 2026-11-01).
 
 Con Codex, las sesiones las abre el dueño: Codex no tiene un lanzador de sesiones de fondo con nombre.
 
+### La opción `--slot`: los puestos fijos
+
+Una versión de Claude Code que pida aprobar cada copia, aunque la principal ya esté aprobada, deja a `open --repo` sin
+abrir. Para ese caso queda `open --repo <repo> --slot`: en lugar de crear una copia, toma un puesto fijo libre del repo
+y abre la sesión ahí, en la rama del trabajo. Hay tantos puestos como el tope y siempre son las mismas carpetas, así que
+el dueño los aprueba una sola vez: `node scripts/tools/work-slots.js pending-trust` lista los que faltan, cada uno con
+su `cd`, y no lista los de un repo cuya carpeta principal ya está aprobada. Sin puesto libre, `open --slot` lo dice y no
+abre. El encargo le dice a la sesión cómo soltar el puesto al terminar; si el lanzador falla, el puesto vuelve a quedar
+libre. Al cerrar, un puesto se suelta, no se borra. Nada crea puestos si no se piden. Cómo son:
+`guides/git-worktrees.md` §8.
+
 ## Cerrar una sesión
 
 La coordinadora, o una persona en su terminal, cierra una sesión con `coordination.js close --name <nombre>`. Antes de
@@ -150,8 +165,9 @@ cerrar mira cuatro cosas, y si falta una no cierra y dice cuál:
 
 1. Que esté quieta: una con un comando corriendo tampoco se cierra.
 2. Que en su carpeta no quede nada sin commitear ni sin empujar.
-3. Que su rama haya entrado a `main`, también las ramas de las que se fue en esa carpeta desde que arrancó. Si está en un
-   puesto fijo, que esté suelto: un puesto se suelta, no se borra.
+3. Que su rama haya entrado a `main`, también las ramas de las que se fue en esa carpeta desde que arrancó. Una copia
+   hermana se mira como cualquier carpeta de trabajo y no se borra al cerrar; con `--slot`, el puesto tiene que estar
+   suelto.
 4. Que no tenga una corrida ni un arreglo rápido abiertos.
 
 Lo que no puede mirar (una carpeta que no anotó o que ya no está, git que no contesta, un registro ilegible) sale como
@@ -206,9 +222,11 @@ contar (un archivo de estado que no se lee) o no puede anotarla, niega igual y n
 ese archivo, o que la persona abra la sesión desde su terminal: el freno mira sólo las herramientas del agente. No tiene
 interruptor: el tope lo cambia una persona.
 
-La coordinadora, además, lo ve sin pedirlo: en cada turno, si la máquina está en el tope, un aviso le dice quiénes
-trabajan; si lo pasó, por cuánto y cuál trabaja hace menos. Debajo del tope no dice nada de eso, y ninguna otra sesión lo
-ve. Se apaga con `TYCON_COORDINATION_NOTICE=0`.
+La coordinadora, además, lo ve sin pedirlo: cuando la máquina llega al tope o cambia cuántas trabajan, un aviso le dice
+quiénes trabajan; si lo pasó, por cuánto y cuál trabaja hace menos. La línea sale una vez por cambio, no en cada turno:
+vuelve a salir si cambia el conteo o el tope, si la máquina baja del tope y vuelve, o en el primer turno de otra
+coordinadora. Si no puede anotar que ya avisó, sale en cada turno y lo dice. Debajo del tope no dice nada de eso, y
+ninguna otra sesión lo ve. Se apaga con `TYCON_COORDINATION_NOTICE=0`.
 
 El mismo aviso trae dos cosas más:
 
@@ -749,7 +767,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Las preguntas de las sesiones van a la coordinadora | nadie | No hay aviso, por decisión del dueño: lo vería cada sesión de trabajo. La coordinadora lo recuerda cuando una sesión le pregunta al dueño. |
 | La coordinadora cierra los detalles con la opción más segura | nadie | Es criterio, y queda anotado para que el dueño lo vea. |
 | Cada sesión con un nombre puesto por una persona | aviso | `/coordinate` lista las que tienen el nombre que armó la herramienta. |
-| No más sesiones trabajando que el tope | freno | `open` no abre en el tope. Una sesión que el dueño abre a mano no la frena nada; la cuenta `status` y, en el tope, el aviso de cada turno de la coordinadora. |
+| No más sesiones trabajando que el tope | freno | `open` no abre en el tope. Una sesión que el dueño abre a mano no la frena nada; la cuenta `status` y, al llegar al tope o cambiar el conteo, el aviso de la coordinadora. |
 | Con la fila de la suite larga no se abren sesiones para programar | nadie | Qué trabajo pide suite es criterio; `status` muestra quién espera turno. |
 | Una suite completa por vez | freno | El corredor de las suites y las portables enteras no arrancan con el turno de otro proceso vivo, y dicen quién lo tiene. Una suite que alguien corre por otro camino no la ve. |
 | Pases adversariales de a uno | freno | El portón del pase sale 3 y `next` pide esperar con otro en vuelo. Lanzar el pase sin consultar el portón no lo frena nada, y el de un arreglo rápido no queda anotado como en vuelo. Pasada una hora, sólo avisa. |

@@ -423,6 +423,29 @@ explain` muestra cada valor y de dónde salió.
 **Cuatro skills propietarias** (`docx`, `pdf`, `pptx`, `xlsx`) no son parte de este repo y no se bajan: vienen con el
 plugin oficial de Anthropic. Instalalo si las querés.
 
+## Antes de trabajar con una coordinadora
+
+Un paso guiado dice, de a una, qué le falta a tu máquina, cada cosa con su comando:
+
+```bash
+node ~/.tycon/harness/scripts/tools/prepare-machine.js --repo <repo> [--repo <otro repo>]
+```
+
+Mira la carpeta principal de cada repo (si Claude Code no la aprobó, o si su CLAUDE.md importa archivos de afuera sin
+aceptar), la confirmación de la coordinadora si tu organización la usa para firmar, y el freno de producción si la
+máquina lo tiene. Sólo lee: no aprueba nada ni pide tu contraseña. Cuando no falta nada, dice «lista». Con la carpeta
+principal aprobada, las sesiones que la coordinadora abre en copias del repo arrancan sin pedirte nada
+([guides/working-with-a-coordinator.md](../guides/working-with-a-coordinator.md)).
+
+Si tu organización eligió que el freno de producción se actualice solo (`guard.update: auto`), cada máquina de
+producción instala una vez, con tu contraseña, el permiso:
+
+```bash
+sudo bash ~/.tycon/harness/scripts/production/install-guard.sh --allow-auto-update
+```
+
+Qué habilita, qué ensaya antes de reemplazar y qué no se instala solo: [guides/produccion-con-permiso.md](../guides/produccion-con-permiso.md).
+
 ## Qué escribe en tu máquina y qué hace solo
 
 Esta sección sale de una lista declarada, `scripts/setup/install-effects.json`, que una prueba cruza con el instalador.

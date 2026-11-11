@@ -45,6 +45,18 @@ Con eso ya está. `/coordinate` te muestra el estado de la máquina cuando quier
 
 Hay una sola coordinadora por máquina. Si designás otra, reemplaza a la anterior.
 
+**Antes de la primera sesión que abra ella, dejá lista la máquina.** Corré, desde la carpeta del arnés:
+
+```bash
+node scripts/tools/prepare-machine.js --repo <repo> [--repo <otro repo>]
+```
+
+Dice de a una qué falta, con el comando para cada cosa: abrir una vez la carpeta principal de cada repo (`cd '<repo>'
+&& claude` y aceptar), poner al día el freno de producción si la máquina lo tiene, y confirmar a la coordinadora si tu
+organización la usa para firmar. Lo que falta lo hacés vos: el guion sólo lee, no aprueba nada ni pide tu contraseña.
+Cuando lo volvés a correr y no falta nada, dice «lista». Con la carpeta principal aprobada, las sesiones que abre la
+coordinadora en copias del repo arrancan sin pedirte nada.
+
 ## Un día de trabajo
 
 1. **Le pedís algo a ella**, en su pestaña y con tus palabras: «arreglá el combo de provincias», «seguí la historia de los feriados».

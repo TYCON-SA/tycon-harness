@@ -113,16 +113,21 @@ belongs to a person: the agent does not write it. The other failures also take o
 installed, the first line of its error, or it did not come back within 30 seconds. A failed opening does not count
 toward the cap.
 
-**Measured limit:** approving a folder does not cover the folders inside it, so each new worktree asks for its own
-approval. In practice, the first time the coordinator opens a session in a new worktree, `open` answers that the
-folder still needs approving.
+**With `--repo <repo>` instead of `--cwd`, `open` sets up the folder itself.** It creates a sibling copy of the repo,
+`<repo>--wt-<name>`, from the tip of `origin/main`, on the branch `wt/<name>` (or the one in `--branch`), and opens the
+session there. Claude Code accepts it without asking if the repo's main folder is already approved: the owner approves
+each repo once, not each folder. It goes beside the repo, not inside, because of a **measured limit**: approving a
+folder does not cover the folders inside it, so each new worktree asks for its own approval. If the copy or the branch already exist, `open` refuses in one line and does not
+overwrite what is there. If it cannot fetch `main` or create the copy, it says the first line of the error and does not
+open: it never starts from an old tip without saying so. If the launcher answers that the folder is not approved, `open`
+removes the copy and the branch it just created, names the main folder to open once and adds that, if it is already
+approved, the session can be opened with `--slot`. The task tells the session to leave everything committed, pushed and
+with its request open when it is done. The copy is not removed when the session closes: the copy sweep takes it out,
+like any other, once its branch got into `main`.
 
-**That is why there are fixed work slots.** With `--repo <repo>` instead of `--cwd`, `open` does not use a new folder:
-it takes a free slot of the repo and opens the session there, on the job's branch (`--branch <branch>`, or
-`wt/<name>`). There are as many slots as the cap and they are always the same folders, so the owner approves them only
-once: `node scripts/tools/work-slots.js pending-trust` lists the missing ones, each with its `cd`. With no free slot,
-`open` says so and does not open. The task tells the session how to release the slot when it is done; if the launcher
-fails, the slot is free again. What the slots are: `guides/git-worktrees.md` §8.
+To get a machine ready before the first opening, `node scripts/tools/prepare-machine.js --repo <repo>` says one at a
+time what is missing (the main folder not approved, an old guard, the coordinator's confirmation) and with which
+command. It only reads: it approves nothing and does not ask for the password.
 
 **Not measured yet, left as the owner's test:** how long a session opened in the background takes to show up, and what
 title the editor tab shows after `/rename`. The guide takes neither for granted.
@@ -148,6 +153,17 @@ signatures»).
 
 With Codex, the owner opens the sessions: Codex has no launcher for named background sessions.
 
+### The `--slot` option: fixed work slots
+
+A Claude Code version that asks to approve each copy, even with the main folder approved, leaves `open --repo` unable to
+open. For that case there is `open --repo <repo> --slot`: instead of creating a copy, it takes a free fixed slot of the
+repo and opens the session there, on the job's branch. There are as many slots as the cap and they are always the same
+folders, so the owner approves them only once: `node scripts/tools/work-slots.js pending-trust` lists the missing ones,
+each with its `cd`, and leaves out those of a repo whose main folder is already approved. With no free slot,
+`open --slot` says so and does not open. The task tells the session how to release the slot when it is done; if the
+launcher fails, the slot is free again. On closing, a slot is released, not deleted. Nothing creates slots unless asked.
+What they are: `guides/git-worktrees.md` §8.
+
 ## Closing a session
 
 The coordinator, or a person in their terminal, closes a session with `coordination.js close --name <name>`. Before
@@ -155,8 +171,8 @@ closing it checks four things, and if one is missing it does not close and says 
 
 1. That it is idle: one running a command is not closed either.
 2. That its folder has nothing uncommitted or unpushed.
-3. That its branch got into `main`, and so did the branches it left in that folder since it started. In a fixed slot,
-   that the slot is released: a slot is released, not deleted.
+3. That its branch got into `main`, and so did the branches it left in that folder since it started. A sibling copy is
+   checked like any working folder and is not removed on closing; with `--slot`, the slot has to be released.
 4. That it has no open run and no open quick fix.
 
 What it cannot look at (a folder it did not record or that is gone, git not answering, an unreadable record) comes out
@@ -212,9 +228,11 @@ the session, so it counts from that moment. If it cannot count (a state file tha
 session, it refuses as well and names the file. The way out is fixing that file, or the person opening the session from
 their terminal: the brake only watches the agent's tools. It has no switch: a person changes the cap.
 
-The coordinator also sees it without asking: on each turn, if the machine is at the cap, a notice tells her who is
-working; if it is over, by how much and which one has been working the shortest. Below the cap it says nothing about that,
-and no other session sees it. It is turned off with `TYCON_COORDINATION_NOTICE=0`.
+The coordinator also sees it without asking: when the machine reaches the cap or the number working changes, a notice
+tells her who is working; if it is over, by how much and which one has been working the shortest. The line goes out once
+per change, not on every turn: it goes out again if the count or the cap changes, if the machine drops below the cap and
+comes back, or on another coordinator's first turn. If it cannot note that it already warned, it goes out on every turn
+and says so. Below the cap it says nothing about that, and no other session sees it. It is turned off with `TYCON_COORDINATION_NOTICE=0`.
 
 The same notice carries two more things:
 
@@ -775,7 +793,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | The sessions' questions go to the coordinator | nadie | There is no notice, by the owner's decision: every working session would see it. The coordinator reminds a session that asks the owner. |
 | The coordinator settles details with the safest option | nadie | It is a judgment call, and it is written down for the owner to see. |
 | Every session with a name a person gave it | aviso | `/coordinate` lists the ones whose name the tool made up. |
-| No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, at the cap, so does the coordinator's notice on each turn. |
+| No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, on reaching the cap or a change in the count, so does the coordinator's notice. |
 | With a long suite queue, no sessions are opened to program | nadie | Which work needs the suite is a judgment call; `status` shows who is waiting for the turn. |
 | One full suite at a time | freno | The suite runner and the whole portable run do not start with the turn held by another live process, and they say who holds it. A suite someone runs another way is not seen. |
 | Adversarial passes one at a time | freno | The pass's gate exits 3 and `next` asks to wait with another in flight. Nothing stops launching the pass without asking the gate, and a quick fix's pass is not noted as in flight. After an hour, it only warns. |

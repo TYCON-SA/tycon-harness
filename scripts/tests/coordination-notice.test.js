@@ -295,11 +295,12 @@ test('T22 Notice_UnderBudget @story-8.122 @ac-22: 20 turnos con 6 sesiones, medi
   fs.openSync = function (p, ...rest) { if (String(p).startsWith(projects)) opened.push(String(p)); return origOpen.call(this, p, ...rest); };
   fs.readFileSync = function (p, ...rest) { if (typeof p === 'string' && p.startsWith(projects)) opened.push(p); return origRead.call(this, p, ...rest); };
   const times = [];
-  let last = null;
+  let first = null;
   try {
     for (let i = 0; i < 20; i++) {
       const t0 = process.hrtime.bigint();
-      last = C.capNotice(t.opts);
+      const n = C.capNotice(t.opts);
+      if (i === 0) first = n;
       times.push(Number(process.hrtime.bigint() - t0) / 1e6);
     }
   } finally { fs.openSync = origOpen; fs.readFileSync = origRead; }
@@ -307,8 +308,115 @@ test('T22 Notice_UnderBudget @story-8.122 @ac-22: 20 turnos con 6 sesiones, medi
   const median = (times[9] + times[10]) / 2;
   assert.ok(median < 300, `mediana ${median.toFixed(1)} ms`);
   assert.deepStrictEqual(opened, [], 'ninguna conversación abierta');
-  assert.match(last, /pasó el tope por 1/);
-  assert.ok(!/Titulo/.test(last), 'los nombres no salen de la conversación');
+  // la línea del tope sale en el primer turno (con la carpeta del estado vacía)
+  assert.match(first, /pasó el tope por 1/);
+  assert.ok(!/Titulo/.test(first), 'los nombres no salen de la conversación');
+});
+
+// ── The cap once per change ──────────────────────────────────────────────────────────────────────────────────────
+
+const capLine = (n) => (n || '').split('\n').filter((l) => /en el tope|pasó el tope/.test(l));
+const capFile = (t, sid = COORD) => path.join(t.state, 'coordination', `cap-notice-${sid}.json`);
+
+test('T31 Notice_Cap_OncePerCount @story-8.122 @ac-31: con el tope en 3 y 3 trabajando, la línea del tope sólo en el primer turno; lo demás del aviso sale igual', () => {
+  const t = toy();
+  busy(t, 's-a', 'Uno', 30);
+  busy(t, 's-b', 'Dos', 20);
+  busy(t, 's-c', 'Tres', 10);
+  const n1 = C.capNotice(t.opts);
+  assert.strictEqual(capLine(n1).length, 1, n1);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(capFile(t), 'utf8')), { working: 3, cap: 3 });
+  // en el segundo turno, una sesión de fondo quieta: su línea sale igual, la del tope no
+  session(t, 's-quieta', 'Quieta', { kind: 'bg', status: 'idle', statusUpdatedAt: mins(40) });
+  const n2 = C.capNotice({ ...t.opts, now: NOW + 60000 });
+  assert.strictEqual(capLine(n2).length, 0, n2);
+  assert.match(n2 || '', /Quieta está quieta/);
+  const n3 = C.capNotice({ ...t.opts, now: NOW + 120000 });
+  assert.strictEqual(capLine(n3).length, 0, n3);
+});
+
+test('T32 Notice_Cap_CountOrCapChange_SaysAgain @story-8.122 @ac-32: sale una vez en cada cambio del conteo o del tope; con los nombres cambiados y el mismo conteo, no', () => {
+  const t = toy();
+  for (const [sid, name] of [['s-a', 'Uno'], ['s-b', 'Dos'], ['s-c', 'Tres']]) busy(t, sid, name, 10);
+  assert.strictEqual(capLine(C.capNotice(t.opts)).length, 1);
+  busy(t, 's-d', 'Cuatro', 5);
+  const over = C.capNotice(t.opts);
+  assert.match(capLine(over)[0] || '', /pasó el tope por 1/);
+  assert.strictEqual(capLine(C.capNotice(t.opts)).length, 0, 'sale una vez');
+  fs.rmSync(path.join(t.home, '.claude', 'sessions', 's-d.json'));
+  assert.match(capLine(C.capNotice(t.opts))[0] || '', /en el tope \(3 de 3/);
+  fs.writeFileSync(path.join(t.home, '.claude', 'tycon.json'), JSON.stringify({ coordination: { max_working: 4 } }));
+  busy(t, 's-d', 'Cuatro', 5);
+  assert.match(capLine(C.capNotice(t.opts))[0] || '', /en el tope \(4 de 4/);
+  // otras sesiones con otros nombres, el mismo conteo: no sale
+  for (const sid of ['s-a', 's-b', 's-c', 's-d']) fs.rmSync(path.join(t.home, '.claude', 'sessions', `${sid}.json`));
+  for (const [sid, name] of [['s-e', 'Cinco'], ['s-f', 'Seis'], ['s-g', 'Siete'], ['s-h', 'Ocho']]) busy(t, sid, name, 5);
+  assert.strictEqual(capLine(C.capNotice(t.opts)).length, 0);
+});
+
+test('T33 Notice_Cap_BelowThenBack_SaysAgain @story-8.122 @ac-33: con 2 nada del tope; al volver a 3, la línea sale otra vez; debajo no escribe en cada turno', () => {
+  const t = toy();
+  for (const [sid, name] of [['s-a', 'Uno'], ['s-b', 'Dos'], ['s-c', 'Tres']]) busy(t, sid, name, 10);
+  assert.strictEqual(capLine(C.capNotice(t.opts)).length, 1);
+  fs.rmSync(path.join(t.home, '.claude', 'sessions', 's-c.json'));
+  assert.strictEqual(capLine(C.capNotice(t.opts)).length, 0);
+  const anotado = fs.statSync(capFile(t)).mtimeMs;
+  const contenido = fs.readFileSync(capFile(t), 'utf8');
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+  C.capNotice(t.opts);
+  assert.strictEqual(fs.readFileSync(capFile(t), 'utf8'), contenido);
+  assert.strictEqual(fs.statSync(capFile(t)).mtimeMs, anotado, 'debajo del tope no escribe en cada turno');
+  busy(t, 's-c', 'Tres', 1);
+  assert.strictEqual(capLine(C.capNotice(t.opts)).length, 1, 'al volver al tope sale otra vez');
+});
+
+test('T34 Notice_Cap_PerCoordinatorSession @story-8.122 @ac-34: otra coordinadora designada, con otro número de sesión, recibe la línea en su primer turno', () => {
+  const t = toy();
+  for (const [sid, name] of [['s-a', 'Uno'], ['s-b', 'Dos'], ['s-c', 'Tres']]) busy(t, sid, name, 10);
+  assert.strictEqual(capLine(C.capNotice(t.opts)).length, 1);
+  const other = 'coord-sid-2';
+  session(t, other, 'Coordinadora2', { status: 'busy', statusUpdatedAt: mins(0) });
+  fs.appendFileSync(path.join(t.state, 'gates.log'), `${JSON.stringify({ ts: new Date(NOW + 1000).toISOString(), name: 'relay-designation', status: 'ok', sesion: other, rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' })}\n`);
+  // la primera coordinadora ya no trabaja: no cuenta para el tope de la segunda
+  session(t, COORD, 'Coordinadora', { status: 'idle', statusUpdatedAt: mins(1) });
+  const n = C.capNotice({ ...t.opts, now: NOW + 2000, sessionId: other });
+  assert.strictEqual(capLine(n).length, 1, n);
+  assert.ok(fs.existsSync(capFile(t, other)));
+});
+
+test('T35 Notice_Cap_NotWritableOrBadFile_Repeats @story-8.122 @ac-35: sin poder anotar sale en cada turno, lo dice y no deja temporales; un archivo roto cuenta como no avisado', POSIX_PERMS, () => {
+  const ready = (t) => { for (const [sid, name] of [['s-a', 'Uno'], ['s-b', 'Dos'], ['s-c', 'Tres']]) busy(t, sid, name, 10); };
+  const t = toy();
+  ready(t);
+  const dir = path.join(t.state, 'coordination');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.chmodSync(dir, 0o500);
+  try {
+    for (const now of [NOW, NOW + 60000]) {
+      const n = C.capNotice({ ...t.opts, now });
+      assert.strictEqual(capLine(n).length, 1, `sale en cada turno: ${n}`);
+      assert.match(n, /No pude leer.*no pude anotar el aviso del tope/);
+    }
+  } finally { fs.chmodSync(dir, 0o755); }
+  // el archivo de la anotación es una carpeta
+  const u = toy();
+  ready(u);
+  fs.mkdirSync(capFile(u), { recursive: true });
+  for (const now of [NOW, NOW + 60000]) {
+    const n = C.capNotice({ ...u.opts, now });
+    assert.strictEqual(capLine(n).length, 1, n);
+    assert.match(n, /no pude anotar el aviso del tope/);
+  }
+  assert.deepStrictEqual(fs.readdirSync(path.join(u.state, 'coordination')).filter((f) => f.endsWith('.tmp')), []);
+  // roto: sale, se anota de nuevo y lo dice
+  const v = toy();
+  ready(v);
+  fs.mkdirSync(path.dirname(capFile(v)), { recursive: true });
+  fs.writeFileSync(capFile(v), '{ roto');
+  const n = C.capNotice(v.opts);
+  assert.strictEqual(capLine(n).length, 1, n);
+  assert.match(n, /No pude leer.*aviso del tope/);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(capFile(v), 'utf8')), { working: 3, cap: 3 });
 });
 
 // ── What the review round found ──────────────────────────────────────────────────────────────────────────────────
