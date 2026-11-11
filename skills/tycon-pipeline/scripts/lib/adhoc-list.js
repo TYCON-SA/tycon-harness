@@ -148,7 +148,7 @@ function variosTemas(reason) {
   if (/[;+]/.test(s)) return true;
   if ((s.match(/,/g) || []).length >= 2) return true;
   // una coma y después una «y», «e» u «o»: «a, b y c» es una enumeración; «a y su prueba», sin coma, no
-  return /,[^,]*(^|\s)(y|e|o)(\s|$)/i.test(s);
+  return /,[^,]*\s(y|e|o)(\s|$)/i.test(s);
 }
 
 /** ¿El motivo es vago? Nombra «varios», «arreglos», «pendientes», «etc.», «cosas» u «otros» en vez de qué se arregla. */

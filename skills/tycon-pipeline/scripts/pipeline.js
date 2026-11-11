@@ -3502,7 +3502,7 @@ function computeStart(args) {
       ramaSinLeer = `la de esta sesión (${repo})`;
     } else if (sinLeer.length) {
       ramaSinLeer = sinLeer.map((v) => `${v.sessionId} (${v.repoPath || 'sin repo en su marcador'})`).join(', ');
-    } else if (miRaiz && miRama && vistas.every((v) => real(v.raiz) !== real(miRaiz) && v.rama !== miRama)) {
+    } else if (vistas.every((v) => real(v.raiz) !== real(miRaiz) && v.rama !== miRama)) {
       const lista = vistas.map((v) => ({ sessionId: v.sessionId, branch: v.rama }));
       parallelWith = lista.length === 1 ? lista[0] : lista;
       actions.push(`PIPE-C0: la story ${storyId} también la trabaja ${lista.map((v) => `la sesión ${v.sessionId} en la rama ${v.branch}`).join(' y ')}, `
@@ -3726,7 +3726,7 @@ function computeStart(args) {
       // crudo, on-advisor-run.js y marker.js lo resolverían contra repoPath — coinciden sólo si
       // cwd == --repo. Con `--repo backend --story project/specs/x.md` desde el padre, la proyección
       // del roster resolvería un path inexistente y callaría con "mismo repo". Todo lector acepta absolutos.
-      storyId, storyPath: path.resolve(storyPath), repoPath: repo, ...(runDir ? { runDir } : {}), sprint: fm.sprint ? parseInt(fm.sprint, 10) || null : null,
+      storyId, storyPath: path.resolve(storyPath), repoPath: repo, runDir, sprint: fm.sprint ? parseInt(fm.sprint, 10) || null : null,
       // Dónde nace la evidencia de cierre: el repo de la story, aunque el código
       // esté en otro. Lo leen los pasos «Probar en vivo» y «Preparar el commit» para no tener que adivinarlo.
       evidenceDir: evid.dir || null,

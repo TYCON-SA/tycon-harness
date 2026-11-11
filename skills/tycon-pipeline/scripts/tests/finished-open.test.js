@@ -387,3 +387,12 @@ test('T31 Arranque_SeAcaboElTope_DiceLoNoMedido — lo que no se llegó a mirar 
   assert.doesNotMatch(conTiempo.lines.join('\n'), /no medido/);
   assert.equal(conTiempo.items.filter((i) => i.tipo === 'camino-corto').length, 4);
 });
+
+test('T32 CarpetasSinCommitear_RepoQueNoSeLista_LoDice — un repo cuyo `git worktree list` falla da su línea, no rompe la cuenta', async () => {
+  const C = casa();
+  const roto = path.join(C.home, 'repos', 'roto');
+  fs.mkdirSync(path.join(roto, '.git'), { recursive: true });
+  const lines = await F.unsavedFolders({ home: C.home, repos: [roto], env: { ...process.env, GIT_CEILING_DIRECTORIES: path.dirname(roto) } });
+  assert.equal(lines.length, 1, lines.join('\n'));
+  assert.match(lines[0], /repos[\\/]roto: no pude listar sus carpetas de trabajo$/);
+});

@@ -408,7 +408,7 @@ function armarPedido({ command, cwd, repo, gits, escritos }) {
   const sinSeguir = estado.split('\0').filter((x) => x.startsWith('? ')).map((x) => x.slice(2)).sort().map((rel) => {
     try { return `${rel}\0${sha(fs.readFileSync(path.join(repo, rel)))}`; } catch (e) { return `${rel}\0${e.code || 'ilegible'}`; }
   });
-  let real = cwd;
+  let real;
   try { real = fs.realpathSync(cwd); } catch (_) { real = cwd; }
   const guarda = loQueGuarda(gits, repo, escritos);
   const huella = sha(JSON.stringify({ comando: command, cwd: real, repo, rama, head, estado, preparado, sinPreparar, sinSeguir, hooks: hooks.hooks, conf: conf.mostrar, guarda })).slice(0, 16);
