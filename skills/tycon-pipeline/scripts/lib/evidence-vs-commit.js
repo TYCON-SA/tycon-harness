@@ -299,7 +299,7 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
       if (texto.codigo !== 0) return null;
       textos.push(texto.salida);
     }
-    const numero = historia.numero.replace(/\./g, '\\.');
+    const numero = historia.numero.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const marca = new RegExp(`@story-${numero}(?![\\w.])`);
     const criterios = new Set();
     for (const t of textos) {

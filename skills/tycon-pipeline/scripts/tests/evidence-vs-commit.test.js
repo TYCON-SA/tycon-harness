@@ -599,7 +599,7 @@ function labDeLaHistoria(prueba = conMarcas(1)) {
   git(repo, ['switch', '-q', '-c', 'feature/9-9-lab']);
   const ev = escribir(repo, '.advisors/dod-runtime/9.9-e2e-gate-20270101T000000Z.md', 'verdict=PASS\n');
   commit(repo, 'evidencia', 1700000100);
-  const juzgar = (f) => evidencia().crearJuez({ historia: HISTORIA_9_9 }).vigencia({ archivo: f, mtimeMs: Date.now(), evidencia: { ruta: ev, tsMs: 1700000100 * 1000 } });
+  const juzgar = (f, historia = HISTORIA_9_9) => evidencia().crearJuez({ historia }).vigencia({ archivo: f, mtimeMs: Date.now(), evidencia: { ruta: ev, tsMs: 1700000100 * 1000 } });
   return { repo, archivo, prueba: abs, ev, juzgar };
 }
 
@@ -730,4 +730,14 @@ test('EvidenceVsCommit_EvidenceVersionUnreadable_VoidsAll @story-8.263 @ac-15 �
   const r = juez.vigencia({ archivo: l.prueba, mtimeMs: Date.now(), evidencia: { ruta: l.ev, tsMs: 1700000100 * 1000 } });
   assert.equal(r.cuenta, false, JSON.stringify(r));
   assert.ok(!Array.isArray(r.criterios) || !r.criterios.length, JSON.stringify(r));
+});
+
+test('EvidenceVsCommit_StoryNumberWithRegexChars_ReadsItsCriteria @story-8.263 @ac-14 — un número de historia con caracteres de expresión se busca literal: lee sus criterios y no revienta', () => {
+  for (const numero of ['9.9(', '9.9[']) {
+    const historia = { numero, archivo: '/h/9-9-lab.md', catalogo: () => [{ numero, archivo: '/h/9-9-lab.md' }] };
+    const l = labDeLaHistoria(`test('caso @story-${numero} @ac-4', () => {}); // v1\n`);
+    escribir(l.repo, PRUEBA_9_9, `test('caso @story-${numero} @ac-4', () => {}); // v2\n`);
+    const r = l.juzgar(l.prueba, historia);
+    assert.deepStrictEqual([r.cuenta, r.regla, r.criterios], [false, 6, [4]], `${numero}: ${JSON.stringify(r)}`);
+  }
 });

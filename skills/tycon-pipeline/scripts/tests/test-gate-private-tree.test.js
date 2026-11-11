@@ -915,10 +915,10 @@ test('PrivateTree_SavedRun_ClosesWhenNothingReadsTheChange @story-8.263 @ac-6 @a
   assert.doesNotMatch(r.salida, /sin acotar/, r.salida);
   assert.match(r.salida, /cierra con la completa de las \d\d:\d\d/, r.salida);
   // un control del privado (sus ganchos o sus pipelines) pide la completa, aunque ninguna suite lo lea
-  for (const rel of ['scripts/hooks/nuevo.js', 'pipelines/nuevo.yml']) {
+  for (const rel of ['scripts/hooks/nuevo.js', 'pipelines/nuevo.yml', 'scripts/hooks/nuevo+1.js']) {
     escribir(lab.priv, rel, '// un control\n');
     r = portón(lab, env);
-    assert.match(r.salida, new RegExp(`corre la completa como siempre: cambió un control del privado \\(${rel.replace(/[./]/g, '\\$&')}\\)`), r.salida);
+    assert.match(r.salida, new RegExp(`corre la completa como siempre: cambió un control del privado \\(${rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`), r.salida);
   }
   // verde con el .gitignore del privado: volver a correr sin cambios no corre ninguna suite
   const otro = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });

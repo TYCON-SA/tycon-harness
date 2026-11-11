@@ -207,6 +207,21 @@ test('8.187 T9b Preparar_ImportsExternos_ComoLosVeClaudeCode @story-8.187 @ac-7 
   assert.strictEqual(PM.hasExternalImports(missing, t.home), false, 'un archivo que no existe no se importa');
 });
 
+test('8.187 T9d Preparar_ComentariosHtml_ComoLosQuitaClaudeCode @story-8.187 @ac-7 @ac-8: cada comentario se quita una vez, de izquierda a derecha; lo que queda al quitarlo no se vuelve a recorrer', () => {
+  const t = toy();
+  const afuera = path.join(t.root, 'afuera.md');
+  fs.writeFileSync(afuera, '# afuera\n');
+  const casos = [
+    [`<!<!-- x -->-- @${afuera} -->\n`, true, 'el comentario que se arma al quitar otro no esconde el import'],
+    [`<!-- uno --> @${afuera} <!-- dos -->\n`, true, 'entre dos comentarios es texto'],
+    [`<!--> @${afuera} -->\n`, false, 'el cierre se busca después de la apertura'],
+    [`<!-- sin cerrar @${afuera}\n`, true, 'uno sin cerrar queda como texto'],
+  ];
+  casos.forEach(([claudeMd, esperado, motivo], i) => {
+    assert.strictEqual(PM.hasExternalImports(repo(t, `comentario-${i}`, { claudeMd }), t.home), esperado, motivo);
+  });
+});
+
 test('8.187 T9c Preparar_ImportsRechazados_NoLosPidePorSiempre @story-8.187 @ac-8: imports que la persona ya rechazó no se piden otra vez (Claude Code no vuelve a preguntar); la máquina puede quedar lista', () => {
   const t = toy();
   const afuera = path.join(t.root, 'afuera.md');
