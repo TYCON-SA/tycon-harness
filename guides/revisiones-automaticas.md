@@ -92,7 +92,7 @@ Al escribir los hallazgos y al cerrar el paso «Hallazgos», el arnés compara `
 
 Un revisor ilegible nunca cuenta como «sin críticos». Se vuelve a correr, o lo exime una persona: `marker.js
 waive-critical --rule SIN-REPORTE --file <revisor> --reason '<por qué>'`. Una exención por delegación no alcanza para dar algo por arreglado:
-eso lo cierra una vuelta nueva del revisor o el dueño. Una corrida sin nada anotado (por ejemplo, de antes de este
+eso lo cierra una vuelta nueva del revisor o el dueño. Una ejecución sin nada anotado (por ejemplo, de antes de este
 control) lo dice en una línea y sigue.
 
 ## Las opciones
