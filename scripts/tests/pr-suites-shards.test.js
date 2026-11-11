@@ -33,6 +33,8 @@ const { findGitBash } = require('../lib/git-bash.js');
 const ROOT = path.resolve(__dirname, '..', '..');
 const YAML = path.join(ROOT, 'pipelines/azure-pipelines-maintainers-pr.yml');
 const PLAN_STEP = 'Qué suites corren';
+const TIMES_STEP = 'Los tiempos medidos de Azure';
+const CAPS_STEP = 'Los topes medidos de cada suite';
 const RUN_STEP = 'Correr las suites de este trabajo';
 const JOIN_STEP = 'Juntar lo que midió cada trabajo';
 const VERDICT_STEP = 'Veredicto: ¿algún rojo NUEVO?';
@@ -247,8 +249,10 @@ const artifacts = (dir) => path.join(workspace(dir), 'artifacts');
  * también la matriz que publicó (`matrix`, el texto tal cual) y cuántos trabajos dice (`of`). Por defecto fuerza el
  * máximo (`SUITES_JOB_BUDGET=1`: cada suite de juguete pasa el presupuesto), para que estas pruebas sigan midiendo el
  * reparto entre varios trabajos; `{ SUITES_JOB_BUDGET: '' }` deja el presupuesto de verdad.
+ * `steps.fetch`: corre antes «Los tiempos medidos de Azure» con una bajada de juguete en lugar de fetch-suite-times.js
+ * (el guion de juguete que se le pase); `steps.weights`: todos los llamados al repartidor leen ese archivo de pesos.
  */
-function runPlan(dir, max, changed = ['scripts/lab.js'], env = {}) {
+function runPlan(dir, max, changed = ['scripts/lab.js'], env = {}, steps = {}) {
   const temp = path.join(dir, 'temp-validar');
   const staging = path.join(dir, 'staging-validar');
   fs.mkdirSync(temp, { recursive: true });
@@ -264,8 +268,15 @@ function runPlan(dir, max, changed = ['scripts/lab.js'], env = {}) {
   fs.mkdirSync(path.join(temp, 'snapshot'), { recursive: true });
   if (fs.existsSync(photo)) fs.copyFileSync(photo, path.join(temp, 'snapshot', 'nightly-suites.json'));
   else fs.rmSync(path.join(temp, 'snapshot', 'nightly-suites.json'), { force: true });
-  const body = expand(stepBody(PLAN_STEP), { max, sources: path.join(dir, 'repo'), staging, temp, everything: changed ? 'no' : 'si' });
-  const r = bash(dir, body, 'plan', { SUITES_JOB_BUDGET: '1', ...env });
+  const values = { max, sources: path.join(dir, 'repo'), staging, temp, everything: changed ? 'no' : 'si' };
+  const withWeights = (body) => (steps.weights ? body.split('--weight-set pr').join(`--weight-set pr --weights "${slash(steps.weights)}"`) : body);
+  let fetched = { code: 0, out: '' };
+  if (steps.fetch) {
+    const body = expand(stepBody(TIMES_STEP), values).split('node scripts/ci/fetch-suite-times.js').join(`node "${slash(steps.fetch)}"`);
+    fetched = bash(dir, body, 'times', env);
+  }
+  const plain = bash(dir, withWeights(expand(stepBody(PLAN_STEP), values)), 'plan', { SUITES_JOB_BUDGET: '1', ...env });
+  const r = { code: fetched.code || plain.code, out: `${fetched.out}${plain.out}` };
   const published = r.out.match(/^##vso\[task\.setvariable variable=matrix;isOutput=true\](.*)$/m);
   const matrix = published ? published[1] : null;
   let of = null;
@@ -767,21 +778,38 @@ test('T22 RunSuites_RedRetry_RespectsJobDeadline — la 2ª pasada de una roja t
   for (const x of [r, r2]) assert.doesNotMatch(shardFile(x, 'failures.txt'), /no-medida/, 'una roja medida nunca sale no medida');
 });
 
+// 🔴 El reparto con los tiempos medidos vive en el YAML del PRIVADO, y la validación cruza el público de main con el
+// privado del pedido. Mientras el privado no traiga el paso que baja los tiempos antes del reparto, estas pruebas se
+// saltean: el público entra primero y no puede dejar rojas las validaciones de los demás pedidos privados.
+const MEASURED_SPLIT = text.includes(`displayName: '${TIMES_STEP}'`);
+const OLD_SPLIT = 'NO MEDIDO — el privado todavía no reparte con los tiempos medidos (pipelines/azure-pipelines-maintainers-pr.yml sin el paso «Los tiempos medidos de Azure»)';
+const NO_MEASURED_SPLIT = NO_BASH || (!MEASURED_SPLIT && OLD_SPLIT);
+
 test('T17 PrShards_ValidarFetchesTimesAndPublishesCaps — Validar baja los tiempos y publica los topes; cada trabajo sabe su plazo', { skip: !CUT_RETRY && 'NO MEDIDO — la plantilla del privado todavía no reintenta la cortada (pipelines/templates/run-suites.yml sin cut.txt)' }, () => {
   const all = jobs();
-  const step = stepBody('Los topes medidos de cada suite');
+  // La bajada vive en su propio paso, antes del reparto, o (la forma de antes) dentro de «Los topes medidos».
+  const step = stepBody(MEASURED_SPLIT ? TIMES_STEP : CAPS_STEP);
   assert.match(step, /node scripts\/ci\/run-capped\.js --seconds 150 --mark "[^"]+" -- node scripts\/ci\/fetch-suite-times\.js --timeout 120 \$\{FETCH_ARG\[@\]\+"\$\{FETCH_ARG\[@\]\}"\} --out "\$TIMES"/,
     'baja los tiempos con su tope de 120 s y el de afuera, más largo, de respaldo');
   // cuántas corridas baja y cuántas mira salen de la regla del archivo de pesos, no de los números del guion
   assert.match(step, /suite_cap\.measured/, 'lee runs y scan de pr.suite_cap.measured');
   assert.match(step, /FETCH_ARG=\(--runs "\$_RUNS" --scan "\$_SCAN"\)/);
-  assert.ok(step.indexOf('fetch-suite-times.js') < step.indexOf('suites-shard.js caps'), 'baja antes de calcular');
-  assert.match(step, /if node scripts\/ci\/run-capped\.js[^\n]*; then\n\s*MEASURED_ARG=\(--measured "\$TIMES"\)/, 'los tiempos sólo si la bajada salió 0');
-  assert.match(step, /##vso\[task\.logissue type=warning\]no pude bajar los tiempos medidos: los topes salen del peso, como antes/);
-  assert.match(step, /> "\$OUT\/caps\.tsv"/, 'caps.tsv va en la carpeta de suites-plan');
+  const caps = stepBody(CAPS_STEP);
+  if (MEASURED_SPLIT) {
+    assert.match(step, /; then\n\s*cp -R "\$TIMES" "\$OUT\/tiempos"/, 'los tiempos van a suites-plan sólo si la bajada salió 0');
+    assert.match(step, /##vso\[task\.logissue type=warning\]no pude bajar los tiempos medidos: el reparto y los topes salen del peso, como antes/);
+    assert.doesNotMatch(caps, /fetch-suite-times\.js/, 'los topes no bajan de nuevo');
+    assert.match(caps, /MEASURED_ARG=\(--measured "\$OUT\/tiempos"\)/, 'los topes leen la carpeta que bajó Validar');
+  } else {
+    assert.ok(step.indexOf('fetch-suite-times.js') < step.indexOf('suites-shard.js caps'), 'baja antes de calcular');
+    assert.match(step, /if node scripts\/ci\/run-capped\.js[^\n]*; then\n\s*MEASURED_ARG=\(--measured "\$TIMES"\)/, 'los tiempos sólo si la bajada salió 0');
+    assert.match(step, /##vso\[task\.logissue type=warning\]no pude bajar los tiempos medidos: los topes salen del peso, como antes/);
+  }
+  assert.match(caps, /> "\$OUT\/caps\.tsv"/, 'caps.tsv va en la carpeta de suites-plan');
   const validar = all.Validar;
-  assert.ok(validar.indexOf("displayName: 'Los topes medidos de cada suite'") < validar.indexOf("artifact: 'suites-plan-a$(System.JobAttempt)'"), 'antes de publicar suites-plan');
-  assert.match(validar, /displayName: 'Los topes medidos de cada suite'\n(?: {8}.*\n)*? {8}env:\n {10}SYSTEM_ACCESSTOKEN: \$\(System\.AccessToken\)\n/, 'con el token de la corrida');
+  const fetchName = MEASURED_SPLIT ? TIMES_STEP : CAPS_STEP;
+  assert.ok(validar.indexOf(`displayName: '${CAPS_STEP}'`) < validar.indexOf("artifact: 'suites-plan-a$(System.JobAttempt)'"), 'antes de publicar suites-plan');
+  assert.match(validar, new RegExp(`displayName: '${fetchName}'\\n(?: {8}.*\\n)*? {8}env:\\n {10}SYSTEM_ACCESSTOKEN: \\$\\(System\\.AccessToken\\)\\n`), 'con el token de la corrida');
   for (const [name, minutes] of [['Bench', 40], ['Suites', 40], ['SuitesLargo', 100]]) {
     const job = all[name];
     assert.match(job, new RegExp(`\\n {4}timeoutInMinutes: ${minutes}\\n`), `${name}: su tope no cambia`);
@@ -789,6 +817,112 @@ test('T17 PrShards_ValidarFetchesTimesAndPublishesCaps — Validar baja los tiem
     const steps = job.slice(job.indexOf('\n    steps:\n')).split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
     assert.match(steps, /^\n {4}steps:\n {6}- script: echo "##vso\[task\.setvariable variable=SUITES_JOB_STARTED\]\$\(date \+%s\)"\n {8}displayName: 'La hora de arranque del trabajo'\n {6}- checkout: self\n/,
       `${name}: la hora de arranque, primero, antes del checkout, y sin correr nada del árbol`);
+  }
+});
+
+// ── el reparto con los tiempos medidos de Azure ────────────────────────────────────────────────────────────────────
+// Validar baja los tiempos una vez, antes del reparto, y todos los llamados que pesan usan esa carpeta o ninguno.
+/** Una bajada de juguete: escribe `runs` corridas de Azure con los segundos de cada suite y sale 0, o sale `exit`. */
+function fakeFetch(dir, seconds, { runs = 3, exit = 0 } = {}) {
+  const file = path.join(dir, `fake-fetch-${exit}.js`);
+  const lines = Array.from({ length: runs }, (_, i) => JSON.stringify({ v: 1, ts: `2026-11-0${i + 1}T10:00:00.000Z`, origen: 'ci-azure', repo: 'r',
+    workers: 2, nucleos: 2, carga: 1, wall_ms: 1, suites: Object.entries(seconds).map(([n, s]) => ({ s: `tests/${n}`, ms: s * 1000, exit: 0 })) }));
+  fs.writeFileSync(file, [
+    "const fs = require('fs'); const path = require('path');",
+    "const a = process.argv.slice(2); const out = a[a.indexOf('--out') + 1];",
+    exit ? `console.log('tiempos: no pude (juguete)'); process.exit(${exit});` : '',
+    "fs.mkdirSync(out, { recursive: true });",
+    `fs.writeFileSync(path.join(out, '1-suites-shard-1-a1.jsonl'), ${JSON.stringify(`${lines.join('\n')}\n`)});`,
+    "console.log('tiempos: 3 corrida(s) (juguete)');", ''].join('\n'));
+  return file;
+}
+// Por peso las cuatro pesan lo mismo y se alternan por nombre (a y c, b y d); por lo medido, a y d (100 s) abren un
+// trabajo cada una y b y c (1 s) completan: a y b, c y d.
+const FOUR = ['lab-a.test.sh', 'lab-b.test.sh', 'lab-c.test.sh', 'lab-d.test.sh'];
+const FOUR_TIMES = { 'lab-a.test.sh': 100, 'lab-b.test.sh': 1, 'lab-c.test.sh': 1, 'lab-d.test.sh': 100 };
+const fourToy = () => toy(FOUR.map((n) => [n, GREEN_SH]));
+const planTimes = (dir) => path.join(dir, 'staging-validar', 'suites-plan', 'tiempos');
+
+test('PrShards_ValidarFetchesBeforeThePlan — la bajada va antes del reparto y todos los llamados usan su carpeta', { skip: !MEASURED_SPLIT && OLD_SPLIT }, () => {
+  const validar = jobs().Validar;
+  assert.ok(validar.indexOf(`displayName: '${TIMES_STEP}'`) < validar.indexOf(`displayName: '${PLAN_STEP}'`), 'la bajada, antes de «Qué suites corren»');
+  const fetch = stepBody(TIMES_STEP);
+  assert.match(fetch, /cp -R "\$TIMES" "\$OUT\/tiempos"/, 'deja los tiempos en suites-plan, que viaja a cada trabajo y al veredicto');
+  assert.match(fetch, /rm -rf "\$OUT\/tiempos"/, 'si la bajada falla, no queda carpeta');
+  assert.match(fetch, /\bexit 0\s*$/, 'la bajada no frena Validar');
+  const guard = /MEASURED_ARG=\(\)[^\n]*\n(?:[^\n]*\n)*?[^\n]*\[ -d "(\$OUT\/|\$\{PLAN_DIR\})tiempos" \] && \[ -n "\$\(ls -A "\1tiempos"[^\n]*MEASURED_ARG=\(--measured "\1tiempos"\)/;
+  for (const name of [PLAN_STEP, CAPS_STEP, RUN_STEP, JOIN_STEP]) {
+    assert.match(stepBody(name), guard, `«${name}»: la carpeta sólo si existe y no está vacía`);
+  }
+  for (const sub of ['jobs', 'plan', 'long', 'list', 'merge']) {
+    assert.match(shardCall(sub), /\$\{MEASURED_ARG\[@\]\+"\$\{MEASURED_ARG\[@\]\}"\}/, `${sub} lleva la carpeta de tiempos`);
+  }
+  assert.doesNotMatch(stepBody(JOIN_STEP), /fetch-suite-times/, 'el veredicto no baja nada');
+  assert.doesNotMatch(stepBody(RUN_STEP), /fetch-suite-times/, 'cada trabajo, tampoco');
+});
+
+test('PrShards_ValidarSteps_MeasuredOrWeight — con la bajada en 0 el plan sale de lo medido; con 3, por peso y lo dice', { skip: NO_MEASURED_SPLIT }, () => {
+  const dir = fourToy();
+  const ok = runPlan(dir, maxShards(), ['scripts/lab.js'], {}, { fetch: fakeFetch(dir, FOUR_TIMES) });
+  assert.strictEqual(ok.code, 0, ok.out);
+  assert.ok(fs.existsSync(planTimes(dir)), `tiempos/ queda en suites-plan\n${ok.out}`);
+  assert.match(ok.out, /total: 4 suite\(s\) · ~202 s .* · 4 medidas en Azure, 0 por peso/, 'el plan sale de lo medido');
+  assert.match(ok.out, /s medidos en el trabajo más cargado/, 'el trabajo largo, también');
+  assert.doesNotMatch(ok.out, /no pude (bajar|repartir)/);
+  const off = fourToy();
+  const no = runPlan(off, maxShards(), ['scripts/lab.js'], {}, { fetch: fakeFetch(off, FOUR_TIMES, { exit: 3 }) });
+  assert.strictEqual(no.code, 0, no.out);
+  assert.ok(!fs.existsSync(planTimes(off)), 'sin carpeta');
+  assert.match(no.out, /##vso\[task\.logissue type=warning\]no pude bajar los tiempos medidos: el reparto y los topes salen del peso, como antes/);
+  assert.match(no.out, /sin peso medido/, 'el plan, por peso');
+  assert.doesNotMatch(no.out, /\d+ medidas en Azure|~\d+ s medidos/);
+});
+
+test('RunSuites_ListUsesPlanTimes — cada trabajo pide su lista con los tiempos que viajan en suites-plan', { skip: NO_MEASURED_SPLIT || NO_CUT_RETRY }, () => {
+  const listOf = (withTimes) => {
+    const dir = fourToy();
+    const plan = runPlan(dir, maxShards(), ['scripts/lab.js'], {}, { fetch: fakeFetch(dir, FOUR_TIMES) });
+    assert.strictEqual(plan.code, 0, plan.out);
+    if (!withTimes) fs.rmSync(path.join(workspace(dir), 'suites-plan', 'suites-plan-a1', 'tiempos'), { recursive: true, force: true });
+    const r = runShard(dir, 1, 2);
+    assert.strictEqual(r.code, 0, r.out);
+    return shardFile(r, 'list.txt').split('\n').filter(Boolean).map((l) => path.posix.basename(slash(l)));
+  };
+  assert.deepStrictEqual(listOf(true), ['lab-a.test.sh', 'lab-b.test.sh'], 'con tiempos/: la partición medida de Validar');
+  assert.deepStrictEqual(listOf(false), ['lab-a.test.sh', 'lab-c.test.sh'], 'sin tiempos/: la de peso');
+});
+
+test('PrShards_ValidarMeasuredCallFails_AllByWeight — si un llamado del reparto falla con la carpeta, todo por peso y sin carpeta', { skip: NO_MEASURED_SPLIT }, () => {
+  const dir = fourToy();
+  // Un juego sin la regla de los tiempos medidos: con la carpeta, plan sale 2; sin ella, reparte por peso.
+  const real = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'suites-weights.json'), 'utf8'));
+  delete real.pr.suite_cap.measured;
+  const weights = path.join(dir, 'weights-sin-regla.json');
+  fs.writeFileSync(weights, JSON.stringify(real));
+  const r = runPlan(dir, maxShards(), ['scripts/lab.js'], {}, { fetch: fakeFetch(dir, FOUR_TIMES), weights });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.ok(!fs.existsSync(planTimes(dir)), 'la carpeta no se publica: ningún trabajo ni el veredicto la usan');
+  assert.match(r.out, /##vso\[task\.logissue type=warning\]no pude repartir con los tiempos medidos: el reparto y los topes salen del peso, como antes\n {3}el motivo: [^\n]*suite_cap\.measured/);
+  assert.strictEqual((r.out.match(/no pude repartir con los tiempos medidos/g) || []).length, 1, 'el aviso, una vez');
+  assert.match(r.out, /sin peso medido/, 'el plan, por peso');
+  assert.match(r.out, /s de peso por trabajo/, 'el trabajo largo, por peso');
+  assert.doesNotMatch(r.out, /\d+ medidas en Azure|~\d+ s medidos/, 'nada del intento medido queda en el registro');
+  assert.ok(r.matrix, 'Validar publica la matriz igual');
+  // lo mismo si el que falla con la carpeta es jobs o long: un juego sin el número medido que cada uno necesita
+  for (const [key, call] of [['job_budget_measured', 'jobs'], ['job_deadline_measured', 'long']]) {
+    const each = fourToy();
+    const set = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'suites-weights.json'), 'utf8'));
+    delete set.pr[key];
+    const file = path.join(each, `weights-sin-${key}.json`);
+    fs.writeFileSync(file, JSON.stringify(set));
+    // (jobs con el presupuesto de verdad: el `--budget` que fuerza el juguete no necesita el número medido)
+    const env = call === 'jobs' ? { SUITES_JOB_BUDGET: '' } : {};
+    const x = runPlan(each, maxShards(), ['scripts/lab.js'], env, { fetch: fakeFetch(each, FOUR_TIMES), weights: file });
+    assert.strictEqual(x.code, 0, x.out);
+    assert.ok(!fs.existsSync(planTimes(each)), `${call}: la carpeta no se publica`);
+    assert.match(x.out, new RegExp(`no pude repartir con los tiempos medidos: el reparto y los topes salen del peso, como antes\\n {3}el motivo: ${call}: [^\\n]*${key}`));
+    assert.match(x.out, /sin peso medido/, `${call}: el plan, por peso`);
+    assert.doesNotMatch(x.out, /\d+ medidas en Azure|~\d+ s medidos/, `${call}: nada del intento medido queda en el registro`);
   }
 });
 

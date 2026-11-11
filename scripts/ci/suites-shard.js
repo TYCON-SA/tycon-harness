@@ -104,6 +104,18 @@
  * cambia. La suite cortada en la validación ya no queda no medida de entrada: su trabajo la reintenta una vez, sola y con
  * el doble de tope (`retries.json` la anota con `primera: "cortada"`).
  *
+ * EL REPARTO CON LO MEDIDO (`--measured <carpeta>` en `list`, `plan`, `merge`, `jobs` y `long`): con los pesos a mano
+ * cada trabajo de la validación traía ~2010 s de peso y ~4000 s medidos en el agente, llegaba lleno al plazo y no le
+ * quedaba tiempo para reintentar una cortada. Con la misma carpeta y la misma regla que los topes medidos, el peso de
+ * cada suite con al menos `min` pasadas es la mediana de sus `last` más nuevas (sin `factor`, piso ni techo); las demás
+ * llevan su peso de siempre. `jobs` divide la carga medida por `job_budget_measured` y `long` compara la carga del
+ * trabajo MÁS cargado con `job_deadline_measured`, que deja lugar para reintentar sola una cortada. Igual que con
+ * `--only` y el juego: `list`, `plan`, `merge`, `jobs` y `long` tienen que recibir la MISMA carpeta, o `merge`
+ * esperaría otro reparto. Una carpeta que no existe, un juego sin `suite_cap.measured` o sin los dos números medidos
+ * es un pedido negado: nunca reparte por peso en silencio. Una carpeta legible donde NINGUNA suite junta `min` pasadas
+ * reparte todo por peso, como sin la opción, y los tres lo dicen en su línea: los presupuestos medidos no se comparan
+ * con cargas que son todas de peso. Sin la opción, la salida de siempre, byte por byte.
+ *
  * Lo que cada trabajo deja en su carpeta `suites-shard-<i>-a<intento>/`: `ran.txt` (las que corrió, una por línea),
  * `failures.txt` (las rojas, las «(ausente)» y las «(no-medida)» que cortó su tope), `red-output/<suite>.txt` (la salida
  * de cada roja, o el motivo de cada no medida), `done.txt` (sólo la validación: cada suite que terminó, de cualquier
@@ -154,7 +166,8 @@ const USAGE = 'uso: suites-shard.js list --shard <i> --of <n> --skills <dir> --s
   + '     suites-shard.js of --matrix <la matriz>\n'
   + '     opciones: --suites <suites.json> · --weights <pesos.json> · --scripts <raíz scripts del arnés> · --only <archivo>\n'
   + '               --weight-set <nombre> (un juego de pesos del archivo; la validación de cada rama pide «pr»)\n'
-  + '               --exclusive-apart (las exclusive de suites.json van al trabajo del banco: list --shard bench)\n';
+  + '               --exclusive-apart (las exclusive de suites.json van al trabajo del banco: list --shard bench)\n'
+  + '               --measured <carpeta> (list, plan, merge, jobs y long: el reparto con los tiempos medidos en Azure)\n';
 /** El trabajo del banco, como trabajo de suites: su nombre en `--shard` y en la carpeta que publica. */
 const BENCH_SHARD = 'bench';
 
@@ -228,21 +241,25 @@ function readWeights(file, set = null) {
   const base = checkWeights(data, `el archivo de pesos (${file})`);
   // El juego del nocturno no trae `job_budget`: el nocturno corre siempre todos sus trabajos. Su `suite_cap` (el de
   // arriba) es el tope de cada suite del banco nocturno.
-  if (set === null) return { ...base, budget: null, deadline: null, cap: readCapRule(data.suite_cap, `el archivo de pesos (${file})`) };
+  if (set === null) return { ...base, budget: null, deadline: null, budgetMeasured: null, deadlineMeasured: null, cap: readCapRule(data.suite_cap, `el archivo de pesos (${file})`) };
   const chosen = data[set];
   if (!chosen || typeof chosen !== 'object' || Array.isArray(chosen)) throw new Refused(`el archivo de pesos (${file}) no trae el juego «${set}» que pide --weight-set`);
   const own = checkWeights(chosen, `el juego de pesos «${set}» (${file})`);
   if (chosen.job_budget !== undefined && !(typeof chosen.job_budget === 'number' && Number.isFinite(chosen.job_budget) && chosen.job_budget > 0)) {
     throw new Refused(`el juego de pesos «${set}» (${file}) trae «job_budget» y no es un número mayor que 0: ${JSON.stringify(chosen.job_budget)}`);
   }
-  if (chosen.job_deadline !== undefined && !(typeof chosen.job_deadline === 'number' && Number.isFinite(chosen.job_deadline) && chosen.job_deadline > 0)) {
-    throw new Refused(`el juego de pesos «${set}» (${file}) trae «job_deadline» y no es un número mayor que 0: ${JSON.stringify(chosen.job_deadline)}`);
+  for (const key of ['job_deadline', 'job_budget_measured', 'job_deadline_measured']) {
+    if (chosen[key] !== undefined && !(typeof chosen[key] === 'number' && Number.isFinite(chosen[key]) && chosen[key] > 0)) {
+      throw new Refused(`el juego de pesos «${set}» (${file}) trae «${key}» y no es un número mayor que 0: ${JSON.stringify(chosen[key])}`);
+    }
   }
   return {
     fallback: own.fallback,
     weights: { ...base.weights, ...own.weights },
     budget: chosen.job_budget === undefined ? null : chosen.job_budget,
     deadline: chosen.job_deadline === undefined ? null : chosen.job_deadline,
+    budgetMeasured: chosen.job_budget_measured === undefined ? null : chosen.job_budget_measured,
+    deadlineMeasured: chosen.job_deadline_measured === undefined ? null : chosen.job_deadline_measured,
     cap: readCapRule(chosen.suite_cap, `el juego de pesos «${set}» (${file})`),
   };
 }
@@ -333,8 +350,13 @@ function restrictTo(suites, file) {
   return suites.filter((s) => wanted.has(s.name));
 }
 
-/** La lista (con `--only`, sólo las que corren) y los pesos del juego pedido. */
-function load(argv) {
+/**
+ * La lista (con `--only`, sólo las que corren) y los pesos del juego pedido. Con `measure` y `--measured <carpeta>`, el
+ * peso de cada suite con al menos `min` pasadas medidas es la mediana de sus `last` más nuevas (`measured` dice cuáles).
+ * Si NINGUNA suite junta `min` pasadas (una carpeta con renglones ilegibles o de otro origen), todo va por peso, como
+ * sin la opción, y `byWeight` lo dice: los presupuestos medidos no se comparan con cargas que son todas de peso.
+ */
+function load(argv, { measure = false } = {}) {
   const scriptsRoot = option(argv, '--scripts') || path.resolve(__dirname, '..');
   let suites = readSuites(option(argv, '--suites') || path.join(scriptsRoot, 'tests', 'suites.json'));
   if (argv.includes('--only')) {
@@ -347,20 +369,42 @@ function load(argv) {
     set = option(argv, '--weight-set');
     if (!set) throw new Refused('--weight-set viene sin nombre: sin él no sé con qué pesos repartir');
   }
-  const weights = readWeights(option(argv, '--weights') || path.join(__dirname, 'suites-weights.json'), set);
+  let weights = readWeights(option(argv, '--weights') || path.join(__dirname, 'suites-weights.json'), set);
+  let measured = null;
+  let byWeight = null;
+  if (measure && argv.includes('--measured')) {
+    const { byName } = readMeasured(argv, weights);
+    const own = {};
+    for (const suite of suites) {
+      const median = measuredMedian(byName.get(suite.name), weights.cap.measured);
+      if (median && median.ms > 0) own[suite.name] = median.ms / 1000;
+    }
+    if (Object.keys(own).length) {
+      weights = { ...weights, weights: { ...weights.weights, ...own } };
+      measured = new Set(Object.keys(own));
+    } else {
+      byWeight = ` · con --measured, ninguna suite junta ${weights.cap.measured.min} pasadas medidas en Azure: todo por peso`;
+    }
+  }
   // --exclusive-apart (tramo I): las que corren solas no entran al reparto; son la lista del trabajo del banco
   const apart = argv.includes('--exclusive-apart');
-  return { suites, weights, apart, regular: apart ? suites.filter((s) => !s.exclusive) : suites, bench: apart ? suites.filter((s) => s.exclusive) : [] };
+  return { suites, weights, measured, byWeight, apart, regular: apart ? suites.filter((s) => !s.exclusive) : suites, bench: apart ? suites.filter((s) => s.exclusive) : [] };
 }
 
-/** Lo que piden list, plan y merge: cuántos trabajos, la lista y el reparto. */
+/** Cuántas de `suites` salieron de lo medido y cuántas de su peso, para el registro. */
+function measuredCounts(suites, measured) {
+  const count = suites.filter((s) => measured.has(s.name)).length;
+  return `${count} medidas en Azure, ${suites.length - count} por peso`;
+}
+
+/** Lo que piden list, plan y merge: cuántos trabajos, la lista y el reparto (con `--measured`, por lo medido). */
 function prepare(argv) {
   const count = positiveInteger(option(argv, '--of'));
   if (count === null) throw new Refused(`--of tiene que ser un entero mayor que 0 (vino ${JSON.stringify(option(argv, '--of'))})`);
-  const { suites, weights, apart, regular, bench } = load(argv);
+  const { suites, weights, measured, byWeight, apart, regular, bench } = load(argv, { measure: true });
   // Con todo el plan en el trabajo del banco se pide igual UN trabajo de suites (la matriz no puede quedar sin patas).
   if (count > Math.max(regular.length, bench.length ? 1 : 0)) throw new Refused(`--of ${count} pasa la cantidad de suites (${regular.length}): algún trabajo quedaría vacío`);
-  return { count, suites, weights, apart, bench, shards: assign(regular, weights, count) };
+  return { count, suites, weights, measured, byWeight, apart, bench, shards: assign(regular, weights, count) };
 }
 
 function commandList(argv, write) {
@@ -386,14 +430,19 @@ function commandList(argv, write) {
 }
 
 function commandPlan(argv, write) {
-  const { count, suites, weights, shards, bench } = prepare(argv);
+  const { count, suites, weights, measured, byWeight, shards, bench } = prepare(argv);
   const width = String(suites.length).length;
   const lines = shards.map((shard, i) => `trabajo ${i + 1} de ${count}: ${String(shard.suites.length).padStart(width)} suite(s) · ~${Math.round(shard.load)} s (${Math.round(shard.load / 60)} min)`);
   const benchLoad = bench.reduce((sum, suite) => sum + weightOf(suite, weights), 0);
   if (bench.length) lines.push(`trabajo del banco: ${bench.length} suite(s) que corren solas · ~${Math.round(benchLoad)} s (${Math.round(benchLoad / 60)} min), de a una, después del banco`);
   const total = shards.reduce((sum, shard) => sum + shard.load, 0) + benchLoad;
-  const unweighted = suites.filter((s) => !Object.prototype.hasOwnProperty.call(weights.weights, s.name)).length;
-  lines.push(`total: ${suites.length} suite(s) · ~${Math.round(total)} s (${Math.round(total / 60)} min) · ${unweighted} sin peso medido (${weights.fallback} s cada una por defecto)`);
+  const head = `total: ${suites.length} suite(s) · ~${Math.round(total)} s (${Math.round(total / 60)} min)`;
+  if (measured) {
+    lines.push(`${head} · ${measuredCounts(suites, measured)}`);
+  } else {
+    const unweighted = suites.filter((s) => !Object.prototype.hasOwnProperty.call(weights.weights, s.name)).length;
+    lines.push(`${head} · ${unweighted} sin peso medido (${weights.fallback} s cada una por defecto)${byWeight || ''}`);
+  }
   write(`${lines.join('\n')}\n`);
 }
 
@@ -410,20 +459,24 @@ function commandJobs(argv, write, complain) {
     budget = typeof text === 'string' && /^\d+(\.\d+)?$/.test(text) && Number(text) > 0 ? Number(text) : null;
     if (budget === null) throw new Refused(`--budget tiene que ser un número de segundos mayor que 0 (vino ${JSON.stringify(text)})`);
   }
-  const { weights, regular, bench } = load(argv);
-  if (budget === null) budget = weights.budget;
+  const { weights, measured, byWeight, regular, bench } = load(argv, { measure: true });
+  if (budget === null) budget = measured ? weights.budgetMeasured : weights.budget;
+  if (budget === null && measured) throw new Refused('el juego de pesos no trae «job_budget_measured» (lo medido que entra en un trabajo) y no vino --budget: el número de trabajos no se adivina');
   if (budget === null) throw new Refused('el juego de pesos no trae «job_budget» (lo que entra en un trabajo) y no vino --budget: el número de trabajos no se adivina');
   // El peso que cuenta es el de las que corren en los trabajos de suites: las que corren solas van al del banco.
   const total = regular.reduce((sum, suite) => sum + weightOf(suite, weights), 0);
   const count = Math.max(1, Math.min(max, regular.length || 1, Math.ceil(total / budget)));
   const benchLoad = bench.reduce((sum, suite) => sum + weightOf(suite, weights), 0);
   const aside = bench.length ? ` · ${bench.length} suite(s) que corren solas van al trabajo del banco (~${Math.round(benchLoad)} s)` : '';
-  complain(`suites: ${count} trabajo(s) de un máximo de ${max} · ~${Math.round(total)} s de peso · ${budget} s por trabajo${aside}\n`);
+  if (measured) complain(`suites: ${count} trabajo(s) de un máximo de ${max} · ~${Math.round(total)} s medidos · ${budget} s medidos por trabajo · ${measuredCounts(regular, measured)}${aside}\n`);
+  else complain(`suites: ${count} trabajo(s) de un máximo de ${max} · ~${Math.round(total)} s de peso · ${budget} s por trabajo${aside}${byWeight || ''}\n`);
   write(`${count}\n`);
 }
 
 /**
- * Si los trabajos de suites tienen que ser los largos: `si` o `no`, solo en la salida; el porqué va por `complain`.
+ * Si los trabajos de suites tienen que ser los largos: `si` o `no`, solo en la salida; el porqué va por `complain`. Con
+ * `--measured`, la carga del trabajo MÁS cargado del reparto (no el promedio) contra `job_deadline_measured`, que deja
+ * lugar para reintentar sola una cortada.
  */
 function commandLong(argv, write, complain) {
   const of = positiveInteger(option(argv, '--of'));
@@ -433,16 +486,27 @@ function commandLong(argv, write, complain) {
   if (minutes === null || longMinutes === null || longMinutes <= minutes) {
     throw new Refused(`--minutes y --long-minutes tienen que ser enteros mayores que 0, el largo mayor (vinieron ${JSON.stringify(option(argv, '--minutes'))} y ${JSON.stringify(option(argv, '--long-minutes'))})`);
   }
-  const { weights, regular } = load(argv);
-  if (weights.deadline === null) throw new Refused(`el juego de pesos no trae «job_deadline» (lo que entra en un trabajo de ${minutes} min): si hace falta el trabajo largo no se adivina`);
-  const perJob = regular.reduce((sum, suite) => sum + weightOf(suite, weights), 0) / Math.min(of, regular.length || 1);
-  const head = `suites: ~${Math.round(perJob)} s de peso por trabajo y en uno de ${minutes} min entran ~${weights.deadline}`;
-  if (perJob <= weights.deadline) {
+  const { weights, measured, byWeight, regular } = load(argv, { measure: true });
+  let perJob;
+  let deadline;
+  let head;
+  if (measured) {
+    deadline = weights.deadlineMeasured;
+    if (deadline === null) throw new Refused(`el juego de pesos no trae «job_deadline_measured» (lo medido que entra en un trabajo de ${minutes} min): si hace falta el trabajo largo no se adivina`);
+    perJob = Math.max(...assign(regular, weights, Math.min(of, regular.length || 1)).map((shard) => shard.load));
+    head = `suites: ~${Math.round(perJob)} s medidos en el trabajo más cargado y en uno de ${minutes} min entran ~${deadline}, con lugar para reintentar sola una cortada`;
+  } else {
+    deadline = weights.deadline;
+    if (deadline === null) throw new Refused(`el juego de pesos no trae «job_deadline» (lo que entra en un trabajo de ${minutes} min): si hace falta el trabajo largo no se adivina`);
+    perJob = regular.reduce((sum, suite) => sum + weightOf(suite, weights), 0) / Math.min(of, regular.length || 1);
+    head = `suites: ~${Math.round(perJob)} s de peso por trabajo y en uno de ${minutes} min entran ~${deadline}${byWeight || ''}`;
+  }
+  if (perJob <= deadline) {
     complain(`${head}: los trabajos de siempre\n`);
     write('no\n');
     return;
   }
-  const needed = Math.ceil((minutes * perJob) / weights.deadline);
+  const needed = Math.ceil((minutes * perJob) / deadline);
   const beyond = needed > longMinutes ? `: más que los ${longMinutes} del trabajo largo, lo que no entre sale no medido` : '';
   complain(`${head}: van los trabajos largos (hacen falta ~${needed} min${beyond})\n`);
   write('si\n');
@@ -491,7 +555,7 @@ function readMeasured(argv, weights) {
   let isDir = false;
   try { isDir = fs.statSync(folder).isDirectory(); } catch (_) { isDir = false; }
   if (!isDir) throw new Refused(`--measured: la carpeta de tiempos (${folder}) no existe o no es una carpeta`);
-  if (!weights.cap.measured) throw new Refused('el juego de pesos no trae «suite_cap.measured» (la regla de los topes medidos): el tope medido no se adivina');
+  if (!weights.cap || !weights.cap.measured) throw new Refused('el juego de pesos no trae «suite_cap.measured» (la regla de los tiempos medidos): ni el tope ni el reparto medidos se adivinan');
   let times;
   try {
     times = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'suite-times.js'));
@@ -520,13 +584,22 @@ function readMeasured(argv, weights) {
 function measuredCapOf(suite, weights, byName) {
   const rule = weights.cap.measured;
   if (Object.prototype.hasOwnProperty.call(weights.cap.perSuite, suite.name)) return [capOf(suite, weights), 'propio'];
-  const last = (byName.get(suite.name) || []).slice(-rule.last);
-  if (last.length < rule.min) return [capOf(suite, weights), 'peso'];
+  const median = measuredMedian(byName.get(suite.name), rule);
+  if (!median) return [capOf(suite, weights), 'peso'];
+  const seconds = Math.min(rule.max, Math.max(weights.cap.floor, (weights.cap.factor * median.ms) / 1000));
+  return [Math.ceil(seconds), `medido:${median.count}`];
+}
+
+/**
+ * La mediana, en ms, de las `last` pasadas más nuevas de una suite (`{ ms, count }`), o null con menos de `min`. La
+ * misma regla para el tope medido y para el peso medido del reparto.
+ */
+function measuredMedian(times, rule) {
+  const last = (times || []).slice(-rule.last);
+  if (last.length < rule.min) return null;
   const sorted = [...last].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  const medianMs = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-  const seconds = Math.min(rule.max, Math.max(weights.cap.floor, (weights.cap.factor * medianMs) / 1000));
-  return [Math.ceil(seconds), `medido:${last.length}`];
+  return { ms: sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2, count: last.length };
 }
 
 const MATRIX_KEY = (i) => `shard_${i}`;
