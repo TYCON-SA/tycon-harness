@@ -40,9 +40,9 @@
           }
         },
         {
-          "id": "camino-corto-texto-guarda-con-la-pregunta",
-          "type": "must-emit",
-          "_por_que": "un arreglo chico de texto en el mismo archivo no trae ninguna señal: guarda con la pregunta de siempre.",
+          "id": "camino-corto-texto-guarda-sin-pregunta",
+          "type": "must-stay-quiet",
+          "_por_que": "un arreglo chico de texto en el mismo archivo no trae ninguna señal: el commit guarda sin pregunta (la persona aprueba el pedido).",
           "env": {
             "TYCON_PACKS_DIR": "${FIXTURE}/.senales",
             "TYCON_PACKS_DEFAULT": "all"
@@ -61,9 +61,12 @@
             }
           },
           "expect": {
-            "stdout_re": [
-              "\"permissionDecision\":\"ask\"",
-              "¿GUARDO\\?"
+            "stdout_not_re": [
+              "permissionDecision"
+            ],
+            "stderr_not_re": [
+              "¿GUARDO\\?",
+              "cambia de dónde sale un dato"
             ]
           }
         }

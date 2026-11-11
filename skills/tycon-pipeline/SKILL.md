@@ -250,7 +250,7 @@ build-gate) · 6 Correr las pruebas (`run-tests`: `test-gate.sh <repo> <story_pa
 vez: 0 verde · ≠0 rojo · 3 sin medir · 4 FRENO sin deducir el proyecto: `test-gate.sh <repo> <story> <subdir>` · 5 falta el
 corredor · 6 salió 0 sin correr pruebas; después `pipeline.js dep-gate`) · 7 Revisores (`reviewers`; vuelta N si hubo
 arreglos) · 8 Pase adversarial (`adversarial-pass`, join) · 9 Hallazgos (`findings`: `write-findings` + `write-followups`;
-frena con CRITICAL) · 10 Probar en vivo (`live-check`) · 11 Preparar el commit (`prepare-commit`, NO commitea) ·
+frena con CRITICAL) · 10 Probar en vivo (`live-check`) · 11 Preparar el pull request (`prepare-commit`) ·
 post-merge: `close-work-item`.
 
 ## Marker
@@ -267,7 +267,7 @@ Estado persistente por sesión en `~/.claude/.tycon-pipeline/active/<sessionId>.
 - Checks: `marker.js run-check <name> -- <cmd>` (exit code real).
 - Recovery: `marker.js adopt-session <sid-viejo>` · `list-all` · `find-by-story <id>` ·
   `clear-session <sid>` · `update-story-status <spec> <estado>`.
-- Preparar el commit: arma el mensaje (NO commitea) y termina con `marker.js clear` + `marker.js update-story-status <spec> review` (las horas NO se cierran ahí).
+- Preparar el pull request: la persona aprueba el pull request, no el commit; termina con `marker.js clear` + `marker.js update-story-status <spec> review` (las horas NO se cierran).
 
 Hooks: `on-prompt.js` (intención de story, conflicto cross-sesión, "listo" con pasos pendientes),
 `on-edit.js` (registra ediciones), `on-write-collision.js`, `on-story-gate.js` + `on-bash-write-gate.js`
@@ -304,4 +304,4 @@ Nunca `git commit`/`git push` sin aprobación explícita · no modifica skills B
 pedido · no saltea checkpoints HITL que corresponden · no reemplaza el juicio del dev.
 
 Post-pipeline: la retro del merge la escribe `retro-heartbeat.js` en `/tycon-merge-to-main`; los aprendizajes
-van a engram al preparar el commit.
+van a engram al cerrar.

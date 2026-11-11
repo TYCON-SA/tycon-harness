@@ -52,8 +52,8 @@ function esEvidenciaEnVivo(repo, rel) {
   try { sha = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(repo, rel))).digest('hex'); } catch (_) { return false; }
   return lineas.some((l) => { try { const o = JSON.parse(l); return o[campo] === sub && o[huellaCampo] === sha; } catch (_) { return false; } });
 }
-// el papeleo que no vence el ok de guardar: la evidencia, más las stories y su estado (`specs/`) y las tareas (`tasks/`),
-// sólo en sus datos y sus informes. Nunca una carpeta oculta, un enlace, lo de la lista sensible ni la configuración de
+// el papeleo que no vence el ok de guardar: la evidencia, más las stories y su estado (`specs/`, con su
+// `sprint-status.yaml`) y las tareas (`tasks/`), sólo en sus datos y sus informes. Nunca una carpeta oculta, un enlace, lo de la lista sensible ni la configuración de
 // una herramienta (`package.json`, `tsconfig.json`): ésos cargan o deciden algo, y cambiarlos pide otro ok
 const PAPELEO_DE_LA_HUELLA = ['specs', 'tasks'];
 // los trozos de memoria que exporta el cierre antes del commit, después del ok: sólo los comprimidos, sin subcarpetas,
@@ -66,7 +66,9 @@ function esPapeleoDeLaHuella(rel, modo) {
   if (modo === '120000') return false;
   if (rel.startsWith(`${EVIDENCIA}/`)) return /\.(json|jsonl|md)$/.test(rel);
   if (rel.startsWith(`${MEMORIA}/`) || rel === INDICE_DE_MEMORIA) return esTrozoDeMemoria(rel);
-  if (!PAPELEO_DE_LA_HUELLA.some((d) => rel.startsWith(`${d}/`)) || !/\.(json|jsonl|md)$/.test(rel)) return false;
+  // el estado del sprint es papeleo como la story: cambiarlo después de preparar el pedido no es cambiar el código
+  const estadoDelSprint = rel.startsWith('specs/') && path.posix.basename(rel) === 'sprint-status.yaml';
+  if (!PAPELEO_DE_LA_HUELLA.some((d) => rel.startsWith(`${d}/`)) || (!/\.(json|jsonl|md)$/.test(rel) && !estadoDelSprint)) return false;
   if (rel.split('/').some((p) => p.startsWith('.')) || CONFIGURACION.test(path.posix.basename(rel))) return false;
   const pats = catalogo().SENSITIVE.map(patron);
   return !pats.some((re) => re.test(rel.toLowerCase()));
@@ -77,7 +79,8 @@ const EXIMEN = ['critical-waiver', 'runtime-waiver', 'escape:force-manual'];
 function git(repo, args, env, input) {
   const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', input, env: entornoDeGit().idiomaFijo(process.env, env), maxBuffer: 64 * 1024 * 1024 });
   // `crudo` sin recortar: en `status --porcelain` el primer espacio es parte de la columna del estado
-  return { ok: r.status === 0, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String(r.stderr || '').trim() };
+  // `status`: con `--verify --quiet`, 1 es «no existe» y cualquier otro fallo es «no pude preguntar»
+  return { ok: r.status === 0, status: r.status, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String(r.stderr || '').trim() };
 }
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
 // las carpetas temporales de la máquina: la del sistema y las de siempre de Unix
@@ -186,29 +189,63 @@ function huella(repo) {
   const indice = path.join(gitDir.out, `save-ok-index-${process.pid}-${Date.now()}`);
   try {
     const env = { GIT_INDEX_FILE: indice };
-    const tieneHead = git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']).ok;
     const falla = (p, r) => ({ repo, rama: rama.out, base: base.ok ? base.out : null, arbol: null, error: `git ${p}: ${r.err}` });
+    // `cabeza`: el commit en que estaba la rama al tomar la foto. Empujarlo es empujar lo de antes de preparar. Sin
+    // commits no hay; si git no pudo decirlo, no hay foto
+    const head = git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+    if (!head.ok && head.status !== 1) return falla('rev-parse HEAD', head);
+    const tieneHead = head.ok && !!head.out;
     for (const p of [tieneHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], ['add', '-A']]) {
       const r = git(repo, p, env);
       if (!r.ok) return falla(p[0], r);
     }
-    const ls = git(repo, ['ls-files', '-s', '-z', '--', EVIDENCIA, MEMORIA, INDICE_DE_MEMORIA, ...PAPELEO_DE_LA_HUELLA], env);
-    if (!ls.ok) return falla('ls-files', ls);
-    // cada entrada: «<modo> <blob> <etapa>\t<ruta>»
-    const fuera = ls.crudo.split('\0').filter(Boolean).map((e) => { const t = e.indexOf('\t'); return [e.slice(0, 6), e.slice(t + 1)]; })
-      .filter(([modo, rel]) => esPapeleoDeLaHuella(rel, modo)).map(([, rel]) => rel);
-    if (fuera.length) {
-      const rm = git(repo, ['update-index', '--force-remove', '-z', '--stdin'], env, fuera.map((f) => `${f}\0`).join(''));
-      if (!rm.ok) return falla('update-index', rm);
-    }
-    const arbol = git(repo, ['write-tree'], env);
-    if (!arbol.ok) return falla('write-tree', arbol);
-    return { repo, rama: rama.out, base: base.ok && base.out ? base.out : null, arbol: arbol.out };
+    const arbol = arbolSinPapeleo(repo, env);
+    if (arbol.error) return falla(arbol.paso, arbol);
+    return { repo, rama: rama.out, base: base.ok && base.out ? base.out : null, arbol: arbol.out, cabeza: tieneHead ? head.out : null };
   } finally {
     try { fs.unlinkSync(indice); } catch (_) { /* no llegó a existir */ }
   }
 }
 function huellas(repos) { return repos.map(huella); }
+
+// El árbol del índice aparte `env`, sin el papeleo: `{ out }` o `{ error, paso, err }`.
+function arbolSinPapeleo(repo, env) {
+  const ls = git(repo, ['ls-files', '-s', '-z', '--', EVIDENCIA, MEMORIA, INDICE_DE_MEMORIA, ...PAPELEO_DE_LA_HUELLA], env);
+  if (!ls.ok) return { error: true, paso: 'ls-files', err: ls.err };
+  // cada entrada: «<modo> <blob> <etapa>\t<ruta>»
+  const fuera = ls.crudo.split('\0').filter(Boolean).map((e) => { const t = e.indexOf('\t'); return [e.slice(0, 6), e.slice(t + 1)]; })
+    .filter(([modo, rel]) => esPapeleoDeLaHuella(rel, modo)).map(([, rel]) => rel);
+  if (fuera.length) {
+    const rm = git(repo, ['update-index', '--force-remove', '-z', '--stdin'], env, fuera.map((f) => `${f}\0`).join(''));
+    if (!rm.ok) return { error: true, paso: 'update-index', err: rm.err };
+  }
+  const arbol = git(repo, ['write-tree'], env);
+  return arbol.ok ? { out: arbol.out } : { error: true, paso: 'write-tree', err: arbol.err };
+}
+
+/**
+ * El árbol de un commit (una rama, `HEAD` o un hash), sin el papeleo, comparable con el de la huella: lo que manda un
+ * empuje de ese commit. `{ commit, arbol }` o `{ error }`.
+ */
+function arbolDelCommit(repo, ref) {
+  const commit = git(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
+  // `falta`: el repo no lo tiene (salida 1), y un empuje de algo que no existe no manda nada (git lo rechaza). Cualquier
+  // otro fallo es no haber podido preguntar
+  if (commit.status === 1) return { error: `no encuentro lo que se empuja en ${repo}`, falta: true };
+  if (!commit.ok || !commit.out) return { error: `git rev-parse: ${commit.err || 'sin respuesta'}` };
+  const gitDir = git(repo, ['rev-parse', '--absolute-git-dir']);
+  if (!gitDir.ok) return { error: gitDir.err || 'no es un repo de git' };
+  const indice = path.join(gitDir.out, `save-ok-commit-${process.pid}-${Date.now()}`);
+  try {
+    const env = { GIT_INDEX_FILE: indice };
+    const r = git(repo, ['read-tree', commit.out], env);
+    if (!r.ok) return { error: `git read-tree: ${r.err}` };
+    const arbol = arbolSinPapeleo(repo, env);
+    return arbol.error ? { error: `git ${arbol.paso}: ${arbol.err}` } : { commit: commit.out, arbol: arbol.out };
+  } finally {
+    try { fs.unlinkSync(indice); } catch (_) { /* no llegó a existir */ }
+  }
+}
 
 // lo que pueden tardar los controles del commit de todos los repos antes de darlos por colgados: los del arnés, ~30 s; con
 // un revisor tocado, su chequeo de vida suma ~40 s, y hasta ~2 min si confirma un rojo. Debajo del plazo con que la
@@ -226,9 +263,13 @@ const ultimas = (texto, max = 1200) => {
  * un índice aparte desde HEAD con todo lo del disco, como la huella; el índice de la persona no se toca. Corren con
  * `TYCON_PRECOMMIT_READ_ONLY=1`: un control que escribe (regenerar un archivo, exportar la memoria) no escribe y frena si
  * hacía falta. Si el árbol cambió igual, el ok nacería vencido y no se firma. Colgados o sin poder correrlos, tampoco:
- * no poder mirar no es verde. `{ codigo: 0 }` o `{ codigo: 2, motivo }`.
+ * no poder mirar no es verde. `{ codigo: 0 }` o `{ codigo: 2, motivo }`. `para`: 'firma' (el ok de guardar) o 'pedido'
+ * (el cierre de «Preparar el pull request», que toma la foto del pedido): cambia sólo lo que el motivo dice que hay que hacer.
  */
-function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS }) {
+function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS, para = 'firma' }) {
+  const pedido = para === 'pedido';
+  const volver = pedido ? 'commiteá lo regenerado y volvé a cerrar «Preparar el pull request»' : 'volvé a pedir la firma';
+  const vencido = pedido ? 'la foto del pull request nacería vieja' : 'el ok nacería vencido';
   const limite = Date.now() + timeoutMs;
   for (const repo of repos) {
     const nombre = path.basename(repo);
@@ -251,9 +292,14 @@ function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS }) {
     let preparado = false;
     try {
       const env = { GIT_INDEX_FILE: indice, TYCON_PRECOMMIT_READ_ONLY: '1' };
-      const tieneHead = git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']).ok;
+      const head = git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+      // sin commits se mira el árbol vacío; si git no pudo decirlo, no se mira nada
+      if (!head.ok && head.status !== 1) return no(`no pude leer HEAD (${head.err || 'sin respuesta'})`);
+      const tieneHead = head.ok;
       const delIndice = git(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'index']);
-      const hayPreparado = tieneHead && delIndice.ok && spawnSync('git', ['-C', repo, 'diff', '--cached', '--quiet'], { encoding: 'utf8' }).status === 1;
+      // la foto del pull request mide todo el disco, así que sus controles también: el cierre del paso prepara la memoria
+      // antes, y mirar sólo eso dejaría afuera el código que el commit va a guardar
+      const hayPreparado = !pedido && tieneHead && delIndice.ok && spawnSync('git', ['-C', repo, 'diff', '--cached', '--quiet'], { encoding: 'utf8' }).status === 1;
       if (hayPreparado) {
         try { fs.copyFileSync(delIndice.out, indice); preparado = true; } catch (e) { return no(`no pude copiar lo preparado (${e.code || e.message})`); }
       } else {
@@ -267,11 +313,13 @@ function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS }) {
         cwd: repo, encoding: 'utf8', timeout: queda, env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024,
       });
       if (r.error || r.status === null) {
-        return no(`los controles del commit no terminaron en ${Math.round(timeoutMs / 1000)} s (${r.error ? r.error.code || r.error.message : r.signal}): no se firma sin saber si el commit pasa. Probá \`git hook run pre-commit\` en ${repo} y volvé a pedir la firma`);
+        const sinSaber = pedido ? 'sin saber si el commit pasa no hay foto del pull request' : 'no se firma sin saber si el commit pasa';
+        return no(`los controles del commit no terminaron en ${Math.round(timeoutMs / 1000)} s (${r.error ? r.error.code || r.error.message : r.signal}): ${sinSaber}. Probá \`git hook run pre-commit\` en ${repo} y ${pedido ? 'volvé a cerrar «Preparar el pull request»' : volver}`);
       }
       if (r.status !== 0) {
         const sobre = preparado ? 'los controles del commit, sobre lo preparado,' : 'los controles del commit, sobre todo lo del disco (no hay nada preparado),';
-        return no(`${sobre} lo frenarían, y arreglarlo después vencería el ok. Lo que dijeron: ${ultimas(`${r.stderr}\n${r.stdout}`)}. Arreglá eso y volvé a pedir la firma`);
+        const despues = pedido ? 'y el pull request frenaría después del commit' : 'y arreglarlo después vencería el ok';
+        return no(`${sobre} lo frenarían, ${despues}. Lo que dijeron: ${ultimas(`${r.stderr}\n${r.stdout}`)}. ${pedido ? `Arreglá eso (si es un archivo que hay que regenerar, regeneralo), ${volver}` : `Arreglá eso y ${volver}`}`);
       }
     } finally {
       try { fs.unlinkSync(indice); } catch (_) { /* no llegó a existir */ }
@@ -279,7 +327,7 @@ function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS }) {
     const despues = huella(repo);
     if (despues.error || despues.arbol !== antes.arbol) {
       const cambios = despues.error ? despues.error : git(repo, ['diff-tree', '-r', '--name-only', antes.arbol, despues.arbol]).out.split('\n').filter(Boolean).join(', ');
-      return no(`los controles del commit cambiaron el repo (${cambios || 'no sé qué'}), y el ok nacería vencido. Commiteá o descartá eso y volvé a pedir la firma`);
+      return no(`los controles del commit cambiaron el repo (${cambios || 'no sé qué'}), y ${vencido}. ${pedido ? `Si es un archivo regenerado, ${volver}; si no, descartalo y volvé a cerrar «Preparar el pull request»` : `Commiteá o descartá eso y ${volver}`}`);
     }
   }
   return { codigo: 0 };
@@ -558,4 +606,64 @@ function constancia({ marker, via, por = null, previo, ahora }) {
   };
 }
 
-module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, controlesDelCommit, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia };
+// ── la foto y la evidencia del pedido ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * La foto que toma el cierre de «Preparar el pull request» (`prepareCommitHuellas`): `{ huellas }` o `{ codigo: 2, motivo }`.
+ * Antes de la foto corren los controles del commit en sólo lectura: un pre-commit que regeneraría un archivo y lo sumaría
+ * al commit vencería la foto después del commit, sin que nadie tocara nada.
+ */
+function fotoDelPedido({ repos, timeoutMs = CONTROLES_MS }) {
+  const c = controlesDelCommit({ repos, timeoutMs, para: 'pedido' });
+  if (c.codigo) return c;
+  const hs = huellas(repos);
+  const sin = hs.find((h) => h.error);
+  if (sin) return { codigo: 2, motivo: `${sin.repo}: no pude medirlo (${sin.error}): sin la foto el pull request no sale. Volvé a cerrar «Preparar el pull request»` };
+  return { huellas: hs };
+}
+
+const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+/**
+ * La evidencia de la ventana del pedido, en un renglón y en este orden: pruebas, revisores, pase y hallazgos. Sale de lo
+ * que la corrida ya midió (el marcador y `findings.json`, como lista o como `{ findings }`); lo que no está, o no se
+ * puede leer, dice «no medido». Nunca inventa un número.
+ */
+function evidenciaDelPedido({ marker = {}, findings = null } = {}) {
+  const m = marker && typeof marker === 'object' ? marker : {};
+  const checks = m.checks || {};
+  const prov = (m.checksProvenance || {}).tests;
+  let pruebas = 'no medido';
+  if (checks.tests === 'green') pruebas = `en verde${prov ? ` (${prov})` : ''}`;
+  else if (checks.tests) pruebas = String(checks.tests).slice(0, 40);
+  const pasos = (Array.isArray(m.stepsCompleted) ? m.stepsCompleted : []).map(String);
+  const vueltas = m.iterations && typeof m.iterations === 'object' ? Object.keys(m.iterations).length : 0;
+  const cierre = ((m.stepTimings || {}).reviewers || {});
+  const cerrada = cierre.lastCompletedAt || cierre.completedAt;
+  let revisores = 'no medido';
+  if (pasos.includes('reviewers') && vueltas) revisores = `${plural(vueltas, 'vuelta', 'vueltas')}${cerrada ? `, la última cerrada ${String(cerrada).slice(11, 16)} UTC` : ''}`;
+  else if (pasos.includes('reviewers')) revisores = 'vuelta cerrada';
+  let pase = 'no medido';
+  const del5b = (Array.isArray(m.adversarialPasses) ? m.adversarialPasses : []).filter((p) => p && p.tipo === '5b');
+  const sk = m.adversarialSkip && typeof m.adversarialSkip === 'object' ? m.adversarialSkip : null;
+  if (m.adversarial && del5b.length) {
+    const ult = del5b[del5b.length - 1];
+    const n = ult.confirmados === undefined || ult.confirmados === null || ult.confirmados === '' ? NaN : Number(ult.confirmados);
+    if (ult.veredicto === 'no-medido') pase = 'no midió todo';
+    else pase = Number.isFinite(n) ? `cerrado con ${plural(n, 'confirmado', 'confirmados')}` : 'cerrado, sin el número de confirmados';
+  } else if (m.adversarial) pase = 'lanzado, sin resultado';
+  else if (sk) pase = sk.firmado || sk.forzado ? 'salteado con una firma' : 'salteado por la regla';
+  let hallazgos = 'no medido';
+  const lista = Array.isArray(findings) ? findings : findings && Array.isArray(findings.findings) ? findings.findings : null;
+  if (lista) {
+    const sev = (f) => String((f && f.severity) || '').trim().toUpperCase();
+    const criticos = lista.filter((f) => sev(f) === 'CRITICAL').length;
+    const avisos = lista.filter((f) => sev(f) === 'WARNING').length;
+    const eximidos = lista.filter((f) => f && String(f.disposition || '').toLowerCase() === 'waived').length;
+    // una severidad que no es de las tres no desaparece: se cuenta aparte
+    const sinClasificar = lista.filter((f) => !['CRITICAL', 'WARNING', 'INFO'].includes(sev(f))).length;
+    hallazgos = `${plural(criticos, 'crítico', 'críticos')}, ${plural(avisos, 'aviso', 'avisos')}${sinClasificar ? `, ${sinClasificar} sin clasificar` : ''}${eximidos ? `; eximidos: ${eximidos}` : ''}`;
+  }
+  return `Pruebas: ${pruebas} · Revisores: ${revisores} · Pase: ${pase} · Hallazgos: ${hallazgos}`;
+}
+
+module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, arbolDelCommit, controlesDelCommit, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia, fotoDelPedido, evidenciaDelPedido };

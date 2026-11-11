@@ -169,7 +169,7 @@ test('T94 Kanban_NoBoard_StillColumns @story-2.81 @ac-50: sin tablero, el kanban
 test('T95 Kanban_Page_TextOnly_WallSameColumns @story-2.81 @ac-50: la página dibuja las cinco columnas como texto', () => {
   const data = { agents: [], items: [], meta: { teToca: [], actualizado: '10:00' }, rows: [], free: [], unreadable: [], tablero: null, kanban: {
     columnas: [
-      { id: 'firma', nombre: 'Tu firma', tarjetas: [{ titulo: '<b>no es html</b>', quien: 'Ana', hora: 'dom 10:00', espera: 'el ok para guardar' }] },
+      { id: 'firma', nombre: 'Tu firma', tarjetas: [{ titulo: '<b>no es html</b>', quien: 'Ana', hora: 'dom 10:00', espera: 'abrir el pull request' }] },
       { id: 'curso', nombre: 'En curso', tarjetas: [{ titulo: 'Una', quien: 'Eva', hora: 'sin hora estimada', marca: 'En fila para pruebas', nota: 'Lo de hoy' }, { titulo: 'Dos', quien: 'Lia', hora: '', motivo: 'en borrador' }] },
       { id: 'entrando', nombre: 'Esperan entrar', tarjetas: [] },
       { id: 'sinEmpezar', nombre: 'Sin empezar', tarjetas: [] },
@@ -184,7 +184,7 @@ test('T95 Kanban_Page_TextOnly_WallSameColumns @story-2.81 @ac-50: la página di
   assert.deepStrictEqual(cols.map((c) => textOf(c.children[0])), ['Tu firma · 1', 'En curso · 2', 'Esperan entrar · 0', 'Sin empezar · 0', 'Hechos · 0']);
   assert.match(textOf(cols[2]), /Nada/);
   assert.match(textOf(cols[0]), /<b>no es html<\/b>/);
-  assert.match(textOf(cols[0]), /el ok para guardar/);
+  assert.match(textOf(cols[0]), /abrir el pull request/);
   assert.match(textOf(cols[1]), /En fila para pruebas/);
   assert.match(textOf(cols[1]), /en borrador/);
   assert.match(textOf(cols[1]), /Lo de hoy/);
@@ -646,7 +646,7 @@ test('T2 OwnerWaitsOf_SoloSesionYMedio @story-8.219 @ac-2: sólo lo que espera u
     { sid: 's-rosa', quien: 'Rosa', trabajo: 'Cinco', espera: 'que apruebes el plan', cerrada: true },
   ]);
   // la misma sesión con tarjeta propia y a medio camino: una sola, la de la sesión
-  const doble = firmaData([firmaCard({ titulo: 'Seis', quien: 'Ida', espera: 'el ok para guardar' }, 's-ida', 'medio'), firmaCard({ titulo: 'Seis', quien: 'Ida', espera: 'que apruebes el plan' }, 's-ida', 'sesion')]);
+  const doble = firmaData([firmaCard({ titulo: 'Seis', quien: 'Ida', espera: 'abrir el pull request' }, 's-ida', 'medio'), firmaCard({ titulo: 'Seis', quien: 'Ida', espera: 'que apruebes el plan' }, 's-ida', 'sesion')]);
   assert.deepStrictEqual(ownerWaitsOf(doble), [{ sid: 's-ida', quien: 'Ida', trabajo: 'Seis', espera: 'que apruebes el plan', cerrada: false }]);
   // trabajando, con una pregunta abierta y una sesión de prueba: no esperan al dueño en «Tu firma»
   const plan = { kind: 'pipeline', title: 'Siete', storyId: '9.7', current: 'approve-plan' };

@@ -32,7 +32,7 @@ const STEPS = [
   { number: 8, id: 'adversarial-pass', name: 'Pase adversarial', file: 'step-08-adversarial-pass.md', old: ['5b'], flag: 'deepReviewDone' },
   { number: 9, id: 'findings', name: 'Hallazgos', file: 'step-09-findings.md', old: ['6', '7'], waitsForPerson: true },
   { number: 10, id: 'live-check', name: 'Probar en vivo', file: 'step-10-live-check.md', old: ['7c'], flag: 'dodRuntimeChecked' },
-  { number: 11, id: 'prepare-commit', name: 'Preparar el commit', file: 'step-11-prepare-commit.md', old: ['8'] },
+  { number: 11, id: 'prepare-commit', name: 'Preparar el pull request', file: 'step-11-prepare-commit.md', old: ['8'] },
 ];
 // Corre aparte, después del merge (`/tycon-pipeline close`): no está en la numeración.
 const CLOSE_STEP = { id: 'close-work-item', name: 'Cerrar la historia', file: 'close-work-item.md', old: ['9'] };
@@ -219,6 +219,17 @@ function resolveStepArg(marker, raw, opts = {}) {
     return { ok: true, scheme: 1, ids: [v] };
   }
   return { ok: false, message: `«${v}» no es un paso. Los pasos: ${nombresValidos()}.` };
+}
+
+/**
+ * ¿Los `ids` que cierra `complete-step` (los de `resolveStepArg`) cierran el paso `id`? En el marcador nuevo, si lo
+ * nombran; en el viejo, si traen todos sus números de entonces (el «Preparar el pull request» viejo es el 8).
+ */
+function closesStep(marker, ids, id) {
+  const lista = (Array.isArray(ids) ? ids : []).map(String);
+  if (lista.includes(id)) return true;
+  if (schemeOf(marker) !== 1 || !OLD_CLOSE[id]) return false;
+  return OLD_CLOSE[id].every((o) => lista.includes(o));
 }
 
 /** Las partes del Arranque que corren y todavía no se hicieron, ni fallaron. `applies`: `{ 'time-tracking': bool, ado: bool }`. */
@@ -435,7 +446,7 @@ function retireCheck({ mirror, since, today, stateFile }) {
 module.exports = {
   SCHEME, STEPS, CLOSE_STEP, TOTAL, OLD_IDS, ORDER_REQUIRES, START_PARTS, OLD_NUMBERS_UNTIL, SCHEME_TWO_SINCE,
   STEP_CLOSE_CHECKS, closeControlsByStep, byId, byNumber, fromOld, newFromOld, schemeOf, stepName, stepNames, isDone, isPending, pendingSteps,
-  resolveStepArg, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersRound, otraVueltaDe, prepareCommitStale, findingsOpen, noteFindingsWait, noteFindingsAnswer, retireCheck,
+  resolveStepArg, closesStep, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersRound, otraVueltaDe, prepareCommitStale, findingsOpen, noteFindingsWait, noteFindingsAnswer, retireCheck,
 };
 
 if (require.main === module) {

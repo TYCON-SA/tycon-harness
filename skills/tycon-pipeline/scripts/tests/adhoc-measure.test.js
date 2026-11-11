@@ -105,7 +105,9 @@ const REVISORES = /faltan los revisores y el pase/;
 const PANTALLA = /toca una pantalla/;
 const NO_PUDE = /no pude medir/;
 function frena(r, re, que = '') { assert.match((r && r.texto) || '', re, `${que} ${JSON.stringify(r)}`); }
-function pregunta(r, que = '') { assert.ok(r && r.pregunta && !r.texto, `${que} ${JSON.stringify(r)}`); }
+// guarda: los frenos del carril no frenan. Desde que la persona aprueba el pedido y no el commit, el commit y el empuje
+// de la rama de trabajo del carril pasan sin pregunta (null o un aviso); el pedido pregunta como siempre
+function guarda(r, que = '') { assert.ok(!(r && r.texto), `${que} ${JSON.stringify(r)}`); }
 const bloqueos = (h) => {
   try { return fs.readFileSync(path.join(estado(h), 'gates.log'), 'utf8').split('\n').filter((l) => /"status":"blocked"/.test(l)); } catch (_) { return []; }
 };
@@ -156,7 +158,7 @@ test('T2 Medida_LosFrenosLeenLaMisma_UnaVueltaDeMain @story-8.190 @ac-2', (t) =>
   traidosPorOtroCamino(d, 12, ['src/app/ajena/page.tsx', 'src/auth/ajena.ts']);
   carril(h, { bases: { [d]: baseDe(d, sh(d, 'rev-parse', 'origin/main')) } });
   const { r, veces } = contar(['medirLoPropio', 'conBasesAlDia'], () => decidir(h, d));
-  pregunta(r);
+  guarda(r);
   // con lo ajeno contado en la primera medida, hay una vuelta de main y una segunda medida, y ninguna más
   assert.strictEqual(veces.medirLoPropio, 2, `medidas: ${veces.medirLoPropio}`);
   assert.strictEqual(veces.conBasesAlDia, 1, `vueltas de main: ${veces.conBasesAlDia}`);
@@ -181,7 +183,7 @@ test('T4 Medida_C1_RestauradoNoSumaAlTope @story-8.190 @ac-3', (t) => {
   sh(d, 'push', '-q', 'origin', `HEAD:main`);
   sh(d, 'fetch', '-q', 'origin');
   carril(h, { maxFiles: 1, files: [0, 1, 2].map((i) => path.join(d, 'src', `quieto${i}.js`)), bases: { [d]: baseDe(d) } });
-  pregunta(decidir(h, d));
+  guarda(decidir(h, d));
 });
 
 test('T5 Medida_C1_RestauradoNoPideMaqueta @story-8.190 @ac-3', (t) => {
@@ -191,7 +193,7 @@ test('T5 Medida_C1_RestauradoNoPideMaqueta @story-8.190 @ac-3', (t) => {
   sh(d, 'push', '-q', 'origin', 'HEAD:main');
   sh(d, 'fetch', '-q', 'origin');
   carril(h, { files: [path.join(d, 'src', 'app', 'combo', 'page.tsx')], bases: { [d]: baseDe(d) } });
-  pregunta(decidir(h, d));
+  guarda(decidir(h, d));
 });
 
 test('T6 Medida_C1_QueEntroDeMainNoPideRevisores @story-8.190 @ac-3', (t) => {
@@ -201,7 +203,7 @@ test('T6 Medida_C1_QueEntroDeMainNoPideRevisores @story-8.190 @ac-3', (t) => {
   sh(d, 'push', '-q', 'origin', 'HEAD:main');
   sh(d, 'fetch', '-q', 'origin');
   carril(h, { files: [path.join(d, 'src', 'auth', 'x.ts')] });
-  pregunta(decidir(h, d));
+  guarda(decidir(h, d));
   assert.strictEqual(leerCarril(h).riesgoAlto, undefined);
 });
 
@@ -275,7 +277,7 @@ test('T11 Medida_C2_MarcaLevantadaNoDejaRastro @story-8.190 @ac-6', (t) => {
   const w = path.join(d, 'src', 'auth', 'w.ts');
   carril(h, { maxFiles: 1, rutas: [w], bases: { [d]: baseDe(d, salida) },
     riesgoAlto: { regla: 'rutas-sensibles', archivo: w, motivo: 'de otro pedido', ts: new Date().toISOString() } });
-  for (const vuelta of [1, 2]) pregunta(decidir(h, d), `vuelta ${vuelta}`);
+  for (const vuelta of [1, 2]) guarda(decidir(h, d), `vuelta ${vuelta}`);
   assert.ok(!(leerCarril(h).rutas || []).includes(w));
 });
 
@@ -332,7 +334,7 @@ test('T15 Medida_C4_RamaAtrasada_LoDeMainNoSuma @story-8.190 @ac-10', (t) => {
   sh(d, 'checkout', '-q', RAMA);
   commitDeArchivos(d, 'propio', 1);
   carril(h, { bases: { [d]: baseDe(d, salida) } });
-  pregunta(decidir(h, d));
+  guarda(decidir(h, d));
   assert.strictEqual(base().cuentaDelCarril(leerCarril(h)).archivos.length, 1);
 });
 
@@ -341,7 +343,7 @@ test('T16 Medida_C4_CopiaLocalAtrasada_PreguntaSinBloqueo @story-8.190 @ac-11', 
   const h = home(t);
   const atras = traidosPorOtroCamino(d, 12);
   carril(h, { bases: { [d]: baseDe(d, atras) } });
-  pregunta(decidir(h, d));
+  guarda(decidir(h, d));
   assert.deepStrictEqual(bloqueos(h), []);
 });
 
@@ -381,7 +383,7 @@ test('T19 Medida_C5_OtraFormaDeUrl_UsaLaIntegracion @story-8.190 @ac-12', (t) =>
   const atras = traidosPorOtroCamino(d, 12);
   carril(h, { bases: { [d]: baseDe(d, atras) } });
   sh(d, 'remote', 'set-url', 'origin', `file://${origenDe(d)}`);
-  pregunta(decidir(h, d));
+  guarda(decidir(h, d));
   assert.notStrictEqual(leerCarril(h).bases[d].sha, atras, 'la base se renovó');
 });
 
@@ -492,14 +494,14 @@ test('T27 Medida_C6_PedidoDesdeOtraCarpeta_MideLaSesion @story-8.190 @ac-17', (t
 test('T28 Medida_C6_GuardadoEnOtraCarpeta_NoCobraLaSesion @story-8.190 @ac-18', (t) => {
   const { d, h, fuera } = nueveEnLaSesion(t);
   for (const command of [`cd ${fuera} && git init -q && git add -A && git commit -m x`, `git -C ${fuera} commit -m x`]) {
-    pregunta(decidir(h, d, command), command);
+    guarda(decidir(h, d, command), command);
   }
 });
 
 test('T29 Medida_C6_CdSeguroAOtroRepo_SoloMideEse @story-8.190 @ac-18', (t) => {
   const { d, h } = nueveEnLaSesion(t);
   const otro = repoConOrigin(t, 'otro');
-  pregunta(decidir(h, d, `cd ${otro} && git commit -m x`));
+  guarda(decidir(h, d, `cd ${otro} && git commit -m x`));
 });
 
 test('T30 Lector_PushdPopd_VuelveALaCarpeta @story-8.190 @ac-16', (t) => {
@@ -579,7 +581,7 @@ test('T35 Medida_C8_RutaDeWorktreeBorrado_NoTraeAlDeAfuera @story-8.190 @ac-22',
   commitDeArchivos(d, 'a', 9);
   const tercero = repoConOrigin(t, 'tercero');
   carril(h, { files: [ruta] });
-  pregunta(decidir(h, tercero));
+  guarda(decidir(h, tercero));
 });
 
 test('T36 Medida_C8_CarpetaBorradaConocida_SiTraeSuRepo @story-8.190 @ac-22', (t) => {
@@ -622,7 +624,7 @@ test('T38 Medida_C9_VariableSinExpandir_NoEsRuta @story-8.190 @ac-23', (t) => {
   const h = home(t);
   commitDeArchivos(otro, 'a', 9);
   carril(h, { files: [path.join(otro, '$L', 'p.js')] });
-  pregunta(decidir(h, d));
+  guarda(decidir(h, d));
 });
 
 // ── caso 10: un empuje con otra forma ─────────────────────────────────────────────────────────────────────────────────
@@ -642,7 +644,7 @@ test('T39 Medida_C10_EmpujeSolo_NoCuentaLoSinSeguir @story-8.190 @ac-24', (t) =>
   const { d, h } = sinSeguirAjenos(t);
   for (const command of ['VAR=1 git push', 'env A=1 git push', '/usr/bin/git push', 'gp', 'empujar', 'git push | cat', 'git push && echo listo',
     'git push 2>&1 | tail -3', 'git fetch && git push', 'git status; git push', '{ git push; }', 'git push', 'git push 2>&1']) {
-    pregunta(decidir(h, d, command), command);
+    guarda(decidir(h, d, command), command);
   }
 });
 
@@ -678,7 +680,7 @@ test('T41 AdhocScreen_C11_RutaRealComoPrueba_PideMaqueta @story-8.190 @ac-26', (
 test('T42 AdhocScreen_C11_CarpetaDePruebas_NoPide @story-8.190 @ac-27', (t) => {
   for (const rel of ['tests/Foo.tsx', 'e2e/Foo.tsx', 'cypress/Foo.tsx', 'playwright/Foo.tsx', 'apps/web/e2e/Foo.tsx', 'packages/ui/tests/Foo.tsx',
     'src/__tests__/Foo.tsx', 'src/x/Foo.test.tsx']) {
-    pregunta(conPantalla(t, rel), rel);
+    guarda(conPantalla(t, rel), rel);
   }
 });
 
@@ -784,7 +786,7 @@ test('T46 Medida_Limites_OtraRamaYDevSiguenIgual @story-8.190 @ac-31', (t) => {
   commitDeArchivos(d, 'otra', 9);
   sh(d, 'checkout', '-q', RAMA);
   carril(h, { bases: { [d]: baseDe(d) } });
-  pregunta(decidir(h, d, 'git push origin otra'), 'el trabajo de otra rama no suma');
+  guarda(decidir(h, d, 'git push origin otra'), 'el trabajo de otra rama no suma');
   const e = repoConOrigin(t, 'dev');
   const he = home(t);
   sh(e, 'checkout', '-q', '-b', 'dev', 'origin/main');
@@ -815,7 +817,7 @@ test('T47 Medida_RiesgoDesdeDev_NoPideRevisores @story-8.190 @ac-32', (t) => {
   commitDeArchivos(d, 'propio', 1);
   // la base que anota el carril al primer toque: `main` traído
   carril(h, { bases: { [d]: baseDe(d) } });
-  pregunta(decidir(h, d));
+  guarda(decidir(h, d));
 });
 
 test('T48 Medida_TraerMainNoVenceLaConstancia @story-8.190 @ac-33', (t) => {

@@ -1626,8 +1626,8 @@ test('T7 OwnerWait_UnaVezCadaDosMinutosYEntreProcesos @story-8.219 @ac-7: owner-
     assert.deepStrictEqual(vuelta(121), []);
     assert.strictEqual(leidas, 2);
     assert.strictEqual(owner().leidoAt, NOW + 120000, 'la hora queda en el archivo para el próximo proceso');
-    lectura = { esperas: [espera('s-a', 'Ana', 'el ok para guardar')], problemas: [] };
-    assert.deepStrictEqual(vuelta(240), ['«Ana» ahora espera de la persona: «el ok para guardar»']);
+    lectura = { esperas: [espera('s-a', 'Ana', 'abrir el pull request')], problemas: [] };
+    assert.deepStrictEqual(vuelta(240), ['«Ana» ahora espera de la persona: «abrir el pull request»']);
     lectura = { esperas: [espera('s-b', 'Bea', PLAN)], problemas: ['un aviso del tablero'] };
     assert.deepStrictEqual(vuelta(360), ['«Bea» («Tres») espera de la persona: «que apruebes el plan»'], 'con avisos anuncia y no retira');
     lectura = { esperas: [espera('s-b', 'Bea', PLAN)], problemas: [] };

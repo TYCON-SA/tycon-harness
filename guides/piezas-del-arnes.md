@@ -120,7 +120,7 @@ nueva, hasta que se retire.
 
 ## guides/git-commit-conventions.md
 
-**Qué es:** La guía de commits: no se commitea sin consentimiento, formato HEREDOC, línea Co-Authored-By y `/tycon-merge-to-main`.
+**Qué es:** La guía de commits: en una ejecución la persona aprueba el pull request, no el commit; fuera de una, nada sin consentimiento; formato HEREDOC, línea Co-Authored-By y `/tycon-merge-to-main`.
 
 **Por qué existe:** Un commit sin permiso o mal armado ensucia la historia compartida.
 

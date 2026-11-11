@@ -16,7 +16,7 @@ export const STEPS = [
   { number: 8, id: 'adversarial-pass', name: 'Pase adversarial', old: ['5b'], flag: 'deepReviewDone' },
   { number: 9, id: 'findings', name: 'Hallazgos', old: ['6', '7'] },
   { number: 10, id: 'live-check', name: 'Probar en vivo', old: ['7c'], flag: 'dodRuntimeChecked' },
-  { number: 11, id: 'prepare-commit', name: 'Preparar el commit', old: ['8'] },
+  { number: 11, id: 'prepare-commit', name: 'Preparar el pull request', old: ['8'] },
 ];
 
 /** El «M» de «N de M»: el largo de la tabla. */

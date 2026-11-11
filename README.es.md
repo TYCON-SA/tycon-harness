@@ -89,9 +89,9 @@ las palabras que usa.
     persona.
   - **Quién aprueba qué:** lo delicado lo aprobás siempre vos, el dev que trabaja. Lo demás va como muestra el diagrama, y la sesión
     coordinadora te avisa cuando abre un camino corto. Sin ella, lo suyo lo aprobás vos.
-- **Guardar es un click o un «Aprobado» escrito.** Antes de cada commit,
-  push y pull request el agente pregunta «¿guardo?». Si tu pestaña pide permisos, el sí va en la ventana de permiso. No
-  hay firma ni comando.
+- **Abrir el pull request es un click o un «Aprobado» escrito.** El agente commitea y empuja su rama solo;
+  la persona aprueba el pull request, y cada empuje a una rama compartida, con la evidencia de la ejecución adelante. Si
+  tu pestaña pide permisos, el sí va en la ventana de permiso. No hay firma ni comando.
 
 Los frenos, los controles y las firmas de control del arnés son de quien lo mantiene. El detalle:
 [La medida justa](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio).
@@ -247,7 +247,7 @@ Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la
 4. **Pedí la historia con tus palabras**, para que el cambio quede escrito antes de programar: «creá una historia para agregar un filtro por fecha».
 5. **Revisá la historia.** El agente la arma con lo que le pediste, contestando tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar), y te marca lo que supuso. Te la muestra y la escribe con tu «sí». Si tu repo ya trae la carpeta `_bmad/`, la arma con lo que hay ahí.
 6. **Pedí «implementemos la story»**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. Te muestra el plan y espera tu "sí" antes de programar. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo.
-7. **Revisá el resumen.** Antes de commitear te pregunta «¿guardo?» y guarda con tu sí: nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
+7. **Revisá el resumen.** Commitea y empuja su rama solo, y antes de abrir el pull request te pregunta con la evidencia: nunca abre un pull request ni sube a una rama compartida sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
 8. **Una historia con pantalla.** El agente arma una maqueta para que la apruebes antes de programar; si tu repo no tiene cómo probar en un navegador, te ofrece prepararlo; y te deja una guía para probarla a mano. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
 9. **Las reglas propias de tu proyecto.** Pedile a tu agente un revisor que controle una regla tuya (por ejemplo, «el email de un cliente nunca se muestra completo»): queda en tu repo de reglas y revisa cada historia junto con los del arnés. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
 

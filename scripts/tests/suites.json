@@ -654,6 +654,12 @@
       "requiere": []
     },
     {
+      "__nota": "la foto del pull request es de lo que el commit va a guardar: el cierre de «Preparar el pull request» corre los controles del commit en sólo lectura antes de la foto, y sin foto no cierra.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/marker-prepare-commit-controls.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.196: el camino corto no cambia de dónde salen los datos ni quién los ve — las señales del paquete en las líneas del carril, cada repo contra su base, el freno de guardar y la huella que levanta el click del dueño.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/source-signals.test.js",
@@ -1971,6 +1977,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/office-photo.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/pr-signature-texts.test.js",
       "requiere": []
     },
     {

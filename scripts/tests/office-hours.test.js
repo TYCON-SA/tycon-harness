@@ -420,7 +420,7 @@ test('T132 Finished_NoLatePromise @story-2.81 @ac-62: una corrida terminada no s
   assert.strictEqual(a.atrasada, undefined);
   assert.strictEqual(a.atrasoMin, undefined);
   assert.strictEqual(a.fin.hora, 'sin hora estimada');
-  assert.strictEqual(a.espera, 'el ok para guardar');
+  assert.strictEqual(a.espera, 'abrir el pull request');
 });
 
 test('T134 PausedByNewer_SameInWip @story-2.81 @ac-56 @ac-62: la hora de la corrida tapada, y la nota nueva sobre un carril viejo', async () => {

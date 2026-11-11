@@ -10,7 +10,7 @@
         {
           "id": "camino-corto-empuje-con-cat-no-cuenta-lo-sin-seguir",
           "type": "must-not-block",
-          "_por_que": "nueve archivos sin seguir de otra sesión, cupo 8: el comando sólo empuja (con `| cat` detrás), así que lo sin seguir no suma y pregunta.",
+          "_por_que": "nueve archivos sin seguir de otra sesión, cupo 8: el comando sólo empuja (con `| cat` detrás), así que lo sin seguir no suma y no frena. Pregunta porque el empuje no dice adónde va ni hay rama de empuje configurada: se trata como un empuje a una rama compartida.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
             "mkdir -p src && for i in 1 2 3 4 5 6 7 8 9; do echo x > src/ajeno$i.js; done",

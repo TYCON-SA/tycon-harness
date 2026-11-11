@@ -89,9 +89,9 @@ and stories—; then, story by story.
   - **The coordinating session** is an agent session your team can use to approve routine work; it is not a person.
   - **Who approves what:** you always approve the delicate work. The rest goes as the diagram shows, and the
     coordinating session tells you when it opens a short path. Without one, you approve its part.
-- **Saving is a click or a written "Aprobado".** Before every commit, push and pull
-  request the agent asks "save?". If your tab asks for permissions, the yes goes in the permission window. There is no
-  signature and no command.
+- **Opening the pull request is a click or a written "Aprobado".** The agent commits and pushes its own branch on its
+  own; the person approves the pull request, and every push to a shared branch, with the run's evidence in front. If
+  your tab asks for permissions, the yes goes in the permission window. There is no signature and no command.
 
 The harness brakes, controls and control signatures belong to whoever maintains it. The detail:
 [The right measure](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio) (in Spanish).
@@ -248,7 +248,7 @@ A story is your request in writing, with its criteria and its tests: the agent f
 4. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
 5. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already has a `_bmad/` folder, it builds it with what is there.
 6. **Ask "implementemos la story" (let's implement the story)**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. It shows you the plan and waits for your "yes" before any code. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
-7. **Read the summary.** Before committing it asks "save?" and saves with your yes: it never commits or pushes without your permission. When the first story closes, it offers you the full install.
+7. **Read the summary.** It commits and pushes its own branch on its own, and before opening the pull request it asks you, with the evidence: it never opens a pull request or pushes to a shared branch without your permission. When the first story closes, it offers you the full install.
 8. **A story with a screen.** The agent builds a mockup for you to approve before any code; if your repo has no way to test in a browser, it offers to set it up; and it leaves a guide for testing it by hand. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
 9. **Your project's own rules.** Ask your agent for a reviewer that checks a rule of yours (for example, "a customer's email is never shown in full"): it lives in your rules repo and reviews every story along with the harness's own. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
 

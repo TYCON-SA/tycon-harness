@@ -456,7 +456,7 @@ test('T88 OwnerSignature_PlanAndSave @story-2.81 @ac-46: lo que espera al dueño
   assert.strictEqual(byName(data, 'Plan').estado, 'firma');
   assert.strictEqual(byName(data, 'Plan').espera, 'que apruebes el plan');
   assert.strictEqual(byName(data, 'Guardar').estado, 'firma');
-  assert.strictEqual(byName(data, 'Guardar').espera, 'el ok para guardar');
+  assert.strictEqual(byName(data, 'Guardar').espera, 'abrir el pull request');
   assert.strictEqual(byName(data, 'Ocupada').estado, 'trabajando');
   assert.strictEqual(byName(data, 'Codina').estado, 'firma');
   assert.strictEqual(byName(data, 'Codina').espera, 'que apruebes el plan');
@@ -471,10 +471,24 @@ test('T89 Wip_SaveRow_NotFree @story-2.81 @ac-46: en /wip la corrida que espera 
   const { w } = await ownerMachine();
   const row = w.rows.find((r) => r.session === 'Guardar');
   assert.ok(row, w.text);
-  assert.strictEqual(row.state, 'Terminó: espera el ok para guardar');
+  assert.strictEqual(row.state, 'Terminó: espera tu sí para abrir el pull request');
   assert.match(row.work, /^9\.9 · Espera guardar/);
   assert.ok(!w.free.includes('Guardar'));
-  assert.match(w.text, /Terminó: espera el ok para guardar/);
+  assert.match(w.text, /Terminó: espera tu sí para abrir el pull request/);
+});
+
+test('8.242-T16 Oficina_EsperaTuSiParaElPedido: la corrida terminada espera tu sí para abrir el pull request, y el tablero lo pide como «Tu firma»', async () => {
+  const { now, w } = await ownerMachine();
+  const row = w.rows.find((r) => r.session === 'Guardar');
+  assert.strictEqual(row.state, 'Terminó: espera tu sí para abrir el pull request');
+  const { data } = buildOffice({ wip: w, nowMs: now });
+  const tarjeta = col(data, 'firma').tarjetas.find((t) => t.quien === 'Guardar');
+  assert.ok(tarjeta, 'la corrida terminada no está en «Tu firma»');
+  assert.strictEqual(tarjeta.espera, 'abrir el pull request');
+  const { realState } = require(path.join(path.dirname(OFFICE), 'work-in-progress.js'));
+  const r = realState({ kind: 'finished' }, { status: 'idle' }, null);
+  assert.strictEqual(`Tu firma: ${r.espera}`, 'Tu firma: abrir el pull request');
+  assert.ok(!/ok para guardar/.test(JSON.stringify(data)), 'la oficina todavía dice «el ok para guardar»');
 });
 
 test('T121 SaveSignal_DirtyTree_NotSaveOk @story-2.81 @ac-46: la señal de guardar sale del árbol del repo', async () => {
@@ -666,8 +680,8 @@ test('T112 OfficeAndWip_SayTheSame @story-2.81 @ac-62: /office y /wip dicen lo m
   assert.match(line('Bea'), new RegExp(`Tu firma: ${byName(data, 'Bea').espera}`));
   assert.strictEqual(byName(data, 'Cata').espera, 'que apruebes el plan');
   assert.match(line('Cata'), /Tu firma: que apruebes el plan/);
-  assert.strictEqual(byName(data, 'Dora').espera, 'el ok para guardar');
-  assert.match(line('Dora'), /Terminó: espera el ok para guardar/);
+  assert.strictEqual(byName(data, 'Dora').espera, 'abrir el pull request');
+  assert.match(line('Dora'), /Terminó: espera tu sí para abrir el pull request/);
   assert.strictEqual(byName(data, 'Eva').fin.hora, 'sin hora: el trabajo cambió');
   assert.match(line('Eva'), /sin hora: el trabajo cambió/);
   assert.strictEqual(byName(data, 'Fani').fin.hora, 'se pasó de la hora');

@@ -92,7 +92,7 @@ firmar, y en la columna tu situación:
 
 | Nivel | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás | La revisión automática |
 |---|---|---|---|---|---|---|
-| 1 · rutina | **Guardar el trabajo** (`save`): commit y push a tu rama, y los pull requests. Es rutina porque se deshace; si un commit toca algo sensible, pasa a `save:sensible`, de nivel 2. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
+| 1 · rutina | **Abrir el pull request** (`save`): los pull requests y el push a una rama compartida; el commit y el push a tu rama de trabajo no se firman. Es rutina porque se deshace; si un commit toca algo sensible, pasa a `save:sensible`, de nivel 2. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
 | 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
 | 1 · rutina | **Aprobar el plan** (`plan-approval`) de una story que no es delicada. Es rutina porque decide qué se construye antes de construirlo, y se cambia. | vos | espera | vos, o la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | obligatoria para la coordinadora: la lanza ella y su «aprobado» es lo único con que firma |
 | 1 · rutina | **Eximir un comando de la comparación con main** (`compare-waiver`): un comando que la historia modifica y que no se puede comparar con su versión de `main` (por ejemplo, porque usa la red). La firma es delegable sólo cuando el perfil del equipo la suma a `approvals.delegated_signing`, con un pedido al perfil que firma el dueño: amplía lo que firma la coordinadora. Hasta entonces, es tuya. | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
@@ -142,7 +142,7 @@ firmar, y en la columna tu situación:
 - Con coordinadora, ella puede pedir algunas de nivel 2 (eximir un crítico, un criterio que no se prueba en vivo), pero
   las contesta una persona.
 - **Si tu push ya despliega algo** (en tu equipo, subir a una rama dispara un despliegue), quien administra puede subir
-  «Guardar el trabajo» a nivel 2 desde el sitio: entonces lo firma siempre una persona.
+  «Abrir el pull request» a nivel 2 desde el sitio: entonces lo firma siempre una persona.
 - **Espera** quiere decir que nadie firma. El sistema no mira la hora: pide la firma igual y, si nadie contesta, la
   sesión queda frenada en ese paso.
 - **La emergencia** (`emergency`) es la única salida para pasar por encima del freno de seguridad: la persona la firma en
@@ -494,9 +494,10 @@ con un click o un «aprobado» (ver «Aprobar sin terminal»). El guion firma co
 de la sesión que lo corre, así que nunca se delega. Refirmar los controles tras traer `main` se delega sólo cuando el
 clasificador comprueba que es eso; si no, es un cambio de control, que es sólo del dueño.
 
-Guardar se autoriza en la ventana de permiso, no con una firma: autorización siempre, firma nunca. Guardar se deshace,
-y lo que no se deshace ya tiene su firma de control. La firma `save` y `marker.js approve-save` siguen en el catálogo,
-pero el freno ya no las pide.
+Guardar se autoriza en la ventana de permiso, no con una firma: autorización siempre, firma nunca, y donde tiene
+consecuencias: la persona aprueba el pull request, no cada commit. El commit y el empuje de la rama de trabajo los hace el
+agente sin preguntar; se deshacen, y lo que no se deshace ya tiene su firma de control. La firma `save` y
+`marker.js approve-save` siguen en el catálogo, pero el freno ya no las pide.
 
 El control del commit corre además el freno de publicación sobre lo que agrega ese commit: lo que el empuje frenaría (un
 secreto, un nombre de la lista) frena el commit, y no queda historia que reescribir. La ventana ya preguntó, así que ese
@@ -505,13 +506,15 @@ anteriores y otro remoto público que no sea `origin` los sigue mirando sólo el
 máquina de afuera, no mira.
 
 El gancho del comando lo hace cumplir, no la memoria del agente. En una corrida o en un camino rápido (el carril
-firmado de `marker.js adhoc set`, sin vencer), antes de todo `git commit`, `git push`
-y todo pedido que se crea o se mergea, el gancho le pregunta a la persona en la ventana de permiso de siempre; con el
-sí, guarda. Lo lee también escondido en `bash -c`, con `-C` o desde una variable. Los comandos de pedido son los que
+firmado de `marker.js adhoc set`, sin vencer), el commit y el empuje de la rama de trabajo pasan sin pregunta (con sus
+frenos) y quedan en `gates.log`. Antes de todo pull request que se crea o se mergea, y de todo empuje a una rama
+compartida (`main`, `master`, `dev`, `release/*`, o una rama que no se sabe), el gancho le pregunta a la persona en la
+ventana de permiso de siempre, con la evidencia de la ejecución; con el sí, sale. En una ejecución, antes de preguntar
+frena si el paso «Preparar el pull request» no cerró o si el código cambió desde su foto. Lo lee también escondido en `bash -c`, con `-C` o desde una variable. Los comandos de pedido son los que
 declaran los conectores de plataforma (`rawCommands` de su `integration.json`) con `pr` y que terminan en `create`,
 `new` o `merge`; si alguna integración no se puede leer, un comando que dice `pr` es una duda. Una frase en el chat o
 un mensaje de otra sesión no saltean la ventana. En una pestaña que no pide permisos (la ventana se aprobaría sola), el
-gancho guarda sin preguntar y lo dice en pantalla. Cerrar la corrida ya no pide nada. Lo delicado (frenos, firmas,
+gancho abre el pull request sin preguntar y lo dice en pantalla, con la misma evidencia. Cerrar la ejecución ya no pide nada. Lo delicado (frenos, firmas,
 controles, producción) lo cubre la firma de control del pedido, que es del dueño y no cambia.
 
 ### Lo de rutina en una pestaña sin permisos: hecho y avisado

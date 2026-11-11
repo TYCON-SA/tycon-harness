@@ -389,11 +389,13 @@ test('T6 Carril_SeMarcaRiesgoAlto — @story-8.174 @ac-5', () => {
   escribir(path.dirname(afuera), 'nota.js');
   assert.equal(onEdit(home, 'p7', afuera).status, 0);
   assert.equal(leerCarril(s7, 'p7').riesgoAlto, undefined);
-  // un registro del carril que no se lee no es «no hay carril»: pregunta y lo anota
+  // un registro del carril que no se lee no es «no hay carril»: el pedido pregunta, el commit avisa, y lo anota
   const s5 = conCarril(home, 'p5');
   fs.writeFileSync(path.join(s5, 'adhoc', 'p5.json'), '{ roto');
-  const d5 = saveBrake.decidir({ command: 'git commit -m x', cwd: otro, sid: 'p5', home });
+  const d5 = saveBrake.decidir({ command: 'gh pr create --fill', cwd: otro, sid: 'p5', home });
   assert.ok(d5 && /no pude leer el registro del camino rápido/.test(d5.pregunta), JSON.stringify(d5));
+  const c5 = saveBrake.decidir({ command: 'git commit -m x', cwd: otro, sid: 'p5', home });
+  assert.ok(c5 && /no pude leer el registro del camino rápido/.test(c5.aviso), JSON.stringify(c5));
   assert.match(fs.readFileSync(path.join(s5, 'gates.log'), 'utf8'), /registro del camino rápido ilegible/);
 });
 
@@ -548,8 +550,8 @@ test('T9 RiesgoAlto_ConConstancias_NoFrena_YVencen — @story-8.174 @ac-8 @ac-9'
   const base = { rutas: [f], bases: { [prod]: adhocBase.traerBase(prod) }, riesgoAlto: { regla: 'rutas-sensibles', archivo: f } };
   const huella = adhocBase.huellaDelCarril(base);
   const state = conCarril(home, 's9', { ...base, revisores: { huella, at: new Date().toISOString() }, pase: { huella, at: new Date().toISOString(), confirmados: 0 } });
-  const d = saveBrake.decidir({ command: 'git commit -m x', cwd: prod, sid: 's9', home });
-  // no frena por las constancias ni pide ningún ok firmado: pregunta como todo guardado del camino rápido
+  const d = saveBrake.decidir({ command: 'gh pr create --fill', cwd: prod, sid: 's9', home });
+  // no frena por las constancias ni pide ningún ok firmado: el pedido pregunta como todo pedido del camino rápido
   assert.ok(d && !d.texto && typeof d.pregunta === 'string', JSON.stringify(d));
   assert.doesNotMatch(d.pregunta, /firm|ok de guardar|approve-save|faltan los revisores/i);
   // un archivo de código editado después vence las dos
@@ -603,7 +605,9 @@ function ramaAtrasada(raiz, nombre) {
   const traerMain = () => { git(dir, 'fetch', '-q', 'origin', 'main'); git(dir, '-c', 'user.email=a@b', '-c', 'user.name=a', 'merge', '-q', '--no-edit', 'FETCH_HEAD'); };
   return { dir, entraAMain, traerMain, propio: path.join(dir, 'src/propio.js') };
 }
-const guardar = (dir, sid, home) => saveBrake.decidir({ command: 'git commit -m x', cwd: dir, sid, home });
+// un pedido: los frenos del carril lo miran como al commit, y es lo que pregunta (desde que la persona aprueba el pedido
+// y no el commit, el commit del carril pasa sin pregunta)
+const guardar = (dir, sid, home) => saveBrake.decidir({ command: 'gh pr create --fill', cwd: dir, sid, home });
 const marcaDe = (archivo, ts = new Date().toISOString()) => ({ regla: 'rutas-sensibles', archivo, motivo: 'de prueba', ts });
 
 test('T16 RamaAtrasada_LoDeOtroPedidoNoEsPropio', () => {
@@ -897,7 +901,8 @@ test('T21 RepoAjeno_NoEntraAlCarrilAlGuardar', () => {
   const f = path.join(dir, 'src/auth/x.ts');
   escribir(dir, 'src/auth/x.ts', 'propio\n');
   const state = conCarril(home, 's21', { rutas: [propio, f], bases: { [dir]: adhocBase.traerBase(dir) }, riesgoAlto: marcaDe(f) });
-  const d = guardar(ajeno.dir, 's21', home);
+  // un commit en el repo ajeno (un pull request siempre es del carril)
+  const d = saveBrake.decidir({ command: 'git commit -m x', cwd: ajeno.dir, sid: 's21', home });
   assert.ok(d.texto);
   // sigue frenando, ahora con el pedido del click anotado (8.236)
   assert.match(d.texto, /adhoc allow-foreign-save/);

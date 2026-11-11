@@ -42,14 +42,14 @@
         {
           "id": "camino-corto-riesgo-alto-con-constancias-pregunta",
           "type": "must-emit",
-          "_por_que": "el mismo carril con las dos constancias sobre lo que se guarda: pregunta como todo guardado, sin pedir revisores.",
+          "_por_que": "el mismo carril con las dos constancias sobre lo que se guarda: el pull request pregunta como todo pull request del carril, sin pedir revisores (el commit pasa sin pregunta).",
           "setup": [
             "git init -q --bare -b main ../origen-riesgo.git && git init -q -b main . && git remote add origin ../origen-riesgo.git && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git push -q origin main",
             "mkdir -p src/auth && echo x > src/auth/x.ts && git add -A",
             "S=\"$HOME/.claude/.tycon-pipeline\"; T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); D=$(pwd -P); B=$(git rev-parse HEAD); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"%s/src/auth/x.ts\"],\"files\":[\"%s/src/auth/x.ts\"],\"rutas\":[\"%s/src/auth/x.ts\"],\"bases\":{\"%s\":{\"sha\":\"%s\",\"traida\":true,\"ts\":\"%s\"}},\"riesgoAlto\":{\"regla\":\"rutas-sensibles\",\"archivo\":\"%s/src/auth/x.ts\"},\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\"}' \"$D\" \"$D\" \"$D\" \"$D\" \"$B\" \"$T\" \"$D\" \"$T\" \"$T\" \"$T\" > \"$S/adhoc/bench-riesgo.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-riesgo\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\"",
             "node -e 'const fs=require(\"fs\");const p=process.env.HOME+\"/.claude/.tycon-pipeline/adhoc/bench-riesgo.json\";const a=JSON.parse(fs.readFileSync(p,\"utf8\"));const h=require(process.env.SKILLS+\"/skills/tycon-pipeline/scripts/lib/adhoc-base.js\").huellaDelCarril(a);const t=new Date().toISOString();a.revisores={huella:h,at:t};a.pase={huella:h,at:t,confirmados:0};a.pruebas={comando:\"npm test\",codigo:0,at:t,huella:h,salida:\"ok\"};fs.writeFileSync(p,JSON.stringify(a));'"
           ],
-          "stdin": { "session_id": "bench-riesgo", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
+          "stdin": { "session_id": "bench-riesgo", "tool_name": "Bash", "tool_input": { "command": "gh pr create --fill" } },
           "expect": { "stdout_re": ["\"permissionDecision\":\"ask\""], "stdout_not_re": ["faltan los revisores"] }
         }
       ]

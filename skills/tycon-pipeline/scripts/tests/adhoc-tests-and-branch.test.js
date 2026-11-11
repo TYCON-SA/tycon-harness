@@ -129,8 +129,11 @@ test('T42 Guardar_ConPruebasDeHoy_Pasa_YVencen — @story-8.174 @ac-39', () => {
   const { dir, a } = conCodigo(raiz, h, 's42');
   git(dir, 'switch', '-q', '-c', 'arreglo');
   assert.equal(verde(h, 's42', dir).status, 0);
+  // el commit pasa sin pregunta (la persona aprueba el pull request); el pull request pregunta
   const g = guardar(dir, 's42', h);
-  assert.ok(g && !g.texto && typeof g.pregunta === 'string', JSON.stringify(g));
+  assert.ok(!(g && (g.texto || g.pregunta)), JSON.stringify(g));
+  const pr = guardar(dir, 's42', h, 'gh pr create --fill');
+  assert.ok(pr && !pr.texto && typeof pr.pregunta === 'string', JSON.stringify(pr));
   // editar un archivo de código después vence la corrida
   fs.writeFileSync(a, 'y\n');
   const g2 = guardar(dir, 's42', h);
@@ -146,7 +149,9 @@ test('T43 Guardar_SinCodigo_NoPidePruebas — @story-8.174 @ac-40', () => {
   git(dir, 'add', '.');
   conCarril(h, 's43', { allowedFiles: [guia, datos], files: [guia, datos], bases: { [dir]: { sha: git(dir, 'rev-parse', 'HEAD'), traida: true } } });
   const g = guardar(dir, 's43', h);
-  assert.ok(g && !g.texto && typeof g.pregunta === 'string', JSON.stringify(g));
+  assert.ok(!(g && (g.texto || g.pregunta)), JSON.stringify(g));
+  const pr = guardar(dir, 's43', h, 'gh pr create --fill');
+  assert.ok(pr && !pr.texto && typeof pr.pregunta === 'string', JSON.stringify(pr));
 });
 
 test('T44 SobreCupo_RamaPrincipalFrena_OtraPasa — @story-8.174 @ac-41', () => {
@@ -173,13 +178,16 @@ test('T44 SobreCupo_RamaPrincipalFrena_OtraPasa — @story-8.174 @ac-41', () => 
   const g3 = guardar(dir, 's44', h);
   assert.ok(g3 && g3.texto && /creá una rama/.test(g3.texto), JSON.stringify(g3));
   assert.match(fs.readFileSync(path.join(estado(h), 'gates.log'), 'utf8'), /main y master/);
-  // en otra rama, con las pruebas en verde: commit y push pasan al sí
+  // en otra rama, con las pruebas en verde: commit y push a la rama de trabajo pasan sin pregunta; el pull request
+  // pregunta
   git(dir, 'switch', '-q', '-c', 'arreglo-grande');
   assert.equal(verde(h, 's44', dir).status, 0);
   for (const command of ['git commit -m x', 'git push origin arreglo-grande']) {
     const d = guardar(dir, 's44', h, command);
-    assert.ok(d && !d.texto && typeof d.pregunta === 'string', `${command}: ${JSON.stringify(d)}`);
+    assert.ok(!(d && (d.texto || d.pregunta)), `${command}: ${JSON.stringify(d)}`);
   }
+  const pr = guardar(dir, 's44', h, 'gh pr create --fill');
+  assert.ok(pr && !pr.texto && typeof pr.pregunta === 'string', JSON.stringify(pr));
   // 🔴 Falla con: un push de todas las ramas desde otra rama, que se llevaba también la principal (pase de la 8.245)
   for (const command of ['git push --all origin', 'git push --mirror origin', 'git push --al origin', 'git push --mir origin', 'git push --bra origin']) {
     assert.match((guardar(dir, 's44', h, command) || {}).texto || '', /creá una rama/, command);
@@ -206,9 +214,9 @@ test('T45 SinSobreCupo_LaRamaNoFrena — @story-8.174 @ac-43', () => {
   const h = tmp('home-');
   const { dir } = conCodigo(raiz, h, 's45');
   assert.equal(verde(h, 's45', dir).status, 0);
-  // dentro del tope, en main: no frena por la rama
+  // dentro del tope, en main: no frena por la rama (el commit pasa sin pregunta)
   const g = guardar(dir, 's45', h);
-  assert.ok(g && !g.texto && typeof g.pregunta === 'string', JSON.stringify(g));
+  assert.ok(!(g && (g.texto || g.pregunta)), JSON.stringify(g));
   // cerrado con `adhoc clear`: no hay carril, y la rama no frena
   assert.equal(marker(h, 's45', ['adhoc', 'clear'], { cwd: dir }).status, 0);
   assert.ok(!(guardar(dir, 's45', h) || {}).texto);

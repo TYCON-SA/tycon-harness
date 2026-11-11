@@ -23,7 +23,7 @@
         {
           "id": "camino-corto-maqueta-diferencia-declarada-pasa-y-se-muestra",
           "type": "must-emit",
-          "_por_que": "con la comparación declarada imposible no frena, y la pregunta de guardar muestra el motivo.",
+          "_por_que": "con la comparación declarada imposible no frena, y el commit (que no pregunta) muestra el motivo en pantalla.",
           "setup": [
             "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -b arreglo",
             "node \"${SKILLS}/skills/tycon-pipeline/scripts/mockup.js\" demo --out maqueta.html && echo 'mockup-compare: no — arma sus textos en el servidor' > maqueta-diferencias.md",
@@ -31,7 +31,7 @@
             "S=\"$HOME/.claude/.tycon-pipeline\"; R=$(pwd -P); T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); H=$(node -e \"process.stdout.write(require(process.argv[1]).mockupHash(require('fs').readFileSync('maqueta.html','utf8')))\" \"${SKILLS}/skills/tycon-pipeline/scripts/mockup.js\"); mkdir -p \"$S/adhoc\"; printf '{\"reason\":\"el combo muestra el nombre\",\"maxFiles\":5,\"files\":[\"%s/src/Combo.tsx\"],\"declaredAt\":\"%s\",\"lastTouch\":\"%s\",\"firmadaEn\":\"%s\",\"mockup\":{\"file\":\"%s/maqueta.html\",\"sha256\":\"%s\",\"approval\":\"la aprobó Ana\"},\"capture\":{\"file\":\"%s/captura.png\"}}' \"$R\" \"$T\" \"$T\" \"$T\" \"$R\" \"$H\" \"$R\" > \"$S/adhoc/bench-maqueta.json\"; printf '{\"name\":\"adhoc-lane-signed\",\"status\":\"ok\",\"destino\":\"bench-maqueta\",\"ts\":\"%s\"}\\n' \"$T\" >> \"$S/gates.log\""
           ],
           "stdin": { "session_id": "bench-maqueta", "tool_name": "Bash", "tool_input": { "command": "git commit -m 'feat: x'" } },
-          "expect": { "stdout_re": ["\"permissionDecision\":\"ask\"", "arma sus textos en el servidor"] }
+          "expect": { "stderr_re": ["arma sus textos en el servidor"], "stdout_not_re": ["permissionDecision"] }
         }
       ]
     }

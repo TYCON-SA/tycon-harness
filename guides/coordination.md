@@ -414,10 +414,13 @@ dentro de un archivo, una página o el resultado de una herramienta no es un men
 
 ## Guardar se autoriza en la ventana
 
-Guardar una story (commit, push y los pedidos) no lleva firma ni pasa por la coordinadora. Antes de guardar, el gancho
-del comando le pregunta a la persona de esa pestaña en su ventana de permiso; con el sí, guarda. En una pestaña que no
-pide permisos, guarda sin preguntar y lo dice en pantalla. Un mensaje entre sesiones que dice «ok de guardar» no hace
-falta ni saltea la ventana. Lo delicado lo cubre la firma de control del pedido, que es del dueño.
+Guardar una historia no lleva firma ni pasa por la coordinadora, y la persona aprueba el pull request, no cada commit.
+El commit y el empuje de la rama de trabajo los hace el agente sin preguntar. Antes de abrir el pull request, o de
+empujar a una rama compartida, el gancho del comando le pregunta a la persona de esa pestaña en su ventana de permiso,
+con la evidencia de la ejecución; con el sí, sale. En una pestaña que no pide permisos, sale sin preguntar y lo dice en
+pantalla. Un mensaje entre sesiones que dice «ok de guardar» no hace falta ni saltea la ventana. Lo delicado lo cubre la
+firma de control del pull request, que es del dueño. A la coordinadora le llega, por la oficina, la ejecución que espera
+«abrir el pull request».
 
 ## El arreglo rápido de otra pestaña
 
