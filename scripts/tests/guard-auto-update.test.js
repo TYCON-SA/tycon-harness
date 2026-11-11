@@ -34,7 +34,8 @@ function lab({ permission = true, update = 'auto', installed = 'aaa', running = 
   fs.mkdirSync(home);
   const calls = path.join(root, 'sudo.calls');
   const sudo = path.join(root, 'sudo');
-  fs.writeFileSync(sudo, `#!/bin/sh\necho "$@" >> '${calls}'\n${'sleep ${SUDO_SLEEP:-0}'}\nexit 0\n`, { mode: 0o755 });
+  // printf, not echo: on Linux /bin/sh is dash, whose echo takes the leading -n as its own option
+  fs.writeFileSync(sudo, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${calls}'\n${'sleep ${SUDO_SLEEP:-0}'}\nexit 0\n`, { mode: 0o755 });
   const isStale = () => { if (stale === 'error') throw new Error('no pude leer lo publicado'); return stale; };
   const opts = { root: sys, home, arnes, env: {}, sudo, logDir: path.join(root, 'logs'), isStale };
   return { root, sys, prod, arnes, home, calls, opts };

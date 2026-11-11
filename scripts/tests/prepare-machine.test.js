@@ -108,7 +108,8 @@ test('8.187 T10 Preparar_NoEscribeNadaNiLlamaASudo @story-8.187 @ac-9: no escrib
   const bin = path.join(t.root, 'bin');
   fs.mkdirSync(bin);
   const sudoLog = path.join(t.root, 'sudo.log');
-  fs.writeFileSync(path.join(bin, 'sudo'), `#!/bin/sh\necho "$@" >> '${sudoLog}'\nexit 0\n`, { mode: 0o755 });
+  // printf, not echo: on Linux /bin/sh is dash, whose echo takes a leading -n as its own option
+  fs.writeFileSync(path.join(bin, 'sudo'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${sudoLog}'\nexit 0\n`, { mode: 0o755 });
   const before = fingerprint(t.root);
   const cli = spawnSync(process.execPath, [SCRIPT, '--repo', r1], {
     encoding: 'utf8',
