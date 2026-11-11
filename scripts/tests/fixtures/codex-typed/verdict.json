@@ -1,0 +1,13 @@
+{
+  "version": "0.162.1",
+  "fecha": "2026-11-11",
+  "distingue": false,
+  "datos": {
+    "a": { "dato": "ninguno en la conversación guardada", "valor": "los renglones de user y turn_context tienen las mismas claves y valores que b, c y d (cambian sólo ids, horas, orden y texto)", "corridas": 2 },
+    "b": { "dato": "ninguno en la conversación guardada", "valor": "igual a a" },
+    "c": { "dato": "ninguno en la conversación guardada", "valor": "igual a a con un servidor de la misma versión; uno más nuevo agrega provenance: user" },
+    "d": { "dato": "ninguno en la conversación guardada", "valor": "igual a a" }
+  },
+  "gancho": "el árbol de procesos (la app Terminal arriba) y las variables TERM_PROGRAM, TERM_PROGRAM_VERSION y TERM_SESSION_ID separan a de b, c y d, pero un programa los falsificó idénticos abriendo Codex en una ventana de Terminal",
+  "cuadro": "la respuesta de request_user_input es sólo { answers }: no dice quién la contestó"
+}
