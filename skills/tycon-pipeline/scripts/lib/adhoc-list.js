@@ -23,13 +23,18 @@ const VAGO = /(^|[^\p{L}])(varios|varias|arreglos|pendientes?|etc\.?|cosas|otros
 
 const norm = (p) => String(p || '').replace(/\\/g, '/');
 
+// En Windows la letra de unidad no distingue mayúsculas: VS Code abre la carpeta como `d:\…` y el editor pasa `D:\…`, y
+// `realpathSync` deja la letra como vino. La lista se guarda y se compara con la letra en mayúscula. Una ruta de Mac o
+// Linux empieza con `/` y no cambia.
+const unidadEnMayuscula = (p) => String(p).replace(/^([a-z]):(?=[\\/]|$)/, (_, l) => `${l.toUpperCase()}:`);
+
 /** La ruta con los enlaces resueltos, aunque el final todavía no exista. */
 function sinEnlaces(p) {
-  const abs = path.resolve(String(p));
+  const abs = unidadEnMayuscula(path.resolve(String(p)));
   const resto = [];
   let cabeza = abs;
   for (;;) {
-    try { return path.join(fs.realpathSync(cabeza), ...resto); } catch (_) { /* no existe: se sube uno */ }
+    try { return unidadEnMayuscula(path.join(fs.realpathSync(cabeza), ...resto)); } catch (_) { /* no existe: se sube uno */ }
     const arriba = path.dirname(cabeza);
     if (arriba === cabeza) return abs;
     resto.unshift(path.basename(cabeza));
@@ -67,6 +72,12 @@ function normalizar(entradas, { cwd = process.cwd() } = {}) {
     out.add(escritoDe(path.resolve(cwd, s)));
   }
   return { lista: [...out].sort(), sinRepo };
+}
+
+/** Las entradas de la lista `anterior` que no están en la `nueva`, con la letra de unidad sin distinguir mayúsculas. */
+function faltanEnLaNueva(anterior, nueva) {
+  const nuevas = new Set((nueva || []).map(unidadEnMayuscula));
+  return (anterior || []).filter((f) => !nuevas.has(unidadEnMayuscula(f)));
 }
 
 /** La raíz del repo de una ruta (aunque el archivo todavía no exista), o null. */
@@ -255,6 +266,6 @@ function fueraDeLaLista({ lista, filePath, real, repoRoot, home = os.homedir(), 
 }
 
 module.exports = {
-  sinEnlaces, normalizar, raizDe, esCodigo, esCodigoRel, contar, problemaDeTopes, problemaDelMotivo, variosTemas, vago, sinUnaPersona,
+  sinEnlaces, unidadEnMayuscula, faltanEnLaNueva, normalizar, raizDe, esCodigo, esCodigoRel, contar, problemaDeTopes, problemaDelMotivo, variosTemas, vago, sinUnaPersona,
   esPapeleo, esPruebaDe, esTemporal, fueraDeLaLista, rechazoDeLaLista, textoDeAmpliar, textoOtroCarril, riesgoDeLaLista, textoDelRiesgo,
 };
