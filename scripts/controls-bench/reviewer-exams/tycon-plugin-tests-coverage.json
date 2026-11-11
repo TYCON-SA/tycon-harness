@@ -1,7 +1,7 @@
 {
   "agent": "tycon-plugin-tests-coverage",
   "file": "agents/tycon-plugin-tests-coverage.md",
-  "hash": "8fc616b1d858cd88bc25a5f18ac75a14f389975c",
+  "hash": "ead45fd8e30fc2f3d05034e9ba30066e67be861e",
   "passed": 9,
   "total": 9,
   "score": 1,

@@ -1850,6 +1850,44 @@ function cmdCompleteStep(nRaw, flags) {
       for (const f of v.faltan) for (const l of cw.caminos({ marker: __filename, ruleId: f.rule_id, file: f.file || '<archivo>' })) console.error(l);
       process.exit(1);
     }
+    // Los críticos que reportó cada revisor, anotados por el arnés (lib/reported-criticals.js): findings.json se pudo
+    // reescribir a mano después de write-findings, así que el cruce se repite acá, con los `refuted` vueltos a comprobar
+    // contra la constancia del verificador (la misma función que write-findings).
+    if (rd && v.existe && !v.error) {
+      const rcLib = require('./lib/reported-criticals.js');
+      let lista = null;
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(rd, 'findings.json'), 'utf8'));
+        lista = Array.isArray(data) ? data : (data && Array.isArray(data.findings) ? data.findings : null);
+      } catch (_e) { lista = null; }
+      let roster = null;
+      try { roster = JSON.parse(fs.readFileSync(path.join(rd, 'review-roster.json'), 'utf8')); } catch (_e) { roster = null; }
+      const P = require('./pipeline.js');
+      const refutedHolds = (f) => {
+        try { return P.normalizeFindingRecord(f, [], { roster, errores: [], runDir: rd }).disposition === 'refuted'; } catch (_e) { return false; }
+      };
+      const cruce = lista ? rcLib.checkRun({ stateDir: STATE_DIR, story: marker.storyId, since: marker.startedAt || null, findings: lista, runDir: rd, refutedHolds })
+        : { error: 'findings.json no es una lista de hallazgos', problemas: [] };
+      if (cruce.error) {
+        appendLog('gates.log', { name: 'reported-criticals', status: 'blocked', story: marker.storyId, step: n, error: cruce.error });
+        console.error(`marker.js complete-step ${n} BLOQUEADO — no pude cruzar findings.json con lo que reportaron los revisores (${cruce.error}): «no lo pude leer» no es «no hay críticos».`);
+        process.exit(1);
+      }
+      if (cruce.problemas.length) {
+        appendLog('gates.log', { name: 'reported-criticals', status: 'blocked', story: marker.storyId, step: n, problemas: cruce.problemas.map((p) => ({ tipo: p.tipo, rule: p.rule || null, advisor: p.advisor })) });
+        console.error(`marker.js complete-step ${n} BLOQUEADO — findings.json no trae lo que reportaron los revisores:`);
+        for (const l of rcLib.renglones(cruce, { marker: __filename })) console.error(l);
+        process.exit(1);
+      }
+      if (cruce.sinRegistro) console.error(`ℹ️  complete-step ${n}: ${rcLib.NO_REGISTRY_NOTE}.`);
+      if (cruce.unreadable) console.error(`⚠️  complete-step ${n}: el registro de críticos reportados tiene ${cruce.unreadable} renglón(es) ilegible(s): no cuentan.`);
+      appendLog('gates.log', { name: 'reported-criticals', status: cruce.sinRegistro ? 'no-registry' : 'ok', story: marker.storyId, step: n });
+    } else {
+      // sin carpeta de la corrida o sin findings.json no hay con qué cruzar: se dice, no se calla
+      const porque = !rd ? 'no encontré la carpeta de la corrida' : (v.error ? `no pude leer findings.json (${v.error})` : 'no hay findings.json');
+      console.error(`ℹ️  complete-step ${n}: no crucé lo que reportaron los revisores: ${porque}.`);
+      appendLog('gates.log', { name: 'reported-criticals', status: 'not-checked', story: marker.storyId, step: n, motivo: porque });
+    }
   }
 
   // Gate de DoD — «Preparar el commit». El orquestador puede llegar a

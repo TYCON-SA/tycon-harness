@@ -46,6 +46,7 @@
     { "kind": "hook", "id": "PreToolUse:@tcg:public-push-guard.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PreToolUse:tycon-pipeline/scripts/on-bash-write-gate.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PreToolUse:tycon-pipeline/scripts/on-advisor-run.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
+    { "kind": "hook", "id": "SubagentStop:tycon-pipeline/scripts/on-advisor-done.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PreToolUse:tycon-pipeline/scripts/reviewer-launch-gate.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "Stop:tycon-pipeline/scripts/on-stop-dod-gate.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "Stop:@tcg:response-style-meter.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },

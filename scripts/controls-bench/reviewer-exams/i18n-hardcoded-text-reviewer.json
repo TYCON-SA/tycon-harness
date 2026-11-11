@@ -1,0 +1,19 @@
+{
+  "agent": "i18n-hardcoded-text-reviewer",
+  "file": "agents/i18n-hardcoded-text-reviewer.md",
+  "hash": "bfc8128633749ff5dc2af4c89c8ccae63dbe4d25",
+  "passed": 3,
+  "total": 3,
+  "score": 1,
+  "baseline": {
+    "passed": 3,
+    "total": 3,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "i18n-hardcoded-text-reviewer::i18n-c1-label-jsx-hardcoded": true,
+    "i18n-hardcoded-text-reviewer::i18n-w1-toast-literal": true,
+    "i18n-hardcoded-text-reviewer::limpio-labels-via-t-sin-c1": true
+  }
+}

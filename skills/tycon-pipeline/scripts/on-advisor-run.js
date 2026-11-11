@@ -266,6 +266,26 @@ function recordLaunch(o) {
     lineError = (e && e.message) || String(e);
   }
 
+  // ── El lanzamiento en el registro de críticos reportados ──────────────────
+  // Un revisor del set de la ronda abierta deja su renglón `launched`: sin él, el cierre no sabría que de este revisor
+  // falta el reporte (lib/reported-criticals.js). `reviewers-run` anota el suyo al lanzar el proceso, y no pasa por acá.
+  // El set sale de la marca `step5-start` de la ronda (sólo su posición y su `expected`, no su `iter`).
+  if (!o.extra || o.extra.launcher !== 'pipeline') {
+    try {
+      const parsed = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
+      const idx = require('./lib/advisor-round.js').inicioDeLaRonda(parsed);
+      const expected = idx >= 0 && Array.isArray(parsed[idx].expected) ? parsed[idx].expected : [];
+      if (expected.includes(advisor)) {
+        require('./lib/reported-criticals.js').recordLaunched({
+          stateDir: stateDirOf(os.homedir()), sessionKey: sessionId, advisor, story, run: null, launcher: o.launcher || 'claude',
+        });
+      }
+    } catch (e) {
+      // sin el renglón, el cierre dice «no tiene registro» o «no pude leer»: nunca «no reportó nada». Queda dicho
+      try { process.stderr.write(`on-advisor-run: no pude anotar el lanzamiento de ${advisor} en el registro de críticos (${(e && e.message) || e})\n`); } catch { /* nada */ }
+    }
+  }
+
   // ── La FOTO del estado auditado, tomada sola ──────────────────────────────
   // 🔴 `snapshot-iter N` tiene un único momento correcto: ronda de advisors terminada, ANTES del
   // primer fix. Depender de que el orquestador se acuerde falla con el mismo síntoma:
@@ -437,7 +457,8 @@ function main() {
   const curated = ADHOC.has(advisor) ? curatedReading(ti.prompt, prevLines) : null;
   const extra = curated ? { curated: true } : (logUnreadable && ADHOC.has(advisor) ? { curated_check: 'log-unreadable' } : undefined);
 
-  const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt, extra });
+  const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt, extra,
+    launcher: event.tool_name === 'collaborationspawn_agent' ? 'codex-agent' : 'claude' });
   if (process.env.TYCON_SPAWN_GOVERNANCE === '0') {
     if (notaFreno) {
       try { process.stdout.write(JSON.stringify({ systemMessage: `[tycon-pipeline] lanzamiento \`${advisor}\`: ${notaFreno}` })); } catch { /* nunca romper el spawn */ }

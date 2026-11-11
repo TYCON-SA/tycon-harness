@@ -360,23 +360,31 @@ eso lo decide la persona. Volver a correr `check-count` no cambia nada.
 
 El usuario VE el bloque que devuelve cada subagente. Sin esta instrucción, seis advisors devuelven seis
 reportes de 30+ renglones con rule IDs y `archivo:línea`, uno detrás de otro: un muro. **Todo `Agent(...)`
-de este step cierra con este párrafo, con la ruta ya resuelta** (un subagente no puede inventar dónde
-escribir; si no le das destino, el detalle vuelve al chat):
+de este step cierra con este párrafo**:
 
 ```
-Formato de tu final report — el mensaje que devolvés, NO el archivo:
+Formato de tu final report — el mensaje que devolvés:
 arrancá con 1-3 bullets en castellano llano: qué encontraste y si bloquea. Sin rule IDs, sin
-archivo:línea, sin nombres de regla. Después, la acción, si la hay, en una línea. El DETALLE
-COMPLETO (rule IDs, archivo:línea, tablas, repros) NO va en el reporte: escribilo a
-`<RUN_DIR>/step-05-advisor-reports/<advisor>.md` y cerrá con "detalle completo en <esa ruta>". Tu reporte
-entero tiene que entrar en menos de 1000 caracteres de prosa. Si no hay hallazgos, "limpio,
-0 hallazgos" alcanza y no hace falta escribir archivo — no enumeres lo que revisaste y salió bien.
+archivo:línea, sin nombres de regla en los bullets. Después, la acción, si la hay, en una línea. El
+DETALLE (archivo:línea, tablas, repros) no va en el reporte ni a un archivo: si lo tenés, decí "tengo
+el detalle, pedímelo". Tu reporte entero tiene que entrar en menos de 1000 caracteres de prosa; no
+enumeres lo que revisaste y salió bien. El ÚLTIMO renglón es SIEMPRE el veredicto, solo, sin viñeta
+ni negrita adelante, con la regla de cada hallazgo UNA VEZ POR HALLAZGO (dos del mismo tipo, dos veces):
+Veredicto: limpio
+Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
 ```
 
-`<RUN_DIR>` es `.advisors/pipeline-runs/<clave>-<sello>/`, la ruta que imprime
+**El renglón de veredicto lo lee el arnés** (`lib/reported-criticals.js`): al terminar cada revisor, el gancho del fin
+del subagente (`on-advisor-done.js`) lee sus palabras de su propia transcripción y anota cada regla crítica con cuántas
+veces la reportó. `write-findings` y el cierre de «Hallazgos» frenan si `findings.json` no las trae. Un revisor que no
+cierra con ese renglón queda «no pude leer lo que reportó», y el cierre no pasa hasta que vuelva a correr o una persona
+lo exima. Si el detalle hace falta, se le pide al revisor con un mensaje: su respuesta también se lee y se suma. El
+orquestador deja lo que devolvió cada revisor (y el detalle, si lo pidió) en
+`<RUN_DIR>/step-05-advisor-reports/<advisor>.md`: es la constancia que mira el pre-commit, y el arnés no la usa para el
+cruce. `<RUN_DIR>` es `.advisors/pipeline-runs/<clave>-<sello>/`, la ruta que imprime
 `pipeline.js run-dir --story <s> --repo <r> --create` (con un número repetido en el repo la clave es
-`<tema>__<número>`; armarla a mano parte la corrida en dos carpetas). La regla completa y por qué se endureció
-está en el bloque `TYCON_BLOCK:response-style` de `~/.claude/CLAUDE.md` §"Lo que devuelve un SUBAGENTE".
+`<tema>__<número>`; armarla a mano parte la corrida en dos carpetas). La regla completa del formato y por qué se
+endureció está en el bloque `TYCON_BLOCK:response-style` de `~/.claude/CLAUDE.md` §"Lo que devuelve un SUBAGENTE".
 
 ⚠️ **Es la 3ra vez que este problema se da por arreglado** (feedback del dev 2026-07-25, 2026-07-27 y
 2026-07-27 otra vez). Las dos veces anteriores la regla vivía SOLO en el `CLAUDE.md` y dependía de que el

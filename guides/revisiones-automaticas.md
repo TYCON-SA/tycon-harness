@@ -74,6 +74,27 @@ Sólo un hallazgo confirmado con gravedad en el corte `review.blocking_severity`
 CRITICAL en el código; lo demás confirmado son notas o avisos. El tope de vueltas `review.max_rounds` (de fábrica 3) vale
 para las dos revisiones; un repo lo ajusta en su `.tycon/advisors.yaml`, por commit. No hay ajuste por máquina.
 
+## Los críticos de los revisores los anota el arnés
+
+El agente arma `findings.json` con lo que dijeron los revisores, pero no es el único que lo escucha. Cada revisor del
+paso «Revisores» cierra su respuesta con un renglón fijo: `Veredicto: limpio`, o `Veredicto: hallazgos (SEC-C1, SEC-C1,
+SEC-W2) · bloquea: sí`, con la regla una vez por hallazgo. Cuando el revisor termina, el arnés lee ese renglón de la
+respuesta del propio revisor y anota cuántos críticos dio de cada regla. Lo anota en el estado de la máquina, en una
+zona que el agente no puede escribir. Lo lee el gancho del fin de un subagente en Claude Code, y el lanzador de los
+revisores en Codex.
+
+Al escribir los hallazgos y al cerrar el paso «Hallazgos», el arnés compara `findings.json` con lo anotado, y frena si:
+
+- falta un crítico, o aparece con una gravedad menor;
+- un crítico figura como arreglado sin una vuelta posterior del mismo revisor que ya no lo reporte;
+- un crítico figura como refutado sin la constancia del verificador;
+- un revisor del set no dejó un renglón que se pueda leer.
+
+Un revisor ilegible nunca cuenta como «sin críticos». Se vuelve a correr, o lo exime una persona: `marker.js
+waive-critical --rule SIN-REPORTE --file <revisor> --reason '<por qué>'`. Una exención por delegación no alcanza para dar algo por arreglado:
+eso lo cierra una vuelta nueva del revisor o el dueño. Una ejecución sin nada anotado (por ejemplo, de antes de este
+control) lo dice en una línea y sigue.
+
 ## Las opciones
 
 | Opción | Qué hace | Clave | Valores | De fábrica | Cuándo cambiarla |

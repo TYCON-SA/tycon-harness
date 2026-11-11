@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-e2e-realness-checker.md
-# source_sha256: 7c881accd4045fa98dcb345bd795da4dc426ee41d878a7c354856122ffccb6d1
+# source_sha256: b9c1989f6d1110ed34b031255fe2aa607e0e66dacb9f2e95c2d80e6dde3bac0b
 # Se despliega como $CODEX_HOME/tycon-e2e-realness-checker.config.toml y se invoca: codex exec -p tycon-e2e-realness-checker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -300,6 +300,14 @@ Tu reporte final se estructura SIEMPRE así:
 3. Si tenés detalle (rule IDs, `archivo:línea`, repros, tablas): **NO lo pegues**. Cerrá con una línea:
    *\"tengo el detalle, pedímelo\"*. El orquestador te lo pide con un mensaje de seguimiento del orquestador si hace falta, y él sí puede
    escribirlo a un archivo.
+4. **El último renglón es SIEMPRE el veredicto**, solo, sin viñeta ni negrita adelante, con la regla de cada hallazgo
+   una vez por hallazgo (dos del mismo tipo, dos veces); también sin hallazgos. Es lo único con rule IDs que va en el
+   reporte, y lo lee el arnés: sin él, tu reporte queda como no leído y la historia no cierra. Tu estado propio
+   (`**Veredicto**: GREEN …`) no lo reemplaza: este renglón va además, al final.
+   ```text
+   Veredicto: limpio
+   Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+   ```
 
 **Tope duro: 1000 caracteres de prosa** (600 si el prompt no pide lo contrario). Sin hallazgos:
 `Limpio, 0 hallazgos.` y nada más — enumerar todo lo que revisaste y salió bien es el modo más común de

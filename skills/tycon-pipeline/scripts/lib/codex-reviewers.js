@@ -157,7 +157,8 @@ function promptFor({ advisor, contextFile, storyPath, repo, preamble }) {
     `context_file: ${contextFile}\n` +
     `story_path: ${storyPath}\nrepo_path: ${repo}\nphase: post-implementation\n\n` +
     `Revisá según tu procedimiento (${advisor}) lo que dice el context_file: la story y los archivos tocados. ` +
-    'Devolvé el reporte con tu formato, cada hallazgo con su regla entre corchetes, y cerrá con el renglón «Veredicto:».';
+    'Devolvé el reporte con tu formato, cada hallazgo con su regla entre corchetes, y cerrá con el renglón de veredicto, ' +
+    'solo, con la regla de cada hallazgo una vez por hallazgo: «Veredicto: limpio» o «Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí».';
 }
 
 /**
@@ -229,6 +230,14 @@ async function run(o) {
     (done.size ? `. Ya hechos en esta vuelta: ${[...done].join(', ')}` : '') + '.');
 
   const { recordLaunch } = require('../on-advisor-run.js');
+  // El registro de críticos reportados: el lanzamiento al lanzar, y lo que dejó el revisor al cerrar su proceso, leído en
+  // ese momento (después, el archivo de la carpeta de la corrida lo puede tocar cualquiera). Un registro que no se puede
+  // escribir no corta la vuelta: queda dicho, y el cierre dice «no pude leer lo que reportó».
+  const rc = require('./reported-criticals.js');
+  const runName = path.basename(runDir);
+  const anotar = (fn, que) => {
+    try { return fn(); } catch (e) { say(`reviewers-run: no pude anotar ${que} en el registro de críticos (${e.message || e}).`); return null; }
+  };
   const procs = {};
   const writePids = () => {
     try { fs.writeFileSync(pidsFile, JSON.stringify({ iter: start.iter ?? null, procs }, null, 2)); } catch { /* el relanzado sólo pierde el corte */ }
@@ -249,6 +258,8 @@ async function run(o) {
     const args = ['exec', '-p', advisor, '--sandbox', sandbox, '--skip-git-repo-check', ...sessionArgs(session), '-o', report,
       promptFor({ advisor, contextFile, storyPath, repo, preamble })];
     const errLog = path.join(reportsDir, `${advisor}.stderr.log`);
+    const salida = anotar(() => rc.recordLaunched({ stateDir, sessionKey: sessionId, advisor, story: storyId, run: runName, launcher: 'pipeline' }),
+      `el lanzamiento de ${advisor}`);
     let tail = '';
     // Un `.cmd` sin shell no arranca en Windows (Node tira EINVAL al lanzar, no como evento): se cierra como falla con su
     // motivo, nunca rompe la corrida entera.
@@ -277,6 +288,12 @@ async function run(o) {
       try { fs.writeFileSync(errLog, tail); } catch { /* informativo */ }
       const exit = timedOut ? 'timeout' : code;
       const corrio = exit === 0 && validReport(report);
+      let texto = '';
+      if (corrio) { try { texto = fs.readFileSync(report, 'utf8'); } catch { texto = ''; } }
+      anotar(() => rc.recordReport({
+        stateDir, sessionKey: sessionId, advisor, iter: salida ? salida.iter : null, story: storyId, run: runName, source: 'reviewers-run', text: texto,
+        error: corrio ? (texto ? null : 'no pude leer el reporte que dejó') : (exit === 'timeout' ? 'se cortó por el tope de tiempo' : exit === 0 ? 'terminó sin reporte' : `salió ${exit}`),
+      }), `el reporte de ${advisor}`);
       // Sólo un revisor que corrió pasa por la constancia común (cuenta para la ronda, la foto y el registro de autoría).
       // El que falló queda en su propia línea, sin `advisor`: `check-count` la nombra en el rojo y nada lo da por corrido.
       let rec = { ok: true };

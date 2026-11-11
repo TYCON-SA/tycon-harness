@@ -96,6 +96,11 @@ cerrarRonda(){
   mkdir -p "$ST/advisor-runs"
   printf '{"event":"step5-start","iter":1,"expected":["%s"]}\n' "$3" >> "$ST/advisor-runs/$1.jsonl"
   (cd "$2" && node -e 'require(process.argv[1]).recordLaunch({ advisor: process.argv[2], sessionId: process.argv[3], cwd: process.argv[4] })' "$SK/on-advisor-run.js" "$3" "$1" "$2" 2>/dev/null)
+  # lo que contestó el revisor, como lo anota el gancho del fin del subagente: un revisor lanzado sin reporte frena write-findings
+  local tr="$TMP/revisor-$1-$3.jsonl"
+  printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Sin hallazgos.\nVeredicto: limpio"}]}}' > "$tr"
+  (cd "$2" && printf '{"hook_event_name":"SubagentStop","session_id":"%s","agent_id":"ag-%s","agent_type":"%s","agent_transcript_path":"%s"}' "$1" "$1" "$3" "$tr" \
+    | node "$SK/on-advisor-done.js" >/dev/null 2>&1)
 }
 VIEJA=1.9-20261001000000
 

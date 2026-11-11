@@ -1646,6 +1646,18 @@ function buzonTocado(cmd, cwd, stateDir) {
 }
 
 /**
+ * Lo que el comando borra o mueve del registro de los críticos que reportaron los revisores (`reported-criticals/`, de
+ * cualquier estado): borrar un renglón es borrar lo que dijo un revisor. Sin interruptor.
+ */
+function criticosTocados(cmd, cwd, stateDir) {
+  const { isReportedCriticalsRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'reported-criticals', nombres: ['reported-criticals'], pieza: isReportedCriticalsRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])reported-criticals(?![\w.-])/i.test(t) });
+}
+
+/**
  * Lo que el comando borra o mueve de una zona del estado: `carpeta` y `nombres` adentro del estado, o lo que `pieza` dice.
  * `enTexto`: cuándo un texto la nombra sin que la ruta se pueda resolver (un guion que la arma por partes); sin él, el nombre de la carpeta del estado.
  */
@@ -3653,6 +3665,12 @@ function handleCarrilEHistoria(event, opts = {}) {
     const directo = buzon.some((a) => /(^|[^\w.-])office[\\/](?:inbox|tomados|usados|messages\.jsonl)/i.test(String(a)) || /[\\/]office[\\/]?$/.test(String(a)));
     const tocados = directo || laneOff ? [] : marcadoresTocados(cmd, cwd, stateDir);
     return { block: (tocados.length ? sg.markerDeleteMessage(tocados, via) : sg.blockMessage({ kind: 'office-mailbox' }, { filePath: buzon[0], via })) + '\n' };
+  }
+  // el registro de los críticos que reportaron los revisores, también al borrarlo o moverlo
+  const criticos = constancias.length ? [] : criticosTocados(cmd, cwd, stateDir);
+  if (criticos.length) {
+    const sg = require('./lib/story-gate.js');
+    return { block: sg.blockMessage({ kind: 'reported-criticals' }, { filePath: criticos[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
   }
   if (constancias.length) {
     const sg = require('./lib/story-gate.js');

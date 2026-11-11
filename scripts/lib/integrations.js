@@ -56,7 +56,7 @@ const SAFE_REL = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 const inside = (p) => typeof p === 'string' && SAFE_REL.test(p) && !p.split('/').some((s) => s === '..' || s === '.');
 // el vocabulario de un hook, el mismo que valida la lista del aplicador (scripts/setup/apply-hooks.js): un hook que el
 // aplicador rechazaría deja al manifiesto roto, con su motivo, en vez de frenar la instalación de todo lo demás
-const EVENTS = Object.freeze(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd', 'PermissionRequest']);
+const EVENTS = Object.freeze(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd', 'PermissionRequest', 'SubagentStop']);
 const STEP_RE = /^(all|[a-z][a-z0-9-]*)$/;
 const EFFECTS = Object.freeze(['blocks', 'warns', 'records']);
 

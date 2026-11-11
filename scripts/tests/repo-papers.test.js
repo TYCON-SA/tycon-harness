@@ -143,7 +143,7 @@ const CLONE_LINE = {
   bash: `git clone https://github.com/${ORG_REPO} ${CLONE_DIR} && node ${CLONE_DIR}/scripts/setup/harness.js install`,
   powershell: `git clone https://github.com/${ORG_REPO} ${CLONE_DIR}; node ${CLONE_DIR}/scripts/setup/harness.js install`,
 };
-const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification', 'SessionEnd', 'PermissionRequest'];
+const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification', 'SessionEnd', 'PermissionRequest', 'SubagentStop'];
 
 // ── utilidades ──────────────────────────────────────────────────────────────────────────────────────────────────
 const exists = (abs) => fs.existsSync(abs);

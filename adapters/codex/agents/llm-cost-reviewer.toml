@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/llm-cost-reviewer.md
-# source_sha256: 672732fb1c610f8207963cecf1f21573d00bec81e096fba583f776d9562e04c0
+# source_sha256: 3b4eeb862b50faab303ef294fb0501319c5d2cd09f3dc738e35b2bc91261f5ef
 # Se despliega como $CODEX_HOME/llm-cost-reviewer.config.toml y se invoca: codex exec -p llm-cost-reviewer
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -84,6 +84,20 @@ corchetes** al inicio.
 ```
 
 Si no hay findings → `**Status**: ✅ OK` y omitir las secciones CRITICAL/WARNING.
+
+## 🔴 El último renglón es SIEMPRE el veredicto
+
+Tu respuesta termina con **exactamente uno** de estos renglones, solo, sin viñeta ni negrita adelante, con la regla de
+cada hallazgo una vez por hallazgo (dos del mismo tipo, dos veces); también sin hallazgos:
+
+```text
+Veredicto: limpio
+Veredicto: hallazgos (LLMCOST-C1, LLMCOST-C1, LLMCOST-W2) · bloquea: sí
+```
+
+Lo lee el arnés: anota cada regla crítica con cuántas veces la reportaste, y no deja cerrar la historia si los hallazgos
+anotados son menos. Sin el renglón, tu reporte queda como no leído y la historia no cierra. No lo escribas a un archivo:
+va en tu respuesta.
 
 ## Notas
 
