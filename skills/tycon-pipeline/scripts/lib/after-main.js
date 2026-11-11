@@ -51,14 +51,26 @@ function git(repo, args, env) {
   return { ok: r.status === 0, status: r.status, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String(r.stderr || '').trim() };
 }
 
+// La constancia que deja el propio portón en la carpeta de la evidencia: la escribe después de tomar la foto, y un repo
+// que guarda esa carpeta en git (el privado) la vería cambiar en cada corrida. No es parte de lo que se mide.
+const CONSTANCIA_DEL_PORTON = ':(glob)**/.advisors/dod-runtime/*-tests-result.json';
+
 /** El árbol de todo lo del disco, en un índice aparte desde HEAD: el índice de la persona no se toca. Tira si no se pudo. */
-function arbolDeLaCarpeta(repo) {
+const arbolDeLaCarpeta = (repo) => arbolEnIndiceAparte(repo, 'HEAD', true);
+
+/**
+ * El árbol de un commit o un árbol del repo sin la constancia del portón: la huella que el árbol armado anota de cada
+ * clon tiene que ser la misma que la de su carpeta. Tira si no se pudo.
+ */
+const sinLaConstancia = (repo, arbol) => arbolEnIndiceAparte(repo, arbol, false);
+
+function arbolEnIndiceAparte(repo, desde, conElDisco) {
   const gitDir = git(repo, ['rev-parse', '--absolute-git-dir']);
   if (!gitDir.ok) throw new Error(gitDir.err || 'no es un repo de git');
   const indice = path.join(gitDir.out, `after-main-index-${process.pid}-${Date.now()}`);
   const env = { GIT_INDEX_FILE: indice };
   try {
-    for (const args of [['read-tree', 'HEAD'], ['add', '-A'], ['write-tree']]) {
+    for (const args of [['read-tree', desde], ...(conElDisco ? [['add', '-A']] : []), ['rm', '--cached', '-q', '--ignore-unmatch', '--', CONSTANCIA_DEL_PORTON], ['write-tree']]) {
       const r = git(repo, args, env);
       if (!r.ok) throw new Error(`git ${args[0]}: ${r.err}`);
       if (args[0] === 'write-tree') return r.out;
@@ -204,6 +216,30 @@ function decidirDelArbol({ anotado, ahora }) {
   return { files: [...files], deMain, fallaron: anotado.failed.length };
 }
 
+/** Una sola línea que identifica la foto del árbol: la carpeta de cada repo (y el perfil del equipo, si va). */
+const huellaDeFoto = (f) => `privado:${f.privado.tree}|publico:${f.publico.tree}|equipo:${f.equipo ? f.equipo.tree : '-'}`;
+
+/**
+ * Lo que cambió en cada repo del árbol armado entre la foto de una completa (`anotado`) y la de ahora:
+ * `{ files: [{ repo: 'privado'|'publico', rel }] }`, o `{ no }` si no se puede comparar: el perfil del equipo cambió, el
+ * público salió de otro lado, o git no contestó. Lo comparado es el árbol de cada repo, como en `decidirDelArbol`.
+ */
+function cambiosDelArbol(anotado, ahora) {
+  const no = (m) => ({ no: m });
+  if (!anotado || !anotado.origen || !fotoValida(anotado.privado) || !fotoValida(anotado.publico)) return no('la completa no dejó la foto de sus repos');
+  if ((anotado.equipo && anotado.equipo.tree) !== (ahora.equipo && ahora.equipo.tree)) return no('cambió el perfil del equipo');
+  if (anotado.origen.fuente !== ahora.origen.fuente) return no('el público de debajo salió de otro lado');
+  const files = [];
+  try {
+    for (const lado of ['privado', 'publico']) {
+      if (anotado[lado].tree === ahora[lado].tree) continue;
+      const repo = lado === 'privado' ? ahora.origen.privado : ahora.origen.publico;
+      for (const d of diferencias(repo, anotado[lado].tree, ahora[lado].tree)) files.push({ repo: lado, rel: d.rel });
+    }
+  } catch (e) { return no(`no pude comparar un repo del árbol (${e.message.split('\n')[0]})`); }
+  return { files };
+}
+
 const leer = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
 const leerAnotado = (f) => {
   try { return leer(f); } catch (e) {
@@ -244,6 +280,11 @@ function main(argv) {
     process.stdout.write(`${JSON.stringify(f)}\n`);
     return 0;
   }
+  if (cmd === 'fingerprint') {
+    // fingerprint <foto del árbol>: la línea con que una repetición sola anota su carpeta en el árbol armado
+    process.stdout.write(huellaDeFoto(leer(repo)));
+    return 0;
+  }
   if (cmd === 'record-tree') {
     const [inicioF, resumenF, exit, salida] = resto;
     return anotar(medidoDelArbol({ arbol: repo, inicio: leer(inicioF), resumen: leer(resumenF), exit: Number(exit) }), salida);
@@ -265,4 +306,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { foto, medido, decidir, fotoDelArbol, medidoDelArbol, decidirDelArbol, NO_APLICA };
+module.exports = { foto, medido, decidir, fotoDelArbol, medidoDelArbol, decidirDelArbol, cambiosDelArbol, huellaDeFoto, sinLaConstancia, NO_APLICA };

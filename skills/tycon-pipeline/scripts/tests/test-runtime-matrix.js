@@ -2234,6 +2234,155 @@ withWaiverLog(() => {
   }
 }
 
+// La prueba que la historia corrigió después de la evidencia vence sólo los criterios que nombra. Un repo
+// de verdad: main con el código y las pruebas (también como origin/main), y la rama de la historia con su humo.
+{
+  const { execFileSync } = require('child_process');
+  const HACE_UNA_HORA = new Date(Date.now() - 60 * 60 * 1000);
+  const labCriterios = (acsDelHumo = [1, 2, 3, 4, 5], marcasDeLaPrueba = '@ac-2 @ac-3') => {
+    const f = makeWorkspace({ listaArchivos: ['files_to_modify:', '  - src/Feature.cs', '  - tests/feature.test.js', '  - tests/otra.test.js'] });
+    fs.rmSync(path.join(f.repo, '.git'), { recursive: true, force: true });
+    const git = (...a) => execFileSync('git', ['-C', f.repo, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a],
+      { stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: '2026-11-08T10:00:00Z', GIT_COMMITTER_DATE: '2026-11-08T10:00:00Z' } });
+    const st = fs.readFileSync(f.storyPath, 'utf8').split('## Acceptance Criteria')[0];
+    fs.writeFileSync(f.storyPath, [st, '## Acceptance Criteria', '',
+      ...[1, 2, 3, 4, 5].map((n) => `${n}. **Given** algo ${n}, **When** pasa, **Then** resultado ${n}.`), '',
+      '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|',
+      '| T1 | `FeatureTests.Caso1` | 1,2,3,4,5 | integration | x | y |', ''].join('\n'));
+    const prueba = path.join(f.repo, 'tests', 'feature.test.js');
+    const otra = path.join(f.repo, 'tests', 'otra.test.js');
+    fs.mkdirSync(path.dirname(prueba), { recursive: true });
+    fs.writeFileSync(prueba, `test('caso @story-9.9 ${marcasDeLaPrueba}', () => {});\n`);
+    fs.writeFileSync(otra, "test('otro @story-9.9 @ac-4', () => {});\n");
+    git('init', '-q', '-b', 'main');
+    git('add', '.');
+    git('commit', '-qm', 'inicio');
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git('switch', '-q', '-c', 'feature/9-9-fixture');
+    for (const p of [f.codeFile, prueba, otra]) fs.utimesSync(p, HACE_UNA_HORA, HACE_UNA_HORA);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', acsDelHumo);
+    git('add', '.');
+    git('commit', '-qm', 'el humo');
+    const ahora = (p, txt) => { fs.writeFileSync(p, txt); const d = new Date(Date.now() + 1000); fs.utimesSync(p, d, d); };
+    const calcular = () => rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, testsResults: [] });
+    return { f, prueba, otra, ahora, calcular };
+  };
+  const veredictos = (r) => r.acs.map((n) => `${n}:${r.perAc[n].verdict}`).join(' ');
+  {
+    const L = labCriterios();
+    L.ahora(L.prueba, "test('caso @story-9.9 @ac-2 @ac-3', () => { /* arreglada */ });\n");
+    const r = L.calcular();
+    const fila = (r.perAc[2].vencioPor || []).join(' ');
+    check('T19 RuntimeMatrix_TestFixedAfterEvidence_OnlyItsCriteriaReturn @story-8.263 @ac-14',
+      veredictos(r) === '1:RUNTIME 2:NOT-RUN 3:NOT-RUN 4:RUNTIME 5:RUNTIME'
+        && /venció por tests\/feature\.test\.js, que prueba los criterios 2 y 3/.test(fila)
+        && /\| #2 \|[^\n]*⌛ humo [^|]*venció por tests\/feature\.test\.js, que prueba los criterios 2 y 3/.test(rm.renderMd(r)),
+      JSON.stringify({ v: veredictos(r), fila, w: r.warnings.slice(0, 4) }));
+  }
+  {
+    const L = labCriterios();
+    L.ahora(L.f.codeFile, '// code cambiado\n');
+    const r = L.calcular();
+    check('T20 RuntimeMatrix_CodeFileChanged_AllReturn @story-8.263 @ac-16',
+      veredictos(r) === '1:NOT-RUN 2:NOT-RUN 3:NOT-RUN 4:NOT-RUN 5:NOT-RUN', JSON.stringify({ v: veredictos(r), w: r.warnings.slice(0, 3) }));
+  }
+  {
+    // caso 1: dos pruebas de la historia, de los criterios 2 y 3 y del 4; caso 2: la prueba del 2 y código más viejo
+    const L1 = labCriterios();
+    L1.ahora(L1.prueba, "test('caso @story-9.9 @ac-2 @ac-3', () => { /* arreglada */ });\n");
+    L1.ahora(L1.otra, "test('otro @story-9.9 @ac-4', () => { /* arreglada */ });\n");
+    const r1 = L1.calcular();
+    const L2 = labCriterios();
+    fs.writeFileSync(L2.f.codeFile, '// code cambiado\n');
+    L2.ahora(L2.prueba, "test('caso @story-9.9 @ac-2', () => { /* arreglada */ });\n");
+    const r2 = L2.calcular();
+    check('T22 RuntimeMatrix_MixedChanges_UnionOrAll @story-8.263 @ac-19',
+      veredictos(r1) === '1:RUNTIME 2:NOT-RUN 3:NOT-RUN 4:NOT-RUN 5:RUNTIME' && veredictos(r2) === '1:NOT-RUN 2:NOT-RUN 3:NOT-RUN 4:NOT-RUN 5:NOT-RUN',
+      JSON.stringify({ r1: veredictos(r1), r2: veredictos(r2) }));
+  }
+  {
+    const L = labCriterios([1, 2], '@ac-2');
+    L.ahora(L.prueba, "test('caso @story-9.9 @ac-2', () => { /* arreglada */ });\n");
+    const r = L.calcular();
+    check('T23 RuntimeMatrix_EvidenceCoveringTwoCriteria_CountsPerCriterion @story-8.263 @ac-20',
+      r.perAc[1].verdict === 'RUNTIME' && r.perAc[2].verdict === 'NOT-RUN'
+        && /venció por tests\/feature\.test\.js, que prueba el criterio 2/.test((r.perAc[2].vencioPor || []).join(' ')),
+      JSON.stringify({ v: veredictos(r), fila: r.perAc[2].vencioPor }));
+  }
+}
+
+// La captura de un portón E2E vencido para un criterio no cuenta para ese criterio: la captura es evidencia del mismo
+// portón. Laboratorio: el portón pasa con su captura del criterio 3 (de pantalla), la historia corrige la prueba que
+// nombra el 3, y un humo sin captura corre los criterios 1 y 3. Sin el portón, el 3 queda sin evidencia: con el portón
+// vencido tiene que quedar igual.
+{
+  const { execFileSync } = require('child_process');
+  const crypto = require('crypto');
+  const ledger = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
+  const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
+  const compacta = (minutos) => new Date(Date.now() - minutos * 60000).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const SPEC_1 = "import { test } from '@playwright/test';\ntest('mira @story-9.9 @ac-3', async ({ page }) => { await page.goto('/'); });\n";
+  const SPEC_2 = "import { test } from '@playwright/test';\ntest('mira @story-9.9 @ac-3', async ({ page }) => { await page.goto('/lista'); });\n";
+  const caso = (conPorton) => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'rm-captura-vencida-'));
+    const repo = path.join(ws, 'Proj');
+    const dod = path.join(repo, '.advisors', 'dod-runtime');
+    fs.mkdirSync(dod, { recursive: true });
+    fs.mkdirSync(path.join(repo, 'specs', 'stories'), { recursive: true });
+    fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+    const code = path.join(repo, 'src', 'Feature.cs');
+    fs.writeFileSync(code, '// code\n');
+    const fe = path.join(repo, 'web');
+    const spec = path.join(fe, 'tests', 'real.spec.ts');
+    fs.mkdirSync(path.dirname(spec), { recursive: true });
+    fs.writeFileSync(spec, SPEC_1);
+    const story = path.join(repo, 'specs', 'stories', '9-9-fixture.md');
+    fs.writeFileSync(story, ['---', 'story: 9.9', 'status: in-progress', 'files_to_modify:', '  - src/Feature.cs', '  - web/tests/real.spec.ts', '---', '',
+      '## Acceptance Criteria', '', '1. **Given** algo, **When** pasa, **Then** resultado.', '3. El usuario ve la lista de pedidos. @pantalla', '',
+      '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|',
+      '| T1 | `FeatureTests.Caso1` | 1 | integration | x | y |', '| E1 | `real.spec.ts::mira` | 3 | e2e | x | y |', ''].join('\n'));
+    const gatesLog = path.join(ws, 'gates.log');
+    fs.writeFileSync(gatesLog, '');
+    const vieja = new Date(Date.now() - 3600000);
+    for (const p of [code, spec]) fs.utimesSync(p, vieja, vieja);
+    const git = (...a) => execFileSync('git', ['-C', repo, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', '-c', 'gc.auto=0', ...a], { stdio: 'ignore' });
+    git('init', '-q', '-b', 'main');
+    git('add', '.');
+    git('commit', '-qm', 'inicio');
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git('switch', '-q', '-c', 'feature/9-9-fixture');
+    if (conPorton) {
+      const ts = compacta(20);
+      fs.writeFileSync(path.join(dod, `9.9-e2e-gate-${ts}.md`), ['# DoD Runtime Evidence — Story 9.9 — Playwright Gate (scoped)', '**Spec filter**: real.spec.ts',
+        '```', 'verdict=PASS', 'total=1', 'passed=1', '```', '- skipped: 0', `- frontend_dir: ${fe}`, '', '## Tests corridos (títulos completos — contrato DODRT-C8)', '- mira @story-9.9 @ac-3', ''].join('\n'));
+      fs.appendFileSync(gatesLog, JSON.stringify({ ts: new Date().toISOString(), check: 'dod', status: 'green', provenance: 'run-check', cmd: 'bash e2e-gate.sh /fe 9.9 /dir real.spec.ts', exit: 0 }) + '\n');
+      const dir = path.join(dod, `9.9-captures-${ts}`);
+      fs.mkdirSync(dir);
+      const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('lista')]);
+      fs.writeFileSync(path.join(dir, '01-lista.png'), png);
+      const crudo = JSON.stringify([{ file: '01-lista.png', title: 'mira @story-9.9 @ac-3', acs: [3], sha256: sha(png) }]);
+      fs.writeFileSync(path.join(dir, 'captures.json'), crudo);
+      fs.appendFileSync(gatesLog, JSON.stringify({ type: 'e2e-captures', ts: new Date().toISOString(), folder: path.basename(dir), sha256: sha(crudo) }) + '\n');
+      git('add', '.');
+      git('commit', '-qm', 'el portón');
+    }
+    fs.writeFileSync(spec, SPEC_2);
+    const cinco = new Date(Date.now() - 5 * 60000);
+    fs.utimesSync(spec, cinco, cinco);
+    git('add', '.');
+    git('commit', '-qm', 'corrige la prueba');
+    ledger.append({ dodDir: dod, gatesLog, story: '9.9', acs: [1, 3] });
+    const r = rm.compute({ storyPath: story, gatesLogPath: gatesLog, testsResults: [], activeDir: fs.mkdtempSync(path.join(ws, 'act-')) });
+    return { verdict: r.perAc[3].verdict, visual: r.perAc[3].visual || [], vencio: (r.perAc[3].vencioPor || []).join(' '), notRun: r.notRun, green: r.green };
+  };
+  const con = caso(true);
+  const sin = caso(false);
+  check('RuntimeMatrix_CaptureOfGateExpiredForCriterion_DoesNotCount @story-8.263 @ac-20',
+    con.visual.length === 0 && con.verdict === sin.verdict && con.notRun.includes(3) && con.green === false
+      && /venció por web\/tests\/real\.spec\.ts, que prueba el criterio 3/.test(con.vencio),
+    JSON.stringify({ con, sin }));
+}
+
 console.log('');
 if (failures > 0) {
   console.error(`✗ ${failures} caso(s) fallando`);

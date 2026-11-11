@@ -304,6 +304,23 @@ function groupCriterion(file, groupName) {
 }
 
 /**
+ * Lo compartido de heavy-suites.json (`shared.patterns`, la red común de las pesadas) para quien corre suites fuera de este
+ * guion (el portón de las stories, después de una completa verde): `touched(files)` devuelve el primer archivo del cambio
+ * que lo toca, o null. `problem` si el archivo no se deja leer: entonces quien pregunta corre todo.
+ */
+function sharedCriterion(file) {
+  const heavy = readHeavy(file);
+  if (heavy.problem) return { problem: heavy.problem };
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const patterns = ((data.shared && data.shared.patterns) || []).map(heavyPattern);
+  return {
+    touched(files) {
+      return files.map((f) => String(f).replace(/\\/g, '/')).find((f) => patterns.some((re) => re.test(f))) || null;
+    },
+  };
+}
+
+/**
  * El piso del instalador (la parte installer-floor de scripts/ci/public-ci.sh): si el cambio toca lo que leen sus
  * suites. Eso es lo que el repo ya declara: los patrones del grupo `installer` de heavy-suites.json, y por cada suite del
  * piso su propio archivo, sus patrones en heavy-suites.json y su `gate_only_when_touching` de suites.json. Tocar cómo
@@ -751,4 +768,4 @@ function main(argv) {
 // a los 8 KB (con la lista real quedan 140 de 219 líneas, sin la copia pública ni la máquina limpia). En
 // el pipeline va a un archivo y no muerde; a quien la lea por una tubería, sí.
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { main, nightlyNet, readOverLimit, overLimitProblems, groupCriterion, floorCriterion };
+module.exports = { main, nightlyNet, readOverLimit, overLimitProblems, groupCriterion, floorCriterion, sharedCriterion };

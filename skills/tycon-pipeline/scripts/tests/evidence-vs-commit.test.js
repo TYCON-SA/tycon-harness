@@ -580,3 +580,154 @@ test('T19 Registro_UnaPasadaDeGit_MismoCommitQueLaBusquedaPorLinea', () => {
   assert.equal(logs.length, 1, `una sola pasada de git log por registro (fueron ${logs.length})`);
   assert.ok(!logs[0].some((a) => String(a).startsWith('-S')), 'ya no busca línea por línea');
 });
+
+// ---------------------------------------------------------------- la prueba corregida por la misma historia
+// Decisión del dueño: una prueba que la misma historia cambió después de la evidencia vence sólo la evidencia de los
+// criterios que esa prueba nombra (`@story-<historia> @ac-N`). Sin marcas, ilegible o de autoría desconocida, vence todo.
+
+const HISTORIA_9_9 = { numero: '9.9', archivo: '/h/9-9-lab.md', catalogo: () => [{ numero: '9.9', archivo: '/h/9-9-lab.md' }, { numero: '9.8', archivo: '/h/9-8-otra.md' }] };
+const PRUEBA_9_9 = 'tests/feature.test.js';
+const conMarcas = (n) => `test('caso a @story-9.9 @ac-2 @ac-3', () => {});\ntest('caso b @story-9.9 @ac-3', () => {}); // v${n}\n`;
+
+/** El repo de la historia: main con el código y la prueba (también como origin/main), y la rama de la historia con la evidencia. */
+function labDeLaHistoria(prueba = conMarcas(1)) {
+  const repo = repoNuevo(carpeta());
+  const archivo = escribir(repo, 'src/feature.js', '// v1\n');
+  const abs = escribir(repo, PRUEBA_9_9, prueba);
+  commit(repo, 'base', 1700000000);
+  git(repo, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+  git(repo, ['switch', '-q', '-c', 'feature/9-9-lab']);
+  const ev = escribir(repo, '.advisors/dod-runtime/9.9-e2e-gate-20270101T000000Z.md', 'verdict=PASS\n');
+  commit(repo, 'evidencia', 1700000100);
+  const juzgar = (f) => evidencia().crearJuez({ historia: HISTORIA_9_9 }).vigencia({ archivo: f, mtimeMs: Date.now(), evidencia: { ruta: ev, tsMs: 1700000100 * 1000 } });
+  return { repo, archivo, prueba: abs, ev, juzgar };
+}
+
+test('T17 EvidenceVsCommit_SameStoryTest_VoidsOnlyItsCriteria @story-8.263 @ac-14 — la prueba que la historia corrigió vence sólo sus criterios', () => {
+  // con un commit en la rama de la historia, todavía sin fusionar (lo de siempre dentro de una corrida)
+  let l = labDeLaHistoria();
+  escribir(l.repo, PRUEBA_9_9, conMarcas(2));
+  commit(l.repo, 'arregla la prueba', 1700000200);
+  let r = l.juzgar(l.prueba);
+  assert.equal(r.cuenta, false, JSON.stringify(r));
+  assert.equal(r.regla, 6, JSON.stringify(r));
+  assert.deepStrictEqual(r.criterios, [2, 3], JSON.stringify(r));
+  // sin commitear: la regla 2 la juzga igual, dentro de la carpeta de la historia
+  l = labDeLaHistoria();
+  escribir(l.repo, PRUEBA_9_9, conMarcas(3));
+  r = l.juzgar(l.prueba);
+  assert.deepStrictEqual([r.cuenta, r.regla, r.criterios], [false, 6, [2, 3]], JSON.stringify(r));
+  assert.equal(r.motivo, 'sin-commitear');
+  // con la fusión del pedido de la historia
+  l = labDeLaHistoria();
+  git(l.repo, ['switch', '-q', 'main']);
+  git(l.repo, ['switch', '-q', '-c', 'feature/9-9-arreglo']);
+  escribir(l.repo, PRUEBA_9_9, conMarcas(4));
+  commit(l.repo, 'arregla la prueba', 1700000200);
+  git(l.repo, ['switch', '-q', 'feature/9-9-lab']);
+  git(l.repo, ['merge', '-q', '--no-ff', '-m', 'Merge pull request 7 from feature/9-9-arreglo into main', 'feature/9-9-arreglo'],
+    { GIT_COMMITTER_DATE: '1700000300 +0000', GIT_AUTHOR_DATE: '1700000300 +0000' });
+  r = l.juzgar(l.prueba);
+  assert.deepStrictEqual([r.cuenta, r.regla, r.criterios], [false, 6, [2, 3]], JSON.stringify(r));
+});
+
+test('T18 EvidenceVsCommit_SameStoryTestWithoutTags_VoidsAll @story-8.263 @ac-15 @ac-16 @ac-17 — sin marcas, ilegible, de código o de autoría desconocida vence todo; la de otra historia cuenta', () => {
+  const venceTodo = (r, caso) => {
+    assert.equal(r.cuenta, false, `${caso}: ${JSON.stringify(r)}`);
+    assert.ok(!Array.isArray(r.criterios) || !r.criterios.length, `${caso}: ${JSON.stringify(r)}`);
+  };
+  // la prueba sin marcas
+  let l = labDeLaHistoria('test(\'caso sin marcas\', () => {});\n');
+  escribir(l.repo, PRUEBA_9_9, 'test(\'caso sin marcas\', () => {}); // v2\n');
+  commit(l.repo, 'arregla la prueba', 1700000200);
+  venceTodo(l.juzgar(l.prueba), 'sin marcas');
+  // la prueba que no se deja leer
+  l = labDeLaHistoria();
+  escribir(l.repo, PRUEBA_9_9, conMarcas(2));
+  fs.chmodSync(l.prueba, 0o000);
+  try { venceTodo(l.juzgar(l.prueba), 'ilegible'); } finally { fs.chmodSync(l.prueba, 0o644); }
+  // un archivo de código, aunque lo cambie la misma historia
+  l = labDeLaHistoria();
+  escribir(l.repo, 'src/feature.js', '// v2\n');
+  commit(l.repo, 'arregla el código', 1700000200);
+  venceTodo(l.juzgar(l.archivo), 'código');
+  // la prueba cambiada por otra historia: cuenta, como hoy
+  l = labDeLaHistoria();
+  git(l.repo, ['switch', '-q', '-c', 'feature/9-8-otra', 'main']);
+  escribir(l.repo, PRUEBA_9_9, conMarcas(5));
+  commit(l.repo, 'otra historia', 1700000200);
+  git(l.repo, ['switch', '-q', 'feature/9-9-lab']);
+  git(l.repo, ['merge', '-q', '--no-ff', '-m', 'Merge pull request 8 from feature/9-8-otra into main', 'feature/9-8-otra'],
+    { GIT_COMMITTER_DATE: '1700000300 +0000', GIT_AUTHOR_DATE: '1700000300 +0000' });
+  const ajena = l.juzgar(l.prueba);
+  assert.deepStrictEqual([ajena.cuenta, ajena.regla], [true, 6], JSON.stringify(ajena));
+  // un commit de historia desconocida que ya está en main, sin su fusión
+  l = labDeLaHistoria();
+  git(l.repo, ['switch', '-q', 'main']);
+  escribir(l.repo, PRUEBA_9_9, conMarcas(6));
+  commit(l.repo, 'directo a main', 1700000200);
+  git(l.repo, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+  git(l.repo, ['switch', '-q', 'feature/9-9-lab']);
+  git(l.repo, ['merge', '-q', '--no-ff', '-m', 'trae main', 'main'], { GIT_COMMITTER_DATE: '1700000300 +0000', GIT_AUTHOR_DATE: '1700000300 +0000' });
+  venceTodo(l.juzgar(l.prueba), 'desconocida en main');
+  // la prueba que escribió la resolución de una fusión
+  l = labDeLaHistoria();
+  git(l.repo, ['switch', '-q', '-c', 'feature/9-8-otra', 'main']);
+  escribir(l.repo, 'otro.txt', 'x');
+  commit(l.repo, 'no toca la prueba', 1700000200);
+  git(l.repo, ['switch', '-q', 'feature/9-9-lab']);
+  git(l.repo, ['merge', '-q', '--no-ff', '--no-commit', 'feature/9-8-otra']);
+  escribir(l.repo, PRUEBA_9_9, conMarcas(7));
+  commit(l.repo, 'Merge pull request 9 from feature/9-8-otra into main', 1700000300);
+  venceTodo(l.juzgar(l.prueba), 'resolución de fusión');
+});
+
+test('EvidenceVsCommit_FixedTestCriteria_ReadFromEveryVersion @story-8.263 @ac-14 @ac-15 — los criterios salen de todo el archivo y también de la versión que juzgó la evidencia', () => {
+  const tieneTodos = (r, esperados, caso) => {
+    assert.deepStrictEqual([r.cuenta, r.regla], [false, 6], `${caso}: ${JSON.stringify(r)}`);
+    assert.ok(Array.isArray(r.criterios) && esperados.every((n) => r.criterios.includes(n)), `${caso}: ${JSON.stringify(r)}`);
+  };
+  // un archivo que nombra otra historia y marca cada caso sin repetir la marca de la historia
+  const varias = (v) => [
+    "describe('T1 @story-9.9 @ac-1 @ac-2', () => {",
+    "  it('T2 @ac-2', () => {});",
+    `  it('T6 @ac-3', () => {}); // v${v}`,
+    '});',
+    "describe('@story-9.8 @ac-7', () => {});", ''].join('\n');
+  let l = labDeLaHistoria(varias(1));
+  escribir(l.repo, PRUEBA_9_9, varias(2));
+  commit(l.repo, 'arregla la prueba', 1700000200);
+  tieneTodos(l.juzgar(l.prueba), [1, 2, 3], 'varias historias');
+  // el arreglo commiteado sacó la marca de un caso: ese criterio también vence
+  const dos = (b) => `test('caso a @story-9.9 @ac-2', () => {});\ntest('caso b ${b}', () => {});\n`;
+  l = labDeLaHistoria(dos('@story-9.9 @ac-3'));
+  escribir(l.repo, PRUEBA_9_9, dos('ahora sin marca'));
+  commit(l.repo, 'arregla la prueba', 1700000200);
+  tieneTodos(l.juzgar(l.prueba), [2, 3], 'marca sacada y commiteada');
+  // y lo mismo si después se vuelve a editar sin commitear
+  escribir(l.repo, PRUEBA_9_9, `${dos('ahora sin marca')}// otra vez\n`);
+  tieneTodos(l.juzgar(l.prueba), [2, 3], 'marca sacada, commiteada y vuelta a editar');
+  // una fusión de otra historia tocó la prueba y la historia la edita sin commitear: vence por criterio, no todo
+  l = labDeLaHistoria();
+  git(l.repo, ['switch', '-q', '-c', 'feature/9-8-otra', 'main']);
+  escribir(l.repo, PRUEBA_9_9, conMarcas(5));
+  commit(l.repo, 'otra historia', 1700000200);
+  git(l.repo, ['switch', '-q', 'feature/9-9-lab']);
+  git(l.repo, ['merge', '-q', '--no-ff', '-m', 'Merge pull request 8 from feature/9-8-otra into main', 'feature/9-8-otra'],
+    { GIT_COMMITTER_DATE: '1700000300 +0000', GIT_AUTHOR_DATE: '1700000300 +0000' });
+  escribir(l.repo, PRUEBA_9_9, `${conMarcas(5)}// la historia la corrige\n`);
+  const r = l.juzgar(l.prueba);
+  tieneTodos(r, [2, 3], 'fusión ajena y edición propia sin commitear');
+  assert.equal(r.motivo, 'sin-commitear');
+});
+
+test('EvidenceVsCommit_EvidenceVersionUnreadable_VoidsAll @story-8.263 @ac-15 — si no se encuentra la versión que juzgó la evidencia, vence toda', () => {
+  const l = labDeLaHistoria();
+  escribir(l.repo, PRUEBA_9_9, conMarcas(2));
+  const lib = evidencia();
+  const juez = lib.crearJuez({ historia: HISTORIA_9_9, correrGit: (dir, args, env) =>
+    (args[0] === 'rev-list' && args.some((a) => String(a).startsWith('--before=')) ? { codigo: 128, salida: '', error: 'fatal: de mentira' } : lib.correrGitDeVerdad(dir, args, env)) });
+  const r = juez.vigencia({ archivo: l.prueba, mtimeMs: Date.now(), evidencia: { ruta: l.ev, tsMs: 1700000100 * 1000 } });
+  assert.equal(r.cuenta, false, JSON.stringify(r));
+  assert.ok(!Array.isArray(r.criterios) || !r.criterios.length, JSON.stringify(r));
+});

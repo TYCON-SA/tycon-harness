@@ -304,7 +304,7 @@ function build(repo, story, dir) {
     base: { ...pub, uncommitted: pubFoto.uncommitted },
     private: { root: repo, commit: priv.head, uncommitted: priv.uncommitted },
     // la huella de lo que se clonó de cada repo, antes de superponer: lo que este árbol mide de verdad (lib/after-main.js)
-    measured: { private: priv.tree, public: pubFoto.tree },
+    measured: { private: require('./after-main.js').sinLaConstancia(arbol, priv.tree), public: require('./after-main.js').sinLaConstancia(publico, pubFoto.tree) },
     team: team || null, teamSource: layer.source, teamProblem: layer.problem, seconds: Math.round((Date.now() - t0) / 100) / 10,
     overlay: (r.stdout || '').trim().split('\n').pop() || '',
   };

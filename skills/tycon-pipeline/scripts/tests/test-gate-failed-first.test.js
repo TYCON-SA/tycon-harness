@@ -314,6 +314,56 @@ test('T27 Porton_SinCorrida_LoGuardadoEsNull — red-full sin corrida abierta da
   assert.equal(r.out.trim(), 'null');
 });
 
+test('T13 FailedFirst_DecideGreen_ClassesFromLists @story-8.263 @ac-3 @ac-6 — con lo guardado verde, cada clase pide la completa y lo demás acota', () => {
+  const ff = require('../lib/failed-first.js');
+  const repo = tmp('ff-clases-');
+  git(repo, 'init', '-q'); git(repo, 'config', 'user.email', 'p@e.invalid'); git(repo, 'config', 'user.name', 'p');
+  const escribir = (rel, txt) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), txt); };
+  escribir('scripts/tests/suites.json', JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: A }] }));
+  escribir('scripts/ci/control-x.js', '// control\n');
+  escribir('scripts/ci/controls-from-base.json', JSON.stringify({ controls: [{ name: 'x', script: 'scripts/ci/control-x.js', rules: [] }], content: ['datos/'], workflows: [], approvals: [] }));
+  escribir('scripts/ci/heavy-suites.json', JSON.stringify({ shared: { patterns: ['lib/shared/**'] }, groups: { installer: { patterns: ['installer/**'] } }, suites: {} }));
+  fs.copyFileSync(path.resolve(SCRIPTS, '..', '..', '..', 'scripts', 'ci', 'suites-for-change.js'), path.join(repo, 'scripts', 'ci', 'suites-for-change.js'));
+  for (const rel of ['installer/a.sh', 'lib/shared/a.js', 'datos/a.json', 'docs/a.md']) escribir(rel, 'v1\n');
+  git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'base');
+  const arbol = () => { git(repo, 'add', '-A'); return git(repo, 'write-tree').stdout.trim(); };
+  const d = tmp('ff-verde-');
+  fs.writeFileSync(path.join(d, 'r.json'), JSON.stringify({ suites: [], fallas: [] }));
+  fs.writeFileSync(path.join(d, 'm.json'), JSON.stringify({ tree: arbol() }));
+  const dir = path.join(d, 'g');
+  const hash = ff.saveGreen({ dir, summaryFile: path.join(d, 'r.json'), lcovFile: null, measuredFile: path.join(d, 'm.json'), base: null, recorte: '', storyId: '9.263' });
+  const decidir = () => ff.decide({ dir, hash, repo, tree: arbol(), base: null, recorte: '', storyId: '9.263' });
+  for (const [rel, clase] of [['scripts/ci/control-x.js', 'un control'], ['datos/a.json', 'un control'], ['installer/a.sh', 'el instalador'],
+    ['lib/shared/a.js', 'algo compartido'], ['scripts/tests/suites.json', 'la lista de suites']]) {
+    const antes = fs.readFileSync(path.join(repo, rel), 'utf8');
+    fs.appendFileSync(path.join(repo, rel), rel.endsWith('.json') ? ' ' : 'v2\n');
+    const r = decidir();
+    assert.deepEqual([r.mode, r.reason], ['full', `cambió ${clase} (${rel})`], rel);
+    fs.writeFileSync(path.join(repo, rel), antes);
+  }
+  fs.appendFileSync(path.join(repo, 'docs', 'a.md'), 'v2\n');
+  const r = decidir();
+  assert.deepEqual([r.mode, r.origen, r.files], ['changed', 'verde', ['docs/a.md']]);
+});
+
+test('FailedFirst_DecideWithoutStory_RunsFull @story-8.263 @ac-3 — sin saber de qué historia es la corrida, lo guardado de una historia no se usa', () => {
+  const ff = require('../lib/failed-first.js');
+  const repo = tmp('ff-sin-historia-');
+  git(repo, 'init', '-q'); git(repo, 'config', 'user.email', 'p@e.invalid'); git(repo, 'config', 'user.name', 'p');
+  fs.writeFileSync(path.join(repo, 'a.md'), 'v1\n');
+  git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'base');
+  const arbol = () => { git(repo, 'add', '-A'); return git(repo, 'write-tree').stdout.trim(); };
+  const d = tmp('ff-sin-historia-g-');
+  fs.writeFileSync(path.join(d, 'r.json'), JSON.stringify({ suites: [], fallas: [] }));
+  fs.writeFileSync(path.join(d, 'm.json'), JSON.stringify({ tree: arbol() }));
+  const dir = path.join(d, 'g');
+  const hash = ff.saveGreen({ dir, summaryFile: path.join(d, 'r.json'), lcovFile: null, measuredFile: path.join(d, 'm.json'), base: null, recorte: '', storyId: '9.263' });
+  for (const storyId of [null, '']) {
+    const r = ff.decide({ dir, hash, repo, tree: arbol(), base: null, recorte: '', storyId });
+    assert.deepEqual([r.mode, r.reason], ['full', 'no sé de qué historia es esta corrida: lo guardado es de la 9.263'], JSON.stringify(storyId));
+  }
+});
+
 test('T28 Guia_RepetirSolasCierra — el paso 6 y el portón dicen los tres casos, cada uno', () => {
   for (const archivo of [STEP_06, TEST_GATE]) {
     const texto = fs.readFileSync(archivo, 'utf8');

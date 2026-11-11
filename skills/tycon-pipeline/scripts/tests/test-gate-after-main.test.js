@@ -267,6 +267,12 @@ test('MainNoCambio_CorreLoDeSiempre — sin nada nuevo de main, no se acota por 
   cambioDeLaHistoria(l);
   assert.equal(puerta(l).status, 0);
   borrarCorridas(l);
+  // sin lo guardado de la completa verde: con él, la misma carpeta cierra sin correr nada a propósito
+  // (test-gate-green-saved.test.js T2); acá se mide sólo lo de «sólo trajo main»
+  const mf = path.join(l.home, '.claude', '.tycon-pipeline', 'active', `${SID}.json`);
+  const mk = JSON.parse(fs.readFileSync(mf, 'utf8'));
+  delete mk.testsGreenFull;
+  fs.writeFileSync(mf, JSON.stringify(mk));
   const r = puerta(l);
   assert.equal(r.status, 0, r.out);
   assert.doesNotMatch(r.out, SOLO_MAIN);

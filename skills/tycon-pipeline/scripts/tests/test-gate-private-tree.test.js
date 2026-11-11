@@ -835,3 +835,116 @@ test('Arbol_LoAnotadoSinHash_NoAcota — lo que no es un hash no llega a git', (
     assert.match(d.no, /no dejó qué midió/);
   }
 });
+
+// ── Lo guardado de la última completa, en el árbol armado ─────────────────────────────────────────────────────────────
+// Con un marcador de corrida: lo guardado vive en el marcador de la sesión.
+// stable-data: el marcador lleva la hora de ahora a propósito, para que marker.js no lo dé por abandonado; no se compara.
+function conMarcador(lab, sid) {
+  const activo = path.join(lab.home, '.claude', '.tycon-pipeline', 'active', `${sid}.json`);
+  fs.mkdirSync(path.dirname(activo), { recursive: true });
+  fs.writeFileSync(activo, JSON.stringify({ storyId: '9.36', storyPath: lab.story, repoPath: lab.priv, baseSha: git(lab.priv, 'rev-parse', 'HEAD'),
+    sessionId: sid, startedAt: new Date().toISOString(), lastTouch: new Date().toISOString(), stepsCompleted: [0, 1, 2, 3, 4, 5],
+    stepsPending: [6, 7, 8, 9, 10, 11], filesTouched: [], iterations: {}, fileEvents: [], checks: {} }));
+  return { CLAUDE_CODE_SESSION_ID: sid, leer: () => JSON.parse(fs.readFileSync(activo, 'utf8')) };
+}
+
+test('T14 PrivateTree_GreenAndRedSaved_ComparedPerRepo @story-8.263 @ac-8 @ac-9 — en el árbol armado se compara repo por repo', () => {
+  const lab = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js', 'Pub/scripts/lib/otra.js'] });
+  const perfil = cloneDelPerfil(lab);
+  const m = conMarcador(lab, 'pt-verde');
+  const env = { CLAUDE_CODE_SESSION_ID: m.CLAUDE_CODE_SESSION_ID, HARNESS_TEAM_DIR: perfil };
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  let r = portón(lab, env);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.ok((m.leer().testsGreenFull || []).length === 1, `guarda la completa verde del árbol\n${r.salida}`);
+  // cambia un archivo del público: corre sólo la suite que lo lee
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/otra.js'), '// el arreglo\n');
+  r = portón(lab, env);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.ok(nombra(r, 'otra.test.js') && !nombra(r, 'pub-lib.test.js'), `corre sólo la que lee lo cambiado\n${r.salida}`);
+  assert.match(r.salida, /más 1 suites? por lo cambiado \(scripts\/lib\/otra\.js\)/, r.salida);
+  // el perfil del equipo cambia: la completa como siempre
+  fs.appendFileSync(path.join(perfil, 'team-profile.json'), '\n');
+  r = portón(lab, env);
+  assert.match(r.salida, /corre la completa como siempre: [^\n]*cambió el perfil del equipo/, r.salida);
+  // un repo que no se puede comparar: la completa como siempre, con su motivo
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/otra.js'), '// otro\n');
+  const bin = tmp('pt-bin-');
+  const real = execFileSync('bash', ['-lc', 'command -v git'], { encoding: 'utf8' }).trim();
+  escribir(bin, 'git', `#!/usr/bin/env bash\nfor a in "$@"; do [[ "$a" == diff-tree ]] && { echo "fatal: de mentira" >&2; exit 128; }; done\nexec "${real}" "$@"\n`);
+  fs.chmodSync(path.join(bin, 'git'), 0o755);
+  r = portón(lab, { ...env, PATH: `${bin}:${process.env.PATH}` });
+  assert.match(r.salida, /corre la completa como siempre: no pude comparar/, r.salida);
+  // la completa roja del árbol se guarda, y repetir sola su roja cierra como la 8.208 (el caso P9)
+  const roja = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  const mr = conMarcador(roja, 'pt-roja');
+  fs.writeFileSync(path.join(roja.pub, 'scripts/lib/pub-lib.js'), 'module.exports = 2;\n');
+  r = portón(roja, { CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID });
+  assert.notStrictEqual(r.code, 0, r.salida);
+  assert.ok((mr.leer().testsRedFull || []).length === 1, `guarda la completa roja del árbol\n${r.salida}`);
+  fs.writeFileSync(path.join(roja.pub, 'scripts/lib/pub-lib.js'), 'module.exports = 1;\n');
+  const sola = spawnSync('bash', [TEST_GATE, roja.priv, roja.story, '--suite', 'tests/pub-lib.test.js'], { encoding: 'utf8', cwd: roja.priv,
+    env: entorno(roja.home, { TYCON_PRIVATE_TREE_TMP: path.join(roja.raiz, 'tmp'), CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID }), timeout: 120000 });
+  assert.strictEqual(sola.status, 0, `${sola.stdout}${sola.stderr}`);
+  r = portón(roja, { CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID });
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.match(r.salida, /la carpeta cambió desde la completa roja \(scripts\/lib\/pub-lib\.js\)/, r.salida);
+  assert.match(r.salida, /cierra con la completa de las \d\d:\d\d/, r.salida);
+});
+
+// El .gitignore real del privado deja dentro de git la carpeta de la evidencia, donde el portón deja su constancia.
+const IGNORE_DEL_PRIVADO = '**/.advisors/*\n!**/.advisors/dod-runtime/\n';
+function conIgnoreDelPrivado(lab) {
+  escribir(lab.priv, '.gitignore', IGNORE_DEL_PRIVADO);
+  git(lab.priv, 'add', '.gitignore');
+  git(lab.priv, 'commit', '-q', '-m', 'ignore del privado');
+}
+
+test('PrivateTree_SavedRun_ClosesWhenNothingReadsTheChange @story-8.263 @ac-6 @ac-8 @ac-9 — lo que ninguna suite lee y la propia constancia del portón no impiden cerrar con lo guardado; un control del privado pide la completa', () => {
+  // verde: un cambio del privado que ninguna suite lee cierra con lo guardado, no sale 7
+  const lab = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  const perfil = cloneDelPerfil(lab);
+  const m = conMarcador(lab, 'pt-nadie-lee');
+  const env = { CLAUDE_CODE_SESSION_ID: m.CLAUDE_CODE_SESSION_ID, HARNESS_TEAM_DIR: perfil };
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  let r = portón(lab, env);
+  assert.strictEqual(r.code, 0, r.salida);
+  escribir(lab.priv, 'docs/nota.md', 'una nota que ninguna suite lee\n');
+  r = portón(lab, env);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.doesNotMatch(r.salida, /sin acotar/, r.salida);
+  assert.match(r.salida, /cierra con la completa de las \d\d:\d\d/, r.salida);
+  // un control del privado (sus ganchos o sus pipelines) pide la completa, aunque ninguna suite lo lea
+  for (const rel of ['scripts/hooks/nuevo.js', 'pipelines/nuevo.yml']) {
+    escribir(lab.priv, rel, '// un control\n');
+    r = portón(lab, env);
+    assert.match(r.salida, new RegExp(`corre la completa como siempre: cambió un control del privado \\(${rel.replace(/[./]/g, '\\$&')}\\)`), r.salida);
+  }
+  // verde con el .gitignore del privado: volver a correr sin cambios no corre ninguna suite
+  const otro = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  conIgnoreDelPrivado(otro);
+  const perfil2 = cloneDelPerfil(otro);
+  const m2 = conMarcador(otro, 'pt-ignore-verde');
+  const env2 = { CLAUDE_CODE_SESSION_ID: m2.CLAUDE_CODE_SESSION_ID, HARNESS_TEAM_DIR: perfil2 };
+  fs.appendFileSync(path.join(otro.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  r = portón(otro, env2);
+  assert.strictEqual(r.code, 0, r.salida);
+  r = portón(otro, env2);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.match(r.salida, /la carpeta es la que midió la completa verde: no corro ninguna suite/, r.salida);
+  // roja con el .gitignore del privado: la repetición sola deja su constancia y la completa igual cierra
+  const roja = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  conIgnoreDelPrivado(roja);
+  const mr = conMarcador(roja, 'pt-ignore-roja');
+  fs.writeFileSync(path.join(roja.pub, 'scripts/lib/pub-lib.js'), 'module.exports = 2;\n');
+  r = portón(roja, { CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID });
+  assert.notStrictEqual(r.code, 0, r.salida);
+  fs.writeFileSync(path.join(roja.pub, 'scripts/lib/pub-lib.js'), 'module.exports = 1;\n');
+  const sola = spawnSync('bash', [TEST_GATE, roja.priv, roja.story, '--suite', 'tests/pub-lib.test.js'], { encoding: 'utf8', cwd: roja.priv,
+    env: entorno(roja.home, { TYCON_PRIVATE_TREE_TMP: path.join(roja.raiz, 'tmp'), CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID }), timeout: 120000 });
+  assert.strictEqual(sola.status, 0, `${sola.stdout}${sola.stderr}`);
+  r = portón(roja, { CLAUDE_CODE_SESSION_ID: mr.CLAUDE_CODE_SESSION_ID });
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.doesNotMatch(r.salida, /cambió después de repetir/, r.salida);
+  assert.match(r.salida, /cierra con la completa de las \d\d:\d\d/, r.salida);
+});

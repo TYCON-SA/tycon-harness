@@ -247,8 +247,12 @@ function seccionDelContexto(repos) {
 
 // La historia de la corrida: no cuentan como cambio su estado (en el frontmatter o en el cuerpo), sus tildes, su Change
 // Log, su Dev Agent Record ni sus «Cambios de comportamiento» (declarar una diferencia con main es papeleo: no vuelve a
-// los revisores). Cada una de esas secciones llega, con sus subtítulos, hasta el próximo título de su nivel o de uno mayor.
+// los revisores). Tampoco la sección de seguimientos que escribe «Hallazgos» (`pipeline.js write-followups`) después de
+// la vuelta: se reconoce por su título entero, no por un prefijo, así que «(AI)» o un título con texto de más siguen
+// contando (con el `\b` del patrón de arriba, un título que termina en «)» nunca coincidiría). Cada una de esas
+// secciones llega, con sus subtítulos, hasta el próximo título de su nivel o de uno mayor.
 const SECCION_DE_PAPELEO = /^(Change Log|Dev Agent Record|Cambios de comportamiento)\b/i;
+const SECCION_DE_SEGUIMIENTOS = /^Review Follow-ups \(Advisors\)$/i;
 function sinPapeleoDeLaHistoria(txt) {
   const out = [];
   let nivel = 0;
@@ -256,8 +260,9 @@ function sinPapeleoDeLaHistoria(txt) {
     const titulo = l.match(/^(#{1,6})\s+(.*)$/);
     if (titulo) {
       const n = titulo[1].length;
+      const nombre = titulo[2].trim();
       if (nivel && n <= nivel) nivel = 0;
-      if (!nivel && n === 2 && SECCION_DE_PAPELEO.test(titulo[2].trim())) nivel = n;
+      if (!nivel && n === 2 && (SECCION_DE_PAPELEO.test(nombre) || SECCION_DE_SEGUIMIENTOS.test(nombre))) nivel = n;
     }
     if (nivel) continue;
     if (/^\**status\**\s*:/i.test(l)) continue;
@@ -266,10 +271,24 @@ function sinPapeleoDeLaHistoria(txt) {
   return out.join('\n');
 }
 
+// El renglón de la historia en el estado del sprint (`<épica>-<número>-…: <estado>   # comentario`): la clave sale del
+// `story:` del frontmatter, sin comillas, y tiene que ser `<épica>.<número>`; si no, no hay clave y no se perdona nada.
+function claveDeLaHistoria(txt) {
+  const fm = String(txt || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const m = fm && fm[1].match(/^story:\s*["']?([^"'\s#]+)["']?\s*(?:#.*)?$/m);
+  return m && /^\d+\.\d+$/.test(m[1]) ? `${m[1].replace('.', '-')}-` : null;
+}
+// El renglón propio empieza con la clave y no sigue con `<número>-`: ése es el de una sub-historia (`9-9-1-…`), que cuenta.
+const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
+  .filter((l) => { const t = l.trimStart(); return !(t.startsWith(clave) && !/^\d+-/.test(t.slice(clave.length))); }).join('\n');
+
 /**
  * Los archivos que difieren entre dos sellos de un repo: `{ files, papeleo }` o `{ error }`. Papeleo es lo que no cuenta
- * para el ok de guardar (`esPapeleoDeLaHuella`), `tasks/todo.md`, y la historia de la corrida (`storyRel`, relativa al
- * repo) cuando sólo cambió su estado, sus tildes, su Change Log o su Dev Agent Record.
+ * para el ok de guardar (`esPapeleoDeLaHuella`), `tasks/todo.md`, la historia de la corrida (`storyRel`, relativa al
+ * repo) cuando sólo cambió su estado, sus tildes, su Change Log, su Dev Agent Record, sus «Cambios de comportamiento» o
+ * su sección de seguimientos, y el `sprint-status.yaml` de la carpeta de la historia cuando sólo cambió el renglón de
+ * esa historia (lo pasa a review el cierre). Si el estado del sprint no está en alguno de los dos sellos, o la historia no
+ * dice qué número es, cuenta como cambio.
  */
 function changed(repo, treeA, treeB, { storyRel } = {}) {
   if (treeA === treeB) return { files: [], papeleo: [] };
@@ -279,6 +298,8 @@ function changed(repo, treeA, treeB, { storyRel } = {}) {
   const partes = d.crudo.split('\0');
   const files = [];
   const papeleo = [];
+  const leer = (t, rel) => { const r = git(['-C', repo, 'show', `${t}:${rel}`]); return r.ok ? r.crudo : null; };
+  const estadoDelSprint = storyRel ? path.posix.join(path.posix.dirname(storyRel), 'sprint-status.yaml') : null;
   for (let i = 0; i + 1 < partes.length; i += 2) {
     const meta = partes[i].replace(/^:/, '').split(' ');
     const rel = partes[i + 1];
@@ -287,10 +308,15 @@ function changed(repo, treeA, treeB, { storyRel } = {}) {
     let esPapeleo;
     if (storyRel && rel === storyRel) {
       // la historia de la corrida, por su regla: la lista de papeleo la daría por papeleo entera (`specs/`)
-      const leer = (t) => { const r = git(['-C', repo, 'show', `${t}:${rel}`]); return r.ok ? r.crudo : null; };
-      const a = leer(treeA);
-      const b = leer(treeB);
+      const a = leer(treeA, rel);
+      const b = leer(treeB, rel);
       esPapeleo = a !== null && b !== null && sinPapeleoDeLaHistoria(a) === sinPapeleoDeLaHistoria(b);
+    } else if (rel === estadoDelSprint) {
+      // el estado del sprint: sólo el renglón de la historia de la corrida, con el número que dice la historia de ahora
+      const clave = claveDeLaHistoria(leer(treeB, storyRel));
+      const a = leer(treeA, rel);
+      const b = leer(treeB, rel);
+      esPapeleo = !!clave && a !== null && b !== null && sinRenglonDeLaHistoria(a, clave) === sinRenglonDeLaHistoria(b, clave);
     } else {
       // la salida o la captura de un humo que su registro nombra con la misma huella: «Probar en vivo» corre después de
       // los revisores y deja esa evidencia; no es código
