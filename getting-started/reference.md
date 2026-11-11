@@ -430,6 +430,30 @@ and logged in, and `TYCON_CODEX=1`. Details in [INSTALL.md](../INSTALL.md).
 **Four proprietary skills** (`docx`, `pdf`, `pptx`, `xlsx`) are not part of this repo and are not downloaded: they come
 with Anthropic's official plugin. Install it if you want them.
 
+## Before working with a coordinator
+
+A guided step says, one at a time, what your machine is missing, each with its command:
+
+```bash
+node ~/.tycon/harness/scripts/tools/prepare-machine.js --repo <repo> [--repo <another repo>]
+```
+
+It checks each repo's main folder (whether Claude Code approved it, or whether its CLAUDE.md imports files from outside
+that are not accepted), the coordinator's confirmation if your organization uses her to sign, and the production guard
+if the machine has one. It only reads: it approves nothing and does not ask for your password. When nothing is missing,
+it says «lista» (ready). With the main folder approved, the sessions the coordinator opens in copies of the repo start
+without asking you anything ([guides/working-with-a-coordinator.en.md](../guides/working-with-a-coordinator.en.md)).
+
+If your organization chose that the production guard updates itself (`guard.update: auto`), each production machine
+installs the permission once, with your password:
+
+```bash
+sudo bash ~/.tycon/harness/scripts/production/install-guard.sh --allow-auto-update
+```
+
+What it enables, what it rehearses before replacing and what does not install itself:
+[guides/produccion-con-permiso.md](../guides/produccion-con-permiso.md).
+
 ## What it writes on your machine and what it does on its own
 
 This section comes from a declared list, `scripts/setup/install-effects.json`, which a test checks against the

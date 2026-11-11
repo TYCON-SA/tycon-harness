@@ -62,6 +62,31 @@ else no "T42b · $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-300)"; fi
 perfil ROTO; s="$(aviso)"
 tiene -- "no pude leer lo que eligió la organización" && ok "T59 · con el perfil ilegible lo dice" || no "T59 · $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-300)"
 
+# ── T25 · Aviso_UltimaFalla_DiceVersionYMotivo @story-8.187 @ac-22 ────────────────────────────────────────────────────
+perfil auto
+printf '{"at":"2026-10-22T09:00:00Z","from":"bbbbbbb","to":"ccccccc","from_version":"2026.10.21.2","to_version":"2026.10.22.5","user":"dev"}\n{"status":"failed","attempted_version":"2026.11.09.3","reason":"el ensayo del freno nuevo falló: ls salió 2 (esperaba 0)","at":"2026-11-09T10:00:00Z"}\n' > "$PROD/update-log.jsonl"
+s="$(aviso)"
+if tiene -- "2026.10.22.5" && tiene -- "2026.11.09.3" && tiene -- "ls salió 2" && tiene -- "sudo bash .*install-guard.sh" && ! tiene -- "se actualizó solo a 2026.11.09.3"; then
+  ok "T25 · la última es una falla: nombra la que sigue andando, la que falló, el motivo y el comando con contraseña"
+else no "T25 · $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-400)"; fi
+# una falla sin ninguna actualización buena antes: la que sigue andando es la instalada con contraseña
+printf '{"status":"failed","attempted_version":"2026.11.09.3","reason":"sin red","at":"2026-11-09T10:00:00Z"}\n' > "$PROD/update-log.jsonl"
+# stable-data: «commit» es una clave del JSON con un id fijo, no se crea ningún commit
+printf '{"commit":"%s","version":"2026.11.01.1"}\n' "$(printf 'a%.0s' $(seq 1 40))" > "$PROD/installed-release.json"
+s="$(aviso)"
+tiene -- "2026.11.01.1" && tiene -- "sin red" && ok "T25b · sin una buena antes, nombra la instalada con contraseña" || no "T25b · $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-300)"
+tiene -- "en tu terminal (fuera del asistente" && ok "T25d · el comando de la falla dice que va en la terminal de la persona, fuera del asistente" || no "T25d · $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-300)"
+# la persona siguió el consejo y reinstaló con contraseña la versión que había fallado: esa instalación no deja renglón
+# en el registro, y la falla ya no es la última noticia
+printf '{"at":"2026-10-22T09:00:00Z","to_version":"2026.10.22.5"}\n{"status":"failed","attempted_version":"2026.11.09.3","reason":"otro install-guard.sh","at":"2026-11-09T10:00:00Z"}\n' > "$PROD/update-log.jsonl"
+# stable-data: «commit» es una clave del JSON con un id fijo, no se crea ningún commit
+printf '{"commit":"%s","version":"2026.11.09.3"}\n' "$(printf 'b%.0s' $(seq 1 40))" > "$PROD/installed-release.json"
+s="$(aviso)"
+if ! tiene -- "falló" && ! tiene -- "🟠" && tiene -- "2026.11.09.3" && tiene -- "ya se resolvió"; then
+  ok "T25c · una falla que una instalación con contraseña posterior resolvió no vuelve a pedir la contraseña"
+else no "T25c · $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-300)"; fi
+rm -f "$PROD/update-log.jsonl" "$PROD/installed-release.json"
+
 # ── lo que no tiene que hacer: hablar en una máquina sin freno, o con el aviso apagado ────────────────────────────────
 rm -rf "$SYS/opt/tycon"; perfil auto; s="$(aviso)"
 [ -z "$s" ] && ok "T58f · en una máquina sin el freno instalado no dice nada" || no "T58f · sin freno habló: $s"

@@ -179,6 +179,17 @@ test('S11 PendingTrust_AllKnownRepos: sin repo, lista los puestos de todos los r
   assert.deepStrictEqual([...r.pending].sort(), [slot(t, 1), slot(u, 1)].sort());
 });
 
+test('8.187 T12 PendingTrust_PuestoDeRepoAprobado_NoPendiente @story-8.187 @ac-11: con la carpeta principal aprobada, sus puestos no quedan pendientes; con la principal sin aprobar, sí', () => {
+  const t = toy({ cap: 2 });
+  S.ensure(t.opts);
+  fs.writeFileSync(path.join(t.home, '.claude.json'), JSON.stringify({ projects: { [t.repo]: { hasTrustDialogAccepted: true } } }));
+  const ok = S.pendingTrust(t.opts);
+  assert.strictEqual(ok.ok, true, ok.message);
+  assert.deepStrictEqual(ok.pending, [], 'una copia de un repo aprobado no pregunta: no es pendiente');
+  fs.writeFileSync(path.join(t.home, '.claude.json'), JSON.stringify({ projects: { [t.repo]: { hasTrustDialogAccepted: false } } }));
+  assert.deepStrictEqual(S.pendingTrust(t.opts).pending, [slot(t, 1), slot(t, 2)]);
+});
+
 test('S12 AgentSkills_Refused: el clon de las skills no lleva puestos (su freno mira la ruta literal)', () => {
   const t = toy({ cap: 1 });
   const skills = path.join(t.root, 'home', '.claude', 'agent-skills');

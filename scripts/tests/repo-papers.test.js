@@ -109,6 +109,8 @@ const SECTIONS = [
   // el núcleo no trae paquetes: llegan con el repo del equipo
   ['Reviewers for your stack', 'Revisores para tu tecnología'],
   ['What is optional', 'Qué es opcional'],
+  // el paso guiado de la máquina y el permiso del freno, antes de trabajar con una coordinadora
+  ['Before working with a coordinator', 'Antes de trabajar con una coordinadora'],
   ['What it writes on your machine and what it does on its own', 'Qué escribe en tu máquina y qué hace solo'],
   ['Your product repo', 'El repo del producto'],
   ['Offline', 'Sin red'],

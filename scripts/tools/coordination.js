@@ -22,9 +22,10 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            abre una sesión de fondo con ese nombre; nunca reintenta. Sin --name (o con --name auto)
  *                            toma el primero libre de `coordination.session_names` (el lector de configuración);
  *                            sin esa configuración, no la abre
- *   open --name <n> --repo <repo> [--branch <rama>] -- <encargo>
- *                            lo mismo, en un puesto fijo libre del repo (scripts/tools/work-slots.js), en la rama del
- *                            trabajo (wt/<nombre> sin rama); sin puesto libre no la abre
+ *   open --name <n> --repo <repo> [--branch <rama>] [--slot] -- <encargo>
+ *                            lo mismo, en una copia hermana nueva del repo (`<principal>--wt-<nombre>`, desde
+ *                            origin/main), en la rama del trabajo (wt/<nombre> sin rama); con --slot, en un puesto fijo
+ *                            libre (scripts/tools/work-slots.js). Si Claude Code no la abre, borra lo que creó
  *   close --name <n>         cierra una sesión de fondo si quedó limpia; si falta algo, o no pudo mirarlo, no cierra y dice
  *                            qué. A una interactiva la verifica y avisa
  *   owner-wait               lo lanza la coordinadora confirmada, de fondo: mira cada 2 s y termina, con una línea por
@@ -918,6 +919,37 @@ function slowGateLines(opts, s, problems) {
   }
 }
 
+const capNoticeFile = (home, sid) => path.join(coordinationDir(home), `cap-notice-${sid}.json`);
+
+/**
+ * ¿Sale la línea del tope en este turno? En el tope o pasado, sólo si lo anotado para esta coordinadora es otro conteo u
+ * otro tope; entonces anota `{ working, cap }`. Debajo del tope no sale nada, y anota que quedó debajo sólo si lo anotado
+ * era otra cosa (no escribe en cada turno, y una carpeta sin permiso no hace ruido ahí). Del lado seguro: sin poder
+ * anotar, la línea sale igual y lo dice en `problems`; un archivo roto cuenta como no avisado. Cada coordinadora tiene
+ * su archivo: la de una sesión cerrada no calla a la que sigue.
+ */
+function capChanged(opts, sid, count, cap, problems) {
+  const at = count >= cap;
+  if (!sid || !SAFE_SID.test(String(sid))) {
+    if (at) problems.push('no sé el número de esta sesión: la línea del tope sale en cada turno');
+    return at;
+  }
+  const home = opts.home || require('os').homedir();
+  const file = capNoticeFile(home, sid);
+  const now = at ? { working: count, cap } : { below: true };
+  let prev = null;
+  try { prev = readJson(file, null); } catch (e) {
+    if (at) problems.push(`el archivo del aviso del tope (${e.message}): lo cuento como no avisado`);
+  }
+  const same = prev && typeof prev === 'object' && !Array.isArray(prev)
+    && (at ? prev.working === count && prev.cap === cap && !prev.below : prev.below === true);
+  if (same) return false;
+  try { writeJson(file, now); } catch (e) {
+    if (at) problems.push(`no pude anotar el aviso del tope: ${e.code || e.message}`);
+  }
+  return at;
+}
+
 function capNotice(opts = {}) {
   const sid = sessionOf(opts);
   const who = coordinatorRole(opts, sid);
@@ -927,7 +959,8 @@ function capNotice(opts = {}) {
   const working = s.working.filter((w) => w.sid !== sid);
   const cap = s.cap.value;
   const lines = [];
-  if (working.length >= cap) {
+  // la línea del tope sale una vez por cada cambio del conteo o del tope, no en cada turno
+  if (capChanged(opts, sid, working.length, cap, problems)) {
     const names = working.map((w) => w.session).join(', ');
     if (working.length === cap) lines.push(`Coordinación: la máquina está en el tope (${working.length} de ${cap} trabajando: ${names}). Antes de asignar, esperá que una termine.`);
     else {
@@ -1334,6 +1367,57 @@ function wtBranchNames(repo) {
 }
 
 /**
+ * La copia hermana de un repo para una sesión: `<carpeta principal>--wt-<nombre>`, desde `origin/main` recién traído.
+ * No pisa ni reusa una copia o una rama `wt/<nombre>` que ya existen (pueden tener el trabajo de otra sesión); una rama
+ * pedida con `--branch` que ya existe se usa y nunca se borra. `{ ok, path, main, branch, created }` o
+ * `{ ok: false, message }`, con el primer renglón del error de git.
+ */
+function siblingCopy({ repo, name, branch }) {
+  const no = (message) => ({ ok: false, message: oneLine(message) });
+  const common = gitIn(repo, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  if (common.code !== 0 || !common.out) return no(`No pude ver el repo ${repo} (${common.err || `git salió con código ${common.code}`}): no la abrí.`);
+  const main = realDir(path.basename(common.out) === '.git' ? path.dirname(common.out) : common.out);
+  const copyPath = `${main}--wt-${name}`;
+  if (fs.existsSync(copyPath)) return no(`La copia ${copyPath} ya existe: no la piso ni la reuso; no la abrí.`);
+  const exists = gitIn(main, ['rev-parse', '--verify', '-q', `refs/heads/${branch}`]).code === 0;
+  if (exists && branch === `wt/${name}`) return no(`La rama ${branch} ya existe en ${main}: no la piso ni la reuso; no la abrí.`);
+  // sin red no se crea la copia desde una punta vieja
+  const fetched = gitIn(main, ['fetch', '--quiet', '--no-tags', 'origin', 'main']);
+  if (fetched.code !== 0) return no(`No pude traer main de origin en ${main} (${fetched.err || `git salió con código ${fetched.code}`}): no la abrí.`);
+  const add = exists
+    ? gitIn(main, ['worktree', 'add', '-q', copyPath, branch])
+    : gitIn(main, ['worktree', 'add', '-q', '--no-track', '-b', branch, copyPath, 'origin/main']);
+  if (add.code !== 0) {
+    // sólo se saca lo que este add pudo haber dejado: la carpeta si no existía antes, la rama si no existía antes
+    const left = removeCopy({ path: copyPath, main, branch, created: !exists }) ? '' : ` Quedó algo de la copia: lo saca el barrido.`;
+    return no(`No pude crear la copia ${copyPath} (${add.err || `git salió con código ${add.code}`}): no la abrí.${left}`);
+  }
+  return { ok: true, path: copyPath, main, branch, created: !exists };
+}
+
+/**
+ * Saca una copia que `open` acaba de crear, y su rama si la creó él. Devuelve true si no quedó ninguna de las dos; lo
+ * que no puede sacar queda para el barrido, y quien llama lo dice.
+ */
+function removeCopy(copy) {
+  if (fs.existsSync(copy.path)) gitIn(copy.main, ['worktree', 'remove', '--force', copy.path]);
+  gitIn(copy.main, ['worktree', 'prune']);
+  if (copy.created) gitIn(copy.main, ['branch', '-D', copy.branch]);
+  const branchLeft = copy.created && gitIn(copy.main, ['rev-parse', '--verify', '-q', `refs/heads/${copy.branch}`]).code === 0;
+  return !fs.existsSync(copy.path) && !branchLeft;
+}
+const removedNote = (copy) => (removeCopy(copy)
+  ? 'Borré la copia y no reintenté.'
+  : `No pude borrar la copia ${copy.path}${copy.created ? ` ni su rama ${copy.branch}` : ''}: queda para el barrido. No reintenté.`);
+
+// La carpeta principal de un repo (la de `.git`), o null.
+function mainOf(repo) {
+  const common = gitIn(repo, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  if (common.code !== 0 || !common.out) return null;
+  return realDir(path.basename(common.out) === '.git' ? path.dirname(common.out) : common.out);
+}
+
+/**
  * Abre una sesión de fondo con nombre y encargo. Nunca reintenta; sólo una apertura que salió bien queda anotada. Sin
  * nombre (o con «auto»), toma el primero libre de `coordination.session_names`.
  */
@@ -1369,38 +1453,54 @@ function openNow(opts) {
       for (const n of b.names) taken.add(n);
     }
     if (!names.length) return no('El nombre de la sesión va con letras, números, guion o guion bajo, sin espacios (sin --name, sale de coordination.session_names, y esta máquina no tiene esa lista): no la abrí.');
+    // una copia hermana que quedó (se borra con el barrido, no al cerrar) también toma su nombre, sea cual sea su rama
+    if (opts.repo && !opts.slot && path.isAbsolute(String(opts.repo))) {
+      const main = mainOf(opts.repo);
+      if (main) for (const n of names) if (fs.existsSync(`${main}--wt-${n}`)) taken.add(n);
+    }
     name = sessionNames.nextFree(names, taken);
     if (!name) return no('No quedó ningún nombre libre en la lista de esta máquina (coordination.session_names): no la abrí.');
+    if (!NAME_RE.test(String(name))) return no(`«${name}», de coordination.session_names, no es un nombre de sesión (letras, números, guion o guion bajo, sin espacios): no la abrí.`);
   }
   // los nombres de las sesiones vivas llegan recortados: uno largo se compara recortado igual
   if (taken.has(name) || taken.has(listedName(name))) return no(`«${name}» ya lo usa otra sesión viva: no la abrí.`);
   if (!oneLine(task)) return no('Falta el encargo de la sesión: no la abrí.');
   if (s.atCap) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
   if (cwd && opts.repo) return no('Va o la carpeta o el repo, no los dos: no la abrí.');
+  if (opts.slot && !opts.repo) return no('--slot va con --repo (toma un puesto de ese repo): no la abrí.');
   // La sesión nueva arranca en el modo de la que la abre: en otro modo se traba en permisos que nadie ve y no recibe
   // los mensajes de las demás. Sin saberlo, no se abre a ciegas.
   const pm = callerPermissionMode({ home, env });
   if (pm.problem) return no(`No pude saber en qué modo de permisos estás (${pm.problem}): no la abrí.`);
-  // Con el repo, la sesión va a un puesto fijo (scripts/tools/work-slots.js): la carpeta ya está aprobada y no hace
-  // falta que el dueño apruebe una nueva.
+  // Con el repo, la sesión va a una copia hermana nueva (`<principal>--wt-<nombre>`): Claude Code no pide aprobar una
+  // copia de un repo cuya carpeta principal ya está aprobada (medido con 2.1.312). Con `--slot`, a un puesto fijo
+  // (scripts/tools/work-slots.js), como antes.
   let slot = null;
+  let copy = null;
   if (opts.repo) {
     if (!path.isAbsolute(opts.repo)) return no('El repo va con su ruta absoluta: no la abrí.');
     const branch = opts.branch || `wt/${name}`;
-    const tk = workSlots.take({ home, env, arnes: opts.arnes, repo: opts.repo, branch });
-    if (!tk.ok) return no(`${tk.message.replace(/\.$/, '')}; no la abrí.`);
-    slot = tk;
+    if (opts.slot) {
+      const tk = workSlots.take({ home, env, arnes: opts.arnes, repo: opts.repo, branch });
+      if (!tk.ok) return no(`${tk.message.replace(/\.$/, '')}; no la abrí.`);
+      slot = tk;
+    } else {
+      const c = siblingCopy({ repo: opts.repo, name, branch });
+      if (!c.ok) return no(c.message);
+      copy = c;
+    }
   }
-  const where = slot ? slot.path : cwd;
+  const where = slot ? slot.path : copy ? copy.path : cwd;
   if (!where || !path.isAbsolute(where)) return no('Falta la carpeta de la sesión, absoluta: no la abrí.');
   if (!fs.existsSync(where)) return no(`La carpeta ${where} no existe: no la abrí.`);
-  // Si no abrió, el puesto vuelve a quedar libre y la rama que se creó para el trabajo no queda.
+  // Si no abrió, el puesto vuelve a quedar libre, la copia se borra, y la rama que se creó para el trabajo no queda.
   const fail = (message) => {
     if (slot) {
       workSlots.release({ home, env, slot: slot.path });
       if (slot.created) spawnSync('git', ['-C', slot.path, 'branch', '-d', slot.branch], { encoding: 'utf8', windowsHide: true });
     }
-    return no(message);
+    // con una copia, el mensaje dice si se pudo borrar: nunca «la borré» sin haberlo comprobado
+    return no(copy ? `${message} ${removedNote(copy)}` : message);
   };
   // Lo pesado se pide: seis sesiones dentro del tope, cada una con lo suyo, llevaron la carga de una máquina a 52.
   // con el rol del perfil o con una coordinadora designada; sin ninguno de los dos no hay a quién pedirle turno
@@ -1410,7 +1510,9 @@ function openNow(opts) {
   const heavyRule = rolTurno ? ` — Nada pesado sin turno de la ${rolTurno}: suite completa, banco, examen, portón, revisores, pase.` : '';
   const job = slot
     ? `${task}${heavyRule} — Trabajás en el puesto ${slot.path}, en la rama ${slot.branch}. Al terminar, con todo commiteado, soltalo: node "${path.join(__dirname, 'work-slots.js')}" release "${slot.path}"`
-    : `${task}${heavyRule}`;
+    : copy
+      ? `${task}${heavyRule} — Trabajás en la copia ${copy.path}, en la rama ${copy.branch}. Al terminar, dejá todo commiteado, empujado y con su pedido abierto.`
+      : `${task}${heavyRule}`;
   const launcher = resolveLauncher(opts);
   if (launcher.error) return fail(launcher.error);
   const timeoutMs = opts.timeoutMs || LAUNCH_TIMEOUT_MS;
@@ -1425,6 +1527,9 @@ function openNow(opts) {
   if (r.error) return fail(`El lanzador falló (${r.error.code || r.error.message}): no abrí la sesión.`);
   if (r.status !== 0) {
     const out = `${r.stderr || ''}\n${r.stdout || ''}`;
+    // con la copia no se sabe si falta aprobar la principal o si esta versión de Claude Code pide aprobar cada copia: no
+    // se lee ~/.claude.json para distinguirlo, se dicen las dos salidas
+    if (/not trusted/i.test(out) && copy) return fail(`Claude Code no abrió la copia: falta aprobar la carpeta principal ${copy.main}. Abrila una vez (cd "${copy.main}" y claude) y aceptá; si ya está aprobada, la versión instalada de Claude Code no acepta copias sin aprobar: abrí con --slot.`);
     if (/not trusted/i.test(out)) return fail(`La carpeta ${where} todavía no está aprobada para Claude Code: la abre el dueño una vez${slot ? ' (los puestos sin aprobar los lista work-slots.js pending-trust)' : ''}. Mientras tanto, la sesión la abre el dueño y yo le doy el encargo.`);
     const first = out.split('\n').map((l) => l.trim()).find(Boolean);
     return fail(`El lanzador falló: ${first || (r.signal ? `lo cortó la señal ${r.signal}` : `salió con código ${r.status}`)}. No reintenté.`);
@@ -1737,12 +1842,14 @@ function close(opts = {}) {
 
 // ── La línea de comandos ──
 
+// las opciones que no llevan valor: las demás `--x` toman el argumento siguiente
+const SWITCHES = new Set(['json', 'slot']);
 function flags(argv) {
   const out = { rest: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--') { out.rest = argv.slice(i + 1); break; }
-    if (a === '--json') out.json = true;
+    if (/^--[a-z-]+$/.test(a) && SWITCHES.has(a.slice(2))) out[a.slice(2)] = true;
     else if (/^--[a-z-]+$/.test(a)) {
       const v = argv[++i];
       if (v === undefined || v.startsWith('--')) throw new Error(`${a} pide un valor`);
@@ -1806,7 +1913,7 @@ function main(argv) {
       process.stderr.write('coordination.js: open no elige el modo de permisos: copia el de la sesión que lo llama.\n');
       return 2;
     }
-    const r = open({ ...base, name: f.name, cwd: f.cwd, repo: f.repo, branch: f.branch, task: f.rest.join(' '), timeoutMs: f['timeout-ms'] ? Number(f['timeout-ms']) : undefined });
+    const r = open({ ...base, name: f.name, cwd: f.cwd, repo: f.repo, branch: f.branch, slot: f.slot === true, task: f.rest.join(' '), timeoutMs: f['timeout-ms'] ? Number(f['timeout-ms']) : undefined });
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
   }
@@ -1826,4 +1933,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { LAUNCH_TIMEOUT_MS, heavyPassesInFlight, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };

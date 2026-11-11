@@ -60,6 +60,35 @@ piden tu contraseña. Cada actualización queda en
 permiso, o si el perfil del equipo de tu máquina dice «con la contraseña»: tocar ese perfil sólo puede apagarlo, nunca
 prenderlo.
 
+**Quién la lanza.** Al abrir una sesión, un gancho de arranque mira si hay una versión publicada más nueva que la
+instalada. Si la hay, y la máquina tiene el permiso y la organización eligió «solo», lanza `sudo -n
+/opt/tycon/setup/update-guard.sh` como proceso aparte: no lo espera ni traba el arranque. No lo vuelve a lanzar para una
+versión que ya falló, hasta que se publique otra.
+
+**Antes de reemplazar nada, ensaya el freno nuevo.** El instalador arma en una carpeta temporal la misma disposición de
+`/opt/tycon`, desde la copia verificada, y corre ahí el freno nuevo con tu usuario, sin tus variables ni tus catálogos:
+un comando común (`ls`) tiene que pasar y uno de base (`sqlcmd`) tiene que frenar. Si no, no toca `/opt/tycon` y anota
+por qué. El temporal se borra siempre. Lo que el ensayo no prueba: el lanzador del freno (`node-shim.sh`), la puerta
+(`tycon-prod-sql`) y el intérprete (`node-official.json`), que van por rutas fijas de `/opt/tycon`. Por eso una versión
+que cambia cualquiera de ellos, o el instalador, no se instala sola: anota la falla y pide tu contraseña.
+
+**Si falla, sigue andando el de antes.** Cada intento que sale con error, por el camino que sea, deja en
+`/opt/tycon/production/update-log.jsonl` un renglón con la versión que intentó, el motivo y la hora. El aviso de arranque
+dice qué versión sigue andando, cuál falló y por qué, y trae el comando con tu contraseña:
+
+```bash
+sudo bash ~/.tycon/harness/scripts/production/install-guard.sh
+```
+
+Es la salida también si el ensayo frenó de más. Mientras tanto el freno viejo decide como antes. Si el freno quedó viejo
+y no hay falla anotada, el aviso dice si se está actualizando (otra actualización en curso, o una versión publicada hace
+menos de un día) o da el comando.
+
+**Cómo se enciende en una organización.** Primero, un pedido al repo del perfil del equipo con `guard.update: auto`,
+que aprueba el dueño. Después, cada máquina de producción corre una vez, con su contraseña, el
+`install-guard.sh --allow-auto-update` de arriba. Para saber qué le falta a tu máquina,
+`node ~/.tycon/harness/scripts/tools/prepare-machine.js` lo dice, con el comando, y no lo corre.
+
 Lo que cuesta, dicho antes:
 
 - **Cualquier programa que corra con tu usuario puede pedir esa actualización.** `sudo` no distingue una sesión de

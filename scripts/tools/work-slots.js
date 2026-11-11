@@ -243,7 +243,9 @@ function pendingTrust(opts = {}) {
   for (const repo of repos) {
     const l = list({ ...opts, repo });
     if (!l.ok) return no(l.message);
-    for (const s of l.slots) if (!trusted(s.path)) pending.push(s.path);
+    // una copia de un repo cuya carpeta principal está aprobada no pregunta (medido con Claude Code 2.1.312): un puesto
+    // queda pendiente sólo si no están aprobados ni él ni su carpeta principal
+    for (const s of l.slots) if (!trusted(s.path) && !trusted(l.main)) pending.push(s.path);
   }
   const message = pending.length
     ? `${pending.length} puesto(s) sin aprobar en Claude Code. Para cada uno, abrí Claude ahí una vez y aceptá:`

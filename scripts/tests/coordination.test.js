@@ -769,7 +769,7 @@ const branchIn = (dir) => spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--
 test('T40 Open_WithRepo_TakesAFreeSlot: con el repo, abre la sesión en un puesto libre, en la rama del trabajo, y le dice cómo soltarlo', () => {
   const t = toy({ profile: { coordination: { max_working: 2 } } });
   const repo = toyRepo(t);
-  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'implementá la 9.9', launcher: launcher(t) });
+  const r = C.open({ ...t.opts, ...caller(t), repo, slot: true, name: 'n1', task: 'implementá la 9.9', launcher: launcher(t) });
   assert.strictEqual(r.ok, true, r.message);
   const l = launched(t);
   assert.strictEqual(fs.realpathSync(l.cwd), slotOf(repo, 1));
@@ -777,7 +777,7 @@ test('T40 Open_WithRepo_TakesAFreeSlot: con el repo, abre la sesión en un puest
   assert.match(l.argv[l.argv.length - 1], /^implementá la 9\.9/);
   assert.match(l.argv[l.argv.length - 1], /work-slots\.js" release "/, 'el encargo dice cómo soltar el puesto');
   assert.ok(r.message.includes(slotOf(repo, 1)), r.message);
-  const b = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n2', branch: 'feat/x', task: 'otra', launcher: launcher(t) });
+  const b = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, slot: true, name: 'n2', branch: 'feat/x', task: 'otra', launcher: launcher(t) });
   assert.strictEqual(b.ok, true, b.message);
   assert.strictEqual(branchIn(slotOf(repo, 2)), 'feat/x');
 });
@@ -786,12 +786,12 @@ test('T40b Open_WithRepo_NoName_SkipsNamesWithABranch: con el repo y sin nombre,
   const t = toy({ profile: { coordination: { max_working: 3, session_names: ['Norte', 'Sur'] } } });
   const repo = toyRepo(t);
   gitToy(repo, 'branch', 'wt/norte');
-  const r = C.open({ ...t.opts, ...caller(t), repo, task: 'algo', launcher: launcher(t) });
+  const r = C.open({ ...t.opts, ...caller(t), repo, slot: true, task: 'algo', launcher: launcher(t) });
   assert.strictEqual(r.ok, true, r.message);
   assert.strictEqual(launched(t).argv[2], 'Sur');
   assert.strictEqual(branchIn(slotOf(repo, 1)), 'wt/Sur');
   // con --branch la rama es otra y el primero sigue libre
-  const b = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, branch: 'feat/y', task: 'otra', launcher: launcher(t) });
+  const b = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, slot: true, branch: 'feat/y', task: 'otra', launcher: launcher(t) });
   assert.strictEqual(b.ok, true, b.message);
   assert.strictEqual(launched(t).argv[2], 'Norte');
 });
@@ -816,7 +816,7 @@ test('T41 Open_WithRepo_NoFreeSlot_DoesNotOpen: sin puesto libre lo dice y no ll
   const t = toy({ profile: { coordination: { max_working: 1 } } });
   const repo = toyRepo(t);
   assert.strictEqual(WS.take({ ...t.opts, repo, branch: 'feat/ocupa' }).ok, true);
-  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t) });
+  const r = C.open({ ...t.opts, ...caller(t), repo, slot: true, name: 'n1', task: 'algo', launcher: launcher(t) });
   assert.strictEqual(r.ok, false);
   assert.match(r.message, /no hay puesto libre/);
   assert.match(r.message, /no la abrí/);
@@ -826,7 +826,7 @@ test('T41 Open_WithRepo_NoFreeSlot_DoesNotOpen: sin puesto libre lo dice y no ll
 test('T42 Open_WithRepo_LaunchFails_FreesTheSlot: si el lanzador falla, el puesto vuelve a quedar libre y la rama nueva no queda', () => {
   const t = toy({ profile: { coordination: { max_working: 1 } } });
   const repo = toyRepo(t);
-  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t, 'error') });
+  const r = C.open({ ...t.opts, ...caller(t), repo, slot: true, name: 'n1', task: 'algo', launcher: launcher(t, 'error') });
   assert.strictEqual(r.ok, false);
   assert.strictEqual(WS.list({ ...t.opts, repo }).slots[0].free, true);
   assert.strictEqual(gitToy(repo, 'branch', '--list', 'wt/n1'), '');
@@ -1725,6 +1725,264 @@ test('T11 AdversarialTurn_NoMedidoPass_DoesNotBlockAnother @story-8.228 @ac-3: u
   assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }), null);
   passMarker(t, 'otra-2', '9.2', 1, noMedido);
   assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }).waiting_turn, true);
+});
+
+// ── Opening in a sibling copy ────────────────────────────────────────────────────────────────────────────────────
+
+const copyOf = (repo, name) => `${repo}--wt-${name}`;
+const branchExists = (repo, b) => spawnSync('git', ['-C', repo, 'rev-parse', '--verify', '-q', `refs/heads/${b}`], { encoding: 'utf8' }).status === 0;
+// A toy launcher that counts its calls (one line each) and answers as told.
+function countingLauncher(t, behavior = 'ok') {
+  const script = path.join(t.root, 'counting-launcher.js');
+  fs.writeFileSync(script, `
+const fs = require('fs');
+fs.appendFileSync(${JSON.stringify(path.join(t.root, 'calls.log'))}, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }) + '\\n');
+if (${JSON.stringify(behavior)} === 'untrusted') { process.stderr.write('Error: Workspace not trusted. Open it once to trust it.\\n'); process.exit(1); }
+`);
+  return { bin: process.execPath, prefix: [script] };
+}
+const calls = (t) => { try { return fs.readFileSync(path.join(t.root, 'calls.log'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
+const slotsOf = (repo) => fs.readdirSync(path.dirname(repo)).filter((d) => d.startsWith(`${path.basename(repo)}--slot-`));
+
+test('8.187 T1 Open_ConRepo_CreaCopiaHermana_YAbreAhi @story-8.187 @ac-1: crea <repo>--wt-<nombre> desde origin/main y abre ahí; el encargo nombra copia y rama, pide el pedido abierto y no habla de puestos', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'implementá la 9.9', launcher: launcher(t) });
+  assert.strictEqual(r.ok, true, r.message);
+  const copy = copyOf(repo, 'n1');
+  const l = launched(t);
+  assert.strictEqual(fs.realpathSync(l.cwd), copy);
+  assert.strictEqual(branchIn(copy), 'wt/n1');
+  assert.strictEqual(gitToy(copy, 'rev-parse', 'HEAD'), gitToy(repo, 'rev-parse', 'origin/main'));
+  const job = l.argv[l.argv.length - 1];
+  assert.match(job, /^implementá la 9\.9/);
+  assert.ok(job.includes(copy), job);
+  assert.ok(job.includes('wt/n1'), job);
+  assert.match(job, /commiteado, empujado y con su pedido abierto/);
+  assert.doesNotMatch(job, /puesto|work-slots/);
+  assert.ok(r.message.includes(copy), r.message);
+  // con --branch, la rama es ésa
+  const b = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n2', branch: 'feat/x', task: 'otra', launcher: launcher(t) });
+  assert.strictEqual(b.ok, true, b.message);
+  assert.strictEqual(branchIn(copyOf(repo, 'n2')), 'feat/x');
+  assert.deepStrictEqual(slotsOf(repo), [], 'no crea puestos');
+});
+
+test('8.187 T2 Open_ConSlot_TomaUnPuesto @story-8.187 @ac-2: con --slot toma un puesto como hoy; sin él no se crea ninguno; la línea de comandos lee --slot sin valor', () => {
+  const t = toy({ profile: { coordination: { max_working: 2 } } });
+  const repo = toyRepo(t);
+  const r = C.open({ ...t.opts, ...caller(t), repo, slot: true, name: 'n1', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(fs.realpathSync(launched(t).cwd), slotOf(repo, 1));
+  assert.ok(!fs.existsSync(copyOf(repo, 'n1')), 'con --slot no hay copia');
+  const t2 = toy({ profile: { coordination: { max_working: 2 } } });
+  const repo2 = toyRepo(t2);
+  assert.strictEqual(C.open({ ...t2.opts, ...caller(t2), repo: repo2, name: 'n1', task: 'algo', launcher: launcher(t2) }).ok, true);
+  assert.deepStrictEqual(slotsOf(repo2), []);
+  // la línea de comandos: --slot no se come el argumento siguiente ni pide un valor
+  const f = C.flags(['--name', 'x', '--repo', '/r', '--slot', '--', 'el encargo entero']);
+  assert.strictEqual(f.slot, true);
+  assert.strictEqual(f.repo, '/r');
+  assert.deepStrictEqual(f.rest, ['el encargo entero']);
+  assert.strictEqual(C.flags(['--repo', '/r', '--slot']).slot, true);
+});
+
+test('8.187 T3 Open_NotTrusted_BorraLoQueCreo @story-8.187 @ac-3: «not trusted» borra la copia y la rama nueva; una rama que ya existía queda', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t, 'untrusted') });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(launched(t).cwd, copyOf(repo, 'n1'), 'probó en la copia hermana');
+  assert.ok(!fs.existsSync(copyOf(repo, 'n1')), 'la copia no queda');
+  assert.strictEqual(branchExists(repo, 'wt/n1'), false, 'la rama nueva no queda');
+  gitToy(repo, 'branch', 'feat/existe', 'origin/main');
+  const r2 = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n2', branch: 'feat/existe', task: 'algo', launcher: launcher(t, 'untrusted') });
+  assert.strictEqual(r2.ok, false);
+  assert.ok(!fs.existsSync(copyOf(repo, 'n2')), 'la copia no queda');
+  assert.strictEqual(branchExists(repo, 'feat/existe'), true, 'la rama que ya existía queda');
+  // otra falla del lanzador también limpia
+  const r3 = C.open({ ...t.opts, ...caller(t), now: NOW + 2000, repo, name: 'n3', task: 'algo', launcher: launcher(t, 'error') });
+  assert.strictEqual(r3.ok, false);
+  assert.ok(!fs.existsSync(copyOf(repo, 'n3')));
+  assert.strictEqual(branchExists(repo, 'wt/n3'), false);
+});
+
+test('8.187 T4 Open_NotTrusted_NombraPrincipalYSlot @story-8.187 @ac-4: una línea con la carpeta principal y --slot; una sola llamada; ~/.claude.json igual', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const cfg = path.join(t.home, '.claude.json');
+  fs.writeFileSync(cfg, '{ esto no es json');
+  const antes = fs.readFileSync(cfg);
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: countingLauncher(t, 'untrusted') });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.message.trim().split('\n').length, 1, r.message);
+  assert.match(r.message, new RegExp(`${repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!-)`), `nombra la carpeta principal: ${r.message}`);
+  assert.doesNotMatch(r.message, /--slot-\d/, 'no habla de un puesto');
+  assert.match(r.message, /--slot\b(?!-)/, 'ofrece la opción --slot');
+  assert.strictEqual(calls(t).length, 1, 'no reintenta');
+  assert.strictEqual(calls(t)[0].cwd, copyOf(repo, 'n1'), 'lo intentó en la copia hermana');
+  assert.deepStrictEqual(fs.readFileSync(cfg), antes, 'no toca ~/.claude.json');
+});
+
+test('8.187 T5 Open_CopiaORamaExistente_SeNiega @story-8.187 @ac-5: con la copia o la rama wt/<nombre> ya presentes se niega y no toca nada', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const copy = copyOf(repo, 'n1');
+  fs.mkdirSync(copy);
+  fs.writeFileSync(path.join(copy, 'de-otra.txt'), 'algo\n');
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /ya existe/);
+  assert.strictEqual(r.message.trim().split('\n').length, 1);
+  assert.deepStrictEqual(fs.readdirSync(copy), ['de-otra.txt']);
+  assert.strictEqual(calls(t).length, 0);
+  gitToy(repo, 'branch', 'wt/n2', 'origin/main');
+  const tip = gitToy(repo, 'rev-parse', 'wt/n2');
+  const r2 = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n2', task: 'algo', launcher: countingLauncher(t) });
+  assert.strictEqual(r2.ok, false);
+  assert.match(r2.message, /ya existe/);
+  assert.ok(!fs.existsSync(copyOf(repo, 'n2')));
+  assert.strictEqual(gitToy(repo, 'rev-parse', 'wt/n2'), tip);
+  assert.strictEqual(calls(t).length, 0);
+});
+
+test('8.187 T16 Open_FallaGit_NoAbre_LoDice @story-8.187 @ac-15: fetch o worktree add que fallan: un renglón con el error y el lanzador no se llama', { skip: process.platform === 'win32' ? 'permisos POSIX' : false }, () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  gitToy(repo, 'remote', 'set-url', 'origin', path.join(t.root, 'no-esta.git'));
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.message.trim().split('\n').length, 1, r.message);
+  assert.match(r.message, /origin|main|repository|repositorio/i);
+  assert.match(r.message, /no la abrí/);
+  assert.ok(!fs.existsSync(copyOf(repo, 'n1')), 'sin red no crea la copia desde una punta vieja');
+  assert.strictEqual(calls(t).length, 0);
+  // worktree add que falla: la carpeta de los repos sin permiso de escritura
+  const t2 = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo2 = toyRepo(t2);
+  const parent = path.dirname(repo2);
+  fs.chmodSync(parent, 0o555);
+  try {
+    const r2 = C.open({ ...t2.opts, ...caller(t2), repo: repo2, name: 'n1', task: 'algo', launcher: countingLauncher(t2) });
+    assert.strictEqual(r2.ok, false);
+    assert.strictEqual(r2.message.trim().split('\n').length, 1, r2.message);
+    assert.match(r2.message, /no la abrí/);
+    assert.strictEqual(calls(t2).length, 0);
+    assert.strictEqual(branchExists(repo2, 'wt/n1'), false, 'la rama a medias no queda');
+  } finally { fs.chmodSync(parent, 0o755); }
+});
+
+test('8.187 T17 Open_ConCwd_Y_TopeSinCambios @story-8.187 @ac-16: --cwd abre como hoy; el tope cuenta igual una sesión en una copia', () => {
+  const t = toy({ profile: { coordination: { max_working: 1 } } });
+  const repo = toyRepo(t);
+  const r = open(t, { name: 'c1', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(fs.realpathSync(launched(t).cwd), fs.realpathSync(t.root));
+  const t2 = toy({ profile: { coordination: { max_working: 1 } } });
+  const repo2 = toyRepo(t2);
+  session(t2, 'busy-copia', 'otra', { status: 'busy', cwd: copyOf(repo2, 'otra') });
+  const r2 = C.open({ ...t2.opts, ...caller(t2), repo: repo2, name: 'n1', task: 'algo', launcher: countingLauncher(t2) });
+  assert.strictEqual(r2.ok, false);
+  assert.match(r2.message, /1 trabajando.*tope.*1/);
+  assert.strictEqual(calls(t2).length, 0);
+  assert.ok(!fs.existsSync(copyOf(repo2, 'n1')), 'en el tope no crea la copia');
+  assert.ok(repo);
+});
+
+test('8.187 T6 Barrido_CopiaHermana_LaSacaSoloMergeada @story-8.187 @ac-6: el barrido saca la copia mergeada y la que no tiene trabajo con main adelante; deja y nombra la que tiene commits', () => {
+  const t = toy();
+  const repo = toyRepo(t);
+  const mk = (name) => { const c = copyOf(repo, name); gitToy(repo, 'worktree', 'add', '-q', '-b', `wt/${name}`, c, 'origin/main'); return c; };
+  const mergeada = mk('mergeada');
+  fs.writeFileSync(path.join(mergeada, 'm.txt'), 'm\n');
+  gitToy(mergeada, 'add', 'm.txt');
+  gitToy(mergeada, 'commit', '-q', '-m', 'trabajo mergeado');
+  const vacia = mk('vacia');
+  const conTrabajo = mk('con-trabajo');
+  fs.writeFileSync(path.join(conTrabajo, 'c.txt'), 'c\n');
+  gitToy(conTrabajo, 'add', 'c.txt');
+  gitToy(conTrabajo, 'commit', '-q', '-m', 'trabajo sin mergear');
+  // la mergeada entra a main, y main avanza: la vacía queda atrás
+  gitToy(repo, 'merge', '-q', '--no-ff', '-m', 'merge', 'wt/mergeada');
+  gitToy(repo, 'push', '-q', 'origin', 'HEAD:main');
+  gitToy(repo, 'fetch', '-q', 'origin');
+  const SWEEP = path.join(ROOT, 'scripts', 'hooks', 'worktree-sweep.js');
+  const r = spawnSync(process.execPath, [SWEEP, '--force'], {
+    cwd: t.root, encoding: 'utf8',
+    env: { ...GIT_ENV, HOME: t.home, USERPROFILE: t.home, TYCON_REPOS_ROOT: path.dirname(repo), TYCON_WORKTREE_SWEEP_IDLE_HOURS: '0', TYCON_WORKTREE_SWEEP: '', TYCON_EVAL_SANDBOX: '' },
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(!fs.existsSync(mergeada), `la mergeada sigue: ${r.stdout}`);
+  assert.ok(!fs.existsSync(vacia), `la vacía sigue: ${r.stdout}`);
+  assert.ok(fs.existsSync(conTrabajo), 'borró la que tiene commits');
+  assert.match(r.stdout, /con-trabajo/);
+});
+
+test('8.187 T18 Cierre_CopiaSinEmpujar_NoEstaLimpia @story-8.187 @ac-17: la copia con un commit sin empujar no está limpia y se nombra, sin hablar de puestos', () => {
+  const t = closeLab();
+  const copy = `${t.repo}--wt-n1`;
+  git(t.repo, 'worktree', 'add', '-q', '-b', 'wt/n1', copy);
+  commitIn(copy);
+  bg(t, 'n1', copy);
+  const r = closeIt(t, 'n1');
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /1 commit\(s\) sin empujar/);
+  assert.ok(r.message.includes(copy), r.message);
+  assert.doesNotMatch(r.message, /puesto/);
+  assert.deepStrictEqual(closed(t), []);
+  assert.ok(fs.existsSync(copy), 'el cierre no borra la copia');
+});
+
+test('8.187 T19 Guias_NoDescribenElCaminoViejo @story-8.187 @ac-18: pending-trust y los puestos aparecen sólo en la sección de la opción --slot', () => {
+  const PAGES = ['guides/coordination.md', 'guides/coordination.en.md', 'guides/working-with-a-coordinator.md', 'guides/working-with-a-coordinator.en.md', 'guides/git-worktrees.md', 'INSTALL.md', 'getting-started/reference.md', 'getting-started/reference.es.md'];
+  const OLD = /pending-trust|\bpuestos? fijos?\b|\bfixed (work )?slots?\b|work-slots\.js/i;
+  const SLOT_SECTION = /--slot/;
+  for (const rel of PAGES) {
+    const text = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    // cada sección (título ## o ###) con el camino viejo tiene que ser la de la opción --slot
+    const sections = text.split(/\n(?=#{2,3} )/);
+    for (const s of sections) {
+      if (!OLD.test(s)) continue;
+      const title = s.split('\n')[0];
+      assert.match(`${title}\n${s}`, SLOT_SECTION, `${rel}: la sección «${title.slice(0, 80)}» describe los puestos sin la opción --slot`);
+      assert.match(title, /--slot|slot|puesto/i, `${rel}: «${title.slice(0, 80)}» habla de puestos fuera de la sección de --slot`);
+    }
+  }
+});
+
+test('8.187 T3b Open_NotTrusted_SinPoderBorrar_LoDice @story-8.187 @ac-3: si la copia no se puede borrar, el mensaje no dice «borré»: dice que queda para el barrido', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  // el lanzador bloquea la copia antes de contestar «not trusted»: `worktree remove --force` no saca una bloqueada
+  const script = path.join(t.root, 'locking-launcher.js');
+  fs.writeFileSync(script, `
+require('child_process').spawnSync('git', ['worktree', 'lock', process.cwd()], { cwd: process.cwd() });
+process.stderr.write('Error: Workspace not trusted.\\n'); process.exit(1);
+`);
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: { bin: process.execPath, prefix: [script] } });
+  assert.strictEqual(r.ok, false);
+  assert.doesNotMatch(r.message, /Borré la copia/, r.message);
+  assert.match(r.message, /No pude borrar la copia .*barrido/, r.message);
+  spawnSync('git', ['-C', repo, 'worktree', 'unlock', copyOf(repo, 'n1')]);
+});
+
+test('8.187 T5b Open_NombreAuto_SaltaLasCopiasQueQuedaron @story-8.187 @ac-5: sin --name no elige un nombre cuya copia todavía existe, aunque su rama sea otra', () => {
+  const t = toy({ profile: { coordination: { max_working: 3, session_names: ['Norte', 'Sur'] } } });
+  const repo = toyRepo(t);
+  const first = C.open({ ...t.opts, ...caller(t), repo, branch: 'feat/a', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(first.ok, true, first.message);
+  assert.ok(fs.existsSync(copyOf(repo, 'Norte')));
+  // once minutos después la sesión ya no está viva y su apertura salió de las recientes; la copia quedó
+  const second = C.open({ ...t.opts, ...caller(t), now: NOW + 11 * 60000, repo, task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(second.ok, true, second.message);
+  assert.ok(fs.existsSync(copyOf(repo, 'Sur')), second.message);
+});
+
+test('8.187 T16b Open_SlotSinRepo_SeNiega @story-8.187 @ac-2: --slot sin --repo no se ignora en silencio', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const r = C.open({ ...t.opts, ...caller(t), cwd: t.root, slot: true, name: 'n1', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /--slot va con --repo/);
 });
 
 test('8.212 T11 Guia_LaReglaDiceFreno @story-8.212 @ac-10: la regla de no cambiar archivos la mide un freno, con su límite, en las dos guías', () => {

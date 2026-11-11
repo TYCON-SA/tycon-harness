@@ -1,0 +1,46 @@
+{
+  "__doc": "Gancho de arranque que lanza la actualización del freno de producción sin contraseña. Lanza `sudo -n /opt/tycon/setup/update-guard.sh` de fondo sólo con /opt/tycon, el permiso de la máquina, «solo» en el perfil, un arnés bajado más nuevo que lo instalado y sin una falla anotada para esa versión. A propósito no acepta una raíz falsa por variable: los casos que lanzan viven en scripts/tests/guard-auto-update.test.js, que llama a decide() y run() con una raíz y un sudo de juguete. Acá se fija lo que vale en cualquier máquina, incluida una con el freno instalado: con el interruptor apagado, en el sandbox de evaluación o sin un arnés bajado en la HOME, calla y no lanza nada.",
+  "hooks": [
+    {
+      "hook": "guard-auto-update.js (lanza la actualización del freno sin contraseña cuando corresponde)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/guard-auto-update.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "interruptor-apagado-calla",
+          "type": "must-stay-quiet",
+          "__doc": "Con TYCON_GUARD_AUTO_UPDATE=0 no mira nada ni lanza nada. ROJO PREVIO: un interruptor que no apaga deja a la persona sin forma de frenar una actualización que falla en cada arranque.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness home && cp $TCG/scripts/hooks/guard-auto-update.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/"
+          ],
+          "stdin": { "source": "startup" },
+          "env": { "TYCON_GUARD_AUTO_UPDATE": "0", "HOME": "${FIXTURE}/home" },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "sandbox-de-evaluacion-calla",
+          "type": "must-stay-quiet",
+          "__doc": "En el sandbox de evaluación (TYCON_EVAL_SANDBOX=1) no lanza nada: una evaluación no puede pedir root. ROJO PREVIO: una corrida de evaluación disparando sudo en la máquina de quien la corre.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness home && cp $TCG/scripts/hooks/guard-auto-update.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/"
+          ],
+          "stdin": { "source": "startup" },
+          "env": { "TYCON_EVAL_SANDBOX": "1", "HOME": "${FIXTURE}/home" },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "sin-arnes-bajado-ni-perfil-en-auto-calla",
+          "type": "must-stay-quiet",
+          "__doc": "Con una HOME sin arnés bajado ni perfil en «solo», calla y sale 0, haya o no freno en la máquina: no hay versión publicada contra la que comparar, y de fábrica se actualiza con la contraseña. ROJO PREVIO: lanzar sudo sin saber a qué versión, o trabar el arranque con un error.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness home && cp $TCG/scripts/hooks/guard-auto-update.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/"
+          ],
+          "stdin": { "source": "startup" },
+          "env": { "HOME": "${FIXTURE}/home" },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}
