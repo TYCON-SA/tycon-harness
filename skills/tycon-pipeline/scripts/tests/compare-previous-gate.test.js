@@ -10,6 +10,8 @@
 //   P1-P6    lo que encontró el pase adversarial de la 8.243: qué es candidato, qué subcomando toca un cambio (cierres,
 //            despachos con if, comentarios, switch internos, el último case, shell), las declaraciones bajo subtítulos,
 //            un «no comparado» que no borra un «distinto», y un humo de otra versión del código que no cuenta
+//   T28      el papeleo que escribe el cierre (los seguimientos y el renglón propio de sprint-status) no
+//            vuelve viejo un humo; el renglón de otra historia, sí
 //
 // Correr: node --test skills/tycon-pipeline/scripts/tests/compare-previous-gate.test.js < /dev/null
 
@@ -529,4 +531,20 @@ test('P14 HumoSinSellar_DiceElMotivo @story-8.167 @ac-11 — si el repo del humo
   const f = cp().freno({ storyPath: L.storyPath, repos: [L.repo], runDir: L.runDir(), stateDir: L.state, story: '9.9' });
   assert.ok(f.lineas.some((l) => /no pude sellar .*no se pudieron atar al código de ahora/.test(l)), f.lineas.join('\n'));
   assert.ok(!f.lineas.some((l) => /otra versión del código/.test(l)), f.lineas.join('\n'));
+});
+
+test('T28 CompareSmokes_ClosingPaperwork_SmokeStaysCurrent @story-8.263 @ac-25 — los seguimientos y el renglón propio de sprint-status no vuelven viejo un humo', () => {
+  const SPRINT = ['development_status:', '', 'epic-9: in-progress', '9-9-cmp: in-progress   # hoy', '9-10-otra: backlog', ''].join('\n');
+  const L = laboratorio({ sid: 's-gate-t28', archivos: { 'cli.js': CLI, 'specs/sprint-status.yaml': SPRINT } });
+  L.humo({ cmd: 'node cli.js get', archivo: 'cli.js', resultado: 'igual', main: { exit: 0 }, cambio: { exit: 0 } });
+  const vigentes = () => cp().delCodigoDeAhora(cp().leerInforme(L.runDir()), L.storyPath);
+  // «Hallazgos» escribe la sección de seguimientos y el cierre pasa la historia a review
+  fs.appendFileSync(L.storyPath, '\n## Review Follow-ups (Advisors)\n\n- [ ] **[WARNING]** X-W1 — `cli.js` — algo <!-- fkey:X-W1|cli.js -->\n');
+  fs.writeFileSync(path.join(L.repo, 'specs', 'sprint-status.yaml'), SPRINT.replace('9-9-cmp: in-progress   # hoy', '9-9-cmp: review   # cerrada'));
+  let d = vigentes();
+  assert.deepStrictEqual([d.vigentes.length, d.viejas.length], [1, 0], 'el humo sigue siendo de la versión de ahora');
+  // el renglón de otra historia: el humo pasa a ser de otra versión
+  fs.writeFileSync(path.join(L.repo, 'specs', 'sprint-status.yaml'), SPRINT.replace('9-10-otra: backlog', '9-10-otra: done'));
+  d = vigentes();
+  assert.deepStrictEqual([d.vigentes.length, d.viejas.length], [0, 1], 'otro renglón lo vuelve viejo');
 });

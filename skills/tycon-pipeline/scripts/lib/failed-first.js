@@ -84,16 +84,28 @@ function redHash(dir) {
   return h.digest('hex');
 }
 
-function saveRed({ dir, summaryFile, lcovFile, measuredFile, base, recorte, at = new Date().toISOString() }) {
+/**
+ * Guarda lo que midió una completa. `origen`: «roja» (para cerrar repitiendo solas sus rojas) o «verde» (para correr
+ * después sólo lo cambiado). `forgivenFile`: el resumen
+ * después del juez de heredados, si lo hubo; `summaryFile` es el de antes, con esas suites rojas: las que el juez perdonó
+ * quedan anotadas en `heredadas` y se vuelven a juzgar al cerrar con lo guardado (con la foto del nocturno de ese día).
+ */
+function saveRed({ dir, summaryFile, lcovFile, measuredFile, base, recorte, storyId = null, origen = 'roja', forgivenFile = null, at = new Date().toISOString() }) {
+  let heredadas = [];
+  if (forgivenFile) {
+    const despues = new Set((leerJson(forgivenFile).fallas || []).map(rutaDeFalla).filter(Boolean));
+    heredadas = (leerJson(summaryFile).fallas || []).map(rutaDeFalla).filter((r) => r && !despues.has(r));
+  }
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
   fs.copyFileSync(summaryFile, path.join(dir, 'resumen.json'));
   fs.copyFileSync(measuredFile, path.join(dir, 'medido.json'));
   if (lcovFile && fs.existsSync(lcovFile)) fs.copyFileSync(lcovFile, path.join(dir, 'lcov.info'));
-  fs.writeFileSync(path.join(dir, 'meta.json'), `${JSON.stringify({ base: base || null, recorte: recorte || '', at })}\n`);
+  fs.writeFileSync(path.join(dir, 'meta.json'), `${JSON.stringify({ base: base || null, recorte: recorte || '', at, origen, storyId: storyId || null, heredadas })}\n`);
   fs.writeFileSync(path.join(dir, 'repetidas.json'), '{}\n');
   return redHash(dir);
 }
+const saveGreen = (opts) => saveRed({ ...opts, origen: 'verde' });
 
 /** Suma una repetición verde: su entrada del resumen de la suite sola, la foto de la carpeta en que corrió y su lcov. */
 function addRepeat(dir, ruta, { tree, entry, lcovFile = null }) {
@@ -256,7 +268,52 @@ function changedFiles(repo, a, b) {
   return r.stdout.split('\0').filter(Boolean);
 }
 
-function decide({ dir, hash, repo, tree, base, recorte }) {
+// ── Lo que pide la completa como siempre ──────────────────────────────────────────────────────────────────────────────
+// Después de una completa verde (o en el árbol armado del privado) no se acota si cambió un control, el instalador, lo
+// compartido o la lista de suites: los criterios salen de las listas que ya usa la CI (scripts/ci/controls-from-base.json
+// y scripts/ci/heavy-suites.json, por scripts/ci/suites-for-change.js), no de una lista propia. En el privado, además, lo
+// que lanza su validación y sus ganchos. Un criterio que no se deja leer tira: nunca cuenta como «no es un control».
+const PREFIJOS_DEL_PRIVADO = ['pipelines/', 'scripts/ci/', 'scripts/hooks/', '.githooks/'];
+
+/**
+ * La primera clase que pide la completa entre `files` (`[{ repo, rel }]`, con `repo` «privado», «publico» o «local»):
+ * `{ clase, archivo }` o null. `raiz`: la carpeta de donde se leen las listas (la del repo, o la del árbol armado).
+ */
+function claseQuePideLaCompleta(files, { raiz }) {
+  const rels = files.map((f) => f.rel);
+  const priv = files.find((f) => f.repo === 'privado' && PREFIJOS_DEL_PRIVADO.some((p) => f.rel.startsWith(p)));
+  if (priv) return { clase: 'un control del privado', archivo: priv.rel };
+  const lista = rels.find((r) => SUITE_LISTS.includes(r));
+  if (lista) return { clase: 'la lista de suites', archivo: lista };
+  const inv = path.join(raiz, 'scripts', 'ci', 'controls-from-base.json');
+  if (fs.existsSync(inv)) {
+    const controles = require('./risk-paths.js').archivosDeControles(raiz);
+    const datos = leerJson(inv);
+    const carpetas = [...(datos.content || []), ...(datos.approvals || [])].map((x) => (typeof x === 'string' ? x : x && x.path)).filter(Boolean);
+    const control = rels.find((r) => (controles && controles.has(r)) || carpetas.some((c) => (c.endsWith('/') ? r.startsWith(c) : r === c)));
+    if (control) return { clase: 'un control', archivo: control };
+  }
+  const heavy = path.join(raiz, 'scripts', 'ci', 'heavy-suites.json');
+  if (fs.existsSync(heavy)) {
+    const sfc = require(path.join(raiz, 'scripts', 'ci', 'suites-for-change.js'));
+    const piso = sfc.floorCriterion(heavy, path.join(raiz, 'scripts', 'tests', 'suites.json'), []);
+    if (piso.problem) throw new Error(piso.problem);
+    const delInstalador = piso.touched(rels);
+    if (delInstalador) return { clase: 'el instalador', archivo: delInstalador };
+    if (typeof sfc.sharedCriterion !== 'function') throw new Error('scripts/ci/suites-for-change.js no trae sharedCriterion');
+    const comun = sfc.sharedCriterion(heavy);
+    if (comun.problem) throw new Error(comun.problem);
+    const compartido = comun.touched(rels);
+    if (compartido) return { clase: 'algo compartido', archivo: compartido };
+  }
+  return null;
+}
+
+// En el árbol armado la foto es la de cada repo (after-main.js `fotoDelArbol`); fuera, el árbol de la carpeta.
+const esFotoDelArbol = (t) => Boolean(t) && typeof t === 'object' && t.privado && t.publico;
+const huellaDe = (t) => (esFotoDelArbol(t) ? require('./after-main.js').huellaDeFoto(t) : t);
+
+function decide({ dir, hash, repo, tree, base, recorte, storyId = null }) {
   const full = (reason) => ({ mode: 'full', reason });
   if (!dir || !fs.existsSync(dir) || redHash(dir) !== hash) return full('lo guardado no coincide con su constancia');
   let meta; let medido; let resumen; let rep;
@@ -266,25 +323,47 @@ function decide({ dir, hash, repo, tree, base, recorte }) {
     resumen = leerJson(path.join(dir, 'resumen.json'));
     rep = leerJson(path.join(dir, 'repetidas.json'));
   } catch (e) { return full(`lo guardado no se deja leer (${e.message})`); }
-  if (!medido || typeof medido.tree !== 'string' || !tree) return full('no hay foto de la carpeta para comparar');
-  if ((meta.base || null) !== (base || null)) return full('la base cambió desde la completa roja (main avanzó: las suites tocadas pueden ser otras)');
-  if ((meta.recorte || '') !== (recorte || '')) return full('esta corrida no tiene el mismo recorte que la completa roja');
+  const verde = meta.origen === 'verde';
+  const deLa = verde ? 'la completa verde' : 'la completa roja';
+  const arbol = esFotoDelArbol(tree);
+  if (!medido || !tree || (arbol ? !esFotoDelArbol(medido) : typeof medido.tree !== 'string')) return full('no hay foto de la carpeta para comparar');
+  // sin la historia de la corrida no se sabe si lo guardado es suyo: ante la duda, la completa
+  if (meta.storyId && !storyId) return full(`no sé de qué historia es esta corrida: lo guardado es de la ${meta.storyId}`);
+  if (meta.storyId && storyId && meta.storyId !== storyId) return full(`lo guardado es de otra historia (${meta.storyId})`);
+  if ((meta.base || null) !== (base || null)) return full(`la base cambió desde ${deLa} (main avanzó: las suites tocadas pueden ser otras)`);
+  if ((meta.recorte || '') !== (recorte || '')) return full(`esta corrida no tiene el mismo recorte que ${deLa}`);
+  const heredadas = new Set(meta.heredadas || []);
   const fallas = (resumen.fallas || []).map(rutaDeFalla).filter(Boolean);
-  const sinRepetir = fallas.filter((r) => !rep[r]);
+  const sinRepetir = fallas.filter((r) => !rep[r] && !heredadas.has(r));
   if (sinRepetir.length) return full(`falta repetir sola: ${sinRepetir.join(', ')}`);
+  const ahora = huellaDe(tree);
+  const igual = ahora === (arbol ? huellaDe(medido) : medido.tree);
   let files = [];
-  if (tree !== medido.tree) {
-    try { files = changedFiles(repo, medido.tree, tree); } catch (e) { return full(`no pude comparar la carpeta con la de la completa roja (${e.message})`); }
-    if (files.some((f) => SUITE_LISTS.includes(f))) return full('cambió la lista de suites: una suite nueva no está en lo guardado');
+  if (!igual) {
+    let cambios;
+    if (arbol) {
+      const d = require('./after-main.js').cambiosDelArbol(medido, tree);
+      if (d.no) return full(`no pude comparar la carpeta con la de ${deLa} (${d.no})`);
+      cambios = d.files;
+    } else {
+      try { cambios = changedFiles(repo, medido.tree, tree).map((rel) => ({ repo: 'local', rel })); } catch (e) { return full(`no pude comparar la carpeta con la de ${deLa} (${e.message})`); }
+    }
+    files = [...new Set(cambios.map((f) => f.rel))];
+    if (verde || arbol) {
+      let c;
+      try { c = claseQuePideLaCompleta(cambios, { raiz: repo }); } catch (e) { return full(`no pude leer los criterios de lo que pide la completa (${e.message})`); }
+      if (c) return full(`cambió ${c.clase} (${c.archivo})`);
+    } else if (files.some((f) => SUITE_LISTS.includes(f))) return full('cambió la lista de suites: una suite nueva no está en lo guardado');
     let vuelven;
     try { vuelven = reEligible(repo, resumen, files); } catch (e) { return full(`no pude ver qué suites difirió la completa (${e.message})`); }
-    if (vuelven.length) return full(`lo cambiado vuelve a hacer correr ${vuelven.join(', ')}, que la completa roja difirió`);
+    if (vuelven.length) return full(`lo cambiado vuelve a hacer correr ${vuelven.join(', ')}, que ${deLa} difirió`);
   }
-  const otraCarpeta = Object.entries(rep).filter(([, x]) => x.tree !== tree).map(([r]) => r);
+  const otraCarpeta = Object.entries(rep).filter(([, x]) => x.tree !== ahora).map(([r]) => r);
   if (otraCarpeta.length) return full(`la carpeta cambió después de repetir ${otraCarpeta.join(', ')}`);
   const at = meta.at;
-  if (tree === medido.tree) return { mode: 'same', at, repetidas: Object.keys(rep).length };
-  return { mode: 'changed', at, repetidas: Object.keys(rep).length, files };
+  const origen = verde ? 'verde' : 'roja';
+  if (igual) return { mode: 'same', at, origen, repetidas: Object.keys(rep).length };
+  return { mode: 'changed', at, origen, repetidas: Object.keys(rep).length, files };
 }
 
 /**
@@ -312,8 +391,12 @@ function merge({ dir, newSummary = null, covDir = null, changed = [] }) {
     if (newSummary.no_medido) extra.no_medido = newSummary.no_medido;
   }
   const suites = [...porRuta.values()];
+  const origen = meta.origen === 'verde' ? 'verde' : 'roja';
   const out = { ...resumen, ...extra, suites, fallas, corridas: suites.length, verdes: suites.filter((s) => s.exit === 0).length,
-    cerrada: { completa: meta.at, repetidas: Object.keys(rep).length, nuevas } };
+    cerrada: { completa: meta.at, repetidas: Object.keys(rep).length, nuevas, origen, cambiados: changed } };
+  // lo guardado verde es de antes del perdón: el de las heredadas lo vuelve a dar el juez al final del portón, con la foto
+  // del nocturno de ahora
+  if (origen === 'verde') delete out.inherited;
   if (covDir) {
     fs.mkdirSync(covDir, { recursive: true });
     const lcov = path.join(covDir, 'lcov.info');
@@ -322,7 +405,9 @@ function merge({ dir, newSummary = null, covDir = null, changed = [] }) {
       .filter((t) => t.trim());
     fs.writeFileSync(lcov, partes.map((t) => (t.endsWith('\n') ? t : `${t}\n`)).join(''));
     out.coverage = { ...(resumen.coverage || {}), lcov,
-      juntada: `la de la completa roja de las ${hhmm(meta.at)}${changed.length ? ' (sin los archivos que cambiaron después)' : ''}, más la de las ${Object.keys(rep).length} suites repetidas solas${nuevas ? ` y la de las ${nuevas} que leen lo cambiado` : ''}` };
+      juntada: origen === 'verde'
+        ? `la de la completa verde de las ${hhmm(meta.at)}${changed.length ? ' (sin los archivos que cambiaron después)' : ''}${nuevas ? `, más la de las ${nuevas} suites que leen lo cambiado` : ''}`
+        : `la de la completa roja de las ${hhmm(meta.at)}${changed.length ? ' (sin los archivos que cambiaron después)' : ''}, más la de las ${Object.keys(rep).length} suites repetidas solas${nuevas ? ` y la de las ${nuevas} que leen lo cambiado` : ''}` };
   }
   return out;
 }
@@ -332,7 +417,7 @@ const mergedRed = (out) => out.fallas.length > 0 || (out.ausentes || []).length 
 
 const hhmm = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '??:??' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
-module.exports = { entries, find, fromSummary, prune, redHash, saveRed, addRepeat, rewriteResult, decide, merge, mergedRed, reEligible, dropRecords, changedFiles, hhmm, RED_FILES };
+module.exports = { entries, find, fromSummary, prune, redHash, saveRed, saveGreen, addRepeat, rewriteResult, decide, merge, mergedRed, reEligible, dropRecords, changedFiles, claseQuePideLaCompleta, hhmm, RED_FILES };
 
 if (require.main === module) {
   const [cmd, suitesJson, ruta] = process.argv.slice(2);
@@ -352,7 +437,12 @@ if (require.main === module) {
       const out = merge({ dir: opt('--dir'), newSummary: nuevo, covDir: opt('--coverage'), changed });
       fs.writeFileSync(opt('--out'), `${JSON.stringify(out, null, 2)}\n`);
       const c = out.cerrada;
-      console.log(`[test-gate] cierra con la completa de las ${hhmm(c.completa)} y ${c.repetidas} suites repetidas solas${c.nuevas ? ` y ${c.nuevas} que leen lo cambiado` : ': la carpeta no cambió'}`);
+      if (c.origen === 'verde') {
+        const lista = `${c.cambiados.slice(0, 5).join(', ')}${c.cambiados.length > 5 ? ` y ${c.cambiados.length - 5} más` : ''}`;
+        console.log(c.cambiados.length
+          ? `[test-gate] cierra con la completa de las ${hhmm(c.completa)} más ${c.nuevas} suites por lo cambiado (${lista})`
+          : `[test-gate] cierra con la completa de las ${hhmm(c.completa)}: la carpeta no cambió`);
+      } else console.log(`[test-gate] cierra con la completa de las ${hhmm(c.completa)} y ${c.repetidas} suites repetidas solas${c.nuevas ? ` y ${c.nuevas} que leen lo cambiado` : ': la carpeta no cambió'}`);
       if (out.coverage && out.coverage.juntada) console.log(`[test-gate] cobertura juntada: ${out.coverage.juntada}`);
       if (out.fallas.length) console.error(`[test-gate] 🔴 quedan ${out.fallas.length} roja(s): ${out.fallas.map((f) => rutaDeFalla(f) || f.ruta).join(', ')}`);
       if ((out.ausentes || []).length) console.error(`[test-gate] 🔴 ${out.ausentes.length} ausente(s): ${out.ausentes.join(', ')}`);

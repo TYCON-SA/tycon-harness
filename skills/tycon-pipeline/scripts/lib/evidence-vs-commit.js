@@ -23,7 +23,12 @@
  *      por su fusión después de la evidencia tiene el mismo dibujo en git que el propio.
  *   6. Después de la 4 y de la 5: un archivo de prueba cuenta si todos los commits que lo cambiaron después son de otra
  *      historia. Afloja el control a propósito, por decisión del dueño: una prueba corregida por la misma historia quizá daba
- *      verde por estar mal, y vence. De qué historia es un commit lo dice lib/commit-story.js; si no se sabe, vence.
+ *      verde por estar mal, y vence. Pero vence sólo la evidencia de los criterios que esa prueba nombra
+ *      (`@story-<historia> @ac-N`), también si está sin commitear en la rama de la historia (la regla 2): devuelve
+ *      `{ cuenta: false, regla: 6, criterios }`, y la evidencia de los otros criterios sigue contando: el arreglo de
+ *      una prueba no dice nada de lo que esa prueba no mira. Sin marcas o ilegible, `criterios: null`: vence toda. De qué historia es un commit lo dice
+ *      lib/commit-story.js, o, para un commit de la rama de la historia que todavía no está en origin/main, la rama; si no
+ *      se sabe, vence toda.
  *
  * Una evidencia guardada en el mismo commit que un archivo editado después de la prueba da verde en la regla 4: no se
  * distingue en git. Lo frena antes el freno del commit, que calcula esta misma regla con el archivo sin commitear.
@@ -242,6 +247,74 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return delMasNuevo;
   }
 
+  // ¿La carpeta está en la rama de la historia? El mismo juez que reconoce la rama de una fusión de pedido.
+  function enLaRamaDeLaHistoria(carpeta) {
+    const r = preguntar(carpeta, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+    return r.codigo === 0 && historiaDe(r.salida.trim()) === 'propia';
+  }
+
+  // Si el archivo es de prueba, ¿lo cambió la propia historia? Los commits de `rango` (los que lo tocaron después de la
+  // evidencia) tienen que ser todos propios o de otra historia, y al menos uno propio; sin ninguno (`vacio`), alcanza
+  // con que la carpeta esté en la rama de la historia. Un commit sin fusión de pedido es propio si la carpeta está en la
+  // rama de la historia y el commit no está en origin/main (es lo de siempre dentro de una corrida). El archivo de HEAD
+  // tiene que ser el de uno de los commits: si no, lo escribió la resolución de una fusión. Cualquier duda da false.
+  function laCambioLaPropia(carpeta, nombre, rango, { vacio = false, propioSinCommitear = false } = {}) {
+    if (!historia) return false;
+    const rel = rutaEnElRepo(carpeta, nombre);
+    if (!rel || !isTestPath(rel)) return false;
+    const commits = preguntar(carpeta, ['log', '--no-merges', '--format=%h', ...rango, '--', nombre]);
+    if (commits.codigo !== 0) return false;
+    const lista = commits.salida.split('\n').filter(Boolean);
+    if (!lista.length) return vacio && enLaRamaDeLaHistoria(carpeta);
+    const enHead = preguntar(carpeta, ['rev-parse', '--verify', '-q', `HEAD:${rel}`]).salida.trim();
+    if (!enHead || !lista.some((c) => preguntar(carpeta, ['rev-parse', '--verify', '-q', `${c}:${rel}`]).salida.trim() === enHead)) return false;
+    let propios = 0;
+    for (const c of lista) {
+      const de = historiaDelCommit(carpeta, c);
+      if (de === 'propia') { propios += 1; continue; }
+      if (de) continue;
+      if (!enLaRamaDeLaHistoria(carpeta) || preguntar(carpeta, ['merge-base', '--is-ancestor', c, 'origin/main']).codigo !== 1) return false;
+      propios += 1;
+    }
+    // la edición sin commitear en la rama de la historia es suya, aunque los commits del medio sean todos de otra
+    return propios > 0 || propioSinCommitear;
+  }
+
+  // Los criterios que una prueba nombra para esta historia: los `@ac-N` de todo el archivo que nombra `@story-<historia>`,
+  // como story-checks.js, que busca las dos marcas en todo el archivo. En un archivo de varias historias suma también los
+  // criterios de las otras: vencer de más es el lado seguro. Se juntan la versión del disco, la de HEAD y la que juzgó la
+  // evidencia (`desde`): un `@ac` que el arreglo sacó también vence, esté commiteado o no. Sin ninguno, con el archivo
+  // ilegible o con `desde` que no se deja leer, null.
+  function criteriosDeLaPrueba(archivo, carpeta, nombre, desde) {
+    let disco;
+    try { disco = require('fs').readFileSync(archivo, 'utf8'); } catch (_) { return null; }
+    const rel = rutaEnElRepo(carpeta, nombre);
+    const textos = [disco];
+    for (const rev of ['HEAD', ...(desde ? [desde] : [])]) {
+      if (!rel) break;
+      if (preguntar(carpeta, ['rev-parse', '--verify', '-q', `${rev}^{commit}`]).codigo !== 0) return null;
+      // el archivo puede no existir todavía en esa versión: entonces no aporta marcas
+      if (preguntar(carpeta, ['cat-file', '-e', `${rev}:${rel}`]).codigo !== 0) continue;
+      const texto = preguntar(carpeta, ['show', `${rev}:${rel}`]);
+      if (texto.codigo !== 0) return null;
+      textos.push(texto.salida);
+    }
+    const numero = historia.numero.replace(/\./g, '\\.');
+    const marca = new RegExp(`@story-${numero}(?![\\w.])`);
+    const criterios = new Set();
+    for (const t of textos) {
+      if (!marca.test(t)) continue;
+      for (const m of t.matchAll(/@ac-(\d+)\b/g)) criterios.add(Number(m[1]));
+    }
+    return criterios.size ? [...criterios].sort((a, b) => a - b) : null;
+  }
+
+  // La regla 6 por criterio: la prueba que la propia historia cambió vence sólo la evidencia de los criterios que nombra,
+  // porque pudo dar verde por estar mal sólo en lo que mira. `criterios: null` vence toda la evidencia. `desde` es la
+  // versión que juzgó la evidencia.
+  const porCriterio = (archivo, carpeta, nombre, motivo, regla, desde, extra = {}) =>
+    NO_CUENTA(motivo, 6, { ...extra, reglaDeOrigen: regla, criterios: criteriosDeLaPrueba(archivo, carpeta, nombre, desde) });
+
   // Con la prueba sin commitear al correr, el commit que guardó justo lo probado no es un cambio posterior: se cuenta desde
   // el primero que dejó el archivo igual a su huella. Si ninguno lo hizo, desde el ancla.
   function desdeElAncla(carpeta, nombre, ancla) {
@@ -346,7 +419,18 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     if (letra === 'S' || letra !== letra.toUpperCase()) return NO_CUENTA('oculto-para-git', 2);
     const estado = preguntar(carpeta, ['status', '--porcelain', '--', nombre], conIndice);
     if (estado.codigo !== 0) return SIN_RESPUESTA(2);
-    if (estado.salida.trim()) return NO_CUENTA('sin-commitear', 2);
+    if (estado.salida.trim()) {
+      // la prueba que la historia está corrigiendo, todavía sin commitear: en su rama, y con los commits posteriores a la
+      // evidencia (por su hora: la evidencia puede vivir en otro repo) propios o de otra historia
+      const desde = Number.isFinite(evidencia.tsMs) ? [`--since=@${Math.floor(evidencia.tsMs / 1000)}`, 'HEAD'] : null;
+      if (desde && enLaRamaDeLaHistoria(carpeta) && laCambioLaPropia(carpeta, nombre, desde, { vacio: true, propioSinCommitear: true })) {
+        // la versión que juzgó la evidencia: el último commit anterior a su hora. Sin poder buscarla, vence toda
+        const antes = preguntar(carpeta, ['rev-list', '-1', `--before=@${Math.floor(evidencia.tsMs / 1000)}`, 'HEAD']);
+        if (antes.codigo !== 0) return NO_CUENTA('sin-commitear', 2);
+        return porCriterio(archivo, carpeta, nombre, 'sin-commitear', 2, antes.salida.trim() || undefined);
+      }
+      return NO_CUENTA('sin-commitear', 2);
+    }
 
     const carpetaEvidencia = path.dirname(evidencia.ruta);
     const raizEvidencia = raizDe(carpetaEvidencia);
@@ -362,7 +446,9 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
       if (diff.codigo !== 1) return SIN_RESPUESTA(4);
       const ajena = pruebaDeOtraHistoria(carpeta, nombre, guardada.commit);
       if (ajena) return cuentaPorPrueba(ajena);
-      return NO_CUENTA('cambio-posterior', 4, { commit: ultimoCommitCorto(carpeta, nombre) });
+      const commit = ultimoCommitCorto(carpeta, nombre);
+      if (laCambioLaPropia(carpeta, nombre, [`${guardada.commit}..HEAD`])) return porCriterio(archivo, carpeta, nombre, 'cambio-posterior', 4, guardada.commit, { commit });
+      return NO_CUENTA('cambio-posterior', 4, { commit });
     }
 
     if (!historiaEntera(carpeta)) return SIN_RESPUESTA(5);
@@ -371,9 +457,12 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
       const igual = igualAlAncla(carpeta, nombre, ancla);
       if (igual) return { cuenta: true, regla: 5, via: 'ancla' };
       if (igual === false) {
-        const ajena = pruebaDeOtraHistoria(carpeta, nombre, desdeElAncla(carpeta, nombre, ancla));
+        const desdeAncla = desdeElAncla(carpeta, nombre, ancla);
+        const ajena = pruebaDeOtraHistoria(carpeta, nombre, desdeAncla);
         if (ajena) return cuentaPorPrueba(ajena);
-        return NO_CUENTA('cambio-posterior', 5, { commit: ultimoCommitCorto(carpeta, nombre) });
+        const commit = ultimoCommitCorto(carpeta, nombre);
+        if (laCambioLaPropia(carpeta, nombre, [`${desdeAncla}..HEAD`])) return porCriterio(archivo, carpeta, nombre, 'cambio-posterior', 5, desdeAncla, { commit });
+        return NO_CUENTA('cambio-posterior', 5, { commit });
       }
     }
     const ultimo = preguntar(carpeta, ['log', '-1', '--first-parent', `--format=${FORMATO_DE_COMMIT}`, 'HEAD', '--', nombre]);
@@ -389,6 +478,7 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     const ajena = pruebaDeOtraHistoria(carpeta, nombre, desde);
     if (ajena) return cuentaPorPrueba(ajena);
     const padres = preguntar(carpeta, ['log', '-1', '--format=%p', corto]).salida.trim().split(' ').filter(Boolean);
+    if (desde && laCambioLaPropia(carpeta, nombre, [`${desde}..HEAD`])) return porCriterio(archivo, carpeta, nombre, 'otro-repo', 5, desde, { commit: corto, sinFusion: padres.length === 1 });
     return NO_CUENTA('otro-repo', 5, { commit: corto, sinFusion: padres.length === 1 });
   }
 

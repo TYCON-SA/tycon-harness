@@ -669,8 +669,9 @@ function cmdSet(payloadJson) {
       // proveedor de la anterior
       sessionModel, codexSession,
       // las suites que fallaron son de la corrida: heredadas, la primera corrida completa de la story nueva se negaría
-      // (76) por suites que sólo rompió la anterior
-      testsFailed,
+      // (76) por suites que sólo rompió la anterior. Lo guardado de una completa verde, igual: la nueva compararía su
+      // carpeta con una completa de otra historia
+      testsFailed, testsGreenFull,
       // la tanda es de la historia: heredada, la matriz de la nueva mediría una tanda que no es suya
       batch, batchSetAt,
       ...carryOver
@@ -2763,8 +2764,11 @@ function cmdMarkTestsNotScoped(motivo) {
  *   · `pending --suites <suites.json> --gate <test-gate.sh> --repo <repo> [--story <story>]`: saca las rutas que ya no
  *     están en suites.json (y lo dice); si queda alguna, nombra cada una con su comando y sale 76;
  *   · `save-red`, `red-full` y `drop-red`: lo guardado de la última completa roja del repo (`testsRedFull`, con su
- *     carpeta en `red-full/` y su hash), para que repetir solas las rojas cierre sin otra completa (lib/failed-first.js).
- * `record`, `clear`, `save-red` y `drop-red` escriben lo que mide la puerta: sólo los llama test-gate.sh (TYCON_TEST_GATE=1).
+ *     carpeta en `red-full/` y su hash), para que repetir solas las rojas cierre sin otra completa (lib/failed-first.js);
+ *   · `save-green`, `green-full` y `drop-green`: lo mismo para la última completa verde (`testsGreenFull`, carpeta
+ *     `green-full/`), para que la próxima corrida corra sólo lo que cambió desde ella. Las dos guardan
+ *     `--story-id`; `save-green` recibe además `--after-inherited <resumen>`, el de después del juez de heredados.
+ * `record`, `clear`, `save-*` y `drop-*` escriben lo que mide la puerta: sólo los llama test-gate.sh (TYCON_TEST_GATE=1).
  * Sin corrida abierta: sale 0, no escribe nada y lo dice.
  */
 const TESTS_FAILED_PENDING = 76;
@@ -2772,23 +2776,23 @@ const TESTS_FAILED_PENDING = 76;
 function cmdTestsFailed(argv) {
   const accion = argv[0];
   const opt = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
-  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> [--full-ts <ts>] | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] [--result <f> [--story-id <id>] [--sealed <f>] [--inherited] [--full-suite-by <quién>]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] --repo <r> | red-full --repo <r> | drop-red --repo <r>';
-  if (!['record', 'clear', 'pending', 'save-red', 'red-full', 'drop-red'].includes(accion) || !opt('--repo')
+  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> [--full-ts <ts>] | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] [--result <f> [--story-id <id>] [--sealed <f>] [--inherited] [--full-suite-by <quién>]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red|save-green --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] [--story-id <id>] [--after-inherited <f>] --repo <r> | red-full|green-full --repo <r> | drop-red|drop-green --repo <r>';
+  if (!['record', 'clear', 'pending', 'save-red', 'red-full', 'drop-red', 'save-green', 'green-full', 'drop-green'].includes(accion) || !opt('--repo')
     || (accion === 'record' && !opt('--summary')) || (accion === 'clear' && !opt('--path'))
     || (accion === 'pending' && (!opt('--suites') || !opt('--gate')))
-    || (accion === 'save-red' && (!opt('--summary') || !opt('--measured')))) {
+    || ((accion === 'save-red' || accion === 'save-green') && (!opt('--summary') || !opt('--measured')))) {
     console.error(uso);
     process.exit(2);
   }
-  if (!['pending', 'red-full'].includes(accion) && process.env.TYCON_TEST_GATE !== '1') {
+  if (!['pending', 'red-full', 'green-full'].includes(accion) && process.env.TYCON_TEST_GATE !== '1') {
     console.error(`marker.js tests-failed ${accion}: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)`);
     process.exit(2);
   }
   const ff = require('./lib/failed-first.js');
   const marker = readMarker();
   if (!marker) {
-    // red-full lo lee test-gate.sh como JSON: sin corrida, no hay nada guardado
-    if (accion === 'red-full') process.stdout.write('null\n');
+    // red-full y green-full los lee test-gate.sh como JSON: sin corrida, no hay nada guardado
+    if (accion === 'red-full' || accion === 'green-full') process.stdout.write('null\n');
     else process.stdout.write(`marker.js tests-failed ${accion}: sin corrida abierta en esta sesión, no anoto nada\n`);
     return;
   }
@@ -2808,6 +2812,42 @@ function cmdTestsFailed(argv) {
     writeMarker(marker);
     const nuevas = marker.testsFailed.filter((x) => x.repo === repo);
     if (nuevas.length) process.stderr.write(`[test-gate] suites que fallaron, anotadas para repetir primero: ${nuevas.map((x) => x.ruta).join(', ')}\n`);
+    return;
+  }
+  // Lo guardado de la última completa verde de este repo: como lo rojo de abajo, en `green-full/` y con
+  // el campo `testsGreenFull`. Sus tres acciones terminan acá.
+  if (['save-green', 'green-full', 'drop-green'].includes(accion)) {
+    const verdes = Array.isArray(marker.testsGreenFull) ? marker.testsGreenFull : [];
+    const propia = verdes.find((x) => x && x.repo === repo) || null;
+    const otras = verdes.filter((x) => x && x.repo !== repo);
+    const guardar = (l2) => { if (l2.length) marker.testsGreenFull = l2; else delete marker.testsGreenFull; };
+    const casa = path.join(STATE_DIR, 'green-full') + path.sep;
+    if (accion === 'green-full') { process.stdout.write(`${JSON.stringify(propia)}\n`); return; }
+    if (accion === 'drop-green') {
+      if (!propia) return;
+      if (typeof propia.dir === 'string' && path.resolve(propia.dir).startsWith(casa)) {
+        try { fs.rmSync(propia.dir, { recursive: true, force: true }); } catch (e) {
+          process.stderr.write(`[test-gate] ⚠️  no pude borrar lo guardado de la completa verde (${e.message}): queda la carpeta, el marcador ya no la nombra\n`);
+        }
+      } else process.stderr.write(`[test-gate] ⚠️  lo guardado de la completa verde apunta fuera de ${casa}: no borro nada, sólo lo saco del marcador\n`);
+      guardar(otras);
+      marker.lastTouch = nowIso();
+      writeMarker(marker);
+      return;
+    }
+    const dir = path.join(STATE_DIR, 'green-full', `${marker.sessionId || 'sesion'}-${require('crypto').createHash('sha1').update(repo).digest('hex').slice(0, 12)}`);
+    let hash;
+    try {
+      hash = ff.saveGreen({ dir, summaryFile: opt('--summary'), lcovFile: opt('--coverage-file'), measuredFile: opt('--measured'), base: opt('--base'),
+        recorte: opt('--trim') || '', storyId: opt('--story-id') || marker.storyId || null, forgivenFile: opt('--after-inherited') });
+    } catch (e) {
+      process.stderr.write(`[test-gate] ⚠️  no pude guardar la completa verde (${e.message}): la próxima corrida corre la completa entera\n`);
+      return;
+    }
+    guardar([...otras, { repo, dir, hash, at: nowIso() }]);
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    process.stderr.write('[test-gate] guardé lo que midió esta completa verde: la próxima corrida corre sólo las suites que leen lo que cambie\n');
     return;
   }
   // Lo guardado de la última completa roja de este repo («repetir solas cierra»): vive en la carpeta de
@@ -2838,7 +2878,7 @@ function cmdTestsFailed(argv) {
     const dir = path.join(STATE_DIR, 'red-full', `${marker.sessionId || 'sesion'}-${require('crypto').createHash('sha1').update(repo).digest('hex').slice(0, 12)}`);
     let hash;
     try {
-      hash = ff.saveRed({ dir, summaryFile: opt('--summary'), lcovFile: opt('--coverage-file'), measuredFile: opt('--measured'), base: opt('--base'), recorte: opt('--trim') || '' });
+      hash = ff.saveRed({ dir, summaryFile: opt('--summary'), lcovFile: opt('--coverage-file'), measuredFile: opt('--measured'), base: opt('--base'), recorte: opt('--trim') || '', storyId: opt('--story-id') || marker.storyId || null });
     } catch (e) {
       process.stderr.write(`[test-gate] ⚠️  no pude guardar la completa roja (${e.message}): repetir solas no va a cerrar «Correr las pruebas»\n`);
       return;

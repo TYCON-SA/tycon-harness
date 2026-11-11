@@ -760,6 +760,13 @@ tanda que «Preparar el commit». Por terminal, con `--for-session <la sesión d
   la imprime). Con el número a mano, en un repo que numera por tema la evidencia queda **huérfana**:
   la matriz la nombra y no la cuenta.
 
+**Una prueba que la historia corrige después de grabar la evidencia vence sólo sus criterios.** Si la misma historia
+cambia una prueba que nombra `@story-<historia> @ac-2 @ac-3` (sin commitear en su rama, o con un commit propio), vence
+la evidencia de los criterios 2 y 3, y la de los demás sigue contando. El renglón de cada criterio vencido dice
+«venció por <archivo>, que prueba los criterios 2 y 3»: se re-corren sólo esos. Vence toda la evidencia, como siempre,
+si cambió un archivo de código, si la prueba no nombra criterios de la historia o no se deja leer, o si no se sabe
+quién la cambió (un commit sin historia que ya está en main, o la resolución de una fusión).
+
 `complete-step prepare-commit` exige `checks.acmatrix=green` (provenance run-check) — sin este
 sub-step el pipeline NO llega a commit prep. `on-pre-commit.js` además RE-COMPUTA
 la matriz en las transiciones a review/done (el .md escrito no se confía).

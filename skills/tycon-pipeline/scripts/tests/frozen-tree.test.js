@@ -12,6 +12,9 @@
 //   T12  sin poder armar la copia, frena con el motivo
 //   T15  (parte A) las copias se borran, también las de una corrida que ya no está abierta
 //   T16  una copia alterada no coincide con su sello; los atributos de exportación no alteran el sello
+//   T24-T27 el papeleo que escribe el cierre: la sección de seguimientos de los revisores y el
+//        renglón de la historia en sprint-status.yaml no piden otra vuelta; otro renglón, otra sección o un sprint-status
+//        que no se deja leer, sí
 //
 // Correr: node --test skills/tycon-pipeline/scripts/tests/frozen-tree.test.js < /dev/null
 
@@ -148,7 +151,7 @@ test('T16 Freeze_AlteredCopy_Blocks @story-8.161 @ac-16 — la copia alterada no
 // ── La corrida de juguete: la historia en un repo, el código en otro, una HOME propia ──────────────────────────────
 const { spawnSync } = require('child_process');
 const RAIZ = path.join(SCRIPTS, '..', '..', '..');
-function corrida(sid) {
+function corrida(sid, { masHistorias = {} } = {}) {
   const base = tmp('ft-corrida-');
   const home = path.join(base, 'home');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
@@ -160,6 +163,7 @@ function corrida(sid) {
       '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.caso1` | 1 | unit | x | y |', '',
       '## Tasks / Subtasks', '', '- [ ] Task 1: hacerlo (AC: 1)', '', '## Change Log', '', '- hoy: escrita', ''].join('\n'),
     'tasks/todo.md': '- nada\n',
+    ...masHistorias,
   });
   const codigo = repoDeJuguete('codigo', { 'src/a.js': 'module.exports = 1;\n', 'src/b.js': 'module.exports = 2;\n' });
   const story = path.join(historias.repo, 'specs', 'story-9.9-sello.md');
@@ -484,4 +488,128 @@ test('T15 Regression_OldLedgersAndCleanup @story-8.161 @ac-14 — (parte A) las 
   assert.deepStrictEqual(barridas, ['s-cerrada']);
   assert.ok(fs.existsSync(path.join(estado, 'frozen', 's-abierta')));
   assert.ok(!fs.existsSync(path.join(estado, 'frozen', 's-cerrada')));
+});
+
+// ── El papeleo que escribe el cierre ─────────────────────────────────────────────────────────────────────────────────
+// Sin esto, una historia frenaba sólo por su sección de seguimientos, u otra por esa sección más su renglón de
+// sprint-status, y cada una pedía una vuelta de revisores sin nada que revisar.
+// La sección que escribe `pipeline.js write-followups` en «Hallazgos», con la forma de `renderFollowupItem`.
+const SEGUIMIENTOS = ['', '', '## Review Follow-ups (Advisors)', '',
+  '<!-- tycon-pipeline: generado por el paso de hallazgos. Cada item = finding advisor no resuelto (CRITICAL waived o WARNING). -->', '',
+  '- [x] **[WARNING]** SILENT-W2 — `src/a.js:3` — un aviso que no se veía <!-- fkey:SILENT-W2|src/a.js -->',
+  '- [ ] **[WARNING]** VAL-W15 — `specs/story-9.9-sello.md` — papeleo al día <!-- fkey:VAL-W15|specs/story-9.9-sello.md -->', ''].join('\n');
+const SPRINT = ['# generated: 2026-01-01', '# STATUS DEFINITIONS: backlog | done', '', 'development_status:', '', 'epic-9: in-progress',
+  '9-8-otra: done   # 2026-01-01: cerrada', '9-9-sello: ready-for-dev   # 2026-01-01: escrita', '9-90-otra: backlog', ''].join('\n');
+const SPRINT_REL = path.join('specs', 'sprint-status.yaml');
+
+test('T24 PrepareCommit_ReviewFollowupsSection_IsPaperwork @story-8.263 @ac-21 — la sección de seguimientos que escribe «Hallazgos» es papeleo', () => {
+  const C = corrida('s-ft24');
+  const { json } = C.vuelta();
+  const deLaHistoria = json.frozen.find((f) => f.repo === C.historias.repo);
+  const rel = path.relative(C.historias.repo, C.story).split(path.sep).join('/');
+  // «Hallazgos» agrega la sección al final de la historia, además del papeleo de siempre
+  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('- [ ] Task 1', '- [x] Task 1') + SEGUIMIENTOS);
+  let d = ft().changed(C.historias.repo, deLaHistoria.tree, ft().seal(C.historias.repo).tree, { storyRel: rel });
+  assert.deepStrictEqual([d.files, d.papeleo], [[], [rel]]);
+  let r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  assert.match(salida(r), new RegExp(`lo que se guarda es lo revisado[^\\n]*papeleo cambiado después[^\\n]*story-9\\.9-sello\\.md`), salida(r));
+  // tildar un seguimiento después también es papeleo
+  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('- [ ] **[WARNING]** VAL-W15', '- [x] **[WARNING]** VAL-W15'));
+  r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // la sección llega hasta el próximo título de nivel 2: lo que sigue vuelve a contar
+  fs.writeFileSync(C.story, `${fs.readFileSync(C.story, 'utf8')}\n## Notas\n\nun criterio nuevo escondido\n`);
+  d = ft().changed(C.historias.repo, deLaHistoria.tree, ft().seal(C.historias.repo).tree, { storyRel: rel });
+  assert.deepStrictEqual(d.files, [rel]);
+  r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), MISMATCH);
+});
+
+test('T25 PrepareCommit_SprintStatusOwnRow_IsPaperwork @story-8.263 @ac-22 — el renglón de la historia en sprint-status.yaml es papeleo, también si se agrega', () => {
+  // el estado y el comentario del propio renglón
+  const C = corrida('s-ft25', { masHistorias: { [SPRINT_REL]: SPRINT } });
+  const { json } = C.vuelta();
+  const sello = json.frozen.find((f) => f.repo === C.historias.repo).tree;
+  const rel = path.relative(C.historias.repo, C.story).split(path.sep).join('/');
+  const sprint = path.join(C.historias.repo, SPRINT_REL);
+  fs.writeFileSync(sprint, SPRINT.replace('9-9-sello: ready-for-dev   # 2026-01-01: escrita', '9-9-sello: review   # 2026-01-02: implementada, 1 vuelta'));
+  let d = ft().changed(C.historias.repo, sello, ft().seal(C.historias.repo).tree, { storyRel: rel });
+  assert.deepStrictEqual([d.files, d.papeleo], [[], ['specs/sprint-status.yaml']]);
+  let r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  assert.match(salida(r), /papeleo cambiado después[^\n]*sprint-status\.yaml/, salida(r));
+  // el renglón que no estaba y se agrega
+  const sinRenglon = SPRINT.replace('9-9-sello: ready-for-dev   # 2026-01-01: escrita\n', '');
+  const C2 = corrida('s-ft25b', { masHistorias: { [SPRINT_REL]: sinRenglon } });
+  const sello2 = C2.vuelta().json.frozen.find((f) => f.repo === C2.historias.repo).tree;
+  fs.writeFileSync(path.join(C2.historias.repo, SPRINT_REL), SPRINT);
+  d = ft().changed(C2.historias.repo, sello2, ft().seal(C2.historias.repo).tree, { storyRel: rel });
+  assert.deepStrictEqual(d.files, []);
+  r = prepararCommit(C2);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+});
+
+test('PrepareCommit_SubStoryRow_StillBlocks @story-8.263 @ac-23 — el renglón de una sub-historia empieza igual y no es el propio', () => {
+  const conSub = SPRINT.replace('9-90-otra: backlog', '9-9-1-sub-historia: backlog\n9-90-otra: backlog');
+  const C = corrida('s-ft26s', { masHistorias: { [SPRINT_REL]: conSub } });
+  C.vuelta();
+  fs.writeFileSync(path.join(C.historias.repo, SPRINT_REL), conSub.replace('9-9-1-sub-historia: backlog', '9-9-1-sub-historia: done'));
+  const r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), MISMATCH);
+  assert.ok(salida(r).includes('specs/sprint-status.yaml'), salida(r));
+});
+
+test('T26 PrepareCommit_OtherRowsOrSections_StillBlock @story-8.263 @ac-23 — otro renglón, otra carpeta u otra sección siguen frenando', () => {
+  const C = corrida('s-ft26', { masHistorias: { [SPRINT_REL]: SPRINT, 'otra/sprint-status.yaml': SPRINT } });
+  C.vuelta();
+  const sprint = path.join(C.historias.repo, SPRINT_REL);
+  const otra = path.join(C.historias.repo, 'otra', 'sprint-status.yaml');
+  const historiaBase = fs.readFileSync(C.story, 'utf8');
+  const conDevNotes = historiaBase.replace('## Tasks / Subtasks', '## Dev Notes\n\nnada\n\n## Tasks / Subtasks');
+  const casos = [
+    ['el renglón de otra historia con el mismo comienzo', () => fs.writeFileSync(sprint, SPRINT.replace('9-90-otra: backlog', '9-90-otra: done')), 'specs/sprint-status.yaml'],
+    ['la épica', () => fs.writeFileSync(sprint, SPRINT.replace('epic-9: in-progress', 'epic-9: done')), 'specs/sprint-status.yaml'],
+    ['un comentario suelto', () => fs.writeFileSync(sprint, SPRINT.replace('epic-9: in-progress', '# nota suelta\nepic-9: in-progress')), 'specs/sprint-status.yaml'],
+    ['la cabecera', () => fs.writeFileSync(sprint, SPRINT.replace('# generated: 2026-01-01', '# generated: 2026-01-02')), 'specs/sprint-status.yaml'],
+    ['el renglón propio en un sprint-status de otra carpeta', () => fs.writeFileSync(otra, SPRINT.replace('9-9-sello: ready-for-dev', '9-9-sello: review')), 'otra/sprint-status.yaml'],
+    ['los seguimientos de BMAD', () => fs.writeFileSync(C.story, historiaBase + SEGUIMIENTOS.replace('(Advisors)', '(AI)')), 'story-9.9-sello.md'],
+    ['un título con texto de más', () => fs.writeFileSync(C.story, historiaBase + SEGUIMIENTOS.replace('(Advisors)', '(Advisors) extra')), 'story-9.9-sello.md'],
+    ['un ### dentro de otra sección', () => fs.writeFileSync(C.story, conDevNotes.replace('nada\n', `nada\n\n### Review Follow-ups (Advisors)\n\n- [ ] algo\n`)), 'story-9.9-sello.md'],
+  ];
+  for (const [nombre, cambiar, archivo] of casos) {
+    fs.writeFileSync(sprint, SPRINT);
+    fs.writeFileSync(otra, SPRINT);
+    fs.writeFileSync(C.story, historiaBase);
+    cambiar();
+    const r = prepararCommit(C);
+    assert.strictEqual(r.status, 2, `${nombre}: ${salida(r)}`);
+    assert.match(salida(r), MISMATCH, nombre);
+    assert.ok(salida(r).includes(archivo), `${nombre}: nombra ${archivo}`);
+    assert.match(salida(r), /smart-reloop .*--iter 2/, nombre);
+  }
+});
+
+test('T27 PrepareCommit_SprintStatusMissingOrStoryWithoutId_Blocks @story-8.263 @ac-24 — sin saber de qué historia es el renglón, o sin el archivo en un sello, cuenta como cambio', () => {
+  const historia = (frontmatter) => ['---', ...frontmatter, 'status: in-progress', '---', '', '# Story', ''].join('\n');
+  const STORY = 'specs/story-9.9-sello.md';
+  const conRenglon = (estado) => SPRINT.replace('9-9-sello: ready-for-dev', `9-9-sello: ${estado}`);
+  const casos = [
+    ['creado después con sólo su renglón', { [STORY]: historia(['story: "9.9"']) }, () => ({ [SPRINT_REL]: '9-9-sello: review\n' })],
+    ['borrado después', { [STORY]: historia(['story: "9.9"']), [SPRINT_REL]: SPRINT }, () => ({ [SPRINT_REL]: null })],
+    ['la historia sin story:', { [STORY]: historia([]), [SPRINT_REL]: SPRINT }, () => ({ [SPRINT_REL]: conRenglon('review') })],
+    ['la historia con story: "9.9b"', { [STORY]: historia(['story: "9.9b"']), [SPRINT_REL]: SPRINT }, () => ({ [SPRINT_REL]: conRenglon('review') })],
+  ];
+  for (const [nombre, inicio, despues] of casos) {
+    const R = repoDeJuguete('t27', inicio);
+    const a = ft().seal(R.repo).tree;
+    for (const [rel, txt] of Object.entries(despues())) {
+      if (txt === null) fs.rmSync(path.join(R.repo, rel));
+      else { fs.mkdirSync(path.dirname(path.join(R.repo, rel)), { recursive: true }); fs.writeFileSync(path.join(R.repo, rel), txt); }
+    }
+    const d = ft().changed(R.repo, a, ft().seal(R.repo).tree, { storyRel: STORY });
+    assert.deepStrictEqual(d.files, ['specs/sprint-status.yaml'], nombre);
+  }
 });

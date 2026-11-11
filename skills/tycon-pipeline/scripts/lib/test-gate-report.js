@@ -801,6 +801,14 @@ function informe(argv) {
     const sc = resumenSuites && esObjeto(resumenSuites.coverage) ? resumenSuites.coverage : null;
     // cerrada con lo guardado de una completa roja (lib/failed-first.js): la cobertura no es de una sola corrida, y se dice
     if (sc && typeof sc.juntada === 'string' && sc.juntada) result.coverage.joined = sc.juntada;
+    // cerrada con lo guardado de una completa verde: de qué hora es esa completa y qué cambió después, para
+    // que nadie tome la acotada por una completa nueva
+    const cerrada = resumenSuites && esObjeto(resumenSuites.cerrada) ? resumenSuites.cerrada : null;
+    if (cerrada && cerrada.origen === 'verde') {
+      result.completa_at = cerrada.completa || null;
+      result.changed_since_full = Array.isArray(cerrada.cambiados) ? cerrada.cambiados : [];
+      if (result.suite_green) result.suite_green_by = 'completa-guardada';
+    }
     if (sc) {
       result.coverage.suites_without_coverage = {
         without_data: (Array.isArray(sc.without_data) ? sc.without_data : []).map(rel),

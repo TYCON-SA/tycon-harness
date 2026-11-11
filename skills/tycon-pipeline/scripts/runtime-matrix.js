@@ -907,7 +907,7 @@ function sellosDeCapturas(gatesLogPath) {
  * Un gate viejo, sin carpeta de capturas, no aporta imágenes y no es un problema; lo demás que no cuenta se dice.
  * → { porAc: Map(AC → [ruta relativa a la carpeta de la evidencia]), problemas: [texto] }.
  */
-function imagenesDelE2e(gates, key, sellos) {
+function imagenesDelE2e(gates, key, sellos, valeParaAc = () => true) {
   const porAc = new Map();
   const problemas = [];
   for (const g of gates) {
@@ -943,7 +943,7 @@ function imagenesDelE2e(gates, key, sellos) {
         continue;
       }
       for (const n of Array.isArray(e.acs) ? e.acs : []) {
-        if (!Number.isInteger(n)) continue;
+        if (!Number.isInteger(n) || !valeParaAc(g, n)) continue;
         if (!porAc.has(n)) porAc.set(n, []);
         porAc.get(n).push(`${carpeta}/${nombre}`);
       }
@@ -1355,22 +1355,38 @@ function compute(opts) {
   const vigenciaDe = (ev, evidencia) => {
     if (!vigencias.has(ev)) {
       if (noLeidos.length) {
-        vigencias.set(ev, { cuenta: false, motivo: 'no-leido', rel: noLeidos[0].rel, contadas: [] });
+        vigencias.set(ev, { cuenta: false, motivo: 'no-leido', rel: noLeidos[0].rel, contadas: [], vencidos: new Map() });
         return vigencias.get(ev);
       }
+      // Se miran todos los archivos: una prueba que la historia corrigió (regla 6 con sus criterios) vence sólo esos
+      // criterios, y cualquier otro que no cuenta (código, una prueba sin marcas, otra regla) vence la evidencia entera.
       let v = { cuenta: true };
       const contadas = [];
+      const porCriterio = [];
       for (const f of codeFiles) {
         const r = juez.vigencia({ archivo: f.abs, mtimeMs: f.mt, evidencia });
+        if (!r.cuenta && r.regla === 6 && Array.isArray(r.criterios) && r.criterios.length) { porCriterio.push({ ...r, rel: f.rel }); continue; }
         if (!r.cuenta) { v = { ...r, rel: f.rel, sinCopia: f.sinCopia }; break; }
         if (r.via === 'fusion-propia' || r.regla === 6) contadas.push({ ...r, rel: f.rel });
       }
-      vigencias.set(ev, { ...v, contadas: v.cuenta ? contadas : [] });
+      const vencidos = new Map();
+      if (v.cuenta) for (const p of porCriterio) for (const n of p.criterios) if (!vencidos.has(n)) vencidos.set(n, p);
+      vigencias.set(ev, { ...v, contadas: v.cuenta ? contadas : [], vencidos });
     }
     return vigencias.get(ev);
   };
   const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts, ancla: g.ancla });
   const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla, sello: e.sello });
+  // ¿Una evidencia que cuenta vale para el criterio `n`? No, si una prueba que la historia corrigió después lo nombra.
+  const valePara = (ev, n) => !(vigencias.get(ev) && vigencias.get(ev).vencidos.has(n));
+  // «venció por <archivo>, que prueba los criterios 2 y 3»: lo que dice el renglón del criterio vencido
+  const vencioPor = (ev, n) => {
+    const p = vigencias.get(ev) && vigencias.get(ev).vencidos.get(n);
+    if (!p) return null;
+    const lista = p.criterios.length === 1 ? `el criterio ${p.criterios[0]}`
+      : `los criterios ${p.criterios.slice(0, -1).join(', ')} y ${p.criterios[p.criterios.length - 1]}`;
+    return `venció por ${p.rel}, que prueba ${lista}`;
+  };
   // Un archivo de un hermano que no tiene copia en la rama de la historia se juzga en el declarado: el aviso dice contra
   // qué se comparó y qué se buscó, porque puede ser el clon compartido, sin el código de la historia. «No tomé» y no «no
   // hay»: también es el caso de dos copias que nombran la historia, o de git que no pudo listarlas (lo dicen los avisos
@@ -1525,7 +1541,8 @@ function compute(opts) {
   for (const aviso of dejadasContar) warnings.push(aviso);
 
   // --- imagen de pantalla: de qué AC es cada captura o grabación que la matriz ya puede contar
-  const imagenesE2e = imagenesDelE2e(freshPassGates.filter(noSimulado), evKey, sellosDeCapturas(gatesLogPath));
+  // La captura es evidencia de su portón: el que venció para un criterio no la aporta a ese criterio.
+  const imagenesE2e = imagenesDelE2e(freshPassGates.filter(noSimulado), evKey, sellosDeCapturas(gatesLogPath), valePara);
   for (const m of imagenesE2e.problemas) avisos.push(m);
   const storyEsUi = uiSignal.storyTouchesUi(content, repoRoot);
 
@@ -1571,7 +1588,8 @@ function compute(opts) {
       if (simulados.length) {
         return { row: r, tier: 'code', ref: `${path.basename(simulados[0].path)}, servidor simulado`, simulado: simulados.flatMap((g) => g.simulado) };
       }
-      return { row: r, tier: gate ? 'runtime' : 'none', ref: gate ? path.basename(gate.path) : null };
+      // `gates`: los que valen en vivo para la fila; cada criterio toma el primero que vale para él
+      return { row: r, tier: gate ? 'runtime' : 'none', ref: gate ? path.basename(gate.path) : null, gates: deLaFila.filter(noSimulado) };
     }
     const kind = kindOf(r.name, fePaths);
     const tr = greenByKind[kind] || (kindsPresent.has(kind) ? null : soloTr);
@@ -1589,14 +1607,25 @@ function compute(opts) {
     // De qué fuente sale cada evidencia, sin parsear los textos de arriba: lo lee el freno del commit para sumar las
     // tres fuentes por AC (lib/closing-evidence.js → coberturaDeLaUnion). No entra al `hash`.
     const fuentes = { e2e: [], smoke: [] };
+    // la evidencia que vale para este criterio: sin la que venció por una prueba que la historia corrigió y lo nombra
+    const vencido = [];
+    const humosDelAc = freshSmokes.filter((e) => {
+      if (!e.acs.includes(n)) return false;
+      if (valePara(e, n)) return true;
+      vencido.push(`humo ${e.ts}: ${vencioPor(e, n)}`);
+      return false;
+    });
+    const gatesDelAc = freshPassGates.filter((g) => valePara(g, n));
     for (const re of rowEvidence) {
       if (!re.row.acRefs.includes(n)) continue;
-      if (re.tier === 'runtime') { runtime.push(`${re.row.tid} (${re.ref})`); fuentes.e2e.push(re.ref); }
-      else if (re.tier === 'code') code.push(`${re.row.tid} (${re.ref})`);
+      if (re.tier === 'runtime') {
+        const gate = re.gates.find((g) => valePara(g, n));
+        if (gate) { runtime.push(`${re.row.tid} (${path.basename(gate.path)})`); fuentes.e2e.push(path.basename(gate.path)); }
+        else vencido.push(`${re.row.tid} (${re.ref}): ${vencioPor(re.gates[0], n)}`);
+      } else if (re.tier === 'code') code.push(`${re.row.tid} (${re.ref})`);
       for (const h of re.simulado || []) simulados.push({ ac: n, ...h, fuente: `${re.row.tid}, portón E2E` });
     }
-    for (const e of freshSmokes) {
-      if (!e.acs.includes(n)) continue;
+    for (const e of humosDelAc) {
       fuentes.smoke.push(e.ts);
       for (const h of e.simulado || []) simulados.push({ ac: n, ...h, fuente: `humo ${e.ts}` });
       // Un smoke sólo cuenta como evidencia RUNTIME si su comando ejercita la app. Si fue
@@ -1617,11 +1646,11 @@ function compute(opts) {
     if (ex.marcada) exenciones.push({ ac: n, valida: ex.valida, motivo: ex.motivo });
     // La clasificación mira el mismo texto de siempre (los primeros 600), sin la marca.
     if (verdict === 'RUNTIME' && !ex.valida && acEsDeAccion(parseExencionC8(acTexts[n]).texto) && !LEGACY_NO_MUTATION_CHECK) {
-      const porTitulo = freshPassGates.filter(noSimulado)
+      const porTitulo = gatesDelAc.filter(noSimulado)
         .flatMap((g) => (g.titulos || []).map((t) => ({ t, g })))
         .find(({ t }) => tituloEjerceAc(t, n));
-      const porSmoke = freshSmokes.find((e) => e.acs.includes(n) && e.evidenceKind === 'app-run' && cmdMutates(e.cmd));
-      const porDeclarado = freshSmokes.find((e) => e.acs.includes(n) && e.evidenceKind === 'app-run' && e.mutatesOk === true);
+      const porSmoke = humosDelAc.find((e) => e.evidenceKind === 'app-run' && cmdMutates(e.cmd));
+      const porDeclarado = humosDelAc.find((e) => e.evidenceKind === 'app-run' && e.mutatesOk === true);
       if (porTitulo) mutacion = `test @mutates: "${porTitulo.t}"`;
       else if (porSmoke) mutacion = `smoke con escritura ${porSmoke.ts}`;
       else if (porDeclarado) mutacion = `smoke declarado --mutates ${porDeclarado.ts} (exit 0 vía smoke-run.sh, espejo verificado)`;
@@ -1632,18 +1661,21 @@ function compute(opts) {
     const pantalla = esDePantalla(acTextsEnteros[n] != null ? acTextsEnteros[n] : acTexts[n], storyEsUi);
     const visual = [...(imagenesE2e.porAc.get(n) || [])];
     const visualProblemas = [];
-    for (const e of freshSmokes) {
-      if (!e.acs.includes(n) || !(e.evidenceKind === 'app-run' || LEGACY_SMOKE_KINDS)) continue;
+    for (const e of humosDelAc) {
+      if (!(e.evidenceKind === 'app-run' || LEGACY_SMOKE_KINDS)) continue;
       if (e.visual) visual.push(e.visual);
       else if (e.visualProblema) visualProblemas.push(`humo ${e.ts}: ${e.visualProblema}`);
     }
-    // `pantalla` y `visual` sólo viajan en los AC de pantalla: un AC que no lo es no cambia de forma.
+    // `pantalla` y `visual` sólo viajan en los AC de pantalla: un AC que no lo es no cambia de forma. `vencioPor`, sólo
+    // si una evidencia venció para este criterio por una prueba que la historia corrigió después (regla 6 por criterio).
     perAc[n] = { verdict, runtime, code, text: acTexts[n] || null, mutacion,
       exentoC8: ex.valida ? ex.motivo : null, fuentes,
+      ...(vencido.length ? { vencioPor: vencido } : {}),
       ...(pantalla ? { pantalla, visual, ...(visualProblemas.length ? { visualProblemas } : {}) } : {}) };
+    for (const v of vencido) warnings.push(`AC ${n}: la evidencia ${v}; la de los otros criterios sigue contando. Re-correla vía smoke-run.sh.`);
     // Qué esperaba cada humo `v:2` del AC y dónde está lo que salió. Va aparte y NO entra al hash: las
     // líneas sin `v:2` dan exactamente la misma matriz que sin esta parte.
-    const expectativas = freshSmokes.filter((e) => e.v2 && e.acs.includes(n))
+    const expectativas = humosDelAc.filter((e) => e.v2)
       .map((e) => ({ ts: e.ts, pasaSi: e.pass_if, fallaSi: e.fail_if, output: e.output }));
     if (expectativas.length) perAc[n].expectativas = expectativas;
   }
@@ -1902,7 +1934,7 @@ function renderMd(r) {
       `🎯 smoke ${x.ts} pasa si: «${celda(x.pasaSi || '—')}»${x.fallaSi ? ` · falla si: «${celda(x.fallaSi)}»` : ''} · salida: \`${celda(x.output)}\``);
     const imagen = a.visual && a.visual.length ? `🖼️ ${a.visual.length} imagen(es): ${a.visual.map((v) => `\`${v}\``).join(', ')}`
       : a.motivo ? '🖼️ falta la captura o la grabación del navegador' : null;
-    const ev = [a.runtime.join('; ') || '—', ...esperado, imagen, a.mutacion ? `✋ ${a.mutacion}` : null,
+    const ev = [a.runtime.join('; ') || '—', ...esperado, imagen, ...(a.vencioPor || []).map((v) => `⌛ ${celda(v)}`), a.mutacion ? `✋ ${a.mutacion}` : null,
       a.exentoC8 ? `⚖️ verbo exento: ${a.exentoC8}` : null].filter(Boolean).join(' · ');
     L.push(`| #${n} | ${icon} ${a.verdict} | ${ev} | ${a.code.join('; ') || '—'} | ${a.declReason || '—'} |`);
   }
