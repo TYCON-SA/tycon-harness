@@ -107,7 +107,7 @@ test('T2 Projects_AutomaticRunsDoNotCount @story-8.185 @ac-1 — sdk-cli y codex
 test('T3 Stories_FromWhatTheHarnessDeclares @story-8.185 @ac-2 @ac-3 — la carpeta propia, el hermano, lo declarado, la de BMAD, el compañero al revés, y el aviso', () => {
   const raiz = tmp('raiz');
   // un repo con sus historias y un compañero declarado con otras
-  const hermano = repo(raiz, 'hermano', { remoto: 'https://github.com/acme/hermano.git', archivos: { 'specs/s.md': historia('3.1', 'review') } });
+  repo(raiz, 'hermano', { remoto: 'https://github.com/acme/hermano.git', archivos: { 'specs/s.md': historia('3.1', 'review') } });
   const propio = repo(raiz, 'propio', { remoto: 'https://github.com/acme/propio.git', archivos: { 'specs/s.md': historia('2.1', 'in-progress'), '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../hermano\n' } });
   let r = SWB.projectStoryPlaces(propio);
   assert.strictEqual(r.problem, null);

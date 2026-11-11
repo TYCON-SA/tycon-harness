@@ -17,7 +17,6 @@ const RS = require('../lib/run-signatures.js');
 const { logPath } = require('../lib/signature-log.js');
 
 const S1 = '11111111-aaaa-4bbb-8ccc-000000000001';
-const S0 = '00000000-aaaa-4bbb-8ccc-000000000000';
 const OTRA = '22222222-aaaa-4bbb-8ccc-000000000002';
 const COORD = 'dddddddd-0000-4000-8000-0000000000d1';
 const DESDE = Date.parse('2026-11-08T10:00:00Z');

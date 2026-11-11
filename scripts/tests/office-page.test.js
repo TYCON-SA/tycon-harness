@@ -11,8 +11,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
-  OFFICE, PAGE_CODE, NOW, STEPS, run, BOARD, mixedOffice, shape, wip, toyHome, collectWith, pageClock, buildOffice,
-  page, importMap, MODULES, stateDir, openFile, deskSlots, collect, drawKanban, buildTables
+  OFFICE, PAGE_CODE, NOW, STEPS, run, BOARD, mixedOffice, wip, toyHome, collectWith, pageClock, buildOffice,
+  page, importMap, MODULES, stateDir, openFile, deskSlots, drawKanban, buildTables
 } = require('./lib/office-fixtures.js');
 
 test('T24 Oficina_EstadoNuevo_EnLaLista @story-8.195 @ac-24 — «cerrar» está en AGENT_STATES y en la página, con su texto', () => {

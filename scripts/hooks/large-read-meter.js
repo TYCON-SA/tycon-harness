@@ -41,7 +41,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { readEnv } = require('../lib/legacy-names.js');
 
 const WHERE = 'scripts/hooks/large-read-meter.js';

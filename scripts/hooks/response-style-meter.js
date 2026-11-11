@@ -28,7 +28,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 // la carpeta de los registros sueltos (scripts/lib/loose-logs.js): la del estado en una máquina que vive en la casa
 // propia del arnés, la de siempre en las demás. Sin ella (un árbol sin tycon-home.js) el medidor no mide: `main` sale

@@ -27,7 +27,6 @@ const { spawnSync } = require('child_process');
 
 const SCRIPTS = path.resolve(__dirname, '..');
 const RAIZ = path.resolve(SCRIPTS, '..', '..', '..');
-const MARKER_JS = path.join(SCRIPTS, 'marker.js');
 const TEST_GATE = path.join(SCRIPTS, 'test-gate.sh');
 const ff = () => require(path.join(SCRIPTS, 'lib', 'failed-first.js'));
 

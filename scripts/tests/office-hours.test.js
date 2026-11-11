@@ -11,9 +11,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
-  OFFICE, NOW, STEPS, byName, run, MARKER, liveSession, runMarker, STEP_LIB, col, hm, IDS, runMarkerFile,
-  BEFORE_PLAN, sessionWith, noPrs, atIso, hourRun, collectAt, ddmm, ymd, parked, oldHours, wip, pageTimeHelpers,
-  toyMachine, storyFile, markerAt, toyRepo, parkMachine, buildOffice, page, buildWip, stateDir, wipNow, collect
+  OFFICE, NOW, STEPS, byName, MARKER, liveSession, runMarker, STEP_LIB, col, hm, IDS, runMarkerFile,
+  BEFORE_PLAN, sessionWith, noPrs, atIso, hourRun, collectAt, ddmm, ymd, oldHours, wip, pageTimeHelpers,
+  toyMachine, storyFile, markerAt, toyRepo, parkMachine, buildOffice, page, buildWip, stateDir, wipNow
 } = require('./lib/office-fixtures.js');
 
 test('T12 HoraPasada: una hora de fin que ya pasó no es un pronóstico: dice que se pasó, por vieja que sea; nunca «en hora»', () => {

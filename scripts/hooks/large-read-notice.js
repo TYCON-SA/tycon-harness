@@ -13,7 +13,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 // donde lo deja large-read-meter.js: la carpeta de los registros sueltos (scripts/lib/loose-logs.js); sin ella, null
 const LOOSE_DIR = (() => { try { return require('../lib/loose-logs.js').looseLogsDir(); } catch (_) { return null; } })();

@@ -108,7 +108,7 @@ function buscarTarea(texto){const aviso=document.getElementById("buscarAviso"),n
   numeroMarcado=n;vista="kanban";guardarVista(vista);pintarVista();
   const card=document.querySelector('#boardBody [data-numero="'+n+'"]');document.querySelectorAll("#boardBody .marcada").forEach(x=>x.classList.remove("marcada"));
   if(card){card.classList.add("marcada");card.scrollIntoView({block:"center"})}abrirTarjeta(i,card)}
-{const f=document.getElementById("buscar");if(f)f.addEventListener("submit",e=>{e.preventDefault();buscarTarea(document.getElementById("buscarTarea").value)})}
+{const f=document.getElementById("buscar");if(f)f.addEventListener("submit",e=>{e.preventDefault();buscarTarea(document.getElementById("buscarTarea").value)});}
 // los dos resúmenes por tema, con la hora en que se armaron. Un tema se abre y muestra sus trabajos, y sigue abierto con la foto
 // nueva. Todo va como texto, nunca como HTML
 const temasAbiertos=new Set();
@@ -120,7 +120,7 @@ function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tabl
     const tb=el("table"),hd=el("tr");t.columnas.forEach(c=>hd.appendChild(el("th",null,c)));const th=el("thead");th.appendChild(hd);tb.appendChild(th);const bd=el("tbody");let seccion="";
     t.filas.forEach(r=>{const tr=el("tr");
       // las filas de tus proyectos van después de las de tema, bajo su título
-      if((r.seccion||"")!==seccion){seccion=r.seccion||"";if(seccion){const st=el("tr","seccionFila"),sh=el("th",null,seccion);sh.colSpan=3;st.appendChild(sh);bd.appendChild(st)}}
+      if((r.seccion||"")!==seccion){seccion=r.seccion||"";if(seccion){const st=el("tr","seccionFila"),sh=el("th",null,seccion);sh.colSpan=3;st.appendChild(sh);bd.appendChild(st);}}
       if(!(r.trabajos||[]).length){[r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));bd.appendChild(tr);return;}
       const id=k+"|"+seccion+"|"+r.grupo,b=el("button","temaBoton",r.grupo),primera=el("td"),det=el("tr","temaTrabajos"),dd=el("td"),ul=el("ul");
       b.type="button";b.dataset.tema=id;primera.appendChild(b);tr.className="temaFila";tr.appendChild(primera);[r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));
@@ -611,7 +611,7 @@ function cerrarPanel(){if(panel.hidden)return false;sel=null;panel.hidden=true;p
 T.cerrarPanel=cerrarPanel;PANELES.add(cerrarPanel);
 // tocar afuera: un toque que empieza y termina afuera del panel, sin arrastrar (arrastrar gira la sala), y sin la ventana encima
 {let abajo=null;document.addEventListener("pointerdown",e=>{abajo=!panel.hidden&&ventana().hidden&&!panel.contains(e.target)&&!e.target.closest(".tag,.ventana")?{x:e.clientX,y:e.clientY}:null},true);
-  document.addEventListener("pointerup",e=>{const a=abajo;abajo=null;if(!a||panel.contains(e.target)||Math.hypot(e.clientX-a.x,e.clientY-a.y)>6)return;cerrarPanel()},true)}
+  document.addEventListener("pointerup",e=>{const a=abajo;abajo=null;if(!a||panel.contains(e.target)||Math.hypot(e.clientX-a.x,e.clientY-a.y)>6)return;cerrarPanel()},true);}
 const BOT='<svg class="bot" viewBox="0 0 24 24" fill="none" stroke="#c9b6ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1.2"/><circle cx="9" cy="13" r="1.3" fill="#c9b6ff"/><circle cx="15" cy="13" r="1.3" fill="#c9b6ff"/><path d="M2 12.5v3M22 12.5v3"/></svg>';
 const FX={firma:"!",pregunta:"?",espera:"⌛",esperando:"⌛",coordina:"→",prueba:"✓",libre:"z",parada:"‖"};
 function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="como"></span><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
