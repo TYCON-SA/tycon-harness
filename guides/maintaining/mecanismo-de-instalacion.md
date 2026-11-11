@@ -798,7 +798,8 @@ registro ni al estado**; una clave sensible se avisa sin su valor. Lo que no se 
 la lista y no es de la versión ni de la capa (la conexión, con «su lugar es…»; lo demás, «se pierde con la próxima versión»),
 en lugar de la línea «de más»; una carpeta propia que tapa la de la capa en `~/.claude/skills/<s>` (y en `~/.codex/skills/<s>`
 con Codex), con las dos versiones y lo que trae que no es de la skill —sacarla es del dev—; el original que ya se copió; y la
-casa resuelta. Antes de mandar `previous/` a `trash/` y antes de quitar un árbol en `uninstall`, lo ajeno de esas carpetas se
+casa resuelta. La casa sale siempre, pero sin aviso (como `ok`, «todavía no la usaste») cuando no hay nada que diferir: sin
+el archivo de datos, sin la variable de la casa y sin conexión vieja por mudar. Antes de mandar `previous/` a `trash/` y antes de quitar un árbol en `uninstall`, lo ajeno de esas carpetas se
 guarda en `~/.tycon/team/kept-<fecha>/<árbol>/<ruta>` y la salida lo nombra.
 
 **Azure no pide dos veces lo que ya tiene.** Un archivo cuyo blob ya está en `harness/` o en otra caché

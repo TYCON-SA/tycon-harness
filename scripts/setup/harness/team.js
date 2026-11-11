@@ -1545,20 +1545,34 @@ function skillDataDoctor({ home = os.homedir(), env = process.env, tree, team = 
         items.push({ level: 'warn', text: `${p} es una carpeta propia y tapa la ${name} de la capa (la tuya: ${versionIn(real) || 'sin VERSION'}; la de la capa: ${layerVersion})${stuff.length ? ` — trae lo que no es de la skill: ${stuff.join(', ')}: copialo antes de sacarla` : ''}; sacarla es tuyo (el arnés no la toca)` });
       }
       const dh = dataHomeOf(e, { home, env });
+      // «no está» sólo si el disco lo dice (ENOENT/ENOTDIR): lo que no se pudo mirar se dice con su código, y no cuenta
+      // como una skill sin usar
+      const look = (p) => { try { fs.lstatSync(p); return { has: true, error: null }; } catch (err) { return { has: false, error: err.code === 'ENOENT' || err.code === 'ENOTDIR' ? null : (err.code || err.message) }; } };
       const moved = isObject(team) && isObject(team.data_moved) ? team.data_moved[name] : null;
-      if (moved && typeof moved.from === 'string' && moved.from && exists(moved.from)) {
+      const old = moved && typeof moved.from === 'string' && moved.from ? look(moved.from) : { has: false, error: null };
+      const pendingMove = old.has;
+      if (old.error) items.push({ level: 'warn', text: `${name}: su conexión vieja estaba en ${moved.from} y no la pude mirar (${old.error}): revisá los permisos de ${path.dirname(moved.from)}` });
+      if (pendingMove) {
         let cmp = '';
         try { if (exists(dh.file) && !fs.readFileSync(dh.file).equals(fs.readFileSync(moved.from))) cmp = '; las dos difieren y gana la casa nueva'; } catch (err) { cmp = `; no pude compararlas (${err.code || err.message})`; }
         items.push({ level: 'warn', text: `${name}: su conexión vieja sigue en ${moved.from}${moved.copied === false ? ` (no se copió: ${moved.reason || 'ver la salida de la actualización'})` : ` y ya está en ${dh.file}`}${cmp} — borrala de ahí cuando confirmes que anda` });
       }
-      // la casa que se resolvió, como `warn`: así una diferencia entre lo que mira el arnés
-      // y lo que mira la skill —otra BIZUIT_SDD_HOME en la sesión— se ve en cada doctor
-      // y qué hacer en cada caso, no sólo dónde está
-      const has = exists(dh.file);
-      const todo = dh.ignored ? `${dh.ignored}; poné una ruta absoluta o sacala`
-        : has ? `no hay nada que hacer; si la skill usa otra conexión, mirá ${e.dataHome.env} en esa sesión`
-          : 'no hay nada que hacer: la skill te pide la conexión la primera vez que la usás y la guarda ahí';
-      items.push({ level: 'warn', text: `${name}: la casa de sus datos es ${dh.file} (${has ? 'existe' : 'todavía no existe'}${dh.from === 'env' ? `, por ${e.dataHome.env}` : ''}) — ${todo}` });
+      // la casa que se resolvió, siempre: así una diferencia entre lo que mira el arnés y lo que mira la skill —otra
+      // BIZUIT_SDD_HOME en la sesión— se ve en cada doctor, con qué hacer en cada caso. Es `warn` salvo cuando no hay
+      // nada que diferir (sin archivo, sin variable y sin conexión vieja por mudar): quien no usó la skill no recibe un aviso
+      const { has, error: unreadable } = look(dh.file);
+      if (unreadable) {
+        items.push({ level: 'warn', text: `${name}: la casa de sus datos es ${dh.file} y no la pude mirar (${unreadable}): revisá los permisos de ${dh.dir}` });
+      } else if (!has && dh.from === 'default' && !dh.ignored && !pendingMove && !old.error) {
+        items.push({ level: 'ok', text: `${name}: la casa de sus datos sería ${dh.file} (todavía no la usaste)` });
+      } else if (!has && dh.from === 'env') {
+        items.push({ level: 'warn', text: `${name}: ${e.dataHome.env} apunta a ${dh.dir}, y ahí falta ${e.dataHome.file}: corré la skill una vez para crearlo, o sacá la variable` });
+      } else {
+        const todo = dh.ignored ? `${dh.ignored}; poné una ruta absoluta o sacala`
+          : has ? `no hay nada que hacer; si la skill usa otra conexión, mirá ${e.dataHome.env} en esa sesión`
+            : 'no hay nada que hacer: la skill te pide la conexión la primera vez que la usás y la guarda ahí';
+        items.push({ level: 'warn', text: `${name}: la casa de sus datos es ${dh.file} (${has ? 'existe' : 'todavía no existe'}${dh.from === 'env' ? `, por ${e.dataHome.env}` : ''}) — ${todo}` });
+      }
       if (extrasReviewDue(e, now)) items.push({ level: 'warn', text: `la skill ${name} tiene su revisión vencida (${e.review.next}): quien la revisa corre la fecha ${e.review.every_months} meses o decide el retiro (primero el repo del equipo, después la versión)` });
     }
   } catch (err) {
