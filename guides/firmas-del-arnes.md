@@ -229,6 +229,18 @@ idéntica abriendo Codex en una ventana de terminal con el mensaje ya escrito. Y
 contestó, no quién. Por eso, en Codex, la constancia de la persona es la firma en la terminal. Los renglones medidos,
 sin datos reales, y el veredicto están en `scripts/tests/fixtures/codex-typed/`.
 
+**Lo que vale en Codex.** Una constancia de la persona que pide una sesión de Codex (por ejemplo, la respuesta a una
+pregunta que bloquea una historia) se da en su propia terminal, fuera de Codex, con el comando entero que muestra la
+sesión: `harness.js sign acknowledge --session <sesión> --seal "<sello>" --text "<texto>"`. La terminal muestra la
+sesión, el sello y el texto, y pregunta «¿Firmás? (s/n)»; en Windows, la ventana de las tres palabras al azar. Con «s»
+anota un renglón en el registro de aprobaciones (`plataforma: codex`, `via: terminal`, no en el registro común de
+firmas) y deja una marca aparte en `terminal-acknowledgments/` de la carpeta de estado; las dos tienen que coincidir, el
+texto tiene que ser la pregunta que muestra la sesión, y
+los frenos de escritura cuidan las dos carpetas. Vale 30 minutos, una sola vez y sólo para la sesión que nombra: no pasa
+por la coordinadora. No firma si la lanzó la herramienta del agente o Codex (en Windows eso no se mira: cuida la
+ventana). La aceptan sólo los controles que la piden con `plataformas` que incluye Codex, como la aprobación de la
+intención de una historia; las firmas de hoy siguen como están. En Codex el click y la respuesta escrita no valen.
+
 ### En Windows
 
 En Windows firmás con un click en el cuadro de opciones o con un «aprobado» escrito, si el agente corre la firma por su
