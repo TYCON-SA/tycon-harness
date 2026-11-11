@@ -51,11 +51,24 @@ function mainFolder(dir) {
   return { main: fs.realpathSync(path.dirname(common)) };
 }
 
+// Los comentarios HTML, de izquierda a derecha y una sola vez, como los quita Claude Code: lo que queda al quitar uno
+// no se vuelve a recorrer, y uno sin cerrar queda como texto.
+function sinComentarios(text) {
+  let fuera = '';
+  let desde = 0;
+  for (let abre = text.indexOf('<!--'); abre >= 0; abre = text.indexOf('<!--', desde)) {
+    const cierra = text.indexOf('-->', abre + 4);
+    if (cierra < 0) break;
+    fuera += text.slice(desde, abre);
+    desde = cierra + 3;
+  }
+  return fuera + text.slice(desde);
+}
+
 // Lo que Claude Code no lee como import: los bloques de código, el código en línea y los comentarios HTML.
-const sinCodigo = (text) => text
+const sinCodigo = (text) => sinComentarios(text
   .replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, '')
-  .replace(/`[^`\n]*`/g, '')
-  .replace(/<!--[\s\S]*?-->/g, '');
+  .replace(/`[^`\n]*`/g, ''));
 
 const PROFUNDIDAD_DE_IMPORTS = 5;
 

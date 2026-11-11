@@ -69,6 +69,25 @@ test('8.187 T20 AutoUpdate_Gancho_LanzaSoloConPermisoYAutoYViejo @story-8.187 @a
   assert.ok(waitFor(() => fs.existsSync(slow.opts.logDir) && fs.readdirSync(slow.opts.logDir).length > 0), 'la salida va a un registro');
 });
 
+test('8.187 T20e AutoUpdate_Gancho_SinShell @story-8.187 @ac-19: sudo y la ruta del freno llegan como argumentos, sin armar un comando de shell', { skip: process.platform === 'win32' ? 'sudo de mentira en sh' : false }, () => {
+  const cp = require('child_process');
+  const original = cp.spawn;
+  const lanzados = [];
+  cp.spawn = (cmd, args, o) => { lanzados.push([cmd, ...args]); return original(cmd, args, o); };
+  delete require.cache[HOOK];
+  try {
+    const l = lab();
+    require(HOOK).run(l.opts);
+    assert.ok(waitFor(() => sudoCalls(l).length > 0), 'lanza la actualización');
+    assert.strictEqual(lanzados.length, 1, JSON.stringify(lanzados));
+    const [cmd, ...args] = lanzados[0];
+    assert.ok(!/(^|\/)[a-z]*sh$/.test(cmd) && !args.includes('-c'), `sin shell: ${JSON.stringify(lanzados[0])}`);
+  } finally {
+    cp.spawn = original;
+    delete require.cache[HOOK];
+  }
+});
+
 test('8.187 T21 AutoUpdate_Gancho_NoReintentaLaMismaVersion @story-8.187 @ac-19: con una falla anotada de la versión que corre no lanza; con otra versión, sí', () => {
   const fail = { status: 'failed', attempted_version: 'v-bbb', reason: 'el ensayo frenó', at: '2026-11-09T00:00:00Z' };
   const same = lab({ log: [fail] });

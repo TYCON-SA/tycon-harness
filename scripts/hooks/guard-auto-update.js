@@ -24,6 +24,10 @@ const { spawn } = require('child_process');
 
 const ARBOL = path.resolve(__dirname, '..', '..');
 
+// Corre `<sudo> -n <ruta>` y anota `exit=N`; 127 si sudo no arranca, como el shell.
+const ESPERAR_A_SUDO = "const r = require('child_process').spawnSync(process.argv[1], ['-n', process.argv[2]], { stdio: 'inherit' });"
+  + ' console.log(`exit=${r.error ? 127 : r.status ?? 128}`);';
+
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 
 // `{ valor: 'auto' | 'password' }`, o `{ error }` si no se pudo leer: «no pude leer» no es «la organización no eligió».
@@ -98,11 +102,12 @@ function run(opts = {}) {
     fs.mkdirSync(logDir, { recursive: true });
     out = fs.openSync(path.join(logDir, `${new Date().toISOString().replace(/[:.]/g, '-')}.log`), 'a');
   } catch (e) { d.sinRegistro = e.code || e.message; }
-  // `exit=N` al final del registro: si sudo no arranca (pide contraseña, falta la regla), el aviso de arranque lo lee
-  const child = spawn('/bin/sh', ['-c', '"$0" -n "$1"; echo "exit=$?"', opts.sudo || 'sudo', path.join(root, 'opt', 'tycon', 'setup', 'update-guard.sh')], {
+  // `exit=N` al final del registro: si sudo no arranca (pide contraseña, falta la regla), el aviso de arranque lo lee.
+  // Sin shell: un node de fondo corre sudo con la ruta como argumento y anota con qué salió.
+  const child = spawn(process.execPath, ['-e', ESPERAR_A_SUDO, opts.sudo || 'sudo', path.join(root, 'opt', 'tycon', 'setup', 'update-guard.sh')], {
     detached: true, stdio: ['ignore', out, out], env: opts.env || process.env, cwd: '/', windowsHide: true,
   });
-  child.on('error', () => { /* sin sh: el registro queda sin `exit=` y el aviso no da la actualización por arrancada */ });
+  child.on('error', () => { /* sin node: el registro queda sin `exit=` y el aviso no da la actualización por arrancada */ });
   child.unref();
   if (typeof out === 'number') { try { fs.closeSync(out); } catch { /* nada */ } }
   return d;
