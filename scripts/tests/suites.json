@@ -1659,6 +1659,12 @@
       "requiere": []
     },
     {
+      "__nota": "T-269: la lista del camino corto con rutas de Windows — la letra de unidad no distingue mayúsculas al guardar la lista, al compararla en el portón y al guardar, ni al ampliarla.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-list-windows.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.174, tanda A3: las pruebas y la rama del camino rápido — adhoc test corre y anota, sin pruebas en verde con la huella de hoy no guarda, y un carril que pasó el tope no guarda en la rama principal.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-tests-and-branch.test.js",

@@ -6917,8 +6917,8 @@ function cmdAdhoc(sub, payloadJson) {
       }
       const sinPersona = LISTA.sinUnaPersona({ reason }) ? LISTA.sinUnaPersona({ reason, harness: enElArnes() }) : null;
       if (sinPersona) return { codigo: 1, motivo: sinPersona };
-      // ampliar por delegación: la lista nueva contiene entera la firmada
-      const faltan = actual && Array.isArray(actual.allowedFiles) ? actual.allowedFiles.filter((f) => !allowedFiles.includes(f)) : [];
+      // ampliar por delegación: la lista nueva contiene entera la firmada (una firmada con `d:` la contiene `D:`)
+      const faltan = actual && Array.isArray(actual.allowedFiles) ? LISTA.faltanEnLaNueva(actual.allowedFiles, allowedFiles) : [];
       if (faltan.length) return { codigo: 1, motivo: LISTA.textoDeAmpliar(faltan.map((f) => path.relative(process.cwd(), f) || f), { harness: enElArnes() }) };
       // un solo carril delegado por repo: dos a la vez se pisan las cuentas
       const mios = new Set(allowedFiles.map(LISTA.raizDe).filter(Boolean));
@@ -7021,9 +7021,10 @@ function cmdAdhoc(sub, payloadJson) {
         .filter((k) => existing[k] !== undefined).map((k) => [k, existing[k]])) : {}),
     };
     // abrir trae la base de cada repo de la lista, como el primer toque: sin red abre igual, con la base «sin traer» y el
-    // aviso. Un repo que ya tiene la suya la conserva
+    // aviso. Un repo que ya tiene la suya la conserva. La base se anota con la raíz de git, la misma con que la busca la
+    // medida al guardar (la de la lista lleva la letra de unidad en mayúscula y git puede devolverla en minúscula)
     const adhocBase = require('./lib/adhoc-base.js');
-    for (const repo of [...new Set(allowedFiles.map(LISTA.raizDe).filter(Boolean))]) {
+    for (const repo of [...new Set(allowedFiles.map(adhocBase.raizDe).filter(Boolean))]) {
       const b = adhocBase.conBase(obj, repo);
       if (b.adhoc.bases) obj.bases = b.adhoc.bases;
       if (b.aviso) console.error(`⚠ ${b.aviso}`);
