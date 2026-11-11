@@ -158,8 +158,6 @@ const { homeCommand, signatureCommand } = require('./lib/home-command.js');
 // la tabla de los pasos: nombres, orden, equivalencia con el marcador viejo
 const STEPS_LIB = require('./lib/steps.js');
 const { posixRelative } = require('./lib/path-forms.js');   // rutas relativas al repo con `/`, también en Windows
-// la carpeta de Claude Code (la de sus archivos de sesión) la sabe state-dir.js, con el mismo respaldo
-const { claudeDir: claudeDirOf } = require('./lib/state-dir.js');
 
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
 const ACTIVE_DIR = path.join(STATE_DIR, 'active');

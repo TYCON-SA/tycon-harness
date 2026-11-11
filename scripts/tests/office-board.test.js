@@ -13,7 +13,7 @@ const {
   OFFICE, PAGE_CODE, NOW, STEPS, byName, run, runMarker, BOARD, all, textOf, sessionFile, STEP_LIB, col, titles, hm,
   IDS, runMarkerFile, BEFORE_PLAN, CLOSED, sessionWith, atIso, KANBAN_BOARD, collectAt, localIsoAt, mixedOffice,
   WALL_ORDER, toyKanban, firmaCard, firmaData, wip, toyHome, toyMachine, storyFile, collectWith, drawKanban, toyRepo,
-  parkMachine, openWallPanel, wallTexts, firmaOffice, filesOf, buildOffice, page, stateDir, collect, buildBoard,
+  parkMachine, openWallPanel, wallTexts, firmaOffice, filesOf, buildOffice, page, collect, buildBoard,
   createEnvelopes, ownerWaitsOf
 } = require('./lib/office-fixtures.js');
 
