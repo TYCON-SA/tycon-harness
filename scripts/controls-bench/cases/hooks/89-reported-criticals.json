@@ -37,8 +37,8 @@
         },
         {
           "id": "un-agente-que-no-salio-en-la-vuelta-no-se-anota",
-          "type": "must-run",
-          "__nota": "Un agente de exploración termina con críticos en su texto: no tiene lanzamiento en el registro, así que no es un revisor del set y no se anota nada.",
+          "type": "must-stay-quiet",
+          "__nota": "Un agente de exploración termina con críticos en su texto: no tiene lanzamiento en el registro, así que no es un revisor del set y no se anota nada. Afirma que algo NO pasa: es la contracara del primer caso, y un control mudo también lo cumple (por eso no es un must-run).",
           "files": {
             "_registro.jsonl": "{\"ts\":\"2026-11-10T10:00:00.000Z\",\"kind\":\"launched\",\"advisor\":\"tycon-plugin-security-basics\",\"iter\":1,\"story\":\"9.9\",\"run\":null,\"launcher\":\"claude\"}\n",
             "_transcripcion.jsonl": "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Veredicto: hallazgos (SEC-C7) · bloquea: sí\"}]}}\n"

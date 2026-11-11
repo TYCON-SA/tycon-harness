@@ -269,7 +269,7 @@ function cross(o) {
     if (waiverFor({ runDir: o.runDir, rule: c.rule, ownerOnly: true, home: o.home, story: o.story })) continue;
     problemas.push({ tipo: 'arreglado-sin-comprobar', rule: c.rule, advisor: c.rep.advisor, iter: c.rep.iter,
       texto: `${c.rule}: ${arreglados} figura(n) como arreglado(s) y una vuelta posterior del mismo revisor comprueba ${bajada} (lo reportó ${de}): `
-        + 'vale con otra vuelta legible del mismo revisor que ya no lo reporte, o con la exención del dueño (la de la coordinadora por delegación no alcanza)' });
+        + 'vale con otra vuelta legible del mismo revisor que ya no lo reporte, o con la exención que firma una persona (la de la coordinadora por delegación no alcanza)' });
   }
 
   // 4. cada revisor que salió: un reporte legible de su última salida. Se empareja por la vuelta, no por la hora: la
