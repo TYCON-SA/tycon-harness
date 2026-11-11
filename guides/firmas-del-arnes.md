@@ -219,6 +219,16 @@ firma con la forma normal de abrir Codex: la terminal usa un servidor compartido
 contesta el cuadro con un resultado idéntico al de un click. El comando `codex queue`, además, mete un mensaje que para el
 gancho se ve igual que uno tipeado. Medido en Codex 0.162.1.
 
+Tampoco vale una respuesta escrita leída de la conversación de Codex. Medición del 2026-11-11, Codex 0.162.1:
+**distingue: no**. Un mensaje tipeado por la persona en la terminal de Codex, uno metido con `codex queue`, uno mandado
+por otro programa conectado a un servidor de Codex y uno tipeado por un programa en una pseudo-terminal dejan en la
+conversación guardada los mismos renglones; cambian sólo los ids, las horas, el orden y el texto. Lo que manda otro
+programa por el servidor queda marcado como escrito por el usuario. El gancho de prompt sí ve una diferencia: la
+cadena de procesos que sube hasta la aplicación de terminal, y sus variables de terminal. Pero un programa la reproduce
+idéntica abriendo Codex en una ventana de terminal con el mensaje ya escrito. Y la respuesta del cuadro dice qué se
+contestó, no quién. Por eso, en Codex, la constancia de la persona es la firma en la terminal. Los renglones medidos,
+sin datos reales, y el veredicto están en `scripts/tests/fixtures/codex-typed/`.
+
 ### En Windows
 
 En Windows firmás con un click en el cuadro de opciones o con un «aprobado» escrito, si el agente corre la firma por su

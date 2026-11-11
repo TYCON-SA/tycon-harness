@@ -2849,6 +2849,12 @@
       "requiere": []
     },
     {
+      "__nota": "si la conversación guardada de Codex distingue lo que tipeó la persona (scripts/lib/codex-typed-verdict.js y scripts/tests/fixtures/codex-typed/): los renglones medidos de cada forma de llegar un mensaje, sin datos reales, y su veredicto leído con falla cerrada; la guía de firmas trae la medición. Sin red, milisegundos.",
+      "raiz": "arnes",
+      "ruta": "tests/codex-typed-fixtures.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "mergear salteando la cola y la CI de main lo aprueba una persona (regla GIT-C5): el lector de lo que saltea (scripts/lib/ci-bypass.js), el freno de la sesión de verdad con una casa de juguete y la decisión de la ventana con un árbol de juguete. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/ci-bypass-guard.test.js",
