@@ -73,15 +73,21 @@ test('8.187 T20e AutoUpdate_Gancho_SinShell @story-8.187 @ac-19: sudo y la ruta 
   const cp = require('child_process');
   const original = cp.spawn;
   const lanzados = [];
-  cp.spawn = (cmd, args, o) => { lanzados.push([cmd, ...args]); return original(cmd, args, o); };
+  // a fake process: the test writes down the call and launches nothing (T20 runs the real one against the fake sudo)
+  cp.spawn = (cmd, args) => {
+    lanzados.push([cmd, ...args]);
+    const hijo = new (require('events'))();
+    hijo.unref = () => {};
+    return hijo;
+  };
   delete require.cache[HOOK];
   try {
     const l = lab();
     require(HOOK).run(l.opts);
-    assert.ok(waitFor(() => sudoCalls(l).length > 0), 'lanza la actualización');
     assert.strictEqual(lanzados.length, 1, JSON.stringify(lanzados));
     const [cmd, ...args] = lanzados[0];
     assert.ok(!/(^|\/)[a-z]*sh$/.test(cmd) && !args.includes('-c'), `sin shell: ${JSON.stringify(lanzados[0])}`);
+    assert.deepStrictEqual(args.slice(-2), [l.opts.sudo, path.join(l.sys, 'opt', 'tycon', 'setup', 'update-guard.sh')], 'sudo y la ruta del freno van como argumentos propios');
   } finally {
     cp.spawn = original;
     delete require.cache[HOOK];

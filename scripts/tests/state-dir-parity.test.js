@@ -19,6 +19,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
+// la ruta le llega al shell por el ambiente, no por la línea de comando que arma
 const SH = path.join(ROOT, 'scripts', 'lib', 'state-dir.sh');
 const HOME_JS = path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js');
 const LOOSE_JS = path.join(ROOT, 'scripts', 'lib', 'loose-logs.js');
@@ -33,8 +34,8 @@ function cleanEnv(home, tyconHome) {
 
 /** Lo que dice el shell: [carpeta del estado, carpeta de los registros sueltos]. */
 function fromShell(home, tyconHome, cwd) {
-  const r = spawnSync('bash', ['-c', '. "$1" && tycon_state_dir && printf "\\n" && tycon_logs_dir', '_', SH],
-    { env: cleanEnv(home, tyconHome), cwd, encoding: 'utf8' });
+  const r = spawnSync('bash', ['-c', '. "$STATE_DIR_SH" && tycon_state_dir && printf "\\n" && tycon_logs_dir'],
+    { env: { ...cleanEnv(home, tyconHome), STATE_DIR_SH: SH }, cwd, encoding: 'utf8' });
   assert.strictEqual(r.status, 0, `state-dir.sh salió ${r.status}: ${r.stderr}`);
   return r.stdout.split('\n');
 }
@@ -129,8 +130,8 @@ test('T1 Paridad_ShellYTyconHome @story-8.150 @ac-1 — state-dir.sh y tycon-hom
 test('T1b StateDirSh_CargadoNoCambiaNada @story-8.150 @ac-1 — cargarlo con «.» no exporta ni cambia el PATH', () => {
   const h = lab();
   try {
-    const r = spawnSync('bash', ['-c', 'before="$(env | sort)"; . "$1"; after="$(env | sort)"; [ "$before" = "$after" ] && echo igual', '_', SH],
-      { env: cleanEnv(h), encoding: 'utf8' });
+    const r = spawnSync('bash', ['-c', 'before="$(env | sort)"; . "$STATE_DIR_SH"; after="$(env | sort)"; [ "$before" = "$after" ] && echo igual'],
+      { env: { ...cleanEnv(h), STATE_DIR_SH: SH }, encoding: 'utf8' });
     assert.strictEqual(r.status, 0, r.stderr);
     assert.strictEqual(r.stdout.trim(), 'igual', 'cargar state-dir.sh cambió el ambiente');
   } finally {
