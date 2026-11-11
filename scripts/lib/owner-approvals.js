@@ -29,8 +29,10 @@
  * y las banderas de una sesión de fondo, porque su proceso no las muestra.
  *
  * La parte de acá no depende de la herramienta salvo las funciones de Claude Code (la transcripción, las capas, el
- * árbol de procesos). Codex queda para después: tiene el cuadro (`request_user_input`), que en el modo normal pide la
- * bandera `features.default_mode_request_user_input`, y su gancho de prompt.
+ * árbol de procesos). En Codex no vale el click ni un mensaje: su conversación no distingue lo que tipeó la persona de
+ * lo que mete un programa (guides/firmas-del-arnes.md §«En Codex»). Ahí la constancia es la firma en la terminal
+ * (harness-sign.js `acknowledge`): un renglón `plataforma: 'codex'`, `via: 'terminal'`, y una marca aparte que tiene que
+ * coincidir. La acepta sólo quien la pide con `plataformas` que incluye `'codex'`; las firmas de hoy no.
  */
 const fs = require('fs');
 const os = require('os');
@@ -685,16 +687,42 @@ function coordinadoraConfirmada(casa, { env, arnes } = {}) {
 
 // --- buscar la aprobación para una firma ----------------------------------------------------------------------------
 
+/** En qué herramienta se dio la aprobación: su campo `plataforma`, o `'claude'` (las anotadas antes del campo). */
+function plataformaDe(a) { return a && a.plataforma ? String(a.plataforma) : 'claude'; }
+
+/**
+ * La constancia de Codex: se dio en la terminal (`via: 'terminal'`), contesta el sello del cuadro con su pregunta como
+ * texto, y la marca que dejó
+ * harness-sign.js `acknowledge` coincide con el renglón (sesión, sello, texto, hora y la huella del renglón, que es su
+ * `id`). `{ ok }` o `{ ok: false, motivo }`.
+ */
+function constanciaDeLaTerminal(a, { casa, cuadro }) {
+  if (a.via !== 'terminal' || a.tipo !== 'terminal') return { ok: false, motivo: 'en Codex la constancia se da en la terminal (harness.js sign acknowledge)' };
+  if (a.sello !== cuadro.sello) return { ok: false, motivo: 'la constancia de la terminal es de otro sello: lo que se mostró cambió, o es de otra pregunta' };
+  // el sello es una huella que la persona no lee: lo que firmó es el texto, y tiene que ser la pregunta del cuadro
+  if (cuadro.pregunta && a.texto !== cuadro.pregunta) return { ok: false, motivo: 'la constancia de la terminal firmó otro texto que la pregunta del cuadro: pedila de nuevo con la pregunta tal cual' };
+  let m;
+  try { m = require('./harness-sign.js').marcaDeConstancia({ casa, sesion: a.sesion, ts: a.ts }); } catch (e) {
+    return { ok: false, motivo: `no pude leer la marca de la terminal (${e.code || e.message})` };
+  }
+  if (!m) return { ok: false, motivo: 'falta la marca de la terminal de esa constancia (la deja harness.js sign acknowledge)' };
+  if (m.sesion !== a.sesion || m.sello !== a.sello || m.texto !== a.texto || m.ts !== a.ts) return { ok: false, motivo: 'la marca de la terminal no coincide con la constancia del registro' };
+  if (m.renglon !== a.id) return { ok: false, motivo: 'la marca de la terminal es de otro renglón del registro' };
+  return { ok: true };
+}
+
 /**
  * La aprobación vigente para la firma `firma` pedida desde `sesion` sobre `destino` (por defecto, la misma): sin usar, de
  * los últimos 30 minutos, dada en `sesion` o en la coordinadora (`coordinadora`: su id, o null), contestando el cuadro
  * que armó el guion para ese comando (`cuadro`: `{ pregunta, sello }`, de `cuadroDe`). La de la propia sesión tiene que
  * venir del mismo proceso de la herramienta que firma (`herramienta`: { pid, inicio }); la de la coordinadora, de su
  * proceso vivo (`arbol`, se lee si falta). `validar(aprobacion, contexto)` la confirma contra la transcripción y los
- * ganchos; se pasa en las pruebas. `cwd` y `casa` son los de la firma, nunca los del registro. `{ ok, aprobacion, via }` o
- * `{ ok: false, motivo }`.
+ * ganchos; se pasa en las pruebas. `cwd` y `casa` son los de la firma, nunca los del registro. `plataformas`: en qué
+ * herramientas se acepta la aprobación (de fábrica, sólo `'claude'`); con `'codex'`, vale la constancia de la terminal
+ * de esa misma sesión (`constanciaDeLaTerminal`), también para un cuadro de sólo click. `{ ok, aprobacion, via,
+ * plataforma }` o `{ ok: false, motivo }`.
  */
-function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, ahora = Date.now(), cwd, herramienta = null, validar, arbol } = {}) {
+function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, ahora = Date.now(), cwd, herramienta = null, validar, arbol, plataformas = ['claude'] } = {}) {
   if (!SESION.test(String(sesion || ''))) return { ok: false, motivo: 'la firma no dice de qué sesión es' };
   if (!cuadro || !cuadro.pregunta || !cuadro.sello) return { ok: false, motivo: 'no pude armar el cuadro de esta firma' };
   // un cuadro de sólo click vale en la pestaña que hace el trabajo: ni la coordinadora ni un mensaje escrito lo contestan
@@ -704,9 +732,15 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
   const sesiones = [sesion, ...(!soloClick && coordinadora && coordinadora !== sesion && SESION.test(coordinadora) ? [coordinadora] : [])];
   let candidatas = [];
   try { for (const s of sesiones) candidatas.push(...leerSesion(casa, s).filter((r) => r.sesion === s)); } catch (e) { return { ok: false, motivo: e.message }; }
+  const pide = new Set(Array.isArray(plataformas) ? plataformas : ['claude']);
   candidatas = candidatas.filter((r) => {
     const edad = ahora - Date.parse(r.ts);
-    if (!(edad >= 0 && edad <= VENCE_MIN * 60000 && (r.tipo === 'click' || (r.tipo === 'mensaje' && !sinMensaje)) && !usada(casa, r.id))) return false;
+    if (!(edad >= 0 && edad <= VENCE_MIN * 60000) || usada(casa, r.id)) return false;
+    const plataforma = plataformaDe(r);
+    if (!pide.has(plataforma)) return false;
+    // la de Codex se confirma abajo, con su marca; vale sólo en la sesión que la nombra, no por la coordinadora
+    if (plataforma === 'codex') return r.sesion === sesion;
+    if (!(r.tipo === 'click' || (r.tipo === 'mensaje' && !sinMensaje))) return false;
     // la de la propia sesión la anotó el mismo proceso de la herramienta que firma: otra copia de la sesión (abierta con
     // `--resume` por un agente) no aprueba por ella
     return !herramienta || r.sesion !== sesion || (r.herramienta && r.herramienta.pid === herramienta.pid && r.herramienta.inicio === herramienta.inicio);
@@ -723,6 +757,12 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
   let leido = arbol;
   let motivo = null;
   for (const a of candidatas) {
+    if (plataformaDe(a) === 'codex') {
+      const t = constanciaDeLaTerminal(a, { casa, cuadro });
+      if (t.ok) return { ok: true, aprobacion: a, via: 'terminal', plataforma: 'codex' };
+      motivo = motivo || t.motivo;
+      continue;
+    }
     let proceso = null;
     if (a.sesion !== sesion) {
       if (leido === undefined) leido = ow().arbolDeLaPlataforma();
@@ -736,7 +776,7 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
       proceso = { linea: p.comando };
     }
     const v = check(a, { casa, cwd, cuadro, destino, linea: proceso && proceso.linea, cwdAprobacion: proceso && proceso.cwd });
-    if (v && v.ok) return { ok: true, aprobacion: a, via: a.tipo };
+    if (v && v.ok) return { ok: true, aprobacion: a, via: a.tipo, plataforma: plataformaDe(a) };
     motivo = motivo || (v && v.motivo);
   }
   return { ok: false, motivo: `la aprobación no vale: ${motivo || 'no se pudo confirmar'}` };
@@ -762,4 +802,4 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
 
 module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, APRUEBA, NIEGA, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, cuadroDe, traeElSello, lanzadoPorLaHerramienta,
   anotar, leerSesion, consumir, devolver, transcripcionDe, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
-  escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, validarEnClaude };
+  escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, validarEnClaude, plataformaDe, constanciaDeLaTerminal };

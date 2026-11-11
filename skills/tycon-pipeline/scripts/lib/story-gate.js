@@ -226,11 +226,17 @@ function isOfficeMailboxRecord(p) { return OFFICE_MAILBOX.test(norm(String(p || 
 // estado de la cuenta, en una de sus dos carpetas (la carpeta misma también)
 const REPORTED_CRITICALS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/reported-criticals(\/|$)/i;
 function isReportedCriticalsRecord(p) { return REPORTED_CRITICALS_DIR.test(norm(String(p || ''))); }
-/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `launched-sessions`, `office-mailbox`, `reported-criticals` o null. */
+// Las marcas de la constancia de Codex (scripts/lib/harness-sign.js `acknowledge`): las escribe sólo la terminal de la
+// persona, y owner-approvals.js las exige al lado de su renglón del registro. Escribir una es fingir una constancia. Sólo
+// en el estado de la cuenta, en una de sus dos carpetas (la carpeta misma también)
+const TERMINAL_ACKS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/terminal-acknowledgments(\/|$)/i;
+function isTerminalAcknowledgmentsRecord(p) { return TERMINAL_ACKS_DIR.test(norm(String(p || ''))); }
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `terminal-acknowledgments`, `launched-sessions`, `office-mailbox`, `reported-criticals` o null. */
 function signedRecordKind(p) {
   if (isControlApproval(p)) return 'control-approvals';
   if (isPendingApprovalsRecord(p)) return 'pending-approvals';
   if (isOwnerApprovalsRecord(p)) return 'owner-approvals';
+  if (isTerminalAcknowledgmentsRecord(p)) return 'terminal-acknowledgments';
   if (isLaunchedSessionsRecord(p)) return 'launched-sessions';
   if (isOfficeMailboxRecord(p)) return 'office-mailbox';
   if (isReportedCriticalsRecord(p)) return 'reported-criticals';
@@ -271,6 +277,9 @@ function computeStoryGate({
   }
   if (isOwnerApprovalsRecord(filePath) || isOwnerApprovalsRecord(real)) {
     return { action: 'block', kind: 'owner-approvals', reason: 'escritura a mano del registro de aprobaciones de la persona' };
+  }
+  if (isTerminalAcknowledgmentsRecord(filePath) || isTerminalAcknowledgmentsRecord(real)) {
+    return { action: 'block', kind: 'terminal-acknowledgments', reason: 'escritura a mano de la marca de una constancia dada en la terminal' };
   }
   if (isLaunchedSessionsRecord(filePath) || isLaunchedSessionsRecord(real)) {
     return { action: 'block', kind: 'launched-sessions', reason: 'escritura a mano del registro de las sesiones que abrió la coordinadora' };
@@ -591,6 +600,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  la aprobación a la persona.',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'terminal-acknowledgments') {
+    return [
+      '⛔ la marca de una constancia dada en la terminal no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  La deja sólo `harness.js sign acknowledge`, en la terminal de la persona, junto con su renglón del registro de',
+      '  aprobaciones: escribirla es fingir una constancia de Codex. Si falta una, pedile a la persona que la dé en su terminal.',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'launched-sessions') {
     return [
       '⛔ el registro de las sesiones que abrió la coordinadora no se toca a mano',
@@ -778,7 +796,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };

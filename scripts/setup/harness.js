@@ -134,13 +134,13 @@ const COMMANDS = {
   npx:       { opts: {}, passthrough: true, help: 'lo que sigue a la bajada de `npx @tyconsa/harness@latest` (el paquete baja este árbol y lo corre con el commit en TYCON_NPX_COMMIT): revisa los requisitos (Node, tar; bash y python3, o pwsh 7 en Windows) y que haya Claude Code o Codex, y dice lo que falta sin instalar nada; sin preguntas, es para mí (--team <repo> para sumarte a un equipo, --audience team|org para elegir, org da de alta tu organización), con la instalación mínima, ninguna conexión opcional y sin paquete; después corre install --version latest --defaults de este árbol: muestra un plan de cinco renglones y pregunta una sola vez «¿Instalo? [s/N]». Con el arnés ya instalado no lo reinstala: dice si está al día, o pregunta «¿Actualizo? [s/N]» y corre el update de este árbol. Sin nadie delante, --yes acepta el plan. Sale 0 bien o nada que hacer, 1 si falta algo, 2 por un uso mal hecho o una confirmación pendiente' },
   layer:     { opts: { '--check': 'flag', '--list': 'flag', '--json': 'flag', '--public': 'value', '--harness-clone': 'value' }, help: 'la capa privada, sólo leyendo: qué agregó, qué pisó, qué está editado a mano (--check sale 0 si está entera, 1 si falta o sobra algo, 3 si no hay capa; --list nombra cada archivo; --public <copia> y --harness-clone <clon> calculan contra esa copia y ese clon sin tocar el estado)' },
   // `extraPositional`: el id de la firma lo valida el catálogo, no la tabla
-  sign:      { opts: { '--reason': 'value', '--request': 'value', '--commit': 'flag', '--target': 'value', '--ordered-by': 'value' }, extraPositional: () => true, help: 'firma un id del catálogo (guides/firmas-del-arnes.md) en tu terminal y lo anota en el registro común de firmas; una excepción (nivel 2) o más pide --reason, y el nivel es el mayor entre el catálogo y lo que sube el perfil del equipo (approvals.levels). La emergencia, la única salida de un freno: `sign emergency --reason "<por qué>" --request <número>` deja pasar una vez el comando que frenó el freno con ese número (la terminal lo muestra antes de firmar); `--commit` en vez de --request deja pasar el próximo commit de este repo. Los dos valen 30 minutos y una sola vez. --target dice sobre qué, --ordered-by quién la pidió. Sale 0 firmó, 1 no firmó o el registro no escribió, 2 uso mal hecho o sin terminal' },
+  sign:      { opts: { '--reason': 'value', '--request': 'value', '--commit': 'flag', '--target': 'value', '--ordered-by': 'value', '--session': 'value', '--seal': 'text', '--text': 'text' }, extraPositional: () => true, help: 'firma un id del catálogo (guides/firmas-del-arnes.md) en tu terminal y lo anota en el registro común de firmas; una excepción (nivel 2) o más pide --reason, y el nivel es el mayor entre el catálogo y lo que sube el perfil del equipo (approvals.levels). La emergencia, la única salida de un freno: `sign emergency --reason "<por qué>" --request <número>` deja pasar una vez el comando que frenó el freno con ese número (la terminal lo muestra antes de firmar); `--commit` en vez de --request deja pasar el próximo commit de este repo. Los dos valen 30 minutos y una sola vez. --target dice sobre qué, --ordered-by quién la pidió. La constancia de Codex: `sign acknowledge --session <sesión> --seal <sello> --text <texto>` contesta en tu terminal lo que te mostró esa sesión de Codex y la anota en el registro de aprobaciones (no en el común); vale 30 minutos y una sola vez. Sale 0 firmó, 1 no firmó o el registro no escribió, 2 uso mal hecho o sin terminal' },
 };
 
 function usage() {
   const L = ['uso: node scripts/setup/harness.js <subcomando> [opciones]', ''];
   for (const [name, c] of Object.entries(COMMANDS)) {
-    const opts = Object.entries(c.opts).map(([o, k]) => (k === 'value' || k === 'list' ? `${o} <valor>` : o));
+    const opts = Object.entries(c.opts).map(([o, k]) => (k === 'value' || k === 'list' || k === 'text' ? `${o} <valor>` : o));
     const pos = c.positional ? [`[${c.positional.join('|')}]`] : [];
     L.push(`  ${[name, ...pos, ...opts].join(' ')}`);
     L.push(`      ${c.help}`);
@@ -166,9 +166,10 @@ function parse(argv) {
       // en `config`, lo que empieza con guion puede ser un secreto pegado en el lugar equivocado: no se repite
       if (!kind && cmd === 'config') return { error: 'opción desconocida para config (no se muestra: config no lleva opciones)' };
       if (!kind) return { error: `opción desconocida «${a}» para ${cmd}. Opciones: ${Object.keys(spec.opts).join(', ') || '(ninguna)'}` };
-      if (kind === 'value' || kind === 'list') {
+      // `text`: un texto libre (el sello o la respuesta de una constancia), que puede empezar con guion
+      if (kind === 'value' || kind === 'list' || kind === 'text') {
         const v = argv[i + 1];
-        if (v === undefined || v.startsWith('-')) return { error: `${a} necesita un valor` };
+        if (v === undefined || (kind !== 'text' && v.startsWith('-'))) return { error: `${a} necesita un valor` };
         // `list`: la opción es repetible y junta sus valores (`--tool claude --tool codex`)
         if (kind === 'list') (opts[a.slice(2)] = opts[a.slice(2)] || []).push(v); else opts[a.slice(2)] = v;
         i++;
@@ -5188,6 +5189,15 @@ function cmdSign(ctx) {
   const [id, ...sobra] = ctx.args;
   if (!id) return { code: 2, lines: ['harness.js sign: falta el id de la firma (guides/firmas-del-arnes.md)'] };
   if (sobra.length) return { code: 2, lines: [`harness.js sign: una firma por vez (sobra «${sobra[0]}»)`] };
+  const deLaConstancia = ['session', 'seal', 'text'];
+  // la constancia de Codex no es una firma del catálogo: se enruta antes de buscar el id
+  if (id === 'acknowledge') {
+    const otra = Object.keys(ctx.opts).find((o) => !deLaConstancia.includes(o));
+    if (otra) return { code: 2, lines: [`harness.js sign acknowledge: lleva sólo --session, --seal y --text (sobra --${otra})`] };
+    return require('../lib/harness-sign.js').acknowledge({ session: ctx.opts.session, seal: ctx.opts.seal, text: ctx.opts.text });
+  }
+  const suelta = deLaConstancia.find((o) => ctx.opts[o] !== undefined);
+  if (suelta) return { code: 2, lines: [`harness.js sign: --${suelta} es de \`sign acknowledge\` (la constancia de Codex), no de una firma del catálogo`] };
   // lo que sube la organización; sin poder leerlo, null: se pide motivo también para la rutina
   let levels = null;
   try {

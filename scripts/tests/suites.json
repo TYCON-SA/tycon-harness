@@ -2861,6 +2861,12 @@
       "requiere": []
     },
     {
+      "__nota": "en Codex, la constancia de la persona es la firma en su terminal (scripts/lib/owner-approvals.js buscar con plataformas y la constancia de la terminal): el renglón y su marca, que no firme si la lanzó Codex, que no valga sin la terminal, sin la marca, con otra marca, otro sello, otro renglón o desde la coordinadora, y que los frenos de escritura cuiden las dos carpetas. Sin red, segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-approvals-codex.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "mergear salteando la cola y la CI de main lo aprueba una persona (regla GIT-C5): el lector de lo que saltea (scripts/lib/ci-bypass.js), el freno de la sesión de verdad con una casa de juguete y la decisión de la ventana con un árbol de juguete. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/ci-bypass-guard.test.js",

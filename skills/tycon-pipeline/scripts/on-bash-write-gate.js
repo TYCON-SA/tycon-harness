@@ -1616,6 +1616,18 @@ function aprobacionesTocadas(cmd, cwd, stateDir) {
 }
 
 /**
+ * Lo que el comando borra o mueve de las marcas de las constancias dadas en la terminal (`terminal-acknowledgments/`, de
+ * cualquier estado): sin la marca, una constancia de Codex no vale, y una puesta a mano la finge. Sin interruptor.
+ */
+function marcasDeTerminalTocadas(cmd, cwd, stateDir) {
+  const { isTerminalAcknowledgmentsRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'terminal-acknowledgments', nombres: ['terminal-acknowledgments'], pieza: isTerminalAcknowledgmentsRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])terminal-acknowledgments(?![\w.-])/i.test(t) });
+}
+
+/**
  * Lo que el comando borra o mueve del registro de las sesiones que abrió la coordinadora (`coordination/launched.json`, de
  * cualquier estado): sacar un renglón deja a esa sesión preguntarle a la persona. Sin interruptor.
  */
@@ -3650,6 +3662,16 @@ function handleCarrilEHistoria(event, opts = {}) {
     const directo = aprobaciones.some((a) => /(^|[^\w.-])owner-approvals(?![\w.-])/i.test(String(a)));
     const tocados = directo || laneOff ? [] : marcadoresTocados(cmd, cwd, stateDir);
     return { block: (tocados.length ? sg.markerDeleteMessage(tocados, via) : sg.blockMessage({ kind: 'owner-approvals' }, { filePath: aprobaciones[0], via })) + '\n' };
+  }
+  // las marcas de las constancias dadas en la terminal, también al borrarlas o moverlas
+  const marcasDeTerminal = constancias.length ? [] : marcasDeTerminalTocadas(cmd, cwd, stateDir);
+  if (marcasDeTerminal.length) {
+    const sg = require('./lib/story-gate.js');
+    const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
+    // como el registro: el que las alcanza sólo por una carpeta de arriba borra el estado entero y recibe ese cartel
+    const directo = marcasDeTerminal.some((a) => /(^|[^\w.-])terminal-acknowledgments(?![\w.-])/i.test(String(a)));
+    const tocados = directo || laneOff ? [] : marcadoresTocados(cmd, cwd, stateDir);
+    return { block: (tocados.length ? sg.markerDeleteMessage(tocados, via) : sg.blockMessage({ kind: 'terminal-acknowledgments' }, { filePath: marcasDeTerminal[0], via })) + '\n' };
   }
   // el registro de las sesiones que abrió la coordinadora, también al borrarlo o moverlo
   const lanzadas = constancias.length ? [] : lanzadasTocadas(cmd, cwd, stateDir);
