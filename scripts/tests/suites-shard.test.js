@@ -1142,7 +1142,6 @@ const splitLab = (set = SPLIT_SET) => lab({ weights: { ...LAB_WEIGHTS, pr: set }
 const passes = (count, seconds) => Array.from({ length: count }, (_, i) => [at(i + 1), Object.fromEntries(Object.entries(seconds).map(([n, s]) => [n, [s]]))]);
 const splitArgs = (dir, names, times) => [...(names ? ['--only', onlyFile(dir, names)] : []), '--weight-set', 'pr', ...(times ? ['--measured', times] : []),
   '--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json')];
-const shardNames = (r) => r.lines.map((l) => path.basename(l));
 
 test('Shard_Measured_MedianIsTheWeight — el peso es la mediana de las 5 pasadas más nuevas; con menos de 3, el de siempre', () => {
   const dir = splitLab();
