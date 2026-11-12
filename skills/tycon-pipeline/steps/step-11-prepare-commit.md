@@ -68,8 +68,8 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
   nombran están en la lista) y nada más pendiente. Un criterio sin correr fuera de la lista, uno imposible sin su
   firma, una acción no ejercida, una pantalla sin imagen, código que la matriz no pudo leer o la fecha vencida frenan
   como siempre. Aceptado, anota `acmatrix-debt` en `gates.log` e imprime la línea `Sin evidencia en vivo: AC … —
-  deuda <id>, vence <fecha>` que lleva el mensaje de commit, debajo de `Deuda:`. Volver a medir la matriz en rojo no
-  borra el rojo esperado. No es un camino sin evidencia: el paso a `review`/`done` sigue pidiendo la matriz en verde,
+  deuda <id>, vence <fecha>` que lleva el mensaje de commit, debajo de `Deuda:`. Volver a medir la matriz en rojo la
+  deja en rojo: para seguir en deuda, la persona vuelve a firmar el rojo esperado. No es un camino sin evidencia: el paso a `review`/`done` sigue pidiendo la matriz en verde,
   y vencida la fecha el arranque de sesión lo avisa hasta que esos criterios tengan su evidencia.
 - **`findings.json` presente** (insumo del `tycon-retrospective-capturer`): si el run dir existe y el archivo falta o no
   es un array, bloquea. Se escribe con `pipeline.js write-findings` y después `write-followups`

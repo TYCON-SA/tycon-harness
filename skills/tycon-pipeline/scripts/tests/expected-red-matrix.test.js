@@ -457,7 +457,7 @@ test('T10 ExpectRed_Acmatrix_AsksPermission @story-8.252 @ac-9 — la firma prop
   assert.match(r.stderr, /ventana de permiso/);
 });
 
-test('T12 ExpectRed_Acmatrix_Renew @story-8.252 @ac-7 — renovar dentro del tope cambia la fecha; más allá, no; una medición más en rojo no borra la deuda', () => {
+test('T12 ExpectRed_Acmatrix_Renew @story-8.252 @ac-7 — renovar dentro del tope cambia la fecha; más allá, no; una medición más en rojo vuelve a rojo y se firma de nuevo', () => {
   const E = paraElRojoEsperado('s-t12');
   const T = ['T1', 'T2', 'T3'];
   E.firmar('s-t12', { pruebas: T, hasta: fecha(3) });
@@ -475,12 +475,17 @@ test('T12 ExpectRed_Acmatrix_Renew @story-8.252 @ac-7 — renovar dentro del top
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, new RegExp(fecha(14)));
   assert.strictEqual(E.leer('s-t12').expectedRed.acmatrix.until, fecha(10));
-  // una medición más de la matriz, todavía en rojo: el control sigue en rojo esperado y se puede renovar
+  // una medición más de la matriz, todavía en rojo: el control vuelve a rojo (run-check registra lo que midió, sin
+  // excepciones) y, para seguir en deuda, la persona vuelve a firmar el rojo esperado
   r = E.correr('marker.js', ['run-check', 'acmatrix', '--', process.execPath, '-e', 'process.exit(1)'], 's-t12');
-  assert.strictEqual(E.leer('s-t12').checks.acmatrix, 'rojo-esperado:exit=1', r.stderr + r.stdout);
+  assert.strictEqual(E.leer('s-t12').checks.acmatrix, 'red:exit=1', r.stderr + r.stdout);
+  r = expectRed(E, 's-t12', T, fecha(12));
+  assert.strictEqual(r.status, 2, 'sin la firma nueva no vuelve al rojo esperado');
+  assert.strictEqual(E.leer('s-t12').checks.acmatrix, 'red:exit=1');
   E.firmar('s-t12', { pruebas: T, hasta: fecha(12) });
   r = expectRed(E, 's-t12', T, fecha(12));
   assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(E.leer('s-t12').checks.acmatrix, 'rojo-esperado:exit=1');
   assert.strictEqual(E.leer('s-t12').expectedRed.acmatrix.until, fecha(12));
   // en verde, el control queda verde
   E.correr('marker.js', ['run-check', 'acmatrix', '--', process.execPath, '-e', 'process.exit(0)'], 's-t12');

@@ -3437,10 +3437,7 @@ function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) 
     const fresh = readMarker();
     if (fresh) {
       fresh.checks = fresh.checks || {};
-      // con el rojo esperado de la matriz escrito (`expect-red acmatrix`), la matriz todavía en rojo sigue siendo ese rojo
-      // esperado: una medición más no borra la deuda en silencio ni deja sin poder renovarla. Los demás controles, igual
-      const sigueEsperado = name === 'acmatrix' && fresh.expectedRed && fresh.expectedRed.acmatrix && /^red:exit=/.test(status);
-      fresh.checks[name] = sigueEsperado ? status.replace(/^red:/, 'rojo-esperado:') : status;
+      fresh.checks[name] = status;
       fresh.checksProvenance = fresh.checksProvenance || {};
       fresh.checksProvenance[name] = prov;
       fresh.checksAt = fresh.checksAt || {};
