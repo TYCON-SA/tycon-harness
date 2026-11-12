@@ -63,7 +63,7 @@
           "id": "dice-el-aviso-despues-del-comando",
           "type": "must-emit",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/skills/tycon-pipeline/scripts/lib && cp $TCG/scripts/hooks/extension-notices.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/extension-notices.js tcg/scripts/lib/ && cp $TCG/skills/tycon-pipeline/scripts/lib/packs.js $TCG/skills/tycon-pipeline/scripts/lib/legacy-names.js $TCG/skills/tycon-pipeline/scripts/lib/harness-path.js tcg/skills/tycon-pipeline/scripts/lib/ && cp $TCG/scripts/lib/integrations.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/skills/tycon-pipeline/scripts/lib && cp $TCG/scripts/hooks/extension-notices.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/extension-notices.js tcg/scripts/lib/ && cp $TCG/skills/tycon-pipeline/scripts/lib/packs.js $TCG/skills/tycon-pipeline/scripts/lib/legacy-names.js $TCG/skills/tycon-pipeline/scripts/lib/harness-path.js tcg/skills/tycon-pipeline/scripts/lib/ && cp $TCG/scripts/lib/integrations.js $TCG/scripts/lib/az-pr.js tcg/scripts/lib/",
             "mkdir -p packs/producto/notices && printf '{\"name\":\"producto\",\"description\":\"de prueba\"}' > packs/producto/pack.json && printf 'REGLA-DEL-DESPLIEGUE del producto\\n' > packs/producto/notices/despliegue.md",
             "printf '{\"notices\":[{\"id\":\"despliegue\",\"text\":\"notices/despliegue.md\",\"when\":\"after-command\",\"commands\":[\"acme deploy\"]}]}' > packs/producto/notices.json",
             "git init -q repo"
@@ -88,7 +88,7 @@
           "id": "quiet-con-otro-comando",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/skills/tycon-pipeline/scripts/lib && cp $TCG/scripts/hooks/extension-notices.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/extension-notices.js tcg/scripts/lib/ && cp $TCG/skills/tycon-pipeline/scripts/lib/packs.js $TCG/skills/tycon-pipeline/scripts/lib/legacy-names.js $TCG/skills/tycon-pipeline/scripts/lib/harness-path.js tcg/skills/tycon-pipeline/scripts/lib/ && cp $TCG/scripts/lib/integrations.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/skills/tycon-pipeline/scripts/lib && cp $TCG/scripts/hooks/extension-notices.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/extension-notices.js tcg/scripts/lib/ && cp $TCG/skills/tycon-pipeline/scripts/lib/packs.js $TCG/skills/tycon-pipeline/scripts/lib/legacy-names.js $TCG/skills/tycon-pipeline/scripts/lib/harness-path.js tcg/skills/tycon-pipeline/scripts/lib/ && cp $TCG/scripts/lib/integrations.js $TCG/scripts/lib/az-pr.js tcg/scripts/lib/",
             "mkdir -p packs/producto/notices && printf '{\"name\":\"producto\",\"description\":\"de prueba\"}' > packs/producto/pack.json && printf 'REGLA-DEL-DESPLIEGUE del producto\\n' > packs/producto/notices/despliegue.md",
             "printf '{\"notices\":[{\"id\":\"despliegue\",\"text\":\"notices/despliegue.md\",\"when\":\"after-command\",\"commands\":[\"acme deploy\"]}]}' > packs/producto/notices.json",
             "git init -q repo"
