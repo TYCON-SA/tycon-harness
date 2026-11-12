@@ -296,6 +296,34 @@
  },
  "historicos": [
   {
+   "id": "--organization",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "--output",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "--project",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "--query",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "--top",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "--wiql",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
+   "id": "AZURE_DEVOPS_EXT_PAT",
+   "motivo": "2026-11-11: el núcleo habla de la plataforma del equipo y no trae comandos de una sola. La búsqueda por título del pedido de trabajo en Azure DevOps (con sus opciones y su credencial) se mudó tal cual a guides/integrations/ado-en-el-nucleo.md §«El Arranque», que el paso 1 de step-01-start.md nombra después de preguntar la plataforma; la foto de comandos az la sigue contando."
+  },
+  {
    "id": "--auto-approved",
    "motivo": "story 1.29 (2026-10-30): ningún plan se aprueba solo. La regla de riesgo bajo (`complete-step approve-plan --auto-approved`) salió: el comando sale 2 sin aprobar, y el plan lo aprueba una persona o la coordinadora con la revisión automática (step-04-approve-plan.md §«Quién aprueba el plan»)."
   },

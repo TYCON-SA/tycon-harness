@@ -157,6 +157,17 @@
     "falta enumerarlos: `az devops invoke --area wit --resource workitemtypes --route-parameters",
     "process=$(az devops project show \\"
   ],
+  "guides/integrations/ado-cola-y-listados.md": [
+    "**Qué pasa:** después de cancelar despliegues encolados, `az pipelines runs list` proyecto por",
+    "**Qué pasa:** tras un push a `main`, `az pipelines runs list` puede seguir sin mostrar el run del",
+    "2. **Probar por id**: `az pipelines runs show --id <N>` con los ids siguientes al último run",
+    "`az pipelines runs list` responde por PROYECTO y con atraso; no es la cola. La cola se le pregunta",
+    "az devops invoke --area build --resource timeline \\"
+  ],
+  "guides/integrations/ado-projects.md": [
+    "- crea el WI con `az boards work-item create`,",
+    "`tycon-story-work-item` detecta el process del project (`az devops project show ... --query"
+  ],
   "integrations/azure-devops/scripts/change-requests.js": [
     "*   az repos pr show --id <n> --org <org> -o json",
     "//   az devops invoke --area git --resource pullRequests --route-parameters project=<proyecto>",

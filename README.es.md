@@ -316,8 +316,8 @@ Un ejemplo: en ACME, Pedro es el admin y Juan programa.
    Mientras ACME no tiene su sitio, cada archivo se cambia con un pedido de cambio a su repo. Qué
    necesita cada caso y dónde vive cada configuración, en [Con sitio o sin sitio](getting-started/reference.es.md#con-sitio-o-sin-sitio).
 3. Juan instala con npx y el repo del equipo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` si está en
-   GitHub, o `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<proyecto>/_git/harness-team-profile` si
-   está en Azure DevOps. Como ese repo lo ve sólo el equipo, antes de bajar nada la línea mira si lo puede leer y, si
+   GitHub, o `npx @tyconsa/harness@latest --team <la dirección del repo>` si está en Azure DevOps (la forma de la
+   dirección, en [Azure DevOps](guides/integrations/ado-projects.md#la-url-de-un-repo)). Como ese repo lo ve sólo el equipo, antes de bajar nada la línea mira si lo puede leer y, si
    no, le pide el permiso de lectura. Desde ahí, cada actualización le trae también lo del equipo.
 
 Cómo se extiende el arnés para tu organización, con un recorrido de ejemplo, en un

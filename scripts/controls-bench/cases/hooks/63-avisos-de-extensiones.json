@@ -47,6 +47,63 @@
           }
         }
       ]
+    },
+    {
+      "hook": "extension-notices.js después de un comando (los avisos after-command: los dice junto con el resultado del comando que los dispara, una vez por sesión; el gancho copiado suelto, sin la capa de plataforma al lado, igual dice los de los paquetes)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/extension-notices.js",
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "env": {
+        "TYCON_PACKS_DIR": "${FIXTURE}/packs",
+        "TYCON_PACKS_DEFAULT": "all",
+        "TYCON_HOME": "${FIXTURE}/casa"
+      },
+      "cases": [
+        {
+          "id": "dice-el-aviso-despues-del-comando",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/skills/tycon-pipeline/scripts/lib && cp $TCG/scripts/hooks/extension-notices.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/extension-notices.js tcg/scripts/lib/ && cp $TCG/skills/tycon-pipeline/scripts/lib/packs.js $TCG/skills/tycon-pipeline/scripts/lib/legacy-names.js $TCG/skills/tycon-pipeline/scripts/lib/harness-path.js tcg/skills/tycon-pipeline/scripts/lib/ && cp $TCG/scripts/lib/integrations.js tcg/scripts/lib/",
+            "mkdir -p packs/producto/notices && printf '{\"name\":\"producto\",\"description\":\"de prueba\"}' > packs/producto/pack.json && printf 'REGLA-DEL-DESPLIEGUE del producto\\n' > packs/producto/notices/despliegue.md",
+            "printf '{\"notices\":[{\"id\":\"despliegue\",\"text\":\"notices/despliegue.md\",\"when\":\"after-command\",\"commands\":[\"acme deploy\"]}]}' > packs/producto/notices.json",
+            "git init -q repo"
+          ],
+          "stdin": {
+            "hook_event_name": "PostToolUse",
+            "session_id": "bench",
+            "cwd": "${FIXTURE}/repo",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd repo && acme --verbose deploy staging"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "REGLA-DEL-DESPLIEGUE del producto",
+              "\"hookEventName\":\"PostToolUse\""
+            ]
+          }
+        },
+        {
+          "id": "quiet-con-otro-comando",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/skills/tycon-pipeline/scripts/lib && cp $TCG/scripts/hooks/extension-notices.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/extension-notices.js tcg/scripts/lib/ && cp $TCG/skills/tycon-pipeline/scripts/lib/packs.js $TCG/skills/tycon-pipeline/scripts/lib/legacy-names.js $TCG/skills/tycon-pipeline/scripts/lib/harness-path.js tcg/skills/tycon-pipeline/scripts/lib/ && cp $TCG/scripts/lib/integrations.js tcg/scripts/lib/",
+            "mkdir -p packs/producto/notices && printf '{\"name\":\"producto\",\"description\":\"de prueba\"}' > packs/producto/pack.json && printf 'REGLA-DEL-DESPLIEGUE del producto\\n' > packs/producto/notices/despliegue.md",
+            "printf '{\"notices\":[{\"id\":\"despliegue\",\"text\":\"notices/despliegue.md\",\"when\":\"after-command\",\"commands\":[\"acme deploy\"]}]}' > packs/producto/notices.json",
+            "git init -q repo"
+          ],
+          "stdin": {
+            "hook_event_name": "PostToolUse",
+            "session_id": "bench",
+            "cwd": "${FIXTURE}/repo",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "acme logs --since 1h"
+            }
+          }
+        }
+      ]
     }
   ]
 }

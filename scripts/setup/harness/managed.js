@@ -27,7 +27,7 @@ const PD = require('./plugin-dirs.js');
 const RP = require('./read-permissions.js');
 
 const KINDS = ['hook', 'setting', 'block', 'import', 'startup-line', 'link', 'command', 'git-hook', 'launch-agent', 'codex', 'third-party', 'file'];
-const EVENTS = ['PreToolUse', 'PostToolUse', 'SessionStart', 'SessionEnd', 'Stop', 'SubagentStop', 'UserPromptSubmit', 'Notification', 'PreCompact', 'PermissionRequest'];
+const EVENTS = ['PreToolUse', 'PostToolUseFailure', 'PostToolUse', 'SessionStart', 'SessionEnd', 'Stop', 'SubagentStop', 'UserPromptSubmit', 'Notification', 'PreCompact', 'PermissionRequest'];
 const BLOCK_RE = /<!--\s*TYCON_BLOCK:([^\s>]+)\s+START/g;
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);

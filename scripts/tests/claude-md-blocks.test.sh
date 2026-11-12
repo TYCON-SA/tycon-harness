@@ -466,10 +466,12 @@ else
   mal "T34 NO MEDIDO — no está el commit de antes de la tanda (${BASE_REF}): no puedo comparar con el sync de entonces"
 fi
 # los marcadores de los bloques reales: se miden también en la copia (no necesitan historia)
-for b in response-style response-style/executive.es response-style/executive.en response-style/detailed.es response-style/detailed.en response-style/neutral.es response-style/neutral.en response-style/executive.auto response-style/detailed.auto response-style/neutral.auto tool-names background-execution; do
+for b in response-style response-style/executive.es response-style/executive.en response-style/detailed.es response-style/detailed.en response-style/neutral.es response-style/neutral.en response-style/executive.auto response-style/detailed.auto response-style/neutral.auto tool-names background-execution platform-rules; do
   head -n 3 "$RAIZ/claude-md-blocks/$b.md" | grep -x '<!-- requires-profile: full -->' >/dev/null && ok "T34 $b.md lleva el marcador" || mal "T34 $b.md no lleva <!-- requires-profile: full -->"
 done
-grep -q 'requires-profile' "$RAIZ/claude-md-blocks/ado-runs-list-lag.md" && mal "T34 ado-runs-list-lag.md cambió (no lleva el marcador)" || ok "T34 ado-runs-list-lag.md sin el marcador"
+# el bloque de Azure DevOps se retiró (su regla viaja con el conector): no está, y quedó en la lista de retirados
+[ ! -e "$RAIZ/claude-md-blocks/ado-runs-list-lag.md" ] && grep -q '"ado-runs-list-lag"' "$RAIZ/claude-md-blocks/retired.json" \
+  && ok "T34 ado-runs-list-lag.md retirado (en retired.json)" || mal "T34 ado-runs-list-lag.md sigue en claude-md-blocks/ o falta en retired.json"
 rm -rf "$P"
 
 # ── T69 · la tabla de nombres de tools trae las filas de la herramienta de horas elegida, de su integración ──────────────

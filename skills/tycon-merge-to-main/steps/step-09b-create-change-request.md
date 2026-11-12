@@ -13,7 +13,7 @@ node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/platform/plat
 La capa elige el conector por la plataforma del repo y devuelve un JSON: `{ ok: true, value }` o
 `{ ok: false, reason, detail }`. **Leé el JSON, no lo supongas.**
 
-- **Azure DevOps**: la misma secuencia de `az repos pr` de siempre (reusa el pedido abierto de ese par de ramas o lo
+- **Azure DevOps**: la misma secuencia de siempre (`~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`; reusa el pedido abierto de ese par de ramas o lo
   crea, fija el mensaje de merge «Merged PR N: asunto», prende el auto-completar sin aplastar y lo verifica releyendo
   el pedido). El modo es siempre `auto`: el servidor lo completa cuando sus políticas dan verde.
 - **GitHub**: abre o actualiza el pedido y, si el repo permite el auto-merge, lo prende (modo `auto`). Si no lo
@@ -155,7 +155,7 @@ esperando su control. El tope de la espera es de 30 minutos (`--wait-minutes <n>
 llamada vuelve enseguida.
 
 `--auto-complete` va siempre en la línea: sin él la capa no abre, y los frenos lo leen ahí. Los frenos de antes de
-publicar miran esta línea igual que un `az repos pr create` o un `gh pr create`: uno por repo con el control de otro
+publicar miran esta línea igual que el comando crudo de cada plataforma: uno por repo con el control de otro
 pedido corriendo, la retrospectiva pendiente al apuntar a `main`. En GitHub, el conector pasa además el título y el
 texto por el freno de publicación antes de abrir: si frena, devuelve `rechazado` y dice dónde está el problema, nunca
 el texto. Se corrige el mensaje y se vuelve al 9b.4. No se busca otra forma de abrirlo.

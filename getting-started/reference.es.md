@@ -315,8 +315,8 @@ node $HOME/.tycon/harness/scripts/setup/harness.js team-init
 ```
 
 Te pregunta lo que no le pasaste por opción: el nombre de la organización (`--name`, letras sin tilde, números, punto
-y guion), dónde vive el repo del equipo (`--platform github|azure` y `--profile-repo`, `org/repo` de GitHub o
-`https://dev.azure.com/<org>/<proyecto>/_git/<repo>`) y la carpeta donde dejar los archivos (`--dir`; por defecto
+y guion), dónde vive el repo del equipo (`--platform github|azure` y `--profile-repo`, `org/repo` de GitHub o la
+dirección del repo en Azure DevOps, con la forma de [Azure DevOps](../guides/integrations/ado-projects.md#la-url-de-un-repo)) y la carpeta donde dejar los archivos (`--dir`; por defecto
 `~/<repo>`; una carpeta con algo adentro no se toca). Baja el ejemplo publicado (`harness-team-profile-example`) y
 escribe sólo los tres archivos obligatorios:
 
@@ -345,7 +345,7 @@ volvé a instalar con `--team <dirección>`.
 Hay dos, `minimal` y `full`, y no hay una por defecto: `install` te pregunta si no elegís; sin terminal, pasá `--profile`.
 
 - **`minimal`**: las guías, las skills, los revisores, el recorrido de las historias y el aviso de versión nueva. No
-  cambia cómo contesta el asistente. Registra 13 hooks (nueve que sólo anotan, el que dice los avisos de los paquetes, el que tapa los secretos de la máquina, el freno de comandos destructivos y el de editar código sin
+  cambia cómo contesta el asistente. Registra 15 hooks (nueve que sólo anotan, los tres que dicen avisos —los de los paquetes al arrancar, y los de la plataforma después de su primer comando, haya salido bien o mal—, el que tapa los secretos de la máquina, el freno de comandos destructivos y el de editar código sin
   historia ni ajuste puntual),
   más los de cada conexión opcional que prendas, y trae los enlaces, los comandos y las skills de terceros.
 - **`full`**: todo lo de `minimal`, y además los otros frenos (el mismo portón para el código que se escribe por la

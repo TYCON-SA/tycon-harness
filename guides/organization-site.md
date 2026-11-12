@@ -640,7 +640,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   **campos fijos**. Abajo, **según la gravedad**, una tabla con una fila por campo y una columna por gravedad (crítica,
   alta, media y baja); sus valores ganan sobre los fijos si el campo coincide. Los campos fijos y la tabla valen sólo
   para las vulnerabilidades, y la sección lo dice. Con organización y proyecto, el sitio lee de ese proyecto los tipos,
-  los campos de cada tipo y sus valores permitidos; sin ellos, de los proyectos de los productos: cada campo se ve con su nombre (y su referencia, como `Microsoft.VSTS.Common.Priority`, debajo) y cada
+  los campos de cada tipo y sus valores permitidos; sin ellos, de los proyectos de los productos: cada campo se ve con su nombre (y su nombre de referencia debajo) y cada
   valor se elige de un desplegable. Los valores que traen un símbolo adelante, como un círculo de color, se ven sin él y
   se guardan tal cual los acepta Azure DevOps. Un campo sin valores fijos se escribe. Sin permiso de lectura de work
   items, o si Azure DevOps no contesta, un aviso dice por qué y todo se escribe con su referencia. La ✕ de un campo lo

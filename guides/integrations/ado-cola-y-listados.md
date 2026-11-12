@@ -1,7 +1,9 @@
 # Azure DevOps — por qué el bloque de reglas dice lo que dice
 
-> **Qué es este documento.** El bloque `claude-md-blocks/ado-runs-list-lag.md` se carga **entero,
-> en cada sesión, en cada máquina del equipo**. Al 2026-09-06 pesaba **9.979 bytes** —el 27 % del
+> **Qué es este documento.** Las reglas de Azure DevOps viven en `integrations/azure-devops/rules.md` y el agente
+> las ve la primera vez que usa esa CLI en una sesión, sólo en las organizaciones que eligieron Azure DevOps. Antes
+> eran el bloque `claude-md-blocks/ado-runs-list-lag.md`, que se cargaba **entero, en cada sesión, en cada máquina del
+> equipo**. Al 2026-09-06 pesaba **9.979 bytes** —el 27 % del
 > `CLAUDE.md`— y casi todo ese peso era **explicación**: cada regla arrastraba su diagnóstico
 > completo. Acá vive el porqué de cada regla; en el bloque queda
 > la regla. Es la misma poda que se le hizo al bloque de estilo el 2026-09-03

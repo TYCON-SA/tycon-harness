@@ -19,6 +19,11 @@
    "why": "el checkout, el repositorio, el grupo de lectores y la llamada a la API del proyecto en Azure DevOps"
   },
   {
+   "path": "guides/integrations/ado-en-el-nucleo.md",
+   "kind": "azure",
+   "why": "el checkout, el repositorio, el grupo de lectores y la llamada a la API del proyecto en Azure DevOps, mudados de guides/ci-gate.md con lo sólo de Azure DevOps"
+  },
+  {
    "path": "guides/decisions/codex-etapa-d-retro-red.md",
    "kind": "history",
    "why": "historia: una decisión escrita con las rutas de ese día; se publica entera y no se reescribe (AC 28)"

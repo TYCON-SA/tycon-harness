@@ -636,8 +636,9 @@ Una máquina que instala o se muda a la versión bajada quedaba de fábrica: int
 máquina: esos archivos viven en **un segundo repo privado de GitHub, chico**, y el programa los baja con el mismo
 permiso que el arnés y los apila sobre la versión pública.
 
-**Cómo se declara.** Por URL, con una de dos fuentes: `--team https://dev.azure.com/<org>/<proyecto>/_git/<repo>` (Azure
-DevOps) o `--team https://github.com/<org>/<repo>` (GitHub; también la forma corta `org/nombre`), en `install --version` y
+**Cómo se declara.** Por URL, con una de dos fuentes: `--team <la dirección del repo>` (Azure DevOps; su forma, en
+[`guides/integrations/ado-projects.md`](../integrations/ado-projects.md#la-url-de-un-repo)) o
+`--team https://github.com/<org>/<repo>` (GitHub; también la forma corta `org/nombre`), en `install --version` y
 en `migrate --to-home`. Sin la opción, el estado (`team`, si la máquina ya la registró) y, sólo en la mudanza, la clave
 `team` del `public-repos.json` del clon que la máquina deja (ese archivo no viaja en la copia). Cada empresa declara la
 suya; lo que la capa es y cómo se apila es el mismo código para las dos. El nombre del repo del equipo **no está escrito
