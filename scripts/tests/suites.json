@@ -2547,6 +2547,18 @@
       "requiere": []
     },
     {
+      "__nota": "todo proceso que lanza el arnés en la máquina de quien desarrolla pide la ventana oculta: en Windows, sin consola, cada uno abría una ventana. Frena el lanzamiento nuevo sin la opción; las carpetas que corren sin escritorio quedan afuera, con su motivo.",
+      "raiz": "arnes",
+      "ruta": "tests/hidden-window.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el aviso de trabajo sin subir mira las ramas de un repo con tres git, tenga las ramas que tenga, y da lo mismo que rama por rama; un git que no contesta deja el repo no escaneado.",
+      "raiz": "arnes",
+      "ruta": "tests/unpushed-work-notice.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.54: el aviso de contexto. Avisa al cruzar el umbral de tokens y cada 100 mil más; /clear y compactar lo vuelven a cero; máquina sobre organización sobre fábrica; lo que no puede medir lo dice. Nunca frena.",
       "raiz": "arnes",
       "ruta": "tests/context-size-notice.test.js",

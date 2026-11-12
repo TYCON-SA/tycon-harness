@@ -65,7 +65,7 @@ function browserDir({ platform = process.platform, env = process.env, home = os.
 
 // Los argumentos de npm y npx son fijos (nunca vienen de la historia ni de la persona): por eso pueden ir por la consola en Windows.
 function correr(cmd, args, cwd) {
-  const r = spawnSync(cmd, args, { cwd, stdio: 'inherit', ...runner() });
+  const r = spawnSync(cmd, args, { windowsHide: true, cwd, stdio: 'inherit', ...runner() });
   if (r.error) throw new Error(`no pude correr ${cmd} ${args.join(' ')}: ${r.error.message}`);
   if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')} salió con ${r.status}`);
 }

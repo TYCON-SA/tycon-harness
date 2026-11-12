@@ -126,7 +126,7 @@ function run(args) {
     // corrido desde dentro de otro `node --test`, la variable le diría a este que reporte al de afuera en vez de correr
     const env = { ...process.env };
     delete env.NODE_TEST_CONTEXT;
-    child = spawn(process.execPath, args, { stdio: 'ignore', env });
+    child = spawn(process.execPath, args, { windowsHide: true, stdio: 'ignore', env });
     child.on('error', () => resolve(1));
     child.on('exit', (code) => resolve(code === 0 ? 0 : 1));
   });

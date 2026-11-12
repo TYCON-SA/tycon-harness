@@ -238,7 +238,7 @@ function discoverStoryFiles(repo, budgetMs = 15000) {
 function git(repo, args, timeoutMs = 15000) {
   try {
     return execFileSync('git', ['-C', repo, ...args],
-      { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 256 * 1024 * 1024 }).trim();
+      { windowsHide: true, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 256 * 1024 * 1024 }).trim();
   } catch { return null; }
 }
 
@@ -595,6 +595,7 @@ function leerBlobs(repo, oids) {
   let buf;
   try {
     buf = execFileSync('git', ['-C', repo, 'cat-file', '--batch'], {
+      windowsHide: true,
       input: `${oids.join('\n')}\n`, timeout: 120000, maxBuffer: 512 * 1024 * 1024,
     });
   } catch {

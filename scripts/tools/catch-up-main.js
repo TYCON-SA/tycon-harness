@@ -56,7 +56,7 @@ class Salida extends Error {
 function crearGit(repo) {
   const env = idiomaFijo(sinGitDelPadre());
   return (args, opts = {}) => {
-    const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', env, maxBuffer: 64 * 1024 * 1024, ...opts });
+    const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', env, maxBuffer: 64 * 1024 * 1024, ...opts });
     return { code: r.status === null ? -1 : r.status, out: r.stdout || '', err: (r.stderr || '') + (r.error ? String(r.error.message) : '') };
   };
 }

@@ -314,7 +314,7 @@ function sTablaVsRealidad(ctx) {
 }
 
 function sCodexCli() {
-  const bin = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['codex'], { stdio: 'ignore' }).status === 0;
+  const bin = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['codex'], { windowsHide: true, stdio: 'ignore' }).status === 0;
   if (!bin) return { name: 'codex-cli', ok: false, detail: 'el binario `codex` no está en el PATH' };
   const auth = fs.existsSync(path.join(CODEX(), 'auth.json'));
   return { name: 'codex-cli', ok: auth, detail: auth ? 'binario + login' : 'binario ok pero SIN login (correr: codex login)' };
@@ -540,9 +540,9 @@ function frenoVivoDeCodex(hooks, { plataforma = process.platform, correr, consol
   const evento = (command) => JSON.stringify({ session_id: 'harness-parity', turn_id: 'harness-parity', hook_event_name: 'PreToolUse', tool_name: 'Bash', cwd: os.tmpdir(), tool_input: { command } });
   const comun = { encoding: 'utf8', windowsHide: true, timeout: 120000 };
   const lanzar = correr || ((c, input, consola) => (consola === 'cmd'
-    ? spawnSync('cmd.exe', ['/D', '/S', '/C', `"${c}"`], { ...comun, input, windowsVerbatimArguments: true })
-    : spawnSync(consola, ['-NoProfile', '-Command', c], { ...comun, input })));
-  const hay = (consola) => { const r = spawnSync(consola, ['-NoProfile', '-Command', 'exit 0'], comun); return !r.error && r.status === 0; };
+    ? spawnSync('cmd.exe', ['/D', '/S', '/C', `"${c}"`], { windowsHide: true, ...comun, input, windowsVerbatimArguments: true })
+    : spawnSync(consola, ['-NoProfile', '-Command', c], { windowsHide: true, ...comun, input })));
+  const hay = (consola) => { const r = spawnSync(consola, ['-NoProfile', '-Command', 'exit 0'], { windowsHide: true, ...comun }); return !r.error && r.status === 0; };
   const lista = consolas || ['cmd', ...['pwsh', 'powershell'].filter(hay)];
   const niega = (r) => { try { return JSON.parse(String(r.stdout || '')).hookSpecificOutput.permissionDecision === 'deny'; } catch { return false; } };
   const salida = (r) => (r.status === null || r.status === undefined ? 'sin código' : r.status);

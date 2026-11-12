@@ -337,6 +337,7 @@ function dispatch(mode) {
             const { execFileSync } = require('child_process');
             // el mismo Node que corre este despachador (el del arnés, si lo lanzó así), no el del PATH
             const out = execFileSync(process.execPath, [h.path], {
+              windowsHide: true,
               input: JSON.stringify(spawnEvent || {}),
               encoding: 'utf8',
               timeout: 15000,

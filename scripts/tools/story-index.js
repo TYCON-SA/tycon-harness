@@ -220,7 +220,7 @@ function git(repo, args) {
 }
 // la salida tal cual: un archivo comparado byte por byte no puede perder sus renglones en blanco
 function gitRaw(repo, args) {
-  const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: idiomaFijo() });
+  const r = spawnSync('git', args, { windowsHide: true, cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: idiomaFijo() });
   return { ok: r.status === 0, out: String(r.stdout || ''), err: String(r.stderr || '').trim() };
 }
 
@@ -330,7 +330,7 @@ function regenerateOnMain(repo, { remote = 'origin', beforePush = null } = {}) {
     const add = git(repo, ['add', '--', EPICS, SPRINT]);
     const ci = add.ok && git(repo, ['commit', '-q', '-m', 'chore(specs): regenerar los índices de historias desde el frontmatter [skip ci]', '--', EPICS, SPRINT]);
     if (!ci || !ci.ok) { console.log(`🔒 story-index: no pude commitear los índices (${(ci && ci.err) || add.err})`); return 1; }
-    if (beforePush) spawnSync(beforePush, { cwd: repo, shell: true, stdio: 'ignore' });
+    if (beforePush) spawnSync(beforePush, { windowsHide: true, cwd: repo, shell: true, stdio: 'ignore' });
     const push = git(repo, ['push', '-q', remote, 'HEAD:main']);
     if (push.ok) { console.log(`story-index: índices regenerados y empujados a ${remote}/main`); return 0; }
     console.log(`story-index: el empuje chocó (intento ${i} de ${TRIES}): traigo main y regenero de nuevo`);

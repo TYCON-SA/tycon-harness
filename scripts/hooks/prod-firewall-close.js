@@ -97,8 +97,8 @@ function puerta(args) {
   const quedan = PRESUPUESTO_MS - (Date.now() - inicio);
   if (quedan < 5000) return { rc: 1, salida: 'no quedó tiempo para intentarlo (tope del hook)', tope: true };
   const r = INSTALADA
-    ? spawnSync(PUERTA, args, { encoding: 'utf8', timeout: quedan })
-    : spawnSync('bash', [PUERTA, ...args], { encoding: 'utf8', timeout: quedan });
+    ? spawnSync(PUERTA, args, { windowsHide: true, encoding: 'utf8', timeout: quedan })
+    : spawnSync('bash', [PUERTA, ...args], { windowsHide: true, encoding: 'utf8', timeout: quedan });
   const tope = !!r.signal || (r.error && r.error.code === 'ETIMEDOUT');
   const salida = `${r.stdout || ''}${r.stderr || ''}`.trim();
   return { rc: r.status === null ? 1 : r.status, salida: tope ? `se cortó por tiempo (tope del hook)${salida ? `: ${salida.split('\n').pop()}` : ''}` : salida, tope };

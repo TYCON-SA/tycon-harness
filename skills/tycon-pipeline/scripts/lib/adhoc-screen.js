@@ -108,7 +108,7 @@ function problemaDeLaCaptura(ruta) {
 // El nombre del repo, también desde un worktree: en una historia la entrada lleva el del repo (`(FrontEnd) x.ts`), no el
 // de la carpeta de trabajo.
 function nombreDelRepo(repo) {
-  const comun = execFileSync('git', ['-C', repo, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 }).trim();
+  const comun = execFileSync('git', ['-C', repo, 'rev-parse', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 }).trim();
   return path.basename(path.dirname(path.resolve(repo, comun)));
 }
 
@@ -172,7 +172,7 @@ const esArchivo = (f) => { try { return fs.statSync(f).isFile(); } catch (_) { r
  * que git sigue y no está en el disco (borrado, o afuera por sparse-checkout) no tiene nada que comparar.
  */
 function otrasPantallas(repo, yaMiradas) {
-  const lista = execFileSync('git', ['-C', repo, '-c', 'core.quotepath=false', 'ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, maxBuffer: 64 * 1024 * 1024 });
+  const lista = execFileSync('git', ['-C', repo, '-c', 'core.quotepath=false', 'ls-files', '-z'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, maxBuffer: 64 * 1024 * 1024 });
   return lista.split('\0').filter((rel) => rel && /\.(tsx|jsx|vue|svelte)$/i.test(rel) && !esPrueba(rel))
     .map((rel) => ({ rel, abs: path.join(repo, rel) })).filter((s) => !yaMiradas.has(s.abs) && esArchivo(s.abs));
 }

@@ -84,14 +84,20 @@ const MAX_PARENT_REPOS = 12;
 const MAX_GROUP = 10;
 const MAX_BRANCH_LINES = 8;
 const GIT_TIMEOUT_MS = 3000;
+// lo que falta subir de todas las ramas va en un solo git: un remoto sin ramas traídas lo hace recorrer toda la historia
+const PENDING_TIMEOUT_MS = 10000;
+// el tope de salida por defecto es de 1 MB: con miles de commits sin subir se pasa, y no es «nada sin subir»
+const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 
 function real(p) { try { return fs.realpathSync(p); } catch { return String(p); } }
 function sessionIdOf(event) {
   return event.session_id || process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID || '_nosession';
 }
-function git(cwd, args) {
-  try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: GIT_TIMEOUT_MS }).trim(); }
-  catch (e) { if (e && (e.signal || /ETIMEDOUT/.test(String(e.message)))) throw e; return ''; }
+// `strict`: un git que sale con error también sube. Lo usan los tres git que deciden todas las ramas del repo: si uno
+// falla, el repo sale «no escaneado», nunca «sin remoto» ni «nada sin subir».
+function git(cwd, args, timeout = GIT_TIMEOUT_MS, { strict = false } = {}) {
+  try { return execFileSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout, maxBuffer: GIT_MAX_BUFFER }).trim(); }
+  catch (e) { if (strict || (e && (e.signal || /ETIMEDOUT/.test(String(e.message))))) throw e; return ''; }
 }
 function gitSafe(cwd, args) { try { return git(cwd, args); } catch { return ''; } }
 function isGitRepo(p) { return gitSafe(p, ['rev-parse', '--show-toplevel']) !== ''; }
@@ -225,25 +231,43 @@ function groupOf(root) {
 }
 
 // ── scan de un repo ────────────────────────────────────────────────────────────────────────────
+// Los commits sin subir de cada rama del último escaneo, por `<repo real>|<rama>`: classifyBranch los usa sin volver a
+// preguntarle a git rama por rama (el push a main escanea varios repos, y `main` se repite entre ellos).
+const pendingByBranch = new Map();
+
+// Tres git por repo, tenga las ramas que tenga: el remoto, lo que falta subir de TODAS las ramas con sus padres, y las
+// puntas. Una rama tiene trabajo sin subir si su punta está entre lo que falta subir (si el remoto alcanzara la punta,
+// alcanzaría todo lo de abajo); lo suyo son sus antecesores dentro de ese conjunto. Rama por rama eran dos git por rama:
+// cientos en un repo con muchas ramas, en cada cierre de turno.
 function scanRepo(repoPath) {
   const out = { path: repoPath, scanned: false, branches: [] };
   try {
-    const remotes = git(repoPath, ['remote']).split('\n').filter(Boolean);
+    const remotes = git(repoPath, ['remote'], GIT_TIMEOUT_MS, { strict: true }).split('\n').filter(Boolean);
     if (!remotes.length) { out.scanned = true; out.noRemote = true; return out; }
     const remote = remotes.includes('origin') ? 'origin' : remotes[0];
     out.remote = remote;
-    // 1 invocación para el "¿hay algo?"; el detalle por rama solo si dio positivo.
-    const any = git(repoPath, ['log', '--branches', '--not', `--remotes=${remote}`, '--max-count=1', '--format=%H']);
+    const parents = new Map();
+    for (const line of git(repoPath, ['rev-list', '--parents', '--branches', '--not', `--remotes=${remote}`], PENDING_TIMEOUT_MS, { strict: true }).split('\n')) {
+      const [sha, ...up] = line.split(' ').filter(Boolean);
+      if (sha) parents.set(sha, up);
+    }
     out.scanned = true;
-    if (!any) return out;
-    const refs = git(repoPath, ['for-each-ref', 'refs/heads', '--format=%(refname:short)\t%(objectname:short)\t%(contents:subject)']);
+    if (!parents.size) return out;
+    const refs = git(repoPath, ['for-each-ref', 'refs/heads', '--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(contents:subject)'], GIT_TIMEOUT_MS, { strict: true });
     for (const line of refs.split('\n').filter(Boolean)) {
-      const [branch, tip, ...rest] = line.split('\t');
+      const [branch, full, tip, ...rest] = line.split('\t');
+      if (!parents.has(full)) continue;
+      const own = new Set();
+      const stack = [full];
+      while (stack.length) {
+        const sha = stack.pop();
+        if (own.has(sha) || !parents.has(sha)) continue;
+        own.add(sha);
+        stack.push(...parents.get(sha));
+      }
+      pendingByBranch.set(`${real(repoPath)}|${branch}`, [...own]);
       const subject = rest.join('\t');
-      const unpushed = git(repoPath, ['rev-list', '-1', branch, '--not', `--remotes=${remote}`]);
-      if (!unpushed) continue;
-      const count = Number(git(repoPath, ['rev-list', '--count', branch, '--not', `--remotes=${remote}`])) || 1;
-      out.branches.push({ branch, tip, count, subject: subject.slice(0, 90), wip: /\bwip\b|\bparked\b/i.test(subject + branch) });
+      out.branches.push({ branch, tip, count: own.size || 1, subject: subject.slice(0, 90), wip: /\bwip\b|\bparked\b/i.test(subject + branch) });
     }
   } catch (e) {
     out.error = /ETIMEDOUT|SIGTERM/.test(String(e && e.message)) ? 'timeout' : 'error git';
@@ -517,8 +541,9 @@ function classifyBranch(repoPath, branch, remote, ctx) {
   const rp = real(repoPath);
   if (ctx.legacyRepos.has(rp)) return 'own';
   if (ctx.mine.size) {
-    let shas;
-    try { shas = unpushedShas(repoPath, remote, branch); } catch { return 'unknown'; }
+    // lo que el escaneo ya calculó para esta rama; sin eso (el escaneo falló), se le pregunta a git
+    let shas = pendingByBranch.get(`${rp}|${branch}`);
+    if (!shas) { try { shas = unpushedShas(repoPath, remote, branch); } catch { return 'unknown'; } }
     if (shas.some((s) => ctx.mine.has(s))) return 'own';
   }
   if (ctx.committedRepos.has(rp) && gitSafe(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD']) === branch) return 'own-rewritten';

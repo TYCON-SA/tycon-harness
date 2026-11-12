@@ -55,7 +55,7 @@ const SIN_GIT_DEL_LLAMADOR = (() => {
 })();
 
 function git(cwd, args, env) {
-  const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: env || SIN_GIT_DEL_LLAMADOR,
+  const r = spawnSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: env || SIN_GIT_DEL_LLAMADOR,
     maxBuffer: 256 * 1024 * 1024 });
   if (r.error) throw new Error(`git ${args[0]} no se pudo ejecutar en ${cwd} (${r.error.code || r.error.message})`);
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} en ${cwd}: ${(r.stderr || '').trim().split('\n')[0] || `salió ${r.status}`}`);
@@ -148,7 +148,7 @@ function findPublic(repo, story) {
     // El origin/main de un clon que nadie pone al día está tan atrás como su main: se trae antes, con un tope y sin
     // pedir credenciales. Sin red, el que había (el renglón del portón dice su fecha).
     if (leer()) {
-      spawnSync('git', ['-C', base, 'fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main'], { stdio: 'ignore',
+      spawnSync('git', ['-C', base, 'fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main'], { windowsHide: true, stdio: 'ignore',
         timeout: 30000, env: { ...SIN_GIT_DEL_LLAMADOR, GIT_TERMINAL_PROMPT: '0' } });
     }
     servidor = leer();
@@ -293,7 +293,7 @@ function build(repo, story, dir) {
   const report = path.join(dir, 'superpuesto.json');
   const args = [path.join(arbol, OVERLAY), '--after-cut', '--stale', 'warn', ...(team ? ['--team-from', team] : []),
     '--repo', arbol, '--from', publico, '--report', report];
-  const r = spawnSync(process.execPath, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: SIN_GIT_DEL_LLAMADOR,
+  const r = spawnSync(process.execPath, args, { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: SIN_GIT_DEL_LLAMADOR,
     maxBuffer: 64 * 1024 * 1024 });
   if (r.error || r.status !== 0) {
     const motivo = r.error ? r.error.message : `${(r.stderr || r.stdout || '').trim().split('\n').pop() || `salió ${r.status}`}`;
@@ -313,7 +313,7 @@ function build(repo, story, dir) {
 /** Lo tocado en un repo: la base de coverage-base.js (con la bifurcación si no hay marcador de este repo) y touched-files. */
 function touchedIn(repo, story) {
   const base = spawnSync(process.execPath, [path.join(__dirname, 'coverage-base.js'), repo],
-    { encoding: 'utf8', env: { ...process.env, TYCON_TEST_GATE_CROSS_REPO: '1' }, cwd: repo });
+    { windowsHide: true, encoding: 'utf8', env: { ...process.env, TYCON_TEST_GATE_CROSS_REPO: '1' }, cwd: repo });
   let ref = null, source = null, sinBase = null;
   try { const j = JSON.parse(base.stdout); ref = j.ref; source = j.source; } catch (e) {
     // sin base, touched-files contesta «no sé» (se corre sin acotar); el motivo viaja en `reason`

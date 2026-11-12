@@ -66,7 +66,7 @@ const motivos = {}; let frenados = 0, nombranBases = 0, frenadosSinBase = 0;
 let sinTiempo = 0, caidos = 0;
 const RELOJ_MS = 8000;
 for (const c of muestra) {
-  const r = spawnSync('node', [HOOK], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: c } }),
+  const r = spawnSync('node', [HOOK], { windowsHide: true, input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: c } }),
     env: { PATH: process.env.PATH, HOME: casa, TYCON_REPOS_ROOT: RAIZ_REPOS, TYCON_PROD_SESSION_SINCE: '0' }, encoding: 'utf8', timeout: RELOJ_MS });
   const nombra = CRUDO.test(c); if (nombra) nombranBases++;
   if (r.error && r.error.code === 'ETIMEDOUT') { sinTiempo++; continue; }

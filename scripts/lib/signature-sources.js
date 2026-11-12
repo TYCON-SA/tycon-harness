@@ -127,7 +127,7 @@ function delPlan(palabras, m, { estado, destino } = {}) {
 
 // sin programas externos: el cuadro se arma antes de la firma, y el repo lo nombra el comando. Las rutas van literales: un
 // comodín o un «:(glob)» de la sesión no le hace mostrar a la pregunta archivos que el guion no firma
-const git = (dir, args) => spawnSync('git', ['-c', 'core.fsmonitor=false', '--literal-pathspecs', '-C', dir, ...args], { encoding: 'utf8', timeout: 20000, maxBuffer: 32 * 1024 * 1024 });
+const git = (dir, args) => spawnSync('git', ['-c', 'core.fsmonitor=false', '--literal-pathspecs', '-C', dir, ...args], { windowsHide: true, encoding: 'utf8', timeout: 20000, maxBuffer: 32 * 1024 * 1024 });
 
 /**
  * El commit de una revisión que escribió la sesión: `{ sha }`, o `{ motivo }` con por qué no. Lo que empieza con «-»

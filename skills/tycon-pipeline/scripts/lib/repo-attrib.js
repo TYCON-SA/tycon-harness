@@ -35,6 +35,7 @@ function stateDir() {
 function gitRoot(cwd) {
   try {
     const out = execFileSync('git', ['-C', cwd || process.cwd(), 'rev-parse', '--show-toplevel'], {
+      windowsHide: true,
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000,
     }).trim();
     return out || null;

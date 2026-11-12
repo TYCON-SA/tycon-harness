@@ -25,7 +25,7 @@ const entornoDeGit = () => require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-
 // sin las variables de git del proceso padre (un hook las exporta y ganan sobre `-C`), y con el idioma fijo
 function git(args, env) {
   const e = entornoDeGit();
-  const r = spawnSync('git', args, { encoding: 'utf8', env: e.idiomaFijo(e.sinGitDelPadre(process.env), env || {}), maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync('git', args, { windowsHide: true, encoding: 'utf8', env: e.idiomaFijo(e.sinGitDelPadre(process.env), env || {}), maxBuffer: 256 * 1024 * 1024 });
   return { ok: !r.error && r.status === 0, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String((r.error && r.error.message) || r.stderr || '').trim() };
 }
 const unaLinea = (t) => String(t || '').split('\n').map((x) => x.trim()).filter(Boolean)[0] || 'sin detalle';

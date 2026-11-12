@@ -864,7 +864,7 @@ function gitAt(root, args) {
   const base = {};
   for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('GIT_')) base[k] = v;
   const env = require('./clean-git-env.js').idiomaFijo(base);
-  const r = spawnSync('git', ['-C', root, ...args], { env, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync('git', ['-C', root, ...args], { windowsHide: true, env, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
   const stderr = String(r.stderr || '').trim();
   const notARepo = (!!r.error && r.error.code === 'ENOENT') || (r.status === 128 && /not a git repository/i.test(stderr));
   const failed = !notARepo && (!!r.error || r.status !== 0);
@@ -1066,10 +1066,10 @@ function migrateMachine(opts = {}) {
     if (!label) continue;
     const bin = launchctl || (isRealHome ? 'launchctl' : null);
     if (!bin) { res.notes.push(`${name}: reescrito; no toqué launchd (la HOME no es la real y no hay LAUNCHCTL_BIN)`); continue; }
-    const loaded = spawnSync(bin, ['print', `gui/${uid}/${label}`], { stdio: 'ignore' }).status === 0;
+    const loaded = spawnSync(bin, ['print', `gui/${uid}/${label}`], { windowsHide: true, stdio: 'ignore' }).status === 0;
     if (!loaded) continue;
-    spawnSync(bin, ['bootout', `gui/${uid}/${label}`], { stdio: 'ignore' });
-    const boot = spawnSync(bin, ['bootstrap', `gui/${uid}`, f], { stdio: 'ignore' });
+    spawnSync(bin, ['bootout', `gui/${uid}/${label}`], { windowsHide: true, stdio: 'ignore' });
+    const boot = spawnSync(bin, ['bootstrap', `gui/${uid}`, f], { windowsHide: true, stdio: 'ignore' });
     if (boot.status !== 0) res.notes.push(`${label}: no pude volver a cargarlo (launchctl bootstrap salió ${boot.status}) — cargalo a mano: launchctl bootstrap gui/${uid} ${f}`);
   }
   return res;
@@ -1389,7 +1389,7 @@ function rerootMachine(opts = {}) {
       const plutil = findPlutil(env);
       if (!plutil) { res.notes.push(`${entry.label}: plist binario con el nombre viejo y sin plutil — no lo toqué (reescribirlo como texto lo corrompe); convertilo con plutil -convert xml1 y volvé a correrlo`); continue; }
       try { backup(entry.file); } catch (e) { res.notes.push(`${entry.label} (${entry.file}): no pude respaldarlo (${why(e)}) — no lo toqué`); continue; }
-      const c = spawnSync(plutil, ['-convert', 'xml1', entry.file], { stdio: 'ignore' });
+      const c = spawnSync(plutil, ['-convert', 'xml1', entry.file], { windowsHide: true, stdio: 'ignore' });
       let after = null;
       try { after = fs.readFileSync(entry.file); } catch { after = null; }
       if (c.status !== 0 || !after || isBinaryPlist(after)) {
@@ -1412,9 +1412,9 @@ function rerootMachine(opts = {}) {
     if (!label) continue;
     const bin = launchctl || (isRealHome ? 'launchctl' : null);
     if (!bin) { res.notes.push(`${entry.label}: reescrito; no toqué launchd (la HOME no es la real y no hay LAUNCHCTL_BIN)`); continue; }
-    if (spawnSync(bin, ['print', `gui/${uid}/${label}`], { stdio: 'ignore' }).status !== 0) continue;
-    spawnSync(bin, ['bootout', `gui/${uid}/${label}`], { stdio: 'ignore' });
-    const boot = spawnSync(bin, ['bootstrap', `gui/${uid}`, entry.file], { stdio: 'ignore' });
+    if (spawnSync(bin, ['print', `gui/${uid}/${label}`], { windowsHide: true, stdio: 'ignore' }).status !== 0) continue;
+    spawnSync(bin, ['bootout', `gui/${uid}/${label}`], { windowsHide: true, stdio: 'ignore' });
+    const boot = spawnSync(bin, ['bootstrap', `gui/${uid}`, entry.file], { windowsHide: true, stdio: 'ignore' });
     if (boot.status !== 0) res.notes.push(`${label}: no pude volver a cargarlo (launchctl bootstrap salió ${boot.status}) — cargalo a mano: launchctl bootstrap gui/${uid} ${entry.file}`);
     else res.notes.push(`${label}: recargado en launchd (si estaba corriendo, se cortó y vuelve a correr en su próximo turno)`);
   }

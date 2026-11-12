@@ -87,7 +87,7 @@ function partePrincipal(lineas, maq) {
 
 /** Mide un repo: { estado, motivo, commits, maquina, top }. Nunca devuelve ni imprime autores. */
 function medirRepo(dir, v, maq) {
-  const git = (args) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+  const git = (args) => spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
   const sh = git(['rev-parse', '--is-shallow-repository']);
   if (sh.error || sh.status !== 0) return { estado: 'no_medido', motivo: `no es un repo git legible (git rev-parse salió ${sh.status === null ? 'sin código' : sh.status})`, error: true };
   if (String(sh.stdout).trim() === 'true') return { estado: 'no_medido', motivo: 'clon superficial, no tiene el año de historia' };

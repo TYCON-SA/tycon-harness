@@ -314,12 +314,12 @@ function refrescar(org) {
   const { execFileSync } = require('child_process');
   let o = org;
   if (!o) {
-    try { const m = execFileSync('az', ['devops', 'configure', '-l'], { encoding: 'utf8', timeout: 15000 }).match(/organization\s*=\s*(\S+)/); o = m && m[1]; } catch { /* sin az */ }
+    try { const m = execFileSync('az', ['devops', 'configure', '-l'], { windowsHide: true, encoding: 'utf8', timeout: 15000 }).match(/organization\s*=\s*(\S+)/); o = m && m[1]; } catch { /* sin az */ }
   }
   if (!o) { console.error('consulta-fallida-notice: no sé la organización (pasá --org <url>)'); return 2; }
   let proyectos;
   try {
-    const raw = JSON.parse(execFileSync('az', ['devops', 'project', 'list', '--org', o, '--top', '500', '-o', 'json'], { encoding: 'utf8', timeout: 60000 }));
+    const raw = JSON.parse(execFileSync('az', ['devops', 'project', 'list', '--org', o, '--top', '500', '-o', 'json'], { windowsHide: true, encoding: 'utf8', timeout: 60000 }));
     proyectos = (Array.isArray(raw) ? raw : raw.value).map((p) => p.name).filter((n) => typeof n === 'string');
   } catch (e) { console.error(`consulta-fallida-notice: no pude listar los proyectos (${(e.message || '').slice(0, 120)})`); return 2; }
   if (!proyectos.length) { console.error('consulta-fallida-notice: la lista vino vacía; no piso la cache'); return 2; }

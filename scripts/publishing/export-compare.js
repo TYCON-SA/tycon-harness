@@ -94,7 +94,7 @@ const strings = (x) => (Array.isArray(x) ? x.map((v) => (typeof v === 'string' ?
 function git(dir, args, opts = {}) {
   // con salida binaria la entrada va como Buffer: spawnSync codifica una entrada de texto con `encoding`
   const input = opts.input === undefined ? undefined : (opts.binary ? Buffer.from(opts.input, 'utf8') : opts.input);
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: opts.binary ? 'buffer' : 'utf8', input, maxBuffer: 1 << 30 });
+  const r = spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: opts.binary ? 'buffer' : 'utf8', input, maxBuffer: 1 << 30 });
   if (r.error || r.status !== 0) {
     throw new CouldNotCompare(`git ${args.slice(0, 3).join(' ')} en ${dir} falló: ${r.error ? r.error.message : String(r.stderr).trim()}`);
   }
@@ -212,7 +212,7 @@ function snapshot(argv) {
   // foto de una rama adelantada del repo unido.
   // En snapshot.json, `agentSkills: null` = el que eligió el exportador (lo dice export-<paquete>.json → fuentes).
   const refs = ['--harness', a.harness || 'origin/main', ...(a.agentSkills ? ['--agent-skills', a.agentSkills] : [])];
-  const run = (args) => spawnSync(process.execPath, [exporterPath, ...args, ...refs], { encoding: 'utf8', maxBuffer: 1 << 30, cwd: workParent });
+  const run = (args) => spawnSync(process.execPath, [exporterPath, ...args, ...refs], { windowsHide: true, encoding: 'utf8', maxBuffer: 1 << 30, cwd: workParent });
   const put = (name, value) => fs.writeFileSync(path.join(out, name), `${JSON.stringify(value, null, 2)}\n`);
   const meta = { version: SNAPSHOT_VERSION, createdAt: new Date().toISOString(), exporter: exporterPath, refs: { harness: refs[1], agentSkills: a.agentSkills || null }, packages: a.packages, explain: {}, exports: {} };
   const notes = [];
@@ -278,7 +278,7 @@ function snapshot(argv) {
     // «el archivo no está en ese commit» es dato (nota); cualquier otro fallo de git (permisos, «dubious ownership», un
     // sha que no existe, git ausente) es no poder sacar la foto: nunca una foto que parece completa. Git en inglés
     // para poder leer el motivo.
-    const shown = spawnSync('git', ['-C', repos.arnes, 'show', `${harnessSha}:${CEILING}`], { encoding: 'utf8', env: require('../lib/clean-git-env.js').idiomaFijo() });
+    const shown = spawnSync('git', ['-C', repos.arnes, 'show', `${harnessSha}:${CEILING}`], { windowsHide: true, encoding: 'utf8', env: require('../lib/clean-git-env.js').idiomaFijo() });
     const gitSaid = String(shown.stderr || '').trim();
     if (shown.status === 0) {
       let ceiling;
@@ -533,7 +533,7 @@ const UNION_COVERAGE_EMPTIED = Object.freeze([
 /** git sobre una copia o sobre el repo unido: sin las variables que git le pasa a sus hooks (este guion puede correr
  *  desde uno), y con el motivo de git si falla. */
 function gitClean(dir, args) {
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', maxBuffer: 1 << 30, env: require('../lib/clean-git-env.js').sinGitDelPadre() });
+  const r = spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', maxBuffer: 1 << 30, env: require('../lib/clean-git-env.js').sinGitDelPadre() });
   if (r.error || r.status !== 0) {
     throw new CouldNotCompare(`git ${args.slice(0, 3).join(' ')} en ${dir} falló: ${r.error ? r.error.message : String(r.stderr).trim() || `salió ${r.status}`}`);
   }

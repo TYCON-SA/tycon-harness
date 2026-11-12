@@ -420,7 +420,7 @@ function correrJq(segs, abs, cwd, home) {
   const entrada = jqs[0].redir.find((r) => r.op === '<');
   const archivos = libres.slice(1).concat(entrada ? [entrada.a] : []);
   if (libres.length < 1 || archivos.length !== 1 || resolver(archivos[0], cwd, home) !== abs) return null;
-  const r = spawnSync('jq', [...opciones, libres[0], abs], { encoding: 'utf8', timeout: 3000 });
+  const r = spawnSync('jq', [...opciones, libres[0], abs], { windowsHide: true, encoding: 'utf8', timeout: 3000 });
   if (r.error || r.status !== 0) return null;
   return r.stdout;
 }

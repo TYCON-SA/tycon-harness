@@ -211,14 +211,14 @@ function sessionIdOf(event) {
   return event.session_id || process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID || '_nosession';
 }
 function git(cwd, args) {
-  try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim(); }
+  try { return execFileSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim(); }
   catch { return ''; }
 }
 // Igual que `git`, pero "falló" es null y no '' — para las preguntas donde un vacío significa "exento"
 // y un fallo tiene que significar "no sé" (o sea, registrar): un `git log` que revienta por tamaño o por
 // tiempo no puede leerse como "no cambió ningún status".
 function gitOrNull(cwd, args) {
-  try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 16 * 1024 * 1024 }).trim(); }
+  try { return execFileSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 16 * 1024 * 1024 }).trim(); }
   catch { return null; }
 }
 // La sha de la rama que va a mergear un pedido, o null. Primero la del remoto: el pedido mergea lo que hay allá, y la rama
@@ -248,7 +248,7 @@ function puntaDelRemoto(root, corta) {
   Object.assign(env, idioma, { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never',
     GIT_SSH_COMMAND: `${ssh} ${/plink/i.test(ssh) ? '-batch' : '-oBatchMode=yes -oConnectTimeout=5'}` });
   const preguntar = (args) => {
-    try { return execFileSync('git', ['-C', root, '-c', 'core.askPass=', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: REMOTO_MS, env }).trim(); }
+    try { return execFileSync('git', ['-C', root, '-c', 'core.askPass=', ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: REMOTO_MS, env }).trim(); }
     catch { return null; }
   };
   const ref = `refs/heads/${corta}`;
@@ -548,7 +548,7 @@ function enLineaDeMain(e) {
   const clave = `${real(dir)}|${ref}`;
   if (!lineasDeMain.has(clave)) {
     let lista = null;
-    try { lista = execFileSync('git', ['-C', dir, 'rev-list', '--first-parent', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000, maxBuffer: 256 * 1024 * 1024 }); } catch { lista = null; }
+    try { lista = execFileSync('git', ['-C', dir, 'rev-list', '--first-parent', ref], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000, maxBuffer: 256 * 1024 * 1024 }); } catch { lista = null; }
     lineasDeMain.set(clave, lista === null ? null : new Set(lista.split('\n').filter(Boolean).map((s) => s.slice(0, 12))));
   }
   const linea = lineasDeMain.get(clave);

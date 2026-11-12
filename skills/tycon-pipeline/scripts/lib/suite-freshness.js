@@ -63,6 +63,7 @@ const CODE_RE = { test: (f) => isCodeFile(f) };
 
 function git(repoDir, args) {
   return execFileSync('git', ['-C', repoDir, ...args], {
+    windowsHide: true,
     encoding: 'utf8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'],
   });
 }

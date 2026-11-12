@@ -105,7 +105,7 @@ function args(argv) {
 
 function git(cwd, argv) {
   try {
-    return execFileSync('git', argv, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim();
+    return execFileSync('git', argv, { windowsHide: true, cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim();
   } catch { return null; }
 }
 
@@ -424,7 +424,7 @@ function traerMain(repo, rama) {
   Object.assign(env, { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_SSH_COMMAND: `${env.GIT_SSH_COMMAND || 'ssh'} -oBatchMode=yes -oConnectTimeout=5` });
   try {
     execFileSync('git', ['-C', repo, '-c', 'core.askPass=', 'fetch', '--quiet', '--no-tags', 'origin', `+refs/heads/${rama}:refs/remotes/origin/${rama}`],
-      { stdio: ['ignore', 'ignore', 'ignore'], timeout: TRAER_MS, env });
+      { windowsHide: true, stdio: ['ignore', 'ignore', 'ignore'], timeout: TRAER_MS, env });
     return true;
   } catch { return false; }
 }
@@ -448,7 +448,7 @@ function lineaDeMain(repo) {
 }
 function enLaLinea(repo, ref, sha) {
   const lista = (() => {
-    try { return execFileSync('git', ['-C', repo, 'rev-list', '--first-parent', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024, timeout: 30000 }); }
+    try { return execFileSync('git', ['-C', repo, 'rev-list', '--first-parent', ref], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024, timeout: 30000 }); }
     catch { return null; }
   })();
   if (lista === null) return null;

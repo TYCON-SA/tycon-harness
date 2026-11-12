@@ -124,7 +124,7 @@ function adhocState(adhoc, ctx) {
   let falla = null;
   let sinTiempo = false;
   const anotar = (motivo) => { falla = falla || causa(motivo); };
-  for (const repo of reposDelCarril(adhoc)) {
+  for (const repo of reposDelCarril(adhoc, { ubicados: ctx && ctx.ubicados })) {
     if (!fs.existsSync(repo)) { anotar(`la carpeta ${repo} ya no está`); continue; }
     const head = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
     if (head.status !== 0) { anotar(`no pude leer la rama de ${repo}: ${head.err.split('\n')[0]}`); continue; }
@@ -165,7 +165,9 @@ function contexto({ home, stateDir, now, env, topeMs = TOPE_MS }) {
   const sdir = stateDir || stateDirOf(home);
   const fotoFile = path.join(sdir, 'finished-open-prs.json');
   const f = leer(fotoFile);
-  return { sdir, fotoFile, foto: f.data && typeof f.data === 'object' ? f.data : {}, now, env: env || process.env, until: Date.now() + topeMs, cambio: false };
+  // `ubicados`: la carpeta de cada ruta de los caminos cortos, preguntada a git una sola vez en todo el recorrido (muchos
+  // caminos cortos viejos anotan rutas de carpetas que ya no existen, bajo la misma carpeta temporal)
+  return { sdir, fotoFile, foto: f.data && typeof f.data === 'object' ? f.data : {}, now, env: env || process.env, until: Date.now() + topeMs, cambio: false, ubicados: new Map() };
 }
 
 /** Lo ya dicho, por sesión, día y caso: true si hay que decirlo ahora (y lo anota). */

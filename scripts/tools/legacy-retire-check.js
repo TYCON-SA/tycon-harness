@@ -92,7 +92,7 @@ function defaults(a) {
 /** Un ejecutable de az (o el de laboratorio, un .js): `{ ok, json, error }`, mirando el código de salida primero. */
 function az(bin, args) {
   const [cmd, pre] = /\.js$/.test(bin) ? [process.execPath, [bin]] : [bin, []];
-  const r = spawnSync(cmd, [...pre, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync(cmd, [...pre, ...args], { windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (r.error) return { ok: false, error: `${bin} no corrió (${r.error.code || r.error.message})` };
   if (r.status !== 0) return { ok: false, error: `az ${args.slice(0, 3).join(' ')} salió ${r.status}: ${String(r.stderr || '').trim().slice(0, 200)}` };
   // salió 0 sin escribir nada: lo decide quien pregunta (el timeline de una corrida cancelada antes de arrancar)
@@ -252,7 +252,7 @@ function check(o) {
 
   // (b) el buzón
   if (o.download) {
-    const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'metrics', 'download-runs.js'), '--json', '--no-threads'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'metrics', 'download-runs.js'), '--json', '--no-threads'], { windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     let j = null;
     try { j = JSON.parse(r.stdout); } catch (_) { /* abajo */ }
     if (r.status !== 0 || !j) failed.push({ source: 'buzon', query: 'download-runs', error: `la bajada del buzón salió ${r.status}${j && j.motivo ? `: ${j.motivo}` : ''}` });

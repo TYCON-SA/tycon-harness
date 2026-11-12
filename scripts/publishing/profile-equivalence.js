@@ -97,7 +97,7 @@ function leer(p) { try { return fs.readFileSync(p, 'utf8'); } catch (_) { return
 // ajena, compararlos como «igual» sería verificarse a sí misma.
 const FALLOS = [];
 function correr(cmd, args, opts = {}) {
-  const r = spawnSync(cmd, args, Object.assign({ encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }, opts));
+  const r = spawnSync(cmd, args, { windowsHide: true, ...Object.assign({ encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }, opts) });
   if (r.error || r.status === null) {
     FALLOS.push(`${cmd} ${args.slice(0, 2).join(' ')}: ${r.error ? r.error.message : `sin código de salida (señal ${r.signal || '?'})`}`);
   }
@@ -235,7 +235,7 @@ function main() {
   const dirBase = tmp('equiv-perfil-base-');
   const shaBase = correr('git', ['-C', RAIZ, 'rev-parse', '--verify', `${base}^{commit}`]).stdout.trim();
   if (!shaBase) { console.error(`no encuentro el commit ${base} en ${RAIZ}`); return 2; }
-  execFileSync('sh', ['-c', `git -C "${RAIZ}" archive "${shaBase}" | tar -x -C "${dirBase}"`]);
+  execFileSync('sh', ['-c', `git -C "${RAIZ}" archive "${shaBase}" | tar -x -C "${dirBase}"`], { windowsHide: true });
   const { shaNuevo } = procedenciaDe(RAIZ);
   const items = [];
   const item = (grupo, nombre, viejo, nuevo, opts = {}) => {

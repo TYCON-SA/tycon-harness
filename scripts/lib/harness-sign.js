@@ -93,7 +93,7 @@ function nivelEfectivo(id, levels) {
 
 /** La carpeta del repo de un commit: la raíz de git de `cwd`, o `cwd` si no es un repo. */
 function repoDe(cwd) {
-  const r = spawnSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8' });
   return real(r.status === 0 && r.stdout.trim() ? r.stdout.trim() : cwd);
 }
 

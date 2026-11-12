@@ -47,7 +47,7 @@ const NO_APLICA = 10;
 const IDENTIDAD = { GIT_AUTHOR_NAME: 'portón', GIT_AUTHOR_EMAIL: 'gate@localhost', GIT_COMMITTER_NAME: 'portón', GIT_COMMITTER_EMAIL: 'gate@localhost' };
 
 function git(repo, args, env) {
-  const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: env ? { ...process.env, ...env } : process.env, maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', env: env ? { ...process.env, ...env } : process.env, maxBuffer: 64 * 1024 * 1024 });
   return { ok: r.status === 0, status: r.status, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String(r.stderr || '').trim() };
 }
 

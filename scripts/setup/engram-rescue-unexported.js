@@ -124,7 +124,7 @@ const REPOS_ROOT = REPOS_ROOTS[0];
 const raizDe = (rel) => REPOS_ROOTS.find((x) => fs.existsSync(path.join(x, rel))) || REPOS_ROOT;
 
 function sql(q) {
-  return execFileSync(process.env.TYCON_SQLITE_BIN || 'sqlite3', ['-readonly', DB, q], { encoding: 'utf8', timeout: 20000 })
+  return execFileSync(process.env.TYCON_SQLITE_BIN || 'sqlite3', ['-readonly', DB, q], { windowsHide: true, encoding: 'utf8', timeout: 20000 })
     .split('\n').map((x) => x.trim()).filter(Boolean);
 }
 
@@ -593,7 +593,7 @@ function resolverDestino(r) {
     let salida = '';
     try {
       salida = execFileSync('engram', ['sync', '--project', r.project],
-        { cwd: destino, encoding: 'utf8', timeout: 120000 });
+        { windowsHide: true, cwd: destino, encoding: 'utf8', timeout: 120000 });
     } catch (e) {
       // 🔴 Un sync con exit no-cero no puede terminar la corrida en 0.
       problemas.push(`${r.repo}: el sync falló (${String(e.message || e).split('\n')[0]})`);

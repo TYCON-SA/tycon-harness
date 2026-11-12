@@ -67,7 +67,7 @@ function defaultInvokeCheck({ scriptPath, repo, storyPath, maxMutants, deadlineM
     process.execPath,
     [scriptPath, '--repo', repo, '--story', storyPath,
       '--max-mutants', String(maxMutants), ...(deadlineMs ? ['--deadline-ms', String(deadlineMs)] : []), '--json'],
-    { encoding: 'utf8', timeout: HARD_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'inherit'] },
+    { windowsHide: true, encoding: 'utf8', timeout: HARD_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'inherit'] },
   );
   const stderr = r.stderr || '';
   if (r.error && r.error.code === 'ETIMEDOUT') return { code: null, result: null, stderr, timedOut: true };
@@ -80,7 +80,7 @@ function defaultInvokeCheck({ scriptPath, repo, storyPath, maxMutants, deadlineM
 
 /** El `.git` común de un repo: dos worktrees del mismo repo lo comparten. null si git no contesta. */
 function gitComun(dir) {
-  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { windowsHide: true, encoding: 'utf8' });
   return r.status === 0 ? r.stdout.trim() : null;
 }
 

@@ -55,10 +55,10 @@ function install({ home = os.homedir(), stdio = 'inherit' } = {}) {
   if (versionOf(dir) !== PINNED_VERSION) {
     fs.mkdirSync(cache, { recursive: true });
     if (!fs.existsSync(path.join(cache, 'package.json'))) fs.writeFileSync(path.join(cache, 'package.json'), '{"private":true}\n');
-    const npm = spawnSync('npm', ['install', '--prefix', cache, '--no-audit', '--no-fund', `playwright-core@${PINNED_VERSION}`], { stdio, shell: process.platform === 'win32' });
+    const npm = spawnSync('npm', ['install', '--prefix', cache, '--no-audit', '--no-fund', `playwright-core@${PINNED_VERSION}`], { windowsHide: true, stdio, shell: process.platform === 'win32' });
     if (npm.status !== 0 || versionOf(dir) !== PINNED_VERSION) return false;
   }
-  const r = spawnSync(process.execPath, [path.join(dir, 'cli.js'), 'install', 'chromium'], { stdio });
+  const r = spawnSync(process.execPath, [path.join(dir, 'cli.js'), 'install', 'chromium'], { windowsHide: true, stdio });
   return r.status === 0;
 }
 

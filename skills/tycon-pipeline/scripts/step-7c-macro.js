@@ -73,7 +73,7 @@ function parseArgs(argv) {
 function evidenceDirDelMarker() {
   try {
     const out = require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'get'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
     const m = JSON.parse(out || '{}');
     return m && typeof m.evidenceDir === 'string' && m.evidenceDir ? m.evidenceDir : null;
   } catch { return null; }

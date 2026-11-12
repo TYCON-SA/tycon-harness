@@ -58,7 +58,7 @@ function gitRunner() {
   return (cwd, args, { timeout = GIT_MS, input, buffer = false } = {}) => {
     const o = { cwd, timeout, input, windowsHide: true, maxBuffer: 256 * 1024 * 1024 };
     if (!buffer) o.encoding = 'utf8';
-    const r = spawnSync('git', ['-c', 'maintenance.auto=false', ...args], o);
+    const r = spawnSync('git', ['-c', 'maintenance.auto=false', ...args], { windowsHide: true, ...o });
     return { ok: !r.error && r.status === 0, out: buffer ? r.stdout : String(r.stdout || ''), err: r.error ? r.error.message : String(r.stderr || '').trim(), timedOut: Boolean(r.error && r.error.code === 'ETIMEDOUT') };
   };
 }

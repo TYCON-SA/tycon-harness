@@ -98,7 +98,7 @@ try { ({ nombreDeRepo: nombreDeRepoAzure, resolverRemoto } = require('../lib/har
 function git(dir, args, ok) {
   // `--literal-pathspecs`: una ruta con `[`, `*` o `?` (las rutas dinámicas de Next.js, por ejemplo) es un
   // NOMBRE, no un patrón — sin esto, el parche de un archivo se traería el de otros.
-  const r = spawnSync('git', ['-C', dir, '--literal-pathspecs', ...args], { encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
+  const r = spawnSync('git', ['-C', dir, '--literal-pathspecs', ...args], { windowsHide: true, encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
   if (r.error) return { error: r.error.code === 'ENOENT' ? 'git no está instalado en esta máquina' : `git no se pudo ejecutar (${r.error.code || r.error.message})` };
   if (r.status !== 0 && !(ok || []).includes(r.status)) return { error: `git ${args[0]} salió ${r.status}: ${String(r.stderr || '').trim().split('\n')[0] || 'sin detalle'}`, status: r.status };
   return { out: r.stdout, status: r.status };
@@ -324,7 +324,7 @@ function commitsDeLaCorrida(top, v) {
   }
   const commits = [];
   for (const h of shas) {
-    const anc = spawnSync('git', ['-C', top, 'merge-base', '--is-ancestor', h, 'HEAD'], { stdio: 'ignore' });
+    const anc = spawnSync('git', ['-C', top, 'merge-base', '--is-ancestor', h, 'HEAD'], { windowsHide: true, stdio: 'ignore' });
     let alcanzable = anc.status === 0;
     // Cualquier otro final (error del binario, objeto ilegible) también pregunta por las ramas: dar por
     // «no alcanzable» un fallo de git sería perder un commit de la corrida sin decirlo.
@@ -471,7 +471,7 @@ function armar({ volcado, estado }) {
   const finRaw = Date.parse(d.archivedAt || '');
   const v = { desde: ini - MARGEN_MS, hasta: (Number.isFinite(finRaw) ? finRaw : Date.now()) + MARGEN_MS };
   const ventana = { desde: new Date(v.desde).toISOString(), hasta: new Date(v.hasta).toISOString() };
-  const hayGit = spawnSync('git', ['--version'], { stdio: 'ignore' });
+  const hayGit = spawnSync('git', ['--version'], { windowsHide: true, stdio: 'ignore' });
   if (hayGit.error) return noMedido(`git no está en esta máquina (${hayGit.error.code || hayGit.error.message}): no se puede mirar el cambio`, { ventana });
 
   const cache = new Map();

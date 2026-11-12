@@ -56,7 +56,7 @@ function entornoDeGit() {
   return gitEnv;
 }
 function git(cwd, args) {
-  return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: GIT_TIMEOUT_MS, env: entornoDeGit() }).trim();
+  return execFileSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: GIT_TIMEOUT_MS, env: entornoDeGit() }).trim();
 }
 function gitOr(cwd, args, fallback = '') { try { return git(cwd, args); } catch { return fallback; } }
 const hasRef = (root, ref) => gitOr(root, ['rev-parse', '-q', '--verify', `${ref}^{commit}`]) !== '';

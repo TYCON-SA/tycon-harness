@@ -67,7 +67,7 @@ function cargarMatriz(nombre, harness) {
 
 // `.native` devuelve la ruta como la guarda el disco: en uno que no distingue mayúsculas, dos escrituras dan la misma
 function raizDeGit(carpeta) {
-  return fs.realpathSync.native(execFileSync('git', ['-C', carpeta, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim());
+  return fs.realpathSync.native(execFileSync('git', ['-C', carpeta, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim());
 }
 
 const dormir = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);

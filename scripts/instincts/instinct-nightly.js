@@ -201,12 +201,12 @@ function informeVacio(fecha) {
 
 function guardarConPush({ ops, rutas, mensaje, today }) {
   const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'push-nightly-data.js'), 'save', '--repo', ops, '--message', mensaje,
-    '--today', today, '--require-daily', `${INFORMES}/instintos-{day}.json`, '--', ...rutas], { cwd: ops, stdio: ['ignore', 'inherit', 'inherit'] });
+    '--today', today, '--require-daily', `${INFORMES}/instintos-{day}.json`, '--', ...rutas], { windowsHide: true, cwd: ops, stdio: ['ignore', 'inherit', 'inherit'] });
   return { ok: r.status === 0 };
 }
 
 function sincronizarConPush({ ops, rutas }) {
-  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'push-nightly-data.js'), 'sync', '--repo', ops, '--', ...rutas], { cwd: ops, stdio: ['ignore', 'inherit', 'inherit'] });
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'push-nightly-data.js'), 'sync', '--repo', ops, '--', ...rutas], { windowsHide: true, cwd: ops, stdio: ['ignore', 'inherit', 'inherit'] });
   return { ok: r.status === 0 };
 }
 

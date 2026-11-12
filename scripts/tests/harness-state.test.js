@@ -3668,58 +3668,21 @@ test('T39b · StartupDetached_WindowsShim_WorkerIsGrandchild_ResultAndStartedFro
   assert.strictEqual(D.wantsShim({ TYCON_STARTUP_SHIM: '1' }), true);
   assert.strictEqual(D.wantsShim({ TYCON_STARTUP_SHIM: '0' }), false);
   assert.strictEqual(D.wantsShim({}), process.platform === 'win32');
-  // la red: TODO lo que el programa lanza pide la ventana oculta (una llamada futura sin la opción vuelve a abrir una)
+  // la red: TODO lo que el programa lanza pide la ventana oculta (una llamada futura sin la opción vuelve a abrir una).
+  // El escáner es el de hidden-window.test.js; acá, además, ni un `windowsHide: false`: el arranque corre desprendido.
+  const scan = require('./lib/hidden-window-scan.js');
   const files = [path.join(MODULES, '..', 'harness.js'), ...fs.readdirSync(MODULES).filter((f) => f.endsWith('.js')).map((f) => path.join(MODULES, f))];
   const sinHide = [];
   for (const f of files) {
-    const text = fs.readFileSync(f, 'utf8');
-    const re = /(?<![\w.])(?:spawnSync|spawn|execFileSync|execFile|execSync)\(/g;   // (`regex.exec(` no es un proceso)
-    let m;
-    while ((m = re.exec(text))) {
-      // la llamada entera: desde el paréntesis hasta el que lo cierra (profundidad)
-      let depth = 0, i = m.index + m[0].length - 1;
-      for (; i < text.length; i++) { if (text[i] === '(') depth++; else if (text[i] === ')') { depth--; if (!depth) break; } }
-      const call = text.slice(m.index, i + 1);
-      const line = text.slice(0, m.index).split('\n').length;
-      const lineText = text.split('\n')[line - 1];
-      if (/^\s*(\/\/|\*)/.test(lineText)) continue;   // un comentario que nombra la función
-      if (!optionsHideWindow(call)) sinHide.push(`${path.relative(MODULES, f)}:${line}`);
-    }
+    for (const l of scan.findLaunches(fs.readFileSync(f, 'utf8'))) if (l.state !== 'hidden') sinHide.push(`${path.relative(MODULES, f)}:${l.line}`);
   }
   assert.deepStrictEqual(sinHide, [], `llamadas que lanzan procesos sin windowsHide: true EN SUS OPCIONES (en Windows abren una ventana desde el arranque desprendido)`);
   // el escáner mira las opciones, no el texto: uno dentro de `env: Object.assign(...)` no vale (pasó en la primera edición)
-  assert.strictEqual(optionsHideWindow("spawnSync('git', ['x'], { windowsHide: true, env })"), true);
-  assert.strictEqual(optionsHideWindow("spawnSync('git', ['x'], { env: Object.assign({}, env, { windowsHide: true }) })"), false);
-  assert.strictEqual(optionsHideWindow("spawnSync('git', ['x'])"), false);
+  assert.strictEqual(scan.windowState("spawnSync('git', ['x'], { windowsHide: true, env })"), 'hidden');
+  assert.strictEqual(scan.windowState("spawnSync('git', ['x'], { env: Object.assign({}, env, { windowsHide: true }) })"), 'missing');
+  assert.strictEqual(scan.windowState("spawnSync('git', ['x'])"), 'missing');
+  assert.strictEqual(scan.windowState("spawnSync('git', ['x'], { windowsHide: false })"), 'shown');
 });
-
-/** ¿La llamada pide windowsHide: true en su objeto de opciones (el último argumento, al primer nivel de llaves)? */
-function optionsHideWindow(call) {
-  const inner = call.slice(call.indexOf('(') + 1, call.lastIndexOf(')'));
-  // el último argumento al nivel 0 de paréntesis/corchetes/llaves
-  let depth = 0, start = 0, last = null, quote = null;
-  for (let i = 0; i < inner.length; i++) {
-    const ch = inner[i];
-    if (quote) { if (ch === '\\') i++; else if (ch === quote) quote = null; continue; }
-    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
-    if ('([{'.includes(ch)) depth++;
-    else if (')]}'.includes(ch)) depth--;
-    else if (ch === ',' && depth === 0) start = i + 1;
-  }
-  last = inner.slice(start).trim();
-  if (!last.startsWith('{')) return false;
-  // windowsHide: true al nivel 1 de ESE objeto (no dentro de otro objeto anidado)
-  depth = 0; quote = null;
-  for (let i = 0; i < last.length; i++) {
-    const ch = last[i];
-    if (quote) { if (ch === '\\') i++; else if (ch === quote) quote = null; continue; }
-    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
-    if ('([{'.includes(ch)) depth++;
-    else if (')]}'.includes(ch)) depth--;
-    else if (depth === 1 && /^windowsHide\s*:\s*true/.test(last.slice(i))) return true;
-  }
-  return false;
-}
 
 test('T3b · CodexHooksHealth_TreeBehindSymlinkAndSpace_BrokenHookFails_UnknownCommandsWarn', () => {
   // ── La comprobación de salud de los hooks de Codex

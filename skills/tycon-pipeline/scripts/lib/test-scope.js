@@ -382,6 +382,7 @@ function changedFiles(repoDir) {
   const run = (args) => {
     try {
       return execFileSync('git', ['-C', repoDir, ...args], {
+        windowsHide: true,
         encoding: 'utf8', timeout: 20000, stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch (_e) { return ''; }
@@ -405,6 +406,7 @@ function delRepo(files, repoDir, storyPath) {
   const nombres = new Set([path.basename(raiz).toLowerCase()]);
   try {
     const comun = require('child_process').execFileSync('git', ['-C', raiz, 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      windowsHide: true,
       encoding: 'utf8', timeout: 20000, stdio: ['pipe', 'pipe', 'pipe'],
     }).trim();
     if (path.basename(comun) === '.git') nombres.add(path.basename(path.dirname(comun)).toLowerCase());

@@ -111,7 +111,7 @@ function readNotices(dir) {
  */
 function repoRoot(cwd) {
   try {
-    return { root: execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null };
+    return { root: execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null };
   } catch (e) {
     // git sale 128 también con un repo que se niega a abrir (dueño distinto, un worktree cuyo .git apunta a una carpeta
     // que ya no está): con un .git en el camino eso es «no pude preguntar», no «no es un repo»
@@ -137,7 +137,7 @@ function gitMarkerAbove(dir) {
 /** Las rutas que git sigue en `root` (null si no se pudo preguntar: eso no es «no hay ninguna»). */
 function trackedFiles(root) {
   try {
-    return execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
+    return execFileSync('git', ['-C', root, 'ls-files', '-z'], { windowsHide: true, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
       .split('\0').filter(Boolean);
   } catch (_) { return null; }
 }
@@ -252,13 +252,16 @@ function chosenPlatforms() {
 
 /**
  * Los avisos `after-command` que dispara `command` en `cwd`. Primero se miran sólo los comandos declarados (barato: corre
- * después de cada comando de la sesión); la configuración, git y los paquetes activos se preguntan recién si alguno
- * dispara.
+ * después de cada comando de la sesión); la configuración y los paquetes activos se preguntan recién si alguno dispara.
+ * `yaDichos`: las claves (`<tipo>:<nombre>/<id>`, las del gancho) de lo ya dicho en la sesión, que no se vuelve a mirar.
+ * La raíz del repo (un git) se pide sólo si un candidato la necesita: uno de paquete (para saber si está activo en el
+ * repo) o uno con `repo_files`; uno de plataforma o un conector roto no la usan.
  * @returns {{notices: Array<{extension, id, file}>, errors: string[]}}
  */
-function afterCommand({ cwd, command, powershell = false }) {
+function afterCommand({ cwd, command, powershell = false, yaDichos = [] }) {
   const errors = [];
   const candidatos = [];
+  const dicho = new Set(yaDichos);
   const dispara = (n) => n.when === 'after-command' && n.commands.some((c) => matchesCommand(command, c, { powershell }));
   const conectores = platformConnectors();
   errors.push(...conectores.errors);
@@ -273,14 +276,17 @@ function afterCommand({ cwd, command, powershell = false }) {
   for (const ext of [...conectores.extensions, ...paquetes]) {
     const r = readNotices(ext.dir);
     for (const e of r.errors) errors.push(`${ext.kind === 'pack' ? 'paquete' : 'integración'} ${ext.name}: ${e}`);
-    for (const n of r.notices) if (dispara(n)) candidatos.push({ ext, n });
+    for (const n of r.notices) if (dispara(n) && !dicho.has(`${ext.kind}:${ext.name}/${n.id}`)) candidatos.push({ ext, n });
   }
   // un conector con el manifiesto roto cuyo aviso dispara este comando: sus reglas no salen, y eso se dice si es elegido
   const rotos = conectores.broken.filter((b) => readNotices(b.dir).notices.some(dispara));
   if (!candidatos.length && !rotos.length) return { notices: [], errors };
-  const where = repoRoot(cwd);
-  if (where.error) return { notices: [], errors: errors.concat(`${where.error}: los avisos de las extensiones no se evaluaron`) };
-  const root = where.root;
+  let root = null;
+  if (candidatos.some((c) => c.ext.kind === 'pack' || c.n.repoFiles)) {
+    const where = repoRoot(cwd);
+    if (where.error) return { notices: [], errors: errors.concat(`${where.error}: los avisos de las extensiones no se evaluaron`) };
+    root = where.root;
+  }
   let elegidas = null;
   if (rotos.length || candidatos.some((c) => c.ext.kind === 'integration')) {
     const ch = chosenPlatforms();

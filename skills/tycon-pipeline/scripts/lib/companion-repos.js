@@ -95,7 +95,7 @@ function companionRoots(repo, storyPath, opts) {
 /** La rama en que está un repo, o null (cabeza suelta, o git que no contesta). */
 function ramaDe(dir) {
   if (!dir) return null;
-  const r = spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--short', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+  const r = spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--short', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
   // salida 1 con -q = cabeza suelta; cualquier otra cosa es git que no contestó, y se dice
   if (r.error || (r.status !== 0 && r.status !== 1)) {
     avisar(`no pude leer la rama de ${dir} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): los repos hermanos se leen como están declarados`);
@@ -168,18 +168,18 @@ function enLaMismaRama(declarado, rama, numero) {
   const deLaStory = rama ? `la rama ${rama}` : `la story ${numero}`;
   // Un declarado que no es un repo git no tiene ramas ni worktrees: se usa tal cual y se dice una vez, con el motivo
   // exacto (suele ser una ruta mal declarada). Cualquier otra falla de git (un .git roto) sigue al aviso de abajo.
-  const repo = spawnSync('git', ['-C', declarado, 'rev-parse', '--git-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo() });
+  const repo = spawnSync('git', ['-C', declarado, 'rev-parse', '--git-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo() });
   if (!repo.error && repo.status !== 0 && /not a git repository/i.test(String(repo.stderr || ''))) {
     avisar(`no pude listar los worktrees de ${declarado}: no es un repo git, uso la carpeta tal cual (¿la ruta de companion_repos está bien declarada?)`);
     return declarado;
   }
-  const r = spawnSync('git', ['-C', declarado, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+  const r = spawnSync('git', ['-C', declarado, 'worktree', 'list', '--porcelain'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
   if (r.error || r.status !== 0) {
     avisar(`no pude listar los worktrees de ${declarado} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): uso el declarado, que puede no ser el código de ${deLaStory}`);
     return declarado;
   }
   // Un hermano declarado como subcarpeta de su repo es esa subcarpeta también en el worktree.
-  const top = spawnSync('git', ['-C', declarado, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+  const top = spawnSync('git', ['-C', declarado, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
   if (top.error || top.status !== 0) {
     avisar(`no pude leer la raíz git de ${declarado} (${(top.error && (top.error.code || top.error.message)) || String(top.stderr || '').trim().split('\n')[0] || `git salió ${top.status}`}): uso el declarado, que puede no ser el código de ${deLaStory}`);
     return declarado;
@@ -390,7 +390,7 @@ const TOPE_DE_HUELLAS = 50;
  * porque el ancla viaja con la evidencia.
  */
 function nombreDelRepo(dir) {
-  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
   if (r.error || r.status !== 0) return null;
   const comun = path.resolve(dir, String(r.stdout).trim());
   return path.basename(path.basename(comun) === '.git' ? path.dirname(comun) : comun);
@@ -399,10 +399,10 @@ function nombreDelRepo(dir) {
 // Lo que el hermano tiene sin commitear, con la huella que tendría en git; `null` si el archivo se borró. Las rutas van desde la
 // raíz del repo, como las da git: un hermano declarado como subcarpeta mira sólo lo suyo.
 function huellasSinCommitear(raiz) {
-  const top = spawnSync('git', ['-C', raiz, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const top = spawnSync('git', ['-C', raiz, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
   if (top.error || top.status !== 0) return { motivo: 'no pude leer su raíz' };
   const repo = String(top.stdout).trim();
-  const git = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const git = (...a) => spawnSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
   const estado = git('status', '--porcelain', '-z', '--no-renames', '--untracked-files=all', '--', path.relative(repo, raiz) || '.');
   if (estado.error || estado.status !== 0) return { motivo: 'no pude leer sus cambios' };
   const lineas = String(estado.stdout).split('\0').filter(Boolean);
@@ -431,7 +431,7 @@ function anclasDeLaEvidencia(repo, historia) {
   return parseEvidenceConfig(repo).roots.map((declarado) => {
     const raiz = enLaMismaRama(real(declarado), rama, /\d/.test(numero || '') ? numero : null);
     const nombre = nombreDelRepo(raiz) || path.basename(raiz);
-    const head = spawnSync('git', ['-C', raiz, 'rev-parse', '--verify', '-q', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+    const head = spawnSync('git', ['-C', raiz, 'rev-parse', '--verify', '-q', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
     const commit = head.status === 0 ? String(head.stdout).trim() : '';
     if (!commit) return { repo: nombre, sinAncla: 'no pude leer su commit' };
     const { huellas, motivo } = huellasSinCommitear(raiz);

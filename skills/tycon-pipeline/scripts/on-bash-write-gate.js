@@ -860,7 +860,7 @@ function versionadoSinMemo(real, memo) {
   for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR']) delete env[k];
   // sin el programa que el clon configure para vigilar archivos: lo correría el freno, y puede mostrar limpio un guion
   // editado. Sin el índice de archivos tocados por commit: si lo reescriben, esconde el commit local que tocó el guion
-  const git = (args) => spawnSync('git', ['-C', arbol, '-c', 'core.fsmonitor=false', '-c', 'commitGraph.readChangedPaths=false', ...args], { encoding: 'utf8', timeout: 3000, env });
+  const git = (args) => spawnSync('git', ['-C', arbol, '-c', 'core.fsmonitor=false', '-c', 'commitGraph.readChangedPaths=false', ...args], { windowsHide: true, encoding: 'utf8', timeout: 3000, env });
   // `-v` marca con minúscula o con `S` lo que git dejó de mirar (`--assume-unchanged`, `--skip-worktree`)
   const versionado = git(['ls-files', '-v', '--error-unmatch', '--', rel]);
   if (versionado.status !== 0) return false;
@@ -1892,7 +1892,7 @@ function ensayarSeds(abs, seds) {
   try { texto = fs.readFileSync(abs, 'utf8'); } catch (e) { logHookError(e); return null; }
   for (const s of seds) {
     const r = require('child_process').spawnSync(s.sed, [...s.opciones, ...s.guiones.flatMap((g) => ['-e', g])],
-      { input: texto, encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'] });
+      { windowsHide: true, input: texto, encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'] });
     if (r.error || r.status !== 0) return null;
     texto = r.stdout;
   }
@@ -2086,9 +2086,9 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
           // como agregado); `restore --source` también borra, así que cuenta todo
           const filtro = c === 'git checkout' ? ['--diff-filter=a'] : [];
           const r = require('child_process').spawnSync('git', ['-C', base, 'diff', '--name-only', ...filtro, '--end-of-options', desdeRef, '--', ...rutas],
-            { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+            { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
           if (r.error || r.status !== 0) {
-            const raiz = require('child_process').spawnSync('git', ['-C', base, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+            const raiz = require('child_process').spawnSync('git', ['-C', base, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
             const top = raiz.status === 0 ? String(raiz.stdout).trim() : null;
             // sin la raíz del repo, una ruta suelta a un archivo no puede traer una constancia; una carpeta, un patrón o
             // una ruta que nombra la carpeta de las constancias, sí
@@ -2197,7 +2197,7 @@ function parcheNombraConstancia(texto, isControlApproval) {
 function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
   const { spawnSync } = require('child_process');
   const git = (argv) => {
-    const r = spawnSync('git', ['-C', base, ...argv], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    const r = spawnSync('git', ['-C', base, ...argv], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
     return r.error || r.status !== 0 ? null : String(r.stdout);
   };
   const tramo = String(extra.tramo || '');
@@ -2450,7 +2450,7 @@ function archivoDeTar(args) {
 function contenidoDelArchivo(c, args, tramo, abs) {
   const { spawnSync } = require('child_process');
   const correr = (bin, argv, input) => {
-    const r = spawnSync(bin, argv, { input, encoding: 'utf8', stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 32 * 1024 * 1024 });
+    const r = spawnSync(bin, argv, { windowsHide: true, input, encoding: 'utf8', stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 32 * 1024 * 1024 });
     return r.error || r.status !== 0 ? null : String(r.stdout).split(/\r?\n/).filter(Boolean);
   };
   if (c === 'cpio') {
@@ -2926,7 +2926,7 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   // reponer una historia sin cambios no le cambia nada: pasa (`git restore .` después de tocar código)
   const conCambios = (abs) => {
     const r = require('child_process').spawnSync('git', ['-C', path.dirname(abs), 'status', '--porcelain', '--', abs],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
     return r.error || r.status !== 0 || String(r.stdout).trim() !== '';
   };
   for (const abs of repuestos) if (!otros.has(abs) && !conCambios(abs)) vistos.delete(abs);
@@ -2962,10 +2962,10 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
 /** Lo que git sigue en esa ruta (un archivo, una carpeta, un comodín): `[rutas absolutas]`, o null si no se pudo preguntar. */
 function seguidos(repo, abs) {
   const r = require('child_process').spawnSync('git', ['-C', repo, 'ls-files', '-z', '--full-name', '--', abs],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
   if (r.error || r.status !== 0) return null;
   const top = require('child_process').spawnSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
   const raiz = top.status === 0 ? String(top.stdout).trim() : repo;
   return String(r.stdout).split('\0').filter(Boolean).map((f) => path.join(raiz, f));
 }

@@ -70,6 +70,7 @@ function llamarAnthropic({ model, llave, prompt, env, timeoutMs }) {
   // al hijo le llega sólo su llave: la del otro proveedor de la noche se queda en este proceso
   const { OLLAMA_API_KEY: _otra, ...resto } = env;
   const r = spawnSync('claude', ['--model', model, '--print', '--output-format', 'text', '--safe-mode', '--tools', ''], {
+    windowsHide: true,
     input: prompt, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024, timeout: timeoutMs,
     env: { ...resto, ANTHROPIC_API_KEY: llave, TYCON_EVAL_SANDBOX: '1' },
   });

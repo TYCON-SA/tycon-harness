@@ -408,7 +408,7 @@ function git(dir, args, { input, env, binario } = {}) {
   // Con salida binaria la entrada va como Buffer: spawnSync codifica una entrada de texto con `encoding`.
   if (binario) opciones.input = input === undefined ? undefined : Buffer.from(input, 'utf8');
   else Object.assign(opciones, { input, encoding: 'utf8' });
-  const r = spawnSync('git', ['-C', dir, ...GIT_AISLADO, ...args], opciones);
+  const r = spawnSync('git', ['-C', dir, ...GIT_AISLADO, ...args], { windowsHide: true, ...opciones });
   if (r.error) throw new NoPudo(`no pude correr git ${args[0]} (${r.error.code || r.error.message})`);
   return r;
 }
@@ -1182,7 +1182,7 @@ function compilan(dirCopia, rutas, aux, opciones = {}) {
     else if (!path.basename(r).includes('.') && shebangDeShell(abs)) cmd = ['bash', ['-O', 'extglob', '-n', abs], 'bash -n'];
     else continue;
     if (opciones.spawned) opciones.spawned.push(abs);
-    const res = spawnSync(cmd[0], cmd[1], { encoding: 'utf8', env: { ...env, PYTHONPYCACHEPREFIX: path.join(aux, 'pycache') } });
+    const res = spawnSync(cmd[0], cmd[1], { windowsHide: true, encoding: 'utf8', env: { ...env, PYTHONPYCACHEPREFIX: path.join(aux, 'pycache') } });
     if (res.error) throw new NoPudo(`no pude correr ${cmd[2]} sobre ${r} (${res.error.code || res.error.message}): sin eso no puedo decir que la copia compila`);
     if (res.status !== 0) {
       const lineas = `${res.stderr || ''}${res.stdout || ''}`.split('\n').map((l) => l.trim()).filter(Boolean);

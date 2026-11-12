@@ -124,7 +124,7 @@ function pedidosDeGitHub(comando, cwd) {
 /** `dueño/nombre` de GitHub del origin de una carpeta, o null. */
 function repoDeLaCarpeta(dir) {
   try {
-    const url = execFileSync('git', ['-C', dir, 'remote', 'get-url', 'origin'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }).trim();
+    const url = execFileSync('git', ['-C', dir, 'remote', 'get-url', 'origin'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }).trim();
     const m = url.match(/github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
     return m ? `${m[1]}/${m[2]}` : null;
   } catch { return null; }
@@ -152,7 +152,7 @@ async function revisarGitHub(pedidos) {
       const org = `https://dev.azure.com/${p.repo.org}`;
       let abiertos;
       try {
-        abiertos = JSON.parse(execFileSync('az', ['repos', 'pr', 'list', '--status', 'active', '-o', 'json', '--org', org, '--project', p.repo.project, '--repository', p.repo.repo], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 }) || '[]');
+        abiertos = JSON.parse(execFileSync('az', ['repos', 'pr', 'list', '--status', 'active', '-o', 'json', '--org', org, '--project', p.repo.project, '--repository', p.repo.repo], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 }) || '[]');
       } catch (e) {
         console.error(`[pr-uno-por-repo] no pude consultar los pull requests de ${p.donde} (${String((e && e.message) || e).slice(0, 80)}). No bloqueo, pero NO verifiqué.`);
         noPudeMirar = true;
@@ -210,7 +210,7 @@ for (const segCreate of creates) {
 
   let abiertos;
   try {
-    const salida = execFileSync('az', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000, cwd: evCwd || process.cwd() });
+    const salida = execFileSync('az', args, { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000, cwd: evCwd || process.cwd() });
     abiertos = JSON.parse(salida || '[]');
   } catch (e) {
     // No pudo preguntar: NO bloquea, pero lo dice — "no miré" no puede parecer "está bien".
@@ -251,7 +251,7 @@ for (const pr of otros) {
   try {
     ev = JSON.parse(execFileSync('az', [
       'repos', 'pr', 'policy', 'list', '--org', org, '--id', String(pr.pullRequestId), '-o', 'json',
-    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 }) || '[]');
+    ], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 }) || '[]');
   } catch (e) {
     // No pudo mirar ESTE: no se cuenta como en curso, y se dice. Falla hacia dejar trabajar.
     console.error(`[pr-uno-por-repo] no pude ver el estado del PR ${pr.pullRequestId}: no lo cuento.`);

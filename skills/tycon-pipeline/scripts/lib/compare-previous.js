@@ -53,7 +53,7 @@ const topes = (env = process.env) => ({
 const entornoDeGit = () => require(path.join(RAIZ_ARNES, 'scripts', 'lib', 'clean-git-env.js'));
 function git(args, { env = {}, timeout = 60000 } = {}) {
   const e = entornoDeGit();
-  const r = spawnSync('git', args, { encoding: 'utf8', env: e.idiomaFijo(e.sinGitDelPadre(process.env), env), timeout, maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync('git', args, { windowsHide: true, encoding: 'utf8', env: e.idiomaFijo(e.sinGitDelPadre(process.env), env), timeout, maxBuffer: 64 * 1024 * 1024 });
   return { ok: !r.error && r.status === 0, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String((r.error && r.error.message) || r.stderr || '').trim() };
 }
 const unaLinea = (t) => String(t || '').split('\n').map((x) => x.trim()).filter(Boolean)[0] || 'sin detalle';
@@ -65,7 +65,7 @@ const dentroDe = (base, p) => { const r = path.relative(path.resolve(base), path
 const hash8 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex').slice(0, 8);
 function borrar(dir) {
   if (!fs.existsSync(dir)) return;
-  try { spawnSync('chmod', ['-R', 'u+w', dir]); } catch (_) { /* lo intenta el borrado */ }
+  try { spawnSync('chmod', ['-R', 'u+w', dir], { windowsHide: true }); } catch (_) { /* lo intenta el borrado */ }
   fs.rmSync(dir, { recursive: true, force: true });
 }
 const raizDe = (p) => { const r = git(['-C', fs.existsSync(p) && fs.statSync(p).isDirectory() ? p : path.dirname(p), 'rev-parse', '--show-toplevel']); return r.ok && r.out ? real(r.out) : null; };
@@ -141,7 +141,7 @@ function encierro(env = process.env) {
   if (env.TYCON_COMPARE_SANDBOX === 'off') return { nombre: 'ninguno', corta: 'nada: corren con las otras capas' };
   if (process.platform === 'darwin' && fs.existsSync('/usr/bin/sandbox-exec')) return { nombre: 'sandbox-exec', corta: 'red y escritura' };
   if (process.platform === 'linux') {
-    const r = spawnSync('unshare', ['-rn', 'true'], { encoding: 'utf8', timeout: 5000 });
+    const r = spawnSync('unshare', ['-rn', 'true'], { windowsHide: true, encoding: 'utf8', timeout: 5000 });
     if (!r.error && r.status === 0) return { nombre: 'unshare', corta: 'sólo red · escritura sin cortar' };
   }
   return { nombre: 'ninguno', corta: 'nada: corren con las otras capas' };
@@ -258,7 +258,7 @@ function correr({ argv, cwd, env, enc, perfil, tiempoMs, salidaF }) {
     let fd;
     try {
       fd = fs.openSync(salidaF, 'w');
-      hijo = spawn(lanzar[0], lanzar[1], { cwd, env, detached: true, stdio: ['ignore', fd, fd] });
+      hijo = spawn(lanzar[0], lanzar[1], { windowsHide: true, cwd, env, detached: true, stdio: ['ignore', fd, fd] });
     } catch (e) {
       if (fd !== undefined) try { fs.closeSync(fd); } catch (_) { /* ya cerrado */ }
       resolve({ exit: 127, salida: `no se pudo correr: ${e.message}`, ms: Date.now() - t0, tope: false });

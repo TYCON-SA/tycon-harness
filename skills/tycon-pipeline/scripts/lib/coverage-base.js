@@ -28,7 +28,7 @@ const { spawnSync } = require('child_process');
 // Devuelve { out } o { error } con el detalle de git: un git que FALLA (binario ausente, carpeta que no
 // existe, permisos) no puede leerse como «ref inválida» o «no es un repo» sin decir por qué.
 function git(cwd, args) {
-  const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.error) return { error: `git no se pudo ejecutar (${r.error.code || r.error.message})` };
   if (r.status !== 0) return { error: (r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}` };
   return { out: r.stdout.trim() };
@@ -42,7 +42,7 @@ function verificar(top, ref) {
   const r = git(top, ['rev-parse', '--verify', `${ref}^{commit}`]);
   if (r.error) return { motivo: `«${ref}» no es un commit de este repo (${r.error})` };
   const sha = r.out;
-  const anc = spawnSync('git', ['-C', top, 'merge-base', '--is-ancestor', sha, 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] });
+  const anc = spawnSync('git', ['-C', top, 'merge-base', '--is-ancestor', sha, 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] });
   if (anc.error) return { motivo: `no se pudo verificar si ${sha.slice(0, 12)} es ancestro de HEAD (${anc.error.code || anc.error.message})` };
   if (anc.status === 1) return { motivo: `${sha.slice(0, 12)} no es ancestro de HEAD (otra rama o historia reescrita)` };
   if (anc.status !== 0) return { motivo: `no se pudo verificar si ${sha.slice(0, 12)} es ancestro de HEAD (${(anc.stderr || '').trim().split('\n')[0] || `git salió ${anc.status}`})` };
@@ -103,7 +103,7 @@ function resolver({ repo, env = process.env, marker = null, markerError = null }
     // Un repo sin commits todavía (el que inicia el arranque) se mide contra el árbol vacío: todo es línea tocada.
     // Casos: skills/tycon-pipeline/scripts/tests/start-no-git.test.js
     const sinCommits = git(top, ['symbolic-ref', '-q', 'HEAD']);
-    const vacio = sinCommits.out ? spawnSync('git', ['-C', top, 'hash-object', '-t', 'tree', '--stdin'], { input: '', encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }) : null;
+    const vacio = sinCommits.out ? spawnSync('git', ['-C', top, 'hash-object', '-t', 'tree', '--stdin'], { windowsHide: true, input: '', encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }) : null;
     if (vacio && vacio.status === 0 && vacio.stdout.trim()) return { ref: vacio.stdout.trim(), source: 'arbol-vacio', descartadas };
     descartadas.push({ source: 'HEAD', motivo: `no hay un HEAD utilizable (${h.error})` });
     return { ref: null, source: null, descartadas };
@@ -114,7 +114,7 @@ function resolver({ repo, env = process.env, marker = null, markerError = null }
 // { marker, error }: un marker.js que falla se DICE (queda en descartadas), no se lee como «sin corrida».
 function leerMarcador() {
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'marker.js'), 'get'],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+    { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
   if (r.error) return { marker: null, error: `marker.js get no corrió (${r.error.code || r.error.message})` };
   if (r.status !== 0) return { marker: null, error: `marker.js get salió ${r.status}: ${(r.stderr || '').trim().split('\n')[0]}` };
   try { return { marker: JSON.parse(r.stdout || '{}'), error: null }; } catch (e) { return { marker: null, error: `marker.js get devolvió algo ilegible (${e.message})` }; }

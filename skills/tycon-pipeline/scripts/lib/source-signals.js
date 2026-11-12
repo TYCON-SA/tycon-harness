@@ -72,7 +72,7 @@ function cargar({ repo, packsDir } = {}) {
 }
 
 function gitPorDefecto(repo, args) {
-  const r = spawnSync('git', ['-C', repo, '-c', 'core.quotepath=false', ...args], { encoding: 'utf8', timeout: 10000, maxBuffer: SALIDA_MAX });
+  const r = spawnSync('git', ['-C', repo, '-c', 'core.quotepath=false', ...args], { windowsHide: true, encoding: 'utf8', timeout: 10000, maxBuffer: SALIDA_MAX });
   if (r.error) throw r.error;
   if (r.status !== 0) throw new Error(String(r.stderr || '').split('\n')[0] || `git salió con ${r.status}`);
   return r.stdout;

@@ -60,7 +60,7 @@ function toolPid() {
   if (process.platform === 'win32') return null;
   let pid = process.ppid;
   for (let i = 0; i < 2 && pid > 1; i += 1) {
-    const r = spawnSync('ps', ['-o', 'ppid=,comm=', '-p', String(pid)], { encoding: 'utf8', timeout: 2000 });
+    const r = spawnSync('ps', ['-o', 'ppid=,comm=', '-p', String(pid)], { windowsHide: true, encoding: 'utf8', timeout: 2000 });
     if (r.status !== 0) return null;
     const m = /^\s*(\d+)\s+(.*)$/.exec(r.stdout.trim());
     if (!m) return null;

@@ -84,6 +84,7 @@ function lines(s) { return String(s || '').split('\n').filter(Boolean); }
 function makeGit(env) {
   return function git(dir, args, opts = {}) {
     return execFileSync('git', ['-C', dir, ...args], {
+      windowsHide: true,
       encoding: 'utf8',
       timeout: opts.timeout || 8000,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -355,7 +356,7 @@ function bringsSkills(git, dir, rev) {
 
 function hasCmd(name) {
   try {
-    execFileSync(process.platform === 'win32' ? 'where' : 'which', [name], { stdio: 'ignore', timeout: 3000 });
+    execFileSync(process.platform === 'win32' ? 'where' : 'which', [name], { windowsHide: true, stdio: 'ignore', timeout: 3000 });
     return true;
   } catch {
     return false;

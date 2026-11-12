@@ -78,13 +78,13 @@ const CROSS = audit.CROSS_CUTTING_PROJECTS;
 const SQLITE = process.env.TYCON_SQLITE_BIN || 'sqlite3';
 
 function sql(q, db) {
-  return execFileSync(SQLITE, ['-readonly', db || DB, q], { encoding: 'utf8', timeout: 20000 })
+  return execFileSync(SQLITE, ['-readonly', db || DB, q], { windowsHide: true, encoding: 'utf8', timeout: 20000 })
     .split('\n').map((x) => x.trim()).filter(Boolean);
 }
 
 function engramBin() {
   if (process.env.ENGRAM_BIN) return process.env.ENGRAM_BIN;
-  try { return execFileSync('command', ['-v', 'engram'], { shell: true, encoding: 'utf8' }).trim() || 'engram'; }
+  try { return execFileSync('command', ['-v', 'engram'], { windowsHide: true, shell: true, encoding: 'utf8' }).trim() || 'engram'; }
   catch { return 'engram'; }
 }
 
@@ -174,7 +174,7 @@ function ofertaDe(dir, bin) {
   let salida;
   try {
     salida = execFileSync(bin, ['projects', 'consolidate', '--dry-run'],
-      { cwd: dir, encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] });
+      { windowsHide: true, cwd: dir, encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] });
   } catch { return []; }
   const out = [];
   for (const linea of salida.split('\n')) {
@@ -198,12 +198,12 @@ function hacerBackup() {
   const sello = new Date().toISOString().replace(/[:.]/g, '-');
   const destino = path.join(os.homedir(), '.engram', `engram.db.backup-autoheal-${sello}-${process.pid}`);
   if (fs.existsSync(destino)) return { error: `el backup ${destino} ya existe — no se pisa` };
-  try { execFileSync(SQLITE, [DB, `.backup '${destino}'`], { timeout: 60000 }); }
+  try { execFileSync(SQLITE, [DB, `.backup '${destino}'`], { windowsHide: true, timeout: 60000 }); }
   catch (e) { return { error: `no se pudo hacer backup (${String(e.message).split('\n')[0]})` }; }
   // Verificación de la copia: que exista no alcanza, tiene que poder consultarse.
   try {
     const n = execFileSync(SQLITE, ['-readonly', destino, 'SELECT count(*) FROM observations;'],
-      { encoding: 'utf8', timeout: 30000 }).trim();
+      { windowsHide: true, encoding: 'utf8', timeout: 30000 }).trim();
     if (!/^\d+$/.test(n)) return { error: `el backup ${destino} no se puede consultar — NO se toca la base` };
     return { destino, observaciones: Number(n) };
   } catch (e) {
@@ -230,7 +230,7 @@ function ejecutar(plan, bin) {
     if (!numeros.length) continue;
     try {
       execFileSync(bin, ['projects', 'consolidate'],
-        { cwd: r.dir, input: numeros.join(',') + '\n', encoding: 'utf8', timeout: 120000, stdio: ['pipe', 'pipe', 'ignore'] });
+        { windowsHide: true, cwd: r.dir, input: numeros.join(',') + '\n', encoding: 'utf8', timeout: 120000, stdio: ['pipe', 'pipe', 'ignore'] });
       hechos.push({ repo: r.repo, pin: r.pin, absorbidos: r.auto.filter((a) => numeros.some((n) => oferta.find((o) => o.n === n && o.nombre === a.nombre))).map((a) => a.nombre) });
     } catch (e) {
       problemas.push(`${r.repo}: el comando de unión falló (${String(e.message).split('\n')[0]})`);

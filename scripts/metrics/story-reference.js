@@ -86,7 +86,7 @@ function ramaDe(asunto) {
 // core.quotePath=false: sin eso git escribe entre comillas y con escapes octales una ruta con tilde o ñ, y lo documental
 // no la reconoce
 function git(dir, args) {
-  return spawnSync('git', ['-c', 'mailmap.blob=HEAD:.mailmap', '-c', 'core.quotePath=false', '-C', dir, ...args], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  return spawnSync('git', ['-c', 'mailmap.blob=HEAD:.mailmap', '-c', 'core.quotePath=false', '-C', dir, ...args], { windowsHide: true, encoding: 'utf8', maxBuffer: 1 << 28 });
 }
 class NoMedido extends Error {}
 function gitOk(dir, args, que) {

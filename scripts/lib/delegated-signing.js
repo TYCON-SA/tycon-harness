@@ -192,7 +192,7 @@ const SOBRE_UN_REPO = new Set(['pending-approval']);
  */
 function raizDelRepo(dir) {
   try {
-    const salida = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel', '--absolute-git-dir', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const salida = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel', '--absolute-git-dir', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     const [r, gitDir, comun] = salida.split(/\r?\n/);
     if (!r || !gitDir || !comun) return null;
     const st = fs.statSync(r);

@@ -77,7 +77,7 @@ function salidaDelJuez(texto) {
 function porLaFoto(tree, rojos) {
   const judge = path.join(tree, JUDGE);
   const snapshot = path.join(tree, SNAPSHOT);
-  const tocada = spawnSync('git', ['-C', tree, 'status', '--porcelain', '--', SNAPSHOT], { encoding: 'utf8' });
+  const tocada = spawnSync('git', ['-C', tree, 'status', '--porcelain', '--', SNAPSHOT], { windowsHide: true, encoding: 'utf8' });
   if (tocada.status !== 0) return { ok: false, line: 'no pude ver si la foto nocturna tiene cambios en el árbol: no se perdona nada' };
   if (tocada.stdout.trim()) return { ok: false, line: 'la foto nocturna tiene cambios sin commitear en el árbol: no se perdona nada' };
   let snap;
@@ -93,7 +93,7 @@ function porLaFoto(tree, rojos) {
     const actual = path.join(dir, 'suites.json');
     fs.writeFileSync(actual, JSON.stringify({ kind: 'bash-tests', ts: new Date().toISOString(), failures: rojos }));
     const r = spawnSync(process.execPath, [judge, '--tcg', tree, '--suites-actual', actual, '--suites-snapshot', snapshot, '--json'],
-      { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+      { windowsHide: true, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
     if (r.status !== 0 && r.status !== 1) {
       const ultima = String(r.stdout || r.stderr || '').trim().split('\n').pop();
       return { ok: false, line: `el juez de los pedidos no pudo decidir (${ultima || `salió ${r.status}`}): no se perdona nada` };
@@ -124,7 +124,7 @@ function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled }) {
     for (const a of ausentes) suites.push({ ruta: String(a), raiz: null, verdict: 'no-medido', motivo: 'no medido: la suite no existe en el cambio' });
     return { base, suites, heredadas };
   };
-  const g = (...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', tree, ...a], { encoding: 'utf8' });
+  const g = (...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', tree, ...a], { windowsHide: true, encoding: 'utf8' });
   if (assembled) { todas('no medido: el árbol armado del privado mezcla dos repos'); return fin(null); }
   if (!fallas.length) return fin(null);
   if (g('rev-parse', '--is-inside-work-tree').status !== 0) { todas('no medido: el árbol no es un repo de git'); return fin(null); }
@@ -184,7 +184,7 @@ function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled }) {
       const marca = path.join(dir, `tope-${i}`);
       const r = spawnSync(process.execPath, [RUN_CAPPED, '--seconds', String(timeout), '--mark', marca, '--',
         process.execPath, RUNNER, raizBase, out, '--suite', ruta],
-      { cwd: raizBase, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: (timeout + 60) * 1000 });
+      { windowsHide: true, cwd: raizBase, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: (timeout + 60) * 1000 });
       if (fs.existsSync(marca)) { suites.push({ ruta, raiz, verdict: 'no-medido', motivo: `no medido: pasó el tope de ${timeout} s` }); return; }
       if (r.status === 0) { suites.push({ ruta, raiz, verdict: 'no-heredada', motivo: 'verde en la base: el rojo es del cambio' }); return; }
       let roja = false;

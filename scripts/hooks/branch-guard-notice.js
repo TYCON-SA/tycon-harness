@@ -64,6 +64,7 @@ function sinBiblioteca() { return Object.assign(new Error('scripts/lib/clean-git
 function git(dir, args) {
   if (!gitEnv) throw sinBiblioteca();
   return execFileSync('git', ['-C', dir, ...args], {
+    windowsHide: true,
     encoding: 'utf8',
     timeout: 5000,
     stdio: ['ignore', 'pipe', 'ignore'],
@@ -83,6 +84,7 @@ function gitTry(dir, args) {
   try {
     if (!gitEnv) throw sinBiblioteca();
     const out = execFileSync('git', ['-C', dir, ...args], {
+      windowsHide: true,
       encoding: 'utf8',
       timeout: 5000,
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -226,7 +226,7 @@ function tokenDeAz(tenant) {
   const bin = process.env.TYCON_AZ_BIN || 'az';
   const args = ['account', 'get-access-token', '--resource', 'https://storage.azure.com/', '--query', 'accessToken', '-o', 'tsv'];
   if (tenant) args.push('--tenant', tenant);
-  const r = spawnSync(bin, args, { encoding: 'utf8', timeout: 45000, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, AZURE_CORE_NO_COLOR: '1', AZURE_CORE_ONLY_SHOW_ERRORS: '1' } });
+  const r = spawnSync(bin, args, { windowsHide: true, encoding: 'utf8', timeout: 45000, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, AZURE_CORE_NO_COLOR: '1', AZURE_CORE_ONLY_SHOW_ERRORS: '1' } });
   if (r.error && r.error.code === 'ENOENT') return { estado: 'sin_az', motivo: `no hay az en esta máquina (${bin}): el buzón sólo lo leen quienes tienen el rol de lectura, con su sesión de az` };
   if (r.error) return { estado: 'sin_sesion', motivo: `az no respondió (${r.error.code || r.error.message}): no se pide un login desde acá` };
   const token = String(r.stdout || '').trim();
