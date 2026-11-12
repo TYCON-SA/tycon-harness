@@ -419,8 +419,42 @@ function deLaDesignacion(firma, destino, cwd) {
   return { queHace: lineas, fuente: lineas.join('\n') };
 }
 
+/**
+ * El rojo esperado de la matriz (`marker.js expect-red acmatrix --tests … --until …`): los criterios que la lista deja
+ * sin evidencia en vivo, con su texto, las pruebas y la fecha, de la matriz de la historia de la corrida. Sin el comando
+ * a la vista, sin la historia o sin la matriz, `{ error }`: sin los criterios a la vista no se firma.
+ */
+function delRojoEsperado(palabras, m) {
+  if (!palabras) return { error: 'el comando no está escrito tal cual (una envoltura, una variable): sin los criterios a la vista no se firma' };
+  const pruebas = String(valor(palabras, '--tests') || '').split(',').map((t) => t.trim()).filter(Boolean);
+  const fecha = valor(palabras, '--until');
+  if (!pruebas.length || !fecha) return { error: 'el comando no dice las pruebas (--tests) o la fecha (--until): sin ellas a la vista no se firma' };
+  const historia = rutaDeLaHistoria(m);
+  const texto = historia ? leer(historia) : null;
+  if (!texto) return { error: `no encuentro la historia de la ejecución${historia ? ` (${historia})${porQueNo(historia)}` : ''}: sin sus criterios a la vista no se firma` };
+  const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts');
+  let matriz;
+  try {
+    const rmx = require(path.join(lib, 'runtime-matrix.js'));
+    matriz = rmx.compute({ storyPath: historia, ...rmx.opcionesDeTandaDelMarcador({ ...m, storyPath: historia }, historia) });
+    if (matriz.structuralError) return { error: `la matriz de la historia no se puede calcular (${matriz.structuralError}): sin sus criterios a la vista no se firma` };
+    const c = rmx.debtCoverage(matriz, pruebas);
+    const textos = require(path.join(lib, 'lib', 'story-checks.js')).acTextsFromSpec(texto);
+    const lineas = c.covered.map((n) => `AC ${n}: ${String(textos[n] || '(sin texto en la historia)').replace(/\s+/g, ' ').trim()}`);
+    if (!lineas.length) lineas.push('Ningún criterio sin correr queda cubierto por esa lista: la firma no lleva nada al commit');
+    lineas.push(`Pruebas de la lista: ${pruebas.join(', ')} · vence ${fecha}`);
+    if (c.uncovered.length) lineas.push(`Sin cubrir por la lista (frenan igual): AC ${c.uncovered.join(', ')}`);
+    if (c.unknown.length) lineas.push(`No están en la tabla de pruebas: ${c.unknown.join(', ')}`);
+    const acs = c.covered.length ? `los AC ${c.covered.join(', ')}` : 'ningún criterio';
+    return { criterios: c.covered, queHace: lineas, completo: historia, fuente: lineas.join('\n'), que: `llevar al commit ${acs} sin evidencia en vivo (pruebas ${pruebas.join(', ')}), hasta el ${fecha}` };
+  } catch (e) {
+    return { error: `no pude calcular la matriz de la historia (${(e && e.message) || e}): sin sus criterios a la vista no se firma` };
+  }
+}
+
 function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {}) {
   if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd);
+  if (firma === 'escape:rojo-esperado-de-la-matriz') return delRojoEsperado(palabras, marcador);
   if (!palabras) return null;
   if (firma === 'plan-approval') return delPlan(palabras, marcador, { estado, destino });
   if (firma === 'control-change' || firma === 'refresh-after-main') return deControles(palabras, cwd, estado);

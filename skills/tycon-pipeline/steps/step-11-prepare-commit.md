@@ -60,6 +60,17 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
   criterio de la tanda declarado imposible de probar se firma con la misma matriz: el comando que muestra el freno
   lleva `--for-session <la sesión>`, para que la firma por terminal mida la misma tanda. Un criterio de otra tanda no
   se firma en esta corrida.
+  **En deuda, el rojo esperado de la matriz.** Una ejecución cerrada en deuda (`close-as-debt`) por criterios que se
+  pueden probar en vivo pero no ahora llega al commit con `marker.js expect-red acmatrix --tests <T1,T2> --until
+  <AAAA-MM-DD>`, que firma la persona en su propia ventana (criterios, pruebas y fecha a la vista; tope de 14 días desde
+  el cierre en deuda; el mismo comando renueva la fecha dentro del tope). El freno sigue calculando la matriz: acepta
+  sólo los criterios sin correr que la lista cubre (al menos una prueba de la tabla los nombra y todas las que los
+  nombran están en la lista) y nada más pendiente. Un criterio sin correr fuera de la lista, uno imposible sin su
+  firma, una acción no ejercida, una pantalla sin imagen, código que la matriz no pudo leer o la fecha vencida frenan
+  como siempre. Aceptado, anota `acmatrix-debt` en `gates.log` e imprime la línea `Sin evidencia en vivo: AC … —
+  deuda <id>, vence <fecha>` que lleva el mensaje de commit, debajo de `Deuda:`. Volver a medir la matriz en rojo no
+  borra el rojo esperado. No es un camino sin evidencia: el paso a `review`/`done` sigue pidiendo la matriz en verde,
+  y vencida la fecha el arranque de sesión lo avisa hasta que esos criterios tengan su evidencia.
 - **`findings.json` presente** (insumo del `tycon-retrospective-capturer`): si el run dir existe y el archivo falta o no
   es un array, bloquea. Se escribe con `pipeline.js write-findings` y después `write-followups`
   (`step-09-findings.md`); verlo antes: `pipeline.js findings-status --story <story_path> --repo <repo>` (exit 3 = falta).

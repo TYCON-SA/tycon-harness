@@ -19,8 +19,10 @@
  *
  * Uso: llamadas(comando, { shell: 'bash' | 'powershell' }) → [{ guion, sub, args: [{ texto, literal }], dudosa, asig }]
  *      escapeDe(llamada, sid, comando?) → 'set-autonomous' | 'cerrar la ejecución' | 'cerrar como deuda' |
- *      'force-manual' | 'trust-ran' | 'no-deep-review' | null. Con `comando`, el comando entero en la forma canónica de
- *      la firma de force-manual o trust-ran no es un escape: lo firma su guion en la ventana.
+ *      'rojo esperado de la matriz' | 'force-manual' | 'trust-ran' | 'no-deep-review' | null. Con `comando`, el
+ *      comando entero en la forma canónica de la firma de force-manual o trust-ran no es un escape: lo firma su guion en
+ *      la ventana.
+ *      detalleDeLaLlamada(llamada) → la huella de la lista y la fecha de un `expect-red`, o null.
  */
 
 const PREFIJOS = new Set(['sudo', 'env', 'exec', 'command', 'nohup', 'time', 'nice', 'timeout', 'xargs', 'builtin',
@@ -502,8 +504,11 @@ function escapeDe(llamada, sid, comando = null) {
     return lit(v) && ['true', '1', 'on'].includes(v.texto) ? null : 'set-autonomous';
   }
   if (sub === 'clear') return 'cerrar la ejecución';
-  // cerrar la historia como deuda, o registrar un control en rojo como esperado: siempre lo decide la persona
-  if (sub === 'close-as-debt' || sub === 'expect-red') return 'cerrar como deuda';
+  // cerrar la historia como deuda, o registrar un control en rojo como esperado: siempre lo decide la persona. El rojo
+  // esperado de la matriz tiene su propia firma, que muestra los criterios y la fecha; un control que no se ve
+  // (`expect-red "$C"`) puede ser la matriz
+  if (sub === 'close-as-debt') return 'cerrar como deuda';
+  if (sub === 'expect-red') return !args[0] || !lit(args[0]) || args[0].texto === 'acmatrix' ? 'rojo esperado de la matriz' : 'cerrar como deuda';
   if (sub === 'clear-session') {
     const v = args[0];
     if (!v || !lit(v)) return 'cerrar la ejecución';
@@ -532,4 +537,32 @@ function salidaPerdida(llamada) {
   return null;
 }
 
-module.exports = { llamadas, escapeDe, lectorDeBanderas, salidaPerdida, tramos };
+/**
+ * La huella de un rojo esperado: el control, sus pruebas (ordenadas, sin repetir) y la fecha de vencimiento. La anota el
+ * freno con la constancia de la firma y la compara `marker.js expect-red`: así la firma vale para la lista y la fecha que
+ * mostró la ventana, no para otras.
+ */
+function detalleDelRojoEsperado(control, pruebas, fecha) {
+  const lista = [...new Set((pruebas || []).map((t) => String(t).trim()).filter(Boolean))].sort();
+  // la fecha se recorta acá, del lado del freno y del de marker.js: con espacios alrededor es la misma firma
+  const dia = String(fecha == null ? '' : fecha).trim();
+  return require('crypto').createHash('sha256').update(`${control}|${lista.join(',')}|${dia}`).digest('hex');
+}
+
+/**
+ * La huella de una llamada `expect-red`, leída de sus argumentos (`<control> --tests <lista> --until <fecha>`), o null si
+ * alguno no está escrito tal cual: sin la huella, `marker.js` no acepta la constancia.
+ */
+function detalleDeLaLlamada(llamada) {
+  if (!llamada || llamada.sub !== 'expect-red') return null;
+  const a = llamada.args || [];
+  if (a.some((x) => !x.literal)) return null;
+  const valor = (n) => { const i = a.findIndex((x) => x.texto === n); return i >= 0 && a[i + 1] ? a[i + 1].texto : null; };
+  const control = a[0] ? a[0].texto : null;
+  const pruebas = valor('--tests');
+  const fecha = valor('--until');
+  if (!control || !pruebas || !fecha) return null;
+  return detalleDelRojoEsperado(control, pruebas.split(','), fecha);
+}
+
+module.exports = { llamadas, escapeDe, lectorDeBanderas, salidaPerdida, tramos, detalleDelRojoEsperado, detalleDeLaLlamada };

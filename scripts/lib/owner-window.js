@@ -784,8 +784,11 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   let m = null;
   try { m = casa === undefined || !destino ? null : marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`)); } catch (_) { m = null; }
   const fuentes = require('./signature-sources.js');
+  // un escape no trae las palabras de un guion de firma; el rojo esperado de la matriz las necesita para mostrar sus
+  // criterios, y las lee del comando sin envolturas (envuelto, la fuente no tiene qué mostrar y no hay cuadro)
+  const palabrasDeLaFuente = palabras || (firma === 'escape:rojo-esperado-de-la-matriz' ? canonica(comando) : null);
   // el cuadro dice el tope con la misma lectura que usa el freno para decidir
-  let partes = fuentes.partesDe({ firma, palabras, cwd, marcador: m, estado: casa === undefined ? null : stateDir(casa), destino, topes: topesDelCaminoCorto(casa) });
+  let partes = fuentes.partesDe({ firma, palabras: palabrasDeLaFuente, cwd, marcador: m, estado: casa === undefined ? null : stateDir(casa), destino, topes: topesDelCaminoCorto(casa) });
   // una fuente que dice que no hay nada que firmar: sin cuadro, el pedido se niega
   if (partes && partes.error) return { error: partes.error };
   if (firma === 'runtime-waiver') {
