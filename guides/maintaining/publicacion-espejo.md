@@ -1403,7 +1403,7 @@ bash scripts/tests/mirror-pipeline.test.sh
 node scripts/ci/check-tolerant-steps.js pipelines/azure-pipelines-public-leak-check.yml
 node scripts/ci/check-stage-dependencies.js pipelines/azure-pipelines-public-leak-check.yml
 # contra Azure, sin ejecutar ni hacer cola
-bash scripts/ci/validate-pipeline-in-ado.sh --project tycon-claude-guides --pipeline <id> \
+bash integrations/azure-devops/scripts/validate-pipeline-in-ado.sh --project tycon-claude-guides --pipeline <id> \
   --yaml pipelines/azure-pipelines-public-leak-check.yml
 ```
 

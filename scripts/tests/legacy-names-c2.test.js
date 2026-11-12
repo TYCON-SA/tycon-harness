@@ -32,12 +32,13 @@ const SHIM_MARK = 'tycon-legacy-shim:';
 
 // Los ejecutables renombrados: 30, 15 de ellos en scripts/ci.
 const EXPECTED_FILES = 30;
-const EXPECTED_CI = 15;
+const EXPECTED_CI = 14;
 
 const entries = () => (TEAM ? JSON.parse(fs.readFileSync(MAP, 'utf8')).entries : []);
 const c2Files = () => entries().filter((e) => e.kind === 'file' && e.batch === 'C2' && (e.repo || 'arnes') === 'arnes'
   && !/^scripts\/tests\//.test(e.old));
-const c2Ci = () => c2Files().filter((e) => e.old.startsWith('scripts/ci/'));
+// los que viajan en el artefacto arnes-ci: el viejo y el nuevo en scripts/ci (el que se mudó a su conector no viaja ahí)
+const c2Ci = () => c2Files().filter((e) => e.old.startsWith('scripts/ci/') && e.new.startsWith('scripts/ci/'));
 const isShim = (abs) => fs.existsSync(abs) && fs.readFileSync(abs, 'utf8').split('\n').slice(0, 3).some((l) => l.includes(SHIM_MARK));
 
 function cleanEnv(extra) {
