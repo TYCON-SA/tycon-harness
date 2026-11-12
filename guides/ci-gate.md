@@ -179,41 +179,8 @@ política de rama, si no el cambio entra por push directo y no pasa por nada.
 
 ## 🔴 Los DOS permisos que hay que dar en Azure DevOps — y el segundo NO da error claro
 
-Copiar el YAML
-no alcanza: el pipeline necesita **dos** permisos distintos sobre el arnés, y
-si falta cualquiera de los dos el run se cae de una manera que no dice qué le falta.
-
-**(1) Autorizar el RECURSO para ese pipeline.** Sin esto el run queda con un `Checkpoint` en
-`inProgress` y **ninguna etapa arranca** — el tablero muestra todo en `pending` sin un solo
-mensaje de error. Se guarda en el proyecto que CONSUME (no en el del arnés):
-
-```
-PATCH /{proyecto-que-consume}/_apis/pipelines/pipelinePermissions/repository/{projIdArnes}.{repoIdArnes}?api-version=7.1-preview.1
-{"pipelines":[{"id":<id del pipeline>,"authorized":true}]}
-```
-
-**(2) Dar LECTURA del repo del arnés a la identidad de compilación del proyecto.** Éste es el que
-sorprende: con el (1) puesto, el checkpoint pasa y el run arranca… y muere en
-`Checkout tycon-claude-guides@main to tcg` con `Git fetch failed with exit code 128`. Ese 128 no
-dice "te falta un permiso": parece un problema de red o de rama.
-
-La identidad es una por proyecto y su descriptor se arma solo:
-`Microsoft.TeamFoundation.ServiceIdentity;<collectionId>:Build:<projectId>`. Se le da el bit
-`2` (GenericRead) sobre `repoV2/{projIdArnes}/{repoIdArnes}` en el espacio de nombres
-`2e9eb7ed-3c0a-47d4-87c1-0ffdd275fd87` (Git Repositories), vía
-`POST /_apis/accesscontrolentries/{ns}`.
-
-Para verificar de antemano: listar quién tiene lectura sobre ese token y contar. Al 2026-09-01 son
-**siete** identidades de compilación, una por producto que consume el arnés. Si el proyecto nuevo
-no está en esa lista, va a fallar — antes de correr nada.
-
-### El permiso del BUMP, que es otro y va ANTES de la política
-
-Los pipelines que suben el número de versión pushean a `main`. Al poner la política de rama, ese
-push queda bloqueado y **todos los builds de main se ponen rojos**. La salida es darle a esa misma
-identidad de compilación el bit `128` (*saltear políticas al pushear*) sobre el repo de código.
-Verificación: sobre cada repo tiene que haber **exactamente una** identidad con ese bit.
-Hacerlo **antes** de crear la política, no después.
+Los dos permisos (y el del bump, que es otro y va antes de la política), con las llamadas a la API, están en
+`guides/integrations/ado-en-el-nucleo.md`, §«El portón de la CI: los dos permisos».
 
 ## El snippet (Azure DevOps)
 
@@ -290,37 +257,8 @@ Ceibo, Lapacho): el stage de `Build` colgaba de `SecurityScan`, y al volver ése
 
 ## Permisos cross-project — con el scope de jobs CERRADO (medido en un producto del equipo, 2026-08-31)
 
-El portón clona el repo de guías, que vive en **otro proyecto** de ADO. Hay dos caminos para que el
-job pueda hacerlo, y el equipo eligió el cerrado:
-
-| | Scope abierto (`enforceJobAuthScope: false`) | **Scope cerrado (`true`) — el elegido** |
-|---|---|---|
-| Identidad del job | `Project Collection Build Service` (toda la org) | `<Proyecto> Build Service (org-del-equipo)` (solo el proyecto) |
-| Clonar el repo de guías | anda solo | Read (bit 2) sobre el repo **+ membresía en `[tycon-claude-guides]\Readers`** — el Read solo da `TF401019 … does not exist or you do not have permissions` |
-| Push del bump a `main` (bypass de políticas) | `PolicyExempt` (128) en `refs/heads/main` alcanza | `PolicyExempt` (128) **a nivel repo** (`repoV2/<proj>/<repo>`) — el de rama solo NO alcanza: da `TF402455`, y verde a los minutos del grant de repo |
-| Feed de Pacara | reader | reader a la identidad de proyecto (ya estaba) |
-
-Cómo se aplica (namespace `Git Repositories` = `2e9eb7ed-3c0a-47d4-87c1-0ffdd275fd87`; el `Content-Length: 0`
-es obligatorio en el PUT de membresía — sin él, 411):
-
-```bash
-SUBJ="Microsoft.TeamFoundation.ServiceIdentity;c0000000-0000-4000-8000-00000000000c:Build:<projectId>"
-# 1) Readers del proyecto de guías (Graph API; descriptor svc.* del Build Service vía graph/subjectquery)
-curl -u ":$PAT" -X PUT -H "Content-Length: 0" \
-  "https://vssps.dev.azure.com/org-del-equipo/_apis/graph/memberships/<svc.descriptor>/<vssgp.Readers de tycon-claude-guides>?api-version=7.1-preview.1"
-# 2) Read sobre el repo de guías + PolicyExempt a nivel repo en el propio proyecto
-curl -u ":$PAT" -X POST -H "Content-Type: application/json" \
-  "https://dev.azure.com/org-del-equipo/_apis/accesscontrolentries/2e9eb7ed-3c0a-47d4-87c1-0ffdd275fd87?api-version=7.1" \
-  -d '{"token":"repoV2/<projId>/<repoId>","merge":true,"accessControlEntries":[{"descriptor":"'"$SUBJ"'","allow":128,"deny":0}]}'
-# 3) Cerrar el scope
-curl -u ":$PAT" -X PATCH -H "Content-Type: application/json" \
-  "https://dev.azure.com/org-del-equipo/<Proyecto>/_apis/build/generalsettings?api-version=7.1" -d '{"enforceJobAuthScope": true}'
-```
-
-Verificación: `GET _apis/accesscontrollists/<ns>?token=…&includeExtendedInfo=true` (el `effectiveAllow` de la
-identidad tiene que incluir el 128), y un run de `main` que pushee el bump. 🔴 Para re-probar el bump NO
-sirve reintentar el stage Build de un run que ya publicó artefacto ("Artifact … already exists for build N"):
-encolar un run nuevo.
+Con Azure DevOps, los tres permisos y su verificación (con las llamadas a la API) están en
+`guides/integrations/ado-en-el-nucleo.md`, §«El portón de la CI: permisos entre proyectos».
 
 ## El mismo control, ANTES del commit (`--staged`, 2026-09-04)
 
@@ -376,25 +314,8 @@ comparar** (no poder mirar nunca se reporta como limpio).
 
 ### Validar una rama del arnés en Azure (2026-10-05)
 
-```bash
-node scripts/ci/queue-validation.js              # la rama actual, con el pipeline declarado para el repo
-node scripts/ci/queue-validation.js --dry-run    # qué cortaría y qué encolaría, sin tocar nada
-```
-
-El pipeline sale de la configuración: el `full_tests_pipeline` del repo en `team-repos.json`
-(`merge_suites.repos[]`, el número de la definición de Azure), o `--pipeline <número>`. Sin ninguno de los dos no
-encola nada y sale 2 con la línea que hay que declarar.
-
-En lugar de `az pipelines run --id <número> --branch <rama>`: antes de encolar, corta las validaciones de **esa misma
-rama** que todavía no terminaron (la nueva prueba lo mismo y más) y borra sus pedidos que esperan carril. Las de otras
-ramas no las toca. Si no puede leer la lista, no corta ni encola nada (sale 2). Por qué: con 4 carriles para toda
-la organización, varias sesiones validando a la vez traban la fila de Azure.
-
-En esa validación, las suites largas (`scripts/ci/heavy-suites.json`: la copia pública de verdad, la máquina limpia y
-las ~18 del instalador) corren sólo si el cambio toca lo que miden; el banco nocturno las corre siempre.
-
----
-
+Con Azure DevOps, cómo se encola la validación de una rama sin dejar validaciones viejas de la misma rama en la cola:
+`guides/integrations/ado-en-el-nucleo.md`, §«El portón de la CI: validar una rama del arnés».
 
 ## Límite conocido: el portón mira que la evidencia EXISTA, no lo que dice adentro (2026-09-06)
 

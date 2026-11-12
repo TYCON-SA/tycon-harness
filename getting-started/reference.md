@@ -321,8 +321,8 @@ node $HOME/.tycon/harness/scripts/setup/harness.js team-init
 ```
 
 It asks for whatever you did not pass as an option: the organization name (`--name`: unaccented letters, digits, dot and
-dash), where the team repo lives (`--platform github|azure` and `--profile-repo`, a GitHub `org/repo` or
-`https://dev.azure.com/<org>/<project>/_git/<repo>`) and the folder for the files (`--dir`; by default `~/<repo>`; a
+dash), where the team repo lives (`--platform github|azure` and `--profile-repo`, a GitHub `org/repo` or the repo's
+address on Azure DevOps, whose form is in [Azure DevOps](../guides/integrations/ado-projects.md#la-url-de-un-repo)) and the folder for the files (`--dir`; by default `~/<repo>`; a
 folder with something in it is left alone). It downloads the published example (`harness-team-profile-example`) and
 writes only the three required files:
 
@@ -352,7 +352,7 @@ There are two, `minimal` and `full`, and there is no default: `install` asks if 
 pass `--profile`.
 
 - **`minimal`**: the guides, the skills, the reviewers, the story workflow and the new-version notice. It does not
-  change how the assistant answers. It registers 13 hooks (nine that only take notes, the one that shows package notices, the one that covers the machine's secrets, the brake against
+  change how the assistant answers. It registers 15 hooks (nine that only take notes, the three that show notices —packages' at startup, and the platform's after its first command, whether it worked or failed—, the one that covers the machine's secrets, the brake against
   destructive commands and the one against editing code without a story or a one-off fix), plus those of each optional connection you turn on, and brings the links, commands and third-party skills.
 - **`full`**: everything in `minimal`, plus the other brakes (the same gate for code written from the
   terminal, and the one against committing a story without the evidence it asks for), the three blocks that change how the assistant answers in all your projects (in Spanish,

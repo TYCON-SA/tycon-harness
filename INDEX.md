@@ -73,7 +73,7 @@ la fila aplica.
 | Usar el arnés con modelos de Ollama (Claude Code o Codex): variables, perfiles, qué anda y qué no | `guides/integrations/ollama.md` (en inglés, `guides/integrations/ollama.en.md`) |
 | Usar el arnés con Cursor: qué anda tal cual, qué falta y las advertencias | `guides/integrations/cursor.md` (en inglés, `guides/integrations/cursor.en.md`) |
 | Instalar/configurar CodeGraph (índice de código MCP, opcional) | `guides/integrations/codegraph-mcp.md` |
-| Crear stories que generen work items en Azure DevOps; configurar `.tycon/ado-config.yaml` | `guides/integrations/ado-projects.md` |
+| Crear stories que generen su pedido de trabajo en la plataforma del equipo; configurar `.tycon/work-items.yaml` · sumar un conector de plataforma | `guides/integrations/ado-projects.md` (Azure DevOps), `guides/integrations/github-platform.md` (GitHub), `guides/integrations/platform-connectors.md` (uno nuevo) |
 | Consultar una base de PRODUCCIÓN · te frenó el freno de producción y querés saber por qué · declarar un servidor en `.tycon/production.json` · instalar o actualizar el freno (pide `sudo`) | `guides/produccion-con-permiso.md` |
 | Activar/desactivar el freno de mano del harness (bloqueo de `rm -rf /`, `--no-verify`, `curl\|bash`, `DROP DATABASE`, etc.) | `guides/safety-guard.md` |
 | Qué firmas le pide el arnés al dueño, cuáles se pueden delegar a la coordinadora y cuáles son sólo del dueño (`approvals.delegated_signing`, `approvals.owner_only`) | `guides/firmas-del-arnes.md` |

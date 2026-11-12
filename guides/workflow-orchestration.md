@@ -598,7 +598,7 @@ Si el artefacto nuevo cambia un modelo (navegación, layout, flujo) que estaba e
 `azure-pipelines.yml` nuevo con `paths.include` que cubre `*/src/**` y poco más, y un commit
 legítimo que se mergea a `main` **sin que corra un solo pipeline** — sin error, sin aviso, porque
 un trigger que no matchea no falla: no existe. Un commit que arregla un bug real de
-`shared/` entra sin CI; se verifica con `az pipelines runs show` (el commit no aparece en NINGÚN
+`shared/` entra sin CI; se verifica con la CI de la plataforma (`platform.js ci read`: el commit no aparece en NINGÚN
 run). Y cada vez se redescubre desde cero.
 
 **Checklist al crear o clonar un `azure-pipelines.yml`** — cotejar `trigger.paths.include` contra

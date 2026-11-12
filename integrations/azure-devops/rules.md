@@ -1,4 +1,3 @@
-<!-- requires-integration: ado -->
 # ===================================================
 # REGLA ADO — un listado no es evidencia de lo que no muestra
 # ===================================================

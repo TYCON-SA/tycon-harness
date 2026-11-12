@@ -39,32 +39,9 @@ node "$ARNES/scripts/lib/tycon-config.js" get paths.operations < /dev/null; echo
 
 Con `operations.platform`:
 
-**azure** (`ORG=https://dev.azure.com/<org>`, `PROJ=<project>`, `REPO=<repo>`):
-
-```bash
-# el proceso es el del repo de operaciones cuyo YAML es pipelines/team-dashboard.yml (no se adivina por el nombre)
-for id in $(az pipelines list --org "$ORG" --project "$PROJ" --repository "$REPO" --repository-type tfsgit --query "[].id" -o tsv < /dev/null); do
-  [ "$(az pipelines show --org "$ORG" --project "$PROJ" --id "$id" --query process.yamlFilename -o tsv < /dev/null)" = "pipelines/team-dashboard.yml" ] && echo "def=$id"
-done
-# ¿ya hay una corrida en marcha? Entonces se sigue ésa: no se encola otra
-az pipelines runs list --org "$ORG" --project "$PROJ" --pipeline-ids "$DEF" --top 5 --query "[?status!='completed'].id" -o tsv < /dev/null; echo "rc=$?"
-# si no hay ninguna:
-az pipelines run --org "$ORG" --project "$PROJ" --id "$DEF" --branch main --query id -o tsv < /dev/null; echo "rc=$?"
-```
-
-Si no aparece ningún `def=`, decí que el repo de operaciones no tiene dado de alta el proceso del tablero
-(`pipelines/team-dashboard.yml`) y seguí con el punto 2. Si encolar falla, decí el error tal cual: no reintentes.
-
-Seguí la corrida **de fondo** (en Claude Code, Bash con `run_in_background`), con un tope de 40 minutos:
-
-```bash
-for i in $(seq 1 120); do
-  R="$(az pipelines runs show --org "$ORG" --project "$PROJ" --id "$RUN" --query "[status,result]" -o tsv < /dev/null)" || { echo "NO PUDE MIRAR la corrida $RUN"; exit 2; }
-  case "$R" in completed*) echo "terminó: $R"; exit 0 ;; esac
-  sleep 20
-done
-echo "SIGUE CORRIENDO después de 40 minutos: corrida $RUN"; exit 3
-```
+**azure**: los comandos de Azure DevOps —encontrar el proceso del tablero, ver si ya hay una corrida en marcha, encolar
+si no hay ninguna y seguirla de fondo con un tope de 40 minutos— están en `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`,
+§«El tablero». Seguilos tal cual: no se encola otra corrida si ya hay una, y si encolar falla, decí el error tal cual.
 
 **github** (`REPO=<org>/<repo>`):
 
@@ -121,10 +98,7 @@ Traer la página de `main` del repo de operaciones, **sin tocar el checkout de n
 ```bash
 # con clon (paths.operations): sólo actualiza la referencia remota, no mueve la carpeta de trabajo
 git -C "$OPS" fetch --quiet origin main < /dev/null && git -C "$OPS" show origin/main:artifacts/tablero-del-arnes.html > "$DIR/tablero-del-arnes.html"; echo "rc=$?"
-# sin clon, Azure:
-az devops invoke --org "$ORG" --area git --resource items --route-parameters project="$PROJ" repositoryId="$REPO" \
-  --query-parameters path=/artifacts/tablero-del-arnes.html versionDescriptor.version=main versionDescriptor.versionType=branch download=true '$format=octetStream' \
-  --api-version 7.1 --accept-media-type application/octet-stream --out-file "$DIR/tablero-del-arnes.html" -o none < /dev/null; echo "rc=$?"
+# sin clon, Azure DevOps: el comando está en ~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md, §«El tablero»
 # sin clon, GitHub:
 gh api "repos/$REPO/contents/artifacts/tablero-del-arnes.html?ref=main" -H "Accept: application/vnd.github.raw" < /dev/null > "$DIR/tablero-del-arnes.html"; echo "rc=$?"
 ```

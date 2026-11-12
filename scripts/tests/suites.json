@@ -3047,6 +3047,18 @@
       "requiere": []
     },
     {
+      "__nota": "Las reglas de cada plataforma viajan con su conector y aparecen a demanda: el bloque de Azure DevOps retirado del CLAUDE.md y del AGENTS.md, el gancho de avisos después del primer comando del CLI (también el que falló), sólo de una plataforma elegida, y el reconocimiento del comando. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-rules.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Los textos del núcleo hablan de la plataforma del equipo: lo de Azure DevOps vive en guides/integrations/, salvo los renglones declarados con su motivo, y la guía de conectores dice cada operación y cada motivo.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-texts.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "El pedido de trabajo de la historia por la capa de plataforma: crear, activar y cerrar con Azure DevOps (las mismas llamadas a az de los pasos) y con GitHub (issue, etiquetas, horas en un comentario), el campo work_item con su alias, la configuración con su nombre viejo y lo que GitHub no tiene. Sin red: el az y el gh de mentira.",
       "raiz": "arnes",
       "ruta": "tests/platform-work-item.test.js",

@@ -1,6 +1,6 @@
 ---
 name: tycon-story-work-item
-description: Crea el work item en Azure DevOps cuando se crea una story Mary+GOLD y escribe el `work_item:` de vuelta en el frontmatter (el nombre viejo `ado_work_item:` se sigue leyendo). Resuelve la config ADO del repo (.tycon/ado-config.yaml → env vars → preguntar), auto-detecta el tipo de WI por process template, pide confirmación al dev antes de crear, y linkea el WI como hijo del Epic. Usar cuando un hook emite el reminder "tycon-story-work-item STORY-CREATE-detect", cuando el usuario pide "crear el work item en ADO para esta story", o tras crear stories con tycon-create-story / bmad-create-epics-and-stories.
+description: Crea el work item en Azure DevOps cuando se crea una story Mary+GOLD y escribe el `work_item:` de vuelta en el frontmatter (el nombre viejo `ado_work_item:` se sigue leyendo). Resuelve el destino del pedido en la configuración del repo (.tycon/work-items.yaml o su nombre viejo → la máquina → preguntar), auto-detecta el tipo de WI por process template, pide confirmación al dev antes de crear, y linkea el WI como hijo del Epic. Usar cuando un hook emite el reminder "tycon-story-work-item STORY-CREATE-detect", cuando el usuario pide "crear el work item en ADO para esta story", o tras crear stories con tycon-create-story / bmad-create-epics-and-stories.
 ---
 
 # tycon-story-work-item — Crear el pedido de trabajo al crear la story
@@ -49,130 +49,23 @@ preguntar al dev cuál es la story / directorio.
 
 ## Pre-condiciones
 
-- `az` CLI instalado con la extensión `azure-devops` (`az extension add --name azure-devops`).
-- `AZURE_DEVOPS_EXT_PAT` exportada (token con scope **Work Items: Read & Write**). Es la
-  misma variable que usan `step-00c` y `step-09`.
+- La plataforma del equipo con su credencial en la máquina. Con Azure DevOps, el CLI y su permiso de pedidos de trabajo
+  están en `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`, §«La skill de creación: lo que pide»; con GitHub, `gh` con sesión.
 
 Si falta el CLI o el token → **no crear el WI**. Avisar al dev una línea y terminar
 (no bloquear ningún flujo: la creación del WI es importante pero no crítica).
 
 ---
 
-## Paso 1 — Resolver la config ADO del repo
+## Pasos 1 a 3 — Resolver el destino, el tipo y los campos
 
-Mismo orden de prioridad que `tycon-pipeline/steps/step-01-start.md` y
-`step-09`. Walk-up desde la story `.md` hasta encontrar el root del repo
-(`.git/` o `.tycon/`):
-
-1. **`.tycon/ado-config.yaml`** en el root del repo — fuente de verdad preferida (un repo de
-   cliente puede vivir en otra organización).
-2. **La configuración del arnés** — `ado.org`:
-   `node ~/.claude/tycon-harness/scripts/lib/tycon-config.js get ado.org` (lee `TYCON_ADO_ORG`,
-   `~/.claude/tycon.json` y el perfil del equipo, en ese orden; exit 3 = sin organización; exit 2 =
-   configuración rota, y se dice con archivo, clave y motivo). El project: `TYCON_ADO_PROJECT`, o
-   preguntar al dev.
-3. **Sin organización = Azure DevOps apagada en esta máquina** — decirlo en UNA línea («Azure DevOps
-   apagado en esta máquina — el work item no se crea; prender: ado.org en ~/.claude/tycon.json o
-   TYCON_ADO_ORG»), no llamar a `az` y terminar bien. Ya no hay un nivel «tabla por proyecto».
-
-Schema completo de `.tycon/ado-config.yaml` (ver también `~/.claude/tycon-harness/guides/integrations/ado-projects.md`):
-
-```yaml
-ado_org: https://dev.azure.com/<organizacion>
-ado_project: Ceibo
-ado_wi_type: ""                 # opcional — override del tipo de WI. Vacío = auto-detectar.
-ado_area_path: "Ceibo"         # opcional — default = nombre del project.
-ado_iteration_path: ""          # opcional — override LITERAL del iteration. Si está seteado, pisa la auto-derivación desde `sprint:` del frontmatter.
-ado_iteration_root: ""          # opcional — root del template Sprint N. Default = `ado_project` (ej "Ceibo"). Combinado con `sprint:` del frontmatter da `<root>\\Sprint <N>`.
-ado_iteration_auto_from_frontmatter: true  # opcional — default true. Si la story tiene `sprint: N` en el frontmatter, setea automáticamente `IterationPath=<root>\\Sprint <N>`. Override con `ado_iteration_path` literal o flag en `false`.
-ado_state_active: "Active"      # consumido por step-00c
-ado_state_closed: "Closed"      # consumido por step-09
-ado_auto_assign: false          # si true, asigna el WI a git config user.email
-ado_default_tags: "tycon-pipeline"  # opcional — tags separados por ;
-epic_links:                     # opcional — mapeo epic (frontmatter) → WI id del Epic/Feature en ADO
-  1: 12001
-  2: 12002
-  3: 12003
-```
-
-**Si la config NO resuelve por ninguna vía** → log "tycon-story-work-item: repo sin config ADO,
-WI no creado para story <id>" y terminar. No es error: hay repos TYCON que no trackean en ADO.
-
-Si la config resuelve por env vars o por respuesta del dev (no por archivo), **ofrecer crear
-`.tycon/ado-config.yaml`** con lo resuelto para que las próximas corridas no pregunten.
-
----
-
-## Paso 2 — Auto-detectar el tipo de work item
-
-Si `ado_wi_type` está seteado en la config → usar ese valor, saltar la detección.
-
-Si no, detectar por process template del project:
-
-```bash
-process=$(az devops project show \
-  --organization <ado_org> --project <ado_project> \
-  --query "capabilities.processTemplate.templateName" --output tsv)
-```
-
-⚠️ Los projects TYCON suelen usar un nombre de process **custom** derivado de un base
-process — ej: Ceibo reporta `Ceibo Scrum`, no `Scrum`. Por eso el mapeo es por
-**substring case-insensitive**, NO por igualdad exacta:
-
-| Si el nombre del template contiene… | Tipo de WI | `ado_state_active` | `ado_state_closed` |
-|---|---|---|---|
-| `Scrum` | `Product Backlog Item` | `Committed` | `Done` |
-| `Agile` | `User Story` | `Active` | `Closed` |
-| `CMMI`  | `Requirement` | `Active` | `Closed` |
-| `Basic` | `Issue` | `Doing` | `Done` |
-| (ninguno matchea) | preguntar al dev + sugerir fijar `ado_wi_type` en la config | — | — |
-
-Si la detección falla (token, red, nombre no mapeable) → preguntar al dev el tipo y sugerir
-fijarlo en `ado_wi_type` de la config. El CLI no lista los tipos de WI directo; si hace
-falta enumerarlos: `az devops invoke --area wit --resource workitemtypes --route-parameters
-project=<project> --organization <ado_org>`.
-
----
-
-## Paso 3 — Armar los campos del WI desde la story
-
-Parsear el frontmatter + cuerpo de la story `.md`:
-
-| Campo ADO | Origen en la story |
-|---|---|
-| `System.Title` | `Story {story}: {title}` del frontmatter (ej: `Story <N.M>: POST /voice/calls ...`) |
-| `System.Description` | el bloque `## Story` (el "Como X, quiero Y, para Z") + una línea `Spec: <ruta de la story .md>` |
-| `Microsoft.VSTS.Common.AcceptanceCriteria` | la sección `## Acceptance Criteria` completa, convertida a HTML simple (los campos rich-text de ADO son HTML) |
-| `Microsoft.VSTS.Common.Priority` | mapear `priority` del frontmatter: `P0`→`1`, `P1`→`2`, `P2`→`3`, `P3`→`4` |
-| `System.AreaPath` | `ado_area_path` de la config (o el project) |
-| `System.IterationPath` | ver "Resolución del IterationPath" abajo |
-| `System.Tags` | `ado_default_tags` de la config + `sprint-{N}` si la story tiene `sprint:` |
-
-Notas:
-- Los campos rich-text (`Description`, `AcceptanceCriteria`) son **HTML** en ADO. Convertir
-  el markdown a HTML básico: párrafos `<p>`, listas `<ul><li>`, `<br>` para saltos. No hace
-  falta nada sofisticado — preservar el texto y la estructura de lista.
-- Escapar comillas en los valores antes de pasarlos a `--fields`.
-
-### Resolución del IterationPath (orden de prioridad)
-
-Para evitar que los WIs caigan en el backlog general cuando la story ya declara su sprint en el frontmatter (`sprint: N`), aplicar este orden:
-
-1. **`ado_iteration_path` de la config** — si está seteado (string literal no vacío), usar **textual** ese valor. Es el override más fuerte (útil para sprints con nombre custom o casos especiales).
-2. **Auto-derivar desde `sprint:` del frontmatter** — si `ado_iteration_auto_from_frontmatter` es `true` (default) **y** la story tiene `sprint: N` en el frontmatter (entero), construir el path:
-   ```
-   <ado_iteration_root o ado_project>\Sprint <N>
-   ```
-   Ej: con `ado_iteration_root="Ceibo"` (o `ado_project="Ceibo"`) y `sprint: 5` → `Ceibo\Sprint 5`. Asume convención TYCON `Sprint <N>` como nombre del iteration (verificable con `az boards iteration project list --project <p>`).
-3. **Si nada de lo anterior aplica** → omitir el campo (cae en backlog general del project).
-
-**Best-effort de validación**: si la auto-derivación produce un path, una vez por sesión chequear que el iteration exista (`az boards iteration project list --project <p>`). Si NO existe, fallback a backlog + warning al dev. NO bloquear creación del WI.
-
-**Tag `sprint-<N>` sigue agregándose** independientemente del IterationPath resuelto — el tag es trazabilidad spec-side, el IterationPath es scheduling-side. Pueden divergir si el WI se mueve en ADO sin actualizar la spec.
-
-**Por qué**: con `ado_iteration_path: ""` en la config, un WI cae en el backlog (`IterationPath=<proyecto>`) aunque la story tenga `sprint: <N>` en el frontmatter, y hay que moverlo a mano con `az boards work-item update --iteration "<proyecto>\Sprint <N>"`. Resolver el IterationPath desde el sprint de la story cierra ese gap.
-
----
+Dónde se crea el pedido, de qué tipo y con qué campos depende de la plataforma que eligió el perfil del equipo
+(`integrations.platform`); la configuración del repo es `.tycon/work-items.yaml` (o su nombre viejo de Azure DevOps).
+Con Azure DevOps, los tres pasos (la configuración y su orden de resolución, el tipo por la plantilla de proceso, los
+campos y la iteración) están en `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`, §«La skill de creación»: seguilos tal cual.
+Con GitHub, el tipo va como la etiqueta `tipo:<Tipo>` y el resto lo resuelve el conector
+(`~/.claude/tycon-harness/guides/integrations/github-platform.md`). Si la configuración no resuelve por ninguna vía,
+una línea («repo sin destino para el pedido de trabajo; story <N.M> sin pedido») y terminar, sin bloquear nada.
 
 ## Paso 4 — Confirmar con el dev (OBLIGATORIO)
 
@@ -204,7 +97,7 @@ para el lote (o dejar que el dev excluya algunas).
 
 La skill no arma comandos de la plataforma: le pide a la capa de plataforma, que crea el pedido donde lo elige el perfil
 del equipo (`integrations.platform`), con el destino de la configuración del repo (`.tycon/work-items.yaml`, o
-`.tycon/ado-config.yaml` con el nombre viejo).
+su nombre viejo de Azure DevOps).
 
 Primero, la estimación vigente de la historia (la última que se escribió al estimarla, o la del plan):
 
@@ -273,7 +166,7 @@ Una sola línea por story creada:
 Si hubo skip:
 
 ```
-📋 ADO: skip — repo sin config ADO (.tycon/ado-config.yaml ausente, sin env vars). Story <N.M> sin WI.
+📋 pedido de trabajo: skip — repo sin destino (sin `.tycon/work-items.yaml` ni su nombre viejo, sin la organización en la máquina). Story <N.M> sin pedido.
 ```
 
 ---
@@ -287,9 +180,8 @@ Si hubo skip:
 - ❌ NO crear un WI si la story YA tiene `work_item:` (o el nombre viejo `ado_work_item:`). El hook ya filtra esto, pero
   re-chequear en el skill por si se invoca a mano.
 - ❌ NO inventar el WI id del Epic para el parent link. Si no está en `epic_links` → suelto + warn.
-- ❌ NO duplicar: antes de crear, si la config resuelve, considerar una `az boards query` por
-  el story id en el título (igual que el fallback de `step-00c`) — si ya existe un WI para
-  esa story, proponer linkear ese en vez de crear uno nuevo.
+- ❌ NO duplicar: antes de crear, buscar un pedido con el story id en el título (con Azure DevOps, la consulta de
+  `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md` §«El Arranque») — si ya existe un pedido para esa story, proponer linkear ese en vez de crear uno nuevo.
 
 ## Referencia cruzada
 
@@ -297,7 +189,7 @@ Si hubo skip:
   empezar a implementar. Consume el `work_item:` que este skill escribe.
 - `tycon-pipeline/steps/close-work-item.md` — cierra el WI con trazabilidad
   post-merge. Otro consumidor de `work_item:`.
-- `~/.claude/tycon-harness/guides/integrations/ado-projects.md` — schema de `.tycon/ado-config.yaml`,
+- `~/.claude/tycon-harness/guides/integrations/ado-projects.md` — schema de la configuración del pedido (`.tycon/work-items.yaml` y su nombre viejo),
   tabla de mapeo proyecto→ADO, y bloque de registro del hook.
 - `~/.claude/tycon-harness/story-format.md` §1 — el campo `work_item` del frontmatter (antes `ado_work_item`).
 

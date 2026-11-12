@@ -791,8 +791,9 @@ medida: [piezas-del-arnes.md](../piezas-del-arnes.md) §`scripts/tests/clean-mac
 esa integración prendida: afuera, nadie recibe una regla sobre un servicio que no usa. El comentario nunca llega al
 `CLAUDE.md` ni al espejo; al apagar la integración el bloque se quita solo en la corrida siguiente; y si no se puede
 saber (configuración rota, sin `node`, integración que el lector no conoce, o un marcador casi bien escrito) no se agrega ni se quita nada, y el sync lo
-dice. Sólo `ado-runs-list-lag` lleva el marcador: es una regla sobre cómo operar Azure DevOps y, sin ese servicio, no
-tiene a qué aplicarse. `tool-names` y `background-execution` no lo llevan aunque nombran integraciones que se pueden
+dice. Hoy ningún bloque lo lleva: el último, el de las reglas de Azure DevOps, salió del `CLAUDE.md` y viaja con su
+conector (`integrations/azure-devops/rules.md`), que lo muestra la primera vez que el agente usa esa CLI en la sesión
+(`claude-md-blocks/retired.json` lo saca de las máquinas que lo tenían). `tool-names` y `background-execution` no lo llevan aunque nombran integraciones que se pueden
 apagar, porque no dependen de ninguna. El primero es una tabla de nombres: dice cómo se llama cada herramienta si está,
 y la fila de una que no está no manda a hacer nada. El segundo ofrece avisar por Telegram como una opción dentro de una
 regla —correr en segundo plano lo que tarda— que vale igual sin él. Partirlos por integración sería cambiarles el

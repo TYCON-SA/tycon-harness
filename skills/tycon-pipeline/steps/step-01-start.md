@@ -255,8 +255,8 @@ plataforma (`scripts/lib/platform/platform.js`), y la plataforma la elige el per
 **El id**, con el lector común (lee `work_item:` y su nombre viejo `ado_work_item:`, que se sigue leyendo):
 `node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js get <story_path>` (sale 3 si no tiene).
 
-**Dónde vive**: `.tycon/work-items.yaml` del repo (o `.tycon/ado-config.yaml`, el nombre viejo, que se sigue leyendo;
-con los dos gana el nuevo); si no, `ado.org` de la configuración del arnés (lee `TYCON_ADO_ORG`, `~/.claude/tycon.json`
+**Dónde vive**: `.tycon/work-items.yaml` del repo (o el archivo de nombre viejo de Azure DevOps, que se sigue leyendo:
+`guides/integrations/ado-projects.md`; con los dos gana el nuevo); si no, `ado.org` de la configuración del arnés (lee `TYCON_ADO_ORG`, `~/.claude/tycon.json`
 y el perfil del equipo, en ese orden; exit 2 = configuración rota, que se dice con archivo, clave y motivo) y el
 proyecto de `TYCON_ADO_PROJECT`. Overrides en ese archivo: `state_active`, `state_closed` (lo usa `close-work-item.md`)
 y `auto_assign: true`.
@@ -278,10 +278,7 @@ lo resuelve `close-work-item.md` al cerrar. Nunca en silencio: una línea que di
    ```
    Otro `connector`, u `ok: false` → una línea («la historia no tiene pedido de trabajo (`work_item:`); se crea con la
    skill de creación o al cerrar», o el `detail`) y seguir. Con `azure-devops`:
-   ```bash
-   az boards query --organization <ado_org> --project <ado_project> --output json \
-     --wiql "SELECT [System.Id], [System.Title], [System.State] FROM workitems WHERE [System.TeamProject] = '<ado_project>' AND [System.Title] CONTAINS '<story_id>'"
-   ```
+   la búsqueda por título de `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`, §«El Arranque».
    Un match único → proponer «Encontré el pedido #{id} '{title}' que parece corresponder a esta story. ¿Agrego
    `work_item: {id}` al frontmatter y lo paso a activo?»; si confirma, escribirlo con
    `node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js set <story_path> {id}` y seguir. Varios →
@@ -301,7 +298,7 @@ lo resuelve `close-work-item.md` al cerrar. Nunca en silencio: una línea que di
    (`pedido de trabajo #{id} en <plataforma>: {previo} → {estado}`). Si se salteó: una línea contextual o nada.
 
 **Si falla** (`ok: false`: sin plataforma elegida, sin credencial —con Azure DevOps, la sesión de `az` venció: `az
-login` o renovar `AZURE_DEVOPS_EXT_PAT`—, pedido no encontrado, la plataforma lo rechazó):
+login` o renovar el permiso de su CLI—, pedido no encontrado, la plataforma lo rechazó):
 mostrar el `summary` en UNA línea (dice qué falta y cómo ponerlo),
 `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js start-warning ado "<motivo>"` y seguir. No frena el
 pipeline: la implementación no depende de la plataforma (a diferencia del build gate de `step-05-implement.md`).

@@ -651,7 +651,7 @@ be, to copy it and open the request by hand.
   severity (critical, high, moderate and low); its values win over the fixed ones when the field matches. The fixed
   fields and the table apply to vulnerabilities only, and the section says so. With an organization and a project, the
   site reads the types, each type's fields and their allowed values from that project; without them, from the
-  products' projects: each field shows its name (with its reference name, like `Microsoft.VSTS.Common.Priority`, underneath) and
+  products' projects: each field shows its name (with its reference name underneath) and
   each value is picked from a dropdown. Values that start with a symbol, such as a colored circle, are shown without it
   and saved exactly as Azure DevOps accepts them. A field without fixed values is typed in. Without the work item read
   permission, or if Azure DevOps does not answer, a notice says why and everything is typed in by its reference name. A

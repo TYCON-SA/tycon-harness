@@ -681,6 +681,35 @@ try:
         changed.append((name, "quitado (%s)" % why))
         removed[name] = why
 
+    # Un bloque que el arnés retiró (claude-md-blocks/retired.json, con su motivo) se va entre sus marcadores de una
+    # máquina que todavía lo tiene: su archivo ya no está, y sin esto quedaría escrito para siempre. Si vuelve a haber un
+    # archivo con su nombre, manda el archivo. Una lista que no se lee se dice, y no se quita nada.
+    retired = {}
+    try:
+        with open(os.path.join(blocks_dir, "retired.json"), "r", encoding="utf-8") as fh:
+            _ret = json.load(fh)
+        retired = {k: v for k, v in _ret.items() if not k.startswith("_") and isinstance(v, str)}
+    except FileNotFoundError:
+        retired = {}
+    except (OSError, ValueError, AttributeError) as e:
+        unknown.append("⚠ tycon: claude-md-blocks/retired.json no se puede leer (%s): los bloques retirados quedan donde están" % e)
+    for name in sorted(set(retired) - names):
+        start_prefix, end = "<!-- TYCON_BLOCK:%s START" % name, marker_end(name)
+        i = content.find(start_prefix)
+        if i == -1:
+            continue
+        j = content.find(end, i)
+        if j == -1:
+            changed.append((name, "MARCADOR DE CIERRE FALTANTE — revisar a mano"))
+            continue
+        why = "el arnés lo retiró: %s" % retired[name]
+        before, after = content[:i].rstrip("\n"), content[j + len(end):]
+        if after.startswith("\n"):
+            after = after[1:]
+        content = before + "\n" + after if (before or after) else ""
+        changed.append((name, "quitado (%s)" % why))
+        removed[name] = why
+
     real_changes = [c for c in changed if "FALTANTE" not in c[1]]
 
     for name, what in changed:

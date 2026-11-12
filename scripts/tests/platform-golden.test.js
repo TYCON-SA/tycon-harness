@@ -58,6 +58,19 @@ test('Golden_Core_OnlyWhatTravels — en el árbol armado, un comando az en una 
   assert.deepStrictEqual(G.deIntegraciones(lab.root), [], 'sin integraciones, nada que contar');
 });
 
+test('Golden_Compare_MovedFromWhatDoesNotTravel — en el árbol armado, un renglón mudado desde un archivo que no viaja no es nuevo @story-8.85 @ac-27', (t) => {
+  // 🔴 rojo: el renglón se graba en un archivo que el privado tiene con su versión y se muda tal cual a una guía del
+  // público; el árbol armado no ve su archivo de antes y lo daba por comando nuevo
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ privado: { 'guides/catalogo.md': 'x\n' }, publico: { 'guides/nueva.md': 'az repos pr list\naz boards query\n' } });
+  t.after(lab.cleanup);
+  const grabada = { 'guides/catalogo.md': ['az repos pr list'], 'guides/nueva.md': ['az pipelines run'] };
+  assert.deepStrictEqual(G.compararComandos(grabada, G.literales({ root: lab.root }), lab.root), [
+    'un comando az que ya no está: az pipelines run',
+    'un comando az nuevo: az boards query',
+  ], 'lo mudado no es nuevo; lo que falta de lo que viaja y lo nuevo de verdad, sí');
+});
+
 test('Golden_Recorded_StillMatchesTree @story-8.85 @ac-27', () => {
   const dir = path.join(ROOT, 'scripts', 'tests', 'fixtures', 'platform-golden');
   for (const f of ['hard-signals-baseline.json', 'az-commands.json', ...G.SUITES.map((s) => `${s.replace(/\.test\.(js|sh)$/, '')}.calls`)]) assert.ok(fs.existsSync(path.join(dir, f)), `falta ${f}`);
