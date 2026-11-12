@@ -334,6 +334,30 @@ test('Manifest_PlatformKind_ValidatedByReader @story-8.85 @ac-32', () => {
   assert.ok(INT.find('clockify', { kind: 'timeTracking', dir: d }), 'el de horas se lee igual que antes');
 });
 
+test('Manifest_HardSignals_ValidatedByReader @story-8.85 @ac-25', () => {
+  // las señales de una plataforma las declara su conector: una lista de patrones que compilan; lo demás es manifiesto roto
+  const ok = { name: 'buena', label: 'Buena', kind: 'platform', connector: 'scripts/connector.js', operations: ['ci.read'], hardSignals: ['\\bx\\s+pr\\b', 'api\\.x\\.example'] };
+  const d = tmp('manifiestos-');
+  const poner = (n, m) => { fs.mkdirSync(path.join(d, n), { recursive: true }); fs.writeFileSync(path.join(d, n, 'integration.json'), JSON.stringify({ ...m, name: n })); };
+  poner('buena', ok);
+  poner('nolista', { ...ok, hardSignals: 'x pr' });
+  poner('nocompila', { ...ok, hardSignals: ['(sin cerrar'] });
+  poner('vacio', { ...ok, hardSignals: [''] });
+  poner('horas', { name: 'horas', label: 'Horas', kind: 'timeTracking', hardSignals: ['x'] });
+  const r = INT.listManifests({ dir: d });
+  const de = (n) => JSON.stringify((r.problems.find((x) => x.name === n) || {}).reasons || r.problems);
+  assert.deepStrictEqual(INT.find('buena', { kind: 'platform', dir: d }).hardSignals, ok.hardSignals);
+  for (const [n, rx] of [['nolista', /«hardSignals» es una lista/], ['nocompila', /«hardSignals».*no compila/], ['vacio', /«hardSignals».*vacío/], ['horas', /«hardSignals» es sólo de un conector de plataforma/]]) {
+    assert.ok(!INT.find(n, { dir: d }), `${n} no se carga`);
+    assert.match(de(n), rx, n);
+  }
+  // los dos conectores de verdad declaran las señales del AC 25
+  const juntas = ['azure-devops', 'github'].flatMap((n) => INT.find(n, { kind: 'platform', dir: path.join(ROOT, 'integrations') }).hardSignals);
+  for (const t of ['az repos pr create', 'https://dev.azure.com/acme', '_apis/build', 'System.Title', 'Microsoft.VSTS.Scheduling', '.tycon/ado-config.yaml', 'AZURE_DEVOPS_EXT_PAT', 'SYSTEM_ACCESSTOKEN', 'gh pr view', 'gh api repos', 'https://api.github.com/x']) {
+    assert.ok(juntas.some((p) => new RegExp(p).test(t)), `ninguna señal declarada reconoce «${t}»`);
+  }
+});
+
 test('Layer_PlatformChange_RaisesRequiresHarness @story-8.85 @ac-33', () => {
   const ORG = require(path.join(ROOT, 'scripts', 'lib', 'org-config.js'));
   const actual = { version: 1, integrations: {} };

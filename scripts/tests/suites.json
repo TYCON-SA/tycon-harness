@@ -3035,6 +3035,26 @@
       "requiere": []
     },
     {
+      "__nota": "El candado de las plataformas (scripts/ci/check-core-neutrality.js) y la mudanza de lo que sólo es de Azure DevOps: los dos guiones corren desde su conector y frenan sin el freno de la plataforma; el candado frena un comando o una dirección nueva en el núcleo, un techo que sube y una señal en un archivo exceptuado por horas; la lista con archivo, techo y motivo; y los despliegues y las llaves de integración con la foto de antes.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-neutrality.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Una organización sólo con GitHub hace el ciclo de una historia por la capa sin una llamada a az (con el conector de mentira y con el de GitHub contra el gh de mentira), y una con Azure DevOps no nota el cambio: su configuración no se toca, la foto de llamadas a az es la de siempre (corre las seis suites de la foto) y la instalación no duplica ganchos.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-github-only.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/lib/**",
+        "integrations/**",
+        "scripts/nightly/**",
+        "scripts/hooks/**",
+        "scripts/setup/**",
+        "scripts/tests/lib/**"
+      ]
+    },
+    {
       "__nota": "Los revisores y los agentes por la capa de plataforma: el revisor de DoD lee la CI con la capa y sus dos copias de Codex son las generadas, el despachador avisa del pedido de trabajo sin nombrar una plataforma (y dice si la configuración o la capa no cargan), y work-in-progress lista los pedidos de GitHub por rama, también desde forks.",
       "raiz": "arnes",
       "ruta": "tests/platform-agents.test.js",

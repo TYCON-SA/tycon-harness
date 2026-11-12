@@ -2,7 +2,8 @@
 # config-shell-consumers.test.sh — los consumidores de shell y python del lector de configuración del
 # arnés, corridos de verdad.
 #
-# Qué defiende, MIDIENDO y no leyendo: `scripts/ci/validate-pipeline-in-ado.sh` resuelve las dos
+# Qué defiende, MIDIENDO y no leyendo: `integrations/azure-devops/scripts/validate-pipeline-in-ado.sh` (el guion del
+# conector de Azure DevOps) resuelve las dos
 # variables de la organización en el MISMO orden que el lector (con las dos definidas y distintas consulta
 # la organización que muestra `tycon-config.js explain`), y `integrations/instincts/scripts/instinct-observe.js`
 # expande una `~` literal en TYCON_REPOS_ROOT (si no, atribuye la observación al último nombre de
@@ -15,7 +16,7 @@
 # 🔴 Sin pipes sobre el comando medido: el exit code REAL es el veredicto.
 set -u
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VALIDAR="$TCG/scripts/ci/validate-pipeline-in-ado.sh"
+VALIDAR="$TCG/integrations/azure-devops/scripts/validate-pipeline-in-ado.sh"
 OBSERVE="$TCG/integrations/instincts/scripts/instinct-observe.js"
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/config-consumidores.XXXXXX")"
 trap 'rm -rf "$BASE"' EXIT

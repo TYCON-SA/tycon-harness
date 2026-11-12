@@ -33,13 +33,20 @@
 set -u
 ORG="${TYCON_ADO_ORG:-${ADO_ORG:-}}"   # la misma precedencia que el lector (tycon-config.js): TYCON_ADO_ORG › ADO_ORG
 PROY=""; PID=""; YAML=""
-# El traductor de las opciones viejas vive al lado (viaja en el artefacto arnes-ci).
+# El arnés, tres carpetas arriba (integrations/azure-devops/scripts/): de ahí salen el freno de la plataforma, la
+# configuración y el traductor de los nombres viejos. Este guion vive en el conector y no viaja en el artefacto arnes-ci,
+# así que el arnés entero siempre está: lo que falta se dice, no se saltea.
 _AQUI_LO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "${_AQUI_LO}/legacy-options.sh" ]; then
-  . "${_AQUI_LO}/legacy-options.sh"
-  LEGACY_OPTIONS_PREFIX='[validar] ' legacy_options 'proyecto:project' "$@" || exit 2
-  set -- ${LEGACY_OPTIONS[@]+"${LEGACY_OPTIONS[@]}"}
+_ARNES="$(cd "${_AQUI_LO}/../../.." && pwd)"
+# Las opciones renombradas a inglés: el nombre viejo sigue andando hasta el retiro. El traductor de scripts/ci trae los
+# pares acá mismo y no necesita el mapa de renombres, que no viaja en el público. Sin el traductor, no_medido y frena.
+if [ ! -f "${_ARNES}/scripts/ci/legacy-options.sh" ]; then
+  echo "[validar] no_medido: validate-pipeline-in-ado.sh: no encontré scripts/ci/legacy-options.sh del arnés para leer las opciones" >&2
+  exit 2
 fi
+. "${_ARNES}/scripts/ci/legacy-options.sh"
+LEGACY_OPTIONS_PREFIX='[validar] ' legacy_options 'proyecto:project' "$@" || exit 2
+set -- ${LEGACY_OPTIONS[@]+"${LEGACY_OPTIONS[@]}"}
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) PROY="$2"; shift 2 ;;
@@ -53,26 +60,26 @@ done
 # La cola de la organización en otra plataforma (azure-only.js): no hay pipeline de Azure DevOps que validar. Frena con
 # no_soportado (sale 2: «no lo validé» nunca es «válido»); sale 0 sólo si quien llama lo pide con TYCON_ALLOW_UNSUPPORTED=1.
 # Una salida que no es 0, 2 ni 3 (node que no arranca, azure-only.js roto) es «no pude preguntar»: frena igual. Sin node
-# en el PATH tampoco se preguntó.
-if [ -f "${_AQUI_LO}/azure-only.js" ]; then
-  if command -v node >/dev/null 2>&1; then
-    NO_SOPORTADO="$(node "${_AQUI_LO}/azure-only.js" validate-pipeline-in-ado.sh)"; RC_NS=$?; POR_QUE="azure-only.js salió $RC_NS"
-  else
-    RC_NS=127; POR_QUE="no hay node en el PATH"
-  fi
-  case "$RC_NS" in
-    0) ;;
-    2) echo "[validar] $NO_SOPORTADO" >&2; exit 2 ;;
-    3) echo "[validar] $NO_SOPORTADO"; exit 0 ;;
-    *) echo "[validar] no_medido: validate-pipeline-in-ado.sh: no pude preguntar la plataforma de la organización ($POR_QUE)" >&2; exit 2 ;;
-  esac
+# en el PATH tampoco se preguntó, y sin el freno tampoco.
+if [ ! -f "${_ARNES}/scripts/ci/azure-only.js" ]; then
+  RC_NS=127; POR_QUE="no encontré scripts/ci/azure-only.js del arnés"
+elif command -v node >/dev/null 2>&1; then
+  NO_SOPORTADO="$(node "${_ARNES}/scripts/ci/azure-only.js" validate-pipeline-in-ado.sh)"; RC_NS=$?; POR_QUE="azure-only.js salió $RC_NS"
+else
+  RC_NS=127; POR_QUE="no hay node en el PATH"
 fi
+case "$RC_NS" in
+  0) ;;
+  2) echo "[validar] $NO_SOPORTADO" >&2; exit 2 ;;
+  3) echo "[validar] $NO_SOPORTADO"; exit 0 ;;
+  *) echo "[validar] no_medido: validate-pipeline-in-ado.sh: no pude preguntar la plataforma de la organización ($POR_QUE)" >&2; exit 2 ;;
+esac
 # La organización sale de la configuración del arnés: --org › ADO_ORG / TYCON_ADO_ORG › `ado.org`
 # (perfil del equipo o ~/.claude/tycon.json). Sin organización, Azure DevOps está APAGADA en esta máquina: se dice en
 # una línea y sale 0 sin consultar nada. Nunca «válido».
 if [ -z "$ORG" ]; then
   CFG_ERR="$(mktemp)"
-  ORG="$(node "$(cd "$(dirname "$0")" && pwd)/../lib/tycon-config.js" get ado.org 2>"$CFG_ERR")"; RC_ORG=$?
+  ORG="$(node "${_ARNES}/scripts/lib/tycon-config.js" get ado.org 2>"$CFG_ERR")"; RC_ORG=$?
   # rc 2 = configuración del arnés ROTA: un comando frena con el archivo, la clave y el motivo
   if [ "$RC_ORG" = "2" ]; then cat "$CFG_ERR" >&2; rm -f "$CFG_ERR"; exit 2; fi
   # rc 0 = hay organización · rc 3 = sin valor (apagada). Cualquier OTRO rc (node ausente = 127, un crash = 1) es «no pude

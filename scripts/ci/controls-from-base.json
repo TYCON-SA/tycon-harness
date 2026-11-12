@@ -31,6 +31,11 @@
     { "name": "tool-names", "script": "scripts/ci/tool-names.js", "rules": [
       "scripts/ci/tool-names.json"
     ] },
+    { "name": "core-neutrality", "script": "scripts/ci/check-core-neutrality.js", "rules": [
+      "scripts/ci/neutrality-allowlist.json",
+      "integrations/azure-devops/integration.json",
+      "integrations/github/integration.json"
+    ] },
     { "name": "vocabulary", "script": "scripts/ci/vocabulary.js", "rules": [
       "scripts/ci/vocabulary.json"
     ] },

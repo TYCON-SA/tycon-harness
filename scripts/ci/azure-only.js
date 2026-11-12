@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
-// azure-only.js — ¿la organización trabaja en Azure DevOps? Lo preguntan los guiones que sólo existen ahí
-// (validate-pipeline-in-ado.sh, label-prs.sh, grant-new-product-permissions.js) antes de consultar nada.
+// azure-only.js — ¿la organización trabaja en Azure DevOps? Lo preguntan los guiones que sólo existen ahí antes de
+// consultar nada: label-prs.sh, al lado, y los dos que viven en su conector (integrations/azure-devops/scripts/:
+// validate-pipeline-in-ado.sh y grant-new-product-permissions.js), que lo cargan desde la raíz del arnés.
 //
 // Si la capa de plataforma está (scripts/lib/platform/platform.js) y la cola de la organización (`queue.read`) es de otra
 // plataforma, dice en una línea `no_soportado: <guion>: <razón>`. Sin la capa (el artefacto de la CI no la trae) o sin

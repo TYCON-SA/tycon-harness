@@ -44,7 +44,7 @@
    "why": "el proyecto de Azure DevOps en los comandos az del pipeline del espejo"
   },
   {
-   "path": "scripts/ci/grant-new-product-permissions.js",
+   "path": "integrations/azure-devops/scripts/grant-new-product-permissions.js",
    "kind": "azure",
    "why": "el proyecto del arnés en Azure DevOps (el valor por defecto de --harness)"
   },

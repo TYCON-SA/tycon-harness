@@ -624,7 +624,7 @@ test('T50 FunctionalRecognizers_AddPublicName_KeepInternal_AzureDataDeclared', (
   fs.rmSync(t, { recursive: true, force: true });
   // los datos de Azure quedan, declarados con su motivo
   const azure = INTERNAL_LIST.entries.filter((e) => e.kind === 'azure');
-  for (const p of ['scripts/ci/grant-new-product-permissions.js', 'scripts/production/install-guard.sh']) {
+  for (const p of ['integrations/azure-devops/scripts/grant-new-product-permissions.js', 'scripts/production/install-guard.sh']) {
     assert.ok(azure.some((e) => e.path === p), `${p}: el dato de Azure no está declarado como «azure»`);
   }
   for (const e of shipped(azure, 'datos de Azure de public-copy-internal-name.json')) assert.ok(/Azure/.test(e.why), `${e.path}: el motivo no dice que es un dato de Azure`);

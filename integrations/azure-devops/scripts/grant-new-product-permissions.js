@@ -67,29 +67,46 @@ const CONTRIBUIR = 4;              // GenericContribute
 const SALTEAR_POLITICAS = 128;     // PolicyExempt — para el commit de versión que va directo a main
 const ESCRITURA = CONTRIBUIR | SALTEAR_POLITICAS; // 132, lo mismo que tienen los productos que andan
 
-// Las opciones renombradas a inglés: el nombre viejo sigue andando hasta el retiro. El
-// traductor vive al lado (viaja con este archivo en el artefacto arnes-ci).
-const { aliasLegacyOptions, LegacyOptionsError } = (() => {
-  try { return require('./legacy-options.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') process.stderr.write(`⚠️  legacy-options.js no cargó (${e && e.message}): los nombres viejos de este guion no se traducen\n`); return { aliasLegacyOptions: (argv) => argv, LegacyOptionsError: Error }; }
-})();
+// El arnés, tres carpetas arriba (integrations/azure-devops/scripts/): de ahí salen el freno de la plataforma, la
+// configuración y el traductor de los nombres viejos. Este guion vive en el conector y no viaja en el artefacto arnes-ci,
+// así que el arnés entero siempre está: lo que falta se dice, no se saltea.
+const ARNES = require('path').resolve(__dirname, '..', '..', '..');
+const desdeElArnes = (...p) => require('path').join(ARNES, 'scripts', ...p);
+// Las opciones renombradas a inglés: el nombre viejo sigue andando hasta el retiro. El traductor de scripts/ci trae los
+// pares acá mismo y no necesita el mapa de renombres, que no viaja en el público. Sin el traductor, no_medido y frena.
 const args = (() => {
+  let tr;
+  try { tr = require(desdeElArnes('ci', 'legacy-options.js')); } catch (e) {
+    console.error(`no_medido: grant-new-product-permissions.js: no pude cargar scripts/ci/legacy-options.js del arnés para leer las opciones (${(e && (e.code || e.message)) || e})`);
+    process.exit(2);
+  }
   try {
-    return aliasLegacyOptions(process.argv.slice(2), 'arnes:harness escritura:write-access proyecto:project verificar:verify', 'scripts/ci/grant-new-product-permissions.js');
+    return tr.aliasLegacyOptions(process.argv.slice(2), 'arnes:harness escritura:write-access proyecto:project verificar:verify', 'integrations/azure-devops/scripts/grant-new-product-permissions.js');
   } catch (e) {
-    if (!(e instanceof LegacyOptionsError)) throw e;
+    if (!(e instanceof tr.LegacyOptionsError)) throw e;
     console.error(`✗ ${e.message}`);
     process.exit(2);
   }
 })();
+// Una opción que este guion no conoce frena antes de todo: tomada por ausente, un nombre viejo sin traducir de --verify
+// dejaría dar los permisos en vez de sólo mirar
+const OPCIONES = new Set(['--project', '--write-access', '--harness', '--repo', '--org', '--verify', '--json']);
+for (const a of args) {
+  if (a.startsWith('--') && !OPCIONES.has(a)) { console.error(`✗ opción desconocida: ${a}`); process.exit(2); }
+}
 const flag = (n, d = null) => {
   const i = args.indexOf(n);
   return i === -1 ? d : (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : true);
 };
 // La cola de la organización en otra plataforma (azure-only.js): no hay permisos de Azure DevOps que dar. Frena con
-// no_soportado (sale 2); sale 0 sólo si quien llama lo pide con TYCON_ALLOW_UNSUPPORTED=1.
+// no_soportado (sale 2); sale 0 sólo si quien llama lo pide con TYCON_ALLOW_UNSUPPORTED=1. Sin el freno no se sabe si la
+// organización es de Azure DevOps: no_medido, y frena.
 (() => {
   let r = null;
-  try { r = require('./azure-only.js').check('grant-new-product-permissions.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; }
+  try { r = require(desdeElArnes('ci', 'azure-only.js')).check('grant-new-product-permissions.js'); } catch (e) {
+    console.error(`no_medido: grant-new-product-permissions.js: no pude cargar scripts/ci/azure-only.js del arnés para saber la plataforma de la organización (${(e && (e.code || e.message)) || e})`);
+    process.exit(2);
+  }
   if (!r) return;
   if (r.code === 3) { console.log(r.line); process.exit(0); }
   console.error(r.line);
@@ -102,7 +119,7 @@ const ORG = (() => {
   if (dada && dada !== true) return String(dada).replace(/\/+$/, '');
   let ado;
   try {
-    ado = require(require('path').join(__dirname, '..', 'lib', 'tycon-config.js')).integracionParaComando('ado');
+    ado = require(desdeElArnes('lib', 'tycon-config.js')).integracionParaComando('ado');
   } catch (e) {
     console.error(`✗ la configuración del arnés no se deja leer: ${e.message}`);
     process.exit(2);

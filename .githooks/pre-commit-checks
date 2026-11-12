@@ -181,6 +181,17 @@ if [ -f "$TOOL_NAMES" ] && ! node "$TOOL_NAMES" --repo "$REPO_ROOT"; then
   exit 1
 fi
 
+# ── Los comandos y las direcciones de una plataforma fuera de su conector ──
+# El núcleo dice qué se hace; cómo, el conector: un commit que sube las líneas con un comando o una dirección de una
+# plataforma fuera de integrations/ y las pruebas, sobre el techo de su archivo o con una entrada mal escrita, no se crea.
+# Las señales salen de los manifiestos de plataforma (hardSignals); la lista, de scripts/ci/neutrality-allowlist.json.
+# Casos: scripts/tests/platform-neutrality.test.js
+CORE_NEUTRALITY="$REPO_ROOT/scripts/ci/check-core-neutrality.js"
+if [ -f "$CORE_NEUTRALITY" ] && ! node "$CORE_NEUTRALITY" --repo "$REPO_ROOT"; then
+  echo "⛔ COMMIT RECHAZADO — un comando o una dirección de una plataforma fuera de su conector, o no se pudo mirar (arriba dice dónde)." >&2
+  exit 1
+fi
+
 # ── Las palabras de las guías en castellano ──
 # Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulario.md): el control señala las palabras que
 # no se escriben en la prosa de una guía y pasan el techo de su archivo. Informa y no frena el commit. Las reglas:
