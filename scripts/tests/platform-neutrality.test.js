@@ -73,7 +73,7 @@ test('Move_AzureOnlyFiles_UnderIntegrations @story-8.85 @ac-24', () => {
   for (const n of MUDADOS) {
     const r = correrMudado(mundo(), ROOT, n);
     assert.strictEqual(r.code, 2, `${n}: ${r.out}`);
-    assert.match(r.out, new RegExp(`no_soportado: ${n.replace(/\./g, '\\.')}: sólo existe en Azure DevOps`), r.out);
+    assert.match(r.out, new RegExp(`no_soportado: ${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: sólo existe en Azure DevOps`), r.out);
     assert.strictEqual(r.curl, false, `${n} no consulta a Azure`);
   }
   // con el freno escondido (un árbol sin scripts/ci/azure-only.js), no pasan callados: no_medido y salen 2
