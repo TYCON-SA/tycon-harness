@@ -369,8 +369,9 @@ test('IntegrationsOff_Others_Unchanged @story-8.85 @ac-31', (t) => {
   const salida = (config, env = {}) => {
     const home = tmp('casa-');
     if (config) { const f = TH.configFile(home); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(config)); }
-    // la llave del buzón de corridas en un lugar que no existe: el árbol armado del privado la trae y el público no
-    const base = { ...process.env, HOME: home, USERPROFILE: home, TYCON_MAILBOX_JSON: path.join(home, 'sin-llave.json'), ...env };
+    // la llave del buzón de corridas en un lugar que no existe: el árbol armado del privado la trae y el público no.
+    // Codex apagado: sin llave se detecta, y la foto no puede depender de si la máquina lo tiene instalado
+    const base = { ...process.env, HOME: home, USERPROFILE: home, TYCON_MAILBOX_JSON: path.join(home, 'sin-llave.json'), TYCON_CODEX: '0', ...env };
     for (const k of Object.keys(base)) if (/^TYCON_(ADO_ORG|PLATFORM|PROFILE|TIME_TRACKING|HOME|MAILBOX|INTEG_.*)$/.test(k) && !(k in env)) delete base[k];
     return ['--json', '--shell'].map((f) => {
       const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'), 'integrations', f], { encoding: 'utf8', env: { ...base, TYCON_PROFILE: '0' } });
