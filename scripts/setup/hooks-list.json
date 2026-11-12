@@ -92,5 +92,5 @@
   ],
   "superseded": ["scripts/hooks/instinct-observe.js", "scripts/hooks/instincts-notice.js", "clocki/scripts/clocki-enforce.js", "clocki/scripts/on-prompt.js", "clocki/scripts/touch-activity.js", "clocki/scripts/sweep.js","tycon-pipeline/scripts/on-edit.js", "tycon-pipeline/scripts/on-write-collision.js", "tycon-pipeline/scripts/on-frontmatter-write.js", "tycon-ado-story-wi/scripts/on-story-create.js", "tycon-story-work-item/scripts/on-story-create.js", "tycon-story-followup-link/scripts/on-story-create.js", "scripts/hooks/produccion-notice.js"],
   "moved_to": {"scripts/hooks/instinct-observe.js": "@int:instincts/scripts/instinct-observe.js", "scripts/hooks/instincts-notice.js": "@int:instincts/scripts/instincts-notice.js", "clocki/scripts/on-prompt.js": "@int:clockify/scripts/on-prompt.js", "clocki/scripts/touch-activity.js": "@int:clockify/scripts/touch-activity.js", "clocki/scripts/sweep.js": "@int:clockify/scripts/sweep.js"},
-  "legacy_fragments": [".claude/hooks/engram-pre-commit.sh", "scripts/hooks/instinct-observe.sh","*\"git commit\"*|*\"git push\"*) REPO=$(git rev-parse --show-toplevel"]
+  "legacy_fragments": [".claude/hooks/engram-pre-commit.sh", "hooks/engram-pre-commit.ps1","scripts/hooks/instinct-observe.sh","*\"git commit\"*|*\"git push\"*) REPO=$(git rev-parse --show-toplevel"]
 }
