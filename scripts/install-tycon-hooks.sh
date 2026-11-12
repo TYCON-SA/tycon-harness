@@ -852,7 +852,7 @@ BF_PRESENT=()
 
 # ============================================================
 # Banco de pruebas de controles — throttle DIARIO.
-# Corre los casos de los ~20 hooks contra los scripts REALES (sandbox, sin LLM,
+# Corre los casos de los hooks contra los scripts REALES (sandbox, sin LLM,
 # ~45s) y compara contra la línea de base Claude: un control que se rompe suena
 # acá, no en producción. El lado Codex (paridad + live-fire con sesiones reales)
 # corre solo con TYCON_CODEX=1, en background para no frenar el arranque.

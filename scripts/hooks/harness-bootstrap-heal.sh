@@ -2,6 +2,10 @@
 #
 # harness-bootstrap-heal.sh — repara la LÍNEA DE ARRANQUE del arnés (SessionStart).
 #
+# Pieza en retiro. La línea de arranque la escribe y la sana `harness.js` (su copia fija vive fuera
+# del árbol que actualiza), y este guion la da por sana cuando llama a `bootstrap.js`. Se borra
+# junto con la limpieza de los nombres viejos.
+#
 # El problema que resuelve:
 #
 #   Todo el arnés se propaga por `git pull` + `install-tycon-hooks.sh`, y esa segunda mitad la

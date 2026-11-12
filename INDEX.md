@@ -131,4 +131,5 @@ aplica. Setup (opcional, por dev): `guides/integrations/codegraph-mcp.md`.
 ## Instalación y mantenimiento
 
 El setup por máquina y el opcional (la herramienta de horas, CodeGraph), el mantenimiento y el troubleshooting
-viven en **[INSTALL.md](INSTALL.md)**: onboarding humano de una sola vez, no contexto de cada sesión.
+viven en **[INSTALL.md](INSTALL.md)**: onboarding humano de una sola vez, no contexto de cada sesión. Cómo instala,
+actualiza, vuelve atrás y desinstala el arnés, en una sola guía: `guides/maintaining/mecanismo-de-instalacion.md`.

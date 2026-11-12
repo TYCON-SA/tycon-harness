@@ -3,6 +3,10 @@
  * guides-heal.js — repara el CLON ATRASADO (o TRABADO) del arnés desde un hook que ya
  * está enchufado en todas las máquinas (on-prompt.js, UserPromptSubmit).
  *
+ * Pieza en retiro. En una máquina con estado del mecanismo de instalación (`harness-state.json`)
+ * no hace nada: el arranque lo hacen `harness.js` y su copia fija, que vive fuera del árbol que
+ * actualiza (`delegated`, más abajo). Se borra junto con la limpieza de los nombres viejos.
+ *
  * El problema que resuelve:
  *
  *   La línea de arranque de cada sesión hace `git pull` del arnés y después corre el
