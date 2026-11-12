@@ -12,7 +12,8 @@
 //
 // Todo el recorrido tiene un tope de 5 s (lo que no se llegó a mirar se dice como no medido) y la consulta del pedido de
 // un camino corto, una foto de 10 minutos. Los caminos cortos de sesiones que ya no están, sin tocarse hace más de 7
-// días, sólo se cuentan, con el comando para cerrarlos.
+// días, sólo se cuentan, con el comando para cerrarlos. También dice la deuda de evidencia en vivo vencida
+// (`debtNotice` de unclosed-runs-notice.js): es lo único que escribe, el cierre de una deuda ya pagada en `gates.log`.
 // Nunca rompe el arranque: sale 0 siempre. Off: TYCON_FINISHED_OPEN_NOTICE=0 (todo) o TYCON_UNSAVED_FOLDERS=0 (las carpetas). TYCON_FINISHED_OPEN_NOW fija la hora (pruebas).
 const fs = require('fs');
 const os = require('os');
@@ -31,6 +32,8 @@ async function main({ env = process.env, home = os.homedir(), write = (t) => pro
   const stateDir = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(home);
   const { lines } = require(LIB).machine({ home, stateDir, now, markerJs: MARKER_JS });
   if (lines.length) write(`🔔 terminado sin cerrar en esta máquina (nada se cierra solo; cerralo después del último push y del último pedido):\n${lines.map((l) => `  · ${l}`).join('\n')}\n`);
+  // la deuda de evidencia en vivo vencida: este gancho se instala siempre, el de las corridas sin cerrar sólo con el buzón
+  require(path.join(__dirname, 'unclosed-runs-notice.js')).debtNotice({ env, home, write: (t) => write(`${t}\n`) });
   if (env.TYCON_UNSAVED_FOLDERS === '0') return;
   const sueltas = await require(LIB).unsavedFolders({ home, now, env });
   if (sueltas.length) write(`🔔 carpetas de trabajo con cambios sin commitear y sin sesión (no toco nada; commitealos y empujalos a su rama, o descartalos a conciencia):\n${sueltas.map((l) => `  · ${l}`).join('\n')}\n`);

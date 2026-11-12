@@ -196,7 +196,7 @@ dice_apagada "validate-engram-upgrade.sh (engram)" "$RC" "$SAL" 'engram'
 SAL="$(afuera "$C4" -- node "$RAIZ/scripts/hooks/engram-drift-notice.js" --force 2>&1)"; RC=$?
 dice_apagada "engram-drift-notice.js (engram)" "$RC" "$SAL" 'engram'
 
-SAL="$(afuera "$C4" -- bash "$RAIZ/scripts/ci/validate-pipeline-in-ado.sh" --project Producto --pipeline 1 2>&1)"; RC=$?
+SAL="$(afuera "$C4" -- bash "$RAIZ/integrations/azure-devops/scripts/validate-pipeline-in-ado.sh" --project Producto --pipeline 1 2>&1)"; RC=$?
 dice_apagada "validate-pipeline-in-ado.sh (Azure DevOps)" "$RC" "$SAL" 'azure devops'
 
 # (acá sólo los SERVICIOS de las integraciones: el observador de instintos pregunta por `claude`/`codex` para elegir

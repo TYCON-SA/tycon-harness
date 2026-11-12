@@ -30,6 +30,7 @@ const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'cont
   'escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'escape:TYCON_NEW_NAMES', 'escape:TYCON_TEST_GATE',
   'escape:DOD_BYPASS', 'escape:TYCON_NO_DEEP_REVIEW', 'escape:TYCON_STATUS_GATE',
   'escape:story-skill-bypass', 'escape:red-control-test-edit', 'escape:set-autonomous', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda',
+  'escape:rojo-esperado-de-la-matriz',
   'escape:force-manual', 'escape:trust-ran', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:dod_runtime_exempt',
   'escape:no-deep-review', 'escape:cambiar-el-estado', 'save', 'designation-confirm',
   // nombrar y retirar a la coordinadora con un click
@@ -245,6 +246,7 @@ const CUBRE = {
   'escape:no-deep-review': ['adversarial-skip'],
   'escape:cerrar-la-ejecucion': ['lost-run'],
   'escape:cerrar-como-deuda': ['lost-run'],
+  'escape:rojo-esperado-de-la-matriz': ['lost-run'],
   'escape:cambiar-el-estado': ['escape:TYCON_STATUS_GATE'],
 };
 

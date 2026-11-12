@@ -1,6 +1,6 @@
 {
-  "archivos": 97,
-  "lineas": 336,
+  "archivos": 95,
+  "lineas": 318,
   "porArchivo": {
     ".github/control-changes/081bc179e3cc1672ceb50f0d7d0a386002838f3fd8d8c04f6bf2a5bd1e378963.json": 1,
     ".github/control-changes/0a8d93523ebe27ac7ab2292034f2da51edffc6b0af09af1d9d60752d3b950454.json": 1,
@@ -42,11 +42,9 @@
     "pipelines/operations/stage-metrics.yml": 4,
     "pipelines/operations/team-dashboard.yml": 1,
     "pipelines/operations/templates/ops-data.yml": 2,
-    "scripts/ci/grant-new-product-permissions.js": 14,
     "scripts/ci/open-pr-per-finding.sh": 8,
     "scripts/ci/push-nightly-data.js": 1,
     "scripts/ci/queue-validation.js": 19,
-    "scripts/ci/validate-pipeline-in-ado.sh": 4,
     "scripts/controls-bench/exam-smoke.sh": 1,
     "scripts/hooks/failed-query-notice.js": 1,
     "scripts/hooks/pr-auto-complete-guard.js": 9,

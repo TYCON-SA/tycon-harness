@@ -17,6 +17,8 @@ const C = () => require(path.join(ROOT, 'scripts', 'lib', 'platform', 'contract.
 const FAKE_AZ = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-az.sh');
 const FAKE_GH = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-gh.js');
 const CI = path.join(ROOT, 'scripts', 'ci');
+// los dos guiones sólo de Azure DevOps viven en su conector y cargan el freno desde la raíz del arnés
+const AZ_SOLO = path.join(ROOT, 'integrations', 'azure-devops', 'scripts');
 
 const dirs = [];
 test.after(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); });
@@ -379,8 +381,8 @@ function guion(m, cmd, args, extra = {}) {
   return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}`, curl: fs.existsSync(log) };
 }
 const labelPrs = (m, extra) => guion(m, 'bash', [path.join(CI, 'label-prs.sh')], extra);
-const validar = (m, args, extra) => guion(m, 'bash', [path.join(CI, 'validate-pipeline-in-ado.sh'), '--project', 'Producto', '--pipeline', '7', ...args], extra);
-const permisos = (m, extra) => guion(m, process.execPath, [path.join(CI, 'grant-new-product-permissions.js'), '--project', 'Producto', '--verify'], extra);
+const validar = (m, args, extra) => guion(m, 'bash', [path.join(AZ_SOLO, 'validate-pipeline-in-ado.sh'), '--project', 'Producto', '--pipeline', '7', ...args], extra);
+const permisos = (m, extra) => guion(m, process.execPath, [path.join(AZ_SOLO, 'grant-new-product-permissions.js'), '--project', 'Producto', '--verify'], extra);
 function vigilante(m, extra) {
   const q = path.join(tmp('colas-'), 'watcher');
   fs.mkdirSync(q);

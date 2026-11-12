@@ -376,7 +376,8 @@ if [ -n "$LOGFILE" ]; then mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true;
 # `ps` — y de él sólo se guarda la huella.
 constancia() { # $1 = regla (id del catálogo)  $2 = veredicto  [$3 = camino del escape  $4 = sesión que lo reenvió
                #  $5 = sesión del comando  $6 = nombre del escape (set-autonomous, cerrar-la-ejecucion)
-               #  $7 = motivo del bloqueo, de la lista de su regla en guard-record.js]
+               #  $7 = motivo del bloqueo, de la lista de su regla en guard-record.js
+               #  $8 = huella de lo que se firma (la lista y la fecha del rojo esperado de la matriz)]
   local lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/guard-record.js"
   [[ -f "$lib" ]] || return 0
   command -v "$HNODE" >/dev/null 2>&1 || return 0
@@ -386,6 +387,7 @@ constancia() { # $1 = regla (id del catálogo)  $2 = veredicto  [$3 = camino del
   [[ -n "${5:-}" ]] && extra+=(--session "$5")
   [[ -n "${6:-}" ]] && extra+=(--escape "$6")
   [[ -n "${7:-}" ]] && extra+=(--reason "$7")
+  [[ -n "${8:-}" ]] && extra+=(--detail "$8")
   printf '%s' "$CMD_SHOWN" | "$HNODE" "$lib" --guard safety-guard --rule "$1" --verdict "$2" ${extra[@]+"${extra[@]}"} --cmd-stdin >/dev/null 2>&1 || true
   return 0
 }
@@ -726,6 +728,7 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
     case "$_c3_l" in
       motivo=*) _c3_motivo="${_c3_l#motivo=}" ;;
       frena=*) _c3_frenos+=("${_c3_l#frena=}") ;;
+      detalle=*) _c3_detalle="${_c3_l#detalle=}" ;;
     esac
   done <<< "$_c3_out"
   # Cada escape va a la ventana de permiso (más abajo, después de ESC-C7), con lo que hace falta para frenar con su
@@ -739,6 +742,7 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
     case "$_c3_esc" in
       "cerrar la ejecución") _c3_clave="cerrar-la-ejecucion" ;;
       "cerrar como deuda") _c3_clave="cerrar-como-deuda"; _c3_regla="ESC-C4" ;;
+      "rojo esperado de la matriz") _c3_clave="rojo-esperado-de-la-matriz"; _c3_regla="ESC-C4" ;;
       *) _c3_clave="${_c3_esc// /-}" ;;
     esac
     # la salida de una ejecución perdida sin apertura visible (la sesión no está escrita literal, o no tiene apertura):
@@ -814,7 +818,7 @@ fi
 ow_regla() { # $1 = la firma → la regla con que frena o deja constancia
   case "$1" in
     escape:TYCON_SAFETY_OFF|escape:TYCON_PROD_LINT|escape:TYCON_NEW_NAMES|escape:TYCON_TEST_GATE|escape:DOD_BYPASS|escape:TYCON_NO_DEEP_REVIEW|escape:TYCON_STATUS_GATE) echo "ESC-C1" ;;
-    escape:cerrar-como-deuda) echo "ESC-C4" ;;
+    escape:cerrar-como-deuda|escape:rojo-esperado-de-la-matriz) echo "ESC-C4" ;;
     plan-approval) echo "ESC-C6" ;;
     control-change|refresh-after-main) echo "ESC-C7" ;;
     escape:merge-bypass) echo "GIT-C5" ;;
@@ -834,6 +838,9 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
       cerrar-como-deuda) block "ESC-C4" \
           "Cerrar la historia como deuda (marker.js ${sub}) deja lo que no se pudo hacer como el final de la ejecución, con su deuda anotada." \
           "Si se puede terminar, terminá. Si no, explicale a la persona qué quedó pendiente y por qué." ;;
+      rojo-esperado-de-la-matriz) block "ESC-C4" \
+          "Dejar la matriz de evidencia en vivo en rojo a propósito (marker.js ${sub} ${a1}) lleva al commit criterios sin evidencia en vivo, hasta una fecha." \
+          "Si podés correr la evidencia, corréla. Si no, explicale a la persona qué criterios quedan sin evidencia en vivo, por qué y hasta cuándo." ;;
       force-manual) BLOCK_MOTIVO="force-manual"; block "ESC-C3" \
           "Declarar un control a mano (marker.js set-check … --force-manual) lo da por pasado sin correrlo; así escrito (escondido, en una variable o en una envoltura) no se firma." \
           "Corré el control de verdad: marker.js run-check <nombre> -- <comando>. Si no se puede, decíselo a la persona: si lo decide ella, la firma va en su forma exacta, sola: marker.js set-check <control> <estado> --force-manual [--for-session <D>]." ;;
@@ -881,11 +888,13 @@ if [[ "$_ow_mira" == "1" ]]; then
     ask)
       OW_ASK_JSON="$OW_JSON"
       for _ow_e in ${OW_ESCAPES[@]+"${OW_ESCAPES[@]}"}; do
-        constancia "$(ow_regla "$_ow_e")" escape ventana "" "$_c3_sid" "${_ow_e#escape:}"
+        _ow_det=""; [[ "$_ow_e" == "escape:rojo-esperado-de-la-matriz" ]] && _ow_det="${_c3_detalle:-}"
+        constancia "$(ow_regla "$_ow_e")" escape ventana "" "$_c3_sid" "${_ow_e#escape:}" "" "$_ow_det"
       done ;;
     # la aprobación explícita de la persona (un click o un «aprobado») queda con su vía: la dio ella, no la delegación
     allow) _ow_camino=delegacion; case "$OW_VIA" in click|mensaje) _ow_camino="$OW_VIA" ;; esac
-      constancia "$(ow_regla "$OW_FIRMA")" escape "$_ow_camino" "$OW_RELEVO" "$_c3_sid" "${OW_FIRMA#escape:}" ;;
+      _ow_det=""; [[ "$OW_FIRMA" == "escape:rojo-esperado-de-la-matriz" ]] && _ow_det="${_c3_detalle:-}"
+      constancia "$(ow_regla "$OW_FIRMA")" escape "$_ow_camino" "$OW_RELEVO" "$_c3_sid" "${OW_FIRMA#escape:}" "" "$_ow_det" ;;
     none)
       # la salida de una ejecución perdida que la ventana no reconoce como su firma (otro subcomando): no se firma acá
       if [[ -n "$_c3_perdida" ]]; then

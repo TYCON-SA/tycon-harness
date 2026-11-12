@@ -1,9 +1,9 @@
 {
   "__doc": "Story 8.23 (AC 4): el techo de «.claude» en el código. Por archivo, cuántas veces aparece «.claude» fuera de los enchufes de Claude Code (clase B: settings.json, settings.local.json, CLAUDE.md, skills/, agents/, commands/, projects/, plugins/, channels/, ~/.claude.json) y fuera de los archivos de legacy-home-names.json. Barrido: los archivos rastreados de scripts/, skills/, agents/, build/ y adapters/, sin pruebas (tests/, *.test.*, fixtures/, controls-bench/cases/) ni prosa (.md); los comentarios cuentan. La regla: el techo SÓLO BAJA. Un archivo que sube frena nombrando sus líneas (pedile la ruta a scripts/setup/harness/tycon-home.js); uno que baja frena pidiendo bajar el techo. Re-medir: node scripts/tests/tycon-home.test.js --measure > scripts/tests/fixtures/dot-claude-ceiling.json. Lo compara scripts/tests/tycon-home.test.js (T3). El cero se exige en la tanda E.",
   "__last_change": {
-    "date": "2026-11-08",
-    "direction": "baja en dieciséis archivos",
-    "reason": "Story 8.150: los hooks en shell y los escritores y lectores en JS de los registros sueltos (el freno, el guardián de pruebas, la grabadora de instintos, los medidores y sus avisos, el tablero, la auditoría, la subida al buzón, la prueba de fuego) piden su carpeta a scripts/lib/state-dir.sh o scripts/lib/loose-logs.js. safety-guard-pre.sh 28 → 26 y test-scope-guard-pre.sh 1 → 0, como promete el AC 12; nadie sube. state-dir.sh entra a las entries de legacy-home-names.json. Y el aplicador toma la carpeta del estado del ayudante (tanda B): install-tycon-hooks.sh 38 → 22. retro-staleness-notice.js queda igual (3): copiado suelto, sin la biblioteca, sella donde siempre. Total 829 → 795."
+    "date": "2026-11-12",
+    "direction": "igual: dos archivos cambian de ruta",
+    "reason": "Los dos guiones que sólo sirven en Azure DevOps (validate-pipeline-in-ado.sh y grant-new-product-permissions.js) se mudan de scripts/ci/ a su conector, integrations/azure-devops/scripts/, con el mismo número; nadie sube. Total 795."
   },
   "total": 795,
   "files": {
@@ -26,7 +26,9 @@
     "build/deploy-codex-hooks.js": 1,
     "build/deploy-shared-skills.js": 1,
     "build/generate.js": 1,
+    "integrations/azure-devops/scripts/grant-new-product-permissions.js": 1,
     "integrations/azure-devops/scripts/on-story-create.js": 1,
+    "integrations/azure-devops/scripts/validate-pipeline-in-ado.sh": 2,
     "integrations/clockify/integration.json": 2,
     "integrations/clockify/scripts/clocki-enforce.js": 2,
     "integrations/clockify/scripts/install-mcp.ps1": 2,
@@ -38,14 +40,12 @@
     "integrations/instincts/integration.json": 2,
     "integrations/instincts/scripts/instincts-notice.js": 1,
     "scripts/ci/check-trigger-without-docs.js": 1,
-    "scripts/ci/grant-new-product-permissions.js": 1,
     "scripts/ci/nightly-dod-notice.sh": 2,
     "scripts/ci/public-ci.sh": 2,
     "scripts/ci/reviewer-rules.js": 1,
     "scripts/ci/sql-compile.js": 1,
     "scripts/ci/suites-for-change.js": 1,
     "scripts/ci/tycon-ci-gate.js": 3,
-    "scripts/ci/validate-pipeline-in-ado.sh": 2,
     "scripts/controls-bench/advisor-runner.js": 5,
     "scripts/controls-bench/exam-smoke.sh": 2,
     "scripts/controls-bench/live-fire-stop.js": 2,

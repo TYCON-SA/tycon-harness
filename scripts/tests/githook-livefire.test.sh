@@ -75,6 +75,9 @@ montar() {
   cp "$HOOK_REPO" "$T/repo/.githooks/pre-commit"; chmod +x "$T/repo/.githooks/pre-commit"
   # el lint de stories vive en scripts/lib/: viaja con la carpeta
   cp -R "$RAIZ/scripts/lib" "$RAIZ/scripts/metrics" "$RAIZ/scripts/ci" "$T/repo/scripts/" 2>/dev/null
+  # sin la lista del candado de plataforma: el laboratorio no trae los conectores (integrations/), y una lista sin sus
+  # manifiestos frena el commit por no poder contar. Sin los dos, el candado dice que no hay nada que contar
+  rm -f "$T/repo/scripts/ci/neutrality-allowlist.json"
   # y los reemplazos de lo mudado a scripts/lib/, como en el arnés (rutas del mapa, nunca escritas acá): sin ellos el mapa
   # del laboratorio (C-25) nombraría archivos mudados sin su reemplazo. Sin mapa (la copia pública) no hay nada que copiar.
   local vieja

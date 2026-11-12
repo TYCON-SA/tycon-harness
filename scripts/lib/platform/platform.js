@@ -112,7 +112,7 @@ function otrosRepos(tr) {
 function identityByName(name, opts = {}) {
   const tr = teamRepos(opts);
   const wanted = String(name || '').toLowerCase();
-  return identidades(tr && tr.data).find((r) => String(r.repo).toLowerCase() === wanted || `${r.org}/${r.repo}`.toLowerCase() === wanted) || null;
+  return identidades(tr.data).find((r) => String(r.repo).toLowerCase() === wanted || `${r.org}/${r.repo}`.toLowerCase() === wanted) || null;
 }
 
 /** Una identidad de repo a partir de lo que llega: un objeto, un JSON o `org/repo`. */

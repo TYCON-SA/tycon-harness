@@ -358,7 +358,8 @@ function pruneStale() {
 // Append-only logs en STATE_DIR — trazabilidad durable de gates y bypasses.
 // gates.log: cada run-check/set-check (ts, name, status, cmd, exit, provenance).
 // bypass.log: cada DOD_BYPASS / --no-verify detectado (rastro durable, no sólo stderr).
-function appendLog(fileName, obj) {
+// `estricto`: el renglón es la constancia de algo que se acepta (la deuda de evidencia en vivo): si no se escribe, tira.
+function appendLog(fileName, obj, { estricto = false } = {}) {
   try {
     if (!fs.existsSync(STATE_DIR)) fs.mkdirSync(STATE_DIR, { recursive: true });
     // Namespace por repo: los logs son globales por máquina y
@@ -380,7 +381,10 @@ function appendLog(fileName, obj) {
     const linea = JSON.stringify({ ts: nowIso(), sessionId: SID, repoPath, ...(storyPath ? { storyPath } : {}), ...obj }) + '\n';
     if (PREVIO) { LOGS_DEL_CHEQUEO.push([path.join(STATE_DIR, fileName), linea]); return; }
     fs.appendFileSync(path.join(STATE_DIR, fileName), linea, 'utf8');
-  } catch (_e) { /* logging nunca rompe el comando */ }
+  } catch (e) {
+    // logging nunca rompe el comando, salvo la constancia de lo que se acepta
+    if (estricto) throw e;
+  }
 }
 
 // Marker de ESTA sesión. Primero el archivo per-session; si no, fallback al
@@ -2175,9 +2179,24 @@ function cmdCompleteStep(nRaw, flags) {
           const sinLista = (matrix.warnings || []).find((w) => /sin la lista de cambios de la corrida no achico/.test(w));
           if (sinLista) console.error(`marker.js complete-step ${n}: ${sinLista}`);
         }
+        // en una ejecución en deuda con el rojo esperado de la matriz: los criterios sin correr que cubre su lista llegan al
+        // commit, con su fecha; todo lo demás frena como siempre (la matriz se recalcula igual, nunca se lee el control)
+        const deudaEnVivo = matrix && !matrix.structuralError && !matrix.green ? deudaDeLaMatriz(marker, matrix) : null;
         if (matrix && matrix.structuralError) {
           blocked = 'acmatrix-struct';
           console.error(`marker.js complete-step ${n} BLOQUEADO — matriz runtime no computable: ${matrix.structuralError}`);
+        } else if (deudaEnVivo && deudaEnVivo.acepta) {
+          const acs = deudaEnVivo.acs.join(', ');
+          // el renglón es lo único que hace hablar al aviso de la deuda vencida: sin él, la deuda no se acepta. Lleva
+          // dónde vive la historia en su repo, para encontrarla cuando esta carpeta de trabajo ya no esté
+          try {
+            appendLog('gates.log', { name: 'acmatrix-debt', story: nn(marker.storyId, null), storyPath, ...dondeViveLaHistoria(storyPath), deuda: marker.cierre.deuda, acs: deudaEnVivo.acs, tests: deudaEnVivo.tests, until: deudaEnVivo.until }, { estricto: true });
+            console.error(`⚠️  matriz (DODRT-C6): AC ${acs} sin evidencia en vivo — aceptados por la deuda ${marker.cierre.deuda}, vence ${deudaEnVivo.until}`);
+            console.error(`📌 El mensaje de commit lleva esta línea: Sin evidencia en vivo: AC ${acs} — deuda ${marker.cierre.deuda}, vence ${deudaEnVivo.until}`);
+          } catch (e) {
+            blocked = 'acmatrix-debt-log';
+            console.error(`marker.js complete-step ${n} BLOQUEADO — no pude anotar la deuda de evidencia en vivo en gates.log (${e.code || e.message}): sin ese renglón nadie avisa cuando venza. Revisá la carpeta de estado y reintentá.`);
+          }
         } else if (matrix && !matrix.green) {
           blocked = 'acmatrix';
           console.error(`marker.js complete-step ${n} BLOQUEADO — matriz de verificación runtime (DODRT-C6) ROJA.`);
@@ -2196,6 +2215,8 @@ function cmdCompleteStep(nRaw, flags) {
           // La firma que existe pero se descartó se DICE: sin esto, «esperan waiver» parece que el dev no firmó.
           for (const l of require('./runtime-matrix.js').avisoFirmasDescartadas(matrix, storyPath)) console.error(`  ${l}`);
           if (matrix.chainOk === false) console.error('  🚨 hay líneas de esta story descartadas por la cadena del registro de firmas — causa probable: una edición a mano.');
+          // en deuda con el rojo esperado de la matriz: lo que la deuda no acepta, dicho
+          if (deudaEnVivo) for (const l of deudaEnVivo.motivos) console.error(`  ${l}`);
         }
       }
     }
@@ -3640,6 +3661,7 @@ function cmdExpectRed(args) {
     process.exit(2);
   }
   const actual = String(nn(at(marker.checks, check), ''));
+  if (check === 'acmatrix') return rojoEsperadoDeLaMatriz(marker, tests, args, actual);
   const m = /^red:exit=(\d+)/.exec(actual);
   if (!m) {
     console.error(`marker.js expect-red: el control ${check} no está en rojo (${actual || 'sin registrar'}): no hay rojo que esperar`);
@@ -3651,6 +3673,149 @@ function cmdExpectRed(args) {
   writeMarker(marker);
   appendLog('gates.log', { name: 'expect-red', story: nn(marker.storyId, null), check, tests, deuda: marker.cierre.deuda });
   process.stdout.write(`${check}: rojo-esperado:exit=${m[1]} (${tests.join(', ')}) — deuda ${marker.cierre.deuda}\n`);
+}
+
+// El tope de la fecha de vencimiento de un rojo esperado de la matriz, en días desde el cierre en deuda.
+const TOPE_DE_LA_DEUDA_EN_VIVO = 14;
+
+/** La fecha local `AAAA-MM-DD` de un momento: el vencimiento vale el día entero de la máquina. */
+function fechaLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function sumarDias(fecha, dias) {
+  const [a, m, d] = fecha.split('-').map(Number);
+  return fechaLocal(new Date(a, m - 1, d + dias));
+}
+const esFecha = (t) => /^\d{4}-\d{2}-\d{2}$/.test(String(t || '')) && sumarDias(String(t), 0) === String(t);
+
+/**
+ * La constancia del freno para el rojo esperado de la matriz: la de esta sesión y esta ejecución, con la huella de esta
+ * lista y esta fecha, y posterior a la última que ya se usó (`desde`). Una constancia, una escritura.
+ */
+function constanciaDelRojoEsperado(frenos, sid, startedAt, desde, detalle) {
+  const inicio = Date.parse(startedAt || '');
+  const usada = Date.parse(desde || '');
+  const vias = require('./lib/run-close.js').VIAS_DE_CIERRE;
+  for (let i = frenos.length - 1; i >= 0; i--) {
+    const l = frenos[i];
+    if (l.freno !== 'safety-guard' || l.veredicto !== 'escape' || l.escape !== 'rojo-esperado-de-la-matriz' || l.sesion !== sid) continue;
+    if (l.detalle !== detalle || !vias.includes(l.via)) continue;
+    const ts = Date.parse(l.ts);
+    if (Number.isFinite(inicio) && !(ts >= inicio)) continue;
+    if (Number.isFinite(usada) && !(ts > usada)) continue;
+    return l;
+  }
+  return null;
+}
+
+// El rojo esperado de la matriz: `expect-red acmatrix --tests <T1,T2> --until <AAAA-MM-DD>`. Lleva al commit los criterios
+// sin evidencia en vivo que cubre la lista, hasta la fecha, con un tope de 14 días desde el cierre en deuda. Pide su propia
+// firma, cuya constancia trae la huella de la lista y la fecha que vio la persona. Con el control ya en rojo esperado,
+// el mismo comando renueva la fecha (y la lista) dentro del mismo tope.
+function rojoEsperadoDeLaMatriz(marker, tests, args, actual) {
+  const previo = (marker.expectedRed || {}).acmatrix || null;
+  const m = /^red:exit=(\d+)/.exec(actual) || (previo ? /^rojo-esperado:exit=(\d+)/.exec(actual) : null);
+  if (!m) {
+    console.error(`marker.js expect-red: el control acmatrix no está en rojo (${actual || 'sin registrar'}): no hay rojo que esperar`);
+    process.exit(2);
+  }
+  const hasta = opcion(args, 'until');
+  const tope = TOPE_DE_LA_DEUDA_EN_VIVO;
+  if (!hasta) {
+    console.error(`marker.js expect-red: acmatrix pide --until <AAAA-MM-DD>: hasta cuándo quedan los criterios sin evidencia en vivo (como mucho ${tope} días desde el cierre en deuda)`);
+    process.exit(2);
+  }
+  if (!esFecha(hasta)) {
+    console.error(`marker.js expect-red: «${hasta}» no es una fecha AAAA-MM-DD`);
+    process.exit(2);
+  }
+  const cerrada = new Date(marker.cierre.at || '');
+  if (!Number.isFinite(cerrada.getTime())) {
+    console.error('marker.js expect-red: no sé cuándo se cerró la ejecución en deuda (cierre.at): sin eso no hay tope para la fecha');
+    process.exit(2);
+  }
+  const hoy = fechaLocal(new Date());
+  const maximo = sumarDias(fechaLocal(cerrada), tope);
+  if (hasta < hoy) {
+    console.error(`marker.js expect-red: la fecha ${hasta} es anterior a hoy (${hoy})`);
+    process.exit(2);
+  }
+  if (hasta > maximo) {
+    console.error(`marker.js expect-red: la fecha ${hasta} pasa el tope de ${tope} días desde el cierre en deuda: la más lejana es ${maximo}. Pasado el tope, la deuda se paga corriendo la evidencia.`);
+    process.exit(2);
+  }
+  const story = resolveStoryPath(marker.storyPath, marker);
+  let enTabla;
+  try {
+    enTabla = require('./lib/story-checks.js').parseTestsTable(fs.readFileSync(story, 'utf8')).rows.map((r) => r.tid).filter(Boolean);
+  } catch (e) {
+    console.error(`marker.js expect-red: no pude leer la tabla ### Tests de la historia (${story || marker.storyPath}): ${e.message}`);
+    process.exit(2);
+  }
+  const ajenas = tests.filter((t) => !enTabla.includes(t));
+  if (ajenas.length) {
+    console.error(`marker.js expect-red: ${ajenas.join(', ')} no está(n) en la tabla ### Tests de la historia (${story}): la lista nombra pruebas de la tabla`);
+    process.exit(2);
+  }
+  const detalle = require('./lib/marker-command.js').detalleDelRojoEsperado('acmatrix', tests, hasta);
+  const frenos = require('./lib/run-close.js').leerFrenos();
+  const l = frenos ? constanciaDelRojoEsperado(frenos, SID, marker.startedAt, previo && previo.constanciaTs, detalle) : null;
+  // la frase la juzga el freno; acá se exige su constancia, atada a esta lista y esta fecha, y sin usar
+  if (!l) {
+    console.error(frenos
+      ? 'marker.js expect-red: no encuentro la constancia de que una persona autorizó este rojo esperado de la matriz, con esta lista y esta fecha (regla ESC-C4 del freno de seguridad). Volvé a correr el comando tal cual: el freno le abre a la persona la ventana de permiso, con los criterios y la fecha.'
+      : 'marker.js expect-red: no pude leer el registro de escapes del freno de seguridad: sin él no sé si una persona autorizó el rojo esperado de la matriz.');
+    process.exit(2);
+  }
+  const renovada = !!previo && /^rojo-esperado/.test(actual);
+  marker.checks.acmatrix = `rojo-esperado:exit=${m[1]}`;
+  marker.expectedRed = Object.assign({}, marker.expectedRed, { acmatrix: { tests, deuda: marker.cierre.deuda, at: nowIso(), until: hasta, via: l.via, constanciaTs: l.ts } });
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  if (renovada) appendLog('gates.log', { name: 'acmatrix-debt-renewed', story: nn(marker.storyId, null), storyPath: story, deuda: marker.cierre.deuda, tests, until: hasta, antes: previo.until || null });
+  else appendLog('gates.log', { name: 'expect-red', story: nn(marker.storyId, null), check: 'acmatrix', tests, deuda: marker.cierre.deuda, until: hasta });
+  process.stdout.write(`acmatrix: rojo-esperado:exit=${m[1]} (${tests.join(', ')}) — deuda ${marker.cierre.deuda}, vence ${hasta}${renovada ? ` (antes ${previo.until || 'sin fecha'})` : ''}\n`);
+}
+
+/**
+ * Dónde vive la historia en su repo, para el renglón de la deuda: `{ storyRel, repoCommon }` (la ruta dentro del repo y
+ * su carpeta git común, la que comparten todas sus carpetas de trabajo). El aviso de la deuda vencida la busca ahí
+ * cuando la carpeta de trabajo de la corrida ya se borró. Sin git, `{}`: el aviso dice que no pudo mirar.
+ */
+function dondeViveLaHistoria(storyPath) {
+  try {
+    const dir = path.dirname(storyPath);
+    const [raiz, comun] = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel', '--git-common-dir'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim().split('\n');
+    return { storyRel: path.relative(fs.realpathSync(raiz), fs.realpathSync(storyPath)), repoCommon: path.resolve(dir, comun) };
+  } catch (_e) {
+    return {};
+  }
+}
+
+/**
+ * Lo que la deuda acepta de una matriz en rojo (DODRT-C6), o null si no aplica: sin la ejecución en deuda o sin el rojo
+ * esperado de la matriz. `{ acepta, acs, tests, until, motivos }`: acepta sólo los criterios sin correr que cubre la
+ * lista, antes de su fecha, y nada más pendiente (imposibles sin firma, acción no ejercida, pantalla sin imagen, código
+ * sin leer). `motivos`: lo que no acepta, dicho.
+ */
+function deudaDeLaMatriz(marker, matrix) {
+  const er = (marker.expectedRed || {}).acmatrix;
+  if (!marker.cierre || marker.cierre.estado !== 'deuda' || !er || !/^rojo-esperado/.test(String(at(marker.checks, 'acmatrix') || ''))) return null;
+  const tests = Array.isArray(er.tests) ? er.tests.map(String) : [];
+  const motivos = [];
+  const hoy = fechaLocal(new Date());
+  if (!esFecha(er.until)) motivos.push('🔴 el rojo esperado de la matriz no tiene fecha de vencimiento: la deuda no lo acepta sin ella (marker.js expect-red acmatrix --tests … --until <AAAA-MM-DD>)');
+  else if (hoy > er.until) motivos.push(`🔴 la deuda ${marker.cierre.deuda} venció el ${er.until}: corré la evidencia de los criterios, o que la persona renueve la fecha dentro del tope (marker.js expect-red acmatrix --tests … --until <AAAA-MM-DD>)`);
+  const c = require('./runtime-matrix.js').debtCoverage(matrix, tests);
+  const lista = (ns) => ns.map((x) => '#' + x).join(', ');
+  if (c.uncovered.length) motivos.push(`🔴 sin correr y fuera de la deuda: ${lista(c.uncovered)} — la lista del rojo esperado (${tests.join(', ')}) no tiene todas las pruebas de la tabla que los nombran`);
+  if ((matrix.unreadableTests || []).length) motivos.push(`🔴 la deuda no cubre nada mientras la tabla tenga pruebas con la columna AC ilegible: ${matrix.unreadableTests.join(', ')}`);
+  if ((matrix.notVerifiable || []).length) motivos.push(`🔴 la deuda no exime los imposibles-declarados sin firma: ${lista(matrix.notVerifiable)}`);
+  if ((matrix.accionNoEjercida || []).length) motivos.push(`🔴 la deuda no exime la evidencia que no ejerció la acción: ${lista(matrix.accionNoEjercida)}`);
+  if ((matrix.sinImagen || []).length) motivos.push(`🔴 la deuda no exime los criterios de pantalla sin imagen: ${lista(matrix.sinImagen)}`);
+  if ((matrix.noLeidos || []).length) motivos.push(`🔴 la deuda no exime el código declarado que la matriz no pudo leer: ${matrix.noLeidos.map((x) => x.rel || x).join(', ')}`);
+  return { acepta: motivos.length === 0 && c.covered.length > 0, acs: c.covered, tests, until: er.until, motivos };
 }
 
 // Una prueba que ya existía y estaba en rojo se edita con su razón: `note-red-test --test <ruta> --reason "<motivo>"`.
