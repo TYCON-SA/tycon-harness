@@ -59,11 +59,15 @@ function senales() {
   return { archivos: Object.keys(archivos).length, lineas, porArchivo: archivos };
 }
 
-/** Los archivos de las integraciones (donde se mudan los comandos de una plataforma a su conector). */
+/**
+ * Los archivos de las integraciones y de sus guías (donde se mudan los comandos de una plataforma: a su conector, o a
+ * la guía de la plataforma cuando el núcleo deja de traerlos).
+ */
 function deIntegraciones(root = ROOT) {
-  const out = execFileSync('git', ['-C', root, 'ls-files', '-z', '--others', '--cached', '--exclude-standard', 'integrations'], { encoding: 'utf8' });
-  // el manifiesto declara los comandos crudos de su plataforma (para los frenos): es una lista, no una llamada
-  const lista = out.split('\0').filter((f) => f && TEXTO.test(f) && !/(^|\/)integration\.json$/.test(f));
+  const out = execFileSync('git', ['-C', root, 'ls-files', '-z', '--others', '--cached', '--exclude-standard', 'integrations', 'guides/integrations'], { encoding: 'utf8' });
+  // el manifiesto y los avisos declaran comandos de su plataforma (para los frenos, para saber cuándo avisar): son
+  // listas, no llamadas
+  const lista = out.split('\0').filter((f) => f && TEXTO.test(f) && !/(^|\/)(integration|notices)\.json$/.test(f));
   // sin integraciones no hay nada que contar; con integraciones y ninguna que viaje, la foto no las miró: rojo
   return lista.length ? IH().travelling(root, lista, 'las integraciones') : [];
 }
@@ -89,6 +93,22 @@ function literales({ root = ROOT } = {}) {
 function grabadosQueViajan(porArchivo, root = ROOT) {
   const viaja = IH().travels(root);
   return Object.fromEntries(Object.entries(porArchivo).filter(([f]) => viaja(f)));
+}
+
+/**
+ * Los cambios entre la foto grabada y los comandos de hoy, como conjunto y sin el archivo: mudar un guion a su conector
+ * no cambia lo que pide. Falta lo grabado en un archivo que viaja y hoy no está; es nuevo lo que no está en ningún lado
+ * de la foto: en el árbol armado, un renglón mudado tal cual desde un archivo del que el privado tiene su versión (o que
+ * el público borró) ya estaba grabado, aunque su archivo de antes no viaje.
+ */
+function compararComandos(grabada, ahora, root = ROOT) {
+  const antes = new Set(Object.values(grabadosQueViajan(grabada, root)).flat());
+  const conocidos = new Set(Object.values(grabada).flat());
+  const hoy = new Set(Object.values(ahora).flat());
+  return [
+    ...[...antes].filter((x) => !hoy.has(x)).map((x) => `un comando az que ya no está: ${x}`),
+    ...[...hoy].filter((x) => !conocidos.has(x)).map((x) => `un comando az nuevo: ${x}`),
+  ];
 }
 
 // las rutas temporales y las fechas cambian en cada corrida: se reemplazan para que la foto sea la misma
@@ -129,11 +149,7 @@ function main(argv) {
     escribir('hard-signals-baseline.json', `${JSON.stringify(s, null, 2)}\n`);
     escribir('az-commands.json', `${JSON.stringify(l, null, 2)}\n`);
   } else {
-    // los comandos se comparan como conjunto, sin el archivo: mudar un guion a su conector no cambia lo que pide
-    const antes = new Set(Object.values(grabadosQueViajan(leerJson('az-commands.json'))).flat());
-    const ahora = new Set(Object.values(l).flat());
-    for (const x of antes) if (!ahora.has(x)) problemas.push(`un comando az que ya no está: ${x}`);
-    for (const x of ahora) if (!antes.has(x)) problemas.push(`un comando az nuevo: ${x}`);
+    problemas.push(...compararComandos(leerJson('az-commands.json'), l));
   }
   if (!sinSuites) {
     for (const suite of SUITES) {
@@ -156,4 +172,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { senales, literales, nucleo, deIntegraciones, grabadosQueViajan, normalizar, DURA, AFUERA, SUITES };
+module.exports = { senales, literales, nucleo, deIntegraciones, grabadosQueViajan, compararComandos, normalizar, DURA, AFUERA, SUITES };

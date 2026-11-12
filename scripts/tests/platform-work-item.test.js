@@ -586,7 +586,10 @@ test('WorkItem_Readers_RunForReal @story-8.85 @ac-8', () => {
   const r = cli(m, ['choose', 'work-item', 'update']);
   assert.strictEqual(r.json.value.connector, 'github');
   const t = fs.readFileSync(path.join(STEPS, 'step-01-start.md'), 'utf8');
-  assert.ok(t.indexOf('platform.js choose work-item update') > 0 && t.indexOf('platform.js choose work-item update') < t.indexOf('az boards query'), 'la búsqueda por título va después de preguntar la plataforma');
+  // la búsqueda por título de Azure DevOps vive en su guía; el paso la nombra después de preguntar la plataforma
+  const guia = 'guides/integrations/ado-en-el-nucleo.md';
+  assert.ok(t.indexOf('platform.js choose work-item update') > 0 && t.indexOf('platform.js choose work-item update') < t.indexOf(guia), 'la búsqueda por título va después de preguntar la plataforma');
+  assert.match(fs.readFileSync(path.join(ROOT, guia), 'utf8'), /az boards query/, 'la guía de Azure DevOps trae la búsqueda por título');
 });
 
 test('WorkItem_Calls_AreInTheRecordedPhoto @story-8.85 @ac-7 @ac-9 @ac-27', () => {

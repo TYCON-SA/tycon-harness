@@ -3,15 +3,22 @@
 // aplican, en vez de que viajen siempre en las instrucciones de cada sesión.
 //
 // Cada extensión los declara en `notices.json`, en su carpeta, al lado de su manifiesto:
-//   { "notices": [ { "id": "…", "text": "<ruta dentro de la carpeta>", "when": "session-start" | "before-command",
-//                    "commands": ["…"],        // sólo con before-command, y ahí obligatorio
+//   { "notices": [ { "id": "…", "text": "<ruta dentro de la carpeta>",
+//                    "when": "session-start" | "before-command" | "after-command",
+//                    "commands": ["…"],        // sólo con before-command o after-command, y ahí obligatorio
 //                    "repo_files": "<regex>" } ] } // opcional: sobre las rutas que git sigue en el repo
 // Va en un archivo aparte y no como clave del manifiesto porque el lector de manifiestos de paquetes rechaza las claves
 // que no conoce: un arnés anterior que recibiera la clave nueva dejaría de cargar el paquete entero.
 //
+// `after-command` sale junto con el resultado del comando (el evento después de la herramienta): es el canal que llega
+// al modelo en las dos herramientas. Un comando declarado (`<cli> <palabra>`) es el CLI y su primera palabra; el comando
+// de la sesión dispara si alguno de sus tramos (`&&`, `||`, `;`, `|`, salto de línea), salteadas las asignaciones
+// `VAR=valor` del principio, empieza con ese CLI y trae esa palabra entre las dos primeras que no son opciones.
+//
 // Cuándo aplica lo decide el núcleo según el tipo de extensión, no la extensión: un paquete, si está activo para el repo
-// (lo de la organización, achicado por el `packs:` del repo); después, si trae `repo_files`, si alguna ruta del repo la
-// cumple. El texto vive dentro de la carpeta de la extensión: una ruta que sale de ahí se rechaza.
+// (lo de la organización, achicado por el `packs:` del repo); un conector de plataforma, si la organización eligió esa
+// plataforma para algo (scripts/lib/platform/platform.js, `chosen`); después, si trae `repo_files`, si alguna ruta del
+// repo la cumple. El texto vive dentro de la carpeta de la extensión: una ruta que sale de ahí se rechaza.
 //
 // Casos: scripts/tests/extension-notices.test.js. Lo usa scripts/hooks/extension-notices.js.
 const fs = require('fs');
@@ -19,7 +26,8 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const FILE = 'notices.json';
-const WHEN = Object.freeze(['session-start', 'before-command']);
+const WHEN = Object.freeze(['session-start', 'before-command', 'after-command']);
+const WITH_COMMANDS = Object.freeze(['before-command', 'after-command']);
 const KEYS = Object.freeze(['id', 'text', 'when', 'commands', 'repo_files']);
 const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 const GIT_TIMEOUT_MS = 3000;
@@ -80,11 +88,11 @@ function readNotices(dir) {
     if (tf.problem) bad.push(tf.problem);
     if (!WHEN.includes(n.when)) bad.push(`«when» tiene que ser ${WHEN.join(' o ')}`);
     let commands = null;
-    if (n.when === 'before-command') {
+    if (WITH_COMMANDS.includes(n.when)) {
       if (!Array.isArray(n.commands) || !n.commands.length || !n.commands.every((c) => typeof c === 'string' && c.trim())) {
-        bad.push('«commands» tiene que ser una lista no vacía de comandos (con before-command)');
+        bad.push(`«commands» tiene que ser una lista no vacía de comandos (con ${n.when})`);
       } else commands = n.commands.map((c) => c.trim());
-    } else if (n.commands !== undefined) bad.push('«commands» va sólo con before-command');
+    } else if (n.commands !== undefined) bad.push(`«commands» va sólo con ${WITH_COMMANDS.join(' o ')}`);
     let repoFiles = null;
     if (n.repo_files !== undefined) {
       if (typeof n.repo_files !== 'string' || !n.repo_files) bad.push('«repo_files» tiene que ser una expresión regular');
@@ -183,4 +191,124 @@ function applicable({ cwd, when }) {
   return { notices: out, errors };
 }
 
-module.exports = { FILE, WHEN, readNotices, applicable, repoRoot, trackedFiles };
+// lo que puede ir delante del comando en su tramo sin ser el comando: palabras de la terminal y envoltorios
+const DELANTE = new Set(['do', 'then', 'else', 'if', 'elif', 'while', 'until', '!', 'time', 'nohup', 'exec', 'command', 'env']);
+
+/**
+ * Si el comando de la sesión dispara el comando declarado (`<cli> [palabra]`): algún tramo (los parte el segmentador de
+ * la capa, scripts/lib/az-pr.js: lo que está entre comillas o en un heredoc es texto, y `$(…)` es su propio tramo),
+ * salteadas las asignaciones y las palabras de la terminal del principio (`timeout` con su duración), empieza fuera de
+ * comillas con ese CLI (o una ruta que termina en él) y trae la palabra entre las dos primeras que no son opciones.
+ * `gh -R o/r pr checks` dispara `gh pr`; `gh repo view pr` no, ni el CLI escrito en el mensaje de un commit.
+ */
+function matchesCommand(command, declared, { powershell = false } = {}) {
+  const [cli, word] = String(declared || '').trim().split(/\s+/);
+  if (!cli) return false;
+  for (const seg of require(path.join(__dirname, 'az-pr.js')).segmentos(String(command || ''), { powershell })) {
+    let i = 0;
+    for (;;) {
+      const f = seg[i];
+      if (!f || !f.esBandera) break;
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(f.texto) || DELANTE.has(f.texto)) { i++; continue; }
+      if (f.texto === 'timeout') { i++; while (seg[i] && seg[i].texto.startsWith('-')) i++; i++; continue; }
+      break;
+    }
+    const f = seg[i];
+    if (!f || !f.esBandera || path.basename(f.texto.replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '') !== cli) continue;
+    if (!word || seg.slice(i + 1).map((x) => x.texto).filter((x) => !x.startsWith('-')).slice(0, 2).includes(word)) return true;
+  }
+  return false;
+}
+
+/**
+ * Los conectores de plataforma instalados, con su carpeta: `{ extensions, broken, errors }`. `broken`: las carpetas cuyo
+ * `integration.json` no se lee o no es válido (no se sabe si son de plataforma), con el motivo: si su aviso es del
+ * comando y su nombre es el de una plataforma elegida, se dice que sus reglas no salen.
+ */
+function platformConnectors() {
+  try {
+    const INT = require(path.join(__dirname, 'integrations.js'));
+    const dir = INT.integrationsDir();
+    const { manifests, problems } = INT.listManifests({ dir });
+    return {
+      extensions: (manifests || []).filter((m) => m.kind === 'platform').map((m) => ({ kind: 'integration', name: m.name, dir: path.join(dir, m.name) })),
+      broken: (problems || []).filter((p) => !/^\(/.test(p.name)).map((p) => ({ kind: 'integration', name: p.name, dir: path.join(dir, p.name), reasons: p.reasons })),
+      errors: (problems || []).filter((p) => /^\(/.test(p.name)).map((p) => `integraciones: ${p.reasons.join('; ')}`),
+    };
+  } catch (e) { return { extensions: [], broken: [], errors: [`no se pudo saber qué conectores de plataforma hay (${(e && e.message) || e})`] }; }
+}
+
+/**
+ * Las plataformas que la organización eligió para algo (`chosen` de la capa), o el motivo por el que no se sabe. La capa
+ * se carga recién acá: el gancho suelto (sin la capa al lado) lo dice y sigue con los paquetes.
+ */
+function chosenPlatforms() {
+  let r;
+  try { r = require(path.join(__dirname, 'platform', 'platform.js')).chosen(); } catch (e) {
+    return { problem: `no se pudo saber qué plataformas eligió la organización (${String((e && e.message) || e).split('\n')[0]})` };
+  }
+  return r && r.ok ? { names: r.value } : { problem: `no se pudo saber qué plataformas eligió la organización (${(r && r.detail) || 'sin detalle'})` };
+}
+
+/**
+ * Los avisos `after-command` que dispara `command` en `cwd`. Primero se miran sólo los comandos declarados (barato: corre
+ * después de cada comando de la sesión); la configuración, git y los paquetes activos se preguntan recién si alguno
+ * dispara.
+ * @returns {{notices: Array<{extension, id, file}>, errors: string[]}}
+ */
+function afterCommand({ cwd, command, powershell = false }) {
+  const errors = [];
+  const candidatos = [];
+  const dispara = (n) => n.when === 'after-command' && n.commands.some((c) => matchesCommand(command, c, { powershell }));
+  const conectores = platformConnectors();
+  errors.push(...conectores.errors);
+  let paquetes = [];
+  try {
+    const packs = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'packs.js'));
+    paquetes = packs.descubrir(packs.dirPaquetes(), !!process.env.TYCON_PACKS_DIR).map((p) => ({ kind: 'pack', name: p.nombre, dir: p.dir }));
+  } catch (e) {
+    const why = e && Array.isArray(e.errores) ? e.errores.map((x) => x.motivo).join('; ') : (e && e.message) || String(e);
+    errors.push(`no se pudo saber qué paquetes hay (${why})`);
+  }
+  for (const ext of [...conectores.extensions, ...paquetes]) {
+    const r = readNotices(ext.dir);
+    for (const e of r.errors) errors.push(`${ext.kind === 'pack' ? 'paquete' : 'integración'} ${ext.name}: ${e}`);
+    for (const n of r.notices) if (dispara(n)) candidatos.push({ ext, n });
+  }
+  // un conector con el manifiesto roto cuyo aviso dispara este comando: sus reglas no salen, y eso se dice si es elegido
+  const rotos = conectores.broken.filter((b) => readNotices(b.dir).notices.some(dispara));
+  if (!candidatos.length && !rotos.length) return { notices: [], errors };
+  const where = repoRoot(cwd);
+  if (where.error) return { notices: [], errors: errors.concat(`${where.error}: los avisos de las extensiones no se evaluaron`) };
+  const root = where.root;
+  let elegidas = null;
+  if (rotos.length || candidatos.some((c) => c.ext.kind === 'integration')) {
+    const ch = chosenPlatforms();
+    if (ch.problem) errors.push(ch.problem); else elegidas = ch.names;
+  }
+  for (const b of rotos) {
+    if (!elegidas || elegidas.includes(b.name)) errors.push(`integración ${b.name}: su integration.json no es válido (${b.reasons.join('; ')}): sus reglas no se muestran`);
+  }
+  let activos = null;
+  if (candidatos.some((c) => c.ext.kind === 'pack')) {
+    const act = activeExtensions({ root });
+    errors.push(...act.errors);
+    activos = act.extensions.map((x) => x.name);
+  }
+  let files;
+  const out = [];
+  for (const { ext, n } of candidatos) {
+    if (ext.kind === 'integration' && !(elegidas && elegidas.includes(ext.name))) continue;
+    if (ext.kind === 'pack' && !(activos && activos.includes(ext.name))) continue;
+    if (n.repoFiles) {
+      if (!root) continue;
+      if (files === undefined) files = trackedFiles(root);
+      if (files === null) { errors.push(`no se pudo listar los archivos de ${root}: el aviso ${n.id} no se evaluó`); continue; }
+      if (!files.some((f) => n.repoFiles.test(f))) continue;
+    }
+    out.push({ extension: `${ext.kind}:${ext.name}`, id: n.id, file: n.file });
+  }
+  return { notices: out, errors };
+}
+
+module.exports = { FILE, WHEN, readNotices, applicable, afterCommand, matchesCommand, repoRoot, trackedFiles };

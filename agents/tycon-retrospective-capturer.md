@@ -138,7 +138,7 @@ content: "Story <N.M>: implementación usó read-modify-write para metadata en v
    - un commit que toca **el mismo archivo** que un finding con `disposition: fixed` de una story
      cerrada en la ventana (el arreglo del arreglo: la señal más fuerte y la que no depende de cómo
      alguien redactó el mensaje).
-   - si el repo expone el estado de su CI (`az pipelines runs list`, `gh run list`): un run **failed**
+   - si el repo expone el estado de su CI (`platform.js ci read`, o el comando de su plataforma; el de Azure DevOps, en `guides/integrations/ado-en-el-nucleo.md`): un run **failed**
      sobre la rama de integración dentro de la ventana. 🔴 La ausencia de un run en el LISTADO no es
      evidencia de que no existió (el listado laguea minutos) — ver la regla ADO del `CLAUDE.md`.
 

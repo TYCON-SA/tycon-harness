@@ -317,8 +317,8 @@ An example: at ACME, Pedro is the admin and Juan writes code.
    site, each file is changed with a pull request to its repo. What each case needs and
    where each setting lives, in [With or without the site](getting-started/reference.md#with-or-without-the-site).
 3. Juan installs with npx and the team repo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` if it is on
-   GitHub, or `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<project>/_git/harness-team-profile` if it
-   is on Azure DevOps. Since only the team sees that repo, before downloading anything the line checks that it can read
+   GitHub, or `npx @tyconsa/harness@latest --team <the repo's address>` if it is on Azure DevOps (the address's form
+   is in [Azure DevOps](guides/integrations/ado-projects.md#la-url-de-un-repo)). Since only the team sees that repo, before downloading anything the line checks that it can read
    it and, if not, asks him for read permission. From then on, every update also brings him what belongs to the team.
 
 How the harness extends for your organization, with a worked example, in an

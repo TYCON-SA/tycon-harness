@@ -102,7 +102,7 @@ test('T33 HooksList_Schema_EveryRecordOnce_NoListLeftInAppliers', () => {
   const keys = list.hooks.map((h) => `${h.event}|${mod.normMatcher(h.matcher)}|${h.spec}`);
   assert.strictEqual(new Set(keys).size, keys.length, 'ningún registro repetido');
   for (const h of list.hooks) {
-    assert.ok(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd', 'PermissionRequest', 'SubagentStop'].includes(h.event), `${h.spec}: evento ${h.event}`);
+    assert.ok(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Stop', 'SessionStart', 'Notification', 'SessionEnd', 'PermissionRequest', 'SubagentStop'].includes(h.event), `${h.spec}: evento ${h.event}`);
     assert.match(h.when, /^(always|integration:[a-z]+|optin:TYCON_[A-Z_]+)$/, `${h.spec}: when ${h.when}`);
     assert.strictEqual(typeof h.platforms.windows, 'boolean', `${h.spec}: platforms.windows`);
     assert.ok(h.label && typeof h.label === 'string', `${h.spec}: label`);
@@ -221,6 +221,29 @@ test('T8 HooksList_RegistersNodeRecorderAndNotice_DropsShell @story-4.7 @ac-5 @a
     assert.strictEqual(off.status, 0);
     assert.ok(!commandsOf(settingsOf(L), 'PostToolUse').some((c) => c.includes('instinct-observe.js')), `${platform}: apagada, la grabadora sale`);
     assert.ok(commandsOf(settingsOf(L), 'SessionStart').some((c) => c.includes('instincts-notice.js')), `${platform}: el aviso queda, para decir lo de las variables viejas`);
+  }
+});
+
+test('T39 ApplyHooks_EngramHookRegisteredByHand_LeavesOnMacAndWindows_TcgStays @story-8.13 @ac-30 — el alta viejo lo registraba a mano en las dos plataformas', (t) => {
+  // las formas viejas salen de la lista real: el alta registraba `~/.claude/hooks/engram-pre-commit.sh` en Mac y
+  // `pwsh … C:\Users\<u>\.claude\hooks\engram-pre-commit.ps1` en Windows
+  const legacy = JSON.parse(fs.readFileSync(LIST, 'utf8')).legacy_fragments;
+  const byHand = {
+    posix: '/Users/dev/.claude/hooks/engram-pre-commit.sh',
+    windows: 'pwsh -NoProfile -ExecutionPolicy Bypass -File "C:\\Users\\dev\\.claude\\hooks\\engram-pre-commit.ps1"',
+  };
+  for (const [platform, command] of Object.entries(byHand)) {
+    const list = LIST_OF([H('PreToolUse', 'Bash|PowerShell', '@tcg:engram-pre-commit.sh')], { legacy_fragments: legacy });
+    const L = lab(t, { list, files: ['@tcg:engram-pre-commit.sh'] });
+    fs.writeFileSync(L.settingsPath, JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command }] }] },
+    }, null, 2) + '\n');
+    const r = run(L, ['--platform', platform]);
+    assert.strictEqual(r.status, 0, `${platform}: ${r.stderr}`);
+    const pre = commandsOf(settingsOf(L), 'PreToolUse');
+    assert.ok(!pre.includes(command), `${platform}: el registro a mano se fue (${JSON.stringify(pre)})`);
+    assert.strictEqual(pre.filter((c) => c.includes('engram-pre-commit.sh') && !c.includes('.claude/hooks/')).length, 1,
+      `${platform}: queda el del arnés, una vez (${JSON.stringify(pre)})`);
   }
 });
 

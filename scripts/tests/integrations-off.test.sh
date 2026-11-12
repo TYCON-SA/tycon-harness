@@ -210,7 +210,10 @@ for f in skills/tycon-pipeline/steps/step-01-start.md skills/tycon-pipeline/step
   p="$SK_REPO/$f"
   if [ ! -f "$p" ]; then suite_check; echo "  ℹ NO MEDIDO — $f no está en $SK_REPO"; continue; fi
   if grep -qiE 'default por proyecto conocido|defaults conocidos' "$p"; then no "T10 $f: sigue teniendo el «default por proyecto conocido»"; else ok "T10 $f: sin «default por proyecto conocido»"; fi
-  if grep -qiE 'Azure DevOps (está )?apagad' "$p" && grep -q 'ado.org' "$p"; then ok "T10 $f: la organización sale de ado.org y, apagada, el paso lo dice y se saltea"
+  # lo sólo de Azure DevOps puede vivir en su guía de integración: vale si el paso la nombra y la guía lo dice
+  g="$SK_REPO/guides/integrations/ado-en-el-nucleo.md"; q="$p"
+  if grep -q 'guides/integrations/ado-en-el-nucleo.md' "$p" && [ -f "$g" ]; then q="$g"; fi
+  if { grep -qiE 'Azure DevOps (está )?apagad' "$p" || grep -qiE 'Azure DevOps (está )?apagad' "$q"; } && { grep -q 'ado.org' "$p" || grep -q 'ado.org' "$q"; }; then ok "T10 $f: la organización sale de ado.org y, apagada, el paso lo dice y se saltea"
   else no "T10 $f: no resuelve la organización por ado.org ni dice qué hace con Azure DevOps apagado"; fi
 done
 
@@ -328,8 +331,15 @@ else no "T2 el hook ajeno se movió: antes=${P_ANTES:-ausente} después=${P_DESP
 # (`<!-- requires-integration: ado -->`) y el sync pregunta al lector de configuración.
 # Se llama al sync DIRECTO y sin TYCON_NO_CLAUDEMD_SYNC (el ayudante `afuera` lo apaga con LOCAL_OFF).
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
-SYNC="$RAIZ/scripts/setup/sync-claude-md-blocks.sh"
-B_ADO=ado-runs-list-lag
+# El bloque de Azure DevOps de verdad se retiró (claude-md-blocks/retired.json: su regla viaja con el conector), así
+# que la regla del marcador se prueba con un bloque de laboratorio que lo declara, en una copia del árbol con los
+# bloques de verdad más el de laboratorio.
+LAB0="$T/t32-lab0"; mkdir -p "$LAB0/scripts"
+cp -R "$RAIZ/scripts/lib" "$RAIZ/scripts/setup" "$LAB0/scripts/"; cp -R "$RAIZ/claude-md-blocks" "$RAIZ/integrations" "$LAB0/"
+[ -f "$RAIZ/INDEX.md" ] && cp "$RAIZ/INDEX.md" "$LAB0/"
+printf '<!-- requires-integration: ado -->\n# regla de laboratorio de Azure DevOps\ntexto de ado\n' > "$LAB0/claude-md-blocks/ado-lab.md"
+SYNC="$LAB0/scripts/setup/sync-claude-md-blocks.sh"
+B_ADO=ado-lab
 ADO_ON=TYCON_ADO_ORG=https://dev.azure.com/equipo
 SEED='# notas del dev\n\nuna regla escrita a mano\n'
 home32() { # <nombre> [seed] → HOME temporal nueva; con `seed`, con un CLAUDE.md escrito a mano
@@ -367,7 +377,7 @@ sync32 "$V" "$ADO_ON" > "$V/on.out" 2>&1
 if has_block "$MD_V" "$B_ADO"; then ok "T32 con TYCON_ADO_ORG el bloque $B_ADO se escribe"
 else no "T32 con TYCON_ADO_ORG el bloque $B_ADO no se escribió: $(head -2 "$V/on.out" | tr '\n' ' ')"; fi
 if grep -q 'requires-integration' "$MD_V"; then no "T32 el comentario requires-integration se copió al CLAUDE.md"
-elif head -1 "$RAIZ/claude-md-blocks/$B_ADO.md" | grep -x '<!-- requires-integration: ado -->' >/dev/null; then ok "T32 el bloque declara su integración en la primera línea y el comentario no llega al CLAUDE.md"
+elif head -1 "$LAB0/claude-md-blocks/$B_ADO.md" | grep -x '<!-- requires-integration: ado -->' >/dev/null; then ok "T32 el bloque declara su integración en la primera línea y el comentario no llega al CLAUDE.md"
 else no "T32 claude-md-blocks/$B_ADO.md no declara «<!-- requires-integration: ado -->» en su primera línea"; fi
 SAL="$(sync32 "$V" 2>&1)"; RC=$?
 if [ "$RC" -eq 0 ] && ! has_block "$MD_V" "$B_ADO" && echo "$SAL" | grep "$B_ADO" | grep 'integración «ado» apagada' >/dev/null; then ok "T32 apagada con el bloque ya escrito: el sync lo quita y lo dice"
@@ -388,7 +398,7 @@ else no "T32 sin CLAUDE.md previo el ida y vuelta deja otro archivo: $(diff "$N0
 #    (armado acá por separado: cada bloque sin su comentario, con el recorte y los marcadores de siempre)
 E="$(home32 team)"
 sync32 "$E" "$ADO_ON" > /dev/null 2>&1
-python3 - "$RAIZ/claude-md-blocks" "$T/t32-expected.md" <<'PY'
+python3 - "$LAB0/claude-md-blocks" "$T/t32-expected.md" <<'PY'
 import glob, os, sys
 out = ""
 for p in sorted(glob.glob(os.path.join(sys.argv[1], "*.md"))):

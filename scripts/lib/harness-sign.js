@@ -20,6 +20,13 @@
  * El pedido y el permiso viven en `emergency/` dentro de la carpeta de estado de la casa de la cuenta. Los dos vencen a
  * los 30 minutos y se usan una sola vez: un número usado o vencido no sirve.
  *
+ * `acknowledge` es la constancia de una persona pedida desde Codex (`harness.js sign acknowledge --session <sesión>
+ * --seal <sello> --text <texto>`): la conversación de Codex no distingue lo que tipeó la persona de lo que mete un
+ * programa (guides/firmas-del-arnes.md §«En Codex»), así que se da en su terminal, con la misma pregunta que `sign`. No
+ * es una firma del catálogo: no va al registro común. Deja una marca en `terminal-acknowledgments/` de la carpeta de
+ * estado, atada al renglón exacto que anota en el registro de aprobaciones (owner-approvals.js `anotar`), y
+ * `buscar` exige las dos. No firma si entre los procesos que la lanzaron está la herramienta del agente o Codex.
+ *
  * La terminal, el registro, los niveles del perfil, la casa y la hora se pasan como parámetros en las pruebas.
  *
  * Por consola, para los frenos:
@@ -57,6 +64,11 @@ const vigente = (ts, ahora) => { const edad = ahora - Date.parse(ts); return eda
 
 function carpeta(casa) { return path.join(stateDir(casa === undefined ? casaDeLaCuenta() : casa), 'emergency'); }
 const carpetaPedidos = (casa) => path.join(carpeta(casa), 'pedidos');
+// las marcas de la constancia de Codex: las escribe sólo `acknowledge`, y los frenos de escritura las cuidan como al
+// registro de aprobaciones (story-gate.js, on-bash-write-gate.js)
+function carpetaConstancias(casa) { return path.join(stateDir(casa === undefined ? casaDeLaCuenta() : casa), 'terminal-acknowledgments'); }
+const archivoDeMarca = (casa, sesion, ts) => path.join(carpetaConstancias(casa), `${sha256(`${sesion}\n${ts}`)}.json`);
+const SESION = /^[\w-]+$/;
 
 /** La entrada del catálogo de un id: `{ level, approves }`, o null si no está. */
 function entrada(id) {
@@ -99,8 +111,9 @@ function ttyDeVerdad() {
  * ¿Lo lanzó la herramienta del agente, con cualquier envoltura (una terminal propia, `script`, un pty, una copia del
  * guion con otro nombre)? Mira los padres del proceso en el árbol de la máquina (owner-window.js). Sin árbol no se sabe:
  * no firma. En Windows el árbol no se lee; ahí cuida la ventana nueva, que una consola del agente no pasa.
+ * `sinCodex`: tampoco firma si en la cadena está Codex (lo pide la constancia de Codex).
  */
-function origenDeVerdad({ pid = process.pid, arbol } = {}) {
+function origenDeVerdad({ pid = process.pid, arbol, sinCodex = false } = {}) {
   const ow = require('./owner-window.js');
   const a = arbol === undefined ? ow.leerArbol() : arbol;
   if (!a) return { ok: false, motivo: 'no pude ver qué procesos lanzaron este comando, y sin eso no firmo: probá de nuevo en tu terminal' };
@@ -112,12 +125,42 @@ function origenDeVerdad({ pid = process.pid, arbol } = {}) {
   if (!p) return cortada;
   while (true) {
     if (ow.esHerramienta(p)) return { ok: false, motivo: 'lo lanzó la herramienta del agente: se firma en una terminal tuya, fuera de la herramienta' };
+    if (sinCodex && esCodex(p)) return { ok: false, motivo: 'lo lanzó Codex: la constancia se da en una terminal tuya, fuera de Codex' };
     vistos.add(p.pid);
     if (p.ppid === 0 || p.ppid === p.pid) return { ok: true };
     const padre = m.get(p.ppid);
     if (!padre || vistos.has(padre.pid)) return cortada;
     p = padre;
   }
+}
+
+/**
+ * ¿El proceso es Codex? Su ejecutable o su primera palabra se llama `codex` (o `codex.exe`), o es un intérprete (`node`,
+ * `bun`) cuyo guion (el primer argumento que no es una opción) es `codex` o `codex.js`, o está dentro del paquete
+ * `@openai/codex`. La línea se corta después del ejecutable, como en `esHerramienta` (su ruta puede tener espacios), y
+ * una primera palabra entre comillas va entera. Una ruta del guion con espacios se mira hasta el `codex` que la cierra:
+ * un `codex` suelto en los argumentos (el texto de una constancia) no es el guion.
+ */
+function esCodex(p) {
+  const linea = String((p && p.comando) || '').trim();
+  const exe = p && p.ejecutable ? String(p.ejecutable) : '';
+  const crudo = (x) => String(x || '').split(/[\\/]/).pop();
+  let programa;
+  let resto;
+  if (exe && linea.startsWith(exe)) { programa = exe; resto = linea.slice(exe.length); } else if (exe && linea.startsWith(`"${exe}"`)) {
+    programa = exe; resto = linea.slice(exe.length + 2);
+  } else {
+    const m = linea.match(/^"([^"]*)"|^'([^']*)'|^(\S*)/);
+    programa = m[1] !== undefined ? m[1] : m[2] !== undefined ? m[2] : m[3];
+    resto = linea.slice(m[0].length);
+    if (exe) programa = exe;
+  }
+  if (/^codex(\.exe)?$/i.test(crudo(programa))) return true;
+  if (!/^(node|bun)(\.exe)?$/i.test(crudo(programa))) return false;
+  const guion = resto.replace(/^(\s+-\S*)+/, '').trim().replace(/^["']/, '');
+  // la marca de Codex tiene que estar en la ruta del guion: antes de ella no puede empezar otra opción (« -»)
+  const enElGuion = (re) => { const m = guion.match(re); return Boolean(m) && !/\s-/.test(guion.slice(0, m.index)); };
+  return enElGuion(/[\\/]@openai[\\/]codex[\\/]/i) || enElGuion(/(?:^|[\\/])codex(?:\.js)?(?=["']?(?:\s|$))/i);
 }
 
 /**
@@ -158,9 +201,9 @@ function mover(archivo, como, ahora) {
   try { fs.renameSync(archivo, `${archivo}.${como}-${ahora}`); return true; } catch (_) { return false; }
 }
 
-/** Borra lo de más de un día en las dos carpetas: pedidos y permisos vencidos, usados o consumidos. Nunca falla. */
+/** Borra lo de más de un día en las tres carpetas: pedidos, permisos y marcas de constancias, ya vencidos. Nunca falla. */
 function barrer(casa, ahora) {
-  for (const dir of [carpeta(casa), carpetaPedidos(casa)]) {
+  for (const dir of [carpeta(casa), carpetaPedidos(casa), carpetaConstancias(casa)]) {
     let archivos = [];
     try { archivos = fs.readdirSync(dir); } catch (_) { continue; }
     for (const f of archivos) {
@@ -293,6 +336,79 @@ function sign({ id, reason = '', request = null, commit = false, target = null, 
   };
 }
 
+/**
+ * La marca de la constancia de `sesion` dada a la hora `ts`, o null si no está. Tira si está pero no se puede leer o
+ * está dañada: quien la pide dice por qué, en vez de «falta».
+ */
+function marcaDeConstancia({ casa, sesion, ts } = {}) {
+  let texto;
+  try { texto = fs.readFileSync(archivoDeMarca(casa, sesion, ts), 'utf8'); } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
+  let m;
+  try { m = JSON.parse(texto); } catch (_) { m = null; }
+  if (!m || typeof m !== 'object') throw new Error('la marca está dañada');
+  return m;
+}
+
+/**
+ * `sign acknowledge`: la constancia de la persona pedida desde Codex, dada en su terminal. Muestra enteros la sesión, el
+ * sello y el texto que contesta; si firma, deja la marca y después el renglón en el registro de aprobaciones, los dos
+ * en la misma casa. Devuelve `{ code, lines }`: 0 anotada, 1 no firmó o no se pudo anotar, 2 uso mal hecho, sin
+ * terminal o lanzada por la herramienta del agente o por Codex (nada escrito).
+ * `tty`, `origen` (o `arbol` y `pid`), `casa`, `ahora` y `signer` se pasan en las pruebas; `argv`, como en `sign`.
+ */
+function acknowledge({ session, seal, text, tty, origen, arbol, pid = process.pid, casa, ahora = Date.now(), signer, argv = process.argv.slice(1) } = {}) {
+  const no = (code, ...lines) => ({ code, lines });
+  const sesion = String(session == null ? '' : session);
+  const sello = String(seal == null ? '' : seal);
+  const texto = String(text == null ? '' : text);
+  if (!SESION.test(sesion)) return no(2, 'harness sign acknowledge: --session lleva el id de la sesión de Codex que pide la constancia (letras, números, «-» y «_»)');
+  if (!sello.trim() || !texto.trim()) return no(2, 'harness sign acknowledge: --seal y --text llevan el sello y el texto que muestra la sesión; sin ellos no se sabe qué se contesta');
+  const t = tty || ttyDeVerdad();
+  if (t.windows && t.enVentana && !t.enVentana()) {
+    const v = t.abrir({ programa: process.execPath, script: argv[0], args: argv.slice(1), titulo: 'Constancia en la terminal' });
+    if (v.estado === 'vencida') return no(1, `harness sign acknowledge: la ventana venció a los ${v.tope} s sin firmar`);
+    if (v.estado !== 'cerrada') return no(1, `harness sign acknowledge: no pude abrir la ventana para firmar (${v.motivo})`);
+    return { code: v.codigo === 0 ? 0 : (v.codigo || 1), lines: [v.codigo === 0 ? '✅ constancia anotada en la ventana nueva' : 'harness sign acknowledge: no se firmó en la ventana nueva'] };
+  }
+  if (t.windows && t.dentro) t.dentro();
+  if (!t.hay()) return no(2, 'harness sign acknowledge: la constancia se da en tu terminal, y aquí no hay una: corré el comando vos, en tu terminal');
+  if (!t.windows) {
+    const o = (origen || (() => origenDeVerdad({ arbol, pid, sinCodex: true })))();
+    if (!o.ok) return no(2, `harness sign acknowledge: ${o.motivo}`);
+  }
+  const vistos = [sello, texto].map(aLaVista);
+  const aviso = vistos.some((v) => v.raro) ? '\n⚠️ El sello o el texto traen caracteres que no se ven: están escritos como \\u{…}. Firmá sólo si sabés por qué están.' : '';
+  const que = `Constancia para Codex, de la sesión ${sesion}: contestás lo que esa sesión te mostró.\nSello: ${vistos[0].visto}\nTexto: ${vistos[1].visto}${aviso}`;
+  let ok;
+  try {
+    if (t.windows) { process.stderr.write(`\n${que}\n`); ok = t.confirmarFrase({}); } else ok = SI.test(String(t.preguntar(`\n${que}\n¿Firmás? (s/n) `) || '').trim());
+  } catch (err) { return no(2, `harness sign acknowledge: no pude leer tu terminal (${err.message})`); }
+  if (!ok) return no(1, 'harness sign acknowledge: no se firmó');
+
+  // la misma casa para la marca y el renglón: si cayeran en cuentas distintas, la constancia no se encontraría
+  const home = casa === undefined ? casaDeLaCuenta() : casa;
+  const ts = new Date(ahora).toISOString();
+  const firmante = signer || (() => { try { return os.userInfo().username; } catch (_) { return null; } })();
+  const registro = { tipo: 'terminal', plataforma: 'codex', via: 'terminal', sesion, sello, texto, ts, firmante };
+  barrer(home, Date.now());
+  // la marca guarda la huella del renglón exacto que se anota (la misma con que el registro lo identifica)
+  const marca = archivoDeMarca(home, sesion, ts);
+  try {
+    escribir(marca, { sesion, sello, texto, ts, renglon: sha256(JSON.stringify(registro)) });
+  } catch (err) {
+    return no(1, `harness sign acknowledge: no pude dejar la marca de la terminal (${err.code || err.message}): la constancia no vale`);
+  }
+  try { require('./owner-approvals.js').anotar(home, registro); } catch (err) {
+    // sin renglón la marca no sirve: se saca, y si no se puede, la barre `barrer` al día siguiente
+    try { fs.rmSync(marca, { force: true }); } catch (_) { /* queda para el barrido */ }
+    return no(1, `harness sign acknowledge: no pude anotar en el registro de aprobaciones (${err.code || err.message}): la constancia no vale`);
+  }
+  return { code: 0, lines: [`✅ constancia anotada para la sesión ${sesion}: vale ${require('./owner-approvals.js').VENCE_MIN} minutos y una sola vez.`] };
+}
+
 function gastar(archivo, permiso, ahora) {
   if (!vigente(permiso.ts, ahora)) {
     mover(archivo, 'vencido', ahora);
@@ -344,7 +460,8 @@ function permisos(casa) {
   try { return fs.readdirSync(carpeta(casa)).filter((f) => f.endsWith('.json')).map((f) => leer(path.join(carpeta(casa), f))).filter(Boolean); } catch (_) { return []; }
 }
 
-module.exports = { EMERGENCIA, VENCE_MIN, carpeta, entrada, nivelEfectivo, sign, pedir, consumir, consumirCommit, hayPermisoDeCommit, permisos, esCommit, origenDeVerdad, aLaVista };
+module.exports = { EMERGENCIA, VENCE_MIN, carpeta, entrada, nivelEfectivo, sign, pedir, consumir, consumirCommit, hayPermisoDeCommit, permisos, esCommit, origenDeVerdad, aLaVista,
+  acknowledge, carpetaConstancias, marcaDeConstancia, esCodex };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

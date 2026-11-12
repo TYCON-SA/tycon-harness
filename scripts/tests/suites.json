@@ -1664,6 +1664,12 @@
       "requiere": []
     },
     {
+      "__nota": "T-269: la lista del camino corto con rutas de Windows — la letra de unidad no distingue mayúsculas al guardar la lista, al compararla en el portón y al guardar, ni al ampliarla.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-list-windows.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.174, tanda A3: las pruebas y la rama del camino rápido — adhoc test corre y anota, sin pruebas en verde con la huella de hoy no guarda, y un carril que pasó el tope no guarda en la rama principal.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-tests-and-branch.test.js",
@@ -2860,6 +2866,12 @@
       "requiere": []
     },
     {
+      "__nota": "en Codex, la constancia de la persona es la firma en su terminal (scripts/lib/owner-approvals.js buscar con plataformas y la constancia de la terminal): el renglón y su marca, que no firme si la lanzó Codex, que no valga sin la terminal, sin la marca, con otra marca, otro sello, otro renglón o desde la coordinadora, y que los frenos de escritura cuiden las dos carpetas. Sin red, segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-approvals-codex.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "mergear salteando la cola y la CI de main lo aprueba una persona (regla GIT-C5): el lector de lo que saltea (scripts/lib/ci-bypass.js), el freno de la sesión de verdad con una casa de juguete y la decisión de la ventana con un árbol de juguete. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/ci-bypass-guard.test.js",
@@ -3037,6 +3049,18 @@
       "__nota": "La foto de cómo habla hoy el arnés con Azure DevOps (scripts/tests/lib/record-platform-golden.js): la normalización, qué cuenta como núcleo y que la foto grabada siga valiendo para el árbol, sin escribir nada.",
       "raiz": "arnes",
       "ruta": "tests/platform-golden.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Las reglas de cada plataforma viajan con su conector y aparecen a demanda: el bloque de Azure DevOps retirado del CLAUDE.md y del AGENTS.md, el gancho de avisos después del primer comando del CLI (también el que falló), sólo de una plataforma elegida, y el reconocimiento del comando. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-rules.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Los textos del núcleo hablan de la plataforma del equipo: lo de Azure DevOps vive en guides/integrations/, salvo los renglones declarados con su motivo, y la guía de conectores dice cada operación y cada motivo.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-texts.test.js",
       "requiere": []
     },
     {

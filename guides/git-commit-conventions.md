@@ -74,7 +74,7 @@ MAL:  update readme
 BIEN: docs(readme): agregar sección de setup local con connection strings de ejemplo
 
 MAL:  trigger rebuild
-BIEN: chore(ci): re-trigger pipeline tras rotación de AZURE_DEVOPS_PAT en Key Vault
+BIEN: chore(ci): re-trigger pipeline tras rotación del permiso de la CI en Key Vault
 ```
 
 ---
@@ -138,12 +138,9 @@ Agente:  git merge dev -m "merge dev to main"    ← igual de inútil
 Una rama que no se borra cuando su pedido entra queda viva para siempre: el 2026-11-01 había 1.019 ramas remotas ya
 entradas a `main` entre los dos repos del arnés.
 
-- **Azure DevOps**: un pedido a `main` armado a mano con auto-completar dice explícito si borra la rama:
-  `--auto-complete true --squash false --delete-source-branch true`. `false` sólo desde una rama de larga vida (`dev`,
-  `develop`, `main`, `master`, la lista de §9b.4 del paso de merge), y escrita en `--source-branch`; `true` desde una
-  de esas ramas la borraría. Un `az repos pr update` no dice la rama de origen: para publicar un borrador va
-  `--delete-source-branch false`, y con `true` el freno frena. El freno de pedidos lo exige; el skill de merge ya lo
-  hace solo.
+- **Azure DevOps**: un pedido a `main` armado a mano con auto-completar dice explícito si borra la rama; las banderas
+  y el caso del borrador están en `guides/integrations/ado-en-el-nucleo.md`, §«Las convenciones de git». El freno de
+  pedidos lo exige; el skill de merge ya lo hace solo.
 - **GitHub** (tarea humana, una vez por repo, la hace quien administra el repo): prender
   **«Automatically delete head branches»** en **Settings → General → Pull Requests**. Ahí no hay bandera que el arnés
   pueda pedir: lo borra la plataforma.

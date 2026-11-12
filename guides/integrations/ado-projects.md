@@ -164,3 +164,10 @@ ni el pipeline.
 Para que el pipe de creación de historias, para todos los devs en
 todos los proyectos, cree el work item en ADO cada vez que se crea una story. El pipeline ya
 tenía el **consumo** del `ado_work_item:` (el Arranque y «Cerrar la historia»); faltaba la **creación**.
+
+## La URL de un repo
+
+Donde el núcleo pide «la dirección del repo» y el repo vive en Azure DevOps, la forma es
+`https://dev.azure.com/<org>/<proyecto>/_git/<repo>` (por ejemplo, el repo del perfil del equipo en
+`npx @tyconsa/harness@latest --team …`, en `harness.js team-init --profile-repo …` o en `install --version`). En GitHub
+alcanza con `org/repo`.

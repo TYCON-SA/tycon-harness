@@ -529,6 +529,38 @@ try {
         $removed[$name] = $offWhy
     }
 
+    # Un bloque que el arnés retiró (claude-md-blocks/retired.json, con su motivo) se va entre sus marcadores de una
+    # máquina que todavía lo tiene (espejo del .sh): su archivo ya no está, y sin esto quedaría escrito para siempre. Si
+    # vuelve a haber un archivo con su nombre, manda el archivo. Una lista que no se lee se dice, y no se quita nada.
+    $retired = [ordered]@{}
+    $retiredFile = Join-Path $blocksDir 'retired.json'
+    if (Test-Path -LiteralPath $retiredFile) {
+        try {
+            $rj = [System.IO.File]::ReadAllText($retiredFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+            # una lista, un texto o null también son JSON: sin objeto no se sabe qué se retiró (como la variante bash)
+            if ($rj -isnot [System.Management.Automation.PSCustomObject]) { throw 'tiene que ser un objeto { bloque: motivo }' }
+            foreach ($p in $rj.PSObject.Properties) { if (-not $p.Name.StartsWith('_') -and $p.Value -is [string]) { $retired[$p.Name] = [string]$p.Value } }
+        } catch {
+            $unknown += "⚠ tycon: claude-md-blocks/retired.json no se puede leer ($($_.Exception.Message)): los bloques retirados quedan donde están"
+        }
+    }
+    $retiredNames = @($retired.Keys | Sort-Object { $_ } -CaseSensitive)
+    foreach ($name in $retiredNames) {
+        if ($entryNames.Contains($name)) { continue }
+        $end = "<!-- TYCON_BLOCK:$name END -->"
+        $i = $content.IndexOf("<!-- TYCON_BLOCK:$name START", [StringComparison]::Ordinal)
+        if ($i -lt 0) { continue }
+        $j = $content.IndexOf($end, $i, [StringComparison]::Ordinal)
+        if ($j -lt 0) { $changed += , @($name, 'MARCADOR DE CIERRE FALTANTE — revisar a mano'); continue }
+        $offWhy = "el arnés lo retiró: $($retired[$name])"
+        $before = $content.Substring(0, $i).TrimEnd("`n")
+        $after = $content.Substring($j + $end.Length)
+        if ($after.StartsWith("`n", [StringComparison]::Ordinal)) { $after = $after.Substring(1) }
+        if ($before -or $after) { $content = $before + "`n" + $after } else { $content = '' }
+        $changed += , @($name, "quitado ($offWhy)")
+        $removed[$name] = $offWhy
+    }
+
     foreach ($c in $changed) {
         if ($c[1] -like '*FALTANTE*') {
             Write-Host "⚠ tycon: bloque '$($c[0])' en ${target}: $($c[1])"

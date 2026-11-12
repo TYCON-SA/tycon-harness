@@ -1226,7 +1226,7 @@ JS
 HW="$(new_home widen)"; SW="$HW/.claude/settings.json"
 installer "$HW" "${HELD[@]}" "${TEAM[@]}" > "$T/n0.out" 2>&1
 node "$T/widen.js" old "$SW" "$SW"; cp "$SW" "$T/n.old.json"
-if [ "$(node "$T/widen.js" state "$SW")" != "13 2/2" ]; then no "(v) no pude armar la settings.json de antes: «$(node "$T/widen.js" state "$SW")» (esperaba «13 2/2»)"; fi
+if [ "$(node "$T/widen.js" state "$SW")" != "14 2/2" ]; then no "(v) no pude armar la settings.json de antes: «$(node "$T/widen.js" state "$SW")» (esperaba «14 2/2»)"; fi
 installer "$HW" "${HELD[@]}" "${TEAM[@]}" > "$T/n1.out" 2>&1; RC=$?
 BAD="$(wrong_counts "$SW" 1 "${SHELL_ROWS[@]}")"
 RB="$(hook_n "$SW" PostToolUse 'Bash|PowerShell' rebuild-before-verify.js)$(hook_n "$SW" PostToolUse 'Edit|Write' rebuild-before-verify.js)$(hook_n "$SW" PostToolUse '*' rebuild-before-verify.js)"
@@ -1235,8 +1235,8 @@ if [ "$RC" -eq 0 ] && [ -z "$BAD" ] && [ "$RB" = 112 ] && [ "$(node "$T/widen.js
 else no "(v) una settings.json de antes (rc $RC):${BAD:- —} · rebuild «${RB}» (esperaba 112) · estado «$(node "$T/widen.js" state "$SW")» (esperaba «0 2/2») · $(brief "$T/n1.out" 200)"; fi
 N="$(grep -c 'matcher ampliado' "$T/n1.out")"
 OLD_SG="$(node -e 'const s=require(process.argv[1]);for(const e of s.hooks.PreToolUse)for(const h of e.hooks)if(/safety-guard-pre\.sh"$/.test(h.command))console.log(h.command)' "$T/n.old.json")"
-if [ "$N" = 13 ] && same_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh "$OLD_SG"; then ok "(v) el reporte dice cada matcher ampliado (13) y el guion conserva su comando tal cual"
-else no "(v) el reporte nombra $N matcher(s) ampliado(s) (esperaba 13); safety-guard quedó «$(hook_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh)» (antes «${OLD_SG}»)"; fi
+if [ "$N" = 14 ] && same_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh "$OLD_SG"; then ok "(v) el reporte dice cada matcher ampliado (14) y el guion conserva su comando tal cual"
+else no "(v) el reporte nombra $N matcher(s) ampliado(s) (esperaba 14); safety-guard quedó «$(hook_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh)» (antes «${OLD_SG}»)"; fi
 cp "$SW" "$T/n.after.json"
 installer "$HW" "${HELD[@]}" "${TEAM[@]}" > "$T/n2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && cmp -s "$SW" "$T/n.after.json"; then ok "(v) una segunda ejecución deja settings.json byte a byte igual"
@@ -1413,14 +1413,17 @@ if [ "$RC" -eq 0 ] && [ "${NR:-0}" -ge 1 ] && [ "$(hhash "$HR")" = "$V2" ]; then
 else no "(v) T26 hook viejo (rc $RC): ${NR:-0} remove · HOME $( [ "$(hhash "$HR")" = "$V2" ] && echo igual || echo CAMBIADA ) · $(brief "$T/v5.out" 200)"; fi
 # un bloque escrito que pide una integración apagada: el sync lo saca al aplicar, y el plan lo dice con «remove»
 HB="$(new_home plan-block-off)"; mkdir -p "$HB/.claude"
-REQ="$(grep -l '^<!-- requires-integration:' "$CLONE"/claude-md-blocks/*.md | head -1)"
-if [ -n "$REQ" ]; then
+# ningún bloque del núcleo pide hoy una integración: la prueba arma uno de laboratorio en el clon y lo saca al final
+REQ="$CLONE/claude-md-blocks/lab-con-integracion.md"
+printf '<!-- requires-integration: ado -->\n# Bloque de laboratorio\n\nUna regla que sólo vale con Azure DevOps.\n' > "$REQ"
+if [ -f "$REQ" ]; then
   BN="$(basename "$REQ" .md)"
   printf '# lo mío\n<!-- TYCON_BLOCK:%s START — viejo -->\nviejo\n<!-- TYCON_BLOCK:%s END -->\n' "$BN" "$BN" > "$HB/.claude/CLAUDE.md"
   installer "$HB" TYCON_NO_CLAUDEMD_SYNC=0 -- -Check -PlanJson "$T/plan-v6.json" > "$T/v6.out" 2>&1; RC=$?
   ACT="$(python3 -c "import json,sys; print(next((x['action'] for x in json.load(open(sys.argv[1])) if x['kind']=='block' and x['id']=='TYCON_BLOCK:'+sys.argv[2]), 'ninguna'))" "$T/plan-v6.json" "$BN" 2>/dev/null)"
   [ "$RC" -eq 0 ] && [ "$ACT" = remove ] && ok "(v) T26 un bloque escrito cuya integración está apagada: el plan lo trae con «remove»" || no "(v) T26 bloque con la integración apagada (rc $RC): acción «${ACT}» · $(brief "$T/v6.out" 200)"
-else no "(v) T26 no hay ningún bloque con requires-integration para probar el «remove»"; fi
+else no "(v) T26 no pude armar el bloque de laboratorio con requires-integration"; fi
+rm -f "$REQ"
 installer "$HV" -- -PlanJson "$T/plan-v3.json" > "$T/v3.out" 2>&1; RC=$?
 if [ "$RC" -eq 2 ] && [ ! -e "$T/plan-v3.json" ] && [ "$(hhash "$HV")" = "$V0" ] && grep -q -- '-Check' "$T/v3.out"; then ok "(v) T26 -PlanJson sin -Check sale 2 con una línea y no escribe"
 else no "(v) T26 -PlanJson sin -Check (rc $RC): $(brief "$T/v3.out" 200)"; fi

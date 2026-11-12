@@ -173,9 +173,11 @@ if corre T32; then
   applier "$H" "$TREE" "$T/t32/install.out"
   [ "$RC" = 0 ] || mal "T32 el aplicador en minimal salió ${RC}: $(tail -n 3 "$T/t32/install.out" | tr '\n' ' ')"
   harness_hooks "$H" "$TREE" > "$T/t32/hooks.txt"; minimal_hooks > "$T/t32/want.txt"
-  # trece: nueve que anotan, el que dice los avisos de los paquetes, el que tapa los secretos, el freno de comandos y el portón de edición
-  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 13 ] && ok "T32 la lista de efectos marca trece hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no trece"
-  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los trece hooks de minimal" \
+  # quince: nueve que anotan, los tres registros del que dice los avisos (al arrancar, los de los paquetes; después de un
+  # comando, los de la plataforma, y después de uno que falló, porque Claude Code lo avisa con otro evento), el que tapa
+  # los secretos, el freno de comandos y el portón de edición
+  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 15 ] && ok "T32 la lista de efectos marca quince hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no quince"
+  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los quince hooks de minimal" \
     || mal "T32 hooks registrados distintos de los de minimal: $(diff "$T/t32/want.txt" "$T/t32/hooks.txt" | grep '^[<>]' | head -6 | tr '\n' ' ')"
   # el freno de comandos destructivos y el portón de edición están en los dos perfiles (sin el portón, el agente puede
   # implementar una historia sin recorrido y nadie se entera); los demás, sólo en full
@@ -414,7 +416,8 @@ PY
     #   scripts/hooks/unclosed-runs-notice.js — las corridas que quedaron sin cerrar, dicho una vez por día
     #   scripts/hooks/deprecated-read-notice.js — avisa cuando se lee un archivo que el repo declara deprecado
     #   scripts/hooks/deprecated-session-notice.js — los archivos deprecados del repo, dichos al arrancar
-    #   scripts/hooks/extension-notices.js — los avisos de las extensiones instaladas, al arrancar
+    #   scripts/hooks/extension-notices.js — los avisos de las extensiones instaladas: al arrancar, después de un comando
+    #     y después de uno que falló (tres)
     #   scripts/hooks/guard-update-notice.js — el freno de producción quedó viejo y hay que reinstalarlo
     #   scripts/hooks/dev-behind-main-notice.js — la rama dev atrasada frente a main
     #   scripts/hooks/stuck-pr-notice.js — los pedidos trabados en choque o sin entrar
@@ -431,7 +434,7 @@ PY
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
       scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
-      scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js scripts/hooks/guard-update-notice.js
+      scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js=3 scripts/hooks/guard-update-notice.js
       scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js=2
       scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=8 scripts/hooks/owner-approval-record.js=2
       scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/office-link-start.js=2

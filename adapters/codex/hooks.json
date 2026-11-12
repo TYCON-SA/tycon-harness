@@ -250,6 +250,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/cover-secrets.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/extension-notices.js"
           }
         ]
       },
@@ -406,6 +410,7 @@
         "test-scope-guard-pre.sh",
         "failed-query-notice.js",
         "cover-secrets.js",
+        "extension-notices.js",
         "rebuild-before-verify.js",
         "session-collision-guard.js",
         "on-bash-write-gate.js",

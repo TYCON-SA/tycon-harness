@@ -81,6 +81,9 @@ set de hooks del instalador (la tabla de «Los hooks que instala», más abajo),
 cambio. En cada sesión, la línea de arranque mira si hay una versión nueva del canal «estable» y, si la hay, avisa y
 pregunta: no la aplica sin que lo pidas (`npx @tyconsa/harness@latest`, que pregunta antes de actualizar).
 `TYCON_UPDATE=0` la apaga; `harness.js doctor` dice cómo quedó todo y `harness.js uninstall` quita sólo lo que registró.
+Cómo funciona por dentro (el estado, los canales y las versiones, las copias y la vuelta atrás, la desinstalación, lo
+que queda fuera en Windows y cuándo se reabre la decisión sobre la integridad) vive en una sola guía,
+[`guides/maintaining/mecanismo-de-instalacion.md`](guides/maintaining/mecanismo-de-instalacion.md); acá queda el paso a paso.
 
 **En Windows, `~/.tycon/versions`.** Cada versión vive en su carpeta, `~/.tycon/versions/<versión>/`, y `~/.tycon/harness`
 y `~/.tycon/previous` son uniones (enlaces de carpeta) a la activa y a la anterior. Así la actualización anda con otras
@@ -269,6 +272,8 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `finished-open-notice.js` | SessionStart | Avisa las ejecuciones que terminaron todos sus pasos y siguen abiertas, y los caminos cortos con su pedido abierto o ya en main, con cómo se cierra cada uno; no cierra nada | No | full | `TYCON_FINISHED_OPEN_NOTICE=0` |
 | `stuck-pr-notice.js` | SessionStart | En un repo del arnés, avisa qué pedidos con auto-completar llevan más de una hora en choque o sin entrar | No | full | `TYCON_STUCK_PR_NOTICE=0` |
 | `extension-notices.js` | SessionStart | Dice los avisos de los paquetes activos (su `notices.json`) que aplican en el repo de la sesión, una vez por sesión | No | minimal y full | `TYCON_EXTENSION_NOTICES=0` |
+| `extension-notices.js` | PostToolUse | Después del primer comando de una plataforma que la organización eligió (su CLI), le da al asistente las reglas de ese conector (su `notices.json`), una vez por sesión | No | minimal y full | `TYCON_EXTENSION_NOTICES=0` |
+| `extension-notices.js` | PostToolUseFailure | Lo mismo cuando ese primer comando falló (Claude Code avisa el comando fallado con este evento) | No | minimal y full | `TYCON_EXTENSION_NOTICES=0` |
 | `unpushed-work-notice.js` | PostToolUse (Bash) | Anota los repos donde se commiteó y, al subir a `main`, avisa si un repo hermano tiene trabajo sólo local | No | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `unpushed-work-notice.js` | Stop | Si la sesión commiteó y quedó algo sin subir, frena el cierre una vez por repo y rama | Sí, una vez | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `office-link-start.js` | SessionStart | Con la dirección del sitio en el perfil, pide el alta de la máquina en la oficina del sitio y lanza el proceso que le manda la foto | No | full | `TYCON_OFFICE_LINK=0` |
@@ -440,7 +445,7 @@ escribió no se edita a mano: se edita el canónico, que lo re-pisa. Todo se man
 | Reglas globales | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` (espejo del global + su propia tabla de nombres) | `sync-claude-md-blocks.sh` |
 | Reglas de proyecto | `CLAUDE.md` de cada repo | `AGENTS.md` puntero de una línea en el mismo repo ("leé CLAUDE.md") — sin copia; se commitea al repo | el instalador lo deposita si falta |
 | 28 advisors | `~/.claude/agent-skills/agents/*.md` | `~/.codex/<name>.config.toml` (perfiles, `codex exec -p <name>`) **y** `~/.codex/agents/<name>.toml` (subagentes nativos) | `build/generate.js --deploy` |
-| ~20 hooks | scripts reales en los repos del equipo (el arnés y `agent-skills`), registrados en `~/.claude/settings.json` | los MISMOS scripts, registrados en `~/.codex/hooks.json` (merge quirúrgico — lo tuyo queda intacto) | `build/deploy-codex-hooks.js` |
+| Los hooks del arnés | scripts reales en los repos del equipo (el arnés y `agent-skills`), registrados en `~/.claude/settings.json` | los MISMOS scripts, registrados en `~/.codex/hooks.json` (merge quirúrgico — lo tuyo queda intacto) | `build/deploy-codex-hooks.js` |
 | Servidores MCP | el registro de TU máquina (`~/.claude.json`; los que vienen por plugin, de la tabla de equivalencias) | `[mcp_servers]` de `~/.codex/config.toml` + los `writable_roots` del sandbox (secretos jamás al archivo) | `build/deploy-codex-mcp.js` |
 | ~160 skills (BMAD incluido) | `~/.claude/agent-skills/skills/` | `~/.codex/skills/*` → symlinks — BMAD se instala UNA vez, del lado Claude, SIEMPRE | `build/deploy-shared-skills.js` |
 

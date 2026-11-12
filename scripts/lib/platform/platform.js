@@ -17,6 +17,7 @@
 // Uso: node scripts/lib/platform/platform.js <operación> [--repo <org/repo | JSON de la identidad>] [--args <JSON | @archivo>]
 //   La operación va en una palabra o en dos (`work-item.close` o `work-item close`).
 //   node scripts/lib/platform/platform.js choose <operación> [--repo …]: qué conector la atendería, sin pedirle nada.
+//   node scripts/lib/platform/platform.js chosen: las plataformas que la organización eligió para algo.
 //   node scripts/lib/platform/platform.js raw-command '<comando>': qué conector reconoce ese comando crudo (sale 1 si
 //     ninguno, y 2 si lo reconoce más de uno o si alguna integración no se puede leer).
 //   `change-request open` pide `--auto-complete` en la línea, y acepta `--wait-minutes` y `--poll-seconds`.
@@ -92,6 +93,19 @@ function identidades(tr) {
   const ms = tr.merge_suites && Array.isArray(tr.merge_suites.repos) ? tr.merge_suites.repos.map((e) => e && e.repo) : [];
   return [tr.public, tr.profile, tr.operations, tr.maintainers, ...(Array.isArray(tr.harness_copies) ? tr.harness_copies : []), ...ms]
     .filter((r) => r && typeof r === 'object' && r.org && r.repo);
+}
+
+/**
+ * Los repos que team-repos.json declara además de los de `identidades`: los de los índices de historias
+ * (`story_index.repos`) y los de cada herramienta de prueba (`stack.test_runners[].repos`). Su plataforma también es
+ * una elegida (`chosen`); no entran a la búsqueda por nombre, que mira los repos del arnés y de la cola.
+ */
+function otrosRepos(tr) {
+  if (!tr || typeof tr !== 'object') return [];
+  const lista = (v) => (Array.isArray(v) ? v : []);
+  const historias = lista(tr.story_index && tr.story_index.repos).map((e) => e && e.repo);
+  const pruebas = lista(tr.stack && tr.stack.test_runners).flatMap((r) => lista(r && r.repos).map((e) => e && e.repo));
+  return [...historias, ...pruebas].filter((r) => r && typeof r === 'object' && r.platform);
 }
 
 /** La identidad de un repo por su nombre (`repo` u `org/repo`), de las que declara team-repos.json; null si no está. */
@@ -180,6 +194,28 @@ function choose(operation, opts = {}) {
   const c = connector(name, env);
   if (c.problem) return no('sin_plataforma', `${c.problem}: se trata como sin plataforma; ${CHOOSE}`);
   return { ok: true, value: { connector: name, origin } };
+}
+
+/**
+ * Las plataformas que la organización eligió para algo: `{ok:true, value:[conector, …]}` (ordenada, sin repetir) o
+ * `{ok:false, reason:'no_medido', detail}` si la configuración no se lee. Juntan: el valor por defecto y las áreas de
+ * `integrations.platform`, la plataforma de cada repo de team-repos.json (incluidos el de operaciones, los de los
+ * índices de historias y los de las herramientas de prueba) traducida al
+ * nombre del conector, y Azure DevOps si la máquina tiene `ado.org` (lo que hoy prende Azure DevOps en la máquina). Lo
+ * usa el gancho de avisos: las reglas de una plataforma no elegida no se muestran.
+ */
+function chosen(opts = {}) {
+  const perfil = profileChoice(opts);
+  if (perfil.problem) return no('no_medido', `la elección de plataforma del perfil no se lee: ${perfil.problem}`);
+  const out = new Set();
+  for (const v of Object.values(perfil.value || {})) if (typeof v === 'string' && v.trim()) out.add(v.trim());
+  const leido = teamRepos(opts);
+  if (leido.problem) return no('no_medido', leido.problem);
+  for (const r of [...identidades(leido.data), ...otrosRepos(leido.data)]) { const c = TEAM_REPOS.connectorOf(r.platform); if (c) out.add(c); }
+  try {
+    if (perfil.config && require('../tycon-config.js').integraciones(perfil.config).ado === true) out.add(TEAM_REPOS.connectorOf('azure'));
+  } catch (e) { return no('no_medido', `no pude saber si Azure DevOps está prendida en la máquina (${String((e && e.message) || e).split('\n')[0]})`); }
+  return { ok: true, value: [...out].sort() };
 }
 
 /** Lo que el conector recibe además de los argumentos: el estado de sus secretos y los valores de la configuración. */
@@ -392,6 +428,11 @@ function main(argv) {
     process.stdout.write(`${JSON.stringify(choose(op, { repo: i >= 0 ? argv[i + 1] : undefined }))}\n`);
     return Promise.resolve(0);
   }
+  // `chosen`: las plataformas que la organización eligió para algo (el gancho de avisos las pregunta)
+  if (argv[0] === 'chosen') {
+    process.stdout.write(`${JSON.stringify(chosen())}\n`);
+    return Promise.resolve(0);
+  }
   // la operación en una palabra (`work-item.create`) o en dos (`work-item create`)
   const dos = argv.length > 1 && OPERATIONS.includes(`${argv[0]}.${argv[1]}`);
   const operation = dos ? `${argv[0]}.${argv[1]}` : argv[0];
@@ -422,4 +463,4 @@ function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 
-module.exports = { choose, run, call, conformance, connector, identityFromRemote, identityByName, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };
+module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityByName, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };

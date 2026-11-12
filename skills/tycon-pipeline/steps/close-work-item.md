@@ -50,7 +50,7 @@ Antes de postear nada en ADO, validar que se cumple TODO esto:
 4. **Merge a main hecho** (vía `/tycon-merge-to-main` o manual) — para tener el CI run definitivo y, si aplica, el PR link.
 5. **Frontmatter `status:`** debe estar en `review` (después de «Preparar el commit») o `done` (si dev ya lo movió manualmente). NO ejecutar este cierre sobre `ready-for-dev`/`in-progress` — es señal de que el flujo no completó «Preparar el commit».
 6. **Si la story NO tiene id de pedido de trabajo** → NO skipear el pedido con "N/A". Resolver en este orden (ver sección "Creación retroactiva del pedido" abajo):
-   a. Si el repo tiene la configuración del pedido de trabajo (`.tycon/work-items.yaml` o `.tycon/ado-config.yaml`) → **CREAR el pedido retroactivamente** (hijo del Epic mapeado en `epic_links`), escribir `work_item:` en el frontmatter, y continuar con el cierre normal (comment + cierre + horas). NO preguntar al dev por un ID que no existe.
+   a. Si el repo tiene la configuración del pedido de trabajo (`.tycon/work-items.yaml`, o su nombre viejo de Azure DevOps) → **CREAR el pedido retroactivamente** (hijo del Epic mapeado en `epic_links`), escribir `work_item:` en el frontmatter, y continuar con el cierre normal (comment + cierre + horas). NO preguntar al dev por un ID que no existe.
    b. Si el dev SABE que ya existe un WI (creado a mano fuera del flujo) → preguntar el ID, NO grep por título (puede haber WIs con títulos similares).
    c. Si el repo NO tiene ninguno de los dos archivos → el pedido genuinamente N/A, skip esa parte (solo entonces).
 
@@ -94,9 +94,7 @@ El CI run relevante es el **post-merge a main** (ya con todo el código integrad
 Estrategia según provider:
 
 ```bash
-# Azure DevOps Pipelines:
-az pipelines runs list --organization https://dev.azure.com/<org> --project <project> \
-  --branch main --top 5 --query "[?contains(sourceVersion, '<merge-sha>')].{id:id, status:status, result:result, web:_links.web.href}"
+# Azure DevOps Pipelines: el comando, en ~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md §«Cerrar la historia»
 
 # GitHub Actions (si aplica):
 gh run list --branch main --limit 5 --json databaseId,headSha,status,conclusion,url \
@@ -159,8 +157,8 @@ Formato del output: `Xh YYm` (ej. `4h 32m`). Si la story tomó menos de 1h, most
 El paso no arma comandos de ninguna plataforma: le pide a la capa de plataforma
 (`node ~/.claude/tycon-harness/scripts/lib/platform/platform.js work-item create|close`). La plataforma la elige el perfil
 del equipo (`integrations.platform`); el destino (organización, proyecto o repo, tipo, estados, épicas), la
-configuración del repo: `.tycon/work-items.yaml`, o `.tycon/ado-config.yaml` (el nombre viejo, que se sigue leyendo; con
-los dos gana el nuevo). En Azure DevOps la organización es la del archivo y, si no la tiene, `ado.org` de la máquina.
+configuración del repo: `.tycon/work-items.yaml`, o el archivo de nombre viejo de Azure DevOps (que se sigue leyendo; con
+los dos gana el nuevo: `guides/integrations/ado-projects.md`). En Azure DevOps la organización es la del archivo y, si no la tiene, `ado.org` de la máquina.
 
 **Sin plataforma elegida o sin credencial** la capa contesta `ok: false` con un `summary` de una línea que dice qué falta
 y cómo ponerlo: se muestra esa línea, el pedido no se toca y el resto del cierre sigue (exit 0).
