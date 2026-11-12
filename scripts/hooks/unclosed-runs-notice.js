@@ -86,7 +86,7 @@ function storyOf(d) {
   if (fs.existsSync(d.storyPath)) return d.storyPath;
   if (!d.repoCommon || !d.storyRel) return null;
   const r = require('child_process').spawnSync('git', ['--git-dir', d.repoCommon, 'worktree', 'list', '--porcelain'],
-    { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
+    { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
   if (r.status !== 0) return null;
   for (const m of String(r.stdout).matchAll(/^worktree (.+)$/gm)) {
     const c = path.join(m[1], d.storyRel);

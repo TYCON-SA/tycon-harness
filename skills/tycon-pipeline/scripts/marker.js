@@ -3786,7 +3786,7 @@ function dondeViveLaHistoria(storyPath) {
   try {
     const dir = path.dirname(storyPath);
     const [raiz, comun] = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel', '--git-common-dir'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim().split('\n');
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }).trim().split('\n');
     return { storyRel: path.relative(fs.realpathSync(raiz), fs.realpathSync(storyPath)), repoCommon: path.resolve(dir, comun) };
   } catch (_e) {
     return {};
