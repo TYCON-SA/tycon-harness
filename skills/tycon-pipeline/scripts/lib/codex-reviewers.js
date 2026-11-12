@@ -109,7 +109,7 @@ function adversarialInFlight(marker) {
 function killTree(pid) {
   if (!Number.isInteger(pid)) return;
   if (process.platform === 'win32') {
-    require('child_process').spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 10000 });
+    require('child_process').spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 10000 });
     return;
   }
   try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch { /* ya no está */ } }
@@ -122,7 +122,7 @@ function alive(pid) {
 /** La línea de comando de un proceso vivo, o null si no se puede saber (sin `ps`, en Windows). */
 function commandOf(pid) {
   if (process.platform === 'win32') return null;
-  const r = require('child_process').spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', timeout: 5000 });
+  const r = require('child_process').spawnSync('ps', ['-p', String(pid), '-o', 'command='], { windowsHide: true, encoding: 'utf8', timeout: 5000 });
   return r.status === 0 ? String(r.stdout || '').trim() : null;
 }
 
@@ -266,7 +266,7 @@ async function run(o) {
     let ch = null;
     let spawnError = null;
     try {
-      ch = spawn(codex, args, { cwd: repo, env, stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' });
+      ch = spawn(codex, args, { windowsHide: true, cwd: repo, env, stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' });
     } catch (e) { spawnError = e; }
     if (ch) {
       children.add(ch);

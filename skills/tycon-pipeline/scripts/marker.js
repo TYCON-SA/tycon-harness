@@ -1234,7 +1234,7 @@ function anotarAprobacion(marker, entrada) {
     if (!runDir) throw new Error('no pude calcular la carpeta de la corrida (clave de la story)');
     let commit = null;
     try {
-      commit = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+      commit = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--short=12', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
     } catch (_e) { /* repo sin commits: la línea va sin commit */ }
     const linea = approvals.anotar(runDir, { commit, ...entrada });
     appendLog('gates.log', { name: 'approval', status: 'ok', story: marker.storyId, que: linea.que, tipo: linea.tipo, quien: linea.quien });
@@ -2233,7 +2233,7 @@ function cmdCompleteStep(nRaw, flags) {
         require('child_process').execFileSync(
           'node',
           require('./mockup.js').qaGuideCheckArgs(qaStoryPath, marker),
-          { stdio: 'inherit' },
+          { windowsHide: true, stdio: 'inherit' },
         );
       } catch (e) {
         blocked = 'qaguide';
@@ -3226,7 +3226,7 @@ const SENALES_RUN_CHECK = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
 /** El candado de `name` en el repo de la carpeta actual: la ruta real de la raíz de git (sin git, la carpeta). */
 function runCheckLock(name) {
   let raiz = process.cwd();
-  try { raiz = require('child_process').execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || raiz; } catch (_) { /* sin git: la carpeta */ }
+  try { raiz = require('child_process').execFileSync('git', ['rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || raiz; } catch (_) { /* sin git: la carpeta */ }
   try { raiz = fs.realpathSync(raiz); } catch (_) { /* la ruta tal cual */ }
   const huella = require('crypto').createHash('sha1').update(raiz).digest('hex').slice(0, 16);
   const clave = name === 'tests-suite' ? 'tests' : name;
@@ -3327,7 +3327,7 @@ function cmdRunCheck(argv) {
     return;
   }
   try {
-    hijo = spawn(lanzar.file, lanzar.args, { stdio: ['inherit', 'pipe', 'pipe'] });
+    hijo = spawn(lanzar.file, lanzar.args, { windowsHide: true, stdio: ['inherit', 'pipe', 'pipe'] });
   } catch (err) {
     retener(Buffer.from(`${err.message}\n`));
     terminar(1);
@@ -3606,7 +3606,7 @@ function cmdCloseAsDebt(args) {
   const story = resolveStoryPath(marker.storyPath, marker);
   let raiz = story ? path.dirname(path.dirname(story)) : null;
   if (story) {
-    try { raiz = require('child_process').execFileSync('git', ['-C', path.dirname(story), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || raiz; } catch (_) { /* sin git: la carpeta de arriba */ }
+    try { raiz = require('child_process').execFileSync('git', ['-C', path.dirname(story), 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || raiz; } catch (_) { /* sin git: la carpeta de arriba */ }
   }
   const todo = raiz ? path.join(raiz, 'tasks', 'todo.md') : null;
   // el id entero, como palabra: el comienzo de un id anotado no es ese id, y una letra suelta no es una deuda
@@ -3786,7 +3786,7 @@ function dondeViveLaHistoria(storyPath) {
   try {
     const dir = path.dirname(storyPath);
     const [raiz, comun] = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel', '--git-common-dir'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim().split('\n');
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }).trim().split('\n');
     return { storyRel: path.relative(fs.realpathSync(raiz), fs.realpathSync(storyPath)), repoCommon: path.resolve(dir, comun) };
   } catch (_e) {
     return {};
@@ -4140,7 +4140,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
   // spawnSync y no execFileSync: con exit 0 execFileSync no devuelve el stderr.
   const r = require('child_process').spawnSync(process.execPath,
     [path.join(__dirname, 'pipeline.js'), 'deep-review-gate', ...args],
-    { encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    { windowsHide: true, encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   let gate = null;
   // la salida 3 es «corre, y espera su turno»: un veredicto legible, que niega el salteo como cualquier otro `run: true`
   if (r.status === 0 || r.status === 3) { try { gate = JSON.parse(r.stdout); } catch (_e) { gate = null; } }
@@ -4473,7 +4473,7 @@ function cmdMarkAdversarialResult(countRaw) {
   let head = null;
   try {
     head = require('child_process').execFileSync('git', ['rev-parse', '--short', 'HEAD'],
-      { cwd: (corrida && corrida.repoPath) || process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+      { windowsHide: true, cwd: (corrida && corrida.repoPath) || process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
   } catch (_e) { head = null; }
   // En cuántas CAUSAS distintas se agrupan esos hallazgos. Lo devuelve el propio pase
   // (`clases` de adversarial-verify.workflow.js). Sin el dato el volcado no puede decir cuánto se
@@ -4602,7 +4602,7 @@ function verificarPruebasPropias(rutas, marker, tipo) {
   ].map((p) => clave(p));
   const raizGit = (archivo) => {
     const r = require('child_process').spawnSync('git', ['-C', path.dirname(archivo), 'rev-parse', '--show-toplevel'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     return r.status === 0 && String(r.stdout || '').trim() ? canon(String(r.stdout).trim()) : null;
   };
   // La (d) sólo existe con un lanzamiento anotado del pase: una revisión a mano no tiene lanzamiento que anotar.
@@ -4809,7 +4809,7 @@ function rescatarHiloYConsumo(archivo, dump) {
   try {
     const { execFileSync } = require('child_process');
     const resto = process.env.TYCON_PROJECTS_DIR ? ['--projects-dir', process.env.TYCON_PROJECTS_DIR] : [];
-    const llamar = (opcion) => execFileSync(process.execPath, [script, opcion, archivo, ...resto], { stdio: 'ignore', timeout: 60000 });
+    const llamar = (opcion) => execFileSync(process.execPath, [script, opcion, archivo, ...resto], { windowsHide: true, stdio: 'ignore', timeout: 60000 });
     try {
       llamar('--run');
     } catch (err) {
@@ -4867,7 +4867,7 @@ function guardarCambioDeCorrida(archivo, dump) {
   try {
     const { spawnSync } = require('child_process');
     const llamar = (dumpOption, stateOption) => spawnSync(process.execPath, [script, dumpOption, archivo, stateOption, STATE_DIR],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: tope, killSignal: 'SIGKILL' });
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: tope, killSignal: 'SIGKILL' });
     let r = llamar('--dump', '--state');
     // sólo «argumentos inválidos» (un arnés de antes del renombre) merece la vuelta con los nombres viejos
     if (!r.error && r.status === HARNESS_INVALID_ARGS) r = llamar(HARNESS_OLD_OPTION.dump, HARNESS_OLD_OPTION.state);
@@ -4899,7 +4899,7 @@ function avisarCierreSinPasos(marker) {
     const tocados = new Set((marker.filesTouched || []).map(String));
     if (repo && marker.baseSha) {
       const { spawnSync } = require('child_process');
-      const git = (args) => spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', timeout: 10000 });
+      const git = (args) => spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
       for (const r of [git(['diff', '--name-only', marker.baseSha]), git(['ls-files', '--others', '--exclude-standard'])]) {
         if (r.error || r.status !== 0) continue;
         for (const f of String(r.stdout).split('\n').filter(Boolean)) tocados.add(path.join(repo, f));
@@ -6139,7 +6139,7 @@ function cmdApprovePending(argv) {
   }
   let repo = val('--repo');
   try {
-    repo = require('child_process').execFileSync('git', ['-C', path.resolve(repo || process.cwd()), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    repo = require('child_process').execFileSync('git', ['-C', path.resolve(repo || process.cwd()), 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch (_) { console.error(`marker.js approve-pending: ${repo || process.cwd()} no es un repo de git.`); process.exit(2); }
   let todo; let registro;
   try { todo = fs.readFileSync(path.join(repo, PA.TODO), 'utf8'); } catch (e) { console.error(`marker.js approve-pending: no pude leer ${PA.TODO} de ${repo} (${e.code || e.message}).`); process.exit(2); }
@@ -6737,7 +6737,7 @@ function cmdAdhocAllowDataChange(io) {
       const sinSaber = [];
       for (const rel of rels) {
         if (!sha) { sinSaber.push(rel); continue; }
-        const r = require('child_process').spawnSync('git', ['-C', repo, 'ls-tree', '-z', '--name-only', sha, '--', rel], { encoding: 'utf8' });
+        const r = require('child_process').spawnSync('git', ['-C', repo, 'ls-tree', '-z', '--name-only', sha, '--', rel], { windowsHide: true, encoding: 'utf8' });
         if (r.error || r.status !== 0) sinSaber.push(rel);
         else (r.stdout.split('\0').includes(rel) ? enLaBase : nuevos).push(rel);
       }
@@ -6873,7 +6873,7 @@ function cmdAdhoc(sub, payloadJson) {
     const enWindows = process.platform === 'win32';
     const citarWin = (w) => (/[\s"&|<>^]/.test(w) ? `"${String(w).replace(/"/g, '""')}"` : w);
     const r = require('child_process').spawnSync(enWindows ? citarWin(comando[0]) : comando[0], enWindows ? comando.slice(1).map(citarWin) : comando.slice(1),
-      { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024, shell: enWindows });
+      { windowsHide: true, encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024, shell: enWindows });
     if (r.stdout) process.stdout.write(r.stdout);
     if (r.stderr) process.stderr.write(r.stderr);
     const codigo = r.error ? 127 : (r.status === null ? 1 : r.status);

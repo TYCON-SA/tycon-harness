@@ -131,7 +131,7 @@ function spawnAgent(cmdline, prompt, cwd, timeoutMs, { stdin = false, env = {} }
     // El prompt viaja siempre por env (el comando propio y el falso de las pruebas lo leen de ahí); además, por la
     // entrada estándar o en la línea de comando, según lo que declara el corredor.
     // Las corridas de un corredor no ven los ganchos del arnés: TYCON_EVAL_SANDBOX los calla.
-    const ch = spawn(bin, pre, { cwd, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'], env: { ...process.env, TYCON_EVAL_SANDBOX: '1', ...env, TYCON_WFLITE_PROMPT: prompt } });
+    const ch = spawn(bin, pre, { windowsHide: true, cwd, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'], env: { ...process.env, TYCON_EVAL_SANDBOX: '1', ...env, TYCON_WFLITE_PROMPT: prompt } });
     let out = '', err = '';
     const killer = setTimeout(() => ch.kill('SIGKILL'), timeoutMs);
     ch.stdout.on('data', (d) => (out += d));

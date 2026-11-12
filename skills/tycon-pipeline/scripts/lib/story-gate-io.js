@@ -343,6 +343,7 @@ function gateEnabledForRepo(repoRoot, key = 'story_gate') {
   let yaml = '';
   try {
     yaml = execFileSync('git', ['-C', repoRoot, 'show', 'HEAD:.tycon/advisors.yaml'], {
+      windowsHide: true,
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000,
     });
   } catch { return true; }

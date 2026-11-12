@@ -311,7 +311,7 @@ function gitIgnoraProbe(repo) {
   const { execFileSync } = require('child_process');
   return (rel) => {
     try {
-      execFileSync('git', ['-C', repo, 'check-ignore', '-q', '--', rel], { stdio: 'ignore' });
+      execFileSync('git', ['-C', repo, 'check-ignore', '-q', '--', rel], { windowsHide: true, stdio: 'ignore' });
       return true;
     } catch (e) {
       return e && e.status === 1 ? false : null;
@@ -358,6 +358,7 @@ function gitAddedLinesByFile(repo) {
   const result = { byFile: new Map(), untracked: new Set(), gitOk: false };
   try {
     const diff = execFileSync('git', ['-C', repo, 'diff', '-U0', 'HEAD'], {
+      windowsHide: true,
       encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
     });
     let current = null;
@@ -369,6 +370,7 @@ function gitAddedLinesByFile(repo) {
       }
     }
     const untracked = execFileSync('git', ['-C', repo, 'ls-files', '--others', '--exclude-standard'], {
+      windowsHide: true,
       encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
     });
     for (const f of untracked.split('\n').filter(Boolean)) result.untracked.add(f);
@@ -878,6 +880,7 @@ function dependenciaCambiada(repo, files) {
     let antes = null;
     try {
       antes = JSON.parse(execFileSync('git', ['-C', repo, 'show', `HEAD:${rel}`], {
+        windowsHide: true,
         encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000,
       }));
     } catch (_e) {
@@ -1987,7 +1990,7 @@ function gitArchivosDelWorkingTree(repo) {
   const { execFileSync } = require('child_process');
   const correr = (args) => {
     try {
-      return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      return execFileSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
         .split(/\r?\n/).filter(Boolean);
     } catch { return []; }   // sin git / no es repo → fail-open: la ceguera no se puede diagnosticar
   };
@@ -2730,6 +2733,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     const gitDiff = (cwd, rutas) => {
       const base = baseDe(cwd);
       const r = require('child_process').spawnSync('git', ['-C', cwd, 'diff', base.ref, '--', ...rutas], {
+        windowsHide: true,
         encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
       });
       if (r.error || r.status !== 0) {
@@ -3371,7 +3375,7 @@ const markerInstalado = () => path.join(os.homedir(), '.claude', 'agent-skills',
 function anotarTanda(nombre) {
   const { execFileSync } = require('child_process');
   try {
-    execFileSync(process.execPath, [markerInstalado(), 'set-batch', nombre], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync(process.execPath, [markerInstalado(), 'set-batch', nombre], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     return { ok: true };
   } catch (e) {
     return { ok: false, motivo: String((e.stderr || e.message || e)).trim().split('\n')[0] };
@@ -3488,7 +3492,7 @@ function computeStart(args) {
   let ramaSinLeer = null;
   if (others.length) {
     const gitDe = (dir, ...a) => {
-      try { return execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch { return null; }
+      try { return execFileSync('git', ['-C', dir, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch { return null; }
     };
     const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
     const miRaiz = gitDe(repo, 'rev-parse', '--show-toplevel');
@@ -3521,7 +3525,7 @@ function computeStart(args) {
   // PIPE-C1: branch guard.
   let branch = null;
   try {
-    branch = execFileSync('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    branch = execFileSync('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch { /* repo sin git */ }
   // La historia del modo primera vez de tycon-create-story arranca sola: sin git, `git init`; en main/master (o en un repo sin
   // commits), la rama `story/<n>`. Sólo con la marca `origin: first-time` Y la constancia que deja el guion que la
@@ -3532,7 +3536,7 @@ function computeStart(args) {
   const firstTimeMark = fm.origin === 'first-time';
   const firstTimeOk = firstTimeMark && require('./lib/first-time-record.js').isRecorded(os.homedir(), storyPath, storyId);
   if (firstTimeOk) {
-    const gitOut = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const gitOut = (...a) => execFileSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     const target = `story/${storyId}`;
     let hasGit = true;
     try { gitOut('rev-parse', '--git-dir'); } catch { hasGit = false; }
@@ -3559,7 +3563,7 @@ function computeStart(args) {
   // ni con la historia afuera: ahí pausa y da el comando a mano.
   if (!firstTimeGit && !firstTimeOk) {
     let hasGit = true;
-    try { execFileSync('git', ['-C', repo, 'rev-parse', '--git-dir'], { stdio: ['ignore', 'ignore', 'ignore'] }); } catch { hasGit = false; }
+    try { execFileSync('git', ['-C', repo, 'rev-parse', '--git-dir'], { windowsHide: true, stdio: ['ignore', 'ignore', 'ignore'] }); } catch { hasGit = false; }
     if (!hasGit) {
       const target = `story/${storyId}`;
       const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
@@ -3611,7 +3615,7 @@ function computeStart(args) {
   if (firstTimeGit && !pauses.length) {
     const { init, unborn, target, sinMarca } = firstTimeGit;
     try {
-      const run = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      const run = (...a) => execFileSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
       if (init) run('init', '-q');
       // Sin commits no hay desde dónde ramificar: se nombra la rama de HEAD, y el primer commit nace en ella.
       if (init || unborn) run('symbolic-ref', 'HEAD', `refs/heads/${target}`);
@@ -3733,7 +3737,7 @@ function computeStart(args) {
       // Commit de partida: la base de las «líneas tocadas» que mide test-gate.sh.
       // Sin git queda null y test-gate cae a HEAD diciéndolo.
       baseSha: (() => {
-        try { return execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() || null; } catch (e) {
+        try { return execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() || null; } catch (e) {
           // No frena el arranque (test-gate cae a HEAD y lo dice), pero no se calla.
           actions.push(`⚠️ BASE DE COBERTURA: no pude leer el commit de partida (${String((e.stderr || e.message || e)).trim().split('\n')[0]}); test-gate medirá contra HEAD`);
           return null;
@@ -3748,8 +3752,8 @@ function computeStart(args) {
       ...(args.sessionModel ? { sessionModel: args.sessionModel } : {}),
       ...(args.codexSession ? { codexSession: args.codexSession } : {}),
       ...(parallelWith ? { parallelWith } : {}),
-    })], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    execFileSync(process.execPath, [markerJs, 'complete-step', esquema.arranque], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    })], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync(process.execPath, [markerJs, 'complete-step', esquema.arranque], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     logRunStart(storyId);
     // La apertura en el registro y su copia en la carpeta, después del marcador: con las tres piezas, si falta una, la
     // ejecución frena como perdida (lib/open-runs.js). Retomar la misma historia sobrescribe la copia.
@@ -3771,7 +3775,7 @@ function computeStart(args) {
 
   // PIPE-C5 (escritura): status → in-progress.
   try {
-    execFileSync(process.execPath, [markerJs, 'update-story-status', storyPath, 'in-progress'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync(process.execPath, [markerJs, 'update-story-status', storyPath, 'in-progress'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     actions.push('PIPE-C5: frontmatter status → in-progress');
   } catch (e) {
     actions.push(`PIPE-C5 FALLÓ (no bloqueante): ${String(e.message || e)}`);
@@ -3779,7 +3783,7 @@ function computeStart(args) {
 
   if (args.autonomous) {
     try {
-      execFileSync(process.execPath, [markerJs, 'set-autonomous', 'true'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      execFileSync(process.execPath, [markerJs, 'set-autonomous', 'true'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
       actions.push('PIPE-C6: modo autónomo Nivel 1 ACTIVO (default ON · Stop-gate DoD). Pánico: touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY');
     } catch { /* ignore */ }
   } else {
@@ -4394,7 +4398,7 @@ function computeMissingBeforeStart({ repo, fm, env = process.env, home = os.home
       const candidatas = new Set([path.resolve(repo)]);
       try { candidatas.add(fs.realpathSync.native(repo)); } catch { /* sin ruta real: queda la resuelta */ }
       try {
-        const comun = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        const comun = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
         if (path.basename(comun) === '.git') {
           candidatas.add(path.dirname(comun));
           try { candidatas.add(fs.realpathSync.native(path.dirname(comun))); } catch { /* idem */ }
@@ -5182,7 +5186,7 @@ function densidadDelDiff(repo, files, { allowMissing = false, marcador = null } 
       // desde la carpeta existente más cercana.
       let dir = path.dirname(abs);
       while (!fs.existsSync(dir) && path.dirname(dir) !== dir) dir = path.dirname(dir);
-      const top = sp('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const top = sp('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       const raiz = top.status === 0 ? String(top.stdout || '').trim() : '';
       if (raiz) {
         o.root = raiz;
@@ -5191,14 +5195,14 @@ function densidadDelDiff(repo, files, { allowMissing = false, marcador = null } 
     }
     // `ownerOf` da como raíz la carpeta de `--repo` aunque no sea un repo git: eso tampoco se puede medir
     if (!o.root || !companionLib.gitRootOf(o.root)) { noMedidos.push({ file: f, motivo: 'no está dentro de ningún repo git' }); continue; }
-    const ls = sp('git', ['-C', o.root, 'ls-files', '--error-unmatch', '--', o.rel], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const ls = sp('git', ['-C', o.root, 'ls-files', '--error-unmatch', '--', o.rel], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     if (ls.error) { noMedidos.push({ file: f, motivo: `no pude correr git (${ls.error.message})` }); continue; }
     // `ls-files --error-unmatch`: 0 = trackeado, 1 = no trackeado. Cualquier otra salida (128 por safe.directory o un repo
     // roto, una señal) es «git no pudo decir», no «no trackeado»: sumarlo entero sería un error.
     if (ls.status !== 0 && ls.status !== 1) { noMedidos.push({ file: f, motivo: `git no pudo decir si está trackeado en ${o.root} (salida ${ls.status === null ? `señal ${ls.signal}` : ls.status})` }); continue; }
     const tracked = ls.status === 0;
     if (tracked) {
-      const r = sp('git', ['-C', o.root, 'diff', '--numstat', baseDe(o.root), '--', o.rel], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const r = sp('git', ['-C', o.root, 'diff', '--numstat', baseDe(o.root), '--', o.rel], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       const salida = String(r.stdout || '').trim();
       if (r.status !== 0) { noMedidos.push({ file: f, motivo: `git diff falló en ${o.root}` }); continue; }
       if (!salida) continue;   // tracked y sin cambios respecto de la base: 0 agregadas, medido
@@ -5211,7 +5215,7 @@ function densidadDelDiff(repo, files, { allowMissing = false, marcador = null } 
         // con `--allow-missing-files` quien llama ya dijo que puede haber archivos que no están (borrados): ausente = 0
         // borrado por el cambio (`git rm`, o el nombre viejo de un `git mv`): no está en el índice ni en el disco, pero
         // sí en HEAD. Agrega 0 líneas, medido (sin esto, cortaría stories de un solo repo).
-        if (e.code === 'ENOENT' && sp('git', ['-C', o.root, 'cat-file', '-e', `HEAD:${o.rel}`], { stdio: 'ignore' }).status === 0) continue;
+        if (e.code === 'ENOENT' && sp('git', ['-C', o.root, 'cat-file', '-e', `HEAD:${o.rel}`], { windowsHide: true, stdio: 'ignore' }).status === 0) continue;
         if (allowMissing && e.code === 'ENOENT') { ausentes.push(f); continue; }
         noMedidos.push({ file: f, motivo: `no está trackeado en ${o.root} y no lo pude leer (${e.code || e.message})` });
         continue;
@@ -5336,12 +5340,12 @@ function archivosFantasma(args) {
     while (!exists(dir) && path.dirname(dir) !== dir) dir = path.dirname(dir);
     let raiz;
     try {
-      raiz = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-      execFileSync('git', ['-C', raiz, 'rev-parse', '--verify', '--quiet', 'HEAD'], { stdio: 'ignore' });
+      raiz = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      execFileSync('git', ['-C', raiz, 'rev-parse', '--verify', '--quiet', 'HEAD'], { windowsHide: true, stdio: 'ignore' });
     } catch { return 'sin-git'; }
     const rel = path.relative(fs.realpathSync(raiz), path.join(fs.realpathSync(dir), path.relative(dir, abs))).split(path.sep).join('/');
     if (!rel || rel.startsWith('../')) return 'no';
-    try { execFileSync('git', ['-C', raiz, 'cat-file', '-e', `HEAD:${rel}`], { stdio: 'ignore' }); return 'si'; } catch { return 'no'; }
+    try { execFileSync('git', ['-C', raiz, 'cat-file', '-e', `HEAD:${rel}`], { windowsHide: true, stdio: 'ignore' }); return 'si'; } catch { return 'no'; }
   };
   const fantasmas = [];
   let sinGit = 0;
@@ -5437,7 +5441,7 @@ function computeDepGate({ repo, story }) {
   const sinMedir = [];
   const MANIFIESTOS = ['package.json', '*/package.json', '**/package.json',
     '*.csproj', '**/*.csproj', 'Directory.Packages.props', '**/Directory.Packages.props'];
-  const gitDe = (raiz, a, input) => execFileSync('git', ['-C', raiz, ...a], { encoding: 'utf8', input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'] });
+  const gitDe = (raiz, a, input) => execFileSync('git', ['-C', raiz, ...a], { windowsHide: true, encoding: 'utf8', input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'] });
   for (const raiz of raices) {
     try {
       // Sin commits todavía (el repo recién iniciado al arrancar) la base es el árbol vacío: todo es nuevo.
@@ -5780,9 +5784,9 @@ function computeDodCheckerNeeded(args, deps = {}) {
     const { spawnSync } = require('child_process');
     // Todo desde la RAÍZ del repo y sin comillas: `ls-files` desde una subcarpeta sólo lista esa subcarpeta, y con
     // `core.quotePath` por defecto una ruta con tilde sale entre comillas y con escapes.
-    const t = spawnSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const t = spawnSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     const top = t.error || t.status !== 0 ? null : t.stdout.trim();
-    const git = (argv) => spawnSync('git', ['-C', top || repo, '-c', 'core.quotePath=false', ...argv], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
+    const git = (argv) => spawnSync('git', ['-C', top || repo, '-c', 'core.quotePath=false', ...argv], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
     const d = top ? git(['diff', '--name-only', '-z', base.ref]) : null;
     const u = top ? git(['ls-files', '--others', '--exclude-standard', '-z']) : null;
     const falla = [t, d, u].find((r) => !r || r.error || r.status !== 0);
@@ -5817,7 +5821,7 @@ function computeDodCheckerNeeded(args, deps = {}) {
 // { marker, error }: un marker.js que falla se DICE, no se lee como «sin corrida» (patrón de coverage-base.js).
 function leerMarcadorDeLaCorrida() {
   const { spawnSync } = require('child_process');
-  const r = spawnSync(process.execPath, [path.join(__dirname, 'marker.js'), 'get'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+  const r = spawnSync(process.execPath, [path.join(__dirname, 'marker.js'), 'get'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
   if (r.error) return { marker: null, error: `marker.js get no corrió (${r.error.code || r.error.message})` };
   if (r.status !== 0) return { marker: null, error: `marker.js get salió ${r.status}` };
   try { return { marker: JSON.parse(r.stdout || '{}'), error: null }; } catch (e) { return { marker: null, error: `marker.js get devolvió algo ilegible (${e.message})` }; }
@@ -6113,7 +6117,7 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
 function emptyWorkGate(args) {
   const { spawnSync } = require('child_process');
   const repo = path.resolve(args.repo || '.');
-  const git = (a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8', timeout: 10000 });
+  const git = (a) => spawnSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
   const top = git(['rev-parse', '--show-toplevel']);
   if (top.error || top.status !== 0) return null;
   const status = git(['status', '--porcelain', '--untracked-files=normal']);
@@ -7596,7 +7600,7 @@ function main() {
     if (process.env.TYCON_5B_EARLY === '0' || process.env.TYCON_5B_EARLY === '1') {
       try {
         require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'mark-adversarial-gate',
-          JSON.stringify({ early_env: process.env.TYCON_5B_EARLY })], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 10000 });
+          JSON.stringify({ early_env: process.env.TYCON_5B_EARLY })], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], timeout: 10000 });
       } catch (e) {
         // se dice: sin la anotación, el próximo `next` sin la variable vuelve a pedir el temprano que se apagó
         const detalle = String((e && e.stderr) || (e && e.message) || '').trim().split('\n')[0];
@@ -7631,7 +7635,7 @@ function main() {
     if (!result.error && (STEPS_TABLE.byId(result.next_step) || /^(\d|0b|0c|5b|7c)$/.test(String(result.next_step || '')))) {
       try {
         require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'start-step', String(result.next_step)],
-          { stdio: 'ignore', timeout: 10000 });
+          { windowsHide: true, stdio: 'ignore', timeout: 10000 });
       } catch { /* sin arranque: la cuenta lo rotula «estimada», no lo inventa */ }
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -7740,7 +7744,7 @@ function main() {
       estimateMotivo = `no pude leer el número de la historia (${(e && (e.code || e.message)) || 'error'})`;
     }
     let repoDir = path.dirname(path.dirname(storyPath));
-    try { repoDir = require('child_process').execFileSync('git', ['-C', path.dirname(storyPath), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || repoDir; } catch (_) { /* sin git: la carpeta de arriba */ }
+    try { repoDir = require('child_process').execFileSync('git', ['-C', path.dirname(storyPath), 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || repoDir; } catch (_) { /* sin git: la carpeta de arriba */ }
     const r = require('./lib/external-flags.js').adoMarkActive({ workItem: wi, repoDir, reopen: !!args.reopen, assignTo: args.assignTo || null,
       platformJs: path.join(raiz, 'scripts', 'lib', 'platform', 'platform.js'), storyId, estimateMotivo });
     if (r.marked) {
@@ -7932,7 +7936,7 @@ function main() {
       try {
         const out = require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'mark-adversarial-gate',
           JSON.stringify({ run: result.run, files: args.files, decision: result.decision || null, early_env: nn(process.env.TYCON_5B_EARLY, null) })],
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+        { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
         const anotado = JSON.parse(out || '{}');
         if ('early_launch' in result && typeof anotado.early_launch === 'boolean' && anotado.early_launch !== result.early_launch) {
           result.early_launch = anotado.early_launch;

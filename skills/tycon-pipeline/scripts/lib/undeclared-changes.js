@@ -65,7 +65,7 @@ function lockDeclarado(rel, declarados) {
 }
 
 function git(repo, args) {
-  const r = spawnSync('git', ['-C', repo, '-c', 'core.quotePath=false', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 });
+  const r = spawnSync('git', ['-C', repo, '-c', 'core.quotePath=false', ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 });
   if (r.error) return { error: `git no se pudo ejecutar (${r.error.code || r.error.message})` };
   if (r.status !== 0) return { error: `git ${args[0]} salió ${r.status}: ${(r.stderr || '').trim().split('\n')[0]}` };
   return { out: r.stdout };

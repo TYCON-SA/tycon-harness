@@ -64,7 +64,7 @@ function paraSubir(dir, opts = {}) {
 }
 
 function gitPorDefecto(cwd, args) {
-  const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8' });
   return { status: r.error ? -1 : r.status, stdout: r.stdout || '', stderr: r.error ? r.error.message : (r.stderr || '') };
 }
 

@@ -95,6 +95,57 @@ function runOnce(dir, label, shim, env) {
   return { pid, window: w, consoleWindows: { before, during, new: newWindows }, visible, detachedPid: r.pid };
 }
 
+/**
+ * Un repo de laboratorio con `branches` ramas (la mitad con un commit sin subir) y su remoto pelado: lo que el aviso de
+ * trabajo sin subir recorre. Devuelve su ruta, o null si git no anduvo.
+ */
+function toyRepo(dir, branches, env) {
+  const bare = path.join(dir, 'remote.git');
+  const repo = path.join(dir, 'repo');
+  const g = (cwd, args) => L.run('git', ['-c', 'maintenance.auto=false', ...args], { cwd, env: Object.assign({}, env, { GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.com', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.com', GIT_AUTHOR_DATE: '2026-01-01T10:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T10:00:00Z' }), timeoutMs: 60000 }).exit === 0;
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  if (!g(dir, ['init', '-q', '--bare', bare]) || !g(dir, ['clone', '-q', bare, repo])) return null;
+  fs.mkdirSync(path.join(repo, '.tycon'));
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'base\n');
+  if (!g(repo, ['checkout', '-q', '-b', 'main']) || !g(repo, ['add', '-A']) || !g(repo, ['commit', '-qm', 'base']) || !g(repo, ['push', '-q', 'origin', 'main'])) return null;
+  for (let i = 1; i <= branches; i++) {
+    if (!g(repo, ['checkout', '-q', '-b', `b${i}`, 'main'])) return null;
+    if (i % 2 === 0) { fs.writeFileSync(path.join(repo, `f${i}.txt`), `${i}\n`); if (!g(repo, ['add', '-A']) || !g(repo, ['commit', '-qm', `c${i}`])) return null; }
+  }
+  return g(repo, ['checkout', '-q', 'main']) ? repo : null;
+}
+
+/**
+ * El aviso de trabajo sin subir corriendo en un proceso SIN consola (desprendido, sin relevo): es lo que pasa cuando la
+ * herramienta lanza los ganchos sin consola. Escanea el repo una y otra vez durante 6 s, para que una ventana, si la
+ * abriera, esté a la vista cuando se cuentan. Cada git que lanza tiene que ir con la ventana oculta: 0 ventanas nuevas.
+ */
+function runHookWithoutConsole(dir, repo, env) {
+  const D = require(DETACH);
+  const hook = path.join(__dirname, '..', '..', 'hooks', 'unpushed-work-notice.js');
+  const script = path.join(dir, 'hook-worker.js');
+  fs.writeFileSync(script, [
+    "'use strict';",
+    `const D = require(${JSON.stringify(DETACH)});`,
+    'if (!D.adoptDetachedRun()) { process.exit(3); }',
+    `process.argv = [process.argv[0], ${JSON.stringify(hook)}, '--scan', ${JSON.stringify(repo)}];`,
+    'const end = Date.now() + 6000;',
+    `while (Date.now() < end) { delete require.cache[require.resolve(${JSON.stringify(hook)})]; require(${JSON.stringify(hook)}); }`,
+    'D.writeResult(0, []);',
+  ].join('\n'));
+  const resultFile = path.join(dir, 'hook.result.json');
+  const before = consoleWindowCount(env);
+  const r = D.runDetached({ script, args: [], env: Object.assign({}, env, { TYCON_STARTUP_SHIM: '0' }), resultFile, waitMs: 400, startWaitMs: 10000 });
+  if (!r) return { problem: 'no pude lanzar el aviso desprendido' };
+  wait(3000);
+  const during = consoleWindowCount(env);
+  const end = Date.now() + 20000;
+  while (!fs.existsSync(resultFile) && !fs.existsSync(resultFile + '.gone') && Date.now() < end) wait(200);
+  const newWindows = before === null || during === null ? null : Math.max(0, during - before);
+  return { consoleWindows: { before, during, new: newWindows }, detachedPid: r.pid };
+}
+
 function measure({ lab, out, platform = process.platform, baseEnv = process.env, rec }) {
   if (platform !== 'win32') return { status: L.STATUS.notMeasured, reason: 'sólo mide en Windows: las ventanas de consola son de ahí' };
   const dir = path.join(lab, 'console-windows');
@@ -113,6 +164,14 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
   rec.fact('with_shim', fixed);
   if (!fixed.window && fixed.consoleWindows.new === null) return { status: L.STATUS.error, reason: 'con relevo: no pude preguntarle a PowerShell por las ventanas' };
   if (fixed.visible) rec.finding('console-windows:visible-with-shim', 'startup', `con el relevo, el programa lanzado desde el arranque desprendido sigue abriendo ventana (handle ${fixed.window ? fixed.window.handle : '?'}, ventanas de consola nuevas: ${fixed.consoleWindows.new})`, 'L', { severity: 'breaks' });
+  // el aviso de trabajo sin subir, sin consola: sus git no abren ventanas (el control de arriba ya dijo que se ven)
+  const repo = toyRepo(path.join(dir, 'hook-repo'), 20, env);
+  if (!repo) return { status: L.STATUS.error, reason: 'aviso sin consola: no pude armar el repo de laboratorio' };
+  const hook = runHookWithoutConsole(dir, repo, env);
+  if (hook.problem) return { status: L.STATUS.error, reason: `aviso sin consola: ${hook.problem}` };
+  rec.fact('hook_without_console', hook);
+  if (hook.consoleWindows.new === null) return { status: L.STATUS.error, reason: 'aviso sin consola: no pude contar las ventanas' };
+  if (hook.consoleWindows.new > 0) rec.finding('console-windows:hook-opens-window', 'hooks', `el aviso de trabajo sin subir, corriendo sin consola, abrió ${hook.consoleWindows.new} ventana(s) de consola: algún git que lanza va sin windowsHide`, 'L', { severity: 'breaks' });
   return { status: L.STATUS.measured, reason: null };
 }
 
@@ -133,4 +192,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { NAME, measure };
+module.exports = { NAME, measure, toyRepo, runHookWithoutConsole };

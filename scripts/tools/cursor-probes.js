@@ -267,7 +267,7 @@ process.stdout.write('{}');
 
 /** Runs the recorder once by hand: a run without records says something only if the recorder writes. null when it does. */
 function checkRecorder(recorder, records) {
-  const r = spawnSync(process.execPath, [recorder, 'prueba', records, String(process.pid)], { input: '{}', encoding: 'utf8', timeout: 15000 });
+  const r = spawnSync(process.execPath, [recorder, 'prueba', records, String(process.pid)], { windowsHide: true, input: '{}', encoding: 'utf8', timeout: 15000 });
   if (fs.existsSync(records)) return null;
   return `el registrador de hooks no escribió: ${firstLine(r.stderr) || (r.error && r.error.message) || 'sin mensaje'}`;
 }

@@ -357,7 +357,7 @@ function desdeLaUltimaVerde(rojas, rep, foto) {
   const git = (args) => {
     const resta = hasta - Date.now();
     if (resta <= 0) { agotado = true; return null; }
-    const r = spawnSync('git', ['-C', NOCHE.dir, ...args], { encoding: 'utf8', timeout: resta, maxBuffer: 16 * 1024 * 1024 });
+    const r = spawnSync('git', ['-C', NOCHE.dir, ...args], { windowsHide: true, encoding: 'utf8', timeout: resta, maxBuffer: 16 * 1024 * 1024 });
     if (r.status !== 0) { agotado = agotado || Date.now() >= hasta; return null; }
     return String(r.stdout);
   };

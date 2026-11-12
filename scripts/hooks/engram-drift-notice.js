@@ -107,7 +107,7 @@ try {
   const HAY_BASE = fs.existsSync(path.join(os.homedir(), '.engram', 'engram.db'));
 
   const haySqlite = (() => {
-    try { require('child_process').execFileSync(process.env.TYCON_SQLITE_BIN || 'sqlite3', ['-version'], { stdio: 'ignore' }); return true; }
+    try { require('child_process').execFileSync(process.env.TYCON_SQLITE_BIN || 'sqlite3', ['-version'], { windowsHide: true, stdio: 'ignore' }); return true; }
     catch { return false; }
   })();
   if (!haySqlite && HAY_BASE) {

@@ -120,7 +120,7 @@ function respaldoFiltra(archivo) {
 // El motor REAL: grep -E, el mismo que usa el guion. No se reimplementa la expresión en JS.
 function filtra(patron, mensaje) {
   try {
-    execFileSync('grep', ['-qE', patron], { input: mensaje, stdio: ['pipe', 'ignore', 'ignore'] });
+    execFileSync('grep', ['-qE', patron], { windowsHide: true, input: mensaje, stdio: ['pipe', 'ignore', 'ignore'] });
     return true;
   } catch { return false; }
 }

@@ -62,7 +62,7 @@ function leerReporte(p) {
   }
 }
 
-const git = (cwd, args) => spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+const git = (cwd, args) => spawnSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
 /** El repo de git del archivo, o null. */
 function repoDe(archivo) {

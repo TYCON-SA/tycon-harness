@@ -295,7 +295,7 @@ function senales({ story, repo, batch, raices }) {
 }
 
 function gitDe(repo, args) {
-  return require('child_process').execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 }).trim();
+  return require('child_process').execFileSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 }).trim();
 }
 
 module.exports = { normRuta, validarParte, parteMedible, huellaDeLaLista, sensibleDeclarado, esCodigoDeParte, volverAlPlan, planEsperaPersona, cierreDelPlanDelegado, frenoDelCierre, senales, rutasDeConcurrencia };

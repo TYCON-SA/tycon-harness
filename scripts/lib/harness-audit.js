@@ -72,7 +72,7 @@ const SQLITE = process.env.TYCON_SQLITE_BIN || 'sqlite3';
 // "no hay nada raro".
 function consultar(db, query, timeout) {
   return execFileSync(SQLITE, ['-readonly', db, query],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: timeout || 15000 });
+    { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: timeout || 15000 });
 }
 
 // todas las carpetas de repos de la máquina (puede haber más de una); REPOS_ROOT es la primera
@@ -809,7 +809,7 @@ function checkMemoryPersistence() {
 function checkCatalogIntegrity() {
   const checks = [];
   try {
-    const out = execFileSync(process.execPath, [path.join(TCG_SCRIPTS, 'tools', 'rules-distill.js'), '--json'], { encoding: 'utf8' });
+    const out = execFileSync(process.execPath, [path.join(TCG_SCRIPTS, 'tools', 'rules-distill.js'), '--json'], { windowsHide: true, encoding: 'utf8' });
     const data = JSON.parse(out);
     checks.push({
       name: 'Catalog: 0 BROKEN-REFS',

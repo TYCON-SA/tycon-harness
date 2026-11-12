@@ -147,7 +147,7 @@ function existingHashes({ lugares } = {}) {
 
 function binAvailable(bin) {
   try {
-    return spawnSync(bin, ['--version'], { encoding: 'utf-8' }).status === 0;
+    return spawnSync(bin, ['--version'], { windowsHide: true, encoding: 'utf-8' }).status === 0;
   } catch (_) {
     return false;
   }
@@ -155,7 +155,7 @@ function binAvailable(bin) {
 
 function ollamaUp() {
   try {
-    const r = spawnSync('curl', ['-s', '-m', '2', `${OLLAMA_URL}/api/version`], { encoding: 'utf-8' });
+    const r = spawnSync('curl', ['-s', '-m', '2', `${OLLAMA_URL}/api/version`], { windowsHide: true, encoding: 'utf-8' });
     return r.status === 0 && /"version"/.test(r.stdout || '');
   } catch (_) {
     return false;
@@ -194,6 +194,7 @@ function callModel(prompt, executor) {
       // Proponer y revisar no usa herramientas ni el contexto del arnés (todo va en el prompt, como para
       // codex y ollama): --safe-mode no carga el CLAUDE.md del dev, skills, plugins, hooks ni MCP.
       '--safe-mode', '--tools', ''], {
+      windowsHide: true,
       // El arnés no le grita sus alarmas de arranque al agente que lanza: sin esto, los hooks
       // de SessionStart le inyectan "controls-bench EN ROJO — Correr: node .../runner.js" y el
       // modelo va y lo corre en vez de hacer su tarea.
@@ -211,6 +212,7 @@ function callModel(prompt, executor) {
     const r = spawnSync('codex', [
       'exec', '-m', CODEX_MODEL, '--skip-git-repo-check', '-s', 'read-only', '-o', outFile,
     ], {
+      windowsHide: true,
       input: prompt, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024, timeout: 180000,
       env: Object.assign({}, process.env, { TYCON_EVAL_SANDBOX: '1' }), // ver nota en la rama claude
     });
@@ -228,7 +230,7 @@ function callModel(prompt, executor) {
       messages: [{ role: 'user', content: prompt }],
     }));
     const r = spawnSync('curl', ['-s', '-m', '600', `${OLLAMA_URL}/api/chat`, '-d', `@${bodyFile}`],
-      { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      { windowsHide: true, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
     try { fs.unlinkSync(bodyFile); } catch (_) {}
     if (r.status !== 0) throw new Error(`ollama call failed (status ${r.status})`);
     const parsed = JSON.parse(r.stdout);

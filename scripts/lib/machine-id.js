@@ -33,7 +33,7 @@ function opcionesDelHijo() {
   return { env: {}, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true };
 }
 
-function ejecutarSinAmbiente(cmd, args) { return execFileSync(cmd, args, opcionesDelHijo()); }
+function ejecutarSinAmbiente(cmd, args) { return execFileSync(cmd, args, { windowsHide: true, ...opcionesDelHijo() }); }
 /** El texto del archivo, o `{ error }` con el código (ausente, sin permiso…): el motivo no se pierde. */
 function leerArchivo(ruta) { try { return fs.readFileSync(ruta, 'utf8'); } catch (e) { return { error: (e && e.code) || String(e) }; } }
 

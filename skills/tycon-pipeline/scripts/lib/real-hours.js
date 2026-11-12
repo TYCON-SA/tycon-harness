@@ -83,7 +83,7 @@ function latest(home, storyPath) {
 function repoDe(storyPath, repo) {
   if (repo) return path.resolve(repo);
   try {
-    return execFileSync('git', ['-C', path.dirname(path.resolve(storyPath)), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return execFileSync('git', ['-C', path.dirname(path.resolve(storyPath)), 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch (_) {
     throw Object.assign(new Error(`el spec ${storyPath} no está en un repo de git: pasá --repo <repo de historias>`), { code: SALIDA.invalid });
   }

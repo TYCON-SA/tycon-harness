@@ -57,7 +57,7 @@ function tmp(p) { return fs.mkdtempSync(path.join(os.tmpdir(), p)); }
 // git en inglés: un repo sin commits se reconoce por el texto del error, que git traduce
 const entornoDeGit = () => require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js'));
 function git(dir, args, opts = {}) {
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, ...opts, env: entornoDeGit().idiomaFijo(opts.env) });
+  const r = spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, ...opts, env: entornoDeGit().idiomaFijo(opts.env) });
   if (r.error) throw new Error(`git no se pudo ejecutar (${r.error.code || r.error.message})`);   // binario ausente ≠ comando fallido
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} en ${dir}: ${r.stderr}`);
   return r.stdout;
@@ -70,10 +70,10 @@ function pipelineViejo(sha) {
   const dir = tmp('equiv-viejo-');
   const tar = path.join(dir, 'viejo.tar');
   // con `scripts/lib`: el pipeline sella el árbol de cada vuelta con bibliotecas de ahí (clean-git-env.js)
-  const r = spawnSync('git', ['-C', RAIZ, 'archive', '-o', tar, shaCompleto, 'skills/tycon-pipeline/scripts', 'scripts/lib'], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', RAIZ, 'archive', '-o', tar, shaCompleto, 'skills/tycon-pipeline/scripts', 'scripts/lib'], { windowsHide: true, encoding: 'utf8' });
   if (r.error) throw new Error(`git no se pudo ejecutar (${r.error.code || r.error.message})`);
   if (r.status !== 0) throw new Error(`git archive ${sha}: ${r.stderr}`);
-  const t = spawnSync('tar', ['-xf', tar, '-C', dir], { encoding: 'utf8' });
+  const t = spawnSync('tar', ['-xf', tar, '-C', dir], { windowsHide: true, encoding: 'utf8' });
   if (t.error) throw new Error(`tar no se pudo ejecutar (${t.error.code || t.error.message})`);
   if (t.status !== 0) throw new Error(`tar: ${t.stderr}`);
   const pipeline = path.join(dir, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js');
@@ -332,9 +332,9 @@ function arbolViejo(sha) {
   const dir = tmp('equiv-arbol-');
   const tar = path.join(dir, 'arbol.tar');
   const rutas = ['skills/tycon-pipeline/scripts', 'packs', 'agents'].filter((r) => git(RAIZ, ['ls-tree', '--name-only', shaCompleto, r]).trim());
-  const r = spawnSync('git', ['-C', RAIZ, 'archive', '-o', tar, shaCompleto, ...rutas], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', RAIZ, 'archive', '-o', tar, shaCompleto, ...rutas], { windowsHide: true, encoding: 'utf8' });
   if (r.error || r.status !== 0) throw new Error(`git archive ${sha}: ${(r.error && r.error.message) || r.stderr}`);
-  const t = spawnSync('tar', ['-xf', tar, '-C', dir], { encoding: 'utf8' });
+  const t = spawnSync('tar', ['-xf', tar, '-C', dir], { windowsHide: true, encoding: 'utf8' });
   if (t.error || t.status !== 0) throw new Error(`tar: ${(t.error && t.error.message) || t.stderr}`);
   return { dir, sha: shaCompleto };
 }

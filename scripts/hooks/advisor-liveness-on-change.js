@@ -98,7 +98,7 @@ function decidir(primera, confirmacion) {
 
 /** Corre el motor y devuelve {code, rojos[], infra}. `infra` ≠ null ⇒ no se pudo medir. */
 function correr(args) {
-  const r = spawnSync(process.execPath, [RUNNER, ...args], { encoding: 'utf8', timeout: 8 * 60 * 1000 });
+  const r = spawnSync(process.execPath, [RUNNER, ...args], { windowsHide: true, encoding: 'utf8', timeout: 8 * 60 * 1000 });
   if (r.error) return { code: -1, rojos: [], infra: r.error.message, salida: '' };
   const salida = `${r.stdout || ''}\n${r.stderr || ''}`;
   // Sin sesión / sin binario / sin red: el motor no falla "por criterio", falla por plomería.

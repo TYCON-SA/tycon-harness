@@ -137,7 +137,7 @@ function parseAddedLines(diffText) {
 
 // ── git helpers ──────────────────────────────────────────────────────────────
 function git(repo, args) {
-  const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8' });
   if (r.error || r.status !== 0) return null;
   return r.stdout;
 }
@@ -182,6 +182,7 @@ function defaultRunTests({ repo, testFiles, capMs = RUN_CAP_MS }) {
   delete env.NODE_TEST_CONTEXT;
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--test', ...testFiles], {
+      windowsHide: true,
       cwd: repo, env, stdio: ['ignore', 'ignore', 'ignore'],
     });
     let timedOut = false;
@@ -284,7 +285,7 @@ function runRecipe({ recipe, capMs = RUN_CAP_MS }) {
   const grupo = process.platform !== 'win32';
   const limpiar = () => { try { fs.rmSync(resultsDir, { recursive: true, force: true }); } catch { /* nada */ } };
   return new Promise((resolve, reject) => {
-    const child = spawn('bash', ['-c', command], { cwd: recipe.cwd, env, stdio: ['ignore', 'ignore', 'ignore'], detached: grupo });
+    const child = spawn('bash', ['-c', command], { windowsHide: true, cwd: recipe.cwd, env, stdio: ['ignore', 'ignore', 'ignore'], detached: grupo });
     let timedOut = false;
     const t = setTimeout(() => {
       timedOut = true;
@@ -315,14 +316,14 @@ function defaultRun({ repo, testFiles, recipe, capMs }) {
  */
 function crearCopiaDeTrabajo(repo, log) {
   const { execFileSync } = require('child_process');
-  const g = (cwd, args, opts) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...(opts || {}) });
+  const g = (cwd, args, opts) => execFileSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...(opts || {}) });
   let dir = null;
   try {
     // Por su ruta real: en macOS la carpeta temporal es un enlace (/var → /private/var), y .NET restaura los paquetes con
     // una ruta y compila con la otra, y no los encuentra (la base sale en rojo con la suite verde).
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutation-copia-')));
     const head = g(repo, ['rev-parse', 'HEAD']).trim();
-    execFileSync('git', ['clone', '-q', '--shared', '--no-checkout', repo, dir], { stdio: 'ignore' });
+    execFileSync('git', ['clone', '-q', '--shared', '--no-checkout', repo, dir], { windowsHide: true, stdio: 'ignore' });
     g(dir, ['checkout', '-q', head]);
     // lo que la story cambió y todavía no commiteó (trackeado)
     const patch = g(repo, ['diff', 'HEAD', '--binary'], { maxBuffer: 256 * 1024 * 1024 });

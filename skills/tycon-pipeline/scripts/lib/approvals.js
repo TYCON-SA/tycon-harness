@@ -195,7 +195,7 @@ function anteriorAlControl(dir, nombre, ref = 'origin/main') {
   let salida;
   try {
     salida = require('child_process').execFileSync('git', ['-C', dir, 'log', ref, '--diff-filter=A', '--format=%cs', '--', 'review-roster.json'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env });
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env });
   } catch (_e) { return false; }
   const fechas = salida.split('\n').map((l) => l.trim().replace(/-/g, '')).filter((l) => /^\d{8}$/.test(l));
   return fechas.length > 0 && fechas[fechas.length - 1] < DESDE_EN_LA_STORY;

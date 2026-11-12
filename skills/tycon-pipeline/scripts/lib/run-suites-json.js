@@ -749,7 +749,7 @@ function main(argv, env = process.env) {
     const [ej, args, childEnv] = launch(p, covDir, home ? isolatedEnv(home, p) : env);
     const t0 = Date.now();
     // detached = grupo de proceso propio: al cortar se mata el grupo entero (la suite y sus hijos).
-    const c = spawn(ej, args, { cwd: repo, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
+    const c = spawn(ej, args, { windowsHide: true, cwd: repo, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
     live.add(c);
     const chunks = [];
     let size = 0;

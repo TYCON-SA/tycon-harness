@@ -69,7 +69,7 @@ class CannotLook extends Error {}
 
 const ENV = sinGitDelPadre();
 function run(repo, args, input) {
-  return spawnSync('git', ['-C', repo, ...args], { env: ENV, encoding: 'utf8', input, maxBuffer: 256 * 1024 * 1024 });
+  return spawnSync('git', ['-C', repo, ...args], { windowsHide: true, env: ENV, encoding: 'utf8', input, maxBuffer: 256 * 1024 * 1024 });
 }
 /** La salida de un git que tiene que andar; si no anda, no se pudo mirar. */
 function out(repo, args, input) {

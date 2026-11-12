@@ -611,7 +611,7 @@ let deLaVersion = null;
 function esDeGit(sub) {
   if (GIT_PROPIOS.has(sub)) return true;
   if (deLaVersion === null) {
-    const r = spawnSync('git', ['--list-cmds=builtins,main'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    const r = spawnSync('git', ['--list-cmds=builtins,main'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
     deLaVersion = new Set(r.status === 0 ? String(r.stdout).split('\n').map((s) => s.trim()).filter(Boolean) : []);
   }
   return deLaVersion.has(sub);
@@ -689,7 +689,7 @@ function leerGit(ps, ctx) {
 
 // el alias de git `nombre` en el repo de `dir`, o null si no hay (git sale 1); cualquier otra salida tira
 function aliasDelRepo(dir, nombre) {
-  const r = spawnSync('git', ['-C', dir, 'config', '--get', `alias.${nombre}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+  const r = spawnSync('git', ['-C', dir, 'config', '--get', `alias.${nombre}`], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
   if (r.status === 0) return String(r.stdout).trim();
   if (r.status === 1) return null;
   throw new Error('no pude buscar el alias');
@@ -1011,12 +1011,12 @@ const RAMAS_COMPARTIDAS = Object.freeze(['main', 'master', 'dev']);
 const esCompartida = (rama) => RAMAS_COMPARTIDAS.includes(rama) || /^release\//.test(rama);
 const TODAS_LAS_RAMAS = 'todas las ramas (--all o --mirror)';
 function gitEn(dir, args) {
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8' });
   return r.status === 0 ? String(r.stdout || '').trim() : null;
 }
 // Una clave de la configuración de git: su valor, null si no está (salida 1) o undefined si git no pudo decirlo.
 function configDe(dir, args) {
-  const r = spawnSync('git', ['-C', dir, 'config', ...args], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', dir, 'config', ...args], { windowsHide: true, encoding: 'utf8' });
   if (r.status === 0) return String(r.stdout || '').trim();
   return r.status === 1 ? null : undefined;
 }
@@ -1547,7 +1547,7 @@ function textoFaltanLasPruebas({ porque = 'no hay una corrida de pruebas', archi
  */
 function ramasPrincipales(dir) {
   try {
-    const ref = require('child_process').execFileSync('git', ['-C', dir, 'symbolic-ref', '-q', 'refs/remotes/origin/HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const ref = require('child_process').execFileSync('git', ['-C', dir, 'symbolic-ref', '-q', 'refs/remotes/origin/HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     const rama = ref.replace(/^refs\/remotes\/origin\//, '');
     if (rama) return { ramas: [rama], aviso: null };
   } catch (_) { /* sin la rama del remoto: las de siempre */ }
@@ -1565,7 +1565,7 @@ function ramasPrincipales(dir) {
  */
 function destinoPorConfiguracion(dir, remotoEscrito, actual) {
   const leer = (clave) => {
-    const r = require('child_process').spawnSync('git', ['-C', dir, 'config', '--get', clave], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const r = require('child_process').spawnSync('git', ['-C', dir, 'config', '--get', clave], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     if (r.status === 0) return r.stdout.trim();
     if (r.status === 1) return null;
     throw new Error(`git config --get ${clave} salió con ${r.status}`);
@@ -1592,7 +1592,7 @@ function frenoDeLaRama(a, sid, home, cs, { registrar = true } = {}) {
     if (c.tipo !== 'commit' && c.tipo !== 'push') continue;
     let actual = null;
     let falla = null;
-    try { actual = require('child_process').execFileSync('git', ['-C', c.dir, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch (e) { falla = e; }
+    try { actual = require('child_process').execFileSync('git', ['-C', c.dir, 'rev-parse', '--abbrev-ref', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch (e) { falla = e; }
     // `git push origin HEAD:main` empuja a main; `git push origin HEAD`, a la de ahora; sin rama escrita, a la que elige la
     // configuración de git (que puede ser main, o todas)
     const pedida = c.tipo === 'push' && c.rama ? String(c.rama).replace(/^.*:/, '').replace(/^refs\/heads\//, '') : null;

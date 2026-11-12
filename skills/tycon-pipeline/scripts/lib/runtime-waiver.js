@@ -284,7 +284,7 @@ function abrirVentana({ script, args = [], titulo = 'Firma del waiver', programa
   const pidFile = path.join(os.tmpdir(), `tycon-waiver-ventana-${process.pid}-${Date.now()}.pid`);
   const linea = `start "${titulo}" /wait ${todo.map((a) => `"${a}"`).join(' ')}`;
   const tope = topeVentanaS();
-  const correr = spawn || ((cmd, a, o) => cp.spawnSync(cmd, a, o));
+  const correr = spawn || ((cmd, a, o) => cp.spawnSync(cmd, a, { windowsHide: true, ...o }));
   const r = correr(delSistema('cmd.exe'), ['/d', '/s', '/c', `"${linea}"`], {
     windowsVerbatimArguments: true, windowsHide: false, stdio: 'inherit', timeout: tope * 1000,
     env: { ...process.env, [MARCA_VENTANA]: '1', TYCON_WAIVER_WINDOW_PROCESS_FILE: pidFile, ...(porAmbiente ? { TYCON_WAIVER_WINDOW_ARGS: argumentos } : {}) },

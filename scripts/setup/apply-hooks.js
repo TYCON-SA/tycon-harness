@@ -249,7 +249,7 @@ function readConfig({ env = process.env, libDir = path.join(SCRIPTS_DIR, 'lib'),
   // los frenos que la organización encendió desde el sitio (`switches` del perfil), como variables de la máquina
   const switches = { state: 'sin-lector', env: {} };
   if (!fs.existsSync(cfg)) return { integ, profile, switches };
-  const ask = (args) => (runConfig ? runConfig(args) : spawnSync(process.execPath, [cfg, ...args], { encoding: 'utf8', env }));
+  const ask = (args) => (runConfig ? runConfig(args) : spawnSync(process.execPath, [cfg, ...args], { windowsHide: true, encoding: 'utf8', env }));
   const r = ask(['integrations', '--shell']);
   if (r.status === 0) {
     integ.state = 'ok';

@@ -303,7 +303,7 @@ function isMailboxPath(sdir, file) {
 /** La hora de arranque de un proceso, para no confundir un pid reutilizado; null si no se sabe (Windows o sin `ps`). */
 function processStart(pid) {
   if (process.platform === 'win32') return null;
-  const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', timeout: 2000 });
+  const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { windowsHide: true, encoding: 'utf8', timeout: 2000 });
   const t = r.status === 0 ? r.stdout.trim() : '';
   return t || null;
 }

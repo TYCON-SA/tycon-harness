@@ -79,7 +79,7 @@ const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
 const encode = (p) => [p.replace(/[\/\\:]/g, '-'), p.replace(/[\/\\:.]/g, '-')];
 
 function raizDelRepo(dir) {
-  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 5000 });
+  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', timeout: 5000 });
   return r.status === 0 ? (r.stdout || '').trim() : null;
 }
 

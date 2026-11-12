@@ -199,7 +199,7 @@ async function abrirNavegador(pw) {
     if (!/Executable doesn't exist|install/i.test(String(e && e.message))) throw e;
     process.stderr.write('falta el Chromium de playwright: lo bajo una vez\n');
     const cli = path.join(PINNED_PW.locate().dir, 'cli.js');
-    const r = spawnSync(process.execPath, [cli, 'install', 'chromium'], { stdio: 'inherit' });
+    const r = spawnSync(process.execPath, [cli, 'install', 'chromium'], { windowsHide: true, stdio: 'inherit' });
     if (r.status !== 0) return null;
     return pw.chromium.launch({ headless: true });
   }

@@ -54,7 +54,7 @@ function target(env = process.env, { byDefault = env.TYCON_SUITE_RUNNER === 'tes
 
 /** El sha de 12 de HEAD del repo, o null. */
 function headOf(repo) {
-  const r = spawnSync('git', ['-C', repo, 'rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const r = spawnSync('git', ['-C', repo, 'rev-parse', '--short=12', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   return r.status === 0 ? r.stdout.trim() || null : null;
 }
 
@@ -335,7 +335,7 @@ function processStart(pid) {
   if (process.platform === 'win32') return null;
   // con el idioma y la zona fijos: quien escribe el aviso y quien lo lee pueden tener otro ambiente
   const env = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo(process.env, { TZ: 'UTC' });
-  const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'ignore'] });
+  const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { windowsHide: true, encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'ignore'] });
   return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null;
 }
 

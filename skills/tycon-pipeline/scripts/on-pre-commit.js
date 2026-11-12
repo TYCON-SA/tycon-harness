@@ -224,6 +224,7 @@ function getStagedDiff(cwd) {
   let diff;
   try {
     diff = execFileSync('git', ['diff', '--cached', '--name-only'], {
+      windowsHide: true,
       cwd,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
@@ -235,6 +236,7 @@ function getStagedDiff(cwd) {
   if (archivos.length === 0) return diff;
   const env = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo();
   const git = (args, dir = cwd) => execFileSync('git', args, {
+    windowsHide: true,
     cwd: dir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024, env,
   });
   try {
@@ -274,6 +276,7 @@ function getStagedDiff(cwd) {
 function getStagedFileContent(cwd, file) {
   try {
     return execFileSync('git', ['show', `:${file}`], {
+      windowsHide: true,
       cwd,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
@@ -286,6 +289,7 @@ function getStagedFileContent(cwd, file) {
 function getHeadFileContent(cwd, file) {
   try {
     return execFileSync('git', ['show', `HEAD:${file}`], {
+      windowsHide: true,
       cwd,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
@@ -1008,6 +1012,7 @@ function frenoSecretosEnEvidencia(event) {
   try {
     const smokeSecrets = require('./lib/smoke-secrets.js');
     const git = (args) => execFileSync('git', args, {
+      windowsHide: true,
       cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024,
     });
     let raiz;
@@ -1079,7 +1084,7 @@ function prepararIndiceConLosAdd(command, cwd) {
   if (plan.estado !== 'simulable') { pedirAddAparte(plan.motivo); return; }
   let copia;
   try {
-    const git = (args, env) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: env || process.env });
+    const git = (args, env) => execFileSync('git', args, { windowsHide: true, cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: env || process.env });
     const indice = path.resolve(cwd, git(['rev-parse', '--git-path', 'index']).trim());
     copia = path.join(os.tmpdir(), `tycon-precommit-index-${process.pid}-${Date.now()}`);
     if (fs.existsSync(indice)) fs.copyFileSync(indice, copia);

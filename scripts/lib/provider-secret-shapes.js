@@ -52,7 +52,7 @@ function redactShapes(text) {
   return String(text || '').replace(ANY, '***');
 }
 
-const git = (repo, args) => spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+const git = (repo, args) => spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 
 /** Lo que el commit agrega: `[{ archivo, linea, texto }]`, de `git diff --cached` sin contexto. */
 function stagedLines(repo) {

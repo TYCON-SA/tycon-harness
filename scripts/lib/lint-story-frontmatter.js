@@ -288,6 +288,7 @@ function resolveDirs() {
   }
   try {
     const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      windowsHide: true,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
@@ -321,13 +322,14 @@ function scalar(fm, key) {
 
 function yamlChecker() {
   try {
-    execFileSync('python3', ['-c', 'import yaml'], { stdio: 'ignore' });
+    execFileSync('python3', ['-c', 'import yaml'], { windowsHide: true, stdio: 'ignore' });
   } catch {
     return null; // fail-open: sin PyYAML no bloqueamos a nadie
   }
   return (fmText) => {
     try {
       execFileSync('python3', ['-c', 'import sys,yaml; yaml.safe_load(sys.stdin.read())'], {
+        windowsHide: true,
         input: fmText,
         stdio: ['pipe', 'ignore', 'pipe'],
       });
@@ -465,11 +467,11 @@ function inRemoteMain(root, p) {
   const env = sinGitDelPadre();
   let ref = null;
   for (const r of ['origin/HEAD', 'origin/main']) {
-    try { execFileSync('git', ['-C', root, 'rev-parse', '--verify', '-q', `${r}^{commit}`], { stdio: 'ignore', timeout: 5000, env }); ref = r; break; } catch { /* la siguiente */ }
+    try { execFileSync('git', ['-C', root, 'rev-parse', '--verify', '-q', `${r}^{commit}`], { windowsHide: true, stdio: 'ignore', timeout: 5000, env }); ref = r; break; } catch { /* la siguiente */ }
   }
   if (!ref) return 'no';
   try {
-    const out = execFileSync('git', ['-C', root, 'ls-tree', '--name-only', ref, '--', p], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, env });
+    const out = execFileSync('git', ['-C', root, 'ls-tree', '--name-only', ref, '--', p], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, env });
     return out.trim() ? 'yes' : 'no';
   } catch { return 'unknown'; }
 }

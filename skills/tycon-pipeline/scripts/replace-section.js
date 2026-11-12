@@ -52,7 +52,7 @@ function argumentos(argv) {
 }
 
 function cadena(modo, evento) {
-  return spawnSync(process.execPath, [DISPATCH, modo], { input: JSON.stringify(evento), encoding: 'utf8', env: process.env });
+  return spawnSync(process.execPath, [DISPATCH, modo], { windowsHide: true, input: JSON.stringify(evento), encoding: 'utf8', env: process.env });
 }
 
 function main() {
@@ -94,7 +94,7 @@ function main() {
   let repoDeLaCarpeta = null;
   try {
     repoDeLaCarpeta = require('child_process').execFileSync('git', ['-C', process.cwd(), 'rev-parse', '--show-toplevel'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
   } catch { repoDeLaCarpeta = null; }
   const raices = [repoDeLaCorrida, repoDeLaCarpeta].filter(Boolean).map(real).filter(Boolean);
   const destinoReal = real(abs);

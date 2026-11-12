@@ -463,7 +463,7 @@ function openWait(sid, tp, kindIn, waiting) {
     openedAt: new Date().toISOString(), records, prompts, transcript: tp || null, pid: null, notified: false,
   };
   writeJsonAtomic(waitPath(sid), wait);
-  const child = spawn(process.execPath, [__filename, '--timer', sid, wait.openedAt], timerSpawnOptions({}));
+  const child = spawn(process.execPath, [__filename, '--timer', sid, wait.openedAt], { windowsHide: true, ...timerSpawnOptions({}) });
   child.unref();
   writeJsonAtomic(waitPath(sid), { ...wait, pid: child.pid });
 }

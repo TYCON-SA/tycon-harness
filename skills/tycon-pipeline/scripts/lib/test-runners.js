@@ -302,7 +302,7 @@ function hallar(dir, nombre, hondo, problems) {
  * la entrada de la configuración: del repo probado no sale nada más.
  */
 function repoDe(dir) {
-  if (spawnSync('git', ['--version'], { encoding: 'utf8' }).error) return { id: null, problema: `no pude correr git para leer el remoto de ${dir}` };
+  if (spawnSync('git', ['--version'], { windowsHide: true, encoding: 'utf8' }).error) return { id: null, problema: `no pude correr git para leer el remoto de ${dir}` };
   let r;
   try { r = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'harness-repo.js')).resolverRemoto(dir); } catch (e) {
     return { id: null, problema: `no pude cargar harness-repo.js del arnés para reconocer el remoto (${e && e.code ? e.code : e})` };

@@ -346,7 +346,7 @@ function huellaDe({ estado, sesion, kind }) {
   }
   // el error se reconoce por el texto: git va con el idioma fijo
   const env = require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo();
-  const git = (base) => require('child_process').spawnSync('git', ['-C', marker.repoPath || process.cwd(), 'diff', base], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env });
+  const git = (base) => require('child_process').spawnSync('git', ['-C', marker.repoPath || process.cwd(), 'diff', base], { windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env });
   let r = git('HEAD');
   // un repo sin commits no tiene HEAD: el diff se mide contra el árbol vacío, para que la pregunta se pueda contestar
   if (r.status !== 0 && /unknown revision|ambiguous argument 'HEAD'/.test(r.stderr || '')) r = git('4b825dc642cb6eb9a060e54bf8d69288fbee4904');

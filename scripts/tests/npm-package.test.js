@@ -9,7 +9,7 @@
  *   · T3  — con un Node menor que el piso sale 1 sin un solo pedido a la red, con el comando sugerido.
  *   · T4  — un árbol bajado sin el subcomando `npx` (una punta vieja) sale 1 diciendo el motivo, sin correr nada.
  *   · T5  — el archivo tiene 200 líneas o menos, ningún `require` fuera del núcleo, no nombra su versión, el paquete
- *           trae los mismos archivos de hoy y su versión es 1.1.0.
+ *           trae los mismos archivos de hoy y su versión es 1.1.1.
  *   · 8.40 T3 — el shebang, el repo de fábrica una sola vez, el piso de Node en 22, ningún hijo lanzado como `node`,
  *           `--help` corto sin red ni HOME, y `--repo` o las variables de prueba mal escritos salen 2 sin red.
  *   · T10 / T10b / T10c — package.json: semver, bin, `files`, licencia, repo, acceso público, `engines.node` con el piso;
@@ -160,7 +160,7 @@ test('T5 NpmPackage_SinNumeroNiDependencias @story-8.80 @ac-4', (t) => {
   assert.strictEqual(pkg.devDependencies, undefined, 'sin devDependencies');
   assert.ok(!/require\(\s*['"](?!(fs|os|path|http|https|net|tls|tty|child_process|crypto|url)['"])/.test(src), 'sólo módulos del núcleo de Node');
   assert.ok(!/package\.json/.test(src) && !src.includes(pkg.version), 'no lee ni nombra el número de versión del paquete');
-  assert.strictEqual(pkg.version, '1.1.0');
+  assert.strictEqual(pkg.version, '1.1.1');
   const npm = spawnSync(npmBin, ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' });
   if (npm.status !== 0) { t.diagnostic('NO MEDIDO: no hay npm en esta máquina (la lista del paquete)'); return; }
   const box = tmp('npm-pack-');

@@ -132,6 +132,7 @@ function leerCausas(ruta) {
 function naceAhora(abs, storyId) {
   const dir = path.dirname(abs);
   const git = (args, cwd) => execFileSync('git', args, {
+    windowsHide: true,
     cwd: cwd || dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000,
   });
 

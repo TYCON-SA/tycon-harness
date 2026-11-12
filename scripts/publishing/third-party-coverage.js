@@ -208,7 +208,7 @@ function loadManifest(file = DEFAULT_MANIFEST) {
 // Sin limpiar las variables GIT_*: desde el pre-commit, GIT_INDEX_FILE es el índice del commit que se está armando
 // (con `git commit -a` es un índice temporal), y es justo el que hay que mirar.
 function git(repo, args, input) {
-  const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', input, maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', input, maxBuffer: 256 * 1024 * 1024 });
   if (r.error) throw new ManifestError(`no pude correr git (${r.error.code || r.error.message})`);
   return r;
 }

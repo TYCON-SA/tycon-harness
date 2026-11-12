@@ -2567,6 +2567,7 @@ function secuestroEnShellDeLogin() {
   const restante = RELOJ_MS - (Date.now() - t0) - 300;   // y que quede reloj para lo que sigue
   if (restante < 500) return 'sin tiempo para preguntarle al shell de login qué define.';
   const r = spawnSync(shell, ['-l', '-c', script, 'tycon-prod-guard', ...nombres], {
+    windowsHide: true,
     encoding: 'utf8', timeout: Math.min(restante, 3000), stdio: ['ignore', 'pipe', 'pipe'], env: process.env,
   });
   if (r.error || r.status === null) return `no pude preguntarle al shell de login (${shell}) qué define: ${r.error ? r.error.message : 'no contestó a tiempo'}.`;
@@ -2596,13 +2597,13 @@ function arranqueDeLaSesion() {
   let pid = process.ppid;
   for (let i = 0; i < 6 && pid && pid > 1; i++) {
     if (vencido()) return null;                       // «no pude mirar» → el llamador frena
-    const r = spawnSync('ps', ['-o', 'ppid=,command=', '-p', String(pid)], { encoding: 'utf8', timeout: 1500 });
+    const r = spawnSync('ps', ['-o', 'ppid=,command=', '-p', String(pid)], { windowsHide: true, encoding: 'utf8', timeout: 1500 });
     if (r.status !== 0 || !r.stdout) break;
     const m = /^\s*(\d+)\s+(.*)$/.exec(r.stdout.trim());
     if (!m) break;
     const comando = m[2];
     if (/(^|\/)claude(\s|$)/.test(comando) || comando.includes('native-binary/claude')) {
-      const l = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', timeout: 1500 });
+      const l = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { windowsHide: true, encoding: 'utf8', timeout: 1500 });
       const t = l.status === 0 ? Date.parse(l.stdout.trim()) : NaN;
       if (!Number.isNaN(t)) return t;
       break;

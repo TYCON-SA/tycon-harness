@@ -67,6 +67,7 @@ const { blobSha, treeSha } = require('../lib/git-tree-hash.js');
 // ── git ────────────────────────────────────────────────────────────────────────────────────────────────────────
 function git(cwd, args, { input, timeout, binary = false } = {}) {
   const r = spawnSync('git', ['-C', cwd, ...args], {
+    windowsHide: true,
     input, timeout, encoding: binary ? undefined : 'utf8', maxBuffer: 1024 * 1024 * 1024,
     // mensajes de git en inglés siempre: la clasificación de fallas (no-network / no-origin / missing-commit) los lee
     env: idiomaFijo(sinGitDelPadre({ GIT_TERMINAL_PROMPT: '0' })),

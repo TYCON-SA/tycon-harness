@@ -139,7 +139,7 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
       let headSha = null;
       try {
         headSha = require('child_process')
-          .execFileSync('git', ['-C', repo, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8', timeout: 5000 })
+          .execFileSync('git', ['-C', repo, 'rev-parse', '--short', 'HEAD'], { windowsHide: true, encoding: 'utf8', timeout: 5000 })
           .trim() || null;
       } catch { /* repo sin commits todavía */ }
       // El sello del ÁRBOL que los revisores están mirando. `headSha` sólo dice sobre qué commit
@@ -312,6 +312,7 @@ function recordLaunch(o) {
         const { execFileSync } = require('child_process');
         try {
           execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'snapshot-iter', String(r.iter)], {
+            windowsHide: true,
             stdio: 'ignore', timeout: 10000, env: { ...process.env, CLAUDE_CODE_SESSION_ID: sessionId },
           });
         } catch (e) {

@@ -102,7 +102,7 @@ function revisarContenido(buf, nombre) {
 function revisarArchivo(ruta) { return revisarContenido(fs.readFileSync(ruta), ruta); }
 
 const lista = (repo, args) => {
-  const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 });
   if (r.status !== 0) throw new Error(`git ${args[0]} falló: ${(r.stderr || '').toString().trim() || r.status}`);
   return r.stdout.toString('utf8').split('\0').filter(Boolean);
 };
@@ -134,7 +134,7 @@ function leer(repo, p) {
     if (st.size > MAX_TEXTO) throw Object.assign(new Error('pasa el tope'), { code: 'TOPE' });
     return fs.readFileSync(abs);
   }
-  const r = spawnSync('git', ['-C', repo, 'cat-file', 'blob', `:${p.ruta}`], { maxBuffer: MAX_TEXTO });
+  const r = spawnSync('git', ['-C', repo, 'cat-file', 'blob', `:${p.ruta}`], { windowsHide: true, maxBuffer: MAX_TEXTO });
   if (r.status !== 0) throw Object.assign(new Error('no está en el índice'), { code: 'INDICE' });
   return r.stdout;
 }

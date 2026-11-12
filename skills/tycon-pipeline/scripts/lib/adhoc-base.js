@@ -44,24 +44,30 @@ const entornoDeGit = () => gitEnv || (gitEnv = require(path.join(__dirname, '..'
 // el tope de salida por defecto es de 1 MB: en un repo grande, la lista de archivos lo pasa y parece que git no contestó
 const SALIDA_MAX = 64 * 1024 * 1024;
 function git(repo, args, timeout = 5000) {
-  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, env: entornoDeGit(), maxBuffer: SALIDA_MAX }).trim();
+  return execFileSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, env: entornoDeGit(), maxBuffer: SALIDA_MAX }).trim();
 }
 const primeraLinea = (e) => String((e && (e.stderr || e.message)) || e).split('\n').find((l) => l.trim()) || 'git no contestó';
 
 /**
  * `{ raiz }` con la raíz real del repo de una ruta; `{ fuera: true }` si la ruta no está en un repo (la carpeta temporal
- * de la sesión, por ejemplo); `{ falla }` si git no contestó.
+ * de la sesión, por ejemplo); `{ falla }` si git no contestó. Con `ubicados` (un `Map` carpeta → resultado), la
+ * respuesta de cada carpeta que existe se guarda y se reusa: las rutas de una misma carpeta preguntan una sola vez (un
+ * git que no contestó no se guarda).
  */
-function ubicar(p) {
+function ubicar(p, ubicados) {
   let d = String(p);
   try { if (!fs.statSync(d).isDirectory()) d = path.dirname(d); } catch (_) { d = path.dirname(d); }
   while (!fs.existsSync(d) && path.dirname(d) !== d) d = path.dirname(d);
-  try { return { raiz: fs.realpathSync(git(d, ['rev-parse', '--show-toplevel'])) }; } catch (e) {
+  if (ubicados && ubicados.has(d)) return ubicados.get(d);
+  let u;
+  try { u = { raiz: fs.realpathSync(git(d, ['rev-parse', '--show-toplevel'])) }; } catch (e) {
     const err = String((e && (e.stderr || e.message)) || e);
     // adentro de `.git` o de un repo pelado no hay árbol de trabajo: tampoco hay nada que medir
-    if (/not a git repository|must be run in a work tree/i.test(err)) return { fuera: true };
-    return { falla: primeraLinea(e) };
+    u = /not a git repository|must be run in a work tree/i.test(err) ? { fuera: true } : { falla: primeraLinea(e) };
   }
+  // un git que no contestó puede contestar en la próxima ruta: sólo se guarda lo que no cambia en la corrida
+  if (ubicados && !u.falla) ubicados.set(d, u);
+  return u;
 }
 /** La raíz del repo de una ruta, o null (fuera de un repo, o git que no contesta). */
 function raizDe(p) { return ubicar(p).raiz || null; }
@@ -224,14 +230,15 @@ function anotadasDe(adhoc, { sinMarca = false } = {}) {
 
 /**
  * Los repos del carril (los de su base y los de las rutas que anotó) y las rutas cuyo repo no se pudo ubicar. Una ruta que
- * ya no está en el disco trae a su repo sólo si el repo la conoce (`repoConoce`).
+ * ya no está en el disco trae a su repo sólo si el repo la conoce (`repoConoce`). `ubicados`: lo ya ubicado, compartido
+ * entre llamadas (ver `ubicar`).
  */
-function reposYHuerfanas(adhoc, avisos = []) {
+function reposYHuerfanas(adhoc, avisos = [], { ubicados } = {}) {
   const repos = new Set(Object.keys((adhoc && adhoc.bases) || {}));
   const huerfanas = [];
   for (const f of [...((adhoc && adhoc.rutas) || []), ...((adhoc && adhoc.files) || [])]) {
     if (typeof f !== 'string') continue;
-    const u = ubicar(f);
+    const u = ubicar(f, ubicados);
     if (u.falla) { huerfanas.push(String(f)); continue; }
     if (!u.raiz || repos.has(u.raiz)) continue;
     if (fs.existsSync(f)) { repos.add(u.raiz); continue; }
@@ -240,7 +247,7 @@ function reposYHuerfanas(adhoc, avisos = []) {
   }
   return { repos: [...repos], huerfanas };
 }
-function reposDelCarril(adhoc) { return reposYHuerfanas(adhoc).repos; }
+function reposDelCarril(adhoc, opts = {}) { return reposYHuerfanas(adhoc, [], opts).repos; }
 
 // Las rutas que lista git, separadas por NUL (`-z`): sin comillas ni escapes en los nombres con acentos o espacios.
 // `-z` va antes de todo lo demás: después de un `--` git lo leería como una ruta.

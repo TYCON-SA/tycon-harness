@@ -77,7 +77,7 @@ function esPapeleoDeLaHuella(rel, modo) {
 const EXIMEN = ['critical-waiver', 'runtime-waiver', 'escape:force-manual'];
 
 function git(repo, args, env, input) {
-  const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', input, env: entornoDeGit().idiomaFijo(process.env, env), maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', input, env: entornoDeGit().idiomaFijo(process.env, env), maxBuffer: 64 * 1024 * 1024 });
   // `crudo` sin recortar: en `status --porcelain` el primer espacio es parte de la columna del estado
   // `status`: con `--verify --quiet`, 1 es «no existe» y cualquier otro fallo es «no pude preguntar»
   return { ok: r.status === 0, status: r.status, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String(r.stderr || '').trim() };
@@ -299,7 +299,7 @@ function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS, para = 'firma' })
       const delIndice = git(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'index']);
       // la foto del pull request mide todo el disco, así que sus controles también: el cierre del paso prepara la memoria
       // antes, y mirar sólo eso dejaría afuera el código que el commit va a guardar
-      const hayPreparado = !pedido && tieneHead && delIndice.ok && spawnSync('git', ['-C', repo, 'diff', '--cached', '--quiet'], { encoding: 'utf8' }).status === 1;
+      const hayPreparado = !pedido && tieneHead && delIndice.ok && spawnSync('git', ['-C', repo, 'diff', '--cached', '--quiet'], { windowsHide: true, encoding: 'utf8' }).status === 1;
       if (hayPreparado) {
         try { fs.copyFileSync(delIndice.out, indice); preparado = true; } catch (e) { return no(`no pude copiar lo preparado (${e.code || e.message})`); }
       } else {
@@ -310,6 +310,7 @@ function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS, para = 'firma' })
       }
       const queda = limite - Date.now();
       const r = queda <= 0 ? { error: { code: 'ETIMEDOUT' }, status: null } : spawnSync('git', ['-C', repo, 'hook', 'run', '--ignore-missing', 'pre-commit'], {
+        windowsHide: true,
         cwd: repo, encoding: 'utf8', timeout: queda, env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024,
       });
       if (r.error || r.status === null) {

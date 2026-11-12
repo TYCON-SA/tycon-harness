@@ -28,7 +28,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 function git(dir, ...args) {
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8' });
   if (r.error) throw new Error(`git no se pudo ejecutar (${r.error.code || r.error.message})`);   // binario ausente ≠ comando fallido
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} en ${dir}: ${r.stderr}`);
   return r.stdout;
@@ -300,7 +300,7 @@ function medir({ pipeline, repo, files, story, env = {} }) {
   if (storyPath) args.push('--story', storyPath);
   args.push('--files', ...files);
   const r = spawnSync(process.execPath, args,
-    { encoding: 'utf8', env: ambiente, timeout: 180000, maxBuffer: 50 * 1024 * 1024 });
+    { windowsHide: true, encoding: 'utf8', env: ambiente, timeout: 180000, maxBuffer: 50 * 1024 * 1024 });
   if (r.error) throw new Error(`${pipeline} advisors no se pudo ejecutar (${r.error.code || r.error.message})`);
   if (r.status !== 0) throw new Error(`${pipeline} advisors salió ${r.status}:\n${r.stderr}`);
   const j = JSON.parse(r.stdout);
@@ -309,7 +309,7 @@ function medir({ pipeline, repo, files, story, env = {} }) {
 const all = ${JSON.stringify(all)}; const files = ${JSON.stringify(files)};
 const superficie = {}; for (const a of all) superficie[a] = p.advisorAffectedByDelta(a, files).affected;
 process.stdout.write(JSON.stringify({ superficie, reloop: p.reloopHintsFor(all, 2, 'lean') }));`;
-  const r2 = spawnSync(process.execPath, ['-e', codigo], { encoding: 'utf8', env: ambiente, timeout: 60000 });
+  const r2 = spawnSync(process.execPath, ['-e', codigo], { windowsHide: true, encoding: 'utf8', env: ambiente, timeout: 60000 });
   if (r2.error) throw new Error(`superficie con ${pipeline}: node no se pudo ejecutar (${r2.error.code || r2.error.message})`);
   if (r2.status !== 0) throw new Error(`superficie con ${pipeline} salió ${r2.status}:\n${r2.stderr}`);
   const x = JSON.parse(r2.stdout);

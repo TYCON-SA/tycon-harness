@@ -38,7 +38,7 @@ const GIT_ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !
 class NoSe extends Error {}
 
 function git(root, args, input) {
-  const r = spawnSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], { encoding: 'utf8', input, env: GIT_ENV, maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], { windowsHide: true, encoding: 'utf8', input, env: GIT_ENV, maxBuffer: 256 * 1024 * 1024 });
   if (r.error) throw new NoSe(`git ${args[0]}: ${r.error.message}`);
   return r;
 }
@@ -107,7 +107,7 @@ function porQueNo(ctx, anterior, e) {
   const actual = archivo('actual', o2.blob);
   const ancestro = archivo('ancestro', o1.blob);
   const otro = archivo('otro', regla.blob);
-  const m = spawnSync('git', ['merge-file', '-p', '-q', actual, ancestro, otro], { encoding: 'buffer', env: GIT_ENV, maxBuffer: 256 * 1024 * 1024 });
+  const m = spawnSync('git', ['merge-file', '-p', '-q', actual, ancestro, otro], { windowsHide: true, encoding: 'buffer', env: GIT_ENV, maxBuffer: 256 * 1024 * 1024 });
   if (m.error || m.status !== 0) return no(`traer main sobre ${e.path} no es limpio (conflicto o archivo que git no fusiona)`);
   const h = git(root, ['hash-object', '--stdin'], m.stdout);
   if (h.status !== 0) throw new NoSe('no pude calcular el blob de la fusión');

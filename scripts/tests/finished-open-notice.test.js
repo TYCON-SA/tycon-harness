@@ -145,3 +145,55 @@ test('T-133b CarpetasSinCommitear_ElGancho_NoTocaNada — el aviso sale al arran
   assert.equal(fs.readFileSync(path.join(tirada, 'a.txt'), 'utf8'), antes);
   assert.equal(C.correr({ TYCON_UNSAVED_FOLDERS: '0', TYCON_REPOS_ROOT: path.join(C.home, 'repos') }).stdout, '', 'apagado, calla');
 });
+
+// Los caminos cortos viejos de una máquina anotan rutas de carpetas que ya no existen (temporales, worktrees borrados).
+// Cada una le preguntaba a git por la carpeta que existe más arriba: cientos de veces la misma. Se pregunta una vez.
+test('T10 · FinishedOpen_MissingFolders_AskedOncePerExistingFolder @story-8.266 @ac-6 — dos caminos cortos con rutas en carpetas borradas bajo la misma carpeta que existe', () => {
+  const C = casa();
+  const temporal = path.join(C.home, 'temporal');
+  fs.mkdirSync(temporal);
+  fs.mkdirSync(path.join(C.sdir, 'adhoc'), { recursive: true });
+  for (const sid of ['eeeeeeee-uno', 'ffffffff-dos']) {
+    const rutas = Array.from({ length: 15 }, (_, i) => path.join(temporal, `${sid}-borrada-${i}`, 'x.txt'));
+    fs.writeFileSync(path.join(C.sdir, 'adhoc', `${sid}.json`), JSON.stringify({ reason: 'prueba', rutas, files: [], bases: {}, lastTouch: '2026-10-15T11:00:00Z' }));
+  }
+  const trace = path.join(C.home, 'trace.json');
+  const r = C.correr({ GIT_TRACE2_EVENT: trace });
+  assert.equal(r.status, 0, r.stderr);
+  const starts = fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.event === 'start') : [];
+  const toplevel = starts.filter((e) => e.argv.includes('--show-toplevel'));
+  assert.equal(toplevel.length, 1, toplevel.map((e) => e.argv.join(' ')).join('\n'));
+  // un git que no contestó no se guarda: la próxima ruta de la misma carpeta vuelve a preguntar
+  if (process.platform === 'win32') return;
+  const bin = path.join(C.home, 'bin');
+  const calls = path.join(C.home, 'calls.txt');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\necho x >> "${calls}"\necho "fatal: unable to read index" >&2\nexit 128\n`, { mode: 0o755 });
+  const probe = [
+    `const base = require(${JSON.stringify(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'adhoc-base.js'))});`,
+    'const seen = new Map();',
+    `const a = base.ubicar(${JSON.stringify(path.join(temporal, 'a.txt'))}, seen);`,
+    `const b = base.ubicar(${JSON.stringify(path.join(temporal, 'b.txt'))}, seen);`,
+    'process.stdout.write(JSON.stringify({ a: !!a.falla, b: !!b.falla, kept: seen.size }));',
+  ].join('\n');
+  const p = spawnSync(process.execPath, ['-e', probe], { encoding: 'utf8', windowsHide: true, env: { ...process.env, HOME: C.home, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  assert.equal(p.status, 0, p.stderr);
+  assert.deepEqual(JSON.parse(p.stdout), { a: true, b: true, kept: 0 });
+  assert.equal(fs.readFileSync(calls, 'utf8').trim().split('\n').length, 2);
+});
+
+test('T11 · FinishedOpen_DeletedFolderInLiveRepo_StillBringsTheRepo @story-8.266 @ac-6 — una carpeta borrada y commiteada en un repo vivo sigue trayendo el repo', () => {
+  const C = casa();
+  const repo = path.join(C.home, 'vivo');
+  const g = (args) => spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', windowsHide: true, env: { ...process.env, HOME: C.home, GIT_AUTHOR_NAME: 'a', GIT_AUTHOR_EMAIL: 'a@example.com', GIT_COMMITTER_NAME: 'a', GIT_COMMITTER_EMAIL: 'a@example.com' } });
+  fs.mkdirSync(path.join(repo, 'sub'), { recursive: true });
+  g(['init', '-q']);
+  fs.writeFileSync(path.join(repo, 'sub', 'x.txt'), 'x\n');
+  g(['add', '-A']); g(['commit', '-qm', 'x']);
+  g(['rm', '-rq', 'sub']); g(['commit', '-qm', 'borrada']);
+  const base = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'adhoc-base.js'));
+  const adhoc = { reason: 'prueba', rutas: [path.join(repo, 'sub', 'x.txt')], files: [], bases: {} };
+  const real = fs.realpathSync(repo);
+  assert.deepEqual(base.reposDelCarril(adhoc), [real], 'sin la opción, como siempre');
+  assert.deepEqual(base.reposDelCarril(adhoc, { ubicados: new Map() }), [real], 'con lo ya ubicado compartido, lo mismo');
+});

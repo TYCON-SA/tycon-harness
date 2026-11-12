@@ -587,7 +587,7 @@ function screenSearch(repoRoot, notes, storyPath) {
   // El repo de git de una carpeta (el mismo para el checkout principal y todos sus worktrees), o null.
   const repoGit = (dir) => {
     const r = require('child_process').spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
     return r.status === 0 ? lib.real(String(r.stdout || '').trim()) : null;
   };
   const propio = repoGit(repoRoot);
@@ -1164,7 +1164,7 @@ function main() {
         : process.platform === 'win32' ? 'cmd'
         : 'xdg-open';
       const args = process.platform === 'win32' ? ['/c', 'start', '', out] : [out];
-      spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
+      spawn(cmd, args, { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
       console.log('   🌐 Guía abierta en el navegador (--open)');
     } catch (e) {
       console.log(`   ⚠ No pude abrir la guía en el navegador (${e.message}) — abrila a mano: ${out}`);

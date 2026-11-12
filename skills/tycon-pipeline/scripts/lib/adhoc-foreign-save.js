@@ -67,7 +67,7 @@ const COMMIT_CON_VALOR = new Set(['-m', '-F', '-C', '-c', '-t', '--author', '--d
 const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
 
 function git(dir, args, { binario = false, sale = [0] } = {}) {
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: binario ? 'buffer' : 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+  const r = spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: binario ? 'buffer' : 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
   if (r.error || !sale.includes(r.status)) throw new Error(`git ${args.filter((x) => !x.startsWith('-')).slice(0, 2).join(' ')} no contestó en ${dir}`);
   return { salida: binario ? r.stdout : String(r.stdout), codigo: r.status };
 }

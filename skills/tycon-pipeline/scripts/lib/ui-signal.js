@@ -458,7 +458,7 @@ const REACT_EXT_RE = /\.(tsx|jsx)\b/i;
  */
 function changedFiles(repoRoot, base) {
   const { spawnSync } = require('child_process');
-  const git = (args) => spawnSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8', timeout: 10000 });
+  const git = (args) => spawnSync('git', ['-C', repoRoot, ...args], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
   const out = [];
   for (const r of [git(['diff', '--name-only', base || 'HEAD']), git(['ls-files', '--others', '--exclude-standard'])]) {
     if (r.error || r.status !== 0) return null;

@@ -399,7 +399,7 @@ const atributo = (el, k, def) => (Object.prototype.hasOwnProperty.call(el.attrs,
 // ── git, con su propio tiempo máximo (spawnSync, no el comando `timeout`) ───────────────────────────────────────
 
 function correrGit(args, timeoutMs) {
-  const r = spawnSync('git', args, { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync('git', args, { windowsHide: true, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 256 * 1024 * 1024 });
   if (r.error) {
     if (r.error.code === 'ETIMEDOUT') throw new Error(`Command '${['git', ...args].join(' ')}' timed out after ${timeoutMs / 1000} seconds`);
     throw r.error;

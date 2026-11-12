@@ -98,11 +98,11 @@ function leerArbol({ spawnSync = require('child_process').spawnSync, plataforma 
   if (plataforma === 'win32') return null;
   const o = { encoding: 'utf8', timeout: 5000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C.UTF-8' } };
   let r;
-  try { r = spawnSync('ps', ['-A', '-ww', '-o', 'pid=,ppid=,lstart=,command='], o); } catch (_) { return null; }
+  try { r = spawnSync('ps', ['-A', '-ww', '-o', 'pid=,ppid=,lstart=,command='], { windowsHide: true, ...o }); } catch (_) { return null; }
   if (!r || r.error || r.status !== 0 || !r.stdout) return null;
   const ejecutables = new Map();
   try {
-    const c = spawnSync('ps', ['-A', '-ww', '-o', 'pid=,comm='], o);
+    const c = spawnSync('ps', ['-A', '-ww', '-o', 'pid=,comm='], { windowsHide: true, ...o });
     if (c && !c.error && c.status === 0 && c.stdout) {
       for (const l of c.stdout.split('\n')) { const m = /^\s*(\d+)\s(.+)$/.exec(l); if (m) ejecutables.set(Number(m[1]), m[2].trim()); }
     }
@@ -937,7 +937,7 @@ function avisarOficina(sesion, casa) {
  */
 function clasificarConElGuion(palabras, cwd) {
   const r = require('child_process').spawnSync('bash', [path.join(__dirname, '..', 'ci', 'run-base-controls.sh'), 'classify', ...palabras.slice(2)],
-    { cwd: cwd || process.cwd(), encoding: 'utf8', timeout: 20000 });
+    { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: 20000 });
   if (r.status !== 0) return null;
   try { return JSON.parse(String(r.stdout).trim().split('\n').pop()); } catch (_) { return null; }
 }
@@ -979,7 +979,7 @@ function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env, via = nu
   const nombre = base(palabras[0]);
   const sh = nombre.endsWith('.sh');
   const guion = sh ? path.join(__dirname, '..', 'ci', nombre) : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre);
-  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { cwd: cwd || process.cwd(), encoding: 'utf8', timeout: PLAZO_DEL_CHEQUEO[firma] || PLAZO_DEL_PRECHEQUEO_MS,
+  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: PLAZO_DEL_CHEQUEO[firma] || PLAZO_DEL_PRECHEQUEO_MS,
     env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', [PRECHEQUEO_VIA]: via || '', ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
   if (r.error || r.status === null) return null;
   if (r.status === 0) return String(r.stdout).split('\n').includes(PRECHEQUEO_OK) ? { ok: true } : null;

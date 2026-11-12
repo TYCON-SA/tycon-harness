@@ -183,7 +183,7 @@ function origenDe(dir) {
   let url = null;
   try {
     url = execFileSync('git', ['-C', dir, 'remote', 'get-url', 'origin'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch (_e) { url = null; }
   // Misma identidad escrita de varias formas: mayúsculas, `.git` al final, credenciales en la URL.
   const norm = url

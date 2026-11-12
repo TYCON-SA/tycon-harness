@@ -21,7 +21,7 @@ const dec = (s) => { try { return decodeURIComponent(s); } catch (_) { return s;
 const tarCmd = (env = process.env, platform = process.platform) => (platform === 'win32' ? path.win32.join(env.SystemRoot || env.SYSTEMROOT || 'C:\\Windows', 'System32', 'tar.exe') : 'tar');
 /** Un hijo, esperado: si no arrancó o lo cortó una señal se dice, nunca un «salió mal» callado. */
 function launch(what, cmd, args, opts) {
-  const r = spawnSync(cmd, args, opts);
+  const r = spawnSync(cmd, args, { windowsHide: true, ...opts });
   if (r.error && r.error.code === 'ENOENT' && /tar/.test(what)) {   // falta tar: se dice con el comando sugerido (se imprime, nunca se corre)
     const how = { win32: 'Windows 10 o posterior trae tar.exe en C:\\Windows\\System32', darwin: 'brew install tar' }[process.platform] || 'sudo apt install tar (Debian y Ubuntu) o https://www.gnu.org/software/tar/';
     throw new Stop(1, `falta tar — sugerido (no lo corro): ${how}. No instalé nada.`);

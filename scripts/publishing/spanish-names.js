@@ -544,7 +544,7 @@ function run(args) {
     range = { base, tip };
   } else {
     const { spawnSync } = require('child_process');
-    const head = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { cwd: repo, env: process.env, encoding: 'utf8' });
+    const head = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { windowsHide: true, cwd: repo, env: process.env, encoding: 'utf8' });
     const shas = head.status === 0 ? [head.stdout.trim()] : [null];
     const mergeAbs = path.resolve(repo, nn.hookGit(repo, ['rev-parse', '--git-path', 'MERGE_HEAD']).trim());
     if (shas[0] && fs.existsSync(mergeAbs)) shas.push(...fs.readFileSync(mergeAbs, 'utf8').split('\n').map((x) => x.trim()).filter(Boolean));

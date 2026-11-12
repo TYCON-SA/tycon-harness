@@ -48,7 +48,7 @@ const MARCADORES = /^(<{7} |={7}$|>{7} )/m;
 
 // ── git, sin shell y sin explotar ───────────────────────────────────────────────────────────────
 function git(dir, args) {
-  return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return execFileSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 function gitOk(dir, args) {
   try { return { ok: true, out: git(dir, args) }; }
@@ -495,7 +495,7 @@ function modoDelIndice(dir) {
   // biblioteca que no carga no es git que no contestó
   const env = require('./clean-git-env.js').idiomaFijo();
   const correr = (args) => {
-    try { execFileSync('git', ['-C', dir, ...args], { stdio: ['ignore', 'ignore', 'pipe'], env }); return { rc: 0 }; }
+    try { execFileSync('git', ['-C', dir, ...args], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], env }); return { rc: 0 }; }
     catch (e) { return { rc: typeof e.status === 'number' ? e.status : null, motivo: String((e && e.stderr) || (e && e.message) || e).trim().split('\n')[0] }; }
   };
   const ignorado = correr(['check-ignore', '-q', '--', REL_INDICE]);
@@ -619,6 +619,7 @@ function verificarConImportador(dir, archivos) {
     // dejaría al dev esperando con la reparación ya hecha y sin saberlo. 60 s es varias veces lo
     // que tarda un import de un repo grande sobre una base vacía; pasado eso, se dice y se sigue.
     const out = execFileSync('engram', ['sync', '--import'], {
+      windowsHide: true,
       cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000,
       env: { ...process.env, ENGRAM_DATA_DIR: tmpBase },
     });

@@ -651,7 +651,7 @@ const waitLine = (w) => `${quoted(w.quien, LABEL_MAX)} (${quoted(w.trabajo, WAIT
 function readOwnerWaits(opts = {}) {
   if (typeof opts.ownerWaits === 'function') return opts.ownerWaits(opts);
   const timeout = Number.isFinite(opts.officeTimeoutMs) ? opts.officeTimeoutMs : OFFICE_TIMEOUT_MS;
-  const r = spawnSync(process.execPath, [opts.officeScript || OFFICE_JS, '--owner-waits'], { encoding: 'utf8', timeout, env: opts.officeEnv || process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync(process.execPath, [opts.officeScript || OFFICE_JS, '--owner-waits'], { windowsHide: true, encoding: 'utf8', timeout, env: opts.officeEnv || process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.error && r.error.code === 'ETIMEDOUT') return { error: `la oficina tardó más de ${Math.round(timeout / 1000)} s` };
   if (r.error) return { error: `no pude lanzar la oficina (${r.error.code || r.error.message})` };
   if (r.signal) return { error: `la oficina se cortó (${r.signal})` };

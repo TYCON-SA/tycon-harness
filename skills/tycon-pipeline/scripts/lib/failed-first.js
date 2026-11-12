@@ -263,7 +263,7 @@ function dropRecords(lcov, files) {
 
 /** Los archivos que cambiaron entre dos árboles del repo; tira si git no contesta. */
 function changedFiles(repo, a, b) {
-  const r = spawnSync('git', ['-C', repo, 'diff-tree', '-r', '-z', '--name-only', '--no-renames', a, b], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync('git', ['-C', repo, 'diff-tree', '-r', '-z', '--name-only', '--no-renames', a, b], { windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (r.status !== 0) throw new Error((r.stderr || '').trim() || `git diff-tree salió ${r.status}`);
   return r.stdout.split('\0').filter(Boolean);
 }

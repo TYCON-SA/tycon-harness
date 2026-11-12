@@ -92,7 +92,7 @@ function abrirInstalador() {
   const hoy = new Date().toISOString().slice(0, 10);
   try { if (fs.readFileSync(SELLO_INSTALADOR, 'utf8').trim() === hoy) return false; } catch { /* nunca se abrió */ }
   try { fs.mkdirSync(path.dirname(SELLO_INSTALADOR), { recursive: true }); fs.writeFileSync(SELLO_INSTALADOR, hoy + '\n'); } catch { return false; }
-  if (!RAIZ && existe(INSTALADOR)) spawnSync('open', [INSTALADOR], { stdio: 'ignore', timeout: 5000 });
+  if (!RAIZ && existe(INSTALADOR)) spawnSync('open', [INSTALADOR], { windowsHide: true, stdio: 'ignore', timeout: 5000 });
   return true;
 }
 // Contra qué se compara lo instalado: en un clon, el propio árbol; en una versión bajada, el
@@ -103,11 +103,11 @@ function abrirInstalador() {
 const PUBLICADO = (() => {
   try { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return fs.existsSync(lib) ? require(lib).maintainedDir(HOME, ARNES) : ARNES; } catch (_) { return ARNES; }
 })();
-const git = (args) => (PUBLICADO ? spawnSync('git', ['-C', PUBLICADO, ...args], { encoding: 'utf8', timeout: 5000 }) : { status: 1, stdout: '', stderr: 'sin clon que mantener' });
+const git = (args) => (PUBLICADO ? spawnSync('git', ['-C', PUBLICADO, ...args], { windowsHide: true, encoding: 'utf8', timeout: 5000 }) : { status: 1, stdout: '', stderr: 'sin clon que mantener' });
 
 /** Hash de blob de git de un archivo (para compararlo con lo publicado sin depender del disco del clon). */
 function blobDe(archivo) {
-  const r = spawnSync('git', ['hash-object', archivo], { encoding: 'utf8', timeout: 5000 });
+  const r = spawnSync('git', ['hash-object', archivo], { windowsHide: true, encoding: 'utf8', timeout: 5000 });
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
@@ -272,7 +272,7 @@ function juzgar({ soloLeer = false, reporte = REPORTE, reindex = false } = {}) {
   if (existe(LLAVERO_PROPIO) || RAIZ) {
     for (const ll of llaveros) {
       // Sin -w y sin -g: se pregunta si la entrada EXISTE; no se lee el secreto y no abre cuadro.
-      const r = spawnSync(existe(SECURITY) ? SECURITY : '/usr/bin/security', ['find-generic-password', '-s', ll, LLAVERO_PROPIO], { encoding: 'utf8', timeout: 4000 });
+      const r = spawnSync(existe(SECURITY) ? SECURITY : '/usr/bin/security', ['find-generic-password', '-s', ll, LLAVERO_PROPIO], { windowsHide: true, encoding: 'utf8', timeout: 4000 });
       if (r.status === 0) { tieneClave = true; break; }
       // 44 = no está. Cualquier otra cosa es «no pude preguntar», que NO es «no autorizada».
       if (r.status !== 44) llaveroIlegible = true;

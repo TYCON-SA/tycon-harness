@@ -93,7 +93,8 @@ function main() {
   if (comando) {
     const command = String((input.tool_input || {}).command || '');
     if (!command.trim()) return;
-    const { notices, errors } = lib.afterCommand({ cwd, command, powershell: input.tool_name === 'PowerShell' });
+    // lo ya dicho en la sesión no se vuelve a mirar: así no se le pregunta a git por un aviso que no va a salir
+    const { notices, errors } = lib.afterCommand({ cwd, command, powershell: input.tool_name === 'PowerShell', yaDichos: shown });
     if (problem) errors.unshift(problem);
     const { out, nuevos } = porDecir(notices, shown, errors);
     // un problema se dice una vez por sesión: este gancho corre después de cada comando

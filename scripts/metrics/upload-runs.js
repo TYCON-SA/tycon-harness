@@ -171,7 +171,7 @@ function nombreEstableDeMac() {
   //    máquina escribiría en dos carpetas del buzón y re-subiría todo. HostName si está
   //    fijado —es lo que os.hostname() ya devuelve—, y si no LocalHostName, que no depende de la red.
   for (const clave of ['HostName', 'LocalHostName']) {
-    const r = spawnSync('scutil', ['--get', clave], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
+    const r = spawnSync('scutil', ['--get', clave], { windowsHide: true, encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
     const v = !r.error && r.status === 0 ? String(r.stdout || '').trim() : '';
     if (v) { nombreMac = v; break; }
   }

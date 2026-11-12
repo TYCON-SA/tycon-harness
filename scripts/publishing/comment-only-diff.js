@@ -30,7 +30,7 @@ function parseArgs(argv) {
   return args;
 }
 
-const git = (repo, list) => execFileSync('git', ['-C', repo, ...list], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+const git = (repo, list) => execFileSync('git', ['-C', repo, ...list], { windowsHide: true, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 
 /** El contenido de un archivo en un commit, o en el árbol de trabajo cuando `ref` es `null`. */
 function contentAt(repo, ref, file) {
@@ -55,7 +55,7 @@ function firstDifference(a, b) {
 function guardCopies(repo, base) {
   const installer = 'scripts/production/install-guard.sh';
   // sólo «no está en la base» es «repo sin freno»; cualquier otra falla de git sale como «no pude mirar»
-  if (spawnSync('git', ['-C', repo, 'cat-file', '-e', `${base}:${installer}`]).status !== 0) return new Set();
+  if (spawnSync('git', ['-C', repo, 'cat-file', '-e', `${base}:${installer}`], { windowsHide: true }).status !== 0) return new Set();
   const src = contentAt(repo, base, installer).replace(/\r/g, '');
   const m = /^ARCHIVOS=\(\n([\s\S]*?)\n\)/m.exec(src);
   if (!m) throw new Error(`${installer} no trae la lista ARCHIVOS: no sé qué se copia al freno`);

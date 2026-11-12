@@ -395,7 +395,7 @@ function persona(nombre, v) {
 }
 function quien(o, repo) {
   if (o.who) return persona('--who', o.who);
-  const r = spawnSync('git', ['-C', repo, 'config', 'user.name'], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', repo, 'config', 'user.name'], { windowsHide: true, encoding: 'utf8' });
   const nombre = r.status === 0 ? String(r.stdout || '').trim() : '';
   return nombre || null;
 }

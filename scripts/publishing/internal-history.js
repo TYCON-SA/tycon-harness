@@ -607,6 +607,7 @@ function publicLookup(repo, remote = null) {
     }
     if (target.startsWith('-')) { answer = { problem: 'la dirección del repo público no es válida' }; return answer; }
     const r = spawnSync('git', ['ls-remote', target], {
+      windowsHide: true,
       cwd: repo, encoding: 'utf8', timeout: LOOKUP_MS, maxBuffer: 256 * 1024 * 1024,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
     });
@@ -641,12 +642,12 @@ function publicLookup(repo, remote = null) {
       if (r.status === 0) {
         if (!localTips) {
           // las puntas del público que este clon tiene (una que no trajo no sirve para llegar a nada)
-          const c = spawnSync('git', ['cat-file', '--batch-check'], { cwd: repo, encoding: 'utf8', input: `${a.tips.join('\n')}\n` });
+          const c = spawnSync('git', ['cat-file', '--batch-check'], { windowsHide: true, cwd: repo, encoding: 'utf8', input: `${a.tips.join('\n')}\n` });
           localTips = c.status === 0 ? c.stdout.split('\n').filter((l) => / commit /.test(l)).map((l) => l.split(' ')[0]) : [];
         }
         if (localTips.length) {
           // vacío = se llega al commit desde alguna de esas puntas
-          const l = spawnSync('git', ['rev-list', '-n', '1', '--stdin'], { cwd: repo, encoding: 'utf8', input: `${r.stdout.trim()}\n${localTips.map((t) => `^${t}`).join('\n')}\n` });
+          const l = spawnSync('git', ['rev-list', '-n', '1', '--stdin'], { windowsHide: true, cwd: repo, encoding: 'utf8', input: `${r.stdout.trim()}\n${localTips.map((t) => `^${t}`).join('\n')}\n` });
           yes = l.status === 0 && l.stdout.trim() === '';
         }
       }
@@ -728,7 +729,7 @@ const zoneConfig = (config, zone) => (config && config.zones && config.zones[zon
 
 // ── git: el del hook (con el índice del commit en curso) ─────────────────────────────────────────────────────────
 function git(cwd, args, { tolerate = false, buffer = false } = {}) {
-  const r = spawnSync('git', args, { cwd, env: process.env, encoding: buffer ? 'buffer' : 'utf8', maxBuffer: 1024 * 1024 * 1024 });
+  const r = spawnSync('git', args, { windowsHide: true, cwd, env: process.env, encoding: buffer ? 'buffer' : 'utf8', maxBuffer: 1024 * 1024 * 1024 });
   if (r.error) throw new CouldNot(`no pude correr git ${args[0]} (${r.error.code || r.error.message})`);
   if (r.status !== 0 && !tolerate) throw new CouldNot(`git ${args[0]} falló en ${shown(cwd)}: ${shown(String(r.stderr).trim().split('\n')[0]) || `salió ${r.status}`}`);
   return r;
@@ -1060,7 +1061,7 @@ const TEAM_LAYER = (f) => f === 'perfil-equipo.json' || /^onboarding\/[^/]+\.md$
  */
 function travels(repo) {
   // el mensaje de git en inglés, que es el que se reconoce abajo
-  const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: repo, env: require('../lib/clean-git-env.js').idiomaFijo(), encoding: 'utf8' });
+  const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { windowsHide: true, cwd: repo, env: require('../lib/clean-git-env.js').idiomaFijo(), encoding: 'utf8' });
   if (top.error) throw new CouldNot(`no pude correr git rev-parse (${top.error.code || top.error.message})`);
   // una carpeta fuera de todo repo no tiene superposición; cualquier otra falla de git no se toma por «no la hay»
   if (top.status !== 0 && !/not a git repository/i.test(String(top.stderr))) throw new CouldNot(`no pude saber si ${shown(repo)} es un árbol armado: git rev-parse falló (${shown(String(top.stderr).trim().split('\n')[0]) || `salió ${top.status}`})`);

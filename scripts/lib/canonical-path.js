@@ -531,7 +531,7 @@ const SYNCED_SKILLS = 'skills/synced/';
  */
 function ignoreSyncedSkills({ dir, check = false, git = 'git' } = {}) {
   const { spawnSync } = require('child_process');
-  const run = (args) => spawnSync(git, ['-C', dir, ...args], { encoding: 'utf8', timeout: 10000 });
+  const run = (args) => spawnSync(git, ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
   // la raíz del repo tiene que ser ESA carpeta: si no es un repo de verdad (un `.git` vacío), git sigue subiendo y
   // contestaría por el repo de una carpeta madre, y el exclude se escribiría en otro lado
   const top = run(['rev-parse', '--show-toplevel']);
@@ -1434,7 +1434,7 @@ function selftest() {
 
   // por la línea de comandos: el reporte de piezas (TYCON_REPORT_PIECES), --check que no lo escribe, y el uso
   const { spawnSync } = require('child_process');
-  const cli = (args, env = {}) => spawnSync(process.execPath, [__filename, ...args], { encoding: 'utf8', env: Object.assign({}, process.env, { TYCON_REPORT_PIECES: '' }, env) });
+  const cli = (args, env = {}) => spawnSync(process.execPath, [__filename, ...args], { windowsHide: true, encoding: 'utf8', env: Object.assign({}, process.env, { TYCON_REPORT_PIECES: '' }, env) });
   const k13 = casa('k13'); const rep = path.join(t, 'pieces-k13.tsv');
   let c1 = cli(['--ensure-repo-links', '--clone', u, '--home', k13, '--check'], { TYCON_REPORT_PIECES: rep });
   casos.push(['AC18 CLI --check: sale 0, dice qué haría, no escribe enlaces ni el reporte de piezas',
@@ -1534,15 +1534,15 @@ function selftest() {
   // 🔴 Sin la exclusión local, en la transición el instalador no hace nada y los archivos de skills/synced/ quedan sueltos
   //    adentro del clon viejo. Repos de git DE VERDAD: la pregunta la contesta git.
   const { spawnSync: sp } = require('child_process');
-  const gitOk = sp('git', ['--version'], { encoding: 'utf8' }).status === 0;
+  const gitOk = sp('git', ['--version'], { windowsHide: true, encoding: 'utf8' }).status === 0;
   if (gitOk) {
     const gitHome = (name) => {
       const h = teamHome(name, { git: false });
-      sp('git', ['init', '-q', at(h, 'agent-skills')], { encoding: 'utf8' });
+      sp('git', ['init', '-q', at(h, 'agent-skills')], { windowsHide: true, encoding: 'utf8' });
       return h;
     };
     const exclude = (h) => path.join(at(h, 'agent-skills'), '.git', 'info', 'exclude');
-    const ignored = (h) => sp('git', ['-C', at(h, 'agent-skills'), 'check-ignore', '-q', '--no-index', 'skills/synced/x']).status === 0;
+    const ignored = (h) => sp('git', ['-C', at(h, 'agent-skills'), 'check-ignore', '-q', '--no-index', 'skills/synced/x'], { windowsHide: true }).status === 0;
     const readOr = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch (_) { return null; } };
     const g1 = gitHome('g1');
     const before1 = readOr(exclude(g1));
@@ -1571,9 +1571,9 @@ function selftest() {
     ensureRepoLinks({ clone: u, home: g3, only: 'agent-skills' });
     casos.push(['T30 un exclude que no termina en salto de línea: lo del dev queda intacto y la línea va en su propio renglón',
       readOr(exclude(g3)).startsWith('# lo del dev\n*.bak\n') && ignored(g3)
-      && sp('git', ['-C', at(g3, 'agent-skills'), 'check-ignore', '-q', '--no-index', 'a.bak']).status === 0]);
+      && sp('git', ['-C', at(g3, 'agent-skills'), 'check-ignore', '-q', '--no-index', 'a.bak'], { windowsHide: true }).status === 0]);
     // (error) un `.git` vacío adentro de un repo de verdad: git contestaría por el repo de afuera. No se escribe en ninguno
-    const outer = real(mk('afuera')); sp('git', ['init', '-q', outer]);
+    const outer = real(mk('afuera')); sp('git', ['init', '-q', outer], { windowsHide: true });
     const g4 = casa('g4'); const inner = path.join(outer, 'agent-skills');
     fs.mkdirSync(path.join(inner, 'skills', 'tycon-pipeline'), { recursive: true }); fs.mkdirSync(path.join(inner, 'agents'));
     fs.mkdirSync(path.join(inner, '.git'));
