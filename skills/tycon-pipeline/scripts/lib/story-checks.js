@@ -393,7 +393,8 @@ function parseTestsTable(specContent) {
       }
     }
     if (tid || name) {
-      rows.push({ tid, name, acRefs: [...acRefs], nivel: idx.nivel !== -1 ? (cells[idx.nivel] || '') : null, raw: line.trim() });
+      // `acCell`: la celda AC tal cual, para quien necesita leer también los rangos («1-3»); null sin columna AC
+      rows.push({ tid, name, acRefs: [...acRefs], acCell: idx.ac !== -1 ? (cells[idx.ac] || '') : null, nivel: idx.nivel !== -1 ? (cells[idx.nivel] || '') : null, raw: line.trim() });
     }
   }
   if (!rows.length) {

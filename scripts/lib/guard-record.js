@@ -14,7 +14,9 @@
  *
  * Un `escape` puede llevar además por qué camino se autorizó (`via`, de la lista `VIAS`) y, si vino por
  * relevo, la sesión que lo reenvió (`relevo`). Los dos son de una forma cerrada, no texto libre. Un `bloqueo` de una
- * regla que frena por causas distintas lleva además su `motivo`, un código de la lista `MOTIVOS`.
+ * regla que frena por causas distintas lleva además su `motivo`, un código de la lista `MOTIVOS`. Un `escape` puede
+ * llevar también `detalle`: la huella (sha256) de lo que se firmó, como la lista y la fecha de un rojo esperado de la
+ * matriz, para que quien la usa compruebe que es la de su pedido.
  *
  * 🔴 LA LÍNEA NO LLEVA EL CONTENIDO. El registro sube al buzón y lo que el reductor publica lo ve
  *    todo el equipo. Del comando va su HUELLA, nunca su texto — el patrón es el de `registrar()` del
@@ -223,10 +225,11 @@ const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
 const ESCAPES_CON_NOMBRE = ['TYCON_SAFETY_OFF', 'TYCON_PROD_LINT', 'TYCON_NEW_NAMES', 'set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda',
   'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt',
-  'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado', 'merge-bypass', 'red-control-test-edit'];
+  'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado', 'merge-bypass', 'red-control-test-edit',
+  'rojo-esperado-de-la-matriz'];
 const SESION = /^[\w-]{1,80}$/;
 
-function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape, motivo } = {}) {
+function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape, motivo, detalle } = {}) {
   try {
     if (!FRENOS[freno]) {
       anotarFallo(home, `freno desconocido: ${String(freno).slice(0, 40)}`);
@@ -260,6 +263,11 @@ function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escap
       if (ESCAPES_CON_NOMBRE.includes(escape)) linea.escape = escape;
       else anotarFallo(home, `escape fuera de la lista en ${freno}: ${String(escape).slice(0, 40)}`);
     }
+    // la huella de lo que se firmó: sólo en un escape y sólo con la forma de un sha256; otra cosa no se anota
+    if (detalle !== undefined && veredicto === 'escape') {
+      if (/^[0-9a-f]{64}$/.test(String(detalle))) linea.detalle = detalle;
+      else anotarFallo(home, `huella fuera de forma en un escape de ${freno}: no se anotó`);
+    }
     const dir = casaDelPipeline(home);
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'frenos.jsonl'), JSON.stringify(linea) + '\n', 'utf8');
@@ -284,7 +292,7 @@ function main(argv) {
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined;
   };
   const cmd = argv.includes('--cmd-stdin') ? leerStdin() : undefined;
-  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd, via: val('--via'), relevo: val('--relay'), sesion: val('--session'), escape: val('--escape'), motivo: val('--reason') });
+  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd, via: val('--via'), relevo: val('--relay'), sesion: val('--session'), escape: val('--escape'), motivo: val('--reason'), detalle: val('--detail') });
   return 0; // SIEMPRE 0: el freno que nos llamó decide su propio código de salida
 }
 

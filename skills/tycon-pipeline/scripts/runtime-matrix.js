@@ -1042,6 +1042,55 @@ function avisoFirmasDescartadas(r, storyPath) {
   return L;
 }
 
+// El rango más largo que se lee en una celda AC: uno más largo es un error de tipeo, no una lista de criterios.
+const TOPE_DE_RANGO = 100;
+
+// Lo que una celda AC escribe para «esta prueba no nombra ningún criterio» (una regresión, una prueba de estructura).
+const SIN_CRITERIO = new Set(['—', '–', '-', 'n/a', 'na', 'ninguno', 'ninguna', 'none']);
+// Lo que escribe para «nombra todos los criterios».
+const TODOS = new Set(['todos', 'todas', 'all']);
+
+/**
+ * Los criterios que nombra la celda AC de una prueba: `{ acs, legible, todos }`. Lee lo que lee la matriz (`acRefs` de
+ * `parseTestsTable`: un número, un `N.M` que es su criterio padre) y además los rangos («1-3», «1–3») y los
+ * subcriterios («4b» es el 4). Una celda vacía, «—» o «n/a» no nombra ninguno; «todos» los nombra todos. Una con algo
+ * más es ilegible: no se sabe qué criterios nombra.
+ */
+function acsDeLaCelda(celda) {
+  const t = String(celda == null ? '' : celda).replace(/\*/g, '').replace(/AC\s*/gi, '').replace(/#/g, '').replace(/\sy\s/g, ',').trim();
+  if (!t || SIN_CRITERIO.has(t.toLowerCase())) return { acs: [], legible: true, todos: false };
+  if (TODOS.has(t.toLowerCase())) return { acs: [], legible: true, todos: true };
+  const acs = new Set();
+  for (const p of t.split(/[,;\s]+/).filter(Boolean)) {
+    const uno = /^(\d+)(?:\.\d+|[a-z])?$/i.exec(p);
+    const rango = /^(\d+)[-–](\d+)$/.exec(p);
+    if (uno) acs.add(Number(uno[1]));
+    else if (rango && Number(rango[1]) <= Number(rango[2]) && Number(rango[2]) - Number(rango[1]) < TOPE_DE_RANGO) {
+      for (let n = Number(rango[1]); n <= Number(rango[2]); n++) acs.add(n);
+    } else return { acs: [], legible: false, todos: false };
+  }
+  return { acs: [...acs], legible: true, todos: false };
+}
+
+/**
+ * Qué criterios sin correr de la matriz cubre la lista de pruebas de un rojo esperado (`marker.js expect-red acmatrix`):
+ * cubierto = al menos una prueba de la tabla lo nombra y todas las que lo nombran están en la lista. Un criterio que
+ * ninguna prueba nombra nunca queda cubierto, y una celda AC ilegible deja todo sin cubrir: no se sabe qué excusa.
+ * `{ covered, uncovered, unknown }`: `unknown`, las pruebas de la lista que no están en la tabla.
+ */
+function debtCoverage(matrix, tests) {
+  const lista = new Set((tests || []).map(String));
+  const enTabla = new Set(matrix.testIds || []);
+  const ilegible = (matrix.unreadableTests || []).length > 0;
+  const covered = [];
+  const uncovered = [];
+  for (const n of matrix.notRun || []) {
+    const nombran = (matrix.testsByAc || {})[n] || [];
+    (!ilegible && nombran.length && nombran.every((t) => lista.has(t)) ? covered : uncovered).push(n);
+  }
+  return { covered, uncovered, unknown: [...lista].filter((t) => !enTabla.has(t)) };
+}
+
 function compute(opts) {
   // 🔴 storyPath SIEMPRE a absoluto. `discoverWorkspaceRoot` sube por el árbol de directorios, y con
   // un path RELATIVO degenera en silencio: para 'specs/<epic>/<story>.md' llega a basename==='specs'
@@ -1090,11 +1139,24 @@ function compute(opts) {
   // y una marca al final de un AC largo se perdería en silencio.
   const acTextsEnteros = sc.acTextsFromSpec(content, { maxChars: Infinity });
   const table = sc.parseTestsTable(content);
-
   // Universo de ACs = sección AC ∪ columna AC de la tabla (defensa contra parsers que
   // subcuenten: la tabla es el contrato de cobertura y también vota).
   const acSet = new Set(acsFromSpec);
   for (const r of table.rows) for (const n of r.acRefs) acSet.add(n);
+
+  // Qué pruebas de la tabla nombran cada criterio, con la misma lectura de la tabla y sus rangos: lo usa la cobertura de
+  // una deuda en vivo (`debtCoverage`). Una prueba con la celda AC ilegible queda en `unreadableTests`. Una fila sin id
+  // que nombra un criterio entra con su nombre: no puede estar en ninguna lista, así que ese criterio no queda cubierto.
+  const testsByAc = {};
+  const testIds = [];
+  const unreadableTests = [];
+  for (const r of table.rows) {
+    const id = r.tid || `(sin id: ${r.name})`;
+    if (r.tid) testIds.push(r.tid);
+    const c = r.acCell == null ? { acs: r.acRefs, legible: true, todos: false } : acsDeLaCelda(r.acCell);
+    if (!c.legible) unreadableTests.push(id);
+    for (const n of (c.todos ? [...acSet] : c.acs)) (testsByAc[n] = testsByAc[n] || []).push(id);
+  }
 
   // La tanda medida: la de la ejecución (`opts.batch`, que la sesión anota con `marker.js set-batch`) o las que cierra
   // un commit (`opts.closingBatches`, que el control del commit saca del diff). Sin ninguna, el universo es el de
@@ -1885,6 +1947,8 @@ function compute(opts) {
     codeMtime: maxCodeMtime,
     // el código declarado que no está en ningún lugar de búsqueda: deja la matriz en rojo
     noLeidos,
+    // qué pruebas de la tabla nombran cada criterio, todas las de la tabla y las de celda AC ilegible (`debtCoverage`)
+    testsByAc, testIds, unreadableTests,
     deTandaBloqueada,
     stats: {
       total: acs.length,
@@ -2222,7 +2286,7 @@ function opcionesDeTandaDelMarcador(marker, storyPath) {
 // `acEsDeAccion` se exporta para poder testear la heurística de DODRT-C8 como función PURA
 // (mismo criterio que lib/atdd-order.js): sus falsos positivos se miden con texto de ACs
 // reales, no armando un workspace entero.
-module.exports = { isCodeFile, compute, renderMd, opcionesDeTandaDelMarcador, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM, SIMULATED_SERVER_FROM, readSmokeLedger, defaultGatesLog };
+module.exports = { isCodeFile, compute, debtCoverage, acsDeLaCelda, renderMd, opcionesDeTandaDelMarcador, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM, SIMULATED_SERVER_FROM, readSmokeLedger, defaultGatesLog };
 
 if (require.main === module) {
   main();

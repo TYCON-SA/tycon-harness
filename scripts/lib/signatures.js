@@ -139,6 +139,7 @@ const COVERS = Object.freeze({
   'escape:no-deep-review': ['adversarial-skip'],
   'escape:cerrar-la-ejecucion': ['lost-run'],
   'escape:cerrar-como-deuda': ['lost-run'],
+  'escape:rojo-esperado-de-la-matriz': ['lost-run'],
   'escape:cambiar-el-estado': ['escape:TYCON_STATUS_GATE'],
 });
 // lo que una firma cubre pero no se firma por delegación: el ok de guardar delegado no firma un cambio que toca algo de
@@ -164,6 +165,7 @@ const CON_NOMBRE = [
   ['set-autonomous', 'cambiar el modo autónomo de una ejecución', 'marker.js set-autonomous'],
   ['cerrar-la-ejecucion', 'cerrar una ejecución con un control en rojo', 'marker.js clear'],
   ['cerrar-como-deuda', 'cerrar una ejecución dejando lo que falta como deuda', 'marker.js close-as-debt'],
+  ['rojo-esperado-de-la-matriz', 'llevar al commit criterios sin evidencia en vivo, hasta una fecha', 'marker.js expect-red acmatrix --tests <T1,T2> --until <AAAA-MM-DD>'],
   ['force-manual', 'marcar a mano el estado de un control', 'marker.js set-check <control> <estado> --force-manual [--for-session <D>]'],
   ['trust-ran', 'contar los revisores sin la constancia de que corrieron', 'pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]'],
   ['ALLOW_DOD_EVIDENCE_WRITE', 'escribir a mano la evidencia de la prueba en vivo', 'file'],
@@ -190,6 +192,7 @@ const SI_SALE_MAL = Object.freeze({
   'escape:set-autonomous': 'la ejecución cambia cómo se frena sola ante un control en rojo',
   'escape:cerrar-la-ejecucion': 'la ejecución se cierra con un control en rojo, y lo que frenaba queda sin arreglar',
   'escape:cerrar-como-deuda': 'la ejecución se cierra y lo que falta queda anotado como deuda, sin hacer',
+  'escape:rojo-esperado-de-la-matriz': 'el commit entra con esos criterios sin evidencia en vivo hasta la fecha, y una falla que la prueba en vivo encontraría llega al pedido',
   'escape:force-manual': 'un control queda en el estado escrito a mano, aunque nadie lo haya medido',
   'escape:trust-ran': 'los revisores cuentan como corridos sin constancia, y uno que no corrió pasa por corrido',
   'escape:ALLOW_DOD_EVIDENCE_WRITE': 'la evidencia de la prueba en vivo queda escrita a mano, y puede decir algo que no pasó',
@@ -251,6 +254,7 @@ const APPROVES_EN = {
   'escape:set-autonomous': "change a run's autonomous mode",
   'escape:cerrar-la-ejecucion': 'close a run with a control in red',
   'escape:cerrar-como-deuda': 'close a run leaving what is missing as debt',
+  'escape:rojo-esperado-de-la-matriz': 'take criteria without live evidence to the commit, until a date',
   'escape:force-manual': "set a control's state by hand",
   'escape:trust-ran': 'count the reviewers without the record that they ran',
   'escape:ALLOW_DOD_EVIDENCE_WRITE': 'write the live test evidence by hand',

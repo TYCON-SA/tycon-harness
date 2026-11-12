@@ -19,7 +19,8 @@
  *   entrada, además un `frena=<escape>\t<subcomando>\t<valor>` por cada llamada a marker.js o pipeline.js que, con este
  *   marcador, pide la firma de la persona (lib/marker-command.js las encuentra); cada una va a la ventana de permiso. La
  *   salida de una ejecución perdida (`clear-session <sesión> --lost`, `restore <sesión>`) frena siempre y su renglón
- *   suma `\t<apertura>`: desde cuándo vale la firma de esa ejecución (`-` si no se ve). La delegación desde la sesión
+ *   suma `\t<apertura>`: desde cuándo vale la firma de esa ejecución (`-` si no se ve). El rojo esperado de la matriz
+ *   suma un `detalle=<huella>` de su lista y su fecha, si están escritas tal cual. La delegación desde la sesión
  *   designada la decide la ventana de permiso. No lee la conversación: ninguna firma sale de ahí.
  */
 const fs = require('fs');
@@ -186,11 +187,17 @@ if (require.main === module) {
     // apagar el pase adversarial pide la firma siempre, también sin ejecución: `pipeline.js start` la crea. Un comando
     // que no se pudo leer, también
     if (hay === 0 && esc !== 'no-deep-review' && !siempre) continue;
-    // cerrar como deuda, declarar un control a mano y dar por corridos los revisores piden la firma siempre que haya una
-    // ejecución: no dependen de cómo esté
-    const aplica = siempre || esc === 'cerrar como deuda' || esc === 'force-manual' || esc === 'trust-ran' || esc === 'no-deep-review' ? true
+    // cerrar como deuda, el rojo esperado de la matriz, declarar un control a mano y dar por corridos los revisores piden
+    // la firma siempre que haya una ejecución: no dependen de cómo esté (renovar la fecha del rojo esperado se hace con la
+    // ejecución en verde)
+    const aplica = siempre || esc === 'cerrar como deuda' || esc === 'rojo esperado de la matriz' || esc === 'force-manual' || esc === 'trust-ran' || esc === 'no-deep-review' ? true
       : esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || r.abierta;
     if (!aplica) continue;
     process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '')}\n`);
+    // la huella de la lista y la fecha que va a mostrar la ventana: el freno la anota con la constancia
+    if (esc === 'rojo esperado de la matriz') {
+      const detalle = require('./marker-command.js').detalleDeLaLlamada(l);
+      if (detalle) process.stdout.write(`detalle=${detalle}\n`);
+    }
   }
 }
