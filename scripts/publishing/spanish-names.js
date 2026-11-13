@@ -1136,21 +1136,33 @@ function ciPairsProblems(repo, entries) {
  * sus globs, donde el nombre viejo es otro archivo que se llama igual; un glob muerto frena.
  */
 const STALE_KINDS = ['env', 'option', 'subcommand', 'value', 'folder', 'file', 'state-file', 'config-file', 'key'];
-// 🔴 Los que LEEN o PROTEGEN los dos nombres a propósito (escritura doble): el freno de producción tiene que
-// nombrar el catálogo, el índice y la memoria con su nombre de antes del renombre, porque la copia vieja de /opt los sigue
-// usando hasta que todas las máquinas autorizadas reinstalen. No hay forma de hacerlo sin escribir el nombre viejo, y en
-// una plantilla JSON no hay comentario donde declararlo. Salen de esta lista en el commit que apaga la escritura doble:
-// desde ahí, un nombre viejo en ellos vuelve a ser una mención de más.
+// 🔴 Los que todavía LEEN, PROTEGEN o LIMPIAN un nombre viejo a propósito, cada uno con su motivo. No hay forma de
+// hacerlo sin escribir el nombre viejo, y en una plantilla JSON no hay comentario donde declararlo. Cuando el motivo se
+// va, el archivo sale de la lista: desde ahí, un nombre viejo en él vuelve a ser una mención de más.
 const LEGACY_READERS = new Set([
-  'scripts/production/production-index.js', 'scripts/production/tycon-prod-sql', 'scripts/production/node-shim.sh',
-  'scripts/production/install-guard.sh', 'scripts/production/lint-production-json.js',
-  'scripts/production/managed-settings.tycon-production.json.template', 'scripts/hooks/prod-access-guard.js',
-  'scripts/hooks/production-notice.js', 'scripts/hooks/git-pre-commit-global.sh', 'scripts/lib/tycon-config.js',
+  // el catálogo de producción de los productos, con su nombre y sus claves de antes: lo siguen leyendo, protegiendo y
+  // revisando hasta que los productos lo migren (tiene su propia fecha en el mapa). production-index.js, además, pasa
+  // una sola vez la memoria y el índice de antes a los nuevos y los borra
+  'scripts/production/production-index.js', 'scripts/production/node-shim.sh', 'scripts/production/lint-production-json.js',
+  'scripts/production/managed-settings.tycon-production.json.template', 'scripts/hooks/git-pre-commit-global.sh',
+  // el catálogo de antes, y el reemplazo del aviso que el repo del equipo deja en su ruta vieja (lo reconoce como pieza
+  // propia del freno hasta que se borren los reemplazos)
+  'scripts/hooks/prod-access-guard.js',
+  // el instalador borra los estados de antes (índice, memoria, registro) y traduce sus opciones de antes
+  'scripts/production/install-guard.sh',
+  // la puerta: un campo del registro que anota conserva su nombre de antes (es el formato del registro), y sus
+  // comentarios nombran las claves del catálogo de antes, que los productos todavía usan
+  'scripts/production/tycon-prod-sql',
+  // la copia propia del freno: su vocabulario interno conserva el nombre de antes de las secciones (como la biblioteca
+  // de la que sale), aunque del archivo de la máquina lee sólo `paths` e `integrations`
+  'scripts/production/guard-libs/lib/tycon-config.js',
+  // el aviso de arranque exige la regla del catálogo de antes en la configuración administrada
+  'scripts/hooks/production-notice.js',
+  // las claves de antes del archivo de la máquina, hasta el retiro (la copia del freno, en cambio, ya no las lee)
+  'scripts/lib/tycon-config.js',
   // los controles del commit: la copia propia del repo privado busca los guiones de las skills también en la carpeta de
   // antes del renombre, para un arnés atrasado; sale con el retiro de los nombres viejos
   '.githooks/pre-commit-checks',
-  // la copia propia del freno: ocupa en /opt el lugar de scripts/lib/tycon-config.js y lee lo mismo que ella
-  'scripts/production/guard-libs/lib/tycon-config.js',
   // compara contra una base de antes del renombre y corre los archivos de esa base por el nombre que tenían
   'scripts/publishing/profile-equivalence.js',
   // el termómetro mide también los commits de la medición (T5), donde el archivo de esquema del intérprete tenía su

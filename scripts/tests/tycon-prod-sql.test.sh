@@ -12,7 +12,7 @@
 #   T23 — si la entrada del Llavero confía en alguien más, no lee el secreto: sale ≠ 0 y guía a recrearla
 #   T24 — sin entrada en el Llavero no conecta: sale 3 y deja el `.command` para cargarla
 #   T25 — un host que no es producción se rechaza (para eso no hace falta la puerta)
-#   T26 — `--reclasificar` baja el host y eso se nota (deja de frenarse) y queda en el registro
+#   T26 — `--reclassify` baja el host y eso se nota (deja de frenarse) y queda en el registro
 #   T29 — usa el cliente de base de root, no el del PATH (un `sqlcmd` impostor se llevaría la clave)
 #   T30 — los comandos del cliente (`!!`, `:r`, `:out`, `:connect`) los frena la puerta, antes de conectarse
 #   T33 — `port` en el catálogo: la puerta lo pega al host al conectarse, y un puerto inválido la
@@ -462,20 +462,20 @@ if [ "$rc" != 0 ] && ! grep -q -- "-w" "$TMP/security-argv.log" 2>/dev/null; the
 else no "T23c · leyó el secreto de una clave abierta a cualquier programa (rc=$rc)"; fi
 
 
-# ── T24j · `--cargar-clave <host>`: el archivo sin tener que fallar una consulta ────────────────
+# ── T24j · `--load-key <host>`: el archivo sin tener que fallar una consulta ────────────────
 # Cargar la clave no exige «correr
 # una consulta que falle», un rodeo: hay un comando directo. Tiene que dejar el .command, NO
 # tocar el cliente de base, NO pedir el secreto al Llavero, y salir 0 (la persona sigue).
 mundo sin-entrada
-rc="$(puerta --cargar-clave "$PROD")"
+rc="$(puerta --load-key "$PROD")"
 if [ "$rc" = 0 ] && [ ! -s "$TMP/sqlcmd-argv.log" ] && ! grep -q -- " -w" "$TMP/security-argv.log" 2>/dev/null \
    && ls "$CASA/Desktop"/cargar-clave-tycon-prod-acme.command >/dev/null 2>&1 && grep -q "Escritorio" "$TMP/out"; then
-  ok "T24j · --cargar-clave deja el .command, no consulta, no lee el secreto, y sale 0"
-else no "T24j · --cargar-clave: rc=$rc · sqlcmd=$(wc -c <"$TMP/sqlcmd-argv.log" 2>/dev/null) · .command: $(ls "$CASA/Desktop" 2>/dev/null | tr '\n' ' ') · out: $(head -c 80 "$TMP/out")"; fi
-rc="$(puerta --cargar-clave "$STAGING")"
-[ "$rc" != 0 ] && ok "T24k · --cargar-clave con un host que NO es producción se niega" || no "T24k · dejó cargar clave para un host de no-producción"
-rc="$(puerta --cargar-clave)"
-[ "$rc" != 0 ] && ok "T24l · --cargar-clave sin host se niega" || no "T24l · --cargar-clave sin host salió 0"
+  ok "T24j · --load-key deja el .command, no consulta, no lee el secreto, y sale 0"
+else no "T24j · --load-key: rc=$rc · sqlcmd=$(wc -c <"$TMP/sqlcmd-argv.log" 2>/dev/null) · .command: $(ls "$CASA/Desktop" 2>/dev/null | tr '\n' ' ') · out: $(head -c 80 "$TMP/out")"; fi
+rc="$(puerta --load-key "$STAGING")"
+[ "$rc" != 0 ] && ok "T24k · --load-key con un host que NO es producción se niega" || no "T24k · dejó cargar clave para un host de no-producción"
+rc="$(puerta --load-key)"
+[ "$rc" != 0 ] && ok "T24l · --load-key sin host se niega" || no "T24l · --load-key sin host salió 0"
 
 # ── T24 · sin entrada en el Llavero ───────────────────────────────────────────────────────────
 mundo sin-entrada
@@ -519,7 +519,7 @@ rc="$(puerta "$PROD" 'select 1')"
 if [ "$rc" != 0 ] && ! grep -q -- " -w" "$TMP/security-argv.log" 2>/dev/null; then ok "T23b · si no pudo verificar en quién confía la entrada, no pide el secreto"
 else no "T23b · leyó la clave sin poder verificar la confianza (rc=$rc)"; fi
 
-# ── T26 · --reclasificar ──────────────────────────────────────────────────────────────────────
+# ── T26 · --reclassify ──────────────────────────────────────────────────────────────────────
 # El escenario real: el host se vio como producción (queda en la memoria pegajosa), el proyecto lo
 # baja a no-producción en su catálogo… y aun así sigue frenándose (T15). Lo único que lo destraba es
 # reclasificarlo por la puerta, que pasa por el cuadro de aprobación.
@@ -529,12 +529,29 @@ frena(){ echo "{\"tool_name\":\"Bash\",\"hook_event_name\":\"PreToolUse\",\"tool
 antes="$(frena)"                                   # lo vio como producción: queda en la memoria
 printf '{"servers":[{"host":"%s","environment":"no-produccion"}]}' "$PROD" > "$REPOS/backend-acme/.tycon/production.json"
 intermedio="$(frena)"                              # el catálogo ya dice no-producción y IGUAL frena
-rc="$(puerta --reclasificar "$PROD")"
+rc="$(puerta --reclassify "$PROD")"
 despues="$(frena)"
 if [ "$antes" = 2 ] && [ "$intermedio" = 2 ] && [ "$rc" = 0 ] && [ "$despues" = 0 ]; then ok "T26a · sólo la puerta lo destraba: reescribir el catálogo no alcanza"
 else no "T26a · antes=$antes intermedio=$intermedio rc=$rc después=$despues (esperaba 2 / 2 / 0 / 0)"; fi
 if grep -q "reclasific" "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null; then ok "T26b · la reclasificación queda en el registro"
 else no "T26b · reclasificar no dejó constancia"; fi
+
+# ── RetireD_NoticeAndGuardOptionsRenamed · las opciones de antes ya no existen, sin alias ──────────────────────
+# La puerta y sus llamadores se instalan juntos: una opción de antes recibe el mensaje real de la puerta, que nombra
+# las de hoy. Las de antes, armadas por partes (como en las pruebas de nombres).
+mundo ok
+OLD_LOAD="cargar-""clave"; OLD_RECLASS="reclasi""ficar"; OLD_VERIFY="verifi""car"; OLD_ROWS="max-""filas"
+for vieja in "--$OLD_LOAD $PROD" "--$OLD_RECLASS $PROD" "--$OLD_VERIFY"; do
+  # shellcheck disable=SC2086
+  rc="$(puerta $vieja)"
+  if [ "$rc" != 0 ] && grep -q "primer argumento inválido: sólo <host>, --load-key, --reclassify, --verify" "$TMP/err"; then
+    ok "RetireD_NoticeAndGuardOptionsRenamed · «${vieja%% *}» ya no es una opción: «primer argumento inválido» con las de hoy @story-8.15 @ac-15"
+  else no "RetireD_NoticeAndGuardOptionsRenamed · «${vieja%% *}»: rc=$rc — $(head -c 200 "$TMP/err") @story-8.15 @ac-15"; fi
+done
+rc="$(puerta "$PROD" 'select 1' "--$OLD_ROWS" 5)"
+if [ "$rc" != 0 ] && grep -q "sólo se acepta la sentencia en línea y, opcionalmente, --max-rows N" "$TMP/err"; then
+  ok "RetireD_NoticeAndGuardOptionsRenamed · la opción de antes del tope de filas recibe el mensaje con --max-rows @story-8.15 @ac-15"
+else no "RetireD_NoticeAndGuardOptionsRenamed · tope de filas de antes: rc=$rc — $(head -c 200 "$TMP/err") @story-8.15 @ac-15"; fi
 
 # ── 6.6 · la consulta va en línea: la puerta no acepta --file ────────────────────────────────────────────────────────
 # El cuadro de aprobación muestra el comando y nada más: el contenido de un archivo no se ve antes de aprobar (medido el
@@ -545,7 +562,7 @@ printf 'select top 3 Id,\n       Nombre\nfrom Articulos\n' > "$TMP/consulta.sql"
 sin_archivo_en_registro(){ ! grep -rqs '"origen":"archivo"' "$CASA" 2>/dev/null; }
 
 # T9 · --file sale 2 con el uso, sin leer el archivo ni conectarse, y el registro no suma líneas de archivo
-for args in "$PROD --file $TMP/consulta.sql --sha256 $H64" "$PROD --file $TMP/consulta.sql --sha256 $H64 --max-filas 5" \
+for args in "$PROD --file $TMP/consulta.sql --sha256 $H64" "$PROD --file $TMP/consulta.sql --sha256 $H64 --max-rows 5" \
             "--file $TMP/consulta.sql $PROD" "$PROD select --file $TMP/consulta.sql"; do
   mundo ok
   # shellcheck disable=SC2086
@@ -563,7 +580,7 @@ printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_S
 LISTO="$(node -e '
   const t = require("fs").readFileSync(process.argv[1], "utf8"); const i = t.indexOf(process.argv[2]);
   if (i < 0) process.exit(1);
-  const m = /^\S+ \S+ (?:\x27(?:[^\x27]|\x27\\\x27\x27)*\x27)(?: --max-filas \d+)?/.exec(t.slice(i));
+  const m = /^\S+ \S+ (?:\x27(?:[^\x27]|\x27\\\x27\x27)*\x27)(?: --max-rows \d+)?/.exec(t.slice(i));
   if (!m) process.exit(1); process.stdout.write(m[0]);' "$TMP/hook-err" "/opt/tycon/bin/tycon-prod-sql $PROD '")" || LISTO=""
 if [ -n "$LISTO" ]; then
   eval "puerta ${LISTO#/opt/tycon/bin/tycon-prod-sql }" >/dev/null

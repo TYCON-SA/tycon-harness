@@ -85,10 +85,9 @@ const CRUDO = new RegExp('(' + [
   // es una variable de shell cualquiera y no nombra ninguna base (caso T4h de la suite).
   '(?<![A-Za-z0-9_])Server\\s*=', 'Data\\s+Source\\s*=', '\\bAddr(?:ess)?\\s*=', 'Network\\s+Address\\s*=',
   '\\baz\\s+sql\\b', 'Microsoft\\.Sql\\/servers', '(?:jdbc:)?(?:sqlserver|mssql|tds):\\/\\/',
-  // los dos nombres del catálogo, del índice y de la memoria (story 8.9, tanda P: escritura doble hasta que todas las
-  // máquinas autorizadas reinstalen)
+  // el catálogo con sus dos nombres (los productos lo migran aparte); el índice y la memoria, sólo con el nuevo
   'tycon-prod-sql', '\\.tycon\\/production\\.json', 'production-(?:index|memory)\\.json',
-  '\\.tycon\\/produccion\\.json', 'produccion-indice\\.json', 'produccion-memoria\\.json',
+  '\\.tycon\\/produccion\\.json',
   'security\\s+(?:-i\\b|find-|dump-keychain|export|[a-z-]*generic-password)',
 ].join('|') + ')', 'i');
 
@@ -196,7 +195,7 @@ function mensaje(motivo, detalle = []) {
     ...(detalle.length ? [''].concat(detalle.map((d) => `   ${d}`)) : []),
     '',
     '   Para consultar una base de producción hay UNA sola forma, y abre un cuadro de aprobación:',
-    "     /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-filas N]",
+    "     /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]",
     '   Detalle y cómo declarar un servidor: guides/produccion-con-permiso.md',
     '',
   ].join('\n');
@@ -259,21 +258,7 @@ function registrar(ctx, extra) {
     sha256: ctx && ctx.cmd ? crypto.createHash('sha256').update(ctx.cmd).digest('hex') : null,
     ...extra,
   };
-  // El registro de antes del renombre a inglés (story 8.9, tanda P) pasa al nuevo una vez, sin tocar el viejo. La copia va
-  // a un temporal y entra con `link`, que no pisa: otro freno en paralelo nunca ve un registro nuevo a medio copiar. Si
-  // la historia no se puede pasar, se sigue anotando en el viejo: un registro nuevo sin su historia la perdería (AC 18).
-  const nuevo = path.join(dir, 'production.log');
-  const viejo = path.join(dir, 'produccion.log');
-  let destino = nuevo;
-  if (!fs.existsSync(nuevo) && fs.existsSync(viejo)) {
-    const tmp = `${nuevo}.tmp-${process.pid}`;
-    try {
-      fs.copyFileSync(viejo, tmp);
-      try { fs.linkSync(tmp, nuevo); } catch (e) { if (!e || e.code !== 'EEXIST') throw e; }   // EEXIST: otro proceso ya lo pasó
-    } catch { destino = viejo; }
-    try { fs.unlinkSync(tmp); } catch { /* no se llegó a crear */ }
-  }
-  fs.appendFileSync(destino, JSON.stringify(linea) + '\n', 'utf8');
+  fs.appendFileSync(path.join(dir, 'production.log'), JSON.stringify(linea) + '\n', 'utf8');
 }
 
 // ── la puerta ─────────────────────────────────────────────────────────────────────────────────
@@ -300,13 +285,13 @@ const HOST_CANONICO = '[A-Za-z0-9][A-Za-z0-9._:,\\-]*';
 // expresar por ninguna vía, y una puerta que no sirve para el trabajo real es una puerta que se rodea.
 const SENTENCIA = `(?:'(?:[^']|'\\\\'')*'|"[^"$\`\\\\]*")`;
 const RUTA_PUERTA = PUERTA.replace(/\//g, '\\/');
-const CANONICA = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) ${SENTENCIA}(?: --max-filas \\d+)?$`);
-const CANONICA_RECLAS = new RegExp(`^${RUTA_PUERTA} --reclasificar (${HOST_CANONICO})$`);
-const CANONICA_VERIF = new RegExp(`^${RUTA_PUERTA} --verificar$`);
-// `--cargar-clave <host>`: deja en el Escritorio el archivo con el que la PERSONA carga usuario y
+const CANONICA = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) ${SENTENCIA}(?: --max-rows \\d+)?$`);
+const CANONICA_RECLAS = new RegExp(`^${RUTA_PUERTA} --reclassify (${HOST_CANONICO})$`);
+const CANONICA_VERIF = new RegExp(`^${RUTA_PUERTA} --verify$`);
+// `--load-key <host>`: deja en el Escritorio el archivo con el que la PERSONA carga usuario y
 // contraseña. No lee nada del Llavero ni consulta ninguna base; el disparador antes era «corré una
 // consulta que falle», que es un rodeo (2026-09-15).
-const CANONICA_CARGA = new RegExp(`^${RUTA_PUERTA} --cargar-clave (${HOST_CANONICO})$`);
+const CANONICA_CARGA = new RegExp(`^${RUTA_PUERTA} --load-key (${HOST_CANONICO})$`);
 // `--open-firewall <host>` y `--close-firewall <host>`: la regla de firewall de ESTA máquina, con el mismo cuadro. Sólo
 // el host: `--session <id>` lo pasa el hook de fin de sesión, que no pasa por acá, y cualquier otro argumento (un
 // rango, una IP, un nombre de regla) no es canónico.
@@ -321,7 +306,7 @@ const CANONICA_BORRAR_GRUPO = new RegExp(`^${RUTA_PUERTA} --delete-group (?:[A-Z
 // contenido del archivo. Cuando el archivo se puede pasar a una consulta en línea, el freno da ese comando listo. La ruta
 // sin comillas, espacios ni nada que el shell expanda, y sin «-» al principio.
 const RUTA_ARCHIVO = '[A-Za-z0-9._/~@+][A-Za-z0-9._/~@+-]*';
-const FORMA_ARCHIVO = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) --file (${RUTA_ARCHIVO})(?: --sha256 (\\S*))?(?: --max-filas (\\d+))?$`);
+const FORMA_ARCHIVO = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) --file (${RUTA_ARCHIVO})(?: --sha256 (\\S*))?(?: --max-rows (\\d+))?$`);
 const TOPE_ARCHIVO = 64 * 1024;
 
 // lo que haría ver en el cuadro otra cosa que los bytes que corren: controles C0 (salvo salto de línea y tabulador), DEL
@@ -388,7 +373,7 @@ function leerArchivoDeConsulta(ruta) {
   if (!st.isFile()) return { error: `${ruta} no es un archivo común` };
   if (st.size > TOPE_ARCHIVO) return { error: `${ruta} mide ${st.size} bytes: el tope es ${TOPE_ARCHIVO} (más que eso no se lee entero en pantalla)` };
   const base = path.basename(abs);
-  if (NOMBRES_PROTEGIDOS.includes(base) || /^(?:production|produccion)\.log$/.test(base)) {
+  if (NOMBRES_PROTEGIDOS.includes(base) || base === 'production.log') {
     return { error: `${ruta} es un archivo protegido por el freno, no una consulta` };
   }
   if (!/\.sql$/i.test(base)) return { error: `${ruta} no termina en .sql: el freno sólo lee consultas` };
@@ -513,7 +498,7 @@ function decidir(entrada) {
       const fa = unSoloSegmento ? FORMA_ARCHIVO.exec(limpio) : null;
       if (!fa) frenar(motivo, [enLinea], { cmd }, 'puerta-no-canonica');
       const v = leerArchivoDeConsulta(fa[2]);
-      const listo = v.error ? null : `${PUERTA} ${fa[1]} '${v.texto.replace(/'/g, "'\\''")}'${fa[4] ? ` --max-filas ${fa[4]}` : ''}`;
+      const listo = v.error ? null : `${PUERTA} ${fa[1]} '${v.texto.replace(/'/g, "'\\''")}'${fa[4] ? ` --max-rows ${fa[4]}` : ''}`;
       const renglones = listo ? renglonesDePantalla(listo) : 0;
       const problema = v.error || sentenciaQueLaPuertaRechaza(v.texto)
         || (renglones > TOPE_RENGLONES ? `la consulta ocupa ${renglones} renglones de pantalla y el cuadro muestra unos ${TOPE_RENGLONES}: partila en consultas más cortas` : null);
@@ -626,7 +611,7 @@ function decidir(entrada) {
     var clasificar = mod.clasificar;                                              // eslint-disable-line no-var
     if (indice.memoria_alterada) {
       frenar('la memoria de producción fue tocada a mano (su huella no cierra).', [
-        'Mientras tanto no se decide nada sobre bases: verificá con `/opt/tycon/bin/tycon-prod-sql --verificar`.',
+        'Mientras tanto no se decide nada sobre bases. Si sólo se tocó lo de antes del renombre, resolvelo con `/opt/tycon/bin/tycon-prod-sql --verify`; si no, revisala y bajá lo que corresponda con `--reclassify <host>`.',
       ], { cmd });
     }
   } catch (e) {
@@ -657,7 +642,7 @@ function decidir(entrada) {
         c.desde === 'memoria'
           ? 'Ese host ya se vio como producción antes; el catálogo de ahora dice otra cosa y no alcanza.'
           : 'Toda consulta a producción pasa por la puerta y la aprobás vos, sentencia por sentencia.',
-        `Si de verdad ya no es producción: /opt/tycon/bin/tycon-prod-sql --reclasificar ${n.host}`,
+        `Si de verdad ya no es producción: /opt/tycon/bin/tycon-prod-sql --reclassify ${n.host}`,
         ...caminoFirewall(n.host),
       ], { cmd, host: n.host, repos: c.repos, causa: 'base-de-produccion' }, 'produccion');
     }
@@ -798,11 +783,12 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
         // Las piezas del propio freno NO son texto escondido: su código fuente habla del Llavero y de
         // los clientes de base porque ESO es lo que vigilan. Leerlas como si fueran un guion ajeno
         // hace que el freno se frene a sí mismo (2026-09-15).
-        // (con el nombre de antes del renombre a inglés también: su reemplazo sigue en la carpeta vieja)
+        // `produccion-notice.js` es el reemplazo del aviso que el repo del equipo deja en su ruta de antes del renombre;
+        // sale de esta lista cuando se borran los reemplazos.
         // Se reconocen por el nombre Y por dónde viven (la instalación en /opt o el arnés de este mismo freno): un guion
         // recién hecho en otra carpeta con el nombre de una pieza se lee igual que cualquiera.
         const raizDelFreno = require('path').resolve(__dirname, '..', '..') + require('path').sep;
-        const esDelFreno = /(?:tycon-prod-sql|prod-access-guard\.js|node-shim\.sh|production-index\.js|indice-produccion\.js|production-notice\.js|produccion-notice\.js)$/.test(abs)
+        const esDelFreno = /(?:tycon-prod-sql|prod-access-guard\.js|node-shim\.sh|production-index\.js|production-notice\.js|produccion-notice\.js)$/.test(abs)
           && (abs.startsWith('/opt/tycon/') || abs.startsWith(raizDelFreno));
         const esTemporal = !esDelFreno && (
              /^(?:\/tmp\/|\/private\/tmp\/|\/var\/folders\/|\/private\/var\/folders\/)/.test(abs)
@@ -1077,7 +1063,7 @@ function juzgarSecurity(t0) {
 // vieja usa para decidir. Los viejos salen de acá en el commit que apaga la escritura doble (AC 49).
 const CATALOGOS = ['production.json', 'produccion.json'];
 // `production-firewall.json`: las reglas de firewall que abrió la puerta. Borrarlo a mano escondería una regla viva.
-const ESTADOS = ['production-index.json', 'production-memory.json', 'production-firewall.json', 'produccion-indice.json', 'produccion-memoria.json'];
+const ESTADOS = ['production-index.json', 'production-memory.json', 'production-firewall.json'];
 const NOMBRES_PROTEGIDOS = [...CATALOGOS, ...ESTADOS];
 const CARPETAS_PROTEGIDAS = ['.tycon', '.tycon-pipeline'];
 // la carpeta del estado dentro de `.tycon`: cuenta como protegida sólo ahí, no cualquier `state`
@@ -1088,7 +1074,7 @@ const NOMBRA_PRODUCCION = /^(?:production|produccion)/i;
 // La mención ENTERA de un nombre protegido dentro de un argumento que no es una ruta: el programa de `python3 -c`,
 // `node -e`, `perl -e` (`os.remove('…/production-memory.json')`). Era la red del texto crudo sobre el segmento entero;
 // ahora es por palabra y con borde de nombre: `production-index.json0` (L3) es OTRO archivo y no se frena.
-const MENCION_PROTEGIDA = /(?<![\w-])(?:\.tycon\/(?:production|produccion)\.json|production-(?:index|memory|firewall)\.json|produccion-(?:indice|memoria)\.json)(?![\w.-])/i;
+const MENCION_PROTEGIDA = /(?<![\w-])(?:\.tycon\/(?:production|produccion)\.json|production-(?:index|memory|firewall)\.json)(?![\w.-])/i;
 
 // 🔴 Lista blanca de LECTORES, no lista negra de escritores (pase adversarial 2026-09-15). Y sin
 // `sort` (`-o` escribe), `uniq` (`uniq a b` escribe en b) ni `find` (`-delete`, `-exec`): esos tres

@@ -1415,5 +1415,107 @@ rc="$(chk34)"
 if [ "$rc" = 1 ] && grep -q "lib/suelto.js no está declarado" "$TMP/chk34"; then ok "T34h · un archivo en la copia propia que sources.json no declara frena y lo nombra"
 else no "T34h · archivo sin declarar: rc=$rc — $(tr '\n' ' ' < "$TMP/chk34" | cut -c1-300)"; fi
 
+# ── RetireD_OldMemoryMergedBeforeDelete · el instalador borra lo de antes del renombre sólo si ya está en lo nuevo ──
+# Sin esto, reinstalar borraría una memoria vieja con un servidor de producción que la nueva todavía no tiene, y ese
+# servidor dejaría de frenarse. Los nombres de antes, armados por partes (como en las pruebas de nombres).
+P40="produ""ccion"; OLDMEM40="$P40-memo""ria.json"; OLDIDX40="$P40-ind""ice.json"; OLDLOG40="$P40.log"
+if [ -n "${HARNESS_T19:-}" ]; then
+  CASA40="$TMP/casa-40"; A40="$CASA40/.tycon/state"; B40="$CASA40/.claude/.tycon-pipeline"
+  rm -rf "$CASA40"; mkdir -p "$A40" "$B40"
+  sellar40(){ node -e 'const c=require("crypto"); const h=process.argv[2]?process.argv[2].split(","):[];
+    require("fs").writeFileSync(process.argv[1], JSON.stringify({produccion:h, huella:c.createHash("sha256").update(JSON.stringify({produccion:h})).digest("hex")}))' "$1" "$2"; }
+  # A: todo lo de antes ya está en lo nuevo, y lo nuevo es más nuevo → se borra
+  sellar40 "$A40/$OLDMEM40" "a.example.com,b.example.com"; printf '{"memoria":["a.example.com"]}' > "$A40/$OLDIDX40"; printf '{"ts":"antes"}\n' > "$A40/$OLDLOG40"
+  touch -t 202601010000 "$A40/$OLDMEM40" "$A40/$OLDIDX40" "$A40/$OLDLOG40"
+  sellar40 "$A40/production-memory.json" "a.example.com,b.example.com"; printf '{"memoria":["a.example.com","b.example.com"]}' > "$A40/production-index.json"; printf '{"ts":"despues"}\n' > "$A40/production.log"
+  # B: sin estado de firewall ni registro nuevo (la carpeta que el recorrido del firewall saltea); la memoria vieja y el
+  # índice viejo tienen un servidor que la nueva no tiene → quedan
+  sellar40 "$B40/production-memory.json" "a.example.com"; printf '{"memoria":["a.example.com"]}' > "$B40/production-index.json"
+  sellar40 "$B40/$OLDMEM40" "a.example.com,c.example.com"; printf '{"memoria":["a.example.com","c.example.com"]}' > "$B40/$OLDIDX40"
+  touch -t 202601010000 "$B40/$OLDMEM40" "$B40/$OLDIDX40"
+  inst40(){ PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="$ORG_T19" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$TMP/sys2" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 TYCON_PROD_TEST_HOME="$CASA40" bash "$INSTALADOR" --no-sudo >"$TMP/inst-40" 2>&1; }
+  inst40; rc40=$?
+  if [ "$rc40" = 0 ] && [ ! -e "$A40/$OLDMEM40" ] && [ ! -e "$A40/$OLDIDX40" ] && [ ! -e "$A40/$OLDLOG40" ]; then
+    ok "RetireD_OldMemoryMergedBeforeDelete · el instalador borra la memoria, el índice y el registro de antes cuando ya están en lo nuevo @story-8.15 @ac-14 @ac-33"
+  else no "RetireD_OldMemoryMergedBeforeDelete · rc=$rc40 · quedan en A: $(ls "$A40" | tr '\n' ' ') — $(tail -3 "$TMP/inst-40" | tr '\n' ' ') @story-8.15 @ac-14 @ac-33"; fi
+  if [ -e "$B40/$OLDMEM40" ] && [ -e "$B40/$OLDIDX40" ] && grep -q "todavía no tiene" "$TMP/inst-40"; then
+    ok "RetireD_OldMemoryMergedBeforeDelete · con un servidor que la nueva no tiene, la memoria y el índice de antes quedan y se dice, también en una carpeta sin estado de firewall @story-8.15 @ac-33"
+  else no "RetireD_OldMemoryMergedBeforeDelete · en B: $(ls "$B40" | tr '\n' ' ') — $(grep -c 'todavía no tiene' "$TMP/inst-40") avisos @story-8.15 @ac-33"; fi
+  # la memoria de antes ilegible: no se borra y se dice
+  printf '{' > "$A40/$OLDMEM40"
+  inst40
+  if [ -e "$A40/$OLDMEM40" ] && grep -q "no se puede leer" "$TMP/inst-40"; then
+    ok "RetireD_OldMemoryMergedBeforeDelete · una memoria de antes ilegible no se borra, y el instalador lo dice @story-8.15 @ac-33"
+  else no "RetireD_OldMemoryMergedBeforeDelete · memoria de antes ilegible: $(ls "$A40" | tr '\n' ' ') @story-8.15 @ac-33"; fi
+  # el índice de antes más nuevo que el nuevo (el freno de antes escribe los dos, el viejo después): con sus servidores
+  # ya en la memoria nueva se borra igual; el registro de antes con historia que el nuevo no tiene: la pasa adelante y
+  # se borra
+  rm -f "$A40/$OLDMEM40"
+  printf '{"memoria":["a.example.com"]}' > "$A40/$OLDIDX40"; printf '{"ts":"historia-vieja"}\n{"ts":"despues"}\n' > "$A40/$OLDLOG40"
+  touch -t 202601010000 "$A40/production-index.json" "$A40/production.log"
+  inst40
+  if [ ! -e "$A40/$OLDIDX40" ] && [ ! -e "$A40/$OLDLOG40" ] && [ "$(head -1 "$A40/production.log")" = '{"ts":"historia-vieja"}' ] && [ "$(grep -c '"ts":"despues"' "$A40/production.log")" = 1 ]; then
+    ok "RetireD_OldMemoryMergedBeforeDelete · el índice de antes más nuevo se borra si lo suyo ya está, y el registro de antes pasa su historia al nuevo antes de borrarse @story-8.15 @ac-14"
+  else no "RetireD_OldMemoryMergedBeforeDelete · índice y registro de antes: $(ls "$A40" | tr '\n' ' ') — nuevo: $(tr '\n' ' ' < "$A40/production.log" 2>/dev/null) @story-8.15 @ac-14"; fi
+  # el registro de antes sin registro nuevo: se renombra, con su historia
+  printf '{"ts":"solo-viejo"}\n' > "$A40/$OLDLOG40"; rm -f "$A40/production.log"
+  inst40
+  if [ ! -e "$A40/$OLDLOG40" ] && grep -q '"ts":"solo-viejo"' "$A40/production.log" 2>/dev/null; then
+    ok "RetireD_OldMemoryMergedBeforeDelete · sin registro nuevo, el de antes se renombra con su historia @story-8.15 @ac-14"
+  else no "RetireD_OldMemoryMergedBeforeDelete · registro de antes sin nuevo: $(ls "$A40" | tr '\n' ' ') @story-8.15 @ac-14"; fi
+  # el registro nuevo o el de antes como enlace a otro archivo: no se sigue, ni se escribe ni se lee a través de él
+  VICTIMA40="$TMP/victima-40"; printf 'intacto\n' > "$VICTIMA40"
+  printf '{"ts":"por-enlace"}\n' > "$A40/$OLDLOG40"; rm -f "$A40/production.log"; ln -s "$VICTIMA40" "$A40/production.log"
+  inst40
+  if [ "$(cat "$VICTIMA40")" = "intacto" ] && [ -e "$A40/$OLDLOG40" ] && grep -q "no es un archivo común" "$TMP/inst-40"; then
+    ok "RetireD_OldMemoryMergedBeforeDelete · un registro nuevo que es un enlace no se sigue: el archivo de afuera queda intacto y se dice @story-8.15 @ac-14"
+  else no "RetireD_OldMemoryMergedBeforeDelete · por un enlace: víctima «$(cat "$VICTIMA40")» · $(ls "$A40" | tr '\n' ' ') @story-8.15 @ac-14"; fi
+  rm -f "$A40/production.log" "$A40/$OLDLOG40"; printf 'secreto\n' > "$VICTIMA40"; ln -s "$VICTIMA40" "$A40/$OLDLOG40"; printf '{"ts":"nuevo"}\n' > "$A40/production.log"
+  inst40
+  if ! grep -q secreto "$A40/production.log" && [ -L "$A40/$OLDLOG40" ]; then
+    ok "RetireD_OldMemoryMergedBeforeDelete · un registro de antes que es un enlace no se lee ni se copia @story-8.15 @ac-14"
+  else no "RetireD_OldMemoryMergedBeforeDelete · se leyó por un enlace: $(tr '\n' ' ' < "$A40/production.log") @story-8.15 @ac-14"; fi
+  rm -f "$A40/$OLDLOG40"
+  # la limpieza de la casa nunca corre como administrador: como root la lanza con los permisos del usuario, sin usuario
+  # conocido no toca nada, y el programa mismo se niega a correr como root
+  FUNC40="$(awk '/^retirar_estados_viejos\(\)\{/{on=1} on{print} on&&/^\}$/{exit}' "$INSTALADOR")"
+  printf '{"ts":"no-tocar"}\n' > "$A40/$OLDLOG40"
+  out40="$(cd "$TMP" && id(){ echo 0; }; ok(){ echo "ok $*"; }; USUARIO=""; HOME_USUARIO="$CASA40"; CLAUDE_LEIDA="$CASA40/.claude"; eval "$FUNC40"; retirar_estados_viejos 2>&1)"
+  if [ -e "$A40/$OLDLOG40" ] && printf '%s' "$out40" | grep "como administrador no los toco" >/dev/null; then
+    ok "RetireD_OldMemoryMergedBeforeDelete · como administrador y sin saber qué usuario lanzó, la limpieza no toca la casa y lo dice @story-8.15 @ac-14"
+  else no "RetireD_OldMemoryMergedBeforeDelete · como administrador sin usuario: $(printf '%s' "$out40" | head -c 200) @story-8.15 @ac-14"; fi
+  if printf '%s' "$FUNC40" | grep 'como=(/usr/bin/sudo -n -u "$USUARIO" --)' >/dev/null && printf '%s' "$FUNC40" | grep 'if os.geteuid() == 0:' >/dev/null; then
+    ok "RetireD_OldMemoryMergedBeforeDelete · como administrador, la limpieza se lanza con los permisos del usuario y se niega a correr como root @story-8.15 @ac-14"
+  else no "RetireD_OldMemoryMergedBeforeDelete · la limpieza puede correr como root @story-8.15 @ac-14"; fi
+  rm -f "$A40/$OLDLOG40"
+  # sin casa de laboratorio, el modo de pruebas no toca ninguna casa
+  if ! grep -q "borré" "$TMP/inst-out" 2>/dev/null; then ok "RetireD_OldMemoryMergedBeforeDelete · sin casa de laboratorio, las pruebas del instalador no borran nada @story-8.15 @ac-14"
+  else no "RetireD_OldMemoryMergedBeforeDelete · el instalador borró algo sin casa de laboratorio @story-8.15 @ac-14"; fi
+fi
+
+# ── RetireD_NoticeAndGuardOptionsRenamed · el aviso nombra la opción que entiende la puerta instalada ──────────
+# El aviso llega con la actualización del arnés y la puerta recién al reinstalar: entre los dos, mandar a --verify con
+# una puerta que no la conoce sería un comando que falla.
+if [ -d /opt/tycon ]; then
+  echo "⏭ instalar-freno: NO MEDIDO — RetireD_NoticeAndGuardOptionsRenamed (el aviso según la puerta): con el freno instalado, el aviso ignora la raíz de prueba; lo mide la CI. No es un verde."
+else
+  CASA41="$TMP/casa-41"; SYS41="$TMP/sys41"; REPOS41="$TMP/repos-41"
+  aviso41(){ # $1 = la línea de la puerta instalada que reconoce la opción
+    rm -rf "$CASA41" "$SYS41" "$REPOS41"; mkdir -p "$CASA41/.claude/.tycon-pipeline" "$SYS41/opt/tycon/bin" "$REPOS41"
+    printf '{"produccion":["a.example.com"],"huella":"0"}' > "$CASA41/.claude/.tycon-pipeline/production-memory.json"
+    printf '#!/usr/bin/env bash\ncase "$1" in\n%s\nesac\n' "$1" > "$SYS41/opt/tycon/bin/tycon-prod-sql"
+    env -u TF_BUILD HOME="$CASA41" TYCON_REPOS_ROOT="$REPOS41" TYCON_PROD_ROOT="$SYS41" TYCON_PRODUCTION_AUTOINSTALL=0 node "$AQUI/scripts/hooks/production-notice.js" --report 2>&1
+  }
+  out41="$(aviso41 '  --verify)       MODO=verificar ;;')"
+  if printf '%s' "$out41" | grep -- "tycon-prod-sql --verify\. Si no" >/dev/null && printf '%s' "$out41" | grep -- "--reclassify" >/dev/null; then
+    ok "RetireD_NoticeAndGuardOptionsRenamed · con una puerta que conoce --verify, el aviso de la memoria tocada la nombra @story-8.15 @ac-15"
+  else no "RetireD_NoticeAndGuardOptionsRenamed · puerta nueva: $(printf '%s' "$out41" | grep -i memoria | head -3 | tr '\n' ' ') @story-8.15 @ac-15"; fi
+  OLD_VERIFY41="verifi""car"
+  out41="$(aviso41 "  --$OLD_VERIFY41)    MODO=verificar ;;")"
+  if printf '%s' "$out41" | grep -- "tycon-prod-sql --$OLD_VERIFY41" >/dev/null && ! printf '%s' "$out41" | grep -- "--verify\." >/dev/null; then
+    ok "RetireD_NoticeAndGuardOptionsRenamed · con una puerta de antes, el aviso nombra la opción que esa puerta entiende @story-8.15 @ac-15"
+  else no "RetireD_NoticeAndGuardOptionsRenamed · puerta de antes: $(printf '%s' "$out41" | grep -i memoria | head -3 | tr '\n' ' ') @story-8.15 @ac-15"; fi
+fi
+
 echo "— instalar-freno: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

@@ -287,10 +287,11 @@ function paquetesDeTexto(texto) {
 function rangoDe(tipo) { const m = typeof tipo === 'string' ? /^entero:(\d+)-(\d+)$/.exec(tipo) : null; return m ? [Number(m[1]), Number(m[2])] : null; }
 /** Las opciones de un tipo `opcion:a|b`, o null si no es de ese tipo. */
 function optionsOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opcion:') ? tipo.slice('opcion:'.length).split('|') : null; }
-// Las secciones se ESCRIBEN en inglés en los archivos (story 8.9, tanda P · 2026-09-30): `paths` e `integrations`. El
-// nombre de antes del renombre (`rutas`, `integraciones`) se sigue leyendo hasta el retiro —también en la copia de este
-// archivo que vive en /opt con el freno de producción—; los dos juntos con valores distintos son un error del archivo. Por
-// dentro (valores, orígenes, variables) las secciones conservan su nombre de siempre: nada de lo que las consume cambia.
+// Las secciones se ESCRIBEN en inglés en los archivos: `paths` e `integrations`. Esta copia, la que vive en /opt con el
+// freno de producción, lee sólo ese nombre: el de antes del renombre (`rutas`, `integraciones`) lo ignora y lo dice
+// (`seccionesDeArchivo`). La biblioteca del arnés de la que sale lo sigue leyendo hasta el retiro: esa diferencia está
+// decidida con `guard-libs-check.js keep`. Por dentro (valores, orígenes, variables) las secciones conservan su nombre de
+// siempre: es el vocabulario interno de los dos lectores, y nada de lo que las consume cambia.
 const SECCION_EN_ARCHIVO = Object.freeze({ rutas: 'paths', integraciones: 'integrations' });
 const SECCION_DE_ARCHIVO = Object.freeze({ paths: 'rutas', integrations: 'integraciones' });
 const enArchivo = (seccion) => SECCION_EN_ARCHIVO[seccion] || seccion;
@@ -605,49 +606,28 @@ function mismoValor(a, b) {
   return ka.length === Object.keys(b).length && ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && mismoValor(a[k], b[k]));
 }
 
-/**
- * El cuerpo de una sección con sus claves en el nombre de hoy, para comparar las dos formas de la sección: `{mailbox: true}`
- * y `{<su nombre viejo>: true}` dicen lo mismo. Si dos claves caen en el mismo nombre de hoy, el cuerpo queda como vino:
- * ese choque lo nombra después la validación de las claves.
- */
-function cuerpoDeHoy(seccion, cuerpo) {
-  if (!esObjeto(cuerpo)) return cuerpo;
-  const out = {};
-  for (const k of Object.keys(cuerpo)) {
-    const hoy = claveDeHoy(seccion, k);
-    if (tiene(out, hoy)) return cuerpo;
-    out[hoy] = cuerpo[k];
-  }
-  return out;
-}
-
-function seccionesDeArchivo(datos, archivo, errores, home) {
+function seccionesDeArchivo(datos, archivo, errores) {
   const out = {};
   const vista = {};   // sección de adentro → nombre con que vino
-  const viejas = [];  // los nombres viejos de sección que trae el archivo, vengan primero o después
   for (const clave of Object.keys(datos)) {
     const seccion = SECCION_DE_ARCHIVO[clave] || clave;
-    if (clave !== enArchivo(seccion)) viejas.push([clave, seccion]);
-    if (!Object.prototype.hasOwnProperty.call(out, seccion)) { out[seccion] = datos[clave]; vista[seccion] = clave; continue; }
-    if (!mismoValor(cuerpoDeHoy(seccion, out[seccion]), cuerpoDeHoy(seccion, datos[clave]))) {
-      errores.push({ archivo, clave: enArchivo(seccion), motivo: `«${enArchivo(seccion)}» y su nombre viejo «${seccion}» están los dos con valores distintos — dejá sólo «${enArchivo(seccion)}»` });
-      out[seccion] = undefined;
+    // Esta copia vive en /opt con el freno de producción y lee sólo el nombre de hoy de cada sección. Con sólo el de
+    // antes, la ignora y lo dice: el error deja el índice armado sin la configuración de la máquina, que es el lado
+    // seguro (un repo que no se encuentra deja sus servidores desconocidos, y lo desconocido se frena). Con los dos,
+    // vale el de hoy.
+    if (clave !== enArchivo(seccion)) {
+      if (!tiene(datos, enArchivo(seccion))) errores.push({ archivo, clave, motivo: `«${clave}» es el nombre de antes de «${enArchivo(seccion)}»: el freno de producción ya no lo lee — renombralo a «${enArchivo(seccion)}»` });
+      continue;
     }
+    out[seccion] = datos[clave]; vista[seccion] = clave;
   }
-  // el nombre viejo de una sección se sigue leyendo en silencio; se anota el uso para saber cuándo retirarlo, también si
-  // viene junto al nuevo (en cualquier orden: antes sólo se anotaba si venía primero). Adentro de `sinAnotar`, no
-  for (const [vino, seccion] of viejas) {
-    if (legacy && !sinAnotarNivel) {
-      try { legacy.recordUse({ kind: 'key', old: vino, new: enArchivo(seccion), script: 'scripts/lib/tycon-config.js' }, { home }); } catch (_) { /* anotar nunca rompe */ }
-    }
-  }
-  return { datos: Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined)), vista };
+  return { datos: out, vista };
 }
 
 function validarArchivo(datos0, { archivo, esPerfil, home }) {
   const errores = [];
   const plano = {};
-  const { datos, vista } = seccionesDeArchivo(datos0, archivo, errores, home);
+  const { datos, vista } = seccionesDeArchivo(datos0, archivo, errores);
   // los errores nombran la sección como está escrita en ESE archivo (la persona busca lo que escribió)
   const comoVino = (seccion) => vista[seccion] || enArchivo(seccion);
   for (const seccion of Object.keys(datos)) {

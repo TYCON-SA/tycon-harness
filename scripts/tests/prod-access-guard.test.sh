@@ -112,7 +112,7 @@ corre "sqlcmd -S $PROD -Q \"select 1\"" >/dev/null                     # primera
 printf '{"servers":[{"host":"'$PROD'","environment":"no-produccion"}]}' > "$REPOS/backend-acme/.tycon/production.json"
 rm -f "$CASA/.claude/.tycon-pipeline/production-index.json"
 rc="$(corre "sqlcmd -S $PROD -Q \"select 1\"")"
-if [ "$rc" = 2 ] && grep -q -- "--reclasificar" "$TMP/err"; then ok "T15 · sigue frenando y ofrece --reclasificar"
+if [ "$rc" = 2 ] && grep -q -- "--reclassify" "$TMP/err"; then ok "T15 · sigue frenando y ofrece --reclassify"
 else no "T15 · el host se destrabó reescribiendo el catálogo (rc=$rc)"; fi
 
 # ── T4 · todas las formas de nombrar un servidor ──────────────────────────────────────────────
@@ -151,7 +151,7 @@ mundo
 snapshot "" ""
 PUERTA="/opt/tycon/bin/tycon-prod-sql"
 pasa  "T6a · la forma canónica pasa" "$PUERTA $PROD 'select 1'"
-pasa  "T6b · canónica con --max-filas" "$PUERTA $PROD 'select 1' --max-filas 50"
+pasa  "T6b · canónica con --max-rows" "$PUERTA $PROD 'select 1' --max-rows 50"
 # 6.4 · T10: `--locks` sola es una forma canónica (pasa al cuadro); con cualquier argumento más, se corta
 pasa  "6.4 T10 · la puerta --locks sola pasa al cuadro" "$PUERTA --locks"
 frena "6.4 T10 · la puerta --locks con un argumento se corta" "$PUERTA --locks acme-sql"
@@ -1051,8 +1051,8 @@ t1(){ local etiqueta="$1" cmd="$2" listo="$3" rc; rc="$(corre "$cmd")"
 t1 "huella buena" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 $H66" si
 t1 "huella vieja" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 0000000000000000000000000000000000000000000000000000000000000000" si
 t1 "sin huella" "$PUERTA $PROD --file $TMP/q/consulta.sql" si
-t1 "con --max-filas" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 $H66 --max-filas 7" si
-grep -qF -- "--max-filas 7" "$TMP/err" && ok "6.6 T1 Guard_File_AlwaysBlocks · el comando listo conserva --max-filas" || no "6.6 T1 · el comando listo perdió --max-filas — err: $(head -c 200 "$TMP/err")"
+t1 "con --max-rows" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 $H66 --max-rows 7" si
+grep -qF -- "--max-rows 7" "$TMP/err" && ok "6.6 T1 Guard_File_AlwaysBlocks · el comando listo conserva --max-rows" || no "6.6 T1 · el comando listo perdió --max-rows — err: $(head -c 200 "$TMP/err")"
 t1 "ruta con espacios" "$PUERTA $PROD --file '$TMP/q/con espacio/c.sql' --sha256 $H66" no
 t1 "--file antes del host" "$PUERTA --file $TMP/q/consulta.sql $PROD" no
 t1 "--file=<ruta>" "$PUERTA $PROD --file=$TMP/q/consulta.sql" no
@@ -1065,7 +1065,7 @@ LISTO="$(grep -F "$PUERTA $PROD '" "$TMP/err" | head -1 | sed 's/^ *//')"
 LISTO="$(node -e '
   const t = require("fs").readFileSync(process.argv[1], "utf8"); const i = t.indexOf(process.argv[2]);
   if (i < 0) process.exit(1);
-  const resto = t.slice(i); const m = /^\S+ \S+ (?:\x27(?:[^\x27]|\x27\\\x27\x27)*\x27)(?: --max-filas \d+)?/.exec(resto);
+  const resto = t.slice(i); const m = /^\S+ \S+ (?:\x27(?:[^\x27]|\x27\\\x27\x27)*\x27)(?: --max-rows \d+)?/.exec(resto);
   if (!m) process.exit(1); process.stdout.write(m[0]);' "$TMP/err" "$PUERTA $PROD '")" || LISTO=""
 if [ "$rc" = 2 ] && [ -n "$LISTO" ]; then
   rc2="$(corre "$LISTO")"
@@ -1166,9 +1166,9 @@ if [ "$rc" = 2 ] && grep -q "UTF-8" "$TMP/err"; then ok "6.6 T7 Guard_Inline_Dec
 else no "6.6 T7 Guard_Inline_DeceivingChars_Block · UTF-8 inválido (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
 
 # T8 · las otras formas no cambian; Codex sigue cortado, con o sin --file
-pasa "6.6 T8 Guard_OtherForms_Unchanged · --reclasificar" "$PUERTA --reclasificar $PROD"
-pasa "6.6 T8 Guard_OtherForms_Unchanged · --verificar" "$PUERTA --verificar"
-pasa "6.6 T8 Guard_OtherForms_Unchanged · --cargar-clave" "$PUERTA --cargar-clave $PROD"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --reclassify" "$PUERTA --reclassify $PROD"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --verify" "$PUERTA --verify"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --load-key" "$PUERTA --load-key $PROD"
 pasa "6.6 T8 Guard_OtherForms_Unchanged · --open-firewall" "$PUERTA --open-firewall $PROD"
 pasa "6.6 T8 Guard_OtherForms_Unchanged · --close-firewall" "$PUERTA --close-firewall $PROD"
 pasa "6.6 T8 Guard_OtherForms_Unchanged · --locks" "$PUERTA --locks"

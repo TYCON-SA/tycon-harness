@@ -2646,3 +2646,32 @@ test('T25 CopiaDelFreno_AceptaLasClaves @story-8.182 @ac-11 — un perfil con sh
   maquina(home, { short_path: { max_files: 10 } });
   assert.deepEqual(copia.cargar({ home, arnes: arnesCon(null), env: {} }).errores, []);
 });
+
+test('RetireD_GuardConfigCopyOnlyNewKeys @story-8.15 @ac-14 — la copia del freno lee paths e ignora rutas diciéndolo; la del arnés lee los dos', () => {
+  const copia = require(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js'));
+  const reposCopia = require(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'repos-root.js'));
+  const viejo = 'ru' + 'tas';   // el nombre de antes de la sección, armado (como en las pruebas de nombres)
+  const raiz = tmp('tcfg-repos-');
+  // sólo con el nombre de antes: la copia lo ignora y lo dice; el arnés lo sigue leyendo
+  const conViejo = casa();
+  maquina(conViejo, { [viejo]: { repos: raiz } });
+  const errCopia = copia.cargar({ home: conViejo, arnes: arnesCon(null), env: {} }).errores;
+  assert.ok(errCopia.some((e) => e.clave === viejo && /ya no lo lee/.test(e.motivo)), JSON.stringify(errCopia));
+  assert.deepEqual(cargar({ home: conViejo, arnes: arnesCon(null) }).errores, []);
+  assert.equal(lib().valor(cargar({ home: conViejo, arnes: arnesCon(null) }), 'paths.repos'), raiz);
+  // con eso, la raíz de repos del freno no sale de esa configuración (la lee rota): sin raíz o la de siempre, nunca la vieja.
+  // El lado seguro: un repo que el freno no encuentra deja sus servidores desconocidos, y lo desconocido se frena.
+  assert.throws(() => reposCopia.resolveReposRoot('', { home: conViejo, env: {} }), (e) => e && e.name === 'ConfigError');
+  // sólo con el de hoy: la copia lo lee
+  const conNuevo = casa();
+  maquina(conNuevo, { paths: { repos: raiz } });
+  const cNuevo = copia.cargar({ home: conNuevo, arnes: arnesCon(null), env: {} });
+  assert.deepEqual(cNuevo.errores, []);
+  assert.equal(copia.valor(cNuevo, 'paths.repos'), raiz);
+  // con los dos: vale el de hoy, sin error
+  const conLosDos = casa();
+  maquina(conLosDos, { paths: { repos: raiz }, [viejo]: { repos: '/otra/carpeta' } });
+  const cDos = copia.cargar({ home: conLosDos, arnes: arnesCon(null), env: {} });
+  assert.deepEqual(cDos.errores, []);
+  assert.equal(copia.valor(cDos, 'paths.repos'), raiz);
+});
