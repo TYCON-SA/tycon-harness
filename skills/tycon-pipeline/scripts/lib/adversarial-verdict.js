@@ -183,6 +183,11 @@ function medicionDelResultado(obj, opts = {}) {
   // Sin la lista de confirmados no se sabe cuántos hubo: no se cuenta 0 (un `<N>` de 0 pasaría como `listo`).
   if (!Array.isArray(obj.confirmed)) throw new Error('el resultado no trae la lista `confirmed`: no se sabe cuántos hallazgos confirmó');
   const confirmados = obj.confirmed.length;
+  // el corredor de prueba de workflow-lite.js (TYCON_WFLITE_AGENT_CMD) contesta lo que le escriban: no revisó nada
+  if (obj.corredor && obj.corredor.de_prueba) {
+    return { medido: false, confirmados, lentes_sin_medir: [], hallazgos_sin_veredicto: 0,
+      motivo: 'el pase corrió con el corredor de prueba (TYCON_WFLITE_AGENT_CMD): no es una revisión' };
+  }
   if (!Array.isArray(obj.lentes)) {
     return { medido: false, confirmados, lentes_sin_medir: [], hallazgos_sin_veredicto: 0,
       motivo: 'el resultado no trae el estado de cada lente (un formato anterior): no se sabe qué se revisó' };

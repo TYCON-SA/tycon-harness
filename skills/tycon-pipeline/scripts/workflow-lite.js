@@ -33,7 +33,8 @@
  *       node workflow-lite.js --selftest
  * Env:  TYCON_WFLITE_JOBS (cap de agentes concurrentes, default 4)
  *       TYCON_WFLITE_MODEL_MAP (json label→slug; default desde equivalences.json si existe)
- *       TYCON_WFLITE_AGENT_CMD (SOLO selftest: comando stub que reemplaza a codex)
+ *       TYCON_WFLITE_AGENT_CMD (SOLO pruebas: comando stub que reemplaza a codex). El pase que corre con él sale con
+ *       `corredor.de_prueba: true`, y ni la revisión del plan ni la del código lo cuentan: no es una revisión
  */
 'use strict';
 // el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
@@ -322,6 +323,7 @@ function makeAgent(opts, corredor) {
   const lista = stub ? { usable: [{ name: 'stub', runner: { label: 'el corredor de prueba', answer: 'stdout', prompt: 'env' } }], skipped: [], customCommand: null }
     : runnersDeLaCorrida(opts);
   corredor.lista = lista.usable.map((u) => u.name);
+  if (stub) corredor.dePrueba = true;
   return async function agent(prompt, aopts) {
     aopts = aopts || {};
     const id = ++seq.n;
@@ -428,6 +430,7 @@ async function runWorkflow(scriptPath, argsValue, opts) {
     const total = Object.values(corredor.tokensPorFase).reduce((a, b) => a + b, 0);
     result.corredor = { nombre: corredor.nombre, lista: corredor.lista || [], usado: corredor.usado, muertos: corredor.muertos, tope: corredor.tope,
       topes: corredor.topes, caidos: corredor.caidos, agentes: corredor.agentes, tokens: corredor.conTokens ? { total, por_fase: corredor.tokensPorFase } : null,
+      ...(corredor.dePrueba ? { de_prueba: true } : {}),
       ...(corredor.pendientes ? { pedidos_pendientes: corredor.pendientes.length, pedidos: path.join(path.resolve(opts.agentsDir), 'PEDIDOS.json') } : {}) };
   }
   return result;

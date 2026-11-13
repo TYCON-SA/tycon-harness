@@ -129,13 +129,19 @@ function problemaDelAprobador(config) {
 /** El motivo de pedir el click en rutina, con el nombre de la llave que lo pidió. */
 const PIDE_EL_CLICK = (cfg) => `la organización o la máquina piden el click en rutina (plan_review.routine_approval: person${cfg.plan_review.coordinator_approves === false ? ', o su nombre viejo plan_review.coordinator_approves: false' : ''})`;
 
+/** ¿El pase corrió con el corredor de prueba de workflow-lite.js (`TYCON_WFLITE_AGENT_CMD`)? */
+const deUnCorredorDePrueba = (r) => !!(r && r.corredor && r.corredor.de_prueba);
+const DE_PRUEBA = 'el pase corrió con el corredor de prueba (TYCON_WFLITE_AGENT_CMD): no es una revisión';
+
 /**
  * El veredicto de un resultado del pase en modo plan, con el corte de gravedad: «rechazado» sólo con un confirmado en
  * el corte o por encima; los demás confirmados dan «aprobado-con-notas». Medido y sin nada pendiente; un resultado que
- * no es del modo plan, o que contradice su propio `veredicto`, queda sin veredicto.
+ * no es del modo plan, o que contradice su propio `veredicto`, queda sin veredicto. El que corrió con el corredor de
+ * prueba (`corredor.de_prueba`) también: ese corredor contesta lo que le escriban, no revisa nada.
  */
 function veredictoDe(r, corte = 'all') {
   if (!r || typeof r !== 'object' || r.medido !== true || r.modo !== 'plan') return 'sin-veredicto';
+  if (deUnCorredorDePrueba(r)) return 'sin-veredicto';
   const propio = calcular(r, corte);
   if (r.veredicto !== undefined && r.veredicto !== propio) return 'sin-veredicto';
   return propio;
@@ -314,6 +320,7 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
   const corte = pedido.corte || 'all';
   let veredicto = sinHerramienta ? 'sin-veredicto' : veredictoDe(resultado, corte);
   let motivo = sinHerramienta ? `sin herramienta para correr el pase: ${sinHerramienta}` : (veredicto === 'sin-veredicto' ? 'el pase no midió todo' : null);
+  if (!sinHerramienta && deUnCorredorDePrueba(resultado)) motivo = DE_PRUEBA;
   if (!sinHerramienta && resultado && (!pedido.numero || resultado.pedido !== pedido.numero)) { veredicto = 'sin-veredicto'; motivo = 'el resultado no es el de esta revisión'; }
   // `noVale`: el resultado no se puede usar aunque traiga el número del pedido (no vino de la ruta que nombró la preparación)
   if (noVale) { veredicto = 'sin-veredicto'; motivo = String(noVale); }
