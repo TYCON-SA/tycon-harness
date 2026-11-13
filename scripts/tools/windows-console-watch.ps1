@@ -1,4 +1,4 @@
-# windows-console-watch.ps1 — anota cada ventana de consola que aparece en el escritorio, mientras exista -StopFile.
+﻿# windows-console-watch.ps1 — anota cada ventana de consola que aparece en el escritorio, mientras exista -StopFile.
 #
 # Por qué: una ventana de consola que se abre y se cierra en medio segundo no la ve nadie que cuente ventanas de a ratos.
 # Este vigilante se suscribe al aviso de Windows «se mostró una ventana» (SetWinEventHook, EVENT_OBJECT_SHOW, fuera del
