@@ -159,6 +159,20 @@ const aplica = (s, rel) => {
 };
 const corto = (t) => { const x = String(t).trim(); return x.length > TEXTO_MAX ? `${x.slice(0, TEXTO_MAX)}…` : x; };
 
+const primerRenglon = (e) => String((e && e.message) || e).split('\n')[0];
+/**
+ * El primer error de un paquete roto (la lista de `PackError`), con los mismos campos que su mensaje, y cuántos más hay:
+ * el primer renglón sólo dice cuántos, y el freno que lo muestra no podría nombrar el paquete. Sin lista, o con un
+ * primer error sin archivo, nada. El motivo va en su primer renglón: a veces trae el mensaje de otro error (un JSON roto,
+ * un módulo que no carga) y la falla es de un renglón.
+ */
+function primerErrorDePaquete(e) {
+  const x = e && Array.isArray(e.errores) && e.errores[0];
+  if (!x || !x.archivo) return '';
+  const mas = e.errores.length > 1 ? ` (y ${e.errores.length - 1} más)` : '';
+  return ` — ${x.archivo}${x.revisor ? ` · revisor ${x.revisor}` : ''}${x.clave ? ` · clave ${x.clave}` : ''} · ${String(x.motivo ?? '').split('\n')[0]}${mas}`;
+}
+
 /**
  * Las señales en las líneas que agrega o borra lo propio del carril, cada repo contra su base. `medida`: la de esta vuelta
  * del freno (sin ella, mide); de ella salen los archivos y la base de cada repo.
@@ -220,7 +234,7 @@ function buscar(adhoc, senales, { repos = [], sinSeguir = false, git = gitPorDef
         for (const s of deRuta) if (s.re.test(rel)) hallazgos.push({ id: s.id, strength: s.strength, says: s.says, repo, file: rel, line: null, borrada: false, texto: '' });
       }
     } catch (e) {
-      fallas.push(`camino corto: no pude leer las líneas cambiadas en ${repo} (${String((e && e.message) || e).split('\n')[0]})`);
+      fallas.push(`camino corto: no pude leer las líneas cambiadas en ${repo} (${primerRenglon(e)}${primerErrorDePaquete(e)})`);
     }
   }
   return { hallazgos, avisos, fallas };

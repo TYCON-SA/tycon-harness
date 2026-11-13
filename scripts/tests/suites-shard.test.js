@@ -1301,3 +1301,20 @@ test('Shard_WithoutMeasured_SameBytesAsBefore — sin --measured, list, plan, me
   assert.strictEqual(m.out, 'trabajo 1 de 2: terminó · 1 ejecución(es) · 0 en rojo o ausente(s)\ntrabajo 2 de 2: terminó · 6 ejecución(es) · 0 en rojo o ausente(s)\n');
   assert.strictEqual(m.err, '');
 });
+
+// 🔴 Falla con: la suite del árbol privado cortada de noche a los 180 s cuando tarda 150 (su peso anotado era 33).
+test('SuitesShardCaps_TestGatePrivateTree_UsesMeasuredWeight @story-8.268 @ac-5', () => {
+  const name = 'test-gate-private-tree.test.js';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-shard-'));
+  labs.push(dir);
+  const caps = run(['caps', '--only', onlyFile(dir, [name]), '--suites', REAL_SUITES, '--weights', REAL_WEIGHTS]);
+  assert.strictEqual(caps.code, 0, caps.err);
+  assert.deepStrictEqual(caps.lines, [`${name}\t300`], 'el doble de lo medido (150 s), por encima del piso de 180');
+  const seen = [];
+  for (let i = 1; i <= 4; i += 1) {
+    const r = run(['list', '--shard', String(i), '--of', '4', '--skills', '/S/skills', '--scripts', '/R/scripts', '--suites', REAL_SUITES, '--weights', REAL_WEIGHTS]);
+    assert.strictEqual(r.code, 0, `trabajo ${i} de 4: ${r.err}`);
+    seen.push(...r.lines.filter((l) => l.endsWith(`/${name}`)).map(() => i));
+  }
+  assert.strictEqual(seen.length, 1, `la suite va en exactamente un trabajo del reparto de la noche: ${JSON.stringify(seen)}`);
+});
