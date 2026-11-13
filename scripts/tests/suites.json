@@ -2570,6 +2570,12 @@
       "requiere": []
     },
     {
+      "__nota": "la medición de ventanas de consola por gancho en Windows: qué ganchos encuentra (usuario, repo y plugins prendidos), con qué entrada los dispara, a qué disparo se cuenta cada ventana, y que sin el control visto dice NO MEDIDO, nunca «0 ventanas».",
+      "raiz": "arnes",
+      "ruta": "tests/windows-console-probe.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el aviso de trabajo sin subir mira las ramas de un repo con tres git, tenga las ramas que tenga, y da lo mismo que rama por rama; un git que no contesta deja el repo no escaneado.",
       "raiz": "arnes",
       "ruta": "tests/unpushed-work-notice.test.js",
