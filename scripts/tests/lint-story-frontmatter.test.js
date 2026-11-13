@@ -405,3 +405,114 @@ test('Q18 FilesDeParte_ComentarioAntesDeLosItems_NoFrena: el lint lee la lista c
   // un comentario sin ítems debajo sigue sin ser una lista
   assert.deepStrictEqual(filesDeParteMalos('pipelines:\n  - name: A\n    files: # nada\n    status: pending\n'), ['A']);
 });
+
+// ── «Nace» durante un merge ──────────────────────────────────────────────────────────────────────────────────────────
+// Traer main a una rama atrasada mete en lo preparado para el commit las historias que main tiene y la rama no conocía.
+// Su historia de git vive en la cabeza del merge, no en HEAD: si «nace» sólo pregunta a HEAD, el lint las trata como
+// recién escritas y frena por reglas que a una historia vieja sólo le avisan.
+// 🔴 Falla con: `naceAhora` mirando sólo HEAD (el merge no se puede commitear sin tocar las historias de main).
+const gitT = (cwd, ...args) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'user.email=t@example.invalid', '-c', 'user.name=t', ...args],
+  { cwd, env: GIT_ENV, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+const FOLLOWUP_OF = path.join(RAIZ, 'scripts', 'lib', 'followup-of.js');
+const HISTORIA_DE_MAIN = [
+  'story: "9.1"', 'epic: 9', 'status: ready-for-dev',
+  'followup_of:', '  - id: "1.1"', '    type: "fix"',
+  'files_to_modify:', '  - "src/AcmeBackend/Features/AbmGestores/GestoresEndpoints.cs"',
+];
+
+/** El producto de juguete con una rama creada antes de que main tuviera su historia de seguimiento (y lo que se pida en main). */
+function ramaAtrasada(enMain = {}) {
+  const { prod, proj } = productoConCodigo();
+  const principal = gitT(proj, 'rev-parse', '--abbrev-ref', 'HEAD').trim();
+  gitT(proj, 'branch', 'atrasada');
+  story(proj, 'specs/story-9.1-de-main.md', HISTORIA_DE_MAIN);
+  for (const [rel, fm] of Object.entries(enMain)) story(proj, rel, fm);
+  gitT(proj, 'add', '.');
+  gitT(proj, 'commit', '-q', '-m', 'historias de main');
+  gitT(proj, 'checkout', '-q', 'atrasada');
+  write(proj, 'notas.txt', 'trabajo de la rama\n');
+  gitT(proj, 'add', '.');
+  gitT(proj, 'commit', '-q', '-m', 'trabajo de la rama');
+  return { prod, proj, principal };
+}
+const traerMain = (proj, principal) => gitT(proj, 'merge', '--no-ff', '--no-commit', principal);
+const mergeHeadDe = (proj) => path.resolve(proj, gitT(proj, 'rev-parse', '--git-path', 'MERGE_HEAD').trim());
+
+test('NaceAhora_MergeBringsMainStory_IsExisting @story-8.269 @ac-6', () => {
+  const { proj, principal } = ramaAtrasada();
+  traerMain(proj, principal);
+  assert.ok(fs.existsSync(mergeHeadDe(proj)), 'hay un merge en curso');
+  const r = run([path.join(proj, 'specs', 'story-9.1-de-main.md')], proj);
+  assert.strictEqual(r.code, 0, `la historia de main no frena el merge\n${r.out}`);
+  assert.match(r.out, /ya existían.*story-9\.1-de-main\.md/s, 'el archivo inventado se avisa como de una historia vieja');
+  assert.match(r.out, /story\(s\) con seguimiento .*sin causa declarada/, 'sin `followup_reason:` suma a las que ya existían');
+});
+
+test('NaceAhora_MergeBringsRenamedStory_FoundByStoryId @story-8.269 @ac-7', () => {
+  // la rama escribe la historia con otro nombre: ese nombre no tiene historia en HEAD ni en main, y sólo la identidad
+  // declarada (`story:`) la encuentra en la cabeza del merge
+  const { proj, principal } = ramaAtrasada({ 'specs/story-9.2-nombre-de-main.md': ['story: "9.2"', 'epic: 9', 'status: ready-for-dev'] });
+  const deLaRama = story(proj, 'specs/story-9.2-nombre-de-la-rama.md', ['story: "9.2"', 'epic: 9', 'status: ready-for-dev']);
+  const { naceAhora } = require(FOLLOWUP_OF);
+  assert.strictEqual(naceAhora(deLaRama, '9.2'), true, 'sin merge en curso nace: ni HEAD ni su nombre la conocen');
+  traerMain(proj, principal);
+  assert.strictEqual(naceAhora(deLaRama, '9.2'), false, 'durante el merge, main ya tiene una historia con ese `story:`');
+});
+
+test('NaceAhora_NewStoryDuringMerge_StillStops @story-8.269 @ac-8', () => {
+  const { proj, principal } = ramaAtrasada();
+  traerMain(proj, principal);
+  const nueva = story(proj, 'specs/story-9.3-nueva.md', [
+    'story: "9.3"', 'epic: 9', 'status: ready-for-dev',
+    'files_to_modify:', '  - "src/AcmeBackend/Features/Inexistente/Inexistente.cs"',
+  ]);
+  const r = run([path.join(proj, 'specs', 'story-9.1-de-main.md'), nueva], proj);
+  assert.strictEqual(r.code, 1, `la historia nueva de la rama frena como siempre\n${r.out}`);
+  const frenadas = (r.out.match(/^❌ (?!\d).*$/mg) || []).join('\n');
+  assert.match(frenadas, /story-9\.3-nueva\.md/, 'el error nombra la historia nueva');
+  assert.match(r.out, /Problema: .*Inexistente\.cs/);
+  assert.doesNotMatch(frenadas, /story-9\.1-de-main\.md/, 'la historia de main no frena: ni por la causa ni por los archivos');
+});
+
+/** `naceAhora` en un proceso aparte, con cada llamada a git anotada (vale igual en Windows que en Linux y Mac). */
+function naceAhoraContando(abs, storyId) {
+  const programa = `
+    const cp = require('child_process');
+    const original = cp.execFileSync;
+    const llamadas = [];
+    cp.execFileSync = (cmd, args, opts) => { if (cmd === 'git') llamadas.push(args); return original(cmd, args, opts); };
+    const { naceAhora } = require(${JSON.stringify(FOLLOWUP_OF)});
+    const nace = naceAhora(${JSON.stringify(abs)}, ${JSON.stringify(storyId)});
+    process.stdout.write(JSON.stringify({ nace, llamadas }));`;
+  return JSON.parse(execFileSync(process.execPath, ['-e', programa], { encoding: 'utf8' }));
+}
+
+test('NaceAhora_UnreadableMergeHead_CountsAsExisting @story-8.269 @ac-9 @ac-10', () => {
+  const { proj } = ramaAtrasada();
+  const nueva = story(proj, 'specs/story-9.4-nueva.md', ['story: "9.4"', 'epic: 9', 'status: ready-for-dev']);
+  const vieja = path.join(proj, 'specs', 'story-9.4-vieja.md');
+  story(proj, 'specs/story-9.4-vieja.md', ['story: "9.5"', 'epic: 9', 'status: ready-for-dev']);
+  gitT(proj, 'add', vieja);
+  gitT(proj, 'commit', '-q', '-m', 'historia vieja');
+  const mergeHead = mergeHeadDe(proj);
+
+  // sin merge en curso: la historia nueva nace, y la única llamada nueva es la que ubica MERGE_HEAD, al final
+  const sinMerge = naceAhoraContando(nueva, '9.4');
+  assert.strictEqual(sinMerge.nace, true);
+  assert.deepStrictEqual(sinMerge.llamadas.at(-1), ['rev-parse', '--git-path', 'MERGE_HEAD']);
+  assert.strictEqual(sinMerge.llamadas.length, 7, `las seis de siempre más la de MERGE_HEAD: ${JSON.stringify(sinMerge.llamadas)}`);
+
+  // una historia con historia en HEAD: las dos llamadas de siempre, ninguna de más
+  const conHistoria = naceAhoraContando(vieja, '9.5');
+  assert.strictEqual(conHistoria.nace, false);
+  assert.deepStrictEqual(conHistoria.llamadas, [['rev-parse', '--verify', 'HEAD'], ['log', '-1', '--follow', '--format=%H', '--', 'story-9.4-vieja.md']]);
+
+  // un MERGE_HEAD vacío cuenta como sin merge
+  fs.writeFileSync(mergeHead, '');
+  assert.strictEqual(naceAhoraContando(nueva, '9.4').nace, true, 'MERGE_HEAD vacío: lo mismo que sin merge');
+
+  // una cabeza que no existe en el repo: no se puede decidir, cuenta como existente (avisa, no frena)
+  fs.writeFileSync(mergeHead, `${'0123456789abcdef'.repeat(2)}01234567\n`);
+  assert.strictEqual(naceAhoraContando(nueva, '9.4').nace, false, 'una cabeza que no resuelve: existente');
+  fs.rmSync(mergeHead, { force: true });
+});
