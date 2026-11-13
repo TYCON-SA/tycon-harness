@@ -228,14 +228,16 @@ function sinPantalla(p) {
  * envoltura (otra casa en la foto del ambiente, otra forma, una comilla suelta adentro). La consola de fondo va sin
  * `< /dev/null`. La consola es la de la persona: zsh o bash, de cualquier carpeta (la del sistema o la de Homebrew).
  * Una sesión que arrancó sin foto lanza `-c -l` sin el `source`; ahí el bloque propio de su consola (`setopt` en zsh,
- * `shopt` en bash) es obligatorio, porque es el ancla que queda en lugar de la foto.
+ * `shopt` en bash) es obligatorio, porque es el ancla que queda en lugar de la foto. El bloque propio puede ir con `\builtin`
+ * delante, como lo lanza la extensión del editor: sin aceptarlo, el guion no reconoce la consola, el click del dueño se
+ * gasta, y el freno no ve las consolas de fondo ni las de un agente.
  */
 function desenvolver(linea, casa) {
   const re = new RegExp('^(?:/[\\w.+-]+)*/(?<consola>zsh|bash) -c (?:source ' + escRe(casa)
     + '/\\.claude/shell-snapshots/snapshot-(?:zsh|bash)-[\\w.-]+\\.sh 2>/dev/null \\|\\| true && '
-    + '(?:setopt(?: [A-Z_]+)+ 2>/dev/null \\|\\| true && )?'
-    + '(?:shopt -u extglob 2>/dev/null \\|\\| true && )?'
-    + '|-l (?<propio>setopt(?: [A-Z_]+)+|shopt -u extglob) 2>/dev/null \\|\\| true && )'
+    + '(?:(?:\\\\builtin )?setopt(?: [A-Z_]+)+ 2>/dev/null \\|\\| true && )?'
+    + '(?:(?:\\\\builtin )?shopt -u extglob 2>/dev/null \\|\\| true && )?'
+    + '|-l (?:\\\\builtin )?(?<propio>setopt(?: [A-Z_]+)+|shopt -u extglob) 2>/dev/null \\|\\| true && )'
     + "(?:\\{(?: \\\\builtin (?:unalias|unset -f) -- '[\\w-]+';)+ \\} >/dev/null 2>&1 \\|\\| true && )*"
     + "eval '(?<comando>[\\s\\S]*)'(?: < /dev/null)? && pwd -P >\\| (?:/private)?/tmp/claude-[0-9a-f]+-cwd$");
   const m = re.exec(String(linea || ''));
