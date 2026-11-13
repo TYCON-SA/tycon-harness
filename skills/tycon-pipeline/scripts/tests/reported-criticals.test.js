@@ -400,8 +400,10 @@ test('Findings_LaunchNotInRegistry_Blocks — un revisor que salió sin su rengl
   const l = lab({ advisors: [SEC, OTRO] });
   const ledger = path.join(l.state, 'advisor-runs', `${SID}.jsonl`);
   const salio = (ts, advisor) => fs.appendFileSync(ledger, `${JSON.stringify({ ts, advisor, model: 'sonnet', repo: l.repo, story: '9.92' })}\n`);
-  // SEC salió con su renglón y su reporte: bien
-  salio(at(-120), SEC); l.anotar(LANZADO(at(-120))); l.anotar(REPORTE(at(-110), []));
+  // SEC salió con su renglón y su reporte: bien. La salida y su renglón llevan la misma hora: con dos lecturas del
+  // reloj, el renglón quedaba un milisegundo después y la salida caía fuera de la ventana (en una máquina cargada)
+  const lanzado = at(-120);
+  salio(lanzado, SEC); l.anotar(LANZADO(lanzado)); l.anotar(REPORTE(at(-110), []));
   // OTRO salió y su salida no quedó anotada
   salio(at(-100), OTRO);
   // SEC salió otra vez sin su renglón

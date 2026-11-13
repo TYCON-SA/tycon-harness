@@ -221,6 +221,33 @@ test('T7 WorkflowLite_ElGanchoDePruebasGana @story-8.221 @ac-7 — TYCON_WFLITE_
   assert.strictEqual(st.status, 0, st.stdout + st.stderr);
 });
 
+test('WorkflowLite_ElCorredorDePruebaNuncaApruebaNiMide — con TYCON_WFLITE_AGENT_CMD el resultado sale marcado de prueba, y ni la revisión del plan ni la del código lo cuentan', (t) => {
+  const L = laboratorio(t, { uno: TOPE });
+  const lab = L.lab;
+  // el corredor falso contesta lo que haga falta para un pase limpio
+  const falso = path.join(lab, 'falso.js');
+  fs.writeFileSync(falso, "console.log(JSON.stringify({eco:'limpio'}))");
+  const wf = path.join(lab, 'limpio.workflow.js');
+  fs.writeFileSync(wf, "await agent('x', { schema: { required: ['eco'] } })\n"
+    + "return { medido: true, modo: 'plan', veredicto: 'aprobado', confirmed: [], lentes: [{ lens: 'a', estado: 'medida' }], detalle: [] }");
+  const out = path.join(lab, 'r.json');
+  const r = spawnSync(process.execPath, [LITE, wf, '--args', '{}', '--out', out], {
+    cwd: lab, encoding: 'utf8', env: { ...process.env, TYCON_REVIEW_RUNNER_FILE: path.join(lab, 'integration.json'), TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${falso}` },
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const res = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.strictEqual(res.corredor.de_prueba, true);
+  const PR = require('../lib/plan-review.js');
+  assert.strictEqual(PR.veredictoDe(res), 'sin-veredicto');
+  // sin la marca, el mismo resultado aprobaría: lo que lo frena es el corredor de prueba
+  const { de_prueba, ...sinMarca } = res.corredor;
+  assert.strictEqual(de_prueba, true);
+  assert.strictEqual(PR.veredictoDe({ ...res, corredor: sinMarca }), 'aprobado');
+  const m = require('../lib/adversarial-verdict.js').medicionDelResultado(res);
+  assert.strictEqual(m.medido, false);
+  assert.match(m.motivo, /corredor de prueba/);
+});
+
 test('T60 ReviewRunner_LeeLaRespuestaYElTopeDeCadaCorredor @story-8.221 @ac-2 @ac-4 @ac-5 — salidas reales: respuesta, tokens, error y tope; sin confinamiento no corre en el modo código', () => {
   const integ = RR.loadIntegration({ env: {} });
   const claude = integ.runners.claude;
