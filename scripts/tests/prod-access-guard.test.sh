@@ -904,8 +904,12 @@ EOF"
 t27="$(REPO_ROOT="$AQUI" node - <<'JS'
 const fs = require('fs'); const path = require('path'); const crypto = require('crypto'); const { spawnSync } = require('child_process');
 const ROOT = process.env.REPO_ROOT; const REF = '6e01463';
-const HUELLA_CRUDO = '66fceabd7e5f83b141a2b4bbd22211129159ccd116a2e4e70e31c2016591cdb3';
-const HUELLA_SHIM = 'b3251a743f5a0300dde442b73858c80877f99778734fc7c294ace2ee888ae9bc';
+// Las huellas de hoy: el índice y la memoria con su nombre viejo ya no se nombran (el freno no los protege). Contra REF
+// se le sacan a la referencia esos dos nombres y nada más, así cualquier otro cambio del criterio sigue en rojo.
+const HUELLA_CRUDO = '72198852a4628e026ff193ebabd31ecea454f0a14be4600c12b011040b018c68';
+const HUELLA_SHIM = 'd18d1386883f225f231321752585aca269ab8360a67bd1ebecb7d98252e16c44';
+const sinEstadosViejos = (src) => src.replace(", 'produccion-indice\\\\.json', 'produccion-memoria\\\\.json'", '')
+  .replace('|produccion-(indice|memoria)\\.json', '');
 const trozos = (src) => [/const CLIENTES = \{[\s\S]*?\n\};/, /const VARIABLES_SERVIDOR = \[[^\]]*\];/, /const escRe = [^\n]*;/,
   /const CRUDO = new RegExp\([\s\S]*?'i'\);/].map((re) => { const m = re.exec(src); if (!m) throw new Error(`sin ${re}`); return m[0]; }).join('\n');
 const criterio = (src) => new Function(`${trozos(src)}\nreturn CRUDO;`)();
@@ -932,13 +936,13 @@ const A = criterio(hoy);
 let via;
 if (refHook.status === 0) {
   via = REF;
-  const B = criterio(refHook.stdout);
+  const B = criterio(sinEstadosViejos(refHook.stdout));
   for (const c of cmds) if (A.test(c) !== B.test(c)) mal.push(`veredicto distinto: «${c.slice(0, 60)}»`);
 } else {
   via = 'huella fijada';
   if (sha(trozos(hoy)) !== HUELLA_CRUDO) mal.push('CRUDO cambió (huella distinta)');
 }
-const shimRef = refShim.status === 0 ? sha(shim(refShim.stdout)) : HUELLA_SHIM;
+const shimRef = refShim.status === 0 ? sha(shim(sinEstadosViejos(refShim.stdout))) : HUELLA_SHIM;
 if (!shim(shimHoy) || sha(shim(shimHoy)) !== shimRef) mal.push('nombra_bases() de node-shim.sh cambió');
 console.log(mal.length ? `NO ${mal.join(' · ')}` : `OK ${cmds.length} comandos contra ${via}`);
 JS
