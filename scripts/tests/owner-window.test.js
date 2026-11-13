@@ -1159,6 +1159,66 @@ test('OwnerWindow_SinFoto_LasNegacionesLaVen', (t) => {
   assert.strictEqual(pedir(casa, cmd).decision, 'ask');
 });
 
+/**
+ * La envoltura de la extensión del editor (Mac, 2.1.323, medida el 13/11 en una pestaña con permisos salteados): el bloque
+ * propio va con `\builtin` delante, más opciones, y dos bloques de unalias. La de bash es un supuesto no medido.
+ */
+function envolverConBuiltin(casa, cmd, { bash = false, sinFoto = false } = {}) {
+  const propio = bash ? '\\builtin shopt -u extglob' : '\\builtin setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL NO_BRACE_CCL NO_MAGIC_EQUAL_SUBST';
+  return `${bash ? '/bin/bash' : '/bin/zsh'} -c `
+    + (sinFoto ? `-l ${propio} 2>/dev/null || true`
+      : `source ${casa}/.claude/shell-snapshots/snapshot-${bash ? 'bash' : 'zsh'}-1794576663478-c40byd.sh 2>/dev/null || true && ${propio} 2>/dev/null || true`)
+    + " && { \\builtin unalias -- 'which'; \\builtin unset -f -- 'which'; } >/dev/null 2>&1 || true"
+    + " && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true"
+    + ` && eval '${cmd.replace(/'/g, `'"'"'`)}' < /dev/null && pwd -P >| /tmp/claude-776e-cwd`;
+}
+
+test('OwnerWindow_ConBuiltin_SeDesenvuelveTalCual', (t) => {
+  const casa = casaNueva(t);
+  for (const cmd of ['x', `echo 'a' "b"`, GUIONES[4][1]]) {
+    assert.strictEqual(ow.desenvolver(envolverConBuiltin(casa, cmd), casa), cmd, `zsh: ${cmd}`);
+    assert.strictEqual(ow.desenvolver(envolverConBuiltin(casa, cmd, { bash: true }), casa), cmd, `bash: ${cmd}`);
+    assert.strictEqual(ow.desenvolver(envolverConBuiltin(casa, cmd, { sinFoto: true }), casa), cmd, `sin foto: ${cmd}`);
+  }
+  // `\builtin` no abre la puerta a otra cosa delante del bloque propio ni a la consola equivocada
+  const L = envolverConBuiltin(casa, 'x');
+  const noVale = {
+    'otro programa con builtin': L.replace('\\builtin setopt', '\\builtin eval'),
+    'builtin dos veces': L.replace('\\builtin setopt', '\\builtin \\builtin setopt'),
+    'builtin sin barra': L.replace('\\builtin setopt', 'builtin setopt'),
+    'algo antes del bloque propio': L.replace('\\builtin setopt', 'echo y && \\builtin setopt'),
+    'zsh con shopt': envolverConBuiltin(casa, 'x', { bash: true, sinFoto: true }).replace('/bin/bash', '/bin/zsh'),
+  };
+  for (const [que, linea] of Object.entries(noVale)) assert.strictEqual(ow.desenvolver(linea, casa), null, que);
+});
+
+test('OwnerWindow_ConBuiltin_ElClickDelDuenoFirmaElGuion', (t) => {
+  // el caso medido: el freno pidió la firma, el dueño la aprobó, y el guion tiene que reconocer la consola que lo lanzó
+  const [firma, cmd, argv] = GUIONES[4];
+  let casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, cmd).decision, 'ask');
+  const v = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: envolverConBuiltin(casa, cmd) }), casa, ahora: AHORA + 60000 });
+  assert.ok(v.ok, v.motivo);
+  assert.strictEqual(vigentes(casa).length, 0, 'el registro quedó consumido');
+  // la misma consola lanzada por la consola de un agente no firma: el guion sigue exigiendo la herramienta arriba
+  casa = casaNueva(t);
+  pedir(casa, cmd);
+  const agente = { pid: 250, ppid: 100, inicio: INICIO, comando: envolverConBuiltin(casa, 'zsh -c x') };
+  const r = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: envolverConBuiltin(casa, cmd), padre: 250, extra: [agente] }), casa, ahora: AHORA + 60000 });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.motivo, /la consola no es de la herramienta/);
+  assert.strictEqual(vigentes(casa).length, 1, 'nada lo consumió');
+});
+
+test('OwnerWindow_ConBuiltin_ElFrenoVeLaConsolaDeFondo', (t) => {
+  const [, cmd] = GUIONES[4];
+  const casa = casaNueva(t);
+  const fondo = envolverConBuiltin(casa, 'sleep 600').replace(' < /dev/null', '');
+  const r = pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [{ pid: 400, ppid: 100, inicio: INICIO, comando: fondo }] }) });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /cerrá los procesos de fondo o firmá desde tu terminal/);
+});
+
 test('OwnerWindow_SinFoto_WindowsIgual', (t) => {
   const casa = casaNueva(t);
   assert.strictEqual(ow.desenvolverWindows(envolverSinFoto('x'), casa), null);
