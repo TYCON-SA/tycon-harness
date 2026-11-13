@@ -648,7 +648,8 @@ test('T47n · BatchD_StateFilesMigrateOnWrite — el instalador copia los cuatro
   for (const e of logs) fs.writeFileSync(path.join(st, base(e.old)), `antes: ${base(e.new)}\n`);
   const r = spawnSync('bash', ['-c', 'source "$1"', '_', bloque], { encoding: 'utf8', timeout: 20000,
     // PROFILE_FULL: lo fija el instalador antes de este bloque (el rescate y la recolección son de full)
-    env: cleanEnv({ HOME: home, SCRIPT_DIR: sd, CHECK_ONLY: '0', TYCON_INTEG_MAILBOX: '1', PROFILE_FULL: '1', ORDER_LOG: orden }) });
+    // STATE_DIR: lo define el instalador arriba de este bloque, que crea la carpeta antes de lanzar los pasos
+    env: cleanEnv({ HOME: home, SCRIPT_DIR: sd, CHECK_ONLY: '0', TYCON_INTEG_MAILBOX: '1', PROFILE_FULL: '1', ORDER_LOG: orden, STATE_DIR: st }) });
   assert.strictEqual(r.status, 0, r.stderr);
   for (let n = 0; n < 60 && (readOr(orden) || '').split('\n').filter(Boolean).length < 4; n++) await new Promise((ok) => setTimeout(ok, 250));
   assert.strictEqual(readOr(orden), 'rescate\nrecoleccion\nsubida\nbajada\n', 'la tanda de fondo corrió los cuatro pasos, en orden');
@@ -691,8 +692,12 @@ test('T47p · BatchD_StateFilesMigrateOnWrite — un estado viejo que no se deja
   } finally { fs.chmodSync(cerrado, 0o755); }
 });
 
-/** El bloque de fondo del instalador real en un temporal, como en T47n; `prep(st)` siembra el estado antes de correrlo. */
-async function installerBlock(p, prep) {
+/**
+ * El bloque de fondo del instalador real en un temporal, como en T47n; `prep(st)` siembra el estado antes de correrlo.
+ * `extra(st)` devuelve variables que pisan el ambiente de siempre; con `esperar: false` no espera los cuatro pasos (el
+ * caso que no lanza ninguno no tiene nada que esperar).
+ */
+async function installerBlock(p, prep, { extra = () => ({}), esperar = true } = {}) {
   const src = fs.readFileSync(path.join(RAIZ, 'scripts', 'install-tycon-hooks.sh'), 'utf8');
   let i = src.indexOf('# Rescate del hilo y el consumo de las ejecuciones del pipeline');
   i = src.lastIndexOf('# ====', i);
@@ -714,8 +719,10 @@ async function installerBlock(p, prep) {
   }
   prep(st);
   const r = spawnSync('bash', ['-c', 'source "$1"', '_', bloque], { encoding: 'utf8', timeout: 20000,
-    // PROFILE_FULL: lo fija el instalador antes de este bloque (el rescate y la recolección son de full)
-    env: cleanEnv({ HOME: home, SCRIPT_DIR: sd, CHECK_ONLY: '0', TYCON_INTEG_MAILBOX: '1', PROFILE_FULL: '1', ORDER_LOG: orden }) });
+    // PROFILE_FULL: lo fija el instalador antes de este bloque (el rescate y la recolección son de full); STATE_DIR
+    // también, y el bloque crea la carpeta antes de lanzar los pasos
+    env: cleanEnv({ HOME: home, SCRIPT_DIR: sd, CHECK_ONLY: '0', TYCON_INTEG_MAILBOX: '1', PROFILE_FULL: '1', ORDER_LOG: orden, STATE_DIR: st, ...extra(st) }) });
+  if (!esperar) return { r, st, orden };
   for (let n = 0; n < 60 && (readOr(orden) || '').split('\n').filter(Boolean).length < 4; n++) await new Promise((ok) => setTimeout(ok, 250));
   await new Promise((ok) => setTimeout(ok, 300));
   return { r, st, orden };
@@ -741,6 +748,18 @@ test('T47q · BatchD_StateFilesMigrateOnWrite — si el instalador no puede llev
       assert.ok((readOr(path.join(st, nuevo)) || '').startsWith(`antes: ${nuevo}\n`), `${nuevo}: se llevó igual`);
     }
   } finally { if (st0) try { fs.chmodSync(path.join(st0, base(cerrado.old)), 0o644); } catch (_) { /* */ } }
+});
+
+// La carpeta de estado que no se puede crear: el bloque lo dice y no lanza ningún paso (los registros no tendrían dónde ir).
+test('T16 BatchD_StateDirNotCreatable_SaysSoAndLaunchesNothing @story-8.268 @ac-16', { skip: SKIP_PUBLIC }, async () => {
+  const { r, orden } = await installerBlock('inst-no-dir', () => {}, {
+    extra: (st) => { const archivo = path.join(st, 'un-archivo'); fs.writeFileSync(archivo, 'x\n'); return { STATE_DIR: path.join(archivo, 'x') }; },
+    esperar: false,
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stderr, /no se pudo crear/);
+  await new Promise((ok) => setTimeout(ok, 500));   // un paso lanzado de fondo, si lo hubiera, tendría tiempo de anotarse
+  assert.strictEqual(readOr(orden) || '', '', 'no se lanzó ningún paso');
 });
 
 // un nombre de estado viejo que quede en agent-skills también

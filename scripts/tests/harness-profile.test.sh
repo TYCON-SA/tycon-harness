@@ -431,6 +431,11 @@ PY
     #   scripts/hooks/office-link-start.js — el proceso que le manda la oficina de la máquina al sitio de la organización
     #     (al arrancar la sesión y al escribir un pedido: dos veces)
     #   scripts/hooks/cover-secrets.js — tapa los secretos de la máquina en lo que devuelven los comandos y las lecturas
+    #   scripts/hooks/background-question-guard.js — la pregunta de una sesión que abrió la coordinadora va a la coordinadora
+    #   scripts/hooks/finished-open-notice.js — lo terminado sin cerrar de la máquina, dicho al arrancar
+    #   scripts/hooks/guard-auto-update.js — la actualización del freno de producción sin contraseña, al arrancar
+    #   tycon-pipeline/scripts/reviewer-launch-gate.js — un revisor no sale antes que el pase adversarial que le toca
+    #   tycon-pipeline/scripts/on-advisor-done.js — anota los críticos de un revisor apenas termina
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
       scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
@@ -439,7 +444,9 @@ PY
       scripts/hooks/why-blocked-notice.js scripts/hooks/session-state.js=8 scripts/hooks/owner-approval-record.js=2
       scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/office-link-start.js=2
       scripts/hooks/cover-secrets.js
-      scripts/hooks/office-message-rule.js scripts/hooks/office-inbox-watch.js=2)
+      scripts/hooks/office-message-rule.js scripts/hooks/office-inbox-watch.js=2
+      scripts/hooks/background-question-guard.js scripts/hooks/finished-open-notice.js scripts/hooks/guard-auto-update.js
+      tycon-pipeline/scripts/reviewer-launch-gate.js tycon-pipeline/scripts/on-advisor-done.js)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
       rm -f "$2"
       python3 - "$1" "$2" "${T40_ADDED[@]}" <<'PY'

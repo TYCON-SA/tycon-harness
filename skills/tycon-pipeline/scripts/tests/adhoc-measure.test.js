@@ -858,6 +858,30 @@ test('T50 Banco_CaminoCortoUnaMedida @story-8.190 @ac-34', () => {
   assert.strictEqual(conAdd.type, 'must-block');
 });
 
+// 🔴 Falla con: el freno que dice «1 error(es)» y no nombra el paquete roto ni el motivo (lo que la noche no pudo leer).
+test('T2 AdhocMeasure_BrokenPack_BrakeNamesThePack @story-8.268 @ac-1', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  commitDe(d, 'src/propia.ts', 'export const a = 1;\n');
+  carril(h, { files: [path.join(d, 'src', 'propia.ts')], bases: { [d]: baseDe(d) } });
+  const packsDir = tmp(t, 'medida-packs-');
+  fs.mkdirSync(path.join(packsDir, 'acme', 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(packsDir, 'acme', 'agents', 'rev-acme.md'), '---\nname: rev-acme\n---\n# rev-acme\n');
+  fs.writeFileSync(path.join(packsDir, 'acme', 'pack.json'), JSON.stringify({ name: 'acme', description: 'roto a propósito',
+    reviewers: [{ agent: 'rev-acme', group: 'base', when: { detection: 'noExiste' }, surface: { paths: ['**/*.cs'] }, depth: 'lean', prefixes: ['ACM'] }] }));
+  const antes = { dir: process.env.TYCON_PACKS_DIR, def: process.env.TYCON_PACKS_DEFAULT };
+  process.env.TYCON_PACKS_DIR = packsDir;
+  process.env.TYCON_PACKS_DEFAULT = 'all';
+  t.after(() => {
+    for (const [k, v] of [['TYCON_PACKS_DIR', antes.dir], ['TYCON_PACKS_DEFAULT', antes.def]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  });
+  require(path.join(SCRIPTS, 'lib', 'packs.js')).resetCache();
+  const r = decidir(h, d);
+  frena(r, NO_PUDE);
+  assert.ok(r.texto.includes(`${path.join(packsDir, 'acme', 'pack.json')} · revisor rev-acme · when.detection: la bandera «noExiste»`), r.texto);
+  assert.match(r.texto, /^🔒 GUARDAR: /);
+});
+
 // 🔴 Falla con: el freno de datos midiendo por su cuenta, o leyendo lo anotado que no cambió.
 test('T51 Medida_Datos_LeeLaMismaMedida @story-8.190 @ac-2', (t) => {
   const d = repoConOrigin(t);

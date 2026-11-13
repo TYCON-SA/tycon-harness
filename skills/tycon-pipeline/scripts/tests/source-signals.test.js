@@ -425,6 +425,73 @@ test('T16 SaveBrake_PantallaAntesQueLosDatos_YConElClickGuarda @story-8.196 @ac-
   assert.ok(guarda && !guarda.texto && guarda.pregunta, JSON.stringify(guarda));
 });
 
+// ── el paquete roto, nombrado en la falla ───────────────────────────────────────────────────────────────────────────
+
+/** Un paquete de juguete en `dir/<nombre>` con un revisor; `extra` le cambia campos (una bandera inválida, por ejemplo). */
+function paqueteDeJuguete(dir, nombre, extra = {}) {
+  fs.mkdirSync(path.join(dir, nombre, 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(dir, nombre, 'agents', 'rev-acme.md'), '---\nname: rev-acme\n---\n# rev-acme\n');
+  fs.writeFileSync(path.join(dir, nombre, 'pack.json'), JSON.stringify({ name: nombre, description: 'señales de la prueba',
+    reviewers: [{ agent: 'rev-acme', group: 'base', surface: { paths: ['**/*.cs'] }, depth: 'lean', prefixes: ['ACM'], ...extra }] }));
+}
+/** `buscar` con las señales cargadas de `packsDir`, como las carga el freno de guardar; `env` se pone sólo mientras mide. */
+function fallaDeCarga(t, packsDir, env = {}) {
+  const antes = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, env);
+  t.after(() => { for (const [k, v] of Object.entries(antes)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
+  require(path.join(SCRIPTS, 'lib', 'packs.js')).resetCache();
+  const d = repo(t);
+  escribir(d, 'src/a.tsx', 'export const a = 1;\n');
+  const r = buscar(carril([d]), (r2) => SS().cargar({ repo: r2, packsDir }).senales);
+  assert.strictEqual(r.fallas.length, 1, JSON.stringify(r));
+  return r.fallas[0];
+}
+const PRIMER_RENGLON = /no pude leer las líneas cambiadas en .* \(🛑 paquetes de revisores: \d+ error\(es\)\. .*\)$/;
+
+// 🔴 Falla con: «1 error(es)» sin decir qué paquete, qué revisor ni por qué; o un campo que el error no trae.
+test('T1 SourceSignals_PackError_KeepsFirstErrorInFailure @story-8.268 @ac-1 @ac-15', (t) => {
+  const uno = tmp(t, 'datos-packs-uno-');
+  paqueteDeJuguete(uno, 'acme', { when: { detection: 'noExiste' } });
+  const conRevisor = fallaDeCarga(t, uno, { TYCON_PACKS_DEFAULT: 'all' });
+  assert.ok(conRevisor.includes(`${path.join(uno, 'acme', 'pack.json')} · revisor rev-acme · when.detection: la bandera «noExiste»`), conRevisor);
+  assert.doesNotMatch(conRevisor, /· clave |y \d+ más|undefined/);
+
+  const conClave = fallaDeCarga(t, (() => { const d = tmp(t, 'datos-packs-default-'); paqueteDeJuguete(d, 'acme', { when: { detection: 'csModified' } }); return d; })(), { TYCON_PACKS_DEFAULT: 'Mal_Nombre' });
+  assert.match(conClave, /— variable de entorno TYCON_PACKS_DEFAULT · clave packs\.default · "Mal_Nombre" no es un nombre de paquete/);
+  assert.doesNotMatch(conClave, /· revisor |undefined/);
+
+  const dos = tmp(t, 'datos-packs-dos-');
+  paqueteDeJuguete(dos, 'acme', { when: { detection: 'noExiste' } });
+  paqueteDeJuguete(dos, 'beta', { when: { detection: 'tampoco' } });
+  const conDos = fallaDeCarga(t, dos, { TYCON_PACKS_DEFAULT: 'all' });
+  assert.ok(conDos.includes(`${path.join(dos, 'acme', 'pack.json')} · revisor rev-acme`), conDos);
+  assert.match(conDos, /\(y 1 más\)\)$/);
+  assert.doesNotMatch(conDos, /beta/, 'sólo el primero; los demás, contados');
+
+  const sinCarpeta = fallaDeCarga(t, path.join(uno, 'no-hay'), { TYCON_PACKS_DEFAULT: 'all' });
+  assert.ok(sinCarpeta.includes(`— ${path.join(uno, 'no-hay')} · no se pudo leer la carpeta de paquetes (ENOENT)`), sinCarpeta);
+
+  // lo que no es un PackError con su lista queda como hoy: el primer renglón
+  const d = repo(t);
+  escribir(d, 'src/a.tsx', 'export const a = 1;\n');
+  const comun = buscar(carril([d]), () => { throw new Error('se rompió\nsegundo renglón'); });
+  assert.deepStrictEqual(comun.fallas, [`camino corto: no pude leer las líneas cambiadas en ${d} (se rompió)`]);
+  const { PackError } = require(path.join(SCRIPTS, 'lib', 'packs.js'));
+  const vacio = buscar(carril([d]), () => { throw new PackError([]); });
+  assert.strictEqual(vacio.fallas.length, 1);
+  assert.match(vacio.fallas[0], PRIMER_RENGLON);
+  assert.doesNotMatch(vacio.fallas[0], / — |undefined/);
+  // un motivo que trae el mensaje de otro error (un JSON roto, un módulo que no carga) no le suma renglones a la falla
+  const largo = buscar(carril([d]), () => { throw new PackError([{ archivo: '/x/pack.json', revisor: null, motivo: 'JSON inválido o ilegible: Unexpected token\n  "x": }\nis not valid JSON' }]); });
+  assert.strictEqual(largo.fallas[0].split('\n').length, 1, largo.fallas[0]);
+  assert.match(largo.fallas[0], /— \/x\/pack\.json · JSON inválido o ilegible: Unexpected token\)$/);
+  const sinMotivo = buscar(carril([d]), () => { throw new PackError([{ archivo: '/x/pack.json', revisor: null }]); });
+  assert.doesNotMatch(sinMotivo.fallas[0], /undefined/);
+  const sinArchivo = buscar(carril([d]), () => { throw new PackError([{ revisor: null, motivo: 'sin archivo' }]); });
+  assert.match(sinArchivo.fallas[0], PRIMER_RENGLON);
+  assert.doesNotMatch(sinArchivo.fallas[0], / — |undefined|sin archivo/);
+});
+
 // ── los textos ──────────────────────────────────────────────────────────────────────────────────────────────────────
 // el texto en un renglón: las guías cortan las frases a 120 columnas
 const leer = (r) => fs.readFileSync(path.join(RAIZ, r), 'utf8').replace(/\s+/g, ' ');
