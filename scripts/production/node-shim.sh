@@ -29,7 +29,7 @@ nombra_bases() {
   # puede derivar (bash, y justo cuando node no está), así que lo sostiene un caso de la suite que
   # prueba CADA cliente de esa lista de los dos lados: si alguien suma un cliente allá y no acá, se
   # pone rojo. Eran dos listas a mano y ya se habían separado (pase adversarial 2026-09-15).
-  printf '%s' "$ENTRADA" | grep -qiE '(^|[^A-Za-z0-9_-])(sqlcmd|bcp|mssql-cli|sqlps|osql|tsql|mssql|usql|invoke-sqlcmd|sqlpackage)([^A-Za-z0-9_-]|$)|SQLCMDSERVER[[:space:]]*=|MSSQL_HOST[[:space:]]*=|PGHOST[[:space:]]*=|DBSERVER[[:space:]]*=|(^|[^A-Za-z0-9_])Server[[:space:]]*=|Data[[:space:]]+Source[[:space:]]*=|Addr(ess)?[[:space:]]*=|Network[[:space:]]+Address[[:space:]]*=|az[[:space:]]+sql|Microsoft\.Sql/servers|(jdbc:)?(sqlserver|mssql|tds)://|tycon-prod-sql|\.tycon/production\.json|production-(index|memory)\.json|\.tycon/produccion\.json|produccion-(indice|memoria)\.json|security[[:space:]]+(-i|find-|dump-keychain|export|[a-z-]*generic-password)'
+  printf '%s' "$ENTRADA" | grep -qiE '(^|[^A-Za-z0-9_-])(sqlcmd|bcp|mssql-cli|sqlps|osql|tsql|mssql|usql|invoke-sqlcmd|sqlpackage)([^A-Za-z0-9_-]|$)|SQLCMDSERVER[[:space:]]*=|MSSQL_HOST[[:space:]]*=|PGHOST[[:space:]]*=|DBSERVER[[:space:]]*=|(^|[^A-Za-z0-9_])Server[[:space:]]*=|Data[[:space:]]+Source[[:space:]]*=|Addr(ess)?[[:space:]]*=|Network[[:space:]]+Address[[:space:]]*=|az[[:space:]]+sql|Microsoft\.Sql/servers|(jdbc:)?(sqlserver|mssql|tds)://|tycon-prod-sql|\.tycon/production\.json|production-(index|memory)\.json|\.tycon/produccion\.json|security[[:space:]]+(-i|find-|dump-keychain|export|[a-z-]*generic-password)'
 }
 
 # ¿el comando borra un grupo, un candado o un recurso de Azure? (mismo criterio que nombraBorradoAzure() en prod-access-guard.js;

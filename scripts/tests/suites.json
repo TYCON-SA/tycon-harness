@@ -1807,6 +1807,12 @@
       "requiere": []
     },
     {
+      "__nota": "el freno de producción con un solo nombre para sus estados: escribe y protege sólo el índice, la memoria y el registro nuevos; pasa una vez la memoria y el índice de antes a los nuevos y los borra (un servidor bajado con la puerta no vuelve); sigue leyendo y protegiendo el catálogo con su nombre de antes. Los casos del índice corren en cualquier máquina; los del freno, sólo sin el freno instalado (en una máquina con /opt/tycon dicen NO MEDIDO). Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/production-single-name.test.sh",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/install-guard.test.sh",
       "requiere": []

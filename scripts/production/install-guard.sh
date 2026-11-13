@@ -912,6 +912,115 @@ for h in dict.fromkeys(hosts + list(abiertas)): print(h)' "$d/production-firewal
 }
 cerrar_reglas_abiertas
 
+# Los estados del freno con su nombre de antes del renombre (el índice, la memoria y el registro): el freno ya no los
+# escribe ni los lee. Se borran sólo si lo suyo ya está en lo nuevo, mirado por contenido y nunca por fechas: la memoria
+# y el índice, con cada servidor suyo ya en la memoria nueva (y el índice nuevo presente); el registro, después de pasar
+# su historia al nuevo. Si no, quedan y se dice: el freno los pasa a lo nuevo al regenerar, o la puerta con --verify. Recorrido propio, en cada carpeta de estado: el de las reglas de firewall saltea las que no
+# tienen estado nuevo, y ahí también puede quedar algo viejo.
+retirar_estados_viejos(){
+  # Con sudo, la casa del usuario que lanzó. En el modo de pruebas (--no-sudo) sólo una casa de laboratorio explícita:
+  # esto BORRA, y las pruebas que corren el instalador no apuntan HOME a una carpeta propia.
+  local casa="${HOME_USUARIO:-${TYCON_PROD_TEST_HOME:-}}" d salida linea como=()
+  [ -n "$casa" ] || return 0
+  # 🔴 La casa es del usuario: se limpia con SUS permisos, nunca como administrador. Como administrador, un enlace que el
+  # usuario ponga entre el chequeo y el uso desviaría el borrado o la escritura a cualquier carpeta; con sus permisos,
+  # lo peor es tocar sus propios archivos. Lo que sea de root queda, y se dice.
+  if [ "$(id -u)" = 0 ]; then
+    if [ -z "${USUARIO:-}" ] || [ "$USUARIO" = root ]; then
+      printf '   ⚠ no limpio los estados de antes del renombre: no sé qué usuario lanzó la instalación, y como administrador no los toco.\n'
+      return 0
+    fi
+    como=(/usr/bin/sudo -n -u "$USUARIO" --)
+  fi
+  # la carpeta de Claude Code con el nombre escrito una sola vez, arriba (CLAUDE_LEIDA)
+  for d in "$casa/.tycon/state" "$casa/${CLAUDE_LEIDA##*/}/.tycon-pipeline"; do
+    [ -d "$d" ] || continue
+    if ! salida="$(${como[@]+"${como[@]}"} /usr/bin/python3 -I -c 'import json,sys,os,stat
+d, casa = sys.argv[1], sys.argv[2]
+if os.geteuid() == 0:
+    print("KEEP %s no la limpio como administrador: la casa se limpia sólo con los permisos de su dueño" % d); sys.exit(0)
+def ruta(n): return os.path.join(d, n)
+# Corre con los permisos del dueño de la casa, y además nada se sigue por un enlace. Cada tramo desde la casa es una carpeta
+# común del dueño de la casa, y cada archivo, un archivo común suyo; si no, no se lee, no se escribe y no se borra.
+dueno = os.stat(casa).st_uid
+tramo = casa
+for parte in os.path.relpath(d, casa).split(os.sep):
+    tramo = os.path.join(tramo, parte); s = os.lstat(tramo)
+    if stat.S_ISLNK(s.st_mode) or not stat.S_ISDIR(s.st_mode) or s.st_uid != dueno:
+        print("KEEP %s no es una carpeta común del dueño de la casa: no toco nada adentro" % tramo); sys.exit(0)
+def comun(n):
+    try: s = os.lstat(ruta(n))
+    except FileNotFoundError: return None
+    return stat.S_ISREG(s.st_mode) and s.st_uid == dueno
+def lineas(n):
+    with os.fdopen(os.open(ruta(n), os.O_RDONLY | os.O_NOFOLLOW), encoding="utf-8") as f: return f.read().splitlines()
+def leer(n):
+    c = comun(n)
+    if c is None: return False, None
+    if not c: return True, "NO-COMUN"
+    try: return True, json.loads("\n".join(lineas(n)))
+    except Exception: return True, "ILEGIBLE"
+def borrar(n):
+    try: os.unlink(ruta(n)); print("DEL %s" % n)
+    except Exception as e: print("KEEP %s no pude borrarlo (%s): queda" % (n, e))
+_, mem = leer("production-memory.json")
+nueva = set(h for h in (mem.get("produccion", []) if isinstance(mem, dict) else []) if isinstance(h, str))
+existe, vieja = leer("produccion-memoria.json")
+if existe:
+    hosts = vieja.get("produccion", []) if isinstance(vieja, dict) else None
+    if vieja == "NO-COMUN": print("KEEP produccion-memoria.json no es un archivo común del dueño de la casa: no lo leo ni lo borro")
+    elif not isinstance(hosts, list): print("KEEP produccion-memoria.json no se puede leer: queda, y la puerta la resuelve con --verify")
+    elif not set(h for h in hosts if isinstance(h, str)) <= nueva: print("KEEP produccion-memoria.json tiene servidores que la memoria nueva todavía no tiene: queda hasta que el freno la pase")
+    else: borrar("produccion-memoria.json")
+existe, viejo = leer("produccion-indice.json")
+if existe:
+    hosts = viejo.get("memoria", []) if isinstance(viejo, dict) else None
+    if viejo == "NO-COMUN": print("KEEP produccion-indice.json no es un archivo común del dueño de la casa: no lo leo ni lo borro")
+    elif not isinstance(hosts, list): print("KEEP produccion-indice.json no se puede leer: queda, y la puerta lo resuelve con --verify")
+    elif not comun("production-index.json"): print("KEEP produccion-indice.json queda: falta production-index.json")
+    elif not set(h for h in hosts if isinstance(h, str)) <= nueva: print("KEEP produccion-indice.json guarda servidores que la memoria nueva todavía no tiene: queda hasta que el freno los pase")
+    else: borrar("produccion-indice.json")
+# El registro de antes: su historia pasa al nuevo (adelante, es más vieja) antes de borrarlo. El freno de antes la copiaba
+# una vez y éste ya no: sin pasarla acá, una máquina que nunca escribió el nuevo la perdería. El nuevo se escribe por un
+# temporal con el dueño y los permisos del que había, y se renombra: un corte no lo deja a medias.
+viejo_log, nuevo_log = comun("produccion.log"), comun("production.log")
+if viejo_log is False: print("KEEP produccion.log no es un archivo común del dueño de la casa: no lo leo ni lo borro")
+elif viejo_log and nuevo_log is False: print("KEEP produccion.log queda: production.log no es un archivo común del dueño de la casa")
+elif viejo_log:
+    try:
+        if nuevo_log is None:
+            os.rename(ruta("produccion.log"), ruta("production.log")); print("MOVED produccion.log")
+        else:
+            nuevas = lineas("production.log")
+            faltan = [l for l in lineas("produccion.log") if l.strip() and l not in set(nuevas)]
+            if faltan:
+                s = os.lstat(ruta("production.log")); tmp = ruta(".production.log.instalador")
+                try: os.unlink(tmp)
+                except FileNotFoundError: pass
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write("\n".join(faltan + nuevas) + "\n"); f.flush(); os.fchown(f.fileno(), s.st_uid, s.st_gid); os.fchmod(f.fileno(), stat.S_IMODE(s.st_mode))
+                os.rename(tmp, ruta("production.log"))
+            borrar("produccion.log")
+    except Exception as e: print("KEEP produccion.log no pude pasar su historia a production.log (%s): queda" % e)
+' "$d" "$casa")"; then
+      # lo que alcanzó a hacer antes de cortarse se dice igual: «quedan como están» sería falso si ya borró algo
+      while IFS= read -r linea; do
+        case "$linea" in DEL\ *|MOVED\ *) printf '   · en %s alcancé a: %s\n' "$d" "$linea" ;; esac
+      done <<< "${salida:-}"
+      printf '   🔴 no pude terminar de revisar los estados de antes del renombre en %s: lo que no dice arriba quedó como estaba.\n' "$d"; continue
+    fi
+    while IFS= read -r linea; do
+      case "$linea" in
+        DEL\ *) ok "borré $d/${linea#DEL } (su nombre de antes del renombre; lo suyo ya está en el nuevo)" ;;
+        MOVED\ *) ok "renombré $d/${linea#MOVED } a su nombre nuevo, con su historia" ;;
+        KEEP\ *) printf '   ⚠ en %s: %s\n' "$d" "${linea#KEEP }" ;;
+      esac
+    done <<< "$salida"
+  done
+}
+retirar_estados_viejos
+
 instalar scripts/hooks/prod-access-guard.js       "$DESTINO/hooks/prod-access-guard.js" 644
 # el hook que cierra las reglas de firewall de la puerta, en el fin de sesión y en el barrido de arranque
 instalar scripts/hooks/prod-firewall-close.js     "$DESTINO/hooks/prod-firewall-close.js" 644

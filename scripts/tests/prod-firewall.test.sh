@@ -790,12 +790,12 @@ else no "6.5 T12 · otras=«${otras}» · $(cat "$TMP/az.log")"; fi
 # La puerta se tragaba el fallo al escribir el registro de producción: algo podía correr sin quedar anotado y nadie se
 # enteraba. El aviso sale sólo cuando la escritura falla; con el registro sano, la puerta no dice nada nuevo.
 # 🔴 Falla con: el fallo de escritura callado, un aviso en cada uso, o el aviso que cambia la salida de la puerta.
-mundo; rc="$(puerta --reclasificar "$STAGING")"
+mundo; rc="$(puerta --reclassify "$STAGING")"
 if [ "$rc" = 0 ] && ! grep -q "no pude anotar" "$TMP/err" && grep -q '"accion":"reclasificar"' "$CASA/.claude/.tycon-pipeline/production.log"; then
   ok "Gate_CannotLog_SaysSoInRed · con el registro sano anota y no avisa"
 else no "Gate_CannotLog_SaysSoInRed · registro sano: rc=$rc · err: $(head -c 200 "$TMP/err")"; fi
 mundo; mkdir -p "$CASA/.claude/.tycon-pipeline/production.log"
-rc="$(puerta --reclasificar "$STAGING")"
+rc="$(puerta --reclassify "$STAGING")"
 if [ "$rc" = 0 ] && grep -q "🔴 no pude anotar" "$TMP/err" && grep -q "production.log" "$TMP/err"; then
   ok "Gate_CannotLog_SaysSoInRed · sin poder escribir el registro, lo dice en rojo con la ruta y sale igual"
 else no "Gate_CannotLog_SaysSoInRed · sin registro: rc=$rc · err: $(head -c 200 "$TMP/err")"; fi

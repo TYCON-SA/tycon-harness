@@ -11,20 +11,21 @@
  *
  * PRODUCCIÓN PEGAJOSA (AC 4): un host que alguna vez se vio como `produccion` NO vuelve a
  * `no-produccion` porque alguien reescriba un archivo o borre el índice. Esa memoria vive aparte
- * (`production-memory.json`), con huella, y sólo la baja la puerta con `--reclasificar`, que
+ * (`production-memory.json`), con huella, y sólo la baja la puerta con `--reclassify`, que
  * primero abre el cuadro de aprobación.
  *
- * ESCRITURA DOBLE (story 8.9, tanda P · 2026-09-30): el renombre a inglés cambió los nombres del catálogo
- * (`.tycon/produccion.json` → `.tycon/production.json`, claves `servidores/ambiente/llavero/puerto` →
- * `servers/environment/keychain/port`), del índice y de la memoria. La copia del freno que corre de verdad vive en
- * /opt/tycon y sólo cambia cuando la persona reinstala con sudo; hasta que TODAS las máquinas autorizadas reinstalen,
- * conviven la copia vieja (lee los nombres viejos) y ésta. Por eso acá: el índice y la memoria se ESCRIBEN con los dos
- * nombres (mismo contenido: la copia vieja lee el índice que arma ésta), la memoria se LEE de los dos (se juntan: es
- * pegajosa) y el catálogo se lee con los dos nombres y las dos claves. Un catálogo con los dos nombres y contenidos
- * distintos, o una clave con sus dos nombres y valores distintos, es un error de ESE repo: sus hosts quedan
- * desconocidos, y lo desconocido se frena. Los nombres viejos están escritos acá y no en el mapa a propósito: este
- * archivo corre desde /opt, y un mapa que no se pudiera leer no puede apagar la mitad vieja. La escritura doble se
- * apaga en un commit aparte, con todas las máquinas «al día» (AC 49).
+ * LOS NOMBRES DE ANTES: el renombre a inglés cambió los nombres del catálogo (`.tycon/produccion.json` →
+ * `.tycon/production.json`, claves `servidores/ambiente/llavero/puerto` → `servers/environment/keychain/port`), del
+ * índice y de la memoria. El índice y la memoria se escriben sólo con el nombre nuevo. Los viejos se pasan UNA vez:
+ * al regenerar, lo que marcan la memoria y el índice viejos se suma a la memoria nueva (sumar sólo agrega servidores de
+ * producción), se guarda la nueva y recién entonces se borran los viejos. Desde ahí nada los lee, así que un servidor
+ * bajado con la puerta no vuelve desde un archivo viejo. Una memoria vieja que no se lee o cuya huella no cierra no se
+ * borra: suma lo legible y deja el índice alterado hasta que la puerta lo resuelve (`--reclassify`, o `--verify` cuando
+ * lo único tocado es lo de antes). El catálogo, en cambio, se sigue leyendo con los dos nombres y las dos claves: los
+ * productos lo migran aparte. Un catálogo con los dos nombres y contenidos distintos, o una clave con sus dos nombres y
+ * valores distintos, es un error de ESE repo: sus hosts quedan desconocidos, y lo desconocido se frena. Los nombres
+ * viejos están escritos acá y no en el mapa a propósito: este archivo corre desde /opt, y un mapa que no se pudiera
+ * leer no puede apagar la lectura del catálogo viejo.
  *
  * LÍMITE HONESTO: la huella detecta una EDICIÓN A MANO, no a un adversario (quien puede escribir el
  * archivo puede recalcularla). Lo que impide escribir estos archivos es el freno (AC 9); la huella
@@ -54,11 +55,11 @@ const dirDatos = (home) => {
 };
 const rutaIndice = (home) => path.join(dirDatos(home), 'production-index.json');
 const rutaMemoria = (home) => path.join(dirDatos(home), 'production-memory.json');
-// los nombres de antes del renombre (escritura doble, ver la cabecera)
+// los nombres de antes del renombre: sólo se leen para pasarlos una vez a los nuevos (ver la cabecera)
 const rutaIndiceVieja = (home) => path.join(dirDatos(home), 'produccion-indice.json');
 const rutaMemoriaVieja = (home) => path.join(dirDatos(home), 'produccion-memoria.json');
-// El valor de `environment` también va en inglés («production», «non-production»); el índice guarda siempre el de antes,
-// porque la copia del freno instalada en /opt lo lee y no conoce el nuevo hasta que la máquina reinstala.
+// El valor de `environment` también va en inglés («production», «non-production»); el índice guarda siempre el de antes:
+// es su vocabulario interno, el que leen el freno y su copia en /opt, y cambiarlo cambiaría el formato del índice.
 const AMBIENTE_DE_ANTES = { production: 'produccion', 'non-production': 'no-produccion' };
 const CATALOGO = path.join('.tycon', 'production.json');
 const CATALOGO_VIEJO = path.join('.tycon', 'produccion.json');
@@ -254,65 +255,118 @@ function leerUnaMemoria(ruta) {
   return { existe: true, hosts, alterada: !doc || doc.huella !== huellaDe({ produccion: hosts }) };
 }
 
-/** La memoria que guarda cada índice (los dos nombres), junta. Un índice que no está o no se lee no aporta nada. */
-function memoriaDeIndices(home) {
-  const hosts = [];
-  for (const ruta of [rutaIndice(home), rutaIndiceVieja(home)]) {
-    try {
-      const idx = JSON.parse(fs.readFileSync(ruta, 'utf8'));
-      if (Array.isArray(idx.memoria)) hosts.push(...idx.memoria.filter((h) => typeof h === 'string'));
-    } catch { /* ese índice no está o no se lee: el otro, o nada */ }
+/**
+ * El índice de una ruta: { existe, legible, hosts, alterada } con los hosts de la memoria que guarda adentro y si ya
+ * la daba por alterada.
+ */
+function leerUnIndice(ruta) {
+  let texto;
+  try { texto = fs.readFileSync(ruta, 'utf8'); } catch (e) {
+    return e && e.code === 'ENOENT' ? { existe: false, legible: true, hosts: [], alterada: false } : { existe: true, legible: false, hosts: [], alterada: false };
   }
-  return [...new Set(hosts)];
+  try {
+    const idx = JSON.parse(texto);
+    return {
+      existe: true, legible: true,
+      hosts: Array.isArray(idx && idx.memoria) ? idx.memoria.filter((h) => typeof h === 'string') : [],
+      alterada: Boolean(idx && idx.memoria_alterada === true),
+    };
+  } catch { return { existe: true, legible: false, hosts: [], alterada: false }; }
 }
 
 function leerMemoria(home) {
-  // Las dos memorias, la nueva y la de antes del renombre, SE JUNTAN (escritura doble, ver la cabecera): la copia vieja
-  // de /opt sigue escribiendo la suya, y lo que aprendió no se puede perder en la nueva.
+  // La memoria nueva SE JUNTA con la del nombre viejo y con la que guarda cada índice, hasta que lo viejo se
+  // pasa a lo nuevo y se borra (ver la cabecera y `retirarViejos`).
   //
-  // 🔴 Y se juntan SIEMPRE con la memoria que guarda cada índice (los dos). Borrar una memoria —o romperla— para destrabar
-  // un host de producción era el escape que la copia dentro del índice existe para cerrar (pase adversarial del
-  // 2026-09-15). La primera versión de la escritura doble recuperaba del índice sólo si faltaban LAS DOS memorias, y sólo
-  // del primer índice con algo: una memoria rota, o la vieja borrada con un host que la nueva no tenía, perdía ese host
-  // en silencio (pase adversarial de la tanda P, 2026-09-30, reproducido). Juntar sólo suma hosts de producción: nunca
-  // baja ninguno. Bajar uno es `tycon-prod-sql --reclasificar`, que reescribe las memorias y los índices.
+  // 🔴 Se juntan SIEMPRE con la memoria que guarda cada índice. Borrar una memoria —o romperla— para destrabar un host
+  // de producción era el escape que la copia dentro del índice existe para cerrar (pase adversarial del 2026-09-15).
+  // Juntar sólo suma hosts de producción: nunca baja ninguno. Bajar uno es `tycon-prod-sql --reclassify`, que reescribe
+  // la memoria y el índice y borra lo de antes.
   const nueva = leerUnaMemoria(rutaMemoria(home));
   const vieja = leerUnaMemoria(rutaMemoriaVieja(home));
-  const deIndices = memoriaDeIndices(home);
+  const indice = leerUnIndice(rutaIndice(home));
+  const indiceViejo = leerUnIndice(rutaIndiceVieja(home));
+  const deIndices = [...new Set([...indice.hosts, ...indiceViejo.hosts])];
   const enMemorias = new Set([...nueva.hosts, ...vieja.hosts]);
   // 🔴 «No está» y «está pero no lo puedo leer» NO son lo mismo: un archivo ilegible (permisos, JSON roto) cuenta como
-  // memoria alterada, nunca como «primera vez, nada que recordar» (revisores del Step 5, 2026-09-15).
-  let alterada = nueva.alterada || vieja.alterada;
+  // memoria alterada, nunca como «primera vez, nada que recordar». Vale también para los índices, que guardan su copia
+  // de la memoria. Y una alteración que el índice ya anotó sigue hasta que la puerta la resuelve: si no, borrar las
+  // memorias y romper el índice se olvidaría en la regeneración siguiente.
+  let alterada = nueva.alterada || vieja.alterada || indice.alterada
+    || (indice.existe && !indice.legible) || (indiceViejo.existe && !indiceViejo.legible);
   // las dos borradas con un índice que recuerda algo: alguien las borró (la primera vez no hay índice)
   if (!nueva.existe && !vieja.existe && deIndices.length) alterada = true;
-  // la vieja borrada y la nueva presente: el arnés nuevo escribe siempre las dos, así que falta porque alguien la borró;
-  // se dice si se perdía algo. (La nueva que falta con la vieja presente es la primera vez después del renombre.)
-  if (!vieja.existe && nueva.existe && deIndices.some((h) => !enMemorias.has(h))) alterada = true;
   return { memoria: [...new Set([...enMemorias, ...deIndices])].sort(), alterada };
 }
 
-/** Escribe `texto` en las dos rutas, cada una por su temporal y rename (nunca se ve un archivo a medias). */
-function escribirDoble(rutas, texto) {
-  for (const ruta of rutas) {
-    const tmp = ruta + '.tmp';
-    fs.writeFileSync(tmp, texto); fs.renameSync(tmp, ruta);
+/** Escribe `texto` por un temporal y rename (nunca se ve un archivo a medias). */
+function escribir(ruta, texto) {
+  const tmp = ruta + '.tmp';
+  fs.writeFileSync(tmp, texto); fs.renameSync(tmp, ruta);
+}
+
+/**
+ * Borra la memoria y el índice de antes del renombre, una vez que lo suyo ya está en la memoria nueva (`memoria`).
+ * Sin la puerta, cada uno se borra sólo si se lee, su huella cierra (la memoria) y cada servidor suyo está en la nueva:
+ * si no, queda, y la alteración sigue a la vista. Con la puerta (`todo`), la persona aprobó en el cuadro y lo legible
+ * ya se sumó al construir: se borran los dos, también lo que se bajó a propósito, para que no vuelva.
+ */
+function retirarViejos(home, memoria, todo) {
+  const enLaNueva = new Set(memoria);
+  const vieja = leerUnaMemoria(rutaMemoriaVieja(home));
+  if (vieja.existe && (todo || (!vieja.alterada && vieja.hosts.every((h) => enLaNueva.has(h))))) {
+    try { fs.unlinkSync(rutaMemoriaVieja(home)); } catch { /* sigue ahí: la próxima regeneración lo vuelve a intentar */ }
+  }
+  const indiceViejo = leerUnIndice(rutaIndiceVieja(home));
+  if (indiceViejo.existe && (todo || (indiceViejo.legible && indiceViejo.hosts.every((h) => enLaNueva.has(h))))) {
+    try { fs.unlinkSync(rutaIndiceVieja(home)); } catch { /* sigue ahí: la próxima regeneración lo vuelve a intentar */ }
   }
 }
 
 function guardar(indice, home, opts = {}) {
   const dir = dirDatos(home);
   fs.mkdirSync(dir, { recursive: true });
-  // el índice con los dos nombres y el MISMO contenido: la copia vieja de /opt lee el suyo y lo encuentra fresco
-  escribirDoble([rutaIndice(home), rutaIndiceVieja(home)], JSON.stringify(indice, null, 2));
+  escribir(rutaIndice(home), JSON.stringify(indice, null, 2));
   // 🔴 Una memoria alterada NO se vuelve a sellar sola. Antes, la misma lectura que detectaba el
   // toqueteo reescribía el archivo con una huella nueva, y a la lectura siguiente ya no figuraba nada
   // (revisores del Step 5, 2026-09-15, probado). La alteración queda a la vista hasta que una persona
-  // la resuelve por la puerta (`tycon-prod-sql --verificar`, que pasa por el cuadro de aprobación).
+  // la resuelve por la puerta (`tycon-prod-sql --reclassify`, o `--verify` si sólo se tocó lo de antes), que pasa por
+  // el cuadro de aprobación. Mientras tanto, lo de antes tampoco se borra.
   if (indice.memoria_alterada && !opts.resellar) return indice;
   const mem = { produccion: indice.memoria };
   mem.huella = huellaDe({ produccion: indice.memoria });
-  escribirDoble([rutaMemoria(home), rutaMemoriaVieja(home)], JSON.stringify(mem, null, 2));
+  escribir(rutaMemoria(home), JSON.stringify(mem, null, 2));
+  // lo viejo se borra sólo con la memoria nueva ya escrita: un corte en el medio deja lo viejo, nunca un hueco
+  retirarViejos(home, indice.memoria, Boolean(opts.resellar));
   return indice;
+}
+
+/**
+ * Lo que hace `tycon-prod-sql --verify` con la memoria: si la alteración viene sólo de lo de antes del renombre (la
+ * memoria nueva se lee y su huella cierra), suma lo legible, sella la nueva y borra lo de antes. Sumar nunca baja un
+ * servidor. Si la memoria nueva está tocada o falta, no la sella: eso lo decide una persona con `--reclassify`.
+ * Devuelve { resuelto, sellado, motivo? }: `sellado` dice si hubo que sellar y borrar lo de antes.
+ */
+function resolverViejos(opts = {}) {
+  const home = opts.home || os.homedir();
+  // «se borró» y «sana» se dicen mirando que lo de antes ya no esté, no porque se intentó borrarlo
+  const quedanViejos = () => [rutaMemoriaVieja(home), rutaIndiceVieja(home)].filter((r) => { try { fs.lstatSync(r); return true; } catch { return false; } });
+  const noPudo = (quedan, sellado) => ({ resuelto: false, sellado, motivo: `${sellado ? 'sellé la memoria nueva pero ' : ''}no pude borrar lo de antes del renombre (${quedan.map((r) => path.basename(r)).join(', ')}): borralo a mano y volvé a verificar` });
+  const i = construir({ home, raiz: opts.raiz });
+  if (!i.memoria_alterada) {
+    guardar(i, home);
+    const quedan = quedanViejos();
+    return quedan.length ? noPudo(quedan, false) : { resuelto: true, sellado: false };
+  }
+  const nueva = leerUnaMemoria(rutaMemoria(home));
+  if (!nueva.existe || nueva.alterada) {
+    return { resuelto: false, sellado: false, motivo: 'la memoria de producción está tocada o falta: revisala y resolvela con tycon-prod-sql --reclassify <host>' };
+  }
+  i.memoria_alterada = false;
+  i.huella = huellaDe({ ...i, huella: undefined });
+  guardar(i, home, { resellar: true });
+  const quedan = quedanViejos();
+  return quedan.length ? noPudo(quedan, true) : { resuelto: true, sellado: true };
 }
 
 const VIGENCIA_MS = 60 * 1000;   // el hook regenera a lo sumo una vez por minuto (AC 2)
@@ -322,10 +376,8 @@ function leer(opts = {}) {
   const home = opts.home || os.homedir();
   if (!opts.forzar) {
     try {
-      // el nuevo; si todavía no está (la primera vez después del renombre), el de antes
-      let texto;
-      try { texto = fs.readFileSync(rutaIndice(home), 'utf8'); } catch { texto = fs.readFileSync(rutaIndiceVieja(home), 'utf8'); }
-      const doc = JSON.parse(texto);
+      // sólo el nuevo: el de antes del renombre no es un índice, es una memoria por pasar (se suma al construir)
+      const doc = JSON.parse(fs.readFileSync(rutaIndice(home), 'utf8'));
       const esperada = huellaDe({ ...doc, huella: undefined });
       const fresco = Date.now() - Date.parse(doc.generado) < VIGENCIA_MS;
       if (doc.huella === esperada && fresco) return doc;
@@ -361,4 +413,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { construir, leer, guardar, clasificar, normalizar, esLocal, huellaDe, rutaIndice, rutaMemoria, rutaIndiceVieja, rutaMemoriaVieja, reposBajo, CATALOGO, CATALOGO_VIEJO };
+module.exports = { construir, leer, guardar, resolverViejos, clasificar, normalizar, esLocal, huellaDe, rutaIndice, rutaMemoria, rutaIndiceVieja, rutaMemoriaVieja, reposBajo, CATALOGO, CATALOGO_VIEJO };

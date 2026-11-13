@@ -118,22 +118,22 @@ valores en inglés no reconoce `production` ni `non-production`: trata ese servi
 lo deja pasar). Para un repo que comparten máquinas que todavía no se actualizaron, conviene seguir con los de antes.
 
 Lo que corre de verdad es la copia de `/opt/tycon`, y ésa cambia sólo cuando cada persona **reinstala con su
-contraseña**. Hasta que reinstalen todas las máquinas autorizadas:
+contraseña**. Lo que hace el freno con los nombres de antes:
 
-- el arnés **escribe** el índice y la memoria con los dos nombres, y **lee** el catálogo y `~/.claude/tycon.json`
-  (`paths` e `integrations`, o sus nombres en castellano) con los dos: la copia vieja sigue frenando igual, también un
-  servidor declarado después del renombre;
-- el freno protege los dos nombres de cada archivo, y el cuadro de aprobación los pide a los dos;
-- **reclasificá (`--reclasificar`) o volvé a sellar la memoria (`--verificar`) recién después de reinstalar**: la puerta
-  vieja sólo toca la memoria con el nombre viejo, y el arnés nuevo junta las dos, así que el servidor vuelve a quedar
-  como producción en la sesión siguiente (el lado seguro: nunca baja producción sin querer);
-- el aviso de arranque dice **«el freno quedó viejo: reinstalalo»** en cada máquina que todavía no lo hizo (nunca
-  «alguien lo cambió»). Al reinstalar, el instalador trae solo el origen que ya habías aceptado y saca el archivo
-  administrado viejo (queda un respaldo al lado).
-
-Un catálogo nuevo conviene escribirlo con el nombre nuevo; los de los repos de producto se pasan con el
-retiro de los nombres viejos. Tener los dos catálogos en el mismo repo es un error: el commit no se crea. La escritura doble se apaga en un
-commit aparte, recién con todas las máquinas «al día».
+- **el catálogo** se sigue leyendo y protegiendo con sus dos nombres y sus claves de antes, hasta que los productos lo
+  migren. Un catálogo nuevo conviene escribirlo con el nombre nuevo. Tener los dos catálogos en el mismo repo es un
+  error: el commit no se crea;
+- **el índice, la memoria y el registro** se escriben y se protegen sólo con el nombre nuevo. La memoria y el índice de
+  antes se pasan **una vez** a los nuevos al regenerar (sumar sólo agrega servidores de producción) y se borran; desde
+  ahí, un servidor bajado con `--reclassify` no vuelve. Si la memoria de antes está tocada o no se lee, queda, y el
+  freno no decide nada sobre bases hasta que la resolvés: `--verify` si sólo se tocó la de antes, `--reclassify <host>`
+  si no. Al reinstalar, el instalador borra lo de antes que ya está en lo nuevo, y lo que no, lo deja y lo dice;
+- **la configuración de la máquina**: el freno lee sólo `paths` e `integrations` de `~/.claude/tycon.json`. Con sus
+  nombres en castellano, los ignora y lo dice: el índice se arma sin esa configuración, y lo que no encuentra lo frena;
+- las opciones de la puerta son `--load-key`, `--reclassify`, `--verify` y `--max-rows`. Hasta reinstalar, la puerta
+  instalada entiende sólo las de antes; el aviso de arranque te nombra la que entiende tu puerta, y dice **«el freno
+  quedó viejo: reinstalalo»** (nunca «alguien lo cambió»). Al reinstalar, el instalador trae solo el origen que ya
+  habías aceptado y saca el archivo administrado viejo (queda un respaldo al lado).
 
 ## Cargar la clave (la primera vez)
 
@@ -141,7 +141,7 @@ No la tipeés en el chat, ni se la pases al asistente. Un comando te deja en el 
 `cargar-clave-<entrada>.command` y lo abre:
 
 ```bash
-/opt/tycon/bin/tycon-prod-sql --cargar-clave <host>
+/opt/tycon/bin/tycon-prod-sql --load-key <host>
 ```
 
 Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda en un llavero propio
@@ -155,13 +155,13 @@ Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda
 /opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select top 10 * from Articulos'
 
 # más filas de las 50 por defecto
-/opt/tycon/bin/tycon-prod-sql <host> 'select …' --max-filas 200
+/opt/tycon/bin/tycon-prod-sql <host> 'select …' --max-rows 200
 
 # revisar que la entrada del Llavero siga sana (no lee la contraseña)
-/opt/tycon/bin/tycon-prod-sql --verificar
+/opt/tycon/bin/tycon-prod-sql --verify
 
 # un host que ya NO es producción (queda en el registro, y lo aprobás en el cuadro)
-/opt/tycon/bin/tycon-prod-sql --reclasificar <host>
+/opt/tycon/bin/tycon-prod-sql --reclassify <host>
 ```
 
 🔴 **En el cuadro: «Permitir», nunca «Permitir siempre».** El punto entero de esto es que cada
@@ -225,7 +225,7 @@ un número entero en rango.
 
 **Producción es pegajosa**: un host que alguna vez se vio como producción no vuelve a
 no-producción por reescribir un archivo ni por borrar el índice. Lo único que lo baja es
-`--reclasificar`, que pasa por el cuadro.
+`--reclassify`, que pasa por el cuadro.
 
 ## El firewall: la IP de tu máquina, por la puerta
 
@@ -434,7 +434,7 @@ El mensaje dice el motivo y el camino correcto. Los dos casos normales:
 - **«no está declarado»** → es un servidor de prueba: declaralo en el `.tycon/production.json` del
   repo que lo usa.
 - **«está declarado como producción»** → usá la puerta. Si de verdad dejó de serlo,
-  `--reclasificar`.
+  `--reclassify`.
 - **«no encontré el snapshot de shell de esta sesión»** → esa máquina tiene el freno de antes del
   2026-09-16 instalado. Claude Code 2.1.272 (la extensión de VS Code) ya no escribe ese snapshot, y
   el freno de ahora, sin snapshot, le pregunta al shell de login en vivo. Corré el instalador
@@ -580,7 +580,7 @@ comandos reales.
 La carga la hace el `.command` que deja la puerta en el Escritorio, y eso está bien. Si alguien
 carga la entrada **a mano con `-A`**, cualquier programa del usuario puede leer la contraseña sin
 cuadro — y la puerta **se niega a usarla** y te dice que la borres y la vuelvas a cargar. Para
-revisarlo: `tycon-prod-sql --verificar` dice, clave por clave, quién puede leerla (y ahora **sale
+revisarlo: `tycon-prod-sql --verify` dice, clave por clave, quién puede leerla (y ahora **sale
 ≠ 0** si algo está mal, así que se puede llamar desde un guion).
 
 La contraseña nunca viaja por los argumentos de un comando: iría a la lista de procesos, visible
@@ -597,9 +597,9 @@ Se midió con un **servidor SQL de mentira** en la propia máquina que decodific
 clave del paquete de login (`scripts/tests/lib/tds-spy.py`): con la config presente el cliente
 mandó la clave vieja; sin ella, la de la variable; con `-P`, la del argumento. Por eso la
 puerta corre el cliente con `HOME` en una carpeta vacía —no ve ninguna config del usuario— y
-`--verificar` dice si esa config existe. Caso T32 de `scripts/tests/tycon-prod-sql.test.sh`, con
+`--verify` dice si esa config existe. Caso T32 de `scripts/tests/tycon-prod-sql.test.sh`, con
 el cliente real y su control.
 
-La regla: **un «Login failed» con `--verificar` en verde NO es una clave mal cargada.**
+La regla: **un «Login failed» con `--verify` en verde NO es una clave mal cargada.**
 Antes de pedirle a alguien que borre y recargue la entrada, hay que saber qué clave viajó de
 verdad.

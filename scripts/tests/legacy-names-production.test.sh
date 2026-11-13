@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
-# legacy-names-production.test.sh — el freno de producción renombrado a inglés con
-# ESCRITURA DOBLE (T49-T51).
+# legacy-names-production.test.sh — el freno de producción renombrado a inglés: lo que queda doble (T49-T51).
 #
-# POR QUÉ ESCRITURA DOBLE Y NO UN ALIAS: la copia del freno que corre de verdad vive en /opt/tycon, de root, y sólo se
-# actualiza cuando la persona reinstala con `sudo`. Hasta que TODAS las máquinas autorizadas reinstalen, en cada una
-# conviven la copia vieja de /opt (lee `produccion-indice.json`, `produccion-memoria.json` y `.tycon/produccion.json`) y
-# el arnés nuevo (escribe `production-*.json` y lee `.tycon/production.json`). Si el nuevo escribiera sólo los nombres
-# nuevos, un servidor declarado después del renombre le quedaría invisible a la copia vieja. Por eso el índice y la
-# memoria se escriben con los dos nombres, y el catálogo se lee con los dos.
+# El freno escribe y protege su índice, su memoria y su registro sólo con el nombre nuevo; la memoria y el índice
+# viejos se pasan una vez a los nuevos (production-single-name.test.sh). Lo que sigue doble es el catálogo de los
+# productos (`.tycon/produccion.json` y sus claves de antes), que se lee y se protege con los dos nombres hasta que los
+# productos lo migren.
 #
 # Qué prueba:
-#   T49 — un servidor declarado con el nombre nuevo lo frena la copia VIEJA de /opt (índice fresco, y también cuando
-#         la copia vieja reconstruye sola el índice: por la memoria vieja, que se sigue escribiendo).
-#   T50 — el freno nuevo protege del agente los dos nombres del catálogo, del índice y de la memoria; la configuración
-#         administrada pide confirmación sobre los dos; el lanzador en bash reconoce los dos.
+#   T49 — el catálogo con su nombre y sus claves viejas se sigue leyendo; con los dos nombres y contenidos distintos,
+#         o una clave con sus dos nombres y valores distintos, es un error de ese repo; lo que marcaba la memoria
+#         vieja se suma a la nueva.
+#   T50 — el freno protege del agente los dos nombres del catálogo, el índice y la memoria; la configuración
+#         administrada pide confirmación sobre ellos; el lanzador en bash los reconoce.
 #   T51 — con una copia instalada anterior al renombre, el aviso dice «el freno quedó viejo: reinstalalo», nunca
 #         «alguien lo cambió».
 #   Además: el catálogo con los dos nombres, las claves viejas, las opciones viejas del instalador y la mudanza de /opt.
@@ -38,7 +36,6 @@ OLD_SHA=a6bae2bd95bfd7dd789ee3e219bcfa565f2ea546
 P_OLD="produ""ccion"
 OLD_DIR="scripts/$P_OLD"
 OLD_CATALOG=".tycon/$P_OLD.json"
-OLD_INDEX="$P_OLD-ind""ice.json"
 OLD_MEMORY="$P_OLD-memo""ria.json"
 OLD_MANAGED="tycon-$P_OLD.json"
 OLD_ROOT_VAR="TYCON_PROD_RA""IZ"
@@ -127,55 +124,24 @@ run_guard(){ payload "$2" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PRO
 
 has_host(){ node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const h=process.argv[2]; const x=d.hosts?d.hosts[h]:null; const m=(d.produccion||d.memoria||[]); process.exit((x&&x.ambiente==="produccion")||m.includes(h)?0:1)' "$1" "$2" 2>/dev/null; }
 
-# ═════ T49 · BatchP_DoubleWrite ═════════════════════════════════════════════════════════════════════════════
+# ═════ T49 · el catálogo con sus dos nombres, y la memoria de antes que se pasa a la nueva ═════════════════════════
+# Desde que el freno escribe sus estados sólo con el nombre nuevo, de la escritura doble quedan dos cosas: el catálogo de
+# los productos se sigue leyendo con su nombre y sus claves de antes, y lo que marcaba la memoria de antes no se pierde.
 world
-LAB="$TMP/lab-opt"
-if ! old_opt "$LAB"; then
-  no "T49 · no pude armar la copia vieja del freno desde ${OLD_SHA:0:10}"
-else
-  OLD_GUARD="$LAB/opt/tycon/hooks/prod-access-guard.js"
-  reindex
-  if [ -f "$PIPE/production-index.json" ] && [ -f "$PIPE/$OLD_INDEX" ] && has_host "$PIPE/production-index.json" "$HOST_NEW" && has_host "$PIPE/$OLD_INDEX" "$HOST_NEW"; then
-    ok "T49a · el índice se escribe con los dos nombres y los dos tienen el servidor declarado con el nombre nuevo"
-  else no "T49a · falta un índice o el servidor nuevo — $(ls "$PIPE" | tr '\n' ' ') · $(head -c 200 "$TMP/reindex-out")"; fi
+reindex
+if has_host "$PIPE/production-index.json" "$HOST_OLD"; then ok "T49d · el catálogo con el nombre y las claves viejas se sigue leyendo"
+else no "T49d · el servidor del catálogo viejo no entró al índice"; fi
 
-  if [ -f "$PIPE/production-memory.json" ] && [ -f "$PIPE/$OLD_MEMORY" ] && has_host "$PIPE/production-memory.json" "$HOST_NEW" && has_host "$PIPE/$OLD_MEMORY" "$HOST_NEW"; then
-    ok "T49b · la memoria de producción se escribe con los dos nombres y los dos la tienen"
-  else no "T49b · falta una memoria o el servidor nuevo en ella"; fi
-
-  if cmp -s "$PIPE/production-index.json" "$PIPE/$OLD_INDEX"; then ok "T49c · los dos índices son idénticos (la copia vieja lee el mismo contenido)"
-  else no "T49c · los dos índices difieren"; fi
-
-  if has_host "$PIPE/production-index.json" "$HOST_OLD"; then ok "T49d · el catálogo con el nombre y las claves viejas se sigue leyendo"
-  else no "T49d · el servidor del catálogo viejo no entró al índice"; fi
-
-  rc="$(run_guard "$OLD_GUARD" "sqlcmd -S $HOST_NEW -Q \"select 1\"")"
-  if [ "$rc" = 2 ] && grep -q "está declarado como PRODUCCIÓN" "$TMP/err"; then ok "T49e · la copia VIEJA de /opt frena como producción un servidor declarado después del renombre"
-  else no "T49e · la copia vieja no lo frenó como producción (rc=$rc) — $(head -c 200 "$TMP/err")"; fi
-
-  # la copia vieja reconstruye sola el índice (el suyo, viejo) cuando no está: no ve el catálogo nuevo, pero la memoria
-  # vieja —que el arnés nuevo sigue escribiendo— lo tiene
-  rm -f "$PIPE/$OLD_INDEX"
-  rc="$(run_guard "$OLD_GUARD" "sqlcmd -S $HOST_NEW -Q \"select 1\"")"
-  if [ "$rc" = 2 ] && grep -q "está declarado como PRODUCCIÓN" "$TMP/err" && grep -q "por memoria" "$TMP/err"; then
-    ok "T49f · y cuando la copia vieja reconstruye su índice, lo frena por la memoria vieja"
-  else no "T49f · al reconstruir, la copia vieja no lo frenó por memoria (rc=$rc) — $(head -c 200 "$TMP/err")"; fi
-
-  # lo que aprendió la copia vieja por su cuenta (un host en su memoria) no se pierde en la nueva: se leen las dos
-  node -e '
-    const f=require("fs"), c=require("crypto"), p=process.argv[1];
-    const d=JSON.parse(f.readFileSync(p,"utf8")); d.produccion=[...new Set([...d.produccion,"solo-vieja.example.com"])].sort();
-    d.huella=c.createHash("sha256").update(JSON.stringify({produccion:d.produccion})).digest("hex"); f.writeFileSync(p, JSON.stringify(d,null,2));
-  ' "$PIPE/$OLD_MEMORY"
-  reindex
-  if has_host "$PIPE/production-memory.json" "solo-vieja.example.com" && has_host "$PIPE/production-index.json" "solo-vieja.example.com"; then
-    ok "T49g · la memoria nueva junta lo de la vieja (producción pegajosa entre los dos nombres)"
-  else no "T49g · un host que sólo tenía la memoria vieja se perdió"; fi
-
-  rc="$(run_guard "$GUARD" "sqlcmd -S $HOST_NEW -Q \"select 1\"")"
-  if [ "$rc" = 2 ] && grep -q "está declarado como PRODUCCIÓN" "$TMP/err"; then ok "T49h · el freno nuevo también lo frena como producción"
-  else no "T49h · el freno nuevo no lo frenó (rc=$rc) — $(head -c 200 "$TMP/err")"; fi
-fi
+# lo que marcaba la memoria vieja (un host que la nueva no tiene) se suma a la nueva, y la vieja se borra
+node -e '
+  const f=require("fs"), c=require("crypto"), p=process.argv[1];
+  const h=["solo-vieja.example.com"];
+  f.writeFileSync(p, JSON.stringify({produccion:h, huella:c.createHash("sha256").update(JSON.stringify({produccion:h})).digest("hex")}));
+' "$PIPE/$OLD_MEMORY"
+reindex
+if has_host "$PIPE/production-memory.json" "solo-vieja.example.com" && has_host "$PIPE/production-index.json" "solo-vieja.example.com" && [ ! -e "$PIPE/$OLD_MEMORY" ]; then
+  ok "T49g · la memoria nueva junta lo de la vieja (producción pegajosa entre los dos nombres), y la vieja se borra"
+else no "T49g · un host que sólo tenía la memoria vieja se perdió, o la vieja quedó — $(ls "$PIPE" | tr '\n' ' ')"; fi
 
 # el catálogo con los dos nombres y contenido distinto: ese repo no se lee (sus hosts quedan desconocidos → frenados)
 world
@@ -196,7 +162,7 @@ else no "T49j · la mezcla de claves se leyó como no-producción"; fi
 
 # ═════ T50 · BatchP_GuardProtectsBothNames ══════════════════════════════════════════════════════════════════
 world; reindex
-for target in "$REPOS/nuevo/.tycon/production.json" "$REPOS/viejo/$OLD_CATALOG" "$PIPE/production-index.json" "$PIPE/$OLD_INDEX" "$PIPE/production-memory.json" "$PIPE/$OLD_MEMORY"; do
+for target in "$REPOS/nuevo/.tycon/production.json" "$REPOS/viejo/$OLD_CATALOG" "$PIPE/production-index.json" "$PIPE/production-memory.json"; do
   name="${target#"$TMP"/}"
   rc="$(run_guard "$GUARD" "printf '{}' > $target")"
   [ "$rc" = 2 ] && ok "T50a · el freno frena escribir ${name}" || no "T50a · escribir ${name} pasó (rc=$rc)"
@@ -207,17 +173,17 @@ done
 if [ -f "$TEMPLATE" ] && node -e '
   const t = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
   const ask = ((t.permissions || {}).ask || []).join("\n");
-  const need = [".tycon/production.json", ".tycon/" + process.argv[2] + ".json", "production-index.json", process.argv[3], "production-memory.json", process.argv[4]];
+  const need = [".tycon/production.json", ".tycon/" + process.argv[2] + ".json", "production-index.json", "production-memory.json"];
   const miss = need.filter((n) => !ask.includes(n));
   if (miss.length) { console.error(miss.join(", ")); process.exit(1); }
-' "$TEMPLATE" "$P_OLD" "$OLD_INDEX" "$OLD_MEMORY" 2>"$TMP/tpl-err"; then
-  ok "T50c · la configuración administrada pide confirmación para editar los dos nombres del catálogo, del índice y de la memoria"
+' "$TEMPLATE" "$P_OLD" 2>"$TMP/tpl-err"; then
+  ok "T50c · la configuración administrada pide confirmación para editar los dos nombres del catálogo, el índice y la memoria"
 else no "T50c · a la plantilla administrada le faltan reglas: $(cat "$TMP/tpl-err" 2>/dev/null)"; fi
 
 # el filtro crudo del lanzador en bash (lo que decide cuando node no se puede correr): los dos nombres
 if [ -f "$SHIM" ]; then
   eval "$(sed -n '/^nombra_bases() {/,/^}/p' "$SHIM")"
-  for t in ".tycon/production.json" "$OLD_CATALOG" "production-index.json" "$OLD_INDEX" "production-memory.json" "$OLD_MEMORY"; do
+  for t in ".tycon/production.json" "$OLD_CATALOG" "production-index.json" "production-memory.json"; do
     ENTRADA="{\"tool_input\":{\"command\":\"cat x/$t\"}}"
     if nombra_bases; then ok "T50d · el lanzador reconoce ${t} como algo del freno"; else no "T50d · el lanzador no reconoce ${t}"; fi
   done
@@ -402,34 +368,8 @@ s="$(mem_case '
   const i = m.construir({ home, raiz }); process.stdout.write(`${m.clasificar("b.example.com", i).estado}|${i.memoria_alterada}`);
 ')"
 [ "$s" = "produccion|true" ] && ok "5B-C1a · con las dos memorias ilegibles, el host de producción se recupera del índice (y se dice alterada)" || no "5B-C1a · memorias ilegibles: «${s}»"
-# La memoria vieja (la que escribe la copia de /opt) borrada, con un host que la nueva no tiene: se recupera
-world
-s="$(mem_case '
-  const m = require(process.argv[1]); const fs = require("fs"); const [, , home, raiz] = process.argv;
-  const P = "produ" + "ccion";
-  fs.writeFileSync(`${raiz}/nuevo/.tycon/production.json`, JSON.stringify({ servers: [{ host: "a.example.com", environment: "produccion", keychain: "tycon-prod-a" }] }));
-  m.guardar(m.construir({ home, raiz }), home);
-  // la copia vieja aprendió B: su índice y su memoria lo tienen; la nueva no
-  const vi = JSON.parse(fs.readFileSync(m.rutaIndiceVieja(home), "utf8")); vi.memoria = ["a.example.com", "b.example.com"];
-  fs.writeFileSync(m.rutaIndiceVieja(home), JSON.stringify(vi));
-  fs.writeFileSync(`${raiz}/nuevo/.tycon/production.json`, JSON.stringify({ servers: [{ host: "b.example.com", environment: "no-produccion" }] }));
-  fs.unlinkSync(m.rutaMemoriaVieja(home));
-  const i = m.construir({ home, raiz }); process.stdout.write(`${m.clasificar("b.example.com", i).estado}|${i.memoria_alterada}`);
-')"
-[ "$s" = "produccion|true" ] && ok "5B-C1b · con la memoria vieja borrada, lo que aprendió la copia vieja vuelve del índice viejo (y se dice alterada)" || no "5B-C1b · memoria vieja borrada: «${s}»"
-# Las dos memorias borradas: se une la memoria de LOS DOS índices, no la del primero no vacío
-world
-s="$(mem_case '
-  const m = require(process.argv[1]); const fs = require("fs"); const [, , home, raiz] = process.argv;
-  fs.writeFileSync(`${raiz}/nuevo/.tycon/production.json`, JSON.stringify({ servers: [{ host: "a.example.com", environment: "produccion", keychain: "tycon-prod-a" }] }));
-  m.guardar(m.construir({ home, raiz }), home);
-  const vi = JSON.parse(fs.readFileSync(m.rutaIndiceVieja(home), "utf8")); vi.memoria = ["a.example.com", "b.example.com"];
-  fs.writeFileSync(m.rutaIndiceVieja(home), JSON.stringify(vi));
-  fs.writeFileSync(`${raiz}/nuevo/.tycon/production.json`, JSON.stringify({ servers: [{ host: "b.example.com", environment: "no-produccion" }] }));
-  fs.unlinkSync(m.rutaMemoria(home)); fs.unlinkSync(m.rutaMemoriaVieja(home));
-  const i = m.construir({ home, raiz }); process.stdout.write(`${m.clasificar("b.example.com", i).estado}|${i.memoria_alterada}`);
-')"
-[ "$s" = "produccion|true" ] && ok "5B-C2 · con las dos memorias borradas, se juntan las memorias de los dos índices" || no "5B-C2 · memorias borradas: «${s}»"
+# (la memoria vieja borrada y las dos memorias borradas, con el índice de antes: production-single-name.test.sh, que
+# corre también en la copia pública)
 # Un comodín `product*` cualquiera no es un archivo del freno; `production-*` en su carpeta sí
 world; reindex
 for cmd in "cp fixtures/product*.json out/" "rm -f build/product*" "mv product* archive/"; do
@@ -446,19 +386,6 @@ g2="$(env HOME="$CFG_HOME" TYCON_PROFILE=0 node "$AQUI/scripts/lib/tycon-config.
 # Las dos formas de una sección con el mismo contenido en otro orden no son «valores distintos»
 s="$(cfg "{\"integrations\":{\"engram\":true,\"codex\":false},\"$I_OLD\":{\"codex\":false,\"engram\":true}}")"
 [ "$s" = "|true|" ] && ok "5B-C6 · el mismo contenido en otro orden no es un conflicto" || no "5B-C6 · mismo contenido, otro orden: «${s}»"
-# Si el registro viejo no se puede pasar al nuevo, no se escribe el nuevo (se pierde la historia) — sigue en el viejo
-world; reindex
-OLD_LOG="$PIPE/$P_OLD.log"; printf '{"ts":"antes"}\n' > "$OLD_LOG"; chmod 200 "$OLD_LOG"
-rc="$(run_guard "$GUARD" "sqlcmd -S $HOST_NEW -Q \"select 1\"")"
-chmod 600 "$OLD_LOG"
-if [ "$rc" = 2 ] && [ ! -e "$PIPE/production.log" ] && [ "$(wc -l < "$OLD_LOG" | tr -d ' ')" = 2 ]; then
-  ok "5B-C7 · con el registro viejo ilegible, el freno no arranca uno nuevo sin historia: anota en el viejo"
-else no "5B-C7 · registro: rc=$rc · nuevo $( [ -e "$PIPE/production.log" ] && echo existe || echo no) · viejo $(wc -l < "$OLD_LOG" | tr -d ' ') líneas"; fi
-world; reindex
-printf '{"ts":"antes"}\n' > "$PIPE/$P_OLD.log"
-rc="$(run_guard "$GUARD" "sqlcmd -S $HOST_NEW -Q \"select 1\"")"
-{ [ "$(head -1 "$PIPE/production.log" 2>/dev/null)" = '{"ts":"antes"}' ] && [ "$(wc -l < "$PIPE/production.log" | tr -d ' ')" = 2 ]; } \
-  && ok "5B-C7 · y legible, el nuevo arranca con la historia del viejo y la línea nueva" || no "5B-C7 · el nuevo no trae la historia: $(head -c 120 "$PIPE/production.log" 2>/dev/null)"
 
 # ═════ --stale-mentions aprende los kinds (folder, file, state-file, config-file, key) ═════════════════════
 out="$(node -e '

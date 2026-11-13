@@ -404,7 +404,7 @@ function juzgar({ soloLeer = false, reporte = REPORTE, reindex = false } = {}) {
       // de la memoria deja editar en silencio los archivos con los que el freno decide qué es
       // producción, y el aviso daba «bien» igual.
       const reglas = ((m.permissions || {}).ask || []).join(' ');
-      // los dos nombres del catálogo, del índice y de la memoria. Una administrada de antes del
+      // el catálogo con sus dos nombres; el índice y la memoria, sólo con el nuevo. Una administrada de antes del
       // renombre no los tiene, y eso ya lo dijo «quedó viejo»: no se suma otro aviso que parezca un toqueteo.
       const exigidas = administradaVieja ? [] : [
         ['tycon-prod-sql', 'la que abre el cuadro de aprobación de la puerta'],
@@ -413,8 +413,6 @@ function juzgar({ soloLeer = false, reporte = REPORTE, reindex = false } = {}) {
         ['production-index.json', 'la que hace aprobar una edición del índice de producción'],
         ['production-memory.json', 'la que hace aprobar una edición de la memoria de producción'],
         ['.tycon/produccion.json', 'la que hace aprobar un cambio del catálogo con su nombre de antes del renombre'],
-        ['produccion-indice.json', 'la que hace aprobar una edición del índice con su nombre de antes del renombre'],
-        ['produccion-memoria.json', 'la que hace aprobar una edición de la memoria con su nombre de antes del renombre'],
       ].filter(([clave]) => !reglas.includes(clave));
       if (exigidas.length) {
         avisos.push(`🔴 a la configuración administrada le faltan reglas del cuadro de aprobación: ${exigidas.map(([, q]) => q).join(' · ')}.`);
@@ -432,7 +430,19 @@ function juzgar({ soloLeer = false, reporte = REPORTE, reindex = false } = {}) {
   // ── 4. la memoria de producción alterada (queda a la vista hasta que se revise) ──────────────
   if (indice && indice.memoria_alterada) {
     avisos.push('🔴 la memoria de producción fue tocada a mano (su huella no cierra). Mientras tanto el freno no decide nada sobre bases.');
-    avisos.push('   Revisala y volvé a sellarla: /opt/tycon/bin/tycon-prod-sql --verificar');
+    // Este aviso llega con la actualización del arnés; la puerta, recién cuando la máquina reinstala. La opción se nombra
+    // como la entiende la puerta instalada: se lee de su texto la que abre el modo de verificar (como install-guard.sh
+    // mira si conoce --close-firewall). Sin puerta legible, la de hoy.
+    let opcion = '--verify';
+    try {
+      const m = /^\s*(--[a-z-]+)\)\s+MODO=verificar\b/m.exec(fs.readFileSync(path.join(OPT, 'bin', 'tycon-prod-sql'), 'utf8'));
+      if (m) opcion = m[1];
+    } catch { /* sin puerta legible: la de hoy */ }
+    if (opcion === '--verify') {
+      avisos.push('   Si sólo se tocó lo de antes del renombre: /opt/tycon/bin/tycon-prod-sql --verify. Si no, revisala y bajá lo que corresponda con --reclassify <host>.');
+    } else {
+      avisos.push(`   Revisala y volvé a sellarla: /opt/tycon/bin/tycon-prod-sql ${opcion}`);
+    }
   }
 
   // ── 5. lo que el freno no pudo decidir (el registro que nadie más lee) ───────────────────────

@@ -1732,3 +1732,35 @@ test('T43 — con el filtro, --stale-mentions sigue encontrando una ruta vieja e
     fs.rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('RetireD_LegacyReadersOnlyWhatStillReadsOld @story-8.15 @ac-14 — cada lector de nombres viejos con su motivo; ninguno lee un estado viejo del freno ni nombra una opción vieja', () => {
+  const fuente = fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js'), 'utf8');
+  const bloque = fuente.slice(fuente.indexOf('const LEGACY_READERS = new Set(['), fuente.indexOf(']);', fuente.indexOf('const LEGACY_READERS = new Set([')));
+  // cada archivo de la lista, debajo de un comentario: su motivo (un renglón de archivos sigue al comentario o a otro de archivos)
+  let conMotivo = false;
+  const sinMotivo = [];
+  for (const linea of bloque.split('\n').slice(1)) {
+    if (/^\s*\/\//.test(linea)) { conMotivo = true; continue; }
+    const rutas = linea.match(/'[^']+'/g) || [];
+    if (rutas.length && !conMotivo) sinMotivo.push(...rutas);
+  }
+  assert.deepEqual(sinMotivo, [], 'archivos de LEGACY_READERS sin su motivo escrito arriba');
+  const lectores = [...require(path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js')).LEGACY_READERS];
+  // los nombres de antes, armados (como en las pruebas de nombres)
+  const P = 'produ' + 'ccion';
+  const estadosViejos = new RegExp(`${P}-ind${'ice'}\\.json|${P}-memo${'ria'}\\.json|${P}\\.log`);
+  const opcionesViejas = new RegExp(`--(?:cargar-${'clave'}|reclasi${'ficar'}|verifi${'car'}|max-${'filas'})\\b`);
+  // quienes pueden nombrar un estado viejo: el que los pasa a los nuevos y el que los borra
+  const pasanOBorran = new Set(['scripts/production/production-index.js', 'scripts/production/install-guard.sh']);
+  // ninguno nombra una opción vieja: el aviso lee de la puerta instalada la que ella entiende
+  const mal = [];
+  for (const rel of lectores) {
+    let texto;
+    try { texto = fs.readFileSync(path.join(RAIZ, rel), 'utf8'); } catch { continue; }   // un archivo del repo del equipo
+    if (!pasanOBorran.has(rel) && estadosViejos.test(texto)) mal.push(`${rel}: nombra un estado viejo del freno`);
+    if (opcionesViejas.test(texto)) mal.push(`${rel}: nombra una opción vieja del freno`);
+  }
+  assert.deepEqual(mal, []);
+  // la puerta no tiene más lectura del registro viejo
+  assert.doesNotMatch(fs.readFileSync(path.join(RAIZ, 'scripts', 'production', 'tycon-prod-sql'), 'utf8'), /REGISTRO_VIEJO/);
+});

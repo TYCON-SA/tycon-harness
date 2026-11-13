@@ -19,10 +19,10 @@
 # uso real no necesita tuberías ni redirecciones, que la forma canónica prohíbe.
 #
 # Formas aceptadas:
-#   tycon-prod-sql <host> '<sentencia>' [--max-filas N]
-#   tycon-prod-sql --reclasificar <host>     baja un host a no-producción (lo aprobás en el cuadro)
-#   tycon-prod-sql --verificar                revisa la instalación y la entrada del Llavero, sin leer el secreto
-#   tycon-prod-sql --cargar-clave <host>      deja el archivo para cargar la clave, sin consultar nada
+#   tycon-prod-sql <host> '<sentencia>' [--max-rows N]
+#   tycon-prod-sql --reclassify <host>       baja un host a no-producción (lo aprobás en el cuadro)
+#   tycon-prod-sql --verify                   revisa la instalación y la entrada del Llavero, sin leer el secreto
+#   tycon-prod-sql --load-key <host>          deja el archivo para cargar la clave, sin consultar nada
 #   tycon-prod-sql --open-firewall <host>     abre la regla de firewall de esta máquina en un Azure SQL de producción
 #   tycon-prod-sql --close-firewall <host>    la cierra (el hook de fin de sesión agrega --session <id>)
 #   tycon-prod-sql --locks                    dice qué servidores de producción tienen el candado de Azure (sólo lee)
@@ -54,9 +54,6 @@ HUELLAS="$RAIZ/opt/tycon/huellas.json"
 # la carpeta del estado: la regla de tycon-home.js stateDir (si existe ~/.tycon/state, la máquina vive ahí; story 8.23, tanda D)
 _ESTADO="$HOME/.claude/.tycon-pipeline"; [ -d "$HOME/.tycon/state" ] && _ESTADO="$HOME/.tycon/state"
 REGISTRO="$_ESTADO/production.log"
-# el registro de antes del renombre a inglés (story 8.9, tanda P) pasa al nuevo una vez, sin tocar el viejo: la
-# historia de consultas no se pierde
-REGISTRO_VIEJO="$_ESTADO/produccion.log"
 LLAVERO_PROPIO="$HOME/Library/Keychains/tycon-prod.keychain-db"
 MAX_FILAS=50
 
@@ -123,7 +120,7 @@ quien_lee(){ # $1 = volcado de dump-keychain, $2 = nombre del servicio
     }
   '
 }
-# los servicios que hay en el llavero propio (para --verificar)
+# los servicios que hay en el llavero propio (para --verify)
 servicios_del_llavero(){ printf '%s\n' "$1" | sed -n 's/^[[:space:]]*"svce"<blob>="\(.*\)"[[:space:]]*$/\1/p' | sort -u; }
 
 HOST_VALIDO='^[A-Za-z0-9][A-Za-z0-9._-]*$'
@@ -134,26 +131,17 @@ BASE_VALIDA='^[A-Za-z0-9_][A-Za-z0-9_.-]*$'       # el mismo charset que exige l
 sin_registro(){ printf '🔴 no pude anotar esta operación en el registro de producción (%s): quedó sin constancia.\n' "$1" >&2; }
 anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaron su charset)
   mkdir -p "$(dirname "$REGISTRO")" 2>/dev/null || { sin_registro "$REGISTRO"; return 0; }
-  # a un temporal y entra con `ln`, que no pisa (otro proceso nunca ve uno a medio copiar); si la historia no se pudo
-  # pasar, se sigue anotando en el viejo: nunca un registro nuevo sin su historia (AC 18)
-  local destino="$REGISTRO"
-  if [ ! -e "$REGISTRO" ] && [ -f "$REGISTRO_VIEJO" ]; then
-    local tmp="$REGISTRO.tmp-$$"
-    if cp -p "$REGISTRO_VIEJO" "$tmp" 2>/dev/null; then ln "$tmp" "$REGISTRO" 2>/dev/null; fi
-    rm -f "$tmp" 2>/dev/null
-    [ -e "$REGISTRO" ] || destino="$REGISTRO_VIEJO"
-  fi
-  printf '{"ts":"%s",%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" 2>/dev/null >> "$destino" || sin_registro "$destino"
+  printf '{"ts":"%s",%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" 2>/dev/null >> "$REGISTRO" || sin_registro "$REGISTRO"
 }
 
 # ── argumentos ────────────────────────────────────────────────────────────────────────────────
-[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-filas N]  ·  --cargar-clave <host>  ·  --reclasificar <host>  ·  --verificar  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks  ·  --delete-group <grupo>"
+[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-rows N]  ·  --load-key <host>  ·  --reclassify <host>  ·  --verify  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks  ·  --delete-group <grupo>"
 
 MODO=consulta; HOST=""; SENTENCIA=""; SESION_CIERRE=""
 # La consulta desde un archivo no se acepta: el cuadro de aprobación muestra el comando, no lo que trae el archivo.
 # Se mira cada argumento, en cualquier posición.
 for arg in "$@"; do
-  case "$arg" in (--file|--file=*) muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-filas N] — la consulta va en línea: el cuadro no muestra el contenido de un archivo";; esac
+  case "$arg" in (--file|--file=*) muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-rows N] — la consulta va en línea: el cuadro no muestra el contenido de un archivo";; esac
 done
 SESION_VALIDA='^[A-Za-z0-9-]{8,64}$'
 case "${1:-}" in
@@ -163,8 +151,8 @@ case "${1:-}" in
   --close-firewall) MODO=close-firewall; HOST="${2:-}"
                     if [ $# -eq 4 ] && [ "$3" = "--session" ] && [[ "$4" =~ $SESION_VALIDA ]]; then SESION_CIERRE="$4"
                     elif [ $# -ne 2 ] || [ -z "$HOST" ]; then muere "uso: tycon-prod-sql --close-firewall <host>  (sólo el host: cierra la regla de esta máquina y ninguna otra)"; fi ;;
-  --reclasificar) MODO=reclasificar; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --reclasificar <host>" ;;
-  --verificar)    MODO=verificar; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --verificar" ;;
+  --reclassify)   MODO=reclasificar; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --reclassify <host>" ;;
+  --verify)       MODO=verificar; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --verify" ;;
   # los candados: sola, sin host ni nada más (mira todos los servidores de producción declarados)
   --locks)        MODO=locks; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --locks  (sola: dice qué servidores de producción tienen el candado de Azure)" ;;
   # borrar un grupo: sólo el nombre; la suscripción, la confirmación y la espera las fija la puerta
@@ -174,13 +162,13 @@ case "${1:-}" in
   # 🔴 Cargar la clave SIN tener que fallar una consulta primero (2026-09-15, pedido del dev: el
   # disparador era «corré algo que falle», que es un rodeo). La clave la sigue tipeando la persona en
   # el archivo que deja la puerta: nunca pasa por la conversación ni la escribe el asistente.
-  --cargar-clave) MODO=cargar-clave; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --cargar-clave <host>" ;;
-  -*)             muere "primer argumento inválido: sólo <host>, --cargar-clave, --reclasificar, --verificar, --open-firewall, --close-firewall, --locks o --delete-group" ;;
+  --load-key)     MODO=cargar-clave; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --load-key <host>" ;;
+  -*)             muere "primer argumento inválido: sólo <host>, --load-key, --reclassify, --verify, --open-firewall, --close-firewall, --locks o --delete-group" ;;
   *)              HOST="$1"; SENTENCIA="${2:-}"
                   [ $# -ge 2 ] || muere "falta la sentencia: tycon-prod-sql <host> 'select …'"
                   if [ $# -gt 2 ]; then
-                    [ $# -eq 4 ] && [ "$3" = "--max-filas" ] || muere "sólo se acepta la sentencia en línea y, opcionalmente, --max-filas N (llegaron $# argumentos)"
-                    case "$4" in (*[!0-9]*|'') muere "--max-filas necesita un número";; esac
+                    [ $# -eq 4 ] && [ "$3" = "--max-rows" ] || muere "sólo se acepta la sentencia en línea y, opcionalmente, --max-rows N (llegaron $# argumentos)"
+                    case "$4" in (*[!0-9]*|'') muere "--max-rows necesita un número";; esac
                     MAX_FILAS="$4"
                   fi ;;
 esac
@@ -298,13 +286,20 @@ if [ "$MODO" = verificar ]; then
       process.exitCode = 7;
     }
   ' "$INDICE_JS" || MAL=1
-  # la memoria de producción: si la tocaron a mano, acá se vuelve a sellar (lo aprobaste en el cuadro)
-  "$NODE" -e '
-    const m = require(process.argv[1]);
-    const i = m.construir({ home: process.env.HOME });
-    if (i.memoria_alterada) { i.memoria_alterada = false; m.guardar(i, process.env.HOME, { resellar: true }); console.log("memoria de producción: estaba alterada — revisada y vuelta a sellar."); }
-    else console.log("memoria de producción: sana.");
-  ' "$INDICE_JS" || { echo "memoria de producción: 🔴 no pude revisarla"; MAL=1; }
+  # La memoria tocada sólo en lo de antes del renombre (la memoria o el índice con su nombre viejo): lo legible se suma a
+  # la nueva, se sella y lo viejo se borra. Sumar nunca baja un servidor. Con la memoria nueva tocada no se sella nada:
+  # eso lo decide una persona con --reclassify, y acá no se sella por ningún otro camino.
+  if memoria="$("$NODE" -e '
+    const r = require(process.argv[1]).resolverViejos({ home: process.env.HOME });
+    if (r.sellado && r.resuelto) console.log("memoria de producción: lo de antes del renombre pasó a la nueva y se borró ✓");
+    else if (r.resuelto) console.log("memoria de producción: sana.");
+    if (!r.resuelto) { console.log(`memoria de producción: 🔴 ${r.motivo}`); process.exitCode = 7; }
+  ' "$INDICE_JS")"; then
+    echo "$memoria"
+    case "$memoria" in *"se borró"*) anotar "\"accion\":\"verify-memory\",\"exit\":0" ;; esac
+  else
+    echo "${memoria:-memoria de producción: 🔴 no pude revisarla}"; MAL=1
+  fi
   # 🔴 Sale ≠ 0 cuando algo está mal. Salir siempre 0 hacía que «lo revisé y está todo bien» y
   # «lo revisé y está roto» fueran el mismo veredicto para quien lo llama desde un script
   # (revisores del Step 5, 2026-09-15).
@@ -761,7 +756,7 @@ dejar_command(){
    No pasan por la conversación, y el archivo se borra solo al terminar." 3
 }
 
-# `--cargar-clave <host>`: deja el archivo y lo abre, sin consultar nada. El host ya se validó arriba
+# `--load-key <host>`: deja el archivo y lo abre, sin consultar nada. El host ya se validó arriba
 # (tiene que estar declarado como producción y traer su «llavero»), así que acá sólo queda escribirlo.
 if [ "$MODO" = cargar-clave ]; then
   [ -f "$PLANTILLA" ] || muere "falta la plantilla para cargar la clave ($PLANTILLA). Reinstalá el freno."
@@ -812,7 +807,7 @@ USUARIO="$(printf '%s' "$atributos" | sed -n 's/.*"acct"<blob>="\([^"]*\)".*/\1/
 # clave, cargala», y el que llama mandaba a cargar de nuevo una clave que ya está (Step 5).
 CLAVE="$("$SECURITY" find-generic-password -s "$LLAVERO" -w "$LLAVERO_PROPIO" 2>/dev/null)" || CLAVE=""
 [ -n "$CLAVE" ] || muere "la entrada «${LLAVERO}» está en el Llavero pero no pude leer su contraseña
-   (¿el llavero quedó bloqueado, o le cambiaron el permiso?). Revisalo con: tycon-prod-sql --verificar"
+   (¿el llavero quedó bloqueado, o le cambiaron el permiso?). Revisalo con: tycon-prod-sql --verify"
 
 # ── la consulta ───────────────────────────────────────────────────────────────────────────────
 # -x: sin sustitución de variables — una sentencia con `$(SQLCMDPASSWORD)` devolvería la clave.
@@ -865,7 +860,7 @@ RC=$?
 CLAVE=""
 FILAS="$(printf '%s\n' "$SALIDA" | wc -l | tr -d ' ')"
 printf '%s\n' "$SALIDA" | head -n "$MAX_FILAS"
-[ "$FILAS" -gt "$MAX_FILAS" ] && printf '… (cortado en %s de %s líneas; pedí más con --max-filas N)\n' "$MAX_FILAS" "$FILAS"
+[ "$FILAS" -gt "$MAX_FILAS" ] && printf '… (cortado en %s de %s líneas; pedí más con --max-rows N)\n' "$MAX_FILAS" "$FILAS"
 printf 'rc=%s\n' "$RC"
 anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\",\"exit\":$RC,\"filas\":$FILAS"
 exit "$RC"

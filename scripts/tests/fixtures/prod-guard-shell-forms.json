@@ -47,7 +47,7 @@
     "OM"
    ],
    "touchesSource": "shell-expande",
-   "expect": "block",
+   "expect": "pass",
    "today": "pass",
    "limit": false
   },

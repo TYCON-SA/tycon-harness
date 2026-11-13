@@ -5,7 +5,7 @@
     "direction": "igual: dos archivos cambian de ruta",
     "reason": "Los dos guiones que sólo sirven en Azure DevOps (validate-pipeline-in-ado.sh y grant-new-product-permissions.js) se mudan de scripts/ci/ a su conector, integrations/azure-devops/scripts/, con el mismo número; nadie sube. Total 795."
   },
-  "total": 795,
+  "total": 793,
   "files": {
     "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
     "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
@@ -109,7 +109,7 @@
     "scripts/production/guard-libs/lib/tycon-config.js": 30,
     "scripts/production/guard-libs/setup/harness/tycon-home.js": 7,
     "scripts/production/install-guard.sh": 9,
-    "scripts/production/managed-settings.tycon-production.json.template": 6,
+    "scripts/production/managed-settings.tycon-production.json.template": 4,
     "scripts/production/node-shim.sh": 1,
     "scripts/production/production-index.js": 4,
     "scripts/production/tycon-prod-sql": 1,

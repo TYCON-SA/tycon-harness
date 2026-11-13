@@ -4975,7 +4975,7 @@
     {
      "id": "archivo-da-el-comando-en-linea",
      "type": "must-block",
-     "__doc": "Story 6.6 · T2 · el comando listo conserva `--max-filas` y lleva la consulta entre comillas simples, con las suyas escapadas.",
+     "__doc": "Story 6.6 · T2 · el comando listo conserva `--max-rows` y lleva la consulta entre comillas simples, con las suyas escapadas.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
       "q/consulta.sql": "select top 3 Id,\n       Nombre\nfrom Articulos\n"
@@ -4989,7 +4989,7 @@
       "tool_name": "Bash",
       "cwd": "${FIXTURE}",
       "tool_input": {
-       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net --file ${FIXTURE}/q/consulta.sql --sha256 cf0775a30a4ced382854d382d935b8c0313ddc342afd126658e7e4b86e3d694c --max-filas 7"
+       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net --file ${FIXTURE}/q/consulta.sql --sha256 cf0775a30a4ced382854d382d935b8c0313ddc342afd126658e7e4b86e3d694c --max-rows 7"
       }
      },
      "expect": {
@@ -4997,7 +4997,7 @@
       "stderr_re": [
        "contenido de un archivo",
        "tycon-prod-sql acme-sql\\.database\\.windows\\.net 'select top 3 Id,",
-       "--max-filas 7"
+       "--max-rows 7"
       ]
      },
      "tools": [
