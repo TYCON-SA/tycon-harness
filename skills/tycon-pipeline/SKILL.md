@@ -154,10 +154,10 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   `marker.fileEvents` + `file-events/<sid>.jsonl`). Sin código → pasa; código sin tests → avisa. Escape
   único: `marker.js set-flag atddBypass true --reason "<por qué>"` (auditado). Fuera del pipeline, `on-pre-commit.js` avisa
   (`.tycon/atdd-gate` con `block` para frenar). La guía de QA se pide sólo si hay superficie operable a
-  mano (`qa_guide: auto|off|always`). Un smoke corrido a mano no cuenta: va por `smoke-run.sh`.
-- **I.ii — mutantes**: `run-tests` corre `scripts/mutation-check.js` sobre los archivos que la story
-  declara; bloquea sólo si NINGÚN mutante murió; sobrevivientes → aviso. Escapes (persona):
-  `TYCON_MUTATION_CHECK=off` / `--no-mutation`. Corre sólo `node --test`.
+  mano (`qa_guide: auto|off|always`).
+- **I.ii — mutantes**: `run-tests` corre `mutation-check.js` (Jest, Vitest, .NET, pytest, `node --test`, `scoped`)
+  sobre lo declarado; frena si NINGÚN mutante murió (otra receta: avisa hasta el 2026-11-18 y frena desde ese día);
+  sobrevivientes → aviso. Escapes (persona): `TYCON_MUTATION_CHECK=off` / `--no-mutation`.
 - **Modo autónomo Nivel 1 (default ON)**: el Stop-hook `on-stop-dod-gate.js` no deja cerrar el turno con
   un check registrado en rojo (cap 6 iteraciones, no-progreso → escala). Opt-out `--no-autonomous` /
   `TYCON_PIPELINE_NO_AUTONOMOUS=1`; pánico `touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY`. Los checks se

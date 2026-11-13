@@ -212,6 +212,9 @@ la historia declara**, una vez por mutante, sobre una copia del repo. Nunca la s
 - **Una receta de la organización** (`stack.test_runners`) muta si declara `scoped`: el comando que corre sólo algunas
   pruebas, con `{files}` (los archivos) o `{classes}` (las clases de .NET). Sin `scoped`, el chequeo sale
   «estructural» y lo dice.
+- **Cuándo frena:** sólo si ningún mutante murió (las pruebas no ejercen el código nuevo). Con `node --test` frena
+  siempre. Con las demás recetas avisa y deja pasar hasta el 2026-11-18, para que cada equipo sume las pruebas que
+  faltan; desde ese día frena igual. Los sobrevivientes sólo avisan, con cualquier receta.
 - **Los topes:** .NET, 8 min en total y 3 min por ejecución (recompila en cada mutante); las demás, 3 min en total y
   2 min por ejecución. Ninguna ejecución pasa lo que queda del total; el portón lo mata a los 12 min como red. Antes de la
   base imprime cuántos mutantes hay y cuánto puede tardar.
