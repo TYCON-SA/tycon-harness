@@ -421,7 +421,7 @@ const HISTORIA_DE_MAIN = [
 ];
 // las tres reglas que a una historia nueva la frenan (o, la del nombre viejo del pedido, la anotan) y a una vieja sólo
 // le avisan: causa del reproceso, archivos inventados y `ado_work_item:`
-const CAMPO_VIEJO = (nombre) => new RegExp(`${nombre.replace(/\./g, '\\.')}: nace con \`ado_work_item:\``);
+const CAMPO_VIEJO = (nombre) => new RegExp(`${nombre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: nace con \`ado_work_item:\``);
 
 /** El producto de juguete con una rama creada antes de que main tuviera su historia de seguimiento (y lo que se pida en main). */
 function ramaAtrasada(enMain = {}) {
