@@ -324,7 +324,11 @@ function delCritico(palabras, m) {
   return { queHace: lineas, archivos: archivo ? archivos : [...new Set(iguales.map((f) => f.file).filter(Boolean))], completo: h.ruta, fuente: h.texto, cita };
 }
 
-/** La vuelta extra: su nota, o la carpeta de la corrida sin ella. */
+/**
+ * La vuelta extra, en tres renglones: la vuelta que se pide, lo que sigue abierto en el informe de hallazgos de la
+ * corrida (regla, archivo y si bloquea) y la nota de repensar de ESA vuelta (la de otra vuelta habla de lo anterior, y no
+ * se muestra). Lo abierto y la nota van en la fuente: si cambian después del cuadro, el click no vale.
+ */
 function deLaVuelta(palabras, m) {
   const iter = valor(palabras, '--iter');
   const dir = carpetaDeLaCorrida(m);
@@ -333,10 +337,31 @@ function deLaVuelta(palabras, m) {
   const texto = ruta ? leer(ruta) : null;
   let n = null;
   let roto = porQueNo(ruta);
-  try { n = texto ? JSON.parse(texto) : null; } catch (e) { roto = ` (su nota no se entiende: ${e.message})`; }
-  if (!n) return { queHace: [`Una vuelta ${iter} de revisores sobre lo que quedó abierto${roto}`], completo: roto ? ruta : dir, fuente: texto || '' };
-  const lineas = [n.repeated && `Se repitió: ${n.repeated}`, n.change ? `Cambia: ${n.change}` : n.keep && `Sigue igual: ${n.keep}`, n.story_change && `Cambia la historia: ${n.story_change}`].filter(Boolean);
-  return { queHace: lineas, completo: ruta, fuente: texto };
+  try { n = texto ? JSON.parse(texto) : null; } catch (e) { roto = ` (${e.message})`; }
+  const campos = n ? [n.repeated && `Se repitió: ${n.repeated}`, n.change ? `Cambia: ${n.change}` : n.keep && `Sigue igual: ${n.keep}`, n.story_change && `Cambia la historia: ${n.story_change}`].filter(Boolean) : [];
+  // una nota que existe y no se lee no es «sin nota»
+  const deLaNota = n ? `Nota de la vuelta ${iter}: ${campos.join('; ')}`
+    : texto !== null && texto !== undefined ? `Nota de la vuelta ${iter}: no se entiende${roto}`
+      : roto ? `No pude leer la nota de repensar de la vuelta ${iter}${roto}` : `Sin nota de repensar de la vuelta ${iter}`;
+  const ab = abiertoDeLaCorrida(dir);
+  return { queHace: [`Vuelta ${iter} de revisores`, ab.linea, deLaNota], completo: texto !== null && texto !== undefined ? ruta : dir, fuente: JSON.stringify({ abiertos: ab.lista, nota: texto || null }) };
+}
+
+/**
+ * Lo que sigue abierto en el informe de hallazgos de la corrida: `{ linea, lista }`, un tramo por hallazgo abierto en un
+ * solo renglón (la pregunta muestra tres renglones de «Qué hace», y la nota de la vuelta tiene que entrar). «No lo pude
+ * leer» no es «nada», y una carpeta que no se ubica no es un informe que falta.
+ */
+function abiertoDeLaCorrida(dir) {
+  const uno = (linea, lista) => ({ linea, lista });
+  if (!dir) return uno('No pude ubicar la carpeta de la ejecución: no sé qué sigue abierto', { error: 'sin carpeta' });
+  const rr = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'review-rounds.js'));
+  const h = rr.hallazgosDe(dir);
+  if (h.error) return uno(`No pude leer el informe de hallazgos: ${h.error}`, { error: h.error });
+  if (!h.existe) return uno('No hay informe de hallazgos en esta ejecución', null);
+  const lista = rr.abiertos(h.lista);
+  if (!lista.length) return uno('Nada abierto en el informe de hallazgos', lista);
+  return uno(`Sigue abierto: ${lista.map((a) => `${a.regla}${a.file ? ` en ${a.file}` : ''}, ${a.bloquea ? 'bloquea' : 'no bloquea'}`).join('; ')}`, lista);
 }
 
 // Los topes cuando el que arma el cuadro no los pasa: la lectura de story-gate-io.js, o los de fábrica si no carga
@@ -467,4 +492,4 @@ function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {
   return null;
 }
 
-module.exports = { partesDe, historiaDe, seccionesDelPlan, planDe, carpetaDeLaCorrida, valor };
+module.exports = { partesDe, historiaDe, seccionesDelPlan, planDe, carpetaDeLaCorrida, valor, abiertoDeLaCorrida };

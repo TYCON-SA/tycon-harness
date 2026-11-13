@@ -2,9 +2,11 @@
 /**
  * batch-scope.js — la parte de una historia que se está haciendo (la tanda que anota `marker.js set-batch`).
  *
- * Una parte vale si declara `files:` no vacío, cada archivo suyo está en `files_to_create` o `files_to_modify` de la
- * historia, y ningún archivo de código suyo está en `files:` de otra parte abierta (dos partes abiertas que comparten
- * código se miden como la historia entera; una guía, `suites.json` o `sprint-status.yaml` compartidos no la invalidan).
+ * Una parte vale si declara `files:` no vacío o, sin él, si la historia le ata al menos un archivo (la regla de atar,
+ * `tandasQueNombran`: su lista son los atados más los que no se atan a ninguna tanda); cada archivo suyo está en
+ * `files_to_create` o `files_to_modify` de la historia, y ningún archivo de código suyo es de otra parte abierta (dos
+ * partes abiertas que comparten código se miden como la historia entera; una guía, `suites.json` o
+ * `sprint-status.yaml` compartidos no la invalidan).
  * Con una parte válida, el riesgo, la marca de delicada y el tamaño del plan miden la parte más lo que el cambio toca;
  * el pase, su modelo y la revisión de la historia siguen por la historia entera. En duda (la historia no se lee, el
  * bloque no se entiende, la parte no está), la historia entera.
@@ -12,6 +14,73 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const path = require('path');
+
+const sinPunto = (r) => r.replace(/^\.\//, '');
+// Los renglones de lista del frontmatter (`- ruta  # comentario`), con la ruta como la lee la lista (entre comillas o no).
+function renglonesDeLista(fm) {
+  return fm.split(/\r?\n/).map((l) => l.match(/^\s*-\s+(?:(["'])(.*?)\1|([^\s#]+))(.*)$/)).filter(Boolean)
+    .map((m) => ({ ruta: sinPunto((m[2] !== undefined ? m[2] : m[3]).trim()), resto: m[4] }));
+}
+
+/**
+ * Las tandas a las que la historia ata un archivo, cualquiera sea su estado: el comentario de su renglón en la lista
+ * (`# tanda` y su nombre o su letra), una fila de la tabla de pruebas de esa tanda (`tests` / `tests_pending`) o una
+ * tarea de esa tanda (`tasks` / `tasks_pending`) que lo nombra. Las tandas salen de `parsePipelinesBlock`, que lee
+ * el bloque en forma de lista y de mapa. Devuelve `[{ name, status }]`. La usan la parte (`validarParte`) y la matriz.
+ */
+function tandasQueNombran(content, rel) {
+  const fm = (String(content).match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
+  const cuerpo = String(content).slice(fm.length);
+  const tandas = require('./story-checks.js').parsePipelinesBlock(content)
+    .map((t) => ({ name: t.name, status: t.status, tests: [...t.tests, ...t.testsPending], tasks: [...t.tasks, ...t.tasksPending] }));
+  if (!tandas.length) return [];
+  const items = renglonesDeLista(fm);
+  // el nombre del archivo, entero: ni pegado a otra palabra ni seguido de otra extensión (un punto final sí lo cierra).
+  // Si otro archivo declarado se llama igual, el nombre solo no dice cuál es: hace falta la ruta entera.
+  const gemelos = items.filter((it) => path.basename(it.ruta) === path.basename(rel) && it.ruta !== sinPunto(rel)).length;
+  const buscado = (gemelos ? sinPunto(rel) : path.basename(rel)).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // con la ruta entera, tampoco vale como cola de otra ruta más larga (`lib/src/a/x.js` no nombra a `src/a/x.js`)
+  const antes = gemelos ? '[^\\w./-]' : '[^\\w.-]';
+  const nombra = (texto) => new RegExp(`(^|${antes})${buscado}($|[^\\w.-]|\\.(?![\\w-]))`).test(texto);
+  const atadas = new Set();
+  // el comentario de su renglón en la lista que nombra la tanda, con la ruta como la lee la lista (entre comillas o no)
+  for (const it of items) {
+    if (it.ruta !== sinPunto(rel)) continue;
+    for (const [, letra] of (it.resto.split('#')[1] || '').matchAll(/\btanda\s+([\w-]+)/gi)) {
+      for (const t of tandas) if (t.name.toLowerCase() === letra.toLowerCase() || t.name.split('-')[0].toLowerCase() === letra.toLowerCase()) atadas.add(t);
+    }
+  }
+  // una fila de la tabla de pruebas, por su ID
+  for (const l of cuerpo.split(/\r?\n/)) {
+    const fila = l.match(/^\|\s*([A-Za-z]+\d+\w*)\s*\|/);
+    if (fila && nombra(l)) for (const t of tandas) if (t.tests.includes(fila[1])) atadas.add(t);
+  }
+  // una tarea, con sus renglones de continuación: hasta un renglón en blanco o un título
+  for (const bloque of cuerpo.split(/\r?\n(?=\s*-\s*\[.\])/)) {
+    const tarea = bloque.match(/^\s*-\s*\[.\][^\n]*?\bTask\s+(\d+)\b/);
+    if (tarea && nombra(bloque.split(/\r?\n(?=\s*(?:#|\r?$))/m)[0])) for (const t of tandas) if (t.tasks.includes(Number(tarea[1]))) atadas.add(t);
+  }
+  return [...atadas].map((t) => ({ name: t.name, status: t.status }));
+}
+
+/**
+ * La lista de una tanda que no declara `files:`: los archivos de la historia que se le atan (`tandasQueNombran`, o el
+ * `files:` de otra parte, que ata a esa otra) más los que no se atan a ninguna tanda, que cualquiera puede tocar.
+ * `{ files, atados }`: sin ningún atado propio, la tanda no tiene lista.
+ */
+function listaDerivada(texto, nombre, tandas) {
+  const declarados = require('./run-size.js').declaredFiles(texto).map(normRuta).filter(Boolean);
+  const deOtraParte = new Set();
+  for (const t of tandas) if (t.name !== nombre && Array.isArray(t.files)) for (const f of t.files) deOtraParte.add(normRuta(f));
+  const files = [];
+  let atados = 0;
+  for (const f of [...new Set(declarados)]) {
+    const nombres = tandasQueNombran(texto, f).map((t) => t.name);
+    if (nombres.includes(nombre)) { files.push(f); atados++; } else if (!nombres.length && !deOtraParte.has(f)) files.push(f);
+  }
+  return { files, atados };
+}
 
 /** Una ruta como la escribe la historia, en la forma en que se compara: sin comentario, comillas ni `./`, con `/`. */
 function normRuta(f) {
@@ -40,18 +109,26 @@ function validarParte(texto, nombre) {
   if (!t) return { existe: false, valid: false, reason: `la parte «${nombre}» no está en la historia`, nombre };
   const done = String(t.status || '').toLowerCase() === 'done';
   const base = { existe: true, done, nombre, sensible: t.sensible || null };
-  const files = Array.isArray(t.files) ? t.files.map(normRuta).filter(Boolean) : [];
-  if (!files.length) return { ...base, valid: false, files, reason: `la parte ${nombre} no declara files:` };
+  const declarada = Array.isArray(t.files) ? t.files.map(normRuta).filter(Boolean) : [];
+  // sin `files:`, la lista sale de lo que la historia le ata a la tanda (más lo que no ata a ninguna)
+  let derivada = null;
+  if (!declarada.length) {
+    derivada = listaDerivada(texto, nombre, tandas);
+    if (!derivada.atados) return { ...base, valid: false, files: [], reason: `la parte ${nombre} no declara files: y ningún archivo atado a la tanda ${nombre}` };
+  }
+  const files = derivada ? derivada.files : declarada;
   const deLaHistoria = new Set(require('./run-size.js').declaredFiles(texto).map(normRuta));
   const fuera = files.filter((f) => !deLaHistoria.has(f));
   if (fuera.length) return { ...base, valid: false, files, reason: `${fuera[0]} está en files: de la parte ${nombre} y no en files_to_create ni files_to_modify de la historia` };
   for (const otra of tandas) {
-    if (otra === t || String(otra.status || '').toLowerCase() === 'done' || !Array.isArray(otra.files)) continue;
-    const suyos = new Set(otra.files.map(normRuta));
+    if (otra === t || String(otra.status || '').toLowerCase() === 'done') continue;
+    // lo de la otra parte: su `files:` o, sin él, lo que la historia le ata (lo que no se ata a ninguna no pisa)
+    const suyos = new Set(Array.isArray(otra.files) && otra.files.length ? otra.files.map(normRuta)
+      : files.filter((f) => tandasQueNombran(texto, f).some((x) => x.name === otra.name)));
     const pisa = files.find((f) => suyos.has(f) && esCodigoDeParte(f));
     if (pisa) return { ...base, valid: false, files, reason: `${pisa} es código de la parte ${nombre} y de la parte abierta ${otra.name}: se mide la historia entera` };
   }
-  return { ...base, valid: true, files, reason: null };
+  return { ...base, valid: true, files, reason: null, ...(derivada ? { derivada: true } : {}) };
 }
 
 /**
@@ -298,4 +375,4 @@ function gitDe(repo, args) {
   return require('child_process').execFileSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 }).trim();
 }
 
-module.exports = { normRuta, validarParte, parteMedible, huellaDeLaLista, sensibleDeclarado, esCodigoDeParte, volverAlPlan, planEsperaPersona, cierreDelPlanDelegado, frenoDelCierre, senales, rutasDeConcurrencia };
+module.exports = { sinPunto, renglonesDeLista, tandasQueNombran, normRuta, validarParte, parteMedible, huellaDeLaLista, sensibleDeclarado, esCodigoDeParte, volverAlPlan, planEsperaPersona, cierreDelPlanDelegado, frenoDelCierre, senales, rutasDeConcurrencia };

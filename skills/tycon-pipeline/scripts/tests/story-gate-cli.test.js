@@ -121,7 +121,7 @@ test('complete-step: orden (3←1,2 · 4←3 · 5←4 · 8←5), --out-of-order 
   assert.notEqual(r.status, 0); assert.match(r.stderr, /falta la aprobación del plan/);
   // 3 «auto-aprobado» → bloqueado: ningún plan se aprueba solo
   r = markerCli(home, sid, ['complete-step', '3', '--auto-approved', 'criterios']);
-  assert.equal(r.status, 2); assert.match(r.stderr, /el plan no se aprueba solo/);
+  assert.equal(r.status, 2); assert.match(r.stderr, /--auto-approved no aprueba/);
   // 3 con cita → ok y queda planApproval
   r = markerCli(home, sid, ['complete-step', '3', '--approved', 'dale, aprobado']);
   assert.equal(r.status, 0, r.stderr);
@@ -1042,7 +1042,7 @@ test('7.30-T13 CompleteStep3_RiesgoBajoConPantalla_IgualPideLaMaqueta @story-7.3
   // con riesgo bajo el plan ya no se aprueba solo; con su aprobación, la maqueta se pide igual
   let r = markerCli(home, 's13', ['complete-step', '3', '--auto-approved', 'LOW: 2 archivos']);
   assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, /el plan no se aprueba solo/);
+  assert.match(r.stderr, /--auto-approved no aprueba/);
   const runDir = require(path.join(__dirname, '..', 'pipeline.js')).resolveRunDir(repo, '1.1', true, s);
   const planAuto = '1. La pantalla de facturas con su detalle.\n';
   fs.writeFileSync(path.join(runDir, 'step-02-bmad-plan.md'), planAuto);

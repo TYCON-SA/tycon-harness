@@ -175,7 +175,11 @@ vacío, cada archivo suyo está en `files_to_create` o `files_to_modify` de la h
 está en `files:` de otra parte abierta (una guía, `suites.json` o `sprint-status.yaml` compartidos no la invalidan). Con
 una parte que vale, el riesgo, la marca de delicada y el tamaño del plan miden la parte más lo que el cambio toca, y la
 regla «tiene tandas» no cuenta. El pase adversarial, su modelo y la revisión de la historia siguen por la historia
-entera. Una parte sin `files:`, o que no vale, se mide como la historia entera, como antes.
+entera. Sin `files:`, la parte vale con los archivos que la historia le ata a la tanda (ver «Atar un archivo a una
+tanda», abajo) más los que no ata a ninguna, que cualquier tanda puede tocar; `set-batch` imprime esa lista. Así se mide
+con y sin coordinadora. Dos tandas abiertas que comparten un archivo de código (atado a las dos, o en `files:` de las
+dos) no valen: se mide la historia entera. Una parte sin `files:` y sin ningún archivo atado, o que no vale, se mide
+como la historia entera, como antes.
 
 **Reglas de consistencia** (verificadas por `tycon-story-validator`):
 

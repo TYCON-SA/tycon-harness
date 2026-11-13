@@ -226,13 +226,19 @@ function isOfficeMailboxRecord(p) { return OFFICE_MAILBOX.test(norm(String(p || 
 // estado de la cuenta, en una de sus dos carpetas (la carpeta misma también)
 const REPORTED_CRITICALS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/reported-criticals(\/|$)/i;
 function isReportedCriticalsRecord(p) { return REPORTED_CRITICALS_DIR.test(norm(String(p || ''))); }
+// La revisión automática del plan (lib/plan-review.js): el pedido, sus args, el resultado del corredor y la constancia
+// con el veredicto. Lo escriben sólo `marker.js plan-review` y el corredor del pase (`workflow-lite.js` con el guion del
+// pase del arnés). Escribir el resultado o la constancia es darse un «aprobado». Sólo en el estado de la cuenta
+const PLAN_REVIEW_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/plan-review(\/|$)/i;
+function isPlanReviewRecord(p) { return PLAN_REVIEW_DIR.test(norm(String(p || ''))); }
 // Las marcas de la constancia de Codex (scripts/lib/harness-sign.js `acknowledge`): las escribe sólo la terminal de la
 // persona, y owner-approvals.js las exige al lado de su renglón del registro. Escribir una es fingir una constancia. Sólo
 // en el estado de la cuenta, en una de sus dos carpetas (la carpeta misma también)
 const TERMINAL_ACKS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/terminal-acknowledgments(\/|$)/i;
 function isTerminalAcknowledgmentsRecord(p) { return TERMINAL_ACKS_DIR.test(norm(String(p || ''))); }
-/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `terminal-acknowledgments`, `launched-sessions`, `office-mailbox`, `reported-criticals` o null. */
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `terminal-acknowledgments`, `launched-sessions`, `office-mailbox`, `reported-criticals`, `plan-review` o null. */
 function signedRecordKind(p) {
+  if (isPlanReviewRecord(p)) return 'plan-review';
   if (isControlApproval(p)) return 'control-approvals';
   if (isPendingApprovalsRecord(p)) return 'pending-approvals';
   if (isOwnerApprovalsRecord(p)) return 'owner-approvals';
@@ -289,6 +295,9 @@ function computeStoryGate({
   }
   if (isReportedCriticalsRecord(filePath) || isReportedCriticalsRecord(real)) {
     return { action: 'block', kind: 'reported-criticals', reason: 'escritura a mano del registro de críticos reportados' };
+  }
+  if (isPlanReviewRecord(filePath) || isPlanReviewRecord(real)) {
+    return { action: 'block', kind: 'plan-review', reason: 'escritura a mano de la constancia de la revisión del plan' };
   }
   // El arreglo rápido que abrió la coordinadora por delegación no toca lo sensible: eso lo firma el dueño. Antes del
   // portón apagado y del pase de los repos del arnés, que es donde están esos archivos. La lista de lo sensible vive en el
@@ -638,6 +647,16 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  motivo, o lo exime una persona (marker.js waive-critical).',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'plan-review') {
+    return [
+      '⛔ escritura a mano de la constancia de la revisión del plan',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  La escriben sólo marker.js plan-review y el corredor del pase (workflow-lite.js con el guion del pase del arnés,',
+      '  con el --out que dio la preparación): escribir el resultado o la constancia es darse un «aprobado». Para revisar',
+      '  el plan, corré el comando que devuelve marker.js plan-review.',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'pending-approvals') {
     return [
       '⛔ el registro de aprobaciones de pendientes no se escribe a mano',
@@ -662,7 +681,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       // el paso como lo acepta el marcador de esta ejecución: por nombre en el nuevo, por número en el viejo
       `        ${signatureCommand(MARKER_REL)} complete-step ${require('./steps.js').schemeOf(marker) === 2 ? 'approve-plan' : '3'} --approved "<cita textual de la aprobación>"`,
       ...(storyNeedsMockup(marker) ? ['        --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"   (story con pantalla: la maqueta la ve una persona)'] : []),
-      '      (ningún plan se aprueba solo: lo aprueba el user, o la coordinadora con la revisión automática).',
+      '      (un plan de rutina lo aprueba el «aprobado» de su revisión automática, con o sin coordinadora;',
+      '      uno delicado, o con plan_review.routine_approval: person, el user).',
       '   3. Si estás retomando un pipeline (sesión nueva / compactación) → `pipeline.js next` +',
       '      `marker.js get` y cerrá los pasos que efectivamente ya pasaron, con su evidencia.',
       '',
@@ -796,7 +816,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isPlanReviewRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };

@@ -183,7 +183,9 @@ function criterioDeCierre(casa, ahora, s, problemas, lista = []) {
     if (vive(s, f.destino) === false) return true;
     if (lista.some((x) => tipoDe(x) === 'firma' && x.destino === f.destino && x.at > f.at && reemplaza(x.firma, f))) return true;
     if (!dadas) dadas = firmasDelRegistroComun(casa, problemas);
-    return dadas.some((r) => Date.parse(r.ts) > f.at && ((r.signature === f.firma && (r.target === f.destino || sinDestinoEsDe(r, f)))
+    // un renglón con la clave del pedido cierra sólo esa fila: las otras de la misma firma y destino siguen esperando
+    const mismaFirma = (r) => (r.key ? r.key === f.key : r.target === f.destino || sinDestinoEsDe(r, f));
+    return dadas.some((r) => Date.parse(r.ts) > f.at && ((r.signature === f.firma && mismaFirma(r))
       || (r.target === f.destino && reemplaza(r.signature, f))));
   };
 }
@@ -519,4 +521,4 @@ function mensajesDe(ruta) {
   return fuera;
 }
 
-module.exports = { archivo, candado, tipoDe, cuadroDeLaFila, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, rechazar, esDeLaPersona };
+module.exports = { claveDe, archivo, candado, tipoDe, cuadroDeLaFila, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, rechazar, esDeLaPersona };

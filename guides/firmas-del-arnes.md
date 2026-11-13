@@ -42,7 +42,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 <!-- generado: niveles -->
 | Firma | Nivel | Quién la ve | Qué aprueba | Se pide hoy con |
 | --- | --- | --- | --- | --- |
-| `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class; la coordinadora aprueba el nivel 1 sólo con el veredicto aprobado de la revisión automática) | `plan-approval` |
+| `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person) | `plan-approval` |
 | `extra-round` | 1 · rutina | dev y mantenimiento | una vuelta más de revisores | `extra-round` |
 | `pending-approval` | 1 · rutina | dev y mantenimiento | abrir un pendiente nuevo en la lista | `pending-approval` |
 | `save` | 1 · rutina | dev y mantenimiento | guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible | `save` |
@@ -94,7 +94,7 @@ firmar, y en la columna tu situación:
 |---|---|---|---|---|---|---|
 | 1 · rutina | **Abrir el pull request** (`save`): los pull requests y el push a una rama compartida; el commit y el push a tu rama de trabajo no se firman. Es rutina porque se deshace; si un commit toca algo sensible, pasa a `save:sensible`, de nivel 2. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
 | 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
-| 1 · rutina | **Aprobar el plan** (`plan-approval`) de una story que no es delicada. Es rutina porque decide qué se construye antes de construirlo, y se cambia. | vos | espera | vos, o la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | obligatoria para la coordinadora: la lanza ella y su «aprobado» es lo único con que firma |
+| 1 · rutina | **Aprobar el plan** (`plan-approval`) de una story que no es delicada. Es rutina porque decide qué se construye antes de construirlo, y se cambia. | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, vos | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, espera | vos, o la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | su «aprobado» es lo único con que se aprueba sin vos: con coordinadora la lanza ella; sin ella, la propia sesión. Con `plan_review.routine_approval: person`, aprobás vos siempre |
 | 1 · rutina | **Eximir un comando de la comparación con main** (`compare-waiver`): un comando que la historia modifica y que no se puede comparar con su versión de `main` (por ejemplo, porque usa la red). La firma es delegable sólo cuando el perfil del equipo la suma a `approvals.delegated_signing`, con un pedido al perfil que firma el dueño: amplía lo que firma la coordinadora. Hasta entonces, es tuya. | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
 | 2 · excepción | **Aprobar el plan de una story delicada** (`plan-approval` cuando `risk-class` dice `delicate`) | vos | espera | vos | espera | puede correr: ataca el plan y avisa, nunca aprueba |
 | 2 · excepción | **Saltear un control** o aceptar un problema grave sin arreglarlo (`critical-waiver`, `escape:…` y las demás de nivel 2) | vos | espera | vos | espera | no aplica |
@@ -111,14 +111,17 @@ firmar, y en la columna tu situación:
   `approvals.delegated_machines`, y sólo con la designación confirmada por el dueño (`designation-confirm`: con un click en
   la pestaña de la sesión designada, o en su terminal; ver «Aprobar en nombre del dueño»). Si la firma no está delegada, tu máquina no está en la lista o nadie confirmó la designación, la
   fila es igual que sin coordinadora. Lo que queda en 2 o más sale de esa lista.
-- \*\* **El plan, con coordinadora**: cuándo corre la revisión automática lo dice la matriz de la organización
-  (`plan_review`, `guides/revisiones-automaticas.md`): en una delicada corre siempre; en una de rutina se le pregunta al
-  dueño y, si el dueño está ausente, se revisa sin preguntar, se espera o se sigue sin revisión. Las tres salidas de
-  una revisión: **aprobado** (también «aprobado con notas»: sólo un defecto rechaza), **rechazado** y **sin veredicto**.
-  Ella lanza la revisión (`marker.js plan-review --for-session <sesión>`) y aprueba en nombre del dueño sólo con
-  «aprobado» sobre ese mismo plan, con `plan_review.coordinator_approves` en sí y `plan-approval` delegado. Rechazado o
-  sin veredicto, el plan espera a una persona. Ningún plan se aprueba solo. La sesión que hizo el plan también puede
-  lanzar la revisión de su plan (`marker.js plan-review`, sin `--for-session`): esa revisión sólo informa y nunca firma
+- \*\* **El plan de rutina, con y sin coordinadora**: cuándo corre la revisión automática lo dice la matriz de la
+  organización (`plan_review`, `guides/revisiones-automaticas.md`): en una delicada corre siempre; en una de rutina se
+  le pregunta al dueño y, si el dueño está ausente, se revisa sin preguntar, se espera o se sigue sin revisión. Las tres
+  salidas de una revisión: **aprobado** (también «aprobado con notas»: sólo un defecto rechaza), **rechazado** y
+  **sin veredicto**. Con coordinadora, ella lanza la revisión (`marker.js plan-review --for-session <sesión>`) y aprueba en
+  nombre del dueño sólo con «aprobado» sobre ese mismo plan, con `plan-approval` delegado. Sin coordinadora, la lanza la
+  propia sesión (`marker.js plan-review`, sin `--for-session`), y con «aprobado» sobre ese mismo plan `complete-step
+  approve-plan` cierra sin click: el mismo aprobado alcanza con y sin coordinadora. Con
+  `plan_review.routine_approval: person` (o su nombre viejo, `plan_review.coordinator_approves: false`) un plan de rutina
+  lo aprueba siempre una persona. Rechazado o sin veredicto, el plan espera a una persona. Una revisión informativa (la
+  de la propia sesión en una story delicada o con `person`) sólo informa y nunca firma
   (`steps/step-04-approve-plan.md`).
 - **Con tu aprobación escrita, la firma es tuya, también en lo delicado.** Donde la ventana no llega, o cuando la coordinadora
   firmaría por delegación, vale tu click en el cuadro de opciones o tu «aprobado» tipeado. Gana a la delegación: un plan
@@ -476,14 +479,16 @@ El límite de la consola: el portón de edición ve las herramientas de edición
 (un archivo movido o generado por un programa) lo frena el freno de guardar, que compara todo lo que cambió contra la
 lista y nombra lo que sobra. Un carril delegado, además, no guarda nada de lo sensible.
 
-**El plan de una parte.** Cuando la ejecución anota su tanda con `marker.js set-batch` y la parte vale (declara `files:`,
-sus archivos están en la historia y no pisa el código de otra parte abierta), la marca de delicada del plan se mide
-por la parte más lo que el cambio toca. Es lo único que afloja: una parte que no es delicada la aprueba la coordinadora
-con la revisión automática, en vez del dueño (medido el 31/10: 82 de 115 partes recientes dejan de ser delicadas). Ese
+**El plan de una parte.** Cuando la ejecución anota su tanda con `marker.js set-batch` y la parte vale (declara `files:`
+o, sin él, la historia le ata archivos; sus archivos están en la historia y no pisa el código de otra parte abierta), la
+marca de delicada del plan se mide por la parte más lo que el cambio toca, con coordinadora y sin ella. Es lo único que
+afloja: una parte que no es delicada la aprueba la revisión automática, en vez del dueño (medido el 31/10: 82 de 115
+partes recientes dejan de ser delicadas). Ese
 plan queda atado a la lista de la parte, la que quedó al aprobar: editar código fuera de ella frena, y al cerrar se
 mide el diff entero; si sale delicado, «Aprobar el plan» vuelve al dueño y el código queda en la rama. El pase
 adversarial, su modelo y la revisión de la historia siguen por la historia entera. Una historia cuyas partes no
-declaran `files:` se sigue midiendo entera: la ganancia llega cuando las historias declaran sus partes.
+declaran `files:` ni le atan ningún archivo a la tanda se sigue midiendo entera: la ganancia llega cuando las historias
+dicen de qué parte es cada archivo (`story-format.md` §1.1, «La parte que vale»).
 
 **Las pruebas y la rama del camino rápido.** Dos reglas más, para todo camino rápido con su lista:
 

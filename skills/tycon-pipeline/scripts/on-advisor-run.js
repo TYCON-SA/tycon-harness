@@ -226,6 +226,24 @@ function retroTarget(prompt) {
  * @returns {{sessionId: string, cwd: string, logPath: string, repo: string|null, story: string|null, ok: boolean,
  *            error?: string}} `ok: false` si la línea del registro no se pudo escribir
  */
+/**
+ * El nombre de la carpeta de la corrida del marcador de la sesión (`lib/run-dir.js`, sin crearla), o null sin marcador de
+ * esa historia o sin carpeta. Nunca tira: sin la corrida, el renglón queda como antes.
+ */
+function runDeLaSesion(sessionId, story) {
+  try {
+    const m = require('./lib/repo-attrib.js').readMarkerFile(sessionId);
+    if (!m || !story || String(m.storyId) !== String(story) || !m.repoPath) return null;
+    const storyPath = m.storyPath ? (path.isAbsolute(m.storyPath) ? m.storyPath : path.join(m.repoPath, m.storyPath)) : undefined;
+    const dir = require('./lib/run-dir.js').resolveRunDir(m.repoPath, String(m.storyId), false, storyPath, { marker: m });
+    return dir ? path.basename(dir) : null;
+  } catch (e) {
+    // el renglón queda con `run: null` y el cruce cae a las sesiones de la corrida: se dice por qué
+    process.stderr.write(`[on-advisor-run] no pude resolver la carpeta de la corrida de ${sessionId}: ${(e && e.message) || e}\n`);
+    return null;
+  }
+}
+
 function recordLaunch(o) {
   const advisor = o.advisor;
   const model = o.model || null;
@@ -248,13 +266,16 @@ function recordLaunch(o) {
   // qué merge apunta la retrospectiva. Se estampa aparte, sin tocar `repo`/`story` — de los que
   // dependen el roster de revisores y el snapshot de iteración.
   const retro = advisor === 'tycon-retrospective-capturer' ? retroTarget(o.prompt) : null;
+  // la corrida, por el nombre de su carpeta (como la anota Codex): el cierre cruza sólo lo de su corrida, y una
+  // ayudante que comparte el marcador escribe la misma. Sin marcador o sin carpeta, null
+  const run = runDeLaSesion(sessionId, story);
   let lineError = null;
   try {
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(
       logPath,
       JSON.stringify({
-        ts: new Date().toISOString(), advisor, model, repo, story,
+        ts: new Date().toISOString(), advisor, model, repo, story, run,
         ...(o.extra || {}),
         ...(retro && retro.repo ? { retro_repo: retro.repo } : {}),
         ...(retro && retro.sha ? { retro_sha: retro.sha } : {}),
@@ -277,7 +298,7 @@ function recordLaunch(o) {
       const expected = idx >= 0 && Array.isArray(parsed[idx].expected) ? parsed[idx].expected : [];
       if (expected.includes(advisor)) {
         require('./lib/reported-criticals.js').recordLaunched({
-          stateDir: stateDirOf(os.homedir()), sessionKey: sessionId, advisor, story, run: null, launcher: o.launcher || 'claude',
+          stateDir: stateDirOf(os.homedir()), sessionKey: sessionId, advisor, story, run, launcher: o.launcher || 'claude',
         });
       }
     } catch (e) {

@@ -825,3 +825,52 @@ test('Lista_Reemplazada_DejaDeContar — @fix-T-207', (t) => {
   sl.siguiente(opts(toy, { sesion: 'ses-a', validar: () => ({ ok: false }) }));
   assert.deepStrictEqual(crudas(toy).map((f) => f.firma), ['adhoc-lane']);
 });
+
+// 🔴 Mutaciones: cerrar todas las filas de la misma firma y destino con el renglón que trae la clave de una sola (T5); dejar
+// de cerrar como antes un renglón sin clave, una firma de terminal sin destino o un carril reemplazado (T6).
+test('Lista_UsarUna_NoCierraLasHermanas (T5) — @story-8.267 @ac-4', (t) => {
+  const toy = casaNueva(t);
+  sesion(toy.casa, 'ses-a');
+  const EXIMIR = (archivo) => `node ${MARKER} compare-waiver --story s --command ${archivo} --reason porque`;
+  for (const [i, a] of ['a.js', 'b.js', 'c.js'].entries()) firma(toy, { firmaId: 'compare-waiver', comando: EXIMIR(a), titulo: 'eximir de la comparación', ahora: antes(30 - i) });
+  const filas = crudas(toy);
+  assert.strictEqual(filas.length, 3);
+  const deB = filas.find((f) => /b\.js/.test(f.comando));
+  assert.strictEqual(deB.key, sl.claveDe('compare-waiver', 'ses-a', palabras(EXIMIR('b.js'))), 'la clave exportada no es la de la fila');
+  appendSignature({ signature: 'compare-waiver', via: 'click', target: 'ses-a', key: deB.key, home: toy.casa, now: antes(5), huella: () => ({ huella: 'h' }) });
+  const quedan = abiertos(toy).filas.map((f) => f.comando).sort();
+  assert.deepStrictEqual(quedan.map((c) => /([abc])\.js/.exec(c)[1]), ['a', 'c'], 'la firma de b cerró a sus hermanas');
+  // owner-next las pasa sin que nadie las relance
+  designar(toy.casa);
+  sesion(toy.casa, 'ses-coord');
+  const r = sl.siguiente(opts(toy, { sesion: 'ses-coord', validar: () => ({ ok: false }) }));
+  assert.strictEqual(r.tipo, 'firma', JSON.stringify(r));
+  assert.match(r.aviso, /a\.js/);
+  assert.doesNotMatch(JSON.stringify(crudas(toy)), /b\.js/, 'owner-next no borró la cerrada');
+});
+
+test('Lista_RenglonSinClave_CierraComoHoy_YAdhocReemplazada (T6) — @story-8.267 @ac-5 @ac-6', (t) => {
+  const nueva = () => { const toy = casaNueva(t); sesion(toy.casa, 'ses-a'); return toy; };
+  // un renglón sin clave para ese destino cierra todas las de esa firma, como antes
+  let toy = nueva();
+  firma(toy, { ahora: antes(30) });
+  firma(toy, { comando: OTRA, ahora: antes(29) });
+  appendSignature({ signature: 'manual-test', via: 'click', target: 'ses-a', home: toy.casa, now: antes(5), huella: () => ({ huella: 'h' }) });
+  assert.strictEqual(abiertos(toy).filas.length, 0, 'sin clave, cierra como hoy');
+  // una firma por la terminal sin destino, con el código del pendiente en el motivo
+  toy = nueva();
+  firma(toy, { firmaId: 'pending-approval', comando: `node ${MARKER} approve-pending --id DEF-1 --repo /r` });
+  appendSignature({ signature: 'pending-approval', via: 'terminal', target: null, reason: 'huella b · DEF-1 · este', home: toy.casa, now: antes(1), huella: () => ({ huella: 'h' }) });
+  assert.strictEqual(abiertos(toy).filas.length, 0, 'la de terminal sin destino no la cerró');
+  // un carril reemplazado por un pedido posterior de la misma sesión
+  toy = nueva();
+  const CARRIL = (cupo) => `node ${MARKER} adhoc set '{"reason":"arreglo","maxFiles":${cupo},"datos":"sin-cambio"}'`;
+  firma(toy, { firmaId: 'adhoc-lane', comando: CARRIL(4), titulo: 'carril', ahora: antes(30) });
+  firma(toy, { firmaId: 'adhoc-lane', comando: CARRIL(5), titulo: 'carril', ahora: antes(20) });
+  assert.deepStrictEqual(abiertos(toy).filas.map((f) => /maxFiles":(\d)/.exec(f.comando)[1]), ['5'], 'el reemplazado sigue abierto');
+  // una firma con la clave de otro pedido no cierra la fila, aunque sea la misma firma y el mismo destino
+  toy = nueva();
+  firma(toy, { ahora: antes(30) });
+  appendSignature({ signature: 'manual-test', via: 'click', target: 'ses-a', key: 'firma:otra', home: toy.casa, now: antes(5), huella: () => ({ huella: 'h' }) });
+  assert.strictEqual(abiertos(toy).filas.length, 1, 'la clave de otro pedido la cerró');
+});

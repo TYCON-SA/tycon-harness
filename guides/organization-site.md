@@ -756,7 +756,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   |---|---|---|---|---|---|
   | Abrir el pull request · 1 | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
   | Pedir otra revisión · 1 | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
-  | Aprobar el plan · 1 | vos | espera | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | obligatoria para la coordinadora |
+  | Aprobar el plan · 1 | la revisión de la propia sesión, si da aprobado \*\*; si no, vos | la revisión de la propia sesión, si da aprobado \*\*; si no, espera | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | obligatoria: sin su «aprobado», firma una persona |
   | Aprobar el plan de una story delicada · 2 | vos | espera | vos | espera | ataca y avisa, nunca aprueba |
   | Saltear un control · 2 | vos | espera | vos | espera | no aplica |
   | Aceptar un criterio imposible de probar en vivo · 2 | vos | espera | vos | espera | no aplica |
@@ -764,8 +764,9 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   | La emergencia · 3 | vos, en tu terminal | espera | vos, en tu terminal | espera | no aplica |
 
   \* Sólo si esa firma está en «Delegada a la coordinadora» y tu máquina está en «En qué máquinas vale lo delegado»;
-  si no, es igual que sin coordinadora. \*\* La coordinadora lanza la revisión automática del plan y aprueba sólo si
-  dice «aprobado»; ningún plan se aprueba solo, y el de una story delicada lo aprueba siempre el dev. Por qué cada rutina es rutina, y las notas, en `guides/firmas-del-arnes.md`.
+  si no, es igual que sin coordinadora. \*\* La revisión automática del plan la lanza la coordinadora o, sin ella, la
+  propia sesión, y aprueba un plan de rutina sólo si dice «aprobado» (salvo que la organización pida el click: la opción
+  O4, `plan_review.routine_approval: person`); el de una story delicada lo aprueba siempre el dev. Por qué cada rutina es rutina, y las notas, en `guides/firmas-del-arnes.md`.
 
   **Dónde se configura**, todo en esta sección:
   - **A · si hay coordinadora**: «¿Quién pasa la autorización para saltarse un control grave?», con «¿Cómo la llaman?»
@@ -853,7 +854,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
 | O1 | Revisión del plan en historias delicadas | `plan_review.delicate` | `always` · `ask` | `always` | `ask` si preferís decidir cada vez, aun en lo delicado |
 | O2 | Revisión del plan en historias de rutina | `plan_review.routine` | `always` · `ask` · `never` | `ask` | `always` para no preguntar nunca; `never` si tu equipo no la quiere |
 | O3 | Revisión del plan de rutina con el dueño ausente | `plan_review.routine_owner_away` | `review` · `wait` · `skip` | `review` | `wait` si preferís que espere; `skip` para seguir sin revisión |
-| O4 | La coordinadora aprueba un plan de rutina revisado sin defectos | `plan_review.coordinator_approves` | `true` · `false` | `true` | `false` si querés firmar vos todos los planes |
+| O4 | Quién aprueba un plan de rutina revisado sin defectos: la revisión (con o sin coordinadora) o una persona | `plan_review.routine_approval` | `review` · `person` | `review` | `person` si querés firmar vos todos los planes (el nombre viejo, `plan_review.coordinator_approves: false`, vale lo mismo) |
 | O5 | Un plan rechazado le llega al dueño enseguida | `plan_review.rejected_reaches_owner` | `true` · `false` | `false` | `true` si querés ver cada rechazo, no sólo al llegar al tope |
 | O6 | Revisión del código en historias delicadas | `deep_review.delicate` | `always` · `ask` | `always` | `ask` si preferís decidir cada vez |
 | O7 | Hasta cuántos archivos de código un cambio es chico | `deep_review.small_max_files` | entero de 1 a 50 | `6` | más alto si tus historias tocan muchos archivos chicos |

@@ -251,7 +251,8 @@ su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
 
 El mismo guion corre **antes del código**, sobre el plan, con `args.modo: 'plan'`. No es este paso: lo lanza la
 coordinadora desde «Aprobar el plan» (`steps/step-04-approve-plan.md` §«Quién aprueba el plan»), con
-`marker.js plan-review --for-session <sesión>`, que le arma los args; sin coordinadora, la propia sesión, informativa.
+`marker.js plan-review --for-session <sesión>`, que le arma los args; sin coordinadora, la propia sesión (informativa
+sólo en una story delicada o con `plan_review.routine_approval: person`).
 
 - **Qué recibe**: sólo el texto de la story, el del plan y la ruta del repo (`storyTexto`, `planTexto`, `repo`), nunca
   el hilo de la sesión que planeó. Los dos textos van entre marcas, como **datos no confiables**: una instrucción escrita

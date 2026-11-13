@@ -510,3 +510,151 @@ test('Findings_LateReportOtherRound_DoesNotCount — la respuesta tardía de otr
   assert.notEqual(k.status, 0, `el cierre pasó igual: ${out(k)}`);
   assert.match(out(k), new RegExp(`no pude leer lo que reportó ${SEC}, vuelta 2`));
 });
+
+// ── El cruce por corrida: lo de otra sesión o de otra corrida no entra ───────────────────────────────────────────────────────────────
+// 🔴 Mutaciones: cruzar todas las sesiones del registro (T1), perder la ayudante que comparte la corrida (T2), contar
+// un renglón sin corrida de otra sesión (T3), contar las salidas sin historia o de otra corrida (T4).
+const S2 = 's-otra';
+const AYUDANTE = 's-ayudante';
+const ADOPTADA = 's-adoptada';
+const ACCOV = 'tycon-ac-coverage-checker';
+const anotarEn = (l, sesion, linea) => {
+  const f = path.join(l.state, 'reported-criticals', `${sesion}.jsonl`);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.appendFileSync(f, `${JSON.stringify({ story: '9.92', ...linea })}\n`);
+};
+const salidas = (l, sesion, lineas) => fs.appendFileSync(path.join(l.state, 'advisor-runs', `${sesion}.jsonl`), lineas.map((x) => `${JSON.stringify(x)}\n`).join(''));
+
+test('Findings_OtherSessionSameStory_NotCrossed — los renglones de otra corrida de la misma historia no entran al cruce @story-8.267 @ac-1', () => {
+  const l = lab();
+  l.anotar(LANZADO(at(-100))); l.anotar(REPORTE(at(-90), []));
+  // otra sesión, otra corrida, la misma historia, después del arranque: un crítico que esta corrida no tiene que pedir
+  anotarEn(l, S2, { ...LANZADO(at(-80), 1, ACCOV), run: 'N2' });
+  anotarEn(l, S2, { ...REPORTE(at(-70), [{ rule: 'ACCOV-C1', count: 1 }], { advisor: ACCOV }), run: 'N2' });
+  const since = at(-600);
+  const r = rcLib().checkRun({ stateDir: l.state, story: '9.92', since, run: l.run, sessionKeys: [SID], findings: [], runDir: l.runDir, home: l.home });
+  assert.deepEqual(r.problemas, [], JSON.stringify(r.problemas));
+  const w = l.writeFindings([]);
+  assert.equal(w.status, 0, `write-findings pidió lo de otra corrida: ${out(w)}`);
+  // la de esta corrida sí se pide: el filtro no es «nada»
+  l.anotar(REPORTE(at(-60), [{ rule: 'SEC-C1', count: 1 }], { agentId: 'otro' }));
+  const w2 = l.writeFindings([]);
+  assert.notEqual(w2.status, 0, out(w2));
+  assert.match(out(w2), /falta SEC-C1/);
+  assert.doesNotMatch(out(w2), /ACCOV-C1/);
+});
+
+test('Findings_HelperSharingRun_Counts — una ayudante que escribe la misma corrida en su archivo entra al cruce @story-8.267 @ac-1', () => {
+  const l = lab();
+  l.anotar(LANZADO(at(-100))); l.anotar(REPORTE(at(-90), []));
+  anotarEn(l, AYUDANTE, { ...LANZADO(at(-80), 1, ACCOV), run: l.run });
+  anotarEn(l, AYUDANTE, { ...REPORTE(at(-70), [{ rule: 'ACCOV-C1', count: 1 }], { advisor: ACCOV }), run: l.run });
+  const r = rcLib().checkRun({ stateDir: l.state, story: '9.92', since: at(-600), run: l.run, sessionKeys: [SID], findings: [], runDir: l.runDir, home: l.home });
+  assert.ok(r.problemas.some((p) => p.rule === 'ACCOV-C1'), `la ayudante no entró: ${JSON.stringify(r.problemas)}`);
+  const w = l.writeFindings([]);
+  assert.notEqual(w.status, 0, out(w));
+  assert.match(out(w), /falta ACCOV-C1/);
+});
+
+test('Findings_NoRunLines_OnlyFromRunSessions — sin corrida, cuenta sólo el archivo de una sesión de la corrida @story-8.267 @ac-2', () => {
+  const l = lab();
+  l.setMarker({ adoptedFrom: ADOPTADA });
+  // renglones de antes de este cambio: sin `run`
+  const sinRun = (x) => { const { run, ...resto } = x; return resto; };
+  anotarEn(l, SID, sinRun({ ...LANZADO(at(-100)), run: null }));
+  anotarEn(l, SID, sinRun({ ...REPORTE(at(-95), [{ rule: 'SEC-C1', count: 1 }]), run: null }));
+  anotarEn(l, ADOPTADA, sinRun({ ...LANZADO(at(-90), 1, OTRO), run: null }));
+  anotarEn(l, ADOPTADA, sinRun({ ...REPORTE(at(-85), [{ rule: 'TEST-C2', count: 1 }], { advisor: OTRO }), run: null }));
+  anotarEn(l, S2, sinRun({ ...LANZADO(at(-80), 1, ACCOV), run: null }));
+  anotarEn(l, S2, sinRun({ ...REPORTE(at(-75), [{ rule: 'ACCOV-C1', count: 1 }], { advisor: ACCOV }), run: null }));
+  const r = rcLib().checkRun({ stateDir: l.state, story: '9.92', since: at(-600), run: l.run, sessionKeys: [SID, ADOPTADA], findings: [], runDir: l.runDir, home: l.home });
+  const reglas = r.problemas.map((p) => p.rule).filter(Boolean).sort();
+  assert.deepEqual(reglas, ['SEC-C1', 'TEST-C2'], JSON.stringify(r.problemas));
+  // el mismo cruce por el comando: toma las sesiones del marcador
+  const w = l.writeFindings([]);
+  assert.notEqual(w.status, 0, out(w));
+  assert.match(out(w), /falta SEC-C1/);
+  assert.match(out(w), /falta TEST-C2/);
+  assert.doesNotMatch(out(w), /ACCOV-C1/);
+});
+
+// 🔴 Mutación: sin carpeta de la corrida, descartar el renglón que sí trae `run` aunque sea de una sesión de la corrida:
+// el crítico que reportó dejaría de exigirse.
+test('Findings_NoRunDir_LineWithRunFromRunSession_Counts — sin carpeta, el renglón con run de una sesión de la corrida cuenta @story-8.267 @ac-2', () => {
+  const l = lab();
+  anotarEn(l, SID, { ...LANZADO(at(-100)), run: 'otra-carpeta' });
+  anotarEn(l, SID, { ...REPORTE(at(-95), [{ rule: 'SEC-C1', count: 1 }]), run: 'otra-carpeta' });
+  anotarEn(l, S2, { ...LANZADO(at(-80), 1, ACCOV), run: 'otra-carpeta' });
+  anotarEn(l, S2, { ...REPORTE(at(-75), [{ rule: 'ACCOV-C1', count: 1 }], { advisor: ACCOV }), run: 'otra-carpeta' });
+  const r = rcLib().checkRun({ stateDir: l.state, story: '9.92', since: at(-600), run: null, sessionKeys: [SID], findings: [], runDir: l.runDir, home: l.home });
+  assert.deepEqual(r.problemas.map((p) => p.rule).filter(Boolean), ['SEC-C1'], JSON.stringify(r.problemas));
+});
+
+// 🔴 Mutación: que el gancho del fin del subagente no copie la corrida del renglón `launched` al `report`.
+test('Findings_ReportHook_CarriesRunOfLaunch — el renglón report hereda la corrida de su lanzamiento @story-8.267 @ac-1', () => {
+  const l = lab();
+  l.anotar({ ...LANZADO(at(-100)), run: 'carpeta-x' });
+  const subagents = path.join(l.home, 'transcripts', 'subagents');
+  fs.mkdirSync(subagents, { recursive: true });
+  const transcript = path.join(subagents, 'agent-run.jsonl');
+  const texto = 'Nada que reportar.\nVeredicto: limpio';
+  fs.writeFileSync(transcript, `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: texto }] } })}\n`);
+  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'SubagentStop', session_id: SID, agent_id: 'ag-run', agent_type: SEC, agent_transcript_path: transcript, last_assistant_message: texto }), env: l.env, encoding: 'utf8' });
+  assert.equal(r.status, 0, out(r));
+  const rep = jsonl(l.registro).filter((x) => x.kind === 'report').pop();
+  assert.ok(rep, 'no anotó el report');
+  assert.equal(rep.run, 'carpeta-x', `el report no lleva la corrida: ${JSON.stringify(rep)}`);
+});
+
+test('Findings_OtherSessionLaunches_NotCounted — las salidas de otra sesión, sin historia o de otra corrida, no piden reporte @story-8.267 @ac-1 @ac-3', () => {
+  const l = lab({ advisors: [SEC, OTRO, ACCOV] });
+  // esta corrida: una salida de SEC con su renglón y su reporte
+  salidas(l, SID, [{ ts: at(-100), advisor: SEC, model: 'sonnet', repo: l.repo, story: '9.92', run: l.run }]);
+  l.anotar(LANZADO(at(-100))); l.anotar(REPORTE(at(-90), []));
+  // otra sesión sin marcador (sin historia) y otra corrida de la misma historia
+  salidas(l, S2, [
+    { ts: at(-200), event: 'step5-start', expected: [SEC, OTRO, ACCOV], iter: 1 },
+    { ts: at(-80), advisor: SEC, model: 'sonnet', repo: null, story: null },
+    { ts: at(-79), advisor: OTRO, model: 'sonnet', repo: null, story: null },
+    { ts: at(-78), advisor: ACCOV, model: 'sonnet', repo: null, story: null },
+    { ts: at(-77), advisor: OTRO, model: 'sonnet', repo: l.repo, story: '9.92', run: 'N2' },
+    { ts: at(-76), advisor: ACCOV, model: 'sonnet', repo: l.repo, story: '9.92', run: 'N2' },
+  ]);
+  // una ayudante de esta corrida: su salida cuenta y tiene su reporte, no sobra
+  salidas(l, AYUDANTE, [
+    { ts: at(-200), event: 'step5-start', expected: [ACCOV], iter: 1 },
+    { ts: at(-70), advisor: ACCOV, model: 'sonnet', repo: l.repo, story: '9.92', run: l.run },
+  ]);
+  anotarEn(l, AYUDANTE, { ...LANZADO(at(-70), 1, ACCOV), run: l.run });
+  anotarEn(l, AYUDANTE, { ...REPORTE(at(-60), [], { advisor: ACCOV }), run: l.run });
+  const r = rcLib().checkRun({ stateDir: l.state, story: '9.92', since: at(-600), run: l.run, sessionKeys: [SID], findings: [], runDir: l.runDir, home: l.home });
+  assert.deepEqual(r.problemas, [], JSON.stringify(r.problemas));
+  const w = l.writeFindings([]);
+  assert.equal(w.status, 0, `pidió SIN-REPORTE por salidas de otra sesión: ${out(w)}`);
+  // una salida de esta corrida sin su renglón sigue frenando: el filtro no apaga el control
+  salidas(l, SID, [{ ts: at(-50), advisor: OTRO, model: 'sonnet', repo: l.repo, story: '9.92', run: l.run }]);
+  const w2 = l.writeFindings([]);
+  assert.notEqual(w2.status, 0, out(w2));
+  assert.match(out(w2), new RegExp(`no pude leer lo que reportó ${OTRO}`));
+  // el lanzamiento de Claude Code deja la corrida en el registro de lanzamientos y en el de críticos
+  const prev = process.env.HOME;
+  const prevSid = process.env.CLAUDE_CODE_SESSION_ID;
+  try {
+    process.env.HOME = l.home; process.env.USERPROFILE = l.home;
+    salidas(l, SID, [{ ts: at(-40), event: 'step5-start', expected: [SEC], iter: 2 }]);
+    delete require.cache[require.resolve(path.join(SCRIPTS, 'on-advisor-run.js'))];
+    const run = require(path.join(SCRIPTS, 'on-advisor-run.js'));
+    const env0 = process.env.TYCON_REVIEW_ROSTER;
+    process.env.TYCON_REVIEW_ROSTER = '0';
+    const hecho = run.recordLaunch({ sessionId: SID, cwd: l.repo, advisor: SEC, model: 'sonnet' });
+    if (env0 === undefined) delete process.env.TYCON_REVIEW_ROSTER; else process.env.TYCON_REVIEW_ROSTER = env0;
+    assert.equal(hecho.ok, true, hecho.error);
+    const ultima = jsonl(path.join(l.state, 'advisor-runs', `${SID}.jsonl`)).filter((x) => !x.event && x.advisor === SEC).pop();
+    assert.equal(ultima.run, l.run, `la salida no lleva la corrida: ${JSON.stringify(ultima)}`);
+    const lanz = jsonl(l.registro).filter((x) => x.kind === 'launched').pop();
+    assert.equal(lanz.run, l.run, `el renglón launched no lleva la corrida: ${JSON.stringify(lanz)}`);
+  } finally {
+    process.env.HOME = prev;
+    if (prevSid === undefined) delete process.env.CLAUDE_CODE_SESSION_ID; else process.env.CLAUDE_CODE_SESSION_ID = prevSid;
+  }
+});

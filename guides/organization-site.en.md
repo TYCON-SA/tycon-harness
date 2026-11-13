@@ -772,7 +772,7 @@ be, to copy it and open the request by hand.
   |---|---|---|---|---|---|
   | Open the pull request · 1 | you | waits | the coordinator \* | the coordinator \* | does not apply |
   | Ask for another review · 1 | you | waits | the coordinator \* | the coordinator \* | does not apply |
-  | Approve the plan · 1 | you | waits | the coordinator, only with the approved verdict of the review she launches \*\* | the coordinator, only with the approved verdict of the review she launches \*\* | required for the coordinator |
+  | Approve the plan · 1 | the session's own review, if it says approved \*\*; otherwise you | the session's own review, if it says approved \*\*; otherwise it waits | the coordinator, only with the approved verdict of the review she launches \*\* | the coordinator, only with the approved verdict of the review she launches \*\* | required: without its "approved", a person signs |
   | Approve the plan of a sensitive story · 2 | you | waits | you | waits | attacks and warns, never approves |
   | Skip a control · 2 | you | waits | you | waits | does not apply |
   | Accept a criterion that cannot be tested live · 2 | you | waits | you | waits | does not apply |
@@ -780,9 +780,10 @@ be, to copy it and open the request by hand.
   | The emergency · 3 | you, at your terminal | waits | you, at your terminal | waits | does not apply |
 
   \* Only if that signature is "Delegated to the coordinator" and your machine is in "On which machines delegation
-  applies"; otherwise it is the same as without a coordinator. \*\* The coordinator launches the automatic review of the
-  plan and approves only if it says "approved"; no plan approves itself, and the plan of a sensitive story is always
-  approved by the dev. Why each routine is routine, and the notes, in
+  applies"; otherwise it is the same as without a coordinator. \*\* The automatic review of the plan is launched by the
+  coordinator or, without one, by the session itself, and it approves a routine plan only if it says "approved" (unless
+  the organization asks for the click: option O4, `plan_review.routine_approval: person`); the plan of a sensitive story
+  is always approved by the dev. Why each routine is routine, and the notes, in
   `guides/firmas-del-arnes.md`.
 
   **Where it is configured**, all in this section:
@@ -875,7 +876,7 @@ be, to copy it and open the request by hand.
 | O1 | Plan review on delicate stories | `plan_review.delicate` | `always` · `ask` | `always` | `ask` if you prefer to decide each time, even on delicate ones |
 | O2 | Plan review on routine stories | `plan_review.routine` | `always` · `ask` · `never` | `ask` | `always` to never ask; `never` if your team does not want it |
 | O3 | Routine plan review with the owner away | `plan_review.routine_owner_away` | `review` · `wait` · `skip` | `review` | `wait` if you prefer it to wait; `skip` to go on without review |
-| O4 | The coordinator approves a routine plan reviewed with no bugs | `plan_review.coordinator_approves` | `true` · `false` | `true` | `false` if you want to sign every plan yourself |
+| O4 | Who approves a routine plan reviewed with no bugs: the review (with or without a coordinator) or a person | `plan_review.routine_approval` | `review` · `person` | `review` | `person` if you want to sign every plan yourself (the old name, `plan_review.coordinator_approves: false`, means the same) |
 | O5 | A rejected plan reaches the owner right away | `plan_review.rejected_reaches_owner` | `true` · `false` | `false` | `true` if you want to see every rejection, not only at the cap |
 | O6 | Code review on delicate stories | `deep_review.delicate` | `always` · `ask` | `always` | `ask` if you prefer to decide each time |
 | O7 | Up to how many code files a change is small | `deep_review.small_max_files` | integer from 1 to 50 | `6` | higher if your stories touch many small files |

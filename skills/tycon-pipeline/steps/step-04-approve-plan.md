@@ -10,13 +10,18 @@
 
 ## Quién aprueba el plan
 
-**Ningún plan se aprueba solo**: ni el de riesgo bajo, ni por la misma sesión que lo escribió.
-La opción vieja de aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
+**Un plan de rutina se aprueba con el aprobado de su revisión, con o sin coordinadora; uno delicado, siempre el dev.**
+Sin revisión aprobada no se aprueba solo: ni el de riesgo bajo ni por la sesión que lo escribió, y la opción vieja de
+aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
 
 - **una persona**, en la ventana de permiso; donde la ventana no llega (una pestaña sin permisos, una sesión de fondo),
   con un click en el cuadro de opciones o un «aprobado» escrito, según `guides/firmas-del-arnes.md`, «Aprobar sin
   terminal»; o en su terminal (`--approved "<su respuesta>"`, o `--terminal`); o
-- **la coordinadora, por delegación, sólo con la revisión automática.** La revisión es el pase adversarial en **modo
+- **la revisión automática, en un plan de rutina** (`plan_review.routine_approval: review`, de fábrica): con
+  coordinadora, ella firma por delegación con la revisión que lanzó; sin coordinadora, `complete-step approve-plan` sin
+  `--approved` cierra con el «aprobado» de la revisión que lanzó la propia sesión. Con `plan_review.routine_approval:
+  person` (o la variable `TYCON_PLAN_ROUTINE_APPROVAL=person` en la máquina), lo aprueba siempre una persona. Una story
+  con pantalla tampoco se aprueba sin click: la maqueta la ve una persona. La revisión es el pase adversarial en **modo
   plan**, sobre la story, el plan y el repo, nunca sobre el hilo de la sesión que planeó. De fábrica corre una sola
   lente, «suposición falsa» (lo que el plan cree del código y no es cierto); la organización puede sumar las otras
   (`plan_review.lenses`). Corre con el revisor que elige la organización (`review_runner`; de fábrica, Claude) y sólo
@@ -43,14 +48,21 @@ La opción vieja de aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
      Después: `marker.js plan-review --for-session <sesión> --result <resultado.json> --model opus`. Un resultado sin
      ese número, o con el de otra revisión, queda sin veredicto; uno que no se puede leer, también, y el comando sale 3.
      Sin herramienta para correrlo: `--no-tool "<motivo>"`.
-   - **Sin coordinadora**, la propia sesión: `marker.js plan-review` (sin `--for-session`) prepara una revisión
-     **informativa**, con el mismo comando y la misma forma de anotar el resultado. Informa y nunca firma: el plan lo
-     aprueba el dueño, y su cuadro dice el resultado.
+   - **Sin coordinadora**, la propia sesión: `marker.js plan-review` (sin `--for-session`) prepara la revisión de su
+     plan, con el mismo comando y la misma forma de anotar el resultado. El resultado vale sólo desde la ruta que nombró
+     la preparación (el `--out` del comando): uno de otra ruta queda sin veredicto, «el resultado no vino del corredor».
+     En una story de rutina con `plan_review.routine_approval: review` (de fábrica) su «aprobado» aprueba el plan; en
+     una delicada o con `person` es **informativa**: informa, el plan lo aprueba el dueño y su cuadro dice el resultado.
+     Lo que garantiza (y lo que no): `guides/revisiones-automaticas.md`, «Qué garantiza la revisión que lanza la propia
+     sesión».
 4. **Los cuatro resultados.**
-   - **4a. Aprobado** (o aprobado con notas). Con coordinadora, `plan_review.coordinator_approves` en sí y `plan-approval`
-     delegado, ella firma `complete-step approve-plan --for-session <sesión> --approved "<la revisión>"` (vía `review`
-     en el registro de firmas) y al dueño no le llega nada. Si falta cualquiera de las dos, le llega al dueño con
-     «revisado, sin hallazgos» (o con sus notas).
+   - **4a. Aprobado** (o aprobado con notas), en una story de rutina con `plan_review.routine_approval: review`. Con
+     coordinadora y `plan-approval` delegado, ella firma `complete-step approve-plan --for-session <sesión> --approved
+     "<la revisión>"` (vía `review` en el registro de firmas) y al dueño no le llega nada. Sin coordinadora, la sesión
+     cierra con `complete-step approve-plan` sin `--approved`: el guion vuelve a comprobar la revisión (la misma corrida,
+     la misma huella del plan, de la story y de la parte) y aprueba sin click, a nombre de «revisión automática»; si el
+     plan cambió después de la revisión, frena y hay que volver a lanzarla. Con `person`, sin delegación o en una
+     delicada, le llega al dueño con «revisado, sin hallazgos» (o con sus notas).
    - **4b. Rechazado.** `pipeline.js next` le muestra los hallazgos a la sesión (`plan_review`). La sesión corrige el
      plan y lo vuelve a cerrar, y la revisión vuelve a correr. No llega al dueño mientras siga rechazado, salvo con
      `plan_review.rejected_reaches_owner` en sí o al llegar al tope de rechazos seguidos (`review.max_rounds`, de
@@ -260,7 +272,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-ste
 #   … --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"
 ```
 
-Sin `--approved` (o `--terminal`) el comando bloquea: ningún plan se aprueba solo; en una story con pantalla, también sin `--mockup-approved`. Queda en `marker.planApproval` y en `gates.log`. No se codea "mientras tanto": el orden es plan aprobado → tests (4.0 ATDD) → código.
+Sin `--approved` (o `--terminal`) el comando bloquea, salvo un plan de rutina con el «aprobado» de la revisión de la propia sesión (4a); en una story con pantalla, también sin `--mockup-approved`. Queda en `marker.planApproval` y en `gates.log`. No se codea "mientras tanto": el orden es plan aprobado → tests (4.0 ATDD) → código.
 
 ### Quién aprobó: manual o automática
 

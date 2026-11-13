@@ -6960,9 +6960,15 @@ test('SiteConfig_LaSeccionDeLaRevisionDelPlan (T28) @story-8.221 @ac-22 — siet
   assert.ok(s, 'hay una sección «Revisión del plan»');
   assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves], ['team-repos.json', 'perfil', 'team-repos.js', ['plan_review']]);
   const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('revisionDelPlan', { repo: 'perfil', borrador: { plan_review: { lenses: ['suposicion-falsa'] } } })] });
-  const siete = ['plan_review.delicate', 'plan_review.routine', 'plan_review.routine_owner_away', 'plan_review.coordinator_approves', 'plan_review.rejected_reaches_owner', 'plan_review.owner_away_minutes', 'plan_review.lenses.0'];
+  // `routine_approval` reemplaza a la fila de `coordinator_approves`, que queda como nombre viejo en el lector
+  const siete = ['plan_review.delicate', 'plan_review.routine', 'plan_review.routine_owner_away', 'plan_review.routine_approval', 'plan_review.rejected_reaches_owner', 'plan_review.owner_away_minutes', 'plan_review.lenses.0'];
   for (const p of siete) assert.ok(nodosDe(r, 'revisionDelPlan', (x) => x.attrs['data-path'] === p).length, `el control ${p}`);
   assert.deepStrictEqual(opcionesRA(r, 'revisionDelPlan', 'plan_review.routine'), ['', 'always', 'ask', 'never']);
+  // @story-8.267 @ac-18: quién aprueba un plan de rutina revisado, con su valor de fábrica
+  assert.deepStrictEqual(opcionesRA(r, 'revisionDelPlan', 'plan_review.routine_approval'), ['', 'review', 'person']);
+  assert.ok(!nodosDe(r, 'revisionDelPlan', (x) => x.attrs['data-path'] === 'plan_review.coordinator_approves').length, 'la fila vieja sigue en la pestaña');
+  const persona = revisarCon('revisionDelPlan', { plan_review: { routine_approval: 'person' } });
+  assert.strictEqual(persona.ok, true, JSON.stringify(persona.problems));
   const bien = revisarCon('revisionDelPlan', { plan_review: { routine: 'always', owner_away_minutes: 30, lenses: ['suposicion-falsa', 'prueba-que-falta'] } });
   assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
   assert.deepStrictEqual(JSON.parse(bien.texto).plan_review, { routine: 'always', owner_away_minutes: 30, lenses: ['suposicion-falsa', 'prueba-que-falta'] });

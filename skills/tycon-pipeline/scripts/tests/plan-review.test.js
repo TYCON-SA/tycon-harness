@@ -457,16 +457,21 @@ test('PlanReview_SoloLaCoordinadoraParaOtra_ConSinForSessionLaInformativa (T5, T
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, motivo);
   assert.deepStrictEqual(sin.revisiones(), [], 'nada escrito sin designación');
-  // sin --for-session (o con la propia), la sesión prepara la informativa de su plan
+  // sin --for-session (o con la propia), la sesión prepara la revisión de su plan: de una rutina, la que puede firmar
+  // (la regla nueva); con `person`, informativa
   for (const args of [['plan-review'], ['plan-review', '--for-session', DESTINO]]) {
     r = lab.marker(DESTINO, args);
     assert.strictEqual(r.status, 0, r.stderr);
     const salida = JSON.parse(r.stdout);
-    assert.strictEqual(salida.informativa, true);
+    assert.strictEqual(salida.informativa, false);
     assert.match(salida.comando, /workflow-lite\.js/);
-    assert.match(r.stderr, /informativa/);
+    assert.doesNotMatch(r.stderr, /informativa/);
   }
-  assert.ok(lab.revisiones().some((f) => f.includes(`${DESTINO}.pending.json`)), 'el pedido de la informativa');
+  r = lab.marker(DESTINO, ['plan-review'], null, { TYCON_PLAN_ROUTINE_APPROVAL: 'person' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(JSON.parse(r.stdout).informativa, true);
+  assert.match(r.stderr, /informativa/);
+  assert.ok(lab.revisiones().some((f) => f.includes(`${DESTINO}.pending.json`)), 'el pedido de la revisión propia');
   // una sesión sin plan escrito no tiene qué revisar
   r = lab.marker(COORD, ['plan-review']);
   assert.strictEqual(r.status, 2, r.stderr);
@@ -516,7 +521,8 @@ test('PlanReview_Rechazado_Avisa (T7) @story-1.29 @ac-7', (t) => {
   // la revisión rechazada, anotada por el comando: imprime los hallazgos
   const p = PR().preparar({ lanza: COORD, destino: DESTINO, estado: lab.estado, home: lab.home, delegacion: delegacionReal() });
   assert.strictEqual(p.codigo, 0, p.motivo);
-  const res = path.join(lab.base, 'resultado.json');
+  // donde lo deja el corredor (el --out del comando): un resultado de otra ruta no se anota
+  const res = PR().rutaResultado(lab.estado, COORD, DESTINO);
   fs.writeFileSync(res, JSON.stringify({ ...RECHAZADO, pedido: p.args.pedido }));
   const r = lab.marker(COORD, ['plan-review', '--for-session', DESTINO, '--result', res, '--model', 'opus']);
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
@@ -904,7 +910,8 @@ test('AutoAprobacion_YaNoAprueba (T22) @story-1.29 @ac-21', (t) => {
   const gatesAntes = lab.gates().length;
   const r = lab.marker(DESTINO, ['complete-step', 'approve-plan', '--auto-approved', 'riesgo bajo: un archivo, sin rutas sensibles']);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
-  assert.match(r.stderr, /el plan no se aprueba solo: lo aprueba una persona, o la coordinadora con la revisión automática/);
+  assert.match(r.stderr, /--auto-approved no aprueba: un plan de rutina lo aprueba el «aprobado» de su revisión automática \(con o sin coordinadora\); uno delicado, una persona/);
+  assert.doesNotMatch(r.stderr, /no se aprueba solo/);
   assert.strictEqual(lab.leer(DESTINO), antes, 'sin planApproval');
   assert.ok(!lab.gates().slice(gatesAntes).some((g) => g.name === 'plan-approval' && g.status === 'ok'), 'sin renglón plan-approval ok');
   assert.deepStrictEqual(lab.aprobaciones(), [], 'sin línea en approvals.jsonl');
@@ -960,9 +967,13 @@ const POL = () => require(path.join(SCRIPTS, 'lib', 'review-policy.js'));
 const cfgCon = (raw = {}) => POL().normalize(raw).values;
 const markerDe = (lab, sid = DESTINO) => JSON.parse(lab.leer(sid));
 const renglonesDe = (lab, name) => lab.gates().filter((j) => j.name === name);
-/** La informativa: la propia sesión revisa su plan. */
-const informativa = (lab, resultado) => {
-  const p = PR().preparar({ lanza: DESTINO, estado: lab.estado });
+/**
+ * La revisión de la propia sesión sobre su plan. Nace informativa sólo cuando no puede firmar: por eso la de las pruebas
+ * que miden una informativa se prepara con `routine_approval: person` (`PIDE_CLICK`).
+ */
+const PIDE_CLICK = () => cfgCon({ plan_review: { routine_approval: 'person' } });
+const informativa = (lab, resultado, config) => {
+  const p = PR().preparar({ lanza: DESTINO, estado: lab.estado, ...(config ? { config } : {}) });
   assert.strictEqual(p.codigo, 0, p.motivo);
   return PR().anotar({ lanza: DESTINO, estado: lab.estado, resultado: { pedido: p.args.pedido, ...resultado } });
 };
@@ -991,21 +1002,27 @@ test('PlanReview_AprobadoConCoordinadoraYO4EnNo (T20) @story-8.221 @ac-16', (t) 
   assert.strictEqual(PR().lineaDelCuadro({ estado: lab.estado, destino: DESTINO, marker: markerDe(lab), config }).linea, 'revisado, sin hallazgos');
 });
 
-test('PlanReview_AprobadoSinCoordinadora (T21) @story-8.221 @ac-17', (t) => {
+test('PlanReview_AprobadoSinCoordinadora (T21) @story-8.221 @ac-17 @story-8.267 @ac-16', (t) => {
+  // la regla cambió (el dueño, 12/11): sin coordinadora, la revisión de la propia sesión aprueba una rutina
   const lab = laboratorio(t, { designada: null });
   const c = informativa(lab, APROBADO);
   assert.strictEqual(c.veredicto, 'aprobado');
-  assert.strictEqual(c.informativa, true);
+  assert.strictEqual(c.informativa, false);
   assert.strictEqual(PR().lineaDelCuadro({ estado: lab.estado, destino: DESTINO, marker: markerDe(lab), config: cfgCon() }).linea, 'revisado, sin hallazgos');
-  // nadie más que el dueño firma: ni la propia sesión con su informativa
   const r = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: markerDe(lab), home: lab.home, config: cfgCon() });
-  assert.strictEqual(r.codigo, 2);
-  assert.match(r.motivo, /informativa/);
+  assert.strictEqual(r.codigo, 0, r.motivo);
+  // con `person` nace informativa y la propia sesión no firma
+  const click = laboratorio(t, { designada: null });
+  assert.strictEqual(informativa(click, APROBADO, PIDE_CLICK()).informativa, true);
+  const rc = PR().antesDeAprobar({ estado: click.estado, firmante: DESTINO, destino: DESTINO, marker: markerDe(click), home: click.home, config: PIDE_CLICK() });
+  assert.strictEqual(rc.codigo, 2);
+  assert.match(rc.motivo, /routine_approval: person/);
 });
 
 test('PlanReview_LaInformativaNuncaAprueba (T25) @story-8.221 @ac-20', (t) => {
   const lab = laboratorio(t);
-  informativa(lab, APROBADO);
+  // informativa: con `person`, la de la propia sesión no puede firmar
+  informativa(lab, APROBADO, PIDE_CLICK());
   const propia = path.join(lab.estado, 'plan-review', DESTINO, `${DESTINO}.json`);
   assert.strictEqual(JSON.parse(fs.readFileSync(propia, 'utf8')).informativa, true);
   // copiada a la carpeta de la coordinadora, con informativa en false: sin su renglón no vale
@@ -1038,8 +1055,11 @@ test('PlanReview_ElRenglonDeGatesLogTraeHuellaHallazgosCorridaEInformativa (T53)
   const corrida = { storyId: '9.91', startedAt: markerDe(lab).startedAt || null };
   assert.strictEqual(PR().rechazosSeguidos({ estado: lab.estado, destino: DESTINO, corrida }), 2);
   assert.strictEqual(PR().hallazgosCorregidos({ estado: lab.estado, destino: DESTINO, corrida }), 3);
-  informativa(lab, APROBADO);
+  informativa(lab, APROBADO, PIDE_CLICK());
   assert.strictEqual(renglonesDe(lab, 'plan-review').pop().informativa, true);
+  // la propia de una rutina que puede firmar no es informativa
+  informativa(lab, APROBADO);
+  assert.strictEqual(renglonesDe(lab, 'plan-review').pop().informativa, false);
 });
 
 test('PlanReview_AlTercerRechazoSeguidoLlegaAlDueno (T49) @story-8.221 @ac-38', (t) => {
@@ -1106,13 +1126,17 @@ test('PlanReview_ElTopeDeRechazosEsElDelRepoYCuentaLasInformativas (T49) @story-
 
 test('PlanReview_LaInformativaNoTapaLaRevisionDeLaCoordinadora (T25) @story-8.221 @ac-20 — designada después, le toca lanzar la suya', (t) => {
   const lab = laboratorio(t, { designada: null });
-  informativa(lab, APROBADO);
+  informativa(lab, APROBADO, PIDE_CLICK());
   const d = { name: 'relay-designation', status: 'ok', ts: '2026-10-27T08:00:00.000Z', sesion: COORD, rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
   fs.appendFileSync(path.join(lab.estado, 'gates.log'), `${JSON.stringify(d)}\n${JSON.stringify(DS.confirmationRecord(d, '2026-10-27T08:01:00.000Z'))}\n`);
   const a = PR().accionDelPlan({ estado: lab.estado, sesion: DESTINO, marker: markerDe(lab), config: cfgCon({ plan_review: { routine: 'always' } }), home: lab.home });
   assert.strictEqual(a.approves, 'coordinator');
   assert.strictEqual(a.revisado, undefined, 'la informativa no cuenta como la revisión de la coordinadora');
   assert.match(a.comando, /plan-review --for-session ses-a/);
+  // la de la propia sesión que puede firmar sí cuenta, con coordinadora o sin ella (la regla nueva)
+  informativa(lab, APROBADO);
+  const b = PR().accionDelPlan({ estado: lab.estado, sesion: DESTINO, marker: markerDe(lab), config: cfgCon({ plan_review: { routine: 'always' } }), home: lab.home });
+  assert.strictEqual(b.revisado, 'aprobado');
 });
 
 test('PlanReview_LaConfiguracionDiceSusClavesMalas (T8) @story-8.221 @ac-8 — el lector las saca de data y la revisión las dice', (t) => {
@@ -1329,3 +1353,272 @@ test('PlanReview_NextYAprobarSiguenLaMatriz (T59) @story-8.221 @ac-10 @ac-11 @ac
 function lab2Aprobar(lab) {
   return lab.marker(DESTINO, ['complete-step', 'approve-plan', '--approved', 'ok']);
 }
+
+// ═══════════════════════ Un plan de rutina con la revisión «aprobado» se aprueba solo, con o sin coordinadora ═══════
+// 🔴 Mutaciones: rechazar la revisión de la propia sesión (T21), aprobar con un plan, una story o una parte cambiados
+// (T22), aprobar con `person` o firmar la coordinadora con `person` (T23), aprobar una delicada o una con maqueta (T21,
+// T24), aceptar un resultado que no vino del corredor (T28), anotar la aprobación propia como de la coordinadora (T21).
+const RESULTADO_PROPIO = (lab, sid = DESTINO) => path.join(lab.estado, 'plan-review', sid, `${DESTINO}.resultado.json`);
+/** La revisión que lanza la propia sesión por el comando: prepara, el «corredor» deja el resultado donde se nombró, y se anota. */
+function revisionPropia(lab, resultado = APROBADO, extraEnv = {}) {
+  const p = lab.marker(DESTINO, ['plan-review'], null, extraEnv);
+  assert.strictEqual(p.status, 0, p.stderr);
+  const s = JSON.parse(p.stdout);
+  fs.writeFileSync(RESULTADO_PROPIO(lab), JSON.stringify({ ...resultado, pedido: s.args.pedido }));
+  const a = lab.marker(DESTINO, ['plan-review', '--result', RESULTADO_PROPIO(lab), '--model', 'opus'], null, extraEnv);
+  assert.strictEqual(a.status, 0, `${a.stdout}${a.stderr}`);
+  return { preparada: s, anotada: a };
+}
+const aprobarSolo = (lab, extraEnv = {}) => lab.marker(DESTINO, ['complete-step', 'approve-plan'], null, extraEnv);
+
+test('PlanReview_RutinaSinCoordinadora_AprobadoAprueba (T21) @story-8.267 @ac-16', (t) => {
+  const lab = laboratorio(t, { designada: null });
+  const { preparada } = revisionPropia(lab);
+  assert.strictEqual(preparada.informativa, false, 'la revisión propia de una rutina no nace informativa');
+  assert.strictEqual(JSON.parse(fs.readFileSync(lab.constancia(DESTINO), 'utf8')).informativa, false);
+  const firmasAntes = lab.firmas().length;
+  const r = aprobarSolo(lab);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const m = markerDe(lab);
+  assert.strictEqual(m.planApproval.mode, 'revision');
+  assert.strictEqual(m.planApproval.revision.lanzo, DESTINO);
+  assert.ok(!(m.stepsPending || []).some((s) => s === 'approve-plan' || s === '3'), `el paso sigue pendiente: ${JSON.stringify(m.stepsPending)}`);
+  assert.ok(renglonesDe(lab, 'plan-approval').some((g) => g.status === 'ok'), 'sin renglón plan-approval');
+  assert.ok(renglonesDe(lab, 'plan-approval-signed').some((g) => g.via === 'revision' && g.destino === DESTINO), 'sin renglón plan-approval-signed');
+  const comun = lab.firmas().slice(firmasAntes).find((f) => f.signature === 'plan-approval');
+  assert.ok(comun, 'sin renglón en el registro común');
+  assert.strictEqual(comun.via, 'review');
+  assert.strictEqual(comun.signer, `revisión automática (sesión ${DESTINO})`);
+  assert.strictEqual(comun.target, DESTINO);
+  const ap = lab.aprobaciones().find((x) => x.que === 'plan');
+  assert.ok(ap, 'sin línea en approvals.jsonl');
+  assert.strictEqual(ap.tipo, 'automatica');
+  assert.match(ap.quien, /revisión automática/);
+  assert.doesNotMatch(JSON.stringify(ap), /coordinadora/, 'la aprobación propia quedó anotada como de la coordinadora');
+  assert.ok(!fs.existsSync(path.join(lab.estado, 'coordination', 'signatures.json')) || !/plan-approval/.test(fs.readFileSync(path.join(lab.estado, 'coordination', 'signatures.json'), 'utf8')), 'la lista de firmas abrió un renglón');
+  // con notas, igual
+  const conNotas = laboratorio(t, { designada: null });
+  revisionPropia(conNotas, CON_NOTAS);
+  assert.strictEqual(aprobarSolo(conNotas).status, 0);
+  // sin revisión: frena como hoy, con el motivo
+  const sin = laboratorio(t, { designada: null });
+  const f = aprobarSolo(sin);
+  assert.notStrictEqual(f.status, 0);
+  assert.match(f.stderr, /falta la aprobación del plan/);
+  assert.match(f.stderr, /no hay una revisión automática/);
+  // una delicada: la revisión nace informativa y el paso frena
+  const del = laboratorio(t, { designada: null, sensible: 'seguridad' });
+  const d = revisionPropia(del);
+  assert.strictEqual(d.preparada.informativa, true);
+  const fd = aprobarSolo(del);
+  assert.notStrictEqual(fd.status, 0);
+  assert.match(fd.stderr, /falta la aprobación del plan/);
+  assert.ok(!markerDe(del).planApproval, 'una delicada se aprobó sola');
+  // una historia con maqueta que aprobar: frena aunque la revisión sea aprobado
+  const conPantalla = laboratorio(t, { designada: null });
+  fs.mkdirSync(path.join(conPantalla.repo, 'src', 'pages'), { recursive: true });
+  const conTsx = fs.readFileSync(conPantalla.stories[DESTINO], 'utf8').replace('  - README.md', '  - README.md\n  - src/pages/Inicio.tsx');
+  fs.writeFileSync(conPantalla.stories[DESTINO], `${conTsx}\n## Pantalla\n\nLa página src/pages/Inicio.tsx muestra un botón nuevo.\n`);
+  assert.strictEqual(require(path.join(SCRIPTS, 'mockup.js')).screenStory(conPantalla.stories[DESTINO]).screen, true, 'la historia de la prueba no tiene pantalla: no mide lo que dice');
+  revisionPropia(conPantalla);
+  const fp = aprobarSolo(conPantalla);
+  assert.notStrictEqual(fp.status, 0, `${fp.stdout}${fp.stderr}`);
+  assert.match(fp.stderr, /maqueta/);
+  assert.ok(!markerDe(conPantalla).planApproval, 'una historia con pantalla se aprobó sola');
+});
+
+test('PlanReview_PlanCambiadoDespuesDeLaRevision_NoApruebaSolo (T22) @story-8.267 @ac-17', (t) => {
+  // el plan, la story o la parte cambiados después de la revisión
+  const casos = [
+    ['el plan', (lab) => fs.writeFileSync(lab.planFile, `${PLAN}3. Un paso más.\n`), /el plan cambió después de la revisión/],
+    ['la story', (lab) => fs.appendFileSync(lab.stories[DESTINO], '\nUn renglón más.\n'), /la story cambió después de la revisión/],
+    ['la parte', (lab) => {
+      const m = JSON.parse(lab.leer(DESTINO));
+      fs.writeFileSync(lab.marcador(DESTINO), JSON.stringify({ ...m, batch: 'B-otra' }, null, 2));
+    }, /la parte o su lista cambiaron/],
+  ];
+  for (const [que, cambiar, re] of casos) {
+    const lab = laboratorio(t, { designada: null });
+    revisionPropia(lab);
+    cambiar(lab);
+    const r = aprobarSolo(lab);
+    assert.notStrictEqual(r.status, 0, `${que}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, re, que);
+    assert.ok(!markerDe(lab).planApproval, `${que}: se aprobó solo`);
+    if (que === 'el plan') {
+      // next pide relanzar la revisión sobre el plan cerrado; con «aprobado» sobre la versión nueva, aprueba solo
+      const n = JSON.parse(spawnSync(process.execPath, [PIPELINE, 'next'], { cwd: lab.repo, encoding: 'utf8', env: { ...lab.env, CLAUDE_CODE_SESSION_ID: DESTINO } }).stdout);
+      assert.match(JSON.stringify(n.plan_review_action || {}), /marker\.js plan-review/, JSON.stringify(n.plan_review_action));
+      revisionPropia(lab);
+      const ok = aprobarSolo(lab);
+      assert.strictEqual(ok.status, 0, `${ok.stdout}${ok.stderr}`);
+    }
+  }
+});
+
+test('PlanReview_RoutineApprovalPerson_PideElClick (T23) @story-8.267 @ac-18', (t) => {
+  // la organización (configuración inyectada), la variable de la máquina y el nombre viejo: con `person` no aprueba sola
+  const lab = laboratorio(t, { designada: null });
+  revisionPropia(lab, APROBADO, { TYCON_PLAN_ROUTINE_APPROVAL: 'person' });
+  const r = aprobarSolo(lab, { TYCON_PLAN_ROUTINE_APPROVAL: 'person' });
+  assert.notStrictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /routine_approval: person/);
+  assert.strictEqual(PR().lineaDelCuadro({ estado: lab.estado, destino: DESTINO, marker: markerDe(lab), config: cfgCon() }).linea, 'revisado, sin hallazgos');
+  const viejo = laboratorio(t, { designada: null });
+  const p = PR().preparar({ lanza: DESTINO, estado: viejo.estado, config: cfgCon({ plan_review: { coordinator_approves: false } }) });
+  assert.strictEqual(p.informativa, true, 'con el nombre viejo en false la propia nace informativa');
+  PR().anotar({ lanza: DESTINO, estado: viejo.estado, resultado: { ...APROBADO, pedido: p.args.pedido } });
+  const rv = PR().antesDeAprobar({ estado: viejo.estado, firmante: DESTINO, destino: DESTINO, marker: markerDe(viejo), home: viejo.home, config: { plan_review: { coordinator_approves: false } } });
+  assert.strictEqual(rv.codigo, 2);
+  assert.match(rv.motivo, /coordinator_approves: false/);
+  // con coordinadora y `person`, la coordinadora tampoco firma por delegación con la revisión
+  const conCoord = laboratorio(t);
+  conCoord.revisar(APROBADO);
+  const rc = PR().antesDeAprobar({ estado: conCoord.estado, firmante: COORD, destino: DESTINO, marker: markerDe(conCoord), home: conCoord.home, config: cfgCon({ plan_review: { routine_approval: 'person' } }), delegacion: delegacionReal() });
+  assert.strictEqual(rc.codigo, 2);
+  assert.match(rc.motivo, /routine_approval: person/);
+  // la variable gana sobre la organización (en review) y un valor malo de la variable no cuenta
+  const arbol = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-org-')));
+  t.after(() => fs.rmSync(arbol, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(arbol, 'team-repos.json'), JSON.stringify({ version: 1, plan_review: { routine_approval: 'review' } }));
+  const leer = () => JSON.parse(fs.readFileSync(path.join(arbol, 'team-repos.json'), 'utf8'));
+  const conVar = (v, fn) => { const prev = process.env.TYCON_PLAN_ROUTINE_APPROVAL; if (v === undefined) delete process.env.TYCON_PLAN_ROUTINE_APPROVAL; else process.env.TYCON_PLAN_ROUTINE_APPROVAL = v; try { return fn(); } finally { if (prev === undefined) delete process.env.TYCON_PLAN_ROUTINE_APPROVAL; else process.env.TYCON_PLAN_ROUTINE_APPROVAL = prev; } };
+  assert.strictEqual(conVar('person', () => PR().configDeLaOrganizacion({ leer }).values.plan_review.routine_approval), 'person');
+  assert.strictEqual(conVar(undefined, () => PR().configDeLaOrganizacion({ leer }).values.plan_review.routine_approval), 'review');
+  assert.strictEqual(conVar('quizas', () => PR().configDeLaOrganizacion({ leer }).values.plan_review.routine_approval), 'review');
+  // el nombre viejo escrito solo: lo dice como problema
+  const soloViejo = () => ({ version: 1, plan_review: { coordinator_approves: false } });
+  const cv = conVar(undefined, () => PR().configDeLaOrganizacion({ leer: soloViejo }));
+  assert.strictEqual(cv.values.plan_review.routine_approval, 'person');
+  assert.ok(cv.problems.some((x) => /nombre viejo/.test(x.message)), JSON.stringify(cv.problems));
+});
+
+// 🔴 Mutaciones: dejar que la variable afloje lo que la organización pidió, o que un valor malo de quién aprueba caiga
+// callado a «review» y apruebe solo. Es la cuarta forma de falsificar el aprobado: la sesión pone
+// TYCON_PLAN_ROUTINE_APPROVAL=review delante del comando y se saca el click que pide la organización (T23).
+test('PlanReview_VariableSoloAprieta_YValorMaloNoApruebaSolo (T23) @story-8.267 @ac-18', (t) => {
+  const arbol = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-org-')));
+  t.after(() => fs.rmSync(arbol, { recursive: true, force: true }));
+  const org = (v) => () => ({ version: 1, plan_review: { routine_approval: v } });
+  const conVar = (v, fn) => { const prev = process.env.TYCON_PLAN_ROUTINE_APPROVAL; if (v === undefined) delete process.env.TYCON_PLAN_ROUTINE_APPROVAL; else process.env.TYCON_PLAN_ROUTINE_APPROVAL = v; try { return fn(); } finally { if (prev === undefined) delete process.env.TYCON_PLAN_ROUTINE_APPROVAL; else process.env.TYCON_PLAN_ROUTINE_APPROVAL = prev; } };
+  // la organización pide el click: la variable en review no lo saca, y lo dice
+  const r = conVar('review', () => PR().configDeLaOrganizacion({ leer: org('person') }));
+  assert.strictEqual(r.values.plan_review.routine_approval, 'person');
+  assert.ok(r.problems.some((x) => x.path === 'TYCON_PLAN_ROUTINE_APPROVAL' && /sólo puede pedir el click/.test(x.message)), JSON.stringify(r.problems));
+  // con la organización en review, la variable en review no cambia nada ni es un problema
+  assert.deepStrictEqual(conVar('review', () => PR().configDeLaOrganizacion({ leer: org('review') }).problems), []);
+  // un valor malo de quién aprueba no aprueba solo: el plan de rutina espera a una persona y el motivo nombra el problema
+  const lab = laboratorio(t);
+  revisionPropia(lab, APROBADO);
+  const malo = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: markerDe(lab), home: lab.home,
+    config: { version: 1, plan_review: { routine_approval: 'quizas' } } });
+  assert.strictEqual(malo.codigo, 2);
+  assert.match(malo.motivo, /quién aprueba.*routine_approval/);
+  // la configuración de la organización que no se lee, o que la variable del arnés esconde, no aprueba sola
+  const homeFalsa = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-home-')));
+  t.after(() => fs.rmSync(homeFalsa, { recursive: true, force: true }));
+  const canonica = path.join(homeFalsa, '.claude', 'tycon-harness');
+  fs.mkdirSync(canonica, { recursive: true });
+  fs.writeFileSync(path.join(canonica, 'team-repos.json'), JSON.stringify({ version: 1, plan_review: { routine_approval: 'person' } }));
+  const vacio = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-clon-'));
+  t.after(() => fs.rmSync(vacio, { recursive: true, force: true }));
+  const conEnvs = (vars, fn) => {
+    const prev = {};
+    for (const [k, v] of Object.entries(vars)) { prev[k] = process.env[k]; if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    try { return fn(); } finally { for (const [k, v] of Object.entries(prev)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
+  };
+  const escondida = conEnvs({ HOME: homeFalsa, USERPROFILE: homeFalsa, TYCON_GUIDES_DIR: vacio, TCG: undefined, TYCON_PLAN_ROUTINE_APPROVAL: undefined },
+    () => PR().problemaDelAprobador());
+  assert.match(String(escondida), /team-repos\.json/, 'la variable del arnés escondió la configuración y no lo dijo');
+  fs.writeFileSync(path.join(vacio, 'team-repos.json'), '{ roto');
+  const rota = conEnvs({ HOME: homeFalsa, USERPROFILE: homeFalsa, TYCON_GUIDES_DIR: vacio, TCG: undefined, TYCON_PLAN_ROUTINE_APPROVAL: undefined },
+    () => PR().problemaDelAprobador());
+  assert.match(String(rota), /team-repos\.json/, 'una configuración rota cae callada a la de fábrica');
+  // el nombre viejo con un valor malo tampoco aprueba solo (el pase adversarial lo confirmó)
+  for (const v of ['false', 0, null]) {
+    const viejo = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: markerDe(lab), home: lab.home,
+      config: { version: 1, plan_review: { coordinator_approves: v } } });
+    assert.strictEqual(viejo.codigo, 2, `coordinator_approves: ${JSON.stringify(v)} aprobó solo`);
+    assert.match(viejo.motivo, /quién aprueba.*coordinator_approves/);
+  }
+  // lo que el lector del archivo dice de la sección (una llave mal escrita, la sección que no es un objeto) también
+  for (const path of ['plan_review', 'plan_review.routine_aproval', 'plan_review.Routine_approval']) {
+    assert.ok(PR().esProblemaDelAprobador({ path, message: 'clave desconocida' }), path);
+  }
+  assert.ok(!PR().esProblemaDelAprobador({ path: 'team-repos.json', message: 'plan_review.coordinator_approves es el nombre viejo: usá …' }), 'el nombre viejo bien escrito es sólo un aviso');
+  assert.ok(!PR().esProblemaDelAprobador({ path: 'review.blocking_severity', message: 'x' }), 'otra sección no es de quién aprueba');
+  // el mismo plan, con la configuración bien escrita, se aprueba con su revisión
+  const bien = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: markerDe(lab), home: lab.home,
+    config: { version: 1, plan_review: { routine_approval: 'review' } } });
+  assert.strictEqual(bien.codigo, 0, bien.motivo);
+});
+
+test('PlanReview_DelicadaEsperaYLosDocsDicenLaRegla (T24) @story-8.267 @ac-19', (t) => {
+  const lab = laboratorio(t, { sensible: 'seguridad' });
+  lab.revisar(APROBADO);
+  const r = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: markerDe(lab), home: lab.home, config: cfgCon(), delegacion: delegacionReal() });
+  assert.strictEqual(r.codigo, 2);
+  assert.match(r.motivo, /plan delicado/);
+  const leer = (f) => fs.readFileSync(path.join(RAIZ, f), 'utf8');
+  for (const f of ['guides/revisiones-automaticas.md', 'guides/organization-site.md', 'guides/coordination.md', 'guides/firmas-del-arnes.md',
+    'skills/tycon-pipeline/steps/step-04-approve-plan.md']) {
+    assert.match(leer(f), /plan_review\.routine_approval|routine_approval/, `${f} no nombra la llave nueva`);
+  }
+  for (const f of ['guides/revisiones-automaticas.en.md', 'guides/organization-site.en.md', 'guides/coordination.en.md']) {
+    assert.match(leer(f), /routine_approval/, `${f} no nombra la llave nueva`);
+  }
+  assert.match(leer('skills/tycon-pipeline/SKILL.md'), /un plan de rutina se aprueba con el aprobado de su revisión, con o sin\s+coordinadora; uno delicado, siempre el dev/);
+  assert.doesNotMatch(leer('skills/tycon-pipeline/SKILL.md'), /ningún plan se aprueba solo/);
+  // la regla vieja no queda en ningún texto que lee una persona o la sesión
+  for (const f of ['skills/tycon-pipeline/scripts/lib/story-gate.js', 'skills/tycon-pipeline/scripts/pipeline.js', 'scripts/site/texts.js']) {
+    assert.doesNotMatch(leer(f), /ningún plan se aprueba solo|no plan approves itself/i, `${f} dice la regla vieja`);
+  }
+  const s4 = leer('skills/tycon-pipeline/steps/step-04-approve-plan.md');
+  assert.doesNotMatch(s4, /Informa y nunca firma: el plan lo\s+aprueba el dueño/, 'el paso 4 sigue diciendo que la propia informa y nunca firma');
+});
+
+test('PlanReview_SelfReview_GuaranteesAndDocs (T27) @story-8.267 @ac-22', (t) => {
+  const lab = laboratorio(t, { designada: null });
+  // otro proceso, con las lentes de la organización
+  const p = lab.marker(DESTINO, ['plan-review']);
+  assert.strictEqual(p.status, 0, p.stderr);
+  const s = JSON.parse(p.stdout);
+  assert.match(s.comando, /workflow-lite\.js'? '?[^ ]*adversarial-verify\.workflow\.js/);
+  assert.match(s.comando, new RegExp(`--out '?${RESULTADO_PROPIO(lab).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.deepStrictEqual(s.args.lenses, cfgCon().plan_review.lenses);
+  // las huellas del pedido, y «sin veredicto» si el plan cambia mientras corre
+  const pedido = JSON.parse(fs.readFileSync(path.join(lab.estado, 'plan-review', DESTINO, `${DESTINO}.pending.json`), 'utf8'));
+  assert.strictEqual(pedido.huellas.plan, sha(PLAN));
+  fs.writeFileSync(lab.planFile, `${PLAN}3. cambia mientras corre\n`);
+  fs.writeFileSync(RESULTADO_PROPIO(lab), JSON.stringify({ ...APROBADO, pedido: s.args.pedido }));
+  const a = lab.marker(DESTINO, ['plan-review', '--result', RESULTADO_PROPIO(lab), '--model', 'opus']);
+  assert.match(a.stdout, /sin-veredicto — el plan cambió/);
+  // con el plan quieto: la constancia en gates.log, el marcador y approvals.jsonl
+  revisionPropia(lab);
+  assert.strictEqual(aprobarSolo(lab).status, 0);
+  assert.ok(renglonesDe(lab, 'plan-review').some((g) => g.sesion === DESTINO && g.veredicto === 'aprobado' && g.informativa === false));
+  assert.ok(markerDe(lab).planApproval.revision);
+  assert.ok(lab.aprobaciones().some((x) => x.que === 'plan' && /revisión automática \(opus\)/.test(x.quien)));
+  // el párrafo de garantías, en los dos idiomas, con lo que no garantiza
+  const es = fs.readFileSync(path.join(RAIZ, 'guides', 'revisiones-automaticas.md'), 'utf8');
+  const en = fs.readFileSync(path.join(RAIZ, 'guides', 'revisiones-automaticas.en.md'), 'utf8');
+  assert.match(es, /Qué garantiza la revisión que lanza la propia sesión/);
+  assert.match(es, /\*\*no\*\* garantiza/i);
+  assert.match(en, /What the review the session launches itself guarantees/);
+  assert.match(en, /does \*\*not\*\* guarantee/i);
+});
+
+test('PlanReview_FolderProtected_AndResultOnlyFromRunner (T28, el resultado) @story-8.267 @ac-23', (t) => {
+  const lab = laboratorio(t, { designada: null });
+  const p = lab.marker(DESTINO, ['plan-review']);
+  const s = JSON.parse(p.stdout);
+  // un resultado de otra ruta, aunque traiga el número del pedido: sin veredicto y no aprueba
+  const afuera = path.join(lab.base, 'resultado.json');
+  fs.writeFileSync(afuera, JSON.stringify({ ...APROBADO, pedido: s.args.pedido }));
+  const a = lab.marker(DESTINO, ['plan-review', '--result', afuera, '--model', 'opus']);
+  assert.match(a.stdout, /sin-veredicto — el resultado no vino del corredor/, `${a.stdout}${a.stderr}`);
+  assert.notStrictEqual(aprobarSolo(lab).status, 0, 'aprobó con un resultado de afuera');
+  // el de la ruta nombrada, sí
+  revisionPropia(lab);
+  assert.strictEqual(aprobarSolo(lab).status, 0);
+});

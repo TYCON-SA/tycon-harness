@@ -291,11 +291,14 @@ the coordinator:
   `plan_review.owner_away_minutes`, what the «owner away» cell says.
 - **Launches the plan review**: `marker.js plan-review --for-session <session>`, with the command it returns (the
   organization's reviewer), and records the result with `--result`.
-- **Approves on the owner's behalf only with «approved»** on that same plan, with `plan_review.coordinator_approves`
-  (O4) on and `plan-approval` delegated. Rejected or without a verdict, the plan waits; a delicate plan is always signed
-  by the owner. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is
-  valid, «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at
-  the close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
+- **Approves on the owner's behalf only with «approved»** on that same plan, with `plan_review.routine_approval` (O4)
+  on `review` and `plan-approval` delegated. Without a coordinator, that same «approved» of the review the session
+  launches itself approves the routine plan without a click: it is enough in both cases. With `person`, a routine plan
+  is always signed by a person. Rejected or without a verdict, the plan waits; a delicate plan is always signed by the
+  owner. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
+  (with its `files:` or, without `files:`, with the files the story ties to it plus those it ties to no batch),
+  «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
+  close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
   still goes by the whole story.
 - **Gives the code pass its turn.** She launches nothing for the code: with the owner away, she answers the question on
   the owner's behalf according to the cell (`review-answer --for-session`, with «owner away» as the reason), and the
@@ -372,8 +375,10 @@ turned on in the profile, or on the machine to try it out.
 - **What gets written down.** The brake writes down the signature it denies with its box to the target session itself. No row
   comes from a request run by another session, a delegated signature, «done and notified», an open window,
   `designation-confirm`, anything irreversible or Codex. What `coordination.js signature` leaves goes in the same record.
-- **What closes it.** The signature given for that target, 24 hours, or its session no longer being alive. If the sessions cannot
-  be read, it stays.
+- **What closes it.** The signature given for that request (same signature, target and command), 24 hours, or its session
+  no longer being alive. Using one signature does not close the session's other pending ones: each row waits for its own
+  signature. An older signature, or one given in the terminal without `--for-session`, closes as always: the same
+  signature for that target, or the pending item's code in its reason. If the sessions cannot be read, it stays.
 - **How they go through, with a coordinator.** If the coordinator is confirmed and alive, it passes them all. The background
   session does not show the box or send messages: the brake tells it to wait for the notice. When the person writes, the
   coordinator gets a notice: answer what the person wrote and run `coordination.js owner-next`.

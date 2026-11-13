@@ -283,11 +283,14 @@ una, la coordinadora:
   `plan_review.owner_away_minutes`, lo que dice la celda de «dueño ausente».
 - **Lanza la revisión del plan**: `marker.js plan-review --for-session <sesión>`, con el comando que devuelve (el
   revisor de la organización), y anota el resultado con `--result`.
-- **Aprueba en nombre del dueño sólo con «aprobado»** sobre ese mismo plan, con `plan_review.coordinator_approves`
-  (O4) en sí y `plan-approval` delegado. Rechazado o sin veredicto, el plan espera; un plan delicado lo firma siempre el
-  dueño. **El plan que aprueba es el de una parte**: si la ejecución anotó su tanda (`set-batch`) y la parte vale, la
-  delicada se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide
-  el diff entero; si sale delicado, el plan vuelve al dueño. El pase adversarial sigue por la historia entera.
+- **Aprueba en nombre del dueño sólo con «aprobado»** sobre ese mismo plan, con `plan_review.routine_approval` (O4) en
+  `review` y `plan-approval` delegado. Sin coordinadora, ese mismo «aprobado» de la revisión que lanza la propia sesión
+  aprueba el plan de rutina sin click: alcanza en los dos casos. Con `person`, el plan de rutina lo firma siempre una
+  persona. Rechazado o sin veredicto, el plan espera; un plan delicado lo firma siempre el dueño.
+  **El plan que aprueba es el de una parte**: si la ejecución anotó su tanda (`set-batch`) y la parte vale (con su
+  `files:` o, sin `files:`, con los archivos que la historia le ata a la tanda más los que no ata a ninguna), la delicada
+  se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide el diff
+  entero; si sale delicado, el plan vuelve al dueño. El pase adversarial sigue por la historia entera.
 - **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta la pregunta en su
   nombre según la celda (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la propia
   sesión con su turno, como siempre.
@@ -360,7 +363,10 @@ probarla.
 - **Qué se anota.** El freno anota la firma que niega con su cuadro a la propia sesión destino. No dejan renglón el pedido que
   corre otra sesión, lo delegado, lo «hecho y avisado», una ventana abierta, `designation-confirm`, lo irreversible y Codex.
   Lo que deja `coordination.js signature` queda en el mismo registro.
-- **Qué lo cierra.** La firma dada para ese destino, 24 horas o que su sesión ya no viva. Sin poder leer las sesiones, sigue.
+- **Qué lo cierra.** La firma dada para ese pedido (misma firma, destino y comando), 24 horas o que su sesión ya no viva.
+  Usar una firma no cierra las otras pendientes de la misma sesión: cada renglón espera su firma. Una firma de antes, o
+  una por la terminal sin `--for-session`, cierra como siempre: la misma firma para ese destino, o el código del
+  pendiente en su motivo. Sin poder leer las sesiones, sigue.
 - **Cómo se pasan, con coordinadora.** Si está confirmada y viva, pasa todas ella. La sesión de fondo no muestra el cuadro ni
   manda mensajes: el freno le dice que espere el aviso. Cuando la persona escribe, a la coordinadora le llega un aviso: que
   conteste lo que escribió y corra `coordination.js owner-next`.

@@ -76,7 +76,8 @@ El skill BMAD en plan mode debe producir:
 
 **El plan queda escrito** en la carpeta de la corrida (`pipeline.js run-dir --story <s> --repo <r> --create`), en
 `step-02-bmad-plan.md`, antes de pasar a «Aprobar el plan». Es lo que se le muestra a la persona, y lo que revisa la
-revisión automática cuando lo aprueba la coordinadora («Aprobar el plan»). Ningún plan se aprueba solo.
+revisión automática («Aprobar el plan»). Un plan de rutina se aprueba con el «aprobado» de su revisión, con o sin
+coordinadora; uno delicado, siempre una persona.
 
 El plan escrito trae dos secciones, que son las que muestra la pregunta de la firma:
 

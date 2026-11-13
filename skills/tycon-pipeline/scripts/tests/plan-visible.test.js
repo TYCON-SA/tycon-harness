@@ -70,7 +70,7 @@ test('PlanVisible_SinPlan_NoSeApruebaSolo @story-8.62 @ac-7 @story-1.29 @ac-21',
   hasta3(home, 's-sin', repo, story);
   const r = markerCli(home, 's-sin', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
   assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stderr, /el plan no se aprueba solo/);
+  assert.match(r.stderr, /--auto-approved no aprueba/);
   assert.equal(paso3Cerrado(home, 's-sin', repo), false, 'el paso 3 sigue abierto');
   const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '9.92', true, story);
   fs.writeFileSync(path.join(runDir, PLAN), PLAN_JUGUETE);
@@ -145,7 +145,7 @@ test('PlanVisible_SinConversacion_PreguntaALaPersona @story-8.62 @ac-8', () => {
   const { repo, home } = conPlanEscrito('s-sinconv');
   const r = markerCli(home, 's-sinconv', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
   assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stderr, /el plan no se aprueba solo/);
+  assert.match(r.stderr, /--auto-approved no aprueba/);
   assert.match(r.stderr, /--approved/);
   assert.equal(paso3Cerrado(home, 's-sinconv', repo), false);
   // con la aprobación de la persona, cierra

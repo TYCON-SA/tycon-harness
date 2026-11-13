@@ -58,7 +58,7 @@ function maquina(huella) {
  * Agrega el renglón de una firma. `{ ok: true, path }` o `{ ok: false, error }`; nunca lanza.
  * `home`, `now` y `huella` se pasan en las pruebas.
  */
-function appendSignature({ signature, via, signer = null, orderedBy = null, target = null, reason = '', source = null, home, now = Date.now(), huella } = {}) {
+function appendSignature({ signature, via, signer = null, orderedBy = null, target = null, reason = '', source = null, key = null, home, now = Date.now(), huella } = {}) {
   try {
     if (!VIAS.includes(via)) return { ok: false, error: `la vía «${via}» no es una de ${VIAS.join(', ')}` };
     const n = nivelDe(signature, DELEGADAS.includes(via));
@@ -66,6 +66,8 @@ function appendSignature({ signature, via, signer = null, orderedBy = null, targ
     const renglon = {
       ts: new Date(now).toISOString(), signature, level: n.level, covers: n.covers, via, delegated: DELEGADAS.includes(via),
       signer, ordered_by: orderedBy, target, machine: maquina(huella), reason: una(reason, MOTIVO_MAX), source,
+      // la clave del pedido (la de su fila en la lista de firmas): con ella, la firma cierra sólo ese pedido
+      ...(key ? { key: String(key) } : {}),
     };
     const p = logPath(home);
     fs.mkdirSync(path.dirname(p), { recursive: true });
