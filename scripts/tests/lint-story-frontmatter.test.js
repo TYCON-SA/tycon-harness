@@ -415,10 +415,13 @@ const gitT = (cwd, ...args) => execFileSync('git', ['-c', 'maintenance.auto=fals
   { cwd, env: GIT_ENV, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 const FOLLOWUP_OF = path.join(RAIZ, 'scripts', 'lib', 'followup-of.js');
 const HISTORIA_DE_MAIN = [
-  'story: "9.1"', 'epic: 9', 'status: ready-for-dev',
+  'story: "9.1"', 'epic: 9', 'status: ready-for-dev', 'ado_work_item: 101',
   'followup_of:', '  - id: "1.1"', '    type: "fix"',
   'files_to_modify:', '  - "src/AcmeBackend/Features/AbmGestores/GestoresEndpoints.cs"',
 ];
+// las tres reglas que a una historia nueva la frenan (o, la del nombre viejo del pedido, la anotan) y a una vieja sólo
+// le avisan: causa del reproceso, archivos inventados y `ado_work_item:`
+const CAMPO_VIEJO = (nombre) => new RegExp(`${nombre.replace(/\./g, '\\.')}: nace con \`ado_work_item:\``);
 
 /** El producto de juguete con una rama creada antes de que main tuviera su historia de seguimiento (y lo que se pida en main). */
 function ramaAtrasada(enMain = {}) {
@@ -446,6 +449,7 @@ test('NaceAhora_MergeBringsMainStory_IsExisting @story-8.269 @ac-6', () => {
   assert.strictEqual(r.code, 0, `la historia de main no frena el merge\n${r.out}`);
   assert.match(r.out, /ya existían.*story-9\.1-de-main\.md/s, 'el archivo inventado se avisa como de una historia vieja');
   assert.match(r.out, /story\(s\) con seguimiento .*sin causa declarada/, 'sin `followup_reason:` suma a las que ya existían');
+  assert.doesNotMatch(r.out, CAMPO_VIEJO('story-9.1-de-main.md'), 'el nombre viejo del pedido no se anota en una historia vieja');
 });
 
 test('NaceAhora_MergeBringsRenamedStory_FoundByStoryId @story-8.269 @ac-7', () => {
@@ -466,12 +470,20 @@ test('NaceAhora_NewStoryDuringMerge_StillStops @story-8.269 @ac-8', () => {
     'story: "9.3"', 'epic: 9', 'status: ready-for-dev',
     'files_to_modify:', '  - "src/AcmeBackend/Features/Inexistente/Inexistente.cs"',
   ]);
-  const r = run([path.join(proj, 'specs', 'story-9.1-de-main.md'), nueva], proj);
-  assert.strictEqual(r.code, 1, `la historia nueva de la rama frena como siempre\n${r.out}`);
+  const seguimiento = story(proj, 'specs/story-9.6-seguimiento.md', [
+    'story: "9.6"', 'epic: 9', 'status: ready-for-dev', 'ado_work_item: 102',
+    'followup_of:', '  - id: "1.1"', '    type: "fix"',
+  ]);
+  const r = run([path.join(proj, 'specs', 'story-9.1-de-main.md'), nueva, seguimiento], proj);
+  assert.strictEqual(r.code, 1, `las historias nuevas de la rama frenan como siempre\n${r.out}`);
   const frenadas = (r.out.match(/^❌ (?!\d).*$/mg) || []).join('\n');
-  assert.match(frenadas, /story-9\.3-nueva\.md/, 'el error nombra la historia nueva');
+  assert.match(frenadas, /story-9\.3-nueva\.md/, 'la historia nueva con un archivo inventado frena');
   assert.match(r.out, /Problema: .*Inexistente\.cs/);
+  assert.match(frenadas, /story-9\.6-seguimiento\.md/, 'la historia nueva de seguimiento sin causa frena');
+  assert.match(r.out, /Problema: la story NACE declarando `followup_of:`/);
+  assert.match(r.out, CAMPO_VIEJO('story-9.6-seguimiento.md'), 'el nombre viejo del pedido se anota en la historia nueva');
   assert.doesNotMatch(frenadas, /story-9\.1-de-main\.md/, 'la historia de main no frena: ni por la causa ni por los archivos');
+  assert.doesNotMatch(r.out, CAMPO_VIEJO('story-9.1-de-main.md'), 'ni se anota por el nombre viejo del pedido');
 });
 
 /** `naceAhora` en un proceso aparte, con cada llamada a git anotada (vale igual en Windows que en Linux y Mac). */
@@ -514,5 +526,25 @@ test('NaceAhora_UnreadableMergeHead_CountsAsExisting @story-8.269 @ac-9 @ac-10',
   // una cabeza que no existe en el repo: no se puede decidir, cuenta como existente (avisa, no frena)
   fs.writeFileSync(mergeHead, `${'0123456789abcdef'.repeat(2)}01234567\n`);
   assert.strictEqual(naceAhoraContando(nueva, '9.4').nace, false, 'una cabeza que no resuelve: existente');
+
+  // un MERGE_HEAD que no se puede leer (acá, una carpeta en su lugar): no se puede decidir, existente
   fs.rmSync(mergeHead, { force: true });
+  fs.mkdirSync(mergeHead);
+  assert.strictEqual(naceAhoraContando(nueva, '9.4').nace, false, 'MERGE_HEAD ilegible: existente');
+  fs.rmSync(mergeHead, { recursive: true, force: true });
+});
+
+// 🔴 Falla con: la búsqueda por `story:` sin comillas como texto fijo — `story: 9.2` aparece dentro de `story: 9.26`, y
+// una historia nueva cuyo número es el comienzo de otro que ya existe se da por existente (el lint no la frena).
+test('NaceAhora_StoryIdPrefixOfAnother_StillBorn @story-8.269 @ac-7', () => {
+  const { proj, principal } = ramaAtrasada({ 'specs/story-9.27-de-main.md': ['story: 9.27', 'epic: 9', 'status: ready-for-dev'] });
+  story(proj, 'specs/story-9.26-vieja.md', ['story: 9.26', 'epic: 9', 'status: ready-for-dev']);
+  gitT(proj, 'add', '.');
+  gitT(proj, 'commit', '-q', '-m', 'historia vieja de la rama');
+  const { naceAhora } = require(FOLLOWUP_OF);
+  const enHead = story(proj, 'specs/story-9.2-nueva.md', ['story: 9.2', 'epic: 9', 'status: ready-for-dev']);
+  assert.strictEqual(naceAhora(enHead, '9.2'), true, 'HEAD tiene la 9.26, no la 9.2');
+  assert.strictEqual(naceAhora(enHead, '9.26'), false, 'el número entero sí la encuentra');
+  traerMain(proj, principal);
+  assert.strictEqual(naceAhora(enHead, '9.2'), true, 'la cabeza del merge tiene la 9.27, no la 9.2');
 });

@@ -152,10 +152,20 @@ function naceAhora(abs, storyId) {
     try {                                                                            // (3)
       const raiz = git(['rev-parse', '--show-toplevel']).trim();
       if (!raiz) return false;
-      for (const patron of [`story: "${storyId}"`, `story: '${storyId}'`, `story: ${storyId}`]) {
+      // Con comillas, la comilla de cierre corta el número. Sin comillas, el número tiene que terminar el renglón (o
+      // seguir un comentario): `story: 9.2` no es `story: 9.26`.
+      const sinComillas = String(storyId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const busquedas = [
+        ['--fixed-strings', `story: "${storyId}"`],
+        ['--fixed-strings', `story: '${storyId}'`],
+        ['-E', `story: ${sinComillas}[[:space:]]*(#.*)?$`],
+      ];
+      for (const [modo, patron] of busquedas) {
         let hit = '';
-        // `git grep` sale 1 cuando no encuentra: eso es una respuesta, no un error.
-        try { hit = git(['grep', '-l', '--fixed-strings', patron, rev || 'HEAD', '--', '*.md'], raiz); } catch { hit = ''; }
+        // `git grep` sale 1 cuando no encuentra: eso es una respuesta. Cualquier otra salida es un error: «no sé».
+        try { hit = git(['grep', '-l', modo, '-e', patron, rev || 'HEAD', '--', '*.md'], raiz); } catch (e) {
+          if (!e || e.status !== 1) return null;
+        }
         if (hit.trim() !== '') return true;
       }
     } catch { return null; }
