@@ -1463,6 +1463,12 @@
       "requiere": []
     },
     {
+      "__nota": "las guías del pipeline dicen lo que el código hace: las recetas y la fecha del chequeo de mutantes, y la plantilla de historia que nace en borrador.",
+      "raiz": "arnes",
+      "ruta": "tests/pipeline-docs-match-code.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/e2e-gate-key.test.sh",
       "requiere": []
