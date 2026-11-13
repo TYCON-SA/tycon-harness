@@ -64,6 +64,15 @@ lib_shims() {
     for (const e of es) if (e && e.kind === "file" && String(e.new).startsWith("scripts/lib/") && fs.existsSync(path.join(raiz, e.old))) console.log(e.old);' \
     "$RAIZ" "$RAIZ/scripts/lib/renames.json"
 }
+# El destino de cada reemplazo que el laboratorio ya trae y cuyo destino quedó fuera de lo copiado (un guion mudado a
+# un conector, en integrations/), una ruta por línea: sin él, el validador del mapa ve un reemplazo que no apunta a nada.
+shim_targets() {   # $1 = el repo del laboratorio
+  node -e 'const fs = require("fs"), path = require("path"); const [raiz, mapa, lab] = process.argv.slice(1);
+    let es = []; try { es = JSON.parse(fs.readFileSync(mapa, "utf8")).entries || []; } catch (_) { /* sin mapa: nada */ }
+    for (const e of es) if (e && e.kind === "file" && fs.existsSync(path.join(lab, e.old)) && !fs.existsSync(path.join(lab, e.new))
+      && fs.existsSync(path.join(raiz, e.new))) console.log(e.new);' \
+    "$RAIZ" "$RAIZ/scripts/lib/renames.json" "$1"
+}
 
 # ── El laboratorio: la MISMA cadena que en la máquina del dev ─────────────────────────────────
 #   core.hooksPath global → pre-commit global (el delegador) → .githooks/pre-commit del repo
@@ -82,6 +91,9 @@ montar() {
   # del laboratorio (C-25) nombraría archivos mudados sin su reemplazo. Sin mapa (la copia pública) no hay nada que copiar.
   local vieja
   for vieja in $(lib_shims); do mkdir -p "$T/repo/$(dirname "$vieja")"; cp "$RAIZ/$vieja" "$T/repo/$vieja"; done
+  # y el destino de los reemplazos de scripts/ci/ cuyo guion se mudó a un conector (sólo el guion, sin el manifiesto)
+  local destino
+  for destino in $(shim_targets "$T/repo"); do mkdir -p "$T/repo/$(dirname "$destino")"; cp "$RAIZ/$destino" "$T/repo/$destino"; done
   git init -q -b main "$T/repo"
   # la base lleva TODO lo copiado (hooks apagados): el árbol arranca limpio y «quedó afuera» mide sólo lo del caso
   ( cd "$T/repo" && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m base )
