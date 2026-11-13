@@ -86,7 +86,7 @@ armar_arbol() {
   cp "$RAIZ/scripts/ci/open-pr-per-finding.sh" "$RAIZ/scripts/ci/legacy-options.sh" "$RAIZ/scripts/ci/push-nightly-data.js" "$J/scripts/ci/"
   cp -R "$RAIZ/scripts/nightly/dependencies" "$RAIZ/scripts/nightly/findings" "$J/scripts/nightly/"
   cp -R "$RAIZ/scripts/lib" "$J/scripts/lib"
-  echo 'process.exit(Number(process.env.GUARD_EXIT || 0));' > "$J/scripts/ci/overlay-harness.js"
+  echo 'process.exit(Number(process.env.GUARD_EXIT || 0));' > "$J/scripts/ci/harness-tree.js"
   printf '{"repos":[]}\n' > "$J/scripts/nightly/dependencies/repos.json"
   git -C "$J" init -q; git -C "$J" symbolic-ref HEAD refs/heads/main
   git -C "$T/remoto.git" archive main inbox | tar -x -C "$J"
