@@ -246,10 +246,11 @@
           "id": "quiet-default-apagado",
           "type": "must-stay-quiet",
           "env": {
+            "TYCON_INSTINCTS": "0",
             "TYCON_INSTINCT_MINING": "1",
             "TYCON_INSTINCT_OBS_DIR": "${FIXTURE}/obs"
           },
-          "__doc": "La integración apagada (nadie la prende) no graba nada, aunque la variable vieja diga 1: la grabación la decide sólo la integración instincts.",
+          "__doc": "La integración apagada no graba nada, aunque la variable vieja diga 1: la grabación la decide sólo la integración instincts. El caso la apaga con TYCON_INSTINCTS=0 porque el perfil del equipo puede prenderla, y el banco mide el gancho, no esa decisión.",
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
@@ -332,6 +333,7 @@
           "id": "reenvio-quiet-apagado",
           "type": "must-stay-quiet",
           "env": {
+            "TYCON_INSTINCTS": "0",
             "TYCON_INSTINCT_MINING": "1",
             "TYCON_INSTINCT_OBS_DIR": "${FIXTURE}/obs"
           },
@@ -380,6 +382,9 @@
         {
           "id": "quiet-apagada-sin-variables-viejas",
           "type": "must-stay-quiet",
+          "env": {
+            "TYCON_INSTINCTS": "0"
+          },
           "stdin": {
             "source": "startup"
           },
@@ -393,6 +398,7 @@
           "id": "dice-una-vez-que-las-variables-viejas-no-prenden",
           "type": "must-run",
           "env": {
+            "TYCON_INSTINCTS": "0",
             "TYCON_INSTINCT_MINING": "1"
           },
           "stdin": {
