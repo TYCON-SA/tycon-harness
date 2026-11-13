@@ -1689,6 +1689,23 @@ function revisionDelPlanTocada(cmd, cwd, stateDir) {
  * resueltas contra el arnés instalado. Devuelve la ruta del `--out` que no vale, o null. Otro guion con `--out` ahí, o el
  * corredor con otro workflow, escribiría un resultado que la revisión tomaría por el del pase.
  */
+/**
+ * Los corredores del pase que eligió la organización, como los escribe el arnés en `--runners`: `{ lista, motivo }`.
+ * Si no se pueden leer, `lista` es null (el corredor con `--runners` se frena) y `motivo` dice por qué, también por la
+ * salida de errores. `leer` reemplaza la lectura de la configuración (las pruebas).
+ */
+function corredoresDeLaOrganizacion({ leer } = {}) {
+  try {
+    const raw = leer ? leer() : require('./lib/plan-review.js').configDeLaOrganizacion().raw;
+    const orden = require('./lib/review-runner.js').runnerOrder(raw).order;
+    return { lista: Array.isArray(orden) ? orden.join(',') : null, motivo: null };
+  } catch (e) {
+    const motivo = `no pude leer la lista de corredores de la organización (${(e && e.message) || e}): el corredor con --runners se frena`;
+    process.stderr.write(`[on-bash-write-gate] ${motivo}\n`);
+    return { lista: null, motivo };
+  }
+}
+
 function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
   const { isPlanReviewRecord } = require('./lib/story-gate.js');
   const { isInside } = require('./lib/atdd-preedit.js');
@@ -1709,19 +1726,12 @@ function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
   const nombraLaRevision = /(^|[^\w-])plan-review|\}-review|tycon[\\/]state|\.tycon-pipeline/i.test(String(cmd || ''));
   const cambiaDeCarpeta = /(^|[;&|(\s])(?:cd|pushd)(\s|$)/.test(String(cmd || ''));
   // los corredores del pase: sólo la lista de la organización, como la escribe el arnés; revisores propios, nunca
-  const corredoresDeLaOrganizacion = () => {
-    try {
-      const pr = require('./lib/plan-review.js');
-      const orden = require('./lib/review-runner.js').runnerOrder(pr.configDeLaOrganizacion().raw).order;
-      return Array.isArray(orden) ? orden.join(',') : null;
-    } catch (_) { return null; }
-  };
   const opcionesDelArnes = (w) => {
     if (w.some((x) => x === '--agents-dir' || x.startsWith('--agents-dir='))) return false;
     const ri = w.findIndex((x) => x === '--runners' || x.startsWith('--runners='));
     if (ri < 0) return true;
     const lista = w[ri].startsWith('--runners=') ? w[ri].slice('--runners='.length) : w[ri + 1];
-    return !!lista && lista === corredoresDeLaOrganizacion();
+    return !!lista && lista === corredoresDeLaOrganizacion().lista;
   };
   // el pedido que preparó el arnés: `--args "$(cat '<carpeta de la revisión>/<destino>.args.json')"`, una sola vez
   const pedidoDelArnes = (tramo) => {
@@ -4092,7 +4102,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA };
+module.exports = { handle, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA };
 
 if (require.main === module) {
   const cruda = leerEntrada();

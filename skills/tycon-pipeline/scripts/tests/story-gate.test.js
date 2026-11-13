@@ -1143,6 +1143,16 @@ test('PlanReview_FolderProtected_AndResultOnlyFromRunner (T28, el freno) @story-
   });
 });
 
+// 🔴 Mutación: tragar callado el error al leer la lista de corredores de la organización: el corredor con `--runners`
+// se frenaba sin decir por qué (el revisor de fallos silenciosos lo marcó en las vueltas 3 y 4).
+test('PlanReview_RunnerListUnreadable_SaysWhy (T28, el freno) @story-8.267 @ac-23', () => {
+  const r = bash.corredoresDeLaOrganizacion({ leer: () => { throw new Error('archivo roto'); } });
+  assert.strictEqual(r.lista, null);
+  assert.match(r.motivo, /no pude leer la lista de corredores de la organización \(archivo roto\)/);
+  const bien = bash.corredoresDeLaOrganizacion({ leer: () => ({ review_runner: { order: ['claude'] } }) });
+  assert.strictEqual(bien.motivo, null);
+});
+
 // 🔴 Mutaciones: mirar sólo el primer `--out`, aceptar un destino que no se puede leer, o aceptar el corredor del arnés
 // con un `--args` que no es el pedido que preparó el arnés: con cualquiera, la sesión escribe un «aprobado» que no es el
 // de su plan (T28, las tres formas de falsificar el resultado).
