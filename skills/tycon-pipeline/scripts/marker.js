@@ -217,8 +217,8 @@ const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'script
 function paraOtraSesion(argv) {
   // la revisión automática del plan y la respuesta a la pregunta de revisar no son firmas: entran por su camino
   // (cmdPlanReview, cmdReviewAnswer) y no escriben el marcador destino (sólo su constancia o su renglón). Sin
-  // --for-session, la propia sesión prepara una revisión informativa, que nunca firma; para otra sesión, la designada
-  // (lo mira el camino de cada una)
+  // --for-session, la propia sesión prepara la revisión de su plan (aprueba una rutina con `review`; si no, sólo informa);
+  // para otra sesión, la designada (lo mira el camino de cada una)
   if (argv[2] === 'plan-review' || argv[2] === 'review-answer' || argv[2] === 'review-ask' || argv[2] === 'owner-away') {
     if (PROPIA === '_nosession') {
       console.error(`🔒 marker.js ${argv[2]}: hace falta la sesión que lo pide (CLAUDE_CODE_SESSION_ID). No se escribió nada.`);
@@ -1461,23 +1461,41 @@ function cmdCompleteStep(nRaw, flags) {
     comprobarLoRevisado(marker, `complete-step ${n}`);
   }
 
-  // ── «Aprobar el plan» — lo aprueba una persona, o la coordinadora con la revisión automática ──
+  // ── «Aprobar el plan» — lo aprueba una persona, o la revisión automática en un plan de rutina ──
   // `--approved "<cita>"` en la ventana o `--terminal`. Por la delegación del perfil (la coordinadora, para otra
-  // sesión), sólo con el veredicto «aprobado» de la revisión que ella lanzó sobre este mismo plan, y nunca el de una
-  // story delicada (lib/plan-review.js). Ningún plan se aprueba solo: sin esto, cerrar el paso sería un
-  // comando vacío y el portón de carril (código antes del plan) se abría sin que nadie hubiera aprobado nada.
+  // sesión), sólo con el veredicto «aprobado» de la revisión que ella lanzó sobre este mismo plan; sin `--approved`, con
+  // el de la revisión que lanzó la propia sesión. Nunca el de una story delicada, ni con `routine_approval: person`
+  // (lib/plan-review.js). Sin aprobación de nadie, cerrar el paso sería un comando vacío y el portón de carril (código
+  // antes del plan) se abría sin que nadie hubiera aprobado nada.
   if (controles.has('plan')) {
     const approved = optVal('--approved');
     // el dueño lo aprueba en su terminal: la cita es esa firma
     const enTerminal = opts.includes('--terminal');
     if (opts.includes('--auto-approved')) {
       appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: 'ya no existe' });
-      console.error(`marker.js complete-step ${n} BLOQUEADO — el plan no se aprueba solo: lo aprueba una persona, o la coordinadora con la revisión automática.`);
+      console.error(`marker.js complete-step ${n} BLOQUEADO — --auto-approved no aprueba: un plan de rutina lo aprueba el «aprobado» de su revisión automática (con o sin coordinadora); uno delicado, una persona.`);
       console.error(`  Mostrale el plan a la persona y cerrá con --approved "<su respuesta>". Ver steps/${STEPS_LIB.byId('approve-plan').file}.`);
       process.exit(2);
     }
-    if (!approved && !enTerminal) {
+    // ── Sin --approved: un plan de rutina se aprueba con el «aprobado» de la revisión que lanzó la propia sesión ──
+    // (lib/plan-review.js antesDeAprobar, con la propia sesión como firmante y destino: la misma corrida, la misma huella
+    // del plan, de la story y de la parte, no delicada, `routine_approval: review`). Sin delegación del perfil: sin
+    // coordinadora no hay a quién delegar. Una historia con pantalla no: la maqueta la ve una persona.
+    let autoRevision = null;
+    let sinRevision = null;
+    if (!approved && !enTerminal && !(PEDIDA && PEDIDA !== PROPIA)) {
+      let r;
+      try { r = require('./lib/plan-review.js').antesDeAprobar({ estado: STATE_DIR, firmante: SID, destino: SID, marker }); } catch (e) { r = { codigo: 2, motivo: `no pude comprobar la revisión (${String((e && e.message) || e).split('\n')[0]})` }; }
+      if (!r.codigo) {
+        let pantalla = true;
+        try { pantalla = require('./mockup.js').screenStory(resolveStoryPath(marker.storyPath, marker) || marker.storyPath).screen; } catch (_e) { pantalla = true; }
+        if (pantalla) sinRevision = 'la historia tiene pantalla: la maqueta la aprueba una persona (--approved y --mockup-approved)';
+        else autoRevision = r.constancia;
+      } else sinRevision = r.motivo;
+    }
+    if (!approved && !enTerminal && !autoRevision) {
       console.error(`marker.js complete-step ${n} BLOQUEADO — falta la aprobación del plan.`);
+      if (sinRevision) console.error(`  No se aprueba sin click: ${sinRevision}`);
       console.error(`  marker.js complete-step ${n} --approved "<cita textual de la aprobación del user>"`);
       console.error(`  No se aprueba el plan sin decir QUIÉN aprobó. Ver steps/${STEPS_LIB.byId('approve-plan').file}.`);
       process.exit(1);
@@ -1562,7 +1580,7 @@ function cmdCompleteStep(nRaw, flags) {
         console.error(`ℹ️  revisión del plan: no pude calcular qué toca (${String((e && e.message) || e).split('\n')[0]})`);
       }
     }
-    let revision = null;
+    let revision = autoRevision;
     const antesDelPlan = (via, registro) => {
       if (via === 'delegacion') {
         const r = require('./lib/plan-review.js').antesDeAprobar({ estado: STATE_DIR, firmante: PROPIA, destino: SID, marker });
@@ -1576,7 +1594,14 @@ function cmdCompleteStep(nRaw, flags) {
       return m ? { codigo: 1, motivo: m } : null;
     };
     // lo que aprueba una persona (el plan y la maqueta) es una firma del dueño; por delegación, con la revisión
-    const firmaPlan = firmaDelDueno('plan-approval', `plan de ${marker.storyId}${approved ? `: ${approved}` : ''}`, { antes: antesDelPlan });
+    // sin click, la firma es de la revisión de la propia sesión: su renglón -signed y el del registro común (via: review)
+    const porLaPropia = () => {
+      const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+      ow.firmar({ firma: 'plan-approval', via: 'revision', sesion: SID, destino: SID, anotar: (renglon) => appendLog('gates.log', renglon),
+        resumen: `plan de ${marker.storyId}: revisión ${autoRevision.id} ${autoRevision.veredicto} (${autoRevision.modelo}), lanzada por la propia sesión` });
+      return { via: 'revision', constancia: { via: 'revision' } };
+    };
+    const firmaPlan = autoRevision ? porLaPropia() : firmaDelDueno('plan-approval', `plan de ${marker.storyId}${approved ? `: ${approved}` : ''}`, { antes: antesDelPlan });
     const at3 = nowIso();
     if (mockupPlan) {
       // El archivo de aprobación viaja con la story (va en el commit); la cita queda sólo en el marcador.
@@ -1585,17 +1610,20 @@ function cmdCompleteStep(nRaw, flags) {
       } catch (e) { bloquear3(`no pude escribir la aprobación de la maqueta (${mockupPlan.p.approval}): ${e.code || e.message}`); }
     }
     const porRevision = !!revision;
-    marker.planApproval = { mode: porRevision ? 'revision' : 'user', text: approved || 'firmado en la terminal', at: at3,
+    const textoPlan = approved || (autoRevision ? 'aprobado por la revisión automática de la propia sesión' : 'firmado en la terminal');
+    marker.planApproval = { mode: porRevision ? 'revision' : 'user', text: textoPlan, at: at3,
       ...(porRevision ? { revision: { id: revision.id, veredicto: revision.veredicto, modelo: revision.modelo, lanzo: revision.lanzo } } : {}), ...firmaPlan.constancia };
     appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...firmaPlan.constancia });
     // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; por la revisión, automática a
     // nombre de la revisión. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
     // con su click o su «aprobado», aprobó la persona: nadie vio este comando, así que un nombre escrito en él no cuenta
     const delDueno = ['click', 'mensaje'].includes(firmaPlan.via) ? { tipo: 'manual', quien: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona' } : null;
-    const quienPlan = porRevision
-      ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: `coordinadora (sesión ${PROPIA})` }
-      : delDueno || quienDeLasOpciones(optVal);
-    anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${porRevision ? '· revisión automática' : '--approved'}`, ...quienPlan, ...porDe(firmaPlan) });
+    // la revisión que lanzó la propia sesión no es una delegación de nadie: se anota como lo que es
+    const quienPlan = autoRevision ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})` }
+      : porRevision ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: `coordinadora (sesión ${PROPIA})` }
+        : delDueno || quienDeLasOpciones(optVal);
+    const viaPlan = autoRevision ? '· revisión automática de la propia sesión' : porRevision ? '· revisión automática' : '--approved';
+    anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${viaPlan}`, ...quienPlan, ...porDe(firmaPlan) });
     if (mockupPlan) {
       anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...(delDueno || quienDeLasOpciones(optVal)), ...porDe(firmaPlan) });
     }
@@ -1869,7 +1897,8 @@ function cmdCompleteStep(nRaw, flags) {
       const refutedHolds = (f) => {
         try { return P.normalizeFindingRecord(f, [], { roster, errores: [], runDir: rd }).disposition === 'refuted'; } catch (_e) { return false; }
       };
-      const cruce = lista ? rcLib.checkRun({ stateDir: STATE_DIR, story: marker.storyId, since: marker.startedAt || null, findings: lista, runDir: rd, refutedHolds })
+      // sólo lo de esta corrida: lo que anotó otra sesión sobre la misma historia no se pide acá
+      const cruce = lista ? rcLib.checkRun({ stateDir: STATE_DIR, story: marker.storyId, since: marker.startedAt || null, ...rcLib.corridaDelMarcador(marker, rd), findings: lista, runDir: rd, refutedHolds })
         : { error: 'findings.json no es una lista de hallazgos', problemas: [] };
       if (cruce.error) {
         appendLog('gates.log', { name: 'reported-criticals', status: 'blocked', story: marker.storyId, step: n, error: cruce.error });
@@ -2599,6 +2628,8 @@ function cmdSetBatch(nombre) {
   writeMarker(marker);
   appendLog('gates.log', { name: 'set-batch', story: marker.storyId || null, batch: nombre, valid: marker.batchValid, ...(valida.valid ? {} : { reason: valida.reason }), ts: marker.batchSetAt });
   process.stdout.write(`batch: ${nombre}\n`);
+  // sin `files:`, la lista sale de lo que la historia le ata: se dice cuál es, para que se vea qué se mide
+  if (valida.valid && valida.derivada) process.stdout.write(`batch: archivos de la parte: ${valida.files.join(', ')}\n`);
   if (!valida.valid) process.stdout.write(`batch: la parte no vale para medir el riesgo (${valida.reason}): el plan se mide por la historia entera\n`);
   if (conPlan) process.stdout.write('batch: el plan estaba aprobado sin parte: «Aprobar el plan» queda pendiente otra vez\n');
 }
@@ -5792,10 +5823,12 @@ function opcionesDe(argv) {
 }
 
 // `plan-review [--for-session <D>]`: la revisión automática del plan (lib/plan-review.js). Con `--for-session` la lanza
-// la sesión designada sobre el plan de otra; sin él, la propia sesión sobre el suyo, informativa (nunca firma). No es una
-// firma y no escribe el marcador destino. Sin `--result`, prepara y devuelve los args del pase en modo plan y el comando
-// que lo corre con el revisor de la organización; con `--result <json del pase>` (o `--no-tool "<motivo>"`), anota el
-// veredicto en la constancia de la sesión que la lanzó.
+// la sesión designada sobre el plan de otra; sin él, la propia sesión sobre el suyo (informativa sólo si no puede firmar:
+// story delicada o `routine_approval: person`). No es una firma y no escribe el marcador destino. Sin `--result`, prepara
+// y devuelve los args del pase en modo plan y el comando que lo corre con el revisor de la organización; con `--result
+// <json del pase>` (o `--no-tool "<motivo>"`), anota el veredicto en la constancia de la sesión que la lanzó. El
+// resultado vale sólo desde la ruta que nombró la preparación (el `--out` del comando): uno de otra ruta lo pudo escribir
+// cualquiera, y queda sin veredicto.
 function cmdPlanReview(argv) {
   const pr = require('./lib/plan-review.js');
   const { val } = opcionesDe(argv);
@@ -5807,16 +5840,23 @@ function cmdPlanReview(argv) {
   if (resultado === null && sinHerramienta === null) {
     const p = pr.preparar({ lanza: PROPIA, destino, estado: STATE_DIR });
     if (p.codigo) { console.error(`🔒 marker.js plan-review: ${p.motivo}. No se escribió nada.`); process.exit(p.codigo); }
-    const comando = pr.comandoLite(p.argsFile, path.join(path.dirname(p.argsFile), `${destino}.resultado.json`));
+    const comando = pr.comandoLite(p.argsFile, pr.rutaResultado(STATE_DIR, PROPIA, destino));
     process.stdout.write(`${JSON.stringify({ scriptPath: path.join(__dirname, 'adversarial-verify.workflow.js'), args: p.args, argsFile: p.argsFile, delicate: p.delicate,
       informativa: p.informativa, comando, lite: comando, despues: `marker.js plan-review${conSesion} --result <resultado.json> --model ${p.args.model}` }, null, 2)}\n`);
-    if (p.informativa) console.error('ℹ️  revisión informativa (la lanza la propia sesión): informa, nunca firma el plan.');
+    if (p.informativa) console.error('ℹ️  revisión informativa (la story es delicada o la organización pide el click): informa, y el plan lo firma una persona.');
     if (p.delicate && p.delicate.value) console.error(`⚠️  la story es delicada (${p.delicate.reason}): la revisión ataca y avisa, pero el plan lo aprueba el dev.`);
     process.exit(0);
   }
   let res = null;
   let ilegible = false;
-  if (resultado !== null) {
+  let noVale = null;
+  // sólo el resultado que dejó el corredor donde lo nombró la preparación; las dos rutas, resueltas
+  const real = (r) => { try { return fs.realpathSync(r); } catch (_e) { return path.resolve(r); } };
+  if (resultado !== null && real(resultado) !== real(pr.rutaResultado(STATE_DIR, PROPIA, destino))) {
+    noVale = 'el resultado no vino del corredor';
+    console.error(`🔒 marker.js plan-review: el resultado tiene que estar en ${pr.rutaResultado(STATE_DIR, PROPIA, destino)} (el --out del comando que devolvió la preparación): queda sin veredicto.`);
+    ilegible = true;
+  } else if (resultado !== null) {
     try { res = JSON.parse(fs.readFileSync(resultado, 'utf8')); } catch (e) {
       console.error(`🔒 marker.js plan-review: no pude leer el resultado del pase (${resultado}: ${e.code || e.message}): queda sin veredicto.`);
       res = null;
@@ -5824,7 +5864,7 @@ function cmdPlanReview(argv) {
     }
   }
   const c = pr.anotar({ lanza: PROPIA, destino, estado: STATE_DIR, resultado: res, sinHerramienta: sinHerramienta !== null ? (sinHerramienta || 'sin motivo') : null,
-    modelo: val('--model') || 'opus', proveedor: val('--provider') || 'anthropic' });
+    noVale, modelo: val('--model') || 'opus', proveedor: val('--provider') || 'anthropic' });
   if (c.codigo) { console.error(`🔒 marker.js plan-review: ${c.motivo}`); process.exit(c.codigo); }
   const lineas = [`revisión automática del plan de ${c.storyId} (sesión ${destino}${c.informativa ? ', informativa' : ''}): ${c.veredicto}${c.motivo ? ` — ${c.motivo}` : ''}`];
   const renglon = (h) => `- [${h.lente || '?'}${h.severidad ? `, ${h.severidad}` : ''}] ${h.resumen}${h.archivo && h.archivo !== 'plan' ? ` (${h.archivo}${h.linea ? `:${h.linea}` : ''})` : ''}`;
@@ -5834,9 +5874,9 @@ function cmdPlanReview(argv) {
     for (const h of c.notas) lineas.push(renglon(h));
   }
   if (c.informativa) lineas.push('Es informativa: el plan lo firma una persona.');
-  else if (!pr.APROBADOS.includes(c.veredicto)) lineas.push('El plan espera a una persona: la coordinadora no lo puede aprobar con esta revisión.');
+  else if (!pr.APROBADOS.includes(c.veredicto)) lineas.push('El plan espera a una persona: esta revisión no lo aprueba.');
   if (c.reintentar) lineas.push(`El plan cambió mientras corría: se reintenta una vez sobre el plan cerrado (marker.js plan-review${conSesion}).`);
-  if (ilegible) lineas.push('El resultado del pase no se pudo leer: este comando sale 3.');
+  if (ilegible) lineas.push(noVale ? `El resultado del pase no se puede usar (${noVale}): este comando sale 3.` : 'El resultado del pase no se pudo leer: este comando sale 3.');
   process.stdout.write(`${lineas.join('\n')}\n`);
   process.exit(ilegible ? 3 : 0);
 }

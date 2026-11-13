@@ -73,7 +73,9 @@ test('T18 ReviewPolicy_LasCeldasDeFabrica @story-8.221 @ac-15 — las celdas de 
   assert.deepStrictEqual(P.planReview({ delicate: false, coordinator: true, ownerAway: true, config: c }).decision, 'run');
   const rutina = P.planReview({ delicate: false, coordinator: true, ownerAway: false, config: c });
   assert.strictEqual(rutina.approves, 'coordinator');
-  assert.strictEqual(P.planReview({ delicate: false, coordinator: false, ownerAway: false, config: c }).approves, 'owner');
+  // sin coordinadora, un plan de rutina lo aprueba su revisión (la de la propia sesión); con `person`, el dueño
+  assert.strictEqual(P.planReview({ delicate: false, coordinator: false, ownerAway: false, config: c }).approves, 'session');
+  assert.strictEqual(P.planReview({ delicate: false, coordinator: false, ownerAway: false, config: cfg({ plan_review: { routine_approval: 'person' } }) }).approves, 'owner');
   // matriz 2
   const code = (o) => P.codeReview({ delicate: false, codeFiles: 2, normalByOtherCriterion: false, dense: false, ownerAway: false, config: c, ...o }).decision;
   assert.strictEqual(code({ delicate: true }), 'run');
@@ -157,4 +159,37 @@ test('T48 ReviewPolicy_LosMinutosSinRespuesta @story-8.221 @ac-37 — con 20, a 
     assert.strictEqual(n.values.plan_review.owner_away_minutes, 20);
     assert.ok(n.problems.some((p) => p.path === 'plan_review.owner_away_minutes'));
   }
+});
+
+// 🔴 Mutaciones: perder el valor de fábrica `review`, aceptar un valor malo, que el nombre viejo en false no valga
+// `person` (o que el lector de la organización lo saque de `data`), o que el nombre viejo le gane al nuevo.
+test('ReviewPolicy_RoutineApproval_KeyAliasAndBadValue (T23) @story-8.267 @ac-18', () => {
+  assert.strictEqual(cfg().plan_review.routine_approval, 'review', 'de fábrica');
+  assert.strictEqual(cfg({ plan_review: { routine_approval: 'person' } }).plan_review.routine_approval, 'person');
+  const malo = P.normalize({ plan_review: { routine_approval: 'quizas' } });
+  assert.strictEqual(malo.values.plan_review.routine_approval, 'review');
+  assert.ok(malo.problems.some((p) => p.path === 'plan_review.routine_approval'), JSON.stringify(malo.problems));
+  // el nombre viejo en false, sin el nuevo: vale `person`, sin problema (el lector de la organización lo conserva)
+  const viejo = P.normalize({ plan_review: { coordinator_approves: false } });
+  assert.strictEqual(viejo.values.plan_review.routine_approval, 'person');
+  assert.deepStrictEqual(viejo.problems, []);
+  assert.strictEqual(P.nombreViejo({ plan_review: { coordinator_approves: false } }), true);
+  // con los dos escritos, gana el nuevo y no hay aviso de nombre viejo
+  assert.strictEqual(cfg({ plan_review: { coordinator_approves: false, routine_approval: 'review' } }).plan_review.routine_approval, 'review');
+  assert.strictEqual(P.nombreViejo({ plan_review: { coordinator_approves: false, routine_approval: 'review' } }), false);
+  // idempotente: normalizar lo normalizado da lo mismo
+  assert.deepStrictEqual(P.normalize(viejo.values).values.plan_review, viejo.values.plan_review);
+  // el lector de team-repos.json deja las dos llaves en `data`
+  const TR = require('../../../../scripts/lib/team-repos.js');
+  const base = { version: 1, public: { platform: 'github', org: 'acme', repo: 'h' }, profile: { platform: 'github', org: 'acme', repo: 'p' }, operations: { platform: 'github', org: 'acme', repo: 'o' } };
+  const r = TR.parse(JSON.stringify({ ...base, plan_review: { coordinator_approves: false } }));
+  assert.strictEqual(r.data.plan_review.coordinator_approves, false, `el lector sacó el nombre viejo: ${JSON.stringify(r.sectionProblems || {})}`);
+  const n = TR.parse(JSON.stringify({ ...base, plan_review: { routine_approval: 'person' } }));
+  assert.strictEqual(n.data.plan_review.routine_approval, 'person', `el lector sacó la llave nueva: ${JSON.stringify(n.sectionProblems || {})}`);
+  // la matriz: con coordinadora, `coordinator`; sin ella, `session`; delicada o `person`, el dueño
+  const ap = (o, c = cfg()) => P.planReview({ delicate: false, coordinator: true, ownerAway: false, config: c, ...o }).approves;
+  assert.strictEqual(ap({}), 'coordinator');
+  assert.strictEqual(ap({ coordinator: false }), 'session');
+  assert.strictEqual(ap({ delicate: true }), 'owner');
+  assert.strictEqual(ap({}, viejo.values), 'owner');
 });

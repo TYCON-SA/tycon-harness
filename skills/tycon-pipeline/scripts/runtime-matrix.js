@@ -136,53 +136,8 @@ function tandasBloqueadasDe(content, rel) {
   return atadas.map((t) => t.name);
 }
 
-const sinPunto = (r) => r.replace(/^\.\//, '');
-// Los renglones de lista del frontmatter (`- ruta  # comentario`), con la ruta como la lee la lista (entre comillas o no).
-function renglonesDeLista(fm) {
-  return fm.split(/\r?\n/).map((l) => l.match(/^\s*-\s+(?:(["'])(.*?)\1|([^\s#]+))(.*)$/)).filter(Boolean)
-    .map((m) => ({ ruta: sinPunto((m[2] !== undefined ? m[2] : m[3]).trim()), resto: m[4] }));
-}
-
-/**
- * Las tandas a las que la historia ata un archivo, cualquiera sea su estado: el comentario de su renglón en la lista
- * (`# tanda` y su nombre o su letra), una fila de la tabla de pruebas de esa tanda (`tests` / `tests_pending`) o una
- * tarea de esa tanda (`tasks` / `tasks_pending`) que lo nombra. Las tandas salen de `parsePipelinesBlock`, que lee
- * el bloque en forma de lista y de mapa. Devuelve `[{ name, status }]`.
- */
-function tandasQueNombran(content, rel) {
-  const fm = (String(content).match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
-  const cuerpo = String(content).slice(fm.length);
-  const tandas = require(path.join(__dirname, 'lib', 'story-checks.js')).parsePipelinesBlock(content)
-    .map((t) => ({ name: t.name, status: t.status, tests: [...t.tests, ...t.testsPending], tasks: [...t.tasks, ...t.tasksPending] }));
-  if (!tandas.length) return [];
-  const items = renglonesDeLista(fm);
-  // el nombre del archivo, entero: ni pegado a otra palabra ni seguido de otra extensión (un punto final sí lo cierra).
-  // Si otro archivo declarado se llama igual, el nombre solo no dice cuál es: hace falta la ruta entera.
-  const gemelos = items.filter((it) => path.basename(it.ruta) === path.basename(rel) && it.ruta !== sinPunto(rel)).length;
-  const buscado = (gemelos ? sinPunto(rel) : path.basename(rel)).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // con la ruta entera, tampoco vale como cola de otra ruta más larga (`lib/src/a/x.js` no nombra a `src/a/x.js`)
-  const antes = gemelos ? '[^\\w./-]' : '[^\\w.-]';
-  const nombra = (texto) => new RegExp(`(^|${antes})${buscado}($|[^\\w.-]|\\.(?![\\w-]))`).test(texto);
-  const atadas = new Set();
-  // el comentario de su renglón en la lista que nombra la tanda, con la ruta como la lee la lista (entre comillas o no)
-  for (const it of items) {
-    if (it.ruta !== sinPunto(rel)) continue;
-    for (const [, letra] of (it.resto.split('#')[1] || '').matchAll(/\btanda\s+([\w-]+)/gi)) {
-      for (const t of tandas) if (t.name.toLowerCase() === letra.toLowerCase() || t.name.split('-')[0].toLowerCase() === letra.toLowerCase()) atadas.add(t);
-    }
-  }
-  // una fila de la tabla de pruebas, por su ID
-  for (const l of cuerpo.split(/\r?\n/)) {
-    const fila = l.match(/^\|\s*([A-Za-z]+\d+\w*)\s*\|/);
-    if (fila && nombra(l)) for (const t of tandas) if (t.tests.includes(fila[1])) atadas.add(t);
-  }
-  // una tarea, con sus renglones de continuación: hasta un renglón en blanco o un título
-  for (const bloque of cuerpo.split(/\r?\n(?=\s*-\s*\[.\])/)) {
-    const tarea = bloque.match(/^\s*-\s*\[.\][^\n]*?\bTask\s+(\d+)\b/);
-    if (tarea && nombra(bloque.split(/\r?\n(?=\s*(?:#|\r?$))/m)[0])) for (const t of tandas) if (t.tasks.includes(Number(tarea[1]))) atadas.add(t);
-  }
-  return [...atadas].map((t) => ({ name: t.name, status: t.status }));
-}
+// La regla de atar un archivo a una tanda vive en lib/batch-scope.js: la parte que se programa y la matriz la usan igual
+const { sinPunto, renglonesDeLista, tandasQueNombran } = require(path.join(__dirname, 'lib', 'batch-scope.js'));
 
 /**
  * Las tandas a las que la historia ata un archivo que cambió la corrida. `c` es la ruta que da git, relativa a

@@ -2860,7 +2860,7 @@ ${trabajandoJs}
   var CORTO = [
     ['guardar', 'vos', 'espera', 'coordinadora', 'coordinadora', 'noAplica'],
     ['otraRevision', 'vos', 'espera', 'coordinadora', 'coordinadora', 'noAplica'],
-    ['plan', 'vos', 'espera', 'coordinadoraPlan', 'coordinadoraPlan', 'revisionObligatoria'],
+    ['plan', 'propiaPlanEstas', 'propiaPlanNoEstas', 'coordinadoraPlan', 'coordinadoraPlan', 'revisionObligatoria'],
     ['planDelicado', 'vos', 'espera', 'vos', 'espera', 'revisionAvisa'],
     ['saltear', 'vos', 'espera', 'vos', 'espera', 'noAplica'],
     ['imposible', 'vos', 'espera', 'vos', 'espera', 'noAplica'],
@@ -3937,7 +3937,7 @@ ${trabajandoJs}
       selector(T('pantalla.revisionDelPlanDelicada'), p.delicate, [['', deFab + ' (' + T('pantalla.opcionSiempre') + ')'], ['always', T('pantalla.opcionSiempre')], ['ask', T('pantalla.opcionPreguntar')]], function (v) { poner('delicate', v); }, 'plan_review.delicate', pr),
       selector(T('pantalla.revisionDelPlanRutina'), p.routine, [['', deFab + ' (' + T('pantalla.opcionPreguntar') + ')'], ['always', T('pantalla.opcionSiempre')], ['ask', T('pantalla.opcionPreguntar')], ['never', T('pantalla.opcionNunca')]], function (v) { poner('routine', v); }, 'plan_review.routine', pr),
       selector(T('pantalla.revisionDelPlanAusente'), p.routine_owner_away, [['', deFab + ' (' + T('pantalla.opcionRevisar') + ')'], ['review', T('pantalla.opcionRevisar')], ['wait', T('pantalla.opcionEsperar')], ['skip', T('pantalla.opcionSaltear')]], function (v) { poner('routine_owner_away', v); }, 'plan_review.routine_owner_away', pr),
-      selector(T('pantalla.revisionDelPlanCoordinadoraAprueba'), siNo(p.coordinator_approves), [['', deFab + ' (' + T('pantalla.opcionSi') + ')'], ['true', T('pantalla.opcionSi')], ['false', T('pantalla.opcionNo')]], function (v) { poner('coordinator_approves', v === '' ? '' : v === 'true'); }, 'plan_review.coordinator_approves', pr),
+      selector(T('pantalla.revisionDelPlanQuienAprueba'), p.routine_approval, [['', deFab + ' (' + T('pantalla.opcionLaRevision') + ')'], ['review', T('pantalla.opcionLaRevision')], ['person', T('pantalla.opcionUnaPersona')]], function (v) { poner('routine_approval', v); }, 'plan_review.routine_approval', pr),
       selector(T('pantalla.revisionDelPlanRechazoAlDueno'), siNo(p.rejected_reaches_owner), [['', deFab + ' (' + T('pantalla.opcionNo') + ')'], ['true', T('pantalla.opcionSi')], ['false', T('pantalla.opcionNo')]], function (v) { poner('rejected_reaches_owner', v === '' ? '' : v === 'true'); }, 'plan_review.rejected_reaches_owner', pr),
       campo(T('pantalla.revisionDelPlanMinutos'), p.owner_away_minutes, function (v) { poner('owner_away_minutes', v === '' ? '' : numOTexto(v)); }, 'plan_review.owner_away_minutes', pr, { inputmode: 'numeric', placeholder: T('pantalla.revisionDelPlanMinutosDeFabrica') }),
       listaDeTextos(T('pantalla.revisionDelPlanLentes'), T('pantalla.revisionDelPlanLentesAyuda'), lentes, function (l) { poner('lenses', l.length ? l : ''); }, 'plan_review.lenses', pr, 'suposicion-falsa', T('pantalla.agregarLente'), T('pantalla.revisionDelPlanLentesDeFabrica')));

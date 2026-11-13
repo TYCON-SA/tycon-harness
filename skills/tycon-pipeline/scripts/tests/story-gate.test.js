@@ -1103,3 +1103,106 @@ test('on-bash-write-gate.handle: un guion que escribe a una ruta en una variable
   assert.ok(!bash.handle(ev(delAmbiente), { stateDir, installedRoots: [] }), 'el cupo lleno no frena lo que no se lee');
   assert.ok(!frena(leida), 'leída, con el carril firmado, pasa');
 });
+
+// 🔴 Mutaciones: dejar que Edit/Write escriban la constancia de la revisión del plan, que la consola la escriba, la mueva
+// o la borre, o negar los dos comandos del arnés que la escriben (T28).
+test('PlanReview_FolderProtected_AndResultOnlyFromRunner (T28, el freno) @story-8.267 @ac-23', () => {
+  // Edit/Write: la carpeta de la revisión del plan, en cualquiera de los dos estados
+  for (const f of ['/home/u/.tycon/state/plan-review/s1/s1.json', '/home/u/.tycon/state/plan-review/s1/s1.resultado.json']) {
+    const r = gate.computeStoryGate({ ...BASE, filePath: f });
+    assert.equal(r.action, 'block', f);
+    assert.equal(r.kind, 'plan-review', f);
+    assert.equal(gate.signedRecordKind(f), 'plan-review', f);
+    assert.match(gate.blockMessage(r, { filePath: f }), /escritura a mano de la constancia de la revisión del plan/);
+  }
+  // en el estado viejo (`.tycon-pipeline`) frena igual: ahí lo para primero el freno del estado entero
+  const viejo = '/home/u/.claude/.tycon-pipeline/plan-review/c/s1.pending.json';
+  assert.equal(gate.computeStoryGate({ ...BASE, filePath: viejo }).action, 'block');
+  assert.equal(gate.signedRecordKind(viejo), 'plan-review');
+  assert.notEqual(gate.signedRecordKind(`${REPO}/docs/plan-review/a.md`), 'plan-review', 'una carpeta de un producto con ese nombre no es la constancia');
+  // Bash: escribir, mover y borrar
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  const lite = path.join(SCRIPTS, 'workflow-lite.js');
+  const wf = path.join(SCRIPTS, 'adversarial-verify.workflow.js');
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of [`echo '{"veredicto":"aprobado"}' > ${res}`, `cp /tmp/x.json ${res}`, `mv ${E}/plan-review/s1/s1.json /tmp/x.json`,
+      `rm -rf ${E}/plan-review`, `node -e "require('fs').writeFileSync('${res}','{}')"`, `echo x | tee ${res}`,
+      // otro guion de workflow, o el del arnés con un guion que no es el del pase
+      `node /tmp/otro/workflow-lite.js ${wf} --args '{}' --out ${res}`, `node ${lite} /tmp/mio.workflow.js --args '{}' --out ${res}`]) {
+      const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] });
+      assert.ok(r && r.block, cmd);
+    }
+    // los dos del arnés pasan: el corredor del pase con su --out y marker.js plan-review
+    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args "$(cat ${E}/plan-review/s1/s1.args.json)" --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
+    assert.equal(bash.handle(ev(`node ${path.join(SCRIPTS, 'marker.js')} plan-review --result ${res} --model opus`), { stateDir, installedRoots: [arnes] }), null);
+  });
+});
+
+// 🔴 Mutación: tragar callado el error al leer la lista de corredores de la organización: el corredor con `--runners`
+// se frenaba sin decir por qué (el revisor de fallos silenciosos lo marcó en las vueltas 3 y 4).
+test('PlanReview_RunnerListUnreadable_SaysWhy (T28, el freno) @story-8.267 @ac-23', () => {
+  const r = bash.corredoresDeLaOrganizacion({ leer: () => { throw new Error('archivo roto'); } });
+  assert.strictEqual(r.lista, null);
+  assert.match(r.motivo, /no pude leer la lista de corredores de la organización \(archivo roto\)/);
+  const bien = bash.corredoresDeLaOrganizacion({ leer: () => ({ review_runner: { order: ['claude'] } }) });
+  assert.strictEqual(bien.motivo, null);
+});
+
+// 🔴 Mutaciones: mirar sólo el primer `--out`, aceptar un destino que no se puede leer, o aceptar el corredor del arnés
+// con un `--args` que no es el pedido que preparó el arnés: con cualquiera, la sesión escribe un «aprobado» que no es el
+// de su plan (T28, las tres formas de falsificar el resultado).
+test('PlanReview_ForgedResult_ThreeWays_Blocked (T28, el freno) @story-8.267 @ac-23', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const args = path.join(E, 'plan-review', 's1', 's1.args.json');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  const lite = path.join(SCRIPTS, 'workflow-lite.js');
+  const wf = path.join(SCRIPTS, 'adversarial-verify.workflow.js');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, cmd); };
+    // 1. un `--out` inocente primero y el de la revisión después
+    frena(`node /tmp/mio.js --out /tmp/x.json --out ${res}`);
+    // 2. el destino en una variable que apunta a la carpeta de la revisión
+    frena(`D=${E}/plan-review/s1; node /tmp/mio.js --out "$D/s1.resultado.json"`);
+    frena(`node /tmp/mio.js --out "$(echo ${res})"`);
+    // 3. el corredor del arnés con un pedido armado a mano, o leído de otro archivo
+    frena(`node '${lite}' '${wf}' --args '{"modo":"plan","planTexto":"x","pedido":"abc"}' --out '${res}'`);
+    frena(`node '${lite}' '${wf}' --args "$(cat /tmp/mio.args.json)" --out '${res}'`);
+    frena(`node '${lite}' '${wf}' --args "$(cat '${args}')" --args '{}' --out '${res}'`);
+    // 2b. la carpeta en una asignación, o armada por partes
+    frena(`D=${E}/plan-review; node /tmp/mio.js --out $D/s1/s1.resultado.json`);
+    frena(`P=plan; node /tmp/mio.js --out "${E}/\${P}-review/s1/s1.resultado.json"`);
+    // 2c. un --out relativo después de entrar a la carpeta en el mismo comando
+    frena(`cd ${E}/plan-review/s1 && node /tmp/mio.js --out s1.resultado.json`);
+    frena(`pushd ${E}/plan-review/s1; node /tmp/mio.js --out=s1.resultado.json`);
+    // 3b. el corredor con el pedido auténtico y revisores propios
+    frena(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}' --agents-dir /tmp/mis-agentes`);
+    frena(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}' --runners mio`);
+    // el comando que arma el arnés, con su pedido entre comillas simples, pasa; una variable en un --out que no nombra
+    // la revisión, también
+    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
+    // con la lista de corredores de la organización, como la escribe el arnés, también pasa
+    const orden = require(path.join(SCRIPTS, 'lib', 'review-runner.js')).runnerOrder(require(path.join(SCRIPTS, 'lib', 'plan-review.js')).configDeLaOrganizacion().raw).order;
+    if (Array.isArray(orden) && orden.length) {
+      assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}' --runners ${orden.join(',')}`), { stateDir, installedRoots: [arnes] }), null);
+    }
+    assert.equal(bash.handle(ev(`cd /tmp && node /tmp/build.js --out dist.json`), { stateDir, installedRoots: [arnes] }), null);
+    // «review» suelto no es la revisión del plan: un --out opaco con esa palabra en otro lado pasa (el pase adversarial
+    // mostró estos comandos frenados con el mensaje de la constancia)
+    for (const cmd of [`node /tmp/build.js --out "$OUT/dist.json" && echo code-review done`, `npx typedoc --out "$DOCS" src/review.ts`,
+      `npm run preview -- --out "$TMPDIR/x.json"`, `cd /tmp/proj && node build.js --out reports/code-review.json`,
+      `node /tmp/build.js --out "$DIST" && gh pr review 12 --approve`,
+      `RUN_DIR=/tmp/run; node '${lite}' '${wf}' --args '{"modo":"code","reviewers":["a"]}' --out "$RUN_DIR/step-05b-adversarial.json"`]) {
+      assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, cmd);
+    }
+    assert.equal(bash.handle(ev(`node /tmp/build.js --out "$OUT/dist.json"`), { stateDir, installedRoots: [arnes] }), null);
+  });
+});

@@ -52,7 +52,7 @@ const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
 
 // qué aprueba cada id de la tabla, en inglés: la pantalla del sitio lo muestra en ese idioma
 const LEVELS_EN = Object.freeze({
-  'plan-approval': 'approve the plan (level 2 if the story is sensitive: risk-class works it out; the coordinator approves level 1 only with the approved verdict of the automatic review)',
+  'plan-approval': 'approve the plan (level 2 if the story is sensitive: risk-class works it out; level 1 is also approved by the approved verdict of the automatic review, with or without a coordinator, unless plan_review.routine_approval is person)',
   'extra-round': 'one more round of reviewers',
   'pending-approval': 'open a new item in the pending list',
   'save': 'save: commit, push and pull requests, if no commit touches anything sensitive',
@@ -91,7 +91,7 @@ const LEVELS_EN = Object.freeze({
 
 // id, nivel, perfiles, qué aprueba
 const LEVELS = Object.freeze([
-  ['plan-approval', 1, AMBOS, 'aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class; la coordinadora aprueba el nivel 1 sólo con el veredicto aprobado de la revisión automática)'],
+  ['plan-approval', 1, AMBOS, 'aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person)'],
   ['extra-round', 1, AMBOS, 'una vuelta más de revisores'],
   ['pending-approval', 1, AMBOS, 'abrir un pendiente nuevo en la lista'],
   ['save', 1, AMBOS, 'guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible'],

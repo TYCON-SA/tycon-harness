@@ -3032,7 +3032,7 @@ function notaCierre3(marker) {
   const maqueta = storyNeedsMockup(abs)
     ? ` + --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>" (story con pantalla: la maqueta la ve una persona, también con LOW — steps/${STEPS_TABLE.byId('approve-plan').file} §La maqueta)`
     : '';
-  return `marker.js complete-step approve-plan --approved "<cita textual de la aprobación del user>"${maqueta}. Ningún plan se aprueba solo: lo aprueba una persona, o la coordinadora con la revisión automática (steps/${STEPS_TABLE.byId('approve-plan').file}). Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código`;
+  return `marker.js complete-step approve-plan --approved "<cita textual de la aprobación del user>"${maqueta}. Un plan de rutina lo aprueba el «aprobado» de su revisión automática (con o sin coordinadora); uno delicado, o con plan_review.routine_approval: person, una persona (steps/${STEPS_TABLE.byId('approve-plan').file}). Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código`;
 }
 const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
@@ -6656,8 +6656,10 @@ function writeFindings(args) {
   {
     const rcLib = require('./lib/reported-criticals.js');
     const marcador = readSessionMarker();
-    const since = marcador && String(marcador.storyId) === String(storyId) ? marcador.startedAt : null;
-    const cruce = rcLib.checkRun({ stateDir: stateDirOf(os.homedir()), story: storyId, since, findings: records, runDir });
+    const deEsta = marcador && String(marcador.storyId) === String(storyId) ? marcador : null;
+    const since = deEsta ? deEsta.startedAt : null;
+    // sólo lo de esta corrida: lo que anotó otra sesión sobre la misma historia no se pide acá
+    const cruce = rcLib.checkRun({ stateDir: stateDirOf(os.homedir()), story: storyId, since, ...rcLib.corridaDelMarcador(deEsta, runDir), findings: records, runDir });
     if (cruce.error) {
       return { error: `no pude leer el registro de críticos reportados (${cruce.error}): no sé qué reportaron los revisores, y eso no es «nada»`,
         run_dir: runDir, note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
@@ -8341,7 +8343,7 @@ function main() {
     '       El LLM sigue siendo el loop (H17): lee SOLO el step file que esto indica.)\n' +
     '  node pipeline.js risk-class     --story <spec.md> [--files ...] [--repo <dir>]\n' +
     '       (LOW o NORMAL, y `delicate`: el plan de una story delicada lo aprueba siempre el dev.\n' +
-    '       Ningún plan se aprueba solo. Push/scope firmado SIEMPRE human-gate.)\n' +
+    '       Uno de rutina lo aprueba el «aprobado» de su revisión. Push/scope firmado SIEMPRE human-gate.)\n' +
     '  node pipeline.js tooling-expected --repo <dir>\n' +
     '       (PIPE-C9: qué tooling ESPERA el pipeline acá — codegraph si hay .codegraph/, engram,\n' +
     '       tool Workflow p/ el pase adversarial. El orquestador cruza contra su harness y AVISA al user si algo\n' +

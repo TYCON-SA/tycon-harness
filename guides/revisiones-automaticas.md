@@ -27,19 +27,51 @@ instalador, producción, una migración, o declara `sensible:`. En duda, delicad
 | ¿Delicada? | ¿Se corre? (de fábrica) | Quién aprueba si sale «aprobado» |
 |---|---|---|
 | Sí | Siempre, sin preguntar (`plan_review.delicate: always`) | El dueño, con el resultado en el cuadro |
-| No | Se le pregunta al dueño (`plan_review.routine: ask`). Dueño ausente: se revisa (`plan_review.routine_owner_away: review`) | Con coordinadora: ella, en nombre del dueño (`plan_review.coordinator_approves: true`). Sin coordinadora: el dueño |
+| No | Se le pregunta al dueño (`plan_review.routine: ask`). Dueño ausente: se revisa (`plan_review.routine_owner_away: review`) | La revisión, con o sin coordinadora (`plan_review.routine_approval: review`): con coordinadora, ella firma en nombre del dueño; sin coordinadora, se aprueba sin click. Con `person`, el dueño |
 
 La lanza la coordinadora (`marker.js plan-review --for-session <sesión>`); sin coordinadora, la propia sesión
-(`marker.js plan-review`), y esa revisión sólo informa. De fábrica corre una lente, «suposición falsa»: lo que el plan
-cree del código y no es cierto. Los resultados:
+(`marker.js plan-review`). La de la propia sesión aprueba un plan de rutina igual que la de la coordinadora; sólo
+informa en una historia delicada o con `plan_review.routine_approval: person`. De fábrica corre una lente, «suposición
+falsa»: lo que el plan cree del código y no es cierto. Los resultados:
 
 | Resultado | Qué pasa |
 |---|---|
-| «aprobado» | Delicada, o sin coordinadora: le llega al dueño con «revisado, sin hallazgos». Rutina con coordinadora: ella aprueba |
+| «aprobado» | Rutina: se aprueba, con o sin coordinadora (con coordinadora, ella firma; sin ella, `complete-step approve-plan` cierra sin click). Delicada, o con `plan_review.routine_approval: person`: le llega al dueño con «revisado, sin hallazgos» |
 | «aprobado con notas» | Confirmados por debajo del corte de gravedad: cuenta como aprobado, la sesión los corrige al implementar y el cuadro los muestra |
 | «rechazado» | Sólo por un confirmado en el corte (de fábrica, un defecto). La sesión corrige el plan y la revisión vuelve a correr. Llega al dueño al tope de rechazos seguidos (`review.max_rounds`, de fábrica 3), o enseguida con `plan_review.rejected_reaches_owner: true` |
 | «sin veredicto» | Le llega al dueño con «no se pudo revisar: <motivo>». Si el plan cambió mientras corría, se reintenta una vez |
 | Se eligió no revisar | Aprueba el dueño, y el cuadro dice «sin revisión» |
+
+### Qué garantiza la revisión que lanza la propia sesión
+
+Sin coordinadora, el «aprobado» de la revisión que lanza la propia sesión aprueba un plan de rutina. Lo que garantiza:
+
+- **Corre como otro proceso y con sus lentes**: `marker.js plan-review` devuelve el comando del corredor
+  (`workflow-lite.js` con el guion del pase), con el revisor, el modelo y las lentes de la organización. No es la
+  sesión que escribió el plan la que lo juzga.
+- **El veredicto queda atado a la versión exacta del plan y de la historia**: la preparación guarda sus huellas; si el plan
+  cambia mientras corre, queda «sin veredicto», y al aprobar se vuelven a calcular las dos. Un plan, una historia o una
+  parte que cambiaron después de la revisión no se aprueban solos: hay que volver a lanzarla.
+- **Sin veredicto o rechazado, el plan espera a una persona**, como con la coordinadora.
+- **Queda anotada**: en gates.log (`plan-review` y `plan-approval-signed`), en el marcador (`planApproval.revision`) y en
+  `approvals.jsonl` de la ejecución, a nombre de «revisión automática (<modelo>)». Viaja en el commit del pedido y la
+  lee el portón de CI.
+- **La sesión no puede escribirse el veredicto**: la carpeta `plan-review/` del estado está protegida contra lo que el
+  agente escribe, mueve o borra, y el resultado vale sólo desde la ruta que nombró la preparación (el `--out` del
+  corredor). El corredor del arnés pasa sólo con el pedido que preparó el arnés (`--args "$(cat '<…>.args.json')"`):
+  con un pedido armado a mano, otro `--out`, un destino en una variable o relativo después de un `cd`, o revisores
+  propios (`--agents-dir`, otra lista de `--runners`), el freno lo para. Con la herramienta Workflow
+  de Claude Code el resultado pasa por la sesión, no llega a esa ruta, y el plan espera a una persona.
+- **La sesión no puede sacarse el click**: la variable `TYCON_PLAN_ROUTINE_APPROVAL` sólo aprieta (`person`); en
+  `review` no saca el que pide la organización. Una llave de quién aprueba mal escrita, o una configuración de la
+  organización que no se lee o que la variable del arnés esconde, no aprueba sola: el plan espera a una persona, con el
+  problema en el motivo.
+
+Lo que **no** garantiza: que el plan sea lo que el dueño quería. La revisión busca errores sobre el código, no
+intenciones. Por eso vale sólo para rutina: el dueño lo ve en el pedido (las aprobaciones de la ejecución) y puede
+volver a pedir el click para todos los planes (`plan_review.routine_approval: person`). Y su límite, el de toda la
+delegación: todas las sesiones corren con el mismo usuario del sistema, así que el arnés cierra el camino fácil (la
+carpeta protegida y el resultado sólo del corredor), no una falsificación coordinada de la constancia y de gates.log.
 
 ## Matriz 2: la revisión del código (el pase adversarial)
 
@@ -102,7 +134,7 @@ control) lo dice en una línea y sigue.
 | O1 | Revisión del plan en historias delicadas | `plan_review.delicate` | `always` · `ask` | `always` | `ask` si preferís decidir cada vez, aun en lo delicado |
 | O2 | Revisión del plan en historias de rutina | `plan_review.routine` | `always` · `ask` · `never` | `ask` | `always` para no preguntar nunca; `never` si tu equipo no la quiere |
 | O3 | Revisión del plan de rutina con el dueño ausente | `plan_review.routine_owner_away` | `review` · `wait` · `skip` | `review` | `wait` si preferís que espere; `skip` para seguir sin revisión |
-| O4 | La coordinadora aprueba un plan de rutina revisado sin defectos | `plan_review.coordinator_approves` | `true` · `false` | `true` | `false` si querés firmar vos todos los planes |
+| O4 | Quién aprueba un plan de rutina revisado sin defectos: la revisión (con o sin coordinadora) o una persona | `plan_review.routine_approval` | `review` · `person` | `review` | `person` si querés firmar vos todos los planes (el nombre viejo, `plan_review.coordinator_approves: false`, vale lo mismo) |
 | O5 | Un plan rechazado le llega al dueño enseguida | `plan_review.rejected_reaches_owner` | `true` · `false` | `false` | `true` si querés ver cada rechazo, no sólo al llegar al tope |
 | O6 | Revisión del código en historias delicadas | `deep_review.delicate` | `always` · `ask` | `always` | `ask` si preferís decidir cada vez |
 | O7 | Hasta cuántos archivos de código un cambio es chico | `deep_review.small_max_files` | entero de 1 a 50 | `6` | más alto si tus historias tocan muchos archivos chicos |

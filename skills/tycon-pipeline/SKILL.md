@@ -135,8 +135,9 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **F.iv — ADVISORS-GATE**: a `done` no se llega sin constancia de advisors en este repo (run dir con
   reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes del dev:
   `advisors_exempt: true` + `advisors_exempt_reason:`, o `TYCON_ADVISORS_GATE=off`.
-- **G.i**: ningún plan se aprueba solo: una persona, o la coordinadora con el «aprobado» de la revisión que ella lanza
-  (`plan-review`); uno delicado (`risk-class`), siempre el dev. Push y scope firmado: human-gate.
+- **G.i**: un plan de rutina se aprueba con el aprobado de su revisión, con o sin
+  coordinadora; uno delicado, siempre el dev (risk-class); con `plan_review.routine_approval: person`, una persona.
+  Push, scope: human-gate.
 - **G.ii**: con `visual_plan: true` (o `--visual-plan`) y risk NORMAL, plan visual offline con
   `scripts/visual-plan.js render`. Default OFF.
 - **H.i — sesión fresca**: el pipeline corre en sesión nueva o tras `/clear`; si la conversación ya lleva

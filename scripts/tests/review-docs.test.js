@@ -16,7 +16,8 @@ const leer = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
 const P = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'review-policy.js'));
 const RR = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'review-runner.js'));
 
-const CLAVES = ['plan_review.delicate', 'plan_review.routine', 'plan_review.routine_owner_away', 'plan_review.coordinator_approves',
+// O4 es `routine_approval` (@story-8.267 @ac-18); `coordinator_approves` queda como nombre viejo en el lector
+const CLAVES = ['plan_review.delicate', 'plan_review.routine', 'plan_review.routine_owner_away', 'plan_review.routine_approval',
   'plan_review.rejected_reaches_owner', 'deep_review.delicate', 'deep_review.small_max_files', 'deep_review.small_routine_day',
   'deep_review.small_routine_owner_away', 'deep_review.large_routine', 'review_runner.order[0]', 'review_runner.order',
   'plan_review.owner_away_minutes', 'review_runner.custom_command', 'review.max_rounds', 'review_runner.verifiers',
@@ -129,4 +130,12 @@ test('Medicion_VerificadoresAntesYDespues (T51) @story-8.221 @ac-40 — el mismo
     if (par) assert.ok(enPl.has(par), `${c.id}: su par ${par} existe en per_lens`);
     else assert.ok(pf.diferencias.find((d) => d.id === c.id).motivo.length > 40, `${c.id}: la diferencia dice por qué`);
   }
+});
+
+// 🔴 Mutaciones: una guía que no dice qué garantiza (o qué no) la revisión que lanza la propia sesión (T27).
+test('ReviewDocs_SelfReviewGuarantees (T27, las guías) @story-8.267 @ac-22', () => {
+  const es = leer('guides/revisiones-automaticas.md').split('### Qué garantiza la revisión que lanza la propia sesión')[1] || '';
+  const en = leer('guides/revisiones-automaticas.en.md').split('### What the review the session launches itself guarantees')[1] || '';
+  for (const r of [/otro proceso/, /huellas/, /espera a una persona/, /approvals\.jsonl/, /plan-review\//, /\*\*no\*\* garantiza/, /routine_approval: person/, /mismo usuario del sistema/]) assert.match(es.split('\n## ')[0], r);
+  for (const r of [/another process/, /fingerprints/, /waits for a person/, /approvals\.jsonl/, /plan-review\//, /\*\*not\*\* guarantee/, /routine_approval: person/, /same system user/]) assert.match(en.split('\n## ')[0], r);
 });

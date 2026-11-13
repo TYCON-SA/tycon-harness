@@ -27,19 +27,52 @@ installer, production, a migration, or declares `sensible:`. In doubt, delicate.
 | Delicate? | Does it run? (built-in) | Who approves on «approved» |
 |---|---|---|
 | Yes | Always, without asking (`plan_review.delicate: always`) | The owner, with the result in the box |
-| No | The owner is asked (`plan_review.routine: ask`). Owner away: it reviews (`plan_review.routine_owner_away: review`) | With a coordinator: she does, on the owner's behalf (`plan_review.coordinator_approves: true`). Without one: the owner |
+| No | The owner is asked (`plan_review.routine: ask`). Owner away: it reviews (`plan_review.routine_owner_away: review`) | The review, with or without a coordinator (`plan_review.routine_approval: review`): with a coordinator, she signs on the owner's behalf; without one, it is approved without a click. With `person`, the owner |
 
 The coordinator launches it (`marker.js plan-review --for-session <session>`); without a coordinator, the session
-itself (`marker.js plan-review`), and that review only informs. Built-in, it runs one lens, «suposicion-falsa»: what
-the plan believes about the code and is not true. The results:
+itself (`marker.js plan-review`). The session's own review approves a routine plan just like the coordinator's; it only
+informs on a delicate story or with `plan_review.routine_approval: person`. Built-in, it runs one lens,
+«suposicion-falsa»: what the plan believes about the code and is not true. The results:
 
 | Result | What happens |
 |---|---|
-| «approved» | Delicate, or without a coordinator: it reaches the owner with «reviewed, no findings». Routine with a coordinator: she approves |
+| «approved» | Routine: it is approved, with or without a coordinator (with one, she signs; without one, `complete-step approve-plan` closes without a click). Delicate, or with `plan_review.routine_approval: person`: it reaches the owner with «reviewed, no findings» |
 | «approved with notes» | Confirmed findings below the severity cut: it counts as approved, the session fixes them while coding and the box shows them |
 | «rejected» | Only for a confirmed finding at the cut (built-in, a bug). The session fixes the plan and the review runs again. It reaches the owner at the cap of rejections in a row (`review.max_rounds`, built-in 3), or right away with `plan_review.rejected_reaches_owner: true` |
 | «no verdict» | It reaches the owner with «could not review: <reason>». If the plan changed while it ran, it is retried once |
 | Chose not to review | The owner approves, and the box says «no review» |
+
+### What the review the session launches itself guarantees
+
+Without a coordinator, the «approved» of the review the session launches itself approves a routine plan. What it
+guarantees:
+
+- **It runs as another process and with its lenses**: `marker.js plan-review` returns the runner's command
+  (`workflow-lite.js` with the pass script), with the organization's reviewer, model and lenses. It is not the session
+  that wrote the plan that judges it.
+- **The verdict is tied to the exact version of the plan and the story**: the preparation keeps their fingerprints; if
+  the plan changes while it runs, it ends with «no verdict», and both are computed again on approval. A plan, a story or
+  a part that changed after the review is not approved by itself: the review has to run again.
+- **With no verdict or rejected, the plan waits for a person**, as with the coordinator.
+- **It is recorded**: in gates.log (`plan-review` and `plan-approval-signed`), in the marker (`planApproval.revision`)
+  and in the run's `approvals.jsonl`, under «automatic review (<model>)». It travels in the request's commit and the CI
+  gate reads it.
+- **The session cannot write itself the verdict**: the state's `plan-review/` folder is protected against what the
+  agent writes, moves or deletes, and the result only counts from the path the preparation named (the runner's
+  `--out`). The harness runner passes only with the request the harness prepared (`--args "$(cat '<…>.args.json')"`):
+  with a hand-made request, another `--out`, a destination in a variable or relative after a `cd`, or reviewers of its
+  own (`--agents-dir`, another `--runners` list), the brake stops it. With Claude Code's
+  Workflow tool the result goes through the session, does not reach that path, and the plan waits for a person.
+- **The session cannot remove the click**: the `TYCON_PLAN_ROUTINE_APPROVAL` variable only tightens (`person`); set to
+  `review` it does not remove the one the organization asks for. A misspelled approver key, or an organization
+  configuration that cannot be read or that the harness variable hides, does not approve on its own: the plan waits
+  for a person, with the problem in the reason.
+
+What it does **not** guarantee: that the plan is what the owner wanted. The review looks for bugs about the code, not
+for intentions. That is why it only counts for routine: the owner sees it in the request (the run's approvals) and can
+ask for the click on every plan again (`plan_review.routine_approval: person`). And its limit, that of all delegation:
+every session runs as the same system user, so the harness closes the easy path (the protected folder and the result
+only from the runner), not a coordinated forgery of the record and of gates.log.
 
 ## Matrix 2: the code review (the adversarial pass)
 
@@ -102,7 +135,7 @@ check) says so in one line and goes on.
 | O1 | Plan review on delicate stories | `plan_review.delicate` | `always` · `ask` | `always` | `ask` if you prefer to decide each time, even on delicate ones |
 | O2 | Plan review on routine stories | `plan_review.routine` | `always` · `ask` · `never` | `ask` | `always` to never ask; `never` if your team does not want it |
 | O3 | Routine plan review with the owner away | `plan_review.routine_owner_away` | `review` · `wait` · `skip` | `review` | `wait` if you prefer it to wait; `skip` to go on without review |
-| O4 | The coordinator approves a routine plan reviewed with no bugs | `plan_review.coordinator_approves` | `true` · `false` | `true` | `false` if you want to sign every plan yourself |
+| O4 | Who approves a routine plan reviewed with no bugs: the review (with or without a coordinator) or a person | `plan_review.routine_approval` | `review` · `person` | `review` | `person` if you want to sign every plan yourself (the old name, `plan_review.coordinator_approves: false`, means the same) |
 | O5 | A rejected plan reaches the owner right away | `plan_review.rejected_reaches_owner` | `true` · `false` | `false` | `true` if you want to see every rejection, not only at the cap |
 | O6 | Code review on delicate stories | `deep_review.delicate` | `always` · `ask` | `always` | `ask` if you prefer to decide each time |
 | O7 | Up to how many code files a change is small | `deep_review.small_max_files` | integer from 1 to 50 | `6` | higher if your stories touch many small files |

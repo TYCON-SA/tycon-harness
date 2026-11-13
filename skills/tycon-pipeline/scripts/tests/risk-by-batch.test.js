@@ -289,3 +289,78 @@ test('T16 RevisionDelPlan_LlevaLaParte — @story-8.168 @ac-8', () => {
     assert.strictEqual(pr.antesDeAprobar({ estado, firmante: 'coord', destino: 'dest', marker: { ...marker, batch }, config }).codigo, 2, String(batch));
   }
 });
+
+// ── la parte sin `files:`, medida por lo que la historia le ata ──────────────────────────────────────────────
+// 🔴 Mutaciones: no derivar la lista de lo atado (T25), dejar afuera lo que no se ata a ninguna tanda (T25), tomar la
+// parte de la otra tanda como propia, o dejar valer una parte que comparte código con otra abierta (T26).
+const FIRMAS = 'scripts/lib/signatures.js';
+/** Una historia con dos tandas sin `files:`, atadas por comentario, por una fila de pruebas y por una tarea. */
+function atada({ conAtados = true, extraArriba = [] } = {}) {
+  return ['---', 'story: "9.7"', 'title: "atadas"', 'status: ready-for-dev', ...extraArriba,
+    'pipelines:',
+    '  - name: A-guias', '    status: pending', '    acs_pending: [1]', '    tests_pending: ["T1"]', '    tasks_pending: [1]',
+    '  - name: B-firmas', '    status: pending', '    acs_pending: [2]', '    tests_pending: ["T2"]', '    tasks_pending: [2]',
+    'files_to_modify:',
+    `  - docs/guia.md            ${conAtados ? '# tanda A' : ''}`,
+    '  - docs/tabla.md',
+    '  - docs/tarea.md',
+    `  - ${FIRMAS}                # tanda B`,
+    '  - docs/suelta.md',
+    '---', '# Story 9.7', '', '## Acceptance Criteria', '', '1. **Given** algo, **Then** pasa.', '2. **Given** otro, **Then** pasa.', '',
+    '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
+    `| T1 | \`Guia_Tabla\` | 1 | unit | ${conAtados ? 'lee docs/tabla.md' : 'lee la guía'} | ok |`, '| T2 | `Firmas_Texto` | 2 | unit | lee el catálogo | ok |', '',
+    '## Tasks / Subtasks', '', `- [ ] Task 1 (tanda A): ${conAtados ? 'ajustar docs/tarea.md' : 'ajustar la guía'}`, '- [ ] Task 2 (tanda B): el texto del catálogo', ''].join('\n');
+}
+
+test('T25 RiskByBatch_PartWithoutFiles_MeasuresTiedFiles — @story-8.267 @ac-20', () => {
+  const p = scope.validarParte(atada(), 'A-guias');
+  assert.strictEqual(p.valid, true, p.reason);
+  assert.deepStrictEqual([...p.files].sort(), ['docs/guia.md', 'docs/suelta.md', 'docs/tabla.md', 'docs/tarea.md'], 'los atados a A más el que no se ata a ninguna');
+  assert.strictEqual(p.derivada, true);
+  const b = scope.validarParte(atada(), 'B-firmas');
+  assert.strictEqual(b.valid, true, b.reason);
+  assert.ok(b.files.includes(FIRMAS) && !b.files.includes('docs/guia.md'), JSON.stringify(b.files));
+  // la regla de atar es una sola: la matriz la importa de la parte
+  const rm = require(path.join(SCRIPTS, 'runtime-matrix.js'));
+  assert.ok(!rm.tandasQueNombran || rm.tandasQueNombran === scope.tandasQueNombran, 'la regla de atar quedó duplicada en la matriz');
+  // el riesgo de A sale de rutina: el catálogo de firmas es de la B
+  const { story, dir } = repo(atada());
+  assert.strictEqual(pipeline.computeDelicate({ story, repo: dir }).value, true, 'la historia entera toca las firmas');
+  assert.strictEqual(pipeline.computeDelicate({ story, repo: dir, batch: 'A-guias' }).value, false);
+  assert.strictEqual(pipeline.computeRiskClass({ story, repo: dir, batch: 'A-guias' }).delicate.value, false);
+  // el plan que nombra un archivo sensible, o lo que el cambio toca de verdad, la vuelve delicada
+  assert.strictEqual(pipeline.computeDelicate({ story, repo: dir, batch: 'A-guias', planText: `Cambiar ${FIRMAS}.` }).value, true);
+  assert.strictEqual(pipeline.computeDelicate({ story, repo: dir, batch: 'A-guias', files: [FIRMAS] }).value, true);
+  // la revisión del plan la ve válida, con su lista
+  const pr = require(path.join(SCRIPTS, 'lib', 'plan-review.js'));
+  const parte = pr.parteDe({ batch: 'A-guias' }, atada());
+  assert.strictEqual(parte.valida, true);
+  assert.strictEqual(parte.huella, scope.huellaDeLaLista(p.files));
+  // set-batch la anota válida e imprime la lista derivada
+  const E = entorno(atada());
+  E.arrancar('s25');
+  const r = E.correr('marker.js', ['set-batch', 'A-guias'], 's25');
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(E.leer('s25').batchValid, true);
+  assert.match(r.stdout + r.stderr, /archivos de la parte: .*docs\/guia\.md/);
+  // una tanda sin files: y sin nada atado no vale, y lo dice
+  const sinAtados = scope.validarParte(atada({ conAtados: false }), 'A-guias');
+  assert.strictEqual(sinAtados.valid, false);
+  assert.match(sinAtados.reason, /ningún archivo atado a la tanda/);
+});
+
+test('T26 RiskByBatch_SharedCodeStillWhole_AndGuidesSayIt — @story-8.267 @ac-21', () => {
+  // un .js atado a las dos tandas abiertas: la parte no vale
+  const ambas = atada().replace('  - docs/suelta.md', '  - scripts/lib/compartido.js   # tanda A, tanda B');
+  const p = scope.validarParte(ambas, 'A-guias');
+  assert.strictEqual(p.valid, false);
+  assert.match(p.reason, /compartido\.js.*B-firmas.*historia entera/);
+  // dos tandas que sólo comparten sprint-status.yaml: vale
+  const papeleo = atada().replace('  - docs/suelta.md', '  - specs/sprint-status.yaml   # tanda A, tanda B');
+  assert.strictEqual(scope.validarParte(papeleo, 'A-guias').valid, true, scope.validarParte(papeleo, 'A-guias').reason);
+  // las guías dicen la regla derivada
+  const leer = (f) => fs.readFileSync(path.join(RAIZ, f), 'utf8');
+  assert.match(leer('story-format.md'), /[Ss]in `files:`, la parte vale con los archivos que la historia le ata/);
+  assert.match(leer('guides/coordination.md'), /sin `files:`, con los archivos que la historia le ata/);
+  assert.match(leer('guides/coordination.en.md'), /without `files:`, with the files the story ties to it/);
+});

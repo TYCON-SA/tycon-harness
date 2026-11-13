@@ -1393,7 +1393,7 @@ const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delega
  * Después, el renglón del registro común de las firmas; si no se puede escribir, avisa y la firma sigue.
  * `persona`, `huella`, `appendSignature` y `avisar` se pasan en las pruebas.
  */
-function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa, ahora = Date.now(), anotar, extra, persona, huella, appendSignature, avisar } = {}) {
+function firmar({ firma, via, sesion = null, destino = null, resumen = '', key = null, casa, ahora = Date.now(), anotar, extra, persona, huella, appendSignature, avisar } = {}) {
   // lo que el guion suma al renglón (el ok de guardar, sus huellas) va primero: no pisa quién ni cómo se firmó
   const renglon = { ...(typeof extra === 'function' ? extra({ via, sesion, destino }) : extra || {}), name: `${firma}-signed`, status: 'ok', via, sesion, destino, resumen: una(resumen, 200) };
   if (anotar) anotar(renglon);
@@ -1402,7 +1402,10 @@ function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa,
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'gates.log'), `${JSON.stringify({ ts: new Date(ahora).toISOString(), ...renglon })}\n`);
   }
-  let quien = via === 'delegacion' ? `coordinadora (sesión ${sesion})` : via === 'revision' ? `coordinadora (sesión ${sesion}), vía revisión automática`
+  // por la revisión que lanzó la propia sesión (sin coordinadora): firma la revisión, no una coordinadora
+  const propia = via === 'revision' && sesion && sesion === destino;
+  let quien = via === 'delegacion' ? `coordinadora (sesión ${sesion})` : propia ? `revisión automática (sesión ${sesion})`
+    : via === 'revision' ? `coordinadora (sesión ${sesion}), vía revisión automática`
     : via === 'avisado' ? `sesión ${sesion}, en una pestaña sin permisos (hecho y avisado)` : persona;
   if (quien === undefined) { try { quien = os.userInfo().username; } catch (_) { quien = null; } }
   const escribir = appendSignature || require('./signature-log.js').appendSignature;
@@ -1411,7 +1414,7 @@ function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa,
   let r;
   try {
     r = escribir({ signature: firma, via: VIA_COMUN[via] || via, signer: quien, orderedBy: sesion, target: destino, reason: resumen,
-      source: path.basename(process.argv[1] || '') || null, home, now: ahora, huella });
+      source: path.basename(process.argv[1] || '') || null, ...(key ? { key } : {}), home, now: ahora, huella });
   } catch (e) { r = { ok: false, error: e.message }; }
   if (!r || !r.ok) (avisar || ((m) => console.error(m)))(`⚠️ la firma se dio, pero no quedó en el registro común de firmas: ${(r && r.error) || 'sin respuesta'}`);
   avisarOficina(destino || sesion, home);
@@ -1613,6 +1616,18 @@ function avisarHecho({ firma, sesion, destino, que, notificar }) {
   } catch (e) { console.error(`⚠️ hecho y avisado: el aviso no salió (${e.message}); queda en el registro de firmas`); }
 }
 
+/**
+ * La clave de un pedido de firma (`signature-list.js claveDe`): con las palabras canónicas del comando que vio el freno
+ * (las mismas con que la lista anota la fila al negar) o, si no se lee, con las del guion. null si no hay con qué.
+ */
+function claveDelPedido({ firma, destino, comando, argv }) {
+  try {
+    const can = comando ? canonicaDe(comando) : null;
+    const palabras = can ? can.palabras : (Array.isArray(argv) && argv.length ? argv.map(String) : null);
+    return palabras ? require('./signature-list.js').claveDe(firma, destino, palabras) : null;
+  } catch (_) { return null; }
+}
+
 function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir, antes, extra, aprobador, env, escribir, notificar, avisarSinAprobacion, terminal = null } = {}) {
   // sin variable de sesión (la terminal del dueño) el guion no tiene sesión propia: la dice --for-session
   if (propia === '_nosession') propia = null;
@@ -1669,7 +1684,9 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
     (avisarSinAprobacion || ((t) => process.stderr.write(t)))(`⚠️ no contó la aprobación de la persona, y esto se firmó por ${via}: ${v.registro.sin_aprobacion}\n`);
   }
   const que = (v.previo && v.previo.resumen) || resumen || v.registro.comando;
-  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado) ? que : (resumen || v.registro.comando), casa, ahora, anotar, extra });
+  // la clave del pedido, la misma con que la lista de firmas anotó su fila: la firma cierra ese pedido y no sus hermanos
+  const key = claveDelPedido({ firma, destino: v.registro.destino, comando: v.registro.comando, argv });
+  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado) ? que : (resumen || v.registro.comando), key, casa, ahora, anotar, extra });
   // el ok de guardar y el arreglo rápido ya avisaron desde los controles de la delegación de su guion
   if (avisado && !AVISA_SU_GUION.has(firma)) avisarHecho({ firma, sesion: v.registro.sesion, destino: v.registro.destino, que, notificar });
   return { codigo: 0, via, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro };
@@ -1718,7 +1735,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { claveDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, formasDeFirmar,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos };
 

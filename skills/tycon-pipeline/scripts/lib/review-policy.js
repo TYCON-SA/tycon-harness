@@ -14,6 +14,8 @@ const ENUMS = Object.freeze({
     delicate: ['always', 'ask'],
     routine: ['always', 'ask', 'never'],
     routine_owner_away: ['review', 'wait', 'skip'],
+    // quién aprueba un plan de rutina cuya revisión dio aprobado: la revisión (con coordinadora o sin ella) o una persona
+    routine_approval: ['review', 'person'],
   },
   deep_review: {
     delicate: ['always', 'ask'],
@@ -41,7 +43,7 @@ const BOOLEANS = Object.freeze({
 
 const DEFAULTS = Object.freeze({
   plan_review: Object.freeze({
-    delicate: 'always', routine: 'ask', routine_owner_away: 'review', coordinator_approves: true,
+    delicate: 'always', routine: 'ask', routine_owner_away: 'review', routine_approval: 'review', coordinator_approves: true,
     rejected_reaches_owner: false, owner_away_minutes: 20, lenses: Object.freeze(['suposicion-falsa']),
   }),
   deep_review: Object.freeze({
@@ -116,12 +118,24 @@ function normalize(raw) {
       if (ok) out[k] = v;
       else { out[k] = fabrica; problems.push({ path: `${sec}.${k}`, message: `${message}: uso el de fábrica, ${JSON.stringify(fabrica)}` }); }
     }
+    // `coordinator_approves` es el nombre viejo de `routine_approval`: en false, sin la nueva escrita, vale `person`. Sin
+    // problema acá: el lector de team-repos.js saca de `data` toda clave con un problema, y el nombre viejo dejaría de
+    // llegar (una organización que pidió el click aprobaría sola). El aviso lo da quien lee la configuración
+    if (sec === 'plan_review' && crudo.routine_approval === undefined && out.coordinator_approves === false) out.routine_approval = 'person';
     values[sec] = out;
   }
   return { values, problems };
 }
 
-const aprobador = (delicate, coordinator, c) => (!delicate && coordinator && c.coordinator_approves ? 'coordinator' : 'owner');
+/**
+ * ¿Escribió la organización el nombre viejo (`coordinator_approves`) sin el nuevo? Para avisarlo donde se lee la
+ * configuración, no en `normalize`.
+ */
+const nombreViejo = (raw) => isObject(raw) && isObject(raw.plan_review) && raw.plan_review.coordinator_approves !== undefined && raw.plan_review.routine_approval === undefined;
+
+// quién aprueba el plan: una delicada o `person`, el dueño; una rutina con `review`, la revisión, que firma la
+// coordinadora si la hay o la propia sesión si no
+const aprobador = (delicate, coordinator, c) => (delicate || c.routine_approval !== 'review' ? 'owner' : coordinator ? 'coordinator' : 'session');
 
 /** Matriz 1: la revisión del plan. `config` es la salida de `normalize(...).values`. */
 function planReview({ delicate, coordinator, ownerAway, config }) {
@@ -177,4 +191,4 @@ function ownerAway({ mark, askedAt, now, minutes }) {
     : { away: false, reason: `la pregunta lleva ${pasaron} de ${minutes} minutos` };
 }
 
-module.exports = { DEFAULTS, ENUMS, RANGES, PLAN_LENSES, SEVERITIES, blocks, normalize, planReview, codeReview, ownerAway };
+module.exports = { DEFAULTS, ENUMS, RANGES, PLAN_LENSES, SEVERITIES, blocks, normalize, nombreViejo, planReview, codeReview, ownerAway };

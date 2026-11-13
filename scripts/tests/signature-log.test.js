@@ -221,3 +221,25 @@ test('si el registro común no se puede escribir, la firma sigue y avisa', (t) =
   assert.strictEqual(avisos.length, 1);
   assert.match(avisos[0], /disco lleno/);
 });
+
+// 🔴 Mutaciones: no escribir la clave del pedido, escribirla aunque no la pasen, o que `exigir` la calcule con
+// otras palabras que la lista (la fila nunca se cerraría por clave).
+test('SignatureLog_CarriesRequestKey — el renglón lleva la clave del pedido cuando se la pasan @story-8.267 @ac-4', (t) => {
+  const casa = casaNueva(t);
+  log.appendSignature({ signature: 'save', via: 'window', target: 'ses-a', key: 'firma:abc', home: casa, now: AHORA, huella: HUELLA });
+  log.appendSignature({ signature: 'save', via: 'window', target: 'ses-a', home: casa, now: AHORA, huella: HUELLA });
+  const [con, sin] = renglones(casa);
+  assert.strictEqual(con.key, 'firma:abc');
+  assert.ok(!('key' in sin), `sin clave, el renglón es el de hoy: ${JSON.stringify(sin)}`);
+  assert.deepStrictEqual(Object.keys(sin), CAMPOS);
+  // firmar la pasa al registro común
+  ow.firmar({ firma: 'save', via: 'ventana', sesion: 'ses-c', destino: 'ses-a', key: 'firma:def', casa, ahora: AHORA, huella: HUELLA, persona: 'acme' });
+  assert.strictEqual(renglones(casa)[2].key, 'firma:def');
+  // la clave que calcula exigir es la misma con que la lista anota la fila: las palabras canónicas del comando
+  const sl = require('../lib/signature-list.js');
+  const cmd = 'node /x/marker.js compare-waiver --story s --command b.js --reason porque --for-session ses-a';
+  const esperada = sl.claveDe('compare-waiver', 'ses-a', ow.canonicaDe(cmd).palabras);
+  assert.strictEqual(ow.claveDelPedido({ firma: 'compare-waiver', destino: 'ses-a', comando: cmd, argv: [] }), esperada);
+  // sin un comando que se pueda leer, con las palabras del guion (las mismas después del shell)
+  assert.strictEqual(ow.claveDelPedido({ firma: 'compare-waiver', destino: 'ses-a', comando: null, argv: ['/otra/ruta/marker.js', 'compare-waiver', '--story', 's', '--command', 'b.js', '--reason', 'porque'] }), esperada);
+});

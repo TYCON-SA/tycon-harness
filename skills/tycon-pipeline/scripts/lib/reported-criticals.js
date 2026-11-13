@@ -142,7 +142,10 @@ function recordReport(o) {
   });
 }
 
-/** Los renglones de todo el registro, en orden de hora: `{ lines, unreadable, error? }`. Un renglón roto se cuenta. */
+/**
+ * Los renglones de todo el registro, en orden de hora: `{ lines, unreadable, error? }`. Un renglón roto se cuenta. Cada
+ * renglón lleva `sessionKey`, el archivo del que salió: sin corrida anotada, es lo que dice de qué corrida es.
+ */
 function readAll(stateDir) {
   const dir = registryDir(stateDir);
   let files;
@@ -155,7 +158,8 @@ function readAll(stateDir) {
   for (const f of files) {
     try {
       const r = readFileLines(path.join(dir, f));
-      lines.push(...r.lines);
+      const sessionKey = f.slice(0, -'.jsonl'.length);
+      for (const l of r.lines) lines.push(l && typeof l === 'object' ? { ...l, sessionKey } : l);
       unreadable += r.unreadable;
     } catch (e) { return { lines: [], unreadable, error: `no pude leer ${path.join(dir, f)} (${e.code || e.message})` }; }
   }
@@ -163,9 +167,35 @@ function readAll(stateDir) {
   return { lines, unreadable };
 }
 
-/** Los renglones de una corrida: los de la historia, desde que arrancó la corrida si se sabe. */
-function linesOfRun(lines, { story, since }) {
-  return lines.filter((l) => l && String(l.story) === String(story) && (!since || String(l.ts) >= String(since)));
+/**
+ * ¿El renglón es de la corrida? Con otra historia, nunca. Sin `run` ni `sessionKeys` (quien no los pasa), cuenta como
+ * antes: toda la historia. Con la corrida: un renglón que la anota cuenta si es la misma (una ayudante que comparte el
+ * marcador la escribe igual); uno sin corrida (de antes, o sin marcador) cuenta sólo si su archivo es de una sesión de la
+ * corrida. `archivo`: la sesión del archivo del que salió el renglón.
+ */
+function esDeLaCorrida(renglon, archivo, { story, run, sessionKeys }) {
+  if (!renglon || String(renglon.story) !== String(story)) return false;
+  if (!run && !(sessionKeys && sessionKeys.length)) return true;
+  // con la carpeta, el renglón que la nombra manda; sin ella, el archivo de una sesión de la corrida
+  if (renglon.run && run) return renglon.run === run;
+  return (sessionKeys || []).includes(archivo);
+}
+
+/**
+ * La corrida para el cruce, desde el marcador y su carpeta: `{ run, sessionKeys }`. `run` es el nombre de la carpeta (la
+ * ruta cambia entre máquinas y entre repos), y las sesiones son la del marcador, la adoptada y la restaurada, con el
+ * nombre de su archivo en el registro. Sin marcador, nada: el cruce sigue como antes.
+ */
+function corridaDelMarcador(marker, runDir) {
+  if (!marker) return { run: null, sessionKeys: [] };
+  const sessionKeys = [marker.sessionId, marker.adoptedFrom, marker.restoredFrom].filter(Boolean)
+    .map((s) => path.basename(registryFile('.', s), '.jsonl'));
+  return { run: runDir ? path.basename(runDir) : null, sessionKeys };
+}
+
+/** Los renglones de una corrida: los de la historia y la corrida, desde que arrancó la corrida si se sabe. */
+function linesOfRun(lines, { story, since, run, sessionKeys }) {
+  return lines.filter((l) => l && esDeLaCorrida(l, l.sessionKey, { story, run, sessionKeys }) && (!since || String(l.ts) >= String(since)));
 }
 
 /**
@@ -307,14 +337,16 @@ function renglones(r, { marker }) {
 const NO_REGISTRY_NOTE = 'esta corrida no tiene registro de críticos reportados (empezó antes de que el arnés los anotara): sigue como antes, sin el cruce';
 
 /**
- * El cruce de una corrida contra todo el registro: `o` = { stateDir, story, since, findings, runDir, home, refutedHolds }.
- * `since` es la hora de arranque de la corrida (sin ella, todos los renglones de la historia). Un registro que no se puede
+ * El cruce de una corrida contra todo el registro: `o` = { stateDir, story, since, run, sessionKeys, findings, runDir,
+ * home, refutedHolds }. `since` es la hora de arranque de la corrida (sin ella, todos los renglones de la historia);
+ * `run`, el nombre de la carpeta de la corrida, y `sessionKeys`, sus sesiones (la del marcador, la adoptada y la
+ * restaurada): con ellos, lo de otra corrida de la misma historia no entra (`esDeLaCorrida`). Un registro que no se puede
  * leer devuelve `error`: quien llama frena, porque «no lo pude leer» no es «no hay críticos».
  */
 function checkRun(o) {
   const all = readAll(o.stateDir);
   if (all.error) return { error: all.error, sinRegistro: false, problemas: [] };
-  const lines = linesOfRun(all.lines, { story: o.story, since: o.since });
+  const lines = linesOfRun(all.lines, { story: o.story, since: o.since, run: o.run, sessionKeys: o.sessionKeys });
   const r = { ...cross({ ...o, lines }), unreadable: all.unreadable };
   // un registro con renglones y ninguno legible de esta corrida no es una corrida de antes del control: no sé qué
   // reportaron los revisores
@@ -330,7 +362,7 @@ function checkRun(o) {
   // renglón del registro en esta máquina: lo de antes es de cuando el control no existía
   if (all.lines.length) {
     const desde = [o.since, all.lines[0].ts].filter(Boolean).sort().pop();
-    const salidas = spawnsOf(o.stateDir, { story: o.story, since: desde });
+    const salidas = spawnsOf(o.stateDir, { story: o.story, since: desde, run: o.run, sessionKeys: o.sessionKeys });
     if (salidas.error) return { error: salidas.error, sinRegistro: false, problemas: [] };
     const porRevisor = new Map();
     for (const s of salidas.spawns) porRevisor.set(s.advisor, (porRevisor.get(s.advisor) || 0) + 1);
@@ -351,10 +383,12 @@ function checkRun(o) {
 const UNREADABLE_REGISTRY = 'registro';
 
 /**
- * Las salidas de revisores del set de su vuelta, del registro de lanzamientos (`<estado>/advisor-runs/*.jsonl`): las de
- * la historia (o sin historia: sin marcador no se sabe de cuál), desde `since`. `{ spawns: [{ advisor, ts }], error? }`.
+ * Las salidas de revisores del set de su vuelta, del registro de lanzamientos (`<estado>/advisor-runs/*.jsonl`), desde
+ * `since`. `{ spawns: [{ advisor, ts }], error? }`. Con `run` o `sessionKeys`, la misma regla que el cruce
+ * (`esDeLaCorrida`): lo contado y lo anotado se miden igual. Sin ellos, como antes: las de la historia y las sin historia.
  */
-function spawnsOf(stateDir, { story, since }) {
+function spawnsOf(stateDir, { story, since, run, sessionKeys }) {
+  const porCorrida = !!run || !!(sessionKeys && sessionKeys.length);
   const dir = path.join(stateDir, 'advisor-runs');
   let files;
   try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')); } catch (e) {
@@ -374,7 +408,7 @@ function spawnsOf(stateDir, { story, since }) {
       if (d.event === 'run-start') { expected = []; continue; }
       if (d.event === 'step5-start') { expected = Array.isArray(d.expected) ? d.expected : []; continue; }
       if (d.event || !d.advisor || !expected.includes(d.advisor)) continue;
-      if (d.story != null && String(d.story) !== String(story)) continue;
+      if (porCorrida ? !esDeLaCorrida(d, f.slice(0, -'.jsonl'.length), { story, run, sessionKeys }) : (d.story != null && String(d.story) !== String(story))) continue;
       if (since && String(d.ts) < String(since)) continue;
       spawns.push({ advisor: d.advisor, ts: d.ts });
     }
@@ -385,5 +419,5 @@ function spawnsOf(stateDir, { story, since }) {
 module.exports = {
   DIR, NO_REPORT_RULE, NO_REGISTRY_NOTE, registryDir, registryFile, hashOf, extractCriticals, unreadableReason,
   recordLaunched, recordReport, readSession, readAll, linesOfRun, launchFor, cross, checkRun, renglones, waiverFor,
-  spawnsOf, UNREADABLE_REGISTRY, readSessionStrict,
+  spawnsOf, UNREADABLE_REGISTRY, readSessionStrict, esDeLaCorrida, corridaDelMarcador,
 };

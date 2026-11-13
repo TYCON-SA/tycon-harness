@@ -1,8 +1,9 @@
 'use strict';
 /**
- * plan-review.js — la revisión automática del plan. La lanza la coordinadora sobre el plan de otra sesión, y su veredicto
- * «aprobado» es lo único con que ella puede aprobar un plan de rutina por delegación. La propia sesión también la puede
- * lanzar sobre su plan, pero esa revisión es informativa: sólo informa, nunca firma.
+ * plan-review.js — la revisión automática del plan. La lanza la coordinadora sobre el plan de otra sesión, o la propia
+ * sesión sobre el suyo. Su veredicto «aprobado» aprueba un plan de rutina: por delegación, si la lanzó la coordinadora;
+ * sin click, si la lanzó la propia sesión (`plan_review.routine_approval: review`, de fábrica). Con `person`, o con una
+ * story delicada, la revisión que lanza la propia sesión es informativa: sólo informa, y el plan lo firma una persona.
  *
  * Va en dos tiempos, porque el pase lo corre la herramienta Workflow (o workflow-lite.js), no este proceso:
  *   preparar → lee el plan y la story UNA vez, guarda sus huellas y si la story es delicada, y devuelve los args del
@@ -58,19 +59,75 @@ function configDeLaOrganizacion({ leer } = {}) {
       if (fs.existsSync(file)) {
         const r = require(path.join(RAIZ, 'scripts', 'lib', 'team-repos.js')).parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
         raw = r && r.data ? r.data : null;
+        // un archivo que no se lee no es uno vacío: se dice, y quien aprueba lo mira
+        if (!raw) problems.push({ path: 'team-repos.json', message: `no se pudo leer (${((r && r.problems) || []).map((p) => p.message).join('; ') || 'sin datos'}): uso la de fábrica` });
         // el lector ya sacó cada clave mala de `data`: sus problemas se dicen acá, porque normalize ya no las ve
         const sp = (r && r.sectionProblems) || {};
         for (const sec of ['plan_review', 'review', 'review_runner', 'deep_review']) {
           for (const p of sp[sec] || []) problems.push({ path: p.path, message: `${p.message}; uso el valor de fábrica` });
         }
+      } else {
+        // la variable del arnés apunta a otro lado y ahí no está la configuración que sí tiene el lugar del arnés:
+        // no se toma por vacía (una sesión podría esconderla así delante de su propio comando)
+        const canonica = path.join(require('./harness-path.js').enlace(), 'team-repos.json');
+        if ((process.env.TYCON_GUIDES_DIR || process.env.TCG) && fs.existsSync(canonica)) {
+          problems.push({ path: 'team-repos.json', message: `no está en ${TCG} (la variable del arnés) y sí en ${canonica}: no la tomo por vacía` });
+        }
       }
     }
   } catch (e) {
-    problems.push({ path: 'team-repos.json', message: `no pude leer la configuración de la organización (${String((e && e.message) || e).split('\n')[0]}): uso la de fábrica` });
+    // sin arnés instalado no hay configuración de la organización que leer: la de fábrica es la que vale. Si la variable
+    // del arnés apunta a algo que no lo es y el lugar del arnés tiene la configuración, no es «sin arnés»
+    const escondida = (process.env.TYCON_GUIDES_DIR || process.env.TCG) && fs.existsSync(path.join(require('./harness-path.js').enlace(), 'team-repos.json'));
+    problems.push({ path: 'team-repos.json', sinArnes: !!(e && e.name === 'RutaArnesError') && !escondida,
+      message: `no pude leer la configuración de la organización (${String((e && e.message) || e).split('\n')[0]}): uso la de fábrica` });
   }
-  const n = policy().normalize(raw || {});
+  if (policy().nombreViejo(raw)) {
+    problems.push({ path: 'team-repos.json', message: 'plan_review.coordinator_approves es el nombre viejo: usá plan_review.routine_approval (review · person)' });
+  }
+  // la variable de la máquina sólo aprieta: `person` pide el click aunque la organización diga `review`; `review` no saca
+  // el click que la organización pide (la sesión podría ponerla delante de su propio comando). Un valor que no es de la
+  // lista no cuenta
+  const deLaMaquina = process.env.TYCON_PLAN_ROUTINE_APPROVAL;
+  const conVariable = deLaMaquina === 'person'
+    ? { ...(raw || {}), plan_review: { ...((raw && raw.plan_review) || {}), routine_approval: deLaMaquina } } : raw;
+  if (deLaMaquina === 'review') {
+    if (policy().normalize(raw || {}).values.plan_review.routine_approval !== 'review') {
+      problems.push({ path: 'TYCON_PLAN_ROUTINE_APPROVAL', message: 'en review no cuenta: la variable sólo puede pedir el click, no sacar el que pide la organización' });
+    }
+  } else if (deLaMaquina !== undefined && deLaMaquina !== '' && conVariable === raw) {
+    problems.push({ path: 'TYCON_PLAN_ROUTINE_APPROVAL', message: `tiene que ser review o person (es ${JSON.stringify(deLaMaquina)}): uso el de la organización` });
+  }
+  const n = policy().normalize(conVariable || {});
   return { values: n.values, problems: [...problems, ...n.problems], raw };
 }
+
+/** La configuración que se usa: la inyectada pasa por `normalize` (una sin la llave vale como de fábrica). */
+const configUsada = (config) => (config ? policy().normalize(config).values : configDeLaOrganizacion().values);
+
+/**
+ * ¿El problema es de quién aprueba? Todo lo de la sección `plan_review` (un valor malo, también del nombre viejo; una
+ * llave mal escrita; la sección que no es un objeto), la variable, o el archivo de la organización que no se lee. El
+ * nombre viejo bien escrito es sólo un aviso, y sin arnés instalado vale la de fábrica.
+ */
+function esProblemaDelAprobador(x) {
+  const ruta = String((x && x.path) || '');
+  if (/^plan_review(\.|$)/.test(ruta) || ruta === 'TYCON_PLAN_ROUTINE_APPROVAL') return true;
+  return ruta === 'team-repos.json' && !x.sinArnes && !/nombre viejo/.test(String(x.message));
+}
+
+/**
+ * El problema de la configuración de quién aprueba un plan de rutina, o null. Con uno, el valor cae al de fábrica, que
+ * aprueba solo: por eso el plan espera a una persona.
+ */
+function problemaDelAprobador(config) {
+  const problems = config ? policy().normalize(config).problems : configDeLaOrganizacion().problems;
+  const p = problems.find(esProblemaDelAprobador);
+  return p ? `${p.path} ${p.message}` : null;
+}
+
+/** El motivo de pedir el click en rutina, con el nombre de la llave que lo pidió. */
+const PIDE_EL_CLICK = (cfg) => `la organización o la máquina piden el click en rutina (plan_review.routine_approval: person${cfg.plan_review.coordinator_approves === false ? ', o su nombre viejo plan_review.coordinator_approves: false' : ''})`;
 
 /**
  * El veredicto de un resultado del pase en modo plan, con el corte de gravedad: «rechazado» sólo con un confirmado en
@@ -170,19 +227,20 @@ const anotarRenglon = (estado, r, ahora = Date.now()) => {
 
 /**
  * Prepara la revisión del plan de `destino`, pedida por `lanza`: `{ codigo: 0, args, pedido, informativa }` o
- * `{ codigo: 2, motivo }` sin escribir nada. Sin `destino` (o con el propio), la propia sesión prepara una revisión
- * informativa de su plan. Para otra sesión, sólo la designada. Lanzar no pide la delegación: se mira al firmar.
- * `designada()` y `config` se inyectan en las pruebas.
+ * `{ codigo: 2, motivo }` sin escribir nada. Sin `destino` (o con el propio), la propia sesión prepara la revisión de su
+ * plan: informativa sólo si no puede firmar (una story delicada, o `routine_approval: person`). Para otra sesión, sólo la
+ * designada. Lanzar no pide la delegación: se mira al firmar. `designada()` y `config` se inyectan en las pruebas.
  */
 function preparar({ lanza, destino, estado, designada, config } = {}) {
   if (!lanza || !SESION.test(lanza)) return no('falta la sesión que lanza la revisión');
-  const informativa = !destino || destino === lanza;
-  const dest = informativa ? lanza : destino;
+  // de la propia sesión: decide el destino y que no se pide ser la designada; si es informativa se decide después
+  const propia = !destino || destino === lanza;
+  const dest = propia ? lanza : destino;
   if (!SESION.test(dest)) return no('la sesión destino no se puede leer');
-  if (!informativa) {
+  if (!propia) {
     let d;
     try { d = designada ? designada() : designadaDeVerdad(estado); } catch (e) { return no(`${LA_COORDINADORA}: no pude leer la designación (${e.message})`); }
-    if (d !== lanza) return no(`${LA_COORDINADORA}: esta sesión no es la designada (sin --for-session, la propia sesión prepara una revisión informativa de su plan)`);
+    if (d !== lanza) return no(`${LA_COORDINADORA}: esta sesión no es la designada (sin --for-session, la propia sesión prepara la revisión de su plan)`);
   }
   let marker;
   try { marker = marcadorDe(estado, dest); } catch (e) { return no(e.message); }
@@ -197,7 +255,9 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   // la parte: el revisor la ve con su lista, y la delicada se mide con ella si vale
   const parte = parteDe(marker, storyTexto);
   const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto, batch: batchDe(parte) });
-  const cfg = config || configDeLaOrganizacion().values;
+  const cfg = configUsada(config);
+  // la revisión de la propia sesión firma una rutina con `review`; si no puede firmar, informa
+  const informativa = propia && (delicate.value || cfg.plan_review.routine_approval !== 'review');
   // el número al azar que ata el resultado del pase a esta revisión: un resultado sin él, o con el de otra, no se anota
   const numero = crypto.randomBytes(16).toString('hex');
   const corte = cfg.review.blocking_severity;
@@ -244,7 +304,7 @@ function revisionesDe(estado, destino, corrida) {
  * Anota el resultado de la revisión preparada: devuelve la constancia escrita, o `{ codigo: 2, motivo }` si no hay pedido.
  * `resultado`: lo que devolvió el pase en modo plan. `sinHerramienta`: el motivo de no poder correrlo (sin veredicto).
  */
-function anotar({ lanza, destino, estado, resultado, sinHerramienta, modelo = MODELO, proveedor = 'anthropic', ahora = Date.now() } = {}) {
+function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = null, modelo = MODELO, proveedor = 'anthropic', ahora = Date.now() } = {}) {
   const dest = destino || lanza;
   const fp = rutaPedido(estado, lanza, dest);
   let pedido;
@@ -255,6 +315,8 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, modelo = MO
   let veredicto = sinHerramienta ? 'sin-veredicto' : veredictoDe(resultado, corte);
   let motivo = sinHerramienta ? `sin herramienta para correr el pase: ${sinHerramienta}` : (veredicto === 'sin-veredicto' ? 'el pase no midió todo' : null);
   if (!sinHerramienta && resultado && (!pedido.numero || resultado.pedido !== pedido.numero)) { veredicto = 'sin-veredicto'; motivo = 'el resultado no es el de esta revisión'; }
+  // `noVale`: el resultado no se puede usar aunque traiga el número del pedido (no vino de la ruta que nombró la preparación)
+  if (noVale) { veredicto = 'sin-veredicto'; motivo = String(noVale); }
   let ahoraPlan = null;
   try { ahoraPlan = fs.readFileSync(pedido.planFile, 'utf8'); } catch (_) { ahoraPlan = null; }
   let reintentar = false;
@@ -264,7 +326,7 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, modelo = MO
     // se reintenta una sola vez por corrida sobre el plan cerrado; la segunda llega al dueño con este motivo
     reintentar = !revisionesDe(estado, dest, pedido.corrida).some((j) => j.motivo === CAMBIO);
   }
-  const confirmados = (!sinHerramienta && resultado && Array.isArray(resultado.confirmed)) ? resultado.confirmed : [];
+  const confirmados = (!sinHerramienta && !noVale && resultado && Array.isArray(resultado.confirmed)) ? resultado.confirmed : [];
   const { blocks } = policy();
   const aHallazgo = (h) => ({ lente: h.lens || null, severidad: h.adjusted_severity || h.severity || null, archivo: h.file || null, linea: h.line ?? null, resumen: h.summary || '' });
   const constancia = {
@@ -395,8 +457,8 @@ function eligioSeguir({ estado, destino, huellaPlan }) {
 
 /**
  * Los rechazos seguidos de la corrida, contados en los renglones `plan-review`: uno por huella de plan; un «aprobado»
- * (o con notas) pone la cuenta en cero; un «sin veredicto» no suma ni la pone en cero. Las informativas cuentan: sin
- * coordinadora son la única revisión, y el tope tiene que poder llegar al dueño igual.
+ * (o con notas) pone la cuenta en cero; un «sin veredicto» no suma ni la pone en cero. Las de la propia sesión cuentan:
+ * sin coordinadora son la única revisión, y el tope tiene que poder llegar al dueño igual.
  */
 function rechazosSeguidos({ estado, destino, corrida }) {
   let huellas = new Set();
@@ -433,7 +495,7 @@ function hallazgosCorregidos({ estado, destino, corrida }) {
  * `{ linea, detalle: [] }`.
  */
 function lineaDelCuadro({ estado, destino, marker, config }) {
-  const cfg = config || configDeLaOrganizacion().values;
+  const cfg = configUsada(config);
   const plan = planDe(marker);
   const huellaPlan = plan.texto ? sha(plan.texto) : null;
   const corrida = corridaDe(marker);
@@ -474,19 +536,21 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
   const parte = parteDe(marker, storyTexto);
   const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parte) });
-  if (delicate.value) return no(`plan delicado (nivel 2): lo aprueba el dev, no la coordinadora (${delicate.reason})`);
-  const cfg = config || configDeLaOrganizacion().values;
-  if (!cfg.plan_review.coordinator_approves) return no(`el perfil no deja que la coordinadora apruebe el plan (plan_review.coordinator_approves: false): ${ESPERA}`);
+  if (delicate.value) return no(`plan delicado (nivel 2): lo aprueba el dev, no la revisión (${delicate.reason})`);
+  const cfg = configUsada(config);
+  if (cfg.plan_review.routine_approval !== 'review') return no(`${PIDE_EL_CLICK(cfg)}: ${ESPERA}`);
+  const malEscrita = problemaDelAprobador(config);
+  if (malEscrita) return no(`la configuración de quién aprueba tiene un problema (${malEscrita}): ${ESPERA}`);
   if (delegacion) {
     let d;
     try { d = delegacion({ firma: 'plan-approval', sesion: firmante, destino, home, estado }); } catch (e) { d = { ok: false, motivo: e.message }; }
     if (!d || !d.ok) return no(`el perfil no delega la aprobación del plan (${(d && d.motivo) || 'sin respuesta'}): ${ESPERA}`);
   }
   const r = leerConstancia({ estado, lanza: firmante, destino });
-  if (!r.ok && r.ausente) return no(`no hay una revisión automática de este plan lanzada por esta sesión (marker.js plan-review --for-session ${destino}): ${ESPERA}`);
+  if (!r.ok && r.ausente) return no(`no hay una revisión automática de este plan lanzada por esta sesión (marker.js plan-review${firmante === destino ? '' : ` --for-session ${destino}`}): ${ESPERA}`);
   if (!r.ok) return no(`la constancia de la revisión no se puede leer (${r.motivo}): ${ESPERA}`);
   const c = r.constancia;
-  if (c.informativa === true || c.lanzo === c.destino) return no(`la revisión es informativa (la lanzó la propia sesión): sólo informa, nunca firma: ${ESPERA}`);
+  if (c.informativa === true) return no(`la revisión es informativa (la lanzó la propia sesión cuando no podía firmar): sólo informa: ${ESPERA}`);
   if (c.lanzo !== firmante || c.destino !== destino) return no(`la revisión la lanzó otra sesión (${c.lanzo}), no la que firma: ${ESPERA}`);
   if (!tieneRenglon(estado, firmante, destino, r.texto)) return no(`la constancia de la revisión no tiene su renglón en gates.log: ${ESPERA}`);
   const hoy = corridaDe(marker);
@@ -501,7 +565,11 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   return { codigo: 0, via: 'revision', constancia: c };
 }
 
-/** Lo que la aprobación del plan comprueba con el pedido sin gastar: sólo por delegación; la ventana y la terminal, no. */
+/**
+ * Lo que la aprobación del plan comprueba con el pedido sin gastar: sólo por delegación; la ventana y la terminal, no.
+ * La aprobación sin click de la propia sesión no pasa por acá: `complete-step approve-plan` llama a `antesDeAprobar`
+ * directo, con la propia sesión como firmante y destino.
+ */
 function antesDelPlan({ via, ...o }) {
   return via === 'delegacion' ? antesDeAprobar(o) : null;
 }
@@ -509,11 +577,11 @@ function antesDelPlan({ via, ...o }) {
 /**
  * Qué toca con la revisión del plan de una sesión, al cerrar el plan (`next` en «Aprobar el plan»): `{ decision,
  * approves, reason, comando?, estado }`. `decision` sale de la matriz; si toca revisar y este plan no tiene revisión, el
- * comando para lanzarla (la coordinadora, si la hay; si no, la propia sesión, informativa). `ahora` y `config` se
- * inyectan en las pruebas.
+ * comando para lanzarla (la coordinadora, si la hay; si no, la propia sesión), y también si la revisión de esta corrida
+ * es de otra versión del plan. `ahora` y `config` se inyectan en las pruebas.
  */
 function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now() }) {
-  const cfg = config || configDeLaOrganizacion().values;
+  const cfg = configUsada(config);
   const P = policy();
   const plan = planDe(marker);
   if (!plan.texto || !plan.texto.trim()) return { decision: null, reason: 'todavía no hay plan escrito' };
@@ -539,8 +607,9 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   if (avisos.length) { out.reason = `${out.reason} (${avisos.join('; ')})`; out.problems = avisos; }
   if (eligioSeguir({ estado, destino: sesion, huellaPlan })) return { ...out, decision: 'skip', reason: 'se eligió seguir sin revisión para este plan' };
   const c = ultimaDelDestino({ estado, destino: sesion });
-  // con coordinadora, una informativa (la lanzó la propia sesión) no tapa la revisión que ella tiene que lanzar
-  const informativa = !!c && (c.informativa === true || c.lanzo === c.destino);
+  // con coordinadora, una informativa no tapa la revisión que ella tiene que lanzar; la de la propia sesión que puede
+  // firmar (rutina con `review`) sí cuenta: aprueba en los dos casos
+  const informativa = !!c && c.informativa === true;
   const revisado = c && c.huellas && c.huellas.plan === huellaPlan && mismaCorrida(c.corrida, corridaDe(marker))
     && !(hayCoordinadora && informativa && r.approves === 'coordinator');
   if (revisado && c.veredicto === 'rechazado') {
@@ -557,7 +626,9 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   if (revisado && c.veredicto !== 'sin-veredicto') return { ...out, revisado: c.veredicto };
   // sin veredicto sobre este mismo plan: llega al dueño con el motivo
   if (revisado) return { ...out, revisado: c.veredicto, alDueno: { llega: true, motivo: `no se pudo revisar: ${c.motivo || 'el pase no midió todo'}` } };
-  if (r.decision === 'run') {
+  // ya se revisó otra versión del plan en esta corrida: se vuelve a lanzar sobre el plan cerrado, sin volver a preguntar
+  const deOtraVersion = !!(c && c.huellas && c.huellas.plan !== huellaPlan && mismaCorrida(c.corrida, corridaDe(marker)) && c.veredicto);
+  if (r.decision === 'run' || (deOtraVersion && r.decision === 'ask')) {
     // el plan cambió mientras corría: se reintenta una sola vez sobre el plan cerrado; la segunda llega al dueño
     const cambios = revisionesDe(estado, sesion, corridaDe(marker)).filter((j) => j.motivo === CAMBIO).length;
     if (cambios >= 2) return { ...out, alDueno: { llega: true, motivo: `no se pudo revisar: ${CAMBIO}, dos veces` } };
@@ -570,9 +641,12 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   return out;
 }
 
+/** La ruta donde el corredor deja el resultado de la revisión que preparó `lanza` sobre `destino` (el `--out` del comando). */
+const rutaResultado = (estado, lanza, destino) => path.join(carpetaDe(estado, lanza), `${destino}.resultado.json`);
+
 module.exports = {
-  CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
+  rutaResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, huellaDe, designadaDeVerdad, sha,
-  tieneRenglon, parteDe,
+  tieneRenglon, parteDe, problemaDelAprobador, esProblemaDelAprobador,
 };

@@ -241,14 +241,14 @@ test('SignatureQuestion_WaiversAndExtraRound_FromTheirSource (T37)', (t) => {
   const sinArchivo = crit('--rule SEC-C1');
   assert.match(sinArchivo, /Qué hace: SEC-C1: secreto en el código 6\./);
   assert.doesNotMatch(sinArchivo, /a\.js|b\.js/);
-  // la vuelta extra: con su nota, y sin ella
+  // la vuelta extra: la vuelta, lo abierto del informe y su nota, con ella y sin ella
   const extra = () => conFirma('extra-round')(c, `node ${PIPELINE} smart-reloop --iter 3 --extra-round`).pregunta;
-  assert.match(extra(), /Qué hace: Una vuelta 3 de revisores sobre lo que quedó abierto\./);
+  assert.match(extra(), /Qué hace: Vuelta 3 de revisores · Sigue abierto: SEC-C1 en a\.js, bloquea; .* · Sin nota de repensar de la vuelta 3\./);
   assert.ok(extra().includes(`Completo en: ${c.runDir}.`), extra());
   const nota = path.join(c.runDir, 'rethink', 'iter-3.json');
   fs.mkdirSync(path.dirname(nota), { recursive: true });
   fs.writeFileSync(nota, JSON.stringify({ iter: 3, repeated: 'vuelve el hallazgo del tope', change: 'se parte el archivo en dos' }));
-  assert.match(extra(), /Qué hace: Se repitió: vuelve el hallazgo del tope · Cambia: se parte el archivo en dos\./);
+  assert.match(extra(), / · Nota de la vuelta 3: Se repitió: vuelve el hallazgo del tope; Cambia: se parte el archivo en dos\./);
   assert.ok(extra().includes(`Completo en: ${nota}.`), extra());
 });
 
@@ -441,7 +441,7 @@ test('SignatureQuestion_BrokenSource_SaysItCouldNotRead', (t) => {
   fs.mkdirSync(path.join(c.runDir, 'rethink'), { recursive: true });
   fs.writeFileSync(path.join(c.runDir, 'rethink', 'iter-2.json'), '{ roto');
   const vuelta = conFirma('extra-round')(c, `node ${PIPELINE} smart-reloop --iter 2 --extra-round`).pregunta;
-  assert.match(vuelta, /Una vuelta 2 de revisores sobre lo que quedó abierto \(su nota no se entiende: .*Completo en: .*iter-2\.json\./);
+  assert.match(vuelta, /Vuelta 2 de revisores · No pude leer el informe de hallazgos: .* · Nota de la vuelta 2: no se entiende \(.*Completo en: .*iter-2\.json\./);
   // un plan que es una carpeta: está, pero no se puede leer
   fs.mkdirSync(path.join(c.runDir, 'step-02-bmad-plan.md'));
   assert.match(cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta, /no encuentro el plan escrito en .*step-02-bmad-plan\.md \(no pude leerlo: EISDIR\)/);
@@ -842,4 +842,68 @@ test('8.176-Cuadro_RutaQueFalsea_SinCuadro (T10) @story-8.176 @ac-9', (t) => {
   assert.strictEqual(deVerdad.decision, 'deny', deVerdad.texto);
   assert.doesNotMatch(deVerdad.texto, /No abrí la ventana/, deVerdad.texto);
   assert.match(deVerdad.texto, /run-base-controls\.sh pending --root /, deVerdad.texto);
+});
+
+// 🔴 Mutaciones: mostrar sólo la nota de repensar (T8), tomar la nota de otra vuelta como la pedida o decir «nada
+// abierto» cuando el informe no se lee (T9), un sello que no cambia cuando cambia lo abierto (T8).
+const VUELTA_4 = `node ${PIPELINE} smart-reloop --iter 4 --extra-round`;
+test('SignatureQuestion_ExtraRound_NamesRoundOpenAndItsNote (T8) @story-8.267 @ac-7', (t) => {
+  const c = corrida(t);
+  const informe = path.join(c.runDir, 'findings.json');
+  fs.writeFileSync(informe, JSON.stringify([
+    { rule_id: 'SEC-C1', severity: 'CRITICAL', file: 'a.js', summary: 'secreto', disposition: 'open' },
+    { rule_id: 'TEST-W2', severity: 'WARNING', file: 'b.js', summary: 'falta una prueba', disposition: 'open' },
+    { rule_id: 'SEC-C2', severity: 'CRITICAL', file: 'c.js', summary: 'arreglado', disposition: 'fixed' },
+  ]));
+  const nota = path.join(c.runDir, 'rethink', 'iter-4.json');
+  fs.mkdirSync(path.dirname(nota), { recursive: true });
+  fs.writeFileSync(nota, JSON.stringify({ iter: 4, repeated: 'vuelve el mismo hallazgo', change: 'se parte el archivo', story_change: 'ninguno' }));
+  const q = conFirma('extra-round')(c, VUELTA_4);
+  const queHace = (q.pregunta.match(/Qué hace: ([^]*?)\. (?:Archivos|Completo en)/) || [])[1] || '';
+  const [vuelta, abierto, deLaNota] = queHace.split(' · ');
+  assert.strictEqual(vuelta, 'Vuelta 4 de revisores', q.pregunta);
+  // un tramo por hallazgo abierto, en un renglón: la pregunta muestra tres y la nota tiene que entrar
+  assert.strictEqual(abierto, 'Sigue abierto: SEC-C1 en a.js, bloquea; TEST-W2 en b.js, no bloquea', q.pregunta);
+  assert.strictEqual(deLaNota, 'Nota de la vuelta 4: Se repitió: vuelve el mismo hallazgo; Cambia: se parte el archivo; Cambia la historia: ninguno', q.pregunta);
+  assert.doesNotMatch(queHace, /c\.js/, 'lo arreglado no sigue abierto');
+  // lo abierto va en la fuente: si cambia después del cuadro, el sello cambia y el click no vale
+  fs.writeFileSync(informe, JSON.stringify([{ rule_id: 'SEC-C1', severity: 'CRITICAL', file: 'a.js', summary: 'secreto', disposition: 'fixed' }]));
+  const despues = conFirma('extra-round')(c, VUELTA_4);
+  assert.notStrictEqual(despues.sello, q.sello, 'cambió lo abierto y el sello no');
+  assert.match(despues.pregunta, /Qué hace: Vuelta 4 de revisores · Nada abierto en el informe de hallazgos · Nota de la vuelta 4/);
+  // sin --iter válido, el renglón de hoy
+  assert.match(conFirma('extra-round')(c, `node ${PIPELINE} smart-reloop --extra-round`).pregunta, /Qué hace: Una vuelta más de revisores sobre lo que quedó abierto\./);
+});
+
+test('SignatureQuestion_ExtraRound_OtherRoundNote_NotShown (T9) @story-8.267 @ac-7', (t) => {
+  const c = corrida(t);
+  fs.mkdirSync(path.join(c.runDir, 'rethink'), { recursive: true });
+  fs.writeFileSync(path.join(c.runDir, 'rethink', 'iter-3.json'), JSON.stringify({ iter: 3, repeated: 'la nota de la tres', change: 'algo' }));
+  fs.writeFileSync(path.join(c.runDir, 'findings.json'), '{ roto');
+  const q = conFirma('extra-round')(c, VUELTA_4).pregunta;
+  assert.match(q, /Sin nota de repensar de la vuelta 4/);
+  assert.doesNotMatch(q, /la nota de la tres/, 'mostró la nota de otra vuelta');
+  assert.match(q, /No pude leer el informe de hallazgos: findings\.json no se lee/);
+  assert.doesNotMatch(q, /Nada abierto/, '«no pude leer» no es «nada abierto»');
+});
+
+// 🔴 Mutaciones: mostrar una nota que existe y no se lee como «sin nota», o una carpeta que no se ubica como «no hay
+// informe»: las dos callan un error.
+test('SignatureQuestion_ExtraRound_UnreadableNoteAndNoRunDir_SaySo (T9) @story-8.267 @ac-7', (t) => {
+  const c = corrida(t);
+  const nota = path.join(c.runDir, 'rethink', 'iter-4.json');
+  fs.mkdirSync(path.dirname(nota), { recursive: true });
+  fs.writeFileSync(nota, JSON.stringify({ iter: 4, repeated: 'x', change: 'y' }));
+  fs.chmodSync(nota, 0o000);
+  t.after(() => { try { fs.chmodSync(nota, 0o644); } catch (_) { /* ya se borró */ } });
+  let legible = true;
+  try { fs.readFileSync(nota); } catch (_) { legible = false; }
+  if (!legible) {
+    const q = conFirma('extra-round')(c, VUELTA_4).pregunta;
+    assert.match(q, /No pude leer la nota de repensar de la vuelta 4/);
+    assert.doesNotMatch(q, /Sin nota de repensar/);
+  }
+  const sinCarpeta = fuentes.abiertoDeLaCorrida(null);
+  assert.match(sinCarpeta.linea, /No pude ubicar la carpeta de la ejecución/);
+  assert.doesNotMatch(sinCarpeta.linea, /No hay informe/);
 });

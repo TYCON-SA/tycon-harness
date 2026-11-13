@@ -1670,6 +1670,99 @@ function criticosTocados(cmd, cwd, stateDir) {
 }
 
 /**
+ * Lo que el comando borra o mueve de la revisión automática del plan (`plan-review/`, de cualquier estado): el pedido, el
+ * resultado del corredor y la constancia con el veredicto. Moverlo o borrarlo deja otra constancia en su lugar. Lo que
+ * se escribe ahí lo frena el freno del estado; pasan sólo `marker.js plan-review` y el corredor del pase del arnés
+ * (`corredorDelPase`). Sin interruptor.
+ */
+function revisionDelPlanTocada(cmd, cwd, stateDir) {
+  const { isPlanReviewRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'plan-review', nombres: ['plan-review'], pieza: isPlanReviewRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])plan-review[\\/](?![\w.-]*\.md\b)/i.test(t) });
+}
+
+/**
+ * Un `--out` que cae en la carpeta de la revisión del plan desde un comando que no es el corredor del pase del arnés:
+ * `node <workflow-lite.js del arnés> <adversarial-verify.workflow.js del arnés> … --out <ruta>`, con las dos rutas
+ * resueltas contra el arnés instalado. Devuelve la ruta del `--out` que no vale, o null. Otro guion con `--out` ahí, o el
+ * corredor con otro workflow, escribiría un resultado que la revisión tomaría por el del pase.
+ */
+/**
+ * Los corredores del pase que eligió la organización, como los escribe el arnés en `--runners`: `{ lista, motivo }`.
+ * Si no se pueden leer, `lista` es null (el corredor con `--runners` se frena) y `motivo` dice por qué, también por la
+ * salida de errores. `leer` reemplaza la lectura de la configuración (las pruebas).
+ */
+function corredoresDeLaOrganizacion({ leer } = {}) {
+  try {
+    const raw = leer ? leer() : require('./lib/plan-review.js').configDeLaOrganizacion().raw;
+    const orden = require('./lib/review-runner.js').runnerOrder(raw).order;
+    return { lista: Array.isArray(orden) ? orden.join(',') : null, motivo: null };
+  } catch (e) {
+    const motivo = `no pude leer la lista de corredores de la organización (${(e && e.message) || e}): el corredor con --runners se frena`;
+    process.stderr.write(`[on-bash-write-gate] ${motivo}\n`);
+    return { lista: null, motivo };
+  }
+}
+
+function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
+  const { isPlanReviewRecord } = require('./lib/story-gate.js');
+  const { isInside } = require('./lib/atdd-preedit.js');
+  const installedTree = require('./lib/installed-tree.js');
+  const carpetas = [...new Set([stateDir, installedTree.realPath(stateDir)].filter(Boolean))].map((b) => path.join(b, 'plan-review'));
+  const enLaRevision = (abs) => isPlanReviewRecord(abs) || carpetas.some((c) => abs === c || isInside(c, abs) || isInside(c, installedTree.realPath(abs)));
+  const delArnes = (ruta, nombre) => {
+    const real = installedTree.realPath(path.resolve(cwd, ruta));
+    return path.basename(real) === nombre && (installedRoots || []).some((r) => {
+      const raiz = installedTree.realPath(r);
+      return real === installedTree.realPath(path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', nombre));
+    });
+  };
+  // un destino que no se lee hasta correr (una variable, una sustitución, o relativo después de un `cd`) cuenta como de
+  // la revisión si el comando nombra la carpeta de la revisión (`plan-review`, o `…}-review` armada por partes) o el
+  // estado; «review» suelto en otra palabra (`code-review`, `preview`, un subcomando `review`) no. El límite de la guía sigue:
+  // esto cierra el camino fácil, no una falsificación armada a propósito
+  const nombraLaRevision = /(^|[^\w-])plan-review|\}-review|tycon[\\/]state|\.tycon-pipeline/i.test(String(cmd || ''));
+  const cambiaDeCarpeta = /(^|[;&|(\s])(?:cd|pushd)(\s|$)/.test(String(cmd || ''));
+  // los corredores del pase: sólo la lista de la organización, como la escribe el arnés; revisores propios, nunca
+  const opcionesDelArnes = (w) => {
+    if (w.some((x) => x === '--agents-dir' || x.startsWith('--agents-dir='))) return false;
+    const ri = w.findIndex((x) => x === '--runners' || x.startsWith('--runners='));
+    if (ri < 0) return true;
+    const lista = w[ri].startsWith('--runners=') ? w[ri].slice('--runners='.length) : w[ri + 1];
+    return !!lista && lista === corredoresDeLaOrganizacion().lista;
+  };
+  // el pedido que preparó el arnés: `--args "$(cat '<carpeta de la revisión>/<destino>.args.json')"`, una sola vez
+  const pedidoDelArnes = (tramo) => {
+    const todos = String(tramo).match(/(?:^|\s)--args(?:=|\s)/g) || [];
+    const m = String(tramo).match(/(?:^|\s)--args\s+"\$\(cat\s+(?:'([^']+)'|([^\s'"()$`]+))\)"(?=\s|$)/);
+    if (todos.length !== 1 || !m) return false;
+    const archivo = resolveTarget(m[1] || m[2], cwd, process.platform, { homeVariable: true });
+    return /\.args\.json$/.test(archivo) && enLaRevision(archivo);
+  };
+  for (const tramo of tramos(cmd)) {
+    const w = palabras(tramo);
+    // cada `--out` del tramo, no sólo el primero
+    const destinos = [];
+    w.forEach((x, i) => {
+      if (x.startsWith('--out=')) destinos.push(x.slice('--out='.length));
+      else if (x === '--out' && w[i + 1] != null) destinos.push(w[i + 1]);
+    });
+    for (const destino of destinos) {
+      const opaco = /[$`]/.test(destino) || (cambiaDeCarpeta && !path.isAbsolute(destino) && !/^~/.test(destino));
+      const abs = opaco ? null : resolveTarget(destino, cwd, process.platform, { homeVariable: true });
+      if (opaco ? !nombraLaRevision : !enLaRevision(abs)) continue;
+      const corredor = !opaco && destinos.length === 1 && /^(?:.*[\\/])?node(?:js)?(?:\.exe)?$/i.test(w[0] || '') && w[1] && w[2]
+        && delArnes(w[1], 'workflow-lite.js') && delArnes(w[2], 'adversarial-verify.workflow.js') && pedidoDelArnes(tramo)
+        && opcionesDelArnes(w);
+      if (!corredor) return abs || destino;
+    }
+  }
+  return null;
+}
+
+/**
  * Lo que el comando borra o mueve de una zona del estado: `carpeta` y `nombres` adentro del estado, o lo que `pieza` dice.
  * `enTexto`: cuándo un texto la nombra sin que la ruta se pueda resolver (un guion que la arma por partes); sin él, el nombre de la carpeta del estado.
  */
@@ -3694,6 +3787,13 @@ function handleCarrilEHistoria(event, opts = {}) {
     const sg = require('./lib/story-gate.js');
     return { block: sg.blockMessage({ kind: 'reported-criticals' }, { filePath: criticos[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
   }
+  // la revisión automática del plan, también al borrarla o moverla, o con un `--out` que no es el del corredor del pase
+  const ajena = constancias.length ? null : salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots);
+  const revisionDelPlan = constancias.length ? [] : ajena ? [ajena] : revisionDelPlanTocada(cmd, cwd, stateDir);
+  if (revisionDelPlan.length) {
+    const sg = require('./lib/story-gate.js');
+    return { block: sg.blockMessage({ kind: 'plan-review' }, { filePath: revisionDelPlan[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+  }
   if (constancias.length) {
     const sg = require('./lib/story-gate.js');
     // el registro del arnés y la carpeta de una ejecución son estado del pipeline; lo demás, su constancia
@@ -4002,7 +4102,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA };
+module.exports = { handle, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA };
 
 if (require.main === module) {
   const cruda = leerEntrada();
