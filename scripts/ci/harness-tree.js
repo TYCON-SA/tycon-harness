@@ -125,6 +125,6 @@ function main(argv, { stdout = process.stdout, stderr = process.stderr, env = pr
   return r.code;
 }
 
-module.exports = { treeOf, guardTree, isData, main, DATA_DIRS };
+module.exports = { treeOf, guardTree, isData, main, DATA_DIRS, DATA_FILE };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

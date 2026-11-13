@@ -648,12 +648,13 @@ test('T21 2.26-StageMetrics_ConcentracionEnElPasoDeLaFoto — el modelo público
   assert.doesNotMatch(read('github/stage-metrics.yml'), /author-concentration/, 'el modelo de GitHub no corre la concentración');
   const privado = path.join(ROOT, 'pipelines', 'azure-pipelines.yml');
   if (!fs.existsSync(privado)) {
-    console.log('  (T21 lo privado —azure-pipelines.yml, ops-data.yml y .gitignore— no viene con la copia pública: NO MEDIDO acá)');
+    console.log('  (T21 lo privado —azure-pipelines.yml y .gitignore— no viene con la copia pública: NO MEDIDO acá)');
     return;
   }
   pasoConConcentracion(fs.readFileSync(privado, 'utf8'), 'Medir las 4 métricas y escribir el snapshot del día', 'pipelines/azure-pipelines.yml');
-  const ops = fs.readFileSync(path.join(ROOT, 'pipelines', 'templates', 'ops-data.yml'), 'utf8');
-  assert.match(ops, /author-concentration-\*\.json/, 'ops-data.yml trae el archivo de concentración al árbol');
+  // la plantilla de datos es una sola, la del modelo: la corren también los nocturnos del equipo
+  const ops = read('templates/ops-data.yml');
+  assert.match(ops, /DATA_DIRS=\([^)]*\.dashboard\b/, 'ops-data.yml trae .dashboard entera de operaciones, con el archivo de concentración');
   const ign = spawnSync('git', ['-C', ROOT, 'check-ignore', '-q', '.dashboard/author-concentration-2026-10-15.json']);
   assert.strictEqual(ign.status, 1, '.gitignore del privado deja pasar el archivo de concentración');
 });
@@ -681,12 +682,12 @@ test('T9 1.31-StageMetrics_CuentaEnElPasoDeLaConcentracion @story-1.31 @ac-5 —
   assert.doesNotMatch(read('github/stage-metrics.yml'), /story-reference/, 'el modelo de GitHub no la corre: sin el archivo, la ficha sale «no medido»');
   const privado = path.join(ROOT, 'pipelines', 'azure-pipelines.yml');
   if (!fs.existsSync(privado)) {
-    console.log('  (T9 lo privado —azure-pipelines.yml, ops-data.yml y .gitignore— no viene con la copia pública: NO MEDIDO acá)');
+    console.log('  (T9 lo privado —azure-pipelines.yml y .gitignore— no viene con la copia pública: NO MEDIDO acá)');
     return;
   }
   pasoConSinHistoria(fs.readFileSync(privado, 'utf8'), 'Medir las 4 métricas y escribir el snapshot del día', 'pipelines/azure-pipelines.yml');
-  const ops = fs.readFileSync(path.join(ROOT, 'pipelines', 'templates', 'ops-data.yml'), 'utf8');
-  assert.match(ops, /story-reference-\*\.json/, 'ops-data.yml trae el archivo del día al árbol');
+  const ops = read('templates/ops-data.yml');
+  assert.match(ops, /DATA_DIRS=\([^)]*\.dashboard\b/, 'ops-data.yml trae .dashboard entera de operaciones, con el archivo del día');
   const ign = spawnSync('git', ['-C', ROOT, 'check-ignore', '-q', '.dashboard/story-reference-2026-10-20.json']);
   assert.strictEqual(ign.status, 1, '.gitignore del privado deja pasar el archivo del día');
 });
