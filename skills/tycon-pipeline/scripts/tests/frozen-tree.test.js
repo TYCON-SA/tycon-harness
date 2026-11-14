@@ -735,3 +735,15 @@ test('SmokeRun_LiveCheckScript_LedgerCarriesScriptSha @story-8.270 @ac-23 — el
   assert.strictEqual(conGuionL.script_sha, sha256('process.exit(0);\n'));
   for (const e of [sinGuion, enConsola]) assert.ok(!('script' in e) && !('script_sha' in e), JSON.stringify(e));
 });
+
+test('Seal_QaLegibilidadUiAfterRound_IsPaperwork @story-8.271 @ac-3 @ac-15 — la revisión de la pantalla en qa/ al lado de specs/ es papeleo; el código no', () => {
+  const R = repoDeJuguete('qa-al-lado', { 'specs/story-9.9.md': '---\nstory: "9.9"\n---\n', 'qa/9.9-legibilidad-ui.md': 'antes\n', 'src/a.js': 'module.exports = 1;\n' });
+  const antes = ft().seal(R.repo).tree;
+  fs.writeFileSync(path.join(R.repo, 'qa', '9.9-legibilidad-ui.md'), 'después\n');
+  let d = ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: 'specs/story-9.9.md' });
+  assert.deepStrictEqual(d.files, [], JSON.stringify(d));
+  assert.deepStrictEqual(d.papeleo, ['qa/9.9-legibilidad-ui.md']);
+  fs.writeFileSync(path.join(R.repo, 'src', 'a.js'), 'module.exports = 2;\n');
+  d = ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: 'specs/story-9.9.md' });
+  assert.deepStrictEqual(d.files, ['src/a.js']);
+});

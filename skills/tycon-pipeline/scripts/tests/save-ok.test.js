@@ -875,3 +875,30 @@ test('EvidenciaDelPedido_PartesEnOrden_YNoMedido @story-8.242 @ac-3', () => {
   assert.match(s, /Pase: salteado por la regla/);
   assert.match(s, /Hallazgos: 0 críticos, 0 avisos/);
 });
+
+// ── La carpeta qa/ al lado de specs/ (8.271) ──────────────────────────────────────────────────────────────────────────
+//
+// Un repo que tiene `qa/` al lado de `specs/` (qa-dir.js) deja ahí la revisión de la pantalla y la guía del tester. Son
+// informes, como la historia: cambiarlos después del ok de guardar no es cambiar el código. Sólo los `.md` hijos
+// directos de una carpeta `qa`, con las exclusiones de siempre.
+
+test('Papeleo_QaAlLadoDeSpecs_EsPapeleo @story-8.271 @ac-1', () => {
+  assert.ok(SO.esPapeleoDeLaHuella('qa/9.9-legibilidad-ui.md', '100644'));
+  assert.ok(SO.esPapeleoDeLaHuella('docs/qa/9.9-guia.md', '100644'));
+});
+
+test('Papeleo_QaCodigoOSubcarpetaOEnlace_NoEsPapeleo @story-8.271 @ac-2 @ac-15', () => {
+  for (const rel of ['qa/helpers.js', 'qa/datos.json', 'qa/sub/x.md', '.qa/x.md', 'qa/.oculto/x.md']) {
+    assert.ok(!SO.esPapeleoDeLaHuella(rel, '100644'), rel);
+  }
+  assert.ok(!SO.esPapeleoDeLaHuella('qa/x.md', '120000'), 'un enlace no es papeleo');
+});
+
+test('Huella_QaLegibilidadUiDespuesDelOk_NoLaVence @story-8.271 @ac-19', (t) => {
+  const a = repo(t, { 'specs/story-9.99.md': '# 9.99\n', 'qa/9.99-legibilidad-ui.md': 'antes\n', 'qa/helpers.js': 'module.exports = 1;\n' });
+  const antes = SO.huella(a).arbol;
+  escribir(a, 'qa/9.99-legibilidad-ui.md', 'después de tocar el File List\n');
+  assert.strictEqual(SO.huella(a).arbol, antes, 'la revisión de la pantalla no cambia la huella');
+  escribir(a, 'qa/helpers.js', 'module.exports = 2;\n');
+  assert.notStrictEqual(SO.huella(a).arbol, antes, 'un .js de qa/ sí la cambia');
+});
