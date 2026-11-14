@@ -1,0 +1,37 @@
+{
+  "hooks": [
+    {
+      "hook": "hook-failures-notice.js (aviso de arranque de las fallas de los controles)",
+      "script": "${TCG}/scripts/hooks/hook-failures-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "cuenta-las-fallas-de-las-ultimas-24-horas-por-control",
+          "type": "must-emit",
+          "setup": [
+            "node -e \"var p=require('path'),fs=require('fs');var d=require(p.join(process.env.TCG,'scripts','setup','harness','tycon-home.js')).stateDir(process.env.HOME);fs.mkdirSync(d,{recursive:true});var t=new Date().toISOString();fs.writeFileSync(p.join(d,'hook-errors.log'),'['+t+'] dispatch handler \\\"on-write-collision\\\" FAILED OPEN: Error: x\\n\\n['+t+'] dispatch handler \\\"on-write-collision\\\" FAILED OPEN: Error: x\\n\\n['+t+'] dispatch handler \\\"on-dod-evidence-guard\\\" FAILED CLOSED: SyntaxError: y\\n\\n')\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "on-write-collision: 2 dejando pasar",
+              "on-dod-evidence-guard: 1 frenando",
+              "hook-errors\\.log"
+            ]
+          }
+        },
+        {
+          "id": "quiet-sin-registro",
+          "type": "must-stay-quiet",
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        }
+      ]
+    }
+  ]
+}
