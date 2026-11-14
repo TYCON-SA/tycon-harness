@@ -222,7 +222,9 @@ test('T22 Oficina_TerminadaSinCerrar_LaTarjetaLoDice @story-8.195 @ac-22 — /wi
   const m = toyMachine();
   marker(m, 'hora0000-1', hecha(m, '5.1', minsBeforeNow(60)));
   marker(m, 'vieja000-2', hecha(m, '5.2', minsBeforeNow(30 * 60)));
-  // con código cambiado después de los revisores: falta revisar, no cerrar (un .js fuera de todo repo es código)
+  // con código cambiado después de los revisores: falta revisar, no cerrar (un .js de un repo es código; uno fuera de todo
+  // repo ya no, desde la 8.270)
+  fs.mkdirSync(path.join(m.root, 'nada', '.git'), { recursive: true });
   marker(m, 'vuelta00-3', hecha(m, '5.3', minsBeforeNow(60), { fileEvents: [{ path: path.join(m.root, 'nada', 'a.js'), ts: minsBeforeNow(30), code: true }] }));
   for (const [sid, n] of [['hora0000-1', 'a'], ['vieja000-2', 'b'], ['vuelta00-3', 'c']]) session(m, process.pid, sid, n);
   const r = run(m);

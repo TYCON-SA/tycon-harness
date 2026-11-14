@@ -757,10 +757,12 @@ test('T22 Oficina_TerminadaSinCerrar_LaTarjetaLoDice @story-8.195 @ac-22 — fro
     assert.strictEqual(f.step, null);
   }
   // con código cambiado después de los revisores, la misma oración que la fila de /wip y la tarjeta
+  // (en un repo: un archivo fuera de todo repo ya no pide otra vuelta, 8.270)
   const cerro = new Date(ahora - HOUR).toISOString();
+  fs.mkdirSync(path.join(w.home, 'con-repo', '.git'), { recursive: true });
   pipelineMarker(w, 's-rev', { done: STEPS.STEPS.filter((s) => !s.flag).map((s) => s.id), extra: {
     lastTouch: cerro, stepTimings: { reviewers: { completedAt: new Date(ahora - 3 * HOUR).toISOString() }, findings: { completedAt: new Date(ahora - 3 * HOUR).toISOString() }, 'prepare-commit': { completedAt: cerro } },
-    fileEvents: [{ path: path.join(w.home, 'sin-repo', 'a.js'), ts: new Date(ahora - 2 * HOUR).toISOString(), code: true }],
+    fileEvents: [{ path: path.join(w.home, 'con-repo', 'a.js'), ts: new Date(ahora - 2 * HOUR).toISOString(), code: true }],
   } });
   assert.strictEqual(lib().fromDisk(w.sdir, 's-rev', { home: w.home, now: ahora }).sentence, 'Terminó la story 9.9: falta revisar lo cambiado después de los revisores.');
   // con un carril abierto en la misma sesión, lo que hace ahora va primero: su motivo y su hora

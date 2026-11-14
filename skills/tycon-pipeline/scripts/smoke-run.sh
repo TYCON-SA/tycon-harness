@@ -318,6 +318,12 @@ fi
 # cortos de story se repiten entre repos. El repo es el dueño del evidence-dir (<repo>/.advisors/...);
 # si no es un repo git, cae al cwd. Misma key que marker.js para que el capturer agrupe igual.
 REPO_PATH="$(git -C "$EVIDENCE_DIR" rev-parse --show-toplevel 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# ── El guion de la prueba en vivo que nombra el comando, con su huella (8.270) ──
+# Si una palabra del comando es un `<story>-*.js` de la carpeta de la evidencia, el renglón suma `script` y `script_sha`:
+# con eso el sello de lo revisado da ese guion por papeleo (save-ok.js `esGuionEnVivo`). Si no lo nombra, o el cálculo
+# falla, el renglón queda como siempre y el guion, si cambió, cuenta como cambio.
+LEDGER_EXTRA="$LEDGER_EXTRA$(node "$SECRETS_JS" live-script --evidence-dir "$EVIDENCE_DIR" --key "$STORY_ID" --repo "$REPO_PATH" -- "$@" 2>/dev/null || true)"
 REPO_JSON="$(node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$REPO_PATH")"
 
 # ── Contra qué corrió (DODRT-C9) ──

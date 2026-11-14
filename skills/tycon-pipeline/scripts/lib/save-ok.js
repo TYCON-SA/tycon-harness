@@ -52,6 +52,26 @@ function esEvidenciaEnVivo(repo, rel) {
   try { sha = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(repo, rel))).digest('hex'); } catch (_) { return false; }
   return lineas.some((l) => { try { const o = JSON.parse(l); return o[campo] === sub && o[huellaCampo] === sha; } catch (_) { return false; } });
 }
+/**
+ * ¿`rel` es el guion de la prueba en vivo de una historia (`<carpeta de .advisors>/<clave>-*.js`) que el registro de
+ * humos de esa carpeta (`<clave>-smoke-ledger.jsonl`) nombra con su sha256 de ahora? Lo deja smoke-run.sh en `script` y
+ * `script_sha` cuando el comando nombra el guion. Un guion que ningún renglón nombra, o que cambió después de correrlo,
+ * no: cualquier otro `.js` de `.advisors` sigue siendo código.
+ */
+function esGuionEnVivo(repo, rel) {
+  const m = /^(.*)\/([^/]+)$/.exec(String(rel));
+  if (!m || !m[1].startsWith(`${EVIDENCIA}/`) || !/\.js$/.test(m[2])) return false;
+  const [, carpeta, nombre] = m;
+  let lineas;
+  try { lineas = fs.readdirSync(path.join(repo, carpeta)).filter((f) => f.endsWith('-smoke-ledger.jsonl') && nombre.startsWith(`${f.slice(0, -'-smoke-ledger.jsonl'.length)}-`)); } catch (_) { return false; }
+  let sha;
+  try { sha = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(repo, rel))).digest('hex'); } catch (_) { return false; }
+  return lineas.some((ledger) => {
+    let texto;
+    try { texto = fs.readFileSync(path.join(repo, carpeta, ledger), 'utf8'); } catch (_) { return false; }
+    return texto.split('\n').some((l) => { try { const o = JSON.parse(l); return o && o.script === rel && o.script_sha === sha; } catch (_) { return false; } });
+  });
+}
 // el papeleo que no vence el ok de guardar: la evidencia, más las stories y su estado (`specs/`, con su
 // `sprint-status.yaml`) y las tareas (`tasks/`), sólo en sus datos y sus informes. Nunca una carpeta oculta, un enlace, lo de la lista sensible ni la configuración de
 // una herramienta (`package.json`, `tsconfig.json`): ésos cargan o deciden algo, y cambiarlos pide otro ok
@@ -62,13 +82,18 @@ const MEMORIA = '.engram/chunks';
 const INDICE_DE_MEMORIA = '.engram/manifest.json';
 const esTrozoDeMemoria = (rel) => rel === INDICE_DE_MEMORIA || new RegExp(`^${MEMORIA.replace('.', '\\.')}/[^/]+\\.jsonl\\.gz$`).test(rel);
 const CONFIGURACION = /^(package(-lock)?|npm-shrinkwrap|tsconfig[\w.-]*|jsconfig)\.json$/;
+// un informe de la carpeta qa/: un `.md` hijo directo de una carpeta `qa`, en cualquier nivel
+const ES_INFORME_DE_QA = /(^|\/)qa\/[^/]+\.md$/;
+const INFORMES_DE_QA = ':(glob)**/qa/*.md';
 function esPapeleoDeLaHuella(rel, modo) {
   if (modo === '120000') return false;
   if (rel.startsWith(`${EVIDENCIA}/`)) return /\.(json|jsonl|md)$/.test(rel);
   if (rel.startsWith(`${MEMORIA}/`) || rel === INDICE_DE_MEMORIA) return esTrozoDeMemoria(rel);
   // el estado del sprint es papeleo como la story: cambiarlo después de preparar el pedido no es cambiar el código
   const estadoDelSprint = rel.startsWith('specs/') && path.posix.basename(rel) === 'sprint-status.yaml';
-  if (!PAPELEO_DE_LA_HUELLA.some((d) => rel.startsWith(`${d}/`)) || (!/\.(json|jsonl|md)$/.test(rel) && !estadoDelSprint)) return false;
+  // la carpeta qa/ de una historia puede vivir al lado de specs/ (qa-dir.js): sus informes son papeleo como la story
+  const informeDeQa = ES_INFORME_DE_QA.test(rel);
+  if (!informeDeQa && (!PAPELEO_DE_LA_HUELLA.some((d) => rel.startsWith(`${d}/`)) || (!/\.(json|jsonl|md)$/.test(rel) && !estadoDelSprint))) return false;
   if (rel.split('/').some((p) => p.startsWith('.')) || CONFIGURACION.test(path.posix.basename(rel))) return false;
   const pats = catalogo().SENSITIVE.map(patron);
   return !pats.some((re) => re.test(rel.toLowerCase()));
@@ -210,7 +235,7 @@ function huellas(repos) { return repos.map(huella); }
 
 // El árbol del índice aparte `env`, sin el papeleo: `{ out }` o `{ error, paso, err }`.
 function arbolSinPapeleo(repo, env) {
-  const ls = git(repo, ['ls-files', '-s', '-z', '--', EVIDENCIA, MEMORIA, INDICE_DE_MEMORIA, ...PAPELEO_DE_LA_HUELLA], env);
+  const ls = git(repo, ['ls-files', '-s', '-z', '--', EVIDENCIA, MEMORIA, INDICE_DE_MEMORIA, ...PAPELEO_DE_LA_HUELLA, INFORMES_DE_QA], env);
   if (!ls.ok) return { error: true, paso: 'ls-files', err: ls.err };
   // cada entrada: «<modo> <blob> <etapa>\t<ruta>»
   const fuera = ls.crudo.split('\0').filter(Boolean).map((e) => { const t = e.indexOf('\t'); return [e.slice(0, 6), e.slice(t + 1)]; })
@@ -667,4 +692,4 @@ function evidenciaDelPedido({ marker = {}, findings = null } = {}) {
   return `Pruebas: ${pruebas} · Revisores: ${revisores} · Pase: ${pase} · Hallazgos: ${hallazgos}`;
 }
 
-module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, arbolDelCommit, controlesDelCommit, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia, fotoDelPedido, evidenciaDelPedido };
+module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, arbolDelCommit, controlesDelCommit, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia, fotoDelPedido, evidenciaDelPedido };

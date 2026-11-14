@@ -10,12 +10,20 @@
  * Lo que ya estaba cambiado o sin rastrear antes de arrancar (su fecha es anterior al arranque) no es de la ejecución:
  * sale como aviso. Las líneas que el propio arranque agrega al `.gitignore` (las de `.advisors`) tampoco cuentan.
  * Lo borrado por la terminal que el freno deja pasar (node_modules) no aparece en git: sale de `console-writes`, como aviso.
+ * La memoria que exporta el cierre antes del commit (los trozos de `.engram/chunks/` y su índice) tampoco cuenta: es la
+ * misma regla que la huella de guardar (`save-ok.js esPapeleoDeLaHuella`), y sale como aviso con la cuenta.
  * Sin commit de arranque o sin git, no se mide y se dice: «no pude mirar» no es «no sobra nada».
  */
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseDeclaredFiles } = require('./test-scope.js');
+const { esPapeleoDeLaHuella } = require('./save-ok.js');
+
+// el modo de git de un archivo de la carpeta: un enlace no es papeleo; uno borrado no tiene qué mirar
+function modoDe(abs) {
+  try { return fs.lstatSync(abs).isSymbolicLink() ? '120000' : '100644'; } catch (_) { return '100644'; }
+}
 
 // lock → los manifiestos que lo producen, en la misma carpeta
 const LOCK_OF = {
@@ -131,7 +139,10 @@ function computeUndeclared({ repo, baseSha, storyPath, startedAt = null, registr
     if (!Number.isFinite(desde)) return false;
     try { return fs.statSync(path.join(repoReal, f)).mtimeMs < desde; } catch (_) { return false; }
   };
-  const sinDeclarar = cambiados.filter((f) => !f.split('/').includes('.advisors') && f !== historiaRel
+  // la memoria que exporta el cierre antes del commit: la misma regla que la huella de guardar, con el modo del archivo
+  const memoria = cambiados.filter((f) => f.startsWith('.engram/') && esPapeleoDeLaHuella(f, modoDe(path.join(repoReal, f))));
+  if (memoria.length) avisos.push(`memoria exportada (no cuenta): ${memoria.length} archivo(s)`);
+  const sinDeclarar = cambiados.filter((f) => !f.split('/').includes('.advisors') && f !== historiaRel && !memoria.includes(f)
     && !declarados.has(f) && !lockDeclarado(f, declarados) && !(path.posix.basename(f) === '.gitignore' && gitignoreDelArranque(repo, baseSha)));
   const previos = sinDeclarar.filter(previo).sort();
   if (previos.length) avisos.push(`ya estaba(n) cambiado(s) antes de arrancar (no cuenta(n) como de esta ejecución): ${previos.join(', ')}`);

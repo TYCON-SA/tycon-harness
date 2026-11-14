@@ -84,8 +84,8 @@ function listaDerivada(texto, nombre, tandas) {
 
 /** Una ruta como la escribe la historia, en la forma en que se compara: sin comentario, comillas ni `./`, con `/`. */
 function normRuta(f) {
-  // sin la barra final: `src/db/` es la carpeta `src/db`
-  return String(f || '').replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+  // sin la barra final: `src/db/` es la carpeta `src/db`; sin el prefijo «(repo) » que las listas de la historia permiten
+  return String(f || '').replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '').replace(/^\([^)]*\)\s*/, '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
 }
 
 /** Lo que dos partes abiertas pueden compartir sin dejar de valer: lo que igual cuenta en la medición de cada una. */

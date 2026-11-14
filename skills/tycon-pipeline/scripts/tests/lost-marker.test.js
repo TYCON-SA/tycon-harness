@@ -14,6 +14,9 @@
 // con el evento por la entrada. Los comandos que juzgan los ganchos van en las tablas de abajo, no en la línea de un
 // comando: el freno de esta máquina los frenaría.
 //
+// Las dos podas de un marcador ajeno miran además la última firma de su sesión (@story-8.270): una corrida que el dueño
+// firmó después del corte no está abandonada.
+//
 // Correr: node --test skills/tycon-pipeline/scripts/tests/lost-marker.test.js < /dev/null
 
 const { test } = require('node:test');
@@ -674,4 +677,85 @@ test('T14b NoRegresion_RegistroGrandeNoSubeElCosto @story-8.121 @ac-12 — el re
   for (let i = 0; i < 15; i++) { renglones.push(vuelta(partir)); eventos.push(vuelta(() => or.leerEventos(home))); }
   const [a, b] = [mediana(renglones), mediana(eventos)];
   assert.ok(b <= a / 2, `partir en renglones ${a.toFixed(1)} ms, leer los eventos ${b.toFixed(1)} ms (más de la mitad)`);
+});
+
+// ── La poda mira la última firma de la sesión (@story-8.270, AC 1-3, 18, 22) ─────────────────────────────────────────
+
+// una firma del dueño sobre esa sesión, en el registro de la carpeta de estado de la HOME de juguete
+const firmar = (E, sid, ts, campo = 'target') => {
+  const f = path.join(E.estado(), 'signatures.jsonl');
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.appendFileSync(f, `${JSON.stringify({ ts, signature: 'compare-waiver', via: 'click', [campo]: sid })}\n`);
+};
+// la poda de 6 h de on-prompt.js, corrida por un pedido de implementar desde otra sesión
+const podarDesdeOnPrompt = (E) => spawnSync(process.execPath, [path.join(SCRIPTS, 'on-prompt.js')], {
+  input: JSON.stringify({ session_id: 's-otra', prompt: 'implementemos la story 9.8', cwd: E.repo }), encoding: 'utf8',
+  env: { ...process.env, HOME: E.home, USERPROFILE: E.home, TYCON_GUIDES_DIR: RAIZ, TYCON_TIME_TRACKING: 'none' },
+});
+const cierresDe = (E, sid) => E.eventos(sid).filter((l) => l.name === 'run-close');
+
+test('Prune_SignatureAfterCutoff_KeepsRun @story-8.270 @ac-1 — un marcador ajeno de hace 7 h con una firma de hace 1 h no se poda', () => {
+  for (const campo of ['target', 'ordered_by']) {
+    const E = entorno();
+    E.arrancar('s-p1');
+    fs.writeFileSync(E.activo('s-p1'), JSON.stringify({ ...E.leerMarcador('s-p1'), sessionId: 's-p1', lastTouch: hace(7 * 60) }));
+    firmar(E, 's-p1', hace(60), campo);
+    podarDesdeOnPrompt(E);
+    assert.ok(fs.existsSync(E.activo('s-p1')), `${campo}: el marcador sigue`);
+    assert.strictEqual(cierresDe(E, 's-p1').length, 0, `${campo}: la corrida no se cerró`);
+  }
+});
+
+test('Prune_MarkerPruneStale_SignatureAfterCutoff_KeepsRun @story-8.270 @ac-2 — la poda de 24 h de marker.js, con una firma reciente', () => {
+  const E = entorno();
+  E.arrancar('s-p2');
+  fs.writeFileSync(E.activo('s-p2'), JSON.stringify({ ...E.leerMarcador('s-p2'), lastTouch: hace(25 * 60) }));
+  firmar(E, 's-p2', hace(60));
+  E.correr('marker.js', ['list-all'], 's-otra');
+  assert.ok(fs.existsSync(E.activo('s-p2')), 'el marcador sigue');
+  assert.strictEqual(cierresDe(E, 's-p2').length, 0, 'la corrida no se cerró');
+});
+
+test('Prune_SignatureLogUnreadable_DoesNotPrune @story-8.270 @ac-3 — un registro de firmas que no se lee no poda, y lo dice', () => {
+  // las dos podas: la de on-prompt.js y la de marker.js
+  for (const [sid, horas, podar] of [['s-p3a', 7, (E) => podarDesdeOnPrompt(E)], ['s-p3b', 25, (E) => E.correr('marker.js', ['list-all'], 's-otra')]]) {
+    const E = entorno();
+    E.arrancar(sid);
+    fs.writeFileSync(E.activo(sid), JSON.stringify({ ...E.leerMarcador(sid), sessionId: sid, lastTouch: hace(horas * 60) }));
+    fs.mkdirSync(path.join(E.estado(), 'signatures.jsonl'));
+    const r = podar(E);
+    assert.ok(fs.existsSync(E.activo(sid)), `${sid}: el marcador sigue`);
+    assert.strictEqual(cierresDe(E, sid).length, 0, `${sid}: la corrida no se cerró`);
+    const lineas = (r.stderr || '').split('\n').filter((l) => /firmas/.test(l));
+    assert.strictEqual(lineas.length, 1, `${sid}: una línea por stderr con el motivo: ${r.stderr}`);
+  }
+});
+
+test('Prune_NoSignatureNoTouch_StillPrunes @story-8.270 @ac-18 — sin firmas nuevas se poda y se cierra como abandonada', () => {
+  const E = entorno();
+  E.arrancar('s-p4');
+  fs.writeFileSync(E.activo('s-p4'), JSON.stringify({ ...E.leerMarcador('s-p4'), sessionId: 's-p4', lastTouch: hace(7 * 60) }));
+  // una firma vieja (de antes del corte) y una de otra sesión no la dejan viva
+  firmar(E, 's-p4', hace(8 * 60));
+  firmar(E, 's-otra-mas', hace(10));
+  podarDesdeOnPrompt(E);
+  assert.ok(!fs.existsSync(E.activo('s-p4')), 'la poda borró el marcador');
+  const c = cierresDe(E, 's-p4');
+  assert.strictEqual(c.length, 1);
+  assert.strictEqual(c[0].estado, 'abandonada');
+});
+
+test('Prune_FutureOrBadSignatureTs_Ignored @story-8.270 @ac-22 — una firma con hora futura o ilegible no cuenta', () => {
+  const { lastSignatureFor } = require(path.join(RAIZ, 'scripts', 'lib', 'signature-log.js'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lost-marker-t18-'));
+  const f = path.join(dir, 'signatures.jsonl');
+  const now = Date.parse('2026-11-13T12:00:00Z');
+  const iso = (h) => new Date(now + h * 3600000).toISOString();
+  const raras = [{ ts: iso(24), target: 's-x' }, { ts: 'ayer', target: 's-x' }, { ts: null, ordered_by: 's-x' }];
+  fs.writeFileSync(f, `${raras.map((o) => JSON.stringify(o)).join('\n')}\n{roto\n`);
+  assert.deepStrictEqual(lastSignatureFor('s-x', { paths: [f], now }), { ts: null }, 'sólo las raras: ninguna');
+  fs.appendFileSync(f, `${JSON.stringify({ ts: iso(-8), target: 's-x' })}\n${JSON.stringify({ ts: iso(-2), target: 's-y' })}\n`);
+  assert.deepStrictEqual(lastSignatureFor('s-x', { paths: [f], now }), { ts: iso(-8) }, 'la de hace 8 h');
+  assert.deepStrictEqual(lastSignatureFor('s-x', { paths: [path.join(dir, 'no-esta.jsonl')], now }), { ts: null }, 'sin registro: ninguna');
+  assert.ok(lastSignatureFor('s-x', { paths: [dir], now }).error, 'un registro que no se lee: error');
 });

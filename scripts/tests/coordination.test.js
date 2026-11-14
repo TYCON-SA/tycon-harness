@@ -1995,3 +1995,101 @@ test('8.212 T11 Guia_LaReglaDiceFreno @story-8.212 @ac-10: la regla de no cambia
   assert.match(es, /guion guardado en un archivo/i, es);
   assert.match(en, /script saved in a file/i, en);
 });
+
+// ── pr-wait: the read-only watcher of a pull request, through the platform layer (@story-8.270, AC 26) ───────────────
+// A toy platform connector answers `change-request.read` from a list, one answer per call, and logs every operation.
+// The core names no platform tool: the connector is the only one that would talk to Azure DevOps or GitHub.
+const PLATFORM_FAKE = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-platform');
+function toyPlatform(answers) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-pr-'));
+  const ints = path.join(root, 'integrations');
+  fs.cpSync(PLATFORM_FAKE, path.join(ints, 'fake-platform'), { recursive: true });
+  const log = path.join(root, 'calls.jsonl');
+  const count = path.join(root, 'count');
+  fs.writeFileSync(path.join(root, 'answers.json'), JSON.stringify(answers));
+  fs.writeFileSync(path.join(ints, 'fake-platform', 'scripts', 'connector.js'), `'use strict';
+const fs = require('fs');
+module.exports = { run: (operacion, args) => {
+  fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ operacion, args }) + '\\n');
+  let n = 0; try { n = Number(fs.readFileSync(${JSON.stringify(count)}, 'utf8')); } catch (_) { n = 0; }
+  fs.writeFileSync(${JSON.stringify(count)}, String(n + 1));
+  const a = JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root, 'answers.json'))}, 'utf8'))[n];
+  if (a === 'fail') return { ok: false, reason: 'no_medido', detail: 'sin conexión con la plataforma' };
+  return { ok: true, value: { number: args.number, state: a, draft: false, autoComplete: false, mergedAt: null, mergeCommit: null, title: 'x' } };
+} };
+`);
+  const tree = path.join(root, 'tree');
+  fs.mkdirSync(tree);
+  fs.writeFileSync(path.join(tree, 'team-profile.json'), JSON.stringify({ integrations: { platform: { default: 'fake-platform' } } }));
+  // el repo no declara plataforma: cae en la del perfil (el conector de prueba)
+  fs.writeFileSync(path.join(tree, 'team-repos.json'), JSON.stringify({ version: 1, public: { platform: 'github', org: 'acme', repo: 'arnes' },
+    profile: { platform: 'github', org: 'acme', repo: 'perfil' }, operations: { platform: 'github', org: 'acme', repo: 'operaciones' } }));
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home);
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), TYCON_INTEGRATIONS_DIR: ints, TYCON_TREE: tree,
+    TYCON_FAKE_PLATFORM_TOKEN: ['tok', 'falso'].join('-') };
+  for (const k of Object.keys(env)) if (/^TYCON_(ADO_ORG|ADO_CMD|PLATFORM|PROFILE)$|^FAKE_PLATFORM_/.test(k)) delete env[k];
+  const run = (args) => spawnSync(process.execPath, [COORD, 'pr-wait', ...args], { encoding: 'utf8', input: '', timeout: 60000, env });
+  const calls = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
+  return { run, calls };
+}
+
+test('PrWait_OnlyReadsAndStopsWhenNotOpen @story-8.270 @ac-26 — only reads the pull request through the platform layer, and ends when it stops being open', () => {
+  const a = toyPlatform(['open', 'open', 'merged']);
+  const r = a.run(['--repo', 'acme/portal', '--number', '7', '--interval', '1']);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.strictEqual(r.stdout.trim(), 'merged');
+  const calls = a.calls();
+  assert.strictEqual(calls.length, 3, JSON.stringify(calls));
+  for (const c of calls) assert.deepStrictEqual([c.operacion, c.args.number], ['change-request.read', 7]);
+  // three failures in a row: exit 2 with the reason
+  const b = toyPlatform(['fail', 'fail', 'fail']);
+  const rb = b.run(['--repo', 'acme/portal', '--number', '7', '--interval', '1']);
+  assert.strictEqual(rb.status, 2, rb.stdout + rb.stderr);
+  assert.match(rb.stderr, /sin conexión con la plataforma/);
+  assert.strictEqual(b.calls().length, 3);
+  // a failure between answers does not add up: only three in a row stop it
+  const c = toyPlatform(['fail', 'open', 'fail', 'fail', 'closed']);
+  const rc = c.run(['--repo', 'acme/portal', '--number', '7', '--interval', '1']);
+  assert.strictEqual(rc.status, 0, rc.stderr);
+  assert.strictEqual(rc.stdout.trim(), 'closed');
+  // another shape is refused before reading anything
+  for (const bad of [['--number', '7'], ['--repo', 'acme/portal'], ['--repo', 'acme/portal', '--number', '0'], ['--repo', 'acme/portal', '--number', 'x7'],
+    ['--repo', 'acme', '--number', '7'], ['--repo', 'acme/portal', '--number', '7', '--interval', '0'], ['--repo', 'acme/portal', '--number', '7', 'extra'], ['--ado', '7']]) {
+    const d = toyPlatform(['merged']);
+    const rd = d.run(bad);
+    assert.strictEqual(rd.status, 2, `${bad.join(' ')}: ${rd.stdout}${rd.stderr}`);
+    assert.strictEqual(d.calls().length, 0, `${bad.join(' ')}: leyó igual`);
+  }
+});
+
+test('PrWait_AdoRepoDeclared_ReadsWithItsProject @story-8.270 @ac-26 — a repo declared in team-repos.json is read with its whole identity (Azure DevOps needs the project)', async () => {
+  // the adversarial pass of the 8.270 found it: with the plain text `org/repo` the Azure DevOps connector has no
+  // project and every read is refused
+  const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-pr-ado-'));
+  fs.writeFileSync(path.join(tree, 'team-profile.json'), '{}');
+  fs.writeFileSync(path.join(tree, 'team-repos.json'), JSON.stringify({ version: 1, public: { platform: 'github', org: 'acme', repo: 'arnes' },
+    profile: { platform: 'github', org: 'acme', repo: 'perfil' }, operations: { platform: 'azure', org: 'acme', project: 'Operaciones', repo: 'operaciones' } }));
+  const vistos = [];
+  const leer = async (number, repo) => { vistos.push(repo); return { ok: true, value: { number, state: 'merged' } }; };
+  const r = await C.prWait({ rest: [], repo: 'acme/operaciones', number: '6508' }, { leer, tree });
+  assert.deepStrictEqual(r, { code: 0, text: 'merged' });
+  assert.deepStrictEqual(vistos[0], { platform: 'azure', org: 'acme', project: 'Operaciones', repo: 'operaciones' });
+  // a repo the file does not declare keeps its `org/repo` text (GitHub reads it as is)
+  const r2 = await C.prWait({ rest: [], repo: 'acme/portal', number: '7' }, { leer, tree });
+  assert.strictEqual(r2.code, 0);
+  assert.strictEqual(vistos[1], 'acme/portal');
+  // (vuelta 2 de revisores) un estado que no es open, merged ni closed no termina la espera: cuenta como lectura fallida
+  const raro = async () => ({ ok: true, value: { state: 'draft' } });
+  const r3 = await C.prWait({ rest: [], repo: 'acme/portal', number: '7', interval: '1' }, { leer: raro, tree, sleep: async () => {} });
+  assert.strictEqual(r3.code, 2, JSON.stringify(r3));
+  assert.match(r3.error, /estado que no conozco: draft/);
+  // un team-repos.json que no se lee: la lectura sigue con org/repo, y si falla, el motivo lo dice
+  const roto = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-pr-roto-'));
+  fs.writeFileSync(path.join(roto, 'team-repos.json'), '{ roto');
+  const falla = async () => ({ ok: false, reason: 'rechazado', detail: 'falta el proyecto' });
+  const r4 = await C.prWait({ rest: [], repo: 'acme/operaciones', number: '7', interval: '1' }, { leer: falla, tree: roto, sleep: async () => {} });
+  assert.strictEqual(r4.code, 2);
+  assert.match(r4.error, /falta el proyecto/);
+  assert.match(r4.error, /team-repos\.json/, `el motivo no dice que la identidad no se resolvió: ${r4.error}`);
+});

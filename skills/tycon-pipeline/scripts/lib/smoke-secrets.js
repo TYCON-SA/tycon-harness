@@ -477,13 +477,44 @@ function ledgerExtras(o, opts = {}) {
   return { ledger, mirror, count };
 }
 
+/**
+ * El guion de la prueba en vivo que nombra el comando, o null. `o`: { evidenceDir, key, repo, args, cwd }. Lo nombra una
+ * de las palabras del comando tal como llegan (`args`, sin interpretar comillas de una consola de adentro: en
+ * `bash -c "node x.js"` la palabra es todo el texto): la ruta, absoluta o relativa a `cwd`, de un archivo de la carpeta
+ * de la evidencia con nombre `<key>-*.js`, dentro del repo. Devuelve `{ script, script_sha }`: la ruta relativa al repo y
+ * el sha256 del archivo ahora. Con él, el sello de lo revisado da ese guion por papeleo (save-ok.js `esGuionEnVivo`).
+ */
+function liveScript(o) {
+  const fs = require('fs');
+  const path = require('path');
+  const crypto = require('crypto');
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
+  const dir = real(o.evidenceDir);
+  const repo = real(o.repo);
+  if (!dir || !repo || !o.key) return null;
+  const prefijo = `${o.key}-`;
+  for (const palabra of o.args || []) {
+    if (typeof palabra !== 'string' || !palabra.endsWith('.js')) continue;
+    const abs = real(path.resolve(o.cwd || process.cwd(), palabra));
+    if (!abs || path.dirname(abs) !== dir) continue;
+    const nombre = path.basename(abs);
+    if (!nombre.startsWith(prefijo)) continue;
+    const rel = path.relative(repo, abs);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) continue;
+    let contenido;
+    try { if (!fs.statSync(abs).isFile()) continue; contenido = fs.readFileSync(abs); } catch (_) { continue; }
+    return { script: rel.split(path.sep).join('/'), script_sha: crypto.createHash('sha256').update(contenido).digest('hex') };
+  }
+  return null;
+}
+
 /** Los campos como fragmento de JSON, para pegarlos detrás de los de la línea (`,"a":1,"b":2`; vacío si no hay). */
 function fragmento(obj) {
   return Object.entries(obj).map(([k, v]) => `,${JSON.stringify(k)}:${JSON.stringify(v)}`).join('');
 }
 
 module.exports = { MASK, FORMS, redact, truncate, ledgerCmd, ledgerCmdFromArgs, joinArgs, findLeaks, findLeaksInContent, isEvidencePath, isSafeValue,
-  SALIDA_MAX_BYTES, recortarSalida, salidaParaGuardar, expectativaParaGuardar, ledgerExtras, fragmento, cortaSinPartirMascara };
+  SALIDA_MAX_BYTES, recortarSalida, salidaParaGuardar, expectativaParaGuardar, ledgerExtras, fragmento, cortaSinPartirMascara, liveScript };
 
 function avisoTapado(count) {
   if (count > 0) {
@@ -517,8 +548,22 @@ if (require.main === module) {
     const r = ledgerExtras(o, { legacy });
     avisoTapado(r.count);
     process.stdout.write(`${fragmento(r.ledger)}\n${fragmento(r.mirror)}\n`);
+  } else if (sub === 'live-script') {
+    const corte = rest.indexOf('--');
+    const o = { args: corte >= 0 ? rest.slice(corte + 1) : [] };
+    const flags = { '--evidence-dir': 'evidenceDir', '--key': 'key', '--repo': 'repo' };
+    const opciones = corte >= 0 ? rest.slice(0, corte) : rest;
+    for (let i = 0; i < opciones.length; i += 2) {
+      if (!flags[opciones[i]] || i + 1 >= opciones.length) {
+        process.stderr.write(`smoke-secrets.js live-script: no entiendo «${opciones[i]}»\n`);
+        process.exit(2);
+      }
+      o[flags[opciones[i]]] = opciones[i + 1];
+    }
+    const r = liveScript(o);
+    if (r) process.stdout.write(fragmento(r));
   } else {
-    process.stderr.write('uso: smoke-secrets.js ledger-cmd -- <comando…> | ledger-extras [--pass-if <texto>] …\n');
+    process.stderr.write('uso: smoke-secrets.js ledger-cmd -- <comando…> | ledger-extras [--pass-if <texto>] … | live-script --evidence-dir <d> --key <clave> --repo <r> -- <comando…>\n');
     process.exit(2);
   }
 }

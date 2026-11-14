@@ -212,8 +212,9 @@ La terminal también es la salida cuando el freno no puede decidir:
 - con el comando escondido detrás de otro (`cd … && <firma>`);
 - con la herramienta lanzada por otra herramienta o por su consola;
 - en una sesión sin pantalla (`-p`);
-- con una consola de fondo viva: se cierra, o se firma en la terminal. Una sola no frena, salvo en Windows: el
-  `owner-wait` de la coordinadora, con la ruta completa de este mismo arnés y nada más en la línea.
+- con una consola de fondo viva: se cierra, o se firma en la terminal. No frenan, salvo en Windows: el `owner-wait` de
+  la coordinadora, con la ruta completa de este mismo arnés y nada más en la línea, y el vigilante de sólo lectura de
+  «Aprobar en nombre del dueño».
 
 ### En Codex
 
@@ -434,7 +435,22 @@ ventana sólo si se cumple todo esto:
   `approvals.owner_only`: si está en las dos, gana «sólo del dueño»;
 - esta máquina está en `approvals.delegated_machines`;
 - la sesión que la corre es la designada, y el dueño confirmó la designación (con su click en esa pestaña, o en su terminal);
-- la sesión destino no es la propia, ni trabaja la misma story que una ejecución abierta de la sesión designada.
+- la sesión destino no es la propia, ni trabaja la misma story que una ejecución abierta de la sesión designada;
+- ninguna consola de fondo viva de la designada, salvo un vigilante de sólo lectura (abajo).
+
+**El vigilante de sólo lectura no quita la firma por delegación.** La coordinadora puede tener de fondo, y firmar
+igual, sólo esta forma exacta, para cualquier plataforma:
+
+- `node <coordination.js> pr-wait --repo <organización/repo> --number <número>`, con `--interval <segundos>` opcional y
+  el `coordination.js` de este mismo arnés: repite sólo la lectura del pedido por la capa de plataforma, y termina
+  cuando deja de estar abierto.
+
+Los números van escritos tal cual, y la línea no lleva nada más: ni tubos, ni `&&` o `;`, ni redirecciones, ni nada
+armado con `$`. Cualquier otra consola de fondo sigue frenando, también el vigilante propio de una plataforma o un bucle
+escrito a mano que sólo consulta: desde la línea de comando el freno no puede saber si además escribe, y por eso la
+lectura de un pedido va por `pr-wait`. Una corrida suelta de la CI no se vigila de fondo. El
+freno, al negar, dice que hay una consola de fondo viva que no es un vigilante de sólo lectura, y nunca muestra su línea
+de comando. En Windows no cambia nada.
 
 Pasar el tope de 8 archivos del camino corto (por defecto) es otra firma, `adhoc-lane:sobre-cupo`: la elige el dev con su
 click en el

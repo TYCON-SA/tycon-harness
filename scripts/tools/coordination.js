@@ -32,6 +32,11 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            novedad, cuando otra sesión queda frenada en un permiso, cuando una frenada sigue o se
  *                            cierra, o cuando Claude Code cierra una sesión de fondo. Terminar la despierta. Uno por
  *                            máquina; sin coordinadora confirmada, o desde otra sesión, sale enseguida
+ *   pr-wait --repo <org/repo> --number <n> [--interval <s>]
+ *                            el vigilante de sólo lectura de un pedido: repite sólo su lectura por la capa de plataforma
+ *                            (cada 120 s por defecto) y termina con 0 e imprime el estado cuando deja de estar abierto;
+ *                            con 2 si la lectura falla tres veces seguidas. De fondo no le quita a la coordinadora la
+ *                            firma por delegación (scripts/lib/owner-window.js)
  *
  * Además, sin línea de comandos: `capNotice` es el aviso que la coordinadora ve en cada turno
  * (scripts/hooks/coordination-notice.js): el tope, las sesiones de fondo quietas, la fila de la suite completa parada
@@ -2117,6 +2122,56 @@ function close(opts = {}) {
 
 // las opciones que no llevan valor: las demás `--x` toman el argumento siguiente
 const SWITCHES = new Set(['json', 'slot']);
+// ── pr-wait: el vigilante de sólo lectura de un pedido ──
+// Repite sólo la lectura del pedido por la capa de plataforma (`change-request.read`: el conector de cada plataforma sabe
+// cómo se lee; el núcleo no nombra ninguna herramienta), y termina cuando el pedido deja de estar abierto. Es la forma
+// exacta que el freno de las firmas reconoce como vigilante de sólo lectura (owner-window.js `esVigilanteDeLectura`): un
+// bucle de consola escrito a mano no se distingue de uno que además escribe.
+const PR_WAIT_INTERVAL_S = 120;
+const PR_WAIT_MAX_FAILS = 3;
+const ENTERO = /^[1-9]\d*$/;
+const ORG_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+
+/**
+ * `{ code, text?, error? }`: 0 con el estado nuevo (`merged` o `closed`), 2 con el motivo (argumentos con otra forma, o
+ * la lectura que falla tres veces seguidas). `leer` y `sleep` se pasan en las pruebas.
+ */
+async function prWait(f, { leer, tree, sleep = (ms) => new Promise((ok) => setTimeout(ok, ms)) } = {}) {
+  const intervalo = f.interval === undefined ? String(PR_WAIT_INTERVAL_S) : f.interval;
+  const sobra = Object.keys(f).filter((k) => !['rest', 'repo', 'number', 'interval'].includes(k));
+  if (typeof f.repo !== 'string' || !ORG_REPO.test(f.repo)) return { code: 2, error: 'pr-wait pide --repo <organización/repo>' };
+  if (typeof f.number !== 'string' || !ENTERO.test(f.number)) return { code: 2, error: 'pr-wait pide --number <número de pedido>, un entero positivo' };
+  if (typeof intervalo !== 'string' || !ENTERO.test(intervalo)) return { code: 2, error: 'pr-wait: --interval va en segundos, un entero positivo' };
+  if (f.rest.length || sobra.length) return { code: 2, error: `pr-wait no lleva más palabras (${[...sobra.map((k) => `--${k}`), ...f.rest].join(' ')})` };
+  const platform = require('../lib/platform/platform.js');
+  // el repo con su identidad entera si team-repos.json lo declara (Azure DevOps necesita el proyecto); si no, el texto
+  // `org/repo`, que GitHub lee tal cual
+  const opciones = tree ? { tree } : {};
+  let repo = null;
+  let sinIdentidad = '';
+  try { repo = platform.identityByName(f.repo, opciones); } catch (e) { sinIdentidad = ` (${(e && e.message) || e})`; }
+  // sin identidad, el motivo de una falla lo dice: en Azure DevOps es casi siempre por eso
+  if (!repo) { repo = f.repo; sinIdentidad = ` · ${f.repo} no tiene identidad en team-repos.json${sinIdentidad}: se leyó como org/repo`; }
+  const lectura = leer || ((number, r) => platform.run('change-request.read', { number }, { ...opciones, repo: r }));
+  const n = Number(f.number);
+  let fallas = 0;
+  for (;;) {
+    let r;
+    try { r = await lectura(n, repo); } catch (e) { r = { ok: false, detail: (e && e.message) || String(e) }; }
+    // los estados del contrato de change-request.read: open, merged y closed. Otro no termina la espera: cuenta como falla
+    const estado = r && r.ok && r.value && typeof r.value.state === 'string' ? r.value.state : null;
+    if (estado === 'open') fallas = 0;
+    else if (estado === 'merged' || estado === 'closed') return { code: 0, text: estado };
+    else {
+      fallas += 1;
+      if (fallas >= PR_WAIT_MAX_FAILS) {
+        const motivo = estado ? `la plataforma contestó un estado que no conozco: ${estado}` : ((r && (r.detail || r.reason)) || 'la plataforma contestó sin estado');
+        return { code: 2, error: `pr-wait: la lectura del pedido ${n} de ${f.repo} falló ${fallas} veces seguidas: ${motivo}${sinIdentidad}` };
+      }
+    }
+    await sleep(Number(intervalo) * 1000);
+  }
+}
 function flags(argv) {
   const out = { rest: [] };
   for (let i = 0; i < argv.length; i += 1) {
@@ -2200,10 +2255,22 @@ function main(argv) {
     if (r.text) process.stdout.write(`${r.text}\n`);
     return r.code;
   }
-  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n> | owner-wait\n');
+  if (cmd === 'pr-wait') {
+    // la lectura por la capa de plataforma es asíncrona: devuelve la promesa del código de salida
+    return prWait(f).then((r) => {
+      if (r.text) process.stdout.write(`${r.text}\n`);
+      if (r.error) process.stderr.write(`coordination.js: ${r.error}\n`);
+      return r.code;
+    });
+  }
+  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n> | owner-wait | pr-wait --repo <org/repo> --number <n> [--interval <s>]\n');
   return 2;
 }
 
-if (require.main === module) process.exitCode = main(process.argv.slice(2));
+if (require.main === module) {
+  const code = main(process.argv.slice(2));
+  if (code && typeof code.then === 'function') code.then((c) => { process.exitCode = c; });
+  else process.exitCode = code;
+}
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };

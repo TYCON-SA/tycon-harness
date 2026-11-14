@@ -286,6 +286,16 @@ test('Compare_PrefixedPathOrOwnBatchNonCandidate @story-8.272 @ac-6 @ac-7 — (p
   assert.doesNotMatch(w.stderr, /no es de la tanda/);
 });
 
+test('Compare_PrefixedStoryList_BatchStillMeasured @story-8.272 @ac-6 — files_to_modify con el prefijo del repo: la tanda se sigue midiendo, no la historia entera', () => {
+  const L = laboratorio({ archivos: { 'cli.js': CLI, 'otro.js': OTRO }, cambios: { 'cli.js': enGet, 'otro.js': OTRO_CAMBIADO },
+    modificar: ['(público) cli.js', '(público) otro.js'], frontmatter: tandas(), batch: 'B', sid: 's-gate-prefijo' });
+  const parte = cp().archivosDeLaTanda({ batch: 'B', storyPath: L.storyPath }, L.storyPath);
+  assert.deepStrictEqual(parte.files, ['cli.js'], parte.motivo);
+  const cierre = L.cerrar();
+  assert.match(cierre.stderr, /cli\.js/);
+  assert.doesNotMatch(cierre.stderr, /otro\.js/, cierre.stderr);
+});
+
 test('T5 Compare_Candidates_OnlyBatchFiles @story-8.272 @ac-6 — sólo los archivos de la tanda de la corrida', () => {
   const L = conDosTandas();
   // la función, con la lista de la tanda

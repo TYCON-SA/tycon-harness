@@ -57,14 +57,14 @@ V="$(json "${HOME}/.claude/settings.json" '[d.model, JSON.stringify(((d.hooks ||
 if [ "${V}" = "opus|true" ] && [ "$(head -n 1 "${HOME}/.claude/CLAUDE.md")" = "# Lo mío" ]; then ok "T26 (carpetas reales) lo sembrado en settings.json y en CLAUDE.md sigue ahí después de instalar"
 else no "T26 (carpetas reales) lo sembrado no sobrevivió a la instalación (settings.json: ${V:-ilegible}; CLAUDE.md empieza con «$(head -n 1 "${HOME}/.claude/CLAUDE.md")»)"; fi
 check_install "T26 (carpetas reales)" minimal
-# minimal (T51): los hooks del arnés son los de la lista de efectos para minimal —nueve que anotan, los tres que dicen los
+# minimal (T51): los hooks del arnés son los de la lista de efectos para minimal —diez que anotan, los tres que dicen los
 # avisos (al arrancar, después de un comando y después de uno que falló), el que tapa los secretos, el freno de comandos y
 # el portón de edición—
 WANT="$(node -e 'const e = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).effects;
   console.log(e.filter((x) => x.kind === "hook" && x.profiles.includes("minimal") && ["always", "optin:TYCON_SAFETY_GUARD"].includes(x.when)).length)' "${CLONE}/scripts/setup/install-effects.json" 2>/dev/null)"
 GOT="$(json "${HOME}/.claude/settings.json" 'Object.values(d.hooks || {}).flat().flatMap((m) => m.hooks || []).filter((h) => /tycon-claude-guides|agent-skills|\/skills\/|scripts\/hooks/.test(h.command || "") && !/bootstrap\.js/.test(h.command || "")).length')"
-if [ -n "${WANT}" ] && [ "${GOT}" = "${WANT}" ] && [ "${WANT}" = 15 ]; then ok "T51 (carpetas reales) minimal: ${GOT} hooks del arnés (nueve que anotan, los tres de los avisos, el que tapa los secretos, el freno de comandos y el portón de edición)"
-else no "T51 (carpetas reales) minimal: ${GOT:-?} hooks del arnés (esperado ${WANT:-?}, que tienen que ser 15)"; fi
+if [ -n "${WANT}" ] && [ "${GOT}" = "${WANT}" ] && [ "${WANT}" = 16 ]; then ok "T51 (carpetas reales) minimal: ${GOT} hooks del arnés (diez que anotan, los tres de los avisos, el que tapa los secretos, el freno de comandos y el portón de edición)"
+else no "T51 (carpetas reales) minimal: ${GOT:-?} hooks del arnés (esperado ${WANT:-?}, que tienen que ser 16)"; fi
 if ! grep -q 'TYCON_BLOCK:' "${HOME}/.claude/CLAUDE.md"; then ok "T51 (carpetas reales) minimal: ningún bloque de reglas en CLAUDE.md"
 else no "T51 (carpetas reales) minimal: hay bloques en CLAUDE.md: $(grep -o 'TYCON_BLOCK:[a-z-]* START' "${HOME}/.claude/CLAUDE.md" | tr '\n' ' ')"; fi
 

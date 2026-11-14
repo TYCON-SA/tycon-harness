@@ -387,6 +387,41 @@ function freshCommitSha(root, cmd) {
     return git(root, ['rev-parse', 'HEAD']) || null;
   } catch { return null; }
 }
+// La carpeta git común del repo (en un worktree, la del repo principal), absoluta: con ella se miran los commits de una
+// carpeta de trabajo que después se borró. null si git no la dice.
+function carpetaComun(root) {
+  const c = gitSafe(root, ['rev-parse', '--git-common-dir']);
+  return c ? path.resolve(root, c) : null;
+}
+
+/**
+ * Una carpeta del registro que ya no existe (un worktree borrado): la línea del aviso, o null si lo que la sesión
+ * commiteó ahí no quedó pendiente. Se prueban todos los commits que el registro le anota (`commit` y `rewrite`) contra
+ * su carpeta git común: uno queda pendiente si alguna rama local lo tiene y ninguna remota. Un commit reescrito ya no
+ * está en ninguna rama con su sha viejo; uno que el repo ya no tiene, tampoco.
+ */
+function carpetaBorrada(repoPath, entries) {
+  const deAca = entries.filter((e) => e.repo && real(e.repo) === real(repoPath));
+  const shas = [...new Set(deAca.flatMap((e) => (e.kind === 'commit' ? [e.sha] : e.kind === 'rewrite' && Array.isArray(e.shas) ? e.shas : []))
+    .filter((s) => typeof s === 'string' && /^[0-9a-f]{7,40}$/i.test(s)))];
+  const common = deAca.map((e) => e.common).filter((c) => typeof c === 'string' && c).pop() || null;
+  const cortos = (lista) => lista.map((s) => s.slice(0, 7)).join(', ');
+  const linea = (por) => `  - ${short(repoPath)}: la carpeta ya no existe; ${por}`;
+  if (!shas.length) return linea('el registro no tiene ningún commit suyo para mirar');
+  if (!common || !fs.existsSync(common)) return linea(`no sé en qué repo vivía: no pude ver en el remoto ${cortos(shas)}`);
+  try {
+    git(common, ['rev-parse', '--git-dir'], GIT_TIMEOUT_MS, { strict: true });
+    const pendientes = shas.filter((s) => {
+      try { git(common, ['cat-file', '-e', `${s}^{commit}`], GIT_TIMEOUT_MS, { strict: true }); } catch (e) { if (e && e.signal) throw e; return false; }
+      const en = (refs) => git(common, ['for-each-ref', '--contains', s, '--format=%(refname)', refs], PENDING_TIMEOUT_MS, { strict: true }) !== '';
+      return en('refs/heads') && !en('refs/remotes');
+    });
+    return pendientes.length ? linea(`commit(s) en una rama local que no están en el remoto: ${cortos(pendientes)}`) : null;
+  } catch {
+    return linea(`git no contestó en ${short(common)}: no pude ver en el remoto ${cortos(shas)}`);
+  }
+}
+
 function unpushedShas(root, remote, ref) {
   return git(root, ['rev-list', ref, '--not', `--remotes=${remote}`]).split('\n').filter(Boolean);
 }
@@ -414,7 +449,7 @@ function record(event) {
         const ts = new Date().toISOString();
         const sha = freshCommitSha(root, cmd);
         const { carril, story } = carrilDeSesion(sid);
-        fs.appendFileSync(ledgerFile(sid), JSON.stringify({ ts, repo: root, kind: 'commit', sha, carril, story }) + '\n');
+        fs.appendFileSync(ledgerFile(sid), JSON.stringify({ ts, repo: root, kind: 'commit', sha, carril, story, common: carpetaComun(root) }) + '\n');
         // La constancia durable, sin ruta ni sha: sube al buzón. Sólo si el commit existe.
         if (sha) fs.appendFileSync(path.join(STATE_DIR, 'carriles.jsonl'), JSON.stringify({ ts, carril, story }) + '\n');
       } catch { /* fail-open: la constancia es ayuda, no evidencia */ }
@@ -431,7 +466,7 @@ function record(event) {
         const remote = remotes.includes('origin') ? 'origin' : remotes[0];
         if (!remote) continue;
         const shas = unpushedShas(root, remote, 'HEAD');
-        if (shas.length) fs.appendFileSync(ledgerFile(sid), JSON.stringify({ ts: new Date().toISOString(), repo: root, kind: 'rewrite', shas }) + '\n');
+        if (shas.length) fs.appendFileSync(ledgerFile(sid), JSON.stringify({ ts: new Date().toISOString(), repo: root, kind: 'rewrite', shas, common: carpetaComun(root) }) + '\n');
       } catch { /* fail-open */ }
       continue;
     }
@@ -489,8 +524,18 @@ function stop(event) {
   const ctx = mineContext(sid);
   const state = loadState();
   const seen = state.stopSeen || {};
-  const own = []; const foreign = []; const unknown = []; const problems = [];
+  const own = []; const foreign = []; const unknown = []; const problems = []; const gone = [];
   for (const repoPath of repos.values()) {
+    // una carpeta borrada no se escanea: se prueban sus commits y, si hace falta, se avisa una sola vez por sesión
+    if (!fs.existsSync(repoPath)) {
+      const key = `${sid}|${real(repoPath)}|carpeta-borrada`;
+      if (seen[key]) continue;
+      const line = carpetaBorrada(repoPath, entries);
+      if (!line) continue;
+      seen[key] = { ts: new Date().toISOString() };
+      gone.push(line);
+      continue;
+    }
     const scan = scanRepo(repoPath);
     if (scan.error) { problems.push(`  - ⚠ ${short(repoPath)}: no escaneado (${scan.error}) — no se pudo mirar; correr --scan a mano`); continue; }
     for (const b of scan.branches || []) {
@@ -506,12 +551,13 @@ function stop(event) {
   }
   state.stopSeen = prune(seen);
   saveState(state);
-  if (!own.length && !foreign.length && !unknown.length && !problems.length) return;
+  if (!own.length && !foreign.length && !unknown.length && !problems.length && !gone.length) return;
   const parts = [];
   if (own.length) parts.push(`⛔ trabajo sin subir: esta sesión commiteó y quedaron commits que NO están en el remoto:\n${own.join('\n')}\nSi es WIP a propósito, decíselo al dev en una línea y cerrá (este aviso no se repite para la misma rama). Si es una entrega, falta el push: decíselo al dev y pusheá sólo con su OK — caso FRESNO Story 1.1 (2026-08-25): el backend quedó solo local y el front se promovió igual.`);
   if (foreign.length) parts.push(`⚠️ hay commits sin subir que esta sesión NO hizo (otra sesión de Claude/Codex, el dev desde la terminal, o commits anteriores a este registro):\n${foreign.join('\n')}\n🔴 NO los revertas, NO los pushees ni los toques: no son tuyos. Decíselo al dev en una línea y cerrá — si SABÉS que los hiciste vos (p. ej. con sha reescrito), decíselo igual y que decida él; no decidas solo. Caso 2026-08-31: un agente revirtió y pusheó el commit de prueba de otra sesión porque este aviso lo llamaba suyo.`);
   if (unknown.length) parts.push(`⚠️ commits sin subir cuya autoría no se pudo determinar (git no respondió a tiempo):\n${unknown.join('\n')}\nNo los toques; decíselo al dev y que decida.`);
   if (problems.length) parts.push(`⚠️ repos que no se pudieron escanear (esto NO es verde):\n${problems.join('\n')}`);
+  if (gone.length) parts.push(`⚠️ carpetas de trabajo que ya no existen (este aviso sale una sola vez por carpeta):\n${gone.join('\n')}\nSi esos commits ya entraron por otra rama, no hace falta nada; si no, decíselo al dev en una línea.`);
   process.stdout.write(JSON.stringify({ decision: 'block', reason: parts.join('\n\n') }) + '\n');
 }
 

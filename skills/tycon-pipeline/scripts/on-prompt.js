@@ -41,6 +41,13 @@ const LEGACY_MARKER_PATH = path.join(STATE_DIR, 'active.json');
 // paralelismo intencional (sesiones reales tocan lastTouch con cada Edit via on-edit.js).
 const STALE_HOURS = 6;
 
+// ¿la sesión tiene una firma más nueva que el corte? `{ viva }` o `{ error }` (scripts/lib/signature-log.js)
+function firmadaDespuesDe(sesion, cutoff) {
+  try {
+    return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-log.js')).signedSince(sesion, path.dirname(ACTIVE_DIR), cutoff);
+  } catch (e) { return { error: `no pude mirar el registro de firmas (${(e && e.message) || e})` }; }
+}
+
 function markerFilePath(sessionId) {
   const safe = String(sessionId || '_nosession').replace(/[/\\]/g, '_');
   return path.join(ACTIVE_DIR, `${safe}.json`);
@@ -79,6 +86,10 @@ function listAllMarkers(currentSessionId) {
         const io = require('./lib/story-gate-io.js');
         const podada = m.sessionId || f.replace(/\.json$/, '');
         if (io.waitingTurn(path.dirname(ACTIVE_DIR), podada)) { markers.push(m); continue; }
+        // una que el dueño firmó después del corte tampoco: la firma va a su registro y no toca el marcador
+        const firma = firmadaDespuesDe(podada, cutoff);
+        if (firma.error) process.stderr.write(`[on-prompt] no podé el marcador de ${podada}: ${firma.error}; sin saber si la firmaron, no se poda.\n`);
+        if (firma.error || firma.viva) { markers.push(m); continue; }
         // sin su copia no se poda: `marker.js restore` la rearma desde ahí
         if (!io.savePruned(path.dirname(ACTIVE_DIR), podada, m)) { markers.push(m); continue; }
         try { fs.unlinkSync(full); } catch { /* best-effort */ }
