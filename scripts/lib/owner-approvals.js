@@ -800,6 +800,6 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
   return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones });
 }
 
-module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, APRUEBA, NIEGA, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, cuadroDe, traeElSello, lanzadoPorLaHerramienta,
+module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, cuadroDe, traeElSello, lanzadoPorLaHerramienta,
   anotar, leerSesion, consumir, devolver, transcripcionDe, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
   escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, validarEnClaude, plataformaDe, constanciaDeLaTerminal };

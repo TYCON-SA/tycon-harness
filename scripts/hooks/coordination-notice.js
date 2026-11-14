@@ -11,7 +11,10 @@
  * por la terminal que esperan hace más de un día salen en una línea, una vez por día. Sin suite completa en curso y con
  * sesiones que anotaron que esperan su turno (de suite, de portón), nombra a la que espera hace más para que arranque. Con
  * la lista de firmas encendida, si escribió la persona y hay renglones sin avisar, pide pasarlos de a uno: a la
- * coordinadora viva o, sin ella, a la sesión destino de cada uno. Cualquier otra sesión no ve nada: sin coordinadora
+ * coordinadora viva o, sin ella, a la sesión destino de cada uno. Con coordinadora confirmada y viva, lo que la persona
+ * tipea en otra sesión se anota para ella (sólo el mensaje de la persona, nunca uno envuelto ni el encargo de una sesión de
+ * fondo), y en su turno le llega, con las sesiones que le preguntaron algo a la persona en su pestaña. Cualquier otra
+ * sesión no ve nada: sin coordinadora
  * designada, o en otra sesión, el hook calla. El
  * tope no abre conversaciones; la lista mira la de esta sesión, sólo en una de fondo, para no contar su encargo como la persona.
  * Un error propio nunca frena el turno. Opt-out: TYCON_COORDINATION_NOTICE=0
@@ -63,11 +66,18 @@ function main() {
   if (!leido) return;
   const sessionId = event.session_id || event.sessionId || null;
   if (!sessionId) return;
-  const { capNotice, guideNotice, listNotice } = require(path.join(__dirname, '..', 'tools', 'coordination.js'));
+  const { capNotice, guideNotice, listNotice, recordOwnerReply } = require(path.join(__dirname, '..', 'tools', 'coordination.js'));
   const notices = [];
   if (event.hook_event_name === 'SessionStart') {
     notices.push(guideNotice({ sessionId, env: process.env, source: event.source, title: event.session_title, transcript: event.transcript_path }));
   } else {
+    // lo que la persona le escribe a esta sesión le llega a la coordinadora en su turno; esta sesión no ve nada. Codex no:
+    // su mensaje no se puede confirmar en una conversación de Claude. Un error propio no frena el mensaje
+    if (event.hook_event_name === 'UserPromptSubmit') {
+      try { recordOwnerReply({ sessionId, env: process.env, prompt: event.prompt, transcript: event.transcript_path, turnId: event.turn_id }); } catch (e) {
+        process.stderr.write(`coordination-notice: no pude anotar el mensaje para la coordinadora: ${String((e && e.message) || e).split('\n')[0]}\n`);
+      }
+    }
     notices.push(capNotice({ sessionId, env: process.env }));
     // Codex firma por terminal: no entra a la lista
     if (!event.turn_id) notices.push(listNotice({ sessionId, env: process.env, prompt: event.prompt, transcript: event.transcript_path }));

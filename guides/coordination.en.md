@@ -553,6 +553,20 @@ There is one per machine, and without a confirmed coordinator it exits at once. 
 turn says so with the command. `coordination.js status` shows the stuck sessions ("Trabadas") and the ones Claude Code
 closed ("Cerradas por Claude Code").
 
+**What happens in other tabs reaches the coordinator on her turn**, and the working session sees nothing:
+
+- "<session> le preguntó a la persona en su pestaña, hace N min": the session opened a question box or asked for its plan
+  to be approved. It shows once per question, without the text: to know what it asks, ask the session or go in with
+  `claude attach`. A permission does not show here: it shows among the stuck sessions.
+- "<session>: te contestaron «…»": what the person typed in another tab, up to 120 characters, on one line and with
+  secrets masked. At most 5 show, with "(+N más)", and each one shows once. Before handing it over, the notice checks in
+  that session's conversation that a person typed it. A message from another session, a notice or a background
+  session's task are not recorded. A message shaped like a seal is not recorded either, and an "aprobado" arrives
+  labeled as what the person said there: it approves nothing and is not a signature.
+
+Both lines need a confirmed, live coordinator, and they turn off with the rest of the notice
+(`TYCON_COORDINATION_NOTICE=0`). What could not be read shows in "No pude leer".
+
 **At every check, and before saying there is nothing for you, the coordinator looks at the office's waits** ("Tu firma"
 and the state of each session), not only at the messages it gets: the notice can fail.
 
@@ -795,7 +809,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | Rule | Measured by | Why |
 |---|---|---|
 | Signatures, passwords, product decisions and what leaves the house go to the owner | nadie | What a product decision or a routine release is is a judgment call: no piece of data says it. |
-| The sessions' questions go to the coordinator | nadie | There is no notice, by the owner's decision: every working session would see it. The coordinator reminds a session that asks the owner. |
+| The sessions' questions go to the coordinator | nadie | The working session sees no notice, by the owner's decision. When a session asks the person directly in its tab, the notice of each turn tells the coordinator, once per question, and she reminds the session. |
 | The coordinator settles details with the safest option | nadie | It is a judgment call, and it is written down for the owner to see. |
 | Every session with a name a person gave it | aviso | `/coordinate` lists the ones whose name the tool made up. |
 | No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, on reaching the cap or a change in the count, so does the coordinator's notice. |
@@ -829,7 +843,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | Sessions do not write to each other | nadie | A message between sessions does not go through a control. |
 | A session does not open a box in its tab | nadie | The session decides it when asking. |
 | A stuck session is reported with the recommended answer | aviso | A permission, instantly, with `owner-wait`; the other waits, at 5 and at 30 minutes; the coordinator writes the recommendation. |
-| Ask the session before saying "your turn" | nadie | What the owner writes in another tab does not reach her. |
+| Ask the session before saying "your turn" | nadie | It is the coordinator's judgment. What the person types in another tab reaches her on her turn, on one line; what got cut or went another way does not: that is why she still asks. |
 | "Your turn" only for what can be done now | nadie | It is the shape of the message. |
 | Every request to the owner comes complete | nadie | It is the shape of the message. |
 | Ask the session when the owner asks how it is going | nadie | It is the coordinator's judgment call. |
