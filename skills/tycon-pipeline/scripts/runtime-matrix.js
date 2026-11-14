@@ -1148,7 +1148,8 @@ function compute(opts) {
     for (const n of pedidas) {
       const t = tandas.find((x) => x.name === n);
       if (!t) return { sid, structuralError: `la tanda «${n}» no está en el bloque pipelines de la historia (${lista})` };
-      if (opts.batch != null && String(t.status || '').toLowerCase() === 'done') {
+      // la tanda de la corrida abierta se mide aunque la sesión ya la haya cerrado en la historia; a mano, no
+      if (opts.batch != null && !opts.deLaCorrida && String(t.status || '').toLowerCase() === 'done') {
         return { sid, structuralError: `la tanda «${n}» está done: una tanda hecha no se entrega de nuevo (${lista})` };
       }
       for (const a of deTanda(t)) propios.add(a);
@@ -2148,7 +2149,7 @@ function tandaDeLaLinea(argv, opt, storyPath) {
   const op = opcionesDeTandaDelMarcador(marker, storyPath);
   if (op.batch) {
     if (pedida && pedida !== op.batch) return { error: `--batch ${pedida} no es la tanda del marcador de esta sesión (${op.batch}): no mido.` };
-    return repoDelCodigo ? { batch: op.batch, changed: lista(), codeRepo: repoDelCodigo } : { batch: op.batch, changed: op.changed, codeRepo: op.codeRepo };
+    return repoDelCodigo ? { batch: op.batch, changed: lista(), codeRepo: repoDelCodigo, deLaCorrida: true } : { batch: op.batch, changed: op.changed, codeRepo: op.codeRepo, deLaCorrida: true };
   }
   if (repoDelCodigo) return { batch: pedida, changed: lista(), codeRepo: repoDelCodigo };
   if (pedida) return { batch: pedida };
@@ -2183,6 +2184,7 @@ function main() {
     batch: tanda.batch,
     ...(tanda.changed !== undefined ? { changed: tanda.changed } : {}),
     ...(tanda.codeRepo ? { codeRepo: tanda.codeRepo } : {}),
+    ...(tanda.deLaCorrida ? { deLaCorrida: true } : {}),
   });
 
   if (r.structuralError) {
@@ -2233,9 +2235,24 @@ function opcionesDeTandaDelMarcador(marker, storyPath) {
     : null;
   if (!suya || real(suya) !== real(path.resolve(storyPath))) return { batch: null, otraHistoria: true };
   const changed = marker.repoPath && marker.baseSha
-    ? require(path.join(__dirname, 'lib', 'ui-signal.js')).changedFiles(marker.repoPath, marker.baseSha)
+    ? sinLoQueTrajoMain(marker.repoPath, require(path.join(__dirname, 'lib', 'ui-signal.js')).changedFiles(marker.repoPath, marker.baseSha))
     : null;
-  return { batch: String(marker.batch), changed, codeRepo: marker.repoPath || null };
+  return { batch: String(marker.batch), changed, codeRepo: marker.repoPath || null, deLaCorrida: true };
+}
+
+/**
+ * Lo que cambió la corrida desde su arranque, sin lo que trajo main: queda un archivo que difiere también del punto en
+ * común de ahora con main. Uno que trajo main y la corrida no tocó no devuelve los criterios de otra tanda. Sin main
+ * para calcularlo, o si git no contesta, la lista queda como vino.
+ */
+function sinLoQueTrajoMain(repo, changed) {
+  if (!Array.isArray(changed) || !changed.length) return changed;
+  const punto = require(path.join(__dirname, 'lib', 'frozen-tree.js')).puntoComunConMain(repo);
+  if (!punto.sha) return changed;
+  const desdeMain = require(path.join(__dirname, 'lib', 'ui-signal.js')).changedFiles(repo, punto.sha);
+  if (!Array.isArray(desdeMain)) return changed;
+  const propios = new Set(desdeMain);
+  return changed.filter((f) => propios.has(f));
 }
 
 // `acEsDeAccion` se exporta para poder testear la heurística de DODRT-C8 como función PURA

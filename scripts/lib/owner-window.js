@@ -990,8 +990,9 @@ const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control
   // dejar pasar un guardado ajeno sin un pedido anotado
   'adhoc-lane:guardado-ajeno']);
 // las de sólo click cuyo chequeo corre antes de dar el cuadro: un pedido que el guion niega igual (un motivo en dos
-// renglones, una lista inválida) no gasta el click
-const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', SOBRE_CUPO]);
+// renglones, una lista inválida) no gasta el click. La vuelta extra también: sin el aviso del tope o la nota de repensar,
+// la sesión los agregaría después del click, el cuadro cambiaría y la firma vencería
+const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', SOBRE_CUPO, 'extra-round']);
 // lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
 // 210 s (lib/save-ok.js)
 const PLAZO_DEL_CHEQUEO = { save: 240000 };

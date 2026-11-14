@@ -895,6 +895,8 @@ function comprobarLoRevisado(marker, quien) {
   const realDe = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
   const distintos = [];
   const papeleo = [];
+  const deMain = [];
+  const sinSepararMain = [];
   const huellas = [];
   const frenar = (motivo) => {
     appendLog('gates.log', { name: 'reviewed-tree-mismatch', status: 'blocked', story: marker.storyId || null, quien, motivo });
@@ -905,10 +907,16 @@ function comprobarLoRevisado(marker, quien) {
     const ahora = ft.seal(r.repo);
     if (ahora.error) frenar(`no pude sellar lo que se guarda para compararlo con lo revisado (${ahora.error}).`);
     const rel = storyAbs ? path.relative(realDe(r.repo), realDe(storyAbs)) : null;
-    const c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null });
+    // lo que trajo main en archivos que la corrida no tocó no es «no revisado»: se separa con el punto en común con main
+    // del sello y el de ahora, del mismo repo
+    const pm = r.mainBase ? ft.puntoComunConMain(r.repo) : { error: `${path.basename(r.repo)}: la vuelta se selló sin el punto en común con main` };
+    if (pm.error) sinSepararMain.push(pm.error);
+    const c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null,
+      mainAntes: r.mainBase || null, mainAhora: pm.sha || null });
     if (c.error) frenar(`no pude comparar lo que se guarda con lo revisado (${c.error}).`);
     for (const f of c.files) distintos.push({ repo: r.repo, f });
     for (const f of c.papeleo) papeleo.push(f);
+    for (const f of c.deMain || []) deMain.push(f);
     huellas.push(`${path.basename(r.repo)} ${r.tree.slice(0, 12)}`);
   }
   if (distintos.length) {
@@ -916,12 +924,13 @@ function comprobarLoRevisado(marker, quien) {
     const iter = (parseInt(String(v.etiqueta || '').replace(/\D/g, ''), 10) || 1) + 1;
     console.error(`marker.js ${quien} BLOQUEADO — lo que se guarda no es lo revisado: cambió después de la última vuelta de revisores (${v.etiqueta}):`);
     for (const d of distintos) console.error(`   · ${d.f} (${path.basename(d.repo)})`);
+    for (const s of sinSepararMain) console.error(`  No pude separar lo que trajo main (${s}): cuenta como cambio.`);
     console.error(`  Corré otra vuelta: pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'} --repo ${marker.repoPath || '<repo>'} --iter ${iter} --files "<el diff completo, como hoy>".`);
     console.error('  La vuelta re-revisa lo que cambió desde su foto; con el sello nuevo, este paso sigue.');
     process.exit(2);
   }
-  appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length });
-  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}.`);
+  appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length, deMain: deMain.length });
+  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}.`);
 }
 
 /** `{ sellos, copias }` por repo de una vuelta congelada. */
@@ -1980,7 +1989,7 @@ function cmdCompleteStep(nRaw, flags) {
       if (storyAbs) {
         try {
           const rdc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs, { marker });
-          f = require('./lib/compare-previous.js').freno({ storyPath: storyAbs, repos: reposParaComparar(marker), runDir: rdc, stateDir: STATE_DIR, story: marker.storyId });
+          f = require('./lib/compare-previous.js').freno({ storyPath: storyAbs, repos: reposParaComparar(marker), runDir: rdc, stateDir: STATE_DIR, story: marker.storyId, marker });
         } catch (e) { noMedido = String(e.message || e).split('\n')[0]; }
       } else {
         noMedido = `no encuentro la historia (${marker.storyPath || 'el marcador no la nombra'})`;
@@ -6058,12 +6067,28 @@ function cmdCompareWaiver(argv) {
     process.exit(2);
   }
   // el candidato, antes de la firma: una exención de algo que no es candidato no exime nada y gastaría la firma
+  // con la tanda de la corrida, los mismos candidatos que exige el freno de «Preparar»
   let c;
-  try { c = require('./lib/compare-previous.js').candidatos({ storyPath: storyAbs, repos: reposParaComparar(m) }); } catch (e) {
+  let tanda;
+  try {
+    const cp = require('./lib/compare-previous.js');
+    tanda = cp.archivosDeLaTanda(m, storyAbs);
+    c = cp.candidatos({ storyPath: storyAbs, repos: reposParaComparar(m), files: tanda.files });
+  } catch (e) {
     console.error(`marker.js compare-waiver: no pude calcular los candidatos (${e.message}). No se pidió la firma.`);
     process.exit(2);
   }
   const nombres = [...c.candidatos.map((x) => x.archivo), ...c.sinRepo.map((x) => x.archivo)];
+  if (!nombres.includes(command) && tanda.files) {
+    // de otra tanda: está en la historia y no en la lista de la tanda de la corrida
+    const cpv = require('./lib/compare-previous.js');
+    const norm = cpv.rutaDeLaLista;
+    const deLaHistoria = cpv.rutasAModificar(fs.readFileSync(storyAbs, 'utf8')).map(norm);
+    if (deLaHistoria.includes(norm(command)) && !tanda.files.map(norm).includes(norm(command))) {
+      console.error(`marker.js compare-waiver: «${command}» no es de la tanda ${tanda.tanda}, la de esta corrida: la comparación con main mide sólo sus archivos. Los candidatos: ${nombres.length ? nombres.join(', ') : '(ninguno)'}. No se pidió la firma.`);
+      process.exit(2);
+    }
+  }
   if (!nombres.includes(command)) {
     const noMedido = (c.noMedidos || []).find((x) => x.archivo === command);
     if (noMedido) {

@@ -84,8 +84,9 @@ function listaDerivada(texto, nombre, tandas) {
 
 /** Una ruta como la escribe la historia, en la forma en que se compara: sin comentario, comillas ni `./`, con `/`. */
 function normRuta(f) {
-  // sin la barra final: `src/db/` es la carpeta `src/db`
-  return String(f || '').replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+  // sin la barra final: `src/db/` es la carpeta `src/db`; sin el prefijo «(repo) » que las listas de la historia permiten,
+  // que lleva un espacio después (una carpeta entre paréntesis, como `(app)/page.tsx`, es parte de la ruta)
+  return String(f || '').replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '').replace(/^\([^)]*\)\s+/, '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
 }
 
 /** Lo que dos partes abiertas pueden compartir sin dejar de valer: lo que igual cuenta en la medición de cada una. */
@@ -133,14 +134,15 @@ function validarParte(texto, nombre) {
 
 /**
  * La parte con la que se mide, o null (sin parte, o una que no vale: la historia entera). `story`: la ruta de la
- * historia; `batch`: el nombre de la parte. Una historia que no se lee da null.
+ * historia; `batch`: el nombre de la parte. Una historia que no se lee da null. Una parte done no se mide, salvo con
+ * `deLaCorrida`: la tanda de la corrida abierta, que la sesión cerró en la historia antes de «Preparar».
  */
-function parteMedible(story, batch) {
+function parteMedible(story, batch, { deLaCorrida = false } = {}) {
   if (!batch || !story) return null;
   let texto;
   try { texto = fs.readFileSync(story, 'utf8'); } catch (_) { return null; }
   const p = validarParte(texto, batch);
-  return p.valid && !p.done ? p : null;
+  return p.valid && (!p.done || deLaCorrida) ? p : null;
 }
 
 /** La huella de la lista de una parte: lo que la revisión del plan guarda y la aprobación delegada compara. */

@@ -1622,6 +1622,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.272 (T1-T4): el revisor de un crítico arreglado vuelve a la vuelta siguiente aunque el descuento mecánico o el cálculo por diferencias lo saquen. HOME y repo de juguete, el registro de críticos y findings.json escritos como los deja el arnés, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/criticals-to-confirm.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.167 (T1-T11, T19-T23, T29, T30, T32, T33): el humo comparado con main, en dos clones locales sin remoto, con casas vacías y la red cortada por capas. Repos de juguete con su origin desnudo, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/compare-previous.test.js",

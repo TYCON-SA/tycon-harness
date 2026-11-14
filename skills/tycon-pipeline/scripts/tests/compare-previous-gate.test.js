@@ -111,7 +111,7 @@ function historia(repo, { modificar = [], cuerpo = [], frontmatter = [] } = {}) 
 }
 
 // El laboratorio de un repo: la historia y el comando viven en el mismo repo; el marcador está en «Preparar el commit».
-function laboratorio({ archivos = { 'cli.js': CLI }, cambios = { 'cli.js': enGet }, modificar = ['cli.js'], cuerpo = [], frontmatter = [], sid = 's-gate' } = {}) {
+function laboratorio({ archivos = { 'cli.js': CLI }, cambios = { 'cli.js': enGet }, modificar = ['cli.js'], cuerpo = [], frontmatter = [], sid = 's-gate', batch = null } = {}) {
   const base = tmp('cpg-');
   const home = path.join(base, 'home');
   fs.mkdirSync(home);
@@ -127,6 +127,7 @@ function laboratorio({ archivos = { 'cli.js': CLI }, cambios = { 'cli.js': enGet
     storyId: '9.9', sessionId: sid, stepScheme: 2, startedAt: '2026-10-22T10:00:00.000Z', lastTouch: '2026-10-22T10:00:00.000Z',
     stepsCompleted: SIN_CIERRE, stepsPending: ['prepare-commit'], iterations: {},
     storyPath, repoPath: repo, baseSha, filesTouched: Object.keys(cambios).map((r) => path.join(repo, r)), fileEvents: [],
+    ...(batch ? { batch, batchValid: true } : {}),
   };
   fs.writeFileSync(path.join(state, 'active', `${sid}.json`), JSON.stringify(marcador));
   const env = (extra = {}) => {
@@ -261,6 +262,95 @@ test('T24 CompareWaiver_SinFirmaNoEscribe @story-8.167 @ac-20 — sin firma no h
   fs.mkdirSync(L2.runDir(), { recursive: true });
   fs.writeFileSync(path.join(L2.runDir(), require(CW).FILE), `${JSON.stringify({ ts: new Date().toISOString(), story: '9.9', command: 'cli.js', reason: 'x', tipo: 'manual', quien: 'el dev', via: 'compare-waiver (ventana)' })}\n`);
   assert.match(L2.cerrar().stderr, FRENO);
+});
+
+// Dos comandos de main cambiados por la rama, cada uno de una tanda: `otro.js` es de la A (ya en main, done) y `cli.js`
+// de la B, la de la corrida. La comparación con main mide sólo la tanda de la corrida
+const OTRO = CLI.replace("console.log('uso');", "console.log('uso de otro');");
+const OTRO_CAMBIADO = OTRO.replace("console.log(saludar('get'));", "console.log(saludar('otro'));");
+const tandas = (estadoB = 'in-progress', { filesB = ['cli.js'] } = {}) => ['pipelines:',
+  '  - name: A', '    status: done', '    files:', '      - otro.js',
+  '  - name: B', `    status: ${estadoB}`, ...(filesB.length ? ['    files:', ...filesB.map((f) => `      - ${f}`)] : [])];
+const conDosTandas = (o = {}) => laboratorio({ archivos: { 'cli.js': CLI, 'otro.js': OTRO, 'datos.json': '{}\n' }, cambios: { 'cli.js': enGet, 'otro.js': OTRO_CAMBIADO },
+  modificar: ['cli.js', 'otro.js', 'datos.json'], frontmatter: tandas(o.estadoB, o), batch: 'batch' in o ? o.batch : 'B', sid: o.sid || 's-gate' });
+
+test('Compare_PrefixedPathOrOwnBatchNonCandidate @story-8.272 @ac-6 @ac-7 — (pase de la 8.272) una ruta con el prefijo del repo sigue en la tanda; un archivo de la tanda que no es candidato no se nombra como de otra', () => {
+  const L = conDosTandas({ filesB: ['cli.js', 'datos.json'] });
+  // la lista de la tanda escrita con el prefijo del repo, como la historia lo permite en files_to_modify
+  const r = cp().candidatos({ storyPath: L.storyPath, repos: [L.repo], files: ['(público) cli.js'] });
+  assert.deepStrictEqual(r.candidatos.map((c) => c.archivo), ['cli.js']);
+  // datos.json es de la tanda de la corrida y no es un comando: «no es candidato», no «no es de la tanda»
+  const w = L.marker(['compare-waiver', '--story', L.storyPath, '--command', 'datos.json', '--reason', 'x']);
+  assert.strictEqual(w.status, 2, w.stderr);
+  assert.match(w.stderr, /no es candidato/);
+  assert.doesNotMatch(w.stderr, /no es de la tanda/);
+});
+
+test('Compare_PrefixedStoryList_BatchStillMeasured @story-8.272 @ac-6 — files_to_modify con el prefijo del repo: la tanda se sigue midiendo, no la historia entera', () => {
+  const L = laboratorio({ archivos: { 'cli.js': CLI, 'otro.js': OTRO }, cambios: { 'cli.js': enGet, 'otro.js': OTRO_CAMBIADO },
+    modificar: ['(público) cli.js', '(público) otro.js'], frontmatter: tandas(), batch: 'B', sid: 's-gate-prefijo' });
+  const parte = cp().archivosDeLaTanda({ batch: 'B', storyPath: L.storyPath }, L.storyPath);
+  assert.deepStrictEqual(parte.files, ['cli.js'], parte.motivo);
+  const cierre = L.cerrar();
+  assert.match(cierre.stderr, /cli\.js/);
+  assert.doesNotMatch(cierre.stderr, /otro\.js/, cierre.stderr);
+  // una carpeta entre paréntesis (un grupo de rutas) es parte de la ruta: sólo el prefijo con su espacio se quita
+  const { normRuta } = require(path.join(SCRIPTS, 'lib', 'batch-scope.js'));
+  assert.deepStrictEqual(['(público) cli.js', '(app)/page.tsx', '(auth)/page.tsx'].map(normRuta), ['cli.js', '(app)/page.tsx', '(auth)/page.tsx']);
+});
+
+test('T5 Compare_Candidates_OnlyBatchFiles @story-8.272 @ac-6 — sólo los archivos de la tanda de la corrida', () => {
+  const L = conDosTandas();
+  // la función, con la lista de la tanda
+  const parte = cp().archivosDeLaTanda({ batch: 'B', storyPath: L.storyPath }, L.storyPath);
+  assert.deepStrictEqual(parte.files, ['cli.js'], parte.motivo);
+  const r = cp().candidatos({ storyPath: L.storyPath, repos: [L.repo], files: parte.files });
+  assert.deepStrictEqual(r.candidatos.map((c) => c.archivo), ['cli.js']);
+  // el freno de «Preparar»: nombra cli.js y no otro.js
+  const cierre = L.cerrar();
+  assert.match(cierre.stderr, FRENO);
+  assert.match(cierre.stderr, /cli\.js/);
+  assert.doesNotMatch(cierre.stderr, /otro\.js/, cierre.stderr);
+  // la línea de comando, con el marcador de la corrida
+  const cli = spawnSync(process.execPath, [PIPELINE, 'compare-candidates', '--story', L.storyPath, '--json'], { cwd: L.repo, encoding: 'utf8', env: L.env() });
+  assert.strictEqual(cli.status, 0, cli.stderr);
+  assert.deepStrictEqual(JSON.parse(cli.stdout).candidatos.map((c) => c.archivo), ['cli.js']);
+});
+
+test('T6 CompareWaiver_OtherBatchFile_Rejected @story-8.272 @ac-7 — la exención acepta lo mismo que exige el freno', () => {
+  const L = conDosTandas();
+  const otro = L.marker(['compare-waiver', '--story', L.storyPath, '--command', 'otro.js', '--reason', 'es de la tanda A']);
+  assert.strictEqual(otro.status, 2, otro.stderr);
+  assert.match(otro.stderr, /no es de la tanda B/);
+  assert.ok(!fs.existsSync(path.join(L.runDir(), require(CW).FILE)), 'no escribe nada');
+});
+
+test('T7 Compare_NoBatchOrNotMeasurable_WholeStory @story-8.272 @ac-8 @ac-28 — sin tanda o sin parte medible, la historia entera', () => {
+  // sin tanda en el marcador: los dos, como hoy
+  let L = conDosTandas({ batch: null });
+  let cierre = L.cerrar();
+  assert.match(cierre.stderr, /cli\.js/);
+  assert.match(cierre.stderr, /otro\.js/);
+  // la tanda de la corrida sin files: ni archivos atados: la historia entera, con el motivo de validarParte
+  L = conDosTandas({ filesB: [], sid: 's-gate-b' });
+  const parte = cp().archivosDeLaTanda({ batch: 'B', storyPath: L.storyPath }, L.storyPath);
+  assert.strictEqual(parte.files, null);
+  assert.match(parte.motivo, /no declara files/);
+  cierre = L.cerrar();
+  assert.match(cierre.stderr, /otro\.js/);
+  assert.match(cierre.stderr, /comparo la historia entera.*no declara files/);
+});
+
+test('T11 Compare_DoneBatchOfOpenRun_OnlyThatBatch @story-8.272 @ac-12 — la tanda de la corrida marcada done se sigue midiendo', () => {
+  const L = conDosTandas({ estadoB: 'done' });
+  const parte = cp().archivosDeLaTanda({ batch: 'B', storyPath: L.storyPath }, L.storyPath);
+  assert.deepStrictEqual(parte.files, ['cli.js'], parte.motivo);
+  const cierre = L.cerrar();
+  assert.match(cierre.stderr, /cli\.js/);
+  assert.doesNotMatch(cierre.stderr, /otro\.js/, cierre.stderr);
+  // el marcador de otra historia no presta su tanda
+  const ajena = cp().archivosDeLaTanda({ batch: 'B', storyPath: path.join(L.repo, 'specs', 'otra.md') }, L.storyPath);
+  assert.strictEqual(ajena.files, null);
 });
 
 test('T25 PrepareCommit_ExencionEnElFrontmatter_NoCuenta @story-8.167 @ac-20 — compare_exempt: en el frontmatter no exime', () => {

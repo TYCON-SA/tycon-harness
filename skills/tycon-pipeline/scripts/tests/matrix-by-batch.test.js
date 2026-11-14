@@ -394,6 +394,38 @@ test('T12 MatrixCli_ReadsMarkerBatch @story-8.240 @ac-8 — la línea de comando
   assert.doesNotMatch(primera(r), /mide la tanda/, r.stdout);
 });
 
+test('T11 Matrix_DoneBatchOfOpenRun_IsMeasured + Matrix_ManualBatchDone_StillRejected + SetBatchAndStart_DoneBatch_StillRejected @story-8.272 @ac-12 @ac-13 — la tanda de la corrida marcada done se sigue midiendo; a mano, no', () => {
+  const E = entorno();
+  E.arrancar('s-a11');
+  assert.strictEqual(E.correr('marker.js', ['set-batch', A], 's-a11').status, 0);
+  hastaPrepararElCommit(E, 's-a11');
+  E.humo([1]);
+  // la sesión cerró su tanda en la historia antes de «Preparar»: la matriz mide A, no la historia entera ni un error
+  fs.writeFileSync(E.story, historia({ estados: { [A]: 'done' } }));
+  let r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-a11');
+  assert.doesNotMatch(r.stderr, MATRIZ_ROJA, r.stderr);
+  assert.doesNotMatch(r.stderr + r.stdout, /una tanda hecha no se entrega de nuevo/, r.stderr);
+  assert.match(r.stderr + r.stdout, new RegExp(`tanda ${A}`));
+  // la línea de comando con la sesión de la corrida (la que corre el chequeo de la matriz de «Preparar»): también la mide
+  const linea = cli(E, [], 's-a11');
+  assert.match(primera(linea), new RegExp(`mide la tanda ${A}`), linea.stdout + linea.stderr);
+  assert.doesNotMatch(linea.stdout + linea.stderr, /una tanda hecha no se entrega de nuevo/);
+  // la parte de la corrida, con la tanda done: una historia que declara los archivos de cada tanda
+  const bs = require(path.join(SCRIPTS, 'lib', 'batch-scope.js'));
+  const conArchivos = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'matrix-by-batch-parte-')), 'historia.md');
+  fs.writeFileSync(conArchivos, ['---', 'story: "9.9"', 'files_to_modify:', '  - src/a.js', '  - src/b.js', 'pipelines:',
+    `  - name: ${A}`, '    status: done', '    files:', '      - src/a.js',
+    `  - name: ${B}`, '    status: pending', '    files:', '      - src/b.js', '---', ''].join('\n'));
+  assert.strictEqual(bs.parteMedible(conArchivos, A), null, 'sin la opción, como hoy');
+  assert.deepStrictEqual((bs.parteMedible(conArchivos, A, { deLaCorrida: true }) || {}).files, ['src/a.js'], 'con la opción de la corrida, la parte');
+  // a mano: --batch A rechaza como hoy
+  r = cli(E, ['--batch', A], 's-a11', true);
+  assert.match(r.stdout + r.stderr, /una tanda hecha no se entrega de nuevo/);
+  // el arranque con la tanda done, en otra sesión: rechaza como hoy (set-batch con una tanda done lo fija la T9 de la 8.239)
+  r = E.correr('pipeline.js', ['start', '--story', E.story, '--repo', E.repo, '--brief', '--batch', A], 's-a11-otra');
+  assert.match(r.stdout + r.stderr, /una tanda hecha no se entrega de nuevo/);
+});
+
 test('T13 MatrixCli_BatchFlags @story-8.240 @ac-8 — --batch, --all-batches, --code-repo y --base', () => {
   const E = entorno();
   conArchivoDeB(E);
@@ -569,4 +601,49 @@ test('T7 TandaBloqueada_ArchivoCompartido_NoVuelve_SuPantallaSi @story-8.245 @ac
   r = cli(E, ['--batch', A, '--code-repo', E.repo, '--base', base], 's-otra');
   assert.match(r.stdout, new RegExp(`${B_PANT} \\(AC 2\\), porque la corrida cambió web/src/Panel\\.tsx`), r.stdout + r.stderr);
   assert.match(r.stdout, /\| #2 \| 🔴/, r.stdout);
+});
+
+test('T11 Matrix_MainBroughtOtherBatchFile_DoesNotReturn @story-8.272 @ac-12 — lo que trajo main en un archivo de otra tanda no devuelve sus criterios', () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'matrix-by-batch-main-')));
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  const en = (dir) => (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
+  const origen = path.join(base, 'origen.git');
+  const repo = path.join(base, 'repo');
+  const otro = path.join(base, 'otro');
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origen]);
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  const git = en(repo);
+  git('init', '-q', '-b', 'main');
+  git('remote', 'add', 'origin', origen);
+  const story = path.join(repo, 'specs', 'story-9.9-main.md');
+  fs.writeFileSync(story, ['---', 'story: "9.9"', 'files_to_modify:', '  - a.js', '  - b.js', 'pipelines:',
+    `  - name: ${A}`, '    status: in-progress', '    acs_pending: [1]', '    files:', '      - a.js',
+    `  - name: ${B}`, '    status: pending', '    acs_pending: [2]', '    files:', '      - b.js', '---', ''].join('\n'));
+  fs.writeFileSync(path.join(repo, 'a.js'), '1\n');
+  fs.writeFileSync(path.join(repo, 'b.js'), '1\n');
+  git('add', '.');
+  git('commit', '-qm', 'inicio');
+  git('push', '-q', 'origin', 'main');
+  git('checkout', '-q', '-b', 'story/9.9');
+  const baseSha = git('rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(repo, 'a.js'), '2\n');
+  git('commit', '-qam', 'la corrida');
+  execFileSync('git', ['clone', '-q', origen, otro], { env });
+  fs.writeFileSync(path.join(otro, 'b.js'), 'de main\n');
+  en(otro)('commit', '-qam', 'otro pedido');
+  en(otro)('push', '-q', 'origin', 'main');
+  git('fetch', '-q', 'origin');
+  git('merge', '-q', '--no-edit', 'origin/main');
+  const rm = require(path.join(SCRIPTS, 'runtime-matrix.js'));
+  const marker = { batch: A, storyPath: story, repoPath: repo, baseSha };
+  assert.deepStrictEqual(rm.opcionesDeTandaDelMarcador(marker, story).changed, ['a.js']);
+  // la corrida también toca el archivo de la otra tanda: vuelve, como hoy
+  fs.writeFileSync(path.join(repo, 'b.js'), 'de la corrida\n');
+  assert.deepStrictEqual(rm.opcionesDeTandaDelMarcador(marker, story).changed.sort(), ['a.js', 'b.js']);
+  // sin main para calcular el punto en común, la lista es la de hoy
+  git('checkout', '-q', '--', 'b.js');
+  git('remote', 'remove', 'origin');
+  git('branch', '-m', 'main', 'tronco');
+  assert.deepStrictEqual(rm.opcionesDeTandaDelMarcador(marker, story).changed.sort(), ['a.js', 'b.js']);
+  fs.rmSync(base, { recursive: true, force: true });
 });

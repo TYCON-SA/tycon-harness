@@ -265,6 +265,54 @@ function waiverFor({ runDir, rule, reviewer, ownerOnly, home, story }) {
 }
 
 /**
+ * Cuánto comprueban los reportes posteriores de una regla crítica: `{ revisores, bajada }`. `revisores`, los que la
+ * reportaron; `bajada`, lo que bajó la cuenta en un reporte legible posterior al pico, en el revisor que menos bajó.
+ */
+function comprobadoDe(reports, rule) {
+  const revisores = [...new Set(reports.filter((r) => countIn(r, rule) > 0).map((r) => r.advisor))];
+  const bajadas = revisores.map((a) => {
+    const suyos = reports.filter((r) => r.advisor === a);
+    const pico = Math.max(...suyos.map((r) => countIn(r, rule)));
+    // el último reporte con la cuenta más alta; lo que vino después y se leyó dice cuánto bajó
+    const picoTs = suyos.filter((r) => countIn(r, rule) === pico).map((r) => String(r.ts)).sort().pop();
+    const despues = suyos.filter((r) => r.readable && String(r.ts) > picoTs);
+    if (!despues.length) return 0;
+    return Math.max(0, pico - countIn(despues[despues.length - 1], rule));
+  });
+  return { revisores, bajada: Math.min(...bajadas), bajadas };
+}
+
+/**
+ * Los revisores que tienen que volver a la vuelta siguiente: los que reportaron una regla crítica que `findings.json`
+ * trae `fixed` u `open` (un crítico arreglado queda `open` hasta que su revisor lo confirma: `write-findings` no acepta
+ * `fixed` antes) y que ningún reporte suyo posterior comprueba todavía (la misma cuenta del tercer control del cruce), sin la
+ * exención del dueño. Sin ellos en la vuelta, el cruce pide esa exención. `o`: { lines, findings, runDir, home, story,
+ * eximido? }; `eximido(consulta)` dice si hay exención (sin él, `waiverFor`, la misma consulta que el cruce).
+ * Devuelve `{ revisores: [{ name, rules }] }`; sin reportes, ninguno.
+ */
+function porConfirmar(o) {
+  const eximido = typeof o.eximido === 'function' ? o.eximido : waiverFor;
+  const reports = (o.lines || []).filter((l) => l.kind === 'report');
+  const findings = Array.isArray(o.findings) ? o.findings : [];
+  const porRevisor = new Map();
+  const reglas = new Set(reports.flatMap((r) => (r.criticals || []).map((c) => c.rule)));
+  for (const rule of reglas) {
+    // refutado, diferido o eximido ya tiene su destino: volver lo haría reportar de nuevo
+    const arreglados = findings.filter((f) => ruleOf(f) === rule && sevOf(f) === 'CRITICAL' && ['fixed', 'open'].includes(dispOf(f))).length;
+    if (!arreglados) continue;
+    const { revisores, bajadas } = comprobadoDe(reports, rule);
+    if (arreglados <= Math.min(...bajadas)) continue;
+    if (eximido({ runDir: o.runDir, rule, ownerOnly: true, home: o.home, story: o.story })) continue;
+    // vuelve cada revisor que todavía no bajó lo suficiente: el cruce mira al que menos bajó
+    revisores.forEach((a, i) => {
+      if (bajadas[i] >= arreglados) return;
+      porRevisor.set(a, [...(porRevisor.get(a) || []), rule]);
+    });
+  }
+  return { revisores: [...porRevisor].map(([name, rules]) => ({ name, rules })) };
+}
+
+/**
  * El cruce. `o`: { lines (de la corrida), findings, runDir, home, story, refutedHolds? }. `refutedHolds(f)` dice si un
  * hallazgo `refuted` tiene la constancia del verificador (la misma comprobación que write-findings); sin ella, todo
  * `refuted` se toma por válido (write-findings ya lo normalizó).
@@ -311,16 +359,7 @@ function cross(o) {
     // salvo la exención del dueño. El pase adversarial no prueba nada: sus hallazgos no traen la regla.
     const arreglados = criticos.filter((f) => dispOf(f) === 'fixed').length;
     if (!arreglados) continue;
-    const revisores = [...new Set(reports.filter((r) => countIn(r, c.rule) > 0).map((r) => r.advisor))];
-    const bajada = Math.min(...revisores.map((a) => {
-      const suyos = reports.filter((r) => r.advisor === a);
-      const pico = Math.max(...suyos.map((r) => countIn(r, c.rule)));
-      // el último reporte con la cuenta más alta; lo que vino después y se leyó dice cuánto bajó
-      const picoTs = suyos.filter((r) => countIn(r, c.rule) === pico).map((r) => String(r.ts)).sort().pop();
-      const despues = suyos.filter((r) => r.readable && String(r.ts) > picoTs);
-      if (!despues.length) return 0;
-      return Math.max(0, pico - countIn(despues[despues.length - 1], c.rule));
-    }));
+    const { bajada } = comprobadoDe(reports, c.rule);
     if (arreglados <= bajada) continue;
     if (waiverFor({ runDir: o.runDir, rule: c.rule, ownerOnly: true, home: o.home, story: o.story })) continue;
     problemas.push({ tipo: 'arreglado-sin-comprobar', rule: c.rule, advisor: c.rep.advisor, iter: c.rep.iter,
@@ -444,6 +483,6 @@ function spawnsOf(stateDir, { story, since, run, sessionKeys }) {
 
 module.exports = {
   DIR, NO_REPORT_RULE, NO_REGISTRY_NOTE, registryDir, registryFile, hashOf, extractCriticals, unreadableReason,
-  recordLaunched, recordLaunchAgent, recordReport, readSession, readAll, linesOfRun, launchFor, cross, checkRun, renglones, waiverFor,
+  recordLaunched, recordLaunchAgent, recordReport, readSession, readAll, linesOfRun, launchFor, cross, porConfirmar, checkRun, renglones, waiverFor,
   spawnsOf, UNREADABLE_REGISTRY, readSessionStrict, esDeLaCorrida, corridaDelMarcador,
 };
