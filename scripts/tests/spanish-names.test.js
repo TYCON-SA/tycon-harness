@@ -1797,7 +1797,7 @@ test('GuiaNuevaEnCastellano_Frena @story-8.45 @ac-3 — una guía agregada o ren
   const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-guias-'));
   const vieja = `${W.lista}-${W.de}-${W.datos}`;
   const nueva = `guides/${G.notas}-${W.de}-${W.copia}.md`;
-  const nombra = (rel) => new RegExp(rel.replace(/[.]/g, '\\.'));
+  const nombra = (salida, rel) => assert.ok(salida.includes(rel), `el freno nombra ${rel}: ${salida}`);
   try {
     git(lab, ['init', '-q', '-b', 'main']);
     write(lab, {
@@ -1831,19 +1831,19 @@ test('GuiaNuevaEnCastellano_Frena @story-8.45 @ac-3 — una guía agregada o ren
     git(lab, ['add', '-A']);
     r = run(['--repo', lab]);
     assert.strictEqual(r.status, 1, `la guía nueva en castellano frena: ${r.stderr}`);
-    assert.match(r.stderr, nombra(nueva));
+    nombra(r.stderr, nueva);
     git(lab, ['commit', '-q', '-m', 'la nueva']);
     // y en el pedido (--range)
     r = run(['--range', `${base}...HEAD`, '--repo', lab]);
     assert.strictEqual(r.status, 1, `por --range también: ${r.stderr}`);
-    assert.match(r.stderr, nombra(nueva));
+    nombra(r.stderr, nueva);
     // renombrar una inglesa a un nombre castellano también frena
     // (con palabras de la lista del laboratorio: sin diccionario inglés, como en la CI, una palabra suelta no cuenta)
     const renombrada = `guides/maintaining/${W.copia}-${W.de}-${W.datos}.md`;
     git(lab, ['mv', 'guides/maintaining/keep.md', renombrada]);
     r = run(['--repo', lab]);
     assert.strictEqual(r.status, 1, `renombrar a castellano frena: ${r.stderr}`);
-    assert.match(r.stderr, nombra(renombrada));
+    nombra(r.stderr, renombrada);
 
     // el termómetro no cuenta guías
     assert.deepStrictEqual(count(), before, 'el conteo no cambia por las guías');
@@ -1875,7 +1875,7 @@ test('GuideNames_ExistingNamesDoNotCrossKinds @story-8.45 @ac-3 — el nombre de
       git(lab, ['add', '-A']);
       const r = run(['--repo', lab]);
       assert.strictEqual(r.status, 1, `${que} frena: ${r.stderr}`);
-      assert.match(r.stderr, new RegExp(rel.replace(/[.]/g, '\\.')));
+      assert.ok(r.stderr.includes(rel), `${que}: el freno nombra ${rel}`);
       git(lab, ['reset', '-q', 'HEAD', '--', rel]);
       fs.rmSync(path.join(lab, rel));
     }
