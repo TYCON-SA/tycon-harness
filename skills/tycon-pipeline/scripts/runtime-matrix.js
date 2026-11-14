@@ -1148,7 +1148,8 @@ function compute(opts) {
     for (const n of pedidas) {
       const t = tandas.find((x) => x.name === n);
       if (!t) return { sid, structuralError: `la tanda «${n}» no está en el bloque pipelines de la historia (${lista})` };
-      if (opts.batch != null && String(t.status || '').toLowerCase() === 'done') {
+      // la tanda de la corrida abierta se mide aunque la sesión ya la haya cerrado en la historia; a mano, no
+      if (opts.batch != null && !opts.deLaCorrida && String(t.status || '').toLowerCase() === 'done') {
         return { sid, structuralError: `la tanda «${n}» está done: una tanda hecha no se entrega de nuevo (${lista})` };
       }
       for (const a of deTanda(t)) propios.add(a);
@@ -2148,7 +2149,7 @@ function tandaDeLaLinea(argv, opt, storyPath) {
   const op = opcionesDeTandaDelMarcador(marker, storyPath);
   if (op.batch) {
     if (pedida && pedida !== op.batch) return { error: `--batch ${pedida} no es la tanda del marcador de esta sesión (${op.batch}): no mido.` };
-    return repoDelCodigo ? { batch: op.batch, changed: lista(), codeRepo: repoDelCodigo } : { batch: op.batch, changed: op.changed, codeRepo: op.codeRepo };
+    return repoDelCodigo ? { batch: op.batch, changed: lista(), codeRepo: repoDelCodigo, deLaCorrida: true } : { batch: op.batch, changed: op.changed, codeRepo: op.codeRepo, deLaCorrida: true };
   }
   if (repoDelCodigo) return { batch: pedida, changed: lista(), codeRepo: repoDelCodigo };
   if (pedida) return { batch: pedida };
@@ -2183,6 +2184,7 @@ function main() {
     batch: tanda.batch,
     ...(tanda.changed !== undefined ? { changed: tanda.changed } : {}),
     ...(tanda.codeRepo ? { codeRepo: tanda.codeRepo } : {}),
+    ...(tanda.deLaCorrida ? { deLaCorrida: true } : {}),
   });
 
   if (r.structuralError) {
@@ -2235,7 +2237,7 @@ function opcionesDeTandaDelMarcador(marker, storyPath) {
   const changed = marker.repoPath && marker.baseSha
     ? require(path.join(__dirname, 'lib', 'ui-signal.js')).changedFiles(marker.repoPath, marker.baseSha)
     : null;
-  return { batch: String(marker.batch), changed, codeRepo: marker.repoPath || null };
+  return { batch: String(marker.batch), changed, codeRepo: marker.repoPath || null, deLaCorrida: true };
 }
 
 // `acEsDeAccion` se exporta para poder testear la heurística de DODRT-C8 como función PURA

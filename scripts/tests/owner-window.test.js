@@ -3677,6 +3677,52 @@ test('Freno_SesionDeFondoRetomada_LaVueltaExtraVaALaListaYValeConElClick', (t) =
   assert.deepStrictEqual([g.ok, g.herramienta && g.herramienta.pid], [true, 100], g.motivo);
 });
 
+// la vuelta extra pide sus requisitos (el aviso del tope, la nota de repensar) antes de anotar el renglón: si la sesión
+// los agrega después del click, el cuadro cambia y la firma vence
+const PIDE_EXTRA = (casa, comprobar, o = {}) => ow.decidir({ evento: evento(`node ${PIPELINE} smart-reloop --iter 5 --extra-round`), arbol: [...RETOMADA, ...FRENO(200)], pid: 201, casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(), lista: SIN_PERFIL(casa) });
+
+test('T12 OwnerWindow_ExtraRoundMissingRequirement_NoRow @story-8.272 @ac-14', (t) => {
+  const casa = casaDeLista(t);
+  let visto = null;
+  const r = PIDE_EXTRA(casa, (o) => { visto = o; return { niega: 'falta la nota de repensar de la vuelta 5' }; });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /ni te doy el cuadro.*falta la nota de repensar/);
+  assert.strictEqual(visto && visto.firma, 'extra-round', 'el chequeo corre antes del cuadro');
+  assert.strictEqual(renglones(casa).length, 0, 'sin renglón: el click se gastaría en un cuadro que va a cambiar');
+});
+
+test('T13 OwnerWindow_ExtraRoundReady_SameFingerprintAfterClick @story-8.272 @ac-15', (t) => {
+  const casa = casaDeLista(t);
+  const listo = () => ({ ok: true });
+  const sin = PIDE_EXTRA(casa, listo);
+  assert.strictEqual(sin.decision, 'deny');
+  assert.match(sin.texto, AVISAN);
+  assert.strictEqual(renglones(casa).length, 1);
+  assert.strictEqual(renglones(casa)[0].firma, 'extra-round');
+  // nada cambió entre las dos pasadas: el click de la persona vale para la repetición
+  anotarAprobacion(casa, 'ses-a', { tipo: 'click', tool_use_id: 'toolu_13' });
+  const con = PIDE_EXTRA(casa, listo);
+  assert.deepStrictEqual([con.decision, con.via], ['allow', 'click'], con.texto);
+});
+
+test('T14 OwnerWindow_ExtraRoundPrecheckTimeout_RowAsToday + OwnerWindow_OtherSignatures_NoPrecheckAsToday @story-8.272 @ac-16 @ac-27', (t) => {
+  // el guion no contestó a tiempo: el renglón se anota como hoy, y el guion vuelve a comprobar al firmar
+  let casa = casaDeLista(t);
+  const r = PIDE_EXTRA(casa, () => null);
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.texto, AVISAN);
+  assert.strictEqual(renglones(casa)[0].firma, 'extra-round');
+  // la lista sólo suma la vuelta extra
+  assert.ok(ow.CHEQUEO_ANTES_DEL_CUADRO.has('extra-round'));
+  for (const otra of ['save', 'plan-approval', 'critical-waiver', 'runtime-waiver', 'control-change']) assert.ok(!ow.CHEQUEO_ANTES_DEL_CUADRO.has(otra), otra);
+  // y una firma que no está en la lista no consulta al guion antes del cuadro, aunque el guion la negaría
+  casa = casaDeLista(t);
+  let consultado = false;
+  const otra = ow.decidir({ evento: evento(`node ${MARKER} approve-save`), arbol: [...RETOMADA, ...FRENO(200)], pid: 201, casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => { consultado = true; return { niega: 'x' }; }, aprobador: DEL_ARNES, aprobaciones: aprobacionesDePrueba(), lista: SIN_PERFIL(casa) });
+  assert.strictEqual(otra.decision, 'deny');
+  assert.strictEqual(consultado, false, otra.texto);
+});
+
 test('Freno_RegistroRoto_DecideIgual (T3) — @story-8.153 @ac-3', (t) => {
   const conLlaveApagada = pedirConLista(casaDeLista(t, { llave: 'off' }), MANUAL_T);
   // archivo roto: misma decisión y el texto de hoy, y el archivo no se pisa

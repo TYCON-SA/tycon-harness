@@ -133,14 +133,15 @@ function validarParte(texto, nombre) {
 
 /**
  * La parte con la que se mide, o null (sin parte, o una que no vale: la historia entera). `story`: la ruta de la
- * historia; `batch`: el nombre de la parte. Una historia que no se lee da null.
+ * historia; `batch`: el nombre de la parte. Una historia que no se lee da null. Una parte done no se mide, salvo con
+ * `deLaCorrida`: la tanda de la corrida abierta, que la sesión cerró en la historia antes de «Preparar».
  */
-function parteMedible(story, batch) {
+function parteMedible(story, batch, { deLaCorrida = false } = {}) {
   if (!batch || !story) return null;
   let texto;
   try { texto = fs.readFileSync(story, 'utf8'); } catch (_) { return null; }
   const p = validarParte(texto, batch);
-  return p.valid && !p.done ? p : null;
+  return p.valid && (!p.done || deLaCorrida) ? p : null;
 }
 
 /** La huella de la lista de una parte: lo que la revisión del plan guarda y la aprobación delegada compara. */

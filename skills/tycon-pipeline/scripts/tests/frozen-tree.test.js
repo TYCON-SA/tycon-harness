@@ -613,3 +613,130 @@ test('T27 PrepareCommit_SprintStatusMissingOrStoryWithoutId_Blocks @story-8.263 
     assert.deepStrictEqual(d.files, ['specs/sprint-status.yaml'], nombre);
   }
 });
+
+// --- lo que trae main después de la última vuelta (historia 8.272) ------------------------------------------------
+// Un repo con su origin: main con dos archivos; la rama de la corrida cambia `a.js` y se sella. Después main cambia
+// `otro.js` (y, según el caso, `a.js`) desde otro clon, y la rama lo trae por merge o por rebase
+function conMain() {
+  const base = tmp('ft-main-');
+  const origen = path.join(base, 'origen.git');
+  const repo = path.join(base, 'repo');
+  const otro = path.join(base, 'otro');
+  const env = { ...process.env, GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  const en = (dir) => (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origen]);
+  fs.mkdirSync(repo);
+  const git = en(repo);
+  git('init', '-q', '-b', 'main');
+  git('remote', 'add', 'origin', origen);
+  fs.writeFileSync(path.join(repo, 'a.js'), 'uno\ndos\ntres\ncuatro\ncinco\n');
+  fs.writeFileSync(path.join(repo, 'otro.js'), 'otro\n');
+  fs.writeFileSync(path.join(repo, 'quieto.sh'), 'echo quieto\n');
+  git('add', '.');
+  git('commit', '-qm', 'inicio');
+  git('push', '-q', 'origin', 'main');
+  git('fetch', '-q', 'origin');
+  git('checkout', '-q', '-b', 'story/9.9');
+  fs.writeFileSync(path.join(repo, 'a.js'), 'uno de la corrida\ndos\ntres\ncuatro\ncinco\n');
+  git('commit', '-qam', 'la corrida');
+  execFileSync('git', ['clone', '-q', origen, otro], { env });
+  const o = en(otro);
+  const avanzarMain = (cambios) => {
+    for (const [rel, txt] of Object.entries(cambios)) fs.writeFileSync(path.join(otro, rel), txt);
+    o('commit', '-qam', 'otro pedido');
+    o('push', '-q', 'origin', 'main');
+    git('fetch', '-q', 'origin');
+  };
+  return { repo, git, avanzarMain };
+}
+
+test('T8 Seal_MainBroughtFileRunDidNotTouch_IsPaperwork @story-8.272 @ac-9 — lo que trae main en un archivo que la corrida no tocó es papeleo', () => {
+  for (const como of ['merge', 'rebase']) {
+    const R = conMain();
+    const v = ft().sealAndFreeze({ stateDir: tmp('ft-main-estado-'), sid: 's-main', etiqueta: 'rev-iter1', repos: [R.repo] });
+    assert.ok(!v.error, v.error);
+    const antes = v.repos[0];
+    assert.match(String(antes.mainBase), /^[0-9a-f]{40}$/, `${como}: el sello anota el punto en común con main`);
+    R.avanzarMain({ 'otro.js': 'otro cambiado por main\n' });
+    if (como === 'merge') R.git('merge', '-q', '--no-edit', 'origin/main');
+    else R.git('rebase', '-q', 'origin/main');
+    const ahora = ft().puntoComunConMain(R.repo);
+    assert.ok(ahora.sha, ahora.error);
+    let d = ft().changed(R.repo, antes.tree, ft().seal(R.repo).tree, { mainAntes: antes.mainBase, mainAhora: ahora.sha });
+    assert.deepStrictEqual([d.files, d.deMain], [[], ['otro.js']], como);
+    // main vuelve a cambiar el archivo y la rama no lo trae: el punto en común no cambia, sigue siendo papeleo
+    R.avanzarMain({ 'otro.js': 'otro cambiado otra vez\n' });
+    const otraVez = ft().puntoComunConMain(R.repo);
+    assert.strictEqual(otraVez.sha, ahora.sha, como);
+    d = ft().changed(R.repo, antes.tree, ft().seal(R.repo).tree, { mainAntes: antes.mainBase, mainAhora: otraVez.sha });
+    assert.deepStrictEqual([d.files, d.deMain], [[], ['otro.js']], como);
+  }
+});
+
+test('T9 Seal_RunFileAlsoChangedByMain_Counts @story-8.272 @ac-10 @ac-26 — un archivo de la corrida que main también cambió cuenta', () => {
+  const R = conMain();
+  const antes = ft().seal(R.repo).tree;
+  const mainAntes = ft().puntoComunConMain(R.repo).sha;
+  R.avanzarMain({ 'a.js': 'uno\ndos\ntres\ncuatro\ncinco de main\n', 'otro.js': 'otro de main\n' });
+  R.git('merge', '-q', '--no-edit', 'origin/main');
+  const d = ft().changed(R.repo, antes, ft().seal(R.repo).tree, { mainAntes, mainAhora: ft().puntoComunConMain(R.repo).sha });
+  assert.deepStrictEqual(d.files, ['a.js']);
+  assert.deepStrictEqual(d.deMain, ['otro.js']);
+  // un cambio de la corrida después de la vuelta sigue frenando
+  fs.writeFileSync(path.join(R.repo, 'a.js'), 'uno otra vez\n');
+  const d2 = ft().changed(R.repo, antes, ft().seal(R.repo).tree, { mainAntes, mainAhora: ft().puntoComunConMain(R.repo).sha });
+  assert.ok(d2.files.includes('a.js'));
+});
+
+test('T10 Seal_NoMainBaseOrNoMain_CountsAsToday @story-8.272 @ac-11 — sin la base de main en el sello, o sin main, todo cuenta como hoy', () => {
+  const R = conMain();
+  const antes = ft().seal(R.repo).tree;
+  R.avanzarMain({ 'otro.js': 'otro de main\n' });
+  R.git('merge', '-q', '--no-edit', 'origin/main');
+  const ahora = ft().puntoComunConMain(R.repo).sha;
+  // un sello de antes, sin mainBase
+  const d = ft().changed(R.repo, antes, ft().seal(R.repo).tree, { mainAntes: null, mainAhora: ahora });
+  assert.deepStrictEqual([d.files, d.deMain], [['otro.js'], []]);
+  // un repo sin origin/main ni main: el motivo
+  const J = repoDeJuguete('t10', { 'x.js': 'x\n' });
+  const sin = ft().puntoComunConMain(J.repo);
+  assert.strictEqual(sin.sha, undefined);
+  assert.match(sin.error, /sin origin\/main ni main/);
+});
+
+test('PrepareCommit_NoMainToSeparate_SaysWhy @story-8.272 @ac-11 — (revisores de la 8.272) sin main para separar, «Preparar» frena como hoy y dice por qué', () => {
+  // los repos de la corrida de juguete no tienen origin/main ni main: el sello no anota el punto en común
+  const C = corrida('s-ft11');
+  C.vuelta();
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), 'module.exports = 4;\n');
+  const r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), MISMATCH);
+  assert.match(salida(r), /No pude separar lo que trajo main \(.*(sin el punto en común con main|sin origin\/main ni main).*\): cuenta como cambio/, salida(r));
+});
+
+test('Seal_ModeOrSubmoduleChangedByRun_CountsEvenAfterMain @story-8.272 @ac-10 — (pase de la 8.272) un cambio de permisos o de submódulo de la corrida no pasa como «lo trajo main»', () => {
+  const R = conMain();
+  // un submódulo de juguete: un repo adentro, que git anota por su puntero (el commit de su HEAD)
+  const sub = path.join(R.repo, 'sub');
+  const enSub = (...a) => execFileSync('git', ['-C', sub, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
+  fs.mkdirSync(sub);
+  enSub('init', '-q');
+  fs.writeFileSync(path.join(sub, 'x'), '1\n');
+  enSub('add', '.');
+  enSub('commit', '-qm', 'uno');
+  R.git('add', 'sub');
+  R.git('commit', '-qm', 'el submódulo');
+  const antes = ft().seal(R.repo).tree;
+  const mainAntes = ft().puntoComunConMain(R.repo).sha;
+  R.avanzarMain({ 'otro.js': 'otro de main\n' });
+  R.git('merge', '-q', '--no-edit', 'origin/main');
+  // después de traer main, la sesión hace dos cambios que nadie revisó: el permiso de ejecución y el puntero
+  fs.chmodSync(path.join(R.repo, 'quieto.sh'), 0o755);
+  fs.writeFileSync(path.join(sub, 'x'), '2\n');
+  enSub('commit', '-qam', 'dos');
+  R.git('add', 'quieto.sh', 'sub');
+  R.git('commit', '-qm', 'cambios sin revisar');
+  const d = ft().changed(R.repo, antes, ft().seal(R.repo).tree, { mainAntes, mainAhora: ft().puntoComunConMain(R.repo).sha });
+  assert.deepStrictEqual([d.files.sort(), d.deMain], [['quieto.sh', 'sub'], ['otro.js']]);
+});

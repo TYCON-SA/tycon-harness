@@ -1551,6 +1551,66 @@ function computeMechDiscount(allList, args) {
   };
 }
 
+// ── El revisor de un crítico arreglado vuelve a confirmarlo ─────────────────────────────────────────────────────────
+//
+// El cruce de «Hallazgos» (lib/reported-criticals.js, su tercer control) da por bueno un crítico «arreglado» sólo con otra vuelta
+// legible del revisor que lo reportó, o con la exención del dueño. Si el descuento mecánico o el cálculo por diferencias
+// lo dejan afuera de la vuelta siguiente, la única salida es la exención: por eso vuelve, por encima de los dos.
+// `{ agregar: [{ name, reason }], fuera: [texto], error }`. Sin marcador de esta historia, sin registro o sin reportes,
+// nada que confirmar. Un registro o un findings.json que no se leen dan `error`: quien llama no descuenta esa vuelta.
+function revisoresPorConfirmar(args) {
+  const vacio = { agregar: [], fuera: [], error: null };
+  if (!args.story || (args.iter || 1) < 2) return vacio;
+  // un marcador que no se lee no es «sin corrida»: no sé qué hay por confirmar
+  const leido = readSessionMarkerStrict();
+  if (leido.estado === 'ilegible') return { ...vacio, error: `el marcador de la sesión (${leido.motivo})` };
+  const marker = leido.marcador;
+  if (!marker || !marker.storyPath) return vacio;
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const suya = path.isAbsolute(marker.storyPath) ? marker.storyPath : path.resolve(marker.repoPath || process.cwd(), marker.storyPath);
+  if (real(suya) !== real(args.story)) return vacio;
+  const rc = require('./lib/reported-criticals.js');
+  // la carpeta de la corrida que anota el marcador puede ser relativa al repo del código
+  const runDir = marker.runDir ? path.resolve(marker.repoPath || args.repo || process.cwd(), marker.runDir)
+    : resolveRunDir(marker.repoPath || args.repo || process.cwd(), String(marker.storyId), false, suya, { marker });
+  const all = rc.readAll(stateDirOf(os.homedir()));
+  if (all.error) return { ...vacio, error: `el registro de críticos (${all.error})` };
+  const lines = rc.linesOfRun(all.lines, { story: marker.storyId, since: marker.startedAt || null, ...rc.corridaDelMarcador(marker, runDir) });
+  // renglones rotos y ningún reporte legible de la corrida: el cruce lo da por «registro ilegible», no por «nada»
+  if (!lines.some((l) => l.kind === 'report')) return all.unreadable ? { ...vacio, error: `el registro de críticos (${all.unreadable} renglón(es) ilegible(s) y ningún reporte legible de esta corrida)` } : vacio;
+  const h = require('./lib/review-rounds.js').hallazgosDe(runDir);
+  if (h.error && h.existe) return { ...vacio, error: `los hallazgos de la corrida (${h.error})` };
+  const pc = rc.porConfirmar({ lines, findings: h.lista || [], runDir, home: os.homedir(), story: marker.storyId });
+  const out = { ...vacio };
+  for (const r of pc.revisores) {
+    // uno que esta sesión no puede lanzar se exigiría sin salida: no se suma, y el cierre pide la exención como hoy
+    if (!MODELOS.reviewerExists(r.name, { agentsDir: args.agentsDir })) { out.fuera.push(`${r.name} tiene un crítico arreglado por confirmar (${r.rules.join(', ')}) y su agente no se puede lanzar en esta sesión: no lo sumo; el cierre pedirá la exención`); continue; }
+    out.agregar.push({ name: r.name, reason: `crítico arreglado por confirmar (${r.rules.join(', ')})` });
+  }
+  return out;
+}
+
+/**
+ * Suma a `lista` los revisores por confirmar: los saca de `skipped` y de `mech_discounted` de `salida` y los nombra en
+ * `confirm_reviewers`. Devuelve la lista nueva. Los demás campos de `salida` no cambian.
+ */
+function sumarPorConfirmar(lista, salida, pc) {
+  const nueva = [...lista];
+  for (const a of pc.agregar) if (!nueva.includes(a.name)) nueva.push(a.name);
+  if (!pc.agregar.length) return nueva;
+  const nombres = new Set(pc.agregar.map((a) => a.name));
+  if (Array.isArray(salida.skipped)) {
+    salida.skipped = salida.skipped.filter((s) => !nombres.has(typeof s === 'string' ? s : s.name));
+    if (salida.skipped_count != null) salida.skipped_count = salida.skipped.length;
+  }
+  if (Array.isArray(salida.mech_discounted)) {
+    salida.mech_discounted = salida.mech_discounted.filter((d) => !nombres.has(d.name));
+    if (!salida.mech_discounted.length) delete salida.mech_discounted;
+  }
+  salida.confirm_reviewers = pc.agregar;
+  return nueva;
+}
+
 // ── El validador de stories en los re-loops ──────────────────────
 //
 // Medido: en los re-loops, después de
@@ -7135,7 +7195,9 @@ function main() {
     // Descuento automático de advisors cubiertos por mech-check (coherente
     // con el expected[] que se persiste abajo — check-count valida contra el set
     // YA descontado, así el orquestador no spawnea LLMs para checks que corren gratis).
-    const disc = computeMechDiscount(set.all, args);
+    // Sin poder leer los críticos de la corrida no se descuenta: no saber si hay algo por confirmar no es «nada».
+    const pc = revisoresPorConfirmar(args);
+    const disc = pc.error ? null : computeMechDiscount(set.all, args);
     if (disc && disc.discounted.length) {
       set.all = disc.kept;
       set.required_count = disc.kept.length;
@@ -7147,6 +7209,10 @@ function main() {
       set.mech_findings = disc.mech_findings;
       set.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — van DIRECTO al reporte consolidado.`;
     }
+    // el revisor de un crítico arreglado vuelve, por encima del descuento: sin él, el cierre pide la exención del dueño
+    set.all = sumarPorConfirmar(set.all, set, pc);
+    set.required_count = set.all.length;
+    for (const l of [...(pc.error ? [`no pude leer los críticos de la corrida (${pc.error}): no descuento`] : []), ...pc.fuera]) process.stderr.write(`⚠️  ${l}\n`);
     // Enriquecer con model_hints solo si el caller pidió un tier opt-in.
     // Default (tier=null o 'standard'): output sin model_hints (zero regresión).
     const hints = modelHintsForSet({ all: set.all, tier: args.costTier });
@@ -7269,8 +7335,9 @@ function main() {
     const conModelos = conModelosDeLaCorrida(args);
     const result = computeSmartReloop(conModelos);
     const avisosModelos = result._avisos || [];
-    // El descuento aplica también al subset rerun del re-loop.
-    const disc = computeMechDiscount(result.rerun, args);
+    // El descuento aplica también al subset rerun del re-loop. Sin poder leer los críticos de la corrida, no se descuenta.
+    const pc = revisoresPorConfirmar(args);
+    const disc = pc.error ? null : computeMechDiscount(result.rerun, args);
     if (disc && disc.discounted.length) {
       if (result.reviewer_models) for (const d of disc.discounted) delete result.reviewer_models[d.name];
       result.rerun = disc.kept;
@@ -7282,6 +7349,20 @@ function main() {
     } else if (disc && disc.mech_findings.length) {
       result.mech_findings = disc.mech_findings;
       result.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — al reporte del paso de hallazgos.`;
+    }
+    // el revisor de un crítico arreglado vuelve aunque el descuento o el cálculo por diferencias lo dejen afuera; lleva el
+    // modelo que le da la corrida. `no_code_delta` y el aviso del registro ciego se conservan: vuelve sólo a confirmar
+    {
+      const antes = result.rerun || [];
+      result.rerun = sumarPorConfirmar(antes, result, pc);
+      result.rerun_count = result.rerun.length;
+      const nuevos = result.rerun.filter((n) => !antes.includes(n));
+      if (nuevos.length && result.reviewer_models) {
+        const suyos = {};
+        aplicarModelosDeRevisores(suyos, nuevos, conModelos);
+        Object.assign(result.reviewer_models, suyos.reviewer_models || {});
+      }
+      for (const l of [...(pc.error ? [`no pude leer los críticos de la corrida (${pc.error}): no descuento`] : []), ...pc.fuera]) process.stderr.write(`⚠️  ${l}\n`);
     }
     // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
     const congelada = congelarVuelta({ story: args.story, repo: args.repo, iter: args.iter });
@@ -7397,8 +7478,10 @@ function main() {
       // (sin esto, el fallback exigiría advisors
       // que el orquestador legítimamente no spawneó por descuento → exit 2 falso).
       const recomputed = computeAdvisorSet(args);
-      const disc = computeMechDiscount(recomputed.all, args);
-      expected = (disc && disc.discounted.length) ? disc.kept : recomputed.all;
+      const pc = revisoresPorConfirmar(args);
+      const disc = pc.error ? null : computeMechDiscount(recomputed.all, args);
+      // el revisor de un crítico arreglado: el mismo que suman advisors y smart-reloop
+      expected = sumarPorConfirmar((disc && disc.discounted.length) ? disc.kept : recomputed.all, {}, pc);
       expectedSource = 'recomputado (step5-start sin expected — corrida pre-upgrade o log ausente)' +
         ((disc && disc.discounted.length) ? ` con descuento mech aplicado (${disc.discounted.map((d) => d.name).join(', ')})` : '');
       // El mismo descuento del validador que aplicó el re-loop —sin él,
@@ -8105,8 +8188,9 @@ function main() {
     if (!args.story) { process.stderr.write('uso: pipeline.js compare-candidates --story <spec.md> [--repo <repo>[,<repo>]] [--json]\n'); process.exit(2); }
     const storyAbs = path.resolve(args.story);
     let repos;
+    let m = null;
     try {
-      const m = readSessionMarker();
+      m = readSessionMarker();
       const so = require('./lib/save-ok.js');
       if (process.argv.includes('--repo')) repos = String(args.repo).split(',').map((r) => path.resolve(r.trim())).filter(Boolean);
       else if (args.filesDeclarado) repos = [...new Set(args.files.map((f) => so.raizDe(path.resolve(f))).filter(Boolean))];
@@ -8115,8 +8199,12 @@ function main() {
         repos = so.reposDeLaCorrida({ marker: { ...m, storyPath: path.isAbsolute(m.storyPath) ? m.storyPath : path.resolve(m.repoPath || process.cwd(), m.storyPath) }, hermanos });
       } else repos = [so.raizDe(storyAbs)].filter(Boolean);
     } catch (e) { process.stderr.write(`compare-candidates: no pude calcular los repos de la corrida (${e.message})\n`); process.exit(2); }
-    const r = require('./lib/compare-previous.js').candidatos({ storyPath: storyAbs, repos });
-    if (process.argv.includes('--json')) { process.stdout.write(JSON.stringify({ repos, ...r }, null, 2) + '\n'); process.exit(0); }
+    // con la tanda de la corrida, los mismos candidatos que exige el freno de «Preparar»
+    const cpv = require('./lib/compare-previous.js');
+    const tanda = cpv.archivosDeLaTanda(m, storyAbs);
+    const r = cpv.candidatos({ storyPath: storyAbs, repos, files: tanda.files });
+    if (process.argv.includes('--json')) { process.stdout.write(JSON.stringify({ repos, tanda, ...r }, null, 2) + '\n'); process.exit(0); }
+    if (tanda.tanda) process.stderr.write(tanda.files ? `ℹ️  sólo la tanda ${tanda.tanda}\n` : `⚠️  sin parte medible de la tanda ${tanda.tanda}: comparo la historia entera (${tanda.motivo})\n`);
     for (const a of r.avisos) process.stderr.write(`⚠️  ${a}\n`);
     // lo que no se pudo mirar no es «sin candidatos»
     for (const n of r.noMedidos || []) process.stdout.write(`· ${n.archivo} (${path.basename(n.repo)}) — no medido: ${n.motivo}\n`);
@@ -8418,6 +8506,8 @@ function main() {
 // más evadibles/sutiles tienen tests). require() NO ejecuta main().
 module.exports = {
   matchGlob,
+  // los revisores de un crítico arreglado sin confirmar, que vuelven a la vuelta siguiente
+  revisoresPorConfirmar,
   // La configuración `models` de la organización (la usa también on-advisor-run.js)
   orgModels,
   orgDeepReview,

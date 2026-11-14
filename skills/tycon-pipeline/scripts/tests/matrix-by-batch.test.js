@@ -394,6 +394,38 @@ test('T12 MatrixCli_ReadsMarkerBatch @story-8.240 @ac-8 — la línea de comando
   assert.doesNotMatch(primera(r), /mide la tanda/, r.stdout);
 });
 
+test('T11 Matrix_DoneBatchOfOpenRun_IsMeasured + Matrix_ManualBatchDone_StillRejected + SetBatchAndStart_DoneBatch_StillRejected @story-8.272 @ac-12 @ac-13 — la tanda de la corrida marcada done se sigue midiendo; a mano, no', () => {
+  const E = entorno();
+  E.arrancar('s-a11');
+  assert.strictEqual(E.correr('marker.js', ['set-batch', A], 's-a11').status, 0);
+  hastaPrepararElCommit(E, 's-a11');
+  E.humo([1]);
+  // la sesión cerró su tanda en la historia antes de «Preparar»: la matriz mide A, no la historia entera ni un error
+  fs.writeFileSync(E.story, historia({ estados: { [A]: 'done' } }));
+  let r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-a11');
+  assert.doesNotMatch(r.stderr, MATRIZ_ROJA, r.stderr);
+  assert.doesNotMatch(r.stderr + r.stdout, /una tanda hecha no se entrega de nuevo/, r.stderr);
+  assert.match(r.stderr + r.stdout, new RegExp(`tanda ${A}`));
+  // la línea de comando con la sesión de la corrida (la que corre el chequeo de la matriz de «Preparar»): también la mide
+  const linea = cli(E, [], 's-a11');
+  assert.match(primera(linea), new RegExp(`mide la tanda ${A}`), linea.stdout + linea.stderr);
+  assert.doesNotMatch(linea.stdout + linea.stderr, /una tanda hecha no se entrega de nuevo/);
+  // la parte de la corrida, con la tanda done: una historia que declara los archivos de cada tanda
+  const bs = require(path.join(SCRIPTS, 'lib', 'batch-scope.js'));
+  const conArchivos = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'matrix-by-batch-parte-')), 'historia.md');
+  fs.writeFileSync(conArchivos, ['---', 'story: "9.9"', 'files_to_modify:', '  - src/a.js', '  - src/b.js', 'pipelines:',
+    `  - name: ${A}`, '    status: done', '    files:', '      - src/a.js',
+    `  - name: ${B}`, '    status: pending', '    files:', '      - src/b.js', '---', ''].join('\n'));
+  assert.strictEqual(bs.parteMedible(conArchivos, A), null, 'sin la opción, como hoy');
+  assert.deepStrictEqual((bs.parteMedible(conArchivos, A, { deLaCorrida: true }) || {}).files, ['src/a.js'], 'con la opción de la corrida, la parte');
+  // a mano: --batch A rechaza como hoy
+  r = cli(E, ['--batch', A], 's-a11', true);
+  assert.match(r.stdout + r.stderr, /una tanda hecha no se entrega de nuevo/);
+  // el arranque con la tanda done, en otra sesión: rechaza como hoy (set-batch con una tanda done lo fija la T9 de la 8.239)
+  r = E.correr('pipeline.js', ['start', '--story', E.story, '--repo', E.repo, '--brief', '--batch', A], 's-a11-otra');
+  assert.match(r.stdout + r.stderr, /una tanda hecha no se entrega de nuevo/);
+});
+
 test('T13 MatrixCli_BatchFlags @story-8.240 @ac-8 — --batch, --all-batches, --code-repo y --base', () => {
   const E = entorno();
   conArchivoDeB(E);

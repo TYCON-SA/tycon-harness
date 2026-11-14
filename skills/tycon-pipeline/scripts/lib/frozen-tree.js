@@ -68,6 +68,19 @@ function seal(repo) {
 }
 
 /**
+ * El punto en común de `HEAD` con main (`origin/main`, o `main` sin él): `{ sha }` o `{ error }` en una línea. Lo anota
+ * el sello de cada vuelta y se vuelve a calcular al guardar: lo que cambió entre los dos es lo que la rama trajo de main,
+ * por merge o por rebase. Si main avanza sin que la rama lo traiga, el punto en común no se mueve.
+ */
+function puntoComunConMain(repo) {
+  const ref = ['origin/main', 'main'].find((r) => git(['-C', repo, 'rev-parse', '--verify', '-q', `${r}^{commit}`]).ok);
+  if (!ref) return { error: `${path.basename(repo)}: sin origin/main ni main` };
+  const mb = git(['-C', repo, 'merge-base', 'HEAD', ref]);
+  if (!mb.ok || !/^[0-9a-f]{40}$/.test(mb.out)) return { error: `${path.basename(repo)}: no encontré el punto en común con ${ref} (${unaLinea(mb.err || mb.out)})` };
+  return { sha: mb.out };
+}
+
+/**
  * Deja los archivos de una carpeta de sólo lectura (o, con `escribible`, les devuelve el permiso al dueño). Las carpetas
  * quedan escribibles por su dueño: así cualquiera que limpia su carpeta temporal la puede borrar; un archivo agregado o
  * cambiado lo atrapa `verify`, que vuelve a sellar la copia.
@@ -219,7 +232,9 @@ function sealAndFreeze({ stateDir, sid, etiqueta, repos, tipo = 'revisores', sto
     if (s.error) { for (const r of out) remover(r.copy); return { error: s.error }; }
     const f = freeze(repo, s.tree, copyDir(stateDir, sid, etiqueta, repo));
     if (f.error) { for (const r of out) remover(r.copy); return { error: f.error }; }
-    out.push({ repo, tree: s.tree, copy: f.copy });
+    // sin el punto en común con main el sello vale igual: al guardar, lo que trajo main cuenta como cambio
+    const pm = puntoComunConMain(repo);
+    out.push({ repo, tree: s.tree, copy: f.copy, ...(pm.sha ? { mainBase: pm.sha } : {}) });
   }
   if (tipo === 'revisores') {
     for (const v of vueltas(stateDir, sid).filter((x) => x.tipo === 'revisores' && x.etiqueta !== etiqueta)) {
@@ -289,17 +304,40 @@ const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
  * su sección de seguimientos, y el `sprint-status.yaml` de la carpeta de la historia cuando sólo cambió el renglón de
  * esa historia (lo pasa a review el cierre). Si el estado del sprint no está en alguno de los dos sellos, o la historia no
  * dice qué número es, cuenta como cambio.
+ * Con `mainAntes` y `mainAhora` (el punto en común con main del sello y el de ahora), un archivo que en la foto revisada
+ * es igual al de `mainAntes` y ahora es igual al de `mainAhora` va a `deMain`: lo cambió main y la corrida no lo tocó
+ * (en el estado del sprint, sin el renglón de la historia). Un archivo que la corrida tocó cuenta aunque main también.
  */
-function changed(repo, treeA, treeB, { storyRel } = {}) {
-  if (treeA === treeB) return { files: [], papeleo: [] };
+function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null } = {}) {
+  if (treeA === treeB) return { files: [], papeleo: [], deMain: [] };
   const d = git(['-C', repo, 'diff-tree', '-r', '-z', '--no-renames', treeA, treeB]);
   if (!d.ok) return { error: `no pude comparar ${repo} entre ${treeA} y ${treeB}: ${unaLinea(d.err)}` };
   const { esPapeleoDeLaHuella, esEvidenciaEnVivo } = require('./save-ok.js');
   const partes = d.crudo.split('\0');
   const files = [];
   const papeleo = [];
+  const deMain = [];
   const leer = (t, rel) => { const r = git(['-C', repo, 'show', `${t}:${rel}`]); return r.ok ? r.crudo : null; };
   const estadoDelSprint = storyRel ? path.posix.join(path.posix.dirname(storyRel), 'sprint-status.yaml') : null;
+  // la entrada de una ruta en un árbol: modo, tipo y objeto («» si no existe, null si no se pudo leer). Así cuentan también
+  // un cambio de permisos y el puntero de un submódulo, que el contenido solo no muestra
+  const entrada = (t, rel) => { const r = git(['-C', repo, 'ls-tree', t, '--', rel]); return r.ok ? r.out.split('\t')[0] : null; };
+  const trajoMain = (rel, sinPropio = null) => {
+    if (!mainAntes || !mainAhora || mainAntes === mainAhora) return false;
+    // lo que no se pudo leer no es «igual»: cuenta como cambio
+    const igual = (tx, ty) => {
+      const x = entrada(tx, rel);
+      const y = entrada(ty, rel);
+      if (x === null || y === null) return false;
+      if (x === y) return true;
+      // el estado del sprint: el mismo modo y tipo, y el mismo texto sin el renglón de la historia
+      if (!sinPropio || !x || !y || x.split(' ').slice(0, 2).join(' ') !== y.split(' ').slice(0, 2).join(' ')) return false;
+      const a = leer(tx, rel);
+      const b = leer(ty, rel);
+      return a !== null && b !== null && sinPropio(a) === sinPropio(b);
+    };
+    return igual(treeA, mainAntes) && igual(treeB, mainAhora);
+  };
   for (let i = 0; i + 1 < partes.length; i += 2) {
     const meta = partes[i].replace(/^:/, '').split(' ');
     const rel = partes[i + 1];
@@ -322,9 +360,11 @@ function changed(repo, treeA, treeB, { storyRel } = {}) {
       // los revisores y deja esa evidencia; no es código
       esPapeleo = rel === 'tasks/todo.md' || esPapeleoDeLaHuella(rel, modo) || esEvidenciaEnVivo(repo, rel);
     }
-    (esPapeleo ? papeleo : files).push(rel);
+    if (esPapeleo) papeleo.push(rel);
+    else if (trajoMain(rel, rel === estadoDelSprint && storyRel ? (t) => sinRenglonDeLaHistoria(t, claveDeLaHistoria(leer(treeB, storyRel)) || '\0') : undefined)) deMain.push(rel);
+    else files.push(rel);
   }
-  return { files, papeleo };
+  return { files, papeleo, deMain };
 }
 
 /**
@@ -371,7 +411,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
   };
 }
 
-module.exports = { seal, freeze, verify, changed, copyDir, remove, sweep, reposDe, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia };
+module.exports = { seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia };
 
 // `node frozen-tree.js procedencia <repo>`: la procedencia como fragmento JSON (`"run":…,"tree":…`), para sumar a un
 // renglón que arma un guion de bash. Nunca falla: sin node que conteste, el guion sigue sin ella.

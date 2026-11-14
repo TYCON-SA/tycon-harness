@@ -783,9 +783,37 @@ function renglonesTocados(repo, base, rel) {
  * Uno que no se puede mirar (su versión de main, su diff o el archivo de ahora no se leen) va a `noMedidos` con su
  * motivo. `{ candidatos, sinRepo, noMedidos, avisos }`.
  */
-function candidatos({ storyPath, storyText, repos = [] }) {
+/** Una ruta de una lista de la historia, en la forma en que se comparan: sin el prefijo «(repo) » y normalizada. */
+function rutaDeLaLista(f) {
+  return require('./batch-scope.js').normRuta(String(f || '').trim().replace(/^\([^)]*\)\s*/, ''));
+}
+
+/**
+ * Los archivos de la tanda de la corrida, para medir sólo esa tanda: `{ files, tanda, motivo }`. `files` es null (se mide
+ * la historia entera) sin tanda en el marcador, con el marcador de otra historia o con una parte que no vale; `motivo`
+ * dice por qué, con el texto de `validarParte`. La tanda de la corrida marcada done se sigue midiendo: su corrida está
+ * abierta.
+ */
+function archivosDeLaTanda(marker, storyPath) {
+  const tanda = marker && marker.batch ? String(marker.batch) : null;
+  if (!tanda) return { files: null, tanda: null, motivo: 'la corrida no tiene tanda' };
+  const suya = marker.storyPath
+    ? (path.isAbsolute(marker.storyPath) ? marker.storyPath : path.resolve(marker.repoPath || process.cwd(), marker.storyPath))
+    : null;
+  if (!suya || !storyPath || real(suya) !== real(storyPath)) return { files: null, tanda, motivo: `el marcador es de otra historia (${marker.storyPath || 'sin historia'})` };
+  let texto;
+  try { texto = fs.readFileSync(storyPath, 'utf8'); } catch (e) { return { files: null, tanda, motivo: `no pude leer la historia (${e.code || e.message})` }; }
+  const p = require('./batch-scope.js').validarParte(texto, tanda);
+  if (!p.valid) return { files: null, tanda, motivo: p.reason };
+  return { files: p.files, tanda, motivo: null };
+}
+
+function candidatos({ storyPath, storyText, repos = [], files = null }) {
   const texto = storyText != null ? storyText : (() => { try { return fs.readFileSync(storyPath, 'utf8'); } catch (_) { return ''; } })();
   const avisos = [];
+  // con la lista de la tanda, sólo sus archivos: lo de otra tanda ya está en main o todavía no empezó. Las dos listas se
+  // comparan en la misma forma, sin el prefijo de repo o de tanda que `rutasAModificar` ya saca
+  const deLaTanda = files ? new Set(files.map(rutaDeLaLista)) : null;
   const out = [];
   const sinRepo = [];
   const noMedidos = [];
@@ -795,6 +823,7 @@ function candidatos({ storyPath, storyText, repos = [] }) {
   for (const [r, p] of puntas) if (!p) avisos.push(`${path.basename(r)}: sin origin/main ni main, sus archivos no se miran`);
   for (const ruta of rutasAModificar(texto)) {
     if (esPrueba(ruta)) continue;
+    if (deLaTanda && !deLaTanda.has(rutaDeLaLista(ruta))) continue;
     let enAlguno = false;
     for (const { repo, rel } of ubicar(ruta, raices, raizHistoria)) {
       const punta = puntas.get(repo);
@@ -977,10 +1006,12 @@ function delCodigoDeAhora(entradas, storyPath) {
  * `{ medido, candidatos, bloquea, lineas, avisos, juicio }`. Sin candidatos no hace nada (`candidatos: []`). Escribe los
  * avisos en `compare-avisos.md` de la corrida, para el texto del pedido.
  */
-function freno({ storyPath, repos, runDir, stateDir, story }) {
+function freno({ storyPath, repos, runDir, stateDir, story, marker = null }) {
   let storyText = '';
   try { storyText = fs.readFileSync(storyPath, 'utf8'); } catch (e) { return { medido: false, motivo: `no pude leer la historia (${e.code || e.message})`, candidatos: [] }; }
-  const c = candidatos({ storyPath, storyText, repos });
+  const t = archivosDeLaTanda(marker, storyPath);
+  const c = candidatos({ storyPath, storyText, repos, files: t.files });
+  if (!t.files) c.avisos.unshift(`sin parte medible${t.tanda ? ` de la tanda ${t.tanda}` : ''}: comparo la historia entera (${t.motivo})`);
   const noMedidos = (c.noMedidos || []).map((x) => `${x.archivo} (${path.basename(x.repo)}): ${x.motivo}`);
   if (!c.candidatos.length && !c.sinRepo.length) {
     if (noMedidos.length) return { medido: false, motivo: noMedidos.join(' · '), candidatos: [], avisos: c.avisos };
@@ -1033,7 +1064,7 @@ function freno({ storyPath, repos, runDir, stateDir, story }) {
 }
 
 module.exports = { compararHumo, normalizar, comparar, tocaLoReal, encierro, barrer, limpiar, leerInforme, anotarEntrada, informeVerificado, raizDelHumo, reposDeLaSesion, archivoQueCorre, topes,
-  candidatos, juicio, freno, rutasAModificar, alcanceDe, analizar, declara, cambiosDeclarados, ultimas, delCodigoDeAhora, leerInformeDetallado, seguro, INFORME, AVISOS };
+  candidatos, archivosDeLaTanda, rutaDeLaLista, juicio, freno, rutasAModificar, alcanceDe, analizar, declara, cambiosDeclarados, ultimas, delCodigoDeAhora, leerInformeDetallado, seguro, INFORME, AVISOS };
 
 // La línea de comando, para smoke-run.sh:
 //   compare-previous.js humo --run-dir <d> --state-dir <e> --sid <s> [--covers a,b] [--cmd-json <texto tapado>] -- <comando…>
