@@ -62,13 +62,18 @@ const MEMORIA = '.engram/chunks';
 const INDICE_DE_MEMORIA = '.engram/manifest.json';
 const esTrozoDeMemoria = (rel) => rel === INDICE_DE_MEMORIA || new RegExp(`^${MEMORIA.replace('.', '\\.')}/[^/]+\\.jsonl\\.gz$`).test(rel);
 const CONFIGURACION = /^(package(-lock)?|npm-shrinkwrap|tsconfig[\w.-]*|jsconfig)\.json$/;
+// un informe de la carpeta qa/: un `.md` hijo directo de una carpeta `qa`, en cualquier nivel
+const ES_INFORME_DE_QA = /(^|\/)qa\/[^/]+\.md$/;
+const INFORMES_DE_QA = ':(glob)**/qa/*.md';
 function esPapeleoDeLaHuella(rel, modo) {
   if (modo === '120000') return false;
   if (rel.startsWith(`${EVIDENCIA}/`)) return /\.(json|jsonl|md)$/.test(rel);
   if (rel.startsWith(`${MEMORIA}/`) || rel === INDICE_DE_MEMORIA) return esTrozoDeMemoria(rel);
   // el estado del sprint es papeleo como la story: cambiarlo después de preparar el pedido no es cambiar el código
   const estadoDelSprint = rel.startsWith('specs/') && path.posix.basename(rel) === 'sprint-status.yaml';
-  if (!PAPELEO_DE_LA_HUELLA.some((d) => rel.startsWith(`${d}/`)) || (!/\.(json|jsonl|md)$/.test(rel) && !estadoDelSprint)) return false;
+  // la carpeta qa/ de una historia puede vivir al lado de specs/ (qa-dir.js): sus informes son papeleo como la story
+  const informeDeQa = ES_INFORME_DE_QA.test(rel);
+  if (!informeDeQa && (!PAPELEO_DE_LA_HUELLA.some((d) => rel.startsWith(`${d}/`)) || (!/\.(json|jsonl|md)$/.test(rel) && !estadoDelSprint))) return false;
   if (rel.split('/').some((p) => p.startsWith('.')) || CONFIGURACION.test(path.posix.basename(rel))) return false;
   const pats = catalogo().SENSITIVE.map(patron);
   return !pats.some((re) => re.test(rel.toLowerCase()));
@@ -210,7 +215,7 @@ function huellas(repos) { return repos.map(huella); }
 
 // El árbol del índice aparte `env`, sin el papeleo: `{ out }` o `{ error, paso, err }`.
 function arbolSinPapeleo(repo, env) {
-  const ls = git(repo, ['ls-files', '-s', '-z', '--', EVIDENCIA, MEMORIA, INDICE_DE_MEMORIA, ...PAPELEO_DE_LA_HUELLA], env);
+  const ls = git(repo, ['ls-files', '-s', '-z', '--', EVIDENCIA, MEMORIA, INDICE_DE_MEMORIA, ...PAPELEO_DE_LA_HUELLA, INFORMES_DE_QA], env);
   if (!ls.ok) return { error: true, paso: 'ls-files', err: ls.err };
   // cada entrada: «<modo> <blob> <etapa>\t<ruta>»
   const fuera = ls.crudo.split('\0').filter(Boolean).map((e) => { const t = e.indexOf('\t'); return [e.slice(0, 6), e.slice(t + 1)]; })

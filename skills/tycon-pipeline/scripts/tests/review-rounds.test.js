@@ -387,7 +387,7 @@ test('VueltaExtra_ForSession_SinFirmaPendiente_NoSirve @story-8.142 @ac-2', () =
   const lab = laboratorio({ fotos: [1], servidas: [1] });
   const r = vueltaParaOtra(lab, 2, ['--extra-round', '--for-session', SID]);
   assert.notEqual(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stderr, /no necesita firma/);
+  assert.match(r.stderr, /La vuelta 2 está dentro del tope de 2/);
   assert.deepEqual(lab.servidas(), [1], 'no anotó una vuelta servida');
   assert.equal(vigentes(lab).length, 1, 'el pedido sigue sin gastar');
   // una sesión sin marcador abierto: sale 2 antes de la firma
@@ -481,4 +481,30 @@ test('Precheck_VueltaExtraYaAutorizada_NoAbreLaVentana', () => {
   // sin --extra-round, la vuelta autorizada se sirve sin otra firma
   const sin = lab.reloop(3);
   assert.equal(sin.status, 0, sin.stderr);
+});
+
+// ── La vuelta dentro del tope pedida para otra sesión dice el tope (8.271) ────────────────────────────────────────────
+//
+// «No se pide para otra sesión» se leía como «--for-session está prohibido». Lo que pasa es que la vuelta no necesita
+// firma: está dentro del tope, o la vuelta extra ya está autorizada. El mensaje lo dice y dice quién la pide.
+
+test('VueltaExtra_ForSession_DentroDelTope_DiceElTope @story-8.271 @ac-4', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], advisorsYaml: 'review:\n  max_rounds: 3\n' });
+  const r = vueltaParaOtra(lab, 3, ['--extra-round', '--for-session', SID]);
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /La vuelta 3 está dentro del tope de 3: no necesita la vuelta extra ni la firma/);
+  assert.match(r.stderr, /la sesión de la corrida, con el set sin --extra-round ni --for-session/);
+  assert.doesNotMatch(r.stderr, /no se pide para otra sesión/);
+  assert.deepEqual(lab.servidas(), [1, 2], 'no sirvió el set');
+  assert.equal(vigentes(lab).length, 1, 'el pedido sigue sin gastar');
+});
+
+test('VueltaExtra_ForSession_YaAutorizada_LoDice @story-8.271 @ac-5', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
+  fs.appendFileSync(path.join(lab.state, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'extra-round', story: '9.8', iter: 3 })}\n`);
+  const r = vueltaParaOtra(lab, 3, ['--extra-round', '--for-session', SID]);
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /La vuelta extra 3 ya está autorizada/);
+  assert.match(r.stderr, /sin --extra-round ni --for-session, sin otra firma/);
+  assert.deepEqual(lab.servidas(), [1, 2], 'no sirvió el set');
 });
