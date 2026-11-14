@@ -2,7 +2,8 @@
 'use strict';
 // reloop-code.test.js — qué edición pide otra vuelta de revisores: el código del proyecto sí, aunque viva en una
 // carpeta que se llama como una salida de compilación; la carpeta qa de la historia, las del arnés, una prueba y un
-// texto, no. Una prueba se reconoce por su ruta desde la raíz de su repo; sin raíz, cuenta como código.
+// texto, no. Una prueba se reconoce por su ruta desde la raíz de su repo; un archivo sin raíz (fuera de todo repo) no
+// pide otra vuelta.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -32,7 +33,7 @@ function marcador(dir, story, archivos) {
 }
 
 test('CodigoEnBinOBuild_PideOtraVuelta', (t) => {
-  const { dir, story } = repo(t);
+  const { dir, story } = repo(t, { git: true });
   assert.equal(pideOtraVuelta(path.join(dir, 'scripts', 'bin', 'cli.js'), { storyPath: story }), true);
   assert.equal(pideOtraVuelta(path.join(dir, 'src', 'build', 'x.ts'), { storyPath: story }), true);
 });
@@ -94,11 +95,37 @@ test('T8b OtraVuelta_DosReposMismaRuta_NombraLosDos @story-8.195 @ac-2 — dos a
   assert.deepEqual(reviewersRound(m).archivos, ['src/app.ts']);
 });
 
-test('T12 OtraVuelta_SinRaizDeRepo_EsCodigo @story-8.195 @ac-12 — sin .git arriba (o en una carpeta que ya no existe), una prueba cuenta como código', (t) => {
+test('T12 OtraVuelta_SinRaizDeRepo_NoPide @story-8.195 @story-8.270 @ac-12 @ac-24 — sin .git arriba (o en una carpeta que ya no existe), no pide otra vuelta', (t) => {
+  // la 8.270 cambia la regla de la 8.195: un archivo fuera de todo repo no está en ningún pedido y el sello no lo mira
   const { dir, story } = repo(t);
-  assert.equal(pideOtraVuelta(path.join(dir, 'src', 'a.test.ts'), { storyPath: story }), true);
-  assert.equal(pideOtraVuelta(path.join(dir, 'ya-no-existe', 'tests', 'b.test.ts'), { storyPath: story }), true);
-  assert.ok(reviewersRound(marcador(dir, story, ['src/a.test.ts'])), 'ante la duda, se revisa');
+  assert.equal(pideOtraVuelta(path.join(dir, 'src', 'a.test.ts'), { storyPath: story }), false);
+  assert.equal(pideOtraVuelta(path.join(dir, 'ya-no-existe', 'tests', 'b.test.ts'), { storyPath: story }), false);
+  assert.equal(reviewersRound(marcador(dir, story, ['src/a.test.ts'])), null);
+});
+
+test('Reloop_FileOutsideAnyRepo_NoRound @story-8.270 @ac-24 — un guion escrito en una carpeta sin repo no pide otra vuelta', (t) => {
+  const fuera = fs.mkdtempSync(path.join(os.tmpdir(), 'reloop-code-fuera-'));
+  t.after(() => fs.rmSync(fuera, { recursive: true, force: true }));
+  const guion = path.join(fuera, 'firmar-constancia.sh');
+  fs.writeFileSync(guion, 'echo hola\n');
+  const { dir, story } = repo(t, { git: true });
+  assert.equal(pideOtraVuelta(guion, { storyPath: story }), false);
+  assert.equal(pideOtraVuelta(path.join(fuera, 'ayuda.js'), { storyPath: story }), false, 'también un .js');
+  const m = marcador(dir, story, []);
+  m.fileEvents = [{ path: guion, ts: '2026-11-03T10:05:00.000Z', code: true }];
+  assert.equal(reviewersRound(m), null, 'sin otra vuelta, aunque el evento diga código');
+  // un archivo borrado dentro del repo sigue encontrando la raíz: sigue contando
+  assert.equal(pideOtraVuelta(path.join(dir, 'src', 'borrado', 'x.js'), { storyPath: story }), true);
+});
+
+test('Reloop_CodeInRepoOrWorktree_StillRounds @story-8.270 @ac-25 — código en un repo o en un worktree (con .git archivo) sigue pidiendo otra vuelta', (t) => {
+  const { dir, story } = repo(t, { git: true });
+  assert.equal(pideOtraVuelta(path.join(dir, 'src', 'a.js'), { storyPath: story }), true);
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'reloop-code-wt-'));
+  t.after(() => fs.rmSync(wt, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(wt, '.git'), 'gitdir: /tmp/en-otro-lado/.git/worktrees/x\n');
+  assert.equal(pideOtraVuelta(path.join(wt, 'lib', 'b.js'), { storyPath: story }), true);
+  assert.ok(reviewersRound(marcador(dir, story, ['src/a.js'])), 'pide otra vuelta');
 });
 
 test('T32 ReloopReducido_SoloPruebas_NoDispara @story-8.195 @ac-32 — un delta de sólo pruebas no repite revisores; con código, sí', (t) => {

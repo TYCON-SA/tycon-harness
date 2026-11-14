@@ -270,6 +270,34 @@ function esOwnerWait(comando) {
 }
 
 /**
+ * ¿El comando de una consola de fondo es exactamente el vigilante de sólo lectura? Decisión del dueño: con él de fondo,
+ * la coordinadora sigue firmando por delegación. Una sola forma, para cualquier plataforma (lee el pedido por la capa de
+ * plataforma), con el mismo lector y las mismas reglas que `esOwnerWait` (un solo tramo, todas las palabras literales,
+ * sin redirecciones ni nada armado):
+ *   node <coordination.js de este arnés> pr-wait --repo <org/repo> --number <n> [--interval <s>]
+ * `<n>` y `<s>` son enteros positivos escritos tal cual, y `<org/repo>` una palabra `organización/repo`. Un bucle de
+ * consola escrito a mano, o el vigilante propio de una plataforma, no es esta forma: desde su línea no se sabe si además
+ * escribe.
+ */
+const ENTERO = /^[1-9]\d*$/;
+const ORG_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+function esVigilanteDeLectura(comando) {
+  let t;
+  try { t = markerCommand().tramos(String(comando), 'bash'); } catch (_) { return false; }
+  if (t.abierta || t.subs.length || t.tramos.length !== 1 || t.tramos[0].heredocs.length) return false;
+  const p = t.tramos[0].palabras;
+  if (p.some((x) => !x.literal || /^\d*[<>&|]/.test(x.texto) || /[\r\n]/.test(x.texto))) return false;
+  const w = p.map((x) => x.texto);
+  const intervalo = (resto) => resto.length === 0 || (resto.length === 2 && resto[0] === '--interval' && ENTERO.test(resto[1]));
+  if (NODES.has(base(w[0])) && path.isAbsolute(w[1] || '') && w[2] === 'pr-wait' && w[3] === '--repo' && ORG_REPO.test(w[4] || '')
+    && w[5] === '--number' && ENTERO.test(w[6] || '') && intervalo(w.slice(7))) {
+    const propio = real(COORDINACION);
+    return propio !== null && real(w[1]) === propio;
+  }
+  return false;
+}
+
+/**
  * Las palabras de una línea de comando de Windows, con sus reglas: las barras valen como escape sólo antes de una comilla.
  * null si la línea queda con una comilla abierta, o si trae `""` dentro de unas comillas, que cada programa lee a su modo.
  */
@@ -1128,9 +1156,15 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   if (arriba.slice(i + 1).some(otra)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
   const deFondo = arriba.slice(i + 1).some(esHerramienta);
   if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);
-  // una consola de fondo frena, salvo el owner-wait de la coordinadora (sólo en Mac y Linux: en Windows no se midió)
-  const viva = (p) => (enWindows ? esConsolaVivaDeWindows(p) : esConsola(p) && !esOwnerWait(desenvolver(p.comando, casa)));
-  if (arbol.some((p) => p.ppid === tool.pid && viva(p))) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva', pendientes);
+  // una consola de fondo frena, salvo el owner-wait de la coordinadora y los vigilantes de sólo lectura (sólo en Mac y
+  // Linux: en Windows no se midió). El motivo nunca lleva la línea de comando de la consola
+  const viva = (p) => {
+    if (enWindows) return esConsolaVivaDeWindows(p);
+    if (!esConsola(p)) return false;
+    const comando = desenvolver(p.comando, casa);
+    return !esOwnerWait(comando) && !esVigilanteDeLectura(comando);
+  };
+  if (arbol.some((p) => p.ppid === tool.pid && viva(p))) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva que no es un vigilante de sólo lectura', pendientes);
   const destino = destinoDe(can && can.palabras, sesion, guion);
   if (!SESION.test(destino)) return negar(sesionNombrada(guion, can && can.palabras) !== null ? 'la sesión que nombra el comando no se puede leer' : 'la sesión de --for-session no se puede leer', pendientes);
   const pedida = forSessionDe(can && can.palabras);

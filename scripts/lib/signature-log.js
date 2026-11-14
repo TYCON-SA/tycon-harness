@@ -78,4 +78,52 @@ function appendSignature({ signature, via, signer = null, orderedBy = null, targ
   }
 }
 
-module.exports = { FILE, VIAS, logPath, appendSignature };
+/**
+ * Los registros de firmas que mira la poda de los marcadores: el de la carpeta de estado donde viven los marcadores
+ * (`estado`, la que sale de HOME) y el de la casa de la cuenta, donde escribe `appendSignature`. Son el mismo cuando
+ * HOME es la casa de la cuenta; si difieren, mirar sólo uno dejaría sin ver las firmas del otro.
+ */
+function signaturePathsFor(estado) {
+  const out = [path.join(estado, FILE)];
+  try { const p = logPath(); if (!out.includes(p)) out.push(p); } catch (_) { /* sin la casa de la cuenta, el de la HOME */ }
+  return out;
+}
+
+/**
+ * La hora de la última firma sobre una sesión (`target` u `ordered_by` igual a `sessionId`): `{ ts }`, `{ ts: null }`
+ * sin ninguna (o sin registro), o `{ error }` si un registro existe y no se lee. Una firma con `ts` ilegible o posterior
+ * a `now` no cuenta: una hora futura dejaría viva la corrida para siempre. `paths`: los registros a mirar.
+ */
+function lastSignatureFor(sessionId, { paths = [logPath()], now = Date.now() } = {}) {
+  let ultima = null;
+  for (const p of paths) {
+    let texto;
+    try { texto = fs.readFileSync(p, 'utf8'); } catch (e) {
+      if (e && e.code === 'ENOENT') continue;
+      return { error: `no pude leer el registro de firmas ${p} (${(e && e.code) || (e && e.message) || e})` };
+    }
+    for (const l of texto.split('\n')) {
+      if (!l.includes(sessionId)) continue;
+      let o;
+      try { o = JSON.parse(l); } catch (_) { continue; }
+      if (!o || (o.target !== sessionId && o.ordered_by !== sessionId)) continue;
+      const t = typeof o.ts === 'string' ? Date.parse(o.ts) : NaN;
+      if (!Number.isFinite(t) || t > now) continue;
+      if (ultima === null || t > ultima) ultima = t;
+    }
+  }
+  return { ts: ultima === null ? null : new Date(ultima).toISOString() };
+}
+
+/**
+ * Para las podas de los marcadores: ¿la sesión tiene una firma más nueva que el corte? `{ viva }` o `{ error }`. Una
+ * corrida que el dueño firmó no está abandonada aunque su marcador lleve horas sin tocarse; y no saber si la firmaron no
+ * es «no la firmaron».
+ */
+function signedSince(sessionId, estado, cutoffMs) {
+  const r = lastSignatureFor(sessionId, { paths: signaturePathsFor(estado) });
+  if (r.error) return { error: r.error };
+  return { viva: r.ts !== null && Date.parse(r.ts) >= cutoffMs };
+}
+
+module.exports = { FILE, VIAS, logPath, appendSignature, signaturePathsFor, lastSignatureFor, signedSince };

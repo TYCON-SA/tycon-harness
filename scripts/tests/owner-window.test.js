@@ -3979,3 +3979,69 @@ test('Freno_SoloClickDeFondo_NoDejaRenglon — @fix-T-207', (t) => {
   pedirConLista(casa, pedidoDe(8));
   assert.strictEqual(renglones(casa).length, 1);
 });
+
+// ── El vigilante de sólo lectura (@story-8.270, AC 14-17, 21) ──────────────────────────────────────────────────────────
+// La coordinadora con el vigilante de fondo que sólo lee el estado de un pedido sigue firmando por delegación. Una sola
+// forma exacta; cualquier otra consola de fondo sigue frenando, y el freno nunca muestra su línea de comando.
+const COORD_PROPIO = path.join(RAIZ, 'scripts', 'tools', 'coordination.js');
+const ADHOC_EN_CUPO = `node ${MARKER} adhoc set '{"reason":"arreglo del sp","allowedFiles":["src/sp.js"],"maxFiles":5}' --for-session ses-a`;
+const VIGILANTE_MOTIVO = 'cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva que no es un vigilante de sólo lectura';
+const conVigilante = (casa, linea) => arbolDelFreno({ extra: [{ pid: 400, ppid: 100, inicio: INICIO, comando: envolver(casa, linea, { deFondo: true }) }] });
+
+test('OwnerWindow_ReadOnlyWatcher_DelegatedSignAllowed @story-8.270 @ac-14 — con un vigilante de sólo lectura de fondo, la coordinadora firma por delegación', (t) => {
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo acme/arnes --number 6508`, `node ${COORD_PROPIO} pr-wait --repo acme/arnes --number 6508 --interval 60`]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.deepStrictEqual([r.decision, r.via], ['allow', 'delegacion'], `${linea}: ${r.texto}`);
+    // y con la ventana, tampoco le quita el click al dueño
+    const casa2 = casaNueva(t);
+    assert.strictEqual(pedir(casa2, GUIONES[0][1], { arbol: conVigilante(casa2, linea) }).decision, 'ask', linea);
+  }
+});
+
+test('OwnerWindow_WatcherOtherShapes_StillBlocks @story-8.270 @ac-14 @ac-15 @ac-16 @ac-21 — cualquier otra forma niega, sin mostrar su línea', (t) => {
+  const otro = fs.mkdtempSync(path.join(os.tmpdir(), 'otro-arnes-'));
+  t.after(() => fs.rmSync(otro, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(otro, 'scripts', 'tools'), { recursive: true });
+  const copia = path.join(otro, 'scripts', 'tools', 'coordination.js');
+  fs.copyFileSync(COORD_PROPIO, copia);
+  for (const linea of [
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --number 6508 | tee PALABRA-CONOCIDA`, // un tubo
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --number 6508 && echo PALABRA-CONOCIDA`, // otro comando
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --number $N`, // un número armado
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --number 0`, // un número que no es positivo
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --number 6508 --interval x9`, // un intervalo que no es un número
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --number 6508 > /tmp/PALABRA-CONOCIDA`, // una redirección
+    'gh pr checks 12 --watch', // el vigilante propio de una plataforma no pasa: el núcleo no lo reconoce
+    'gh run watch 34', // una corrida suelta de la CI no se vigila de fondo
+    'glab mr view 12 --watch', // otro programa
+    'while az repos pr show --id 7 --query status -o tsv | grep -q active; do sleep 60; done', // el bucle escrito a mano
+    `node "${copia}" pr-wait --repo acme/arnes --number 6508`, // pr-wait de otra copia del arnés
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --number 6508 --PALABRA-CONOCIDA`,
+    `node "${COORD_PROPIO}" pr-wait --ado 6508`, // la forma vieja
+    `node "${COORD_PROPIO}" pr-wait --repo acme --number 6508`, // un repo sin organización
+    `node "${COORD_PROPIO}" pr-wait --number 6508 --repo acme/arnes`, // otro orden
+  ]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.strictEqual(r.decision, 'deny', linea);
+    assert.ok(r.texto.includes(VIGILANTE_MOTIVO), `${linea}: ${r.texto}`);
+    assert.doesNotMatch(r.texto, /PALABRA-CONOCIDA|tee |glab|while /, `${linea}: el freno mostró la línea de comando`);
+    assert.strictEqual(registros(casa).length, 0);
+  }
+  // el owner-wait de la coordinadora sigue pasando
+  const casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, GUIONES[0][1], { arbol: conVigilante(casa, `node "${COORD_PROPIO}" owner-wait`) }).decision, 'ask');
+});
+
+test('Guide_DelegatedSign_NamesReadOnlyWatchers @story-8.270 @ac-17 — la guía de las firmas nombra el vigilante y por qué lo demás frena', () => {
+  const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
+  const inicio = guia.indexOf('## Aprobar en nombre del dueño');
+  assert.ok(inicio >= 0, 'falta la sección de la firma por delegación');
+  const seccion = guia.slice(inicio, guia.indexOf('\n## ', inicio + 5));
+  assert.ok(seccion.includes('pr-wait --repo <organización/repo> --number <número>'));
+  assert.doesNotMatch(seccion, /gh pr checks|gh run watch/);
+  assert.match(seccion, /sólo lectura/);
+  assert.match(seccion, /Cualquier otra consola de fondo sigue frenando/);
+  assert.match(seccion, /no puede saber si además escribe/);
+});

@@ -253,20 +253,63 @@ function seccionDelContexto(repos) {
 // secciones llega, con sus subtítulos, hasta el próximo título de su nivel o de uno mayor.
 const SECCION_DE_PAPELEO = /^(Change Log|Dev Agent Record|Cambios de comportamiento)\b/i;
 const SECCION_DE_SEGUIMIENTOS = /^Review Follow-ups \(Advisors\)$/i;
+// Lo que «Probar en vivo» deja después de la última vuelta (8.270): en los criterios, la marca
+// `@runtime-exempt(DODRT-C8): <motivo>` en cualquiera de sus formas (al final del renglón, entre comillas invertidas, o
+// en un renglón propio con su motivo partido en los renglones que siguen; el texto del criterio sigue contando), y en
+// cada tanda de `pipelines:` del frontmatter, su estado y lo que le queda pendiente. `files`, `delivers`, `name` y lo
+// demás de la tanda siguen contando. Un `#` dentro de un bloque de código no es un título: no corta la sección.
+const SECCION_DE_CRITERIOS = /^Acceptance Criteria\b/i;
+const CAMPO_DE_LA_TANDA = /^(\s+)(status|acs_pending|tasks_pending|tests_pending)\s*:/;
+const MARCA = /\s*`?@runtime-exempt\(.*$/;
+const BLOQUE = /^\s*(```|~~~)/;
+// lo que corta el motivo partido de una marca: un renglón en blanco, sin sangría, otro criterio o elemento, un bloque
+const CORTA_EL_MOTIVO = /^\s*$|^\S|^\s*(\d+\.|[-*+])\s|^\s*(```|~~~)/;
 function sinPapeleoDeLaHistoria(txt) {
   const out = [];
   let nivel = 0;
-  for (const l of String(txt).split('\n')) {
-    const titulo = l.match(/^(#{1,6})\s+(.*)$/);
+  let criterios = false;
+  let enBloque = false;
+  let motivoAbierto = false;   // la marca ocupó su renglón: los renglones con sangría que siguen son su motivo
+  const lineas = String(txt).split('\n');
+  const conFrontmatter = lineas[0] === '---';
+  let enFrontmatter = conFrontmatter;
+  let enPipelines = false;
+  let campoDeLaTanda = null;   // la sangría del campo que se saca, con sus renglones de continuación
+  for (const [i, l] of lineas.entries()) {
+    if (enFrontmatter) {
+      if (i > 0 && l === '---') { enFrontmatter = false; out.push(l); continue; }
+      if (/^\S/.test(l)) { enPipelines = /^pipelines\s*:/.test(l); campoDeLaTanda = null; }
+      if (enPipelines) {
+        const sangria = l.match(/^(\s*)/)[1].length;
+        // su continuación: más sangrada, o una lista escrita a la misma sangría que el campo (también es YAML válido)
+        if (campoDeLaTanda !== null && l.trim() && (sangria > campoDeLaTanda || (sangria === campoDeLaTanda && /^\s*- /.test(l)))) continue;
+        campoDeLaTanda = null;
+        const campo = l.match(CAMPO_DE_LA_TANDA);
+        if (campo) { campoDeLaTanda = campo[1].length; continue; }
+      }
+    }
+    const titulo = !enBloque && l.match(/^(#{1,6})\s+(.*)$/);
     if (titulo) {
       const n = titulo[1].length;
       const nombre = titulo[2].trim();
       if (nivel && n <= nivel) nivel = 0;
       if (!nivel && n === 2 && (SECCION_DE_PAPELEO.test(nombre) || SECCION_DE_SEGUIMIENTOS.test(nombre))) nivel = n;
+      if (n <= 2) criterios = n === 2 && SECCION_DE_CRITERIOS.test(nombre);
     }
+    if (BLOQUE.test(l)) enBloque = !enBloque;
     if (nivel) continue;
     if (/^\**status\**\s*:/i.test(l)) continue;
-    out.push(l.replace(/^(\s*[-*]\s*)\[[ xX]\]/, '$1[ ]'));
+    let sinMarca = l;
+    if (criterios && !enBloque) {
+      if (motivoAbierto && !CORTA_EL_MOTIVO.test(l)) continue;
+      motivoAbierto = false;
+      if (MARCA.test(l)) {
+        sinMarca = l.replace(MARCA, '');
+        // la marca sola en su renglón: el renglón entero es papeleo, y su motivo puede seguir abajo
+        if (!sinMarca.trim()) { motivoAbierto = true; continue; }
+      }
+    }
+    out.push(sinMarca.replace(/^(\s*[-*]\s*)\[[ xX]\]/, '$1[ ]'));
   }
   return out.join('\n');
 }
@@ -294,7 +337,7 @@ function changed(repo, treeA, treeB, { storyRel } = {}) {
   if (treeA === treeB) return { files: [], papeleo: [] };
   const d = git(['-C', repo, 'diff-tree', '-r', '-z', '--no-renames', treeA, treeB]);
   if (!d.ok) return { error: `no pude comparar ${repo} entre ${treeA} y ${treeB}: ${unaLinea(d.err)}` };
-  const { esPapeleoDeLaHuella, esEvidenciaEnVivo } = require('./save-ok.js');
+  const { esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo } = require('./save-ok.js');
   const partes = d.crudo.split('\0');
   const files = [];
   const papeleo = [];
@@ -318,9 +361,10 @@ function changed(repo, treeA, treeB, { storyRel } = {}) {
       const b = leer(treeB, rel);
       esPapeleo = !!clave && a !== null && b !== null && sinRenglonDeLaHistoria(a, clave) === sinRenglonDeLaHistoria(b, clave);
     } else {
-      // la salida o la captura de un humo que su registro nombra con la misma huella: «Probar en vivo» corre después de
-      // los revisores y deja esa evidencia; no es código
-      esPapeleo = rel === 'tasks/todo.md' || esPapeleoDeLaHuella(rel, modo) || esEvidenciaEnVivo(repo, rel);
+      // la salida o la captura de un humo, o el guion de la prueba en vivo, que su registro nombra con la misma huella:
+      // «Probar en vivo» corre después de los revisores y deja esa evidencia; no es código
+      esPapeleo = rel === 'tasks/todo.md' || esPapeleoDeLaHuella(rel, modo) || esEvidenciaEnVivo(repo, rel)
+        || (modo !== '120000' && esGuionEnVivo(repo, rel));
     }
     (esPapeleo ? papeleo : files).push(rel);
   }

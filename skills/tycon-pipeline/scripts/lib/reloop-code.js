@@ -9,8 +9,10 @@
  * otra vuelta.
  *
  * Una prueba se reconoce con `isTestPath` (lib/atdd-order.js) sobre la ruta desde la raíz de su repo, la carpeta con
- * `.git` más cercana: una carpeta `tests` por encima del repo no hace prueba al código. Sin raíz (fuera de todo repo, o
- * en una carpeta que ya no existe), cuenta como código: ante la duda, se revisa.
+ * `.git` más cercana: una carpeta `tests` por encima del repo no hace prueba al código. Sin raíz (fuera de todo repo),
+ * no pide otra vuelta: no está en ningún pedido y el sello de lo guardado no lo mira (un guion de ayuda que la sesión
+ * deja en una carpeta sin git). Un archivo borrado dentro de un repo sigue encontrando la raíz: la búsqueda sube por las
+ * carpetas aunque la suya ya no exista.
  */
 const fs = require('fs');
 const path = require('path');
@@ -48,7 +50,8 @@ function pideOtraVuelta(file, { storyPath } = {}) {
   }
   if (!require('./suite-freshness.js').isCodeFile(abs)) return false;
   const raiz = raizDelRepo(abs);
-  if (raiz && require('./atdd-order.js').isTestPath(path.relative(raiz, abs).split(path.sep).join('/'))) return false;
+  if (raiz === null) return false;
+  if (require('./atdd-order.js').isTestPath(path.relative(raiz, abs).split(path.sep).join('/'))) return false;
   return true;
 }
 

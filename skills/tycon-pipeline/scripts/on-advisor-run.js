@@ -299,6 +299,7 @@ function recordLaunch(o) {
       if (expected.includes(advisor)) {
         require('./lib/reported-criticals.js').recordLaunched({
           stateDir: stateDirOf(os.homedir()), sessionKey: sessionId, advisor, story, run, launcher: o.launcher || 'claude',
+          toolUseId: o.toolUseId || null,
         });
       }
     } catch (e) {
@@ -442,6 +443,25 @@ function main() {
   const advisor = event.tool_name === 'collaborationspawn_agent' && !ti.agent_type ? rawName.replace(/_/g, '-') : rawName;
   const model = (event.tool_input && event.tool_input.model) || null;
 
+  // ── Después del lanzamiento: el agente que le tocó a la salida ────────────
+  // La herramienta devuelve el identificador del agente (`tool_response.agentId`). Se ata a la salida del mismo
+  // `tool_use_id` (`launch-agent`): si esa salida muere al arrancar y se relanza, el reporte del relanzado va a la suya.
+  // Nada más corre en este evento: la salida ya quedó anotada antes.
+  if (event.hook_event_name === 'PostToolUse') {
+    const resp = event.tool_response;
+    const agentId = resp && typeof resp === 'object' && typeof resp.agentId === 'string' && resp.agentId ? resp.agentId : null;
+    if (!agentId || typeof event.tool_use_id !== 'string') return;
+    try {
+      require('./lib/reported-criticals.js').recordLaunchAgent({
+        stateDir: stateDirOf(os.homedir()), sessionKey: sessionIdFileKey(event.session_id), advisor, agentId, toolUseId: event.tool_use_id,
+      });
+    } catch (e) {
+      // sin el renglón, esa salida empareja como antes (la más vieja sin reporte): se dice
+      try { process.stderr.write(`on-advisor-run: no pude atar ${advisor} a su agente en el registro de críticos (${(e && e.message) || e})\n`); } catch { /* nada */ }
+    }
+    return;
+  }
+
   // ── El lanzamiento que niega el freno de revisores no se anota ────────────
   // El freno (`reviewer-launch-gate.js`) y este registro corren en el mismo PreToolUse, en cualquier orden: deciden con
   // la misma función sobre el mismo marcador. Un lanzamiento negado no corrió, y anotarlo lo haría contar en
@@ -480,6 +500,7 @@ function main() {
   const extra = curated ? { curated: true } : (logUnreadable && ADHOC.has(advisor) ? { curated_check: 'log-unreadable' } : undefined);
 
   const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt, extra,
+    toolUseId: typeof event.tool_use_id === 'string' ? event.tool_use_id : null,
     launcher: event.tool_name === 'collaborationspawn_agent' ? 'codex-agent' : 'claude' });
   if (process.env.TYCON_SPAWN_GOVERNANCE === '0') {
     if (notaFreno) {
