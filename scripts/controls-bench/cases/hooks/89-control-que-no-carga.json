@@ -1,0 +1,204 @@
+{
+  "__doc": "Un control del despachador de ediciones que no carga, o un despachador que no carga o tira, se ve: los críticos frenan la edición y los de aviso dejan pasar con su línea en hook-errors.log. Cada caso arma en el FIXTURE una copia del despachador (skills/tycon-pipeline/scripts/, sin sus pruebas, y scripts/lib/, la que cerrarConsumos busca tres carpetas arriba), rompe una pieza y corre el gancho de la copia: el disparo real, como lo registran las herramientas. Los casos de la entrada ilegible corren el gancho real con un guion propio, porque el banco siempre manda JSON.",
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js → dispatch (un control que no carga, en una copia del despachador)",
+      "script": "${FIXTURE}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "control-cerrado-que-no-carga-frena",
+          "type": "must-block",
+          "__doc": "T1 · AC 3: on-dod-evidence-guard es de los que frenan; con un error de sintaxis la edición no pasa y el registro gana FAILED CLOSED con su nombre.",
+          "setup": [
+            "mkdir -p skills/tycon-pipeline scripts src && cp -R \"$SKILLS/skills/tycon-pipeline/scripts\" skills/tycon-pipeline/ && rm -rf skills/tycon-pipeline/scripts/tests && cp -R \"$TCG/scripts/lib\" scripts/",
+            "printf 'module.exports = { handle( ;\\n' > skills/tycon-pipeline/scripts/on-dod-evidence-guard.js"
+          ],
+          "stdin": { "session_id": "bench-fm1", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/src/Nuevo.cs", "content": "class Nuevo {}" } },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["el control on-dod-evidence-guard no carga \\(.*\\) y es de los que frenan: esta edición no pasa"],
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/hook-errors.log", "re": "dispatch handler \"on-dod-evidence-guard\" FAILED CLOSED: " }]
+          }
+        },
+        {
+          "id": "control-abierto-que-no-carga-deja-pasar-con-su-linea",
+          "type": "must-not-block",
+          "__doc": "T2 · AC 4: on-write-collision sólo avisa; roto, la edición pasa y deja FAILED OPEN.",
+          "setup": [
+            "mkdir -p skills/tycon-pipeline scripts src && cp -R \"$SKILLS/skills/tycon-pipeline/scripts\" skills/tycon-pipeline/ && rm -rf skills/tycon-pipeline/scripts/tests && cp -R \"$TCG/scripts/lib\" scripts/",
+            "printf 'module.exports = { handle( ;\\n' > skills/tycon-pipeline/scripts/on-write-collision.js"
+          ],
+          "stdin": { "session_id": "bench-fm2", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/src/Nuevo.cs", "content": "class Nuevo {}" } },
+          "expect": {
+            "exit": 0,
+            "stderr_re": ["dispatch handler \"on-write-collision\" FAILED OPEN"],
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/hook-errors.log", "re": "dispatch handler \"on-write-collision\" FAILED OPEN: " }]
+          }
+        },
+        {
+          "id": "porton-de-carril-roto-frena-la-escritura-al-estado",
+          "type": "must-block",
+          "__doc": "T5 · AC 6: on-story-gate es closed-on-state; roto, una escritura a la carpeta del estado del pipeline no pasa.",
+          "setup": [
+            "mkdir -p skills/tycon-pipeline scripts && cp -R \"$SKILLS/skills/tycon-pipeline/scripts\" skills/tycon-pipeline/ && rm -rf skills/tycon-pipeline/scripts/tests && cp -R \"$TCG/scripts/lib\" scripts/",
+            "printf 'module.exports = { handle( ;\\n' > skills/tycon-pipeline/scripts/on-story-gate.js"
+          ],
+          "stdin": { "session_id": "bench-fm5", "tool_name": "Write", "tool_input": { "file_path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/x.json", "content": "{}" } },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["el control on-story-gate no carga"],
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/hook-errors.log", "re": "dispatch handler \"on-story-gate\" FAILED CLOSED: " }]
+          }
+        },
+        {
+          "id": "porton-de-carril-roto-deja-pasar-el-codigo-con-su-linea",
+          "type": "must-not-block",
+          "__doc": "T6 · AC 6: la misma copia rota; un .cs de un repo con .tycon/ (que el portón sano frenaría sin carril) pasa con FAILED OPEN.",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon src skills/tycon-pipeline scripts && cp -R \"$SKILLS/skills/tycon-pipeline/scripts\" skills/tycon-pipeline/ && rm -rf skills/tycon-pipeline/scripts/tests && cp -R \"$TCG/scripts/lib\" scripts/",
+            "printf 'module.exports = { handle( ;\\n' > skills/tycon-pipeline/scripts/on-story-gate.js"
+          ],
+          "stdin": { "session_id": "bench-fm6", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/src/Nuevo.cs", "content": "class Nuevo {}" } },
+          "expect": {
+            "exit": 0,
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/hook-errors.log", "re": "dispatch handler \"on-story-gate\" FAILED OPEN: " }]
+          }
+        },
+        {
+          "id": "despachador-que-no-carga-frena",
+          "type": "must-block",
+          "__doc": "T8 · AC 8: la copia sin lib/state-dir.js; dispatch.js no carga y el gancho de antes de editar frena, sólo por stderr.",
+          "setup": [
+            "mkdir -p skills/tycon-pipeline scripts src && cp -R \"$SKILLS/skills/tycon-pipeline/scripts\" skills/tycon-pipeline/ && rm -rf skills/tycon-pipeline/scripts/tests && cp -R \"$TCG/scripts/lib\" scripts/",
+            "rm skills/tycon-pipeline/scripts/lib/state-dir.js"
+          ],
+          "stdin": { "session_id": "bench-fm8", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/src/Nuevo.cs", "content": "class Nuevo {}" } },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["⛔ el despachador de ediciones no carga \\(.+\\): esta edición no pasa\\. Reparalo: /tycon-harness"],
+            "file_absent": ["${SANDBOX_HOME}/.claude/.tycon-pipeline/hook-errors.log"]
+          }
+        },
+        {
+          "id": "despachador-que-tira-frena",
+          "type": "must-block",
+          "__doc": "T24 · AC 19: lib/path-shape.js con un nativeEvent que tira; prepareEvents tira fuera del lazo y el gancho frena con dispatch FAILED CLOSED.",
+          "setup": [
+            "mkdir -p skills/tycon-pipeline scripts src && cp -R \"$SKILLS/skills/tycon-pipeline/scripts\" skills/tycon-pipeline/ && rm -rf skills/tycon-pipeline/scripts/tests && cp -R \"$TCG/scripts/lib\" scripts/",
+            "printf 'module.exports = { nativeEvent() { throw new Error(\"forma rota\"); } };\\n' > skills/tycon-pipeline/scripts/lib/path-shape.js"
+          ],
+          "stdin": { "session_id": "bench-fm24", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/src/Nuevo.cs", "content": "class Nuevo {}" } },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["⛔ el despachador de ediciones tiró \\(forma rota\\): esta edición no pasa\\. Reparalo: /tycon-harness dice si el arnés quedó bien instalado"],
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/hook-errors.log", "re": "dispatch FAILED CLOSED: " }]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "hook-post-edit.js → dispatch (el despachador roto, en una copia, después de editar)",
+      "script": "${FIXTURE}/skills/tycon-pipeline/scripts/hook-post-edit.js",
+      "event": "PostToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "despachador-que-no-carga-deja-pasar-despues-de-editar",
+          "type": "must-not-block",
+          "__doc": "T8 · AC 8: la misma copia sin lib/state-dir.js; después de editar no se puede frenar: sale 0 y lo dice por stderr.",
+          "setup": [
+            "mkdir -p skills/tycon-pipeline scripts src && cp -R \"$SKILLS/skills/tycon-pipeline/scripts\" skills/tycon-pipeline/ && rm -rf skills/tycon-pipeline/scripts/tests && cp -R \"$TCG/scripts/lib\" scripts/",
+            "rm skills/tycon-pipeline/scripts/lib/state-dir.js"
+          ],
+          "stdin": { "session_id": "bench-fm8b", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/src/Nuevo.cs", "content": "class Nuevo {}" } },
+          "expect": {
+            "exit": 0,
+            "stderr_re": ["el despachador de ediciones no carga \\(.+\\)"],
+            "file_absent": ["${SANDBOX_HOME}/.claude/.tycon-pipeline/hook-errors.log"]
+          }
+        },
+        {
+          "id": "despachador-que-tira-deja-pasar-con-su-linea",
+          "type": "must-not-block",
+          "__doc": "T24 · AC 19: la copia con path-shape.js que tira; después de editar sale 0, lo dice y anota dispatch FAILED OPEN.",
+          "setup": [
+            "mkdir -p skills/tycon-pipeline scripts src && cp -R \"$SKILLS/skills/tycon-pipeline/scripts\" skills/tycon-pipeline/ && rm -rf skills/tycon-pipeline/scripts/tests && cp -R \"$TCG/scripts/lib\" scripts/",
+            "printf 'module.exports = { nativeEvent() { throw new Error(\"forma rota\"); } };\\n' > skills/tycon-pipeline/scripts/lib/path-shape.js"
+          ],
+          "stdin": { "session_id": "bench-fm24b", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/src/Nuevo.cs", "content": "class Nuevo {}" } },
+          "expect": {
+            "exit": 0,
+            "stderr_re": ["el despachador de ediciones tiró \\(forma rota\\)"],
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/hook-errors.log", "re": "dispatch FAILED OPEN: " }]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "hook-pre-edit.js → dispatch (la entrada ilegible antes de editar)",
+      "__doc": "El gancho es el real; cada caso lo corre por su guion crudo.sh (en `script` del caso), que le pasa el texto sin armar.",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "entrada-que-no-es-json-frena",
+          "type": "must-block",
+          "__doc": "T7 · AC 7: el gancho real recibe un texto que no es JSON.",
+          "script": "${FIXTURE}/crudo.sh",
+          "files": { "crudo.sh": "#!/bin/bash\nprintf '%s' '{esto no es json' | node \"${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js\"\n" },
+          "expect": { "exit": 2, "stderr_re": ["⛔ el despachador de ediciones no pudo leer esta edición y la frenó: .+\\. Reiniciá la sesión; si sigue, /tycon-harness dice si el arnés quedó bien instalado"] }
+        },
+        {
+          "id": "entrada-vacia-frena",
+          "type": "must-block",
+          "__doc": "T7 · AC 7: el gancho real recibe stdin vacío.",
+          "script": "${FIXTURE}/crudo.sh",
+          "files": { "crudo.sh": "#!/bin/bash\nnode \"${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js\" < /dev/null\n" },
+          "expect": { "exit": 2, "stderr_re": ["no pudo leer esta edición y la frenó"] }
+        },
+        {
+          "id": "entrada-json-que-no-es-un-objeto-frena",
+          "type": "must-block",
+          "__doc": "T7 · AC 7: JSON válido que no es un objeto (un número).",
+          "script": "${FIXTURE}/crudo.sh",
+          "files": { "crudo.sh": "#!/bin/bash\nprintf '42' | node \"${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js\"\n" },
+          "expect": { "exit": 2, "stderr_re": ["no pudo leer esta edición y la frenó"] }
+        }
+      ]
+    },
+    {
+      "hook": "hook-post-edit.js → dispatch (la entrada ilegible después de editar)",
+      "__doc": "El gancho es el real; cada caso lo corre por su guion crudo.sh (en `script` del caso), que le pasa el texto sin armar.",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-post-edit.js",
+      "event": "PostToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "entrada-que-no-es-json-deja-pasar-con-su-linea",
+          "type": "must-not-block",
+          "__doc": "T7 · AC 7: después de editar, la entrada ilegible sale 0 y deja su línea.",
+          "script": "${FIXTURE}/crudo.sh",
+          "files": { "crudo.sh": "#!/bin/bash\nprintf '%s' '{esto no es json' | node \"${SKILLS}/skills/tycon-pipeline/scripts/hook-post-edit.js\"\n" },
+          "expect": {
+            "exit": 0,
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/hook-errors.log", "re": "dispatch FAILED OPEN: entrada ilegible" }]
+          }
+        },
+        {
+          "id": "entrada-vacia-deja-pasar-con-su-linea",
+          "type": "must-not-block",
+          "__doc": "T7 · AC 7: después de editar, stdin vacío sale 0 y deja su línea.",
+          "script": "${FIXTURE}/crudo.sh",
+          "files": { "crudo.sh": "#!/bin/bash\nnode \"${SKILLS}/skills/tycon-pipeline/scripts/hook-post-edit.js\" < /dev/null\n" },
+          "expect": {
+            "exit": 0,
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/hook-errors.log", "re": "dispatch FAILED OPEN: entrada ilegible" }]
+          }
+        }
+      ]
+    }
+  ]
+}
