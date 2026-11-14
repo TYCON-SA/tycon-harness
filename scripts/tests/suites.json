@@ -1223,6 +1223,12 @@
       "requiere": []
     },
     {
+      "__nota": "cómo se abren en el navegador el plan, la maqueta y la guía de prueba: en Windows con rundll32, sin cmd, así un & de la ruta no corre otra orden; qa-guide usa el mismo abridor.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/visual-plan.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.34: la guía del tester y su chequeo cuentan los pasos con la misma regla (pasos numerados y «Usuario:» suelto).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/qa-guide-steps.test.js",
@@ -4515,6 +4521,12 @@
       "__nota": "qué anota el reclamo de la retrospectiva al abrir un pedido (scripts/hooks/retro-pending.js): la punta del remoto antes que la local y la carpeta principal, y a qué carpeta manda el comando que lo paga. Repos de juguete con git de verdad. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-pending-punta.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los repos del arnés (el privado de Azure y el público de GitHub, éste sin .tycon/ ni .advisors/) se anotan y piden su retrospectiva como un repo de producto (scripts/hooks/retro-pending.js), con las exenciones de siempre; un repo suelto sin origin no se anota aunque su carpeta se llame como el arnés. Repos de juguete con git de verdad e identidades del arnés de mentira. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-pending-harness-repos.test.js",
       "requiere": []
     },
     {

@@ -395,18 +395,32 @@ const DEMO = {
  * pedido al asistente sólo existe en Mac). Best-effort, como `qa-guide.js --open`:
  * si no puede abrirlo lo dice con la ruta, y el plan ya quedó escrito.
  */
-function openInBrowser(file, what = 'el plan') {
+/**
+ * El programa que abre `file` en cada sistema. En Windows, `rundll32` recibe la ruta como un solo argumento y sin
+ * consola: con `cmd /c start`, un `&` de la ruta correría otra orden.
+ */
+function openCommand(file, platform = process.platform) {
+  if (platform === 'darwin') return ['open', [file]];
+  if (platform === 'win32') return ['rundll32', ['url.dll,FileProtocolHandler', file]];
+  return ['xdg-open', [file]];
+}
+
+/**
+ * Lanza el navegador con `file`. Devuelve si lo pudo lanzar: false cuando el lanzamiento falla en el acto. Un programa
+ * que no existe avisa después, por su evento de error, y sólo si el guion sigue vivo.
+ */
+function openInBrowser(file, what = 'el plan', { platform = process.platform, spawn } = {}) {
   const fallback = (why) => console.error(`⚠ No pude abrir ${what} en el navegador (${why}) — abrilo a mano: ${file}`);
   try {
-    const { spawn } = require('child_process');
-    const win = process.platform === 'win32';
-    const cmd = process.platform === 'darwin' ? 'open' : win ? 'cmd' : 'xdg-open';
-    const args = win ? ['/c', 'start', '', file] : [file];
-    const child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true });
+    const lanzar = spawn || require('child_process').spawn;
+    const [cmd, args] = openCommand(file, platform);
+    const child = lanzar(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true });
     child.on('error', (e) => fallback(e.code || e.message));
     child.unref();
+    return true;
   } catch (e) {
     fallback(e.message);
+    return false;
   }
 }
 
@@ -453,5 +467,5 @@ function main() {
   process.exit(2);
 }
 // La maqueta (mockup.js) reusa `esc` y `openInBrowser`; un `require` no corre `main()`.
-module.exports = { renderHtml, esc, openInBrowser };
+module.exports = { renderHtml, esc, openInBrowser, openCommand };
 if (require.main === module) main();

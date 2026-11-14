@@ -289,6 +289,23 @@ function stalledOf(s, f, now) {
   return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude' };
 }
 
+// La espera que el archivo de estado anota cuando una sesión abre un cuadro o pide aprobar su plan (hooks/session-state.js).
+const ANSWER_WAIT = 'una respuesta';
+
+// Si la sesión viva le preguntó algo a la persona en su pestaña: `{ since, key }` o null. Como con los permisos, cuando
+// Claude dice el estado de la sesión, manda él: la pregunta está abierta sólo si la da esperando (una cortada con Esc deja
+// la espera anotada y la sesión quieta). El archivo de estado no dice desde cuándo pregunta, y su hora cambia con cualquier
+// otra cosa que se anote: la pregunta empieza cuando Claude dio la sesión por esperando, y esa hora la identifica. Sin
+// estado de Claude, la hora del archivo.
+function askingOf(s, f, now) {
+  if (!f || f.waitingForOwner !== true || f.waitingFor !== ANSWER_WAIT) return null;
+  const known = typeof s.status === 'string' && s.status !== '';
+  if (known && s.status !== 'waiting') return null;
+  const at = known && Number.isFinite(s.statusAt) ? s.statusAt : Date.parse(f.updatedAt);
+  const since = Number.isFinite(at) ? at : now;
+  return { since, key: `${since}` };
+}
+
 // Las sesiones de fondo que Claude Code cerró y no se levantaron. Una que ya está viva de nuevo no sale.
 function retiredOf(home, now, sessions) {
   let r;
@@ -325,6 +342,7 @@ function status(opts = {}) {
   const alive = new Set();
   const files = stateFiles(home, problems);
   const stalled = [];
+  const asking = [];
   for (const [sid, s] of sessions) {
     if (!s.alive) continue;
     // Un agente interno de otra sesión (carpeta temporal, nombre armado) no es una sesión de trabajo, salvo con marcador.
@@ -344,6 +362,9 @@ function status(opts = {}) {
       stalled.push(Object.defineProperty({ session: nameOf(sid), sid, ...rest }, 'key', { value: key }));
       continue;
     }
+    const q = askingOf(s, files.get(String(sid)), now);
+    // como la de las trabadas, la clave no sale en --json: es sólo para no anunciar dos veces la misma pregunta
+    if (q) asking.push(Object.defineProperty({ session: nameOf(sid), sid, since: q.since }, 'key', { value: q.key }));
     if (s.busy) working.push({ session: nameOf(sid), sid, why: story || 'trabajando sin pipeline', since: s.statusAt });
     else if (justOpened.has(s.name)) working.push({ session: nameOf(sid), sid, why: 'recién abierta, todavía arrancando', since: (opened.find((o) => o.name === s.name) || {}).at || null });
     else {
@@ -383,7 +404,7 @@ function status(opts = {}) {
   const firstPass = [...adversarial].sort((a, b) => Date.parse(a.since) - Date.parse(b.since))[0];
   const heavyTurn = suiteRow ? { kind: 'suite', ...suiteRow } : firstPass ? { kind: 'pass', ...firstPass } : null;
   return {
-    now, working, waiting, quiet, passWaiting, suiteWaiting, cap: r.max_working, adversarial, stalled,
+    now, working, waiting, quiet, passWaiting, suiteWaiting, cap: r.max_working, adversarial, stalled, asking,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
     suite: suiteRow, heavyTurn,
     signatures,
@@ -955,6 +976,256 @@ function capChanged(opts, sid, count, cap, problems) {
   return at;
 }
 
+const askingNoticeFile = (home, sid) => path.join(coordinationDir(home), `asking-notice-${sid}.json`);
+
+/**
+ * Las preguntas directas que esta coordinadora todavía no anunció: una línea por sesión que espera una respuesta de la
+ * persona en su pestaña, sin el texto de la pregunta. Lo anunciado se anota por coordinadora, con las preguntas que
+ * siguen abiertas: mientras dura la misma no se repite, y la próxima es otra aunque haya empezado entre dos turnos. Sin
+ * poder anotar, se repite y lo dice.
+ */
+function askingLines(opts, sid, s, problems) {
+  const home = opts.home || require('os').homedir();
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  const open = (s.asking || []).filter((x) => x.sid !== sid).map((x) => ({ ...x, id: `${x.sid}@${x.key}` }));
+  const safe = SAFE_SID.test(String(sid));
+  let seen = [];
+  if (safe) {
+    try { const v = readJson(askingNoticeFile(home, sid), null); seen = v && Array.isArray(v.preguntas) ? v.preguntas.map(String) : []; } catch (e) {
+      problems.push(`lo ya avisado de las preguntas directas (${e.message}): lo cuento como no avisado`);
+    }
+  } else if (open.length) problems.push('no sé el número de esta sesión: las preguntas directas salen en cada turno');
+  const fresh = open.filter((x) => !seen.includes(x.id));
+  const keep = open.map((x) => x.id).sort();
+  if (safe && keep.join('\n') !== [...seen].sort().join('\n')) {
+    try { writeJson(askingNoticeFile(home, sid), { preguntas: keep }); } catch (e) {
+      if (fresh.length) problems.push(`no pude anotar las preguntas directas avisadas: ${e.code || e.message}`);
+    }
+  }
+  return fresh.map((x) => `Coordinación: ${x.session} le preguntó a la persona en su pestaña, hace ${Math.max(0, Math.floor((now - x.since) / 60000))} min.`);
+}
+
+// Lo que la persona le escribe a otra sesión, para la coordinadora: un renglón por mensaje, con tope de tamaño.
+const repliesFile = (home) => path.join(coordinationDir(home), 'owner-replies.jsonl');
+const REPLIES_MAX_BYTES = 256 * 1024;
+const REPLY_CHARS = 120;
+const REPLY_LINES = 5;
+// sin confirmar en la conversación, una línea espera hasta 10 minutos; entregada o no, una de más de un día no sale
+const REPLY_CONFIRM_MS = 10 * 60000;
+const REPLY_MAX_AGE_MS = 24 * 3600000;
+// La forma de un sello: el de una firma (owner-approvals.js, cuadroDe) y el de un permiso. Un mensaje así no se anota.
+const SEAL = /\b(?:firma|permiso)\s+\S+\s*·\s*sesión\s+\S+|·\s*código\s+\S+/i;
+const sha256 = (s) => require('crypto').createHash('sha256').update(String(s)).digest('hex');
+// El texto que llega al contexto de la coordinadora: una línea, sin las comillas del rótulo ni `<` y `>`, que cerrarían el
+// bloque del aviso, y acotado.
+const replyText = (s) => Array.from(oneLine(s).replace(/[«»]/g, '"').replace(/</g, '‹').replace(/>/g, '›')).slice(0, REPLY_CHARS).join('');
+// La extensión del editor antepone al mensaje bloques suyos (el archivo abierto, lo seleccionado): no los escribió la
+// persona, y gastarían los 120 caracteres. Si no queda nada después de ellos, el texto va entero.
+const EDITOR_BLOCK = /^\s*<([a-z][\w-]*)\b[^>]*>[\s\S]*?<\/\1>\s*/i;
+function withoutEditorBlocks(s) {
+  let t = String(s);
+  for (let m = EDITOR_BLOCK.exec(t); m && t.slice(m[0].length).trim(); m = EDITOR_BLOCK.exec(t)) t = t.slice(m[0].length);
+  return t;
+}
+// Cómo anota la herramienta un mensaje tipeado (owner-approvals.js), más el que la persona tipea en la consola mientras la
+// sesión trabaja, que queda «en cola». Sólo para saber quién escribió una respuesta: nunca aprueba nada.
+const typedBy = (TIPEADO, entrypoint, source) => (Object.hasOwn(TIPEADO, String(entrypoint)) && TIPEADO[entrypoint].includes(source)) || (entrypoint === 'cli' && source === 'queued');
+// Una conversación de Claude de esa sesión: el archivo `<sesión>.jsonl` bajo la carpeta de conversaciones de esta cuenta.
+// Lo que se lee al entregar sale de un archivo de estado: una ruta a cualquier otro lado no se abre.
+function isTranscriptOf(home, file, sid) {
+  if (typeof file !== 'string' || path.basename(file) !== `${sid}.jsonl`) return false;
+  const projects = path.join(claudeDir(home), 'projects');
+  return path.resolve(file).startsWith(projects + path.sep);
+}
+// Lo que se muestra de un mensaje: sin los bloques del editor, con los secretos tapados, en una línea y acotado.
+const shownReply = (s) => replyText(require(path.join(__dirname, '..', 'hooks', 'wait-notice.js')).redact(withoutEditorBlocks(s)));
+
+// Un mensaje de la persona que no se pudo anotar: queda un renglón sin texto, para que la coordinadora lo lea en «No pude
+// leer». Sin poder escribirlo, no hay a dónde avisar: lo dice quien llama.
+function noteReplyProblem(home, now, sid, problem) {
+  const file = repliesFile(home);
+  let size = 0;
+  try { size = fs.statSync(file).size; } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  if (size >= REPLIES_MAX_BYTES) return;
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  fs.appendFileSync(file, `${JSON.stringify({ sid, at: new Date(now).toISOString(), problem })}\n`, { mode: 0o600 });
+}
+
+/**
+ * Anota lo que la persona le escribió a una sesión que no es la coordinadora, para que le llegue a ella en su próximo
+ * turno. Sólo con coordinadora confirmada y viva; ni un mensaje envuelto (otra sesión, un aviso), ni el encargo de una
+ * sesión de fondo, ni uno con la forma de un sello, ni uno de Codex (`turnId`), que no se confirma en una conversación de
+ * Claude. Guarda la conversación de esa sesión y la huella del mensaje entero: quién lo escribió se confirma ahí al
+ * entregarlo, porque la herramienta puede anotarlo después de este gancho. En una pestaña no abre la conversación: sólo
+ * en una de fondo, para reconocer su encargo. Sin poder leer las sesiones, deja un renglón sin texto que la coordinadora
+ * lee en «No pude leer». Devuelve 'anotado' o por qué no; un error de escritura se lanza, y quien llama lo dice sin frenar.
+ */
+function recordOwnerReply(opts = {}) {
+  const home = opts.home || require('os').homedir();
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  const sid = sessionOf(opts);
+  const text = String(opts.prompt == null ? '' : opts.prompt).trim();
+  if (opts.turnId) return 'es de Codex';
+  if (!sid || !text) return 'sin mensaje';
+  const oa = require(path.join(__dirname, '..', 'lib', 'owner-approvals.js'));
+  if (oa.ENVUELTO.test(text)) return 'no lo escribió la persona';
+  if (SEAL.test(text)) return 'tiene la forma de un sello';
+  const t = opts.transcript;
+  if (!isTranscriptOf(home, t, sid)) return 'sin conversación';
+  // la coordinadora antes que las sesiones: sin ella no hace falta leer nada más
+  const coord = oa.coordinadoraConfirmada(home);
+  if (!coord) return 'sin coordinadora';
+  if (coord === sid) return 'es la coordinadora';
+  const sessions = signatureList.sesiones(home);
+  const alive = signatureList.vive(sessions, coord);
+  const kind = (sessions.mapa.get(sid) || {}).kind;
+  // sin poder leer las sesiones no se sabe si la coordinadora vive ni quién escribió: se dice, sin el mensaje
+  if (alive === null || ((kind === null || kind === undefined) && sessions.sinDato)) {
+    noteReplyProblem(home, now, sid, 'no pude leer las sesiones de la máquina');
+    return 'sin dato de las sesiones';
+  }
+  if (!alive) return 'sin coordinadora';
+  if (kind === null || kind === undefined) return 'no lo escribió la persona';
+  if ((kind === 'bg' || kind === 'background') && !signatureList.esDeLaPersona({ prompt: text, kind, transcript: t })) return 'no lo escribió la persona';
+  const file = repliesFile(home);
+  let size = 0;
+  try { size = fs.statSync(file).size; } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  if (size >= REPLIES_MAX_BYTES) return 'el archivo está lleno';
+  // hasta dónde llegaba la conversación: el mensaje se escribe después, y ahí se lo busca al entregarlo
+  let from = 0;
+  try { from = fs.statSync(t).size; } catch { /* todavía no existe: se busca desde el principio */ }
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  fs.appendFileSync(file, `${JSON.stringify({ sid, at: new Date(now).toISOString(), text: shownReply(text), sha: sha256(text), transcript: t, from })}\n`, { mode: 0o600 });
+  return 'anotado';
+}
+
+// Cuánto se lee de una conversación para encontrar una respuesta: desde un poco antes de donde llegaba al anotarla (por si
+// la herramienta escribió el mensaje antes que el gancho), hacia adelante.
+const TRANSCRIPT_BEFORE = 256 * 1024;
+const TRANSCRIPT_WINDOW = 4 * 1024 * 1024;
+// Los mensajes de usuario de ese tramo de la conversación: `[{ sha, typed, said }]`, o null si no se puede leer.
+function typedMessages(file, from = 0) {
+  let text;
+  try {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const size = fs.fstatSync(fd).size;
+      const start = Math.max(0, Math.min(Number(from) || 0, size) - TRANSCRIPT_BEFORE);
+      const b = Buffer.alloc(Math.min(TRANSCRIPT_WINDOW, size - start));
+      text = b.toString('utf8', 0, fs.readSync(fd, b, 0, b.length, start));
+    } finally { fs.closeSync(fd); }
+  } catch { return null; }
+  const { TIPEADO } = require(path.join(__dirname, '..', 'lib', 'owner-approvals.js'));
+  const out = [];
+  for (const l of text.split('\n')) {
+    let r;
+    try { r = JSON.parse(l); } catch { continue; }
+    if (!r || r.type !== 'user' || r.isSidechain === true) continue;
+    const c = r.message && r.message.content;
+    if (Array.isArray(c) && c.some((b) => b && b.type === 'tool_result')) continue;
+    const said = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n') : '';
+    if (!said.trim()) continue;
+    // los mismos criterios de quién escribió que mensajeEnLaTranscripcion, sin su sello: una respuesta no lo tiene
+    const typed = r.isMeta !== true && Boolean(r.origin) && r.origin.kind === 'human' && typedBy(TIPEADO, r.entrypoint, r.promptSource);
+    out.push({ sha: sha256(said.trim()), typed, said: said.trim() });
+  }
+  return out;
+}
+
+/**
+ * Lo que la persona escribió en otras pestañas, para la coordinadora: toma el archivo de una vez (lo renombra: lo que
+ * se anota mientras tanto va a uno nuevo), confirma en la conversación de cada sesión que lo tipeó una persona y entrega
+ * a lo sumo 5 líneas y «(+N más)». Cada línea sale una vez, con el texto de la conversación, no el del archivo. La que
+ * todavía no está en la conversación vuelve al archivo hasta 10 minutos; la de otro origen se descarta. Cada descarte que
+ * no es el esperado, y lo que no se pudo leer, va a `problems`. Si algo falla a mitad de camino, lo tomado vuelve al
+ * archivo: no se pierde.
+ */
+function ownerReplyLines(opts, sid, problems) {
+  const home = opts.home || require('os').homedir();
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  const file = repliesFile(home);
+  const what = 'las respuestas de la persona en otras pestañas';
+  try {
+    if (fs.statSync(file).size >= REPLIES_MAX_BYTES) problems.push(`${what}: el archivo llegó a ${REPLIES_MAX_BYTES / 1024} KB y las nuevas no se anotan`);
+  } catch (e) {
+    if (e.code !== 'ENOENT') problems.push(`${what} (${e.code || e.message})`);
+    return [];
+  }
+  const taken = `${file}.${process.pid}.leyendo`;
+  try { fs.renameSync(file, taken); } catch (e) {
+    if (e.code !== 'ENOENT') problems.push(`${what} (${e.code || e.message})`);
+    return [];
+  }
+  let text;
+  try { text = fs.readFileSync(taken, 'utf8'); } catch (e) {
+    // sin leerlo no se borra: vuelve a su lugar si nadie anotó otro mientras tanto, y si no, queda dicho dónde está
+    let kept = taken;
+    try { if (!fs.existsSync(file)) { fs.renameSync(taken, file); kept = file; } } catch { /* queda en el tomado */ }
+    problems.push(`${what} (${e.code || e.message}): quedaron en ${kept}`);
+    return [];
+  }
+  const out = [];
+  const back = [];
+  try {
+    const transcripts = new Map();
+    const count = { bad: 0, lost: 0, other: 0, unreadable: 0, notRecorded: 0 };
+    for (const l of text.split('\n')) {
+      if (!l.trim()) continue;
+      let r;
+      try { r = JSON.parse(l); } catch { count.bad += 1; continue; }
+      const at = r && Date.parse(r.at);
+      if (!r || typeof r.sid !== 'string' || !Number.isFinite(at)) { count.bad += 1; continue; }
+      if (now - at > REPLY_MAX_AGE_MS || r.sid === sid) continue;
+      if (typeof r.problem === 'string') { count.notRecorded += 1; continue; }
+      if (typeof r.sha !== 'string' || !isTranscriptOf(home, r.transcript, r.sid)) { count.bad += 1; continue; }
+      const from = Number.isFinite(Number(r.from)) ? Number(r.from) : 0;
+      const k = `${r.transcript}@${from}`;
+      if (!transcripts.has(k)) transcripts.set(k, typedMessages(r.transcript, from));
+      const msgs = transcripts.get(k);
+      const found = [...(msgs || [])].reverse().find((m) => m.sha === r.sha);
+      if (found && found.typed) out.push({ sid: r.sid, said: found.said });
+      else if (found) count.other += 1;
+      else if (now - at < REPLY_CONFIRM_MS) back.push(l);
+      // lo que no se encontró se descarta, pero se dice: puede ser una respuesta de verdad que no se pudo leer
+      else if (msgs === null) count.unreadable += 1;
+      else count.lost += 1;
+    }
+    if (count.bad) problems.push(`${count.bad} línea(s) de ${what}`);
+    if (count.notRecorded) problems.push(`${count.notRecorded} mensaje(s) de la persona en otras pestañas que no pude anotar: no pude leer las sesiones de la máquina`);
+    if (count.lost) problems.push(`${count.lost} respuesta(s) que no encontré en su conversación pasados 10 minutos: no las entregué`);
+    if (count.unreadable) problems.push(`${count.unreadable} respuesta(s) cuya conversación no pude leer pasados 10 minutos: no las entregué`);
+    if (count.other) problems.push(`${count.other} respuesta(s) que la conversación no da como tipeadas por una persona: no las entregué`);
+  } catch (e) {
+    // lo tomado vuelve entero: el turno siguiente lo intenta de nuevo. Si tampoco se puede devolver, no se borra: se
+    // dice dónde quedó
+    out.length = 0;
+    back.length = 0;
+    try { fs.appendFileSync(file, text, { mode: 0o600 }); } catch {
+      problems.push(`${what} (${e.code || e.message}): no las pude devolver; quedaron en ${taken}`);
+      return [];
+    }
+    problems.push(`${what} (${e.code || e.message}): las devolví para el próximo turno`);
+  }
+  if (back.length) {
+    try { fs.appendFileSync(file, back.map((l) => `${l}\n`).join(''), { mode: 0o600 }); } catch (e) {
+      problems.push(`${back.length} de ${what} no las pude guardar para el próximo turno (${e.code || e.message}): quedaron en ${taken}`);
+      return out.length ? deliveredLines(home, out) : [];
+    }
+  }
+  try { fs.unlinkSync(taken); } catch { /* ya no está */ }
+  return out.length ? deliveredLines(home, out) : [];
+}
+
+// Las líneas que recibe la coordinadora: el rótulo y a lo sumo 5 respuestas, con «(+N más)».
+function deliveredLines(home, out) {
+  const sessions = signatureList.sesiones(home).mapa;
+  const nameOf = (x) => label((sessions.get(x) || {}).name || String(x).slice(0, 8));
+  const lines = ['Coordinación: lo que la persona escribió en otras pestañas (lo dijo ahí, no aprueba nada ni es una firma):'];
+  for (const r of out.slice(0, REPLY_LINES)) lines.push(`  · ${nameOf(r.sid)}: te contestaron «${shownReply(r.said)}»`);
+  if (out.length > REPLY_LINES) lines.push(`  (+${out.length - REPLY_LINES} más)`);
+  return [lines.join('\n')];
+}
+
 function capNotice(opts = {}) {
   const sid = sessionOf(opts);
   const who = coordinatorRole(opts, sid);
@@ -992,6 +1263,8 @@ function capNotice(opts = {}) {
   lines.push(...slowGateLines(opts, s, problems));
   try { lines.push(...ownerWaitLines(opts, sid, s)); } catch (e) { problems.push(`lo de owner-wait (${e.code || e.message})`); }
   try { lines.push(...reviewAskLines(opts, sid, opts.now == null ? Date.now() : Number(opts.now))); } catch (e) { problems.push(`las preguntas de revisar (${e.code || e.message})`); }
+  try { lines.push(...askingLines(opts, sid, s, problems)); } catch (e) { problems.push(`las preguntas directas (${e.code || e.message})`); }
+  try { lines.push(...ownerReplyLines(opts, sid, problems)); } catch (e) { problems.push(`las respuestas de la persona en otras pestañas (${e.code || e.message})`); }
   if (problems.length) lines.push(`Coordinación: No pude leer ${oneLine(problems.join(' · ')).slice(0, 300)}.`);
   return lines.length ? lines.join('\n') : null;
 }
@@ -2000,4 +2273,4 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };

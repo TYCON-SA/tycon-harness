@@ -540,6 +540,20 @@ click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la 
 Hay uno por máquina, y sin coordinadora confirmada sale enseguida. Si no está corriendo, el aviso de cada turno lo dice
 con el comando. `coordination.js status` muestra las «Trabadas» y las «Cerradas por Claude Code».
 
+**Lo que pasa en otras pestañas le llega a la coordinadora en su turno**, sin que la sesión de trabajo vea nada:
+
+- «<sesión> le preguntó a la persona en su pestaña, hace N min»: la sesión abrió un cuadro o pidió aprobar su plan. Sale
+  una vez por pregunta y sin el texto: para saber qué pregunta, se le pregunta a la sesión o se entra con
+  `claude attach`. Un permiso no sale acá: sale en las «Trabadas».
+- «<sesión>: te contestaron «…»»: lo que la persona tipeó en otra pestaña, hasta 120 caracteres, en una línea y con los
+  secretos tapados. Van a lo sumo 5, con «(+N más)», y cada uno sale una vez. Antes de entregarlo, el aviso confirma en
+  la conversación de esa sesión que lo tipeó una persona. Un mensaje de otra sesión, un aviso o el encargo de una
+  sesión de fondo no se anotan. Un mensaje con la forma de un sello tampoco se anota, y un «aprobado» llega rotulado
+  como lo que la persona dijo ahí: no aprueba nada ni es una firma.
+
+Las dos líneas son sólo con coordinadora confirmada y viva, y se apagan con el resto del aviso
+(`TYCON_COORDINATION_NOTICE=0`). Lo que no se pudo leer sale en «No pude leer».
+
 **En cada chequeo, y antes de decir «no hay nada para vos», la coordinadora mira las esperas de la oficina** («Tu firma» y
 el estado de cada sesión), no sólo los mensajes que le llegan: el aviso puede fallar.
 
@@ -775,7 +789,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Regla | Mide | Por qué |
 |---|---|---|
 | Al dueño van firmas, contraseñas, decisiones de producto y lo que sale de la casa | nadie | Qué es una decisión de producto o una salida de rutina es criterio: no hay un dato que lo diga. |
-| Las preguntas de las sesiones van a la coordinadora | nadie | No hay aviso, por decisión del dueño: lo vería cada sesión de trabajo. La coordinadora lo recuerda cuando una sesión le pregunta al dueño. |
+| Las preguntas de las sesiones van a la coordinadora | nadie | La sesión de trabajo no ve ningún aviso, por decisión del dueño. Cuando una sesión le pregunta directo a la persona en su pestaña, el aviso de cada turno se lo dice a la coordinadora, una vez por pregunta, y ella se lo recuerda a la sesión. |
 | La coordinadora cierra los detalles con la opción más segura | nadie | Es criterio, y queda anotado para que el dueño lo vea. |
 | Cada sesión con un nombre puesto por una persona | aviso | `/coordinate` lista las que tienen el nombre que armó la herramienta. |
 | No más sesiones trabajando que el tope | freno | `open` no abre en el tope. Una sesión que el dueño abre a mano no la frena nada; la cuenta `status` y, al llegar al tope o cambiar el conteo, el aviso de la coordinadora. |
@@ -809,7 +823,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Las sesiones no se escriben entre sí | nadie | Un mensaje entre sesiones no pasa por un control. |
 | Una sesión no abre un cuadro en su pestaña | nadie | Lo decide la sesión al preguntar. |
 | Una sesión trabada se avisa con la respuesta recomendada | aviso | Un permiso, al instante, con `owner-wait`; las demás esperas, a los 5 y a los 30 minutos; la recomendación la escribe la coordinadora. |
-| Preguntarle a la sesión antes de decir «te toca» | nadie | Lo que el dueño escribe en otra pestaña no le llega a ella. |
+| Preguntarle a la sesión antes de decir «te toca» | nadie | Es criterio de la coordinadora. Lo que la persona tipea en otra pestaña le llega en su turno, en una línea; lo que se recortó o pasó por otro lado, no: por eso se le pregunta igual. |
 | «Te toca» sólo para lo que se puede hacer ahora | nadie | Es la forma del mensaje. |
 | Cada pedido al dueño viene completo | nadie | Es la forma del mensaje. |
 | Preguntarle a la sesión cuando el dueño pregunta cómo va | nadie | Es criterio de la coordinadora. |
