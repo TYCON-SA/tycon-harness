@@ -32,7 +32,7 @@ const { matchGlob, advisorAffectedByDelta, buildStoryDigest, parseFrontmatterLis
   computeGitignoreNeeds,
   normalizeFindingRecord } = require(path.join(SCRIPTS, 'pipeline.js'));
 const checks = require(path.join(SCRIPTS, 'lib', 'story-checks.js'));
-const { fakeHomeEnv, ponerCarpetaPersonal } = require(path.join(__dirname, 'lib', 'fake-home.js'));
+const { fakeHomeEnv, ponerCarpetaPersonal, conCarpetaPersonal } = require(path.join(__dirname, 'lib', 'fake-home.js'));
 
 // ── isGitCommit — corpus de detección + evasión ──────────────────────────────
 test('isGitCommit detecta commits directos y variantes', () => {
@@ -1373,7 +1373,22 @@ test('resolveRunDir: prefiere dir con archivos sobre stray vacío; create cuando
   fs.rmSync(empty, { recursive: true, force: true });
 });
 
+// writeFindings cruza con los registros de la carpeta de estado de la carpeta personal: con la real, lo que lanzaron
+// otras sesiones de la máquina entra al cruce. Corre con una carpeta personal propia y sin TYCON_HOME (con ella, la
+// casa propia sale de la variable y no de la carpeta de juguete).
 test('writeFindings + findings-status: escribe validado, status pasa de missing(exit3) a present', () => {
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-home-'));
+  const tyconHome = process.env.TYCON_HOME;
+  delete process.env.TYCON_HOME;
+  try {
+    conCarpetaPersonal(casa, writeFindingsEscribeValidado);
+  } finally {
+    if (tyconHome !== undefined) process.env.TYCON_HOME = tyconHome;
+    fs.rmSync(casa, { recursive: true, force: true });
+  }
+});
+
+function writeFindingsEscribeValidado() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-'));
   const runDir = path.join(repo, '.advisors', 'pipeline-runs', '2.2-20260101');
   fs.mkdirSync(runDir, { recursive: true });
@@ -1411,7 +1426,7 @@ test('writeFindings + findings-status: escribe validado, status pasa de missing(
   assert.equal(written[1].severity, 'CRITICAL');
   assert.equal(written[1].disposition, 'fixed');
   fs.rmSync(repo, { recursive: true, force: true });
-});
+}
 
 // ── REGRESIÓN: `marker.js set` NO debe borrar los campos que no enumera ──────────────────────
 // Si el objeto que construye `cmdSet` fuera un whitelist cerrado, todo lo NO enumerado se perdería en
@@ -5847,13 +5862,17 @@ test('ProyeccionDelRunDirAlRepoDeLaStory_SoloRosterYFindings', () => {
   assert.equal(mismo.projected, false);
 
   // write-findings de verdad, con la story en otro repo: proyecta y lo dice. Sin una corrida abierta, la carpeta que ya
-  // tiene su findings.json se nombra a propósito (--run-dir).
+  // tiene su findings.json se nombra a propósito (--run-dir). Con una carpeta personal propia y sin TYCON_HOME: el cruce
+  // de write-findings lee los registros de la carpeta de estado, y la real trae lo que lanzaron otras sesiones.
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'proj-home-'));
+  const env = { ...process.env, ...fakeHomeEnv(casa) };
+  delete env.TYCON_HOME;
   const out = JSON.parse(execFileSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'write-findings',
-    '--story', story, '--repo', codeRepo, '--run-dir', runDir, '--findings', '-'], { encoding: 'utf8', input: '[]' }));
+    '--story', story, '--repo', codeRepo, '--run-dir', runDir, '--findings', '-'], { encoding: 'utf8', input: '[]', env }));
   assert.ok(out.wrote && out.projected_to_story_repo, `write-findings proyecta al repo de la story: ${JSON.stringify(out)}`);
   assert.ok(fs.existsSync(path.join(out.projected_to_story_repo, 'findings.json')));
 
-  for (const d of [project, codeRepo]) fs.rmSync(d, { recursive: true, force: true });
+  for (const d of [project, codeRepo, casa]) fs.rmSync(d, { recursive: true, force: true });
 });
 
 // El registro de aprobaciones viaja con la misma proyección: une líneas, nunca pisa.

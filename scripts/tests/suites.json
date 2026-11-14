@@ -548,6 +548,14 @@
       ]
     },
     {
+      "__nota": "las pruebas del cierre de hallazgos con la carpeta personal de quien las corre «envenenada» (lanzamientos sin historia de otra sesión): tienen que dar verde porque cada una arma la suya, y el mismo write-findings sin carpeta propia tiene que caer (si no cae, sale saltada con su motivo). Corre unit.test.js filtrado por nombre y write-findings-signer.test.js como procesos hijos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/findings-real-home.test.js",
+      "requiere": [
+        "agent-skills"
+      ]
+    },
+    {
       "__nota": "story 8.2: los paquetes de revisores (cargador, vocabulario cerrado, fallas que frenan, `validadores`) y la equivalencia con el pipeline anterior contra la foto dorada de main.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/packs.test.js",

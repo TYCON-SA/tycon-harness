@@ -125,35 +125,79 @@ function leerCausas(ruta) {
  *      `git mv` acompañado de una reescritura grande hace que git la reporte como borrado+alta en
  *      vez de renombre, y ahí `--follow` tampoco la encuentra. La identidad declarada
  *      sí — es el mismo criterio con el que todo este arnés decide qué es una story.
+ *   4. Si HEAD no la conoce y hay un merge en curso: las preguntas 2 y 3 desde cada cabeza del merge
+ *      (`MERGE_HEAD`). Traer main a una rama atrasada mete en lo preparado para el commit las historias
+ *      que main ya tenía; su historia vive en la cabeza del merge, no en HEAD. Sin merge en curso esto
+ *      cuesta una sola llamada (la que ubica `MERGE_HEAD`), y sólo cuando HEAD no alcanzó.
  *
  * Falla siempre hacia **existente** (avisar), nunca hacia **nace ahora** (frenar): un freno que no
- * puede decidir no frena.
+ * puede decidir no frena. Un `MERGE_HEAD` que no se lee, o una cabeza que no es un commit del repo,
+ * es «no sé».
  */
 function naceAhora(abs, storyId) {
   const dir = path.dirname(abs);
+  const archivo = path.basename(abs);
   const git = (args, cwd) => execFileSync('git', args, {
     windowsHide: true,
     cwd: cwd || dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000,
   });
+  // ¿Esta revisión ya conoce la story, por su archivo (2) o por su `story:` (3)? `null` = no se pudo saber.
+  // Sin revisión, las preguntas van a HEAD con las mismas llamadas de siempre.
+  const laConoce = (rev) => {
+    try {
+      const log = ['log', '-1', '--follow', '--format=%H', ...(rev ? [rev] : []), '--', archivo];
+      if (git(log).trim() !== '') return true;                                       // (2)
+    } catch { return null; }
+    if (!storyId) return false;
+    try {                                                                            // (3)
+      const raiz = git(['rev-parse', '--show-toplevel']).trim();
+      if (!raiz) return false;
+      // Con comillas, la comilla de cierre corta el número. Sin comillas, el número tiene que terminar el renglón (o
+      // seguir un comentario): `story: 9.2` no es `story: 9.26`.
+      const sinComillas = String(storyId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const busquedas = [
+        ['--fixed-strings', `story: "${storyId}"`],
+        ['--fixed-strings', `story: '${storyId}'`],
+        ['-E', `story: ${sinComillas}[[:space:]]*(#.*)?$`],
+      ];
+      for (const [modo, patron] of busquedas) {
+        let hit = '';
+        // `git grep` sale 1 cuando no encuentra: eso es una respuesta. Cualquier otra salida es un error: «no sé».
+        try { hit = git(['grep', '-l', modo, '-e', patron, rev || 'HEAD', '--', '*.md'], raiz); } catch (e) {
+          if (!e || e.status !== 1) return null;
+        }
+        if (hit.trim() !== '') return true;
+      }
+    } catch { return null; }
+    return false;
+  };
 
   try { git(['rev-parse', '--verify', 'HEAD']); } catch { return false; }          // (1)
 
-  try {
-    if (git(['log', '-1', '--follow', '--format=%H', '--', path.basename(abs)]).trim() !== '') return false;  // (2)
-  } catch { return false; }
+  const enHead = laConoce(null);
+  if (enHead !== false) return false;
 
-  if (!storyId) return true;
-  try {                                                                            // (3)
-    const raiz = git(['rev-parse', '--show-toplevel']).trim();
-    if (!raiz) return true;
-    for (const patron of [`story: "${storyId}"`, `story: '${storyId}'`, `story: ${storyId}`]) {
-      let hit = '';
-      // `git grep` sale 1 cuando no encuentra: eso es una respuesta, no un error.
-      try { hit = git(['grep', '-l', '--fixed-strings', patron, 'HEAD', '--', '*.md'], raiz); } catch { hit = ''; }
-      if (hit.trim() !== '') return false;
-    }
-  } catch { return false; }
+  const cabezas = cabezasDelMerge(git, dir);                                        // (4)
+  if (cabezas === null) return false;
+  for (const cabeza of cabezas) {
+    try { git(['rev-parse', '--verify', '--quiet', `${cabeza}^{commit}`]); } catch { return false; }
+    if (laConoce(cabeza) !== false) return false;
+  }
   return true;
+}
+
+/**
+ * Las cabezas de un merge en curso: un hash por renglón del archivo `MERGE_HEAD`, que se ubica con
+ * `git rev-parse --git-path` (en un worktree no está en `<raíz>/.git`). `[]` sin merge en curso (el
+ * archivo no existe o está vacío); `null` si no se pudo leer.
+ */
+function cabezasDelMerge(git, dir) {
+  let ruta;
+  try { ruta = git(['rev-parse', '--git-path', 'MERGE_HEAD']).trim(); } catch { return null; }
+  if (!ruta) return null;
+  let raw;
+  try { raw = fs.readFileSync(path.resolve(dir, ruta), 'utf8'); } catch (e) { return e && e.code === 'ENOENT' ? [] : null; }
+  return raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 }
 
 module.exports = { tieneFollowupOf, tiposDeFollowupOf, leerCausas, naceAhora, sinComentario, cuerpoBloque };
