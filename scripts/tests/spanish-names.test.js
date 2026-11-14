@@ -1838,10 +1838,12 @@ test('GuiaNuevaEnCastellano_Frena @story-8.45 @ac-3 — una guía agregada o ren
     assert.strictEqual(r.status, 1, `por --range también: ${r.stderr}`);
     assert.match(r.stderr, nombra(nueva));
     // renombrar una inglesa a un nombre castellano también frena
-    git(lab, ['mv', 'guides/maintaining/keep.md', `guides/maintaining/${G.constitucion}.md`]);
+    // (con palabras de la lista del laboratorio: sin diccionario inglés, como en la CI, una palabra suelta no cuenta)
+    const renombrada = `guides/maintaining/${W.copia}-${W.de}-${W.datos}.md`;
+    git(lab, ['mv', 'guides/maintaining/keep.md', renombrada]);
     r = run(['--repo', lab]);
     assert.strictEqual(r.status, 1, `renombrar a castellano frena: ${r.stderr}`);
-    assert.match(r.stderr, nombra(`guides/maintaining/${G.constitucion}.md`));
+    assert.match(r.stderr, nombra(renombrada));
 
     // el termómetro no cuenta guías
     assert.deepStrictEqual(count(), before, 'el conteo no cambia por las guías');
