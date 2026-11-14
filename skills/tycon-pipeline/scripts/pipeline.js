@@ -6035,20 +6035,21 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   const tope = rr.tope({ repo: repoAbs });
   const stateDir = stateDirOf(os.homedir());
   const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), story: storyId, iter, ...g })}\n`); };
-  const sinFirmaPendiente = `🛑 La vuelta ${iter} no necesita firma: no se pide para otra sesión (--for-session). La pide la sesión de la corrida.\n`;
+  // pedida para otra sesión sin firma que dar: se dice por qué no la necesita y quién la pide
+  const laPideLaCorrida = 'La pide la sesión de la corrida, con el set sin --extra-round ni --for-session';
   // la vuelta extra para otra sesión es de la historia de su corrida, no de la que diga --story
   if (paraOtra && paraOtra.storyId !== String(storyId)) {
     process.stderr.write(`🛑 La corrida de la sesión ${paraOtra.pedida} es de la story ${paraOtra.storyId}, y --story nombra la ${storyId}. No escribí nada.\n`);
     process.exit(2);
   }
   if (iter <= tope.value) {
-    if (paraOtra) return sinFirmaPendiente;
+    if (paraOtra) return `🛑 La vuelta ${iter} está dentro del tope de ${tope.value}: no necesita la vuelta extra ni la firma. ${laPideLaCorrida}.\n`;
     if (args.extraRound) return `🛑 La vuelta ${iter} no necesita la vuelta extra ni la firma: está dentro del tope de ${tope.value}. Pedí el set sin --extra-round.\n`;
     for (const p of tope.problems || []) process.stderr.write(`⚠️  ${p}\n`);
     return null;
   }
   if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) {
-    if (paraOtra) return sinFirmaPendiente;
+    if (paraOtra) return `🛑 La vuelta extra ${iter} ya está autorizada. ${laPideLaCorrida}, sin otra firma.\n`;
     return args.extraRound ? `🛑 La vuelta extra ${iter} ya está autorizada: pedí el set sin --extra-round, sin otra firma.\n` : null;
   }
   const h = rr.hallazgosDe(runDir);

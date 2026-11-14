@@ -166,3 +166,106 @@ test('T9 · UnpushedScan_BigOrSlow_SaysNotScanned @story-8.266 @ac-8', { skip: p
 });
 
 test.after(() => { fs.rmSync(BASE, { recursive: true, force: true }); });
+
+// ── La carpeta de trabajo que ya no existe (8.271) ────────────────────────────────────────────────────────────────────
+//
+// Un worktree temporal borrado con `git worktree remove` queda en el registro de la sesión. Escanearlo en cada cierre de
+// turno da «no escaneado (error git)» sin fin. El registro guarda la carpeta git común del commit; con ella se prueba si
+// lo que la sesión commiteó ahí sigue pendiente: una rama local lo tiene y ninguna remota. Si no se puede probar, se avisa
+// una sola vez por sesión. Una carpeta que existe y en la que git falla sigue avisando siempre.
+
+/** Un repo del arnés de juguete (con `.tycon` commiteada, para que el worktree la traiga) y un worktree en la rama `rama`. */
+function repoConWorktree(name, rama = 'tarea') {
+  const repo = toyRepo(name, 0);
+  fs.writeFileSync(path.join(repo, '.tycon', 'repo.json'), '{}\n');
+  git(repo, ['add', '-A']); git(repo, ['commit', '-qm', 'tycon']); git(repo, ['push', '-q', 'origin', 'main']);
+  const wt = path.join(path.dirname(repo), 'wt');
+  git(repo, ['worktree', 'add', '-q', '-b', rama, wt, 'main']);
+  return { repo, wt: fs.realpathSync(wt), common: fs.realpathSync(path.join(repo, '.git')) };
+}
+function registro(sid, renglones) {
+  const dir = stateDir(HOME);
+  fs.mkdirSync(dir, { recursive: true });
+  // stable-data: el registro tiene que ser de hoy para que el gancho lo lea al cerrar el turno
+  fs.writeFileSync(path.join(dir, `unpushed-commits-${sid}.jsonl`), renglones.map((r) => JSON.stringify({ ts: new Date().toISOString(), ...r })).join('\n') + '\n');
+}
+const cierre = (sid) => runHook([], { input: JSON.stringify({ hook_event_name: 'Stop', session_id: sid, stop_hook_active: false }) });
+const realDe = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
+
+test('UnpushedRecord_Commit_GuardaLaCarpetaComun @story-8.271 @ac-10', () => {
+  const { wt, common } = repoConWorktree('rec-comun');
+  commit(wt, 'w.txt', 'w');
+  const sid = 'rec-comun-session';
+  runHook([], { input: JSON.stringify({ session_id: sid, tool_name: 'Bash', tool_input: { command: 'git commit -m w.txt' }, cwd: wt }) });
+  const lineas = fs.readFileSync(path.join(stateDir(HOME), `unpushed-commits-${sid}.jsonl`), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const c = lineas.find((l) => l.kind === 'commit');
+  assert.ok(c, JSON.stringify(lineas));
+  assert.strictEqual(realDe(c.common), common);
+  assert.ok(path.isAbsolute(c.common), 'la ruta va absoluta');
+});
+
+test('UnpushedStop_CarpetaBorradaYCommitEnElRemoto_Calla @story-8.271 @ac-11', () => {
+  // empujado y borrado
+  const a = repoConWorktree('borrada-empujada');
+  const sha = commit(a.wt, 'a.txt', 'a');
+  git(a.wt, ['push', '-q', 'origin', 'tarea']);
+  git(a.repo, ['worktree', 'remove', a.wt]);
+  registro('borrada-empujada', [{ repo: a.wt, kind: 'commit', sha, common: a.common }]);
+  let r = cierre('borrada-empujada');
+  assert.strictEqual(r.out.trim(), '', r.out);
+  // reescrito (el sha viejo ya no está en ninguna rama), el nuevo empujado, y borrado
+  const b = repoConWorktree('borrada-reescrita');
+  const viejo = commit(b.wt, 'b.txt', 'b');
+  git(b.wt, ['commit', '-q', '--amend', '-m', 'b reescrito']);
+  const nuevo = git(b.wt, ['rev-parse', 'HEAD']);
+  git(b.wt, ['push', '-q', 'origin', 'tarea']);
+  git(b.repo, ['worktree', 'remove', b.wt]);
+  registro('borrada-reescrita', [{ repo: b.wt, kind: 'commit', sha: viejo, common: b.common }, { repo: b.wt, kind: 'rewrite', shas: [nuevo], common: b.common }]);
+  r = cierre('borrada-reescrita');
+  assert.strictEqual(r.out.trim(), '', r.out);
+});
+
+test('UnpushedStop_CarpetaBorradaSinProbar_AvisaUnaVez @story-8.271 @ac-12', () => {
+  // sin empujar: avisa la primera vez, con la carpeta y el commit; la segunda, no
+  const a = repoConWorktree('borrada-sin-subir');
+  const sha = commit(a.wt, 'a.txt', 'a');
+  git(a.repo, ['worktree', 'remove', a.wt]);
+  registro('borrada-sin-subir', [{ repo: a.wt, kind: 'commit', sha, common: a.common }]);
+  let r = cierre('borrada-sin-subir');
+  const reason = JSON.parse(r.out).reason;
+  assert.match(reason, /ya no existe/);
+  assert.ok(reason.includes('borrada-sin-subir/wt'), reason);
+  assert.ok(reason.includes(sha.slice(0, 7)), reason);
+  assert.doesNotMatch(reason, /no escaneado/);
+  r = cierre('borrada-sin-subir');
+  assert.strictEqual(r.out.trim(), '', 'el segundo cierre no repite el aviso');
+  // sin carpeta común, y sólo con renglones sin sha: avisa una vez
+  const b = repoConWorktree('borrada-sin-comun');
+  const shaB = commit(b.wt, 'b.txt', 'b');
+  git(b.wt, ['push', '-q', 'origin', 'tarea']);
+  git(b.repo, ['worktree', 'remove', b.wt]);
+  registro('borrada-sin-comun', [{ repo: b.wt, kind: 'commit', sha: shaB }]);
+  assert.match(JSON.parse(cierre('borrada-sin-comun').out).reason, /ya no existe/);
+  registro('borrada-sin-sha', [{ repo: b.wt, kind: 'commit', sha: null, common: b.common }]);
+  assert.match(JSON.parse(cierre('borrada-sin-sha').out).reason, /ya no existe/);
+  // una rama empujada y otra de la misma carpeta sin subir: avisa por la que falta
+  const c = repoConWorktree('borrada-dos-ramas');
+  const subido = commit(c.wt, 'c.txt', 'c');
+  git(c.wt, ['push', '-q', 'origin', 'tarea']);
+  git(c.wt, ['checkout', '-q', '-b', 'otra']);
+  const local = commit(c.wt, 'd.txt', 'd');
+  git(c.wt, ['checkout', '-q', 'tarea']);
+  git(c.repo, ['worktree', 'remove', c.wt]);
+  registro('borrada-dos-ramas', [{ repo: c.wt, kind: 'commit', sha: subido, common: c.common }, { repo: c.wt, kind: 'commit', sha: local, common: c.common }]);
+  const dos = JSON.parse(cierre('borrada-dos-ramas').out).reason;
+  assert.ok(dos.includes(local.slice(0, 7)), dos);
+  assert.ok(!dos.includes(subido.slice(0, 7)), dos);
+});
+
+test('UnpushedStop_CarpetaVivaConGitRoto_SigueAvisando @story-8.271 @ac-13 @ac-14', () => {
+  const roto = path.join(BASE, 'git-roto');
+  fs.mkdirSync(roto, { recursive: true });
+  fs.writeFileSync(path.join(roto, '.git'), `gitdir: ${path.join(BASE, 'no-existe')}\n`);
+  registro('git-roto', [{ repo: roto, kind: 'commit', sha: 'a'.repeat(40) }]);
+  for (let i = 0; i < 2; i++) assert.match(JSON.parse(cierre('git-roto').out).reason, /no escaneado/, `cierre ${i + 1}`);
+});
