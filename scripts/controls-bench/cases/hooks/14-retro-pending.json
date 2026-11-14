@@ -205,9 +205,9 @@
           }
         },
         {
-          "id": "quiet-push-main-en-repo-del-arnes",
-          "type": "must-stay-quiet",
-          "__doc": "Desde el 2026-09-17 éste es el camino de RESPALDO: el repo no tiene `origin`, así que no hay identidad que leer y decide el nombre de la carpeta. Con `origin`, decide el remoto (los casos que siguen).",
+          "id": "registra-push-main-en-repo-del-arnes",
+          "type": "must-block",
+          "__doc": "Desde el 2026-09-17 éste es el camino de RESPALDO: el repo no tiene `origin`, así que no hay identidad que leer y decide el nombre de la carpeta. Con `origin`, decide el remoto (los casos que siguen). Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p tycon-claude-guides && cd tycon-claude-guides && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
@@ -221,15 +221,22 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/tycon-claude-guides\""
+              }
             ]
           }
         },
         {
-          "id": "quiet-push-main-en-repo-del-arnes-nombre-publico",
-          "type": "must-stay-quiet",
-          "__doc": "GEMELO con el nombre público (story 8.19, tanda E, AC 39): el mismo caso con la carpeta llamada como el lugar del arnés. Desde el 2026-09-17 éste es el camino de RESPALDO: el repo no tiene `origin`, así que no hay identidad que leer y decide el nombre de la carpeta. Con `origin`, decide el remoto (los casos que siguen).",
+          "id": "registra-push-main-en-repo-del-arnes-nombre-publico",
+          "type": "must-block",
+          "__doc": "GEMELO con el nombre público (story 8.19, tanda E, AC 39): el mismo caso con la carpeta llamada como el lugar del arnés. Desde el 2026-09-17 éste es el camino de RESPALDO: el repo no tiene `origin`, así que no hay identidad que leer y decide el nombre de la carpeta. Con `origin`, decide el remoto (los casos que siguen). Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ${PLACE_NAME} && cd ${PLACE_NAME} && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
@@ -243,15 +250,22 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/${PLACE_NAME}\""
+              }
             ]
           }
         },
         {
-          "id": "quiet-clon-del-arnes-en-carpeta-con-otro-nombre-se-reconoce-por-su-origin",
-          "type": "must-stay-quiet",
-          "__doc": "EL CASO REAL (2026-09-17, pendiente (a) del caso de la retro por push sin story, 2026-09-16): un clon descartable del arnés en `…/scratchpad/clon-arnes`, con la URL real de `git remote get-url origin` del checkout canónico. ROJO PREVIO: la exclusión miraba los segmentos de la RUTA; ninguno se llama como el arnés, así que el push quedaba anotado como merge pendiente — el mismo push que desde el checkout canónico no se anota.",
+          "id": "registra-clon-del-arnes-en-carpeta-con-otro-nombre-se-reconoce-por-su-origin",
+          "type": "must-block",
+          "__doc": "EL CASO REAL (2026-09-17, pendiente (a) del caso de la retro por push sin story, 2026-09-16): un clon descartable del arnés en `…/scratchpad/clon-arnes`, con la URL real de `git remote get-url origin` del checkout canónico. ROJO PREVIO: la exclusión miraba los segmentos de la RUTA; ninguno se llama como el arnés, así que el push quedaba anotado como merge pendiente — el mismo push que desde el checkout canónico no se anota. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p scratchpad/clon-arnes && cd scratchpad/clon-arnes && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides"
@@ -265,8 +279,15 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/scratchpad/clon-arnes\""
+              }
             ]
           },
           "env": {
@@ -341,9 +362,9 @@
           "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
         },
         {
-          "id": "quiet-clon-de-agent-skills-por-su-url-visualstudio-y-con-otro-usuario",
-          "type": "must-stay-quiet",
-          "__doc": "El otro repo del arnés y la otra forma de URL: `org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills` (la real del checkout canónico), con OTRO usuario adelante — el usuario de la URL no es parte de la identidad. ROJO PREVIO: carpeta `as`, se anotaba.",
+          "id": "registra-clon-de-agent-skills-por-su-url-visualstudio-y-con-otro-usuario",
+          "type": "must-block",
+          "__doc": "El otro repo del arnés y la otra forma de URL: `org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills` (la real del checkout canónico), con OTRO usuario adelante — el usuario de la URL no es parte de la identidad. ROJO PREVIO: carpeta `as`, se anotaba. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p scratchpad/as && cd scratchpad/as && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://usuarioa@org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
@@ -357,8 +378,15 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/scratchpad/as\""
+              }
             ]
           },
           "env": {
@@ -367,9 +395,9 @@
           "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
         },
         {
-          "id": "quiet-clon-del-arnes-por-ssh",
-          "type": "must-stay-quiet",
-          "__doc": "La forma ssh de Azure (`git@ssh.dev.azure.com:v3/<org>/<proyecto>/<repo>`) es el mismo repo. ROJO PREVIO: carpeta `por-ssh`, se anotaba.",
+          "id": "registra-clon-del-arnes-por-ssh",
+          "type": "must-block",
+          "__doc": "La forma ssh de Azure (`git@ssh.dev.azure.com:v3/<org>/<proyecto>/<repo>`) es el mismo repo. ROJO PREVIO: carpeta `por-ssh`, se anotaba. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p scratchpad/por-ssh && cd scratchpad/por-ssh && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin git@ssh.dev.azure.com:v3/org-del-equipo/tycon-claude-guides/tycon-claude-guides"
@@ -383,8 +411,15 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/scratchpad/por-ssh\""
+              }
             ]
           },
           "env": {
@@ -393,9 +428,9 @@
           "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
         },
         {
-          "id": "quiet-clon-LOCAL-de-un-checkout-del-arnes-se-sigue-hasta-el-remoto-de-verdad",
-          "type": "must-stay-quiet",
-          "__doc": "Un clon hecho DESDE el checkout local (`git clone ~/SourceCode/tycon-claude-guides scratchpad/x`): su `origin` es una ruta, y el repo es lo que sea ese otro — se sigue hasta la URL de Azure. ROJO PREVIO: carpeta `clon-local`, se anotaba.",
+          "id": "registra-clon-LOCAL-de-un-checkout-del-arnes-se-sigue-hasta-el-remoto-de-verdad",
+          "type": "must-block",
+          "__doc": "Un clon hecho DESDE el checkout local (`git clone ~/SourceCode/tycon-claude-guides scratchpad/x`): su `origin` es una ruta, y el repo es lo que sea ese otro — se sigue hasta la URL de Azure. ROJO PREVIO: carpeta `clon-local`, se anotaba. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p canonico && cd canonico && git init -q -b main . && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides",
@@ -410,8 +445,15 @@
             }
           },
           "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/scratchpad/clon-local\""
+              }
             ]
           },
           "env": {
