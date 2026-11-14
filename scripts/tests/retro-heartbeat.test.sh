@@ -396,8 +396,10 @@ ARNES_ENV=""
 ( cd "${J}/repo" && git remote set-url origin "${ARNES_URL}" )
 if [ -n "${ARNES_ENV}" ]; then JZ="$(TYCON_HARNESS_IDENTITIES="${ARNES_ENV}" node "${RAIZ}/scripts/hooks/retro-pending.js" --judge "${J}/repo" 2>&1)"
 else JZ="$(node "${RAIZ}/scripts/hooks/retro-pending.js" --judge "${J}/repo" 2>&1)"; fi
-echo "${JZ}" | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(j.arnes === true && j.arnes_por === "remoto" && j.registraria === false && j.exento === null ? 0 : 1)' \
-  && ok "T11b --judge: un clon del arnés (carpeta «repo», remoto del arnés) sale arnes:true y registraria:false, con exento intacto" || bad "T11b --judge arnés" "${JZ}"
+# Los repos del arnés deben retrospectiva como cualquier producto: `arnes` lo sigue diciendo, y `registraria` ya no
+# depende de eso.
+echo "${JZ}" | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(j.arnes === true && j.arnes_por === "remoto" && j.registraria === true && j.exento === null ? 0 : 1)' \
+  && ok "T11b --judge: un clon del arnés (carpeta «repo», remoto del arnés) sale arnes:true y registraria:true, con exento intacto" || bad "T11b --judge arnés" "${JZ}"
 
 # T11c — `--judge` dice también si el repo es de LABORATORIO: uno que vive en una carpeta temporal y cuyo
 #        remoto no tiene copia de trabajo fuera de las temporales no se anota (registraria:false). El clon descartable
@@ -661,13 +663,13 @@ fi
   pedir Bash 'gh pr create --base main --head solo-remota --title t --body b'
   anotado main && grep -q "\"sha\":\"${TIP20:0:12}\"" "${LED20}" && ok "T20 con una --head que sólo existe en el remoto, la punta es la del remoto" || bad "T20 --head sólo remota" "$(cat "${LED20}" 2>/dev/null)"
 
-  # un repo del arnés sigue sin deber retrospectiva (decide el remoto)
+  # un repo del arnés también debe retrospectiva (decide el remoto): su pedido hacia main se anota
   G20 remote set-url origin https://github.com/acme/el-arnes.git
   rm -f "${LED20}"
   node -e 'process.stdout.write(JSON.stringify({ session_id: "s-t20", tool_name: "Bash", cwd: process.argv[1], tool_input: { command: "gh pr create --base main --title t --body b" } }))' "${P20}" \
     | TYCON_HARNESS_IDENTITIES="https://github.com/acme/el-arnes.git" node "${H20}/scripts/hooks/retro-pending.js" > "${T20}/stdout" 2> "${T20}/stderr"
   echo $? > "${T20}/rc"
-  callado && ok "T20 en un repo del arnés no se anota, como hoy" || bad "T20 repo del arnés" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
+  anotado main && ok "T20 en un repo del arnés se anota, como en un producto" || bad "T20 repo del arnés" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
   G20 remote set-url origin https://github.com/acme/producto.git
 
   # el hook viaja suelto: sin el lector de gh al lado calla, no se cae — y lo de Azure sigue andando

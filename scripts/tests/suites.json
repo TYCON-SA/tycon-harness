@@ -4524,6 +4524,12 @@
       "requiere": []
     },
     {
+      "__nota": "los repos del arnés (el privado de Azure y el público de GitHub, éste sin .tycon/ ni .advisors/) se anotan y piden su retrospectiva como un repo de producto (scripts/hooks/retro-pending.js), con las exenciones de siempre; un repo suelto sin origin no se anota aunque su carpeta se llame como el arnés. Repos de juguete con git de verdad e identidades del arnés de mentira. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-pending-harness-repos.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las entradas del reclamo de la retrospectiva que anotaron el commit equivocado (scripts/hooks/retro-pending.js): la punta que contesta el remoto al abrir el pedido, la rama de origen, la corrección con quién y por qué (--correct), el aviso de «ya estaba en main» y la carpeta principal por nombre. Repos de juguete con git de verdad y un remoto en una carpeta. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-pending-correct.test.js",

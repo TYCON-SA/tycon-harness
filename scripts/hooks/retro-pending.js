@@ -87,21 +87,21 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
 // el archivo — si el agente no lo escribió, el gate bloquea igual. El ledger advisor-runs/ no es insumo de este hook
 // (on-advisor-run.js sigue escribiendo retro_repo/retro_sha, pero acá no se lee): lo que importa se exige al cerrar,
 // no se recuerda.
-// 🔴 QUIÉN ES EL ARNÉS: LO DICE EL REMOTO, NO LA CARPETA. Los repos del arnés no deben retrospectiva. Decidirlo
-// mirando si algún segmento de la RUTA se llama `agent-skills` o el arnés haría que el mismo push se registrara o no
-// según desde qué carpeta se hace: un clon descartable del arnés (`…/scratchpad/tcg`, que es como se trabaja cuando hay
-// otra sesión viva en el checkout) quedaría anotado, y un repo de producto clonado debajo de una carpeta con ese nombre
-// quedaría excluido sin serlo — la segunda es la cara: una retrospectiva que no se pide y nada lo dice. Por eso decide
-// el `origin` del repo del push, comparado como (org, proyecto, repo) de Azure en cualquiera de sus formas de URL
-// (dev.azure.com, *.visualstudio.com, ssh; con cualquier usuario adelante). Un `origin` que es una ruta local —el
-// clon de un checkout— se sigue hasta el repo de verdad, con tope de saltos. El nombre de la carpeta
-// queda SÓLO como respaldo para el repo que no tiene `origin` (no hay otra identidad que leer). Un
-// remoto que no se sabe leer no es el arnés: se registra. Límites declarados: mira `origin` aunque el push nombre otro
-// remoto (igual que el resto del hook, que lee `origin/<main>`), y las dos identidades están escritas en la lib — si
-// un repo del arnés se muda de proyecto en Azure, este hook empieza a registrarlo (ruidoso, no mudo).
-// El criterio vive en UN lugar, scripts/lib/harness-repo.js, para que la exclusión no se escriba varias veces por
-// carpeta. Casos: 14-retro-pending.json (`quiet-clon-del-arnes-…`,
-// `registra-repo-de-producto-debajo-…`) y scripts/tests/harness-repo.test.sh.
+// 🔴 QUIÉN ES EL ARNÉS: LO DICE EL REMOTO, NO LA CARPETA. Los repos del arnés deben retrospectiva como cualquier
+// producto: trabajan por historia, pipeline y pedido. Se anotan aunque no tengan `.tycon/` ni `.advisors/` (el público
+// no los tiene), y para eso hay que reconocerlos. Decidirlo mirando si algún segmento de la RUTA se llama
+// `agent-skills` o el arnés haría que el mismo push se tratara distinto según desde qué carpeta se hace: un clon
+// descartable del arnés (`…/scratchpad/tcg`, que es como se trabaja cuando hay otra sesión viva en el checkout) y el
+// checkout principal tienen que anotarse igual. Por eso decide el `origin` del repo del push, comparado como (org,
+// proyecto, repo) de Azure en cualquiera de sus formas de URL (dev.azure.com, *.visualstudio.com, ssh; con cualquier
+// usuario adelante) o como (org, repo) de GitHub. Un `origin` que es una ruta local —el clon de un checkout— se sigue
+// hasta el repo de verdad, con tope de saltos. Sólo un repo reconocido por su `origin` se salta la condición de
+// `.tycon/` o `.advisors/`: la lib decide por el nombre de la carpeta cuando no hay `origin` que leer, y una carpeta
+// con ese nombre puede ser un repo suelto, que no debe retrospectiva. Un remoto que no se sabe leer no es el arnés:
+// se juzga como cualquier repo. Límite declarado: mira `origin` aunque el push nombre otro remoto (igual que el resto
+// del hook, que lee `origin/<main>`). El criterio vive en UN lugar, scripts/lib/harness-repo.js. Casos:
+// 14-retro-pending.json (`registra-clon-del-arnes-…`, `registra-repo-de-producto-debajo-…`),
+// scripts/tests/retro-pending-harness-repos.test.js y scripts/tests/harness-repo.test.sh.
 // 🔴 LOS REPOS DE LABORATORIO. Una sesión puede armar un repo de juguete en su carpeta de trabajo temporal
 // (`/private/tmp/…/scratchpad/…`, con `.tycon/` y `origin` a un repo de PRUEBA en GitHub) para probar una story y
 // empujar a main varias veces; el cierre del turno quedaría frenado por «merges sin retrospectiva» que ninguna
@@ -148,7 +148,7 @@ const destinoGit = require(path.join(__dirname, '..', 'lib', 'git-target.js'));
 const GIT_PUSH = destinoGit.regexDeGit(destinoGit.VERBOS_QUE_PUBLICAN);
 // Quién es un repo DEL arnés: lo dice el remoto `origin`, no la carpeta. Criterio ÚNICO,
 // compartido con unpushed-work-notice.js y con el portón de carril de agent-skills. Se copia al sandbox del banco junto con el hook (setups).
-const { esRepoDelArnes, juzgarRepo, identidadRemoto, resolverRemoto, mismaIdentidad } = require(path.join(__dirname, '..', 'lib', 'harness-repo.js'));
+const { juzgarRepo, identidadRemoto, resolverRemoto, mismaIdentidad } = require(path.join(__dirname, '..', 'lib', 'harness-repo.js'));
 // El cuerpo de un heredoc que NO va a un shell es TEXTO, no comandos. Caso: un `node - <<'EOF'` cuyo cuerpo trae, dentro de un
 // string, `cd ${dir} && … && git push -q origin main`. El recorrido por sentencias corta por `&&` sin mirar dónde
 // está, así que vería un `cd` a una variable que nadie define seguido de un `git push … main`: aviso de «no pude
@@ -1163,17 +1163,25 @@ function pedidosDeCapa(cmd, cwd) {
   return out;
 }
 
+/**
+ * ¿Este repo debe retrospectiva? Un repo bajo el arnés (`.tycon/` o artefactos del pipeline en la raíz) sí; un repo
+ * suelto no. Los repos DEL arnés trabajan por historia, pipeline y pedido, y deben retrospectiva como cualquier
+ * producto ("QUIÉN ES EL ARNÉS", en la cabecera): se reconocen SÓLO por su `origin`, porque el público no tiene
+ * `.tycon/` ni `.advisors/`. Uno reconocido por el nombre de la carpeta (sin `origin`, o sin identidades de
+ * referencia) no alcanza: una carpeta con ese nombre puede ser un repo suelto. La usan `anotar` y `--judge`, para que
+ * el juicio conteste lo mismo que el gancho.
+ */
+function debeRetrospectiva(root) {
+  const delArnes = juzgarRepo(root);
+  if (delArnes.arnes && delArnes.por === 'remoto') return true;
+  return fs.existsSync(path.join(root, '.tycon')) || fs.existsSync(path.join(root, '.advisors'));
+}
+
 /** Anota UNA entrega en el ledger. Devuelve la entry escrita, o null si no correspondía. */
 function anotar(event, cmd, punto, ctx) {
   const root = git(punto.dir, ['rev-parse', '--show-toplevel']);
   if (!root) return null;
-  // Repo bajo el arnés: .tycon/ o artefactos del pipeline. Un repo suelto no debe retrospectiva.
-  if (!fs.existsSync(path.join(root, '.tycon')) && !fs.existsSync(path.join(root, '.advisors'))) return null;
-  // Los repos DEL arnés (agent-skills / el arnés) se trabajan directo en main, sin story
-  // ni pipeline: no hay retrospectiva que correr (misma POLÍTICA que el portón de carril,
-  // lib/story-gate.js HARNESS_REPO_SEGMENTS). 🔴 Con el repo mal calculado esta exclusión nunca se miraría.
-  // Se decide por el REMOTO, no por la carpeta ("QUIÉN ES EL ARNÉS", en la cabecera).
-  if (esRepoDelArnes(root)) return null;
+  if (!debeRetrospectiva(root)) return null;
   // La rama y el destino se leen de LA SENTENCIA, no del comando entero: una línea con dos pushes
   // a ramas distintas habla de las dos, y cada repo tiene que juzgarse por lo suyo.
   const st = punto.st || cmd;
@@ -1470,15 +1478,17 @@ function main() {
     const root = git(dir, ['rev-parse', '--show-toplevel']);
     if (!root) { process.stdout.write(JSON.stringify({ error: `no es un repo git: ${dir}` }) + '\n'); process.exitCode = 2; return; }
     const target = /^(main|master)$/.test(git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])) ? git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) : 'main';
-    // `arnes`: `--judge` dice qué TRAJO el push, no si este hook lo anotaría — y a un repo
-    // del arnés no lo anota nunca. Se dice, con de dónde salió el dato; `exento` no cambia (sigue hablando
-    // sólo de lo que trajo el push) y qué hacer con un merge del arnés lo sigue decidiendo quien pregunta.
+    // `arnes`: si el repo es uno de los del arnés, con de dónde salió el dato. Ya no cambia `registraria`: un repo del
+    // arnés debe retrospectiva como cualquier producto. `exento` sigue hablando sólo de lo que trajo el push.
     const arnes = juzgarRepo(root);
     const lab = juzgarLaboratorio(root);
     const juicio = juzgarPush(root, target);
-    // `registraria`: ¿este hook dejaría una entrada por ese push? No, si el repo es del arnés o de laboratorio, o si todo
-    // lo que trajo es salida de una retrospectiva (una entrada exenta también es una entrada).
-    process.stdout.write(JSON.stringify({ repo: root, target, arnes: arnes.arnes, arnes_por: arnes.por, laboratorio: lab.laboratorio, laboratorio_por: lab.por, registraria: !arnes.arnes && !lab.laboratorio && !juicio.retro, ...juicio }, null, 2) + '\n');
+    // `registraria`: ¿este hook dejaría una entrada por ese push? No, si es un repo del arnés que no debe retrospectiva
+    // (reconocido sólo por el nombre de la carpeta y sin `.tycon/` ni `.advisors/`: la misma regla que `anotar`), si es
+    // de laboratorio, o si todo lo que trajo es salida de una retrospectiva (una entrada exenta también es una entrada).
+    // Límite declarado: para un repo que no es del arnés no mira `.tycon/` ni `.advisors/`, como antes.
+    const arnesSinRetro = arnes.arnes && !debeRetrospectiva(root);
+    process.stdout.write(JSON.stringify({ repo: root, target, arnes: arnes.arnes, arnes_por: arnes.por, laboratorio: lab.laboratorio, laboratorio_por: lab.por, registraria: !arnesSinRetro && !lab.laboratorio && !juicio.retro, ...juicio }, null, 2) + '\n');
     return;
   }
   let event = {};
