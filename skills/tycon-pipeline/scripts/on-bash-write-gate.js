@@ -1724,7 +1724,7 @@ function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
   // estado; «review» suelto en otra palabra (`code-review`, `preview`, un subcomando `review`) no. El límite de la guía sigue:
   // esto cierra el camino fácil, no una falsificación armada a propósito
   const nombraLaRevision = /(^|[^\w-])plan-review|\}-review|tycon[\\/]state|\.tycon-pipeline/i.test(String(cmd || ''));
-  const cambiaDeCarpeta = /(^|[;&|(\s])(?:cd|pushd)(\s|$)/.test(String(cmd || ''));
+  const cambiaDeCarpeta = /(^|[;&|(\s])(?:cd|pushd)(\s|$)/.test(String(cmd));
   // los corredores del pase: sólo la lista de la organización, como la escribe el arnés; revisores propios, nunca
   const opcionesDelArnes = (w) => {
     if (w.some((x) => x === '--agents-dir' || x.startsWith('--agents-dir='))) return false;

@@ -1487,7 +1487,7 @@ function cmdCompleteStep(nRaw, flags) {
       let r;
       try { r = require('./lib/plan-review.js').antesDeAprobar({ estado: STATE_DIR, firmante: SID, destino: SID, marker }); } catch (e) { r = { codigo: 2, motivo: `no pude comprobar la revisión (${String((e && e.message) || e).split('\n')[0]})` }; }
       if (!r.codigo) {
-        let pantalla = true;
+        let pantalla;
         try { pantalla = require('./mockup.js').screenStory(resolveStoryPath(marker.storyPath, marker) || marker.storyPath).screen; } catch (_e) { pantalla = true; }
         if (pantalla) sinRevision = 'la historia tiene pantalla: la maqueta la aprueba una persona (--approved y --mockup-approved)';
         else autoRevision = r.constancia;

@@ -1215,6 +1215,12 @@
       "requiere": []
     },
     {
+      "__nota": "cómo se abren en el navegador el plan, la maqueta y la guía de prueba: en Windows con rundll32, sin cmd, así un & de la ruta no corre otra orden; qa-guide usa el mismo abridor.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/visual-plan.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.34: la guía del tester y su chequeo cuentan los pasos con la misma regla (pasos numerados y «Usuario:» suelto).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/qa-guide-steps.test.js",

@@ -153,10 +153,13 @@ function siteUrlOk(v) {
 }
 
 // ── el navegador ──────────────────────────────────────────────────────────────────────────────────────────────────
-/** El comando que abre una dirección en el navegador de cada sistema. En Windows, `start` es de cmd y su primer argumento entre comillas es el título. */
+/**
+ * El comando que abre una dirección en el navegador de cada sistema. En Windows, `rundll32` recibe la dirección como un
+ * solo argumento y sin consola: con `cmd /c start`, un `&` de la dirección correría otra orden.
+ */
 function browserCommand(platform, url) {
   if (platform === 'darwin') return ['open', [url]];
-  if (platform === 'win32') return ['cmd', ['/c', 'start', '""', url]];
+  if (platform === 'win32') return ['rundll32', ['url.dll,FileProtocolHandler', url]];
   return ['xdg-open', [url]];
 }
 
