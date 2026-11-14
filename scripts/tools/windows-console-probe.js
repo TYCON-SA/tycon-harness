@@ -40,7 +40,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const EVENTS = ['UserPromptSubmit', 'Stop', 'PostToolUse'];
 const EVENT_WORDS = { UserPromptSubmit: 'al mandar un mensaje', Stop: 'al cerrar el turno', PostToolUse: 'después de una herramienta' };
@@ -186,8 +186,6 @@ function renderReport(r) {
   lines.push('', 'El detalle de cada ventana (hora, clase, título, proceso y padre) está en report.json, al lado de este archivo.');
   return lines.join('\n') + '\n';
 }
-
-function sleep(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch (_) { /* nada */ } }
 
 /** Un proceso SIN consola (como un gancho lanzado por la extensión): devuelve { ms, timedOut, code }. */
 function fireWithoutConsole(bin, args, { cwd, env, input = '', timeoutMs = HOOK_TIMEOUT_MS }) {

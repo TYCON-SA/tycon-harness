@@ -1157,18 +1157,9 @@ function main() {
   // SOLO con el flag explícito, nunca por default: qa-guide corre también desde hooks
   // (on-pre-commit --check no pasa por acá, pero cualquier automatización futura que
   // genere no debe abrir ventanas sin pedirlo). Cross-platform, fail-open (best-effort).
+  // el mismo abridor que el plan: en Windows, sin consola, así un `&` de la ruta no corre otra orden
   if (process.argv.includes('--open')) {
-    try {
-      const { spawn } = require('child_process');
-      const cmd = process.platform === 'darwin' ? 'open'
-        : process.platform === 'win32' ? 'cmd'
-        : 'xdg-open';
-      const args = process.platform === 'win32' ? ['/c', 'start', '', out] : [out];
-      spawn(cmd, args, { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
-      console.log('   🌐 Guía abierta en el navegador (--open)');
-    } catch (e) {
-      console.log(`   ⚠ No pude abrir la guía en el navegador (${e.message}) — abrila a mano: ${out}`);
-    }
+    if (require(path.join(__dirname, 'visual-plan.js')).openInBrowser(out, 'la guía')) console.log('   🌐 Guía enviada al navegador (--open)');
   }
   process.exit(0);
 }
