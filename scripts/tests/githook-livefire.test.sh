@@ -593,7 +593,7 @@ printf 'const quiere = process.argv.includes("--pa""quete");\n' | sed 's/""//' >
 ANTES=$(cuantos "$T")
 mkdir -p "$T/repo/scripts/tests"
 printf 'const r = run(["--pa""quete", "nucleo"]);\n' | sed 's/""//' > "$T/repo/scripts/tests/lab.test.js"
-printf '# Guía nueva\n\n`TYCON_NO_UPLOAD_RUNS=1` lo apaga.\n' > "$T/repo/guides/nueva.md"
+printf '# Guía nueva\n\n`TYCON_NO_UPLOAD_RUNS=1` lo apaga.\n' > "$T/repo/guides/new-guide.md"
 # (el commit trae una guía: el control de historia interna, que no es lo que este caso mide, va apagado — el repo del
 # laboratorio no tiene la forma del repo unido y ahí el control, con razón, no sabe qué sale)
 ( cd "$T/repo" && git add -A ); RC=$(TYCON_INTERNAL_HISTORY=0 commitear_nombres "$T" "nombres que ya existen")
@@ -605,9 +605,10 @@ fi
 rm -rf "$T"
 
 # C-18 · T8 SpanishNames_ShellLocalAndMdAndCases_Silent — una variable local de shell, un .md y un caso del banco
+# (el .md va fuera de guides/: el nombre de una guía sí se mira, y una guía nueva en castellano frena)
 T=$(mktemp -d); montar_castellano "$T"; ANTES=$(cuantos "$T")
 printf '#!/usr/bin/env bash\necho "${SAL""IDA:-}"\n' | sed 's/""//' > "$T/repo/scripts/english-tool.sh"
-printf '# x\n' > "$T/repo/guides/guias-nue""vas.md"
+printf '# x\n' > "$T/repo/scripts/guias-nue""vas.md"
 ( cd "$T/repo" && git add -A ); RC=$(TYCON_INTERNAL_HISTORY=0 commitear_nombres "$T" "lo que no se mira")   # ídem: trae un .md
 if [ "$RC" = "0" ] && [ "$(cuantos "$T")" = "$((ANTES + 1))" ] && ! hablo_el_freno "$T/out.txt"; then
   ok "C-18 T8 SpanishNames_ShellLocalAndMdAndCases_Silent: una variable local de shell y un .md nuevo entran callados"

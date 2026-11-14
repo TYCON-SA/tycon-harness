@@ -4,11 +4,13 @@
 //
 // POR QUÉ EXISTE: el núcleo público mezcla inglés y castellano en lo que alguien de afuera tiene que ESCRIBIR para usarlo
 // —archivos, opciones, subcomandos, variables, claves de configuración—. Los renombres a inglés se hacen por tandas; sin este
-// freno, lo que una tanda renombra lo vuelve a ensuciar el commit siguiente. La prosa, los mensajes, las guías, los
-// comentarios y los ids de los casos siguen en castellano: la convención está en guides/maintaining/nombres-en-ingles.md.
+// freno, lo que una tanda renombra lo vuelve a ensuciar el commit siguiente. La prosa, los mensajes, el contenido de las
+// guías, los comentarios y los ids de los casos siguen en castellano: la convención está en
+// guides/maintaining/nombres-en-ingles.md.
 //
 // QUÉ MIRA: lo que sale en alguna copia pública (la clasificación del exportador, reusada de new-names.js) y, de eso, sólo
-// ejecutables, configuración y pruebas —nunca `.md` ni los casos del banco—. Frena un nombre en castellano que NO EXISTE en
+// ejecutables, configuración, pruebas y el nombre de archivo de las guías de `guides/` (sin el sufijo de idioma; de un `.md`
+// nunca el contenido, ni las guías de los paquetes, ni los casos del banco). El termómetro no cuenta las guías. Frena un nombre en castellano que NO EXISTE en
 // ninguna parte de lo que sale ANTES del cambio (los dos repos; en un merge, en ningún padre): una ruta, una opción `--x`,
 // un subcomando, un valor que declara el mapa de renombres, una variable de entorno leída o una clave de un archivo de
 // `schemaFiles`. Usar un nombre castellano que ya existe pasa: todavía no tiene reemplazo. Qué es castellano lo decide
@@ -213,14 +215,19 @@ function propose(name, det, words) {
 const CASES = /^scripts\/controls-bench\/cases\//;
 const TEST = /(^|\/)(tests?|__tests__|fixtures?)\//;
 const EXEC_EXT = /\.(js|mjs|cjs|sh|bash|ps1|psm1|py|command)$/;
+// las guías del arnés: de un `.md` sólo se mira su nombre de archivo, nunca su contenido (es prosa). Las de los paquetes
+// (`packs/*/guides/`) viajan en la capa del equipo, que tiene otro dueño y otro calendario: no se miran.
+const GUIDE = /^guides\/(?:[^/]+\/)*[^/]+\.md$/i;
+const isMd = (rel) => /\.md$/i.test(rel);
 function kindOf(rel, text) {
-  if (/\.md$/i.test(rel) || CASES.test(rel)) return null;
+  if (CASES.test(rel) || (isMd(rel) && !GUIDE.test(rel))) return null;
   // un reemplazo generado es un nombre VIEJO que sigue andando hasta el retiro, nunca uno nuevo: no depende de qué mapa
   // haya a mano (sin su entrada, un mapa de laboratorio lo haría ver nuevo). Sólo el idéntico a lo que escribe
   // --write-shims: la marca sola se escribe a mano. Con una biblioteca anterior a `isGeneratedShim` (una copia
   // de trabajo a medio actualizar) no hay cómo saberlo: el archivo se mira como cualquier otro, que es el lado que frena.
   const isGenerated = text && require('../lib/legacy-names.js').isGeneratedShim;
   if (typeof isGenerated === 'function' && isGenerated(rel, text)) return null;
+  if (isMd(rel)) return 'guide';
   const exec = EXEC_EXT.test(rel) || /(^|\/)\.githooks\//.test(rel) || /^#!/.test(text || '');
   const cfg = /\.json$/.test(rel);
   if (!exec && !cfg) return null;
@@ -230,10 +237,14 @@ function kindOf(rel, text) {
 const isExecutable = (rel, text) => EXEC_EXT.test(rel) || /(^|\/)\.githooks\//.test(rel) || /^#!/.test(text || '');
 const isShell = (rel, text) => /\.(sh|bash|command)$/.test(rel) || /(^|\/)\.githooks\//.test(rel) || /^#!.*\b(ba|z)?sh\b/.test((text || '').split('\n', 1)[0]);
 
-/** Los segmentos de una ruta que son nombres: las carpetas y el archivo sin su extensión (ni `.test`/`.spec`). */
+/**
+ * Los segmentos de una ruta que son nombres: las carpetas y el archivo sin su extensión (ni `.test`/`.spec`). En un `.md`,
+ * tampoco el sufijo de idioma (`organization-site.en.md`): dice en qué idioma está, no es parte del nombre.
+ */
 function pathNames(rel) {
   const segs = rel.split('/');
-  const base = segs.pop().replace(/(\.(test|spec))?\.[A-Za-z0-9]+$/, '');
+  let base = segs.pop().replace(/(\.(test|spec))?\.[A-Za-z0-9]+$/, '');
+  if (isMd(rel)) base = base.replace(/\.(es|en)$/i, '');
   return [...segs, base].filter(Boolean);
 }
 
@@ -300,7 +311,7 @@ const BASH_CASE = /case\s+"?\$\{?(?:1|cmd|CMD|sub|SUB|accion|ACCION|modo|MODO|co
 /** Los nombres de un archivo, por categoría: `[{ category, name, line }]`. */
 function extract(rel, text, { schemaFiles = [], renames = null } = {}) {
   const kind = kindOf(rel, text);
-  if (!kind || text === null || text === undefined) return [];
+  if (!kind || kind === 'guide' || text === null || text === undefined) return [];
   const out = [];
   const add = (category, name, index) => out.push({ category, name, line: lineAt(text, index) });
   if (isExecutable(rel, text)) {
@@ -408,7 +419,8 @@ function countFiles(files, words, det) {
   for (const f of files) {
     if (f.text === null || f.text === undefined || pathAllowed(words, f.rel)) continue;
     const kind = kindOf(f.rel, f.text);
-    if (!kind) continue;
+    // las guías no cuentan: las que faltan renombrar las sigue su medición, no el techo
+    if (!kind || kind === 'guide') continue;
     const names = pathNames(f.rel);
     const base = names[names.length - 1];
     if (yes(base)) {
@@ -564,7 +576,7 @@ function run(args) {
   const trigger = (rel) => (source === 'arnes' && TRIGGERS.includes(rel)) || (source === 'agent-skills' && PACK.test(rel));
   // Por la ruta sola no se sabe: un `.zsh` o un `.template` con `#!` es un ejecutable (kindOf mira el texto). Acá sólo
   // se descarta lo que seguro no se mira; el resto lo decide kindOf con el contenido.
-  const maybe = (rel) => !!rel && (trigger(rel) || (!/\.md$/i.test(rel) && !CASES.test(rel)));
+  const maybe = (rel) => !!rel && (trigger(rel) || ((!isMd(rel) || GUIDE.test(rel)) && !CASES.test(rel)));
   if (!touched.some((c) => (c.status !== 'D' && maybe(c.path)) || maybe(c.oldPath))) return { outcome: 'quiet' };
 
   // 3 · el modo: el arnés del equipo tiene perfil; la copia pública, no
@@ -690,9 +702,16 @@ function run(args) {
   // 8 · ¿ya existía en lo que salía antes? (en algún padre; los dos repos)
   const findings = [];
   if (candidates.length) {
+    // un nombre que ya estaba excusa sólo a un archivo de su mismo tipo: los de las guías, a una guía (mudarla de carpeta
+    // con su nombre pasa); los del resto, al resto. Juntos, una guía castellana excusaría a un script nuevo con su nombre,
+    // y una carpeta (la de las capturas de una guía) a una guía nueva que se llame como ella
     const pathSets = beforeShips.map((b) => {
-      const s = new Set();
-      for (const f of b.values()) if (!/\.md$/i.test(f.rel) && !CASES.test(f.rel)) for (const seg of pathNames(f.rel)) s.add(seg.toLowerCase());
+      const s = { guide: new Set(), other: new Set() };
+      for (const f of b.values()) {
+        if (CASES.test(f.rel) || (isMd(f.rel) && !GUIDE.test(f.rel))) continue;
+        const into = isMd(f.rel) ? s.guide : s.other;
+        for (const seg of pathNames(f.rel)) into.add(seg.toLowerCase());
+      }
       return s;
     });
     const contentNames = candidates.filter((c) => c.category !== 'path');
@@ -712,7 +731,7 @@ function run(args) {
     const reported = new Set();
     for (const c of candidates) {
       const exists = c.category === 'path'
-        ? pathSets.some((s) => s.has(c.name.toLowerCase()))
+        ? pathSets.some((s) => s[isMd(c.rel) ? 'guide' : 'other'].has(c.name.toLowerCase()))
         : existing.some((s) => s.has(`${c.category}\0${c.name}`));
       const id = `${c.category}\0${c.name}\0${c.rel}`;
       if (exists || reported.has(id)) continue;
