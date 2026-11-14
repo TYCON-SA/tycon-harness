@@ -785,7 +785,7 @@ function renglonesTocados(repo, base, rel) {
  */
 /** Una ruta de una lista de la historia, en la forma en que se comparan: sin el prefijo «(repo) » y normalizada. */
 function rutaDeLaLista(f) {
-  return require('./batch-scope.js').normRuta(String(f || '').trim().replace(/^\([^)]*\)\s*/, ''));
+  return require('./batch-scope.js').normRuta(f);
 }
 
 /**

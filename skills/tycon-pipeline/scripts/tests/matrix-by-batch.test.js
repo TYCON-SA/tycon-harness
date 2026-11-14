@@ -602,3 +602,48 @@ test('T7 TandaBloqueada_ArchivoCompartido_NoVuelve_SuPantallaSi @story-8.245 @ac
   assert.match(r.stdout, new RegExp(`${B_PANT} \\(AC 2\\), porque la corrida cambió web/src/Panel\\.tsx`), r.stdout + r.stderr);
   assert.match(r.stdout, /\| #2 \| 🔴/, r.stdout);
 });
+
+test('T11 Matrix_MainBroughtOtherBatchFile_DoesNotReturn @story-8.272 @ac-12 — lo que trajo main en un archivo de otra tanda no devuelve sus criterios', () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'matrix-by-batch-main-')));
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  const en = (dir) => (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
+  const origen = path.join(base, 'origen.git');
+  const repo = path.join(base, 'repo');
+  const otro = path.join(base, 'otro');
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origen]);
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  const git = en(repo);
+  git('init', '-q', '-b', 'main');
+  git('remote', 'add', 'origin', origen);
+  const story = path.join(repo, 'specs', 'story-9.9-main.md');
+  fs.writeFileSync(story, ['---', 'story: "9.9"', 'files_to_modify:', '  - a.js', '  - b.js', 'pipelines:',
+    `  - name: ${A}`, '    status: in-progress', '    acs_pending: [1]', '    files:', '      - a.js',
+    `  - name: ${B}`, '    status: pending', '    acs_pending: [2]', '    files:', '      - b.js', '---', ''].join('\n'));
+  fs.writeFileSync(path.join(repo, 'a.js'), '1\n');
+  fs.writeFileSync(path.join(repo, 'b.js'), '1\n');
+  git('add', '.');
+  git('commit', '-qm', 'inicio');
+  git('push', '-q', 'origin', 'main');
+  git('checkout', '-q', '-b', 'story/9.9');
+  const baseSha = git('rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(repo, 'a.js'), '2\n');
+  git('commit', '-qam', 'la corrida');
+  execFileSync('git', ['clone', '-q', origen, otro], { env });
+  fs.writeFileSync(path.join(otro, 'b.js'), 'de main\n');
+  en(otro)('commit', '-qam', 'otro pedido');
+  en(otro)('push', '-q', 'origin', 'main');
+  git('fetch', '-q', 'origin');
+  git('merge', '-q', '--no-edit', 'origin/main');
+  const rm = require(path.join(SCRIPTS, 'runtime-matrix.js'));
+  const marker = { batch: A, storyPath: story, repoPath: repo, baseSha };
+  assert.deepStrictEqual(rm.opcionesDeTandaDelMarcador(marker, story).changed, ['a.js']);
+  // la corrida también toca el archivo de la otra tanda: vuelve, como hoy
+  fs.writeFileSync(path.join(repo, 'b.js'), 'de la corrida\n');
+  assert.deepStrictEqual(rm.opcionesDeTandaDelMarcador(marker, story).changed.sort(), ['a.js', 'b.js']);
+  // sin main para calcular el punto en común, la lista es la de hoy
+  git('checkout', '-q', '--', 'b.js');
+  git('remote', 'remove', 'origin');
+  git('branch', '-m', 'main', 'tronco');
+  assert.deepStrictEqual(rm.opcionesDeTandaDelMarcador(marker, story).changed.sort(), ['a.js', 'b.js']);
+  fs.rmSync(base, { recursive: true, force: true });
+});

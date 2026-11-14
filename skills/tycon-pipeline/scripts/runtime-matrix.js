@@ -2235,9 +2235,24 @@ function opcionesDeTandaDelMarcador(marker, storyPath) {
     : null;
   if (!suya || real(suya) !== real(path.resolve(storyPath))) return { batch: null, otraHistoria: true };
   const changed = marker.repoPath && marker.baseSha
-    ? require(path.join(__dirname, 'lib', 'ui-signal.js')).changedFiles(marker.repoPath, marker.baseSha)
+    ? sinLoQueTrajoMain(marker.repoPath, require(path.join(__dirname, 'lib', 'ui-signal.js')).changedFiles(marker.repoPath, marker.baseSha))
     : null;
   return { batch: String(marker.batch), changed, codeRepo: marker.repoPath || null, deLaCorrida: true };
+}
+
+/**
+ * Lo que cambió la corrida desde su arranque, sin lo que trajo main: queda un archivo que difiere también del punto en
+ * común de ahora con main. Uno que trajo main y la corrida no tocó no devuelve los criterios de otra tanda. Sin main
+ * para calcularlo, o si git no contesta, la lista queda como vino.
+ */
+function sinLoQueTrajoMain(repo, changed) {
+  if (!Array.isArray(changed) || !changed.length) return changed;
+  const punto = require(path.join(__dirname, 'lib', 'frozen-tree.js')).puntoComunConMain(repo);
+  if (!punto.sha) return changed;
+  const desdeMain = require(path.join(__dirname, 'lib', 'ui-signal.js')).changedFiles(repo, punto.sha);
+  if (!Array.isArray(desdeMain)) return changed;
+  const propios = new Set(desdeMain);
+  return changed.filter((f) => propios.has(f));
 }
 
 // `acEsDeAccion` se exporta para poder testear la heurística de DODRT-C8 como función PURA

@@ -294,6 +294,9 @@ test('Compare_PrefixedStoryList_BatchStillMeasured @story-8.272 @ac-6 — files_
   const cierre = L.cerrar();
   assert.match(cierre.stderr, /cli\.js/);
   assert.doesNotMatch(cierre.stderr, /otro\.js/, cierre.stderr);
+  // una carpeta entre paréntesis (un grupo de rutas) es parte de la ruta: sólo el prefijo con su espacio se quita
+  const { normRuta } = require(path.join(SCRIPTS, 'lib', 'batch-scope.js'));
+  assert.deepStrictEqual(['(público) cli.js', '(app)/page.tsx', '(auth)/page.tsx'].map(normRuta), ['cli.js', '(app)/page.tsx', '(auth)/page.tsx']);
 });
 
 test('T5 Compare_Candidates_OnlyBatchFiles @story-8.272 @ac-6 — sólo los archivos de la tanda de la corrida', () => {
