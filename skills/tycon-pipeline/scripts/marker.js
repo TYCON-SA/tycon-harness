@@ -285,6 +285,13 @@ function markerFilePath(sessionId) {
   return path.join(ACTIVE_DIR, `${safe}.json`);
 }
 
+// ¿la sesión tiene una firma más nueva que el corte? `{ viva }` o `{ error }` (scripts/lib/signature-log.js)
+function firmadaDespuesDe(sesion, cutoff) {
+  try {
+    return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-log.js')).signedSince(sesion, STATE_DIR, cutoff);
+  } catch (e) { return { error: `no pude mirar el registro de firmas (${(e && e.message) || e})` }; }
+}
+
 // Borra archivos de sesiones stale (>STALE_HOURS sin touch) — auto-recovery
 // de pipelines huérfanos (sesión cerrada / Claude crasheó).
 // Housekeeping: también purga advisor-runs/*.jsonl
@@ -319,6 +326,10 @@ function pruneStale() {
         // que espera su turno con la espera anotada
         const io = require('./lib/story-gate-io.js');
         if (marcaDe(podada, m) || esperaGuardar(m) || io.waitingTurn(STATE_DIR, podada)) continue;
+        // ni la que el dueño firmó después del corte: la firma va a su registro y no toca el marcador
+        const firma = firmadaDespuesDe(podada, cutoff);
+        if (firma.error) process.stderr.write(`[marker] no podé el marcador de ${podada}: ${firma.error}; sin saber si la firmaron, no se poda.\n`);
+        if (firma.error || firma.viva) continue;
         // sin su copia no se poda: `restore` la rearma desde ahí
         if (!io.savePruned(STATE_DIR, podada, m)) continue;
         fs.unlinkSync(full);

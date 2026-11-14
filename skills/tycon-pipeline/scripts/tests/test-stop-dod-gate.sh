@@ -304,8 +304,10 @@ else
   echo "✗ T16 CierreDeTurno_TerminadaSinCerrar_Avisa: rc=$RC a=$R16a b=$R16b «${M16a}» «${M16b}»"; fail=1
 fi
 
-# T17) CierreDeTurno_ConOtraVuelta_DiceQueFaltaRevisar: un .js cambiado después de los revisores, fuera de todo repo (código).
-echo "{\"storyId\":\"7.7\",\"autonomous\":false,$TERM_H,\"fileEvents\":[{\"path\":\"$HOME/sin-repo/src/a.js\",\"ts\":\"2026-10-15T10:20:00Z\",\"code\":true}]}" > "$MK"
+# T17) CierreDeTurno_ConOtraVuelta_DiceQueFaltaRevisar: un .js cambiado después de los revisores, dentro de un repo (código).
+# Fuera de todo repo ya no cuenta (8.270): el archivo va en una carpeta con `.git`.
+mkdir -p "$HOME/con-repo/.git"
+echo "{\"storyId\":\"7.7\",\"autonomous\":false,$TERM_H,\"fileEvents\":[{\"path\":\"$HOME/con-repo/src/a.js\",\"ts\":\"2026-10-15T10:20:00Z\",\"code\":true}]}" > "$MK"
 run_strict; M17=$(mensaje)
 if printf '%s' "$M17" | grep -q 'tiene código cambiado después de los revisores' && ! printf '%s' "$M17" | grep -q 'marker.js clear'; then
   echo "✓ T17 CierreDeTurno_ConOtraVuelta_DiceQueFaltaRevisar"

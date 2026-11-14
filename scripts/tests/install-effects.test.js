@@ -444,6 +444,8 @@ const MINIMAL_HOOKS = [
   // on-advisor-run.js anota cada revisor que sale; sin el que anota lo que reportó, en la mínima cada revisor quedaría
   // sin reporte y el cierre de «Hallazgos» frenaría siempre
   'SubagentStop:tycon-pipeline/scripts/on-advisor-done.js',
+  // y el que ata cada salida a su agente: sin él, en la mínima un revisor caído y relanzado pediría exenciones
+  'PostToolUse:tycon-pipeline/scripts/on-advisor-run.js',
 ];
 /** Las filas de «Los hooks que instala»: `{ hook, event, profile }` (la columna «Perfil» tal cual), o null sin la columna. */
 function installTableRows(text) {

@@ -360,7 +360,10 @@ The owner signs from the phone, with a click in the coordinator's box. For that 
   A session that waits for the owner and has no other work counts as stopped: first the coordinator gives it work from
   the queue, if there is something it can take; if not, the question goes to the owner right away.
 - **The background `owner-wait` does not take the click away from the owner**: the brake lets it through if it runs
-  exactly as its notice asks. Any other live background console does stop it: close it before asking for the box.
+  exactly as its notice asks. Neither does the read-only watcher of a pull request
+  (`coordination.js pr-wait --repo <org/repo> --number <n>`), which also keeps delegated signing possible
+  (`guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Any other live background console does stop it: close
+  it before asking for the box.
 - **A request without code is approved by the coordinator**: if it brings only stories, records, evidence, memory or
   documentation, the coordinator gives on the owner's behalf the two approvals of the merge (the message and the push)
   and shows the owner the list in the hourly batch. With a single code file, both stay with the owner.

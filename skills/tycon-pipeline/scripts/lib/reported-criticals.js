@@ -114,14 +114,34 @@ function readSessionStrict(stateDir, sessionKey) {
 }
 
 /**
- * Un revisor del set salió. `o`: { stateDir, sessionKey, advisor, story, run, launcher }. La vuelta es su número de
- * salida en la corrida, contado en este mismo registro. Devuelve el renglón anotado.
+ * Un revisor del set salió. `o`: { stateDir, sessionKey, advisor, story, run, launcher, toolUseId }. La vuelta es su
+ * número de salida en la corrida, contado en este mismo registro. `toolUseId` (el del lanzamiento en Claude Code) ata la
+ * salida con el agente que le toca (`recordLaunchAgent`). Devuelve el renglón anotado.
  */
 function recordLaunched(o) {
   const previas = readSession(o.stateDir, o.sessionKey).filter((d) => d && d.kind === 'launched' && d.advisor === o.advisor
     && String(d.story) === String(o.story ?? null) && (d.run || null) === (o.run || null)).length;
   return append(o.stateDir, o.sessionKey, {
     kind: 'launched', advisor: o.advisor, iter: previas + 1, story: o.story ?? null, run: o.run ?? null, launcher: o.launcher || null,
+    ...(o.toolUseId ? { tool_use_id: o.toolUseId } : {}),
+  });
+}
+
+/**
+ * La herramienta devolvió el agente de una salida: `launch-agent` con la vuelta, la historia y la corrida del `launched`
+ * del mismo `tool_use_id`. `o`: { stateDir, sessionKey, advisor, agentId, toolUseId }. Sin ese `launched` (una salida
+ * fuera del set de la ronda, o sin el dato) no anota nada, y esa salida empareja como antes. Devuelve el renglón o null.
+ * Así una salida que murió al arrancar no se queda con el reporte de la que la reemplazó.
+ */
+function recordLaunchAgent(o) {
+  if (!o.agentId || !o.toolUseId) return null;
+  const lines = readSession(o.stateDir, o.sessionKey);
+  const salida = lines.find((d) => d && d.kind === 'launched' && d.advisor === o.advisor && d.tool_use_id === o.toolUseId);
+  if (!salida) return null;
+  if (lines.some((d) => d && d.kind === 'launch-agent' && d.tool_use_id === o.toolUseId)) return null;
+  return append(o.stateDir, o.sessionKey, {
+    kind: 'launch-agent', advisor: o.advisor, iter: salida.iter, story: salida.story ?? null, run: salida.run ?? null,
+    agent_id: o.agentId, tool_use_id: o.toolUseId,
   });
 }
 
@@ -200,21 +220,27 @@ function linesOfRun(lines, { story, since, run, sessionKeys }) {
 
 /**
  * El lanzamiento al que corresponde una respuesta de `advisor`, o null. Una respuesta nueva del mismo agente (`agentId`:
- * el revisor contestó otra vez, por ejemplo con el detalle que le pidieron) va al mismo lanzamiento; si no, la salida más
- * vieja de ese revisor que todavía no tiene reporte, entre las de la historia y la corrida de su última salida. Con dos
- * salidas del mismo revisor en vuelo, cada respuesta toma la suya: ninguna se descarta.
+ * el revisor contestó otra vez, por ejemplo con el detalle que le pidieron) va al mismo lanzamiento; la de un agente que
+ * quedó atado a su salida al salir (`launch-agent`), a esa salida. Si no, la salida más vieja de ese revisor que
+ * todavía no tiene reporte ni está atada a otro agente, entre las de la historia y la corrida de su última salida. Con
+ * dos salidas del mismo revisor en vuelo, cada respuesta toma la suya: ninguna se descarta.
  */
 function launchFor(lines, advisor, agentId) {
+  const atadas = lines.filter((l) => l && l.kind === 'launch-agent' && l.advisor === advisor);
   if (agentId) {
     const previo = [...lines].reverse().find((l) => l && l.kind === 'report' && l.advisor === advisor && l.agent_id === agentId);
     if (previo) return { iter: previo.iter, story: previo.story, run: previo.run };
+    const suya = [...atadas].reverse().find((l) => l.agent_id === agentId);
+    if (suya) return { iter: suya.iter, story: suya.story, run: suya.run };
   }
   const launches = lines.filter((l) => l && l.kind === 'launched' && l.advisor === advisor);
   if (!launches.length) return null;
   const ultima = launches[launches.length - 1];
   const misma = (l) => String(l.story) === String(ultima.story) && (l.run || null) === (ultima.run || null);
   const conReporte = new Set(lines.filter((l) => l && l.kind === 'report' && l.advisor === advisor && misma(l)).map((r) => r.iter));
-  return launches.find((l) => misma(l) && !conReporte.has(l.iter)) || null;
+  // una salida atada a otro agente es de ése: una respuesta sin atar no se la lleva
+  const deOtro = new Set(atadas.filter((l) => misma(l) && l.agent_id !== agentId).map((l) => l.iter));
+  return launches.find((l) => misma(l) && !conReporte.has(l.iter) && !deOtro.has(l.iter)) || null;
 }
 
 // la severidad, la disposición y la regla como las normaliza write-findings
@@ -418,6 +444,6 @@ function spawnsOf(stateDir, { story, since, run, sessionKeys }) {
 
 module.exports = {
   DIR, NO_REPORT_RULE, NO_REGISTRY_NOTE, registryDir, registryFile, hashOf, extractCriticals, unreadableReason,
-  recordLaunched, recordReport, readSession, readAll, linesOfRun, launchFor, cross, checkRun, renglones, waiverFor,
+  recordLaunched, recordLaunchAgent, recordReport, readSession, readAll, linesOfRun, launchFor, cross, checkRun, renglones, waiverFor,
   spawnsOf, UNREADABLE_REGISTRY, readSessionStrict, esDeLaCorrida, corridaDelMarcador,
 };

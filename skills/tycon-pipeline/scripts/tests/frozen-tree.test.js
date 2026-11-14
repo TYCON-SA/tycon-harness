@@ -15,6 +15,8 @@
 //   T24-T27 el papeleo que escribe el cierre: la sección de seguimientos de los revisores y el
 //        renglón de la historia en sprint-status.yaml no piden otra vuelta; otro renglón, otra sección o un sprint-status
 //        que no se deja leer, sí
+//   8.270 el papeleo de «Probar en vivo»: la marca DODRT-C8 de un criterio, el estado de una tanda y el guion de la
+//        prueba en vivo que su registro nombra con la misma huella; el texto de un criterio y el código siguen contando
 //
 // Correr: node --test skills/tycon-pipeline/scripts/tests/frozen-tree.test.js < /dev/null
 
@@ -612,4 +614,124 @@ test('T27 PrepareCommit_SprintStatusMissingOrStoryWithoutId_Blocks @story-8.263 
     const d = ft().changed(R.repo, a, ft().seal(R.repo).tree, { storyRel: STORY });
     assert.deepStrictEqual(d.files, ['specs/sprint-status.yaml'], nombre);
   }
+});
+
+// ── El papeleo de «Probar en vivo» (@story-8.270, AC 4-7, 19, 23) ────────────────────────────────────────────────────
+// «Probar en vivo» corre después de la última vuelta y deja siempre lo mismo: la marca DODRT-C8 de un criterio, el estado
+// de la tanda en `pipelines:` y el guion de la prueba en vivo, que su registro de humos nombra con la misma huella.
+
+const HISTORIA_870 = 'specs/story-9.9-vivo.md';
+const historiaConTandas = () => ['---', 'story: "9.9"', 'status: in-progress', 'pipelines:', '  a:', '    name: "la tanda A"',
+  '    status: in-progress', '    files:', '      - src/a.js', '    acs_pending: [1, 2]', '    tasks_pending: [1]', '    tests_pending: [T1]', '---', '',
+  '## Acceptance Criteria', '', '1. **Given** algo **Then** resultado.', '2. **Given** otra cosa **Then** otro resultado.', '',
+  '## Tasks', '', '- [ ] Task 1', ''].join('\n');
+const sha256 = (txt) => require('crypto').createHash('sha256').update(txt).digest('hex');
+
+test('Seal_RuntimeExemptMarkAfterRound_IsPaperwork @story-8.270 @ac-4 — la marca DODRT-C8 en un criterio es papeleo', () => {
+  const R = repoDeJuguete('marca', { [HISTORIA_870]: historiaConTandas(), 'src/a.js': '1\n' });
+  const antes = ft().seal(R.repo).tree;
+  const f = path.join(R.repo, HISTORIA_870);
+  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('**Then** resultado.', '**Then** resultado. @runtime-exempt(DODRT-C8): se lee, no se ejecuta'));
+  const d = ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: HISTORIA_870 });
+  assert.deepStrictEqual(d, { files: [], papeleo: [HISTORIA_870] });
+  // la misma marca fuera de los criterios no es papeleo
+  fs.writeFileSync(f, `${fs.readFileSync(f, 'utf8')}\nNota @runtime-exempt(DODRT-C8): fuera\n`);
+  assert.deepStrictEqual(ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: HISTORIA_870 }).files, [HISTORIA_870]);
+});
+
+test('Seal_BatchStatusFieldsAfterRound_ArePaperwork @story-8.270 @ac-5 — el estado y lo pendiente de una tanda son papeleo', () => {
+  const R = repoDeJuguete('tanda', { [HISTORIA_870]: historiaConTandas(), 'src/a.js': '1\n' });
+  const antes = ft().seal(R.repo).tree;
+  const f = path.join(R.repo, HISTORIA_870);
+  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('    status: in-progress', '    status: done').replace('    acs_pending: [1, 2]', '    acs_pending: []')
+    .replace('    tests_pending: [T1]', '    tests_pending:\n      - T1\n      - T2').replace('    tasks_pending: [1]', '    tasks_pending:\n    - 1\n    - 2'));
+  const d = ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: HISTORIA_870 });
+  assert.deepStrictEqual(d, { files: [], papeleo: [HISTORIA_870] });
+});
+
+// el guion de la prueba en vivo y el renglón del registro de humos que lo nombra
+function conGuion(nombre, { huella } = {}) {
+  const R = repoDeJuguete(nombre, { [HISTORIA_870]: historiaConTandas(), 'src/a.js': '1\n', '.advisors/dod-runtime/9.9-en-vivo.js': 'console.log(1);\n' });
+  const antes = ft().seal(R.repo).tree;
+  const guion = path.join(R.repo, '.advisors', 'dod-runtime', '9.9-en-vivo.js');
+  fs.writeFileSync(guion, 'console.log(2);\n');
+  const rel = '.advisors/dod-runtime/9.9-en-vivo.js';
+  fs.writeFileSync(path.join(R.repo, '.advisors', 'dod-runtime', '9.9-smoke-ledger.jsonl'),
+    `${JSON.stringify({ v: 2, story: '9.9', acs: [1], exit: 0, cmd: `node ${rel}`, script: rel, script_sha: huella || sha256('console.log(2);\n') })}\n`);
+  return { R, antes, rel };
+}
+
+test('Seal_LiveCheckScriptNamedByLedger_IsPaperwork @story-8.270 @ac-6 — el guion que el registro nombra con su huella es papeleo', () => {
+  const { R, antes, rel } = conGuion('guion');
+  const d = ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: HISTORIA_870 });
+  assert.deepStrictEqual(d.files, [], JSON.stringify(d));
+  assert.ok(d.papeleo.includes(rel), JSON.stringify(d));
+});
+
+test('Seal_LiveCheckScriptOtherHash_Counts @story-8.270 @ac-6 — con otra huella, o sin renglón que lo nombre, cuenta', () => {
+  const { R, antes, rel } = conGuion('otra-huella', { huella: sha256('console.log(1);\n') });
+  assert.deepStrictEqual(ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: HISTORIA_870 }).files, [rel]);
+  fs.writeFileSync(path.join(R.repo, '.advisors', 'dod-runtime', '9.9-smoke-ledger.jsonl'), `${JSON.stringify({ v: 2, story: '9.9', acs: [1], exit: 0 })}\n`);
+  assert.deepStrictEqual(ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: HISTORIA_870 }).files, [rel]);
+});
+
+test('Seal_RuntimeExemptMarkEveryForm_IsPaperwork @story-8.270 @ac-4 — (pase de la 8.270) la marca entre comillas invertidas, en su renglón, con el motivo partido o después de un bloque de código', () => {
+  // las formas que escriben las historias reales y la que pide la guía del pipeline (entre comillas invertidas)
+  const base = ['---', 'story: "9.9"', 'status: in-progress', '---', '', '## Acceptance Criteria', '',
+    '1. **Given** algo **Then** resultado.', '   ```bash', '   # un comentario dentro del bloque', '   node x.js', '   ```',
+    '2. **Given** otra cosa **Then** otro resultado.', '', '## Tasks', '', '- [ ] Task 1', ''].join('\n');
+  const formas = [
+    ['entre comillas invertidas', (s) => s.replace('**Then** resultado.', '**Then** resultado. `@runtime-exempt(DODRT-C8): se lee`')],
+    ['en su renglón', (s) => s.replace('**Then** resultado.', '**Then** resultado.\n   @runtime-exempt(DODRT-C8): se lee')],
+    ['en su renglón, entre comillas', (s) => s.replace('**Then** resultado.', '**Then** resultado.\n   `@runtime-exempt(DODRT-C8): se lee`')],
+    ['con el motivo partido', (s) => s.replace('**Then** resultado.', '**Then** resultado.\n   @runtime-exempt(DODRT-C8): se lee y no se\n   ejecuta nunca')],
+    ['después de un bloque con #', (s) => s.replace('**Then** otro resultado.', '**Then** otro resultado. @runtime-exempt(DODRT-C8): se lee')],
+  ];
+  for (const [nombre, cambio] of formas) {
+    assert.strictEqual(ft().sinPapeleoDeLaHistoria(cambio(base)), ft().sinPapeleoDeLaHistoria(base), nombre);
+  }
+  // lo que sigue a la marca y es otro criterio, otra sección o texto nuevo sigue contando
+  const conMarca = formas[1][1](base);
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(conMarca.replace('2. **Given** otra cosa', '2. **Given** otra cosa distinta')), ft().sinPapeleoDeLaHistoria(base));
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('# un comentario dentro del bloque', '# otro comentario')), ft().sinPapeleoDeLaHistoria(base));
+});
+
+test('Seal_AcWordingOrBatchFilesChanged_Counts @story-8.270 @ac-7 @ac-19 — el texto de un criterio, los archivos de una tanda o el código siguen contando', () => {
+  const casos = [
+    ['texto', (s) => s.replace('**Then** resultado.', '**Then** resultado distinto.'), [HISTORIA_870]],
+    ['files', (s) => s.replace('      - src/a.js', '      - src/a.js\n      - src/b.js'), [HISTORIA_870]],
+    ['name', (s) => s.replace('la tanda A', 'otra tanda'), [HISTORIA_870]],
+  ];
+  for (const [nombre, cambio, esperado] of casos) {
+    const R = repoDeJuguete(`cuenta-${nombre}`, { [HISTORIA_870]: historiaConTandas(), 'src/a.js': '1\n' });
+    const antes = ft().seal(R.repo).tree;
+    const f = path.join(R.repo, HISTORIA_870);
+    fs.writeFileSync(f, cambio(fs.readFileSync(f, 'utf8')));
+    assert.deepStrictEqual(ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: HISTORIA_870 }).files, esperado, nombre);
+  }
+  const R = repoDeJuguete('cuenta-codigo', { [HISTORIA_870]: historiaConTandas(), 'src/a.js': '1\n' });
+  const antes = ft().seal(R.repo).tree;
+  fs.writeFileSync(path.join(R.repo, 'src', 'a.js'), '2\n');
+  assert.deepStrictEqual(ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: HISTORIA_870 }).files, ['src/a.js']);
+});
+
+test('SmokeRun_LiveCheckScript_LedgerCarriesScriptSha @story-8.270 @ac-23 — el renglón del humo trae el guion que corrió y su huella', () => {
+  const R = repoConHistoria();
+  fs.mkdirSync(R.dodDir, { recursive: true });
+  const guion = path.join(R.dodDir, '9.8-en-vivo.js');
+  fs.writeFileSync(guion, 'process.exit(0);\n');
+  const correr = (args) => spawnSync('bash', [SMOKE, R.dodDir, R.story, '--acs', '1', '--pass-if', 'sale 0', '--', ...args], {
+    encoding: 'utf8', cwd: R.repo, env: { ...process.env, HOME: R.home, USERPROFILE: R.home, TYCON_HOME: '', CLAUDE_CODE_SESSION_ID: 's-humo' },
+  });
+  let r = correr(['node', '.advisors/dod-runtime/9.8-en-vivo.js', 'x']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  r = correr(['echo', 'hola']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  // otra forma: dentro de una consola, la palabra es todo el texto, y no nombra el guion
+  r = correr(['bash', '-c', 'node .advisors/dod-runtime/9.8-en-vivo.js']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const [conGuionL, sinGuion, enConsola] = renglones(R);
+  assert.strictEqual(conGuionL.script, '.advisors/dod-runtime/9.8-en-vivo.js');
+  assert.strictEqual(conGuionL.script_sha, sha256('process.exit(0);\n'));
+  for (const e of [sinGuion, enConsola]) assert.ok(!('script' in e) && !('script_sha' in e), JSON.stringify(e));
 });

@@ -52,6 +52,26 @@ function esEvidenciaEnVivo(repo, rel) {
   try { sha = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(repo, rel))).digest('hex'); } catch (_) { return false; }
   return lineas.some((l) => { try { const o = JSON.parse(l); return o[campo] === sub && o[huellaCampo] === sha; } catch (_) { return false; } });
 }
+/**
+ * ¿`rel` es el guion de la prueba en vivo de una historia (`<carpeta de .advisors>/<clave>-*.js`) que el registro de
+ * humos de esa carpeta (`<clave>-smoke-ledger.jsonl`) nombra con su sha256 de ahora? Lo deja smoke-run.sh en `script` y
+ * `script_sha` cuando el comando nombra el guion. Un guion que ningún renglón nombra, o que cambió después de correrlo,
+ * no: cualquier otro `.js` de `.advisors` sigue siendo código.
+ */
+function esGuionEnVivo(repo, rel) {
+  const m = /^(.*)\/([^/]+)$/.exec(String(rel));
+  if (!m || !m[1].startsWith(`${EVIDENCIA}/`) || !/\.js$/.test(m[2])) return false;
+  const [, carpeta, nombre] = m;
+  let lineas;
+  try { lineas = fs.readdirSync(path.join(repo, carpeta)).filter((f) => f.endsWith('-smoke-ledger.jsonl') && nombre.startsWith(`${f.slice(0, -'-smoke-ledger.jsonl'.length)}-`)); } catch (_) { return false; }
+  let sha;
+  try { sha = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(repo, rel))).digest('hex'); } catch (_) { return false; }
+  return lineas.some((ledger) => {
+    let texto;
+    try { texto = fs.readFileSync(path.join(repo, carpeta, ledger), 'utf8'); } catch (_) { return false; }
+    return texto.split('\n').some((l) => { try { const o = JSON.parse(l); return o && o.script === rel && o.script_sha === sha; } catch (_) { return false; } });
+  });
+}
 // el papeleo que no vence el ok de guardar: la evidencia, más las stories y su estado (`specs/`, con su
 // `sprint-status.yaml`) y las tareas (`tasks/`), sólo en sus datos y sus informes. Nunca una carpeta oculta, un enlace, lo de la lista sensible ni la configuración de
 // una herramienta (`package.json`, `tsconfig.json`): ésos cargan o deciden algo, y cambiarlos pide otro ok
@@ -667,4 +687,4 @@ function evidenciaDelPedido({ marker = {}, findings = null } = {}) {
   return `Pruebas: ${pruebas} · Revisores: ${revisores} · Pase: ${pase} · Hallazgos: ${hallazgos}`;
 }
 
-module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, arbolDelCommit, controlesDelCommit, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia, fotoDelPedido, evidenciaDelPedido };
+module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, arbolDelCommit, controlesDelCommit, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia, fotoDelPedido, evidenciaDelPedido };

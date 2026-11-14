@@ -400,14 +400,16 @@ test('Findings_LaunchNotInRegistry_Blocks — un revisor que salió sin su rengl
   const l = lab({ advisors: [SEC, OTRO] });
   const ledger = path.join(l.state, 'advisor-runs', `${SID}.jsonl`);
   const salio = (ts, advisor) => fs.appendFileSync(ledger, `${JSON.stringify({ ts, advisor, model: 'sonnet', repo: l.repo, story: '9.92' })}\n`);
-  // SEC salió con su renglón y su reporte: bien. La salida y su renglón llevan la misma hora: con dos lecturas del
-  // reloj, el renglón quedaba un milisegundo después y la salida caía fuera de la ventana (en una máquina cargada)
-  const lanzado = at(-120);
-  salio(lanzado, SEC); l.anotar(LANZADO(lanzado)); l.anotar(REPORTE(at(-110), []));
+  // stable-data: todas las horas de la prueba salen de una sola lectura del reloj (8.270): con una lectura por hora, el
+  // renglón quedaba un milisegundo después de su salida y la salida caía fuera de la ventana (4 de cada 30 corridas)
+  const base = Date.now();
+  const en = (seg) => new Date(base + seg * 1000).toISOString();
+  // SEC salió con su renglón y su reporte: bien. La salida y su renglón llevan la misma hora
+  salio(en(-120), SEC); l.anotar(LANZADO(en(-120))); l.anotar(REPORTE(en(-110), []));
   // OTRO salió y su salida no quedó anotada
-  salio(at(-100), OTRO);
+  salio(en(-100), OTRO);
   // SEC salió otra vez sin su renglón
-  salio(at(-90), SEC);
+  salio(en(-90), SEC);
   const w = l.writeFindings([]);
   assert.notEqual(w.status, 0, `write-findings escribió igual: ${out(w)}`);
   assert.match(out(w), new RegExp(`no pude leer lo que reportó ${OTRO}`));
@@ -422,6 +424,21 @@ test('Findings_LaunchNotInRegistry_Blocks — un revisor que salió sin su rengl
   assert.equal(w2.status, 0, out(w2));
   const k2 = l.closeFindings([]);
   assert.equal(k2.status, 0, out(k2));
+});
+
+test('Findings_SpawnSameMsAsFirstLine_Counts — una salida con la misma hora exacta que el primer renglón del registro cuenta @story-8.270 @ac-13', () => {
+  const l = lab({ advisors: [SEC, OTRO] });
+  const ledger = path.join(l.state, 'advisor-runs', `${SID}.jsonl`);
+  const salio = (ts, advisor) => fs.appendFileSync(ledger, `${JSON.stringify({ ts, advisor, model: 'sonnet', repo: l.repo, story: '9.92' })}\n`);
+  const base = Date.now();
+  const en = (seg) => new Date(base + seg * 1000).toISOString();
+  // el primer renglón del registro es el de OTRO, con su reporte; SEC salió en el mismo milisegundo y no quedó anotado
+  salio(en(-120), OTRO); l.anotar(LANZADO(en(-120), 1, OTRO)); l.anotar(REPORTE(en(-110), [], { advisor: OTRO }));
+  salio(en(-120), SEC);
+  const w = l.writeFindings([]);
+  assert.notEqual(w.status, 0, `la salida de SEC no contó: ${out(w)}`);
+  assert.match(out(w), new RegExp(`no pude leer lo que reportó ${SEC}`));
+  assert.doesNotMatch(out(w), new RegExp(`no pude leer lo que reportó ${OTRO}`));
 });
 
 // ── T14 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -476,6 +493,75 @@ test('Findings_SameReviewerTwiceInFlight_BothRecorded — dos salidas del mismo 
   const w = l.writeFindings([CRIT]);
   assert.notEqual(w.status, 0, 'SEC-C1 se pidió una sola vez');
   assert.match(out(w), /SEC-C1/);
+});
+
+// ── El revisor caído y su relanzamiento (@story-8.270, AC 8-11, 20) ──────────────────────────────────────────────────
+// El gancho de antes del lanzamiento anota la salida con su `tool_use_id`; el de después, el agente que la herramienta
+// le dio (`launch-agent`). Cada respuesta va a la salida de su agente, no a la más vieja sin reporte.
+const RUN_HOOK = path.join(SCRIPTS, 'on-advisor-run.js');
+function lanzar(l, toolUseId, agentId, advisor = SEC) {
+  const ev = { session_id: SID, cwd: l.repo, tool_name: 'Agent', tool_use_id: toolUseId, tool_input: { subagent_type: advisor, prompt: 'revisá' } };
+  const pre = spawnSync(process.execPath, [RUN_HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', ...ev }), env: l.env, encoding: 'utf8', cwd: l.repo });
+  assert.equal(pre.status, 0, out(pre));
+  if (agentId === undefined) return;
+  const post = spawnSync(process.execPath, [RUN_HOOK], {
+    input: JSON.stringify({ hook_event_name: 'PostToolUse', ...ev, tool_response: { isAsync: true, status: 'async_launched', agentId } }),
+    env: l.env, encoding: 'utf8', cwd: l.repo,
+  });
+  assert.equal(post.status, 0, out(post));
+}
+const terminar = (l, agentId, texto, advisor = SEC) => spawnSync(process.execPath, [HOOK], {
+  input: JSON.stringify({ hook_event_name: 'SubagentStop', session_id: SID, agent_id: agentId, agent_type: advisor, agent_transcript_path: transcriptCon(l.base, `${agentId}-${Math.random()}.jsonl`, texto) }),
+  env: l.env, encoding: 'utf8',
+});
+
+test('Launch_DeadThenRelaunched_ReportPairsByAgentId — el reporte del relanzado va a su salida, no a la caída @story-8.270 @ac-8 @ac-9', () => {
+  const l = lab();
+  lanzar(l, 'toolu_a', 'ag-A');
+  lanzar(l, 'toolu_b', 'ag-B');
+  const atadas = jsonl(l.registro).filter((x) => x.kind === 'launch-agent');
+  assert.deepEqual(atadas.map((x) => [x.advisor, x.iter, x.agent_id, x.story, x.run]), [[SEC, 1, 'ag-A', '9.92', l.run], [SEC, 2, 'ag-B', '9.92', l.run]]);
+  assert.equal(terminar(l, 'ag-B', 'Sin hallazgos.\nVeredicto: limpio').status, 0);
+  const reps = jsonl(l.registro).filter((x) => x.kind === 'report');
+  assert.deepEqual(reps.map((r) => r.iter), [2], `el reporte de B no fue a su salida: ${JSON.stringify(reps)}`);
+});
+
+test('Findings_DeadThenRelaunched_NoSinReporte — la caída relanzada no pide exención al cerrar @story-8.270 @ac-9', () => {
+  const l = lab();
+  lanzar(l, 'toolu_a', 'ag-A');
+  lanzar(l, 'toolu_b', 'ag-B');
+  assert.equal(terminar(l, 'ag-B', 'Sin hallazgos.\nVeredicto: limpio').status, 0);
+  const w = l.writeFindings([]);
+  assert.equal(w.status, 0, out(w));
+  const k = l.closeFindings([]);
+  assert.equal(k.status, 0, out(k));
+});
+
+test('Findings_DeadNeverRelaunched_StillBlocks — una caída sin relanzar sigue frenando con SIN-REPORTE @story-8.270 @ac-10', () => {
+  const l = lab();
+  lanzar(l, 'toolu_a', 'ag-A');
+  assert.ok(jsonl(l.registro).some((x) => x.kind === 'launch-agent' && x.agent_id === 'ag-A'));
+  const w = l.writeFindings([]);
+  assert.notEqual(w.status, 0, out(w));
+  assert.match(out(w), new RegExp(`no pude leer lo que reportó ${SEC}`));
+  const k = l.closeFindings([]);
+  assert.notEqual(k.status, 0, out(k));
+  assert.match(out(k), new RegExp(SEC));
+});
+
+test('Launch_WithoutLaunchAgent_PairsAsBefore — sin launch-agent, la más vieja; con él, cada uno la suya @story-8.270 @ac-11 @ac-20', () => {
+  const rc = rcLib();
+  const L = (iter) => ({ kind: 'launched', advisor: SEC, iter, story: '9.92', run: 'r' });
+  const A = (iter, id) => ({ kind: 'launch-agent', advisor: SEC, iter, story: '9.92', run: 'r', agent_id: id });
+  // sin launch-agent: la más vieja sin reporte, como siempre
+  assert.equal(rc.launchFor([L(1), L(2)], SEC, 'ag-2').iter, 1);
+  assert.equal(rc.launchFor([L(1), L(2)], SEC, null).iter, 1);
+  // con launch-agent, contestando al revés: cada reporte a su vuelta
+  const lineas = [L(1), A(1, 'ag-1'), L(2), A(2, 'ag-2')];
+  assert.equal(rc.launchFor(lineas, SEC, 'ag-2').iter, 2);
+  assert.equal(rc.launchFor(lineas, SEC, 'ag-1').iter, 1);
+  // `launch-agent` no es una salida: el cruce de salidas no cambia
+  assert.deepEqual(lineas.filter((x) => x.kind === 'launched').length, 2);
 });
 
 // ── T16 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
