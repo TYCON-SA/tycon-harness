@@ -304,12 +304,18 @@ function isHarnessRepo(filePath) {
 
 // ── repo ─────────────────────────────────────────────────────────────────────────────────────────
 
+// Un descubrimiento que tira deja el resultado de siempre (sin repo, sin stories) y su motivo en `fallo`: acá no se
+// escribe (no hay stateDir ni sesión); lo anota `evaluate`. Los otros que llaman no leen el campo.
+const motivoDe = (e) => String((e && e.message) || e).split('\n')[0].slice(0, 200);
+
 function repoContext(filePath) {
   let repoRoot = null;
   try {
     const { findRepoRoot } = require('./story-discovery.js');
     repoRoot = findRepoRoot(path.dirname(String(filePath)));
-  } catch { repoRoot = null; }
+  } catch (e) {
+    return { repoRoot: null, repoHasTycon: false, repoHasStories: false, discoveryPartial: false, fallo: `no pude buscar la raíz del repo (${motivoDe(e)})` };
+  }
   if (!repoRoot) return { repoRoot: null, repoHasTycon: false, repoHasStories: false, discoveryPartial: false };
 
   let repoHasTycon = false;
@@ -319,15 +325,16 @@ function repoContext(filePath) {
   // que declaran `story:`/`status:` pero ids fuera del patrón (`excluded`) TRABAJA con stories.
   let repoHasStories = false;
   let discoveryPartial = false;
+  let fallo = null;
   if (!repoHasTycon) {
     try {
       const { discoverStories } = require('./story-discovery.js');
       const r = discoverStories(repoRoot, { budgetMs: DISCOVERY_BUDGET_MS });
       repoHasStories = (r.stories && r.stories.length > 0) || (r.excluded && r.excluded.length > 0);
       discoveryPartial = !!r.partial;
-    } catch { repoHasStories = false; }
+    } catch (e) { repoHasStories = false; fallo = `no pude buscar las historias del repo (${motivoDe(e)})`; }
   }
-  return { repoRoot, repoHasTycon, repoHasStories, discoveryPartial };
+  return { repoRoot, repoHasTycon, repoHasStories, discoveryPartial, ...(fallo ? { fallo } : {}) };
 }
 
 /**
@@ -478,6 +485,16 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
       return { verdict, message: or.cartel(p, { markerJs: path.join(__dirname, '..', 'marker.js') }), ctx: { filePath: abs, perdida: p, via } };
     }
   }
+  // repoContext se llama hasta tres veces: lo que no pudo mirar queda en UN renglón de gates.log por llamada a evaluate
+  const fallos = new Set();
+  const contextoDelRepo = (p) => {
+    const { fallo, ...r } = repoContext(p);
+    if (fallo) fallos.add(fallo);
+    return r;
+  };
+  const anotarFallos = () => {
+    if (fallos.size) appendLog(stateDir, 'gates.log', sessionId, { name: 'story-gate', status: 'unknown', file: abs, via: via || null, reason: [...fallos].join('; ') });
+  };
   const roots = Array.isArray(installedRoots) ? installedRoots : defaultInstalledRoots();
   const realFilePath = installedTree.realPath(abs);
   const realStateDir = installedTree.realPath(stateDir);
@@ -501,7 +518,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   let adhocRepoRoot = null;
   let riesgoAlto = null;
   if (adhoc && (adhoc.via === 'delegacion' || adhoc.via === 'avisado')) {
-    adhocRepoRoot = repoContext(abs).repoRoot;
+    adhocRepoRoot = contextoDelRepo(abs).repoRoot;
     if (adhoc.via === 'delegacion') {
       // sin raíz, igual las reglas que miran la ruta (`.sql`, `auth/`); la ruta real también cuenta (un enlace)
       try { riesgoAlto = riesgoDeLaRutaYSuReal(abs, adhocRepoRoot); } catch (e) {
@@ -513,7 +530,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   // con el portón del repo (la del delegado, no)
   let listGateEnabled = true;
   if (adhoc && Array.isArray(adhoc.allowedFiles)) {
-    if (!adhocRepoRoot) adhocRepoRoot = repoContext(abs).repoRoot;
+    if (!adhocRepoRoot) adhocRepoRoot = contextoDelRepo(abs).repoRoot;
     listGateEnabled = gateEnabledForRepo(adhocRepoRoot);
   }
   // con el plan de una parte aprobado por delegación, la lista congelada al aprobar (de la constancia, no del marcador)
@@ -530,7 +547,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   let repo = { repoRoot: null, repoHasTycon: false, repoHasStories: false, discoveryPartial: false };
   let verdict = pre;
   if (pre.action === 'block' && (pre.kind === 'no-lane' || pre.kind === 'adhoc-cap')) {
-    repo = repoContext(abs);
+    repo = contextoDelRepo(abs);
     // el tope en un repo del arnés se reevalúa como tal: con `isHarness: false`, un clon sin `.tycon/` dejaría pasar
     verdict = gate.computeStoryGate({
       filePath: abs, stateDir, homeDir: os.homedir(), ...repo, marker, adhoc, isHarness: esDelArnes,
@@ -539,6 +556,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     });
   }
 
+  anotarFallos();
   const ctx = { filePath: abs, marker, adhoc, repo, via };
   if (verdict.action !== 'block') {
     // Pasó porque el repo "no trabaja con el arnés" pero el escaneo fue PARCIAL (sin .tycon/, bajo carga):

@@ -468,6 +468,12 @@
       ]
     },
     {
+      "__nota": "el modo de falla de cada control del despachador de ediciones: el que no carga, no exporta handle o tira deja su línea en hook-errors.log y los críticos frenan; corre cada cadena en un proceso aparte con una HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/dispatch-fail-mode.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la lista única de lo que es código, de lo que es prueba y de las marcas de prueba salteada.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/code-files.test.js",

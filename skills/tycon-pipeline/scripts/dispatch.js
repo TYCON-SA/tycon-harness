@@ -18,9 +18,12 @@
  *                   reminders adentro), salvo que un handler lanzado aparte ya haya escrito: ahí va como reminder
  *   { block: msg }  → BLOQUEAR → stderr + exit 2 (solo válido en PreToolUse)
  *
- * Fail-open + VISIBLE: si un handler tira, se loguea a
- * ~/.claude/.tycon-pipeline/hook-errors.log y se sigue con el resto — un bug de
- * un handler no debe romper el Edit ni esconder en silencio que un gate no corrió.
+ * Un control que no corre (no carga, no exporta handle o tira) nunca se saltea en silencio: deja su línea
+ * `FAILED OPEN` o `FAILED CLOSED` en hook-errors.log (la carpeta del estado). Qué hace después lo declara cada entrada
+ * en `failMode`: `closed` frena la edición, `open` sigue con el resto y `closed-on-state` frena sólo si la edición cae
+ * en la carpeta del estado. Las entradas de una integración y todo post-edit son `open`: después de editar no se
+ * puede frenar. La excepción de un control `closed` frena desde FAIL_CLOSED_ON_THROW_FROM; hasta entonces deja pasar
+ * con su línea. Una entrada que no se puede leer frena en pre-edit y deja su línea en post-edit.
  *
  * Los hooks de una integración que corren en CADA tool (y de fondo) no pasan por acá: tienen otro matcher, y los
  * registra el instalador desde el manifiesto de la integración.
@@ -185,82 +188,150 @@ const CHAINS = {
   'pre-edit': [
     // Sacar un control del arnés de la configuración de la herramienta (disableAllHooks, un interruptor en env, un hook
     // del arnés) frena antes, en cualquier paso. Ver lib/controls-off.js; la terminal la mira safety-guard-pre.sh.
-    { name: 'on-controls-off', path: path.join(PIPELINE_SCRIPTS, 'on-controls-off.js'), steps: ['all'], effect: 'blocks' },
+    { name: 'on-controls-off', path: path.join(PIPELINE_SCRIPTS, 'on-controls-off.js'), steps: ['all'], effect: 'blocks', failMode: 'closed' },
     // La coordinadora no cambia archivos de los repos ni de la copia instalada del arnés: se lo encarga a una sesión.
     // Antes del portón de carril, así ve su mensaje. Ver scripts/lib/coordination-writes.js; la consola la mira
     // on-bash-write-gate.js.
-    { name: 'on-coordination-write', path: path.join(PIPELINE_SCRIPTS, 'on-coordination-write.js'), steps: ['all'], effect: 'blocks' },
+    { name: 'on-coordination-write', path: path.join(PIPELINE_SCRIPTS, 'on-coordination-write.js'), steps: ['all'], effect: 'blocks', failMode: 'closed' },
     // Portón de CARRIL: deniega código sin pipeline/ad-hoc, código antes del plan aprobado,
     // y escrituras directas al estado del pipeline. Va PRIMERO: es el más amplio. Ver lib/story-gate.js.
     // `steps` (los pasos del pipeline donde actúa, o 'all') y `effect` (blocks · warns · records) no los usa el
     // despachador: los muestra «Cómo trabaja», en el sitio de la organización, en lugar del despachador mismo.
-    { name: 'on-story-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-gate.js'), steps: ['approve-plan', 'implement'], effect: 'blocks' },
+    // `failMode` sí: es qué hace el despachador si el control no corre (ver el encabezado). Su parte del estado frena
+    // fabricar marcador o evidencia; la de carril tiene otras capas después, y un falso positivo trabaría todo.
+    { name: 'on-story-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-gate.js'), steps: ['approve-plan', 'implement'], effect: 'blocks', failMode: 'closed-on-state' },
     // Freno de STORY A MANO: deniega CREAR un .md con identidad de story sin constancia
     // de tycon-create-story en la sesión (la deja on-skill-invoke.js, PostToolUse Skill). Editar una
     // story existente pasa siempre. Ver lib/story-skill-gate.js.
-    { name: 'on-story-skill-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-skill-gate.js'), steps: ['validate-story'], effect: 'blocks' },
-    { name: 'on-dod-evidence-guard', path: path.join(PIPELINE_SCRIPTS, 'on-dod-evidence-guard.js'), steps: ['live-check'], effect: 'blocks' },
-    { name: 'on-frontmatter-write', path: path.join(PIPELINE_SCRIPTS, 'on-frontmatter-write.js'), steps: ['live-check', 'prepare-commit'], effect: 'blocks' },
+    { name: 'on-story-skill-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-skill-gate.js'), steps: ['validate-story'], effect: 'blocks', failMode: 'open' },
+    { name: 'on-dod-evidence-guard', path: path.join(PIPELINE_SCRIPTS, 'on-dod-evidence-guard.js'), steps: ['live-check'], effect: 'blocks', failMode: 'closed' },
+    { name: 'on-frontmatter-write', path: path.join(PIPELINE_SCRIPTS, 'on-frontmatter-write.js'), steps: ['live-check', 'prepare-commit'], effect: 'blocks', failMode: 'closed' },
     // Portón ATDD preventivo: deniega el PRIMER archivo de código de una corrida de
     // pipeline si no se tocó ningún test antes. Las capas post-mortem (complete-step run-tests, commit)
     // detectan; ésta impide. Ver on-atdd-preedit.js + lib/atdd-preedit.js.
-    { name: 'on-atdd-preedit', path: path.join(PIPELINE_SCRIPTS, 'on-atdd-preedit.js'), steps: ['implement'], effect: 'blocks' },
+    { name: 'on-atdd-preedit', path: path.join(PIPELINE_SCRIPTS, 'on-atdd-preedit.js'), steps: ['implement'], effect: 'blocks', failMode: 'open' },
     // Una prueba que ya existía y está en rojo en el último reporte de esta sesión no se edita sin decir por qué: pide
     // la nota (`marker.js note-red-test`) o, si es la prueba de un control, la firma del dueño. Ver lib/red-test-edit.js.
-    { name: 'on-red-test-edit', path: path.join(PIPELINE_SCRIPTS, 'on-red-test-edit.js'), steps: ['all'], effect: 'blocks' },
-    { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js'), steps: ['implement'], effect: 'warns' },
-    { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['plan'], effect: 'warns' },
+    { name: 'on-red-test-edit', path: path.join(PIPELINE_SCRIPTS, 'on-red-test-edit.js'), steps: ['all'], effect: 'blocks', failMode: 'closed' },
+    { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js'), steps: ['implement'], effect: 'warns', failMode: 'open' },
+    { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['plan'], effect: 'warns', failMode: 'open' },
     // Código deprecado del repo (lib/deprecated.js): con `deprecated.edit: block`, editarlo sin una historia que lo pida
     // frena acá; con `warn`, el aviso sale después de editar (en post-edit), que es el que le llega al modelo.
-    { name: 'on-deprecated-edit', path: path.join(PIPELINE_SCRIPTS, 'on-deprecated-edit.js'), steps: ['all'], effect: 'blocks' },
+    { name: 'on-deprecated-edit', path: path.join(PIPELINE_SCRIPTS, 'on-deprecated-edit.js'), steps: ['all'], effect: 'blocks', failMode: 'open' },
   ],
   'post-edit': [
     // antes de esta tabla van las entradas de la integración de horas elegida (integrationEntries)
-    { name: 'on-edit', path: path.join(PIPELINE_SCRIPTS, 'on-edit.js'), steps: ['all'], effect: 'records' },
+    { name: 'on-edit', path: path.join(PIPELINE_SCRIPTS, 'on-edit.js'), steps: ['all'], effect: 'records', failMode: 'open' },
     // Lint de la config del repo: `.tycon/advisors.yaml` es la única
     // superficie que puede apagar frenos y NO dispara revisores (un commit que sólo la toca se
     // clasifica como docs). Determinístico, sin modelo, avisa y nunca bloquea.
-    { name: 'on-config-lint', path: path.join(PIPELINE_SCRIPTS, 'on-config-lint.js'), steps: ['all'], effect: 'warns' },
+    { name: 'on-config-lint', path: path.join(PIPELINE_SCRIPTS, 'on-config-lint.js'), steps: ['all'], effect: 'warns', failMode: 'open' },
     // Código deprecado editado sin una historia que lo pida, con `deprecated.edit: warn`: se le dice a la persona y al modelo
-    { name: 'on-deprecated-edit', path: path.join(PIPELINE_SCRIPTS, 'on-deprecated-edit.js'), steps: ['all'], effect: 'warns' },
+    { name: 'on-deprecated-edit', path: path.join(PIPELINE_SCRIPTS, 'on-deprecated-edit.js'), steps: ['all'], effect: 'warns', failMode: 'open' },
     // El plan escrito se lo muestra el arnés a la persona en pantalla (el agente no siempre lo hace: medido)
-    { name: 'plan-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'plan-display.js'), steps: ['plan', 'approve-plan'], effect: 'warns' },
+    { name: 'plan-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'plan-display.js'), steps: ['plan', 'approve-plan'], effect: 'warns', failMode: 'open' },
     // El crítico que se quiere eximir se lo muestra el arnés a la persona al escribirse el pedido (instalación mínima)
-    { name: 'critical-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'critical-display.js'), steps: ['all'], effect: 'warns' },
+    { name: 'critical-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'critical-display.js'), steps: ['all'], effect: 'warns', failMode: 'open' },
     // Los criterios que se van a marcar como probados a mano se los muestra el arnés a la persona (instalación mínima)
-    { name: 'manual-check-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'manual-checks.js'), steps: ['all'], effect: 'warns' },
+    { name: 'manual-check-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'manual-checks.js'), steps: ['all'], effect: 'warns', failMode: 'open' },
     // El criterio que se quiere firmar como imposible de probar en vivo, al escribirse el pedido (instalación mínima)
-    { name: 'waiver-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'waiver-display.js'), steps: ['all'], effect: 'warns' },
+    { name: 'waiver-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'waiver-display.js'), steps: ['all'], effect: 'warns', failMode: 'open' },
     // Una historia con pantalla en un repo sin prueba con navegador: el arnés le ofrece a la persona prepararla
-    { name: 'browser-test-offer', path: path.join(PIPELINE_SCRIPTS, 'lib', 'browser-test.js'), steps: ['plan', 'approve-plan'], effect: 'warns' },
-    // crea el pedido de trabajo en ADO: `integration` lo dice para «Cómo trabaja» (lo apagado en la organización no se muestra)
-    { name: 'ado-story-create', path: path.join(INTEGRATIONS_DIR, 'azure-devops', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && workItemsForStory(event), steps: ['validate-story'], effect: 'records', integration: 'ado' },
-    { name: 'followup-story-create', path: path.join(SKILLS_DIR, 'tycon-story-followup-link', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: isStoryWrite, steps: ['validate-story'], effect: 'records' },
+    { name: 'browser-test-offer', path: path.join(PIPELINE_SCRIPTS, 'lib', 'browser-test.js'), steps: ['plan', 'approve-plan'], effect: 'warns', failMode: 'open' },
+    // crea el pedido de trabajo en ADO: `integration` lo dice para «Cómo trabaja» (lo apagado en la organización no se muestra).
+    // Las dos `spawn: true` corren aparte, con su propio catch, y no pasan por el camino de «no corrió»
+    { name: 'ado-story-create', path: path.join(INTEGRATIONS_DIR, 'azure-devops', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && workItemsForStory(event), steps: ['validate-story'], effect: 'records', integration: 'ado', failMode: 'open' },
+    { name: 'followup-story-create', path: path.join(SKILLS_DIR, 'tycon-story-followup-link', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: isStoryWrite, steps: ['validate-story'], effect: 'records', failMode: 'open' },
   ],
 };
 
-function logHookError(name, e) {
-  const msg = (e && (e.stack || e.message)) || String(e);
+// La excepción de un control `closed` frena desde este día; antes deja pasar con su línea, que mide en hook-errors.log
+// si algún crítico tira con ediciones sanas. Se compara con el `hoy` de dispatch(); ninguna variable de ambiente la mueve.
+const FAIL_CLOSED_ON_THROW_FROM = '2026-11-28';
+const REPARAR = 'Reparalo: /tycon-harness dice si el arnés quedó bien instalado';
+const detalle = (e) => (e && (e.stack || e.message)) || String(e);
+
+/**
+ * La línea de un control que no corrió, en hook-errors.log de la carpeta del estado:
+ * `dispatch handler "<name>" FAILED OPEN|CLOSED[ (frena desde <fecha>)]: <motivo>`, o `dispatch FAILED …` sin nombre (el
+ * despachador mismo). El registro es ayuda, no la decisión: si no se puede escribir, calla.
+ */
+function logDispatchFailure(name, modo, e, { frenaDesde } = {}) {
+  const marca = `FAILED ${modo === 'closed' ? 'CLOSED' : 'OPEN'}${frenaDesde ? ` (frena desde ${frenaDesde})` : ''}`;
   try {
-    process.stderr.write(`⚠ tycon dispatch: handler "${name}" error (failing open): ${msg}\n`);
-  } catch { /* noop */ }
-  try {
-    const logDir = path.join(stateDirOf(os.homedir()));
+    const logDir = stateDirOf(os.homedir());
     fs.mkdirSync(logDir, { recursive: true });
-    fs.appendFileSync(
-      path.join(logDir, 'hook-errors.log'),
-      `[${new Date().toISOString()}] dispatch handler "${name}" FAILED OPEN: ${msg}\n\n`,
-      'utf8',
-    );
+    fs.appendFileSync(path.join(logDir, 'hook-errors.log'),
+      `[${new Date().toISOString()}] ${name ? `dispatch handler "${name}"` : 'dispatch'} ${marca}: ${detalle(e)}\n\n`, 'utf8');
   } catch { /* noop */ }
 }
 
-function readEvent() {
+function logHookError(name, e) {
   try {
-    const stdin = fs.readFileSync(0, 'utf8');
-    return stdin ? JSON.parse(stdin) : null;
+    process.stderr.write(`⚠ tycon dispatch: handler "${name}" error (failing open): ${detalle(e)}\n`);
+  } catch { /* noop */ }
+  logDispatchFailure(name, 'open', e);
+}
+
+/** `{ event }`, o `{ motivo }` si la entrada está vacía, no es JSON o no es un objeto. */
+function readEvent() {
+  let stdin;
+  try { stdin = fs.readFileSync(0, 'utf8'); } catch (e) { return { motivo: `no pude leer la entrada (${oneLineError(e)})` }; }
+  if (!stdin || !stdin.trim()) return { motivo: 'la entrada llegó vacía' };
+  let event;
+  try { event = JSON.parse(stdin); } catch (e) { return { motivo: `la entrada no es JSON (${oneLineError(e)})` }; }
+  if (!event || typeof event !== 'object' || Array.isArray(event)) {
+    return { motivo: `la entrada es JSON pero no un objeto (${Array.isArray(event) ? 'una lista' : oneLineError(JSON.stringify(event))})` };
+  }
+  return { event };
+}
+
+/**
+ * ¿Alguno de los archivos de la edición cae en la carpeta del estado? Sin ruta, o sin poder resolverla: sí. La ruta se
+ * resuelve como la resuelve el sistema al escribir, con la misma función que el portón de carril (lib/installed-tree.js):
+ * un enlace roto que apunta a un archivo nuevo de la carpeta del estado también cae adentro.
+ */
+function caeEnElEstado(events) {
+  try {
+    const { realPath } = require('./lib/installed-tree.js');
+    const norm = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+    const estado = norm(realPath(stateDirOf(os.homedir())));
+    return events.some((ev) => {
+      const fp = ev && ev.tool_input && ev.tool_input.file_path;
+      if (typeof fp !== 'string' || !fp) return true;
+      const abs = norm(realPath(path.isAbsolute(fp) ? fp : path.join(String(ev.cwd || process.cwd()), fp)));
+      return abs === estado || abs.startsWith(estado.endsWith(path.sep) ? estado : estado + path.sep);
+    });
   } catch {
-    return null;
+    return true;
+  }
+}
+
+/**
+ * Un control que no corrió (`clase`: no-carga · sin-handle · tira). Decide su modo efectivo, deja su línea una vez por
+ * llamada y, si es cerrado, frena la edición. Si es abierto, vuelve y la cadena sigue.
+ */
+function noCorrio(h, clase, e, { mode, events, hoy, anotados }) {
+  let modo = h.integration || mode !== 'pre-edit' ? 'open' : (h.failMode || 'open');
+  if (modo === 'closed-on-state') modo = caeEnElEstado(events) ? 'closed' : 'open';
+  let frenaDesde = null;
+  if (modo === 'closed' && clase === 'tira' && hoy < FAIL_CLOSED_ON_THROW_FROM) { modo = 'open'; frenaDesde = FAIL_CLOSED_ON_THROW_FROM; }
+  const motivo = clase === 'sin-handle' ? 'no exporta handle' : oneLineError(e);
+  if (modo === 'closed') {
+    logDispatchFailure(h.name, 'closed', clase === 'sin-handle' ? motivo : e);
+    cerrarConsumos({ paso: false });
+    process.stderr.write(`⛔ el control ${h.name} ${clase === 'tira' ? 'tiró' : 'no carga'} (${motivo}) y es de los que frenan: esta edición no pasa. ${REPARAR}\n`);
+    process.exit(2);
+  }
+  if (anotados.has(h.name)) return;
+  anotados.add(h.name);
+  // el control de una integración elegida que no carga se dice como siempre: elegida y sin su control es un error a la vista
+  if (h.integration && clase === 'no-carga') process.stderr.write(`despachador: el control «${h.name}» de la integración ${h.integration} no carga (${(e && e.code) || 'error'}): ${h.path}\n`);
+  logDispatchFailure(h.name, 'open', clase === 'sin-handle' ? motivo : e, { frenaDesde });
+  if (clase === 'tira' && !frenaDesde) {
+    process.stderr.write(`⚠ tycon dispatch: handler "${h.name}" error (failing open): ${detalle(e)}\n`);
+  } else {
+    process.stderr.write(`⚠ dispatch handler "${h.name}" FAILED OPEN${frenaDesde ? ` (frena desde ${frenaDesde})` : ''}: ${motivo}\n`);
   }
 }
 
@@ -296,7 +367,11 @@ function cerrarConsumos({ paso }) {
   return errores;
 }
 
-function dispatch(mode) {
+/**
+ * Corre la cadena del modo y termina el proceso. `hoy` (YYYY-MM-DD) lo pasan sólo las pruebas, para la fecha de
+ * FAIL_CLOSED_ON_THROW_FROM; los ganchos llaman sin opciones y vale el día de hoy.
+ */
+function dispatch(mode, { hoy = new Date().toISOString().slice(0, 10) } = {}) {
   if (AVISO_SIN_ARNES) process.stderr.write(AVISO_SIN_ARNES + '\n');
   const chain = CHAINS[mode];
   if (!chain) {
@@ -305,7 +380,18 @@ function dispatch(mode) {
   }
   abrirConsumos();
 
-  const rawEvent = readEvent();
+  const leida = readEvent();
+  if (!leida.event) {
+    if (mode === 'pre-edit') {
+      logDispatchFailure(null, 'closed', `entrada ilegible (${leida.motivo})`);
+      cerrarConsumos({ paso: false });
+      process.stderr.write(`⛔ el despachador de ediciones no pudo leer esta edición y la frenó: ${leida.motivo}. Reiniciá la sesión; si sigue, /tycon-harness dice si el arnés quedó bien instalado\n`);
+      process.exit(2);
+    }
+    logDispatchFailure(null, 'open', `entrada ilegible (${leida.motivo})`);
+    process.exit(0);
+  }
+  const rawEvent = leida.event;
   // Un block en CUALQUIER archivo de un patch bloquea el patch entero (es un solo tool call
   // atómico — semántica correcta).
   const events = prepareEvents(rawEvent);
@@ -313,6 +399,7 @@ function dispatch(mode) {
   const paraLaPersona = [];
   let escribioAparte = false;
   const fullChain = integrationEntries(mode).concat(chain);
+  const fallo = { mode, events, hoy, anotados: new Set() };
 
   for (const event of events) for (const h of fullChain) {
     // Scripts top-level de otros skills (sin handle()) — spawn condicional por contenido.
@@ -359,17 +446,19 @@ function dispatch(mode) {
     try {
       mod = require(h.path);
     } catch (e) {
-      // el control de una integración elegida que no carga se dice: elegida y sin su control es un error a la vista
-      if (h.integration) process.stderr.write(`despachador: el control «${h.name}» de la integración ${h.integration} no carga (${(e && e.code) || 'error'}): ${h.path}\n`);
+      noCorrio(h, 'no-carga', e, fallo);
       continue;
     }
-    if (!mod || typeof mod.handle !== 'function') continue;
+    if (!mod || typeof mod.handle !== 'function') {
+      noCorrio(h, 'sin-handle', null, fallo);
+      continue;
+    }
 
     let result;
     try {
       result = mod.handle(event);
     } catch (e) {
-      logHookError(h.name, e); // fail-open + visible
+      noCorrio(h, 'tira', e, fallo);
       continue;
     }
 
@@ -410,7 +499,7 @@ function dispatch(mode) {
   process.exit(0);
 }
 
-module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries, abrirConsumos, cerrarConsumos };
+module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries, abrirConsumos, cerrarConsumos, logDispatchFailure, FAIL_CLOSED_ON_THROW_FROM };
 
 // CLI: `node dispatch.js pre-edit|post-edit` (los entry-scripts hook-*.js lo llaman).
 if (require.main === module) {
