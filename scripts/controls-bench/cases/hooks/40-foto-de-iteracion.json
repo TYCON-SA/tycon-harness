@@ -55,6 +55,7 @@
           },
           "setup": [
             "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs",
+            "git init -q .",
             "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-2.json",
             "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-2.jsonl",
             "node _utimes.js src/reductor.js 2026-09-15T16:58:16.000Z",
@@ -321,6 +322,7 @@
           },
           "setup": [
             "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs",
+            "git init -q .",
             "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-10.json",
             "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-10.jsonl",
             "node _utimes.js src/reductor.js 2026-09-15T16:58:16.000Z",
