@@ -1268,6 +1268,24 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
       }
     }
   }
+  // la aprobación del plan en una pestaña que pregunta: vale el click del dueño por la lista (el mismo que vale de fondo);
+  // sin él, el renglón queda en su lista además de la ventana. El chequeo del guion va antes del renglón: un comando que
+  // se iba a negar no deja renglón
+  let comprobado = false;
+  if (firmaGuion === 'plan-approval' && !delegada && !aprobada && !sinVentana && !deFondo && !enWindows && !soloClick && !clickDelDueno && pendientes.length === 1) {
+    const cuadro = cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios });
+    const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
+    if (a.ok) aprobada = a;
+    else {
+      let c = null;
+      try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: null }); } catch (_) { c = null; }
+      if (c && c.niega) {
+        return { decision: 'deny', firmas: pendientes, texto: `No abrí la ventana: el comando se iba a negar antes de usar la firma, y el «Sí» se perdería. Lo que dijo: ${una(c.niega, 800)}. Arreglá eso y volvé a pedirla` };
+      }
+      comprobado = true;
+      anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras: can && can.palabras, cuadro, cwd: evento.cwd, ahora, deFondo: false, lista });
+    }
+  }
   let avisado = false;
   if (!delegada && !aprobada && sinVentana) avisado = true;
   // los criterios se calculan antes del chequeo del guion, que tiene su propio plazo: así lo que tarda cada uno entra en
@@ -1278,7 +1296,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   const vistaDeControl = esDeControl(pendientes) ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios }) : null;
   if (vistaDeControl && vistaDeControl.error) return negarSinCuadroDeControl(vistaDeControl.error, pendientes);
   // el guion dice antes si se negaría: entonces no hay ventana ni registro (sin respuesta, la ventana se abre como siempre)
-  if (guion && !delegada && CON_PRECHEQUEO.has(firmaGuion)) {
+  if (guion && !delegada && !comprobado && CON_PRECHEQUEO.has(firmaGuion)) {
     let c = null;
     try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: aprobada ? aprobada.via : null }); } catch (_) { c = null; }
     if (c && c.niega) {

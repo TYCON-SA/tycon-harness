@@ -25,7 +25,9 @@
 #   - Log de bloqueos en safety-guard.log, en la carpeta de los registros sueltos (scripts/lib/state-dir.sh), para
 #     retro/audit.
 #   - Fail-open: si el script crashea por cualquier motivo, NO bloquea
-#     (mejor permitir que romper toda la sesión por un bug del hook).
+#     (mejor permitir que romper toda la sesión por un bug del hook), pero deja su línea en hook-errors.log, en la
+#     carpeta del estado: el renglón y el texto del guion que falló, nunca el comando. Esa línea la cuenta el aviso de
+#     arranque de las fallas de los controles (scripts/hooks/hook-failures-notice.js).
 #
 # Input: JSON por stdin del PreToolUse hook (Claude Code lo pasa).
 #   { "tool_input": { "command": "..." }, "cwd": "..." }
@@ -108,7 +110,30 @@ salida_ok() {
   if [[ -n "$OW_ASK_JSON" ]]; then printf '%s\n' "$OW_ASK_JSON"; fi
   exit 0
 }
-trap 'salida_ok' ERR
+# La salida por error deja su línea en hook-errors.log de la carpeta del estado (tycon_state_dir, la que leen el aviso de
+# arranque y el despachador; no la de safety-guard.log): el renglón y BASH_COMMAND, que es el texto del guion sin expandir
+# (un renglón con "$CMD" anota "$CMD", no el comando del agente). Puede saltar antes de que exista LOGFILE, por eso
+# carga el ayudante acá. Sin el ayudante no escribe: una ruta fija caería, en una máquina con casa propia, donde nadie
+# lee. Escribir es ayuda: si no puede, sale 0 igual.
+# El renglón: el bash de la Mac (3.2) da en LINENO el del cierre de un if o el del for cuando la falla está adentro de
+# un bloque; si el texto del comando aparece una sola vez en el guion, vale ese renglón.
+_SG_STATE_SH="$(dirname "${BASH_SOURCE[0]}")/../lib/state-dir.sh"
+_SG_SELF="${BASH_SOURCE[0]}"
+salida_err() {
+  trap - ERR
+  local linea="${1:-?}" texto="${2:-}" dir="" hallados=""
+  hallados="$(grep -nF -- "$texto" "$_SG_SELF" 2>/dev/null | cut -d: -f1)" || hallados=""
+  case "$hallados" in ''|*[!0-9]*) ;; *) linea="$hallados" ;; esac
+  texto="${texto//$'\n'/ }"
+  texto="${texto//$'\r'/ }"
+  if [ -f "$_SG_STATE_SH" ] && . "$_SG_STATE_SH" 2>/dev/null; then dir="$(tycon_state_dir 2>/dev/null)"; fi
+  if [ -n "$dir" ]; then
+    { mkdir -p "$dir" && printf '[%s] safety-guard ERR-FAIL-OPEN línea %s: %s\n\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$linea" "${texto:0:200}" >> "$dir/hook-errors.log"; } 2>/dev/null || true
+  fi
+  salida_ok
+}
+trap 'salida_err "$LINENO" "$BASH_COMMAND"' ERR
 
 # `TYCON_SAFETY_OFF=1` en el ambiente ya no apaga el freno: quedó una sola salida, la emergencia. Se anota para que el
 # cartel lo diga.

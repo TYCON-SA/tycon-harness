@@ -277,6 +277,48 @@ test('T21 OwnErrors_DoNotBlock @story-8.122 @ac-21: con la configuración rota o
 
 // ── Cost (AC 22) ─────────────────────────────────────────────────────────────────────────────────────────────────
 
+// The cost is CPU time of this process, not wall-clock time: with the machine loaded (the gate, other sessions) the
+// wait for a CPU lands in the wall clock and the median goes over the cap without the notice getting slower.
+function medianCpuMs(fn, rounds) {
+  const times = [];
+  for (let i = 0; i < rounds; i++) {
+    const c0 = process.cpuUsage();
+    fn();
+    const d = process.cpuUsage(c0);
+    times.push((d.user + d.system) / 1000);
+  }
+  times.sort((a, b) => a - b);
+  const mid = Math.floor(rounds / 2);
+  return rounds % 2 ? times[mid] : (times[mid - 1] + times[mid]) / 2;
+}
+
+// Runs fn with a fresh copy of coordination.js (and what it loads) whose child_process calls are counted. A module
+// keeps the spawnSync it took when it loaded, so the counter goes in before loading, and the old copies come back after.
+function withSpawnCount(fn) {
+  const cpm = require('child_process');
+  const names = ['spawnSync', 'execFileSync', 'execSync', 'spawn', 'execFile', 'exec', 'fork'];
+  const orig = Object.fromEntries(names.map((n) => [n, cpm[n]]));
+  const spawned = [];
+  for (const n of names) cpm[n] = function (...a) { spawned.push(`${n} ${a[0]}`); return orig[n].apply(this, a); };
+  const ours = (k) => k.startsWith(ROOT + path.sep) && !k.split(path.sep).includes('tests');
+  const saved = {};
+  for (const k of Object.keys(require.cache)) if (ours(k)) { saved[k] = require.cache[k]; delete require.cache[k]; }
+  try {
+    return { value: fn(require(path.join(ROOT, 'scripts', 'tools', 'coordination.js'))), spawned };
+  } finally {
+    Object.assign(cpm, orig);
+    for (const k of Object.keys(require.cache)) if (ours(k)) delete require.cache[k];
+    Object.assign(require.cache, saved);
+  }
+}
+
+test('T22 Notice_UnderBudget @story-8.122 @ac-22: la medición de CPU ve un aviso lento (un bucle de 400 ms sale sobre el tope)', () => {
+  const t = toy();
+  const slow = () => { const c0 = process.cpuUsage(); while (true) { const d = process.cpuUsage(c0); if (d.user + d.system >= 400000) break; } return C.capNotice(t.opts); };
+  const median = medianCpuMs(slow, 3);
+  assert.ok(median >= 300, `con 400 ms de CPU de más la mediana tiene que pasar el tope de 300 ms: dio ${median.toFixed(1)} ms`);
+});
+
 test('T22 Notice_UnderBudget @story-8.122 @ac-22: 20 turnos con 6 sesiones, mediana bajo 300 ms, sin abrir una conversación', () => {
   const t = toy();
   const projects = path.join(t.home, '.claude', 'projects');
@@ -294,19 +336,15 @@ test('T22 Notice_UnderBudget @story-8.122 @ac-22: 20 turnos con 6 sesiones, medi
   const origRead = fs.readFileSync;
   fs.openSync = function (p, ...rest) { if (String(p).startsWith(projects)) opened.push(String(p)); return origOpen.call(this, p, ...rest); };
   fs.readFileSync = function (p, ...rest) { if (typeof p === 'string' && p.startsWith(projects)) opened.push(p); return origRead.call(this, p, ...rest); };
-  const times = [];
   let first = null;
+  let median;
+  let spawned;
   try {
-    for (let i = 0; i < 20; i++) {
-      const t0 = process.hrtime.bigint();
-      const n = C.capNotice(t.opts);
-      if (i === 0) first = n;
-      times.push(Number(process.hrtime.bigint() - t0) / 1e6);
-    }
+    ({ value: median, spawned } = withSpawnCount((fresh) => medianCpuMs(() => { const n = fresh.capNotice(t.opts); if (first === null) first = n; }, 20)));
   } finally { fs.openSync = origOpen; fs.readFileSync = origRead; }
-  times.sort((a, b) => a - b);
-  const median = (times[9] + times[10]) / 2;
-  assert.ok(median < 300, `mediana ${median.toFixed(1)} ms`);
+  assert.ok(median < 300, `mediana ${median.toFixed(1)} ms de CPU`);
+  // el tiempo de CPU de este proceso no cuenta el de un proceso hijo: el aviso no lanza ninguno
+  assert.deepStrictEqual(spawned, [], 'el aviso no lanza procesos: su costo está todo en la medición');
   assert.deepStrictEqual(opened, [], 'ninguna conversación abierta');
   // la línea del tope sale en el primer turno (con la carpeta del estado vacía)
   assert.match(first, /pasó el tope por 1/);
@@ -716,6 +754,73 @@ test('Q7 Notice_SuiteIdleWithQueue_SaysWhoStarts: sin suite completa en curso y 
   fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
   fs.writeFileSync(path.join(t.state, 'coordination', 'suite-turn.json'), JSON.stringify({ pid: process.pid, sid: 's-x', session: 'ConSuite', what: 'suites portables', at: mins(5) }));
   assert.strictEqual(C.capNotice(t.opts), null, 'con la suite corriendo calla');
+});
+
+// A bounded gate (without the turn) running, as heavy-turn.js registers it: `pid` alive = running.
+function gate(t, pid, sid, session, what, minutesAgo) {
+  const dir = path.join(t.state, 'coordination', 'gates');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${pid}.json`), JSON.stringify({ pid, sid, session, what, at: mins(minutesAgo) }));
+}
+function waitNote(t, sid, name, minutesAgo, waitingFor = 'turno de la suite completa') {
+  fs.mkdirSync(path.join(t.state, 'doing'), { recursive: true });
+  session(t, sid, name);
+  fs.writeFileSync(path.join(t.state, 'doing', `${sid}.json`), JSON.stringify({ text: 'implementar la historia', at: new Date(mins(minutesAgo)).toISOString(), waitingFor, waitingSince: new Date(mins(minutesAgo)).toISOString() }));
+}
+test('T3 Fila_PortonAcotadoCorriendo_NoPideArranca @story-8.274 @ac-4: con un portón acotado en curso, la fila lo nombra y no pide el «arrancá»', () => {
+  // 🔴 mutación: no leer los portones acotados en status (vuelve «no corre ninguna suite completa … dale el «arrancá»»)
+  const t = toy();
+  session(t, 's-ana', 'Ana', { status: 'busy', statusUpdatedAt: mins(5) });
+  gate(t, process.pid, 's-ana', 'Ana', '40 suites de repo', 5);
+  waitNote(t, 's-beto', 'Beto', 30);
+  const n = C.capNotice(t.opts);
+  assert.match(n, /^Coordinación: corre el portón acotado de Ana \(40 suites de repo, desde las \d\d:\d\d\) y hay 1 esperando turno: cuando termine, sigue Beto\.$/m, n);
+  assert.doesNotMatch(n, /no corre ninguna|arrancá/, n);
+  assert.match(C.statusText(C.status({ ...t.opts, noTranscripts: true })), /Portón acotado en curso: Ana \(40 suites de repo, desde las \d\d:\d\d\)/);
+  // una anotación que se lee a medio escribir (vacía) de un proceso vivo no se borra: el portón sigue corriendo y la
+  // próxima lectura lo ve. 🔴 mutación: borrar todo lo que no se pudo leer (la fila deja de verlo para siempre)
+  const t3 = toy();
+  const medio = path.join(t3.state, 'coordination', 'gates', `${process.pid}.json`);
+  fs.mkdirSync(path.dirname(medio), { recursive: true });
+  fs.writeFileSync(medio, '');
+  C.status({ ...t3.opts, noTranscripts: true });
+  assert.ok(fs.existsSync(medio), 'se borró la anotación de un portón vivo leída a medio escribir');
+  // y la anotación nueva se publica entera: lo que se lee es el portón completo o nada
+  // 🔴 mutación: escribir directo sobre el archivo final (queda visible vacío mientras se escribe)
+  const HT = require(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'));
+  const g = HT.gateStarted({ home: t3.home, env: { TYCON_SUITE_TURN: '1', CLAUDE_CODE_SESSION_ID: 's-ana' }, pid: process.pid, what: '3 suites' });
+  assert.strictEqual(g.error, null);
+  assert.deepStrictEqual(fs.readdirSync(path.dirname(medio)), [`${process.pid}.json`], 'quedó un temporal');
+  assert.strictEqual(JSON.parse(fs.readFileSync(medio, 'utf8')).what, '3 suites');
+  // el de un proceso que ya no vive no corre: la fila vuelve a pedir el «arrancá»
+  const t2 = toy();
+  gate(t2, deadPid(), 's-ana', 'Ana', '40 suites de repo', 5);
+  waitNote(t2, 's-beto', 'Beto', 30);
+  assert.match(C.capNotice(t2.opts), /no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Beto\./);
+});
+
+test('T4 Fila_EsperaViejaConTrabajoDespues_PideConfirmar @story-8.274 @ac-6: quien trabajó después de anotar la espera no sale esperando: se pide confirmar', () => {
+  // 🔴 mutación: no mirar workedAfterWait (Moreno vuelve a la fila y a «dale el «arrancá» a Moreno»), o no mirar los
+  // archivos tocados (Pía, un camino corto sin marcador, vuelve a la fila)
+  const t = toy();
+  waitNote(t, 's-moreno', 'Moreno', 60);
+  marker(t, 's-moreno', { storyId: '9.9', lastTouch: new Date(mins(10)).toISOString() });
+  waitNote(t, 's-pia', 'Pía', 50);
+  fs.mkdirSync(path.join(t.state, 'file-events'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'file-events', 's-pia.jsonl'), `${JSON.stringify({ path: path.join(t.root, 'lib', 'a.js'), ts: new Date(mins(8)).toISOString() })}\n`);
+  waitNote(t, 's-beto', 'Beto', 30);
+  const n = C.capNotice(t.opts);
+  assert.match(n, /^Coordinación: no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Beto\.$/m, n);
+  assert.match(n, /^Coordinación: Moreno anotó a las \d\d:\d\d que espera turno y trabajó después: preguntale si sigue esperando\.$/m, n);
+  assert.match(n, /^Coordinación: Pía anotó a las \d\d:\d\d que espera turno y trabajó después: preguntale si sigue esperando\.$/m, n);
+  const text = C.statusText(C.status({ ...t.opts, noTranscripts: true }));
+  assert.match(text, /Esperando turno de suite o portón: .*Moreno desde las \d\d:\d\d \(trabajó después: ¿sigue esperando\?\)/);
+  assert.doesNotMatch(text, /Beto desde las \d\d:\d\d \(trabajó/);
+  // la actividad que no se puede leer se dice: sin eso, Rosa saldría esperando aunque esté trabajando
+  // 🔴 mutación: pasarle a touchedField un arreglo descartable (el «no pude leer» se pierde)
+  waitNote(t, 's-rosa', 'Rosa', 40);
+  fs.mkdirSync(path.join(t.state, 'file-events', 's-rosa.jsonl'));
+  assert.match(C.capNotice(t.opts), /No pude leer .*la actividad de Rosa .*no sé si sigue esperando/);
 });
 
 test('Q7c Notice_SuiteQueue_PassWaitNotCounted: una espera de pase no es de la fila de la suite: sin suite corriendo, no avisa', () => {

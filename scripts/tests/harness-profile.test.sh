@@ -346,12 +346,17 @@ if corre T40; then
     # ya no aparece sale, como en T40_ADDED).
     #   production-notice.js — el aviso del freno, que pasó a su nombre en inglés
     #   safety-guard-pre.sh mira también Monitor — el freno de comandos cubre los comandos que vigilan
-    # «ruta-vieja>ruta-nueva»: el hook renombrado · «ruta@matcher»: el matcher de hoy de ese hook.
+    #   on-advisor-run.js también en PostToolUse — anota los críticos del revisor cuando termina
+    # «ruta-vieja>ruta-nueva»: el hook renombrado · «ruta@matcher»: el matcher de hoy de ese hook · «ruta+Evento@matcher»:
+    # el hook se registra también en ese evento, y al settings viejo le suma esa entrada.
     # El nombre viejo se arma en dos partes: escrito entero, el control de nombres viejos lo cuenta como una mención.
     OLD_NOTICE="scripts/hooks/produc""cion-notice.js"
     T40_CHANGED=("${OLD_NOTICE}>scripts/hooks/production-notice.js"
-      "scripts/hooks/safety-guard-pre.sh@Bash|PowerShell|Monitor")
-    python3 - "$T/t40/old/.claude/settings.json" "$OLD" "$TREE" "$T/t40/old-as-new.json" "$T/t40/changed.out" "${T40_CHANGED[@]}" <<'PY'
+      "scripts/hooks/safety-guard-pre.sh@Bash|PowerShell|Monitor"
+      "tycon-pipeline/scripts/on-advisor-run.js+PostToolUse@Task|Agent")
+    t40_changed() { # t40_changed <salida> <faltantes> <cambios...> → el settings de antes con los cambios declarados
+      local out="$1" faltan="$2"; shift 2
+      python3 - "$T/t40/old/.claude/settings.json" "$OLD" "$TREE" "$out" "$faltan" "$@" <<'PY'
 import json, sys
 t = open(sys.argv[1], encoding="utf-8").read().replace(sys.argv[2], sys.argv[3]).replace(sys.argv[1].rsplit("/.claude/", 1)[0], "@HOME@")
 data, missing = json.loads(t), []
@@ -367,6 +372,15 @@ for change in sys.argv[6:]:
                     cmd = str(h.get("command", ""))
                     if ("/" + old + '"') in cmd or cmd.endswith("/" + old):
                         h["command"] = cmd.replace("/" + old, "/" + new); found = True
+    elif "+" in change:
+        # el hook ya registrado en otro evento: se le suma, en un grupo propio, la entrada en el evento de hoy
+        ruta, rest = change.split("+", 1)
+        event, matcher = rest.split("@", 1)
+        found = False
+        if not any(hit(h, ruta) for g in data["hooks"].get(event, []) for h in g.get("hooks") or []):
+            mine = [h for groups in data["hooks"].values() for g in groups for h in g.get("hooks") or [] if hit(h, ruta)]
+            if mine:
+                data["hooks"].setdefault(event, []).append({"matcher": matcher, "hooks": [dict(mine[0])]}); found = True
     else:
         # sólo ese hook pasa al matcher de hoy, en un grupo propio: los demás de su grupo quedan donde estaban
         ruta, matcher = change.split("@", 1)
@@ -386,6 +400,15 @@ for change in sys.argv[6:]:
 json.dump(data, open(sys.argv[4], "w", encoding="utf-8"), indent=2)
 open(sys.argv[5], "w", encoding="utf-8").write("\n".join(missing))
 PY
+    }
+    t40_changed "$T/t40/old-as-new.json" "$T/t40/changed.out" "${T40_CHANGED[@]}"
+    # un registro de más declarado sobre un hook que no está del lado de antes, o que ya estaba en ese evento, no se
+    # inventa: sale como cambio que ya no está
+    t40_changed "$T/t40/plus-check.json" "$T/t40/plus-check.out" "scripts/hooks/no-existe.js+PostToolUse@Task" \
+      "tycon-pipeline/scripts/on-advisor-run.js+PreToolUse@Task|Agent"
+    if [ "$(sort "$T/t40/plus-check.out" | tr '\n' ' ')" = "scripts/hooks/no-existe.js+PostToolUse@Task tycon-pipeline/scripts/on-advisor-run.js+PreToolUse@Task|Agent " ]; then
+      ok "T40 un registro de más sobre un hook que no estaba, o en un evento donde ya estaba, sale como cambio que ya no está"
+    else mal "T40 el registro de más inventó un hook: $(tr '\n' ' ' < "$T/t40/plus-check.out")"; fi
     [ -s "$T/t40/changed.out" ] && mal "T40 cambios declarados que ya no están del lado de ${BASE_REF}: $(tr '\n' ' ' < "$T/t40/changed.out")"
     sed "s#$T/t40/new#@HOME@#g" "$T/t40/new/.claude/settings.json" > "$T/t40/new-floor.json"
     # El aplicador de hoy registra cada hook `.js` por el piso de Node: `node "<árbol>/scripts/lib/node-floor.js"
@@ -434,6 +457,7 @@ PY
     #   scripts/hooks/cover-secrets.js — tapa los secretos de la máquina en lo que devuelven los comandos y las lecturas
     #   scripts/hooks/background-question-guard.js — la pregunta de una sesión que abrió la coordinadora va a la coordinadora
     #   scripts/hooks/finished-open-notice.js — lo terminado sin cerrar de la máquina, dicho al arrancar
+    #   scripts/hooks/hook-failures-notice.js — las fallas de los controles de las últimas 24 horas, dichas al arrancar
     #   scripts/hooks/guard-auto-update.js — la actualización del freno de producción sin contraseña, al arrancar
     #   tycon-pipeline/scripts/reviewer-launch-gate.js — un revisor no sale antes que el pase adversarial que le toca
     #   tycon-pipeline/scripts/on-advisor-done.js — anota los críticos de un revisor apenas termina
@@ -447,7 +471,7 @@ PY
       scripts/hooks/cover-secrets.js
       scripts/hooks/office-message-rule.js scripts/hooks/office-inbox-watch.js=2
       scripts/hooks/background-question-guard.js scripts/hooks/finished-open-notice.js scripts/hooks/guard-auto-update.js
-      tycon-pipeline/scripts/reviewer-launch-gate.js tycon-pipeline/scripts/on-advisor-done.js)
+      scripts/hooks/hook-failures-notice.js tycon-pipeline/scripts/reviewer-launch-gate.js tycon-pipeline/scripts/on-advisor-done.js)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
       rm -f "$2"
       python3 - "$1" "$2" "${T40_ADDED[@]}" <<'PY'

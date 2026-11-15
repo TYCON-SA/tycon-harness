@@ -280,11 +280,13 @@ test('OwnerNext_FilaRota_SinCuadro (T13) — @story-8.153 @ac-13', (t) => {
   // el comando no es la firma que dice el renglón
   fs.mkdirSync(path.dirname(sl.archivo(toy.casa)), { recursive: true });
   fs.writeFileSync(sl.archivo(toy.casa), JSON.stringify([{ tipo: 'firma', id: 'rota', key: 'k', firma: 'manual-test', sesion: 'ses-a', destino: 'ses-a', comando: 'rm -rf /', cwd: '/r', title: 'marcar', at: antes(5) }]));
+  // no da su cuadro y no corta la pasada: queda entre los que no se arman desde aquí (8.272)
   let r = sl.siguiente(opts(toy, { sesion: 'ses-a' }));
-  assert.strictEqual(r.tipo, 'rota');
-  assert.match(r.texto, /rota/);
+  assert.strictEqual(r.tipo, 'nada');
   assert.strictEqual(r.pregunta, undefined);
-  assert.match(r.sigue, /--after rota/);
+  assert.deepStrictEqual(r.saltados.map((s) => s.id), ['rota']);
+  assert.match(r.saltados[0].motivo, /no tiene la forma de la firma/);
+  assert.match(r.texto, /rota/);
 
   // otro título en el renglón no cambia la pregunta: sale del comando real
   const toy2 = casaNueva(t);
@@ -354,21 +356,58 @@ test('OwnerReject_YCuadroCerrado (T14) — @story-8.153 @ac-14', (t) => {
   assert.deepStrictEqual(crudas(toy2).map((f) => f.id).sort(), [dado.id, siguiente.id].sort());
   assert.strictEqual(sl.siguiente({ ...sinValidar, after: siguiente.id }).tipo, 'nada', 'después del último no queda nada');
 
-  // `cuadroPara` con error (un runtime-waiver sin historia): el renglón queda, y --after da el siguiente
+  // `cuadroPara` con error (un runtime-waiver sin historia): el renglón queda y la pasada da el siguiente (8.272)
   const toy3 = casaNueva(t);
   sesion(toy3.casa, 'ses-a');
   fs.mkdirSync(path.join(estado(toy3.casa), 'active'), { recursive: true });
   const sinHistoria = `node ${MARKER} runtime-waiver /no/existe.md --acs 1`;
-  firma(toy3, { firmaId: 'runtime-waiver', comando: sinHistoria, titulo: 'aceptar un criterio' });
+  const sinCuadro = firma(toy3, { firmaId: 'runtime-waiver', comando: sinHistoria, titulo: 'aceptar un criterio' });
   firma(toy3, { comando: OTRA, ahora: antes(5) });
-  const a = sl.siguiente(opts(toy3, { sesion: 'ses-a', validar: () => ({ ok: false }) }));
-  assert.strictEqual(a.tipo, 'sin-cuadro');
-  assert.match(a.sigue, new RegExp(`--after ${a.id}`));
-  assert.strictEqual(crudas(toy3).length, 2);
-  const b = sl.siguiente(opts(toy3, { sesion: 'ses-a', after: a.id, validar: () => ({ ok: false }) }));
+  const b = sl.siguiente(opts(toy3, { sesion: 'ses-a', validar: () => ({ ok: false }) }));
   assert.strictEqual(b.tipo, 'firma');
-  assert.notStrictEqual(b.id, a.id);
-  assert.strictEqual(crudas(toy3).length, 2, 'la negada queda');
+  assert.notStrictEqual(b.id, sinCuadro.id);
+  assert.deepStrictEqual(b.saltados.map((s) => s.id), [sinCuadro.id]);
+  assert.strictEqual(crudas(toy3).length, 2, 'la que no se arma queda');
+});
+
+// owner-next no se traba en un renglón que no se arma desde aquí: da el siguiente, de cualquier sesión que pasa, y
+// cuando no queda otro dice cuántos quedan y desde qué carpeta se pidió cada uno (8.272)
+const SIN_HISTORIA = `node ${MARKER} runtime-waiver /no/existe.md --acs 1`;
+
+test('T20 OwnerNext_UnbuildableRow_SkipsToNext @story-8.272 @ac-23', (t) => {
+  const toy = casaNueva(t);
+  sesion(toy.casa, 'ses-a');
+  sesion(toy.casa, 'ses-b');
+  sesion(toy.casa, 'ses-coord');
+  designar(toy.casa);
+  // el más viejo es de otra carpeta y no se arma; el siguiente, de otra sesión, sí
+  const ajeno = firma(toy, { firmaId: 'runtime-waiver', comando: SIN_HISTORIA, titulo: 'aceptar un criterio', cwd: '/otro/proyecto', ahora: antes(20) });
+  const bueno = firma(toy, { ses: 'ses-b', comando: OTRA, ahora: antes(10) });
+  const r = sl.siguiente(opts(toy, { sesion: 'ses-coord', validar: () => ({ ok: false }) }));
+  assert.strictEqual(r.tipo, 'firma', r.texto);
+  assert.strictEqual(r.id, bueno.id);
+  assert.strictEqual(r.destino, 'ses-b');
+  assert.deepStrictEqual(r.saltados.map((s) => [s.id, s.cwd]), [[ajeno.id, '/otro/proyecto']]);
+  // owner-next lo dice debajo del cuadro, sin cambiar el cuadro
+  const out = C.ownerNextText(r, 'ses-coord');
+  assert.match(out, new RegExp(`Renglón ${r.id}`));
+  assert.match(out, new RegExp(`${ajeno.id}.*/otro/proyecto`));
+  assert.ok(out.indexOf(ajeno.id) > out.indexOf(r.pregunta), 'el aviso va debajo del cuadro');
+});
+
+test('T21 OwnerNext_OnlyUnbuildableLeft_SaysWhere @story-8.272 @ac-24', (t) => {
+  const toy = casaNueva(t);
+  sesion(toy.casa, 'ses-a');
+  const uno = firma(toy, { firmaId: 'runtime-waiver', comando: SIN_HISTORIA, titulo: 'aceptar un criterio', cwd: '/otro/proyecto', ahora: antes(20) });
+  fs.writeFileSync(sl.archivo(toy.casa), JSON.stringify([...crudas(toy), { tipo: 'firma', id: 'rota', key: 'k', firma: 'manual-test', sesion: 'ses-a', destino: 'ses-a', comando: 'rm -rf /', title: 'marcar', at: antes(5) }]));
+  const r = sl.siguiente(opts(toy, { sesion: 'ses-a', validar: () => ({ ok: false }) }));
+  assert.strictEqual(r.tipo, 'nada');
+  assert.deepStrictEqual(r.saltados.map((s) => s.id), [uno.id, 'rota']);
+  const out = C.ownerNextText(r, 'ses-a');
+  assert.doesNotMatch(out, /No queda nada|No hay nada/);
+  assert.match(out, /Quedan 2 renglón\(es\)/);
+  assert.match(out, new RegExp(`${uno.id}.*/otro/proyecto`));
+  assert.match(out, /rota.*sin carpeta anotada/);
 });
 
 test('OwnerNext_PermisoPrimeroYAparte (T15) — @story-8.153 @ac-15', (t) => {

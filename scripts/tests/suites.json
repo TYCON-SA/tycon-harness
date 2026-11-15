@@ -2590,6 +2590,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.274: el aviso y el freno de choque entre sesiones cuentan una transcripción por el cwd de su arranque (la raíz o debajo), no por el prefijo de su carpeta: un puesto `…--wt-X` no frena al checkout; sin cwd legible cuenta por la carpeta; Codex, por el cwd de su payload.",
+      "raiz": "arnes",
+      "ruta": "tests/session-collision-guard.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.195: el aviso de arranque de lo terminado sin cerrar lista lo de toda la máquina con el comando de cada sesión, y calla sin nada.",
       "raiz": "arnes",
       "ruta": "tests/finished-open-notice.test.js",
@@ -4330,6 +4336,18 @@
       "__nota": "el reloj propio del freno de seguridad: con un jq que se queda esperando (y un nieto que deja la salida abierta), el freno frena a su tope en vez de dejar que venza el de la herramienta, que correría el comando sin mirar; un comando común no espera y un tope fuera de rango usa el de fábrica. Salteada en Windows: el jq de mentira no se lanza sin .exe.",
       "raiz": "arnes",
       "ruta": "tests/safety-guard-clock.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la trampa de errores del freno de comandos deja su línea en hook-errors.log (renglón y texto del guion, con sello y renglón en blanco; nunca el comando) cuando lo hace dejar pasar; la salida normal no escribe. Corre una copia del freno con un renglón que falla.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-guard-err-trap.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el aviso de arranque de las fallas de los controles: cuenta por control las de las últimas 24 horas de hook-errors.log (todas las formas de línea), deja afuera lo viejo, lo del freno de producción y lo que no es una falla, calla sin fallas y dice cuando no puede leer el registro.",
+      "raiz": "arnes",
+      "ruta": "tests/hook-failures-notice.test.js",
       "requiere": []
     },
     {

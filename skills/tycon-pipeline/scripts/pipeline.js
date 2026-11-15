@@ -6064,7 +6064,9 @@ function paraOtraSesion(cmd, args, argv) {
   if (!/^[\w-]+$/.test(pedida)) return '🛑 La sesión de --for-session no se puede leer. No escribí nada.\n';
   if (pedida === '_nosession') return '🛑 «_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id. No escribí nada.\n';
   let abierta;
-  try { abierta = ownerWindow().marcadorEn(path.join(stateDirOf(os.homedir()), 'active', `${pedida}.json`)); } catch (e) { return `🛑 ${e.message}. No escribí nada.\n`; }
+  const noEncontre = (motivo) => `🛑 No encontré la corrida de la sesión ${pedida}: ${motivo}. No escribí nada.\n`;
+  try { abierta = ownerWindow().marcadorEn(path.join(stateDirOf(os.homedir()), 'active', `${pedida}.json`)); } catch (e) { return noEncontre(e.message); }
+  if (!abierta && !contar) return noEncontre('no está su marcador');
   if (!abierta || !abierta.storyId) {
     return `🛑 La sesión ${pedida} no tiene una ejecución abierta: no hay corrida ${contar ? 'que contar' : 'para la vuelta extra'}. No escribí nada.\n`;
   }
@@ -6082,6 +6084,33 @@ function paraOtraSesion(cmd, args, argv) {
       return `🛑 ${path.basename(storyAbs)} no es el archivo de la historia de la corrida de la sesión ${pedida} (${abierta.storyPath || 'sin ruta en su marcador'}). No escribí nada.\n`;
     }
     return null;
+  }
+  // la vuelta es de la corrida de <D>, no de la carpeta desde donde se pide: sin --repo, el de su marcador; lo relativo,
+  // contra ese repo; sin --files, lo que su corrida tocó en ese repo
+  const repoDeLaCorrida = typeof abierta.repoPath === 'string' && abierta.repoPath ? abierta.repoPath : null;
+  if (!argv.includes('--repo') || !path.isAbsolute(String(args.repo))) {
+    if (!repoDeLaCorrida) return `🛑 La corrida de la sesión ${pedida} no dice su repo: pasá --repo con la ruta completa. No escribí nada.\n`;
+    args.repo = argv.includes('--repo') ? path.resolve(repoDeLaCorrida, String(args.repo)) : repoDeLaCorrida;
+  }
+  if (!args.story && typeof abierta.storyPath === 'string' && abierta.storyPath) args.story = abierta.storyPath;
+  else if (args.story && !path.isAbsolute(String(args.story))) args.story = path.resolve(args.repo, String(args.story));
+  if (!args.files.length) {
+    // lo que la corrida tocó en su repo y en sus repos hermanos (el código de una historia del privado vive en el
+    // público), sin los probes del pase, sin lo de la carpeta de la corrida y sin lo que ya no está
+    const raiz = path.resolve(args.repo);
+    const lh = require('./lib/ledger-honesty.js');
+    let hermanos = [];
+    try { hermanos = require('./lib/companion-repos.js').companionRoots(raiz, args.story || null); } catch (e) {
+      process.stderr.write(`⚠️  No pude leer los repos hermanos de ${raiz} (${e.message}): la vuelta va sólo con los archivos de ese repo.\n`);
+      hermanos = [];
+    }
+    const dentro = (f, r) => { const rel = path.relative(r, f); return rel && !rel.startsWith('..') && !path.isAbsolute(rel); };
+    const suyos = lh.sinRuido((Array.isArray(abierta.filesTouched) ? abierta.filesTouched : []).map((f) => path.resolve(raiz, String(f))))
+      .filter((f) => exists(f) && (dentro(f, raiz) || hermanos.some((h) => dentro(f, path.resolve(h)))))
+      .map((f) => (dentro(f, raiz) ? path.relative(raiz, f) : f));
+    if (!suyos.length) return `🛑 La corrida de la sesión ${pedida} no tocó archivos en ${raiz} ni en sus repos hermanos: pasá --files con los de la vuelta. No escribí nada.\n`;
+    args.files = [...new Set(suyos)];
+    args.filesDeclarado = true;
   }
   // hasta la firma, sólo para leer su corrida: nada se escribe antes (topeDeVueltas)
   for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) if (k === 'CLAUDE_CODE_SESSION_ID' || process.env[k]) process.env[k] = pedida;

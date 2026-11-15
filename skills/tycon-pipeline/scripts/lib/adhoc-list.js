@@ -267,6 +267,55 @@ function textoDelRiesgo(riesgo, { cwd = process.cwd() } = {}) {
 /** ¿`rel` (relativa a su repo) es evidencia del pipeline o un trozo de memoria? Pasan sin nombrarlos. */
 function esPapeleo(rel) { return EVIDENCIA.test(rel) || MEMORIA.test(rel); }
 
+// el papeleo de lo que está en la lista: la constancia del cambio de un control (la escribe sólo el guion firmado; el
+// portón niega editarla a mano) y el renglón de suites.json de una prueba nueva
+const CONSTANCIA = /^\.github\/control-changes\/[^/]+\.json$/;
+const SUITES = 'scripts/tests/suites.json';
+// dónde vive cada raíz de suites.json dentro del repo del arnés (su `__raices`)
+const CARPETA_DE_LA_RAIZ = { arnes: 'scripts', 'agent-skills': 'skills' };
+const esObjeto = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+const relSegura = (r) => typeof r === 'string' && r !== '' && !path.isAbsolute(r) && !norm(r).split('/').includes('..');
+
+/**
+ * ¿`abs` (relativa `rel` a su repo `raiz`) es papeleo de lo que nombra la lista? La constancia pasa si se lee y cada ruta
+ * de sus `rules` está en la lista; suites.json, si contra su versión del último commit sólo suma renglones de pruebas de
+ * la lista. Lo que no se puede leer, o sin git, no pasa.
+ */
+function esPapeleoDeLaLista(lista, abs, raiz, rel) {
+  const set = new Set(lista.map(sinEnlaces));
+  const esta = (r) => set.has(sinEnlaces(path.join(raiz, r)));
+  if (CONSTANCIA.test(rel)) {
+    let c;
+    try { c = JSON.parse(fs.readFileSync(abs, 'utf8')); } catch (_) { return false; }
+    const reglas = esObjeto(c) && Array.isArray(c.rules) ? c.rules : [];
+    return reglas.length > 0 && reglas.every((x) => esObjeto(x) && relSegura(x.path) && esta(norm(x.path)));
+  }
+  if (rel !== SUITES) return false;
+  let ahora;
+  try { ahora = JSON.parse(fs.readFileSync(abs, 'utf8')); } catch (_) { return false; }
+  const r = require('child_process').spawnSync('git', ['-C', raiz, 'show', `HEAD:${SUITES}`], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+  if (r.error || r.status !== 0) return false;
+  let antes;
+  try { antes = JSON.parse(r.stdout); } catch (_) { return false; }
+  if (!esObjeto(ahora) || !esObjeto(antes)) return false;
+  const deLaLista = (x) => esObjeto(x) && Object.prototype.hasOwnProperty.call(CARPETA_DE_LA_RAIZ, x.raiz) && relSegura(x.ruta) && esta(`${CARPETA_DE_LA_RAIZ[x.raiz]}/${norm(x.ruta)}`);
+  for (const k of new Set([...Object.keys(antes), ...Object.keys(ahora)])) {
+    if ((k === 'diarias' || k === 'semanales') && Array.isArray(antes[k]) && Array.isArray(ahora[k])) {
+      // los renglones de antes siguen todos, tal cual; lo que sobra son renglones de pruebas de la lista
+      const quedan = new Map();
+      for (const x of ahora[k]) { const t = JSON.stringify(x); quedan.set(t, [...(quedan.get(t) || []), x]); }
+      for (const x of antes[k]) {
+        const t = JSON.stringify(x);
+        const iguales = quedan.get(t);
+        if (!iguales || !iguales.length) return false;
+        iguales.pop();
+      }
+      if (![...quedan.values()].flat().every(deLaLista)) return false;
+    } else if (JSON.stringify(antes[k]) !== JSON.stringify(ahora[k])) return false;
+  }
+  return true;
+}
+
 /**
  * ¿`abs` es la prueba de un archivo de la lista? En el mismo repo, en una carpeta de pruebas (o con nombre de prueba) y
  * con el nombre del archivo: `x.test.js`, `x.spec.ts`, `test_x.py` o `x_test.go` de un `x.<ext>` de la lista.
@@ -322,10 +371,11 @@ function fueraDeLaLista({ lista, filePath, real, repoRoot, home = os.homedir(), 
   const rel = norm(path.relative(raiz, abs));
   if (esPapeleo(rel)) return null;
   if (esPruebaDe(lista, abs, raiz)) return null;
+  if (esPapeleoDeLaLista(lista, abs, raiz, rel)) return null;
   return { archivo: abs, motivo: 'no está en la lista' };
 }
 
 module.exports = {
   sinEnlaces, unidadEnMayuscula, faltanEnLaNueva, normalizar, carpetaDeLaSesion, raizDe, esCodigo, esCodigoRel, contar, problemaDeTopes, problemaDelMotivo, variosTemas, vago, sinUnaPersona,
-  esPapeleo, esPruebaDe, esTemporal, fueraDeLaLista, rechazoDeLaLista, textoDeAmpliar, textoOtroCarril, riesgoDeLaLista, textoDelRiesgo,
+  esPapeleo, esPapeleoDeLaLista, esPruebaDe, esTemporal, fueraDeLaLista, rechazoDeLaLista, textoDeAmpliar, textoOtroCarril, riesgoDeLaLista, textoDelRiesgo,
 };

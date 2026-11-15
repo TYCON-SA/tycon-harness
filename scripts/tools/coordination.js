@@ -212,6 +212,24 @@ function suiteWaitSince(home, sid) {
   return Number.isFinite(since) ? since : null;
 }
 
+// ¿La sesión trabajó después de anotar que espera turno? La misma regla que la oficina (`workedAfterWait`): tocó archivos,
+// su ejecución se movió, o está ocupada desde después. Se carga sólo con una espera anotada: el aviso de cada turno tiene tope.
+// Lo que no se pudo leer de la actividad se dice: sin eso, una sesión que trabajó saldría esperando turno.
+function waitWorked(home, sid, s, m, since, now, problems, name) {
+  const { workedAfterWait } = require('./office.js');
+  const { touchedField } = require('./work-in-progress.js');
+  const activityAt = m ? Date.parse(m.lastTouch) : NaN;
+  const unreadable = [];
+  const x = { waitingFor: 'turno', waitingSince: since, activityAt, ...touchedField(stateDir(home), sid, home, now, unreadable) };
+  if (unreadable.length) problems.push(`la actividad de ${name} (${oneLine(unreadable.join(' · ')).slice(0, 160)}): no sé si sigue esperando`);
+  return workedAfterWait(x, s && s.busy ? s.statusAt : undefined, s && s.status);
+}
+
+// Los portones sin turno que corren (heavy-turn.js los anota): la fila no da el «arrancá» encima de uno.
+function gatesOf(home, now, problems) {
+  try { return require('./heavy-turn.js').gatesRunning({ home, now, problems }); } catch (e) { problems.push(`los portones en curso (${e.message})`); return []; }
+}
+
 // Quién tiene el turno de la suite completa: el renglón de heavy-turn.js, o null. No poder leerlo no frena el estado.
 function suiteHolder(home, now, problems) {
   try { return require('./heavy-turn.js').holder({ home, now, problems }); } catch (e) { problems.push(`el turno de la suite completa (${e.message})`); return null; }
@@ -317,6 +335,7 @@ function retiredOf(home, now, sessions) {
 }
 
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
+const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
 const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}. Para entrar: claude attach ${x.session}`;
 const retiredLine = (x) => `${x.session}: la cerró Claude Code a las ${hhmm(x.at)} por ${x.reason}, quieta ${x.idleMin} min. Para levantarla: claude respawn ${x.short}`;
@@ -353,7 +372,7 @@ function status(opts = {}) {
     if (s.nameSource === 'derived' && s.name) unnamed.push(label(s.name));
     try {
       const since = suiteWaitSince(home, sid);
-      if (since != null) suiteWaiting.push({ session: nameOf(sid), sid, since });
+      if (since != null) suiteWaiting.push({ session: nameOf(sid), sid, since, worked: waitWorked(home, sid, s, m, since, now, problems, nameOf(sid)) });
     } catch (e) { problems.push(`la nota de ${nameOf(sid)} (${e.message})`); }
     const st = stalledOf(s, files.get(String(sid)), now);
     if (st) {
@@ -400,13 +419,14 @@ function status(opts = {}) {
   } catch (e) { problems.push(e.message); }
   const gone = retiredOf(home, now, sessions);
   const suiteRow = suite ? { session: suite.session ? label(suite.session) : null, what: label(suite.what), since: suite.at } : null;
+  const gates = gatesOf(home, now, problems).map((g) => ({ session: g.session ? label(g.session) : null, sid: g.sid || null, what: label(g.what), since: g.at }));
   // un solo turno de tarea pesada por máquina: lo tiene la ejecución grande o el pase más viejo en vuelo
   const firstPass = [...adversarial].sort((a, b) => Date.parse(a.since) - Date.parse(b.since))[0];
   const heavyTurn = suiteRow ? { kind: 'suite', ...suiteRow } : firstPass ? { kind: 'pass', ...firstPass } : null;
   return {
     now, working, waiting, quiet, passWaiting, suiteWaiting, cap: r.max_working, adversarial, stalled, asking,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
-    suite: suiteRow, heavyTurn,
+    suite: suiteRow, heavyTurn, gates,
     signatures,
     unnamed, problems,
   };
@@ -429,7 +449,8 @@ function statusText(s) {
   // los demás pases anotados en vuelo, si los hay, a continuación: dos a la vez no deberían pasar, y si pasan se ven
   const others = s.adversarial.filter((a) => !(h && h.kind === 'pass' && a.session === h.session && a.since === h.since));
   lines.push(`Turno de tarea pesada: ${holderText}${others.length ? `; además en vuelo: ${others.map(passText).join(' · ')}` : ''}`);
-  if (s.suiteWaiting && s.suiteWaiting.length) lines.push(`Esperando turno de suite o portón: ${[...s.suiteWaiting].sort((a, b) => a.since - b.since).map((w) => `${w.session} desde las ${hhmm(w.since)}`).join(' · ')}`);
+  if (s.gates && s.gates.length) lines.push(`Portón acotado en curso: ${s.gates.map((g) => `${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`).join(' · ')}`);
+  if (s.suiteWaiting && s.suiteWaiting.length) lines.push(`Esperando turno de suite o portón: ${[...s.suiteWaiting].sort((a, b) => a.since - b.since).map((w) => `${w.session} desde las ${hhmm(w.since)}${w.worked ? ' (trabajó después: ¿sigue esperando?)' : ''}`).join(' · ')}`);
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
   lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`].join(' · ')}`);
   lines.push(`Sin nombre puesto por una persona: ${s.unnamed.length ? s.unnamed.join(', ') : 'ninguna'}`);
@@ -1253,9 +1274,18 @@ function capNotice(opts = {}) {
       ? `Coordinación: ${w.session} espera su turno de pase adversarial (lo tiene ${t.heavy_run ? `${t.heavy_run.session || 'una sesión sin nombre'}, con una ejecución grande de pruebas` : (t.other_in_flight.find((a) => !passIsStale(a.since, opts.now == null ? Date.now() : Number(opts.now))) || t.other_in_flight[0]).session}): avisale cuando termine.`
       : `Coordinación: ${w.session} puede lanzar su pase adversarial, no hay otro en vuelo: avisale.`);
   }
-  // la máquina parada con gente en la fila: nadie arranca sola, el «arrancá» lo da la coordinadora
-  const queue = s.suiteWaiting.filter((x) => x.sid !== sid).sort((a, b) => a.since - b.since);
-  if (!s.suite && queue.length) lines.push(`Coordinación: no corre ninguna suite completa y hay ${queue.length} esperando turno: dale el «arrancá» a ${queue[0].session}.`);
+  // la máquina parada con gente en la fila: nadie arranca sola, el «arrancá» lo da la coordinadora. Con un portón acotado
+  // corriendo no está parada: se dice cuál y quién sigue. Quien trabajó después de anotar la espera no está en la fila
+  // hasta que confirme que sigue esperando.
+  const queue = s.suiteWaiting.filter((x) => x.sid !== sid && !x.worked).sort((a, b) => a.since - b.since);
+  if (!s.suite && queue.length) {
+    lines.push(s.gates.length
+      ? `Coordinación: corre ${s.gates.map(gateText).join(' y ')} y hay ${queue.length} esperando turno: cuando termine, sigue ${queue[0].session}.`
+      : `Coordinación: no corre ninguna suite completa y hay ${queue.length} esperando turno: dale el «arrancá» a ${queue[0].session}.`);
+  }
+  for (const w of s.suiteWaiting.filter((x) => x.sid !== sid && x.worked).sort((a, b) => a.since - b.since)) {
+    lines.push(`Coordinación: ${w.session} anotó a las ${hhmm(w.since)} que espera turno y trabajó después: preguntale si sigue esperando.`);
+  }
   lines.push(...greenPrLines(opts, problems));
   const signatures = oldSignatures(opts, opts.now == null ? Date.now() : Number(opts.now), problems);
   if (signatures) lines.push(signatures);
@@ -1315,6 +1345,8 @@ function ownerNextText(r, sesion, nota = null) {
   const lines = [];
   for (const p of r.problemas) lines.push(`Aviso: ${p}.`);
   for (const f of r.faltaRepetir) lines.push(f.destino === sesion ? `${f.id} ya está aprobado y es de esta sesión: repetí el comando, si todavía no lo hiciste.` : `${f.id} ya está aprobado y falta que su sesión repita el comando. Si todavía no se lo mandaste, mandale este mensaje a ${f.nombre}; si ya se lo mandaste, no se lo repitas:`, f.aviso, '');
+  // con un renglón para dar, los que no se arman desde aquí van debajo, como aviso; sin él, ya los dice el texto de la pasada
+  const saltados = r.tipo !== 'nada' && Array.isArray(r.saltados) && r.saltados.length ? ['', `Aviso: ${signatureList.textoDeSaltados(r.saltados)}`] : [];
   if (r.tipo === 'firma' || r.tipo === 'permiso') {
     lines.push(`Renglón ${r.id}. Mostrá AskUserQuestion con una sola pregunta, sin cambiarle una letra, con «${r.rotulo}» como rótulo y las opciones «${r.opciones[0]}» y «${r.opciones[1]}».`);
     if (r.nota) lines.push(`Decile también: ${r.nota}`);
@@ -1323,13 +1355,13 @@ function ownerNextText(r, sesion, nota = null) {
     lines.push('Si el cuadro se cierra o se resuelve solo: no corras nada; la pasada se corta y el renglón queda.');
     if (r.tipo === 'firma') lines.push(`Con «${r.opciones[0]}», esto no se corre acá: lo repite su sesión. ${r.destino === sesion ? 'Es ésta: repetilo.' : `Mandale este mensaje a ${r.nombre}:`}`, r.aviso);
     if (r.tipo === 'firma') lines.push(`Si la repetición se niega: owner-next --after ${r.id} da el siguiente, y el renglón queda.`);
-    return lines.join('\n');
+    return [...lines, ...saltados].join('\n');
   }
   if (r.tipo === 'plan') lines.push(r.texto, 'El plan:', r.plan);
   else if (r.sigue) lines.push(r.texto, `Sigue con: ${r.sigue}`);
   else if (!(nota && nota.reemplaza)) lines.push(r.texto);
   if (nota) lines.push(...nota.lineas);
-  return lines.join('\n');
+  return [...lines, ...saltados].join('\n');
 }
 
 /**

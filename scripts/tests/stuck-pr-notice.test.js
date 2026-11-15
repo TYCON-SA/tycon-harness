@@ -539,6 +539,64 @@ test('GreenIdle_CoordinatorReadsThePhoto — la coordinadora lo ve de la foto, s
   assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora }).problem, /la última lectura no pudo leer harness/);
 });
 
+// una foto de la coordinadora de `minutos` atrás, con una lectura en curso (el candado): no se lanza otra
+function fotoDeLaCoordinadora(w, lecturas, minutos, ahora) {
+  const dir = stateDir(w.home);
+  fs.mkdirSync(dir, { recursive: true });
+  const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - minutos * 60000).toISOString(), repos, lecturas }));
+  fs.writeFileSync(path.join(dir, 'stuck-prs-refresh.lock'), JSON.stringify({ at: new Date().toISOString() }));
+  return dir;
+}
+
+test('T1 Coordinadora_FotoDeMasDeDiezMinutos_NoDiceFueraDeLaCola @story-8.274 @ac-1: con la foto de 15 min dice de cuándo es la lectura; con la de 1 min, como siempre', () => {
+  // 🔴 mutación: no pasar la edad de la foto a verdesSinEntrar (vuelve «fuera de la cola: nadie lo va a mergear»)
+  const w = mundo([]);
+  const ahora = Date.now();
+  const dir = fotoDeLaCoordinadora(w, { 'acme/harness': { ok: true, value: [verde(882)] } }, 15, ahora);
+  fs.writeFileSync(path.join(dir, 'green-prs.json'), JSON.stringify({ 'acme/harness#882': { estado: 'verde-sin-auto', punta: 'c882', vistoDesde: new Date(ahora - 20 * 60000).toISOString() } }));
+  const r = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
+  assert.strictEqual(r.lines.length, 1, r.lines.join('\n'));
+  assert.match(r.lines[0], /pedido 882 \(harness\) .*según la lectura de hace 15 min/);
+  assert.match(r.lines[0], /la lectura nueva corre de fondo/);
+  assert.doesNotMatch(r.lines[0], /fuera de la cola|nadie lo va a mergear|sin auto-merge/);
+  // con la foto vigente, la línea de siempre
+  fotoDeLaCoordinadora(w, { 'acme/harness': { ok: true, value: [verde(882)] } }, 1, ahora);
+  const fresca = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
+  assert.match(fresca.lines[0], /listo y sin auto-merge hace 20 min, fuera de la cola: nadie lo va a mergear/);
+});
+
+test('T1b Arranque_LecturaCortadaConFotoVieja_NoDiceFueraDeLaCola @story-8.274 @ac-1: la lectura en vivo llega a su tope y vale la foto de hace 30 min', () => {
+  // 🔴 mutación: en el arranque, no pasar la edad de la foto vieja (vuelve «fuera de la cola»)
+  const w = mundo([]);
+  // un gh que siempre dice que hay otra página: la lista de GitHub llega a su tope de páginas, como una lectura cortada
+  const sinFin = path.join(tmp('spn-sinfin-'), 'gh');
+  fs.writeFileSync(sinFin, `#!/bin/sh\necho '${JSON.stringify({ data: { repository: { pullRequests: { nodes: [], pageInfo: { hasNextPage: true, endCursor: 'x' } } } } })}'\n`);
+  fs.chmodSync(sinFin, 0o755);
+  const ahora = Date.now();
+  const vacio = { ok: true, value: [] };
+  const dir = fotoDeLaCoordinadora(w, { 'acme/harness': { ok: true, value: [verde(882)] }, 'acme/Harness/harness-team-profile': vacio,
+    'acme/Harness/harness-team-operations': vacio, 'acme/Harness/harness-maintainers': vacio }, 30, ahora);
+  fs.writeFileSync(path.join(dir, 'stuck-prs.json'), JSON.stringify({ 'acme/harness#882': { estado: 'verde-sin-auto', punta: 'c882', vistoDesde: new Date(ahora - 40 * 60000).toISOString() } }));
+  const r = correr(w, { TYCON_GH_CMD: sinFin });
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /pedido 882 \(harness\) .*según la lectura de hace 30 min/, r.out);
+  assert.doesNotMatch(r.out, /fuera de la cola: nadie lo va a mergear/, r.out);
+});
+
+test('T2 Coordinadora_PedidoEnLaCola_NoAvisaNiDiceSinAutoMerge @story-8.274 @ac-2 @ac-3: con la lectura nueva y el pedido en la cola, ningún aviso de ese pedido', () => {
+  // 🔴 mutación: sacar `p.inQueue === true` del filtro de verdesSinEntrar (sale «sin auto-merge … fuera de la cola»)
+  const w = mundo([]);
+  const ahora = Date.now();
+  const dir = fotoDeLaCoordinadora(w, { 'acme/harness': { ok: true, value: [verde(1133, { inQueue: true, autoComplete: false })] } }, 1, ahora);
+  fs.writeFileSync(path.join(dir, 'green-prs.json'), JSON.stringify({ 'acme/harness#1133': { estado: 'verde-sin-auto', punta: 'c1133', vistoDesde: new Date(ahora - 30 * 60000).toISOString() } }));
+  const r = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
+  assert.deepStrictEqual(r.lines, [], r.lines.join('\n'));
+  assert.strictEqual(r.problem, null);
+  // y sale del reloj: si vuelve a salir de la cola, cuenta de cero
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'green-prs.json'), 'utf8')), {});
+});
+
 // un correo de juguete, armado por partes: entero en el archivo lo frena el control de publicación
 const mail = (who) => [who, 'acme.com'].join('@');
 

@@ -589,3 +589,68 @@ test('T57 AdhocSet_TraeLaBaseAlAbrir — @story-8.174 @ac-54', () => {
   assert.equal(leerCarril(h2, 's57b').bases[sinRed].traida, false);
   assert.match(r3.stderr, /sin traer/);
 });
+
+// ── el papeleo del camino corto (8.272) ─────────────────────────────────────────────────────────────────────────────
+//
+// La constancia del cambio de un control de la lista y el renglón de suites.json de una prueba nueva de la lista no piden
+// ampliarla. Todo lo demás, sí: la constancia que nombra otra ruta, el renglón de otra prueba, un renglón viejo tocado.
+
+const SUITES = 'scripts/tests/suites.json';
+const SUITES_BASE = { __doc: 'la lista', diarias: [{ raiz: 'arnes', ruta: 'tests/viejo.test.js', requiere: [] }], semanales: [], __raices: { arnes: 'scripts' } };
+/** Un repo con suites.json commiteado y la lista de un carril: un control, su prueba nueva y una prueba de las skills. */
+function conPapeleo(nombre) {
+  const raiz = tmp(`${nombre}-`);
+  const dir = repo(raiz, 'arnes');
+  escribir(dir, SUITES, `${JSON.stringify(SUITES_BASE, null, 2)}\n`);
+  git(dir, 'add', '.');
+  commitear(dir, 'suites');
+  const listaDelCarril = ['scripts/ci/control.js', 'scripts/tests/nuevo.test.js', 'skills/tycon-pipeline/scripts/tests/otro.test.js'].map((r) => path.join(dir, r));
+  const fuera = (rel) => lista().fueraDeLaLista({ lista: listaDelCarril, filePath: path.join(dir, rel), real: path.join(dir, rel), repoRoot: dir });
+  const suites = (cambiar) => { const s = JSON.parse(JSON.stringify(SUITES_BASE)); cambiar(s); escribir(dir, SUITES, `${JSON.stringify(s, null, 2)}\n`); };
+  return { dir, listaDelCarril, fuera, suites };
+}
+
+test('T18 AdhocList_ControlChangeAndSuiteLine_NoWiden @story-8.272 @ac-21', () => {
+  const p = conPapeleo('t18');
+  // sin cambios todavía (antes de la edición): no pide ampliar
+  assert.strictEqual(p.fuera(SUITES), null);
+  // el renglón de las pruebas nuevas de la lista, de las dos raíces
+  p.suites((s) => { s.diarias.push({ raiz: 'arnes', ruta: 'tests/nuevo.test.js', requiere: [] }); s.semanales.push({ raiz: 'agent-skills', ruta: 'tycon-pipeline/scripts/tests/otro.test.js', requiere: [] }); });
+  assert.strictEqual(p.fuera(SUITES), null);
+  // la constancia del cambio del control de la lista
+  const constancia = '.github/control-changes/abc123.json';
+  escribir(p.dir, constancia, JSON.stringify({ hash: 'abc123', rules: [{ path: 'scripts/ci/control.js', blob: 'f00' }], at: '2026-11-14', by: 'dueño' }));
+  assert.strictEqual(p.fuera(constancia), null);
+  // también por el portón de carril, como una edición de la herramienta
+  const h = tmp('home-');
+  const state = conCarril(h, 's18', { allowedFiles: p.listaDelCarril });
+  assert.notEqual(ev(state, 's18', path.join(p.dir, SUITES), p.dir).verdict.kind, 'adhoc-out-of-list');
+});
+
+test('T19 AdhocList_OtherFile_StillWidens @story-8.272 @ac-22', () => {
+  const p = conPapeleo('t19');
+  // el renglón de una prueba que no está en la lista
+  p.suites((s) => s.diarias.push({ raiz: 'arnes', ruta: 'tests/ajena.test.js', requiere: [] }));
+  assert.notStrictEqual(p.fuera(SUITES), null);
+  // un renglón viejo tocado o sacado, aunque sume uno de la lista
+  p.suites((s) => { s.diarias = [{ raiz: 'arnes', ruta: 'tests/nuevo.test.js', requiere: [] }]; });
+  assert.notStrictEqual(p.fuera(SUITES), null);
+  p.suites((s) => { s.__doc = 'otra cosa'; s.diarias.push({ raiz: 'arnes', ruta: 'tests/nuevo.test.js', requiere: [] }); });
+  assert.notStrictEqual(p.fuera(SUITES), null);
+  // ilegible
+  escribir(p.dir, SUITES, '{ no es json');
+  assert.notStrictEqual(p.fuera(SUITES), null);
+  // sin versión en el último commit
+  const nuevo = repo(tmp('t19b-'), 'arnes');
+  escribir(nuevo, SUITES, `${JSON.stringify(SUITES_BASE)}\n`);
+  assert.notStrictEqual(lista().fueraDeLaLista({ lista: [path.join(nuevo, 'scripts/tests/viejo.test.js')], filePath: path.join(nuevo, SUITES), repoRoot: nuevo }), null);
+  // la constancia que nombra una ruta fuera de la lista, una vacía o una ilegible
+  const constancia = '.github/control-changes/def456.json';
+  for (const txt of [JSON.stringify({ rules: [{ path: 'scripts/ci/control.js' }, { path: 'scripts/ci/otro.js' }] }), JSON.stringify({ rules: [] }), '{ roto']) {
+    escribir(p.dir, constancia, txt);
+    assert.notStrictEqual(p.fuera(constancia), null, txt);
+  }
+  // cualquier otro archivo fuera de la lista, como hoy
+  assert.notStrictEqual(p.fuera('README.md'), null);
+  assert.notStrictEqual(p.fuera('.github/workflows/ci.yml'), null);
+});
