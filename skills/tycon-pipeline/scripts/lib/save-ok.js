@@ -285,8 +285,7 @@ function arbolDelCommit(repo, ref) {
  */
 function publicoDeLaHistoria(repo, story) {
   try {
-    const pt = require('./private-tree.js');
-    if (!pt.isThinPrivate(repo)) return null;
+    if (!require('./thin-private.js').isThinPrivate(repo)) return null;
     const cr = require('./companion-repos.js');
     const faltan = [];
     const base = cr.companionRoots(repo, story || null, { onMissing: (nombre) => faltan.push(nombre), onWarning: () => {} })
