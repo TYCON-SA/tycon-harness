@@ -154,3 +154,53 @@ test('T46 OwnerAway_ElMensajeDeLaOficinaVerificadoLaBorra @story-8.221 @ac-36 �
   assert.strictEqual(OA.get({ estado: L.estado }).mark, null);
   assert.match(L.renglones().pop().motivo, /mensaje de la oficina verificado/);
 });
+
+test('GatesLog_Ilegible_AvisaYNoEsVacio (T8, owner-away) @story-8.281 @ac-13 @ac-15 — con la marca vigente, un registro ilegible es un problema y el dueño cuenta como presente', (t) => {
+  const L = lab(t);
+  const gates = path.join(L.estado, 'gates.log');
+  // la marca legible y vigente: sólo con ella get() mira si el dueño firmó después
+  assert.strictEqual(OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'me voy a dormir', ahora: T0 }).codigo, 0);
+  assert.ok(OA.get({ estado: L.estado, ahora: T0 + 60000 }).mark, 'legible y sin firma: la marca rige, como hoy');
+  const marca = fs.readFileSync(path.join(L.estado, OA.ARCHIVO), 'utf8');
+  const formas = process.platform === 'win32' || (typeof process.getuid === 'function' && process.getuid() === 0) ? ['carpeta'] : ['carpeta', 'permisos'];
+  for (const como of formas) {
+    const antes = fs.readFileSync(gates, 'utf8');
+    if (como === 'carpeta') { fs.rmSync(gates); fs.mkdirSync(gates); } else fs.chmodSync(gates, 0o000);
+    const g = OA.get({ estado: L.estado, ahora: T0 + 60000 });
+    assert.strictEqual(g.mark, null, `${como}: el dueño cuenta como presente`);
+    assert.match(g.problem || '', /no pude leer gates\.log: E[A-Z]+/, como);
+    // la marca no se borra: no se sabe si el dueño firmó
+    assert.strictEqual(fs.readFileSync(path.join(L.estado, OA.ARCHIVO), 'utf8'), marca, como);
+    if (como === 'carpeta') { fs.rmSync(gates, { recursive: true }); fs.writeFileSync(gates, antes); } else fs.chmodSync(gates, 0o644);
+  }
+  // con el registro ilegible, la marca que existe se informa aparte: el mensaje de la persona la sigue borrando (borrarla
+  // no depende del registro). Registro de sólo escritura (POSIX sin root) y una carpeta en su lugar (en todo sistema)
+  // (el gancho lee el reloj: la marca se pone con la hora de ahora, como en las pruebas del gancho de arriba)
+  for (const como of formas.includes('permisos') ? ['carpeta', 'solo-escritura'] : ['carpeta']) {
+    sesion(L.home, 'ses-v', 'interactive');
+    assert.strictEqual(OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'me voy', ahora: Date.now() }).codigo, 0);
+    const antes = fs.readFileSync(gates, 'utf8');
+    if (como === 'carpeta') { fs.rmSync(gates); fs.mkdirSync(gates); } else fs.chmodSync(gates, 0o200);
+    const g = OA.get({ estado: L.estado });
+    assert.strictEqual(g.mark, null, como);
+    assert.ok(g.unconfirmed && g.unconfirmed.setAt, `${como}: la marca existe y no se pudo confirmar: ${JSON.stringify(g)}`);
+    const env = { ...process.env, HOME: L.home, USERPROFILE: L.home };
+    for (const k of ['TYCON_COORDINATION_NOTICE', 'TYCON_EVAL_SANDBOX']) delete env[k];
+    const r = spawnSync(process.execPath, [HOOK], { encoding: 'utf8', env,
+      input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 'ses-v', prompt: 'ya volví', transcript_path: transcript(L.home, [{ texto: 'ya volví', humano: true }]) }) });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.ok(!fs.existsSync(path.join(L.estado, OA.ARCHIVO)), `${como}: la persona volvió y la marca se borra: ${r.stderr}`);
+    if (como === 'carpeta') { fs.rmSync(gates, { recursive: true }); fs.writeFileSync(gates, antes); } else fs.chmodSync(gates, 0o644);
+    assert.deepStrictEqual(OA.get({ estado: L.estado }), { mark: null }, `${como}: con el registro de vuelta, el dueño sigue presente`);
+  }
+  assert.strictEqual(OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'me voy a dormir', ahora: T0 }).codigo, 0);
+  // legible con una firma del dueño posterior: la borra, como hoy
+  L.firma('terminal', T0 + 120000);
+  assert.deepStrictEqual(OA.get({ estado: L.estado, ahora: T0 + 130000 }), { mark: null });
+  // sin el registro: la marca rige sin aviso, como hoy
+  assert.strictEqual(OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'otra vez', ahora: T0 + 140000 }).codigo, 0);
+  fs.rmSync(gates);
+  const sin = OA.get({ estado: L.estado, ahora: T0 + 150000 });
+  assert.ok(sin.mark);
+  assert.strictEqual(sin.problem, undefined);
+});

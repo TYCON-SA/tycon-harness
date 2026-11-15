@@ -1687,3 +1687,152 @@ test('PlanReview_PedidosViejos_FormaRara_NoPudeLeerYSigue (T6, pase adversarial 
   fs.writeFileSync(marcador, textoMarcador);
   assert.strictEqual(viejas().viejas.length, 1);
 });
+
+// ── el registro que no se puede leer no es un registro vacío ─────────────────────────────────────────────────────────
+
+const GATES_ILEGIBLE = /no pude leer gates\.log: E[A-Z]+/;
+const comoRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+/**
+ * Deja gates.log sin poder leerse y devuelve con qué. `carpeta`: una carpeta en su lugar (EISDIR, en todo sistema);
+ * `permisos`: el archivo con chmod 000 (no en Windows ni como root, que lo leen igual). Lo que tenía se conserva aparte.
+ */
+function registroIlegible(lab, como = 'carpeta') {
+  const f = path.join(lab.estado, 'gates.log');
+  const antes = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '';
+  if (como === 'carpeta') { fs.rmSync(f, { force: true }); fs.mkdirSync(f); return () => { fs.rmSync(f, { recursive: true, force: true }); fs.writeFileSync(f, antes); }; }
+  fs.writeFileSync(f, antes);
+  fs.chmodSync(f, 0o000);
+  return () => { fs.chmodSync(f, 0o644); };
+}
+const formasIlegibles = () => (process.platform === 'win32' || comoRoot ? ['carpeta'] : ['carpeta', 'permisos']);
+
+/** `revisionDeLaOrganizacion()` como la corre la línea de comandos: la HOME de juguete y la sesión de la corrida. */
+function revisionDeLaOrganizacionEn(lab, sid = DESTINO) {
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(PIPELINE)}).revisionDeLaOrganizacion()))`],
+    { cwd: lab.repo, encoding: 'utf8', env: { ...lab.env, CLAUDE_CODE_SESSION_ID: sid } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout);
+}
+
+test('GatesLog_Ilegible_AvisaYNoEsVacio (T8) @story-8.281 @ac-13 @ac-14 @ac-15 @ac-24', (t) => {
+  const lab = laboratorio(t);
+  let r = lab.marker(DESTINO, ['review-ask', '--kind', 'plan']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  r = lab.marker(DESTINO, ['review-ask', '--kind', 'code']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  r = lab.marker(DESTINO, ['review-answer', '--kind', 'code', '--choice', 'review']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const huellaPlan = sha(fs.readFileSync(lab.planFile, 'utf8'));
+  const huellaCodigo = PR().huellaDe({ estado: lab.estado, sesion: DESTINO, kind: 'code' }).huella;
+  const consultas = (problemas) => ({
+    abiertas: PR().preguntasAbiertas({ estado: lab.estado, problemas }).map((p) => [p.sesion, p.kind]),
+    respuesta: PR().respuestaDe({ estado: lab.estado, sesion: DESTINO, kind: 'code', huella: huellaCodigo, problemas }),
+    seguir: PR().eligioSeguir({ estado: lab.estado, destino: DESTINO, huellaPlan, problemas }),
+  });
+  // legible: lo mismo que hoy, con o sin pedir el problema, y sin problema
+  const legible = { abiertas: [[DESTINO, 'plan']], respuesta: 'review', seguir: false };
+  const sinPedir = consultas();
+  assert.deepStrictEqual(sinPedir, legible);
+  const ok = [];
+  assert.deepStrictEqual(consultas(ok), legible);
+  assert.deepStrictEqual(ok, [], 'legible: sin problema');
+  const legibleOrg = revisionDeLaOrganizacionEn(lab);
+  assert.strictEqual(legibleOrg.codeAnswer, 'review');
+  assert.ok(!legibleOrg.reviewConfigProblems.some((p) => /gates\.log/.test(p.message)), JSON.stringify(legibleOrg.reviewConfigProblems));
+  for (const como of formasIlegibles()) {
+    const volver = registroIlegible(lab, como);
+    // quien no pide el problema ve lo mismo que hoy (un registro vacío); quien lo pide, lo recibe
+    assert.deepStrictEqual(consultas(), { abiertas: [], respuesta: null, seguir: false }, como);
+    const problemas = [];
+    consultas(problemas);
+    assert.ok(problemas.length >= 1 && problemas.every((p) => GATES_ILEGIBLE.test(p)), `${como}: ${JSON.stringify(problemas)}`);
+    // la revisión de la organización: el dueño presente, sin respuesta, y el aviso
+    const org = revisionDeLaOrganizacionEn(lab);
+    assert.strictEqual(org.ownerAway, false, como);
+    assert.strictEqual(org.codeAnswer, null, como);
+    assert.ok(org.reviewConfigProblems.some((p) => GATES_ILEGIBLE.test(p.message)), `${como}: ${JSON.stringify(org.reviewConfigProblems)}`);
+    volver();
+  }
+  // sin el archivo: vacío y sin aviso, como hoy
+  fs.rmSync(path.join(lab.estado, 'gates.log'));
+  const vacio = [];
+  assert.deepStrictEqual(consultas(vacio), { abiertas: [], respuesta: null, seguir: false });
+  assert.deepStrictEqual(vacio, []);
+  const sinArchivo = revisionDeLaOrganizacionEn(lab);
+  assert.ok(!sinArchivo.reviewConfigProblems.some((p) => /gates\.log/.test(p.message)), JSON.stringify(sinArchivo.reviewConfigProblems));
+});
+
+test('ReviewAnswer_DesignacionConError_DiceLaCausa (T9) @story-8.281 @ac-16 @ac-17', (t) => {
+  const lab = laboratorio(t);
+  const volver = registroIlegible(lab);
+  // la coordinadora no se puede confirmar: dice por qué, en una línea, y no escribe nada
+  let r = lab.marker(COORD, ['review-answer', '--kind', 'plan', '--choice', 'skip', '--for-session', DESTINO]);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /ésta no lo es/);
+  assert.match(r.stderr, /no pude leer el registro del arnés \(EISDIR\)/);
+  assert.strictEqual(r.stderr.trim().split('\n').length, 1, r.stderr);
+  // preparar la revisión de otra sesión dice la misma causa
+  const p = PR().preparar({ lanza: COORD, destino: DESTINO, estado: lab.estado, home: lab.home });
+  assert.notStrictEqual(p.codigo, 0);
+  assert.match(p.motivo, /no pude leer la designación \(no pude leer el registro del arnés \(EISDIR\)\)/);
+  assert.throws(() => PR().designadaDeVerdad(lab.estado), /no pude leer el registro del arnés/);
+  volver();
+  assert.strictEqual(PR().designadaDeVerdad(lab.estado), COORD, 'legible: la sesión, como hoy');
+  // sin designación: lo dice
+  const sin = laboratorio(t, { designada: null });
+  assert.strictEqual(PR().designadaDeVerdad(sin.estado), null);
+  r = sin.marker(COORD, ['review-answer', '--kind', 'plan', '--choice', 'skip', '--for-session', DESTINO]);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /no hay designada/);
+});
+
+test('PlanReview_RegistroIlegible_LlegaAlDuenoSinRelanzar (T12) @story-8.281 @ac-13 @ac-15', (t) => {
+  const lab = laboratorio(t);
+  const config = cfgCon({ plan_review: { routine: 'always' } });
+  const accion = () => PR().accionDelPlan({ estado: lab.estado, sesion: DESTINO, marker: markerDe(lab), config, home: lab.home });
+  const linea = () => PR().lineaDelCuadro({ estado: lab.estado, destino: DESTINO, marker: markerDe(lab), config }).linea;
+  // rechazado una vez: con el registro legible, se corrige y se relanza
+  lab.revisar(RECHAZADO);
+  assert.ok(!accion().alDueno || accion().alDueno.llega === false, JSON.stringify(accion().alDueno));
+  assert.match(linea(), /rechazado 1 vez/);
+  for (const como of formasIlegibles()) {
+    const volver = registroIlegible(lab, como);
+    // sin el registro no se cuentan los rechazos ni los cambios: llega al dueño, sin comando para relanzar
+    const a = accion();
+    assert.strictEqual(a.alDueno && a.alDueno.llega, true, `${como}: ${JSON.stringify(a)}`);
+    assert.match(a.alDueno.motivo, GATES_ILEGIBLE);
+    assert.strictEqual(a.comando, undefined, como);
+    assert.ok((a.problems || []).some((p) => GATES_ILEGIBLE.test(p)), `${como}: ${JSON.stringify(a.problems)}`);
+    assert.match(linea(), GATES_ILEGIBLE);
+    volver();
+  }
+  // el plan cambió mientras corría la revisión y el registro se puede escribir pero no leer: no se sabe si ya se
+  // reintentó, así que no se reintenta (POSIX sin root: chmod de sólo escritura)
+  if (process.platform !== 'win32' && !comoRoot) {
+    const gates = path.join(lab.estado, 'gates.log');
+    const c = lab.revisar(APROBADO, { antesDeAnotar: () => { fs.writeFileSync(lab.planFile, `${PLAN}9. cambió mientras corría\n`); fs.chmodSync(gates, 0o200); } });
+    fs.chmodSync(gates, 0o644);
+    assert.strictEqual(c.veredicto, 'sin-veredicto');
+    assert.strictEqual(c.reintentar, undefined, 'sin el registro, no se reintenta');
+  }
+  // aprobada: el renglón de la constancia con el registro ilegible dice por qué no aprueba
+  fs.writeFileSync(lab.planFile, `${PLAN}3. corregido\n`);
+  lab.revisar(APROBADO);
+  const aprobar = () => PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: markerDe(lab), home: lab.home, config: cfgCon(), delegacion: () => ({ ok: true }) });
+  assert.strictEqual(aprobar().codigo, 0, aprobar().motivo);
+  const volver = registroIlegible(lab);
+  const b = aprobar();
+  assert.notStrictEqual(b.codigo, 0);
+  assert.match(b.motivo, GATES_ILEGIBLE);
+  assert.doesNotMatch(b.motivo, /no tiene su renglón/);
+  // la lista de la parte del plan delegado: falla cerrado con el motivo, con parte y sin parte
+  const SGIO = require(path.join(SCRIPTS, 'lib', 'story-gate-io.js'));
+  const marker = { ...markerDe(lab), planApproval: { mode: 'revision', revision: { lanzo: COORD } } };
+  for (const m of [marker, { ...marker, batch: 'B' }]) {
+    const l = SGIO.listaDelPlanDelegado(lab.estado, DESTINO, m);
+    assert.ok(l && l.problema, `${m.batch || 'sin parte'}: ${JSON.stringify(l)}`);
+    assert.match(l.problema, GATES_ILEGIBLE);
+  }
+  volver();
+  assert.strictEqual(SGIO.listaDelPlanDelegado(lab.estado, DESTINO, marker), null, 'legible y sin parte: como hoy');
+});

@@ -2380,6 +2380,23 @@ function cmdInstall(ctx) {
 
 // ── la salud, la vuelta atrás automática, la retención y el intento fallido ─────────────────────────────────
 
+/**
+ * El aviso guardado tal como lo muestra el doctor, o null si no queda nada que mostrar. El tramo de una copia a medias
+ * lo calculó un arranque anterior: se vuelve a mirar si hay una copia abierta. Si no la hay, sale sin ese tramo; si no
+ * se pudo leer todo, sale entero y dice que no se pudo confirmar. Sin ese tramo, el aviso tal cual. No escribe nada.
+ */
+function pendingNotice(ctx, notice) {
+  if (!notice) return null;
+  const SN = mod('snapshot');
+  if (!String(notice).split(' · ').some((part) => part.startsWith(SN.CUT_NOTICE_PREFIX))) return notice;
+  const problems = [];
+  let open = false;
+  try { open = Boolean(SN.openCopyNotice(SN.list(ctx.home, { problems }), { cmd: 'harness.js' })); } catch (e) { problems.push(e.message); }
+  if (open) return notice;
+  if (problems.length) return `${notice} (no pude confirmar si la copia sigue abierta: ${problems.join('; ')})`;
+  return SN.stripCutNotice(notice);
+}
+
 /** El texto de la retención que dejó un `rollback` (el aviso de cada arranque y lo que dice `update`). */
 function holdText(state) {
   const h = state.hold || {};
@@ -3981,7 +3998,7 @@ function cmdDoctor(ctx) {
     // el Node propio del arnés: dato o aviso, nunca rojo
     doctorHarnessNodeItems(ctx, tree, add, extra);
     doctorClaudeVersionItems(ctx, add);
-    if (state.notice) add('warn', `aviso pendiente: ${state.notice}`);
+    { const n = pendingNotice(ctx, state.notice); if (n) add('warn', `aviso pendiente: ${n}`); }
     if (state.hold) add('warn', `${holdText(state)}`);
     if (state.failed) {
       const f = state.failed;
@@ -4128,8 +4145,11 @@ function cmdDoctor(ctx) {
   // las copias de seguridad del mecanismo, y los .bak sueltos que NO gestiona
   try {
     const SN = mod('snapshot');
-    const copies = typeof SN.list === 'function' ? SN.list(ctx.home) : [];
+    const unreadable = [];
+    const copies = typeof SN.list === 'function' ? SN.list(ctx.home, { problems: unreadable }) : [];
     add('ok', `copias de seguridad del mecanismo: ${copies.length}${copies.length ? ` (la más reciente: ${path.basename(copies[0].dir || String(copies[0]))})` : ''}`);
+    // la cuenta es de las que se pudieron leer: lo que no, se dice
+    if (unreadable.length) add('warn', `copias de seguridad: no pude leer todo (${unreadable.join('; ')}); la cuenta es de las legibles`);
     const bak = typeof SN.countBak === 'function' ? SN.countBak({ home: ctx.home, env, tree }) : 0;
     if (bak) add('ok', `${bak} copia(s) .bak sueltas al lado de tus archivos: el mecanismo no las gestiona (no las toca ni las borra)`);
   } catch (e) { add('warn', `copias de seguridad: no pude mirarlas (${e.message})`); }
@@ -4162,7 +4182,7 @@ function cmdDoctor(ctx) {
     if (publicCopy && policy.channel === 'latest' && policy.apply === 'auto') add('warn', `${LATEST_AUTO_REMINDER} (para revisar cada versión antes: update.apply «ask» en ${machineConfigName(ctx.home)}, o harness.js channel stable)`);
   }
   if (state.mode === 'developer') add('warn', `modo desarrollador sobre ${tree}: update no toca su git; la versión es la del clon`);
-  if (state.notice) add('warn', `aviso pendiente: ${state.notice}`);
+  { const n = pendingNotice(ctx, state.notice); if (n) add('warn', `aviso pendiente: ${n}`); }
   if (state.hold) add('warn', `${holdText(state)}`);
   if (state.failed) {
     const f = state.failed;

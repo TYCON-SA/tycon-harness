@@ -1982,7 +1982,14 @@ function revisionDeLaOrganizacion() {
     const sid = sessionIdFileKey();
     // la pregunta cuenta sólo si es sobre este mismo diff (como la del plan): una de una ejecución cerrada no vale
     const h = PR.huellaDe({ estado, sesion: sid, kind: 'code' });
-    const pregunta = h.codigo ? null : PR.preguntasAbiertas({ estado }).find((p) => p.sesion === sid && p.kind === 'code' && p.huella === h.huella);
+    const sinRegistro = [];
+    const pregunta = h.codigo ? null : PR.preguntasAbiertas({ estado, problemas: sinRegistro }).find((p) => p.sesion === sid && p.kind === 'code' && p.huella === h.huella);
+    // con el registro ilegible no se sabe si se preguntó ni qué se respondió: la persona presente y sin respuesta
+    if (sinRegistro.length) {
+      out.reviewConfigProblems.push({ path: 'owner-away', message: `${sinRegistro[0]}: la persona cuenta como presente y la pregunta del código, sin respuesta` });
+      out.codeAnswer = null;
+      return out;
+    }
     // la respuesta a la pregunta de este diff decide la celda que preguntaba o esperaba
     if (!h.codigo) out.codeAnswer = PR.respuestaDe({ estado, sesion: sid, kind: 'code', huella: h.huella });
     out.ownerAway = require('./lib/review-policy.js').ownerAway({ mark: leida.mark, askedAt: pregunta ? Date.parse(pregunta.ts) : null,
@@ -8543,6 +8550,8 @@ module.exports = {
   // La configuración `models` de la organización (la usa también on-advisor-run.js)
   orgModels,
   orgDeepReview,
+  // la configuración de las revisiones y si el dueño está ausente: tests/plan-review.test.js la corre con su HOME
+  revisionDeLaOrganizacion,
   frenosDelManifiesto,
   aplicarModelosDeRevisores,
   // El cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
