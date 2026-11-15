@@ -146,7 +146,9 @@ function clearWait(home, sid) {
 const hhmmIso = (iso) => hhmm(Date.parse(iso));
 
 // El pase en vuelo que frena la ejecución grande, o null; `note` es lo que se dice aunque no frene (un pase de más de una
-// hora, o no haber podido mirar). Se carga acá y no al cargar el módulo: coordination.js ya carga éste.
+// hora, o no haber podido mirar). Un pase cuyo Workflow ya terminó no frena aunque nadie haya anotado su resultado: el
+// mismo criterio que el turno entre pases (coordination.js passOccupiesMachine). Se carga acá y no al cargar el módulo:
+// coordination.js ya carga éste.
 function passHolder({ home, env, now, sid }) {
   let r;
   try { r = require('./coordination.js').heavyPassesInFlight({ home, env, now, sessionId: sid, includeOwn: true }); } catch (e) {

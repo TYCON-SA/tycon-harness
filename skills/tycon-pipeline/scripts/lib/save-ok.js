@@ -275,6 +275,31 @@ function arbolDelCommit(repo, ref) {
 // lo que pueden tardar los controles del commit de todos los repos antes de darlos por colgados: los del arnés, ~30 s; con
 // un revisor tocado, su chequeo de vida suma ~40 s, y hasta ~2 min si confirma un rojo. Debajo del plazo con que la
 // ventana espera al chequeo (owner-window.js, 240 s)
+/**
+ * El público de la historia para los controles del privado adelgazado, o null. Su gancho toma los guiones del arnés
+ * (`harness_dir()`, que lee `TYCON_GUIDES_DIR`); con el arnés instalado no encuentra el guion nuevo que trae el pedido
+ * público hasta que entra. Es la misma regla que `private-tree.js findPublic` para el público de la historia (el hermano
+ * declarado con `version.json` y `scripts/`, en una rama que no es `main` y que es la del privado o nombra la historia),
+ * sin lo demás: esa función, con un público en otra rama, trae `origin/main` de la red, y estos controles son de sólo
+ * lectura y con plazo. Sin la historia, vale sólo la rama del privado. Ante cualquier duda, null: el arnés instalado.
+ */
+function publicoDeLaHistoria(repo, story) {
+  try {
+    const pt = require('./private-tree.js');
+    if (!pt.isThinPrivate(repo)) return null;
+    const cr = require('./companion-repos.js');
+    const base = cr.companionRoots(repo, story || null, { onMissing: () => {}, onWarning: () => {} })
+      .find((r) => fs.existsSync(path.join(r, 'version.json')) && fs.existsSync(path.join(r, 'scripts')));
+    if (!base) return null;
+    const rama = git(base, ['symbolic-ref', '-q', '--short', 'HEAD']);
+    const suya = rama.ok ? rama.out : '';
+    if (!suya || suya === 'main') return null;
+    return suya === cr.ramaDe(repo) || (story && cr.ramaNombraLaStory(suya, cr.numeroDeLaStory(story))) ? base : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 const CONTROLES_MS = 210000;
 const ultimas = (texto, max = 1200) => {
   const l = String(texto || '').split('\n').map((x) => x.trim()).filter(Boolean);
@@ -291,7 +316,7 @@ const ultimas = (texto, max = 1200) => {
  * no poder mirar no es verde. `{ codigo: 0 }` o `{ codigo: 2, motivo }`. `para`: 'firma' (el ok de guardar) o 'pedido'
  * (el cierre de «Preparar el pull request», que toma la foto del pedido): cambia sólo lo que el motivo dice que hay que hacer.
  */
-function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS, para = 'firma' }) {
+function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS, para = 'firma', story = null }) {
   const pedido = para === 'pedido';
   const volver = pedido ? 'commiteá lo regenerado y volvé a cerrar «Preparar el pull request»' : 'volvé a pedir la firma';
   const vencido = pedido ? 'la foto del pull request nacería vieja' : 'el ok nacería vencido';
@@ -299,6 +324,8 @@ function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS, para = 'firma' })
   for (const repo of repos) {
     const nombre = path.basename(repo);
     const no = (m) => ({ codigo: 2, motivo: `${nombre}: ${m}` });
+    // el privado adelgazado corre sus controles con el arnés del público de la historia; los demás repos, como siempre
+    const publico = publicoDeLaHistoria(repo, story);
     const gitDir = git(repo, ['rev-parse', '--absolute-git-dir']);
     if (!gitDir.ok) return no(`no pude correr los controles del commit (${gitDir.err || 'no es un repo de git'})`);
     const antes = huella(repo);
@@ -336,7 +363,7 @@ function controlesDelCommit({ repos, timeoutMs = CONTROLES_MS, para = 'firma' })
       const queda = limite - Date.now();
       const r = queda <= 0 ? { error: { code: 'ETIMEDOUT' }, status: null } : spawnSync('git', ['-C', repo, 'hook', 'run', '--ignore-missing', 'pre-commit'], {
         windowsHide: true,
-        cwd: repo, encoding: 'utf8', timeout: queda, env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024,
+        cwd: repo, encoding: 'utf8', timeout: queda, env: { ...process.env, ...env, ...(publico ? { TYCON_GUIDES_DIR: publico } : {}) }, maxBuffer: 16 * 1024 * 1024,
       });
       if (r.error || r.status === null) {
         const sinSaber = pedido ? 'sin saber si el commit pasa no hay foto del pull request' : 'no se firma sin saber si el commit pasa';
@@ -611,7 +638,7 @@ function antesDeFirmar({ via, marker, repos, findings = [], firmasDeLaCorrida = 
   if (sinMedir) return { codigo: 2, motivo: `${sinMedir.repo}: no pude medirlo (${sinMedir.error}): no se firma un ok que después no se puede comprobar` };
   // en toda vía: un control del commit que lo frenaría vence el ok al arreglarlo (el examen de un revisor tocado, los
   // datos estables, la versión pública del mapa): se ve antes de firmar
-  const c = controles({ repos });
+  const c = controles({ repos, story: (marker && marker.storyPath) || null });
   if (c.codigo) return c;
   if (via !== 'delegacion') return { codigo: 0, huellas: hs };
   // lo sensible primero: el motivo nombra el archivo aunque además falte algo para estar limpia
@@ -639,8 +666,8 @@ function constancia({ marker, via, por = null, previo, ahora }) {
  * Antes de la foto corren los controles del commit en sólo lectura: un pre-commit que regeneraría un archivo y lo sumaría
  * al commit vencería la foto después del commit, sin que nadie tocara nada.
  */
-function fotoDelPedido({ repos, timeoutMs = CONTROLES_MS }) {
-  const c = controlesDelCommit({ repos, timeoutMs, para: 'pedido' });
+function fotoDelPedido({ repos, timeoutMs = CONTROLES_MS, story = null }) {
+  const c = controlesDelCommit({ repos, timeoutMs, para: 'pedido', story });
   if (c.codigo) return c;
   const hs = huellas(repos);
   const sin = hs.find((h) => h.error);

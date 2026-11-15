@@ -3140,7 +3140,25 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
   }
   const adv = marker.adversarial && typeof marker.adversarial === 'object' ? marker.adversarial : null;
   if (adv && adv.sessionId !== sidNow) return { pending_action: reglaPaseAjeno(adv) };
-  if (adv) return {};   // lanzado por esta sesión y en vuelo: el join es el paso del pase adversarial
+  if (adv) {
+    // lanzado por esta sesión: si su Workflow ya terminó y nadie anotó el resultado, se anota antes de seguir (para las
+    // demás sesiones ya no ocupa la máquina); si sigue corriendo, el join es el paso del pase adversarial
+    let terminado = false;
+    try {
+      terminado = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js')).passFinished({ home: require('os').homedir(), sessionId: adv.sessionId, runId: adv.runId });
+    } catch (e) {
+      process.stderr.write(`next: no pude ver si terminó el pase adversarial de esta sesión (${String(e.message).split('\n')[0]})\n`);
+    }
+    if (!terminado) return {};
+    const command = `node ${path.join(__dirname, 'marker.js')} mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run ${adv.runId} --model <modelo> …`;
+    return {
+      pending_action: {
+        kind: 'anotar-resultado-del-pase',
+        message: `el pase adversarial de esta sesión terminó (runId ${adv.runId}) y falta anotar su resultado: anotalo antes de seguir — ${NOTA_CIERRE_5B}`,
+        command,
+      },
+    };
+  }
 
   if (!marker.storyPath) {
     return { adversarial_note: 'no pude leer la story: el marcador está sin ruta de story — no se pide lanzar el pase (el portón la necesita)' };
@@ -3290,6 +3308,9 @@ function computeNext() {
   const advIsOurs = adv ? adv.sessionId === sidNow : null;
   const pase = STEPS_TABLE.isDone(marker, 'run-tests') ? accionDelPase(marker, story, { sidNow, nextStep: nextStep ? nextStep.step : null }) : {};
   const pending = pase.pending_action || null;
+  // lo del pase que va antes del paso, en las tres formas de la instrucción: un pedido que viaja sólo en el JSON no se lee
+  const antesDelPase = pending && ['consultar-porton', 'lanzar-pase', 'esperar-turno-pase', 'anotar-resultado-del-pase'].includes(pending.kind)
+    ? `ANTES, pase adversarial: ${pending.message} ` : '';
 
   // Cómo se cierra el paso que sigue.
   const cierre = (st) => {
@@ -3348,10 +3369,10 @@ function computeNext() {
     ...(pase.adversarial_note ? { adversarial_note: pase.adversarial_note } : {}),
     ...(notaDelTamano(marker, nextStep) ? { run_size_note: notaDelTamano(marker, nextStep) } : {}),
     note: exempt7c
-      ? `${partes}Sigue ${etiqueta}. ${NOTA_7C_EXENTA}`
+      ? `${partes}${antesDelPase}Sigue ${etiqueta}. ${NOTA_7C_EXENTA}`
       : nextStep
-      ? `${partes}${pending && ['consultar-porton', 'lanzar-pase', 'esperar-turno-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue ${etiqueta}.${faltaRevisar} Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${cierre(nextStep)}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}${warnings.length ? ` ${warnings.join(' · ')}.` : ''}`
-      : `No quedan pasos pendientes — cerrá con marker.js clear (o ${STEPS_TABLE.CLOSE_STEP.file} si vas a cerrar la story en ADO: «${STEPS_TABLE.CLOSE_STEP.name}»).`,
+      ? `${partes}${antesDelPase}Sigue ${etiqueta}.${faltaRevisar} Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${cierre(nextStep)}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}${warnings.length ? ` ${warnings.join(' · ')}.` : ''}`
+      : `${antesDelPase}No quedan pasos pendientes — cerrá con marker.js clear (o ${STEPS_TABLE.CLOSE_STEP.file} si vas a cerrar la story en ADO: «${STEPS_TABLE.CLOSE_STEP.name}»).`,
   };
 }
 
