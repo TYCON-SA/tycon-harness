@@ -31,7 +31,10 @@ function repoDe(storyReal) {
   const raiz = git(['rev-parse', '--show-toplevel']);
   if (!raiz) return null;
   const raizReal = realPath(raiz) || raiz;
-  const origin = git(['config', '--get', 'remote.origin.url']);
+  let origin = git(['config', '--get', 'remote.origin.url']);
+  // una remota local («../x.git», «file://…») es una carpeta: relativa, nombra otra cosa en cada repo
+  const local = origin && !/^(?:https?|ssh|git):\/\//i.test(origin) && !/^(?:[^@/]+@)?[^/:]{2,}:(?!\/)/.test(origin);
+  if (local) origin = realPath(path.resolve(raizReal, origin.replace(/^file:\/\//i, ''))) || path.resolve(raizReal, origin.replace(/^file:\/\//i, ''));
   const forma = origin ? require('./adhoc-base.js').formaDeLaRemota(origin) : '';
   return { repo: forma || raizReal, rel: path.relative(raizReal, storyReal).split(path.sep).join('/') };
 }

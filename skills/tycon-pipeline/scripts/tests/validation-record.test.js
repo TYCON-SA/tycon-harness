@@ -210,3 +210,21 @@ test('ValidationRecord_OldKey_StillRead @story-8.277 @ac-20 — una constancia c
   escribir(vieja, JSON.stringify({ path: fs.realpathSync(a.story), resultado: 'verde', validadores: [VALIDADOR], huella: huella(historia()), hora: '2026-11-14T22:01:18.549Z' }));
   assert.equal(lib().readRecord(home, a.story).estado, 'current');
 });
+
+test('ValidationRecord_RelativeOrigin_ResolvedPerRepo @story-8.277 @ac-9 — (pase de la 8.277) un origin local relativo se resuelve contra su repo', () => {
+  const home = tmp('home');
+  // dos repos distintos, cada uno en su carpeta con su «../compartido.git» al lado: son dos remotas distintas
+  const enSuCarpeta = () => {
+    const repo = path.join(tmp('padre'), 'proj');
+    spawnSync('git', ['init', '-q', '-b', 'main', repo], { stdio: 'ignore' });
+    spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', '../compartido.git'], { stdio: 'ignore' });
+    const story = path.join(repo, 'specs', 'story-9.5.md');
+    escribir(story, historia());
+    return { repo, story };
+  };
+  const a = enSuCarpeta();
+  const b = enSuCarpeta();
+  lib().writeRecord(home, a.story, { resultado: 'verde', validadores: [VALIDADOR] });
+  assert.equal(lib().readRecord(home, b.story).estado, 'none', 'otro repo con la misma remota relativa no la ve');
+  assert.equal(lib().readRecord(home, a.story).estado, 'current', 'el mismo repo sí');
+});
