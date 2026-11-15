@@ -114,6 +114,8 @@
  *                                                  `deepReviewDone` NO: el pase adversarial lo cierran
  *                                                  los dos comandos de abajo, con constancia.
  *   marker.js start-warning <time-tracking|ado> "<motivo>" → una parte del Arranque que falló (queda a la vista)
+ *   marker.js lift-debt --debt <DEF-id>          → levanta la deuda del cierre ya pagada: cada rojo esperado vuelve a
+ *                                                  ser rojo y «Preparar» pide todo en verde. Sin firma: no afloja nada.
  *   marker.js mark-adversarial-result <N> --type 5b --tests k [--own p --in "<rutas>"]
  *                                   [--deferred d --reason "…"] [--classes k] [--separate n]
  *                                                → anota el resultado del pase y lo CIERRA
@@ -201,7 +203,7 @@ const PARA_OTRA_SESION = {
   // un control declarado a mano y un criterio que no se prueba en vivo: los firma la persona, en la ventana o la terminal
   'set-check': { firma: 'escape:force-manual', marcador: true, si: (a) => a.includes('--force-manual') },
   'runtime-waiver': { firma: 'runtime-waiver', marcador: true },
-  'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') },
+  'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') && !a.includes('--partition') },
   // el ok de guardar: sobre la corrida abierta del destino, la que vio el dueño
   'approve-save': { firma: 'save', marcador: true },
   'restore': { firma: 'lost-run', nombra: 3 },
@@ -210,6 +212,11 @@ const PARA_OTRA_SESION = {
   // el pendiente que abrió otra sesión: la firma se escribe en su repo, que el freno comprueba que es de esa sesión
   'approve-pending': { firma: 'pending-approval' },
 };
+
+// cerrar la ejecución que la partición de su historia dejó sin objeto: la forma de rutina de la salida perdida
+const PARTICION = { firma: 'lost-run:particion', nombra: 3, si: (a) => a.includes('--lost') && a.includes('--partition') };
+// la regla del subcomando para firmar por otra sesión; `clear-session --lost --partition` tiene la suya
+const reglaParaOtra = (argv) => (argv[2] === 'clear-session' && PARTICION.si(argv) ? PARTICION : PARA_OTRA_SESION[argv[2]]);
 
 const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
 
@@ -247,7 +254,7 @@ function paraOtraSesion(argv) {
     if (!process.argv.includes('--terminal')) no('sin variable de sesión, la firma para una sesión se da en la terminal de la persona (--terminal)');
     // en la terminal, el marcador de la sesión nombrada se escribe sólo con la firma dada, y la salida de una ejecución
     // perdida nombra esa misma sesión
-    const t = PARA_OTRA_SESION[argv[2]];
+    const t = reglaParaOtra(argv);
     if (t && t.nombra && (!t.si || t.si(argv)) && String(argv[t.nombra] || '').replace(/[/\\]/g, '_') !== PEDIDA) no(`el comando nombra la sesión ${argv[t.nombra]}, y la firma es para ${PEDIDA}`);
     SOLO_LECTURA = true;
     return;
@@ -255,7 +262,7 @@ function paraOtraSesion(argv) {
   if (!/^[\w-]+$/.test(PEDIDA)) no('la sesión no se puede leer');
   if (PEDIDA === '_nosession') no('«_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id');
   if (argv[2] === 'clear') no(`clear cierra la ejecución de la propia sesión; la de otra sesión se cierra con marker.js clear-session ${PEDIDA} (y si quedó perdida, clear-session ${PEDIDA} --lost --for-session ${PEDIDA})`);
-  const t = PARA_OTRA_SESION[argv[2]];
+  const t = reglaParaOtra(argv);
   const s = t && require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === t.firma);
   if (!t || (t.si && !t.si(argv)) || !s || s.otherSession !== 'yes') no(`«${argv.slice(2, 4).join(' ')}» no es una firma que se pida para otra sesión`);
   if (t.nombra && String(argv[t.nombra] || '').replace(/[/\\]/g, '_') !== PEDIDA) no(`el comando nombra la sesión ${argv[t.nombra]}, y la firma es para ${PEDIDA}`);
@@ -885,6 +892,7 @@ function vueltaCongeladaComprobada(tipo, quien) {
  */
 function comprobarLoRevisado(marker, quien) {
   const ft = require('./lib/frozen-tree.js');
+  const { isControlApproval } = require('./lib/story-gate.js');
   const v = vueltaCongeladaComprobada('revisores', quien);
   if (!v || !(v.repos || []).length) {
     appendLog('gates.log', { name: 'reviewed-tree', status: 'no-medido', story: marker.storyId || null, quien, motivo: 'la vuelta no tiene sello' });
@@ -914,7 +922,11 @@ function comprobarLoRevisado(marker, quien) {
     const c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null,
       mainAntes: r.mainBase || null, mainAhora: pm.sha || null });
     if (c.error) frenar(`no pude comparar lo que se guarda con lo revisado (${c.error}).`);
-    for (const f of c.files) distintos.push({ repo: r.repo, f });
+    // una constancia de cambio de control la firma el dueño: no es código que los revisores tengan que ver
+    for (const f of c.files) {
+      if (isControlApproval(f)) papeleo.push(f);
+      else distintos.push({ repo: r.repo, f });
+    }
     for (const f of c.papeleo) papeleo.push(f);
     for (const f of c.deMain || []) deMain.push(f);
     huellas.push(`${path.basename(r.repo)} ${r.tree.slice(0, 12)}`);
@@ -3729,6 +3741,46 @@ function cmdCloseAsDebt(args) {
   process.stdout.write(`cierre: deuda (${deuda}) — la ejecución sigue hasta el commit: revisores sobre lo que sí cambió, el pase y la línea «Deuda:» del mensaje.\n`);
 }
 
+// Levantar una deuda que se pagó antes del commit: `lift-debt --debt <DEF-id>`, con el id de la deuda del cierre. Saca
+// el cierre y deja cada control en rojo esperado como el rojo que dejaría `run-check` con ese exit: «Preparar» vuelve a
+// pedir todo en verde. No pide firma porque no afloja nada. Del rojo esperado queda sólo la hora de la constancia ya
+// usada, que `expect-red acmatrix` toma como piso: la firma vieja no vuelve a valer con una deuda nueva.
+function cmdLiftDebt(args) {
+  const deuda = String(opcion(args, 'debt') || '').trim();
+  if (!deuda) {
+    console.error('marker.js lift-debt: uso: lift-debt --debt <DEF-id>   (el id de la deuda del cierre, ya pagada)');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js lift-debt: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  if (!marker.cierre || marker.cierre.estado !== 'deuda') {
+    console.error('marker.js lift-debt: la ejecución no está en deuda: no hay nada que levantar');
+    process.exit(2);
+  }
+  if (marker.cierre.deuda !== deuda) {
+    console.error(`marker.js lift-debt: la deuda del cierre es ${marker.cierre.deuda}, no ${deuda}: sólo se levanta la deuda del cierre`);
+    process.exit(2);
+  }
+  const checks = [];
+  for (const [k, v] of Object.entries(marker.checks || {})) {
+    const m = /^rojo-esperado:exit=(\d+)/.exec(String(v));
+    if (!m) continue;
+    marker.checks[k] = `red:exit=${m[1]}`;
+    checks.push(k);
+  }
+  const usada = ((marker.expectedRed || {}).acmatrix || {}).constanciaTs;
+  if (usada) marker.expectedRed = { acmatrix: { constanciaTs: usada } };
+  else delete marker.expectedRed;
+  delete marker.cierre;
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'lift-debt', story: nn(marker.storyId, null), deuda, checks });
+  process.stdout.write(`deuda ${deuda} levantada${checks.length ? ` — ${checks.join(', ')} vuelve(n) a ser rojo(s)` : ''}: «Preparar» vuelve a pedir todo en verde y el commit no lleva «Deuda:».\n`);
+}
+
 // Un control en rojo que la historia en deuda deja así a propósito: `expect-red <control> --tests <T2,T5>`. Sólo en una
 // ejecución en deuda y sobre un control en rojo; queda `rojo-esperado:exit=N` con la lista, que el cierre del turno y
 // `prepare-commit` aceptan sólo con la deuda escrita. Antes, el paso pide ajustar las pruebas para que verifiquen la
@@ -5354,6 +5406,37 @@ function cmdClearSession(sid, rest = []) {
   process.stdout.write(`cleared: ${safe}.json\n`);
 }
 
+/**
+ * ¿La partición de la historia dejó sin objeto la ejecución de `sesion`? `{ ok }` o `{ ok: false, motivo }`. Con la tanda
+ * del marcador (el vivo o el podado), si la historia de ahora ya no la nombra. Sin tanda, si la historia no traía bloque
+ * `pipelines:` al arrancar y ahora sí. La historia de arranque sale del repo de la historia, por fecha: el último commit
+ * que la tocó antes de la apertura. El `baseSha` del marcador no sirve: es del repo del código.
+ */
+function reemplazadaPorParticion(apertura, sesion, podada) {
+  const checks = require('./lib/story-checks.js');
+  const storyPath = apertura.storyPath ? path.resolve(apertura.repo || process.cwd(), apertura.storyPath) : null;
+  if (!storyPath) return { ok: false, motivo: 'la apertura no dice qué historia era' };
+  let ahora;
+  try { ahora = fs.readFileSync(storyPath, 'utf8'); } catch (e) { return { ok: false, motivo: `no pude leer la historia ${storyPath} (${e.code || e.message})` }; }
+  const tandas = checks.parsePipelinesBlock(ahora).map((t) => t.name);
+  if (!tandas.length) return { ok: false, motivo: 'la historia de ahora no está partida en tandas' };
+  let m = null;
+  try { m = JSON.parse(fs.readFileSync(markerFilePath(sesion), 'utf8')); } catch (_e) { m = podada || null; }
+  if (m && m.batch) {
+    return tandas.includes(String(m.batch)) ? { ok: false, motivo: `su tanda ${m.batch} sigue en la historia` } : { ok: true };
+  }
+  const dir = path.dirname(storyPath);
+  const git = (args) => require('child_process').execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  let alArrancar;
+  try {
+    const sha = git(['log', '-1', `--before=${apertura.ts}`, '--format=%H', '--', path.basename(storyPath)]);
+    if (!sha) return { ok: false, motivo: 'la historia no tiene un commit anterior a la apertura de la ejecución' };
+    alArrancar = git(['show', `${sha}:./${path.basename(storyPath)}`]);
+  } catch (e) { return { ok: false, motivo: `no pude leer la historia de antes de la apertura (${String(e.message).split('\n')[0]})` }; }
+  if (checks.parsePipelinesBlock(alArrancar).length) return { ok: false, motivo: 'la historia ya estaba partida en tandas cuando arrancó la ejecución' };
+  return { ok: true };
+}
+
 // La salida de una ejecución perdida (lib/open-runs.js), que decide el dueño: `clear-session <sesión> --lost` la cierra
 // como perdida y `restore <sesión>` rearma el marcador desde la copia de la apertura. Lo aprueba el dueño en la ventana
 // de permiso, o lo corre él con --terminal: sin esa firma, el guion no cierra ni rearma nada.
@@ -5383,8 +5466,19 @@ function cmdSalidaPerdida(modo, sesion) {
     console.error(`marker.js ${nombre}: la apertura de la sesión ${sesion} no trae una hora legible (${apertura.ts}): está dañada, y no se ${modo === 'lost' ? 'cierra' : 'rearma'} a ciegas.`);
     process.exit(3);
   }
+  // cerrarla como reemplazada por la partición de su historia es de rutina, si de verdad la historia se partió después de
+  // la apertura: se comprueba antes de la firma (también en el chequeo previo), y una bandera mal puesta no cierra nada
+  const porParticion = modo === 'lost' && process.argv.includes('--partition');
+  if (porParticion) {
+    // el marcador podado por viejo también trae su tanda: se lee acá, aunque la salida de «perdida» no lo use para la apertura
+    const p = reemplazadaPorParticion(apertura, sesion, podada || io.readPruned(STATE_DIR, sesion));
+    if (!p.ok) {
+      console.error(`marker.js ${nombre} --partition: ${p.motivo}: se cierra con lost-run, sin --partition. No se cerró nada.`);
+      process.exit(2);
+    }
+  }
   // el dueño lo aprueba en la ventana de permiso (o lo corre con --terminal): sin eso, el guion no cierra ni rearma nada
-  const firma = firmaDelDueno('lost-run', `${modo === 'lost' ? 'cerrar como perdida' : 'restaurar'} la ejecución de la story ${apertura.story} (sesión ${sesion})`);
+  const firma = firmaDelDueno(porParticion ? 'lost-run:particion' : 'lost-run', `${modo === 'lost' ? `cerrar como perdida${porParticion ? ' (la partición de su historia la dejó sin objeto)' : ''}` : 'restaurar'} la ejecución de la story ${apertura.story} (sesión ${sesion})`);
   const { via } = firma;
   const cita = null;
   // pedida para otra sesión, la constancia dice cuál la pidió (SID ya es la destino)
@@ -7149,7 +7243,17 @@ function cmdAdhoc(sub, payloadJson) {
     // los topes del camino corto de la organización, leídos una vez: la firma, el cupo y los textos dicen el mismo número
     const topes = io.topesDelCaminoCorto({ stateDir: STATE_DIR, sessionId: destino });
     // la lista de archivos: todo camino corto la lleva, cerrada, y se valida antes de pedir la firma
-    const pedidaLista = LISTA.normalizar(payload.allowedFiles, { cwd: process.cwd() });
+    // pedida por otra sesión (la coordinadora, desde su carpeta), la lista va relativa a la carpeta de trabajo de la
+    // sesión destino; la terminal de una persona y la propia sesión, a la del proceso
+    const deOtraSesion = pedida && PROPIA !== '_nosession' && pedida !== PROPIA;
+    const base = deOtraSesion ? LISTA.carpetaDeLaSesion({ casa: os.homedir(), sesion: pedida }) : process.cwd();
+    const conRelativas = Array.isArray(payload.allowedFiles) && payload.allowedFiles.some((f) => typeof f === 'string' && f.trim() && !path.isAbsolute(f.trim()) && !/^[A-Za-z]:[\\/]/.test(f.trim()));
+    if (!base && conRelativas) {
+      console.error(`marker.js adhoc set: no sé la carpeta de la sesión ${pedida}: que lo pida esa sesión, o una persona desde su terminal en esa carpeta.`);
+      process.exit(2);
+    }
+    const carpetaDeLaLista = base || process.cwd();
+    const pedidaLista = LISTA.normalizar(payload.allowedFiles, { cwd: carpetaDeLaLista });
     if (pedidaLista.problema) {
       console.error(`marker.js adhoc set: ${LISTA.rechazoDeLaLista(pedidaLista.problema, { harness: enElArnes() })}`);
       process.exit(2);
@@ -7157,7 +7261,7 @@ function cmdAdhoc(sub, payloadJson) {
     const allowedFiles = pedidaLista.lista;
     // una lista fuera de todo repo casi siempre es un pedido desde otra carpeta: cada edición real va a frenar
     if (pedidaLista.sinRepo && pedidaLista.sinRepo.length) {
-      console.error(`⚠️  marker.js adhoc set: ${pedidaLista.sinRepo.length} archivo(s) de la lista no caen dentro de ningún repo desde ${process.cwd()}: ${pedidaLista.sinRepo.slice(0, 5).join(', ')}. Si no es lo que querías, pedila de nuevo desde la carpeta del repo.`);
+      console.error(`⚠️  marker.js adhoc set: ${pedidaLista.sinRepo.length} archivo(s) de la lista no caen dentro de ningún repo desde ${carpetaDeLaLista}: ${pedidaLista.sinRepo.slice(0, 5).join(', ')}. Si no es lo que querías, pedila de nuevo desde la carpeta del repo.`);
     }
     const deCodigo = LISTA.contar(allowedFiles).codigo;
     if (payload.maxFiles !== undefined && deCodigo > payload.maxFiles) {
@@ -7176,7 +7280,7 @@ function cmdAdhoc(sub, payloadJson) {
       console.error(`marker.js adhoc set: ${LISTA.rechazoDeLaLista(malosTopes, { harness: enElArnes() })}`);
       process.exit(2);
     }
-    const relLista = allowedFiles.map((f) => path.relative(process.cwd(), f) || f);
+    const relLista = allowedFiles.map((f) => path.relative(carpetaDeLaLista, f) || f);
     // una ruta de riesgo alto en la lista: la firma de una persona lo dice, y sin una persona no se abre
     const riesgoDeLaLista = LISTA.riesgoDeLaLista(allowedFiles);
     // adelante en el resumen: se corta a los 200 caracteres, y el riesgo alto es lo primero que tiene que leer quien firma
@@ -7198,7 +7302,7 @@ function cmdAdhoc(sub, payloadJson) {
       if (sinPersona) return { codigo: 1, motivo: sinPersona };
       // ampliar por delegación: la lista nueva contiene entera la firmada (una firmada con `d:` la contiene `D:`)
       const faltan = actual && Array.isArray(actual.allowedFiles) ? LISTA.faltanEnLaNueva(actual.allowedFiles, allowedFiles) : [];
-      if (faltan.length) return { codigo: 1, motivo: LISTA.textoDeAmpliar(faltan.map((f) => path.relative(process.cwd(), f) || f), { harness: enElArnes() }) };
+      if (faltan.length) return { codigo: 1, motivo: LISTA.textoDeAmpliar(faltan.map((f) => path.relative(carpetaDeLaLista, f) || f), { harness: enElArnes() }) };
       // un solo carril delegado por repo: dos a la vez se pisan las cuentas
       const mios = new Set(allowedFiles.map(LISTA.raizDe).filter(Boolean));
       let otros = [];
@@ -7246,7 +7350,7 @@ function cmdAdhoc(sub, payloadJson) {
       console.error('   El arreglo rápido lo aprueba una persona, no el agente: en la ventana de permiso, corriendo este comando solo y en su forma');
       console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
       // con la carpeta: la lista va relativa a ella, y la terminal de la persona puede estar en otra
-      const irALaCarpeta = process.platform === 'win32' ? `cd /d "${process.cwd()}"` : `cd ${citar(process.cwd())}`;
+      const irALaCarpeta = process.platform === 'win32' ? `cd /d "${carpetaDeLaLista}"` : `cd ${citar(carpetaDeLaLista)}`;
       console.error(`     ${irALaCarpeta} && node ${__filename} adhoc set ${pedidoEnTerminal} --terminal --for-session ${destino}`);
       console.error('   Si la persona no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
       process.exit(r.codigo === 2 ? 2 : 1);
@@ -7539,6 +7643,9 @@ switch (cmd) {
   case 'close-as-debt':
     cmdCloseAsDebt(process.argv.slice(3));
     break;
+  case 'lift-debt':
+    cmdLiftDebt(process.argv.slice(3));
+    break;
   case 'expect-red':
     cmdExpectRed(process.argv.slice(3));
     break;
@@ -7650,7 +7757,7 @@ switch (cmd) {
         'list-all|find-by-story|clear-session|park|unpark|adopt-session|update-story-status|' +
         'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|set-size|snapshot-iter|' +
         'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|' +
-        'approve-mockup|rethink> [arg] [arg2]',
+        'approve-mockup|rethink|lift-debt> [arg] [arg2]',
     );
     process.exit(2);
 }

@@ -785,6 +785,24 @@ function ownerWaitTurn(opts, a, lines, { home, me, stalled, now }) {
   return true;
 }
 
+// Las trabadas de un repo que el arnés no sigue: la regla de «Otro proyecto» de la oficina (`otherProjectsOf`), con los
+// repos de la última foto de pedidos leída del disco (no sale a la red) y el remoto de la carpeta de cada una. Se mira
+// sólo con alguna trabada. Sin foto, sin carpeta o sin remoto, la sesión no es de otro proyecto: ante la duda, despierta.
+function otherProjectStalled(home, stalled, sessions, now) {
+  if (!stalled.length) return new Set();
+  try {
+    const { otherProjectsOf, readOpenPrs } = require('./office.js');
+    const { remoteOfFolder } = require('./work-in-progress.js');
+    const cwds = stalled.map((x) => { const s = sessions.get(x.sid); return (s && s.cwd) || null; });
+    const wip = { rows: stalled.map((x) => ({ session: x.session })), extra: cwds.map((cwd) => ({ cwd })), details: stalled.map((x) => ({ sid: x.sid })) };
+    return otherProjectsOf(wip, readOpenPrs(stateDir(home), now), (cwd) => (fs.existsSync(cwd) ? remoteOfFolder(cwd) : null));
+  } catch (e) {
+    // sin poder mirarlo, ninguna es de otro proyecto y todas despiertan (AC 3); queda dicho, para que no se apague callado
+    process.stderr.write(`owner-wait: no pude mirar de qué proyecto son las trabadas (${(e && e.message) || e}): las anuncio todas\n`);
+    return new Set();
+  }
+}
+
 /**
  * Una vuelta de owner-wait, sin dormir: `{ lines, stop }`. `lines` son las novedades, que quedan anotadas como
  * anunciadas; `stop` es que su coordinadora ya no lo es (murió o se designó otra), y entonces no dice nada.
@@ -799,7 +817,17 @@ function ownerWaitOnce(opts = {}) {
   const a = readAnnounced(home);
   const lines = [];
   const now = new Set();
+  const others = otherProjectStalled(home, s.stalled, sessions, opts.now == null ? Date.now() : Number(opts.now));
+  // si se saca una ya anunciada, el archivo se escribe aunque la vuelta no traiga novedades: si no, la próxima vez que
+  // siga sin permiso abierto saldría «siguió»
+  let dropped = false;
   for (const x of s.stalled.filter((y) => y.sid !== me)) {
+    // la de otro proyecto no es trabajo de la coordinadora: ni se anuncia ni, si ya se anunció, se dice que siguió
+    if (others.has(String(x.sid))) {
+      if (a.waits[x.sid]) { delete a.waits[x.sid]; dropped = true; }
+      now.add(x.sid);
+      continue;
+    }
     now.add(x.sid);
     // una espera ya anunciada no se anuncia de nuevo aunque su hora cambie de fuente (la de Claude y después la del
     // permiso anotado); sólo un permiso nuevo, con otra hora anotada
@@ -824,7 +852,7 @@ function ownerWaitOnce(opts = {}) {
   }
   const at = opts.now == null ? Date.now() : Number(opts.now);
   const read = ownerWaitTurn(opts, a, lines, { home, me, stalled: s.stalled.map((x) => x.sid), now: at });
-  if (lines.length || read) writeJson(ownerWaitFile(home), a);
+  if (lines.length || read || dropped) writeJson(ownerWaitFile(home), a);
   return { lines, stop: false };
 }
 
@@ -916,10 +944,10 @@ function ownerWaitLines(opts, sid, s) {
   const out = [];
   if (!ownerWaitAlive(home)) out.push(`Coordinación: owner-wait no está corriendo: lanzalo de fondo para enterarte al instante de una sesión trabada: node "${__filename}" owner-wait`);
   const a = readAnnounced(home);
-  for (const x of s.stalled.filter((y) => y.sid !== sid)) {
-    if (now - x.since < STALLED_NOTICE_MS || a.waits[x.sid]) continue;
-    out.push(`Coordinación: ${stalledLine(x)}`);
-  }
+  const pending = s.stalled.filter((x) => x.sid !== sid && now - x.since >= STALLED_NOTICE_MS && !a.waits[x.sid]);
+  // la regla de owner-wait: la trabada de otro proyecto no es trabajo de la coordinadora, tampoco en su aviso de cada turno
+  const others = pending.length ? otherProjectStalled(home, pending, sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null), now) : new Set();
+  for (const x of pending) if (!others.has(String(x.sid))) out.push(`Coordinación: ${stalledLine(x)}`);
   for (const x of s.retired.filter((y) => y.sid !== sid)) if (!a.retired[`${x.short}@${x.at}`]) out.push(`Coordinación: ${retiredLine(x)}`);
   return out;
 }
@@ -1936,20 +1964,29 @@ function gitIn(dir, args) {
 }
 
 // ¿La sesión soltó el puesto antes de que llegara la otra? Lo dice el registro de la carpeta entre su arranque y el de la
-// otra: su último movimiento fue a un commit suelto o a una rama remota (lo que hace `work-slots.js release`). Devuelve
-// también las ramas a las que se movió, que siguen siendo suyas; null si el registro no lo puede decir.
+// otra: su último movimiento fue a un commit suelto o a una rama remota (lo que hace `work-slots.js release`). Si la otra
+// arrancó antes de llegar al puesto (antes de la suelta, o antes que la que cierra), llegó después de la última suelta
+// desde que arrancó la que cierra: el registro va por segundos, y la suelta y la llegada pueden caer en el mismo, así que
+// lo de la que cierra llega hasta la suelta inclusive. Devuelve si lo soltó, las ramas a las que se movió (que siguen
+// siendo suyas) y desde cuándo el puesto es de la otra; null si el registro no lo puede decir.
 function soltoElPuesto(dir, startedAt, heirStartedAt) {
   const log = gitIn(dir, ['reflog', 'show', '--date=unix', '--format=%gd %gs', 'HEAD']);
   if (log.code !== 0 || !log.out) return null;
   const movs = [];
   for (const l of log.out.split('\n')) {
     const m = /^HEAD@\{(\d+)\} checkout: moving from (\S+) to (\S+)/.exec(l);
-    if (m && Number(m[1]) * 1000 >= startedAt && Number(m[1]) * 1000 < heirStartedAt) movs.push(m[3]);
+    if (m && Number(m[1]) * 1000 >= startedAt) movs.push({ at: Number(m[1]) * 1000, to: m[3] });
   }
-  if (!movs.length) return null;
   const suelto = (to) => /^[0-9a-f]{7,40}$/.test(to) || gitIn(dir, ['show-ref', '--verify', '--quiet', `refs/remotes/${to}`]).code === 0;
+  const propias = (list) => new Set(list.filter((x) => !suelto(x.to)).map((x) => x.to));
   // el registro va del más nuevo al más viejo
-  return { solto: suelto(movs[0]), propias: new Set(movs.filter((to) => !suelto(to))) };
+  const before = movs.filter((x) => x.at < heirStartedAt);
+  if (before.length && suelto(before[0].to)) return { solto: true, propias: propias(before), llegada: heirStartedAt };
+  // la otra no llegó antes de arrancar: una suelta de antes de su arranque seguida de un movimiento propio no es la suya
+  const i = movs.findIndex((x) => x.at >= heirStartedAt && suelto(x.to));
+  // `volvio`: soltó antes de que arrancara la otra y después se movió ella misma: lo de ahora es suyo
+  if (i === -1) return before.length ? { solto: false, volvio: before.some((x) => suelto(x.to)), propias: propias(before) } : null;
+  return { solto: true, propias: propias(movs.slice(i + 1)), llegada: movs[i].at + 1 };
 }
 
 // Los archivos sin commitear de la carpeta, separados en los suyos y los que ya estaban antes de que la sesión arrancara,
@@ -2029,6 +2066,16 @@ function folderGaps(dir, opts) {
   // Sin el registro que diga que lo soltó, o con la rama de ahora entre las suyas, se mira todo como siempre.
   const solto = slot && opts.heir && Number.isFinite(opts.startedAt) ? soltoElPuesto(dir, opts.startedAt, opts.heir.startedAt) : null;
   const heredado = Boolean(solto && solto.solto && !(onBranch && solto.propias.has(branch.out)));
+  // con otra sesión viva en el puesto y sin una suelta en el registro, lo de ahora puede ser de cualquiera de las dos: no
+  // cierra, y lo dice como «no sé», nombrando a la otra, en vez de cargárselo a la que cierra como faltante suyo. Con una
+  // suelta y la rama de ahora entre las suyas, o una suelta seguida de su propio movimiento antes de que arrancara la
+  // otra, el registro sí lo dice: es suyo, y se mira todo como siempre
+  const compartido = Boolean(slot && opts.heir && !(solto && (solto.solto || solto.volvio)));
+  const own = compartido ? [] : missing;
+  const done = () => {
+    if (own.length && own !== missing) unknown.push(`no puedo separar lo suyo de lo de ${opts.heir.name || 'la otra sesión'}, que también está en el puesto, y el registro no muestra que lo soltara: ${own.join('; ')}`);
+    return { missing, unknown, before };
+  };
   if (!heredado) {
     // con todos los archivos sin seguir, aunque la configuración del repo los esconda
     const status = gitRaw(dir, ['status', '--porcelain', '-z', '--untracked-files=all']);
@@ -2036,52 +2083,52 @@ function folderGaps(dir, opts) {
     else if (status.out) {
       const files = uncommittedFiles(top.out, status.out, opts.startedAt);
       before = files.before.length;
-      if (files.own.length) missing.push(`${files.own.length} archivo(s) sin commitear en ${dir}`);
+      if (files.own.length) own.push(`${files.own.length} archivo(s) sin commitear en ${dir}`);
       if (before) {
         const mas = before > 3 ? ` y ${before - 3} más` : '';
-        missing.push(`${before} archivo(s) sin commitear de antes de que arrancara (no parecen suyos): ${files.before.slice(0, 3).join(', ')}${mas}`);
+        own.push(`${before} archivo(s) sin commitear de antes de que arrancara (no parecen suyos): ${files.before.slice(0, 3).join(', ')}${mas}`);
       }
     }
-    if (slot && onBranch) missing.push(`el puesto ${slot.path} sigue tomado por la rama ${branch.out}: soltalo con work-slots.js release`);
+    if (slot && onBranch) own.push(`el puesto ${slot.path} sigue tomado por la rama ${branch.out}: soltalo con work-slots.js release`);
   }
   const fetched = gitIn(dir, ['fetch', '--quiet', '--no-tags', 'origin', 'main']);
   if (fetched.code !== 0) {
     unknown.push(`no pude traer main de origin en ${dir} (${fetched.err || `salió con código ${fetched.code}`}): no sé si lo empujó ni si entró`);
-    return { missing, unknown, before };
+    return done();
   }
   const main = git(['rev-parse', 'FETCH_HEAD^{commit}'], 'main');
-  if (main.code !== 0) return { missing, unknown, before };
+  if (main.code !== 0) return done();
   if (!heredado) {
     const unpushed = git(['rev-list', '--count', 'HEAD', '--not', '--remotes', main.out], 'lo empujado');
-    if (unpushed.code === 0 && Number(unpushed.out) > 0) missing.push(`${unpushed.out} commit(s) sin empujar en ${dir}`);
+    if (unpushed.code === 0 && Number(unpushed.out) > 0) own.push(`${unpushed.out} commit(s) sin empujar en ${dir}`);
     // la rama de un worktree o de la carpeta, o un commit suelto: que haya entrado a main. También una `main` local:
     // empujada a otra rama, tampoco entró
     const merged = git(['merge-base', '--is-ancestor', 'HEAD', main.out], 'si la rama entró a main', true);
-    if (merged.code === 1) missing.push(`${onBranch ? `la rama ${branch.out}` : 'el commit suelto'} de ${dir} no entró a main`);
+    if (merged.code === 1) own.push(`${onBranch ? `la rama ${branch.out}` : 'el commit suelto'} de ${dir} no entró a main`);
   }
   // las ramas de las que la sesión se fue en esta carpeta: su registro dice cuáles, desde que arrancó
   if (!Number.isFinite(opts.startedAt)) {
     unknown.push(`no sé desde cuándo trabaja en ${dir}: no puedo mirar las ramas que dejó`);
-    return { missing, unknown, before };
+    return done();
   }
   // sin su archivo, git contesta con el registro de la rama, que no dice de qué ramas se fue: medido
   const logPath = git(['rev-parse', '--git-path', 'logs/HEAD'], 'el registro');
-  if (logPath.code !== 0) return { missing, unknown, before };
+  if (logPath.code !== 0) return done();
   let logSize = 0;
   try { logSize = fs.statSync(path.resolve(dir, logPath.out)).size; } catch (_) { logSize = 0; }
   const log = logSize ? git(['reflog', 'show', '--date=unix', '--format=%gd %gs', 'HEAD'], 'las ramas que dejó') : null;
-  if (log && log.code !== 0) return { missing, unknown, before };
+  if (log && log.code !== 0) return done();
   // un registro vacío (apagado por configuración) o con otra forma no dice que no dejó ramas
   const lines = log && log.out ? log.out.split('\n') : [];
   if (!lines.length || !lines.every((l) => /^HEAD@\{\d+\}( |$)/.test(l))) {
     unknown.push(`no pude leer el registro de ${dir}: no sé qué ramas dejó`);
-    return { missing, unknown, before };
+    return done();
   }
   const left = new Set();
   for (const l of lines) {
     const m = /^HEAD@\{(\d+)\} checkout: moving from (\S+) to /.exec(l);
     // en un puesto heredado, sólo hasta que llegó la otra sesión: lo de después es suyo
-    if (m && Number(m[1]) * 1000 >= opts.startedAt && !(heredado && Number(m[1]) * 1000 >= opts.heir.startedAt)) left.add(m[2]);
+    if (m && Number(m[1]) * 1000 >= opts.startedAt && !(heredado && Number(m[1]) * 1000 >= solto.llegada)) left.add(m[2]);
   }
   for (const b of left) {
     if (b === branch.out && !heredado) continue;
@@ -2091,14 +2138,14 @@ function folderGaps(dir, opts) {
       // sin rama, el registro dice el commit: lo hecho ahí sólo queda en el registro si ninguna rama lo tiene
       if (ref.code === 1 && /^[0-9a-f]{7,40}$/.test(b)) {
         const loose = git(['rev-list', '--count', b, '--not', '--branches', '--remotes', main.out], `el commit ${b}`);
-        if (loose.code === 0 && Number(loose.out) > 0) missing.push(`${loose.out} commit(s) hechos sin rama en ${dir}, desde ${b}`);
+        if (loose.code === 0 && Number(loose.out) > 0) own.push(`${loose.out} commit(s) hechos sin rama en ${dir}, desde ${b}`);
       }
       continue;
     }
     const entered = git(['merge-base', '--is-ancestor', `refs/heads/${b}`, main.out], `si la rama ${b} entró a main`, true);
-    if (entered.code === 1) missing.push(`la rama local ${b} de ${dir} no entró a main`);
+    if (entered.code === 1) own.push(`la rama local ${b} de ${dir} no entró a main`);
   }
-  return { missing, unknown, before };
+  return done();
 }
 
 // La ejecución de la sesión: `{ missing, unknown }`. Un marcador sin pasos pendientes es de una corrida terminada, y un
@@ -2209,12 +2256,14 @@ function close(opts = {}) {
   const unknown = [];
   // sólo una quieta: `shell` es un comando corriendo, y un estado que no se conoce tampoco es estar quieta
   if (s.alive && s.status !== 'idle') missing.push(`está trabajando (${oneLine(s.status) || 'sin estado'})`);
-  // la sesión viva que arrancó después en su misma carpeta: si la carpeta es un puesto fijo, lo heredó
+  // la sesión viva que arrancó después en su misma carpeta: si la carpeta es un puesto fijo, lo heredó. Sin una así, la
+  // que arrancó antes y está ahí ahora: puede haber llegado al puesto después de la suelta (lo dice el registro)
   const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-  const heir = s.cwd && Number.isFinite(s.startedAt)
-    ? [...sessions.entries()].filter(([o, x]) => o !== sid && x.alive && x.cwd && Number.isFinite(x.startedAt) && x.startedAt > s.startedAt && real(x.cwd) === real(s.cwd))
-      .map(([, x]) => x).sort((a, b) => a.startedAt - b.startedAt)[0] || null
-    : null;
+  const others = s.cwd && Number.isFinite(s.startedAt)
+    ? [...sessions.entries()].filter(([o, x]) => o !== sid && x.alive && x.cwd && Number.isFinite(x.startedAt) && real(x.cwd) === real(s.cwd)).map(([, x]) => x)
+    : [];
+  const heir = others.filter((x) => x.startedAt > s.startedAt).sort((a, b) => a.startedAt - b.startedAt)[0]
+    || others.sort((a, b) => b.startedAt - a.startedAt)[0] || null;
   const folder = s.cwd ? folderGaps(s.cwd, { home, env, arnes: opts.arnes, startedAt: s.startedAt, heir }) : { missing: [], unknown: ['no anotó su carpeta: no puedo mirarla'] };
   const run = runGaps(sid, home);
   missing.push(...folder.missing, ...run.missing);

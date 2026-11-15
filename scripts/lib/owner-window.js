@@ -43,7 +43,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, firmaDelPedidoAdhoc } = require('./signatures.js');
+const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc } = require('./signatures.js');
 const { approverOf } = require('./approver.js');
 const { casaDeLaCuenta } = require('./real-home.js');
 
@@ -519,6 +519,9 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null) {
     // dejar pasar una vez un guardado ajeno al carril que espera sus revisores
     if (sub === 'adhoc' && a[0] === 'allow-foreign-save') return 'adhoc-lane:guardado-ajeno';
     if (sub === 'adhoc' && /[$`]/.test(a[0] || '')) return SOBRE_CUPO;
+    // cerrar la ejecución que la partición de su historia dejó sin objeto: la bandera elige la forma de rutina, y el
+    // guion comprueba antes de la firma que la historia se partió después de la apertura
+    if (sub === 'clear-session' && a.includes('--lost') && a.includes('--partition')) return LOST_RUN_PARTICION;
     if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
     // la firma en una variable puede ser cualquiera de las cuatro: cuenta como una, y la forma canónica la niega
     if (sub === 'sign-file' && (opaca || FIRMAS_DE_ARCHIVO.includes(a[0]))) return `escape:${FIRMAS_DE_ARCHIVO.includes(a[0]) ? a[0] : FIRMAS_DE_ARCHIVO[0]}`;
@@ -598,7 +601,7 @@ function canonicaDe(comando, topes = null) {
  * la sesión que corre el comando, que es su destino.
  */
 function sesionNombrada(firma, palabras) {
-  return firma === 'lost-run' && palabras && palabras[1] === 'clear-session' ? String(palabras[2] || '') : null;
+  return (firma === 'lost-run' || firma === LOST_RUN_PARTICION) && palabras && palabras[1] === 'clear-session' ? String(palabras[2] || '') : null;
 }
 
 /** El valor de `--for-session`, separado o con `=`; null si no está. */
@@ -988,11 +991,16 @@ const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control
   // dejar pasar el freno de los datos sin un freno anotado, o con un texto que el guion no acepta
   'adhoc-lane:datos',
   // dejar pasar un guardado ajeno sin un pedido anotado
-  'adhoc-lane:guardado-ajeno']);
+  'adhoc-lane:guardado-ajeno',
+  // cerrar como reemplazada por una partición una ejecución cuya historia no se partió después de la apertura
+  LOST_RUN_PARTICION]);
 // las de sólo click cuyo chequeo corre antes de dar el cuadro: un pedido que el guion niega igual (un motivo en dos
 // renglones, una lista inválida) no gasta el click. La vuelta extra también: sin el aviso del tope o la nota de repensar,
-// la sesión los agregaría después del click, el cuadro cambiaría y la firma vencería
-const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', SOBRE_CUPO, 'extra-round']);
+// la sesión los agregaría después del click, el cuadro cambiaría y la firma vencería. El camino corto también: sin
+// «datos», con una lista inválida o un cupo menor que lo tocado, `adhoc set` lo niega después del click. Cerrar una
+// ejecución reemplazada por una partición: con la bandera mal puesta, el guion la niega igual
+const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', SOBRE_CUPO, 'extra-round',
+  'adhoc-lane', LOST_RUN_PARTICION]);
 // lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
 // 210 s (lib/save-ok.js)
 const PLAZO_DEL_CHEQUEO = { save: 240000 };
@@ -1030,7 +1038,7 @@ const AVISA_SU_GUION = new Set(['save', 'adhoc-lane']);
  * ¿La firma pedida en una pestaña sin permisos es de rutina? `{ ok }` o `{ ok: false, motivo }`. Va sola, sin escapes;
  * un arreglo rápido que ya existe no sube su tope (el que se pide sin `maxFiles` conserva el que tenía).
  */
-function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, topes = null, cwd = null }) {
+function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, topes = null, cwd = null, sesion = null }) {
   if (!guion || !RUTINA_SIN_PERMISOS.has(guion) || pendientes.length !== 1 || pendientes[0] !== guion) return { ok: false, motivo: null };
   if (guion !== 'adhoc-lane') return { ok: true };
   let pedido;
@@ -1042,8 +1050,20 @@ function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, to
   if (existente && pedido && pedido.maxFiles !== undefined && Number(pedido.maxFiles) > Number(existente.maxFiles)) {
     return { ok: false, motivo: `subir el tope del arreglo rápido (de ${existente.maxFiles} a ${pedido.maxFiles} archivos) sigue siendo una firma` };
   }
-  const pasa = pasaDelCupoDelegado(palabras, (topes || topesDelCaminoCorto(casa)).delegado, cwd);
+  // la lista pedida para otra sesión se mira con la carpeta de esa sesión, como en la delegación
+  const pasa = pasaDelCupoDelegado(palabras, (topes || topesDelCaminoCorto(casa)).delegado, carpetaDelPedido({ palabras, cwd, casa, sesion }));
   return pasa ? { ok: false, motivo: pasa } : { ok: true };
+}
+
+/**
+ * La carpeta contra la que se resuelve la lista de un `adhoc set`: con `--for-session` de otra sesión, la carpeta de
+ * trabajo de esa sesión (su transcripción), o null si no se sabe (el guion lo niega igual); si no, `cwd`, la del evento.
+ */
+function carpetaDelPedido({ palabras, cwd, casa, sesion }) {
+  const i = (palabras || []).indexOf('--for-session');
+  const pedida = i >= 0 ? palabras[i + 1] : null;
+  if (!pedida || pedida === sesion) return cwd;
+  return require(path.join(LIB, 'adhoc-list.js')).carpetaDeLaSesion({ casa: casa || casaDeLaCuenta(), sesion: pedida });
 }
 
 /**
@@ -1200,7 +1220,8 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     // una firma que el perfil delega y no se delegó lleva su motivo a la ventana; la que no se delega, no (es lo normal)
     else sinDelegar = rs.map((r) => r && !r.ok && r.motivo).find((m) => m && !/no delega|sólo del dueño|la sesión que implementa/.test(m)) || null;
   } catch (e) { return negar(`no se pudo consultar la delegación del perfil (${e.message})`, pendientes); }
-  const fueraDelCupo = delegada && firmaGuion === 'adhoc-lane' ? pasaDelCupoDelegado(can && can.palabras, topes.delegado, evento.cwd || null) : null;
+  // la lista pedida para otra sesión se mira con la carpeta de esa sesión, no con la de quien pide
+  const fueraDelCupo = delegada && firmaGuion === 'adhoc-lane' ? pasaDelCupoDelegado(can && can.palabras, topes.delegado, carpetaDelPedido({ palabras: can && can.palabras, cwd: evento.cwd || null, casa, sesion })) : null;
   if (fueraDelCupo) { delegada = null; sinDelegar = fueraDelCupo; }
   // una pestaña que no pide permisos aprueba sola lo que se manda a la ventana: el renglón quedaría a nombre del dueño
   // sin su Sí. Lo que afloja un control se niega ahí, con el comando de la terminal; lo de rutina se hace y queda en el
@@ -1223,7 +1244,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
       sinAprobacion = a.motivo;
       // sin aprobación: lo de rutina en una pestaña sin permisos sigue «hecho y avisado»; lo demás se niega y dice cómo
       // aprobarlo. En una sesión de fondo no hay «hecho y avisado»: nadie ve el aviso en la pestaña
-      const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa, topes, cwd: evento.cwd || null });
+      const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa, topes, cwd: evento.cwd || null, sesion });
       // nombrar o retirar a la coordinadora: lo que el guion negaría se dice antes del cuadro, sin gastar el click
       if (CHEQUEO_ANTES_DEL_CUADRO.has(firmaGuion)) {
         let c = null;
@@ -1790,7 +1811,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { claveDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, formasDeFirmar,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos };
 

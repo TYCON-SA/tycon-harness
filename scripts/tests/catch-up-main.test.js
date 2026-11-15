@@ -400,3 +400,34 @@ test('Ayudante_FirmaSinHora_NoResuelveYDejaLaRama', (t) => {
   assert.equal(enCurso(lab), false);
   assert.equal(lab.git('status', '--porcelain').trim(), '');
 });
+
+// Una falla de git al preguntar si el índice está en origin/main no es «no está»: si lo fuera, un repo con el índice
+// generado se trataría como escrito a mano y el merge uniría los renglones en vez de regenerarlos.
+test('CatchUpMain_GitFalla_NoEsManual (T6) @story-8.282 @ac-6', () => {
+  const { esGenerado } = require(HELPER);
+  const MARCA = '# Generado por scripts/tools/story-index.js desde el frontmatter de cada historia: no se edita a mano.\n';
+  // un git falso: contesta según la orden y anota lo que le preguntaron
+  const falso = (respuestas) => (args) => {
+    const clave = `${args[0]} ${args[args.length - 1]}`;
+    return respuestas[clave] || { code: 0, out: '', err: '' };
+  };
+  // git que falla al preguntar por la ruta: null y el motivo
+  const salida = {};
+  const roto = falso({ [`ls-tree ${SPRINT}`]: { code: 128, out: '', err: 'fatal: not a git repository' } });
+  assert.strictEqual(esGenerado(roto, salida), null);
+  assert.match(salida.motivo, /not a git repository/);
+  // la ruta no está en ninguno de los dos: false (escrito a mano o sin índice)
+  assert.strictEqual(esGenerado(falso({})), false);
+  // uno de los dos está y trae la marca: true
+  const generado = falso({
+    [`ls-tree ${SPRINT}`]: { code: 0, out: `${SPRINT}\n`, err: '' },
+    [`show origin/main:${SPRINT}`]: { code: 0, out: MARCA, err: '' },
+  });
+  assert.strictEqual(esGenerado(generado), true);
+  // está y no se puede leer: null, como hoy
+  const ilegible = falso({
+    [`ls-tree ${EPICS}`]: { code: 0, out: `${EPICS}\n`, err: '' },
+    [`show origin/main:${EPICS}`]: { code: 128, out: '', err: 'fatal: bad object' },
+  });
+  assert.strictEqual(esGenerado(ilegible), null);
+});

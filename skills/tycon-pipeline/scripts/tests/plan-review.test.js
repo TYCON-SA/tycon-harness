@@ -144,7 +144,8 @@ function agentes({ cazar = () => [], verificar = () => ({ verdict: 'REFUTED', re
     return { lens: m ? m[1] : '?', findings: cazar(m ? m[1] : '?') };
   };
 }
-const argsDelPlan = (extra = {}) => ({ modo: 'plan', repo: '/tmp/repo-de-la-prueba', storyTexto: '# Story 9.91\n\nAC 1. el README dice x.\n', planTexto: PLAN, model: 'opus', runDir: '/tmp/repo-de-la-prueba/run', pedido: 'c0ffee12c0ffee12', ...extra });
+// un verificador por hallazgo, como al escribirse esta suite (la fábrica del guion es uno por lente desde la 8.282)
+const argsDelPlan = (extra = {}) => ({ modo: 'plan', verifiers: 'per_finding', repo: '/tmp/repo-de-la-prueba', storyTexto: '# Story 9.91\n\nAC 1. el README dice x.\n', planTexto: PLAN, model: 'opus', runDir: '/tmp/repo-de-la-prueba/run', pedido: 'c0ffee12c0ffee12', ...extra });
 
 // ════════════════════════════════════════════ Qué es delicado ═══════════════════════════════════════════════════════
 
@@ -790,6 +791,10 @@ test('Carril_ConAprobadoDelDueno_SeDeclara', (t) => {
   const json = JSON.stringify({ reason: 'el arreglo de la prueba', maxFiles: 3, datos: 'sin-cambio', allowedFiles: ['src/a.js'] });
   const args = ['adhoc', 'set', json, '--for-session', DESTINO];
   const cmd = `node ${MARKER} adhoc set '${json}' --for-session ${DESTINO}`;
+  // la sesión destino trabaja en el repo: su transcripción lo dice, y la lista se resuelve contra esa carpeta (8.276)
+  const suya = path.join(lab.home, '.claude', 'projects', '-r-destino');
+  fs.mkdirSync(suya, { recursive: true });
+  fs.writeFileSync(path.join(suya, `${DESTINO}.jsonl`), `${JSON.stringify({ type: 'user', cwd: lab.repo })}\n`);
   aprobadoDelDueno(lab, preguntaDe(lab, cmd, 'adhoc-lane'));
   const p = lab.pedir(cmd, { delegada: true });
   assert.deepStrictEqual([p.decision, p.via], ['allow', 'mensaje'], p.texto);

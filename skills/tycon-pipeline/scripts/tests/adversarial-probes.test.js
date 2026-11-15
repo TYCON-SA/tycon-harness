@@ -59,7 +59,8 @@ function correr(args) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'adv-probes-'));
   const stub = mkStub(tmp);
   const out = path.join(tmp, 'out.json');
-  args = { repo: tmp, base: '0123456789abcdef0123456789abcdef01234567', ...args };
+  // un verificador por hallazgo, como al escribirse esta suite (la fábrica es uno por lente desde la 8.282)
+  args = { repo: tmp, base: '0123456789abcdef0123456789abcdef01234567', verifiers: 'per_finding', ...args };
   const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify(args), '--out', out], {
     encoding: 'utf8',
     env: { ...process.env, TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}` },

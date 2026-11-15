@@ -911,6 +911,7 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   // la sesión de cada tarjeta: el número de su fila del tablero vuelve a su ficha, para nombrarla desde la tarjeta
   const agentOfCard = new Map();
   const rowNumbers = new Set(((board && board.filas) || []).map((f) => f.numero).filter(Boolean));
+  const ocultas = [];
   for (const a of agents) {
     const card = { titulo: a.titulo || a.haciendo, quien: a.nombre, hora: cardHour(a.fin), ...(a.fin && a.fin.cls ? { cls: a.fin.cls } : {}), ...(a.espera ? { espera: a.espera } : {}), ...(a.marca ? { marca: a.marca } : {}), ...(a.parada ? { motivo: a.parada } : {}), ...(a.mano ? { mano: a.mano } : {}) };
     let id = null;
@@ -918,8 +919,13 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     // la marcada con la sesión viva va a «En curso», salvo que espere firma
     else if (a.tipo && a.estado === 'espera' && !a.marca) id = 'entrando';
     else if (a.tipo && a.estado !== 'inactiva' && a.estado !== 'libre') id = 'curso';
-    // la coordinadora no es un pendiente, salvo que su trabajo anotado sea una fila del tablero: coordinar no es una tarea
-    if (!id || (a.estado === 'coordina' && (!a.titulo || !tasksIn(a.titulo, a.haciendo, ...(a.tareasDichas || [])).some((n) => rowNumbers.has(n))))) continue;
+    // la coordinadora no es un pendiente, salvo que su trabajo anotado sea una fila del tablero: coordinar no es una tarea.
+    // Su tarjeta no sale, pero queda dicho por qué (`ocultas`); una sesión sin columna no tiene tarjeta que ocultar
+    if (!id) continue;
+    if (a.estado === 'coordina' && (!a.titulo || !tasksIn(a.titulo, a.haciendo, ...(a.tareasDichas || [])).some((n) => rowNumbers.has(n)))) {
+      ocultas.push({ quien: a.nombre, motivo: 'coordina y su trabajo anotado no es una fila del tablero' });
+      continue;
+    }
     if (a.tipo === 'stalled') card.marca = 'riesgo';
     if (a.otroProyecto) { card.quien = `${a.nombre} · Otro proyecto`; card.otro = true; }
     const hourAt = a.estado === 'esperando' ? NaN : Date.parse(a.pronosticoIso || a.estimadaIso);
@@ -1056,7 +1062,8 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   const anteriores = done.filter((c) => !isToday(c));
   col('hechos').tarjetas = done.filter(isToday).sort((p, q) => q.terminadoMs - p.terminadoMs);
   for (const c of done) delete c.terminadoMs;
-  return { anteriores, columnas: cols, medioCamino: items.filter((i) => i.estado === 'riesgo' && i.accion).map((i) => Object.defineProperties({ titulo: i.titulo, quien: i.quien, accion: i.accion }, { trabajo: { value: i.trabajo }, historia: { value: i.historia }, proyecto: { value: i.proyecto } })) };
+  // las tarjetas que no salen, con su motivo: no viajan a la página ni al sitio (no se enumeran)
+  return Object.defineProperty({ anteriores, columnas: cols, medioCamino: items.filter((i) => i.estado === 'riesgo' && i.accion).map((i) => Object.defineProperties({ titulo: i.titulo, quien: i.quien, accion: i.accion }, { trabajo: { value: i.trabajo }, historia: { value: i.historia }, proyecto: { value: i.proyecto } })) }, 'ocultas', { value: ocultas });
 }
 
 /**
@@ -1709,6 +1716,22 @@ function sessionsForPrs(wip, board, remoteOf, remembered, nowMs, liveSessions = 
   return out;
 }
 
+// Los caracteres que parten o ensucian un renglón del registro: los de control y los separadores de línea.
+const CONTROL_CHARS = new RegExp('[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+', 'g');
+
+// El renglón del registro de la oficina para las tarjetas que no salen (`kanban.ocultas`), o null: sólo cuando la lista
+// cambió desde la última foto (`seen` es la memoria del proceso), para no repetirlo en cada refresco; una lista vacía no
+// dice nada.
+function hiddenCardsLine(ocultas, seen) {
+  const list = ocultas || [];
+  const key = JSON.stringify(list);
+  if (seen.hiddenCards === key) return null;
+  seen.hiddenCards = key;
+  // el nombre lo pone una persona: en un renglón del registro, sin caracteres de control que lo partan
+  const said = (v) => String(v == null ? '' : v).replace(CONTROL_CHARS, ' ').trim();
+  return list.length ? list.map((o) => `no muestro la tarjeta de ${said(o.quien)}: ${said(o.motivo)}`).join(' · ') : null;
+}
+
 // Las sesiones de un repo que el arnés no sigue, de los que lee la lista de pedidos. Si no se sabe de qué repo es, cuenta.
 function otherProjectsOf(wip, open, remoteOf) {
   const out = new Set();
@@ -2129,6 +2152,11 @@ async function collect(opts = {}) {
   const { data, promises, facts, factsComplete } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf), projectOf, projectOfRepo, projectStories });
   // el tablero se mueve solo con los hechos de esta foto: lo hace sólo quien tiene el candado de la oficina, con board.js
   if (opts.syncBoard && board.board && !opts.readOnly) syncBoardFromPhoto(sdir, facts, factsComplete && open.measured !== false, problems, { now: nowMs, home, sync: opts.boardSync });
+  // por qué no sale una tarjeta, al registro del proceso de la oficina (su salida de errores va a server.log): sólo él
+  if (opts.syncBoard && opts.memory) {
+    const hidden = hiddenCardsLine(data.kanban.ocultas, opts.memory);
+    if (hidden) process.stderr.write(`${new Date(nowMs).toISOString()} ${hidden}\n`);
+  }
   // sólo con la oficina abierta: la primera pasada lee conversaciones enteras, y la foto fija y `--json` empezarían de cero cada vez
   if (opts.envelopes && !opts.noTranscripts) data.tokens = readTokens(wip, states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
   // el modelo y el esfuerzo de cada sesión, de su última respuesta: van con la persona, a su etiqueta y a sus tarjetas
@@ -2344,4 +2372,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { workedAfterWait, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };
+module.exports = { workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };

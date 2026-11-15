@@ -50,6 +50,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `adhoc-lane` | 1 · rutina | dev y mantenimiento | abrir un arreglo rápido sin historia, dentro del cupo | `adhoc-lane` |
 | `compare-waiver` | 1 · rutina | dev y mantenimiento | eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing) | `compare-waiver` |
 | `refresh-after-main` | 1 · rutina | sólo mantenimiento | refirmar los controles tras traer main, sin cambio propio | `refresh-after-main` |
+| `lost-run:particion` | 1 · rutina | dev y mantenimiento | cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing) | `lost-run:particion` |
 | `save:sensible` | 2 · excepción | dev y mantenimiento | guardar cuando un commit toca algo de lo sensible | `save` |
 | `adhoc-lane:datos` | 2 · excepción | dev y mantenimiento | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño) | `adhoc-lane:datos` |
 | `adhoc-lane:guardado-ajeno` | 2 · excepción | dev y mantenimiento | dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista (sólo el click o la terminal de una persona) | `adhoc-lane:guardado-ajeno` |
@@ -318,6 +319,7 @@ vuelve a pedir la firma del dueño.
 | `manual-test` | marcar un criterio como probado a mano | `marker.js mark-tested --acs` | sí | `marker.js mark-tested --acs --terminal` |
 | `browser-test` | preparar la prueba con navegador, o decirle que no | `e2e-setup.js prepare (o defer --no)` | sí | `e2e-setup.js prepare --terminal (o defer --no --terminal)` |
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
+| `lost-run:particion` | cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto | `marker.js clear-session <S> --lost --partition` | sí | `marker.js clear-session <S> --lost --partition --terminal` |
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
 | `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --file <ruta> --terminal --for-session <id>` |
@@ -359,6 +361,10 @@ delega nada: saltear el pase lo firma sólo el dueño.
 `escape-phrases` no trae `escape:force-manual` ni `escape:trust-ran`: esas dos se piden con su propio guion, también
 para otra sesión, y se delegan sólo nombrándolas. `approvals.owner_only` no acepta grupos: cada firma que el dueño se
 reserva va por su id.
+
+`lost-run` no trae `lost-run:particion`, la forma de rutina de cerrar una ejecución que la partición de su historia dejó
+sin objeto: un perfil que ya delega `lost-run` no la delega sin pedirla por su id. Al reservar, sí: `lost-run` en
+`approvals.owner_only` la vuelve sólo del dueño también.
 
 <!-- generado: grupos -->
 | Grupo | Firmas |
