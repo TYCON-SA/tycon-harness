@@ -6,6 +6,7 @@
   "suite_cap": { "factor": 2, "floor": 180, "measured": { "runs": 5, "scan": 14, "last": 5, "min": 3, "max": 1500 } },
   "__job_warn_minutes": "El umbral del trabajo más cargado del nocturno (story 8.280, AC 12): si el plan le da más de 50 minutos, el nocturno lo avisa antes de correr. Son minutos del plan (lo medido, o el peso), no del reloj: los 10 de margen al tope de 60 de Azure cubren la preparación de cada trabajo, que en la corrida 16213 tardó 55 a 95 s. En esa corrida las suites sumaron más de 12 570 s entre los 4 trabajos: repartidas parejo, cada uno lleva ~52 min, así que el aviso va a salir casi todas las noches. No cambia la cantidad de trabajos: sumar uno lo decide una persona, por los carriles.",
   "job_warn_minutes": 50,
+  "__signature_question": "signature-question.test.js: 18 s, la mediana de tres corridas en una Mac (2026-11-15) después de darle al repo de juguete de sus preguntas una carpeta propia; antes tardaba de 86 a 134 s y se contaba con el peso por defecto de 3 s. No sale de una noche: se renueva con las demás cuando una noche la mida.",
   "default": 3,
   "weights": {
     "harness-install.test.sh": 505,
@@ -193,7 +194,8 @@
     "night-notices.p1.test.js": 35,
     "night-notices.p3.test.js": 35,
     "maintainers-sync.p2.test.js": 25,
-    "maintainers-sync.p3.test.js": 25
+    "maintainers-sync.p3.test.js": 25,
+    "signature-question.test.js": 18
   },
   "pr": {
     "__doc": "Los pesos de la validación de cada rama (pipelines/azure-pipelines-maintainers-pr.yml), que los pide con `--weight-set pr` en sus tres llamados a suites-shard.js (story 8.22, tramo A). No son los del nocturno: en la validación clean-machine tarda ~3 s y export-real ~391. Cada peso es la mediana de las corridas de `runs` (la mediana deja afuera un cuelgue: en la 12185 harness-update tardó 1373 s). Una suite que no está acá toma el peso de `weights` de arriba y, si tampoco, el `default` de acá; por eso clean-machine va anotada aunque pese menos de 10 s. Trae las suites de 10 s o más; las demás promediaron 2,6 s. Cómo se mide una suite cuando corren dos a la vez (restar la línea anterior del registro NO da su duración), y la tabla: tasks/medicion-8.22-validacion-15-min.md.",

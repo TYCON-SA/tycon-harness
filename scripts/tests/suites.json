@@ -709,6 +709,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.277: una deuda pagada antes del commit se levanta con marker.js lift-debt; los rojos esperados vuelven a ser rojos y «Preparar» pide todo en verde.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/lift-debt.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.51: la historia de primera vez arranca sola — sin git, git init; en main/master, la rama story/<n>; sólo con la marca y la constancia del guion (la marca a mano pausa como siempre).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/start-first-story.test.js",
@@ -2964,7 +2970,7 @@
       "requiere": []
     },
     {
-      "__nota": "la pregunta de cada firma dice qué se aprueba (owner-approvals.js cuadroDe, owner-window.js cuadroPara y signature-sources.js): el verbo una vez, la historia con su título, qué hace en hasta 3 líneas, archivos, ruta, su «si sale mal» y la cita al final; el click atado a lo que se mostró. Sin red, segundos.",
+      "__nota": "la pregunta de cada firma dice qué se aprueba (owner-approvals.js cuadroDe, owner-window.js cuadroPara y signature-sources.js): el verbo una vez, la historia con su título, qué hace en hasta 3 líneas, archivos, ruta, su «si sale mal» y la cita al final; el click atado a lo que se mostró. Sin red, unos 18 s (corre de verdad los guiones de cada firma).",
       "raiz": "arnes",
       "ruta": "tests/signature-question.test.js",
       "requiere": []

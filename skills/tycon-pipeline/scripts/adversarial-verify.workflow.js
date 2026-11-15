@@ -72,9 +72,11 @@ const AGRUPAR = (A && A.agrupar === false)
   : !(typeof process !== 'undefined' && process && process.env && process.env.TYCON_5B_GROUP === '0')
 
 // Cuántos verificadores: `per_lens`, uno por lente con todos sus hallazgos (cada uno con su respuesta y su id), o
-// `per_finding`, uno por hallazgo (o por clase, con el agrupamiento). Sin el arg, lo de siempre: uno por hallazgo. Quien
-// arma los args pasa el valor de la organización (team-repos.json → review_runner.verifiers).
-const VERIFIERS = (A && A.verifiers === 'per_lens') ? 'per_lens' : 'per_finding'
+// `per_finding`, uno por hallazgo (o por clase, con el agrupamiento). Quien arma los args pasa el valor de la
+// organización (team-repos.json → review_runner.verifiers). Sin el arg (el guion llamado a mano), el de fábrica:
+// `DEFAULTS.review_runner.verifiers` de lib/review-policy.js, copiado acá porque la caja no tiene `require`. La prueba
+// T8 de tests/adversarial-launch.test.js compara los dos: si uno cambia, se cambia el otro.
+const VERIFIERS = (A && A.verifiers === 'per_finding') ? 'per_finding' : 'per_lens'
 
 // En el modo plan con un verificador por hallazgo, cuántos se verifican como mucho (los de mayor gravedad): los demás
 // quedan sin veredicto, y entonces el plan no cuenta como medido. Sin tope, un revisor que reporta cien hallazgos

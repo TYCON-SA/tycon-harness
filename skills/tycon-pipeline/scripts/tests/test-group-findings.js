@@ -172,7 +172,8 @@ function correr(extra) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agrupar-'));
   const stub = mkStub(tmp);
   const out = path.join(tmp, 'out.json');
-  const args = { repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE, ...(extra || {}) };
+  // el agrupamiento es del modo «un verificador por hallazgo»: la fábrica es uno por lente desde la 8.282
+  const args = { repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE, verifiers: 'per_finding', ...(extra || {}) };
   delete args.__env;
   const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify(args), '--out', out], {
     encoding: 'utf8',
@@ -302,7 +303,7 @@ if (/LENTE: completitud/.test(prompt)) { console.log(JSON.stringify({ lens: 'tra
 else { console.log(JSON.stringify({ lens: 'otra', findings: [] })); }
 `);
   const out = path.join(tmp, 'out.json');
-  const args = { repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE };
+  const args = { repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE, verifiers: 'per_finding' };
   const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify(args), '--out', out], {
     encoding: 'utf8',
     env: { ...process.env, TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}` },
@@ -428,7 +429,7 @@ if (/REFUTAR/i.test(prompt)) {
 else { console.log(JSON.stringify({ lens: 'otra', findings: [] })); }
 `);
   const out = path.join(tmp, 'out.json');
-  const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify({ repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE }), '--out', out], {
+  const r = spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify({ repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE, verifiers: 'per_finding' }), '--out', out], {
     encoding: 'utf8', env: { ...process.env, TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}` },
   });
   const salida = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')) : null;
@@ -461,7 +462,7 @@ if (/REFUTAR/i.test(prompt)) {
 else { console.log(JSON.stringify({ lens: 'otra', findings: [] })); }
 `);
     const out = path.join(tmp, 'out.json');
-    spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify({ repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE }), '--out', out], {
+    spawnSync(process.execPath, [WFLITE, WORKFLOW, '--args', JSON.stringify({ repo: tmp, files: ['src/a.js'], runDir: path.join(tmp, 'run'), base: BASE, verifiers: 'per_finding' }), '--out', out], {
       encoding: 'utf8', env: { ...process.env, TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${stub}` },
     });
     const salida = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')) : null;

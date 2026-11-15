@@ -159,3 +159,72 @@ test('Guias_ValidarLaHistoriaYCrearLaHistoria_DejanLaConstancia — los dos paso
   const crear = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-create-story', 'workflow.md'), 'utf8');
   assert.match(crear, /validation-record --story/);
 });
+
+// Dos copias de un mismo repo (dos clones de un mismo origin) o dos repos distintos, cada uno con su historia 9.5.
+function conOrigin(origen) {
+  const repo = tmp('copia');
+  spawnSync('git', ['init', '-q', '-b', 'main', repo], { stdio: 'ignore' });
+  spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', origen], { stdio: 'ignore' });
+  const story = path.join(repo, 'specs', 'story-9.5.md');
+  escribir(story, historia());
+  return { repo, story };
+}
+
+test('ValidationRecord_OtherCopySameRepo_Recognized @story-8.277 @ac-7 — la constancia escrita en una copia vale en otra del mismo repo', () => {
+  const home = tmp('home');
+  const a = conOrigin('https://example.com/acme/historias.git');
+  const b = conOrigin('git@example.com:acme/historias');
+  lib().writeRecord(home, a.story, { resultado: 'verde', validadores: [VALIDADOR] });
+  assert.equal(lib().readRecord(home, b.story).estado, 'current');
+});
+
+test('ValidationRecord_FingerprintChanged_NotRecognized @story-8.277 @ac-8 — con la huella cambiada en la otra copia, no la reconoce', () => {
+  const home = tmp('home');
+  const a = conOrigin('https://example.com/acme/historias.git');
+  const b = conOrigin('https://example.com/acme/historias.git');
+  lib().writeRecord(home, a.story, { resultado: 'verde', validadores: [VALIDADOR] });
+  escribir(b.story, historia().replace('queda con su total', 'queda con su total y su fecha'));
+  assert.equal(lib().readRecord(home, b.story).estado, 'stale');
+});
+
+test('ValidationRecord_SameNumberOtherRepo_Separate @story-8.277 @ac-9 — el mismo número en otro repo, o en otro repo sin origin, no la ve', () => {
+  const home = tmp('home');
+  const a = conOrigin('https://example.com/acme/historias.git');
+  const otro = conOrigin('https://example.com/acme/otras.git');
+  lib().writeRecord(home, a.story, { resultado: 'verde', validadores: [VALIDADOR] });
+  assert.equal(lib().readRecord(home, otro.story).estado, 'none', 'otro origin');
+  // sin origin, la clave es la raíz real del repo: otro repo sin origin no la ve, el mismo sí
+  const s1 = lab();
+  const s2 = lab();
+  lib().writeRecord(home, s1.story, { resultado: 'verde', validadores: [VALIDADOR] });
+  assert.equal(lib().readRecord(home, s2.story).estado, 'none', 'otro repo sin origin');
+  assert.equal(lib().readRecord(home, s1.story).estado, 'current', 'el mismo repo sin origin');
+});
+
+test('ValidationRecord_OldKey_StillRead @story-8.277 @ac-20 — una constancia con la clave de antes se sigue leyendo', () => {
+  const home = tmp('home');
+  const a = conOrigin('https://example.com/acme/historias.git');
+  const vieja = lib().recordFileViejo(home, a.story);
+  assert.notEqual(vieja, lib().recordFile(home, a.story), 'la clave cambió');
+  const { huella } = require(path.join(SCRIPTS, 'lib', 'story-review-record.js'));
+  escribir(vieja, JSON.stringify({ path: fs.realpathSync(a.story), resultado: 'verde', validadores: [VALIDADOR], huella: huella(historia()), hora: '2026-11-14T22:01:18.549Z' }));
+  assert.equal(lib().readRecord(home, a.story).estado, 'current');
+});
+
+test('ValidationRecord_RelativeOrigin_ResolvedPerRepo @story-8.277 @ac-9 — (pase de la 8.277) un origin local relativo se resuelve contra su repo', () => {
+  const home = tmp('home');
+  // dos repos distintos, cada uno en su carpeta con su «../compartido.git» al lado: son dos remotas distintas
+  const enSuCarpeta = () => {
+    const repo = path.join(tmp('padre'), 'proj');
+    spawnSync('git', ['init', '-q', '-b', 'main', repo], { stdio: 'ignore' });
+    spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', '../compartido.git'], { stdio: 'ignore' });
+    const story = path.join(repo, 'specs', 'story-9.5.md');
+    escribir(story, historia());
+    return { repo, story };
+  };
+  const a = enSuCarpeta();
+  const b = enSuCarpeta();
+  lib().writeRecord(home, a.story, { resultado: 'verde', validadores: [VALIDADOR] });
+  assert.equal(lib().readRecord(home, b.story).estado, 'none', 'otro repo con la misma remota relativa no la ve');
+  assert.equal(lib().readRecord(home, a.story).estado, 'current', 'el mismo repo sí');
+});

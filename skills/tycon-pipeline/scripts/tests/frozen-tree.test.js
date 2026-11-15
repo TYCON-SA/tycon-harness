@@ -874,3 +874,26 @@ test('Seal_QaLegibilidadUiAfterRound_IsPaperwork @story-8.271 @ac-3 @ac-15 — l
   d = ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: 'specs/story-9.9.md' });
   assert.deepStrictEqual(d.files, ['src/a.js']);
 });
+
+test('T16 ReviewedTree_ControlChangeConstancy_NotAChange @story-8.277 @ac-22 — una constancia de cambio de control después de la vuelta es papeleo', () => {
+  const C = corrida('s-ft-t16');
+  C.vuelta();
+  fs.mkdirSync(path.join(C.codigo.repo, '.github', 'control-changes'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, '.github', 'control-changes', 'x.json'), '{"firma":"acme"}\n');
+  const r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  assert.match(salida(r), /papeleo[^\n]*\.github\/control-changes\/x\.json/, salida(r));
+});
+
+test('T16 ReviewedTree_CodeOrOtherDotFile_StillBlocks @story-8.277 @ac-22 — un .js o un workflow después de la vuelta siguen frenando', () => {
+  for (const [sid, rel] of [['s-ft-t16b', 'src/b.js'], ['s-ft-t16c', '.github/workflows/ci.yml']]) {
+    const C = corrida(sid);
+    C.vuelta();
+    fs.mkdirSync(path.dirname(path.join(C.codigo.repo, rel)), { recursive: true });
+    fs.writeFileSync(path.join(C.codigo.repo, rel), 'cambio\n');
+    const r = prepararCommit(C);
+    assert.strictEqual(r.status, 2, salida(r));
+    assert.match(salida(r), MISMATCH, salida(r));
+    assert.ok(salida(r).includes(rel), `${rel} nombrado: ${salida(r)}`);
+  }
+});

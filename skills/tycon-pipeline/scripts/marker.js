@@ -114,6 +114,8 @@
  *                                                  `deepReviewDone` NO: el pase adversarial lo cierran
  *                                                  los dos comandos de abajo, con constancia.
  *   marker.js start-warning <time-tracking|ado> "<motivo>" → una parte del Arranque que falló (queda a la vista)
+ *   marker.js lift-debt --debt <DEF-id>          → levanta la deuda del cierre ya pagada: cada rojo esperado vuelve a
+ *                                                  ser rojo y «Preparar» pide todo en verde. Sin firma: no afloja nada.
  *   marker.js mark-adversarial-result <N> --type 5b --tests k [--own p --in "<rutas>"]
  *                                   [--deferred d --reason "…"] [--classes k] [--separate n]
  *                                                → anota el resultado del pase y lo CIERRA
@@ -885,6 +887,7 @@ function vueltaCongeladaComprobada(tipo, quien) {
  */
 function comprobarLoRevisado(marker, quien) {
   const ft = require('./lib/frozen-tree.js');
+  const { isControlApproval } = require('./lib/story-gate.js');
   const v = vueltaCongeladaComprobada('revisores', quien);
   if (!v || !(v.repos || []).length) {
     appendLog('gates.log', { name: 'reviewed-tree', status: 'no-medido', story: marker.storyId || null, quien, motivo: 'la vuelta no tiene sello' });
@@ -914,7 +917,11 @@ function comprobarLoRevisado(marker, quien) {
     const c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null,
       mainAntes: r.mainBase || null, mainAhora: pm.sha || null });
     if (c.error) frenar(`no pude comparar lo que se guarda con lo revisado (${c.error}).`);
-    for (const f of c.files) distintos.push({ repo: r.repo, f });
+    // una constancia de cambio de control la firma el dueño: no es código que los revisores tengan que ver
+    for (const f of c.files) {
+      if (isControlApproval(f)) papeleo.push(f);
+      else distintos.push({ repo: r.repo, f });
+    }
     for (const f of c.papeleo) papeleo.push(f);
     for (const f of c.deMain || []) deMain.push(f);
     huellas.push(`${path.basename(r.repo)} ${r.tree.slice(0, 12)}`);
@@ -1198,6 +1205,37 @@ function planDeLaCorrida(marker) {
     const runDir = require('./pipeline.js').resolveRunDir(repo, String(marker.storyId), true, storyAbs, { marker });
     return runDir ? { file: path.join(runDir, PLAN_FILE) } : { error: 'la story no da una clave para su carpeta de corrida' };
   } catch (e) { return { error: e.message }; }
+}
+
+/**
+ * La huella sha256 del plan escrito de la corrida, la misma que calcula la revisión del plan (`planDe`, que no crea la
+ * carpeta): `{ sha }`, o `{ motivo }` si no hay plan escrito o no se puede leer.
+ */
+function huellaDelPlan(marker) {
+  let plan;
+  try { plan = require('./lib/plan-review.js').planDe(marker); } catch (e) { return { motivo: String(e.message || e).split('\n')[0] }; }
+  if (!plan || !plan.texto || !plan.texto.trim()) return { motivo: (plan && plan.error) || 'no hay plan escrito' };
+  return { sha: require('crypto').createHash('sha256').update(plan.texto).digest('hex') };
+}
+
+/**
+ * Con el plan ya aprobado, ¿anotar la parte lo deja aprobado? Sólo si lo aprobó una persona (su aprobación no congela
+ * una lista para la parte, la de la revisión sí) y ni el plan ni la maqueta aprobada cambiaron: `{ mantener, caso }`.
+ */
+function planSigueAprobado(marker) {
+  const ap = marker.planApproval || {};
+  if (ap.mode !== 'user') return { mantener: false, caso: 'la aprobación fue de la revisión automática: con la parte la da de nuevo quien la dio' };
+  if (!ap.planSha) return { mantener: false, caso: 'la aprobación es de antes de guardar la huella del plan' };
+  const ahora = huellaDelPlan(marker);
+  if (!ahora.sha) return { mantener: false, caso: `no pude leer el plan de ahora (${ahora.motivo})` };
+  if (ahora.sha !== ap.planSha) return { mantener: false, caso: 'el plan cambió desde que lo aprobó una persona' };
+  const maqueta = marker.mockupApproval;
+  if (maqueta) {
+    let sha = null;
+    try { sha = require('./mockup.js').mockupHash(fs.readFileSync(maqueta.file, 'utf8')); } catch (_) { sha = null; }
+    if (!sha || sha !== maqueta.sha256) return { mantener: false, caso: 'la maqueta aprobada cambió o no se puede leer' };
+  }
+  return { mantener: true, caso: 'el plan no cambió desde que lo aprobó una persona' };
 }
 
 /**
@@ -1631,7 +1669,9 @@ function cmdCompleteStep(nRaw, flags) {
     }
     const porRevision = !!revision;
     const textoPlan = approved || (autoRevision ? 'aprobado por la revisión automática de la propia sesión' : 'firmado en la terminal');
-    marker.planApproval = { mode: porRevision ? 'revision' : 'user', text: textoPlan, at: at3,
+    // la huella del plan aprobado: con ella, anotar la parte después no lo reabre si no cambió (set-batch)
+    const planSha = huellaDelPlan(marker).sha;
+    marker.planApproval = { mode: porRevision ? 'revision' : 'user', text: textoPlan, at: at3, ...(planSha ? { planSha } : {}),
       ...(porRevision ? { revision: { id: revision.id, veredicto: revision.veredicto, modelo: revision.modelo, lanzo: revision.lanzo } } : {}), ...firmaPlan.constancia };
     appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...firmaPlan.constancia });
     // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; por la revisión, automática a
@@ -2634,11 +2674,15 @@ function cmdSetBatch(nombre) {
   // delicada y el tamaño del plan se miden por la historia entera
   const scope = require('./lib/batch-scope.js');
   const valida = scope.validarParte(texto, nombre);
-  // con el plan ya aprobado sin parte, anotarla lo deja pendiente otra vez: la aprobación era de otra cosa
+  // con el plan ya aprobado sin parte, anotarla lo deja pendiente otra vez (la aprobación era de otra cosa), salvo que lo
+  // haya aprobado una persona y no haya cambiado
   const conPlan = require('./lib/steps.js').isDone(marker, 'approve-plan');
-  if (conPlan) {
+  const decision = conPlan ? planSigueAprobado(marker) : null;
+  if (decision && decision.mantener) {
+    appendLog('gates.log', { name: 'plan-kept', status: 'ok', story: marker.storyId || null, batch: nombre, motivo: decision.caso });
+  } else if (decision) {
     scope.volverAlPlan(marker);
-    appendLog('gates.log', { name: 'plan-reopened', status: 'ok', story: marker.storyId || null, batch: nombre, motivo: 'se anotó la parte con el plan ya aprobado sin parte' });
+    appendLog('gates.log', { name: 'plan-reopened', status: 'ok', story: marker.storyId || null, batch: nombre, motivo: `se anotó la parte con el plan ya aprobado sin parte: ${decision.caso}` });
   }
   marker.batch = nombre;
   marker.batchSetAt = nowIso();
@@ -2651,7 +2695,8 @@ function cmdSetBatch(nombre) {
   // sin `files:`, la lista sale de lo que la historia le ata: se dice cuál es, para que se vea qué se mide
   if (valida.valid && valida.derivada) process.stdout.write(`batch: archivos de la parte: ${valida.files.join(', ')}\n`);
   if (!valida.valid) process.stdout.write(`batch: la parte no vale para medir el riesgo (${valida.reason}): el plan se mide por la historia entera\n`);
-  if (conPlan) process.stdout.write('batch: el plan estaba aprobado sin parte: «Aprobar el plan» queda pendiente otra vez\n');
+  if (decision && decision.mantener) process.stdout.write(`batch: ${decision.caso}: «Aprobar el plan» sigue hecho\n`);
+  else if (decision) process.stdout.write(`batch: el plan estaba aprobado sin parte (${decision.caso}): «Aprobar el plan» queda pendiente otra vez\n`);
 }
 
 // `tests-suite`: una suite sola de suites.json, repetida con `test-gate.sh --suite` después de un rojo. Nunca vale como
@@ -3689,6 +3734,46 @@ function cmdCloseAsDebt(args) {
   writeMarker(marker);
   appendLog('gates.log', { name: 'close-as-debt', story: nn(marker.storyId, null), deuda, motivo, via });
   process.stdout.write(`cierre: deuda (${deuda}) — la ejecución sigue hasta el commit: revisores sobre lo que sí cambió, el pase y la línea «Deuda:» del mensaje.\n`);
+}
+
+// Levantar una deuda que se pagó antes del commit: `lift-debt --debt <DEF-id>`, con el id de la deuda del cierre. Saca
+// el cierre y deja cada control en rojo esperado como el rojo que dejaría `run-check` con ese exit: «Preparar» vuelve a
+// pedir todo en verde. No pide firma porque no afloja nada. Del rojo esperado queda sólo la hora de la constancia ya
+// usada, que `expect-red acmatrix` toma como piso: la firma vieja no vuelve a valer con una deuda nueva.
+function cmdLiftDebt(args) {
+  const deuda = String(opcion(args, 'debt') || '').trim();
+  if (!deuda) {
+    console.error('marker.js lift-debt: uso: lift-debt --debt <DEF-id>   (el id de la deuda del cierre, ya pagada)');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js lift-debt: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  if (!marker.cierre || marker.cierre.estado !== 'deuda') {
+    console.error('marker.js lift-debt: la ejecución no está en deuda: no hay nada que levantar');
+    process.exit(2);
+  }
+  if (marker.cierre.deuda !== deuda) {
+    console.error(`marker.js lift-debt: la deuda del cierre es ${marker.cierre.deuda}, no ${deuda}: sólo se levanta la deuda del cierre`);
+    process.exit(2);
+  }
+  const checks = [];
+  for (const [k, v] of Object.entries(marker.checks || {})) {
+    const m = /^rojo-esperado:exit=(\d+)/.exec(String(v));
+    if (!m) continue;
+    marker.checks[k] = `red:exit=${m[1]}`;
+    checks.push(k);
+  }
+  const usada = ((marker.expectedRed || {}).acmatrix || {}).constanciaTs;
+  if (usada) marker.expectedRed = { acmatrix: { constanciaTs: usada } };
+  else delete marker.expectedRed;
+  delete marker.cierre;
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'lift-debt', story: nn(marker.storyId, null), deuda, checks });
+  process.stdout.write(`deuda ${deuda} levantada${checks.length ? ` — ${checks.join(', ')} vuelve(n) a ser rojo(s)` : ''}: «Preparar» vuelve a pedir todo en verde y el commit no lleva «Deuda:».\n`);
 }
 
 // Un control en rojo que la historia en deuda deja así a propósito: `expect-red <control> --tests <T2,T5>`. Sólo en una
@@ -7501,6 +7586,9 @@ switch (cmd) {
   case 'close-as-debt':
     cmdCloseAsDebt(process.argv.slice(3));
     break;
+  case 'lift-debt':
+    cmdLiftDebt(process.argv.slice(3));
+    break;
   case 'expect-red':
     cmdExpectRed(process.argv.slice(3));
     break;
@@ -7612,7 +7700,7 @@ switch (cmd) {
         'list-all|find-by-story|clear-session|park|unpark|adopt-session|update-story-status|' +
         'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|set-size|snapshot-iter|' +
         'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|' +
-        'approve-mockup|rethink> [arg] [arg2]',
+        'approve-mockup|rethink|lift-debt> [arg] [arg2]',
     );
     process.exit(2);
 }

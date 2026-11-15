@@ -144,7 +144,8 @@ function agentes({ cazar = () => [], verificar = () => ({ verdict: 'REFUTED', re
     return { lens: m ? m[1] : '?', findings: cazar(m ? m[1] : '?') };
   };
 }
-const argsDelPlan = (extra = {}) => ({ modo: 'plan', repo: '/tmp/repo-de-la-prueba', storyTexto: '# Story 9.91\n\nAC 1. el README dice x.\n', planTexto: PLAN, model: 'opus', runDir: '/tmp/repo-de-la-prueba/run', pedido: 'c0ffee12c0ffee12', ...extra });
+// un verificador por hallazgo, como al escribirse esta suite (la fábrica del guion es uno por lente desde la 8.282)
+const argsDelPlan = (extra = {}) => ({ modo: 'plan', verifiers: 'per_finding', repo: '/tmp/repo-de-la-prueba', storyTexto: '# Story 9.91\n\nAC 1. el README dice x.\n', planTexto: PLAN, model: 'opus', runDir: '/tmp/repo-de-la-prueba/run', pedido: 'c0ffee12c0ffee12', ...extra });
 
 // ════════════════════════════════════════════ Qué es delicado ═══════════════════════════════════════════════════════
 
@@ -1621,4 +1622,64 @@ test('PlanReview_FolderProtected_AndResultOnlyFromRunner (T28, el resultado) @st
   // el de la ruta nombrada, sí
   revisionPropia(lab);
   assert.strictEqual(aprobarSolo(lab).status, 0);
+});
+
+test('PlanReview_PedidosViejos_ComparaHuellas (T6) @story-8.284 @ac-10 @ac-11 @ac-13', (t) => {
+  const lab = laboratorio(t);
+  const viejas = () => PR().revisionesViejas({ estado: lab.estado, lanza: COORD });
+  // sin pedidos preparados, nada
+  assert.deepStrictEqual(viejas(), { viejas: [], problemas: [] });
+  const p = PR().preparar({ lanza: COORD, destino: DESTINO, estado: lab.estado, home: lab.home, delegacion: delegacionReal() });
+  assert.strictEqual(p.codigo, 0, p.motivo);
+  // el mismo plan: no es vieja
+  assert.deepStrictEqual(viejas(), { viejas: [], problemas: [] });
+  // el plan cambió después de preparar: la lista con la sesión, la hora y la historia
+  fs.writeFileSync(lab.planFile, `${PLAN}3. Otro paso.\n`);
+  const r = viejas();
+  assert.deepStrictEqual(r.problemas, []);
+  assert.strictEqual(r.viejas.length, 1);
+  const pedido = JSON.parse(fs.readFileSync(p.pedido, 'utf8'));
+  assert.deepStrictEqual(r.viejas[0], { destino: DESTINO, hora: pedido.hora, storyId: '9.91' });
+  // anotar con el plan cambiado da sin-veredicto como hoy: el aviso no cambia lo que se anota
+  const c = PR().anotar({ lanza: COORD, destino: DESTINO, estado: lab.estado, resultado: { ...APROBADO, pedido: p.args.pedido }, modelo: 'opus', proveedor: 'anthropic' });
+  assert.strictEqual(c.veredicto, 'sin-veredicto');
+  assert.match(c.motivo, /el plan cambió mientras corría la revisión/);
+  // anotada, el pedido ya no está: deja de salir
+  assert.deepStrictEqual(viejas(), { viejas: [], problemas: [] });
+});
+
+test('PlanReview_PedidosViejos_FormaRara_NoPudeLeerYSigue (T6, pase adversarial y revisores) @story-8.284 @ac-12', (t) => {
+  const lab = laboratorio(t);
+  const viejas = () => PR().revisionesViejas({ estado: lab.estado, lanza: COORD });
+  const p = PR().preparar({ lanza: COORD, destino: DESTINO, estado: lab.estado, home: lab.home, delegacion: delegacionReal() });
+  assert.strictEqual(p.codigo, 0, p.motivo);
+  const bueno = fs.readFileSync(p.pedido, 'utf8');
+  fs.writeFileSync(lab.planFile, `${PLAN}3. Otro paso.\n`);
+  const carpeta = path.dirname(p.pedido);
+  // un pedido con forma rara de otra sesión no corta el recorrido: va a «No pude leer» y la vieja de ses-a sigue saliendo
+  for (const [nombre, texto] of [['null', 'null'], ['lista', '[]'], ['vacio', '{}'], ['sin-corrida', JSON.stringify({ ...JSON.parse(bueno), destino: 'ses-x', corrida: undefined })]]) {
+    const otro = path.join(carpeta, `ses-${nombre}.pending.json`);
+    fs.writeFileSync(otro, texto);
+    const r = viejas();
+    assert.deepStrictEqual(r.viejas.map((v) => v.destino), [DESTINO], nombre);
+    assert.strictEqual(r.problemas.length, 1, `${nombre}: ${JSON.stringify(r.problemas)}`);
+    assert.match(r.problemas[0], new RegExp(`pedido de revisión del plan ses-${nombre}`));
+    fs.rmSync(otro);
+  }
+  // sin la huella del plan: «No pude leer», nunca «igual» ni «vieja»
+  fs.writeFileSync(p.pedido, JSON.stringify({ ...JSON.parse(bueno), huellas: {} }));
+  assert.deepStrictEqual(viejas(), { viejas: [], problemas: [`el pedido de revisión del plan ${DESTINO} (sin la huella del plan)`] });
+  fs.writeFileSync(p.pedido, bueno);
+  // el marcador de la sesión ilegible o que no es un objeto: «No pude leer»
+  const marcador = lab.marcador(DESTINO);
+  const textoMarcador = fs.readFileSync(marcador, 'utf8');
+  for (const roto of ['{roto', '[]', 'null']) {
+    fs.writeFileSync(marcador, roto);
+    const r = viejas();
+    assert.deepStrictEqual(r.viejas, [], roto);
+    assert.strictEqual(r.problemas.length, 1, `${roto}: ${JSON.stringify(r.problemas)}`);
+    assert.match(r.problemas[0], new RegExp(`marcador de la sesión ${DESTINO}`));
+  }
+  fs.writeFileSync(marcador, textoMarcador);
+  assert.strictEqual(viejas().viejas.length, 1);
 });

@@ -1113,6 +1113,10 @@ function postEvent(lock, { query = `?t=${lock.token}`, method = 'POST', body = '
     req.end(body);
   });
 }
+// El aviso a un proceso que puede estar yéndose: su código, o `gone` si la conexión se rechaza o se corta porque el
+// proceso ya no está. Cualquier otro error de la conexión es un error de la prueba, y sigue siendo error.
+const GONE = new Set(['ECONNREFUSED', 'ECONNRESET', 'EPIPE']);
+const nudge = (lock) => postEvent(lock).catch((e) => { if (GONE.has(e.code)) return 'gone'; throw e; });
 const says = (holder, text) => holder.fotos.find((f) => JSON.stringify(f.data).includes(text));
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
@@ -1474,9 +1478,38 @@ test('Regresion_ProcesoQuePerdioElCandado_SeVa: si otro escribió su candado enc
   assert.strictEqual((await openLocal(m)).status, 0);
   const lock = readLock(m);
   fs.writeFileSync(lockOf(m), JSON.stringify({ ...lock, pid: other.pid }));
-  assert.strictEqual(await postEvent(lock), 204);
+  // el aviso sólo lo despierta: si una foto en curso ya lo apagó, el aviso se corta, y eso también es que se fue
+  assert.ok([204, 'gone'].includes(await nudge(lock)));
   assert.ok(await until(() => !alive(lock.pid), 5000), 'se fue');
   assert.strictEqual(readLock(m).pid, other.pid, 'sin tocar el candado del otro');
+});
+
+test('Regresion_ProcesoQuePerdioElCandado_SeVaAunqueCorteElAviso: el aviso a un proceso que ya se fue cuenta como ido; otro error no', async () => {
+  // la carrera de la cola, sin azar: el primer aviso dispara la foto que lo apaga, y el segundo llega a un proceso ido
+  const other = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  started.add(other.pid);
+  const m = toy();
+  assert.strictEqual((await openLocal(m)).status, 0);
+  const lock = readLock(m);
+  fs.writeFileSync(lockOf(m), JSON.stringify({ ...lock, pid: other.pid }));
+  assert.ok([204, 'gone'].includes(await nudge(lock)));
+  assert.ok(await until(() => !alive(lock.pid), 5000), 'se fue');
+  assert.strictEqual(await nudge(lock), 'gone', 'el aviso a un proceso ido se rechaza');
+  assert.strictEqual(readLock(m).pid, other.pid, 'sin tocar el candado del otro');
+
+  // un proceso que corta la conexión a mitad del aviso (el ECONNRESET de la cola) también se fue
+  const cut = http.createServer((req) => req.socket.destroy());
+  await new Promise((resolve) => cut.listen(0, '127.0.0.1', resolve));
+  try {
+    assert.strictEqual(await nudge({ port: cut.address().port, token: 'x' }), 'gone');
+  } finally { cut.close(); }
+
+  // uno que contesta mal no es uno que se fue: el código sale tal cual y la prueba del candado lo rechazaría
+  const bad = http.createServer((req, res) => { req.resume(); res.writeHead(500); res.end(); });
+  await new Promise((resolve) => bad.listen(0, '127.0.0.1', resolve));
+  try {
+    assert.strictEqual(await nudge({ port: bad.address().port, token: 'x' }), 500);
+  } finally { bad.close(); }
 });
 
 // ── La clave ilegible ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -1859,6 +1892,30 @@ test('T44 CadaTreintaMinutos_SinEsperar: un pedido lanza la puesta al día apart
   assert.strictEqual(logOf(m).split('\n').length, lines, 'sin capa, nada que anotar cada 30 min');
 });
 
+// Cada paso del enlace sin abrir sesión espera esto: el gancho lanza aparte un proceso que pide el alta, arma la clave,
+// lanza la oficina y manda la foto, y con la cola de GitHub cargada un paso ya pasó dos veces los 8 s de antes. El plazo
+// es el triple de eso; un paso que no ocurre igual falla, sólo tarda más en decirlo (T45b).
+const LINK_STEP_MS = 24000;
+
+// El enlace sin abrir sesión, paso por paso: la capa nueva trae `siteUrl`, y la máquina pide el alta en `site`, arma su
+// clave, lanza el proceso de la oficina y la foto llega. Falle o no un paso, el proceso que el gancho haya lanzado se para:
+// el gancho lo lanza aunque el alta falle, y sin esto quedaría vivo hasta su propio apagado.
+async function linkFlow(site, siteUrl, m, stepMs) {
+  const fake = refreshFake(m, { site: siteUrl });
+  try {
+    assert.strictEqual((await hookOn(m, 'UserPromptSubmit', { TYCON_TEAM_REFRESH_RUN: fake.file })).status, 0);
+    assert.ok(await until(() => site.enrolls.length === 1, stepMs), 'pidió el alta sin abrir sesión');
+    assert.ok(siteLink().readKey(m.sdir), 'armó su clave');
+    assert.ok(await until(() => readLock(m), stepMs), 'lanzó el proceso de la oficina');
+    assert.ok(await until(() => site.fotos.length >= 1, stepMs), 'y la foto llegó al sitio, sin página abierta');
+  } finally {
+    await until(() => readLock(m), LINK_STEP_MS);
+    const lock = readLock(m);
+    if (lock && lock.pid) started.add(lock.pid);
+    await stopServer(m);
+  }
+}
+
 test('T45 Enlace_LlegaSiteUrl_PideElAltaYLanza: la capa nueva trae site.url y la máquina pide el alta y lanza, sin abrir sesión', async () => {
   const list = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
   const entries = (list.hooks || list).filter((h) => h.spec === '@tcg:office-link-start.js');
@@ -1869,15 +1926,7 @@ test('T45 Enlace_LlegaSiteUrl_PideElAltaYLanza: la capa nueva trae site.url y la
   }
 
   const site = await toySite();
-  const m = toy();
-  const fake = refreshFake(m, { site: site.url });
-  assert.strictEqual((await hookOn(m, 'UserPromptSubmit', { TYCON_TEAM_REFRESH_RUN: fake.file })).status, 0);
-  assert.ok(await until(() => site.enrolls.length === 1, 8000), 'pidió el alta sin abrir sesión');
-  assert.ok(siteLink().readKey(m.sdir), 'armó su clave');
-  assert.ok(await until(() => readLock(m), 8000), 'lanzó el proceso de la oficina');
-  started.add(readLock(m).pid);
-  assert.ok(await until(() => site.fotos.length >= 1, 8000), 'y la foto llegó al sitio, sin página abierta');
-  await stopServer(m);
+  await linkFlow(site, site.url, toy(), LINK_STEP_MS);
 
   // la puesta al día no trajo dirección: ni clave ni proceso
   const n = toy();
@@ -1889,6 +1938,18 @@ test('T45 Enlace_LlegaSiteUrl_PideElAltaYLanza: la capa nueva trae site.url y la
   assert.strictEqual(siteLink().readKey(n.sdir), null, 'sin dirección no arma clave');
   assert.strictEqual(readLock(n), null, 'ni lanza el proceso');
   await site.stop();
+});
+
+test('T45b Enlace_SinAlta_FallaDiciendoQuePaso: si el alta no llega al sitio, el enlace falla nombrando ese paso y no deja el proceso vivo', async () => {
+  // la capa trae la dirección de un sitio ya apagado: el pedido de alta no llega a ningún lado
+  const site = await toySite();
+  const deadUrl = site.url;
+  await site.stop();
+  const m = toy();
+  await assert.rejects(linkFlow(site, deadUrl, m, 1500), (e) => e instanceof assert.AssertionError && /pidió el alta sin abrir sesión/.test(e.message));
+  assert.strictEqual(site.enrolls.length, 0, 'el alta no llegó');
+  const lock = readLock(m);
+  assert.ok(!lock || !alive(lock.pid), 'el proceso que lanzó el gancho quedó parado');
 });
 
 test('T46 ProcesoVivo_ReleeSiteUrl: el proceso vivo se enlaza, cambia de sitio o se desenlaza al aviso, sin cortarlo', async () => {
