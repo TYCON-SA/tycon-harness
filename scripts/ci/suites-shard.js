@@ -54,6 +54,9 @@
  *   node scripts/ci/suites-shard.js caps  [--weight-set pr] [--only <archivo>] [--measured <carpeta>]
  *        el tope de cada suite, una por línea: «<suite>\t<segundos>» (ver «EL TOPE DE CADA SUITE», abajo); sin juego,
  *        el del nocturno. Con --measured, una tercera columna dice de dónde sale (ver «LOS TOPES MEDIDOS»)
+ *   node scripts/ci/suites-shard.js heaviest --of <n> [--measured <carpeta>]
+ *        el trabajo más cargado del reparto de `plan`: «<trabajo>\t<segundos>\t<minutos>\t<si|no|->» (si pasa el umbral del
+ *        juego, ver «EL TRABAJO MÁS CARGADO»); la frase llana, por stderr
  *   node scripts/ci/suites-shard.js matrix --of <n>
  *        la matriz del job de suites para Azure, en una línea: {"shard_1":{"SUITES_SHARD":"1","SUITES_OF":"<n>"},…}
  *   node scripts/ci/suites-shard.js of --matrix '<la matriz>'
@@ -116,6 +119,13 @@
  * reparte todo por peso, como sin la opción, y los tres lo dicen en su línea: los presupuestos medidos no se comparan
  * con cargas que son todas de peso. Sin la opción, la salida de siempre, byte por byte.
  *
+ * EL TRABAJO MÁS CARGADO (`heaviest`): el nocturno no tiene variante larga y su tope de 60 min es de Azure; un trabajo
+ * desparejo se cortaba ahí sin aviso. Antes de correr, el nocturno pide el trabajo más cargado del MISMO reparto que
+ * `plan` (con `--measured`, por lo medido) y lo escribe con su número y sus minutos; si pasa `job_warn_minutes` del
+ * juego pedido, la cuarta columna dice `si` y quien llama lo avisa. Los minutos son del plan, no del reloj: sin
+ * tiempos medidos la frase dice que es por peso, que suele quedarse corto. Un juego sin la clave no avisa (`-`): el
+ * umbral no se adivina. No cambia la cantidad de trabajos.
+ *
  * Lo que cada trabajo deja en su carpeta `suites-shard-<i>-a<intento>/`: `ran.txt` (las que corrió, una por línea),
  * `failures.txt` (las rojas, las «(ausente)» y las «(no-medida)» que cortó su tope), `red-output/<suite>.txt` (la salida
  * de cada roja, o el motivo de cada no medida), `done.txt` (sólo la validación: cada suite que terminó, de cualquier
@@ -162,6 +172,7 @@ const USAGE = 'uso: suites-shard.js list --shard <i> --of <n> --skills <dir> --s
   + '     suites-shard.js jobs --max <n> [--budget <segundos>]\n'
   + '     suites-shard.js long --of <n> [--minutes <40>] [--long-minutes <100>]\n'
   + '     suites-shard.js caps [--weight-set <nombre>] [--measured <carpeta con suite-times.jsonl>]\n'
+  + '     suites-shard.js heaviest --of <n>\n'
   + '     suites-shard.js matrix --of <n>\n'
   + '     suites-shard.js of --matrix <la matriz>\n'
   + '     opciones: --suites <suites.json> · --weights <pesos.json> · --scripts <raíz scripts del arnés> · --only <archivo>\n'
@@ -241,7 +252,10 @@ function readWeights(file, set = null) {
   const base = checkWeights(data, `el archivo de pesos (${file})`);
   // El juego del nocturno no trae `job_budget`: el nocturno corre siempre todos sus trabajos. Su `suite_cap` (el de
   // arriba) es el tope de cada suite del banco nocturno.
-  if (set === null) return { ...base, budget: null, deadline: null, budgetMeasured: null, deadlineMeasured: null, cap: readCapRule(data.suite_cap, `el archivo de pesos (${file})`) };
+  if (set === null) {
+    return { ...base, budget: null, deadline: null, budgetMeasured: null, deadlineMeasured: null, cap: readCapRule(data.suite_cap, `el archivo de pesos (${file})`),
+      warnMinutes: readWarnMinutes(data, `el archivo de pesos (${file})`) };
+  }
   const chosen = data[set];
   if (!chosen || typeof chosen !== 'object' || Array.isArray(chosen)) throw new Refused(`el archivo de pesos (${file}) no trae el juego «${set}» que pide --weight-set`);
   const own = checkWeights(chosen, `el juego de pesos «${set}» (${file})`);
@@ -261,7 +275,17 @@ function readWeights(file, set = null) {
     budgetMeasured: chosen.job_budget_measured === undefined ? null : chosen.job_budget_measured,
     deadlineMeasured: chosen.job_deadline_measured === undefined ? null : chosen.job_deadline_measured,
     cap: readCapRule(chosen.suite_cap, `el juego de pesos «${set}» (${file})`),
+    warnMinutes: readWarnMinutes(chosen, `el juego de pesos «${set}» (${file})`),
   };
+}
+
+/** El umbral del trabajo más cargado (`job_warn_minutes`), en minutos; null si el juego no lo trae. */
+function readWarnMinutes(set, label) {
+  if (set.job_warn_minutes === undefined) return null;
+  if (!(typeof set.job_warn_minutes === 'number' && Number.isFinite(set.job_warn_minutes) && set.job_warn_minutes > 0)) {
+    throw new Refused(`${label} trae «job_warn_minutes» y no es un número mayor que 0: ${JSON.stringify(set.job_warn_minutes)}`);
+  }
+  return set.job_warn_minutes;
 }
 
 /**
@@ -444,6 +468,24 @@ function commandPlan(argv, write) {
     lines.push(`${head} · ${unweighted} sin peso medido (${weights.fallback} s cada una por defecto)${byWeight || ''}`);
   }
   write(`${lines.join('\n')}\n`);
+}
+
+/**
+ * El trabajo más cargado del reparto de `plan`: una línea `<trabajo>\t<segundos>\t<minutos>\t<si|no|->` (si pasa
+ * `job_warn_minutes`; `-` si el juego no lo trae). La frase va por `complain`.
+ */
+function commandHeaviest(argv, write, complain) {
+  const { count, suites, weights, measured, byWeight, shards } = prepare(argv);
+  let index = 0;
+  shards.forEach((shard, i) => { if (shard.load > shards[index].load) index = i; });
+  const load = shards[index].load;
+  const minutes = Math.round(load / 60);
+  const over = weights.warnMinutes === null ? '-' : (load > weights.warnMinutes * 60 ? 'si' : 'no');
+  const kind = measured ? 'medidos' : 'de peso (por peso: el reloj suele dar más)';
+  const verdict = over === '-' ? 'el juego no trae umbral' : `${over === 'si' ? 'pasa' : 'no pasa'} el umbral de ${weights.warnMinutes} min`;
+  const counts = measured ? ` · ${measuredCounts(suites, measured)}` : (byWeight || '');
+  complain(`suites: trabajo más cargado: el ${index + 1} de ${count}, ~${minutes} min ${kind}: ${verdict}${counts}\n`);
+  write(`${index + 1}\t${Math.round(load)}\t${minutes}\t${over}\n`);
 }
 
 /**
@@ -813,7 +855,7 @@ function commandMerge(argv, write) {
   write(`${lines.join('\n')}\n`);
 }
 
-const COMMANDS = { list: commandList, plan: commandPlan, merge: commandMerge, jobs: commandJobs, long: commandLong, caps: commandCaps, matrix: commandMatrix, of: commandOf };
+const COMMANDS = { list: commandList, plan: commandPlan, merge: commandMerge, jobs: commandJobs, long: commandLong, heaviest: commandHeaviest, caps: commandCaps, matrix: commandMatrix, of: commandOf };
 
 function main(argv, write = (text) => process.stdout.write(text), complain = (text) => process.stderr.write(text)) {
   const command = COMMANDS[argv[0]];

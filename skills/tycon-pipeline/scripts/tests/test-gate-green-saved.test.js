@@ -6,8 +6,8 @@
  * En un repo que acota el portón (`.test-gate.yaml` con `full_suite_by`), una completa verde que midió todo lo suyo guarda
  * lo medido (`marker.js tests-failed save-green`). La corrida siguiente compara la carpeta con la de esa completa: igual,
  * cierra sin correr nada; con cambios, corren sólo las suites que leen lo cambiado y se juntan con lo guardado. Un cambio
- * en un control, el instalador, lo compartido o la lista de suites, otra base, otro recorte, lo guardado tocado u otra
- * historia corren la completa como siempre. La completa la sigue corriendo la CI del pedido.
+ * en un control, el instalador, lo compartido o la lista de suites, otro recorte, lo guardado tocado u otra historia
+ * corren la completa como siempre; main traído cuenta como un cambio más de la carpeta. La completa la sigue corriendo la CI del pedido.
  *
  * Todo corre sobre un repo de prueba con tres suites de bash que leen un archivo cada una (docs/a.md, docs/b.md,
  * docs/c.md) y salen con el código de su archivo de estado, y una HOME de prueba con un marcador falso.
@@ -213,13 +213,14 @@ test('T6 GreenSaved_ControlInstallerShared_RunsFull @story-8.263 @ac-6 — un co
   }
 });
 
-test('T7 GreenSaved_BaseTrimOrDeferred_RunsFull @story-8.263 @ac-6 — otra base, otro recorte o una diferida que vuelve corren la completa', () => {
+test('T7 GreenSaved_BaseTrimOrDeferred_RunsFull @story-8.263 @ac-6 @story-8.279 @ac-7 — otro recorte o una diferida que vuelve corren la completa; main traído sin cambios, nada', () => {
   const l = conCompletaVerde();
   git(l.repo, 'commit', '-q', '--allow-empty', '-m', 'main avanzó');
   escribirMarcador(l, { baseSha: git(l.repo, 'rev-parse', 'HEAD').stdout.trim(), testsGreenFull: marcador(l).testsGreenFull });
   let r = puerta(l);
-  assert.deepEqual(r.corridas, TODAS, r.out);
-  assert.match(r.out, /corre la completa como siempre: la base cambió/);
+  // main traído cuenta como un cambio más de la carpeta: sin cambios, no corre nada
+  assert.deepEqual(r.corridas, [], r.out);
+  assert.doesNotMatch(r.out, /la base cambió/);
   escribirMarcador(l, { baseSha: marcador(l).baseSha, testsGreenFull: marcador(l).testsGreenFull, size: 'liviana' });
   tocar(l, 'docs/a.md');
   r = puerta(l);

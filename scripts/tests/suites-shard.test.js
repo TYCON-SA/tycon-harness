@@ -439,7 +439,11 @@ test('SuitesWeights_NightlySetMeasuredAndCapped', () => {
   // viejo de 96 s, su tope la cortaría todas las noches). Ninguna suite lleva tope propio en el nocturno: el tope de
   // todas es el doble de su peso.
   const real = JSON.parse(fs.readFileSync(REAL_WEIGHTS, 'utf8'));
-  assert.deepStrictEqual(real.suite_cap, { factor: 2, floor: 180 });
+  // Con su regla de los tiempos medidos: el nocturno baja lo que midieron sus últimas noches.
+  assert.deepStrictEqual(real.suite_cap, { factor: 2, floor: 180, measured: { runs: 5, scan: 14, last: 5, min: 3, max: 1500 } });
+  assert.strictEqual(real.job_warn_minutes, 50, 'el umbral del trabajo más cargado: 10 min de margen al tope de 60 de Azure');
+  assert.ok(typeof real.__job_warn_minutes === 'string' && /16213/.test(real.__job_warn_minutes), 'el umbral dice de qué medición sale');
+  assert.ok(typeof real.__suite_cap_measured === 'string' && real.__suite_cap_measured.length > 0, 'la regla medida del nocturno dice por qué');
   assert.deepStrictEqual(real.runs, [14049, 14101, 14135, 14281], 'el nocturno cita los bancos de donde salen sus pesos');
   const hu = real.weights['harness-update.test.sh'];
   assert.ok(hu >= 300 && hu <= 1200, `harness-update pesa lo medido en el nocturno (~350 s): ${hu}`);
@@ -1230,6 +1234,46 @@ test('Shard_Measured_PlanSaysMeasuredAndByWeight — el total dice cuántas sali
   const r = run(['plan', '--of', '1', ...splitArgs(dir, ['a-slow.test.sh', 'b-fast.test.js', 'c-skill.test.js', 'd-medium.test.sh'], times)]);
   assert.strictEqual(r.code, 0, r.err);
   assert.match(r.out, /total: 4 suite\(s\) · ~100 s \(2 min\) · 3 medidas en Azure, 1 por peso\n$/, '10 + 20 + 30 medidas y d-medium por su peso (40)');
+});
+
+test('T9 SuitesShard_TrabajoMasCargado_ConNombreYUmbral @story-8.280 @ac-12 @ac-17', () => {
+  // El nocturno escribe, antes de correr, el trabajo más cargado con su número y sus minutos, del mismo reparto que
+  // `plan`; si pasa `job_warn_minutes` del juego, avisa. El juego `pr` no trae umbral, y su `long` no cambia.
+  const nightly = { ...LAB_WEIGHTS, job_warn_minutes: 50, suite_cap: { factor: 2, floor: 180, measured: MEASURED_RULE } };
+  const dir = lab({ weights: { ...nightly, pr: SPLIT_SET } });
+  const names = ['a-slow.test.sh', 'b-fast.test.js', 'c-skill.test.js', 'd-medium.test.sh', 'e-fast.test.js', 'f-new-without-weight.test.js', 'g-weekly.test.sh'];
+  const args = (times, extra = []) => ['--of', '4', '--only', onlyFile(dir, names), ...(times ? ['--measured', times] : []), ...extra,
+    '--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json')];
+  // a-slow: 55 min medidos; las demás, 10 min cada una. Cuatro trabajos: a-slow va sola.
+  const times = timesDir(dir, [passes(3, { 'a-slow.test.sh': 3300, 'b-fast.test.js': 600, 'c-skill.test.js': 600, 'd-medium.test.sh': 600,
+    'e-fast.test.js': 600, 'f-new-without-weight.test.js': 600, 'g-weekly.test.sh': 600 })]);
+  const plan = run(['plan', ...args(times)]);
+  const heavyIndex = plan.lines.findIndex((l) => /~3300 s/.test(l)) + 1;
+  assert.ok(heavyIndex > 0, `plan pone a-slow sola: ${plan.out}`);
+  const over = run(['heaviest', ...args(times)]);
+  assert.strictEqual(over.code, 0, over.err);
+  assert.deepStrictEqual(over.lines, [`${heavyIndex}\t3300\t55\tsi`], 'el número, los segundos, los minutos y si pasa el umbral');
+  assert.match(over.err, new RegExp(`trabajo más cargado: el ${heavyIndex} de 4, ~55 min medidos: pasa el umbral de 50 min`));
+  // por peso: a-slow pesa 100 s y no pasa; la frase dice que es por peso
+  const byWeight = run(['heaviest', ...args(null)]);
+  assert.strictEqual(byWeight.code, 0, byWeight.err);
+  assert.match(byWeight.lines[0], /^\d\t\d+\t\d+\tno$/);
+  assert.match(byWeight.err, /min de peso \(por peso: el reloj suele dar más\): no pasa el umbral de 50 min/);
+  // el juego pr no trae umbral: no inventa uno
+  const pr = run(['heaviest', ...args(null, ['--weight-set', 'pr'])]);
+  assert.strictEqual(pr.code, 0, pr.err);
+  assert.match(pr.lines[0], /^\d\t\d+\t\d+\t-$/);
+  assert.match(pr.err, /el juego no trae umbral/);
+  // un umbral roto frena, como cualquier número del juego
+  const broken = lab({ weights: { ...nightly, job_warn_minutes: 'mucho' } });
+  refuses(run(['heaviest', '--of', '2', '--suites', path.join(broken, 'suites.json'), '--weights', path.join(broken, 'weights.json')]), /job_warn_minutes/, 'un umbral que no es número');
+  // AC 17: `long` del juego pr contesta igual que sin la clave nueva del nocturno
+  const plain = lab({ weights: { ...LAB_WEIGHTS, pr: SPLIT_SET } });
+  const longOf = (d) => run(['long', '--of', '2', '--weight-set', 'pr', '--suites', path.join(d, 'suites.json'), '--weights', path.join(d, 'weights.json')]);
+  const before = longOf(plain);
+  const after = longOf(dir);
+  assert.strictEqual(before.code, 0, before.err);
+  assert.deepStrictEqual([after.code, after.out, after.err], [before.code, before.out, before.err], 'long de la validación, byte por byte');
 });
 
 test('SuitesWeights_PrSetHasMeasuredJobNumbers — el juego pr trae lo medido que entra en un trabajo, y de dónde sale', () => {

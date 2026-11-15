@@ -878,8 +878,20 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     # el árbol vive en la carpeta temporal: las HOME vacías de las portables van bajo `.advisors/` del privado de verdad
     # (git la ignora), fuera de ella, porque hay suites que tratan esa carpeta como «de prueba»
     export TYCON_SUITE_HOMES_ROOT="${TYCON_SUITE_HOMES_ROOT:-$REPO_RUN/.advisors}"
+    # El alcance del privado se lee del privado de verdad (lo commiteado, lib/test-gate-scope.js), no del árbol
+    # temporal. Si acota, el árbol SUMA `--scoped-by-repo` a `--only-touched`: sabiendo qué se tocó y sin suite que lo
+    # lea, cierra en verde diciendo quién corre la completa; sin saber qué se tocó, `--only-touched` lo deja en 7 sin
+    # correr nada (`--scoped-by-repo` sola correría todas las suites del árbol).
+    _tg_scope_rc=0
+    _tg_scope_by="$(node "$SCRIPT_DIR/lib/test-gate-scope.js" "$REPO_RUN")" || _tg_scope_rc=$?
     REPO_RUN="$(_tg_tree_field tree)"
     TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --only-touched)
+    if [[ "$_tg_scope_rc" == "0" && -n "$_tg_scope_by" ]]; then
+      TG_FULL_SUITE_BY="$_tg_scope_by"
+      TG_TREE_ARGS+=(--scoped-by-repo "$TG_FULL_SUITE_BY")
+    elif [[ "$_tg_scope_rc" != "10" ]]; then
+      echo "[test-gate] ⚠️  no pude leer test_gate de .test-gate.yaml del privado (salió $_tg_scope_rc): el árbol acota como siempre, sin cerrar en verde lo que ninguna suite lee" >&2
+    fi
     echo "[test-gate] en la máquina corren sólo las suites que leen lo tocado; las otras quedan diferidas (las corre la CI del pedido y el nocturno)"
   fi
   # --- Primero la suite que falló ---
@@ -1067,10 +1079,10 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # --- Repetir solas cierra (story 8.208), y lo guardado de una completa verde ---
   # Después de una completa roja, con sus rojas repetidas solas en verde, la completa no se vuelve a correr entera: si la
   # carpeta no cambió desde la completa ni desde cada repetición, cierra con lo guardado (la carpeta no cambió); si cambió
-  # entre la completa y las repeticiones, corren sólo las suites que leen lo cambiado. Si cambió después de alguna
-  # repetición, o con cualquier duda (otra base, otro recorte, la lista de suites cambiada, lo guardado tocado), corre la
-  # completa como siempre. Después de una completa verde, lo mismo contra ella: siempre contra la completa de origen, nunca
-  # contra la última acotada; un cambio en un control, el instalador, lo compartido o la lista de suites, u otra historia,
+  # desde la completa (también por main traído), corren sólo las suites que leen lo cambiado, y cada repetida cuya
+  # carpeta cambió después de repetirla vuelve a correr. Con cualquier duda (otro recorte, la lista de suites cambiada, lo
+  # guardado tocado), corre la completa como siempre. Después de una completa verde, lo mismo contra ella: siempre contra
+  # la completa de origen, nunca contra la última acotada; un cambio en un control, el instalador, lo compartido o la lista de suites, u otra historia,
   # corre la completa como siempre. Sólo en un repo que acota el portón (la completa la corre después la CI del pedido) o
   # en el árbol armado del privado (ahí la comparación es por repo). Lo guardado lo escriben `marker.js tests-failed
   # save-red` y `save-green`, al final de una completa.
@@ -1104,12 +1116,20 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
       case "$TG_CLOSE_MODE" in
         same) echo "[test-gate] la carpeta es la que midió la completa $TG_CLOSE_ORIGIN$([[ "$TG_CLOSE_ORIGIN" == "roja" ]] && echo ' y cada repetición'): no corro ninguna suite" ;;
         changed)
-          node -e 'const [f, files, base] = process.argv.slice(1); require("fs").writeFileSync(f, JSON.stringify({ known: true, files: files.split(",").filter(Boolean), sources: {}, reason: null, base: { ref: base || null, source: "repetidas" } }))' \
-            "$RESULTS_DIR/touched-repetidas.json" "$(_tg_campo files)" "$_TG_BASE"
-          TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched-repetidas.json")
-          # en el árbol armado, que ninguna suite lea lo cambiado es cerrar con lo guardado, no «sin acotar» (salida 7)
-          [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
-          echo "[test-gate] la carpeta cambió desde la completa $TG_CLOSE_ORIGIN ($(_tg_campo files)): corren sólo las suites que leen lo cambiado" ;;
+          # `rerun_suites`: las repetidas cuya carpeta cambió después de repetirlas. Van aparte de los archivos:
+          # son claves de la lista de suites, no rutas del repo, y el corredor las corre antes de cualquier filtro.
+          # Las listas salen de la decisión entera (JSON), no de un texto partido por comas; si no se dejan leer, la completa:
+          # unas repetidas viejas que no vuelven a correr dejarían en verde un arreglo deshecho.
+          if node -e 'const [f, dec, base] = process.argv.slice(1); const d = JSON.parse(dec); const rerun = d.rerun || []; if (!Array.isArray(d.files) || !Array.isArray(rerun)) throw new Error("la decisión no trae sus listas"); require("fs").writeFileSync(f, JSON.stringify({ known: true, files: d.files, rerun_suites: rerun, sources: {}, reason: null, base: { ref: base || null, source: "repetidas" } }))' \
+            "$RESULTS_DIR/touched-repetidas.json" "$_tg_dec" "$_TG_BASE"; then
+            TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched-repetidas.json")
+            # en el árbol armado, que ninguna suite lea lo cambiado es cerrar con lo guardado, no «sin acotar» (salida 7)
+            [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
+            echo "[test-gate] la carpeta cambió desde la completa $TG_CLOSE_ORIGIN ($(_tg_campo files)): corren sólo las suites que leen lo cambiado$([[ -n "$(_tg_campo rerun)" ]] && echo " y las repetidas que quedaron viejas ($(_tg_campo rerun))")"
+          else
+            echo "[test-gate] corre la completa como siempre: no pude leer las listas de la decisión sobre lo guardado"
+            TG_CLOSE_MODE=""; TG_CLOSE_ORIGIN=""
+          fi ;;
         *) _tg_motivo="$(_tg_campo reason)"
            echo "[test-gate] corre la completa como siempre: ${_tg_motivo:-no pude leer lo guardado}"; TG_CLOSE_MODE=""; TG_CLOSE_ORIGIN="" ;;
       esac

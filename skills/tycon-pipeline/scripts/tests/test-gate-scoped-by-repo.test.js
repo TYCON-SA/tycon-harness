@@ -169,3 +169,72 @@ test('T5 PortonAcotado_TodasPedidas_ElCierreNoDiceAcotado — con TYCON_GATE_ALL
   assert.deepEqual(corridas(l), ['a', 'b'], out);
   assert.doesNotMatch(out, /en esta máquina corrieron sólo las suites que leen lo tocado/);
 });
+
+// ── El tamaño antes del turno ─────────────────────────────────────────────────────────────────────────
+
+// El registro de tiempos de la máquina de prueba: el mismo archivo que lee el aviso de portón lento.
+function tiempos(l, suites) {
+  const dir = require('../lib/state-dir.js').stateDir(l.home);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'suite-times.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), suites })}\n`);
+}
+
+// Un turno falso en el repo de prueba: deja una marca en la salida cuando se pide, para ver qué salió antes.
+function turnoFalso(l) {
+  const dir = path.join(l.repo, 'scripts', 'tools');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'heavy-turn.js'), "module.exports = { BUSY_EXIT: 77, take() { console.log('TURNO-PEDIDO'); return { ok: true, taken: true }; }, release() {} };\n");
+}
+
+const RENGLON = /\[suites\.json\] portón acotado: (\d+) de (\d+) suites · ([^\n]*)/g;
+
+test('T19 ScopedGate_AnnouncesSizeBeforeTurn @story-8.279 @ac-4 — el acotado dice cuántas suites de cuántas y los minutos, una sola vez; sin medida, «sin estimación»', () => {
+  // 🔴 mutación: sin el renglón (o con el aviso de portón lento sólo desde cien suites), nadie sabe el tamaño antes del turno.
+  const con = lab({ clave: true });
+  tiempos(con, [{ s: 'tests/a.test.sh', ms: 180000 }]);
+  fs.writeFileSync(path.join(con.repo, 'lib', 'acme.js'), 'module.exports = 2;\n');
+  const r1 = puerta(con);
+  assert.equal(r1.status, 0, r1.out);
+  const m1 = [...r1.out.matchAll(RENGLON)];
+  assert.equal(m1.length, 1, r1.out);
+  assert.deepEqual([m1[0][1], m1[0][2]], ['1', '2'], r1.out);
+  assert.match(m1[0][3], /~3 min/, r1.out);
+  // antes de la línea de los carriles, que sale con el turno ya tomado
+  assert.ok(r1.out.indexOf(m1[0][0]) < r1.out.indexOf('en paralelo:'), r1.out);
+
+  const sin = lab({ clave: true });
+  fs.writeFileSync(path.join(sin.repo, 'lib', 'acme.js'), 'module.exports = 2;\n');
+  const r2 = puerta(sin);
+  assert.equal(r2.status, 0, r2.out);
+  const m2 = [...r2.out.matchAll(RENGLON)];
+  assert.equal(m2.length, 1, r2.out);
+  assert.match(m2[0][3], /sin estimación/, r2.out);
+});
+
+test('T20 ScopedGate_LargeAnnouncesAlmostFull @story-8.279 @ac-5 — un acotado de cien suites o más dice «casi una completa», antes de pedir el turno y sin repetir el aviso lento', () => {
+  // 🔴 mutación: el renglón sale después de `turn.take`, o se imprime además el «🔴 portón lento» de siempre.
+  const l = lab({ clave: true });
+  const tests = path.join(l.repo, 'scripts', 'tests');
+  const lista = [];
+  for (let i = 0; i < 100; i += 1) {
+    fs.writeFileSync(path.join(tests, `n${i}.test.sh`), suite(`n${i}`, 'prueba lib/acme.js'));
+    lista.push({ raiz: 'arnes', ruta: `tests/n${i}.test.sh` });
+  }
+  fs.writeFileSync(path.join(tests, 'suites.json'), JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.sh' }, { raiz: 'arnes', ruta: 'tests/b.test.sh' }, ...lista], semanales: [] }, null, 2));
+  turnoFalso(l);
+  git(l.repo, 'add', '-A'); git(l.repo, 'commit', '-q', '-m', 'cien suites');
+  const mf = path.join(l.home, '.claude', '.tycon-pipeline', 'active', `${SID}.json`);
+  const m = JSON.parse(fs.readFileSync(mf, 'utf8'));
+  m.baseSha = git(l.repo, 'rev-parse', 'HEAD').stdout.trim();
+  fs.writeFileSync(mf, JSON.stringify(m));
+  fs.writeFileSync(path.join(l.repo, 'lib', 'acme.js'), 'module.exports = 2;\n');
+  const r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  const ms = [...r.out.matchAll(RENGLON)];
+  assert.equal(ms.length, 1, r.out);
+  assert.deepEqual([ms[0][1], ms[0][2]], ['101', '102'], r.out);
+  assert.match(ms[0][3], /casi una completa: pide turno como una completa/, r.out);
+  assert.ok(r.out.includes('TURNO-PEDIDO'), r.out);
+  assert.ok(r.out.indexOf(ms[0][0]) < r.out.indexOf('TURNO-PEDIDO'), r.out);
+  assert.doesNotMatch(r.out, /portón lento/, r.out);
+});
