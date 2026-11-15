@@ -863,14 +863,22 @@ function candidatos({ storyPath, storyText, repos = [], files = null, renombres 
     }
     return enAlguno;
   };
+  // cada archivo una vez: la historia puede nombrar la ruta vieja y la nueva, o dos viejas que el mapa lleva a la misma
+  const vistos = new Set();
   for (const ruta of rutasAModificar(texto)) {
     if (esPrueba(ruta)) continue;
-    if (deLaTanda && !deLaTanda.has(rutaDeLaLista(ruta))) continue;
-    if (mirar(ruta) || !PARECE_GUION.test(ruta)) continue;
-    // un archivo que otro pedido mudó: se mira donde está ahora, y si tampoco está, falta el de ahora
-    const final = rutaMudada(rutaDeLaLista(ruta), renombres);
-    if (!final) sinRepo.push({ archivo: ruta });
-    else if (!esPrueba(final) && !mirar(final)) sinRepo.push({ archivo: final, mudadoDe: ruta });
+    const enLaLista = rutaDeLaLista(ruta);
+    if (deLaTanda && !deLaTanda.has(enLaLista)) continue;
+    if (vistos.has(enLaLista)) continue;
+    vistos.add(enLaLista);
+    if (mirar(ruta)) continue;
+    // un archivo que otro pedido mudó: se mira donde está ahora, sea cual sea su extensión, y si tampoco está, falta el de
+    // ahora
+    const final = rutaMudada(enLaLista, renombres);
+    if (!final) { if (PARECE_GUION.test(ruta)) sinRepo.push({ archivo: ruta }); continue; }
+    if (esPrueba(final) || vistos.has(final)) continue;
+    vistos.add(final);
+    if (!mirar(final) && (PARECE_GUION.test(final) || PARECE_GUION.test(ruta))) sinRepo.push({ archivo: final, mudadoDe: ruta });
   }
   return { candidatos: out, sinRepo, noMedidos, avisos };
 }

@@ -696,6 +696,25 @@ test('T14 Compare_MovedByRenamesMap_NotSinRepo @story-8.276 @ac-16 — un salto,
     assert.deepStrictEqual(r.sinRepo, []);
     assert.deepStrictEqual(r.candidatos.map((c) => c.archivo), ['scripts/c.js']);
   });
+  // 🔴 Falla con: el mismo archivo contado una vez por cada ruta que lleva a él
+  await t.test('la vieja y la nueva, o dos viejas al mismo final: un solo candidato y un solo faltante', () => {
+    const { repo, storyPath } = conMudanzas(t, { 'scripts/nuevo.js': CLI }, ['scripts/viejo.js', 'scripts/nuevo.js', 'scripts/otroViejo.js', 'scripts/x.js', 'scripts/w.js']);
+    const renombres = { entries: [mudanza('scripts/viejo.js', 'scripts/nuevo.js'), mudanza('scripts/otroViejo.js', 'scripts/nuevo.js'), mudanza('scripts/x.js', 'scripts/y.js'), mudanza('scripts/w.js', 'scripts/y.js')] };
+    const r = cp().candidatos({ storyPath, repos: [repo], renombres });
+    assert.deepStrictEqual(r.candidatos.map((c) => c.archivo), ['scripts/nuevo.js']);
+    assert.deepStrictEqual(r.sinRepo, [{ archivo: 'scripts/y.js', mudadoDe: 'scripts/x.js' }]);
+  });
+  // 🔴 Falla con: el mapa mirado sólo para las rutas que terminan en .js, .sh o .py
+  await t.test('un comando sin esas extensiones también se mira en su lugar nuevo', () => {
+    const SH = '#!/bin/bash\necho hola\n';
+    const { repo, storyPath } = conMudanzas(t, { 'scripts/nuevo.command': SH, 'bin/nuevo': SH }, ['scripts/viejo.command', 'bin/viejo']);
+    fs.writeFileSync(path.join(repo, 'scripts/nuevo.command'), '#!/bin/bash\necho chau\n');
+    fs.writeFileSync(path.join(repo, 'bin/nuevo'), '#!/bin/bash\necho chau\n');
+    const renombres = { entries: [mudanza('scripts/viejo.command', 'scripts/nuevo.command'), mudanza('bin/viejo', 'bin/nuevo')] };
+    const r = cp().candidatos({ storyPath, repos: [repo], renombres });
+    assert.deepStrictEqual(r.candidatos.map((c) => c.archivo).sort(), ['bin/nuevo', 'scripts/nuevo.command']);
+    assert.deepStrictEqual(r.sinRepo, []);
+  });
   await t.test('la ruta final tampoco está: va la final, con la vieja al lado', () => {
     const { repo, storyPath } = conMudanzas(t, { 'scripts/otro.js': CLI }, ['scripts/x.js']);
     const r = cp().candidatos({ storyPath, repos: [repo], renombres: { entries: [mudanza('scripts/x.js', 'scripts/y.js')] } });

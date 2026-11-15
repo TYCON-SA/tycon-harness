@@ -305,8 +305,93 @@ test('T16 AdhocBase_UnbackedClose_NoTip @story-8.276 @ac-21', async (t) => {
     carril(h, d);
     const r = guardarPorElCarril(h, d, archivos('a', 1));
     assert.ok(!(r && r.texto), JSON.stringify(r));
+    // en pantalla, no sólo en el registro: con la carpeta de estado sin escritura, el registro tampoco se escribe
+    assert.match((r && r.aviso) || '', /no anoté la constancia del guardado/);
     const log = fs.readFileSync(path.join(estado(h), 'gates.log'), 'utf8');
     assert.match(log, /"name":"carril-guardado","status":"warn"/);
+  });
+  // 🔴 Falla con: el carril abierto midiéndose desde su propio guardado anterior (partir en commits esquiva el tope)
+  await t.test('el mismo carril abierto no se mide desde su propio guardado: el tope cuenta todo', (tt) => {
+    const d = repoConOrigin(tt);
+    const h = home(tt);
+    carril(h, d, { maxFiles: 3 });
+    assert.ok(!(guardarPorElCarril(h, d, archivos('a', 2)) || {}).texto);
+    const r = guardarPorElCarril(h, d, archivos('b', 2));
+    assert.ok(r && r.texto && /tope/i.test(r.texto), JSON.stringify(r));
+  });
+  // 🔴 Falla con: el `git add` del mismo comando sin constancia, o con la del índice de antes del add
+  await t.test('git add -A && git commit en un solo comando: anota lo que se commitea', (tt) => {
+    const d = repoConOrigin(tt);
+    const h = home(tt);
+    carril(h, d);
+    for (const r of archivos('a', 2)) escribir(d, r, `// ${r}\n`);
+    assert.ok(!(decidir(h, d, 'git add -A && git commit -m x') || {}).texto);
+    sh(d, 'add', '-A');
+    sh(d, 'commit', '-q', '-m', 'x');
+    const P = sh(d, 'rev-parse', 'HEAD');
+    cerrarCarril(h);
+    carril(h, d);
+    escribir(d, 'src/a0.js', '// el arreglo\n');
+    assert.deepStrictEqual(medida(h, d).base, { sha: P, de: 'constancia' });
+  });
+  // 🔴 Falla con: con marca de riesgo alto, un índice distinto de lo revisado bendecido como punta
+  await t.test('con marca: sólo lo revisado (el disco) da punta', async (tt) => {
+    const conMarca = (ttt, indiceDistinto) => {
+      const d = repoConOrigin(ttt);
+      const h = home(ttt);
+      carril(h, d);
+      escribir(d, 'src/auth/session.ts', '// lo revisado\n');
+      sh(d, 'add', '-A');
+      assert.ok((decidir(h, d) || {}).texto, 'la marca frena sin revisores');
+      const c = leerCarril(h);
+      const huella = base().huellaDelCarril(c);
+      fs.writeFileSync(carrilPath(h), JSON.stringify({ ...c, revisores: { huella }, pase: { huella } }));
+      if (indiceDistinto) {
+        escribir(d, 'src/auth/session.ts', '// sin revisar\n');
+        sh(d, 'add', '-A');
+        escribir(d, 'src/auth/session.ts', '// lo revisado\n');
+      }
+      assert.ok(!(decidir(h, d) || {}).texto, 'con las constancias vigentes guarda');
+      sh(d, 'commit', '-q', '-m', 'x');
+      const P = sh(d, 'rev-parse', 'HEAD');
+      cerrarCarril(h);
+      carril(h, d);
+      escribir(d, 'LEEME.md', 'cambio\n');
+      return { P, base: medida(h, d).base };
+    };
+    await tt.test('el índice es lo revisado: punta', (t3) => {
+      const { P, base: b } = conMarca(t3, false);
+      assert.deepStrictEqual(b, { sha: P, de: 'constancia' });
+    });
+    await tt.test('el índice no es lo revisado: sin punta', (t3) => {
+      assert.strictEqual(conMarca(t3, true).base.de, 'integracion');
+    });
+  });
+  // 🔴 Falla con: la medida con fallas o el HEAD suelto anotando, o diciéndolo como «nada que anotar»
+  await t.test('medida con fallas no anota; sin rama, lo dice', (tt) => {
+    const d = repoConOrigin(tt);
+    const h = home(tt);
+    const dir = estado(h);
+    const medidaDe = { porRepo: { [d]: { base: { sha: sh(d, 'rev-parse', 'HEAD') }, cambios: [{ ruta: 'LEEME.md', vieja: null }], anotados: [], sinSeguir: [] } }, fallas: [] };
+    assert.deepStrictEqual(base().anotarGuardadoDelCarril({ medida: { ...medidaDe, fallas: ['git no contestó'] }, repo: d, dir }), { anotado: false });
+    sh(d, 'checkout', '-q', '--detach');
+    const r = base().anotarGuardadoDelCarril({ medida: medidaDe, repo: d, dir });
+    assert.strictEqual(r.anotado, false);
+    assert.match(r.aviso, /sin rama/);
+    assert.ok(!fs.existsSync(guardadosPath(h)));
+  });
+  // 🔴 Falla con: un renglón roto de las constancias tomado como «no hay», sin decirlo
+  await t.test('un renglón que no se lee: la de hoy y la línea', (tt) => {
+    const d = repoConOrigin(tt);
+    const h = home(tt);
+    escribir(d, 'src/ya.js');
+    sh(d, 'add', '-A');
+    sh(d, 'commit', '-q', '-m', 'algo en la rama');
+    fs.writeFileSync(guardadosPath(h), '{"esto no cierra\n');
+    carril(h, d);
+    const e = medida(h, d);
+    assert.strictEqual(e.base.de, 'integracion');
+    assert.ok(e.avisos.some((a) => /renglón\(es\) que no se leen/.test(a)), e.avisos.join('\n'));
   });
 });
 
