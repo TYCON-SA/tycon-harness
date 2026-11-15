@@ -1981,6 +1981,26 @@ test('T212 Doing_WithOpenRun_Refused: con una historia abierta no anota texto ni
   assert.strictEqual(JSON.parse(fs.readFileSync(doingFile(h, sid), 'utf8')).text, 'mido el banco de controles');
 });
 
+test('T4 Doing_EsperaALaCoordinadora_RecuerdaMandarElPedido @story-8.284 @ac-7 @ac-18: la espera que nombra a la coordinadora recuerda mandarle el pedido; la propia coordinadora y otra espera, como hoy', () => {
+  const h = toyHome();
+  const RECUERDA = /la coordinadora no lee tu pestaña: si todavía no le mandaste el pedido, mandáselo por mensaje/;
+  const abierta = (sid) => fs.writeFileSync(path.join(h.state, 'active', `${sid}.json`), JSON.stringify({ sessionId: sid, storyId: '8.284', startedAt: new Date().toISOString() }));
+  abierta('doi00000-a');
+  // execFileSync lanza si sale distinto de 0: no frena
+  const out = doing(h, 'doi00000-a', '--waiting-for', 'respuesta de la coordinadora sobre el AC 20');
+  assert.match(out, /historia 8\.284 \(espera respuesta de la coordinadora sobre el AC 20\)/);
+  assert.match(out, RECUERDA);
+  assert.strictEqual(JSON.parse(fs.readFileSync(doingFile(h, 'doi00000-a'), 'utf8')).waitingFor, 'respuesta de la coordinadora sobre el AC 20');
+  assert.match(doing(h, 'doi00000-a', '--waiting-for', 'decision of the Coordinator'), RECUERDA);
+  // otra espera: como hoy
+  assert.doesNotMatch(doing(h, 'doi00000-a', '--waiting-for', 'turno de la suite'), RECUERDA);
+  // la coordinadora designada que espera algo «de la coordinadora» no se lo recuerda a sí misma
+  abierta('doi00000-c');
+  fs.appendFileSync(path.join(h.state, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'relay-designation', status: 'ok', sesion: 'doi00000-c', rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' })}\n`);
+  assert.doesNotMatch(doing(h, 'doi00000-c', '--waiting-for', 'respuesta de la coordinadora vieja'), RECUERDA);
+  assert.match(doing(h, 'doi00000-a', '--waiting-for', 'respuesta de la coordinadora sobre el AC 21'), RECUERDA, 'para las demás sigue saliendo');
+});
+
 test('T213 LooseNote_TaskNumber_OnlyItsOwn: el texto de la nota de un camino corto llega a la oficina sólo si es de este camino corto', () => {
   const at = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
   const m = toyMachine();

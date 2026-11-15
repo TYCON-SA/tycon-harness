@@ -1429,6 +1429,73 @@ test('T7c Coordinacion_ErrorAlEntregar_NoPierdeElLote @story-8.180 @ac-7: un err
   assert.match(turno(t), /Alma: te contestaron «que no se pierda»/);
 });
 
+test('T3 Respuestas_NoEntregadas_NombraLaSesion @story-8.284 @ac-6 @ac-9 @ac-18: una línea por sesión con la cantidad y los minutos, sin el texto; lo demás como hoy', () => {
+  const t = conCoordinadora();
+  const huella = (s) => require('crypto').createHash('sha256').update(s).digest('hex');
+  fs.mkdirSync(path.dirname(RESPUESTAS(t)), { recursive: true });
+  const renglon = (r) => fs.appendFileSync(RESPUESTAS(t), `${JSON.stringify(r)}\n`);
+  const perdido = (sid, min, transcript) => renglon({ sid, at: iso(mins(min)), text: 'secreto del mensaje', sha: huella('secreto del mensaje'), transcript, from: 0 });
+  const PERDIO = (quien, n, min) => new RegExp(`Coordinación: ${quien} escribió ${n} mensaje\\(s\\) en su pestaña que no te llegaron, el último hace ${min} min: preguntale qué te pidió\\.`);
+  for (const [sid, nombre] of [['ses-c', 'Caro'], ['ses-d', 'Dani'], ['ses-e', 'Edu'], ['ses-f', 'Fede'], ['ses-g', 'Gabi']]) session(t, sid, nombre, INTERACTIVA);
+  // pasados los 10 minutos, la conversación no lo trae (Bruno, dos mensajes); la ilegible va más abajo
+  charla(t, 'ses-b', ['otra cosa']);
+  perdido('ses-b', 12, rutaCharla(t, 'ses-b'));
+  perdido('ses-b', 11, rutaCharla(t, 'ses-b'));
+  // en el acto: mal formado con sid (conversación fuera de projects) y uno que no se pudo anotar
+  renglon({ sid: 'ses-c', at: iso(mins(2)), sha: huella('x'), transcript: path.join(t.root, 'ses-c.jsonl') });
+  renglon({ sid: 'ses-d', at: iso(mins(2)), problem: 'no pude leer las sesiones de la máquina' });
+  // un id largo, con espacios y < >: sale acotado
+  renglon({ sid: `<a b>${'y'.repeat(55)}`, at: iso(mins(2)), sha: huella('x'), transcript: '/afuera/raro.jsonl' });
+  // sin línea: sin confirmar todavía (vuelve al archivo), no tipeado, mal formado sin sid, de más de un día, y el bueno
+  charla(t, 'ses-e', ['otra cosa']);
+  perdido('ses-e', 2, rutaCharla(t, 'ses-e'));
+  charla(t, 'ses-f', ['secreto del mensaje'], { origin: { kind: 'system' }, promptSource: 'system', entrypoint: 'cli' });
+  perdido('ses-f', 11, rutaCharla(t, 'ses-f'));
+  renglon({ at: iso(mins(11)), sha: huella('x') });
+  perdido('ses-g', 25 * 60, rutaCharla(t, 'ses-g'));
+  const ruta = charla(t, 'ses-a', ['el bueno']);
+  assert.strictEqual(contesta(t, 'ses-a', 'el bueno', ruta), 'anotado');
+  const n = turno(t);
+  assert.match(n, /Alma: te contestaron «el bueno»/);
+  assert.match(n, PERDIO('Bruno \\(ses-b\\)', 2, 11));
+  assert.match(n, PERDIO('Caro \\(ses-c\\)', 1, 2));
+  assert.match(n, PERDIO('Dani \\(ses-d\\)', 1, 2));
+  assert.match(n, PERDIO('a byyy', 1, 2));
+  assert.doesNotMatch(n, /<a b>|Edu|Fede|Gabi|secreto del mensaje/);
+  // la cuenta en «No pude leer» sigue como hoy
+  assert.match(n, /No pude leer .*3 línea\(s\) de las respuestas/);
+  // «No pude leer» se corta a 300 caracteres: por eso las sesiones van en líneas propias
+  assert.match(n, /1 respuesta\(s\) que la conversación no da c/);
+  assert.match(fs.readFileSync(RESPUESTAS(t), 'utf8'), /"sid":"ses-e"/, 'el sin confirmar vuelve al archivo');
+  // la conversación que no se puede leer: Alma, en una carpeta sin su archivo
+  fs.writeFileSync(RESPUESTAS(t), '');
+  perdido('ses-a', 11, path.join(t.home, '.claude', 'projects', '-otro', 'ses-a.jsonl'));
+  const ilegible = turno(t);
+  assert.match(ilegible, PERDIO('Alma \\(ses-a\\)', 1, 11));
+  assert.match(ilegible, /1 respuesta\(s\) cuya conversación no pude leer pasados 10 minutos/);
+  // siete sesiones a la vez: cinco líneas y «(+2 más)», que cuenta sesiones
+  fs.writeFileSync(RESPUESTAS(t), '');
+  for (let i = 1; i <= 7; i++) perdido(`s7-${i}`, 11, path.join(t.home, '.claude', 'projects', '-otro', `s7-${i}.jsonl`));
+  const siete = turno(t);
+  assert.strictEqual(siete.split('\n').filter((l) => /que no te llegaron, el último/.test(l)).length, 5, siete);
+  assert.match(siete, /\(\+2 más\) con mensajes de la persona que no te llegaron/);
+  // el turno siguiente no los repite
+  assert.doesNotMatch(turno(t), /que no te llegaron/);
+  // sin poder devolver al archivo lo que todavía espera, el aviso de los perdidos sale igual (la otra salida)
+  fs.writeFileSync(RESPUESTAS(t), '');
+  perdido('ses-b', 11, rutaCharla(t, 'ses-b'));
+  perdido('ses-e', 2, rutaCharla(t, 'ses-e'));
+  const append = fs.appendFileSync;
+  fs.appendFileSync = (f, ...resto) => {
+    if (String(f) === RESPUESTAS(t)) throw Object.assign(new Error('disco inventado'), { code: 'EIO' });
+    return append(f, ...resto);
+  };
+  let sinDevolver;
+  try { sinDevolver = turno(t); } finally { fs.appendFileSync = append; }
+  assert.match(sinDevolver, PERDIO('Bruno \\(ses-b\\)', 1, 11));
+  assert.match(sinDevolver, /no las pude guardar para el próximo turno \(EIO\)/);
+});
+
 test('T6 RespuestaEnOtraPestana_NoAprueba @story-8.180 @ac-6: «aprobado» sale rotulado y no aprueba; la forma del sello no entra', () => {
   const t = conCoordinadora();
   assert.strictEqual(contesta(t, 'ses-a', 'aprobado', charla(t, 'ses-a', ['aprobado'])), 'anotado');
