@@ -6064,8 +6064,13 @@ function cmdReviewAnswer(argv) {
   const ajena = sesion !== PROPIA;
   if (ajena) {
     let d = null;
-    try { d = pr.designadaDeVerdad(STATE_DIR); } catch (_) { d = null; }
-    if (d !== PROPIA) { console.error(`🔒 marker.js review-answer --for-session ${sesion}: la respuesta para otra sesión la anota la coordinadora designada, y ésta no lo es. No se escribió nada.`); process.exit(2); }
+    let causa = null;
+    try { d = pr.designadaDeVerdad(STATE_DIR); } catch (e) { causa = String((e && e.message) || e).split('\n')[0]; }
+    if (d !== PROPIA) {
+      const porque = causa ? ` (no se pudo saber cuál es: ${causa})` : d ? '' : ' (no hay designada)';
+      console.error(`🔒 marker.js review-answer --for-session ${sesion}: la respuesta para otra sesión la anota la coordinadora designada, y ésta no lo es${porque}. No se escribió nada.`);
+      process.exit(2);
+    }
   }
   const kind = val('--kind');
   const h = pr.huellaDe({ estado: STATE_DIR, sesion, kind });

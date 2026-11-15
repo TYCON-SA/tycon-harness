@@ -47,7 +47,8 @@ function borrarLaMarcaSiEscribioLaPersona() {
   const marca = require(path.join(__dirname, '..', 'lib', 'owner-away.js'));
   const g = marca.get({ home });
   if (g.problem) process.stderr.write(`coordination-notice: la marca de ausente: ${g.problem}\n`);
-  if (!g.mark) return;
+  // una marca que no se pudo confirmar contra el registro también se borra: que escribió la persona no depende de él
+  if (!g.mark && !g.unconfirmed) return;
   const lista = require(path.join(__dirname, '..', 'lib', 'signature-list.js'));
   const s = lista.sesiones(home).mapa.get(sid);
   if (!lista.esDeLaPersona({ prompt: event.prompt, kind: s ? s.kind || 'interactive' : null, transcript: event.transcript_path })) return;

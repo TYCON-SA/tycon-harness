@@ -72,19 +72,24 @@ function clear(o = {}) {
   return { cleared: true };
 }
 
-/** La firma del dueño más vieja posterior a `desde` (ms), o null. */
+/**
+ * La firma del dueño más vieja posterior a `desde` (ms): `{ firma }` (null si no hay) o `{ problema }` si el registro
+ * existe y no se puede leer, que no es lo mismo que «no firmó».
+ */
 function firmaDelDuenoDesde(estado, desde) {
   let lineas = [];
-  try { lineas = fs.readFileSync(path.join(estado, 'gates.log'), 'utf8').split('\n'); } catch (_) { return null; }
+  try { lineas = fs.readFileSync(path.join(estado, 'gates.log'), 'utf8').split('\n'); } catch (e) {
+    return e.code === 'ENOENT' ? { firma: null } : { problema: `no pude leer gates.log: ${e.code || e.message}` };
+  }
   for (const l of lineas) {
     if (!l || l.indexOf('-signed') < 0) continue;
     let j;
     try { j = JSON.parse(l); } catch (_) { continue; }
     if (!j || typeof j.name !== 'string' || !/-signed$/.test(j.name) || j.status !== 'ok' || !VIAS_DEL_DUENO.includes(j.via)) continue;
     const ts = Date.parse(j.ts);
-    if (Number.isFinite(ts) && ts > desde) return j;
+    if (Number.isFinite(ts) && ts > desde) return { firma: j };
   }
-  return null;
+  return { firma: null };
 }
 
 /**
@@ -101,7 +106,10 @@ function get(o = {}) {
   let motivo = null;
   if (!Number.isFinite(desde) || ahora - desde >= VENCE_MS) motivo = 'venció a las 24 h de puesta';
   else {
-    const f = firmaDelDuenoDesde(estado, desde);
+    const { firma: f, problema } = firmaDelDuenoDesde(estado, desde);
+    // sin saber si el dueño firmó, cuenta como presente; la marca no se borra, y va aparte (`unconfirmed`) para quien la
+    // borra por otra señal, como el mensaje de la persona, que no depende del registro
+    if (problema) return { mark: null, unconfirmed: m, problem: `${problema}: no sé si el dueño firmó después de la marca` };
     if (f) motivo = `firma del dueño (${String(f.name).replace(/-signed$/, '')}, por ${f.via})`;
   }
   if (!motivo) return { mark: m };
