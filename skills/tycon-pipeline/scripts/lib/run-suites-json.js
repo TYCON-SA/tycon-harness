@@ -627,6 +627,9 @@ function main(argv, env = process.env) {
   // anota mientras corre: la fila lo ve y no da el «arrancá» encima. La espera y la fila son de la máquina, no del repo:
   // vale el heavy-turn.js del arnés que corre esto, y si no está (una copia suelta), el del repo. Nada de esto frena, pero
   // no poder anotarse se dice: la fila pediría el «arrancá» encima de este portón.
+  // Con un pase adversarial en vuelo, el portón corre al lado sólo si es chico, va uno solo y hay memoria libre
+  // (heavy-turn.js `besidePass`); si no, sale 77 como con el turno ajeno. Un heavy-turn.js sin esa regla no la aplica, y
+  // lo dice.
   let gateTurn = null;
   if (!turn && env.TYCON_GATE_PROCESS) {
     const sinAnotar = (why) => console.error(`[suites.json] ⚠️  no pude anotar el portón: la fila de la coordinadora no lo va a ver (${why})`);
@@ -634,15 +637,41 @@ function main(argv, env = process.env) {
     let mod = null;
     for (const m of [path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tools', 'heavy-turn.js'), path.join(repo, 'scripts', 'tools', 'heavy-turn.js')]) {
       if (!fs.existsSync(m)) continue;
-      try { const x = require(m); if (typeof x.gateStarted === 'function') { mod = x; break; } cargas.push(`${m} no trae el registro de portones`); } catch (e) { cargas.push(`${m}: ${e.message}`); }
+      try {
+        const x = require(m);
+        if (typeof x.gateStarted !== 'function') { cargas.push(`${m} no trae el registro de portones`); continue; }
+        if (!mod || (typeof mod.besidePass !== 'function' && typeof x.besidePass === 'function')) mod = x;
+        if (typeof mod.besidePass === 'function') break;
+      } catch (e) { cargas.push(`${m}: ${e.message}`); }
     }
     if (!mod) sinAnotar(cargas.length ? cargas.join(' · ') : 'no encontré heavy-turn.js');
     else {
+      let beside = null;
+      if (typeof mod.besidePass !== 'function') console.error('[suites.json] ⚠️  el heavy-turn.js que cargué no trae la regla del portón al lado del pase: no la aplico');
+      else {
+        let b = null;
+        try { b = mod.besidePass({ env, suites: count }); } catch (e) { console.error(`[suites.json] ⚠️  no pude mirar si hay un pase en vuelo (${e.message}): corro igual`); }
+        if (b && !b.ok) {
+          console.error(`[suites.json] ${b.message}`);
+          escribir(out, { ...resumen, no_medido: b.message });
+          return Promise.resolve(mod.BUSY_EXIT);
+        }
+        beside = b && b.pass;
+      }
       try {
-        const g = mod.gateStarted({ env, what: `${count} suites de ${path.basename(process.cwd())}` });
+        const g = mod.gateStarted({ env, what: `${count} suites de ${path.basename(process.cwd())}`, suites: count });
         if (g && g.error) sinAnotar(g.error);
         else if (g && g.file) gateTurn = mod;
       } catch (e) { sinAnotar(e.message); }
+      if (gateTurn && beside) {
+        const again = mod.besideRecheck({});
+        if (!again.ok) {
+          gateTurn = null;
+          console.error(`[suites.json] ${again.message}`);
+          escribir(out, { ...resumen, no_medido: again.message });
+          return Promise.resolve(mod.BUSY_EXIT);
+        }
+      }
     }
   }
   // con el turno ya tomado: un portón que no arranca no deja aviso ni dice su hora de fin

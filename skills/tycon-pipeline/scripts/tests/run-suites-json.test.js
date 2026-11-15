@@ -1446,3 +1446,60 @@ fs.writeFileSync(${JSON.stringify(visto)}, JSON.stringify(l));`);
   assert.match(roto.stderr, /no pude anotar el portón: la fila de la coordinadora no lo va a ver \(/, roto.stderr);
   assert.ok(!fs.existsSync(nota), 'la espera se borra igual');
 });
+
+// ── El portón acotado al lado del pase (8.286) ────────────────────────────────────────────────────────────────────
+
+test('T-8.286a RunSuites_Threshold_SingleSource @story-8.286 @ac-8: el corte y el piso viven en heavy-turn.js y nadie los repite', () => {
+  // 🔴 mutación: copiar el 40 en el corredor o en la coordinación deja dos cortes que se separan con el tiempo
+  const tools = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tools');
+  const HT = require(path.join(tools, 'heavy-turn.js'));
+  assert.equal(HT.BESIDE_PASS_MAX_SUITES, 40);
+  assert.equal(HT.BESIDE_PASS_MIN_FREE_PCT, 40);
+  const define = /\bBESIDE_PASS_(MAX_SUITES|MIN_FREE_PCT)\s*=/;
+  assert.match(fs.readFileSync(path.join(tools, 'heavy-turn.js'), 'utf8'), define);
+  for (const f of [RUNNER, path.join(tools, 'coordination.js')]) assert.doesNotMatch(fs.readFileSync(f, 'utf8'), define, f);
+});
+
+test('T-8.286b RunSuites_GateBesidePass_Exit77NoResult @story-8.286 @ac-1 @ac-2: con un pase en vuelo, 41 suites no corren; sin pase, 20 corren y se anotan con cuántas', () => {
+  // 🔴 mutación: no consultar el pase antes de anotarse, o no pasarle la cantidad a gateStarted
+  const { stateDir } = require('../lib/state-dir.js');
+  const rutas = (n) => Array.from({ length: n }, (_, i) => ({ raiz: 'arnes', ruta: `tests/s${i}.test.js` }));
+  const preparar = (n) => {
+    const f = armar({ diarias: rutas(n) });
+    const home = path.join(f.root, 'home');
+    const gates = path.join(stateDir(home), 'coordination', 'gates');
+    const visto = path.join(f.root, 'visto.json');
+    for (let i = 0; i < n; i += 1) {
+      f.escribir('arnes', `tests/s${i}.test.js`, i ? 'process.exit(0)' : `const fs = require('fs');
+let l = []; try { l = fs.readdirSync(${JSON.stringify(gates)}).map((x) => JSON.parse(fs.readFileSync(require('path').join(${JSON.stringify(gates)}, x), 'utf8'))); } catch (_) {}
+fs.writeFileSync(${JSON.stringify(visto)}, JSON.stringify(l));`);
+    }
+    fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true });
+    const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-uma', TYCON_SUITE_TURN: '1', TYCON_GATE_PROCESS: String(process.pid) };
+    delete env.TYCON_HOME;
+    delete env.CODEX_SESSION_ID;
+    return { f, home, visto, env };
+  };
+  // un pase de otra sesión viva, lanzado hace un minuto
+  const pase = (home) => {
+    fs.writeFileSync(path.join(home, '.claude', 'sessions', 's-ana.json'), JSON.stringify({ pid: process.pid, sessionId: 's-ana', name: 'Ana', nameSource: 'user', status: 'busy', statusUpdatedAt: Date.now() }));
+    const active = path.join(stateDir(home), 'active');
+    fs.mkdirSync(active, { recursive: true });
+    fs.writeFileSync(path.join(active, 's-ana.json'), JSON.stringify({ sessionId: 's-ana', storyId: '7.7', adversarial: { launchedAt: new Date(Date.now() - 60000).toISOString(), runId: 'wf_x' } }));
+  };
+  const grande = preparar(41);
+  pase(grande.home);
+  const out = path.join(grande.f.root, 'out.json');
+  const r = spawnSync('node', [RUNNER, grande.f.repo, out, '--skills', grande.f.skills], { encoding: 'utf8', env: grande.env });
+  assert.equal(r.status, 77, r.stderr);
+  assert.match(r.stderr, /41 suites/);
+  assert.match(JSON.parse(fs.readFileSync(out, 'utf8')).no_medido, /pase adversarial de la 7\.7/);
+  assert.ok(!fs.existsSync(grande.visto), 'no corrió ninguna suite');
+
+  const chico = preparar(20);
+  const r2 = spawnSync('node', [RUNNER, chico.f.repo, path.join(chico.f.root, 'out.json'), '--skills', chico.f.skills], { encoding: 'utf8', env: chico.env });
+  assert.equal(r2.status, 0, r2.stderr);
+  const anotados = JSON.parse(fs.readFileSync(chico.visto, 'utf8'));
+  assert.equal(anotados.length, 1, JSON.stringify(anotados));
+  assert.equal(anotados[0].suites, 20);
+});
