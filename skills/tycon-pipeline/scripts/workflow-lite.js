@@ -329,6 +329,10 @@ function makeAgent(opts, corredor) {
     const id = ++seq.n;
     const label = aopts.label || `agent-${id}`;
     const phase = aopts.phase || 'sin-fase';
+    // la clave con que se anota el corredor que contestó: la etiqueta, y desde la segunda con la misma, `<etiqueta> #N`
+    // en el orden en que se lanzaron (dos agentes con la misma etiqueta no se pisan)
+    corredor.vecesPorEtiqueta[label] = (corredor.vecesPorEtiqueta[label] || 0) + 1;
+    const clave = corredor.vecesPorEtiqueta[label] === 1 ? label : `${label} #${corredor.vecesPorEtiqueta[label]}`;
     const muerto = (causa, nombre, hora = horaCorta()) => { corredor.muertos.push({ label, corredor: nombre, causa, hora }); };
     corredor.agentes[phase] = (corredor.agentes[phase] || 0) + 1;
     const outFile = path.join(tmpBase, `out-${id}.txt`);
@@ -388,13 +392,13 @@ function makeAgent(opts, corredor) {
         if (leido.failed && !leido.structured && !raw.trim()) { murioPorError(); continue; }
         if (!aopts.schema) {
           const t = raw.trim();
-          if (t && !leido.failed) { respondio(); corredor.usado[label] = name; return t; }
+          if (t && !leido.failed) { respondio(); corredor.usado[clave] = name; return t; }
           if (leido.failed) murioPorError(); else causa = 'contestó vacío';
           continue;
         }
         let obj = leido.structured;
         if (!obj) { try { obj = JSON.parse(raw.trim()); } catch (_) { obj = lastJsonObject(raw); } }
-        if (obj && checkShape(obj, aopts.schema)) { respondio(); corredor.usado[label] = name; return obj; }
+        if (obj && checkShape(obj, aopts.schema)) { respondio(); corredor.usado[clave] = name; return obj; }
         if (leido.failed) murioPorError();
         else causa = `contestó sin las claves pedidas (${(aopts.schema.required || []).join(', ')})`;
       }
@@ -409,7 +413,7 @@ async function runWorkflow(scriptPath, argsValue, opts) {
   let source = fs.readFileSync(scriptPath, 'utf8');
   // neutralizar el export (ilegal dentro de una función): mismo objeto, sin exportar
   source = source.replace(/^export const meta =/m, 'const meta =');
-  const corredor = { nombre: opts.agentsDir ? 'agentes-claude' : 'workflow-lite', muertos: [], tope: null, topes: {}, caidos: {}, fallosSeguidos: {}, usado: {}, agentes: {}, tokensPorFase: {}, conTokens: false };
+  const corredor = { nombre: opts.agentsDir ? 'agentes-claude' : 'workflow-lite', muertos: [], tope: null, topes: {}, caidos: {}, fallosSeguidos: {}, usado: {}, vecesPorEtiqueta: {}, agentes: {}, tokensPorFase: {}, conTokens: false };
   // el modo del pase: el del plan revisa texto; el del código ejecuta pruebas y pide un corredor confinado
   const modo = argsValue && typeof argsValue === 'object' && argsValue.modo === 'plan' ? 'plan' : 'code';
   const agent = opts.agentsDir ? makeDirAgent(opts, corredor) : makeAgent({ ...opts, mode: opts.mode || modo }, corredor);

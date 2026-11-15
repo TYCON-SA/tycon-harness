@@ -125,7 +125,8 @@ function correrPase(dir, envExtra, extraArgs = [], argsExtra = {}) {
   const home = path.join(dir, 'home');
   fs.mkdirSync(home, { recursive: true });
   const out = path.join(dir, 'step-05b-adversarial.json');
-  const args = { repo: dir, files: ['scripts/x.js'], runDir: dir, model: 'sonnet', base: BASE, ...argsExtra };
+  // un verificador por hallazgo, como al escribirse esta suite (la fábrica es uno por lente desde la 8.282)
+  const args = { repo: dir, files: ['scripts/x.js'], runDir: dir, model: 'sonnet', base: BASE, verifiers: 'per_finding', ...argsExtra };
   for (const k of Object.keys(args)) if (args[k] === undefined) delete args[k];
   const r = spawnSync(process.execPath, [WFLITE, GUION, '--args', JSON.stringify(args), '--out', out, ...extraArgs],
     { encoding: 'utf8', env: entorno(home, { TYCON_WFLITE_JOBS: '6', ...envExtra }), cwd: dir, timeout: 60000 });
@@ -636,7 +637,7 @@ async function correrGuion(args, agent) {
   const source = fs.readFileSync(GUION, 'utf8').replace(/^export const meta =/m, 'const meta =');
   const fn = new (Object.getPrototypeOf(async function () {}).constructor)('args', 'log', 'agent', 'parallel', 'pipeline', source);
   const parallel = (thunks) => Promise.all(thunks.map((t) => t().catch(() => null)));
-  return fn(args, () => {}, agent, parallel, null);
+  return fn({ verifiers: 'per_finding', ...args }, () => {}, agent, parallel, null);
 }
 
 test('T1 8.215-SinBase_NoMedido_SinCazadores @story-8.215 @ac-1', () => {

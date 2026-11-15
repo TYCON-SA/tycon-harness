@@ -30,7 +30,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * `story` o sin `status`, o con un id fuera del patrón) y lo que vuelve sin `epic` se avisa con su ruta, y nada se
  * escribe: un índice al que le falta una historia es peor que uno viejo. Un escaneo que quedó incompleto, igual.
  *
- * Salidas: 0 bien · 1 frenado (lo dice la última línea) · 2 mal llamado.
+ * Salidas: 0 bien · 1 frenado (lo dice la última línea) · 2 mal llamado, o la carpeta de historias está y no se puede
+ * leer (`--write` y `--check`: no es «al día» ni «sin historias»).
  */
 const fs = require('fs');
 const path = require('path');
@@ -101,7 +102,8 @@ function readIntro(repo) {
   }
   let cur = null;
   for (const line of text.split(/\r?\n/)) {
-    const h = /^## Épica (\S+?)(?: — (.*))?$/.exec(line);
+    // un espacio al final del renglón no cambia la épica
+    const h = /^## Épica (\S+?)(?: — (.*?))?\s*$/.exec(line);
     if (h) { cur = { title: (h[2] || '').trim(), lines: [] }; out.set(h[1], cur); continue; }
     if (/^#{1,2} /.test(line)) { cur = null; continue; }
     if (cur) cur.lines.push(line);
@@ -137,7 +139,14 @@ function collect(repo) {
   // lo que el descubridor dejó afuera por su id, se llame como se llame
   for (const r of [...outside].sort()) if (!/^story-.*\.md$/.test(path.posix.basename(r))) problems.push(`${r}: su id está fuera del patrón de ids de historia`);
   let files = [];
-  try { files = fs.readdirSync(path.join(repo, SPECS)).filter((f) => /^story-.*\.md$/.test(f)); } catch (_) { files = []; }
+  let unreadable = null;
+  // sin la carpeta no hay historias; una que está y no se puede listar no es «sin historias»: falla el índice entero
+  try { files = fs.readdirSync(path.join(repo, SPECS)).filter((f) => /^story-.*\.md$/.test(f)); } catch (e) {
+    if (!e || e.code !== 'ENOENT') {
+      unreadable = `no se puede leer la carpeta ${SPECS} (${(e && e.code) || e}): no sé qué historias hay`;
+      problems.push(unreadable);
+    }
+  }
   for (const f of files.sort()) {
     const r = `${SPECS}/${f}`;
     if (seen.has(r)) continue;
@@ -153,7 +162,11 @@ function collect(repo) {
   const byKey = new Map();
   for (const s of stories) byKey.set(keyOf(s), [...(byKey.get(keyOf(s)) || []), s.rel]);
   for (const [k, rels] of byKey) if (rels.length > 1) problems.push(`la clave ${k} está repetida: ${rels.join(', ')}`);
-  return { stories, problems, partial: !!res.partial };
+  // dos historias con el mismo número y distinto nombre tienen claves distintas, y el número es la identidad
+  const byId = new Map();
+  for (const s of stories) byId.set(fullId(s), [...(byId.get(fullId(s)) || []), s.rel]);
+  for (const [id, rels] of byId) if (rels.length > 1) problems.push(`el número ${id} está repetido: ${rels.join(', ')}`);
+  return { stories, problems, partial: !!res.partial, unreadable };
 }
 
 const yamlValue = (v) => (/^[\w.-]+$/.test(v) ? v : JSON.stringify(v));
@@ -183,14 +196,17 @@ function render(stories, intro) {
 /** `{ files, problems }`: los dos textos generados, o lo que impide generarlos. */
 function build(repo) {
   const c = collect(repo);
-  if (c.problems.length) return { files: null, problems: c.problems };
+  if (c.problems.length) return { files: null, problems: c.problems, unreadable: c.unreadable };
   const intro = readIntro(repo);
   if (intro.problem) return { files: null, problems: [intro.problem] };
   return { files: render(c.stories, intro), problems: [] };
 }
 
 function writeFiles(repo, files) {
-  for (const [rel, text] of Object.entries(files)) fs.writeFileSync(path.join(repo, rel), text);
+  for (const [rel, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
+    fs.writeFileSync(path.join(repo, rel), text);
+  }
 }
 
 /** Las diferencias entre lo escrito y lo generado, en renglones legibles. */
@@ -479,6 +495,7 @@ function main(argv) {
   const b = build(repo);
   if (b.problems.length) {
     for (const p of b.problems) console.log(`   ${p}`);
+    if (b.unreadable) { console.log(`🔒 story-index: no ${write ? 'escribí' : 'puedo comparar'} los índices: ${b.unreadable}`); return 2; }
     console.log(`🔒 story-index: no ${write ? 'escribí' : 'puedo comparar'} los índices: hay historias que no se pueden leer (arriba la ruta y el motivo)`);
     return 1;
   }
