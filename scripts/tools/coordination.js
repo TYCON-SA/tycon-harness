@@ -237,22 +237,51 @@ function suiteHolder(home, now, problems) {
   try { return require('./heavy-turn.js').holder({ home, now, problems }); } catch (e) { problems.push(`el turno de la suite completa (${e.message})`); return null; }
 }
 
+// Los estados finales del registro de un Workflow que se vieron en esta máquina; cualquier otro cuenta como corriendo.
+const WORKFLOW_DONE = new Set(['completed', 'killed']);
+const SAFE_NAME = /^[\w.-]+$/;
+
+/**
+ * ¿Terminó el Workflow del pase? Claude Code deja el registro de cada ejecución en la carpeta de la sesión que la lanzó
+ * (`projects/<carpeta>/<sesión>/workflows/<runId>.json`), con su `status`. Sólo se lee ese archivo: sin registro, ilegible
+ * o con otro estado (el pase de Codex o el propio sin Workflow no lo dejan), no terminó.
+ */
+function passFinished({ home, sessionId, runId }) {
+  const safe = (n) => SAFE_NAME.test(n) && !/^\.+$/.test(n);
+  if (!safe(String(sessionId || '')) || !safe(String(runId || ''))) return false;
+  const projects = path.join(claudeDir(home), 'projects');
+  // no poder leer no es «no terminó»: el pase cuenta en vuelo, como siempre, pero se dice
+  const noLei = (what, e) => process.stderr.write(`coordination: no pude leer ${what} (${e.code || oneLine(e.message)}): el pase ${runId} cuenta como en vuelo\n`);
+  let folders = [];
+  try { folders = fs.readdirSync(projects); } catch (e) { if (e.code !== 'ENOENT') noLei(projects, e); return false; }
+  for (const f of folders) {
+    const file = path.join(projects, f, String(sessionId), 'workflows', `${runId}.json`);
+    let rec = null;
+    try { rec = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') noLei(file, e); rec = null; }
+    if (rec && WORKFLOW_DONE.has(rec.status)) return true;
+  }
+  return false;
+}
+
 // El pase ocupa la máquina desde que se lanzó hasta que su sesión anota un resultado posterior a ese lanzamiento, con
-// cualquier veredicto, o lo saltea. Un `no-medido` deja el pase abierto para relanzarlo, pero su workflow ya terminó; si
-// se relanza, el lanzamiento nuevo lo vuelve a poner en vuelo.
-function passOccupiesMachine(m) {
+// cualquier veredicto, o lo saltea, o hasta que su Workflow terminó aunque nadie haya anotado el resultado: eso se le
+// pide a su sesión (`pipeline.js next`). Un `no-medido` deja el pase abierto para relanzarlo, pero su workflow ya
+// terminó; si se relanza, el lanzamiento nuevo lo vuelve a poner en vuelo. `sid`: la sesión del marcador, por si el
+// lanzamiento no la anotó.
+function passOccupiesMachine(m, { home, sid } = {}) {
   if (!adversarialInFlight(m)) return false;
   const launched = Date.parse(m.adversarial.launchedAt);
   if (!Number.isFinite(launched)) return true;
   const passes = Array.isArray(m.adversarialPasses) ? m.adversarialPasses : [];
-  return !passes.some((p) => p && p.tipo === '5b' && Date.parse(p.ts) >= launched);
+  if (passes.some((p) => p && p.tipo === '5b' && Date.parse(p.ts) >= launched)) return false;
+  return !(home && passFinished({ home, sessionId: m.adversarial.sessionId || sid, runId: m.adversarial.runId }));
 }
 
 // Los pases adversariales en vuelo, con la sesión de cada uno.
-function inFlight(markers, nameOf) {
+function inFlight(markers, nameOf, home) {
   const out = [];
   for (const [sid, m] of markers) {
-    if (passOccupiesMachine(m)) out.push({ storyId: m.storyId ? label(m.storyId) : null, session: nameOf(sid), since: m.adversarial.launchedAt, sid });
+    if (passOccupiesMachine(m, { home, sid })) out.push({ storyId: m.storyId ? label(m.storyId) : null, session: nameOf(sid), since: m.adversarial.launchedAt, sid });
   }
   return out;
 }
@@ -278,7 +307,7 @@ function heavyPassesInFlight(opts = {}) {
   const live = [...markers].filter(([k]) => (opts.includeOwn || k !== sid) && (knownAlive(k) || (!sessions.has(k) && problems.length > 0)));
   const nameOf = (k) => { const s = sessions.get(k); return (s && s.name && label(s.name)) || String(k).slice(0, 8); };
   // `uncertain`: cuenta sólo porque no se pudo leer todo; quien pregunta decide si eso frena
-  const passes = inFlight(new Map(live), nameOf).map(({ sid: k, ...a }) => ({ ...a, stale: passIsStale(a.since, now), uncertain: !knownAlive(k) }));
+  const passes = inFlight(new Map(live), nameOf, home).map(({ sid: k, ...a }) => ({ ...a, stale: passIsStale(a.since, now), uncertain: !knownAlive(k) }));
   return { passes, problems };
 }
 
@@ -395,7 +424,7 @@ function status(opts = {}) {
       if (owesPass && s.status === 'idle') passWaiting.push({ session: nameOf(sid), sid });
       // una de fondo, quieta: ni esperando su pase, ni con una nota de lo que hace, ni con la suite completa de la máquina
       else if (s.kind === 'bg' && s.status === 'idle' && Number.isFinite(s.statusAt) && now - s.statusAt >= QUIET_MS
-        && !(m && adversarialInFlight(m)) && !hasFreshDoing(home, sid, now) && !(suite && suite.sid === sid)) {
+        && !(m && passOccupiesMachine(m, { home, sid })) && !hasFreshDoing(home, sid, now) && !(suite && suite.sid === sid)) {
         quiet.push({ session: nameOf(sid), sid, minutes: Math.floor((now - s.statusAt) / 60000) });
       }
     }
@@ -410,7 +439,7 @@ function status(opts = {}) {
   for (const o of opened) {
     if (!alive.has(o.name)) working.push({ session: o.name, sid: null, why: 'recién abierta, todavía sin archivo de sesión', since: o.at });
   }
-  const adversarial = inFlight(markers, nameOf).map(({ sid, ...a }) => a);
+  const adversarial = inFlight(markers, nameOf, home).map(({ sid, ...a }) => a);
   const r = recipe({ home, arnes: opts.arnes, env });
   if (r.problem) problems.push(r.problem);
   const signatures = { terminal: 0, firma: 0, permiso: 0, delegated: 0 };
@@ -2513,4 +2542,4 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };

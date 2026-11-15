@@ -409,6 +409,27 @@ test('HT12 HeavyTurn_PassResultNoted_TurnFree @story-8.228 @ac-3 — con su resu
   assert.strictEqual(takeAs(m, 's-uma').ok, false, 'relanzado después del no-medido');
 });
 
+// The run record Claude Code leaves for the pass's Workflow, in the folder of the session that launched it.
+function workflowRecord(m, sid, status) {
+  const dir = path.join(m.home, '.claude', 'projects', '-repo', sid, 'workflows');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'wf_x.json'), JSON.stringify({ runId: 'wf_x', status }));
+}
+
+// 🔴 mutación: soltar el pase por cualquier registro deja correr una grande al lado de un pase que todavía corre.
+test('HT12b HeavyTurn_FinishedPassWithoutResult_TurnFree @story-8.277 @ac-10 @ac-12 — un pase con su Workflow terminado y sin resultado anotado no frena la grande, de otra sesión ni de la propia; uno corriendo, sí', () => {
+  for (const [owner, name] of [['s-ana', 'Ana'], ['s-uma', 'Uma']]) {
+    const m = toy();
+    if (owner !== 's-uma') addSession(m, owner, name);
+    passMarker(m, owner, '7.7', 5);
+    workflowRecord(m, owner, 'running');
+    assert.strictEqual(takeAs(m, 's-uma').ok, false, `${name}: corriendo, frena`);
+    workflowRecord(m, owner, 'completed');
+    assert.strictEqual(takeAs(m, 's-uma').taken, true, `${name}: terminado, libre`);
+    HT.release({ home: m.home, pid: process.pid });
+  }
+});
+
 // 🔴 mutación: sin el tope de la hora, un pase colgado traba las suites para siempre; sin mirar la sesión, uno abandonado.
 test('HT13 HeavyTurn_StaleOrDeadPass_DoesNotBlock @story-8.228 @ac-6 — un pase de más de una hora o de una sesión cerrada no frena', () => {
   const m = toy();
