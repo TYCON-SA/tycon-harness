@@ -207,7 +207,7 @@ test('T27 Porton_RepetidasSolas_CarpetaCambio_SoloLasQueLoLeen — lo cambiado c
   assert.equal(r.status, 0, r.out);
   assert.deepEqual(corridas(l), ['b'], `no corrió sólo la que lee lo cambiado:\n${r.out}`);
   assert.equal(JSON.parse(fs.readFileSync(artefacto(l), 'utf8')).totals.suites, 2, 'el resumen juntado trae las dos suites');
-  // la base movida (main avanzó): completa
+  // la base movida (main avanzó) sin cambiar la carpeta: lo traído es un cambio más, y acá no cambió nada
   const bm = conRojoAcotado();
   repetirVerdes(bm);
   git(bm.repo, 'commit', '-q', '--allow-empty', '-m', 'main avanzó');
@@ -215,16 +215,17 @@ test('T27 Porton_RepetidasSolas_CarpetaCambio_SoloLasQueLoLeen — lo cambiado c
   mk.baseSha = git(bm.repo, 'rev-parse', 'HEAD').stdout.trim();
   fs.writeFileSync(markerFile(bm), JSON.stringify(mk));
   const u = puerta(bm);
-  assert.deepEqual(corridas(bm).sort(), ['a', 'b'], u.out);
-  assert.match(u.out, /la base cambió desde la completa roja/);
-  // un cambio después de repetir (un arreglo deshecho, o uno más): la completa como siempre
+  assert.equal(u.status, 0, u.out);
+  assert.deepEqual(corridas(bm), [], u.out);
+  assert.doesNotMatch(u.out, /la base cambió desde la completa roja/);
+  // un cambio después de repetir: ya no la completa, sino las que leen lo cambiado y las repetidas viejas
   const d = conRojoAcotado();
   repetirVerdes(d);
   fs.appendFileSync(path.join(d.repo, 'docs', 'x.md'), 'otra vuelta\n');
   const v = puerta(d);
   assert.equal(v.status, 0, v.out);
   assert.deepEqual(corridas(d).sort(), ['a', 'b'], v.out);
-  assert.match(v.out, /la carpeta cambió después de repetir/);
+  assert.doesNotMatch(v.out, /corre la completa como siempre/);
   // la lista de suites cambiada: completa
   const s = conRojoAcotado();
   repetirVerdes(s);
@@ -362,6 +363,210 @@ test('FailedFirst_DecideWithoutStory_RunsFull @story-8.263 @ac-3 — sin saber d
     const r = ff.decide({ dir, hash, repo, tree: arbol(), base: null, recorte: '', storyId });
     assert.deepEqual([r.mode, r.reason], ['full', 'no sé de qué historia es esta corrida: lo guardado es de la 9.263'], JSON.stringify(storyId));
   }
+});
+
+// ── El arreglo después del portón ─────────────────────────────────────────────────────────────────────
+// Una repetición vieja (la carpeta cambió después de repetirla) o main traído ya no corren la completa: corren las suites
+// que leen lo cambiado desde la completa y las repetidas viejas, reconocidas por su entrada de la lista de suites.
+// 🔴 Falla con: la completa de siempre por `otraCarpeta` o por la base; la repetida vieja pasada como archivo tocado
+//    (su clave es de la lista, relativa a scripts/, y el filtro de lo tocado descarta lo que tiene forma de suite); o el
+//    resultado nuevo de la repetida sumado al lado del viejo en vez de reemplazarlo.
+
+// a falla salvo que exista docs/arreglo-a (el arreglo de la historia); b lee docs/y.md; c lee docs/z.md y docs/w.md.
+const suiteA = suite('a', '# lee docs/x.md\nif [ -f "$FF_REPO/docs/arreglo-a" ]; then echo 0 > "$FF_STATE/a"; else echo 1 > "$FF_STATE/a"; fi');
+const C = 'tests/c.test.sh';
+
+/** Un repo que acota con tres suites: la completa toca x.md (a, b) y z.md (c); a y b salen rojas, c verde. */
+function conTres() {
+  const l = lab({ a: 1, b: 1, acota: true, suiteA, suiteB: suite('b', '# lee docs/x.md y docs/y.md') });
+  const tests = path.join(l.repo, 'scripts', 'tests');
+  fs.writeFileSync(path.join(tests, 'c.test.sh'), suite('c', '# lee docs/z.md y docs/w.md'));
+  fs.writeFileSync(path.join(tests, 'suites.json'), JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: A }, { raiz: 'arnes', ruta: B }, { raiz: 'arnes', ruta: C }], semanales: [] }, null, 2));
+  for (const f of ['z.md', 'w.md', 'nadie.md']) fs.writeFileSync(path.join(l.repo, 'docs', f), `${f}\n`);
+  git(l.repo, 'add', '-A'); git(l.repo, 'commit', '-q', '-m', 'tres suites');
+  l.base = git(l.repo, 'rev-parse', 'HEAD').stdout.trim();
+  escribirMarcador(l);
+  fs.appendFileSync(path.join(l.repo, 'docs', 'x.md'), 'cambio de la historia\n');
+  fs.appendFileSync(path.join(l.repo, 'docs', 'z.md'), 'cambio de la historia\n');
+  const r = puerta(l, [], { FF_REPO: l.repo });
+  assert.notEqual(r.status, 0, r.out);
+  assert.deepEqual(corridas(l).sort(), ['a', 'b', 'c'], `la completa no corrió las tres:\n${r.out}`);
+  limpiarCorridas(l);
+  return l;
+}
+const repetirSola = (l, s) => { const r = puerta(l, ['--suite', s], { FF_REPO: l.repo }); assert.equal(r.status, 0, r.out); };
+
+test('T6a Gate_FixAfterRepeat_OnlyChangedReaders @story-8.279 @ac-6 — repetida A, arreglada B después: corren B y A (vieja), no la completa', () => {
+  const l = conTres();
+  fs.writeFileSync(path.join(l.repo, 'docs', 'arreglo-a'), 'ok\n');
+  repetirSola(l, A);
+  estado(l, { b: 0 });
+  fs.appendFileSync(path.join(l.repo, 'docs', 'y.md'), 'el arreglo de b\n');
+  repetirSola(l, B);
+  limpiarCorridas(l);
+  const r = puerta(l, [], { FF_REPO: l.repo });
+  assert.equal(r.status, 0, r.out);
+  assert.deepEqual(corridas(l).sort(), ['a', 'b'], `c no lee lo cambiado y no es repetida: no corre\n${r.out}`);
+  assert.match(r.out, /la carpeta cambió desde la completa roja .*: corren sólo las suites que leen lo cambiado/);
+  assert.doesNotMatch(r.out, /corre la completa como siempre/);
+  const art = JSON.parse(fs.readFileSync(artefacto(l), 'utf8'));
+  assert.equal(art.suite_green, true, JSON.stringify(art).slice(0, 400));
+  assert.equal(art.totals.suites, 3, 'una entrada por suite: la nueva reemplaza a la vieja');
+});
+
+test('T6b Gate_UndoneFix_StaleRepeatRerunsBySuiteEntry @story-8.279 @ac-6 — el arreglo de A deshecho después de repetirla: A vuelve a correr (por su entrada tests/a.test.sh) y el portón cierra en rojo', () => {
+  const l = conTres();
+  fs.writeFileSync(path.join(l.repo, 'docs', 'arreglo-a'), 'ok\n');
+  estado(l, { b: 0 });
+  repetirSola(l, A);
+  repetirSola(l, B);
+  fs.rmSync(path.join(l.repo, 'docs', 'arreglo-a'));
+  limpiarCorridas(l);
+  const r = puerta(l, [], { FF_REPO: l.repo });
+  assert.notEqual(r.status, 0, `un arreglo deshecho no puede cerrar en verde:\n${r.out}`);
+  assert.ok(corridas(l).includes('a'), r.out);
+  assert.ok(!corridas(l).includes('c'), r.out);
+  const art = JSON.parse(fs.readFileSync(artefacto(l), 'utf8'));
+  assert.equal(art.suite_green, false);
+  assert.equal(art.totals.suites, 3, 'una entrada por suite');
+});
+
+test('T6c Gate_MainBroughtIn_OnlyChangedReaders @story-8.279 @ac-7 — main traído: lo que nadie lee no corre nada; lo que lee c corre c; la lista de suites, la completa', () => {
+  const traer = (l, cambio) => {
+    cambio();
+    git(l.repo, 'add', '-A'); git(l.repo, 'commit', '-q', '-m', 'main');
+    const mk = marcador(l);
+    mk.baseSha = git(l.repo, 'rev-parse', 'HEAD').stdout.trim();
+    fs.writeFileSync(markerFile(l), JSON.stringify(mk));
+    limpiarCorridas(l);
+    return puerta(l, [], { FF_REPO: l.repo });
+  };
+  const listo = () => { const l = conTres(); fs.writeFileSync(path.join(l.repo, 'docs', 'arreglo-a'), 'ok\n'); estado(l, { b: 0 }); repetirSola(l, A); repetirSola(l, B); return l; };
+  // un archivo que ninguna suite lee: c no corre (a y b, sí: sus repeticiones quedaron viejas)
+  const n = listo();
+  const r1 = traer(n, () => fs.appendFileSync(path.join(n.repo, 'docs', 'nadie.md'), 'de main\n'));
+  assert.equal(r1.status, 0, r1.out);
+  assert.deepEqual(corridas(n).filter((x) => x === 'c'), [], r1.out);
+  assert.doesNotMatch(r1.out, /la base cambió desde la completa/);
+  // uno que lee c: corre c
+  const c = listo();
+  const r2 = traer(c, () => fs.appendFileSync(path.join(c.repo, 'docs', 'w.md'), 'de main\n'));
+  assert.equal(r2.status, 0, r2.out);
+  assert.ok(corridas(c).includes('c'), r2.out);
+  assert.doesNotMatch(r2.out, /corre la completa como siempre/);
+  // la lista de suites: la completa, con su motivo
+  const s = listo();
+  const sj = path.join(s.repo, 'scripts', 'tests', 'suites.json');
+  const r3 = traer(s, () => fs.writeFileSync(sj, fs.readFileSync(sj, 'utf8').replace('"diarias"', '"diarias" ')));
+  assert.match(r3.out, /corre la completa como siempre: .*lista de suites/);
+});
+
+test('T6d FailedFirst_DecideTree_StaleRepeatByFingerprint @story-8.279 @ac-6 — en el árbol armado, la huella de una línea alcanza: `changed` con la repetida vieja en `rerun`', () => {
+  const ff = require('../lib/failed-first.js');
+  const am = require('../lib/after-main.js');
+  const nuevoRepo = (n) => {
+    const d = tmp(`ff-arbol-${n}-`);
+    git(d, 'init', '-q'); git(d, 'config', 'user.email', 'p@e.invalid'); git(d, 'config', 'user.name', 'p');
+    fs.writeFileSync(path.join(d, 'a.md'), 'v1\n');
+    git(d, 'add', '-A'); git(d, 'commit', '-q', '-m', 'base');
+    return d;
+  };
+  const priv = nuevoRepo('priv');
+  const pub = nuevoRepo('pub');
+  const foto = () => {
+    const lado = (d) => { git(d, 'add', '-A'); return { head: git(d, 'rev-parse', 'HEAD').stdout.trim(), tree: git(d, 'write-tree').stdout.trim() }; };
+    return { origen: { privado: priv, publico: pub, fuente: 'rama' }, privado: lado(priv), publico: lado(pub) };
+  };
+  const d = tmp('ff-arbol-g-');
+  const enCompleta = foto();
+  fs.writeFileSync(path.join(d, 'r.json'), JSON.stringify({ suites: [{ ruta: `/tmp/arbol-1/scripts/${A}`, exit: 1, ms: 1, entrada: { raiz: 'arnes', ruta: A } }],
+    fallas: [{ ruta: `/tmp/arbol-1/scripts/${A}`, entrada: { raiz: 'arnes', ruta: A } }] }));
+  fs.writeFileSync(path.join(d, 'm.json'), JSON.stringify(enCompleta));
+  const dir = path.join(d, 'g');
+  ff.saveRed({ dir, summaryFile: path.join(d, 'r.json'), lcovFile: null, measuredFile: path.join(d, 'm.json'), base: null, recorte: '', storyId: '9.279' });
+  fs.appendFileSync(path.join(priv, 'a.md'), 'el arreglo\n');
+  const hash = ff.addRepeat(dir, A, { tree: am.huellaDeFoto(foto()), entry: { ruta: `/tmp/arbol-2/scripts/${A}`, exit: 0, ms: 1, entrada: { raiz: 'arnes', ruta: A } } });
+  fs.appendFileSync(path.join(pub, 'a.md'), 'después de repetir\n');
+  const r = ff.decide({ dir, hash, repo: pub, tree: foto(), base: null, recorte: '', storyId: '9.279' });
+  assert.equal(r.mode, 'changed', JSON.stringify(r));
+  assert.deepEqual(r.rerun, [A], JSON.stringify(r));
+  assert.deepEqual(r.files.sort(), ['a.md'], JSON.stringify(r));
+});
+
+test('T6e FailedFirst_Merge_ReplacesBySuiteEntry @story-8.279 @ac-6 — en el árbol armado la ruta del resumen cambia con la carpeta temporal: la entrada nueva reemplaza a la vieja por su entrada de la lista', () => {
+  const ff = require('../lib/failed-first.js');
+  const d = tmp('ff-merge-');
+  const en = (base, exit) => ({ ruta: `${base}/scripts/${A}`, exit, ms: 1, entrada: { raiz: 'arnes', ruta: A } });
+  fs.writeFileSync(path.join(d, 'r.json'), JSON.stringify({ suites: [en('/tmp/arbol-1', 1)], fallas: [{ ...en('/tmp/arbol-1', 1) }] }));
+  fs.writeFileSync(path.join(d, 'm.json'), JSON.stringify({ tree: 'a'.repeat(40) }));
+  const dir = path.join(d, 'g');
+  ff.saveRed({ dir, summaryFile: path.join(d, 'r.json'), lcovFile: null, measuredFile: path.join(d, 'm.json'), base: null, recorte: '', storyId: '9.279' });
+  ff.addRepeat(dir, A, { tree: 'b'.repeat(40), entry: en('/tmp/arbol-2', 0) });
+  const out = ff.merge({ dir, newSummary: { suites: [en('/tmp/arbol-3', 1)], fallas: [en('/tmp/arbol-3', 1)] } });
+  assert.equal(out.suites.length, 1, JSON.stringify(out.suites));
+  assert.equal(out.suites[0].exit, 1);
+  assert.equal(out.fallas.length, 1, JSON.stringify(out.fallas));
+});
+
+/** Un repo con un control declarado y una completa roja guardada (con su repetición) sobre la carpeta de ahora. */
+function rojaConControl() {
+  const ff = require('../lib/failed-first.js');
+  const repo = tmp('ff-control-');
+  git(repo, 'init', '-q'); git(repo, 'config', 'user.email', 'p@e.invalid'); git(repo, 'config', 'user.name', 'p');
+  const escribir = (rel, txt) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), txt); };
+  escribir('scripts/tests/suites.json', JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: A }] }));
+  escribir('scripts/ci/control-x.js', '// control\n');
+  escribir('scripts/ci/controls-from-base.json', JSON.stringify({ controls: [{ name: 'x', script: 'scripts/ci/control-x.js', rules: [] }], content: [], workflows: [], approvals: [] }));
+  escribir('docs/a.md', 'v1\n');
+  git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'base');
+  const arbol = () => { git(repo, 'add', '-A'); return git(repo, 'write-tree').stdout.trim(); };
+  const d = tmp('ff-control-g-');
+  fs.writeFileSync(path.join(d, 'r.json'), JSON.stringify({ suites: [], fallas: [{ ruta: `/x/scripts/${A}`, entrada: { raiz: 'arnes', ruta: A } }] }));
+  fs.writeFileSync(path.join(d, 'm.json'), JSON.stringify({ tree: arbol() }));
+  const dir = path.join(d, 'g');
+  ff.saveRed({ dir, summaryFile: path.join(d, 'r.json'), lcovFile: null, measuredFile: path.join(d, 'm.json'), base: 'base-vieja', recorte: '', storyId: '9.279' });
+  const hash = ff.addRepeat(dir, A, { tree: arbol(), entry: { ruta: `/x/scripts/${A}`, exit: 0, ms: 1, entrada: { raiz: 'arnes', ruta: A } } });
+  return { ff, repo, dir, hash, arbol, escribir };
+}
+
+test('T6f Gate_MainTouchesControl_FullAsToday @story-8.279 @ac-7 — main traído que cambia un control corre la completa con su motivo, aunque lo guardado sea rojo', () => {
+  const { ff, repo, dir, hash, arbol } = rojaConControl();
+  fs.appendFileSync(path.join(repo, 'scripts', 'ci', 'control-x.js'), '// de main\n');
+  const r = ff.decide({ dir, hash, repo, tree: arbol(), base: 'base-nueva', recorte: '', storyId: '9.279' });
+  assert.deepEqual([r.mode, r.reason], ['full', 'cambió un control (scripts/ci/control-x.js)'], JSON.stringify(r));
+  // un papel traído de main, en cambio, acota
+  fs.writeFileSync(path.join(repo, 'scripts', 'ci', 'control-x.js'), '// control\n');
+  fs.appendFileSync(path.join(repo, 'docs', 'a.md'), 'de main\n');
+  const p = ff.decide({ dir, hash, repo, tree: arbol(), base: 'base-nueva', recorte: '', storyId: '9.279' });
+  assert.equal(p.mode, 'changed', JSON.stringify(p));
+});
+
+test('T7e PrivateGate_NoSnapshot_FullAsToday @story-8.279 @ac-8 — sin foto, lo guardado tocado, de otra historia o con otro recorte: la completa como hoy, con su motivo', () => {
+  const { ff, repo, dir, hash, arbol } = rojaConControl();
+  const decidir = (o) => ff.decide({ dir, hash, repo, tree: arbol(), base: 'base-vieja', recorte: '', storyId: '9.279', ...o });
+  // la carpeta es la misma de la completa y de la repetición: sin ninguna de estas dudas, cerraría con lo guardado
+  assert.equal(decidir({}).mode, 'same');
+  assert.deepEqual([decidir({ tree: null }).mode, decidir({ tree: null }).reason], ['full', 'no hay foto de la carpeta para comparar']);
+  assert.match(decidir({ storyId: '9.999' }).reason, /lo guardado es de otra historia/);
+  assert.match(decidir({ recorte: '--light' }).reason, /no tiene el mismo recorte/);
+  assert.match(decidir({ hash: 'f'.repeat(64) }).reason, /lo guardado no coincide con su constancia/);
+  for (const o of [{ tree: null }, { storyId: '9.999' }, { recorte: '--light' }, { hash: 'f'.repeat(64) }]) assert.equal(decidir(o).mode, 'full');
+});
+
+test('T6g RunSuites_RerunWithoutEntry_CountsMissing @story-8.279 @ac-6 — una repetida vieja que no está en la lista no se saltea en silencio: cuenta como ausente y lo dice', () => {
+  const repo = tmp('ff-rerun-sin-');
+  const escribir = (rel, txt) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), txt); };
+  escribir('scripts/tests/suites.json', JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: A }] }));
+  escribir(`scripts/${A}`, '#!/usr/bin/env bash\nexit 0\n');
+  escribir('touched.json', JSON.stringify({ known: true, files: [], rerun_suites: [A, 'tests/ya-no-esta.test.sh'], sources: {}, reason: null }));
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'run-suites-json.js'), repo, path.join(repo, 'r.json'), '--skills', path.join(repo, 'skills'),
+    '--touched', path.join(repo, 'touched.json'), '--scoped-by-repo', 'la CI de prueba'], { encoding: 'utf8', cwd: repo,
+    env: entorno({ home: tmp('ff-rerun-home-'), state: tmp('ff-rerun-state-'), skills: path.join(repo, 'skills') }) });
+  const out = `${r.stdout}\n${r.stderr}`;
+  assert.match(out, /tests\/ya-no-esta\.test\.sh/, out);
+  const res = JSON.parse(fs.readFileSync(path.join(repo, 'r.json'), 'utf8'));
+  assert.ok((res.ausentes || []).some((a) => String(a).includes('ya-no-esta')), JSON.stringify(res.ausentes));
+  assert.notEqual(r.status, 0, out);
 });
 
 test('T28 Guia_RepetirSolasCierra — el paso 6 y el portón dicen los tres casos, cada uno', () => {

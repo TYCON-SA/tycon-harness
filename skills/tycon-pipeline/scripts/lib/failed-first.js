@@ -60,11 +60,12 @@ function prune(lista, suitesJson) {
 // y su base y su recorte. Cada repetición verde con `--suite` suma su resultado con la foto de su carpeta. Cuando la lista
 // queda vacía, la próxima completa pregunta a `decide`:
 //   · `same`    — la carpeta es la de la completa y la de cada repetición: no corre nada, `merge` arma el resumen;
-//   · `changed` — la carpeta cambió entre la completa y las repeticiones: corren las suites que leen esos archivos, y
-//                 `merge` las junta con lo guardado;
-//   · `full`    — no se puede comparar; cambió la base, el recorte o la lista de suites; la carpeta cambió después de
-//                 alguna repetición (un arreglo deshecho, o un cambio más); o lo cambiado vuelve a hacer correr una suite
-//                 que la completa difirió por sus carpetas o por el grupo del instalador: la completa como siempre.
+//   · `changed` — la carpeta cambió desde la completa (también por main traído): corren las suites que leen esos
+//                 archivos y, en `rerun`, cada repetida cuya carpeta cambió después de repetirla (un arreglo deshecho
+//                 vuelve a dar rojo); `merge` las junta con lo guardado, reconociendo cada suite por su entrada;
+//   · `full`    — no se puede comparar; cambió el recorte o la lista de suites; lo cambiado toca un control, el
+//                 instalador o lo compartido (con lo guardado verde, en el árbol armado o con main traído); o vuelve a
+//                 hacer correr una suite que la completa difirió por sus carpetas o por el grupo del instalador.
 // La cobertura juntada es la de la completa (sin los archivos cambiados después, que se midieron sobre el código viejo)
 // más la de cada repetición y la de lo que corrió por lo cambiado.
 const crypto = require('crypto');
@@ -330,7 +331,9 @@ function decide({ dir, hash, repo, tree, base, recorte, storyId = null }) {
   // sin la historia de la corrida no se sabe si lo guardado es suyo: ante la duda, la completa
   if (meta.storyId && !storyId) return full(`no sé de qué historia es esta corrida: lo guardado es de la ${meta.storyId}`);
   if (meta.storyId && storyId && meta.storyId !== storyId) return full(`lo guardado es de otra historia (${meta.storyId})`);
-  if ((meta.base || null) !== (base || null)) return full(`la base cambió desde ${deLa} (main avanzó: las suites tocadas pueden ser otras)`);
+  // main traído: lo que trajo ya está en la carpeta de ahora, así que cuenta como un cambio más, con los criterios de lo
+  // que pide la completa aunque lo guardado sea rojo
+  const baseCambio = (meta.base || null) !== (base || null);
   if ((meta.recorte || '') !== (recorte || '')) return full(`esta corrida no tiene el mismo recorte que ${deLa}`);
   const heredadas = new Set(meta.heredadas || []);
   const fallas = (resumen.fallas || []).map(rutaDeFalla).filter(Boolean);
@@ -349,7 +352,7 @@ function decide({ dir, hash, repo, tree, base, recorte, storyId = null }) {
       try { cambios = changedFiles(repo, medido.tree, tree).map((rel) => ({ repo: 'local', rel })); } catch (e) { return full(`no pude comparar la carpeta con la de ${deLa} (${e.message})`); }
     }
     files = [...new Set(cambios.map((f) => f.rel))];
-    if (verde || arbol) {
+    if (verde || arbol || baseCambio) {
       let c;
       try { c = claseQuePideLaCompleta(cambios, { raiz: repo }); } catch (e) { return full(`no pude leer los criterios de lo que pide la completa (${e.message})`); }
       if (c) return full(`cambió ${c.clase} (${c.archivo})`);
@@ -358,13 +361,19 @@ function decide({ dir, hash, repo, tree, base, recorte, storyId = null }) {
     try { vuelven = reEligible(repo, resumen, files); } catch (e) { return full(`no pude ver qué suites difirió la completa (${e.message})`); }
     if (vuelven.length) return full(`lo cambiado vuelve a hacer correr ${vuelven.join(', ')}, que ${deLa} difirió`);
   }
-  const otraCarpeta = Object.entries(rep).filter(([, x]) => x.tree !== ahora).map(([r]) => r);
-  if (otraCarpeta.length) return full(`la carpeta cambió después de repetir ${otraCarpeta.join(', ')}`);
+  // Una repetición cuya carpeta ya no es la de ahora vuelve a correr: así un arreglo deshecho después de repetir vuelve
+  // a dar rojo. Para saber que es vieja alcanza la huella que guardó (también la de una línea del árbol armado). Va por
+  // su clave de la lista de suites (`rerun`), aparte de los archivos: no es una ruta del repo.
+  const rerun = Object.entries(rep).filter(([, x]) => x.tree !== ahora).map(([r]) => r);
   const at = meta.at;
   const origen = verde ? 'verde' : 'roja';
-  if (igual) return { mode: 'same', at, origen, repetidas: Object.keys(rep).length };
-  return { mode: 'changed', at, origen, repetidas: Object.keys(rep).length, files };
+  if (igual && !rerun.length) return { mode: 'same', at, origen, repetidas: Object.keys(rep).length };
+  return { mode: 'changed', at, origen, repetidas: Object.keys(rep).length, files, rerun };
 }
+
+// La misma suite en dos corridas: por su entrada de la lista de suites. La ruta del resumen es absoluta, y en el árbol
+// armado la carpeta temporal cambia en cada corrida; sin entrada (un resumen viejo), la ruta.
+const claveDeSuite = (s) => (s && s.entrada && s.entrada.ruta ? `${s.entrada.raiz || ''}:${s.entrada.ruta}` : s && s.ruta);
 
 /**
  * El resumen de la completa con las repeticiones (y, si las hay, las suites que corrieron por lo cambiado) en lugar de
@@ -375,17 +384,17 @@ function merge({ dir, newSummary = null, covDir = null, changed = [] }) {
   const resumen = leerJson(path.join(dir, 'resumen.json'));
   const rep = leerJson(path.join(dir, 'repetidas.json'));
   const meta = leerJson(path.join(dir, 'meta.json'));
-  const porRuta = new Map((resumen.suites || []).map((s) => [s.ruta, s]));
+  const porRuta = new Map((resumen.suites || []).map((s) => [claveDeSuite(s), s]));
   let fallas = (resumen.fallas || []).filter((f) => !rep[rutaDeFalla(f)]);
-  for (const x of Object.values(rep)) if (x.entry && x.entry.ruta) porRuta.set(x.entry.ruta, x.entry);
+  for (const x of Object.values(rep)) if (x.entry && x.entry.ruta) porRuta.set(claveDeSuite(x.entry), x.entry);
   let nuevas = 0;
   const extra = {};
   if (newSummary) {
-    for (const s of newSummary.suites || []) { porRuta.set(s.ruta, s); nuevas += 1; }
-    const corridas = new Set((newSummary.suites || []).map((s) => s.ruta));
-    fallas = [...fallas.filter((f) => !corridas.has(f.ruta)), ...(newSummary.fallas || [])];
+    for (const s of newSummary.suites || []) { porRuta.set(claveDeSuite(s), s); nuevas += 1; }
+    const corridas = new Set((newSummary.suites || []).map(claveDeSuite));
+    fallas = [...fallas.filter((f) => !corridas.has(claveDeSuite(f))), ...(newSummary.fallas || [])];
     const ausentes = Array.isArray(newSummary.ausentes) ? newSummary.ausentes : [];
-    for (const a of ausentes) porRuta.delete(a);
+    for (const a of ausentes) for (const [k, s] of porRuta) if (k === a || s.ruta === a) porRuta.delete(k);
     extra.ausentes = [...new Set([...(resumen.ausentes || []), ...ausentes])];
     extra.unmeasured_suites = [...(resumen.unmeasured_suites || []), ...(newSummary.unmeasured_suites || [])];
     if (newSummary.no_medido) extra.no_medido = newSummary.no_medido;

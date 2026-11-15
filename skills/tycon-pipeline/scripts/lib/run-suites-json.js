@@ -463,6 +463,8 @@ function main(argv, env = process.env) {
   // la suite pedida sola corre aunque la difiera lo tocado o la corrida liviana
   const allSuites = env.TYCON_GATE_ALL_SUITES === '1' || Boolean(suiteOnly);
   const touched = readTouched(touchedFile);
+  const rerun = new Set(touched.known && Array.isArray(touched.rerun_suites) ? touched.rerun_suites.filter((r) => typeof r === 'string') : []);
+  const rerunHallada = new Set();
   let light = argv.includes('--light');
   // acotar sin saber qué se tocó sería no correr nada: el acotado por el repo sólo vale con lo tocado conocido
   const byRepo = Boolean(fullSuiteBy) && !allSuites && touched.known;
@@ -533,6 +535,14 @@ function main(argv, env = process.env) {
       continue;
     }
     if (!fs.existsSync(p.ruta)) { resumen.ausentes.push(p.ruta); console.log(`AUSENTE  ${p.ruta}`); continue; }
+    // Una repetida vieja (failed-first.js `decide`, `rerun`) vuelve a correr sin pasar por los filtros, como `--suite`:
+    // se la reconoce por su entrada de la lista, la misma clave con que se guardó la repetición.
+    if (rerun.has(p.entrada.ruta)) {
+      rerunHallada.add(p.entrada.ruta);
+      console.log(`REPETIDA ${p.name} — se repitió sola y la carpeta cambió después: vuelve a correr`);
+      (p.exclusive ? exclusives : parallel).push(p);
+      continue;
+    }
     if (p.gate && !allSuites) {
       // Editar la propia suite la hace correr aunque no toque sus carpetas.
       const propia = ownPaths(repo, p.ruta);
@@ -566,6 +576,13 @@ function main(argv, env = process.env) {
       continue;
     }
     (p.exclusive ? exclusives : parallel).push(p);
+  }
+  // Una repetida vieja sin entrada en la lista no se vuelve a medir: cuenta como ausente (es rojo), no se saltea callada.
+  // Su repetición guardada en verde no puede cerrar lo que nadie volvió a correr.
+  for (const r of rerun) {
+    if (rerunHallada.has(r)) continue;
+    resumen.ausentes.push(r);
+    console.log(`AUSENTE  ${r} — se repitió sola y la carpeta cambió después, pero ya no está en la lista de suites: no se pudo volver a correr`);
   }
 
   if (byRepo) resumen.scoped = { by: 'repo', full_suite_by: fullSuiteBy, none_touched: false };
@@ -603,6 +620,9 @@ function main(argv, env = process.env) {
   // acotada o no la ejecución, y en una máquina con coordinadora va una grande por vez. Con el turno de otro proceso vivo
   // no corre y sale 77, con quién lo tiene. Sin coordinadora (la CI, la nube) no se toma nada.
   const count = parallel.length + exclusives.length;
+  // Un portón acotado dice su tamaño antes de pedir el turno: quien lo lanzó (o la coordinadora) sabe cuánto ocupa la
+  // máquina antes de que la ocupe. Es el aviso de portón lento adelantado: ése no lo repite.
+  const anunciado = onlyTouched && anunciarTamano({ repo, decision, items: [...parallel, ...exclusives], total: plan.length });
   let turn = null;
   if (count >= TURN_FROM_SUITES) {
     // un repo sin el módulo no tiene turno; uno que lo trae y no carga, lo dice
@@ -646,7 +666,7 @@ function main(argv, env = process.env) {
     }
   }
   // con el turno ya tomado: un portón que no arranca no deja aviso ni dice su hora de fin
-  const slowGate = avisarSiLento({ env, repo, decision, maquina, items: [...parallel, ...exclusives] });
+  const slowGate = avisarSiLento({ env, repo, decision, maquina, items: [...parallel, ...exclusives], callado: anunciado });
   console.log(`[suites.json] ${suiteTimes.describeWorkers(decision, maquina)} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}${portables ? ` · ${portables} portables con su HOME vacía, como en la CI` : ''}`);
   const releaseTurn = () => {
     if (turn) { try { turn.release({}); } catch (_) { /* vence con el proceso */ } turn = null; }
@@ -823,7 +843,9 @@ function main(argv, env = process.env) {
     for (const r of results) {
       if (!r) continue;
       resumen.corridas += 1;
-      resumen.suites.push({ ruta: r.ruta, exit: r.exit, ms: r.ms });
+      // con su entrada de la lista: al juntar con lo guardado (failed-first.js `merge`), la misma suite de otra corrida
+      // se reconoce por ella, aunque la ruta absoluta cambie (el árbol armado es una carpeta nueva cada vez)
+      resumen.suites.push({ ruta: r.ruta, exit: r.exit, ms: r.ms, entrada: r.entrada });
       if (r.exit === 0) resumen.verdes += 1;
       else {
         // El rojo se lee sin re-correr: los casos que fallaron (estén donde estén en la salida), la salida entera en un
@@ -876,26 +898,57 @@ function main(argv, env = process.env) {
 }
 
 /**
+ * Cuánto tarda correr `items` con `workers` a la vez: las medianas del registro de la máquina y, sin medición, el peso
+ * por defecto de suites-weights.json. `{ est, eta }`, con `eta` la hora estimada de fin. Tira si no puede estimar.
+ */
+function estimar({ repo, items, workers }) {
+  let defaultMs = 30000;
+  try {
+    const w = JSON.parse(fs.readFileSync(path.join(repo, 'scripts', 'ci', 'suites-weights.json'), 'utf8'));
+    const d = (w.pr && w.pr.default) || w.default;
+    if (Number(d) > 0) defaultMs = Number(d) * 1000;
+  } catch (_) { /* sin pesos, el valor de siempre */ }
+  let runs = [];
+  try { runs = suiteTimes.filterRuns(suiteTimes.readSources([path.join(stateDir(), 'suite-times.jsonl')]).runs); } catch (_) { /* sin registro, todo con el peso por defecto */ }
+  const est = suiteTimes.estimateMs({ rutas: items.map((p) => p.entrada.ruta), workers, runs, defaultMs });
+  const fin = new Date(Date.now() + est.ms);
+  return { est, eta: `${String(fin.getHours()).padStart(2, '0')}:${String(fin.getMinutes()).padStart(2, '0')}` };
+}
+
+/**
+ * El tamaño de un portón acotado, en un renglón, antes del turno: cuántas suites de cuántas y los minutos estimados
+ * (o «sin estimación» si ninguna tiene medida en la máquina). Desde TURN_FROM_SUITES suites dice que es casi una
+ * completa y que pide turno como una. Devuelve si lo dijo: no poder estimar no tumba la corrida.
+ */
+function anunciarTamano({ repo, decision, items, total }) {
+  try {
+    const casi = items.length >= TURN_FROM_SUITES ? ' · casi una completa: pide turno como una completa' : '';
+    let tiempo = 'sin estimación';
+    if (items.length) {
+      // con menos suites que carriles, los carriles de más no acortan nada
+      const { est, eta } = estimar({ repo, items, workers: Math.max(1, Math.min(decision.workers, items.length)) });
+      if (est.medidas) tiempo = `~${Math.max(1, Math.round(est.ms / 60000))} min, termina cerca de las ${eta}${est.sinMedir ? ` (${est.sinMedir} sin medición, con el peso por defecto)` : ''}`;
+    }
+    console.log(`[suites.json] portón acotado: ${items.length} de ${total} suites · ${tiempo}${casi}`);
+    return true;
+  } catch (e) {
+    console.log(`[suites.json] ⚠️  no pude decir el tamaño del portón acotado: ${e.message}`);
+    return false;
+  }
+}
+
+/**
  * Un portón grande (desde TURN_FROM_SUITES suites) fuera de la CI que arranca con menos de 3 a la vez lo dice en su
  * primera línea, con la hora estimada de fin, y deja su aviso para la coordinadora mientras corre (lib/suite-times.js).
  * La hora sale de las medianas del registro de la máquina; sin medición, el peso por defecto de suites-weights.json.
- * Devuelve la ruta del aviso (para borrarlo al terminar) o null. Nada de esto puede tumbar la corrida.
+ * Devuelve la ruta del aviso (para borrarlo al terminar) o null. Nada de esto puede tumbar la corrida. Con `callado`, el
+ * tamaño ya se dijo antes del turno (`anunciarTamano`): deja el aviso sin repetir la línea.
  */
-function avisarSiLento({ env, repo, decision, maquina, items }) {
+function avisarSiLento({ env, repo, decision, maquina, items, callado = false }) {
   if (decision.why === 'ci' || items.length < TURN_FROM_SUITES || decision.workers >= suiteTimes.SLOW_GATE_WORKERS) return null;
   try {
-    let defaultMs = 30000;
-    try {
-      const w = JSON.parse(fs.readFileSync(path.join(repo, 'scripts', 'ci', 'suites-weights.json'), 'utf8'));
-      const d = (w.pr && w.pr.default) || w.default;
-      if (Number(d) > 0) defaultMs = Number(d) * 1000;
-    } catch (_) { /* sin pesos, el valor de siempre */ }
-    let runs = [];
-    try { runs = suiteTimes.filterRuns(suiteTimes.readSources([path.join(stateDir(), 'suite-times.jsonl')]).runs); } catch (_) { /* sin registro, todo con el peso por defecto */ }
-    const est = suiteTimes.estimateMs({ rutas: items.map((p) => p.entrada.ruta), workers: decision.workers, runs, defaultMs });
-    const fin = new Date(Date.now() + est.ms);
-    const eta = `${String(fin.getHours()).padStart(2, '0')}:${String(fin.getMinutes()).padStart(2, '0')}`;
-    console.log(`🔴 [suites.json] portón lento: ${decision.workers} a la vez para ${items.length} suites (carga ${maquina.carga} al arrancar): termina cerca de las ${eta}${est.sinMedir ? ` (${est.sinMedir} sin medición, con el peso por defecto)` : ''}`);
+    const { est, eta } = estimar({ repo, items, workers: decision.workers });
+    if (!callado) console.log(`🔴 [suites.json] portón lento: ${decision.workers} a la vez para ${items.length} suites (carga ${maquina.carga} al arrancar): termina cerca de las ${eta}${est.sinMedir ? ` (${est.sinMedir} sin medición, con el peso por defecto)` : ''}`);
     // el nombre sale de la carpeta desde donde se lanza, como el del turno: en el árbol armado, `repo` es temporal
     return suiteTimes.writeSlowGate({ sid: env.CLAUDE_CODE_SESSION_ID || null, repo: path.basename(process.cwd()), suites: items.length,
       workers: decision.workers, carga: maquina.carga, eta });
