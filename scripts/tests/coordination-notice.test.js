@@ -1481,6 +1481,16 @@ test('T3 Respuestas_NoEntregadas_NombraLaSesion @story-8.284 @ac-6 @ac-9 @ac-18:
   assert.match(siete, /\(\+2 más\) con mensajes de la persona que no te llegaron/);
   // el turno siguiente no los repite
   assert.doesNotMatch(turno(t), /que no te llegaron/);
+  // las otras formas rotas: sin huella con sid da línea; sin hora, o con un sid vacío o de espacios, sólo se cuentan
+  fs.writeFileSync(RESPUESTAS(t), '');
+  renglon({ sid: 'ses-c', at: iso(mins(2)), transcript: rutaCharla(t, 'ses-c') });
+  renglon({ sid: 'ses-d', sha: huella('x'), transcript: rutaCharla(t, 'ses-d') });
+  renglon({ sid: '', at: iso(mins(2)), problem: 'x' });
+  renglon({ sid: '   ', at: iso(mins(2)), sha: huella('x'), transcript: '/afuera/x.jsonl' });
+  const rotos = turno(t);
+  assert.match(rotos, PERDIO('Caro \\(ses-c\\)', 1, 2));
+  assert.strictEqual(rotos.split('\n').filter((l) => /que no te llegaron, el último/.test(l)).length, 1, rotos);
+  assert.match(rotos, /No pude leer .*4 línea\(s\) de las respuestas/);
   // sin poder devolver al archivo lo que todavía espera, el aviso de los perdidos sale igual (la otra salida)
   fs.writeFileSync(RESPUESTAS(t), '');
   perdido('ses-b', 11, rutaCharla(t, 'ses-b'));

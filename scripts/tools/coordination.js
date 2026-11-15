@@ -1221,7 +1221,8 @@ function ownerReplyLines(opts, sid, problems) {
       let r;
       try { r = JSON.parse(l); } catch { count.bad += 1; continue; }
       const at = r && Date.parse(r.at);
-      if (!r || typeof r.sid !== 'string' || !Number.isFinite(at)) { count.bad += 1; continue; }
+      // un sid vacío no dice a quién preguntarle: cuenta como sin sid
+      if (!r || typeof r.sid !== 'string' || !r.sid.trim() || !Number.isFinite(at)) { count.bad += 1; continue; }
       if (now - at > REPLY_MAX_AGE_MS || r.sid === sid) continue;
       if (typeof r.problem === 'string') { count.notRecorded += 1; miss(r.sid, at); continue; }
       if (typeof r.sha !== 'string' || !isTranscriptOf(home, r.transcript, r.sid)) { count.bad += 1; miss(r.sid, at); continue; }
