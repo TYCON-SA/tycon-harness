@@ -779,13 +779,26 @@ function renglonesTocados(repo, base, rel) {
  * Los candidatos de la historia (AC 10, 22): los archivos de `files_to_modify` que son un comando (cabecera `#!`, o un
  * JavaScript con `require.main === module`, en su versión de `main`), existen en `main` y la historia cambió, sin las
  * pruebas. El repo de cada uno sale de `repos` (los de la corrida); uno que podría ser un guion y no está en ninguno va a
- * `sinRepo`. Por candidato, `subcomandos` (los que el cambio toca), `funciones` (las que lo encierran) y `sinSubcomando`.
+ * `sinRepo`, salvo que el mapa de renombres (`renombres`, ver `rutaMudada`) lo declare mudado: entonces se mira donde está
+ * ahora, y si tampoco está, va a `sinRepo` el de ahora con `mudadoDe`. Por candidato, `subcomandos` (los que el cambio toca), `funciones` (las que lo encierran) y `sinSubcomando`.
  * Uno que no se puede mirar (su versión de main, su diff o el archivo de ahora no se leen) va a `noMedidos` con su
  * motivo. `{ candidatos, sinRepo, noMedidos, avisos }`.
  */
 /** Una ruta de una lista de la historia, en la forma en que se comparan: sin el prefijo «(repo) » y normalizada. */
 function rutaDeLaLista(f) {
   return require('./batch-scope.js').normRuta(f);
+}
+
+/**
+ * Dónde está ahora un archivo que el mapa de renombres declara mudado (`kind: file`, del repo del arnés): el final de su
+ * cadena, o null si el mapa no lo nombra o la cadena no tiene final. `renombres`: el mapa; sin él, el de la copia
+ * instalada (`legacy-names.js`), y una copia sin mapa no muda nada.
+ */
+function rutaMudada(ruta, renombres) {
+  const ln = require(path.join(RAIZ_ARNES, 'scripts', 'lib', 'legacy-names.js'));
+  const todas = ln.entriesOf(renombres === undefined ? ln.loadMap() : renombres);
+  const e = todas.find((x) => x.kind === 'file' && (x.repo || 'arnes') === 'arnes' && x.old === ruta);
+  return e ? ln.chainEnd(e, todas) || null : null;
 }
 
 /**
@@ -808,7 +821,7 @@ function archivosDeLaTanda(marker, storyPath) {
   return { files: p.files, tanda, motivo: null };
 }
 
-function candidatos({ storyPath, storyText, repos = [], files = null }) {
+function candidatos({ storyPath, storyText, repos = [], files = null, renombres }) {
   const texto = storyText != null ? storyText : (() => { try { return fs.readFileSync(storyPath, 'utf8'); } catch (_) { return ''; } })();
   const avisos = [];
   // con la lista de la tanda, sólo sus archivos: lo de otra tanda ya está en main o todavía no empezó. Las dos listas se
@@ -821,9 +834,8 @@ function candidatos({ storyPath, storyText, repos = [], files = null }) {
   const raizHistoria = storyPath ? raizDe(storyPath) : null;
   const puntas = new Map(raices.map((r) => [r, puntaDeMain(r)]));
   for (const [r, p] of puntas) if (!p) avisos.push(`${path.basename(r)}: sin origin/main ni main, sus archivos no se miran`);
-  for (const ruta of rutasAModificar(texto)) {
-    if (esPrueba(ruta)) continue;
-    if (deLaTanda && !deLaTanda.has(rutaDeLaLista(ruta))) continue;
+  // lo de una ruta: cada repo donde está, y si es candidata. Devuelve si estaba en alguno (en el árbol o en main)
+  const mirar = (ruta) => {
     let enAlguno = false;
     for (const { repo, rel } of ubicar(ruta, raices, raizHistoria)) {
       const punta = puntas.get(repo);
@@ -849,7 +861,16 @@ function candidatos({ storyPath, storyText, repos = [], files = null }) {
       }
       out.push({ archivo: rel, repo, main: punta, ...analizar(lineas, t.renglones, sh) });
     }
-    if (!enAlguno && PARECE_GUION.test(ruta)) sinRepo.push({ archivo: ruta });
+    return enAlguno;
+  };
+  for (const ruta of rutasAModificar(texto)) {
+    if (esPrueba(ruta)) continue;
+    if (deLaTanda && !deLaTanda.has(rutaDeLaLista(ruta))) continue;
+    if (mirar(ruta) || !PARECE_GUION.test(ruta)) continue;
+    // un archivo que otro pedido mudó: se mira donde está ahora, y si tampoco está, falta el de ahora
+    const final = rutaMudada(rutaDeLaLista(ruta), renombres);
+    if (!final) sinRepo.push({ archivo: ruta });
+    else if (!esPrueba(final) && !mirar(final)) sinRepo.push({ archivo: final, mudadoDe: ruta });
   }
   return { candidatos: out, sinRepo, noMedidos, avisos };
 }

@@ -667,3 +667,52 @@ test('T3 Compare_OtherGithubOrTyconFile_Expires @story-8.277 @ac-3 — un workfl
   assert.deepStrictEqual(despuesDelHumo('s-gate-t3-a', { '.github/workflows/ci.yml': 'on: push\n' }), [0, 1], 'un workflow');
   assert.deepStrictEqual(despuesDelHumo('s-gate-t3-b', { '.tycon/advisors.yaml': 'packs: []\n' }), [0, 1], 'la configuración');
 });
+
+// ── el archivo mudado por el mapa de renombres (8.276 B) ──────────────────────────────────────────────────────────────
+
+// Un repo con los comandos de `main` y la historia que nombra las rutas viejas. El mapa es de juguete, pasado a la función.
+function conMudanzas(t, archivos, modificar) {
+  const base = tmp('cpg-mud-');
+  const home = path.join(base, 'home');
+  fs.mkdirSync(home);
+  const cambios = Object.fromEntries(Object.keys(archivos).map((rel) => [rel, enGet]));
+  const a = repoCon(base, 'a', archivos, cambios, home);
+  return { repo: a.repo, storyPath: historia(a.repo, { modificar }) };
+}
+const mudanza = (old, nuevo, extra = {}) => ({ kind: 'file', old, new: nuevo, ...extra });
+
+// 🔴 Falla con: la ruta vieja de un archivo que otro pedido mudó pidiendo una exención en cada cierre.
+test('T14 Compare_MovedByRenamesMap_NotSinRepo @story-8.276 @ac-16 — un salto, una cadena y la final ausente', async (t) => {
+  await t.test('un salto: se mira la ruta nueva', () => {
+    const { repo, storyPath } = conMudanzas(t, { 'scripts/nuevo.js': CLI }, ['scripts/viejo.js']);
+    const r = cp().candidatos({ storyPath, repos: [repo], renombres: { entries: [mudanza('scripts/viejo.js', 'scripts/nuevo.js')] } });
+    assert.deepStrictEqual(r.sinRepo, []);
+    assert.deepStrictEqual(r.candidatos.map((c) => c.archivo), ['scripts/nuevo.js']);
+  });
+  await t.test('una cadena de dos saltos llega al final', () => {
+    const { repo, storyPath } = conMudanzas(t, { 'scripts/c.js': CLI }, ['scripts/a.js']);
+    const renombres = { entries: [mudanza('scripts/a.js', 'scripts/b.js'), mudanza('scripts/b.js', 'scripts/c.js')] };
+    const r = cp().candidatos({ storyPath, repos: [repo], renombres });
+    assert.deepStrictEqual(r.sinRepo, []);
+    assert.deepStrictEqual(r.candidatos.map((c) => c.archivo), ['scripts/c.js']);
+  });
+  await t.test('la ruta final tampoco está: va la final, con la vieja al lado', () => {
+    const { repo, storyPath } = conMudanzas(t, { 'scripts/otro.js': CLI }, ['scripts/x.js']);
+    const r = cp().candidatos({ storyPath, repos: [repo], renombres: { entries: [mudanza('scripts/x.js', 'scripts/y.js')] } });
+    assert.deepStrictEqual(r.sinRepo, [{ archivo: 'scripts/y.js', mudadoDe: 'scripts/x.js' }]);
+  });
+});
+
+// 🔴 Falla con: una ruta que no está en ningún lado perdonada sin que el mapa la declare.
+test('T15 Compare_MissingNotInMap_StillSinRepo @story-8.276 @ac-17 — sin entrada y sin mapa', async (t) => {
+  await t.test('el mapa no la nombra', () => {
+    const { repo, storyPath } = conMudanzas(t, { 'scripts/nuevo.js': CLI }, ['scripts/fantasma.js']);
+    const r = cp().candidatos({ storyPath, repos: [repo], renombres: { entries: [mudanza('scripts/viejo.js', 'scripts/nuevo.js'), { kind: 'folder', old: 'scripts', new: 'otra' }] } });
+    assert.deepStrictEqual(r.sinRepo, [{ archivo: 'scripts/fantasma.js' }]);
+  });
+  await t.test('sin mapa', () => {
+    const { repo, storyPath } = conMudanzas(t, { 'scripts/nuevo.js': CLI }, ['scripts/viejo.js']);
+    const r = cp().candidatos({ storyPath, repos: [repo], renombres: null });
+    assert.deepStrictEqual(r.sinRepo, [{ archivo: 'scripts/viejo.js' }]);
+  });
+});
