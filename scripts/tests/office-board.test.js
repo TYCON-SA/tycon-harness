@@ -384,6 +384,33 @@ test('T206 Coordinator_NotAPending: la coordinadora no es una tarjeta de «En cu
   assert.deepStrictEqual(titles(photo({ kind: 'note', text: 'T-9: ordeno los pedidos del día' }), 'curso'), ['T-9: ordeno los pedidos del día']);
 });
 
+// La tarjeta de la coordinadora sin fila del tablero no sale, y queda dicho por qué: en una lista del kanban que no se
+// enumera (no viaja a la página ni al sitio) y que la oficina escribe en su registro. No es un problema: `problems` no cambia.
+test('8.281 T5 Tablero_CoordinadoraSinFila_NoSaleYDejaRenglon @story-8.281 @ac-9 @ac-10 @ac-23: sin fila no sale y queda en la lista de ocultas con su motivo; con fila sale y la lista está vacía', () => {
+  const board = buildBoard({ pendientes: [{ titulo: 'Ordenar los pedidos', estado: 'curso', id: 'T-9' }] });
+  const photo = (extra) => buildOffice({ wip: wip([{ session: 'Coord', sid: 'co', status: 'busy', extra }]), coordinatorSid: 'co', board, nowMs: NOW }).data;
+  const sin = photo({ kind: 'note', text: 'ordeno los pedidos del día' });
+  assert.deepStrictEqual(titles(sin, 'curso'), []);
+  assert.deepStrictEqual(sin.kanban.ocultas, [{ quien: 'Coord', motivo: 'coordina y su trabajo anotado no es una fila del tablero' }]);
+  assert.ok(!Object.keys(sin.kanban).includes('ocultas'), 'la lista no viaja con el kanban');
+  assert.ok(!JSON.stringify(sin).includes('no es una fila del tablero'), 'ni a la página ni a los avisos');
+  const con = photo({ kind: 'note', text: 'T-9: ordeno los pedidos del día' });
+  assert.deepStrictEqual(titles(con, 'curso'), ['T-9: ordeno los pedidos del día']);
+  assert.deepStrictEqual(con.kanban.ocultas, []);
+  // una sesión sin columna no es una tarjeta oculta
+  const libre = buildOffice({ wip: wip([{ session: 'Libre', sid: 'li', status: 'idle', extra: { kind: 'activity' } }]), board, nowMs: NOW }).data;
+  assert.deepStrictEqual(libre.kanban.ocultas, []);
+  // el renglón del registro de la oficina, una vez por cambio de la lista
+  const { hiddenCardsLine } = require(OFFICE);
+  const seen = { last: null };
+  assert.match(hiddenCardsLine(sin.kanban.ocultas, seen), /no muestro la tarjeta de Coord: coordina y su trabajo anotado no es una fila del tablero/);
+  assert.strictEqual(hiddenCardsLine(sin.kanban.ocultas, seen), null, 'la misma lista no se repite en cada refresco');
+  assert.strictEqual(hiddenCardsLine([], seen), null, 'que deje de estar oculta no es un renglón');
+  // un nombre con un salto de línea no parte el renglón del registro
+  const partido = hiddenCardsLine([{ quien: 'Coord\n2026-11-15T00:00:00Z otro renglón', motivo: 'm' }], {});
+  assert.ok(!/[\r\n]/.test(partido), partido);
+});
+
 test('T223 Numbers_PanelMatchesItsList: cada número del panel coincide con su lista, con la pared y con el kanban', () => {
   const data = mixedOffice();
   assert.strictEqual(col(data, 'entrando').tarjetas.length, 2, 'los dos pedidos que esperan; el quieto no');
