@@ -631,14 +631,16 @@ test('SignatureQuestion_ControlChange_WithLines_AsToday (T47) @fix-T-227 @story-
 // ── el cuadro de un cambio de control: lo que se ve es lo que se aprueba ─────────────────────────────────────────────
 
 /** Un repo con `rutas` como archivos de control: una base y un commit que los cambia a todos. */
-function repoConArchivos(t, rutas) {
+// `fijas`: archivos que están desde la base y no cambian. `config`: claves de git del repo, puestas antes del primer commit
+function repoConArchivos(t, rutas, { fijas = [], config = [] } = {}) {
   const c = corrida(t);
   const fecha = '2026-11-04T12:00:00Z';
   const git = (...a) => spawnSync('git', ['-C', c.repo, '-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'maintenance.auto=false', ...a],
     { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha } });
-  const escribir = (texto) => { for (const r of rutas) { fs.mkdirSync(path.dirname(path.join(c.repo, r)), { recursive: true }); fs.writeFileSync(path.join(c.repo, r), texto); } };
+  const escribir = (texto, lista = rutas) => { for (const r of lista) { fs.mkdirSync(path.dirname(path.join(c.repo, r)), { recursive: true }); fs.writeFileSync(path.join(c.repo, r), texto); } };
   git('init', '-q');
-  escribir('a=1\n'); git('add', '.'); git('commit', '-qm', 'base');
+  for (const [k, v] of config) git('config', k, v);
+  escribir('a=1\n'); escribir('fija\n', fijas); git('add', '.'); git('commit', '-qm', 'base');
   const base = git('rev-parse', 'HEAD').stdout.trim();
   escribir('a=1\nb=2\n'); git('add', '.'); git('commit', '-qm', 'cambio');
   const entradas = (lista = rutas) => JSON.stringify(lista.map((p) => ({ path: p, blob: git('rev-parse', `HEAD:${p}`).stdout.trim() })));
@@ -909,4 +911,67 @@ test('SignatureQuestion_ExtraRound_UnreadableNoteAndNoRunDir_SaySo (T9) @story-8
   const sinCarpeta = fuentes.abiertoDeLaCorrida(null);
   assert.match(sinCarpeta.linea, /No pude ubicar la carpeta de la ejecución/);
   assert.doesNotMatch(sinCarpeta.linea, /No hay informe/);
+});
+
+// ── los invisibles que faltaban y la cuenta de lo que cambió ────────────────────────────────────────────────────────
+
+// 🔴 Falla con: una ruta con un carácter de uso privado o una marca de acento sin letra base arma el cuadro (se ve otra
+//    cosa que lo que se firma), o el motivo la nombra con el carácter crudo; o una tilde compuesta deja sin cuadro.
+test('Cuadro_UsoPrivadoYMarcaSuelta_NoSeVen_TildesSi (T15) @story-8.282 @ac-20 @ac-21 @ac-23 @ac-29', (t) => {
+  const { c, base, entradas } = repoConArchivos(t, ['scripts/ci/a.sh']);
+  const buena = JSON.parse(entradas())[0];
+  const conRuta = (p) => JSON.stringify([{ path: p, blob: buena.blob }]);
+  const porEntries = (p) => `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${conRuta(p)}'`;
+  const porFile = (p) => `bash ${CONTROLES} approve --root ${c.repo} --file '${p}' --rev HEAD`;
+  const casos = [
+    ['uso privado', 'scripts/ci/a\u{e000}.sh', '\\u{e000}', [porEntries, porFile]],
+    ['marca suelta al principio', '́scripts/ci/a.sh', '\\u{301}', [porEntries, porFile]],
+    ['marca suelta después de /', 'scripts/ci/́a.sh', '\\u{301}', [porEntries, porFile]],
+    ['secuencia de terminal', 'scripts/ci/a\u001b[2K.sh', '\\u001b', [porFile]],
+    // por --file, un salto parte el comando en dos y no llega a esta fuente: se prueba por --entries
+    ['salto de línea', 'scripts/ci/a.sh\nscripts/ci/otra.sh', '\\n', [porEntries]],
+    ['de dirección', 'scripts/ci/a‮b.sh', '\\u{202e}', [porFile]],
+    // detrás de un control que el motivo escribe con letras (\n, \t, \u001b), la marca sigue siendo suelta
+    ['marca suelta después de un salto', 'scripts/ci/a\ńb.sh', '\\n\\u{301}', [porEntries]],
+    ['marca suelta después de un tabulador', 'scripts/ci/a\t́b.sh', '\\t\\u{301}', [porEntries]],
+    ['marca suelta después de un control', 'scripts/ci/a\u001b́b.sh', '\\u001b\\u{301}', [porEntries]],
+  ];
+  for (const [nombre, ruta, escrito, formas] of casos) {
+    for (const forma of formas) {
+      const q = conFirma('control-change')(c, forma(ruta));
+      assert.ok(!q.pregunta, `${nombre}: armó el cuadro: ${q.pregunta}`);
+      assert.match(String(q.error), /uno que no se ve/, nombre);
+      assert.ok(String(q.error).includes(escrito), `${nombre}: el motivo no lo escribe como código: ${q.error}`);
+      assert.ok(!String(q.error).includes(ruta), `${nombre}: el motivo trae la ruta cruda`);
+    }
+  }
+  // una letra con su marca es una tilde compuesta: se ve, y el cuadro se arma (git sin normalizar el nombre, como en
+  // Linux y Windows)
+  const tilde = 'scripts/ci/cámara.sh';
+  const conTilde = repoConArchivos(t, [tilde], { config: [['core.precomposeunicode', 'false']] });
+  const q = conFirma('control-change')(conTilde.c, conTilde.comando(conTilde.entradas())).pregunta;
+  assert.ok(q, 'la tilde compuesta no dio cuadro');
+  assert.match(q, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
+  // sin invisibles, el cuadro de siempre
+  const comun = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${entradas()}'`).pregunta;
+  assert.match(comun, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\. Archivos: scripts\/ci\/a\.sh\./);
+});
+
+// 🔴 Falla con: «Cambia 5» cuando de las 5 rutas pedidas sólo 2 tienen cambio: el dueño cree que firma cinco cambios.
+test('Cuadro_CambiaN_CuentaLasQueCambiaron (T16) @story-8.282 @ac-22 @ac-29', (t) => {
+  const cambian = ['scripts/ci/a.sh', 'scripts/ci/b.sh'];
+  const fijas = ['scripts/ci/c.sh', 'scripts/ci/d.sh', 'scripts/ci/e.sh'];
+  const { c, entradas, comando } = repoConArchivos(t, cambian, { fijas });
+  const q = conFirma('control-change')(c, comando(entradas([...cambian, ...fijas]))).pregunta;
+  assert.match(q, /Qué hace: Cambia 2 de 5 archivo\(s\) de control pedidos: \+2 −0 líneas\./);
+  // sin base, o si git no puede leer la base, no hay «Cambia»: el texto de siempre
+  const cinco = entradas([...cambian, ...fijas]);
+  const sinBase = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --entries '${cinco}'`).pregunta;
+  assert.match(sinBase, /Qué hace: Firma 5 archivo\(s\) de control en su versión de la punta \(sin base para comparar\)\./);
+  const baseRota = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${'0'.repeat(40)} --entries '${cinco}'`).pregunta;
+  assert.match(baseRota, /Qué hace: no pude leer el cambio de 5 archivo\(s\) de control: /);
+  // con todo lo pedido cambiado, el texto de hoy
+  const todas = repoConArchivos(t, ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/lib/c.js']);
+  const igual = conFirma('control-change')(todas.c, todas.comando(todas.entradas())).pregunta;
+  assert.match(igual, /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\./);
 });

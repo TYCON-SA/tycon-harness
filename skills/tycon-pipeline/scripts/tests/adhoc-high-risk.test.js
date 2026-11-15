@@ -1128,6 +1128,25 @@ test('T28 ArchivoAnotadoQueYaNoExiste_NoMeteSuRepoEnElCarril', () => {
   assert.deepStrictEqual(adhocBase.reposDelCarril(porEnlace), [dir], 'la sonda por un enlace no mete el puesto');
 });
 
+// 🔴 Falla con: el puesto ajeno recién creado (sin commits) hace reventar la cuenta del carril, o lo mete en el carril
+// porque git no tiene historia que recorrer.
+test('AdhocHighRisk_PuestoSinCommits_NoEntraNiRevienta (T28, sin commits) @story-8.282 @ac-24', () => {
+  const raiz = tmp('t28b-');
+  const home = tmp('home-');
+  const dir = repoConOrigen(raiz, 'producto');
+  const puesto = path.join(raiz, 'puesto-vacio');
+  fs.mkdirSync(puesto);
+  git(puesto, 'init', '-q');
+  const propio = path.join(dir, 'src/lib/x.js');
+  escribir(dir, 'src/lib/x.js', 'module.exports = 1;\n');
+  const sonda = path.join(puesto, 'probe.js');
+  const state = conCarril(home, 's28b', { rutas: [propio], files: [propio, sonda], bases: { [dir]: adhocBase.traerBase(dir) } });
+  assert.deepStrictEqual(adhocBase.reposDelCarril(leerCarril(state, 's28b')), [dir], 'el puesto sin commits no es del carril');
+  const huella = adhocBase.huellaDelCarril(leerCarril(state, 's28b'));
+  escribir(puesto, 'src/otro.js', 'module.exports = 2;\n');
+  assert.equal(adhocBase.huellaDelCarril(leerCarril(state, 's28b')), huella, 'lo que la otra sesión escribe en él no mueve la huella');
+});
+
 // 🔴 Falla con: un destino con una variable sin resolver (`$P/probe.js`, con P=$(mktemp -d)) cuenta como un archivo del
 // repo: frena por el tope del carril o entra en su lista.
 test('T30 DestinoConVariableSinResolver_NoGastaElCupo', () => {

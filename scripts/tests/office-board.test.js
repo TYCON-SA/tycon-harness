@@ -763,3 +763,32 @@ test('T317 Finished_TodayAndBefore: la columna dice «Terminados hoy» y la pág
   assert.match(code, /" anterior":" anteriores"/);
   assert.match(code, /aria-expanded/);
 });
+
+// 🔴 Falla con: el botón «N anteriores» que la página arma mal (otra cuenta, «1 anteriores», abierto de entrada, no se
+// abre al tocarlo) o filas de «Hechos» sin su texto; T317 sólo compara el código de la página con una expresión.
+test('Oficina_NAnteriores_EjecutaLaPagina @story-8.282 @ac-25', () => {
+  const datos = (filas) => ({ agents: [], items: [], meta: { actualizado: '10:00', teToca: [] }, rows: [], free: [], unreadable: [], tablero: null,
+    kanban: { escrito: `Tablero escrito a las ${hm(NOW)}`, columnas: [{ id: 'hechos', nombre: 'Terminados hoy', tarjetas: [] }], medioCamino: [] },
+    tablas: { hechos: { filas } } });
+  const boton = (body) => all(body, (n) => n.tag === 'button' && / anterior(es)?$/.test(n.textContent))[0];
+  const lista = (body) => all(body, (n) => n.className === 'anteriores-lista')[0];
+  // una sola fila, con sólo su grupo
+  const uno = drawKanban(datos([{ grupo: 'T-50' }])).body;
+  assert.strictEqual(boton(uno).textContent, '1 anterior');
+  assert.strictEqual(textOf(lista(uno)), 'T-50');
+  // tres, una de un pedido con sesión: su qué y su columna van en la línea de abajo
+  const tres = drawKanban(datos([{ grupo: 'T-50' }, { grupo: 'Historia 9.1', que: 'pedido 901 de la sesión ses-a', col: 'Terminado' }, { grupo: 'T-52', que: 'el arreglo' }])).body;
+  const b = boton(tres);
+  const l = lista(tres);
+  assert.strictEqual(b.textContent, '3 anteriores');
+  assert.strictEqual(b.attrs['aria-expanded'], 'false', 'empieza cerrado');
+  assert.strictEqual(l.hidden, true);
+  assert.deepStrictEqual(l.children.map(textOf), ['T-50', 'Historia 9.1pedido 901 de la sesión ses-a · Terminado', 'T-52el arreglo']);
+  b.onclick();
+  assert.strictEqual(b.attrs['aria-expanded'], 'true', 'se abre al tocarlo');
+  assert.strictEqual(l.hidden, false);
+  b.onclick();
+  assert.strictEqual(b.attrs['aria-expanded'], 'false', 'y se vuelve a cerrar');
+  // sin filas viejas, no hay botón
+  assert.strictEqual(boton(drawKanban(datos([])).body), undefined);
+});

@@ -157,12 +157,27 @@ function objetoDe(raiz, objeto, noExiste) {
 
 // los de control (C0 y C1), los de formato, que no se ven o dan vuelta el texto (ancho cero, dirección, guion blando), los
 // separadores de renglón y de párrafo, que lo parten como un salto, los que se ignoran al mostrar (rellenos, selectores de
-// variante) y el braille en blanco
-const CLASE_QUE_NO_SE_VE = '[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}\\p{Default_Ignorable_Code_Point}\\u{2800}]';
+// variante), los de uso privado, que cada fuente dibuja a su manera, y el braille en blanco
+const CLASE_QUE_NO_SE_VE = '[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}\\p{Default_Ignorable_Code_Point}\\p{Co}\\u{2800}]';
 const NO_SE_VE = new RegExp(CLASE_QUE_NO_SE_VE, 'u');
-// la ruta, para nombrarla en un motivo: entre comillas de JSON y con lo que no se ve escrito como su código, así se lee
+// una marca de acento sin letra base (al principio, o después de algo que no es letra, número ni otra marca) se monta
+// sobre lo que tiene al lado; con su letra es una tilde compuesta y se ve
+const MARCA_SUELTA = /(^|[^\p{L}\p{N}\p{M}])\p{M}/u;
+const NO_SE_VE_UNO = new RegExp(`^${CLASE_QUE_NO_SE_VE}$`, 'u');
+const ES_BASE = /^[\p{L}\p{N}\p{M}]$/u;
+// la ruta, para nombrarla en un motivo: con los escapes de JSON y con lo que no se ve escrito como su código, así se lee.
+// Se decide sobre la ruta cruda, carácter por carácter: una marca detrás de un salto sigue sin letra base aunque el
+// motivo escriba el salto con letras («\n»)
 const rutaALaVista = (r) => {
-  const t = JSON.stringify(String(r)).slice(1, -1).replace(new RegExp(CLASE_QUE_NO_SE_VE, 'gu'), (c) => `\\u{${c.codePointAt(0).toString(16)}}`);
+  let t = '';
+  let base = false;
+  for (const c of String(r)) {
+    const json = JSON.stringify(c).slice(1, -1);
+    const suelta = /^\p{M}$/u.test(c) && !base;
+    t += json !== c ? json : (NO_SE_VE_UNO.test(c) || suelta) ? `\\u{${c.codePointAt(0).toString(16)}}` : c;
+    // una marca suelta tampoco es base de la que sigue
+    base = ES_BASE.test(c) && !suelta;
+  }
   return t.length > 120 ? `${t.slice(0, 120)}…` : t;
 };
 // las opciones que lee el guion (run-base-controls.sh `opt`), que sólo las lee separadas de su valor: pegadas con «=», la
@@ -175,7 +190,7 @@ const OPCIONES_DEL_GUION = ['--root', '--base', '--entries', '--file', '--rev', 
  * que no son el común se ven como uno solo (owner-approvals.js `cuadroDe` junta los espacios).
  */
 function porQueNoSeVe(ruta) {
-  if (NO_SE_VE.test(ruta)) return 'trae un salto de línea, un carácter de control o uno que no se ve';
+  if (NO_SE_VE.test(ruta) || MARCA_SUELTA.test(ruta)) return 'trae un salto de línea, un carácter de control o uno que no se ve';
   if (ruta.includes(', ')) return 'trae «, », que en la pregunta se lee como el fin de una ruta y el principio de otra';
   if (ruta !== ruta.trim() || / {2}/.test(ruta) || /[^\S ]/.test(ruta)) return 'trae espacios en las puntas, seguidos o que no son el común, y la pregunta los muestra distintos';
   return null;
@@ -267,7 +282,9 @@ function deControles(palabras, cwd, estado) {
   let mas = 0;
   let menos = 0;
   const nombradas = new Set(rutas);
-  for (const l of num.stdout.split('\0').filter(Boolean)) {
+  // las que cambiaron: una ruta pedida sin cambio entre la base y la punta no sale en el numstat
+  const cambiadas = num.stdout.split('\0').filter(Boolean);
+  for (const l of cambiadas) {
     const [a, b, ...ruta] = l.split('\t');
     // una ruta que es una carpeta trae el cambio de los archivos de adentro: la pregunta mostraría lo que no se firma
     if (!nombradas.has(ruta.join('\t'))) return { error: `el cambio trae ${rutaALaVista(ruta.join('\t'))}, que el pedido no nombra: alguna de sus rutas es una carpeta, no un archivo` };
@@ -280,7 +297,8 @@ function deControles(palabras, cwd, estado) {
     completo = path.join(dir, `diff-${sha(diff.stdout).slice(0, 16)}.patch`);
     try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(completo, diff.stdout); } catch (_) { completo = null; }
   }
-  return { queHace: [`Cambia ${rutas.length} archivo(s) de control: +${mas} −${menos} líneas`], archivos: rutas, completo, fuente: diff.stdout };
+  const cuantas = cambiadas.length < rutas.length ? `${cambiadas.length} de ${rutas.length} archivo(s) de control pedidos` : `${rutas.length} archivo(s) de control`;
+  return { queHace: [`Cambia ${cuantas}: +${mas} −${menos} líneas`], archivos: rutas, completo, fuente: diff.stdout };
 }
 
 const acsDe = (palabras) => [...new Set(String(valor(palabras, '--acs') || '').split(/[,\s]+/).filter(Boolean).map(Number))].filter((n) => Number.isInteger(n) && n > 0);
