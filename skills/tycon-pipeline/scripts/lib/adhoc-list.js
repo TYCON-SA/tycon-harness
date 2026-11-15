@@ -74,6 +74,32 @@ function normalizar(entradas, { cwd = process.cwd() } = {}) {
   return { lista: [...out].sort(), sinRepo };
 }
 
+/**
+ * La carpeta de trabajo de la sesión `sesion`, para resolver la lista que otra sesión pide por ella (`--for-session`): el
+ * `cwd` del último renglón que lo trae en su transcripción, `<casa>/.claude/projects/<carpeta>/<sesión>.jsonl`. Null si
+ * no hay transcripción con ese id, si hay más de una, o si ninguna trae `cwd` (una sesión de Codex, por ejemplo). No se
+ * toma de un texto que manda otra sesión ni de los registros por nombre, que vencen.
+ */
+function carpetaDeLaSesion({ casa = os.homedir(), sesion } = {}) {
+  if (!/^[\w-]+$/.test(String(sesion || ''))) return null;
+  const raiz = path.join(casa, '.claude', 'projects');
+  let dirs;
+  try { dirs = fs.readdirSync(raiz, { withFileTypes: true }); } catch (_) { return null; }
+  const halladas = dirs.filter((d) => d.isDirectory()).map((d) => path.join(raiz, d.name, `${sesion}.jsonl`)).filter((f) => fs.existsSync(f));
+  if (halladas.length !== 1) return null;
+  let texto;
+  try { texto = fs.readFileSync(halladas[0], 'utf8'); } catch (_) { return null; }
+  const renglones = texto.split('\n');
+  for (let i = renglones.length - 1; i >= 0; i--) {
+    if (!renglones[i].includes('"cwd"')) continue;
+    try {
+      const r = JSON.parse(renglones[i]);
+      if (r && typeof r.cwd === 'string' && path.isAbsolute(r.cwd)) return r.cwd;
+    } catch (_) { /* renglón a medias */ }
+  }
+  return null;
+}
+
 /** Las entradas de la lista `anterior` que no están en la `nueva`, con la letra de unidad sin distinguir mayúsculas. */
 function faltanEnLaNueva(anterior, nueva) {
   const nuevas = new Set((nueva || []).map(unidadEnMayuscula));
@@ -266,6 +292,6 @@ function fueraDeLaLista({ lista, filePath, real, repoRoot, home = os.homedir(), 
 }
 
 module.exports = {
-  sinEnlaces, unidadEnMayuscula, faltanEnLaNueva, normalizar, raizDe, esCodigo, esCodigoRel, contar, problemaDeTopes, problemaDelMotivo, variosTemas, vago, sinUnaPersona,
+  sinEnlaces, unidadEnMayuscula, faltanEnLaNueva, normalizar, carpetaDeLaSesion, raizDe, esCodigo, esCodigoRel, contar, problemaDeTopes, problemaDelMotivo, variosTemas, vago, sinUnaPersona,
   esPapeleo, esPruebaDe, esTemporal, fueraDeLaLista, rechazoDeLaLista, textoDeAmpliar, textoOtroCarril, riesgoDeLaLista, textoDelRiesgo,
 };

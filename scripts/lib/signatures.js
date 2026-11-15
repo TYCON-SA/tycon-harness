@@ -49,6 +49,8 @@ const MANT = Object.freeze(['mant']);
 const TOPE = 8;
 const ADHOC = 'adhoc-lane';
 const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
+// cerrar una ejecución perdida que la partición de su historia dejó sin objeto: la forma de rutina de `lost-run`
+const LOST_RUN_PARTICION = 'lost-run:particion';
 
 // qué aprueba cada id de la tabla, en inglés: la pantalla del sitio lo muestra en ese idioma
 const LEVELS_EN = Object.freeze({
@@ -71,6 +73,7 @@ const LEVELS_EN = Object.freeze({
   'browser-test:no': 'say no to the browser test',
   'adversarial-skip': 'skip the adversarial pass',
   'lost-run': 'give up on a run as lost and close it',
+  'lost-run:particion': 'close a lost run that the split of its story into batches left without purpose',
   'escape:force-manual': "mark a control's result by hand",
   'escape:trust-ran': 'count reviewers with no record that they ran',
   'escape:TYCON_TEST_GATE': 'skip only the test gate of the commit',
@@ -99,6 +102,7 @@ const LEVELS = Object.freeze([
   ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
   ['compare-waiver', 1, AMBOS, 'eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
   ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
+  ['lost-run:particion', 1, AMBOS, 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
   ['save:sensible', 2, AMBOS, 'guardar cuando un commit toca algo de lo sensible'],
   ['adhoc-lane:datos', 2, AMBOS, 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño)'],
   ['adhoc-lane:guardado-ajeno', 2, AMBOS, 'dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista (sólo el click o la terminal de una persona)'],
@@ -208,6 +212,7 @@ const SI_SALE_MAL = Object.freeze({
   'manual-test': 'un criterio queda como probado sin una prueba automática que lo repita',
   'browser-test': 'se prepara la prueba con navegador, o queda sin ella y un error de pantalla puede pasar',
   'lost-run': 'la ejecución se cierra y lo que le faltaba queda sin hacer',
+  'lost-run:particion': 'se cierra una ejecución que la historia partida ya no necesitaba; lo hecho sigue en la copia de trabajo y se retoma con su tanda',
   'adversarial-skip': 'el código entra sin el pase adversarial, y un error que él encontraría puede llegar a main',
   'pending-approval': 'queda un pendiente de más en la lista; se cierra a mano',
   'adhoc-lane': 'la sesión escribe código sin historia; se cierra el arreglo, y nada entra a main sin revisión',
@@ -235,6 +240,7 @@ const APPROVES_EN = {
   'manual-test': 'mark a criterion as tested by hand',
   'browser-test': 'set up the browser test, or say no to it',
   'lost-run': 'give up a run as lost and close it',
+  'lost-run:particion': 'close a lost run that the split of its story into batches left without purpose',
   'adversarial-skip': 'skip the adversarial pass with a signed record',
   'pending-approval': 'open a new item in the pending list',
   'adhoc-lane': "open a session's quick fix, with no story",
@@ -283,6 +289,9 @@ const SIGNATURES = Object.freeze([
   { id: 'manual-test', approves: 'marcar un criterio como probado a mano', command: 'marker.js mark-tested --acs', otherSession: 'yes', terminal: 'marker.js mark-tested --acs --terminal' },
   { id: 'browser-test', approves: 'preparar la prueba con navegador, o decirle que no', command: 'e2e-setup.js prepare (o defer --no)', otherSession: 'yes', terminal: 'e2e-setup.js prepare --terminal (o defer --no --terminal)' },
   { id: 'lost-run', approves: 'dar por perdida una ejecución y cerrarla', command: 'marker.js clear-session --lost (o restore)', otherSession: 'yes', terminal: 'marker.js clear-session --lost --terminal (o restore --terminal)' },
+  // la ejecución que la partición de su historia dejó sin objeto: el freno la elige por la bandera, y el guion comprueba
+  // antes de la firma que la historia se partió después de la apertura
+  { id: LOST_RUN_PARTICION, approves: 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto', command: 'marker.js clear-session <S> --lost --partition', otherSession: 'yes', terminal: 'marker.js clear-session <S> --lost --partition --terminal' },
   { id: 'adversarial-skip', approves: 'saltear el pase adversarial con constancia', command: 'marker.js sign-adversarial-skip --story <S> --reason <R>', otherSession: 'no', terminal: 'marker.js sign-adversarial-skip --story <S> --reason <R> --terminal' },
   { id: 'pending-approval', approves: 'abrir un pendiente nuevo en la lista de pendientes', command: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta>', otherSession: 'yes', terminal: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal' },
   { id: 'adhoc-lane', approves: 'abrir el arreglo rápido de una sesión, sin historia', command: "marker.js adhoc set '<json>'", otherSession: 'yes', terminal: 'marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --file <ruta> --terminal --for-session <id>' },
@@ -418,6 +427,9 @@ function isId(v) { return SIGNATURES.some((s) => s.id === v); }
  */
 function expand(v, { restringe = false } = {}) {
   if (restringe && v === 'escape-phrases') return [...ESCAPES];
+  // la forma de rutina de lost-run: «lost-run» en owner_only la cubre, y en delegated_signing no (la delegación no mira
+  // niveles: un perfil que ya delega «lost-run» la delegaría sin un pedido aparte)
+  if (restringe && v === 'lost-run') return ['lost-run', LOST_RUN_PARTICION];
   if (Object.prototype.hasOwnProperty.call(GROUPS, v)) return [...GROUPS[v]];
   return isId(v) ? [v] : [];
 }
@@ -448,4 +460,4 @@ function delegatedLevel(id, raised) {
 // Lo que no tiene vuelta atrás: sólo se firma en la terminal de la persona, nunca con un click ni con un «aprobado»
 const ONLY_IN_TERMINAL = Object.freeze(['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'emergency']);
 
-module.exports = { TOPE, SOBRE_CUPO, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, ONLY_IN_TERMINAL, ids, groupNames, isId, expand, effectiveLevel, delegatedLevel };
+module.exports = { TOPE, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, ONLY_IN_TERMINAL, ids, groupNames, isId, expand, effectiveLevel, delegatedLevel };

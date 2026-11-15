@@ -355,10 +355,28 @@ function pistaDeVersion(renglon) {
 }
 
 /**
+ * Dónde difiere la pregunta que armó el guion de la que contestó la persona: un renglón en `hook-errors.log` con el sello
+ * (la firma y la sesión destino), la sesión del click, la huella y el largo de cada una, y desde el primer carácter
+ * distinto hasta 40 de cada una. Sin la casa, o si no se puede escribir, no anota: la negativa es la misma.
+ */
+function anotarPreguntaDistinta({ casa, sello, sesion, esperada, recibida }) {
+  if (!casa) return;
+  try {
+    const e = String(esperada || '');
+    const r = String(recibida || '');
+    let i = 0;
+    while (i < e.length && i < r.length && e[i] === r[i]) i++;
+    const huella = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 12);
+    fs.mkdirSync(stateDir(casa), { recursive: true });
+    fs.appendFileSync(path.join(stateDir(casa), 'hook-errors.log'), `[${new Date().toISOString()}] owner-approvals: la pregunta del cuadro no es la del guion · ${una(sello, 200)} · click de ${una(sesion, 80)} · huellas ${huella(e)}/${huella(r)} (guion/cuadro) · largos ${e.length}/${r.length} · primer carácter distinto: ${i} · guion ${JSON.stringify(e.slice(i, i + 40))} · cuadro ${JSON.stringify(r.slice(i, i + 40))}\n\n`);
+  } catch (_) { /* sin registro: la negativa es la misma */ }
+}
+
+/**
  * El cuadro en la transcripción: la pregunta es la que armó el guion, la respuesta es la del registro, a esa hora, y no la
  * dio un gancho. `{ ok }` o `{ ok: false, motivo }`.
  */
-function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones } = {}) {
+function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, sello, casa } = {}) {
   let rs;
   try { rs = renglones(ruta); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})` }; }
   if (!a.tool_use_id) return { ok: false, motivo: 'el click no dice qué cuadro contestó' };
@@ -375,7 +393,10 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones } =
   const dijo = respuestaDelCuadro(r.toolUseResult);
   if (!dijo.ok) return { ok: false, motivo: `en la transcripción, ${dijo.motivo}` };
   if (dijo.pregunta !== a.pregunta || dijo.respuesta !== a.respuesta) return { ok: false, motivo: 'la respuesta del cuadro en la transcripción no es la del registro' };
-  if (!pregunta || dijo.pregunta !== pregunta) return { ok: false, motivo: 'la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual' };
+  if (!pregunta || dijo.pregunta !== pregunta) {
+    anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
+    return { ok: false, motivo: 'la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual' };
+  }
   // con dos opciones que aprueban, la persona no tendría cómo decir que no
   const mostrada = ((r.toolUseResult && r.toolUseResult.questions) || []).find((q) => q && q.question === pregunta);
   const etiquetas = mostrada && Array.isArray(mostrada.options) ? mostrada.options.map((o) => o && o.label) : null;
@@ -797,7 +818,7 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
     if (e.ilegibles.length) return { ok: false, motivo: `no pude leer ${e.ilegibles[0]}, y sin leerla no sé si un gancho contestó el cuadro` };
     if (e.ajenos.length) return { ok: false, motivo: `un gancho que no es del arnés escucha el cuadro (${e.ajenos[0].evento} en ${e.ajenos[0].archivo}): mientras esté, el click no vale; ${cuadro && (cuadro.soloClick || cuadro.clickDelDueno) ? 'queda la terminal' : 'escribí «aprobado»'}` };
   }
-  return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones });
+  return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones, sello: cuadro.sello, casa });
 }
 
 module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, cuadroDe, traeElSello, lanzadoPorLaHerramienta,
