@@ -28,6 +28,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            libre (scripts/tools/work-slots.js). Si Claude Code no la abre, borra lo que creó
  *   close --name <n>         cierra una sesión de fondo si quedó limpia; si falta algo, o no pudo mirarlo, no cierra y dice
  *                            qué. A una interactiva la verifica y avisa
+ *   stop --name <n>          para una sesión de fondo con el id que anotó (claude stop no la encuentra por el nombre ni
+ *                            por el ref de ListAgents); no borra nada y se retoma con claude respawn <id>
  *   owner-wait               lo lanza la coordinadora confirmada, de fondo: mira cada 2 s y termina, con una línea por
  *                            novedad, cuando otra sesión queda frenada en un permiso, cuando una frenada sigue o se
  *                            cierra, o cuando Claude Code cierra una sesión de fondo. Terminar la despierta. Uno por
@@ -2087,32 +2089,84 @@ function runGaps(sid, home) {
   return { missing, unknown };
 }
 
+// El nombre completo que anotó la sesión `sid` en su archivo, o `null` si no lo anotó o no se puede leer.
+function fullSessionName(home, sid) {
+  const dir = path.join(claudeDir(home), 'sessions');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return null; }
+  for (const f of files) {
+    let s;
+    try { s = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+    if (s && s.sessionId === sid) return typeof s.name === 'string' && s.name.trim() ? oneLine(s.name) : null;
+  }
+  return null;
+}
+
+/**
+ * La sesión de `--name` para `close` y `stop`, con la regla de quién la puede tocar: la coordinadora designada o una
+ * persona en su terminal, nunca otra sesión ni ella misma. Entre las del mismo nombre cuenta la única viva; sin vivas,
+ * la única que haya. `w` trae las palabras del comando (`cmd`, `inf`, `hecho`, `tercera`, `reflexivo`).
+ * `{ error }` o `{ home, sid, s, sessions }`.
+ */
+function namedSession(opts, w) {
+  const home = opts.home || require('os').homedir();
+  const env = opts.env || process.env;
+  const name = opts.name;
+  const nada = `no ${w.hecho} nada.`;
+  if (!name || !NAME_RE.test(String(name))) return { error: `${w.cmd} va con --name <el nombre de la sesión>: ${nada}` };
+  if (isCodex(env) && !opts.launcher) return { error: `Codex no tiene sesiones de fondo que ${w.inf}: ${nada}` };
+  // el nombre lo escribe la coordinadora o una persona en su terminal: una sesión de trabajo no toca a otra
+  const caller = sessionOf({ ...opts, env });
+  const d = designacionVigente({ home });
+  if (d && d.error) return { error: `No pude saber cuál es la coordinadora (${d.error}): ${nada}` };
+  if (caller && (!d || d.sesion !== caller)) return { error: `Una sesión ${w.tercera} la coordinadora designada o una persona en su terminal: ${nada}` };
+  const unreadable = [];
+  const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unreadable, path.join(claudeDir(home), 'projects'));
+  if (unreadable.length) return { error: `No pude leer todas las sesiones (${unreadable[0]}): ${nada}` };
+  // la lista guarda los nombres largos recortados: uno largo se compara recortado y se confirma con el nombre completo
+  // que anotó la sesión, porque dos nombres que empiezan igual quedan iguales en la lista
+  const listed = listedName(name);
+  const found = [...sessions.entries()].filter(([sid, s]) => s.name === listed && (listed === name || fullSessionName(home, sid) === name));
+  const alive = found.filter(([, s]) => s.alive);
+  if (!found.length) return { error: `No encuentro la sesión «${name}»: ${nada}` };
+  if (alive.length > 1 || (!alive.length && found.length > 1)) return { error: `Hay más de una sesión «${name}»: ${nada}` };
+  const [sid, s] = alive[0] || found[0];
+  if (sid === caller) return { error: `Una sesión no ${w.reflexivo} a sí misma: ${nada}` };
+  return { home, sid, s, sessions };
+}
+
+/**
+ * Los verbos de `claude` sobre la sesión de fondo `id`, por el lanzador de `close` y `stop`: `{ error }` si no hay
+ * lanzador, o `{ run(verb) }`, que devuelve `null` si salió bien y el motivo si falló.
+ */
+function jobVerbs(opts, id, what) {
+  const launcher = resolveLauncher(opts, what);
+  if (launcher.error) return { error: launcher.error };
+  const why = (r) => (r.error ? (r.error.code || r.error.message) : (`${r.stderr || ''}\n${r.stdout || ''}`.split('\n').map((l) => l.trim()).find(Boolean) || `salió con código ${r.status}`));
+  return {
+    run: (verb) => {
+      const r = spawnSync(launcher.bin, launchArgv(launcher, [verb, id]), { encoding: 'utf8', timeout: opts.timeoutMs || LAUNCH_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+      return r.error || r.status !== 0 ? why(r) : null;
+    },
+  };
+}
+// el id va como argumento del lanzador: uno que empieza con guion se leería como una opción
+const JOB_ID_RE = /^\w[\w-]*$/;
+// el ref que muestra ListAgents entre corchetes: seis caracteres hexadecimales
+const LIST_REF_RE = /^[0-9a-f]{6}$/i;
+
 /**
  * Cierra una sesión de fondo sólo si quedó limpia: nada sin commitear ni sin empujar, su worktree sin rama pendiente y su
  * ejecución cerrada. Si falta algo no cierra y dice qué; lo que no pudo mirar es «no sé», y tampoco cierra. A una sesión
  * interactiva la verifica y avisa: esa pestaña la cierra la persona. `{ ok, closed, message }`.
  */
 function close(opts = {}) {
-  const home = opts.home || require('os').homedir();
-  const env = opts.env || process.env;
   const name = opts.name;
   const no = (message) => ({ ok: false, closed: false, message: oneLine(message) });
-  if (!name || !NAME_RE.test(String(name))) return no('close va con --name <el nombre de la sesión>: no cerré nada.');
-  if (isCodex(env) && !opts.launcher) return no('Codex no tiene sesiones de fondo que cerrar: no cerré nada.');
-  // el nombre lo escribe la coordinadora o una persona en su terminal: una sesión de trabajo no cierra a otra
-  const caller = sessionOf({ ...opts, env });
-  const d = designacionVigente({ home });
-  if (d && d.error) return no(`No pude saber cuál es la coordinadora (${d.error}): no cerré nada.`);
-  if (caller && (!d || d.sesion !== caller)) return no('Una sesión la cierra la coordinadora designada o una persona en su terminal: no cerré nada.');
-  const unreadable = [];
-  const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unreadable, path.join(claudeDir(home), 'projects'));
-  if (unreadable.length) return no(`No pude leer todas las sesiones (${unreadable[0]}): no cerré nada.`);
-  const found = [...sessions.entries()].filter(([, s]) => s.name === name);
-  const alive = found.filter(([, s]) => s.alive);
-  if (!found.length) return no(`No encuentro la sesión «${name}»: no cerré nada.`);
-  if (alive.length > 1 || (!alive.length && found.length > 1)) return no(`Hay más de una sesión «${name}»: no cerré nada.`);
-  const [sid, s] = alive[0] || found[0];
-  if (sid === caller) return no('Una sesión no se cierra a sí misma: no cerré nada.');
+  const found = namedSession(opts, { cmd: 'close', inf: 'cerrar', hecho: 'cerré', tercera: 'la cierra', reflexivo: 'se cierra' });
+  if (found.error) return no(found.error);
+  const { home, sid, s, sessions } = found;
+  const env = opts.env || process.env;
   const missing = [];
   const unknown = [];
   // sólo una quieta: `shell` es un comando corriendo, y un estado que no se conoce tampoco es estar quieta
@@ -2133,25 +2187,22 @@ function close(opts = {}) {
     // encuentra. Una pestaña interactiva la cierra la persona.
     let parar = '';
     if (folder.before && /^(bg|background)$/.test(String(s.kind))) {
-      parar = /^\w[\w-]*$/.test(String(s.jobId || ''))
+      parar = JOB_ID_RE.test(String(s.jobId || ''))
         ? ` Si esos archivos no son suyos, pararla a mano: claude stop ${s.jobId}`
         : ' Si esos archivos no son suyos, para pararla a mano mirá su id con claude agents';
     }
     return no(`No cierro «${name}»: ${parts.join('. ')}.${parar}`);
   }
   if (!/^(bg|background)$/.test(String(s.kind))) return { ok: true, closed: false, message: `«${name}» quedó limpia. Es una pestaña interactiva: la cierra la persona.` };
-  // el id va como argumento del lanzador: uno que empieza con guion se leería como una opción
-  if (!/^\w[\w-]*$/.test(String(s.jobId || ''))) return no(`«${name}» quedó limpia, pero no anotó un id de fondo válido: no sé cómo cerrarla. Mirá el id con claude agents.`);
-  const launcher = resolveLauncher(opts, 'no la cerré');
-  if (launcher.error) return no(`«${name}» quedó limpia, pero ${launcher.error}`);
-  const run1 = (verb) => spawnSync(launcher.bin, launchArgv(launcher, [verb, s.jobId]), { encoding: 'utf8', timeout: opts.timeoutMs || LAUNCH_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-  const why = (r) => (r.error ? (r.error.code || r.error.message) : (`${r.stderr || ''}\n${r.stdout || ''}`.split('\n').map((l) => l.trim()).find(Boolean) || `salió con código ${r.status}`));
+  if (!JOB_ID_RE.test(String(s.jobId || ''))) return no(`«${name}» quedó limpia, pero no anotó un id de fondo válido: no sé cómo cerrarla. Mirá el id con claude agents.`);
+  const job = jobVerbs(opts, s.jobId, 'no la cerré');
+  if (job.error) return no(`«${name}» quedó limpia, pero ${job.error}`);
   if (s.alive) {
-    const stop = run1('stop');
-    if (stop.error || stop.status !== 0) return no(`«${name}» quedó limpia, pero no la pude parar (${why(stop)}): no la cerré.`);
+    const stopFailed = job.run('stop');
+    if (stopFailed) return no(`«${name}» quedó limpia, pero no la pude parar (${stopFailed}): no la cerré.`);
   }
-  const rm = run1('rm');
-  if (rm.error || rm.status !== 0) return no(`«${name}» quedó parada, pero no la pude borrar (${why(rm)}).`);
+  const rmFailed = job.run('rm');
+  if (rmFailed) return no(`«${name}» quedó parada, pero no la pude borrar (${rmFailed}).`);
   const now = opts.now == null ? Date.now() : Number(opts.now);
   // su renglón entre las que abrió la coordinadora: sin poder sacarlo, otra sesión con el mismo nombre y carpeta no lo
   // hereda (la reconoce también por la hora de arranque)
@@ -2166,6 +2217,29 @@ function close(opts = {}) {
   }
   if (unlaunched) return { ok: true, closed: true, message: oneLine(`Cerré «${name}»: quedó limpia, sin nada pendiente.${unlaunched}`) };
   return { ok: true, closed: true, message: `Cerré «${name}»: quedó limpia, sin nada pendiente.` };
+}
+
+/**
+ * Para una sesión de fondo por su nombre, con el id de fondo que anotó la sesión: `claude stop` no la encuentra ni por
+ * el nombre ni por el ref que muestra ListAgents. No mira si quedó limpia, porque parar no borra nada (borrar es de
+ * `close`), y se retoma con `claude respawn`. Quién puede y cuál es la sesión, como en `close`. `{ ok, message }`.
+ */
+function stop(opts = {}) {
+  const name = opts.name;
+  // un nombre con la forma del ref de ListAgents: cada negativa dice que va el nombre
+  const ref = LIST_REF_RE.test(String(name || '')) ? ' (el ref que muestra ListAgents no es el id de la sesión: va su nombre)' : '';
+  const no = (message) => ({ ok: false, message: oneLine(`${message}${ref}`) });
+  const found = namedSession(opts, { cmd: 'stop', inf: 'parar', hecho: 'paré', tercera: 'la para', reflexivo: 'se para' });
+  if (found.error) return no(found.error);
+  const { s } = found;
+  if (!/^(bg|background)$/.test(String(s.kind))) return no(`«${name}» es una pestaña interactiva: la para la persona; no paré nada.`);
+  if (!s.alive) return no(`«${name}» ya no está viva: no paré nada.`);
+  if (!JOB_ID_RE.test(String(s.jobId || ''))) return no(`«${name}» no anotó un id de fondo válido (mirá el id con claude agents): no paré nada.`);
+  const job = jobVerbs(opts, s.jobId, 'no paré nada');
+  if (job.error) return no(job.error);
+  const failed = job.run('stop');
+  if (failed) return no(`«${name}»: no la pude parar (${failed}), no paré nada.`);
+  return { ok: true, message: `paré ${name} (${s.jobId}); se retoma con claude respawn ${s.jobId}` };
 }
 
 // ── La línea de comandos ──
@@ -2300,6 +2374,11 @@ function main(argv) {
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
   }
+  if (cmd === 'stop') {
+    const r = stop({ ...base, name: f.name });
+    process.stdout.write(`${r.message}\n`);
+    return r.ok ? 0 : 1;
+  }
   if (cmd === 'owner-wait') {
     const r = ownerWait(base);
     if (r.text) process.stdout.write(`${r.text}\n`);
@@ -2313,7 +2392,7 @@ function main(argv) {
       return r.code;
     });
   }
-  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n> | owner-wait | pr-wait --repo <org/repo> --number <n> [--interval <s>]\n');
+  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n> | stop --name <n> | owner-wait | pr-wait --repo <org/repo> --number <n> [--interval <s>]\n');
   return 2;
 }
 
@@ -2323,4 +2402,4 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
