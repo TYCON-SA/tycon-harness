@@ -16,31 +16,16 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-
-/**
- * El texto de un archivo común. Un archivo especial (una tubería, un dispositivo) es un error, no una espera: se abre sin
- * bloquear y se mira lo que se abrió, así el cambio entre mirar y leer no cuenta.
- */
-function leerArchivoComun(file) {
-  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0));
-  try {
-    if (!fs.fstatSync(fd).isFile()) throw Object.assign(new Error('no es un archivo común'), { code: 'ENOTREG' });
-    return fs.readFileSync(fd, 'utf8');
-  } finally { fs.closeSync(fd); }
-}
+const { tamanoDelTope, leerRenglones } = require('./jsonl-lines.js');
 
 /** ¿Hay un archivo común en esa ruta? */
 function esArchivoComun(file) {
   try { return fs.statSync(file).isFile(); } catch (_e) { return false; }
 }
 
+// de a renglones y, si pasa del tope, sin leerla: una conversación de más de 512 MB no entra en un texto
 function leerRegistros(file) {
-  const registros = [];
-  for (const l of leerArchivoComun(file).split('\n')) {
-    if (!l.trim()) continue;
-    try { registros.push(JSON.parse(l)); } catch (_e) { /* un renglón a medio escribir no tapa a los demás */ }
-  }
-  return registros;
+  return leerRenglones(file, { tope: true });
 }
 
 /** El registro de la conversación de esta sesión: `{ legible, motivo?, registros, archivo? }`. */
@@ -57,6 +42,7 @@ function leerConversacion({ env = process.env, home = os.homedir(), sesion } = {
   } catch (e) { return { legible: false, motivo: `no pude leer ${root} (${e.code || e.message})` }; }
   if (!file) return { legible: false, motivo: 'no encontré su registro' };
   try { return { legible: true, registros: leerRegistros(file), archivo: file }; } catch (e) {
+    if (e.code === 'ETOPE') return { legible: false, motivo: `la conversación pasa de ${tamanoDelTope()}` };
     return { legible: false, motivo: `no pude leer su registro (${e.code || e.message})` };
   }
 }
