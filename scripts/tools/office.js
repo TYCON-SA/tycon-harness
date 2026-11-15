@@ -1716,6 +1716,9 @@ function sessionsForPrs(wip, board, remoteOf, remembered, nowMs, liveSessions = 
   return out;
 }
 
+// Los caracteres que parten o ensucian un renglón del registro: los de control y los separadores de línea.
+const CONTROL_CHARS = new RegExp('[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+', 'g');
+
 // El renglón del registro de la oficina para las tarjetas que no salen (`kanban.ocultas`), o null: sólo cuando la lista
 // cambió desde la última foto (`seen` es la memoria del proceso), para no repetirlo en cada refresco; una lista vacía no
 // dice nada.
@@ -1724,7 +1727,9 @@ function hiddenCardsLine(ocultas, seen) {
   const key = JSON.stringify(list);
   if (seen.hiddenCards === key) return null;
   seen.hiddenCards = key;
-  return list.length ? list.map((o) => `no muestro la tarjeta de ${o.quien}: ${o.motivo}`).join(' · ') : null;
+  // el nombre lo pone una persona: en un renglón del registro, sin caracteres de control que lo partan
+  const said = (v) => String(v == null ? '' : v).replace(CONTROL_CHARS, ' ').trim();
+  return list.length ? list.map((o) => `no muestro la tarjeta de ${said(o.quien)}: ${said(o.motivo)}`).join(' · ') : null;
 }
 
 // Las sesiones de un repo que el arnés no sigue, de los que lee la lista de pedidos. Si no se sabe de qué repo es, cuenta.

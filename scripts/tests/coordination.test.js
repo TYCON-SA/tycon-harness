@@ -2193,3 +2193,24 @@ test('8.281 T4 Close_OtraSesionSinReflog_SoloLoPropio @story-8.281 @ac-7 @ac-8: 
   assert.strictEqual(closeIt(t, 'primera').closed, true, closeIt(t, 'primera').message);
   assert.ok(fs.existsSync(path.join(slot, 'a-medio-hacer.txt')), 'el trabajo de la otra no se toca');
 });
+
+// 🔴 Falla con: el «no sé» del puesto compartido sale también con una suelta en el registro, cuando la que cierra volvió
+// a su propia rama: ahí el registro sí dice de quién es lo de ahora (de ella), y se mira todo como suyo, como siempre.
+test('8.281 T4b Close_SoltoYVolvioASuRama_LoMiraComoSuyo @story-8.281 @ac-7: con suelta y la rama de ahora entre las suyas, falta lo suyo; no es «no sé»', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  git(slot, 'checkout', '-q', '-b', 'wt/primera');
+  commitIn(slot);
+  bg(t, 'primera', slot);
+  esperar(1100);
+  git(slot, 'checkout', '-q', '--detach', 'origin/main');
+  esperar(1100);
+  git(slot, 'checkout', '-q', 'wt/primera');
+  fs.writeFileSync(path.join(slot, 'a-medio-hacer.txt'), 'x\n');
+  bg(t, 'otra', slot, { startedAt: Date.now() + 1000 });
+  const r = closeIt(t, 'primera');
+  assert.doesNotMatch(r.message, /no puedo separar/, r.message);
+  assert.match(r.message, /falta: [^.]*sin commitear/, r.message);
+  assert.deepStrictEqual(closed(t), []);
+});

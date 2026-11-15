@@ -406,6 +406,9 @@ test('8.281 T5 Tablero_CoordinadoraSinFila_NoSaleYDejaRenglon @story-8.281 @ac-9
   assert.match(hiddenCardsLine(sin.kanban.ocultas, seen), /no muestro la tarjeta de Coord: coordina y su trabajo anotado no es una fila del tablero/);
   assert.strictEqual(hiddenCardsLine(sin.kanban.ocultas, seen), null, 'la misma lista no se repite en cada refresco');
   assert.strictEqual(hiddenCardsLine([], seen), null, 'que deje de estar oculta no es un renglón');
+  // un nombre con un salto de línea no parte el renglón del registro
+  const partido = hiddenCardsLine([{ quien: 'Coord\n2026-11-15T00:00:00Z otro renglón', motivo: 'm' }], {});
+  assert.ok(!/[\r\n]/.test(partido), partido);
 });
 
 test('T223 Numbers_PanelMatchesItsList: cada número del panel coincide con su lista, con la pared y con el kanban', () => {

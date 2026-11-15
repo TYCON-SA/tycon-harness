@@ -791,7 +791,11 @@ function otherProjectStalled(home, stalled, sessions, now) {
     const cwds = stalled.map((x) => { const s = sessions.get(x.sid); return (s && s.cwd) || null; });
     const wip = { rows: stalled.map((x) => ({ session: x.session })), extra: cwds.map((cwd) => ({ cwd })), details: stalled.map((x) => ({ sid: x.sid })) };
     return otherProjectsOf(wip, readOpenPrs(stateDir(home), now), (cwd) => (fs.existsSync(cwd) ? remoteOfFolder(cwd) : null));
-  } catch (_) { return new Set(); }
+  } catch (e) {
+    // sin poder mirarlo, ninguna es de otro proyecto y todas despiertan (AC 3); queda dicho, para que no se apague callado
+    process.stderr.write(`owner-wait: no pude mirar de qué proyecto son las trabadas (${(e && e.message) || e}): las anuncio todas\n`);
+    return new Set();
+  }
 }
 
 /**
@@ -2014,8 +2018,9 @@ function folderGaps(dir, opts) {
   const solto = slot && opts.heir && Number.isFinite(opts.startedAt) ? soltoElPuesto(dir, opts.startedAt, opts.heir.startedAt) : null;
   const heredado = Boolean(solto && solto.solto && !(onBranch && solto.propias.has(branch.out)));
   // con otra sesión viva en el puesto y sin una suelta en el registro, lo de ahora puede ser de cualquiera de las dos: no
-  // cierra, y lo dice como «no sé», nombrando a la otra, en vez de cargárselo a la que cierra como faltante suyo
-  const compartido = Boolean(slot && opts.heir && !heredado);
+  // cierra, y lo dice como «no sé», nombrando a la otra, en vez de cargárselo a la que cierra como faltante suyo. Con una
+  // suelta y la rama de ahora entre las suyas, el registro sí lo dice: es suyo, y se mira todo como siempre
+  const compartido = Boolean(slot && opts.heir && !(solto && solto.solto));
   const own = compartido ? [] : missing;
   const done = () => {
     if (own.length && own !== missing) unknown.push(`no puedo separar lo suyo de lo de ${opts.heir.name || 'la otra sesión'}, que también está en el puesto, y el registro no muestra que lo soltara: ${own.join('; ')}`);
