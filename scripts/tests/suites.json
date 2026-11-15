@@ -1678,6 +1678,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.276 (T11-T13, T16, T17): la base del camino corto desde la punta con constancia — el guardado del carril que el freno dejó pasar y la foto de una corrida cerrada completa; sin punta, ilegible, fuera de la rama o con main traído después, desde main. HOME y repos de juguete con su origin desnudo, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-base.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el camino rápido que toca una pantalla: maqueta aprobada y captura posterior al último cambio, o no guarda.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-screen.test.js",

@@ -1338,6 +1338,7 @@ function decidirCarril({ command, cwd, sid, home }) {
   // el pedido y el empuje a una rama compartida preguntan; el commit y el empuje de la rama de trabajo no, y lo que la
   // pregunta mostraba (la maqueta, el aviso de los datos) sale en pantalla
   let guarda = false;
+  const commitean = new Set();
   for (const c of cs) {
     if (c.tipo === 'pr') return { pregunta: `¿GUARDO? «${c.forma}», ${de}. ${como}` };
     let r = null;
@@ -1345,10 +1346,23 @@ function decidirCarril({ command, cwd, sid, home }) {
     if (!repos.length || (r && repos.includes(r))) {
       if (c.tipo === 'push' && destinoDelEmpuje(c).compartida) return { pregunta: `¿GUARDO? «${c.forma}»${r ? ` sobre ${r}` : ''}, ${de}. ${como}` };
       guarda = true;
+      if (c.tipo === 'commit' && r) commitean.add(r);
     }
   }
-  const mostrar = [pantalla && pantalla.mostrar, datos && datos.mostrar].filter(Boolean);
-  return guarda && mostrar.length ? { aviso: mostrar.join(' ') } : null;
+  // el commit que pasa los frenos del carril deja su constancia: el próximo arreglo de la rama se mide desde ahí. Que no se
+  // pueda anotar no frena el guardado: sale en pantalla y queda en el registro
+  const sinAnotar = [];
+  if (esDelCarril) {
+    const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+    for (const r of commitean) {
+      const g = base.anotarGuardadoDelCarril({ adhoc: a, medida: v.m, repo: r, dir });
+      if (!g.aviso) continue;
+      sinAnotar.push(g.aviso);
+      require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'carril-guardado', status: 'warn', reason: g.aviso });
+    }
+  }
+  const mostrar = [...(guarda ? [pantalla && pantalla.mostrar, datos && datos.mostrar].filter(Boolean) : []), ...sinAnotar];
+  return mostrar.length ? { aviso: mostrar.join(' ') } : null;
 }
 
 /**

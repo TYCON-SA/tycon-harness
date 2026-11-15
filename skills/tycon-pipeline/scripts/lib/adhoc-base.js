@@ -20,6 +20,9 @@
  *   marcaSinSustento(…)       ¿la marca de riesgo alto nombra un archivo que ya no es del carril?
  *   huellaDelCarril(adhoc)    el sha256 del contenido de sus archivos de código, en cada repo: un cambio después de una
  *                             constancia la cambia.
+ *   anotarGuardadoDelCarril(…) la constancia de un guardado del carril que el freno dejó pasar.
+ *   puntaConConstancia(repo, M) el commit más nuevo de la rama con constancia (un guardado de otro carril o la foto de
+ *                             una corrida cerrada completa): lo propio se mide desde ahí, no desde M.
  *
  * Lo que no se puede leer (git que no contesta) no da verde: queda en `fallas`, y quien mide no guarda.
  */
@@ -293,8 +296,9 @@ const existeElCommit = (repo, sha) => {
 const corto = (sha) => String(sha).slice(0, 12);
 
 /**
- * Desde dónde se mide lo propio de un repo, en un solo lugar: `{ sha, de, aviso? }` (de: 'integracion' | 'anotada' |
- * 'sin-base'), o `{ falla }` con la salida escrita. Se compara el `origin` de hoy con el anotado antes de mirar ninguna
+ * Desde dónde se mide lo propio de un repo, en un solo lugar: `{ sha, de, aviso? }` (de: 'integracion' | 'constancia' |
+ * 'anotada' | 'sin-base'), o `{ falla }` con la salida escrita. Con la rama de integración, si la rama ya tiene una punta
+ * con constancia después de la bifurcación (`puntaConConstancia`), desde esa punta. Se compara el `origin` de hoy con el anotado antes de mirar ninguna
  * rama remota:
  *  - el mismo `origin` (o sin base anotada): la bifurcación con la rama de integración más cercana (`main` o `dev`). Una
  *    sola: «igual a la otra rama» no quiere decir «entró de ahí», y un revert masivo no sumaría. En `dev` con `main` traído
@@ -327,13 +331,211 @@ function laBase(repo, adhoc, nacido) {
         if (e.status !== 1 && !/not a valid object name/i.test(String(e.stderr || e.message))) throw e;
       }
     }
-    if (candidatas.length) return { sha: candidatas.sort((a, b) => a.adelante - b.adelante)[0].sha, de: 'integracion' };
+    if (candidatas.length) {
+      const M = candidatas.sort((a, b) => a.adelante - b.adelante)[0].sha;
+      // lo que la rama ya guardó con su constancia no se vuelve a medir: se mide desde esa punta
+      const p = puntaConConstancia(repo, M, { adhoc });
+      if (p.sha) return { sha: p.sha, de: 'constancia', ...(p.aviso ? { aviso: p.aviso } : {}) };
+      return { sha: M, de: 'integracion', ...(p.aviso ? { aviso: p.aviso } : {}) };
+    }
   }
   if (!shaAnotado) return sinBase((anotada && anotada.motivo) || `sin origin/${RAMA}`);
   if (!existeElCommit(repo, shaAnotado)) {
     return { falla: `camino corto: la base anotada de ${repo} (${corto(shaAnotado)}) no está en el repo: con red, repetí el comando (trae ${RAMA} de nuevo); sin red, cerrá y reabrí el carril (marker.js adhoc clear y adhoc set)` };
   }
   return { sha: nacido ? puntoDeSalida(repo, shaAnotado) : null, de: 'anotada' };
+}
+
+// ── la punta con constancia ─────────────────────────────────────────────────────────────────────────────────────────
+
+// Las constancias viven en la carpeta de estado del arnés, la de `gates.log`, que el portón de edición no deja escribir a
+// una sesión: los guardados del carril que el freno dejó pasar, y los cierres archivados de las corridas.
+const GUARDADOS = 'carril-guardados.jsonl';
+const CIERRES = 'timing-history';
+// cuánto se mira hacia atrás: los commits de la rama, los cierres de corrida, los guardados, las puntas encadenadas y, por
+// cierre, los commits desde su foto
+const COMMITS_MAX = 50;
+const CIERRES_MAX = 50;
+const GUARDADOS_MAX = 200;
+const ENCADENADAS_MAX = 3;
+const DESDE_LA_FOTO_MAX = 5;
+const estadoDelArnes = () => require('./state-dir.js').stateDir(os.homedir());
+const noPudeLeer = (que, e) => `camino corto: no pude leer las constancias de las puntas (${que}: ${(e && e.code) || primeraLinea(e)}): se mide desde main`;
+const ramaDe = (repo) => { const r = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']); return r === 'HEAD' ? null : r; };
+
+/**
+ * Quién es el carril: sus guardados no le sirven de punta a él mismo (si no, partir el trabajo en varios commits esquivaría
+ * su tope), sólo al arreglo que viene después. Sale de cuándo se declaró y se firmó, que no cambian mientras está abierto.
+ */
+function idDelCarril(adhoc) {
+  if (!adhoc) return null;
+  const partes = [adhoc.declaredAt, adhoc.firmadaEn, adhoc.reason].map((x) => (x == null ? '' : String(x)));
+  return partes.every((x) => !x) ? null : crypto.createHash('sha256').update(partes.join('\0')).digest('hex').slice(0, 16);
+}
+
+/** El contenido de cada ruta en el índice y en el disco: `{ rel: { indice, disco } }` (null: no está). */
+function contenidosDe(repo, rels) {
+  const indice = new Map();
+  for (const l of git(repo, ['-c', 'core.quotepath=false', '--literal-pathspecs', 'ls-files', '-s', '-z', '--', ...rels]).split('\0')) {
+    const m = /^\d+ ([0-9a-f]+) 0\t(.*)$/s.exec(l);
+    if (m) indice.set(m[2], m[1]);
+  }
+  const enDisco = rels.filter((r) => {
+    try { return fs.statSync(path.join(repo, r)).isFile(); } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return false; throw e; }
+  });
+  const hashes = enDisco.length ? git(repo, ['hash-object', '--', ...enDisco]).split('\n') : [];
+  if (hashes.length !== enDisco.length) throw new Error('git hash-object no devolvió un contenido por archivo');
+  const disco = new Map(enDisco.map((r, i) => [r, hashes[i]]));
+  return Object.fromEntries(rels.map((r) => [r, { indice: indice.get(r) || null, disco: disco.get(r) || null }]));
+}
+
+/**
+ * Anota el guardado de un carril que el freno dejó pasar: `{ ts, repo, rama, base, carril, marca, archivos }`, con cada
+ * archivo de lo propio del repo como está en el índice y en el disco. El freno corre antes del comando: un `git commit` solo
+ * guarda el índice; con `-a` o un `git add` en el mismo comando, el disco. Al buscar la punta vale cualquiera de los dos,
+ * salvo con marca de riesgo alto: ahí sólo el disco, que es lo que vieron los revisores. Sin medida, con fallas o sin nada
+ * propio no anota. `{ anotado }`, o `{ anotado: false, aviso }` si algo impidió anotarlo: nunca tira, y quien guarda
+ * sigue igual.
+ */
+function anotarGuardadoDelCarril({ adhoc, medida, repo, dir = estadoDelArnes(), ahora = new Date().toISOString() } = {}) {
+  const no = (por) => ({ anotado: false, aviso: `camino corto: no anoté la constancia del guardado en ${repo} (${por}): el próximo arreglo de la rama se mide desde main` });
+  try {
+    if (!medida || (medida.fallas || []).length) return { anotado: false };
+    const e = medida.porRepo && (medida.porRepo[repo] || medida.porRepo[rutaReal(repo)]);
+    if (!e) return no('el repo no está en la medida del carril');
+    if (!e.base || !e.base.sha) return no('la medida no tiene base');
+    // lo que git todavía no sigue también: un `git add` en el mismo comando lo sube al commit
+    const rels = [...new Set([...e.cambios.flatMap((c) => [c.ruta, c.vieja]), ...e.anotados, ...(e.sinSeguir || [])].filter(Boolean))].sort();
+    if (!rels.length) return { anotado: false };
+    const rama = ramaDe(repo);
+    if (!rama) return no('HEAD suelto, sin rama');
+    const renglon = { ts: ahora, repo: rutaReal(repo), rama, base: e.base.sha, carril: idDelCarril(adhoc), marca: !!(adhoc && adhoc.riesgoAlto), archivos: contenidosDe(repo, rels) };
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, GUARDADOS), `${JSON.stringify(renglon)}\n`);
+    return { anotado: true };
+  } catch (err) {
+    return no((err && err.code) || primeraLinea(err));
+  }
+}
+
+const esContenido = (x) => x === null || (typeof x === 'string' && ES_SHA.test(x));
+/** Los guardados anotados de ese repo y esa rama, del más nuevo al más viejo. Un renglón que no se lee lo dice el aviso. */
+function guardadosDe(dir, repo, rama) {
+  let texto;
+  try { texto = fs.readFileSync(path.join(dir, GUARDADOS), 'utf8'); } catch (e) {
+    if (e.code === 'ENOENT') return { lista: [] };
+    return { lista: [], aviso: noPudeLeer(GUARDADOS, e) };
+  }
+  const lista = [];
+  let rotos = 0;
+  for (const l of texto.split('\n').filter((x) => x.trim()).slice(-GUARDADOS_MAX).reverse()) {
+    let g;
+    try { g = JSON.parse(l); } catch (_) { rotos += 1; continue; }
+    const forma = g && ES_SHA.test(String(g.base)) && g.archivos && typeof g.archivos === 'object'
+      && Object.values(g.archivos).every((c) => c && esContenido(c.indice) && esContenido(c.disco));
+    if (!forma) { rotos += 1; continue; }
+    if (g.repo === repo && g.rama === rama) lista.push(g);
+  }
+  return { lista, ...(rotos ? { aviso: noPudeLeer(GUARDADOS, { code: `${rotos} renglón(es) que no se leen` }) } : {}) };
+}
+
+/**
+ * Las fotos de «Preparar el pull request» de las corridas cerradas completas de ese repo y esa rama: `[{ arbol, cabeza }]`
+ * (el árbol sin el papeleo y el commit desde el que se tomó). Sólo los cierres posteriores a `desde` (segundos): uno
+ * anterior a la bifurcación no puede tener una punta suya. Un cierre que no se lee lo dice el aviso.
+ */
+function fotosDe(dir, repo, rama, desde) {
+  const carpeta = path.join(dir, CIERRES);
+  let nombres;
+  try { nombres = fs.readdirSync(carpeta).filter((n) => n.endsWith('.json')); } catch (e) {
+    if (e.code === 'ENOENT') return { fotos: [] };
+    return { fotos: [], aviso: noPudeLeer(CIERRES, e) };
+  }
+  const recientes = [];
+  for (const n of nombres) {
+    // uno que se borró mientras se listaba no estaba
+    try { const t = fs.statSync(path.join(carpeta, n)).mtimeMs; if (t >= desde * 1000) recientes.push({ n, t }); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  }
+  const fotos = [];
+  let rotos = 0;
+  for (const { n } of recientes.sort((a, b) => b.t - a.t).slice(0, CIERRES_MAX)) {
+    let m;
+    try { m = JSON.parse(fs.readFileSync(path.join(carpeta, n), 'utf8')).marker; } catch (_) { rotos += 1; continue; }
+    if (!m || !m.cierre || m.cierre.estado !== 'completa' || !Array.isArray(m.prepareCommitHuellas)) continue;
+    for (const h of m.prepareCommitHuellas) {
+      if (h && rutaReal(String(h.repo)) === repo && h.rama === rama && ES_SHA.test(String(h.arbol))) fotos.push({ arbol: h.arbol, cabeza: ES_SHA.test(String(h.cabeza)) ? h.cabeza : null });
+    }
+  }
+  return { fotos, ...(rotos ? { aviso: noPudeLeer(CIERRES, { code: `${rotos} cierre(s) que no se leen` }) } : {}) };
+}
+
+/**
+ * La punta con constancia de la rama: el commit P más nuevo entre M (el punto en común con la rama de integración, sin
+ * incluirlo) y HEAD que desciende de M y tiene su constancia —el árbol de la foto de una corrida cerrada completa, o el
+ * guardado de OTRO carril: cada archivo con el contenido anotado y todo lo cambiado desde su base dentro de la lista, con la
+ * base en M u otra punta válida—. Un merge de `main` después de P lo deja fuera: P ya no desciende del M de hoy. `adhoc`:
+ * el carril que mide, cuyos guardados no cuentan. `{ sha }` (null: no hay) y `aviso` si una constancia no se pudo leer.
+ */
+function puntaConConstancia(repo, M, { adhoc = null, dir = estadoDelArnes() } = {}) {
+  try {
+    const real = rutaReal(repo);
+    const rama = ramaDe(repo);
+    if (!rama) return { sha: null };
+    const commits = git(repo, ['rev-list', '--ancestry-path', `--max-count=${COMMITS_MAX}`, `${M}..HEAD`]).split('\n').filter(Boolean);
+    if (!commits.length) return { sha: null };
+    const propio = idDelCarril(adhoc);
+    const g = guardadosDe(dir, real, rama);
+    const guardados = g.lista.filter((x) => !propio || x.carril !== propio);
+    const f = fotosDe(dir, real, rama, Number(git(repo, ['log', '-1', '--format=%ct', M])) || 0);
+    const aviso = g.aviso || f.aviso;
+    if (!guardados.length && !f.fotos.length) return { sha: null, ...(aviso ? { aviso } : {}) };
+    const enLaRama = new Set(commits);
+    // la foto se toma antes del commit: su punta es su cabeza o uno de los commits que le siguen, no cualquiera de la rama
+    const deLaFoto = new Set();
+    for (const foto of f.fotos) {
+      if (!foto.cabeza || !(foto.cabeza === M || enLaRama.has(foto.cabeza))) continue;
+      const despues = git(repo, ['rev-list', '--ancestry-path', '--reverse', `${foto.cabeza}..HEAD`]).split('\n').filter(Boolean).slice(0, DESDE_LA_FOTO_MAX);
+      for (const sha of [foto.cabeza, ...despues]) {
+        if (sha === M || deLaFoto.has(sha)) continue;
+        const a = require('./save-ok.js').arbolDelCommit(repo, sha);
+        if (a.error) throw new Error(a.error);
+        if (a.arbol === foto.arbol) deLaFoto.add(sha);
+      }
+    }
+    const blobs = new Map();
+    const blobsDe = (sha) => {
+      if (!blobs.has(sha)) {
+        const rels = [...new Set(guardados.flatMap((x) => Object.keys(x.archivos)))];
+        blobs.set(sha, new Map(git(repo, ['-c', 'core.quotepath=false', '--literal-pathspecs', 'ls-tree', '-r', '-z', sha, '--', ...rels])
+          .split('\0').map((l) => /^\d+ blob ([0-9a-f]+)\t(.*)$/s.exec(l)).filter(Boolean).map((m) => [m[2], m[1]])));
+      }
+      return blobs.get(sha);
+    };
+    const validas = new Map();
+    const valida = (sha, vuelta) => {
+      if (deLaFoto.has(sha)) return true;
+      if (validas.has(sha)) return validas.get(sha);
+      const ok = guardados.some((x) => {
+        // lo barato primero: una base que no es M ni de la rama no puede encadenar
+        if (x.base !== M && !(vuelta < ENCADENADAS_MAX && enLaRama.has(x.base))) return false;
+        const ahi = blobsDe(sha);
+        const coincide = Object.entries(x.archivos).every(([r, c]) => {
+          const b = ahi.get(r) || null;
+          return b === c.disco || (!x.marca && b === c.indice);
+        });
+        if (!coincide) return false;
+        const cambiados = git(repo, ['-c', 'core.quotepath=false', 'diff', '-z', '--name-only', '--no-renames', x.base, sha, '--']).split('\0').filter(Boolean);
+        if (cambiados.some((r) => !Object.prototype.hasOwnProperty.call(x.archivos, r))) return false;
+        return x.base === M || valida(x.base, vuelta + 1);
+      });
+      validas.set(sha, ok);
+      return ok;
+    };
+    const P = commits.find((sha) => valida(sha, 0)) || null;
+    return { sha: P, ...(aviso ? { aviso } : {}) };
+  } catch (e) {
+    return { sha: null, aviso: noPudeLeer(repo, e) };
+  }
 }
 
 /**
@@ -595,4 +797,4 @@ function huellaDelCarril(adhoc, medida) {
 const huellaCompleta = (h) => typeof h === 'string' && !h.startsWith('incompleta:');
 
 module.exports = { traerBase, conBase, conBasesAlDia, mismoOrigen, formaDeLaRemota, repoConoce, medirLoPropio, rutasDe, reposQueSeMiden, marcaSinSustento,
-  reposDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, raizDe, ubicar, sumaAlTope, RAMA };
+  anotarGuardadoDelCarril, puntaConConstancia, reposDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, raizDe, ubicar, sumaAlTope, RAMA };
