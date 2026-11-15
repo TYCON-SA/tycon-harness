@@ -283,7 +283,7 @@ const describeGate = (g) => `${oneLine(g.session) || 'una sesión sin nombre'} (
 function freeMemory({ platform = process.platform, run, readFile } = {}) {
   try {
     if (platform === 'darwin') {
-      const text = (run || (() => require('child_process').execFileSync('memory_pressure', ['-Q'], { encoding: 'utf8', timeout: 5000 })))();
+      const text = (run || (() => require('child_process').execFileSync('memory_pressure', ['-Q'], { encoding: 'utf8', timeout: 5000, windowsHide: true })))();
       const m = /memory free percentage:\s*(\d+)\s*%/i.exec(String(text));
       return m ? { pct: Number(m[1]), why: null } : { pct: null, why: 'memory_pressure no dio el porcentaje' };
     }
