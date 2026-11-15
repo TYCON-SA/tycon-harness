@@ -485,11 +485,25 @@ test('T1 SourceSignals_PackError_KeepsFirstErrorInFailure @story-8.268 @ac-1 @ac
   const largo = buscar(carril([d]), () => { throw new PackError([{ archivo: '/x/pack.json', revisor: null, motivo: 'JSON inválido o ilegible: Unexpected token\n  "x": }\nis not valid JSON' }]); });
   assert.strictEqual(largo.fallas[0].split('\n').length, 1, largo.fallas[0]);
   assert.match(largo.fallas[0], /— \/x\/pack\.json · JSON inválido o ilegible: Unexpected token\)$/);
+  // sin motivo, el texto entero: el de un motivo cualquiera sin su « · <motivo>», sin « · » colgando
+  const conMotivo = buscar(carril([d]), () => { throw new PackError([{ archivo: '/x/pack.json', revisor: null, motivo: 'razón' }]); });
   const sinMotivo = buscar(carril([d]), () => { throw new PackError([{ archivo: '/x/pack.json', revisor: null }]); });
-  assert.doesNotMatch(sinMotivo.fallas[0], /undefined/);
+  assert.strictEqual(sinMotivo.fallas[0], conMotivo.fallas[0].replace(' · razón)', ')'));
   const sinArchivo = buscar(carril([d]), () => { throw new PackError([{ revisor: null, motivo: 'sin archivo' }]); });
   assert.match(sinArchivo.fallas[0], PRIMER_RENGLON);
   assert.doesNotMatch(sinArchivo.fallas[0], / — |undefined|sin archivo/);
+});
+
+test('T10 SourceSignals_SinMotivo_TextoCompleto @story-8.283 @ac-19 @ac-20 — el motivo ausente, vacío o de puros espacios: la falla termina en el archivo, sin « · » colgando', (t) => {
+  const d = repo(t);
+  escribir(d, 'src/a.tsx', 'export const a = 1;\n');
+  const { PackError } = require(path.join(SCRIPTS, 'lib', 'packs.js'));
+  const falla = (x) => buscar(carril([d]), () => { throw new PackError([{ archivo: '/x/pack.json', revisor: null, ...x }]); }).fallas[0];
+  const esperado = falla({ motivo: 'razón' }).replace(' · razón)', ')');
+  assert.match(esperado, /— \/x\/pack\.json\)$/);
+  for (const x of [{}, { motivo: undefined }, { motivo: null }, { motivo: '' }, { motivo: '   ' }, { motivo: '\nsólo el segundo renglón' }]) {
+    assert.strictEqual(falla(x), esperado, JSON.stringify(x));
+  }
 });
 
 // ── los textos ──────────────────────────────────────────────────────────────────────────────────────────────────────

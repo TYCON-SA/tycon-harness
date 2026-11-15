@@ -213,9 +213,26 @@ function taparCredencialesConNombre(txt) {
   return out + txt.slice(pos);
 }
 
+// El resto de una ruta. Un espacio adentro cuenta como parte de ella si hasta la PRÓXIMA barra hay puros caracteres de
+// nombre de carpeta, y ese tramo se toma entero de una vez: mirar hacia adelante en cada espacio releía el resto del
+// texto, y con una barra lejos el tiempo crecía al cuadrado. Uno por separador: `/`, `\` o cualquiera de los dos.
+const restoDeRuta = (barra) => `(?:[^\\s'"]|\\s[\\w .()-]*(?=${barra}))*`;
+const RESTO_BARRA = restoDeRuta('/');
+const RESTO_CONTRABARRA = restoDeRuta('\\\\');
+const RESTO_CUALQUIER_BARRA = restoDeRuta('[\\\\/]');
+const TMP_PRIVADA = new RegExp(`/private/tmp/${RESTO_BARRA}`, 'g');
+const TMP = new RegExp(`/tmp/${RESTO_BARRA}`, 'g');
+const TMP_DE_MAC = new RegExp(`/(?:private/)?var/folders/${RESTO_BARRA}`, 'g');
+const CARPETA_DE_PERSONA = new RegExp(`/(?:Users|home)/${RESTO_BARRA}`, 'g');
+const UNIDAD_CONTRABARRA = new RegExp(`[A-Za-z]:\\\\${RESTO_CONTRABARRA}`, 'g');
+const UNIDAD_BARRA = new RegExp(`(?<![A-Za-z0-9])[A-Za-z]:/(?!/)${RESTO_BARRA}`, 'g');
+const CARPETA_DE_RED = new RegExp(`\\\\\\\\[^\\s'"\\\\]+\\\\${RESTO_CONTRABARRA}`, 'g');
+const CASA_BARRA = new RegExp(`~/${RESTO_BARRA}`, 'g');
+const CASA_CONTRABARRA = new RegExp(`~\\\\${RESTO_CONTRABARRA}`, 'g');
+
 // Una carpeta de arriba del sistema no dice nada de la persona ni del cliente; cualquier otra ruta absoluta sí puede.
 const RUTA_DE_SISTEMA = 'usr|bin|sbin|etc|lib|lib64|var|proc|sys|dev|run|boot|System|Library|Applications|nix';
-const RUTA_ABSOLUTA = new RegExp(`(?<![\\w.:/~<>-])/(?!(?:${RUTA_DE_SISTEMA})/)[\\w.@+-]+/(?:[^\\s'"]|\\s(?=[\\w .()-]*/))*`, 'g');
+const RUTA_ABSOLUTA = new RegExp(`(?<![\\w.:/~<>-])/(?!(?:${RUTA_DE_SISTEMA})/)[\\w.@+-]+/${RESTO_BARRA}`, 'g');
 
 // Las formas de una credencial sin nombre adelante (un token de GitHub, una llave de AWS, un JWT): las saben el detector
 // de publicación y el control de claves del commit, y acá se usan las mismas. Se cargan SI ESTÁN, como la carpeta del
@@ -328,7 +345,7 @@ function sinControlesTapandoClaves(txt) {
 function sanear(txt, home) {
   const casa = home || os.homedir();
   const tmp = os.tmpdir();
-  const casaConSuResto = new RegExp(`${casa.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[\\\\/](?:[^\\s'"]|\\s(?=[\\w .()-]*[\\\\/]))*)?`, 'g');
+  const casaConSuResto = new RegExp(`${casa.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[\\\\/]${RESTO_CUALQUIER_BARRA})?`, 'g');
   // de una forma con su nombre adelante (`Password=…`) queda el nombre: dice de qué se trata, y no es el secreto
   const tapar = (m) => { const nombre = /^[A-Za-z][A-Za-z_-]*\s*[=:]\s*/.exec(m); return `${nombre ? nombre[0] : ''}<oculto>`; };
   const taparFormas = (t) => FORMAS_DE_CREDENCIAL.reduce((a, forma) => a.replace(forma, tapar), t);
@@ -356,19 +373,19 @@ function sanear(txt, home) {
     // puros caracteres de nombre de carpeta (`/Users/x/Cliente Grande SA/a.ts`): mejor tapar de más
     // que dejar el nombre del cliente a medias — pero sin tragarse el resto del renglón: una regla
     // que sólo mire «¿hay una barra más adelante?» dejaría que un `PATH=/usr/bin` al final se llevara puesto
-    // todo lo del medio, credenciales y texto legítimo del error incluidos.
-    .replace(/\/private\/tmp\/(?:[^\s'"]|\s(?=[\w .()-]*\/))*/g, '<carpeta temporal>')
-    .replace(/\/tmp\/(?:[^\s'"]|\s(?=[\w .()-]*\/))*/g, '<carpeta temporal>')
-    .replace(/\/(?:private\/)?var\/folders\/(?:[^\s'"]|\s(?=[\w .()-]*\/))*/g, '<carpeta temporal>')
+    // todo lo del medio, credenciales y texto legítimo del error incluidos. El tramo, en `restoDeRuta`.
+    .replace(TMP_PRIVADA, '<carpeta temporal>')
+    .replace(TMP, '<carpeta temporal>')
+    .replace(TMP_DE_MAC, '<carpeta temporal>')
     .split(tmp).join('<carpeta temporal>')
-    .replace(/\/(?:Users|home)\/(?:[^\s'"]|\s(?=[\w .()-]*\/))*/g, '<ruta>')
-    .replace(/[A-Za-z]:\\(?:[^\s'"]|\s(?=[\w .()-]*\\))*/g, '<ruta>')
-    .replace(/(?<![A-Za-z0-9])[A-Za-z]:\/(?!\/)(?:[^\s'"]|\s(?=[\w .()-]*\/))*/g, '<ruta>')
-    .replace(/\\\\[^\s'"\\]+\\(?:[^\s'"]|\s(?=[\w .()-]*\\))*/g, '<ruta>')
+    .replace(CARPETA_DE_PERSONA, '<ruta>')
+    .replace(UNIDAD_CONTRABARRA, '<ruta>')
+    .replace(UNIDAD_BARRA, '<ruta>')
+    .replace(CARPETA_DE_RED, '<ruta>')
     .replace(casaConSuResto, '<ruta>')
     .replace(RUTA_ABSOLUTA, '<ruta>')
-    .replace(/~\/(?:[^\s'"]|\s(?=[\w .()-]*\/))*/g, '<ruta>')
-    .replace(/~\\(?:[^\s'"]|\s(?=[\w .()-]*\\))*/g, '<ruta>')
+    .replace(CASA_BARRA, '<ruta>')
+    .replace(CASA_CONTRABARRA, '<ruta>')
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '<correo>')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<sesión>');
 }

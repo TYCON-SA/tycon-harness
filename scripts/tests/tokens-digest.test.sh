@@ -1302,6 +1302,40 @@ else
   bad "T44 · caracteres de control" "salió: $r44"
 fi
 
+# ──────────────────────────────────────────────────────────────────────────────────────────────
+# T45 Sanear_TextoLargo_Lineal @story-8.283 @ac-15 @ac-16 — una ruta al principio, muchas palabras con espacios y una
+# barra lejos al final: cada espacio dentro de la ruta miraba hasta esa barra y releía el resto del texto, y el tiempo
+# crecía al cuadrado (12 000 → 48 000 caracteres: ~14 veces). Se mide una forma por separador (`/`, `\`, la carpeta de
+# la persona) y la razón entre los dos tamaños, nunca milisegundos: la prueba corre igual en una máquina lenta. De cada
+# tamaño vale la medida más corta de siete: lo que otro proceso le roba a la máquina sólo alarga, nunca acorta.
+# 🔴 Falla con: un fragmento de ruta que vuelve a mirar hacia adelante en cada espacio, en cualquiera de las formas.
+r45="$(node -e '
+const { sanear } = require(process.argv[1]);
+const formas = [["/Users/x/", "/fin"], ["/opt/x/", "/fin"], ["C:\\x\\", "\\fin"], ["~/x/", "/fin"], ["\\\\srv\\c\\", "\\fin"], ["/srv/dev-a/x/", "/fin", "/srv/dev-a"]];
+const texto = ([pre, fin], n) => pre + "palabra ".repeat(Math.floor((n - pre.length - fin.length) / 8)) + fin + " y sigue";
+const vueltas = (s, home, k) => { for (let i = 0; i < k; i++) sanear(s, home); };
+const minima = (s, home, k) => {
+  vueltas(s, home, k); // la de calentamiento no cuenta
+  const ts = [];
+  for (let i = 0; i < 7; i++) { const a = process.hrtime.bigint(); vueltas(s, home, k); ts.push(Number(process.hrtime.bigint() - a)); }
+  return Math.min(...ts);
+};
+for (const f of formas) vueltas(texto(f, 12000), f[2], 3); // calienta todas las formas antes de medir la primera
+const out = formas.map((f) => {
+  const chico = texto(f, 12000), grande = texto(f, 48000);
+  // cada medida repite la limpieza hasta unos 10 ms con el texto chico: lejos de la resolución del reloj
+  const k = Math.max(1, Math.ceil(1e7 / minima(chico, f[2], 1)));
+  const razon = minima(grande, f[2], k) / minima(chico, f[2], k);
+  return { forma: f[0], lineal: razon <= 6, razon: Math.round(razon * 10) / 10, igual: sanear(chico, f[2]) === "<ruta> y sigue" };
+});
+console.log(JSON.stringify(out.filter((x) => !x.lineal || !x.igual)));
+' "$DIGEST" 2>&1)"
+if [ "$r45" = '[]' ]; then
+  ok "T45 · sanear crece lineal con una ruta larga en todas sus formas, y tapa lo mismo que antes"
+else
+  bad "T45 · sanear al cuadrado o con otro resultado" "salió: $r45"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 if [ "$fallos" -eq 0 ]; then echo "✅ tokens-digest: todo verde"; exit 0; fi
 echo "❌ tokens-digest: $fallos rojos"; exit 1

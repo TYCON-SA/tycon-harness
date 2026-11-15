@@ -828,3 +828,29 @@ test('T15 Close_CannotClose_SaysSo @story-8.224 @ac-1 — close con el manifiest
   assert.strictEqual(manifestOf(old.dir).open, true, 'la vieja se cerró aunque su carpeta no se dejaba escribir');
   assert.ok(said2.some((l) => l.includes(nameOf(old.dir)) && /sigue abierta/.test(l)), `closeOlder no dijo que ${nameOf(old.dir)} sigue abierta: ${JSON.stringify(said2)}`);
 });
+
+test('T9 CloseOlder_CopiaFueraDeLaLista_Avisa @story-8.283 @ac-17 @ac-18 — una copia que no está en la lista de esa casa: lo dice por el log y no cierra ninguna; dentro, como siempre', () => {
+  const S = snapshot();
+  const home = makeHome('t9-8283'); const otra = makeHome('t9-8283-otra'); const tree = makeTree('t9-8283', []);
+  const settings = path.join(home, '.claude', 'settings.json');
+  const now = clock();
+  write(settings, '{"v":1}\n');
+  const vieja = S.take({ home, env: {}, tree, reason: 'update', now: now() });
+  write(path.join(otra, '.claude', 'settings.json'), '{"v":1}\n');
+  const ajena = S.take({ home: otra, env: {}, tree, reason: 'update', now: now() });
+  // (a) la copia es de otra casa: el renglón la nombra y dice que no cerró las más viejas; la vieja sigue abierta
+  const said = [];
+  assert.doesNotThrow(() => S.finish(ajena.dir, { home, env: {}, older: true, log: (l) => said.push(l) }));
+  assert.ok(said.some((l) => l.includes(nameOf(ajena.dir)) && /no está en la lista/.test(l) && /no cerré ninguna más vieja/.test(l)), `closeOlder no avisó: ${JSON.stringify(said)}`);
+  assert.strictEqual(manifestOf(vieja.dir).open, true);
+  // (b) sin log, sale igual y sin error
+  const ajena2 = S.take({ home: otra, env: {}, tree, reason: 'update', force: true, now: now() });
+  assert.doesNotThrow(() => S.finish(ajena2.dir, { home, env: {}, older: true }));
+  // (c) en la lista: cierra la vieja abierta y no dice nada de lista
+  write(settings, '{"v":2}\n');
+  const nueva = S.take({ home, env: {}, tree, reason: 'startup', force: true, now: now() });
+  const said3 = [];
+  S.finish(nueva.dir, { home, env: {}, older: true, log: (l) => said3.push(l) });
+  assert.strictEqual(manifestOf(vieja.dir).open, false);
+  assert.ok(!said3.some((l) => /no está en la lista/.test(l)), JSON.stringify(said3));
+});
