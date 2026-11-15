@@ -2069,9 +2069,21 @@ function namedSession(opts, w) {
   return { home, sid, s, sessions };
 }
 
-// Un verbo de `claude` sobre una sesión de fondo, por el lanzador, y el motivo si falló.
-const launchVerb = (launcher, verb, id, opts) => spawnSync(launcher.bin, launchArgv(launcher, [verb, id]), { encoding: 'utf8', timeout: opts.timeoutMs || LAUNCH_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-const launchWhy = (r) => (r.error ? (r.error.code || r.error.message) : (`${r.stderr || ''}\n${r.stdout || ''}`.split('\n').map((l) => l.trim()).find(Boolean) || `salió con código ${r.status}`));
+/**
+ * Los verbos de `claude` sobre la sesión de fondo `id`, por el lanzador de `close` y `stop`: `{ error }` si no hay
+ * lanzador, o `{ run(verb) }`, que devuelve `null` si salió bien y el motivo si falló.
+ */
+function jobVerbs(opts, id, what) {
+  const launcher = resolveLauncher(opts, what);
+  if (launcher.error) return { error: launcher.error };
+  const why = (r) => (r.error ? (r.error.code || r.error.message) : (`${r.stderr || ''}\n${r.stdout || ''}`.split('\n').map((l) => l.trim()).find(Boolean) || `salió con código ${r.status}`));
+  return {
+    run: (verb) => {
+      const r = spawnSync(launcher.bin, launchArgv(launcher, [verb, id]), { encoding: 'utf8', timeout: opts.timeoutMs || LAUNCH_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+      return r.error || r.status !== 0 ? why(r) : null;
+    },
+  };
+}
 // el id va como argumento del lanzador: uno que empieza con guion se leería como una opción
 const JOB_ID_RE = /^\w[\w-]*$/;
 // el ref que muestra ListAgents entre corchetes: seis caracteres hexadecimales
@@ -2117,14 +2129,14 @@ function close(opts = {}) {
   }
   if (!/^(bg|background)$/.test(String(s.kind))) return { ok: true, closed: false, message: `«${name}» quedó limpia. Es una pestaña interactiva: la cierra la persona.` };
   if (!JOB_ID_RE.test(String(s.jobId || ''))) return no(`«${name}» quedó limpia, pero no anotó un id de fondo válido: no sé cómo cerrarla. Mirá el id con claude agents.`);
-  const launcher = resolveLauncher(opts, 'no la cerré');
-  if (launcher.error) return no(`«${name}» quedó limpia, pero ${launcher.error}`);
+  const job = jobVerbs(opts, s.jobId, 'no la cerré');
+  if (job.error) return no(`«${name}» quedó limpia, pero ${job.error}`);
   if (s.alive) {
-    const stop = launchVerb(launcher, 'stop', s.jobId, opts);
-    if (stop.error || stop.status !== 0) return no(`«${name}» quedó limpia, pero no la pude parar (${launchWhy(stop)}): no la cerré.`);
+    const stopFailed = job.run('stop');
+    if (stopFailed) return no(`«${name}» quedó limpia, pero no la pude parar (${stopFailed}): no la cerré.`);
   }
-  const rm = launchVerb(launcher, 'rm', s.jobId, opts);
-  if (rm.error || rm.status !== 0) return no(`«${name}» quedó parada, pero no la pude borrar (${launchWhy(rm)}).`);
+  const rmFailed = job.run('rm');
+  if (rmFailed) return no(`«${name}» quedó parada, pero no la pude borrar (${rmFailed}).`);
   const now = opts.now == null ? Date.now() : Number(opts.now);
   // su renglón entre las que abrió la coordinadora: sin poder sacarlo, otra sesión con el mismo nombre y carpeta no lo
   // hereda (la reconoce también por la hora de arranque)
@@ -2157,10 +2169,10 @@ function stop(opts = {}) {
   if (!/^(bg|background)$/.test(String(s.kind))) return no(`«${name}» es una pestaña interactiva: la para la persona; no paré nada.`);
   if (!s.alive) return no(`«${name}» ya no está viva: no paré nada.`);
   if (!JOB_ID_RE.test(String(s.jobId || ''))) return no(`«${name}» no anotó un id de fondo válido (mirá el id con claude agents): no paré nada.`);
-  const launcher = resolveLauncher(opts, 'no paré nada');
-  if (launcher.error) return no(launcher.error);
-  const r = launchVerb(launcher, 'stop', s.jobId, opts);
-  if (r.error || r.status !== 0) return no(`«${name}»: no la pude parar (${launchWhy(r)}), no paré nada.`);
+  const job = jobVerbs(opts, s.jobId, 'no paré nada');
+  if (job.error) return no(job.error);
+  const failed = job.run('stop');
+  if (failed) return no(`«${name}»: no la pude parar (${failed}), no paré nada.`);
   return { ok: true, message: `paré ${name} (${s.jobId}); se retoma con claude respawn ${s.jobId}` };
 }
 
