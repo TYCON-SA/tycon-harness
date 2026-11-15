@@ -144,9 +144,12 @@ mode or if the coordinator is in plan mode (the new session would wait for someo
 from the coordinator's conversation, which records it with each of the person's messages. **Known limit:** if someone
 changes its mode with Shift+Tab and sends no message afterwards, `open` copies the previous mode. A session opened by
 hand, or before this change, that got stuck like that, the coordinator stops and relaunches:
-`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>`. To stop and
-remove a background session, use `claude stop <id>` and `claude rm <id>`, with the id that `claude agents` shows: with
-the name they answer that they cannot find it (measured on 2026-11-01).
+`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>`. To stop a
+background session, use `coordination.js stop --name <name>`: it looks up the background id that the session recorded
+and runs `claude stop` with it. It removes nothing, and the session is resumed with `claude respawn <id>`. By hand,
+`claude stop <id>` and `claude rm <id>` need the id that `claude agents` shows: neither the name nor the ref that
+ListAgents shows (the six characters in brackets) works, and they answer that they cannot find it (measured on
+2026-11-01 and 2026-11-15).
 
 `open` passes the task to the launcher as is, without reviewing it: nothing it says signs anything (see «The owner's
 signatures»).
@@ -180,6 +183,9 @@ as «no sé» (I don't know), and it does not close either. With everything clea
 with the session's id.
 
 **An interactive session is not closed.** It is checked all the same and it says so: a person closes that tab.
+
+**Stopping is not closing.** `coordination.js stop --name <name>` stops a background session without checking whether
+it is clean and without removing it; the same rule on who can. It is resumed with `claude respawn <id>`.
 
 **Limits.** It looks at the folder the session is in now: it does not see another worktree the session left behind, nor
 what was kept with `git stash`. A branch deleted without merging is no longer seen. A branch squashed into one commit

@@ -40,7 +40,10 @@ function temporal(t, prefijo) {
  */
 function corrida(t, { titulo = TITULO, historia = true, story = '9.99', extraHistoria = [], criterios = null } = {}) {
   const casa = temporal(t, 'sigq-casa-');
-  const repo = temporal(t, 'sigq-repo-');
+  // el repo, solo en una carpeta propia: la matriz de criterios revisa los repos vecinos por evidencia de la historia, y
+  // suelto en la carpeta temporal de la máquina revisaría miles de carpetas ajenas (unos 15 s por pregunta)
+  const repo = path.join(temporal(t, 'sigq-repo-'), 'repo');
+  fs.mkdirSync(repo);
   const estado = path.join(casa, '.claude', '.tycon-pipeline');
   fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
   fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
