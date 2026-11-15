@@ -37,7 +37,9 @@
 //
 // LISTO Y SIN ENTRAR, en GitHub: un pedido limpio, no borrador, sin auto-merge, fuera de la cola y sin caída registrada,
 // igual más de 10 minutos, sale con el comando para encolarlo: nadie lo va a mergear. Lo mismo le llega a la coordinadora en
-// cada turno (`coordinatorLines`, desde scripts/tools/coordination.js), de la foto y sin salir a la red.
+// cada turno (`coordinatorLines`, desde scripts/tools/coordination.js), de la foto y sin salir a la red. Con una foto de
+// más de 10 minutos (en la coordinadora, o en el arranque cuando la lectura en vivo llega a su tope) no se afirma que
+// sigue fuera de la cola: pudo entrar después, y con cola GitHub no trae el auto-merge. Se dice de cuándo es la lectura.
 //
 // LOS PEDIDOS DE LA PERSONA, para /office: la lectura de fondo deja en `own-prs.json` los pedidos abiertos cuyo autor es la
 // persona, de todos sus repos, con una consulta por lugar: una búsqueda en GitHub y una por cada organización de Azure de los
@@ -248,8 +250,10 @@ const comandoParaEncolar = (repo, n, id) => `gh pr merge ${Number(n)} -R ${repo.
  * Los pedidos listos que nadie encoló, de las lecturas de cada repo: `{ trabados, estado }`. `estado` trae el reloj de
  * cada uno (`<repo>#<n>`), leído de `previo`: con otra punta o recién visto, vuelve a cero. Una lectura fallida conserva
  * los relojes de ese repo, y «todavía no calculado» el de ese pedido: no son un cambio de estado.
+ * `lecturaDeHace` (`{ <repo>: ms }`): los repos leídos de una foto de más de FOTO_MS. De ésos no se afirma que el pedido
+ * sigue fuera de la cola: pudo entrar después de la foto, y en un repo con cola GitHub no trae el auto-merge.
  */
-function verdesSinEntrar(repos, leidas, previo, ahora, minutos = verdeMin()) {
+function verdesSinEntrar(repos, leidas, previo, ahora, minutos = verdeMin(), { lecturaDeHace = {} } = {}) {
   const trabados = [];
   const estado = {};
   for (const repo of repos) {
@@ -272,8 +276,11 @@ function verdesSinEntrar(repos, leidas, previo, ahora, minutos = verdeMin()) {
       const ms = ahora - Date.parse(desde);
       if (ms < minutos * 60000) continue;
       const creado = Date.parse(p.createdAt);
+      const vieja = lecturaDeHace[base];
       trabados.push({ ms, creado: Number.isFinite(creado) ? creado : Infinity, number: p.number,
-        linea: `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) listo y sin auto-merge hace ${haceDe(ms)}, fuera de la cola: nadie lo va a mergear — encolalo con ${comandoParaEncolar(repo, p.number, p.nodeId)} · ${limpio(p.sourceBranch, 120)}` });
+        linea: Number.isFinite(vieja) && vieja >= FOTO_MS
+          ? `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) listo hace ${haceDe(ms)} según la lectura de hace ${haceDe(vieja)}: no sé si ya entró a la cola; la lectura nueva corre de fondo. Si sigue afuera, se encola con ${comandoParaEncolar(repo, p.number, p.nodeId)} · ${limpio(p.sourceBranch, 120)}`
+          : `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) listo y sin auto-merge hace ${haceDe(ms)}, fuera de la cola: nadie lo va a mergear — encolalo con ${comandoParaEncolar(repo, p.number, p.nodeId)} · ${limpio(p.sourceBranch, 120)}` });
     }
   }
   return { trabados, estado };
@@ -452,7 +459,9 @@ function coordinatorLines({ home = os.homedir(), tree = path.resolve(process.env
   const sinLeer = declarados.repos.filter((r) => r.platform === 'github' && !(foto.lecturas[claveDe(r)] && foto.lecturas[claveDe(r)].ok)).map((r) => limpio(r.repo, 60));
   const relojArchivo = path.join(dir, 'green-prs.json');
   const previo = leerJson(relojArchivo) || {};
-  const { trabados, estado } = verdesSinEntrar(declarados.repos, foto.lecturas, previo, now);
+  // con la foto de más de FOTO_MS, ninguno se da por fuera de la cola (la lectura nueva ya se lanzó)
+  const lecturaDeHace = edad >= FOTO_MS ? Object.fromEntries(declarados.repos.map((r) => [claveDe(r), edad])) : {};
+  const { trabados, estado } = verdesSinEntrar(declarados.repos, foto.lecturas, previo, now, verdeMin(), { lecturaDeHace });
   let problem = sinLeer.length ? `los pedidos listos sin encolar: la última lectura no pudo leer ${sinLeer.join(', ')}` : null;
   try { escribirJson(relojArchivo, estado); } catch (e) { problem = `no pude guardar desde cuándo está verde cada pedido (${e.code || e.message})`; }
   trabados.sort((a, b) => b.ms - a.ms || a.creado - b.creado || a.number - b.number);
@@ -485,10 +494,15 @@ async function main() {
   // lo que no llegó a leerse sigue de fondo; mientras tanto vale la foto anterior, con su edad, si tiene esa lectura
   const deFondo = incompleta && lanzarRefresco(tree, dir);
   let fotoVieja = null;
+  const lecturaDeHace = {};
   for (const repo of declarados.repos) {
     const k = claveDe(repo);
     const vieja = anterior && anterior.lecturas[k];
-    if (esTope(leidas[k]) && vieja && vieja.ok && ahora - Date.parse(anterior.at) < 24 * HORA_MS) { leidas[k] = vieja; fotoVieja = anterior.at; }
+    if (esTope(leidas[k]) && vieja && vieja.ok && ahora - Date.parse(anterior.at) < 24 * HORA_MS) {
+      leidas[k] = vieja;
+      fotoVieja = anterior.at;
+      lecturaDeHace[k] = ahora - Date.parse(anterior.at);
+    }
   }
   const horas = (() => { const v = Number(readVar('TYCON_STUCK_PR_HOURS')); return Number.isFinite(v) && v > 0 ? v : 1; })();
 
@@ -542,7 +556,7 @@ async function main() {
     }
   }
   // los listos que nadie encoló, con su propio reloj en el mismo estado
-  const verdes = verdesSinEntrar(declarados.repos, leidas, previo, ahora);
+  const verdes = verdesSinEntrar(declarados.repos, leidas, previo, ahora, verdeMin(), { lecturaDeHace });
   Object.assign(estado, verdes.estado);
   trabados.push(...verdes.trabados);
   // los que quedaron fuera de la cola después de un empuje: lo que hizo la lectura de fondo, o por qué no los re-encola

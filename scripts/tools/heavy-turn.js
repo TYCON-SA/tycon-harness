@@ -17,6 +17,11 @@
  *   release [--process <pid>]                   suelta el turno si es de ese proceso; el de otro no lo toca
  *   holder [--json]                         quién lo tiene ahora, o nadie
  *
+ * Un portón que no toma el turno (acotado, de menos suites que el corte) igual borra la espera anotada de su sesión al
+ * arrancar (`gateStarted`) y, con coordinadora, se anota en `<estado>/coordination/gates/<pid>.json` mientras corre: la
+ * fila de la coordinadora lo ve (`gatesRunning`) y no da el «arrancá» encima. Se borra al terminar (`gateEnded`); el de
+ * un proceso que ya no vive se descarta al leer.
+ *
  * Sin coordinadora designada y viva (la nube, la CI, una máquina sin coordinar) no se toma nada y todo corre como
  * siempre: el mismo criterio que el turno del pase (`adversarialTurn` de coordination.js). Un turno cuyo proceso ya no
  * vive (una suite cortada con kill -9), o de más de tres horas, se libera solo. El registro vive en `<estado>/coordination/suite-turn.json`.
@@ -189,6 +194,58 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
   return { ok: false, taken: false, message: `No pude tomar el turno de las ejecuciones grandes (${file} vuelve a aparecer): no la corrí.` };
 }
 
+const gatesDir = (home) => path.join(stateDir(home), 'coordination', 'gates');
+
+/**
+ * Un portón que corre sin el turno: borra la espera de su sesión y, con coordinadora, se anota. `{ file, error }`: `file`
+ * es lo anotado (null sin coordinadora); `error`, por qué no se pudo anotar. No poder anotarlo no frena el portón, pero
+ * se dice: sin la anotación, la fila pediría el «arrancá» encima de él.
+ */
+function gateStarted({ home = require('os').homedir(), env = process.env, arnes, pid = process.pid, what, now = Date.now() } = {}) {
+  const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
+  clearWait(home, sid);
+  if (!coordinator({ home, env, arnes })) return { file: null, error: null };
+  const file = path.join(gatesDir(home), `${pid}.json`);
+  // entera y de una, como el turno: escrita directo, se vería vacía mientras se escribe
+  const tmp = `${file}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify({ pid, sid, session: sessionName(home, sid), what: oneLine(what) || 'portón acotado', at: now }));
+    fs.renameSync(tmp, file);
+    return { file, error: null };
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch { /* no quedó */ }
+    return { file: null, error: e.code || oneLine(e.message) };
+  }
+}
+
+/** Borra la anotación del portón de `pid`. */
+function gateEnded({ home = require('os').homedir(), pid = process.pid } = {}) {
+  try { fs.unlinkSync(path.join(gatesDir(home), `${pid}.json`)); } catch { /* no estaba */ }
+}
+
+/**
+ * Los portones sin turno que corren: `[{ pid, sid, session, what, at }]`, del más viejo al más nuevo. Los de un proceso
+ * que ya no vive, o de más de TURN_MAX_MS, se descartan (y se borran). Con `problems`, la carpeta que no se lee se anota.
+ */
+function gatesRunning({ home = require('os').homedir(), now = Date.now(), problems = null } = {}) {
+  const dir = gatesDir(home);
+  let names;
+  try { names = fs.readdirSync(dir).filter((n) => /^\d+\.json$/.test(n)); } catch (e) {
+    if (e.code !== 'ENOENT' && problems) problems.push(`los portones en curso (${dir}) no se pueden leer (${e.code || oneLine(e.message)})`);
+    return [];
+  }
+  const out = [];
+  for (const n of names) {
+    const t = readTurn(path.join(dir, n));
+    if (inForce(t, now)) out.push(t);
+    // una que no se pudo leer de un proceso vivo puede estar a medio publicar: se deja, y la próxima lectura la ve
+    else if (!t && alive(Number(n.split('.')[0]))) continue;
+    else { try { fs.unlinkSync(path.join(dir, n)); } catch { /* otro lo borró */ } }
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
+
 /** Suelta el turno si es de `pid`. El de otro proceso no se toca. */
 function release({ home = require('os').homedir(), pid = process.pid } = {}) {
   const file = turnFile(home);
@@ -220,4 +277,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { take, release, holder, describe, turnFile, BUSY_EXIT };
+module.exports = { take, release, holder, describe, turnFile, clearWait, gateStarted, gateEnded, gatesRunning, BUSY_EXIT };
