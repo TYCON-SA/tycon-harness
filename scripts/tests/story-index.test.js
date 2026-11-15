@@ -488,3 +488,92 @@ test('StoryIndex_OldEntriesParsesLongDashRunsInLinearTime @story-8.226', () => {
   assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 2000, 'tardó demasiado: el patrón retrocede');
   assert.deepEqual(SI.oldEntries('  8-17-1-foo: done  # nota').map((e) => e.ids.map((i) => i.id)), [['8.17', '8.17.1']]);
 });
+
+// ── el índice no calla sus fallas: número repetido, carpeta que falta o no se lee, título en bloque ──────
+
+test('StoryIndex_MismoNumeroOtroNombre_Avisa (T1) @story-8.282 @ac-1 @ac-27', () => {
+  const dir = juguete('t1-repetido');
+  fs.writeFileSync(path.join(dir, 'specs', 'story-1.2-otra.md'), historia(1, '1.2', 'Otra con el mismo número', 'draft'));
+  const r = correr(['--repo', dir, '--write']);
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /el número 1\.2 está repetido: specs\/story-1\.2-alfa\.md, specs\/story-1\.2-otra\.md/);
+  assert.ok(!fs.existsSync(path.join(dir, EPICS)) && !fs.existsSync(path.join(dir, SPRINT)), 'no escribe nada');
+  // el repo sano da lo mismo que hoy
+  const sano = juguete('t1-sano');
+  const w = correr(['--repo', sano, '--write']);
+  assert.strictEqual(w.code, 0, w.out);
+  assert.strictEqual(leer(sano, EPICS), esperado('expected-epics.md'));
+  assert.strictEqual(leer(sano, SPRINT), esperado('expected-sprint-status.yaml'));
+});
+
+test('StoryIndex_SinSpecs_CreaLaCarpeta (T2) @story-8.282 @ac-2', () => {
+  const dir = tmp('t2-sin-specs');
+  const r = correr(['--repo', dir, '--write']);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.ok(fs.existsSync(path.join(dir, EPICS)) && fs.existsSync(path.join(dir, SPRINT)), 'escribió los dos');
+  assert.match(leer(dir, SPRINT), /^development_status:$/m);
+});
+
+test('StoryIndex_EpicaConEspacioFinal_LaReconoce (T3) @story-8.282 @ac-3', () => {
+  const dir = tmp('t3-intro');
+  fs.mkdirSync(path.join(dir, 'specs'));
+  fs.writeFileSync(path.join(dir, 'specs', 'epics-intro.md'), '# Intro\n\n## Épica 8 — El título \nLa prosa.\n\n## Épica 9 \nOtra.\n');
+  const intro = require(TOOL).readIntro(dir);
+  assert.deepStrictEqual(intro.get('8'), { title: 'El título', body: 'La prosa.' });
+  assert.deepStrictEqual(intro.get('9'), { title: '', body: 'Otra.' });
+});
+
+test('StoryIndex_CarpetaIlegible_NoEsAlDia (T4) @story-8.282 @ac-4 @ac-2', { skip: process.platform === 'win32' || process.getuid?.() === 0 ? 'los permisos de archivo no frenan en Windows ni como root' : false }, () => {
+  const dir = juguete('t4-ilegible');
+  const specs = path.join(dir, 'specs');
+  fs.chmodSync(specs, 0o000);
+  try {
+    for (const modo of ['--write', '--check']) {
+      const r = correr(['--repo', dir, modo]);
+      assert.strictEqual(r.code, 2, `${modo}: ${r.out}`);
+      assert.match(r.out, /no se puede leer la carpeta specs \(EACCES\)/, modo);
+      assert.doesNotMatch(r.out, /al día/, modo);
+    }
+    // los otros caminos que leen las historias también frenan (la regeneración en main usa build; la migración, collect)
+    const SI = require(TOOL);
+    assert.match(SI.build(dir).problems.join('\n'), /no se puede leer la carpeta specs/);
+    assert.match(SI.collect(dir).problems.join('\n'), /no se puede leer la carpeta specs/);
+    const m = correr(['--repo', dir, '--migrate', '--report', path.join(dir, 'informe.md')]);
+    assert.strictEqual(m.code, 1, m.out);
+    assert.ok(!fs.existsSync(path.join(dir, 'informe.md')), 'no migró');
+  } finally { fs.chmodSync(specs, 0o755); }
+  assert.ok(!fs.existsSync(path.join(dir, EPICS)) && !fs.existsSync(path.join(dir, SPRINT)), 'no escribió ningún índice');
+  // una carpeta que no existe sigue siendo «sin historias» y se escribe
+  const vacio = tmp('t4-sin-carpeta');
+  assert.strictEqual(correr(['--repo', vacio, '--write']).code, 0);
+});
+
+test('StoryDiscovery_TituloEnBloque_LoLee (T5) @story-8.282 @ac-5', () => {
+  const D = require(path.join(REPO, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js'));
+  const dir = tmp('t5-bloque');
+  const probar = (cabecera) => {
+    const f = path.join(dir, 'story-9.1-x.md');
+    fs.writeFileSync(f, `---\nepic: 9\nstory: "9.1"\n${cabecera}\nstatus: draft\n---\n\n# x\n`);
+    return D.probeStoryFile(f).title;
+  };
+  assert.strictEqual(probar('title: |\n  El título en bloque'), 'El título en bloque');
+  assert.strictEqual(probar('title: |-\n  Dos\n  renglones'), 'Dos\nrenglones');
+  assert.strictEqual(probar('title: >\n  Plegado\n  en uno'), 'Plegado en uno');
+  assert.strictEqual(probar('title: >-\n  Otro'), 'Otro');
+  // un indicador de bloque sin renglones con sangría no tiene valor: null, no «|»
+  assert.strictEqual(probar('title: |'), null);
+  assert.strictEqual(probar('title: "En línea"'), 'En línea', 'el título en línea, como hoy');
+  // un renglón vacío es parte del bloque: no lo corta (el pase de la 8.282 A lo confirmó)
+  assert.strictEqual(probar('title: |\n  Uno\n\n  Dos'), 'Uno\n\nDos');
+  assert.strictEqual(probar('title: >\n  primera parte\n\n  segunda parte'), 'primera parte\nsegunda parte');
+  assert.strictEqual(probar('title: |\n\n  texto'), 'texto', 'un renglón vacío antes del texto no lo vacía');
+  // el indicador con comentario o con su sangría explícita sigue siendo un bloque
+  assert.strictEqual(probar('title: | # comentario\n  uno'), 'uno');
+  assert.strictEqual(probar('title: |2\n  uno'), 'uno');
+  // entre comillas no es un indicador: es el texto
+  assert.strictEqual(probar('title: "|"'), '|');
+  // sólo el título se lee en bloque: las demás claves, como las leen los otros lectores del arnés
+  const f = path.join(dir, 'story-9.2-y.md');
+  fs.writeFileSync(f, '---\nepic: 9\nstory: "9.2"\ntitle: x\nstatus: >-\n  draft\n---\n');
+  assert.strictEqual(D.probeStoryFile(f).status, '>-');
+});

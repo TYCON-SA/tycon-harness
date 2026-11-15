@@ -144,7 +144,8 @@ function agentes({ cazar = () => [], verificar = () => ({ verdict: 'REFUTED', re
     return { lens: m ? m[1] : '?', findings: cazar(m ? m[1] : '?') };
   };
 }
-const argsDelPlan = (extra = {}) => ({ modo: 'plan', repo: '/tmp/repo-de-la-prueba', storyTexto: '# Story 9.91\n\nAC 1. el README dice x.\n', planTexto: PLAN, model: 'opus', runDir: '/tmp/repo-de-la-prueba/run', pedido: 'c0ffee12c0ffee12', ...extra });
+// un verificador por hallazgo, como al escribirse esta suite (la fábrica del guion es uno por lente desde la 8.282)
+const argsDelPlan = (extra = {}) => ({ modo: 'plan', verifiers: 'per_finding', repo: '/tmp/repo-de-la-prueba', storyTexto: '# Story 9.91\n\nAC 1. el README dice x.\n', planTexto: PLAN, model: 'opus', runDir: '/tmp/repo-de-la-prueba/run', pedido: 'c0ffee12c0ffee12', ...extra });
 
 // ════════════════════════════════════════════ Qué es delicado ═══════════════════════════════════════════════════════
 
