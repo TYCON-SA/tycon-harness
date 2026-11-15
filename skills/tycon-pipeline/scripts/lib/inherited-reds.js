@@ -8,15 +8,18 @@
  * 1. LA FOTO NOCTURNA. La validación de cada pedido juzga contra la última foto nocturna (scripts/ci/pr-verdict.js): un
  *    rojo que ya estaba en la foto avisa, y sólo frena lo nuevo. La puerta pasa su resumen por ese mismo juez, con la
  *    foto que viaja en el árbol que mide (scripts/controls-bench/ultimo-suites.json): la regla es una sola. Se compara
- *    por suite, como el juez: un caso nuevo dentro de una suite que ya estaba roja pasa como heredado. La foto vale tal
- *    como llegó en el árbol (sin cambios sin commitear) y si es de esa mañana (36 horas).
+ *    por caso cuando la foto y el resumen traen los casos de la suite (`casos` de la foto, `fallas[].casos` del
+ *    resumen): un caso nuevo dentro de una suite que ya estaba roja la deja roja. Sin los casos de algún lado (una foto
+ *    anterior a ese campo, una lista en su tope), por suite, y se dice. La foto vale tal como llegó en el árbol (sin
+ *    cambios sin commitear) y si es de esa mañana (36 horas).
  *
  * 2. LA BASE, EN EL MOMENTO. Lo que la foto no perdonó —o todo, si no hay foto o no sirve— se corre
  *    solo sobre la base, sin el cambio: la bifurcación de HEAD con `origin/main`, armada como un árbol aparte
  *    (`git worktree add --detach`) una vez por corrida y borrada al terminar. Cada suite corre con el mismo corredor de
  *    la puerta (run-suites-json.js --suite) dentro de scripts/ci/run-capped.js, que la corta entera al llegar al tope.
  *    El veredicto sale de la marca del tope y de la salida, nada más: la marca → «no medido: pasó el tope»; salida 0 →
- *    no heredada; salida 1 con la suite en las fallas del resumen de la base → heredada; cualquier otra cosa → «no
+ *    no heredada; salida 1 con la suite en las fallas del resumen de la base → heredada, salvo que los casos de ahora
+ *    traigan uno que la base no tiene (con las dos listas completas): ése la deja no heredada; cualquier otra cosa → «no
  *    medido». Nadie la declara a mano: lo decide la medición. Una sola corrida alcanza: una suite de azar que da rojo en
  *    la base queda heredada acá, y la validación del pedido la sigue juzgando contra la foto.
  *    No se mide (cada roja dice «no medido» y su motivo): sin `origin/main`; con el árbol igual a la base y sin cambios;
@@ -73,8 +76,36 @@ function salidaDelJuez(texto) {
   return JSON.parse(texto.slice(0, fin + 2));
 }
 
-/** El juez de la foto: `{ ok: true, snap, viejos }` con los nombres que la foto ya traía rojos, o `{ ok: false, line }`. */
-function porLaFoto(tree, rojos) {
+// Cuántos casos trae failedCases de run-suites-json.js (su MAX_CASES): con la lista llena, faltan casos y la suite se
+// juzga entera. Una prueba ata los dos números (inherited-reds.test.js, Inherited_NoCaseNames_BySuiteAsToday).
+const TOPE_DE_CASOS = 40;
+// El nombre de caso de la validación de los pedidos, del repo de este guion (como el corte por tope): sin él, por suite,
+// y el motivo lo dice.
+const RAIZ_DEL_REPO = path.resolve(__dirname, '..', '..', '..', '..');
+const juezDelRepo = () => { try { return require(path.join(RAIZ_DEL_REPO, 'scripts', 'ci', 'pr-verdict.js')); } catch (_) { return null; } };
+// La foto guarda sus casos saneados (suites-report.js, con `sanear` de tokens-digest.js): los del portón pasan por el mismo
+// saneado, para que un caso con una ruta de la máquina se llame igual en los dos lados. Sin él, tal cual.
+const saneado = (() => {
+  try { return require(path.join(RAIZ_DEL_REPO, 'scripts', 'metrics', 'tokens-digest.js')).sanear; } catch (_) { return (s) => s; }
+})();
+
+/** Los casos del portón por nombre de suite, y los que llegaron al tope (incompletos). */
+function casosDelPorton(fallas) {
+  const casos = {};
+  const incompletos = [];
+  for (const f of fallas) {
+    if (!f || !Array.isArray(f.casos) || !f.casos.length) continue;
+    casos[nombre(f.ruta)] = f.casos.map((c) => saneado(String(c)));
+    if (f.casos.length >= TOPE_DE_CASOS) incompletos.push(nombre(f.ruta));
+  }
+  return { casos, incompletos };
+}
+
+/**
+ * El juez de la foto: `{ ok: true, snap, viejos, porCaso, avisos }` con los nombres que la foto ya traía rojos (y, por
+ * suite, los casos nuevos y los heredados), o `{ ok: false, line }`.
+ */
+function porLaFoto(tree, rojos, fallas = []) {
   const judge = path.join(tree, JUDGE);
   const snapshot = path.join(tree, SNAPSHOT);
   const tocada = spawnSync('git', ['-C', tree, 'status', '--porcelain', '--', SNAPSHOT], { windowsHide: true, encoding: 'utf8' });
@@ -91,20 +122,43 @@ function porLaFoto(tree, rojos) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heredados-'));
   try {
     const actual = path.join(dir, 'suites.json');
-    fs.writeFileSync(actual, JSON.stringify({ kind: 'bash-tests', ts: new Date().toISOString(), failures: rojos }));
+    const { casos, incompletos } = casosDelPorton(fallas);
+    fs.writeFileSync(actual, JSON.stringify({ kind: 'bash-tests', ts: new Date().toISOString(), failures: rojos, casos, casos_incompletos: incompletos }));
     const r = spawnSync(process.execPath, [judge, '--tcg', tree, '--suites-actual', actual, '--suites-snapshot', snapshot, '--json'],
       { windowsHide: true, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
     if (r.status !== 0 && r.status !== 1) {
       const ultima = String(r.stdout || r.stderr || '').trim().split('\n').pop();
       return { ok: false, line: `el juez de los pedidos no pudo decidir (${ultima || `salió ${r.status}`}): no se perdona nada` };
     }
-    const viejos = new Set(salidaDelJuez(r.stdout).viejos.map((t) => t.replace(/^suite /, '').replace(/ \(.*\)$/, '')));
-    return { ok: true, snap, viejos };
+    const juez = salidaDelJuez(r.stdout);
+    const viejos = new Set(juez.viejos.map((t) => t.replace(/^suite /, '').replace(/ \(.*\)$/, '')));
+    // un juez anterior a la comparación por caso no trae `porCaso`: todo queda por suite, como antes, y se dice
+    const avisos = (juez.avisos || []).filter((a) => /se juzgó por suite/.test(a));
+    if (!juez.porCaso) avisos.push('suites: se juzgó por suite — el juez de los pedidos del árbol no compara por caso');
+    return { ok: true, snap, viejos, porCaso: juez.porCaso || {}, avisos };
   } catch (e) {
     return { ok: false, line: `no pude leer lo que decidió el juez de los pedidos (${e.message}): no se perdona nada` };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Los casos de la falla de ahora que la de la base no tiene (por nombre, con el juez de los pedidos): `{ nuevos }`, o
+ * `{ nuevos: null, porque }` si no se puede comparar (el juez no cargó, o un lado no trae su lista completa): entonces
+ * se juzga por suite.
+ */
+function casosNuevos(ahora, enLaBase) {
+  const juez = juezDelRepo();
+  if (!juez || typeof juez.nombreDeCaso !== 'function') return { nuevos: null, porque: 'no cargó el juez de los pedidos (scripts/ci/pr-verdict.js)' };
+  const lista = (f) => (f && Array.isArray(f.casos) && f.casos.length && f.casos.length < TOPE_DE_CASOS ? f.casos : null);
+  const a = lista(ahora);
+  const b = lista(enLaBase);
+  if (!a || !b) return { nuevos: null, porque: 'falta la lista de casos de un lado' };
+  // los dos lados con el mismo saneado: el motivo, que nombra los casos nuevos, no publica una ruta de la máquina
+  const nombrar = (c) => juez.nombreDeCaso(saneado(String(c)));
+  const deLaBase = new Set(b.map(nombrar));
+  return { nuevos: [...new Set(a.map(nombrar).filter(Boolean))].filter((c) => !deLaBase.has(c)) };
 }
 
 /** Una sola línea de la salida de un comando, para el motivo. */
@@ -187,12 +241,19 @@ function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled }) {
       { windowsHide: true, cwd: raizBase, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: (timeout + 60) * 1000 });
       if (fs.existsSync(marca)) { suites.push({ ruta, raiz, verdict: 'no-medido', motivo: `no medido: pasó el tope de ${timeout} s` }); return; }
       if (r.status === 0) { suites.push({ ruta, raiz, verdict: 'no-heredada', motivo: 'verde en la base: el rojo es del cambio' }); return; }
-      let roja = false;
+      let roja = null;
       if (r.status === 1) {
-        try { roja = (JSON.parse(fs.readFileSync(out, 'utf8')).fallas || []).some((x) => rutaDe(x) === ruta); } catch (_) { roja = false; }
+        try { roja = (JSON.parse(fs.readFileSync(out, 'utf8')).fallas || []).find((x) => rutaDe(x) === ruta) || null; } catch (_) { roja = null; }
+      }
+      // Roja en la base también: con los casos de los dos lados, un caso que la base no tenía la vuelve del cambio.
+      const comp = roja ? casosNuevos(f, roja) : null;
+      if (comp && comp.nuevos && comp.nuevos.length) {
+        suites.push({ ruta, raiz, verdict: 'no-heredada', motivo: `roja también en la base, pero con caso(s) nuevo(s): ${comp.nuevos.join(' · ')}` });
+        return;
       }
       if (roja) {
-        suites.push({ ruta, raiz, verdict: 'heredada', motivo: 'roja también en la base, sin el cambio' });
+        suites.push({ ruta, raiz, verdict: 'heredada', motivo: comp.nuevos ? 'roja también en la base, sin el cambio'
+          : `roja también en la base, sin el cambio (se juzgó por suite: ${comp.porque})` });
         heredadas.push(f);
       } else {
         const como = r.error ? r.error.message : (r.signal ? `cortada por ${r.signal}` : `salió ${r.status}`);
@@ -231,11 +292,15 @@ function apply(tree, summaryPath, { assembled = false } = {}) {
   const heredadas = [];
   let snap = null;
   if (hayFoto) {
-    const foto = porLaFoto(tree, rojos);
+    const foto = porLaFoto(tree, rojos, fallas);
     if (!foto.ok && max === 0) return { code: 2, lines: [...lines, foto.line] };
     if (!foto.ok) lines.push(`${foto.line}; lo rojo se mide en la base`);
     else {
       snap = foto.snap;
+      for (const a of foto.avisos) lines.push(a.replace(/^suites: /, ''));
+      for (const [n, c] of Object.entries(foto.porCaso)) {
+        if (c.nuevos.length) lines.push(`${n}: caso(s) nuevo(s): ${c.nuevos.join(' · ')} — frena${c.viejos.length ? `; ya rojo(s) en el nocturno: ${c.viejos.join(' · ')} — avisan` : ''}`);
+      }
       const viejos = foto.viejos;
       heredadas.push(...fallas.filter((f) => viejos.has(nombre(f && f.ruta))).map((f) => ({ ...f, measured_on: 'snapshot' })));
       heredadas.push(...ausentes.filter((a) => viejos.has(nombre(a))).map((a) => ({ ruta: a, ausente: true, measured_on: 'snapshot' })));

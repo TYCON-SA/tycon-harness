@@ -339,6 +339,161 @@ test('Heredado_MedidoEnMainEnElMomento @story-8.230 @ac-14 — apagado con TYCON
   assert.equal(fs.readFileSync(f, 'utf8'), antes);
 });
 
+// ── El juez por caso ────────────────────────────────────────────────────────────────────────────────────────────────
+// La foto la arma suites-report.js con la salida guardada de la suite roja; el portón trae sus casos de failedCases
+// (con renglones de contexto y otra duración). Los dos lados pasan por el mismo nombre de caso.
+const REPORTE = path.join(CI, 'suites-report.js');
+const VEREDICTO = path.join(CI, 'pr-verdict.js');
+
+/** Una foto armada por suites-report.js con `salidas` ({suite: salida de la corrida}) como las rojas de la noche. */
+function fotoDeLaNoche(salidas) {
+  const d = tmp('herencia-noche-');
+  const detalle = path.join(d, 'detalle');
+  fs.mkdirSync(detalle);
+  for (const [s, txt] of Object.entries(salidas)) fs.writeFileSync(path.join(detalle, `${s}.txt`), txt);
+  const rep = path.join(d, 'ultimo-suites.json');
+  const r = spawnSync(process.execPath, [REPORTE, '--rep', rep, '--build', '7', '--runs', '3', '--failures', Object.keys(salidas).join(' '), '--detail', detalle], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  return fs.readFileSync(rep, 'utf8');
+}
+const SALIDA_AB = '▶ b\n✖ T1 caso A (12.5ms)\n  AssertionError: 1 !== 2\n✖ T2 caso B (3ms)\n✖ failing tests:\n✖ T1 caso A (12.5ms)\n';
+/** El resumen del portón con `b.test.sh` roja por esos casos (como los arma failedCases). */
+function resumenConCasos(raiz, casos) {
+  const f = resumen(raiz, ['tests/b.test.sh']);
+  const j = leer(f);
+  j.fallas[0].casos = casos;
+  fs.writeFileSync(f, JSON.stringify(j));
+  return f;
+}
+const CASO_A_DEL_PORTON = '✖ T1 caso A (8.1ms)\n  AssertionError [ERR_ASSERTION]: otra cosa\n    at Test.run';
+
+test('Inherited_ByCase_NewCaseBlocks @story-8.279 @ac-21 — roja por A y B en la foto, por A y C ahora: C frena, A avisa', () => {
+  const raiz = arbol(fotoDeLaNoche({ 'b.test.sh': SALIDA_AB }));
+  const f = resumenConCasos(raiz, [CASO_A_DEL_PORTON, '✖ T3 caso C (2ms)']);
+  const r = aplicar(raiz, f);
+  assert.equal(r.status, 1, r.stderr);
+  const j = leer(f);
+  assert.deepEqual(j.fallas.map((x) => x.entrada.ruta), ['tests/b.test.sh'], 'la suite sigue roja por C');
+  assert.equal(j.inherited, undefined);
+  assert.match(r.stderr, /b\.test\.sh.*caso\(s\) nuevo\(s\): T3 caso C/);
+  assert.match(r.stderr, /b\.test\.sh.*ya rojo\(s\) en el nocturno: T1 caso A/);
+});
+
+test('Inherited_NoCaseNames_BySuiteAsToday @story-8.279 @ac-22 — sin casos en algún lado, por suite como hoy, y lo dice', () => {
+  // la foto vieja, sin el campo `casos`
+  const vieja = arbol(['b.test.sh']);
+  const r = aplicar(vieja, resumenConCasos(vieja, [CASO_A_DEL_PORTON, '✖ T3 caso C (2ms)']));
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /b\.test\.sh: se juzgó por suite/);
+  // la lista de la foto que llegó a su tope
+  const larga = {};
+  for (let i = 0; i < 60; i++) larga[`T${i}`] = `✖ T${i} caso (1ms)`;
+  const tope = arbol(fotoDeLaNoche({ 'b.test.sh': Object.values(larga).join('\n') }));
+  assert.ok(JSON.parse(fs.readFileSync(path.join(tope, FOTO), 'utf8')).casos_incompletos.includes('b.test.sh'));
+  assert.equal(aplicar(tope, resumenConCasos(tope, ['✖ T99 otro (1ms)'])).status, 0, 'incompleta: por suite');
+  // la lista del portón en su tope (el de failedCases): por suite
+  const { failedCases } = require(path.resolve(__dirname, '..', 'lib', 'run-suites-json.js'));
+  const delPorton = failedCases(Object.values(larga).join('\n'));
+  const llena = arbol(fotoDeLaNoche({ 'b.test.sh': SALIDA_AB }));
+  const rl = aplicar(llena, resumenConCasos(llena, delPorton));
+  assert.equal(rl.status, 0, rl.stderr);
+  assert.match(rl.stderr, /b\.test\.sh: se juzgó por suite/);
+});
+
+test('Inherited_SameCases_StillWarns @story-8.279 @ac-26 — los mismos casos con nombres en los dos lados: avisa sin frenar', () => {
+  const raiz = arbol(fotoDeLaNoche({ 'b.test.sh': SALIDA_AB }));
+  const f = resumenConCasos(raiz, [CASO_A_DEL_PORTON, '✖ T2 caso B (9ms)']);
+  const r = aplicar(raiz, f);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(leer(f).inherited.suites.map((s) => s.entrada.ruta), ['tests/b.test.sh']);
+  assert.doesNotMatch(r.stderr, /se juzgó por suite/);
+});
+
+test('Inherited_SameCases_StillWarns @story-8.279 @ac-26 — el mismo caso escrito distinto en cada lado sigue siendo el mismo', () => {
+  // (1) el renglón de resumen de una suite de bash cambia su contador: no es un caso nuevo
+  const resumenBash = (n) => `❌ pr-uno: caso A\n${n > 1 ? '❌ pr-uno: caso B\n' : ''}❌ pr-uno-por-repo: ${n} falla(s)\n❌ FALLARON ${n} de 9\n`;
+  const r1 = arbol(fotoDeLaNoche({ 'b.test.sh': resumenBash(2) }));
+  const f1 = resumenConCasos(r1, ['❌ pr-uno: caso A', '❌ pr-uno-por-repo: 1 falla(s)', '❌ FALLARON 1 de 9']);
+  assert.equal(aplicar(r1, f1).status, 0, 'arreglar un caso de una suite roja no la vuelve nueva');
+  // (2) un renglón de más de 300 caracteres: el portón lo recorta (failedCases) y la foto no
+  const largo = `✖ T1 ${'x'.repeat(320)} (2ms)`;
+  const { failedCases } = require(path.resolve(__dirname, '..', 'lib', 'run-suites-json.js'));
+  const r2 = arbol(fotoDeLaNoche({ 'b.test.sh': `${largo}\n` }));
+  const f2 = resumenConCasos(r2, failedCases(`${largo}\n`));
+  assert.equal(aplicar(r2, f2).status, 0, 'el mismo caso largo, recortado en un lado');
+  // (3) un nombre con una ruta de la máquina: la foto lo guarda saneado, el portón también lo sanea
+  const conRuta = `✖ T1 lee ${os.homedir()}/x/config.json (1ms)`;
+  const r3 = arbol(fotoDeLaNoche({ 'b.test.sh': `${conRuta}\n` }));
+  const f3 = resumenConCasos(r3, [conRuta]);
+  const a3 = aplicar(r3, f3);
+  assert.equal(a3.status, 0, a3.stderr);
+});
+
+test('Inherited_GreenInPhoto_Blocks @story-8.279 @ac-26 — verde en la foto, roja ahora: frena', () => {
+  const raiz = arbol(fotoDeLaNoche({ 'otra.test.sh': '✖ T9 otra (1ms)\n' }));
+  const f = resumenConCasos(raiz, ['✖ T1 caso A (1ms)']);
+  assert.equal(aplicar(raiz, f).status, 1);
+  assert.deepEqual(leer(f).fallas.map((x) => x.entrada.ruta), ['tests/b.test.sh']);
+});
+
+test('PrVerdict_ByCase_SameRule @story-8.279 @ac-23 — la validación del pedido juzga igual, también con la suite renombrada', () => {
+  const d = tmp('herencia-veredicto-');
+  const foto = path.join(d, 'foto.json');
+  fs.writeFileSync(foto, fotoDeLaNoche({ 'b.test.sh': SALIDA_AB, 'viejo.test.sh': '✖ T5 caso E (1ms)\n' }));
+  const ahora = (casos) => {
+    const p = path.join(d, `ahora-${Math.random().toString(36).slice(2)}.json`);
+    fs.writeFileSync(p, JSON.stringify({ kind: 'bash-tests', ts: new Date().toISOString(), failures: Object.keys(casos), motivos: {}, casos }));
+    return p;
+  };
+  // un árbol con el mapa de renombres: viejo.test.sh se llama nuevo.test.sh
+  const tcg = tmp('herencia-tcg-');
+  fs.mkdirSync(path.join(tcg, 'scripts', 'lib'), { recursive: true });
+  fs.copyFileSync(path.resolve(CI, '..', 'lib', 'legacy-names.js'), path.join(tcg, 'scripts', 'lib', 'legacy-names.js'));
+  fs.writeFileSync(path.join(tcg, 'scripts', 'lib', 'renames.json'), JSON.stringify({ entries: [
+    { kind: 'file', old: 'scripts/tests/viejo.test.sh', new: 'scripts/tests/nuevo.test.sh', batch: 'X', callers: ['same-repo'] }] }));
+  const juzgar = (p) => spawnSync(process.execPath, [VEREDICTO, '--tcg', tcg, '--suites-actual', p, '--suites-snapshot', foto, '--json'], { encoding: 'utf8' });
+  const nuevo = juzgar(ahora({ 'b.test.sh': ['✖ T1 caso A (2ms)', '✖ T3 caso C (2ms)'] }));
+  assert.equal(nuevo.status, 1, nuevo.stdout + nuevo.stderr);
+  assert.match(nuevo.stdout, /b\.test\.sh \(caso\(s\) nuevo\(s\): T3 caso C/);
+  const igual = juzgar(ahora({ 'b.test.sh': ['✖ T2 caso B (2ms)'], 'nuevo.test.sh': ['✖ T5 caso E (7ms)'] }));
+  assert.equal(igual.status, 0, igual.stdout + igual.stderr);
+  assert.doesNotMatch(igual.stdout, /se juzgó por suite/, 'la renombrada trae sus casos con el nombre nuevo');
+});
+
+test('Inherited_BaseRun_ByCase @story-8.279 @ac-24 — roja en la base por A, ahora por A y C: no es heredada', () => {
+  const remoto = tmp('herencia-remoto-caso-');
+  git(remoto, 'init', '-q', '--bare', '-b', 'main');
+  const raiz = tmp('herencia-clon-caso-');
+  git(raiz, 'init', '-q', '-b', 'main');
+  git(raiz, 'remote', 'add', 'origin', remoto);
+  const t = path.join(raiz, 'scripts', 'tests');
+  fs.mkdirSync(t, { recursive: true });
+  fs.writeFileSync(path.join(t, 'suites.json'), JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.sh' }, { raiz: 'arnes', ruta: 'tests/d.test.sh' }], semanales: [] }));
+  fs.writeFileSync(path.join(t, 'a.test.sh'), suiteQueSale(1, 'echo "MAL caso A"'));
+  fs.writeFileSync(path.join(t, 'd.test.sh'), suiteQueSale(1, 'echo "MAL caso D"'));
+  git(raiz, 'add', '-A'); git(raiz, ...autor, 'commit', '-q', '-m', 'base');
+  git(raiz, 'push', '-q', 'origin', 'main');
+  git(raiz, 'fetch', '-q', 'origin');
+  git(raiz, 'checkout', '-q', '-b', 'cambio');
+  fs.writeFileSync(path.join(t, 'a.test.sh'), suiteQueSale(1, `echo "MAL caso A"\necho "MAL caso C"\necho "MAL lee ${os.homedir()}/secreto.json"`));
+  fs.writeFileSync(path.join(t, 'd.test.sh'), suiteQueSale(1, 'echo "MAL caso D" # otra línea'));
+  git(raiz, 'add', '-A'); git(raiz, ...autor, 'commit', '-q', '-m', 'el cambio');
+  const f = resumen(raiz, ['tests/a.test.sh', 'tests/d.test.sh']);
+  const j0 = leer(f);
+  j0.fallas[0].casos = ['MAL caso A', 'MAL caso C', `MAL lee ${os.homedir()}/secreto.json`];
+  j0.fallas[1].casos = ['MAL caso D'];
+  fs.writeFileSync(f, JSON.stringify(j0));
+  const r = enLaBase(raiz, f);
+  assert.equal(r.status, 1, r.stderr);
+  const j = leer(f);
+  assert.deepEqual(j.fallas.map((x) => x.entrada.ruta), ['tests/a.test.sh']);
+  assert.equal(veredicto(j, 'tests/a.test.sh').verdict, 'no-heredada');
+  assert.match(veredicto(j, 'tests/a.test.sh').motivo, /caso\(s\) nuevo\(s\): caso C · lee /);
+  assert.ok(!veredicto(j, 'tests/a.test.sh').motivo.includes(os.homedir()), 'el motivo sale saneado: sin la ruta de la máquina');
+  assert.equal(veredicto(j, 'tests/d.test.sh').verdict, 'heredada', 'los mismos casos: heredada');
+  baseSinRestos(raiz);
+});
+
 test('InheritedReds_Unmeasured_Undecided — con suites sin medir no se perdona nada: sale 2 y el resumen no cambia', () => {
   const raiz = arbol(['b.test.sh']);
   const f = resumen(raiz, ['tests/b.test.sh'], { unmeasured_suites: [{ suite: 'tests/d.test.sh', reason: 'pasó su tope' }] });

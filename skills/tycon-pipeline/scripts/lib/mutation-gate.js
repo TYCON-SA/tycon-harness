@@ -48,15 +48,19 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const DEFAULT_MAX_MUTANTS = 12;
-// El corte de presupuesto lo maneja el CHEQUEO, por receta (BUDGETS de mutation-check.js: .NET 8 min, las demás 3):
-// sólo él sabe qué receta corre. El timeout del spawn queda como red de ÚLTIMO recurso, igual para todas y MÁS ALTO que
-// el tope más largo — si se dispara, el hijo murió por señal y sus handlers restauraron (o gritaron); el gate igual avisa.
-const HARD_TIMEOUT_MS = 720000;
+// El corte de presupuesto lo maneja el CHEQUEO, por receta (BUDGETS de mutation-check.js: .NET 8 min, las demás 3) o por
+// el tiempo medido de la suite (hasta MEASURED_TOTAL_CEIL_MS, 20 min): sólo él sabe qué receta corre y cuánto tarda. El
+// timeout del spawn queda como red de ÚLTIMO recurso, igual para todas: el total más largo posible más 2 min para
+// restaurar y salir. Si se dispara, el hijo murió por señal y sus handlers restauraron (o gritaron); el gate igual avisa.
+const chequeo = require(path.join(__dirname, '..', 'mutation-check.js'));
+const HARD_TIMEOUT_MS = Math.max(chequeo.MEASURED_TOTAL_CEIL_MS, ...Object.values(chequeo.BUDGETS).map((b) => b.totalMs)) + 120000;
 
 // Las recetas nuevas del chequeo (todas menos `node --test`) entran avisando: hasta esta fecha, cero mutantes cazados
 // avisa y deja pasar; desde esta fecha, frena como `node --test`. Son dos semanas desde que las recetas nuevas entran:
 // el tiempo para que cada equipo agregue las pruebas que faltan antes de que el chequeo frene.
 const MUTATION_NOTICE_UNTIL = '2026-11-18';
+// La receta de bash entró después que las demás: tiene sus propias dos semanas, sin mover la fecha de las otras.
+const MUTATION_BASH_NOTICE_UNTIL = '2026-11-30';
 
 // Borde real: spawnea mutation-check.js y devuelve { code, result, stderr,
 // timedOut } con el exit code REAL y el JSON parseado (o null si no parseó).
@@ -264,15 +268,16 @@ function medirEn(repo, { marker, storyPath, appendLog, log, maxMutants, scriptPa
     volcarStderr();
     return { invoked: true, block: false, reason: 'exit1-incoherente' };
   }
-  // Período de aviso de las recetas nuevas: cero cazados avisa y deja pasar hasta MUTATION_NOTICE_UNTIL.
+  // Período de aviso de las recetas nuevas: cero cazados avisa y deja pasar hasta su fecha (bash, la suya).
   const hoy = (today instanceof Date ? today : new Date(today)).toISOString().slice(0, 10);
-  if (code === 1 && res.runner && res.runner !== 'node-test' && hoy < MUTATION_NOTICE_UNTIL) {
-    appendLog('gates.log', { ...entryBase, status: 'warn-notice', until: MUTATION_NOTICE_UNTIL });
+  const hasta = res.runner === 'bash' ? MUTATION_BASH_NOTICE_UNTIL : MUTATION_NOTICE_UNTIL;
+  if (code === 1 && res.runner && res.runner !== 'node-test' && hoy < hasta) {
+    appendLog('gates.log', { ...entryBase, status: 'warn-notice', until: hasta });
     log(`⚠️  Chequeo de mutantes (${res.runner}): NINGÚN mutante murió — los tests no ejercen el código que la story agregó.`);
     for (const m of survived.slice(0, 3)) {
       log(`    · ${m.file}:${m.line} [${m.operator}] — ${String(m.before).trim()} → ${String(m.after).trim()}`);
     }
-    log(`   Avisa y deja pasar: la receta ${res.runner} entra frenando el ${MUTATION_NOTICE_UNTIL}.`);
+    log(`   Avisa y deja pasar: la receta ${res.runner} entra frenando el ${hasta}.`);
     return { invoked: true, block: false, reason: 'aviso-receta-nueva' };
   }
   if (code === 1) {
@@ -331,4 +336,4 @@ function medirEn(repo, { marker, storyPath, appendLog, log, maxMutants, scriptPa
   return { invoked: true, block: false, reason: 'exit-raro' };
 }
 
-module.exports = { runMutationGate, destinosDeLaStory, defaultInvokeCheck, DEFAULT_MAX_MUTANTS, HARD_TIMEOUT_MS, MUTATION_NOTICE_UNTIL };
+module.exports = { runMutationGate, destinosDeLaStory, defaultInvokeCheck, DEFAULT_MAX_MUTANTS, HARD_TIMEOUT_MS, MUTATION_NOTICE_UNTIL, MUTATION_BASH_NOTICE_UNTIL };

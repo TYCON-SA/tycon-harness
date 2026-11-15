@@ -15,6 +15,10 @@
  *   · un NO MEDIDO                                 → AVISO, nunca frena: no dice que el control ande
  *                                                    ni que esté roto (mismo balde que el nocturno)
  * Es la misma idea que el `--baseline check` del propio banco, aplicada también a las suites.
+ * Una suite roja en los dos lados se juzga CASO POR CASO cuando los dos reportes traen sus casos (`casos`, que escribe
+ * suites-report.js): un caso que la foto no tenía la deja como rojo nuevo. Sin la lista completa en algún lado, por
+ * suite, con un aviso. El nombre de un caso sale de `nombreDeCaso`, la misma función para la foto, el reporte y la
+ * puerta (skills/tycon-pipeline/scripts/lib/inherited-reds.js); `porCaso` de `--json` dice los nuevos y los heredados.
  *
  * 🔴 Las dos formas de «no saber» NO son la misma cosa, y por eso se resuelven distinto:
  *   · la FOTO no se puede leer (falta, JSON roto) → exit 2, «no pude decidir: sin foto», haya rojos o no.
@@ -137,8 +141,67 @@ function suitesUnidas(rep, renombres) {
   const out = { ...rep };
   if (Array.isArray(rep.failures)) out.failures = rep.failures.map(f);
   if (Array.isArray(rep.unmeasured)) out.unmeasured = rep.unmeasured.map(f);
-  for (const k of ['motivos', 'reintentos']) if (rep[k] && typeof rep[k] === 'object') out[k] = conClaves(rep[k], f);
+  for (const k of ['motivos', 'reintentos', 'casos']) if (rep[k] && typeof rep[k] === 'object') out[k] = conClaves(rep[k], f);
+  if (Array.isArray(rep.casos_incompletos)) out.casos_incompletos = rep.casos_incompletos.map(f);
   return out;
+}
+
+// ── Los casos de una suite roja ─────────────────────────────────────────────────────────────────
+// Una suite roja en la foto que hoy está roja por OTRO caso no es la misma roja: el caso nuevo lo trajo el cambio. Los
+// dos lados guardan los renglones de sus casos rojos —la foto y el resumen de la validación los escribe
+// suites-report.js (`casos`), el portón los saca de failedCases de run-suites-json.js— y se comparan por NOMBRE: el
+// primer renglón, sin la marca de falla, la duración ni el contexto que lo sigue. Es una sola función para los tres,
+// para que un mismo caso no quede escrito distinto en cada lado y frene como nuevo.
+const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
+// Los renglones con que una suite anuncia un caso que falló: los mismos que reconoce failedCases (el reportero de
+// Node, TAP, las suites de bash). El título del resumen de Node («✖ failing tests:») no es un caso.
+const LINEA_DE_CASO = /^\s*(?:✖|✗|❌|not ok\b|MAL\b|FAIL\b)/;
+const TITULO_DEL_RESUMEN = /^\s*✖\s+failing tests:?\s*$/;
+// Cuántos casos guarda cada lado: pasado este número la lista está incompleta y la suite se juzga entera.
+const MAX_CASOS = 40;
+
+// El renglón de resumen de una suite de bash («❌ x: 2 falla(s)», «❌ FALLARON 3 de 9»): con otro contador es el
+// mismo renglón, no un caso nuevo. Sus números se cambian por «N» antes de comparar.
+const RENGLON_DE_CUENTA = /^FALLARON\b|\b\d+\s+de\s+\d+\b|\b\d+\s+(?:fall(?:a|o)s?|fall(?:a|o)\(s\)|roj(?:o|a)s?|casos?|caso\(s\)|chequeos?|chequeo\(s\)|errores|error(?:es)?\(s\))\b/i;
+// Lo que el portón guarda de cada renglón (MAX_LINE de run-suites-json.js, con «…» al final): se compara hasta acá, con
+// margen, para que el mismo caso largo, recortado de un lado, sea el mismo.
+const LARGO_DEL_NOMBRE = 200;
+
+/**
+ * El nombre de un caso: el primer renglón, sin la marca de falla, la duración ni el contexto, hasta LARGO_DEL_NOMBRE
+ * caracteres; en un renglón de resumen, los números como «N». '' si no queda nada.
+ */
+function nombreDeCaso(renglon) {
+  const n = String(renglon == null ? '' : renglon).split(/\r?\n/)[0].replace(ANSI, '').trim()
+    .replace(/^(?:✖|✗|❌|not ok(?:\s+\d+)?(?:\s+-)?|MAL:?|FAIL:?)\s*/, '')
+    .replace(/\s+#\s+(?:SKIP|TODO)\b.*$/i, '')
+    .replace(/…$/, '')
+    .replace(/\s*\(\d+(?:\.\d+)?\s*m?s\)\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (RENGLON_DE_CUENTA.test(n) ? n.replace(/\d+/g, 'N') : n).slice(0, LARGO_DEL_NOMBRE).trim();
+}
+
+/** Los nombres de los casos rojos de la salida de una suite: `{ casos, completos }` (sin repetidos, hasta MAX_CASOS). */
+function casosDeLaSalida(texto) {
+  const casos = [];
+  let completos = true;
+  for (const l of String(texto == null ? '' : texto).replace(ANSI, '').split(/\r?\n/)) {
+    if (!LINEA_DE_CASO.test(l) || TITULO_DEL_RESUMEN.test(l)) continue;
+    const n = nombreDeCaso(l);
+    if (!n || casos.includes(n)) continue;
+    if (casos.length >= MAX_CASOS) { completos = false; break; }
+    casos.push(n);
+  }
+  return { casos, completos };
+}
+
+/** Los nombres de los casos de la suite `n` en un reporte, o null si no los trae completos (entonces, por suite). */
+function casosDe(rep, n) {
+  const lista = rep && rep.casos && typeof rep.casos === 'object' ? rep.casos[n] : null;
+  if (!Array.isArray(lista) || !lista.length) return null;
+  if (Array.isArray(rep.casos_incompletos) && rep.casos_incompletos.includes(n)) return null;
+  return [...new Set(lista.map(nombreDeCaso).filter(Boolean))];
 }
 
 /** Edad de una foto, en días; `null` si la fecha no se puede leer (que cuenta como vieja). */
@@ -244,7 +307,7 @@ function main() {
 
   // `nuevos` frena; `nuevosQueAvisan` es lo mismo pero sin frenar (hoy, las suites).
   // `rojosSinFoto`: los rojos de una sección cuya foto no se leyó (no se sabe si son nuevos; la corrida sale 2).
-  const salida = { nuevos: [], nuevosQueAvisan: [], viejos: [], avisos: [], nomedidos: [], intermitentes: [], lentas: [], suitesSinMedir: [], noCorrieron: [], noViajan: [], sinFoto: [], rojosSinFoto: [] };
+  const salida = { porCaso: {}, nuevos: [], nuevosQueAvisan: [], viejos: [], avisos: [], nomedidos: [], intermitentes: [], lentas: [], suitesSinMedir: [], noCorrieron: [], noViajan: [], sinFoto: [], rojosSinFoto: [] };
   const renombres = cargarRenombres(salida.avisos);
 
   // ── suites ──
@@ -262,10 +325,28 @@ function main() {
     for (const [n, why] of Object.entries(notRun)) salida.noCorrieron.push(`${n} (${why})`);
     if (Array.isArray(ahora.datos && ahora.datos.notTravelling)) salida.noViajan.push(...ahora.datos.notTravelling.map(String));
     if (!foto.ok) salida.sinFoto.push('suites');
+    const rojosAhora = rojosDeSuites(ahoraUnida, { sinNoMedidas: true });
+    const rojosFoto = foto.ok ? rojosDeSuites(fotoUnida, { sinNoMedidas: true }) : new Map();
+    // Roja en los dos lados: con los casos de los dos, un caso que la foto no tenía la vuelve nueva; sin ellos, por suite.
+    const porSuite = [];
+    for (const [id, texto] of rojosAhora) {
+      if (!rojosFoto.has(id)) continue;
+      const n = id.slice('suite:'.length);
+      const a = casosDe(ahoraUnida, n);
+      const f = casosDe(fotoUnida, n);
+      if (!a || !f) { porSuite.push(n); continue; }
+      const nuevosCasos = a.filter((c) => !f.includes(c));
+      const viejosCasos = a.filter((c) => f.includes(c));
+      salida.porCaso[n] = { nuevos: nuevosCasos, viejos: viejosCasos };
+      if (!nuevosCasos.length) continue;
+      rojosFoto.delete(id);
+      rojosAhora.set(id, `${n} (caso(s) nuevo(s): ${nuevosCasos.join(' · ')}${viejosCasos.length ? ` — ya rojo(s) en el nocturno: ${viejosCasos.join(' · ')}` : ''})${texto.slice(n.length)}`);
+    }
+    if (porSuite.length) salida.avisos.push(`suites: ${porSuite.join(', ')}: se juzgó por suite — la foto o el reporte de ahora no traen sus casos completos`);
     const r = comparar({
       etiqueta: 'suites',
-      rojosAhora: rojosDeSuites(ahoraUnida, { sinNoMedidas: true }),
-      rojosFoto: foto.ok ? rojosDeSuites(fotoUnida, { sinNoMedidas: true }) : new Map(),
+      rojosAhora,
+      rojosFoto,
       fotoLeida: foto.ok,
       motivoFoto: foto.motivo,
       edad: foto.ok ? edadDias(foto.datos) : null,
@@ -390,4 +471,4 @@ function main() {
 // escritura grande seguida de salir llega cortada en 8192 bytes y el JSON se rompe; el
 // consumidor lo lee como «no pude», nunca como un error.
 if (require.main === module) process.exitCode = main();
-module.exports = { rojosDelBanco, rojosDeSuites, comparar, saneadoParaAzure, FOTO_VIEJA_MS };
+module.exports = { rojosDelBanco, rojosDeSuites, comparar, saneadoParaAzure, FOTO_VIEJA_MS, nombreDeCaso, casosDeLaSalida, casosDe, MAX_CASOS };
