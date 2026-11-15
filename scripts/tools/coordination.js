@@ -2060,7 +2060,9 @@ function namedSession(opts, w) {
   const unreadable = [];
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unreadable, path.join(claudeDir(home), 'projects'));
   if (unreadable.length) return { error: `No pude leer todas las sesiones (${unreadable[0]}): ${nada}` };
-  const found = [...sessions.entries()].filter(([, s]) => s.name === name);
+  // la lista guarda los nombres largos recortados: uno largo se compara recortado igual
+  const listed = listedName(name);
+  const found = [...sessions.entries()].filter(([, s]) => s.name === listed);
   const alive = found.filter(([, s]) => s.alive);
   if (!found.length) return { error: `No encuentro la sesión «${name}»: ${nada}` };
   if (alive.length > 1 || (!alive.length && found.length > 1)) return { error: `Hay más de una sesión «${name}»: ${nada}` };

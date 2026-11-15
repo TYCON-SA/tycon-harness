@@ -1427,6 +1427,33 @@ test('T8 Stop_NombreDesconocidoAmbiguoORef_NoPara @story-8.284 @ac-15 @ac-16 @ac
   assert.match(cli.stdout, /stop va con --name/);
 });
 
+test('Stop_NombreLargo_LaEncuentraIgual @story-8.284 @ac-14: un nombre de más de 40 caracteres, que la lista guarda recortado, se para y se cierra igual', () => {
+  const t = closeLab();
+  const largo = 'story-8284-firmas-y-esperas-de-mas-entre-sesiones-tanda-d';
+  bg(t, largo, t.repo, { jobId: 'job-largo' });
+  const r = stopIt(t, largo);
+  assert.strictEqual(r.ok, true, r.message);
+  assert.deepStrictEqual(closed(t), ['stop job-largo']);
+  const c = closeIt(t, largo);
+  assert.strictEqual(c.closed, true, c.message);
+  assert.deepStrictEqual(closed(t), ['stop job-largo', 'stop job-largo', 'rm job-largo']);
+});
+
+test('Stop_DosMuertasORefQueEsNombre @story-8.284 @ac-15: dos muertas sin viva es ambiguo; un nombre con forma de ref que existe se para', () => {
+  const t = closeLab();
+  bg(t, 'vieja', t.repo, { pid: 2147483646, jobId: 'j1' });
+  session(t, 'sid-vieja-2', 'vieja', { cwd: t.repo, kind: 'bg', jobId: 'j2', pid: 2147483646 });
+  const r = stopIt(t, 'vieja');
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /más de una sesión «vieja»: no paré nada/);
+  // un nombre de seis caracteres hexadecimales que es de verdad el nombre de una sesión: se para sin la nota del ref
+  bg(t, 'cafe12', t.repo);
+  const ok = stopIt(t, 'cafe12');
+  assert.strictEqual(ok.ok, true, ok.message);
+  assert.doesNotMatch(ok.message, /ListAgents/);
+  assert.deepStrictEqual(closed(t), ['stop job-cafe12']);
+});
+
 test('T9 GuiaCoordinacion_PararPorNombre_EnLosDosIdiomas @story-8.284 @ac-17: las dos guías nombran stop --name y dicen que el ref de ListAgents no es el id', () => {
   const es = fs.readFileSync(GUIDE, 'utf8');
   const en = fs.readFileSync(GUIDE_EN, 'utf8');
