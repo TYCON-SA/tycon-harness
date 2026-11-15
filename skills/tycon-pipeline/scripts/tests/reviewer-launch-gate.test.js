@@ -50,7 +50,9 @@ const hace = (min) => new Date(Date.now() - min * 60000).toISOString();
 function entorno(home, extra) {
   const env = { ...process.env };
   for (const k of DEL_ENTORNO) delete env[k];
-  return { ...env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_PROFILE: '0', ...(extra || {}) };
+  // packs.default fijo, el del perfil del equipo: sin arnés instalado (la HOME vacía del agente nocturno) no se puede
+  // leer y, con paquetes instalados en el árbol, el freno de paquetes frenaría todo. `extra` lo puede cambiar.
+  return { ...env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_PROFILE: '0', TYCON_PACKS_DEFAULT: 'all', ...(extra || {}) };
 }
 
 /** Una máquina de ensayo: HOME con la carpeta de estado, la configuración con el freno registrado y un repo con su

@@ -876,11 +876,13 @@ test('T1 Restructure_CheckMap_CrossFolderEntriesCallersAndAdo — un .yml ya mud
 // ── T51 · el mapa contra la medición, en la otra dirección, y sin fecha propia ─────────
 // T1 mira de cada entrada R hacia la medición (sus `callers`). Lo que falta para que el retiro
 // saque del mapa exactamente lo de esta mudanza: que todo ítem de la medición con una ruta de destino tenga su entrada (o lo
-// cubra la carpeta que lo contiene), que el `new` sea el destino medido, que ninguna entrada traiga una fecha suya (el
-// retiro vive en la raíz del mapa, una sola vez) y que el conteo cierre. Los ítems se clasifican por la FORMA de su
+// cubra la carpeta que lo contiene), que el `new` sea el destino medido, que la fecha de retiro de una entrada, si la
+// trae, sea válida y no anterior a la de la raíz (como la lee el guion de retiro) y que el conteo cierre. Los ítems se clasifican por la FORMA de su
 // encabezado, nunca por su ruta: esta prueba no escribe ninguna ruta vieja.
-const R_ENTRY_KEYS = new Set(['kind', 'old', 'new', 'batch', 'callers', 'role', 'homonyms', '__nota']);
+const R_ENTRY_KEYS = new Set(['kind', 'old', 'new', 'batch', 'callers', 'role', 'homonyms', '__nota', 'retire_after']);
 const DATE_SHAPE = /\d{4}-\d{2}-\d{2}/;
+// el mismo criterio que el guion de retiro: AAAA-MM-DD y un día que exista
+const isDay = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
 const isREntry = (e) => e && (e.kind === 'file' || e.kind === 'folder') && typeof e.batch === 'string' && /^R/.test(e.batch);
 const noSlash = (s) => String(s).replace(/\/+$/, '');
 
@@ -953,17 +955,26 @@ function mapVsMeasurement(entries, items, exists = () => true) {
   return { problems, counts };
 }
 
-/** Ninguna entrada R trae una fecha suya: sólo sus claves, ningún valor con forma de fecha, y `retire_after` en la raíz. */
+/**
+ * La fecha de retiro vive en la raíz del mapa. Una entrada puede traer la suya (`retire_after`), como la lee el guion de
+ * retiro (scripts/tools/legacy-retire-check.js): una fecha AAAA-MM-DD que exista y no anterior a la de la raíz. Fuera
+ * de eso, una entrada R trae sólo sus claves y ningún otro valor con forma de fecha.
+ */
 function ownDateProblems(map) {
   const problems = [];
   if (!Object.prototype.hasOwnProperty.call(map, 'retire_after')) problems.push('la raíz del mapa no tiene retire_after');
+  const root = isDay(map.retire_after) ? map.retire_after : null;
   for (const e of map.entries || []) {
-    if (e && Object.prototype.hasOwnProperty.call(e, 'retire_after')) problems.push(`${e.old}: retire_after vive en la raíz del mapa, no en una entrada`);
+    if (e && Object.prototype.hasOwnProperty.call(e, 'retire_after')) {
+      if (!isDay(e.retire_after)) problems.push(`${e.old}: retire_after «${e.retire_after}» no es una fecha AAAA-MM-DD que exista`);
+      else if (root && e.retire_after < root) problems.push(`${e.old}: retire_after ${e.retire_after} es anterior a la de la raíz (${root})`);
+    }
     if (!isREntry(e)) continue;
     for (const [k, v] of Object.entries(e)) {
       if (!R_ENTRY_KEYS.has(k)) { problems.push(`${e.old}: la clave «${k}» no es de una entrada R (${[...R_ENTRY_KEYS].join(' ')})`); continue; }
-      // en `old` y `new` una fecha es parte del nombre del archivo (los documentos fechados de decisiones), no de la entrada
-      if (k === 'old' || k === 'new') continue;
+      // en `old` y `new` una fecha es parte del nombre del archivo (los documentos fechados de decisiones), no de la
+      // entrada; `retire_after` ya se miró arriba
+      if (k === 'old' || k === 'new' || k === 'retire_after') continue;
       // lo mismo con el `glob` de cada homónimo, que también es una ruta; su `reason` sí se mira
       const seen = k === 'homonyms' && Array.isArray(v)
         ? v.map((h) => (h && typeof h === 'object' ? Object.fromEntries(Object.entries(h).filter(([hk]) => hk !== 'glob')) : h))
@@ -975,7 +986,7 @@ function ownDateProblems(map) {
   return problems;
 }
 
-test('T51 Close_MapEntriesCompleteVsMeasurement — toda ruta medida tiene su entrada R, el new es el destino medido, sin fecha propia y el conteo cierra', { skip: !TEAM_812 && 'NO MEDIDO — copia pública sin el mapa' }, () => {
+test('T51 Close_MapEntriesCompleteVsMeasurement — toda ruta medida tiene su entrada R, el new es el destino medido, ninguna fecha propia fuera de regla y el conteo cierra', { skip: !TEAM_812 && 'NO MEDIDO — copia pública sin el mapa' }, () => {
   const { items, problems: parse } = measurementItems(fs.readFileSync(MEASUREMENT, 'utf8'));
   assert.deepStrictEqual(parse, [], 'la medición se lee entera');
   const map = JSON.parse(fs.readFileSync(MAP_REAL, 'utf8'));
@@ -983,7 +994,7 @@ test('T51 Close_MapEntriesCompleteVsMeasurement — toda ruta medida tiene su en
   const { problems, counts } = mapVsMeasurement(map.entries, items, exists);
   assert.deepStrictEqual(problems, [], `el mapa contra la medición:\n  ${problems.join('\n  ')}`);
   const dates = ownDateProblems(map);
-  assert.deepStrictEqual(dates, [], `entradas con fecha propia:\n  ${dates.join('\n  ')}`);
+  assert.deepStrictEqual(dates, [], `fechas propias fuera de regla:\n  ${dates.join('\n  ')}`);
   // el conteo cerrado de la medición, por la forma de cada encabezado
   const byKind = {};
   for (const it of items) byKind[it.kind] = (byKind[it.kind] || 0) + 1;
@@ -1037,14 +1048,24 @@ test('T51 Close_MapEntriesCompleteVsMeasurement — laboratorio: un ítem sin en
   // una entrada R que la medición no tiene
   assert.deepStrictEqual(mapVsMeasurement([...good(), { kind: 'file', old: 'scripts/lab-extra.js', new: 'scripts/lib/lab-extra.js', batch: 'R3', callers: [] }], items).problems,
     ['scripts/lab-extra.js: la entrada R no es un ítem con ruta de destino de la medición']);
-  // fecha propia: una clave con fecha, un valor con fecha, retire_after fuera de la raíz o ausente en la raíz
+  // fecha propia: una clave con fecha, un valor con fecha, un retire_after propio que no es fecha o es anterior a la
+  // raíz, o la raíz sin retire_after
   const lab = (entries, extra = {}) => mapOf(entries, extra);
   assert.deepStrictEqual(ownDateProblems(lab(good())), [], 'el mapa de laboratorio no tiene fecha propia');
   const dated = good();
   dated[0].retire_after = '2099-01-01';
-  const dp = ownDateProblems(lab(dated));
-  assert.ok(dp.some((p) => p.startsWith('scripts/lab-a.sh: retire_after vive en la raíz')), dp.join('\n'));
-  assert.ok(dp.some((p) => p.startsWith('scripts/lab-a.sh: la clave «retire_after» no es de una entrada R')), dp.join('\n'));
+  assert.deepStrictEqual(ownDateProblems(lab(dated, { retire_after: '2026-11-17' })), [], 'una fecha propia válida y posterior a la raíz se acepta, como en el guion de retiro');
+  const early = good();
+  early[0].retire_after = '2026-11-01';
+  assert.deepStrictEqual(ownDateProblems(lab(early, { retire_after: '2026-11-17' })),
+    ['scripts/lab-a.sh: retire_after 2026-11-01 es anterior a la de la raíz (2026-11-17)']);
+  const notADate = good();
+  notADate[0].retire_after = 'en diciembre';
+  assert.deepStrictEqual(ownDateProblems(lab(notADate, { retire_after: '2026-11-17' })),
+    ['scripts/lab-a.sh: retire_after «en diciembre» no es una fecha AAAA-MM-DD que exista']);
+  const otherKind = [{ kind: 'config-file', old: '.tycon/lab-viejo.json', new: '.tycon/lab-nuevo.json', batch: 'P1', retire_after: '2026-13-45' }];
+  assert.deepStrictEqual(ownDateProblems(lab(otherKind, { retire_after: '2026-11-17' })),
+    ['.tycon/lab-viejo.json: retire_after «2026-13-45» no es una fecha AAAA-MM-DD que exista'], 'la regla vale para toda entrada, no sólo las R');
   const keyed = good();
   keyed[1].moved_on = '2099-01-01';
   assert.deepStrictEqual(ownDateProblems(lab(keyed)), [`scripts/lab-b.js: la clave «moved_on» no es de una entrada R (${[...R_ENTRY_KEYS].join(' ')})`]);

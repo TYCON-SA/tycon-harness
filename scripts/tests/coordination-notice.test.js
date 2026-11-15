@@ -277,6 +277,48 @@ test('T21 OwnErrors_DoNotBlock @story-8.122 @ac-21: con la configuración rota o
 
 // ── Cost (AC 22) ─────────────────────────────────────────────────────────────────────────────────────────────────
 
+// The cost is CPU time of this process, not wall-clock time: with the machine loaded (the gate, other sessions) the
+// wait for a CPU lands in the wall clock and the median goes over the cap without the notice getting slower.
+function medianCpuMs(fn, rounds) {
+  const times = [];
+  for (let i = 0; i < rounds; i++) {
+    const c0 = process.cpuUsage();
+    fn();
+    const d = process.cpuUsage(c0);
+    times.push((d.user + d.system) / 1000);
+  }
+  times.sort((a, b) => a - b);
+  const mid = Math.floor(rounds / 2);
+  return rounds % 2 ? times[mid] : (times[mid - 1] + times[mid]) / 2;
+}
+
+// Runs fn with a fresh copy of coordination.js (and what it loads) whose child_process calls are counted. A module
+// keeps the spawnSync it took when it loaded, so the counter goes in before loading, and the old copies come back after.
+function withSpawnCount(fn) {
+  const cpm = require('child_process');
+  const names = ['spawnSync', 'execFileSync', 'execSync', 'spawn', 'execFile', 'exec', 'fork'];
+  const orig = Object.fromEntries(names.map((n) => [n, cpm[n]]));
+  const spawned = [];
+  for (const n of names) cpm[n] = function (...a) { spawned.push(`${n} ${a[0]}`); return orig[n].apply(this, a); };
+  const ours = (k) => k.startsWith(ROOT + path.sep) && !k.split(path.sep).includes('tests');
+  const saved = {};
+  for (const k of Object.keys(require.cache)) if (ours(k)) { saved[k] = require.cache[k]; delete require.cache[k]; }
+  try {
+    return { value: fn(require(path.join(ROOT, 'scripts', 'tools', 'coordination.js'))), spawned };
+  } finally {
+    Object.assign(cpm, orig);
+    for (const k of Object.keys(require.cache)) if (ours(k)) delete require.cache[k];
+    Object.assign(require.cache, saved);
+  }
+}
+
+test('T22 Notice_UnderBudget @story-8.122 @ac-22: la medición de CPU ve un aviso lento (un bucle de 400 ms sale sobre el tope)', () => {
+  const t = toy();
+  const slow = () => { const c0 = process.cpuUsage(); while (true) { const d = process.cpuUsage(c0); if (d.user + d.system >= 400000) break; } return C.capNotice(t.opts); };
+  const median = medianCpuMs(slow, 3);
+  assert.ok(median >= 300, `con 400 ms de CPU de más la mediana tiene que pasar el tope de 300 ms: dio ${median.toFixed(1)} ms`);
+});
+
 test('T22 Notice_UnderBudget @story-8.122 @ac-22: 20 turnos con 6 sesiones, mediana bajo 300 ms, sin abrir una conversación', () => {
   const t = toy();
   const projects = path.join(t.home, '.claude', 'projects');
@@ -294,19 +336,15 @@ test('T22 Notice_UnderBudget @story-8.122 @ac-22: 20 turnos con 6 sesiones, medi
   const origRead = fs.readFileSync;
   fs.openSync = function (p, ...rest) { if (String(p).startsWith(projects)) opened.push(String(p)); return origOpen.call(this, p, ...rest); };
   fs.readFileSync = function (p, ...rest) { if (typeof p === 'string' && p.startsWith(projects)) opened.push(p); return origRead.call(this, p, ...rest); };
-  const times = [];
   let first = null;
+  let median;
+  let spawned;
   try {
-    for (let i = 0; i < 20; i++) {
-      const t0 = process.hrtime.bigint();
-      const n = C.capNotice(t.opts);
-      if (i === 0) first = n;
-      times.push(Number(process.hrtime.bigint() - t0) / 1e6);
-    }
+    ({ value: median, spawned } = withSpawnCount((fresh) => medianCpuMs(() => { const n = fresh.capNotice(t.opts); if (first === null) first = n; }, 20)));
   } finally { fs.openSync = origOpen; fs.readFileSync = origRead; }
-  times.sort((a, b) => a - b);
-  const median = (times[9] + times[10]) / 2;
-  assert.ok(median < 300, `mediana ${median.toFixed(1)} ms`);
+  assert.ok(median < 300, `mediana ${median.toFixed(1)} ms de CPU`);
+  // el tiempo de CPU de este proceso no cuenta el de un proceso hijo: el aviso no lanza ninguno
+  assert.deepStrictEqual(spawned, [], 'el aviso no lanza procesos: su costo está todo en la medición');
   assert.deepStrictEqual(opened, [], 'ninguna conversación abierta');
   // la línea del tope sale en el primer turno (con la carpeta del estado vacía)
   assert.match(first, /pasó el tope por 1/);
