@@ -421,7 +421,7 @@ function status(opts = {}) {
   } catch (e) { problems.push(e.message); }
   const gone = retiredOf(home, now, sessions);
   const suiteRow = suite ? { session: suite.session ? label(suite.session) : null, what: label(suite.what), since: suite.at } : null;
-  const gates = gatesOf(home, now, problems).map((g) => ({ session: g.session ? label(g.session) : null, sid: g.sid || null, what: label(g.what), since: g.at }));
+  const gates = gatesOf(home, now, problems).map((g) => ({ session: g.session ? label(g.session) : null, sid: g.sid || null, what: label(g.what), suites: require('./heavy-turn.js').suitesOf(g), since: g.at }));
   // un solo turno de tarea pesada por máquina: lo tiene la ejecución grande o el pase más viejo en vuelo
   const firstPass = [...adversarial].sort((a, b) => Date.parse(a.since) - Date.parse(b.since))[0];
   const heavyTurn = suiteRow ? { kind: 'suite', ...suiteRow } : firstPass ? { kind: 'pass', ...firstPass } : null;
@@ -451,7 +451,10 @@ function statusText(s) {
   // los demás pases anotados en vuelo, si los hay, a continuación: dos a la vez no deberían pasar, y si pasan se ven
   const others = s.adversarial.filter((a) => !(h && h.kind === 'pass' && a.session === h.session && a.since === h.since));
   lines.push(`Turno de tarea pesada: ${holderText}${others.length ? `; además en vuelo: ${others.map(passText).join(' · ')}` : ''}`);
-  if (s.gates && s.gates.length) lines.push(`Portón acotado en curso: ${s.gates.map((g) => `${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`).join(' · ')}`);
+  // al lado de un pase en vuelo, el portón lo dice: la coordinadora ve que van juntos
+  const beside = h && h.kind === 'pass' ? `, al lado del pase de ${h.storyId ? `la ${h.storyId}` : 'una sesión sin story'}` : '';
+  const gateCount = (g) => (g.suites != null && !String(g.what).startsWith(`${g.suites} suites`) ? `, ${g.suites} suites` : '');
+  if (s.gates && s.gates.length) lines.push(`Portón acotado en curso: ${s.gates.map((g) => `${g.session || 'una sesión sin nombre'} (${g.what}${gateCount(g)}${beside}, desde las ${hhmm(g.since)})`).join(' · ')}`);
   if (s.suiteWaiting && s.suiteWaiting.length) lines.push(`Esperando turno de suite o portón: ${[...s.suiteWaiting].sort((a, b) => a.since - b.since).map((w) => `${w.session} desde las ${hhmm(w.since)}${w.worked ? ' (trabajó después: ¿sigue esperando?)' : ''}`).join(' · ')}`);
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
   lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`].join(' · ')}`);
@@ -1341,8 +1344,14 @@ function capNotice(opts = {}) {
   // que el portón: el pase de una sesión cerrada, o de más de una hora, no ocupa el lugar.
   for (const w of s.passWaiting.filter((x) => x.sid !== sid)) {
     const t = adversarialTurn({ ...opts, sessionId: w.sid });
+    const now = opts.now == null ? Date.now() : Number(opts.now);
+    const pass = t && t.other_in_flight.find((a) => !passIsStale(a.since, now));
+    const holderOf = (x) => (x.heavy_run ? `${x.heavy_run.session || 'una sesión sin nombre'}, con una ejecución grande de pruebas`
+      : pass ? pass.session
+        : x.gate_waits ? `${x.gates_running[0].session || 'una sesión sin nombre'}, con un portón de ${x.gates_running[0].suites == null ? 'una cantidad desconocida de' : x.gates_running[0].suites} suites`
+          : (x.other_in_flight[0] || {}).session || 'alguien que no sé nombrar');
     lines.push(t && t.waiting_turn
-      ? `Coordinación: ${w.session} espera su turno de pase adversarial (lo tiene ${t.heavy_run ? `${t.heavy_run.session || 'una sesión sin nombre'}, con una ejecución grande de pruebas` : (t.other_in_flight.find((a) => !passIsStale(a.since, opts.now == null ? Date.now() : Number(opts.now))) || t.other_in_flight[0]).session}): avisale cuando termine.`
+      ? `Coordinación: ${w.session} espera su turno de pase adversarial (lo tiene ${holderOf(t)}): avisale cuando termine.`
       : `Coordinación: ${w.session} puede lanzar su pase adversarial, no hay otro en vuelo: avisale.`);
   }
   // la máquina parada con gente en la fila: nadie arranca sola, el «arrancá» lo da la coordinadora. Con un portón acotado
@@ -1463,17 +1472,46 @@ function adversarialTurn(opts = {}) {
   const unread = [...runProblems, ...passes.problems];
   if (unread.length) process.stderr.write(`coordination: no pude ver todo lo que ocupa la máquina para el turno del pase (${oneLine(unread.join(' · ')).slice(0, 300)}): lo que no leí no frena\n`);
   const heavy_run = run ? { session: run.session ? label(run.session) : null, what: label(run.what), since: run.at } : null;
-  if (!other_in_flight.length && !heavy_run) return null;
+  const gates = gateBesidePass(opts, env, home, now);
+  if (!other_in_flight.length && !heavy_run && !gates.why) return null;
   const list = other_in_flight.map((a) => `${a.storyId ? `la ${a.storyId}` : 'sin story'}, ${a.session}, desde las ${hhmm(a.since)}`).join(' · ');
   // una fecha que no se lee no frena: no se sabe cuánto lleva, y sin tope trabaría la fila para siempre
   const passWaits = other_in_flight.some((a) => !passIsStale(a.since, now));
-  const waiting_turn = passWaits || Boolean(heavy_run);
+  const waiting_turn = passWaits || Boolean(heavy_run) || Boolean(gates.why);
   const turn = heavy_run
     ? `Corre una ejecución grande de pruebas (${heavy_run.session || 'una sesión sin nombre'}, ${heavy_run.what}, desde las ${hhmm(heavy_run.since)}): va una tarea pesada por vez en la máquina y el arnés no deja lanzar el pase hasta que termine; pedile turno a la ${rol.valor}.`
     : passWaits
       ? `Hay otro pase adversarial en vuelo (${list}): va uno por vez y el arnés no deja lanzar este hasta que termine; pedile turno a la ${rol.valor}.`
-      : `Hay otro pase adversarial anotado hace más de una hora (${list}): puede estar terminado o colgado, así que no frena; pedile turno a la ${rol.valor} antes de lanzar este.`;
-  return { other_in_flight, heavy_run, waiting_turn, turn };
+      : gates.why
+        ? `Corre un portón de pruebas en la máquina (${gates.running.map(gateLabel).join(' · ')}) y ${gates.why}: el arnés no deja lanzar el pase hasta que termine (guides/coordination.md, «Lo pesado, con turno»); pedile turno a la ${rol.valor}.`
+        : `Hay otro pase adversarial anotado hace más de una hora (${list}): puede estar terminado o colgado, así que no frena; pedile turno a la ${rol.valor} antes de lanzar este.`;
+  return { other_in_flight, heavy_run, gates_running: gates.running, gate_waits: Boolean(gates.why), waiting_turn, turn };
+}
+
+const gateLabel = (g) => `${g.session || 'una sesión sin nombre'}, ${g.suites == null ? 'sin cantidad conocida de' : g.suites} suites, desde las ${hhmm(g.since)}`;
+
+/**
+ * Los portones acotados que corren y, si frenan al pase, por qué: `{ running, why }`. Al lado del pase va uno solo, de
+ * hasta `BESIDE_PASS_MAX_SUITES` suites, con la memoria libre en el piso o arriba (heavy-turn.js). Uno sin cantidad
+ * legible cuenta como largo. Con el turno apagado (`TYCON_SUITE_TURN=0`) no se mira.
+ */
+function gateBesidePass(opts, env, home, now) {
+  if (env.TYCON_SUITE_TURN === '0') return { running: [], why: null };
+  const problems = [];
+  const HT = require('./heavy-turn.js');
+  const running = gatesOf(home, now, problems).map((g) => ({ session: g.session ? label(g.session) : null, suites: HT.suitesOf(g), since: g.at }));
+  if (problems.length) process.stderr.write(`coordination: no pude ver los portones en curso para el turno del pase (${oneLine(problems.join(' · ')).slice(0, 300)}): lo que no leí no frena\n`);
+  if (!running.length) return { running, why: null };
+  if (running.length > 1) return { running, why: `al lado del pase va uno solo, y corren ${running.length}` };
+  const g = running[0];
+  if (!(g.suites != null && g.suites <= HT.BESIDE_PASS_MAX_SUITES)) return { running, why: `al lado del pase va uno de ${HT.BESIDE_PASS_MAX_SUITES} suites o menos` };
+  let mem;
+  try { mem = (opts.readMemory || HT.freeMemory)(); } catch (e) { mem = { pct: null, why: e.message }; }
+  if (!mem || mem.pct == null) {
+    process.stderr.write(`coordination: no pude medir la memoria libre: ${oneLine(mem && mem.why) || 'sin motivo'}; no frena\n`);
+    return { running, why: null };
+  }
+  return { running, why: mem.pct < HT.BESIDE_PASS_MIN_FREE_PCT ? `la memoria libre está en ${mem.pct} % (al lado del pase se corre con ${HT.BESIDE_PASS_MIN_FREE_PCT} % o más)` : null };
 }
 
 // ── Las firmas por la terminal ──

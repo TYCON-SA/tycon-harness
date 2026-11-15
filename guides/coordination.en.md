@@ -260,10 +260,18 @@ The same notice carries two more things:
 
 ## Heavy work takes turns: the full suite and adversarial passes
 
-The machine runs **one piece of heavy work at a time**: one large test run or one adversarial pass, never two, and not
-one of each either. The pass's hunters and verifiers run their probes on the machine, not in the cloud: a pass and a large
-suite together used up the memory and Claude Code closed sessions. The reviewers, the bench and the exam are calls to the
-model and ask for no turn. The harness controls this, not anyone's memory:
+The machine runs **one piece of heavy work at a time**: one large test run (the full gate, of 100 suites or more, or the
+portable run) or one adversarial pass: never two, and the large run never beside the pass. The pass's hunters and
+verifiers run their probes on the machine, not in the cloud: a pass and a large suite together used up the memory and
+Claude Code closed sessions. The reviewers, the bench and the exam are calls to the model and ask for no turn. The harness
+controls this, not anyone's memory:
+
+- **A scoped gate does run beside the pass.** One of 40 suites or fewer runs with a pass in flight, one at a time and
+  with the system's free memory at 40 % or more. It asks the coordinator for no turn: the harness decides when it starts
+  (`heavy-turn.js besidePass`). Measured on 15/11: the pass weighs about as much as one more session (~0.5 GB), a gate
+  running 4 at a time about the same, and a gate of up to 40 suites takes less time than a pass. With more than 40
+  suites, with another gate already beside it, or with less free memory, the gate waits for the pass (it exits 75 and
+  says why). Memory is checked once, at the start; if it cannot be measured, it does not stop the gate, and that is said.
 
 - **The second large run does not start.** The turn (`scripts/tools/heavy-turn.js`) is requested by the suite runner, when it
   is about to run 100 suites or more, scoped or not, and by the whole portable run. With the turn held by another live
@@ -271,17 +279,20 @@ model and ask for no turn. The harness controls this, not anyone's memory:
   and how to free it. Below 100 suites it is not requested. With a pass in flight from any live session, the own one too,
   they do not run either, and they say which story, which session and since when: the turn belongs to the machine, not
   to the session.
-- **The pass is not launched with the machine busy.** With another pass in flight, or a large run going, the pass's gate
+- **The pass is not launched with the machine busy.** With another pass in flight, a large run going, or a scoped gate
+  that cannot go beside it (more than 40 suites, two gates, or free memory under 40 %), the pass's gate
   (`pipeline.js deep-review-gate`) exits 3, and `pipeline.js next` asks to wait instead of launching. The answer carries
-  `other_in_flight` (story, session and time) or `heavy_run` (session, how many suites and since when), and the line saying
-  who holds the place. The pass of a closed session does not count.
+  `other_in_flight` (story, session and time), `heavy_run` (session, how many suites and since when) or `gates_running`
+  (session, suites and time of each gate), and the line saying who holds the place. Beside a single gate of up to 40
+  suites, with free memory, the pass launches. The pass of a closed session does not count.
 - **How each one frees up.** The large run releases its turn when it ends; the turn of a dead process, or one older than
   three hours, frees itself. The pass has no turn file: it holds the machine from its launch until its session notes the
   result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
   (`marker.js mark-adversarial-skipped`). Relaunched, it holds it again. A session that closed frees it, and after an hour
   it no longer stops anything, because it may be finished or stuck, and that is said.
 
-`coordination.js status` shows a single line, «Turno de tarea pesada», with who holds it and what it is. With no coordinator designated, everything answers as
+`coordination.js status` shows a single line, «Turno de tarea pesada», with who holds it and what it is; a scoped gate
+running beside a pass says so in its own line, with how many suites. With no coordinator designated, everything answers as
 always: in CI and in the cloud there is no turn. `TYCON_SUITE_TURN=0` turns off the suite's, and `TYCON_SUITE_TURN=1` asks for
 it even with no coordinator: it can only stop too much.
 
@@ -754,9 +765,10 @@ They come from a whole day of coordinating several sessions. Each says what to d
   path (for example, the window in the owner's name), tell the owner right away and redo it. Why: a signature in the
   owner's name that they did not give is a false record. A tab that does not ask for permissions no longer signs
   through the window: the harness refuses it. A click or an «aprobado» the hook did not record does not count either.
-- **Heavy things, with a turn.** The full suite, the controls bench, the reviewers' exam and the gate run one at a time on
-  the machine, and the turn is asked from the coordinator. The harness also stops the full suite and the pass, which do not go
-  together (above, "Heavy work takes turns"). The story the owner marked as a priority goes first in the line. Why: two at once saturate the
+- **Heavy things, with a turn.** The full suite, the controls bench, the reviewers' exam and the full gate run one at a
+  time on the machine, and the turn is asked from the coordinator. The harness also stops the full suite and the pass, which
+  do not go together (above, "Heavy work takes turns"). A gate of 40 suites or fewer asks for no turn: the harness lets it
+  run beside the pass, or makes it wait. The story the owner marked as a priority goes first in the line. Why: two at once saturate the
   machine and both take longer.
 - **Before approving someone else's request, look at the diff.** And an ok covering sensitive files nobody reviewed is
   not given: separate them first. Why: approving without looking is signing what was not seen.
@@ -841,7 +853,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | A story number never alone | nadie | It goes in the messages, which do not go through a text check. |
 | A tab that does not ask for permissions does not sign through the window | freno | The window's guard refuses the signature and says how to approve it with a click or an «aprobado»; what does not accept them, with the terminal command. That the path says «delegación» is confirmed by the coordinator. |
 | A quick fix with a screen carries a mockup and a screenshot | freno | The save guard does not pass without the three things, or if it could not measure. It looks at the screenshot's date, not at what it shows. |
-| Heavy things one at a time, with a turn | nadie | The full suite and the adversarial pass have their stop (above); the bench, the exam and the gate do not. |
+| Heavy things one at a time, with a turn | nadie | The full suite, the adversarial pass and the scoped gate beside the pass have their stop (above); the bench, the exam and the full gate without a pass do not. |
 | Look at the diff before approving someone else's request | nadie | It is the approver's judgment call. |
 | A waiting session writes what it is doing | nadie | The session writes it with `marker.js doing`; nothing forces it. |
 | Check that a request is still in the queue | nadie | Checking on every turn would mean asking the network all the time. |

@@ -2,7 +2,8 @@
 // stable-data: las horas de estas pruebas son relativas al reloj de quien las corre (turnos recién tomados o vencidos): no dependen del día ni del huso.
 // heavy-turn.test.js — el turno de las ejecuciones grandes (scripts/tools/heavy-turn.js): con coordinadora, una por vez en
 // la máquina; la segunda no arranca y dice quién tiene el lugar. Sin coordinadora, nada cambia. Un turno de un proceso
-// muerto se libera solo; el de otro no se suelta. Y el corredor de suites.json lo pide según cuántas suites corren.
+// muerto se libera solo; el de otro no se suelta. Y el corredor de suites.json lo pide según cuántas suites corren. Un
+// portón acotado corre al lado de un pase en vuelo sólo si es chico, va uno solo y hay memoria libre.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -480,4 +481,176 @@ test('HT16 Guides_HeavyTurn_SuiteAndPassNotTogether @story-8.228 @ac-5 — las d
   assert.doesNotMatch(en, /run in the cloud|can run at the same time \*\*one full suite and one adversarial pass/);
   assert.match(en, /probes/);
   for (const k of ['mark-adversarial-result', 'mark-adversarial-skipped', 'three hours']) assert.ok(en.includes(k), `en: ${k}`);
+});
+
+// ── El portón acotado al lado del pase (8.286) ────────────────────────────────────────────────────────────────────
+
+// El registro de un portón que corre sin turno, como lo deja gateStarted, de un proceso vivo.
+function gateOf(m, pid, fields) {
+  const dir = path.join(stateDir(m.home), 'coordination', 'gates');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${pid}.json`), JSON.stringify({ pid, sid: 's-ana', session: 'Ana', what: `${fields.suites} suites de repo`, at: Date.now() - 60000, ...fields }));
+}
+const memory = (pct) => { const r = () => { r.calls += 1; return { pct, why: null }; }; r.calls = 0; return r; };
+const besideAs = (m, suites, readMemory, extra = {}) => HT.besidePass({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-uma' }, pid: process.pid, suites, readMemory, ...extra });
+// la salida de errores de una llamada, sin ensuciar la de la prueba
+function said(fn) {
+  const out = [];
+  const write = process.stderr.write;
+  process.stderr.write = (s) => { out.push(String(s)); return true; };
+  try { return { r: fn(), text: out.join('') }; } finally { process.stderr.write = write; }
+}
+
+// 🔴 mutación: frenar todo portón con un pase en vuelo (como hoy la guía) deja la sesión parada por unas pocas suites.
+test('HT18 BesidePass_SmallGate_Runs @story-8.286 @ac-1 — con un pase en vuelo, un portón de 40 suites corre y se anota con cuántas', () => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 5);
+  const r = besideAs(m, 40, memory(60));
+  assert.strictEqual(r.ok, true, r.message);
+  assert.ok(r.pass, 'dice que hay un pase al lado');
+  const g = HT.gateStarted({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-uma' }, pid: process.pid, what: '40 suites de repo', suites: 40 });
+  assert.ok(g.file, g.error);
+  assert.strictEqual(JSON.parse(fs.readFileSync(g.file, 'utf8')).suites, 40);
+});
+
+// 🔴 mutación: comparar con el corte de 100 deja correr al lado del pase un portón que dura dos pases.
+test('HT19 BesidePass_MediumGate_Waits @story-8.286 @ac-2 — con un pase en vuelo, uno de 41 suites espera y dice por qué', () => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 5);
+  const r = besideAs(m, 41, memory(90));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(HT.BUSY_EXIT, 77);
+  assert.match(r.message, /pase adversarial de la 7\.7 \(Ana, desde las \d\d:\d\d\)/);
+  assert.match(r.message, /41 suites/);
+  assert.match(r.message, /40 suites o menos/);
+  assert.match(r.message, /pedile turno a la coordinadora/);
+});
+
+// 🔴 mutación: no mirar los portones ya anotados deja dos al lado del pase.
+test('HT20 BesidePass_SecondSmallGate_Waits @story-8.286 @ac-3 — al lado del pase va uno solo: el segundo dice cuál ya está', (t) => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 5);
+  gateOf(m, otherProcess(t), { suites: 10, session: 'Bea' });
+  const r = besideAs(m, 5, memory(90));
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /Bea \(10 suites, desde las \d\d:\d\d\)/);
+  assert.match(r.message, /uno solo/);
+  // 🔴 mutación: leer los portones sin juntar los problemas deja pasar callado lo que no se pudo ver (AC 14)
+  const gates = path.join(stateDir(m.home), 'coordination', 'gates');
+  fs.rmSync(gates, { recursive: true, force: true });
+  fs.writeFileSync(gates, 'no es una carpeta');
+  const { r: r2, text } = said(() => besideAs(m, 5, memory(90)));
+  assert.strictEqual(r2.ok, true, 'no poder leer los portones no frena');
+  assert.match(text, /no pude ver los portones en curso/);
+  assert.match(said(() => HT.besideRecheck({ home: m.home, pid: process.pid })).text, /no pude ver los portones en curso/);
+});
+
+// 🔴 mutación: aplicar la regla sin pase en vuelo frena portones que hoy corren, y mira la memoria de más.
+test('HT21 NoPass_GatesAsToday @story-8.286 @ac-4 — sin pase, los portones corren como hoy y la memoria no se mira', (t) => {
+  const m = toy();
+  const mem = memory(5);
+  assert.strictEqual(besideAs(m, 90, mem).ok, true);
+  gateOf(m, otherProcess(t), { suites: 90 });
+  assert.strictEqual(besideAs(m, 30, mem).ok, true);
+  assert.strictEqual(mem.calls, 0, 'sin pase no se lee la memoria');
+});
+
+// 🔴 mutación: no mirar la memoria deja correr el portón con la máquina ya justa, que es lo que cerró sesiones.
+test('HT22 BesidePass_LowMemory_Waits @story-8.286 @ac-9 — con poca memoria libre el portón espera y dice cuánta hay y el piso', () => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 5);
+  const r = besideAs(m, 5, memory(35));
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /35 %/);
+  assert.match(r.message, /40 %/);
+});
+
+// 🔴 mutación: tratar «no pude medir» como poca memoria frena para siempre donde no se puede medir (Windows).
+test('HT23 MemoryUnreadable_DoesNotBlockAndSays @story-8.286 @ac-10 — sin poder medir la memoria corre y lo dice', () => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 5);
+  const { r, text } = said(() => besideAs(m, 5, () => { throw new Error('sin comando'); }));
+  assert.strictEqual(r.ok, true, r.message);
+  assert.match(text, /no pude medir la memoria libre: sin comando/);
+  const { r: r2, text: t2 } = said(() => besideAs(m, 5, () => ({ pct: null, why: 'no hay número' })));
+  assert.strictEqual(r2.ok, true);
+  assert.match(t2, /no pude medir la memoria libre: no hay número/);
+});
+
+// 🔴 mutación: leer `MemFree` en vez de `MemAvailable`, o el primer porcentaje de memory_pressure, mide de menos.
+test('HT24 MemoryReader_ParsesPlatforms @story-8.286 @ac-9 @ac-10 — macOS y Linux dan el porcentaje; lo ilegible, null con el motivo', () => {
+  const mac = HT.freeMemory({ platform: 'darwin', run: () => 'The system has 17179869184 (1048576 pages with a page size of 16384).\nPages free: 6117.\nSystem-wide memory free percentage: 66%\n' });
+  assert.strictEqual(mac.pct, 66);
+  const linux = HT.freeMemory({ platform: 'linux', readFile: () => 'MemTotal:       16000000 kB\nMemFree:          100000 kB\nMemAvailable:    4000000 kB\n' });
+  assert.strictEqual(linux.pct, 25);
+  const garbage = HT.freeMemory({ platform: 'darwin', run: () => 'nada que leer' });
+  assert.strictEqual(garbage.pct, null);
+  assert.ok(garbage.why, 'dice por qué');
+  const failed = HT.freeMemory({ platform: 'darwin', run: () => { throw new Error('ENOENT memory_pressure'); } });
+  assert.strictEqual(failed.pct, null);
+  assert.match(failed.why, /ENOENT/);
+  assert.strictEqual(HT.freeMemory({ platform: 'win32' }).pct, null);
+});
+
+// 🔴 mutación: volver a mirar la memoria y cortar el portón ya arrancado deja corridas a medias sin resultado.
+test('HT26 BesidePass_MemoryReadOnce_GateNotCut @story-8.286 @ac-11 — la memoria se mira una vez; si baja después, el portón sigue', () => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 5);
+  let pct = 60;
+  const mem = () => { mem.calls += 1; return { pct, why: null }; };
+  mem.calls = 0;
+  assert.strictEqual(besideAs(m, 5, mem).ok, true);
+  HT.gateStarted({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-uma' }, pid: process.pid, what: '5 suites de repo', suites: 5 });
+  pct = 20;
+  assert.strictEqual(HT.besideRecheck({ home: m.home, pid: process.pid }).ok, true);
+  assert.deepStrictEqual(HT.gatesRunning({ home: m.home }).map((g) => g.pid), [process.pid]);
+  assert.strictEqual(mem.calls, 1);
+});
+
+// 🔴 mutación: dejar pasar por memoria o por el corte nuevo una ejecución de 100 suites rompe la exclusión de la 8.228.
+test('HT27 BesidePass_FullGate_StillExclusive @story-8.286 @ac-16 — una de 100 suites sigue esperando al pase, con memoria de sobra', () => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 5);
+  const r = takeAs(m, 's-uma', { readMemory: memory(90) });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /pase adversarial de la 7\.7/);
+});
+
+// 🔴 mutación: sin la relectura, dos portones que arrancan a la vez quedan los dos al lado del pase.
+test('HT28 BesidePass_TwoGatesAtOnce_OneRuns @story-8.286 @ac-3 — de dos anotados a la vez sigue el de menor proceso; el otro se baja', (t) => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 5);
+  const [a, b] = [otherProcess(t), otherProcess(t)].sort((x, y) => x - y);
+  const at = Date.now() - 1000;
+  gateOf(m, a, { suites: 5, session: 'Primera', at });
+  gateOf(m, b, { suites: 5, session: 'Segunda', at });
+  const lost = HT.besideRecheck({ home: m.home, pid: b });
+  assert.strictEqual(lost.ok, false);
+  assert.match(lost.message, /Primera \(5 suites/);
+  assert.ok(!fs.existsSync(path.join(stateDir(m.home), 'coordination', 'gates', `${b}.json`)), 'el que pierde borra su registro');
+  assert.strictEqual(HT.besideRecheck({ home: m.home, pid: a }).ok, true);
+});
+
+// 🔴 mutación: dejar la guía con «tampoco una de cada una» hace que la coordinadora siga frenando todo portón.
+test('HT25 Guides_SmallGateBesidePass @story-8.286 @ac-13 — las guías y el paso de pruebas cuentan la regla del portón al lado del pase', () => {
+  const flat = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8').replace(/\s+/g, ' ');
+  const section = (text, heading) => { const s = text.indexOf(heading); assert.ok(s >= 0, `falta «${heading}»`); const e = text.indexOf(' ## ', s + 1); return text.slice(s, e < 0 ? undefined : e); };
+  const esAll = flat('guides/coordination.md');
+  const es = section(esAll, '## Lo pesado, con turno');
+  for (const k of ['40 suites', 'uno por vez', 'memoria libre', 'portón completo']) assert.ok(es.includes(k), `es: ${k}`);
+  assert.doesNotMatch(es, /tampoco una de cada una/);
+  assert.doesNotMatch(esAll, /el examen de revisores y el portón corren de a uno/);
+  const en = section(flat('guides/coordination.en.md'), '## Heavy work takes turns');
+  for (const k of ['40 suites', 'one at a time', 'free memory', 'full gate']) assert.ok(en.includes(k), `en: ${k}`);
+  const step = flat('skills/tycon-pipeline/steps/step-06-run-tests.md');
+  assert.match(step, /pase adversarial en vuelo/);
+  assert.match(step, /40 suites/);
 });

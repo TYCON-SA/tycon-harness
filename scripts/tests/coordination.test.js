@@ -2202,6 +2202,121 @@ test('PrWait_AdoRepoDeclared_ReadsWithItsProject @story-8.270 @ac-26 — a repo 
   assert.match(r4.error, /team-repos\.json/, `el motivo no dice que la identidad no se resolvió: ${r4.error}`);
 });
 
+// ── El pase al lado de un portón acotado (8.286) ─────────────────────────────────────────────────────────────────
+
+// El registro de un portón sin turno de un proceso vivo (este, salvo que se diga otro), como lo deja heavy-turn.js.
+function gateRec(t, fields) {
+  const dir = path.join(t.state, 'coordination', 'gates');
+  fs.mkdirSync(dir, { recursive: true });
+  const pid = fields.pid || process.pid;
+  fs.writeFileSync(path.join(dir, `${pid}.json`), JSON.stringify({ pid, sid: 's-ana', session: 'Ana', at: mins(5), ...fields }));
+}
+const mem = (pct) => () => ({ pct, why: null });
+function coordToy() {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  session(t, 'coord-1', 'Coordinadora', { status: 'busy' });
+  designate(t, 'coord-1');
+  return t;
+}
+// un proceso vivo que no es éste, para un segundo portón
+function otherAlive(tt) {
+  const c = require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
+  tt.after(() => { try { c.kill('SIGKILL'); } catch { /* ya terminó */ } });
+  return c.pid;
+}
+
+// 🔴 mutación: tratar cualquier portón como pesado deja al pase esperando unas pocas suites.
+test('T15 AdversarialTurn_SmallGateRunning_PassLaunches @story-8.286 @ac-5: un portón de 20 suites con memoria libre no frena el pase', () => {
+  const t = coordToy();
+  gateRec(t, { suites: 20, what: '20 suites de repo' });
+  const r = C.adversarialTurn({ ...t.opts, sessionId: 's-b', readMemory: mem(60) });
+  assert.ok(r === null || r.waiting_turn === false, JSON.stringify(r));
+});
+
+// 🔴 mutación: no mirar los portones (como hoy), o leer la cantidad de cualquier número del texto, deja lanzar el pase
+// al lado de un portón largo o de dos; y nombrar sólo pases rompe el aviso de la coordinadora cuando lo ocupa un portón.
+test('T16 AdversarialTurn_BigOrManyGates_PassWaits @story-8.286 @ac-6 @ac-7: un portón largo, dos portones o uno sin cantidad legible hacen esperar al pase', (tt) => {
+  const ask = (t) => C.adversarialTurn({ ...t.opts, sessionId: 's-b', readMemory: mem(90) });
+  // (a) uno de 60 suites
+  const a = coordToy();
+  gateRec(a, { suites: 60, what: '60 suites de repo' });
+  const ra = ask(a);
+  assert.strictEqual(ra.waiting_turn, true);
+  assert.deepStrictEqual(ra.gates_running, [{ session: 'Ana', suites: 60, since: mins(5) }]);
+  assert.match(ra.turn, /Ana/);
+  assert.match(ra.turn, /60 suites/);
+  // (g) el aviso de la coordinadora para quien espera su pase nombra al portón y no se rompe sin pases en vuelo
+  session(a, 'bg-debe', 'Rita', { kind: 'bg', status: 'idle', statusUpdatedAt: mins(40) });
+  marker(a, 'bg-debe', { storyId: '9.8', adversarialGate: { run: true, files: ['a.js'] } });
+  assert.match(C.capNotice({ ...a.opts, sessionId: 'coord-1' }), /Rita espera su turno de pase adversarial \(lo tiene Ana, con un portón de 60 suites\)/);
+  // (b) dos de 10
+  const b = coordToy();
+  gateRec(b, { suites: 10, what: '10 suites de repo' });
+  gateRec(b, { pid: otherAlive(tt), session: 'Bea', suites: 10, what: '10 suites de repo' });
+  assert.strictEqual(ask(b).waiting_turn, true);
+  // (c) sin el campo, con la cantidad al principio del texto
+  const c = coordToy();
+  gateRec(c, { what: '85 suites de x' });
+  const rc = ask(c);
+  assert.strictEqual(rc.waiting_turn, true);
+  assert.strictEqual(rc.gates_running[0].suites, 85);
+  // (d) sin el campo ni número, y (f) con un número que no es la cantidad: cuentan como más de 40
+  for (const what of ['portón acotado', 'portón de 3 pruebas']) {
+    const d = coordToy();
+    gateRec(d, { what });
+    const rd = ask(d);
+    assert.strictEqual(rd.waiting_turn, true, what);
+    assert.strictEqual(rd.gates_running[0].suites, null, what);
+  }
+  // (e) el de (a) con su proceso ya muerto no frena
+  const e = coordToy();
+  const dead = require('child_process').spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout;
+  gateRec(e, { pid: Number(dead), suites: 60, what: '60 suites de repo' });
+  assert.strictEqual(ask(e), null);
+});
+
+// 🔴 mutación: no mirar la memoria del lado del pase deja lanzarlo con la máquina justa y un portón corriendo.
+test('T17 AdversarialTurn_SmallGateLowMemory_PassWaits @story-8.286 @ac-9: con un portón chico y poca memoria libre el pase espera', () => {
+  const t = coordToy();
+  gateRec(t, { suites: 10, what: '10 suites de repo' });
+  const r = C.adversarialTurn({ ...t.opts, sessionId: 's-b', readMemory: mem(30) });
+  assert.strictEqual(r.waiting_turn, true);
+  assert.match(r.turn, /30 %/);
+  assert.match(r.turn, /40 %/);
+});
+
+// 🔴 mutación: no decir el pase en el renglón del portón deja a la coordinadora sin saber que van juntos.
+test('T18 CoordinationStatus_GateBesidePass_Line @story-8.286 @ac-12 @ac-14 @ac-15: el renglón del portón dice si va al lado del pase; lo ilegible no frena; sin coordinadora, nada', () => {
+  // (a) con un pase en vuelo
+  const a = coordToy();
+  session(a, 'pase-1', 'ConPase', { status: 'busy' });
+  passMarker(a, 'pase-1', '7.7', 12);
+  gateRec(a, { suites: 12, what: '12 suites de repo' });
+  assert.match(C.statusText(C.status(a.opts)), /^Portón acotado en curso: Ana \(12 suites de repo, al lado del pase de la 7\.7, desde las \d\d:\d\d\)$/m);
+  // (d) sin pase
+  const d = coordToy();
+  gateRec(d, { suites: 12, what: '12 suites de repo' });
+  const td = C.statusText(C.status(d.opts));
+  assert.match(td, /Portón acotado en curso: Ana \(12 suites de repo, desde/);
+  assert.doesNotMatch(td, /al lado del pase/);
+  // (b) la carpeta de los portones no se puede leer: no frena el pase y se anota
+  const b = coordToy();
+  fs.mkdirSync(path.join(b.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(b.state, 'coordination', 'gates'), 'no es una carpeta');
+  const sb = C.status(b.opts);
+  assert.ok(sb.problems.some((p) => /portones en curso/.test(p)), JSON.stringify(sb.problems));
+  const write = process.stderr.write;
+  process.stderr.write = () => true;
+  try { assert.strictEqual(C.adversarialTurn({ ...b.opts, sessionId: 's-b', readMemory: mem(90) }), null); } finally { process.stderr.write = write; }
+  // (c) sin coordinadora designada, o con el turno apagado, un portón largo no frena el pase
+  const c = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  gateRec(c, { suites: 60, what: '60 suites de repo' });
+  assert.strictEqual(C.adversarialTurn({ ...c.opts, sessionId: 's-b', readMemory: mem(90) }), null);
+  const off = coordToy();
+  gateRec(off, { suites: 60, what: '60 suites de repo' });
+  assert.strictEqual(C.adversarialTurn({ ...off.opts, env: { TYCON_SUITE_TURN: '0' }, sessionId: 's-b', readMemory: mem(90) }), null);
+});
+
 // ── 8.281: la espera del dueño no se despierta por sesiones de otros proyectos ──────────────────────────────────────
 
 // Una carpeta con su remoto: el repo del que es una sesión sale de ahí, como en la oficina.

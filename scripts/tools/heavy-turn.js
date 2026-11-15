@@ -22,6 +22,12 @@
  * fila de la coordinadora lo ve (`gatesRunning`) y no da el «arrancá» encima. Se borra al terminar (`gateEnded`); el de
  * un proceso que ya no vive se descarta al leer.
  *
+ * Al lado de un pase en vuelo corre un solo portón acotado, de hasta `BESIDE_PASS_MAX_SUITES` suites, y sólo con la
+ * memoria libre del sistema en `BESIDE_PASS_MIN_FREE_PCT` o más (`besidePass`): el pase pesa como una sesión más, y un
+ * portón chico dura menos que él. Uno más largo, uno segundo o la memoria justa esperan al resultado del pase. Mirar y
+ * anotarse no es un solo paso: después de anotarse, `besideRecheck` deja seguir sólo al primero de los anotados. La
+ * memoria se mira una vez, al decidir; no poder medirla no frena, y se dice. Sin pase en vuelo, nada de esto se mira.
+ *
  * Sin coordinadora designada y viva (la nube, la CI, una máquina sin coordinar) no se toma nada y todo corre como
  * siempre: el mismo criterio que el turno del pase (`adversarialTurn` de coordination.js). Un turno cuyo proceso ya no
  * vive (una suite cortada con kill -9), o de más de tres horas, se libera solo. El registro vive en `<estado>/coordination/suite-turn.json`.
@@ -43,6 +49,9 @@ const TURN_MAX_MS = 3 * 3600000;
 // test-gate.sh lo da como su 75 («otra corrida en marcha, esperá»; steps/step-06-run-tests.md).
 const BUSY_EXIT = 77;
 const EVICT_LOCK_MS = 10000;
+// Al lado de un pase: hasta cuántas suites (las de un portón que dura menos que un pase) y con cuánta memoria libre.
+const BESIDE_PASS_MAX_SUITES = 40;
+const BESIDE_PASS_MIN_FREE_PCT = 40;
 const turnFile = (home) => path.join(stateDir(home), 'coordination', 'suite-turn.json');
 const oneLine = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').replace(/[\p{Cc}\p{Cf}<>]/gu, '').trim().slice(0, 80);
 const hhmm = (ms) => { const d = new Date(ms); return Number.isNaN(d.getTime()) ? '?' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -201,7 +210,7 @@ const gatesDir = (home) => path.join(stateDir(home), 'coordination', 'gates');
  * es lo anotado (null sin coordinadora); `error`, por qué no se pudo anotar. No poder anotarlo no frena el portón, pero
  * se dice: sin la anotación, la fila pediría el «arrancá» encima de él.
  */
-function gateStarted({ home = require('os').homedir(), env = process.env, arnes, pid = process.pid, what, now = Date.now() } = {}) {
+function gateStarted({ home = require('os').homedir(), env = process.env, arnes, pid = process.pid, what, suites, now = Date.now() } = {}) {
   const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
   clearWait(home, sid);
   if (!coordinator({ home, env, arnes })) return { file: null, error: null };
@@ -210,7 +219,7 @@ function gateStarted({ home = require('os').homedir(), env = process.env, arnes,
   const tmp = `${file}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(tmp, JSON.stringify({ pid, sid, session: sessionName(home, sid), what: oneLine(what) || 'portón acotado', at: now }));
+    fs.writeFileSync(tmp, JSON.stringify({ pid, sid, session: sessionName(home, sid), what: oneLine(what) || 'portón acotado', ...(Number.isInteger(suites) ? { suites } : {}), at: now }));
     fs.renameSync(tmp, file);
     return { file, error: null };
   } catch (e) {
@@ -246,6 +255,89 @@ function gatesRunning({ home = require('os').homedir(), now = Date.now(), proble
   return out.sort((a, b) => a.at - b.at);
 }
 
+/**
+ * Cuántas suites corre un portón anotado: el campo `suites`, o el número con que empieza su `what` («N suites de …», como
+ * lo arma run-suites-json.js). Cualquier otra cosa es null: no se sabe, y quien decide lo cuenta como largo.
+ */
+function suitesOf(g) {
+  if (g && Number.isInteger(g.suites)) return g.suites;
+  const m = /^(\d+) suites de /.exec(String((g && g.what) || ''));
+  return m ? Number(m[1]) : null;
+}
+
+// Los portones en curso para decidir al lado del pase: la carpeta que no se lee no frena, pero se dice.
+function gatesRead({ home, now }) {
+  const problems = [];
+  const out = gatesRunning({ home, now, problems });
+  if (problems.length) process.stderr.write(`heavy-turn: no pude ver los portones en curso (${oneLine(problems.join(' · '))}): lo que no leí no frena\n`);
+  return out;
+}
+
+const describeGate = (g) => `${oneLine(g.session) || 'una sesión sin nombre'} (${suitesOf(g) == null ? 'sin cantidad conocida de' : suitesOf(g)} suites, desde las ${hhmm(g.at)})`;
+
+/**
+ * La memoria libre del sistema, en porcentaje: `{ pct, why }`, con `pct` null y el motivo cuando no se puede leer. En macOS,
+ * «System-wide memory free percentage» de `memory_pressure -Q`; en Linux, `MemAvailable` sobre `MemTotal`. En otro
+ * sistema no se mide.
+ */
+function freeMemory({ platform = process.platform, run, readFile } = {}) {
+  try {
+    if (platform === 'darwin') {
+      const text = (run || (() => require('child_process').execFileSync('memory_pressure', ['-Q'], { encoding: 'utf8', timeout: 5000, windowsHide: true })))();
+      const m = /memory free percentage:\s*(\d+)\s*%/i.exec(String(text));
+      return m ? { pct: Number(m[1]), why: null } : { pct: null, why: 'memory_pressure no dio el porcentaje' };
+    }
+    if (platform === 'linux') {
+      const text = String((readFile || ((p) => fs.readFileSync(p, 'utf8')))('/proc/meminfo'));
+      const kb = (k) => { const m = new RegExp(`^${k}:\\s*(\\d+)\\s*kB`, 'm').exec(text); return m ? Number(m[1]) : null; };
+      const total = kb('MemTotal');
+      const avail = kb('MemAvailable');
+      return total && avail != null ? { pct: Math.round((avail / total) * 100), why: null } : { pct: null, why: '/proc/meminfo no trae MemTotal y MemAvailable' };
+    }
+    return { pct: null, why: `no sé medirla en ${platform}` };
+  } catch (e) { return { pct: null, why: oneLine(e.message) }; }
+}
+
+/**
+ * Si un portón acotado de `suites` suites puede correr ahora: `{ ok, message, pass, note }`. Sin coordinadora, o sin un
+ * pase en vuelo, sí, y la memoria no se mira. Con un pase en vuelo, sólo si son `BESIDE_PASS_MAX_SUITES` o menos, no
+ * hay otro portón al lado y la memoria libre llega al piso. `pass` es el pase al lado, para la relectura.
+ */
+function besidePass({ home = require('os').homedir(), env = process.env, arnes, pid = process.pid, suites, now = Date.now(), readMemory = freeMemory } = {}) {
+  const role = coordinator({ home, env, arnes });
+  if (!role) return { ok: true, pass: null };
+  const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
+  const { pass, note } = passHolder({ home, env, now, sid });
+  if (note) process.stderr.write(`heavy-turn: ${note}\n`);
+  if (!pass) return { ok: true, pass: null, note };
+  const what = `Hay un pase adversarial en vuelo en esta máquina: pase adversarial de la ${oneLine(pass.storyId) || 'sin story'} (${oneLine(pass.session)}, desde las ${hhmmIso(pass.since)})`;
+  const tail = `Esperá su resultado, o pedile turno a la ${role} (guides/coordination.md, «Lo pesado, con turno»).`;
+  if (!(Number.isInteger(suites) && suites <= BESIDE_PASS_MAX_SUITES)) {
+    return { ok: false, pass, note, message: `${what}, y este portón corre ${Number.isInteger(suites) ? suites : 'una cantidad desconocida de'} suites: al lado del pase corre uno de ${BESIDE_PASS_MAX_SUITES} suites o menos. ${tail}` };
+  }
+  const others = gatesRead({ home, now }).filter((g) => Number(g.pid) !== pid);
+  if (others.length) return { ok: false, pass, note, message: `${what}, y al lado ya corre otro portón: ${describeGate(others[0])}. Al lado del pase va uno solo: esperá que termine. ${tail}` };
+  let mem;
+  try { mem = readMemory(); } catch (e) { mem = { pct: null, why: oneLine(e.message) }; }
+  if (!mem || mem.pct == null) process.stderr.write(`heavy-turn: no pude medir la memoria libre: ${oneLine(mem && mem.why) || 'sin motivo'}; no frena\n`);
+  else if (mem.pct < BESIDE_PASS_MIN_FREE_PCT) return { ok: false, pass, note, message: `${what}, y la memoria libre está en ${mem.pct} %: al lado del pase se corre con ${BESIDE_PASS_MIN_FREE_PCT} % o más. ${tail}` };
+  return { ok: true, pass, note };
+}
+
+/**
+ * Después de anotarse al lado de un pase: sigue sólo el primero de los portones anotados (menor `at`; a igual hora, menor
+ * proceso). El que pierde borra su registro y dice cuál sigue: `{ ok, message }`.
+ */
+function besideRecheck({ home = require('os').homedir(), pid = process.pid, now = Date.now() } = {}) {
+  const all = gatesRead({ home, now });
+  const mine = all.find((g) => Number(g.pid) === pid);
+  if (!mine) return { ok: true };
+  const first = all.filter((g) => g.at < mine.at || (g.at === mine.at && Number(g.pid) < pid))[0];
+  if (!first) return { ok: true };
+  gateEnded({ home, pid });
+  return { ok: false, message: `Al lado del pase adversarial ya arrancó otro portón: ${describeGate(first)}. Al lado del pase va uno solo: esperá que termine (guides/coordination.md, «Lo pesado, con turno»).` };
+}
+
 /** Suelta el turno si es de `pid`. El de otro proceso no se toca. */
 function release({ home = require('os').homedir(), pid = process.pid } = {}) {
   const file = turnFile(home);
@@ -277,4 +369,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { take, release, holder, describe, turnFile, clearWait, gateStarted, gateEnded, gatesRunning, BUSY_EXIT };
+module.exports = { take, release, holder, describe, turnFile, clearWait, gateStarted, gateEnded, gatesRunning, besidePass, besideRecheck, freeMemory, suitesOf, describeGate, BUSY_EXIT, BESIDE_PASS_MAX_SUITES, BESIDE_PASS_MIN_FREE_PCT };
