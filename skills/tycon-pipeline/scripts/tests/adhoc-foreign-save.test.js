@@ -710,7 +710,9 @@ test('T18 Comando_ConUnCaracterQueNoSeVe @story-8.236 @ac-5', () => {
 test('T18b Comando_UsoPrivadoYMarcaSuelta_NoSeVen_TildeSi @story-8.282 @ac-20 @ac-21', () => {
   const pide = (carpeta) => fa.motivoParaNoOfrecer({ command: `cd ${carpeta} && git commit -m x`, cs: [], dudas: [], gits: [], repos: ['/x'], urls: new Set() });
   for (const carpeta of ['/x/rep\u{e000}o', '/x/́repo', '́/x/repo']) assert.match(String(pide(carpeta)), /no se ve/, JSON.stringify(carpeta));
-  assert.doesNotMatch(String(pide('/x/cámara')), /no se ve/, 'la tilde compuesta se ve');
+  // la tilde compuesta se ve: el comando da lo mismo que sin ella (sin motivo para no ofrecer el click)
+  assert.strictEqual(pide('/x/camara'), null);
+  assert.strictEqual(pide('/x/cámara'), null, 'la tilde compuesta se ve');
 });
 
 // 🔴 Falla con: la configuración de una máquina común (git-lfs y los ayudantes de credenciales de gh) iba toda en un

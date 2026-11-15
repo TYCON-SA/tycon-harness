@@ -931,6 +931,10 @@ test('Cuadro_UsoPrivadoYMarcaSuelta_NoSeVen_TildesSi (T15) @story-8.282 @ac-20 @
     // por --file, un salto parte el comando en dos y no llega a esta fuente: se prueba por --entries
     ['salto de línea', 'scripts/ci/a.sh\nscripts/ci/otra.sh', '\\n', [porEntries]],
     ['de dirección', 'scripts/ci/a‮b.sh', '\\u{202e}', [porFile]],
+    // detrás de un control que el motivo escribe con letras (\n, \t, \u001b), la marca sigue siendo suelta
+    ['marca suelta después de un salto', 'scripts/ci/a\ńb.sh', '\\n\\u{301}', [porEntries]],
+    ['marca suelta después de un tabulador', 'scripts/ci/a\t́b.sh', '\\t\\u{301}', [porEntries]],
+    ['marca suelta después de un control', 'scripts/ci/a\u001b́b.sh', '\\u001b\\u{301}', [porEntries]],
   ];
   for (const [nombre, ruta, escrito, formas] of casos) {
     for (const forma of formas) {
@@ -960,6 +964,12 @@ test('Cuadro_CambiaN_CuentaLasQueCambiaron (T16) @story-8.282 @ac-22 @ac-29', (t
   const { c, entradas, comando } = repoConArchivos(t, cambian, { fijas });
   const q = conFirma('control-change')(c, comando(entradas([...cambian, ...fijas]))).pregunta;
   assert.match(q, /Qué hace: Cambia 2 de 5 archivo\(s\) de control pedidos: \+2 −0 líneas\./);
+  // sin base, o si git no puede leer la base, no hay «Cambia»: el texto de siempre
+  const cinco = entradas([...cambian, ...fijas]);
+  const sinBase = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --entries '${cinco}'`).pregunta;
+  assert.match(sinBase, /Qué hace: Firma 5 archivo\(s\) de control en su versión de la punta \(sin base para comparar\)\./);
+  const baseRota = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${'0'.repeat(40)} --entries '${cinco}'`).pregunta;
+  assert.match(baseRota, /Qué hace: no pude leer el cambio de 5 archivo\(s\) de control: /);
   // con todo lo pedido cambiado, el texto de hoy
   const todas = repoConArchivos(t, ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/lib/c.js']);
   const igual = conFirma('control-change')(todas.c, todas.comando(todas.entradas())).pregunta;

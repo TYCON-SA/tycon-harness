@@ -162,12 +162,22 @@ const CLASE_QUE_NO_SE_VE = '[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}\\p{Default_Ignorable_C
 const NO_SE_VE = new RegExp(CLASE_QUE_NO_SE_VE, 'u');
 // una marca de acento sin letra base (al principio, o después de algo que no es letra, número ni otra marca) se monta
 // sobre lo que tiene al lado; con su letra es una tilde compuesta y se ve
-const MARCA_SUELTA = /(^|[^\p{L}\p{N}\p{M}])(\p{M}+)/gu;
-const comoCodigo = (s) => [...s].map((c) => `\\u{${c.codePointAt(0).toString(16)}}`).join('');
-// la ruta, para nombrarla en un motivo: entre comillas de JSON y con lo que no se ve escrito como su código, así se lee
+const MARCA_SUELTA = /(^|[^\p{L}\p{N}\p{M}])\p{M}/u;
+const NO_SE_VE_UNO = new RegExp(`^${CLASE_QUE_NO_SE_VE}$`, 'u');
+const ES_BASE = /^[\p{L}\p{N}\p{M}]$/u;
+// la ruta, para nombrarla en un motivo: con los escapes de JSON y con lo que no se ve escrito como su código, así se lee.
+// Se decide sobre la ruta cruda, carácter por carácter: una marca detrás de un salto sigue sin letra base aunque el
+// motivo escriba el salto con letras («\n»)
 const rutaALaVista = (r) => {
-  const t = JSON.stringify(String(r)).slice(1, -1).replace(new RegExp(CLASE_QUE_NO_SE_VE, 'gu'), comoCodigo)
-    .replace(MARCA_SUELTA, (_, antes, marcas) => `${antes}${comoCodigo(marcas)}`);
+  let t = '';
+  let base = false;
+  for (const c of String(r)) {
+    const json = JSON.stringify(c).slice(1, -1);
+    const suelta = /^\p{M}$/u.test(c) && !base;
+    t += json !== c ? json : (NO_SE_VE_UNO.test(c) || suelta) ? `\\u{${c.codePointAt(0).toString(16)}}` : c;
+    // una marca suelta tampoco es base de la que sigue
+    base = ES_BASE.test(c) && !suelta;
+  }
   return t.length > 120 ? `${t.slice(0, 120)}…` : t;
 };
 // las opciones que lee el guion (run-base-controls.sh `opt`), que sólo las lee separadas de su valor: pegadas con «=», la
@@ -180,7 +190,7 @@ const OPCIONES_DEL_GUION = ['--root', '--base', '--entries', '--file', '--rev', 
  * que no son el común se ven como uno solo (owner-approvals.js `cuadroDe` junta los espacios).
  */
 function porQueNoSeVe(ruta) {
-  if (NO_SE_VE.test(ruta) || new RegExp(MARCA_SUELTA.source, 'u').test(ruta)) return 'trae un salto de línea, un carácter de control o uno que no se ve';
+  if (NO_SE_VE.test(ruta) || MARCA_SUELTA.test(ruta)) return 'trae un salto de línea, un carácter de control o uno que no se ve';
   if (ruta.includes(', ')) return 'trae «, », que en la pregunta se lee como el fin de una ruta y el principio de otra';
   if (ruta !== ruta.trim() || / {2}/.test(ruta) || /[^\S ]/.test(ruta)) return 'trae espacios en las puntas, seguidos o que no son el común, y la pregunta los muestra distintos';
   return null;
