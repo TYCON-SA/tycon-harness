@@ -3874,6 +3874,44 @@ test('OwnerNext_PlanAntesDelClick_LaRepeticionNoGastaElClick (T17) — @story-8.
   assert.strictEqual(fin.via, 'click');
 });
 
+// La aprobación del plan de una pestaña que pregunta (no de fondo): además de la ventana, el renglón en la lista del
+// dueño; el click por la lista firma la repetición sin otra ventana. Un click en un cuadro propio de la coordinadora no vale
+test('T17 OwnerWindow_PlanApprovalForegroundSession_RowAndSingleClick @story-8.272 @ac-19 @ac-20', (t) => {
+  const cmd = `node ${MARKER} complete-step approve-plan --approved "aprobado"`;
+  const DELANTE = [...arbolDelFreno(), COORD_VIVA];
+  const pide = (casa, o = {}) => pedirConLista(casa, o.cmd || cmd, { arbol: DELANTE, evento: { permission_mode: 'default' }, ...o });
+  const casa = casaDeLista(t);
+  // sin click: la ventana de su pestaña, como hoy, y además el renglón; repetir no suma otro
+  const sin = pide(casa);
+  assert.strictEqual(sin.decision, 'ask', sin.texto);
+  assert.deepStrictEqual(renglones(casa).map((f) => f.firma), ['plan-approval']);
+  assert.strictEqual(pide(casa).decision, 'ask');
+  assert.strictEqual(renglones(casa).length, 1);
+  // owner-next se lo da a la coordinadora
+  const r = pasada(casa, 'ses-coord', { arbol: DELANTE });
+  assert.strictEqual(r.tipo, 'firma', r.texto);
+  // un click en un cuadro propio de la coordinadora, con otra pregunta, no vale: sigue la ventana
+  clickEnLaCoordinadora(casa, 'Pregunta propia de la coordinadora: ¿aprobás el plan?');
+  assert.strictEqual(pide(casa, { aprobaciones: aprobacionesDeLaLista(casa) }).decision, 'ask');
+  // el click en el cuadro de la lista: la repetición firma sin abrir la ventana
+  clickEnLaCoordinadora(casa, r.pregunta);
+  const con = pide(casa, { aprobaciones: aprobacionesDeLaLista(casa) });
+  assert.deepStrictEqual([con.decision, con.via], ['allow', 'click'], con.texto);
+  // el guion firma (lo deja en el registro común) y el renglón se cierra: no queda nada para pasar
+  ow.firmar({ firma: 'plan-approval', via: 'click', sesion: 'ses-a', destino: 'ses-a', resumen: 'el plan', casa, ahora: AHORA + 1000, persona: 'el-dueño' });
+  assert.deepStrictEqual(sl.abiertos(casa, { ...SIN_PERFIL(casa), ahora: AHORA + 2000 }).filas.filter((f) => f.firma === 'plan-approval'), []);
+  // un comando que el guion iba a negar no deja renglón ni ventana
+  const casa2 = casaDeLista(t);
+  const niega = pide(casa2, { comprobar: () => ({ niega: 'el plan no está escrito' }) });
+  assert.strictEqual(niega.decision, 'deny', niega.texto);
+  assert.match(niega.texto, /el plan no está escrito/);
+  assert.strictEqual(renglones(casa2).length, 0);
+  // las demás firmas de una pestaña que pregunta, como hoy: ventana y sin renglón
+  const casa3 = casaDeLista(t);
+  assert.strictEqual(pide(casa3, { cmd: MANUAL_T }).decision, 'ask');
+  assert.strictEqual(renglones(casa3).length, 0);
+});
+
 // --- nombrar a la coordinadora con un click --------------------------------------------------------------------------
 
 const DESIGNA = `node ${MARKER} designate-relay`;

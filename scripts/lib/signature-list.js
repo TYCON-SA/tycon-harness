@@ -376,9 +376,10 @@ function cuadroDeLaFila(f, casa, can = ow().canonicaDe(f.comando)) {
 /**
  * Lo que sigue en la pasada para la sesión `sesion`: un solo renglón, el más viejo; primero los permisos, después las
  * firmas y al final lo de la terminal. La coordinadora confirmada pasa todos; otra sesión, aquellos de los que es destino.
- * `tipo` dice qué salió: `permiso` o `firma` (con su cuadro), `plan` (hay que escribir el plan antes), `rota` y `sin-cuadro`
- * (no da el cuadro; `sigue` dice cómo seguir), `terminal` (también con `sigue`: sólo la persona lo cierra), `nada`, `apagada`
- * o `sin-leer` (el registro está roto). Nunca anota una aprobación.
+ * `tipo` dice qué salió: `permiso` o `firma` (con su cuadro), `plan` (hay que escribir el plan antes), `terminal` (con
+ * `sigue`: sólo la persona lo cierra), `nada`, `apagada` o `sin-leer` (el registro está roto). Un renglón que no se arma
+ * desde aquí (roto, o sin cuadro) no corta la pasada: va a `saltados` (`{ id, motivo, cwd }`) y sigue con el próximo;
+ * si no queda otro, `nada` dice cuántos quedan y desde qué carpeta. Nunca anota una aprobación.
  * `arbol` y `validar` van a `buscar`; se pasan en las pruebas.
  */
 function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env, arbol, validar }) {
@@ -405,7 +406,9 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
   const desde = after === null ? 0 : enOrden.findIndex((f) => f.id === after) + 1;
   const nombreDe = (sid) => { const x = s.mapa.get(sid); return (x && x.name) || String(sid).slice(0, 8); };
   const faltaRepetir = [];
-  const sale = (o) => ({ faltaRepetir, problemas, ...o });
+  // lo que no se arma desde aquí no corta la pasada: queda, con su motivo y la carpeta desde la que se pidió
+  const saltados = [];
+  const sale = (o) => ({ faltaRepetir, problemas, saltados, ...o });
 
   for (const f of enOrden.slice(desde)) {
     const tipo = tipoDe(f);
@@ -420,9 +423,9 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
     }
     const can = ow().canonicaDe(f.comando);
     const esSuya = can && (can.id === f.firma || (f.firma === 'refresh-after-main' && can.id === 'control-change'));
-    if (!esSuya) return sale({ tipo: 'rota', id: f.id, texto: `El renglón ${f.id} está roto: su comando no tiene la forma de la firma «${una(f.firma)}». No doy su cuadro.`, sigue: `owner-next --after ${f.id}` });
+    if (!esSuya) { saltados.push({ id: f.id, motivo: `su comando no tiene la forma de la firma «${una(f.firma)}»`, cwd: f.cwd ? una(f.cwd) : null }); continue; }
     const cuadro = cuadroDeLaFila(f, casa, can);
-    if (cuadro.error) return sale({ tipo: 'sin-cuadro', id: f.id, texto: `No pude armar el cuadro de ${f.id}: ${una(cuadro.error)}.`, sigue: `owner-next --after ${f.id}` });
+    if (cuadro.error) { saltados.push({ id: f.id, motivo: `no pude armar su cuadro (${una(cuadro.error)})`, cwd: f.cwd ? una(f.cwd) : null }); continue; }
     let aviso = avisoALaSesion(f, can.palabras);
     // no se pide un click ya dado. `buscar` sólo lee: vencido o con la coordinadora muerta, no lo encuentra y se vuelve a dar
     let dado = { ok: false };
@@ -444,11 +447,18 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
     }
     return sale({ tipo, id: f.id, destino: f.destino, nombre: nombreDe(f.destino), rotulo: rotulo('Firma', firmas.indexOf(f) + 1, firmas.length), pregunta: cuadro.pregunta, sello: cuadro.sello, opciones: cuadro.opciones, aviso, nota });
   }
+  if (saltados.length) return sale({ tipo: 'nada', texto: textoDeSaltados(saltados) });
   const texto = faltaRepetir.length ? 'No queda nada para preguntar.'
     : after !== null && suyas.length ? `No queda nada más en esta pasada, pero siguen abiertos ${suyas.length} renglón(es): se vuelven a pasar sin --after.`
       : filas.length ? 'Para esta sesión no hay nada: los demás renglones los pasa la coordinadora o su sesión.'
         : 'No hay nada que espere a la persona.';
   return sale({ tipo: 'nada', texto });
+}
+
+/** Los renglones que la pasada no pudo armar desde aquí: cuántos, y de cada uno su id, el motivo y la carpeta. */
+function textoDeSaltados(saltados) {
+  const lineas = saltados.map((x) => `- ${x.id}: ${x.motivo}; se pidió desde ${x.cwd || 'sin carpeta anotada'}`);
+  return `Quedan ${saltados.length} renglón(es) que no se pueden armar desde aquí; siguen en la lista hasta que su sesión repita o se cierren:\n${lineas.join('\n')}`;
 }
 
 /**
@@ -521,4 +531,4 @@ function mensajesDe(ruta) {
   return fuera;
 }
 
-module.exports = { claveDe, archivo, candado, tipoDe, cuadroDeLaFila, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, rechazar, esDeLaPersona };
+module.exports = { claveDe, archivo, candado, tipoDe, cuadroDeLaFila, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, textoDeSaltados, rechazar, esDeLaPersona };

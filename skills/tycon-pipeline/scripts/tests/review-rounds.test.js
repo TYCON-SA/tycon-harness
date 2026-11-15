@@ -508,3 +508,118 @@ test('VueltaExtra_ForSession_YaAutorizada_LoDice @story-8.271 @ac-5', () => {
   assert.match(r.stderr, /sin --extra-round ni --for-session, sin otra firma/);
   assert.deepEqual(lab.servidas(), [1, 2], 'no sirvió el set');
 });
+
+// ── La vuelta extra para otra sesión sale de la corrida de esa sesión (8.272) ────────────────────────────────────────
+//
+// La coordinadora corre el comando desde su propia carpeta: el repo, la historia y los archivos salen del marcador de la
+// sesión destino, no del directorio de trabajo. Sin esa corrida, o sin lo que hace falta de ella, sale 2 sin armar nada.
+
+/** La vuelta `iter` pedida desde `cwd` (la carpeta de la coordinadora), sólo con los argumentos de `extra`. */
+function vueltaDesdeOtraCarpeta(lab, cwd, iter, extra, { pedir = true, delegada = false } = {}) {
+  const args = [PIPELINE, 'smart-reloop', '--iter', String(iter), ...extra];
+  const cmd = `node ${args.join(' ')}`;
+  if (pedir) {
+    const p = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, cwd },
+      escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, clasificar: () => null, comprobar: () => null,
+      delegacion: () => (delegada ? { ok: true, maquina: 'm-prueba' } : { ok: false, motivo: 'sin delegación en la prueba' }) });
+    assert.deepEqual([p.decision, p.via], delegada ? ['allow', 'delegacion'] : ['ask', undefined], p.texto);
+  }
+  return spawnSync(process.execPath, args, { encoding: 'utf8', cwd,
+    env: conVentana({ ...lab.env, CLAUDE_CODE_SESSION_ID: COORD }, delegada ? { delegadaPor: COORD } : { arbol: { arbol: arbolDelGuion(lab.home, cmd), pid: 301, ahora: AHORA + 60000 } }) });
+}
+/** El laboratorio al tope, con la nota de la tercera vuelta y lo que tocó la corrida (uno en el repo, uno fuera). */
+function alTopeConNota({ marcador = {} } = {}) {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
+  assert.equal(lab.reloop(3).status, 3);
+  const nota = lab.cmd(MARKER, ['rethink', '--iter', '3', '--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
+    '--change', 'Cambia el enfoque: la validación pasa a la entrada del endpoint, antes de tocar la base', '--repo', lab.repo, '--story', lab.story]);
+  assert.equal(nota.status, 0, nota.stderr);
+  const m = JSON.parse(fs.readFileSync(lab.markerFile, 'utf8'));
+  Object.assign(m, { filesTouched: [path.join(lab.repo, 'src', 'a.js'), path.join(os.tmpdir(), 'fuera-del-repo.js')] }, marcador);
+  for (const [k, v] of Object.entries(marcador)) if (v === undefined) delete m[k];
+  fs.writeFileSync(lab.markerFile, JSON.stringify(m));
+  return lab;
+}
+
+test('T15 ExtraRound_ForSession_FilesFromTheirMarker @story-8.272 @ac-17', () => {
+  // desde la carpeta de la coordinadora, sin --repo, --story ni --files: todo sale de la corrida de la sesión destino
+  const lab = alTopeConNota();
+  const coord = tmp('rr-coord-');
+  const r = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--extra-round', '--for-session', SID]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(r.stdout).iter, 3);
+  assert.ok(gates(lab).some((g) => g.name === 'extra-round' && g.story === '9.8' && g.iter === 3), 'la vuelta extra es de la corrida destino');
+  assert.deepEqual(lab.servidas(), [1, 2, 3], 'se sirvió la vuelta en la corrida destino');
+  assert.equal(vigentes(lab).length, 0, 'el pedido se gastó');
+  // un --repo y unos --files relativos se leen contra el repo de la corrida destino, no contra la carpeta de la coordinadora
+  const lab2 = alTopeConNota();
+  const r2 = vueltaDesdeOtraCarpeta(lab2, coord, 3, ['--repo', '.', '--files', 'src/a.js', '--extra-round', '--for-session', SID]);
+  assert.equal(r2.status, 0, r2.stdout + r2.stderr);
+  assert.deepEqual(lab2.servidas(), [1, 2, 3]);
+  // la firma por delegación del perfil, desde la carpeta de la coordinadora y sin `cd … &&`
+  const lab3 = alTopeConNota();
+  const r3 = vueltaDesdeOtraCarpeta(lab3, coord, 3, ['--extra-round', '--for-session', SID], { delegada: true });
+  assert.equal(r3.status, 0, r3.stdout + r3.stderr);
+  assert.ok(gates(lab3).some((g) => g.name === 'extra-round' && g.iter === 3 && g.via === 'delegacion'), JSON.stringify(gates(lab3).filter((g) => g.name === 'extra-round')));
+  assert.deepEqual(lab3.servidas(), [1, 2, 3]);
+});
+
+test('T16 ExtraRound_ForSessionWithoutMarker_Exit2 @story-8.272 @ac-17 @ac-18', () => {
+  const coord = tmp('rr-coord-');
+  const lab = alTopeConNota();
+  // sin marcador: «no encontré la corrida» con el motivo, salida 2, sin servir nada
+  const sin = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--extra-round', '--for-session', 'ses-z'], { pedir: false });
+  assert.equal(sin.status, 2, sin.stdout + sin.stderr);
+  assert.match(sin.stderr, /no encontré la corrida de la sesión ses-z/i);
+  assert.match(sin.stderr, /no está su marcador/);
+  // marcador ilegible: lo mismo, con su motivo
+  fs.writeFileSync(path.join(lab.state, 'active', 'ses-rota.json'), '{ no es json');
+  const rota = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--extra-round', '--for-session', 'ses-rota'], { pedir: false });
+  assert.equal(rota.status, 2, rota.stdout + rota.stderr);
+  assert.match(rota.stderr, /no encontré la corrida de la sesión ses-rota/i);
+  assert.match(rota.stderr, /no pude leer/);
+  // la corrida no dice su repo y no vino --repo: sale 2 diciendo qué falta
+  const sinRepo = alTopeConNota({ marcador: { repoPath: undefined } });
+  const r3 = vueltaDesdeOtraCarpeta(sinRepo, coord, 3, ['--extra-round', '--for-session', SID], { pedir: false });
+  assert.equal(r3.status, 2, r3.stdout + r3.stderr);
+  assert.match(r3.stderr, /no dice su repo.*--repo/);
+  // la corrida no tocó archivos en ese repo y no vino --files: sale 2 diciendo qué falta
+  const sinArchivos = alTopeConNota({ marcador: { filesTouched: [path.join(os.tmpdir(), 'fuera-del-repo.js')] } });
+  const r4 = vueltaDesdeOtraCarpeta(sinArchivos, coord, 3, ['--extra-round', '--for-session', SID], { pedir: false });
+  assert.equal(r4.status, 2, r4.stdout + r4.stderr);
+  assert.match(r4.stderr, /no tocó archivos en .*--files/);
+  for (const l of [lab, sinRepo, sinArchivos]) assert.deepEqual(l.servidas(), [1, 2], 'ninguna vuelta armada');
+  // un marcador legible sin historia: el texto de hoy, también con salida 2
+  fs.writeFileSync(path.join(lab.state, 'active', 'ses-sin.json'), JSON.stringify({ sessionId: 'ses-sin', startedAt: new Date().toISOString() }));
+  const sinHistoria = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--extra-round', '--for-session', 'ses-sin'], { pedir: false });
+  assert.equal(sinHistoria.status, 2, sinHistoria.stdout + sinHistoria.stderr);
+  assert.match(sinHistoria.stderr, /no tiene una ejecución abierta/);
+});
+
+// Regresión del pase adversarial de la 8.272 B: el código de la corrida vive en el repo hermano de la historia, una
+// --story relativa se lee contra el repo de la corrida, y lo que la corrida tocó y ya no está (un probe del pase, un
+// archivo borrado) no tumba la vuelta
+test('Regresion_ExtraRound_ForSession_SiblingCodeRelativeStoryGoneFiles @story-8.272 @ac-17', () => {
+  const sib = tmp('rr-sib-');
+  fs.mkdirSync(path.join(sib, 'src'));
+  fs.writeFileSync(path.join(sib, 'src', 'codigo.js'), '// el código de la corrida\n');
+  execFileSync('git', ['-C', sib, 'init', '-q']);
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')],
+    advisorsYaml: `${TOPE_DOS}evidence:\n  companion_repos:\n    - ${path.basename(sib)}\n` });
+  assert.equal(lab.reloop(3).status, 3);
+  assert.equal(lab.cmd(MARKER, ['rethink', '--iter', '3', '--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
+    '--change', 'Cambia el enfoque: la validación pasa a la entrada del endpoint, antes de tocar la base', '--repo', lab.repo, '--story', lab.story]).status, 0);
+  const m = JSON.parse(fs.readFileSync(lab.markerFile, 'utf8'));
+  m.filesTouched = [lab.story, path.join(sib, 'src', 'codigo.js'), path.join(lab.repo, 'src', '__probe_x.js'), path.join(lab.repo, 'src', 'borrado.js')];
+  fs.writeFileSync(lab.markerFile, JSON.stringify(m));
+  // la carpeta de la coordinadora tiene su propia story.md: la relativa es la de la corrida
+  const coord = tmp('rr-coord-');
+  fs.writeFileSync(path.join(coord, 'story.md'), '---\nstory: 7.1\n---\n\n## Acceptance Criteria\n- AC1: OTRA\n');
+  const r = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--story', 'story.md', '--extra-round', '--for-session', SID]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const ctx = fs.readFileSync(JSON.parse(r.stdout).context_file, 'utf8');
+  assert.match(ctx, /codigo\.js/, 'el código del repo hermano entra a la vuelta');
+  assert.match(ctx, /AC1: x/);
+  assert.doesNotMatch(ctx, /OTRA/, 'no la historia de la carpeta de la coordinadora');
+  assert.deepEqual(lab.servidas(), [1, 2, 3]);
+});
