@@ -137,15 +137,17 @@ function tandasBloqueadasDe(content, rel) {
 }
 
 // La regla de atar un archivo a una tanda vive en lib/batch-scope.js: la parte que se programa y la matriz la usan igual
-const { sinPunto, renglonesDeLista, tandasQueNombran } = require(path.join(__dirname, 'lib', 'batch-scope.js'));
+const { sinPunto, renglonesDeLista, esRegistroDeCorrida, tandasQueNombran } = require(path.join(__dirname, 'lib', 'batch-scope.js'));
 
 /**
  * Las tandas a las que la historia ata un archivo que cambió la corrida. `c` es la ruta que da git, relativa a
  * `codeRepo`; la historia puede escribirla desde otro lugar (la carpeta de arriba, un hermano): se comparan como rutas
  * reales absolutas contra cada renglón de la lista resuelto desde `lugares`. Para las filas y las tareas, la regla de
- * `nombra` de siempre, con la ruta de git y con la del renglón que le corresponde.
+ * `nombra` de siempre, con la ruta de git y con la del renglón que le corresponde. Un cambio en `.advisors/` es el
+ * registro de la ejecución: no se ata, aunque un renglón lo nombre de otra forma.
  */
 function tandasDelCambio(content, c, { codeRepo, lugares, real }) {
+  if (esRegistroDeCorrida(c)) return [];
   const fm = (String(content).match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
   const abs = real(path.resolve(codeRepo, c));
   const rutas = new Set([sinPunto(String(c))]);

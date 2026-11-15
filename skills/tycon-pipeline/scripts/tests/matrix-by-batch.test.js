@@ -647,3 +647,28 @@ test('T11 Matrix_MainBroughtOtherBatchFile_DoesNotReturn @story-8.272 @ac-12 —
   assert.deepStrictEqual(rm.opcionesDeTandaDelMarcador(marker, story).changed.sort(), ['a.js', 'b.js']);
   fs.rmSync(base, { recursive: true, force: true });
 });
+
+test('T7 MatrizPorTanda_ArchivoDeAdvisors_NoSeAta @story-8.283 @ac-12 @ac-13 @ac-14 @ac-32 — lo de .advisors/ es registro de la corrida: no se ata a ninguna tanda', () => {
+  const rm = require(path.join(SCRIPTS, 'runtime-matrix.js'));
+  const { tandasQueNombran } = require(path.join(SCRIPTS, 'lib', 'batch-scope.js'));
+  const E = entorno();
+  const registros = ['.advisors/findings.json', 'Back/.advisors/findings.json'];
+  for (const r of [...registros, 'src/c.js']) {
+    fs.mkdirSync(path.dirname(path.join(E.repo, r)), { recursive: true });
+    fs.writeFileSync(path.join(E.repo, r), '{}\n');
+  }
+  // los tres nombrados por la primera tanda: los dos registros y un archivo de código
+  const texto = historia({ archivos: [...registros, 'src/c.js'].map((r) => `  - ${r}  # tanda A`) });
+  fs.writeFileSync(E.story, texto);
+  for (const r of registros) assert.deepStrictEqual(tandasQueNombran(texto, r), [], r);
+  // también con el nombre suelto en una fila de la tabla de pruebas de la tanda
+  const conFila = texto.replace('    acs: [1]', '    acs: [1]\n    tests_pending: [T1]').split('`a.caso1`').join('`findings.json`');
+  assert.deepStrictEqual(tandasQueNombran(conFila, '.advisors/findings.json'), []);
+  assert.deepStrictEqual(tandasQueNombran(conFila, 'src/c.js').map((t) => t.name), [A]);
+  // la matriz de la segunda tanda: los registros cambiados no devuelven los criterios de la primera
+  const deB = (changed) => rm.compute({ storyPath: E.story, batch: B, changed, codeRepo: E.repo });
+  assert.deepStrictEqual(deB(registros).returnedAcs, []);
+  // el archivo de código sí, como hoy; y con los registros al lado, lo mismo que sin ellos
+  assert.deepStrictEqual(deB(['src/c.js']).returnedAcs, [1]);
+  assert.deepStrictEqual(deB([...registros, 'src/c.js']).returnedAcs, deB(['src/c.js']).returnedAcs);
+});

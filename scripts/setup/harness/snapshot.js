@@ -425,12 +425,16 @@ function finish(dir, { home = os.homedir(), env = process.env, closedBy = null, 
  * `before-rollback` sólo con `beforeRollback`, que dice con qué (`'rollback'`: la vuelta atrás que las terminó;
  * `'superseded'`: un cambio de versión que las dejó sin sentido). `spare` (una carpeta) no se toca: es la copia de la
  * operación que lanzó a ésta (el arranque que muda la máquina), sigue en curso y la cierra ella con su «después».
- * La que no se pudo cerrar sigue abierta y avisando: se dice por `log`.
+ * La que no se pudo cerrar sigue abierta y avisando: se dice por `log`. Si `dir` no está en la lista de `home` (puede
+ * pasar sin falla, por ejemplo tras mudar las copias), no se sabe cuáles son más viejas: no cierra ninguna y lo dice.
  */
 function closeOlder(home, dir, { beforeRollback = null, spare = null, log = null } = {}) {
   const all = list(home);
   const at = all.findIndex((b) => path.resolve(b.dir) === path.resolve(dir));
-  if (at < 0) return;
+  if (at < 0) {
+    if (log) log(`copia de seguridad ${path.basename(String(dir))}: no está en la lista de copias de esta máquina, no cerré ninguna más vieja`);
+    return;
+  }
   for (const b of all.slice(at + 1)) {
     if (!isOpen(b.manifest)) continue;
     // por el nombre: la mudanza lleva las copias a otra carpeta y la ruta de la que se lanzó ya no es ésa

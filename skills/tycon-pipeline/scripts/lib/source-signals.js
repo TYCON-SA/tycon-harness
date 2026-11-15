@@ -164,13 +164,14 @@ const primerRenglon = (e) => String((e && e.message) || e).split('\n')[0];
  * El primer error de un paquete roto (la lista de `PackError`), con los mismos campos que su mensaje, y cuántos más hay:
  * el primer renglón sólo dice cuántos, y el freno que lo muestra no podría nombrar el paquete. Sin lista, o con un
  * primer error sin archivo, nada. El motivo va en su primer renglón: a veces trae el mensaje de otro error (un JSON roto,
- * un módulo que no carga) y la falla es de un renglón.
+ * un módulo que no carga) y la falla es de un renglón. Sin motivo (o con su primer renglón vacío), termina en lo anterior.
  */
 function primerErrorDePaquete(e) {
   const x = e && Array.isArray(e.errores) && e.errores[0];
   if (!x || !x.archivo) return '';
   const mas = e.errores.length > 1 ? ` (y ${e.errores.length - 1} más)` : '';
-  return ` — ${x.archivo}${x.revisor ? ` · revisor ${x.revisor}` : ''}${x.clave ? ` · clave ${x.clave}` : ''} · ${String(x.motivo ?? '').split('\n')[0]}${mas}`;
+  const motivo = String(x.motivo ?? '').split('\n')[0].trim();
+  return ` — ${x.archivo}${x.revisor ? ` · revisor ${x.revisor}` : ''}${x.clave ? ` · clave ${x.clave}` : ''}${motivo ? ` · ${motivo}` : ''}${mas}`;
 }
 
 /**

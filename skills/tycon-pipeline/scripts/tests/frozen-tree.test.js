@@ -29,6 +29,9 @@ const { execFileSync } = require('child_process');
 
 const SCRIPTS = path.join(__dirname, '..');
 const ft = () => require(path.join(SCRIPTS, 'lib', 'frozen-tree.js'));
+// La primera aparición de un texto literal, como `replace` con un texto; con corchetes, `replace` se lee como si el
+// texto quisiera ser una expresión regular (CodeQL lo marca).
+const reemplazarTexto = (s, de, a) => { const i = s.indexOf(de); return i < 0 ? s : s.slice(0, i) + a + s.slice(i + de.length); };
 
 const tmpDirs = [];
 function tmp(prefix) {
@@ -266,7 +269,7 @@ test('T7 PrepareCommit_PaperworkOnly_DoesNotBlock @story-8.161 @ac-6 — el pape
   const C = corrida('s-ft7');
   C.vuelta();
   const st = fs.readFileSync(C.story, 'utf8');
-  fs.writeFileSync(C.story, st.replace('status: in-progress', 'status: review').replace('- [ ] Task 1', '- [x] Task 1').replace('- hoy: escrita', '- hoy: escrita\n- después: cerrada'));
+  fs.writeFileSync(C.story, reemplazarTexto(st.replace('status: in-progress', 'status: review'), '- [ ] Task 1', '- [x] Task 1').replace('- hoy: escrita', '- hoy: escrita\n- después: cerrada'));
   fs.writeFileSync(path.join(C.historias.repo, 'tasks', 'todo.md'), '- otra cosa\n');
   fs.mkdirSync(path.join(C.codigo.repo, '.advisors', 'dod-runtime'), { recursive: true });
   fs.writeFileSync(path.join(C.codigo.repo, '.advisors', 'dod-runtime', 'x.json'), '{}\n');
@@ -510,14 +513,14 @@ test('T24 PrepareCommit_ReviewFollowupsSection_IsPaperwork @story-8.263 @ac-21 �
   const deLaHistoria = json.frozen.find((f) => f.repo === C.historias.repo);
   const rel = path.relative(C.historias.repo, C.story).split(path.sep).join('/');
   // «Hallazgos» agrega la sección al final de la historia, además del papeleo de siempre
-  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('- [ ] Task 1', '- [x] Task 1') + SEGUIMIENTOS);
+  fs.writeFileSync(C.story, reemplazarTexto(fs.readFileSync(C.story, 'utf8'), '- [ ] Task 1', '- [x] Task 1') + SEGUIMIENTOS);
   let d = ft().changed(C.historias.repo, deLaHistoria.tree, ft().seal(C.historias.repo).tree, { storyRel: rel });
   assert.deepStrictEqual([d.files, d.papeleo], [[], [rel]]);
   let r = prepararCommit(C);
   assert.doesNotMatch(salida(r), MISMATCH, salida(r));
   assert.match(salida(r), new RegExp(`lo que se guarda es lo revisado[^\\n]*papeleo cambiado después[^\\n]*story-9\\.9-sello\\.md`), salida(r));
   // tildar un seguimiento después también es papeleo
-  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('- [ ] **[WARNING]** VAL-W15', '- [x] **[WARNING]** VAL-W15'));
+  fs.writeFileSync(C.story, reemplazarTexto(fs.readFileSync(C.story, 'utf8'), '- [ ] **[WARNING]** VAL-W15', '- [x] **[WARNING]** VAL-W15'));
   r = prepararCommit(C);
   assert.doesNotMatch(salida(r), MISMATCH, salida(r));
   // la sección llega hasta el próximo título de nivel 2: lo que sigue vuelve a contar
@@ -770,8 +773,9 @@ test('Seal_BatchStatusFieldsAfterRound_ArePaperwork @story-8.270 @ac-5 — el es
   const R = repoDeJuguete('tanda', { [HISTORIA_870]: historiaConTandas(), 'src/a.js': '1\n' });
   const antes = ft().seal(R.repo).tree;
   const f = path.join(R.repo, HISTORIA_870);
-  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('    status: in-progress', '    status: done').replace('    acs_pending: [1, 2]', '    acs_pending: []')
-    .replace('    tests_pending: [T1]', '    tests_pending:\n      - T1\n      - T2').replace('    tasks_pending: [1]', '    tasks_pending:\n    - 1\n    - 2'));
+  const cerrada = [['    acs_pending: [1, 2]', '    acs_pending: []'], ['    tests_pending: [T1]', '    tests_pending:\n      - T1\n      - T2'],
+    ['    tasks_pending: [1]', '    tasks_pending:\n    - 1\n    - 2']].reduce((s, [de, a]) => reemplazarTexto(s, de, a), fs.readFileSync(f, 'utf8').replace('    status: in-progress', '    status: done'));
+  fs.writeFileSync(f, cerrada);
   const d = ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: HISTORIA_870 });
   assert.deepStrictEqual(d, { files: [], papeleo: [HISTORIA_870], deMain: [] });
 });
@@ -896,4 +900,14 @@ test('T16 ReviewedTree_CodeOrOtherDotFile_StillBlocks @story-8.277 @ac-22 — un
     assert.match(salida(r), MISMATCH, salida(r));
     assert.ok(salida(r).includes(rel), `${rel} nombrado: ${salida(r)}`);
   }
+});
+
+test('T11 FrozenTree_ReemplazoLiteral_SinHallazgoCodeQL @story-8.283 @ac-21 — un reemplazo de texto con forma de expresión regular se escribe como texto', () => {
+  // CodeQL marca «String instead of regular expression» en un `.replace` cuyo texto lleva corchetes: se lee como si
+  // quisiera ser una expresión. Acá esos reemplazos van por `reemplazarTexto`, que dice que es un texto literal.
+  const fuente = fs.readFileSync(__filename, 'utf8');
+  const conCorchete = [...fuente.matchAll(/\.replace\(('(?:[^'\\\n]|\\.)*')/g)].map((m) => m[1]).filter((s) => s.includes('['));
+  assert.deepStrictEqual(conCorchete, []);
+  assert.strictEqual(reemplazarTexto('a [x] b [x]', '[x]', '[ok]'), 'a [ok] b [x]');
+  assert.strictEqual(reemplazarTexto('sin nada', '[x]', '[ok]'), 'sin nada');
 });

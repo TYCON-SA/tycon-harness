@@ -95,9 +95,9 @@ firmar, y en la columna tu situación:
 |---|---|---|---|---|---|---|
 | 1 · rutina | **Abrir el pull request** (`save`): los pull requests y el push a una rama compartida; el commit y el push a tu rama de trabajo no se firman. Es rutina porque se deshace; si un commit toca algo sensible, pasa a `save:sensible`, de nivel 2. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
 | 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
-| 1 · rutina | **Aprobar el plan** (`plan-approval`) de una story que no es delicada. Es rutina porque decide qué se construye antes de construirlo, y se cambia. | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, vos | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, espera | vos, o la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | su «aprobado» es lo único con que se aprueba sin vos: con coordinadora la lanza ella; sin ella, la propia sesión. Con `plan_review.routine_approval: person`, aprobás vos siempre |
+| 1 · rutina | **Aprobar el plan** (`plan-approval`) de una historia que no es delicada. Es rutina porque decide qué se construye antes de construirlo, y se cambia. | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, vos | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, espera | vos, o la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | su «aprobado» es lo único con que se aprueba sin vos: con coordinadora la lanza ella; sin ella, la propia sesión. Con `plan_review.routine_approval: person`, aprobás vos siempre |
 | 1 · rutina | **Eximir un comando de la comparación con main** (`compare-waiver`): un comando que la historia modifica y que no se puede comparar con su versión de `main` (por ejemplo, porque usa la red). La firma es delegable sólo cuando el perfil del equipo la suma a `approvals.delegated_signing`, con un pedido al perfil que firma el dueño: amplía lo que firma la coordinadora. Hasta entonces, es tuya. | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
-| 2 · excepción | **Aprobar el plan de una story delicada** (`plan-approval` cuando `risk-class` dice `delicate`) | vos | espera | vos | espera | puede correr: ataca el plan y avisa, nunca aprueba |
+| 2 · excepción | **Aprobar el plan de una historia delicada** (`plan-approval` cuando `risk-class` dice `delicate`) | vos | espera | vos | espera | puede correr: ataca el plan y avisa, nunca aprueba |
 | 2 · excepción | **Saltear un control** o aceptar un problema grave sin arreglarlo (`critical-waiver`, `escape:…` y las demás de nivel 2) | vos | espera | vos | espera | no aplica |
 | 2 · excepción | **Aceptar un criterio imposible de probar en vivo** (`runtime-waiver`). Antes de la ventana, el arnés te muestra el criterio en pantalla: su texto, por qué no se puede probar en vivo y qué prueba lo cubre. | vos | espera | vos | espera | no aplica |
 | 2 · excepción | **Marcar un criterio como probado a mano** (`manual-test`) | vos | espera | vos | espera | no aplica |
@@ -122,7 +122,7 @@ firmar, y en la columna tu situación:
   approve-plan` cierra sin click: el mismo aprobado alcanza con y sin coordinadora. Con
   `plan_review.routine_approval: person` (o su nombre viejo, `plan_review.coordinator_approves: false`) un plan de rutina
   lo aprueba siempre una persona. Rechazado o sin veredicto, el plan espera a una persona. Una revisión informativa (la
-  de la propia sesión en una story delicada o con `person`) sólo informa y nunca firma
+  de la propia sesión en una historia delicada o con `person`) sólo informa y nunca firma
   (`steps/step-04-approve-plan.md`).
 - **Con tu aprobación escrita, la firma es tuya, también en lo delicado.** Donde la ventana no llega, o cuando la coordinadora
   firmaría por delegación, vale tu click en el cuadro de opciones o tu «aprobado» tipeado. Gana a la delegación: un plan
@@ -441,7 +441,7 @@ ventana sólo si se cumple todo esto:
   `approvals.owner_only`: si está en las dos, gana «sólo del dueño»;
 - esta máquina está en `approvals.delegated_machines`;
 - la sesión que la corre es la designada, y el dueño confirmó la designación (con su click en esa pestaña, o en su terminal);
-- la sesión destino no es la propia, ni trabaja la misma story que una ejecución abierta de la sesión designada;
+- la sesión destino no es la propia, ni trabaja la misma historia que una ejecución abierta de la sesión designada;
 - ninguna consola de fondo viva de la designada, salvo un vigilante de sólo lectura (abajo).
 
 **El vigilante de sólo lectura no quita la firma por delegación.** La coordinadora puede tener de fondo, y firmar
@@ -454,7 +454,7 @@ igual, sólo esta forma exacta, para cualquier plataforma:
 Los números van escritos tal cual, y la línea no lleva nada más: ni tubos, ni `&&` o `;`, ni redirecciones, ni nada
 armado con `$`. Cualquier otra consola de fondo sigue frenando, también el vigilante propio de una plataforma o un bucle
 escrito a mano que sólo consulta: desde la línea de comando el freno no puede saber si además escribe, y por eso la
-lectura de un pedido va por `pr-wait`. Una corrida suelta de la CI no se vigila de fondo. El
+lectura de un pedido va por `pr-wait`. Una ejecución suelta de la CI no se vigila de fondo. El
 freno, al negar, dice que hay una consola de fondo viva que no es un vigilante de sólo lectura, y nunca muestra su línea
 de comando. En Windows no cambia nada.
 
@@ -529,9 +529,9 @@ quien lo propone. Ni la máquina ni una variable los cambian. Subir el máximo (
 
 Un pendiente nuevo de otra sesión (`pending-approval`) se aprueba así desde la sesión designada, con
 `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --for-session <sesión>`. La delegación vale sólo si la
-carpeta es de esa sesión: el repo de su ejecución abierta, el worktree donde vive la story de esa ejecución (suele
-ser el privado; el clon principal no cuenta, porque lo comparten varias stories), o el de un arreglo rápido que declaró
-ella misma. Tampoco puede ser un repo de la coordinadora: ni su checkout, ni los de su ejecución abierta y su story, ni
+carpeta es de esa sesión: el repo de su ejecución abierta, el worktree donde vive la historia de esa ejecución (suele
+ser el privado; el clon principal no cuenta, porque lo comparten varias historias), o el de un arreglo rápido que declaró
+ella misma. Tampoco puede ser un repo de la coordinadora: ni su checkout, ni los de su ejecución abierta y su historia, ni
 el de su arreglo rápido. Si uno de los repos de ella no se encuentra, la delegación se niega. Los repos se
 comparan por la carpeta real, así que otra forma de escribir la ruta no cambia el resultado.
 
@@ -555,7 +555,7 @@ sí se pierde. Sin poder mirar, el commit sigue con un aviso, y el empuje vuelve
 anteriores y otro remoto público que no sea `origin` los sigue mirando sólo el empuje. Sin la lista, en la CI o en una
 máquina de afuera, no mira.
 
-El gancho del comando lo hace cumplir, no la memoria del agente. En una corrida o en un camino rápido (el carril
+El gancho del comando lo hace cumplir, no la memoria del agente. En una ejecución o en un camino rápido (el carril
 firmado de `marker.js adhoc set`, sin vencer), el commit y el empuje de la rama de trabajo pasan sin pregunta (con sus
 frenos) y quedan en `gates.log`. Antes de todo pull request que se crea o se mergea, y de todo empuje a una rama
 compartida (`main`, `master`, `dev`, `release/*`, o una rama que no se sabe), el gancho le pregunta a la persona en la
@@ -597,7 +597,7 @@ Tres arreglos de la misma tanda:
 
 La pregunta nombra la forma (`git push`, `… pr create`…) y el repo, nunca el comando, que puede traer una credencial;
 tampoco la rama escrita en el comando; en un camino rápido, también su motivo. Un camino rápido es del repo de los
-archivos que anotó (si todavía no anotó ninguno, de cualquiera); un pedido pregunta siempre. Dentro de una corrida o de
+archivos que anotó (si todavía no anotó ninguno, de cualquiera); un pedido pregunta siempre. Dentro de una ejecución o de
 un camino rápido, lo que el gancho no puede leer con certeza pregunta igual,
 guarde o no: «no pude leer este comando». Entran el comando entero en una variable, un shell que lee de un tubo, `<<<`
 o un heredoc, una función o un alias que no está en la copia del shell de la sesión, un programa que no se encuentra y
@@ -607,8 +607,8 @@ una variable, un programa armado de un texto (`env -S`, `sudo -s`), una comilla 
 escrito con comodines o llaves. Así, una forma nueva pregunta por defecto. Los comentarios y el mensaje de un heredoc
 con comillas se leen como el shell: no corren. Los alias y las funciones de la copia del shell que guarda la sesión se
 leen como lo que corren: `ll` o `gst` no preguntan, y un alias que empuja pregunta como el push. Las redirecciones de la
-salida (`2>&1`, `> log`, `2>/dev/null`) no son una duda. Sin corrida ni camino rápido, nada de esto pasa. Si el gancho mismo
-no carga, frena dentro de una corrida, y fuera deja pasar con un aviso.
+salida (`2>&1`, `> log`, `2>/dev/null`) no son una duda. Sin ejecución ni camino rápido, nada de esto pasa. Si el gancho mismo
+no carga, frena dentro de una ejecución, y fuera deja pasar con un aviso.
 
 Lo que no ve: un guion o un programa que guarda sin nombrar git en el comando (`node guardar.js`, `bash guion.sh`,
 un programa que lee el comando de un archivo), los alias propios del programa de la plataforma,
@@ -628,7 +628,7 @@ desde su pestaña:
 - si quedó perdida (le falta el marcador o la copia de su apertura), `marker.js clear-session <sesión> --lost
   --for-session <sesión>` pide la firma `lost-run`. Corre sin ventana si el perfil la delega, y si no, sale la ventana.
 
-La ventana muestra la story y la sesión que se cierran, que son las que nombra el comando. Donde la ventana no llega, se
+La ventana muestra la historia y la sesión que se cierran, que son las que nombra el comando. Donde la ventana no llega, se
 aprueba con un click o un «aprobado» (ver «Aprobar sin terminal»). Si `--for-session` nombra
 otra sesión, no se pide. `marker.js clear` cierra sólo la ejecución propia: con `--for-session` sale 2.
 `marker.js restore <sesión>` rearma la ejecución perdida en la sesión que corre el comando, y firma para ésa.

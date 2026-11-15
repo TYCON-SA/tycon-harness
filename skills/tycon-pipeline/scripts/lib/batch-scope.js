@@ -23,13 +23,18 @@ function renglonesDeLista(fm) {
     .map((m) => ({ ruta: sinPunto((m[2] !== undefined ? m[2] : m[3]).trim()), resto: m[4] }));
 }
 
+/** Una ruta dentro de una carpeta `.advisors`, en cualquier nivel (también la de un subproyecto, `Back/.advisors/…`). */
+const esRegistroDeCorrida = (ruta) => String(ruta).split(/[\\/]/).includes('.advisors');
+
 /**
  * Las tandas a las que la historia ata un archivo, cualquiera sea su estado: el comentario de su renglón en la lista
  * (`# tanda` y su nombre o su letra), una fila de la tabla de pruebas de esa tanda (`tests` / `tests_pending`) o una
  * tarea de esa tanda (`tasks` / `tasks_pending`) que lo nombra. Las tandas salen de `parsePipelinesBlock`, que lee
  * el bloque en forma de lista y de mapa. Devuelve `[{ name, status }]`. La usan la parte (`validarParte`) y la matriz.
+ * Lo que vive en `.advisors/` no se ata a ninguna: es el registro de la ejecución, no algo que una tanda entregue.
  */
 function tandasQueNombran(content, rel) {
+  if (esRegistroDeCorrida(rel)) return [];
   const fm = (String(content).match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
   const cuerpo = String(content).slice(fm.length);
   const tandas = require('./story-checks.js').parsePipelinesBlock(content)
@@ -377,4 +382,4 @@ function gitDe(repo, args) {
   return require('child_process').execFileSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 }).trim();
 }
 
-module.exports = { sinPunto, renglonesDeLista, tandasQueNombran, normRuta, validarParte, parteMedible, huellaDeLaLista, sensibleDeclarado, esCodigoDeParte, volverAlPlan, planEsperaPersona, cierreDelPlanDelegado, frenoDelCierre, senales, rutasDeConcurrencia };
+module.exports = { sinPunto, renglonesDeLista, esRegistroDeCorrida, tandasQueNombran, normRuta, validarParte, parteMedible, huellaDeLaLista, sensibleDeclarado, esCodigoDeParte, volverAlPlan, planEsperaPersona, cierreDelPlanDelegado, frenoDelCierre, senales, rutasDeConcurrencia };
