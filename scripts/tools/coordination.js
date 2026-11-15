@@ -885,6 +885,23 @@ function reviewAskLines(opts, sid, now) {
   });
 }
 
+/**
+ * Las revisiones del plan que la coordinadora preparó para otra sesión y quedaron viejas porque el plan cambió después:
+ * la sesión, la hora en que la preparó y el comando para prepararla de nuevo. Lo que no se puede leer va a `problems`.
+ */
+function stalePlanReviewLines(opts, sid, problems) {
+  const home = opts.home || require('os').homedir();
+  const PR = require(path.join(SKILL_LIB, 'plan-review.js'));
+  const r = PR.revisionesViejas({ estado: stateDir(home), lanza: sid });
+  problems.push(...r.problemas);
+  if (!r.viejas.length) return [];
+  const nombres = signatureList.sesiones(home).mapa;
+  return r.viejas.map((v) => {
+    const quien = nombres.get(v.destino) && nombres.get(v.destino).name ? `${nombres.get(v.destino).name} (${v.destino})` : v.destino;
+    return `Coordinación: la revisión del plan de ${quien} que preparaste a las ${hhmm(v.hora)} quedó vieja: el plan cambió después. Preparala de nuevo: marker.js plan-review --for-session ${v.destino}.`;
+  });
+}
+
 // Las líneas de owner-wait para el turno de la coordinadora confirmada: el comando si no corre, y lo que no anunció
 // (una trabada de 2 minutos o más, una cerrada por Claude Code).
 function ownerWaitLines(opts, sid, s) {
@@ -1293,6 +1310,7 @@ function capNotice(opts = {}) {
   lines.push(...slowGateLines(opts, s, problems));
   try { lines.push(...ownerWaitLines(opts, sid, s)); } catch (e) { problems.push(`lo de owner-wait (${e.code || e.message})`); }
   try { lines.push(...reviewAskLines(opts, sid, opts.now == null ? Date.now() : Number(opts.now))); } catch (e) { problems.push(`las preguntas de revisar (${e.code || e.message})`); }
+  try { lines.push(...stalePlanReviewLines(opts, sid, problems)); } catch (e) { problems.push(`las revisiones del plan preparadas (${e.code || e.message})`); }
   try { lines.push(...askingLines(opts, sid, s, problems)); } catch (e) { problems.push(`las preguntas directas (${e.code || e.message})`); }
   try { lines.push(...ownerReplyLines(opts, sid, problems)); } catch (e) { problems.push(`las respuestas de la persona en otras pestañas (${e.code || e.message})`); }
   if (problems.length) lines.push(`Coordinación: No pude leer ${oneLine(problems.join(' · ')).slice(0, 300)}.`);
