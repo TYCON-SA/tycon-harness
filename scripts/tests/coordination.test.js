@@ -2214,3 +2214,89 @@ test('8.281 T4b Close_SoltoYVolvioASuRama_LoMiraComoSuyo @story-8.281 @ac-7: con
   assert.match(r.message, /falta: [^.]*sin commitear/, r.message);
   assert.deepStrictEqual(closed(t), []);
 });
+
+// ── El aviso de cada turno con otros proyectos, y el cierre con sueltas de antes de que llegara la otra ─────────────
+
+// 🔴 Falla con: el aviso de cada turno de la coordinadora (capNotice → ownerWaitLines) no filtra la trabada de otro
+// proyecto, y como owner-wait ya no la anota, la nombra en cada turno.
+test('8.281 T1b AvisoDelTurno_OtroProyecto_NoLaNombra @story-8.281 @ac-1: el aviso de cada turno de la coordinadora tampoco nombra la trabada de otro proyecto', () => {
+  const { t, vuelta, restore } = ownerWaitLab();
+  try {
+    prsPhoto(t, ['acme/arnes']);
+    const desde = { ...perm, statusUpdatedAt: NOW - 5 * 60000 };
+    session(t, 's-otro', 'DeOtro', { ...desde, cwd: repoWithRemote(t, 'otro', 'https://github.com/acme/otro.git') });
+    session(t, 's-arnes', 'DelArnes', { ...desde, cwd: repoWithRemote(t, 'arnes', 'https://github.com/acme/arnes.git') });
+    vuelta();
+    const turno = (n) => JSON.stringify(C.capNotice({ ...t.opts, now: NOW + n * 1000, env: { CLAUDE_CODE_SESSION_ID: 's-coord' } }));
+    for (const n of [0, 60]) assert.doesNotMatch(turno(n), /DeOtro/, `turno ${n}`);
+    // y una ya anunciada que pasa a ser de otro proyecto sale de lo anunciado aunque la vuelta no traiga novedades
+    const file = path.join(C.coordinationDir(t.home), 'owner-wait.json');
+    const a = JSON.parse(fs.readFileSync(file, 'utf8'));
+    a.waits['s-otro'] = { since: NOW, session: 'DeOtro', key: 'x' };
+    fs.writeFileSync(file, JSON.stringify(a));
+    vuelta(30);
+    assert.ok(!JSON.parse(fs.readFileSync(file, 'utf8')).waits['s-otro'], 'la sacada queda escrita');
+  } finally { restore(); }
+});
+
+// 🔴 Falla con: la que cierra soltó el puesto y tomó una rama nueva ANTES de que arrancara la otra; la suelta vieja se toma
+// como la llegada de la otra y el cierre da por limpia a una sesión con trabajo sin empujar.
+test('8.281 T4c Close_SoltoYTomoOtraRamaAntesDeLaOtra_NoCierra @story-8.281 @ac-7 @ac-8: una suelta de antes del arranque de la otra, seguida de una rama propia, no es la llegada de la otra', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  git(slot, 'checkout', '-q', '-b', 'wt/primera');
+  bg(t, 'primera', slot);
+  esperar(1100);
+  git(slot, 'checkout', '-q', '--detach', 'origin/main');
+  esperar(1100);
+  git(slot, 'checkout', '-q', '-b', 'wt/nueva');
+  commitIn(slot);
+  fs.writeFileSync(path.join(slot, 'a-medio-hacer.txt'), 'x\n');
+  esperar(1100);
+  bg(t, 'otra', slot, { startedAt: Date.now() });
+  const r = closeIt(t, 'primera');
+  assert.strictEqual(r.closed, false, r.message);
+  assert.match(r.message, /sin commitear/, r.message);
+  assert.deepStrictEqual(closed(t), []);
+});
+
+// La otra arrancó ANTES que la que cierra (el otro orden del caso del 8/11) y llegó después de la suelta: también cuenta
+// desde que llegó (AC 7).
+test('8.281 T4d Close_OtraArrancoAntesQueLaQueCierra_CuentaDesdeQueLlego @story-8.281 @ac-7: la otra más vieja que llegó después de la suelta hereda el puesto', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  bg(t, 'otra', slot, { startedAt: 500 });
+  git(slot, 'checkout', '-q', '-b', 'wt/primera');
+  commitIn(slot);
+  git(slot, 'push', '-q', 'origin', 'wt/primera');
+  bg(t, 'primera', slot);
+  esperar(1100);
+  git(slot, 'checkout', '-q', '--detach', 'origin/main');
+  esperar(1100);
+  git(slot, 'checkout', '-q', '-b', 'wt/otra');
+  commitIn(slot, 'c.txt');
+  fs.writeFileSync(path.join(slot, 'a-medio-hacer.txt'), 'x\n');
+  const r = closeIt(t, 'primera');
+  assert.doesNotMatch(r.message, /sin commitear|sin empujar|wt\/otra/, `lo de la otra no es suyo: ${r.message}`);
+  assert.match(r.message, /la rama local wt\/primera .*no entró a main/, r.message);
+});
+
+// 🔴 Falla con: con el puesto compartido sin suelta, las ramas que se dejaron en el puesto se cargan como «falta» de la que
+// cierra, aunque pueden ser de la otra.
+test('8.281 T4e Close_PuestoCompartido_RamasDejadas_EnNoSe @story-8.281 @ac-7: sin suelta y con otra sesión, las ramas dejadas también van a «no sé»', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  git(slot, 'checkout', '-q', '-b', 'wt/una');
+  commitIn(slot);
+  bg(t, 'primera', slot);
+  esperar(1100);
+  git(slot, 'checkout', '-q', '-b', 'wt/dos');
+  bg(t, 'intrusa', slot, { startedAt: Date.now() + 1000 });
+  const r = closeIt(t, 'primera');
+  assert.strictEqual(r.closed, false, r.message);
+  assert.doesNotMatch(r.message, /falta:/, r.message);
+  assert.match(r.message, /no puedo separar.*la rama local wt\/una/, r.message);
+});

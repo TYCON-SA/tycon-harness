@@ -813,9 +813,16 @@ function ownerWaitOnce(opts = {}) {
   const lines = [];
   const now = new Set();
   const others = otherProjectStalled(home, s.stalled, sessions, opts.now == null ? Date.now() : Number(opts.now));
+  // si se saca una ya anunciada, el archivo se escribe aunque la vuelta no traiga novedades: si no, la próxima vez que
+  // siga sin permiso abierto saldría «siguió»
+  let dropped = false;
   for (const x of s.stalled.filter((y) => y.sid !== me)) {
     // la de otro proyecto no es trabajo de la coordinadora: ni se anuncia ni, si ya se anunció, se dice que siguió
-    if (others.has(String(x.sid))) { delete a.waits[x.sid]; now.add(x.sid); continue; }
+    if (others.has(String(x.sid))) {
+      if (a.waits[x.sid]) { delete a.waits[x.sid]; dropped = true; }
+      now.add(x.sid);
+      continue;
+    }
     now.add(x.sid);
     // una espera ya anunciada no se anuncia de nuevo aunque su hora cambie de fuente (la de Claude y después la del
     // permiso anotado); sólo un permiso nuevo, con otra hora anotada
@@ -840,7 +847,7 @@ function ownerWaitOnce(opts = {}) {
   }
   const at = opts.now == null ? Date.now() : Number(opts.now);
   const read = ownerWaitTurn(opts, a, lines, { home, me, stalled: s.stalled.map((x) => x.sid), now: at });
-  if (lines.length || read) writeJson(ownerWaitFile(home), a);
+  if (lines.length || read || dropped) writeJson(ownerWaitFile(home), a);
   return { lines, stop: false };
 }
 
@@ -932,10 +939,10 @@ function ownerWaitLines(opts, sid, s) {
   const out = [];
   if (!ownerWaitAlive(home)) out.push(`Coordinación: owner-wait no está corriendo: lanzalo de fondo para enterarte al instante de una sesión trabada: node "${__filename}" owner-wait`);
   const a = readAnnounced(home);
-  for (const x of s.stalled.filter((y) => y.sid !== sid)) {
-    if (now - x.since < STALLED_NOTICE_MS || a.waits[x.sid]) continue;
-    out.push(`Coordinación: ${stalledLine(x)}`);
-  }
+  const pending = s.stalled.filter((x) => x.sid !== sid && now - x.since >= STALLED_NOTICE_MS && !a.waits[x.sid]);
+  // la regla de owner-wait: la trabada de otro proyecto no es trabajo de la coordinadora, tampoco en su aviso de cada turno
+  const others = pending.length ? otherProjectStalled(home, pending, sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null), now) : new Set();
+  for (const x of pending) if (!others.has(String(x.sid))) out.push(`Coordinación: ${stalledLine(x)}`);
   for (const x of s.retired.filter((y) => y.sid !== sid)) if (!a.retired[`${x.short}@${x.at}`]) out.push(`Coordinación: ${retiredLine(x)}`);
   return out;
 }
@@ -1935,8 +1942,10 @@ function soltoElPuesto(dir, startedAt, heirStartedAt) {
   // el registro va del más nuevo al más viejo
   const before = movs.filter((x) => x.at < heirStartedAt);
   if (before.length && suelto(before[0].to)) return { solto: true, propias: propias(before), llegada: heirStartedAt };
-  const i = movs.findIndex((x) => suelto(x.to));
-  if (i === -1) return before.length ? { solto: false, propias: propias(before) } : null;
+  // la otra no llegó antes de arrancar: una suelta de antes de su arranque seguida de un movimiento propio no es la suya
+  const i = movs.findIndex((x) => x.at >= heirStartedAt && suelto(x.to));
+  // `volvio`: soltó antes de que arrancara la otra y después se movió ella misma: lo de ahora es suyo
+  if (i === -1) return before.length ? { solto: false, volvio: before.some((x) => suelto(x.to)), propias: propias(before) } : null;
   return { solto: true, propias: propias(movs.slice(i + 1)), llegada: movs[i].at + 1 };
 }
 
@@ -2019,8 +2028,9 @@ function folderGaps(dir, opts) {
   const heredado = Boolean(solto && solto.solto && !(onBranch && solto.propias.has(branch.out)));
   // con otra sesión viva en el puesto y sin una suelta en el registro, lo de ahora puede ser de cualquiera de las dos: no
   // cierra, y lo dice como «no sé», nombrando a la otra, en vez de cargárselo a la que cierra como faltante suyo. Con una
-  // suelta y la rama de ahora entre las suyas, el registro sí lo dice: es suyo, y se mira todo como siempre
-  const compartido = Boolean(slot && opts.heir && !(solto && solto.solto));
+  // suelta y la rama de ahora entre las suyas, o una suelta seguida de su propio movimiento antes de que arrancara la
+  // otra, el registro sí lo dice: es suyo, y se mira todo como siempre
+  const compartido = Boolean(slot && opts.heir && !(solto && (solto.solto || solto.volvio)));
   const own = compartido ? [] : missing;
   const done = () => {
     if (own.length && own !== missing) unknown.push(`no puedo separar lo suyo de lo de ${opts.heir.name || 'la otra sesión'}, que también está en el puesto, y el registro no muestra que lo soltara: ${own.join('; ')}`);
@@ -2088,12 +2098,12 @@ function folderGaps(dir, opts) {
       // sin rama, el registro dice el commit: lo hecho ahí sólo queda en el registro si ninguna rama lo tiene
       if (ref.code === 1 && /^[0-9a-f]{7,40}$/.test(b)) {
         const loose = git(['rev-list', '--count', b, '--not', '--branches', '--remotes', main.out], `el commit ${b}`);
-        if (loose.code === 0 && Number(loose.out) > 0) missing.push(`${loose.out} commit(s) hechos sin rama en ${dir}, desde ${b}`);
+        if (loose.code === 0 && Number(loose.out) > 0) own.push(`${loose.out} commit(s) hechos sin rama en ${dir}, desde ${b}`);
       }
       continue;
     }
     const entered = git(['merge-base', '--is-ancestor', `refs/heads/${b}`, main.out], `si la rama ${b} entró a main`, true);
-    if (entered.code === 1) missing.push(`la rama local ${b} de ${dir} no entró a main`);
+    if (entered.code === 1) own.push(`la rama local ${b} de ${dir} no entró a main`);
   }
   return done();
 }
