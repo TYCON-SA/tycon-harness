@@ -1646,3 +1646,39 @@ test('PlanReview_PedidosViejos_ComparaHuellas (T6) @story-8.284 @ac-10 @ac-11 @a
   // anotada, el pedido ya no está: deja de salir
   assert.deepStrictEqual(viejas(), { viejas: [], problemas: [] });
 });
+
+test('PlanReview_PedidosViejos_FormaRara_NoPudeLeerYSigue (T6, pase adversarial y revisores) @story-8.284 @ac-12', (t) => {
+  const lab = laboratorio(t);
+  const viejas = () => PR().revisionesViejas({ estado: lab.estado, lanza: COORD });
+  const p = PR().preparar({ lanza: COORD, destino: DESTINO, estado: lab.estado, home: lab.home, delegacion: delegacionReal() });
+  assert.strictEqual(p.codigo, 0, p.motivo);
+  const bueno = fs.readFileSync(p.pedido, 'utf8');
+  fs.writeFileSync(lab.planFile, `${PLAN}3. Otro paso.\n`);
+  const carpeta = path.dirname(p.pedido);
+  // un pedido con forma rara de otra sesión no corta el recorrido: va a «No pude leer» y la vieja de ses-a sigue saliendo
+  for (const [nombre, texto] of [['null', 'null'], ['lista', '[]'], ['vacio', '{}'], ['sin-corrida', JSON.stringify({ ...JSON.parse(bueno), destino: 'ses-x', corrida: undefined })]]) {
+    const otro = path.join(carpeta, `ses-${nombre}.pending.json`);
+    fs.writeFileSync(otro, texto);
+    const r = viejas();
+    assert.deepStrictEqual(r.viejas.map((v) => v.destino), [DESTINO], nombre);
+    assert.strictEqual(r.problemas.length, 1, `${nombre}: ${JSON.stringify(r.problemas)}`);
+    assert.match(r.problemas[0], new RegExp(`pedido de revisión del plan ses-${nombre}`));
+    fs.rmSync(otro);
+  }
+  // sin la huella del plan: «No pude leer», nunca «igual» ni «vieja»
+  fs.writeFileSync(p.pedido, JSON.stringify({ ...JSON.parse(bueno), huellas: {} }));
+  assert.deepStrictEqual(viejas(), { viejas: [], problemas: [`el pedido de revisión del plan ${DESTINO} (sin la huella del plan)`] });
+  fs.writeFileSync(p.pedido, bueno);
+  // el marcador de la sesión ilegible o que no es un objeto: «No pude leer»
+  const marcador = lab.marcador(DESTINO);
+  const textoMarcador = fs.readFileSync(marcador, 'utf8');
+  for (const roto of ['{roto', '[]', 'null']) {
+    fs.writeFileSync(marcador, roto);
+    const r = viejas();
+    assert.deepStrictEqual(r.viejas, [], roto);
+    assert.strictEqual(r.problemas.length, 1, `${roto}: ${JSON.stringify(r.problemas)}`);
+    assert.match(r.problemas[0], new RegExp(`marcador de la sesión ${DESTINO}`));
+  }
+  fs.writeFileSync(marcador, textoMarcador);
+  assert.strictEqual(viejas().viejas.length, 1);
+});

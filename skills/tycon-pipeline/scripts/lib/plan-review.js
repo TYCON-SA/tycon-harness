@@ -165,14 +165,19 @@ function escribirDeUnaVez(archivo, texto) {
   fs.renameSync(tmp, archivo);
 }
 
-/** El marcador abierto de una sesión: null si no existe; lanza si existe y no se puede leer. */
+const esObjeto = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+
+/** El marcador abierto de una sesión: null si no existe; lanza si existe y no se puede leer o no es un objeto. */
 function marcadorDe(estado, sid) {
   let texto;
   try { texto = fs.readFileSync(path.join(estado, 'active', `${sid}.json`), 'utf8'); } catch (e) {
     if (e.code === 'ENOENT') return null;
     throw new Error(`no pude leer el marcador de la sesión ${sid} (${e.code || e.message})`);
   }
-  try { return JSON.parse(texto); } catch (e) { throw new Error(`no pude leer el marcador de la sesión ${sid} (${e.message})`); }
+  let m;
+  try { m = JSON.parse(texto); } catch (e) { throw new Error(`no pude leer el marcador de la sesión ${sid} (${e.message})`); }
+  if (!esObjeto(m)) throw new Error(`no pude leer el marcador de la sesión ${sid} (no es un marcador)`);
+  return m;
 }
 
 function storyDe(marker) {
@@ -377,16 +382,19 @@ function revisionesViejas({ estado, lanza }) {
       problemas.push(`el pedido de revisión del plan ${dest} (${e.code || e.message})`);
       continue;
     }
+    // un pedido con otra forma no se puede comparar: sin corrida no se sabe si es de la abierta
+    if (!esObjeto(pedido)) { problemas.push(`el pedido de revisión del plan ${dest} (no es un pedido)`); continue; }
+    if (!esObjeto(pedido.corrida)) { problemas.push(`el pedido de revisión del plan ${dest} (sin la corrida)`); continue; }
     let marker;
     try { marker = marcadorDe(estado, dest); } catch (e) { problemas.push(e.message); continue; }
     if (!marker || !mismaCorrida(pedido.corrida, corridaDe(marker))) continue;
     if (require('./steps.js').isDone(marker, 'approve-plan')) continue;
+    if (!esObjeto(pedido.huellas) || !pedido.huellas.plan) { problemas.push(`el pedido de revisión del plan ${dest} (sin la huella del plan)`); continue; }
     let texto;
     try { texto = fs.readFileSync(pedido.planFile, 'utf8'); } catch (e) {
       problemas.push(`el plan de la revisión del plan de ${dest} (${e.code || e.message})`);
       continue;
     }
-    if (!pedido.huellas || !pedido.huellas.plan) { problemas.push(`el pedido de revisión del plan ${dest} (sin la huella del plan)`); continue; }
     if (sha(texto) !== pedido.huellas.plan) viejas.push({ destino: dest, hora: pedido.hora, storyId: pedido.storyId });
   }
   return { viejas, problemas };
