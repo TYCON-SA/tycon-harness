@@ -1038,7 +1038,7 @@ const AVISA_SU_GUION = new Set(['save', 'adhoc-lane']);
  * ¿La firma pedida en una pestaña sin permisos es de rutina? `{ ok }` o `{ ok: false, motivo }`. Va sola, sin escapes;
  * un arreglo rápido que ya existe no sube su tope (el que se pide sin `maxFiles` conserva el que tenía).
  */
-function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, topes = null, cwd = null }) {
+function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, topes = null, cwd = null, sesion = null }) {
   if (!guion || !RUTINA_SIN_PERMISOS.has(guion) || pendientes.length !== 1 || pendientes[0] !== guion) return { ok: false, motivo: null };
   if (guion !== 'adhoc-lane') return { ok: true };
   let pedido;
@@ -1050,7 +1050,8 @@ function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, to
   if (existente && pedido && pedido.maxFiles !== undefined && Number(pedido.maxFiles) > Number(existente.maxFiles)) {
     return { ok: false, motivo: `subir el tope del arreglo rápido (de ${existente.maxFiles} a ${pedido.maxFiles} archivos) sigue siendo una firma` };
   }
-  const pasa = pasaDelCupoDelegado(palabras, (topes || topesDelCaminoCorto(casa)).delegado, cwd);
+  // la lista pedida para otra sesión se mira con la carpeta de esa sesión, como en la delegación
+  const pasa = pasaDelCupoDelegado(palabras, (topes || topesDelCaminoCorto(casa)).delegado, carpetaDelPedido({ palabras, cwd, casa, sesion }));
   return pasa ? { ok: false, motivo: pasa } : { ok: true };
 }
 
@@ -1243,7 +1244,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
       sinAprobacion = a.motivo;
       // sin aprobación: lo de rutina en una pestaña sin permisos sigue «hecho y avisado»; lo demás se niega y dice cómo
       // aprobarlo. En una sesión de fondo no hay «hecho y avisado»: nadie ve el aviso en la pestaña
-      const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa, topes, cwd: evento.cwd || null });
+      const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa, topes, cwd: evento.cwd || null, sesion });
       // nombrar o retirar a la coordinadora: lo que el guion negaría se dice antes del cuadro, sin gastar el click
       if (CHEQUEO_ANTES_DEL_CUADRO.has(firmaGuion)) {
         let c = null;

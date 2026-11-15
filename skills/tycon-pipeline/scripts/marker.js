@@ -5385,7 +5385,8 @@ function cmdSalidaPerdida(modo, sesion) {
   // la apertura: se comprueba antes de la firma (también en el chequeo previo), y una bandera mal puesta no cierra nada
   const porParticion = modo === 'lost' && process.argv.includes('--partition');
   if (porParticion) {
-    const p = reemplazadaPorParticion(apertura, sesion, podada);
+    // el marcador podado por viejo también trae su tanda: se lee acá, aunque la salida de «perdida» no lo use para la apertura
+    const p = reemplazadaPorParticion(apertura, sesion, podada || io.readPruned(STATE_DIR, sesion));
     if (!p.ok) {
       console.error(`marker.js ${nombre} --partition: ${p.motivo}: se cierra con lost-run, sin --partition. No se cerró nada.`);
       process.exit(2);

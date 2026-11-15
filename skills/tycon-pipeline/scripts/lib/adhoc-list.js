@@ -87,8 +87,42 @@ function carpetaDeLaSesion({ casa = os.homedir(), sesion } = {}) {
   try { dirs = fs.readdirSync(raiz, { withFileTypes: true }); } catch (_) { return null; }
   const halladas = dirs.filter((d) => d.isDirectory()).map((d) => path.join(raiz, d.name, `${sesion}.jsonl`)).filter((f) => fs.existsSync(f));
   if (halladas.length !== 1) return null;
-  let texto;
-  try { texto = fs.readFileSync(halladas[0], 'utf8'); } catch (_) { return null; }
+  // desde el final, por bloques: una transcripción larga pasa los cientos de MB y no entra en un texto (ni conviene
+  // cargarla dentro del freno); la carpeta está en los últimos renglones
+  let fd;
+  try { fd = fs.openSync(halladas[0], 'r'); } catch (_) { return null; }
+  try {
+    let pos = fs.fstatSync(fd).size;
+    let resto = Buffer.alloc(0);
+    let leidos = 0;
+    while (pos > 0 && leidos < LECTURA_MAXIMA) {
+      const n = Math.min(BLOQUE, pos);
+      pos -= n;
+      const b = Buffer.alloc(n);
+      fs.readSync(fd, b, 0, n, pos);
+      leidos += n;
+      resto = Buffer.concat([b, resto]);
+      // el primer renglón puede estar cortado: queda para la vuelta siguiente, salvo al llegar al principio
+      const corte = pos > 0 ? resto.indexOf(10) : -1;
+      const enteros = corte >= 0 ? resto.subarray(corte + 1) : (pos > 0 ? Buffer.alloc(0) : resto);
+      resto = corte >= 0 ? resto.subarray(0, corte) : (pos > 0 ? resto : Buffer.alloc(0));
+      const cwd = ultimoCwd(enteros.toString('utf8'));
+      if (cwd) return cwd;
+    }
+    return null;
+  } catch (_) {
+    return null;
+  } finally {
+    try { fs.closeSync(fd); } catch (_) { /* ya cerrado */ }
+  }
+}
+
+// lo que se lee por vuelta y el tope: el último renglón con `cwd` está cerca del final; más allá de esto, «no sé»
+const BLOQUE = 64 * 1024;
+const LECTURA_MAXIMA = 64 * 1024 * 1024;
+
+/** El `cwd` absoluto del último renglón de `texto` que lo trae, o null. */
+function ultimoCwd(texto) {
   const renglones = texto.split('\n');
   for (let i = renglones.length - 1; i >= 0; i--) {
     if (!renglones[i].includes('"cwd"')) continue;

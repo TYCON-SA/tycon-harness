@@ -69,6 +69,11 @@ test('T3 AdhocSet_ForSession_RelativeFromDestinationFolder @story-8.276 @ac-4', 
   const E = entorno();
   E.transcripcion('ses-d', [{ type: 'user', cwd: '/otra/carpeta/vieja' }, { type: 'assistant' }, { type: 'user', cwd: E.destino }]);
   assert.strictEqual(LISTA.carpetaDeLaSesion({ casa: E.home, sesion: 'ses-d' }), E.destino, 'el último cwd de la transcripción');
+  // se lee desde el final, por bloques: una transcripción larga, con renglones sin cwd de más de un bloque después del
+  // último que lo trae, y ese renglón cortado entre dos bloques, se resuelve igual (una de cientos de MB no entra entera)
+  const relleno = Array.from({ length: 40 }, (_, i) => ({ type: 'assistant', n: i, texto: 'x'.repeat(7000) }));
+  E.transcripcion('ses-larga', [{ type: 'user', cwd: '/vieja' }, ...relleno, { type: 'user', cwd: E.destino, texto: 'y'.repeat(70000) }, ...relleno]);
+  assert.strictEqual(LISTA.carpetaDeLaSesion({ casa: E.home, sesion: 'ses-larga' }), E.destino, 'la última, aunque esté lejos del final');
   // desde la carpeta de la coordinadora, la lista cae en la carpeta de la sesión destino
   const r = E.pedir(E.ajena, 'ses-coord', ['--file', 'a/b.js', '--for-session', 'ses-d']);
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
@@ -80,6 +85,11 @@ test('T3 AdhocSet_ForSession_RelativeFromDestinationFolder @story-8.276 @ac-4', 
   const carpeta = ow.carpetaDelPedido({ palabras: palabras('ses-d'), cwd: E.ajena, casa: E.home, sesion: 'ses-coord' });
   assert.strictEqual(carpeta, E.destino);
   assert.match(String(ow.pasaDelCupoDelegado(palabras('ses-d'), 8, carpeta)), /riesgo alto/);
+  // y el camino «hecho y avisado» (una pestaña sin permisos) mira la misma carpeta que la delegación
+  const rutina = ow.rutinaSinPermisos({ guion: 'adhoc-lane', pendientes: ['adhoc-lane'], palabras: palabras('ses-d'), destino: 'ses-d', casa: E.home,
+    topes: { delegado: 3, maximo: 5 }, cwd: E.ajena, sesion: 'ses-coord' });
+  assert.strictEqual(rutina.ok, false, JSON.stringify(rutina));
+  assert.match(String(rutina.motivo), /riesgo alto/);
   // sin --for-session, o de la propia sesión, la carpeta del evento
   assert.strictEqual(ow.carpetaDelPedido({ palabras: palabras('ses-coord'), cwd: E.ajena, casa: E.home, sesion: 'ses-coord' }), E.ajena);
 });

@@ -118,6 +118,12 @@ test('T9 LostRun_OtherRuns_StillLevelTwo @story-8.276 @ac-11', () => {
     ['sin cambio de partición', entorno({ alArrancar: CON_TANDAS, ahora: CON_TANDAS }), (E) => E.abrir('s-q')],
     // la ejecución tiene una tanda que la historia todavía nombra
     ['su tanda sigue', entorno({ alArrancar: CON_TANDAS, ahora: CON_TANDAS }), (E) => { E.abrir('s-q'); E.marcador('s-q', { batch: 'A-uno' }); }],
+    // el marcador se podó por viejo y su tanda sigue en la historia: la tanda del podado cuenta igual que la del vivo
+    ['tanda del podado', entorno(), (E) => {
+      E.abrir('s-q');
+      require(path.join(SCRIPTS, 'lib', 'story-gate-io.js')).savePruned(require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(E.home), 's-q',
+        { sessionId: 's-q', storyId: '9.7', storyPath: E.story, repoPath: E.codigo, batch: 'A-uno', startedAt: APERTURA });
+    }],
     // la historia de la apertura no se puede leer
     ['historia ilegible', entorno(), (E) => E.abrir('s-q', { storyPath: path.join(E.historias, 'specs', 'no-existe.md') })],
   ];
@@ -152,6 +158,13 @@ test('T10 LostRun_RestoreAndEscapes_Unchanged @story-8.276 @ac-12 @ac-19', () =>
   assert.deepStrictEqual(firmas.GROUPS['lost-run'], ['lost-run']);
   // pero restringe: «lost-run» en owner_only la vuelve sólo del dueño también
   assert.deepStrictEqual(firmas.expand('lost-run', { restringe: true }).sort(), ['lost-run', 'lost-run:particion']);
+  // y el perfil que la delega por su id con «lost-run» sólo del dueño es una contradicción: la validación la dice, como
+  // dice la de una misma firma en las dos listas (si no, el perfil pasa y la delegación la niega en cada máquina)
+  const tc = require(path.join(RAIZ, 'scripts', 'lib', 'tycon-config.js'));
+  const contradictorio = tc.parse(JSON.stringify({ approvals: { owner_only: ['lost-run'], delegated_signing: ['lost-run:particion'] } }));
+  assert.match(JSON.stringify(contradictorio), /lost-run:particion está también en approvals\.owner_only/);
+  const sinCruce = tc.parse(JSON.stringify({ approvals: { owner_only: ['lost-run'], delegated_signing: ['save'] } }));
+  assert.doesNotMatch(JSON.stringify(sinCruce), /está también en approvals\.owner_only/);
   // la sesión que nombra el comando es la de la ejecución, como en lost-run
   assert.ok(ow.CON_PRECHEQUEO.has('lost-run:particion') && ow.CHEQUEO_ANTES_DEL_CUADRO.has('lost-run:particion'));
 });
