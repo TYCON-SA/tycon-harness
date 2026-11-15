@@ -878,8 +878,20 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     # el árbol vive en la carpeta temporal: las HOME vacías de las portables van bajo `.advisors/` del privado de verdad
     # (git la ignora), fuera de ella, porque hay suites que tratan esa carpeta como «de prueba»
     export TYCON_SUITE_HOMES_ROOT="${TYCON_SUITE_HOMES_ROOT:-$REPO_RUN/.advisors}"
+    # El alcance del privado se lee del privado de verdad (lo commiteado, lib/test-gate-scope.js), no del árbol
+    # temporal. Si acota, el árbol SUMA `--scoped-by-repo` a `--only-touched`: sabiendo qué se tocó y sin suite que lo
+    # lea, cierra en verde diciendo quién corre la completa; sin saber qué se tocó, `--only-touched` lo deja en 7 sin
+    # correr nada (`--scoped-by-repo` sola correría todas las suites del árbol).
+    _tg_scope_rc=0
+    _tg_scope_by="$(node "$SCRIPT_DIR/lib/test-gate-scope.js" "$REPO_RUN")" || _tg_scope_rc=$?
     REPO_RUN="$(_tg_tree_field tree)"
     TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --only-touched)
+    if [[ "$_tg_scope_rc" == "0" && -n "$_tg_scope_by" ]]; then
+      TG_FULL_SUITE_BY="$_tg_scope_by"
+      TG_TREE_ARGS+=(--scoped-by-repo "$TG_FULL_SUITE_BY")
+    elif [[ "$_tg_scope_rc" != "10" ]]; then
+      echo "[test-gate] ⚠️  no pude leer test_gate de .test-gate.yaml del privado (salió $_tg_scope_rc): el árbol acota como siempre, sin cerrar en verde lo que ninguna suite lee" >&2
+    fi
     echo "[test-gate] en la máquina corren sólo las suites que leen lo tocado; las otras quedan diferidas (las corre la CI del pedido y el nocturno)"
   fi
   # --- Primero la suite que falló ---
@@ -1104,12 +1116,14 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
       case "$TG_CLOSE_MODE" in
         same) echo "[test-gate] la carpeta es la que midió la completa $TG_CLOSE_ORIGIN$([[ "$TG_CLOSE_ORIGIN" == "roja" ]] && echo ' y cada repetición'): no corro ninguna suite" ;;
         changed)
-          node -e 'const [f, files, base] = process.argv.slice(1); require("fs").writeFileSync(f, JSON.stringify({ known: true, files: files.split(",").filter(Boolean), sources: {}, reason: null, base: { ref: base || null, source: "repetidas" } }))' \
-            "$RESULTS_DIR/touched-repetidas.json" "$(_tg_campo files)" "$_TG_BASE"
+          # `rerun_suites`: las repetidas cuya carpeta cambió después de repetirlas. Van aparte de los archivos:
+          # son claves de la lista de suites, no rutas del repo, y el corredor las corre antes de cualquier filtro.
+          node -e 'const [f, files, rerun, base] = process.argv.slice(1); const l = (s) => s.split(",").filter(Boolean); require("fs").writeFileSync(f, JSON.stringify({ known: true, files: l(files), rerun_suites: l(rerun), sources: {}, reason: null, base: { ref: base || null, source: "repetidas" } }))' \
+            "$RESULTS_DIR/touched-repetidas.json" "$(_tg_campo files)" "$(_tg_campo rerun)" "$_TG_BASE"
           TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched-repetidas.json")
           # en el árbol armado, que ninguna suite lea lo cambiado es cerrar con lo guardado, no «sin acotar» (salida 7)
           [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
-          echo "[test-gate] la carpeta cambió desde la completa $TG_CLOSE_ORIGIN ($(_tg_campo files)): corren sólo las suites que leen lo cambiado" ;;
+          echo "[test-gate] la carpeta cambió desde la completa $TG_CLOSE_ORIGIN ($(_tg_campo files)): corren sólo las suites que leen lo cambiado$([[ -n "$(_tg_campo rerun)" ]] && echo " y las repetidas que quedaron viejas ($(_tg_campo rerun))")" ;;
         *) _tg_motivo="$(_tg_campo reason)"
            echo "[test-gate] corre la completa como siempre: ${_tg_motivo:-no pude leer lo guardado}"; TG_CLOSE_MODE=""; TG_CLOSE_ORIGIN="" ;;
       esac

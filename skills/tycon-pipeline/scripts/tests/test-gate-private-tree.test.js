@@ -948,3 +948,68 @@ test('PrivateTree_SavedRun_ClosesWhenNothingReadsTheChange @story-8.263 @ac-6 @a
   assert.doesNotMatch(r.salida, /cambió después de repetir/, r.salida);
   assert.match(r.salida, /cierra con la completa de las \d\d:\d\d/, r.salida);
 });
+
+// ── El privado acota lo que no es código ─────────────────────────────────────────────────────────────
+// Con `.test-gate.yaml` commiteado en el privado, el árbol armado suma `--scoped-by-repo` a `--only-touched`: un cambio
+// que ninguna suite lee cierra en verde y dice quién corre la completa; sin la clave, como hoy (salida 7).
+// 🔴 Falla con: el árbol que no lee el alcance del privado (sale 7 con sólo papeles), o `--scoped-by-repo` EN LUGAR de
+//    `--only-touched` (sin saber qué se tocó, correría todas las suites del árbol).
+const ALCANCE = 'test_gate:\n  scope: touched\n  full_suite_by: "la validación de prueba del privado"\n';
+
+function labConAlcance({ alcance = ALCANCE, modificar } = {}) {
+  const lab = laboratorio({ modificar });
+  if (alcance) escribir(lab.priv, '.test-gate.yaml', alcance);
+  escribir(lab.priv, 'docs/x.md', 'v1\n');
+  git(lab.priv, 'add', '-A', '-f'); git(lab.priv, 'commit', '-q', '-m', 'alcance y papeles');
+  return lab;
+}
+
+test('T7a PrivateGate_DocsOnly_NoSuites @story-8.279 @ac-9 @ac-11 — sólo papeles: ninguna suite, verde, y el cierre dice quién corre la completa', () => {
+  const lab = labConAlcance({ modificar: ['docs/x.md'] });
+  fs.appendFileSync(path.join(lab.priv, 'docs/x.md'), 'v2\n');
+  const r = portón(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.ok(!nombra(r, 'pub-lib.test.js') && !nombra(r, 'otra.test.js') && !nombra(r, 'demo.test.js'), r.salida);
+  assert.match(r.salida, /ninguna suite lee lo tocado; la suite completa la corre la CI del pedido \(la validación de prueba del privado\)/, r.salida);
+  assert.doesNotMatch(r.salida, /sin acotar/, r.salida);
+});
+
+test('T7b PrivateGate_TouchedRead_RunsThose @story-8.279 @ac-10 — con la clave, lo que una suite lee corre esa suite y nada más', () => {
+  const lab = labConAlcance({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  const r = portón(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.ok(nombra(r, 'pub-lib.test.js'), r.salida);
+  assert.ok(!nombra(r, 'otra.test.js'), r.salida);
+});
+
+test('T7c Gate_NoScopeFile_RunsAllAsToday @story-8.279 @ac-11 @ac-25 — sin la clave el árbol sigue como hoy (sólo papeles: 7); con `scope: full` el privado no acota', () => {
+  const lab = labConAlcance({ alcance: null, modificar: ['docs/x.md'] });
+  fs.appendFileSync(path.join(lab.priv, 'docs/x.md'), 'v2\n');
+  const r = portón(lab);
+  assert.strictEqual(r.code, 7, r.salida);
+  assert.doesNotMatch(r.salida, /la validación de prueba del privado/, r.salida);
+  const full = labConAlcance({ alcance: 'test_gate:\n  scope: full\n  full_suite_by: "nadie"\n' });
+  const s = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'test-gate-scope.js'), full.priv], { encoding: 'utf8' });
+  assert.strictEqual(s.status, 10, `${s.stdout}${s.stderr}`);
+  const con = labConAlcance();
+  const c = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'test-gate-scope.js'), con.priv], { encoding: 'utf8' });
+  assert.strictEqual(c.status, 0, `${c.stdout}${c.stderr}`);
+  assert.strictEqual(c.stdout.trim(), 'la validación de prueba del privado');
+});
+
+test('T7d PrivateGate_UnknownTouched_StaysUnscoped @story-8.279 @ac-11 — las dos marcas juntas, sin saber qué se tocó: 7 sin correr nada; `--scoped-by-repo` sola correría todas', () => {
+  const lab = laboratorio();
+  const arbolDir = tmp('arbol-sin-tocado-');
+  escribir(arbolDir, 'scripts/tests/suites.json', JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/u.test.js' }] }));
+  escribir(arbolDir, 'scripts/tests/u.test.js', "require('fs').appendFileSync(process.env.LAB_RAN_FILE, 'u\\n');\n");
+  const marca = path.join(arbolDir, 'corrio');
+  const correr = (marcas) => spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'run-suites-json.js'), arbolDir, path.join(arbolDir, 'r.json'), '--skills', path.join(arbolDir, 'skills'), ...marcas],
+    { encoding: 'utf8', cwd: arbolDir, env: entorno(lab.home, { LAB_RAN_FILE: marca }) });
+  const dos = correr(['--only-touched', '--scoped-by-repo', 'la validación de prueba del privado']);
+  assert.strictEqual(dos.status, 7, `${dos.stdout}${dos.stderr}`);
+  assert.ok(!fs.existsSync(marca), 'no corrió ninguna suite');
+  const sola = correr(['--scoped-by-repo', 'la validación de prueba del privado']);
+  assert.strictEqual(sola.status, 0, `${sola.stdout}${sola.stderr}`);
+  assert.ok(fs.existsSync(marca), 'sola, corre todas: por eso van las dos');
+});
