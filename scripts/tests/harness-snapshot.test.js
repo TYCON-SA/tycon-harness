@@ -854,3 +854,133 @@ test('T9 CloseOlder_CopiaFueraDeLaLista_Avisa @story-8.283 @ac-17 @ac-18 — una
   assert.strictEqual(manifestOf(vieja.dir).open, false);
   assert.ok(!said3.some((l) => /no está en la lista/.test(l)), JSON.stringify(said3));
 });
+
+// ─── El doctor vuelve a mirar la copia antes de mostrar el aviso de un cambio a medias ─────────────────────────────
+
+const HARNESS_JS = path.join(RAIZ, 'scripts', 'setup', 'harness.js');
+const comoRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+const CUT = (name) => `a medias: un cambio del arnés se cortó (copia ${name}, update, —): harness.js rollback --to ${name} vuelve a como estaba`;
+/**
+ * Una casa de juguete con el estado escrito y el aviso guardado, y una copia `update` tomada (abierta). `release`: la
+ * instalación de versión bajada, que el doctor mira por otro camino.
+ */
+function doctorLab(name, { release = false } = {}) {
+  const S = snapshot(); const ST = hmod('state');
+  const home = makeHome(name); const tree = makeTree(name, []);
+  write(path.join(home, '.claude', 'settings.json'), '{"v":0}\n');
+  const copy = S.take({ home, env: {}, tree, reason: 'update', now: new Date('2026-11-15T10:00:00Z') });
+  const sources = release ? [{ kind: 'release', version: '1.0.0', path: tree }] : [];
+  const setNotice = (notice) => { const st = ST.defaults({ tree, sources, mode: 'managed' }); st.notice = notice; ST.write(home, st); };
+  return { S, ST, home, copy, cut: CUT(nameOf(copy.dir)), setNotice };
+}
+/** Los renglones «aviso pendiente» de `harness.js doctor --json`, y el estado: el doctor no lo escribe. */
+function pendingLines(L) {
+  const stateFile = L.ST.paths(L.home).file;
+  const before = fs.readFileSync(stateFile, 'utf8');
+  const env = { ...process.env, HOME: L.home, USERPROFILE: L.home, TYCON_PROFILE: '0' };
+  delete env.TYCON_HOME;
+  const r = spawnSync(process.execPath, [HARNESS_JS, 'doctor', '--json'], { encoding: 'utf8', timeout: 60000, env });
+  assert.ok(r.stdout, r.stderr);
+  assert.strictEqual(fs.readFileSync(stateFile, 'utf8'), before, 'el doctor no escribe el estado');
+  return JSON.parse(r.stdout).warn.filter((w) => w.startsWith('aviso pendiente: '));
+}
+/** Todos los avisos de `harness.js doctor --json`. */
+function doctorWarns(L) {
+  const env = { ...process.env, HOME: L.home, USERPROFILE: L.home, TYCON_PROFILE: '0' };
+  delete env.TYCON_HOME;
+  const r = spawnSync(process.execPath, [HARNESS_JS, 'doctor', '--json'], { encoding: 'utf8', timeout: 60000, env });
+  assert.ok(r.stdout, r.stderr);
+  return JSON.parse(r.stdout).warn;
+}
+
+test('List_ProblemsSaysWhatItCouldNotRead @story-8.281 @ac-21 — la lectura de las copias distingue «no pude leer» de «no hay»', () => {
+  const S = snapshot();
+  const home = makeHome('list-problems'); const tree = makeTree('list-problems', []);
+  // sin la carpeta de copias: «no hay», sin problema
+  let problems = [];
+  assert.deepStrictEqual(S.list(home, { problems }), []);
+  assert.deepStrictEqual(problems, []);
+  write(path.join(home, '.claude', 'settings.json'), '{"v":0}\n');
+  const good = S.take({ home, env: {}, tree, reason: 'update', now: new Date('2026-11-15T10:00:00Z') });
+  const bad = S.take({ home, env: {}, tree, reason: 'update', force: true, now: new Date('2026-11-15T10:01:00Z') });
+  assert.notStrictEqual(bad.dir, good.dir, 'dos copias distintas');
+  fs.writeFileSync(path.join(bad.dir, 'manifest.json'), '{ roto');
+  // un manifiesto roto: sin `problems`, como hoy (se saltea); con `problems`, se nombra
+  assert.deepStrictEqual(S.list(home).map((c) => c.name), [nameOf(good.dir)]);
+  problems = [];
+  assert.deepStrictEqual(S.list(home, { problems }).map((c) => c.name), [nameOf(good.dir)]);
+  assert.strictEqual(problems.length, 1, JSON.stringify(problems));
+  assert.match(problems[0], new RegExp(`copia ${nameOf(bad.dir)}: no pude leer su manifiesto`));
+  for (const shape of ['[]', 'null']) {
+    fs.writeFileSync(path.join(bad.dir, 'manifest.json'), shape);
+    problems = [];
+    S.list(home, { problems });
+    assert.strictEqual(problems.length, 1, `${shape}: ${JSON.stringify(problems)}`);
+  }
+  // la carpeta de copias que no se puede leer: un archivo en su lugar (en todo sistema)
+  const root = backupsDir(home);
+  fs.renameSync(root, `${root}.aparte`);
+  fs.writeFileSync(root, 'no es una carpeta');
+  problems = [];
+  assert.deepStrictEqual(S.list(home, { problems }), []);
+  assert.match(problems.join(' · '), /no pude leer la carpeta de copias \(ENOTDIR\)/);
+  fs.rmSync(root); fs.renameSync(`${root}.aparte`, root);
+});
+
+test('Doctor_CopiaCerrada_NoAvisaAMedias (T10) @story-8.281 @ac-18 — con la copia cerrada, el tramo «a medias» no sale; los otros tramos sí', () => {
+  for (const release of [false, true]) {
+    const L = doctorLab(`t10-${release ? 'release' : 'clon'}`, { release });
+    L.S.close(L.copy.dir, { closedBy: 'startup' });
+    L.setNotice(L.cut);
+    assert.deepStrictEqual(pendingLines(L), [], `${release ? 'versión bajada' : 'clon'}: sólo el tramo de la copia cerrada`);
+    L.setNotice(`algo que dijo la red · ${L.cut}`);
+    assert.deepStrictEqual(pendingLines(L), ['aviso pendiente: algo que dijo la red'], `${release ? 'versión bajada' : 'clon'}: compuesto`);
+    // sin el tramo, el aviso sale tal cual, sin mirar las copias
+    L.setNotice('algo que dijo la red');
+    assert.deepStrictEqual(pendingLines(L), ['aviso pendiente: algo que dijo la red']);
+  }
+});
+
+test('Doctor_CopiaAMedias_AvisaComoHoy_EIlegibleLoDice (T11) @story-8.281 @ac-19 @ac-21 — abierta: como hoy; sin poder mirarla: el aviso y «no pude confirmarlo»', () => {
+  for (const release of [false, true]) {
+    const label = release ? 'versión bajada' : 'clon';
+    const L = doctorLab(`t11-${release ? 'release' : 'clon'}`, { release });
+    L.setNotice(`algo · ${L.cut}`);
+    // la copia sigue abierta: el aviso como hoy
+    assert.deepStrictEqual(pendingLines(L), [`aviso pendiente: algo · ${L.cut}`], label);
+    // cerrada pero con otra copia de manifiesto roto: no se quita nada que pueda seguir vigente
+    L.S.close(L.copy.dir, { closedBy: 'startup' });
+    write(path.join(L.home, '.claude', 'settings.json'), '{"v":1}\n');
+    const other = L.S.take({ home: L.home, env: {}, tree: makeTree(`t11-other-${release}`, []), reason: 'update', force: true, now: new Date('2026-11-15T10:05:00Z') });
+    fs.writeFileSync(path.join(other.dir, 'manifest.json'), '{ roto');
+    let lines = pendingLines(L);
+    assert.strictEqual(lines.length, 1, `${label}: ${JSON.stringify(lines)}`);
+    assert.ok(lines[0].startsWith(`aviso pendiente: algo · ${L.cut}`), lines[0]);
+    assert.match(lines[0], /no pude confirmar si la copia sigue abierta: copia .*: no pude leer su manifiesto/);
+    // la cuenta de copias del doctor (la muestra el clon) también dice lo que no pudo leer
+    const warns = release ? [] : doctorWarns(L);
+    if (!release) assert.ok(warns.some((w) => /^copias de seguridad: no pude leer todo \(copia .*: no pude leer su manifiesto/.test(w)), `${label}: ${JSON.stringify(warns)}`);
+    // una copia abierta con un manifiesto que no se puede interpretar: no se corta, dice que no pudo confirmar
+    fs.writeFileSync(path.join(other.dir, 'manifest.json'), JSON.stringify({ open: true, reason: 'update', files: 'no es una lista' }));
+    lines = pendingLines(L);
+    assert.strictEqual(lines.length, 1, `${label}: ${JSON.stringify(lines)}`);
+    assert.match(lines[0], /^aviso pendiente: algo · a medias: .*\(no pude confirmar si la copia sigue abierta: /, label);
+    fs.rmSync(other.dir, { recursive: true });
+    // la carpeta de copias ilegible: un archivo en su lugar (en todo sistema) y sin permiso de lectura (POSIX sin root)
+    const root = backupsDir(L.home);
+    fs.renameSync(root, `${root}.aparte`);
+    fs.writeFileSync(root, 'no es una carpeta');
+    lines = pendingLines(L);
+    assert.match(lines.join('\n'), /no pude confirmar si la copia sigue abierta: no pude leer la carpeta de copias \(ENOTDIR\)/, label);
+    if (!release) assert.ok(doctorWarns(L).some((w) => /^copias de seguridad: no pude leer todo \(no pude leer la carpeta de copias \(ENOTDIR\)\)/.test(w)), `${label}: la cuenta de copias lo dice`);
+    fs.rmSync(root); fs.renameSync(`${root}.aparte`, root);
+    if (process.platform !== 'win32' && !comoRoot) {
+      fs.chmodSync(root, 0o000);
+      try { lines = pendingLines(L); } finally { fs.chmodSync(root, 0o755); }
+      assert.match(lines.join('\n'), /no pude confirmar si la copia sigue abierta: no pude leer la carpeta de copias \(EACCES\)/, label);
+    }
+    // sin la carpeta de copias: no hay copias, el tramo se quita sin aviso
+    fs.rmSync(root, { recursive: true });
+    assert.deepStrictEqual(pendingLines(L), ['aviso pendiente: algo'], label);
+  }
+});

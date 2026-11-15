@@ -902,3 +902,99 @@ test('Huella_QaLegibilidadUiDespuesDelOk_NoLaVence @story-8.271 @ac-19', (t) => 
   escribir(a, 'qa/helpers.js', 'module.exports = 2;\n');
   assert.notStrictEqual(SO.huella(a).arbol, antes, 'un .js de qa/ sí la cambia');
 });
+
+// ── Los controles del privado con el público de la historia ──────────────────────────────────────────────────────────
+
+/**
+ * Un privado adelgazado de juguete que declara su hermano público en `.tycon/advisors.yaml` (`declara`, relativo al
+ * privado). Su gancho corre `scripts/x.js` del arnés que le toque, como `harness_dir()`: `TYCON_GUIDES_DIR` si viene y
+ * si no el «instalado» de juguete, que no lo trae; y anota qué carpeta usó y si le llegó la variable.
+ */
+function privadoConGancho(t, { declara = null } = {}) {
+  const instalado = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-instalado-')));
+  t.after(() => fs.rmSync(instalado, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(instalado, 'scripts'));
+  const priv = repo(t, {
+    '.tycon/internal-forms.json': JSON.stringify({ layout: 'thin' }),
+    'scripts/ci/overlay-harness.js': '// de juguete\n',
+    ...(declara ? { '.tycon/advisors.yaml': `evidence:\n  companion_repos:\n    - ${declara}\n` } : {}),
+    'specs/story-9.1-la-prueba.md': '---\nstory: "9.1"\n---\n',
+  });
+  const anota = path.join(instalado, 'uso.txt');
+  gancho(t, priv, `d="\${TYCON_GUIDES_DIR:-${instalado}}"; printf '%s\\n%s\\n' "$d" "\${TYCON_GUIDES_DIR:-sin-variable}" > ${JSON.stringify(anota)}
+[ -f "$d/scripts/x.js" ] || { echo "falta scripts/x.js en $d" >&2; exit 1; }`);
+  const uso = () => { const [dir, variable] = fs.readFileSync(anota, 'utf8').split('\n'); return { dir, variable }; };
+  return { priv, instalado, uso, story: path.join(priv, 'specs', 'story-9.1-la-prueba.md') };
+}
+/** El público de juguete con `version.json` y `scripts/`; `x` decide si trae el guion nuevo; `rama`, en qué rama queda. */
+function publico(t, { x = true, rama = 'story/la-prueba' } = {}) {
+  const pub = repo(t, { 'version.json': '{"version":"0.0.0"}\n', 'scripts/viejo.js': '// ya estaba\n', ...(x ? { 'scripts/x.js': '// el guion nuevo del pedido público\n' } : {}) });
+  if (rama !== 'story/la-prueba') sh(pub, 'checkout', '-q', rama);
+  return pub;
+}
+// el entorno de la sesión no decide: sin la variable, como en la CI
+function sinVariable(t) {
+  const antes = process.env.TYCON_GUIDES_DIR;
+  delete process.env.TYCON_GUIDES_DIR;
+  t.after(() => { if (antes === undefined) delete process.env.TYCON_GUIDES_DIR; else process.env.TYCON_GUIDES_DIR = antes; });
+}
+
+// 🔴 Falla con: los controles del privado con el arnés instalado, que no trae el guion nuevo del pedido público
+// («Preparar» no cierra hasta el merge público), o la variable puesta también en los repos que no son el privado.
+test('SaveOk_PrivateControls_FindScriptInStoryPublic @story-8.277 @ac-13: el gancho del privado corre con el público de la rama de la historia, con la historia y sin ella', (t) => {
+  sinVariable(t);
+  const pub = publico(t);
+  const p = privadoConGancho(t, { declara: `../${path.basename(pub)}` });
+  for (const [como, story] of [['con la historia (el ok de guardar)', p.story], ['sin la historia (la foto de «Preparar»)', undefined]]) {
+    const r = SO.controlesDelCommit({ repos: [p.priv], story });
+    assert.strictEqual(r.codigo, 0, `${como}: ${r.motivo}`);
+    assert.strictEqual(p.uso().dir, pub, como);
+  }
+  // el público mismo, en la misma lista, corre como hoy: sin la variable
+  const anota = path.join(p.instalado, 'uso-publico.txt');
+  gancho(t, pub, `printf '%s' "\${TYCON_GUIDES_DIR:-sin-variable}" > ${JSON.stringify(anota)}`);
+  assert.strictEqual(SO.controlesDelCommit({ repos: [p.priv, pub], story: p.story }).codigo, 0);
+  assert.strictEqual(fs.readFileSync(anota, 'utf8'), 'sin-variable');
+});
+
+// 🔴 Falla con: tomar un clon del público en otra rama (o el primero que aparezca) como el de la historia, traer de la
+// red en medio de los controles, o dejar pasar un guion que el público de la historia no trae.
+test('SaveOk_NoCompanionOrMissing_AsToday @story-8.277 @ac-14 @ac-15: sin hermano, con el hermano fuera del disco o en otra rama, el arnés instalado; sin el guion, frena', (t) => {
+  sinVariable(t);
+  const casos = [
+    ['sin hermano declarado', () => privadoConGancho(t)],
+    ['el hermano declarado y no en disco', () => privadoConGancho(t, { declara: '../no-existe-este-publico-8277' })],
+    ['el hermano en main', () => { const pub = publico(t, { rama: 'main' }); return { ...privadoConGancho(t, { declara: `../${path.basename(pub)}` }), pub }; }],
+  ];
+  for (const [como, armar] of casos) {
+    const p = armar();
+    for (const story of [p.story, undefined]) {
+      const said = [];
+      const write = process.stderr.write;
+      process.stderr.write = (s) => { said.push(String(s)); return true; };
+      let r;
+      try { r = SO.controlesDelCommit({ repos: [p.priv], story }); } finally { process.stderr.write = write; }
+      assert.strictEqual(r.codigo, 2, `${como}: frena como hoy, porque el instalado no trae el guion`);
+      assert.deepStrictEqual(p.uso(), { dir: p.instalado, variable: 'sin-variable' }, como);
+      // el hermano declarado que no está se dice: «no está» no se lee igual que «no hay»
+      if (como === 'el hermano declarado y no en disco') assert.match(said.join(''), /el hermano declarado .*no-existe-este-publico-8277.* no está en disco: .*arnés instalado/, como);
+    }
+    if (p.pub) assert.ok(!fs.existsSync(path.join(p.pub, '.git', 'FETCH_HEAD')), `${como}: nada se trajo de la red`);
+  }
+  // una búsqueda del público que falla (acá, una historia que no es una ruta) no es «sin hermano»: corre con el
+  // instalado, y se dice
+  const roto = privadoConGancho(t);
+  const said = [];
+  const write = process.stderr.write;
+  process.stderr.write = (s) => { said.push(String(s)); return true; };
+  try { SO.controlesDelCommit({ repos: [roto.priv], story: 42 }); } finally { process.stderr.write = write; }
+  assert.strictEqual(roto.uso().dir, roto.instalado);
+  assert.match(said.join(''), /no pude buscar el público de la historia para .*: sus controles corren con el arnés instalado/);
+  // el público de la historia sin el guion: frena, y usó ese público
+  const pub = publico(t, { x: false });
+  const p = privadoConGancho(t, { declara: `../${path.basename(pub)}` });
+  const r = SO.controlesDelCommit({ repos: [p.priv], story: p.story });
+  assert.strictEqual(r.codigo, 2);
+  assert.match(r.motivo, /falta scripts\/x\.js/);
+  assert.strictEqual(p.uso().dir, pub);
+});

@@ -1835,6 +1835,131 @@ test('T11 AdversarialTurn_NoMedidoPass_DoesNotBlockAnother @story-8.228 @ac-3: u
   assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }).waiting_turn, true);
 });
 
+// ── A finished pass nobody recorded ──────────────────────────────────────────────────────────────────────────────────
+
+// The run record Claude Code leaves for a Workflow in the folder of the session that launched it. `raw` writes the text
+// as is (an unreadable record).
+function workflowRecord(t, sid, runId, status, { raw = null, folder = '-srv-repos-proyecto' } = {}) {
+  const dir = path.join(claudeDir(t.home), 'projects', folder, sid, 'workflows');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${runId}.json`), raw !== null ? raw : JSON.stringify({ runId, status, workflowName: 'adversarial-verify' }));
+}
+function machineWithPass(t) {
+  session(t, 'coord-1', 'Coordinadora', { status: 'busy' });
+  designate(t, 'coord-1');
+  session(t, 'otra-2', 'Vecina', { status: 'busy' });
+  passMarker(t, 'otra-2', '9.2', 5);
+}
+
+// 🔴 mutación: mirar sólo el resultado anotado deja trabado el turno con un pase que ya terminó y nadie anotó.
+test('T9 AdversarialTurn_FinishedWithoutResult_NotInFlight @story-8.277 @ac-10: un pase de otra sesión con su Workflow terminado no toma el turno, aunque nadie haya anotado su resultado', () => {
+  for (const status of ['completed', 'killed']) {
+    const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+    machineWithPass(t);
+    workflowRecord(t, 'otra-2', 'wf_x', status);
+    assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }), null, status);
+    assert.deepStrictEqual(C.heavyPassesInFlight({ ...t.opts, sessionId: 'propia-1' }).passes, [], status);
+  }
+});
+
+// 🔴 mutación: soltar el pase con cualquier registro, o sin él, deja lanzar dos pases a la vez.
+test('T9 AdversarialTurn_Running_StillInFlight @story-8.277 @ac-12 @ac-21: sin registro, con otro estado o con uno ilegible, el pase sigue en vuelo', () => {
+  const cases = [['sin registro', null], ['corriendo', { status: 'running' }], ['ilegible', { raw: '{ no es json' }], ['de otro pase', { status: 'completed', runId: 'wf_otro' }]];
+  for (const [what, rec] of cases) {
+    const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+    machineWithPass(t);
+    if (rec) workflowRecord(t, 'otra-2', rec.runId || 'wf_x', rec.status || null, { raw: rec.raw == null ? null : rec.raw });
+    const said = [];
+    const write = process.stderr.write;
+    process.stderr.write = (s) => { said.push(String(s)); return true; };
+    let r;
+    try { r = C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }); } finally { process.stderr.write = write; }
+    assert.strictEqual(r.waiting_turn, true, what);
+    // el ilegible se dice: «no pude mirar» no se lee igual que «no terminó»
+    if (what === 'ilegible') assert.match(said.join(''), /no pude leer .*wf_x\.json .*el pase wf_x cuenta como en vuelo/, what);
+    else assert.doesNotMatch(said.join(''), /no pude leer/, what);
+  }
+  // un nombre de sólo puntos no arma una ruta
+  assert.strictEqual(C.passFinished({ home: toy().home, sessionId: '..', runId: 'wf_x' }), false);
+  // la carpeta de los proyectos que no se puede leer: en vuelo, y se dice
+  const t = toy();
+  fs.writeFileSync(path.join(claudeDir(t.home), 'projects'), 'no es una carpeta');
+  const said = [];
+  const write = process.stderr.write;
+  process.stderr.write = (s) => { said.push(String(s)); return true; };
+  let fin;
+  try { fin = C.passFinished({ home: t.home, sessionId: 'otra-2', runId: 'wf_x' }); } finally { process.stderr.write = write; }
+  assert.strictEqual(fin, false);
+  assert.match(said.join(''), /no pude leer .*projects .*el pase wf_x cuenta como en vuelo/);
+});
+
+// 🔴 mutación: tomar el reporte de la corrida como señal suelta el turno con un pase que todavía escribe.
+test('T9 AdversarialTurn_PartialReport_StillInFlight @story-8.277 @ac-10 @ac-12: un reporte a medias en la carpeta de la corrida no es la señal de término', () => {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  machineWithPass(t);
+  const run = path.join(t.root, 'repo', '.advisors', 'pipeline-runs', '9.2-x');
+  fs.mkdirSync(run, { recursive: true });
+  fs.writeFileSync(path.join(run, 'step-05b-adversarial.json'), '{ "confirmed": [');
+  assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }).waiting_turn, true);
+});
+
+// 🔴 mutación: dejar el estado con su propio criterio dice «pase en vuelo» de una sesión que el turno ya da por libre.
+test('T9b Status_FinishedPass_NotInFlight @story-8.277 @ac-10: el estado y el turno dicen lo mismo de un pase terminado sin anotar', () => {
+  const t = toy();
+  session(t, 'bg-pase', 'ConPase', { kind: 'bg', status: 'idle', statusUpdatedAt: mins(30) });
+  passMarker(t, 'bg-pase', '9.5', 25);
+  const before = C.status({ ...t.opts, noTranscripts: true });
+  assert.strictEqual(before.heavyTurn && before.heavyTurn.kind, 'pass');
+  assert.deepStrictEqual(before.quiet, []);
+  workflowRecord(t, 'bg-pase', 'wf_x', 'completed');
+  const after = C.status({ ...t.opts, noTranscripts: true });
+  assert.strictEqual(after.heavyTurn, null, JSON.stringify(after.heavyTurn));
+  assert.deepStrictEqual(after.adversarial, []);
+  assert.deepStrictEqual(after.quiet.map((q) => q.session), ['ConPase']);
+});
+
+// `pipeline.js next` with a toy run marker of this session: the pass launched by itself, the tests closed.
+const PIPELINE = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js');
+const ALL_STEPS = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'];
+function nextWithOwnPass(t, { pending, exempt = false, status = 'completed' }) {
+  const repo = path.join(t.root, 'repo');
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  const story = path.join(repo, 'specs', 'story-9.1.md');
+  fs.writeFileSync(story, ['---', 'story: "9.1"', 'epic: 9', 'status: in-progress', ...(exempt ? ['dod_runtime_exempt: true', 'dod_runtime_exempt_reason: "de juguete"'] : []), '---', '', '# Story 9.1', '', '## Acceptance Criteria', '', '1. algo', ''].join('\n'));
+  marker(t, 'propia-1', {
+    storyId: '9.1', storyPath: story, repoPath: repo, startedAt: new Date(mins(60)).toISOString(),
+    stepScheme: 2, stepsCompleted: ALL_STEPS.filter((s) => !pending.includes(s)), stepsPending: pending, timeTrackingDone: true,
+    adversarial: { launchedAtStep: 'run-tests', runId: 'wf_own', sessionId: 'propia-1', launchedAt: new Date(mins(20)).toISOString() },
+  });
+  workflowRecord(t, 'propia-1', 'wf_own', status);
+  const env = { ...process.env, HOME: t.home, CLAUDE_CODE_SESSION_ID: 'propia-1' };
+  for (const k of ['TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'TYCON_5B_EARLY', 'TYCON_NO_DEEP_REVIEW', 'DOD_BYPASS']) delete env[k];
+  const r = spawnSync(process.execPath, [PIPELINE, 'next'], { encoding: 'utf8', env, cwd: repo });
+  assert.strictEqual(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout);
+}
+
+// 🔴 mutación: dejar el pedido sólo en el JSON hace que la instrucción diga «Sigue …» sin pedir que se anote.
+test('T10 Next_OwnFinishedPassWithoutResult_AsksToRecord @story-8.277 @ac-11: la dueña del pase terminado recibe el pedido de anotarlo, en la instrucción y antes del paso, en sus tres formas', () => {
+  const forms = [['con paso que sigue', { pending: ['reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'] }],
+    ['con «Probar en vivo» exenta', { pending: ['live-check', 'prepare-commit'], exempt: true }],
+    ['sin pasos pendientes', { pending: [] }]];
+  for (const [what, opts] of forms) {
+    const n = nextWithOwnPass(toy(), opts);
+    assert.strictEqual(n.pending_action && n.pending_action.kind, 'anotar-resultado-del-pase', `${what}: ${JSON.stringify(n.pending_action)}`);
+    assert.match(n.pending_action.message, /mark-adversarial-result/, what);
+    const at = n.note.indexOf('ANTES, pase adversarial:');
+    assert.ok(at >= 0, `${what}: ${n.note}`);
+    assert.match(n.note.slice(at), /mark-adversarial-result/, what);
+    const step = n.note.search(/Sigue «|No quedan pasos pendientes/);
+    assert.ok(step > at, `${what}: el pedido va antes del paso — ${n.note}`);
+  }
+  // corriendo todavía: nada de eso, como hoy
+  const running = nextWithOwnPass(toy(), { pending: ['reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'], status: 'running' });
+  assert.ok(!running.pending_action || running.pending_action.kind !== 'anotar-resultado-del-pase', JSON.stringify(running.pending_action));
+  assert.doesNotMatch(running.note, /ANTES, pase adversarial:/);
+});
+
 // ── Opening in a sibling copy ────────────────────────────────────────────────────────────────────────────────────
 
 const copyOf = (repo, name) => `${repo}--wt-${name}`;

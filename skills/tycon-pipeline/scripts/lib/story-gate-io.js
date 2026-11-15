@@ -456,7 +456,12 @@ function listaDelPlanDelegado(stateDir, sessionId, marker) {
   try { pr = require('./plan-review.js'); } catch (e) { return conParte(e.message); }
   const r = pr.leerConstancia({ estado: stateDir, lanza: lanzo, destino: sessionId });
   if (!r.ok) return conParte(r.ausente ? 'no está la constancia de la revisión' : r.motivo);
-  if (!pr.tieneRenglon(stateDir, lanzo, sessionId, r.texto)) return conParte('la constancia no tiene su renglón en gates.log');
+  // un registro ilegible frena también sin parte: no se puede confirmar la revisión con que se aprobó el plan
+  const sinRegistro = [];
+  if (!pr.tieneRenglon(stateDir, lanzo, sessionId, r.texto, sinRegistro)) {
+    if (sinRegistro.length) return { problema: `no pude confirmar la revisión con que se aprobó el plan (${sinRegistro[0]})` };
+    return conParte('la constancia no tiene su renglón en gates.log');
+  }
   const c = r.constancia;
   if (ap.revision.id && c.id !== ap.revision.id) return conParte('la constancia no es la de la aprobación');
   // una parte que no vale (una historia sin `files:` por parte, por ejemplo) la revisión la midió con la historia entera:
@@ -590,4 +595,5 @@ module.exports = {
   DEFAULT_STATE_DIR, STALE_HOURS, WAIT_TURN_MAX_MS,
   waitingTurn, savePruned, readPruned, readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, anotarRutaDelCarril, archivosQueSuman, adhocPath, listOtherMarkers,
   repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots, topesDelCaminoCorto,
+  listaDelPlanDelegado,
 };

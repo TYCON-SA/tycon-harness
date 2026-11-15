@@ -161,13 +161,19 @@ function newestFirst(a, b) {
   return b.key[1] - a.key[1];
 }
 
-/** Las copias válidas (con manifiesto legible), la más nueva primero: `[{ dir, name, manifest }]`. */
-function list(home = os.homedir()) {
+/**
+ * Las copias válidas (con manifiesto legible), la más nueva primero: `[{ dir, name, manifest }]`. `problems` (opcional)
+ * recibe lo que no se pudo leer —la carpeta de copias, o el manifiesto de una copia—, para quien tiene que distinguir
+ * «no pude leer» de «no hay». Sin la carpeta no hay copias, y no es un problema.
+ */
+function list(home = os.homedir(), { problems } = {}) {
   const root = backupsRoot(home);
+  const report = (text) => { if (Array.isArray(problems)) problems.push(text); };
   let names;
   try {
     names = fs.readdirSync(root);
-  } catch (_) {
+  } catch (e) {
+    if (e.code !== 'ENOENT') report(`no pude leer la carpeta de copias (${e.code || e.message})`);
     return [];
   }
   const out = [];
@@ -178,10 +184,11 @@ function list(home = os.homedir()) {
     let manifest;
     try {
       manifest = JSON.parse(fs.readFileSync(path.join(dir, MANIFEST), 'utf8'));
-    } catch (_) {
+    } catch (e) {
+      report(`copia ${name}: no pude leer su manifiesto (${e.code || e.message})`);
       continue;
     }
-    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) continue;
+    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) { report(`copia ${name}: no pude leer su manifiesto (no es un objeto)`); continue; }
     out.push({ dir, name, manifest, key });
   }
   out.sort(newestFirst);

@@ -216,16 +216,27 @@ const mismaParte = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || n
 const corridaDe = (m) => ({ storyId: String(m.storyId), startedAt: m.startedAt || null });
 const mismaCorrida = (a, b) => !!(a && b && a.storyId === b.storyId && a.startedAt === b.startedAt);
 
-/** La sesión designada de la máquina (sin confirmar: la confirmación la mira la delegación), o null. */
+/**
+ * La sesión designada de la máquina (sin confirmar: la confirmación la mira la delegación), o null si no hay. Si el
+ * registro no se puede leer, lanza con la causa: «no se pudo saber» no es «no hay designada».
+ */
 function designadaDeVerdad(estado) {
   const d = require('./critical-waivers.js').designacionVigente({ dir: estado });
-  return d && !d.error ? d.sesion : null;
+  if (d && d.error) throw new Error(d.error);
+  return d ? d.sesion : null;
 }
 
-/** Los renglones de gates.log, ya leídos (los que no se pueden leer no cuentan). */
-function renglones(estado) {
+/**
+ * Los renglones de gates.log, ya leídos (los renglones rotos no cuentan). Sin el archivo, ninguno. Si existe y no se
+ * puede leer, también ninguno, y el motivo va a `problemas` cuando quien llama lo pide: un registro ilegible no es uno
+ * vacío.
+ */
+function renglones(estado, problemas) {
   let lineas = [];
-  try { lineas = fs.readFileSync(path.join(estado, 'gates.log'), 'utf8').split('\n'); } catch (_) { return []; }
+  try { lineas = fs.readFileSync(path.join(estado, 'gates.log'), 'utf8').split('\n'); } catch (e) {
+    if (e.code !== 'ENOENT' && Array.isArray(problemas)) problemas.push(`no pude leer gates.log: ${e.code || e.message}`);
+    return [];
+  }
   const out = [];
   for (const l of lineas) { if (!l.trim()) continue; try { out.push(JSON.parse(l)); } catch (_) { /* un renglón roto no cuenta */ } }
   return out;
@@ -307,8 +318,8 @@ function comandoLite(argsFile, out, { order, integration } = {}) {
 }
 
 /** Los renglones `plan-review` de un destino y una corrida, en orden. */
-function revisionesDe(estado, destino, corrida) {
-  return renglones(estado).filter((j) => j.name === 'plan-review' && j.destino === destino && mismaCorrida(j.corrida, corrida));
+function revisionesDe(estado, destino, corrida, problemas) {
+  return renglones(estado, problemas).filter((j) => j.name === 'plan-review' && j.destino === destino && mismaCorrida(j.corrida, corrida));
 }
 
 /**
@@ -335,8 +346,11 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
   if (ahoraPlan === null || sha(ahoraPlan) !== pedido.huellas.plan) {
     veredicto = 'sin-veredicto';
     motivo = CAMBIO;
-    // se reintenta una sola vez por corrida sobre el plan cerrado; la segunda llega al dueño con este motivo
-    reintentar = !revisionesDe(estado, dest, pedido.corrida).some((j) => j.motivo === CAMBIO);
+    // se reintenta una sola vez por corrida sobre el plan cerrado; la segunda llega al dueño con este motivo. Sin el
+    // registro no se sabe si ya se reintentó: no se reintenta
+    const sinRegistro = [];
+    const yaReintento = revisionesDe(estado, dest, pedido.corrida, sinRegistro).some((j) => j.motivo === CAMBIO);
+    reintentar = !yaReintento && !sinRegistro.length;
   }
   const confirmados = (!sinHerramienta && !noVale && resultado && Array.isArray(resultado.confirmed)) ? resultado.confirmed : [];
   const { blocks } = policy();
@@ -434,10 +448,13 @@ function ultimaDelDestino({ estado, destino }) {
   return { ...(mejor || {}), aviso: `hay ${ilegibles.length} constancia ilegible (de ${ilegibles.join(', ')}): la que se muestra puede no ser la última` };
 }
 
-/** ¿La constancia tiene su renglón en gates.log, con la misma huella y sin ser informativa? */
-function tieneRenglon(estado, firmante, destino, texto) {
+/**
+ * ¿La constancia tiene su renglón en gates.log, con la misma huella y sin ser informativa? Con el registro ilegible no
+ * lo tiene, y el motivo va a `problemas` si quien llama lo pide.
+ */
+function tieneRenglon(estado, firmante, destino, texto, problemas) {
   const h = sha(texto);
-  return renglones(estado).some((j) => j.name === 'plan-review' && j.sesion === firmante && j.destino === destino && j.huella === h && j.informativa !== true);
+  return renglones(estado, problemas).some((j) => j.name === 'plan-review' && j.sesion === firmante && j.destino === destino && j.huella === h && j.informativa !== true);
 }
 
 // ── la pregunta de si revisar, y su respuesta ─────────────────────────────────────────────────────────────────────
@@ -483,10 +500,13 @@ function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo =
   return { codigo: 0 };
 }
 
-/** Las preguntas sin respuesta: `[{ sesion, kind, huella, ts }]`, la más vieja primero. */
-function preguntasAbiertas({ estado }) {
+/**
+ * Las preguntas sin respuesta: `[{ sesion, kind, huella, ts }]`, la más vieja primero. `problemas` (opcional) recibe el
+ * motivo si el registro no se puede leer; las consultas de abajo hacen lo mismo.
+ */
+function preguntasAbiertas({ estado, problemas }) {
   const abiertas = new Map();
-  for (const j of renglones(estado)) {
+  for (const j of renglones(estado, problemas)) {
     const clave = `${j.sesion}|${j.kind}`;
     if (j.name === 'review-ask') abiertas.set(clave, { sesion: j.sesion, kind: j.kind, huella: j.huella, ts: j.ts });
     else if (j.name === 'review-answer' && abiertas.has(clave)) abiertas.delete(clave);
@@ -495,14 +515,14 @@ function preguntasAbiertas({ estado }) {
 }
 
 /** La última respuesta (`review`, `skip` o `wait`) de la pregunta de una sesión sobre esa huella, o null. */
-function respuestaDe({ estado, sesion, kind, huella }) {
-  const r = renglones(estado).filter((j) => j.name === 'review-answer' && j.kind === kind && j.sesion === sesion && j.huella === huella);
+function respuestaDe({ estado, sesion, kind, huella, problemas }) {
+  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === kind && j.sesion === sesion && j.huella === huella);
   return r.length ? r[r.length - 1].choice : null;
 }
 
 /** ¿Para este plan (su huella) se eligió seguir sin revisión? La última respuesta sobre esa huella manda. */
-function eligioSeguir({ estado, destino, huellaPlan }) {
-  const r = renglones(estado).filter((j) => j.name === 'review-answer' && j.kind === 'plan' && j.sesion === destino && j.huella === huellaPlan);
+function eligioSeguir({ estado, destino, huellaPlan, problemas }) {
+  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === 'plan' && j.sesion === destino && j.huella === huellaPlan);
   return r.length ? r[r.length - 1].choice === 'skip' : false;
 }
 
@@ -511,9 +531,9 @@ function eligioSeguir({ estado, destino, huellaPlan }) {
  * (o con notas) pone la cuenta en cero; un «sin veredicto» no suma ni la pone en cero. Las de la propia sesión cuentan:
  * sin coordinadora son la única revisión, y el tope tiene que poder llegar al dueño igual.
  */
-function rechazosSeguidos({ estado, destino, corrida }) {
+function rechazosSeguidos({ estado, destino, corrida, problemas }) {
   let huellas = new Set();
-  for (const j of revisionesDe(estado, destino, corrida)) {
+  for (const j of revisionesDe(estado, destino, corrida, problemas)) {
     if (APROBADOS.includes(j.veredicto)) huellas = new Set();
     else if (j.veredicto === 'rechazado' && j.huellaPlan) huellas.add(j.huellaPlan);
   }
@@ -537,8 +557,8 @@ function topeDeRechazos(cfg, repo) {
 }
 
 /** Cuántos hallazgos sumaron los rechazos de la corrida (la N de «N hallazgos corregidos»). */
-function hallazgosCorregidos({ estado, destino, corrida }) {
-  return revisionesDe(estado, destino, corrida).filter((j) => j.veredicto === 'rechazado').reduce((s, j) => s + (Number(j.hallazgos) || 0), 0);
+function hallazgosCorregidos({ estado, destino, corrida, problemas }) {
+  return revisionesDe(estado, destino, corrida, problemas).filter((j) => j.veredicto === 'rechazado').reduce((s, j) => s + (Number(j.hallazgos) || 0), 0);
 }
 
 /**
@@ -550,6 +570,10 @@ function lineaDelCuadro({ estado, destino, marker, config }) {
   const plan = planDe(marker);
   const huellaPlan = plan.texto ? sha(plan.texto) : null;
   const corrida = corridaDe(marker);
+  // sin el registro no se sabe si se eligió seguir ni cuántas veces se rechazó: se dice, no se muestra «sin revisión»
+  const sinRegistro = [];
+  renglones(estado, sinRegistro);
+  if (sinRegistro.length) return { linea: `${sinRegistro[0]}: no sé cómo quedó la revisión`, detalle: [] };
   if (huellaPlan && eligioSeguir({ estado, destino, huellaPlan })) return { linea: 'sin revisión (se eligió seguir)', detalle: [] };
   const c = ultimaDelDestino({ estado, destino });
   const deEsta = c && c.veredicto && mismaCorrida(c.corrida, corrida) ? c : null;
@@ -603,7 +627,8 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   const c = r.constancia;
   if (c.informativa === true) return no(`la revisión es informativa (la lanzó la propia sesión cuando no podía firmar): sólo informa: ${ESPERA}`);
   if (c.lanzo !== firmante || c.destino !== destino) return no(`la revisión la lanzó otra sesión (${c.lanzo}), no la que firma: ${ESPERA}`);
-  if (!tieneRenglon(estado, firmante, destino, r.texto)) return no(`la constancia de la revisión no tiene su renglón en gates.log: ${ESPERA}`);
+  const sinRegistro = [];
+  if (!tieneRenglon(estado, firmante, destino, r.texto, sinRegistro)) return no(`${sinRegistro[0] || 'la constancia de la revisión no tiene su renglón en gates.log'}: ${ESPERA}`);
   const hoy = corridaDe(marker);
   if (c.storyId !== hoy.storyId || c.corrida.storyId !== hoy.storyId || c.corrida.startedAt !== hoy.startedAt) return no(`la revisión es de otra corrida (${c.corrida.storyId}, ${c.corrida.startedAt}): ${ESPERA}`);
   if (!plan.texto || sha(plan.texto) !== c.huellas.plan) return no(`el plan cambió después de la revisión: ${ESPERA}`);
@@ -651,11 +676,16 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
     marca = leida.mark;
     if (leida.problem) avisos.push(`${leida.problem}: la persona cuenta como presente`);
   } catch (e) { avisos.push(`no pude leer la marca de ausente (${e.message}): la persona cuenta como presente`); }
-  const pregunta = preguntasAbiertas({ estado }).find((p) => p.sesion === sesion && p.kind === 'plan' && p.huella === huellaPlan);
+  const sinRegistro = [];
+  const pregunta = preguntasAbiertas({ estado, problemas: sinRegistro }).find((p) => p.sesion === sesion && p.kind === 'plan' && p.huella === huellaPlan);
   const away = P.ownerAway({ mark: marca, askedAt: pregunta ? Date.parse(pregunta.ts) : null, now: ahora, minutes: cfg.plan_review.owner_away_minutes });
   const r = P.planReview({ delicate: delicate.value, coordinator: hayCoordinadora, ownerAway: away.away, config: cfg });
   const out = { ...r, delicate: delicate.value, ownerAway: away, huellaPlan };
+  if (sinRegistro.length) avisos.push(sinRegistro[0]);
   if (avisos.length) { out.reason = `${out.reason} (${avisos.join('; ')})`; out.problems = avisos; }
+  // sin el registro no se sabe si se eligió seguir ni se cuentan los rechazos o los cambios del plan, que son los topes
+  // que llevan el caso al dueño: llega al dueño ahora, sin relanzar
+  if (sinRegistro.length) return { ...out, alDueno: { llega: true, motivo: `${sinRegistro[0]}: lo decide una persona` } };
   if (eligioSeguir({ estado, destino: sesion, huellaPlan })) return { ...out, decision: 'skip', reason: 'se eligió seguir sin revisión para este plan' };
   const c = ultimaDelDestino({ estado, destino: sesion });
   // con coordinadora, una informativa no tapa la revisión que ella tiene que lanzar; la de la propia sesión que puede
