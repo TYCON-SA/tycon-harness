@@ -508,6 +508,67 @@ test('T6e FailedFirst_Merge_ReplacesBySuiteEntry @story-8.279 @ac-6 — en el á
   assert.equal(out.fallas.length, 1, JSON.stringify(out.fallas));
 });
 
+/** Un repo con un control declarado y una completa roja guardada (con su repetición) sobre la carpeta de ahora. */
+function rojaConControl() {
+  const ff = require('../lib/failed-first.js');
+  const repo = tmp('ff-control-');
+  git(repo, 'init', '-q'); git(repo, 'config', 'user.email', 'p@e.invalid'); git(repo, 'config', 'user.name', 'p');
+  const escribir = (rel, txt) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), txt); };
+  escribir('scripts/tests/suites.json', JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: A }] }));
+  escribir('scripts/ci/control-x.js', '// control\n');
+  escribir('scripts/ci/controls-from-base.json', JSON.stringify({ controls: [{ name: 'x', script: 'scripts/ci/control-x.js', rules: [] }], content: [], workflows: [], approvals: [] }));
+  escribir('docs/a.md', 'v1\n');
+  git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'base');
+  const arbol = () => { git(repo, 'add', '-A'); return git(repo, 'write-tree').stdout.trim(); };
+  const d = tmp('ff-control-g-');
+  fs.writeFileSync(path.join(d, 'r.json'), JSON.stringify({ suites: [], fallas: [{ ruta: `/x/scripts/${A}`, entrada: { raiz: 'arnes', ruta: A } }] }));
+  fs.writeFileSync(path.join(d, 'm.json'), JSON.stringify({ tree: arbol() }));
+  const dir = path.join(d, 'g');
+  ff.saveRed({ dir, summaryFile: path.join(d, 'r.json'), lcovFile: null, measuredFile: path.join(d, 'm.json'), base: 'base-vieja', recorte: '', storyId: '9.279' });
+  const hash = ff.addRepeat(dir, A, { tree: arbol(), entry: { ruta: `/x/scripts/${A}`, exit: 0, ms: 1, entrada: { raiz: 'arnes', ruta: A } } });
+  return { ff, repo, dir, hash, arbol, escribir };
+}
+
+test('T6f Gate_MainTouchesControl_FullAsToday @story-8.279 @ac-7 — main traído que cambia un control corre la completa con su motivo, aunque lo guardado sea rojo', () => {
+  const { ff, repo, dir, hash, arbol } = rojaConControl();
+  fs.appendFileSync(path.join(repo, 'scripts', 'ci', 'control-x.js'), '// de main\n');
+  const r = ff.decide({ dir, hash, repo, tree: arbol(), base: 'base-nueva', recorte: '', storyId: '9.279' });
+  assert.deepEqual([r.mode, r.reason], ['full', 'cambió un control (scripts/ci/control-x.js)'], JSON.stringify(r));
+  // un papel traído de main, en cambio, acota
+  fs.writeFileSync(path.join(repo, 'scripts', 'ci', 'control-x.js'), '// control\n');
+  fs.appendFileSync(path.join(repo, 'docs', 'a.md'), 'de main\n');
+  const p = ff.decide({ dir, hash, repo, tree: arbol(), base: 'base-nueva', recorte: '', storyId: '9.279' });
+  assert.equal(p.mode, 'changed', JSON.stringify(p));
+});
+
+test('T7e PrivateGate_NoSnapshot_FullAsToday @story-8.279 @ac-8 — sin foto, lo guardado tocado, de otra historia o con otro recorte: la completa como hoy, con su motivo', () => {
+  const { ff, repo, dir, hash, arbol } = rojaConControl();
+  const decidir = (o) => ff.decide({ dir, hash, repo, tree: arbol(), base: 'base-vieja', recorte: '', storyId: '9.279', ...o });
+  // la carpeta es la misma de la completa y de la repetición: sin ninguna de estas dudas, cerraría con lo guardado
+  assert.equal(decidir({}).mode, 'same');
+  assert.deepEqual([decidir({ tree: null }).mode, decidir({ tree: null }).reason], ['full', 'no hay foto de la carpeta para comparar']);
+  assert.match(decidir({ storyId: '9.999' }).reason, /lo guardado es de otra historia/);
+  assert.match(decidir({ recorte: '--light' }).reason, /no tiene el mismo recorte/);
+  assert.match(decidir({ hash: 'f'.repeat(64) }).reason, /lo guardado no coincide con su constancia/);
+  for (const o of [{ tree: null }, { storyId: '9.999' }, { recorte: '--light' }, { hash: 'f'.repeat(64) }]) assert.equal(decidir(o).mode, 'full');
+});
+
+test('T6g RunSuites_RerunWithoutEntry_CountsMissing @story-8.279 @ac-6 — una repetida vieja que no está en la lista no se saltea en silencio: cuenta como ausente y lo dice', () => {
+  const repo = tmp('ff-rerun-sin-');
+  const escribir = (rel, txt) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), txt); };
+  escribir('scripts/tests/suites.json', JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: A }] }));
+  escribir(`scripts/${A}`, '#!/usr/bin/env bash\nexit 0\n');
+  escribir('touched.json', JSON.stringify({ known: true, files: [], rerun_suites: [A, 'tests/ya-no-esta.test.sh'], sources: {}, reason: null }));
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'run-suites-json.js'), repo, path.join(repo, 'r.json'), '--skills', path.join(repo, 'skills'),
+    '--touched', path.join(repo, 'touched.json'), '--scoped-by-repo', 'la CI de prueba'], { encoding: 'utf8', cwd: repo,
+    env: entorno({ home: tmp('ff-rerun-home-'), state: tmp('ff-rerun-state-'), skills: path.join(repo, 'skills') }) });
+  const out = `${r.stdout}\n${r.stderr}`;
+  assert.match(out, /tests\/ya-no-esta\.test\.sh/, out);
+  const res = JSON.parse(fs.readFileSync(path.join(repo, 'r.json'), 'utf8'));
+  assert.ok((res.ausentes || []).some((a) => String(a).includes('ya-no-esta')), JSON.stringify(res.ausentes));
+  assert.notEqual(r.status, 0, out);
+});
+
 test('T28 Guia_RepetirSolasCierra — el paso 6 y el portón dicen los tres casos, cada uno', () => {
   for (const archivo of [STEP_06, TEST_GATE]) {
     const texto = fs.readFileSync(archivo, 'utf8');

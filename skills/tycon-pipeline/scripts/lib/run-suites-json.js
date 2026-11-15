@@ -464,6 +464,7 @@ function main(argv, env = process.env) {
   const allSuites = env.TYCON_GATE_ALL_SUITES === '1' || Boolean(suiteOnly);
   const touched = readTouched(touchedFile);
   const rerun = new Set(touched.known && Array.isArray(touched.rerun_suites) ? touched.rerun_suites.filter((r) => typeof r === 'string') : []);
+  const rerunHallada = new Set();
   let light = argv.includes('--light');
   // acotar sin saber qué se tocó sería no correr nada: el acotado por el repo sólo vale con lo tocado conocido
   const byRepo = Boolean(fullSuiteBy) && !allSuites && touched.known;
@@ -537,6 +538,7 @@ function main(argv, env = process.env) {
     // Una repetida vieja (failed-first.js `decide`, `rerun`) vuelve a correr sin pasar por los filtros, como `--suite`:
     // se la reconoce por su entrada de la lista, la misma clave con que se guardó la repetición.
     if (rerun.has(p.entrada.ruta)) {
+      rerunHallada.add(p.entrada.ruta);
       console.log(`REPETIDA ${p.name} — se repitió sola y la carpeta cambió después: vuelve a correr`);
       (p.exclusive ? exclusives : parallel).push(p);
       continue;
@@ -574,6 +576,13 @@ function main(argv, env = process.env) {
       continue;
     }
     (p.exclusive ? exclusives : parallel).push(p);
+  }
+  // Una repetida vieja sin entrada en la lista no se vuelve a medir: cuenta como ausente (es rojo), no se saltea callada.
+  // Su repetición guardada en verde no puede cerrar lo que nadie volvió a correr.
+  for (const r of rerun) {
+    if (rerunHallada.has(r)) continue;
+    resumen.ausentes.push(r);
+    console.log(`AUSENTE  ${r} — se repitió sola y la carpeta cambió después, pero ya no está en la lista de suites: no se pudo volver a correr`);
   }
 
   if (byRepo) resumen.scoped = { by: 'repo', full_suite_by: fullSuiteBy, none_touched: false };
