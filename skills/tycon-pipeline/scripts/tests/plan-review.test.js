@@ -1622,3 +1622,27 @@ test('PlanReview_FolderProtected_AndResultOnlyFromRunner (T28, el resultado) @st
   revisionPropia(lab);
   assert.strictEqual(aprobarSolo(lab).status, 0);
 });
+
+test('PlanReview_PedidosViejos_ComparaHuellas (T6) @story-8.284 @ac-10 @ac-11 @ac-13', (t) => {
+  const lab = laboratorio(t);
+  const viejas = () => PR().revisionesViejas({ estado: lab.estado, lanza: COORD });
+  // sin pedidos preparados, nada
+  assert.deepStrictEqual(viejas(), { viejas: [], problemas: [] });
+  const p = PR().preparar({ lanza: COORD, destino: DESTINO, estado: lab.estado, home: lab.home, delegacion: delegacionReal() });
+  assert.strictEqual(p.codigo, 0, p.motivo);
+  // el mismo plan: no es vieja
+  assert.deepStrictEqual(viejas(), { viejas: [], problemas: [] });
+  // el plan cambió después de preparar: la lista con la sesión, la hora y la historia
+  fs.writeFileSync(lab.planFile, `${PLAN}3. Otro paso.\n`);
+  const r = viejas();
+  assert.deepStrictEqual(r.problemas, []);
+  assert.strictEqual(r.viejas.length, 1);
+  const pedido = JSON.parse(fs.readFileSync(p.pedido, 'utf8'));
+  assert.deepStrictEqual(r.viejas[0], { destino: DESTINO, hora: pedido.hora, storyId: '9.91' });
+  // anotar con el plan cambiado da sin-veredicto como hoy: el aviso no cambia lo que se anota
+  const c = PR().anotar({ lanza: COORD, destino: DESTINO, estado: lab.estado, resultado: { ...APROBADO, pedido: p.args.pedido }, modelo: 'opus', proveedor: 'anthropic' });
+  assert.strictEqual(c.veredicto, 'sin-veredicto');
+  assert.match(c.motivo, /el plan cambió mientras corría la revisión/);
+  // anotada, el pedido ya no está: deja de salir
+  assert.deepStrictEqual(viejas(), { viejas: [], problemas: [] });
+});

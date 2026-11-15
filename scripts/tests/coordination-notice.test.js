@@ -1032,6 +1032,76 @@ test('T56 CoordinationNotice_LasPreguntasDeRevisionSinRespuesta @story-8.221 @ac
   assert.match(n, /marca de ausente puesta.*dueño ausente.*routine_owner_away: review/);
 });
 
+// ── La revisión del plan que quedó vieja ────────────────────────────────────────────────────────────────────────
+
+const sha256 = (s) => require('crypto').createHash('sha256').update(s).digest('hex');
+const ARRANQUE = '2026-10-27T13:00:00.000Z';
+/** Una corrida abierta de `sid` en «Aprobar el plan», con su plan escrito; devuelve la ruta del plan. */
+function corridaConPlan(t, sid, storyId, plan, extra = {}) {
+  const planFile = path.join(t.root, `plan-${sid}-${storyId}.md`);
+  fs.writeFileSync(planFile, plan);
+  marker(t, sid, { storyId, startedAt: ARRANQUE, stepScheme: 2, stepsCompleted: ['start', 'validate-story', 'plan'], stepsPending: ['approve-plan', 'implement'], ...extra });
+  return planFile;
+}
+/** El pedido de la revisión, como lo deja `preparar` en la carpeta de quien la lanza. */
+function pedidoDeRevision(t, destino, planFile, texto, { lanza = COORD, storyId = '9.91', startedAt = ARRANQUE, hora = iso(mins(30)) } = {}) {
+  const dir = path.join(t.state, 'plan-review', lanza);
+  fs.mkdirSync(dir, { recursive: true });
+  const f = path.join(dir, `${destino}.pending.json`);
+  fs.writeFileSync(f, JSON.stringify({ numero: 'n1', lanzo: lanza, destino, corrida: { storyId, startedAt }, storyId, planFile, huellas: { plan: sha256(texto), story: 'x' }, hora }));
+  return f;
+}
+const VIEJA = /revisión del plan de .* quedó vieja/;
+
+test('T5 TurnoCoordinadora_RevisionPreparadaPlanCambiado_Avisa @story-8.284 @ac-10 @ac-11 @ac-12', () => {
+  const t = toy();
+  session(t, 's-a', 'Uno');
+  // sin carpeta de pedidos, nada
+  assert.doesNotMatch(C.capNotice(t.opts) || '', VIEJA);
+  // en la carpeta, sólo cuentan los pedidos: la constancia, los argumentos, el resultado y un temporal no
+  const dir = path.join(t.state, 'plan-review', COORD);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const f of ['s-a.json', 's-a.args.json', 's-a.resultado.json', 's-a.pending.json.tmp-1']) fs.writeFileSync(path.join(dir, f), '{roto');
+  assert.doesNotMatch(C.capNotice(t.opts) || '', /quedó vieja|No pude leer/);
+  // preparada y el plan cambió después: nombre e id, la hora y el comando
+  const plan = corridaConPlan(t, 's-a', '9.91', 'plan v2');
+  const pedido = pedidoDeRevision(t, 's-a', plan, 'plan v1');
+  let n = C.capNotice(t.opts) || '';
+  assert.match(n, /Coordinación: la revisión del plan de Uno \(s-a\) que preparaste a las \d\d:\d\d quedó vieja: el plan cambió después\. Preparala de nuevo: marker\.js plan-review --for-session s-a\./);
+  // sale en cada turno mientras dure
+  assert.match(C.capNotice(t.opts) || '', VIEJA);
+  // otra sesión no lo ve
+  assert.doesNotMatch(C.capNotice({ ...t.opts, sessionId: 's-a' }) || '', VIEJA);
+  // el mismo plan: nada
+  fs.writeFileSync(plan, 'plan v1');
+  assert.doesNotMatch(C.capNotice(t.opts) || '', VIEJA);
+  // el plan borrado: «No pude leer», nunca «igual»
+  fs.rmSync(plan);
+  n = C.capNotice(t.opts) || '';
+  assert.doesNotMatch(n, VIEJA);
+  assert.match(n, /No pude leer .*revisión del plan de s-a/);
+  // el pedido ilegible: «No pude leer»
+  fs.writeFileSync(plan, 'plan v2');
+  fs.writeFileSync(pedido, '{roto');
+  n = C.capNotice(t.opts) || '';
+  assert.doesNotMatch(n, VIEJA);
+  assert.match(n, /No pude leer .*pedido de revisión del plan s-a/);
+  // «Aprobar el plan» ya hecho: la revisión ya no hace falta
+  pedidoDeRevision(t, 's-a', plan, 'plan v1');
+  corridaConPlan(t, 's-a', '9.91', 'plan v2', { stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan'], stepsPending: ['implement'] });
+  assert.doesNotMatch(C.capNotice(t.opts) || '', /quedó vieja|No pude leer/);
+  // la misma sesión con otra corrida abierta y otro plan: el pedido viejo no se compara con el plan nuevo
+  corridaConPlan(t, 's-a', '9.95', 'otro plan');
+  assert.doesNotMatch(C.capNotice(t.opts) || '', /quedó vieja|No pude leer/);
+  // corrida cerrada: nada
+  fs.rmSync(path.join(t.state, 'active', 's-a.json'));
+  assert.doesNotMatch(C.capNotice(t.opts) || '', /quedó vieja|No pude leer/);
+  // un pedido de la coordinadora sobre su propio plan no es de otra sesión
+  const propio = corridaConPlan(t, COORD, '9.92', 'mío v2');
+  pedidoDeRevision(t, COORD, propio, 'mío v1', { storyId: '9.92' });
+  assert.doesNotMatch(C.capNotice(t.opts) || '', /quedó vieja|No pude leer/);
+});
+
 // ── Lo que la persona le dice a otra sesión ─────────────────────────────────────────────────────────────────────
 
 const iso = (ms) => new Date(ms).toISOString();
