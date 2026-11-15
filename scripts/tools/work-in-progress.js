@@ -1709,7 +1709,7 @@ function render(rows, free, noData, idle, halfway, unreadable, internal = 0, not
   const freeText = free.map((f) => (freeNotes.get(f) ? `${f} (${freeNotes.get(f)})` : noData.includes(f) ? `${f} (sin dato de actividad)` : f));
   lines.push('', `Libres: ${freeText.length ? freeText.join(', ') : 'ninguna'}`);
   if (idle.length) lines.push(`Sin uso hace más de ${IDLE_MS / 3600000} h: ${idle.join(', ')}`);
-  if (internal) lines.push(`${internal} agente(s) interno(s) de otras sesiones (sin fila: corren en la carpeta temporal sin nombre puesto, o son corridas sueltas de claude -p)`);
+  if (internal) lines.push(`${internal} agente(s) interno(s) de otras sesiones (sin fila: corren en la carpeta temporal sin nombre puesto, o son ejecuciones sueltas de claude -p)`);
   if (halfway.length) lines.push('', `Quedaron a medio camino (sesión cerrada o sin rastro): ${halfway.length}`, ...halfway.map((h) => `- ${h}`));
   if (unreadable.length) lines.push('', 'No se pudo leer:', ...unreadable.map((u) => `- ${u}`));
   return lines.join('\n');
