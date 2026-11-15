@@ -1315,6 +1315,8 @@ function ownerNextText(r, sesion, nota = null) {
   const lines = [];
   for (const p of r.problemas) lines.push(`Aviso: ${p}.`);
   for (const f of r.faltaRepetir) lines.push(f.destino === sesion ? `${f.id} ya está aprobado y es de esta sesión: repetí el comando, si todavía no lo hiciste.` : `${f.id} ya está aprobado y falta que su sesión repita el comando. Si todavía no se lo mandaste, mandale este mensaje a ${f.nombre}; si ya se lo mandaste, no se lo repitas:`, f.aviso, '');
+  // con un renglón para dar, los que no se arman desde aquí van debajo, como aviso; sin él, ya los dice el texto de la pasada
+  const saltados = r.tipo !== 'nada' && Array.isArray(r.saltados) && r.saltados.length ? ['', `Aviso: ${signatureList.textoDeSaltados(r.saltados)}`] : [];
   if (r.tipo === 'firma' || r.tipo === 'permiso') {
     lines.push(`Renglón ${r.id}. Mostrá AskUserQuestion con una sola pregunta, sin cambiarle una letra, con «${r.rotulo}» como rótulo y las opciones «${r.opciones[0]}» y «${r.opciones[1]}».`);
     if (r.nota) lines.push(`Decile también: ${r.nota}`);
@@ -1323,13 +1325,13 @@ function ownerNextText(r, sesion, nota = null) {
     lines.push('Si el cuadro se cierra o se resuelve solo: no corras nada; la pasada se corta y el renglón queda.');
     if (r.tipo === 'firma') lines.push(`Con «${r.opciones[0]}», esto no se corre acá: lo repite su sesión. ${r.destino === sesion ? 'Es ésta: repetilo.' : `Mandale este mensaje a ${r.nombre}:`}`, r.aviso);
     if (r.tipo === 'firma') lines.push(`Si la repetición se niega: owner-next --after ${r.id} da el siguiente, y el renglón queda.`);
-    return lines.join('\n');
+    return [...lines, ...saltados].join('\n');
   }
   if (r.tipo === 'plan') lines.push(r.texto, 'El plan:', r.plan);
   else if (r.sigue) lines.push(r.texto, `Sigue con: ${r.sigue}`);
   else if (!(nota && nota.reemplaza)) lines.push(r.texto);
   if (nota) lines.push(...nota.lineas);
-  return lines.join('\n');
+  return [...lines, ...saltados].join('\n');
 }
 
 /**
