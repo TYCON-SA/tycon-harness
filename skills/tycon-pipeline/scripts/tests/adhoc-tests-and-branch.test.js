@@ -24,6 +24,10 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPTS = path.join(__dirname, '..');
+// Sin arnés instalado (la HOME vacía del agente nocturno) packs.default no se puede leer y, con paquetes instalados en
+// el árbol, el freno de paquetes frena todo lo que esta suite lanza. La suite fija el valor del perfil del equipo, en
+// este proceso y en todo lo que lanza.
+process.env.TYCON_PACKS_DEFAULT = 'all';
 const MARKER = path.join(SCRIPTS, 'marker.js');
 const saveBrake = require(path.join(SCRIPTS, 'lib', 'save-brake.js'));
 
