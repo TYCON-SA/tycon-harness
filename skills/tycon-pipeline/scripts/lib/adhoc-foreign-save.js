@@ -24,10 +24,11 @@ const EN_EL_CUADRO = 5;
 // el renglón más largo que entra entero en el cuadro del click
 const LARGO_DE_RENGLON = 600;
 // lo que no se ve en el cuadro: los controles (también el salto de línea), los de formato (dirección, ancho cero), los
-// separadores de renglón y de párrafo, los que se ignoran al mostrar y el braille en blanco. Es la misma clase que usa
-// el cuadro de las firmas (`signature-sources`, CLASE_QUE_NO_SE_VE), copiada porque ese módulo carga éste. Además, los
-// espacios que no se distinguen del común (el duro, el ideográfico…): un nombre con uno se ve igual que otro
-const INVISIBLES = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u{2800}]|[^\P{Zs} ]/u;
+// separadores de renglón y de párrafo, los que se ignoran al mostrar, los de uso privado, el braille en blanco y una
+// marca de acento sin letra base. Es la misma clase que usa el cuadro de las firmas (`signature-sources`,
+// CLASE_QUE_NO_SE_VE y MARCA_SUELTA), copiada porque ese módulo carga éste. Además, los espacios que no se distinguen del
+// común (el duro, el ideográfico…): un nombre con uno se ve igual que otro
+const INVISIBLES = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\p{Co}\u{2800}]|[^\P{Zs} ]|(?:^|[^\p{L}\p{N}\p{M}])\p{M}/u;
 // un prefijo de entorno de git, también con `env` o `export` delante
 const ENTORNO_DE_GIT = /(?:^|[\s;&|()`])(?:export\s+)?GIT_[A-Za-z0-9_]*=/;
 // las claves de la configuración que corren un programa al guardar o al empujar

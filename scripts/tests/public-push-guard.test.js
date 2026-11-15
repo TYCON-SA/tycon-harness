@@ -171,6 +171,26 @@ function assertPassed(r) {
 
 // ── qué se mira en cada commit nuevo ─────────────────────────────────────────────────────────────────────
 
+// 🔴 Falla con: el entorno limpio de estas pruebas tira la carpeta del medidor de cobertura, y el freno, que corre como
+// proceso aparte, queda sin medir aunque la suite corra con cobertura.
+test('PublicPushGuard_Cobertura_LoMide @story-8.282 @ac-26', (t) => {
+  const fx = lab(t);
+  commitOn(fx, 'limpia', { 'guides/nueva.md': 'una guía nueva, sin nada raro\n' }, 'docs: una guía nueva');
+  const carpeta = fs.mkdtempSync(path.join(os.tmpdir(), 'ppg-cov-'));
+  t.after(() => fs.rmSync(carpeta, { recursive: true, force: true }));
+  // la carpeta llega como la deja el medidor: en el entorno de la suite, no en el de una llamada
+  const antes = process.env.NODE_V8_COVERAGE;
+  process.env.NODE_V8_COVERAGE = carpeta;
+  let r;
+  try { r = guard(fx, branchLine(fx, 'limpia')); } finally {
+    if (antes === undefined) delete process.env.NODE_V8_COVERAGE; else process.env.NODE_V8_COVERAGE = antes;
+  }
+  assertPassed(r);
+  const medidos = fs.readdirSync(carpeta).filter((f) => f.endsWith('.json'))
+    .flatMap((f) => (JSON.parse(fs.readFileSync(path.join(carpeta, f), 'utf8')).result || []).map((s) => s.url));
+  assert.ok(medidos.some((u) => u.endsWith('/scripts/hooks/public-push-guard.js')), `el freno no quedó medido: ${medidos.length} archivos`);
+});
+
 test('T22_PublicPush_CleanBranch_Passes_AndSaysWhatItLooked', (t) => {
   const fx = lab(t);
   commitOn(fx, 'limpia', { 'guides/nueva.md': 'una guía nueva, sin nada raro\n' }, 'docs: una guía nueva');
