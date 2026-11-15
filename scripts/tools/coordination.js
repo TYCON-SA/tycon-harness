@@ -1237,6 +1237,13 @@ function ownerReplyLines(opts, sid, problems) {
   }
   const out = [];
   const back = [];
+  // los mensajes de la persona que se pierden, por sesión: la coordinadora le pregunta a esa sesión qué le pidieron
+  const lost = new Map();
+  const miss = (who, at) => {
+    const x = lost.get(who) || { n: 0, last: 0 };
+    lost.set(who, { n: x.n + 1, last: Math.max(x.last, at) });
+  };
+  const lines = () => [...(out.length ? deliveredLines(home, out) : []), ...lostReplyLines(home, lost, now)];
   try {
     const transcripts = new Map();
     const count = { bad: 0, lost: 0, other: 0, unreadable: 0, notRecorded: 0 };
@@ -1245,10 +1252,11 @@ function ownerReplyLines(opts, sid, problems) {
       let r;
       try { r = JSON.parse(l); } catch { count.bad += 1; continue; }
       const at = r && Date.parse(r.at);
-      if (!r || typeof r.sid !== 'string' || !Number.isFinite(at)) { count.bad += 1; continue; }
+      // un sid vacío no dice a quién preguntarle: cuenta como sin sid
+      if (!r || typeof r.sid !== 'string' || !r.sid.trim() || !Number.isFinite(at)) { count.bad += 1; continue; }
       if (now - at > REPLY_MAX_AGE_MS || r.sid === sid) continue;
-      if (typeof r.problem === 'string') { count.notRecorded += 1; continue; }
-      if (typeof r.sha !== 'string' || !isTranscriptOf(home, r.transcript, r.sid)) { count.bad += 1; continue; }
+      if (typeof r.problem === 'string') { count.notRecorded += 1; miss(r.sid, at); continue; }
+      if (typeof r.sha !== 'string' || !isTranscriptOf(home, r.transcript, r.sid)) { count.bad += 1; miss(r.sid, at); continue; }
       const from = Number.isFinite(Number(r.from)) ? Number(r.from) : 0;
       const k = `${r.transcript}@${from}`;
       if (!transcripts.has(k)) transcripts.set(k, typedMessages(r.transcript, from));
@@ -1258,8 +1266,7 @@ function ownerReplyLines(opts, sid, problems) {
       else if (found) count.other += 1;
       else if (now - at < REPLY_CONFIRM_MS) back.push(l);
       // lo que no se encontró se descarta, pero se dice: puede ser una respuesta de verdad que no se pudo leer
-      else if (msgs === null) count.unreadable += 1;
-      else count.lost += 1;
+      else if (msgs === null) { count.unreadable += 1; miss(r.sid, at); } else { count.lost += 1; miss(r.sid, at); }
     }
     if (count.bad) problems.push(`${count.bad} línea(s) de ${what}`);
     if (count.notRecorded) problems.push(`${count.notRecorded} mensaje(s) de la persona en otras pestañas que no pude anotar: no pude leer las sesiones de la máquina`);
@@ -1271,6 +1278,7 @@ function ownerReplyLines(opts, sid, problems) {
     // dice dónde quedó
     out.length = 0;
     back.length = 0;
+    lost.clear();
     try { fs.appendFileSync(file, text, { mode: 0o600 }); } catch {
       problems.push(`${what} (${e.code || e.message}): no las pude devolver; quedaron en ${taken}`);
       return [];
@@ -1280,11 +1288,27 @@ function ownerReplyLines(opts, sid, problems) {
   if (back.length) {
     try { fs.appendFileSync(file, back.map((l) => `${l}\n`).join(''), { mode: 0o600 }); } catch (e) {
       problems.push(`${back.length} de ${what} no las pude guardar para el próximo turno (${e.code || e.message}): quedaron en ${taken}`);
-      return out.length ? deliveredLines(home, out) : [];
+      return lines();
     }
   }
   try { fs.unlinkSync(taken); } catch { /* ya no está */ }
-  return out.length ? deliveredLines(home, out) : [];
+  return lines();
+}
+
+// Una línea por sesión con mensajes perdidos, la más reciente primero: cuántos y hace cuánto el último, nunca el texto.
+// A lo sumo 5 sesiones, con «(+N más)».
+function lostReplyLines(home, lost, now) {
+  if (!lost.size) return [];
+  const sessions = signatureList.sesiones(home).mapa;
+  const who = (x) => {
+    const id = label(String(x).slice(0, 8));
+    const name = (sessions.get(x) || {}).name;
+    return name ? `${label(name)} (${id})` : id;
+  };
+  const all = [...lost].sort((a, b) => b[1].last - a[1].last);
+  const lines = all.slice(0, REPLY_LINES).map(([x, { n, last }]) => `Coordinación: ${who(x)} escribió ${n} mensaje(s) en su pestaña que no te llegaron, el último hace ${Math.max(0, Math.floor((now - last) / 60000))} min: preguntale qué te pidió.`);
+  if (all.length > REPLY_LINES) lines.push(`Coordinación: (+${all.length - REPLY_LINES} más) con mensajes de la persona que no te llegaron.`);
+  return lines;
 }
 
 // Las líneas que recibe la coordinadora: el rótulo y a lo sumo 5 respuestas, con «(+N más)».
