@@ -461,6 +461,9 @@ test('8.141 T11 AdhocSet_ForSession_Delegada_SinAviso_NoDeclara', () => {
   const coord = 'sess-coord';
   const destino = 'sess-dest';
   const args = conLista(['adhoc', 'set', '{"reason":"arreglo del sp de deudas","maxFiles":7,"datos":"sin-cambio"}', '--for-session', destino]);
+  // la sesión destino trabaja en esta carpeta: su transcripción lo dice, y la lista se resuelve contra ella (8.276)
+  fs.mkdirSync(path.join(home, '.claude', 'projects', '-destino'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', 'projects', '-destino', `${destino}.jsonl`), `${JSON.stringify({ type: 'user', cwd: home })}\n`);
   const env = conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: coord }, { delegadaPor: coord });
   const r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], { encoding: 'utf8', env, cwd: home });
   assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);

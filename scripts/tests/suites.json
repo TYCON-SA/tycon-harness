@@ -1708,6 +1708,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.276, tanda A: el camino corto pedido para otra sesión resuelve la lista contra la carpeta de esa sesión (su transcripción); sin ella sale 2; el freno mira el riesgo alto con la misma carpeta.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-for-session.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.276, tanda A: cerrar una ejecución que la partición de su historia dejó sin objeto pide lost-run:particion (rutina), comprobado contra la historia de antes de la apertura; lo demás sigue en lost-run.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/lost-run-partition.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.174, tanda A3: las pruebas y la rama del camino rápido — adhoc test corre y anota, sin pruebas en verde con la huella de hoy no guarda, y un carril que pasó el tope no guarda en la rama principal.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-tests-and-branch.test.js",

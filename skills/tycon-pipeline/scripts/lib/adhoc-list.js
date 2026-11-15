@@ -74,6 +74,66 @@ function normalizar(entradas, { cwd = process.cwd() } = {}) {
   return { lista: [...out].sort(), sinRepo };
 }
 
+/**
+ * La carpeta de trabajo de la sesión `sesion`, para resolver la lista que otra sesión pide por ella (`--for-session`): el
+ * `cwd` del último renglón que lo trae en su transcripción, `<casa>/.claude/projects/<carpeta>/<sesión>.jsonl`. Null si
+ * no hay transcripción con ese id, si hay más de una, o si ninguna trae `cwd` (una sesión de Codex, por ejemplo). No se
+ * toma de un texto que manda otra sesión ni de los registros por nombre, que vencen.
+ */
+function carpetaDeLaSesion({ casa = os.homedir(), sesion } = {}) {
+  if (!/^[\w-]+$/.test(String(sesion || ''))) return null;
+  const raiz = path.join(casa, '.claude', 'projects');
+  let dirs;
+  try { dirs = fs.readdirSync(raiz, { withFileTypes: true }); } catch (_) { return null; }
+  const halladas = dirs.filter((d) => d.isDirectory()).map((d) => path.join(raiz, d.name, `${sesion}.jsonl`)).filter((f) => fs.existsSync(f));
+  if (halladas.length !== 1) return null;
+  // desde el final, por bloques: una transcripción larga pasa los cientos de MB y no entra en un texto (ni conviene
+  // cargarla dentro del freno); la carpeta está en los últimos renglones
+  let fd;
+  try { fd = fs.openSync(halladas[0], 'r'); } catch (_) { return null; }
+  try {
+    let pos = fs.fstatSync(fd).size;
+    let resto = Buffer.alloc(0);
+    let leidos = 0;
+    while (pos > 0 && leidos < LECTURA_MAXIMA) {
+      const n = Math.min(BLOQUE, pos);
+      pos -= n;
+      const b = Buffer.alloc(n);
+      fs.readSync(fd, b, 0, n, pos);
+      leidos += n;
+      resto = Buffer.concat([b, resto]);
+      // el primer renglón puede estar cortado: queda para la vuelta siguiente, salvo al llegar al principio
+      const corte = pos > 0 ? resto.indexOf(10) : -1;
+      const enteros = corte >= 0 ? resto.subarray(corte + 1) : (pos > 0 ? Buffer.alloc(0) : resto);
+      resto = corte >= 0 ? resto.subarray(0, corte) : (pos > 0 ? resto : Buffer.alloc(0));
+      const cwd = ultimoCwd(enteros.toString('utf8'));
+      if (cwd) return cwd;
+    }
+    return null;
+  } catch (_) {
+    return null;
+  } finally {
+    try { fs.closeSync(fd); } catch (_) { /* ya cerrado */ }
+  }
+}
+
+// lo que se lee por vuelta y el tope: el último renglón con `cwd` está cerca del final; más allá de esto, «no sé»
+const BLOQUE = 64 * 1024;
+const LECTURA_MAXIMA = 64 * 1024 * 1024;
+
+/** El `cwd` absoluto del último renglón de `texto` que lo trae, o null. */
+function ultimoCwd(texto) {
+  const renglones = texto.split('\n');
+  for (let i = renglones.length - 1; i >= 0; i--) {
+    if (!renglones[i].includes('"cwd"')) continue;
+    try {
+      const r = JSON.parse(renglones[i]);
+      if (r && typeof r.cwd === 'string' && path.isAbsolute(r.cwd)) return r.cwd;
+    } catch (_) { /* renglón a medias */ }
+  }
+  return null;
+}
+
 /** Las entradas de la lista `anterior` que no están en la `nueva`, con la letra de unidad sin distinguir mayúsculas. */
 function faltanEnLaNueva(anterior, nueva) {
   const nuevas = new Set((nueva || []).map(unidadEnMayuscula));
@@ -316,6 +376,6 @@ function fueraDeLaLista({ lista, filePath, real, repoRoot, home = os.homedir(), 
 }
 
 module.exports = {
-  sinEnlaces, unidadEnMayuscula, faltanEnLaNueva, normalizar, raizDe, esCodigo, esCodigoRel, contar, problemaDeTopes, problemaDelMotivo, variosTemas, vago, sinUnaPersona,
+  sinEnlaces, unidadEnMayuscula, faltanEnLaNueva, normalizar, carpetaDeLaSesion, raizDe, esCodigo, esCodigoRel, contar, problemaDeTopes, problemaDelMotivo, variosTemas, vago, sinUnaPersona,
   esPapeleo, esPapeleoDeLaLista, esPruebaDe, esTemporal, fueraDeLaLista, rechazoDeLaLista, textoDeAmpliar, textoOtroCarril, riesgoDeLaLista, textoDelRiesgo,
 };

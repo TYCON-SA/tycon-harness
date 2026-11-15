@@ -994,7 +994,9 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       const delegadas = plano['approvals.delegated_signing'];
       const cat = catalogoDeFirmas();
       const nombradas = cat ? (Array.isArray(delegadas) ? delegadas : [delegadas]).flatMap((v) => cat.expand(v)) : [];
-      const cruce = soloDueno.filter((id) => nombradas.includes(id));
+      // owner_only se expande como la lee la delegación (`restringe`): «lost-run» cubre también su forma de rutina
+      const reservadas = cat ? [...new Set(soloDueno.flatMap((v) => cat.expand(v, { restringe: true })))] : soloDueno;
+      const cruce = reservadas.filter((id) => nombradas.includes(id));
       if (!cat) motivo = `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): no se puede saber si alguna firma es sólo del dueño`;
       else if (cruce.length) motivo = `${cruce.join(', ')} está también en approvals.owner_only: una firma no puede ser delegada y sólo del dueño a la vez — sacala de una de las dos listas`;
     }

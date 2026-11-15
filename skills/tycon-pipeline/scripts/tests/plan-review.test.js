@@ -791,6 +791,10 @@ test('Carril_ConAprobadoDelDueno_SeDeclara', (t) => {
   const json = JSON.stringify({ reason: 'el arreglo de la prueba', maxFiles: 3, datos: 'sin-cambio', allowedFiles: ['src/a.js'] });
   const args = ['adhoc', 'set', json, '--for-session', DESTINO];
   const cmd = `node ${MARKER} adhoc set '${json}' --for-session ${DESTINO}`;
+  // la sesión destino trabaja en el repo: su transcripción lo dice, y la lista se resuelve contra esa carpeta (8.276)
+  const suya = path.join(lab.home, '.claude', 'projects', '-r-destino');
+  fs.mkdirSync(suya, { recursive: true });
+  fs.writeFileSync(path.join(suya, `${DESTINO}.jsonl`), `${JSON.stringify({ type: 'user', cwd: lab.repo })}\n`);
   aprobadoDelDueno(lab, preguntaDe(lab, cmd, 'adhoc-lane'));
   const p = lab.pedir(cmd, { delegada: true });
   assert.deepStrictEqual([p.decision, p.via], ['allow', 'mensaje'], p.texto);

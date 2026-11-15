@@ -406,6 +406,40 @@ test('Click_OpcionesQueNoSonLasDelGuion_NoVale', (t) => {
   assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
 });
 
+// La negativa por pregunta distinta deja dónde difería: sin eso, el click se pierde y nadie sabe por qué
+const OTRA_EN_57 = (p) => `${p.slice(0, 57)}${p[57] === 'X' ? 'Y' : 'X'}${p.slice(58)}`;
+const registroDeErrores = (casa) => path.join(require('../../skills/tycon-pipeline/scripts/lib/state-dir.js').stateDir(casa), 'hook-errors.log');
+
+test('T6 OwnerApprovals_QuestionMismatch_LogsWhereItDiffers @story-8.276 @ac-8', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1')]);
+  const delGuion = OTRA_EN_57(PIDE);
+  const r = oa.validarEnClaude(click(), CTX(casa, { cuadro: { ...CUADRO, pregunta: delGuion } }));
+  assert.deepStrictEqual(r, { ok: false, motivo: 'la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual' });
+  const log = fs.readFileSync(registroDeErrores(casa), 'utf8').trim().split('\n');
+  assert.strictEqual(log.length, 1);
+  const renglon = log[0];
+  assert.ok(renglon.includes(CUADRO.sello), 'con el sello: la firma y la sesión');
+  assert.match(renglon, /ses-a/);
+  assert.match(renglon, new RegExp(`largos ${delGuion.length}/${PIDE.length}`));
+  assert.match(renglon, /primer carácter distinto: 57/);
+  const huella = (s) => require('crypto').createHash('sha256').update(s).digest('hex').slice(0, 12);
+  assert.ok(renglon.includes(huella(delGuion)) && renglon.includes(huella(PIDE)), 'las dos huellas');
+  assert.ok(renglon.includes(JSON.stringify(delGuion.slice(57, 97))) && renglon.includes(JSON.stringify(PIDE.slice(57, 97))), 'los dos recortes desde ahí');
+});
+
+test('T7 OwnerApprovals_QuestionMismatch_LogUnwritable_SameDenial @story-8.276 @ac-9', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1')]);
+  // el registro no se puede escribir: en su lugar hay una carpeta
+  fs.mkdirSync(registroDeErrores(casa), { recursive: true });
+  const r = oa.validarEnClaude(click(), CTX(casa, { cuadro: { ...CUADRO, pregunta: OTRA_EN_57(PIDE) } }));
+  assert.deepStrictEqual(r, { ok: false, motivo: 'la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual' });
+  // sin casa tampoco escribe, y niega igual
+  const sin = oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: OTRA_EN_57(PIDE), opciones: CUADRO.opciones });
+  assert.strictEqual(sin.motivo, r.motivo);
+});
+
 const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
 const DESCRIPCIONES = ['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.',
   'No se abre el arreglo, y el trabajo va por una historia.'];

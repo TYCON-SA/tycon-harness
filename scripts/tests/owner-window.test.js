@@ -2496,7 +2496,7 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
 const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
-  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno'];
+  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'lost-run:particion'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
 test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {
@@ -2514,6 +2514,8 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     ['adhoc-lane:datos', `node ${MARKER} adhoc allow-data-change --changed "el botón pide al proceso" --recommends pasar --why "el proceso tiene su seguridad"`],
     // dejar pasar un guardado ajeno: también antes de dar el cuadro
     ['adhoc-lane:guardado-ajeno', `node ${MARKER} adhoc allow-foreign-save`],
+    // cerrar una ejecución reemplazada por una partición: la bandera mal puesta se niega antes del cuadro
+    ['lost-run:particion', `node ${MARKER} clear-session ses-a --lost --partition`],
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {
@@ -3721,6 +3723,43 @@ test('T14 OwnerWindow_ExtraRoundPrecheckTimeout_RowAsToday + OwnerWindow_OtherSi
   const otra = ow.decidir({ evento: evento(`node ${MARKER} approve-save`), arbol: [...RETOMADA, ...FRENO(200)], pid: 201, casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => { consultado = true; return { niega: 'x' }; }, aprobador: DEL_ARNES, aprobaciones: aprobacionesDePrueba(), lista: SIN_PERFIL(casa) });
   assert.strictEqual(otra.decision, 'deny');
   assert.strictEqual(consultado, false, otra.texto);
+});
+
+// el camino corto también se comprueba antes del cuadro: un pedido que el guion niega (sin «datos», un motivo en dos
+// renglones, una lista inválida, un cupo menor que lo tocado) no le gasta un click al dueño
+const PIDE_ADHOC = (casa, comprobar, o = {}) => ow.decidir({ evento: evento(ADHOC), arbol: [...RETOMADA, ...FRENO(200)], pid: 201, casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(), lista: SIN_PERFIL(casa) });
+
+test('T1 OwnerWindow_AdhocSetWouldBeDenied_NoBoxNoRow @story-8.276 @ac-1 @ac-18', (t) => {
+  const casa = casaDeLista(t);
+  let visto = null;
+  const r = PIDE_ADHOC(casa, (o) => { visto = o; return { niega: 'marker.js adhoc set: falta "datos"' }; });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /ni te doy el cuadro.*falta "datos"/);
+  assert.strictEqual(visto && visto.firma, 'adhoc-lane', 'el chequeo corre antes del cuadro');
+  assert.strictEqual(renglones(casa).length, 0, 'sin renglón en la lista del dueño');
+  // la lista suma el camino corto; las firmas de hoy que no son de camino corto siguen afuera
+  assert.ok(ow.CHEQUEO_ANTES_DEL_CUADRO.has('adhoc-lane'));
+  for (const otra of ['save', 'plan-approval', 'critical-waiver', 'runtime-waiver', 'control-change', 'lost-run']) assert.ok(!ow.CHEQUEO_ANTES_DEL_CUADRO.has(otra), otra);
+});
+
+test('T2 OwnerWindow_AdhocSetAccepted_SameFingerprint + OwnerWindow_AdhocPrecheckTimeout_BoxAsToday @story-8.276 @ac-2 @ac-3', (t) => {
+  // el guion lo acepta: el renglón como hoy, y el click vale para la repetición (el cuadro no cambió)
+  let casa = casaDeLista(t);
+  const listo = () => ({ ok: true });
+  const sin = PIDE_ADHOC(casa, listo);
+  assert.strictEqual(sin.decision, 'deny');
+  assert.match(sin.texto, AVISAN);
+  assert.strictEqual(renglones(casa).length, 1);
+  assert.strictEqual(renglones(casa)[0].firma, 'adhoc-lane');
+  anotarAprobacion(casa, 'ses-a', { tipo: 'click', tool_use_id: 'toolu_276' });
+  const con = PIDE_ADHOC(casa, listo);
+  assert.deepStrictEqual([con.decision, con.via], ['allow', 'click'], con.texto);
+  // el guion no contestó a tiempo: el cuadro y el renglón como hoy, y el guion vuelve a comprobar al firmar
+  casa = casaDeLista(t);
+  const r = PIDE_ADHOC(casa, () => null);
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.texto, AVISAN);
+  assert.strictEqual(renglones(casa)[0].firma, 'adhoc-lane');
 });
 
 test('Freno_RegistroRoto_DecideIgual (T3) — @story-8.153 @ac-3', (t) => {
