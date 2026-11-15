@@ -623,11 +623,34 @@ function main(argv, env = process.env) {
     }
     if (!t.taken) turn = null;
   }
+  // Un portón (lo lanzó test-gate.sh: trae su marca) que corre sin el turno igual deja de esperar y, con coordinadora, se
+  // anota mientras corre: la fila lo ve y no da el «arrancá» encima. La espera y la fila son de la máquina, no del repo:
+  // vale el heavy-turn.js del arnés que corre esto, y si no está (una copia suelta), el del repo. Nada de esto frena, pero
+  // no poder anotarse se dice: la fila pediría el «arrancá» encima de este portón.
+  let gateTurn = null;
+  if (!turn && env.TYCON_GATE_PROCESS) {
+    const sinAnotar = (why) => console.error(`[suites.json] ⚠️  no pude anotar el portón: la fila de la coordinadora no lo va a ver (${why})`);
+    const cargas = [];
+    let mod = null;
+    for (const m of [path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tools', 'heavy-turn.js'), path.join(repo, 'scripts', 'tools', 'heavy-turn.js')]) {
+      if (!fs.existsSync(m)) continue;
+      try { const x = require(m); if (typeof x.gateStarted === 'function') { mod = x; break; } cargas.push(`${m} no trae el registro de portones`); } catch (e) { cargas.push(`${m}: ${e.message}`); }
+    }
+    if (!mod) sinAnotar(cargas.length ? cargas.join(' · ') : 'no encontré heavy-turn.js');
+    else {
+      try {
+        const g = mod.gateStarted({ env, what: `${count} suites de ${path.basename(process.cwd())}` });
+        if (g && g.error) sinAnotar(g.error);
+        else if (g && g.file) gateTurn = mod;
+      } catch (e) { sinAnotar(e.message); }
+    }
+  }
   // con el turno ya tomado: un portón que no arranca no deja aviso ni dice su hora de fin
   const slowGate = avisarSiLento({ env, repo, decision, maquina, items: [...parallel, ...exclusives] });
   console.log(`[suites.json] ${suiteTimes.describeWorkers(decision, maquina)} · en paralelo: ${parallel.length} · solas al final: ${exclusives.length} · diferidas: ${resumen.deferred_suites.length}${portables ? ` · ${portables} portables con su HOME vacía, como en la CI` : ''}`);
   const releaseTurn = () => {
     if (turn) { try { turn.release({}); } catch (_) { /* vence con el proceso */ } turn = null; }
+    if (gateTurn) { try { gateTurn.gateEnded({}); } catch (_) { /* se descarta con el proceso */ } gateTurn = null; }
     // el aviso de portón lento se va con la corrida; si queda, la coordinadora lo descarta por el proceso muerto
     if (slowGate) { try { fs.rmSync(slowGate, { force: true }); } catch (_) { /* nada */ } }
   };

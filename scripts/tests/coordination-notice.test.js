@@ -718,6 +718,73 @@ test('Q7 Notice_SuiteIdleWithQueue_SaysWhoStarts: sin suite completa en curso y 
   assert.strictEqual(C.capNotice(t.opts), null, 'con la suite corriendo calla');
 });
 
+// A bounded gate (without the turn) running, as heavy-turn.js registers it: `pid` alive = running.
+function gate(t, pid, sid, session, what, minutesAgo) {
+  const dir = path.join(t.state, 'coordination', 'gates');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${pid}.json`), JSON.stringify({ pid, sid, session, what, at: mins(minutesAgo) }));
+}
+function waitNote(t, sid, name, minutesAgo, waitingFor = 'turno de la suite completa') {
+  fs.mkdirSync(path.join(t.state, 'doing'), { recursive: true });
+  session(t, sid, name);
+  fs.writeFileSync(path.join(t.state, 'doing', `${sid}.json`), JSON.stringify({ text: 'implementar la historia', at: new Date(mins(minutesAgo)).toISOString(), waitingFor, waitingSince: new Date(mins(minutesAgo)).toISOString() }));
+}
+test('T3 Fila_PortonAcotadoCorriendo_NoPideArranca @story-8.274 @ac-4: con un portón acotado en curso, la fila lo nombra y no pide el «arrancá»', () => {
+  // 🔴 mutación: no leer los portones acotados en status (vuelve «no corre ninguna suite completa … dale el «arrancá»»)
+  const t = toy();
+  session(t, 's-ana', 'Ana', { status: 'busy', statusUpdatedAt: mins(5) });
+  gate(t, process.pid, 's-ana', 'Ana', '40 suites de repo', 5);
+  waitNote(t, 's-beto', 'Beto', 30);
+  const n = C.capNotice(t.opts);
+  assert.match(n, /^Coordinación: corre el portón acotado de Ana \(40 suites de repo, desde las \d\d:\d\d\) y hay 1 esperando turno: cuando termine, sigue Beto\.$/m, n);
+  assert.doesNotMatch(n, /no corre ninguna|arrancá/, n);
+  assert.match(C.statusText(C.status({ ...t.opts, noTranscripts: true })), /Portón acotado en curso: Ana \(40 suites de repo, desde las \d\d:\d\d\)/);
+  // una anotación que se lee a medio escribir (vacía) de un proceso vivo no se borra: el portón sigue corriendo y la
+  // próxima lectura lo ve. 🔴 mutación: borrar todo lo que no se pudo leer (la fila deja de verlo para siempre)
+  const t3 = toy();
+  const medio = path.join(t3.state, 'coordination', 'gates', `${process.pid}.json`);
+  fs.mkdirSync(path.dirname(medio), { recursive: true });
+  fs.writeFileSync(medio, '');
+  C.status({ ...t3.opts, noTranscripts: true });
+  assert.ok(fs.existsSync(medio), 'se borró la anotación de un portón vivo leída a medio escribir');
+  // y la anotación nueva se publica entera: lo que se lee es el portón completo o nada
+  // 🔴 mutación: escribir directo sobre el archivo final (queda visible vacío mientras se escribe)
+  const HT = require(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'));
+  const g = HT.gateStarted({ home: t3.home, env: { TYCON_SUITE_TURN: '1', CLAUDE_CODE_SESSION_ID: 's-ana' }, pid: process.pid, what: '3 suites' });
+  assert.strictEqual(g.error, null);
+  assert.deepStrictEqual(fs.readdirSync(path.dirname(medio)), [`${process.pid}.json`], 'quedó un temporal');
+  assert.strictEqual(JSON.parse(fs.readFileSync(medio, 'utf8')).what, '3 suites');
+  // el de un proceso que ya no vive no corre: la fila vuelve a pedir el «arrancá»
+  const t2 = toy();
+  gate(t2, deadPid(), 's-ana', 'Ana', '40 suites de repo', 5);
+  waitNote(t2, 's-beto', 'Beto', 30);
+  assert.match(C.capNotice(t2.opts), /no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Beto\./);
+});
+
+test('T4 Fila_EsperaViejaConTrabajoDespues_PideConfirmar @story-8.274 @ac-6: quien trabajó después de anotar la espera no sale esperando: se pide confirmar', () => {
+  // 🔴 mutación: no mirar workedAfterWait (Moreno vuelve a la fila y a «dale el «arrancá» a Moreno»), o no mirar los
+  // archivos tocados (Pía, un camino corto sin marcador, vuelve a la fila)
+  const t = toy();
+  waitNote(t, 's-moreno', 'Moreno', 60);
+  marker(t, 's-moreno', { storyId: '9.9', lastTouch: new Date(mins(10)).toISOString() });
+  waitNote(t, 's-pia', 'Pía', 50);
+  fs.mkdirSync(path.join(t.state, 'file-events'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'file-events', 's-pia.jsonl'), `${JSON.stringify({ path: path.join(t.root, 'lib', 'a.js'), ts: new Date(mins(8)).toISOString() })}\n`);
+  waitNote(t, 's-beto', 'Beto', 30);
+  const n = C.capNotice(t.opts);
+  assert.match(n, /^Coordinación: no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Beto\.$/m, n);
+  assert.match(n, /^Coordinación: Moreno anotó a las \d\d:\d\d que espera turno y trabajó después: preguntale si sigue esperando\.$/m, n);
+  assert.match(n, /^Coordinación: Pía anotó a las \d\d:\d\d que espera turno y trabajó después: preguntale si sigue esperando\.$/m, n);
+  const text = C.statusText(C.status({ ...t.opts, noTranscripts: true }));
+  assert.match(text, /Esperando turno de suite o portón: .*Moreno desde las \d\d:\d\d \(trabajó después: ¿sigue esperando\?\)/);
+  assert.doesNotMatch(text, /Beto desde las \d\d:\d\d \(trabajó/);
+  // la actividad que no se puede leer se dice: sin eso, Rosa saldría esperando aunque esté trabajando
+  // 🔴 mutación: pasarle a touchedField un arreglo descartable (el «no pude leer» se pierde)
+  waitNote(t, 's-rosa', 'Rosa', 40);
+  fs.mkdirSync(path.join(t.state, 'file-events', 's-rosa.jsonl'));
+  assert.match(C.capNotice(t.opts), /No pude leer .*la actividad de Rosa .*no sé si sigue esperando/);
+});
+
 test('Q7c Notice_SuiteQueue_PassWaitNotCounted: una espera de pase no es de la fila de la suite: sin suite corriendo, no avisa', () => {
   // 🔴 mutación: sacar el filtro de «pase» (avisa con «hay 1 esperando turno: … Pía»)
   const t = toy();

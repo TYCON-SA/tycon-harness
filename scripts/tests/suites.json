@@ -2578,6 +2578,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.274: el aviso y el freno de choque entre sesiones cuentan una transcripción por el cwd de su arranque (la raíz o debajo), no por el prefijo de su carpeta: un puesto `…--wt-X` no frena al checkout; sin cwd legible cuenta por la carpeta; Codex, por el cwd de su payload.",
+      "raiz": "arnes",
+      "ruta": "tests/session-collision-guard.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.195: el aviso de arranque de lo terminado sin cerrar lista lo de toda la máquina con el comando de cada sesión, y calla sin nada.",
       "raiz": "arnes",
       "ruta": "tests/finished-open-notice.test.js",

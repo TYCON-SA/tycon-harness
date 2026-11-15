@@ -15,7 +15,9 @@
  * un control que no corre. Éste mira el DISCO en el momento de tocar git: cada sesión de Claude Code
  * deja su transcripción en `~/.claude/projects/<carpeta-del-cwd>/<session>.jsonl`, y su mtime dice
  * si está viva. Si hay otra con actividad reciente sobre este mismo repo, se frena (exit 2) y se
- * nombra: quién, hace cuánto, y qué pidió su último prompt.
+ * nombra: quién, hace cuánto, y qué pidió su último prompt. «Este mismo repo» lo dice el cwd que la
+ * transcripción anotó al arrancar (la raíz o una carpeta debajo), no el nombre de su carpeta: la de un
+ * puesto `…/repo--wt-X` empieza igual que la del checkout `…/repo`.
  *
  * ── QUÉ FRENA Y QUÉ NO ──────────────────────────────────────────────────────────────────────────
  * Frena lo que cambia el índice, el árbol o la rama: commit, checkout, switch, rebase, stash,
@@ -144,26 +146,53 @@ function ultimoPedido(archivo) {
   return null;
 }
 
-/** ¿El archivo (de una carpeta que mezcla cwds) pertenece a este repo? */
-function esDeEsteRepo(archivo, raiz, claves, extras) {
+// Claude Code anota el `cwd` en cada línea; Codex, en el `payload` de la primera (`session_meta`).
+function cwdDeLinea(linea) {
+  let d; try { d = JSON.parse(linea); } catch { return null; }
+  return d && (typeof d.cwd === 'string' && d.cwd ? d.cwd : d.payload && typeof d.payload.cwd === 'string' && d.payload.cwd ? d.payload.cwd : null);
+}
+
+/**
+ * Dónde trabaja ahora la sesión: el último `cwd` de su transcripción (la cola, como `ultimoPedido`), o el del arranque si
+ * la cola no trae ninguno; null si no hay uno legible. El último y no el primero: una sesión que arrancó en el checkout
+ * y se mudó a un worktree escribe en la carpeta del worktree, y es ahí donde toca git.
+ */
+function cwdDe(archivo) {
   try {
+    const st = fs.statSync(archivo);
     const fd = fs.openSync(archivo, 'r');
-    const buf = Buffer.alloc(8192);
-    const n = fs.readSync(fd, buf, 0, 8192, 0);
-    fs.closeSync(fd);
-    const cab = buf.toString('utf8', 0, n);
-    return rutasDe(raiz, extras).some((r) => cab.includes(`"cwd":"${r}`)) || claves.some((k) => cab.includes(k));
-  } catch { return false; }
+    try {
+      const len = Math.min(st.size, 256 * 1024);
+      const cola = Buffer.alloc(len);
+      fs.readSync(fd, cola, 0, len, st.size - len);
+      const lineas = cola.toString('utf8').split('\n');
+      for (let i = lineas.length - 1; i >= 0; i--) { const c = cwdDeLinea(lineas[i]); if (c) return c; }
+      if (st.size <= len) return null;
+      const cab = Buffer.alloc(64 * 1024);
+      const n = fs.readSync(fd, cab, 0, cab.length, 0);
+      for (const l of cab.toString('utf8', 0, n).split('\n')) { const c = cwdDeLinea(l); if (c) return c; }
+    } finally { fs.closeSync(fd); }
+  } catch { /* ilegible: no se sabe */ }
+  return null;
+}
+
+/**
+ * ¿La transcripción es de este repo? Manda el `cwd` donde trabaja la sesión: es la raíz o está debajo de ella. El nombre de la
+ * carpeta no alcanza: el de un puesto (`…/repo--wt-X`) empieza con el del checkout (`…/repo`) más un guion, igual que
+ * el de una subcarpeta. Sin `cwd` legible no se sabe de dónde es y cuenta, también en la carpeta que mezcla cwds
+ * (Codex): callarla sería no avisar nunca de esa sesión, y frenar de más tiene el escape de siempre.
+ */
+function esDeEsteRepo(archivo, raiz, extras) {
+  const c = cwdDe(archivo);
+  if (c == null) return true;
+  return rutasDe(raiz, extras).some((r) => c === r || c.startsWith(r.endsWith(path.sep) ? r : r + path.sep));
 }
 
 function sesionesVivas(raiz, ahora, extras = []) {
   const vivas = [];
-  const base = path.join(os.homedir(), '.claude', 'projects');
-  const claves = clavesDe(raiz, extras);
   for (const dir of carpetasDeSesiones(raiz, extras)) {
     let files = [];
     try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')); } catch { continue; }
-    const mezclada = !dir.startsWith(base + path.sep);
     for (const f of files) {
       const p = path.join(dir, f);
       const id = f.replace(/\.jsonl$/, '');
@@ -171,7 +200,7 @@ function sesionesVivas(raiz, ahora, extras = []) {
       let st; try { st = fs.statSync(p); } catch { continue; }
       const edadMs = ahora - st.mtimeMs;
       if (edadMs > VENTANA_MS) continue;
-      if (mezclada && !esDeEsteRepo(p, raiz, claves, extras)) continue;
+      if (!esDeEsteRepo(p, raiz, extras)) continue;
       vivas.push({ id, min: Math.max(0, Math.round(edadMs / 60000)), pedido: ultimoPedido(p) });
     }
   }

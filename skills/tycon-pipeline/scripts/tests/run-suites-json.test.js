@@ -1400,3 +1400,49 @@ test('ConBase_NoAvisa — sabiendo qué se tocó, y en un repo que no acota, no 
   assert.equal(una.status, 0, una.stderr);
   assert.doesNotMatch(una.stdout, /sin base:/);
 });
+
+test('T4 Porton_AcotadoArranca_BorraLaEspera @story-8.274 @ac-5: un portón sin turno borra la espera anotada al arrancar y se anota mientras corre', () => {
+  // 🔴 mutación: no llamar a gateStarted cuando no se toma el turno (la nota de espera sigue, y la fila no ve el portón),
+  // o no llamar a gateEnded al salir (el registro queda y la fila lo ve corriendo hasta que el proceso muera)
+  const { stateDir } = require('../lib/state-dir.js');
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.js' }] });
+  const home = path.join(f.root, 'home');
+  const doing = path.join(stateDir(home), 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  const nota = path.join(doing, 's-espera.json');
+  fs.writeFileSync(nota, JSON.stringify({ at: new Date().toISOString(), waitingFor: 'turno de la suite completa', waitingSince: new Date().toISOString() }));
+  const gates = path.join(stateDir(home), 'coordination', 'gates');
+  const visto = path.join(f.root, 'visto.json');
+  // la suite mira, mientras corre, qué portones hay anotados (la coordinadora los lee igual, de esa carpeta)
+  f.escribir('arnes', 'tests/a.test.js', `const fs = require('fs');
+let l = []; try { l = fs.readdirSync(${JSON.stringify(gates)}).map((x) => JSON.parse(fs.readFileSync(require('path').join(${JSON.stringify(gates)}, x), 'utf8'))); } catch (_) {}
+fs.writeFileSync(${JSON.stringify(visto)}, JSON.stringify(l));`);
+  assert.ok(fs.existsSync(nota), 'la nota está antes del arranque');
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-espera', TYCON_SUITE_TURN: '1', TYCON_GATE_PROCESS: String(process.pid) };
+  delete env.TYCON_HOME;
+  delete env.CODEX_SESSION_ID;
+  const r = spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'out.json'), '--skills', f.skills], { encoding: 'utf8', env });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!fs.existsSync(nota), 'el portón arrancó y la espera sigue anotada');
+  const anotados = JSON.parse(fs.readFileSync(visto, 'utf8'));
+  assert.equal(anotados.length, 1, JSON.stringify(anotados));
+  assert.equal(anotados[0].sid, 's-espera');
+  assert.match(anotados[0].what, /1 suites? de /);
+  assert.deepEqual(fs.existsSync(gates) ? fs.readdirSync(gates) : [], [], 'al terminar, el registro del portón se va');
+  // una corrida que no es un portón (sin la marca de test-gate.sh) no toca la espera de nadie
+  fs.writeFileSync(nota, JSON.stringify({ at: new Date().toISOString(), waitingFor: 'turno de la suite completa', waitingSince: new Date().toISOString() }));
+  const sinMarca = { ...env };
+  delete sinMarca.TYCON_GATE_PROCESS;
+  assert.equal(spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'out2.json'), '--skills', f.skills], { encoding: 'utf8', env: sinMarca }).status, 0);
+  assert.ok(fs.existsSync(nota), 'una corrida de juguete de otra suite borró la espera de la sesión');
+
+  // no poder anotarse se dice: si no, la fila pediría el «arrancá» encima de este portón sin que nadie se entere
+  // 🔴 mutación: callar el error de gateStarted (devolver null igual que sin coordinadora)
+  fs.rmSync(gates, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(gates), { recursive: true });
+  fs.writeFileSync(gates, 'no es una carpeta');
+  const roto = spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'out3.json'), '--skills', f.skills], { encoding: 'utf8', env });
+  assert.equal(roto.status, 0, `no poder anotarse no frena el portón: ${roto.stderr}`);
+  assert.match(roto.stderr, /no pude anotar el portón: la fila de la coordinadora no lo va a ver \(/, roto.stderr);
+  assert.ok(!fs.existsSync(nota), 'la espera se borra igual');
+});
