@@ -1869,8 +1869,18 @@ test('T9 AdversarialTurn_Running_StillInFlight @story-8.277 @ac-12 @ac-21: sin r
     const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
     machineWithPass(t);
     if (rec) workflowRecord(t, 'otra-2', rec.runId || 'wf_x', rec.status || null, { raw: rec.raw == null ? null : rec.raw });
-    assert.strictEqual(C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }).waiting_turn, true, what);
+    const said = [];
+    const write = process.stderr.write;
+    process.stderr.write = (s) => { said.push(String(s)); return true; };
+    let r;
+    try { r = C.adversarialTurn({ ...t.opts, sessionId: 'propia-1' }); } finally { process.stderr.write = write; }
+    assert.strictEqual(r.waiting_turn, true, what);
+    // el ilegible se dice: «no pude mirar» no se lee igual que «no terminó»
+    if (what === 'ilegible') assert.match(said.join(''), /no pude leer .*wf_x\.json .*el pase wf_x cuenta como en vuelo/, what);
+    else assert.doesNotMatch(said.join(''), /no pude leer/, what);
   }
+  // un nombre de sólo puntos no arma una ruta
+  assert.strictEqual(C.passFinished({ home: toy().home, sessionId: '..', runId: 'wf_x' }), false);
 });
 
 // 🔴 mutación: tomar el reporte de la corrida como señal suelta el turno con un pase que todavía escribe.

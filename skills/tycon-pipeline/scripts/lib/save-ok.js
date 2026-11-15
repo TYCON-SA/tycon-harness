@@ -288,14 +288,18 @@ function publicoDeLaHistoria(repo, story) {
     const pt = require('./private-tree.js');
     if (!pt.isThinPrivate(repo)) return null;
     const cr = require('./companion-repos.js');
-    const base = cr.companionRoots(repo, story || null, { onMissing: () => {}, onWarning: () => {} })
+    const faltan = [];
+    const base = cr.companionRoots(repo, story || null, { onMissing: (nombre) => faltan.push(nombre), onWarning: () => {} })
       .find((r) => fs.existsSync(path.join(r, 'version.json')) && fs.existsSync(path.join(r, 'scripts')));
+    if (faltan.length) process.stderr.write(`save-ok: el hermano declarado ${faltan.join(', ')} no está en disco: los controles de ${path.basename(repo)} corren con el arnés instalado\n`);
     if (!base) return null;
     const rama = git(base, ['symbolic-ref', '-q', '--short', 'HEAD']);
     const suya = rama.ok ? rama.out : '';
     if (!suya || suya === 'main') return null;
     return suya === cr.ramaDe(repo) || (story && cr.ramaNombraLaStory(suya, cr.numeroDeLaStory(story))) ? base : null;
-  } catch (_) {
+  } catch (e) {
+    // no poder buscarlo no es «no hay»: los controles corren como siempre, pero se dice
+    process.stderr.write(`save-ok: no pude buscar el público de la historia para ${path.basename(repo)} (${String((e && e.message) || e).split('\n')[0]}): sus controles corren con el arnés instalado\n`);
     return null;
   }
 }

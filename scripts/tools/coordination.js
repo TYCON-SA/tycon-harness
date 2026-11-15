@@ -247,13 +247,17 @@ const SAFE_NAME = /^[\w.-]+$/;
  * o con otro estado (el pase de Codex o el propio sin Workflow no lo dejan), no terminó.
  */
 function passFinished({ home, sessionId, runId }) {
-  if (!SAFE_NAME.test(String(sessionId || '')) || !SAFE_NAME.test(String(runId || ''))) return false;
+  const safe = (n) => SAFE_NAME.test(n) && !/^\.+$/.test(n);
+  if (!safe(String(sessionId || '')) || !safe(String(runId || ''))) return false;
   const projects = path.join(claudeDir(home), 'projects');
+  // no poder leer no es «no terminó»: el pase cuenta en vuelo, como siempre, pero se dice
+  const noLei = (what, e) => process.stderr.write(`coordination: no pude leer ${what} (${e.code || oneLine(e.message)}): el pase ${runId} cuenta como en vuelo\n`);
   let folders = [];
-  try { folders = fs.readdirSync(projects); } catch { return false; }
+  try { folders = fs.readdirSync(projects); } catch (e) { if (e.code !== 'ENOENT') noLei(projects, e); return false; }
   for (const f of folders) {
+    const file = path.join(projects, f, String(sessionId), 'workflows', `${runId}.json`);
     let rec = null;
-    try { rec = JSON.parse(fs.readFileSync(path.join(projects, f, String(sessionId), 'workflows', `${runId}.json`), 'utf8')); } catch { rec = null; }
+    try { rec = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') noLei(file, e); rec = null; }
     if (rec && WORKFLOW_DONE.has(rec.status)) return true;
   }
   return false;
