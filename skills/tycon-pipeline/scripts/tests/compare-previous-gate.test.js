@@ -638,3 +638,32 @@ test('T28 CompareSmokes_ClosingPaperwork_SmokeStaysCurrent @story-8.263 @ac-25 �
   d = vigentes();
   assert.deepStrictEqual([d.vigentes.length, d.viejas.length], [0, 1], 'otro renglón lo vuelve viejo');
 });
+
+// Un humo vigente y, después, sólo `cambios` escritos en el repo: ¿sigue vigente? `{ vigentes, viejas }` en números.
+function despuesDelHumo(sid, cambios) {
+  const L = laboratorio({ sid });
+  L.humo({ cmd: 'node cli.js get', archivo: 'cli.js', resultado: 'igual', main: { exit: 0 }, cambio: { exit: 0 } });
+  for (const [rel, txt] of Object.entries(cambios)) {
+    const f = path.join(L.repo, rel);
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, txt);
+  }
+  const d = cp().delCodigoDeAhora(cp().leerInforme(L.runDir()), L.storyPath);
+  return [d.vigentes.length, d.viejas.length];
+}
+
+test('T1 Compare_ControlChangeConstancy_KeepsComparisons @story-8.277 @ac-1 — una constancia de cambio de control, en cada forma, no vence el humo', () => {
+  const formas = ['.github/control-changes/x.json', '.tycon/control-changes/y.json', '.tycon/control-changes.jsonl', 'pkg/.github/control-changes/z.json'];
+  for (const [i, rel] of formas.entries()) {
+    assert.deepStrictEqual(despuesDelHumo(`s-gate-t1-${i}`, { [rel]: '{"firma":"acme"}\n' }), [1, 0], `${rel}: el humo sigue vigente`);
+  }
+});
+
+test('T2 Compare_CodeAlsoChanged_Expires @story-8.277 @ac-2 @ac-19 — con la constancia y un .js cambiado, el humo vence', () => {
+  assert.deepStrictEqual(despuesDelHumo('s-gate-t2', { '.github/control-changes/x.json': '{}\n', 'otro.js': 'module.exports = 1;\n' }), [0, 1]);
+});
+
+test('T3 Compare_OtherGithubOrTyconFile_Expires @story-8.277 @ac-3 — un workflow o la configuración de .tycon vencen el humo', () => {
+  assert.deepStrictEqual(despuesDelHumo('s-gate-t3-a', { '.github/workflows/ci.yml': 'on: push\n' }), [0, 1], 'un workflow');
+  assert.deepStrictEqual(despuesDelHumo('s-gate-t3-b', { '.tycon/advisors.yaml': 'packs: []\n' }), [0, 1], 'la configuración');
+});

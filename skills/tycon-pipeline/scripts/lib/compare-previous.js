@@ -974,12 +974,14 @@ function juicio({ candidatos: cands = [], sinRepo = [], entradas = [], exencione
 
 /**
  * Las entradas que siguen valiendo para el código de ahora: las que comparan y cuyo sello es el del repo hoy, o difiere
- * sólo en papeleo (la historia de la corrida, la evidencia). `{ vigentes, viejas, sinComparar }`; una entrada que
+ * sólo en papeleo (la historia de la corrida, la evidencia) o en constancias de cambio de control, que firma el dueño y no
+ * cambian lo que el humo comparó. `{ vigentes, viejas, sinComparar }`; una entrada que
  * compara y no trae sello es vieja. Si el repo no se puede sellar o comparar, la entrada va a `sinComparar` con su
  * motivo: tampoco cuenta, pero no es «otra versión».
  */
 function delCodigoDeAhora(entradas, storyPath) {
   const ft = require('./frozen-tree.js');
+  const { isControlApproval } = require('./story-gate.js');
   const sellos = new Map();
   const vigentes = [];
   const viejas = [];
@@ -996,7 +998,7 @@ function delCodigoDeAhora(entradas, storyPath) {
     const rel = storyPath && dentroDe(repo, real(storyPath)) ? path.relative(repo, real(storyPath)).split(path.sep).join('/') : undefined;
     const d = ft.changed(repo, e.sello, ahora.tree, { storyRel: rel });
     if (d.error) { sinComparar.push({ entrada: e, motivo: `no pude comparar ${path.basename(repo)} con el sello del humo (${unaLinea(d.error)})` }); continue; }
-    (d.files.length === 0 ? vigentes : viejas).push(e);
+    (d.files.every((f) => isControlApproval(f)) ? vigentes : viejas).push(e);
   }
   return { vigentes, viejas, sinComparar };
 }
