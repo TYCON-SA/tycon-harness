@@ -5099,7 +5099,9 @@ function criterioDelPase(args) {
   const alcance = Array.isArray(args.files) && args.files.length ? args.files : historiaDeclara(args.story);
   const archivosDeCodigo = alcance.filter((f) => codeFiles.isCode(f, { extra: stackConfig.orgExtra() })).length;
   const delicada = args.delicate || computeDelicate({ story: args.story, repo: args.repo, planText: '' });
-  const celda = (dense) => POLITICA.codeReview({ delicate: !!delicada.value, codeFiles: archivosDeCodigo,
+  // todo documentación según el tamaño de la corrida: sólo así una historia sin archivos de código se queda sin pase
+  const soloDocumentacion = alcance.length > 0 && alcance.every((f) => runSizeLib.classifyFile(f).kind === 'doc');
+  const celda = (dense) => POLITICA.codeReview({ delicate: !!delicada.value, codeFiles: archivosDeCodigo, onlyDocs: soloDocumentacion,
     normalByOtherCriterion: rc.risk === 'NORMAL' && (porOtro.length > 0 || !alcance.length), dense, ownerAway: !!args.ownerAway, config });
   const sinDensidad = celda(false);
   // La densidad decide sólo un cambio chico que no es delicado: una delicada, o un cambio que ya es grande, no la espera.

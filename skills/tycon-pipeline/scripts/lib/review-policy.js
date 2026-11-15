@@ -159,8 +159,13 @@ function planReview({ delicate, coordinator, ownerAway, config }) {
 }
 
 /** Matriz 2: la revisión del código (el pase adversarial). */
-function codeReview({ delicate, codeFiles, normalByOtherCriterion, dense, ownerAway, config }) {
+function codeReview({ delicate, codeFiles, onlyDocs, normalByOtherCriterion, dense, ownerAway, config }) {
   const c = config.deep_review;
+  // sin código no hay código que revisar, ni en una delicada: 0 archivos que cuente code-files y todo documentación
+  // (`onlyDocs`, que dice quien llama con el clasificador del tamaño de la corrida). Instrucciones del agente, un `.yml` de
+  // pipeline o un gancho de git no los cuenta code-files, pero no son documentación. Una historia sin alcance declarado
+  // llega con `normalByOtherCriterion`: ésa no se sabe qué toca y decide como grande
+  if (codeFiles === 0 && onlyDocs === true && !normalByOtherCriterion) return { decision: 'skip', size: 'small', reason: 'sin código: la historia no toca archivos de código' };
   const grande = codeFiles > c.small_max_files || Boolean(normalByOtherCriterion) || Boolean(dense);
   const size = grande ? 'large' : 'small';
   const por = grande

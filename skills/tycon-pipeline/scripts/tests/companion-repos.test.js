@@ -1041,3 +1041,76 @@ test('T6 8.229-Companion_AbsoluteOrHome_NoFallback @story-8.229 @ac-6 — una ab
   assert.deepEqual(cfg.missing, [abs, casaRel]);
   assert.deepEqual(cfg.warnings, []);
 });
+
+// El checkout compartido en `main`, su `origin` y un worktree de la historia 9.1: lo que elige `enLaMismaRama` cuando la
+// historia está en la rama `main`. Corre en otro proceso: los avisos se dicen una vez por proceso.
+function laboratorioMain() {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-main-')));
+  const semilla = repoGit(path.join(raiz, 'semilla'), { 'a.js': '1\n' });
+  const origen = path.join(raiz, 'origen.git');
+  execFileSync('git', ['clone', '-q', '--bare', semilla, origen]);
+  const pub = path.join(raiz, 'pub');
+  execFileSync('git', ['clone', '-q', origen, pub]);
+  const wt = path.join(raiz, 'pub-wt');
+  git(pub, 'worktree', 'add', '-q', '-b', 'story/9.1-x', wt);
+  return { pub: fs.realpathSync(pub), wt: fs.realpathSync(wt) };
+}
+function elegir(declarado, rama, numero) {
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).enLaMismaRama(...JSON.parse(process.argv[1]))))`,
+    JSON.stringify([declarado, rama, numero])], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  return { eleccion: JSON.parse(r.stdout), avisos: r.stderr };
+}
+const NO_LO_ELIJO = /no está al día con origin\/main o tiene cambios: no lo elijo por el nombre de la rama/;
+
+test('CompanionRepos_RamaMain_NoTomaElCompartidoSinMirar @story-8.282 @ac-18', () => {
+  const casos = {
+    atras: (l) => {
+      escribir(l.pub, 'a.js', '2\n');
+      git(l.pub, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qam', 'nuevo');
+      git(l.pub, 'push', '-q', 'origin', 'main');
+      git(l.pub, 'reset', '-q', '--hard', 'HEAD~1');
+    },
+    sucio: (l) => { escribir(l.pub, 'a.js', 'a medio hacer\n'); },
+  };
+  for (const [nombre, preparar] of Object.entries(casos)) {
+    const l = laboratorioMain();
+    preparar(l);
+    const conNumero = elegir(l.pub, 'main', '9.1');
+    assert.equal(conNumero.eleccion, l.wt, `${nombre}: elige por el número`);
+    assert.match(conNumero.avisos, NO_LO_ELIJO, nombre);
+    const sinNumero = elegir(l.pub, 'main', null);
+    assert.equal(sinNumero.eleccion, l.pub, `${nombre}: sin número, el declarado`);
+    assert.match(sinNumero.avisos, NO_LO_ELIJO, nombre);
+  }
+  // al día con su origin/main local y limpio: lo usa, sin aviso
+  const l = laboratorioMain();
+  const alDia = elegir(l.pub, 'main', '9.1');
+  assert.equal(alDia.eleccion, l.pub);
+  assert.doesNotMatch(alDia.avisos, NO_LO_ELIJO);
+  // sin origin/main (un repo local, sin nada contra qué comparar): como antes, lo usa sin aviso, aunque esté sucio
+  const local = laboratorioMain();
+  git(local.pub, 'remote', 'remove', 'origin');
+  escribir(local.pub, 'a.js', 'a medio hacer\n');
+  const sinOrigin = elegir(local.pub, 'main', '9.1');
+  assert.equal(sinOrigin.eleccion, local.pub);
+  assert.doesNotMatch(sinOrigin.avisos, NO_LO_ELIJO);
+  // dentro del gancho del commit, git hereda el índice de otro repo (GIT_INDEX_FILE): no cambia lo que se ve del hermano
+  const otro = laboratorioMain();
+  const indiceAjeno = path.join(otro.pub, '..', 'indice-ajeno');
+  fs.copyFileSync(path.join(otro.pub, '.git', 'index'), indiceAjeno);
+  escribir(otro.pub, 'b.js', 'otro contenido\n');
+  git(otro.pub, 'add', 'b.js');
+  fs.copyFileSync(path.join(otro.pub, '.git', 'index'), indiceAjeno);
+  const conIndice = spawnSync(process.execPath, ['-e', `process.stdout.write(String(require(${JSON.stringify(COMPANION_LIB)}).mainAlDia(process.argv[1])))`, l.pub],
+    { encoding: 'utf8', env: { ...process.env, GIT_INDEX_FILE: indiceAjeno } });
+  assert.equal(conIndice.stdout, 'true', conIndice.stderr);
+});
+
+test('CompanionRepos_RamaDeHistoria_ComoHoy @story-8.282 @ac-19', () => {
+  const l = laboratorioMain();
+  escribir(l.pub, 'a.js', 'sucio: no importa con una rama de historia\n');
+  const r = elegir(l.pub, 'story/9.1-x', '9.1');
+  assert.equal(r.eleccion, l.wt);
+  assert.equal(r.avisos, '');
+});
