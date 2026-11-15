@@ -2039,6 +2039,19 @@ function runGaps(sid, home) {
   return { missing, unknown };
 }
 
+// El nombre completo que anotó la sesión `sid` en su archivo, o `null` si no lo anotó o no se puede leer.
+function fullSessionName(home, sid) {
+  const dir = path.join(claudeDir(home), 'sessions');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return null; }
+  for (const f of files) {
+    let s;
+    try { s = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+    if (s && s.sessionId === sid) return typeof s.name === 'string' && s.name.trim() ? oneLine(s.name) : null;
+  }
+  return null;
+}
+
 /**
  * La sesión de `--name` para `close` y `stop`, con la regla de quién la puede tocar: la coordinadora designada o una
  * persona en su terminal, nunca otra sesión ni ella misma. Entre las del mismo nombre cuenta la única viva; sin vivas,
@@ -2060,9 +2073,10 @@ function namedSession(opts, w) {
   const unreadable = [];
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unreadable, path.join(claudeDir(home), 'projects'));
   if (unreadable.length) return { error: `No pude leer todas las sesiones (${unreadable[0]}): ${nada}` };
-  // la lista guarda los nombres largos recortados: uno largo se compara recortado igual
+  // la lista guarda los nombres largos recortados: uno largo se compara recortado y se confirma con el nombre completo
+  // que anotó la sesión, porque dos nombres que empiezan igual quedan iguales en la lista
   const listed = listedName(name);
-  const found = [...sessions.entries()].filter(([, s]) => s.name === listed);
+  const found = [...sessions.entries()].filter(([sid, s]) => s.name === listed && (listed === name || fullSessionName(home, sid) === name));
   const alive = found.filter(([, s]) => s.alive);
   if (!found.length) return { error: `No encuentro la sesión «${name}»: ${nada}` };
   if (alive.length > 1 || (!alive.length && found.length > 1)) return { error: `Hay más de una sesión «${name}»: ${nada}` };

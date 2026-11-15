@@ -1427,7 +1427,7 @@ test('T8 Stop_NombreDesconocidoAmbiguoORef_NoPara @story-8.284 @ac-15 @ac-16 @ac
   assert.match(cli.stdout, /stop va con --name/);
 });
 
-test('Stop_NombreLargo_LaEncuentraIgual @story-8.284 @ac-14: un nombre de más de 40 caracteres, que la lista guarda recortado, se para y se cierra igual', () => {
+test('T10 Stop_NombreLargo_LaEncuentraIgual @story-8.284 @ac-14 @ac-18: un nombre de más de 40 caracteres, que la lista guarda recortado, se para y se cierra igual', () => {
   const t = closeLab();
   const largo = 'story-8284-firmas-y-esperas-de-mas-entre-sesiones-tanda-d';
   bg(t, largo, t.repo, { jobId: 'job-largo' });
@@ -1437,9 +1437,19 @@ test('Stop_NombreLargo_LaEncuentraIgual @story-8.284 @ac-14: un nombre de más d
   const c = closeIt(t, largo);
   assert.strictEqual(c.closed, true, c.message);
   assert.deepStrictEqual(closed(t), ['stop job-largo', 'stop job-largo', 'rm job-largo']);
+  // dos nombres largos que empiezan igual quedan iguales en la lista: nunca se toca la otra
+  const u = closeLab();
+  const pedido = `${'x'.repeat(40)}-pedida`;
+  const otra = `${'x'.repeat(40)}-otra`;
+  session(u, 'sid-otra', otra, { cwd: u.repo, kind: 'bg', jobId: 'job-otra', startedAt: 1000 });
+  assert.match(stopIt(u, pedido).message, new RegExp(`No encuentro la sesión «${pedido}»: no paré nada`), 'sólo está la otra, viva');
+  assert.match(closeIt(u, pedido).message, /No encuentro la sesión .*: no cerré nada/);
+  session(u, 'sid-pedida', pedido, { cwd: u.repo, kind: 'bg', jobId: 'job-pedida', startedAt: 1000, pid: 2147483646 });
+  assert.match(stopIt(u, pedido).message, /ya no está viva/, 'la pedida está muerta y la viva es la otra');
+  assert.deepStrictEqual(closed(u), []);
 });
 
-test('Stop_DosMuertasORefQueEsNombre @story-8.284 @ac-15: dos muertas sin viva es ambiguo; un nombre con forma de ref que existe se para', () => {
+test('T11 Stop_DosMuertasORefQueEsNombre @story-8.284 @ac-15: dos muertas sin viva es ambiguo; un nombre con forma de ref que existe se para', () => {
   const t = closeLab();
   bg(t, 'vieja', t.repo, { pid: 2147483646, jobId: 'j1' });
   session(t, 'sid-vieja-2', 'vieja', { cwd: t.repo, kind: 'bg', jobId: 'j2', pid: 2147483646 });
