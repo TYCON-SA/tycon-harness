@@ -1369,6 +1369,73 @@ test('Close_LauncherFails: si no se puede parar no se borra, y sin id de fondo n
   assert.match(closeIt(t, 'sin-id').message, /no anotó un id de fondo válido/);
 });
 
+// ── Stopping a session by its name ───────────────────────────────────────────────────────────────────────────────────
+
+const stopIt = (t, name, extra = {}) => C.stop({ ...t.closeOpts, name, ...extra, launcher: extra.launcher || closer(t) });
+
+test('T7 Stop_PorNombre_ParaConElId @story-8.284 @ac-14: para con el id que anotó la sesión, sin mirar si quedó limpia y sin borrar', () => {
+  const t = closeLab();
+  bg(t, 'parable', t.repo, { status: 'busy' });
+  fs.writeFileSync(path.join(t.repo, 'suelto.txt'), 'z\n');
+  const r = stopIt(t, 'parable');
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(r.message, 'paré parable (job-parable); se retoma con claude respawn job-parable');
+  assert.deepStrictEqual(closed(t), ['stop job-parable'], 'una sola llamada, y nunca rm');
+  // una muerta con el mismo nombre no la vuelve ambigua: la misma regla que close
+  const u = closeLab();
+  bg(u, 'doble', u.repo, { jobId: 'job-viva' });
+  session(u, 'sid-doble-muerta', 'doble', { cwd: u.repo, kind: 'bg', jobId: 'job-muerta', pid: 2147483646 });
+  assert.strictEqual(stopIt(u, 'doble').ok, true);
+  assert.deepStrictEqual(closed(u), ['stop job-viva']);
+});
+
+test('T8 Stop_NombreDesconocidoAmbiguoORef_NoPara @story-8.284 @ac-15 @ac-16 @ac-18: cada caso dice su motivo y no llama al lanzador', () => {
+  const t = closeLab();
+  const no = (name, re, extra) => {
+    const r = stopIt(t, name, extra);
+    assert.strictEqual(r.ok, false, `${name}: ${r.message}`);
+    assert.match(r.message, re, String(name));
+    assert.match(r.message, /no paré nada/, String(name));
+  };
+  no(undefined, /stop va con --name/);
+  no('nadie', /No encuentro la sesión «nadie»/);
+  session(t, 'a1', 'doble', { cwd: t.repo, kind: 'bg', jobId: 'j1' });
+  session(t, 'a2', 'doble', { cwd: t.repo, kind: 'bg', jobId: 'j2' });
+  no('doble', /más de una sesión «doble»/);
+  bg(t, 'sin-id', t.repo, { jobId: null });
+  no('sin-id', /no anotó un id de fondo válido.*claude agents/);
+  bg(t, 'guion', t.repo, { jobId: '--force' });
+  no('guion', /no anotó un id de fondo válido/);
+  bg(t, 'pestana', t.repo, { kind: 'interactive' });
+  no('pestana', /interactiva: la para la persona/);
+  bg(t, 'muerta', t.repo, { pid: 2147483646 });
+  no('muerta', /ya no está viva/);
+  session(t, COORD_SID, 'coord', { cwd: t.repo, kind: 'interactive' });
+  no('coord', /no se para a sí misma/);
+  // el ref que muestra ListAgents no es el id: dice que va el nombre
+  no('addc4e', /No encuentro la sesión «addc4e».*el ref que muestra ListAgents no es el id de la sesión: va su nombre/);
+  bg(t, 'limpia', t.repo);
+  no('limpia', /la para la coordinadora designada o una persona en su terminal/, { env: { CLAUDE_CODE_SESSION_ID: 'sid-otra' } });
+  assert.match(C.stop({ ...t.opts, name: 'limpia', env: { CODEX_SESSION_ID: 'x' } }).message, /Codex no tiene sesiones de fondo que parar/);
+  assert.deepStrictEqual(closed(t), []);
+  // el lanzador que falla: lo dice y no la da por parada
+  no('limpia', /no la pude parar \(no la encuentro\)/, { launcher: closer(t, { stop: 'no la encuentro' }) });
+  assert.deepStrictEqual(closed(t), ['stop job-limpia']);
+  // la línea de comandos: stop sin nombre sale con 1 y lo dice
+  const cli = spawnSync(process.execPath, [COORD, 'stop'], { encoding: 'utf8', env: { ...process.env, HOME: t.home, CLAUDE_CODE_SESSION_ID: '' } });
+  assert.strictEqual(cli.status, 1, cli.stderr);
+  assert.match(cli.stdout, /stop va con --name/);
+});
+
+test('T9 GuiaCoordinacion_PararPorNombre_EnLosDosIdiomas @story-8.284 @ac-17: las dos guías nombran stop --name y dicen que el ref de ListAgents no es el id', () => {
+  const es = fs.readFileSync(GUIDE, 'utf8');
+  const en = fs.readFileSync(GUIDE_EN, 'utf8');
+  assert.match(es, /coordination\.js stop --name <nombre>/);
+  assert.match(en, /coordination\.js stop --name <name>/);
+  assert.match(es, /ni\s+el\s+nombre\s+ni\s+el\s+ref\s+que\s+muestra\s+ListAgents/);
+  assert.match(en, /neither\s+the\s+name\s+nor\s+the\s+ref\s+that\s+ListAgents\s+shows/);
+});
+
 // stable-data: the session starts a minute before now, so the files of "before" and "after" are dated against the
 // real clock (git and the file system date them that way); every date is set relative to that start
 const ARRANQUE = Date.now() - 60000;

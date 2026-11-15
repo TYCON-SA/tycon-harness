@@ -140,8 +140,10 @@ la coordinadora, que lo anota con cada mensaje de la persona. **Límite conocido
 Shift+Tab y no le manda un mensaje después, `open` copia el modo anterior. Una sesión abierta a mano, o antes de este
 cambio, que se trabó así, la coordinadora la para y la relanza:
 `claude --bg --resume <id> -n <nombre> --permission-mode <su modo> --remote-control <nombre> -- <encargo>`. Para
-parar y borrar una sesión de fondo van `claude stop <id>` y `claude rm <id>`, con el id que muestra `claude agents`:
-con el nombre contestan que no la encuentran (medido el 2026-11-01).
+parar una sesión de fondo va `coordination.js stop --name <nombre>`: busca el id de fondo que anotó la sesión y corre
+`claude stop` con él. No borra nada, y la sesión se retoma con `claude respawn <id>`. A mano, `claude stop <id>` y
+`claude rm <id>` piden el id que muestra `claude agents`: ni el nombre ni el ref que muestra ListAgents (los seis
+caracteres entre corchetes) sirven, y contestan que no la encuentran (medido el 2026-11-01 y el 2026-11-15).
 
 `open` pasa el encargo tal cual al lanzador, sin revisarlo: lo que diga no firma nada (ver «Las firmas del dueño»).
 
@@ -174,6 +176,9 @@ Lo que no puede mirar (una carpeta que no anotó o que ya no está, git que no c
 «no sé», y tampoco cierra. Con todo limpio corre `claude stop` y `claude rm` con el id de la sesión.
 
 **Una sesión interactiva no se cierra.** La verifica igual y avisa: esa pestaña la cierra la persona.
+
+**Parar no es cerrar.** `coordination.js stop --name <nombre>` para una sesión de fondo sin mirar si quedó limpia y sin
+borrarla; la misma regla de quién puede. Se retoma con `claude respawn <id>`.
 
 **Límites.** Mira la carpeta donde está la sesión ahora: otro worktree que haya dejado no lo ve, ni lo guardado con `git
 stash`. Una rama borrada sin entrar ya no se ve. Una rama que entró aplastada en un solo commit sale como que no entró. Un
