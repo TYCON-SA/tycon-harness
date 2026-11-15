@@ -297,7 +297,9 @@ function codexNames(codexHome, unreadable) {
 
 // Un agente interno de otra sesión (un examen o un pase que lanza su propio Claude): corre en la carpeta temporal del
 // sistema y nadie le puso nombre. Hacen falta las dos señales: un laboratorio con nombre puesto es una sesión de verdad.
-function isInternalAgent(cwd, nameSource) {
+// Una corrida suelta (`claude -p`, la de una medición) también, corra donde corra: su registro dice `sdk-cli`.
+function isInternalAgent(cwd, nameSource, entrypoint) {
+  if (entrypoint === 'sdk-cli') return true;
   if (nameSource !== 'derived' || !cwd) return false;
   let real = cwd;
   try { real = fs.realpathSync(cwd); } catch { /* ya no existe: se juzga por la ruta escrita */ }
@@ -319,7 +321,7 @@ function sessionsBySid(dir, unreadable, projectsDir) {
     const cwd = typeof s.cwd === 'string' ? s.cwd : null;
     // el nombre es el del archivo de sesión, el que usan los mensajes; sin él, el último /rename de la conversación
     const name = (typeof s.name === 'string' && s.name.trim()) ? cut(oneLine(s.name), NAME_MAX) : sessionTitle(projectsDir, cwd, s.sessionId, unreadable);
-    const cur = { name: name || null, pid, alive, busy: s.status === 'busy' || s.status === 'shell', status: typeof s.status === 'string' ? s.status : null, waitingFor: typeof s.waitingFor === 'string' ? oneLine(s.waitingFor).slice(0, 80) : null, statusAt: Number(s.statusUpdatedAt) || null, nameSource: typeof s.nameSource === 'string' ? s.nameSource : null, kind: typeof s.kind === 'string' ? s.kind : null, jobId: typeof s.jobId === 'string' ? s.jobId : null, startedAt: Number(s.startedAt) || null, cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
+    const cur = { name: name || null, pid, alive, busy: s.status === 'busy' || s.status === 'shell', status: typeof s.status === 'string' ? s.status : null, waitingFor: typeof s.waitingFor === 'string' ? oneLine(s.waitingFor).slice(0, 80) : null, statusAt: Number(s.statusUpdatedAt) || null, nameSource: typeof s.nameSource === 'string' ? s.nameSource : null, kind: typeof s.kind === 'string' ? s.kind : null, jobId: typeof s.jobId === 'string' ? s.jobId : null, startedAt: Number(s.startedAt) || null, cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource, s.entrypoint) };
     // Dos archivos con la misma sesión: manda el vivo, y la actividad es la más nueva de los dos.
     const prev = out.get(s.sessionId);
     if (!prev || (!prev.alive && alive)) out.set(s.sessionId, prev && prev.last > nn(cur.last, -1) ? { ...cur, last: prev.last } : cur);
@@ -1497,7 +1499,10 @@ function buildWip(opts = {}) {
       // el de una nota de este camino corto, no el de una vieja que quedó sin borrar
       const laneAt = extra[looseRow].laneAt;
       const ofLane = Number.isFinite(at) && (!Number.isFinite(laneAt) || at >= laneAt);
-      Object.assign(extra[looseRow], hour, d.text && ofLane ? { noteText: String(d.text) } : {});
+      Object.assign(extra[looseRow], d.text && ofLane ? { noteText: String(d.text) } : {});
+      // su hora y su espera, tampoco las de una nota de antes de abrir el camino corto; sin saber cuándo abrió, como antes
+      if (Number.isFinite(laneAt) && !ofLane) continue;
+      Object.assign(extra[looseRow], hour);
       if (hour.waitingFor) rows[looseRow].end = waitingEnd(d);
       else if (Number.isFinite(hour.endAt)) rows[looseRow].end = hourVerdict({ endAt: hour.endAt, hourAt: at, nowMs }) || declaredEnd(d.endAt, hour.endAt);
       continue;
@@ -1704,7 +1709,7 @@ function render(rows, free, noData, idle, halfway, unreadable, internal = 0, not
   const freeText = free.map((f) => (freeNotes.get(f) ? `${f} (${freeNotes.get(f)})` : noData.includes(f) ? `${f} (sin dato de actividad)` : f));
   lines.push('', `Libres: ${freeText.length ? freeText.join(', ') : 'ninguna'}`);
   if (idle.length) lines.push(`Sin uso hace más de ${IDLE_MS / 3600000} h: ${idle.join(', ')}`);
-  if (internal) lines.push(`${internal} agente(s) interno(s) de otras sesiones (sin fila: corren en la carpeta temporal, sin nombre puesto)`);
+  if (internal) lines.push(`${internal} agente(s) interno(s) de otras sesiones (sin fila: corren en la carpeta temporal sin nombre puesto, o son corridas sueltas de claude -p)`);
   if (halfway.length) lines.push('', `Quedaron a medio camino (sesión cerrada o sin rastro): ${halfway.length}`, ...halfway.map((h) => `- ${h}`));
   if (unreadable.length) lines.push('', 'No se pudo leer:', ...unreadable.map((u) => `- ${u}`));
   return lines.join('\n');

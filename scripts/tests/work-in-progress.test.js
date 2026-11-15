@@ -1995,3 +1995,61 @@ test('T213 LooseNote_TaskNumber_OnlyItsOwn: el texto de la nota de un camino cor
   assert.strictEqual(extraOf('nueva').noteText, 'T-50: sigo con el arreglo');
   assert.strictEqual(extraOf('vieja').noteText, undefined, 'la nota de antes de abrir el camino corto no une su fila');
 });
+
+// La hora y la espera de una nota se pegan a un camino corto sólo si la nota es de ese camino corto: una nota escrita
+// antes de abrirlo (con `--until` o con `--waiting-for`) es de otro trabajo. Sin la hora del camino corto, como antes.
+function looseWithNote(m, sid, { laneMin, note }) {
+  const at = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+  fs.mkdirSync(path.join(m.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'adhoc', `${sid}.json`), JSON.stringify({ reason: 'un arreglo chico', ...(laneMin == null ? {} : { declaredAt: at(laneMin) }), lastTouch: at(5) }));
+  fs.writeFileSync(path.join(m.state, 'doing', `${sid}.json`), JSON.stringify({ text: 'otro trabajo', at: at(note.min), ...(note.until ? { endAt: note.until } : {}), ...(note.waiting ? { waitingFor: note.waiting, waitingSince: at(note.min) } : {}) }));
+  // quieta: una sesión ocupada con una espera de más de 5 min la pierde por otra regla
+  session(m, process.pid, sid, sid.slice(0, 5), { status: 'idle' });
+}
+const UNTIL = new Date(Date.parse(NOW) + 60 * 60000).toISOString();
+
+test('8.281 T6 Fila_NotaViejaYCaminoCortoNuevo_SinHoraNiEspera @story-8.281 @ac-11: la nota de antes de abrir el camino corto no le da hora ni espera; sin la hora del camino corto, como hoy', () => {
+  const m = toyMachine();
+  looseWithNote(m, 'hora0000-1', { laneMin: 30, note: { min: 120, until: UNTIL } });
+  looseWithNote(m, 'esper000-2', { laneMin: 30, note: { min: 120, waiting: 'el turno de la suite' } });
+  looseWithNote(m, 'sinla000-3', { laneMin: null, note: { min: 120, until: UNTIL } });
+  const r = run(m);
+  const of = (name) => { const i = r.rows.findIndex((x) => x.session.startsWith(name)); return { row: r.rows[i], extra: r.extra[i] }; };
+  for (const name of ['hora0', 'esper']) {
+    const { row, extra } = of(name);
+    assert.ok(!Number.isFinite(extra.endAt) && !extra.waitingFor, `${name}: ${JSON.stringify(extra)}`);
+    assert.doesNotMatch(String(row.end || ''), /espera|turno/, `${name}: ${row.end}`);
+  }
+  // sin `laneAt` no se sabe cuál es más vieja: la nota se aplica como hoy
+  assert.strictEqual(of('sinla').extra.endAt, Date.parse(UNTIL), JSON.stringify(of('sinla').extra));
+});
+
+test('8.281 T7 Fila_NotaNuevaDelCaminoCorto_ComoHoy @story-8.281 @ac-12: la nota escrita después de abrir el camino corto le da su hora o su espera', () => {
+  const m = toyMachine();
+  looseWithNote(m, 'hora0000-1', { laneMin: 30, note: { min: 10, until: UNTIL } });
+  looseWithNote(m, 'esper000-2', { laneMin: 30, note: { min: 10, waiting: 'el turno de la suite' } });
+  const r = run(m);
+  const of = (name) => { const i = r.rows.findIndex((x) => x.session.startsWith(name)); return { row: r.rows[i], extra: r.extra[i] }; };
+  assert.strictEqual(of('hora0').extra.endAt, Date.parse(UNTIL), JSON.stringify(of('hora0').extra));
+  assert.strictEqual(of('esper').extra.waitingFor, 'el turno de la suite');
+  assert.match(String(of('esper').row.end), /turno de la suite/, of('esper').row.end);
+});
+
+// Una corrida suelta (`claude -p`, la de una medición) no es una sesión de trabajo aunque corra en un puesto: su
+// registro dice `entrypoint: "sdk-cli"`. Con marcador, sí trabaja y cuenta, como un agente interno con marcador.
+test('8.281 T3 Tope_SesionNoInteractiva_NoCuenta_ConMarcadorSi @story-8.281 @ac-4 @ac-5 @ac-6 @ac-22: una corrida suelta sin marcador no cuenta; con marcador y la interactiva con nombre, sí', () => {
+  const m = toyMachine();
+  // un puesto fuera de la carpeta temporal: la regla de los agentes internos de hoy no la alcanza
+  const puesto = path.join(path.sep, 'opt', 'puesto-de-prueba-8281', 'slot-1');
+  session(m, process.pid, 'medic000-1', 'slot-1-a1', { cwd: puesto, nameSource: 'derived', entrypoint: 'sdk-cli', kind: 'interactive', status: 'busy', statusUpdatedAt: Date.parse(NOW) - 60000 });
+  session(m, process.pid, 'medic000-2', 'slot-1-b2', { cwd: puesto, nameSource: 'derived', entrypoint: 'sdk-cli', kind: 'interactive', status: 'busy', statusUpdatedAt: Date.parse(NOW) - 60000 });
+  marker(m, 'medic000-2', { storyId: '9.2', storyPath: story(m.root, '9.2', 'Con marcador'), stepsCompleted: [0], stepsPending: [4], lastTouch: NOW });
+  session(m, process.pid, 'perso000-3', 'Puesto', { cwd: puesto, nameSource: 'user', entrypoint: 'cli', kind: 'interactive', status: 'busy', statusUpdatedAt: Date.parse(NOW) - 60000 });
+  const s = require(WIP).sessionsBySid(m.sessions, [], null);
+  assert.deepStrictEqual(['medic000-1', 'medic000-2', 'perso000-3'].map((sid) => s.get(sid).internal), [true, true, false]);
+  const r = run(m);
+  const names = r.rows.map((x) => x.session);
+  assert.ok(!names.includes('slot-1-a1'), `la corrida suelta sin marcador no tiene fila: ${r.text}`);
+  assert.ok(names.includes('slot-1-b2') && names.includes('Puesto'), `con marcador y la interactiva cuentan: ${r.text}`);
+  assert.match(r.text, /1 agente\(s\) interno\(s\)[^\n]*claude -p/, 'el renglón también nombra las corridas sueltas');
+});

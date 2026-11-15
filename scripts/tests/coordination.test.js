@@ -1141,6 +1141,8 @@ test('Close_SlotOwnBranchWithAnyName: su rama, se llame como se llame, es suya h
 });
 
 // 🔴 Falla con: otra sesión abierta en el mismo puesto mientras la primera todavía lo tiene hace que la primera salga limpia.
+// Sin suelta en el registro no se puede separar lo de cada una (8.281, AC 7): no cierra, y lo dice como «no sé», nombrando
+// a la otra, en vez de cargarle a la primera, como faltante suyo, lo que puede ser de la otra.
 test('Close_SlotSharedWithoutRelease: sin soltar el puesto, otra sesión ahí no se lleva lo de la primera', () => {
   const t = closeLab();
   const slot = path.join(t.root, 'repo--slot-1');
@@ -1151,6 +1153,8 @@ test('Close_SlotSharedWithoutRelease: sin soltar el puesto, otra sesión ahí no
   bg(t, 'primera', slot);
   bg(t, 'intrusa', slot, { startedAt: Date.now() + 1000 });
   const r = closeIt(t, 'primera');
+  assert.match(r.message, /no sé: .*no puedo separar lo suyo de lo de intrusa/, r.message);
+  assert.doesNotMatch(r.message, /falta: [^.]*sin commitear/, 'no se le carga a la primera como faltante suyo');
   assert.match(r.message, /sin commitear/, r.message);
   assert.match(r.message, /sin empujar/, r.message);
   assert.match(r.message, /sigue tomado por la rama wt\/primera/, r.message);
@@ -2092,4 +2096,100 @@ test('PrWait_AdoRepoDeclared_ReadsWithItsProject @story-8.270 @ac-26 — a repo 
   assert.strictEqual(r4.code, 2);
   assert.match(r4.error, /falta el proyecto/);
   assert.match(r4.error, /team-repos\.json/, `el motivo no dice que la identidad no se resolvió: ${r4.error}`);
+});
+
+// ── 8.281: la espera del dueño no se despierta por sesiones de otros proyectos ──────────────────────────────────────
+
+// Una carpeta con su remoto: el repo del que es una sesión sale de ahí, como en la oficina.
+function repoWithRemote(t, name, url) {
+  const dir = path.join(t.root, name);
+  spawnSync('git', ['init', '-q', '-b', 'main', dir]);
+  spawnSync('git', ['-C', dir, 'remote', 'add', 'origin', url]);
+  return dir;
+}
+// La foto de pedidos que deja el aviso de pedidos trabados: de ahí salen los repos que sigue el arnés.
+function prsPhoto(t, repos, at = new Date(NOW).toISOString()) {
+  fs.writeFileSync(path.join(t.state, 'stuck-prs-photo.json'), JSON.stringify({ at, lecturas: Object.fromEntries(repos.map((r) => [r, { ok: true, value: [] }])) }));
+}
+// Una vuelta de owner-wait con la coordinadora confirmada.
+function ownerWaitLab() {
+  const OA = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js'));
+  const DS = require(path.join(ROOT, 'scripts', 'lib', 'delegated-signing.js'));
+  const t = toy();
+  fs.writeFileSync(path.join(t.arnes, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+  const d = { name: 'relay-designation', status: 'ok', ts: new Date(NOW).toISOString(), sesion: 's-coord', rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' };
+  fs.writeFileSync(path.join(t.state, 'gates.log'), `${JSON.stringify(d)}\n${JSON.stringify(DS.confirmationRecord(d, new Date(NOW).toISOString()))}\n`);
+  session(t, 's-coord', 'Coordinadora', { status: 'busy' });
+  const confirmada = OA.coordinadoraConfirmada;
+  OA.coordinadoraConfirmada = (casa, o = {}) => confirmada(casa, { arnes: t.arnes, ...o });
+  const vuelta = (seg = 0) => C.ownerWaitOnce({ ...t.opts, sessionId: 's-coord', now: NOW + seg * 1000, ownerWaits: () => ({ esperas: [], problemas: [] }), signatureDestinos: () => [] }).lines;
+  return { t, vuelta, restore: () => { OA.coordinadoraConfirmada = confirmada; } };
+}
+const perm = { status: 'waiting', waitingFor: 'permission prompt', statusUpdatedAt: NOW };
+
+test('8.281 T1 OwnerWait_OtroProyecto_NoDespierta @story-8.281 @ac-1 @ac-3: la sesión de otro proyecto con un permiso abierto no despierta; la que no se sabe de qué proyecto es, sí', () => {
+  const { t, vuelta, restore } = ownerWaitLab();
+  try {
+    prsPhoto(t, ['acme/arnes']);
+    session(t, 's-otro', 'DeOtro', { ...perm, cwd: repoWithRemote(t, 'otro', 'https://github.com/acme/otro.git') });
+    session(t, 's-nose', 'SinCarpeta', { ...perm, cwd: path.join(t.root, 'no-existe') });
+    session(t, 's-sinrem', 'SinRemoto', { ...perm, cwd: repoWithRemote(t, 'local', '') });
+    const lines = vuelta();
+    assert.ok(!lines.some((l) => /DeOtro/.test(l)), `la de otro proyecto no despierta: ${lines.join(' | ')}`);
+    assert.ok(lines.some((l) => /SinCarpeta espera un permiso/.test(l)), `la que no se sabe, despierta: ${lines.join(' | ')}`);
+    assert.ok(lines.some((l) => /SinRemoto espera un permiso/.test(l)), `sin remoto, despierta: ${lines.join(' | ')}`);
+    // ni la nombra después como «siguió» o «se cerró»
+    assert.deepStrictEqual(vuelta(30).filter((l) => /DeOtro/.test(l)), []);
+    // sin la foto de pedidos no se sabe qué repos sigue el arnés: ante la duda, despierta
+    const u = ownerWaitLab();
+    try {
+      session(u.t, 's-otro', 'DeOtro', { ...perm, cwd: repoWithRemote(u.t, 'otro', 'https://github.com/acme/otro.git') });
+      assert.ok(u.vuelta().some((l) => /DeOtro espera un permiso/.test(l)), 'sin foto, despierta');
+    } finally { u.restore(); }
+  } finally { restore(); }
+});
+
+test('8.281 T2 OwnerWait_SesionDelArnes_DespiertaComoHoy @story-8.281 @ac-2 @ac-22: una sesión del arnés con un permiso abierto despierta, aunque la foto de pedidos sea vieja', () => {
+  const { t, vuelta, restore } = ownerWaitLab();
+  try {
+    prsPhoto(t, ['acme/arnes'], new Date(NOW - 5 * 3600000).toISOString());
+    session(t, 's-arnes', 'DelArnes', { ...perm, cwd: repoWithRemote(t, 'arnes', 'https://github.com/acme/arnes.git') });
+    session(t, 's-otro', 'DeOtro', { ...perm, cwd: repoWithRemote(t, 'otro', 'https://github.com/acme/otro.git') });
+    const lines = vuelta();
+    assert.ok(lines.some((l) => /DelArnes espera un permiso/.test(l)), lines.join(' | '));
+    assert.ok(!lines.some((l) => /DeOtro/.test(l)), 'la foto vieja sirve para saber qué repos sigue el arnés');
+  } finally { restore(); }
+});
+
+// ── 8.281: el cierre ve su puesto ────────────────────────────────────────────────────────────────────────────────────
+
+// 🔴 Falla con: la otra sesión arrancó antes de que la primera soltara el puesto (el caso del 8/11, Quintero y Pratto):
+// la suelta queda fuera de la ventana que corta el ARRANQUE de la otra, y a la primera se le cargan sus cambios y su rama.
+test('8.281 T4 Close_OtraSesionSinReflog_SoloLoPropio @story-8.281 @ac-7 @ac-8: la otra cuenta desde que llegó al puesto, no desde que arrancó; sin suelta, «no sé» con la otra nombrada', () => {
+  const t = closeLab();
+  const slot = path.join(t.root, 'repo--slot-1');
+  git(t.repo, 'worktree', 'add', '-q', '--detach', slot, 'origin/main');
+  git(slot, 'checkout', '-q', '-b', 'wt/primera');
+  commitIn(slot);
+  git(slot, 'push', '-q', 'origin', 'wt/primera');
+  bg(t, 'primera', slot);
+  // la otra arranca ANTES de que la primera suelte el puesto, y llega después
+  esperar(1100);
+  bg(t, 'otra', slot, { startedAt: Date.now() });
+  esperar(1100);
+  git(slot, 'checkout', '-q', '--detach', 'origin/main');
+  esperar(1100);
+  git(slot, 'checkout', '-q', '-b', 'wt/otra');
+  commitIn(slot);
+  fs.writeFileSync(path.join(slot, 'a-medio-hacer.txt'), 'x\n');
+  const r = closeIt(t, 'primera');
+  assert.doesNotMatch(r.message, /sin commitear|sin empujar|wt\/otra/, `lo de la otra no es suyo: ${r.message}`);
+  assert.match(r.message, /la rama local wt\/primera .*no entró a main/, 'su propia rama sí se mira');
+  assert.deepStrictEqual(closed(t), []);
+  // con su rama en main, cierra, y el trabajo de la otra queda como estaba
+  git(t.repo, 'fetch', '-q', 'origin', 'wt/primera');
+  git(t.repo, 'merge', '-q', '--ff-only', 'FETCH_HEAD');
+  git(t.repo, 'push', '-q', 'origin', 'main');
+  assert.strictEqual(closeIt(t, 'primera').closed, true, closeIt(t, 'primera').message);
+  assert.ok(fs.existsSync(path.join(slot, 'a-medio-hacer.txt')), 'el trabajo de la otra no se toca');
 });
