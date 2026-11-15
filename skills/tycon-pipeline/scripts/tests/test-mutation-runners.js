@@ -499,7 +499,8 @@ function repoConMutantes(n) {
 test('@story-8.204 @ac-18 T22 Topes_PorReceta_CierranEntreSi', async () => {
   assert.deepEqual(checker.BUDGETS.dotnet, { totalMs: 480000, perRunMs: 180000 });
   assert.deepEqual(checker.BUDGETS.default, { totalMs: 180000, perRunMs: 120000 });
-  assert.equal(gate.HARD_TIMEOUT_MS, 720000, 'el portón, red de último recurso a los 12 min');
+  // la red sale del techo de los topes medidos: 20 min + 2 de margen
+  assert.equal(gate.HARD_TIMEOUT_MS, checker.MEASURED_TOTAL_CEIL_MS + 120000, 'el portón, red de último recurso a los 22 min');
   // .NET: la base termina a los 7:50; el primer mutante sólo tiene 10 s
   const d = repo({ 'T/T.csproj': CSPROJ_TEST, 'T/ATests.cs': '' }, { 'A.cs': 'class A {\n bool f(int a) { return a == 1; }\n bool g(int a) { return a != 2; }\n}\n' });
   let reloj = 0;
@@ -712,4 +713,68 @@ test('@story-8.204 @ac-26 T29 Base_CeroPruebasOResultadoIlegible_Estructural', a
     assert.match(r.result.motivo, re);
     assert.equal(mutantes, 0, 'ningún mutante corrido');
   }
+});
+
+// ── Suites en bash ───────────────────────────────────────────────────────────
+
+// Una suite en bash que ejerce un código JS: sale 1 si el resultado no es el esperado.
+const CALC_BASH = "'use strict';\nfunction mayorOIgual(a, b) { return a >= b; }\nmodule.exports = { mayorOIgual };\n";
+const SUITE_BASH = [
+  '#!/usr/bin/env bash',
+  'set -u',
+  'cd "$(dirname "$0")"',
+  'r=$(node -e "const c=require(\'./calc.js\'); console.log(c.mayorOIgual(2, 2), c.mayorOIgual(1, 2))")',
+  '[ "$r" = "true false" ] || { echo "MAL: mayorOIgual dio $r"; exit 1; }',
+  'echo "OK"',
+  '',
+].join('\n');
+
+test('@story-8.279 @ac-18 T11 Mutation_BashRecipe_KillsOnNonZero', async () => {
+  const d = repo({ 'calc.js': "'use strict';\n", 'x.test.sh': '' }, { 'calc.js': CALC_BASH, 'x.test.sh': SUITE_BASH, 'helper.sh': 'echo hola\n' });
+  const r = await checker.runMutationCheck({ repo: d, storyPath: story(d, ['calc.js', 'helper.sh', 'x.test.sh']), stack: {}, log: () => {} });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.equal(r.result.runner, 'bash');
+  assert.ok(r.result.killed >= 1, 'el mutante de >= muere con la suite en bash');
+  assert.ok(r.result.skipped.some((s) => s.file === 'helper.sh' && /no sé mutar bash/.test(s.reason)), JSON.stringify(r.result.skipped));
+  // bash mezclado con otra receta: no se elige a ciegas
+  const m = repo({ 'calc.js': "'use strict';\n" }, { 'calc.js': CALC_BASH, 'x.test.sh': SUITE_BASH, 'calc.test.js': "require('node:test');\n" });
+  const rm = await checker.runMutationCheck({ repo: m, storyPath: story(m, ['calc.js', 'x.test.sh', 'calc.test.js']), stack: {}, log: () => {} });
+  assert.equal(rm.exitCode, 2);
+  assert.match(rm.result.motivo, /bash/);
+});
+
+test('@story-8.279 @ac-19 T11 Mutation_BashBaseFails_NotMeasured', async () => {
+  const rota = SUITE_BASH.replace('"true false"', '"nunca"');
+  const d = repo({ 'calc.js': "'use strict';\n" }, { 'calc.js': CALC_BASH, 'x.test.sh': rota });
+  let mutantes = 0;
+  const r = await checker.runMutationCheck({
+    repo: d, storyPath: story(d, ['calc.js', 'x.test.sh']), stack: {}, log: () => {},
+    runTests: (o) => { if (o.mutant) mutantes += 1; return checker.defaultRun(o); },
+  });
+  assert.equal(r.exitCode, 2);
+  assert.match(r.result.motivo, /no medido: la base ya falla/);
+  assert.equal(mutantes, 0, 'sin base verde no se juzga ningún mutante');
+});
+
+test('@story-8.279 @ac-20 T11 Mutation_BashNoticeDate_Own', () => {
+  assert.equal(gate.MUTATION_NOTICE_UNTIL, '2026-11-18', 'la fecha de las demás recetas nuevas no se mueve');
+  assert.match(gate.MUTATION_BASH_NOTICE_UNTIL, /^\d{4}-\d{2}-\d{2}$/);
+  assert.ok(gate.MUTATION_BASH_NOTICE_UNTIL > gate.MUTATION_NOTICE_UNTIL, 'bash entra después: tiene su propia fecha');
+  const hasta = new Date(`${gate.MUTATION_BASH_NOTICE_UNTIL}T12:00:00Z`);
+  const correr = (runner, today) => {
+    const lineas = [];
+    const g = gate.runMutationGate({
+      marker: { storyId: 'X', repoPath: '/r', storyPath: 's.md' }, appendLog: () => {}, log: (l) => lineas.push(l), today,
+      invokeCheck: () => ({ code: 1, result: { total: 2, killed: 0, survived: [{ file: 'a', line: 1, operator: 'x', before: 'a', after: 'b' }], skipped: [], verdict: 'TESTS_NO_EJERCEN_EL_CODIGO', runner, mutants: 2 } }),
+    });
+    return { g, texto: lineas.join('\n') };
+  };
+  const antes = correr('bash', new Date(hasta.getTime() - 86400000));
+  assert.equal(antes.g.block, false, 'antes de su fecha avisa y deja pasar');
+  assert.ok(antes.texto.includes(`entra frenando el ${gate.MUTATION_BASH_NOTICE_UNTIL}`), antes.texto);
+  assert.equal(correr('bash', new Date(hasta.getTime() + 86400000)).g.block, true, 'después de su fecha frena');
+  // entre las dos fechas: bash todavía avisa, las demás recetas nuevas ya frenan
+  const entre = new Date(`${gate.MUTATION_NOTICE_UNTIL}T12:00:00Z`).getTime() + 86400000;
+  assert.equal(correr('bash', new Date(entre)).g.block, false);
+  assert.equal(correr('vitest', new Date(entre)).g.block, true);
 });

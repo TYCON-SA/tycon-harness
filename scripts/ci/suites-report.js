@@ -12,7 +12,9 @@
  * corta: tres líneas, las del fallo (❌ / not ok / AssertionError / Error / MAL / ✗), o las últimas si no hay.
  *
  * `failures` sigue siendo la lista de nombres de siempre (lo leen bench-notice y el tablero); los
- * motivos van en un campo aparte, `motivos`, que existe aunque esté vacío.
+ * motivos van en un campo aparte, `motivos`, que existe aunque esté vacío. Los casos rojos de cada suite, por nombre,
+ * van en `casos` ({suite: [nombre]}, con `nombreDeCaso` de pr-verdict.js, hasta MAX_CASOS); la que tiene más va además
+ * a `casos_incompletos`. Los dos existen aunque estén vacíos. Con ellos el juez compara caso por caso.
  *
  * 🔴 «No medida» no es «roja». Con las suites del nocturno en trabajos paralelos, las de un trabajo que
  * no terminó llegan en `--failures` con la marca «(no-medida)» (scripts/ci/suites-shard.js). Siguen en `failures`, con
@@ -64,6 +66,14 @@
 const fs = require('fs');
 const path = require('path');
 const { sanear } = require('../metrics/tokens-digest.js');
+// Los nombres de los casos, con la función del juez que vive al lado. Sin él (una copia suelta de este guion), el reporte
+// sale sin casos y el juez compara por suite, como antes.
+const { casosDeLaSalida } = (() => {
+  try { return require('./pr-verdict.js'); } catch (e) {
+    process.stderr.write(`⚠️  suites-report: pr-verdict.js no cargó (${e && e.message}): el reporte sale sin los casos de cada suite\n`);
+    return { casosDeLaSalida: () => ({ casos: [], completos: false }) };
+  }
+})();
 // El traductor de las opciones viejas vive al lado.
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
   try { return require('./legacy-options.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') process.stderr.write(`⚠️  legacy-options.js no cargó (${e && e.message}): los nombres viejos de este guion no se traducen\n`); return { aliasLegacyOptions: (argv) => argv, LegacyOptionsError: Error }; }
@@ -214,6 +224,19 @@ function main() {
   } else console.error(`⚠️  suites-report: ${otroLado.problema}`);
   const motivos = {};
   for (const f of failures) motivos[f] = motivoDe(f, arg('--detail'));
+  // Los casos rojos de cada suite, por nombre, para que el juez compare caso por caso (pr-verdict.js): la misma función
+  // que usa él. Una suite sin salida guardada no los trae; una con más de los que entran va a `casos_incompletos`.
+  const casos = {};
+  const casosIncompletos = [];
+  for (const f of failures) {
+    if (UNMEASURED.test(f)) continue;
+    let txt;
+    try { txt = fs.readFileSync(path.join(arg('--detail') || '', `${f}.txt`), 'utf8'); } catch { continue; }
+    const c = casosDeLaSalida(sanear(txt));
+    if (!c.casos.length) continue;
+    casos[f] = c.casos;
+    if (!c.completos) casosIncompletos.push(f);
+  }
   // 🔴 «No medida» no es «roja». Las dos viajan en `failures` —el control de cada cambio
   // compara por ese nombre, y una suite que anoche no se midió no puede excusar un rojo de verdad—, pero el reporte las
   // separa para quien lo lee: `unmeasured` son las mismas entradas de `failures` que no se midieron, y `complete` dice
@@ -250,6 +273,8 @@ function main() {
     corridas: Number(arg('--runs') || 0),
     failures,
     motivos,
+    casos,
+    casos_incompletos: casosIncompletos,
     reintentos,
     unmeasured,
     complete: unmeasured.length === 0,

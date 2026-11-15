@@ -1258,6 +1258,209 @@ test('un marcador que no se pudo leer se dice en el registro y la base queda en 
   assert.equal(r.result.base.ref, base);
 });
 
+// ── Topes medidos ────────────────────────────────────────────────────────────
+// Un registro de tiempos de juguete: la suite `tests/lenta.test.js` tardó `ms` en cada corrida.
+const corridas = (ms, s = 'tests/lenta.test.js') => [1, 2, 3].map((i) => ({ ts: `2026-11-1${i}T00:00:00Z`, suites: [{ s, ms }] }));
+const MIN = 60000;
+
+test('@story-8.279 @ac-12 T8 Mutation_CapsFromMeasuredTime', () => {
+  const suite = ['skills/x/scripts/tests/lenta.test.js'];
+  // 5 min medidos y 12 mutantes: 7,5 por corrida; el total (7,5 × 13) topa en 20
+  const a = checker.topesMedidos({ suites: suite, mutantes: 12, runs: corridas(5 * MIN), presupuesto: checker.BUDGETS.default });
+  assert.deepEqual(a, { perRunMs: 7.5 * MIN, totalMs: 20 * MIN, medidoMs: 5 * MIN });
+  // 40 s y 2 mutantes: 60 s por corrida sube al piso de 2 min; el total, 2 × 3 = 6 min
+  const b = checker.topesMedidos({ suites: suite, mutantes: 2, runs: corridas(40000), presupuesto: checker.BUDGETS.default });
+  assert.deepEqual(b, { perRunMs: 2 * MIN, totalMs: 6 * MIN, medidoMs: 40000 });
+  // 30 min medidos: el tope por corrida topa en 10
+  assert.equal(checker.topesMedidos({ suites: suite, mutantes: 1, runs: corridas(30 * MIN), presupuesto: checker.BUDGETS.default }).perRunMs, 10 * MIN);
+  // con varias suites, la más lenta
+  const dos = [...corridas(MIN, 'tests/rapida.test.js'), ...corridas(3 * MIN)];
+  assert.equal(checker.topesMedidos({ suites: ['a/tests/rapida.test.js', ...suite], mutantes: 1, runs: dos, presupuesto: checker.BUDGETS.default }).medidoMs, 3 * MIN);
+  // la red del portón queda arriba del total más largo posible, con margen: si alguien sube un techo sin la red, salta
+  const gate = require(path.join(SCRIPTS, 'lib', 'mutation-gate.js'));
+  const mayor = Math.max(checker.MEASURED_TOTAL_CEIL_MS, ...Object.values(checker.BUDGETS).map((b2) => b2.totalMs));
+  assert.ok(gate.HARD_TIMEOUT_MS >= mayor + MIN, `HARD_TIMEOUT_MS=${gate.HARD_TIMEOUT_MS} y el total más largo es ${mayor}`);
+});
+
+test('@story-8.279 @ac-13 @ac-14 T8 Mutation_NoMeasure_CapsAsToday', async () => {
+  const suite = ['skills/x/scripts/tests/lenta.test.js'];
+  assert.equal(checker.topesMedidos({ suites: suite, mutantes: 12, runs: [], presupuesto: checker.BUDGETS.default }), null, 'sin registro, los de hoy');
+  assert.equal(checker.topesMedidos({ suites: [...suite, 'b/tests/sin-medida.test.js'], mutantes: 12, runs: corridas(5 * MIN), presupuesto: checker.BUDGETS.default }), null,
+    'una suite sin medida: los de hoy');
+  // los topes de hoy, de punta a punta: lo que recibe la corrida base
+  const repo = mkRepo();
+  const topes = [];
+  await checker.runMutationCheck({
+    repo, storyPath: path.join(repo, 'story-con-tests.md'), suiteRuns: [], log: () => {},
+    runTests: ({ mutant, capMs }) => { if (!mutant) topes.push(capMs); return { code: mutant ? 1 : 0 }; },
+  });
+  assert.equal(topes[0], checker.BUDGETS.default.perRunMs);
+  // la base que pasa del tope: «no medido» con el tope en minutos y el tiempo medido
+  const lento = mkRepo();
+  let t = 0;
+  const r = await checker.runMutationCheck({
+    repo: lento, storyPath: path.join(lento, 'story-con-tests.md'), suiteRuns: [], log: () => {}, now: () => t,
+    runTests: ({ capMs }) => { t += capMs; return { code: 1, timedOut: true }; },
+  });
+  assert.equal(r.exitCode, 2);
+  assert.match(r.result.motivo, /^no medido: la corrida base tardó más que el tope de 2 min \(medido: 120 s\)/);
+});
+
+// ── Sólo las pruebas de la historia ──────────────────────────────────────────
+const CALC_MARCAS = "'use strict';\nfunction esPar(n) { return n % 2 === 0; }\nmodule.exports = { esPar };\n";
+/** Un repo con calc.js nuevo, su prueba (`prueba`) y una historia 9.1 que los declara. */
+function repoConMarcas(prueba) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutmarca-'));
+  sh('git', ['init', '-q'], dir);
+  sh('git', ['config', 'user.email', 'test@tycon.local'], dir);
+  sh('git', ['config', 'user.name', 'tycon-test'], dir);
+  sh('git', ['config', 'commit.gpgsign', 'false'], dir);
+  fs.writeFileSync(path.join(dir, 'calc.js'), "'use strict';\n");
+  sh('git', ['add', '.'], dir);
+  sh('git', ['commit', '-q', '-m', 'base'], dir);
+  fs.writeFileSync(path.join(dir, 'calc.js'), CALC_MARCAS);
+  fs.writeFileSync(path.join(dir, 'calc.test.js'), prueba);
+  fs.writeFileSync(path.join(dir, 'story.md'), '---\nstory: "9.1"\nfiles_to_modify:\n  - calc.js\n  - calc.test.js\n---\n# fixture\n');
+  return dir;
+}
+const prueba = (nombre, cuerpo = 'assert.equal(esPar(2), true);') => `test(${JSON.stringify(nombre)}, () => { ${cuerpo} });\n`;
+const CABECERA = "'use strict';\nconst { test } = require('node:test');\nconst assert = require('node:assert');\nconst { esPar } = require('./calc.js');\n";
+
+test('@story-8.279 @ac-15 T9 Mutation_NodeTest_OnlyStoryTests', async () => {
+  const dir = repoConMarcas(CABECERA
+    + prueba('T1 par @story-9.1 @ac-1') + prueba('T2 impar @story-9.1', 'assert.equal(esPar(3), false);')
+    + prueba('T3 de la 9.12 @story-9.12', 'assert.ok(true);')
+    + prueba('otra historia @story-4.2', 'assert.ok(true);') + prueba('sin marca', 'assert.ok(true);'));
+  const filtros = [];
+  const r = await checker.runMutationCheck({
+    repo: dir, storyPath: path.join(dir, 'story.md'), suiteRuns: [], log: () => {},
+    runTests: (o) => { filtros.push(o.nameFilter); return checker.defaultRun(o); },
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.ok(filtros.length >= 2 && filtros.every((f) => f === filtros[0] && /^@story-9\\\.1/.test(f)), `cada corrida con el filtro: ${filtros}`);
+  assert.equal(r.result.baseTests, 2, 'corren sólo las dos de la 9.1: la de 9.12 no');
+  assert.ok(r.result.killed >= 1);
+  // el filtro anclado, solo: 9.1 no toma 9.12 ni 9.1.3, y sí la marca al final o antes de otra
+  const re = new RegExp(checker.storyNamePattern('9.1'));
+  for (const n of ['x @story-9.1', 'x @story-9.1 @ac-2', 'x @story-9.1, y']) assert.ok(re.test(n), n);
+  for (const n of ['x @story-9.12', 'x @story-9.1.3', 'x @story-9a1']) assert.ok(!re.test(n), n);
+});
+
+test('@story-8.279 @ac-16 T9 Mutation_NoStoryTag_WholeFileAsToday', async () => {
+  const dir = repoConMarcas(CABECERA + prueba('par') + prueba('impar', 'assert.equal(esPar(3), false);'));
+  const filtros = [];
+  const lineas = [];
+  const r = await checker.runMutationCheck({
+    repo: dir, storyPath: path.join(dir, 'story.md'), suiteRuns: [], log: (...a) => lineas.push(a.join(' ')),
+    runTests: (o) => { filtros.push(o.nameFilter); return checker.defaultRun(o); },
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.ok(filtros.every((f) => !f), 'sin marcas, el archivo entero');
+  assert.equal(r.result.baseTests, 2);
+  assert.ok(lineas.some((l) => /ninguna prueba con la marca @story-9\.1.*archivo entero/.test(l)), lineas.join('\n'));
+});
+
+test('@story-8.279 @ac-17 T10 Mutation_FilterLeavesNoTests_NotGreen', async () => {
+  // la marca sólo en un comentario: el filtro aplica y no deja ninguna prueba
+  const dir = repoConMarcas(`${CABECERA}// las pruebas de la @story-9.1 viven en otro archivo\n${prueba('par')}`);
+  let mutantes = 0;
+  const r = await checker.runMutationCheck({
+    repo: dir, storyPath: path.join(dir, 'story.md'), suiteRuns: [], log: () => {},
+    runTests: (o) => { if (o.mutant) mutantes += 1; return checker.defaultRun(o); },
+  });
+  assert.equal(r.exitCode, 2);
+  assert.match(r.result.motivo, /^no medido: .*@story-9\.1.*ninguna prueba/);
+  assert.equal(mutantes, 0);
+});
+
+test('@story-8.279 @ac-12 T8 Mutation_CapsFromMeasuredTime — de punta a punta: la base recibe el tope medido', async () => {
+  const repo = mkRepo();
+  const topes = [];
+  const r = await checker.runMutationCheck({
+    repo, storyPath: path.join(repo, 'story-con-tests.md'), log: () => {},
+    // la suite declarada `calc.test.js` medida en 3 min: 4,5 por corrida
+    suiteRuns: corridas(3 * MIN, 'calc.test.js'),
+    runTests: ({ mutant, capMs }) => { if (!mutant) topes.push(capMs); return { code: mutant ? 1 : 0 }; },
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.equal(topes[0], 4.5 * MIN, 'la base corre con el tope medido');
+  assert.equal(r.result.measuredMs, 3 * MIN);
+  // y la base que pasa ese tope dice el tope medido
+  const lento = mkRepo();
+  let t = 0;
+  const rl = await checker.runMutationCheck({
+    repo: lento, storyPath: path.join(lento, 'story-con-tests.md'), log: () => {}, now: () => t,
+    suiteRuns: corridas(3 * MIN, 'calc.test.js'), runTests: ({ capMs }) => { t += capMs; return { code: 1, timedOut: true }; },
+  });
+  assert.match(rl.result.motivo, /tope de 4\.5 min \(medido: 270 s\)/);
+});
+
+test('@story-8.279 @ac-12 T8 Mutation_CapsFromMeasuredTime — lee el registro de tiempos de la máquina', async () => {
+  // sin `suiteRuns`, el chequeo lee <estado>/suite-times.jsonl de la HOME: una HOME de juguete con la suite medida
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mut-home-'));
+  const antes = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const { stateDir } = require(path.join(SCRIPTS, 'lib', 'state-dir.js'));
+    fs.mkdirSync(stateDir(), { recursive: true });
+    fs.writeFileSync(path.join(stateDir(), 'suite-times.jsonl'), `${corridas(3 * MIN, 'calc.test.js').map((r) => JSON.stringify({ v: 1, origen: 'gate', ...r })).join('\n')}\n{ roto\n`);
+    const repo = mkRepo();
+    const topes = [];
+    const lineas = [];
+    await checker.runMutationCheck({
+      repo, storyPath: path.join(repo, 'story-con-tests.md'), log: (...a) => lineas.push(a.join(' ')),
+      runTests: ({ mutant, capMs }) => { if (!mutant) topes.push(capMs); return { code: mutant ? 1 : 0 }; },
+    });
+    assert.equal(topes[0], 4.5 * MIN, 'la base corre con el tope medido del registro');
+    assert.ok(lineas.some((l) => /renglón\(es\) del registro de tiempos no se dejan leer/.test(l)), lineas.join('\n'));
+  } finally {
+    process.env.HOME = antes;
+  }
+});
+
+test('@story-8.279 @ac-15 T9 Mutation_NodeTest_OnlyStoryTests — la base roja se compara con el original con el mismo filtro', async () => {
+  const dir = repoConMarcas(CABECERA + prueba('T1 par @story-9.1'));
+  const llamadas = [];
+  await checker.runMutationCheck({
+    repo: dir, storyPath: path.join(dir, 'story.md'), suiteRuns: [], log: () => {},
+    runTests: (o) => { llamadas.push({ repo: o.repo, nameFilter: o.nameFilter }); return { code: 1, tests: 1 }; },
+  });
+  assert.equal(llamadas.length, 2, 'la base en la copia y la misma corrida en el original');
+  assert.ok(llamadas.every((l) => l.nameFilter && l.nameFilter === llamadas[0].nameFilter), JSON.stringify(llamadas));
+});
+
+test('@story-8.279 @ac-15 T9 Mutation_NodeTest_OnlyStoryTests — el mutante que rompe la carga del archivo es cazado, con el filtro', async () => {
+  // el código nuevo tira al cargar si el mutante da vuelta la condición: el archivo de prueba no llega a correr ninguna
+  const dir = repoConMarcas(CABECERA + prueba('T1 par @story-9.1'));
+  fs.writeFileSync(path.join(dir, 'calc.js'), `${CALC_MARCAS}const LIMITE = 10;\nif (LIMITE === 3) throw new Error('límite');\n`);
+  const r = await checker.runMutationCheck({ repo: dir, storyPath: path.join(dir, 'story.md'), suiteRuns: [], log: () => {} });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.ok(r.result.killed >= 2, `el que rompe la carga cuenta como cazado: ${JSON.stringify(r.result)}`);
+  assert.ok(!r.result.skipped.some((s) => /no corrió ninguna prueba/.test(s.reason || '')), JSON.stringify(r.result.skipped));
+});
+
+test('@story-8.279 @ac-17 T10 Mutation_FilterLeavesNoTests_NotGreen — también con «#» en la ruta y con el resultado ilegible', async () => {
+  // el reportero TAP escapa «#» y «\» en el nombre del archivo: el renglón del archivo sin pruebas se descuenta igual
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mut#marca-'));
+  const dir = path.join(base, 'repo#1');
+  fs.mkdirSync(dir);
+  const t = path.join(dir, 'c.test.js');
+  fs.writeFileSync(t, `${CABECERA}// la marca @story-9.1 sólo en un comentario\n${prueba('par')}`);
+  fs.writeFileSync(path.join(dir, 'calc.js'), CALC_MARCAS);
+  const corrida = await checker.defaultRunTests({ repo: dir, testFiles: [t], nameFilter: checker.storyNamePattern('9.1') });
+  assert.equal(corrida.tests, 0, 'el renglón escapado del archivo no cuenta como prueba');
+  // con el filtro, una base cuyo resultado no dice cuántas corrieron tampoco es verde
+  const d2 = repoConMarcas(CABECERA + prueba('T1 par @story-9.1'));
+  let mutantes = 0;
+  const r = await checker.runMutationCheck({
+    repo: d2, storyPath: path.join(d2, 'story.md'), suiteRuns: [], log: () => {},
+    runTests: ({ mutant }) => { if (mutant) mutantes += 1; return { code: 0, tests: null }; },
+  });
+  assert.equal(r.exitCode, 2);
+  assert.match(r.result.motivo, /^no medido: .*no dice cuántas pruebas corrieron/);
+  assert.equal(mutantes, 0);
+});
+
 test('un git diff que falla contra la base no se lee como «nada agregado»: devuelve null, no []', () => {
   const { repo, base } = repoCommiteado();
   assert.equal(checker.addedLinesOf(repo, 'calc.js', 'f'.repeat(40)), null);
