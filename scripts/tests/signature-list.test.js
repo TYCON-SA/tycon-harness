@@ -805,6 +805,15 @@ test('Lista_Reemplazada_DejaDeContar — @fix-T-207', (t) => {
   pedido(toy, 'adhoc-lane', 8, 30);
   assert.deepStrictEqual(firmasAbiertas(toy), ['ses-a adhoc-lane', 'ses-a adhoc-lane:sobre-cupo']);
 
+  // Lista_FirmaALaMismaHora_NoCierraElPedido: una firma de su clase dada a la misma hora que el pedido tampoco es posterior: el pedido sigue abierto (de más,
+  // nunca de menos); la de otra sesión a la misma hora, menos todavía
+  for (const target of ['ses-a', 'ses-b']) {
+    toy = nueva();
+    pedido(toy, 'adhoc-lane:sobre-cupo', 10, 30);
+    dada(toy, 'adhoc-lane:sobre-cupo', 30, target);
+    assert.deepStrictEqual(firmasAbiertas(toy), ['ses-a adhoc-lane:sobre-cupo'], `firma de ${target} a la misma hora`);
+  }
+
   // una firma de carril sin destino no reemplaza a nadie
   toy = nueva();
   pedido(toy, 'adhoc-lane:sobre-cupo', 10, 30);
