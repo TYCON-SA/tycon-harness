@@ -5642,6 +5642,13 @@ function cmdDoing(sub, arg) {
   appendLog('doing.log', { kind: 'DOING_SET', ...(text ? { text } : {}), ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
   if (endAt) warnPastUntil('doing', endAt);
   process.stdout.write(`doing: ${text || `la historia ${run.storyId}`}${endAt ? ` (termina ${process.argv[u + 1]})` : waitingFor ? ` (espera ${waitingFor})` : ''}\n`);
+  // quien espera a la coordinadora suele dejar la pregunta en su pestaña, que ella no lee. Sin poder leer la designación
+  // se recuerda igual: sobra una línea, no se pierde un pedido
+  if (waitingFor && /coordinadora|coordinator/i.test(waitingFor)) {
+    let designada = null;
+    try { designada = require('./lib/plan-review.js').designadaDeVerdad(STATE_DIR); } catch (_e) { designada = null; }
+    if (designada !== SID) process.stdout.write('doing: la coordinadora no lee tu pestaña: si todavía no le mandaste el pedido, mandáselo por mensaje, con lo que necesita para contestar\n');
+  }
 }
 
 function cmdAdhocClearOrphan(sid) {
