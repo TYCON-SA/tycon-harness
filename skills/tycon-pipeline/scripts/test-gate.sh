@@ -1079,10 +1079,10 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # --- Repetir solas cierra (story 8.208), y lo guardado de una completa verde ---
   # Después de una completa roja, con sus rojas repetidas solas en verde, la completa no se vuelve a correr entera: si la
   # carpeta no cambió desde la completa ni desde cada repetición, cierra con lo guardado (la carpeta no cambió); si cambió
-  # entre la completa y las repeticiones, corren sólo las suites que leen lo cambiado. Si cambió después de alguna
-  # repetición, o con cualquier duda (otra base, otro recorte, la lista de suites cambiada, lo guardado tocado), corre la
-  # completa como siempre. Después de una completa verde, lo mismo contra ella: siempre contra la completa de origen, nunca
-  # contra la última acotada; un cambio en un control, el instalador, lo compartido o la lista de suites, u otra historia,
+  # desde la completa (también por main traído), corren sólo las suites que leen lo cambiado, y cada repetida cuya
+  # carpeta cambió después de repetirla vuelve a correr. Con cualquier duda (otro recorte, la lista de suites cambiada, lo
+  # guardado tocado), corre la completa como siempre. Después de una completa verde, lo mismo contra ella: siempre contra
+  # la completa de origen, nunca contra la última acotada; un cambio en un control, el instalador, lo compartido o la lista de suites, u otra historia,
   # corre la completa como siempre. Sólo en un repo que acota el portón (la completa la corre después la CI del pedido) o
   # en el árbol armado del privado (ahí la comparación es por repo). Lo guardado lo escriben `marker.js tests-failed
   # save-red` y `save-green`, al final de una completa.

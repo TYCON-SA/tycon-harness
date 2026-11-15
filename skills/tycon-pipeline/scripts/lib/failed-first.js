@@ -60,11 +60,12 @@ function prune(lista, suitesJson) {
 // y su base y su recorte. Cada repetición verde con `--suite` suma su resultado con la foto de su carpeta. Cuando la lista
 // queda vacía, la próxima completa pregunta a `decide`:
 //   · `same`    — la carpeta es la de la completa y la de cada repetición: no corre nada, `merge` arma el resumen;
-//   · `changed` — la carpeta cambió entre la completa y las repeticiones: corren las suites que leen esos archivos, y
-//                 `merge` las junta con lo guardado;
-//   · `full`    — no se puede comparar; cambió la base, el recorte o la lista de suites; la carpeta cambió después de
-//                 alguna repetición (un arreglo deshecho, o un cambio más); o lo cambiado vuelve a hacer correr una suite
-//                 que la completa difirió por sus carpetas o por el grupo del instalador: la completa como siempre.
+//   · `changed` — la carpeta cambió desde la completa (también por main traído): corren las suites que leen esos
+//                 archivos y, en `rerun`, cada repetida cuya carpeta cambió después de repetirla (un arreglo deshecho
+//                 vuelve a dar rojo); `merge` las junta con lo guardado, reconociendo cada suite por su entrada;
+//   · `full`    — no se puede comparar; cambió el recorte o la lista de suites; lo cambiado toca un control, el
+//                 instalador o lo compartido (con lo guardado verde, en el árbol armado o con main traído); o vuelve a
+//                 hacer correr una suite que la completa difirió por sus carpetas o por el grupo del instalador.
 // La cobertura juntada es la de la completa (sin los archivos cambiados después, que se midieron sobre el código viejo)
 // más la de cada repetición y la de lo que corrió por lo cambiado.
 const crypto = require('crypto');
