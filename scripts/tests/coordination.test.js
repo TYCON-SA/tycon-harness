@@ -1881,6 +1881,16 @@ test('T9 AdversarialTurn_Running_StillInFlight @story-8.277 @ac-12 @ac-21: sin r
   }
   // un nombre de sólo puntos no arma una ruta
   assert.strictEqual(C.passFinished({ home: toy().home, sessionId: '..', runId: 'wf_x' }), false);
+  // la carpeta de los proyectos que no se puede leer: en vuelo, y se dice
+  const t = toy();
+  fs.writeFileSync(path.join(claudeDir(t.home), 'projects'), 'no es una carpeta');
+  const said = [];
+  const write = process.stderr.write;
+  process.stderr.write = (s) => { said.push(String(s)); return true; };
+  let fin;
+  try { fin = C.passFinished({ home: t.home, sessionId: 'otra-2', runId: 'wf_x' }); } finally { process.stderr.write = write; }
+  assert.strictEqual(fin, false);
+  assert.match(said.join(''), /no pude leer .*projects .*el pase wf_x cuenta como en vuelo/);
 });
 
 // 🔴 mutación: tomar el reporte de la corrida como señal suelta el turno con un pase que todavía escribe.

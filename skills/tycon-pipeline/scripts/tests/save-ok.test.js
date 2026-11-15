@@ -969,12 +969,27 @@ test('SaveOk_NoCompanionOrMissing_AsToday @story-8.277 @ac-14 @ac-15: sin herman
   for (const [como, armar] of casos) {
     const p = armar();
     for (const story of [p.story, undefined]) {
-      const r = SO.controlesDelCommit({ repos: [p.priv], story });
+      const said = [];
+      const write = process.stderr.write;
+      process.stderr.write = (s) => { said.push(String(s)); return true; };
+      let r;
+      try { r = SO.controlesDelCommit({ repos: [p.priv], story }); } finally { process.stderr.write = write; }
       assert.strictEqual(r.codigo, 2, `${como}: frena como hoy, porque el instalado no trae el guion`);
       assert.deepStrictEqual(p.uso(), { dir: p.instalado, variable: 'sin-variable' }, como);
+      // el hermano declarado que no está se dice: «no está» no se lee igual que «no hay»
+      if (como === 'el hermano declarado y no en disco') assert.match(said.join(''), /el hermano declarado .*no-existe-este-publico-8277.* no está en disco: .*arnés instalado/, como);
     }
     if (p.pub) assert.ok(!fs.existsSync(path.join(p.pub, '.git', 'FETCH_HEAD')), `${como}: nada se trajo de la red`);
   }
+  // una búsqueda del público que falla (acá, una historia que no es una ruta) no es «sin hermano»: corre con el
+  // instalado, y se dice
+  const roto = privadoConGancho(t);
+  const said = [];
+  const write = process.stderr.write;
+  process.stderr.write = (s) => { said.push(String(s)); return true; };
+  try { SO.controlesDelCommit({ repos: [roto.priv], story: 42 }); } finally { process.stderr.write = write; }
+  assert.strictEqual(roto.uso().dir, roto.instalado);
+  assert.match(said.join(''), /no pude buscar el público de la historia para .*: sus controles corren con el arnés instalado/);
   // el público de la historia sin el guion: frena, y usó ese público
   const pub = publico(t, { x: false });
   const p = privadoConGancho(t, { declara: `../${path.basename(pub)}` });
