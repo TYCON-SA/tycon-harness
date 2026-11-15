@@ -165,14 +165,19 @@ function escribirDeUnaVez(archivo, texto) {
   fs.renameSync(tmp, archivo);
 }
 
-/** El marcador abierto de una sesión: null si no existe; lanza si existe y no se puede leer. */
+const esObjeto = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+
+/** El marcador abierto de una sesión: null si no existe; lanza si existe y no se puede leer o no es un objeto. */
 function marcadorDe(estado, sid) {
   let texto;
   try { texto = fs.readFileSync(path.join(estado, 'active', `${sid}.json`), 'utf8'); } catch (e) {
     if (e.code === 'ENOENT') return null;
     throw new Error(`no pude leer el marcador de la sesión ${sid} (${e.code || e.message})`);
   }
-  try { return JSON.parse(texto); } catch (e) { throw new Error(`no pude leer el marcador de la sesión ${sid} (${e.message})`); }
+  let m;
+  try { m = JSON.parse(texto); } catch (e) { throw new Error(`no pude leer el marcador de la sesión ${sid} (${e.message})`); }
+  if (!esObjeto(m)) throw new Error(`no pude leer el marcador de la sesión ${sid} (no es un marcador)`);
+  return m;
 }
 
 function storyDe(marker) {
@@ -354,6 +359,45 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
     huellaPlan: pedido.huellas.plan, hallazgos: constancia.hallazgos.length, notas: constancia.notas.length, corrida: pedido.corrida, informativa: !!pedido.informativa,
   }, ahora);
   return reintentar ? { ...constancia, reintentar: true } : constancia;
+}
+
+/**
+ * Las revisiones que `lanza` preparó sobre el plan de otra sesión y cuyo plan cambió después: `{ viejas, problemas }`.
+ * Cada vieja es `{ destino, hora, storyId }`. No cuenta un pedido de una corrida que ya no es la abierta del destino ni el
+ * de un plan ya aprobado; un pedido, un marcador o un plan que no se pueden leer van a `problemas`, nunca como «igual».
+ */
+function revisionesViejas({ estado, lanza }) {
+  const viejas = [];
+  const problemas = [];
+  let archivos;
+  try { archivos = fs.readdirSync(carpetaDe(estado, lanza)); } catch (e) {
+    if (e.code !== 'ENOENT') problemas.push(`las revisiones del plan preparadas (${e.code || e.message})`);
+    return { viejas, problemas };
+  }
+  for (const f of archivos.filter((x) => x.endsWith('.pending.json')).sort()) {
+    const dest = f.slice(0, -'.pending.json'.length);
+    if (dest === lanza) continue;
+    let pedido;
+    try { pedido = JSON.parse(fs.readFileSync(path.join(carpetaDe(estado, lanza), f), 'utf8')); } catch (e) {
+      problemas.push(`el pedido de revisión del plan ${dest} (${e.code || e.message})`);
+      continue;
+    }
+    // un pedido con otra forma no se puede comparar: sin corrida no se sabe si es de la abierta
+    if (!esObjeto(pedido)) { problemas.push(`el pedido de revisión del plan ${dest} (no es un pedido)`); continue; }
+    if (!esObjeto(pedido.corrida)) { problemas.push(`el pedido de revisión del plan ${dest} (sin la corrida)`); continue; }
+    let marker;
+    try { marker = marcadorDe(estado, dest); } catch (e) { problemas.push(e.message); continue; }
+    if (!marker || !mismaCorrida(pedido.corrida, corridaDe(marker))) continue;
+    if (require('./steps.js').isDone(marker, 'approve-plan')) continue;
+    if (!esObjeto(pedido.huellas) || !pedido.huellas.plan) { problemas.push(`el pedido de revisión del plan ${dest} (sin la huella del plan)`); continue; }
+    let texto;
+    try { texto = fs.readFileSync(pedido.planFile, 'utf8'); } catch (e) {
+      problemas.push(`el plan de la revisión del plan de ${dest} (${e.code || e.message})`);
+      continue;
+    }
+    if (sha(texto) !== pedido.huellas.plan) viejas.push({ destino: dest, hora: pedido.hora, storyId: pedido.storyId });
+  }
+  return { viejas, problemas };
 }
 
 const CAMPOS = ['veredicto', 'lanzo', 'destino', 'corrida', 'storyId', 'huellas', 'delicate', 'hora'];
@@ -655,5 +699,5 @@ module.exports = {
   rutaResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, huellaDe, designadaDeVerdad, sha,
-  tieneRenglon, parteDe, problemaDelAprobador, esProblemaDelAprobador,
+  tieneRenglon, parteDe, problemaDelAprobador, esProblemaDelAprobador, revisionesViejas,
 };
