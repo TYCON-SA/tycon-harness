@@ -589,5 +589,5 @@ function huellaDelCarril(adhoc, medida) {
 /** ¿La huella sirve para una constancia? Una incompleta, no. */
 const huellaCompleta = (h) => typeof h === 'string' && !h.startsWith('incompleta:');
 
-module.exports = { traerBase, conBase, conBasesAlDia, mismoOrigen, repoConoce, medirLoPropio, rutasDe, reposQueSeMiden, marcaSinSustento,
+module.exports = { traerBase, conBase, conBasesAlDia, mismoOrigen, formaDeLaRemota, repoConoce, medirLoPropio, rutasDe, reposQueSeMiden, marcaSinSustento,
   reposDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, raizDe, ubicar, sumaAlTope, RAMA };
