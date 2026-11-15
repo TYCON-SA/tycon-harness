@@ -2311,6 +2311,101 @@ withWaiverLog(() => {
   }
 }
 
+// El código que cargan las pruebas de la historia (8.282): una prueba con `@story-9.9 @ac-N` que carga con un `require`
+// literal un archivo fuera de la lista vence sus criterios cuando ese archivo cambia después de la evidencia, como la
+// regla 6; uno que no cambió no vence nada. Un `require` que no se puede leer deja la vigencia como antes y lo dice.
+{
+  const { execFileSync } = require('child_process');
+  const HACE_UNA_HORA = new Date(Date.now() - 60 * 60 * 1000);
+  const labCarga = (cargaDeLaPrueba = "require('../lib/x.js')", marcas = '@story-9.9 @ac-2') => {
+    const f = makeWorkspace({ listaArchivos: ['files_to_modify:', '  - src/Feature.cs', '  - tests/feature.test.js', '  - tests/otra.test.js'] });
+    fs.rmSync(path.join(f.repo, '.git'), { recursive: true, force: true });
+    const env = { ...process.env, GIT_AUTHOR_DATE: '2026-11-08T10:00:00Z', GIT_COMMITTER_DATE: '2026-11-08T10:00:00Z' };
+    const git = (...a) => execFileSync('git', ['-C', f.repo, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { stdio: 'ignore', env });
+    const st = fs.readFileSync(f.storyPath, 'utf8').split('## Acceptance Criteria')[0];
+    fs.writeFileSync(f.storyPath, [st, '## Acceptance Criteria', '',
+      ...[1, 2, 3].map((n) => `${n}. **Given** algo ${n}, **When** pasa, **Then** resultado ${n}.`), '',
+      '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|',
+      '| T1 | `FeatureTests.Caso1` | 1,2,3 | integration | x | y |', ''].join('\n'));
+    const prueba = path.join(f.repo, 'tests', 'feature.test.js');
+    const otra = path.join(f.repo, 'tests', 'otra.test.js');
+    const cargado = path.join(f.repo, 'lib', 'x.js');
+    const ayuda = path.join(f.repo, 'tests', 'ayuda.js');
+    for (const p of [prueba, cargado]) fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(prueba, `${cargaDeLaPrueba};\nrequire('./ayuda.js');\nrequire('node:assert');\ntest('caso ${marcas}', () => {});\n`);
+    fs.writeFileSync(otra, "test('otro @story-9.9 @ac-1', () => {});\n");
+    fs.writeFileSync(cargado, 'module.exports = 1;\n');
+    fs.writeFileSync(ayuda, 'module.exports = 1;\n');
+    git('init', '-q', '-b', 'main');
+    git('add', '.');
+    git('commit', '-qm', 'inicio');
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git('switch', '-q', '-c', 'feature/9-9-fixture');
+    for (const p of [f.codeFile, prueba, otra, cargado, ayuda]) fs.utimesSync(p, HACE_UNA_HORA, HACE_UNA_HORA);
+    writeMirroredSmoke(f.dodDir, f.gatesLog, '9.9', [1, 2, 3]);
+    git('add', '.');
+    git('commit', '-qm', 'el humo');
+    const ahora = (p, txt) => { fs.writeFileSync(p, txt); const d = new Date(Date.now() + 1000); fs.utimesSync(p, d, d); };
+    // un cambio commiteado por otra historia: su rama fusionada con el asunto de un pedido
+    const deOtraHistoria = (p, txt) => {
+      git('switch', '-q', '-c', 'story/9-8-otra');
+      ahora(p, txt);
+      git('commit', '-qam', 'otra historia');
+      git('switch', '-q', 'feature/9-9-fixture');
+      git('merge', '-q', '--no-ff', '-m', 'Merge pull request 77 from story/9-8-otra into feature/9-9-fixture', 'story/9-8-otra');
+    };
+    const calcular = () => rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, testsResults: [] });
+    return { f, cargado, ayuda, ahora, deOtraHistoria, calcular };
+  };
+  const veredictos = (r) => r.acs.map((n) => `${n}:${r.perAc[n].verdict}`).join(' ');
+  const NO_PUDE = /no pude leer lo que carga tests\/feature\.test\.js: vigencia por la lista de la historia/;
+  {
+    const cambia = labCarga();
+    cambia.ahora(cambia.cargado, 'module.exports = 2;\n');
+    const r = cambia.calcular();
+    const fila = (r.perAc[2].vencioPor || []).join(' ');
+    const sigue = labCarga().calcular();
+    const otra = labCarga();
+    otra.deOtraHistoria(otra.ayuda, 'module.exports = 3;\n');
+    const rOtra = otra.calcular();
+    // `require('..')` es relativo (carga ../index.js); un `require(` en un comentario no se traga al literal que sigue
+    const punto = labCarga("require('..')");
+    punto.ahora(path.join(punto.f.repo, 'index.js'), 'module.exports = 2;\n');
+    const rPunto = punto.calcular();
+    const comentario = labCarga("// se carga con require (ver abajo\nrequire('../lib/x.js')");
+    comentario.ahora(comentario.cargado, 'module.exports = 2;\n');
+    const rComentario = comentario.calcular();
+    check('Matriz_CodigoQueCargaLaPruebaCambio_Vence @story-8.282 @ac-10 @ac-11 @ac-28',
+      veredictos(r) === '1:RUNTIME 2:NOT-RUN 3:RUNTIME'
+        && /venció por lib\/x\.js, que carga tests\/feature\.test\.js/.test(fila)
+        && veredictos(sigue) === '1:RUNTIME 2:RUNTIME 3:RUNTIME'
+        && veredictos(rOtra) === '1:RUNTIME 2:NOT-RUN 3:RUNTIME'
+        && /venció por tests\/ayuda\.js, que carga tests\/feature\.test\.js/.test((rOtra.perAc[2].vencioPor || []).join(' '))
+        && veredictos(rPunto) === '1:RUNTIME 2:NOT-RUN 3:RUNTIME' && /venció por index\.js/.test((rPunto.perAc[2].vencioPor || []).join(' '))
+        && veredictos(rComentario) === '1:RUNTIME 2:NOT-RUN 3:RUNTIME',
+      JSON.stringify({ r: veredictos(r), fila, sigue: veredictos(sigue), otra: veredictos(rOtra), filaOtra: rOtra.perAc[2].vencioPor,
+        punto: veredictos(rPunto), comentario: veredictos(rComentario), w: r.warnings.slice(0, 3) }));
+  }
+  {
+    const variable = labCarga("const ruta = '../lib/x.js';\nrequire(ruta)");
+    variable.ahora(variable.cargado, 'module.exports = 2;\n');
+    const r = variable.calcular();
+    const avisos = r.warnings.filter((w) => NO_PUDE.test(w));
+    const plantilla = labCarga('require(`../lib/${"x"}.js`)').calcular();
+    const noResuelve = labCarga("require('../lib/no-existe.js')").calcular();
+    // sin pruebas con marcas de la historia: como antes, sin aviso
+    const sinMarcas = labCarga("require('../lib/x.js')", '');
+    sinMarcas.ahora(sinMarcas.cargado, 'module.exports = 2;\n');
+    const rSin = sinMarcas.calcular();
+    check('Matriz_CargaNoLiteral_ComoHoyYLoDice @story-8.282 @ac-12',
+      veredictos(r) === '1:RUNTIME 2:RUNTIME 3:RUNTIME' && avisos.length === 1
+        && plantilla.warnings.filter((w) => NO_PUDE.test(w)).length === 1
+        && noResuelve.warnings.filter((w) => NO_PUDE.test(w)).length === 1
+        && veredictos(rSin) === '1:RUNTIME 2:RUNTIME 3:RUNTIME' && !rSin.warnings.some((w) => /no pude leer lo que carga/.test(w)),
+      JSON.stringify({ v: veredictos(r), avisos, w: r.warnings.slice(0, 4), sin: rSin.warnings.slice(0, 3) }));
+  }
+}
+
 // La captura de un portón E2E vencido para un criterio no cuenta para ese criterio: la captura es evidencia del mismo
 // portón. Laboratorio: el portón pasa con su captura del criterio 3 (de pantalla), la historia corrige la prueba que
 // nombra el 3, y un humo sin captura corre los criterios 1 y 3. Sin el portón, el 3 queda sin evidencia: con el portón

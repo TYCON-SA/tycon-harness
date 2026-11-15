@@ -316,6 +316,45 @@ function isDir(d) { try { return fs.statSync(d).isDirectory(); } catch { return 
 function isFile(f) { try { return fs.statSync(f).isFile(); } catch { return false; } }
 function mtimeMs(f) { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }
 
+/**
+ * El código que cargan las pruebas de la historia, un nivel: por cada prueba de `codeFiles` que nombra
+ * `@story-<sid>`, los `require('./…')` y `require('../…')` literales que caen en un archivo que no está en la lista, con
+ * los criterios que esa prueba nombra (`@ac-N`; sin ninguno, null: vence la evidencia entera). Los de paquetes no se
+ * miran. Una prueba ilegible, un `require` que no es un texto literal o uno relativo que no resuelve a un archivo dejan
+ * esa prueba juzgada sólo por la lista, y se dice una vez por prueba en `warnings`.
+ */
+function codigoQueCarganLasPruebas(codeFiles, sid, warnings) {
+  const { isTestPath } = require('./lib/atdd-order.js');
+  const marca = new RegExp(`@story-${String(sid).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.])`);
+  const enLaLista = new Set(codeFiles.map((f) => path.resolve(f.abs)));
+  const esArchivo = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+  const out = [];
+  for (const f of codeFiles) {
+    if (!isTestPath(f.abs)) continue;
+    const noPude = () => warnings.push(`no pude leer lo que carga ${f.rel}: vigencia por la lista de la historia`);
+    let texto;
+    try { texto = fs.readFileSync(f.abs, 'utf8'); } catch (_) { noPude(); continue; }
+    if (!marca.test(texto)) continue;
+    const criterios = [...new Set([...texto.matchAll(/@ac-(\d+)\b/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+    // la raíz desde la que se nombra la prueba: la ruta del aviso del archivo cargado se cuenta desde la misma
+    const raiz = f.abs.endsWith(f.rel) ? f.abs.slice(0, -f.rel.length) : path.dirname(f.abs);
+    // un `require(` en un comentario no es una carga: se leen los literales del texto entero, y lo no literal sin comentarios
+    const sinComentarios = texto.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+    let dudosa = /\brequire\s*\(\s*[^'"\s)]/.test(sinComentarios);
+    for (const m of texto.matchAll(/\brequire\s*\(\s*(['"])([^'"\n]*)\1\s*\)/g)) {
+      // relativo: `./…`, `../…`, y también `.` y `..` solos (cargan su index.js)
+      if (!/^\.\.?(\/|$)/.test(m[2])) continue;
+      const base = path.resolve(path.dirname(f.abs), m[2]);
+      const destino = [base, `${base}.js`, `${base}.json`, path.join(base, 'index.js')].find(esArchivo);
+      if (!destino) { dudosa = true; continue; }
+      if (enLaLista.has(destino)) continue;
+      out.push({ abs: destino, rel: path.relative(raiz, destino), mt: mtimeMs(destino), prueba: f.rel, criterios: criterios.length ? criterios : null });
+    }
+    if (dudosa) noPude();
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- evidence readers
 
 // Artefactos de e2e-gate.sh: `<sid>-e2e-gate-<ts>.md` con `verdict=PASS` + `**Spec filter**: X`.
@@ -1303,10 +1342,12 @@ function compute(opts) {
     const copia = companionLib.real(enRama[i]);
     if (copia !== declarado) copiaDe.set(declarado, copia);
   });
-  // sin copia aparte, el declarado que está él mismo en la rama de la historia (o en una que nombra su número) es su copia
+  // sin copia aparte, el declarado que está él mismo en la rama de la historia (o en una que nombra su número) es su copia.
+  // `main` no nombra a ninguna historia: un declarado en `main` es su copia sólo al día con su origin/main y limpio
   const enSuRama = (r) => {
     const suya = companionLib.ramaDe(r);
-    return Boolean(suya && ((rama && suya === rama) || companionLib.ramaNombraLaStory(suya, numeroDeLaHistoria)));
+    const mismaRama = rama && suya === rama && (rama !== 'main' || companionLib.mainAlDia(r));
+    return Boolean(suya && (mismaRama || companionLib.ramaNombraLaStory(suya, numeroDeLaHistoria)));
   };
   const sinCopia = evCfg.roots.map((r) => companionLib.real(r)).filter((r) => !copiaDe.has(r) && !enSuRama(r));
   const dentroDe = (p, raiz) => p === raiz || p.startsWith(raiz.endsWith(path.sep) ? raiz : raiz + path.sep);
@@ -1352,6 +1393,7 @@ function compute(opts) {
       if (mt > kindMtime[kind]) kindMtime[kind] = mt;
     }
   }
+  const cargados = codigoQueCarganLasPruebas(codeFiles, sid, warnings);
   if (deTandaBloqueada.length) {
     warnings.push(`Todavía sin crear, de una tanda bloqueada: ${deTandaBloqueada.map((d) => `${d.rel} (${d.tandas.join(', ')})`).join(' · ')}. ` +
       'No anulan la evidencia; vuelven a contar cuando su tanda deje de estar bloqueada.');
@@ -1387,6 +1429,19 @@ function compute(opts) {
         if (!r.cuenta) { v = { ...r, rel: f.rel, sinCopia: f.sinCopia }; break; }
         if (r.via === 'fusion-propia' || r.regla === 6) contadas.push({ ...r, rel: f.rel });
       }
+      // lo que cargan las pruebas de la historia vence los criterios de la prueba que lo carga, como la regla 6. Un ayudante
+      // de pruebas que sólo cambió otra historia la regla 6 lo da por vigente: para lo que carga una prueba, cambió igual
+      if (v.cuenta) {
+        for (const c of cargados) {
+          const r = juez.vigencia({ archivo: c.abs, mtimeMs: c.mt, evidencia });
+          if (r.cuenta && !(r.regla === 6 && r.historia)) continue;
+          if (!c.criterios) {
+            v = r.cuenta ? { cuenta: false, regla: 6, motivo: 'cambio-posterior', commit: r.commit, rel: c.rel } : { ...r, rel: c.rel };
+            break;
+          }
+          porCriterio.push({ criterios: c.criterios, rel: c.rel, carga: c.prueba });
+        }
+      }
       const vencidos = new Map();
       if (v.cuenta) for (const p of porCriterio) for (const n of p.criterios) if (!vencidos.has(n)) vencidos.set(n, p);
       vigencias.set(ev, { ...v, contadas: v.cuenta ? contadas : [], vencidos });
@@ -1403,7 +1458,7 @@ function compute(opts) {
     if (!p) return null;
     const lista = p.criterios.length === 1 ? `el criterio ${p.criterios[0]}`
       : `los criterios ${p.criterios.slice(0, -1).join(', ')} y ${p.criterios[p.criterios.length - 1]}`;
-    return `venció por ${p.rel}, que prueba ${lista}`;
+    return p.carga ? `venció por ${p.rel}, que carga ${p.carga} (prueba ${lista})` : `venció por ${p.rel}, que prueba ${lista}`;
   };
   // Un archivo de un hermano que no tiene copia en la rama de la historia se juzga en el declarado: el aviso dice contra
   // qué se comparó y qué se buscó, porque puede ser el clon compartido, sin el código de la historia. «No tomé» y no «no

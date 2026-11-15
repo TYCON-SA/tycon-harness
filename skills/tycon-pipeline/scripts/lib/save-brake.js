@@ -400,7 +400,7 @@ function exportar(ctx, nombre) {
 // los intérpretes que corren un programa recibido por la entrada (un heredoc)
 const INTERPRETES = /^(python[\d.]*|pypy[\d.]*|node|nodejs|deno|bun|ruby|irb|perl|php|lua|tclsh|osascript|pwsh|powershell|rscript|swift|groovy|jshell|ts-node|tsx)$/;
 // los nombres que el shell entiende sin buscarlos en el PATH
-const DEL_SHELL = new Set(['cd', 'pushd', 'popd', 'dirs', 'echo', 'printf', 'print', 'read', 'set', 'unset', 'export', 'source', '.', 'type', 'test',
+const DEL_SHELL = new Set(['cd', 'chdir', 'pushd', 'popd', 'dirs', 'echo', 'printf', 'print', 'read', 'set', 'unset', 'export', 'source', '.', 'type', 'test',
   '[', '[[', 'local', 'declare', 'typeset', 'readonly', 'return', 'exit', 'shift', 'trap', 'wait', 'kill', 'jobs', 'fg', 'bg', 'disown', 'pwd',
   'umask', 'ulimit', 'hash', 'rehash', 'history', 'fc', 'let', 'true', 'false', ':', 'getopts', 'break', 'continue', 'alias', 'unalias', 'setopt',
   'unsetopt', 'autoload', 'whence', 'where', 'which', 'emulate', 'zmodload', 'bindkey', 'compdef', 'eval', 'exec', 'command', 'builtin',
@@ -537,7 +537,8 @@ function porComando(command, cuerpo, depth = 0, ctx = nuevoCtx([process.cwd()], 
     if (cmd === 'set' && ps.slice(1).some((x) => /^-\w*a/.test(x) || x === 'allexport')) { ctx.exportarTodo = true; return cierra; }
     if (MUEVEN.has(cmd) && depth > 0 && ctx.movidas) ctx.movidas.push(depth);
     if (cmd === 'pushd') { ctx.pila = [...(ctx.pila || []), [...ctx.dirs]]; moverCarpeta(ctx, ps); return cierra; }
-    if (cmd === 'cd') { moverCarpeta(ctx, ps); return cierra; }
+    // `chdir` es el `cd` de zsh
+    if (cmd === 'cd' || cmd === 'chdir') { moverCarpeta(ctx, ps); return cierra; }
     // `popd` vuelve a la carpeta que dejó su `pushd`; sin él, el lector no asegura la carpeta (carpetaSegura)
     if (cmd === 'popd') { if (ctx.pila && ctx.pila.length) { ctx.dirs = ctx.pila[ctx.pila.length - 1]; ctx.pila = ctx.pila.slice(0, -1); } return cierra; }
     if (cmd === 'alias') { dudar(); return cierra; }
@@ -822,9 +823,9 @@ function rutasEscritas(args, dirs) {
   return out;
 }
 
-// los comandos que mueven la carpeta del shell
-const MUEVEN = new Set(['cd', 'pushd', 'popd']);
-const MUEVE_ADENTRO = /(\$\(|`|<\(|>\(|\(|\{)\s*(cd|pushd|popd)(\s|$|\))/;
+// los comandos que mueven la carpeta del shell (`chdir`, el `cd` de zsh)
+const MUEVEN = new Set(['cd', 'chdir', 'pushd', 'popd']);
+const MUEVE_ADENTRO = /(\$\(|`|<\(|>\(|\(|\{)\s*(cd|chdir|pushd|popd)(\s|$|\))/;
 /**
  * ¿El lector asegura la carpeta donde corre cada guardado? Sólo si cada `cd`, `pushd` o `popd` está en la cadena inicial
  * del comando, unida por `&&` o `;` y no seguida de `|` o `&`, y cada `popd` tiene su `pushd`. Un `cd` después de otro
@@ -893,8 +894,13 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
       else if (p) guardar({ tipo: 'pr', forma: p.forma, dir: ctx.dirs[0] });
       return;
     }
-    // un programa que corre git por su cuenta
-    if (!INOFENSIVOS.has(cmd) && nombraUnGuardado(ps.slice(1))) { opaco(ctx.dirs[0]); return; }
+    // un programa que corre git por su cuenta. Si además cambia de carpeta por su cuenta (`process.chdir`, `os.chdir`,
+    // `Dir.chdir`), el lector no sabe dónde guarda: lo dice con una duda
+    if (!INOFENSIVOS.has(cmd) && nombraUnGuardado(ps.slice(1))) {
+      if (ps.slice(1).some((w) => /\bchdir\s*\(/.test(w))) ctx.dudar();
+      opaco(ctx.dirs[0]);
+      return;
+    }
     // un programa que no se encuentra (ni del shell, ni en el PATH, ni alias o función de la sesión) y dice guardar
     if (noSeEncuentra(ps[0], ctx.home, ctx.dirs[0]) && ps.slice(1).some((w) => PARECE_GUARDAR.has(w))) { ctx.dudar(); return; }
     // los que cambian archivos antes de un commit o un push

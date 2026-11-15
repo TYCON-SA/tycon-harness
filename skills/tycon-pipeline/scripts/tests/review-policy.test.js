@@ -9,6 +9,10 @@
 //   · el dueño está ausente con la marca puesta, o cuando la pregunta lleva los minutos sin respuesta.
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
 
 const P = require('../lib/review-policy.js');
 
@@ -192,4 +196,39 @@ test('ReviewPolicy_RoutineApproval_KeyAliasAndBadValue (T23) @story-8.267 @ac-18
   assert.strictEqual(ap({ coordinator: false }), 'session');
   assert.strictEqual(ap({ delicate: true }), 'owner');
   assert.strictEqual(ap({}, viejo.values), 'owner');
+});
+
+test('ReviewPolicy_DelicadaSinCodigo_NoCorre @story-8.282 @ac-13 @ac-14 @ac-28 — sin código no hay pase; con otro criterio o con código, como antes', () => {
+  const base = { delicate: true, codeFiles: 0, onlyDocs: true, normalByOtherCriterion: false, dense: false, ownerAway: false };
+  // 0 archivos que cuente code-files, pero no todo es documentación (instrucciones del agente, un .yml): corre como antes
+  assert.strictEqual(P.codeReview({ ...base, onlyDocs: false, config: cfg() }).decision, 'run');
+  assert.strictEqual(P.codeReview({ ...base, onlyDocs: undefined, config: cfg() }).decision, 'run');
+  // el portón entero: una delicada que toca sólo eso no se saltea por «sin código»
+  const pipeline = require('../pipeline.js');
+  for (const archivo of ['skills/x/SKILL.md', 'pipelines/azure-pipelines.yml', '.githooks/pre-commit']) {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-sin-codigo-'));
+    try {
+      spawnSync('git', ['-C', repo, 'init', '-q', '-b', 'feature/9-9-x']);
+      fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+      const story = path.join(repo, 'specs', 'story-9.9-x.md');
+      fs.writeFileSync(story, ['---', 'story: 9.9', 'status: in-progress', 'files_to_modify:', `  - ${archivo}`, '---', '',
+        '## Acceptance Criteria', '', '1. **Given** a **When** b **Then** c.', ''].join('\n'));
+      fs.mkdirSync(path.dirname(path.join(repo, archivo)), { recursive: true });
+      fs.writeFileSync(path.join(repo, archivo), 'x\n');
+      const r = pipeline.computeDeepReviewGate({ story, repo, files: [archivo], filesDeclarado: true, delicate: { value: true, rule: 'prueba', reason: 'delicada' } });
+      assert.strictEqual(r.run, true, `${archivo}: ${r.reason}`);
+      assert.doesNotMatch(String(r.reason), /sin código/, archivo);
+    } finally { fs.rmSync(repo, { recursive: true, force: true }); }
+  }
+  for (const [nombre, o] of [['delicada', {}], ['delicada con ask', { config: cfg({ deep_review: { delicate: 'ask' } }) }], ['dueño ausente', { ownerAway: true }]]) {
+    const r = P.codeReview({ ...base, config: cfg(), ...o });
+    assert.strictEqual(r.decision, 'skip', nombre);
+    assert.match(r.reason, /sin código/, nombre);
+  }
+  // sin alcance declarado (o marcada por otro criterio) llega con 0 y normalByOtherCriterion: decide como grande
+  const otro = P.codeReview({ ...base, normalByOtherCriterion: true, config: cfg() });
+  assert.strictEqual(otro.decision, 'run');
+  assert.doesNotMatch(otro.reason, /sin código/);
+  const conCodigo = P.codeReview({ ...base, codeFiles: 3, config: cfg() });
+  assert.strictEqual(conCodigo.decision, 'run');
 });

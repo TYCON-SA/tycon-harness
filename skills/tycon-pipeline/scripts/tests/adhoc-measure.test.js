@@ -906,3 +906,18 @@ test('T51 Medida_Datos_LeeLaMismaMedida @story-8.190 @ac-2', (t) => {
     assert.ok(archivos.every((f) => /propia\.ts/.test(f)), archivos.join(', '));
   } finally { ss.cargar = cargar; }
 });
+
+// 🔴 Falla con: git que no contesta sobre la carpeta de la sesión tragado en silencio (la medición da verde sin haberla
+// mirado), o una carpeta de la sesión fuera de un repo contada como falla.
+test('SaveBrake_Chdir_Sigue_YFallaDeGitVaAFallas — la carpeta de la sesión @story-8.282 @ac-17', () => {
+  const sesion = '/la/carpeta/de/la/sesion';
+  const medir = (ubicarRuta) => base().reposQueSeMiden({ adhoc: { reason: 'x' }, cs: [], dudas: [1], cwd: sesion, segura: false,
+    raiz: () => null, ubicarRuta });
+  const falla = medir(() => ({ falla: 'git no contestó' }));
+  assert.deepStrictEqual(falla.fallas, [`camino corto: no pude ubicar el repo de ${sesion} (git no contestó)`]);
+  assert.deepStrictEqual(medir(() => ({ fuera: true })).fallas, []);
+  // la raíz que tira: el mismo camino que la carpeta de un guardado
+  const tira = base().reposQueSeMiden({ adhoc: { reason: 'x' }, cs: [], dudas: [1], cwd: sesion, segura: false,
+    raiz: () => { throw new Error('git roto'); }, ubicarRuta: () => ({ falla: 'git roto' }) });
+  assert.strictEqual(tira.fallas.length, 1, JSON.stringify(tira));
+});

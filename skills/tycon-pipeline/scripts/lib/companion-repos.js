@@ -195,9 +195,15 @@ function enLaMismaRama(declarado, rama, numero) {
     ruta: (bloque.match(/^worktree (.+)$/m) || [])[1],
     rama: (bloque.match(/^branch refs\/heads\/(.+)$/m) || [])[1],
   })).filter((w) => w.ruta && esDir(path.join(w.ruta, sub)));
-  const mismoNombre = rama && worktrees.find((w) => w.rama === rama);
-  if (mismoNombre) return elegir(mismoNombre.ruta);
   const nombre = path.basename(declarado);
+  let mismoNombre = rama && worktrees.find((w) => w.rama === rama);
+  // `main` no nombra a ninguna historia: el worktree en `main` suele ser el checkout compartido. Se elige por el nombre
+  // sólo si está al día con su `origin/main` local y limpio; si no, como si la rama no tuviera nombre
+  if (mismoNombre && rama === 'main' && !mainAlDia(mismoNombre.ruta)) {
+    avisar(`${nombre}: el worktree en main ${real(mismoNombre.ruta)} no está al día con origin/main o tiene cambios: no lo elijo por el nombre de la rama`);
+    mismoNombre = null;
+  }
+  if (mismoNombre) return elegir(mismoNombre.ruta);
   const candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
   if (candidatos.length === 1) {
     const wt = elegir(candidatos[0].ruta);
@@ -213,6 +219,27 @@ function enLaMismaRama(declarado, rama, numero) {
     avisar(`${nombre} se lee del checkout principal ${declarado}, que está en la rama ${propio.rama} (la story está en ${rama}): si el código de la story está en otro worktree, que su rama nombre la story`);
   }
   return declarado;
+}
+
+/**
+ * ¿El checkout en `dir` está en el mismo commit que su `origin/main` local y sin cambios? Sin `fetch`: la elección no
+ * sale a la red. Un repo sin `origin/main` (local, sin nada contra qué comparar) es «sí», como antes. Cualquier otra falla
+ * de git es «no».
+ */
+function mainAlDia(dir) {
+  // sin las variables de git del proceso: dentro de un gancho del commit, `GIT_INDEX_FILE` es el índice de otro repo
+  const env = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre();
+  const correr = (args) => spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
+  const conOrigen = correr(['show-ref', '--verify', '--quiet', 'refs/remotes/origin/main']);
+  // `show-ref --verify --quiet` sale 1 si la referencia no está; otra salida es git que no contestó
+  if (!conOrigen.error && conOrigen.status === 1) return true;
+  if (conOrigen.error || conOrigen.status !== 0) return false;
+  const commits = correr(['rev-parse', 'HEAD', 'refs/remotes/origin/main']);
+  if (commits.error || commits.status !== 0) return false;
+  const [head, origen] = String(commits.stdout || '').trim().split('\n');
+  if (!head || head !== origen) return false;
+  const estado = correr(['status', '--porcelain']);
+  return !estado.error && estado.status === 0 && !String(estado.stdout || '').trim();
 }
 
 /** La raíz git que contiene un archivo o carpeta (la carpeta con `.git`), o null. */
@@ -442,7 +469,7 @@ function anclasDeLaEvidencia(repo, historia) {
 
 module.exports = {
   anclasDeLaEvidencia, nombreDelRepo,
-  companionRoots, ramaDe, enLaMismaRama, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
+  companionRoots, ramaDe, enLaMismaRama, mainAlDia, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, real,
 };
 

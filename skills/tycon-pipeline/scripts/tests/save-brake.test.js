@@ -1745,3 +1745,30 @@ test('8.242-Pase_ComandoQueCambiaElCodigoAntesDeSalir_Frena @story-8.242 @ac-2 @
   abrir(h, corrida(a));
   assert.strictEqual(decide(h, `echo z > app.js && git commit -am x && git push origin ${RAMA}`, a), null);
 });
+
+// 🔴 Falla con: el `chdir` de zsh leído como un programa cualquiera (el guardado queda en la carpeta de la sesión), o un
+// programa que cambia de carpeta por su cuenta antes de guardar sin dejar la duda dicha.
+test('SaveBrake_Chdir_Sigue_YFallaDeGitVaAFallas @story-8.282 @ac-15 @ac-16', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const b = tmp(t, 'freno-chdir-');
+  const leer = (command) => brake().leerComando(command, a, 0, [], h);
+  for (const mueve of ['chdir', 'cd']) {
+    const r = leer(`${mueve} ${b} && git commit -m x`);
+    assert.deepStrictEqual(r.cs.filter((c) => c.tipo === 'commit').map((c) => c.dir), [b], mueve);
+    assert.strictEqual(r.segura, true, mueve);
+    assert.deepStrictEqual(r.dudas, [], mueve);
+  }
+  // en un subshell: el guardado en `b`, la carpeta no asegurada (como antes)
+  const sub = leer(`(chdir ${b} && git commit -m x)`);
+  assert.deepStrictEqual(sub.cs.filter((c) => c.tipo === 'commit').map((c) => c.dir), [b]);
+  assert.strictEqual(sub.segura, false);
+  // un programa que cambia de carpeta por su cuenta y guarda: opaco, y la duda dicha
+  const nodo = leer(`node -e "process.chdir('${b}'); require('child_process').execSync('git commit -m x')"`);
+  assert.ok(nodo.cs.some((c) => c.opaco), JSON.stringify(nodo.cs));
+  assert.ok(nodo.dudas.length > 0, JSON.stringify(nodo));
+  // el mismo programa sin cambiar de carpeta: opaco, como antes, y sin duda
+  const quieto = leer(`node -e "require('child_process').execSync('git commit -m x')"`);
+  assert.ok(quieto.cs.some((c) => c.opaco));
+  assert.deepStrictEqual(quieto.dudas, []);
+});

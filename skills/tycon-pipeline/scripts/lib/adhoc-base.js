@@ -493,6 +493,11 @@ function reposQueSeMiden({ adhoc, cs = [], dudas = [], cwd, segura = true, raiz 
     let r = null;
     try { r = raiz(cwd); } catch (_) { r = null; }
     if (r && !delCarril.includes(r)) delCarril.push(r);
+    // como la de un guardado: git que no contestó sobre la carpeta de la sesión no es «fuera de un repo»
+    if (!r) {
+      const u = ubicarRuta(cwd);
+      if (u.falla) fallas.push(`camino corto: no pude ubicar el repo de ${cwd} (${u.falla})`);
+    }
   }
   return { delCarril, delComando, anotados, fallas };
 }
