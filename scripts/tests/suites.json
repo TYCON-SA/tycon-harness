@@ -1652,6 +1652,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.292, tanda A: con otra sesión en el checkout, start se pausa sin escribir nada (PIPE-C6-own-copy) y own-copy.js crea la copia de la historia; el arnés público y agent-skills no la piden; TYCON_OWN_COPY=0 es llave de la persona. Repos de juguete con un origin local, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-own-copy.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.161: la copia congelada de lo que revisa cada vuelta (sello, copia de sólo lectura, comparación con lo que se guarda) y la procedencia de cada prueba. Repos de juguete en una carpeta temporal, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/frozen-tree.test.js",
@@ -2635,6 +2641,12 @@
       "__nota": "story 8.274: el aviso y el freno de choque entre sesiones cuentan una transcripción por el cwd de su arranque (la raíz o debajo), no por el prefijo de su carpeta: un puesto `…--wt-X` no frena al checkout; sin cwd legible cuenta por la carpeta; Codex, por el cwd de su payload.",
       "raiz": "arnes",
       "ruta": "tests/session-collision-guard.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.292, tanda A: quién más vive en un checkout, por la transcripción (con sus subagentes) y por las corridas abiertas, quietas o en espera; la lib sólo carga fs, path y os.",
+      "raiz": "arnes",
+      "ruta": "tests/live-sessions.test.js",
       "requiere": []
     },
     {
