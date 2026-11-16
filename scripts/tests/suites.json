@@ -604,6 +604,18 @@
       "requiere": []
     },
     {
+      "__nota": "el lector de intenciones (lib/intent.js): filas por columna, vocabularios cerrados, el esquema de IntentSpec copiado y lo que bloquea. Textos y repos de juguete en una carpeta temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/intent.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "lo que story-format.md y la plantilla de la intención dicen coincide con lo que lee lib/intent.js. Sólo lee archivos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/intent-docs.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adversarial-launch.test.js",
       "requiere": []
@@ -1000,6 +1012,12 @@
       "__nota": "story 8.278: el lector de comandos. marker.js y pipeline.js cuentan sólo donde se corren, no donde otro programa los nombra.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/marker-command.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.278: una guía de la lista de un camino corto abierto por delegación se edita, y una fuera de la lista frena; corre el control de antes de editar de verdad con una HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/dispatch-delegated-lane.test.js",
       "requiere": []
     },
     {

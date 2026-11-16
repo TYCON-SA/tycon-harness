@@ -445,3 +445,42 @@ test('GuidedUpdate_LabRun_Auto_ReachesTheNewVersionByItself', { skip: SKIP }, ()
   ]) assert.match(md, said);
   assert.doesNotMatch(md, /no se midió|NO SE PUDO ENSAYAR/, 'nada de lo que esta ejecución midió sale como «no se midió»');
 });
+
+// ═══ T17 · el GitHub de juguete sirve entero lo grande ═══════════════════════════════════════════════════════
+// El árbol de juguete que arma la noche (lo privado con el público encima) pasa de 256 MB sin comprimir: el servidor no
+// puede cortar lo que le lee a git. Un archivo de más de 1 MB (el tope de Node cuando nadie pone otro) alcanza para
+// verlo sin armar un repo de cientos de MB.
+const getBuffer = (url) => new Promise((resolve, reject) => {
+  require('http').get(url, (res) => { const parts = []; res.on('data', (c) => parts.push(c)); res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(parts) })); }).on('error', reject);
+});
+
+test('T17 ToyGitHub_FileOverOneMegabyte_ServedWholeByRawAndCodeload @story-8.268 @ac-13', { skip: SKIP }, async () => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'toy-github-big-'));
+  let gh = null;
+  try {
+    // 2 MB que no se comprimen, siempre los mismos: un generador con semilla fija
+    const big = Buffer.alloc(2 * 1024 * 1024);
+    for (let i = 0, x = 0x2545f491; i < big.length; i++) { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; big[i] = x & 0xff; }
+    const work = path.join(dir, 'work');
+    fs.mkdirSync(work);
+    // con la rama nombrada: raw pide `main`, y un 404 por la rama no sería el del tope
+    assert.strictEqual(git(['init', '-q', '-b', 'main'], work).status, 0);
+    fs.writeFileSync(path.join(work, 'big.bin'), big);
+    assert.strictEqual(git(['add', 'big.bin'], work).status, 0);
+    assert.strictEqual(git(['commit', '-q', '-m', 'big file'], work).status, 0);
+    const sha = git(['rev-parse', 'HEAD'], work).stdout.trim();
+    const bare = path.join(dir, 'big.git');
+    assert.strictEqual(git(['clone', '-q', '--bare', work, bare], dir).status, 0);
+    gh = TL.startGitHub({ dir: path.join(dir, 'server'), bare, org: TOY.org, name: TOY.repo, env: process.env });
+    assert.ok(!gh.problem, gh.problem);
+    const raw = await getBuffer(`${gh.raw}/${TOY.org}/${TOY.repo}/main/big.bin`);
+    assert.strictEqual(raw.status, 200, `raw contestó ${raw.status}: ${raw.body.toString('utf8', 0, 200)}`);
+    assert.ok(raw.body.equals(big), `raw sirvió ${raw.body.length} bytes de ${big.length}`);
+    const tgz = await getBuffer(`${gh.archive}/${TOY.org}/${TOY.repo}/tar.gz/${sha}`);
+    assert.strictEqual(tgz.status, 200, `codeload contestó ${tgz.status}`);
+    assert.ok(require('zlib').gunzipSync(tgz.body).includes(big), 'el comprimido trae el archivo entero');
+  } finally {
+    if (gh && gh.stop) gh.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
