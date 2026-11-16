@@ -2235,7 +2235,7 @@ test('8.289 T7 Guia_LaSesionQueEspera_EnLosDosIdiomas @story-8.289 @ac-10: la re
   const section = (f, from, to) => { const t = fs.readFileSync(f, 'utf8'); return (t.split(from)[1] || '').split(to)[0]; };
   const es = section(GUIDE, '## Las reglas del día a día', '## Qué mide cada regla');
   const en = section(GUIDE_EN, '## The everyday rules', '## What measures each rule');
-  assert.match(es, /\*\*Una sesión que espera \(la CI, la cola o una firma\) no queda quieta\.\*\* La coordinadora le da lo liviano de la fila:\s+papeleo, choques, borradores\. Una historia nueva con pipeline va en una sesión nueva, no en la que espera, que sólo\s+vigila su pedido y se cierra al entrar\. Con dos o más esperando el portón, la coordinadora para las últimas de la fila\s+y reabre una corrida detenida con plan firmado\. Por qué:/);
+  assert.match(es, /\*\*Una sesión que espera \(la CI, la cola o una firma\) no queda quieta\.\*\* La coordinadora le da lo liviano de la fila:\s+papeleo, choques, borradores\. Una historia nueva con pipeline va en una sesión nueva, no en la que espera, que sólo\s+vigila su pedido y se cierra al entrar\. Con dos o más esperando el portón, la coordinadora para las últimas de la fila\s+y reabre una ejecución detenida con plan firmado\. Por qué:/);
   assert.match(en, /\*\*A session that waits \(the CI, the queue or a signature\) does not sit idle\.\*\*[\s\S]*?a new session, not in the one that\s+waits[\s\S]*?reopens a stopped run with a signed plan\. Why:/);
   const fila = (f, regla) => fs.readFileSync(f, 'utf8').split('\n').find((l) => l.startsWith(`| ${regla} |`)) || '';
   assert.match(fila(GUIDE, 'Una sesión que espera recibe lo liviano'), /\| aviso \| El aviso de cada turno de la coordinadora/);
