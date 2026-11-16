@@ -3895,7 +3895,8 @@
     {
       "__nota": "story 8.45: las guías movidas a su nombre en inglés — cada ruta vieja es el reemplazo generado y lleva a la nueva (T4) y git sigue cada guía desde su nombre viejo sin reescribirla (T17). Sin el mapa (la copia pública) dice NO MEDIDO.",
       "raiz": "arnes",
-      "ruta": "tests/guide-links.test.js"
+      "ruta": "tests/guide-links.test.js",
+      "requiere": []
     },
     {
       "__nota": "2026-10-02: qué suites corre el control de cada cambio en Azure (scripts/ci/suites-for-change.js) — las que declaran gate_only_when_touching corren sólo si el cambio toca su carpeta o la suite misma; sin lista de cambios, corre todo.",
