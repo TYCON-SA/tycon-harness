@@ -3000,9 +3000,15 @@
       "requiere": []
     },
     {
-      "__nota": "la pregunta de cada firma dice qué se aprueba (owner-approvals.js cuadroDe, owner-window.js cuadroPara y signature-sources.js): el verbo una vez, la historia con su título, qué hace en hasta 3 líneas, archivos, ruta, su «si sale mal» y la cita al final; el click atado a lo que se mostró. Sin red, unos 18 s (corre de verdad los guiones de cada firma).",
+      "__nota": "la pregunta de cada firma dice qué se aprueba (owner-approvals.js cuadroDe, owner-window.js cuadroPara y signature-sources.js): el verbo una vez, la historia con su título, qué hace en dos renglones, los archivos en cantidad y zonas, dónde está lo completo en palabras, su «si sale mal» y la cita al final, sin rutas absolutas ni «…» y dentro del tope del teléfono (8.275); el click atado a lo que se mostró. Sin red, unos 18 s (corre de verdad los guiones de cada firma).",
       "raiz": "arnes",
       "ruta": "tests/signature-question.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "una lista de archivos dicha en palabras (scripts/lib/file-zones.js zonasDe): cuántos y de qué zonas (código, pruebas, historias, guías, configuración, otros), hasta tres archivos de código por su nombre o sus carpetas, sin rutas. Sin red, milisegundos.",
+      "raiz": "arnes",
+      "ruta": "tests/file-zones.test.js",
       "requiere": []
     },
     {

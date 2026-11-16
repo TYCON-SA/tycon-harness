@@ -2653,9 +2653,9 @@ test('Cuadro_ElMismoComandoDaElMismoCuadro_DesdeLaSesionODesdeLaCoordinadora', (
   assert.match(propia.pregunta, /Qué hace: Abre un arreglo rápido sin historia, con hasta 3 archivos.*Cita de la sesión: «arreglar el aviso»/);
   const otro = ow.cuadroPara({ firma: 'adhoc-lane', palabras: [MARKER, 'adhoc', 'set', '{"reason":"otra cosa distinta","maxFiles":3}'], destino: 'ses-a', casa, sesion: 'ses-a' });
   assert.notStrictEqual(otro.sello, propia.sello, 'otro comando es otra aprobación');
-  // el cambio de control muestra los archivos, no el JSON
+  // el cambio de control muestra los archivos en cantidad y zonas (8.275), no el JSON ni las rutas
   const c = ow.cuadroPara({ firma: 'control-change', palabras: [`${MARKER}/../run-base-controls.sh`, 'approve', '--root', '/r', '--entries', '[{"path":"scripts/a.js","blob":"b1"},{"path":"scripts/b.js","blob":"b2"}]'], destino: 'ses-a', casa, sesion: 'ses-a' });
-  assert.match(c.pregunta, /Archivos: scripts\/a\.js, scripts\/b\.js\./);
+  assert.match(c.pregunta, /Archivos: 2 archivos: 2 de código \(a y b\)\./);
   // toda firma del catálogo dice qué pasa si sale mal
   const { SIGNATURES } = require('../lib/signatures.js');
   for (const s of SIGNATURES) assert.ok(s.ifWrong && s.ifWrong.length > 10, s.id);

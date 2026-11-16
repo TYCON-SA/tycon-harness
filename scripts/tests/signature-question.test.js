@@ -5,7 +5,7 @@
  *
  * El caso: la pregunta del plan decía «¿Aprobás aprobar el plan de una story? Detalle: la cita: …» y el dueño no podía
  * decidir con eso. La pregunta empieza con lo que se aprueba, nombra la historia con su título, dice qué
- * hace en hasta 3 líneas, qué archivos toca y dónde está lo completo, trae el «si sale mal» de esa firma y deja la cita de
+ * hace en dos renglones, cuántos archivos toca y de qué zonas y dónde está lo completo (8.275: se lee en un teléfono), trae el «si sale mal» de esa firma y deja la cita de
  * la sesión al final. El click queda atado a lo que se mostró: si la fuente cambia, la huella cambia. Sin red.
  */
 const test = require('node:test');
@@ -110,12 +110,15 @@ test('SignatureQuestion_StoryWithTitle_NamesTitle (T33)', (t) => {
 test('SignatureQuestion_PlanApproval_FromThePlan (T34)', (t) => {
   const c = corrida(t);
   const f = escribirPlan(c);
-  const q = cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta;
-  const orden = ['¿Aprobar el plan de una story?', `Historia 9.99, «${TITULO}», sesión ses-a.`,
+  const r = cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' });
+  const q = r.pregunta;
+  // 8.275: los archivos en cantidad y zonas, «Completo en» en palabras (la ruta, en el detalle); el título, si entra
+  const orden = ['¿Aprobar el plan de una story?', 'Historia 9.99', 'sesión ses-a.',
     'Qué hace: Nombra a la coordinadora con un click · Las preguntas de firma dicen qué se aprueba.',
-    'Archivos: scripts/lib/owner-window.js, scripts/lib/signatures.js.', `Completo en: ${f}.`, 'Si sale mal: ', 'Cita de la sesión: «pido el click', '(firma plan-approval'];
+    'Archivos: 2 archivos: 2 de código (owner-window y signatures).', 'Completo en: el plan, en la carpeta de la corrida.', 'Si sale mal: ', 'Cita de la sesión: «pido el click', '(firma plan-approval'];
   const pos = orden.map((p) => posicion(q, p));
   assert.deepStrictEqual(pos, [...pos].sort((a, b) => a - b), `fuera de orden: ${q}`);
+  assert.ok(r.detalle.includes(`Completo en: ${f}`), JSON.stringify(r.detalle));
 });
 
 // 🔴 Falla con: un plan sin sus dos secciones que llega a la ventana y gasta el click.
@@ -158,8 +161,10 @@ test('SignatureQuestion_ControlChange_DiffStatAndDiffFile (T36)', (t) => {
   const entries = JSON.stringify(['scripts/ci/a.sh', 'scripts/ci/b.sh'].map((p) => ({ path: p, blob: blob(p) })));
   const q = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${entries}'`).pregunta;
   assert.match(q, /Qué hace: Cambia 2 archivo\(s\) de control: \+1 −1 líneas\./);
-  assert.match(q, /Archivos: scripts\/ci\/a\.sh, scripts\/ci\/b\.sh\./);
-  const ruta = (q.match(/Completo en: (\S+\.patch)\./) || [])[1];
+  assert.match(q, /Archivos: 2 archivos: 2 de código \(a y b\)\./);
+  assert.ok(q.includes('Completo en: el cambio, en un archivo de la corrida.'), q);
+  // 8.275: la ruta del diff, en el detalle
+  const ruta = (conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${entries}'`).detalle.find((l) => l.startsWith('Completo en: ')) || '').slice('Completo en: '.length);
   assert.ok(ruta && fs.existsSync(ruta), q);
   const diff = fs.readFileSync(ruta, 'utf8');
   assert.match(diff, /\+nuevo/);
@@ -206,7 +211,8 @@ test('SignatureQuestion_ControlChange_FileShowsTheSignedVersion', (t) => {
   const preguntar = (extra) => conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --file scripts/ci/ctl.sh ${extra}`);
   // sin --rev firma la punta: muestra el cambio de la punta (a=999 → a=5)
   const punta = preguntar('');
-  const diffDe = (q) => fs.readFileSync((q.pregunta.match(/Completo en: (\S+\.patch)\./) || [])[1], 'utf8');
+  // 8.275: la ruta del diff está en el detalle, no en la pregunta
+  const diffDe = (q) => fs.readFileSync((q.detalle.find((l) => l.startsWith('Completo en: ')) || '').slice('Completo en: '.length), 'utf8');
   assert.match(diffDe(punta), /-a=999\n\+a=5/, punta.pregunta);
   // con --rev y --base, lo que se firma es --rev: se muestra su cambio (a=1 → a=2), no el de --base a la punta
   const conRev = preguntar('--rev HEAD~2 --base HEAD~3');
@@ -225,10 +231,11 @@ test('SignatureQuestion_WaiversAndExtraRound_FromTheirSource (T37)', (t) => {
   const c = corrida(t, { extraHistoria: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1'] });
   const rw = conFirma('runtime-waiver')(c, `node ${MARKER} runtime-waiver ${c.ruta} --acs 1`).pregunta;
   assert.match(rw, /Qué hace: AC 1: .*servicio externo/);
-  assert.ok(rw.includes(`Completo en: ${c.ruta}.`), rw);
+  // 8.275: «Completo en» en palabras; la ruta, en el detalle
+  assert.ok(rw.includes('Completo en: la historia 9.99.'), rw);
   const mt = conFirma('manual-test')(c, `node ${MARKER} mark-tested --acs 2`).pregunta;
   assert.match(mt, /Qué hace: AC 2: .*se ve en la lista/);
-  assert.ok(mt.includes(`Completo en: ${c.ruta}.`), mt);
+  assert.ok(mt.includes('Completo en: la historia 9.99.'), mt);
   // el crítico: sin informe, sin coincidencia, con una y con varias
   const crit = (cmd) => conFirma('critical-waiver')(c, `node ${MARKER} waive-critical ${cmd} --reason "lo cubre otra capa"`).pregunta;
   assert.match(crit('--rule SEC-C1 --file a.js'), /Qué hace: Eximir SEC-C1 en a\.js: no hay informe de hallazgos en esta ejecución\./);
@@ -238,21 +245,22 @@ test('SignatureQuestion_WaiversAndExtraRound_FromTheirSource (T37)', (t) => {
   assert.match(crit('--rule SEC-C9 --file a.js'), /Eximir SEC-C9 en a\.js: no está en el informe de hallazgos\./);
   const una = crit('--rule SEC-C1 --file a.js');
   assert.match(una, /Qué hace: SEC-C1 en a\.js: secreto en el código 1\./);
-  assert.ok(una.includes(`Completo en: ${informe}.`), una);
-  assert.match(crit('--rule SEC-C1 --file b.js'), /secreto en el código 2 · SEC-C1 en b\.js: secreto en el código 3 · SEC-C1 en b\.js: secreto en el código 4 · y 1 más\./);
+  assert.ok(una.includes('Completo en: el informe de hallazgos de la corrida.'), una);
+  assert.match(crit('--rule SEC-C1 --file b.js'), /secreto en el código 2 · SEC-C1 en b\.js: secreto en el código 3 · y 2 más en el detalle\./);
   // sin --file la exención se anota sin archivo (regla|): sólo exime, y sólo muestra, los hallazgos sin archivo
   const sinArchivo = crit('--rule SEC-C1');
   assert.match(sinArchivo, /Qué hace: SEC-C1: secreto en el código 6\./);
   assert.doesNotMatch(sinArchivo, /a\.js|b\.js/);
   // la vuelta extra: la vuelta, lo abierto del informe y su nota, con ella y sin ella
   const extra = () => conFirma('extra-round')(c, `node ${PIPELINE} smart-reloop --iter 3 --extra-round`).pregunta;
-  assert.match(extra(), /Qué hace: Vuelta 3 de revisores · Sigue abierto: SEC-C1 en a\.js, bloquea; .* · Sin nota de repensar de la vuelta 3\./);
-  assert.ok(extra().includes(`Completo en: ${c.runDir}.`), extra());
+  // 8.275: dos renglones, la vuelta con lo abierto y la nota
+  assert.match(extra(), /Qué hace: Vuelta 3 de revisores: Sigue abierto: SEC-C1 en a\.js, bloquea; .* · Sin nota de repensar de la vuelta 3\./);
+  assert.ok(extra().includes('Completo en: la carpeta de la corrida.'), extra());
   const nota = path.join(c.runDir, 'rethink', 'iter-3.json');
   fs.mkdirSync(path.dirname(nota), { recursive: true });
   fs.writeFileSync(nota, JSON.stringify({ iter: 3, repeated: 'vuelve el hallazgo del tope', change: 'se parte el archivo en dos' }));
   assert.match(extra(), / · Nota de la vuelta 3: Se repitió: vuelve el hallazgo del tope; Cambia: se parte el archivo en dos\./);
-  assert.ok(extra().includes(`Completo en: ${nota}.`), extra());
+  assert.ok(extra().includes('Completo en: la nota de la vuelta, en la carpeta de la corrida.'), extra());
 });
 
 // Criterios largos que la matriz da por no verificables en vivo: con su razón y la prueba que los cubre
@@ -281,7 +289,8 @@ test('SignatureQuestion_WaiverCincoCriterios_NombraLosCincoAunqueResuma', (t) =>
   assert.ok(!r.error, r.error);
   const q = r.pregunta;
   assert.strictEqual(lineaDeCriterios(q), 'Criterios: AC 2, 7, 9, 13 y 40.', q);
-  assert.match(q, /Qué hace: .* · y 2 más\./);
+  // 8.275: dos renglones a la vista, y lo demás en el detalle
+  assert.match(q, /Qué hace: .* · y 3 más en el detalle\./);
   escribirPlan(c);
   assert.doesNotMatch(conFirma('plan-approval')(c, APRUEBA_PLAN).pregunta, /Criterios:/);
 });
@@ -310,7 +319,8 @@ test('OwnerWindow_WaiverOneReason_TitleSaysTheReason (T6) @story-8.237 @ac-6 @ac
   const larga = 'la prueba la corre la CI de Windows del pedido y no esta máquina '.repeat(5).trim();
   const tl = tituloCon({ 7: larga });
   assert.ok(tl.length <= 202, `${tl.length}: ${tl}`);
-  assert.ok(tl.endsWith('…»?'), tl);
+  // 8.275: el corte se ve sin «…»
+  assert.ok(tl.endsWith('(sigue en el detalle)»?'), tl);
   assert.ok(tl.startsWith('¿Aceptar sin prueba en vivo el AC 7, porque «la prueba la corre la CI de Windows'), tl);
   // muchos criterios: se cuentan en vez de nombrarse, y el título no pasa del largo
   const muchos = Object.fromEntries(Array.from({ length: 30 }, (_, k) => [k + 100, OTRA_CORRIDA]));
@@ -327,10 +337,13 @@ test('OwnerWindow_WaiverManyReasons_EachLineStartsWithItsReason (T7) @story-8.23
   const razon = (n) => `razón ${n}: ${'la prueba depende de un servicio que esta máquina no tiene y que se prueba en otra corrida'.slice(0, 140)}`;
   const lista = excepciones({ 1: razon(1), 2: razon(2), 3: razon(3) });
   assert.strictEqual(tituloCon({ 1: razon(1), 2: razon(2), 3: razon(3) }), '¿Aceptar sin prueba en vivo los AC 1, 2 y 3, cada uno por la razón que declaró?');
-  const cuadro = oa.cuadroDe({ firma: 'runtime-waiver', que: ow.queDeLaExcepcion(lista), queHace: lista.map(ow.renglonDeLaExcepcion), archivos: [] }).pregunta;
+  const q = oa.cuadroDe({ firma: 'runtime-waiver', que: ow.queDeLaExcepcion(lista), queHace: lista.map(ow.renglonDeLaExcepcion), archivos: [] });
+  const cuadro = q.pregunta;
+  // 8.275: dos renglones a la vista, cada uno empieza con su razón; el renglón entero, en el detalle
+  for (const n of [1, 2]) assert.ok(cuadro.includes(`AC ${n}: por qué no se prueba en vivo: razón ${n}`), `AC ${n}: ${cuadro}`);
   for (const n of [1, 2, 3]) {
     assert.ok(razon(n).length <= 150, razon(n).length);
-    assert.ok(cuadro.includes(`AC ${n}: por qué no se prueba en vivo: ${razon(n)}; lo cubre:`), `AC ${n}: ${cuadro}`);
+    assert.ok(q.detalle.some((l) => l.includes(`AC ${n}: por qué no se prueba en vivo: ${razon(n)}; lo cubre:`)), `AC ${n}: ${JSON.stringify(q.detalle)}`);
   }
 });
 
@@ -402,7 +415,11 @@ test('ApprovePlan_PlanWithoutTwoSections_BoxNamesBoth_DoesNotBlock (T13) @story-
       startedAt: '2026-11-04T12:00:00Z', stepScheme: 2, stepsCompleted: ['validate-story', 'plan'], stepsPending: ['approve-plan', 'implement'] }));
     escribirPlan(c, texto);
     const q = cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta;
-    for (const e of fuentes.seccionesDelPlan(texto).errores) assert.ok(q.includes(e), `falta «${e}» entero en: ${q}`);
+    // 8.275: las dos faltas juntas en un renglón corto a la vista; cada una entera, en el detalle
+    assert.ok(q.includes(texto === SIN_LAS_DOS ? 'al plan le faltan las secciones «## Qué hace» y «## Archivos»: agregalas antes de pedir la firma'
+      : 'el plan: su «## Qué hace» tiene 5 líneas (van hasta 3) y le falta «## Archivos»: corregilo antes de pedir la firma'), q);
+    const d = cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).detalle;
+    for (const e of fuentes.seccionesDelPlan(texto).errores) assert.ok(d.some((l) => l.includes(e)), `falta «${e}» entero en el detalle: ${JSON.stringify(d)}`);
     const r = ow.comprobarConElGuion({ palabras: ow.canonica(APRUEBA_PLAN), cwd: c.repo, sesion: 'ses-a', casa: c.casa });
     assert.ok(!(r && r.niega && /## Qué hace|## Archivos/.test(r.niega)), JSON.stringify(r));
   }
@@ -439,15 +456,16 @@ test('SignatureQuestion_BrokenSource_SaysItCouldNotRead', (t) => {
   const c = corrida(t);
   fs.writeFileSync(path.join(c.runDir, 'findings.json'), '{ roto');
   const crit = conFirma('critical-waiver')(c, `node ${MARKER} waive-critical --rule SEC-C1 --file a.js --reason "x"`).pregunta;
-  assert.match(crit, /Eximir SEC-C1 en a\.js: no pude leer el informe de hallazgos \(no se entiende: .*Completo en: .*findings\.json\./);
+  assert.match(crit, /Eximir SEC-C1 en a\.js: no pude leer el informe de hallazgos \(no se entiende.*Completo en: el informe de hallazgos de la corrida\./);
   assert.doesNotMatch(crit, /no hay informe/);
   fs.mkdirSync(path.join(c.runDir, 'rethink'), { recursive: true });
   fs.writeFileSync(path.join(c.runDir, 'rethink', 'iter-2.json'), '{ roto');
   const vuelta = conFirma('extra-round')(c, `node ${PIPELINE} smart-reloop --iter 2 --extra-round`).pregunta;
-  assert.match(vuelta, /Vuelta 2 de revisores · No pude leer el informe de hallazgos: .* · Nota de la vuelta 2: no se entiende \(.*Completo en: .*iter-2\.json\./);
+  assert.match(vuelta, /Vuelta 2 de revisores: No pude leer el informe de hallazgos.* · Nota de la vuelta 2: no se entiende \(.*Completo en: la nota de la vuelta, en la carpeta de la corrida\./);
   // un plan que es una carpeta: está, pero no se puede leer
   fs.mkdirSync(path.join(c.runDir, 'step-02-bmad-plan.md'));
-  assert.match(cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta, /no encuentro el plan escrito en .*step-02-bmad-plan\.md \(no pude leerlo: EISDIR\)/);
+  // 8.275: la carpeta por su nombre (la ruta entera, en el detalle)
+  assert.match(cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta, /no encuentro el plan escrito en step-02-bmad-plan\.md \(no pude leerlo: EISDIR\)/);
 });
 
 // 🔴 Falla con: una ruta larga que empuja la nota «(no pude leerlo…)» del plan fuera del recorte de «Qué hace».
@@ -520,9 +538,11 @@ test('SignatureQuestion_Case8205_IsDecidable (T41)', (t) => {
   const f = escribirPlan(c);
   const q = cuadro(c, `node ${MARKER} complete-step approve-plan --approved "pido el click del dueño para el plan de la opción A"`, { firma: 'plan-approval' }).pregunta;
   assert.doesNotMatch(q, /¿Aprobás aprobar/);
-  assert.match(q, /Historia 8\.205, «El click del dueño vale en sesiones sin foto», sesión ses-a\./);
+  // 8.275: el título si entra en el tope; «Completo en» en palabras, con la ruta en el detalle
+  assert.match(q, /Historia 8\.205(, «El click del dueño vale en sesiones sin foto»)?, sesión ses-a\./);
   assert.match(q, /Qué hace: Nombra a la coordinadora con un click/);
-  assert.ok(q.includes(`Completo en: ${f}.`), q);
+  assert.ok(q.includes('Completo en: el plan, en la carpeta de la corrida.'), q);
+  assert.ok(cuadro(c, `node ${MARKER} complete-step approve-plan --approved "pido el click del dueño para el plan de la opción A"`, { firma: 'plan-approval' }).detalle.includes(`Completo en: ${f}`));
   assert.ok(q.indexOf('Cita de la sesión: «pido el click del dueño para el plan de la opción A»') > q.indexOf('Si sale mal:'), q);
 });
 
@@ -574,8 +594,10 @@ test('SignatureQuestion_LongFields_CutWithMark (T44)', () => {
   const larga = 'x'.repeat(300);
   const archivos = Array.from({ length: 14 }, (_, i) => `a${i}.js`);
   const q = oa.cuadroDe({ firma: 'save', destino: 'ses-a', que: 'guardar la story', queHace: [larga], archivos, siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
-  assert.ok(q.includes(`Qué hace: ${'x'.repeat(200)}….`), q);
-  assert.ok(q.includes(`Archivos: ${archivos.slice(0, 10).join(', ')} y 4 más.`), q);
+  // 8.275: el corte dice «(sigue en el detalle)»; los archivos, en cantidad y zonas
+  assert.match(q, /Qué hace: x+ \(sigue en el detalle\)\./);
+  assert.ok(!q.includes('…'), q);
+  assert.ok(q.includes('Archivos: 14 archivos: 14 de código (raíz).'), q);
 });
 
 const pideControl = (c, base, ruta = 'scripts/ci/ctl.sh') => conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${JSON.stringify([{ path: ruta, blob: 'x' }])}'`);
@@ -651,42 +673,42 @@ const archivosDe = (q) => (q.match(/Archivos: ([^]*?)\. (?:Completo en|Si sale m
 
 // 🔴 Falla con: un cuadro que no nombra todas las rutas que se firman, o que no dice cuántas son.
 test('8.176-Cuadro_NombraTodasLasRutas (T1) @story-8.176 @ac-1', (t) => {
+  // 8.275 (D1, reemplaza este AC): el cuadro cuenta los archivos y dice sus zonas; ninguna ruta, ni en el detalle
   const rutas = ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/lib/c.js'];
   const { c, entradas, comando } = repoConArchivos(t, rutas);
-  const q = conFirma('control-change')(c, comando(entradas())).pregunta;
-  assert.match(q, /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\./);
-  assert.strictEqual(archivosDe(q), rutas.join(', '), q);
-  const uno = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --file scripts/ci/b.sh --rev HEAD`).pregunta;
-  assert.match(uno, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
-  assert.strictEqual(archivosDe(uno), 'scripts/ci/b.sh', uno);
+  const r = conFirma('control-change')(c, comando(entradas()));
+  assert.match(r.pregunta, /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\./);
+  assert.strictEqual(archivosDe(r.pregunta), '3 archivos: 3 de código (a, b y c)', r.pregunta);
+  for (const x of rutas) assert.ok(!r.pregunta.includes(x) && !r.detalle.some((l) => l.includes(x)), x);
+  const uno = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --file scripts/ci/b.sh --rev HEAD`);
+  assert.match(uno.pregunta, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
+  assert.strictEqual(archivosDe(uno.pregunta), '1 archivo: de código (b)', uno.pregunta);
+  assert.ok(!uno.detalle.some((l) => l.includes('scripts/ci/b.sh')), JSON.stringify(uno.detalle));
 });
 
-// 🔴 Falla con: una ruta cortada con «…» en el cuadro (el dueño aprobaría una ruta que no vio entera), o un «y N más» que
-//    no cuenta lo que no se mostró.
+// 🔴 Falla con: una ruta cortada con «…» en el cuadro, o un conteo que no cuenta todos los archivos.
 test('8.176-Cuadro_MuchasRutas_NingunaCortada (T2) @story-8.176 @ac-2', (t) => {
   const cortas = Array.from({ length: 12 }, (_, i) => `scripts/ci/c${String(i).padStart(2, '0')}.sh`);
   const largas = [`scripts/ci/${'x'.repeat(120)}/${'y'.repeat(100)}.sh`, `scripts/lib/${'z'.repeat(110)}/${'w'.repeat(110)}.js`];
-  // las largas en el medio: la vista no las corta ni corta la lista ahí
   const rutas = [...cortas.slice(0, 5), largas[0], ...cortas.slice(5), largas[1]];
   const { c, entradas, comando } = repoConArchivos(t, rutas);
   const q = conFirma('control-change')(c, comando(entradas())).pregunta;
   const vistos = archivosDe(q);
-  assert.ok(vistos && !vistos.includes('…'), q);
-  assert.strictEqual(vistos, `${cortas.slice(0, 10).join(', ')} y 4 más`, q);
-  // sin --base, «Completo en» nombra dónde están los archivos sin cortar nada
-  const sinBase = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --entries '${entradas()}'`).pregunta;
-  assert.ok(!sinBase.includes('…'), sinBase);
-  assert.ok(sinBase.includes(`Completo en: ${c.repo}.`), sinBase);
-  // la lista de archivos del plan usa el mismo cuadro
+  assert.ok(vistos && !q.includes('…'), q);
+  assert.ok(vistos.startsWith('14 archivos: 14 de código ('), q);
+  // sin --base, «Completo en» dice el repo por su nombre
+  const sinBase = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --entries '${entradas()}'`);
+  assert.ok(!sinBase.pregunta.includes('…'), sinBase.pregunta);
+  assert.ok(sinBase.pregunta.includes(`Completo en: el repo ${path.basename(c.repo)}.`), sinBase.pregunta);
+  assert.ok(sinBase.detalle.includes(`Completo en: ${c.repo}`), JSON.stringify(sinBase.detalle));
+  // el plan usa el mismo cuadro: cuenta todos, también los de rutas largas
   const plan = oa.cuadroDe({ firma: 'plan-approval', destino: 'ses-a', que: 'aprobar el plan', queHace: ['uno'], archivos: ['scripts/a.js', largas[0], 'scripts/b.js'], siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
-  assert.ok(plan.includes('Archivos: scripts/a.js, scripts/b.js y 1 más.'), plan);
-  const ningunaEntera = oa.cuadroDe({ firma: 'plan-approval', destino: 'ses-a', que: 'aprobar el plan', queHace: ['uno'], archivos: largas, siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
-  assert.ok(!ningunaEntera.includes('…'), ningunaEntera);
-  assert.match(ningunaEntera, /Archivos: 2, de más de 200 letras: ninguno entra entero en la pregunta\./);
-  // «Completo en» tampoco se corta: con más de 400 letras lo dice
+  // un nombre de más de 40 letras no se nombra: se cuenta
+  assert.ok(plan.includes('Archivos: 3 archivos: 3 de código (scripts y 1 carpeta más).'), plan);
+  // «Completo en» sin palabras: el nombre del archivo, recortado sin «…»
   const completoLargo = oa.cuadroDe({ firma: 'plan-approval', destino: 'ses-a', que: 'aprobar el plan', queHace: ['uno'], completo: `/r/${'c'.repeat(400)}`, siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
   assert.ok(!completoLargo.includes('…'), completoLargo);
-  assert.match(completoLargo, /Completo en: la ruta pasa de 400 letras y no entra entera en la pregunta\./);
+  assert.match(completoLargo, /Completo en: c+ \(sigue en el detalle\)\./);
 });
 
 // 🔴 Falla con: un cuadro que cambia según quién lo pide, desde dónde o cuándo: el click de la coordinadora no valdría
@@ -865,17 +887,17 @@ test('SignatureQuestion_ExtraRound_NamesRoundOpenAndItsNote (T8) @story-8.267 @a
   fs.writeFileSync(nota, JSON.stringify({ iter: 4, repeated: 'vuelve el mismo hallazgo', change: 'se parte el archivo', story_change: 'ninguno' }));
   const q = conFirma('extra-round')(c, VUELTA_4);
   const queHace = (q.pregunta.match(/Qué hace: ([^]*?)\. (?:Archivos|Completo en)/) || [])[1] || '';
-  const [vuelta, abierto, deLaNota] = queHace.split(' · ');
-  assert.strictEqual(vuelta, 'Vuelta 4 de revisores', q.pregunta);
-  // un tramo por hallazgo abierto, en un renglón: la pregunta muestra tres y la nota tiene que entrar
-  assert.strictEqual(abierto, 'Sigue abierto: SEC-C1 en a.js, bloquea; TEST-W2 en b.js, no bloquea', q.pregunta);
+  // 8.275: dos renglones, la vuelta con lo abierto, y la nota
+  const [vuelta, deLaNota] = queHace.split(' · ');
+  // un tramo por hallazgo abierto, en un renglón: la nota tiene que entrar
+  assert.strictEqual(vuelta, 'Vuelta 4 de revisores: Sigue abierto: SEC-C1 en a.js, bloquea; TEST-W2 en b.js, no bloquea', q.pregunta);
   assert.strictEqual(deLaNota, 'Nota de la vuelta 4: Se repitió: vuelve el mismo hallazgo; Cambia: se parte el archivo; Cambia la historia: ninguno', q.pregunta);
   assert.doesNotMatch(queHace, /c\.js/, 'lo arreglado no sigue abierto');
   // lo abierto va en la fuente: si cambia después del cuadro, el sello cambia y el click no vale
   fs.writeFileSync(informe, JSON.stringify([{ rule_id: 'SEC-C1', severity: 'CRITICAL', file: 'a.js', summary: 'secreto', disposition: 'fixed' }]));
   const despues = conFirma('extra-round')(c, VUELTA_4);
   assert.notStrictEqual(despues.sello, q.sello, 'cambió lo abierto y el sello no');
-  assert.match(despues.pregunta, /Qué hace: Vuelta 4 de revisores · Nada abierto en el informe de hallazgos · Nota de la vuelta 4/);
+  assert.match(despues.pregunta, /Qué hace: Vuelta 4 de revisores: Nada abierto en el informe de hallazgos · Nota de la vuelta 4/);
   // sin --iter válido, el renglón de hoy
   assert.match(conFirma('extra-round')(c, `node ${PIPELINE} smart-reloop --extra-round`).pregunta, /Qué hace: Una vuelta más de revisores sobre lo que quedó abierto\./);
 });
@@ -885,10 +907,13 @@ test('SignatureQuestion_ExtraRound_OtherRoundNote_NotShown (T9) @story-8.267 @ac
   fs.mkdirSync(path.join(c.runDir, 'rethink'), { recursive: true });
   fs.writeFileSync(path.join(c.runDir, 'rethink', 'iter-3.json'), JSON.stringify({ iter: 3, repeated: 'la nota de la tres', change: 'algo' }));
   fs.writeFileSync(path.join(c.runDir, 'findings.json'), '{ roto');
-  const q = conFirma('extra-round')(c, VUELTA_4).pregunta;
+  const r = conFirma('extra-round')(c, VUELTA_4);
+  const q = r.pregunta;
   assert.match(q, /Sin nota de repensar de la vuelta 4/);
   assert.doesNotMatch(q, /la nota de la tres/, 'mostró la nota de otra vuelta');
-  assert.match(q, /No pude leer el informe de hallazgos: findings\.json no se lee/);
+  // 8.275: el renglón se corta en la oración; entero, en el detalle
+  assert.match(r.pregunta, /No pude leer el informe de hallazgos/);
+  assert.ok(r.detalle.some((l) => l.includes('No pude leer el informe de hallazgos: findings.json no se lee')), JSON.stringify(r.detalle));
   assert.doesNotMatch(q, /Nada abierto/, '«no pude leer» no es «nada abierto»');
 });
 
@@ -954,7 +979,8 @@ test('Cuadro_UsoPrivadoYMarcaSuelta_NoSeVen_TildesSi (T15) @story-8.282 @ac-20 @
   assert.match(q, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
   // sin invisibles, el cuadro de siempre
   const comun = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${entradas()}'`).pregunta;
-  assert.match(comun, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\. Archivos: scripts\/ci\/a\.sh\./);
+  // 8.275: el archivo en su zona, no su ruta
+  assert.match(comun, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\. Archivos: 1 archivo: de código \(a\)\./);
 });
 
 // 🔴 Falla con: «Cambia 5» cuando de las 5 rutas pedidas sólo 2 tienen cambio: el dueño cree que firma cinco cambios.
@@ -974,4 +1000,276 @@ test('Cuadro_CambiaN_CuentaLasQueCambiaron (T16) @story-8.282 @ac-22 @ac-29', (t
   const todas = repoConArchivos(t, ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/lib/c.js']);
   const igual = conFirma('control-change')(todas.c, todas.comando(todas.entradas())).pregunta;
   assert.match(igual, /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\./);
+});
+
+// ── 8.275: el cuadro se lee en un celular ────────────────────────────────────────────────────────────────────────────
+
+// una palabra que empieza como ruta absoluta (la carpeta de la casa, `~/` o una unidad de Windows)
+const RUTA_ABSOLUTA = /(^|[\s«(["'`])(\/|~\/|[A-Za-z]:[\\/])/;
+const sinSello = (q) => q.pregunta.slice(0, q.pregunta.length - q.sello.length - 3);
+const queHaceDe = (q) => (q.pregunta.match(/Qué hace: ([^]*?)\. (?:Archivos|Completo en|Revisión|Si sale mal)/) || [])[1] || '';
+const enElDetalle = (q, prefijo) => (q.detalle || []).find((l) => l.startsWith(prefijo));
+const largas = (n, letra = 'palabra') => Array.from({ length: n }, (_, k) => `Renglón ${k + 1}: ${`${letra} `.repeat(40)}`.slice(0, 200));
+
+// 🔴 Falla con: un «Qué hace» de tres renglones de 200 en el cuadro, cortado con «…» a mitad de palabra.
+test('SignatureQuestion_WhatItDoes_TwoLinesCutAtSentence (T4) @story-8.275 @ac-1 @ac-9', () => {
+  const lineas = ['Primera oración corta. Segunda oración que sigue y sigue con muchas palabras para pasar el largo del renglón del cuadro sin terminar nunca la idea completa que tenía',
+    ...largas(2)];
+  const q = oa.cuadroDe({ firma: 'save', destino: 'ses-a', que: 'guardar', queHace: lineas, siSaleMal: 'se revierte', huella: 'ab12cd34' });
+  const qh = queHaceDe(q);
+  const renglones = qh.split(' · ');
+  assert.strictEqual(renglones.length, 3, qh);
+  // el primero corta en la oración que entra; el segundo, en la última palabra entera
+  assert.strictEqual(renglones[0], 'Primera oración corta (sigue en el detalle)');
+  assert.ok(renglones[1].length <= 140 && renglones[1].endsWith(' (sigue en el detalle)') && renglones[1].startsWith('Renglón 1: palabra'), renglones[1]);
+  assert.match(renglones[1], /palabra \(sigue en el detalle\)$/);
+  assert.strictEqual(renglones[2], 'y 1 más en el detalle');
+  assert.ok(!q.pregunta.includes('…'), q.pregunta);
+  for (const l of lineas) assert.ok(q.detalle.some((d) => d.includes(l)), `el detalle no trae entero: ${l}`);
+});
+
+test('SignatureQuestion_GuardadoAjeno_NotCut (T4) @story-8.275 @ac-1', () => {
+  const lineas = largas(4).map((l) => `${l} /r/repo/archivo.js`);
+  const q = oa.cuadroDe({ firma: 'adhoc-lane:guardado-ajeno', destino: 'ses-a', que: 'dejar pasar un guardado ajeno', queHace: lineas, todoQueHace: true, siSaleMal: 'se revierte', huella: 'ab12cd34' });
+  assert.ok(q.pregunta.includes(`Qué hace: ${lineas.join(' · ')}.`), q.pregunta);
+});
+
+// 🔴 Falla con: «el comando: node /Users/<persona>/…/marker.js …» en una firma sin fuente, cortado con «…».
+test('SignatureQuestion_NoSourceFirma_CatalogLineAndShortCommand (T5) @story-8.275 @ac-2 @ac-7 @ac-9', (t) => {
+  const c = corrida(t);
+  const lejos = `/Users/x/${'carpeta/'.repeat(30)}`;
+  const perdida = conFirma('lost-run')(c, `node ${MARKER} clear-session ses-b --lost --repo ${lejos}repo`);
+  const qh = queHaceDe(perdida);
+  assert.ok(qh.startsWith(sig.SIGNATURES.find((s) => s.id === 'lost-run').approves), qh);
+  assert.match(qh, /el comando: marker\.js clear-session ses-b --lost --repo repo/);
+  assert.doesNotMatch(sinSello(perdida), RUTA_ABSOLUTA);
+  assert.ok(!perdida.pregunta.includes('…'), perdida.pregunta);
+  assert.ok(enElDetalle(perdida, 'El comando:').includes(`${lejos}repo`), JSON.stringify(perdida.detalle));
+  const escape = ow.cuadroPara({ firma: 'escape:TYCON_SAFETY_OFF', comando: `TYCON_SAFETY_OFF=1 rm -rf ${lejos}x`, palabras: null, destino: 'ses-a', sesion: 'ses-a', cwd: c.repo, casa: c.casa });
+  assert.ok(escape.pregunta, escape.error);
+  assert.doesNotMatch(sinSello(escape), RUTA_ABSOLUTA);
+  assert.ok(!escape.pregunta.includes('…'), escape.pregunta);
+  // sign-file: su texto propio, con el archivo por su nombre; la ruta entera en el detalle
+  const archivo = `${lejos}evidencia.md`;
+  const firmaArchivo = conFirma('escape:dod_runtime_exempt')(c, `node ${MARKER} sign-file dod_runtime_exempt ${archivo}`);
+  assert.match(queHaceDe(firmaArchivo), /sobre el archivo evidencia\.md/);
+  assert.doesNotMatch(sinSello(firmaArchivo), RUTA_ABSOLUTA);
+  assert.ok(!firmaArchivo.pregunta.includes('…'), firmaArchivo.pregunta);
+  assert.ok(firmaArchivo.detalle.some((l) => l.includes(archivo)), JSON.stringify(firmaArchivo.detalle));
+  // designation-confirm: la sesión designada con sus 8 letras, la cita sin «…»
+  const sid = 'sesionde-prueba-larga-con-id-entero-0001';
+  fs.writeFileSync(path.join(c.estado, 'gates.log'), `${JSON.stringify({ name: 'relay-designation', status: 'ok', rol: 'coordinadora', sesion: sid, ts: '2026-11-16T00:00:00Z', cita: `nombro a la coordinadora ${'porque hace falta '.repeat(20)}` })}\n`);
+  const conf = ow.cuadroPara({ firma: 'designation-confirm', comando: 'node delegated-signing.js confirm-designation', palabras: ow.canonica('node delegated-signing.js confirm-designation'), destino: 'ses-a', sesion: 'ses-a', cwd: c.repo, casa: c.casa });
+  assert.ok(conf.pregunta, conf.error);
+  assert.ok(!conf.pregunta.includes('…'), conf.pregunta);
+  assert.ok(!sinSello(conf).includes(sid), conf.pregunta);
+});
+
+// 🔴 Falla con: un plan de tres líneas que no se puede firmar, o uno de cuatro que se firma callado.
+test('SignatureQuestion_PlanThreeLines_TwoShownOneInDetail (T6) @story-8.275 @ac-3', (t) => {
+  const plan = (n) => ['# Plan', '', '## Qué hace', '', ...Array.from({ length: n }, (_, k) => `Línea ${k + 1} del plan.`), '', '## Archivos', '', '- scripts/lib/a.js', ''].join('\n');
+  const c = corrida(t);
+  escribirPlan(c, plan(2));
+  assert.strictEqual(queHaceDe(cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' })), 'Línea 1 del plan · Línea 2 del plan');
+  escribirPlan(c, plan(3));
+  const tres = cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' });
+  assert.strictEqual(queHaceDe(tres), 'Línea 1 del plan · Línea 2 del plan · y 1 más en el detalle');
+  assert.ok(tres.detalle.some((l) => l.includes('Línea 3 del plan.')), JSON.stringify(tres.detalle));
+  assert.doesNotMatch(tres.pregunta, /hasta 3 líneas/);
+  escribirPlan(c, plan(4));
+  assert.match(cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta, /el plan no dice qué hace en hasta 3 líneas: su sección «## Qué hace» tiene 4/);
+});
+
+// 🔴 Falla con: las rutas de los archivos en el cuadro del plan o del cambio de control, o la ruta que falsea con cuadro.
+test('SignatureQuestion_PlanAndControls_FilesAsZones (T7) @story-8.275 @ac-4 @ac-6', (t) => {
+  const c = corrida(t);
+  const archivos = ['scripts/lib/a.js', 'scripts/lib/b.js', 'scripts/lib/c.js', 'scripts/tools/d.js', 'scripts/tests/a.test.js', 'scripts/tests/b.test.js',
+    'scripts/tests/c.test.js', 'guides/x.md', 'guides/y.md', 'specs/story-9.99-prueba.md', '.tycon/advisors.yaml'];
+  escribirPlan(c, ['# Plan', '', '## Qué hace', '', 'Hace algo.', '', '## Archivos', '', ...archivos.map((a) => `- ${a}`), ''].join('\n'));
+  const p = cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' });
+  assert.match(p.pregunta, /Archivos: 11 archivos: 4 de código \(lib y tools\), 3 pruebas, 1 historia, 2 guías, 1 de configuración\./);
+  for (const a of archivos) assert.ok(!p.pregunta.includes(a) && !p.detalle.some((l) => l.includes(a)), `se ve ${a}`);
+  const rutas = ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/lib/c.js'];
+  const r = repoConArchivos(t, rutas);
+  const q = conFirma('control-change')(r.c, r.comando(r.entradas()));
+  assert.match(q.pregunta, /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\. Archivos: 3 archivos: 3 de código \(a, b y c\)\./);
+  for (const a of rutas) assert.ok(!q.pregunta.includes(a) && !q.detalle.some((l) => l.includes(a)), `se ve ${a}`);
+  // una ruta que trae «, » todavía no tiene cuadro (8.176 AC 9)
+  const coma = `bash ${CONTROLES} approve --root ${r.c.repo} --base ${r.base} --entries '${JSON.stringify([{ path: 'scripts/ci/a, b.sh', blob: 'x' }])}'`;
+  assert.ok(conFirma('control-change')(r.c, coma).error);
+});
+
+/** Una corrida con cada firma de AC 11 armada por el freno, con su fuente escrita. */
+function cadaFirma(t) {
+  const c = corrida(t, eximibles([1, 2]));
+  escribirPlan(c);
+  fs.writeFileSync(path.join(c.runDir, 'findings.json'), JSON.stringify([{ rule_id: 'SEC-C1', severity: 'CRITICAL', file: 'a.js', summary: 'secreto en el código', disposition: 'open' }]));
+  const nota = path.join(c.runDir, 'rethink', 'iter-3.json');
+  fs.mkdirSync(path.dirname(nota), { recursive: true });
+  fs.writeFileSync(nota, JSON.stringify({ iter: 3, repeated: 'vuelve', change: 'se parte el archivo' }));
+  const adhoc = path.join(c.estado, 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'x', maxFiles: 8, files: [], frenoDatos: { huella: 'h1', hallazgos: [{ id: 'proceso', strength: 'strong', says: 'una llamada', file: 'src/a.tsx', line: 3, borrada: false, texto: 'executeQuery(x)' }] } }));
+  const r = repoConArchivos(t, ['scripts/ci/a.sh', 'scripts/ci/b.sh']);
+  const arreglo = `node ${MARKER} adhoc set '{"reason":"arreglar el aviso","maxFiles":3}'`;
+  const casos = {
+    'plan-approval': [c, APRUEBA_PLAN],
+    'control-change': [r.c, r.comando(r.entradas())],
+    'refresh-after-main': [r.c, r.comando(r.entradas())],
+    'critical-waiver': [c, `node ${MARKER} waive-critical --rule SEC-C1 --file a.js --reason "lo cubre otra capa"`],
+    'runtime-waiver': [c, `node ${MARKER} runtime-waiver ${c.ruta} --acs 1,2`],
+    'manual-test': [c, `node ${MARKER} mark-tested --acs 2`],
+    'extra-round': [c, `node ${PIPELINE} smart-reloop --iter 3 --extra-round`],
+    'adhoc-lane': [c, arreglo],
+    'adhoc-lane:sobre-cupo': [c, arreglo],
+    'escape:rojo-esperado-de-la-matriz': [c, `node ${MARKER} expect-red acmatrix --tests T1 --until 2026-12-01`],
+    'designation-set': [c, `node ${MARKER} designate-relay`],
+    'adhoc-lane:datos': [c, `node ${MARKER} adhoc allow-data-change --changed "el botón pide al proceso" --recommends pasar --why "el proceso tiene su seguridad"`],
+  };
+  return Object.entries(casos).map(([firma, [cc, cmd]]) => [firma, conFirma(firma)(cc, cmd)]);
+}
+
+// 🔴 Falla con: una ruta absoluta o un «…» en la pregunta de cualquier firma.
+test('SignatureQuestion_EveryFirma_NoAbsolutePathNorEllipsis (T8) @story-8.275 @ac-7 @ac-9', (t) => {
+  const palabras = {
+    'plan-approval': 'el plan, en la carpeta de la corrida', 'control-change': 'el cambio, en un archivo de la corrida', 'critical-waiver': 'el informe de hallazgos de la corrida',
+    'runtime-waiver': 'la historia 9.99', 'manual-test': 'la historia 9.99', 'extra-round': 'la nota de la vuelta, en la carpeta de la corrida', 'escape:rojo-esperado-de-la-matriz': 'la historia 9.99',
+  };
+  for (const [firma, q] of cadaFirma(t)) {
+    assert.ok(q.pregunta, `${firma}: ${q.error}`);
+    assert.doesNotMatch(sinSello(q), RUTA_ABSOLUTA, `${firma}: ${q.pregunta}`);
+    assert.ok(!q.pregunta.includes('…'), `${firma}: ${q.pregunta}`);
+    if (palabras[firma]) assert.ok(q.pregunta.includes(`Completo en: ${palabras[firma]}.`), `${firma}: ${q.pregunta}`);
+  }
+});
+
+test('SignatureQuestion_GuardadoAjeno_ShownAsToday (T8) @story-8.275 @ac-7', () => {
+  const lineas = ['Guarda en /r/repo con git commit', 'Los hooks: /r/repo/.githooks/pre-commit'];
+  const q = oa.cuadroDe({ firma: 'adhoc-lane:guardado-ajeno', destino: 'ses-a', que: 'dejar pasar un guardado ajeno', queHace: lineas, todoQueHace: true, siSaleMal: 'se revierte', huella: 'ab12cd34' });
+  assert.ok(q.pregunta.includes(`Qué hace: ${lineas.join(' · ')}.`), q.pregunta);
+});
+
+// 🔴 Falla con: un título largo que ocupa la pantalla, o el id entero de la sesión en el texto.
+test('SignatureQuestion_LongTitle_GoesToDetail_ShortSessionId (T9) @story-8.275 @ac-8', () => {
+  const sid = 'sesionde-prueba-larga-con-id-entero-0001';
+  const con = (titulo) => oa.cuadroDe({ firma: 'save', destino: sid, que: 'guardar', historia: { id: '9.99', titulo }, queHace: ['x'], siSaleMal: 'se revierte', huella: 'ab12cd34' });
+  const t81 = 'T'.repeat(81);
+  const largo = con(t81);
+  assert.ok(largo.pregunta.includes('Historia 9.99, sesión sesionde.'), largo.pregunta);
+  assert.ok(!sinSello(largo).includes(t81));
+  assert.ok(largo.detalle.some((l) => l.includes(t81)));
+  const t80 = 'T'.repeat(80);
+  assert.ok(con(t80).pregunta.includes(`Historia 9.99, «${t80}», sesión sesionde.`));
+  assert.ok(largo.sello.includes(`sesión ${sid}`), largo.sello);
+  assert.ok(!sinSello(largo).includes(sid));
+});
+
+// 🔴 Falla con: un cuadro con sus campos al máximo que no entra en el tope del teléfono, o que entra sacando lo que se aprueba.
+test('SignatureQuestion_EveryFirma_FitsPhoneCap (T10) @story-8.275 @ac-10 @ac-11', () => {
+  const tope = oa.LARGO_EN_TELEFONO;
+  assert.strictEqual(tope, 600);
+  const archivos = Array.from({ length: 40 }, (_, k) => `scripts/${'d'.repeat(10)}${k % 7}/${'a'.repeat(130)}${k}.js`);
+  const criterios = Array.from({ length: 12 }, (_, k) => k + 1);
+  const completo = `/Users/x/${'c/'.repeat(100)}plan.md`;
+  const pruebas = criterios.map((n) => `T${n}`).join(', ');
+  // cada firma con lo más largo que da cada campo que su fuente da (signature-sources.js y owner-window.js)
+  const campos = {
+    'plan-approval': { queHace: largas(3), archivos, completo, revision: { linea: 'aprobado con notas', detalle: largas(3) }, cita: 'x'.repeat(400) },
+    'control-change': { queHace: largas(1), archivos, completo },
+    'refresh-after-main': { queHace: largas(1), archivos, completo },
+    'critical-waiver': { queHace: largas(3), archivos, completo, cita: 'x'.repeat(400) },
+    'runtime-waiver': { criterios, queHace: largas(3), completo, que: ow.queDeLaExcepcion(criterios.map((ac) => ({ ac, reason: 'y'.repeat(300), coveredBy: 'T1', text: 'z' }))) },
+    'manual-test': { criterios, queHace: largas(3), completo },
+    'extra-round': { queHace: largas(3), completo },
+    'adhoc-lane': { queHace: largas(2), cita: 'x'.repeat(400) },
+    'adhoc-lane:sobre-cupo': { queHace: largas(2), cita: 'x'.repeat(400) },
+    'escape:rojo-esperado-de-la-matriz': { criterios, queHace: largas(3), completo, que: `llevar al commit los AC ${criterios.join(', ')} sin evidencia en vivo (pruebas ${pruebas}), hasta el 2026-12-01` },
+    'designation-set': { queHace: largas(2) },
+    'escape:TYCON_SAFETY_OFF': { queHace: largas(1) },
+  };
+  for (const [id, c] of Object.entries(campos)) {
+    const s = sig.SIGNATURES.find((x) => x.id === id);
+    const q = oa.cuadroDe({ firma: id, destino: 'sesionde-prueba-larga-con-id-entero-0001', que: c.que || s.approves, historia: { id: '9.99', titulo: 'T'.repeat(300) }, criterios: c.criterios || [],
+      queHace: c.queHace, archivos: c.archivos || [], completo: c.completo, completoEnPalabras: c.completo ? 'el plan, en la carpeta de la corrida' : null,
+      revision: c.revision || null, siSaleMal: s.ifWrong, cita: c.cita || null, huella: 'ab12cd34' });
+    assert.ok(q.pregunta.length <= tope, `${id}: ${q.pregunta.length} letras: ${q.pregunta}`);
+    assert.strictEqual(q.pasaElTope, false, id);
+    // lo que nunca se saca
+    assert.ok(q.pregunta.startsWith(`¿${(c.que || s.approves).charAt(0).toUpperCase()}`), `${id}: ${q.pregunta}`);
+    assert.ok(q.pregunta.includes(`Si sale mal: ${s.ifWrong.replace(/[.\s]+$/, '')}.`), `${id}: ${q.pregunta}`);
+    if (c.archivos) assert.ok(q.pregunta.includes('Archivos: 40 archivos: 40 de código'), `${id}: ${q.pregunta}`);
+    assert.ok(q.pregunta.includes('sesión sesionde'), `${id}: ${q.pregunta}`);
+    assert.ok(q.pregunta.endsWith(`(${q.sello})`), id);
+    if (c.criterios) assert.ok(q.pregunta.includes('Criterios: AC 1 a 12.') || q.pregunta.includes(`Criterios: AC ${criterios.slice(0, -1).join(', ')} y 12.`), `${id}: ${q.pregunta}`);
+    assert.ok(!q.pregunta.includes('…'), `${id}: ${q.pregunta}`);
+  }
+});
+
+// 🔴 Falla con: el sello de un comando que cambia con el formato nuevo (un click del dueño ya dado no valdría por nada).
+test('SignatureQuestion_SameSealBeforeAndAfter (T12) @story-8.275 @ac-14', (t) => {
+  // los sellos de main antes de la 8.275 (94099637), calculados con estos mismos comandos y esta misma corrida
+  const ANTES = { 'adhoc-lane': 'e7379f59', save: '40b87e99', 'lost-run': 'c6466a32', 'runtime-waiver': 'c2042686', 'designation-set': '12396fc2' };
+  const c = corrida(t, { titulo: 'x', extraHistoria: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1'] });
+  const de = (firma, cmd, cwd = c.repo) => ow.cuadroPara({ firma, comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion: 'ses-a', cwd, casa: c.casa });
+  const ahora = {
+    'adhoc-lane': de('adhoc-lane', `node ${MARKER} adhoc set '{"reason":"arreglar el aviso","maxFiles":3}'`),
+    save: de('save', `node ${MARKER} approve-save`),
+    'lost-run': de('lost-run', `node ${MARKER} clear-session ses-b --lost`),
+    'runtime-waiver': de('runtime-waiver', `node ${MARKER} runtime-waiver specs/story-9.99-prueba.md --acs 1`),
+    'designation-set': de('designation-set', `node ${MARKER} designate-relay`, '/r/repo'),
+  };
+  for (const [firma, q] of Object.entries(ahora)) assert.strictEqual(q.sello, `firma ${firma} · sesión ses-a · código ${ANTES[firma]}`, `${firma}: ${q.error || q.sello}`);
+});
+
+// 🔴 Falla con: otra pregunta desde la coordinadora que desde la sesión (su click no valdría para el comando de la sesión).
+test('SignatureQuestion_SameQuestionFromSessionAndCoordinator (T12) @story-8.275 @ac-15', (t) => {
+  const c = corrida(t);
+  escribirPlan(c);
+  const desde = (cmd, sesion, cwd) => ow.cuadroPara({ firma: 'plan-approval', comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion, cwd, casa: c.casa });
+  const propia = desde(APRUEBA_PLAN, 'ses-a', c.repo);
+  const ajena = desde(`${APRUEBA_PLAN} --for-session ses-a`, 'ses-coord', os.tmpdir());
+  assert.ok(propia.pregunta, propia.error);
+  assert.strictEqual(ajena.pregunta, propia.pregunta);
+  assert.deepStrictEqual(ajena.detalle, propia.detalle);
+});
+
+// 🔴 Falla con: un cuadro que no entra en el teléfono dado sin aviso, o recortado hasta sacar lo que se aprueba.
+test('SignatureQuestion_OverCap_GivenWithLine (T11) @story-8.275 @ac-12', (t) => {
+  const C = require('../tools/coordination.js');
+  // 60 criterios salteados: sus números no se achican en tramos, y no entran
+  const c = corrida(t, eximibles(Array.from({ length: 60 }, (_, k) => 2 * (k + 1))));
+  const adhoc = path.join(c.estado, 'adhoc');
+  fs.mkdirSync(adhoc, { recursive: true });
+  const archivos = Array.from({ length: 30 }, (_, k) => `src/modulo-${k}/${'componente-largo-'.repeat(4)}${k}.tsx`);
+  fs.writeFileSync(path.join(adhoc, 'ses-a.json'), JSON.stringify({ reason: 'x', maxFiles: 8, files: [],
+    guardadoAjeno: { huella: 'h2', comando: 'git commit -am "guardar"', repo: c.repo, rama: 'main', guarda: [{ tipo: 'commit', archivos }], hooks: [], hooksCarpeta: null, configuracion: [] },
+    frenoDatos: { huella: 'h1', hallazgos: [{ id: 'proceso', strength: 'strong', says: 'una llamada', file: 'src/a.tsx', line: 3, borrada: false, texto: `executeQuery(${'x'.repeat(200)})` }] } }));
+  const largo = 'cambia de dónde salen los datos del tablero, que ahora pide al proceso en lugar de leer la tabla '.repeat(3);
+  const casos = {
+    'adhoc-lane:guardado-ajeno': `node ${MARKER} adhoc allow-foreign-save`,
+    'adhoc-lane:datos': `node ${MARKER} adhoc allow-data-change --changed "${largo}" --recommends pasar --why "${largo}"`,
+    'runtime-waiver': `node ${MARKER} runtime-waiver ${c.ruta}`,
+  };
+  for (const [firma, cmd] of Object.entries(casos)) {
+    const q = conFirma(firma)(c, cmd);
+    assert.ok(q.pregunta, `${firma}: ${q.error}`);
+    assert.strictEqual(q.pasaElTope, true, `${firma}: ${q.pregunta.length}`);
+    const linea = oa.renglonDelTope(q);
+    assert.strictEqual(linea, `Este cuadro pasa el tope del teléfono (${q.pregunta.length} de ${oa.LARGO_EN_TELEFONO} letras): leelo en la máquina si no se ve entero.`);
+    // por owner-next: la pregunta entera y el renglón aparte
+    const r = { tipo: 'firma', id: 'f1', rotulo: 'Firma 1/1', opciones: q.opciones, pregunta: q.pregunta, sello: q.sello, aviso: 'repetí', destino: 'ses-a', nombre: 'A',
+      problemas: [], faltaRepetir: [], saltados: [], detalle: q.detalle, pasaElTope: q.pasaElTope, largo: q.largo, tope: q.tope };
+    const out = C.ownerNextText(r, 'ses-coord');
+    assert.ok(out.includes(`Pregunta:\n${q.pregunta}\n`), `${firma}: ${out}`);
+    assert.ok(out.includes(linea), `${firma}: ${out}`);
+    // por decidir: el texto a la sesión trae la pregunta y el mismo renglón
+    const d = ow.negarSinVentana('sin ventana', [firma], 'ses-a', q, true);
+    assert.ok(d.texto.includes(q.pregunta), `${firma}: ${d.texto}`);
+    assert.ok(d.texto.includes(linea), `${firma}: ${d.texto}`);
+  }
+  // uno que entra no lleva el renglón
+  escribirPlan(c);
+  const plan = cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' });
+  assert.strictEqual(plan.pasaElTope, false);
+  assert.strictEqual(oa.renglonDelTope(plan), null);
 });

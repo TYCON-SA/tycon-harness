@@ -393,8 +393,11 @@ probarla.
 - **Qué da `owner-next`.** Un renglón, el más viejo: un cuadro para mostrar sin cambiarle una letra, con un rótulo («Firma 2/5»),
   y el aviso para la sesión destino. **Un permiso va primero**, con su contador y su cuadro. Lo de la terminal, al final y sin
   cuadro. Si el plan todavía no se vio en esa pestaña y no trae «Qué hace» y «Archivos», lo da para escribirlo antes
-  del cuadro. Si un renglón no se puede mostrar,
-  o su repetición se niega, `owner-next --after <id>` da el siguiente.
+  del cuadro. Debajo de la pregunta imprime el **detalle** («Detalle (no va en el cuadro; mostralo si la persona lo
+  pide):»): lo que no entró en el cuadro, como la ruta del plan o del diff y los renglones enteros. El detalle no va en
+  el cuadro de opciones ni nombra los archivos de la firma, que el cuadro cuenta por zonas. Si el cuadro pasa el tope
+  del teléfono, suma el renglón «Este cuadro pasa el tope del teléfono (N de M letras)»: no frena nada. Si un renglón
+  no se puede mostrar, o su repetición se niega, `owner-next --after <id>` da el siguiente.
 - **Siempre repite el comando la sesión que lo pidió**, con o sin coordinadora. Con el «Sí», la coordinadora le manda el aviso,
   y la sesión repite el mismo comando dentro de los 30 minutos. Con un click sin usar, `owner-next` saltea ese renglón y dice
   que falta repetir.

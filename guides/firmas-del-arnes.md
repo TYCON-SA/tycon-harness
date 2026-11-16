@@ -173,8 +173,8 @@ Con Claude Code, la mayoría de las firmas no piden la terminal. El camino depen
   de rutina en una pestaña sin permisos se hace y se avisa (ver «Lo de rutina en una pestaña sin permisos»).
 - **En Windows:** siempre el click o el «aprobado», y la ventana de permiso no firma (ver «En Windows»).
 
-**El plan se aprueba con el cuadro.** Si el plan trae «Qué hace» y «Archivos», el cuadro de su firma los muestra con la
-ruta del plan completo, y tu click cuenta como plan visto: no hace falta que el agente lo pegue antes en la conversación.
+**El plan se aprueba con el cuadro.** Si el plan trae «Qué hace» y «Archivos», el cuadro de su firma muestra qué hace,
+cuántos archivos toca y de qué zonas, y dónde está el plan completo, y tu click cuenta como plan visto: no hace falta que el agente lo pegue antes en la conversación.
 El plan entero te lo muestran si lo pedís. Vale sólo el click: un «aprobado» escrito, la ventana de permiso o la
 terminal no muestran esas secciones. Un plan sin esas dos secciones sí tiene que estar entero en la conversación.
 
@@ -184,9 +184,21 @@ Lo que tiene que cumplir esa aprobación:
 - **La pregunta la arma el freno.** Se la da al agente al negar el comando, con el sello «firma <id> · sesión <id> · código
   <huella>», y el agente la muestra sin cambiarle una letra. Tu click vale sólo con esa pregunta entera. Tu
   «aprobado» vale si lo último que te dijo el agente trae ese sello y no nombra otra sesión.
-- **La pregunta dice qué aprobás.** En este orden: lo que se aprueba («¿Eximir un hallazgo crítico de los revisores?»), la historia con
-  su título y la sesión, qué hace en hasta 3 líneas, qué archivos toca, dónde está lo completo (el plan, el diff de los
-  controles, la historia, el informe de hallazgos), qué pasa si sale mal con esa firma y, al final, la cita de la sesión.
+- **La pregunta dice qué aprobás, y se lee en un teléfono.** En este orden: lo que se aprueba («¿Eximir un hallazgo
+  crítico de los revisores?»), la historia (con su título si tiene hasta 80 letras) y la sesión por sus 8 primeras
+  letras, qué hace en 2 renglones de hasta 140 letras, cuántos archivos toca y de qué zonas («11 archivos: 6 de código
+  (lib y tools), 4 pruebas, 1 historia»: las rutas no se muestran en ningún lado), dónde está lo completo dicho en
+  palabras («el plan, en la carpeta de la corrida», «el informe de hallazgos de la corrida», «la historia 8.275»), qué
+  pasa si sale mal con esa firma y, al final, la cita de la sesión. Ninguna ruta absoluta y ninguna frase cortada con
+  «…»: lo que se corta dice «(sigue en el detalle)». La pregunta entera, con su sello, entra en 600 letras; para entrar
+  se achica en orden (el título, la cita, «Qué hace» a un renglón, la revisión sin sus notas, los criterios en tramos)
+  y nunca saca lo que se aprueba, la sesión, los criterios, los archivos, «si sale mal» ni el sello. Lo que no entra va
+  al **detalle**, que owner-next imprime debajo de la pregunta y nunca va dentro del cuadro: mostralo si lo pedís. Un
+  cuadro que igual no entra (el guardado ajeno, que se muestra entero) llega con el aviso «Este cuadro pasa el tope del
+  teléfono»: leelo en la máquina.
+- **Un click dado sobre el formato viejo no vale después de actualizar.** Si la pregunta cambió con el mismo código (el
+  formato nuevo del arnés, o un texto alterado), la firma no se da, el renglón queda en la lista y la aprobación no se
+  gasta: el motivo lo dice y hace falta un click nuevo.
   Lo que hace sale de lo que firmarías si lo abrieras, no de lo que escribió la sesión. La huella del sello incluye eso
   que se mostró: si el plan o el diff cambian después del cuadro, tu click ya no vale y el agente pide el cuadro de nuevo.
 - **La das en la sesión que firma, o en la coordinadora con la designación confirmada.** Dada en la coordinadora, su proceso

@@ -2644,3 +2644,82 @@ test('8.281 T4e Close_PuestoCompartido_RamasDejadas_EnNoSe @story-8.281 @ac-7: s
   assert.doesNotMatch(r.message, /falta:/, r.message);
   assert.match(r.message, /no puedo separar.*la rama local wt\/una/, r.message);
 });
+
+// ── 8.275: owner-next da el detalle del cuadro debajo de la pregunta, sin la lista de archivos ───────────────────────
+
+// 🔴 Falla con: un detalle que no llega a quien muestra el cuadro, o que trae las rutas de los archivos de la firma.
+test('OwnerNext_PrintsDetailBelowQuestion_WithoutFileList (T15) @story-8.275 @ac-13', (t) => {
+  const sl = require('../lib/signature-list.js');
+  const ow = require('../lib/owner-window.js');
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-detalle-'));
+  t.after(() => fs.rmSync(raiz, { recursive: true, force: true }));
+  const casa = path.join(raiz, 'casa');
+  const estado = path.join(casa, '.claude', '.tycon-pipeline');
+  fs.mkdirSync(path.join(casa, '.claude', 'sessions'), { recursive: true });
+  fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
+  fs.writeFileSync(path.join(casa, '.claude', 'tycon.json'), JSON.stringify({ approvals: { signature_list: 'on' } }));
+  fs.writeFileSync(path.join(casa, '.claude', 'sessions', 'ses-a.json'), JSON.stringify({ pid: process.pid, sessionId: 'ses-a', name: 'A', nameSource: 'user', status: 'idle', cwd: '/r' }));
+  const arnes = path.join(raiz, 'arnes');
+  fs.mkdirSync(arnes);
+  // la corrida de la sesión, con su plan de 11 archivos
+  const repo = path.join(raiz, 'repo');
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  const git = (...a) => spawnSync('git', ['-C', repo, '-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'maintenance.auto=false', ...a], { encoding: 'utf8' });
+  git('init', '-q');
+  const historia = path.join(repo, 'specs', 'story-9.99-prueba.md');
+  fs.writeFileSync(historia, '---\nstory: "9.99"\ntitle: "Prueba"\nstatus: in-progress\n---\n\n# Story 9.99\n');
+  fs.writeFileSync(path.join(estado, 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: historia, repoPath: repo, startedAt: '2026-11-04T12:00:00Z',
+    stepScheme: 2, stepsCompleted: ['validate-story', 'plan'], stepsPending: ['approve-plan', 'implement'] }));
+  // la carpeta de la corrida, la misma que lee la fuente del plan
+  const run = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'run-dir.js')).resolveRunDir(repo, '9.99', true, historia);
+  const archivos = ['scripts/lib/a.js', 'scripts/lib/b.js', 'scripts/lib/c.js', 'scripts/tools/d.js', 'scripts/tests/a.test.js', 'scripts/tests/b.test.js', 'scripts/tests/c.test.js',
+    'guides/x.md', 'guides/y.md', 'specs/story-9.99-prueba.md', 'scripts/tests/suites.json'];
+  const planRuta = path.join(run, 'step-02-bmad-plan.md');
+  fs.writeFileSync(planRuta, ['# Plan', '', '## Qué hace', '', 'Hace algo.', '', '## Archivos', '', ...archivos.map((a) => `- ${a}`), ''].join('\n'));
+  // los tres controles, cambiados en un commit
+  const controles = ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/ci/c.sh'];
+  fs.mkdirSync(path.join(repo, 'scripts', 'ci'), { recursive: true });
+  for (const r of controles) fs.writeFileSync(path.join(repo, r), 'a=1\n');
+  git('add', '.'); git('commit', '-qm', 'base');
+  const base = git('rev-parse', 'HEAD').stdout.trim();
+  for (const r of controles) fs.writeFileSync(path.join(repo, r), 'a=1\nb=2\n');
+  git('commit', '-qam', 'cambio');
+  const entradas = JSON.stringify(controles.map((p) => ({ path: p, blob: git('rev-parse', `HEAD:${p}`).stdout.trim() })));
+  const MARKER = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  const CONTROLES = path.join(__dirname, '..', 'ci', 'run-base-controls.sh');
+  const pedidos = {
+    'plan-approval': `node ${MARKER} complete-step approve-plan --approved "pido el click del dueño"`,
+    'control-change': `bash ${CONTROLES} approve --root ${repo} --base ${base} --entries '${entradas}'`,
+  };
+  const ahora = Date.parse('2026-11-04T12:30:00Z');
+  for (const [firma, comando] of Object.entries(pedidos)) {
+    fs.rmSync(sl.archivo(casa), { force: true });
+    sl.anotarFirma({ casa, firma, titulo: firma, sesion: 'ses-a', destino: 'ses-a', comando, palabras: ow.canonica(comando), cwd: repo, ahora: ahora - 60000 });
+    const r = sl.siguiente({ casa, sesion: 'ses-a', ahora, arnes, env: {}, arbol: [] });
+    assert.strictEqual(r.tipo, 'firma', `${firma}: ${r.texto}`);
+    assert.ok(Array.isArray(r.detalle) && r.detalle.length, `${firma}: sin detalle`);
+    const out = C.ownerNextText(r, 'ses-a');
+    const i = out.indexOf('Detalle (no va en el cuadro; mostralo si la persona lo pide):');
+    assert.ok(i > out.indexOf(r.pregunta), `${firma}: ${out}`);
+    // lo que ve la persona: la pregunta y el detalle; el comando a repetir es de la sesión
+    const visto = out.slice(0, out.indexOf('Con «'));
+    for (const a of [...archivos, ...controles]) assert.ok(!visto.includes(a), `${firma}: se ve ${a}:\n${visto}`);
+    if (firma === 'plan-approval') assert.ok(visto.includes(planRuta), visto);
+    else assert.match(visto, /Completo en: \S+\.patch/);
+    // el texto de decidir para el mismo pedido
+    const q = ow.cuadroPara({ firma, comando, palabras: ow.canonica(comando), destino: 'ses-a', sesion: 'ses-a', cwd: repo, casa });
+    const d = ow.negarSinVentana('sin ventana', [firma], 'ses-a', q, true);
+    assert.ok(d.texto.includes('Detalle (no va en el cuadro; mostralo si la persona lo pide):'), d.texto);
+    for (const a of [...archivos, ...controles]) assert.ok(!d.texto.includes(a), `${firma}: decidir nombra ${a}`);
+  }
+});
+
+// 🔴 Falla con: el cuadro de un permiso cambiado por el formato nuevo de las firmas.
+test('SignatureList_PermissionBox_Unchanged (T15) @story-8.275 @ac-18', () => {
+  const sl = require('../lib/signature-list.js');
+  const pedido = 'rm -rf /r/repo/node_modules && npm ci';
+  const f = { id: 'p1', destino: 'ses-a', herramienta: 'Bash', carpeta: '/r/repo', pedido };
+  const c = sl.cuadroDePermiso(f);
+  const sha = require('crypto').createHash('sha256').update(pedido).digest('hex').slice(0, 8);
+  assert.strictEqual(c.pregunta, `¿Aprobás este pedido de Bash? (permiso p1 · sesión ses-a · código ${sha}) Carpeta: /r/repo. Pedido:\n${pedido}`);
+});

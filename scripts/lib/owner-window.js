@@ -707,21 +707,32 @@ function corridaDe(casa, destino) {
   try { return corridaDelMarcador(marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`))); } catch (_) { return { ilegible: true }; }
 }
 
-// «Qué hace» de las firmas sin fuente propia (signature-sources.js): lo que hace el comando, en llano
+// la forma corta de un comando para el cuadro: el programa sin su carpeta y cada ruta por el nombre de su archivo
+const formaCorta = (comando) => require('./owner-approvals.js').sinRutas(String(comando == null ? '' : comando).replace(/\s+/g, ' ').trim());
+
+/**
+ * «Qué hace» de las firmas sin fuente propia (signature-sources.js): la frase del catálogo y el comando en su forma corta
+ * (`{ linea, detalle }`; lo entero va al detalle del cuadro). La designación y `sign-file` tienen su texto propio.
+ */
 function detalleDe(id, comando, palabras, cwd, casa) {
+  const { recortar } = require('./owner-approvals.js');
   if (id === DESIGNACION) {
     try {
       const d = require(path.join(LIB, 'critical-waivers.js')).designacionVigente({ dir: stateDir(casa === undefined ? casaDeLaCuenta() : casa) });
-      if (d && !d.error) return `la sesión designada: «${una(d.rol, 60)}» (${d.sesion}), desde ${d.ts}, ${d.cita ? `con la frase «${una(d.cita, 200)}»` : 'por click'}`;
+      if (d && !d.error) {
+        return { linea: `la sesión designada: «${recortar(d.rol, 60)}» (${String(d.sesion).slice(0, 8)}), desde ${d.ts}, ${d.cita ? `con la frase «${recortar(d.cita, 200)}»` : 'por click'}`,
+          detalle: [`La sesión designada: ${d.sesion}`, ...(d.cita ? [`La frase: ${d.cita}`] : [])] };
+      }
     } catch (_) { /* sin leerla, el comando; el guion la vuelve a leer y niega si no está */ }
   }
   if (palabras && palabras[1] === 'sign-file' && palabras[3]) {
-    // la consola expande la tilde antes de correr el guion: la ventana muestra la ruta que se va a firmar
+    // la consola expande la tilde antes de correr el guion: el detalle dice la ruta que se va a firmar
     const tilde = /^~(?=[\\/]|$)/.test(palabras[3]) ? os.homedir() + palabras[3].slice(1) : palabras[3];
     const real = rutaReal(tilde, cwd);
-    return `sobre el archivo ${una(palabras[3], 300)}${real !== palabras[3] ? ` (${una(real, 300)})` : ''}`;
+    return { linea: `sobre el archivo ${path.basename(real || palabras[3])}`, detalle: [`El archivo: ${real}`] };
   }
-  return `el comando: ${una(comando)}`;
+  const s = firmaDe(id);
+  return { linea: `${s ? `${s.approves}; ` : ''}el comando: ${formaCorta(comando)}`, detalle: [] };
 }
 
 /**
@@ -795,12 +806,11 @@ function queDeLaExcepcion(lista) {
   if (razones.length > 1) return `${inicio}, cada uno por la razón que declaró`;
   if (razones[0] === null) return `${inicio}, sin razón declarada`;
   const lugar = LARGO_DE_LO_QUE_SE_APRUEBA - `${inicio}, porque «»`.length;
-  // `una` agrega «…» después de lo que deja: deja uno menos
-  return `${inicio}, porque «${una(razones[0], lugar - 1)}»`;
+  return `${inicio}, porque «${require('./owner-approvals.js').recortar(razones[0], lugar)}»`;
 }
 
-// el renglón de un criterio en el cuadro de `runtime-waiver`: la razón va primero, porque el renglón se corta a 200 y, al
-// final, no llegaba a verse
+// el renglón de un criterio de `runtime-waiver` como entra en la fuente de la huella: no cambia (un click ya dado sigue
+// atado a lo mismo). La razón va primero, porque el renglón se corta y, al final, no llegaba a verse
 const renglonDeLaExcepcion = (x) => `AC ${x.ac}: por qué no se prueba en vivo: ${una(razonDeclarada(x) || 'sin razón declarada', 150)}; lo cubre: ${una(x.coveredBy || '(ninguna prueba declarada)', 60)}; el criterio: ${una(x.text || '(sin texto en la historia)', 200)}`;
 
 /**
@@ -828,13 +838,46 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     const c = criteriosDelPedido(palabras, cwd, { casa, destino, sesion, memo });
     if (c.error) return { error: c.error };
     const lineas = c.lista.map(renglonDeLaExcepcion);
-    partes = { criterios: c.lista.map((x) => x.ac), queHace: lineas, completo: c.historia, fuente: lineas.join('\n'), que: queDeLaExcepcion(c.lista) };
+    // la fuente, con el renglón de siempre; lo que se ve, sin cortes por campo (el cuadro corta el renglón entero)
+    partes = { criterios: c.lista.map((x) => x.ac), queHace: lineas, queHaceALaVista: c.lista.map(renglonALaVista), completo: c.historia,
+      completoEnPalabras: m && m.storyId ? fuentes.laHistoria(m) : `la historia ${path.basename(c.historia)}`, fuente: lineas.join('\n'), que: queDeLaExcepcion(c.lista) };
   }
-  if (!partes) partes = { queHace: [detalleDe(firma, texto, palabras, cwd, casa)], fuente: '' };
+  let delComando = [];
+  if (!partes) {
+    const d = detalleDe(firma, texto, palabras, cwd, casa);
+    partes = { queHace: [d.linea], fuente: '' };
+    delComando = d.detalle;
+  }
   // la huella ata el click a lo que se mostró: el comando y la fuente de la pregunta
   const huella = sha256(`${texto}\0${partes.fuente || ''}`).slice(0, 8);
-  return require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
-    completo: partes.completo, revision: partes.revision, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones });
+  const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
+    completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
+    comando: comandoDelDetalle(sinDestino && [base(sinDestino[0]), ...sinDestino.slice(1)], texto) });
+  // lo que la fuente dice entero y la vista resume (la designación, la exención) va al detalle
+  if (partes.queHaceALaVista) for (const l of partes.queHace) if (!q.detalle.includes(`Qué hace: ${l}`)) q.detalle.unshift(`Qué hace: ${l}`);
+  q.detalle.push(...delComando);
+  return q;
+}
+
+// el renglón de un criterio de `runtime-waiver` como se ve en el cuadro: el cuadro lo corta entero, por oración
+const renglonALaVista = (x) => `AC ${x.ac}: por qué no se prueba en vivo: ${razonDeclarada(x) || 'sin razón declarada'}; lo cubre: ${x.coveredBy || '(ninguna prueba declarada)'}; el criterio: ${x.text || '(sin texto en la historia)'}`;
+
+/**
+ * El comando para el detalle del cuadro: el programa por su nombre y el resto como se pidió, salvo los valores de
+ * `--entries` y `--file`, que nombran los archivos de la firma (la lista no se muestra en ningún lado).
+ */
+function comandoDelDetalle(palabras, texto) {
+  if (!palabras) return texto;
+  const fuera = new Set(['--entries', '--file']);
+  const out = [];
+  for (let k = 0; k < palabras.length; k++) {
+    const w = String(palabras[k]);
+    const igual = /^(--entries|--file)=/.exec(w);
+    if (igual) { out.push(`${igual[1]}=(sus archivos)`); continue; }
+    out.push(w);
+    if (fuera.has(w) && k + 1 < palabras.length) { out.push('(sus archivos)'); k += 1; }
+  }
+  return out.join(' ');
 }
 
 /**
@@ -857,6 +900,15 @@ function aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd, ap
  * viva se lo va a pasar a la persona (`anotarNegativa`): la sesión sólo espera el aviso para repetir el comando.
  */
 function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, anotado = false, coordinadora = null) {
+  const r = negarConElCuadro(motivo, ids, sesion, cuadro, deFondo, anotado, coordinadora);
+  // donde va la pregunta, va también lo que la acompaña: el detalle (aparte, nunca dentro del cuadro de opciones) y el
+  // renglón del tope del teléfono
+  if (!cuadro || cuadro.error || !cuadro.pregunta || !String(r.texto || '').includes(cuadro.pregunta)) return r;
+  const notas = require('./owner-approvals.js').notasDelCuadro(cuadro);
+  return notas.length ? { ...r, texto: `${r.texto}\n${notas.join('\n')}` } : r;
+}
+
+function negarConElCuadro(motivo, ids, sesion, cuadro = null, deFondo = false, anotado = false, coordinadora = null) {
   if (vaATerminal(ids)) return negarCon(motivo, ids, sesion);
   if (cuadro && cuadro.error && esDeControl(ids)) return negarSinCuadroDeControl(motivo, ids);
   const t = terminalDe(ids, sesion);
@@ -1337,9 +1389,13 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   }
   const pregunta = vista ? vista.texto
     : `${pendientes.map((id) => firmaDe(id).approves).join('; ')}. Story ${storyDe(casa, destino)}, sesión ${destino}. El comando: ${una(comando)}.`;
-  const texto = `${aprobador(evento.cwd).label}: ${pregunta} `
+  // la ventana corre en la máquina, no en el teléfono: después de la pregunta, su detalle entero (la ruta que se firma,
+  // los criterios enteros)
+  const detalle = vista && Array.isArray(vista.detalle) && vista.detalle.length ? `Lo que no entra en el cuadro: ${vista.detalle.join(' · ')}. ` : '';
+  const texto = `${aprobador(evento.cwd).label}: ${pregunta} ${detalle}`
     + (sinDelegar ? `No se firmó por delegación: ${una(sinDelegar, 200)}. ` : '')
-    + `Si preferís, firmala en tu terminal: ${terminalDe(pendientes, destino)}.`;
+    + `Si preferís, firmala en tu terminal: ${terminalDe(pendientes, destino)}.`
+    + (vista && vista.pasaElTope ? ` ${require('./owner-approvals.js').renglonDelTope(vista)}` : '');
   return { decision: 'ask', firmas: pendientes, texto };
 }
 

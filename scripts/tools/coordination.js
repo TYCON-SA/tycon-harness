@@ -1461,6 +1461,9 @@ function ownerNextText(r, sesion, nota = null) {
     lines.push(`Renglón ${r.id}. Mostrá AskUserQuestion con una sola pregunta, sin cambiarle una letra, con «${r.rotulo}» como rótulo y las opciones «${r.opciones[0]}» y «${r.opciones[1]}».`);
     if (r.nota) lines.push(`Decile también: ${r.nota}`);
     lines.push('Pregunta:', r.pregunta, '');
+    // lo que acompaña a la pregunta y no va en el cuadro: el detalle (si la persona lo pide) y el aviso del tope
+    const notas = r.tipo === 'firma' ? require('../lib/owner-approvals.js').notasDelCuadro(r) : [];
+    if (notas.length) lines.push(...notas, '');
     lines.push(`Con «${r.opciones[1]}»: node "${__filename}" owner-reject ${r.id}, y seguí con owner-next.`);
     lines.push('Si el cuadro se cierra o se resuelve solo: no corras nada; la pasada se corta y el renglón queda.');
     if (r.tipo === 'firma') lines.push(`Con «${r.opciones[0]}», esto no se corre acá: lo repite su sesión. ${r.destino === sesion ? 'Es ésta: repetilo.' : `Mandale este mensaje a ${r.nombre}:`}`, r.aviso);
