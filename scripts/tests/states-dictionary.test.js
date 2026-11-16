@@ -253,7 +253,10 @@ test('T21 · el diccionario contiene todo VALID_STATUSES de marker.js', (t) => {
     t.skip('marker.js ausente — ver el aviso de arriba');
     return;
   }
-  const src = fs.readFileSync(marker, 'utf8');
+  // marker.js partido: el despachador y sus módulos de lib/ (la lista puede vivir en uno de ellos)
+  const lib = path.join(path.dirname(marker), 'lib');
+  const modulos = fs.existsSync(lib) ? fs.readdirSync(lib).filter((f) => /^marker-.+\.js$/.test(f)).sort() : [];
+  const src = [marker, ...modulos.map((f) => path.join(lib, f))].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   const m = src.match(/VALID_STATUSES\s*=\s*\[([^\]]*)\]/);
   assert.ok(m, `no pude leer VALID_STATUSES de ${marker} — cambió de forma; el caso se actualiza, no se borra`);
   const validos = m[1].match(/'([^']+)'|"([^"]+)"/g).map((s) => s.slice(1, -1));

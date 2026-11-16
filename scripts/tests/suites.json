@@ -1050,6 +1050,12 @@
       "requiere": []
     },
     {
+      "__nota": "marker.js partido por responsabilidad: cada subcomando contra la foto de antes de partir, el despachador y cada módulo bajo el tope con su prueba propia, el módulo que falta, las exportaciones, lo nuevo sensible y el recorrido del freno de guiones (que lee entero lo partido y no corta callado). Carpetas fijas en el temporal; sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/split-contract.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.test.js",
       "requiere": []

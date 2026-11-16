@@ -1,0 +1,754 @@
+/**
+ * marker-lifecycle.js — una parte de marker.js (el despachador carga este módulo para sus subcomandos).
+ *
+ * Responsabilidad: crear, leer, anotar y cerrar el marcador de la sesión.
+ *
+ * El estado que cambia mientras corre (la sesión sobre la que se trabaja, si se escribe o sólo se lee, si hace falta
+ * un marcador) y las rutas del despachador se leen de `estado`, en el módulo compartido, en el momento de usarlos.
+ */
+const { estado, LEGACY_MARKER_PATH, OLD_FLAGS, STATE_DIR, STEPS_LIB, anotarArranque, anotarOtraVuelta, appendLog, at, avisarOficina, cerrarEjecucion, frenarSiIlegible, frenarSiPerdida, fs, markerFilePath, nn, nowIso, opcion, os, path, readMarker, sinFirmaNoSeEscribe, syncSessionState, writeMarker } = require('./marker-shared.js');
+
+function clearMarker() {
+  sinFirmaNoSeEscribe();
+  const own = markerFilePath(estado.SID);
+  if (fs.existsSync(own)) {
+    try { fs.unlinkSync(own); } catch (_e) { /* ignore */ }
+  }
+  // Limpiar también de legacy si la entry de esta sesión vivía ahí.
+  if (fs.existsSync(LEGACY_MARKER_PATH)) {
+    try {
+      const obj = JSON.parse(fs.readFileSync(LEGACY_MARKER_PATH, 'utf8'));
+      if (obj && !obj.storyId && obj[estado.SID]) {
+        delete obj[estado.SID];
+        if (Object.keys(obj).length === 0) {
+          fs.unlinkSync(LEGACY_MARKER_PATH);
+        } else {
+          const tmp = `${LEGACY_MARKER_PATH}.${process.pid}.tmp`;
+          fs.writeFileSync(tmp, JSON.stringify(obj, null, 2) + '\n', 'utf8');
+          fs.renameSync(tmp, LEGACY_MARKER_PATH);
+        }
+      }
+    } catch (_e) { /* ignore */ }
+  }
+  avisarOficina();
+}
+
+function cmdSet(payloadJson) {
+  let payload;
+  try {
+    payload = JSON.parse(payloadJson);
+  } catch (err) {
+    console.error('marker.js set: invalid JSON payload —', err.message);
+    process.exit(2);
+  }
+  if (!payload.storyId) {
+    console.error('marker.js set: payload.storyId requerido');
+    process.exit(2);
+  }
+  // Cómo terminó la ejecución lo escriben `clear` y el camino de la deuda, nunca un `set` a mano: con él, una ejecución
+  // abierta quedaría archivada como completa.
+  if (Object.prototype.hasOwnProperty.call(payload, 'cierre')) {
+    delete payload.cierre;
+    console.error('marker.js set: `cierre` no se escribe con set (lo deja `clear`): se descartó.');
+    appendLog('bypass.log', { kind: 'MARKER_SET_CIERRE_DISCARDED', storyId: payload.storyId });
+  }
+  // Pasos por nombre sin `stepScheme` (un `set` a mano para retomar): es el esquema 2.
+  if (payload.stepScheme === undefined) {
+    const items = [payload.stepsCompleted, payload.stepsPending].filter(Array.isArray).flat().map(String);
+    if (items.length && items.every((x) => STEPS_LIB.byId(x))) payload.stepScheme = STEPS_LIB.SCHEME;
+  }
+  // La aprobación de la maqueta la escriben sólo `complete-step approve-plan` y `approve-mockup`.
+  for (const k of ['mockupApproval', 'mockupDecision']) {
+    if (payload[k] !== undefined) console.error(`marker.js set: «${k}» no se acepta en el payload (lo escriben sólo complete-step approve-plan y approve-mockup): descartado.`);
+  }
+  // `set` (y `set --replace`) pisa el marcador: si el que hay no se lee, no se puede anotar lo que deja
+  frenarSiIlegible(markerFilePath(estado.SID), estado.SID, 'set');
+  let existing = readMarker();
+  // un marcador escrito a mano sobre una ejecución perdida la daría por sana
+  frenarSiPerdida(estado.SID, 'set', (existing && existing.repoPath) || payload.repoPath);
+  const existingBefore = existing;
+  // Las banderas de hechos externos tampoco se escriben con set: las pone el arnés cuando hizo el trabajo. Un
+  // `get | … | set` que las trae como estaban no cambia nada y pasa.
+  {
+    const ext = require('./external-flags.js');
+    for (const k of [...ext.EXTERNAL_FLAGS, ...Object.keys(OLD_FLAGS)]) {
+      if (!Object.prototype.hasOwnProperty.call(payload, k)) continue;
+      const tenia = existing && existing.storyId === payload.storyId ? existing[k] : undefined;
+      if (payload[k] === tenia) continue;
+      delete payload[k];
+      console.error(`marker.js set: «${k}» no se escribe con set (la pone el arnés: ${ext.HARNESS_COMMAND[nn(OLD_FLAGS[k], k)]}): se descartó.`);
+      appendLog('bypass.log', { kind: 'MARKER_SET_EXTERNAL_FLAG_DISCARDED', flag: k, storyId: payload.storyId });
+    }
+  }
+  // La tanda de la ejecución achica la matriz de «Preparar el commit»: la escribe sólo `set-batch`, que la valida
+  // contra la historia y no la cambia. Un `get | … | set` que la trae como estaba pasa.
+  for (const k of ['batch', 'batchSetAt']) {
+    if (!Object.prototype.hasOwnProperty.call(payload, k)) continue;
+    const tenia = existing && existing.storyId === payload.storyId ? existing[k] : undefined;
+    if (tenia !== undefined && payload[k] === tenia) continue;
+    console.error(`marker.js set: «${k}» no se escribe con set: la tanda se anota con marker.js set-batch <tanda>, una vez. No escribí nada.`);
+    process.exit(2);
+  }
+  // 🔴 Anti-leak cross-story: el spread de abajo preserva
+  // campos ante un `set` de la MISMA story — pero si esta sesión arranca una story NUEVA sobre un
+  // marker viejo sin clear (pipeline cancelado, crash, "listo" antes de «Preparar el commit»), la story B
+  // heredaría el ciclo de vida de la A: `deepReviewDone=true` heredado → computeNext saltea el pase adversarial
+  // de B EN SILENCIO; `checks.build=green` y `dodRuntimeChecked` heredados → gates mintiendo.
+  // Por eso, al cambiar de storyId, los campos de CICLO DE VIDA DE
+  // CORRIDA se resetean (la identidad de sesión y el startedAt se conservan).
+  // `--renumber`: la MISMA corrida con otro número (un choque de número obliga a renumerar la story). Cambia el
+  // `storyId` (y el `storyPath` si viene) y conserva el ciclo de vida entero: pasos, controles, pase adversarial,
+  // ediciones. Deja la copia del marcador anterior y lo anota en gates.log, como el reemplazo.
+  if (existing && payload.storyId && payload.storyId !== existing.storyId && process.argv.includes('--renumber')) {
+    const copia = path.join(STATE_DIR, 'replaced', `${estado.SID}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    fs.mkdirSync(path.dirname(copia), { recursive: true });
+    fs.writeFileSync(copia, JSON.stringify(existing, null, 2) + '\n', 'utf8');
+    appendLog('gates.log', { name: 'marker-renumber', from: existing.storyId, to: payload.storyId, copy: copia });
+    console.error(`marker.js set: la corrida de la story ${existing.storyId} sigue como ${payload.storyId}, con sus pasos, controles y ediciones. La copia del marcador anterior quedó en ${copia}`);
+    existing = { ...existing, storyId: payload.storyId };
+  }
+  if (existing && payload.storyId !== existing.storyId) {
+    // Una ejecución que ya avanzó no se reemplaza sin pedirlo: el reinicio borraría sus pasos, sus controles y su
+    // pase adversarial sin que nadie lo vea. Con `--replace` se reemplaza; siempre queda la copia del anterior.
+    const hechos = Array.isArray(existing.stepsCompleted) ? existing.stepsCompleted.length : 0;
+    if (hechos > 0 && !process.argv.includes('--replace')) {
+      console.error(`marker.js set: esta sesión tiene la ejecución de la story ${existing.storyId} con ${hechos} paso(s) hecho(s), y el pedido es de la ${payload.storyId}: no la reemplazo.`);
+      console.error('  Si es la MISMA story con otro número (renumerada por un choque): el mismo set con --renumber conserva la corrida (pasos, controles, ediciones).');
+      console.error('  Si la de antes terminó o se abandona: marker.js clear y volvé a pedirlo, o el mismo set con --replace (deja una copia del marcador anterior).');
+      process.exit(3);
+    }
+    const copia = path.join(STATE_DIR, 'replaced', `${estado.SID}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    fs.mkdirSync(path.dirname(copia), { recursive: true });
+    fs.writeFileSync(copia, JSON.stringify(existing, null, 2) + '\n', 'utf8');
+    appendLog('gates.log', { name: 'marker-replace', from: existing.storyId, to: payload.storyId, stepsCompleted: hechos, copy: copia });
+    console.error(`marker.js set: la copia del marcador de la ${existing.storyId} quedó en ${copia}`);
+    // Otra historia sobre una ejecución que no terminó: la anterior queda dicha como abortada. Sin esto, el reset de
+    // abajo la lavaría y un `clear` después la archivaría como completa.
+    // El cierre se anota siempre, terminada o no: la apertura de la anterior queda cerrada y su copia, borrada.
+    try {
+      const rc = require('./run-close.js');
+      // una con `cierre` escrito (la deuda) ya dijo cómo terminó
+      const abierta = !existing.cierre && rc.abierta(rc.estado(existing));
+      const c = rc.cierreDe(existing, { sid: estado.SID });
+      cerrarEjecucion(estado.SID, existing, { registrar: false, estado: c.estado, via: c.via || null,
+        motivo: abierta ? `reemplazada por la historia ${payload.storyId} sin cerrarla: ${c.motivo || ''}` : `reemplazada por la historia ${payload.storyId}` });
+      if (abierta) console.error(`marker.js set: la ejecución de ${existing.storyId} no había terminado (${c.motivo}): queda anotada como ${c.estado}.`);
+    } catch (e) {
+      cerrarEjecucion(estado.SID, existing, { registrar: false, estado: 'abortada', motivo: `reemplazada por la historia ${payload.storyId}; no pude calcular su estado (${e.message})` });
+    }
+    const {
+      adversarial, deepReviewDone, workSignalStarted, clockiStarted, adoMarkedActive, atddBypass, atddBypassReason,
+      checks, checksProvenance, dodRuntimeChecked, iterations, fileEvents, filesTouched, filesTouchedAt,
+      // la otra vuelta de revisores es de los cambios de la corrida: heredada, la story nueva pediría revisar lo de la vieja
+      otraVuelta,
+      stepsCompleted, stepsPending, startedAt, evidenceDir, baseSha,
+      // la carpeta de la corrida es de la corrida: heredada, la story nueva escribiría su constancia en la de la vieja;
+      // y la otra sesión en paralelo es de la story
+      runDir, parallelWith,
+      // el esquema de los pasos y los avisos del Arranque son de la corrida
+      stepScheme, startWarnings,
+      // Los arranques y fines de paso son de la corrida. Heredarlos le daría a la story
+      // nueva arranques de la vieja, y `anotarArranque` se niega a pisar uno existente.
+      stepTimings,
+      // Lo del pase adversarial es de la corrida. Heredado, B contaría como suyas las pruebas
+      // promovidas de A en `--tests`, y con el freno de «Preparar el commit» heredaría el salteo de A y cerraría ese
+      // paso sin su propio pase adversarial.
+      adversarialPasses, adversarialRegressions, adversarialSkip,
+      // El veredicto del portón (y el temprano apagado) son de la corrida: heredado, `next` le pediría a
+      // la story nueva lanzar el pase con los archivos de la vieja, o le dejaría apagado el temprano.
+      adversarialGate,
+      // La maqueta aprobada y la decisión de «Aprobar el plan» son de la story. Heredadas, la story B usaría la
+      // maqueta de A (o su «sin pantalla») en «Preparar el commit».
+      mockupApproval, mockupDecision,
+      // el tamaño de la corrida (y su forzado a mano) es de la story.
+      size, size_reason, estimate_min, estimate_source, sizeForced,
+      // el modelo y la sesión de Codex son de la corrida: heredados, los revisores de la story nueva correrían con el
+      // proveedor de la anterior
+      sessionModel, codexSession,
+      // las suites que fallaron son de la corrida: heredadas, la primera corrida completa de la story nueva se negaría
+      // (76) por suites que sólo rompió la anterior. Lo guardado de una completa verde, igual: la nueva compararía su
+      // carpeta con una completa de otra historia
+      testsFailed, testsGreenFull,
+      // la tanda es de la historia: heredada, la matriz de la nueva mediría una tanda que no es suya
+      batch, batchSetAt,
+      ...carryOver
+    } = existing;
+    console.error(
+      `marker.js set: story cambia (${existing.storyId} → ${payload.storyId}) — ` +
+      `reset de ciclo de vida de corrida (adversarial/deepReviewDone/atddBypass/checks/flags/steps/iterations/fileEvents/sellos de contenido).`
+    );
+    existing = carryOver;
+  }
+  // 🔴 Mismo storyId + stepsPending entrante (típico: `pipeline.js start` re-corrido tras PIPE-C0/C5 o
+  // tras una compactación): NO reabrir steps ya completados. Sin esto, `start` pisaría stepsPending con
+  // [0..8] y el portón de plan volvería a cerrar en medio de la implementación, obligando a re-aprobar el plan.
+  if (existing && payload.storyId === existing.storyId && Array.isArray(payload.stepsPending)) {
+    const done = new Set((existing.stepsCompleted || []).map(String));
+    payload.stepsPending = payload.stepsPending.filter((n) => !done.has(String(n)));
+    // ni cerrar los que seguían pendientes: un paso se cierra con `complete-step`, no borrándolo de la lista
+    const nuevos = new Set(payload.stepsPending.map(String));
+    for (const p of existing.stepsPending || []) if (!nuevos.has(String(p))) payload.stepsPending.push(p);
+  }
+  // Los controles, el pase y el modo autónomo de la misma historia tienen sus comandos (`run-check`,
+  // `mark-adversarial-*`, `set-autonomous`, que el freno de seguridad mira): un `set` no los pisa.
+  if (existing && payload.storyId === existing.storyId) {
+    for (const k of ['checks', 'checksProvenance', 'autonomous', 'adversarial']) {
+      if (payload[k] === undefined) continue;
+      delete payload[k];
+      console.error(`marker.js set: «${k}» no se cambia con set en la misma historia (tiene su comando): se descartó.`);
+      appendLog('bypass.log', { kind: 'MARKER_SET_FIELD_DISCARDED', field: k, storyId: payload.storyId });
+    }
+  }
+  // Marker NUEVO que arranca sin el paso «Aprobar el plan» pendiente ni completado = un pipeline
+  // "manual" que se saltea el HITL del plan. No se bloquea (adopt/resume legítimos pasan por acá),
+  // pero queda en bypass.log y avisa; el portón de carril no frena código en esta sesión.
+  // Dos formas de "saltearse el plan" con un set: un marker NUEVO (o de
+  // OTRA story) que arranca sin «Aprobar el plan» pendiente ni completado, y un set de la MISMA story que OMITE ese paso
+  // cuando estaba pendiente. Ninguna se bloquea (adopt/resume legítimos), pero las dos quedan en bypass.log.
+  if (Array.isArray(payload.stepsPending)) {
+    // el plan aprobado es `approve-plan` en un marcador nuevo y su equivalente en uno viejo: lo dice lib/steps.js
+    const scheme = payload.stepScheme !== undefined ? payload.stepScheme : (existingBefore && existingBefore.storyId === payload.storyId ? existingBefore.stepScheme : undefined);
+    const conPlan = (pend, done) => {
+      const m = { stepScheme: scheme, stepsPending: pend || [], stepsCompleted: done || [] };
+      return STEPS_LIB.isPending(m, 'approve-plan') || STEPS_LIB.isDone(m, 'approve-plan');
+    };
+    const sameStory = existingBefore && existingBefore.storyId === payload.storyId;
+    const freshWithoutPlan = !sameStory && !conPlan(payload.stepsPending, payload.stepsCompleted);
+    const dropsPlan = sameStory && STEPS_LIB.isPending(existingBefore, 'approve-plan')
+      && !conPlan(payload.stepsPending, payload.stepsCompleted);
+    if (freshWithoutPlan || dropsPlan) {
+      appendLog('bypass.log', { kind: dropsPlan ? 'MARKER_DROPS_PLAN' : 'MARKER_SKIPS_PLAN', storyId: payload.storyId, stepsPending: payload.stepsPending, cwd: process.cwd() });
+      console.error(`⚠️  marker.js set: el marker queda SIN el paso «Aprobar el plan» ${dropsPlan ? 'que estaba pendiente' : 'desde el arranque'} — el portón de carril`);
+      console.error(`    no va a exigir aprobación del plan en esta sesión. Queda en bypass.log (${dropsPlan ? 'MARKER_DROPS_PLAN' : 'MARKER_SKIPS_PLAN'}).`);
+      console.error('    Pipeline real → `pipeline.js start` (deja pendientes los pasos que siguen al Arranque). Retomando una ejecución que YA aprobó');
+      console.error('    el plan → pasá `stepsCompleted` con los pasos hechos (incluido approve-plan) en el mismo set: así no avisa.');
+    }
+  }
+  const marker = {
+    // 🔴 Los campos DESCONOCIDOS del marker existente se PRESERVAN. Con una lista cerrada de campos,
+    // todo lo que no estuviera enumerado acá se perdería en silencio: `checks`,
+    // `checksProvenance`, `dodRuntimeChecked`, `deepReviewDone`, `workSignalStarted`, `adoMarkedActive`,
+    // `autonomous`, `iter`, `noProgressStreak`, `lastFailures`, `stepTimings`… O sea que un `set`
+    // mid-pipeline borraría toda la evidencia de verificación (los checks con provenance `run-check`,
+    // el gate de DoD) y el pipeline quedaría obligado a re-correr suites enteras — o, peor, tentado a
+    // re-poner los greens a mano con `set-check --manual`, que es exactamente lo que la capa
+    // anti-green-falso existe para impedir.
+    //
+    // Así un campo nuevo en el marker no necesita acordarse de sumarlo acá.
+    //
+    // Es fácil no verlo: `cmdGet` emite el marker COMPLETO, así que el patrón natural
+    // `marker.js get | jq '.x = y' | marker.js set` parece seguro. Lo que se preserva evita que un
+    // `set` para corregir `storyPath` borre los 3 checks `run-check` y el flag de DoD, y obligue a
+    // re-correr build + suite completa.
+    ...(existing || {}),
+    storyId: payload.storyId,
+    storyPath: payload.storyPath || at(existing, 'storyPath') || null,
+    repoPath: path.resolve(payload.repoPath || at(existing, 'repoPath') || process.cwd()),
+    // Dónde nace la evidencia de cierre: el repo de la STORY, aunque el código viva en
+    // otro. Lo escribe `pipeline.js start`; lo leen el paso «Probar en vivo», el macro y `mark-dod-runtime-checked`.
+    // 🔴 El spread de arriba preserva lo EXISTENTE, no lo que trae el payload: sin esta línea el
+    // campo se pierde en silencio, aunque la prosa prometa un `marker.js get → evidenceDir`. Es estado
+    // de corrida: se resetea por story.
+    evidenceDir: payload.evidenceDir || at(existing, 'evidenceDir') || null,
+    // Commit en el que arrancó la corrida: la base contra la que
+    // test-gate.sh mide las «líneas tocadas» (lib/coverage-base.js). Lo anota `pipeline.js start`.
+    // Es estado de corrida: el bloque de arriba lo descarta al cambiar de story. Y gana el EXISTENTE:
+    // re-correr `start` sobre la misma story (retomar) no puede mover la base al HEAD de ahora, o lo
+    // commiteado durante la corrida dejaría de contar como tocado.
+    baseSha: at(existing, 'baseSha') || payload.baseSha || null,
+    // La carpeta de la corrida (`.advisors/pipeline-runs/<clave>-<sello>`), que crea `pipeline.js start`: la piden todos
+    // los que escriben o leen la constancia de esta corrida (lib/run-dir.js). Como la base, gana la EXISTENTE: retomar
+    // la misma story no abre otra carpeta. Es estado de corrida: el bloque de arriba la descarta al cambiar de story.
+    // La existente gana mientras siga en disco y sea del mismo repo que la que trae el pedido; si ya no está (o es de
+    // otro repo), la que abrió `start` la reemplaza: si no, la carpeta nueva quedaría sin marcador que la nombre.
+    runDir: (() => {
+      const vieja = at(existing, 'runDir');
+      const nueva = payload.runDir;
+      // por la ruta real: un enlace (/var y /private/var en macOS) no hace de la misma carpeta una de otro repo
+      const real = (p) => { try { return fs.realpathSync(path.dirname(path.resolve(p))); } catch (_e) { return path.dirname(path.resolve(p)); } };
+      const sigue = !!vieja && fs.existsSync(vieja) && (!nueva || real(vieja) === real(nueva));
+      return sigue ? vieja : (nueva || vieja || null);
+    })(),
+    sprint: nn(payload.sprint, nn(at(existing, 'sprint'), null)),
+    sessionId: estado.SID,
+    startedAt: at(existing, 'startedAt') || nowIso(),
+    lastTouch: nowIso(),
+    // el esquema lo trae `pipeline.js start` (2: pasos por nombre); un marcador viejo sigue sin él hasta terminar
+    ...(payload.stepScheme !== undefined ? { stepScheme: payload.stepScheme } : {}),
+    stepsCompleted: payload.stepsCompleted || at(existing, 'stepsCompleted') || [],
+    stepsPending: payload.stepsPending || at(existing, 'stepsPending') || [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    filesTouched: payload.filesTouched || at(existing, 'filesTouched') || [],
+    // Los sellos de contenido (hash + hora por toque, piso de frescura por contenido)
+    // viven y mueren con la story: si cambia la story, los de la anterior no valen para ésta.
+    filesTouchedAt: (payload.storyId && at(existing, 'storyId') && payload.storyId !== existing.storyId)
+      ? (payload.filesTouchedAt || {})
+      : (payload.filesTouchedAt || at(existing, 'filesTouchedAt') || {}),
+    // Foto de archivos por iteración para los revisores del smart re-loop.
+    // Map { "<N>": { ts, filesSnapshot: [abs-paths] } }. Permite computar delta
+    // entre iters N y N-1 → pipeline.js smart-reloop decide qué advisors re-correr.
+    iterations: payload.iterations || at(existing, 'iterations') || {},
+    // fileEvents: un `set`
+    // mid-pipeline NO debe borrar los eventos de edición de la iteración — si se
+    // pierden, computeSmartReloop elige el path fileEvents con datos truncados y
+    // SUPRIME el fallback por mtime (re-ediciones caen del delta en silencio).
+    fileEvents: payload.fileEvents || at(existing, 'fileEvents') || [],
+    // el tamaño de la corrida y su estimado los anota `pipeline.js start`. Un forzado a mano
+    // (`set-size`) gana sobre un `start` re-corrido de la misma story: re-clasificar no deshace una decisión con motivo.
+    ...(() => {
+      const keep = existing && existing.sizeForced;
+      const pick = (k) => (keep && k !== 'estimate_min' && k !== 'estimate_source' ? existing[k] : nn(payload[k], at(existing, k)));
+      const out = {};
+      for (const k of ['size', 'size_reason', 'estimate_min', 'estimate_source']) if (pick(k) !== undefined) out[k] = pick(k);
+      return out;
+    })(),
+    // el modelo de la sesión y, en Codex, su proveedor: los anota `pipeline.js start` (los usan el registro de revisores y
+    // `reviewers-run`)
+    ...(payload.sessionModel !== undefined ? { sessionModel: payload.sessionModel } : {}),
+    ...(payload.codexSession !== undefined ? { codexSession: payload.codexSession } : {}),
+    // la otra sesión de la misma story que trabaja en otra copia y otra rama (PIPE-C0 por hechos, `pipeline.js start`)
+    ...(payload.parallelWith !== undefined ? { parallelWith: payload.parallelWith } : {}),
+    // la hora de este paso sigue valiendo si se retoma la misma story; una story nueva no la hereda
+    ...(at(existing, 'horaDelPaso') ? { horaDelPaso: at(existing, 'horaDelPaso') } : {}),
+  };
+  // Un marcador que no es de ningún esquema (números y nombres mezclados, o un paso que la tabla no conoce) no se
+  // escribe: los portones no sabrían si el plan está aprobado.
+  if (STEPS_LIB.schemeOf(marker) === null) {
+    console.error('marker.js set: el marcador quedaría sin esquema de pasos legible (números y nombres mezclados, o un paso que lib/steps.js no conoce): no se escribe.');
+    console.error(`  stepsCompleted=${JSON.stringify(marker.stepsCompleted)} stepsPending=${JSON.stringify(marker.stepsPending)}${marker.stepScheme !== undefined ? ` stepScheme=${marker.stepScheme}` : ''}`);
+    process.exit(2);
+  }
+  // El Arranque arranca cuando nace la corrida. Nadie lo pide con `next` (start lo cierra
+  // enseguida); sin esto el Arranque sale siempre «estimado» y toda corrida real «parcial».
+  if (STEPS_LIB.isPending(marker, 'start')) {
+    const conArranque = anotarArranque(marker, STEPS_LIB.schemeOf(marker) === 2 ? 'start' : '0', marker.startedAt);
+    if (conArranque) marker.stepTimings = conArranque.stepTimings;
+  }
+  writeMarker(marker);
+  // un set que retoma con otros pasos o reemplaza la story cambia lo que el archivo de estado dice
+  syncSessionState(estado.SID);
+  process.stdout.write(JSON.stringify(marker, null, 2));
+}
+
+function cmdGet() {
+  const marker = readMarker();
+  process.stdout.write(JSON.stringify(nn(marker, {}), null, 2));
+}
+
+function cmdTouch() {
+  const marker = readMarker();
+  if (!marker) process.exit(0);
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+}
+
+/**
+ * run-check — ground-truth de los gates del modo autónomo.
+ *
+ *   marker.js run-check <name> -- <cmd> [args...]
+ *
+ * Lanza el comando como proceso hijo SIN shell (no pipes, no `| tail` que enmascare
+ * el exit code), captura el exit code REAL y setea
+ * marker.checks[name] = 'green' | 'red:exit=N'. provenance='run-check'.
+ * Loguea {check, cmd, exit, durationMs} a gates.log (append-only).
+ * El exit code del proceso = el del comando → gateable con && / set -e.
+ *
+ * Una sola corrida de cada check por repo: antes de lanzar toma el candado
+ * `run-check-locks/<check>-<huella de la raíz de git>`. Si otro lo tiene, no lanza nada, no escribe el marcador
+ * ni gates.log, dice desde cuándo corre el otro y de quién, y sale 75. El candado guarda el pid propio y el del hijo, y
+ * vale mientras viva cualquiera de los dos: no se libera por edad (una suite completa tarda más de diez minutos), sí
+ * cuando los dos murieron en esta máquina; el de otra máquina no se toca. SIGINT, SIGTERM y SIGHUP se le pasan al
+ * hijo; run-check espera a que el hijo cierre, suelta el candado y sale con 128 + la señal, sin registrar la corrida.
+ * Un comando que sale 75 por su cuenta se anota y sale como 1. Las marcas en rojo de
+ * test-gate.sh (TYCON_TEST_GATE_MARK=1) no toman el candado.
+ *
+ * 🔴 EN ROJO guarda además la COLA de la salida en `cola`. Si el comando lo lanzó un script o corre
+ * en segundo plano, la conversación sólo muestra «Command running in background» y la salida va a un
+ * archivo que se borra: este comando es el único que ve la salida, así que la guarda él.
+ * La salida se sigue mostrando mientras corre (se copia a la consola a medida que llega) y se retienen
+ * sólo los últimos bytes. Se sanea ANTES de escribirla con `colaDeSalida` de tokens-digest.js —el mismo
+ * saneado y el mismo tope que el rescate—, porque gates.log viaja al buzón del equipo. Si ese archivo no
+ * está (arnés atrasado), NO se guarda la salida cruda: queda `cola_motivo` y el veredicto no cambia.
+ * En verde no se guarda nada.
+ */
+/**
+ * Las firmas de la corrida para su volcado (`run-signatures.js` del arnés, con su saneador). Sin el arnés o sin el
+ * guion, `no_medido` con el motivo: nunca tira, y nunca sube un texto sin sanear.
+ */
+function firmasDelVolcado(dump) {
+  try {
+    const { dir: guias, aviso } = require('./harness-path.js').rutaArnesHook();
+    if (!guias) return { estado: 'no_medido', motivo: `${aviso}: las firmas no se subieron` };
+    return require(path.join(guias, 'scripts', 'lib', 'run-signatures.js')).deVolcado(dump);
+  } catch (e) {
+    return { estado: 'no_medido', motivo: `no pude cargar run-signatures.js del arnés (${e.code || 'error'}): las firmas no se subieron` };
+  }
+}
+
+function cmdAppendFile(absPath) {
+  if (!absPath) process.exit(0);
+  const marker = readMarker();
+  if (!marker) process.exit(0);
+  if (!marker.filesTouched.includes(absPath)) {
+    marker.filesTouched.push(absPath);
+  }
+  // EVENTOS de edición con timestamp:
+  // filesTouched dedupea → un archivo RE-editado en iter N no entraría al delta
+  // por nombres, y su fix no se re-auditaría. fileEvents conserva CADA edición con ts;
+  // pipeline.js smart-reloop computa el delta como "archivos con evento posterior
+  // al snapshot de la iter previa". Cap 500 entries (FIFO) para no crecer sin límite.
+  // `code`: si pide otra vuelta de revisores, como en on-edit; si la regla falla, pide (ante la duda, se revisa).
+  marker.fileEvents = marker.fileEvents || [];
+  let code;
+  try { code = require('./reloop-code.js').pideOtraVuelta(absPath, { storyPath: marker.storyPath }); } catch (_) { code = true; }
+  marker.fileEvents.push({ path: absPath, ts: nowIso(), code });
+  if (marker.fileEvents.length > 500) {
+    marker.fileEvents = marker.fileEvents.slice(-500);
+  }
+  anotarOtraVuelta(marker);
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+}
+
+// Las opciones de los dos guiones del arnés que llama el cierre (`tokens-digest.js` y `run-change.js`), con sus nombres
+// viejos (anteriores al renombre). El cierre llama con los de hoy; si el guion sale con su código de «argumentos
+// inválidos» es un arnés atrasado, que sólo entiende los viejos, y se lo llama UNA vez más con ésos.
+// Sin el mapa de renombres (la copia pública no lo trae), el guion sale 2 y cada cierre anotaría «no medido»:
+// sin el cambio de git, sin el hilo y sin el consumo. Se arman por partes: no son nombres a usar.
+// Los dos guiones salen 2 también cuando no pudieron escribir su salida: ahí la segunda vuelta repite el intento una vez,
+// falla igual, y el motivo que queda anotado es el de esa última.
+// Casos: `tests/marker-archive-change.test.js` (T13–T16).
+const HARNESS_INVALID_ARGS = 2;
+const HARNESS_OLD_OPTION = {
+  run: `--${['co', 'rrida'].join('')}`,
+  dump: `--${['vol', 'cado'].join('')}`,
+  state: `--${['es', 'tado'].join('')}`,
+};
+
+/**
+ * Rescate del hilo y el consumo de la corrida que cierra.
+ *
+ * El archivador guarda tiempos, frenos y costo; esta función suma el CONSUMO y el HILO, que
+ * viven sólo en la conversación de Claude Code, que se borra a los 30 días: sin rescate, la mayoría
+ * de las corridas archivadas perderían su conversación.
+ *
+ * 🔴 ESTA FUNCIÓN NO PUEDE ROMPER EL ARCHIVADO, y por eso está escrita al revés que el resto: el
+ * volcado ya está en disco cuando se la llama, y todo camino de falla termina anotando el motivo
+ * adentro del volcado en vez de propagar. `tokens-digest.js` vive en OTRO repo
+ * (el arnés), que se actualiza por un camino distinto a éste: una máquina con el arnés
+ * atrasado tiene este archivo nuevo y aquél ausente. Si el archivado dependiera de él, esa máquina
+ * dejaría de archivar TAMBIÉN los tiempos, los frenos y el costo.
+ * Casos: `tests/marker-archive-rescue.test.js` (T8 rescate roto · T8b script ausente · T8c sano) y
+ * `tests/marker-archive-change.test.js` (T15, T16: con qué nombre de opción se lo llama).
+ *
+ * Devuelve el volcado ya actualizado, para que la copia del repo salga con lo mismo.
+ * Apagar: TYCON_NO_THREAD_RESCUE=1
+ */
+function rescatarHiloYConsumo(archivo, dump) {
+  const anotar = (motivo) => {
+    try {
+      const d = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+      // Sin la clave `tokens`, a propósito: un cero se lee como «esta corrida no consumió nada».
+      d.consumo = { estado: 'no_medido', motivo, medido_en: nowIso() };
+      fs.writeFileSync(archivo, JSON.stringify(d, null, 2), 'utf8');
+      return d;
+    } catch { return dump; }
+  };
+
+  if (require('./legacy-names.js').readEnv('TYCON_NO_THREAD_RESCUE', { where: 'skills/tycon-pipeline/scripts/marker.js' }) === '1') {
+    return anotar('el rescate del hilo está apagado en esta máquina (TYCON_NO_THREAD_RESCUE=1)');
+  }
+
+  const arnes = require('./harness-path.js').rutaArnesHook();   // La variable o el enlace, nunca una carpeta escrita a mano
+  if (!arnes.dir) return anotar(`${arnes.aviso} — la corrida se archivó igual`);
+  const script = path.join(arnes.dir, 'scripts', 'metrics', 'tokens-digest.js');
+  if (!fs.existsSync(script)) {
+    return anotar(`no encontré tokens-digest.js en ${script} — el arnés de esta máquina puede estar atrasado; la corrida se archivó igual`);
+  }
+
+  try {
+    const { execFileSync } = require('child_process');
+    const resto = process.env.TYCON_PROJECTS_DIR ? ['--projects-dir', process.env.TYCON_PROJECTS_DIR] : [];
+    const llamar = (opcion) => execFileSync(process.execPath, [script, opcion, archivo, ...resto], { windowsHide: true, stdio: 'ignore', timeout: 60000 });
+    try {
+      llamar('--run');
+    } catch (err) {
+      // sólo «argumentos inválidos» (un arnés de antes del renombre) merece la vuelta con el nombre viejo; cualquier otra
+      // falla —rota, lenta, ausente— sigue su camino de siempre
+      if (!err || err.status !== HARNESS_INVALID_ARGS) throw err;
+      llamar(HARNESS_OLD_OPTION.run);
+    }
+    return JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  } catch (err) {
+    return anotar(`el rescate del hilo falló: ${err && (err.code || err.message) ? (err.code || err.message) : 'motivo desconocido'}`);
+  }
+}
+
+/**
+ * El cambio de la corrida según git: llama a
+ * `scripts/metrics/run-change.js` del arnés, que deja `<volcado>.cambio.json.gz` al
+ * lado del volcado (los commits que la corrida creó y lo que quedó sin commitear, en cada repo donde
+ * escribió), y anota en el volcado SÓLO el resumen `cambio: {estado, repos, archivos, motivo}`.
+ *
+ * 🔴 Mismo contrato que `rescatarHiloYConsumo`, y por la misma razón: el guion vive en otro repo que se
+ * actualiza por otro camino, así que ninguna falla suya —ausente, roto, lento— puede impedir el archivado.
+ * Todo camino termina anotando `no_medido` con el motivo. Los parches nunca entran al volcado: el volcado
+ * se copia al repo.
+ * Casos: `tests/marker-archive-change.test.js` (T11 sano · T12 ausente, roto, lento, apagado · T13, T14: con qué
+ * nombres de opción se lo llama).
+ * Apagar: TYCON_NO_RUN_CHANGE=1 · tope: 30 s (TYCON_RUN_CHANGE_TIMEOUT_MS, para las pruebas)
+ */
+function guardarCambioDeCorrida(archivo, dump) {
+  const anotar = (cambio) => {
+    try {
+      const d = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+      d.cambio = cambio;
+      fs.writeFileSync(archivo, JSON.stringify(d, null, 2), 'utf8');
+      return d;
+    } catch { return { ...dump, cambio }; }
+  };
+  const noMedido = (motivo) => anotar({ estado: 'no_medido', repos: 0, archivos: 0, motivo });
+
+  const { readEnv } = require('./legacy-names.js');
+  if (readEnv('TYCON_NO_RUN_CHANGE', { where: 'skills/tycon-pipeline/scripts/marker.js' }) === '1') {
+    return noMedido('el cambio de git de la corrida está apagado en esta máquina (TYCON_NO_RUN_CHANGE=1)');
+  }
+  const arnes = require('./harness-path.js').rutaArnesHook();   // La variable o el enlace, nunca una carpeta escrita a mano
+  if (!arnes.dir) return noMedido(`${arnes.aviso} — la corrida se archivó igual`);
+  // El nombre nuevo primero: por el viejo corre el reemplazo, que en Azure avisa «nombre viejo» en
+  // cada corrida. El viejo sólo en un arnés que todavía no tiene el renombre (se arma por partes: no es un nombre a usar).
+  const metricas = path.join(arnes.dir, 'scripts', 'metrics');
+  const script = [path.join(metricas, 'run-change.js'), path.join(metricas, `${['cambio', 'de', 'corrida'].join('-')}.js`)].find((p) => fs.existsSync(p));
+  if (!script) {
+    return noMedido(`no encontré run-change.js en ${metricas} — el arnés de esta máquina puede estar atrasado; la corrida se archivó igual`);
+  }
+  const topePuesto = Number(readEnv('TYCON_RUN_CHANGE_TIMEOUT_MS', { where: 'skills/tycon-pipeline/scripts/marker.js' }));
+  const tope = topePuesto > 0 ? topePuesto : 30000;
+  try {
+    const { spawnSync } = require('child_process');
+    const llamar = (dumpOption, stateOption) => spawnSync(process.execPath, [script, dumpOption, archivo, stateOption, STATE_DIR],
+      { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: tope, killSignal: 'SIGKILL' });
+    let r = llamar('--dump', '--state');
+    // sólo «argumentos inválidos» (un arnés de antes del renombre) merece la vuelta con los nombres viejos
+    if (!r.error && r.status === HARNESS_INVALID_ARGS) r = llamar(HARNESS_OLD_OPTION.dump, HARNESS_OLD_OPTION.state);
+    if (r.error && r.error.code === 'ETIMEDOUT') return noMedido(`el cambio de git tardó más de ${Math.round(tope / 1000)} s y se cortó; la corrida se archivó igual`);
+    if (r.error) return noMedido(`el cambio de git falló: ${r.error.code || r.error.message}`);
+    if (r.status !== 0) return noMedido(`el cambio de git falló (salió ${r.status}); la corrida se archivó igual`);
+    let s;
+    try { s = JSON.parse(String(r.stdout || '').trim().split('\n').pop()); } catch { s = null; }
+    if (!s || typeof s !== 'object' || !s.estado) return noMedido('el cambio de git no devolvió un resumen legible; la corrida se archivó igual');
+    return anotar({ estado: String(s.estado), repos: Number(s.repos) || 0, archivos: Number(s.archivos) || 0, motivo: s.motivo || null });
+  } catch (err) {
+    return noMedido(`el cambio de git falló: ${err && (err.code || err.message) ? (err.code || err.message) : 'motivo desconocido'}`);
+  }
+}
+
+/**
+ * Una ejecución que tocó archivos y no completó ningún paso después del arranque trabajó por fuera del pipeline: el
+ * cierre lo dice en una línea y lo deja en bypass.log, para que se vea en el momento y en el tablero. No frena nada.
+ * «Tocó archivos» es lo que registró el editor más lo que git ve cambiado contra el commit de arranque; lo de
+ * `.advisors/` es del propio pipeline y no cuenta.
+ */
+function avisarCierreSinPasos(marker) {
+  try {
+    // el Arranque: `start` en un marcador nuevo; sus tres partes viejas, en uno viejo
+    const arranque = (s) => String(s) === 'start' || String(s).startsWith('0');
+    if ((marker.stepsCompleted || []).some((s) => !arranque(s))) return;
+    const repo = marker.repoPath && fs.existsSync(marker.repoPath) ? marker.repoPath : null;
+    const mostrar = (f) => (repo && f.startsWith(repo + path.sep) ? path.relative(repo, f) : f);
+    const tocados = new Set((marker.filesTouched || []).map(String));
+    if (repo && marker.baseSha) {
+      const { spawnSync } = require('child_process');
+      const git = (args) => spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
+      for (const r of [git(['diff', '--name-only', marker.baseSha]), git(['ls-files', '--others', '--exclude-standard'])]) {
+        if (r.error || r.status !== 0) continue;
+        for (const f of String(r.stdout).split('\n').filter(Boolean)) tocados.add(path.join(repo, f));
+      }
+    }
+    const archivos = [...tocados].map(mostrar).filter((f) => !f.split(/[\\/]/).includes('.advisors'));
+    if (!archivos.length) return;
+    const desde = Date.parse(marker.startedAt || '');
+    const minutos = Number.isFinite(desde) ? Math.max(1, Math.round((Date.now() - desde) / 60000)) : null;
+    appendLog('bypass.log', { kind: 'RUN_CLOSED_WITHOUT_STEPS', storyId: marker.storyId, files: archivos.length, sample: archivos.slice(0, 5), minutes: minutos });
+    process.stderr.write(`⚠️  la ejecución de la ${marker.storyId} tocó ${archivos.length} archivo(s) en ${minutos === null ? '?' : minutos} min y no anotó ningún paso después del arranque: el trabajo se hizo por fuera del pipeline (queda en bypass.log)\n`);
+  } catch { /* el aviso nunca frena el cierre */ }
+}
+
+function cmdClear(rest = []) {
+  // Timing dump automático: el cierre del
+  // pipeline archiva el marker completo + los gates de la sesión ANTES de borrar —
+  // es la única fuente de la curva de costo por run (stepTimings, iteraciones,
+  // checks, gates con duración). Mecánico: no depende de que el orquestador se
+  // acuerde de correr `pipeline.js timing-report` antes del clear. Best-effort:
+  // un fallo acá JAMÁS bloquea el clear.
+  let cerradaEnClear = false;
+  let marcadorAntes = null;
+  frenarSiIlegible(markerFilePath(estado.SID), estado.SID, 'clear');
+  try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
+  frenarSiPerdida(estado.SID, 'clear', marcadorAntes && marcadorAntes.repoPath);
+  try {
+    const marker = readMarker();
+    if (marker && marker.storyId) {
+      let gates = [];
+      try {
+        const raw = fs.readFileSync(path.join(STATE_DIR, 'gates.log'), 'utf8');
+        gates = raw.split('\n').filter(Boolean)
+          .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+          .filter((g) => g && g.sessionId === estado.SID);
+      } catch { /* sin gates.log */ }
+      // Costo del run: el conteo de spawns es el proxy de costo, porque cada
+      // agente cuesta ~60.000-100.000 tokens ANTES de leer nada (baseline medido en
+      // ~/.claude/.tycon-pipeline/baseline/). Se calcula ACÁ, en el mismo cierre mecánico que
+      // el timing dump, para que no dependa de que alguien se acuerde de correr
+      // `pipeline.js cost-report`. Vara del historial (58 runs): ~14 spawns por run, 22% de
+      // exploración libre, 2,6 de ésos antes de los advisors.
+      const ADHOC = new Set(['general-purpose', 'Explore', 'Plan', 'claude']);
+      const costo = { spawns: 0, adhoc: 0, adhoc_pre_step5: 0, iteraciones: 0, por_tipo: {}, sin_hora: 0 };
+      try {
+        const runLog = path.join(STATE_DIR, 'advisor-runs', `${estado.SID}.jsonl`);
+        // El registro es de la sesión, que puede haber corrido otras stories: cuenta sólo lo lanzado desde que arrancó
+        // esta corrida y, si la línea nombra una story, sólo la de ésta. Una línea sin hora no se sabe de qué corrida es:
+        // no cuenta, y queda dicho en `sin_hora`.
+        // Sin la hora de arranque (un marcador viejo o editado) sólo cuentan las líneas que nombran esta story, y se dice.
+        const desde = Date.parse(marker.startedAt || '');
+        if (!Number.isFinite(desde)) costo.sin_arranque = true;
+        const estaStory = String(marker.storyId || '');
+        let vistoStep5 = false;
+        for (const l of fs.readFileSync(runLog, 'utf8').split('\n')) {
+          if (!l.trim()) continue;
+          let d; try { d = JSON.parse(l); } catch { costo.ilegibles = (costo.ilegibles || 0) + 1; continue; }
+          const nombra = d.story !== undefined && d.story !== null;
+          if (nombra && String(d.story) !== estaStory) continue;
+          if (!nombra && costo.sin_arranque) continue;
+          const hora = Date.parse(d.ts || '');
+          if (!Number.isFinite(hora)) { costo.sin_hora++; continue; }
+          if (Number.isFinite(desde) && hora < desde) continue;
+          if (d.event === 'step5-start') { vistoStep5 = true; continue; }
+          if (!d.advisor) continue;
+          costo.spawns++;
+          costo.por_tipo[d.advisor] = (costo.por_tipo[d.advisor] || 0) + 1;
+          if (ADHOC.has(d.advisor)) { costo.adhoc++; if (!vistoStep5) costo.adhoc_pre_step5++; }
+        }
+      } catch (e) {
+        // sin registro, el costo queda en cero; un registro que está y no se lee lo dice, para no pasar por «cero agentes»
+        if (e.code !== 'ENOENT') costo.registro = `no se pudo leer (${e.code || e.message})`;
+      }
+      // las vueltas: las que lanzaron revisores (las fotos de iteración), la misma cuenta que pipeline.js review-rounds; un
+      // arranque del paso de revisores sin revisores no es una vuelta
+      costo.iteraciones = require('./review-rounds.js').vueltas(marker);
+      // La revisión adversarial de la historia antes de programar: su constancia, o null dicho. Lo no medido es null.
+      let revisionPrevia = null;
+      let notaPrevia = 'sin revisión previa';
+      try {
+        const sp = marker.storyPath && marker.repoPath && !path.isAbsolute(marker.storyPath) ? path.join(marker.repoPath, marker.storyPath) : marker.storyPath;
+        revisionPrevia = require('./story-review-record.js').resumenVolcado(os.homedir(), sp);
+      } catch (e) {
+        // no poder leerla no es «no hubo»: se dice
+        notaPrevia = `no se pudo leer la constancia de la revisión previa (${e.message})`;
+        process.stderr.write(`[marker] ${notaPrevia}\n`);
+      }
+      // Cómo terminó la ejecución (lib/run-close.js): completa, o abortada con su motivo y quién autorizó cerrar. Un
+      // cierre ya escrito (la deuda de close-as-debt) no se pisa. Que falle no frena el archivo: queda dicho.
+      try {
+        marker.cierre = require('./run-close.js').cierreDe(marker, { sid: estado.SID });
+        const c = marker.cierre;
+        cerradaEnClear = cerrarEjecucion(estado.SID, marker, { registrar: false, estado: c.estado, motivo: c.motivo || null, via: c.via || null, ...(c.deuda ? { extra: { deuda: c.deuda } } : {}) });
+      } catch (e) {
+        // sin poder calcularlo, la ejecución no cuenta como terminada: queda abortada y el motivo lo dice
+        marker.cierre = { estado: 'abortada', motivo: `no pude determinar cómo terminó (${e.message})`, via: 'sin-registro', at: nowIso() };
+        process.stderr.write(`[marker] no pude armar el cierre de la ejecución (${e.message}): queda como abortada\n`);
+      }
+      // El repo real de la carpeta (un worktree o un clon cuentan como su repo) para agrupar las ejecuciones en la vista.
+      let repo = null;
+      try { repo = require('./repo-attrib.js').realRepo(marker.repoPath); } catch (_e) { /* sin él, la vista deduce de la carpeta */ }
+      const dump = {
+        archivedAt: nowIso(), marker, gates, costo, ...(repo ? { repo } : {}),
+        revision_previa: revisionPrevia, ...(revisionPrevia ? {} : { revision_previa_nota: notaPrevia }),
+      };
+      // Las firmas de la corrida, del registro común: las de sus sesiones entre el arranque y este cierre. Que falle no
+      // frena el archivo: queda `no_medido` con su motivo.
+      dump.firmas = firmasDelVolcado(dump);
+      const safeStory = String(marker.storyId).replace(/[^\w.-]/g, '_');
+      const ts = nowIso().replace(/[:.]/g, '').slice(0, 15);
+      // 1) Historia global (sobrevive aunque el repo no exista).
+      const histDir = path.join(STATE_DIR, 'timing-history');
+      fs.mkdirSync(histDir, { recursive: true });
+      const histFile = path.join(histDir, `${safeStory}-${ts}.json`);
+      fs.writeFileSync(histFile, JSON.stringify(dump, null, 2), 'utf8');
+      // 1b) Rescate del hilo, el consumo y el mensaje de los errores. Se hace DESPUÉS
+      //     de que el volcado ya está en disco, a propósito: si algo de esto falla, lo peor que pasa
+      //     es que el volcado quede con `consumo.estado: "no_medido"` y su motivo.
+      // 1c) El cambio según git, después del rescate y con el mismo contrato: nunca rompe.
+      const dumpFinal = guardarCambioDeCorrida(histFile, rescatarHiloYConsumo(histFile, dump));
+      // 2) Copia en el repo (pipeline-runs del run, si resuelve) — viaja con los
+      //    artefactos de la story para la retro / el retrospective-capturer.
+      if (marker.repoPath && fs.existsSync(marker.repoPath)) {
+        const runsDir = path.join(marker.repoPath, '.advisors', 'pipeline-runs');
+        let target = null;
+        try {
+          // La carpeta de ESTA story: por la clave; con número repetido, `<id>-*` es la de otra.
+          const sp = marker.storyPath ? (path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(marker.repoPath, marker.storyPath)) : null;
+          const ki = require('./evidence-key.js').keyInfoOr(sp, String(marker.storyId));
+          const clave = ki.key;
+          // Sin clave el volcado cae en la raíz de pipeline-runs/ (como cuando no hay carpeta), pero se DICE por qué.
+          if (!clave) process.stderr.write(`[marker] el volcado de tiempos va suelto a ${runsDir}: no pude calcular la clave de la carpeta de la story (${ki.error}).\n`);
+          // la carpeta de la corrida que se limpia (su `runDir`, o la de su apertura): la misma regla que todos
+          // (lib/run-dir.js); sin ninguna, la de la regla sin marcador
+          if (clave) target = require('../pipeline.js').resolveRunDir(marker.repoPath, String(marker.storyId), false, sp || undefined, { marker }) || null;
+        } catch (e) {
+          process.stderr.write(`[marker] no pude calcular la carpeta de la corrida para el volcado de tiempos (${e.message}): va suelto a ${runsDir}.\n`);
+        }
+        if (!target) {
+          target = runsDir;
+          process.stderr.write(`[marker] el volcado de tiempos va suelto a ${runsDir}: no encontré la carpeta de la corrida de la story ${marker.storyId}.\n`);
+          fs.mkdirSync(target, { recursive: true });
+        }
+        fs.writeFileSync(path.join(target, `timing-dump-${ts}.json`), JSON.stringify(dumpFinal, null, 2), 'utf8');
+      }
+      process.stderr.write(`[marker] timing dump archivado: timing-history/${safeStory}-${ts}.json\n`);
+      avisarCierreSinPasos(marker);
+      // Línea de costo al cierre — mecánica, siempre, sin flags. Compara contra la vara del
+      // historial para que el número signifique algo sin tener que ir a buscarlo.
+      if (costo.spawns) {
+        const pct = Math.round((costo.adhoc / costo.spawns) * 100);
+        const vs = (v, base, unidad) => {
+          const d = v - base;
+          if (Math.abs(d) < 0.05) return `= vara (${base}${unidad})`;
+          return `${d > 0 ? '▲' : '▼'} vara ${base}${unidad}`;
+        };
+        process.stderr.write(
+          `[marker] costo del run: ${costo.spawns} agentes en ${costo.iteraciones} iteración(es) de revisión · ` +
+          `${costo.adhoc} de exploración libre (${pct}%, ${vs(pct, 22, '%')}) · ` +
+          `${costo.adhoc_pre_step5} antes de los advisors (${vs(costo.adhoc_pre_step5, 2.6, '')}) · ` +
+          `referencia ~60-100K tokens por agente · vara del historial: ~14 agentes/run\n`,
+        );
+      }
+      // La oferta de la instalación completa al cerrar la primera historia: sale del cierre mecánico, después
+      // de archivar el volcado (el volcado de ESTA corrida es la evidencia de que se cerró). Va a la salida estándar para
+      // que el agente la muestre tal cual; un error se dice en un renglón y nunca frena el cierre.
+      try {
+        const offer = require('./first-story.js').afterClose({ home: os.homedir(), env: process.env, marker });
+        for (const l of offer.lines) process.stdout.write(`${l}\n`);
+        if (offer.warn) process.stderr.write(`[marker] ${offer.warn}\n`);
+      } catch (e) { process.stderr.write(`[marker] la oferta de la instalación completa no se pudo evaluar: ${e.message}\n`); }
+    }
+  } catch { /* best-effort */ }
+  // el archivo falló antes de anotar el cierre: se anota igual, para que la sesión no quede con su apertura sin marcador
+  if (!cerradaEnClear && marcadorAntes && marcadorAntes.storyId) {
+    cerrarEjecucion(estado.SID, marcadorAntes, { registrar: false, estado: 'abortada', motivo: 'clear: no pude archivar la ejecución ni calcular cómo terminó' });
+  }
+  clearMarker();
+  // las copias congeladas de la corrida (historia 8.161): se les devuelve el permiso y se borran
+  try { require('./frozen-tree.js').remove(STATE_DIR, estado.SID); } catch (e) { process.stderr.write(`[marker] no pude borrar las copias congeladas de la corrida (${e.message}): las barre la próxima vuelta\n`); }
+  // y los clones de los humos comparados (historia 8.167)
+  try { require('./compare-previous.js').limpiar(STATE_DIR, estado.SID); } catch (e) { process.stderr.write(`[marker] no pude borrar los clones de los humos comparados (${e.message}): los barre la próxima comparación\n`); }
+  syncSessionState(estado.SID);
+}
+
+function cmdIsActive() {
+  const marker = readMarker();
+  if (!marker) process.exit(1);
+  process.stdout.write(marker.storyId);
+  process.exit(0);
+}
+
+module.exports = { cmdSet, cmdGet, cmdTouch, cmdAppendFile, cmdClear, cmdIsActive };

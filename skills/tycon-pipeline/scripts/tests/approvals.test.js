@@ -108,7 +108,7 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan — la firma por terminal es m
   // runtime-waiver exige una terminal real (el agente no la tiene): se prueba la forma de las líneas que anota.
   const ls = approvals.lineasDeFirmaPorTerminal([2, 5], 'ana');
   assert.deepEqual(ls.map((l) => [l.que, l.tipo, l.quien]), [['AC 2 imposible de verificar en vivo', 'manual', 'ana'], ['AC 5 imposible de verificar en vivo', 'manual', 'ana']]);
-  const fuente = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+  const fuente = require('./lib/marker-source.js')(SCRIPTS);
   assert.match(fuente, /lineasDeFirmaPorTerminal\(approved, approvedBy\)/, 'runtime-waiver anota con esta función, después de firmar');
 });
 

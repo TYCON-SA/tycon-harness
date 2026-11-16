@@ -563,10 +563,10 @@ const CORRE_ARCHIVO = /^(?:node|nodejs|python[0-9.]*|perl|ruby|bun|deno|tsx|ts-n
 // lo que el guion escribe se lee entero hasta este tamaño; más grande, cuenta si nombra una historia o una constancia
 const GUION_TOPE = 256 * 1024;
 const GUION_TOPE_DURO = 64 * 1024 * 1024;
-// el recorrido de los módulos locales: lo medido sobre los despachadores (marker.js, pipeline.js) por dos. Lo que queda
-// más allá no se corta callado: se juzga como un guion que no se lee entero
-const RECORRIDO_NIVELES = 26;
-const RECORRIDO_ARCHIVOS = 224;
+// el recorrido de los módulos locales: lo medido sobre los despachadores (marker.js partido, pipeline.js y este freno:
+// 121 módulos en 14 niveles) por dos. Lo que queda más allá no se corta callado: se juzga como un guion que no se lee entero
+const RECORRIDO_NIVELES = 28;
+const RECORRIDO_ARCHIVOS = 242;
 const ESCANEO_REINTENTO_MS = 3000;
 const CORCHETE_TOPE = 64;
 const CLASES_POSIX = {
