@@ -43,6 +43,10 @@
  *   6. El nombre del campo del pedido de trabajo: una story que NACE con `ado_work_item:` (el nombre viejo) y sin
  *      `work_item:` recibe un aviso; no frena, y a las que ya existían no se les dice nada (el viejo se sigue leyendo,
  *      scripts/lib/platform/work-item-field.js).
+ *   9. Las INTENCIONES (`*.intent.md`, y el `intent.md` de una carpeta de corrida si se lo pasan: git ignora esas
+ *      carpetas): las lee `lib/intent.js` del pipeline. Cada problema frena, nueva o vieja, con la fila y la columna, y
+ *      una intención en `approved` con algo que bloquea también. Sin el lector la regla no corre y se avisa; con el
+ *      lector roto, frena.
  *
  * IMPORTANTE: el chequeo naive `awk '/^---$/'` NO alcanza — cualquier regla
  * horizontal del cuerpo lo satisface. Por eso acá se replica el parser real.
@@ -161,6 +165,61 @@ try { siblingsOf = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'l
 // los valores de `riesgo_alto_por:` viven con la regla de riesgo (lib/risk-paths.js); sin ella, la regla no corre y se dice
 let riskPaths;
 try { riskPaths = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'risk-paths.js')); } catch { riskPaths = null; }
+// las intenciones las lee lib/intent.js y nadie más. Sin el archivo (un arnés viejo), la regla no corre y se dice a los
+// gritos; con el archivo y sin poder cargarlo, frena: un lector roto no se toma por «sin lector».
+const INTENT_PATH = path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'intent.js');
+let intentLib = null;
+let intentLoadError = null;
+if (fs.existsSync(INTENT_PATH)) {
+  try { intentLib = require(INTENT_PATH); } catch (e) { intentLoadError = e; }
+}
+/** ¿Es una intención? Con el lector, lo dice él; sin él, por el nombre, sólo para avisar que no se miró. */
+const esIntencion = (f) => (intentLib ? intentLib.isIntentFile(f)
+  : f.endsWith('.intent.md') || (path.basename(f) === 'intent.md' && f.split(path.sep).includes('pipeline-runs')));
+
+/**
+ * La raíz contra la que se miran las fuentes `repo:` de una intención: el repo donde vive el archivo, no la carpeta
+ * desde donde se corre el lint (el mismo archivo tiene que dar el mismo veredicto desde cualquier lado). Fuera de git,
+ * la raíz del lint.
+ */
+function intentRoot(abs) {
+  try {
+    return execFileSync('git', ['-C', path.dirname(abs), 'rev-parse', '--show-toplevel'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: sinGitDelPadre(), windowsHide: true }).trim() || REPO_ROOT;
+  } catch { return REPO_ROOT; }
+}
+
+/**
+ * Los errores de una intención: uno por problema, con la fila y la columna; y una aprobada con algo que bloquea.
+ * El lint no pasa la consulta de la constancia de la persona: una fila cerrada por `persona:` vale acá por su forma
+ * (la intención aprobada en una máquina no vuelve a bloquear en otra ni en la CI). La constancia la miran quien aprueba
+ * y los frenos de la máquina.
+ */
+function checkIntent(abs, rel) {
+  if (intentLoadError) {
+    return [{ rel, problema: `no pude cargar el lector de intenciones (${INTENT_PATH}): ${intentLoadError.message}`,
+      efecto: 'la intención no se revisó', arreglo: 'actualizar el arnés (harness.js update; en un clon, git pull)' }];
+  }
+  let r;
+  try { r = intentLib.readIntent(fs.readFileSync(abs, 'utf8'), { raiz: intentRoot(abs) }); } catch (e) {
+    return [{ rel, problema: `no pude leer la intención: ${e.message}`, efecto: 'la intención no se revisó', arreglo: 'revisar el archivo; si está bien, avisar: el lector falló' }];
+  }
+  const errores = r.problemas.map((x) => ({
+    rel,
+    problema: `${x.fila ? `fila ${x.fila}` : 'la intención'}${x.columna ? `, columna ${x.columna}` : ''}${x.linea ? ` (renglón ${x.linea})` : ''}: ${x.mensaje}`,
+    efecto: 'la intención no se lee igual en todas partes, y lo que no se puede leer bloquea',
+    arreglo: 'story-format.md, sección «La intención»: las columnas, los valores que valen y «Ninguna.»',
+  }));
+  if (r.frontmatter.status === 'approved' && r.bloqueantes.length) {
+    errores.push({
+      rel,
+      problema: `la intención está en \`approved\` y tiene filas que bloquean: ${r.bloqueantes.map((b) => `${b.id} (${b.motivo})`).join('; ')}`,
+      efecto: 'se programaría con una pregunta o una decisión sin respuesta',
+      arreglo: 'contestar lo que bloquea con la persona; una intención se aprueba recién sin nada que bloquee',
+    });
+  }
+  return errores;
+}
 
 /**
  * El error de un valor de `riesgo_alto_por:` fuera de la lista, en los dos perfiles: en un repo de producto lo lee el
@@ -549,13 +608,15 @@ function main() {
   const aviso = [];
 
   let files;
+  // Las intenciones no declaran `story:`: se apartan antes del filtro de historias.
+  let intents = [];
   if (args.length > 0) {
+    const pedidos = args.map((f) => path.resolve(f)).filter((f) => f.endsWith('.md') && fs.existsSync(f));
+    intents = pedidos.filter(esIntencion);
     // El hook del repo puede pasarle TODOS los `.md` del commit: el filtro lo hace el lint, que es
     // el que sabe qué es una story. Con un grep del hook (`^specs/stories/`) como filtro, un repo con otro
     // layout no lintearía nada.
-    files = args
-      .map((f) => path.resolve(f))
-      .filter((f) => f.endsWith('.md') && fs.existsSync(f) && looksLikeStory(f, dirSet, aviso));
+    files = pedidos.filter((f) => !esIntencion(f) && looksLikeStory(f, dirSet, aviso));
   } else {
     if (dirs.length === 0) {
       console.error('No encontré ninguna story en este repo (busqué .md con `story:` y `status:` en el');
@@ -576,7 +637,8 @@ function main() {
         // `frontmatterZone`, que se agranda justo cuando el frontmatter está roto.
         if (!f.endsWith('.md') || f === 'INDEX.md') continue;
         const cand = path.join(dir, f);
-        if (looksLikeStory(cand, dirSet, aviso)) files.push(cand);
+        if (esIntencion(cand)) intents.push(cand);
+        else if (looksLikeStory(cand, dirSet, aviso)) files.push(cand);
       }
     }
   }
@@ -732,7 +794,18 @@ function main() {
     }
   }
 
-  console.log(`Lint frontmatter de stories — ${checked} revisadas` +
+  // 9. Las intenciones: cada problema frena, nueva o vieja (story-format.md, «La intención»).
+  if (intents.length && !intentLib && !intentLoadError) {
+    console.error(`⚠️  no encontré el lector de intenciones (${INTENT_PATH}): ${intents.length} intención(es) sin revisar. ` +
+      'Es un hueco declarado, no un OK: actualizá el arnés.');
+  } else {
+    for (const abs of intents) {
+      const relRaw = path.relative(REPO_ROOT, abs);
+      errors.push(...checkIntent(abs, relRaw.startsWith('..') ? abs : relRaw));
+    }
+  }
+
+  console.log(`Lint frontmatter de stories — ${checked} revisadas` + (intents.length ? ` · ${intents.length} intención(es)` : '') +
     (skippedNoFm ? ` (${skippedNoFm} sin frontmatter, legado — no se chequean)` : '') +
     (checkYaml ? '' : ' · aviso: sin PyYAML, se saltea el parse YAML'));
 

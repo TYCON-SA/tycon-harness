@@ -548,3 +548,82 @@ test('NaceAhora_StoryIdPrefixOfAnother_StillBorn @story-8.269 @ac-7', () => {
   traerMain(proj, principal);
   assert.strictEqual(naceAhora(enHead, '9.2'), true, 'la cabeza del merge tiene la 9.27, no la 9.2');
 });
+
+// ── Intenciones (`*.intent.md`, y el `intent.md` de una corrida pasado por argumento) ────────────────────────────────
+
+const INTENT_QH = '| # | Pregunta | Por qué importa | Quién contesta | Bloquea | Estado | Respuesta | Fuente |';
+const INTENT_SEP = '|---|---|---|---|---|---|---|---|';
+function intentDoc({ status = 'draft', fila = '| Q1 | ¿Qué fecha? | cambia el filtro | cliente | no | abierta | | — |' } = {}) {
+  return ['---', 'id: story-1.1-x', `status: ${status}`, 'objective: "Buscar por fecha"', 'outcomes:', '  - "Responde rápido"', '---', '',
+    '## Preguntas abiertas', '', INTENT_QH, INTENT_SEP, fila, '', '## Decisiones reservadas', '', 'Ninguna.', ''].join('\n');
+}
+function runEnv(args, cwd, env) {
+  const r = require('child_process').spawnSync(process.execPath, [LINT, ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
+  return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
+}
+
+test('T11 LintFrontmatter_IntentProblems_BlockAlways @story-8.258 @ac-7', () => {
+  const root = mkRepo('lint-intent-');
+  story(root, 'specs/story-1.1-x.md', ['story: "1.1"', 'epic: 1', 'status: draft']);
+  const vieja = write(root, 'specs/story-1.1-x.intent.md', intentDoc({ fila: '| Q1 | ¿Qué fecha? | cambia | cliente | quizás | abierta | | — |' }));
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@example.invalid', '-c', 'user.name=t', 'commit', '-q', '-m', 'base'], { cwd: root });
+  const nueva = write(root, 'specs/story-1.2-y.intent.md', intentDoc({ fila: '| Q1 | ¿Qué orden? | cambia | cliente | no | pendiente | | — |' }));
+  const corrida = write(root, '.advisors/pipeline-runs/1.2-20260101000000/intent.md', intentDoc({ fila: '| Q1 | a | b | c | no | abierta | | chat:x |' }));
+  const aprobada = write(root, 'specs/story-1.3-z.intent.md', intentDoc({ status: 'approved', fila: '| Q1 | ¿Qué? | b | c | sí | abierta | | — |' }));
+
+  for (const [archivo, columna] of [[vieja, 'Bloquea'], [nueva, 'Estado'], [corrida, 'Fuente']]) {
+    const r = run([archivo], root);
+    assert.strictEqual(r.code, 1, `${path.basename(archivo)} tiene que frenar\n${r.out}`);
+    assert.ok(r.out.includes(path.basename(archivo)), `nombra el archivo\n${r.out}`);
+    assert.match(r.out, /Q1/, 'nombra la fila');
+    assert.match(r.out, new RegExp(columna), 'nombra la columna');
+  }
+  const r = run([aprobada], root);
+  assert.strictEqual(r.code, 1, `una intención aprobada con algo que bloquea frena\n${r.out}`);
+  assert.match(r.out, /approved/);
+  assert.match(r.out, /Q1/);
+
+  const sana = write(root, 'specs/story-1.4-w.intent.md', intentDoc());
+  assert.strictEqual(run([sana], root).code, 0, run([sana], root).out);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('LintFrontmatter_IntentRepoSource_FromTheIntentRepo @story-8.258 @ac-7', () => {
+  const repo = mkRepo('lint-intent-raiz-');
+  write(repo, 'src/x.js', 'uno\n');
+  const archivo = write(repo, 'specs/story-1.1-x.intent.md', intentDoc({ status: 'approved', fila: '| Q1 | ¿Dónde? | b | c | sí | encontrada | en x.js | repo:src/x.js:1 |' }));
+  const otro = mkRepo('lint-intent-otro-');
+  for (const cwd of [repo, otro, os.tmpdir()]) {
+    const r = run([archivo], cwd);
+    assert.strictEqual(r.code, 0, `desde ${cwd} la fuente repo: se mira en el repo de la intención\n${r.out}`);
+  }
+});
+
+test('LintFrontmatter_IntentFoundWithoutArgs @story-8.258 @ac-7', () => {
+  const root = mkRepo('lint-intent-sin-args-');
+  story(root, 'specs/story-1.1-x.md', ['story: "1.1"', 'epic: 1', 'status: draft']);
+  write(root, 'specs/story-1.1-x.intent.md', intentDoc({ fila: '| Q1 | a | b | c | quizás | abierta | | — |' }));
+  const r = run([], root);
+  assert.strictEqual(r.code, 1, `sin argumentos también la encuentra y frena\n${r.out}`);
+  assert.match(r.out, /story-1\.1-x\.intent\.md/);
+  assert.doesNotMatch(r.out, /story-1\.1-x\.intent\.md[^\n]*(?:story|epic|status)/, 'no la lee como una historia');
+});
+
+test('T37 LintFrontmatter_IntentReaderMissing_LoudWarning @story-8.258 @ac-29', () => {
+  const root = mkRepo('lint-intent-sin-lector-');
+  const mala = write(root, 'specs/story-1.1-x.intent.md', intentDoc({ fila: '| Q1 | a | b | c | quizás | abierta | | — |' }));
+  const skills = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lint-intent-skills-')), 'skills');
+  const lib = path.join(skills, 'tycon-pipeline', 'scripts', 'lib');
+  fs.mkdirSync(lib, { recursive: true });
+
+  const sinLector = runEnv([mala], root, { TYCON_SKILLS_DIR: skills });
+  assert.strictEqual(sinLector.code, 0, `sin intent.js la regla no corre y no frena\n${sinLector.out}`);
+  assert.match(sinLector.out, /no encontré el lector de intenciones/);
+
+  fs.writeFileSync(path.join(lib, 'intent.js'), "throw new Error('roto al cargar');\n");
+  const roto = runEnv([mala], root, { TYCON_SKILLS_DIR: skills });
+  assert.strictEqual(roto.code, 1, `con un intent.js que no carga, frena\n${roto.out}`);
+  assert.match(roto.out, /roto al cargar/);
+  fs.rmSync(root, { recursive: true, force: true });
+});

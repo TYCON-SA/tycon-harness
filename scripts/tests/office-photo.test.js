@@ -1489,3 +1489,22 @@ test('T323 Office_EsperaAnotada_OcupadaComoLaTarjeta @story-8.234 @ac-4 @ac-5: �
   assert.notStrictEqual(card({ status: 'idle', statusAt: NOW - 20 * 60000 }, { lastWrite: NOW - 60000 }).estado, 'esperando');
   assert.strictEqual(card({ status: 'idle', statusAt: NOW - 5 * 60000 }).estado, 'esperando', 'quieta de verdad: espera');
 });
+
+// ── El modelo y el esfuerzo en `--json` ────────────────────────────────────────────────────────────────────────────
+
+test('T10 Office_ModeloYEsfuerzo_LleganALaFoto @story-8.234 @ac-10 — `--json` trae el modelo y el esfuerzo de la sesión, con las palabras de la oficina viva', () => {
+  const { home } = toyHome();
+  const talk = path.join(home, '.claude', 'projects', 'repo-de-juguete');
+  fs.mkdirSync(talk, { recursive: true });
+  const usage = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+  fs.writeFileSync(path.join(talk, 's1.jsonl'), `${JSON.stringify({ type: 'assistant', uuid: 'u0', isSidechain: false, effort: 'high', perTurnEffort: 'high', message: { id: 'm0', model: 'claude-opus-5-5', usage } })}\n`);
+  const data = JSON.parse(run(home, ['--json', '--now', new Date(NOW).toISOString()]));
+  const a = data.agents.find((x) => x.nombre === 'sesion-a');
+  assert.ok(a, `la sesión de juguete está en la foto (${data.agents.map((x) => x.nombre).join(', ')})`);
+  assert.deepStrictEqual([a.modelo, a.esfuerzo], ['Opus 5.5', 'High']);
+  assert.strictEqual('sobres' in data, false, '--json sigue sin sobres: viven en el proceso de la oficina');
+  // sin conversación: no se inventa nada
+  const { home: otra } = toyHome();
+  const b = JSON.parse(run(otra, ['--json', '--now', new Date(NOW).toISOString()])).agents.find((x) => x.nombre === 'sesion-a');
+  assert.ok(b && !(b.modelo && b.modelo !== 'sin dato'), 'sin conversación, sin modelo');
+});

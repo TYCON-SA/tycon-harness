@@ -1881,3 +1881,60 @@ test('GuideNames_ExistingNamesDoNotCrossKinds @story-8.45 @ac-3 — el nombre de
     }
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
 });
+
+// ── la opción de un programa ajeno ──────────────────────────────────────────────────────────────────────────────────
+// Una opción que va en el arreglo de argumentos de git, npm, gh, az o docker es de ese programa, no del arnés: no se
+// mide. Lo demás del mismo archivo se mide como siempre.
+test('T9 SpanishNames_ForeignProgramOption_NotAName @story-8.278 @ac-13 — la opción del arreglo de argumentos de un programa ajeno no sale', () => {
+  const js = [
+    "const { spawn, spawnSync, execFile, execFileSync } = require('child_process');",
+    "spawnSync('git', ['update-index', '--" + "chmod=+x', f]);",
+    `execFileSync('npm', ['--${W.cargar}', d]);`,
+    `spawn("gh", ['pr', 'view', '--${W.motivo}']);`,
+    `execFile(\`az\`, ['boards', '--${W.bajar}'], () => {});`,
+    "const args = ['docker', 'run',",
+    `  ['--${W.datos}', 'x'],`,
+    `  '--${W.hoy}'];`,
+  ].join('\n');
+  const got = sn.extract('scripts/tests/x.test.js', js, { schemaFiles: [] });
+  assert.deepStrictEqual(got.filter((f) => f.category === 'option'), [], `ninguna opción de un programa ajeno: ${JSON.stringify(got)}`);
+});
+
+test('T10 SpanishNames_OwnOptionOrLoose_AsToday @story-8.278 @ac-14 @ac-15 @ac-20 — la opción propia, la suelta, la de un programa en una variable o de un intérprete, la variable de entorno y el subcomando salen como hoy', (t) => {
+  const js = [
+    `if (process.argv.includes('--${W.cargar}')) {}`,
+    `spawnSync('git', ['x', '--${W.cargar}']);`,
+    `const ayuda = 'usá --${W.datos} para';`,
+    `const prog = 'git'; spawnSync(prog, ['--${W.motivo}']);`,
+    `spawnSync('node', [script, '--${W.bajar}']);`,
+    `const v = process.env.TYCON_${W.hoy.toUpperCase()};`,
+    `if (cmd === '${W.limpiar}') {}`,
+  ].join('\n');
+  const got = sn.extract('scripts/tests/x.test.js', js, { schemaFiles: [] });
+  const opts = got.filter((f) => f.category === 'option');
+  assert.deepStrictEqual(opts.filter((f) => f.name === W.cargar).map((f) => f.line), [1], 'la opción propia sale por donde se lee, no dentro del arreglo de git');
+  for (const w of [W.datos, W.motivo, W.bajar]) assert.ok(opts.some((f) => f.name === w), `--${w} sale como hoy`);
+  assert.ok(got.some((f) => f.category === 'env' && f.name === `TYCON_${W.hoy.toUpperCase()}`), 'la variable de entorno sale');
+  assert.ok(got.some((f) => f.category === 'subcommand' && f.name === W.limpiar), 'el subcomando sale');
+  // un arreglo que no se puede leer entero (una expresión regular, un texto sin cerrar, un arreglo dentro de un texto) no
+  // esconde nada: la opción propia que viene después sale igual
+  const despues = `if (process.argv.includes('--${W.cargar}')) {}`;
+  const bordes = [
+    "spawnSync('git', ['log', s.replace(/'/g, '')]);",
+    "spawnSync('gh', ['x', q.split(/[\"']/)[0]]);",
+    "execFileSync('git', ['x', ref.match(/\\[(\\w+)/)[1]]);",
+    "execFileSync('git', ['x', s.replace(/[\\]]/g, ''), '--" + W.datos + "']);",
+    "const src = \"const a = ['git', 'x',\";",
+    "const src = \"spawnSync('git', [\";",
+    "const msg = \"usá ['git', '--" + W.motivo + "'] así\";",
+  ];
+  for (const antes of bordes) {
+    const sale = sn.extract('scripts/tests/x.test.js', `${antes}\n${despues}`, { schemaFiles: [] }).filter((f) => f.category === 'option');
+    assert.ok(sale.some((f) => f.name === W.cargar && f.line === 2), `después de «${antes}», --${W.cargar} sale: ${JSON.stringify(sale)}`);
+  }
+  const textoSuelto = sn.extract('scripts/tests/x.test.js', bordes[6], { schemaFiles: [] });
+  assert.ok(textoSuelto.some((f) => f.category === 'option' && f.name === W.motivo), 'un arreglo escrito dentro de un texto no es un arreglo de argumentos');
+  const d = sn.makeDetector(sn.loadWords(fs.readFileSync(WORDS, 'utf8'), 'scripts/lib/spanish-words.json'), {});
+  if (!d.dictionary) { t.skip('NO MEDIDO: sin /usr/share/dict/words'); return; }
+  assert.ok(d.isSpanish(W.cargar).spanish, 'la opción propia en castellano frena');
+});
