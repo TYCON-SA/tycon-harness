@@ -143,6 +143,8 @@ function crearFuentesDemo({ dir, ahora = Date.now, log = () => {}, version = DAT
     config: () => vigente().config,
     modelo: () => vigente().modelo,
     personas: () => vigente().personas,
+    // los días de horas y tokens de ejemplo, leídos con la misma función que los del espejo real
+    jornadas: () => require('./tabs/workdays.js').jornadasDe(DATOS.jornadasDeEjemplo(ahora())),
     detener() { /* sin temporizador */ },
     clones: () => vigente().clones,
     exclusivo: (fn) => { const p = cola.then(() => fn()); cola = p.catch(() => {}); return p; },
@@ -320,6 +322,8 @@ function crearModoDemo({ env = { SITE_DEMO: '1' }, dir, log = () => {}, ahora = 
     ...require('./tabs/findings.js').crearRutas({ ...comun, demo: true }),
     // las oficinas inventadas: la misma página, sin conexión de ninguna máquina
     ...require('./tabs/offices.js').crearRutas({ log, demo: true, fuentes, oficinasDeEjemplo: DATOS.oficinasDeEjemplo, ahora }),
+    // los días de horas y tokens de las máquinas inventadas
+    ...require('./tabs/workdays.js').crearRutas({ fuentes, log, ahora }),
     ...require('./help.js').crearRutas({ log }),
   ];
   // el token de la sesión de ejemplo: el mismo para todas las visitas (no hay nada que proteger de otra persona: nada se escribe)

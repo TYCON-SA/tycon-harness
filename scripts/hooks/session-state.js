@@ -16,6 +16,11 @@
  *           UserPromptSubmit → ocupada (`busy: true`) y ya no espera · Stop → parada (`busy: false`)
  *           Codex no avisa los pedidos de permiso ni el cierre de la sesión: no se inventan (adapters/codex/hooks.json,
  *           la asimetría declarada). Una firma pendiente no es la espera de una sesión: su registro no dice de cuál es.
+ *           PostToolUse (de Bash y apply_patch) → sólo refresca el tramo trabajado
+ *
+ * El tramo trabajado de la sesión (scripts/lib/worked-time.js): en todo momento que llega, la apertura del día y
+ * `workingSince`/`lastEventAt`; el renglón de cada tramo que se cierra va a `<estado>/worked/<día>.jsonl`. Off:
+ * TYCON_WORKDAYS=0.
  *
  * Cualquier momento crea el archivo si falta. La espera la anota este gancho y no wait-notice.js, que no anota nada sin
  * pipeline ni sin un canal de aviso. Nunca frena ni imprime: todo error sale 0 y queda en
@@ -138,7 +143,7 @@ function decide(d, codex, cur = null, now = Date.now()) {
   return null;
 }
 
-function handle(d, env = process.env, home = os.homedir()) {
+function handle(d, env = process.env, home = os.homedir(), now = Date.now()) {
   const lib = require(LIB);
   const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
   const sdir = stateDir(home);
@@ -147,9 +152,16 @@ function handle(d, env = process.env, home = os.homedir()) {
   const { tool, certain } = toolOf(d, env);
   const codex = tool === 'codex';
   const cur = lib.read(sdir, sid);
-  const what = decide(d, codex, cur.state);
-  if (!what) return;
-  if (what.remove) { lib.remove(sdir, sid, { env }); return; }
+  const decided = decide(d, codex, cur.state, now);
+  // el tramo trabajado corre en todo momento que llega, también en los que la espera no cambia: si no, se pierde el
+  // refresco de `lastEventAt`, que es donde cierra una sesión que murió
+  const tramo = workedStep(sdir, sid, { cur: cur.state, ev: d.hook_event_name, codex, tool, decided, now, env });
+  if (!decided) {
+    if (cur.state && Object.keys(tramo).length) lib.update(sdir, sid, tramo, { env, tool });
+    return;
+  }
+  if (decided.remove) { lib.remove(sdir, sid, { env }); return; }
+  const what = { patch: { ...decided.patch, ...tramo } };
   const retool = certain;
   // un archivo que falta (o que está roto) se arma de nuevo, con el paso del marcador y quién es la sesión
   if (cur.problem) lib.logError(sdir, `sesión ${sid}: su estado no se podía usar y se arma de nuevo (${cur.problem})`);
@@ -170,6 +182,25 @@ function handle(d, env = process.env, home = os.homedir()) {
     return;
   }
   lib.update(sdir, sid, { ...fix, ...what.patch }, { env, tool, retool });
+}
+
+/**
+ * La apertura del día y el tramo trabajado de la sesión con este momento (scripts/lib/worked-time.js): escribe los
+ * renglones de los tramos que se cierran y devuelve lo que cambia en el archivo de estado (`workingSince`,
+ * `lastEventAt`). Apagado con TYCON_WORKDAYS=0; un error queda en el registro y no frena.
+ */
+function workedStep(sdir, sid, { cur, ev, codex, tool, decided, now, env }) {
+  const worked = require(path.join(ROOT, 'scripts', 'lib', 'worked-time.js'));
+  if (!worked.enabled(env)) return {};
+  try {
+    worked.markOpened(sdir, now);
+    const { patch, spans } = worked.nextState({ cur, ev, codex, decided, now });
+    for (const [desde, hasta] of spans) worked.appendSpan(sdir, { sid, tool, desde, hasta });
+    return patch;
+  } catch (e) {
+    require(LIB).logError(sdir, `sesión ${sid}: no pude anotar su tramo trabajado (${e.code || e.message})`);
+    return {};
+  }
 }
 
 module.exports = { decide, handle, claudeSession, toolOf, permissionOf, WAIT_TOOLS };
