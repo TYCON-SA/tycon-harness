@@ -1273,3 +1273,69 @@ test('SignatureQuestion_OverCap_GivenWithLine (T11) @story-8.275 @ac-12', (t) =>
   assert.strictEqual(plan.pasaElTope, false);
   assert.strictEqual(oa.renglonDelTope(plan), null);
 });
+
+// ── 8.275, pase adversarial: lo que el cuadro corta o esconde llega entero al detalle ───────────────────────────────
+
+// 🔴 Falla con: una ruta quitada de la vista que no queda en ningún lado, o un texto cortado que el detalle no trae.
+test('SignatureQuestion_CutOrHidden_AlwaysInDetail (8.275 pase A, B) @story-8.275 @ac-7 @ac-13', () => {
+  const q = oa.cuadroDe({ firma: 'plan-approval', destino: 'ses-a', que: 'aprobar el plan', huella: 'ab12cd34', queHace: ['Edita /Users/x/proj/src/a.js y listo'],
+    nota: '(EACCES en /Users/x/n.md)', siSaleMal: 'borra /Users/x/data.db', cita: 'mirá /Users/x/a.md', revision: { linea: `r${'evisado '.repeat(40)}`, detalle: ['- falla en /Users/x/b.md'] } });
+  for (const ruta of ['/Users/x/proj/src/a.js', '/Users/x/n.md', '/Users/x/data.db', '/Users/x/a.md', '/Users/x/b.md']) {
+    assert.ok(!q.pregunta.includes(ruta), `${ruta} en la pregunta`);
+    assert.ok(q.detalle.some((l) => l.includes(ruta)), `${ruta} no está en el detalle: ${JSON.stringify(q.detalle)}`);
+  }
+  assert.ok(q.pregunta.includes(SIGUE_EN_EL_DETALLE), q.pregunta);
+  assert.ok(q.detalle.some((l) => l.includes('evisado '.repeat(40).trim())), 'la línea de la revisión entera');
+  // las descripciones del click del dueño, cortadas, también
+  const larga = `Pasa: ${'una cosa muy larga '.repeat(15)}`;
+  const d = oa.cuadroDe({ firma: 'adhoc-lane:datos', destino: 'ses-a', que: 'dejar pasar', huella: 'ab12cd34', queHace: ['x'], siSaleMal: 'y', clickDelDueno: true, descripciones: [larga, larga] });
+  assert.ok(d.pregunta.includes(SIGUE_EN_EL_DETALLE), d.pregunta);
+  assert.ok(d.detalle.some((l) => l.includes(larga.trim())), JSON.stringify(d.detalle));
+  // con todoQueHace, lo que se aprueba cortado también va al detalle
+  const que = `dejar pasar ${'algo largo '.repeat(30)}`;
+  const siSaleMal = `se guarda ${'algo que no debía '.repeat(15)}`;
+  const g = oa.cuadroDe({ firma: 'adhoc-lane:guardado-ajeno', destino: 'ses-a', que, huella: 'ab12cd34', queHace: ['x'], todoQueHace: true, siSaleMal, clickDelDueno: true, descripciones: [larga, larga] });
+  assert.ok(g.detalle.some((l) => l.includes(que.trim())), JSON.stringify(g.detalle));
+  // el guardado ajeno corta «si sale mal» y las opciones como cualquier cuadro: también van al detalle (vuelta 2)
+  assert.ok(g.detalle.some((l) => l.includes(siSaleMal.trim())), JSON.stringify(g.detalle));
+  assert.ok(g.detalle.some((l) => l.includes(larga.trim())), JSON.stringify(g.detalle));
+  // cada renglón del detalle es uno solo
+  const s = oa.cuadroDe({ firma: 'save', destino: 'ses-a', que: 'guardar', huella: 'ab12cd34', queHace: ['uno\ndos /Users/x/z.md'], siSaleMal: 'y', cita: 'una\ncita' });
+  for (const l of s.detalle) assert.ok(!/\n/.test(l), JSON.stringify(l));
+});
+const SIGUE_EN_EL_DETALLE = '(sigue en el detalle)';
+
+// 🔴 Falla con: un comando de barra («/tycon-merge-to-main») que se muestra sin la barra, como si fuera un archivo.
+test('SignatureQuestion_SlashCommand_NotAPath (8.275 pase F) @story-8.275 @ac-7', () => {
+  assert.strictEqual(oa.sinRutas('corré /tycon-merge-to-main después'), 'corré /tycon-merge-to-main después');
+  assert.strictEqual(oa.sinRutas('en /Users/x/a.md y /etc/hosts'), 'en a.md y hosts');
+  assert.strictEqual(oa.sinRutas('el archivo /a.js'), 'el archivo a.js');
+  // una ruta con espacios dentro de una carpeta, entera
+  assert.strictEqual(oa.sinRutas('en /Users/x/Mis Documentos/la nube/a.md listo'), 'en a.md listo');
+  // después de un archivo, la ruta termina: la relativa que sigue no se come (vuelta 2)
+  assert.strictEqual(oa.sinRutas('cambia /x/a.js src/b.js y listo'), 'cambia a.js src/b.js y listo');
+  // pegada a otro signo, entre comillas tipográficas o de una carpeta de red, también
+  assert.strictEqual(oa.sinRutas('ruta:/Users/x/a.md, {/r/b.md} “/r/c.md” \\\\srv\\d\\e.md'), 'ruta:a.md, {b.md} “c.md” e.md');
+  assert.strictEqual(oa.sinRutas('en C:\\a\\b c\\d.txt fin'), 'en d.txt fin');
+});
+
+// 🔴 Falla con: un «aprobado» escrito que se niega porque el detalle mostrado junto a la pregunta nombra otra «sesión».
+test('SignatureQuestion_DetailNamesNoOtherSession (8.275 pase G) @story-8.275 @ac-13 @ac-17', (t) => {
+  const c = corrida(t);
+  escribirPlan(c);
+  const q = cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' });
+  const mensaje = `${q.pregunta}\n${oa.notasDelCuadro(q).join('\n')}`;
+  assert.ok(oa.traeElSello(mensaje, { sello: q.sello, destino: 'ses-a', pregunta: q.pregunta }), mensaje);
+  for (const l of q.detalle) assert.doesNotMatch(l, /sesi[oó]n/i, l);
+});
+
+// 🔴 Falla con: una anotación con coma («(nuevo, 20 líneas)») partida como si fuera otro archivo, o el detalle de la
+//    designación al revés (pase C, D).
+test('SignatureQuestion_PlanAnnotationsAndDetailOrder (8.275 pase C, D) @story-8.275 @ac-4 @ac-13', (t) => {
+  const plan = ['# Plan', '', '## Qué hace', '', 'Algo.', '', '## Archivos', '', '- scripts/lib/a.js (nuevo, 20 líneas)', '- scripts/lib/b.js, scripts/lib/c.js', ''].join('\n');
+  assert.deepStrictEqual(fuentes.seccionesDelPlan(plan).archivos, ['scripts/lib/a.js (nuevo, 20 líneas)', 'scripts/lib/b.js', 'scripts/lib/c.js']);
+  const c = corrida(t);
+  const q = ow.cuadroPara({ firma: 'designation-set', comando: `node ${MARKER} designate-relay`, palabras: ow.canonica(`node ${MARKER} designate-relay`), destino: 'ses-a', sesion: 'ses-a', cwd: c.repo, casa: c.casa });
+  const enteras = q.detalle.filter((l) => l.startsWith('Qué hace: '));
+  assert.ok(/pasa a ser/.test(enteras[0]) && /Su carpeta/.test(enteras[1]), JSON.stringify(q.detalle));
+});

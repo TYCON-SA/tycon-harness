@@ -44,3 +44,14 @@ test('FileZones_OneOrNone (T3) @story-8.275 @ac-5', () => {
   assert.strictEqual(zonasDe(null), null);
   assert.strictEqual(zonasDe(['', '  ']), null);
 });
+
+// 🔴 Falla con: un archivo anotado en el plan («a.js (nuevo)») contado como «otro», una ruta con «..» en otra zona, o la
+//    raíz absoluta como carpeta vacía (pase adversarial de la 8.275).
+test('FileZones_AnnotatedAndOddPaths (pase C, E) @story-8.275 @ac-4', () => {
+  assert.strictEqual(zonasDe(['scripts/lib/a.js (nuevo)', 'scripts/lib/b.js', 'scripts/tools/c.js']), '3 archivos: 3 de código (a, b y c)');
+  assert.strictEqual(zonasDe(['x/tests/../hook.sh']), '1 archivo: de código (hook)');
+  assert.strictEqual(zonasDe(['/a.js', '/b.js', 'x/c.js', 'y/d.js']), '4 archivos: 4 de código (raíz, x y y)');
+  // barras invertidas, y un nombre de más de 40 letras que no se nombra: cuenta por su carpeta
+  assert.strictEqual(zonasDe(['scripts\\lib\\a.js']), '1 archivo: de código (a)');
+  assert.strictEqual(zonasDe([`lib/${'n'.repeat(41)}.js`, 'tools/b.js']), '2 archivos: 2 de código (lib y tools)');
+});

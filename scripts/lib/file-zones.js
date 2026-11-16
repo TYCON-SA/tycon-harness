@@ -37,7 +37,9 @@ function claseDe(ruta) {
 
 const enLista = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}` : xs[0]);
 const sinExtension = (r) => path.posix.basename(r).replace(/\.[^.]+$/, '') || path.posix.basename(r);
-const carpetaDe = (r) => { const d = path.posix.dirname(r); return d === '.' ? 'raíz' : path.posix.basename(d); };
+const carpetaDe = (r) => { const d = path.posix.dirname(r); return d === '.' || d === '/' ? 'raíz' : path.posix.basename(d); };
+// la ruta sin la anotación que le pone el plan («a.js (nuevo)») y con los «..» resueltos: la zona sale del archivo
+const limpia = (r) => path.posix.normalize(String(r == null ? '' : r).trim().replace(/\\/g, '/').replace(/\s+\([^)]*\)$/, ''));
 
 /**
  * Los archivos de código, por su nombre si son hasta 3; si no, por sus carpetas. Un nombre de más de 40 letras no se
@@ -54,7 +56,7 @@ function nombresDelCodigo(rutas) {
 }
 
 function zonasDe(rutas) {
-  const unicas = [...new Set((Array.isArray(rutas) ? rutas : []).map((r) => String(r == null ? '' : r).trim().replace(/\\/g, '/')).filter(Boolean))];
+  const unicas = [...new Set((Array.isArray(rutas) ? rutas : []).filter((r) => String(r == null ? '' : r).trim()).map(limpia))];
   if (!unicas.length) return null;
   const porClase = new Map(CLASES.map(([c]) => [c, []]));
   for (const r of unicas) porClase.get(claseDe(r)).push(r);

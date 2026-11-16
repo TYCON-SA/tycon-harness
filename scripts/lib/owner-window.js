@@ -721,7 +721,7 @@ function detalleDe(id, comando, palabras, cwd, casa) {
       const d = require(path.join(LIB, 'critical-waivers.js')).designacionVigente({ dir: stateDir(casa === undefined ? casaDeLaCuenta() : casa) });
       if (d && !d.error) {
         return { linea: `la sesión designada: «${recortar(d.rol, 60)}» (${String(d.sesion).slice(0, 8)}), desde ${d.ts}, ${d.cita ? `con la frase «${recortar(d.cita, 200)}»` : 'por click'}`,
-          detalle: [`La sesión designada: ${d.sesion}`, ...(d.cita ? [`La frase: ${d.cita}`] : [])] };
+          detalle: [`Designada: ${d.sesion}`, ...(d.cita ? [`La frase: ${String(d.cita).replace(/\s+/g, ' ').trim()}`] : [])] };
       }
     } catch (_) { /* sin leerla, el comando; el guion la vuelve a leer y niega si no está */ }
   }
@@ -854,7 +854,10 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
     comando: comandoDelDetalle(sinDestino && [base(sinDestino[0]), ...sinDestino.slice(1)], texto) });
   // lo que la fuente dice entero y la vista resume (la designación, la exención) va al detalle
-  if (partes.queHaceALaVista) for (const l of partes.queHace) if (!q.detalle.includes(`Qué hace: ${l}`)) q.detalle.unshift(`Qué hace: ${l}`);
+  if (partes.queHaceALaVista) {
+    const enteras = partes.queHace.map((l) => `Qué hace: ${String(l).replace(/\s+/g, ' ').trim()}`).filter((l) => !q.detalle.includes(l));
+    q.detalle.unshift(...enteras);
+  }
   q.detalle.push(...delComando);
   return q;
 }
@@ -902,8 +905,8 @@ function aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd, ap
 function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, anotado = false, coordinadora = null) {
   const r = negarConElCuadro(motivo, ids, sesion, cuadro, deFondo, anotado, coordinadora);
   // donde va la pregunta, va también lo que la acompaña: el detalle (aparte, nunca dentro del cuadro de opciones) y el
-  // renglón del tope del teléfono
-  if (!cuadro || cuadro.error || !cuadro.pregunta || !String(r.texto || '').includes(cuadro.pregunta)) return r;
+  // renglón del tope del teléfono. Se mira el texto sin el sello: también lo trae la rama que muestra sólo `texto`
+  if (!cuadro || cuadro.error || !cuadro.texto || !String(r.texto || '').includes(cuadro.texto)) return r;
   const notas = require('./owner-approvals.js').notasDelCuadro(cuadro);
   return notas.length ? { ...r, texto: `${r.texto}\n${notas.join('\n')}` } : r;
 }

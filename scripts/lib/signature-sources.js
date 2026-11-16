@@ -90,7 +90,8 @@ const renglones = (cuerpo) => (cuerpo || []).map((l) => l.replace(/^\s*(?:[-*]|\
 
 function seccionesDelPlan(texto) {
   const queHace = renglones(seccion(texto, 'Qué hace'));
-  const archivos = renglones(seccion(texto, 'Archivos')).flatMap((l) => l.split(/,\s+/)).map((a) => a.replace(/`/g, '').trim()).filter(Boolean);
+  // varios archivos en un renglón se separan por «, », salvo dentro de una anotación entre paréntesis («(nuevo, 20 líneas)»)
+  const archivos = renglones(seccion(texto, 'Archivos')).flatMap((l) => l.split(/,\s+(?![^(]*\))/)).map((a) => a.replace(/`/g, '').trim()).filter(Boolean);
   // todo lo que falta junto: de a una, la sesión se entera de la segunda en la vuelta siguiente
   const errores = [];
   if (!queHace.length) errores.push('el plan no dice qué hace en hasta 3 líneas: falta la sección «## Qué hace». Agregala al plan con hasta 3 líneas llanas de qué cambia');

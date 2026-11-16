@@ -154,11 +154,18 @@ function recortar(texto, n) {
   return `${sinPunto(cabeza.slice(0, corte)).replace(/[,;:]$/, '')} ${SIGUE}`;
 }
 
-// una palabra que empieza como ruta absoluta (`/…`, `~/…`, `C:\…`), con lo que la abre delante y la puntuación que la cierra
-const RUTA = /(^|[\s«(["'`=])((?:\/|~\/|[A-Za-z]:[\\/])[^\s»)\]"'`]*?)([.,;:]*)(?=[\s»)\]"'`]|$)/g;
-/** El texto con cada ruta absoluta por el nombre de su archivo: lo que se ve en el teléfono; la ruta, en el detalle. */
+// una palabra que empieza como ruta absoluta (`/…`, `~/…`, `C:\…`), con lo que la abre delante. Un espacio sigue en la
+// ruta sólo dentro de una carpeta: lo de antes es un nombre sin punto y lo de después sigue con otra barra («Mis
+// Documentos/…»); después de un archivo («/x/a.js src/b.js») la ruta termina
+const RUTA = /(^|[\s«(["'`=:,{<|“‘])((?:\\\\|\/|~\/|[A-Za-z]:[\\/])(?:[^\s»)\]"'`]|(?<=[\\/][^\s\\/.»)\]"'`]+)\s(?=[^\s»)\]"'`\\/]+[\\/]))*)/g;
+/**
+ * El texto con cada ruta absoluta por el nombre de su archivo: lo que se ve en el teléfono; la ruta, en el detalle. Un
+ * comando de barra («/tycon-merge-to-main»: una palabra sola, sin punto) no es una ruta y queda como está.
+ */
 function sinRutas(texto) {
-  return String(texto == null ? '' : texto).replace(RUTA, (todo, antes, ruta, cierre) => {
+  return String(texto == null ? '' : texto).replace(RUTA, (todo, antes, cruda) => {
+    const [, ruta, cierre] = /^(.*?)([.,;:]*)$/.exec(cruda);
+    if (/^\/[^/.]+$/.test(ruta)) return todo;
     const nombre = ruta.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
     return nombre ? `${antes}${nombre}${cierre}` : todo;
   });
@@ -260,16 +267,24 @@ function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHac
   const texto = pregunta.slice(0, pregunta.length - sello.length - 3);
 
   // el detalle: lo entero de lo que no se vio entero, sin la lista de archivos (se cuentan; la huella la ata a la firma)
+  // `entero`: el texto se ve tal cual (ni cortado ni con una ruta cambiada por su nombre)
+  const entero = (s) => enUnRenglon(vista(s)) === enUnRenglon(s) && texto.includes(sinPunto(enUnRenglon(s)));
+  // «Qué hace» del guardado ajeno se ve entero; lo demás de ese cuadro se corta como en cualquier otro, y va al detalle
   if (!todoQueHace) {
     const vistas = lineas.slice(0, nivel >= 3 ? 1 : LINEAS_QUE_HACE);
-    if (lineas.length > vistas.length || lineas.some((l) => !texto.includes(sinPunto(vista(l))))) lineas.forEach((l) => detalle.push(`Qué hace: ${l}`));
-    if (nota) alDetalle('Nota', enUnRenglon(nota), texto.includes(sinPunto(vista(nota))) ? enUnRenglon(nota) : null);
-    if (historia && historia.titulo && !texto.includes(`«${vista(historia.titulo)}»`)) detalle.push(`Título: ${enUnRenglon(historia.titulo)}`);
-    alDetalle('Lo que se aprueba', enUnRenglon(que), lo);
-    if (cita && !texto.includes(`«${vista(cita)}»`)) detalle.push(`Cita de la sesión: ${enUnRenglon(cita)}`);
-    notas.forEach((l) => { if (!texto.includes(sinPunto(vista(l)))) detalle.push(`Revisión: ${l}`); });
-    alDetalle('Si sale mal', enUnRenglon(siSaleMal), texto.includes(sinPunto(vista(siSaleMal))) ? enUnRenglon(siSaleMal) : null);
+    if (lineas.length > vistas.length || !lineas.every(entero)) lineas.forEach((l) => detalle.push(`Qué hace: ${l}`));
+    if (nota && !entero(nota)) detalle.push(`Nota: ${enUnRenglon(nota)}`);
   }
+  if (historia && historia.titulo && !texto.includes(`«${vista(historia.titulo)}»`)) detalle.push(`Título: ${enUnRenglon(historia.titulo)}`);
+  // sin la palabra «sesión»: el detalle va al lado de la pregunta, y un «aprobado» no puede leerlo como otra sesión
+  if (cita && !entero(cita)) detalle.push(`Cita: ${enUnRenglon(cita)}`);
+  if (revision && revision.linea && !entero(revision.linea)) detalle.push(`Revisión automática: ${enUnRenglon(revision.linea)}`);
+  notas.forEach((l) => { if (!entero(l)) detalle.push(`Revisión: ${l}`); });
+  if (!entero(siSaleMal)) detalle.push(`Si sale mal: ${enUnRenglon(siSaleMal)}`);
+  if (clickDelDueno && !soloClick && Array.isArray(descripciones)) {
+    [APRUEBA, NIEGA].forEach((op, k) => { if (!entero(descripciones[k])) detalle.push(`«${op}»: ${enUnRenglon(descripciones[k])}`); });
+  }
+  alDetalle('Lo que se aprueba', enUnRenglon(que), lo);
   if (todo) detalle.push(`Completo en: ${todo}`);
   if (comando) detalle.push(`El comando: ${enUnRenglon(comando)}`);
   return { sello, texto, pregunta, opciones: [APRUEBA, NIEGA], detalle, largo: pregunta.length, tope: LARGO_EN_TELEFONO, pasaElTope: pregunta.length > LARGO_EN_TELEFONO,
