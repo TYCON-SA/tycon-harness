@@ -446,8 +446,11 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     // lo que espera algo manda también sobre la coordinadora
     const isCoordinator = Boolean(coordinatorSid) && d.sid === coordinatorSid;
     const prsSaid = waitingPrs && d.sid != null ? waitingPrs.get(String(d.sid)) : null;
-    // si ya pasó todo lo que esperaba, la espera vieja no se dice: se dice qué pasó
-    const waitingFor = (prsSaid && prsSaid.all) || workedAfterWait(x0, lastWrite, d.status) ? '' : plain(x0.waitingFor, { keepPrs: true });
+    // si ya pasó todo lo que esperaba, la espera vieja no se dice: se dice qué pasó. La que siguió trabajando la tapa sólo
+    // mientras no está quieta: quieta con la marca puesta, vuelve a esperar (la fila de turnos pide confirmar, a propósito).
+    // Quieta es lo que dice el estado de esta tarjeta (Codex por su archivo, el estado atrasado de Claude corregido)
+    const quietNow = real.estado === 'parada';
+    const waitingFor = (prsSaid && prsSaid.all) || (!quietNow && workedAfterWait(x0, lastWrite, d.status)) ? '' : plain(x0.waitingFor, { keepPrs: true });
     // quien declaró que espera a otro no está trabajando en eso, aunque siga escribiendo
     const declaredWait = Boolean(waitingFor) && !x.mark && !ASKS_OWNER.has(real.estado);
     const estado = isCoordinator && !ASKS_OWNER.has(real.estado) ? 'coordina' : declaredWait ? 'esperando' : real.estado;
