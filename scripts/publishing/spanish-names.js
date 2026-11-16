@@ -306,6 +306,83 @@ function switchCases(code, open) {
   }
   return found;
 }
+// Una opción que va en el arreglo de argumentos de uno de estos programas es de ese programa, no del arnés: no es un
+// nombre. Un intérprete (`node`, `bash`, `python3`) no está: corre guiones que pueden ser del arnés.
+const FOREIGN_PROGRAMS = ['git', 'npm', 'gh', 'az', 'docker'];
+const FOREIGN_LITERAL = `(['"\`])(?:${FOREIGN_PROGRAMS.join('|')})\\1`;
+const FOREIGN_CALL = new RegExp(`\\b(?:spawn|spawnSync|execFile|execFileSync)\\s*\\(\\s*${FOREIGN_LITERAL}\\s*,\\s*\\[`, 'g');
+const FOREIGN_ARRAY = new RegExp(`\\[\\s*${FOREIGN_LITERAL}\\s*,`, 'g');
+
+/**
+ * El índice del `]` que cierra el `[` de `open`, o -1 si el arreglo no se lee entero. Se lee sólo un arreglo de argumentos
+ * simple: textos entre comillas (sin salto de línea; uno con `${` no), nombres, puntos, comas, `+`, llamadas y arreglos
+ * de adentro. Cualquier otra cosa (una expresión regular, una llave, un texto que no cierra, el final del archivo) da -1:
+ * sin un cierre seguro, el tramo no se esconde.
+ */
+function closingBracket(code, open) {
+  let depth = 0;
+  let parens = 0;
+  for (let i = open; i < code.length; i++) {
+    const c = code[i];
+    if (c === '"' || c === "'" || c === '`') {
+      let j = i + 1;
+      while (j < code.length && code[j] !== c) {
+        if (code[j] === '\\') j++;
+        else if (code[j] === '\n' && c !== '`') return -1;
+        else if (c === '`' && code[j] === '$' && code[j + 1] === '{') return -1;
+        j++;
+      }
+      if (j >= code.length) return -1;
+      i = j;
+      continue;
+    }
+    if (c === '[') depth++;
+    else if (c === ']') { depth--; if (depth === 0) return parens === 0 ? i : -1; }
+    else if (c === '(') parens++;
+    else if (c === ')') { parens--; if (parens < 0) return -1; }
+    else if (!/[\w$.,+\s-]/.test(c)) return -1;
+  }
+  return -1;
+}
+
+/**
+ * Las posiciones del código que están dentro de un texto entre comillas: un `['git', …` escrito dentro de un texto no es
+ * un arreglo de argumentos. Las comillas simples y dobles cierran en el salto de línea, como en `blankComments`.
+ */
+function quotedMask(code) {
+  const inside = new Uint8Array(code.length);
+  let quote = null;
+  for (let i = 0; i < code.length; i++) {
+    const c = code[i];
+    if (quote) {
+      inside[i] = 1;
+      if (c === '\\') { inside[i + 1] = 1; i++; continue; }
+      if (c === quote || (c === '\n' && quote !== '`')) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') quote = c;
+  }
+  return inside;
+}
+
+/**
+ * Los tramos `[desde, hasta]` de los arreglos de argumentos de un programa ajeno con nombre literal: el arreglo que sigue
+ * a `spawn('git', [`, `spawnSync`, `execFile` o `execFileSync`, y el arreglo cuyo primer elemento es el programa
+ * (`['git', …]`). Con el programa en una variable no hay tramo: no se sabe qué programa es. Tampoco lo hay si el arreglo
+ * empieza dentro de un texto o no se lee entero: ahí las opciones se miden como siempre.
+ */
+function foreignArgRanges(code) {
+  const ranges = [];
+  const inside = quotedMask(code);
+  const add = (start, open) => {
+    if (inside[start]) return;
+    const close = closingBracket(code, open);
+    if (close >= 0) ranges.push([open, close]);
+  };
+  for (const m of code.matchAll(FOREIGN_CALL)) add(m.index, m.index + m[0].length - 1);
+  for (const m of code.matchAll(FOREIGN_ARRAY)) add(m.index, m.index);
+  return ranges;
+}
 const BASH_CASE = /case\s+"?\$\{?(?:1|cmd|CMD|sub|SUB|accion|ACCION|modo|MODO|comando|COMANDO|command|COMMAND|action|ACTION)(?::-[^}"]*)?\}?"?\s+in\b/g;
 
 /** Los nombres de un archivo, por categoría: `[{ category, name, line }]`. */
@@ -317,11 +394,13 @@ function extract(rel, text, { schemaFiles = [], renames = null } = {}) {
   if (isExecutable(rel, text)) {
     const shell = isShell(rel, text);
     const code = blankComments(text, /\.(js|mjs|cjs)$/.test(rel) || /^#!.*\bnode\b/.test(text.split('\n', 1)[0]) ? 'js' : 'hash');
+    const foreign = shell ? [] : foreignArgRanges(code);
     for (const m of code.matchAll(/(?:^|[\s'"`(\[|,])--([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?=[\s'"`=)\]|,;:]|$)/gm)) {
       const at = m.index + m[0].indexOf('--');
       const next = code[at + 2 + m[1].length] || '';
       // `--x;` o `((--x))` es un pre-decremento, no una opción
       if (next === ';' || (code[at - 1] === '(' && next === ')')) continue;
+      if (foreign.some(([from, to]) => at > from && at < to)) continue;
       add('option', m[1], at);
     }
     for (const re of [/process\.env(?:\?\.|\.|\[\s*['"`])([A-Za-z_][A-Za-z0-9_]*)/g, /['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s+in\s+process\.env\b/g,
