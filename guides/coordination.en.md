@@ -819,6 +819,11 @@ They come from a whole day of coordinating several sessions. Each says what to d
   check whether it already exists. Why: taking the long road without analyzing it is the most repeated mistake.
 - **A session that finishes gets the next approved thing in that turn, or is closed.** Always within the cap. Why: a free
   session is wasted machine time, and the owner should not have to watch the board to assign.
+- **A session that waits (the CI, the queue or a signature) does not sit idle.** The coordinator gives it the light work
+  from the board: paperwork, conflicts, drafts. A new story with a pipeline goes in a new session, not in the one that
+  waits, which only watches its pull request and is closed when it gets in. With two or more waiting for the gate, the
+  coordinator stops the last ones in the queue and reopens a stopped run with a signed plan. Why: a waiting session
+  holds a slot doing nothing, and a story that lands on it gets tied to someone else's pull request.
 - **With a long suite queue, no session is opened to program.** If more than two sessions are waiting for the suite or
   gate turn, a new session is opened only for work that does not need the suite: writing a story, reviewing or
   researching. Those that only wait for their turn can be closed and resumed with the same conversation when their turn
@@ -887,6 +892,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | Check the session that went past double what it said | nadie | The duration was said in a message, not in a piece of data. |
 | Size before assigning | nadie | It is the coordinator's judgment call. |
 | A session that finishes gets work or is closed | aviso | The notice about idle background sessions, after 15 minutes. |
+| A waiting session gets the light work | aviso | The coordinator's notice on each turn: it names the background session that noted it waits for the CI, the queue or a signature, with up to three light rows from the board, and proposes a new session for a story when there is a slot and memory. With two or more in the gate queue, it says which to stop and which stopped run with a signed plan to reopen. A session that did not note its wait is not seen. |
 | A red is not left behind | nadie | The controls stop your own; someone else's red is seen by whoever finds it. |
 | Do not loosen a review, do not do paperwork | nadie | It is a judgment call: no data separates a review from paperwork. |
 | Check a message for the team | nadie | The message goes out outside the machine. |

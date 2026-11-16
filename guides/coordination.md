@@ -796,6 +796,11 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
   si ya existe. Por qué: ir por el camino largo sin analizarlo es el error que más se repite.
 - **Una sesión que termina recibe lo siguiente de lo aprobado en ese turno, o se cierra.** Siempre dentro del tope. Por qué:
   una sesión libre es tiempo de máquina perdido, y el dueño no tiene que mirar el tablero para asignar.
+- **Una sesión que espera (la CI, la cola o una firma) no queda quieta.** La coordinadora le da lo liviano de la fila:
+  papeleo, choques, borradores. Una historia nueva con pipeline va en una sesión nueva, no en la que espera, que sólo
+  vigila su pedido y se cierra al entrar. Con dos o más esperando el portón, la coordinadora para las últimas de la fila
+  y reabre una corrida detenida con plan firmado. Por qué: una sesión que espera ocupa un lugar sin hacer nada, y una
+  historia que cae en ella queda atada a un pedido ajeno.
 - **Con la fila de la suite larga no se abre una sesión para programar.** Si más de dos sesiones esperan turno de suite o
   portón, una sesión nueva se abre sólo para trabajo que no pide suite: escribir una historia, revisar o investigar. Las
   que sólo esperan su turno se pueden cerrar y retomar con su misma conversación cuando les toca (`claude respawn <id>`),
@@ -863,6 +868,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Mirar la sesión que pasó el doble de lo que dijo | nadie | La duración la dijo en un mensaje, no en un dato. |
 | Dimensionar antes de asignar | nadie | Es criterio de la coordinadora. |
 | Una sesión que termina recibe trabajo o se cierra | aviso | El aviso de las sesiones de fondo quietas, pasados 15 minutos. |
+| Una sesión que espera recibe lo liviano | aviso | El aviso de cada turno de la coordinadora: nombra a la sesión de fondo que anotó que espera la CI, la cola o una firma, con hasta tres filas livianas del tablero, y propone una sesión nueva para una historia si hay lugar y memoria. Con dos o más en la fila del portón, dice a cuáles parar y qué corrida detenida con plan firmado reabrir. Una sesión que no anotó su espera no se ve. |
 | Un rojo no se deja | nadie | Los controles frenan lo propio; un rojo ajeno lo ve quien lo encuentra. |
 | No aflojar una revisión, no hacer papeleo | nadie | Es criterio: ningún dato separa una revisión de un papeleo. |
 | Comprobar un mensaje para el equipo | nadie | El mensaje sale por fuera de la máquina. |

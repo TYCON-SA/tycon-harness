@@ -106,7 +106,7 @@ const coordinationDir = (home) => path.join(stateDir(home), 'coordination');
 const oneLine = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').replace(/[\p{Cc}\p{Cf}]/gu, '').trim();
 // Un nombre leído de afuera (una sesión, un hilo de Codex, una historia), acotado y sin `<` ni `>`: va dentro del bloque
 // que el aviso inyecta y no puede cerrarlo.
-const label = (s) => Array.from(oneLine(s).replace(/[<>]/g, '')).slice(0, LABEL_MAX).join('');
+const label = (s, max = LABEL_MAX) => Array.from(oneLine(s).replace(/[<>]/g, '')).slice(0, max).join('');
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
@@ -215,6 +215,57 @@ function suiteWaitSince(home, sid) {
   if (!note || typeof note.waitingFor !== 'string' || !SUITE_WAIT.test(note.waitingFor) || PASS_WAIT.test(note.waitingFor)) return null;
   const since = Date.parse(note.waitingSince || note.at);
   return Number.isFinite(since) ? since : null;
+}
+
+// Lo que la sesión anotó que espera de afuera (la CI, la cola, un pedido, que algo entre, una firma, el dueño, la
+// validación) y desde cuándo; null sin una nota fresca así. Las palabras van enteras («firma» no calza en «confirma»), y la
+// espera de turno o de pase gana: ya tiene su aviso. La ventana es la fecha del archivo, como en hasFreshDoing.
+const OUTSIDE_WAIT = /(?<![\p{L}\p{N}])(ci|colas?|pedidos?|merges?|entr(?:e|en|a|ar|ó|o)|firmas?|dueñ[oa]s?|validaci[oó]n(?:es)?)(?![\p{L}\p{N}])/iu;
+function outsideWaitOf(home, sid, now) {
+  if (!hasFreshDoing(home, sid, now)) return null;
+  const note = readJson(path.join(stateDir(home), 'doing', `${sid}.json`), null);
+  const what = note && typeof note.waitingFor === 'string' ? note.waitingFor : '';
+  if (!OUTSIDE_WAIT.test(what) || SUITE_WAIT.test(what) || PASS_WAIT.test(what)) return null;
+  const since = Date.parse(note.waitingSince || note.at);
+  return { waitingFor: label(what, 160), since: Number.isFinite(since) ? since : null };
+}
+
+// Las corridas detenidas con su plan firmado, de la firma más vieja a la más nueva: los marcadores de `active/` cuya sesión
+// no vive y los de `pruned/`. Los filtros van en orden y el primero que falla la descarta: plan firmado, pasos pendientes,
+// tocada hace menos de 24 h, ningún otro marcador de su historia en `active/`, y recién al final la historia en
+// `in-progress`, leída de su archivo. Así un marcador terminado de una carpeta borrada no llega a «No pude leer».
+const STOPPED_FRESH_MS = 24 * 3600000;
+function stoppedRuns(home, now, markers, alive, nameOf, problems) {
+  const pruned = [];
+  const dir = path.join(stateDir(home), 'pruned');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch (e) {
+    if (e.code !== 'ENOENT') problems.push(`las corridas podadas (${e.code || e.message})`);
+  }
+  for (const f of files) {
+    try { pruned.push({ sid: f.replace(/\.json$/, ''), m: JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')), active: false }); } catch (e) { problems.push(`la corrida podada ${f} (${e.code || e.message})`); }
+  }
+  const actives = [...markers].map(([sid, m]) => ({ sid, m, active: true }));
+  const out = [];
+  for (const x of [...actives.filter((a) => !alive.has(a.sid)), ...pruned]) {
+    const m = x.m || {};
+    const at = Date.parse(m.planApproval && m.planApproval.at);
+    if (!Number.isFinite(at)) continue;
+    if (!Array.isArray(m.stepsPending) || !m.stepsPending.length) continue;
+    const touched = Date.parse(m.lastTouch);
+    if (!Number.isFinite(touched) || now - touched >= STOPPED_FRESH_MS) continue;
+    if (actives.some((a) => a.sid !== x.sid && String(a.m.storyId) === String(m.storyId))) continue;
+    let text;
+    try { text = fs.readFileSync(String(m.storyPath), 'utf8'); } catch (e) {
+      problems.push(`la historia de la corrida detenida ${m.storyId} (${e.code || e.message})`);
+      continue;
+    }
+    const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+    const st = front && /^status:\s*["']?([\w-]+)/m.exec(front[1]);
+    if (!st || st[1] !== 'in-progress') continue;
+    out.push({ storyId: String(m.storyId), sid: x.sid, session: nameOf(x.sid), at, pruned: !x.active });
+  }
+  return out.sort((a, b) => a.at - b.at);
 }
 
 // ¿La sesión trabajó después de anotar que espera turno? La misma regla que la oficina (`workedAfterWait`): tocó archivos,
@@ -427,17 +478,20 @@ function status(opts = {}) {
   const quiet = [];
   const passWaiting = [];
   const suiteWaiting = [];
+  const outsideWaiting = [];
   const turnProblems = [];
   const suites = suiteHolders(home, now, turnProblems);
   problems.push(...turnProblems);
   const opened = recentOpened(home, now, problems);
   const justOpened = new Set(opened.map((o) => o.name));
   const alive = new Set();
+  const aliveSids = new Set();
   const files = stateFiles(home, problems);
   const stalled = [];
   const asking = [];
   for (const [sid, s] of sessions) {
     if (!s.alive) continue;
+    aliveSids.add(String(sid));
     // Un agente interno de otra sesión (carpeta temporal, nombre armado) no es una sesión de trabajo, salvo con marcador.
     if (s.internal && !markers.has(sid)) continue;
     if (s.name) alive.add(s.name);
@@ -462,6 +516,13 @@ function status(opts = {}) {
     else if (justOpened.has(s.name)) working.push({ session: nameOf(sid), sid, why: 'recién abierta, todavía arrancando', since: (opened.find((o) => o.name === s.name) || {}).at || null });
     else {
       waiting.push({ session: nameOf(sid), sid, why: story ? `${story}, ${s.status || 'sin estado'}` : 'sin trabajo' });
+      // una de fondo que anotó que espera algo de afuera (la CI, la cola, una firma): la coordinadora le da lo liviano
+      if (s.kind === 'bg') {
+        try {
+          const o = outsideWaitOf(home, sid, now);
+          if (o) outsideWaiting.push({ session: nameOf(sid), sid, ...o });
+        } catch (e) { problems.push(`la nota de ${nameOf(sid)} (${e.message})`); }
+      }
       // la que tiene que lanzar su pase y espera el lugar: no está quieta, le falta que alguien la despierte
       const owesPass = m && m.adversarialGate && m.adversarialGate.run === true && !m.adversarial && m.deepReviewDone !== true;
       if (owesPass && s.status === 'idle') passWaiting.push({ session: nameOf(sid), sid });
@@ -501,8 +562,10 @@ function status(opts = {}) {
   // un solo turno de tarea pesada por máquina: lo tiene la ejecución grande o el pase más viejo en vuelo
   const firstPass = [...adversarial].sort((a, b) => Date.parse(a.since) - Date.parse(b.since))[0];
   const heavyTurn = suiteRow ? { kind: 'suite', ...suiteRow } : firstPass ? { kind: 'pass', ...firstPass } : null;
+  // las corridas detenidas con plan firmado se buscan sólo con la fila del portón larga: es lo único que las nombra
+  const stopped = suiteWaiting.filter((w) => !w.worked).length >= 2 ? stoppedRuns(home, now, markers, aliveSids, nameOf, problems) : null;
   return {
-    now, working, waiting, quiet, passWaiting, suiteWaiting, cap: r.max_working, adversarial, stalled, asking,
+    now, working, waiting, quiet, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, adversarial, stalled, asking,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
     suite: suiteRow, suites: suiteRows, secondTurn, heavyTurn, gates,
     signatures,
@@ -535,6 +598,7 @@ function statusText(s) {
   const beside = h && h.kind === 'pass' ? `, al lado del pase de ${h.storyId ? `la ${h.storyId}` : 'una sesión sin story'}` : '';
   const gateCount = (g) => (g.suites != null && !String(g.what).startsWith(`${g.suites} suites`) ? `, ${g.suites} suites` : '');
   if (s.gates && s.gates.length) lines.push(`Portón acotado en curso: ${s.gates.map((g) => `${g.session || 'una sesión sin nombre'} (${g.what}${gateCount(g)}${beside}, desde las ${hhmm(g.since)})`).join(' · ')}`);
+  if (s.outsideWaiting && s.outsideWaiting.length) lines.push(`Esperan algo de afuera: ${s.outsideWaiting.map((w) => `${w.session} (${w.waitingFor})${w.since == null ? '' : ` desde las ${hhmm(w.since)}`}`).join(' · ')}`);
   if (s.suiteWaiting && s.suiteWaiting.length) lines.push(`Esperando turno de suite o portón: ${[...s.suiteWaiting].sort((a, b) => a.since - b.since).map((w) => `${w.session} desde las ${hhmm(w.since)}${w.worked ? ' (trabajó después: ¿sigue esperando?)' : ''}`).join(' · ')}`);
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
   lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`].join(' · ')}`);
@@ -1401,6 +1465,126 @@ function deliveredLines(home, out) {
   return [lines.join('\n')];
 }
 
+// La memoria libre que pide una sesión nueva desde el aviso: la propuesta no sale debajo, ni sin poder medirla.
+const PROPOSE_MIN_FREE_PCT = 40;
+const outsideNoticeFile = (home, sid) => path.join(coordinationDir(home), `outside-notice-${sid}.json`);
+
+/**
+ * Las filas del tablero que el aviso nombra, en el orden de la oficina: `light` (sin empezar, sin dueño y sin historia) y
+ * `stories` (lo mismo, con historia). «Sin dueño» es `quien` vacío o «Sin sesión», lo que el tablero escribe en una fila
+ * que nadie tomó. Un tablero que no está o que no se lee devuelve `problem`: «no pude leer» no es «no hay nada».
+ */
+function boardRows(home) {
+  const B = require('./office/board.js');
+  let read;
+  try { read = B.readBoardRaw(stateDir(home)); } catch (e) { return { light: [], stories: [], problem: `el tablero (${oneLine(e.message)})` }; }
+  if (read.text === null) return { light: [], stories: [], problem: 'el tablero (no está)' };
+  const free = (r) => { const q = typeof r.quien === 'string' ? r.quien.trim().toLowerCase() : ''; return !q || q === 'sin sesión'; };
+  const open = B.orderRows(read.raw.pendientes.filter((r) => r && typeof r === 'object' && r.estado === 'sin-empezar' && free(r)));
+  const hasStory = (r) => typeof r.historia === 'string' ? r.historia.trim() !== '' : r.historia != null;
+  return { light: open.filter((r) => !hasStory(r)), stories: open.filter(hasStory), problem: null };
+}
+// Una fila para el texto: su número y su título, o sólo el título (el número lo pone board.js al guardar).
+const rowText = (r) => { const title = `«${label(r.titulo || 'sin título', 80)}»`; return r.id ? `${label(r.id)} ${title}` : title; };
+
+/**
+ * ¿Salen los renglones de `field` en este turno? Salen cuando lo que dicen (`key`) cambió desde lo anotado para esta
+ * coordinadora; entonces lo anota. Una clave vacía (no hay nada que decir) anota sólo si lo anotado era otra cosa, para
+ * que vuelva a salir cuando reaparezca. Sin poder anotar, salen igual y lo dice en `problems`, como la línea del tope.
+ */
+function noteSaid(opts, sid, field, key, problems) {
+  if (!sid || !SAFE_SID.test(String(sid))) return key !== '';
+  const home = opts.home || require('os').homedir();
+  const file = outsideNoticeFile(home, sid);
+  let prev = {};
+  try { prev = readJson(file, {}) || {}; } catch { prev = {}; }
+  if (typeof prev !== 'object' || Array.isArray(prev)) prev = {};
+  if ((prev[field] || '') === key) return false;
+  try { writeJson(file, { ...prev, [field]: key }); } catch (e) {
+    if (key !== '') problems.push(`no pude anotar el aviso de las que esperan: ${e.code || e.message}`);
+  }
+  return key !== '';
+}
+
+// La memoria libre, sólo cuando decide algo: `{ pct, why }`, con `pct` null si no se pudo medir.
+function measureMemory(opts) {
+  try { return (opts.readMemory || require('./heavy-turn.js').freeMemory)() || { pct: null, why: 'sin respuesta' }; } catch (e) { return { pct: null, why: oneLine(e.message) }; }
+}
+const memoryShort = (m) => (m.pct == null ? `no pude medir la memoria libre (${oneLine(m.why || 'sin motivo').slice(0, 120)})` : `la memoria libre está en ${m.pct} % (hace falta ${PROPOSE_MIN_FREE_PCT} %)`);
+
+/**
+ * Las sesiones de fondo que esperan algo de afuera: un renglón por sesión con lo liviano del tablero, y la propuesta de
+ * abrir una sesión nueva para la primera historia sin empezar si hay lugar y memoria. La propuesta nunca nombra a la que
+ * espera: ésa vigila su pedido y se cierra al entrar. La memoria se mide sólo si lo demás se cumple.
+ */
+function outsideWaitLines(opts, sid, s, working, cap, getBoard, problems) {
+  const waiting = s.outsideWaiting.filter((w) => w.sid !== sid);
+  if (!waiting.length) { noteSaid(opts, sid, 'outside', '', problems); return []; }
+  const b = getBoard();
+  if (b.problem) problems.push(b.problem);
+  const light = b.light.slice(0, 3);
+  const lines = waiting.map((w) => {
+    const head = `Coordinación: ${w.session} espera ${w.waitingFor}${w.since == null ? '' : ` desde las ${hhmm(w.since)}`}`;
+    if (b.problem) return `${head}.`;
+    return light.length ? `${head}: dale algo liviano de la fila — ${light.map(rowText).join(', ')}.` : `${head}: la fila no tiene nada liviano: que siga vigilando su pedido.`;
+  });
+  const story = b.stories[0];
+  let proposal = '';
+  if (story && working.length < cap) {
+    const what = `${rowText(story)} (la ${label(story.historia)})`;
+    const m = measureMemory(opts);
+    if (m.pct != null && m.pct >= PROPOSE_MIN_FREE_PCT) {
+      lines.push(`Coordinación: hay lugar (${working.length} de ${cap}) y memoria (${m.pct} %): abrí una sesión nueva para ${what}.`);
+      proposal = `propone:${what}`;
+    } else {
+      lines.push(`Coordinación: no propongo una sesión nueva para ${what}: ${memoryShort(m)}.`);
+      proposal = `memoria:${what}`;
+    }
+  }
+  const key = JSON.stringify([waiting.map((w) => [w.session, w.waitingFor]), b.problem ? 'ilegible' : light.map(rowText), proposal]);
+  return noteSaid(opts, sid, 'outside', key, problems) ? lines : [];
+}
+
+/**
+ * La fila del portón larga: con dos o más esperando turno, a cuáles parar (todas salvo la primera, que es la que sigue) y
+ * qué hacer con el lugar que dejan: reabrir la corrida detenida con el plan firmado más viejo, o abrir una sesión nueva
+ * para la primera fila liviana si hay lugar y memoria. Reabrir no pide lugar ni memoria: las que se paran los liberan. Sin
+ * detenida, el renglón sale si hay lugar o memoria; la memoria que no se pudo medir no cuenta como libre.
+ */
+function longQueueLines(opts, sid, s, queue, working, cap, getBoard, problems) {
+  if (queue.length < 2) { noteSaid(opts, sid, 'gate', '', problems); return []; }
+  const stop = queue.slice(1).map((w) => w.session);
+  const stopText = stop.length === 1 ? stop[0] : `${stop.slice(0, -1).join(', ')} y ${stop[stop.length - 1]}`;
+  const head = `Coordinación: ${queue.length} sesiones esperan el portón: pará ${stopText}`;
+  const reopen = (s.stopped || [])[0];
+  let line;
+  let key;
+  if (reopen) {
+    line = `${head}, y reabrí la ${reopen.storyId} (sesión ${reopen.session}).`;
+    key = ['reabrir', reopen.sid];
+  } else {
+    const room = working.length < cap;
+    const b = getBoard();
+    if (b.problem) problems.push(b.problem);
+    const first = b.problem ? null : b.light[0];
+    let m = null;
+    // la memoria se mide sólo si decide: para proponer la fila liviana, o para saber si el renglón sale sin lugar
+    if ((room && first) || !room) m = measureMemory(opts);
+    const memOk = m && m.pct != null && m.pct >= PROPOSE_MIN_FREE_PCT;
+    if (!room && !memOk) {
+      if (m && m.pct == null) problems.push(`la memoria libre para la fila del portón (${oneLine(m.why || 'sin motivo').slice(0, 120)})`);
+      noteSaid(opts, sid, 'gate', '', problems);
+      return [];
+    }
+    if (b.problem) { line = `${head}.`; key = ['ilegible']; }
+    else if (!first) { line = `${head}; no hay a quién reabrir ni nada liviano en la fila.`; key = ['nada']; }
+    else if (!room) { line = `${head}; no propongo una sesión nueva: no hay lugar (${working.length} de ${cap}).`; key = ['sin-lugar']; }
+    else if (memOk) { line = `${head}, y abrí una sesión nueva para ${rowText(first)} (hay lugar, ${working.length} de ${cap}, y memoria, ${m.pct} %).`; key = ['propone', rowText(first)]; }
+    else { line = `${head}; no propongo una sesión nueva: ${memoryShort(m)}.`; key = ['memoria', rowText(first)]; }
+  }
+  return noteSaid(opts, sid, 'gate', JSON.stringify([stop, ...key]), problems) ? [line] : [];
+}
+
 function capNotice(opts = {}) {
   const sid = sessionOf(opts);
   const who = coordinatorRole(opts, sid);
@@ -1455,6 +1639,11 @@ function capNotice(opts = {}) {
   for (const w of s.suiteWaiting.filter((x) => x.sid !== sid && x.worked).sort((a, b) => a.since - b.since)) {
     lines.push(`Coordinación: ${w.session} anotó a las ${hhmm(w.since)} que espera turno y trabajó después: preguntale si sigue esperando.`);
   }
+  // el tablero se lee una vez por turno, y sólo si algún renglón lo pide
+  let boardCache = null;
+  const getBoard = () => boardCache || (boardCache = boardRows(opts.home || require('os').homedir()));
+  try { lines.push(...longQueueLines(opts, sid, s, queue, working, cap, getBoard, problems)); } catch (e) { problems.push(`la fila del portón larga (${e.code || e.message})`); }
+  try { lines.push(...outsideWaitLines(opts, sid, s, working, cap, getBoard, problems)); } catch (e) { problems.push(`las que esperan algo de afuera (${e.code || e.message})`); }
   lines.push(...greenPrLines(opts, problems));
   const signatures = oldSignatures(opts, opts.now == null ? Date.now() : Number(opts.now), problems);
   if (signatures) lines.push(signatures);
