@@ -845,7 +845,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   repo del perfil. Lo revisa quien mantiene.
 - **Revisión del plan** y **Con qué corre la revisión**, y las opciones nuevas de **Pase adversarial** y de **Vueltas de
   revisores**: las revisiones automáticas, del plan y del código. Cuándo corre cada una, quién la aprueba, con qué
-  revisor y cuándo el dueño cuenta como ausente; la guía entera es `guides/revisiones-automaticas.md`. Quedan en
+  revisor y cuándo el dueño cuenta como ausente; la guía entera es `guides/automatic-reviews.md`. Quedan en
   `team-repos.json` → `plan_review`, `review_runner`, `deep_review` y `review`, en el repo del perfil; un valor malo cae
   al de fábrica sólo en su clave. Lo revisa quien mantiene. Las opciones:
 

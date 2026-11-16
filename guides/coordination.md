@@ -289,7 +289,7 @@ coordinadora: sólo puede frenar de más.
 
 ## Las revisiones automáticas: qué hace la coordinadora
 
-Cuándo corre cada revisión lo dice la configuración de la organización (`guides/revisiones-automaticas.md`). En cada
+Cuándo corre cada revisión lo dice la configuración de la organización (`guides/automatic-reviews.md`). En cada
 una, la coordinadora:
 
 - **Pregunta o no.** Si la matriz dice preguntar, la pregunta al dueño la hace ella, con el cuadro de opciones, y la

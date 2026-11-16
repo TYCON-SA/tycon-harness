@@ -127,7 +127,7 @@ const PUBLIC_ONLY_GUIDES = [
   'README.md', 'INDEX.md', 'INSTALL.md',   // el índice de guías; README.md es la portada
   'guides/maintaining/publicacion-espejo.md',
   'guides/agent-architecture.md', 'guides/ci-gate.md', 'guides/codex-migration.md', 'guides/integrations/instinct-mining.md',
-  'guides/maintaining/mecanismo-de-instalacion.md', 'guides/reglas-para-revisores.md',
+  'guides/maintaining/mecanismo-de-instalacion.md', 'guides/reviewer-rules.md',
   'guides/decisions/codex-etapa-d-retro-red.md', 'guides/decisions/controles-apagables-por-config-2026-08-25.md',
 ];
 /** Las carpetas que no viajan: ahí un marcador de bloque no publica nada (una story o una medición que lo cita como

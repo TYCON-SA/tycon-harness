@@ -2,7 +2,7 @@
 
 Before coding, an agent reviews the story's **plan**; after coding, the **adversarial pass** runs the code to hunt for
 defects. This guide puts together when each review runs, who launches it, with what reviewer, who approves, when the
-owner counts as away and how it is configured. In Spanish: [revisiones-automaticas.md](revisiones-automaticas.md).
+owner counts as away and how it is configured. In Spanish: [automatic-reviews.md](automatic-reviews.md).
 
 Everything is configured on the organization site, Configuration tab, «How Claude works» (sections **Plan review**,
 **What runs the review**, **Adversarial pass** and **Reviewer rounds**), and it lives in `team-repos.json` of the

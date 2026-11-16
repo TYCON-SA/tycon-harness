@@ -70,7 +70,7 @@ nueva, hasta que se retire.
 
 **Detalle:** [ver](maintaining/piezas-en-detalle.md#guidespiezas-del-arnesmd)
 
-## guides/que-hace-el-arnes.md
+## guides/what-the-harness-does.md
 
 **Qué es:** El recorrido del arnés entero: qué se activa en cada momento de un día de trabajo y por qué existe.
 
@@ -80,7 +80,7 @@ nueva, hasta que se retire.
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesque-hace-el-arnesmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guideswhat-the-harness-doesmd)
 
 ## artifacts/mapa-arnes.html
 
@@ -230,7 +230,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Detalle:** [ver](maintaining/piezas-en-detalle.md#scriptslibtycon-configjs--team-profilejson--la-configuración-del-arnés)
 
-## guides/reglas-para-revisores.md
+## guides/reviewer-rules.md
 
 **Qué es:** La sección `## Reglas para revisores` del `CLAUDE.md` de cada repo, que `pipeline.js` recorta y pega al principio del contexto de cada revisor.
 
@@ -240,7 +240,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** `tycon-pipeline/scripts/tests/reviewer-rules.test.js`, `scripts/tests/reviewer-rules.test.sh`
 
-**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesreglas-para-revisoresmd)
+**Detalle:** [ver](maintaining/piezas-en-detalle.md#guidesreviewer-rulesmd)
 
 ## guides/maintaining/bmad-contract.md
 
