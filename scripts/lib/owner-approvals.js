@@ -44,6 +44,8 @@ const LIB = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const stateDir = (casa) => require(path.join(LIB, 'state-dir.js')).stateDir(casa);
 // la carpeta de Claude Code de la cuenta, por el ayudante: el nombre no se escribe acá
 const carpetaClaude = (casa) => require(path.join(LIB, 'state-dir.js')).claudeDir(casa);
+// el lector de transcripciones por renglones: uno solo, el mismo que lee la conversación
+const lector = () => require(path.join(LIB, 'jsonl-lines.js'));
 const VENCE_MIN = 30;
 // la distancia entre la hora del registro y la del renglón de la transcripción
 const MARGEN_MS = 2 * 60 * 1000;
@@ -187,6 +189,13 @@ function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHac
     ...(clickDelDueno && !soloClick ? { clickDelDueno: true } : {}) };
 }
 
+/** El sello con que termina una pregunta de `cuadroDe` (« (firma … · código …)», sin contar espacios al final), o null. */
+function selloAlFinal(pregunta) {
+  const p = String(pregunta || '').trimEnd();
+  const i = p.lastIndexOf(' (firma ');
+  return i >= 0 && p.endsWith(')') ? p.slice(i + 2, -1) : null;
+}
+
 /**
  * ¿El mensaje del agente trae la pregunta que armó el guion (`pregunta`; sin ella, el sello) y no nombra otra sesión que la
  * destino? Para el «aprobado» escrito. El sello solo, pegado a otra pregunta, haría aprobar una cosa y firmar otra. Lo que
@@ -291,14 +300,11 @@ function transcripcionDe(casa, sesion) {
   return null;
 }
 
-function renglones(ruta) {
-  const fuera = [];
-  for (const l of fs.readFileSync(ruta, 'utf8').split('\n')) {
-    if (!l.trim()) continue;
-    try { fuera.push(JSON.parse(l)); } catch (_) { /* renglón a medias */ }
-  }
-  return fuera;
-}
+/**
+ * Los renglones de la transcripción, de a trozos (una de más de 512 MB no entra en un texto). Con `filtro`, sólo los que
+ * lo traen; con `tope`, una que pasa del tope no se lee (`code: 'ETOPE'`).
+ */
+const renglones = (ruta, opciones) => lector().leerRenglones(ruta, opciones);
 
 const bloques = (r) => (r && r.message && Array.isArray(r.message.content) ? r.message.content : []);
 const textoDe = (r) => {
@@ -315,7 +321,11 @@ const cerca = (r, ts) => { const t = Date.parse(r && r.timestamp); const u = Dat
  */
 function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   let rs;
-  try { rs = renglones(ruta); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})` }; }
+  // el «aprobado» necesita los renglones en orden: no se filtra, y una transcripción que pasa del tope no se lee
+  try { rs = renglones(ruta, { tope: true }); } catch (e) {
+    if (e.code === 'ETOPE') return { ok: false, motivo: `la transcripción de esta pestaña pasa de ${lector().tamanoDelTope()}: un «aprobado» escrito no se puede confirmar; aprobá con el click del cuadro o en la terminal` };
+    return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})` };
+  }
   const t = String(a.texto || '').trim();
   // el renglón más cercano a la hora del registro: dos «aprobado» seguidos no se validan contra el mismo
   let i = -1;
@@ -377,9 +387,10 @@ function anotarPreguntaDistinta({ casa, sello, sesion, esperada, recibida }) {
  * dio un gancho. `{ ok }` o `{ ok: false, motivo }`.
  */
 function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, sello, casa } = {}) {
-  let rs;
-  try { rs = renglones(ruta); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})` }; }
   if (!a.tool_use_id) return { ok: false, motivo: 'el click no dice qué cuadro contestó' };
+  let rs;
+  // sólo los renglones que nombran ese cuadro: el resto de la transcripción no se convierte en objetos
+  try { rs = renglones(ruta, { filtro: a.tool_use_id }); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})` }; }
   const llamado = rs.some((r) => r && r.type === 'assistant' && bloques(r).some((b) => b && b.type === 'tool_use' && b.id === a.tool_use_id && b.name === CUADRO));
   if (!llamado) return { ok: false, motivo: 'el cuadro no está en la transcripción de la sesión' };
   const r = rs.find((x) => bloques(x).some((b) => b && b.type === 'tool_result' && b.tool_use_id === a.tool_use_id));
@@ -771,35 +782,63 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
       : 'no hay un click en el cuadro ni un «aprobado» tuyo de los últimos 30 minutos sin usar' };
   // un «Sí» a esta misma firma y sesión con otro código: la fuente (el plan, el diff, el hallazgo) cambió después del cuadro
   const mismaFirma = cuadro.sello.slice(0, cuadro.sello.lastIndexOf('código '));
+  // de qué firma es cada candidato: el click lo dice el sello con que termina su pregunta (el que pone `cuadroDe`; la
+  // pregunta de otra firma puede citar este sello más adentro); la constancia de Codex, su sello; un «aprobado» escrito
+  // no lo dice hasta validarlo
+  const conPregunta = (a) => plataformaDe(a) !== 'codex' && a.tipo === 'click' && typeof a.pregunta === 'string';
+  const conSello = (a) => plataformaDe(a) === 'codex' && typeof a.sello === 'string';
+  const selloDe = (a) => (conSello(a) ? a.sello : conPregunta(a) ? selloAlFinal(a.pregunta) : null);
+  // la constancia de Codex a esta firma y sesión es de esta firma con cualquier código: su motivo ya dice si cambió
+  const deEstaFirma = (a) => (conSello(a) ? a.sello.startsWith(`${mismaFirma}código `) : selloDe(a) === cuadro.sello);
+  const deOtroCodigo = (a) => !deEstaFirma(a) && String(selloDe(a) || '').startsWith(`${mismaFirma}código `);
   const cambio = candidatas.some((a) => a.tipo === 'click' && a.respuesta === APRUEBA && typeof a.pregunta === 'string'
-    && a.pregunta.includes(`(${mismaFirma}código `) && !a.pregunta.includes(`(${cuadro.sello})`));
-  if (cambio && !candidatas.some((a) => a.pregunta === cuadro.pregunta)) return { ok: false, motivo: 'lo que se mostró cambió: pedí el cuadro de nuevo' };
+    && String(selloAlFinal(a.pregunta) || '').startsWith(`${mismaFirma}código `) && selloAlFinal(a.pregunta) !== cuadro.sello);
+  // no, si hay uno con el sello de esta firma: se valida, y su motivo dice por qué no vale
+  if (cambio && !candidatas.some((a) => a.pregunta === cuadro.pregunta || deEstaFirma(a))) return { ok: false, motivo: 'lo que se mostró cambió: pedí el cuadro de nuevo' };
   const check = validar || ((a, ctx) => validarEnClaude(a, ctx));
   let leido = arbol;
-  let motivo = null;
+  // el motivo que se muestra es el de esta firma: el de un click a otra firma confunde al buscar la causa
+  let propio = null;
+  let sinPregunta = null;
+  let ajeno = null;
+  const falla = (a, dicho) => {
+    // sin motivo, igual cuenta: si no, un click de esta firma que falla callado deja «son de otras firmas»
+    const m = dicho || 'no se pudo confirmar';
+    if (deEstaFirma(a)) propio = propio || m;
+    // sin un sello legible (un «aprobado», un click cuya pregunta no termina en uno) no se sabe de qué firma es
+    else if (!selloDe(a)) sinPregunta = sinPregunta || m;
+    else ajeno = ajeno || m;
+  };
   for (const a of candidatas) {
     if (plataformaDe(a) === 'codex') {
       const t = constanciaDeLaTerminal(a, { casa, cuadro });
       if (t.ok) return { ok: true, aprobacion: a, via: 'terminal', plataforma: 'codex' };
-      motivo = motivo || t.motivo;
+      falla(a, t.motivo);
       continue;
     }
     let proceso = null;
     if (a.sesion !== sesion) {
       if (leido === undefined) leido = ow().arbolDeLaPlataforma();
       proceso = procesoQueLaAnoto({ a, arbol: leido, casa });
-      if (!proceso.ok) { motivo = motivo || proceso.motivo; continue; }
+      if (!proceso.ok) { falla(a, proceso.motivo); continue; }
     } else if (herramienta) {
       if (leido === undefined) leido = ow().arbolDeLaPlataforma();
       const p = (leido || []).find((x) => x.pid === herramienta.pid);
       // sin la línea del proceso no se miran los ganchos que suman sus banderas: la aprobación no se puede confirmar
-      if (!p) { motivo = motivo || 'no encontré el proceso de la herramienta entre los procesos de la máquina'; continue; }
+      if (!p) { falla(a, 'no encontré el proceso de la herramienta entre los procesos de la máquina'); continue; }
       proceso = { linea: p.comando };
     }
     const v = check(a, { casa, cwd, cuadro, destino, linea: proceso && proceso.linea, cwdAprobacion: proceso && proceso.cwd });
     if (v && v.ok) return { ok: true, aprobacion: a, via: a.tipo, plataforma: plataformaDe(a) };
-    motivo = motivo || (v && v.motivo);
+    falla(a, v && v.motivo);
   }
+  // sin motivo del click de esta firma: uno a esta misma firma y sesión con otro código dice que lo mostrado cambió
+  const clicks = candidatas.filter((a) => a.tipo === 'click').length;
+  const deOtras = clicks === 1 ? 'no hay un click para esta firma: el click reciente es de otra firma'
+    : `no hay un click para esta firma: los ${clicks} clicks recientes son de otras firmas`;
+  // sin clicks, sólo constancias de Codex de otras firmas: su motivo, como hasta ahora
+  const motivo = propio || (candidatas.some(deOtroCodigo) ? 'lo que se mostró cambió: pedí el cuadro de nuevo' : null) || sinPregunta
+    || (clicks ? deOtras : ajeno);
   return { ok: false, motivo: `la aprobación no vale: ${motivo || 'no se pudo confirmar'}` };
 }
 

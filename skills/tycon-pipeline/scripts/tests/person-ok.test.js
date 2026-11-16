@@ -136,3 +136,36 @@ test('8.141 T15 ElChatSale_SinLectoresDelCarril', () => {
     }
   }
 });
+
+test('PersonOk_LongConversation_ReadByLines (T6) @story-8.287 @ac-7', (t) => {
+  const lineas = require(path.join(__dirname, '..', 'lib', 'jsonl-lines.js'));
+  const antes = { ...lineas.LIMITE };
+  t.after(() => Object.assign(lineas.LIMITE, antes));
+  // trozos de 7 bytes: un renglón (y una letra con tilde) queda partido entre dos lecturas
+  lineas.LIMITE.trozo = 7;
+  const c = conversacion([delDev('hola'), delAgente('con tildes: áéíóú ñ'), delDev('chau')]);
+  const archivo = ok.leerConversacion(c).archivo;
+  // el último, a medio escribir: se descarta, como hoy
+  fs.appendFileSync(archivo, '{"type":"user","mess');
+  const conv = ok.leerConversacion(c);
+  assert.equal(conv.legible, true);
+  assert.deepEqual(conv.registros.map((r) => r.message.content), ['hola', [{ type: 'text', text: 'con tildes: áéíóú ñ' }], 'chau']);
+  // una tubería no es un registro: es un error, sin esperar
+  if (process.platform !== 'win32') {
+    const fifo = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pok-fifo-')), 'tubo.jsonl');
+    assert.equal(spawnSync('mkfifo', [fifo]).status, 0);
+    // stable-data: mide que no espera (una duración), no una fecha
+    const t0 = Date.now();
+    assert.throws(() => lineas.leerRenglones(fifo), { code: 'ENOTREG' });
+    const enCasa = path.join(c.home, '.claude', 'projects', '-repo', 's-2.jsonl');
+    assert.equal(spawnSync('mkfifo', [enCasa]).status, 0);
+    assert.equal(ok.leerConversacion({ home: c.home, env: {}, sesion: 's-2' }).legible, false);
+    assert.ok(Date.now() - t0 < 1000, 'esperó a la tubería');
+  }
+  // una conversación que pasa del tope no se lee, y no tira
+  lineas.LIMITE.bytes = 10;
+  const grande = ok.leerConversacion(c);
+  assert.equal(grande.legible, false);
+  assert.match(grande.motivo, /^la conversación pasa de 10 bytes$/);
+  assert.deepEqual(ok.planEnLaConversacion('1. un plan con un renglón bastante largo.\n', c), { legible: false, motivo: grande.motivo });
+});
