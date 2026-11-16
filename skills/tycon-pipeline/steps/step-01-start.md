@@ -43,10 +43,25 @@ pausa sin escribir el marcador.
 
 **Stories DISTINTAS en paralelo sobre el mismo repo**: PIPE-C0 no las detecta (compara por id de story) y el árbol
 compartido las contamina: un solo HEAD, el `git diff HEAD` arma mal el set de revisores y `.advisors/tests-result.json`
-es único por repo. Regla del equipo: **un worktree por story**. Si `marker.js list-all` muestra otro pipeline activo
-sobre este `repoPath`, crear el worktree (`~/.claude/tycon-harness/scripts/tools/tycon-worktree.sh new <slug>`) y correr
-el pipeline DESDE ahí. Los recursos suman por máquina: una suite completa a la vez y el segundo pipeline con
-`TYCON_5B_EARLY=0` (`step-06-run-tests.md` §Riesgo multi-sesión). Detalle: `~/.claude/tycon-harness/guides/git-worktrees.md`.
+es único por repo. Regla del equipo: **un worktree por story**, y lo hace `start`. Con otra sesión viva en el checkout
+(por su transcripción, sus subagentes o su corrida abierta, también quieta o en espera), sin coordinadora y fuera del
+arnés público y de `agent-skills`, `start` pausa con **`PIPE-C6-own-copy`** sin tocar nada (ni la rama ni el
+`.gitignore`) y trae `own_copy.command`, también en la salida breve. Entonces:
+
+1. Corré `own_copy.command` (`own-copy.js`): trae main, crea `<repo>--wt-<clave>` con la rama `wt/<clave>` y devuelve
+   `path`, `branch`, `story` (la historia dentro de la copia), `checklist` y `next`. Sale 3 si la historia no está
+   commiteada (commiteala en su rama, o coordinate con la otra sesión) y 1 si git falló: decíselo a la persona.
+2. Pasate a la copia: en Claude Code, `EnterWorktree` con `path`; en Codex, cada comando con `cd <copia> &&`.
+3. Decíselo a la persona en una línea, con la ruta y la rama de la copia.
+4. Volvé a correr `start` desde la copia, con la `story` que devolvió el comando (es el `next`), y seguí el pipeline
+   ahí. Nunca vuelvas a escribir en el checkout compartido. El `checklist` dice qué no viaja a la copia (dependencias,
+   `.env`).
+
+Con coordinadora viva, o en el arnés y `agent-skills` (una sola sesión toca git a la vez), `start` no pausa: lo dice en
+un renglón `PIPE-C6-own-copy:` de `acciones`. Otra corrida de la MISMA historia no la pide: ésa la decide PIPE-C0.
+`TYCON_OWN_COPY=0` apaga la pausa; es una llave de la persona (`guides/safety-guard.md`), no del agente. Los recursos suman por máquina: una suite completa a la vez y el segundo
+pipeline con `TYCON_5B_EARLY=0` (`step-06-run-tests.md` §Riesgo multi-sesión). Detalle:
+`~/.claude/tycon-harness/guides/git-worktrees.md`.
 
 ### PIPE-C1 — rama protegida (CRITICAL, bloquea)
 

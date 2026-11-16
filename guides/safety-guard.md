@@ -283,6 +283,10 @@ comando lo reescribe entero y lo deja en borrador; y borrar una historia, sacarl
 versión vieja (`git checkout -- <historia>`, `git restore`) también frena. Se apaga con `TYCON_STATUS_GATE=off` en el ambiente del gancho (lo usan pruebas que miden
 la evidencia), y cada escritura que deja pasar así queda anotada; escrita en un comando, la frena `ESC-C1` sin la firma de la persona.
 
+`TYCON_OWN_COPY=0` apaga la pausa con que el arranque de una historia la lleva a su propia copia de trabajo cuando hay
+otra sesión en el mismo checkout (`PIPE-C6-own-copy`, `skills/tycon-pipeline/steps/step-01-start.md`). Es una llave de
+la persona: escrita por el agente en un comando, la frena `ESC-C1` sin la firma de la persona. `=1` no apaga nada.
+
 Lo que no ve: un guion que el agente escribe en un archivo y después corre; `patch` o `git apply` con un parche que toca
 la historia; `git stash pop`; un enlace (`ln -sf`) sobre el marcador; y el nombre de la carpeta del estado partido entre una variable y
 un comodín (`cd ~/.claude/.tyc* && rm -rf act*`). Eso lo ven el control de cambios sin declarar al cerrar y el diff del

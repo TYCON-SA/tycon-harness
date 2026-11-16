@@ -3513,6 +3513,55 @@ function tandaDelArranque(content, storyId, storyPath, nombre) {
   return { salida: { ready: true, story_id: storyId, actions_done: [`TANDA: anoté la tanda ${nombre} en la ejecución abierta de esta sesión.`], next: 'pipeline.js next te dice el próximo paso' } };
 }
 
+/**
+ * PIPE-C6-own-copy: ¿la historia arranca en su propia copia de trabajo? Con otra sesión viva en el checkout
+ * (scripts/lib/live-sessions.js: por su transcripción, sus subagentes o su corrida abierta, también quieta o en espera),
+ * sin coordinadora viva y fuera del arnés público y de `agent-skills`, pausa con el comando de `own-copy.js`. Con
+ * coordinadora (ella ubica cada sesión) o en el arnés (una sola sesión toca git a la vez) sólo lo dice en un renglón.
+ * La propia sesión es `sessionIdFileKey()`, el nombre de su marcador; sin id (`_nosession`) no se excluye nada: cuenta
+ * de más. Una corrida de la MISMA historia no cuenta: la decide PIPE-C0, con sus tandas y sus copias en paralelo. Sin
+ * otras sesiones, no dice nada. `TYCON_OWN_COPY=0` la apaga: es una llave de la persona (el freno de escapes la frena
+ * escrita por el agente) y deja constancia en `actions`. `{ actions, pause, ownCopy }`.
+ */
+function copiaPropia({ repo, storyPath, storyId = null, home = os.homedir(), env = process.env }) {
+  const { execFileSync } = require('child_process');
+  const RAIZ = path.join(__dirname, '..', '..', '..');
+  const actions = [];
+  if (String(env.TYCON_OWN_COPY || '').trim() === '0') {
+    actions.push('PIPE-C6-own-copy: apagado con TYCON_OWN_COPY=0 (lo decide la persona): no miré si hay otra sesión en este checkout.');
+    return { actions };
+  }
+  let root;
+  try { root = execFileSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return { actions }; }
+  if (!root) return { actions };
+  const live = require(path.join(RAIZ, 'scripts', 'lib', 'live-sessions.js'));
+  const self = sessionIdFileKey();
+  const r = live.others({ root, selfSessionId: self, home, stateDir: stateDirOf(home) });
+  if (self === live.SIN_SESION) actions.push('PIPE-C6-own-copy: esta sesión no tiene id (_nosession): no pude sacarla de la cuenta de sesiones vivas, así que puede contarse a sí misma.');
+  for (const p of r.problems) actions.push(`PIPE-C6-own-copy: ${p}`);
+  const otras = r.sessions.filter((s) => !(storyId != null && s.story != null && String(s.story) === String(storyId)));
+  if (!otras.length) return { actions };
+  r.sessions = otras;
+  const quienes = r.sessions.map(live.describe).join('; ');
+  const ownCopy = require('./own-copy.js');
+  if (ownCopy.sinCopiaPropia(root).sin) {
+    actions.push(`PIPE-C6-own-copy: hay otra sesión viva en este checkout (${quienes}); en ${path.basename(root)} una sola sesión toca git a la vez (guides/git-worktrees.md §1): coordinala o esperala.`);
+    return { actions };
+  }
+  let coordinadora = null;
+  try { coordinadora = require(path.join(RAIZ, 'scripts', 'lib', 'signature-list.js')).coordinadoraViva(home); } catch { coordinadora = null; }
+  if (coordinadora) {
+    actions.push(`PIPE-C6-own-copy: hay otra sesión viva en este checkout (${quienes}); no pido copia propia porque hay coordinadora (ella ubica cada sesión).`);
+    return { actions };
+  }
+  const command = `node ${path.join(__dirname, 'own-copy.js')} --story ${path.resolve(storyPath)} --repo ${path.resolve(repo)}`;
+  return {
+    actions,
+    ownCopy: { command, because: quienes },
+    pause: { id: 'PIPE-C6-own-copy', detail: `Hay otra sesión viva en este checkout (${quienes}): esta historia arranca en su propia copia de trabajo. No toqué nada. Corré: ${command} — pasate a la copia que devuelve y volvé a correr start con la historia de la copia.` },
+  };
+}
+
 function computeStart(args) {
   const { execFileSync } = require('child_process');
   const storyPath = args.story;
@@ -3612,6 +3661,16 @@ function computeStart(args) {
         + (ramaSinLeer ? `. No pude leer la rama de la otra sesión (${ramaSinLeer}): ante la duda, pauso.` : ''),
       options: 'retomar con `marker.js adopt-session <sid>` (copia el estado completo) / clear-session / trabajarla en otra copia del repo y otra rama / cancelar',
     });
+  }
+
+  // PIPE-C6-own-copy: otra sesión viva en este checkout. Antes de PIPE-C1 y PIPE-C2, que escriben (la rama, `git init`,
+  // el `.gitignore`): con la pausa, `start` no toca nada y devuelve el comando que crea la copia propia de la historia.
+  if (!pauses.length) {
+    const propia = copiaPropia({ repo, storyPath, storyId });
+    actions.push(...propia.actions);
+    if (propia.pause) {
+      return { ready: false, story_id: storyId, pauses: [propia.pause], own_copy: propia.ownCopy, actions_done: actions, note: 'NADA mutado. Corré own_copy.command, pasate a la copia y volvé a correr start desde ahí.' };
+    }
   }
 
   // PIPE-C1: branch guard.
@@ -3982,6 +4041,8 @@ function recortarStart(result) {
   if (result.missing_before_start) breve.missing_before_start = result.missing_before_start;
   if (result.e2e_gap) breve.e2e_gap = result.e2e_gap;
   if (result.spec_stale) breve.spec_stale = result.spec_stale;
+  // PIPE-C6-own-copy: el comando que crea la copia propia de la historia, lo que el agente corre después de la pausa
+  if (result.own_copy) breve.own_copy = result.own_copy;
   breve.acciones = result.actions_done || [];
   breve.next = result.next || result.note || null;
   breve.completo = completo;
@@ -8642,6 +8703,8 @@ function main() {
 // más evadibles/sutiles tienen tests). require() NO ejecuta main().
 module.exports = {
   matchGlob,
+  // PIPE-C6-own-copy: si la historia arranca en su propia copia (start-own-copy.test.js prueba la coordinadora viva)
+  copiaPropia,
   // los revisores de un crítico arreglado sin confirmar, que vuelven a la vuelta siguiente
   revisoresPorConfirmar,
   // La configuración `models` de la organización (la usa también on-advisor-run.js)

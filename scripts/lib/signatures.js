@@ -78,6 +78,7 @@ const LEVELS_EN = Object.freeze({
   'escape:trust-ran': 'count reviewers with no record that they ran',
   'escape:TYCON_TEST_GATE': 'skip only the test gate of the commit',
   'escape:TYCON_STATUS_GATE': "change a story's status by hand",
+  'escape:TYCON_OWN_COPY': 'start a story in the shared checkout although another session works there',
   'escape:story-skill-bypass': 'write a story without the story skill',
   'escape:red-control-test-edit': "edit a control's old test that was failing",
   'escape:set-autonomous': 'change the autonomous mode of a run',
@@ -118,6 +119,7 @@ const LEVELS = Object.freeze([
   ['escape:trust-ran', 2, AMBOS, 'contar revisores sin constancia de que corrieron'],
   ['escape:TYCON_TEST_GATE', 2, AMBOS, 'saltear sólo el portón de pruebas del commit'],
   ['escape:TYCON_STATUS_GATE', 2, AMBOS, 'cambiar a mano el estado de una historia'],
+  ['escape:TYCON_OWN_COPY', 2, AMBOS, 'arrancar una historia en el checkout compartido aunque otra sesión trabaje ahí'],
   ['escape:story-skill-bypass', 2, AMBOS, 'escribir una historia sin la skill de historias'],
   ['escape:red-control-test-edit', 2, AMBOS, 'editar una prueba vieja de un control que estaba en rojo'],
   ['escape:set-autonomous', 2, AMBOS, 'cambiar el modo autónomo de una ejecución'],
@@ -161,6 +163,7 @@ const POR_VARIABLE = [
   ['DOD_BYPASS', '1', 'saltear los controles del commit (queda anotado)'],
   ['TYCON_NO_DEEP_REVIEW', '1', 'apagar el pase adversarial de una ejecución'],
   ['TYCON_STATUS_GATE', 'off', 'cambiar a mano el estado de una story'],
+  ['TYCON_OWN_COPY', '0', 'arrancar una historia en el checkout compartido aunque otra sesión trabaje ahí'],
 ];
 
 const CON_NOMBRE = [
@@ -190,6 +193,7 @@ const SI_SALE_MAL = Object.freeze({
   'escape:TYCON_NO_DEEP_REVIEW': 'la ejecución sigue sin el pase adversarial, y un error que él encontraría puede llegar a main',
   'escape:no-deep-review': 'la ejecución arranca sin el pase adversarial, y un error que él encontraría puede llegar a main',
   'escape:TYCON_STATUS_GATE': 'la historia cambia de estado sin los controles del orquestador, y puede quedar como hecha sin estarlo',
+  'escape:TYCON_OWN_COPY': 'la historia arranca en el mismo árbol que otra sesión, y una puede llevarse o pisar los archivos y la rama de la otra',
   'escape:cambiar-el-estado': 'el estado de la historia se escribe a mano, y puede quedar como hecha sin estarlo',
   'escape:story-skill-bypass': 'la historia se escribe sin el validador ni la revisión previa, y puede llegar al plan con huecos',
   'escape:red-control-test-edit': 'la prueba de un control se corrige para que pase, y el control puede quedar apagado sin que nadie lo decida',
@@ -255,6 +259,7 @@ const APPROVES_EN = {
   'escape:DOD_BYPASS': "skip the commit's controls (it is logged)",
   'escape:TYCON_NO_DEEP_REVIEW': "turn off a run's adversarial pass",
   'escape:TYCON_STATUS_GATE': "change a story's status by hand",
+  'escape:TYCON_OWN_COPY': 'start a story in the shared checkout although another session works there',
   'escape:story-skill-bypass': 'write a story without the story skill',
   'escape:red-control-test-edit': "edit a control's old test that was failing",
   'escape:set-autonomous': "change a run's autonomous mode",

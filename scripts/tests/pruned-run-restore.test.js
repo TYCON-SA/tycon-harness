@@ -51,7 +51,9 @@ function entorno() {
     const e = { ...process.env };
     for (const k of Object.keys(e)) if (/^TYCON_|^CODEX_SESSION_ID$|^CLAUDE_CODE_SESSION_ID$/.test(k)) delete e[k];
     Object.assign(e, { HOME: home, USERPROFILE: home, TYCON_LANE_LLM: '0', TYCON_HOME: '', TYCON_TIME_TRACKING: 'none',
-      TYCON_MUTATION_CHECK: 'off', TYCON_GUIDES_DIR: ROOT });
+      TYCON_MUTATION_CHECK: 'off', TYCON_GUIDES_DIR: ROOT,
+      // las corridas de otras historias en este mismo repo de juguete son preparación, no dos sesiones de verdad (8.292)
+      TYCON_OWN_COPY: '0' });
     if (sid) e.CLAUDE_CODE_SESSION_ID = sid;
     return Object.assign(e, extra);
   };

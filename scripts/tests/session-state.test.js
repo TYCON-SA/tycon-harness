@@ -445,7 +445,8 @@ test('T32 OtherSession_ClearAndRestore_UpdateItsFile @story-2.81 @ac-20 — los 
   git('add', '.');
   git('commit', '-qm', 'inicio');
   const w = { home, sdir: stateDir(home) };
-  const env = (sid, extra = {}) => cleanEnv(home, { TYCON_HOME: '', TYCON_GUIDES_DIR: ROOT, CLAUDE_CODE_SESSION_ID: sid, ...extra });
+  // TYCON_OWN_COPY=0: las corridas de otras historias en este repo de juguete son preparación, no dos sesiones (8.292)
+  const env = (sid, extra = {}) => cleanEnv(home, { TYCON_HOME: '', TYCON_GUIDES_DIR: ROOT, CLAUDE_CODE_SESSION_ID: sid, TYCON_OWN_COPY: '0', ...extra });
   const run = (script, args, sid, extra) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env: env(sid, extra), input: '', cwd: repo });
   const start = (sid) => { const r = run('pipeline.js', ['start', '--story', stories[sid], '--repo', repo, '--brief'], sid); assert.strictEqual(r.status, 0, r.stderr + r.stdout); };
   const withStep = (sid) => lib().update(w.sdir, sid, { step: 'Implementar', sentence: 'Va por el paso «Implementar».' }, { create: true, tool: 'claude' });
@@ -573,7 +574,8 @@ test('T118 Park_LostRestoreNewRun @story-2.81 @ac-60 — la salida del dueño si
   git('add', '.');
   git('commit', '-qm', 'inicio');
   const w = { home, sdir: stateDir(home) };
-  const env = (sid, extra = {}) => cleanEnv(home, { TYCON_HOME: '', TYCON_GUIDES_DIR: ROOT, CLAUDE_CODE_SESSION_ID: sid, ...extra });
+  // TYCON_OWN_COPY=0: las corridas de otras historias en este repo de juguete son preparación, no dos sesiones (8.292)
+  const env = (sid, extra = {}) => cleanEnv(home, { TYCON_HOME: '', TYCON_GUIDES_DIR: ROOT, CLAUDE_CODE_SESSION_ID: sid, TYCON_OWN_COPY: '0', ...extra });
   const run = (script, args, sid, extra) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env: env(sid, extra), input: '', cwd: repo });
   const start = (sid) => { const r = run('pipeline.js', ['start', '--story', stories[sid], '--repo', repo, '--brief'], sid); assert.strictEqual(r.status, 0, r.stderr + r.stdout); };
   const park = (id) => { const r = run('marker.js', ['park', id, '--queue'], 's-z'); assert.strictEqual(r.status, 0, r.stderr + r.stdout); };
