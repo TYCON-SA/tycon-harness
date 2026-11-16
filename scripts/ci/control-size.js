@@ -25,10 +25,13 @@
  *   · lo que no se puede leer va aparte, «no medido» con su motivo: nunca se cuenta como chico.
  *
  * EL RECORRIDO DEL FRENO: el freno de guiones (skills/tycon-pipeline/scripts/on-bash-write-gate.js, `guionesEnArchivo`)
- * sigue los `require` locales del guion que nombra un comando, con dos cortes que se leen de SU texto, nunca copiados:
- *   · por nivel (`hondo >= N`): un módulo del nivel N entra, pero lo que él carga no se mira;
- *   · por cantidad (`modulos[cuenta]++ >= M`): desde el módulo M+1 de una cuenta, el módulo no entra (ni se revisa ni se
- *     siguen sus `require`). Hay dos cuentas por comando entero, la de los módulos del arnés y la de los demás: con dos
+ * sigue los `require` locales del guion que nombra un comando, con dos cortes que se leen de SU texto, nunca copiados
+ * (por su nombre, `RECORRIDO_NIVELES` y `RECORRIDO_ARCHIVOS`; en un freno de antes, por su forma dentro de
+ * `guionesEnArchivo`):
+ *   · por nivel (`RECORRIDO_NIVELES`, antes `hondo >= N`): un módulo del nivel N entra, pero lo que él carga no se mira;
+ *   · por cantidad (`RECORRIDO_ARCHIVOS`, antes `modulos[cuenta]++ >= M`): desde el módulo M+1 de una cuenta, el módulo
+ *     no entra (ni se revisa ni se siguen sus `require`). Lo que queda afuera el freno lo juzga como un guion que no se
+ *     lee entero. Hay dos cuentas por comando entero, la de los módulos del arnés y la de los demás: con dos
  *     despachadores en el mismo comando el tope llega antes, así que lo medido acá por despachador es el caso más
  *     favorable.
  * Si el texto del freno no trae esos dos números, el aviso dice «no medido»: nunca calla. Un despachador que falta, o un
@@ -214,8 +217,10 @@ function topeDelFreno(gate) {
     const resto = texto.slice(desde + 1).search(/\nfunction\s/);
     cuerpo = texto.slice(desde, resto < 0 ? texto.length : desde + 1 + resto);
   }
-  const niveles = cuerpo.match(/\bhondo\s*>=\s*(\d+)/);
-  const modulos = cuerpo.match(/\bmodulos\[\w+\]\+\+\s*>=\s*(\d+)/);
+  // con nombre (RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS) en cualquier lugar del freno; si no, la forma de antes, dentro
+  // de guionesEnArchivo
+  const niveles = texto.match(/\bconst\s+RECORRIDO_NIVELES\s*=\s*(\d+)\s*;/) || cuerpo.match(/\bhondo\s*>=\s*(\d+)/);
+  const modulos = texto.match(/\bconst\s+RECORRIDO_ARCHIVOS\s*=\s*(\d+)\s*;/) || cuerpo.match(/\bmodulos\[\w+\]\+\+\s*>=\s*(\d+)/);
   if (!niveles || !modulos) return { tope: null, motivo: `no medido: no encontré el tope del recorrido en el freno (${path.basename(gate)}, guionesEnArchivo)` };
   return { tope: { niveles: Number(niveles[1]), modulos: Number(modulos[1]) } };
 }

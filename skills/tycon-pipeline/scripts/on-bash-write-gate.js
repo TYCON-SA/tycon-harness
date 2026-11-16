@@ -563,6 +563,10 @@ const CORRE_ARCHIVO = /^(?:node|nodejs|python[0-9.]*|perl|ruby|bun|deno|tsx|ts-n
 // lo que el guion escribe se lee entero hasta este tamaño; más grande, cuenta si nombra una historia o una constancia
 const GUION_TOPE = 256 * 1024;
 const GUION_TOPE_DURO = 64 * 1024 * 1024;
+// el recorrido de los módulos locales: lo medido sobre los despachadores (marker.js, pipeline.js) por dos. Lo que queda
+// más allá no se corta callado: se juzga como un guion que no se lee entero
+const RECORRIDO_NIVELES = 26;
+const RECORRIDO_ARCHIVOS = 224;
 const ESCANEO_REINTENTO_MS = 3000;
 const CORCHETE_TOPE = 64;
 const CLASES_POSIX = {
@@ -705,21 +709,28 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
       return { texto, grande: st.size > GUION_TOPE };
     } catch { return null; }
   };
-  // el guion y los módulos locales que importa, hasta dos niveles y veinte archivos; uno del arnés no se revisa, pero
-  // lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la cuenta aparte: no le comen
-  // el lugar a lo que corre después. Un guion nombrado en el comando se mira siempre
+  // el guion y los módulos locales que importa, hasta RECORRIDO_NIVELES niveles y RECORRIDO_ARCHIVOS archivos; uno del
+  // arnés no se revisa, pero lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la
+  // cuenta aparte: no le comen el lugar a lo que corre después. Un guion nombrado en el comando se mira siempre. Lo que
+  // el tope deja afuera cuenta como grande: frena si no se pudo leer, o si escribe y nombra una historia o una constancia
   const modulos = { exentos: 0, revisados: 0 };
+  const afuera = (interprete, real, leido, argv) => {
+    if (vistos.has(real)) return;
+    vistos.add(real);
+    out.push({ interprete, archivo: real, texto: leido ? leido.texto : '', argv, grande: true });
+  };
   const agregar = (interprete, real, leido, argv, hondo = 0, exento = false) => {
     if (vistos.has(real)) return;
     const cuenta = exento ? 'exentos' : 'revisados';
-    if (hondo > 0 && modulos[cuenta]++ >= 20) return;
+    if (hondo > 0 && modulos[cuenta]++ >= RECORRIDO_ARCHIVOS) { if (!exento) afuera(interprete, real, leido, argv); return; }
     vistos.add(real);
     if (!exento) out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande });
-    if (hondo >= 2 || (leido.grande && !exento)) return;
+    if (leido.grande && !exento) return;
     for (const m of importsLocales(familiaDe(interprete), leido.texto, path.dirname(real))) {
       const r = rutaReal(m, path.dirname(real));
       if (!r) continue;
       const l = leer(r);
+      if (hondo >= RECORRIDO_NIVELES) { if (!instalado(r)) afuera(interprete, r, l, argv); continue; }
       if (l) agregar(interprete, r, l, argv, hondo + 1, instalado(r));
     }
   };
