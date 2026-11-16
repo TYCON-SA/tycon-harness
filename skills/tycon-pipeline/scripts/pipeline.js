@@ -2044,7 +2044,9 @@ function advisorAffectedByDelta(advisorName, deltaFiles) {
 function readSessionMarker() {
   const sid = sessionIdFileKey();
   const markerPath = path.join(stateDirOf(os.homedir()), 'active', `${sid}.json`);
-  try { return JSON.parse(fs.readFileSync(markerPath, 'utf8')); } catch { return null; }
+  // las rutas de la corrida, absolutas contra su repo (lib/run-dir.js): un marcador de antes con rutas relativas se lee
+  // igual desde cualquier carpeta
+  try { return require('./lib/run-dir.js').marcadorConRutas(JSON.parse(fs.readFileSync(markerPath, 'utf8'))); } catch { return null; }
 }
 
 // ── Lo que ve GIT — la 4ta fuente del delta, y la única que no depende del hook ──
@@ -3514,7 +3516,9 @@ function tandaDelArranque(content, storyId, storyPath, nombre) {
 function computeStart(args) {
   const { execFileSync } = require('child_process');
   const storyPath = args.story;
-  const repo = args.repo;
+  // el único lugar donde vale la carpeta del proceso: el --repo de quien arranca, resuelto al entrar. De acá salen la
+  // carpeta, el marcador y la apertura, absolutos, y se leen igual desde cualquier carpeta (lib/run-dir.js)
+  const repo = args.repo ? path.resolve(args.repo) : args.repo;
   if (!storyPath || !fs.existsSync(storyPath)) {
     return { ready: false, error: `--story inválido o no existe: ${storyPath}` };
   }
@@ -6143,7 +6147,7 @@ function readSessionMarkerStrict() {
   if (!fs.existsSync(markerPath)) return { estado: 'ausente', marcador: null };
   try {
     const m = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
-    if (m && typeof m === 'object' && !Array.isArray(m)) return { estado: 'ok', marcador: m };
+    if (m && typeof m === 'object' && !Array.isArray(m)) return { estado: 'ok', marcador: require('./lib/run-dir.js').marcadorConRutas(m) };
     return { estado: 'ilegible', marcador: null, motivo: 'no es un objeto' };
   } catch (e) { return { estado: 'ilegible', marcador: null, motivo: String(e.message).slice(0, 80) }; }
 }
@@ -8660,6 +8664,9 @@ module.exports = {
   // se exporta la función en vez de duplicar el criterio de scoring, para que las dos capas no
   // puedan elegir carpetas distintas (pieza "revisor ≠ autor").
   resolveRunDir,
+  // el marcador de la sesión, con las rutas de la corrida absolutas (lib/run-dir.js)
+  readSessionMarker,
+  readSessionMarkerStrict,
   // Lo que le falta al pase adversarial: `next` lo pide y el freno de lanzamiento de revisores niega con lo mismo.
   accionDelPase,
   // la clave de la carpeta sin crearla: el chequeo antes de la ventana de firma (marker.js)

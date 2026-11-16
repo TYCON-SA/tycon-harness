@@ -38,6 +38,55 @@ function bajoElRepo(dir, repo) {
 
 const AVISADOS = new Set();
 
+// Las partes de una ruta, con cualquiera de los dos separadores: una carpeta guardada en Windows se lee en macOS y al revés.
+const partes = (p) => String(p).split(/[\\/]+/).filter(Boolean);
+// el nombre de la carpeta es uno de verdad: `.` o `..` llevarían fuera de las carpetas de corrida del repo
+const esCarpetaDeCorrida = (p) => {
+  const x = partes(p);
+  return x.length >= 3 && x[x.length - 3] === '.advisors' && x[x.length - 2] === 'pipeline-runs' && !['.', '..'].includes(x[x.length - 1]);
+};
+
+/**
+ * Las tres rutas de una corrida (`repoPath`, `runDir`, `storyPath`, de un marcador o de una apertura) llevadas a absolutas
+ * contra el repo de la corrida, nunca contra la carpeta del proceso: la misma corrida se lee igual desde cualquier carpeta.
+ *   - `repoPath`: el absoluto; si es relativo o falta, el repo de una carpeta absoluta que termina en
+ *     `.advisors/pipeline-runs/<nombre>` (lo de antes de ese último tramo).
+ *   - `runDir`: una relativa que termina en `.advisors/pipeline-runs/<nombre>` es `<repo>/.advisors/pipeline-runs/<nombre>`,
+ *     traiga o no el repo adelante (`--repo backend` guardaba `backend/.advisors/…`).
+ *   - `storyPath`: una relativa, contra el repo.
+ * Lo que no se puede ubicar queda como vino y `motivo` dice por qué (null si se ubicó todo). Devuelve una copia; nunca tira.
+ */
+function rutasDeLaCorrida(m) {
+  if (!m || typeof m !== 'object') return m;
+  const out = { ...m };
+  const motivos = [];
+  const absoluta = (p) => typeof p === 'string' && p !== '' && path.isAbsolute(p);
+  let repo = absoluta(m.repoPath) ? path.normalize(m.repoPath) : null;
+  if (!repo && absoluta(m.runDir) && esCarpetaDeCorrida(m.runDir)) repo = path.dirname(path.dirname(path.dirname(path.normalize(m.runDir))));
+  if (repo) out.repoPath = repo;
+  else if (m.repoPath) motivos.push(`el repo de la corrida (${m.repoPath}) es relativo y su carpeta no dice cuál es`);
+  if (typeof m.runDir === 'string' && m.runDir && !path.isAbsolute(m.runDir)) {
+    if (repo && esCarpetaDeCorrida(m.runDir)) out.runDir = path.join(runsBaseDe(repo), partes(m.runDir).pop());
+    else motivos.push(`la carpeta de la corrida (${m.runDir}) es relativa y ${repo ? 'no termina en .advisors/pipeline-runs/<nombre>' : 'no hay un repo absoluto contra el que ubicarla'}`);
+  } else if (absoluta(m.runDir)) out.runDir = path.normalize(m.runDir);
+  if (typeof m.storyPath === 'string' && m.storyPath && !path.isAbsolute(m.storyPath)) {
+    if (repo) out.storyPath = path.join(repo, m.storyPath);
+    else motivos.push(`la historia de la corrida (${m.storyPath}) es relativa y no hay un repo absoluto contra el que ubicarla`);
+  }
+  out.motivo = motivos.length ? motivos.join('; ') : null;
+  return out;
+}
+
+/** El marcador con sus rutas absolutas (`rutasDeLaCorrida`), sin el `motivo`: para leerlo o escribirlo igual desde cualquier carpeta. */
+// `avisar`: quien escribe el marcador dice por la salida de error la ruta que no pudo ubicar, en vez de guardarla callado
+function marcadorConRutas(m, { avisar = false } = {}) {
+  if (!m || typeof m !== 'object') return m;
+  const { motivo, ...resto } = rutasDeLaCorrida(m);
+  if (avisar && motivo) process.stderr.write(`⚠️  marcador de la historia ${m.storyId}: ${motivo}; se guarda como está.\n`);
+  // `motivo` no es un campo del marcador: si el marcador ya traía uno, se conserva el suyo
+  return Object.prototype.hasOwnProperty.call(m, 'motivo') ? { ...resto, motivo: m.motivo } : resto;
+}
+
 const esDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
 
 /**
@@ -64,7 +113,7 @@ function marcadorDe({ marker, sessionId } = {}, tieneMarker = false) {
   }
   try {
     const m = JSON.parse(texto);
-    return { marker: m && m.storyId ? m : null };
+    return { marker: m && m.storyId ? marcadorConRutas(m) : null };
   } catch (e) {
     return { marker: null, motivo: `el marcador de la sesión ${sid} no es un JSON legible (${e.message})` };
   }
@@ -94,10 +143,15 @@ function carpetaDeLaApertura(m, storyId, repo) {
  */
 function carpetaDelMarcador(m, storyId, repo, { create = false } = {}) {
   if (m.runDir) {
-    if (!bajoElRepo(m.runDir, repo)) return {};
-    if (esDir(m.runDir)) return { dir: m.runDir };
-    if (create) { fs.mkdirSync(m.runDir, { recursive: true }); return { dir: m.runDir }; }
-    return { motivo: `la carpeta de la corrida del marcador (${m.runDir}) ya no está` };
+    // un marcador roto (la carpeta no es texto) no es de este repo: sigue la regla sin marcador
+    if (typeof m.runDir !== 'string') return {};
+    // contra el repo del marcador, nunca contra la carpeta del proceso: una relativa que no se ubica no se toma
+    const r = rutasDeLaCorrida(m);
+    if (!path.isAbsolute(r.runDir)) return { motivo: `el marcador de la historia ${storyId}: ${r.motivo}` };
+    if (!bajoElRepo(r.runDir, repo)) return {};
+    if (esDir(r.runDir)) return { dir: r.runDir };
+    if (create) { fs.mkdirSync(r.runDir, { recursive: true }); return { dir: r.runDir }; }
+    return { motivo: `la carpeta de la corrida del marcador (${r.runDir}) ya no está` };
   }
   const a = carpetaDeLaApertura(m, storyId, repo);
   if (a.dir) return a;
@@ -199,4 +253,4 @@ function createRunDir(repo, storyId, storyPath) {
   return dir;
 }
 
-module.exports = { runDirKey, resolveRunDir, createRunDir, carpetaDelMarcador, bajoElRepo };
+module.exports = { runDirKey, resolveRunDir, createRunDir, carpetaDelMarcador, bajoElRepo, rutasDeLaCorrida, marcadorConRutas };

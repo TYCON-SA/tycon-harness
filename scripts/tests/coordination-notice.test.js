@@ -750,10 +750,12 @@ test('Q7 Notice_SuiteIdleWithQueue_SaysWhoStarts: sin suite completa en curso y 
   assert.ok(!/Quieta|Otra/.test(n), `sólo cuentan las esperas anotadas de turno: ${n}`);
   const s = C.status({ ...t.opts, noTranscripts: true });
   assert.match(C.statusText(s), /Esperando turno de suite o portón: Coordinadora desde las \d\d:\d\d · Ana desde las \d\d:\d\d · Beto desde las \d\d:\d\d/);
-  // con una suite completa en curso, la fila no está parada: no se dice nada
+  // con una suite completa en curso, la fila dice si entra una segunda (8.291): con poca memoria, quién sigue cuando termine
   fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
   fs.writeFileSync(path.join(t.state, 'coordination', 'suite-turn.json'), JSON.stringify({ pid: process.pid, sid: 's-x', session: 'ConSuite', what: 'suites portables', at: mins(5) }));
-  assert.strictEqual(C.capNotice(t.opts), null, 'con la suite corriendo calla');
+  const conSuite = C.capNotice({ ...t.opts, readMemory: () => ({ pct: 30, why: null }) });
+  assert.match(conSuite, /^Coordinación: corre ConSuite \(suites portables, desde las \d\d:\d\d\); la segunda no entra \(memoria libre 30 %, piso 50 %\): cuando termine, sigue Ana\.$/m, conSuite);
+  assert.doesNotMatch(conSuite, /no corre ninguna suite completa/);
 });
 
 // A bounded gate (without the turn) running, as heavy-turn.js registers it: `pid` alive = running.

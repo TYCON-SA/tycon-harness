@@ -155,12 +155,13 @@ function globoDe(m){return m==="coordinadora"?{icono:"⏳",color:"#1f6fff"}:m===
 function modeloDe(a){return a&&(a.modelo||a.esfuerzo)?(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"):""}
 function ficha(a,abiertos){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k,v,...x})},hist=historiaDe(a);
   // la tarjeta lleva la historia en su etiqueta; el panel, en un renglón fijo junto al trabajo
-  add("Trabajo",a.titulo);if(!hist)add("De la historia",a.historia);else if(abiertos)add("Historia",hist);add("Encargo",a.encargo);
+  // abierto, sin historia ni título de una foto vieja, el renglón dice «sin dato»; la tarjeta chica no lo suma
+  add("Trabajo",a.titulo);if(!hist)add("De la historia",a.historia);else if(abiertos)add("Historia",hist);if(abiertos&&!hist&&!a.historia)add("Historia","sin dato");add("Encargo",a.encargo);
   if(a.haciendoAhora)add("Haciendo ahora",a.haciendoAhora);else if(a.haciendo!==a.titulo&&!SOLO_COORDINA.test(a.haciendo||""))add("Haciendo",a.haciendo);
   if(a.agentesAhora)r.push({k:"",v:a.agentesAhora});
   add("Última acción",a.ultimaAccion);add("Espera",a.espera);add("Parada",a.parada);add("Novedades",a.callada);
   if(a.mano)add("Mano levantada",[a.manoEtiqueta,a.manoPor].filter(Boolean).join(" · "));
-  if(a.modelo||a.esfuerzo)add("Modelo",(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"));
+  if(abiertos||a.modelo||a.esfuerzo)add("Modelo",(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"));
   const ms=AST[a.mientrasEstado];add("Mientras tanto",a.mientras?a.mientras+(ms?" ("+ms[0].toLowerCase()+")":""):"");
   add("En pausa",a.enPausa);
   // quien espera a otro no da una hora: dice qué espera, o qué pasó con los pedidos que esperaba
@@ -625,15 +626,22 @@ function pintarTag(d){const a=d.agent,m=manoDe(a),s0=T.AST[a.estado]||[a.estado|
   const fx=d.el.querySelector(".fx");fx.textContent=FX[a.estado]||"";d.el.classList.toggle("alert",Boolean(m));d.el.classList.toggle("alert-coord",m==="coordinadora");d.el.classList.toggle("sel",sel===a.nombre);d.el.setAttribute("aria-label",(a.nombre||"")+": "+s[0]);}
 const tmp=new THREE.Vector3();
 function ubicarTags(){const W=stage.clientWidth,H=stage.clientHeight,cmp=stage.classList.contains("compact"),hr=cmp?11:20;
-  const P=desks.map(d=>{tmp.copy(d.anchor);d.st.localToWorld(tmp);tmp.project(cam);const ax=(tmp.x+1)/2*W,ay=(1-tmp.y)/2*H;tmp.copy(d.headP);d.st.localToWorld(tmp);tmp.project(cam);
+  const P=desks.map(d=>{d.el.classList.remove("chica");tmp.copy(d.anchor);d.st.localToWorld(tmp);tmp.project(cam);const ax=(tmp.x+1)/2*W,ay=(1-tmp.y)/2*H;tmp.copy(d.headP);d.st.localToWorld(tmp);tmp.project(cam);
     return {d,ax,ay,hx:(tmp.x+1)/2*W,hy:(1-tmp.y)/2*H,w:d.el.offsetWidth,h:d.el.offsetHeight}});
   P.sort((a,b)=>b.ay-a.ay);const puestos=[];
-  const choca=(x,y,w,h,yo)=>{const L=x-w/2,R=x+w/2,T=y-h;if(L<2||R>W-2||T<2)return true;
+  const choca=(x,y,w,h,yo)=>{const L=x-w/2,R=x+w/2,T=y-h;if(L<2||R>W-2||T<2||y>H-2)return true;
     if(P.some(q=>q!==yo&&q.hx+hr>L&&q.hx-hr<R&&q.hy+hr>T&&q.hy-hr<y))return true;
     return puestos.some(o=>o.x-o.w/2<R+4&&o.x+o.w/2>L-4&&o.y-o.h<y+4&&o.y>T-4)};
   // de abajo hacia arriba: sobre su cabeza; si choca, al costado; si no, un escalón más arriba
-  P.forEach(p=>{const sx=p.w/2+hr+4,cands=[[0,0],[-sx,p.h*.5],[sx,p.h*.5],[-sx,0],[sx,0]];let pos=null;
-    for(let up=0;up<8&&!pos;up++)for(const [dx,dy] of cands){const x=Math.min(Math.max(p.ax+dx,p.w/2+2),W-p.w/2-2),y=p.ay+dy-up*(p.h*.5+4);if(!choca(x,y,p.w,p.h,p)){pos=[x,y];break}}
+  const buscar=(p,escalones)=>{const sx=p.w/2+hr+4,cands=[[0,0],[-sx,p.h*.5],[sx,p.h*.5],[-sx,0],[sx,0]];
+    for(let up=0;up<escalones;up++)for(const [dx,dy] of cands){const x=Math.min(Math.max(p.ax+dx,p.w/2+2),W-p.w/2-2),y=p.ay+dy-up*(p.h*.5+4);if(!choca(x,y,p.w,p.h,p))return [x,y]}
+    return null};
+  // el hueco libre de la sala más cerca de su cabeza
+  const hueco=p=>{const libres=[];for(let y=p.h+2;y<=H-2;y+=12)for(let x=p.w/2+2;x<=W-p.w/2-2;x+=12)libres.push([x,y]);
+    libres.sort((a,b)=>Math.hypot(a[0]-p.ax,a[1]-p.ay)-Math.hypot(b[0]-p.ax,b[1]-p.ay));return libres.find(([x,y])=>!choca(x,y,p.w,p.h,p))||null};
+  P.forEach(p=>{let pos=buscar(p,8);
+    // sin lugar: se achica (el nombre y su estado) y vuelve a buscar; nunca queda encima de otra mientras haya un hueco
+    if(!pos){p.d.el.classList.add("chica");p.w=p.d.el.offsetWidth;p.h=p.d.el.offsetHeight;pos=buscar(p,16)||hueco(p)}
     if(!pos)pos=[p.ax,p.ay];puestos.push({x:pos[0],y:pos[1],w:p.w,h:p.h});
     const el=p.d.el,beside=Math.abs(pos[0]-p.ax)>p.w/4;el.style.left=pos[0]+"px";el.style.top=pos[1]+"px";el.style.setProperty("--stem",beside?"0px":Math.max(0,p.ay-pos[1])+"px");el.style.zIndex=String(Math.round(p.ay));
     // dónde quedó el globito en la pantalla, para comprobar que ninguna etiqueta lo tapa
