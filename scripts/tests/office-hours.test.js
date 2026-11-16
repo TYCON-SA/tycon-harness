@@ -238,7 +238,8 @@ test('T294 FirstCorrection_ReplacesThePromise: sólo la primera, en los 10 minut
 });
 
 test('T51 AdhocSet_KeepsDeclaredHour: agrandar el carril no borra la hora declarada', () => {
-  const src = fs.readFileSync(MARKER, 'utf8');
+  // marker.js partido: el despachador más sus módulos de lib/
+  const src = require(path.join(path.dirname(MARKER), 'tests', 'lib', 'marker-source.js'))(path.dirname(MARKER));
   const set = src.slice(src.indexOf('const existing = io.readAdhoc(STATE_DIR, destino);'), src.indexOf('io.writeAdhoc(STATE_DIR, destino, obj);'));
   assert.match(set, /existing[^\n]*\.until/, 'adhoc set copia la hora del carril que ya existía');
 });

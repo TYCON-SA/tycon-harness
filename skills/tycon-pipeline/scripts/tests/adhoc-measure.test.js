@@ -150,7 +150,8 @@ test('T1 Medida_UnaSola_LasDosViejasNoExisten @story-8.190 @ac-1', () => {
   assert.strictEqual(m.archivosDelCarril, undefined);
   assert.strictEqual(m.propiosDelCarril, undefined);
   for (const rel of ['lib/adhoc-base.js', 'lib/save-brake.js', 'lib/adhoc-screen.js', 'lib/source-signals.js', 'pipeline.js', 'marker.js']) {
-    const txt = fs.readFileSync(path.join(SCRIPTS, rel), 'utf8');
+    // marker.js partido: el despachador más sus módulos de lib/
+    const txt = rel === 'marker.js' ? require('./lib/marker-source.js')(SCRIPTS) : fs.readFileSync(path.join(SCRIPTS, rel), 'utf8');
     assert.doesNotMatch(txt, /archivosDelCarril|propiosDelCarril/, rel);
   }
 });
