@@ -1319,7 +1319,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
       escribirRegistro(casa, { firma: firmaGuion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
         sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString(), corrida: corridaDe(casa, destino),
         ...(delegada ? { via: 'delegacion', maquina: delegada.maquina } : aprobada ? { via: aprobada.via, aprobacion: aprobada.aprobacion.id, aprobada_en: aprobada.aprobacion.sesion }
-          : avisado ? { via: 'avisado' } : {}), ...(sinAprobacion ? { sin_aprobacion: una(sinAprobacion, 300) } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
+          : avisado ? { via: 'avisado' } : { via: 'ventana', permission_mode: modo }), ...(sinAprobacion ? { sin_aprobacion: una(sinAprobacion, 300) } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
     } catch (e) {
       if (aprobada) oa.devolver(casa, aprobada.aprobacion);
       return negar(`no se pudo escribir el registro de la ventana (${e.code || e.message})`, pendientes);
@@ -1469,9 +1469,10 @@ const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delega
  * Después, el renglón del registro común de las firmas; si no se puede escribir, avisa y la firma sigue.
  * `persona`, `huella`, `appendSignature` y `avisar` se pasan en las pruebas.
  */
-function firmar({ firma, via, sesion = null, destino = null, resumen = '', key = null, casa, ahora = Date.now(), anotar, extra, persona, huella, appendSignature, avisar } = {}) {
+function firmar({ firma, via, sesion = null, destino = null, resumen = '', key = null, casa, ahora = Date.now(), anotar, extra, persona, huella, appendSignature, avisar, permission_mode } = {}) {
   // lo que el guion suma al renglón (el ok de guardar, sus huellas) va primero: no pisa quién ni cómo se firmó
-  const renglon = { ...(typeof extra === 'function' ? extra({ via, sesion, destino }) : extra || {}), name: `${firma}-signed`, status: 'ok', via, sesion, destino, resumen: una(resumen, 200) };
+  const renglon = { ...(typeof extra === 'function' ? extra({ via, sesion, destino }) : extra || {}), name: `${firma}-signed`, status: 'ok', via, sesion, destino, resumen: una(resumen, 200),
+    ...(permission_mode !== undefined ? { permission_mode } : {}) };
   if (anotar) anotar(renglon);
   else {
     const dir = stateDir(casa === undefined ? casaDeLaCuenta() : casa);
@@ -1762,10 +1763,12 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   const que = (v.previo && v.previo.resumen) || resumen || v.registro.comando;
   // la clave del pedido, la misma con que la lista de firmas anotó su fila: la firma cierra ese pedido y no sus hermanos
   const key = claveDelPedido({ firma, destino: v.registro.destino, comando: v.registro.comando, argv });
-  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado) ? que : (resumen || v.registro.comando), key, casa, ahora, anotar, extra });
+  // por la ventana, el modo de permisos de la pestaña que anotó el pedido (null: no se supo); un pedido de antes no lo trae
+  const modo = via === 'ventana' && 'permission_mode' in v.registro ? { permission_mode: v.registro.permission_mode } : {};
+  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado) ? que : (resumen || v.registro.comando), key, casa, ahora, anotar, extra, ...modo });
   // el ok de guardar y el arreglo rápido ya avisaron desde los controles de la delegación de su guion
   if (avisado && !AVISA_SU_GUION.has(firma)) avisarHecho({ firma, sesion: v.registro.sesion, destino: v.registro.destino, que, notificar });
-  return { codigo: 0, via, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro };
+  return { codigo: 0, via, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro, ...modo };
 }
 
 /**
@@ -1800,15 +1803,21 @@ function fijarDestino({ r, propia, necesitaMarcador = false, leerMarcador, casa,
 
 /**
  * Quién firmó, para la constancia del guion, a partir de lo que devolvió `exigir`: por la delegación del perfil firmó
- * la coordinadora (la sesión del evento) en nombre de `persona`; por la ventana o por la terminal, la persona.
+ * la coordinadora (la sesión del evento) en nombre de `persona`; por la ventana o por la terminal, la persona. `como` es
+ * el texto para la persona: por la ventana, que se aprobó ahí (el guion corre sólo después del Sí) y si se sabe que la
+ * pestaña pregunta; sin el modo de permisos (una firma de antes, que no lo anotaba), «vía sin anotar».
  */
-function quienFirmo({ via, sesion } = {}, persona) {
-  if (via === 'delegacion') return { tipo: 'automatica', quien: `coordinadora (sesión ${sesion})`, delegacion: persona, via: 'delegada · coordinadora' };
-  if (via === 'revision') return { tipo: 'automatica', quien: `coordinadora (sesión ${sesion}), vía revisión automática`, delegacion: persona, via: 'revisión automática · coordinadora' };
-  if (via === 'avisado') return { tipo: 'automatica', quien: `sesión ${sesion}, en una pestaña sin permisos`, delegacion: persona, via: 'hecho y avisado' };
-  if (via === 'click') return { tipo: 'manual', quien: persona, via: 'click en el cuadro de opciones' };
-  if (via === 'mensaje') return { tipo: 'manual', quien: persona, via: '«aprobado» escrito' };
-  return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
+function quienFirmo({ via, sesion, ...resto } = {}, persona) {
+  const con = (q) => ({ ...q, como: q.via });
+  if (via === 'delegacion') return con({ tipo: 'automatica', quien: `coordinadora (sesión ${sesion})`, delegacion: persona, via: 'delegada · coordinadora' });
+  if (via === 'revision') return con({ tipo: 'automatica', quien: `coordinadora (sesión ${sesion}), vía revisión automática`, delegacion: persona, via: 'revisión automática · coordinadora' });
+  if (via === 'avisado') return con({ tipo: 'automatica', quien: `sesión ${sesion}, en una pestaña sin permisos`, delegacion: persona, via: 'hecho y avisado' });
+  if (via === 'click') return con({ tipo: 'manual', quien: persona, via: 'click en el cuadro de opciones' });
+  if (via === 'mensaje') return con({ tipo: 'manual', quien: persona, via: '«aprobado» escrito' });
+  if (via === 'terminal') return con({ tipo: 'manual', quien: persona, via: 'terminal' });
+  const como = !('permission_mode' in resto) ? 'vía sin anotar'
+    : resto.permission_mode === null ? 'aprobada en la ventana, sin saber si la pestaña pregunta' : 'aprobada en la ventana de permiso';
+  return { tipo: 'manual', quien: persona, via: 'ventana', como };
 }
 
 module.exports = { claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,

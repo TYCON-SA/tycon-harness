@@ -1386,10 +1386,10 @@ test('Constancias_DicenViaQuienYDestino_SinCita (T46) @story-8.139 @ac-30', (t) 
   assert.strictEqual(quien.delegacion, 'el-dueno');
   const cw = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
   assert.strictEqual(cw.constanciaInvalida({ rule_id: 'X-C1', ts: 't', ...quien }), null, 'la exención delegada vale');
-  assert.deepStrictEqual(ow.quienFirmo({ via: 'ventana', sesion: 'ses-a' }, 'el-dueno'), { tipo: 'manual', quien: 'el-dueno', via: 'ventana' });
+  assert.deepStrictEqual(ow.quienFirmo({ via: 'ventana', sesion: 'ses-a', permission_mode: 'default' }, 'el-dueno'), { tipo: 'manual', quien: 'el-dueno', via: 'ventana', como: 'aprobada en la ventana de permiso' });
   // la firma por `--terminal` queda como terminal, no como ventana, y la exención sigue valiendo
   const term = ow.quienFirmo({ codigo: 0, via: 'terminal' }, 'el-dueno');
-  assert.deepStrictEqual(term, { tipo: 'manual', quien: 'el-dueno', via: 'terminal' });
+  assert.deepStrictEqual(term, { tipo: 'manual', quien: 'el-dueno', via: 'terminal', como: 'terminal' });
   assert.strictEqual(cw.constanciaInvalida({ rule_id: 'X-C1', ts: 't', ...term }), null, 'la exención por la terminal vale');
   for (const via of ['click', 'mensaje']) {
     const q = ow.quienFirmo({ via }, 'el dev');
@@ -3442,7 +3442,8 @@ test('Windows_UnPedidoDeLaVentana_NoFirma', (t) => {
   assert.strictEqual(ow.decidir({ plataforma: 'darwin', evento: evento(W_ADHOC), arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES }).decision, 'ask');
   const [archivo] = vigentes(casa);
   const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), archivo), 'utf8'));
-  assert.strictEqual(reg.via, undefined);
+  // el pedido de la ventana dice su vía, que no es la de una aprobación
+  assert.strictEqual(reg.via, 'ventana');
   const herramienta = { pid: W_TOOL.pid, inicio: W_TOOL.inicio };
   fs.writeFileSync(path.join(ow.carpeta(casa), archivo), JSON.stringify({ ...reg, herramienta }));
   assert.ok(!verificarWin(casa, 'adhoc-lane', W_ADHOC_ARGV, arbolGuionWin(casa, W_ADHOC)).ok);
@@ -4167,4 +4168,78 @@ test('Guide_DelegatedSign_NamesReadOnlyWatchers @story-8.270 @ac-17 — la guía
   assert.match(seccion, /sólo lectura/);
   assert.match(seccion, /Cualquier otra consola de fondo sigue frenando/);
   assert.match(seccion, /no puede saber si además escribe/);
+});
+
+// --- la vía de la firma por la ventana: el pedido y la firma dicen el modo de permisos de la pestaña ----------------
+
+const [, MANUAL, MANUAL_ARGV] = GUIONES[3];
+const pedidoEscrito = (casa) => { const [f] = vigentes(casa); return { f, reg: JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), f), 'utf8')) }; };
+
+test('OwnerWindow_FirmaPorVentana_PedidoConViaYModo (T5) @story-8.232 @ac-5', (t) => {
+  const casa = casaNueva(t);
+  const r = pedir(casa, MANUAL, { evento: { permission_mode: 'default' } });
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  const { reg } = pedidoEscrito(casa);
+  assert.strictEqual(reg.via, 'ventana');
+  assert.strictEqual(reg.permission_mode, 'default');
+  // control: el pedido de la ventana pasa por los controles de la persona, no por los de la delegación
+  const vistas = [];
+  const v = ow.verificar({ firma: 'manual-test', argv: MANUAL_ARGV, pid: 301, arbol: arbolDelGuion(casa, MANUAL), casa, ahora: AHORA + 60000, antes: (via) => { vistas.push(via); return null; } });
+  assert.ok(v.ok, v.motivo);
+  assert.deepStrictEqual(vistas, ['ventana']);
+  // control: en Windows sólo vale un pedido de un click o un «aprobado»; uno de la ventana, no
+  const win = casaNueva(t);
+  assert.strictEqual(pedirWin(win, W_ADHOC, { aprobaciones: conClick() }).decision, 'allow');
+  const p = pedidoEscrito(win);
+  fs.writeFileSync(path.join(ow.carpeta(win), p.f), JSON.stringify({ ...p.reg, via: 'ventana', permission_mode: 'default' }));
+  const vw = verificarWin(win, 'adhoc-lane', W_ADHOC_ARGV, arbolGuionWin(win, W_ADHOC));
+  assert.strictEqual(vw.ok, false, 'el pedido de la ventana no vale en Windows');
+  assert.strictEqual(vigentes(win).length, 1, 'no se consumió');
+});
+
+test('OwnerWindow_FirmaDeVentana_RenglonConModoYAprobada (T6) @story-8.232 @ac-6', (t) => {
+  const casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, MANUAL, { evento: { permission_mode: 'default' } }).decision, 'ask');
+  const e = ow.exigir({ firma: 'manual-test', argv: MANUAL_ARGV, pid: 301, arbol: arbolDelGuion(casa, MANUAL), casa, ahora: AHORA + 60000, propia: 'ses-a' });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.via, 'ventana');
+  const [g] = gates(casa).filter((x) => x.name === 'manual-test-signed');
+  assert.strictEqual(g.via, 'ventana');
+  assert.strictEqual(g.permission_mode, 'default');
+  const q = ow.quienFirmo(e, 'el-dueno');
+  assert.deepStrictEqual([q.tipo, q.quien, q.via], ['manual', 'el-dueno', 'ventana']);
+  assert.strictEqual(q.como, 'aprobada en la ventana de permiso');
+  assert.doesNotMatch(q.como, /click/);
+});
+
+test('OwnerWindow_SinModoDePermisos_RenglonConNull (T7) @story-8.232 @ac-7', (t) => {
+  const casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, MANUAL).decision, 'ask');
+  const { reg } = pedidoEscrito(casa);
+  assert.strictEqual(reg.via, 'ventana');
+  assert.ok('permission_mode' in reg && reg.permission_mode === null, 'el pedido dice que no se supo el modo');
+  const e = ow.exigir({ firma: 'manual-test', argv: MANUAL_ARGV, pid: 301, arbol: arbolDelGuion(casa, MANUAL), casa, ahora: AHORA + 60000, propia: 'ses-a' });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  const [g] = gates(casa).filter((x) => x.name === 'manual-test-signed');
+  assert.ok('permission_mode' in g && g.permission_mode === null);
+  assert.strictEqual(ow.quienFirmo(e, 'el-dueno').como, 'aprobada en la ventana, sin saber si la pestaña pregunta');
+});
+
+test('OwnerWindow_ViejoSinViaYViasDeHoy_ComoCorresponde (T8) @story-8.232 @ac-8', () => {
+  // sin vía, o con la de la ventana sin el modo (un pedido de antes, que exigir resuelve como ventana)
+  for (const vieja of [{}, { via: 'ventana' }]) {
+    const q = ow.quienFirmo(vieja, 'el-dueno');
+    assert.deepStrictEqual(q, { tipo: 'manual', quien: 'el-dueno', via: 'ventana', como: 'vía sin anotar' }, JSON.stringify(vieja));
+  }
+  const hoy = {
+    click: { tipo: 'manual', quien: 'el-dueno', via: 'click en el cuadro de opciones' },
+    mensaje: { tipo: 'manual', quien: 'el-dueno', via: '«aprobado» escrito' },
+    terminal: { tipo: 'manual', quien: 'el-dueno', via: 'terminal' },
+    delegacion: { tipo: 'automatica', quien: 'coordinadora (sesión ses-c)', delegacion: 'el-dueno', via: 'delegada · coordinadora' },
+    revision: { tipo: 'automatica', quien: 'coordinadora (sesión ses-c), vía revisión automática', delegacion: 'el-dueno', via: 'revisión automática · coordinadora' },
+    avisado: { tipo: 'automatica', quien: 'sesión ses-c, en una pestaña sin permisos', delegacion: 'el-dueno', via: 'hecho y avisado' },
+  };
+  for (const [via, esperado] of Object.entries(hoy)) {
+    assert.deepStrictEqual(ow.quienFirmo({ via, sesion: 'ses-c' }, 'el-dueno'), { ...esperado, como: esperado.via }, via);
+  }
 });
