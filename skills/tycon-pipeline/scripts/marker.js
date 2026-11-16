@@ -405,6 +405,10 @@ function appendLog(fileName, obj, { estricto = false } = {}) {
   }
 }
 
+// Las rutas de la corrida, absolutas contra su repo y nunca contra la carpeta del proceso (lib/run-dir.js): las usan la
+// lectura y la escritura del marcador, así cualquier comando lo ve igual desde cualquier carpeta.
+const conRutas = (m) => require('./lib/run-dir.js').marcadorConRutas(m);
+
 // Marker de ESTA sesión. Primero el archivo per-session; si no, fallback al
 // legacy single-file (transición — readonly).
 function readMarker() {
@@ -412,7 +416,7 @@ function readMarker() {
   if (fs.existsSync(own)) {
     try {
       const m = JSON.parse(fs.readFileSync(own, 'utf8'));
-      if (m && m.storyId) return m;
+      if (m && m.storyId) return conRutas(m);
     } catch (_e) { /* ignore */ }
   }
   if (fs.existsSync(LEGACY_MARKER_PATH)) {
@@ -422,10 +426,10 @@ function readMarker() {
         const obj = JSON.parse(raw);
         if (obj && obj.storyId) {
           // legacy plano: pertenece a la sesión sintética `_legacy`.
-          return SID === '_legacy' ? obj : null;
+          return SID === '_legacy' ? conRutas(obj) : null;
         }
         const m = obj && obj[SID];
-        if (m && m.storyId) return m;
+        if (m && m.storyId) return conRutas(m);
       }
     } catch (_e) { /* ignore */ }
   }
@@ -461,7 +465,7 @@ function writeMarker(marker) {
   pruneStale();
   const p = markerFilePath(SID);
   const tmp = `${p}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(marker, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify(require('./lib/run-dir.js').marcadorConRutas(marker, { avisar: true }), null, 2) + '\n', 'utf8');
   fs.renameSync(tmp, p);
   avisarOficina();
 }
@@ -512,7 +516,10 @@ function clearMarker() {
 // El cierre de la ejecución de `sesion` en el registro, con su carpeta, y la copia de la apertura borrada
 // (lib/open-runs.js). Todo camino que borra un marcador pasa por acá: sin el cierre, la sesión quedaría con su apertura
 // sin marcador y frenaría como perdida. Que falle no frena el comando: se dice.
-function cerrarEjecucion(sesion, m, { extra, registrar: _registrar, ...campos } = {}) {
+function cerrarEjecucion(sesion, marcador, { extra, registrar: _registrar, ...campos } = {}) {
+  // el embudo de todo lo que cierra un marcador (clear, restore, la adopción): con la carpeta absoluta contra su repo, el
+  // cierre encuentra la copia de la apertura desde cualquier carpeta
+  const m = conRutas(marcador);
   try {
     require('./lib/open-runs.js').cerrar({
       sid: SID, sesion, runDir: (m && m.runDir) || null, story: m && m.storyId != null ? String(m.storyId) : null,
@@ -747,6 +754,16 @@ function cmdSet(payloadJson) {
       console.error('    el plan → pasá `stepsCompleted` con los pasos hechos (incluido approve-plan) en el mismo set: así no avisa.');
     }
   }
+  // El repo que queda guardado. Uno relativo o que falta, con la carpeta absoluta, sale de la carpeta (lib/run-dir.js);
+  // si no, es el argumento de este mismo proceso y se resuelve acá, al entrar, como el --repo de `start`.
+  const repoGuardado = (() => {
+    const pedido = payload.repoPath;
+    if (!(pedido && path.isAbsolute(pedido))) {
+      const deLaCarpeta = require('./lib/run-dir.js').rutasDeLaCorrida({ runDir: payload.runDir }).repoPath;
+      if (deLaCarpeta && path.isAbsolute(deLaCarpeta)) return deLaCarpeta;
+    }
+    return path.resolve(pedido || at(existing, 'repoPath') || process.cwd());
+  })();
   const marker = {
     // 🔴 Los campos DESCONOCIDOS del marker existente se PRESERVAN. Con una lista cerrada de campos,
     // todo lo que no estuviera enumerado acá se perdería en silencio: `checks`,
@@ -766,7 +783,7 @@ function cmdSet(payloadJson) {
     ...(existing || {}),
     storyId: payload.storyId,
     storyPath: payload.storyPath || at(existing, 'storyPath') || null,
-    repoPath: path.resolve(payload.repoPath || at(existing, 'repoPath') || process.cwd()),
+    repoPath: repoGuardado,
     // Dónde nace la evidencia de cierre: el repo de la STORY, aunque el código viva en
     // otro. Lo escribe `pipeline.js start`; lo leen el paso «Probar en vivo», el macro y `mark-dod-runtime-checked`.
     // 🔴 El spread de arriba preserva lo EXISTENTE, no lo que trae el payload: sin esta línea el
@@ -785,8 +802,13 @@ function cmdSet(payloadJson) {
     // La existente gana mientras siga en disco y sea del mismo repo que la que trae el pedido; si ya no está (o es de
     // otro repo), la que abrió `start` la reemplaza: si no, la carpeta nueva quedaría sin marcador que la nombre.
     runDir: (() => {
-      const vieja = at(existing, 'runDir');
-      const nueva = payload.runDir;
+      // las dos, absolutas ANTES de mirar el disco: la vieja contra el repo del marcador existente (ya la trae así
+      // `readMarker`), la nueva contra el que queda guardado; un `set` desde otra carpeta no pierde la vieja
+      const rd = require('./lib/run-dir.js');
+      const ubicada = rd.rutasDeLaCorrida({ repoPath: at(existing, 'repoPath'), runDir: at(existing, 'runDir') }).runDir;
+      // una vieja que no se pudo ubicar no se toma (no se busca en la carpeta del proceso): gana la nueva
+      const vieja = typeof ubicada === 'string' && path.isAbsolute(ubicada) ? ubicada : null;
+      const nueva = rd.rutasDeLaCorrida({ repoPath: repoGuardado, runDir: payload.runDir }).runDir;
       // por la ruta real: un enlace (/var y /private/var en macOS) no hace de la misma carpeta una de otro repo
       const real = (p) => { try { return fs.realpathSync(path.dirname(path.resolve(p))); } catch (_e) { return path.dirname(path.resolve(p)); } };
       const sigue = !!vieja && fs.existsSync(vieja) && (!nueva || real(vieja) === real(nueva));
@@ -5453,11 +5475,24 @@ function cmdSalidaPerdida(modo, sesion) {
   const abierta = podada && !podada.runDir ? (() => { const r = or.leerEventos(); return r.ok ? [...r.eventos].reverse().find((e) => e.sesion === String(sesion) && e.name === 'run-open') : null; })() : null;
   const dePodada = podada ? { name: 'pruned', story: String(podada.storyId), storyPath: podada.storyPath || null, repo: podada.repoPath || null, runDir: podada.runDir || (abierta && abierta.runDir) || null, ts: podada.startedAt || podada.lastTouch } : null;
   // la apertura: la vigente del registro o, sin registro, la copia del repo, o la de la podada
-  const apertura = ult && ult.name === 'run-open' ? ult : copias.length ? copias[copias.length - 1].copia : dePodada;
-  if (!apertura) {
+  const aperturaCruda = ult && ult.name === 'run-open' ? ult : copias.length ? copias[copias.length - 1].copia : dePodada;
+  if (!aperturaCruda) {
     console.error(`marker.js ${nombre}: la sesión ${sesion} no tiene una ejecución abierta (ni apertura en el registro ni copia en este repo): no hay nada que ${modo === 'lost' ? 'cerrar' : 'restaurar'}.`);
     process.exit(1);
   }
+  // sus rutas, absolutas contra su repo, antes de leer su copia, compararla, cerrarla o escribir el marcador (lib/run-dir.js):
+  // una apertura vieja con el repo «.» o una podada con la carpeta relativa no se buscan en la carpeta de este proceso
+  const ubicar = (a) => {
+    const r = require('./lib/run-dir.js').rutasDeLaCorrida({ repoPath: a.repo, runDir: a.runDir, storyPath: a.storyPath });
+    if (typeof r.runDir !== 'string' || !path.isAbsolute(r.runDir)) return { motivo: r.motivo || 'no trae la carpeta de la ejecución' };
+    return { apertura: { ...a, ...(r.repoPath ? { repo: r.repoPath } : {}), runDir: r.runDir, ...(r.storyPath ? { storyPath: r.storyPath } : {}) } };
+  };
+  const ubicada = ubicar(aperturaCruda);
+  if (!ubicada.apertura) {
+    console.error(`marker.js ${nombre}: no puedo ubicar la ejecución de la sesión ${sesion}: ${ubicada.motivo}. No se ${modo === 'lost' ? 'cerró' : 'restauró'} nada.`);
+    process.exit(1);
+  }
+  const apertura = ubicada.apertura;
   // restore pisa el marcador propio y --lost borra el de la sesión perdida: si el que se toca no se lee, no se puede
   // anotar lo que deja (antes de pedir la firma)
   frenarSiIlegible(markerFilePath(modo === 'lost' ? sesion : SID), modo === 'lost' ? sesion : SID, nombre);
@@ -5496,7 +5531,11 @@ function cmdSalidaPerdida(modo, sesion) {
   // restore: el marcador vuelve con lo que dice la copia de la apertura, en la sesión que la pide
   let copia = null;
   try { copia = JSON.parse(fs.readFileSync(path.join(apertura.runDir, 'run-open.json'), 'utf8')); } catch (_e) { copia = null; }
-  const base = copia && copia.sesion === sesion ? copia : apertura;
+  const copiaUbicada = copia && copia.sesion === sesion ? ubicar(copia) : null;
+  // una copia de esta sesión que no se ubica no se usa, y se dice: se restaura con la apertura elegida
+  if (copiaUbicada && !copiaUbicada.apertura) process.stderr.write(`⚠️  marker.js ${nombre}: la copia de la apertura no se puede ubicar (${copiaUbicada.motivo}): uso la apertura del registro.\n`);
+  const deLaCopia = copiaUbicada ? copiaUbicada.apertura : null;
+  const base = deLaCopia || apertura;
   // la ejecución propia de otra carpeta no se pisa callada: se cierra como reemplazada, como en `set`, con su cierre sin
   // ok anotado antes de tocar nada
   let previo = readMarker();
@@ -5731,7 +5770,7 @@ function cmdAdoptSession(sid) {
   }
   let other;
   try {
-    other = JSON.parse(fs.readFileSync(otherPath, 'utf8'));
+    other = conRutas(JSON.parse(fs.readFileSync(otherPath, 'utf8')));
   } catch (e) {
     console.error(`marker.js adopt-session: marker de ${safe} ilegible:`, e.message);
     process.exit(1);
