@@ -28,9 +28,9 @@ const PIPELINE = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 's
 const PLAN_FILE = 'step-02-bmad-plan.md';
 const LINEAS_DEL_PLAN = 3;
 // dónde está lo completo, en palabras: el cuadro no muestra la ruta (va a su detalle)
-const EL_PLAN = 'el plan, en la carpeta de la corrida';
-const EL_INFORME = 'el informe de hallazgos de la corrida';
-const LA_CARPETA = 'la carpeta de la corrida';
+const EL_PLAN = 'el plan, en la carpeta de la ejecución';
+const EL_INFORME = 'el informe de hallazgos de la ejecución';
+const LA_CARPETA = 'la carpeta de la ejecución';
 const laHistoria = (m) => (m && m.storyId ? `la historia ${m.storyId}` : 'la historia de la ejecución');
 const sha = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 
@@ -316,7 +316,7 @@ function deControles(palabras, cwd, estado) {
     try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(completo, diff.stdout); } catch (_) { completo = null; }
   }
   const cuantas = cambiadas.length < rutas.length ? `${cambiadas.length} de ${rutas.length} archivo(s) de control pedidos` : `${rutas.length} archivo(s) de control`;
-  return { queHace: [`Cambia ${cuantas}: +${mas} −${menos} líneas`], archivos: rutas, completo, completoEnPalabras: completo ? 'el cambio, en un archivo de la corrida' : null, fuente: diff.stdout };
+  return { queHace: [`Cambia ${cuantas}: +${mas} −${menos} líneas`], archivos: rutas, completo, completoEnPalabras: completo ? 'el cambio, en un archivo de la ejecución' : null, fuente: diff.stdout };
 }
 
 const acsDe = (palabras) => [...new Set(String(valor(palabras, '--acs') || '').split(/[,\s]+/).filter(Boolean).map(Number))].filter((n) => Number.isInteger(n) && n > 0);
@@ -342,7 +342,7 @@ function hallazgosDe(dir) {
   return { ruta, texto, lista: Array.isArray(j) ? j : (j && Array.isArray(j.findings) ? j.findings : []) };
 }
 
-/** El hallazgo crítico que se exime, del informe de hallazgos de la corrida. */
+/** El hallazgo crítico que se exime, del informe de hallazgos de la ejecución. */
 function delCritico(palabras, m) {
   const regla = valor(palabras, '--rule');
   if (!regla) return null;
@@ -382,11 +382,11 @@ function deLaVuelta(palabras, m) {
   const ab = abiertoDeLaCorrida(dir);
   const conNota = texto !== null && texto !== undefined;
   // dos renglones, los que muestra el cuadro: la vuelta con lo abierto, y la nota (la fuente es lo abierto y la nota)
-  return { queHace: [`Vuelta ${iter} de revisores: ${ab.linea}`, deLaNota], completo: conNota ? ruta : dir, completoEnPalabras: conNota ? 'la nota de la vuelta, en la carpeta de la corrida' : LA_CARPETA, fuente: JSON.stringify({ abiertos: ab.lista, nota: texto || null }) };
+  return { queHace: [`Vuelta ${iter} de revisores: ${ab.linea}`, deLaNota], completo: conNota ? ruta : dir, completoEnPalabras: conNota ? 'la nota de la vuelta, en la carpeta de la ejecución' : LA_CARPETA, fuente: JSON.stringify({ abiertos: ab.lista, nota: texto || null }) };
 }
 
 /**
- * Lo que sigue abierto en el informe de hallazgos de la corrida: `{ linea, lista }`, un tramo por hallazgo abierto en un
+ * Lo que sigue abierto en el informe de hallazgos de la ejecución: `{ linea, lista }`, un tramo por hallazgo abierto en un
  * solo renglón (la pregunta muestra tres renglones de «Qué hace», y la nota de la vuelta tiene que entrar). «No lo pude
  * leer» no es «nada», y una carpeta que no se ubica no es un informe que falta.
  */

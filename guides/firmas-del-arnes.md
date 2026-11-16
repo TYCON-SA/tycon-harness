@@ -188,7 +188,7 @@ Lo que tiene que cumplir esa aprobación:
   crítico de los revisores?»), la historia (con su título si tiene hasta 80 letras) y la sesión por sus 8 primeras
   letras, qué hace en 2 renglones de hasta 140 letras, cuántos archivos toca y de qué zonas («11 archivos: 6 de código
   (lib y tools), 4 pruebas, 1 historia»: las rutas no se muestran en ningún lado), dónde está lo completo dicho en
-  palabras («el plan, en la carpeta de la corrida», «el informe de hallazgos de la corrida», «la historia 8.275»), qué
+  palabras («el plan, en la carpeta de la ejecución», «el informe de hallazgos de la ejecución», «la historia 8.275»), qué
   pasa si sale mal con esa firma y, al final, la cita de la sesión. Ninguna ruta absoluta y ninguna frase cortada con
   «…»: lo que se corta dice «(sigue en el detalle)». La pregunta entera, con su sello, entra en 600 letras; para entrar
   se achica en orden (el título, la cita, «Qué hace» a un renglón, la revisión sin sus notas, los criterios en tramos)

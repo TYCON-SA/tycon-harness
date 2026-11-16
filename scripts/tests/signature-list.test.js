@@ -488,7 +488,7 @@ test('OwnerNext_PlanAntesDelClick (T17) — @story-8.153 @ac-17', (t) => {
   assert.strictEqual(r.tipo, 'firma', JSON.stringify(r));
   assert.match(r.pregunta, /Cambia el primer paso/, 'el cuadro trae qué hace');
   assert.match(r.pregunta, /Archivos: 1 archivo: una guía\./, 'y los archivos');
-  assert.match(r.pregunta, /Completo en: el plan, en la carpeta de la corrida\./, 'y dónde está el plan completo');
+  assert.match(r.pregunta, /Completo en: el plan, en la carpeta de la ejecución\./, 'y dónde está el plan completo');
   assert.ok(r.detalle.some((l) => /step-02-bmad-plan\.md/.test(l)), 'y su ruta, en el detalle');
   assert.doesNotMatch(r.aviso, /escribilo tal cual/i, 'sin pedir que lo peguen');
   // con una sola de las dos, o «Qué hace» de más de 3 renglones, el cuadro no alcanza: el plan se ve antes del click

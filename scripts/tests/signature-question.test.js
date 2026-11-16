@@ -116,7 +116,7 @@ test('SignatureQuestion_PlanApproval_FromThePlan (T34)', (t) => {
   // 8.275: los archivos en cantidad y zonas, «Completo en» en palabras (la ruta, en el detalle); el título, si entra
   const orden = ['¿Aprobar el plan de una story?', 'Historia 9.99', 'sesión ses-a.',
     'Qué hace: Nombra a la coordinadora con un click · Las preguntas de firma dicen qué se aprueba.',
-    'Archivos: 2 archivos: 2 de código (owner-window y signatures).', 'Completo en: el plan, en la carpeta de la corrida.', 'Si sale mal: ', 'Cita de la sesión: «pido el click', '(firma plan-approval'];
+    'Archivos: 2 archivos: 2 de código (owner-window y signatures).', 'Completo en: el plan, en la carpeta de la ejecución.', 'Si sale mal: ', 'Cita de la sesión: «pido el click', '(firma plan-approval'];
   const pos = orden.map((p) => posicion(q, p));
   assert.deepStrictEqual(pos, [...pos].sort((a, b) => a - b), `fuera de orden: ${q}`);
   assert.ok(r.detalle.includes(`Completo en: ${f}`), JSON.stringify(r.detalle));
@@ -163,7 +163,7 @@ test('SignatureQuestion_ControlChange_DiffStatAndDiffFile (T36)', (t) => {
   const q = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${entries}'`).pregunta;
   assert.match(q, /Qué hace: Cambia 2 archivo\(s\) de control: \+1 −1 líneas\./);
   assert.match(q, /Archivos: 2 archivos: 2 de código \(a y b\)\./);
-  assert.ok(q.includes('Completo en: el cambio, en un archivo de la corrida.'), q);
+  assert.ok(q.includes('Completo en: el cambio, en un archivo de la ejecución.'), q);
   // 8.275: la ruta del diff, en el detalle
   const ruta = (conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${entries}'`).detalle.find((l) => l.startsWith('Completo en: ')) || '').slice('Completo en: '.length);
   assert.ok(ruta && fs.existsSync(ruta), q);
@@ -246,7 +246,7 @@ test('SignatureQuestion_WaiversAndExtraRound_FromTheirSource (T37)', (t) => {
   assert.match(crit('--rule SEC-C9 --file a.js'), /Eximir SEC-C9 en a\.js: no está en el informe de hallazgos\./);
   const una = crit('--rule SEC-C1 --file a.js');
   assert.match(una, /Qué hace: SEC-C1 en a\.js: secreto en el código 1\./);
-  assert.ok(una.includes('Completo en: el informe de hallazgos de la corrida.'), una);
+  assert.ok(una.includes('Completo en: el informe de hallazgos de la ejecución.'), una);
   assert.match(crit('--rule SEC-C1 --file b.js'), /secreto en el código 2 · SEC-C1 en b\.js: secreto en el código 3 · y 2 más en el detalle\./);
   // sin --file la exención se anota sin archivo (regla|): sólo exime, y sólo muestra, los hallazgos sin archivo
   const sinArchivo = crit('--rule SEC-C1');
@@ -256,12 +256,12 @@ test('SignatureQuestion_WaiversAndExtraRound_FromTheirSource (T37)', (t) => {
   const extra = () => conFirma('extra-round')(c, `node ${PIPELINE} smart-reloop --iter 3 --extra-round`).pregunta;
   // 8.275: dos renglones, la vuelta con lo abierto y la nota
   assert.match(extra(), /Qué hace: Vuelta 3 de revisores: Sigue abierto: SEC-C1 en a\.js, bloquea; .* · Sin nota de repensar de la vuelta 3\./);
-  assert.ok(extra().includes('Completo en: la carpeta de la corrida.'), extra());
+  assert.ok(extra().includes('Completo en: la carpeta de la ejecución.'), extra());
   const nota = path.join(c.runDir, 'rethink', 'iter-3.json');
   fs.mkdirSync(path.dirname(nota), { recursive: true });
   fs.writeFileSync(nota, JSON.stringify({ iter: 3, repeated: 'vuelve el hallazgo del tope', change: 'se parte el archivo en dos' }));
   assert.match(extra(), / · Nota de la vuelta 3: Se repitió: vuelve el hallazgo del tope; Cambia: se parte el archivo en dos\./);
-  assert.ok(extra().includes('Completo en: la nota de la vuelta, en la carpeta de la corrida.'), extra());
+  assert.ok(extra().includes('Completo en: la nota de la vuelta, en la carpeta de la ejecución.'), extra());
 });
 
 // Criterios largos que la matriz da por no verificables en vivo: con su razón y la prueba que los cubre
@@ -457,12 +457,12 @@ test('SignatureQuestion_BrokenSource_SaysItCouldNotRead', (t) => {
   const c = corrida(t);
   fs.writeFileSync(path.join(c.runDir, 'findings.json'), '{ roto');
   const crit = conFirma('critical-waiver')(c, `node ${MARKER} waive-critical --rule SEC-C1 --file a.js --reason "x"`).pregunta;
-  assert.match(crit, /Eximir SEC-C1 en a\.js: no pude leer el informe de hallazgos \(no se entiende.*Completo en: el informe de hallazgos de la corrida\./);
+  assert.match(crit, /Eximir SEC-C1 en a\.js: no pude leer el informe de hallazgos \(no se entiende.*Completo en: el informe de hallazgos de la ejecución\./);
   assert.doesNotMatch(crit, /no hay informe/);
   fs.mkdirSync(path.join(c.runDir, 'rethink'), { recursive: true });
   fs.writeFileSync(path.join(c.runDir, 'rethink', 'iter-2.json'), '{ roto');
   const vuelta = conFirma('extra-round')(c, `node ${PIPELINE} smart-reloop --iter 2 --extra-round`).pregunta;
-  assert.match(vuelta, /Vuelta 2 de revisores: No pude leer el informe de hallazgos.* · Nota de la vuelta 2: no se entiende \(.*Completo en: la nota de la vuelta, en la carpeta de la corrida\./);
+  assert.match(vuelta, /Vuelta 2 de revisores: No pude leer el informe de hallazgos.* · Nota de la vuelta 2: no se entiende \(.*Completo en: la nota de la vuelta, en la carpeta de la ejecución\./);
   // un plan que es una carpeta: está, pero no se puede leer
   fs.mkdirSync(path.join(c.runDir, 'step-02-bmad-plan.md'));
   // 8.275: la carpeta por su nombre (la ruta entera, en el detalle)
@@ -542,7 +542,7 @@ test('SignatureQuestion_Case8205_IsDecidable (T41)', (t) => {
   // 8.275: el título si entra en el tope; «Completo en» en palabras, con la ruta en el detalle
   assert.match(q, /Historia 8\.205(, «El click del dueño vale en sesiones sin foto»)?, sesión ses-a\./);
   assert.match(q, /Qué hace: Nombra a la coordinadora con un click/);
-  assert.ok(q.includes('Completo en: el plan, en la carpeta de la corrida.'), q);
+  assert.ok(q.includes('Completo en: el plan, en la carpeta de la ejecución.'), q);
   assert.ok(cuadro(c, `node ${MARKER} complete-step approve-plan --approved "pido el click del dueño para el plan de la opción A"`, { firma: 'plan-approval' }).detalle.includes(`Completo en: ${f}`));
   assert.ok(q.indexOf('Cita de la sesión: «pido el click del dueño para el plan de la opción A»') > q.indexOf('Si sale mal:'), q);
 });
@@ -1133,8 +1133,8 @@ function cadaFirma(t) {
 // 🔴 Falla con: una ruta absoluta o un «…» en la pregunta de cualquier firma.
 test('SignatureQuestion_EveryFirma_NoAbsolutePathNorEllipsis (T8) @story-8.275 @ac-7 @ac-9', (t) => {
   const palabras = {
-    'plan-approval': 'el plan, en la carpeta de la corrida', 'control-change': 'el cambio, en un archivo de la corrida', 'critical-waiver': 'el informe de hallazgos de la corrida',
-    'runtime-waiver': 'la historia 9.99', 'manual-test': 'la historia 9.99', 'extra-round': 'la nota de la vuelta, en la carpeta de la corrida', 'escape:rojo-esperado-de-la-matriz': 'la historia 9.99',
+    'plan-approval': 'el plan, en la carpeta de la ejecución', 'control-change': 'el cambio, en un archivo de la ejecución', 'critical-waiver': 'el informe de hallazgos de la ejecución',
+    'runtime-waiver': 'la historia 9.99', 'manual-test': 'la historia 9.99', 'extra-round': 'la nota de la vuelta, en la carpeta de la ejecución', 'escape:rojo-esperado-de-la-matriz': 'la historia 9.99',
   };
   for (const [firma, q] of cadaFirma(t)) {
     assert.ok(q.pregunta, `${firma}: ${q.error}`);
@@ -1191,7 +1191,7 @@ test('SignatureQuestion_EveryFirma_FitsPhoneCap (T10) @story-8.275 @ac-10 @ac-11
   for (const [id, c] of Object.entries(campos)) {
     const s = sig.SIGNATURES.find((x) => x.id === id);
     const q = oa.cuadroDe({ firma: id, destino: 'sesionde-prueba-larga-con-id-entero-0001', que: c.que || s.approves, historia: { id: '9.99', titulo: 'T'.repeat(300) }, criterios: c.criterios || [],
-      queHace: c.queHace, archivos: c.archivos || [], completo: c.completo, completoEnPalabras: c.completo ? 'el plan, en la carpeta de la corrida' : null,
+      queHace: c.queHace, archivos: c.archivos || [], completo: c.completo, completoEnPalabras: c.completo ? 'el plan, en la carpeta de la ejecución' : null,
       revision: c.revision || null, siSaleMal: s.ifWrong, cita: c.cita || null, huella: 'ab12cd34' });
     assert.ok(q.pregunta.length <= tope, `${id}: ${q.pregunta.length} letras: ${q.pregunta}`);
     assert.strictEqual(q.pasaElTope, false, id);
