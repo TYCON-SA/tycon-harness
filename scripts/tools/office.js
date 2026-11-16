@@ -466,8 +466,11 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     // lo que espera algo manda también sobre la coordinadora
     const isCoordinator = Boolean(coordinatorSid) && d.sid === coordinatorSid;
     const prsSaid = waitingPrs && d.sid != null ? waitingPrs.get(String(d.sid)) : null;
-    // si ya pasó todo lo que esperaba, la espera vieja no se dice: se dice qué pasó
-    const waitingFor = (prsSaid && prsSaid.all) || workedAfterWait(x0, lastWrite, d.status) ? '' : plain(x0.waitingFor, { keepPrs: true });
+    // si ya pasó todo lo que esperaba, la espera vieja no se dice: se dice qué pasó. La que siguió trabajando la tapa sólo
+    // mientras no está quieta: quieta con la marca puesta, vuelve a esperar (la fila de turnos pide confirmar, a propósito).
+    // Quieta es lo que dice el estado de esta tarjeta (Codex por su archivo, el estado atrasado de Claude corregido)
+    const quietNow = real.estado === 'parada';
+    const waitingFor = (prsSaid && prsSaid.all) || (!quietNow && workedAfterWait(x0, lastWrite, d.status)) ? '' : plain(x0.waitingFor, { keepPrs: true });
     // quien declaró que espera a otro no está trabajando en eso, aunque siga escribiendo
     const declaredWait = Boolean(waitingFor) && !x.mark && !ASKS_OWNER.has(real.estado);
     const estado = isCoordinator && !ASKS_OWNER.has(real.estado) ? 'coordina' : declaredWait ? 'esperando' : real.estado;
@@ -2224,8 +2227,9 @@ async function collect(opts = {}) {
     const hidden = hiddenCardsLine(data.kanban.ocultas, opts.memory);
     if (hidden) process.stderr.write(`${new Date(nowMs).toISOString()} ${hidden}\n`);
   }
-  // sólo con la oficina abierta: la primera pasada lee conversaciones enteras, y la foto fija y `--json` empezarían de cero cada vez
-  if (opts.envelopes && !opts.noTranscripts) data.tokens = readTokens(wip, states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
+  // con la oficina abierta, y en `--json` (`opts.tokens`): la primera pasada lee conversaciones enteras, y la foto fija
+  // empezaría de cero cada vez
+  if ((opts.envelopes || opts.tokens) && !opts.noTranscripts) data.tokens = readTokens(wip, states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
   // el modelo y el esfuerzo de cada sesión, de su última respuesta: van con la persona, a su etiqueta y a sus tarjetas
   if (data.tokens) for (const a of data.agents) { const t = data.tokens[a.nombre]; if (t) { a.modelo = t.modelo; a.esfuerzo = t.esfuerzo; } }
   // lo del tablero que no es una fila: su resumen, lo que dice que le toca al dueño y cuándo se escribió
@@ -2412,8 +2416,9 @@ async function main(argv) {
   let data;
   // la foto que queda en un archivo no lleva nada de las conversaciones: eso sólo viaja en la foto viva
   // sin el proceso de la oficina, el tablero lo mueve esta foto; una foto de otra hora no escribe nada
+  // `--json` lee además los tokens: el modelo y el esfuerzo de cada sesión salen de ahí
   const sdir = stateDir(os.homedir());
-  try { data = await collect({ now: opts.now, noTranscripts: !opts.json && !opts.task, syncBoard: !opts.now && !officeProcessAlive(sdir) }); } catch (e) {
+  try { data = await collect({ now: opts.now, noTranscripts: !opts.json && !opts.task, tokens: Boolean(opts.json), syncBoard: !opts.now && !officeProcessAlive(sdir) }); } catch (e) {
     if (e.code === 'NO_STATE' || e.code === 'BAD_ARG') { process.stderr.write(`office.js: ${e.message}\n`); return 2; }
     throw e;
   }

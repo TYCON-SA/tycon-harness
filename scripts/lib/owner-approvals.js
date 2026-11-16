@@ -53,6 +53,9 @@ const SESION = /^[\w-]+$/;
 const CUADRO = 'AskUserQuestion';
 const APRUEBA = 'Sí, aprobar';
 const NIEGA = 'No';
+// el motivo de una aprobación sobre otra pregunta con el mismo sello: el texto cambió y el código no (el formato nuevo del
+// cuadro después de actualizar el arnés, o un texto alterado). No se reconoce el formato viejo: hace falta otro click
+const PREGUNTA_CAMBIADA = 'la pregunta cambió con el mismo código (puede ser el formato nuevo del arnés, después de actualizar): hace falta un click nuevo';
 // lo que llega como prompt sin que lo haya escrito la persona: mensajes de otra sesión, de un canal, avisos de tareas
 const ENVUELTO = /<(?:cross-session-message|channel|task-notification|teammate-message|system-reminder|local-command|command-name)\b/i;
 // los ganchos del arnés que pueden escuchar el cuadro: el aviso de espera, el que anota el click, el estado de la sesión y
@@ -123,71 +126,185 @@ function sesionesNombradas(texto) {
   return [...String(texto).matchAll(/(?:^|[^\p{L}\p{N}_-])sesi[oó]n[\s:=«"'`([]+(?:(?:de|del|la|el)\s+)*([\p{L}\p{N}_-]+)/giu)].map((m) => m[1].toLowerCase()).filter((s) => !NO_ES_ID.has(s));
 }
 
-// los topes de la pregunta: un corte siempre se ve («…», «y N más»)
-const LINEAS_QUE_HACE = 3;
-const LARGO_DE_LINEA = 200;
-const ARCHIVOS_A_LA_VISTA = 10;
-// una ruta no se corta: lo que se ve es lo que se aprueba. La que no entra va a «y N más», y lo completo, a su aviso
-const LARGO_DE_RUTA = 200;
-const LARGO_DE_COMPLETO = 400;
+// Los topes de la pregunta, medidos para un teléfono: lo que no entra va al detalle (`detalle`, aparte de la pregunta), y
+// el corte siempre se ve («(sigue en el detalle)», «y N más en el detalle»), nunca a mitad de palabra ni con «…»
+const LINEAS_QUE_HACE = 2;
+const LARGO_DE_LINEA = 140;
+const LARGO_DE_FRASE = 200;
+const LARGO_DEL_TITULO = 80;
+const MINIMO_QUE_HACE = 60;
+// La pregunta entera, con su sello, que se ve sin desplazar en un teléfono encima de las dos opciones. Provisorio: la
+// historia 8.275 lo fija en 600 hasta medirlo en la captura del teléfono del dueño (letras por renglón × renglones)
+const LARGO_EN_TELEFONO = 600;
+const SIGUE = '(sigue en el detalle)';
 const sinPunto = (s) => String(s).replace(/[.\s]+$/, '');
-const masDe = (lista, tope, sep) => (lista.length > tope ? `${lista.slice(0, tope).join(sep)}${sep === ', ' ? ' ' : sep}y ${lista.length - tope} más` : lista.join(sep));
 const enUnRenglon = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
 
-/** Los archivos de la pregunta: hasta 10 rutas que entran enteras, y el resto contado en «y N más»; null sin archivos. */
-function archivosALaVista(archivos) {
-  const rutas = (archivos || []).map(enUnRenglon).filter(Boolean);
-  if (!rutas.length) return null;
-  const vista = rutas.filter((r) => r.length <= LARGO_DE_RUTA).slice(0, ARCHIVOS_A_LA_VISTA);
-  if (!vista.length) return `${rutas.length}, de más de ${LARGO_DE_RUTA} letras: ninguno entra entero en la pregunta`;
-  const resto = rutas.length - vista.length;
-  return resto ? `${vista.join(', ')} y ${resto} más` : vista.join(', ');
+/**
+ * `texto` en un renglón de hasta `n` letras: si no entra, hasta la última oración que entra («. », «; » o «: ») o, sin
+ * ninguna, hasta la última palabra entera, y « (sigue en el detalle)». Nunca deja menos de 20 letras: corta en la palabra.
+ */
+function recortar(texto, n) {
+  const t = enUnRenglon(texto);
+  if (t.length <= n) return t;
+  const cabeza = t.slice(0, Math.max(1, n - SIGUE.length - 1));
+  const enOracion = Math.max(...['. ', '; ', ': '].map((s) => cabeza.lastIndexOf(s)));
+  const enPalabra = cabeza.lastIndexOf(' ');
+  const corte = enOracion >= 20 ? enOracion : enPalabra > 0 ? enPalabra : cabeza.length;
+  return `${sinPunto(cabeza.slice(0, corte)).replace(/[,;:]$/, '')} ${SIGUE}`;
 }
+
+// una ruta absoluta (`/…`, `~/…`, `C:\…`, `\\red\…`) donde no la precede una letra, un número, un punto, un guion ni «:»
+// (así una URL o «host:/ruta» quedan como están). Un espacio sigue en la ruta sólo dentro de una carpeta, con dos tramos
+// antes y otra barra después («/x/Mis Documentos/…»); después de un archivo («/x/a.js src/b.js») la ruta termina
+const RUTA = /(?<![\p{L}\p{N}._\-~:\\/])((?:\\\\|\/|~\/|[A-Za-z]:[\\/])(?:[^\s»)\]"'`”’>|;&]|(?<=[\\/][^\\/]+[\\/][^\s\\/.»)\]"'`]+)\s(?=[^\s»)\]"'`\\/]+[\\/]))*)/gu;
+/**
+ * El texto con cada ruta absoluta por el nombre de su archivo: lo que se ve en el teléfono; la ruta, en el detalle. Un
+ * comando de barra («/tycon-merge-to-main»: una palabra sola, sin punto) no es una ruta y queda como está.
+ */
+function sinRutas(texto) {
+  return String(texto == null ? '' : texto).replace(RUTA, (todo, cruda) => {
+    const [, ruta, cierre] = /^(.*?)([.,;:]*)$/.exec(cruda);
+    if (/^\/[^/.]+$/.test(ruta)) return todo;
+    const nombre = ruta.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+    return nombre ? `${nombre}${cierre}` : todo;
+  });
+}
+
+/** Los números de los criterios: todos, o en tramos («AC 3 a 9 y 12») si hace falta achicar. */
+function criteriosEnPalabras(nums, enTramos) {
+  if (!enTramos) return nums.length > 1 ? `${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}` : String(nums[0]);
+  const tramos = [];
+  for (const n of nums) {
+    const ultimo = tramos[tramos.length - 1];
+    if (ultimo && n === ultimo[1] + 1) ultimo[1] = n; else tramos.push([n, n]);
+  }
+  const dichos = tramos.flatMap(([a, b]) => (b - a >= 2 ? [`${a} a ${b}`] : a === b ? [String(a)] : [String(a), String(b)]));
+  return dichos.length > 1 ? `${dichos.slice(0, -1).join(', ')} y ${dichos[dichos.length - 1]}` : dichos[0];
+}
+
+/** La primera oración del texto, sin su punto final. */
+const primeraOracion = (s) => { const t = enUnRenglon(s); const m = /^(.+?[.!?])(\s|$)/.exec(t); return m ? sinPunto(m[1]) : t; };
 
 /**
  * El cuadro de una firma: lo arma el guion, y el agente lo muestra tal cual. La pregunta dice, en este orden, lo que se
- * aprueba (`que`, con su verbo: no lleva «¿Aprobás» delante), la historia con su título (`historia`: { id, titulo }), qué
- * hace (`queHace`, hasta 3 líneas), qué archivos toca, dónde está lo completo, qué pasa si sale mal, y al final la cita de
- * la sesión, que no reemplaza nada de lo anterior. `criterios`: los números de los criterios que se eximen o se marcan;
- * van todos, antes de «Qué hace» y sin recorte, porque el detalle sí se recorta y un número que no se ve no se aprobó.
- * `nota`: por qué no se pudo leer la fuente; va al final de «Qué hace», también fuera del recorte. `sello`: lo que ata
- * la aprobación a esa firma, esa sesión y lo que se mostró (`huella`); `texto`: la pregunta sin el sello, la que muestra la ventana de permiso. Con `soloClick`, sólo lo
- * aprueba un click en la sesión que trabaja, y el cuadro se muestra con sus `descripciones`. Con `clickDelDueno`, lo aprueba
- * sólo un click, también en la pestaña de la coordinadora, y lo que hace cada opción va en la pregunta.
+ * aprueba (`que`, con su verbo: no lleva «¿Aprobás» delante), la historia (`historia`: { id, titulo }; el título si
+ * tiene hasta 80 letras) y la sesión por sus 8 primeras letras, los criterios, qué hace (`queHace`, hasta 2 renglones de
+ * 140), cuántos archivos toca y de qué zonas (`archivos`, file-zones.js: las rutas no se muestran), dónde está lo
+ * completo (`completoEnPalabras`; la ruta `completo`, en el detalle), qué pasa si sale mal, y al final la cita de la
+ * sesión, que no reemplaza nada de lo anterior. `criterios`: los números de los criterios que se eximen o se marcan; van
+ * todos, antes de «Qué hace», porque un número que no se ve no se aprobó. `nota`: por qué no se pudo leer la fuente; va
+ * al final de «Qué hace». Ninguna ruta absoluta se ve: se dice por el nombre de su archivo, y entera en el detalle.
+ *
+ * El tope: la pregunta con su sello entra en `LARGO_EN_TELEFONO`, achicando en orden (el título al detalle, la cita a su
+ * primera oración, «Qué hace» a un renglón, la revisión sin notas, los criterios en tramos, la cita al detalle, «Completo
+ * en» al detalle, «Qué hace» al lugar que queda). Lo que se aprueba, la sesión, los números de los criterios, los archivos,
+ * «si sale mal», lo que hace cada opción y el sello no se sacan; si igual no entra, `pasaElTope` lo dice y la pregunta se
+ * da entera (`renglonDelTope`). Los cuadros del click del dueño no se achican: llevan lo que hace cada opción. Con
+ * `todoQueHace` (el guardado ajeno) nada se corta, se resume ni se cambia: la fuente promete que todo lo que se aprueba
+ * está a la vista.
+ *
+ * `sello`: lo que ata la aprobación a esa firma, esa sesión y lo que se mostró (`huella`); `texto`: la pregunta sin el
+ * sello, la que muestra la ventana de permiso; `detalle`: los renglones enteros de lo que no entró, que no son parte de
+ * la pregunta ni del cuadro de opciones (`comando`, el pedido sin los valores que nombran archivos, va ahí). Con
+ * `soloClick`, sólo lo aprueba un click en la sesión que trabaja, y el cuadro se muestra con sus `descripciones`. Con
+ * `clickDelDueno`, lo aprueba sólo un click, también en la pestaña de la coordinadora, y lo que hace cada opción va en la
+ * pregunta.
  */
-function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHace = [], todoQueHace = false, nota = null, archivos = [], completo = null, revision = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null }) {
+function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHace = [], todoQueHace = false, nota = null, archivos = [], completo = null, completoEnPalabras = null, revision = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null, comando = null }) {
   const sello = `firma ${firma} · sesión ${destino} · código ${huella}`;
-  const lo = una(que, 200);
-  const partes = [`¿${lo.charAt(0).toUpperCase()}${lo.slice(1)}?`];
-  // la sesión sobre la que se firma, siempre: la coordinadora puede pedir la firma para otra
-  const ses = una(destino, 80);
-  if (historia && historia.id) partes.push(historia.titulo ? `Historia ${una(historia.id, 40)}, «${una(historia.titulo, 160)}», sesión ${ses}.` : `Historia ${una(historia.id, 40)} (sin título en su archivo), sesión ${ses}.`);
-  else if (destino) partes.push(`Sesión ${ses}.`);
+  // lo que se ve: en un renglón y sin rutas absolutas (el guardado ajeno, tal cual)
+  const vista = (s) => (todoQueHace ? String(s == null ? '' : s) : sinRutas(enUnRenglon(s)));
+  const detalle = [];
+  const alDetalle = (rotulo, entero, visto) => { if (entero && entero !== visto) detalle.push(`${rotulo}: ${entero}`); };
+  const lineas = (queHace || []).map((l) => (todoQueHace ? String(l == null ? '' : l) : enUnRenglon(l))).filter(Boolean);
   const nums = [...new Set((criterios || []).map(Number).filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b);
-  if (nums.length) partes.push(`Criterios: AC ${nums.length > 1 ? `${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}` : nums[0]}.`);
-  // con `todoQueHace` ningún renglón se corta ni se le juntan los espacios: la fuente ya garantiza que entra entero, en
-  // un renglón y sin caracteres que no se ven, y se muestra tal cual se guarda
-  const lineas = (queHace || []).map((l) => (todoQueHace ? String(l == null ? '' : l) : sinPunto(una(l, LARGO_DE_LINEA)))).filter(Boolean);
-  // `todoQueHace`: la fuente promete que todo lo que se aprueba está a la vista (el guardado ajeno: comando, destino,
-  // hooks y configuración que corre), y no se recorta
-  if (lineas.length) partes.push(`Qué hace: ${todoQueHace ? lineas.join(' · ') : masDe(lineas, LINEAS_QUE_HACE, ' · ')}${nota ? ` ${sinPunto(una(nota, LARGO_DE_LINEA))}` : ''}.`);
-  const vistos = archivosALaVista(archivos);
-  if (vistos) partes.push(`Archivos: ${vistos}.`);
+  const notas = revision && revision.linea ? (revision.detalle || []).map((l) => enUnRenglon(String(l).replace(/^-\s*/, ''))).filter(Boolean) : [];
+  const ses = String(destino == null ? '' : destino).slice(0, 8);
+  const lo = recortar(vista(que), LARGO_DE_FRASE);
   const todo = enUnRenglon(completo);
-  if (todo) partes.push(`Completo en: ${todo.length <= LARGO_DE_COMPLETO ? todo : `la ruta pasa de ${LARGO_DE_COMPLETO} letras y no entra entera en la pregunta`}.`);
-  // el resultado de la revisión automática del plan, con sus notas o hallazgos debajo
-  if (revision && revision.linea) {
-    const debajo = (revision.detalle || []).map((l) => sinPunto(una(l.replace(/^-\s*/, ''), LARGO_DE_LINEA))).filter(Boolean);
-    partes.push(`Revisión automática: ${sinPunto(una(revision.linea, 200))}${debajo.length ? `: ${masDe(debajo, LINEAS_QUE_HACE, ' · ')}` : ''}.`);
+
+  const armar = (nivel, largoQueHace = LARGO_DE_LINEA) => {
+    const partes = [`¿${lo.charAt(0).toUpperCase()}${lo.slice(1)}?`];
+    // la sesión sobre la que se firma, siempre: la coordinadora puede pedir la firma para otra
+    if (historia && historia.id) {
+      const id = String(historia.id).slice(0, 40);
+      const titulo = historia.titulo && nivel < 1 && enUnRenglon(historia.titulo).length <= LARGO_DEL_TITULO ? vista(historia.titulo) : null;
+      partes.push(!historia.titulo ? `Historia ${id} (sin título en su archivo), sesión ${ses}.` : titulo ? `Historia ${id}, «${titulo}», sesión ${ses}.` : `Historia ${id}, sesión ${ses}.`);
+    } else if (destino) partes.push(`Sesión ${ses}.`);
+    if (nums.length) partes.push(`Criterios: AC ${criteriosEnPalabras(nums, nivel >= 5)}.`);
+    if (lineas.length) {
+      const cuantas = todoQueHace ? lineas.length : nivel >= 3 ? 1 : LINEAS_QUE_HACE;
+      const vistas = todoQueHace ? lineas : lineas.slice(0, cuantas).map((l) => sinPunto(recortar(vista(l), largoQueHace)));
+      const resto = lineas.length - vistas.length;
+      const mas = resto ? ` · y ${resto} más en el detalle` : '';
+      partes.push(`Qué hace: ${vistas.join(' · ')}${mas}${nota ? ` ${sinPunto(recortar(vista(nota), LARGO_DE_LINEA))}` : ''}.`);
+    }
+    const zonas = require('./file-zones.js').zonasDe(archivos);
+    if (zonas) partes.push(`Archivos: ${zonas}.`);
+    if (todo && nivel < 7) partes.push(`Completo en: ${sinPunto(recortar(completoEnPalabras ? enUnRenglon(completoEnPalabras) : sinRutas(todo), LARGO_DE_FRASE))}.`);
+    // el resultado de la revisión automática del plan, con sus notas debajo
+    if (revision && revision.linea) {
+      const debajo = nivel >= 4 ? [] : notas.slice(0, LINEAS_QUE_HACE).map((l) => sinPunto(recortar(vista(l), LARGO_DE_LINEA)));
+      const masNotas = notas.length > debajo.length && debajo.length ? ` · y ${notas.length - debajo.length} más en el detalle` : '';
+      partes.push(`Revisión automática: ${sinPunto(recortar(vista(revision.linea), LARGO_DE_FRASE))}${debajo.length ? `: ${debajo.join(' · ')}${masNotas}` : ''}.`);
+    }
+    partes.push(`Si sale mal: ${sinPunto(recortar(vista(siSaleMal), LARGO_DE_FRASE))}.`);
+    if (cita && nivel < 6) partes.push(`Cita de la sesión: «${recortar(nivel >= 2 ? primeraOracion(vista(cita)) : vista(cita), LARGO_DE_FRASE)}».`);
+    // el click del dueño: lo que hace cada opción va en la pregunta, que la coordinadora muestra tal cual desde su lista
+    if (clickDelDueno && !soloClick && Array.isArray(descripciones)) partes.push(`«${APRUEBA}»: ${sinPunto(recortar(vista(descripciones[0]), LARGO_DE_FRASE))}. «${NIEGA}»: ${sinPunto(recortar(vista(descripciones[1]), LARGO_DE_FRASE))}. Sólo vale tu click.`);
+    return `${partes.join(' ')} (${sello})`;
+  };
+
+  // el guardado ajeno y los cuadros del click del dueño no se achican (llevan lo que hace cada opción): se dan enteros,
+  // con el aviso del tope si no entran
+  let nivel = 0;
+  if (!todoQueHace && !clickDelDueno) while (nivel < 7 && armar(nivel).length > LARGO_EN_TELEFONO) nivel += 1;
+  // con todo lo demás achicado, «Qué hace» toma el lugar que queda, sin bajar de 60 letras
+  let largoQueHace = LARGO_DE_LINEA;
+  if (nivel === 7) while (largoQueHace > MINIMO_QUE_HACE && armar(nivel, largoQueHace).length > LARGO_EN_TELEFONO) largoQueHace -= 5;
+  const pregunta = armar(nivel, largoQueHace);
+  const texto = pregunta.slice(0, pregunta.length - sello.length - 3);
+
+  // el detalle: lo entero de lo que no se vio entero, sin la lista de archivos (se cuentan; la huella la ata a la firma)
+  // `entero`: el texto se ve tal cual (ni cortado ni con una ruta cambiada por su nombre)
+  const entero = (s) => enUnRenglon(vista(s)) === enUnRenglon(s) && texto.includes(sinPunto(enUnRenglon(s)));
+  // «Qué hace» del guardado ajeno se ve entero; lo demás de ese cuadro se corta como en cualquier otro, y va al detalle
+  if (!todoQueHace) {
+    const vistas = lineas.slice(0, nivel >= 3 ? 1 : LINEAS_QUE_HACE);
+    if (lineas.length > vistas.length || !lineas.every(entero)) lineas.forEach((l) => detalle.push(`Qué hace: ${l}`));
+    if (nota && !entero(nota)) detalle.push(`Nota: ${enUnRenglon(nota)}`);
   }
-  partes.push(`Si sale mal: ${sinPunto(una(siSaleMal, 200))}.`);
-  if (cita) partes.push(`Cita de la sesión: «${una(cita, 200)}».`);
-  // el click del dueño: lo que hace cada opción va en la pregunta, que la coordinadora muestra tal cual desde su lista
-  if (clickDelDueno && !soloClick && Array.isArray(descripciones)) partes.push(`«${APRUEBA}»: ${sinPunto(una(descripciones[0], 200))}. «${NIEGA}»: ${sinPunto(una(descripciones[1], 200))}. Sólo vale tu click.`);
-  const texto = partes.join(' ');
-  return { sello, texto, pregunta: `${texto} (${sello})`, opciones: [APRUEBA, NIEGA], ...(soloClick ? { soloClick: true, descripciones } : {}),
-    ...(clickDelDueno && !soloClick ? { clickDelDueno: true } : {}) };
+  if (historia && historia.titulo && !texto.includes(`«${vista(historia.titulo)}»`)) detalle.push(`Título: ${enUnRenglon(historia.titulo)}`);
+  // sin la palabra «sesión»: el detalle va al lado de la pregunta, y un «aprobado» no puede leerlo como otra sesión
+  if (cita && !entero(cita)) detalle.push(`Cita: ${enUnRenglon(cita)}`);
+  if (revision && revision.linea && !entero(revision.linea)) detalle.push(`Revisión automática: ${enUnRenglon(revision.linea)}`);
+  notas.forEach((l) => { if (!entero(l)) detalle.push(`Revisión: ${l}`); });
+  if (!entero(siSaleMal)) detalle.push(`Si sale mal: ${enUnRenglon(siSaleMal)}`);
+  if (clickDelDueno && !soloClick && Array.isArray(descripciones)) {
+    [APRUEBA, NIEGA].forEach((op, k) => { if (!entero(descripciones[k])) detalle.push(`«${op}»: ${enUnRenglon(descripciones[k])}`); });
+  }
+  alDetalle('Lo que se aprueba', enUnRenglon(que), lo);
+  if (todo) detalle.push(`Completo en: ${todo}`);
+  if (comando) detalle.push(`El comando: ${enUnRenglon(comando)}`);
+  return { sello, texto, pregunta, opciones: [APRUEBA, NIEGA], detalle, largo: pregunta.length, tope: LARGO_EN_TELEFONO, pasaElTope: pregunta.length > LARGO_EN_TELEFONO,
+    ...(soloClick ? { soloClick: true, descripciones } : {}), ...(clickDelDueno && !soloClick ? { clickDelDueno: true } : {}) };
 }
+
+/** El renglón aparte de un cuadro que no entra en el teléfono, o null si entra. No frena nada. */
+function renglonDelTope(cuadro) {
+  return cuadro && cuadro.pasaElTope ? `Este cuadro pasa el tope del teléfono (${cuadro.largo} de ${cuadro.tope} letras): leelo en la máquina si no se ve entero.` : null;
+}
+
+/** Lo que acompaña al cuadro para quien lo muestra: el detalle (aparte de la pregunta) y el renglón del tope. */
+function notasDelCuadro(cuadro) {
+  const lineas = [];
+  if (cuadro && Array.isArray(cuadro.detalle) && cuadro.detalle.length) lineas.push(`${DETALLE_TITULO}`, ...cuadro.detalle.map((l) => `- ${l}`));
+  const tope = renglonDelTope(cuadro);
+  if (tope) lineas.push(tope);
+  return lineas;
+}
+const DETALLE_TITULO = 'Detalle (no va en el cuadro; mostralo si la persona lo pide):';
 
 /** El sello con que termina una pregunta de `cuadroDe` (« (firma … · código …)», sin contar espacios al final), o null. */
 function selloAlFinal(pregunta) {
@@ -352,7 +469,7 @@ function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   if (!traeElSello(antes, { sello, destino, pregunta })) {
     // con el sello y sin la pregunta entera, la persona no vio qué aprueba: se dice eso, no que falta el sello
     if (pregunta && sello && String(antes || '').includes(sello) && !String(antes).includes(pregunta)) {
-      return { ok: false, motivo: 'lo último que dijo el agente antes del «aprobado» no trae la pregunta entera, sólo su sello: mostrale la pregunta tal cual la armó el freno' };
+      return { ok: false, motivo: `lo último que dijo el agente antes del «aprobado» no trae la pregunta entera, sólo su sello: mostrale la pregunta tal cual la armó el freno; ${PREGUNTA_CAMBIADA}` };
     }
     return { ok: false, motivo: `lo último que dijo el agente antes del «aprobado» no trae «${sello}», o nombra otra sesión` };
   }
@@ -406,7 +523,9 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, se
   if (dijo.pregunta !== a.pregunta || dijo.respuesta !== a.respuesta) return { ok: false, motivo: 'la respuesta del cuadro en la transcripción no es la del registro' };
   if (!pregunta || dijo.pregunta !== pregunta) {
     anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
-    return { ok: false, motivo: 'la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual' };
+    // con el mismo sello, la firma y lo que se firma son los mismos: lo que cambió es el texto
+    const mismoSello = !!pregunta && !!selloAlFinal(pregunta) && selloAlFinal(dijo.pregunta) === selloAlFinal(pregunta);
+    return { ok: false, motivo: mismoSello ? PREGUNTA_CAMBIADA : 'la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual' };
   }
   // con dos opciones que aprueban, la persona no tendría cómo decir que no
   const mostrada = ((r.toolUseResult && r.toolUseResult.questions) || []).find((q) => q && q.question === pregunta);
@@ -732,7 +851,7 @@ function constanciaDeLaTerminal(a, { casa, cuadro }) {
   if (a.via !== 'terminal' || a.tipo !== 'terminal') return { ok: false, motivo: 'en Codex la constancia se da en la terminal (harness.js sign acknowledge)' };
   if (a.sello !== cuadro.sello) return { ok: false, motivo: 'la constancia de la terminal es de otro sello: lo que se mostró cambió, o es de otra pregunta' };
   // el sello es una huella que la persona no lee: lo que firmó es el texto, y tiene que ser la pregunta del cuadro
-  if (cuadro.pregunta && a.texto !== cuadro.pregunta) return { ok: false, motivo: 'la constancia de la terminal firmó otro texto que la pregunta del cuadro: pedila de nuevo con la pregunta tal cual' };
+  if (cuadro.pregunta && a.texto !== cuadro.pregunta) return { ok: false, motivo: PREGUNTA_CAMBIADA };
   let m;
   try { m = require('./harness-sign.js').marcaDeConstancia({ casa, sesion: a.sesion, ts: a.ts }); } catch (e) {
     return { ok: false, motivo: `no pude leer la marca de la terminal (${e.code || e.message})`, noLeida: true };
@@ -865,6 +984,6 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
   return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones, sello: cuadro.sello, casa });
 }
 
-module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, cuadroDe, traeElSello, lanzadoPorLaHerramienta,
+module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
   anotar, leerSesion, consumir, devolver, transcripcionDe, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
   escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, validarEnClaude, plataformaDe, constanciaDeLaTerminal };

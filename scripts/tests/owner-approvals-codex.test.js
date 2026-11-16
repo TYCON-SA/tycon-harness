@@ -288,8 +288,8 @@ test('T11 Buscar_CodexWithoutTerminal_No — sin terminal, sin marca, otra marca
   assert.equal(constancia(c4).code, 0);
   assert.match(busca(c4, { cuadro: { pregunta: TEXTO, sello: 'firma intent-approve · sesión ses-codex · código ffffffff' } }).motivo, /otro sello/);
 
-  // 4b · el sello bueno con otro texto: la persona firmó algo distinto de la pregunta
-  assert.match(busca(c4, { cuadro: { pregunta: '¿Seguimos con la opción (b)? Respuesta: sí', sello: SELLO } }).motivo, /otro texto que la pregunta/);
+  // 4b · el sello bueno con otro texto: la persona firmó algo distinto de la pregunta (8.275: dice que cambió el texto)
+  assert.match(busca(c4, { cuadro: { pregunta: '¿Seguimos con la opción (b)? Respuesta: sí', sello: SELLO } }).motivo, /la pregunta cambió con el mismo código/);
 
   // 5 · el renglón cambiado después de la marca: la marca es de otro renglón
   const c5 = casaNueva(t);
@@ -391,4 +391,16 @@ test('T19 CodexTerminalMark_ProtectedByBrakes — los frenos cuidan la marca y e
   const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-bash-write-gate.js')], { input: JSON.stringify({ session_id: 's-t19', tool_name: 'Bash', cwd: estado, tool_input: { command: 'rm -rf terminal-acknowledgments' } }), env, encoding: 'utf8', cwd: estado });
   assert.ok(frenado(r), out(r));
   assert.ok(fs.existsSync(marca) && fs.existsSync(registro), 'algo se borró');
+});
+
+test('T14 OwnerApprovals_OldFormatTerminalConstancy_NotAccepted — la constancia del texto viejo, con el mismo sello, se niega por el formato @story-8.275 @ac-16', (t) => {
+  const casa = casaNueva(t);
+  // la constancia de la terminal se dio sobre el texto viejo; el cuadro de ahora tiene el mismo sello y otro texto
+  assert.equal(constancia(casa).code, 0);
+  const nuevo = { pregunta: `${TEXTO} (formato nuevo)`, sello: SELLO };
+  const r = oa.buscar({ casa, sesion: SES, cuadro: nuevo, ahora: AHORA, plataformas: AMBAS });
+  assert.equal(r.ok, false);
+  assert.equal(r.motivo, `la aprobación no vale: ${oa.PREGUNTA_CAMBIADA}`);
+  // no se consumió: con la pregunta que se firmó, vale
+  assert.equal(oa.buscar({ casa, sesion: SES, cuadro: CUADRO, ahora: AHORA, plataformas: AMBAS }).ok, true);
 });

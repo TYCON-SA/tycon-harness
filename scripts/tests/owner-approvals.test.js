@@ -415,7 +415,8 @@ test('T6 OwnerApprovals_QuestionMismatch_LogsWhereItDiffers @story-8.276 @ac-8',
   transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1')]);
   const delGuion = OTRA_EN_57(PIDE);
   const r = oa.validarEnClaude(click(), CTX(casa, { cuadro: { ...CUADRO, pregunta: delGuion } }));
-  assert.deepStrictEqual(r, { ok: false, motivo: 'la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual' });
+  // la misma firma con otro texto (8.275): el motivo dice que la pregunta cambió con el mismo código
+  assert.deepStrictEqual(r, { ok: false, motivo: oa.PREGUNTA_CAMBIADA });
   const log = fs.readFileSync(registroDeErrores(casa), 'utf8').trim().split('\n');
   assert.strictEqual(log.length, 1);
   const renglon = log[0];
@@ -434,7 +435,8 @@ test('T7 OwnerApprovals_QuestionMismatch_LogUnwritable_SameDenial @story-8.276 @
   // el registro no se puede escribir: en su lugar hay una carpeta
   fs.mkdirSync(registroDeErrores(casa), { recursive: true });
   const r = oa.validarEnClaude(click(), CTX(casa, { cuadro: { ...CUADRO, pregunta: OTRA_EN_57(PIDE) } }));
-  assert.deepStrictEqual(r, { ok: false, motivo: 'la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual' });
+  // la misma firma con otro texto (8.275): el motivo dice que la pregunta cambió con el mismo código
+  assert.deepStrictEqual(r, { ok: false, motivo: oa.PREGUNTA_CAMBIADA });
   // sin casa tampoco escribe, y niega igual
   const sin = oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: OTRA_EN_57(PIDE), opciones: CUADRO.opciones });
   assert.strictEqual(sin.motivo, r.motivo);
@@ -522,9 +524,9 @@ test('T27 Buscar_ClickDelDueno_ValeEnLaCoordinadoraVigente_NoElMensaje @story-8.
   const todo = oa.cuadroDe({ firma: s.id, destino: 'ses-a', que: s.approves, queHace: seis, todoQueHace: true, siSaleMal: s.ifWrong, huella: 'h3', clickDelDueno: true, descripciones: s.descripciones });
   for (const l of seis) assert.ok(todo.pregunta.includes(l), l);
   assert.doesNotMatch(todo.pregunta, /y 3 más/);
-  // las demás firmas siguen con su recorte a la vista
+  // las demás firmas siguen con su recorte a la vista (8.275: dos renglones, y lo demás en el detalle)
   const recortado = oa.cuadroDe({ firma: s.id, destino: 'ses-a', que: s.approves, queHace: seis, siSaleMal: s.ifWrong, huella: 'h3' });
-  assert.match(recortado.pregunta, /y 3 más/);
+  assert.match(recortado.pregunta, /y 4 más en el detalle/);
 });
 
 test('T13 Cuadro_SobreCupo_OtraDescripcion_NoVale @story-8.181 @ac-5', (t) => {
@@ -1060,23 +1062,23 @@ test('T5 OwnerApprovals_ManyClicks_ReasonOfThisSignature @story-8.287 @ac-8 @ac-
   oa.anotar(casa2, { tipo: 'terminal', plataforma: 'codex', via: 'terminal', sesion: 'ses-a', sello: OTRA.sello, texto: OTRA.pregunta, ts: hace(1) });
   assert.strictEqual(oa.buscar({ casa: casa2, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA, plataformas: ['claude', 'codex'] }).motivo,
     'la aprobación no vale: no hay un click para esta firma: los 2 clicks recientes son de otras firmas');
-  // un click a esta firma, con su sello, cuya pregunta difiere sólo en «Completo en»: niega por la pregunta y lo anota
-  const conRuta = (completo, huella = 'ab12cd34') => oa.cuadroDe({ firma: FIRMA, destino: 'ses-a', que: 'guardar los cambios', queHace: ['el comando: marker.js approve-save'], completo, siSaleMal: 'se revierte el commit', huella });
-  const delGuion = conRuta('/r/repo/.advisors/pipeline-runs/8.0-x/rethink/iter-1.json');
-  const delCuadro = conRuta('.advisors/pipeline-runs/8.0-x/rethink/iter-1.json');
+  // un click a esta firma, con su sello, cuya pregunta difiere sólo en «Qué hace»: niega por la pregunta y lo anota
+  const conRuta = (queHace, huella = 'ab12cd34') => oa.cuadroDe({ firma: FIRMA, destino: 'ses-a', que: 'guardar los cambios', queHace: [queHace], siSaleMal: 'se revierte el commit', huella });
+  const delGuion = conRuta('el comando: marker.js approve-save');
+  const delCuadro = conRuta('el comando: marker.js approve-save --all');
   assert.strictEqual(delGuion.sello, delCuadro.sello, 'el mismo código de la firma');
   const casa3 = casaNueva(t);
   transcripcion(casa3, 'ses-a', [cuadro('toolu_4', delCuadro.pregunta), respuesta('toolu_4', { pregunta: delCuadro.pregunta })]);
   oa.anotar(casa3, { ...click('toolu_4', hace(1)), pregunta: delCuadro.pregunta });
   assert.strictEqual(oa.buscar({ casa: casa3, sesion: 'ses-a', cuadro: delGuion, ahora: AHORA }).motivo,
-    'la aprobación no vale: la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual');
+    `la aprobación no vale: ${oa.PREGUNTA_CAMBIADA}`);
   const log = fs.readFileSync(registroDeErrores(casa3), 'utf8').trim().split('\n');
   assert.strictEqual(log.length, 1);
-  const enCompleto = delGuion.pregunta.indexOf('Completo en: ') + 'Completo en: '.length;
-  assert.match(log[0], new RegExp(`primer carácter distinto: ${enCompleto} `), 'difiere en la ruta de «Completo en»');
+  const enCompleto = delGuion.pregunta.indexOf('approve-save.') + 'approve-save'.length;
+  assert.match(log[0], new RegExp(`primer carácter distinto: ${enCompleto} `), 'difiere en «Qué hace»');
   assert.ok(log[0].includes(delGuion.sello));
   // con un click aprobado más viejo a esta misma firma con otro código: el motivo sigue siendo el de la pregunta
-  const viejo = conRuta('/r/repo/x', 'ee11ee11');
+  const viejo = conRuta('el comando: marker.js approve-save', 'ee11ee11');
   assert.notStrictEqual(viejo.sello, delGuion.sello);
   const casa4 = casaNueva(t);
   transcripcion(casa4, 'ses-a', [cuadro('toolu_5', viejo.pregunta, hace(5)), respuesta('toolu_5', { pregunta: viejo.pregunta, ts: hace(4) }),
@@ -1084,7 +1086,7 @@ test('T5 OwnerApprovals_ManyClicks_ReasonOfThisSignature @story-8.287 @ac-8 @ac-
   oa.anotar(casa4, { ...click('toolu_5', hace(4)), pregunta: viejo.pregunta });
   oa.anotar(casa4, { ...click('toolu_4', hace(1)), pregunta: delCuadro.pregunta });
   assert.strictEqual(oa.buscar({ casa: casa4, sesion: 'ses-a', cuadro: delGuion, ahora: AHORA }).motivo,
-    'la aprobación no vale: la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual');
+    `la aprobación no vale: ${oa.PREGUNTA_CAMBIADA}`);
   assert.match(fs.readFileSync(registroDeErrores(casa4), 'utf8'), new RegExp(`primer carácter distinto: ${enCompleto} `));
   // sin el click con el sello, el más viejo con otro código sigue diciendo que lo mostrado cambió, como hoy
   const casa5 = casaNueva(t);
@@ -1116,7 +1118,7 @@ test('T5b OwnerApprovals_ReasonOfThisSignature_EachClass @story-8.287 @ac-8', (t
   // la constancia de Codex con el sello de esta firma es de esta firma: su motivo va primero
   oa.anotar(casa3, { tipo: 'terminal', plataforma: 'codex', via: 'terminal', sesion: 'ses-a', sello: CUADRO.sello, texto: 'otro texto', ts: hace(2) });
   oa.anotar(casa3, { ...click('toolu_2', hace(1)), pregunta: OTRA.pregunta, motivoDePrueba: 'el de otra firma' });
-  assert.strictEqual(motivoDe(casa3, { plataformas: ['claude', 'codex'] }), 'la aprobación no vale: la constancia de la terminal firmó otro texto que la pregunta del cuadro: pedila de nuevo con la pregunta tal cual');
+  assert.strictEqual(motivoDe(casa3, { plataformas: ['claude', 'codex'] }), `la aprobación no vale: ${oa.PREGUNTA_CAMBIADA}`);
   // una constancia de Codex a esta firma con otro código es de esta firma: su motivo, que ya dice que lo mostrado
   // cambió, como hoy; también con un click de otra firma más nuevo
   const casa4 = casaNueva(t);
@@ -1213,4 +1215,31 @@ test('T47 OwnerApprovals_ReadFailure_IsNoLeida @story-8.234 @ac-15: una lectura 
   const sinElProceso = oa.buscar({ casa, sesion: 'ses-b', cuadro: cuadroB, herramienta: { pid: 4242, inicio: 'x' }, arbol: [], validar: () => ({ ok: true }) });
   assert.strictEqual(sinElProceso.ok, false);
   assert.strictEqual(sinElProceso.noLeida, undefined);
+});
+
+// 🔴 Falla con: un click dado sobre la pregunta del formato viejo que firma después de actualizar el arnés, o que se
+//    consume sin firmar (el dueño tendría que volver a pedir todo), o un motivo que no dice que cambió el texto.
+test('T13 OwnerApprovals_OldFormatClick_NotSigned_RowStays @story-8.275 @ac-16 @ac-17', (t) => {
+  // la pregunta vieja: otro texto, con el mismo sello al final (el sello no depende del formato)
+  const VIEJA = `¿Guardar los cambios? Sesión ses-a. Qué hace: el comando: marker.js approve-save. Archivos: a.js, b.js. Si sale mal: se revierte el commit. (${CUADRO.sello})`;
+  const ALTERADA = `${PIDE.slice(0, 20)}X${PIDE.slice(21)}`;
+  for (const [nombre, vista] of [['formato viejo', VIEJA], ['texto alterado', ALTERADA]]) {
+    const casa = casaNueva(t);
+    transcripcion(casa, 'ses-a', [cuadro('toolu_1', vista), respuesta('toolu_1', { pregunta: vista })]);
+    oa.anotar(casa, { ...click('toolu_1'), pregunta: vista });
+    const r = oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA });
+    assert.strictEqual(r.ok, false, nombre);
+    assert.strictEqual(r.motivo, `la aprobación no vale: ${oa.PREGUNTA_CAMBIADA}`, nombre);
+    assert.match(oa.PREGUNTA_CAMBIADA, /la pregunta cambió con el mismo código \(puede ser el formato nuevo del arnés, después de actualizar\): hace falta un click nuevo/);
+    // no se consumió: con el cuadro que la persona vio, el mismo click todavía vale (y nada lo marcó usado)
+    const visto = { ...CUADRO, pregunta: vista };
+    assert.strictEqual(oa.buscar({ casa, sesion: 'ses-a', cuadro: visto, ahora: AHORA }).ok, true, nombre);
+    assert.ok(!fs.existsSync(path.join(oa.carpeta(casa), 'usadas')) || fs.readdirSync(path.join(oa.carpeta(casa), 'usadas')).length === 0, nombre);
+  }
+  // con otro sello: el motivo de hoy
+  const casa = casaNueva(t);
+  const otro = armar(FIRMA, 'ses-a', 'ee11ee11');
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', otro.pregunta), respuesta('toolu_1', { pregunta: otro.pregunta })]);
+  oa.anotar(casa, { ...click('toolu_1'), pregunta: otro.pregunta });
+  assert.strictEqual(oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA }).motivo, 'lo que se mostró cambió: pedí el cuadro de nuevo');
 });

@@ -5,6 +5,7 @@
 // aviso. Corre con el Chromium fijo del arnés (scripts/lib/pinned-playwright.js) sobre una máquina de juguete.
 //
 //   node scripts/tests/office-live.smoke.js        sale 0 si todo pasó; 1 si algo no; 2 si no hay navegador
+//   node scripts/tests/office-live.smoke.js --labels    sólo las etiquetas de personas cerca (8.234, AC 12)
 //
 // La oficina corre con una HOME de juguete; el navegador se busca en la carpeta personal de quien lo corre.
 // stable-data: las sesiones de juguete se fechan con el reloj real a propósito, porque la oficina viva compara contra
@@ -216,6 +217,13 @@ async function taskNumbers(playwright) {
     // E6: el panel de la persona con Escape, y el foco vuelve
     await page.keyboard.press('Escape');
     check(await page.locator('#panel').isHidden(), 'E6: Escape cierra el panel de la persona');
+    // E1 (8.234, AC 11): tocar la persona abre su detalle encima del mapa, y la × lo cierra
+    await page.locator('.tag', { hasText: 'Rita' }).click();
+    await page.waitForSelector('#panel:not([hidden])');
+    const encima = await page.evaluate(() => { const p = document.getElementById('panel'), s = document.getElementById('stage'), a = p.getBoundingClientRect(), b = s.getBoundingClientRect(); return p.closest('#stage') === s && a.top >= b.top && a.bottom <= b.bottom && a.left >= b.left && a.right <= b.right; });
+    check(encima, 'E1 OfficePage_TocarPersona_VentanaEncimaDelMapa (8.234 AC 11): el detalle de Rita se abre encima del mapa');
+    await page.locator('#panel button.close').click();
+    check(await page.locator('#panel').isHidden(), 'E1 OfficePage_TocarPersona_VentanaEncimaDelMapa (8.234 AC 11): la × lo cierra');
     // E9: arranca una ejecución con historia y su fila pasa sola a «En curso», con quién la hace
     session('s5', 'Ortega');
     fs.writeFileSync(path.join(sdir, 'active', 's5.json'), JSON.stringify({ storyId: '9.1', sessionId: 's5', repoPath: home, stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan'], stepsPending: ['implement'], startedAt: new Date().toISOString() }));
@@ -564,6 +572,83 @@ async function noProjectStories(playwright) {
   }
 }
 
+// Las etiquetas de personas cerca (8.234, AC 12): diez sesiones, dos filas de escritorios vecinos, y la cámara girada
+// hasta su tope de cada lado. En cada posición, ningún par de etiquetas a la vista cruza sus rectángulos.
+async function labelsClose(playwright) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-etiquetas-'));
+  const sdir = stateDir(home);
+  for (const d of ['active', 'adhoc', 'doing']) fs.mkdirSync(path.join(sdir, d), { recursive: true });
+  const sessions = path.join(claudeDir(home), 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  const names = ['Alfa', 'Beto', 'Cata', 'Dora', 'Emilio', 'Fermín', 'Gabriela', 'Hilario', 'Inés', 'Juana'];
+  names.forEach((name, i) => {
+    fs.writeFileSync(path.join(sessions, `s${i}.json`), JSON.stringify({ pid: process.pid, sessionId: `s${i}`, name, status: 'busy', statusUpdatedAt: Date.now() }));
+    fs.writeFileSync(path.join(sdir, 'doing', `s${i}.json`), JSON.stringify({ text: `el trabajo de ${name}`, at: new Date().toISOString() }));
+  });
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_LINK: '0', TYCON_OFFICE_TEST: '1' };
+  const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env, encoding: 'utf8', timeout: 20000 });
+  const url = (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0];
+  check(open.status === 0 && Boolean(url), `E12: la oficina de diez arrancó (${url || open.stderr.trim()})`);
+  if (!url) return;
+  const lock = JSON.parse(fs.readFileSync(path.join(sdir, 'office', 'server.json'), 'utf8'));
+  const browser = await playwright.chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.goto(url);
+    await page.waitForFunction(() => window.tablero && window.tablero.started, null, { timeout: 45000 });
+    await page.waitForFunction((n) => document.querySelectorAll('.tag').length >= n, names.length, { timeout: 15000 });
+    // los pares de etiquetas a la vista que se cortan, con el nombre de cada una
+    const pisadas = () => page.evaluate(() => {
+      const tags = [...document.querySelectorAll('.tag')].filter((e) => { const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) > 0; });
+      const boxes = tags.map((e) => ({ n: e.querySelector('b').textContent, r: e.getBoundingClientRect() }));
+      const out = [];
+      for (let i = 0; i < boxes.length; i += 1) for (let j = i + 1; j < boxes.length; j += 1) {
+        const a = boxes[i].r, b = boxes[j].r;
+        if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) out.push(`${boxes[i].n}/${boxes[j].n}`);
+      }
+      return out;
+    });
+    const stage = page.locator('#stage canvas');
+    // la cámara tiene inercia: se espera a que quede quieta
+    const quieta = async () => { let before = null; for (let i = 0; i < 40; i += 1) { const now = await page.evaluate(() => window.tablero.camara()); if (before && JSON.stringify(now) === JSON.stringify(before)) return; before = now; await sleep(250); } };
+    // el arrastre arranca en un punto donde lo que está bajo el mouse es la sala misma: ni una etiqueta ni un botón
+    const girar = async (dx) => {
+      await stage.evaluate((e) => e.scrollIntoView({ block: 'start' }));
+      const [x, y] = await stage.evaluate((c) => {
+        const r = c.getBoundingClientRect(), alto = Math.min(r.bottom, innerHeight);
+        for (let yy = alto - 20; yy > r.top + 20; yy -= 15) for (let xx = r.left + r.width / 2; xx < r.right - 20; xx += 15) if (document.elementFromPoint(xx, yy) === c) return [xx, yy];
+        return [r.left + r.width / 2, r.top + r.height / 2];
+      });
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + dx / 4, y, { steps: 6 });
+      await page.mouse.move(x + dx, y, { steps: 12 });
+      await page.mouse.up();
+      await quieta();
+      await sleep(400);
+    };
+    // en una pantalla grande y en una chica, donde las etiquetas quedan más juntas
+    for (const [ancho, alto] of [[1280, 900], [760, 560]]) {
+      await page.setViewportSize({ width: ancho, height: alto });
+      let antes = null;
+      for (const [lado, dx] of [['de frente', 0], ['girada a un lado', 900], ['girada al otro', -1800]]) {
+        if (dx) await girar(dx); else { await quieta(); await sleep(400); }
+        const cam = JSON.stringify(await page.evaluate(() => window.tablero.camara()));
+        if (dx) check(cam !== antes, `E12: la cámara se movió (${lado}, ${ancho}×${alto})`);
+        antes = cam;
+        const p = await pisadas();
+        check(p.length === 0, `E12 OfficePage_EtiquetasCerca_NoSeTapan (8.234 AC 12): ${ancho}×${alto}, con la cámara ${lado}, ninguna etiqueta pisa a otra${p.length ? ` (${p.join(', ')})` : ''}`);
+      }
+    }
+    // la comprobación ve un pisado: dos etiquetas puestas a mano en el mismo lugar
+    const forzado = await page.evaluate(() => { const t = [...document.querySelectorAll('.tag')]; t[1].style.left = t[0].style.left; t[1].style.top = t[0].style.top; return t[0].querySelector('b').textContent; });
+    check((await pisadas()).some((x) => x.includes(forzado)), 'E12: dos etiquetas en el mismo lugar se ven pisadas (la comprobación no es ciega)');
+  } finally {
+    await browser.close();
+    try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }
+  }
+}
+
 async function main() {
   const playwright = PINNED_PW.load();
   if (!playwright) { console.error(`sin navegador: ${PINNED_PW.locate().why}`); return 2; }
@@ -577,6 +662,12 @@ async function main() {
   if (process.argv.includes('--messages')) {
     await talkToSession(playwright);
     console.log(fails.length ? `E1-E6 (8.183): FALLA (${fails.length})` : 'E1-E6 (8.183): OK');
+    return fails.length ? 1 : 0;
+  }
+  // sólo las etiquetas de personas cerca (8.234, AC 12), con su propia oficina de juguete
+  if (process.argv.includes('--labels')) {
+    await labelsClose(playwright);
+    console.log(fails.length ? `E12 (8.234): FALLA (${fails.length})` : 'E12 (8.234): OK');
     return fails.length ? 1 : 0;
   }
   // sólo los números de tarea y las manos (8.198), con su propia oficina de juguete
@@ -653,6 +744,7 @@ async function main() {
     check(await page.locator('.item', { hasText: 'revisión del banco de controles' }).count() === 1, 'la última foto quedó');
     await tablesByTopic(playwright, env, sdir);
     await taskNumbers(playwright);
+    await labelsClose(playwright);
   } finally {
     await browser.close();
     try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }

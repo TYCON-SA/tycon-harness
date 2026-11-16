@@ -2675,3 +2675,23 @@ test('RetireD_GuardConfigCopyOnlyNewKeys @story-8.15 @ac-14 — la copia del fre
   assert.deepEqual(cDos.errores, []);
   assert.equal(copia.valor(cDos, 'paths.repos'), raiz);
 });
+
+// ── El piso del segundo turno de ejecución grande (@story-8.291): coordination.second_heavy_min_free_pct ─────────────
+
+// 🔴 Falla con: la clave sin el orden variable › máquina › perfil, otro número de fábrica que 50, o un valor fuera de
+// rango que el lector acepta.
+test('T-8.291a Config_SecondHeavyFloor_OrderAndRange @story-8.291 @ac-10 — variable, máquina, perfil, 50 de fábrica; 0 y 101 son errores', () => {
+  const home = casa();
+  maquina(home, { coordination: { second_heavy_min_free_pct: 65 } });
+  const perfil = arnesCon({ coordination: { second_heavy_min_free_pct: 55 } });
+  const v = cargar({ home, arnes: perfil, env: { TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT: '45' } });
+  assert.deepEqual(v.errores, []);
+  assert.deepEqual(lib().coordinacion(v).second_heavy_min_free_pct, { value: 45, origin: 'env' });
+  assert.deepEqual(lib().coordinacion(cargar({ home, arnes: perfil })).second_heavy_min_free_pct, { value: 65, origin: 'maquina' });
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: perfil })).second_heavy_min_free_pct, { value: 55, origin: 'perfil' });
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: arnesCon({}) })).second_heavy_min_free_pct, { value: 50, origin: 'sin-valor' });
+  for (const malo of [0, 101]) {
+    const roto = cargar({ home: casa(), arnes: arnesCon({ coordination: { second_heavy_min_free_pct: malo } }) });
+    assert.ok(roto.errores.some((e) => e.clave === 'coordination.second_heavy_min_free_pct'), `${malo}: ${JSON.stringify(roto.errores.map((e) => e.clave))}`);
+  }
+});

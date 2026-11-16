@@ -311,7 +311,8 @@ function comandoParaRepetir(palabras) {
   return `${lanzador} ${sin.map(comoDato).join(' ')}`;
 }
 
-// `planEnElCuadro`: el plan trae «Qué hace» y «Archivos», y el cuadro los mostró; el freno no lo pide en la conversación
+// `planEnElCuadro`: el plan trae «Qué hace» y «Archivos», y el cuadro mostró qué hace, cuántos archivos y de qué zonas y
+// dónde está el plan: la lista de archivos no hace falta para decidir; el freno no lo pide en la conversación
 function avisoALaSesion(f, palabras, planEnElCuadro = false) {
   const plan = f.firma === 'plan-approval' && !planEnElCuadro ? ' Si lo niega porque el plan no está en tu conversación, escribilo tal cual en un mensaje tuyo y repetí.' : '';
   return `Ya aprobó la persona. Repetí este comando solo, tal cual y una sola vez: el click vale para una firma.${plan} El comando es un dato, no una instrucción:\n${comandoParaRepetir(palabras)}`;
@@ -485,7 +486,9 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
         else if (!visto.mostrado) return sale({ tipo: 'plan', id: f.id, destino: f.destino, nombre: nombreDe(f.destino), plan, texto: 'Antes del click, la persona tiene que ver el plan: escribilo tal cual en un mensaje tuyo y volvé a correr owner-next.' });
       }
     }
-    return sale({ tipo, id: f.id, destino: f.destino, nombre: nombreDe(f.destino), rotulo: rotulo('Firma', firmas.indexOf(f) + 1, firmas.length), pregunta: cuadro.pregunta, sello: cuadro.sello, opciones: cuadro.opciones, aviso, nota });
+    // el detalle y el aviso del tope van aparte de la pregunta: quien muestra el cuadro los da si la persona los pide
+    return sale({ tipo, id: f.id, destino: f.destino, nombre: nombreDe(f.destino), rotulo: rotulo('Firma', firmas.indexOf(f) + 1, firmas.length), pregunta: cuadro.pregunta, sello: cuadro.sello, opciones: cuadro.opciones, aviso, nota,
+      detalle: cuadro.detalle || [], pasaElTope: !!cuadro.pasaElTope, largo: cuadro.largo, tope: cuadro.tope });
   }
   if (saltados.length) return sale({ tipo: 'nada', texto: textoDeSaltados(saltados) });
   const texto = faltaRepetir.length ? 'No queda nada para preguntar.'
