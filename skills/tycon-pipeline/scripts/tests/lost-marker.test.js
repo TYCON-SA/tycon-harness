@@ -176,14 +176,12 @@ test('T1 RunOpen_Start_AnotaEnLosDosLugares @story-8.121 @ac-1 — run-open en g
   const r = F.correr('pipeline.js', ['start', '--story', F.story, '--repo', F.repo, '--brief'], 's-t1-sin');
   assert.match(r.stdout + r.stderr, /apertura-failed/, r.stdout + r.stderr);
   assert.ok(!F.apertura('s-t1-sin'), 'no anotó una apertura sin copia');
-  // la carpeta se anota absoluta aunque llegue relativa: los frenos la leen desde otro directorio
+  // la carpeta se anota absoluta aunque llegue relativa: los frenos la leen desde otro directorio. Se ubica contra el repo
+  // de la ejecución, nunca contra la carpeta del proceso (8.287 B): sin un repo absoluto, no se anota
   const or = require(path.join(SCRIPTS, 'lib', 'open-runs.js'));
-  const previo = process.cwd();
-  process.chdir(E.repo);
-  try {
-    const a1 = or.abrir({ sid: 's-t1-rel', story: '9.9', runDir: path.join('.advisors', 'pipeline-runs', '9.9-rel'), home: E.home });
-    assert.ok(path.isAbsolute(a1.runDir), a1.runDir);
-  } finally { process.chdir(previo); }
+  const a1 = or.abrir({ sid: 's-t1-rel', story: '9.9', repo: E.repo, runDir: path.join('.advisors', 'pipeline-runs', '9.9-rel'), home: E.home });
+  assert.strictEqual(a1.runDir, path.join(E.repo, '.advisors', 'pipeline-runs', '9.9-rel'));
+  assert.throws(() => or.abrir({ sid: 's-t1-sin-repo', story: '9.9', runDir: path.join('.advisors', 'pipeline-runs', '9.9-rel'), home: E.home }), /repo absoluto/);
 });
 
 test('T2 RunClose_CadaCaminoLegitimo_LoAnota @story-8.121 @ac-2 — clear, clear-session, adopt-session, las dos podas y el reemplazo', () => {
