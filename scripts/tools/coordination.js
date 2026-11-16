@@ -240,10 +240,10 @@ function stoppedRuns(home, now, markers, alive, nameOf, problems) {
   const dir = path.join(stateDir(home), 'pruned');
   let files = [];
   try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch (e) {
-    if (e.code !== 'ENOENT') problems.push(`las corridas podadas (${e.code || e.message})`);
+    if (e.code !== 'ENOENT') problems.push(`las corridas podadas (${label(e.code || e.message, 120)})`);
   }
   for (const f of files) {
-    try { pruned.push({ sid: f.replace(/\.json$/, ''), m: JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')), active: false }); } catch (e) { problems.push(`la corrida podada ${f} (${e.code || e.message})`); }
+    try { pruned.push({ sid: f.replace(/\.json$/, ''), m: JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')), active: false }); } catch (e) { problems.push(`la corrida podada ${label(f)} (${label(e.code || e.message, 120)})`); }
   }
   const actives = [...markers].map(([sid, m]) => ({ sid, m, active: true }));
   const out = [];
@@ -257,13 +257,13 @@ function stoppedRuns(home, now, markers, alive, nameOf, problems) {
     if (actives.some((a) => a.sid !== x.sid && String(a.m.storyId) === String(m.storyId))) continue;
     let text;
     try { text = fs.readFileSync(String(m.storyPath), 'utf8'); } catch (e) {
-      problems.push(`la historia de la corrida detenida ${m.storyId} (${e.code || e.message})`);
+      problems.push(`la historia de la corrida detenida ${label(m.storyId)} (${label(e.code || e.message, 120)})`);
       continue;
     }
     const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
     const st = front && /^status:\s*["']?([\w-]+)/m.exec(front[1]);
     if (!st || st[1] !== 'in-progress') continue;
-    out.push({ storyId: String(m.storyId), sid: x.sid, session: nameOf(x.sid), at, pruned: !x.active });
+    out.push({ storyId: label(m.storyId), sid: x.sid, session: nameOf(x.sid), at, pruned: !x.active });
   }
   return out.sort((a, b) => a.at - b.at);
 }
@@ -397,7 +397,7 @@ function heavyPassesInFlight(opts = {}) {
   const codexAlive = new Set(codexThreads(opts.codexHome || path.join(home, '.codex'), problems).filter((c) => c.last && now - c.last < CODEX_IDLE_MS).map((c) => c.id));
   const knownAlive = (k) => (sessions.has(k) ? sessions.get(k).alive : codexAlive.has(k));
   const live = [...markers].filter(([k]) => (opts.includeOwn || k !== sid) && (knownAlive(k) || (!sessions.has(k) && problems.length > 0)));
-  const nameOf = (k) => { const s = sessions.get(k); return (s && s.name && label(s.name)) || String(k).slice(0, 8); };
+  const nameOf = (k) => { const s = sessions.get(k); return (s && s.name && label(s.name)) || label(String(k).slice(0, 8)); };
   // `uncertain`: cuenta sólo porque no se pudo leer todo; quien pregunta decide si eso frena
   const passes = inFlight(new Map(live), nameOf, home).map(({ sid: k, ...a }) => ({ ...a, stale: passIsStale(a.since, now), uncertain: !knownAlive(k) }));
   return { passes, problems };
@@ -471,7 +471,7 @@ function status(opts = {}) {
   const problems = [];
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), problems, opts.noTranscripts ? null : path.join(claudeDir(home), 'projects'));
   const markers = markersBySid(home, problems);
-  const nameOf = (sid) => { const s = sessions.get(sid); return (s && s.name && label(s.name)) || String(sid).slice(0, 8); };
+  const nameOf = (sid) => { const s = sessions.get(sid); return (s && s.name && label(s.name)) || label(String(sid).slice(0, 8)); };
   const working = [];
   const waiting = [];
   const unnamed = [];
@@ -1477,7 +1477,7 @@ const outsideNoticeFile = (home, sid) => path.join(coordinationDir(home), `outsi
 function boardRows(home) {
   const B = require('./office/board.js');
   let read;
-  try { read = B.readBoardRaw(stateDir(home)); } catch (e) { return { light: [], stories: [], problem: `el tablero (${oneLine(e.message)})` }; }
+  try { read = B.readBoardRaw(stateDir(home)); } catch (e) { return { light: [], stories: [], problem: `el tablero (${label(e.message, 160)})` }; }
   if (read.text === null) return { light: [], stories: [], problem: 'el tablero (no está)' };
   const free = (r) => { const q = typeof r.quien === 'string' ? r.quien.trim().toLowerCase() : ''; return !q || q === 'sin sesión'; };
   const open = B.orderRows(read.raw.pendientes.filter((r) => r && typeof r === 'object' && r.estado === 'sin-empezar' && free(r)));
@@ -1497,11 +1497,17 @@ function noteSaid(opts, sid, field, key, problems) {
   const home = opts.home || require('os').homedir();
   const file = outsideNoticeFile(home, sid);
   let prev = {};
-  try { prev = readJson(file, {}) || {}; } catch { prev = {}; }
+  // un archivo ilegible cuenta como nada dicho: el aviso se repite, del lado seguro, y se dice
+  try { prev = readJson(file, {}) || {}; } catch (e) {
+    prev = {};
+    if (key !== '') problems.push(`el archivo del aviso de las que esperan (${label(e.message, 120)}): lo cuento como no avisado`);
+  }
   if (typeof prev !== 'object' || Array.isArray(prev)) prev = {};
   if ((prev[field] || '') === key) return false;
+  // sin poder anotar se dice siempre, también al anotar que ya no hay nada: si no, el aviso que vuelve igual quedaría
+  // callado por lo anotado antes
   try { writeJson(file, { ...prev, [field]: key }); } catch (e) {
-    if (key !== '') problems.push(`no pude anotar el aviso de las que esperan: ${e.code || e.message}`);
+    problems.push(`no pude anotar el aviso de las que esperan: ${label(e.code || e.message, 120)}`);
   }
   return key !== '';
 }
@@ -1510,7 +1516,7 @@ function noteSaid(opts, sid, field, key, problems) {
 function measureMemory(opts) {
   try { return (opts.readMemory || require('./heavy-turn.js').freeMemory)() || { pct: null, why: 'sin respuesta' }; } catch (e) { return { pct: null, why: oneLine(e.message) }; }
 }
-const memoryShort = (m) => (m.pct == null ? `no pude medir la memoria libre (${oneLine(m.why || 'sin motivo').slice(0, 120)})` : `la memoria libre está en ${m.pct} % (hace falta ${PROPOSE_MIN_FREE_PCT} %)`);
+const memoryShort = (m) => (m.pct == null ? `no pude medir la memoria libre (${label(m.why || 'sin motivo', 120)})` : `la memoria libre está en ${m.pct} % (hace falta ${PROPOSE_MIN_FREE_PCT} %)`);
 
 /**
  * Las sesiones de fondo que esperan algo de afuera: un renglón por sesión con lo liviano del tablero, y la propuesta de
@@ -1572,7 +1578,7 @@ function longQueueLines(opts, sid, s, queue, working, cap, getBoard, problems) {
     if ((room && first) || !room) m = measureMemory(opts);
     const memOk = m && m.pct != null && m.pct >= PROPOSE_MIN_FREE_PCT;
     if (!room && !memOk) {
-      if (m && m.pct == null) problems.push(`la memoria libre para la fila del portón (${oneLine(m.why || 'sin motivo').slice(0, 120)})`);
+      if (m && m.pct == null) problems.push(`la memoria libre para la fila del portón (${label(m.why || 'sin motivo', 120)})`);
       noteSaid(opts, sid, 'gate', '', problems);
       return [];
     }
@@ -1654,7 +1660,8 @@ function capNotice(opts = {}) {
   try { lines.push(...stalePlanReviewLines(opts, sid, problems)); } catch (e) { problems.push(`las revisiones del plan preparadas (${e.code || e.message})`); }
   try { lines.push(...askingLines(opts, sid, s, problems)); } catch (e) { problems.push(`las preguntas directas (${e.code || e.message})`); }
   try { lines.push(...ownerReplyLines(opts, sid, problems)); } catch (e) { problems.push(`las respuestas de la persona en otras pestañas (${e.code || e.message})`); }
-  if (problems.length) lines.push(`Coordinación: No pude leer ${oneLine(problems.join(' · ')).slice(0, 300)}.`);
+  // los motivos traen textos de afuera (nombres de archivo, mensajes de error): sin `<` ni `>`, no cierran el bloque
+  if (problems.length) lines.push(`Coordinación: No pude leer ${label(problems.join(' · '), 300)}.`);
   return lines.length ? lines.join('\n') : null;
 }
 
