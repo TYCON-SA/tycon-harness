@@ -141,7 +141,8 @@ function collect(repo) {
   let files = [];
   let unreadable = null;
   // sin la carpeta no hay historias; una que está y no se puede listar no es «sin historias»: falla el índice entero
-  try { files = fs.readdirSync(path.join(repo, SPECS)).filter((f) => /^story-.*\.md$/.test(f)); } catch (e) {
+  // la intención de una historia vive a su lado (`story-….intent.md`) y no es una historia: no declara `story:`
+  try { files = fs.readdirSync(path.join(repo, SPECS)).filter((f) => /^story-.*\.md$/.test(f) && !f.endsWith('.intent.md')); } catch (e) {
     if (!e || e.code !== 'ENOENT') {
       unreadable = `no se puede leer la carpeta ${SPECS} (${(e && e.code) || e}): no sé qué historias hay`;
       problems.push(unreadable);

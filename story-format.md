@@ -1,6 +1,6 @@
 # Guia del Formato Mary+GOLD para Stories
 
-Esta guia define como escribir stories para que un agente LLM pueda implementarlas sin ambiguedad, sin preguntas, y sin inventar nada.
+Esta guia define como escribir stories para que un agente LLM pueda implementarlas sin ambiguedad y sin inventar nada: lo que no se sabe se pregunta antes de escribirla, y queda en su intención.
 
 Debe usarse como referencia al escribir o validar stories en cualquier proyecto que siga este formato.
 
@@ -10,19 +10,54 @@ El formato se llama **Mary+GOLD** porque combina:
 
 ---
 
-## La story ES el intent
+## La intención
 
-El AI-Native SDLC Playbook pide un artefacto de "intent" previo al spec. En este equipo esa capa NO se agrega:
-**la story Mary+GOLD es el registro de intención Y el spec implementable a la vez** — su sección
-`## Story` (como <rol> quiero <accion> para <beneficio>) es exactamente el intent, y el resto del
-archivo es su elaboración verificable. Un artefacto separado sería una segunda fuente de verdad
-que hay que mantener sincronizada a mano, y este arnés ya midió cómo terminan las copias dobles
-(caso `~/.codex/AGENTS.md` desincronizado en 48 líneas).
+Antes de la historia va su **intención**: qué se quiere resolver y por qué, sin el cómo. Es un archivo aparte, al lado
+de la historia y con su mismo nombre (`<historia>.md` → `<historia>.intent.md`), en el formato abierto
+IntentSpec 1.2 (https://intentspec.org/spec). En el camino corto también hay intención, corta, en la carpeta de la
+corrida (`intent.md`). La plantilla es `skills/tycon-create-story/intent-template.md`.
 
-La convención que completa la decisión: **las ideas pre-story viven en engram** (`mem_save` con
-`type: idea`, project del repo). Una idea que madura se convierte en story con este formato; una
-que no, queda buscable sin ensuciar `specs/`. No se crean archivos `intent-*.md` ni carpetas de
-ideas en los repos.
+**Qué lleva.** El frontmatter de IntentSpec: `id` (el nombre del archivo sin `.intent.md`), `status`, `objective` (el
+problema y por qué importa) y `outcomes` (lo que se ve cuando está resuelto, al menos uno). Puede llevar las secciones
+que IntentSpec reconoce (`## Constraints`, `## Edge Cases`, `## Verification`). Y dos secciones propias, que IntentSpec
+no lee y por eso no la invalidan:
+
+- `## Preguntas abiertas` — lo que no se sabe. Columnas: `#` (`Q1`, `Q2`…), `Pregunta`, `Por qué importa`,
+  `Quién contesta`, `Bloquea`, `Estado`, `Respuesta`, `Fuente`.
+- `## Decisiones reservadas` — lo que decide una persona: el agente propone, no decide. Columnas: `#` (`R1`, `R2`…),
+  `Decisión`, `Por qué es de una persona`, `Quién decide`, `Propuesta del agente`, `Estado`, `Respuesta`, `Fuente`.
+
+Sin filas, la sección dice `Ninguna.` sola (en las reservadas también `Ninguna, porque <motivo>.`). Los valores son
+cerrados y no se normalizan (`Si` no es `sí`):
+
+| Columna | Valores |
+|---|---|
+| Bloquea | `sí`, `no` |
+| Estado de una pregunta | `abierta`, `supuesta`, `encontrada`, `contestada`, `descartada` |
+| Fuente de una pregunta | `persona:<nombre>`, `repo:<archivo:línea>`, `memoria:<id>`, `pedido:<número>`, `—` |
+| Estado de una decisión | `abierta`, `tomada`, `descartada` |
+| Fuente de una decisión | `persona:<nombre>`, `—` |
+
+Una pregunta `supuesta` no bloquea (se sigue con lo supuesto, marcado); una `encontrada` lleva fuente `repo:` o
+`memoria:`; una `contestada` o `descartada`, `persona:`; `pedido:` sólo informa, en una `abierta` o una `supuesta`.
+Lo que bloquea: una pregunta con `Bloquea: sí` hasta que está `encontrada` en el repo (`repo:` a un archivo y una línea
+que existen) o la contestó una persona; una decisión reservada, siempre, hasta que la toma una persona. Lo escrito puede
+contestar una pregunta, nunca tomar una decisión de una persona.
+
+**Cómo se marca lo que falta.** En el texto, `[falta: Q<n>]` o `[falta: R<n>]`, con su fila en la tabla. Una marca
+de una fila que no existe es un problema; una de una fila ya cerrada, un aviso (la marca quedó vieja).
+
+**Cuándo se aprueba y se congela.** Se aprueba (`status: approved`) cuando no le queda nada que bloquee, antes de que
+la historia pase a `ready-for-dev`. Desde ahí queda **congelada**: es la foto de lo que se sabía al empezar. Lo que se
+sepa después va a la historia.
+
+**Por qué no es una segunda fuente de verdad.** La intención no se mantiene: no se sincroniza con la historia ni se
+corrige. La verdad de hoy es la historia; la intención guarda qué se preguntó, qué se supuso y quién decidió qué. Las
+ideas de antes de la entrevista pueden seguir viviendo en la memoria; la intención nace con la entrevista.
+
+El control: el pre-commit valida cada intención contra el esquema de IntentSpec y estas reglas
+(`scripts/lib/lint-story-frontmatter.js`, con su lector `skills/tycon-pipeline/scripts/lib/intent.js`), y frena una
+intención aprobada con algo que bloquea.
 
 ---
 
