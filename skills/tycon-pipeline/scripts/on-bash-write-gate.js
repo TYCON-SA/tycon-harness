@@ -203,7 +203,7 @@ function lastWord(seg) {
  */
 function stripNonCommandText(s) {
   // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador.
-  let t = String(s).replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  let t = String(s).replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)(?:[\s\S]*?\n)??[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
   // Strings entre comillas que no siguen a un operador de redirección / tee: se vacían (quedan las comillas), salvo
   // los que pueden ser un nombre de archivo (sin espacios ni operadores): `cp a "<dir>/b.md"` sigue nombrando su destino.
   t = t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g,
@@ -285,7 +285,7 @@ function resolverCd(cmd, baseCwd) {
     return d ? { dir: resolveTarget(d, baseCwd), forma: 'hoy', s } : { dir: baseCwd, forma: 'hoy', s };
   };
   try {
-    s = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)([\s\S]*?)(\n[ \t]*\3[ \t]*(?=\n|$))/g, (m, cab, _q, _d, cuerpo, cierre) => cab + cuerpo.replace(/[^\n]/g, ' ') + cierre);
+    s = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)((?:[\s\S]*?\n)??)([ \t]*\3[ \t]*(?=\n|$))/g, (m, cab, _q, _d, cuerpo, cierre) => cab + cuerpo.replace(/[^\n]/g, ' ') + cierre);
     cds = [...s.matchAll(/\bcd\b/g)];
     if (!cds.length) return { dir: baseCwd, forma: 'sin-cd', s };
     const m = /(^|;|\n|&&)[ \t]*cd[ \t]+([^\s;&|()<>'"`\\]+)[ \t]*&&/.exec(s.slice(Math.max(0, cds[0].index - 3)));
@@ -532,7 +532,7 @@ function scriptsInline(cmd) {
   // cada parte con una sola lectura posible: una barra invertida es siempre escape, una opción empieza con letra
   const conFlag = new RegExp(`${inicio}((?:\\s+-{1,2}[A-Za-z][\\w-]*(?:=[^\\s'"]+)?)*?)\\s+(?:-[a-zA-Z]*[epc]|--eval|--print|-Command)\\s+(['"])((?:\\\\[\\s\\S]|(?!\\2)[^\\\\])*)\\2([^\\n;&|]*)`, 'gi');
   // sin los cuerpos de los heredocs: un `node -e` adentro de un `.md` que se escribe es texto, no un comando
-  const sinCuerpos = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  const sinCuerpos = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)(?:[\s\S]*?\n)??[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
   for (const m of sinCuerpos.matchAll(conFlag)) out.push({ script: m[3], argv: argumentosDe(m[4]) });
   // por la entrada: el heredoc o el here-string que llega a un intérprete como su programa, detrás de un envoltorio,
   // en otra etapa de la tubería o con `/dev/stdin`
@@ -554,8 +554,8 @@ function programasPorEntrada(raw) {
     try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch (e) { logHookError(e); lectorDeEntrada = null; }
   }
   if (lectorDeEntrada) return lectorDeEntrada(raw);
-  return [...raw.matchAll(/(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g)]
-    .map((m) => ({ interprete: '', conGuion: false, despues: [], cuerpo: m[3], comillas: Boolean(m[1]) }));
+  return [...raw.matchAll(/(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)[^\n]*\n(?:([\s\S]*?)\n)??[ \t]*\2[ \t]*(?=\n|$)/g)]
+    .map((m) => ({ interprete: '', conGuion: false, despues: [], cuerpo: m[3] || '', comillas: Boolean(m[1]) }));
 }
 
 // los intérpretes que corren un guion guardado en un archivo
@@ -1117,7 +1117,7 @@ function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
 
 /** Los tramos de un comando (`;`, `&&`, `||`, `|`, salto de línea), sin cortar adentro de las comillas ni de los heredocs. */
 function tramos(cmd) {
-  const s = String(cmd || '').replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  const s = String(cmd || '').replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)(?:[\s\S]*?\n)??[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
   const out = [];
   let q = null;
   let actual = '';
@@ -1147,13 +1147,14 @@ const PS_CON_VALOR = /^-(?:filter|include|exclude|erroraction|ea|credential|stre
  * <ruta>`, `git restore <ruta>`): `[{ raw, kind: 'delete'|'restore', base?, quizas?, git? }]`. `base` es la carpeta de un
  * `git -C`. `quizas`: un `git checkout <nombre>` sin `--`, que es una ruta si existe y si no una rama. `git`: lo borra un
  * `git rm`, que deja el borrado en el índice. Lo que sólo toca el
- * índice (`git restore --staged`, `git rm --cached`) no cambia el archivo.
+ * índice (`git restore --staged`, `git rm --cached`) no cambia el archivo. Se lee también lo que corre adentro
+ * (`$(…)`, comillas invertidas, `sh -c`) y detrás de las palabras del shell (`{`, `if`, `!`, `time`…).
  */
 function destinosBorrados(cmd) {
   const out = [];
-  for (const tramo of tramos(cmd)) {
+  for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
     const sinComentario = tramo.replace(/(^|\s)#.*$/, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
-    const words = palabras(sinComentario.trim().replace(PREFIJO, '')).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
+    const words = palabras(sinPalabrasDelShell(sinComentario)).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
     if (!words.length) continue;
     const c = path.basename(words[0].replace(/^\\/, '')).toLowerCase().replace(/\.exe$/, '');
     if (['rm', 'del', 'erase', 'remove-item', 'ri', 'rmdir', 'rd', 'unlink'].includes(c)) {
@@ -1543,6 +1544,28 @@ function guionesInternos(cmd) {
   return out;
 }
 
+// los niveles de `$(…)`, comillas invertidas y `sh -c` que se leen como otro comando; lo de más adentro no se lee
+const TOPE_ANIDADOS = 4;
+
+/**
+ * Lo que corre adentro del comando, nivel por nivel (`guionesInternos`, sin el texto de los heredocs que nadie corre):
+ * `{ leidos, hondos }`. `leidos`, hasta `TOPE_ANIDADOS` niveles; `hondos`, lo del nivel siguiente, que no se lee.
+ */
+function anidadosHasta(cmd) {
+  const leidos = [];
+  const hondos = [];
+  const ver = (texto, nivel) => {
+    for (const g of guionesInternos(sinTextoDeHeredocs(texto))) {
+      if (!String(g).trim()) continue;
+      if (nivel >= TOPE_ANIDADOS) { hondos.push(g); continue; }
+      leidos.push(g);
+      ver(g, nivel + 1);
+    }
+  };
+  ver(String(cmd || ''), 0);
+  return { leidos, hondos };
+}
+
 /** Lo que borra cada tramo, también los de adentro de `bash -c '…'`, y lo que recorre un `find` que borra. */
 function borradosProfundos(cmd) {
   const out = [];
@@ -1835,13 +1858,14 @@ function zonaTocada(cmd, cwd, stateDir, { carpeta, nombres, pieza, enTexto = nul
 /**
  * ¿Algún tramo edita en el lugar los archivos que nombra? `sed`/`perl`/`ruby` con una opción que lleva `i` (`-i`,
  * `-ibak`, `-0pi`, `--in-place`), `awk -i inplace`, `ed` o `ex`. Se lee por palabras con sus comillas (un `;` o un `|`
- * dentro del guion de `sed` no corta) y también detrás de `xargs`, `find -exec` y adentro de `bash -c '…'`.
+ * dentro del guion de `sed` no corta) y también detrás de `xargs`, `find -exec`, las palabras del shell (`{`, `if`…) y
+ * adentro de `bash -c '…'`, `$(…)` y las comillas invertidas.
  */
 function editaEnSitio(cmd) {
   const opcionI = (w) => /^-[A-Za-z0-9]*i/.test(w) || /^--in-place\b/.test(w);
   const ver = (texto, nivel) => {
     for (const tramo of tramos(texto)) {
-      const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
+      const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
       for (let k = 0; k < words.length; k++) {
         const c = path.basename(words[k]).toLowerCase().replace(/\.exe$/, '');
         const resto = words.slice(k + 1);
@@ -1854,7 +1878,7 @@ function editaEnSitio(cmd) {
     }
     return false;
   };
-  return ver(String(cmd || ''), 0);
+  return [String(cmd || ''), ...anidadosHasta(cmd).leidos].some((t) => ver(t, 0));
 }
 
 /**
@@ -2847,6 +2871,32 @@ function expandirComodin(patron, base, aviso) {
 }
 
 /**
+ * El cuerpo de cada guion de shell que el comando escribe con un heredoc y después corre (`sh x.sh`, `bash -e x.sh`,
+ * `. x.sh`, `source x.sh`), con la ruta relativa o absoluta: lo comparan resuelta desde cada carpeta de `bases`. Un
+ * guion que ya estaba en el disco no se lee acá.
+ */
+function guionesDeShellEscritos(cmd, bases) {
+  const escritos = heredocs(cmd).filter((h) => h.target);
+  if (!escritos.length) return [];
+  const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
+  const out = [];
+  for (const tramo of [String(cmd), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+    const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
+    const c = words[0] === '.' || words[0] === 'source' ? 'source' : nombreDeComando(words[0]);
+    if (!['source', 'sh', 'bash', 'zsh', 'dash', 'ksh'].includes(c)) continue;
+    const opciones = words.slice(1).filter((w) => w.startsWith('-'));
+    if (c !== 'source' && opciones.some((w) => /^-[A-Za-z]*c/.test(w))) continue;
+    const guion = words.slice(1).find((w) => !w.startsWith('-') && !/^[+-][oO]$/.test(w));
+    if (!guion) continue;
+    for (const base of bases) {
+      const h = escritos.find((x) => resolver(x.target, base) === resolver(guion, base));
+      if (h) { out.push(h.body); break; }
+    }
+  }
+  return out;
+}
+
+/**
  * El estado de una historia: `'draft'`, otro estado, `''` (historia sin `status:`), o null si no es una historia. Sin la
  * marca de orden de bytes y con CRLF. Un archivo que existe y no se puede leer cuenta como historia (del lado que frena).
  */
@@ -2869,9 +2919,20 @@ function estadoDeHistoria(abs) {
  * estado lo cambia marker.js. Un borrador pasa sólo si el comando lo reescribe entero con un heredoc legible que lo
  * deja en borrador (ahí lo juzga el freno de la historia sin validar); escribirle encima de otra forma podría cerrarla.
  */
-function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin = []) {
+function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin = [], hondo = 0) {
   const enSitio = editaEnSitio(cmd);
-  if (!enSitio && !ESCRIBE.test(String(cmd || ''))) return [];
+  const destinosB = destinosBorrados(cmd);
+  // más allá del tope no se sabe qué corre: si nombra la ruta de una historia y escribe o borra, frena por el texto
+  const sinLeer = anidadosHasta(cmd).hondos.some((h) => NOMBRA_RUTA_DE_HISTORIA.test(h) && (ESCRIBE.test(h) || BORRA_O_MUEVE.test(h)));
+  // un guion de shell que escribe un heredoc del mismo comando corre lo que dice: se mira como otro comando, un nivel
+  if (hondo === 0) {
+    for (const texto of guionesDeShellEscritos(cmd, [...new Set([cwd, sesion])])) {
+      const h = historiasPorConsola(texto, cwd, extractWriteTargets(texto, { keep: () => true }), sesion, [], hondo + 1);
+      if (h.length) return h;
+    }
+  }
+  if (sinLeer) return [`(un comando anidado a más de ${TOPE_ANIDADOS} niveles nombra una historia y escribe o borra: no se lee qué corre)`];
+  if (!enSitio && !destinosB.length && !ESCRIBE.test(String(cmd || ''))) return [];
   // con todos los editores en el lugar escritos como `sed` que nombra sus archivos, lo que escriben es lo que nombran:
   // la carpeta de un `cd` es desde dónde se leen, y una historia que tocan se ensaya para ver si le cambia el estado
   const seds = enSitio ? sedsLiterales(cmd) : null;
@@ -2910,7 +2971,6 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   // un guion que escribe, copia, mueve o borra: cuenta cada texto que nombra (`glob.glob('specs/*.md')`, `'h.md'`)
   const textosDeGuion = scriptsInline(cmd).filter(({ script }) => GUION_ESCRIBE.test(script))
     .flatMap(({ script }) => [...script.matchAll(/(['"`])((?:\\.|(?!\1)[^\\])*)\1/g)].map((m) => m[2]).filter((t) => !/\s/.test(t)));
-  const destinosB = destinosBorrados(cmd);
   const borrados = destinosB.map((d) => d.raw);
   // lo que sólo se repone (`git checkout -- x`, `git restore x`): cuenta si la historia tiene cambios que perdería
   // (desde otra rama o commit, `git checkout <ref> -- x` o `git restore --source`, la cambia aunque no tenga cambios)
@@ -2953,9 +3013,11 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   const sedsDe = new Map();
   // el paréntesis que cierra un subshell no es parte de la ruta: `(cd specs; echo x >> h.md)`. Una variable que puede no
   // haber quedado puesta (`cd wt && f=specs/h.md && python3 - "$f" <<EOF`) cuenta también por lo que valdría si corrió
+  // (con las llaves expandidas, como el shell: `specs/{h,x}.md` nombra `specs/h.md` entera)
   const valoresDe = (raw) => {
     const limpio = String(raw).replace(/\)+$/, '');
-    return [...new Set([expandirRuta(cmd, limpio).valor, expandirRuta(cmd, limpio, { posibles: true }).valor])];
+    return [...new Set([expandirRuta(cmd, limpio).valor, expandirRuta(cmd, limpio, { posibles: true }).valor]
+      .flatMap((v) => (v ? expandirLlaves(v) : [v])))];
   };
   for (const raw of crudos) for (const valor of valoresDe(raw)) {
     // una palabra que no nombra un archivo no es un destino: el `))` que cierra una cuenta queda vacío sin sus
@@ -3193,12 +3255,12 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
  */
 function heredocs(cmd) {
   const out = [];
-  const re = /(^|[\n;&|][ \t]*)([^\n]*?)(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\3(?=[\s;&|()<>]|$)([^\n]*)\n([\s\S]*?)\n[ \t]*\4[ \t]*(?=\n|$)/g;
+  const re = /(^|[\n;&|][ \t]*)([^\n]*?)(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\3(?=[\s;&|()<>]|$)([^\n]*)\n(?:([\s\S]*?)\n)??[ \t]*\4[ \t]*(?=\n|$)/g;
   let m;
   while ((m = re.exec(String(cmd || '')))) {
     const line = `${m[2]} ${m[5]}`;
     const t = extractWriteTargets(line);
-    out.push({ body: m[6], target: t.length === 1 ? t[0] : null });
+    out.push({ body: m[6] || '', target: t.length === 1 ? t[0] : null });
   }
   return out;
 }
