@@ -7,7 +7,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawnSync, spawn } = require('child_process'); // spawn: un proceso vivo ajeno (T47)
 
 const ROOT = path.join(__dirname, '..', '..');
 const COORD = path.join(ROOT, 'scripts', 'tools', 'coordination.js');
@@ -1817,9 +1817,10 @@ test('T5 CoordinationStatus_OneHeavyTurnLine @story-8.228 @ac-4: un solo rengló
   assert.doesNotMatch(text, /Pase adversarial en vuelo|Suite completa en curso/);
   fs.unlinkSync(path.join(t.state, 'active', 'pase-1.json'));
   heavyRun(t, { sid: 'pase-1', session: 'ConPase', what: '279 suites de repo' });
-  const withSuite = C.status(t.opts);
+  // con una corriendo, el renglón suma si entra una segunda (8.291): la memoria inyectada, para no depender de la máquina
+  const withSuite = C.status({ ...t.opts, readMemory: reader(62) });
   assert.strictEqual(withSuite.heavyTurn.kind, 'suite');
-  assert.match(C.statusText(withSuite), /^Turno de tarea pesada: ConPase \(279 suites de repo, desde las \d\d:\d\d\)$/m);
+  assert.match(C.statusText(withSuite), /^Turno de tarea pesada: ConPase \(279 suites de repo, desde las \d\d:\d\d\); segundo turno libre \(memoria libre 62 %, piso 50 %\)$/m);
 });
 
 // 🔴 mutación: seguir mirando `deepReviewDone` deja a un pase no medido frenando al de otra sesión.
@@ -2643,4 +2644,133 @@ test('8.281 T4e Close_PuestoCompartido_RamasDejadas_EnNoSe @story-8.281 @ac-7: s
   assert.strictEqual(r.closed, false, r.message);
   assert.doesNotMatch(r.message, /falta:/, r.message);
   assert.match(r.message, /no puedo separar.*la rama local wt\/una/, r.message);
+});
+
+// ── El segundo turno de ejecución grande, como lo ve la coordinadora (@story-8.291) ─────────────────────────────────
+
+const HTURN = require(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'));
+// Un lugar del turno de un proceso vivo (este, salvo que se diga otro), como lo publica heavy-turn.js: 0 el primero, 1 el segundo.
+function slot(t, i, fields) {
+  const file = HTURN.slotFiles(t.home)[i];
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ pid: process.pid, at: mins(i ? 5 : 10), ...fields }));
+}
+const reader = (pct) => { const r = () => { r.calls += 1; return pct == null ? { pct: null, why: 'memory_pressure no dio el porcentaje' } : { pct, why: null }; }; r.calls = 0; return r; };
+function coordinated(profile = { approvals: { relay_session: 'coordinadora' } }) {
+  const t = toy({ profile });
+  session(t, 'coord-1', 'Coordinadora', { status: 'busy' });
+  designate(t, 'coord-1');
+  return t;
+}
+
+// 🔴 mutación: mirar sólo la más vieja deja lanzar el pase al lado de la segunda ejecución grande.
+test('T44 AdversarialTurn_TwoHeavyRuns_PassWaits @story-8.291 @ac-8: con dos ejecuciones grandes, el pase espera y la línea nombra a las dos', () => {
+  const t = coordinated();
+  slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
+  slot(t, 1, { sid: 's-bea', session: 'Bea', what: '129 suites de repo' });
+  const r = C.adversarialTurn({ ...t.opts, sessionId: 's-b' });
+  assert.strictEqual(r.waiting_turn, true);
+  assert.deepStrictEqual(r.heavy_run, { session: 'Uma', what: '204 suites de repo', since: mins(10) });
+  assert.deepStrictEqual(r.heavy_runs.map((h) => h.session), ['Uma', 'Bea']);
+  assert.match(r.turn, /Uma, 204 suites de repo/);
+  assert.match(r.turn, /Bea, 129 suites de repo/);
+  // sólo la segunda (la primera terminó): también espera, y el formato de heavy_run es el de siempre
+  fs.rmSync(HTURN.slotFiles(t.home)[0]);
+  const s = C.adversarialTurn({ ...t.opts, sessionId: 's-b' });
+  assert.deepStrictEqual(s.heavy_run, { session: 'Bea', what: '129 suites de repo', since: mins(5) });
+});
+
+// 🔴 mutación: medir con dos o con ninguna, decir «libre» con la memoria debajo, o contar quieta a la que corre la segunda.
+test('T45 Status_SecondTurnLine @story-8.291 @ac-11 @ac-13: el renglón del turno dice si la segunda entra, con la memoria y el piso', () => {
+  const t = coordinated();
+  const line = (s) => C.statusText(s).split('\n').find((l) => l.startsWith('Turno de tarea pesada:'));
+  // (e) ninguna: libre, como hoy, y sin medir
+  const none = reader(62);
+  const e = C.status({ ...t.opts, readMemory: none });
+  assert.strictEqual(line(e), 'Turno de tarea pesada: libre');
+  assert.deepStrictEqual([e.suites, e.secondTurn.freePct, e.secondTurn.open, none.calls], [[], null, false, 0]);
+  assert.deepStrictEqual([e.secondTurn.minFreePct, e.secondTurn.origin], [50, 'sin-valor']);
+  slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
+  // (a) una, 62 %
+  const a = C.status({ ...t.opts, readMemory: reader(62) });
+  assert.match(line(a), /^Turno de tarea pesada: Uma \(204 suites de repo, desde las \d\d:\d\d\); segundo turno libre \(memoria libre 62 %, piso 50 %\)$/);
+  assert.deepStrictEqual([a.secondTurn.freePct, a.secondTurn.open], [62, true]);
+  assert.strictEqual(a.suite.session, 'Uma', 'suite sigue siendo la más vieja');
+  // (b) una, 41 %
+  const b = C.status({ ...t.opts, readMemory: reader(41) });
+  assert.match(line(b), /; segundo turno cerrado \(memoria libre 41 %, piso 50 %\)$/);
+  assert.strictEqual(b.secondTurn.open, false);
+  // (c) una, sin medir
+  const c = C.status({ ...t.opts, readMemory: reader(null) });
+  assert.match(line(c), /; segundo turno cerrado \(no pude medir la memoria libre\)$/);
+  assert.deepStrictEqual([c.secondTurn.freePct, c.secondTurn.open], [null, false]);
+  // (d) dos, 20 %: las dos se muestran, la memoria no se mide, y la de fondo que corre la segunda no está quieta
+  session(t, 's-bea', 'Bea', { kind: 'bg', status: 'idle', statusUpdatedAt: mins(40) });
+  slot(t, 1, { sid: 's-bea', session: 'Bea', what: '129 suites de repo' });
+  const low = reader(20);
+  const d = C.status({ ...t.opts, readMemory: low });
+  assert.match(line(d), /^Turno de tarea pesada: Uma \(204 suites de repo, desde las \d\d:\d\d\) y Bea \(129 suites de repo, desde las \d\d:\d\d\)$/);
+  assert.deepStrictEqual([d.suites.map((x) => x.session), d.secondTurn.freePct, d.secondTurn.open, low.calls], [['Uma', 'Bea'], null, false, 0]);
+  assert.ok(!d.quiet.some((q) => q.session === 'Bea'), `la que corre la segunda no está quieta: ${JSON.stringify(d.quiet)}`);
+});
+
+// 🔴 mutación: callar con una corriendo (como antes), o imprimir un porcentaje vacío cuando no se pudo medir.
+test('T46 CapNotice_QueueWithOneRunning @story-8.291 @ac-12: con gente en la fila, el aviso dice si la segunda entra y a quién darle el «arrancá»', () => {
+  const t = coordinated();
+  const opts = (pct) => ({ ...t.opts, sessionId: 'coord-1', readMemory: reader(pct) });
+  session(t, 's-ana', 'Ana', { status: 'idle', statusUpdatedAt: mins(30) });
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  fs.writeFileSync(path.join(doing, 's-ana.json'), JSON.stringify({ text: 'implementar la historia', at: new Date(mins(10)).toISOString(), waitingFor: 'turno de suite', waitingSince: new Date(mins(10)).toISOString() }));
+  // (d) ninguna corriendo: el texto de hoy
+  assert.match(C.capNotice(opts(62)), /^Coordinación: no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Ana\.$/m);
+  slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
+  // (a) una, 62 %
+  assert.match(C.capNotice(opts(62)), /^Coordinación: corre Uma \(204 suites de repo, desde las \d\d:\d\d\); hay lugar para una segunda \(memoria libre 62 %, piso 50 %\): dale el «arrancá» a Ana\.$/m);
+  // (b) una, 41 %
+  assert.match(C.capNotice(opts(41)), /^Coordinación: corre Uma \(.*\); la segunda no entra \(memoria libre 41 %, piso 50 %\): cuando termine, sigue Ana\.$/m);
+  // (e) una, sin medir: ni «null» ni un porcentaje vacío
+  const e = C.capNotice(opts(null));
+  assert.match(e, /la segunda no entra \(no pude medir la memoria libre\): cuando termine, sigue Ana\./);
+  assert.doesNotMatch(e, /null|\( ?%|libre +%/);
+  // (c) dos
+  slot(t, 1, { sid: 's-bea', session: 'Bea', what: '129 suites de repo' });
+  assert.match(C.capNotice(opts(62)), /^Coordinación: corren Uma \(.*\) y Bea \(.*\); cuando termine una, sigue Ana\.$/m);
+});
+
+// 🔴 mutación: dar el segundo lugar con el otro ilegible, frenar por el lector caído, o medir sin coordinadora.
+test('T47 Status_UnreadableSlot_And_NoCoordinator @story-8.291 @ac-14 @ac-15: lo que no se lee no da el segundo turno y se dice; sin coordinadora, nada', (t) => {
+  const m = coordinated();
+  const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
+  t.after(() => { try { other.kill('SIGKILL'); } catch { /* ya terminó */ } });
+  slot(m, 0, { pid: other.pid, sid: 's-uma', session: 'Uma', what: '204 suites de repo', at: Date.now() - 60000 });
+  fs.writeFileSync(HTURN.slotFiles(m.home)[1], '{ esto no es json');
+  const mem = reader(90);
+  const r = HTURN.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-b' }, pid: process.pid, what: 'x', readMemory: mem });
+  assert.strictEqual(r.ok, false, 'con el otro lugar ilegible no se da el segundo');
+  assert.match(r.message, /no se puede leer/);
+  assert.ok(C.status({ ...m.opts, now: Date.now(), readMemory: reader(90) }).problems.some((p) => /turno de las ejecuciones grandes/.test(p)), 'el estado lo dice');
+  // (b) el perfil roto: el piso de fábrica, y se dice
+  const roto = coordinated();
+  fs.writeFileSync(path.join(roto.arnes, 'perfil-equipo.json'), '{ roto');
+  const f = HTURN.secondTurnFloor({ home: roto.home, env: {}, arnes: roto.arnes });
+  assert.deepStrictEqual([f.value, f.origin], [HTURN.SECOND_HEAVY_MIN_FREE_PCT, 'sin-valor']);
+  assert.ok(f.problem, 'dice que no pudo leer la configuración');
+  // (c) sin coordinadora designada: nada se toma ni se mide
+  const libre = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  const none = reader(90);
+  for (const pid of [process.pid, other.pid]) {
+    const x = HTURN.take({ home: libre.home, arnes: libre.arnes, env: {}, pid, what: 'x', readMemory: none });
+    assert.deepStrictEqual([x.ok, x.taken], [true, false]);
+  }
+  assert.strictEqual(none.calls, 0);
+});
+
+// 🔴 mutación: tragar el error del lector de memoria: el estado dice «no pude medir» sin decir por qué.
+test('T48 Status_MemoryReaderThrows_SaysWhy @story-8.291 @ac-11 @ac-14: si medir la memoria falla, el estado lo cierra y anota el motivo', () => {
+  const t = coordinated();
+  slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
+  const s = C.status({ ...t.opts, readMemory: () => { throw new Error('memory_pressure no está'); } });
+  assert.deepStrictEqual([s.secondTurn.freePct, s.secondTurn.open], [null, false]);
+  assert.ok(s.problems.some((p) => /memoria libre.*memory_pressure no está/.test(p)), JSON.stringify(s.problems));
 });

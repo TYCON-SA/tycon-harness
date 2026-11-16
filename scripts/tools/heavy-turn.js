@@ -4,18 +4,25 @@
  * heavy-turn.js — el turno de tarea pesada de una máquina con coordinadora (guides/coordination.md), del lado de las
  * ejecuciones grandes de pruebas.
  *
- * En la máquina corre una tarea pesada por vez: una ejecución grande de pruebas o un pase adversarial, porque las sondas
- * del pase corren en la máquina y, juntos, la saturan. Una ejecución es grande por cuántas suites corre, no por estar
- * acotada o no: el corte lo pone quien pide el turno (`TURN_FROM_SUITES` de run-suites-json.js; las portables enteras
- * siempre). Los revisores son llamadas al modelo y no piden turno. El corredor toma el turno al arrancar y lo suelta al
- * terminar; con el turno tomado por otro proceso vivo, o con un pase en vuelo de cualquier sesión viva (también la
- * propia), no arranca y dice quién lo tiene. El pase no deja archivo propio: está en vuelo mientras su marcador lo dice
- * (`heavyPassesInFlight` de coordination.js), y se libera al anotar su resultado o su salteo. Al tomar el turno se borra
- * la espera que esa sesión anotó: ya no espera.
+ * Un pase adversarial y una ejecución grande de pruebas no van juntos, porque las sondas del pase corren en la máquina y,
+ * juntos, la saturan. Una ejecución es grande por cuántas suites corre, no por estar acotada o no: el corte lo pone quien
+ * pide el turno (`TURN_FROM_SUITES` de run-suites-json.js; las portables enteras siempre). Los revisores son llamadas al
+ * modelo y no piden turno. El corredor toma el turno al arrancar y lo suelta al terminar; con un pase en vuelo de
+ * cualquier sesión viva (también la propia) no arranca y dice de quién es. El pase no deja archivo propio: está en vuelo
+ * mientras su marcador lo dice (`heavyPassesInFlight` de coordination.js), y se libera al anotar su resultado o su
+ * salteo. Al tomar el turno se borra la espera que esa sesión anotó: ya no espera.
  *
- *   take --what <qué corre> [--process <pid>]   0 = turno tomado (o no hay coordinadora) · 77 = lo tiene otro, y dice quién
- *   release [--process <pid>]                   suelta el turno si es de ese proceso; el de otro no lo toca
- *   holder [--json]                         quién lo tiene ahora, o nadie
+ * El turno tiene dos lugares, cada uno en su archivo (`slotFiles`). Sin ninguna ejecución grande corriendo se toma uno
+ * como siempre. Con una corriendo, la segunda toma el otro lugar sólo si la memoria libre del sistema está en el piso o
+ * arriba (`secondTurnFloor`: `coordination.second_heavy_min_free_pct`, o `SECOND_HEAVY_MIN_FREE_PCT`): la memoria es lo
+ * que se cuida, porque la CPU ya se reparte sola (suite-times.js). Se mide una vez, al decidir; sin poder medirla no se da
+ * (es un extra), y una que ya corre no se corta si la memoria baja después. Con dos corriendo, la tercera espera. Lo que
+ * decide es cuántas corren, no qué archivo queda libre, y quien pierde la publicación de un lugar vuelve a contar.
+ *
+ *   take --what <qué corre> [--process <pid>]   0 = turno tomado (o no hay coordinadora) · 77 = no hay lugar, y dice por qué
+ *   release [--process <pid>]                   suelta el lugar de ese proceso; el de otro no lo toca
+ *   holder [--json]                         la ejecución grande más vieja que corre, o nadie
+ *   holders [--json]                        las que corren, de la más vieja a la más nueva
  *
  * Un portón que no toma el turno (acotado, de menos suites que el corte) igual borra la espera anotada de su sesión al
  * arrancar (`gateStarted`) y, con coordinadora, se anota en `<estado>/coordination/gates/<pid>.json` mientras corre: la
@@ -30,7 +37,9 @@
  *
  * Sin coordinadora designada y viva (la nube, la CI, una máquina sin coordinar) no se toma nada y todo corre como
  * siempre: el mismo criterio que el turno del pase (`adversarialTurn` de coordination.js). Un turno cuyo proceso ya no
- * vive (una suite cortada con kill -9), o de más de tres horas, se libera solo. El registro vive en `<estado>/coordination/suite-turn.json`.
+ * vive (una suite cortada con kill -9), o de más de tres horas, se libera solo. El primer lugar vive en
+ * `<estado>/coordination/suite-turn.json` y el segundo, al lado, en `suite-turn-2.json`. El corredor carga este archivo
+ * del repo que prueba: una copia de antes del segundo lugar sigue pidiendo un solo turno, del lado seguro.
  * Off: TYCON_SUITE_TURN=0. Con TYCON_SUITE_TURN=1 se pide el turno aunque no haya coordinadora (sólo puede frenar de más:
  * es lo que usan las pruebas, que no pueden designar una coordinadora en el perfil del árbol).
  */
@@ -52,7 +61,13 @@ const EVICT_LOCK_MS = 10000;
 // Al lado de un pase: hasta cuántas suites (las de un portón que dura menos que un pase) y con cuánta memoria libre.
 const BESIDE_PASS_MAX_SUITES = 40;
 const BESIDE_PASS_MIN_FREE_PCT = 40;
+// El segundo turno de ejecución grande, con cuánta memoria libre como mínimo. Un portón de 4 a la vez suma hasta 1,2 GB
+// de pico: en una máquina de 16 GB, dos juntos desde la mitad libre la dejan cerca de 35 %, por encima del punto en que
+// Claude Code empieza a cerrar sesiones. Cada máquina lo cambia con `coordination.second_heavy_min_free_pct`.
+const SECOND_HEAVY_MIN_FREE_PCT = 50;
 const turnFile = (home) => path.join(stateDir(home), 'coordination', 'suite-turn.json');
+// Los dos lugares del turno: el primero, el de siempre; el segundo, al lado.
+const slotFiles = (home) => [turnFile(home), path.join(stateDir(home), 'coordination', 'suite-turn-2.json')];
 const oneLine = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').replace(/[\p{Cc}\p{Cf}<>]/gu, '').trim().slice(0, 80);
 const hhmm = (ms) => { const d = new Date(ms); return Number.isNaN(d.getTime()) ? '?' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const alive = (pid) => { if (!Number.isInteger(pid) || pid <= 0) return false; try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
@@ -88,17 +103,59 @@ const readTurn = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8
 // Vale el turno de un proceso vivo y de menos de TURN_MAX_MS: una suite colgada o un pid reusado no frenan para siempre.
 const inForce = (t, now) => Boolean(t && alive(Number(t.pid)) && !(Number.isFinite(t.at) && now - t.at >= TURN_MAX_MS));
 
-/**
- * El turno vigente: `{ pid, sid, session, what, at }`, o null. Con `problems`, un archivo del turno que está y no se puede
- * leer se anota ahí: no es lo mismo que «no hay turno».
- */
-function holder({ home = require('os').homedir(), now = Date.now(), problems = null } = {}) {
-  const file = turnFile(home);
-  let t = null;
-  try { t = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
-    if (e.code !== 'ENOENT' && problems) problems.push(`el turno de las ejecuciones grandes (${file}) no se puede leer (${e.code || oneLine(e.message)})`);
+// Un lugar del turno: `{ file, turn, unreadable }`. Un archivo que está y no se puede leer no es lo mismo que «no hay
+// turno»: con `problems`, se anota ahí.
+function readSlot(file, problems) {
+  try { return { file, turn: JSON.parse(fs.readFileSync(file, 'utf8')), unreadable: false }; } catch (e) {
+    if (e.code === 'ENOENT') return { file, turn: null, unreadable: false };
+    if (problems) problems.push(`el turno de las ejecuciones grandes (${file}) no se puede leer (${e.code || oneLine(e.message)})`);
+    return { file, turn: null, unreadable: true };
   }
-  return inForce(t, now) ? t : null;
+}
+// De la más vieja a la más nueva; a igual hora, el proceso menor.
+const byAge = (a, b) => (Number(a.at) - Number(b.at)) || (Number(a.pid) - Number(b.pid));
+
+/**
+ * Las ejecuciones grandes que corren: `[{ pid, sid, session, what, at }]`, de la más vieja a la más nueva. Con `problems`,
+ * el lugar que no se puede leer se anota ahí.
+ */
+function holders({ home = require('os').homedir(), now = Date.now(), problems = null } = {}) {
+  return slotFiles(home).map((f) => readSlot(f, problems).turn).filter((t) => inForce(t, now)).sort(byAge);
+}
+
+/** La ejecución grande más vieja que corre, `{ pid, sid, session, what, at }`, o null; `problems` como en `holders`. */
+function holder(opts = {}) {
+  return holders(opts)[0] || null;
+}
+
+const FLOOR_ORIGIN = { perfil: 'del perfil del equipo', maquina: 'de esta máquina', env: 'de una variable', 'sin-valor': 'de fábrica' };
+const floorText = (f) => `piso ${f.value} %, ${FLOOR_ORIGIN[f.origin] || oneLine(f.origin)}`;
+
+/**
+ * El piso de memoria libre del segundo turno: `{ value, origin, problem }`. Sale de la configuración con el orden de
+ * siempre (variable › máquina › perfil), con el perfil resuelto como `roleOf`: el del árbol de este archivo y, si no trae,
+ * el del arnés instalado. Un valor roto o el lector caído dan `SECOND_HEAVY_MIN_FREE_PCT` y el motivo en `problem`.
+ */
+function secondTurnFloor({ home = require('os').homedir(), env = process.env, arnes } = {}) {
+  const factory = (problem) => ({ value: SECOND_HEAVY_MIN_FREE_PCT, origin: 'sin-valor', problem });
+  try {
+    const TC = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
+    const load = (a) => TC.cargar({ home, env, ...(a ? { arnes: a } : {}) });
+    let cfg = load(arnes);
+    if (!arnes && cfg.archivos && cfg.archivos.perfil && cfg.archivos.perfil.estado === 'ausente') {
+      try { cfg = load(require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).harnessDir(home)); } catch { /* sin arnés instalado: vale el de este árbol */ }
+    }
+    const key = 'coordination.second_heavy_min_free_pct';
+    const errores = cfg.errores || [];
+    // el error de un archivo trae la clave; el de la variable, el nombre de la variable
+    const names = new Set([key, ...((TC.VARIABLES && TC.VARIABLES[key]) || [])]);
+    const own = errores.find((e) => names.has(e.clave));
+    if (own) return factory(`el piso configurado no vale (${oneLine(own.clave)}: ${oneLine(own.motivo)})`);
+    const r = TC.coordinacion(cfg).second_heavy_min_free_pct;
+    const broken = errores.find((e) => !e.clave);
+    if (broken && r.origin === 'sin-valor') return factory(`la configuración no se pudo leer entera (${oneLine(broken.archivo)}: ${oneLine(broken.motivo)})`);
+    return { value: r.value, origin: r.origin, problem: null };
+  } catch (e) { return factory(`el lector de configuración falló (${oneLine(e.message)})`); }
 }
 
 function sessionName(home, sid) {
@@ -175,10 +232,11 @@ function passHolder({ home, env, now, sid }) {
 }
 
 /**
- * Toma el turno para `pid`. `{ ok, taken, message, note }`: ok false = lo tiene otro proceso vivo o un pase en vuelo, y el
- * mensaje dice quién; `note` es lo que hay que decir aunque se haya tomado (también va a la salida de errores).
+ * Toma un lugar del turno para `pid`. `{ ok, taken, message, note }`: ok false = no hay lugar (dos corriendo, una y la
+ * memoria debajo del piso o sin medir, o un pase en vuelo), y el mensaje dice por qué y quién corre; `note` es lo que hay
+ * que decir aunque se haya tomado (también va a la salida de errores). `readMemory` mide la memoria libre (`freeMemory`).
  */
-function take({ home = require('os').homedir(), env = process.env, arnes, pid = process.pid, what, now = Date.now() } = {}) {
+function take({ home = require('os').homedir(), env = process.env, arnes, pid = process.pid, what, now = Date.now(), readMemory = freeMemory } = {}) {
   const role = coordinator({ home, env, arnes });
   if (!role) return { ok: true, taken: false, message: null };
   const sid = env.CLAUDE_CODE_SESSION_ID || env.CODEX_SESSION_ID || null;
@@ -188,21 +246,54 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
     return { ok: false, taken: false, note, holder: { kind: 'pass', storyId: pass.storyId, session: pass.session, since: pass.since },
       message: `Hay un pase adversarial en vuelo en esta máquina: pase adversarial de la ${oneLine(pass.storyId) || 'sin story'} (${oneLine(pass.session)}, desde las ${hhmmIso(pass.since)}). Va una tarea pesada por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que su sesión anote el resultado, o pedile turno a la ${role}.` };
   }
-  const file = turnFile(home);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const files = slotFiles(home);
+  fs.mkdirSync(path.dirname(files[0]), { recursive: true });
   const mine = { pid, sid, session: sessionName(home, sid), what: oneLine(what) || 'ejecución grande', at: now };
-  // unos pocos intentos: entre sacar un turno vencido y publicar el propio puede entrar otro, o estar sacándolo otro
+  const taken = () => { clearWait(home, sid); return { ok: true, taken: true, message: null, note }; };
+  const wait = `esperá que termine, o pedile turno a la ${role} (guides/coordination.md, «Lo pesado, con turno»)`;
+  const unstick = (ts) => `Si quedó colgada, se destraba con ${ts.map((t) => `heavy-turn.js release --process ${Number(t.pid)}`).join(' o con ')}.`;
+  let floor = null;
+  let mem = null;
+  // unos pocos intentos: entre contar, sacar un lugar vencido y publicar el propio puede entrar otro
   for (let i = 0; i < 20; i += 1) {
     if (i) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
-    if (publish(file, mine)) { clearWait(home, sid); return { ok: true, taken: true, message: null, note }; }
-    const t = readTurn(file);
-    if (inForce(t, now)) {
-      if (Number(t.pid) === pid) { clearWait(home, sid); return { ok: true, taken: true, message: null, note }; }
-      return { ok: false, taken: false, note, holder: t, message: `Ya corre una ejecución grande de pruebas en esta máquina: ${describe(t)}. Va una por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que termine, o pedile turno a la ${role}. Si quedó colgada, se destraba con heavy-turn.js release --process ${Number(t.pid)}.` };
+    const slots = files.map((f) => readSlot(f));
+    const running = slots.filter((s) => inForce(s.turn, now)).map((s) => s.turn).sort(byAge);
+    // quien ya tiene un lugar no es otra ejecución: no mide ni ocupa el otro
+    if (running.some((t) => Number(t.pid) === pid)) return taken();
+    if (running.length >= 2) {
+      return { ok: false, taken: false, note, holder: running[0], holders: running,
+        message: `Ya corren dos ejecuciones grandes de pruebas en esta máquina: ${running.map(describe).join(' y ')}. Van dos como mucho: ${wait.replace('que termine', 'que termine una')}. ${unstick(running)}` };
     }
-    evict(file, now);
+    if (running.length === 1) {
+      const [t] = running;
+      const head = `Ya corre una ejecución grande de pruebas en esta máquina: ${describe(t)}.`;
+      const refuse = (why) => ({ ok: false, taken: false, note, holder: t, holders: running, message: `${head} ${why}: ${wait}. ${unstick([t])}` });
+      const other = slots.find((s) => !(s.turn && Number(s.turn.pid) === Number(t.pid) && inForce(s.turn, now)));
+      // un lugar que no se lee puede ser de alguien que corre: el segundo no se da a ciegas
+      if (other.unreadable) return refuse(`El otro lugar del turno (${oneLine(path.basename(other.file))}) no se puede leer, así que no doy el segundo turno`);
+      if (!floor) {
+        floor = secondTurnFloor({ home, env, arnes });
+        if (floor.problem) process.stderr.write(`heavy-turn: ${floor.problem}: uso el piso de fábrica, ${floor.value} %\n`);
+      }
+      if (!mem) {
+        try { mem = readMemory() || { pct: null, why: 'sin motivo' }; } catch (e) { mem = { pct: null, why: oneLine(e.message) }; }
+      }
+      if (mem.pct == null) return refuse(`La segunda no arranca: no pude medir la memoria libre: ${oneLine(mem.why) || 'sin motivo'}; sin medirla no se da el segundo turno`);
+      if (mem.pct < floor.value) return refuse(`La segunda corre con la memoria libre en el piso o arriba, y está en ${mem.pct} % (${floorText(floor)})`);
+      evict(other.file, now);
+      if (publish(other.file, mine)) {
+        process.stderr.write(`heavy-turn: segunda ejecución grande: memoria libre ${mem.pct} %, ${floorText(floor)}\n`);
+        return taken();
+      }
+      continue;
+    }
+    // ninguna corre: los lugares vencidos se sacan y se publica el primero, sólo ése. Quien pierde la publicación vuelve a
+    // contar: si probara el otro lugar, quedaría segundo sin medir la memoria.
+    for (const s of slots) evict(s.file, now);
+    if (publish(files[0], mine)) return taken();
   }
-  return { ok: false, taken: false, message: `No pude tomar el turno de las ejecuciones grandes (${file} vuelve a aparecer): no la corrí.` };
+  return { ok: false, taken: false, message: `No pude tomar el turno de las ejecuciones grandes (${files[0]} vuelve a aparecer): no la corrí.` };
 }
 
 const gatesDir = (home) => path.join(stateDir(home), 'coordination', 'gates');
@@ -340,13 +431,18 @@ function besideRecheck({ home = require('os').homedir(), pid = process.pid, now 
   return { ok: false, message: `Al lado del pase adversarial ya arrancó otro portón: ${describeGate(first)}. Al lado del pase va uno solo: esperá que termine (guides/coordination.md, «Lo pesado, con turno»).` };
 }
 
-/** Suelta el turno si es de `pid`. El de otro proceso no se toca. */
+/** Suelta el lugar del turno de `pid`, el que sea. El de otro proceso no se toca. */
 function release({ home = require('os').homedir(), pid = process.pid } = {}) {
-  const file = turnFile(home);
-  let t;
-  try { t = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return false; }
-  if (!t || Number(t.pid) !== pid) return false;
-  try { fs.unlinkSync(file); return true; } catch { return false; }
+  let done = false;
+  for (const file of slotFiles(home)) {
+    const t = readTurn(file);
+    if (!t || Number(t.pid) !== pid) continue;
+    try { fs.unlinkSync(file); done = true; } catch (e) {
+      // ya no está: otro lo sacó. Si está y no se pudo borrar, queda tomado hasta vencer: se dice
+      if (e.code !== 'ENOENT') process.stderr.write(`heavy-turn: no pude soltar el lugar del turno ${file} (${e.code || oneLine(e.message)}): queda tomado hasta que el proceso termine o venza\n`);
+    }
+  }
+  return done;
 }
 
 function main(argv) {
@@ -365,10 +461,15 @@ function main(argv) {
     process.stdout.write(rest.includes('--json') ? `${JSON.stringify(t)}\n` : `${t ? describe(t) : 'nadie'}\n`);
     return 0;
   }
-  process.stderr.write('uso: heavy-turn.js take --what <qué> [--process <pid>] | release [--process <pid>] | holder [--json]\n');
+  if (cmd === 'holders') {
+    const all = holders();
+    process.stdout.write(rest.includes('--json') ? `${JSON.stringify(all)}\n` : `${all.length ? all.map(describe).join('\n') : 'nadie'}\n`);
+    return 0;
+  }
+  process.stderr.write('uso: heavy-turn.js take --what <qué> [--process <pid>] | release [--process <pid>] | holder [--json] | holders [--json]\n');
   return 2;
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { take, release, holder, describe, turnFile, clearWait, gateStarted, gateEnded, gatesRunning, besidePass, besideRecheck, freeMemory, suitesOf, describeGate, BUSY_EXIT, BESIDE_PASS_MAX_SUITES, BESIDE_PASS_MIN_FREE_PCT };
+module.exports = { take, release, holder, holders, secondTurnFloor, describe, turnFile, slotFiles, SECOND_HEAVY_MIN_FREE_PCT, clearWait, gateStarted, gateEnded, gatesRunning, besidePass, besideRecheck, freeMemory, suitesOf, describeGate, BUSY_EXIT, BESIDE_PASS_MAX_SUITES, BESIDE_PASS_MIN_FREE_PCT };
