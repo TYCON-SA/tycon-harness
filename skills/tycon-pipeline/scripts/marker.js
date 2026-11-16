@@ -1296,9 +1296,10 @@ function planParaLaPersona(planTxt) {
 function planVisto(marker, planTxt, { porElCuadro = false } = {}) {
   const visto = planEnLaConversacion(planTxt);
   if (!visto.legible || visto.mostrado) return visto;
-  // el cuadro de la firma muestra «Qué hace», los archivos y la ruta del plan completo (signature-sources.js): con esas
-  // dos secciones legibles, el click en el cuadro es aprobar viéndolo. Un «aprobado» escrito, la ventana o la terminal
-  // no lo muestran. El plan entero se muestra si la persona lo pide
+  // el cuadro de la firma muestra «Qué hace», cuántos archivos toca y de qué zonas, y dónde está el plan completo
+  // (owner-approvals.js `cuadroDe`; las rutas van a su detalle): con esas dos secciones legibles, el click en el cuadro es
+  // aprobar viéndolo: la cantidad y las zonas de los archivos alcanzan para decidir. Un «aprobado» escrito, la ventana o
+  // la terminal no lo muestran. El plan entero se muestra si la persona lo pide
   if (porElCuadro) {
     let secciones = null;
     try { secciones = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js')).seccionesDelPlan(planTxt); } catch (e) {

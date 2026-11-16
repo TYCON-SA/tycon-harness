@@ -481,13 +481,15 @@ test('OwnerNext_PlanAntesDelClick (T17) — @story-8.153 @ac-17', (t) => {
   assert.strictEqual(r.pregunta, undefined);
   // lo escribió un subagente: la persona no lo vio
   assert.strictEqual(pasada(conPlan(t, { dijo: PLAN, subagente: true })).tipo, 'plan');
-  // un plan con «Qué hace» y «Archivos»: el cuadro los muestra con la ruta del plan completo, y alcanza
+  // un plan con «Qué hace» y «Archivos»: el cuadro muestra qué hace, cuántos archivos y de qué zonas y dónde está el plan
+  // completo (su ruta, en el detalle), y alcanza
   const conSecciones = `${PLAN}\n## Qué hace\n\nCambia el primer paso.\n\n## Archivos\n\n- README.md\n`;
   r = pasada(conPlan(t, { plan: conSecciones }));
   assert.strictEqual(r.tipo, 'firma', JSON.stringify(r));
   assert.match(r.pregunta, /Cambia el primer paso/, 'el cuadro trae qué hace');
-  assert.match(r.pregunta, /README\.md/, 'y los archivos');
-  assert.match(r.pregunta, /step-02-bmad-plan\.md/, 'y dónde está el plan completo');
+  assert.match(r.pregunta, /Archivos: 1 archivo: una guía\./, 'y los archivos');
+  assert.match(r.pregunta, /Completo en: el plan, en la carpeta de la ejecución\./, 'y dónde está el plan completo');
+  assert.ok(r.detalle.some((l) => /step-02-bmad-plan\.md/.test(l)), 'y su ruta, en el detalle');
   assert.doesNotMatch(r.aviso, /escribilo tal cual/i, 'sin pedir que lo peguen');
   // con una sola de las dos, o «Qué hace» de más de 3 renglones, el cuadro no alcanza: el plan se ve antes del click
   for (const incompleto of ['## Qué hace\n\nCambia el primer paso.\n', '## Archivos\n\n- README.md\n', '## Qué hace\n\nUno.\nDos.\nTres.\nCuatro.\n\n## Archivos\n\n- README.md\n']) {
