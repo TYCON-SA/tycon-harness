@@ -142,6 +142,12 @@ test('T38 GanchoDelCommit_ListaYConfigUnaVez', (t) => {
   assert.deepStrictEqual(getStagedDiff(a).split('\n').filter(Boolean), ['app.js', 'otro.js'], 'con la copia, la lista nueva');
   delete process.env.GIT_INDEX_FILE;
   assert.deepStrictEqual(getStagedDiff(a).split('\n').filter(Boolean), ['app.js'], 'de vuelta al índice real, la de siempre');
+
+  // un GIT_INDEX_FILE relativo lo resuelve git desde la raíz del repo, no desde la carpeta: sin huella, no se recuerda
+  const GS = require(path.join(SCRIPTS, 'lib', 'git-stamp.js'));
+  fs.mkdirSync(path.join(a, 'sub'));
+  assert.strictEqual(GS.stampOf(path.join(a, 'sub'), { GIT_INDEX_FILE: '../otro-indice' }), null);
+  assert.ok(GS.stampOf(path.join(a, 'sub'), { GIT_INDEX_FILE: copia }), 'con ruta absoluta, sí hay huella');
 });
 
 /** La base de juguete de base-controls.test.sh: un control que frena una palabra salvo en los archivos de su lista. */
@@ -266,6 +272,14 @@ test('T40 Hermano_RamaUnaVez_OtroHeadVuelveAPreguntar', (t) => {
   sh(suelta, 'add', '-A');
   sh(suelta, 'commit', '-q', '-m', 'x');
   assert.strictEqual(CR.ramaDe(suelta), 'nueva', 'el null de antes no se recordó');
+
+  // desde una subcarpeta del repo, lo commiteado de .tycon/ es el de la raíz (como `git show HEAD:<ruta>`)
+  fs.mkdirSync(path.join(a, 'sub'), { recursive: true });
+  escribir(a, '.tycon/atdd-gate', 'block\n');
+  sh(a, 'add', '.tycon/atdd-gate');
+  sh(a, 'commit', '-q', '-m', 'atdd');
+  assert.strictEqual(CS.leerCommiteado(path.join(a, 'sub')), CS.leerCommiteado(a), 'el yaml commiteado, también desde la subcarpeta');
+  assert.strictEqual(CS.archivoParaFreno(path.join(a, 'sub'), '.tycon/atdd-gate'), 'block\n', 'el archivo suelto, también desde la subcarpeta');
 
   // git que no contesta (una configuración rota, que la huella no mira): «no está commiteado» no se recuerda
   const cfg = path.join(a, '.git', 'config');

@@ -88,7 +88,8 @@ function tyconCommiteado(repoRoot) {
     const h = cabeza(repoRoot);
     if (h === null) return { valor: null, recordar: false };
     if (h === false) return { valor: new Set(), recordar: true };
-    const r = git(repoRoot, ['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', '.tycon/']);
+    // --full-tree: la ruta y lo que imprime son desde la raíz, como `show HEAD:<ruta>`, aunque repoRoot sea una subcarpeta
+    const r = git(repoRoot, ['ls-tree', '-r', '-z', '--full-tree', '--name-only', 'HEAD', '--', '.tycon/']);
     if (r.error || r.status !== 0) return { valor: null, recordar: false };
     return { valor: new Set(String(r.stdout).split('\0').filter(Boolean)), recordar: true };
   });

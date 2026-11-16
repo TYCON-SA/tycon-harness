@@ -51,7 +51,8 @@ function gitDirOf(dir) {
 
 /** La huella de `dir`, o null (no recordar). */
 function stampOf(dir, env = process.env) {
-  if (apagado(env) || env.GIT_DIR || !dir) return null;
+  // un GIT_INDEX_FILE relativo lo resuelve git desde la raíz del árbol, no desde `dir`: sin huella
+  if (apagado(env) || env.GIT_DIR || !dir || (env.GIT_INDEX_FILE && !path.isAbsolute(env.GIT_INDEX_FILE))) return null;
   try {
     const gd = gitDirOf(dir);
     if (!gd) return null;
@@ -61,7 +62,7 @@ function stampOf(dir, env = process.env) {
     // con las referencias en `reftable/` no hay archivo de la rama ni historial que cambien con un commit: sin huella
     if (fs.existsSync(path.join(comun, 'reftable')) || fs.existsSync(path.join(gd, 'reftable'))) return null;
     const ref = /^ref:\s*(\S+)$/.exec(head);
-    const indice = env.GIT_INDEX_FILE ? path.resolve(dir, env.GIT_INDEX_FILE) : path.join(gd, 'index');
+    const indice = env.GIT_INDEX_FILE ? env.GIT_INDEX_FILE : path.join(gd, 'index');
     const partes = [
       gd, head,
       marca(path.join(gd, 'logs', 'HEAD')),
