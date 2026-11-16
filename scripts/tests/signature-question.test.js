@@ -18,6 +18,7 @@ const { spawnSync } = require('child_process');
 const ow = require('../lib/owner-window.js');
 const oa = require('../lib/owner-approvals.js');
 const sig = require('../lib/signatures.js');
+const { conVentana } = require('./lib/window-passed.js');
 
 const RAIZ = path.join(__dirname, '..', '..');
 const MARKER = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
@@ -974,4 +975,386 @@ test('Cuadro_CambiaN_CuentaLasQueCambiaron (T16) @story-8.282 @ac-22 @ac-29', (t
   const todas = repoConArchivos(t, ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/lib/c.js']);
   const igual = conFirma('control-change')(todas.c, todas.comando(todas.entradas())).pregunta;
   assert.match(igual, /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\./);
+});
+
+// ── 8.287 B: las rutas de la corrida no dependen de la carpeta del proceso ───────────────────────────────────────────
+
+const RUN_DIR = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'run-dir.js');
+const OPEN_RUNS = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'open-runs.js');
+const TRAMO = path.join('.advisors', 'pipeline-runs');
+const real = (p) => fs.realpathSync(p);
+const dentroDe = (ruta, repo) => path.isAbsolute(ruta) && (ruta.startsWith(repo + path.sep) || ruta.startsWith(real(repo) + path.sep));
+
+/** Corre `codigo` en un proceso hijo con la carpeta de trabajo `cwd` y la casa `casa`; devuelve `{ out, err, status }`. */
+function enCarpeta(cwd, casa, codigo, extra = {}) {
+  const env = { ...process.env, HOME: casa, USERPROFILE: casa, TYCON_HOME: '', CLAUDE_CODE_SESSION_ID: 'ses-a', ...extra };
+  const r = spawnSync(process.execPath, ['-e', codigo], { cwd, env, encoding: 'utf8', input: '' });
+  return { out: r.stdout, err: r.stderr, status: r.status };
+}
+
+/** El marcador de `ses-a` de la casa, con `cambios` encima. */
+function marcadorDe(c, cambios) {
+  const f = path.join(c.estado, 'active', 'ses-a.json');
+  const m = { ...JSON.parse(fs.readFileSync(f, 'utf8')), ...cambios };
+  for (const k of Object.keys(m)) if (m[k] === undefined) delete m[k];
+  fs.writeFileSync(f, JSON.stringify(m));
+  return m;
+}
+
+// 🔴 Falla con: un marcador con la carpeta relativa (`start --repo .`) da una pregunta en la carpeta del repo y otra en la
+// de la coordinadora: el click del dueño, dado en el cuadro de la lista, no es «la pregunta que armó el guion».
+test('SignatureQuestion_RunSignatures_SameQuestionFromAnyFolder (T1) @story-8.287 @ac-1 @ac-3 @ac-11', (t) => {
+  const c = corrida(t);
+  escribirPlan(c);
+  fs.writeFileSync(path.join(c.runDir, 'findings.json'), JSON.stringify([{ rule_id: 'SEC-C1', severity: 'CRITICAL', file: 'a.js', summary: 'secreto', disposition: 'open' }]));
+  fs.mkdirSync(path.join(c.runDir, 'rethink'), { recursive: true });
+  fs.writeFileSync(path.join(c.runDir, 'rethink', 'iter-1.json'), JSON.stringify({ iter: 1, repeated: 'vuelve', change: 'se parte' }));
+  marcadorDe(c, { runDir: path.join(TRAMO, path.basename(c.runDir)) });
+  const otra = temporal(t, 'sigq-otra-');
+  const firmas = [
+    ['plan-approval', APRUEBA_PLAN],
+    ['extra-round', `node ${PIPELINE} smart-reloop --iter 1 --extra-round`],
+    ['critical-waiver', `node ${MARKER} waive-critical --rule SEC-C1 --file a.js --reason "lo cubre otra capa"`],
+  ];
+  const codigo = `const ow = require(${JSON.stringify(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'))});
+    const firmas = ${JSON.stringify(firmas)};
+    process.stdout.write(JSON.stringify(firmas.map(([firma, comando]) => {
+      const q = ow.cuadroPara({ firma, comando, palabras: ow.canonica(comando), destino: 'ses-a', sesion: 'ses-a', cwd: process.cwd(), casa: ${JSON.stringify(c.casa)} });
+      return { pregunta: q && q.pregunta, opciones: q && q.opciones, sello: q && q.sello };
+    })));`;
+  const desde = (cwd) => { const r = enCarpeta(cwd, c.casa, codigo); assert.strictEqual(r.status, 0, r.err); return JSON.parse(r.out); };
+  const enRepo = desde(c.repo);
+  const enOtra = desde(otra);
+  firmas.forEach(([firma], i) => {
+    assert.ok(enRepo[i].pregunta, `${firma}: sin cuadro`);
+    assert.strictEqual(enOtra[i].pregunta, enRepo[i].pregunta, `${firma}: la pregunta cambia con la carpeta`);
+    assert.strictEqual(enOtra[i].sello, enRepo[i].sello, `${firma}: el sello cambia con la carpeta`);
+    const completo = (enRepo[i].pregunta.match(/Completo en: (.*?)\.(?: |$)/) || [])[1] || '';
+    assert.ok(dentroDe(completo, c.repo), `${firma}: «Completo en» no es absoluto y del repo: ${completo}`);
+  });
+  // el click dado en el cuadro armado desde el repo vale para el cuadro armado desde otra carpeta
+  const ts = '2026-11-16T10:00:00.000Z';
+  oa.anotar(c.casa, { id: 'click-8287', tipo: 'click', sesion: 'ses-a', ts, tool_use_id: 'toolu_8287', pregunta: enRepo[0].pregunta, respuesta: enRepo[0].opciones[0] });
+  const r = oa.buscar({ casa: c.casa, sesion: 'ses-a', cuadro: enOtra[0], ahora: Date.parse(ts) + 60000, validar: () => ({ ok: true }) });
+  assert.strictEqual(r.ok, true, r.motivo);
+});
+
+// 🔴 Falla con: la carpeta relativa del marcador resuelta contra la carpeta del proceso (una igual de otro repo gana), o
+// `backend/.advisors/…` resuelto como `<repo>/backend/.advisors/…`.
+test('RunDir_RelativeInMarker_ResolvesAgainstItsRepo (T2) @story-8.287 @ac-2 @ac-4', (t) => {
+  const c = corrida(t);
+  fs.writeFileSync(path.join(c.runDir, 'a.txt'), 'x');
+  const nombre = path.basename(c.runDir);
+  // otra carpeta de la misma historia, más nueva: la que elige la regla sin marcador
+  const nueva = path.join(c.repo, TRAMO, `${pl.runDirKey('9.99', c.ruta).key}-20991231000000`);
+  fs.mkdirSync(nueva, { recursive: true });
+  fs.writeFileSync(path.join(nueva, 'a.txt'), 'x');
+  // la carpeta del proceso tiene una carpeta relativa igual, de otro repo
+  const otra = temporal(t, 'sigq-otra-');
+  fs.mkdirSync(path.join(otra, TRAMO, nombre), { recursive: true });
+  const base = JSON.parse(fs.readFileSync(path.join(c.estado, 'active', 'ses-a.json'), 'utf8'));
+  const resolver = (m) => enCarpeta(otra, c.casa, `const rd = require(${JSON.stringify(RUN_DIR)});
+    process.stdout.write(String(rd.resolveRunDir(${JSON.stringify(c.repo)}, '9.99', false, ${JSON.stringify(c.ruta)}, { marker: ${JSON.stringify(m)} })));`);
+  for (const rel of [path.join(TRAMO, nombre), path.join('backend', TRAMO, nombre)]) {
+    const r = resolver({ ...base, runDir: rel });
+    assert.strictEqual(r.status, 0, r.err);
+    assert.strictEqual(r.out, c.runDir, `${rel}: no es la carpeta del repo del marcador`);
+  }
+  for (const m of [{ ...base, runDir: path.join('otra', 'forma', nombre) }, (({ repoPath: _r, ...resto }) => ({ ...resto, runDir: path.join(TRAMO, nombre) }))(base)]) {
+    const r = resolver(m);
+    assert.strictEqual(r.status, 0, r.err);
+    assert.strictEqual(r.out, nueva, `${JSON.stringify(m)}: tenía que caer en la regla sin marcador`);
+    assert.match(r.err, /Uso la regla sin marcador/, 'la regla sin marcador elige sin decir por qué');
+  }
+  // pase adversarial: un marcador roto con la carpeta que no es texto no tira; sigue la regla sin marcador, como antes
+  for (const runDir of [true, { a: 1 }, 5]) {
+    const r = resolver({ ...base, runDir });
+    assert.strictEqual(r.status, 0, `${JSON.stringify(runDir)}: ${r.err}`);
+    assert.strictEqual(r.out, nueva, `${JSON.stringify(runDir)}: tenía que caer en la regla sin marcador`);
+  }
+});
+
+/** Una HOME con el arnés y un repo git de juguete con historias `9.91`…, en `<base>/repo`; corre los guiones reales. */
+function arnes(t) {
+  const base = temporal(t, 'sigq-arnes-');
+  const home = path.join(base, 'home');
+  const repo = path.join(base, 'repo');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.symlinkSync(RAIZ, path.join(home, '.claude', 'agent-skills'));
+  fs.symlinkSync(RAIZ, path.join(home, '.claude', 'tycon-harness'));
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'src'));
+  const FECHA = '2026-01-01T10:00:00';
+  const git = (...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, ...a], {
+    stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA } });
+  git('init', '-q', '-b', 'feat/x');
+  git('config', 'user.email', 't@t');
+  git('config', 'user.name', 't');
+  const historia = (n) => {
+    const f = path.join(repo, 'specs', `story-${n}-rutas.md`);
+    fs.writeFileSync(f, ['---', `story: "${n}"`, 'title: "rutas"', 'status: ready-for-dev', 'files_to_modify:', '  - src/a.js', '---',
+      `# Story ${n}`, '', '### Tests', '', '| # | Test |', '|---|---|', '| T1 | a |', '', '## Dev Agent Record', ''].join('\n'));
+    return f;
+  };
+  const historias = { 9.91: historia('9.91'), 9.92: historia('9.92'), 9.93: historia('9.93') };
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'module.exports = 1;\n');
+  git('add', '.');
+  git('commit', '-qm', 'inicio');
+  const env = (sid, extra = {}) => {
+    const e = { ...process.env };
+    for (const k of Object.keys(e)) if (/^TYCON_|^CODEX_SESSION_ID$|^CLAUDE_CODE_SESSION_ID$/.test(k)) delete e[k];
+    Object.assign(e, { HOME: home, USERPROFILE: home, TYCON_LANE_LLM: '0', TYCON_HOME: '', TYCON_TIME_TRACKING: 'none',
+      TYCON_MUTATION_CHECK: 'off', TYCON_GUIDES_DIR: RAIZ });
+    if (sid) e.CLAUDE_CODE_SESSION_ID = sid;
+    return Object.assign(e, extra);
+  };
+  const correr = (script, args, sid, { cwd = repo, extra } = {}) => spawnSync(process.execPath,
+    [path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', script), ...args], { encoding: 'utf8', env: env(sid, extra), input: '', cwd });
+  const estado = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(home);
+  const activo = (sid) => path.join(estado, 'active', `${sid}.json`);
+  const leer = (sid) => JSON.parse(fs.readFileSync(activo(sid), 'utf8'));
+  const escribir = (sid, m) => { fs.mkdirSync(path.join(estado, 'active'), { recursive: true }); fs.writeFileSync(activo(sid), JSON.stringify(m)); };
+  const aperturas = (sid) => fs.readFileSync(path.join(estado, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
+    .filter((e) => e.name === 'run-open' && e.sesion === sid);
+  const carpeta = (n, sello) => { const d = path.join(repo, TRAMO, `${n}-${sello}`); fs.mkdirSync(d, { recursive: true }); return d; };
+  return { base, home, repo, historias, estado, correr, activo, leer, escribir, aperturas, carpeta };
+}
+
+// 🔴 Falla con: `start --repo .` (o `--repo <subcarpeta>`) que guarda `.advisors/…` relativo, o un `set` desde otra
+// carpeta que pierde la carpeta vieja por buscarla en la carpeta del proceso.
+test('Marker_RelativeRepo_StoresAbsoluteRunDir (T3) @story-8.287 @ac-5', (t) => {
+  const A = arnes(t);
+  const uno = A.correr('pipeline.js', ['start', '--story', A.historias['9.91'], '--repo', '.', '--brief'], 's-uno');
+  assert.strictEqual(uno.status, 0, uno.stderr + uno.stdout);
+  assert.ok(dentroDe(A.leer('s-uno').runDir, A.repo), `con --repo .: ${A.leer('s-uno').runDir}`);
+  const dos = A.correr('pipeline.js', ['start', '--story', A.historias['9.92'], '--repo', 'repo', '--brief'], 's-dos', { cwd: A.base });
+  assert.strictEqual(dos.status, 0, dos.stderr + dos.stdout);
+  assert.ok(dentroDe(A.leer('s-dos').runDir, A.repo), `con --repo <subcarpeta>: ${A.leer('s-dos').runDir}`);
+  // un marcador de antes, con la carpeta relativa que existe bajo su repo: `set` desde otra carpeta la conserva, absoluta
+  const vieja = A.carpeta('9.93', '20261101000000');
+  A.escribir('s-tres', { storyId: '9.93', storyPath: A.historias['9.93'], repoPath: A.repo, runDir: path.join(TRAMO, path.basename(vieja)),
+    sessionId: 's-tres', startedAt: '2026-11-01T00:00:00Z', stepScheme: 2, stepsCompleted: ['start'], stepsPending: ['validate-story'] });
+  const otra = temporal(t, 'sigq-otra-');
+  const antes = fs.readdirSync(path.join(A.repo, TRAMO)).length;
+  const r = A.correr('marker.js', ['set', JSON.stringify({ storyId: '9.93', storyPath: A.historias['9.93'], repoPath: A.repo, runDir: path.join(A.repo, TRAMO, '9.93-20991231000000') })], 's-tres', { cwd: otra });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(A.leer('s-tres').runDir, vieja, 'el set perdió la carpeta vieja');
+  assert.strictEqual(fs.readdirSync(path.join(A.repo, TRAMO)).length, antes, 'el set abrió otra carpeta');
+  // una vieja que no se ubica (otra forma) o que ya no está en disco no se toma: gana la nueva, absoluta
+  const nueva = path.join(A.repo, TRAMO, '9.93-20991231000001');
+  for (const [sid, runDirViejo] of [['s-forma', path.join('otra', 'forma')], ['s-borrada', path.join(TRAMO, '9.93-20261101000009')]]) {
+    fs.mkdirSync(path.join(otra, runDirViejo), { recursive: true });
+    A.escribir(sid, { storyId: '9.93', storyPath: A.historias['9.93'], repoPath: A.repo, runDir: runDirViejo, sessionId: sid,
+      startedAt: '2026-11-01T00:00:00Z', stepScheme: 2, stepsCompleted: ['start'], stepsPending: ['validate-story'] });
+    const s = A.correr('marker.js', ['set', JSON.stringify({ storyId: '9.93', storyPath: A.historias['9.93'], repoPath: A.repo, runDir: nueva })], sid, { cwd: otra });
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.strictEqual(A.leer(sid).runDir, nueva, `${sid}: la vieja se buscó en la carpeta del proceso`);
+  }
+  // pase adversarial: un `set` sin repo, con la carpeta absoluta y la historia relativa, toma el repo de la carpeta
+  for (const [sid, repoPath] of [['s-sin-repo', undefined], ['s-repo-vacio', '']]) {
+    const s = A.correr('marker.js', ['set', JSON.stringify({ storyId: '9.93', storyPath: path.join('specs', 'story-9.93-rutas.md'),
+      ...(repoPath === undefined ? {} : { repoPath }), runDir: path.join(A.repo, TRAMO, '9.93-20991231000002') })], sid, { cwd: otra });
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.strictEqual(A.leer(sid).repoPath, A.repo, `${sid}: el repo salió de la carpeta del proceso`);
+    assert.strictEqual(A.leer(sid).storyPath, A.historias['9.93'], `${sid}: la historia se ubicó contra otro repo`);
+  }
+});
+
+// 🔴 Falla con: un escritor del marcador o de la apertura que guarda una ruta relativa, o que la resuelve contra la
+// carpeta del proceso; un restore que pierde la apertura vieja por no encontrar su copia.
+test('RunPaths_EveryWriter_StoresAbsolute (T7) @story-8.287 @ac-12', (t) => {
+  const rd = require(RUN_DIR);
+  // la función única, sobre las formas de la regla (sin carpeta del proceso)
+  const R = path.join(path.sep, 'x', 'repo');
+  const B = path.join(path.sep, 'x', 'backend');
+  const abs = (repo, n = 'k-1') => path.join(repo, TRAMO, n);
+  assert.strictEqual(rd.rutasDeLaCorrida({ repoPath: '.', runDir: abs(R) }).repoPath, R);
+  assert.strictEqual(rd.rutasDeLaCorrida({ runDir: abs(R) }).repoPath, R);
+  assert.strictEqual(rd.rutasDeLaCorrida({ repoPath: B, runDir: path.join('backend', TRAMO, 'k-1') }).runDir, abs(B));
+  const doble = path.join(path.sep, 'a', TRAMO, 'z');
+  assert.strictEqual(rd.rutasDeLaCorrida({ runDir: abs(doble) }).repoPath, doble, 'con el tramo dos veces, el repo es lo de antes del último');
+  assert.strictEqual(rd.rutasDeLaCorrida({ repoPath: R, runDir: abs(R), storyPath: path.join('specs', 's.md') }).storyPath, path.join(R, 'specs', 's.md'));
+  const rara = rd.rutasDeLaCorrida({ runDir: path.join('otra', 'forma') });
+  assert.ok(rara.motivo, 'una carpeta de otra forma y sin repo no se puede ubicar, y lo dice');
+  assert.strictEqual(rara.runDir, path.join('otra', 'forma'));
+  // `.` y `..` no son el nombre de una carpeta de corrida: llevarían fuera de las carpetas del repo
+  for (const punto of ['.', '..']) {
+    const r = rd.rutasDeLaCorrida({ repoPath: R, runDir: `${TRAMO}/${punto}` });
+    assert.ok(r.motivo && !path.isAbsolute(r.runDir), `«${punto}» se tomó como carpeta de corrida: ${r.runDir}`);
+    // armada como texto, sin normalizar: `path.join` ya borraría el `..` antes de llegar a la función
+    assert.strictEqual(rd.rutasDeLaCorrida({ runDir: `${R}${path.sep}${TRAMO}${path.sep}${punto}` }).repoPath, undefined, `«${punto}» dio un repo`);
+  }
+  // una carpeta guardada con el otro separador se ubica igual
+  assert.strictEqual(rd.rutasDeLaCorrida({ repoPath: R, runDir: 'backend\\.advisors\\pipeline-runs\\k-1' }).runDir, abs(R));
+  // sin repo absoluto: el repo relativo y la historia relativa no se ubican, y lo dice
+  assert.match(rd.rutasDeLaCorrida({ repoPath: '.', runDir: path.join(TRAMO, 'k-1') }).motivo || '', /repo de la corrida \(\.\) es relativo/);
+  assert.match(rd.rutasDeLaCorrida({ storyPath: path.join('specs', 's.md') }).motivo || '', /historia de la corrida/);
+  // el `motivo` propio de un marcador se conserva; el de las rutas no se guarda
+  assert.strictEqual(rd.marcadorConRutas({ storyId: '1', repoPath: R, runDir: abs(R), motivo: 'el suyo' }).motivo, 'el suyo');
+  assert.ok(!('motivo' in rd.marcadorConRutas({ storyId: '1', runDir: path.join('otra', 'forma') })), 'el motivo de las rutas quedó en el marcador');
+  // quien escribe el marcador (`avisar`) dice la ruta que no pudo ubicar; sin `avisar`, calla (es una lectura)
+  const dicho = [];
+  const escribir = process.stderr.write;
+  process.stderr.write = (s) => { dicho.push(String(s)); return true; };
+  try {
+    rd.marcadorConRutas({ storyId: '1', runDir: path.join('otra', 'forma') }, { avisar: true });
+    rd.marcadorConRutas({ storyId: '2', runDir: path.join('otra', 'forma') });
+    rd.marcadorConRutas({ storyId: '3', repoPath: R, runDir: abs(R) }, { avisar: true });
+  } finally { process.stderr.write = escribir; }
+  assert.strictEqual(dicho.length, 1, dicho.join(''));
+  assert.match(dicho[0], /historia 1: la carpeta de la corrida .* es relativa/);
+
+  const A = arnes(t);
+  const otra = temporal(t, 'sigq-otra-');
+  // start: la apertura con el repo absoluto
+  const s = A.correr('pipeline.js', ['start', '--story', A.historias['9.91'], '--repo', '.', '--brief'], 's-uno');
+  assert.strictEqual(s.status, 0, s.stderr + s.stdout);
+  const ap = A.aperturas('s-uno').pop();
+  assert.ok(path.isAbsolute(ap.repo) && path.isAbsolute(ap.runDir) && path.isAbsolute(ap.storyPath), JSON.stringify(ap));
+
+  // abrir y cerrar, con la casa de la prueba
+  const or = require(OPEN_RUNS);
+  const k = A.carpeta('9.92', '20261102000000');
+  or.abrir({ sid: 's-abre', story: '9.92', storyPath: path.join('specs', 'story-9.92-rutas.md'), repo: A.repo, runDir: path.join(TRAMO, path.basename(k)), home: A.home });
+  const abierta = A.aperturas('s-abre').pop();
+  assert.strictEqual(abierta.runDir, k);
+  assert.strictEqual(abierta.storyPath, A.historias['9.92']);
+  assert.ok(fs.existsSync(path.join(k, 'run-open.json')), 'abrir no dejó la copia en la carpeta del repo');
+  assert.throws(() => or.abrir({ sid: 's-sin-repo', story: '9.92', runDir: path.join(TRAMO, 'k-9'), home: A.home }), /repo/);
+  assert.strictEqual(A.aperturas('s-sin-repo').length, 0, 'abrir sin repo absoluto anotó igual');
+  or.cerrar({ sid: 's-abre', sesion: 's-abre', runDir: path.join(TRAMO, path.basename(k)), story: '9.92', estado: 'abortada', home: A.home, extra: { repoPath: A.repo } });
+  assert.ok(!fs.existsSync(path.join(k, 'run-open.json')), 'cerrar con el repo no encontró la copia');
+  // sin el repo: anota el cierre, dice que la carpeta no se ubicó y no busca la copia (en la carpeta del proceso tampoco)
+  const k2 = A.carpeta('9.92', '20261102000001');
+  or.abrir({ sid: 's-abre2', story: '9.92', repo: A.repo, runDir: k2, home: A.home });
+  const previo = process.cwd();
+  process.chdir(A.repo);
+  try { or.cerrar({ sid: 's-abre2', sesion: 's-abre2', runDir: path.join(TRAMO, path.basename(k2)), story: '9.92', estado: 'abortada', home: A.home }); } finally { process.chdir(previo); }
+  assert.ok(fs.existsSync(path.join(k2, 'run-open.json')), 'cerrar sin repo buscó la copia en la carpeta del proceso');
+  const cierre = fs.readFileSync(path.join(A.estado, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
+    .filter((e) => e.name === 'run-close' && e.sesion === 's-abre2').pop();
+  assert.strictEqual(cierre && cierre.carpetaSinUbicar, true, JSON.stringify(cierre));
+
+  // restore: aperturas viejas (repo «.» o sin repo), una copia podada relativa y una que no se puede ubicar
+  const gates = path.join(A.estado, 'gates.log');
+  const vieja = (sid, n, conRepo) => {
+    const d = A.carpeta(n, '20261103000000');
+    const ev = { sesion: sid, story: n, storyPath: A.historias[n], ...(conRepo ? { repo: '.' } : {}), runDir: d, ts: '2026-11-03T00:00:00.000Z' };
+    fs.appendFileSync(gates, JSON.stringify({ ...ev, sessionId: sid, name: 'run-open' }) + '\n');
+    fs.writeFileSync(path.join(d, 'run-open.json'), JSON.stringify(ev));
+    return d;
+  };
+  const restaurar = (origen, destino) => A.correr('marker.js', ['restore', origen], destino, { cwd: otra, extra: conVentana({}) });
+  for (const [origen, destino, n, conRepo] of [['s-vieja', 's-r1', '9.92', true], ['s-sin-repo2', 's-r2', '9.93', false]]) {
+    const d = vieja(origen, n, conRepo);
+    const r = restaurar(origen, destino);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const m = A.leer(destino);
+    assert.strictEqual(m.repoPath, A.repo, `${origen}: repo`);
+    assert.strictEqual(m.runDir, d, `${origen}: carpeta`);
+    assert.ok(!fs.existsSync(path.join(d, 'run-open.json')) || JSON.parse(fs.readFileSync(path.join(d, 'run-open.json'), 'utf8')).sesion === destino,
+      `${origen}: la apertura vieja quedó sin cerrar`);
+  }
+  fs.mkdirSync(path.join(A.estado, 'pruned'), { recursive: true });
+  const p = A.carpeta('9.91', '20261104000000');
+  fs.writeFileSync(path.join(A.estado, 'pruned', 's-podada.json'), JSON.stringify({ storyId: '9.91', storyPath: A.historias['9.91'], repoPath: A.repo,
+    runDir: path.join(TRAMO, path.basename(p)), sessionId: 's-podada', startedAt: '2026-11-04T00:00:00Z', lastTouch: '2026-11-04T01:00:00Z',
+    stepScheme: 2, stepsCompleted: ['start'], stepsPending: ['validate-story'] }));
+  const rp = restaurar('s-podada', 's-r3');
+  assert.strictEqual(rp.status, 0, rp.stderr);
+  assert.strictEqual(A.leer('s-r3').runDir, p);
+  fs.writeFileSync(path.join(A.estado, 'pruned', 's-rara.json'), JSON.stringify({ storyId: '9.91', storyPath: A.historias['9.91'],
+    runDir: path.join('otra', 'forma'), sessionId: 's-rara', startedAt: '2026-11-04T00:00:00Z', lastTouch: '2026-11-04T01:00:00Z' }));
+  // una copia de la apertura con rutas relativas: con el repo absoluto se ubica; sin él, se dice y se usa el registro
+  const cp = A.carpeta('9.93', '20261104000001');
+  const evc = { sesion: 's-copia', story: '9.93', storyPath: A.historias['9.93'], repo: A.repo, runDir: cp, ts: '2026-11-04T00:00:00.000Z' };
+  fs.appendFileSync(gates, JSON.stringify({ ...evc, sessionId: 's-copia', name: 'run-open' }) + '\n');
+  fs.writeFileSync(path.join(cp, 'run-open.json'), JSON.stringify({ ...evc, repo: '.', runDir: path.join('x', 'y') }));
+  const rc = restaurar('s-copia', 's-r5');
+  assert.strictEqual(rc.status, 0, rc.stderr);
+  assert.match(rc.stderr, /la copia de la apertura no se puede ubicar/);
+  assert.strictEqual(A.leer('s-r5').runDir, cp);
+  const rr = restaurar('s-rara', 's-r4');
+  assert.notStrictEqual(rr.status, 0, 'el restore sin forma de ubicar la carpeta escribió igual');
+  assert.match(rr.stderr, /no puedo ubicar|no se puede ubicar/);
+  assert.ok(!fs.existsSync(A.activo('s-r4')), 'quedó un marcador a medias');
+
+  // adopt-session y set: el marcador y la apertura nuevos, absolutos
+  const ad = A.carpeta('9.93', '20261105000000');
+  A.escribir('s-otra', { storyId: '9.93', storyPath: A.historias['9.93'], repoPath: A.repo, runDir: path.join(TRAMO, path.basename(ad)), sessionId: 's-otra',
+    startedAt: '2026-11-05T00:00:00Z', stepScheme: 2, stepsCompleted: ['start'], stepsPending: ['validate-story'] });
+  const a = A.correr('marker.js', ['adopt-session', 's-otra'], 's-adopta', { cwd: otra });
+  assert.strictEqual(a.status, 0, a.stderr);
+  assert.strictEqual(A.leer('s-adopta').runDir, ad);
+  assert.strictEqual(A.aperturas('s-adopta').pop().runDir, ad);
+  const st = A.correr('marker.js', ['set', JSON.stringify({ storyId: '9.92', storyPath: A.historias['9.92'], repoPath: '.', runDir: path.join(A.repo, TRAMO, '9.92-20261106000000') })], 's-set', { cwd: otra });
+  assert.strictEqual(st.status, 0, st.stderr);
+  assert.strictEqual(A.leer('s-set').repoPath, A.repo, 'set guardó el repo contra la carpeta del proceso');
+
+  // la reescritura del marcador en el freno del cierre (batch-scope.js): el diff entero sale delicado con el plan delegado
+  const raiz = temporal(t, 'sigq-cierre-');
+  const origen = path.join(raiz, 'origen.git');
+  const repo = path.join(raiz, 'repo');
+  const g = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8' });
+  spawnSync('git', ['init', '-q', '--bare', '-b', 'main', origen]);
+  spawnSync('git', ['init', '-q', '-b', 'main', repo]);
+  g('remote', 'add', 'origin', origen);
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  const historia = path.join(repo, 'specs', 'story-9.94-rutas.md');
+  fs.writeFileSync(historia, ['---', 'story: "9.94"', 'title: "rutas"', 'status: in-progress', '---', '', '# Story 9.94', ''].join('\n'));
+  g('add', '.');
+  g('-c', 'user.email=a@b', '-c', 'user.name=a', 'commit', '-qm', 'base');
+  g('push', '-q', 'origin', 'main');
+  g('switch', '-q', '-c', 'feat/x');
+  const freno = path.join(repo, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-gate.js');
+  fs.mkdirSync(path.dirname(freno), { recursive: true });
+  fs.writeFileSync(freno, 'x\n');
+  g('add', '.');
+  const estado = path.join(raiz, 'home', '.claude', '.tycon-pipeline');
+  fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
+  const markerPath = path.join(estado, 'active', 'sc.json');
+  fs.writeFileSync(markerPath, JSON.stringify({ storyId: '9.94', storyPath: historia, repoPath: repo, runDir: path.join(TRAMO, '9.94-20261107000000'),
+    startedAt: new Date().toISOString(), stepScheme: 2, stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement'], stepsPending: ['prepare-commit'],
+    planApproval: { mode: 'revision', text: 'revisión', at: new Date().toISOString(), revision: { id: 'x', lanzo: 'coord' } } }));
+  const f = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'batch-scope.js')).frenoDelCierre({ markerPath, estado, sid: 'sc' });
+  assert.ok(f && /delicado/.test(f.texto), `el freno del cierre no reescribió el marcador: ${JSON.stringify(f)}`);
+  assert.strictEqual(JSON.parse(fs.readFileSync(markerPath, 'utf8')).runDir, path.join(repo, TRAMO, '9.94-20261107000000'));
+});
+
+// 🔴 Falla con: un marcador vivo escrito antes de la 8.287 B, con rutas relativas, leído contra la carpeta del proceso.
+test('RunPaths_OldRelativeMarker_ReadAbsolute (T8) @story-8.287 @ac-13', (t) => {
+  const c = corrida(t);
+  // el repo se llama «backend» y la carpeta trae el repo adelante, como la guardaba `start --repo backend`
+  const backend = path.join(path.dirname(c.repo), 'backend');
+  fs.renameSync(c.repo, backend);
+  const runDir = path.join(backend, TRAMO, path.basename(c.runDir));
+  const rel = path.join('backend', TRAMO, path.basename(c.runDir));
+  marcadorDe(c, { repoPath: backend, storyPath: path.join(backend, 'specs', path.basename(c.ruta)), runDir: rel });
+  const otra = temporal(t, 'sigq-otra-');
+  const pipelineJs = JSON.stringify(PIPELINE);
+  const lecturas = enCarpeta(otra, c.casa, `const pl = require(${pipelineJs});
+    const rd = require(${JSON.stringify(RUN_DIR)});
+    const s = pl.readSessionMarker(); const e = pl.readSessionMarkerStrict();
+    process.stdout.write(JSON.stringify([s && s.runDir, e && e.marcador && e.marcador.runDir,
+      rd.resolveRunDir(${JSON.stringify(backend)}, '9.99', false, ${JSON.stringify(path.join(backend, 'specs', path.basename(c.ruta)))}, { sessionId: 'ses-a' })]));`);
+  assert.strictEqual(lecturas.status, 0, lecturas.err);
+  for (const leido of JSON.parse(lecturas.out)) assert.strictEqual(leido, runDir);
+  const get = enCarpeta(otra, c.casa, `require('child_process').execFileSync(process.execPath, [${JSON.stringify(MARKER)}, 'get'], { stdio: 'inherit' });`);
+  assert.strictEqual(get.status, 0, get.err);
+  assert.strictEqual(JSON.parse(get.out).runDir, runDir, 'marker.js get (readMarker)');
+  // pase adversarial: el marcador del archivo único de antes (active.json, de transición) también se lee absoluto
+  const legado = enCarpeta(otra, c.casa, `const fs = require('fs'), path = require('path');
+    const estado = ${JSON.stringify(c.estado)};
+    fs.writeFileSync(path.join(estado, 'active.json'), JSON.stringify({ 'ses-legado': ${JSON.stringify({ storyId: '9.99', repoPath: backend, runDir: rel, storyPath: path.join('specs', path.basename(c.ruta)) })} }));
+    require('child_process').execFileSync(process.execPath, [${JSON.stringify(MARKER)}, 'get'], { stdio: 'inherit', env: { ...process.env, CLAUDE_CODE_SESSION_ID: 'ses-legado' } });`);
+  assert.strictEqual(legado.status, 0, legado.err);
+  const ml = JSON.parse(legado.out);
+  assert.strictEqual(ml.runDir, runDir, 'readMarker (archivo único de antes)');
+  assert.strictEqual(ml.storyPath, path.join(backend, 'specs', path.basename(c.ruta)));
+  fs.unlinkSync(path.join(c.estado, 'active.json'));
+  // `cerrarEjecucion` por la lectura común: `clear` cierra la apertura de esa carpeta (su copia se borra)
+  require(OPEN_RUNS).abrir({ sid: 'ses-a', story: '9.99', repo: backend, runDir, home: c.casa });
+  const clear = enCarpeta(otra, c.casa, `require('child_process').execFileSync(process.execPath, [${JSON.stringify(MARKER)}, 'clear'], { stdio: 'inherit' });`);
+  assert.strictEqual(clear.status, 0, clear.err);
+  assert.ok(!fs.existsSync(path.join(runDir, 'run-open.json')), 'el cierre no encontró la apertura de esa carpeta');
 });
