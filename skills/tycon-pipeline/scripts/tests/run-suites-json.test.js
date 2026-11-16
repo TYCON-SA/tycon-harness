@@ -39,6 +39,19 @@ function armar(suites, { conSkills = true } = {}) {
   return { root, repo, skills, escribir };
 }
 
+// Una suite de juguete que, mientras corre, copia a `visto` los portones anotados en `gates` (la coordinadora los lee
+// igual, de esa carpeta). Las dos rutas van en un .json al lado de la suite, no pegadas en su código: así el código de la
+// suite es fijo, y una ruta con comillas o `${` no lo cambia.
+const CUERPO_VIGIA = `const fs = require('fs');
+const path = require('path');
+const { gates, visto } = JSON.parse(fs.readFileSync(__filename + '.rutas.json', 'utf8'));
+let l = []; try { l = fs.readdirSync(gates).map((x) => JSON.parse(fs.readFileSync(path.join(gates, x), 'utf8'))); } catch (_) {}
+fs.writeFileSync(visto, JSON.stringify(l));`;
+function escribirVigia(f, ruta, gates, visto) {
+  f.escribir('arnes', ruta, CUERPO_VIGIA);
+  f.escribir('arnes', `${ruta}.rutas.json`, JSON.stringify({ gates, visto }));
+}
+
 function correr(repo, skills, out) {
   const r = spawnSync('node', [RUNNER, repo, out, '--skills', skills], { encoding: 'utf8' });
   const resumen = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')) : null;
@@ -1414,9 +1427,7 @@ test('T4 Porton_AcotadoArranca_BorraLaEspera @story-8.274 @ac-5: un portón sin 
   const gates = path.join(stateDir(home), 'coordination', 'gates');
   const visto = path.join(f.root, 'visto.json');
   // la suite mira, mientras corre, qué portones hay anotados (la coordinadora los lee igual, de esa carpeta)
-  f.escribir('arnes', 'tests/a.test.js', `const fs = require('fs');
-let l = []; try { l = fs.readdirSync(${JSON.stringify(gates)}).map((x) => JSON.parse(fs.readFileSync(require('path').join(${JSON.stringify(gates)}, x), 'utf8'))); } catch (_) {}
-fs.writeFileSync(${JSON.stringify(visto)}, JSON.stringify(l));`);
+  escribirVigia(f, 'tests/a.test.js', gates, visto);
   assert.ok(fs.existsSync(nota), 'la nota está antes del arranque');
   const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-espera', TYCON_SUITE_TURN: '1', TYCON_GATE_PROCESS: String(process.pid) };
   delete env.TYCON_HOME;
@@ -1447,6 +1458,22 @@ fs.writeFileSync(${JSON.stringify(visto)}, JSON.stringify(l));`);
   assert.ok(!fs.existsSync(nota), 'la espera se borra igual');
 });
 
+test('T-vigia SuiteDeJuguete_RutaConComillas_ElCodigoNoCambia: la suite que mira los portones lee sus rutas de su .json, no de su código', () => {
+  // 🔴 mutación: volver a pegar las rutas en el código de la suite (una ruta con comillas o `${` lo rompe o lo cambia)
+  const f = armar({ diarias: [] });
+  const raro = path.join(f.root, "dir 'con' \"comillas\" y ${x} `fin`");
+  const gates = path.join(raro, 'gates');
+  const visto = path.join(raro, 'visto.json');
+  fs.mkdirSync(gates, { recursive: true });
+  fs.writeFileSync(path.join(gates, 'g.json'), JSON.stringify({ sid: 's-uno' }));
+  escribirVigia(f, 'tests/v.test.js', gates, visto);
+  const suite = path.join(f.repo, 'scripts', 'tests', 'v.test.js');
+  assert.equal(fs.readFileSync(suite, 'utf8'), CUERPO_VIGIA, 'el código de la suite no depende de las rutas');
+  const r = spawnSync('node', [suite], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(visto, 'utf8')), [{ sid: 's-uno' }]);
+});
+
 // ── El portón acotado al lado del pase (8.286) ────────────────────────────────────────────────────────────────────
 
 test('T-8.286a RunSuites_Threshold_SingleSource @story-8.286 @ac-8: el corte y el piso viven en heavy-turn.js y nadie los repite', () => {
@@ -1470,9 +1497,8 @@ test('T-8.286b RunSuites_GateBesidePass_Exit77NoResult @story-8.286 @ac-1 @ac-2:
     const gates = path.join(stateDir(home), 'coordination', 'gates');
     const visto = path.join(f.root, 'visto.json');
     for (let i = 0; i < n; i += 1) {
-      f.escribir('arnes', `tests/s${i}.test.js`, i ? 'process.exit(0)' : `const fs = require('fs');
-let l = []; try { l = fs.readdirSync(${JSON.stringify(gates)}).map((x) => JSON.parse(fs.readFileSync(require('path').join(${JSON.stringify(gates)}, x), 'utf8'))); } catch (_) {}
-fs.writeFileSync(${JSON.stringify(visto)}, JSON.stringify(l));`);
+      if (i) f.escribir('arnes', `tests/s${i}.test.js`, 'process.exit(0)');
+      else escribirVigia(f, `tests/s${i}.test.js`, gates, visto);
     }
     fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true });
     const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-uma', TYCON_SUITE_TURN: '1', TYCON_GATE_PROCESS: String(process.pid) };
