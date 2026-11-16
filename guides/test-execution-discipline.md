@@ -209,15 +209,27 @@ la historia declara**, una vez por mutante, sobre una copia del repo. Nunca la s
 - **Qué recetas mutan:** Jest y Vitest (con el binario del paquete, `node_modules/.bin/…`), .NET (`dotnet test` con el
   `.csproj` de pruebas más cercano y un filtro por clase), pytest y `node --test`. Muta JavaScript/TypeScript, C# y
   Python. La receta se elige por la estructura del paquete, nunca leyendo una prueba.
+- **Suites en bash:** si todas las pruebas que declara la historia son `*.test.sh`, corre cada una con `bash <suite>`;
+  un mutante muere si la suite sale distinto de 0. No muta bash: un `.sh` declarado como código queda afuera, con su
+  motivo. Mezclar suites en bash con pruebas de otra receta sale «estructural».
+- **Sólo las pruebas de la historia:** con `node --test`, si cada archivo de prueba trae la marca `@story-<id>` de la
+  historia, cada ejecución pasa sólo las pruebas con esa marca (el id va anclado: la marca de una historia no toma la de otra cuyo número empieza igual).
+  Si un archivo no la trae, corre el archivo entero y lo dice. Una ejecución filtrada que no corre ninguna prueba es «no
+  medido», no verde.
 - **Una receta de la organización** (`stack.test_runners`) muta si declara `scoped`: el comando que corre sólo algunas
   pruebas, con `{files}` (los archivos) o `{classes}` (las clases de .NET). Sin `scoped`, el chequeo sale
   «estructural» y lo dice.
 - **Cuándo frena:** sólo si ningún mutante murió (las pruebas no ejercen el código nuevo). Con `node --test` frena
   siempre. Con las demás recetas avisa y deja pasar hasta el 2026-11-18, para que cada equipo sume las pruebas que
-  faltan; desde ese día frena igual. Los sobrevivientes sólo avisan, con cualquier receta.
-- **Los topes:** .NET, 8 min en total y 3 min por ejecución (recompila en cada mutante); las demás, 3 min en total y
-  2 min por ejecución. Ninguna ejecución pasa lo que queda del total; el portón lo mata a los 12 min como red. Antes de la
-  base imprime cuántos mutantes hay y cuánto puede tardar.
+  faltan; desde ese día frena igual. La receta de bash tiene su propia fecha: avisa hasta el 2026-11-30. Los
+  sobrevivientes sólo avisan, con cualquier receta.
+- **Los topes:** con el tiempo de cada suite medido en la máquina (el registro de tiempos del portón), cada ejecución
+  tiene lo medido más la mitad (con techo de 10 min) y el total es eso por (1 + mutantes) (con techo de 20 min); con
+  varias suites, manda la más lenta. Sin medida de alguna, los de siempre: .NET, 8 min en total y 3 min por ejecución
+  (recompila en cada mutante); las demás, 3 min en total y 2 min por ejecución. Esos son también el piso de los
+  medidos. Ninguna ejecución pasa lo que queda del total; el portón lo mata a los 22 min como red. Antes de la base
+  imprime cuántos mutantes hay y cuánto puede tardar; una base que pasa su tope sale «no medido» con el tope y el
+  tiempo medido.
 - **La copia** no enlaza `bin/` ni `obj/`: .NET compila en la copia, nunca en el repo del dev.
 
 ## Suites que simulan la máquina del dev: la carpeta personal de prueba
