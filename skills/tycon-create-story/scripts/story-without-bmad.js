@@ -354,7 +354,8 @@ function problems(a) {
         for (const k of ['question', 'why', 'who']) {
           if (!text(q && q[k])) out.push(`a la pregunta ${i + 1} le falta «${k}»`);
           // lo que el lector de intenciones toma por un comentario, un bloque de código o una marca rompería la tabla
-          else if (/<!--|-->|```|~~~|\[falta:/.test(q[k])) out.push(`la pregunta ${i + 1}: «${k}» no puede llevar «<!--», «-->», «\`\`\`», «~~~» ni «[falta:»`);
+          // (`--!>` también cierra un comentario en HTML)
+          else if (/<!--|--!?>|```|~~~|\[falta:/.test(q[k])) out.push(`la pregunta ${i + 1}: «${k}» no puede llevar «<!--», «-->», «--!>», «\`\`\`», «~~~» ni «[falta:»`);
         }
         if (typeof (q && q.blocks) !== 'boolean') out.push(`la pregunta ${i + 1}: «blocks» va true o false`);
       });

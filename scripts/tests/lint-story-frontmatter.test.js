@@ -575,7 +575,7 @@ test('T11 LintFrontmatter_IntentProblems_BlockAlways @story-8.258 @ac-7', () => 
   for (const [archivo, columna] of [[vieja, 'Bloquea'], [nueva, 'Estado'], [corrida, 'Fuente']]) {
     const r = run([archivo], root);
     assert.strictEqual(r.code, 1, `${path.basename(archivo)} tiene que frenar\n${r.out}`);
-    assert.match(r.out, new RegExp(path.basename(archivo).replace(/\./g, '\\.')));
+    assert.ok(r.out.includes(path.basename(archivo)), `nombra el archivo\n${r.out}`);
     assert.match(r.out, /Q1/, 'nombra la fila');
     assert.match(r.out, new RegExp(columna), 'nombra la columna');
   }

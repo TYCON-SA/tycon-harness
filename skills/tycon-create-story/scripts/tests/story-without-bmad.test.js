@@ -702,7 +702,7 @@ test('StoryWithoutBmad_IntentTextRoundTrip_AndUnsafeQuestions @story-8.258 @ac-9
   const leida = intent.readIntent(fs.readFileSync(r.json.intent, 'utf8'), { raiz: d });
   assert.strictEqual(leida.frontmatter.objective, problema);
   // una pregunta que rompería su propia intención (un comentario HTML, un bloque de código, una marca) no se escribe
-  for (const texto of ['¿dejamos los <!-- comentarios?', 'cierra con -->', 'con ``` adentro', 'ver [falta: Q7]']) {
+  for (const texto of ['¿dejamos los <!-- comentarios?', 'cierra con -->', 'cierra con --!>', 'con ``` adentro', 'ver [falta: Q7]']) {
     const d2 = repo();
     const r2 = correr(['write', '--repo', d2, '--answers', escribirRespuestas(respuestas({ questions: [{ question: texto, why: 'w', who: 'x', blocks: false }] }))]);
     assert.strictEqual(r2.status, 2, `${texto}: ${r2.stdout}`);
