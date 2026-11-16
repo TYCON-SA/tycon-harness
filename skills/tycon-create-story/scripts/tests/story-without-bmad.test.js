@@ -692,7 +692,25 @@ test('T44 Numero_IlegibleConNumeroEnElNombre_NoLoPisa: un story: sin número leg
   assert.strictEqual(r.json.number, '1.7');
 });
 
-test('StoryWithoutBmad_WritesIntent @story-8.258 @ac-9: la intención al lado, en borrador; sin pisar ni dejar una sola', () => {
+test('StoryWithoutBmad_IntentTextRoundTrip_AndUnsafeQuestions @story-8.258 @ac-9', () => {
+  const intent = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'intent.js'));
+  // lo que escribe el guion vuelve igual por el lector: tabuladores, comillas, barras y tildes
+  const d = repo();
+  const problema = 'el total\tno suma "x" en C:\\temp, é';
+  const r = correr(['write', '--repo', d, '--answers', escribirRespuestas(respuestas({ problem: problema }))]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const leida = intent.readIntent(fs.readFileSync(r.json.intent, 'utf8'), { raiz: d });
+  assert.strictEqual(leida.frontmatter.objective, problema);
+  // una pregunta que rompería su propia intención (un comentario HTML, un bloque de código, una marca) no se escribe
+  for (const texto of ['¿dejamos los <!-- comentarios?', 'cierra con -->', 'con ``` adentro', 'ver [falta: Q7]']) {
+    const d2 = repo();
+    const r2 = correr(['write', '--repo', d2, '--answers', escribirRespuestas(respuestas({ questions: [{ question: texto, why: 'w', who: 'x', blocks: false }] }))]);
+    assert.strictEqual(r2.status, 2, `${texto}: ${r2.stdout}`);
+    assert.ok(!fs.existsSync(path.join(d2, 'stories')), `${texto}: no tenía que escribir nada`);
+  }
+});
+
+test('StoryWithoutBmad_WritesIntent (T14) @story-8.258 @ac-9: la intención al lado, en borrador; sin pisar ni dejar una sola', () => {
   const intent = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'intent.js'));
   const preguntas = [
     { question: '¿El envío gratis cuenta?', why: 'cambia el total', who: 'quien vende', blocks: true },

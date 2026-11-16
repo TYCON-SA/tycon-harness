@@ -351,7 +351,11 @@ function problems(a) {
     if (!Array.isArray(a.questions)) out.push('«questions» tiene que ser una lista');
     else {
       a.questions.forEach((q, i) => {
-        for (const k of ['question', 'why', 'who']) if (!text(q && q[k])) out.push(`a la pregunta ${i + 1} le falta «${k}»`);
+        for (const k of ['question', 'why', 'who']) {
+          if (!text(q && q[k])) out.push(`a la pregunta ${i + 1} le falta «${k}»`);
+          // lo que el lector de intenciones toma por un comentario, un bloque de código o una marca rompería la tabla
+          else if (/<!--|-->|```|~~~|\[falta:/.test(q[k])) out.push(`la pregunta ${i + 1}: «${k}» no puede llevar «<!--», «-->», «\`\`\`», «~~~» ni «[falta:»`);
+        }
         if (typeof (q && q.blocks) !== 'boolean') out.push(`la pregunta ${i + 1}: «blocks» va true o false`);
       });
     }
@@ -560,7 +564,10 @@ function renderIntent(a, id) {
 function writeNew(target, contenido) {
   const tmpFile = `${target}.${process.pid}.tmp`;
   fs.writeFileSync(tmpFile, contenido, { flag: 'wx' });
-  try { fs.linkSync(tmpFile, target); } finally { fs.unlinkSync(tmpFile); }
+  try { fs.linkSync(tmpFile, target); } finally {
+    // si borrar el temporal falla, no tapa el error del enlace (un «ya existe» tiene que seguir diciéndose así)
+    try { fs.unlinkSync(tmpFile); } catch (_e) { /* el temporal queda; no cambia lo que se escribió */ }
+  }
 }
 
 function write(repo, answersPath, home, { thisRepo = false } = {}) {

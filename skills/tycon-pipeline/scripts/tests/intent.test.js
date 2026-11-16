@@ -219,3 +219,75 @@ test('T41 Intent_OwnSectionsPassIntentSpecSchema @story-8.258 @ac-2 @ac-34', () 
   assert.ok(i >= 0, 'falta su renglón en el NOTICE');
   assert.ok(notice.slice(i).some((l) => l.includes('Permission is hereby granted')), 'falta el aviso MIT debajo');
 });
+
+// ── Lo que encontraron el pase adversarial y los revisores ──────────────────────────────────────────────────────────
+
+test('Intent_FormRulesNotCoveredBefore @story-8.258 @ac-5', () => {
+  const r = intent.readIntent(doc({
+    preguntas: [QH, SEP,
+      q('Q1', 'a', 'b', 'c', 'no', 'encontrada', 'está', '—'),
+      q('Q2', 'a', 'b', 'c', 'no', 'contestada', '', 'persona:x')],
+    reservadas: [RH, SEP, q('R1', 'a', 'b', 'c', 'd', 'abierta', '', 'persona:x')],
+  }), { raiz: tmp('rev1') });
+  assert.ok(problemOf(r, 'Q1').some((p) => p.columna === 'Fuente'), 'encontrada sin repo: ni memoria:');
+  assert.ok(problemOf(r, 'Q2').some((p) => p.columna === 'Respuesta'), 'contestada sin respuesta');
+  assert.deepStrictEqual(problemOf(r, 'R1'), [], 'una reservada abierta puede nombrar a quién decide');
+});
+
+test('Intent_MarkWithoutRow_Blocks @story-8.258 @ac-5 @ac-6', () => {
+  for (const id of ['Q9', 'R2']) {
+    const r = intent.readIntent(doc({ fm: ['id: x', 'status: approved', 'objective: o', 'outcomes:', '  - "o"'], extra: [`Falta saber [falta: ${id}].`, ''] }), { raiz: tmp('rev2') });
+    assert.ok(r.bloqueantes.some((b) => b.id === id), `${id}: un problema de forma bloquea siempre`);
+  }
+});
+
+test('Intent_TableSeparatorShortDashes_IsNotARow @story-8.258 @ac-3', () => {
+  for (const sep of ['|-|-|-|-|-|-|-|-|', '| :-- | :- | -: | :-: | -- | - | - | - |']) {
+    const r = intent.readIntent(doc({ preguntas: [QH, sep, q('Q1', 'p', 'w', 'x', 'no', 'abierta', '', '—')] }), { raiz: tmp('rev3') });
+    assert.deepStrictEqual(r.problemas, [], `${sep}: ${JSON.stringify(r.problemas)}`);
+    assert.deepStrictEqual(r.preguntas.map((f) => f['#']), ['Q1']);
+  }
+});
+
+test('Intent_YamlNullBoolFloat_AreNotText @story-8.258 @ac-2', () => {
+  for (const fm of [['id: x', 'status: draft', 'objective: null', 'outcomes:', '  - "o"'],
+    ['id: x', 'status: draft', 'objective: ~', 'outcomes:', '  - "o"'],
+    ['id: x', 'status: draft', 'objective: true', 'outcomes:', '  - "o"'],
+    ['id: x', 'status: draft', 'objective: o', 'outcomes: [1.5, true]']]) {
+    const r = intent.readIntent(doc({ fm }), { raiz: tmp('rev4') });
+    assert.ok(r.problemas.some((p) => /objective|outcomes/.test(p.mensaje)), `${fm.join(' / ')}: ${JSON.stringify(r.problemas)}`);
+  }
+});
+
+test('Intent_RepeatedKeyOrColumn_IsAProblem @story-8.258 @ac-2 @ac-3', () => {
+  const clave = intent.readIntent(doc({ fm: ['id: x', 'status: draft', 'objective: o', 'outcomes:', '  - "o"', 'status: approved'] }), { raiz: tmp('rev5') });
+  assert.ok(clave.problemas.some((p) => /status/.test(p.mensaje) && /repet/.test(p.mensaje)), JSON.stringify(clave.problemas));
+  const col = intent.readIntent(doc({ preguntas: [`${QH} Bloquea |`, '|---|---|---|---|---|---|---|---|---|', '| Q1 | p | w | c | sí | abierta |  | — | no |'] }), { raiz: tmp('rev5b') });
+  assert.ok(col.problemas.some((p) => p.columna === 'Bloquea' && /repet/.test(p.mensaje)), JSON.stringify(col.problemas));
+  assert.ok(col.bloqueantes.length > 0, 'una columna repetida no puede esconder una pregunta que bloquea');
+});
+
+test('Intent_DoubleQuotedEscapes_RoundTrip @story-8.258 @ac-1', () => {
+  const objetivo = 'el total\tno suma "x" en C:\\temp é';
+  const r = intent.readIntent(doc({ fm: ['id: x', 'status: draft', `objective: ${JSON.stringify(objetivo)}`, 'outcomes:', '  - "o"'] }), { raiz: tmp('rev6') });
+  assert.strictEqual(r.frontmatter.objective, objetivo);
+  const malo = intent.readIntent(doc({ fm: ['id: x', 'status: draft', 'objective: "un \\q raro"', 'outcomes:', '  - "o"'] }), { raiz: tmp('rev6b') });
+  assert.ok(malo.problemas.some((p) => /frontmatter/.test(p.mensaje)), 'un escape que no se sabe leer es problema');
+});
+
+test('Intent_RepoSource_UnreadableAndSymlinkOutside @story-8.258 @ac-5', { skip: process.platform === 'win32' || (process.getuid && process.getuid() === 0) }, () => {
+  const raiz = tmp('rev7');
+  const afuera = tmp('rev7-afuera');
+  fs.writeFileSync(path.join(afuera, 'b.md'), '1\n2\n3\n');
+  fs.symlinkSync(path.join(afuera, 'b.md'), path.join(raiz, 'enlace.md'));
+  fs.writeFileSync(path.join(raiz, 'cerrado.md'), '1\n2\n3\n');
+  fs.chmodSync(path.join(raiz, 'cerrado.md'), 0o000);
+  const r = intent.readIntent(doc({
+    preguntas: [QH, SEP,
+      q('Q1', 'a', 'b', 'c', 'sí', 'encontrada', 'está', 'repo:enlace.md:2'),
+      q('Q2', 'a', 'b', 'c', 'sí', 'encontrada', 'está', 'repo:cerrado.md:2')],
+  }), { raiz });
+  assert.ok(problemOf(r, 'Q1').some((p) => /fuera del repo/.test(p.mensaje)), JSON.stringify(problemOf(r, 'Q1')));
+  assert.ok(problemOf(r, 'Q2').some((p) => /no pude leer/.test(p.mensaje)), JSON.stringify(problemOf(r, 'Q2')));
+  fs.chmodSync(path.join(raiz, 'cerrado.md'), 0o644);
+});

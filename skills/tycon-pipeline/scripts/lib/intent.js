@@ -71,12 +71,19 @@ function isIntentFile(p) {
 // Escalares (con o sin comillas), `[]` y listas en línea de textos, listas de textos, listas de objetos de un nivel y
 // un objeto de un nivel (`scope`). Lo que no sabe leer lo dice: nunca adivina.
 
+// Los escapes de las comillas dobles: los de JSON, que son los que escribe JSON.stringify (y un subconjunto de YAML).
+const ESCAPES = { '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' };
+
 function escalar(v) {
   const s = v.trim();
   if (s.startsWith('"')) {
     const m = /^"((?:[^"\\]|\\.)*)"\s*(#.*)?$/.exec(s);
     if (!m) throw new Error(`comillas sin cerrar: ${s}`);
-    return m[1].replace(/\\(.)/g, '$1');
+    return m[1].replace(/\\(u[0-9a-fA-F]{4}|.)/g, (_, e) => {
+      if (e[0] === 'u' && e.length === 5) return String.fromCharCode(parseInt(e.slice(1), 16));
+      if (Object.prototype.hasOwnProperty.call(ESCAPES, e)) return ESCAPES[e];
+      throw new Error(`escape que no sé leer: \\${e}`);
+    });
   }
   if (s.startsWith("'")) {
     const m = /^'((?:[^']|'')*)'\s*(#.*)?$/.exec(s);
@@ -87,12 +94,23 @@ function escalar(v) {
   if (sinComentario === '[]') return [];
   const enLinea = /^\[(.*)\]$/.exec(sinComentario);
   if (enLinea) return enLinea[1].split(',').map((x) => escalar(x)).filter((x) => x !== '');
+  // los escalares sin comillas de YAML que no son texto: así el esquema los juzga por lo que son
+  if (/^(?:null|Null|NULL|~)$/.test(sinComentario)) return null;
+  if (/^(?:true|True|TRUE)$/.test(sinComentario)) return true;
+  if (/^(?:false|False|FALSE)$/.test(sinComentario)) return false;
   if (/^-?\d+$/.test(sinComentario)) return Number(sinComentario);
+  if (/^-?(?:\d+\.\d*|\.\d+)(?:[eE][-+]?\d+)?$/.test(sinComentario)) return Number(sinComentario);
   return sinComentario;
 }
 
 const indent = (l) => l.length - l.trimStart().length;
 const CLAVE = /^([A-Za-z_][\w-]*):(?:\s+(.*))?$/;
+
+// Una clave repetida no se pisa en silencio: el valor que valdría depende del orden, y un `status:` doble esconde uno.
+function poner(obj, clave, valor) {
+  if (Object.prototype.hasOwnProperty.call(obj, clave)) throw new Error(`la clave «${clave}» está repetida`);
+  obj[clave] = valor;
+}
 
 function leerYaml(texto) {
   const lineas = texto.split('\n').filter((l) => l.trim() !== '' && !/^\s*#/.test(l));
@@ -104,10 +122,10 @@ function leerYaml(texto) {
     const m = CLAVE.exec(l);
     if (!m) throw new Error(`no es «clave: valor»: ${l.trim()}`);
     i++;
-    if (m[2] !== undefined && m[2].trim() !== '') { out[m[1]] = escalar(m[2]); continue; }
+    if (m[2] !== undefined && m[2].trim() !== '') { poner(out, m[1], escalar(m[2])); continue; }
     const hijos = [];
     while (i < lineas.length && indent(lineas[i]) > 0) hijos.push(lineas[i++]);
-    out[m[1]] = hijos.length ? bloque(hijos) : null;
+    poner(out, m[1], hijos.length ? bloque(hijos) : null);
   }
   return out;
 }
@@ -126,7 +144,7 @@ function bloque(lineas) {
       } else if (indent(l) > base && items.length && items[items.length - 1] && typeof items[items.length - 1] === 'object' && !Array.isArray(items[items.length - 1])) {
         const m = CLAVE.exec(t);
         if (!m) throw new Error(`no es «clave: valor»: ${t}`);
-        items[items.length - 1][m[1]] = m[2] === undefined ? null : escalar(m[2]);
+        poner(items[items.length - 1], m[1], m[2] === undefined ? null : escalar(m[2]));
       } else throw new Error(`lista mal formada: ${t}`);
     }
     return items;
@@ -139,10 +157,10 @@ function bloque(lineas) {
     const m = CLAVE.exec(l.trim());
     if (!m) throw new Error(`no es «clave: valor»: ${l.trim()}`);
     i++;
-    if (m[2] !== undefined && m[2].trim() !== '') { obj[m[1]] = escalar(m[2]); continue; }
+    if (m[2] !== undefined && m[2].trim() !== '') { poner(obj, m[1], escalar(m[2])); continue; }
     const hijos = [];
     while (i < lineas.length && indent(lineas[i]) > base) hijos.push(lineas[i++]);
-    obj[m[1]] = hijos.length ? bloque(hijos) : null;
+    poner(obj, m[1], hijos.length ? bloque(hijos) : null);
   }
   return obj;
 }
@@ -300,8 +318,11 @@ function leerSeccion(sec, { nombre, columnas, prefijo, conEntrevista, conMotivo 
   const cabecera = celdas(tabla[0].texto);
   const faltan = columnas.filter((c) => !cabecera.includes(c));
   for (const c of faltan) p(null, c, tabla[0].linea, `«${nombre}»: falta la columna «${c}»`);
+  // una columna repetida esconde una celda: la fila se leería con la última
+  for (const c of new Set(cabecera.filter((x, i) => cabecera.indexOf(x) !== i))) p(null, c, tabla[0].linea, `«${nombre}»: la columna «${c}» está repetida`);
   const filas = [];
-  const cuerpo = tabla.slice(1).filter((x) => !/^\|?\s*:?-{3,}/.test(x.texto.trim()));
+  // el separador de GFM: cada celda, uno o más guiones con dos puntos opcionales a los lados
+  const cuerpo = tabla.slice(1).filter((x) => !celdas(x.texto).every((c) => /^:?-+:?$/.test(c)));
   if (!cuerpo.length) p(null, null, tabla[0].linea, `«${nombre}»: la cabecera sin filas; si no hay ninguna, va «Ninguna.»`);
   if (faltan.length) return { filas: [], entrevista };
   const vistos = new Set();
@@ -319,18 +340,27 @@ function leerSeccion(sec, { nombre, columnas, prefijo, conEntrevista, conMotivo 
   return { filas, entrevista };
 }
 
-function existeRepo(raiz, fuente) {
+/**
+ * Por qué una fuente `repo:<archivo:línea>` no vale, o null si vale. Se mira por la ruta real (un enlace que sale del
+ * repo no cuenta como del repo) y se distingue «no existe» de «no lo pude leer»: son dos arreglos distintos.
+ */
+function fuenteRepoInvalida(raiz, fuente) {
   const m = FUENTES.repo.exec(fuente);
-  if (!m || !raiz) return false;
-  const abs = path.resolve(raiz, m[1]);
-  const rel = path.relative(path.resolve(raiz), abs);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) return false;
+  if (!m) return 'no tiene la forma repo:<archivo:línea>';
+  if (!raiz) return 'sin la carpeta del repo no puedo comprobarla';
+  let base;
+  let abs;
+  try { base = fs.realpathSync(raiz); } catch (e) { return `no pude leer la carpeta del repo (${e.code || e.message})`; }
+  try { abs = fs.realpathSync(path.resolve(raiz, m[1])); } catch (e) {
+    return e.code === 'ENOENT' || e.code === 'ENOTDIR' ? 'ese archivo no existe en el repo' : `no pude leer ese archivo (${e.code || e.message})`;
+  }
+  const rel = path.relative(base, abs);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return 'ese archivo está fuera del repo';
+  let lineas;
+  try { lineas = fs.readFileSync(abs, 'utf8').split('\n'); } catch (e) { return `no pude leer ese archivo (${e.code || e.message})`; }
+  if (lineas[lineas.length - 1] === '') lineas.pop();
   const n = Number(m[2]);
-  try {
-    const lineas = fs.readFileSync(abs, 'utf8').split('\n');
-    if (lineas[lineas.length - 1] === '') lineas.pop();
-    return n >= 1 && n <= lineas.length;
-  } catch { return false; }
+  return n >= 1 && n <= lineas.length ? null : `esa línea no existe (el archivo tiene ${lineas.length})`;
 }
 
 /** Los problemas de forma de una pregunta. */
@@ -345,7 +375,8 @@ function formaPregunta(f, raiz, p) {
   if (f.Estado === 'encontrada' && tipo && !['repo', 'memoria'].includes(tipo)) p(id, 'Fuente', f.linea, 'una encontrada lleva fuente repo:<archivo:línea> o memoria:<id>');
   if (['contestada', 'descartada'].includes(f.Estado) && tipo && tipo !== 'persona' && tipo !== 'pedido') p(id, 'Fuente', f.linea, `una ${f.Estado} lleva fuente persona:<nombre>`);
   if (tipo === 'pedido' && !['abierta', 'supuesta'].includes(f.Estado)) p(id, 'Fuente', f.linea, 'pedido: sólo informa: vale en una abierta o una supuesta');
-  if (tipo === 'repo' && !existeRepo(raiz, f.Fuente)) p(id, 'Fuente', f.linea, `${f.Fuente}: ese archivo o esa línea no existe en el repo`);
+  const porQueNo = tipo === 'repo' ? fuenteRepoInvalida(raiz, f.Fuente) : null;
+  if (porQueNo) p(id, 'Fuente', f.linea, `${f.Fuente}: ${porQueNo}`);
   if (['supuesta', 'encontrada', 'contestada', 'descartada'].includes(f.Estado) && !f.Respuesta) p(id, 'Respuesta', f.linea, `una ${f.Estado} lleva su respuesta`);
 }
 
@@ -460,6 +491,9 @@ function readIntent(texto, { raiz = null, constancia = null } = {}) {
     }
     bloqueantes.push({ id, motivo: 'decisión reservada abierta: la decide una persona' });
   }
+  // Un problema que nombra una fila que no está (una marca `[falta: Q9]` sin su fila) también bloquea, con ese id.
+  const filas = new Set([...preguntas, ...reservadas].map((f) => f['#']));
+  for (const id of conProblema) if (!filas.has(id)) bloqueantes.push({ id, motivo: 'problema de forma' });
   // Un problema que no es de una fila (la sección, el frontmatter, el esquema) también bloquea: falla cerrada.
   if (problemas.some((x) => !x.fila)) bloqueantes.push({ id: 'intención', motivo: 'problema de forma de la intención' });
 

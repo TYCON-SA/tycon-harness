@@ -177,14 +177,31 @@ if (fs.existsSync(INTENT_PATH)) {
 const esIntencion = (f) => (intentLib ? intentLib.isIntentFile(f)
   : f.endsWith('.intent.md') || (path.basename(f) === 'intent.md' && f.split(path.sep).includes('pipeline-runs')));
 
-/** Los errores de una intención: uno por problema, con la fila y la columna; y una aprobada con algo que bloquea. */
+/**
+ * La raíz contra la que se miran las fuentes `repo:` de una intención: el repo donde vive el archivo, no la carpeta
+ * desde donde se corre el lint (el mismo archivo tiene que dar el mismo veredicto desde cualquier lado). Fuera de git,
+ * la raíz del lint.
+ */
+function intentRoot(abs) {
+  try {
+    return execFileSync('git', ['-C', path.dirname(abs), 'rev-parse', '--show-toplevel'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: sinGitDelPadre(), windowsHide: true }).trim() || REPO_ROOT;
+  } catch { return REPO_ROOT; }
+}
+
+/**
+ * Los errores de una intención: uno por problema, con la fila y la columna; y una aprobada con algo que bloquea.
+ * El lint no pasa la consulta de la constancia de la persona: una fila cerrada por `persona:` vale acá por su forma
+ * (la intención aprobada en una máquina no vuelve a bloquear en otra ni en la CI). La constancia la miran quien aprueba
+ * y los frenos de la máquina.
+ */
 function checkIntent(abs, rel) {
   if (intentLoadError) {
     return [{ rel, problema: `no pude cargar el lector de intenciones (${INTENT_PATH}): ${intentLoadError.message}`,
       efecto: 'la intención no se revisó', arreglo: 'actualizar el arnés (harness.js update; en un clon, git pull)' }];
   }
   let r;
-  try { r = intentLib.readIntent(fs.readFileSync(abs, 'utf8'), { raiz: REPO_ROOT }); } catch (e) {
+  try { r = intentLib.readIntent(fs.readFileSync(abs, 'utf8'), { raiz: intentRoot(abs) }); } catch (e) {
     return [{ rel, problema: `no pude leer la intención: ${e.message}`, efecto: 'la intención no se revisó', arreglo: 'revisar el archivo; si está bien, avisar: el lector falló' }];
   }
   const errores = r.problemas.map((x) => ({

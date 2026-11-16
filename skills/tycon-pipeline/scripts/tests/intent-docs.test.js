@@ -53,3 +53,21 @@ test('T15 Docs_IntentFormat_VocabulariesMatch @story-8.258 @ac-9', () => {
   assert.ok(/\n## Preguntas abiertas\n/.test(plantilla) && /\n## Decisiones reservadas\n/.test(plantilla), 'la plantilla no trae las dos secciones');
   assert.ok(/<!--[^]*Ninguna\.[^]*-->/.test(plantilla), 'la plantilla no trae el comentario que pide filas o «Ninguna.»');
 });
+
+test('Docs_IntentRules_AndSkillNotice @story-8.258 @ac-9', () => {
+  const guia = read('story-format.md');
+  const seccion = guia.slice(guia.indexOf('\n## La intención\n'), guia.indexOf('\n## ', guia.indexOf('\n## La intención\n') + 5));
+  for (const [que, re] of [['cuándo se aprueba', /se aprueba/], ['que se congela', /congelada/], ['cómo se marca lo que falta', /\[falta: Q<n>\]/],
+    ['por qué no es una segunda fuente de verdad', /segunda fuente de verdad/]]) {
+    assert.match(seccion, re, `«La intención» no dice ${que}`);
+  }
+  const notice = read('skills/tycon-create-story/NOTICE.md');
+  const [en, es] = notice.split('\n## Castellano\n');
+  for (const [idioma, texto, palabra] of [['inglés', en, /intent/], ['castellano', es, /intención/]]) {
+    assert.ok(texto.includes('`intent-template.md`'), `NOTICE.md (${idioma}) no nombra intent-template.md`);
+    for (const f of ['`first-time.md`', '`scripts/story-without-bmad.js`']) {
+      const fila = texto.split('\n').find((l) => l.startsWith(`| ${f} |`));
+      assert.ok(fila && palabra.test(fila), `NOTICE.md (${idioma}): la fila de ${f} no dice lo nuevo`);
+    }
+  }
+});

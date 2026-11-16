@@ -589,6 +589,27 @@ test('T11 LintFrontmatter_IntentProblems_BlockAlways @story-8.258 @ac-7', () => 
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('LintFrontmatter_IntentRepoSource_FromTheIntentRepo @story-8.258 @ac-7', () => {
+  const repo = mkRepo('lint-intent-raiz-');
+  write(repo, 'src/x.js', 'uno\n');
+  const archivo = write(repo, 'specs/story-1.1-x.intent.md', intentDoc({ status: 'approved', fila: '| Q1 | ¿Dónde? | b | c | sí | encontrada | en x.js | repo:src/x.js:1 |' }));
+  const otro = mkRepo('lint-intent-otro-');
+  for (const cwd of [repo, otro, os.tmpdir()]) {
+    const r = run([archivo], cwd);
+    assert.strictEqual(r.code, 0, `desde ${cwd} la fuente repo: se mira en el repo de la intención\n${r.out}`);
+  }
+});
+
+test('LintFrontmatter_IntentFoundWithoutArgs @story-8.258 @ac-7', () => {
+  const root = mkRepo('lint-intent-sin-args-');
+  story(root, 'specs/story-1.1-x.md', ['story: "1.1"', 'epic: 1', 'status: draft']);
+  write(root, 'specs/story-1.1-x.intent.md', intentDoc({ fila: '| Q1 | a | b | c | quizás | abierta | | — |' }));
+  const r = run([], root);
+  assert.strictEqual(r.code, 1, `sin argumentos también la encuentra y frena\n${r.out}`);
+  assert.match(r.out, /story-1\.1-x\.intent\.md/);
+  assert.doesNotMatch(r.out, /story-1\.1-x\.intent\.md[^\n]*(?:story|epic|status)/, 'no la lee como una historia');
+});
+
 test('T37 LintFrontmatter_IntentReaderMissing_LoudWarning @story-8.258 @ac-29', () => {
   const root = mkRepo('lint-intent-sin-lector-');
   const mala = write(root, 'specs/story-1.1-x.intent.md', intentDoc({ fila: '| Q1 | a | b | c | quizás | abierta | | — |' }));
