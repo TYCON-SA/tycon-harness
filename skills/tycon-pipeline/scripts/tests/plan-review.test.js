@@ -268,6 +268,102 @@ test('Delicado_FirmasFrenosYPerfil_SonDelicados (decisión del dueño, 2026-10-3
   assert.strictEqual(computeDelicate({ story: story('sens-comun', ['guides/otra-guia.md']), repo: r }).value, false);
 });
 
+// ── Lo que el plan sólo corre no lo vuelve delicado; lo que cambia, sí ──────────────────────────────────────────────
+// Un plan con «## Archivos» descuenta las rutas que sólo nombra como el comando que las corre (con su programa delante);
+// todo lo demás que nombra cuenta. Los planes que cambian un control, o que lo corren de una forma que puede esconder un
+// cambio, siguen siendo delicados.
+const ARCHIVOS_DOCS = '# Plan\n\n## Qué hace\n\nCambia la guía.\n\n## Archivos\n\n- docs/a.md\n\n## Pasos\n\n';
+
+test('PlanDelicado_RutaQueSoloSeCorre_NoCuenta (T1) @story-8.285 @ac-1 @ac-2 @ac-3 @ac-5 @ac-8', (t) => {
+  const { r, story } = repoConReglas(t);
+  const s = story('corre', ['docs/a.md']);
+  const corre = `${ARCHIVOS_DOCS}1. Cambio la guía.\n2. Corro \`sh .githooks/pre-commit\` y \`node scripts/ci/check-x.js\`.\n`
+    + '3. Corro `node --test scripts/ci/x.test.js scripts/ci/check-x.js`.\n4. Y el gancho entero:\n\n```\nbash .githooks/pre-commit-checks\n```\n';
+  const d = computeDelicate({ story: s, repo: r, planText: corre });
+  assert.deepStrictEqual([d.value, d.reason], [false, 'ninguna'], JSON.stringify(d));
+  // el código en línea también se escribe entre comillas invertidas dobles
+  const dobles = computeDelicate({ story: s, repo: r, planText: `${ARCHIVOS_DOCS}1. Corro \`\`sh .githooks/pre-commit\`\`.\n` });
+  assert.deepStrictEqual([dobles.value, dobles.reason], [false, 'ninguna'], JSON.stringify(dobles));
+  // lo que «Archivos» nombra cuenta, con su prefijo, aunque en los pasos sólo se corra
+  const enArchivos = corre.replace('- docs/a.md', '- docs/a.md\n- (público, tycon-harness) scripts/ci/check-x.js');
+  const c = computeDelicate({ story: s, repo: r, planText: enArchivos });
+  assert.deepStrictEqual([c.value, c.rule], [true, 'controles'], JSON.stringify(c));
+  assert.match(c.reason, /scripts\/ci\/check-x\.js/);
+});
+
+test('PlanDelicado_ControlQueSeCambiaEnLaProsa_SigueDelicado (T2) @story-8.285 @ac-2 @ac-3 @ac-4 @ac-6', (t) => {
+  const { r, story } = repoConReglas(t);
+  const s = story('cambia', ['docs/a.md']);
+  const conArchivos = (pasos) => `${ARCHIVOS_DOCS}${pasos}\n`;
+  const sinArchivos = (pasos) => `# Plan\n\n## Qué hace\n\nCambia la guía.\n\n## Pasos\n\n${pasos}\n`;
+  const casos = [
+    ['lo cambia en una oración y en otro paso lo corre', conArchivos('1. Cambio `.githooks/pre-commit` para que llame al guion nuevo.\n2. Corro `sh .githooks/pre-commit`.'), 'porton-instalador-migracion', '.githooks/pre-commit'],
+    ['con ./ delante', conArchivos('1. Cambio `./.githooks/pre-commit`.'), 'porton-instalador-migracion', '.githooks/pre-commit'],
+    ['la ruta sola entre comillas es un nombre', conArchivos('1. Corro `.githooks/pre-commit`.'), 'porton-instalador-migracion', '.githooks/pre-commit'],
+    ['nombre suelto sin comillas', conArchivos('1. Ajusto check-x.js.'), 'controles', 'check-x.js'],
+    ['argumento de otro guion', conArchivos('1. `node scripts/x.js .githooks/pre-commit`'), 'porton-instalador-migracion', '.githooks/pre-commit'],
+    ['otro programa delante', conArchivos('1. `sed -i s/a/b/ .githooks/pre-commit`'), 'porton-instalador-migracion', '.githooks/pre-commit'],
+    ['redirección', conArchivos('1. `sh .githooks/pre-commit > scripts/ci/check-x.js`'), null, null],
+    ['comando encadenado', conArchivos('1. `sh .githooks/pre-commit && sed -i s/a/b/ .githooks/pre-commit`'), 'porton-instalador-migracion', '.githooks/pre-commit'],
+    ['git', conArchivos('1. `git add .githooks/pre-commit`'), 'porton-instalador-migracion', '.githooks/pre-commit'],
+    ['correr el instalador', conArchivos('1. `bash scripts/setup/install.sh`'), 'porton-instalador-migracion', 'scripts/setup/install.sh'],
+    ['correr una migración', conArchivos('1. `node db/001-tabla.sql`'), 'porton-instalador-migracion', 'db/001-tabla.sql'],
+    ['«Archivos» vacío', `# Plan\n\n## Qué hace\n\nCambia la guía.\n\n## Archivos\n\n## Pasos\n\n1. Corro \`sh .githooks/pre-commit\`.\n`, 'porton-instalador-migracion', '.githooks/pre-commit'],
+    ['sin «Archivos»', sinArchivos('1. Corro `sh .githooks/pre-commit`.'), 'porton-instalador-migracion', '.githooks/pre-commit'],
+    // una comilla sin cerrar no abre código, y la prosa sin comillas no es un comando aunque lo parezca
+    ['comilla sin cerrar', conArchivos('1. Corro `sh .githooks/pre-commit y sigo.'), 'porton-instalador-migracion', '.githooks/pre-commit'],
+    ['el comando en la prosa, sin comillas', conArchivos('sh .githooks/pre-commit'), 'porton-instalador-migracion', '.githooks/pre-commit'],
+    // lo que el comando ejecuta tiene que ser una ruta, entera: el código en línea o una lista con comas la nombran
+    ['código en línea de node', conArchivos("1. `node -e \"require('fs').writeFileSync('.githooks/pre-commit','')\"`"), 'porton-instalador-migracion', '.githooks/pre-commit'],
+    ['código en línea de python', conArchivos("1. `python3 -c \"open('scripts/ci/check-x.js','w')\"`"), 'controles', 'scripts/ci/check-x.js'],
+    ['rutas unidas por coma', conArchivos('1. `node scripts/a.js,.githooks/pre-commit`'), 'porton-instalador-migracion', '.githooks/pre-commit'],
+  ];
+  assert.strictEqual(casos.length, 18);
+  for (const [nombre, plan, regla, ruta] of casos) {
+    const d = computeDelicate({ story: s, repo: r, planText: plan });
+    assert.strictEqual(d.value, true, `${nombre}: ${JSON.stringify(d)}`);
+    // la redirección: cuentan las dos rutas, y gana la regla que va primero (el gancho)
+    assert.strictEqual(d.rule, regla || 'porton-instalador-migracion', `${nombre}: ${JSON.stringify(d)}`);
+    assert.ok(d.reason.includes(ruta || '.githooks/pre-commit'), `${nombre}: ${d.reason}`);
+  }
+  // correr con su ruta absoluta un despliegue a producción de un repo hermano cuenta, como si estuviera en este repo
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-corre-')));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const repoDe = (nombre, archivos) => {
+    const dir = path.join(base, nombre);
+    for (const [f, c] of Object.entries(archivos)) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), c); }
+    execFileSync('git', ['-C', dir, 'init', '-q'], { stdio: 'ignore' });
+    return dir;
+  };
+  const hermano = repoDe('Hermano', { 'pipelines/deploy.yml': 'stages:\n  - stage: Production\n    jobs: []\n' });
+  const principal = repoDe('Principal', { '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Hermano\n', 'specs/s.md': '---\nstory: "9.1"\nfiles_to_modify:\n  - docs/a.md\n---\n\n# x\n' });
+  const prod = computeDelicate({ story: path.join(principal, 'specs', 's.md'), repo: principal, planText: conArchivos(`1. \`node ${path.join(hermano, 'pipelines', 'deploy.yml')}\``) });
+  assert.deepStrictEqual([prod.value, prod.rule], [true, 'produccion'], JSON.stringify(prod));
+});
+
+test('PlanDelicado_FirmaDelegada_RutinaQueCorreElGancho (T3) @story-8.285 @ac-1 @ac-3 @ac-6', (t) => {
+  // un plan de rutina que sólo corre el gancho: la coordinadora lo firma por delegación con la revisión aprobada
+  const corre = `${PLAN}3. Correr \`sh .githooks/pre-commit\` antes del commit.\n`;
+  const lab = laboratorio(t, { plan: corre });
+  lab.revisar(APROBADO);
+  const a = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(lab.leer(DESTINO)) });
+  assert.strictEqual(a.codigo, 0, JSON.stringify(a));
+  const r = aprobarPorDelegacion(lab);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  // el mismo plan, si además dice que cambia el gancho, es delicado: lo aprueba el dev
+  const cambia = laboratorio(t, { plan: `${corre}4. Cambio \`.githooks/pre-commit\`.\n` });
+  cambia.revisar(APROBADO);
+  const b = PR().antesDeAprobar({ estado: cambia.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(cambia.leer(DESTINO)) });
+  assert.strictEqual(b.codigo, 2, JSON.stringify(b));
+  assert.match(b.motivo, /plan delicado \(nivel 2\): lo aprueba el dev/);
+});
+
+test('GuiaPlan_LoQueSeCorre_ComoComando (T4) @story-8.285 @ac-7', () => {
+  const guia = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-03-plan.md'), 'utf8');
+  assert.match(guia, /todo lo que el plan cambia va en «## Archivos»/i);
+  assert.match(guia, /`sh \.githooks\/pre-commit`/);
+});
+
 test('PlanReview_ResultadoYComandoDelPase (pase adversarial) @story-1.29 @ac-3 @ac-6', (t) => {
   // un resultado que no es del modo plan, o que contradice su propio veredicto, no es «aprobado»
   assert.strictEqual(PR().veredictoDe({ ...APROBADO, modo: undefined }), 'sin-veredicto');
