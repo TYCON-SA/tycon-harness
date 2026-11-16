@@ -510,4 +510,4 @@ function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {
   return null;
 }
 
-module.exports = { partesDe, historiaDe, seccionesDelPlan, planDe, carpetaDeLaCorrida, valor, abiertoDeLaCorrida };
+module.exports = { partesDe, historiaDe, seccion, seccionesDelPlan, planDe, carpetaDeLaCorrida, valor, abiertoDeLaCorrida };

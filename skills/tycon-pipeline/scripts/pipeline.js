@@ -4168,6 +4168,78 @@ function rutasDelPlan(texto) {
   return [...out];
 }
 
+// Lo que un plan sólo corre no lo vuelve delicado. Una ruta cuenta si «## Archivos» la nombra, o si aparece fuera de
+// esa sección de cualquier forma que no sea el comando que la ejecuta: en código (entre comillas invertidas, o un
+// renglón de un bloque cercado), un comando simple, con uno de estos programas delante, y la ruta como lo que ejecuta.
+// La ruta sola entre comillas es un nombre: «Cambio `x`» y «Corro `x`» no se distinguen sin leer el verbo.
+const PROGRAMAS_QUE_CORREN = new Set(['node', 'bash', 'sh', 'zsh', 'pwsh', 'python', 'python3']);
+// un segundo comando, una tubería o una redirección pueden esconder un cambio: ese código cuenta entero
+const RE_COMANDO_COMPUESTO = /[;&|<>]|\$\(/;
+const RE_GANCHO_DE_GIT = /(^|\/)\.githooks(\/|$)/;
+
+/** El plan en piezas `{ codigo, texto }`: la prosa, cada código entre comillas invertidas y cada renglón cercado. */
+function piezasDelPlan(texto) {
+  const piezas = [];
+  let cercado = false;
+  for (const renglon of String(texto || '').split(/\r?\n/)) {
+    if (/^\s*(```|~~~)/.test(renglon)) { cercado = !cercado; continue; }
+    if (cercado) { piezas.push({ codigo: true, texto: renglon }); continue; }
+    // el código en línea va entre una o más comillas invertidas
+    const partes = renglon.split(/`+/);
+    // una comilla sin cerrar deja lo que sigue del lado de la prosa
+    const cerradas = partes.length % 2 === 1 ? partes.length : partes.length - 1;
+    partes.forEach((p, i) => piezas.push({ codigo: i % 2 === 1 && i < cerradas, texto: p }));
+  }
+  return piezas;
+}
+
+/**
+ * Las palabras de un código que el comando ejecuta: `{ palabras, corre }`, con `corre` los índices de las que ejecuta
+ * (después de `node --test`, todas las que no son opciones; si no, la primera que no es opción). null si el código no es
+ * un comando simple con un programa que ejecuta delante.
+ */
+function loQueSeCorre(codigo) {
+  if (RE_COMANDO_COMPUESTO.test(codigo)) return null;
+  const todas = codigo.trim().split(/\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
+  if (!todas.length || !PROGRAMAS_QUE_CORREN.has(todas[0])) return null;
+  const palabras = todas.slice(1);
+  const noOpciones = palabras.map((w, i) => (w.startsWith('-') ? -1 : i)).filter((i) => i >= 0);
+  const conTest = todas[0] === 'node' && palabras.includes('--test');
+  return { palabras, corre: new Set(conTest ? noOpciones : noOpciones.slice(0, 1)) };
+}
+
+/**
+ * Las rutas del plan que cuentan para la marca de delicada. Sin «## Archivos», o sin ninguna ruta en ella, todas: sin la
+ * lista de lo que se cambia no se sabe qué sólo se corre. Una ruta que sólo se corre se descuenta si, sola, no es
+ * delicada, o lo es por los controles o por el gancho de git: correr un instalador, una migración, algo de producción o
+ * de la superficie compartida escribe en lo que el plan no declaró, y cuenta.
+ */
+function rutasQueCuentanDelPlan(texto, { repo = null, raices = [] } = {}) {
+  const { seccion } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js'));
+  const archivos = texto ? seccion(texto, 'Archivos') : null;
+  const deArchivos = archivos ? rutasDelPlan(archivos.join('\n')) : [];
+  if (!deArchivos.length) return rutasDelPlan(texto);
+  const cuentan = new Set(deArchivos);
+  const seCorren = new Set();
+  for (const pieza of piezasDelPlan(texto)) {
+    const corrida = pieza.codigo ? loQueSeCorre(pieza.texto) : null;
+    if (!corrida) { for (const r of rutasDelPlan(pieza.texto)) cuentan.add(r); continue; }
+    // lo que se ejecuta es una ruta entera: código en línea (`node -e "…"`) o rutas unidas por coma la nombran y cuentan
+    corrida.palabras.forEach((w, i) => {
+      const rutas = rutasDelPlan(w);
+      const ejecuta = corrida.corre.has(i) && rutas.length === 1 && rutas[0] === w.replace(/[.,;:)]+$/, '');
+      for (const r of rutas) (ejecuta ? seCorren : cuentan).add(r);
+    });
+  }
+  const soloSeCorre = (ruta) => {
+    // relativa a la raíz que la contiene, como las demás rutas: la absoluta de un repo hermano no queda afuera
+    const r = riskPaths.riesgoDeArchivos([rutaComparable(ruta, raices)], { repo, raices, superficie: tocaSuperficieCompartida });
+    return !r.value || r.rule === 'controles' || (r.rule === 'porton-instalador-migracion' && RE_GANCHO_DE_GIT.test(r.file || ''));
+  };
+  for (const r of seCorren) if (!cuentan.has(r) && !soloSeCorre(r)) cuentan.add(r);
+  return [...cuentan];
+}
+
 /**
  * Una ruta de la story o del plan, en la forma en que se compara: sin el comentario del renglón (`- ruta   # nota`), sin
  * comillas, con `/`, y relativa a la raíz que la contiene cuando es absoluta. `{ rel, abs, base }`.
@@ -4217,7 +4289,7 @@ function computeDelicate(args) {
   const comparables = (lista) => [...new Map(lista.map((f) => rutaComparable(f, raices)).filter((x) => x.rel).map((x) => [x.rel, x])).values()];
   const files = comparables([
     ...(parte ? [...parte.files, ...(args.files || [])] : args.files && args.files.length ? args.files : deLaHistoria),
-    ...rutasDelPlan(args.planText),
+    ...rutasQueCuentanDelPlan(args.planText, { repo, raices }),
   ]);
   const fmTexto = ((content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
   // la decisión escrita en la historia gana sobre las reglas por archivo: lo que la máquina no lee (plata, clientes…)
