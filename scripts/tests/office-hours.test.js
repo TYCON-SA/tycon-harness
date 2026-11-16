@@ -636,3 +636,43 @@ test('T293 Late_AlwaysAgainstThePromise: otra hora, anotada o de su paso, no pon
   assert.strictEqual(row('Dormida').promise, undefined, 'una ejecución dormida tampoco');
   assert.ok(!/tarde/.test(JSON.stringify(byName(data, 'Dormida').fin)), 'ni en la tarjeta');
 });
+
+// La hora prometida es de la sesión, no de su nombre (8.234 E): un nombre reusado por otra sesión no hereda la hora de
+// la anterior. La clave de `promises` lleva la sesión.
+const closedColidio = () => buildOffice({ wip: wip([{ session: 'Colidio', sid: 'old', extra: { kind: 'pipeline', storyId: '8.205', endAt: NOW - 2 * 3600000, promisedAt: NOW - 3 * 3600000 } }]), nowMs: NOW - 60000 }).promises;
+
+test('T320 Office_NombreReusado_NoHeredaLaHora @story-8.234 @ac-6: otra sesión con el mismo nombre tiene su hora y su atraso, no los de la cerrada', () => {
+  // 🔴 mutación: guardar la promesa por nombre (la nueva sale «se pasó de la hora» con la hora de la mañana)
+  const promises = closedColidio();
+  for (const storyId of ['9.9', '8.205']) {
+    const later = NOW + 3600000;
+    const two = buildOffice({ wip: wip([{ session: 'Colidio', sid: 'new', extra: { kind: 'pipeline', storyId, endAt: later } }]), promises, nowMs: NOW });
+    const a = byName(two.data, 'Colidio');
+    assert.notStrictEqual(a.termina, 'se pasó de la hora', storyId);
+    assert.strictEqual(a.atrasada, undefined, storyId);
+    assert.strictEqual(Date.parse(a.estimadaIso), later, `${storyId}: la promesa es la suya`);
+    assert.strictEqual(a.fin.cls, 'ontime', storyId);
+  }
+});
+
+test('T321 Office_NombreReusadoSinHora_SinHoraEstimada @story-8.234 @ac-7: la sesión nueva con ese nombre, sin hora anotada, dice «sin hora estimada»', () => {
+  // 🔴 mutación: darle a la nueva la hora de la cerrada del mismo nombre
+  const two = buildOffice({ wip: wip([{ session: 'Colidio', sid: 'new', extra: { kind: 'pipeline', storyId: '9.9' } }]), promises: closedColidio(), nowMs: NOW });
+  const a = byName(two.data, 'Colidio');
+  assert.strictEqual(a.termina, 'sin hora estimada');
+  assert.strictEqual(a.fin.hora, 'sin hora estimada');
+  assert.strictEqual(a.estimadaIso, undefined);
+});
+
+test('T322 Office_MismaSesionOtraHora_AtrasoContraLoPrometido @story-8.234 @ac-8: la misma sesión anota otra hora y el atraso se mide contra la primera', () => {
+  // 🔴 mutación: medir contra la hora nueva (sale «en hora»)
+  const first = NOW + 30 * 60000;
+  const one = buildOffice({ wip: wip([{ session: 'Colidio', sid: 'new', extra: { kind: 'pipeline', storyId: '9.9', endAt: first } }]), nowMs: NOW });
+  const later = NOW + 3 * 3600000;
+  const two = buildOffice({ wip: wip([{ session: 'Colidio', sid: 'new', extra: { kind: 'pipeline', storyId: '9.9', endAt: later } }]), promises: one.promises, nowMs: NOW + 60000 });
+  const a = byName(two.data, 'Colidio');
+  assert.strictEqual(Date.parse(a.estimadaIso), first);
+  assert.strictEqual(Date.parse(a.pronosticoIso), later);
+  assert.strictEqual(a.fin.cls, 'late');
+  assert.match(a.fin.dif, /tarde$/);
+});

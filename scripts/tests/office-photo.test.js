@@ -1444,6 +1444,52 @@ test('T311 TurnWait_KeepsTheStory: la espera de un turno es de la historia, no o
   assert.strictEqual(w2.rows[w2.rows.findIndex((r) => r.session === 'Sol')].end, 'sin hora estimada (en pausa)');
 });
 
+// La espera anotada y el estado de ahora (8.234 E). En la oficina la espera se ignora sólo mientras la sesión está
+// ocupada; la fila de turnos (coordination.js, 8.274) sigue con su regla, a propósito.
+const waitCard = (status, extra = {}, lastWrite) => {
+  const since = NOW - 30 * 60000;
+  const { data } = buildOffice({ wip: wip([{ session: 'Paz', sid: 'p', status, extra: { kind: 'note', text: 'Su trabajo', waitingFor: 'que entre el #907', waitingSince: since, ...extra } }]), lastWrites: new Map(lastWrite ? [['p', lastWrite]] : []), nowMs: NOW });
+  return { since, card: byName(data, 'Paz') };
+};
+
+test('T318 Office_EsperaAnotadaYOcupada_Trabajando @story-8.234 @ac-4: ocupada y escribiendo más de 5 min después de anotar la espera, la oficina la muestra trabajando', () => {
+  // 🔴 mutación: dar la espera por buena aunque la sesión esté ocupada (vuelve «esperando»)
+  const since = NOW - 30 * 60000;
+  const { card } = waitCard('busy', {}, since + 6 * 60000);
+  assert.notStrictEqual(card.estado, 'esperando');
+  assert.doesNotMatch(JSON.stringify(card.fin), /#907/, 'la tarjeta no dice la espera');
+  // el margen de 5 minutos sigue: recién anotada, ocupada todavía es una espera
+  assert.strictEqual(waitCard('busy', {}, since + 4 * 60000).card.estado, 'esperando');
+});
+
+test('T319 Office_EsperaAnotadaYQuieta_Esperando @story-8.234 @ac-5: trabajó después de anotarla y vuelve a quedar quieta con la marca: otra vez esperando, con su texto', () => {
+  // 🔴 mutación: dejar que lo que hizo antes (archivos tocados, actividad) borre la espera de una sesión quieta
+  const since = NOW - 30 * 60000;
+  for (const extra of [{ touchedAt: since + 20 * 60000 }, { activityAt: since + 20 * 60000 }]) {
+    const { card } = waitCard('idle', extra, since + 20 * 60000);
+    assert.strictEqual(card.estado, 'esperando', JSON.stringify(extra));
+    assert.strictEqual(card.fin.hora, 'espera que entre el #907');
+    assert.strictEqual(card.fin.dif, `desde las ${hm(since)}`);
+  }
+  // corriendo un comando también está ocupada: ahí la espera no manda
+  assert.notStrictEqual(waitCard('shell', { touchedAt: since + 20 * 60000 }, since + 20 * 60000).card.estado, 'esperando');
+});
+
+test('T323 Office_EsperaAnotada_OcupadaComoLaTarjeta @story-8.234 @ac-4 @ac-5: «ocupada» se decide como el estado de la tarjeta: Codex por su archivo, Claude sin estado, y el estado atrasado que la conversación desmiente', () => {
+  // 🔴 mutación: decidir «ocupada» sólo con el estado de Claude (busy/shell): Codex ocupada, Claude sin estado y la
+  // quieta que sigue escribiendo vuelven a «esperando» (lo encontró el pase adversarial de la 8.234 E)
+  const since = NOW - 30 * 60000;
+  const worked = { touchedAt: NOW - 10 * 60000, activityAt: NOW - 10 * 60000 };
+  const card = (row, more = {}) => byName(buildOffice({ wip: wip([{ session: 'Paz', sid: 'p', ...row, extra: { kind: 'note', text: 'Su trabajo', waitingFor: 'que entre el #907', waitingSince: since, ...worked } }]), lastWrites: new Map([['p', more.lastWrite || NOW - 10 * 60000]]), sessionFiles: more.files || [], nowMs: NOW }).data, 'Paz');
+  const codex = (busy) => [sessionFile('p', { tool: 'codex', pid: null, busy })];
+  assert.notStrictEqual(card({ status: null }, { files: codex(true) }).estado, 'esperando', 'Codex ocupada por su archivo');
+  assert.strictEqual(card({ status: null }, { files: codex(false) }).estado, 'esperando', 'Codex quieta: espera');
+  assert.notStrictEqual(card({ status: null }).estado, 'esperando', 'Claude sin estado legible: no se la da por quieta');
+  // el estado de Claude dice «quieta» hace 20 min, pero la conversación se escribió hace 1 min: trabaja
+  assert.notStrictEqual(card({ status: 'idle', statusAt: NOW - 20 * 60000 }, { lastWrite: NOW - 60000 }).estado, 'esperando');
+  assert.strictEqual(card({ status: 'idle', statusAt: NOW - 5 * 60000 }).estado, 'esperando', 'quieta de verdad: espera');
+});
+
 // ── El modelo y el esfuerzo en `--json` ────────────────────────────────────────────────────────────────────────────
 
 test('T10 Office_ModeloYEsfuerzo_LleganALaFoto @story-8.234 @ac-10 — `--json` trae el modelo y el esfuerzo de la sesión, con las palabras de la oficina viva', () => {
