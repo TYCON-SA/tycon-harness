@@ -2157,8 +2157,9 @@ async function collect(opts = {}) {
     const hidden = hiddenCardsLine(data.kanban.ocultas, opts.memory);
     if (hidden) process.stderr.write(`${new Date(nowMs).toISOString()} ${hidden}\n`);
   }
-  // sólo con la oficina abierta: la primera pasada lee conversaciones enteras, y la foto fija y `--json` empezarían de cero cada vez
-  if (opts.envelopes && !opts.noTranscripts) data.tokens = readTokens(wip, states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
+  // con la oficina abierta, y en `--json` (`opts.tokens`): la primera pasada lee conversaciones enteras, y la foto fija
+  // empezaría de cero cada vez
+  if ((opts.envelopes || opts.tokens) && !opts.noTranscripts) data.tokens = readTokens(wip, states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
   // el modelo y el esfuerzo de cada sesión, de su última respuesta: van con la persona, a su etiqueta y a sus tarjetas
   if (data.tokens) for (const a of data.agents) { const t = data.tokens[a.nombre]; if (t) { a.modelo = t.modelo; a.esfuerzo = t.esfuerzo; } }
   // lo del tablero que no es una fila: su resumen, lo que dice que le toca al dueño y cuándo se escribió
@@ -2345,8 +2346,9 @@ async function main(argv) {
   let data;
   // la foto que queda en un archivo no lleva nada de las conversaciones: eso sólo viaja en la foto viva
   // sin el proceso de la oficina, el tablero lo mueve esta foto; una foto de otra hora no escribe nada
+  // `--json` lee además los tokens: el modelo y el esfuerzo de cada sesión salen de ahí
   const sdir = stateDir(os.homedir());
-  try { data = await collect({ now: opts.now, noTranscripts: !opts.json && !opts.task, syncBoard: !opts.now && !officeProcessAlive(sdir) }); } catch (e) {
+  try { data = await collect({ now: opts.now, noTranscripts: !opts.json && !opts.task, tokens: Boolean(opts.json), syncBoard: !opts.now && !officeProcessAlive(sdir) }); } catch (e) {
     if (e.code === 'NO_STATE' || e.code === 'BAD_ARG') { process.stderr.write(`office.js: ${e.message}\n`); return 2; }
     throw e;
   }

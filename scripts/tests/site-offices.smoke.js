@@ -10,7 +10,8 @@
 //
 //   node scripts/tests/site-offices.smoke.js [--shots <carpeta>]    sale 0 si todo pasó; 1 si algo no; 2 si no hay navegador
 //
-// Con --shots deja las capturas de cada estado; con --card corre sólo la tarjeta de una persona y la tecla Espacio.
+// Con --shots deja las capturas de cada estado; con --card corre sólo la tarjeta de una persona y la tecla Espacio; con
+// --reconnecting, sólo la tarjeta de una oficina que el sitio da por «reconectando».
 // Sólo datos de juguete: ningún nombre real.
 
 const fs = require('fs');
@@ -312,16 +313,46 @@ async function tarjetaYEspacio(browser) {
   } finally { await sitio.cerrar(); fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
+// La tarjeta de una oficina que el sitio da por «reconectando» (8.234, AC 25, el renglón de la página): sobre la demo,
+// una oficina llega marcada así y su tarjeta lo dice, en lugar de su hora de conexión.
+async function reconectando(browser) {
+  const dir = tmp('demo-reconectando-');
+  const sitio = crearSitioDemo({ env: { SITE_DEMO: '1' }, dir, log: () => {} });
+  await sitio.iniciar();
+  await new Promise((r) => sitio.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${sitio.server.address().port}`;
+  try {
+    const d = await nuevaPagina(await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' }));
+    await d.page.route('**/offices/demo.json', async (route) => {
+      const res = await route.fetch();
+      const json = await res.json();
+      const bruno = (json.oficinas || []).find((o) => o.id === 'mac-bruno');
+      if (bruno) bruno.reconectando = true;
+      await route.fulfill({ response: res, json });
+    });
+    await d.page.goto(`${base}/offices`);
+    await d.page.waitForSelector('.oficina[data-id="mac-bruno"] .stats', { timeout: ESPERA_MS });
+    const dice = await d.page.locator('.oficina[data-id="mac-bruno"] .stats').innerText();
+    check(/reconectando: el sitio se reinició/.test(dice) && !/sin conexión desde/.test(dice), `Regresion_PaginaReconectando_LaTarjetaLoDice (8.234 AC 25): la tarjeta dice «reconectando» y no su hora de conexión (${dice.replace(/\s+/g, ' ')})`);
+    const otra = await d.page.locator('.oficina[data-id="mac-ana"] .stats').innerText();
+    check(!/reconectando/.test(otra), 'Regresion_PaginaReconectando_LaTarjetaLoDice: la que no está reconectando no lo dice');
+    check(d.problemas.length === 0, `sin errores en la página: ${d.problemas.join(' | ')}`);
+    await d.context.close();
+  } finally { await sitio.cerrar(); fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
 async function main() {
   const playwright = PINNED_PW.load();
   if (!playwright) { console.error(`sin navegador: ${PINNED_PW.locate().why}`); return 2; }
   const browser = await playwright.chromium.launch({ args: ['--use-angle=swiftshader'] });
   try {
     if (process.argv.includes('--card')) await tarjetaYEspacio(browser);
+    else if (process.argv.includes('--reconnecting')) await reconectando(browser);
     else {
       await delSitio(browser);
       await deLaDemo(browser);
       await tarjetaYEspacio(browser);
+      await reconectando(browser);
     }
   } catch (e) { await contarLoQueVieron(); throw e; } finally { await browser.close(); }
   if (fails.length) { console.log(`\n${fails.length} sin pasar`); return 1; }
