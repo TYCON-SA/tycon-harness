@@ -131,7 +131,10 @@ function recipe({ home, arnes, env }) {
     const problem = cfg.errores && cfg.errores.length ? `la configuración no se pudo leer entera (${cfg.errores[0].clave || cfg.errores[0].archivo}: ${cfg.errores[0].motivo})` : null;
     return { ...r, problem };
   } catch (e) {
-    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, session_names: { value: null, origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
+    // el piso del segundo turno, de la constante de heavy-turn.js: el número vive en un solo lugar
+    let floor = null;
+    try { floor = require('./heavy-turn.js').SECOND_HEAVY_MIN_FREE_PCT; } catch { /* sin el módulo del turno no hay piso que decir */ }
+    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, session_names: { value: null, origin: 'sin-valor' }, second_heavy_min_free_pct: { value: floor, origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
   }
 }
 
@@ -232,9 +235,47 @@ function gatesOf(home, now, problems) {
   try { return require('./heavy-turn.js').gatesRunning({ home, now, problems }); } catch (e) { problems.push(`los portones en curso (${e.message})`); return []; }
 }
 
-// Quién tiene el turno de la suite completa: el renglón de heavy-turn.js, o null. No poder leerlo no frena el estado.
-function suiteHolder(home, now, problems) {
-  try { return require('./heavy-turn.js').holder({ home, now, problems }); } catch (e) { problems.push(`el turno de la suite completa (${e.message})`); return null; }
+// Las ejecuciones grandes que corren, de la más vieja a la más nueva (los lugares del turno de heavy-turn.js). No poder
+// leerlas no frena el estado.
+function suiteHolders(home, now, problems) {
+  try { return require('./heavy-turn.js').holders({ home, now, problems }); } catch (e) { problems.push(`el turno de la suite completa (${e.message})`); return []; }
+}
+
+// Una ejecución grande en el texto: quién, qué corre y desde cuándo.
+const runText = (x) => `${x.session || 'una sesión sin nombre'} (${x.what}, desde las ${hhmm(x.since)})`;
+
+/**
+ * Si entra una segunda ejecución grande: `{ minFreePct, origin, freePct, open, closedBy }`. El piso y su origen siempre
+ * (secondTurnFloor de heavy-turn.js, la misma lectura que usa `take`); la memoria, sólo con exactamente una corriendo, sin
+ * pase en vuelo y con los dos lugares legibles. `closedBy` dice qué lo cierra sin medir: `pase` o `ilegible`.
+ */
+function secondTurnOf({ home, env, arnes, readMemory, running, passInFlight, unreadable, problems }) {
+  let HT;
+  try { HT = require('./heavy-turn.js'); } catch (e) {
+    problems.push(`el segundo turno (${e.message})`);
+    return { minFreePct: null, origin: null, freePct: null, open: false, closedBy: null };
+  }
+  const floor = HT.secondTurnFloor({ home, env, arnes });
+  if (floor.problem) problems.push(`el piso del segundo turno (${floor.problem}): vale ${floor.value} %`);
+  const out = { minFreePct: floor.value, origin: floor.origin, freePct: null, open: false, closedBy: null };
+  if (running !== 1) return out;
+  if (passInFlight) return { ...out, closedBy: 'pase' };
+  if (unreadable) return { ...out, closedBy: 'ilegible' };
+  let mem;
+  try { mem = (readMemory || HT.freeMemory)() || { pct: null }; } catch (e) {
+    problems.push(`la memoria libre del segundo turno (${oneLine(e.message)})`);
+    mem = { pct: null };
+  }
+  if (mem.pct == null) return out;
+  return { ...out, freePct: mem.pct, open: mem.pct >= floor.value };
+}
+
+// Por qué la segunda no entra, para el texto: la medida y el piso, o lo que la cierra sin medir. Nunca un porcentaje vacío.
+function closedText(st) {
+  if (st && st.freePct != null) return `memoria libre ${st.freePct} %, piso ${st.minFreePct} %`;
+  if (st && st.closedBy === 'pase') return 'hay un pase adversarial en vuelo';
+  if (st && st.closedBy === 'ilegible') return 'el otro lugar del turno no se puede leer';
+  return 'no pude medir la memoria libre';
 }
 
 // Los estados finales del registro de un Workflow que se vieron en esta máquina; cualquier otro cuenta como corriendo.
@@ -386,7 +427,9 @@ function status(opts = {}) {
   const quiet = [];
   const passWaiting = [];
   const suiteWaiting = [];
-  const suite = suiteHolder(home, now, problems);
+  const turnProblems = [];
+  const suites = suiteHolders(home, now, turnProblems);
+  problems.push(...turnProblems);
   const opened = recentOpened(home, now, problems);
   const justOpened = new Set(opened.map((o) => o.name));
   const alive = new Set();
@@ -422,9 +465,9 @@ function status(opts = {}) {
       // la que tiene que lanzar su pase y espera el lugar: no está quieta, le falta que alguien la despierte
       const owesPass = m && m.adversarialGate && m.adversarialGate.run === true && !m.adversarial && m.deepReviewDone !== true;
       if (owesPass && s.status === 'idle') passWaiting.push({ session: nameOf(sid), sid });
-      // una de fondo, quieta: ni esperando su pase, ni con una nota de lo que hace, ni con la suite completa de la máquina
+      // una de fondo, quieta: ni esperando su pase, ni con una nota de lo que hace, ni con una ejecución grande de la máquina
       else if (s.kind === 'bg' && s.status === 'idle' && Number.isFinite(s.statusAt) && now - s.statusAt >= QUIET_MS
-        && !(m && passOccupiesMachine(m, { home, sid })) && !hasFreshDoing(home, sid, now) && !(suite && suite.sid === sid)) {
+        && !(m && passOccupiesMachine(m, { home, sid })) && !hasFreshDoing(home, sid, now) && !suites.some((x) => x.sid === sid)) {
         quiet.push({ session: nameOf(sid), sid, minutes: Math.floor((now - s.statusAt) / 60000) });
       }
     }
@@ -449,7 +492,11 @@ function status(opts = {}) {
     for (const f of a.filas) signatures[signatureList.tipoDe(f)] += 1;
   } catch (e) { problems.push(e.message); }
   const gone = retiredOf(home, now, sessions);
-  const suiteRow = suite ? { session: suite.session ? label(suite.session) : null, what: label(suite.what), since: suite.at } : null;
+  const suiteRows = suites.map((x) => ({ session: x.session ? label(x.session) : null, what: label(x.what), since: x.at }));
+  // `suite` sigue siendo la más vieja: lo leen los que ya lo leían
+  const suiteRow = suiteRows[0] || null;
+  const secondTurn = secondTurnOf({ home, env, arnes: opts.arnes, readMemory: opts.readMemory, running: suites.length,
+    passInFlight: adversarial.some((a) => !passIsStale(a.since, now)), unreadable: turnProblems.length > 0, problems });
   const gates = gatesOf(home, now, problems).map((g) => ({ session: g.session ? label(g.session) : null, sid: g.sid || null, what: label(g.what), suites: require('./heavy-turn.js').suitesOf(g), since: g.at }));
   // un solo turno de tarea pesada por máquina: lo tiene la ejecución grande o el pase más viejo en vuelo
   const firstPass = [...adversarial].sort((a, b) => Date.parse(a.since) - Date.parse(b.since))[0];
@@ -457,7 +504,7 @@ function status(opts = {}) {
   return {
     now, working, waiting, quiet, passWaiting, suiteWaiting, cap: r.max_working, adversarial, stalled, asking,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
-    suite: suiteRow, heavyTurn, gates,
+    suite: suiteRow, suites: suiteRows, secondTurn, heavyTurn, gates,
     signatures,
     unnamed, problems,
   };
@@ -476,7 +523,11 @@ function statusText(s) {
   else if (s.retired && s.retired.length) lines.push(`Cerradas por Claude Code: ${s.retired.map(retiredLine).join(' · ')}`);
   const passText = (a) => `pase adversarial de ${a.storyId ? `la ${a.storyId}` : 'una sesión sin story'} (${a.session}, desde las ${hhmm(a.since)})`;
   const h = s.heavyTurn;
-  const holderText = !h ? 'libre' : h.kind === 'suite' ? `${h.session || 'una sesión sin nombre'} (${h.what}, desde las ${hhmm(h.since)})` : passText(h);
+  // con una ejecución grande, si entra la segunda; con dos, las dos
+  const runs = s.suites || (s.suite ? [s.suite] : []);
+  const second = (st) => (st && st.open ? `; segundo turno libre (${closedText(st)})` : `; segundo turno cerrado (${closedText(st)})`);
+  const holderText = !h ? 'libre' : h.kind !== 'suite' ? passText(h)
+    : runs.length > 1 ? runs.map(runText).join(' y ') : `${runText(h)}${s.secondTurn ? second(s.secondTurn) : ''}`;
   // los demás pases anotados en vuelo, si los hay, a continuación: dos a la vez no deberían pasar, y si pasan se ven
   const others = s.adversarial.filter((a) => !(h && h.kind === 'pass' && a.session === h.session && a.since === h.since));
   lines.push(`Turno de tarea pesada: ${holderText}${others.length ? `; además en vuelo: ${others.map(passText).join(' · ')}` : ''}`);
@@ -1384,13 +1435,22 @@ function capNotice(opts = {}) {
       : `Coordinación: ${w.session} puede lanzar su pase adversarial, no hay otro en vuelo: avisale.`);
   }
   // la máquina parada con gente en la fila: nadie arranca sola, el «arrancá» lo da la coordinadora. Con un portón acotado
-  // corriendo no está parada: se dice cuál y quién sigue. Quien trabajó después de anotar la espera no está en la fila
-  // hasta que confirme que sigue esperando.
+  // corriendo no está parada: se dice cuál y quién sigue. Con una ejecución grande corriendo, se dice si entra una segunda
+  // (la memoria y el piso); con dos, quién sigue cuando termine una. Quien trabajó después de anotar la espera no está en
+  // la fila hasta que confirme que sigue esperando.
   const queue = s.suiteWaiting.filter((x) => x.sid !== sid && !x.worked).sort((a, b) => a.since - b.since);
-  if (!s.suite && queue.length) {
+  const runs = s.suites || (s.suite ? [s.suite] : []);
+  if (queue.length && !runs.length) {
     lines.push(s.gates.length
       ? `Coordinación: corre ${s.gates.map(gateText).join(' y ')} y hay ${queue.length} esperando turno: cuando termine, sigue ${queue[0].session}.`
       : `Coordinación: no corre ninguna suite completa y hay ${queue.length} esperando turno: dale el «arrancá» a ${queue[0].session}.`);
+  } else if (queue.length && runs.length > 1) {
+    lines.push(`Coordinación: corren ${runs.map(runText).join(' y ')}; cuando termine una, sigue ${queue[0].session}.`);
+  } else if (queue.length) {
+    const st = s.secondTurn;
+    lines.push(st && st.open
+      ? `Coordinación: corre ${runText(runs[0])}; hay lugar para una segunda (${closedText(st)}): dale el «arrancá» a ${queue[0].session}.`
+      : `Coordinación: corre ${runText(runs[0])}; la segunda no entra (${closedText(st)}): cuando termine, sigue ${queue[0].session}.`);
   }
   for (const w of s.suiteWaiting.filter((x) => x.sid !== sid && x.worked).sort((a, b) => a.since - b.since)) {
     lines.push(`Coordinación: ${w.session} anotó a las ${hhmm(w.since)} que espera turno y trabajó después: preguntale si sigue esperando.`);
@@ -1499,25 +1559,30 @@ function adversarialTurn(opts = {}) {
   const other_in_flight = passes.passes.map(({ stale: _s, uncertain: _u, ...a }) => a);
   // la ejecución grande frena también a la propia sesión: el turno es de la máquina
   const runProblems = [];
-  const run = suiteHolder(home, now, runProblems);
+  const runs = suiteHolders(home, now, runProblems);
   // no poder mirar no frena el pase, pero se dice: lo que no se leyó puede ser justo lo que ocupa la máquina
   const unread = [...runProblems, ...passes.problems];
   if (unread.length) process.stderr.write(`coordination: no pude ver todo lo que ocupa la máquina para el turno del pase (${oneLine(unread.join(' · ')).slice(0, 300)}): lo que no leí no frena\n`);
-  const heavy_run = run ? { session: run.session ? label(run.session) : null, what: label(run.what), since: run.at } : null;
+  // `heavy_run` es la más vieja, con el formato de siempre; `heavy_runs`, todas las que corren
+  const heavy_runs = runs.map((x) => ({ session: x.session ? label(x.session) : null, what: label(x.what), since: x.at }));
+  const heavy_run = heavy_runs[0] || null;
   const gates = gateBesidePass(opts, env, home, now);
   if (!other_in_flight.length && !heavy_run && !gates.why) return null;
   const list = other_in_flight.map((a) => `${a.storyId ? `la ${a.storyId}` : 'sin story'}, ${a.session}, desde las ${hhmm(a.since)}`).join(' · ');
   // una fecha que no se lee no frena: no se sabe cuánto lleva, y sin tope trabaría la fila para siempre
   const passWaits = other_in_flight.some((a) => !passIsStale(a.since, now));
   const waiting_turn = passWaits || Boolean(heavy_run) || Boolean(gates.why);
-  const turn = heavy_run
-    ? `Corre una ejecución grande de pruebas (${heavy_run.session || 'una sesión sin nombre'}, ${heavy_run.what}, desde las ${hhmm(heavy_run.since)}): va una tarea pesada por vez en la máquina y el arnés no deja lanzar el pase hasta que termine; pedile turno a la ${rol.valor}.`
+  const runLabel = (x) => `${x.session || 'una sesión sin nombre'}, ${x.what}, desde las ${hhmm(x.since)}`;
+  const turn = heavy_runs.length > 1
+    ? `Corren dos ejecuciones grandes de pruebas (${heavy_runs.map(runLabel).join(' · ')}): el pase no va al lado de una ejecución grande y el arnés no deja lanzarlo hasta que terminen; pedile turno a la ${rol.valor}.`
+    : heavy_run
+    ? `Corre una ejecución grande de pruebas (${runLabel(heavy_run)}): va una tarea pesada por vez en la máquina y el arnés no deja lanzar el pase hasta que termine; pedile turno a la ${rol.valor}.`
     : passWaits
       ? `Hay otro pase adversarial en vuelo (${list}): va uno por vez y el arnés no deja lanzar este hasta que termine; pedile turno a la ${rol.valor}.`
       : gates.why
         ? `Corre un portón de pruebas en la máquina (${gates.running.map(gateLabel).join(' · ')}) y ${gates.why}: el arnés no deja lanzar el pase hasta que termine (guides/coordination.md, «Lo pesado, con turno»); pedile turno a la ${rol.valor}.`
         : `Hay otro pase adversarial anotado hace más de una hora (${list}): puede estar terminado o colgado, así que no frena; pedile turno a la ${rol.valor} antes de lanzar este.`;
-  return { other_in_flight, heavy_run, gates_running: gates.running, gate_waits: Boolean(gates.why), waiting_turn, turn };
+  return { other_in_flight, heavy_run, heavy_runs, gates_running: gates.running, gate_waits: Boolean(gates.why), waiting_turn, turn };
 }
 
 const gateLabel = (g) => `${g.session || 'una sesión sin nombre'}, ${g.suites == null ? 'sin cantidad conocida de' : g.suites} suites, desde las ${hhmm(g.since)}`;
