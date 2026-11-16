@@ -240,4 +240,4 @@ function linea({ n, max, abiertos: ab, noMirado }) {
   return `${n} ${n === 1 ? 'vuelta' : 'vueltas'} de revisores (tope ${max}); quedó abierto: ${partes.length ? partes.join('; ') : 'nada'}.`;
 }
 
-module.exports = { FABRICA, MINIMO, MAXIMO, PREFIJOS_FABRICA, delYaml, tope, prefijos, clase, abiertos, hallazgosDe, vueltas, lanzada, extras, avisoDelTope, juezDeLaVuelta, resumen, linea };
+module.exports = { FABRICA, MINIMO, MAXIMO, PREFIJOS_FABRICA, delYaml, tope, topeSinMaquina, prefijos, clase, abiertos, hallazgosDe, vueltas, lanzada, extras, avisoDelTope, juezDeLaVuelta, resumen, linea };

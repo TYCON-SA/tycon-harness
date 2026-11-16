@@ -94,6 +94,8 @@ const RECENT_FILE_MS = 30 * 60 * 1000;
 const MARKER_JS = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 // lo terminado sin cerrar: qué ejecución terminó y qué camino corto tiene su pedido, sin salir a la red
 const FINISHED_OPEN = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'finished-open.js');
+// los renglones de una corrida: la columna Estado trae el del paso en curso o el del último en rojo
+const RUN_LINES = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'run-lines.js');
 const shortId = (sid) => String(sid || '').slice(0, 8) || '?';
 const oneLine = (s) => String(s).replace(/\s+/g, ' ').trim();
 // texto de afuera (una nota, un registro de otra herramienta) para mostrar: en una línea, sin caracteres de control, acotado
@@ -1360,8 +1362,12 @@ function buildWip(opts = {}) {
       const verdict = kind === 'pipeline' ? hourVerdict({ endAt: info.at == null ? promisedAt : info.at, hourAt: info.computedAt, activityAt, nowMs, run: true }) : null;
       if (verdict) end = verdict;
       if (mark) end = 'sin hora de fin';
+      let stepLine = null;
+      if (kind === 'pipeline' && !mark) {
+        try { stepLine = require(RUN_LINES).stateLine({ marker: m, stateDir: sdir, home }); } catch (e) { unreadable.push(`story ${m.storyId || '?'}: no pude armar el renglón del paso (${e.message})`); }
+      }
       addRow({ work, state: step, end, session: label, folder: folderOf(sid, m.repoPath) }, sid,
-        { kind, storyId: m.storyId ? String(m.storyId) : null, title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt, ...stages,
+        { kind, storyId: m.storyId ? String(m.storyId) : null, ...(stepLine ? { stepLine } : {}), title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt, ...stages,
           ...(verdict ? { hourInWords: true } : {}), ...(mark ? { mark } : {}), ...(save === 'ok' ? { saveOk: true } : {}), ...(kind === 'finished' && !save ? { nothingToSave: true } : {}),
           ...(open ? { finishedOpen: true, ...(open.revisar ? { finishedReview: true } : {}) } : {}),
           ...(info.step !== undefined ? { hourStep: stepName(info.step) || `paso ${info.step}`, hourAt: info.computedAt } : {}),
@@ -1623,7 +1629,7 @@ function buildWip(opts = {}) {
   // los repos de las corridas con fila: /office los reconoce al preguntar por un pedido que nombra el tablero
   const runRepos = [...new Set([...pipeRows.values()].map(({ m }) => m.repoPath).filter((p) => typeof p === 'string' && path.isAbsolute(p)))];
   const retired = retiredNow(home, nowMs, sessions, unreadable);
-  const text = render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes) + renderRetired(retired);
+  const text = render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes, extra.map((x) => x.stepLine || null)) + renderRetired(retired);
   return { testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, retired, text };
 }
 
@@ -1698,12 +1704,14 @@ function stateNote(x, d, f) {
   return x.mark || x.kind === 'finished' ? '' : r.parada || '';
 }
 
-function render(rows, free, noData, idle, halfway, unreadable, internal = 0, notes = [], freeNotes = new Map()) {
+function render(rows, free, noData, idle, halfway, unreadable, internal = 0, notes = [], freeNotes = new Map(), stepLines = []) {
   const esc = (s) => oneLine(s).replace(/\|/g, '\\|');
   const lines = ['| Trabajo | Estado | Fin estimado | Sesión | Carpeta |', '|---|---|---|---|---|'];
   if (!rows.length) lines.push('| (nada en curso) | | | | |');
   rows.forEach((r, i) => {
-    const state = notes[i] ? `${r.state} · ${notes[i]}` : r.state;
+    // una corrida muestra el renglón de su paso; `state` sigue con el nombre del paso
+    const shown = stepLines[i] || r.state;
+    const state = notes[i] ? `${shown} · ${notes[i]}` : shown;
     lines.push(`| ${esc(r.work)} | ${esc(r.meanwhile ? `${state} · mientras tanto: ${r.meanwhile}` : state)} | ${esc(r.promise ? `${r.end} · ${r.promise}` : r.end)} | ${esc(r.session)} | ${esc(r.folder || '')} |`);
   });
   const freeText = free.map((f) => (freeNotes.get(f) ? `${f} (${freeNotes.get(f)})` : noData.includes(f) ? `${f} (sin dato de actividad)` : f));
@@ -1780,7 +1788,7 @@ async function main(argv) {
 
 // La salida de --json: cada fila con la sesión que la trae (su id, su estado y de dónde salió su nombre).
 function jsonOf(r) {
-  const rows = r.rows.map((row, i) => ({ ...row, ...((r.details && r.details[i]) || {}) }));
+  const rows = r.rows.map((row, i) => ({ ...row, ...((r.details && r.details[i]) || {}), ...(r.extra && r.extra[i] && r.extra[i].stepLine ? { stepLine: r.extra[i].stepLine } : {}) }));
   return { rows, free: r.free, idle: r.idle, halfway: r.halfway, unreadable: r.unreadable };
 }
 

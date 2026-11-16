@@ -260,6 +260,8 @@ Estado persistente por sesión en `~/.claude/.tycon-pipeline/active/<sessionId>.
 `sessionId` de `CLAUDE_CODE_SESSION_ID`; los hooks, del evento). Un marker nuevo sin «Aprobar el plan» queda en
 `bypass.log` como `MARKER_SKIPS_PLAN`.
 
+- Cada paso cerrado deja su renglón, la última línea `[paso] <renglón>` de `complete-step` («✓ Correr las pruebas — 41
+  verdes»): decíselo a la persona tal cual en tu próximo mensaje. Lo arma `lib/run-lines.js`, el mismo que lee /wip.
 - Cerrar pasos EN ORDEN y POR NOMBRE: `marker.js complete-step <nombre>` (un número se niega: es ambiguo);
   `approve-plan` con `--approved "<cita del user>"`. Freno de orden
   `lib/steps.js` ORDER_REQUIRES (`--out-of-order` queda logueado). `reviewers` exige `checks.advisors` verde por
