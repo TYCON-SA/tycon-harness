@@ -1576,6 +1576,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.293: los renglones de una corrida (uno por paso y el final), lo que imprimen complete-step y clear, el pedido por marker.js pr y el aviso del cierre contra un Telegram falso.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/run-lines.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/review-roster.test.js",
       "requiere": []
@@ -2075,6 +2081,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/work-in-progress.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/work-in-progress-step-line.test.js",
       "requiere": []
     },
     {
