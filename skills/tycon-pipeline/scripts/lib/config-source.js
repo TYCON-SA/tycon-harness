@@ -67,19 +67,27 @@ function leerCarpeta(repoRoot) {
   return null;
 }
 
-/** ¿El repo tiene un commit? `rev-parse -q --verify` sale 0 (sí) o 1 (no); otra cosa es git que no contestó. */
-function tieneHead(repoRoot) {
+/**
+ * ¿El repo tiene un commit? `rev-parse -q --verify` sale 0 (true) o 1 (false); otra cosa es git que no contestó (null,
+ * sin recordar).
+ */
+function cabeza(repoRoot) {
   return memo(_cache, repoRoot, 'head', () => {
     const r = git(repoRoot, ['rev-parse', '-q', '--verify', 'HEAD']);
     if (!r.error && r.status === 0) return { valor: true, recordar: true };
-    return { valor: false, recordar: !r.error && r.status === 1 };
+    if (!r.error && r.status === 1) return { valor: false, recordar: true };
+    return { valor: null, recordar: false };
   });
 }
+/** Como siempre: git que no contestó cuenta como «sin historia». */
+const tieneHead = (repoRoot) => cabeza(repoRoot) === true;
 
 /** Los archivos de `.tycon/` en el `HEAD` (un Set), o null si git no contestó. Sin historia, vacío. */
 function tyconCommiteado(repoRoot) {
   return memo(_cache, repoRoot, 'tycon', () => {
-    if (!tieneHead(repoRoot)) return { valor: new Set(), recordar: true };
+    const h = cabeza(repoRoot);
+    if (h === null) return { valor: null, recordar: false };
+    if (h === false) return { valor: new Set(), recordar: true };
     const r = git(repoRoot, ['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', '.tycon/']);
     if (r.error || r.status !== 0) return { valor: null, recordar: false };
     return { valor: new Set(String(r.stdout).split('\0').filter(Boolean)), recordar: true };

@@ -71,10 +71,11 @@ function repo(t, pre = 'memo-') {
   sh(d, 'commit', '-q', '-m', 'base');
   return d;
 }
-/** Los renglones `trace: built-in: git …` del archivo de GIT_TRACE, sin el prefijo. */
+/** Los renglones `trace: built-in: git …` del archivo de GIT_TRACE, sin el prefijo ni las comillas que git pone a `^{}`. */
 function trazas(f) {
   if (!fs.existsSync(f)) return [];
-  return fs.readFileSync(f, 'utf8').split('\n').map((l) => (l.match(/trace: built-in: git (.*)$/) || [])[1]).filter(Boolean);
+  return fs.readFileSync(f, 'utf8').split('\n').map((l) => (l.match(/trace: built-in: git (.*)$/) || [])[1]).filter(Boolean)
+    .map((l) => l.replace(/'/g, ''));
 }
 const cuantas = (lista, re) => lista.filter((l) => re.test(l)).length;
 const repetidas = (lista, re) => {
@@ -214,6 +215,10 @@ test('T39 ControlesDeLaBase_UnaPreguntaPorCommitYRuta', (t) => {
   assert.deepStrictEqual(repetidas(con.lista, sha), [], 'cada commit:ruta y cada commit^{commit}, una vez');
   assert.deepStrictEqual(repetidas(con.lista, /^cat-file blob [0-9a-f]{40}:.+$/), [], 'cada blob de la base, una vez');
   assert.ok(repetidas(sin.lista, sha).length > 0, 'sin recordar se repiten (si no, la prueba no mide nada)');
+  // una versión con nombre se pregunta cada vez: las mismas veces con y sin recordar
+  const conNombre = /^rev-parse --verify -q (main|pedido|HEAD)(\^\{commit\}|:.+)$/;
+  assert.ok(cuantas(sin.lista, conNombre) > 0, 'la corrida pregunta por versiones con nombre');
+  assert.strictEqual(cuantas(con.lista, conNombre), cuantas(sin.lista, conNombre), 'con nombre no se recuerda');
   assert.ok(con.lista.length < sin.lista.length, `menos llamadas: ${con.lista.length} contra ${sin.lista.length}`);
 });
 
@@ -262,13 +267,36 @@ test('T40 Hermano_RamaUnaVez_OtroHeadVuelveAPreguntar', (t) => {
   sh(suelta, 'commit', '-q', '-m', 'x');
   assert.strictEqual(CR.ramaDe(suelta), 'nueva', 'el null de antes no se recordó');
 
+  // git que no contesta (una configuración rota, que la huella no mira): «no está commiteado» no se recuerda
+  const cfg = path.join(a, '.git', 'config');
+  const cfgSana = fs.readFileSync(cfg, 'utf8');
+  sh(a, 'add', '-A');
+  sh(a, 'commit', '-q', '-m', 'el yaml dos');
+  fs.writeFileSync(cfg, '[core\n  roto = = =\n');
+  assert.strictEqual(CS.leerAmbas(a).commiteado, null, 'con git que no contesta, no hay commiteado');
+  fs.writeFileSync(cfg, cfgSana);
+  assert.strictEqual(CS.leerAmbas(a).commiteado, 'dos: 2\n', 'con git sano otra vez, lo commiteado (el fallo no se recordó)');
+
+  // sin huella no se recuerda: las referencias en `reftable/`, o GIT_DIR puesto
+  const GS = require(path.join(SCRIPTS, 'lib', 'git-stamp.js'));
+  assert.ok(GS.stampOf(a), 'una carpeta de git común tiene huella');
+  assert.strictEqual(GS.stampOf(a, { GIT_DIR: path.join(a, '.git') }), null);
+  const reftable = path.join(a, '.git', 'reftable');
+  fs.mkdirSync(reftable);
+  assert.strictEqual(GS.stampOf(a), null, 'con reftable/ no hay huella');
+  llamadas.length = 0;
+  CR.ramaDe(a); CR.ramaDe(a);
+  assert.strictEqual(de(/symbolic-ref/), 2, 'sin huella, cada lectura pregunta como siempre');
+  fs.rmdirSync(reftable);
+
   // sin recordar (TYCON_GIT_MEMO=0) cada lectura pregunta
   process.env.TYCON_GIT_MEMO = '0';
   t.after(() => { delete process.env.TYCON_GIT_MEMO; });
   llamadas.length = 0;
   CR.ramaDe(a); CR.ramaDe(a);
   assert.strictEqual(de(/symbolic-ref/), 2);
-  // y los puntos de limpieza existen
+  // y los puntos de limpieza de lo que se carga en un proceso de node existen
   assert.strictEqual(typeof CS.limpiarCache, 'function');
   assert.strictEqual(typeof CR.limpiarRamas, 'function');
+  assert.strictEqual(typeof require(HOOK).limpiarStaged, 'function');
 });

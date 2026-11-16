@@ -10,7 +10,8 @@
  * `packed-refs` y de `MERGE_HEAD` (un merge en curso cambia la lista del commit), y la ruta, el tamaño y la hora del índice en uso (`GIT_INDEX_FILE` si está puesto: el gancho cambia de
  * índice al simular los `git add`). Las horas van en nanosegundos.
  *
- * Si algo no se puede leer, si `GIT_DIR` está puesto (git no mira la carpeta) o con `TYCON_GIT_MEMO=0`, la huella es
+ * Si algo no se puede leer, si las referencias viven en `reftable/` (no hay archivos que cambien con un commit), si
+ * `GIT_DIR` está puesto (git no mira la carpeta) o con `TYCON_GIT_MEMO=0`, la huella es
  * null y nadie recuerda nada: se pregunta como si esto no existiera. Una respuesta fallida no se recuerda.
  */
 'use strict';
@@ -57,6 +58,8 @@ function stampOf(dir, env = process.env) {
     const head = fs.readFileSync(path.join(gd, 'HEAD'), 'utf8').trim();
     let comun = gd;
     try { comun = path.resolve(gd, fs.readFileSync(path.join(gd, 'commondir'), 'utf8').trim()); } catch (_) { /* no es un worktree */ }
+    // con las referencias en `reftable/` no hay archivo de la rama ni historial que cambien con un commit: sin huella
+    if (fs.existsSync(path.join(comun, 'reftable')) || fs.existsSync(path.join(gd, 'reftable'))) return null;
     const ref = /^ref:\s*(\S+)$/.exec(head);
     const indice = env.GIT_INDEX_FILE ? path.resolve(dir, env.GIT_INDEX_FILE) : path.join(gd, 'index');
     const partes = [

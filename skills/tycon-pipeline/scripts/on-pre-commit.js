@@ -226,6 +226,8 @@ const STAGED = new Map();
 function getStagedDiff(cwd) {
   return require('./lib/git-stamp.js').memo(STAGED, cwd, 'staged', () => leerStagedDiff(cwd));
 }
+/** Olvida las listas recordadas (para las pruebas que cargan el gancho en su proceso). */
+function limpiarStaged() { STAGED.clear(); }
 function leerStagedDiff(cwd) {
   let diff;
   try {
@@ -247,8 +249,9 @@ function leerStagedDiff(cwd) {
   });
   try {
     git(['rev-parse', '-q', '--verify', 'MERGE_HEAD^{commit}']);
-  } catch {
-    return { valor: diff, recordar: true };
+  } catch (e) {
+    // sale 1: no hay merge en curso, y eso se recuerda; otro error de git se juzga igual, sin recordarlo
+    return { valor: diff, recordar: e && e.status === 1 };
   }
   try {
     // Todo desde la raíz y con `-z`: las rutas del diff son de la raíz (desde una subcarpeta, `ls-files` y `ls-tree` las
@@ -2099,7 +2102,7 @@ function main() {
 module.exports = {
   prepararIndiceConLosAdd,
   isGitCommit, usaNoVerify, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
-  looksLikeStorySpec, selectStorySpecs, storiesOutsidePattern, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff,
+  looksLikeStorySpec, selectStorySpecs, storiesOutsidePattern, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff, limpiarStaged,
 };
 
 if (require.main === module) {
