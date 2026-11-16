@@ -4344,7 +4344,12 @@ function computeStoryReviewGate({ story, env = process.env, home = os.homedir() 
     };
   }
   const rc = computeRiskClass({ story });
-  if (env.TYCON_STORY_REVIEW === '0') return { run: false, record: estado, riesgo: rc.risk, motivo: 'apagado', nota: 'TYCON_STORY_REVIEW=0' };
+  if (env.TYCON_STORY_REVIEW === '0') {
+    // el salteo lo anota el portón, no el modelo
+    const ES = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+    ES.anotarEscape({ home, sessionId: ES.sesionDe(env), kind: 'STORY_REVIEW_OFF', variable: 'TYCON_STORY_REVIEW', story: path.resolve(story), riesgo: rc.risk });
+    return { run: false, record: estado, riesgo: rc.risk, motivo: 'apagado', nota: 'TYCON_STORY_REVIEW=0' };
+  }
   if (rc.risk === 'LOW') return { run: false, record: estado, riesgo: 'LOW', motivo: 'riesgo-bajo', criterios: rc.criteria };
   const warnings = [];
   const m = MODELOS.resolveStoryReview({ org: orgModels().data, requests: pedidosDeModelos(readSessionMarker()), warnings });

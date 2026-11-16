@@ -1844,3 +1844,45 @@ test('T17 RunsReview_SinPedidos_NoLlamaALaPlataforma @story-8.145 @ac-21', async
     }
   } finally { Object.assign(CYCLE, reales); }
 });
+
+// 8.256-T3 RunsReview_EscapesFromTheList @story-8.256 @ac-4 @ac-6 @ac-27
+// 🔴 Falla con: `ESCAPES` armada a mano y no de la lista única, una escotilla nueva que la noche no cuenta, el renglón
+//    de su lector contado dos veces con su comando, o el renglón del chequeo de vida fuera de la CI contado como escape.
+test('8.256-T3 RunsReview_EscapesFromTheList @story-8.256 @ac-4 @ac-6 @ac-27', () => {
+  const ES = require(path.join(ROOT, 'scripts', 'lib', 'env-switches.js'));
+  assert.deepStrictEqual([...RULES.ESCAPES].sort(), ES.escapesDeLaNoche().map((e) => e.nombre).sort());
+  for (const v of ['TYCON_NO_LIVENESS_PRECOMMIT', 'TYCON_MUTATION_CHECK', 'TYCON_STORY_GATE', 'STOP_AUTONOMY', 'TYCON_SAFETY_OFF']) assert.ok(RULES.ESCAPES.includes(v), v);
+  assert.strictEqual(RULES.VALOR_QUE_APAGA.TYCON_MUTATION_CHECK, 'off');
+  assert.strictEqual(RULES.VALOR_QUE_APAGA.TYCON_STORY_GATE, 'off');
+  // los comandos: tres nuevos y dos de siempre
+  const r = revisar([
+    ...cmd(`TYCON_RUNTIME_MATRIX_LEGACY=1 ${MARKER} complete-step live-check`),
+    ...cmd(`TYCON_STORY_REVIEW=0 ${PIPE} validators --repo /r --story /r/s.md`),
+    ...cmd('TYCON_NO_LIVENESS_PRECOMMIT=ci git commit -m x'),
+    ...cmd(`TYCON_MUTATION_CHECK=off ${MARKER} complete-step run-tests`),
+    ...cmd('TYCON_NO_LIVENESS_PRECOMMIT=1 git commit -m y'),
+    // fuera del comando que la toma, o con un valor que no apaga, no cuenta
+    ...cmd('TYCON_STORY_REVIEW=0 ls'),
+    ...cmd(`TYCON_STORY_REVIEW=1 ${PIPE} validators --repo /r --story /r/s.md`),
+    ...cmd('TYCON_NO_LIVENESS_PRECOMMIT=ci git status'),
+  ]);
+  const escapes = regla(r, 'RR-ESCAPE');
+  assert.strictEqual(escapes.reduce((n, x) => n + x.cuenta, 0), 5, JSON.stringify(escapes));
+  assert.deepStrictEqual(escapes.map((x) => `${x.categoria}:${x.cuenta}`).sort(),
+    ['TYCON_MUTATION_CHECK:1', 'TYCON_NO_LIVENESS_PRECOMMIT:2', 'TYCON_RUNTIME_MATRIX_LEGACY:1', 'TYCON_STORY_REVIEW:1']);
+  // los renglones nuevos del registro, solos: cuatro cuentan una vez cada uno, el del chequeo de vida local no
+  const solos = { bypass: ['RUNTIME_MATRIX_LEGACY', 'RUNTIME_MATRIX_NO_MUTATION_CHECK', 'STORY_REVIEW_OFF', 'ATDD_PREEDIT_GATE_OFF', 'LIVENESS_PRECOMMIT_CI_LOCAL']
+    .map((kind) => ({ ts: ts(), sessionId: 's', kind, story: '1.1' })), cobertura: { fuentes: { bypass: { estado: 'medido' } } } };
+  const s = RULES.revisar({ volcado: volcado({ sid: 's' }), lineasHilo: [], registros: solos });
+  assert.deepStrictEqual(regla(s, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`).sort(),
+    ['ATDD_PREEDIT_GATE_OFF:1', 'RUNTIME_MATRIX_LEGACY:1', 'RUNTIME_MATRIX_NO_MUTATION_CHECK:1', 'STORY_REVIEW_OFF:1']);
+  // junto al comando que los dejó: una vez, por el registro
+  const juntos = RULES.revisar({ volcado: volcado({ sid: 's' }), lineasHilo: [
+    ...cmd(`TYCON_RUNTIME_MATRIX_LEGACY=1 ${MARKER} complete-step live-check`),
+    ...cmd(`TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK=1 ${MARKER} complete-step live-check`),
+    ...cmd(`TYCON_STORY_REVIEW=0 ${PIPE} validators --repo /r --story /r/s.md`),
+  ], registros: { bypass: ['RUNTIME_MATRIX_LEGACY', 'RUNTIME_MATRIX_NO_MUTATION_CHECK', 'STORY_REVIEW_OFF']
+    .map((kind) => ({ ts: ts(), sessionId: 's', kind, story: '1.1' })), cobertura: { fuentes: { bypass: { estado: 'medido' } } } } });
+  assert.deepStrictEqual(regla(juntos, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`).sort(),
+    ['RUNTIME_MATRIX_LEGACY:1', 'RUNTIME_MATRIX_NO_MUTATION_CHECK:1', 'STORY_REVIEW_OFF:1']);
+});

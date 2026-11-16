@@ -2254,6 +2254,12 @@
       "requiere": []
     },
     {
+      "__nota": "La lista única de las variables de entorno del arnés (scripts/lib/env-switches.json): cada lectura del código está en la lista, ESC-C1 y HARNESS-C1 coinciden con ella, sin la lista se falla cerrado, y los lectores de escapes anotan su renglón en bypass.log. Casa de juguete.",
+      "raiz": "arnes",
+      "ruta": "tests/env-switches.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/adversarial-launch-delay.test.sh",
       "requiere": []
