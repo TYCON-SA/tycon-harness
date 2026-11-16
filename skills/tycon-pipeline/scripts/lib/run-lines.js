@@ -1,4 +1,5 @@
 'use strict';
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 // lib/run-lines.js — los renglones de una corrida: uno por paso empezado («✓ Revisores — 2 vueltas de revisores…») y el
 // renglón final («entró el pedido #12 — 52 min de trabajo, 14 min de espera, 2 vueltas, 1 firma del dueño»).
 //
