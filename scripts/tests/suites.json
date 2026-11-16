@@ -991,6 +991,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.278: correr una prueba con su corredor no es una escritura invisible; lo que escribe código o una historia en el mismo comando frena como siempre.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-read-only.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.278: el lector de comandos. marker.js y pipeline.js cuentan sólo donde se corren, no donde otro programa los nombra.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/marker-command.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-gate-failures-logged.test.js",
       "requiere": []
