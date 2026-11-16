@@ -1315,7 +1315,10 @@ test('SignatureQuestion_SlashCommand_NotAPath (8.275 pase F) @story-8.275 @ac-7'
   // después de un archivo, la ruta termina: la relativa que sigue no se come (vuelta 2)
   assert.strictEqual(oa.sinRutas('cambia /x/a.js src/b.js y listo'), 'cambia a.js src/b.js y listo');
   // pegada a otro signo, entre comillas tipográficas o de una carpeta de red, también
-  assert.strictEqual(oa.sinRutas('ruta:/Users/x/a.md, {/r/b.md} “/r/c.md” \\\\srv\\d\\e.md'), 'ruta:a.md, {b.md} “c.md” e.md');
+  assert.strictEqual(oa.sinRutas('ruta: /Users/x/a.md, {/r/b.md} “/r/c.md” \\\\srv\\d\\e.md 2>/r/log; @/r/f.md'), 'ruta: a.md, {b.md} “c.md” e.md 2>log; @f.md');
+  // una URL, «host:/ruta» y un comando de barra seguido de una relativa quedan como están (vuelta 3)
+  assert.strictEqual(oa.sinRutas('https://host/a/b.js y host:/var/x'), 'https://host/a/b.js y host:/var/x');
+  assert.strictEqual(oa.sinRutas('/cmd src/a.js'), '/cmd src/a.js');
   assert.strictEqual(oa.sinRutas('en C:\\a\\b c\\d.txt fin'), 'en d.txt fin');
 });
 

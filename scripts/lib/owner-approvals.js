@@ -154,20 +154,20 @@ function recortar(texto, n) {
   return `${sinPunto(cabeza.slice(0, corte)).replace(/[,;:]$/, '')} ${SIGUE}`;
 }
 
-// una palabra que empieza como ruta absoluta (`/…`, `~/…`, `C:\…`), con lo que la abre delante. Un espacio sigue en la
-// ruta sólo dentro de una carpeta: lo de antes es un nombre sin punto y lo de después sigue con otra barra («Mis
-// Documentos/…»); después de un archivo («/x/a.js src/b.js») la ruta termina
-const RUTA = /(^|[\s«(["'`=:,{<|“‘])((?:\\\\|\/|~\/|[A-Za-z]:[\\/])(?:[^\s»)\]"'`]|(?<=[\\/][^\s\\/.»)\]"'`]+)\s(?=[^\s»)\]"'`\\/]+[\\/]))*)/g;
+// una ruta absoluta (`/…`, `~/…`, `C:\…`, `\\red\…`) donde no la precede una letra, un número, un punto, un guion ni «:»
+// (así una URL o «host:/ruta» quedan como están). Un espacio sigue en la ruta sólo dentro de una carpeta, con dos tramos
+// antes y otra barra después («/x/Mis Documentos/…»); después de un archivo («/x/a.js src/b.js») la ruta termina
+const RUTA = /(?<![\p{L}\p{N}._\-~:\\/])((?:\\\\|\/|~\/|[A-Za-z]:[\\/])(?:[^\s»)\]"'`”’>|;&]|(?<=[\\/][^\\/]+[\\/][^\s\\/.»)\]"'`]+)\s(?=[^\s»)\]"'`\\/]+[\\/]))*)/gu;
 /**
  * El texto con cada ruta absoluta por el nombre de su archivo: lo que se ve en el teléfono; la ruta, en el detalle. Un
  * comando de barra («/tycon-merge-to-main»: una palabra sola, sin punto) no es una ruta y queda como está.
  */
 function sinRutas(texto) {
-  return String(texto == null ? '' : texto).replace(RUTA, (todo, antes, cruda) => {
+  return String(texto == null ? '' : texto).replace(RUTA, (todo, cruda) => {
     const [, ruta, cierre] = /^(.*?)([.,;:]*)$/.exec(cruda);
     if (/^\/[^/.]+$/.test(ruta)) return todo;
     const nombre = ruta.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
-    return nombre ? `${antes}${nombre}${cierre}` : todo;
+    return nombre ? `${nombre}${cierre}` : todo;
   });
 }
 
