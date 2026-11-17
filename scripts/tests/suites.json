@@ -2964,6 +2964,12 @@
       "requiere": []
     },
     {
+      "__nota": "el mismo pedido de firma escrito de otra forma (el orden de las opciones, de --acs, la historia relativa o absoluta) da el mismo cuadro y el mismo click le sirve; lo que cambia lo que se firma da otro código. En proceso, con una casa temporal; un par de segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-window-canonical.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "los carteles que piden una firma sobre un archivo: las dos formas (ventana y terminal) de una sola fuente, ningún comando de firma escrito a mano, cada forma destraba su freno en el laboratorio, los subcomandos nombrados existen, y el banco clasifica cómo frena cada cartel. Corre los guiones con la HOME aislada; unos segundos.",
       "raiz": "arnes",
       "ruta": "tests/notice-commands.test.js",
