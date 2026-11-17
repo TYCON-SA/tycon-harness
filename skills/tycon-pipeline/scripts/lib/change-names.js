@@ -243,7 +243,8 @@ function changeNames({ repo, file, base }) {
   if (!base) return { known: false, reason: 'sin base contra la que comparar' };
   let text;
   try { text = fs.readFileSync(path.join(repo, file), 'utf8'); } catch (e) { return { known: false, reason: `no pude leer ${file} (${e.code || e.message})` }; }
-  try { git(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]); } catch (_) {
+  // una base que empieza con `-` git la tomaría por opción
+  try { if (base.startsWith('-')) throw new Error('opción'); git(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]); } catch (_) {
     return { known: false, reason: `git no conoce la base ${base}` };
   }
   try { git(repo, ['cat-file', '-e', `${base}:./${file}`]); } catch (_) {

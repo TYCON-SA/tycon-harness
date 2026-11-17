@@ -402,7 +402,9 @@ function piezasCentrales({ repo, plan, files, base }) {
     const formas = nombres(f);
     const rutas = new Set(plan.filter((p, i) => textos[i] !== null && formas.some((n) => textos[i].includes(n))).map((p) => p.ruta));
     if (rutas.size < PIEZA_CENTRAL_MIN) continue;
-    const c = base && base.ref ? changeNames({ repo, file: f, base: base.ref }) : { known: false, reason: 'touched.json no trae la base' };
+    let c = { known: false, reason: 'touched.json no trae la base' };
+    // una falla al leer el cambio es «no sé», nunca un portón caído
+    if (base && base.ref) { try { c = changeNames({ repo, file: f, base: base.ref }); } catch (e) { c = { known: false, reason: `no pude leer el cambio (${e.message})` }; } }
     out.push({ file: f, stem: path.posix.basename(f).replace(/\.[^.]+$/, ''), rutas, names: c.known ? c.names : null, reason: c.known ? null : c.reason });
   }
   return out;

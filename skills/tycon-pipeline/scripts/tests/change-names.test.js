@@ -51,7 +51,9 @@ const JS = [
   '};',
   '',
 ].join('\n');
-const SH = ['#!/bin/bash', 'd() {', '  echo hola', '}', ''].join('\n');
+// Las llaves de un documento en línea y las de un `"$(…)"` con comillas adentro no cuentan: si contaran, las llaves no
+// cerrarían y `d` saldría «no sé».
+const SH = ['#!/bin/bash', 'd() {', '  echo hola', '  cat <<EOF', '{ no cuenta', 'EOF', '  x="$(echo "}")"', '}', ''].join('\n');
 
 test('T5 ChangeNames_FunctionCaseArrowShell @story-8.302 @ac-2 — un cambio dentro de una función, un subcomando, una flecha y una función de shell da sus nombres', () => {
   // 🔴 mutación: buscar sólo `function x(` (sin `case`, sin flecha, sin la forma de shell) → faltan b, c o d; contar
@@ -134,4 +136,13 @@ test('T9 ChangeNames_EnclosingByBraces_DispatchAndUnknown @story-8.302 @ac-2 @ac
   const rota = con('return x;', 'return x; {');
   assert.equal(rota.known, false, JSON.stringify(rota));
   assert.match(rota.reason, /no pude seguir las llaves de lib\/despacho\.js/);
+  // las llaves de una expresión regular, de una plantilla y de un comentario de bloque no cuentan
+  const TRAMPAS = ['function traps(x) {', '  const re = /[{]/;', '  const t = `${ { a: 1 }.a } }`;', '  /* { */', '  return x;', '}', ''].join('\n');
+  const t = lab({ 'lib/traps.js': TRAMPAS });
+  t.write('lib/traps.js', TRAMPAS.replace('return x;', 'return x + 1;'));
+  assert.deepEqual(changeNames({ repo: t.repo, file: 'lib/traps.js', base: t.base }), { known: true, names: ['traps'] });
+  // una base que git tomaría por opción no se le pasa: «no sé»
+  const opcion = changeNames({ repo: t.repo, file: 'lib/traps.js', base: '--output=/tmp/x' });
+  assert.equal(opcion.known, false, JSON.stringify(opcion));
+  assert.match(opcion.reason, /git no conoce la base --output=\/tmp\/x/);
 });
