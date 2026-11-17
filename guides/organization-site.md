@@ -474,7 +474,9 @@ conexión.
 
 **Qué sale de la máquina.** Lo mismo que muestra la oficina local: cada sesión con su nombre, su estado, su trabajo, su
 encargo, lo que está haciendo y su última acción; el tablero, las tablas, los tokens, los mensajes entre sesiones (los
-avioncitos) y la conversación de cada sesión, que se abre con «Ver conversación», como en la máquina. Cada texto sale sin
+avioncitos), la conversación de cada sesión, que se abre con «Ver conversación», como en la máquina, y los dos números
+de los racks: el porcentaje de memoria y el de procesador en uso, enteros de 0 a 100 (ni el nombre de la máquina, ni sus
+procesos, ni totales en bytes). Cada texto sale sin
 la carpeta personal ni las claves que se reconocen. La conversación viaja aparte de la foto, sólo a un sitio que la
 entiende, y el sitio la guarda sólo en memoria: nada de la oficina queda en su disco. Así, quien mantiene ve en vivo qué
 hace cada dev; cada dev lo sabe por la línea de la huella.

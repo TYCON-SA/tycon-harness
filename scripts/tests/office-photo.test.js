@@ -1508,3 +1508,82 @@ test('T10 Office_ModeloYEsfuerzo_LleganALaFoto @story-8.234 @ac-10 — `--json` 
   const b = JSON.parse(run(otra, ['--json', '--now', new Date(NOW).toISOString()])).agents.find((x) => x.nombre === 'sesion-a');
   assert.ok(b && !(b.modelo && b.modelo !== 'sin dato'), 'sin conversación, sin modelo');
 });
+
+// ── The load of the machine: memory and processor in use, for the racks ─────────────────────────────────────────────
+
+const MEMORY_38_FREE = 'The system has 17179869184 (4194304 pages with a page size of 4096).\nSystem-wide memory free percentage: 38%\n';
+const cpu = (busy, idle) => ({ times: { user: busy, nice: 0, sys: 0, idle, irq: 0 } });
+/** Each call to the toy `os.cpus()` gives the next reading: two processors, both with the same times. */
+const cpuReads = (...reads) => { let n = 0; const f = () => { f.calls += 1; const r = reads[Math.min(n++, reads.length - 1)]; if (r instanceof Error) throw r; return [r, r]; }; f.calls = 0; return f; };
+const waits = () => { const f = async (ms) => { f.ms.push(ms); }; f.ms = []; return f; };
+/** A home with the state folders the office reads, and nothing else. */
+const emptyHome = () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-load-'));
+  for (const d of ['active', 'adhoc', 'doing']) fs.mkdirSync(path.join(stateDir(home), d), { recursive: true });
+  return home;
+};
+const noSite = async () => ({ code: 3, out: '' });
+
+test('T1 Maquina_MideMemoriaYProcesador @story-8.301 @ac-1 — la foto trae la memoria y el procesador en uso, en enteros', async () => {
+  const { collect } = require(OFFICE);
+  const machine = { platform: 'darwin', run: () => MEMORY_38_FREE, readCpus: cpuReads(cpu(0, 0), cpu(35, 65)), wait: waits(), previous: null, now: () => NOW };
+  const data = await collect({ home: emptyHome(), now: new Date(NOW).toISOString(), siteUrl: noSite, machine });
+  assert.deepStrictEqual(data.meta.maquina, { memoria: 62, procesador: 35 });
+  assert.deepStrictEqual(machine.wait.ms, [250], 'sin lectura previa, dos lecturas a 250 ms');
+  // en Linux, la memoria disponible de /proc/meminfo
+  const { machineLoad } = require(OFFICE);
+  const linux = await machineLoad({ platform: 'linux', readFile: () => 'MemTotal: 1000 kB\nMemAvailable: 380 kB\n', readCpus: cpuReads(cpu(0, 0), cpu(35, 65)), wait: waits(), previous: null, now: () => NOW });
+  assert.deepStrictEqual(linux, { memoria: 62, procesador: 35 });
+});
+
+test('T2 Maquina_MedidaQueFalla_NoVa @story-8.301 @ac-1 @ac-2 — la medida que no se lee no va, y nunca se usa una vieja', async () => {
+  const { collect, machineLoad, memoryCommand } = require(OFFICE);
+  const base = () => ({ platform: 'darwin', run: () => MEMORY_38_FREE, readCpus: cpuReads(cpu(0, 0), cpu(35, 65)), wait: waits(), previous: null, now: () => NOW });
+  // la memoria falla y el procesador anda: la foto se arma igual, sólo con el procesador
+  const sinMemoria = await collect({ home: emptyHome(), now: new Date(NOW).toISOString(), siteUrl: noSite, machine: { ...base(), run: () => { throw new Error('memory_pressure: no está'); } } });
+  assert.deepStrictEqual(sinMemoria.meta.maquina, { procesador: 35 });
+  assert.ok(Array.isArray(sinMemoria.agents), 'la foto se armó');
+  // al revés
+  assert.deepStrictEqual(await machineLoad({ ...base(), readCpus: cpuReads(new Error('sin os.cpus()')) }), { memoria: 62 });
+  // el comando pasa su tope
+  const timedOut = Object.assign(new Error('spawnSync memory_pressure ETIMEDOUT'), { code: 'ETIMEDOUT' });
+  assert.deepStrictEqual(await machineLoad({ ...base(), run: () => { throw timedOut; } }), { procesador: 35 });
+  // el comando de la oficina tiene su tope de 1 s, no los 5 s del turno pesado
+  const calls = [];
+  memoryCommand((cmd, args, opts) => { calls.push([cmd, args, opts.timeout]); return MEMORY_38_FREE; })();
+  assert.deepStrictEqual(calls, [['memory_pressure', ['-Q'], 1000]]);
+  // un texto que no trae el porcentaje no se adivina
+  assert.deepStrictEqual(await machineLoad({ ...base(), run: () => 'algo distinto' }), { procesador: 35 });
+  // dos lecturas iguales: el reloj del procesador no avanzó, no hay medida
+  assert.deepStrictEqual(await machineLoad({ ...base(), readCpus: cpuReads(cpu(10, 90), cpu(10, 90)) }), { memoria: 62 });
+  // una lectura previa de hace 30 s es vieja: se toman dos nuevas a 250 ms y se mide con ellas
+  const old = { ...base(), previous: { at: NOW - 30000, times: { busy: 0, total: 1 } }, readCpus: cpuReads(cpu(100, 100), cpu(150, 150)) };
+  assert.deepStrictEqual(await machineLoad(old), { memoria: 62, procesador: 50 });
+  assert.deepStrictEqual([old.wait.ms, old.readCpus.calls], [[250], 2]);
+  // una de hace 5 s vale: una sola lectura nueva, sin esperar
+  const recent = { ...base(), previous: { at: NOW - 5000, times: { busy: 0, total: 0 } }, readCpus: cpuReads(cpu(35, 65)) };
+  assert.deepStrictEqual(await machineLoad(recent), { memoria: 62, procesador: 35 });
+  assert.deepStrictEqual([recent.wait.ms, recent.readCpus.calls], [[], 1]);
+  // una de hace 100 ms se usa, pero se espera lo que falta hasta 250 ms para que el reloj avance
+  const tooRecent = { ...base(), previous: { at: NOW - 100, times: { busy: 0, total: 0 } }, readCpus: cpuReads(cpu(35, 65)) };
+  assert.deepStrictEqual(await machineLoad(tooRecent), { memoria: 62, procesador: 35 });
+  assert.deepStrictEqual(tooRecent.wait.ms, [150]);
+  // una lectura «del futuro» (el reloj del sistema se atrasó después de leerla) no vale: dos nuevas a 250 ms, nunca una
+  // espera del tamaño del salto
+  for (const jump of [4000, 3600000]) {
+    const future = { ...base(), previous: { at: NOW + jump, times: { busy: 0, total: 0 } }, readCpus: cpuReads(cpu(0, 0), cpu(35, 65)) };
+    assert.deepStrictEqual(await machineLoad(future), { memoria: 62, procesador: 35 }, `reloj atrasado ${jump} ms`);
+    assert.deepStrictEqual([future.wait.ms, future.readCpus.calls], [[250], 2], `reloj atrasado ${jump} ms`);
+  }
+  // quien sólo lee lo que espera al dueño no mide la máquina
+  const none = await collect({ home: emptyHome(), now: new Date(NOW).toISOString(), siteUrl: noSite, machine: false });
+  assert.strictEqual(none.meta.maquina, undefined);
+});
+
+test('T3 Maquina_Windows_UsaFreemem @story-8.301 @ac-1 — en Windows la memoria sale de os.freemem sobre os.totalmem', async () => {
+  const { machineLoad } = require(OFFICE);
+  const GB = 2 ** 30;
+  const load = await machineLoad({ platform: 'win32', freemem: () => 4 * GB, totalmem: () => 16 * GB, run: () => { throw new Error('en Windows no se corre ningún comando'); }, readCpus: cpuReads(cpu(0, 0), cpu(35, 65)), wait: waits(), previous: null, now: () => NOW });
+  assert.deepStrictEqual(load, { memoria: 75, procesador: 35 });
+  assert.deepStrictEqual(await machineLoad({ platform: 'win32', freemem: () => 4 * GB, totalmem: () => 0, readCpus: cpuReads(new Error('x')), wait: waits(), previous: null, now: () => NOW }), {}, 'sin total no hay medida');
+});
