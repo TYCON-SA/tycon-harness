@@ -2,7 +2,7 @@
 
 Antes de programar, un agente revisa el **plan** de la historia; después de programar, el **pase adversarial** ejecuta el
 código para buscarle defectos. Esta guía junta cuándo corre cada revisión, quién la lanza, con qué revisor, quién
-aprueba, cuándo el dueño cuenta como ausente y cómo se configura. En inglés: [revisiones-automaticas.en.md](revisiones-automaticas.en.md).
+aprueba, cuándo el dueño cuenta como ausente y cómo se configura. En inglés: [automatic-reviews.en.md](automatic-reviews.en.md).
 
 Todo se configura en el sitio de la organización, pestaña Configuración, «Cómo trabaja Claude» (secciones **Revisión del
 plan**, **Con qué corre la revisión**, **Pase adversarial** y **Vueltas de revisores**), y queda en `team-repos.json` del

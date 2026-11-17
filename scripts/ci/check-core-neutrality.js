@@ -3,7 +3,7 @@
 /**
  * check-core-neutrality.js — el candado de las plataformas: el núcleo no suma comandos ni direcciones de una plataforma.
  *
- * El núcleo del arnés dice qué se hace; cómo se hace en cada plataforma lo dice su conector (guides/constitucion.md). Este
+ * El núcleo del arnés dice qué se hace; cómo se hace en cada plataforma lo dice su conector (guides/constitution.md). Este
  * control cuenta, por archivo, las líneas de lo que va al commit (el índice de git) que casan con alguna señal dura de
  * plataforma: un comando o una dirección real. Las señales no están escritas acá: las declara cada conector en su
  * manifiesto (`hardSignals` de `integrations/<n>/integration.json`, `kind: "platform"`).

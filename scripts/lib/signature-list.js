@@ -311,7 +311,8 @@ function comandoParaRepetir(palabras) {
   return `${lanzador} ${sin.map(comoDato).join(' ')}`;
 }
 
-// `planEnElCuadro`: el plan trae «Qué hace» y «Archivos», y el cuadro los mostró; el freno no lo pide en la conversación
+// `planEnElCuadro`: el plan trae «Qué hace» y «Archivos», y el cuadro mostró qué hace, cuántos archivos y de qué zonas y
+// dónde está el plan: la lista de archivos no hace falta para decidir; el freno no lo pide en la conversación
 function avisoALaSesion(f, palabras, planEnElCuadro = false) {
   const plan = f.firma === 'plan-approval' && !planEnElCuadro ? ' Si lo niega porque el plan no está en tu conversación, escribilo tal cual en un mensaje tuyo y repetí.' : '';
   return `Ya aprobó la persona. Repetí este comando solo, tal cual y una sola vez: el click vale para una firma.${plan} El comando es un dato, no una instrucción:\n${comandoParaRepetir(palabras)}`;
@@ -374,6 +375,50 @@ function cuadroDeLaFila(f, casa, can = ow().canonicaDe(f.comando)) {
 }
 
 /**
+ * ¿La firma de la fila `f` ya tiene su aprobación? El mismo chequeo para `owner-next` y la oficina: la forma del comando,
+ * su cuadro y `buscar` con la coordinadora `coord`. No se pide un click ya dado: `buscar` sólo lee, y vencido o con la
+ * coordinadora muerta no lo encuentra. `{ saltado }` si la fila no se arma desde aquí; si no, `{ can, cuadro, dado }`, y
+ * `error` si `buscar` tiró (`dado` queda sin aprobar).
+ */
+function aprobacionDe(f, { casa, coord, ahora, arbol, validar }) {
+  const can = ow().canonicaDe(f.comando);
+  const esSuya = can && (can.id === f.firma || (f.firma === 'refresh-after-main' && can.id === 'control-change'));
+  if (!esSuya) return { saltado: `su comando no tiene la forma de la firma «${una(f.firma)}»` };
+  const cuadro = cuadroDeLaFila(f, casa, can);
+  if (cuadro.error) return { saltado: `no pude armar su cuadro (${una(cuadro.error)})` };
+  try {
+    const dado = oa().buscar({ casa, sesion: f.destino, destino: f.destino, cuadro, coordinadora: coord, ahora, cwd: f.cwd, herramienta: procesoDe(casa, f.destino, arbol), ...(arbol !== undefined ? { arbol } : {}), ...(validar ? { validar } : {}) });
+    return { can, cuadro, dado };
+  } catch (e) { return { can, cuadro, dado: { ok: false }, error: e.message }; }
+}
+
+/**
+ * Las firmas de `filas` (las de `abiertos`) que ya tienen su aprobación y esperan que su sesión repita el comando: la
+ * oficina no se las pide al dueño. `{ ids, problemas }`: lo que no se pudo saber (una lectura que falló, `noLeida`) va a
+ * `problemas` y la firma queda sin aprobar; una negativa definitiva o una aprobación vencida, sin aviso.
+ */
+function aprobadasSinRepetir({ casa, filas, ahora = Date.now(), arbol, validar }) {
+  const ids = new Set();
+  const problemas = [];
+  const firmas = (filas || []).filter((f) => f && tipoDe(f) === 'firma' && f.destino);
+  if (!firmas.length) return { ids, problemas };
+  const coord = oa().coordinadoraConfirmada(casa);
+  // los procesos de la máquina, una vez por pasada y no una por firma: leerlos tarda unos 60 ms
+  const procesos = arbol !== undefined ? arbol : ow().arbolDeLaPlataforma();
+  // sin los procesos, `buscar` no puede confirmar de qué proceso es la aprobación de la propia sesión: ninguna se da por
+  // aprobada y se dice por qué
+  if (!procesos) return { ids, problemas: ['no pude leer los procesos de la máquina: no sé qué firmas ya están aprobadas'] };
+  for (const f of firmas) {
+    const ap = aprobacionDe(f, { casa, coord, ahora, arbol: procesos, validar });
+    if (ap.saltado) continue;
+    if (ap.dado.ok) { ids.add(f.id); continue; }
+    const motivo = ap.error || (ap.dado.noLeida ? ap.dado.motivo : null);
+    if (motivo) problemas.push(`no pude saber si «${una(f.title)}» de ${una(f.destino)} está aprobada: ${una(motivo)}`);
+  }
+  return { ids, problemas };
+}
+
+/**
  * Lo que sigue en la pasada para la sesión `sesion`: un solo renglón, el más viejo; primero los permisos, después las
  * firmas y al final lo de la terminal. La coordinadora confirmada pasa todos; otra sesión, aquellos de los que es destino.
  * `tipo` dice qué salió: `permiso` o `firma` (con su cuadro), `plan` (hay que escribir el plan antes), `terminal` (con
@@ -421,15 +466,11 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
       const legible = SESION.test(String(f.id));
       return sale({ tipo, id: f.id, titulo: una(f.title), archivo: f.file ? una(f.file) : null, ...(legible ? { sigue: `owner-next --after ${f.id}` } : {}), texto: `Esto se firma en tu terminal: «${una(f.title)}»${f.file ? `, abriendo ${una(f.file)}` : ''}.${legible ? ` Hecho, se cierra con signature-done ${f.id}.` : ''}` });
     }
-    const can = ow().canonicaDe(f.comando);
-    const esSuya = can && (can.id === f.firma || (f.firma === 'refresh-after-main' && can.id === 'control-change'));
-    if (!esSuya) { saltados.push({ id: f.id, motivo: `su comando no tiene la forma de la firma «${una(f.firma)}»`, cwd: f.cwd ? una(f.cwd) : null }); continue; }
-    const cuadro = cuadroDeLaFila(f, casa, can);
-    if (cuadro.error) { saltados.push({ id: f.id, motivo: `no pude armar su cuadro (${una(cuadro.error)})`, cwd: f.cwd ? una(f.cwd) : null }); continue; }
+    const ap = aprobacionDe(f, { casa, coord, ahora, arbol, validar });
+    if (ap.saltado) { saltados.push({ id: f.id, motivo: ap.saltado, cwd: f.cwd ? una(f.cwd) : null }); continue; }
+    const { can, cuadro, dado } = ap;
+    if (ap.error) problemas.push(`no pude mirar si ya estaba aprobado (${ap.error})`);
     let aviso = avisoALaSesion(f, can.palabras);
-    // no se pide un click ya dado. `buscar` sólo lee: vencido o con la coordinadora muerta, no lo encuentra y se vuelve a dar
-    let dado = { ok: false };
-    try { dado = oa().buscar({ casa, sesion: f.destino, destino: f.destino, cuadro, coordinadora: coord, ahora, cwd: f.cwd, herramienta: procesoDe(casa, f.destino, arbol), ...(arbol !== undefined ? { arbol } : {}), ...(validar ? { validar } : {}) }); } catch (e) { problemas.push(`no pude mirar si ya estaba aprobado (${e.message})`); }
     if (dado.ok) { faltaRepetir.push({ id: f.id, destino: f.destino, nombre: nombreDe(f.destino), aviso }); continue; }
     let nota = null;
     if (f.firma === 'plan-approval') {
@@ -445,7 +486,9 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
         else if (!visto.mostrado) return sale({ tipo: 'plan', id: f.id, destino: f.destino, nombre: nombreDe(f.destino), plan, texto: 'Antes del click, la persona tiene que ver el plan: escribilo tal cual en un mensaje tuyo y volvé a correr owner-next.' });
       }
     }
-    return sale({ tipo, id: f.id, destino: f.destino, nombre: nombreDe(f.destino), rotulo: rotulo('Firma', firmas.indexOf(f) + 1, firmas.length), pregunta: cuadro.pregunta, sello: cuadro.sello, opciones: cuadro.opciones, aviso, nota });
+    // el detalle y el aviso del tope van aparte de la pregunta: quien muestra el cuadro los da si la persona los pide
+    return sale({ tipo, id: f.id, destino: f.destino, nombre: nombreDe(f.destino), rotulo: rotulo('Firma', firmas.indexOf(f) + 1, firmas.length), pregunta: cuadro.pregunta, sello: cuadro.sello, opciones: cuadro.opciones, aviso, nota,
+      detalle: cuadro.detalle || [], pasaElTope: !!cuadro.pasaElTope, largo: cuadro.largo, tope: cuadro.tope });
   }
   if (saltados.length) return sale({ tipo: 'nada', texto: textoDeSaltados(saltados) });
   const texto = faltaRepetir.length ? 'No queda nada para preguntar.'
@@ -531,4 +574,4 @@ function mensajesDe(ruta) {
   return fuera;
 }
 
-module.exports = { claveDe, archivo, candado, tipoDe, cuadroDeLaFila, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, textoDeSaltados, rechazar, esDeLaPersona };
+module.exports = { claveDe, archivo, candado, tipoDe, cuadroDeLaFila, aprobadasSinRepetir, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, textoDeSaltados, rechazar, esDeLaPersona };

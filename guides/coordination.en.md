@@ -308,7 +308,7 @@ it even with no coordinator: it can only stop too much.
 
 ## The automatic reviews: what the coordinator does
 
-When each review runs is set by the organization's configuration (`guides/revisiones-automaticas.en.md`). In each one,
+When each review runs is set by the organization's configuration (`guides/automatic-reviews.en.md`). In each one,
 the coordinator:
 
 - **Asks or not.** If the matrix says to ask, she asks the owner, with the options box, and records it: the session
@@ -417,8 +417,12 @@ turned on in the profile, or on the machine to try it out.
 - **What `owner-next` gives.** One row, the oldest: a box to show without changing a letter, with a label («Firma 2/5»), and the
   notice for the target session. **A permission goes first**, with its own counter and box. What goes through the terminal comes
   last, with no box. If the plan has not been seen yet in that tab and does not bring "What it does" and "Files", it
-  gives the plan to write out before the box. If a row
-  cannot be shown, or its repetition is denied, `owner-next --after <id>` gives the next one.
+  gives the plan to write out before the box. Below the question it prints the **detail** («Detalle (no va en el
+  cuadro; mostralo si la persona lo pide):»): what did not fit in the box, such as the path of the plan or the diff and
+  the whole lines. The detail never goes inside the options box and never names the signature's files, which the box
+  counts by zone. If the box goes over the phone limit, it adds the line «Este cuadro pasa el tope del teléfono (N de M
+  letras)»: it blocks nothing. If a row cannot be shown, or its repetition is denied, `owner-next --after <id>` gives
+  the next one.
 - **The session that asked always repeats the command**, with or without a coordinator. On «Sí», the coordinator sends it the
   notice and the session repeats the same command within 30 minutes. With an unused click, `owner-next` skips that row and says
   the repetition is missing.

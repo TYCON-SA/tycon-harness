@@ -94,7 +94,7 @@ and stories—; then, story by story.
   your tab asks for permissions, the yes goes in the permission window. There is no signature and no command.
 
 The harness brakes, controls and control signatures belong to whoever maintains it. The detail:
-[The right measure](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio) (in Spanish).
+[The right measure](guides/what-the-harness-does.md#la-medida-justa-cuánto-papel-lleva-cada-cambio) (in Spanish).
 
 ```mermaid
 flowchart TB

@@ -81,7 +81,9 @@ coordinadora; uno delicado, siempre una persona.
 
 El plan escrito trae dos secciones, que son las que muestra la pregunta de la firma:
 
-- `## Qué hace`: hasta 3 líneas llanas, para alguien que no tocó el código.
+- `## Qué hace`: hasta 2 líneas llanas, para alguien que no tocó el código. El cuadro de la firma muestra 2, de hasta
+  140 letras cada una, para que se lea en un teléfono; un plan de 3 líneas se firma igual, y la tercera queda en el
+  detalle del cuadro.
 - `## Archivos`: los archivos que toca, uno por renglón (`- ruta`). Todo lo que el plan cambia va en «## Archivos»; lo
   que sólo corre (una prueba, el gancho de commit) se escribe como el comando entero entre comillas invertidas, con su
   programa delante (`sh .githooks/pre-commit`, `node --test …`): así no vuelve delicado al plan, y la ruta sola sí.
