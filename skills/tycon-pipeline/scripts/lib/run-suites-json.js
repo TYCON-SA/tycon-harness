@@ -83,6 +83,7 @@ const { touches, isValidPattern } = require('./touched-files');
 const { joinLcov } = require('./node-coverage');
 const suiteTimes = require('./suite-times');
 const { stateDir } = require('./state-dir.js');
+const { changeNames } = require('./change-names.js');
 
 const MAX_BUFFER = 64 * 1024 * 1024;
 // Tope en bytes del archivo con la salida entera de una suite roja (se guardan la primera y la última mitad) y de lo que
@@ -97,6 +98,9 @@ const WRAPPER = path.join(__dirname, 'coverage-wrapper.js');
 // Desde cuántas suites por correr se pide el turno de la máquina: dos portones grandes a la vez la saturan, y uno mediano
 // corre cerca de cien. Es el único lugar donde se fija.
 const TURN_FROM_SUITES = 100;
+// Una pieza central: un archivo de código tocado que nombran tantas suites o más (5 % de las ~800 del arnés). Con el
+// portón acotado por el repo, para ésas nombrar el archivo no alcanza: ver `piezasCentrales` y `lejana`.
+const PIEZA_CENTRAL_MIN = 40;
 
 /**
  * Cómo se lanza una suite: `[ejecutable, args, env]`, sin las variables internas del portón. Con cobertura, bajo el envoltorio: sin la variable que anida
@@ -383,6 +387,53 @@ function nombres(f) {
   return out;
 }
 
+/**
+ * Las piezas centrales del portón acotado por el repo: los archivos de código tocados que nombran PIEZA_CENTRAL_MIN
+ * suites de la lista o más (con la regla de `namesTouched`), cada uno con lo que cambió adentro según change-names.js
+ * contra la base de touched.json. `names: null` es «no sé qué cambió» (con `reason`): esa pieza no difiere nada.
+ */
+function piezasCentrales({ repo, plan, files, base }) {
+  const { classifyFile } = require('./run-size.js');
+  const candidatas = files.filter((f) => !esSuite(f) && classifyFile(f).kind === 'code');
+  if (!candidatas.length) return [];
+  const textos = plan.map((p) => { try { return fs.readFileSync(p.ruta, 'utf8'); } catch (_) { return null; } });
+  const out = [];
+  for (const f of candidatas) {
+    const formas = nombres(f);
+    const rutas = new Set(plan.filter((p, i) => textos[i] !== null && formas.some((n) => textos[i].includes(n))).map((p) => p.ruta));
+    if (rutas.size < PIEZA_CENTRAL_MIN) continue;
+    const c = base && base.ref ? changeNames({ repo, file: f, base: base.ref }) : { known: false, reason: 'touched.json no trae la base' };
+    out.push({ file: f, stem: path.posix.basename(f).replace(/\.[^.]+$/, ''), rutas, names: c.known ? c.names : null, reason: c.known ? null : c.reason });
+  }
+  return out;
+}
+
+// ¿El texto nombra `n` como palabra entera? (`adhoc` sí en «adhoc set», no en «noadhocs»)
+function nombra(text, n) {
+  const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\w$])${esc}(?![\\w$])`).test(text);
+}
+
+/**
+ * Una suite que hoy corre SÓLO porque nombra piezas centrales queda lejos si, en cada una que nombra, se sabe qué cambió
+ * y la suite no nombra ninguno de esos nombres ni se llama como la pieza (`pieza-*.test.js`). Devuelve las piezas que
+ * nombra, o null si corre: la suite tocada, la que nombra otro archivo tocado, la ilegible y la de una pieza «no sé».
+ */
+function lejana(repo, p, files, centrales) {
+  const leidas = centrales.filter((c) => c.rutas.has(p.ruta));
+  if (!leidas.length) return null;
+  const own = ownPaths(repo, p.ruta);
+  if (files.some((f) => own.includes(f))) return null;
+  let text = null;
+  try { text = fs.readFileSync(p.ruta, 'utf8'); } catch (_) { return null; }
+  const central = new Set(centrales.map((c) => c.file));
+  if (files.some((f) => !esSuite(f) && !central.has(f) && nombres(f).some((n) => text.includes(n)))) return null;
+  for (const c of leidas) {
+    if (!c.names || p.name.startsWith(c.stem) || c.names.some((n) => nombra(text, n))) return null;
+  }
+  return leidas;
+}
+
 // «Otra suite»: un archivo con `.test.` o uno dentro de una carpeta `tests/`. Un archivo de código que empieza con
 // «test-» (test-gate.sh, lib/test-gate-report.js) es código, y una suite que lo nombra lo prueba.
 function esSuite(f) { return /\.test\.(js|sh)$/.test(f) || /(^|\/)tests\//.test(f); }
@@ -522,6 +573,8 @@ function main(argv, env = process.env) {
     else installerCrit = crit;
     return installerCrit;
   };
+  // Con el portón acotado por el repo, las piezas centrales tocadas: sus suites lejanas al cambio quedan para la CI.
+  const centrales = byRepo && !light ? piezasCentrales({ repo, plan, files: touched.files, base: touched.base }) : [];
   const rootMissing = !isDir(skills);
   if (plan.some((p) => p.fromSkills)) console.log(`[suites.json] raíz agent-skills: ${skills} (salió de: ${skillsRoot.source})`);
   for (const p of plan) {
@@ -569,6 +622,14 @@ function main(argv, env = process.env) {
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
     }
+    // La de la regla de carpetas ya se eligió por lo que toca: la cercanía no la difiere.
+    const lejos = centrales.length && !p.gate ? lejana(repo, p, touched.files, centrales) : null;
+    if (lejos) {
+      const reason = `${lejos.map((c) => `lee ${c.file}, que nombran ${c.rutas.size} suites, pero no nombra lo que cambió (${c.names.join(', ')})`).join('; ')}; la suite completa la corre la CI del pedido (${fullSuiteBy})`;
+      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      console.log(`DIFERIDA ${p.name} — ${reason}`);
+      continue;
+    }
     if (light && touched.known && !allSuites && !readsTouched(repo, p.ruta, touched.files)) {
       const reason = 'diferida por corrida liviana: no lee ningún archivo tocado';
       resumen.deferred_suites.push({ suite: p.ruta, reason });
@@ -583,6 +644,13 @@ function main(argv, env = process.env) {
     if (rerunHallada.has(r)) continue;
     resumen.ausentes.push(r);
     console.log(`AUSENTE  ${r} — se repitió sola y la carpeta cambió después, pero ya no está en la lista de suites: no se pudo volver a correr`);
+  }
+
+  for (const c of centrales) {
+    const corren = [...parallel, ...exclusives].filter((p) => c.rutas.has(p.ruta)).length;
+    console.log(c.names
+      ? `[suites.json] ${c.file}: corrieron ${corren} de las ${c.rutas.size} suites que la nombran (para correrlas todas: TYCON_GATE_ALL_SUITES=1)`
+      : `[suites.json] ${c.file}: no sé qué cambió adentro (${c.reason}): corren las ${c.rutas.size} suites que la nombran`);
   }
 
   if (byRepo) resumen.scoped = { by: 'repo', full_suite_by: fullSuiteBy, none_touched: false };

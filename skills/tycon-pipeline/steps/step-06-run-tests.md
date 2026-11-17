@@ -48,7 +48,11 @@ la máquina está cargada, y esperan si la carga pasa el doble de los núcleos; 
 declaran `gate_only_when_touching` se DIFIEREN si la story no toca esas carpetas (hoy export-real: sólo corre si la
 story toca `scripts/publishing/**`). Lo diferido queda en `tests-result.json` → `totals.deferred_suites`, con el motivo.
 Si el repo declara `test_gate` en `.test-gate.yaml`, en su raíz (commiteado), corren sólo las suites que leen lo tocado y la
-completa la corre la CI del pedido; si ninguna lo lee, sale 0 y lo dice. Si el gate no puede saber qué toca la story,
+completa la corre la CI del pedido; si ninguna lo lee, sale 0 y lo dice. Si lo tocado incluye una pieza central (un
+archivo de código que nombran 40 suites o más), de las que la nombran corren sólo las que nombran la función o el
+subcomando que cambió, o se llaman como ella; las demás quedan diferidas para la CI del pedido, y la salida dice
+«<pieza>: corrieron k de las N suites que la nombran (para correrlas todas: TYCON_GATE_ALL_SUITES=1)». Si no se sabe qué
+cambió adentro, corren todas las que la nombran. Si el gate no puede saber qué toca la story,
 corre todo, también con esa clave (sólo la corrida del repo hermano sale 7 sin correr nada; en el árbol armado del
 privado lo tocado sale de los dos repos y, si no se puede saber, también sale 7).
 `TYCON_GATE_ALL_SUITES=1` corre todo como antes. El nocturno y el control del PR no cambian.
