@@ -201,6 +201,13 @@ Lo que tiene que cumplir esa aprobación:
   gasta: el motivo lo dice y hace falta un click nuevo.
   Lo que hace sale de lo que firmarías si lo abrieras, no de lo que escribió la sesión. La huella del sello incluye eso
   que se mostró: si el plan o el diff cambian después del cuadro, tu click ya no vale y el agente pide el cuadro de nuevo.
+- **El código del sello sale del pedido en forma canónica, no del comando tal como se escribió.** El mismo pedido escrito
+  de otra forma da el mismo cuadro y tu click le sirve: las opciones en otro orden, los criterios de `--acs` en otro orden
+  o repetidos, la historia por ruta relativa o absoluta (si las dos llevan al mismo archivo desde donde lo lee el guion).
+  Lo que cambia lo que firmás da otro código: otro valor, otra opción, otro criterio, la forma `--opcion=valor` (el guion
+  no la lee igual que `--opcion valor`), o lo que se mostró (el texto de un criterio, el plan, el diff). Un comando que
+  no tiene forma canónica (una palabra suelta entre las opciones, por ejemplo) se compara tal como se escribió. Los
+  códigos de antes no se migran: al actualizar el arnés, un cuadro que ya habías aprobado se pregunta una vez más.
 - **La das en la sesión que firma, o en la coordinadora con la designación confirmada.** Dada en la coordinadora, su proceso
   tiene que seguir vivo. La aprobación es tuya, no una delegación.
 - **El mensaje es un «aprobado» claro.** «Aprobado», «apruebo» o «sí, aprobado», sin preguntas, negaciones ni condiciones.

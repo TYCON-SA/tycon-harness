@@ -13,6 +13,8 @@
  *     pasa el agente, que puede faltar o repetirse.
  *   - `report`: el arnés leyó lo que contestó, en el momento en que terminó: `readable`, su motivo si no se pudo, la huella
  *     del texto y `criticals: [{ rule, count }]`. Lo escriben `reviewers-run` (Codex) y on-advisor-done.js (Claude Code).
+ *   - `verdict-retry`: a un revisor que cerró sin su renglón de veredicto se le pidió una vez, al mismo agente (Claude
+ *     Code) o con una segunda corrida sobre el mismo contexto (Codex). No es una salida nueva: no cuenta para el tope.
  *
  * Un crítico se identifica por su regla y cuántas veces la reportó el revisor, del renglón de veredicto con que cierra
  * («Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí»: la regla una vez por hallazgo). El archivo no se anota
@@ -162,6 +164,26 @@ function recordReport(o) {
   });
 }
 
+// lo que se le pide a un revisor que cerró sin su renglón de veredicto: sólo el renglón, sin tocar su revisión
+const VERDICT_REQUEST = 'Tu reporte no trae el renglón de veredicto. Sin cambiar tu revisión, cerrá con un solo renglón: '
+  + '«Veredicto: limpio» o «Veredicto: hallazgos (REGLA, REGLA) · bloquea: sí|no».';
+
+/** Se le pidió el renglón de veredicto. `o`: { stateDir, sessionKey, advisor, agentId, iter, story, run }. */
+function recordVerdictRetry(o) {
+  return append(o.stateDir, o.sessionKey, {
+    kind: 'verdict-retry', advisor: o.advisor, agent_id: o.agentId || null, iter: o.iter ?? null, story: o.story ?? null, run: o.run ?? null,
+  });
+}
+
+/**
+ * ¿Ya se le pidió el renglón? Con `agentId`, a ese agente (Claude Code: el pedido es una vez por agente); sin él, al
+ * revisor en esa vuelta (Codex, que no tiene agente).
+ */
+function yaSePidio(lines, { advisor, agentId, iter }) {
+  return (lines || []).some((l) => l && l.kind === 'verdict-retry' && l.advisor === advisor
+    && (agentId ? l.agent_id === agentId : (iter == null || l.iter === iter)));
+}
+
 /**
  * Los renglones de todo el registro, en orden de hora: `{ lines, unreadable, error? }`. Un renglón roto se cuenta. Cada
  * renglón lleva `sessionKey`, el archivo del que salió: sin corrida anotada, es lo que dice de qué corrida es.
@@ -283,29 +305,38 @@ function comprobadoDe(reports, rule) {
 }
 
 /**
- * Los revisores que tienen que volver a la vuelta siguiente: los que reportaron una regla crítica que `findings.json`
- * trae `fixed` u `open` (un crítico arreglado queda `open` hasta que su revisor lo confirma: `write-findings` no acepta
- * `fixed` antes) y que ningún reporte suyo posterior comprueba todavía (la misma cuenta del tercer control del cruce), sin la
- * exención del dueño. Sin ellos en la vuelta, el cruce pide esa exención. `o`: { lines, findings, runDir, home, story,
- * eximido? }; `eximido(consulta)` dice si hay exención (sin él, `waiverFor`, la misma consulta que el cruce).
+ * Los revisores que tienen que volver a la vuelta siguiente: los que reportaron una regla crítica que sigue abierta y que
+ * ningún reporte suyo posterior comprueba todavía (la misma cuenta del tercer control del cruce), sin la exención del
+ * dueño. Sin ellos en la vuelta, el cruce pide esa exención. Los pendientes de una regla son el mayor entre lo que
+ * `findings.json` trae `fixed` u `open` (un crítico arreglado queda `open` hasta que su revisor lo confirma) y el pico
+ * reportado menos los destinos que se sostienen: un `refuted` con la constancia del verificador (`refutedHolds`) y un
+ * `deferred`. Así el revisor vuelve también cuando el agente todavía no escribió los hallazgos. Un `waived` no resta:
+ * con la exención del dueño la regla entera ya no pide nada, y sin ella no es un destino.
+ * `o`: { lines, findings, runDir, home, story, eximido?, refutedHolds? }; `eximido(consulta)` dice si hay exención (sin
+ * él, `waiverFor`, la misma consulta que el cruce); `refutedHolds(f)`, como en el cruce (sin él, todo `refuted` vale).
  * Devuelve `{ revisores: [{ name, rules }] }`; sin reportes, ninguno.
  */
 function porConfirmar(o) {
   const eximido = typeof o.eximido === 'function' ? o.eximido : waiverFor;
+  const refutedHolds = typeof o.refutedHolds === 'function' ? o.refutedHolds : () => true;
   const reports = (o.lines || []).filter((l) => l.kind === 'report');
   const findings = Array.isArray(o.findings) ? o.findings : [];
   const porRevisor = new Map();
   const reglas = new Set(reports.flatMap((r) => (r.criticals || []).map((c) => c.rule)));
   for (const rule of reglas) {
-    // refutado, diferido o eximido ya tiene su destino: volver lo haría reportar de nuevo
-    const arreglados = findings.filter((f) => ruleOf(f) === rule && sevOf(f) === 'CRITICAL' && ['fixed', 'open'].includes(dispOf(f))).length;
-    if (!arreglados) continue;
+    const criticos = findings.filter((f) => ruleOf(f) === rule && sevOf(f) === 'CRITICAL');
+    const arreglados = criticos.filter((f) => ['fixed', 'open'].includes(dispOf(f))).length;
+    // refutado (con su constancia) o diferido ya tiene su destino: volver lo haría reportar de nuevo
+    const conDestino = criticos.filter((f) => (dispOf(f) === 'refuted' && refutedHolds(f)) || dispOf(f) === 'deferred').length;
+    const pico = Math.max(0, ...reports.map((r) => countIn(r, rule)));
+    const pendientes = Math.max(arreglados, pico - conDestino);
+    if (pendientes <= 0) continue;
     const { revisores, bajadas } = comprobadoDe(reports, rule);
-    if (arreglados <= Math.min(...bajadas)) continue;
+    if (pendientes <= Math.min(...bajadas)) continue;
     if (eximido({ runDir: o.runDir, rule, ownerOnly: true, home: o.home, story: o.story })) continue;
     // vuelve cada revisor que todavía no bajó lo suficiente: el cruce mira al que menos bajó
     revisores.forEach((a, i) => {
-      if (bajadas[i] >= arreglados) return;
+      if (bajadas[i] >= pendientes) return;
       porRevisor.set(a, [...(porRevisor.get(a) || []), rule]);
     });
   }
@@ -378,8 +409,11 @@ function cross(o) {
     if (after.some((r) => r.readable)) continue;
     if (waiverFor({ runDir: o.runDir, rule: NO_REPORT_RULE, reviewer: a, ownerOnly: false, home: o.home, story: o.story })) continue;
     const motivo = after.length ? after[after.length - 1].reason : 'no hay reporte suyo en el registro';
-    problemas.push({ tipo: 'sin-reporte', advisor: a, iter: last.iter,
-      texto: `no pude leer lo que reportó ${quien(a, last.iter)} (${motivo}): no es «no reportó nada»` });
+    // el renglón de veredicto se le pide una vez: si ya se le pidió en esta salida, lo que queda es la exención
+    const pedido = yaSePidio(lines, { advisor: a, iter: last.iter });
+    problemas.push({ tipo: 'sin-reporte', advisor: a, iter: last.iter, pedido,
+      texto: `no pude leer lo que reportó ${quien(a, last.iter)} (${motivo}): no es «no reportó nada»`
+        + (pedido ? '; ya se le pidió el renglón una vez y no lo dio' : '') });
   }
   return { sinRegistro: false, problemas };
 }
@@ -389,7 +423,13 @@ function renglones(r, { marker }) {
   const out = r.problemas.map((p) => `   · ${p.texto}`);
   const sinReporte = r.problemas.filter((p) => p.tipo === 'sin-reporte' || p.tipo === 'registro-ilegible');
   if (sinReporte.length) {
-    out.push('   Un revisor sin reporte legible vuelve a correr (y cierra con su renglón «Veredicto:»), o una persona lo exime:');
+    // a quien todavía no se le pidió el renglón, primero se le pide al mismo agente: suele ser lo único que falta
+    const sinPedir = sinReporte.filter((p) => p.tipo === 'sin-reporte' && !p.pedido);
+    if (sinPedir.length) {
+      out.push(`   Primero, a ${sinPedir.map((p) => p.advisor).join(', ')}: continuá al mismo agente con un mensaje que pida sólo el renglón de veredicto`
+        + ' («Veredicto: limpio» o «Veredicto: hallazgos (REGLA, REGLA) · bloquea: sí|no»), sin cambiar su revisión.');
+    }
+    out.push(`   ${sinPedir.length ? 'Si no lo da, una' : 'Una'} persona lo exime:`);
     for (const p of sinReporte) out.push(`     node ${marker} waive-critical --rule ${NO_REPORT_RULE} --file ${p.advisor} --reason '<por qué>'`);
   }
   if (r.problemas.length > sinReporte.length) {
@@ -482,7 +522,7 @@ function spawnsOf(stateDir, { story, since, run, sessionKeys }) {
 }
 
 module.exports = {
-  DIR, NO_REPORT_RULE, NO_REGISTRY_NOTE, registryDir, registryFile, hashOf, extractCriticals, unreadableReason,
-  recordLaunched, recordLaunchAgent, recordReport, readSession, readAll, linesOfRun, launchFor, cross, porConfirmar, checkRun, renglones, waiverFor,
+  DIR, NO_REPORT_RULE, NO_REGISTRY_NOTE, VERDICT_REQUEST, registryDir, registryFile, hashOf, extractCriticals, unreadableReason,
+  recordLaunched, recordLaunchAgent, recordReport, recordVerdictRetry, yaSePidio, readSession, readAll, linesOfRun, launchFor, cross, porConfirmar, checkRun, renglones, waiverFor,
   spawnsOf, UNREADABLE_REGISTRY, readSessionStrict, esDeLaCorrida, corridaDelMarcador,
 };

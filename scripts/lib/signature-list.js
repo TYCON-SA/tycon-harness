@@ -146,11 +146,18 @@ function coordinadoraViva(casa, s = sesiones(casa)) {
   return c && vive(s, c) === true ? c : null;
 }
 
-// la clave de un pedido: la firma, el destino y el comando, sin la ruta del guion ni `--for-session`
-function claveDe(firma, destino, palabras) {
+// la clave de un pedido: la firma, el destino y el comando, sin la ruta del guion ni `--for-session`, en la forma canónica
+// del cuadro (owner-window.js `formaCanonica`): el mismo pedido escrito de otra forma es la misma fila, y firmarlo la
+// cierra. Sin forma canónica, las palabras como se escribieron. `donde` ({ cwd, casa }) resuelve la historia relativa.
+function claveDe(firma, destino, palabras, donde = {}) {
   const i = palabras.indexOf('--for-session');
   const sin = palabras.filter((_, k) => i < 0 || (k !== i && k !== i + 1));
-  return `firma:${sha(JSON.stringify([firma, destino, path.basename(sin[0]), ...sin.slice(1)])).slice(0, 32)}`;
+  let canon = null;
+  try {
+    const ow = require('./owner-window.js');
+    canon = ow.formaCanonica(sin, { historia: ow.historiaDelPedido(sin, { cwd: donde.cwd, casa: donde.casa, destino }) });
+  } catch (_) { canon = null; }
+  return `firma:${sha(JSON.stringify([firma, destino, ...(canon || [path.basename(sin[0]), ...sin.slice(1)])])).slice(0, 32)}`;
 }
 
 function firmasDelRegistroComun(casa, problemas) {
@@ -243,7 +250,7 @@ function abiertos(casa, { arnes, env, ahora = Date.now(), s } = {}) {
  * en el archivo, no se traga el pedido nuevo. `{ ok, id, nuevo }`; tira si no puede leer o escribir.
  */
 function anotarFirma({ casa, firma, titulo, sesion, destino, comando, palabras, cwd, ahora = Date.now(), s }) {
-  const key = claveDe(firma, destino, palabras);
+  const key = claveDe(firma, destino, palabras, { cwd, casa });
   return conCandado(casa, () => {
     const lista = leer(casa);
     const cerrada = criterioDeCierre(casa, ahora, s || sesiones(casa), undefined, entender(lista).filas);
