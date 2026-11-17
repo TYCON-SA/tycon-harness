@@ -295,6 +295,11 @@ test('T12 ApprovePending_DelegatedDestinationRepo_Signs @story-8.255 @ac-11', (t
   // y con el registro completo, el control lo da por bueno: es la coordinadora y el repo es de la sesión destino
   assert.strictEqual(DS.antesDelPendiente({ via: 'delegacion', registro: { via: 'delegacion', sesion: COORD, destino: DEST, comando: 'x' },
     estado: P.estado, cwd: P.coordinadora, repo: P.destino, designada: (s) => s === COORD }), null);
+  // con persona (la ventana, un click, la terminal) el control no mira nada, aunque la que pide sea la destino
+  const nadie = () => { throw new Error('con persona no se pregunta por la coordinadora'); };
+  for (const [via, registro] of [['ventana', { sesion: DEST, destino: DEST, comando: 'x' }], ['ventana', { via: 'click', sesion: DEST, destino: DEST, comando: 'x' }], ['terminal', null]]) {
+    assert.strictEqual(DS.antesDelPendiente({ via, registro, propia: DEST, estado: P.estado, cwd: P.destino, repo: P.destino, designada: nadie }), null, `${via} ${JSON.stringify(registro)}`);
+  }
 });
 
 // ── las firmas de rutina que se delegan ──────────────────────────────────────────────────────────────────────────
