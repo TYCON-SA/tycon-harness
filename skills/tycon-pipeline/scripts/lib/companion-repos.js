@@ -92,18 +92,26 @@ function companionRoots(repo, storyPath, opts) {
   return out;
 }
 
-/** La rama en que está un repo, o null (cabeza suelta, o git que no contesta). */
+/**
+ * La rama en que está un repo, o null (cabeza suelta, o git que no contesta). Se recuerda por carpeta y huella
+ * (lib/git-stamp.js): varios lugares de un mismo comando preguntan por los mismos hermanos. Un fallo no se recuerda.
+ */
+const RAMAS = new Map();
 function ramaDe(dir) {
   if (!dir) return null;
-  const r = spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--short', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
-  // salida 1 con -q = cabeza suelta; cualquier otra cosa es git que no contestó, y se dice
-  if (r.error || (r.status !== 0 && r.status !== 1)) {
-    avisar(`no pude leer la rama de ${dir} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): los repos hermanos se leen como están declarados`);
-    return null;
-  }
-  const b = r.status === 0 ? String(r.stdout || '').trim() : '';
-  return b || null;
+  return require('./git-stamp.js').memo(RAMAS, dir, 'rama', () => {
+    const r = spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--short', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+    // salida 1 con -q = cabeza suelta; cualquier otra cosa es git que no contestó, y se dice
+    if (r.error || (r.status !== 0 && r.status !== 1)) {
+      avisar(`no pude leer la rama de ${dir} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): los repos hermanos se leen como están declarados`);
+      return { valor: null, recordar: false };
+    }
+    const b = r.status === 0 ? String(r.stdout || '').trim() : '';
+    return { valor: b || null, recordar: true };
+  });
 }
+/** Olvida las ramas recordadas (para las pruebas: la huella ya cubre un repo que cambia). */
+function limpiarRamas() { RAMAS.clear(); }
 
 // Cada aviso, una vez por proceso: varios lugares de un mismo comando preguntan por los mismos hermanos.
 const AVISADOS = new Set();
@@ -469,7 +477,7 @@ function anclasDeLaEvidencia(repo, historia) {
 
 module.exports = {
   anclasDeLaEvidencia, nombreDelRepo,
-  companionRoots, ramaDe, enLaMismaRama, mainAlDia, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
+  companionRoots, ramaDe, limpiarRamas, enLaMismaRama, mainAlDia, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, real,
 };
 
