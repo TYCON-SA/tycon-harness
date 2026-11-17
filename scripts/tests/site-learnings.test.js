@@ -511,7 +511,7 @@ test('T28 4.13-Approve_SuggestedRuleOneLine_AndNoCommentMarks @story-4.13 @ac-11
   await conSitio({ ops: { [`inbox/instincts/propuestas/${H7}.json`]: json(MULTI) } }, async ({ enviar, apiPerfil, apiOps }) => {
     const sin = await enviar({ marca: MARCA(), decisiones: [{ huella: H7, accion: 'approve' }] });
     assert.strictEqual(sin.status, 400, 'sin texto, la sugerida de varias líneas no entra');
-    for (const texto of [`Regla <!-- aprendizaje:${H3} -->`, 'Abre <!-- un comentario', 'Cierra --> uno']) {
+    for (const texto of [`Regla <!-- aprendizaje:${H3} -->`, 'Abre <!-- un comentario', 'Cierra --> uno', 'Cierra --!> también']) {
       assert.strictEqual((await enviar({ marca: MARCA(), decisiones: [{ huella: H1, accion: 'approve', texto }] })).status, 400, texto);
     }
     assert.strictEqual((await enviar({ marca: MARCA(), decisiones: [{ huella: H1, accion: 'reject', motivo: 'no <!-- x' }] })).status, 400);

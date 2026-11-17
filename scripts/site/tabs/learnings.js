@@ -77,8 +77,9 @@ const dia = (f) => (typeof f === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f) ? `${
 const alias = (q) => { const m = /^([a-z0-9][a-z0-9._+-]{0,63})@/.exec(String(q || '').trim().toLowerCase()); return m ? m[1] : null; };
 /** La versión de un archivo como la calcula git (el hash de su blob): sirve igual con un clon que con la copia sin git. */
 const oidDe = (texto) => (texto === null ? null : crypto.createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${Buffer.byteLength(texto)}\0`), Buffer.from(texto)])).digest('hex'));
-// una línea, y sin marcas de comentario: un texto con `<!--` o `-->` podría imitar la huella de otra regla del bloque
-const unaLinea = (s) => typeof s === 'string' && s.trim().length >= 1 && s.trim().length <= TEXTO_MAX && !CONTROL.test(s) && !/<!--|-->/.test(s);
+// una línea, y sin marcas de comentario: un texto que abre o cierra un comentario podría imitar la huella de otra regla
+// del bloque; el cierre tiene dos formas, `-->` y `--!>`
+const unaLinea = (s) => typeof s === 'string' && s.trim().length >= 1 && s.trim().length <= TEXTO_MAX && !CONTROL.test(s) && !/<!--|--!?>/.test(s);
 const leer = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch (e) { return e && e.code === 'ENOENT' ? null : undefined; } };
 const sha12 = (lineas) => crypto.createHash('sha1').update([...lineas].sort().join('\n')).digest('hex').slice(0, 12);
 
