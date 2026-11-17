@@ -19,7 +19,7 @@ const NOMBRES_CAUSA = {
     MUTATION_CHECK_OFF: 'prueba de mutación salteada', TYCON_MUTATION_CHECK: 'prueba de mutación salteada',
     LIVENESS_PRECOMMIT_OFF: 'chequeo de vida de revisores salteado', TYCON_NO_LIVENESS_PRECOMMIT: 'chequeo de vida de revisores salteado',
     STORY_GATE_OFF_ADHOC: 'ajuste puntual con el portón apagado', TYCON_STORY_GATE: 'ajuste puntual con el portón apagado',
-    RUNTIME_MATRIX_LEGACY: 'prueba en vivo con todo humo como corrida real', TYCON_RUNTIME_MATRIX_LEGACY: 'prueba en vivo con todo humo como corrida real',
+    RUNTIME_MATRIX_LEGACY: 'prueba en vivo con todo humo como ejecución real', TYCON_RUNTIME_MATRIX_LEGACY: 'prueba en vivo con todo humo como ejecución real',
     RUNTIME_MATRIX_NO_MUTATION_CHECK: 'prueba de mutación salteada',
     STORY_REVIEW_OFF: 'revisión de la historia salteada', TYCON_STORY_REVIEW: 'revisión de la historia salteada',
     ATDD_PREEDIT_GATE_OFF: 'pruebas primero apagado',

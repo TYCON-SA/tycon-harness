@@ -77,9 +77,13 @@ const EN_GANCHOS = new RegExp(`optin:(${NOMBRE})\\b`, 'g');
 const CARPETAS_FUERA = new Set(['.git', 'node_modules', 'tests', '__tests__', 'test', 'controls-bench', 'fixtures']);
 const esPrueba = (nombre) => /\.test\.[cm]?js$|^test-.*\.js$/.test(nombre);
 
+// Las carpetas del código del núcleo. `integrations/` queda afuera (cada integración lleva lo suyo), y también lo que
+// otro árbol pone encima del arnés (las historias, las tareas, la evidencia de un repo que lo usa).
+const CARPETAS_DEL_NUCLEO = ['scripts', 'skills', 'build'];
+
 /**
- * Las variables que lee el código del núcleo bajo `raiz` (fuera de pruebas, del banco y de `integrations/`, donde cada
- * integración lleva lo suyo): nombre → archivos (relativos).
+ * Las variables que lee el código del núcleo bajo `raiz` (sus carpetas de código, fuera de pruebas y del banco):
+ * nombre → archivos (relativos).
  */
 function lecturas(raiz) {
   const out = new Map();
@@ -88,7 +92,8 @@ function lecturas(raiz) {
     try { hijos = fs.readdirSync(dir, { withFileTypes: true }); } catch (_e) { return; }
     for (const h of hijos) {
       const p = path.join(dir, h.name);
-      if (h.isDirectory()) { if (!CARPETAS_FUERA.has(h.name) && path.relative(raiz, p) !== 'integrations') visitar(p); continue; }
+      if (dir === raiz && !(h.isDirectory() && CARPETAS_DEL_NUCLEO.includes(h.name))) continue;
+      if (h.isDirectory()) { if (!CARPETAS_FUERA.has(h.name)) visitar(p); continue; }
       const ganchos = path.relative(raiz, p) === LISTA_DE_GANCHOS;
       if (!ganchos && (!/\.(c|m)?js$|\.sh$/.test(h.name) || esPrueba(h.name))) continue;
       let texto;
