@@ -3006,6 +3006,12 @@
       "requiere": []
     },
     {
+      "__nota": "la firma delegable que pide la sesión que trabaja va sola a la coordinadora (scripts/lib/delegation-routing.js): el freno de verdad con la delegación inyectada, la lista de firmas, owner-next, el respaldo al dueño y el cruce con la conversación. Sin red, segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/delegation-routing.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "`confirm-designation` de scripts/lib/delegated-signing.js: el guion de verdad con la firma reemplazada. Sólo una persona confirma (ventana, click o «aprobado», no la delegación ni lo «hecho y avisado»), desde la pestaña de la sesión designada, y el renglón queda atado a esa designación. Sin red, segundos.",
       "raiz": "arnes",
       "ruta": "tests/delegated-signing-confirm.test.js",
