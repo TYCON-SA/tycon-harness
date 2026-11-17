@@ -2145,12 +2145,15 @@ const CPU_GAP_MS = 250;
 const CPU_PREVIOUS_MAX_MS = 10000;
 let lastCpuRead = null;
 
-/** Un comando sin shell, sin frenar el proceso mientras corre: devuelve lo que imprimió. */
-const execText = (cmd, args, opts) => new Promise((resolve, reject) => require('child_process').execFile(cmd, args, opts, (e, out) => (e ? reject(e) : resolve(out))));
-
-/** El comando que mide la memoria libre en macOS, con el tope de la oficina. No frena al proceso vivo de la oficina. */
-function memoryCommand(exec = execText) {
-  return () => exec('memory_pressure', ['-Q'], { encoding: 'utf8', timeout: MEMORY_TIMEOUT_MS, windowsHide: true });
+/**
+ * El comando que mide la memoria libre en macOS, con el tope de la oficina. Corre sin shell y sin frenar al proceso vivo de
+ * la oficina mientras espera; devuelve lo que imprimió.
+ */
+function memoryCommand(exec = require('util').promisify(require('child_process').execFile)) {
+  return async () => {
+    const out = await exec('memory_pressure', ['-Q'], { encoding: 'utf8', timeout: MEMORY_TIMEOUT_MS, windowsHide: true });
+    return typeof out === 'string' ? out : out.stdout;
+  };
 }
 
 /** El tiempo de todos los procesadores juntos: cuánto estuvieron ocupados y cuánto pasó. */
