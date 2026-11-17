@@ -2140,6 +2140,8 @@ function officeProcessAlive(sdir) {
 // La carga de la máquina para los racks de la oficina. La memoria es la que decide los turnos pesados (`freeMemory()` de
 // heavy-turn.js), con un tope propio: la foto no espera los 5 s del turno pesado.
 const MEMORY_TIMEOUT_MS = 1000;
+// un aviso del tope que llega más tarde que esto encontró al hilo ocupado: la respuesta pudo llegar y no haberse leído
+const MEMORY_LATE_MS = 100;
 // el procesador se mide entre dos lecturas: la anterior de este proceso, si es reciente, o dos separadas por CPU_GAP_MS
 const CPU_GAP_MS = 250;
 const CPU_PREVIOUS_MAX_MS = 10000;
@@ -2147,13 +2149,31 @@ let lastCpuRead = null;
 
 /**
  * El comando que mide la memoria libre en macOS, con el tope de la oficina. Corre sin shell y sin frenar al proceso vivo de
- * la oficina mientras espera; devuelve lo que imprimió.
+ * la oficina mientras espera; devuelve lo que imprimió. El tope cuenta sólo el tiempo en que el hilo pudo leer la respuesta:
+ * si su aviso llega tarde porque el hilo estuvo ocupado armando la foto, da otra vuelta en vez de cortar al comando, que ya
+ * pudo haber contestado.
  */
-function memoryCommand(exec = require('util').promisify(require('child_process').execFile)) {
-  return async () => {
-    const out = await exec('memory_pressure', ['-Q'], { encoding: 'utf8', timeout: MEMORY_TIMEOUT_MS, windowsHide: true });
-    return typeof out === 'string' ? out : out.stdout;
-  };
+function memoryCommand(exec = require('child_process').execFile, { now = Date.now, later = setTimeout, cancel = clearTimeout } = {}) {
+  return () => new Promise((resolve, reject) => {
+    let timer = null;
+    let child = null;
+    let done = false;
+    const settle = (fn, value) => { if (done) return; done = true; cancel(timer); fn(value); };
+    const arm = () => {
+      const due = now() + MEMORY_TIMEOUT_MS;
+      timer = later(() => {
+        if (done) return;
+        if (now() - due > MEMORY_LATE_MS) { arm(); return; }
+        settle(reject, Object.assign(new Error(`memory_pressure pasó su tope de ${MEMORY_TIMEOUT_MS} ms`), { code: 'ETIMEDOUT' }));
+        try { if (child) child.kill(); } catch { /* ya terminó */ }
+      }, MEMORY_TIMEOUT_MS);
+    };
+    arm();
+    child = exec('memory_pressure', ['-Q'], { encoding: 'utf8', windowsHide: true }, (err, stdout) => {
+      if (err) settle(reject, err);
+      else settle(resolve, String(stdout));
+    });
+  });
 }
 
 /** El tiempo de todos los procesadores juntos: cuánto estuvieron ocupados y cuánto pasó. */

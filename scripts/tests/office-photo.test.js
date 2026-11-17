@@ -1550,8 +1550,10 @@ test('T2 Maquina_MedidaQueFalla_NoVa @story-8.301 @ac-1 @ac-2 — la medida que 
   assert.deepStrictEqual(await machineLoad({ ...base(), run: () => { throw timedOut; } }), { procesador: 35 });
   // el comando de la oficina tiene su tope de 1 s, no los 5 s del turno pesado
   const calls = [];
-  memoryCommand((cmd, args, opts) => { calls.push([cmd, args, opts.timeout]); return MEMORY_38_FREE; })();
-  assert.deepStrictEqual(calls, [['memory_pressure', ['-Q'], 1000]]);
+  const timers = [];
+  const read = memoryCommand((cmd, args, opts, done) => { calls.push([cmd, args]); done(null, MEMORY_38_FREE); }, { later: (fn, ms) => { timers.push(ms); return ms; }, cancel: () => {} })();
+  assert.strictEqual(await read, MEMORY_38_FREE);
+  assert.deepStrictEqual([calls, timers], [[['memory_pressure', ['-Q']]], [1000]]);
   // un texto que no trae el porcentaje no se adivina
   assert.deepStrictEqual(await machineLoad({ ...base(), run: () => 'algo distinto' }), { procesador: 35 });
   // dos lecturas iguales: el reloj del procesador no avanzó, no hay medida
@@ -1586,4 +1588,22 @@ test('T3 Maquina_Windows_UsaFreemem @story-8.301 @ac-1 — en Windows la memoria
   const load = await machineLoad({ platform: 'win32', freemem: () => 4 * GB, totalmem: () => 16 * GB, run: () => { throw new Error('en Windows no se corre ningún comando'); }, readCpus: cpuReads(cpu(0, 0), cpu(35, 65)), wait: waits(), previous: null, now: () => NOW });
   assert.deepStrictEqual(load, { memoria: 75, procesador: 35 });
   assert.deepStrictEqual(await machineLoad({ platform: 'win32', freemem: () => 4 * GB, totalmem: () => 0, readCpus: cpuReads(new Error('x')), wait: waits(), previous: null, now: () => NOW }), {}, 'sin total no hay medida');
+});
+
+test('T4 Maquina_HiloOcupado_NoPierdeLaMemoria @story-8.301 @ac-1 — un hilo ocupado más que el tope no deja la foto sin la memoria', { skip: process.platform === 'win32' && 'el comando de juguete es un guion de sh' }, async () => {
+  const { memoryCommand } = require(OFFICE);
+  // un memory_pressure de juguete, que contesta enseguida
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'office-memory-'));
+  fs.writeFileSync(path.join(bin, 'memory_pressure'), `#!/bin/sh\nprintf '%s' '${MEMORY_38_FREE}'\n`, { mode: 0o755 });
+  const before = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${before}`;
+  let pending;
+  try { pending = memoryCommand()(); } finally { process.env.PATH = before; }
+  // el hilo de la foto queda ocupado más que el tope de 1 s: el comando ya contestó, pero nadie lo leyó todavía
+  const start = Date.now();
+  while (Date.now() - start < 1500) { /* ocupado */ }
+  assert.strictEqual(await pending, MEMORY_38_FREE, 'la respuesta que llegó mientras el hilo estaba ocupado se lee');
+  // un comando que de verdad no contesta se corta en su tope, sin esperar para siempre
+  const hung = memoryCommand((cmd, args, opts, done) => ({ kill: () => done(new Error('cortado')) }))();
+  await assert.rejects(hung, /tope de 1000 ms/);
 });
