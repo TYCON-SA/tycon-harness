@@ -3,8 +3,8 @@
  * session-state.js — el archivo de estado de cada sesión de Claude o de Codex: `<estado>/sessions/<sesión>.json`.
  *
  * Lo que dice: `{schema: 1, session, tool, name, sentence, step, endAt, endWithoutHour, waitingForOwner, waitingFor,
- * updatedAt, pid, busy}`. `busy` es de Codex, que no tiene un archivo de sesión propio: `true` con el mensaje de la
- * persona, `false` con el fin de turno y `null` si no se sabe (de Claude lo dice su archivo de sesión). Lo escriben los
+ * updatedAt, pid, busy}`, y sólo con valor `permission`, `workingSince` y `lastEventAt`. `busy` es de Codex, que no
+ * tiene un archivo de sesión propio: `true` con el mensaje de la persona, `false` con el fin de turno y `null` si no se sabe (de Claude lo dice su archivo de sesión). Lo escriben los
  * que saben cada cosa: marker.js el paso, la oración y la hora de fin (`refresh`), y el
  * gancho scripts/hooks/session-state.js el arranque, la espera y el cierre. Cada uno lee el archivo, cambia sólo sus
  * campos y lo escribe entero, con un temporal que después se renombra; si lo que quedaría es lo mismo que ya dice (sin
@@ -24,7 +24,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const SCHEMA = 1;
 const TOOLS = ['claude', 'codex'];
-const FIELDS = ['schema', 'session', 'tool', 'name', 'sentence', 'step', 'endAt', 'endWithoutHour', 'waitingForOwner', 'waitingFor', 'updatedAt', 'pid', 'busy', 'permission'];
+const FIELDS = ['schema', 'session', 'tool', 'name', 'sentence', 'step', 'endAt', 'endWithoutHour', 'waitingForOwner', 'waitingFor', 'updatedAt', 'pid', 'busy', 'permission', 'workingSince', 'lastEventAt'];
 // la oración de una sesión sin pipeline ni trabajo suelto declarado: la misma que dice la oficina
 const NO_PIPELINE = 'Trabaja sin pipeline.';
 const DEAD_AFTER_MS = 2 * 3600 * 1000;
@@ -94,8 +94,9 @@ const fresh = (sid, tool) => ({
   schema: SCHEMA, session: String(sid), tool, name: null, sentence: NO_PIPELINE, step: null, endAt: null, endWithoutHour: null,
   waitingForOwner: false, waitingFor: null, updatedAt: null, pid: null, busy: null,
 });
-// los campos que sólo se escriben con un valor: el permiso abierto, que la mayoría de las sesiones nunca tiene
-const ONLY_WITH_VALUE = new Set(['permission']);
+// los campos que sólo se escriben con un valor: el permiso abierto, que la mayoría de las sesiones nunca tiene, y el
+// tramo trabajado del turno abierto (scripts/lib/worked-time.js): sin turno abierto el archivo no cambia de forma
+const ONLY_WITH_VALUE = new Set(['permission', 'workingSince', 'lastEventAt']);
 const withoutTime = (s) => JSON.stringify(FIELDS.filter((k) => k !== 'updatedAt').map((k) => s[k] === undefined ? null : s[k]));
 
 /**
@@ -235,4 +236,4 @@ function refresh(sdir, sid, opts = {}) {
   return update(sdir, sid, fields, opts);
 }
 
-module.exports = { SCHEMA, FIELDS, NO_PIPELINE, DEAD_AFTER_MS, dirOf, pathOf, errorsLogOf, enabled, logError, read, readAll, update, remove, isStale, fromDisk, refresh };
+module.exports = { SCHEMA, FIELDS, ONLY_WITH_VALUE, NO_PIPELINE, DEAD_AFTER_MS, dirOf, pathOf, errorsLogOf, enabled, logError, read, readAll, update, remove, isStale, fromDisk, refresh };

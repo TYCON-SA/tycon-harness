@@ -709,6 +709,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       fs.renameSync(tmp, rutaMemoria);
     } catch (e) { log(`no se pudo guardar la memoria del espejo en SITE_DATA_DIR (${e.code || e.message}): el próximo despertar relee el espejo`); }
   }
+  // los días de horas y tokens leídos del espejo, con la generación del espejo en que se leyeron
+  let jornadasLeidas = null;
   /** El espejo cambió: lo leído de él ya no vale. */
   function espejoCambio() { memoria.generacion += 1; memoria.lectura = null; memoria.fichas = null; }
 
@@ -923,7 +925,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       // la bajada recorre el espejo en el disco montado: con el módulo de la nube cargado de cloud/, en un hilo aparte
       // (el principal contesta las sondas); una nube dada a mano (las pruebas) corre acá
       const opts = { cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
-        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, hiloTopeBytes: conHilos ? topeConversacionBytes : null, podar: true, confiarIndice: !verificar, log: (l) => log(`buzón: ${l}`) };
+        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, hiloTopeBytes: conHilos ? topeConversacionBytes : null, podar: true, confiarIndice: !verificar, jornadas: true, log: (l) => log(`buzón: ${l}`) };
       r = nube.__archivo ? await require('./summaries.js').bajarEnWorker({ modulo: nube.__archivo, ...opts }) : await nube.bajarBuzon(opts);
     } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
     // lo que trajo, lo que podó y los resúmenes de conversaciones grandes cambian el espejo (también en una pasada a medias)
@@ -1141,6 +1143,11 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     personas: () => st.personas,
     /** Las huellas de oficina que subió cada carpeta del buzón (`leerHuellas`). */
     huellas: () => st.huellas,
+    /** Los días de horas y tokens del espejo (`tabs/workdays.js leerJornadas`), releídos sólo si el espejo cambió. */
+    jornadas: () => {
+      if (!jornadasLeidas || jornadasLeidas.generacion !== memoria.generacion) jornadasLeidas = { generacion: memoria.generacion, valor: require('./tabs/workdays.js').leerJornadas(dirBuzon) };
+      return jornadasLeidas.valor;
+    },
     detener() { if (temporizador) clearTimeout(temporizador); temporizador = null; },
     /**
      * Los clones que lee la pestaña Configuración: `{ operaciones: { dir } | null, perfil: { dir, estado, motivo } | null }`.

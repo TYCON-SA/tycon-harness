@@ -525,7 +525,7 @@ test('T19 Textos_LaExcepcionEnLosDosReadme @story-8.196 @ac-16', () => {
 });
 
 test('T20 Textos_GuiasYSkill_PreguntaYFreno @story-8.196 @ac-17', () => {
-  for (const r of ['guides/que-hace-el-arnes.md', 'guides/coordination.md', 'guides/firmas-del-arnes.md', 'skills/tycon-pipeline/SKILL.md']) {
+  for (const r of ['guides/what-the-harness-does.md', 'guides/coordination.md', 'guides/firmas-del-arnes.md', 'skills/tycon-pipeline/SKILL.md']) {
     const txt = leer(r);
     assert.match(txt, /de dónde sale(n)? (un dato|los datos)/, `${r}: la pregunta`);
     assert.match(txt, /click del dueño/, `${r}: lo destraba el click del dueño`);

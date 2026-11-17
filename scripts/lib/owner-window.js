@@ -764,7 +764,8 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   if (!fs.existsSync(abs)) return { error: `no encuentro la historia ${una(abs, 200)}: sin sus criterios a la vista no se firma` };
   if (m && !wd.esLaDelMarcador(abs, m)) return { error: `${path.basename(abs)} no es la historia de la ejecución de la sesión ${destino}` };
   const i = palabras.indexOf('--acs');
-  const pedidos = i >= 0 ? [...new Set(String(palabras[i + 1] || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))] : null;
+  // en orden: la fuente de la huella y la pregunta no cambian con el orden en que se escribieron
+  const pedidos = i >= 0 ? [...new Set(String(palabras[i + 1] || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b) : null;
   if (pedidos && !pedidos.length) return { error: '--acs no dice qué criterios: sin ellos a la vista no se firma' };
   let c;
   try {
@@ -813,17 +814,84 @@ function queDeLaExcepcion(lista) {
 // atado a lo mismo). La razón va primero, porque el renglón se corta y, al final, no llegaba a verse
 const renglonDeLaExcepcion = (x) => `AC ${x.ac}: por qué no se prueba en vivo: ${una(razonDeclarada(x) || 'sin razón declarada', 150)}; lo cubre: ${una(x.coveredBy || '(ninguna prueba declarada)', 60)}; el criterio: ${una(x.text || '(sin texto en la historia)', 200)}`;
 
+/** Las palabras sin `--for-session <sesión>`: el destino no cambia lo que se firma, sólo para quién. */
+function sinForSession(palabras) {
+  const i = palabras.indexOf('--for-session');
+  return palabras.filter((w, k) => i < 0 || (k !== i && k !== i + 1));
+}
+
+/**
+ * La historia de un `runtime-waiver` por su ruta real, o null. Una ruta absoluta, la suya; una relativa cuenta sólo si da
+ * el mismo archivo desde la carpeta del pedido y desde el repo de la ejecución de la sesión destino, que es de donde la
+ * lee el guion (`marker.js` `resolveStoryPath`): si no, el cuadro y el guion podrían leer historias distintas.
+ */
+function historiaDelPedido(palabras, { cwd, casa, destino } = {}) {
+  const story = palabras && palabras[1] === 'runtime-waiver' && palabras[2] && !String(palabras[2]).startsWith('-') ? String(palabras[2]) : null;
+  if (!story) return null;
+  if (path.isAbsolute(story)) return real(story);
+  let m = null;
+  try { m = casa === undefined || !destino ? null : marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`)); } catch (_) { m = null; }
+  const bases = [...new Set([cwd || process.cwd(), (m && m.repoPath) || cwd || process.cwd()])];
+  const reales = bases.map((b) => real(path.resolve(b, story)));
+  return reales.every((r) => r && r === reales[0]) ? reales[0] : null;
+}
+
+/**
+ * La forma canónica de un pedido (palabras desde el guion, sin `--for-session`), o null si no la tiene. Cambia sólo la
+ * escritura, nunca lo que se firma: el guion por su nombre; las palabras sueltas antes de la primera opción, en su lugar
+ * (la historia de `runtime-waiver`, por su ruta real, que da `historia`); desde la primera opción, sólo pares `--opcion
+ * valor` (el valor sin `-` adelante) y una opción sin valor al final, ordenados por nombre (una repetida conserva el
+ * orden de sus valores), con `--acs` como lista ordenada sin repetidos. `--opcion=valor` es otra opción (el guion no la
+ * lee igual). Cualquier otra forma (una palabra suelta entre opciones, una opción sin valor en el medio, un valor con `-`
+ * adelante, un `--acs` con algo que no es un entero, una historia que no se resuelve) no tiene forma canónica: la duda
+ * pregunta de nuevo.
+ */
+function formaCanonica(palabras, { historia } = {}) {
+  if (!Array.isArray(palabras) || !palabras.length) return null;
+  const w = sinForSession(palabras.map(String));
+  let k = 1;
+  const prefijo = [base(w[0])];
+  while (k < w.length && !w[k].startsWith('-')) { prefijo.push(w[k]); k += 1; }
+  if (prefijo[1] === 'runtime-waiver' && prefijo.length > 2) {
+    const h = historia || (path.isAbsolute(prefijo[2]) ? real(prefijo[2]) : null);
+    if (!h) return null;
+    prefijo[2] = h;
+  }
+  const pares = [];
+  while (k < w.length) {
+    const nombre = w[k];
+    if (!nombre.startsWith('--')) return null;
+    const valor = w[k + 1];
+    if (valor === undefined) { pares.push([nombre]); k += 1; continue; }
+    if (valor.startsWith('-')) return null;
+    if (nombre === '--acs') {
+      const partes = valor.split(',').map((x) => x.trim());
+      if (!partes.every((x) => /^[1-9]\d*$/.test(x))) return null;
+      pares.push([nombre, [...new Set(partes.map(Number))].sort((a, b) => a - b).join(',')]);
+    } else pares.push([nombre, valor]);
+    k += 2;
+  }
+  const orden = pares.map((p, n) => ({ p, n })).sort((a, b) => (a.p[0] < b.p[0] ? -1 : a.p[0] > b.p[0] ? 1 : a.n - b.n));
+  return [...prefijo, ...orden.flatMap((x) => x.p)];
+}
+
 /**
  * El cuadro de opciones de una firma, armado por este módulo y no por el agente (owner-approvals.js `cuadroDe`). El mismo
- * comando da el mismo cuadro: la huella y el detalle salen de sus palabras sin la ruta del guion ni `--for-session`, así da
- * igual si lo corre la sesión destino o la coordinadora. `{ pregunta, sello, opciones }` o `{ error }`.
+ * pedido da el mismo cuadro: la huella y el comando que se muestra salen de su forma canónica (`formaCanonica`), sin la
+ * ruta del guion ni `--for-session`, así da igual si lo corre la sesión destino o la coordinadora y en qué orden escribió
+ * las opciones. Sin forma canónica, del texto como se escribió. `{ pregunta, sello, opciones }` o `{ error }`.
  */
 function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo }) {
   const s = firmaDe(firma);
   if (!s) return { error: `«${firma}» no es una firma` };
-  const i = palabras ? palabras.indexOf('--for-session') : -1;
-  const sinDestino = palabras ? palabras.filter((w, k) => i < 0 || (k !== i && k !== i + 1)) : null;
-  const texto = sinDestino ? [base(sinDestino[0]), ...sinDestino.slice(1)].join(' ') : String(comando).trim();
+  const sinDestino = palabras ? sinForSession(palabras) : null;
+  const literal = sinDestino ? [base(sinDestino[0]), ...sinDestino.slice(1)].join(' ') : String(comando).trim();
+  const canon = sinDestino ? formaCanonica(sinDestino, { historia: historiaDelPedido(sinDestino, { cwd, casa, destino }) }) : null;
+  // lo que entra en la pregunta: el pedido en su forma canónica, o el texto si no la tiene
+  const texto = canon ? canon.join(' ') : literal;
+  // y en la huella, con su marca: un click dado a un sello de antes (sobre el texto) no se toma, aunque el comando ya
+  // viniera en orden; sin forma canónica, la huella de siempre
+  const delPedido = canon ? JSON.stringify(['forma-canonica', ...canon]) : literal;
   let m = null;
   try { m = casa === undefined || !destino ? null : marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`)); } catch (_) { m = null; }
   const fuentes = require('./signature-sources.js');
@@ -848,8 +916,8 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     partes = { queHace: [d.linea], fuente: '' };
     delComando = d.detalle;
   }
-  // la huella ata el click a lo que se mostró: el comando y la fuente de la pregunta
-  const huella = sha256(`${texto}\0${partes.fuente || ''}`).slice(0, 8);
+  // la huella ata el click a lo que se mostró: el pedido y la fuente de la pregunta
+  const huella = sha256(`${delPedido}\0${partes.fuente || ''}`).slice(0, 8);
   const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
     completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
     comando: comandoDelDetalle(sinDestino && [base(sinDestino[0]), ...sinDestino.slice(1)], texto) });
@@ -1148,7 +1216,8 @@ function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado, cw
 }
 
 /**
- * Lo que decide el freno ante un evento: `{ decision: 'ask' | 'deny' | 'allow' | 'none', texto, firmas, via? }`.
+ * Lo que decide el freno ante un evento: `{ decision: 'ask' | 'deny' | 'allow' | 'none', texto, firmas, via? }`. Con
+ * `via: 'desviada'` (y el `id` del renglón), la firma la da la coordinadora por delegación (delegation-routing.js).
  * `escapes`: las firmas `freno` que el freno de seguridad vio en el comando (los escapes por variable y con nombre).
  * `aprobaciones`: el módulo de la aprobación explícita (owner-approvals.js), para las pruebas.
  * `delegacion(opciones)`: si la firma corre sin ventana (delegated-signing.js, las dos listas del perfil);
@@ -1284,6 +1353,46 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // desconocido no pregunta. Sin el dato, la de siempre
   const modo = evento.permission_mode == null ? null : String(evento.permission_mode);
   const sinVentana = modo !== null && !MODOS_QUE_PREGUNTAN.has(modo);
+  // el desvío (delegation-routing.js): lo que la sesión que trabaja pide para sí y la coordinadora puede firmar por
+  // delegación no va a la persona. Se niega sin ventana ni cuadro y queda en la lista con el comando que corre ella. Antes
+  // gana la aprobación explícita de la persona; lo de rutina en una pestaña sin permisos sigue «hecho y avisado»; y lo que
+  // el guion iba a negar se niega con su texto, sin renglón
+  let sinDesvio = null;
+  const pideParaSi = Boolean(guion) && pendientes.length === 1 && pendientes[0] === firmaGuion && !escapes.length && destino === sesion
+    && forSessionDe(can && can.palabras) === null && !enWindows && !soloClick && !clickDelDueno && !delegada;
+  if (pideParaSi) {
+    const DR = require('./delegation-routing.js');
+    let d;
+    try { d = DR.delegable({ firma: firmaGuion, destino, casa, palabras: can.palabras, cwd: evento.cwd || null, delegacion, plataforma, ...(lista || {}) }); } catch (e) { d = { ok: false, motivo: `no pude consultar el desvío (${e.message})` }; }
+    if (d.ok && !/^[\w-]{1,80}$/.test(String(evento.tool_use_id == null ? '' : evento.tool_use_id))) d = { ok: false, motivo: 'el evento no dice qué pedido es: sin eso la coordinadora no lo puede comprobar' };
+    if (!d.ok) sinDesvio = d.callar ? null : d.motivo;
+    else {
+      const cuadro = cuadroPara({ firma: firmaGuion, comando, palabras: can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios });
+      const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
+      const rutina = sinVentana && !deFondo ? rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can.palabras, destino, casa, topes, cwd: evento.cwd || null, sesion }) : { ok: false };
+      if (!a.ok && !rutina.ok) {
+        // un chequeo que no se pudo correr no desvía: el renglón podría ser algo que el guion niega
+        let chequeo = null;
+        if (CON_PRECHEQUEO.has(firmaGuion)) {
+          let c = null;
+          try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: null }); } catch (e) { chequeo = `no pude correr el chequeo del guion (${e.message})`; }
+          if (c && c.niega) return { decision: 'deny', firmas: pendientes, texto: `No te la desvié a la coordinadora: el comando se iba a negar antes de usar la firma. Lo que dijo: ${una(c.niega, 800)}. Arreglá eso y volvé a pedirla` };
+        }
+        let anotada = null;
+        if (chequeo) sinDesvio = chequeo;
+        else try {
+          anotada = require('./signature-list.js').anotarFirma({ casa, firma: firmaGuion, titulo: firmaDe(firmaGuion).approves, sesion, destino, comando, palabras: can.palabras, cwd: evento.cwd || null, ahora,
+            delegable: { comando: d.comando, coordinadora: d.coordinadora, cwd: d.cwdCoord, tool_use_id: String(evento.tool_use_id), plazo_min: Math.round(DR.plazoMs({ casa, ...(lista || {}) }) / 60000) } });
+        } catch (e) { sinDesvio = `no pude anotar el renglón para la coordinadora (${e.message})`; }
+        if (anotada) {
+          avisarOficina(destino, casa);
+          return { decision: 'deny', via: 'desviada', firmas: pendientes, id: anotada.id,
+            texto: `Esta firma la da la coordinadora por delegación: quedó anotada (${anotada.id}). No le pidas nada a la persona ni repitas el comando: esperá su aviso.` };
+        }
+      }
+    }
+  }
+  const noSeDesvio = sinDesvio ? `No se desvió a la coordinadora: ${una(sinDesvio, 200)}` : null;
   // donde la ventana no llega (una pestaña sin permisos, una sesión de fondo), vale la aprobación explícita de la persona:
   // su click en el cuadro de opciones o su «aprobado» escrito (owner-approvals.js), uno por firma. Va antes de «hecho y
   // avisado» y de la delegación: si la persona aprobó, la firma es suya, y lo que la coordinadora no puede firmar por su
@@ -1319,7 +1428,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
             try { fs.appendFileSync(path.join(stateDir(casa), 'hook-errors.log'), `[${new Date().toISOString()}] owner-window: no cargué el freno de preguntas (${e.message}): el texto de siempre\n\n`); } catch (_) { /* sin registro tampoco */ }
           }
         }
-        return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}`, pendientes, paraTerminal, cuadro, deFondo, anotado, coordinadora);
+        return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}${noSeDesvio ? `. ${noSeDesvio}` : ''}`, pendientes, paraTerminal, cuadro, deFondo, anotado, coordinadora);
       }
     }
   }
@@ -1369,11 +1478,18 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     const u = oa.consumir(casa, aprobada.aprobacion, { ahora, firma: pendientes[0], sesion });
     if (!u.ok) return negarSinVentana(u.motivo, pendientes, paraTerminal);
   }
+  // la delegación que cierra un renglón desviado a la coordinadora lo dice en el registro común (`routed`)
+  let routed = false;
+  if (guion && delegada) {
+    try { routed = Boolean(require('./delegation-routing.js').renglonDesviado({ casa, key: require('./signature-list.js').claveDe(firmaGuion, destino, can.palabras, { cwd: evento.cwd || null, casa }), ahora, ...(lista || {}) })); } catch (e) {
+      try { fs.appendFileSync(path.join(stateDir(casa), 'hook-errors.log'), `[${new Date(ahora).toISOString()}] owner-window: no pude saber si la delegación cierra un renglón desviado (${e.message}): queda sin routed\n`); } catch (_) { /* sin registro tampoco */ }
+    }
+  }
   if (guion) {
     try {
       escribirRegistro(casa, { firma: firmaGuion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
         sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString(), corrida: corridaDe(casa, destino),
-        ...(delegada ? { via: 'delegacion', maquina: delegada.maquina } : aprobada ? { via: aprobada.via, aprobacion: aprobada.aprobacion.id, aprobada_en: aprobada.aprobacion.sesion }
+        ...(delegada ? { via: 'delegacion', maquina: delegada.maquina, ...(routed ? { routed: true } : {}) } : aprobada ? { via: aprobada.via, aprobacion: aprobada.aprobacion.id, aprobada_en: aprobada.aprobacion.sesion }
           : avisado ? { via: 'avisado' } : {}), ...(sinAprobacion ? { sin_aprobacion: una(sinAprobacion, 300) } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
     } catch (e) {
       if (aprobada) oa.devolver(casa, aprobada.aprobacion);
@@ -1397,6 +1513,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   const detalle = vista && Array.isArray(vista.detalle) && vista.detalle.length ? `Lo que no entra en el cuadro: ${vista.detalle.join(' · ')}. ` : '';
   const texto = `${aprobador(evento.cwd).label}: ${pregunta} ${detalle}`
     + (sinDelegar ? `No se firmó por delegación: ${una(sinDelegar, 200)}. ` : '')
+    + (noSeDesvio ? `${noSeDesvio}. ` : '')
     + `Si preferís, firmala en tu terminal: ${terminalDe(pendientes, destino)}.`
     + (vista && vista.pasaElTope ? ` ${require('./owner-approvals.js').renglonDelTope(vista)}` : '');
   return { decision: 'ask', firmas: pendientes, texto };
@@ -1525,10 +1642,11 @@ const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delega
 /**
  * El renglón `<firma>-signed` del gates.log: cómo se firmó, quién y para quién. Va antes de la constancia del guion.
  * `anotar(renglon)`: el guion que lo escribe en su propio registro (marker.js, con su carpeta de estado).
- * Después, el renglón del registro común de las firmas; si no se puede escribir, avisa y la firma sigue.
+ * Después, el renglón del registro común de las firmas; si no se puede escribir, avisa y la firma sigue. `routed`: la
+ * firma cierra un renglón que el freno desvió a la coordinadora.
  * `persona`, `huella`, `appendSignature` y `avisar` se pasan en las pruebas.
  */
-function firmar({ firma, via, sesion = null, destino = null, resumen = '', key = null, casa, ahora = Date.now(), anotar, extra, persona, huella, appendSignature, avisar } = {}) {
+function firmar({ firma, via, sesion = null, destino = null, resumen = '', key = null, routed = false, casa, ahora = Date.now(), anotar, extra, persona, huella, appendSignature, avisar } = {}) {
   // lo que el guion suma al renglón (el ok de guardar, sus huellas) va primero: no pisa quién ni cómo se firmó
   const renglon = { ...(typeof extra === 'function' ? extra({ via, sesion, destino }) : extra || {}), name: `${firma}-signed`, status: 'ok', via, sesion, destino, resumen: una(resumen, 200) };
   if (anotar) anotar(renglon);
@@ -1549,7 +1667,7 @@ function firmar({ firma, via, sesion = null, destino = null, resumen = '', key =
   let r;
   try {
     r = escribir({ signature: firma, via: VIA_COMUN[via] || via, signer: quien, orderedBy: sesion, target: destino, reason: resumen,
-      source: path.basename(process.argv[1] || '') || null, ...(key ? { key } : {}), home, now: ahora, huella });
+      source: path.basename(process.argv[1] || '') || null, ...(key ? { key } : {}), ...(routed ? { routed: true } : {}), home, now: ahora, huella });
   } catch (e) { r = { ok: false, error: e.message }; }
   if (!r || !r.ok) (avisar || ((m) => console.error(m)))(`⚠️ la firma se dio, pero no quedó en el registro común de firmas: ${(r && r.error) || 'sin respuesta'}`);
   avisarOficina(destino || sesion, home);
@@ -1755,11 +1873,12 @@ function avisarHecho({ firma, sesion, destino, que, notificar }) {
  * La clave de un pedido de firma (`signature-list.js claveDe`): con las palabras canónicas del comando que vio el freno
  * (las mismas con que la lista anota la fila al negar) o, si no se lee, con las del guion. null si no hay con qué.
  */
-function claveDelPedido({ firma, destino, comando, argv }) {
+function claveDelPedido({ firma, destino, comando, argv, cwd = process.cwd(), casa }) {
   try {
     const can = comando ? canonicaDe(comando) : null;
     const palabras = can ? can.palabras : (Array.isArray(argv) && argv.length ? argv.map(String) : null);
-    return palabras ? require('./signature-list.js').claveDe(firma, destino, palabras) : null;
+    // el guion corre en la carpeta del pedido: la historia relativa se resuelve desde ahí, como la anotó la lista
+    return palabras ? require('./signature-list.js').claveDe(firma, destino, palabras, { cwd, casa }) : null;
   } catch (_) { return null; }
 }
 
@@ -1820,8 +1939,8 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   }
   const que = (v.previo && v.previo.resumen) || resumen || v.registro.comando;
   // la clave del pedido, la misma con que la lista de firmas anotó su fila: la firma cierra ese pedido y no sus hermanos
-  const key = claveDelPedido({ firma, destino: v.registro.destino, comando: v.registro.comando, argv });
-  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado) ? que : (resumen || v.registro.comando), key, casa, ahora, anotar, extra });
+  const key = claveDelPedido({ firma, destino: v.registro.destino, comando: v.registro.comando, argv, casa });
+  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado) ? que : (resumen || v.registro.comando), key, routed: v.registro.routed === true, casa, ahora, anotar, extra });
   // el ok de guardar y el arreglo rápido ya avisaron desde los controles de la delegación de su guion
   if (avisado && !AVISA_SU_GUION.has(firma)) avisarHecho({ firma, sesion: v.registro.sesion, destino: v.registro.destino, que, notificar });
   return { codigo: 0, via, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro };
@@ -1870,7 +1989,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, formasDeFirmar,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos };
 

@@ -948,3 +948,28 @@ test('HT43 Cli_SecondTurn_RealMemory @story-8.291 @ac-1 @ac-2 @ac-9 — por la l
   spawnSync(process.execPath, [cli, 'release', '--process', String(process.pid)], { env: env('1'), encoding: 'utf8' });
   assert.deepStrictEqual(inForce(m), [first], 'soltó sólo el suyo');
 });
+
+// Quién corre una prueba pesada según el registro de turnos, para que la espera de turno de esa sesión pierda contra él:
+// la fila de la coordinadora y /wip lo leen. Sólo los registros vivos; lo que no se lee se dice.
+// 🔴 mutación: aceptar la espera de un pase, contar un portón de un proceso muerto o un turno vencido, o callar uno roto.
+test('HT44 RunningSids_SoloLosVivos_YLaEsperaDeTurno: los vivos cuentan, los muertos y vencidos no, el ilegible se dice; la espera de un pase no es de turno', () => {
+  assert.strictEqual(HT.isTurnWait('portón final de pruebas de la 9.9'), true);
+  assert.strictEqual(HT.isTurnWait('el turno de la suite'), true);
+  assert.strictEqual(HT.isTurnWait('el turno del pase adversarial'), false, 'la espera de un pase no es de este registro');
+  assert.strictEqual(HT.isTurnWait('la firma del dueño'), false);
+  assert.strictEqual(HT.isTurnWait(undefined), false);
+  const state = stateDir(toy().home);
+  const gates = path.join(state, 'coordination', 'gates');
+  fs.mkdirSync(gates, { recursive: true });
+  const dead = Number(spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout);
+  const now = Date.now();
+  fs.writeFileSync(path.join(gates, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sid: 's-viva', at: now }));
+  fs.writeFileSync(path.join(gates, `${dead}.json`), JSON.stringify({ pid: dead, sid: 's-muerta', at: now }));
+  fs.writeFileSync(path.join(gates, `${process.ppid}.json`), '{ esto no es json');
+  fs.writeFileSync(path.join(state, 'coordination', 'suite-turn.json'), JSON.stringify({ pid: process.pid, sid: 's-vencida', at: now - 4 * 3600000 }));
+  fs.writeFileSync(path.join(state, 'coordination', 'suite-turn-2.json'), JSON.stringify({ pid: process.pid, sid: 's-turno', at: now }));
+  const problems = [];
+  assert.deepStrictEqual([...HT.runningSids({ state, now, problems })].sort(), ['s-turno', 's-viva']);
+  assert.ok(problems.some((p) => p.includes(`${process.ppid}.json`)), `el portón ilegible se dice: ${JSON.stringify(problems)}`);
+  assert.deepStrictEqual([...HT.runningSids({ state: path.join(state, 'no-existe'), now })], [], 'sin registro, nadie');
+});

@@ -440,8 +440,8 @@ function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   let rs;
   // el «aprobado» necesita los renglones en orden: no se filtra, y una transcripción que pasa del tope no se lee
   try { rs = renglones(ruta, { tope: true }); } catch (e) {
-    if (e.code === 'ETOPE') return { ok: false, motivo: `la transcripción de esta pestaña pasa de ${lector().tamanoDelTope()}: un «aprobado» escrito no se puede confirmar; aprobá con el click del cuadro o en la terminal` };
-    return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})` };
+    if (e.code === 'ETOPE') return { ok: false, motivo: `la transcripción de esta pestaña pasa de ${lector().tamanoDelTope()}: un «aprobado» escrito no se puede confirmar; aprobá con el click del cuadro o en la terminal`, noLeida: true };
+    return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})`, noLeida: true };
   }
   const t = String(a.texto || '').trim();
   // el renglón más cercano a la hora del registro: dos «aprobado» seguidos no se validan contra el mismo
@@ -507,7 +507,7 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, se
   if (!a.tool_use_id) return { ok: false, motivo: 'el click no dice qué cuadro contestó' };
   let rs;
   // sólo los renglones que nombran ese cuadro: el resto de la transcripción no se convierte en objetos
-  try { rs = renglones(ruta, { filtro: a.tool_use_id }); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})` }; }
+  try { rs = renglones(ruta, { filtro: a.tool_use_id }); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})`, noLeida: true }; }
   const llamado = rs.some((r) => r && r.type === 'assistant' && bloques(r).some((b) => b && b.type === 'tool_use' && b.id === a.tool_use_id && b.name === CUADRO));
   if (!llamado) return { ok: false, motivo: 'el cuadro no está en la transcripción de la sesión' };
   const r = rs.find((x) => bloques(x).some((b) => b && b.type === 'tool_result' && b.tool_use_id === a.tool_use_id));
@@ -795,12 +795,12 @@ function procesoQueLaAnoto({ a, arbol, casa }) {
   const w = ow();
   const h = a.herramienta;
   if (!h || !Number.isInteger(h.pid)) return { ok: false, motivo: 'el registro no dice qué proceso la anotó' };
-  if (!arbol) return { ok: false, motivo: 'no pude leer los procesos de la máquina' };
+  if (!arbol) return { ok: false, motivo: 'no pude leer los procesos de la máquina', noLeida: true };
   const p = arbol.find((x) => x.pid === h.pid);
   if (!p || p.inicio !== h.inicio || !w.esHerramienta(p)) return { ok: false, motivo: `el proceso de la sesión ${a.sesion} que la anotó ya no está` };
   let s;
   try { s = JSON.parse(fs.readFileSync(path.join(carpetaClaude(casa), 'sessions', `${h.pid}.json`), 'utf8')); } catch (e) {
-    return { ok: false, motivo: e.code === 'ENOENT' ? `no sé de qué sesión es el proceso ${h.pid}` : `no pude leer de qué sesión es el proceso ${h.pid} (${e.code || e.message})` };
+    return e.code === 'ENOENT' ? { ok: false, motivo: `no sé de qué sesión es el proceso ${h.pid}` } : { ok: false, motivo: `no pude leer de qué sesión es el proceso ${h.pid} (${e.code || e.message})`, noLeida: true };
   }
   if (!s || s.sessionId !== a.sesion) return { ok: false, motivo: `el proceso ${h.pid} no es de la sesión ${a.sesion}` };
   // otra copia viva de la sesión (abierta con `--resume` por un agente, desprendida de su consola) también se anota como ella
@@ -854,7 +854,7 @@ function constanciaDeLaTerminal(a, { casa, cuadro }) {
   if (cuadro.pregunta && a.texto !== cuadro.pregunta) return { ok: false, motivo: PREGUNTA_CAMBIADA };
   let m;
   try { m = require('./harness-sign.js').marcaDeConstancia({ casa, sesion: a.sesion, ts: a.ts }); } catch (e) {
-    return { ok: false, motivo: `no pude leer la marca de la terminal (${e.code || e.message})` };
+    return { ok: false, motivo: `no pude leer la marca de la terminal (${e.code || e.message})`, noLeida: true };
   }
   if (!m) return { ok: false, motivo: 'falta la marca de la terminal de esa constancia (la deja harness.js sign acknowledge)' };
   if (m.sesion !== a.sesion || m.sello !== a.sello || m.texto !== a.texto || m.ts !== a.ts) return { ok: false, motivo: 'la marca de la terminal no coincide con la constancia del registro' };
@@ -871,7 +871,8 @@ function constanciaDeLaTerminal(a, { casa, cuadro }) {
  * ganchos; se pasa en las pruebas. `cwd` y `casa` son los de la firma, nunca los del registro. `plataformas`: en qué
  * herramientas se acepta la aprobación (de fábrica, sólo `'claude'`); con `'codex'`, vale la constancia de la terminal
  * de esa misma sesión (`constanciaDeLaTerminal`), también para un cuadro de sólo click. `{ ok, aprobacion, via,
- * plataforma }` o `{ ok: false, motivo }`.
+ * plataforma }` o `{ ok: false, motivo }`, con `noLeida: true` si no se pudo leer el registro, o una aprobación que puede
+ * ser de esta firma no se pudo confirmar porque falló una lectura: no se sabe si está aprobada.
  */
 function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, ahora = Date.now(), cwd, herramienta = null, validar, arbol, plataformas = ['claude'] } = {}) {
   if (!SESION.test(String(sesion || ''))) return { ok: false, motivo: 'la firma no dice de qué sesión es' };
@@ -882,7 +883,7 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
   const sinMensaje = soloClick || !!cuadro.clickDelDueno;
   const sesiones = [sesion, ...(!soloClick && coordinadora && coordinadora !== sesion && SESION.test(coordinadora) ? [coordinadora] : [])];
   let candidatas = [];
-  try { for (const s of sesiones) candidatas.push(...leerSesion(casa, s).filter((r) => r.sesion === s)); } catch (e) { return { ok: false, motivo: e.message }; }
+  try { for (const s of sesiones) candidatas.push(...leerSesion(casa, s).filter((r) => r.sesion === s)); } catch (e) { return { ok: false, motivo: e.message, noLeida: true }; }
   const pide = new Set(Array.isArray(plataformas) ? plataformas : ['claude']);
   candidatas = candidatas.filter((r) => {
     const edad = ahora - Date.parse(r.ts);
@@ -920,7 +921,11 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
   let propio = null;
   let sinPregunta = null;
   let ajeno = null;
-  const falla = (a, dicho) => {
+  // una lectura que falló (la transcripción, la configuración, los procesos) no es una negativa: no se sabe. Cuenta si el
+  // candidato es de esta firma o no se sabe de cuál es (un «aprobado» escrito); uno de otra firma no dice nada de ésta
+  let noLeida = false;
+  const falla = (a, dicho, sinLeer = false) => {
+    if (sinLeer && (deEstaFirma(a) || !selloDe(a))) noLeida = true;
     // sin motivo, igual cuenta: si no, un click de esta firma que falla callado deja «son de otras firmas»
     const m = dicho || 'no se pudo confirmar';
     if (deEstaFirma(a)) propio = propio || m;
@@ -932,24 +937,24 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
     if (plataformaDe(a) === 'codex') {
       const t = constanciaDeLaTerminal(a, { casa, cuadro });
       if (t.ok) return { ok: true, aprobacion: a, via: 'terminal', plataforma: 'codex' };
-      falla(a, t.motivo);
+      falla(a, t.motivo, t.noLeida);
       continue;
     }
     let proceso = null;
     if (a.sesion !== sesion) {
       if (leido === undefined) leido = ow().arbolDeLaPlataforma();
       proceso = procesoQueLaAnoto({ a, arbol: leido, casa });
-      if (!proceso.ok) { falla(a, proceso.motivo); continue; }
+      if (!proceso.ok) { falla(a, proceso.motivo, proceso.noLeida); continue; }
     } else if (herramienta) {
       if (leido === undefined) leido = ow().arbolDeLaPlataforma();
       const p = (leido || []).find((x) => x.pid === herramienta.pid);
       // sin la línea del proceso no se miran los ganchos que suman sus banderas: la aprobación no se puede confirmar
-      if (!p) { falla(a, 'no encontré el proceso de la herramienta entre los procesos de la máquina'); continue; }
+      if (!p) { falla(a, leido ? 'no encontré el proceso de la herramienta entre los procesos de la máquina' : 'no pude leer los procesos de la máquina', !leido); continue; }
       proceso = { linea: p.comando };
     }
     const v = check(a, { casa, cwd, cuadro, destino, linea: proceso && proceso.linea, cwdAprobacion: proceso && proceso.cwd });
     if (v && v.ok) return { ok: true, aprobacion: a, via: a.tipo, plataforma: plataformaDe(a) };
-    falla(a, v && v.motivo);
+    falla(a, v && v.motivo, Boolean(v && v.noLeida));
   }
   // sin motivo del click de esta firma: uno a esta misma firma y sesión con otro código dice que lo mostrado cambió
   const clicks = candidatas.filter((a) => a.tipo === 'click').length;
@@ -958,7 +963,7 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
   // sin clicks, sólo constancias de Codex de otras firmas: su motivo, como hasta ahora
   const motivo = propio || (candidatas.some(deOtroCodigo) ? 'lo que se mostró cambió: pedí el cuadro de nuevo' : null) || sinPregunta
     || (clicks ? deOtras : ajeno);
-  return { ok: false, motivo: `la aprobación no vale: ${motivo || 'no se pudo confirmar'}` };
+  return { ok: false, motivo: `la aprobación no vale: ${motivo || 'no se pudo confirmar'}`, ...(noLeida ? { noLeida: true } : {}) };
 }
 
 /**
@@ -969,11 +974,11 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
  */
 function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, cwdAprobacion } = {}) {
   const ruta = transcripcionDe(casa, a.sesion);
-  if (!ruta) return { ok: false, motivo: `no encontré la transcripción de la sesión ${a.sesion}` };
+  if (!ruta) return { ok: false, motivo: `no encontré la transcripción de la sesión ${a.sesion}`, noLeida: true };
   if (a.tipo === 'mensaje') return mensajeEnLaTranscripcion(ruta, a, { sello: cuadro.sello, destino, pregunta: cuadro.pregunta });
   for (const c of [...new Set([cwd, cwdAprobacion].filter(Boolean))]) {
     const e = escuchasDelCuadro({ casa, cwd: c, linea });
-    if (e.ilegibles.length) return { ok: false, motivo: `no pude leer ${e.ilegibles[0]}, y sin leerla no sé si un gancho contestó el cuadro` };
+    if (e.ilegibles.length) return { ok: false, motivo: `no pude leer ${e.ilegibles[0]}, y sin leerla no sé si un gancho contestó el cuadro`, noLeida: true };
     if (e.ajenos.length) return { ok: false, motivo: `un gancho que no es del arnés escucha el cuadro (${e.ajenos[0].evento} en ${e.ajenos[0].archivo}): mientras esté, el click no vale; ${cuadro && (cuadro.soloClick || cuadro.clickDelDueno) ? 'queda la terminal' : 'escribí «aprobado»'}` };
   }
   return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones, sello: cuadro.sello, casa });

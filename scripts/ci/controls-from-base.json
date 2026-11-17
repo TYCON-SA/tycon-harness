@@ -69,6 +69,7 @@
     ".engram/manifest.json",
     ".tycon/",
     "scripts/lib/test-scope-options.json",
+    "scripts/lib/env-switches.json",
     "onboarding/mini-class/i18n/en.json",
     "scripts/controls-bench/ultimo-banco.json",
     "scripts/controls-bench/ultimo-constancias.json",

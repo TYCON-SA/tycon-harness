@@ -78,7 +78,7 @@ const REPO_LINK = /https?:\/\/[^\s)`>"']*(?:visualstudio\.com|dev\.azure\.com)[^
 const ROSTER = /\b[A-Z][A-Za-z0-9-]*\s+\((?:[A-Z][A-Za-z0-9]*)(?:,\s+[A-Z][A-Za-z0-9]*)+\)/g;
 
 test('T23 ReviewerRulesGuide_PublicText_NoRepoRoster — la guía dice quiénes la tienen sin enumerar la cartera de repos', () => {
-  const rel = 'guides/reglas-para-revisores.md';
+  const rel = 'guides/reviewer-rules.md';
   const text = publicText(rel);
   const start = text.indexOf('\n## Qué repos la tienen');
   assert.ok(start >= 0, `${rel}: no encontré la sección «Qué repos la tienen»`);
@@ -338,7 +338,7 @@ test('T28 InternalBlocks_NearMarker_Brakes — un marcador casi bien escrito fre
   assert.strictEqual(markerLines('El texto entre `tycon:internal-start` y `tycon:internal-end` no sale.\n').length, 0);
 
   // con las guías de verdad: si sus marcadores se rompen los dos igual, el exportador tiene que frenar
-  for (const rel of ['guides/maintaining/publicacion-espejo.md', 'guides/reglas-para-revisores.md']) {
+  for (const rel of ['guides/maintaining/publicacion-espejo.md', 'guides/reviewer-rules.md']) {
     const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     if (!raw.includes(MARK.start)) continue;   // en la copia la guía ya salió sin sus bloques
     const broken = raw.split(MARK.start).join(`${OPEN} tycon:internal-start${CLOSE}`).split(MARK.end).join(`${OPEN} tycon:internal-end${CLOSE}`);

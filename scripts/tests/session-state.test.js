@@ -369,9 +369,10 @@ test('T28 Installer_RegistersHooks_Idempotent @story-2.81 @ac-27 — el aplicado
   const cx = JSON.parse(fs.readFileSync(path.join(codexHome, 'hooks.json'), 'utf8'));
   const cxCount = {};
   for (const [ev, groups] of Object.entries(cx.hooks || {})) {
-    for (const g of groups) for (const h of g.hooks || []) if (/session-state\.js/.test(h.command)) cxCount[ev] = (cxCount[ev] || 0) + 1;
+    for (const g of groups) for (const h of g.hooks || []) if (/session-state\.js/.test(h.command)) cxCount[`${ev}·${g.matcher || ''}`] = (cxCount[`${ev}·${g.matcher || ''}`] || 0) + 1;
   }
-  assert.deepStrictEqual(cxCount, { SessionStart: 1, UserPromptSubmit: 1, Stop: 1 });
+  // el PostToolUse de Bash y apply_patch de Codex sólo refresca el tramo trabajado (casos: scripts/tests/worked-time.test.js)
+  assert.deepStrictEqual(cxCount, { 'SessionStart·': 1, 'UserPromptSubmit·': 1, 'Stop·': 1, 'PostToolUse·Bash': 1, 'PostToolUse·apply_patch': 1 });
 });
 
 test('T29 Parity_CodexAsymmetryDeclared @story-2.81 @ac-28 — la paridad de registro pasa; sin la asimetría declarada, falla nombrando los dos momentos', () => {

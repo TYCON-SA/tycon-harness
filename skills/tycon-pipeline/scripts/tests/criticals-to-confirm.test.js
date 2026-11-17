@@ -113,7 +113,8 @@ test('T1 Set_FixedCriticalNotConfirmed_ReviewerBackDespiteMech @story-8.272 @ac-
     assert.ok(r.j.rerun.includes(DEFTR), `${extra}: ${JSON.stringify(r.j.rerun)} · ${salida(r)}`);
     assert.strictEqual(r.j.rerun_count, r.j.rerun.length);
     assert.deepStrictEqual((r.j.confirm_reviewers || []).map((c) => c.name), [DEFTR], salida(r));
-    assert.match(r.j.confirm_reviewers[0].reason, /crítico arreglado por confirmar \(DEFTR-C1\)/);
+    // la 8.296 nombra al crítico «abierto» (con o sin findings.json), no sólo al arreglado
+    assert.match(r.j.confirm_reviewers[0].reason, /crítico abierto por confirmar \(DEFTR-C1\)/);
     assert.ok(!(r.j.mech_discounted || []).some((d) => d.name === DEFTR), 'no queda como descontado');
     assert.ok(!(r.j.skipped || []).some((s) => (s.name || s) === DEFTR), 'no queda como salteado');
     // sin configuración de modelos de la organización la salida no trae reviewer_models; con ella, el sumado lleva el suyo
@@ -147,15 +148,19 @@ test('T3 Set_ConfirmedOrWaivedOrRefuted_DiscountAsToday + Set_ReviewerNotLauncha
   const reporte = { ts: at(-400), kind: 'report', advisor: DEFTR, iter: 1, readable: true, criticals: [{ rule: 'DEFTR-C1', count: 1 }] };
   // confirmado por un reporte posterior
   assert.deepStrictEqual(rc.porConfirmar({ lines: [reporte, { ...reporte, ts: at(-5), iter: 2, criticals: [] }], findings: ARREGLADO() }).revisores, []);
-  // refutado, diferido o eximido: ya tiene su destino, no vuelve (volvería a reportarlo)
-  for (const disposition of ['refuted', 'deferred', 'waived']) {
+  // refutado (con la constancia que da `refutedHolds`, por defecto válida) o diferido: ya tiene su destino, no vuelve
+  // (volvería a reportarlo). Un `waived` sin la exención del dueño no es un destino (8.296, AC 11): vuelve.
+  for (const disposition of ['refuted', 'deferred']) {
     assert.deepStrictEqual(rc.porConfirmar({ lines: [reporte], findings: [{ ...ARREGLADO()[0], disposition }] }).revisores, [], disposition);
   }
+  assert.deepStrictEqual(rc.porConfirmar({ lines: [reporte], findings: [{ ...ARREGLADO()[0], disposition: 'waived' }], eximido: () => false }).revisores, [{ name: DEFTR, rules: ['DEFTR-C1'] }]);
   // abierto: es como queda un crítico arreglado hasta que su revisor lo confirma (write-findings no acepta fixed antes)
   assert.deepStrictEqual(rc.porConfirmar({ lines: [reporte], findings: [{ ...ARREGLADO()[0], disposition: 'open' }] }).revisores, [{ name: DEFTR, rules: ['DEFTR-C1'] }]);
   // sin reportes de la corrida, o sin el reporte de ese revisor: nada que confirmar
   assert.deepStrictEqual(rc.porConfirmar({ lines: [], findings: ARREGLADO() }).revisores, []);
   assert.deepStrictEqual(rc.porConfirmar({ lines: [{ ...reporte, advisor: TESTS, criticals: [] }], findings: ARREGLADO() }).revisores, []);
+  // sin findings.json, el crítico reportado sigue abierto: vuelve (8.296, AC 11)
+  assert.deepStrictEqual(rc.porConfirmar({ lines: [reporte], findings: [] }).revisores, [{ name: DEFTR, rules: ['DEFTR-C1'] }]);
   // con su crítico sin confirmar, vuelve
   assert.deepStrictEqual(rc.porConfirmar({ lines: [reporte], findings: ARREGLADO() }).revisores, [{ name: DEFTR, rules: ['DEFTR-C1'] }]);
   // la exención del dueño (la misma consulta que el cruce: sólo la que firma una persona): nada que confirmar
@@ -237,4 +242,83 @@ test('T4 Set_UnreadableRegistry_NoDiscount + CheckCount_Recompute_AsksTheReviewe
   assert.notStrictEqual(c.status, 0, salida(c));
   assert.match(salida(c), /recomputado/, salida(c));
   assert.match(salida(c), new RegExp(DEFTR), salida(c));
+});
+
+// ── 8.296: el revisor con críticos abiertos vuelve aunque findings.json todavía no los traiga ──────────────────────────
+//
+// 🔴 Mutaciones que los ponen en rojo: contar sólo lo que trae findings.json (T11, T12), restar un `refuted` sin constancia
+// o un `waived` sin la exención del dueño, o sumar con el crítico ya con destino o confirmado (T13), y los textos de MECH-2
+// que no nombran la excepción (T14).
+
+const AC = 'tycon-ac-coverage-checker';
+const AC_REPORTO = { advisor: AC, criticals: [{ rule: 'ACCOV-C1', count: 1 }] };
+
+test('Set_CriticoAbiertoSinFindings_RevisorVuelvePorEncimaDeMech @story-8.296 @ac-11', () => {
+  const L = lab({ reportes: [AC_REPORTO] });
+  assert.ok(!fs.existsSync(path.join(L.runDir, 'findings.json')), 'la prueba supone que todavía no hay findings.json');
+  const r = L.reloop();
+  assert.ok(r.j, salida(r));
+  assert.ok(r.j.rerun.includes(AC), `${JSON.stringify(r.j.rerun)} · ${salida(r)}`);
+  assert.ok(!(r.j.mech_discounted || []).some((d) => d.name === AC), JSON.stringify(r.j.mech_discounted));
+  const suyo = (r.j.confirm_reviewers || []).find((c) => c.name === AC);
+  assert.ok(suyo, JSON.stringify(r.j.confirm_reviewers));
+  assert.match(suyo.reason, /crítico abierto por confirmar \(ACCOV-C1\)/);
+  const runs = fs.readFileSync(path.join(L.state, 'advisor-runs', `${SID}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(runs.filter((x) => x.event === 'step5-start').pop().expected.includes(AC));
+});
+
+test('Set_CriticoAbierto_EnAdvisorsYCheckCount @story-8.296 @ac-11', () => {
+  const L = lab({ reportes: [AC_REPORTO] });
+  const a = L.correr(['advisors', '--story', L.story, '--repo', L.repo, '--iter', '2', '--files', path.join(L.repo, 'a.js')]);
+  const ja = JSON.parse(a.stdout);
+  assert.ok(ja.all.includes(AC), salida(a));
+  const inicio = fs.readFileSync(path.join(L.state, 'advisor-runs', `${SID}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((x) => x.event === 'step5-start').pop();
+  assert.ok(inicio.expected.includes(AC), JSON.stringify(inicio));
+  // el recálculo de check-count, sin el inicio de la vuelta guardado
+  const C = lab({ reportes: [AC_REPORTO] });
+  fs.writeFileSync(path.join(C.state, 'advisor-runs', `${SID}.jsonl`), `${JSON.stringify({ ts: at(-40), event: 'step5-start', iter: 2 })}\n${JSON.stringify({ ts: at(-30), advisor: TESTS, model: 'sonnet', repo: C.repo, story: '9.93', run: C.run })}\n`);
+  const c = C.correr(['check-count', '--story', C.story, '--repo', C.repo, '--iter', '2']);
+  assert.notStrictEqual(c.status, 0, salida(c));
+  assert.match(salida(c), new RegExp(AC), salida(c));
+});
+
+test('Set_ConDestinoOConfirmadoOVuelta1_NoVuelve @story-8.296 @ac-11 @ac-14', () => {
+  const rc = rcLib();
+  const reporte = { ts: at(-400), kind: 'report', advisor: AC, iter: 1, readable: true, criticals: [{ rule: 'ACCOV-C1', count: 1 }] };
+  const hallazgo = (disposition) => [{ rule_id: 'ACCOV-C1', severity: 'CRITICAL', disposition, file: 'a.js', title: 'x' }];
+  const vuelve = [{ name: AC, rules: ['ACCOV-C1'] }];
+  // refutado con la constancia del verificador
+  assert.deepStrictEqual(rc.porConfirmar({ lines: [reporte], findings: hallazgo('refuted'), refutedHolds: () => true }).revisores, []);
+  // diferido
+  assert.deepStrictEqual(rc.porConfirmar({ lines: [reporte], findings: hallazgo('deferred') }).revisores, []);
+  // un reporte posterior que lo bajó
+  assert.deepStrictEqual(rc.porConfirmar({ lines: [reporte, { ...reporte, ts: at(-5), iter: 2, criticals: [] }], findings: [] }).revisores, []);
+  // la vuelta 1: nadie por confirmar
+  const pipe = require(PIPELINE);
+  assert.deepStrictEqual(pipe.revisoresPorConfirmar({ story: 'x', iter: 1 }).agregar, []);
+  // refutado sin constancia y eximido sin la exención del dueño: vuelve
+  assert.deepStrictEqual(rc.porConfirmar({ lines: [reporte], findings: hallazgo('refuted'), refutedHolds: () => false }).revisores, vuelve);
+  assert.deepStrictEqual(rc.porConfirmar({ lines: [reporte], findings: hallazgo('waived'), eximido: () => false }).revisores, vuelve);
+  // y por la corrida de verdad: un refuted escrito a mano sin su constancia no saca al revisor
+  const L = lab({ reportes: [AC_REPORTO], hallazgos: hallazgo('refuted').map((f) => ({ ...f, reason: 'es falso' })) });
+  const r = L.reloop();
+  assert.ok(r.j && r.j.rerun.includes(AC), salida(r));
+});
+
+test('Set_TextosDeMech_NombranElRevisorQueVuelve @story-8.296 @ac-13', () => {
+  const L = lab({ reportes: [{ advisor: DEFTR, criticals: [] }] });
+  const r = L.reloop(['--force-full-reloop']);
+  assert.ok(r.j, salida(r));
+  assert.ok(r.j.mech_note, `smart-reloop no descontó: la prueba no mide su texto · ${salida(r)}`);
+  assert.match(r.j.mech_note, /nunca saca a un revisor con críticos abiertos por confirmar/, r.j.mech_note);
+  const a = L.correr(['advisors', '--story', L.story, '--repo', L.repo, '--iter', '2', '--files', path.join(L.repo, 'a.js')]);
+  const ja = JSON.parse(a.stdout);
+  assert.ok(ja.mech_note, `advisors no descontó: la prueba no mide su texto · ${salida(a)}`);
+  assert.match(ja.mech_note, /nunca saca a un revisor con críticos abiertos por confirmar/, ja.mech_note);
+  const m = L.correr(['mech-check', '--story', L.story, '--repo', L.repo, '--files', path.join(L.repo, 'a.js')]);
+  const jm = JSON.parse(m.stdout);
+  assert.deepStrictEqual(jm.ambiguous, [], 'la historia de juguete trae ambiguos: el texto que se mide es otro');
+  assert.match(jm.note, /nunca saca a un revisor con críticos abiertos por confirmar/, jm.note);
+  const ayuda = L.correr([]);
+  assert.match(ayuda.stderr, /DESCUENTA advisors cubiertos \(MECH-2\)[\s\S]{0,200}nunca saca a un revisor con críticos abiertos/, 'la ayuda de advisors no lo dice');
 });

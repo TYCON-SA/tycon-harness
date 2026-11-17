@@ -1483,6 +1483,9 @@ function buildWip(opts = {}) {
 
   // Lo que anota una sesión sin story (`marker.js doing`): no es un permiso, sólo dice qué hace. Con una story en curso
   // es lo que hace mientras tanto, si un ad-hoc no lo dijo antes; sin story, un ad-hoc de la misma sesión manda.
+  // Quién corre ya su prueba pesada sale del registro de turnos; se carga acá porque heavy-turn.js carga este archivo.
+  let runningHeavy = new Set();
+  try { runningHeavy = require('./heavy-turn.js').runningSids({ state: sdir, now: nowMs, problems: unreadable }); } catch (e) { unreadable.push(`el registro de turnos: ${e.message}`); }
   for (const file of jsonFiles(path.join(sdir, 'doing'), unreadable)) {
     const sid = path.basename(file, '.json');
     const pipe = pipeRows.get(sid);
@@ -1492,7 +1495,10 @@ function buildWip(opts = {}) {
     try { d = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
     // la espera vieja de una sesión ocupada no gana sobre la actividad real: sin texto propio, la nota no dice nada
     const waitSince = Date.parse(d.waitingSince);
-    if (d.waitingFor && sessions.get(sid) && sessions.get(sid).busy && Number.isFinite(waitSince) && nowMs - waitSince > WAIT_OUTLIVED_MS) {
+    // la espera de turno de quien ya corre su prueba pesada tampoco: la nota y el registro de turnos no coinciden, y gana
+    // el registro
+    const turnRuns = runningHeavy.has(sid) && require('./heavy-turn.js').isTurnWait(d.waitingFor);
+    if (turnRuns || (d.waitingFor && sessions.get(sid) && sessions.get(sid).busy && Number.isFinite(waitSince) && nowMs - waitSince > WAIT_OUTLIVED_MS)) {
       if (!d.text) continue;
       d = { ...d, waitingFor: undefined, waitingSince: undefined };
     }

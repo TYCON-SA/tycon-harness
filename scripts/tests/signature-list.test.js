@@ -924,3 +924,86 @@ test('Lista_RenglonSinClave_CierraComoHoy_YAdhocReemplazada (T6) — @story-8.26
   appendSignature({ signature: 'manual-test', via: 'click', target: 'ses-a', key: 'firma:otra', home: toy.casa, now: antes(5), huella: () => ({ huella: 'h' }) });
   assert.strictEqual(abiertos(toy).filas.length, 1, 'la clave de otro pedido la cerró');
 });
+
+// ── la firma aprobada y sin repetir, para la oficina ───────────────────────────────────────────────────────────────────
+
+// un click o un «aprobado» anotado como lo deja el gancho; sin el proceso de la herramienta (arbol: []) lo decide `validar`
+const click = (t, pregunta, { min = 2, ses = 'ses-a' } = {}) => oa.anotar(t.casa, { tipo: 'click', sesion: ses, ts: new Date(antes(min)).toISOString(), tool_use_id: `tu-${min}-${pregunta.length}`, pregunta, respuesta: oa.APRUEBA });
+const escrito = (t, { min = 2, ses = 'ses-a' } = {}) => oa.anotar(t.casa, { tipo: 'mensaje', sesion: ses, ts: new Date(antes(min)).toISOString(), texto: 'aprobado' });
+const aprobadas = (t, validar) => sl.aprobadasSinRepetir({ casa: t.casa, filas: abiertos(t).filas, ahora: AHORA, arbol: [], validar });
+// la pregunta del cuadro de su único renglón, como la da owner-next
+const preguntaDe = (t) => sl.siguiente(opts(t, { sesion: 'ses-a', validar: () => ({ ok: false }) })).pregunta;
+
+test('Lista_AprobadasSinRepetir_ClickYEscrito (G1) — @story-8.234 @ac-14', (t) => {
+  const toy = casaNueva(t);
+  sesion(toy.casa, 'ses-a');
+  const r = firma(toy);
+  click(toy, preguntaDe(toy));
+  const a = aprobadas(toy, () => ({ ok: true }));
+  assert.deepStrictEqual([...a.ids], [r.id]);
+  assert.deepStrictEqual(a.problemas, []);
+  // owner-next sigue igual: la da por aprobada y no la pregunta
+  const sig = sl.siguiente(opts(toy, { sesion: 'ses-a', validar: () => ({ ok: true }) }));
+  assert.deepStrictEqual(sig.faltaRepetir.map((x) => x.id), [r.id]);
+
+  // un «aprobado» escrito que se confirma, también
+  const toy2 = casaNueva(t);
+  sesion(toy2.casa, 'ses-a');
+  const r2 = firma(toy2);
+  escrito(toy2);
+  assert.deepStrictEqual([...aprobadas(toy2, () => ({ ok: true })).ids], [r2.id]);
+});
+
+test('Lista_AprobadasSinRepetir_NoAprobadaONoLeida (G2) — @story-8.234 @ac-15', (t) => {
+  const nueva = () => { const toy = casaNueva(t); sesion(toy.casa, 'ses-a'); firma(toy); return toy; };
+  const noLeida = () => ({ ok: false, motivo: 'no encontré la transcripción de la sesión ses-a', noLeida: true });
+  // sin aprobación: no aprobada, sin aviso
+  let toy = nueva();
+  let a = aprobadas(toy, () => ({ ok: true }));
+  assert.strictEqual(a.ids.size, 0);
+  assert.deepStrictEqual(a.problemas, []);
+  // vencida (31 minutos): igual
+  toy = nueva();
+  click(toy, preguntaDe(toy), { min: 31 });
+  a = aprobadas(toy, () => ({ ok: true }));
+  assert.strictEqual(a.ids.size, 0);
+  assert.deepStrictEqual(a.problemas, []);
+  // un click de otra firma que no se pudo leer no es de ésta: sin aviso
+  toy = nueva();
+  click(toy, '¿Otra cosa? (firma otra · sesión ses-a · código abc)');
+  a = aprobadas(toy, noLeida);
+  assert.strictEqual(a.ids.size, 0);
+  assert.deepStrictEqual(a.problemas, []);
+  // una negativa definitiva de esta firma (lo contestó un gancho): no aprobada, sin aviso
+  toy = nueva();
+  click(toy, preguntaDe(toy));
+  a = aprobadas(toy, () => ({ ok: false, motivo: 'el cuadro lo contestó un gancho, no la persona' }));
+  assert.strictEqual(a.ids.size, 0);
+  assert.deepStrictEqual(a.problemas, []);
+  // el click de esta firma que no se pudo leer: no aprobada, con el motivo
+  toy = nueva();
+  click(toy, preguntaDe(toy));
+  a = aprobadas(toy, noLeida);
+  assert.strictEqual(a.ids.size, 0);
+  assert.strictEqual(a.problemas.length, 1);
+  assert.match(a.problemas[0], /^no pude saber si .*marcar un criterio.* está aprobada: .*no encontré la transcripción/);
+  // un «aprobado» escrito que no se pudo leer (no tiene sello: puede ser de ésta): con el motivo
+  toy = nueva();
+  escrito(toy);
+  a = aprobadas(toy, noLeida);
+  assert.strictEqual(a.ids.size, 0);
+  assert.strictEqual(a.problemas.length, 1);
+  // el registro de aprobaciones de la sesión no se lee: con el motivo
+  toy = nueva();
+  fs.mkdirSync(path.join(oa.carpeta(toy.casa), 'ses-a.jsonl'), { recursive: true });
+  a = aprobadas(toy, () => ({ ok: true }));
+  assert.strictEqual(a.ids.size, 0);
+  assert.strictEqual(a.problemas.length, 1);
+  assert.match(a.problemas[0], /no pude leer las aprobaciones de la sesión ses-a/);
+  // sin los procesos de la máquina no se puede confirmar ninguna: no aprobada, con el motivo
+  toy = nueva();
+  click(toy, preguntaDe(toy));
+  a = sl.aprobadasSinRepetir({ casa: toy.casa, filas: abiertos(toy).filas, ahora: AHORA, arbol: null, validar: () => ({ ok: true }) });
+  assert.strictEqual(a.ids.size, 0);
+  assert.deepStrictEqual(a.problemas, ['no pude leer los procesos de la máquina: no sé qué firmas ya están aprobadas']);
+});

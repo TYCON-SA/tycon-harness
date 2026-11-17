@@ -1155,6 +1155,68 @@ test('T5c OwnerApprovals_OtherSignatureQuotingThisSeal_IsNotThisSignature @story
   assert.strictEqual(motivoDe(casa), 'lo que se mostró cambió: pedí el cuadro de nuevo');
 });
 
+test('T47 OwnerApprovals_ReadFailure_IsNoLeida @story-8.234 @ac-15: una lectura que falló se dice aparte de una negativa', (t) => {
+  const casa = casaNueva(t);
+  const sello = 'firma manual-test · sesión ses-a · código abc';
+  const cuadroDeFirma = { sello, pregunta: `¿Marcar? (${sello})`, opciones: [oa.APRUEBA, oa.NIEGA] };
+  const a = { tipo: 'click', sesion: 'ses-a', ts: hace(1), tool_use_id: 'tu1', pregunta: cuadroDeFirma.pregunta, respuesta: oa.APRUEBA };
+  // sin transcripción: no se pudo leer
+  const sin = oa.validarEnClaude(a, { casa, cuadro: cuadroDeFirma, destino: 'ses-a' });
+  assert.strictEqual(sin.ok, false);
+  assert.strictEqual(sin.noLeida, true, JSON.stringify(sin));
+  // la transcripción que no se lee (una carpeta): tampoco, con el click y con el «aprobado» escrito
+  const dir = path.join(casa, '.claude', 'projects', '-r-proyecto', 'ses-a.jsonl');
+  fs.mkdirSync(dir, { recursive: true });
+  assert.strictEqual(oa.clickEnLaTranscripcion(dir, a, { pregunta: cuadroDeFirma.pregunta, opciones: cuadroDeFirma.opciones, sello, casa }).noLeida, true);
+  assert.strictEqual(oa.mensajeEnLaTranscripcion(dir, { ...a, tipo: 'mensaje', texto: 'aprobado' }, { sello, destino: 'ses-a', pregunta: cuadroDeFirma.pregunta }).noLeida, true);
+  // una negativa definitiva no lo es: el cuadro no está en la transcripción
+  fs.rmSync(dir, { recursive: true });
+  const ruta = transcripcion(casa, 'ses-a', [agente('hola')]);
+  // la transcripción que pasa del tope: el «aprobado» escrito no se puede confirmar, no se sabe
+  const { LIMITE } = require('../../skills/tycon-pipeline/scripts/lib/jsonl-lines.js');
+  const tope = LIMITE.bytes;
+  LIMITE.bytes = 4;
+  try { assert.strictEqual(oa.mensajeEnLaTranscripcion(ruta, { ...a, tipo: 'mensaje', texto: 'aprobado' }, { sello, destino: 'ses-a', pregunta: cuadroDeFirma.pregunta }).noLeida, true); } finally { LIMITE.bytes = tope; }
+  // la configuración de la carpeta que no se lee: no se sabe si un gancho contestó el cuadro
+  const carpeta = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-approvals-cwd-'));
+  t.after(() => fs.rmSync(carpeta, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(carpeta, '.claude', 'settings.json'), { recursive: true });
+  const sinConfig = oa.validarEnClaude(a, { casa, cwd: carpeta, cuadro: cuadroDeFirma, destino: 'ses-a' });
+  assert.strictEqual(sinConfig.ok, false);
+  assert.strictEqual(sinConfig.noLeida, true, JSON.stringify(sinConfig));
+  const neg = oa.clickEnLaTranscripcion(ruta, a, { pregunta: cuadroDeFirma.pregunta, opciones: cuadroDeFirma.opciones, sello, casa });
+  assert.strictEqual(neg.ok, false);
+  assert.strictEqual(neg.noLeida, undefined);
+  // buscar lo pasa cuando es de esta firma, y no cuando es de otra
+  fs.mkdirSync(oa.carpeta(casa), { recursive: true });
+  oa.anotar(casa, { ...a, ts: new Date(Date.now() - 60000).toISOString() });
+  const noLee = () => ({ ok: false, motivo: 'no pude leer la transcripción (EISDIR)', noLeida: true });
+  assert.strictEqual(oa.buscar({ casa, sesion: 'ses-a', cuadro: cuadroDeFirma, validar: noLee }).noLeida, true);
+  const otro = { ...cuadroDeFirma, sello: 'firma otra · sesión ses-a · código zzz', pregunta: '¿Otra? (firma otra · sesión ses-a · código zzz)' };
+  assert.strictEqual(oa.buscar({ casa, sesion: 'ses-a', cuadro: otro, validar: noLee }).noLeida, undefined);
+  // la marca de la terminal (Codex) que no se lee: no se sabe. Sin marca, en cambio, es una negativa
+  const marcas = require.resolve('../lib/harness-sign.js');
+  const antes = require.cache[marcas];
+  const constancia = { tipo: 'terminal', via: 'terminal', sesion: 'ses-a', sello, texto: cuadroDeFirma.pregunta, ts: hace(1), id: 'r1' };
+  require.cache[marcas] = { id: marcas, filename: marcas, loaded: true, exports: { marcaDeConstancia: () => { throw Object.assign(new Error('sin permiso'), { code: 'EACCES' }); } } };
+  try {
+    assert.strictEqual(oa.constanciaDeLaTerminal(constancia, { casa, cuadro: cuadroDeFirma }).noLeida, true);
+    require.cache[marcas].exports = { marcaDeConstancia: () => null };
+    assert.strictEqual(oa.constanciaDeLaTerminal(constancia, { casa, cuadro: cuadroDeFirma }).noLeida, undefined);
+  } finally { if (antes) require.cache[marcas] = antes; else delete require.cache[marcas]; }
+  // los procesos de la máquina que no se leen: la aprobación de otra sesión (la coordinadora) y la de la propia
+  assert.strictEqual(oa.procesoQueLaAnoto({ a: { ...a, herramienta: { pid: 1, inicio: 'x' } }, arbol: null, casa }).noLeida, true);
+  const cuadroB = { ...cuadroDeFirma, sello: 'firma manual-test · sesión ses-b · código abc', pregunta: '¿Marcar? (firma manual-test · sesión ses-b · código abc)' };
+  oa.anotar(casa, { ...a, sesion: 'ses-b', pregunta: cuadroB.pregunta, ts: new Date(Date.now() - 60000).toISOString(), herramienta: { pid: 4242, inicio: 'x' } });
+  const sinProcesos = oa.buscar({ casa, sesion: 'ses-b', cuadro: cuadroB, herramienta: { pid: 4242, inicio: 'x' }, arbol: null, validar: () => ({ ok: true }) });
+  assert.strictEqual(sinProcesos.ok, false);
+  assert.strictEqual(sinProcesos.noLeida, true, JSON.stringify(sinProcesos));
+  // con los procesos leídos y sin el de la herramienta, es una negativa: se sabe que no está
+  const sinElProceso = oa.buscar({ casa, sesion: 'ses-b', cuadro: cuadroB, herramienta: { pid: 4242, inicio: 'x' }, arbol: [], validar: () => ({ ok: true }) });
+  assert.strictEqual(sinElProceso.ok, false);
+  assert.strictEqual(sinElProceso.noLeida, undefined);
+});
+
 // 🔴 Falla con: un click dado sobre la pregunta del formato viejo que firma después de actualizar el arnés, o que se
 //    consume sin firmar (el dueño tendría que volver a pedir todo), o un motivo que no dice que cambió el texto.
 test('T13 OwnerApprovals_OldFormatClick_NotSigned_RowStays @story-8.275 @ac-16 @ac-17', (t) => {

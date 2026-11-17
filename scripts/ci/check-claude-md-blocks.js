@@ -120,7 +120,7 @@ const slug = (h) => h.trim().toLowerCase().replace(/[^\p{L}\p{N} _-]/gu, '').rep
 const entradasDe = (texto) => String(texto).split('\n').filter((l) => /^- \*\*/.test(l));
 
 // Una entrada COMPLETA, con sus líneas de continuación. En markdown una viñeta sigue en las líneas
-// indentadas que le siguen, y el README tiene una ficha así (`guides/que-hace-el-arnes.md`, 12
+// indentadas que le siguen, y el README tiene una ficha así (`guides/what-the-harness-does.md`, 12
 // líneas de continuación). 🔴 `entradasDe` devuelve sólo el PRIMER renglón —que es lo que hace falta
 // para medir el tope por entrada— y con eso una mudanza perdería el resto EN SILENCIO, sin que lo
 // vea un verificador que compara el mismo texto truncado en los dos lados. Quien mueva texto usa

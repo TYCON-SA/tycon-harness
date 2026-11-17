@@ -2073,3 +2073,35 @@ test('8.281 T3 Tope_SesionNoInteractiva_NoCuenta_ConMarcadorSi @story-8.281 @ac-
   assert.ok(names.includes('slot-1-b2') && names.includes('Puesto'), `con marcador y la interactiva cuentan: ${r.text}`);
   assert.match(r.text, /1 agente\(s\) interno\(s\)[^\n]*claude -p/, 'el renglón también nombra las corridas sueltas');
 });
+
+// La espera de turno que anotó una sesión cuya prueba pesada ya corre (un portón anotado o un lugar del turno): la nota y
+// el registro de turnos no coinciden, y gana el registro. La oficina toma la espera de esta tabla: deja de decir
+// «Esperando». Una espera de otra cosa (una firma) y la de quien no corre nada quedan como hoy.
+// 🔴 mutación: leer sólo la nota (como antes), o borrar también la espera de una firma.
+test('T214 Fila_EsperaDeTurnoConPruebaPesadaCorriendo_GanaElRegistro: la espera de turno de quien ya corre su prueba pesada no se muestra', () => {
+  const m = toyMachine();
+  const at = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+  const coord = path.join(m.state, 'coordination');
+  fs.mkdirSync(path.join(coord, 'gates'), { recursive: true });
+  fs.mkdirSync(path.join(m.state, 'doing'), { recursive: true });
+  const p = story(m.root, '9.9', 'Una historia de prueba');
+  const cases = { 'porto000-1': 'portón final de pruebas de la 9.9', 'turno000-2': 'el turno de la suite', 'firma000-3': 'la firma del dueño', 'sinre000-4': 'el turno de la suite' };
+  for (const [sid, what] of Object.entries(cases)) {
+    marker(m, sid, { storyId: '9.9', storyPath: p, stepsCompleted: [0, 1, 2, 3, 4, 5], stepsPending: [6, 7, 8] });
+    session(m, process.pid, sid, sid.slice(0, 5), { status: 'idle' });
+    fs.writeFileSync(path.join(m.state, 'doing', `${sid}.json`), JSON.stringify({ at: at(2), waitingFor: what, waitingSince: at(2) }));
+  }
+  const rec = (pid, sid) => ({ pid, sid, session: sid.slice(0, 5), what: '81 suites de repo', suites: 81, at: Date.parse(NOW) - 3 * 60000 });
+  fs.writeFileSync(path.join(coord, 'gates', `${process.pid}.json`), JSON.stringify(rec(process.pid, 'porto000-1')));
+  fs.writeFileSync(path.join(coord, 'gates', `${process.ppid}.json`), JSON.stringify(rec(process.ppid, 'firma000-3')));
+  fs.writeFileSync(path.join(coord, 'suite-turn.json'), JSON.stringify(rec(process.pid, 'turno000-2')));
+  const r = run(m);
+  const of = (name) => r.extra[r.rows.findIndex((x) => x.session.startsWith(name))] || {};
+  assert.strictEqual(of('porto').waitingFor, undefined, JSON.stringify(of('porto')));
+  assert.strictEqual(of('turno').waitingFor, undefined, JSON.stringify(of('turno')));
+  assert.strictEqual(of('firma').waitingFor, 'la firma del dueño', 'una espera de otra cosa queda');
+  assert.strictEqual(of('sinre').waitingFor, 'el turno de la suite', 'sin registro, como hoy');
+  // un portón ilegible no saca a nadie de la espera, pero se dice
+  fs.writeFileSync(path.join(coord, 'gates', '999999.json'), '{ esto no es json');
+  assert.ok(run(m).unreadable.some((u) => u.includes('999999.json')), 'el portón que no se lee se dice');
+});

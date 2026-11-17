@@ -69,8 +69,6 @@ function appendLog(stateDir, fileName, sessionId, obj) {
  * @param {object} [opts] { stateDir } — override para tests
  */
 function handle(event, opts = {}) {
-  if (String(process.env.TYCON_ATDD_PREEDIT_GATE || '').toLowerCase() === 'off') return null;
-
   const filePath = event?.tool_input?.file_path;
   if (!filePath) return null;
 
@@ -80,6 +78,15 @@ function handle(event, opts = {}) {
   // Sin pipeline activo no se frena nada — el gate de commit
   // (`atdd-commit-gate.js`) sigue cubriendo el trabajo a mano, en modo aviso.
   if (!marker) return null;
+
+  // Apagado: el portón lo anota él mismo, una vez por sesión y día (sin esto, una línea por cada edición).
+  if (String(process.env.TYCON_ATDD_PREEDIT_GATE || '').toLowerCase() === 'off') {
+    require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js')).anotarEscape({
+      stateDir, sessionId, kind: 'ATDD_PREEDIT_GATE_OFF', variable: 'TYCON_ATDD_PREEDIT_GATE', unaVez: 'gate',
+      repoPath: marker.repoPath || null, story: marker.storyId,
+    });
+    return null;
+  }
 
   // storyPath puede venir relativo (marker armado a mano / adoptado) — resolver contra repoPath,
   // misma regla que `resolveStoryPath` de marker.js. Sin esto, el read falla → "no declara Tests"
