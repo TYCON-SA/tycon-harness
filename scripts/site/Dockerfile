@@ -44,6 +44,8 @@ COPY scripts/lib/ scripts/lib/
 COPY scripts/metrics/ scripts/metrics/
 # el armado de los días de instintos: lo pide la subida (scripts/metrics/upload-runs.js), que el sitio carga
 COPY scripts/instincts/instinct-upload.js scripts/instincts/
+# el armado de los días de horas y tokens, que también pide la subida, lee las conversaciones con lo que las limpia
+COPY scripts/tools/office.js scripts/tools/work-in-progress.js scripts/tools/
 # la pestaña Aprendizajes: escribe la decisión con la función de la noche (que carga el observador y sus carpetas) y arma
 # el borrador para el arnés
 COPY scripts/instincts/instinct-nightly.js scripts/instincts/instinct-observer.js scripts/instincts/instinct-dirs.js scripts/instincts/instinct-draft.js scripts/instincts/instinct-model.js scripts/instincts/

@@ -8,6 +8,8 @@
 !.tycon-release.json
 !scripts/site/
 !scripts/tools/office/
+!scripts/tools/office.js
+!scripts/tools/work-in-progress.js
 !guides/organization-site.md
 !guides/organization-site.en.md
 !guides/sitio-de-la-organizacion/capturas/

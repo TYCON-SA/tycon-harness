@@ -2673,7 +2673,7 @@ const TEXTOS = {
   'comoTrabaja.demoNoSeEscribe': { es: 'En el sitio demo no se escribe: no se abrió ningún pull request. En un sitio real, esta mejora del paquete «{pack}» abriría un pull request al repo del perfil para que alguien la revise.', en: 'The demo site writes nothing: no request was opened. On a real site, this change to the "{pack}" pack would open a request on the profile repo for someone to review.' },
   // la pestaña «Horas y tokens» (tabs/workdays.js)
   'pestana.horas': { es: 'Horas y tokens', en: 'Hours and tokens' },
-  'horas.lede': { es: 'Cuánto trabajaron las sesiones de agente de cada máquina y cuántos tokens consumieron, día por día (el día de cada máquina). Un día sin archivo de una máquina es «no medido», nunca cero.', en: 'How long each machine\'s agent sessions worked and how many tokens they used, day by day (each machine\'s own day). A day with no file from a machine is "not measured", never zero.' },
+  'horas.lede': { es: 'Horas y tokens de las sesiones de agente, por máquina y por día. Un día sin archivo es «no medido», nunca cero.', en: 'Hours and tokens of the agent sessions, per machine and per day. A day with no file is "not measured", never zero.' },
   'horas.dia': { es: 'Día', en: 'Day' },
   'horas.total': { es: 'Total', en: 'Total' },
   'horas.arnes': { es: 'Horas con el arnés trabajando', en: 'Hours with the harness working' },
