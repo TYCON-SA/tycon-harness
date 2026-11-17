@@ -1096,7 +1096,12 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # el marcador no tiene la nota de una corrida terminada de esta historia en este repo (`testsSavedNote`); si la tiene
   # y esa corrida no guardó, su motivo acompaña a «no hay un verde guardado».
   TG_RUN_MODO=""; TG_RUN_MOTIVO=""; TG_RUN_TEXTO=""; TG_RUN_ORIGEN_AT=""
-  _TG_NOTA="$(node "$MARKER_JS" get 2>/dev/null | node -e '
+  # `get` imprime `{}` sin corrida y también con un marcador roto: --strict sale distinto de 0 con el roto, y si no se
+  # pudo preguntar tampoco se sabe si es la primera
+  _TG_GET_RC=0
+  _TG_GET="$(node "$MARKER_JS" get --strict 2>/dev/null)" || _TG_GET_RC=$?
+  _TG_NOTA="?"
+  [[ "$_TG_GET_RC" == "0" && -n "$_TG_GET" ]] && _TG_NOTA="$(printf '%s' "$_TG_GET" | node -e '
     let t=""; process.stdin.on("data",(d)=>{t+=d;}).on("end",()=>{ try {
       if (!t.trim() || t.trim() === "null") return;
       const m = JSON.parse(t); const fs = require("fs");

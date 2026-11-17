@@ -497,6 +497,8 @@ test('T4 LastGreen_CloseNotFullyMeasured_KeepsOldAndSaysWhy @story-8.297 @ac-4 @
 
 test('T18 Save_FailsMidway_KeepsPreviousAndNotes @story-8.297 @ac-4 @ac-8 — un guardado que falla deja lo de antes y lo anota', (t) => {
   // 🔴 mutación: borrar la carpeta antes de copiar deja lo guardado vacío si la copia falla
+  // como root una carpeta de sólo lectura se escribe igual: el caso no se puede armar
+  if (typeof process.getuid === 'function' && process.getuid() === 0) { t.skip('como root una carpeta de sólo lectura se escribe igual'); return; }
   const l = conCompletaVerde();
   const antes = verde(l);
   const casa = path.dirname(antes.dir);
@@ -603,6 +605,19 @@ test('T9 Decision_EveryMode_OneLine @story-8.297 @ac-8 — cada corrida dice un 
   tocar(l, 'scripts/ci/control-x.js', '// otro\n');
   una();
   assert.deepEqual(modos, ['primera', 'sin correr', 'acotada', 'entera']);
+});
+
+test('T19 Decision_UnreadableMarker_CountsAsWhole @story-8.297 @ac-8 @ac-10 — un marcador que no se deja leer cuenta como entera, no como primera', () => {
+  // 🔴 mutación: tomar el `{}` que imprime `get` con un marcador roto como «sin nota» achica las repeticiones
+  const l = conCompletaVerde();
+  fs.writeFileSync(markerFile(l), '{roto');
+  tocar(l, 'docs/b.md');
+  const r = puerta(l);
+  const ls = lineasDeModo(r.out);
+  assert.equal(ls.length, 1, r.out);
+  assert.match(ls[0], /^\[test-gate\] modo entera · /, r.out);
+  assert.match(ls[0], /no pude leer el marcador/);
+  assert.deepEqual(registro(l).map((x) => x.modo).slice(-1), ['entera']);
 });
 
 test('T10 GatesLog_RunLine_PerModeAndNotWhenCutOrNoTurn @story-8.297 @ac-9 — un renglón por corrida terminada, ninguno por la cortada ni la ocupada', async () => {

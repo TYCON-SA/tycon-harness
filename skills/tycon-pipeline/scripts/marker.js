@@ -40,6 +40,7 @@
  * Commands (resuelven el sessionId solos — la firma CLI no cambia):
  *   marker.js set '{"storyId":"...","stepsPending":[...]}'  → escribe el marker de esta sesión
  *   marker.js get          → marker de esta sesión, o `{}`
+ *   marker.js get --strict → igual, y sale 3 si el marcador de esta sesión existe y no se deja leer
  *   marker.js touch        → actualiza lastTouch
  *   marker.js complete-step <N>  → mueve step N pending→completed
  *   marker.js append-file <abs-path>  → agrega path a filesTouched (dedup)
@@ -1152,9 +1153,19 @@ function cmdSnapshotIter(nRaw, flags) {
   }, 2);
 }
 
-function cmdGet() {
+function cmdGet(opcion) {
   const marker = readMarker();
   process.stdout.write(JSON.stringify(nn(marker, {}), null, 2));
+  // `{}` dice lo mismo sin corrida que con un marcador roto: con --strict, el roto sale 3 para quien tiene que distinguirlos
+  if (opcion === '--strict' && !marker) {
+    let crudo = null;
+    try { crudo = fs.readFileSync(markerFilePath(SID), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return; }
+    let m = null;
+    try { m = crudo === null ? null : JSON.parse(crudo); } catch (_e) { m = null; }
+    if (m && typeof m === 'object' && !Array.isArray(m) && m.storyId) return;
+    console.error(`marker.js get: el marcador de la sesión ${SID} no se puede leer o no dice de qué story es`);
+    process.exitCode = 3;
+  }
 }
 
 function cmdTouch() {
@@ -3611,6 +3622,8 @@ function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) 
     exit: exitCode,
     durationMs,
     storyId: marker ? marker.storyId : null,
+    // la corrida de un repo hermano es parte de la corrida que la lanzó: el informe de repeticiones no la cuenta aparte
+    ...(process.env.TYCON_TEST_GATE_COMPANION === '1' ? { companion: true } : {}),
     ...(exitCode === 0 ? {} : colaParaElRegistro(salida)),
   });
   process.stdout.write(`check ${name}: ${status} (${prov}, ${durationMs}ms)\n`);
@@ -7652,7 +7665,7 @@ switch (cmd) {
     cmdSet(arg1);
     break;
   case 'get':
-    cmdGet();
+    cmdGet(arg1);
     break;
   case 'touch':
     cmdTouch();

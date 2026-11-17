@@ -401,10 +401,24 @@ test('T12 Repeats_OldDays_FromCheckCommand_NoMotive @story-8.297 @ac-10 — los 
   ]);
   const [e] = JSON.parse(cli('repeats', '--log', g, '--json').stdout).dias;
   assert.deepEqual([e.primera.n, e.entera.n], [1, 0]);
+  // la corrida del repo hermano es parte de la corrida que la lanzó: no es otra entera. Una que no corrió nada (7) o que
+  // se cortó (143) no cuenta; una salida que no se sabe leer no se pierde callada: cuenta entre las que no pude leer
+  const h = gatesLog([
+    run(local(14, 10), 's6', '7.6', 'primera', 'no hay un verde guardado de esta historia en esta sesión', 10),
+    { ...check(local(14, 10, 20), 's6', '7.6', `${RSJ} /hermano ${T}/suites.json --touched ${T}/touched.json --only-touched --coverage ${T}/cov --run-check tests`, 18), companion: true },
+    check(local(14, 10, 40), 's6', '7.6', `${RSJ} /r ${T}/suites.json --touched ${T}/touched.json --only-touched --coverage ${T}/cov --run-check tests`, 0, 7),
+    check(local(14, 10, 50), 's6', '7.6', `${RSJ} /r ${T}/suites.json --touched ${T}/touched.json --coverage ${T}/cov --run-check tests`, 3, 143),
+    check(local(14, 11), 's6', '7.6', `${RSJ} /r ${T}/suites.json --touched ${T}/touched.json --coverage ${T}/cov --run-check tests`, 2, 3),
+  ]);
+  const hj = JSON.parse(cli('repeats', '--log', h, '--json').stdout);
+  assert.deepEqual([hj.dias[0].primera.n, hj.dias[0].entera.n], [1, 0]);
+  assert.equal(hj.descartados, 1);
 });
 
 test('T13 Repeats_NoLogOrNoRuns_Exit3 @story-8.297 @ac-11 — sin registro, ilegible o sin corridas en el rango: sale 3 y lo dice', (t) => {
   // 🔴 mutación: imprimir «0 h» y salir 0 haría pasar «sin datos» por «sin repeticiones»
+  // como root el archivo sin permisos se lee igual: el caso no se puede armar
+  if (typeof process.getuid === 'function' && process.getuid() === 0) { t.skip('como root un archivo sin permisos se lee igual'); return; }
   const dir = tmp('suite-times-sin-');
   const ilegible = path.join(dir, 'gates.log');
   fs.writeFileSync(ilegible, `${JSON.stringify(run(local(10, 9), 's1', '8.1', 'entera', 'x', 5))}\n`);
@@ -423,6 +437,12 @@ test('T13 Repeats_NoLogOrNoRuns_Exit3 @story-8.297 @ac-11 — sin registro, ileg
   assert.equal(conAviso.status, 0, conAviso.stderr);
   assert.match(conAviso.stdout, /1 renglón\(es\) de corridas que no pude leer: no cuentan/);
   assert.equal(JSON.parse(cli('repeats', '--log', cortado, '--json').stdout).descartados, 1);
+  // una fecha que no existe no apaga el filtro en silencio ni rueda al mes siguiente: sale 2 y lo dice
+  for (const v of ['2026-02-31', '2026-13-45', '2026-11-17T25:00', '2026-02-31T10:00']) {
+    const mal = cli('repeats', '--log', cortado, '--since', v);
+    assert.equal(mal.status, 2, `${v}: ${mal.stdout}${mal.stderr}`);
+    assert.match(mal.stderr, /no existe/);
+  }
   // sin --log lee el de la carpeta de estado: con una casa vacía, tampoco hay
   const home = tmp('suite-times-home-');
   const r = spawnSync(process.execPath, [CLI, 'repeats'], { encoding: 'utf8', env: envWith({ HOME: home, USERPROFILE: home }) });

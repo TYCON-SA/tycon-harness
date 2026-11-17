@@ -148,26 +148,38 @@ const SIN_MOTIVO = 'sin motivo: de antes del registro';
 
 /** El momento de `--since`/`--until`: una fecha sola es el día entero (desde su comienzo, o hasta su final). */
 function momento(v, hasta) {
-  const dia = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
-  if (dia) return new Date(Number(dia[1]), Number(dia[2]) - 1, Number(dia[3]) + (hasta ? 1 : 0)).getTime() - (hasta ? 1 : 0);
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(v)) throw new Error(`${hasta ? '--until' : '--since'} pide AAAA-MM-DD o AAAA-MM-DDTHH:MM, no «${v}»`);
-  return new Date(v).getTime();
+  const opcion = hasta ? '--until' : '--since';
+  const p = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(v);
+  if (!p) throw new Error(`${opcion} pide AAAA-MM-DD o AAAA-MM-DDTHH:MM, no «${v}»`);
+  const [a, m, d, hh = 0, mm = 0, ss = 0] = p.slice(1).map((x) => (x === undefined ? undefined : Number(x)));
+  // Date corre en silencio un 31 de febrero al 3 de marzo y da NaN con las 25:00: la fecha tiene que volver tal cual
+  const f = new Date(a, m - 1, d, hh, mm, ss);
+  if (f.getFullYear() !== a || f.getMonth() !== m - 1 || f.getDate() !== d || f.getHours() !== hh || f.getMinutes() !== mm || f.getSeconds() !== ss) {
+    throw new Error(`${opcion}: la fecha «${v}» no existe`);
+  }
+  if (p[4] !== undefined) return f.getTime();
+  return new Date(a, m - 1, d + (hasta ? 1 : 0)).getTime() - (hasta ? 1 : 0);
 }
 
 const diaLocal = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 /**
  * Un check `tests` del portón de antes del renglón `test-gate-run`: la corrida que no se puede atar a un modo cuenta como
- * completa (primera o entera). Devuelve null si no es una corrida del portón que terminó (otra salida, una suite sola, la
- * mitad juntada de un cierre acotado, un comando que no es el corredor).
+ * completa (primera o entera). Devuelve null si no es una corrida del portón que terminó (la que no corrió nada, la
+ * cortada, una suite sola, la mitad juntada de un cierre acotado, la de un repo hermano, un comando que no es el
+ * corredor), y `{ ilegible: true }` si salió con un código que no se sabe leer: no se sabe qué midió.
  */
 function deUnCheck(c) {
   const cmd = String(c.cmd || '');
-  if (c.check !== 'tests' || c.provenance !== 'test-gate' || (c.exit !== 0 && c.exit !== 1)) return null;
+  if (c.check !== 'tests' || c.provenance !== 'test-gate' || c.companion === true) return null;
   if (/ --suite /.test(cmd)) return null;
   const merge = /failed-first\.js merge/.test(cmd);
   if (merge && / --new /.test(cmd)) return null;
   if (!merge && !/run-suites-json\.js/.test(cmd)) return null;
+  // 7 (el hermano no se pudo acotar), 75 (otra corrida), 76 (rojas sin repetir) y 77 (sin turno) no corrieron nada; más de
+  // 128 es una corrida cortada por una señal: ninguna terminó
+  if ([7, 75, 76, 77].includes(c.exit) || c.exit > 128) return null;
+  if (c.exit !== 0 && c.exit !== 1) return { ilegible: true };
   let modo = null;
   if (merge) modo = 'sin correr';
   else if (/touched-repetidas\.json/.test(cmd)) modo = 'acotada';
@@ -198,7 +210,8 @@ function repeatsCmd(o) {
       corridas.push({ t: Date.parse(j.ts), ses: j.sessionId || '?', story: j.story || null, modo: j.modo, motivo: j.motivo || null, ms: Number(j.duracion_ms) || 0 });
     } else if (j.check === 'tests') {
       const c = deUnCheck(j);
-      if (c) checks.push(c);
+      if (c && c.ilegible) descartados += 1;
+      else if (c) checks.push(c);
     }
   }
   // una corrida con su renglón también dejó su check: el check que cae dentro de ella (misma sesión) no se cuenta
