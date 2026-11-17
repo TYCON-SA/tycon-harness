@@ -557,6 +557,12 @@ test('PalabrasRuteadas_ResuelveCadaRutaComoElGuion (T25) — @story-8.295 @ac-1'
   fs.writeFileSync(path.join(ajena, 'marker.js'), 'process.exit(0)\n');
   assert.strictEqual(R('pending-approval', ['./marker.js', 'approve-pending', '--id', 'D', '--repo', '.'], ajena), null);
   assert.strictEqual(R('pending-approval', [path.join(ajena, 'marker.js'), 'approve-pending', '--id', 'D', '--repo', '/r']), null);
+  // un guion que no existe tampoco (sin tirar); un enlace al guion del arnés sí, y el comando lleva la ruta del arnés
+  assert.strictEqual(R('pending-approval', [path.join(ajena, 'nada', 'marker.js'), 'approve-pending', '--id', 'D', '--repo', '/r']), null);
+  fs.mkdirSync(path.join(ajena, 'enlace'));
+  fs.symlinkSync(M, path.join(ajena, 'enlace', 'marker.js'));
+  assert.deepStrictEqual(R('pending-approval', [path.join(ajena, 'enlace', 'marker.js'), 'approve-pending', '--id', 'D', '--repo', '/r']),
+    [M, 'approve-pending', '--id', 'D', '--repo', '/r', '--for-session', 'ses-a']);
   // una opción repetida no se rutea: el guion usa la última y la delegación miraría la primera
   assert.strictEqual(R('pending-approval', [M, 'approve-pending', '--repo', './a', '--repo', './b']), null);
   assert.strictEqual(R('extra-round', [P, 'smart-reloop', '--extra-round', '--story', 'a.md', '--story', 'b.md']), null);
