@@ -19,6 +19,11 @@ const codigo = (t) => t.split('\n').filter((l) => l.trim() && !/^\s*#/.test(l));
 const RUTAS = ["'scripts/site/**'", "'scripts/tools/office/**'", "'scripts/lib/**'", "'scripts/metrics/**'",
   // el armado de los días de instintos: lo pide la subida, que el sitio carga
   "'scripts/instincts/instinct-upload.js'",
+  "'scripts/instincts/instinct-nightly.js'",
+  "'scripts/instincts/instinct-observer.js'",
+  "'scripts/instincts/instinct-dirs.js'",
+  "'scripts/instincts/instinct-draft.js'",
+  "'scripts/instincts/instinct-model.js'",
   "'scripts/nightly/**'", "'scripts/setup/harness/**'", "'scripts/setup/install-effects.json'",
   // las equivalencias de cada modelo en Codex: la línea chica de la sección de modelos
   "'build/equivalences.json'",

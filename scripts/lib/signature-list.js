@@ -146,11 +146,24 @@ function coordinadoraViva(casa, s = sesiones(casa)) {
   return c && vive(s, c) === true ? c : null;
 }
 
-// la clave de un pedido: la firma, el destino y el comando, sin la ruta del guion ni `--for-session`
-function claveDe(firma, destino, palabras) {
+// la clave de un pedido: la firma, el destino y el comando, sin la ruta del guion ni `--for-session`, en la forma canónica
+// del cuadro (owner-window.js `formaCanonica`): el mismo pedido escrito de otra forma es la misma fila, y firmarlo la
+// cierra. Sin forma canónica, las palabras como se escribieron. `donde` ({ cwd, casa }) resuelve la historia relativa.
+function claveDe(firma, destino, palabras, donde = {}) {
   const i = palabras.indexOf('--for-session');
   const sin = palabras.filter((_, k) => i < 0 || (k !== i && k !== i + 1));
-  return `firma:${sha(JSON.stringify([firma, destino, path.basename(sin[0]), ...sin.slice(1)])).slice(0, 32)}`;
+  let canon = null;
+  try {
+    const ow = require('./owner-window.js');
+    canon = ow.formaCanonica(sin, { historia: ow.historiaDelPedido(sin, { cwd: donde.cwd, casa: donde.casa, destino }) });
+  } catch (e) {
+    // sin la forma canónica, la fila se anota con las palabras tal cual: el mismo pedido escrito de otra forma puede
+    // quedar en dos filas, y eso se dice
+    try { process.stderr.write(`signature-list: no pude armar la forma canónica del pedido (${(e && e.message) || e}); la fila va con el comando tal cual\n`); } catch (_) { /* nada */ }
+    canon = null;
+  }
+  // la canónica lleva su marca, como la huella del cuadro: nunca comparte fila con un pedido que no la tiene
+  return `firma:${sha(JSON.stringify([firma, destino, ...(canon ? ['forma-canonica', ...canon] : [path.basename(sin[0]), ...sin.slice(1)])])).slice(0, 32)}`;
 }
 
 function firmasDelRegistroComun(casa, problemas) {
@@ -252,7 +265,8 @@ function abiertos(casa, { arnes, env, ahora = Date.now(), s } = {}) {
 function anotarFirma({ casa, firma, titulo, sesion, destino, comando, palabras, cwd, ahora = Date.now(), s, delegable }) {
   const deLaClave = delegable ? ow().canonica(delegable.comando) : palabras;
   if (!deLaClave) throw new Error('el comando desviado no se puede leer');
-  const key = claveDe(firma, destino, deLaClave);
+  // el desviado lo corre la coordinadora desde su carpeta: la clave se arma desde ahí, como la arma el freno al firmar
+  const key = claveDe(firma, destino, deLaClave, { cwd: delegable ? delegable.cwd : cwd, casa });
   return conCandado(casa, () => {
     const lista = leer(casa);
     const cerrada = criterioDeCierre(casa, ahora, s || sesiones(casa), undefined, entender(lista).filas);

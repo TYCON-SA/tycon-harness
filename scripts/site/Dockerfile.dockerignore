@@ -14,6 +14,11 @@
 !scripts/lib/
 !scripts/metrics/
 !scripts/instincts/instinct-upload.js
+!scripts/instincts/instinct-nightly.js
+!scripts/instincts/instinct-observer.js
+!scripts/instincts/instinct-dirs.js
+!scripts/instincts/instinct-draft.js
+!scripts/instincts/instinct-model.js
 !scripts/nightly/dashboard/
 !scripts/nightly/projects/state-age.js
 !scripts/nightly/findings/cycle.js

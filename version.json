@@ -99,7 +99,7 @@
       "transform": "internal-blocks+not-in-copy+skill-rename"
     },
     {
-      "path": "guides/reglas-para-revisores.md",
+      "path": "guides/reviewer-rules.md",
       "transform": "internal-blocks"
     },
     {

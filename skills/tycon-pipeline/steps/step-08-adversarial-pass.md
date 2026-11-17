@@ -100,7 +100,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversa
 ```
 
 **La matriz de la organización** (`deep_review` de `team-repos.json`, que se edita en el sitio; la guía entera:
-`guides/revisiones-automaticas.md`). El portón decide con dos preguntas: si la historia es delicada y si el cambio es
+`guides/automatic-reviews.md`). El portón decide con dos preguntas: si la historia es delicada y si el cambio es
 chico o grande. Las cuatro celdas, con sus valores de fábrica:
 
 | | Dueño presente | Dueño ausente |

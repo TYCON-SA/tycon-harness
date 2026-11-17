@@ -1206,10 +1206,14 @@ test('SignatureQuestion_EveryFirma_FitsPhoneCap (T10) @story-8.275 @ac-10 @ac-11
   }
 });
 
-// 🔴 Falla con: el sello de un comando que cambia con el formato nuevo (un click del dueño ya dado no valdría por nada).
-test('SignatureQuestion_SameSealBeforeAndAfter (T12) @story-8.275 @ac-14', (t) => {
-  // los sellos de main antes de la 8.275 (94099637), calculados con estos mismos comandos y esta misma corrida
-  const ANTES = { 'adhoc-lane': 'e7379f59', save: '40b87e99', 'lost-run': 'c6466a32', 'runtime-waiver': 'c2042686', 'designation-set': '12396fc2' };
+// 🔴 Falla con: el sello de un comando que cambia con el formato de la pregunta (un click del dueño ya dado no valdría por
+// nada). Los códigos son los de la huella sobre el pedido en forma canónica: cambiaron una vez a propósito (8.296, AC 21,
+// no se migra) y desde ahí el formato de la pregunta no los mueve.
+test('SignatureQuestion_SameSealBeforeAndAfter (T12) @story-8.275 @ac-14 @story-8.296 @ac-21', (t) => {
+  // calculados con estos mismos comandos y esta misma corrida
+  // `runtime-waiver` no va fijo: su forma canónica lleva la ruta real de la historia, que acá es una carpeta temporal
+  // distinta en cada corrida; abajo, el mismo código por ruta relativa y absoluta, y nunca el de antes de la 8.296
+  const ANTES = { 'adhoc-lane': '26eeb534', save: '0925a02b', 'lost-run': 'e089182e', 'designation-set': '03b92ba0' };
   const c = corrida(t, { titulo: 'x', extraHistoria: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1'] });
   const de = (firma, cmd, cwd = c.repo) => ow.cuadroPara({ firma, comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion: 'ses-a', cwd, casa: c.casa });
   const ahora = {
@@ -1219,7 +1223,14 @@ test('SignatureQuestion_SameSealBeforeAndAfter (T12) @story-8.275 @ac-14', (t) =
     'runtime-waiver': de('runtime-waiver', `node ${MARKER} runtime-waiver specs/story-9.99-prueba.md --acs 1`),
     'designation-set': de('designation-set', `node ${MARKER} designate-relay`, '/r/repo'),
   };
-  for (const [firma, q] of Object.entries(ahora)) assert.strictEqual(q.sello, `firma ${firma} · sesión ses-a · código ${ANTES[firma]}`, `${firma}: ${q.error || q.sello}`);
+  const distintos = Object.entries(ahora).filter(([firma]) => ANTES[firma])
+    .filter(([firma, q]) => q.sello !== `firma ${firma} · sesión ses-a · código ${ANTES[firma]}`)
+    .map(([firma, q]) => `${firma}: ${q.error || q.sello}`);
+  assert.deepStrictEqual(distintos, []);
+  const rw = ahora['runtime-waiver'];
+  assert.ok(!rw.error, rw.error);
+  assert.strictEqual(rw.sello, de('runtime-waiver', `node ${MARKER} runtime-waiver ${path.join(c.repo, 'specs', 'story-9.99-prueba.md')} --acs 1`).sello);
+  assert.notStrictEqual(rw.sello, 'firma runtime-waiver · sesión ses-a · código c2042686');
 });
 
 // 🔴 Falla con: otra pregunta desde la coordinadora que desde la sesión (su click no valdría para el comando de la sesión).

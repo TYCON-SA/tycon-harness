@@ -1092,7 +1092,6 @@
     "prod-access-guard.js::comodin-relativo-desde-la-raiz-del-pipeline-sigue-frenando": true,
     "prod-access-guard.js::programa-de-lectura-parado-en-la-carpeta-pasa": true,
     "prod-access-guard.js::brace-list-on-new-state-names-is-blocked": true,
-    "prod-access-guard.js::brace-list-on-old-state-names-is-blocked": true,
     "prod-access-guard.js::brace-list-on-the-catalog-is-blocked": true,
     "prod-access-guard.js::nested-braces-are-blocked": true,
     "prod-access-guard.js::brace-letter-range-is-blocked": true,

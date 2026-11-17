@@ -2078,8 +2078,14 @@ fi
 # archivo de casos — el JSON trae el comando de ataque como dato. Residual asumido y aceptado: un
 # heredoc cuyo contenido incluya el par redirección+rc literal sigue matcheando (raro; para eso
 # está el override por comando, que queda auditado en el log).
+#
+# Además de las formas generales, las que apagan con cualquier valor que no sea 0 (`en_configuracion: cualquiera` en la
+# lista única scripts/lib/env-switches.json; scripts/tests/env-switches.test.js ata esta lista a ésa).
+_RC_CUALQUIERA="DOD_BYPASS|STOP_AUTONOMY|TYCON_ENGRAM_MANIFEST_OK|TYCON_EVAL_SANDBOX|TYCON_FULL_SUITE|TYCON_NO_DEEP_REVIEW|TYCON_PR_BY_HAND|TYCON_RUNTIME_MATRIX_LEGACY|TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK|TYCON_SAFETY_OFF|TYCON_SESSION_GUARD_OK|TYCON_STATUS_GATE|TYCON_TEST_GATE"
+# Los lectores comparan `off` y `on` sin mayúsculas, y el chequeo de vida se apaga también con `ci`.
+_RC_APAGADO="TYCON_[A-Z_]+=(\"?'?)(0|[oO][fF][fF])|TYCON_(NO|SAFETY_OFF)[A-Z_]*=(\"?'?)(1|[oO][nN])|TYCON_NO_LIVENESS_PRECOMMIT=(\"?'?)([cC][iI])|(^|[^A-Za-z0-9_])(${_RC_CUALQUIERA})=[\"']?[^0\"'[:space:]]"
 if [[ "$CMD" =~ (\>|tee[[:space:]]+(-a[[:space:]]+)?|sed[[:space:]]+-i[^\|\;\&]*[[:space:]])[[:space:]]*[\"\']?[^[:space:]\"\']*(\.zshrc|\.bashrc|\.zprofile|\.bash_profile|\.profile|\.zshenv) ]] && \
-   [[ "$CMD" =~ TYCON_[A-Z_]+=(\"?\'?)(0|off|OFF)|TYCON_(NO|SAFETY_OFF)[A-Z_]*=(\"?\'?)(1|on) ]]; then
+   [[ "$CMD" =~ $_RC_APAGADO ]]; then
   block "HARNESS-C1" \
     "Persistir un kill-switch TYCON_* en el rc del shell apaga ese control para TODAS las sesiones futuras, sin rastro y sin vencimiento — incluido el instalador que re-sana a los demás." \
     "Si el dev quiere apagar un control: por sesión (TYCON_X=0 <cmd>) o que lo escriba él en su rc a mano. El agente no persiste apagados."

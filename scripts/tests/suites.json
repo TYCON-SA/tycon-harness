@@ -2272,6 +2272,12 @@
       "requiere": []
     },
     {
+      "__nota": "La lista única de las variables de entorno del arnés (scripts/lib/env-switches.json): cada lectura del código está en la lista, ESC-C1 y HARNESS-C1 coinciden con ella, sin la lista se falla cerrado, y los lectores de escapes anotan su renglón en bypass.log. Casa de juguete.",
+      "raiz": "arnes",
+      "ruta": "tests/env-switches.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/adversarial-launch-delay.test.sh",
       "requiere": []
@@ -2961,6 +2967,12 @@
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el mismo pedido de firma escrito de otra forma (el orden de las opciones, de --acs, la historia relativa o absoluta) da el mismo cuadro y el mismo click le sirve; lo que cambia lo que se firma da otro código. En proceso, con una casa temporal; un par de segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-window-canonical.test.js",
       "requiere": []
     },
     {
@@ -3905,6 +3917,12 @@
       ]
     },
     {
+      "__nota": "story 8.45: las guías movidas a su nombre en inglés — cada ruta vieja es el reemplazo generado y lleva a la nueva (T4) y git sigue cada guía desde su nombre viejo sin reescribirla (T17). Sin el mapa (la copia pública) dice NO MEDIDO.",
+      "raiz": "arnes",
+      "ruta": "tests/guide-links.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "2026-10-02: qué suites corre el control de cada cambio en Azure (scripts/ci/suites-for-change.js) — las que declaran gate_only_when_touching corren sólo si el cambio toca su carpeta o la suite misma; sin lista de cambios, corre todo.",
       "raiz": "arnes",
       "ruta": "tests/suites-for-change.test.js",
@@ -4695,6 +4713,12 @@
       "__nota": "story 4.11, tanda D: la sección de lo que encontró la noche en la página de Ejecuciones del sitio (scripts/site/tabs/findings.js) — una fila por ficha pendiente de las tres fuentes, sólo para quien mantiene (otro rol: 403 y sin la sección), confirmar abre un pedido al repo de operaciones con el archivo de decisión y no escribe main, el segundo clic no abre otro, en dependencias sólo «Arreglar», sin clon o con fichas ilegibles una frase, y el demo dice lo que pasaría sin red. Levanta el servidor del sitio con sesiones reales y un clon de operaciones fabricado; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-findings.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 4.13, tanda B: la pestaña Aprendizajes del sitio (scripts/site/tabs/learnings.js) — las propuestas de la noche de los instintos con sus números y su regla, los estados que no se confunden con una lista vacía, sólo para quien mantiene, la cuenta del menú, rechazar con motivo y aprobar con el texto confirmado en un envío (un pedido al bloque team-learnings.md del perfil y otro a operaciones), el paquete, el techo y la versión de la capa, el reintento con la misma marca, lo que espera aprobación, el borrador para el arnés, los textos y la imagen, sin identidad de escritura y lo aprobado que no llegó al perfil. Servidor real con sesiones de un emisor OIDC local, dos repos git locales y dos APIs de GitHub falsas; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-learnings.test.js",
       "requiere": []
     },
     {
