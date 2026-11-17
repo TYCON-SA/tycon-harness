@@ -307,6 +307,8 @@ function richFoto() {
   data.kanban.escrito = 'Tablero escrito a las 11:59';
   data.meta.pedidosLeidos = '11:59';
   data.meta.sitio = 'https://acme.example';
+  // la carga de la máquina que mide collect()
+  data.meta.maquina = { memoria: 62, procesador: 35 };
   // lo que fitPhoto le agrega a una foto que achicó para el sitio
   data.meta.recorte = 'foto achicada para el sitio: no viajaron las notas de 3 tarjetas';
   // lo que collect() le agrega con la oficina viva, y lo que buildOffice arma con agentes corriendo o con un pedido
@@ -371,6 +373,8 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
     ['trabajos', allOf(tableList.flatMap((t) => t.filas).flatMap((r) => r.trabajos)), tableFields.filas.of.fields.trabajos.of.fields, readBy('w', fn('renderTablas'))],
     // `sitio`: la oficina local lo muestra, pero lo lee del atributo que arma office.js, nunca de la foto
     ['meta', foto.meta, FIELDS.meta.fields, (k) => k === 'sitio' || readBy('meta')(k) || readBy('m', fn('umbral') + src.split('\n').find((l) => l.startsWith('const puestos=')))(k)],
+    // cada rack lee su número por su tipo: `m[r.tipo]`, con el tipo escrito al armar los racks
+    ['maquina', foto.meta.maquina, FIELDS.meta.fields.maquina.fields, (k) => (src.split('\n').find((l) => l.startsWith('const racks=')) || '').includes(`"${k}"`)],
     ['rows', foto.rows[0], FIELDS.rows.of.fields, readBy('r')],
     ['tablero', foto.tablero, FIELDS.tablero.fields, readBy('t', fn('renderBoard'))],
   ];
@@ -2372,4 +2376,23 @@ test('T56 SiteLink_FilaConClaveYRuta_LlegaLimpia @story-8.234 @ac-1: lo que dice
   const chica = fitPhoto(JSON.parse(JSON.stringify(sent)), 4000);
   const json = JSON.stringify(chica);
   assert.ok(!json.includes(token) && !json.includes(home), json.slice(0, 200));
+});
+
+test('T7 Foto_MaquinaViajaAlSitio_SoloDosNumeros @story-8.301 @ac-6 — la memoria y el procesador viajan como dos porcentajes enteros, y el sitio los vuelve a filtrar', () => {
+  const { pick, FIELDS } = fields();
+  const { limpiarFoto } = require(path.join(ROOT, 'scripts', 'site', 'live-hub.js'));
+  const sent = (maquina) => pick({ meta: { quietMin: 30, maquina } }, '/home/nadie').meta.maquina;
+  assert.deepStrictEqual(Object.keys(FIELDS.meta.fields.maquina.fields).sort(), ['memoria', 'procesador'], 'en la lista, sólo los dos números');
+  assert.deepStrictEqual(sent({ memoria: 62, procesador: 35 }), { memoria: 62, procesador: 35 });
+  assert.deepStrictEqual(sent({ memoria: 0, procesador: 100 }), { memoria: 0, procesador: 100 }, 'los bordes valen');
+  // un número que no es un porcentaje entero no viaja
+  assert.deepStrictEqual(sent({ memoria: 140, procesador: 62.5 }), {});
+  assert.deepStrictEqual(sent({ memoria: '62', procesador: -1 }), {});
+  // lo que no está en la lista no viaja: ni el nombre de la máquina ni los totales
+  assert.deepStrictEqual(sent({ memoria: 62, procesador: 35, nombre: 'mac-de-ana', totalBytes: 17179869184, procesos: ['node'] }), { memoria: 62, procesador: 35 });
+  // el sitio acepta la válida con sus dos números, y una forma mala la rechaza entera
+  const ok = limpiarFoto({ meta: { maquina: { memoria: 62, procesador: 35 } } });
+  assert.strictEqual(ok.ok, true);
+  assert.deepStrictEqual(ok.foto.meta.maquina, { memoria: 62, procesador: 35 });
+  for (const bad of [140, 62.5, '62']) assert.strictEqual(limpiarFoto({ meta: { maquina: { memoria: bad } } }).ok, false, `el sitio rechaza ${JSON.stringify(bad)}`);
 });

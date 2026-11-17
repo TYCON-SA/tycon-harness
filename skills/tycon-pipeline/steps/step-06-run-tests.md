@@ -86,9 +86,17 @@ story causó en otro lado. Cuesta ~2 min; aparecer todas juntas recién en el me
 | `130` | la corrida se cortó con Ctrl-C mientras medía el repo privado adelgazado; lo mismo que el `129` | re-correr el gate |
 | `143` | la corrida se cortó con una señal de terminación mientras medía el repo privado adelgazado; lo mismo que el `129` | re-correr el gate |
 
-**Después de una completa en verde, el portón corre sólo lo que cambió desde ella.** En un repo que acota el portón
-(`test_gate` en `.test-gate.yaml`) o en el árbol armado del privado, una completa verde que midió todo lo suyo queda
-guardada. La corrida siguiente compara la carpeta con la de esa completa, nunca con la última acotada:
+**Después de un verde, el portón corre sólo lo que cambió desde el último verde de la historia.** En un repo que acota
+el portón (`test_gate` en `.test-gate.yaml`) o en el árbol armado del privado, una completa verde que midió todo lo suyo
+queda guardada, y un cierre en verde con lo guardado (también desde una roja con sus rojas repetidas solas) guarda su
+resumen juntado como el nuevo verde: «guardé este verde (juntado con la completa de las HH:MM): la próxima corrida corre
+sólo lo que cambie desde acá». Nunca queda como punto de partida una acotada sola: el juntado trae una suite por cada una
+de la completa de origen. Un cierre rojo deja lo guardado como estaba; uno en verde que no se puede guardar (una ausente,
+una sin medir, una roja perdonada en lo guardado sin el resumen de antes del perdón, un guardado que falla) también, y
+lo dice en «no guardo este cierre: …». Si la carpeta cambió mientras corría, guarda igual con la foto del arranque («la
+carpeta cambió mientras corría: guardo con la foto del arranque…»): la próxima corrida vuelve a correr lo que lee lo
+cambiado durante la corrida. Esa foto no sirve para acotar por lo que trajo main, que sigue pidiendo la carpeta quieta.
+La corrida siguiente compara la carpeta con la del último verde:
 - Si no cambió nada, cierra con lo guardado sin correr ninguna suite («cierra con la completa de las HH:MM: la carpeta
   no cambió»).
 - Si cambió algo, corren sólo las suites que leen lo cambiado y se juntan con lo guardado («la completa de las HH:MM
@@ -101,6 +109,14 @@ guardada. La corrida siguiente compara la carpeta con la de esa completa, nunca 
 `tests-result.json` dice `suite_green_by: "completa-guardada"`, la hora de esa completa (`completa_at`) y lo cambiado
 (`changed_since_full`). Para forzar la completa: `TYCON_GATE_ALL_SUITES=1`. La completa la sigue corriendo la CI del
 pedido y la cola de main.
+
+**Cada corrida dice por qué corre lo que corre.** El portón de arriba imprime un solo renglón «modo <primera | entera |
+acotada | sin correr> · <motivo>». Sin nada guardado lo dice («no hay un verde guardado de esta historia en esta
+sesión»), con el motivo de la última corrida que no guardó si la hubo. Cada corrida terminada en verde o en rojo anota su
+nota en el marcador (`testsSavedNote`, una por repo, con la historia) y un renglón `test-gate-run` en `gates.log`; la
+cortada, la sin turno y la ocupada no anotan. Las horas de repetición por día, con las enteras agrupadas por motivo:
+`node {raiz}/scripts/tools/suite-times.js repeats [--since <fecha u hora>] [--until <fecha u hora>] [--json]` (los días
+de antes del renglón se clasifican por el comando, «sin motivo: de antes del registro»; sale 3 si no hay corridas).
 
 Una suite roja que ya estaba roja en el nocturno de esa mañana avisa y no frena, con la misma regla que la validación
 de cada pedido: el portón pasa su resumen por el juez de los pedidos con la foto nocturna que viaja en el árbol armado

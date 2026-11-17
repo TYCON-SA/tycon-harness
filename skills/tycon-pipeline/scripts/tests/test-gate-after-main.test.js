@@ -386,3 +386,50 @@ test('AmbienteHeredado_NoDecideQuienCorreLaCompleta — una variable de afuera n
   assert.equal(r.status, 0, r.out);
   assert.equal(artefacto(l).scoped_by_repo.full_suite_by, CI);
 });
+
+test('T15 CrossRun_AsToday_WithRunLine @story-8.297 @ac-14 — la corrida cruzada no guarda ni compara, y dice primera o entera con su motivo', (t) => {
+  // 🔴 mutación: clasificar la cruzada como acotada achica las repeticiones que mide el informe
+  const l = lab(t, { clave: false });
+  const otro = tmp(t, 'tm-historia-');
+  git(otro, 'init', '-q');
+  escribir(otro, 'specs/story-9.md', '---\nepic: 9\nstory: "9.1"\nstatus: in-progress\n---\n# Story\n');
+  l.historia = path.join(otro, 'specs', 'story-9.md');
+  cambioDeLaHistoria(l);
+  const motivo = 'la historia vive en otro repo: corren las suites que leen lo tocado';
+  let r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.ok(r.out.split('\n').includes(`[test-gate] modo primera · ${motivo}`), r.out);
+  escribir(l.repo, 'lib/acme.js', 'module.exports = 3;\n');
+  r = puerta(l);
+  assert.ok(r.out.split('\n').includes(`[test-gate] modo entera · ${motivo}`), r.out);
+  const log = path.join(l.home, '.claude', '.tycon-pipeline', 'gates.log');
+  const renglones = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((x) => JSON.parse(x)).filter((x) => x.name === 'test-gate-run');
+  assert.deepEqual(renglones.map((x) => [x.modo, x.motivo, x.guardo]), [['primera', motivo, 'no'], ['entera', motivo, 'no']]);
+});
+
+test('T7 AfterMain_FolderChangedDuringRun_StillNotRecorded @story-8.297 @ac-7 — la foto del arranque no sirve para lo que trajo main', (t) => {
+  // 🔴 mutación: anotar lo medido con la foto del arranque (como lo guardado de la historia) acota por main una carpeta
+  // que cambió mientras corría
+  const l = lab(t);
+  cambioDeLaHistoria(l);
+  // a lee lib/acme.js (corre con la historia) y, con TG_TOUCH, escribe lib/otro.js mientras corre
+  escribir(l.repo, 'scripts/tests/a.test.sh', `#!/usr/bin/env bash
+# prueba lib/acme.js
+echo "a" >> "$TG_STATE/corridas"
+[ -n "\${TG_TOUCH:-}" ] && echo "// durante" >> "$TG_TOUCH"
+true
+`);
+  process.env.TG_TOUCH = path.join(l.repo, 'lib', 'otro.js');
+  t.after(() => { delete process.env.TG_TOUCH; });
+  let r = puerta(l);
+  delete process.env.TG_TOUCH;
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /no anoto lo medido: la carpeta cambió mientras corría/);
+  assert.ok(!fs.existsSync(medido(l)), 'no quedó lo medido para main');
+  borrarCorridas(l);
+  git(l.repo, 'add', '-A');
+  git(l.repo, 'commit', '-q', '-m', 'la historia');
+  git(l.repo, 'merge', '-q', '--no-edit', mainAvanza(l, 'lib/nuevo.js'));
+  r = puerta(l);
+  assert.doesNotMatch(r.out, SOLO_MAIN, r.out);
+});

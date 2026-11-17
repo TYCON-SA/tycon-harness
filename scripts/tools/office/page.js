@@ -497,10 +497,29 @@ function prenderLampara(v){lamparaPrendida=v;lampShade.material.emissiveIntensit
 function tocarLampara(){prenderLampara(!lamparaPrendida);guardarLampara(lamparaPrendida)}
 prenderLampara(lamparaGuardada());
 const pnl=new THREE.Group();pnl.position.set(8.0,2.45,.06);scene.add(pnl);add(RB(2.95,2.5,.1,.06),M("#0f121c"),0,0,0,pnl);const pnlFace=add(new THREE.PlaneGeometry(2.82,2.35),new THREE.MeshBasicMaterial({map:texPanel,toneMapped:false}),0,0,.06,pnl,false);
-// racks: titilan más rápido cuantas más sesiones están trabajando
-const leds=[];function rack(x,z){const g=new THREE.Group();g.position.set(x,0,z);scene.add(g);add(RB(.75,2.05,.7,.04),M("#22252f",{r:.45,m:.3}),0,1.025,0,g);
-  for(let u=0;u<9;u++){add(new THREE.BoxGeometry(.62,.16,.02),M("#14161d"),0,.25+u*.2,.355,g);for(let k=0;k<3;k++){const m=new THREE.Mesh(new THREE.BoxGeometry(.04,.03,.02),new THREE.MeshBasicMaterial({color:"#3dff7a",toneMapped:false}));m.position.set(.18+k*.06,.25+u*.2,.37);g.add(m);leds.push(m)}}}
-rack(8.75,4.3);rack(9.55,4.3);plant(scene,9.45,0,2.35,1.1);
+// racks, en la esquina del fondo y detrás de todos los escritorios: el del fondo es la memoria y el de adelante el
+// procesador. Cada uno enciende, de abajo para arriba, las filas de su porcentaje en uso; las encendidas titilan más rápido
+// cuantas más sesiones están trabajando
+const RACK_FILAS=9,LED_APAGADO="#2a2d36",LED_SIN_MEDIDA="#5b606c";
+const colorRack=p=>p>=85?"#ff4d4d":p>=60?"#ffb02e":"#3dff7a";
+// una medida que no es un porcentaje entero es una medida que no vino: el rack queda en gris, nunca con la barra anterior
+function pintarRack(r,p){const ok=Number.isInteger(p)&&p>=0&&p<=100,n=ok?Math.round(p*RACK_FILAS/100):0;r.pct=ok?p:null;
+  r.leds.forEach(m=>{m.userData.on=m.userData.fila<n;m.material.color.set(m.userData.on?colorRack(p):ok?LED_APAGADO:LED_SIN_MEDIDA)})}
+function pintarRacks(maq){const m=maq&&typeof maq==="object"?maq:{};racks.forEach(r=>pintarRack(r,m[r.tipo]));if(rackVisto)rackTag.textContent=textoRack(rackVisto)}
+function textoRack(r){return r.tipo==="memoria"?(r.pct==null?"Memoria: no medida":"Memoria en uso: "+r.pct+" %"):(r.pct==null?"Procesador: no medido":"Procesador: "+r.pct+" %")}
+// un led apagado no titila, y con el movimiento reducido el encendido queda fijo
+function ledVisto(m,i,t){return m.userData.on&&ledRate&&!reduce?Math.sin(t*ledRate*(1+i%5*.3)+i*1.7)>-.5:true}
+// la etiqueta de un rack se ve mientras el mouse lo apunta, o desde que el dedo lo toca hasta que toca otra cosa
+let rackVisto=null;
+function verRack(r,e){rackVisto=r;if(!r){rackTag.style.display="none";return}const b=stage.getBoundingClientRect();rackTag.textContent=textoRack(r);rackTag.style.left=(e.clientX-b.left)+"px";rackTag.style.top=(e.clientY-b.top-14)+"px";rackTag.style.display="block"}
+const leds=[];function rack(x,z,tipo,rot=0){const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=rot;scene.add(g);add(RB(.75,2.05,.7,.04),M("#22252f",{r:.45,m:.3}),0,1.025,0,g);const r={tipo,leds:[],pct:null,g};
+  for(let u=0;u<9;u++){add(new THREE.BoxGeometry(.62,.16,.02),M("#14161d"),0,.25+u*.2,.355,g);for(let k=0;k<3;k++){const m=new THREE.Mesh(new THREE.BoxGeometry(.04,.03,.02),new THREE.MeshBasicMaterial({color:LED_SIN_MEDIDA,toneMapped:false}));m.userData={fila:u,on:false};m.position.set(.18+k*.06,.25+u*.2,.37);g.add(m);leds.push(m);r.leds.push(m)}}
+  // lo que se apunta: el rack entero, invisible, como la lámpara
+  r.hit=add(new THREE.BoxGeometry(.8,2.1,.75),new THREE.MeshBasicMaterial({visible:false}),0,1.05,0,g,false);return r}
+const racks=[rack(.38,.95,"memoria",Math.PI/2),rack(.38,1.75,"procesador",Math.PI/2)];plant(scene,9.45,0,2.35,1.1);
+const rackDe=h=>(h&&racks.find(r=>r.hit===h.object))||null;
+// la etiqueta tiene el aspecto de las de las personas, pero no es una: no entra en su reparto ni recibe el mouse
+const rackTag=document.createElement("div");rackTag.className="rackTag";rackTag.style.cssText="position:absolute;display:none;transform:translate(-50%,-100%);pointer-events:none;z-index:2;background:rgba(24,20,34,.93);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:6px 11px;box-shadow:0 6px 18px rgba(0,0,0,.45);white-space:nowrap;color:#f4eefc;font:600 12.5px/1.2 var(--display)";labelsEl.appendChild(rackTag);
 
 // ---------- centro: alfombra, mesita, sofá ----------
 const rug=add(new THREE.PlaneGeometry(4.0,3.6),M("#fff",{r:.95,x:{map:texRug}}),5.6,.012,5.4,scene,false);rug.rotation.x=-Math.PI/2;
@@ -687,19 +706,21 @@ function volar(){const W=stage.clientWidth,H=stage.clientHeight,now=performance.
     a3.project(cam);v.e.style.left=(a3.x+1)/2*W+"px";v.e.style.top=(1-a3.y)/2*H+"px"}}
 const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();let down=null;
 renderer.domElement.addEventListener("pointerdown",e=>down=[e.clientX,e.clientY]);
-function apuntado(e){const r=renderer.domElement.getBoundingClientRect();ptr.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(ptr,cam);return ray.intersectObjects([pnlFace,lampHit,...(sitio()?[signFace]:[]),...desks.map(d=>d.hit)])[0]}
+function apuntado(e){const r=renderer.domElement.getBoundingClientRect();ptr.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(ptr,cam);return ray.intersectObjects([pnlFace,lampHit,...racks.map(r=>r.hit),...(sitio()?[signFace]:[]),...desks.map(d=>d.hit)])[0]}
 // el cartel abre el sitio de la organización, sólo si el perfil trae su dirección
 const sitio=()=>T.site();
 renderer.domElement.addEventListener("pointermove",e=>{if(e.buttons)return;const h=sitio()&&apuntado(e);renderer.domElement.style.cursor=h&&h.object===signFace?"pointer":""});
 renderer.domElement.addEventListener("pointerup",e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;const h=apuntado(e);
+  // tocar un rack muestra su número, con las dos opciones de «Etiquetas»; tocar otra cosa, o el vacío, lo oculta
+  if(e.pointerType==="touch")verRack(rackDe(h),e);
   // en una pantalla táctil, con las etiquetas ocultas, tocar a alguien muestra la suya; el detalle se abre al tocar la etiqueta
-  if(stage.classList.contains("solo-mouse")&&e.pointerType==="touch"&&!(h&&(h.object===pnlFace||h.object===signFace||h.object===lampHit))){verEtiqueta((h&&desks.find(x=>x.hit===h.object))||null);return}
+  if(stage.classList.contains("solo-mouse")&&e.pointerType==="touch"&&!(h&&(h.object===pnlFace||h.object===signFace||h.object===lampHit||rackDe(h)))){verEtiqueta((h&&desks.find(x=>x.hit===h.object))||null);return}
   if(!h)return;if(h.object===lampHit){tocarLampara();return}if(h.object===pnlFace){abrirTablero();return}if(h.object===signFace){const s=sitio();if(s)window.open(s,"_blank","noopener");return}const d=desks.find(x=>x.hit===h.object);if(d)abrir(d.agent.nombre)});
-let mueve=null;renderer.domElement.addEventListener("pointermove",e=>{if(mueve)return;mueve=requestAnimationFrame(()=>{mueve=null;const h=apuntado(e);renderer.domElement.style.cursor=h?"pointer":"grab";if(e.pointerType!=="touch"&&stage.classList.contains("solo-mouse"))verEtiqueta((h&&desks.find(x=>x.hit===h.object))||null)})});
+let mueve=null;renderer.domElement.addEventListener("pointermove",e=>{if(mueve)return;mueve=requestAnimationFrame(()=>{mueve=null;const h=apuntado(e),r=rackDe(h);renderer.domElement.style.cursor=h&&!r?"pointer":"grab";if(e.pointerType!=="touch")verRack(r,e);if(e.pointerType!=="touch"&&stage.classList.contains("solo-mouse"))verEtiqueta((h&&desks.find(x=>x.hit===h.object))||null)})});
 // con las etiquetas ocultas se ve sólo la de quien tiene el mouse encima, o la que tocó el dedo
 let deskVisto=null;
 function verEtiqueta(d){if(deskVisto===d)return;if(deskVisto&&deskVisto.el)deskVisto.el.classList.remove("ver");deskVisto=d;if(d&&d.el)d.el.classList.add("ver")}
-stage.addEventListener("pointerleave",e=>{if(e.pointerType!=="touch")verEtiqueta(null)});
+stage.addEventListener("pointerleave",e=>{if(e.pointerType!=="touch"){verEtiqueta(null);verRack(null)}});
 // el detalle de lo pendiente, plano y legible
 function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{},meta=T.meta();panel.hidden=false;panel.classList.add("wide");panel.style.setProperty("--c","#9cc2ff");panel.replaceChildren();
   const mk=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
@@ -759,7 +780,7 @@ function loop(){if(apagada||!enVista||document.hidden){timer=null;return}try{dib
 function dibujar(){const t=reduce?2:clock.getElapsedTime();controls.update();
   desks.forEach(d=>animar(d,t));volar();if(t-lastScr>PANTALLAS_S||lastScr<0){desks.forEach(d=>drawScreen(d,t));lastScr=t}
   if(cuadros++%SOMBRA_CADA===0)renderer.shadowMap.needsUpdate=true;
-  leds.forEach((m,i)=>m.visible=ledRate?Math.sin(t*ledRate*(1+i%5*.3)+i*1.7)>-.5:true);
+  leds.forEach((m,i)=>m.visible=ledVisto(m,i,t));
   steam.forEach(s=>{const p=(t*.35+s.ph)%1;s.m.position.set(6.2+Math.sin(p*9+s.ph*6)*.05,1.35+p*.7,5.6);s.m.material.opacity=.35*(1-p);s.m.scale.setScalar(.6+p*1.2)});
   if(T.chica)renderer.render(scene,cam);else composer.render();if(!tagsAlDia){ubicarTags();tagsAlDia=true}}
 const miraTamano=new ResizeObserver(()=>{if(!apagada){resize();despertar()}});miraTamano.observe(stage);resize();
@@ -774,7 +795,7 @@ function poblar(){const ps=puestos(),ags=T.agents().slice(0,ps.length);
 function alDia(){const ags=desks.map(d=>d.agent);
   ledRate=ags.filter(a=>a.estado==="trabajando"||a.estado==="prueba").length*1.6;
   drawPanel();
-  const meta=T.meta(),extra=meta&&meta.extra;
+  const meta=T.meta(),extra=meta&&meta.extra;pintarRacks(meta&&meta.maquina);
   aviso(!ags.length?"No hay sesiones abiertas en esta máquina.":extra?"Y "+extra+" sesión(es) más: están en las tarjetas de abajo.":"")}
 T.refresh=()=>{const ps=puestos(),ags=T.agents().slice(0,ps.length);
   if(ags.map(a=>a.nombre).join("\n")!==quienes)poblar();else{desks.forEach((d,i)=>{d.agent=ags[i];pintarTag(d)});lastScr=-1}
@@ -785,6 +806,8 @@ T.abrir=n=>abrir(n);
 T.apagar=()=>{apagada=true;PANELES.delete(cerrarPanel);clearTimeout(timer);timer=null;miraVista.disconnect();miraTamano.disconnect();controls.dispose();labelsEl.replaceChildren();panel.hidden=true;renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();T.refresh=null;};
 // dónde está la cámara, para comprobar que una foto nueva no la mueve
 T.camara=()=>cam.position.toArray().map(n=>+n.toFixed(3));
+// qué muestra cada rack y dónde cae en la pantalla, para comprobarlo con el navegador
+T.racks=()=>{const b=renderer.domElement.getBoundingClientRect();return racks.map(r=>{const v=r.g.position.clone();v.y=1.05;v.project(cam);return {tipo:r.tipo,pct:r.pct,encendidas:new Set(r.leds.filter(m=>m.userData.on).map(m=>m.userData.fila)).size,x:b.left+(v.x+1)/2*b.width,y:b.top+(1-v.y)/2*b.height}})};
 return function(){resize();poblar();alDia();lanzarSobres()};
 }
 }).catch(e=>{console.error(e);T.sinTresD("Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.")})}

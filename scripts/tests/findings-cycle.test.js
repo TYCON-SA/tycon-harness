@@ -741,10 +741,11 @@ test('T14 Resumen_AceptadasNoSeRepiten', () => {
 // 🔴 Falla con: cambiar una letra de la tabla al mudarla (la huella es la de la tabla de antes), que el resumen use otra
 //    copia, o un nombre de más de 120 caracteres o con un salto de renglón. La huella cambió una vez a propósito, cuando
 //    el freno de stories ganó su nombre (T101), y otra cuando los apagados del chequeo de vida, del de mutantes y del
-//    portón de carril ganaron los suyos, y otra cuando las categorías que se cuentan aparte ganaron los suyos (M6).
+//    portón de carril ganaron los suyos, y otra cuando las categorías que se cuentan aparte ganaron los suyos (M6), y otra
+//    cuando las escotillas de la matriz, la revisión de la historia y pruebas primero apagado ganaron los suyos.
 test('T15 Nombres_MudanzaSinCambiarTexto', () => {
   const crypto = require('crypto');
-  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), 'fad1881298d5d95d3ced3ab8bf8f65e4e58cdc67');
+  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), '90fd47eeb0cf56acd8fc70b15ff87ddebf5e83cb');
   assert.strictEqual(DS.NOMBRES_CAUSA, NOMBRES.NOMBRES_CAUSA, 'el resumen usa la misma tabla');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-HOOK', categoria: 'Stop/tiempo' }), 'aviso automático que se pasó de tiempo');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-ESCAPE', categoria: 'ZZDESCONOCIDA' }), 'otro freno salteado');

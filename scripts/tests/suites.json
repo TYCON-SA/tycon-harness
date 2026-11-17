@@ -2290,6 +2290,12 @@
       "requiere": []
     },
     {
+      "__nota": "La lista única de las variables de entorno del arnés (scripts/lib/env-switches.json): cada lectura del código está en la lista, ESC-C1 y HARNESS-C1 coinciden con ella, sin la lista se falla cerrado, y los lectores de escapes anotan su renglón en bypass.log. Casa de juguete.",
+      "raiz": "arnes",
+      "ruta": "tests/env-switches.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/adversarial-launch-delay.test.sh",
       "requiere": []
@@ -2982,6 +2988,12 @@
       "requiere": []
     },
     {
+      "__nota": "el mismo pedido de firma escrito de otra forma (el orden de las opciones, de --acs, la historia relativa o absoluta) da el mismo cuadro y el mismo click le sirve; lo que cambia lo que se firma da otro código. En proceso, con una casa temporal; un par de segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-window-canonical.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "los carteles que piden una firma sobre un archivo: las dos formas (ventana y terminal) de una sola fuente, ningún comando de firma escrito a mano, cada forma destraba su freno en el laboratorio, los subcomandos nombrados existen, y el banco clasifica cómo frena cada cartel. Corre los guiones con la HOME aislada; unos segundos.",
       "raiz": "arnes",
       "ruta": "tests/notice-commands.test.js",
@@ -3021,6 +3033,12 @@
       "__nota": "la lista de lo que espera a la persona (scripts/lib/signature-list.js): el registro, lo que lo cierra, la pasada de a una y la llave.",
       "raiz": "arnes",
       "ruta": "tests/signature-list.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la firma delegable que pide la sesión que trabaja va sola a la coordinadora (scripts/lib/delegation-routing.js): el freno de verdad con la delegación inyectada, la lista de firmas, owner-next, el respaldo al dueño y el cruce con la conversación. Sin red, segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/delegation-routing.test.js",
       "requiere": []
     },
     {
@@ -4581,6 +4599,12 @@
       "__nota": "2026-10-16, pedido del dueño («borrá solas las carpetas ya mergeadas»): scripts/hooks/worktree-sweep.js. Con git de verdad (remoto desnudo, clon y worktrees en una carpeta temporal) y un HOME de prueba por caso: al arrancar borra el worktree limpio y mergeado con su rama y nunca el checkout principal; nombra y no toca los que tienen archivos modificados o sin seguimiento y los que tienen commits sin mergear; calla ante uno usado hace poco, y deja el recién creado, el bloqueado y el de la sesión; sella el día y calla en el segundo arranque; apagado por variable y en seco no toca nada. Con --story borra sólo los de esa story, trae origin antes de juzgar y deja el que tiene cambios. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/worktree-sweep.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "scripts/hooks/temp-sweep.js, el barrido diario de las carpetas temporales viejas. Sobre una carpeta de prueba dentro de una carpeta temporal de verdad: borra la carpeta y el archivo viejos con sufijo al azar; deja el nombre que escribe una persona (palabra, fecha, versión) y los de otras aplicaciones; deja lo que cambió dentro del plazo (también por fecha de cambio), lo que tiene un socket, la carpeta de trabajo de un proceso vivo y la que tiene un archivo abierto (con un Node de verdad lanzado ahí), lo de otro usuario, los enlaces, la entrada que otro alcanza con una carpeta donde otro escribe y la que tiene una carpeta ilegible que se deja atravesar; no mira una raíz donde cualquiera escribe sin sticky ni una ruta fuera de las carpetas temporales; sin la lista de procesos vivos no borra; lo que no se deja borrar se nombra; el camino de Windows (cambio de nombre y vuelta) se ejercita en cualquier plataforma; con el tope agotado cuenta pendientes. El gancho como proceso, con un HOME de prueba por caso: dice su línea, sella el día y calla al segundo arranque, --force pasa de nuevo, un sello futuro cuenta como vencido, cortado por el tope vuelve en una hora, los dos interruptores no tocan nada, los valores que no valen se dicen, y suelto (sin la librería del sello) no barre y lo dice. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/temp-sweep.test.js",
       "requiere": []
     },
     {

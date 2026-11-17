@@ -405,6 +405,26 @@ async function archivosDelPedido({ remote, credencial, numero, urlBase, fetch: f
   return { archivos: cambios.map((x) => x && x.item && x.item.path).filter((x) => typeof x === 'string').map((x) => x.replace(/^\/+/, '')), cuerpo: String(p.doc.description || '') };
 }
 
+/**
+ * Cómo está un pedido, por su número: `{ estado: 'abierto' | 'aplicado' | 'cerrado' }` (`aplicado`: mergeado; `cerrado`:
+ * cerrado sin mergear), o `{ error }` si la API no contesta bien («no pude mirar» no es «se cerró»).
+ */
+async function estadoDelPedido({ remote, credencial, numero, urlBase, fetch: f }) {
+  if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { error: 'sin plataforma' };
+  if (!Number.isInteger(numero) || numero < 1) return { error: 'sin número' };
+  const cred = credenciales(credencial);
+  const base = baseDe(remote, urlBase);
+  const url = remote.platform === 'azure' ? `${base}/git/repositories/${encodeURIComponent(remote.repo)}/pullrequests/${numero}?${API_AZURE}` : `${base}/pulls/${numero}`;
+  const p = await llamar({ url, remote, cred, fetch: f, secretos: secretosDe(cred) });
+  if (p.status !== 200 || !p.doc) return { error: motivoCorto(p) };
+  if (remote.platform === 'azure') {
+    const estado = { active: 'abierto', completed: 'aplicado', abandoned: 'cerrado' }[p.doc.status];
+    return estado ? { estado } : { error: `estado desconocido: ${String(p.doc.status).slice(0, 40)}` };
+  }
+  if (p.doc.state === 'open') return { estado: 'abierto' };
+  return { estado: p.doc.merged_at || p.doc.merged === true ? 'aplicado' : 'cerrado' };
+}
+
 // Lo que sigue al `<idCorto>-` en la rama de un pedido: la marca de `stamp`. Comparar sólo el prefijo confundiría
 // `repos` con `repos-otro`.
 const COLA_DE_RAMA = /^\d{8}-\d{6}$/;
@@ -931,4 +951,4 @@ async function camposDelTipo({ tipo, ...opts }) {
 }
 
 module.exports = {
-  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos, nombreDeOrganizacion, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidosAbiertos, archivosDelPedido, destinoDeTareas, enlaceDeTarea, esRamaDe, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
+  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos, nombreDeOrganizacion, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidosAbiertos, archivosDelPedido, estadoDelPedido, destinoDeTareas, enlaceDeTarea, esRamaDe, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };

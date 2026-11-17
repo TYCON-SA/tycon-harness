@@ -1551,13 +1551,18 @@ function computeMechDiscount(allList, args) {
   };
 }
 
-// ── El revisor de un crítico arreglado vuelve a confirmarlo ─────────────────────────────────────────────────────────
+// ── El revisor de un crítico abierto vuelve a confirmarlo ───────────────────────────────────────────────────────────
 //
 // El cruce de «Hallazgos» (lib/reported-criticals.js, su tercer control) da por bueno un crítico «arreglado» sólo con otra vuelta
 // legible del revisor que lo reportó, o con la exención del dueño. Si el descuento mecánico o el cálculo por diferencias
-// lo dejan afuera de la vuelta siguiente, la única salida es la exención: por eso vuelve, por encima de los dos.
+// lo dejan afuera de la vuelta siguiente, la única salida es la exención: por eso vuelve, por encima de los dos. Cuenta
+// también el crítico reportado que findings.json todavía no trae (lo normal: el agente arregla y relanza antes de escribir
+// los hallazgos).
 // `{ agregar: [{ name, reason }], fuera: [texto], error }`. Sin marcador de esta historia, sin registro o sin reportes,
 // nada que confirmar. Un registro o un findings.json que no se leen dan `error`: quien llama no descuenta esa vuelta.
+// lo que dicen los textos del descuento mecánico: el revisor de un crítico abierto vuelve igual
+const MECH_NUNCA_SACA = 'El descuento nunca saca a un revisor con críticos abiertos por confirmar: ése vuelve (confirm_reviewers).';
+
 function revisoresPorConfirmar(args) {
   const vacio = { agregar: [], fuera: [], error: null };
   if (!args.story || (args.iter || 1) < 2) return vacio;
@@ -1580,12 +1585,18 @@ function revisoresPorConfirmar(args) {
   if (!lines.some((l) => l.kind === 'report')) return all.unreadable ? { ...vacio, error: `el registro de críticos (${all.unreadable} renglón(es) ilegible(s) y ningún reporte legible de esta corrida)` } : vacio;
   const h = require('./lib/review-rounds.js').hallazgosDe(runDir);
   if (h.error && h.existe) return { ...vacio, error: `los hallazgos de la corrida (${h.error})` };
-  const pc = rc.porConfirmar({ lines, findings: h.lista || [], runDir, home: os.homedir(), story: marker.storyId });
+  // un `refuted` resta sólo con la constancia del verificador: la misma comprobación que el cruce del cierre (marker.js)
+  let roster = null;
+  try { roster = JSON.parse(fs.readFileSync(path.join(runDir, 'review-roster.json'), 'utf8')); } catch (_e) { roster = null; }
+  const refutedHolds = (f) => {
+    try { return normalizeFindingRecord(f, [], { roster, errores: [], runDir }).disposition === 'refuted'; } catch (_e) { return false; }
+  };
+  const pc = rc.porConfirmar({ lines, findings: h.lista || [], runDir, home: os.homedir(), story: marker.storyId, refutedHolds });
   const out = { ...vacio };
   for (const r of pc.revisores) {
     // uno que esta sesión no puede lanzar se exigiría sin salida: no se suma, y el cierre pide la exención como hoy
-    if (!MODELOS.reviewerExists(r.name, { agentsDir: args.agentsDir })) { out.fuera.push(`${r.name} tiene un crítico arreglado por confirmar (${r.rules.join(', ')}) y su agente no se puede lanzar en esta sesión: no lo sumo; el cierre pedirá la exención`); continue; }
-    out.agregar.push({ name: r.name, reason: `crítico arreglado por confirmar (${r.rules.join(', ')})` });
+    if (!MODELOS.reviewerExists(r.name, { agentsDir: args.agentsDir })) { out.fuera.push(`${r.name} tiene un crítico abierto por confirmar (${r.rules.join(', ')}) y su agente no se puede lanzar en esta sesión: no lo sumo; el cierre pedirá la exención`); continue; }
+    out.agregar.push({ name: r.name, reason: `crítico abierto por confirmar (${r.rules.join(', ')})` });
   }
   return out;
 }
@@ -4348,7 +4359,12 @@ function computeStoryReviewGate({ story, env = process.env, home = os.homedir() 
     };
   }
   const rc = computeRiskClass({ story });
-  if (env.TYCON_STORY_REVIEW === '0') return { run: false, record: estado, riesgo: rc.risk, motivo: 'apagado', nota: 'TYCON_STORY_REVIEW=0' };
+  if (env.TYCON_STORY_REVIEW === '0') {
+    // el salteo lo anota el portón, no el modelo
+    const ES = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+    ES.anotarEscape({ home, sessionId: ES.sesionDe(env), kind: 'STORY_REVIEW_OFF', variable: 'TYCON_STORY_REVIEW', story: path.resolve(story), riesgo: rc.risk });
+    return { run: false, record: estado, riesgo: rc.risk, motivo: 'apagado', nota: 'TYCON_STORY_REVIEW=0' };
+  }
   if (rc.risk === 'LOW') return { run: false, record: estado, riesgo: 'LOW', motivo: 'riesgo-bajo', criterios: rc.criteria };
   const warnings = [];
   const m = MODELOS.resolveStoryReview({ org: orgModels().data, requests: pedidosDeModelos(readSessionMarker()), warnings });
@@ -7340,7 +7356,8 @@ function main() {
       set.mech_discounted = disc.discounted;
       set.mech_findings = disc.mech_findings;
       set.mech_note = `mech-check descontó ${disc.discounted.length} advisor(s) del set/expected (checks mecánicos, 0 tokens). ` +
-        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — van DIRECTO al reporte consolidado del paso de hallazgos.` : 'Sin findings mecánicos.');
+        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — van DIRECTO al reporte consolidado del paso de hallazgos.` : 'Sin findings mecánicos.') +
+        ` ${MECH_NUNCA_SACA}`;
     } else if (disc && disc.mech_findings.length) {
       set.mech_findings = disc.mech_findings;
       set.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — van DIRECTO al reporte consolidado.`;
@@ -7481,7 +7498,8 @@ function main() {
       result.mech_discounted = disc.discounted;
       result.mech_findings = disc.mech_findings;
       result.mech_note = `mech-check descontó ${disc.discounted.length} advisor(s) del rerun/expected. ` +
-        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — al reporte del paso de hallazgos.` : 'Sin findings mecánicos.');
+        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — al reporte del paso de hallazgos.` : 'Sin findings mecánicos.') +
+        ` ${MECH_NUNCA_SACA}`;
     } else if (disc && disc.mech_findings.length) {
       result.mech_findings = disc.mech_findings;
       result.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — al reporte del paso de hallazgos.`;
@@ -8548,7 +8566,7 @@ function main() {
       : 'Sin findings mecánicos.';
     result.note += result.ambiguous.length
       ? ` ${result.ambiguous.length} ambiguo(s) → invocar SOLO: ${result.llm_escalation.join(', ') || 'ninguno'}.`
-      : ' Sin ambiguos → en re-loops (iter≥2) ac-coverage y deferral-tracker quedan descontados del set (MECH-2); en iter 1 SÍ corren (juicio LLM completo). El revisor de cableado, si su paquete está activo, se invoca siempre (mech solo cubre WIRING-C1).';
+      : ` Sin ambiguos → en re-loops (iter≥2) ac-coverage y deferral-tracker quedan descontados del set (MECH-2); en iter 1 SÍ corren (juicio LLM completo). El revisor de cableado, si su paquete está activo, se invoca siempre (mech solo cubre WIRING-C1). ${MECH_NUNCA_SACA}`;
     if (sinEscalar.length) result.note += ` Sin escalar: ${sinEscalar.join('; ')} — el hallazgo queda en el reporte tal cual.`;
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.findings.some((f) => f.severity === 'CRITICAL') ? 2 : 0);
@@ -8586,6 +8604,7 @@ function main() {
     '                                  [--iter N] [--cost-tier lean|standard|deep] [--allow-missing-files]\n' +
     '       (valida que los --files existan — abort exit 2 ante paths fantasma/vacíos; corre\n' +
     '       mech-check inline y DESCUENTA advisors cubiertos (MECH-2) del set/expected;\n' +
+    '       el descuento nunca saca a un revisor con críticos abiertos por confirmar;\n' +
     '       --iter N>1 emite reloop_model_hints (deep→sonnet). Genera context_file compartido\n' +
     '       + persiste expected[] en el log para check-count. Triggers sobre líneas AGREGADAS.)\n' +
     '  node pipeline.js check-count    [--ran a,b,c]\n' +

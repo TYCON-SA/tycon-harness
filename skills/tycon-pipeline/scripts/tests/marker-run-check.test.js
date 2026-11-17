@@ -345,6 +345,28 @@ test('T19 RunCheck_ChildExits75_RecordedAsOne @story-8.124 @ac-1b — un comando
   assert.deepEqual(candados(home), [], 'quedó un candado');
 });
 
+test('T20 RunCheck_CompanionRun_MarkedInGatesLog @story-8.297 @ac-10 — la corrida de un repo hermano queda marcada en gates.log', () => {
+  // 🔴 mutación: sin la marca, el informe de repeticiones cuenta la corrida del hermano como otra entera
+  const home = casa(); const d = repo();
+  markerFalso(home, 'rc27', d);
+  const log = path.join(home, '.claude', '.tycon-pipeline', 'gates.log');
+  const renglones = () => fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const marcas = () => renglones().filter((x) => x.name === 'run-check-companion');
+  assert.equal(correr(home, d, 'tests', undefined, { sid: 'rc27' }).status, 0);
+  assert.equal(marcas().length, 0, 'la corrida propia no deja la marca');
+  assert.equal(correr(home, d, 'tests', undefined, { sid: 'rc27', extra: { TYCON_TEST_GATE_COMPANION: '1' } }).status, 0);
+  const [m] = marcas();
+  const check = renglones().filter((x) => x.check === 'tests' && !x.name).pop();
+  assert.ok(m, 'la del hermano deja su renglón');
+  assert.deepEqual([m.check, m.cmd, m.sessionId], ['tests', check.cmd, check.sessionId], 'con el mismo comando y la misma sesión que su check');
+  assert.equal(check.companion, undefined, 'el renglón del check no cambia');
+  // también con el hermano en rojo: la marca lleva el comando del check rojo
+  assert.equal(correr(home, d, 'tests', ['node', '-e', 'process.exit(1)'], { sid: 'rc27', extra: { TYCON_TEST_GATE_COMPANION: '1' } }).status, 1);
+  const roja = renglones().filter((x) => x.check === 'tests' && !x.name).pop();
+  assert.equal(roja.exit, 1);
+  assert.deepEqual([marcas().length, marcas().pop().cmd], [2, roja.cmd]);
+});
+
 test('T20 RunCheck_Signal_SlowChild_HeldUntilItCloses @story-8.124 @ac-10 — con la señal, el candado sigue hasta que el hijo cierra', async () => {
   const home = casa(); const d = repo();
   const hijo = ['node', '-e', 'process.on("SIGTERM", () => setTimeout(() => process.exit(0), 1500)); setTimeout(() => {}, 60000);'];

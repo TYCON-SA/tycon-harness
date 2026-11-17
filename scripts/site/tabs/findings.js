@@ -23,7 +23,9 @@
  * Nada se escribe en main desde acá.
  *
  * Qué espera aprobación sale de los pedidos abiertos de decisiones (sus archivos y la acción de su cuerpo): una
- * consulta para toda la pantalla, guardada un minuto. Si la plataforma no contesta, lo dice una frase y las filas
+ * consulta para toda la pantalla, guardada un minuto. Cuando un pedido deja de estar abierto, se pregunta cómo terminó:
+ * aprobado, sus fichas pasan a «aprobado, se aplica esta noche» aunque la foto de operaciones todavía no lo traiga;
+ * cerrado sin aprobar, vuelven a decidirse. Si la plataforma no contesta, lo dice una frase y las filas
  * quedan para decidir: el pedido se nombra por su contenido, y reenviarlo no abre otro. El menú lleva al lado del
  * nombre cuántas fichas esperan decisión (`cuantasEsperan`). Sin clon, sin fichas o con carpetas que no se pueden leer,
  * una frase.
@@ -393,7 +395,23 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         if (k && !porFicha.has(k)) porFicha.set(k, { numero: x.numero, enlace: ENLACE.test(String(x.enlace)) ? x.enlace : null, accion: acciones.get(k) || null });
       }
     }
-    return { estado: 'leido', porFicha };
+    // 🔴 Un pedido que ya no está abierto: si se aprobó, sus fichas están decididas aunque la foto todavía no lo traiga
+    // (sin esto vuelven a «Te toca decidir» hasta el próximo refresco, y decidirlas otra vez abre un pedido repetido).
+    // Si no se pudo mirar cómo terminó, siguen esperando aprobación y la próxima lectura vuelve a preguntar; si se cerró
+    // sin aprobar, vuelven a decidirse.
+    const aprobadas = [];
+    const idos = new Map();
+    for (const [k, v] of ultimaMembresia ? ultimaMembresia.porFicha : []) {
+      if (porFicha.has(k) || deDecisiones.some((x) => x.numero === v.numero)) continue;
+      if (!idos.has(v.numero)) idos.set(v.numero, []);
+      idos.get(v.numero).push([k, v]);
+    }
+    for (const [numero, fichas] of idos) {
+      const e = await RP.estadoDelPedido({ remote: rem, credencial, numero, urlBase, fetch });
+      if (e.estado === 'aplicado') aprobadas.push(...fichas.filter(([, v]) => ACCIONES.includes(v.accion)).map(([k, v]) => ({ clave: k, accion: v.accion })));
+      else if (e.estado !== 'cerrado') for (const [k, v] of fichas) porFicha.set(k, v);
+    }
+    return { estado: 'leido', porFicha, aprobadas };
   }
 
   /** `{ estado: 'leido', porFicha: Map(fuente/id → { numero, enlace, accion }) }` o `{ estado: 'no_se_pudo' }`. */
@@ -408,6 +426,15 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     // una falla no se guarda: la lectura siguiente vuelve a preguntar
     membresiaGuardada = r.estado === 'leido' ? { t: ahora(), r } : null;
     if (r.estado === 'leido') ultimaMembresia = r;
+    // lo aprobado queda anotado como decidido: «aprobado, se aplica esta noche» hasta que la foto trae la decisión
+    if (r.estado === 'leido' && r.aprobadas && r.aprobadas.length) {
+      const l = leerFichas();
+      const fichas = new Map(l.estado === 'leido' ? l.fichas.map((f) => [clave(f), f]) : []);
+      decididas.marcar(r.aprobadas.map((x) => {
+        const f = fichas.get(x.clave);
+        return { ...x, ...(f ? { nombre: tituloDe(f, LANG.POR_DEFECTO), nombres: titulosDe(f), donde: dondeDe(f), vio: fallidaDe(f) } : {}) };
+      }));
+    }
     return r;
   }
 

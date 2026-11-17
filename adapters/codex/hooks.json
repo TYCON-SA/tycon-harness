@@ -90,6 +90,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/temp-sweep.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/production-notice.js"
           },
           {

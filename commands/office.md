@@ -94,6 +94,12 @@ los pasos de su corrida. Abajo, los pendientes son un kanban de cinco columnas (
 sesión, Hechos), con lo que quedó a medio camino plegado debajo. El panel de la pared cuenta esas columnas y al tocarlo
 las lista.
 
+Los dos racks del fondo muestran la carga de la máquina: el más cercano al panel, la memoria en uso (la misma que decide
+los turnos pesados); el otro, el procesador. Cada uno enciende, de abajo para arriba, las filas de su porcentaje: verde
+por debajo de 60 %, ámbar hasta 84 % y rojo desde 85 %. Las encendidas titilan más rápido cuantas más sesiones trabajan.
+Con el mouse encima, o al tocarlo, un rack dice su número («Memoria en uso: 62 %»). Un rack todo en gris claro es una
+medida que no se pudo leer: no se inventa ni se muestra la anterior.
+
 ## Escribirle a una sesión
 
 En la ventana «Ver conversación» de una sesión de Claude, con la oficina viva, hay un campo y un botón «Mandar», con este
