@@ -10,7 +10,9 @@
  * modelo y no piden turno. El corredor toma el turno al arrancar y lo suelta al terminar; con un pase en vuelo de
  * cualquier sesión viva (también la propia) no arranca y dice de quién es. El pase no deja archivo propio: está en vuelo
  * mientras su marcador lo dice (`heavyPassesInFlight` de coordination.js), y se libera al anotar su resultado o su
- * salteo. Al tomar el turno se borra la espera que esa sesión anotó: ya no espera.
+ * salteo. Al tomar el turno se borra la espera que esa sesión anotó: ya no espera. Una espera anotada después, con la
+ * prueba ya corriendo, pierde contra este registro: la fila de la coordinadora y /wip (y con ella la oficina) leen quién
+ * corre con `runningSids`.
  *
  * El turno tiene dos lugares, cada uno en su archivo (`slotFiles`). Sin ninguna ejecución grande corriendo se toma uno
  * como siempre. Con una corriendo, la segunda toma el otro lugar sólo si la memoria libre del sistema está en el piso o
@@ -66,8 +68,10 @@ const BESIDE_PASS_MIN_FREE_PCT = 40;
 // Claude Code empieza a cerrar sesiones. Cada máquina lo cambia con `coordination.second_heavy_min_free_pct`.
 const SECOND_HEAVY_MIN_FREE_PCT = 50;
 const turnFile = (home) => path.join(stateDir(home), 'coordination', 'suite-turn.json');
-// Los dos lugares del turno: el primero, el de siempre; el segundo, al lado.
-const slotFiles = (home) => [turnFile(home), path.join(stateDir(home), 'coordination', 'suite-turn-2.json')];
+// Los dos lugares del turno: el primero, el de siempre; el segundo, al lado. `slotFilesIn` los cuenta desde la carpeta de
+// estado, para quien ya la tiene.
+const slotFilesIn = (state) => ['suite-turn.json', 'suite-turn-2.json'].map((n) => path.join(state, 'coordination', n));
+const slotFiles = (home) => slotFilesIn(stateDir(home));
 const oneLine = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').replace(/[\p{Cc}\p{Cf}<>]/gu, '').trim().slice(0, 80);
 const hhmm = (ms) => { const d = new Date(ms); return Number.isNaN(d.getTime()) ? '?' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const alive = (pid) => { if (!Number.isInteger(pid) || pid <= 0) return false; try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
@@ -296,7 +300,8 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
   return { ok: false, taken: false, message: `No pude tomar el turno de las ejecuciones grandes (${files[0]} vuelve a aparecer): no la corrí.` };
 }
 
-const gatesDir = (home) => path.join(stateDir(home), 'coordination', 'gates');
+const gatesDirIn = (state) => path.join(state, 'coordination', 'gates');
+const gatesDir = (home) => gatesDirIn(stateDir(home));
 
 /**
  * Un portón que corre sin el turno: borra la espera de su sesión y, con coordinadora, se anota. `{ file, error }`: `file`
@@ -346,6 +351,32 @@ function gatesRunning({ home = require('os').homedir(), now = Date.now(), proble
     else { try { fs.unlinkSync(path.join(dir, n)); } catch { /* otro lo borró */ } }
   }
   return out.sort((a, b) => a.at - b.at);
+}
+
+// La espera anotada (`marker.js doing --waiting-for`) que es de un turno de prueba pesada: la de la suite, la del portón o
+// la del turno. La de un pase no: su lugar lo dice el marcador del pase, no este registro.
+const TURN_WAIT = /suite|port[oó]n|turno/i;
+const PASS_WAIT = /pase|adversarial/i;
+const isTurnWait = (text) => typeof text === 'string' && TURN_WAIT.test(text) && !PASS_WAIT.test(text);
+
+/**
+ * Las sesiones que corren ahora una prueba pesada según el registro de turnos: la de cada lugar del turno y la de cada
+ * portón anotado, vivos. La espera de turno que anotó una de ellas quedó vieja (la anotó después de arrancar, o nadie la
+ * borró): quien lee la nota prefiere este registro. Sólo lee, desde la carpeta de estado `state`; con `problems`, lo que
+ * no se puede leer se anota ahí.
+ */
+function runningSids({ state, now = Date.now(), problems = null } = {}) {
+  const out = new Set();
+  const add = (t) => { if (inForce(t, now) && t.sid) out.add(String(t.sid)); };
+  for (const f of slotFilesIn(state)) add(readSlot(f, problems).turn);
+  const dir = gatesDirIn(state);
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => /^\d+\.json$/.test(n)); } catch (e) {
+    if (e.code !== 'ENOENT' && problems) problems.push(`los portones en curso (${dir}) no se pueden leer (${e.code || oneLine(e.message)})`);
+  }
+  // un portón ilegible deja a su sesión con la espera de la nota: se dice, como el lugar del turno que no se lee
+  for (const n of names) add(readSlot(path.join(dir, n), problems).turn);
+  return out;
 }
 
 /**
@@ -472,4 +503,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { take, release, holder, holders, secondTurnFloor, describe, turnFile, slotFiles, SECOND_HEAVY_MIN_FREE_PCT, clearWait, gateStarted, gateEnded, gatesRunning, besidePass, besideRecheck, freeMemory, suitesOf, describeGate, BUSY_EXIT, BESIDE_PASS_MAX_SUITES, BESIDE_PASS_MIN_FREE_PCT };
+module.exports = { take, release, holder, holders, secondTurnFloor, describe, turnFile, slotFiles, SECOND_HEAVY_MIN_FREE_PCT, clearWait, gateStarted, gateEnded, gatesRunning, runningSids, isTurnWait, besidePass, besideRecheck, freeMemory, suitesOf, describeGate, BUSY_EXIT, BESIDE_PASS_MAX_SUITES, BESIDE_PASS_MIN_FREE_PCT };
