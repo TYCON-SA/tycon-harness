@@ -40,6 +40,10 @@ const RUTAS = Object.freeze({
 });
 
 const no = (motivo, callar = false) => ({ ok: false, motivo, callar });
+// lo que no se pudo leer queda dicho en el registro de errores de los ganchos: el camino sigue, pero no en silencio
+function anotarError(casa, texto) {
+  try { require('fs').appendFileSync(path.join(stateDir(casa), 'hook-errors.log'), `[${new Date().toISOString()}] delegation-routing: ${texto}\n`); } catch (_) { /* sin registro tampoco */ }
+}
 const comillas = (w) => (/^[\w@%+=:,./-]+$/.test(String(w)) ? String(w) : `'${String(w).split("'").join("'\\''")}'`);
 
 /**
@@ -74,7 +78,10 @@ function plazoMs({ casa, arnes, env } = {}) {
   try {
     const v = require('./tycon-config.js').cargar({ home: casa, env: env || process.env, ...(arnes ? { arnes } : {}) }).valores.approvals.delegation_wait_minutes;
     return (Number.isInteger(v) && v >= 1 && v <= 60 ? v : PLAZO_MIN) * 60000;
-  } catch (_) { return PLAZO_MIN * 60000; }
+  } catch (e) {
+    anotarError(casa, `no pude leer approvals.delegation_wait_minutes (${e.message}): uso ${PLAZO_MIN} minutos`);
+    return PLAZO_MIN * 60000;
+  }
 }
 
 /**
@@ -169,7 +176,10 @@ function comprobarRenglon({ f, casa, delegacion, arnes, env }) {
 /** El renglón abierto con esa clave que se desvió a la coordinadora, o null: su firma lleva `routed`. */
 function renglonDesviado({ casa, key, ahora = Date.now(), arnes, env } = {}) {
   if (!key) return null;
-  try { return sl().abiertos(casa, { arnes, env, ahora }).filas.find((f) => f.key === key && f.delegable) || null; } catch (_) { return null; }
+  try { return sl().abiertos(casa, { arnes, env, ahora }).filas.find((f) => f.key === key && f.delegable) || null; } catch (e) {
+    anotarError(casa, `no pude leer la lista de firmas para saber si la firma cerró un renglón desviado (${e.message}): queda sin routed`);
+    return null;
+  }
 }
 
 /** Los ids de `filas` que firma la coordinadora (desviados, dentro del plazo y con ella viva): no esperan al dueño. */

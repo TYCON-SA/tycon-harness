@@ -871,12 +871,26 @@ function ownerWaitTurn(opts, a, lines, { home, me, stalled, now }) {
 /**
  * Lo desviado a la coordinadora en una vuelta de owner-wait: cada renglón nuevo se le anuncia una vez («una firma para vos
  * por delegación»), y una vez más cuando pasa a la persona (vencido, o con otra coordinadora). Lo que ya no está en la
- * lista se olvida. Sin poder leer la lista, nada. Devuelve si cambió lo anunciado.
+ * lista se olvida. Sin poder leer la lista (o con renglones que no se entienden), lo dice una vez por motivo, guardado
+ * en la clave `!`, y no retira nada. Devuelve si cambió lo anunciado.
  */
 function delegatedTurn(opts, a, lines, { home, me, now, sessions }) {
   let filas;
-  try { filas = signatureList.abiertos(home, { arnes: opts.arnes, env: opts.env, ahora: now }).filas.filter((f) => signatureList.tipoDe(f) === 'firma' && f.delegable); } catch { return false; }
+  let problema = null;
+  try {
+    const r = signatureList.abiertos(home, { arnes: opts.arnes, env: opts.env, ahora: now });
+    filas = r.filas.filter((f) => signatureList.tipoDe(f) === 'firma' && f.delegable);
+    if (r.problemas.length) problema = r.problemas.join('; ');
+  } catch (e) { problema = e.message; }
   let changed = false;
+  if (problema) {
+    if (a.delegables['!'] !== problema) {
+      lines.push(`no pude leer la lista de firmas entera: ${quoted(problema, 200)}. Lo desviado a vos por delegación puede faltar: mirá owner-next`);
+      a.delegables['!'] = problema;
+      changed = true;
+    }
+    if (!filas) return changed;
+  } else if (a.delegables['!']) { delete a.delegables['!']; changed = true; }
   const vivos = new Set();
   const plazo = filas.length ? delegationRouting.plazoMs({ casa: home, arnes: opts.arnes, env: opts.env }) : 0;
   for (const f of filas) {
@@ -896,7 +910,8 @@ function delegatedTurn(opts, a, lines, { home, me, now, sessions }) {
       changed = true;
     }
   }
-  for (const id of Object.keys(a.delegables)) if (!vivos.has(id)) { delete a.delegables[id]; changed = true; }
+  // con renglones que no se entienden, lo ya anunciado no se retira: puede estar entre ellos
+  if (!problema) for (const id of Object.keys(a.delegables)) if (!vivos.has(id)) { delete a.delegables[id]; changed = true; }
   return changed;
 }
 

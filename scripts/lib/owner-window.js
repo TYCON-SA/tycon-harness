@@ -1296,20 +1296,23 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     const DR = require('./delegation-routing.js');
     let d;
     try { d = DR.delegable({ firma: firmaGuion, destino, casa, palabras: can.palabras, cwd: evento.cwd || null, delegacion, plataforma, ...(lista || {}) }); } catch (e) { d = { ok: false, motivo: `no pude consultar el desvío (${e.message})` }; }
-    if (d.ok && evento.tool_use_id == null) d = { ok: false, motivo: 'el evento no dice qué pedido es: sin eso la coordinadora no lo puede comprobar' };
+    if (d.ok && !/^[\w-]{1,80}$/.test(String(evento.tool_use_id == null ? '' : evento.tool_use_id))) d = { ok: false, motivo: 'el evento no dice qué pedido es: sin eso la coordinadora no lo puede comprobar' };
     if (!d.ok) sinDesvio = d.callar ? null : d.motivo;
     else {
       const cuadro = cuadroPara({ firma: firmaGuion, comando, palabras: can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios });
       const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
       const rutina = sinVentana && !deFondo ? rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can.palabras, destino, casa, topes, cwd: evento.cwd || null, sesion }) : { ok: false };
       if (!a.ok && !rutina.ok) {
+        // un chequeo que no se pudo correr no desvía: el renglón podría ser algo que el guion niega
+        let chequeo = null;
         if (CON_PRECHEQUEO.has(firmaGuion)) {
           let c = null;
-          try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: null }); } catch (_) { c = null; }
+          try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: null }); } catch (e) { chequeo = `no pude correr el chequeo del guion (${e.message})`; }
           if (c && c.niega) return { decision: 'deny', firmas: pendientes, texto: `No te la desvié a la coordinadora: el comando se iba a negar antes de usar la firma. Lo que dijo: ${una(c.niega, 800)}. Arreglá eso y volvé a pedirla` };
         }
         let anotada = null;
-        try {
+        if (chequeo) sinDesvio = chequeo;
+        else try {
           anotada = require('./signature-list.js').anotarFirma({ casa, firma: firmaGuion, titulo: firmaDe(firmaGuion).approves, sesion, destino, comando, palabras: can.palabras, cwd: evento.cwd || null, ahora,
             delegable: { comando: d.comando, coordinadora: d.coordinadora, cwd: d.cwdCoord, tool_use_id: String(evento.tool_use_id), plazo_min: Math.round(DR.plazoMs({ casa, ...(lista || {}) }) / 60000) } });
         } catch (e) { sinDesvio = `no pude anotar el renglón para la coordinadora (${e.message})`; }
@@ -1410,7 +1413,9 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // la delegación que cierra un renglón desviado a la coordinadora lo dice en el registro común (`routed`)
   let routed = false;
   if (guion && delegada) {
-    try { routed = Boolean(require('./delegation-routing.js').renglonDesviado({ casa, key: require('./signature-list.js').claveDe(firmaGuion, destino, can.palabras), ahora, ...(lista || {}) })); } catch (_) { routed = false; }
+    try { routed = Boolean(require('./delegation-routing.js').renglonDesviado({ casa, key: require('./signature-list.js').claveDe(firmaGuion, destino, can.palabras), ahora, ...(lista || {}) })); } catch (e) {
+      try { fs.appendFileSync(path.join(stateDir(casa), 'hook-errors.log'), `[${new Date(ahora).toISOString()}] owner-window: no pude saber si la delegación cierra un renglón desviado (${e.message}): queda sin routed\n`); } catch (_) { /* sin registro tampoco */ }
+    }
   }
   if (guion) {
     try {

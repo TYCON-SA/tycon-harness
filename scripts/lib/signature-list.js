@@ -212,7 +212,9 @@ function porQueNoSeEntiende(f) {
   if (!SESION.test(String(f.id)) || !SESION.test(String(f.destino))) return `${nombre}: su id o su destino no se pueden leer`;
   // la parte que se desvió a la coordinadora (delegation-routing.js): su comando y a quién se desvió, en texto
   const d = f.delegable;
-  if (d !== undefined && (!d || typeof d !== 'object' || Array.isArray(d) || typeof d.comando !== 'string' || typeof d.coordinadora !== 'string')) return `${nombre}: su parte desviada no se puede leer`;
+  // el pedido es un id: lo que traiga otra cosa es texto de afuera que terminaría en el aviso a la coordinadora
+  if (d !== undefined && (!d || typeof d !== 'object' || Array.isArray(d) || typeof d.comando !== 'string' || typeof d.coordinadora !== 'string'
+    || !/^[\w-]{1,80}$/.test(String(d.tool_use_id)) || !SESION.test(d.coordinadora))) return `${nombre}: su parte desviada no se puede leer`;
   return Number.isFinite(f.at) ? null : `${nombre}: no dice su hora`;
 }
 
@@ -486,7 +488,7 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
         const c = DR.comprobarRenglon({ f, casa, delegacion, arnes, env });
         if (c.saltado) { saltados.push({ id: f.id, motivo: c.saltado, cwd: f.cwd ? una(f.cwd) : null }); continue; }
         if (c.ok) return sale({ tipo: 'delegable', id: f.id, destino: f.destino, nombre: nombreDe(f.destino), comando: f.delegable.comando, cwd: c.cwd });
-        delDesvio = `No se la di a la coordinadora para firmar por delegación: ${una(c.motivo)}.`;
+        delDesvio = `No se la di a la coordinadora para firmar por delegación: ${una(c.motivo).slice(0, 300)}.`;
       } else delDesvio = viva !== f.delegable.coordinadora ? 'Se desvió a la coordinadora, pero la coordinadora ya no está: pasa a la persona.'
         : `Se desvió a la coordinadora, pero la coordinadora no la firmó en ${Math.round(plazo / 60000)} minutos: pasa a la persona.`;
     }
