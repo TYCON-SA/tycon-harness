@@ -417,6 +417,24 @@ test('T12 Repeats_OldDays_FromCheckCommand_NoMotive @story-8.297 @ac-10 — los 
   // la del hermano no cuenta; la de la otra sesión es la primera de la suya
   assert.deepEqual([hj.dias[0].primera.n, hj.dias[0].entera.n], [2, 0]);
   assert.equal(hj.descartados, 1);
+  // los bordes de la marca: saca un solo check, el más cercano, a 10 s o menos antes o después, con el mismo comando
+  // 🔴 mutación: una marca que saca todos los checks de su ventana pierde la corrida de arriba que terminó segundos antes
+  const seg = (hora, min, s) => new Date(2026, 10, 15, hora, min, s).toISOString();
+  const X = `${RSJ} /r ${T}/suites.json --touched ${T}/touched.json --coverage ${T}/cov --run-check tests`;
+  const Y = `${RSJ} /otro ${T}/suites.json --run-check tests`;
+  const marca = (ts, cmd = X) => ({ ts, sessionId: 's8', name: 'run-check-companion', check: 'tests', cmd });
+  const k = gatesLog([
+    check(seg(10, 0, 0), 's8', '7.8', X, 1), check(seg(10, 0, 4), 's8', '7.8', X, 1), marca(seg(10, 0, 5)),
+    check(seg(10, 10, 0), 's8', '7.8', X, 1), marca(seg(10, 10, 9)),
+    marca(seg(10, 20, 5)), check(seg(10, 20, 10), 's8', '7.8', X, 1),
+    check(seg(10, 30, 0), 's8', '7.8', X, 1), marca(seg(10, 30, 11)),
+    check(seg(10, 40, 0), 's8', '7.8', X, 1), marca(seg(10, 40, 1), Y),
+    { ts: 'no es una hora', sessionId: 's8', name: 'run-check-companion', check: 'tests', cmd: X },
+  ]);
+  const kj = JSON.parse(cli('repeats', '--log', k, '--json').stdout);
+  // cuentan la de arriba de las 10:00, la de las 10:30 (marca a 11 s) y la de las 10:40 (marca de otro comando)
+  assert.deepEqual([kj.dias[0].primera.n, kj.dias[0].entera.n], [1, 2]);
+  assert.equal(kj.descartados, 1, 'la marca con una hora ilegible se cuenta');
 });
 
 test('T13 Repeats_NoLogOrNoRuns_Exit3 @story-8.297 @ac-11 — sin registro, ilegible o sin corridas en el rango: sale 3 y lo dice', (t) => {

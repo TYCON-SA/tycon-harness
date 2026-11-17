@@ -211,7 +211,9 @@ function repeatsCmd(o) {
     if (j.name === 'test-gate-run') {
       corridas.push({ t: Date.parse(j.ts), ses: j.sessionId || '?', story: j.story || null, modo: j.modo, motivo: j.motivo || null, ms: Number(j.duracion_ms) || 0 });
     } else if (j.name === 'run-check-companion') {
-      hermanos.push({ t: Date.parse(j.ts), ses: j.sessionId || '?', cmd: String(j.cmd || '') });
+      const t = Date.parse(j.ts);
+      if (Number.isFinite(t)) hermanos.push({ t, ses: j.sessionId || '?', cmd: String(j.cmd || '') });
+      else descartados += 1;
     } else if (j.check === 'tests') {
       const c = deUnCheck(j);
       if (c && c.ilegible) descartados += 1;
@@ -221,9 +223,18 @@ function repeatsCmd(o) {
   // una corrida con su renglón también dejó su check: el check que cae dentro de ella (misma sesión) no se cuenta
   const cubierto = (c) => corridas.some((r) => r.ses === c.ses && c.t <= r.t && c.t >= r.t - r.ms - 60000);
   // la corrida de un repo hermano es parte de la que la lanzó: `run-check` deja, al lado de su check, un renglón con el
-  // mismo comando y la misma sesión
-  const deHermano = (c) => hermanos.some((h) => h.ses === c.ses && h.cmd === c.cmd && Math.abs(h.t - c.t) <= 10000);
-  const leibles = [...corridas, ...checks.filter((c) => !cubierto(c) && !deHermano(c))];
+  // mismo comando y la misma sesión. Cada marca saca un solo check, el más cercano: el mismo comando en el repo de arriba
+  // unos segundos antes no se pierde del informe
+  const deHermano = new Set();
+  for (const h of hermanos) {
+    let mejor = null;
+    for (const c of checks) {
+      if (deHermano.has(c) || c.ses !== h.ses || c.cmd !== h.cmd || Math.abs(h.t - c.t) > 10000) continue;
+      if (!mejor || Math.abs(h.t - c.t) < Math.abs(h.t - mejor.t)) mejor = c;
+    }
+    if (mejor) deHermano.add(mejor);
+  }
+  const leibles = [...corridas, ...checks.filter((c) => !cubierto(c) && !deHermano.has(c))];
   const todas = leibles.filter((x) => Number.isFinite(x.t) && (!x.modo || MODOS.includes(x.modo))).sort((a, b) => a.t - b.t);
   descartados += leibles.length - todas.length;
   const aviso = descartados ? `${descartados} renglón(es) de ejecuciones que no pude leer: no cuentan` : null;

@@ -360,6 +360,11 @@ test('T20 RunCheck_CompanionRun_MarkedInGatesLog @story-8.297 @ac-10 — la corr
   assert.ok(m, 'la del hermano deja su renglón');
   assert.deepEqual([m.check, m.cmd, m.sessionId], ['tests', check.cmd, check.sessionId], 'con el mismo comando y la misma sesión que su check');
   assert.equal(check.companion, undefined, 'el renglón del check no cambia');
+  // también con el hermano en rojo: la marca lleva el comando del check rojo
+  assert.equal(correr(home, d, 'tests', ['node', '-e', 'process.exit(1)'], { sid: 'rc27', extra: { TYCON_TEST_GATE_COMPANION: '1' } }).status, 1);
+  const roja = renglones().filter((x) => x.check === 'tests' && !x.name).pop();
+  assert.equal(roja.exit, 1);
+  assert.deepEqual([marcas().length, marcas().pop().cmd], [2, roja.cmd]);
 });
 
 test('T20 RunCheck_Signal_SlowChild_HeldUntilItCloses @story-8.124 @ac-10 — con la señal, el candado sigue hasta que el hijo cierra', async () => {
