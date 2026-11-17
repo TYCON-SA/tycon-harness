@@ -123,12 +123,17 @@ function movesProblems(root, moved) {
   }
   return { problemas, sinHistorial };
 }
-const NO_GIT = spawnSync('git', ['-C', ROOT, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' }).status !== 0
+// sólo «la raíz no es un repo» se saltea; git ausente o cualquier otro error de git falla en T17
+const REV_PARSE = spawnSync('git', ['-C', ROOT, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' });
+const NO_GIT = !REV_PARSE.error && REV_PARSE.status !== 0 && /not a git repository/i.test(REV_PARSE.stderr || '')
   && 'NO MEDIDO — sin historial de git en la raíz';
 
 test('T17 Contenido_IgualAlDeAntes @story-8.45 @ac-4 — el commit que mueve cada guía no cambia su texto, salvo los enlaces a otra guía movida', { skip: NOT_MEASURED || NO_GIT }, (t) => {
-  const { problemas, sinHistorial } = movesProblems(ROOT, movedGuides());
+  assert.ok(!REV_PARSE.error && REV_PARSE.status === 0, `git no pudo mirar la raíz: ${(REV_PARSE.error && REV_PARSE.error.message) || REV_PARSE.stderr}`);
+  const moved = movedGuides();
+  const { problemas, sinHistorial } = movesProblems(ROOT, moved);
   assert.deepStrictEqual(problemas, []);
+  t.diagnostic(`medidas ${moved.length - sinHistorial.length} de ${moved.length} guías movidas`);
   // una guía sin el movimiento en este árbol no se mide, y se dice; si ninguna lo tiene, la prueba entera queda NO MEDIDA
   if (sinHistorial.length) t.skip(`NO MEDIDO para ${sinHistorial.join(', ')}: este árbol no tiene el commit que la movió`);
 });
