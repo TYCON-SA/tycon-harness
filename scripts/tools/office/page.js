@@ -497,10 +497,10 @@ function prenderLampara(v){lamparaPrendida=v;lampShade.material.emissiveIntensit
 function tocarLampara(){prenderLampara(!lamparaPrendida);guardarLampara(lamparaPrendida)}
 prenderLampara(lamparaGuardada());
 const pnl=new THREE.Group();pnl.position.set(8.0,2.45,.06);scene.add(pnl);add(RB(2.95,2.5,.1,.06),M("#0f121c"),0,0,0,pnl);const pnlFace=add(new THREE.PlaneGeometry(2.82,2.35),new THREE.MeshBasicMaterial({map:texPanel,toneMapped:false}),0,0,.06,pnl,false);
-// racks: titilan más rápido cuantas más sesiones están trabajando
-const leds=[];function rack(x,z){const g=new THREE.Group();g.position.set(x,0,z);scene.add(g);add(RB(.75,2.05,.7,.04),M("#22252f",{r:.45,m:.3}),0,1.025,0,g);
+// racks: titilan más rápido cuantas más sesiones están trabajando; en la esquina del fondo, detrás de todos los escritorios
+const leds=[];function rack(x,z,rot=0){const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=rot;scene.add(g);add(RB(.75,2.05,.7,.04),M("#22252f",{r:.45,m:.3}),0,1.025,0,g);
   for(let u=0;u<9;u++){add(new THREE.BoxGeometry(.62,.16,.02),M("#14161d"),0,.25+u*.2,.355,g);for(let k=0;k<3;k++){const m=new THREE.Mesh(new THREE.BoxGeometry(.04,.03,.02),new THREE.MeshBasicMaterial({color:"#3dff7a",toneMapped:false}));m.position.set(.18+k*.06,.25+u*.2,.37);g.add(m);leds.push(m)}}}
-rack(8.75,4.3);rack(9.55,4.3);plant(scene,9.45,0,2.35,1.1);
+rack(.38,.95,Math.PI/2);rack(.38,1.75,Math.PI/2);plant(scene,9.45,0,2.35,1.1);
 
 // ---------- centro: alfombra, mesita, sofá ----------
 const rug=add(new THREE.PlaneGeometry(4.0,3.6),M("#fff",{r:.95,x:{map:texRug}}),5.6,.012,5.4,scene,false);rug.rotation.x=-Math.PI/2;
