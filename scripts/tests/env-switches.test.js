@@ -164,6 +164,12 @@ test('T9 EnvSwitches_Unreadable_FailsClosedAndNightNotMeasured @story-8.256 @ac-
   assert.strictEqual(o.vacio, false);
   assert.ok(o.motivos.some((x) => /no pude leer la lista de interruptores/.test(x)), o.motivos.join(' | '));
   assert.strictEqual(o.escapes, 'no_medido');
+  // una lista que se lee pero trae una entrada mal armada cuenta como ilegible: no explota después
+  const mala = path.join(tmp('es-mala-'), 'env-switches.json');
+  fs.writeFileSync(mala, JSON.stringify({ entradas: [{ nombre: 'TYCON_ONE', lectores: [], lectura: 'entorno', proceso: 'agente', clase: 'kill-switch', firma: false, noche: true, en_configuracion: null }] }));
+  const l = ES.leer({ ruta: mala });
+  assert.strictEqual(l.ok, false);
+  assert.match(l.error, /TYCON_ONE/);
 });
 
 // T10 Readers_BypassLogNotWritable_WarnAndGoOn @story-8.256 @ac-9

@@ -32,6 +32,10 @@ function leer({ ruta = RUTA } = {}) {
   try {
     const datos = JSON.parse(fs.readFileSync(ruta, 'utf8'));
     if (!datos || !Array.isArray(datos.entradas)) throw new Error('no trae «entradas»');
+    // una entrada mal armada la invalida entera: los lectores la usan sin más chequeos
+    const mal = datos.entradas.find((e) => !e || typeof e.nombre !== 'string' || !Array.isArray(e.apagan) || !Array.isArray(e.lectores)
+      || typeof e.clase !== 'string' || typeof e.firma !== 'boolean' || typeof e.noche !== 'boolean');
+    if (mal !== undefined) throw new Error(`entrada mal armada: ${mal && mal.nombre ? mal.nombre : JSON.stringify(mal)}`);
     r = { ok: true, entradas: datos.entradas };
   } catch (e) {
     r = { ok: false, error: e.code || e.message, entradas: [] };
