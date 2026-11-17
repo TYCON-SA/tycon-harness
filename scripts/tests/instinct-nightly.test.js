@@ -636,3 +636,41 @@ test('T35 Promote_ApproveAndReject_UnchangedForOldProposals', () => {
   const arch = fs.readdirSync(path.join(buzon, 'archived')).find((f) => f.includes('bbbbbbbbbb'));
   assert.match(fs.readFileSync(path.join(buzon, 'archived', arch), 'utf8'), /no aplica/);
 });
+
+test('T17 4.13-Nightly_ReadsSiteDecision_NotReaskedAndInReview @story-4.13 @ac-15 — lo que escribe el sitio, lo lee la noche', async () => {
+  const b = base('t17');
+  const d = diaMenos(1);
+  const s = ['aprobada por el sitio', 'rechazada por el sitio', 'aprobada sin redaccion', 'una nueva'];
+  const carp = { 'mac-a-11111111': { [d]: [] }, 'mac-b-22222222': { [d]: [] } };
+  for (const x of s) { carp['mac-a-11111111'][d].push(...veces(3, d, 'acme/api', x)); carp['mac-b-22222222'][d].push(...veces(3, d, 'acme/api', x)); }
+  espejo(b.espejo, carp);
+  const h = (x) => huellaDe('acme/api', 'Bash', x);
+  const comun = { herramienta: 'Bash', repo: 'acme/api', veces: 6, maquinas: 2, desde: d, hasta: d, propuesta_el: diaMenos(5), estado: 'pendiente', sin_redaccion: null, modelo: null, decision: null };
+  const dir = path.join(b.ops, 'inbox', 'instincts', 'propuestas');
+  fs.mkdirSync(dir, { recursive: true });
+  // los tres archivos, escritos con la misma función que usa el sitio
+  const escritos = [
+    [{ ...comun, huella: h(s[0]), patron: s[0], redaccion: { trigger: 'cuando sitio aprueba', action: 'hacer la sugerida' } }, { estado: 'aprobada', por: 'lead@acme.example', el: diaMenos(2), texto: 'Texto confirmado por quien mantiene', pedido: 'https://github.example/acme/perfil/pull/3' }],
+    [{ ...comun, huella: h(s[1]), patron: s[1], redaccion: { trigger: 'cuando sitio rechaza', action: 'no' } }, { estado: 'rechazada', por: 'lead@acme.example', el: diaMenos(2), motivo: 'Motivo del rechazo del sitio' }],
+    [{ ...comun, huella: h(s[2]), patron: s[2], redaccion: null, sin_redaccion: 'tope' }, { estado: 'aprobada', por: 'lead@acme.example', el: diaMenos(2), texto: 'Regla escrita a mano sin redaccion', pedido: null }],
+  ].map(([p, dec]) => {
+    const f = path.join(dir, `${p.huella}.json`);
+    fs.writeFileSync(f, N.archivoDecidido(p, dec));
+    return f;
+  });
+  const antes = escritos.map((f) => fs.readFileSync(f));
+  const decidido = JSON.parse(antes[0]);
+  assert.strictEqual(decidido.estado, 'aprobada');
+  assert.deepStrictEqual(decidido.decision, { por: 'lead@acme.example', el: diaMenos(2), texto: 'Texto confirmado por quien mantiene', pedido: 'https://github.example/acme/perfil/pull/3' });
+  assert.throws(() => N.archivoDecidido(comun, { estado: 'pendiente' }), /estado/);
+  const m = modelo();
+  await noche(b, { m });
+  assert.strictEqual(m.propuestas.length, 1);
+  const pedidos = [...m.propuestas[0].matchAll(/summary-prefix: acme\/api\|bash\|(.*)$/gm)].map((x) => x[1]);
+  assert.deepStrictEqual(pedidos, [s[3]], 'ninguna decidida se vuelve a pedir');
+  assert.strictEqual(m.revisiones.length, 1);
+  assert.match(m.revisiones[0], /cuando sitio aprueba[^\n]*Texto confirmado por quien mantiene/);
+  assert.match(m.revisiones[0], /cuando sitio rechaza[^\n]*Motivo del rechazo del sitio/);
+  assert.doesNotMatch(m.revisiones[0], /Regla escrita a mano sin redaccion/, 'la que no tiene redacción no entra a la revisión');
+  escritos.forEach((f, i) => assert.deepStrictEqual(fs.readFileSync(f), antes[i], `${path.basename(f)} queda byte por byte`));
+});
