@@ -307,16 +307,18 @@ test('Set_ConDestinoOConfirmadoOVuelta1_NoVuelve @story-8.296 @ac-11 @ac-14', ()
 
 test('Set_TextosDeMech_NombranElRevisorQueVuelve @story-8.296 @ac-13', () => {
   const L = lab({ reportes: [{ advisor: DEFTR, criticals: [] }] });
-  const r = L.reloop();
+  const r = L.reloop(['--force-full-reloop']);
   assert.ok(r.j, salida(r));
-  if (r.j.mech_note) assert.match(r.j.mech_note, /nunca saca a un revisor con críticos abiertos por confirmar/, r.j.mech_note);
+  assert.ok(r.j.mech_note, `smart-reloop no descontó: la prueba no mide su texto · ${salida(r)}`);
+  assert.match(r.j.mech_note, /nunca saca a un revisor con críticos abiertos por confirmar/, r.j.mech_note);
   const a = L.correr(['advisors', '--story', L.story, '--repo', L.repo, '--iter', '2', '--files', path.join(L.repo, 'a.js')]);
   const ja = JSON.parse(a.stdout);
-  assert.ok(ja.mech_note || r.j.mech_note, `ningún camino descontó: la prueba no mide el texto · ${salida(a)}`);
-  if (ja.mech_note) assert.match(ja.mech_note, /nunca saca a un revisor con críticos abiertos por confirmar/, ja.mech_note);
+  assert.ok(ja.mech_note, `advisors no descontó: la prueba no mide su texto · ${salida(a)}`);
+  assert.match(ja.mech_note, /nunca saca a un revisor con críticos abiertos por confirmar/, ja.mech_note);
   const m = L.correr(['mech-check', '--story', L.story, '--repo', L.repo, '--files', path.join(L.repo, 'a.js')]);
   const jm = JSON.parse(m.stdout);
-  if (!jm.ambiguous.length) assert.match(jm.note, /nunca saca a un revisor con críticos abiertos por confirmar/, jm.note);
+  assert.deepStrictEqual(jm.ambiguous, [], 'la historia de juguete trae ambiguos: el texto que se mide es otro');
+  assert.match(jm.note, /nunca saca a un revisor con críticos abiertos por confirmar/, jm.note);
   const ayuda = L.correr([]);
   assert.match(ayuda.stderr, /DESCUENTA advisors cubiertos \(MECH-2\)[\s\S]{0,200}nunca saca a un revisor con críticos abiertos/, 'la ayuda de advisors no lo dice');
 });
