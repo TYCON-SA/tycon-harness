@@ -250,3 +250,50 @@ test('T37 Tramo_CodexSinEventos_CierraALasDosHoras @story-8.209 @ac-5', () => {
   const post = (hooks.PostToolUse || []).filter((g) => (g.hooks || []).some((h) => /hooks\/session-state\.js/.test(h.command)));
   assert.deepStrictEqual(post.map((g) => g.matcher).sort(), ['Bash', 'apply_patch']);
 });
+
+test('T42 Tramo_Compactacion_SigueElTurno @story-8.209 @ac-2', () => {
+  // una compactación a mitad del turno manda un SessionStart en el mismo proceso: el tramo sigue abierto
+  const w = world();
+  handle(w, ev('s42', 'UserPromptSubmit'), at('2026-11-10 09:00'));
+  handle(w, ev('s42', 'PostToolUse', { tool_name: 'Bash' }), at('2026-11-10 09:30'));
+  handle(w, ev('s42', 'SessionStart', { source: 'compact' }), at('2026-11-10 09:31'));
+  handle(w, ev('s42', 'PostToolUse', { tool_name: 'Bash' }), at('2026-11-10 11:00'));
+  handle(w, ev('s42', 'Stop'), at('2026-11-10 12:00'));
+  const spans = spansOf(w, '2026-11-10');
+  assert.strictEqual(spans.length, 1);
+  assert.strictEqual(minutes(spans[0]), 180, 'del pedido al Stop, sin cortar en la compactación');
+  // un arranque de verdad sí cierra el tramo de la vida anterior en su último evento
+  handle(w, ev('s42b', 'UserPromptSubmit'), at('2026-11-10 13:00'));
+  handle(w, ev('s42b', 'PostToolUse', { tool_name: 'Bash' }), at('2026-11-10 13:20'));
+  handle(w, ev('s42b', 'SessionStart', { source: 'resume' }), at('2026-11-10 15:00'));
+  const otro = spansOf(w, '2026-11-10').filter((s) => s.sid === 's42b');
+  assert.strictEqual(otro.length, 1);
+  assert.strictEqual(minutes(otro[0]), 20);
+});
+
+test('T43 Tramo_TurnoCortadoSinStop_NoCuentaElHueco @story-8.209 @ac-2', () => {
+  // la persona corta el turno (sin Stop) y vuelve a pedir horas después: el hueco no se cuenta
+  const w = world();
+  handle(w, ev('s43', 'UserPromptSubmit'), at('2026-11-10 09:00'));
+  handle(w, ev('s43', 'PostToolUse', { tool_name: 'Bash' }), at('2026-11-10 09:10'));
+  handle(w, ev('s43', 'UserPromptSubmit'), at('2026-11-10 14:00'));
+  handle(w, ev('s43', 'Stop'), at('2026-11-10 14:10'));
+  const spans = spansOf(w, '2026-11-10');
+  assert.deepStrictEqual(spans.map(minutes), [10, 10]);
+  assert.strictEqual(require(WT).readDay(w.sdir, '2026-11-10').sesion_segundos, 20 * 60);
+});
+
+test('T44 Tramo_StopFrenado_ElTurnoSigueContando @story-8.209 @ac-2', () => {
+  // otro gancho frena el Stop y el turno sigue: el Stop siguiente (stop_hook_active) suma lo que se trabajó en medio
+  const w = world();
+  handle(w, ev('s44', 'UserPromptSubmit'), at('2026-11-10 10:00'));
+  handle(w, ev('s44', 'Stop'), at('2026-11-10 10:11'));
+  handle(w, ev('s44', 'PostToolUse', { tool_name: 'Bash' }), at('2026-11-10 10:30'));
+  handle(w, ev('s44', 'Stop', { stop_hook_active: true }), at('2026-11-10 10:51'));
+  const spans = spansOf(w, '2026-11-10');
+  assert.deepStrictEqual(spans.map(minutes), [11, 40]);
+  assert.strictEqual(stateOf(w, 's44').workingSince, undefined);
+  // un Stop común sin turno abierto no suma nada
+  handle(w, ev('s44', 'Stop'), at('2026-11-10 11:30'));
+  assert.strictEqual(spansOf(w, '2026-11-10').length, 2);
+});

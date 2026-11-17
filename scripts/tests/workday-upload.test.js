@@ -378,3 +378,44 @@ test('T41 Dia_DosHoras_UnionYSuma @story-8.209 @ac-25', () => {
   assert.ok(t.arnes_segundos <= require(WT).daySeconds('2026-11-09'));
   assert.strictEqual(t.sesiones, 3);
 });
+
+test('T45 Tokens_AgentesDeWorkflow_Cuentan @story-8.209 @ac-9', () => {
+  // los agentes de un workflow viven en subagents/workflows/<corrida>/: sus tokens también son de la conversación
+  const w = world();
+  opened(w, '2026-11-09', '2026-11-09 08:00');
+  claudeConv(w, 'c45', [['2026-11-09 09:00', 100, 10, 0]], { mtime: at('2026-11-09 09:00') });
+  claudeConv(w, 'c45', [['2026-11-09 09:10', 1000, 100, 0]], { mtime: at('2026-11-09 09:10'), agent: 'agent-suelto' });
+  claudeConv(w, 'c45', [['2026-11-09 09:20', 50000, 5000, 0]], { mtime: at('2026-11-09 09:20'), agent: 'workflows/wf_1/agent-w' });
+  prepare(w, at('2026-11-10 09:00'));
+  assert.deepStrictEqual(dayFile(w, '2026-11-09').tokens, { lectura: 51100, escritura: 5110, cache: 0, medido: true });
+});
+
+test('T46 Armado_RenglonDelGanchoMientrasLee_SeRearma @story-8.209 @ac-12', () => {
+  // un tramo que el gancho anota mientras la pasada lee las conversaciones no queda afuera para siempre
+  const w = world();
+  opened(w, '2026-11-11', '2026-11-11 08:00');
+  span(w, '2026-11-11', 'a46', '2026-11-11 09:00', '2026-11-11 10:00');
+  claudeConv(w, 'c46', [['2026-11-11 09:30', 1, 1, 0]], { mtime: at('2026-11-11 09:30') });
+  const ST = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
+  const original = ST.dayTokens;
+  let una = false;
+  ST.dayTokens = (...args) => {
+    if (!una) { una = true; span(w, '2026-11-11', 'b46', '2026-11-11 23:00', '2026-11-11 23:59'); }
+    return original(...args);
+  };
+  try { prepare(w, at('2026-11-12 00:40')); } finally { ST.dayTokens = original; }
+  assert.strictEqual(dayFile(w, '2026-11-11').horas.arnes_segundos, 3600, 'la primera pasada armó antes del renglón nuevo');
+  prepare(w, at('2026-11-12 01:40'));
+  assert.strictEqual(dayFile(w, '2026-11-11').horas.arnes_segundos, 3600 + 59 * 60, 'la pasada siguiente lo ve y rearma');
+});
+
+test('T47 Tokens_RenglonRotoAntesDeLaHora_SeCuenta @story-8.209 @ac-11', () => {
+  // un renglón de uso roto antes del primer renglón con hora va al día de ese renglón, no se pierde
+  const w = world();
+  opened(w, '2026-11-09', '2026-11-09 08:00');
+  const f = claudeConv(w, 'c47', [['2026-11-09 09:30', 1, 1, 1]]);
+  fs.writeFileSync(f, `{"type":"assistant","usage": roto\n${fs.readFileSync(f, 'utf8')}`);
+  fs.utimesSync(f, new Date(at('2026-11-09 10:00')), new Date(at('2026-11-09 10:00')));
+  prepare(w, at('2026-11-10 09:00'));
+  assert.strictEqual(dayFile(w, '2026-11-09').tokens.ilegibles, 1);
+});

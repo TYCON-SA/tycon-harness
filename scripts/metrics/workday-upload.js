@@ -70,8 +70,12 @@ function listConversations(home, env, since) {
     for (const f of list(dir)) {
       if (!f.isFile() || !f.name.endsWith('.jsonl')) continue;
       const file = path.join(dir, f.name);
+      // los agentes de la sesión: los sueltos en subagents/ y los de cada workflow en subagents/workflows/<corrida>/
       const agentsDir = path.join(dir, path.basename(f.name, '.jsonl'), 'subagents');
-      const agents = list(agentsDir).filter((a) => a.isFile() && a.name.endsWith('.jsonl')).map((a) => ({ file: path.join(agentsDir, a.name), mtime: mtimeOf(path.join(agentsDir, a.name)) })).filter((a) => a.mtime >= since);
+      const wfDir = path.join(agentsDir, 'workflows');
+      const agentFiles = list(agentsDir).filter((a) => a.isFile() && a.name.endsWith('.jsonl')).map((a) => path.join(agentsDir, a.name));
+      for (const w of list(wfDir)) if (w.isDirectory()) for (const a of list(path.join(wfDir, w.name))) if (a.isFile() && a.name.endsWith('.jsonl')) agentFiles.push(path.join(wfDir, w.name, a.name));
+      const agents = agentFiles.map((a) => ({ file: a, mtime: mtimeOf(a) })).filter((a) => a.mtime >= since);
       const mtime = mtimeOf(file);
       if (mtime >= since || agents.length) convs.push({ file, kind: 'claude', key: f.name, mtime, agents });
     }
@@ -136,6 +140,9 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
   const leidos = readJson(path.join(wdir, CODEX_TOTALS));
   const totals = keepRecent(leidos.value);
 
+  // la hora del armado es la de antes de mirar los tramos: un renglón que el gancho escribe mientras se leen las
+  // conversaciones queda más nuevo que el armado, y la pasada siguiente rearma el día
+  const armadoAt = Date.now() - 1;
   // qué días necesitan tokens leídos ahora: los de la ventana que nunca se armaron
   const marks = {};
   for (const d of days) {
@@ -219,7 +226,7 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
           for (const k of ['lectura', 'escritura', 'cache']) t[k] += ab[k];
         }
       }
-      if (!rastroGancho && !hubo && !rotaEseDia) { armados[d] = { vacio: true, armadoAt: Date.now() }; dias[d] = 'sin_rastro'; continue; }
+      if (!rastroGancho && !hubo && !rotaEseDia) { armados[d] = { vacio: true, armadoAt }; dias[d] = 'sin_rastro'; continue; }
       // una carpeta de conversaciones que no se pudo leer deja sin medir los tokens de los días que se arman
       let motivo = null;
       const rota = rotaEseDia || rotaCubria || listed.problema;
@@ -239,7 +246,7 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
       else horas = { arnes_segundos: m.arnes_segundos, sesion_segundos: m.sesion_segundos, sesiones: m.sesiones, medido: true, ...(m.ilegibles ? { ilegibles: m.ilegibles } : {}) };
       const tz = (m.abierto && typeof m.abierto.tz === 'string' && m.abierto.tz) || WT.tzOf(WT.midnightOf(d));
       contenido = `${JSON.stringify({ v: 1, dia: d, tz, horas, tokens })}\n`;
-      armados[d] = { armadoAt: Date.now(), tokens, contenido };
+      armados[d] = { armadoAt, tokens, contenido };
     }
     const name = `${d}.json`;
     const file = path.join(outDir, name);

@@ -91,17 +91,40 @@ function appendSpan(sdir, { sid, tool, desde, hasta }) {
   return parts.length;
 }
 
+/** El fin del último tramo anotado de una sesión, entre los de hoy y de ayer (ms; NaN si no hay). */
+function lastClose(sdir, sid, now) {
+  let best = NaN;
+  for (const day of [dayOf(now), addDays(dayOf(now), -1)]) {
+    let text = '';
+    try { text = fs.readFileSync(path.join(dirOf(sdir), `${day}.jsonl`), 'utf8'); } catch { continue; }
+    for (const line of text.split('\n')) {
+      if (!line.includes(sid)) continue;
+      let o;
+      try { o = JSON.parse(line); } catch { continue; }
+      const h = o && o.sid === sid ? Date.parse(o.hasta) : NaN;
+      if (Number.isFinite(h) && h <= now && !(h <= best)) best = h;
+    }
+  }
+  return best;
+}
+
 /**
  * Lo que cambia el tramo de una sesión con un evento: `{ patch, spans }`. `patch` lleva `workingSince` y `lastEventAt`
  * (null para borrarlos); `spans`, los tramos que se cierran (`[desde, hasta]` en ms). `decided` es lo que decidió el gancho
  * para la espera (`decide`), o null.
  *   Claude: abre con UserPromptSubmit; cierra con Stop, SessionEnd o una espera de la persona; después de una espera,
- *           lo reabre el evento que la termina (el PostToolUse con que `decide` la cierra).
+ *           lo reabre el evento que la termina (el PostToolUse con que `decide` la cierra). Un PostToolUse suelto (una
+ *           tarea de fondo después de Stop) no abre nada.
  *   Codex:  abre con UserPromptSubmit; cierra con Stop; su PostToolUse sólo refresca `lastEventAt`.
- * `lastEventAt` se refresca a lo sumo una vez por minuto. Un tramo de una vida anterior (un SessionStart con el tramo
- * abierto) o de un Codex que pasó 2 h sin eventos se cierra en su `lastEventAt`.
+ * Un UserPromptSubmit con el tramo todavía abierto (el turno anterior se cortó sin Stop: la persona lo interrumpió o
+ * terminó en un error) cierra ese tramo en su `lastEventAt` y abre otro: el hueco hasta el pedido nuevo no se cuenta.
+ * Si otro gancho frenó un Stop y el turno siguió, el Stop siguiente llega con `stop_hook_active`: suma el tramo desde
+ * el cierre anterior de la sesión (`prevClose`, que quien llama lee de sus tramos anotados) hasta ahora.
+ * `lastEventAt` se refresca a lo sumo una vez por minuto. Un tramo de una vida anterior (un SessionStart de arranque o de
+ * retome con el tramo abierto; no el de una compactación, que sigue el mismo turno) o de un Codex que pasó 2 h sin
+ * eventos se cierra en su `lastEventAt`.
  */
-function nextState({ cur, ev, codex, decided, now }) {
+function nextState({ cur, ev, source, stopHookActive = false, prevClose = NaN, codex, decided, now }) {
   const patch = {};
   const spans = [];
   const opened = cur && cur.workingSince ? Date.parse(cur.workingSince) : NaN;
@@ -109,14 +132,23 @@ function nextState({ cur, ev, codex, decided, now }) {
   const lastAt = cur && cur.lastEventAt ? Date.parse(cur.lastEventAt) : NaN;
   const last = Number.isFinite(lastAt) ? lastAt : opened;
   const close = (end) => { spans.push([opened, end]); patch.workingSince = null; patch.lastEventAt = null; isOpen = false; };
-  if (isOpen && (ev === 'SessionStart' || (codex && now - last > DEAD_AFTER_MS))) close(last);
+  const open = () => { patch.workingSince = iso(now); patch.lastEventAt = iso(now); isOpen = true; };
+  const newLife = ev === 'SessionStart' && source !== 'compact' && source !== 'clear';
+  if (isOpen && (newLife || (codex && now - last > DEAD_AFTER_MS))) close(last);
   const p = decided && decided.patch ? decided.patch : null;
   const waitStarts = !codex && Boolean(p && p.waitingForOwner === true);
   const waitEnds = !codex && Boolean(cur && cur.waitingForOwner === true && p && p.waitingForOwner === false);
-  if (ev === 'Stop' || ev === 'SessionEnd' || waitStarts) {
+  if (ev === 'Stop') {
     if (isOpen) close(now);
-  } else if (ev === 'UserPromptSubmit' || (ev === 'PostToolUse' && waitEnds)) {
-    if (!isOpen) { patch.workingSince = iso(now); patch.lastEventAt = iso(now); } else if (!(now - last < MIN_MS)) patch.lastEventAt = iso(now);
+    // el turno siguió después de un Stop frenado: del Stop anterior a éste también se trabajó
+    else if (stopHookActive && Number.isFinite(prevClose) && prevClose < now) spans.push([prevClose, now]);
+  } else if (ev === 'SessionEnd' || waitStarts) {
+    if (isOpen) close(now);
+  } else if (ev === 'UserPromptSubmit') {
+    if (isOpen) close(last);
+    open();
+  } else if (ev === 'PostToolUse' && waitEnds) {
+    if (!isOpen) open();
   } else if (isOpen && !(now - last < MIN_MS)) patch.lastEventAt = iso(now);
   return { patch, spans };
 }
@@ -214,4 +246,4 @@ function prune(sdir, now = Date.now(), keep = KEEP_DAYS) {
   return cutoff;
 }
 
-module.exports = { enabled, dirOf, dayOf, midnightOf, addDays, daySeconds, tzOf, splitAtMidnight, markOpened, appendSpan, nextState, closeDead, dayTotals, readDay, prune, DEAD_AFTER_MS, KEEP_DAYS };
+module.exports = { enabled, dirOf, dayOf, midnightOf, addDays, daySeconds, tzOf, splitAtMidnight, markOpened, appendSpan, lastClose, nextState, closeDead, dayTotals, readDay, prune, DEAD_AFTER_MS, KEEP_DAYS };

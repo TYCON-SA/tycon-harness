@@ -155,7 +155,7 @@ function handle(d, env = process.env, home = os.homedir(), now = Date.now()) {
   const decided = decide(d, codex, cur.state, now);
   // el tramo trabajado corre en todo momento que llega, también en los que la espera no cambia: si no, se pierde el
   // refresco de `lastEventAt`, que es donde cierra una sesión que murió
-  const tramo = workedStep(sdir, sid, { cur: cur.state, ev: d.hook_event_name, codex, tool, decided, now, env });
+  const tramo = workedStep(sdir, sid, { cur: cur.state, ev: d.hook_event_name, source: d.source, stopHookActive: d.stop_hook_active === true, codex, tool, decided, now, env });
   if (!decided) {
     if (cur.state && Object.keys(tramo).length) lib.update(sdir, sid, tramo, { env, tool });
     return;
@@ -189,12 +189,14 @@ function handle(d, env = process.env, home = os.homedir(), now = Date.now()) {
  * renglones de los tramos que se cierran y devuelve lo que cambia en el archivo de estado (`workingSince`,
  * `lastEventAt`). Apagado con TYCON_WORKDAYS=0; un error queda en el registro y no frena.
  */
-function workedStep(sdir, sid, { cur, ev, codex, tool, decided, now, env }) {
+function workedStep(sdir, sid, { cur, ev, source, stopHookActive, codex, tool, decided, now, env }) {
   const worked = require(path.join(ROOT, 'scripts', 'lib', 'worked-time.js'));
   if (!worked.enabled(env)) return {};
   try {
     worked.markOpened(sdir, now);
-    const { patch, spans } = worked.nextState({ cur, ev, codex, decided, now });
+    // un Stop que sigue a otro frenado suma desde el cierre anterior: se lee sólo en ese caso
+    const prevClose = ev === 'Stop' && stopHookActive && !(cur && cur.workingSince) ? worked.lastClose(sdir, sid, now) : NaN;
+    const { patch, spans } = worked.nextState({ cur, ev, source, stopHookActive, prevClose, codex, decided, now });
     for (const [desde, hasta] of spans) worked.appendSpan(sdir, { sid, tool, desde, hasta });
     return patch;
   } catch (e) {

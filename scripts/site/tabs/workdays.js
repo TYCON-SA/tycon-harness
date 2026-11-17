@@ -22,6 +22,12 @@ const views = require('../views.js');
 const DIAS = 30;
 const MAQUINA = /^[a-z0-9][a-z0-9._-]*$/;
 const DIA = /^\d{4}-\d{2}-\d{2}$/;
+// un día de verdad: la forma y una fecha que existe (un 2026-13-45 tiene la forma y no es un día)
+const esDia = (d) => {
+  if (!DIA.test(d)) return false;
+  const t = Date.parse(`${d}T00:00:00Z`);
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === d;
+};
 const ARCHIVO = /^(\d{4}-\d{2}-\d{2})\.json$/;
 const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const entero = (n) => Number.isInteger(n) && n >= 0;
@@ -52,7 +58,7 @@ function jornadasDe(crudo) {
     if (!MAQUINA.test(maq)) continue;
     maquinas[maq] = {};
     for (const [dia, t] of Object.entries(dias || {})) {
-      if (!DIA.test(dia)) continue;
+      if (!esDia(dia)) continue;
       let o = null;
       try { o = typeof t === 'string' ? JSON.parse(t) : t; } catch { o = null; }
       maquinas[maq][dia] = validarDia(o, dia);
@@ -97,14 +103,15 @@ const diaMas = (dia, n) => new Date(Date.parse(`${dia}T00:00:00Z`) + n * 864e5).
 function armarTabla({ maquinas, ilegibles = {}, problema = null }, { ayer }) {
   // una máquina cuya carpeta no se pudo leer sigue en la tabla, con sus celdas «no se pudo leer»
   const nombres = [...new Set([...Object.keys(maquinas), ...Object.keys(ilegibles)])].sort();
+  // la tabla termina en el día más nuevo que se entendió: un archivo raro no corre la ventana
   let nuevo = ayer;
-  for (const m of Object.keys(maquinas)) for (const d of Object.keys(maquinas[m])) if (d > nuevo) nuevo = d;
+  for (const m of Object.keys(maquinas)) for (const [d, v] of Object.entries(maquinas[m])) if (v && v.ok && esDia(d) && d > nuevo) nuevo = d;
   const dias = Array.from({ length: DIAS }, (_, i) => diaMas(nuevo, -i));
   const celdas = {};
   const totales = {};
   for (const d of dias) {
     celdas[d] = {};
-    const t = { arnes_segundos: 0, sesion_segundos: 0, lectura: 0, escritura: 0, cache: 0, no_medidas: 0 };
+    const t = { arnes_segundos: 0, sesion_segundos: 0, lectura: 0, escritura: 0, cache: 0, no_medidas: 0, con_horas: 0, con_tokens: 0 };
     for (const m of nombres) {
       const v = maquinas[m] ? maquinas[m][d] : null;
       let c;
@@ -113,8 +120,8 @@ function armarTabla({ maquinas, ilegibles = {}, problema = null }, { ayer }) {
       else if (!v.ok) c = { estado: 'raro' };
       else {
         c = { estado: 'medido', horas: v.horas.medido ? v.horas : null, horasMotivo: v.horas.medido ? null : v.horas.motivo, tokens: v.tokens.medido ? v.tokens : null, tokensMotivo: v.tokens.medido ? null : v.tokens.motivo };
-        if (c.horas) { t.arnes_segundos += c.horas.arnes_segundos; t.sesion_segundos += c.horas.sesion_segundos; }
-        if (c.tokens) { t.lectura += c.tokens.lectura; t.escritura += c.tokens.escritura; t.cache += c.tokens.cache; }
+        if (c.horas) { t.arnes_segundos += c.horas.arnes_segundos; t.sesion_segundos += c.horas.sesion_segundos; t.con_horas += 1; }
+        if (c.tokens) { t.lectura += c.tokens.lectura; t.escritura += c.tokens.escritura; t.cache += c.tokens.cache; t.con_tokens += 1; }
       }
       // una celda medida a medias tampoco entra entera en el total: se cuenta como sin medir
       if (c.estado !== 'medido' || !c.horas || !c.tokens) t.no_medidas += 1;
@@ -158,10 +165,11 @@ function htmlTabla(tabla, idioma) {
     }).join('');
     const tot = tabla.totales[d];
     const sinMedir = tot.no_medidas ? `<div>${esc(tot.no_medidas === 1 ? t('horas.sinMedir1') : t('horas.sinMedirN', { n: tot.no_medidas }))}</div>` : '';
-    // sin ninguna máquina medida, el total no es cero: es «no medido»
-    const ninguna = tabla.maquinas.every((m) => tabla.celdas[d][m].estado !== 'medido');
+    // sin ninguna máquina medida, el total no es cero: es «no medido»; y lo mismo por separado para las horas y los
+    // tokens: sin ninguna máquina con horas medidas, el total de horas dice «no medidas», no 0.0 h
+    const ninguna = !tot.con_horas && !tot.con_tokens;
     const total = ninguna ? `<div>${esc(t('horas.noMedido'))}</div>${sinMedir}`
-      : lineas(idioma, { horas: { arnes_segundos: tot.arnes_segundos, sesion_segundos: tot.sesion_segundos }, tokens: tot }) + sinMedir;
+      : lineas(idioma, { horas: tot.con_horas ? { arnes_segundos: tot.arnes_segundos, sesion_segundos: tot.sesion_segundos } : null, tokens: tot.con_tokens ? tot : null }) + sinMedir;
     return `<tr><th scope="row">${esc(d)}</th>${celdas}<td class="total">${total}</td></tr>`;
   }).join('');
   return `<table class="horas"><thead>${cab}</thead><tbody>${filas}</tbody></table>`;

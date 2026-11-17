@@ -486,10 +486,15 @@ function dayTokens(file, { days = [], isAgent = false } = {}) {
   for (const d of days) out[d.day] = { count: newCount(), sinHora: 0, ilegibles: 0, hubo: false, primero: null, ultimo: null };
   const dayAt = (t) => { const d = days.find((x) => t >= x.desde && t < x.hasta); return d ? d.day : null; };
   let previo = null;
+  // lo que llega antes del primer renglón con hora va al día de ese renglón (o, si no hay ninguno, al de la última
+  // modificación del archivo): no se pierde callado
+  let visto = false;
+  const antes = { sinHora: 0, ilegibles: 0 };
+  const aparte = (k) => { if (!visto) antes[k] += 1; else if (previo && out[previo]) out[previo][k] += 1; };
   const onLine = (line) => {
     if (!line.includes('"usage"') && !line.includes('"token_count"')) return;
     let d;
-    try { d = JSON.parse(line); } catch { if (previo && out[previo]) out[previo].ilegibles += 1; return; }
+    try { d = JSON.parse(line); } catch { aparte('ilegibles'); return; }
     if (!d || typeof d !== 'object') return;
     const t = Date.parse(d.timestamp);
     const claude = d.type === 'assistant' && d.message && d.message.usage && typeof d.message.usage === 'object';
@@ -497,9 +502,13 @@ function dayTokens(file, { days = [], isAgent = false } = {}) {
     const codex = p && p.type === 'token_count' && p.info && p.info.total_token_usage;
     if (!claude && !codex) return;
     if (claude && (d.message.model === '<synthetic>' || (d.isSidechain && !isAgent))) return;
-    if (!Number.isFinite(t)) { if (previo && out[previo]) out[previo].sinHora += 1; return; }
+    if (!Number.isFinite(t)) { aparte('sinHora'); return; }
     const day = dayAt(t);
     previo = day;
+    if (!visto) {
+      visto = true;
+      if (day) for (const k of ['sinHora', 'ilegibles']) out[day][k] += antes[k];
+    }
     if (!day) return;
     const b = out[day];
     b.hubo = true;
@@ -507,8 +516,11 @@ function dayTokens(file, { days = [], isAgent = false } = {}) {
     else { if (!b.primero) b.primero = p.info.total_token_usage; b.ultimo = p.info.total_token_usage; }
   };
   const fd = fs.openSync(file, 'r');
+  let mtime = NaN;
   try {
-    const size = fs.fstatSync(fd).size;
+    const st = fs.fstatSync(fd);
+    mtime = st.mtimeMs;
+    const size = st.size;
     let carry = Buffer.alloc(0);
     let at = 0;
     while (at < size) {
@@ -524,6 +536,10 @@ function dayTokens(file, { days = [], isAgent = false } = {}) {
     }
     if (carry.length) onLine(carry.toString('utf8'));
   } finally { fs.closeSync(fd); }
+  if (!visto) {
+    const day = dayAt(mtime);
+    if (day) for (const k of ['sinHora', 'ilegibles']) out[day][k] += antes[k];
+  }
   const result = {};
   for (const [day, b] of Object.entries(out)) {
     result[day] = { lectura: b.count.lectura, escritura: b.count.escritura, cache: b.count.cache, sinHora: b.sinHora, ilegibles: b.ilegibles, hubo: b.hubo, codex: b.ultimo ? { primero: b.primero, ultimo: b.ultimo } : null };

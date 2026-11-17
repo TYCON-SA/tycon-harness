@@ -226,7 +226,27 @@ const PINNED_PW = require('../lib/pinned-playwright.js');
 const PLAYWRIGHT = PINNED_PW.load();
 const SIN_NAVEGADOR = process.env.E2E_REQUIRED === '1' ? false : (!PLAYWRIGHT && PINNED_PW.locate().why);
 
-test('E1 E2E_HorasYTokens_QuienMantiene @story-8.209 @ac-16 @ac-17', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+test('T48 Total_SinHorasMedidas_NoEsCero @story-8.209 @ac-17', () => {
+  // las dos máquinas tienen archivo pero ninguna midió horas: el total de horas dice «no medidas», no 0.0 h
+  const sinHoras = { medido: false, motivo: 'el gancho de estado no anotó ese día (apagado o sin instalar)' };
+  const j = WD().leerJornadas(espejo({ 'maquina-a': { '2026-11-09': dia('2026-11-09', { horas: sinHoras }) }, 'maquina-b': { '2026-11-09': dia('2026-11-09', { horas: sinHoras }) } }));
+  const t = WD().armarTabla(j, { ayer: '2026-11-09' });
+  const fila = WD().htmlTabla(t, 'es').split('<tr>').find((r) => r.includes('2026-11-09'));
+  const total = fila.slice(fila.indexOf('class="total"'));
+  assert.doesNotMatch(total, /0\.0 h/);
+  assert.match(total, /horas no medidas/i);
+  assert.match(total, /Tokens/, 'los tokens, que sí se midieron, siguen en el total');
+});
+
+test('T49 Ventana_ArchivoRaroOFechaImposible_NoLaCorre @story-8.209 @ac-16', () => {
+  // un archivo que no se entendió o un nombre con forma de fecha que no existe no corren la tabla al futuro
+  const j = WD().leerJornadas(espejo({ 'maquina-a': { '2026-11-09': dia('2026-11-09'), '2099-01-01': '{roto', '2026-13-45': dia('2026-13-45') } }));
+  const t = WD().armarTabla(j, { ayer: '2026-11-09' });
+  assert.strictEqual(t.dias[0], '2026-11-09');
+  assert.ok(!t.dias.includes('2026-13-45'));
+});
+
+test('E1 E2E_HorasYTokens_QuienMantiene @story-8.209 @ac-16 @ac-17',{ skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
   assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
   const h = await arrancarDemo();
   const navegador = await PLAYWRIGHT.chromium.launch();
