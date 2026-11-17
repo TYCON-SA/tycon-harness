@@ -209,11 +209,12 @@ function hasFreshDoing(home, sid, now) {
 // Desde cuándo la sesión espera el turno de la suite completa o del portón, según lo que anotó con `marker.js doing
 // --waiting-for`; null si no anotó una espera así. Sin nota no se supone nada: una sesión quieta no está «esperando turno».
 // La espera de un pase no cuenta: a quien debe su pase lo despierta el aviso de `passWaiting`, no la fila de la suite.
-const SUITE_WAIT = /suite|port[oó]n|turno/i;
-const PASS_WAIT = /pase|adversarial/i;
-function suiteWaitSince(home, sid) {
+// Quien ya corre su prueba pesada según el registro de turnos (`running`, de heavy-turn.js `runningSids`) no espera,
+// aunque su nota lo diga: gana el registro.
+function suiteWaitSince(home, sid, running) {
+  if (running && running.has(String(sid))) return null;
   const note = readJson(path.join(stateDir(home), 'doing', `${sid}.json`), null);
-  if (!note || typeof note.waitingFor !== 'string' || !SUITE_WAIT.test(note.waitingFor) || PASS_WAIT.test(note.waitingFor)) return null;
+  if (!note || !require('./heavy-turn.js').isTurnWait(note.waitingFor)) return null;
   const since = Date.parse(note.waitingSince || note.at);
   return Number.isFinite(since) ? since : null;
 }
@@ -437,6 +438,8 @@ function status(opts = {}) {
   const files = stateFiles(home, problems);
   const stalled = [];
   const asking = [];
+  let runningHeavy = null;
+  try { runningHeavy = require('./heavy-turn.js').runningSids({ state: stateDir(home), now, problems }); } catch (e) { problems.push(`quién corre una prueba pesada (${e.message})`); }
   for (const [sid, s] of sessions) {
     if (!s.alive) continue;
     // Un agente interno de otra sesión (carpeta temporal, nombre armado) no es una sesión de trabajo, salvo con marcador.
@@ -446,7 +449,7 @@ function status(opts = {}) {
     const story = m && m.storyId ? `la ${m.storyId}` : null;
     if (s.nameSource === 'derived' && s.name) unnamed.push(label(s.name));
     try {
-      const since = suiteWaitSince(home, sid);
+      const since = suiteWaitSince(home, sid, runningHeavy);
       if (since != null) suiteWaiting.push({ session: nameOf(sid), sid, since, worked: waitWorked(home, sid, s, m, since, now, problems, nameOf(sid)) });
     } catch (e) { problems.push(`la nota de ${nameOf(sid)} (${e.message})`); }
     const st = stalledOf(s, files.get(String(sid)), now);

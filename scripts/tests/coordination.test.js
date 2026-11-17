@@ -2893,3 +2893,32 @@ test('Aviso_SeparaLasDeLaCoordinadoraDeLasDelDueno (T21) — @story-8.295 @ac-7 
   assert.doesNotMatch(txt, /AskUserQuestion/);
   assert.match(txt, /avisale a Alma/);
 });
+
+// Una sesión anota que espera turno y su prueba pesada ya corre (la anotó después de arrancar, o el turno se lo dieron
+// sin que la borrara): la nota y el registro de turnos no coinciden, y gana el registro. No entra en la fila ni recibe el
+// «arrancá»: sin esto, la fila pide el «arrancá» para un portón que ya corre.
+// 🔴 mutación: leer sólo la nota (como antes), o sacar de la fila también a la que no corre nada.
+test('T49 Status_EsperaVieja_GanaElRegistroDeTurnos: con su portón o su lugar del turno corriendo, la que anotó la espera no está en la fila', () => {
+  const t = coordinated();
+  const opts = (pct) => ({ ...t.opts, sessionId: 'coord-1', readMemory: reader(pct) });
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  const waits = (sid, what) => fs.writeFileSync(path.join(doing, `${sid}.json`), JSON.stringify({ at: new Date(mins(2)).toISOString(), waitingFor: what, waitingSince: new Date(mins(2)).toISOString() }));
+  session(t, 's-ana', 'Ana', { status: 'idle', statusUpdatedAt: mins(3) });
+  session(t, 's-bea', 'Bea', { status: 'idle', statusUpdatedAt: mins(3) });
+  waits('s-ana', 'portón final de pruebas de la 9.9');
+  slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
+  // sin registro de Ana: está en la fila, como hoy
+  assert.match(C.capNotice(opts(62)), /dale el «arrancá» a Ana\./);
+  // su portón corre, anotado antes que la nota: gana el registro
+  gateRec(t, { sid: 's-ana', session: 'Ana', what: '81 suites de repo', suites: 81, at: mins(3) });
+  const s = C.status(opts(62));
+  assert.deepStrictEqual(s.suiteWaiting.map((x) => x.session), [], JSON.stringify(s.suiteWaiting));
+  assert.doesNotMatch(String(C.capNotice(opts(62)) || ''), /Ana/);
+  // la que tiene un lugar del turno tampoco espera, y la otra que espera sin correr nada sigue en la fila
+  fs.rmSync(path.join(t.state, 'coordination', 'gates'), { recursive: true });
+  slot(t, 1, { sid: 's-ana', session: 'Ana', what: '129 suites de repo' });
+  waits('s-bea', 'el turno de la suite');
+  const s2 = C.status(opts(62));
+  assert.deepStrictEqual(s2.suiteWaiting.map((x) => x.session), ['Bea'], JSON.stringify(s2.suiteWaiting));
+});
