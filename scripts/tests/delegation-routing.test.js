@@ -527,3 +527,117 @@ test('RutaManual_SinRenglonDesviado_SinRouted (T24) — @story-8.295 @ac-21', (t
   assert.strictEqual(firma.via, 'delegation');
   assert.strictEqual(firma.routed, undefined);
 });
+
+// =====================================================================================================================
+// Cómo se resuelve cada ruta del comando desviado, la no-regresión y los errores que quedan anotados
+// =====================================================================================================================
+
+test('PalabrasRuteadas_ResuelveCadaRutaComoElGuion (T25) — @story-8.295 @ac-1', () => {
+  const R = (firma, palabras, cwd = '/w/pedido') => DR.palabrasRuteadas(firma, palabras, 'ses-a', cwd);
+  // la ruta del guion relativa va absoluta: la coordinadora corre desde otra carpeta
+  assert.deepStrictEqual(R('pending-approval', ['skills/x/marker.js', 'approve-pending', '--id', 'D', '--repo', '.']),
+    ['/w/pedido/skills/x/marker.js', 'approve-pending', '--id', 'D', '--repo', '/w/pedido', '--for-session', 'ses-a']);
+  // una opción repetida se resuelve todas las veces
+  assert.deepStrictEqual(R('pending-approval', ['/g/m.js', 'approve-pending', '--repo', './a', '--repo', './b']),
+    ['/g/m.js', 'approve-pending', '--repo', '/w/pedido/a', '--repo', '/w/pedido/b', '--for-session', 'ses-a']);
+  // --story de la vuelta extra, contra su --repo (como pipeline.js), no contra la carpeta del pedido; sin --repo, contra
+  // la carpeta, que es el --repo que se agrega
+  assert.deepStrictEqual(R('extra-round', ['/g/p.js', 'smart-reloop', '--extra-round', '--story', 'specs/s.md', '--repo', '/r']),
+    ['/g/p.js', 'smart-reloop', '--extra-round', '--story', '/r/specs/s.md', '--repo', '/r', '--for-session', 'ses-a']);
+  assert.deepStrictEqual(R('extra-round', ['/g/p.js', 'smart-reloop', '--extra-round', '--repo', 'sub', '--story', 'specs/s.md']),
+    ['/g/p.js', 'smart-reloop', '--extra-round', '--repo', '/w/pedido/sub', '--story', '/w/pedido/sub/specs/s.md', '--for-session', 'ses-a']);
+  assert.deepStrictEqual(R('extra-round', ['/g/p.js', 'smart-reloop', '--extra-round', '--story', 'specs/s.md']),
+    ['/g/p.js', 'smart-reloop', '--extra-round', '--story', '/w/pedido/specs/s.md', '--repo', '/w/pedido', '--for-session', 'ses-a']);
+  // --story de compare-waiver queda tal cual: marker.js la resuelve contra el repo del marcador destino; sin rutas que
+  // resolver, no hace falta la carpeta
+  assert.deepStrictEqual(R('compare-waiver', ['/g/m.js', 'compare-waiver', '--story', 'specs/s.md', '--command', 'c', '--reason', 'r'], null),
+    ['/g/m.js', 'compare-waiver', '--story', 'specs/s.md', '--command', 'c', '--reason', 'r', '--for-session', 'ses-a']);
+  // con `=` no se sabe resolver: no se desvía
+  assert.strictEqual(R('pending-approval', ['/g/m.js', 'approve-pending', '--repo=/x']), null);
+  // una opción al final, o seguida de otra bandera, no tiene ruta: queda como vino
+  assert.deepStrictEqual(R('pending-approval', ['/g/m.js', 'approve-pending', '--id', 'D', '--repo']),
+    ['/g/m.js', 'approve-pending', '--id', 'D', '--repo', '--for-session', 'ses-a']);
+  assert.deepStrictEqual(R('pending-approval', ['/g/m.js', 'approve-pending', '--repo', '--id', 'D']),
+    ['/g/m.js', 'approve-pending', '--repo', '--id', 'D', '--for-session', 'ses-a']);
+  // hace falta la carpeta (guion relativo, una ruta, o una que vale `.`) y no se sabe: null; con todo absoluto, no hace falta
+  assert.strictEqual(R('save', ['marker.js', 'complete-step', 'save'], 'relativa'), null);
+  assert.strictEqual(R('pending-approval', ['/g/m.js', 'approve-pending', '--repo', '.'], null), null);
+  assert.strictEqual(R('refresh-after-main', ['/g/c.sh', 'refresh'], null), null);
+  assert.deepStrictEqual(R('save', ['/g/m.js', 'complete-step', 'save'], null), ['/g/m.js', 'complete-step', 'save', '--for-session', 'ses-a']);
+  // ya con --for-session, o una firma fuera de la tabla: null
+  assert.strictEqual(R('save', ['/g/m.js', 'complete-step', 'save', '--for-session', 'x']), null);
+  assert.strictEqual(R('adhoc-lane', ['/g/m.js', 'adhoc', 'open']), null);
+});
+
+test('NoRegresion_ListaApagadaSinDesignarCodex_ComoHoy (T26) — @story-8.295 @ac-20', (t) => {
+  // lista apagada y máquina sin coordinadora designada: ni renglón desviado ni motivo dicho, la ventana de siempre
+  for (const L of [laboratorio(t, { lista: 'off' }), laboratorio(t, { designada: false })]) {
+    const r = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default' }));
+    assert.strictEqual(r.decision, 'ask', r.texto);
+    assert.notStrictEqual(r.via, 'desviada');
+    assert.doesNotMatch(r.texto, /No se desvió a la coordinadora/);
+    assert.deepStrictEqual(desviados(L.casa), []);
+  }
+  // Codex (`turn_id`) no tiene ventana: se niega como hoy, sin desvío
+  const L = laboratorio(t);
+  const p = pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno });
+  p.evento.turn_id = 'turn-1';
+  const r = ow.decidir(p);
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.notStrictEqual(r.via, 'desviada');
+  assert.match(r.texto, /Codex no tiene ventana de permiso/);
+  assert.deepStrictEqual(desviados(L.casa), []);
+});
+
+test('OwnerWait_OtraCoordinadora_PasaALaPersona (T27) — @story-8.295 @ac-9', (t) => {
+  const L = laboratorio(t);
+  assert.strictEqual(ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno })).via, 'desviada');
+  // el dueño designa otra coordinadora: el renglón de la anterior pasa a la persona, dicho una vez
+  const d = { name: 'relay-designation', status: 'ok', ts: '2026-10-27T13:02:00.000Z', sesion: 'ses-nueva', rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
+  fs.appendFileSync(path.join(L.estado, 'gates.log'), `${JSON.stringify(d)}\n${JSON.stringify(DS.confirmationRecord(d, '2026-10-27T13:03:00.000Z'))}\n`);
+  L.sesion('ses-nueva', L.propio);
+  const C = require('../tools/coordination.js');
+  const vuelta = (min) => C.ownerWaitOnce({ home: L.casa, ...L.lista, sessionId: 'ses-nueva', now: AHORA + min * MIN, ownerWaits: () => ({ esperas: [], problemas: [] }), signatureDestinos: () => [] }).lines.join('\n');
+  const a = vuelta(4);
+  assert.match(a, /pasa a la persona: la coordinadora del renglón ya no es ésta/);
+  assert.doesNotMatch(a, /una firma para vos por delegación/);
+  assert.doesNotMatch(vuelta(5), /pasa a la persona/, 'una sola vez');
+});
+
+test('Oficina_Collect_MarcaElRenglonDesviado (T28) — @story-8.295 @ac-11', async (t) => {
+  const L = laboratorio(t);
+  ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno }));
+  const { collectAt, col } = require('./lib/office-fixtures.js');
+  const leer = (min) => collectAt({ home: L.casa }, AHORA + min * MIN, { ...L.lista, readOnly: true });
+  // la conexión de verdad: collect marca la fila con la coordinadora viva y en plazo, y la oficina no la pone en «Tu firma»
+  let data = await leer(1);
+  assert.deepStrictEqual(col(data, 'firma').tarjetas, [], JSON.stringify(col(data, 'firma')));
+  assert.match(JSON.stringify(data), /la firma la coordinadora/);
+  data = await leer(11);
+  assert.strictEqual(col(data, 'firma').tarjetas.length, 1, 'vencida, es del dueño');
+  assert.doesNotMatch(JSON.stringify(data), /la firma la coordinadora/);
+});
+
+test('PlazoYRenglon_LoQueNoSeLeeQuedaAnotado (T29) — @story-8.295 @ac-9 @ac-21', (t) => {
+  const L = laboratorio(t);
+  const errores = () => { try { return fs.readFileSync(path.join(L.estado, 'hook-errors.log'), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return ''; throw e; } };
+  const TC = require('../lib/tycon-config.js');
+  const cargar = TC.cargar;
+  t.after(() => { TC.cargar = cargar; });
+  // la configuración dice 20, o un valor fuera de 1..60 (que vale los 10 de fábrica), o no se puede leer
+  TC.cargar = () => ({ valores: { approvals: { delegation_wait_minutes: 20 } } });
+  assert.strictEqual(DR.plazoMs({ casa: L.casa }), 20 * MIN);
+  TC.cargar = () => ({ valores: { approvals: { delegation_wait_minutes: 99 } } });
+  assert.strictEqual(DR.plazoMs({ casa: L.casa }), 10 * MIN);
+  assert.strictEqual(errores(), '');
+  TC.cargar = () => { throw new Error('perfil roto'); };
+  assert.strictEqual(DR.plazoMs({ casa: L.casa }), 10 * MIN);
+  assert.match(errores(), /no pude leer approvals\.delegation_wait_minutes \(perfil roto\): uso 10 minutos/);
+  TC.cargar = cargar;
+  // sin poder leer la lista, la firma no sabe qué renglón cerró: queda sin routed y dicho
+  const abiertos = sl.abiertos;
+  t.after(() => { sl.abiertos = abiertos; });
+  sl.abiertos = () => { throw new Error('lista rota'); };
+  assert.strictEqual(DR.renglonDesviado({ casa: L.casa, key: 'firma:x', ahora: AHORA, ...L.lista }), null);
+  assert.match(errores(), /no pude leer la lista de firmas.*\(lista rota\): queda sin routed/);
+});

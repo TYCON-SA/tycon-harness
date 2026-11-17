@@ -24,16 +24,18 @@ const PLAZO_MIN = 10;
 
 /**
  * Las firmas que se desvían y las rutas que su guion resuelve contra la carpeta: la coordinadora corre el comando desde
- * otra, así que van absolutas. `conPunto`: las que valen `.` si faltan, y se agregan. Las demás opciones de cada guion se
- * resuelven contra estas (`--out` y `--file` de los controles, contra `--root`) o contra el marcador de la sesión
- * destino. Una firma que no está acá no se desvía: el camino corto (`adhoc-lane`) quedaría a nombre de la coordinadora y
- * en su carpeta, y no tendría el mismo efecto.
+ * otra, así que van absolutas. `conPunto`: las que valen `.` si faltan, y se agregan. `contra`: la que el guion resuelve
+ * contra otra opción y no contra la carpeta (`--story` de la vuelta extra, contra su `--repo`). Las demás opciones de
+ * cada guion se resuelven contra estas (`--out` y `--file` de los controles, contra `--root`) o contra el marcador de la
+ * sesión destino (`--story` de `compare-waiver`, contra su repo: por eso no está). Una firma que no está acá no se
+ * desvía: el camino corto (`adhoc-lane`) quedaría a nombre de la coordinadora y en su carpeta, y no tendría el mismo
+ * efecto.
  */
 const RUTAS = Object.freeze({
   'pending-approval': Object.freeze({ rutas: ['--repo'], conPunto: [] }),
   'refresh-after-main': Object.freeze({ rutas: ['--root'], conPunto: ['--root'] }),
-  'extra-round': Object.freeze({ rutas: ['--repo', '--story'], conPunto: ['--repo'] }),
-  'compare-waiver': Object.freeze({ rutas: ['--story'], conPunto: [] }),
+  'extra-round': Object.freeze({ rutas: ['--repo', '--story'], conPunto: ['--repo'], contra: Object.freeze({ '--story': '--repo' }) }),
+  'compare-waiver': Object.freeze({ rutas: [], conPunto: [] }),
   save: Object.freeze({ rutas: [], conPunto: [] }),
   'plan-approval': Object.freeze({ rutas: [], conPunto: [] }),
   'lost-run:particion': Object.freeze({ rutas: [], conPunto: [] }),
@@ -47,9 +49,10 @@ function anotarError(casa, texto) {
 const comillas = (w) => (/^[\w@%+=:,./-]+$/.test(String(w)) ? String(w) : `'${String(w).split("'").join("'\\''")}'`);
 
 /**
- * Las palabras que corre la coordinadora: las de la sesión con las rutas de la tabla absolutas (contra `cwd`, la carpeta
- * del pedido) y `--for-session <destino>` al final. null si la firma no está en la tabla, si una ruta viene con `=` o si
- * hace falta la carpeta y no se sabe.
+ * Las palabras que corre la coordinadora: las de la sesión con la ruta del guion y las rutas de la tabla absolutas, cada
+ * vez que aparecen (contra `cwd`, la carpeta del pedido, o contra la opción de `contra`, como las resuelve el guion), y
+ * `--for-session <destino>` al final. Una opción seguida de otra bandera, o al final, no tiene ruta y queda como vino.
+ * null si la firma no está en la tabla, si una ruta viene con `=` o si hace falta la carpeta y no se sabe.
  */
 function palabrasRuteadas(firma, palabras, destino, cwd) {
   const t = RUTAS[firma];
@@ -57,11 +60,19 @@ function palabrasRuteadas(firma, palabras, destino, cwd) {
   const w = palabras.map(String);
   if (w.includes('--for-session') || w.some((x) => x.startsWith('--for-session='))) return null;
   if (t.rutas.some((o) => w.some((x) => x.startsWith(`${o}=`)))) return null;
-  const necesita = t.rutas.some((o) => w.includes(o)) || t.conPunto.length > 0;
+  const necesita = !path.isAbsolute(w[0]) || t.rutas.some((o) => w.includes(o)) || t.conPunto.length > 0;
   if (necesita && !(typeof cwd === 'string' && path.isAbsolute(cwd))) return null;
-  for (const o of t.rutas) {
-    const i = w.indexOf(o);
-    if (i >= 0 && w[i + 1] !== undefined) w[i + 1] = path.resolve(cwd, w[i + 1]);
+  if (!path.isAbsolute(w[0])) w[0] = path.resolve(cwd, w[0]);
+  const contra = t.contra || {};
+  const conValor = (i) => i + 1 < w.length && !w[i + 1].startsWith('--');
+  // la base de una opción de `contra`: el último valor de la otra (ya absoluto), o la carpeta
+  const baseDe = (o) => {
+    const i = w.lastIndexOf(contra[o]);
+    return i >= 0 && conValor(i) ? w[i + 1] : cwd;
+  };
+  // primero las que se resuelven contra la carpeta, después las que dependen de otra
+  for (const o of [...t.rutas].sort((a, b) => Number(Boolean(contra[a])) - Number(Boolean(contra[b])))) {
+    for (let i = 0; i < w.length; i++) if (w[i] === o && conValor(i)) w[i + 1] = path.resolve(contra[o] ? baseDe(o) : cwd, w[i + 1]);
   }
   for (const o of t.conPunto) if (!w.includes(o)) w.push(o, path.resolve(cwd));
   return [...w, '--for-session', String(destino)];
