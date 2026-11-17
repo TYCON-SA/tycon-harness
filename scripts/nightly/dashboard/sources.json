@@ -181,6 +181,7 @@
         "values": [
           "FULL_SUITE_RUN",
           "SESSION_GUARD_OK",
+          "STASH_GUARD_OK",
           "GIT_NO_VERIFY",
           "DOD_EVIDENCE_MANUAL_WRITE",
           "PR_A_MANO",

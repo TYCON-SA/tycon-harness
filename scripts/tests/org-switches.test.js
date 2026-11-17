@@ -147,7 +147,9 @@ test('T7 aplicador sin clave = como hoy: el freno de dos sesiones no se registra
   const { cfg, specs } = registrados(casa({}));
   assert.strictEqual(cfg.switches.state, 'ok');
   assert.deepStrictEqual(cfg.switches.env, {});
-  assert.ok(!specs.some((s) => s.includes('session-collision-guard.js')));
+  // el freno (PreToolUse) no; el aviso de llegada (SessionStart del mismo guion) va siempre
+  assert.ok(!specs.includes('PreToolUse @tcg:session-collision-guard.js'));
+  assert.ok(specs.includes('SessionStart @tcg:session-collision-guard.js'), 'el aviso de llegada va siempre');
   assert.ok(specs.some((s) => s.includes('safety-guard-pre.sh')), 'el freno de comandos sigue registrado');
 });
 
@@ -162,7 +164,7 @@ test('T9 aplicador: un freno apagado por la org se ignora, y la variable de la m
   assert.ok(registrados(c).specs.some((s) => s.includes('test-scope-guard-pre.sh')), 'el «off» del perfil no lo saca');
   const c2 = casa({ switches: { session_guard: 'on' } });
   c2.env.TYCON_SESSION_GUARD = '0';
-  assert.ok(!registrados(c2).specs.some((s) => s.includes('session-collision-guard.js')), 'la máquina que lo apagó lo deja apagado');
+  assert.ok(!registrados(c2).specs.includes('PreToolUse @tcg:session-collision-guard.js'), 'la máquina que lo apagó lo deja apagado');
 });
 
 test('T16 aplicador en el perfil mínimo: encender el freno de pruebas sin acotar lo registra, y sin clave no está', () => {

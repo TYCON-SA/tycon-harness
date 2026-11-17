@@ -581,6 +581,10 @@ function applyToSettings(settings, o) {
   const active = o.decision.active.slice();
   const activeSpecs = new Set(active.map((h) => h.spec));
   const inactive = o.decision.known.filter((s) => !activeSpecs.has(s));
+  // un guion puede estar prendido en un evento y apagado en otro (el aviso de llegada de session-collision-guard.js va
+  // siempre; su freno, sólo con su variable): lo apagado se saca por evento y guion, no sólo por guion
+  const activeKeys = new Set(active.map((h) => `${h.event}\0${h.spec}`));
+  const offInEvent = (ev) => o.list.hooks.filter((h) => h.event === ev && activeSpecs.has(h.spec) && !activeKeys.has(`${ev}\0${h.spec}`)).map((h) => h.spec);
   const cmdOf = (hk) => (hk && typeof hk === 'object' && typeof hk.command === 'string' ? hk.command : '');
   const keptByLeave = new Set([...(o.decision.leave || [])].map(intSpec).filter(Boolean).map((i) => path.posix.basename(i.rel)));
   const revive = new Set();   // `${evento}\0${guion}` de una ruta vieja que salió por estar muerta
@@ -612,7 +616,7 @@ function applyToSettings(settings, o) {
           r.missing.push({ event: ev, matcher: entry.matcher || '', relpath: `${sup} (ruta vieja que no se puede comprobar; si su archivo se movió, corregila a mano)`, label: '' });
         }
         if (!what) {
-          const off = inactive.find((s) => (windows ? invokesRepoPath(cmd, repoPathOf(s)) : namesFile(cmd, resolve(s))));
+          const off = [...inactive, ...offInEvent(ev)].find((s) => (windows ? invokesRepoPath(cmd, repoPathOf(s)) : namesFile(cmd, resolve(s))));
           if (off) { what = off; why = o.decision.profileOff.has(off) ? 'fuera del perfil minimal' : 'disabled by env var'; }
         }
         if (!what) {

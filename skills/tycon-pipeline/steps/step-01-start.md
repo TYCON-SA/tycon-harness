@@ -43,10 +43,24 @@ pausa sin escribir el marcador.
 
 **Stories DISTINTAS en paralelo sobre el mismo repo**: PIPE-C0 no las detecta (compara por id de story) y el árbol
 compartido las contamina: un solo HEAD, el `git diff HEAD` arma mal el set de revisores y `.advisors/tests-result.json`
-es único por repo. Regla del equipo: **un worktree por story**. Si `marker.js list-all` muestra otro pipeline activo
-sobre este `repoPath`, crear el worktree (`~/.claude/tycon-harness/scripts/tools/tycon-worktree.sh new <slug>`) y correr
-el pipeline DESDE ahí. Los recursos suman por máquina: una suite completa a la vez y el segundo pipeline con
-`TYCON_5B_EARLY=0` (`step-06-run-tests.md` §Riesgo multi-sesión). Detalle: `~/.claude/tycon-harness/guides/git-worktrees.md`.
+es único por repo. Por eso **`start` lo resuelve solo (PIPE-C10)**: si hay otra sesión viva en este
+checkout (su transcripción, un subagente suyo o su corrida abierta), no hay coordinadora viva y el repo no es el arnés
+ni `agent-skills`, crea la copia de trabajo de la historia (`<principal>--wt-<clave>`, rama `wt/<clave>`, desde
+`origin/main` o desde `HEAD`) y deja el marcador y la carpeta de la corrida allá. La salida trae `work_copy`
+(`path`, `branch`, `base`, `because`, `checklist`). Cuando la trae:
+
+1. Pasá la sesión a la copia: cada comando con `cd <copia> && …` y cada archivo por su ruta absoluta en la copia. No
+   uses `EnterWorktree`: sólo entra a `.claude/worktrees/` del mismo repo, y la copia es hermana, afuera. Nunca vuelvas
+   a escribir en el checkout compartido.
+2. Decíselo a la persona en una línea, con la ruta y la rama de la copia.
+3. Hacé lo del `checklist` (instalar dependencias, los `.env` sin trackear) y seguí el pipeline desde ahí.
+
+Con la historia sin commitear, `start` pausa con `PIPE-C10-own-copy` sin tocar nada: commiteala en su rama y volvé a
+correr `start`, o coordiná con la otra sesión. La misma pausa sale si traer main o crear la copia falla (con el primer
+renglón del error). En el arnés y en `agent-skills` no crea copia: `warnings` dice que una sola sesión toca git a la
+vez; con coordinadora viva tampoco, porque ella decide dónde trabaja cada sesión. Los recursos suman por máquina: una
+suite completa a la vez y el segundo pipeline con `TYCON_5B_EARLY=0` (`step-06-run-tests.md` §Riesgo multi-sesión).
+Detalle: `~/.claude/tycon-harness/guides/git-worktrees.md`.
 
 ### PIPE-C1 — rama protegida (CRITICAL, bloquea)
 

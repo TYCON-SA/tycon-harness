@@ -124,7 +124,7 @@
     { "kind": "hook", "id": "PreToolUse:@tcg:engram-pre-commit.sh", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:engram", "windows": true, "note": "TYCON_ENGRAM_HOOK, puesta, manda sobre la llave en los dos sentidos" },
     { "kind": "hook", "id": "SessionStart:@tcg:telegram-zombie-sweep.sh", "where_pattern": "/\\.claude/settings\\.json$", "when": "optin:telegram-plugin", "windows": false },
     { "kind": "hook", "id": "PreToolUse:@tcg:session-collision-guard.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "optin:TYCON_SESSION_GUARD", "windows": true },
-    { "kind": "hook", "id": "SessionStart:@tcg:session-collision-guard.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "optin:TYCON_SESSION_GUARD", "windows": true },
+    { "kind": "hook", "id": "SessionStart:@tcg:session-collision-guard.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
 
     { "kind": "setting", "id": "cleanupPeriodDays", "value": 365, "where_pattern": "/\\.claude/settings\\.json$", "when": "shared", "windows": true, "source": "setup/harness/shared.js (bajo harness.js, en los dos sistemas) · install-tycon-hooks.sh (suelto)", "note": "sólo si tiene el valor del arnés (365): si el dev la fijó en otro, es suya. El reporte trae `value` (el valor JSON que escribió el arnés) para que doctor vea si el dev lo cambió" },
     { "kind": "setting", "id": "env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR", "value": "1", "where_pattern": "/\\.claude/settings\\.json$", "when": "shared", "windows": true, "source": "ídem", "note": "ídem: sólo con el valor del arnés, y con su `value`" },

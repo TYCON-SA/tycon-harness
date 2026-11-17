@@ -158,19 +158,9 @@ function readParked(sdir, unreadable) {
   return out;
 }
 const localYmd = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-// La fecha de `paused_until:` de una historia, o null. Una historia que no se puede leer no dice que no está en pausa: el
-// motivo queda en `unreadable`, si viene.
-function storyPausedUntil(storyPath, unreadable) {
-  if (typeof storyPath !== 'string' || !storyPath) return null;
-  try {
-    const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(fs.readFileSync(storyPath, 'utf8'));
-    const line = fm && /^paused_until:[ \t]*["']?(\d{4}-\d\d-\d\d)/m.exec(fm[1]);
-    return line ? line[1] : null;
-  } catch (e) {
-    if (unreadable && !ABSENT_FILE.includes(e && e.code)) unreadable.push(`${storyPath}: no pude ver si está en pausa (${(e && e.code) || (e && e.message)})`);
-    return null;
-  }
-}
+// La fecha de `paused_until:` de una historia, o null; el motivo de una ilegible va a `unreadable`. Vive en
+// scripts/lib/live-sessions.js, que también la usa para saber si una corrida sigue viva.
+const { storyPausedUntil } = require(path.join(ROOT, 'scripts', 'lib', 'live-sessions.js'));
 // Lo que dice una corrida marcada, o null. La fecha pasada no la saca: dice que venció y se sigue viendo.
 function markOf(m, sid, parked, nowMs, unreadable) {
   const mark = parked.get(String(sid).replace(/[/\\]/g, '_'));

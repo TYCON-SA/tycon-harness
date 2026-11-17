@@ -683,7 +683,8 @@ MISSING_CONTROLS=(
 )
 DUPLICATES=("PostToolUse|Write|tycon-ado-story-wi/scripts/on-story-create.js" "PostToolUse|Write|tycon-story-followup-link/scripts/on-story-create.js")
 EXCLUDED_ON_WINDOWS=("SessionStart||harness-bootstrap-heal.sh" "PreToolUse|Bash|PowerShell|pr-one-per-repo-guard.js" "SessionStart||telegram-zombie-sweep.sh" "PostToolUse|Bash|PowerShell|missing-path-notice.js")
-OFF_BY_DEFAULT=("PreToolUse|Bash|PowerShell|session-collision-guard.js" "SessionStart||session-collision-guard.js")
+# sólo el freno: el aviso de llegada (SessionStart del mismo guion) va siempre
+OFF_BY_DEFAULT=("PreToolUse|Bash|PowerShell|session-collision-guard.js")
 # lanzado por un harness.js actual: el candado tomado Y el aviso de que la salud que lo va a juzgar
 # sabe revisar un .sh con el bash de Git (sin el aviso, el .ps1 deja los .sh para la corrida siguiente: sección u), y los
 # eventos de hook que esa salud entiende (sin ellos, los de eventos nuevos no van al informe: sección u)
@@ -911,7 +912,7 @@ installer "$HG" "${HELD[@]}" TYCON_SESSION_GUARD=1 > "$T/g1.out" 2>&1; RC=$?
 BAD="$(wrong_counts "$SG" 1 "${OFF_BY_DEFAULT[@]}")"
 installer "$HG" "${HELD[@]}" > "$T/g2.out" 2>&1; RC2=$?
 BAD2="$(wrong_counts "$SG" 0 "${OFF_BY_DEFAULT[@]}")"
-if [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && [ -z "$BAD" ] && [ -z "$BAD2" ]; then ok "(p) T92 el opt-in que nace apagado: con TYCON_SESSION_GUARD=1 se registra en sus dos eventos, y sin la variable se saca"
+if [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && [ -z "$BAD" ] && [ -z "$BAD2" ]; then ok "(p) T92 el opt-in que nace apagado: con TYCON_SESSION_GUARD=1 se registra el freno, y sin la variable se saca (el aviso queda)"
 else no "(p) T92 el opt-in que nace apagado (rc $RC y $RC2): con la variable:${BAD:- bien}; sin la variable:${BAD2:- bien}"; fi
 
 # ── (q) T93 · Ps1_CrlfScriptNotRegistered_MissingScriptNamed ────────────────────────────────────────────────────

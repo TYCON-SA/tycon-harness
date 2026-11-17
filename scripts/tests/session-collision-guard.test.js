@@ -131,3 +131,109 @@ test('T7 Choque_ClaveQueEmpiezaIgual_NoCuenta @story-8.274 @ac-9: …/repo no ve
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(run(t, 'PreToolUse', otro).status, 2, 'en su propio repo sí cuenta');
 });
+
+// ── el aviso de llegada: siempre registrado, ve subagentes y marcadores, y pide decírselo a la persona ──
+
+const STATE = (t) => path.join(t.home, '.claude', '.tycon-pipeline');
+function marcador(t, sid, fields) {
+  const dir = path.join(STATE(t), 'active');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${sid}.json`), JSON.stringify({ sessionId: sid, storyId: '9.1', stepsPending: ['plan'], lastTouch: new Date().toISOString(), ...fields }));
+}
+const viejo = (file, min) => { const w = new Date(Date.now() - min * 60000); fs.utimesSync(file, w, w); };
+
+test('SG-A1 SessionStart_Warns_AndAsksToTellPerson @story-8.292 @ac-8', () => {
+  // 🔴 mutación: sacar el cierre «Decile a la persona…», el consejo de la copia propia, o volver a prometer el freno
+  const t = toy();
+  const checkout = repo(t, 'producto');
+  transcript(t, checkout, 'aaaa1111-otra', checkout);
+  marcador(t, 'aaaa1111-otra', { storyId: '7.7', repoPath: checkout });
+  const fuera = run(t, 'SessionStart', checkout);
+  assert.strictEqual(fuera.status, 0, fuera.stderr);
+  assert.match(fuera.stdout, /aaaa1111/);
+  assert.match(fuera.stdout, /historia 7\.7/);
+  assert.match(fuera.stdout, /pedido de aaaa1111-otra/);
+  assert.match(fuera.stdout, /start.*propia copia/);
+  assert.match(fuera.stdout, /Decile a la persona en una línea que hay otra sesión en este checkout/);
+  assert.doesNotMatch(fuera.stdout, /este freno te va a parar/);
+  // dentro del arnés, el consejo de siempre: una sola sesión toca git
+  const arnes = repo(t, 'tycon-harness');
+  transcript(t, arnes, 'bbbb2222-otra', arnes);
+  const dentro = run(t, 'SessionStart', arnes);
+  assert.match(dentro.stdout, /UNA sola sesión toca git/);
+  assert.doesNotMatch(dentro.stdout, /propia copia/);
+  assert.match(dentro.stdout, /Decile a la persona/);
+});
+
+test('SG-A2 HooksList_SessionStartAlways_BrakeStillOptin @story-8.292 @ac-9', () => {
+  // 🔴 mutación: dejar el SessionStart como opt-in, o sacar por guion (el PreToolUse no se va al apagar la variable)
+  const ROOT = path.join(__dirname, '..', '..');
+  const list = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
+  const del = (ev) => list.hooks.find((h) => h.event === ev && h.spec === '@tcg:session-collision-guard.js');
+  assert.strictEqual(del('SessionStart').when, 'always');
+  assert.strictEqual(del('PreToolUse').when, 'optin:TYCON_SESSION_GUARD');
+  assert.strictEqual(del('PreToolUse').default, 'off');
+  const t = toy();
+  const settings = path.join(t.home, '.claude', 'settings.json');
+  const aplicar = (extra) => {
+    const env = { ...process.env, HOME: t.home, USERPROFILE: t.home, ...extra };
+    for (const k of ['TYCON_SESSION_GUARD', 'TYCON_HOME', 'TYCON_INSTALL_PROFILE']) if (!(k in extra)) delete env[k];
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'setup', 'apply-hooks.js'), '--skills', path.join(ROOT, 'skills'),
+      '--settings', settings, '--hooks-dir', path.join(ROOT, 'scripts', 'hooks'), '--list', path.join(ROOT, 'scripts', 'setup', 'hooks-list.json')], { env, encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    const hooks = JSON.parse(fs.readFileSync(settings, 'utf8')).hooks || {};
+    const en = (ev) => (hooks[ev] || []).some((e) => (e.hooks || []).some((h) => /session-collision-guard\.js/.test(h.command || '')));
+    return { SessionStart: en('SessionStart'), PreToolUse: en('PreToolUse') };
+  };
+  assert.deepStrictEqual(aplicar({}), { SessionStart: true, PreToolUse: false }, 'sin la variable');
+  assert.deepStrictEqual(aplicar({ TYCON_SESSION_GUARD: '1' }), { SessionStart: true, PreToolUse: true }, 'prendido');
+  assert.deepStrictEqual(aplicar({}), { SessionStart: true, PreToolUse: false }, 'apagado otra vez: el freno se va y el aviso queda');
+  // con la variable en 0 el aviso, registrado, sale mudo
+  const checkout = repo(t, 'producto');
+  transcript(t, checkout, 'cccc3333-otra', checkout);
+  const env = { ...process.env, HOME: t.home, USERPROFILE: t.home, TYCON_SESSION_GUARD: '0' };
+  const mudo = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'SessionStart', cwd: checkout, session_id: 'la-mia' }), cwd: checkout, env, encoding: 'utf8' });
+  assert.strictEqual(mudo.status, 0);
+  assert.strictEqual(mudo.stdout, '');
+  // el lado Codex lo declara
+  const codex = fs.readFileSync(path.join(ROOT, 'adapters', 'codex', 'hooks.json'), 'utf8');
+  assert.match(codex, /8\.292/);
+});
+
+test('SG-A3 SessionStart_SubagentOrMarker_Detected @story-8.292 @ac-10', () => {
+  // 🔴 mutación: mirar sólo la transcripción principal (los dos huecos de hoy)
+  const t = toy();
+  const checkout = repo(t, 'producto');
+  const dir = path.join(t.home, '.claude', 'projects', checkout.replace(/[/\\:]/g, '-'));
+  transcript(t, checkout, 'dddd4444-quieta', checkout);
+  viejo(path.join(dir, 'dddd4444-quieta.jsonl'), 10);
+  const sub = path.join(dir, 'dddd4444-quieta', 'subagents');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, 'agent-x.jsonl'), '{}\n');
+  viejo(path.join(sub, 'agent-x.jsonl'), 1);
+  const porSub = run(t, 'SessionStart', checkout);
+  assert.match(porSub.stdout, /dddd4444/, porSub.stdout);
+
+  const t2 = toy();
+  const c2 = repo(t2, 'producto');
+  marcador(t2, 'eeee5555-marcador', { storyId: '3.3', repoPath: c2 });
+  const porMarcador = run(t2, 'SessionStart', c2);
+  assert.match(porMarcador.stdout, /eeee5555/, porMarcador.stdout);
+  assert.match(porMarcador.stdout, /3\.3/);
+});
+
+test('SG-A4 SessionStart_Unreadable_SaysSo @story-8.292 @ac-11', { skip: process.getuid && process.getuid() === 0 ? 'como root se lee todo' : false }, () => {
+  // 🔴 mutación: callar cuando no pudo mirar, o frenar la apertura
+  const t = toy();
+  const checkout = repo(t, 'producto');
+  const projects = path.join(t.home, '.claude', 'projects');
+  const active = path.join(STATE(t), 'active');
+  fs.mkdirSync(active, { recursive: true });
+  fs.chmodSync(projects, 0o000);
+  fs.chmodSync(active, 0o000);
+  try {
+    const r = run(t, 'SessionStart', checkout);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.match(r.stdout, /no pude ver si hay otra sesión en este checkout/);
+  } finally { fs.chmodSync(projects, 0o755); fs.chmodSync(active, 0o755); }
+});
