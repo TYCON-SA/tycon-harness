@@ -43,15 +43,32 @@ function mostrado({ stateDir, sessionId, storyId, ac, sha }) {
  * La huella de lo que se le mostró a la persona: el texto del criterio, por qué no se puede probar en vivo y qué lo
  * cubre. Si cambia cualquiera de los tres, la muestra ya no vale para la firma.
  */
-function huella(text, reason, coveredBy) {
-  return require('crypto').createHash('sha256').update(JSON.stringify([String(text ?? '').trim(), String(reason ?? '').trim(), String(coveredBy ?? '').trim()])).digest('hex').slice(0, 16);
+// Con un criterio con cota, lo medido entra como cuarto dato: si cambia la medición, el aviso se vuelve a mostrar. Sin
+// cota no entra, y la huella de un criterio sin marca es la de siempre.
+function huella(text, reason, coveredBy, medida) {
+  const datos = [String(text ?? '').trim(), String(reason ?? '').trim(), String(coveredBy ?? '').trim()];
+  if (medida) datos.push(String(medida).trim());
+  return require('crypto').createHash('sha256').update(JSON.stringify(datos)).digest('hex').slice(0, 16);
+}
+
+/**
+ * La pregunta por criterio de `marker.js runtime-waiver` en la terminal: el texto del criterio primero (es lo que se
+ * aprueba saltear), la razón, la prueba que lo cubre y, en uno con cota, lo medido y la cota.
+ */
+function preguntaDeTerminal({ ac, texto, reason, cov, medida }) {
+  return `\n──────── AC #${ac} ────────\n` +
+    `QUÉ DICE EL AC:\n  ${texto ? texto : '(no se pudo citar del spec — abrí la story antes de aprobar)'}\n\n` +
+    `Por qué NO se puede verificar corriendo la app:\n  ${reason}\n` +
+    `Cubierto por (test que ya corrió): ${cov}\n` +
+    (medida ? `Lo medido: ${medida}\n` : '') + '\n' +
+    `¿Aprobás saltar la verificación POR-LA-APP de AC#${ac}? (si / no) > `;
 }
 
 function bloque({ storyId, criterios }) {
   // un renglón por criterio, más el encabezado y dónde se aprueba: Claude Code antepone su rótulo a cada renglón del aviso
   return [
     `Te piden firmar ${criterios.length === 1 ? 'un criterio' : `${criterios.length} criterios`} de la historia ${storyId} que no se ${criterios.length === 1 ? 'puede' : 'pueden'} probar en vivo (te lo muestra el arnés). Un criterio firmado cuenta como probado sin haberlo corrido contra la aplicación.`,
-    ...criterios.map((c) => `AC ${c.ac}: ${c.text || '(sin texto en la historia)'} · Por qué no se puede probar en vivo: ${c.reason || '(sin razón declarada)'} · Qué lo cubre: ${c.coveredBy || '(ninguna prueba declarada)'}`),
+    ...criterios.map((c) => `AC ${c.ac}: ${c.text || '(sin texto en la historia)'} · Por qué no se puede probar en vivo: ${c.reason || '(sin razón declarada)'} · Qué lo cubre: ${c.coveredBy || '(ninguna prueba declarada)'}${c.medida ? ` · Lo medido: ${c.medida}` : ''}`),
     'Si estás de acuerdo, aprobalo en la ventana de permiso que sale a continuación o, donde no sale, en el cuadro de opciones; si no, elegí «No». Lo firma esa aprobación, no otra respuesta en el chat.',
   ].join('\n');
 }
@@ -106,7 +123,10 @@ function criteriosDe(storyPath, acs, calculada = null) {
   for (const n of acs) {
     const a = matrix.perAc && matrix.perAc[n];
     if (!a || !pend.has(n)) continue;
-    lista.push({ ac: n, text: a.text, reason: a.declReason, coveredBy: a.coveredBy, sha: huella(a.text, a.declReason, a.coveredBy) });
+    // en un criterio con cota, lo medido y la cota: la persona sabe qué está perdonando (null sin marca)
+    const medida = require('../runtime-matrix.js').textoDeMedida(a);
+    lista.push({ ac: n, text: a.text, reason: a.declReason, coveredBy: a.coveredBy, ...(medida ? { medida } : {}),
+      sha: huella(a.text, a.declReason, a.coveredBy, medida) });
   }
   return { matrix, lista };
 }
@@ -205,4 +225,4 @@ function handle(event, opts = {}) {
   return r ? { systemMessage: r.systemMessage, alMostrar: r.anotar } : null;
 }
 
-module.exports = { PEDIDO, mostrado, huella, bloque, criteriosDe, matrixForSignature, pistaDeSesion, preparar, esLaDelMarcador, pedidosDelComando, paraMostrar, handle };
+module.exports = { PEDIDO, mostrado, huella, bloque, preguntaDeTerminal, criteriosDe, matrixForSignature, pistaDeSesion, preparar, esLaDelMarcador, pedidosDelComando, paraMostrar, handle };

@@ -390,3 +390,15 @@ test('P11 Compare_SesionPuntoPunto_YInformeIlegible @story-8.167 @ac-9 — «..�
   assert.ok(fs.readdirSync(L.runDir).some((f) => f.startsWith(`${cp().INFORME}.ilegible-`)), 'el roto quedó aparte');
   assert.strictEqual(cp().leerInforme(L.runDir).length, 1);
 });
+
+test('ComparePrevious_MeasureValuesNormalized @story-8.260 @ac-18', () => {
+  // el valor de una medida que imprime el comando varía entre corridas: no es una diferencia; el nombre sí cuenta
+  const n = (t) => cp().normalizar(t, {});
+  const a = 'listo\nTYCON_MEASURE p95=180ms\n';
+  const b = 'listo\nTYCON_MEASURE p95=210ms\n';
+  assert.strictEqual(n(a), n(b));
+  assert.match(n(a), /TYCON_MEASURE p95=<N>/);
+  assert.strictEqual(cp().comparar({ exit: 0, salida: n(a) }, { exit: 0, salida: n(b) }).igual, true);
+  assert.notStrictEqual(n('TYCON_MEASURE p95=180ms\n'), n('TYCON_MEASURE p99=180ms\n'));
+  assert.strictEqual(n('TYCON_MEASURE p95=175 ms\n'), n('TYCON_MEASURE p95=180ms\n'));
+});

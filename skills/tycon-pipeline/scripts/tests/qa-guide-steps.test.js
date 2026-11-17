@@ -111,3 +111,27 @@ test('Check_SinGuiaHtml_FrenaYDiceElComando — sin la guía HTML el chequeo da 
   const con = qa(f, '--check');
   assert.doesNotMatch(con.out, /Falta la guía HTML/, con.out);
 });
+
+test('QaGuide_OutOfBound_SaysMeasuredNotUntested @story-8.260 @ac-23', () => {
+  const { estadoDelArnes } = require(QA);
+  const m = { nombre: 'duration', medido: 3010, medidoTexto: '3010 ms', cota: '< 2000 ms', estado: 'fuera', humo: '2026-11-17T10:00:00Z' };
+  const fuera = estadoDelArnes({ verdict: 'FUERA-DE-COTA', medida: m, fuentes: { smoke: ['x'], e2e: [] } });
+  assert.strictEqual(fuera.tier, 'pend');
+  assert.match(fuera.badge, /lo midió/);
+  assert.match(fuera.badge, /3010 ms/);
+  assert.match(fuera.badge, /< 2000 ms/);
+  assert.doesNotMatch(fuera.badge, /no lo probó/);
+  const sin = estadoDelArnes({ verdict: 'SIN-MEDICION', medida: { ...m, medido: null, medidoTexto: undefined, estado: 'sin-medicion', motivo: 'ningún humo fresco del criterio trae la medida p95' } });
+  assert.strictEqual(sin.tier, 'pend');
+  assert.match(sin.badge, /falta la medida/);
+  for (const v of ['NOT-VERIFIABLE', 'WAIVED-USER']) {
+    const f = estadoDelArnes({ verdict: v, medida: m });
+    assert.match(f.badge, /sin medirlo dentro de la cota/, v);
+    assert.match(f.badge, /3010 ms/, v);
+    assert.doesNotMatch(f.badge, /lo cubre una prueba del código/, v);
+  }
+  // los de siempre no cambian
+  assert.strictEqual(estadoDelArnes({ verdict: 'WAIVED-USER' }).badge, 'La app no lo muestra: lo cubre una prueba del código');
+  assert.strictEqual(estadoDelArnes({ verdict: 'RUNTIME', fuentes: { smoke: ['x'], e2e: [] } }).badge, '✓ el arnés ya lo probó');
+  assert.strictEqual(estadoDelArnes({ verdict: 'NOT-RUN' }).badge, 'El arnés no lo probó: probalo a mano');
+});

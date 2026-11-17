@@ -244,7 +244,10 @@ function criteriaOf(specContent) {
 // por diseño: si un AC no se puede aislar, se omite del mapa y el llamador cae a su texto de siempre
 // (nunca rompe el waiver por no poder citar). Cubre los tres estilos que `parseAcsFromSpec` reconoce:
 // heading (`### AC-1`), lista numerada (`1. **Given** …`) y bullet (`- **AC1**`).
-function acTextsFromSpec(specContent, { maxChars = 600 } = {}) {
+// `crudo: true` devuelve el texto entero de cada criterio, renglones unidos tal cual, sin `limpiarProsa` ni corte: lo
+// usa la matriz para leer las marcas de cota (`@measure`), que no pueden perder los acentos graves que las citan. En la
+// forma Gherkin cuenta sólo el bloque del criterio (el que está abierto cuando arranca); el de otro bloque, no.
+function acTextsFromSpec(specContent, { maxChars = 600, crudo = false } = {}) {
   const out = {};
   if (!specContent) return out;
   const section = acSectionOf(specContent);
@@ -269,9 +272,10 @@ function acTextsFromSpec(specContent, { maxChars = 600 } = {}) {
   let cur = null;
   let buf = [];
   let enFence = false; // dentro de un ``` … ``` — su contenido no es prosa del AC (salvo en Gherkin)
+  let propio = false;  // (crudo) el bloque abierto es el de un criterio, no uno ajeno
   const flush = () => {
     if (cur === null) return;
-    const texto = limpiarProsa(buf.join(' '), maxChars);
+    const texto = crudo ? buf.join('\n') : limpiarProsa(buf.join(' '), maxChars);
     // First-wins: en una story con headings Y numerados, el primero que aparece es el que nombra al AC.
     if (texto && out[cur] === undefined) out[cur] = texto;
     cur = null;
@@ -280,15 +284,17 @@ function acTextsFromSpec(specContent, { maxChars = 600 } = {}) {
   for (const [i, raw] of lines.entries()) {
     // El filtrado de fences y citas es POR LÍNEA y va acá, no en `limpiarProsa`: una vez que las
     // líneas se juntan en un solo string, `^`/`$` no distinguen dónde empieza cada una.
-    if (/^[ \t]*```/.test(raw)) { enFence = !enFence; continue; }
+    if (/^[ \t]*```/.test(raw)) { enFence = !enFence; propio = false; continue; }
     if (enFence && !leerBloques) continue;
     const n = startOf(raw, i);
     if (n !== null) {
       flush();
       cur = n;
       buf = [raw];
+      if (enFence) propio = true;
       continue;
     }
+    if (crudo && enFence && !propio) continue;
     // Un heading de nivel 2-4 que NO es un AC cierra el bloque (`### Tests`, `### Doctrina`, …).
     if (/^#{2,4}[ \t]+\S/.test(raw)) { flush(); continue; }
     // Las citas son notas al margen del autor (correcciones, decisiones, historia) — no el AC.

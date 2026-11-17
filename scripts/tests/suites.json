@@ -1156,6 +1156,18 @@
       "requiere": []
     },
     {
+      "__nota": "un criterio con un número se mide: la marca @measure del criterio (las dos formas, operadores, unidades, citada como ejemplo, Gherkin), la comparación con la cota y la lectura de los renglones TYCON_MEASURE",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/smoke-measures.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un criterio con cota fuera de la cota o sin medición: la matriz, «Preparar el commit» y el control del commit lo nombran con lo medido y la cota; la deuda no lo exime; la pregunta de la firma por terminal muestra lo medido. Comandos reales con HOME temporal",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/matrix-out-of-bound-message.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "en una historia paraguas la tanda se anota una vez (set-batch), «Preparar el commit» mide sólo esa tanda, y el control del commit mide todas al pasar a review y la que se cierra al cerrar una tanda. Comandos reales con HOME temporal (8.239)",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/matrix-by-batch.test.js",
@@ -2054,6 +2066,12 @@
       "ruta": "tests/smoke-expectation.test.sh",
       "requiere": [],
       "__nota": "story 1.19 (2026-10-15): un humo por terminal dejaba sólo el código de salida, y en otro arnés el agente insertó a mano el resultado que la prueba debía encontrar. Mide que smoke-run.sh pide --pass-if a todo humo con --acs (y no a la siembra sin --acs), que la expectativa y la salida se guardan tapadas con su sha256 en el espejo, el tope de 8 KB, que el código de salida sobrevive al tee, los bytes que no son texto, el tapado caído, la carpeta de salidas bloqueada, dos humos del mismo segundo y un humo cortado a mitad sin dejar el temporal; y que el paso 7c dice la regla de sembrar el «Given»."
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/smoke-measure.test.sh",
+      "requiere": [],
+      "__nota": "un criterio con un número salía verde con un humo que tardaba de más: smoke-run.sh anota duration_ms y los renglones TYCON_MEASURE del comando en el registro y el espejo (sin temporal, sin la pieza que mide, rechazados, tope, humo cortado), y la sonda de la auditoría da rojo con 3 s contra una cota de 2 s y verde con 1 s."
     },
     {
       "raiz": "arnes",

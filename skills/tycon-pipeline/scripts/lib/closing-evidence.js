@@ -68,8 +68,11 @@ function coberturaDeLaUnion(matriz) {
   if (!matriz || matriz.structuralError || matriz.exempt || !matriz.perAc) return { porAc, cubiertos: new Set() };
   for (const [k, v] of Object.entries(matriz.perAc)) {
     const f = [];
-    if (v && v.fuentes && v.fuentes.smoke && v.fuentes.smoke.length) f.push('smoke');
-    if (v && v.fuentes && v.fuentes.e2e && v.fuentes.e2e.length) f.push('e2e');
+    // un criterio con cota (`medida`) cuenta por la corrida sólo si quedó medido dentro de ella (RUNTIME): fuera de la
+    // cota o sin su medida, el humo y el E2E corrieron pero no lo cubren
+    const enVivo = !(v && v.medida) || v.verdict === 'RUNTIME';
+    if (enVivo && v && v.fuentes && v.fuentes.smoke && v.fuentes.smoke.length) f.push('smoke');
+    if (enVivo && v && v.fuentes && v.fuentes.e2e && v.fuentes.e2e.length) f.push('e2e');
     if (v && v.verdict === 'WAIVED-USER') f.push('firma');
     if (f.length) porAc.set(Number(k), f);
   }

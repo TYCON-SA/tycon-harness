@@ -461,6 +461,33 @@ escriben otros equipos, en un solo lugar (`skills/tycon-pipeline/scripts/lib/sto
 - Lo que no entra en ninguna deja la story **sin criterios**: entra siempre el revisor de cobertura de criterios, y el
   commit que la pasa a `review` o `done` frena con el motivo.
 
+**Un criterio con un número lleva su cota: `@measure(...)`.** Un criterio como «responde en menos de 2 s» sale verde
+con un humo que tarda 3 s si sólo se mira el código de salida. Con la marca, la matriz de evidencia compara lo que midió
+el humo con la cota que escribe el criterio:
+
+```markdown
+1. **Given** la consulta, **When** se pide, **Then** responde en menos de 2 s. @measure(duration < 2s)
+2. **Given** 100 pedidos, **Then** el percentil 95 no pasa de 200 ms. @measure(p95 <= 200ms)
+```
+
+- `duration` es lo que tardó el comando del humo: el reloj lo toma `smoke-run.sh`. Cualquier otro nombre
+  (`[a-z][a-z0-9_.-]`, hasta 40 letras) es lo que el comando imprime con `TYCON_MEASURE <nombre>=<valor><unidad>`.
+- Operadores `<`, `<=`, `>`, `>=`. `ms`, `s` y `min` se convierten entre sí; otra unidad tiene que ser igual letra por
+  letra, y sin unidad sólo contra sin unidad. Varias marcas en un criterio: tienen que cumplir todas.
+- También se lee `@mide(duracion < 2s)`. La guía muestra `@measure`.
+- Una marca entre acentos graves, en un bloque de código o en una cita es un ejemplo, no una marca. Una marca ilegible
+  (`@measure(p95 ~ 2)`, `==`, un nombre en mayúscula) deja el criterio `SIN-MEDICION`: nunca se ignora en silencio.
+- Decide el humo más nuevo del criterio que trae la medida y corrió la app (no cuentan `node --test`, un portón de
+  compilación ni un servidor simulado). Si hace falta repetir, lo hace el comando y emite el agregado (su p95).
+- Fuera de la cota el criterio sale `FUERA-DE-COTA`; sin la medida, `SIN-MEDICION`. Los dos bloquean y tienen tres
+  salidas: se mide de nuevo, se cambia el criterio, o se declara en `runtime_not_verifiable:` con su prueba y lo firma
+  el dueño. La firma se ancla a la declaración, como la de cualquier criterio; lo medido y la cota se le muestran antes.
+
+**Lo que una medición promete y lo que no.** Vale para una corrida, en un entorno: el de la máquina que corrió el humo,
+que va en su procedencia. No es una prueba de carga ni dice nada de producción, y el servidor de CI no la ve (sólo mira
+que existan archivos). Un valor de `TYCON_MEASURE` es lo que el comando dice: el arnés garantiza que no se editó después
+de la corrida, no que el número sea una medición honesta. `duration_ms` sí lo toma el arnés.
+
 ### 6. Tests (tabla)
 
 ```markdown

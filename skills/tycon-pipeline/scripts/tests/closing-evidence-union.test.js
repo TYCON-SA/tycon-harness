@@ -214,3 +214,22 @@ test('la unión lee el veredicto de la matriz, no texto: sin matriz no cubre nad
   assert.deepEqual([...u.cubiertos].sort(), [1, 2, 3]);
   assert.deepEqual(u.porAc.get(3), ['firma']);
 });
+
+test('Union_OutOfBoundAc_NotCovered @story-8.260 @ac-22', () => {
+  // un criterio con la marca (con `medida`) cuenta por el humo o el E2E sólo si salió RUNTIME; firmado, por la firma
+  const m = { nombre: 'duration', medido: 3010, cota: '< 2000 ms', estado: 'fuera' };
+  const u = coberturaDeLaUnion({ perAc: {
+    1: { verdict: 'FUERA-DE-COTA', medida: m, fuentes: { smoke: ['t1'], e2e: [] } },
+    2: { verdict: 'SIN-MEDICION', medida: m, fuentes: { smoke: ['t2'], e2e: [] } },
+    3: { verdict: 'NOT-VERIFIABLE', medida: m, fuentes: { smoke: ['t3'], e2e: [] } },
+    4: { verdict: 'CODE-ONLY', medida: m, fuentes: { smoke: ['t4'], e2e: [] } },
+    5: { verdict: 'WAIVED-USER', medida: m, fuentes: { smoke: ['t5'], e2e: [] } },
+    6: { verdict: 'RUNTIME', medida: { ...m, estado: 'dentro', medido: 1005 }, fuentes: { smoke: ['t6'], e2e: [] } },
+    7: { verdict: 'RUNTIME', fuentes: { smoke: ['t7'], e2e: [] } },
+    8: { verdict: 'SIN-MEDICION', medida: m, fuentes: { smoke: [], e2e: ['g.md'] } },
+  } });
+  assert.deepEqual([...u.cubiertos].sort(), [5, 6, 7]);
+  assert.deepEqual(u.porAc.get(5), ['firma']);
+  assert.deepEqual(u.porAc.get(6), ['smoke']);
+  assert.deepEqual(u.porAc.get(7), ['smoke']);
+});

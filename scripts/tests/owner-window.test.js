@@ -4168,3 +4168,19 @@ test('Guide_DelegatedSign_NamesReadOnlyWatchers @story-8.270 @ac-17 — la guía
   assert.match(seccion, /Cualquier otra consola de fondo sigue frenando/);
   assert.match(seccion, /no puede saber si además escribe/);
 });
+
+test('OwnerWindow_RuntimeWaiver_MeasuredAcShowsBound @story-8.260 @ac-25', () => {
+  // el cuadro del dueño, la fuente de la huella de lo que aprueba y el texto de los criterios dicen lo medido y la cota
+  const con = (medida) => ({ ac: 1, text: 'responde en menos de 2 s', reason: 'el laboratorio no deja medir', coveredBy: 'T1', ...(medida ? { medida } : {}) });
+  const m1 = 'medido 3010 ms; la cota es < 2000 ms';
+  const m2 = 'medido 4500 ms; la cota es < 2000 ms';
+  assert.match(ow.renglonALaVista(con(m1)), /lo medido: medido 3010 ms; la cota es < 2000 ms/);
+  assert.match(ow.textoDeLosCriterios([con(m1)]), /lo medido: medido 3010 ms; la cota es < 2000 ms/);
+  assert.match(ow.renglonDeLaExcepcion(con(m1)), /lo medido: medido 3010 ms/);
+  assert.notStrictEqual(ow.renglonDeLaExcepcion(con(m1)), ow.renglonDeLaExcepcion(con(m2)));
+  // sin marca, los tres como hoy
+  assert.strictEqual(ow.renglonDeLaExcepcion(con(null)),
+    'AC 1: por qué no se prueba en vivo: el laboratorio no deja medir; lo cubre: T1; el criterio: responde en menos de 2 s');
+  assert.doesNotMatch(ow.renglonALaVista(con(null)), /lo medido/);
+  assert.doesNotMatch(ow.textoDeLosCriterios([con(null)]), /lo medido/);
+});

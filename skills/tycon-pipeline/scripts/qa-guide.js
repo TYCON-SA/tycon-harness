@@ -349,6 +349,16 @@ function mdInline(s) {
 // corriendo la app (de punta a punta, o con un humo).
 function estadoDelArnes(pa) {
   const v = (pa && pa.verdict) || 'NOT-RUN';
+  // un criterio con cota: el arnés lo corrió y lo midió, así que «no lo probó» sería falso
+  const m = pa && pa.medida;
+  if (m) {
+    const medido = m.medidoTexto ? `medido ${m.medidoTexto}` : 'sin medición';
+    if (v === 'FUERA-DE-COTA') return { tier: 'pend', badge: `El arnés lo midió y quedó fuera de la cota: ${medido}; la cota es ${m.cota}`, como: null };
+    if (v === 'SIN-MEDICION') return { tier: 'pend', badge: `El arnés lo corrió pero falta la medida: ${m.motivo || 'sin medición'}`, como: null };
+    if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER') {
+      return { tier: 'wv', badge: `Se firmó sin medirlo dentro de la cota (${medido}${m.cota ? `; la cota es ${m.cota}` : ''})`, como: null };
+    }
+  }
   if (v === 'RUNTIME') {
     const e2e = pa.fuentes && Array.isArray(pa.fuentes.e2e) && pa.fuentes.e2e.length > 0;
     return { tier: 'run', badge: '✓ el arnés ya lo probó', como: `Lo probó corriendo la app${e2e ? ', con una prueba de punta a punta' : ''}. Probarlo a mano es un segundo control.` };

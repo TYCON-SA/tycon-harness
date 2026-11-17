@@ -73,6 +73,7 @@ const smokeSecrets = require(path.join(__dirname, 'lib', 'smoke-secrets.js'));
 const e2eEvidence = require(path.join(__dirname, 'lib', 'e2e-evidence.js'));
 const evidenceVsCommit = require(path.join(__dirname, 'lib', 'evidence-vs-commit.js'));
 const simulatedServer = require(path.join(__dirname, 'lib', 'simulated-server.js'));
+const smokeMeasures = require(path.join(__dirname, 'lib', 'smoke-measures.js'));
 
 // Desde cuándo un AC de pantalla sin imagen bloquea: las stories que arrancaron antes de esta hora no se frenan a mitad
 // de su trabajo y reciben un aviso. Es la hora en que se publica la regla.
@@ -831,6 +832,15 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // confirmada del espejo trae el flag. Es la vía de mutación para productos sin superficie
       // HTTP ni navegador.
       const mutatesOk = e.mutates === true && confirmadas.some((l) => l.includes('"mutates":true'));
+      // Lo que midió el humo (`duration_ms`, `measures`) decide el veredicto de un criterio con cota: se confirma contra
+      // el espejo leyendo cada renglón, por igualdad exacta y `measures` entero. Nunca por «el texto contiene»:
+      // `"duration_ms":100` está contenido en `"duration_ms":1005`.
+      const llevaMedida = e.duration_ms !== undefined || e.measures !== undefined;
+      const medidaConfirmada = !llevaMedida || confirmadas.some((l) => {
+        let m;
+        try { m = JSON.parse(l); } catch (_e) { return false; }
+        return m.duration_ms === e.duration_ms && JSON.stringify(m.measures) === JSON.stringify(e.measures);
+      });
       // Una línea `"v":2` trae su expectativa y su salida guardada, selladas en el espejo. Es `v:2` si lo
       // dice el registro O el espejo: borrar la marca del registro (que viaja con el código y se edita) no la vuelve
       // una línea vieja. Las líneas sin `v` en los dos lados cuentan como siempre.
@@ -839,7 +849,7 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // La imagen que el humo guardó con `--capture`, verificada contra el espejo como la salida.
       const imagen = mirrored ? imagenDelHumo(e, dir, confirmadas) : { ruta: null, problema: null };
       // `linea`: la línea entera, para encontrar en git el commit de ESTA corrida; un checkout puede dejarle el `\r`.
-      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, sello, mutatesOk, evidenceKind: classifyCmd(e.cmd),
+      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, sello, mutatesOk, medidaConfirmada, evidenceKind: classifyCmd(e.cmd),
         v2, salidaProblema, visual: imagen.ruta, visualProblema: imagen.problema });
     }
   }
@@ -863,6 +873,104 @@ function problemaDeSalida(e, dir, confirmadas) {
   const shaDe = (v) => (typeof v === 'string' ? sha(v) : undefined);
   const calza = deLaSalida.some((m) => m.pass_if_sha === shaDe(e.pass_if) && m.fail_if_sha === shaDe(e.fail_if));
   return calza ? null : 'expectativa cambiada después de correr';
+}
+
+// ---------------------------------------------------------------- criterio con cota (@measure)
+
+/**
+ * Lo que dice la cota de un criterio sobre sus humos, o null si el criterio no tiene marca. `{ veredicto, medida,
+ * avisos }`: `veredicto` es null si se cumplen todas las marcas, o `FUERA-DE-COTA` / `SIN-MEDICION` por la primera que
+ * no. Para la medida cuentan sólo los humos que corrieron la app (`app-run`, aun con la variable vieja que cuenta todo
+ * humo como corrida) y sin servidor simulado, con la medida confirmada por el espejo (el no confirmado se descarta y se
+ * nombra). Decide el más nuevo; con el mismo sello, el peor.
+ */
+function juzgarMedida(textoCrudo, humos) {
+  const { marcas, ilegibles } = smokeMeasures.marcas(textoCrudo || '');
+  if (!marcas.length && !ilegibles.length) return null;
+  if (ilegibles.length) {
+    const motivo = `marca ilegible: ${ilegibles[0]}`;
+    return { veredicto: 'SIN-MEDICION', avisos: ilegibles.map((t) => `marca ilegible: ${t}`),
+      medida: { nombre: null, medido: null, unidad: null, cota: null, estado: 'sin-medicion', motivo } };
+  }
+  const candidatos = humos.filter((e) => e.evidenceKind === 'app-run' && !e.simuladoParaMedida);
+  const confirmados = candidatos.filter((e) => e.medidaConfirmada);
+  const descartados = candidatos.filter((e) => !e.medidaConfirmada).map((e) => e.ts);
+  let primera = null;
+  for (const marca of marcas) {
+    const valorDe = (e) => {
+      if (marca.nombre === 'duration') return Number.isInteger(e.duration_ms) && e.duration_ms >= 0 ? { value: e.duration_ms, unit: 'ms' } : null;
+      const m = (Array.isArray(e.measures) ? e.measures : []).find((x) => x && x.name === marca.nombre && Number.isFinite(x.value));
+      return m ? { value: m.value, unit: m.unit || null } : null;
+    };
+    const base = { nombre: marca.nombre, cota: smokeMeasures.textoCota(marca), ...(descartados.length ? { descartados } : {}) };
+    const con = confirmados.filter(valorDe);
+    if (!con.length) {
+      const motivo = candidatos.some((e) => !e.medidaConfirmada && valorDe(e))
+        ? 'medida no confirmada por el espejo'
+        : `ningún humo fresco del criterio trae la medida ${marca.nombre}`;
+      primera = { ...base, medido: null, unidad: null, estado: 'sin-medicion', motivo };
+      break;
+    }
+    const juicio = (e) => ({ e, v: valorDe(e), c: smokeMeasures.comparar(valorDe(e), marca) });
+    const malo = (j) => j.c.sinMedicion !== undefined || j.c.cumple === false;
+    const nuevo = Math.max(...con.map((e) => e.tsMs));
+    const delSello = con.filter((e) => e.tsMs === nuevo).map(juicio);
+    const decide = delSello.find((j) => j.c.sinMedicion !== undefined) || delSello.find(malo) || delSello[0];
+    const fuera = con.map(juicio).filter(malo).length;
+    const res = { ...base, medido: decide.v.value, unidad: decide.v.unit, medidoTexto: smokeMeasures.textoMedido(decide.v),
+      humo: decide.e.ts, ...(decide.e.env ? { entorno: decide.e.env } : {}),
+      ...(con.length > 1 ? { otras: `${fuera} de ${con.length} fuera de cota` } : {}) };
+    if (decide.c.sinMedicion !== undefined) { primera = { ...res, estado: 'sin-medicion', motivo: decide.c.sinMedicion }; break; }
+    if (decide.c.cumple === false) { primera = { ...res, estado: 'fuera', motivo: null }; break; }
+    if (!primera) primera = { ...res, estado: 'dentro', motivo: null, dentroDeTodas: true };
+  }
+  const veredicto = primera.estado === 'fuera' ? 'FUERA-DE-COTA' : primera.estado === 'sin-medicion' ? 'SIN-MEDICION' : null;
+  delete primera.dentroDeTodas;
+  return { veredicto, medida: primera, avisos: [] };
+}
+
+/** Lo que la fila del informe dice de la cota de un criterio; [] sin marca. */
+function celdaDeMedida(a) {
+  const m = a.medida;
+  if (!m) return [];
+  const out = [];
+  const firmado = a.verdict === 'NOT-VERIFIABLE' || a.verdict === 'WAIVED-USER';
+  if (firmado) out.push(`📏 declarado imposible de medir; ${m.medidoTexto && m.estado !== 'pendiente' ? `medido ${m.medidoTexto}, la cota es ${m.cota}` : 'sin medición'}`);
+  else if (m.estado === 'dentro' || m.estado === 'fuera') out.push(`📏 medido ${m.medidoTexto}; la cota es ${m.cota} (humo ${m.humo})`);
+  else out.push(`📏 ${textoDeMedida(a)}`);
+  if (m.humo && (m.estado === 'dentro' || m.estado === 'fuera')) out.push(alcanceDeMedida(m));
+  if (m.otras) out.push(`de los humos frescos con la medida, ${m.otras}`);
+  if ((m.descartados || []).length) out.push(`⚠️ descartado(s) para la medida, no confirmada por el espejo: ${m.descartados.join(', ')}`);
+  return out;
+}
+
+/** Lo medido y la cota de un criterio con la marca, en una línea; null sin marca. Lo usan el informe y los pedidos de firma. */
+function textoDeMedida(a) {
+  const m = a && a.medida;
+  if (!m) return null;
+  if (m.estado === 'pendiente') return `sin medición todavía (${m.motivo})`;
+  if (m.estado === 'sin-medicion') return `sin medición: ${m.motivo}${m.cota ? ` (la cota es ${m.cota})` : ''}`;
+  return `medido ${m.medidoTexto}; la cota es ${m.cota}`;
+}
+
+/** El entorno de la corrida que decidió: lo que una medición promete y lo que no. */
+function alcanceDeMedida(m) {
+  const en = m.entorno && m.entorno.os ? `${m.entorno.os}${m.entorno.tool ? ` (${m.entorno.tool})` : ''}` : 'un entorno sin anotar';
+  return `una corrida en ${en}, ${String(m.humo || '').slice(0, 10)}; no es una prueba de carga ni dice nada de producción`;
+}
+
+const SALIDAS_DE_MEDIDA = 'Tres salidas: se mide de nuevo (re-correr el humo vía smoke-run.sh); se cambia el criterio (y eso cambia la historia); '
+  + 'o se declara imposible en `runtime_not_verifiable:` con su prueba y lo firma el dueño (`marker.js runtime-waiver`).';
+
+/** Los renglones que imprimen el freno del commit y «Preparar el commit» para los criterios con la marca que no salieron verdes. */
+function lineasDeMedida(r) {
+  const out = [];
+  const de = (n) => `AC #${n}: ${textoDeMedida(r.perAc[n]) || 'sin medición'}`;
+  for (const n of r.fueraDeCota || []) out.push(`📏 fuera de la cota — ${de(n)}`);
+  for (const n of r.sinMedicion || []) out.push(`📏 sin medición — ${de(n)}`);
+  for (const n of r.notVerifiable || []) if (r.perAc[n] && r.perAc[n].medida) out.push(`🟪 espera firma — ${de(n)}`);
+  if ((r.fueraDeCota || []).length || (r.sinMedicion || []).length) out.push(SALIDAS_DE_MEDIDA);
+  return out;
 }
 
 // ---------------------------------------------------------------- imagen de pantalla
@@ -1152,6 +1260,9 @@ function compute(opts) {
   // La marca `@runtime-exempt(DODRT-C8)` se lee del texto ENTERO del AC: el de arriba se corta a 600 caracteres
   // y una marca al final de un AC largo se perdería en silencio.
   const acTextsEnteros = sc.acTextsFromSpec(content, { maxChars: Infinity });
+  // La marca de cota (`@measure`) se lee del texto crudo: el limpio borra los acentos graves, y una marca citada como
+  // ejemplo entre ellos parecería una marca.
+  const acTextsCrudos = sc.acTextsFromSpec(content, { crudo: true });
   const table = sc.parseTestsTable(content);
   // Universo de ACs = sección AC ∪ columna AC de la tabla (defensa contra parsers que
   // subcuenten: la tabla es el contrato de cobertura y también vota).
@@ -1582,6 +1693,9 @@ function compute(opts) {
       for (const o of d.omitidos) warnings.push(`Smoke ${e.ts}: ${gu.token} importa ${o.de} y no pude leerlo (${o.motivo}): no sé si simuló el servidor.`);
     }
     if (!hallazgos.length) continue;
+    // Para la medida de un criterio con cota no cuenta nunca, tampoco antes del corte. Va en un campo propio: `simulado`
+    // lo lee la lista de los probados con servidor simulado, y antes del corte ese humo todavía cuenta en vivo.
+    e.simuladoParaMedida = true;
     if (simuladoAntesDelCorte()) {
       avisos.push(`Smoke ${e.ts} (AC ${e.acs.join(',')}) corrió con el servidor simulado: ${listaSim(hallazgos)}. Esta story arrancó antes del ${corteSim}, así que por ahora cuenta como prueba en vivo; desde el corte, no.`);
       continue;
@@ -1749,6 +1863,19 @@ function compute(opts) {
       else if (porDeclarado) mutacion = `smoke declarado --mutates ${porDeclarado.ts} (exit 0 vía smoke-run.sh, espejo verificado)`;
       else verdict = 'RUNTIME-PARCIAL';
     }
+    // La cota del criterio (`@measure(...)`): se juzga cuando el criterio corrió en vivo, y antes de armar `perAc[n]`,
+    // así el hash ve el veredicto nuevo. Sin marca, `medida` es null y nada cambia.
+    const juicio = juzgarMedida(acTextsCrudos[n], humosDelAc);
+    const medida = juicio ? juicio.medida : null;
+    if (juicio) {
+      for (const a of juicio.avisos) warnings.push(`AC#${n}: ${a} → no se ignora: el criterio no sale verde por su medida.`);
+      if (verdict === 'RUNTIME' || verdict === 'RUNTIME-PARCIAL') {
+        if (juicio.veredicto) verdict = juicio.veredicto;
+      } else {
+        medida.estado = 'pendiente';
+        medida.motivo = `además pide la medida ${medida.nombre || '(marca ilegible)'}`;
+      }
+    }
     // ¿Es un AC de pantalla, y qué imágenes tiene? Las del portón E2E atadas por `@ac-N` y las de los humos
     // que la matriz ya cuenta como corrida de la app.
     const pantalla = esDePantalla(acTextsEnteros[n] != null ? acTextsEnteros[n] : acTexts[n], storyEsUi);
@@ -1764,7 +1891,9 @@ function compute(opts) {
     perAc[n] = { verdict, runtime, code, text: acTexts[n] || null, mutacion,
       exentoC8: ex.valida ? ex.motivo : null, fuentes,
       ...(vencido.length ? { vencioPor: vencido } : {}),
-      ...(pantalla ? { pantalla, visual, ...(visualProblemas.length ? { visualProblemas } : {}) } : {}) };
+      ...(pantalla ? { pantalla, visual, ...(visualProblemas.length ? { visualProblemas } : {}) } : {}),
+      // sólo en los criterios con la marca: uno sin marca no cambia de forma
+      ...(medida ? { medida } : {}) };
     for (const v of vencido) warnings.push(`AC ${n}: la evidencia ${v}; la de los otros criterios sigue contando. Re-correla vía smoke-run.sh.`);
     // Qué esperaba cada humo `v:2` del AC y dónde está lo que salió. Va aparte y NO entra al hash: las
     // líneas sin `v:2` dan exactamente la misma matriz que sin esta parte.
@@ -1879,10 +2008,17 @@ function compute(opts) {
   for (const n of acs) {
     if (perAc[n].verdict === 'RUNTIME' || perAc[n].verdict === 'RUNTIME-PARCIAL') continue;
     const decl = declMap.get(n);
+    // Un criterio que corrió y quedó fuera de su cota (o sin su medida) se declara imposible y lo firma el dueño como
+    // cualquiera; sin declaración válida conserva su veredicto: no cae a NOT-RUN, que diría «sin correr».
+    const medido = perAc[n].verdict === 'FUERA-DE-COTA' || perAc[n].verdict === 'SIN-MEDICION';
     if (decl && perAc[n].code.length > 0) {
       perAc[n].verdict = 'NOT-VERIFIABLE';
       perAc[n].declReason = decl.reason || '(sin razón declarada)';
       perAc[n].coveredBy = decl.coveredBy || null;
+    } else if (decl && medido) {
+      warnings.push(`AC#${n} está declarado 'runtime_not_verifiable' pero ninguna prueba lo cubre: sigue ${perAc[n].verdict} (no se puede firmar sin una prueba que lo cubra).`);
+    } else if (medido) {
+      // queda como está: lo medido y la cota viajan en `medida`
     } else if (decl) {
       // declarado imposible PERO sin test que lo cubra → declaración inválida (no se puede
       // afirmar "lo cubre un test" cuando no hay ninguno). Se degrada a NOT-RUN.
@@ -1899,6 +2035,9 @@ function compute(opts) {
     if (perAc[n].verdict === 'NOT-VERIFIABLE' && waived.has(n)) perAc[n].verdict = 'WAIVED-USER';
   }
   for (const n of acs) {
+    if ((perAc[n].verdict === 'FUERA-DE-COTA' || perAc[n].verdict === 'SIN-MEDICION') && waived.has(n)) {
+      warnings.push(`AC#${n} tiene un waiver pero NO está declarado imposible — no cuenta: está ${perAc[n].verdict}. Medilo de nuevo, cambiá el criterio, o declaralo en runtime_not_verifiable con su prueba para que lo firme el dueño.`);
+    }
     if (perAc[n].verdict === 'NOT-RUN' && waived.has(n)) {
       warnings.push(`AC#${n} tiene un waiver pero NO está declarado imposible — un waiver no puede saltear un AC no-corrido. Corrélo (E2E/smoke) o declaralo en runtime_not_verifiable con su test.`);
     }
@@ -1944,7 +2083,10 @@ function compute(opts) {
   const notRun = acs.filter((n) => perAc[n].verdict === 'NOT-RUN' || sinImagen.includes(n));
   const accionNoEjercida = acs.filter((n) => perAc[n].verdict === 'RUNTIME-PARCIAL');
   const notVerifiablePend = acs.filter((n) => perAc[n].verdict === 'NOT-VERIFIABLE');
-  const pendientes = [...notRun, ...accionNoEjercida, ...notVerifiablePend].sort((a, b) => a - b);
+  // corrieron y su medida no cumple la cota del criterio, o no está: bloquean, y no van en `notRun` («sin correr»)
+  const fueraDeCota = acs.filter((n) => perAc[n].verdict === 'FUERA-DE-COTA');
+  const sinMedicion = acs.filter((n) => perAc[n].verdict === 'SIN-MEDICION');
+  const pendientes = [...notRun, ...accionNoEjercida, ...notVerifiablePend, ...fueraDeCota, ...sinMedicion].sort((a, b) => a - b);
 
   // Firmas descartadas que se nombran: sólo de un AC que de verdad espera firma (NOT-VERIFIABLE). Uno declarado
   // sin test que lo cubra (NOT-RUN) no se puede perdonar, y uno que ya corrió no la necesita.
@@ -1963,7 +2105,7 @@ function compute(opts) {
 
   return {
     sid, key: evKey, keyInfo: { topic: keyInfo.topic, repeated: keyInfo.repeated, siblings: keyInfo.siblings }, orphans,
-    exempt: false, acs, perAc, pendientes, notRun, accionNoEjercida, notVerifiable: notVerifiablePend,
+    exempt: false, acs, perAc, pendientes, notRun, accionNoEjercida, notVerifiable: notVerifiablePend, fueraDeCota, sinMedicion,
     exencionesC8: exenciones, sinImagen, avisos, simulados,
     hash, warnings, green, evidenceDirs, wsRoot, waivedAcs: [...waived], chainOk: chain.ok, waiverDiscarded,
     repoRoot,
@@ -1990,6 +2132,8 @@ function compute(opts) {
       notVerifiable: notVerifiablePend.length,
       waived: acs.filter((n) => perAc[n].verdict === 'WAIVED-USER').length,
       exentosC8: exenciones.filter((e) => e.valida).length,
+      fueraDeCota: fueraDeCota.length,
+      sinMedicion: sinMedicion.length,
     },
   };
 }
@@ -2008,7 +2152,10 @@ function renderMd(r) {
   // sinImagen va también dentro de notRun (lo imprimen los frenos), pero acá se cuenta aparte.
   const sinImagenTxt = sinImagen.length ? ` · ${sinImagen.length} de pantalla sin captura ni grabación (bloquean)` : '';
   const sinCorrer = (r.notRun || []).filter((n) => !sinImagen.includes(n));
-  L.push(`**Cobertura**: ${r.stats.runtime}/${r.stats.total} ACs corridos en runtime · ${sinCorrer.length} sin correr (bloquean)${sinImagenTxt}${parcialTxt} · ${r.stats.notVerifiable} imposibles-declarados (esperan waiver)${waivedTxt}${exentoTxt}`);
+  // los veredictos de la cota se nombran sólo si hay alguno: sin marcas, la línea es la de siempre
+  const cotaTxt = (r.fueraDeCota || []).length || (r.sinMedicion || []).length
+    ? ` · ${(r.fueraDeCota || []).length} fuera de la cota · ${(r.sinMedicion || []).length} sin medición (bloquean)` : '';
+  L.push(`**Cobertura**: ${r.stats.runtime}/${r.stats.total} ACs corridos en runtime · ${sinCorrer.length} sin correr (bloquean)${sinImagenTxt}${parcialTxt}${cotaTxt} · ${r.stats.notVerifiable} imposibles-declarados (esperan waiver)${waivedTxt}${exentoTxt}`);
   if (r.batch) {
     L.push(`**Tanda medida**: ${r.batch}${(r.fueraDeTanda || []).length ? ` · fuera de esta tanda: ${r.fueraDeTanda.join(' · ')}` : ''} (pasar la historia a review las pide todas)`);
     if ((r.returnedBy || []).length) L.push(`**Vuelven a la matriz**: ${r.returnedBy.join(' · ')}`);
@@ -2030,7 +2177,7 @@ function renderMd(r) {
     const imagen = a.visual && a.visual.length ? `🖼️ ${a.visual.length} imagen(es): ${a.visual.map((v) => `\`${v}\``).join(', ')}`
       : a.motivo ? '🖼️ falta la captura o la grabación del navegador' : null;
     const ev = [a.runtime.join('; ') || '—', ...esperado, imagen, ...(a.vencioPor || []).map((v) => `⌛ ${celda(v)}`), a.mutacion ? `✋ ${a.mutacion}` : null,
-      a.exentoC8 ? `⚖️ verbo exento: ${a.exentoC8}` : null].filter(Boolean).join(' · ');
+      a.exentoC8 ? `⚖️ verbo exento: ${a.exentoC8}` : null, ...celdaDeMedida(a).map(celda)].filter(Boolean).join(' · ');
     L.push(`| #${n} | ${icon} ${a.verdict} | ${ev} | ${a.code.join('; ') || '—'} | ${a.declReason || '—'} |`);
   }
   L.push('');
@@ -2046,6 +2193,17 @@ function renderMd(r) {
     L.push('Si de verdad es materialmente imposible verificarlo corriendo la app, declararlo en el');
     L.push('frontmatter `runtime_not_verifiable:` (con `reason:` y `covered_by:` un test que lo cubra) —');
     L.push('y ahí SÍ lo puede aprobar el usuario. Sin esa declaración, un waiver NO lo saltea.');
+  }
+  const conCota = [...(r.fueraDeCota || []), ...(r.sinMedicion || [])].sort((a, b) => a - b);
+  if (conCota.length) {
+    L.push('');
+    L.push(`## 📏 ACs con cota fuera de la cota o sin medición — bloquean (${conCota.length})`);
+    L.push('');
+    for (const n of conCota) L.push(`- **AC#${n}** — ${textoDeMedida(r.perAc[n])}`);
+    L.push('');
+    L.push('Estos criterios corrieron, pero lo que midieron no cumple la cota que escribe el criterio, o no trae la medida.');
+    L.push(SALIDAS_DE_MEDIDA);
+    L.push('La medición vale para una corrida en un entorno: no es una prueba de carga ni dice nada de producción.');
   }
   const simulados = r.simulados || [];
   if (simulados.length) {
@@ -2110,6 +2268,7 @@ function renderMd(r) {
       else L.push(`- **AC#${n}** — _(no se pudo citar el texto del AC desde el spec)_`);
       L.push(`  - **Por qué no se puede correr**: ${r.perAc[n].declReason}`);
       L.push(`  - **Cubierto por**: ${r.perAc[n].coveredBy || r.perAc[n].code.join(', ') || 'test de código'}`);
+      if (r.perAc[n].medida) L.push(`  - **Lo que se perdona**: ${textoDeMedida(r.perAc[n])}`);
     }
     L.push('');
     L.push('El agente no puede saltearlos. Los aprueba EL USUARIO desde su terminal (requiere `/dev/tty`):');
@@ -2333,7 +2492,7 @@ function sinLoQueTrajoMain(repo, changed) {
 // `acEsDeAccion` se exporta para poder testear la heurística de DODRT-C8 como función PURA
 // (mismo criterio que lib/atdd-order.js): sus falsos positivos se miden con texto de ACs
 // reales, no armando un workspace entero.
-module.exports = { isCodeFile, compute, debtCoverage, acsDeLaCelda, renderMd, opcionesDeTandaDelMarcador, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM, SIMULATED_SERVER_FROM, readSmokeLedger, defaultGatesLog };
+module.exports = { isCodeFile, compute, debtCoverage, acsDeLaCelda, renderMd, opcionesDeTandaDelMarcador, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM, SIMULATED_SERVER_FROM, readSmokeLedger, defaultGatesLog, textoDeMedida, lineasDeMedida };
 
 if (require.main === module) {
   main();
