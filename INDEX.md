@@ -14,7 +14,7 @@ cuando la tarea lo pide. Vale igual con Claude Code y con Codex. Si algo del arn
 
 Cada pieza (guía, script, hook, control) con su caso y su medición: **[guides/piezas-del-arnes.md](guides/piezas-del-arnes.md)**,
 a demanda; el árbol y sus reglas: [Dónde vive cada cosa](guides/piezas-del-arnes.md#dónde-vive-cada-cosa).
-Recorrido completo: **[guides/que-hace-el-arnes.md](guides/que-hace-el-arnes.md)**.
+Recorrido completo: **[guides/what-the-harness-does.md](guides/what-the-harness-does.md)**.
 Las guías: `guides/` para usar el arnés, `guides/integrations/` para las integraciones opcionales y
 `guides/maintaining/` para quien lo mantiene.
 
@@ -25,7 +25,7 @@ la fila aplica.
 
 | Trabajando en... | Leer (on-demand) |
 |---|---|
-| Entender el arnés entero, explicárselo a alguien, o dar la charla | `guides/que-hace-el-arnes.md` |
+| Entender el arnés entero, explicárselo a alguien, o dar la charla | `guides/what-the-harness-does.md` |
 | Entender en detalle UNA pieza — su porqué, su medición, su red de pruebas | `guides/piezas-del-arnes.md` (este archivo es el índice; el detalle está ahí) |
 | Ver qué versión del arnés tenés, si está bien instalado y si hay una nueva | el comando `/tycon-harness` (sólo mira, no cambia nada) |
 | Ver qué está en curso en esta máquina: qué hace cada sesión, en qué paso va, a qué hora termina y qué sesiones están libres | el comando `/wip` (sólo mira, no cambia nada) |
@@ -41,7 +41,7 @@ la fila aplica.
 | Linkear una story nueva a la que viene a fixear/recalibrar (back-links `followup_of:` / `followed_up_by:`) | `story-format.md` §1.2 |
 | Back-fillear back-links de follow-ups en stories existentes (audit periódico de un repo) | `scripts/tools/tycon-backfill-followups.js` (dry-run / `--apply` / `--render-table`) |
 | Una story "no aparece" para el validator / el backfill / los scripts de status, o adoptar el lint de frontmatter en un repo | `story-format.md` §1.0 + `scripts/lib/lint-story-frontmatter.js` |
-| **Agregar o tocar una integración** (avisos, registro de horas, índice de código, revisores propios, cualquier herramienta de afuera) — la regla innegociable: el núcleo no nombra herramientas | `guides/constitucion.md` |
+| **Agregar o tocar una integración** (avisos, registro de horas, índice de código, revisores propios, cualquier herramienta de afuera) — la regla innegociable: el núcleo no nombra herramientas | `guides/constitution.md` |
 | Memoria persistente con engram (si la integración está prendida) | `guides/integrations/engram-workflow.md` |
 | Commit, push, merge, cualquier cosa de git | `guides/git-commit-conventions.md` |
 | Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/maintaining/nombres-en-ingles.md` |
@@ -53,7 +53,7 @@ la fila aplica.
 | Crear/reescribir un artefacto de planning (UX spec, navigation map, architecture, PRD) sobre dominio ya cubierto por un artefacto aprobado | `guides/workflow-orchestration.md` §12 — frontmatter `reconciles:`/`supersedes_in:` OBLIGATORIO; sin eso no pasa de `draft` (caso UX spec V7 que ignoró el catálogo firmado) |
 | Story que crea/modifica layout o navegación de pantalla | `guides/workflow-orchestration.md` §11 — validar contra el artefacto de IA antes de `done` (enforced por `WIRING-C5` desde 2026-06-10) |
 | Pipeline de agentes, invocar advisors, integración BMAD | `guides/agent-architecture.md` |
-| Cuándo corren la revisión del plan y la del código, quién la lanza, con qué revisor, quién aprueba, cuándo el dueño cuenta como ausente (`skills/tycon-pipeline/scripts/marker.js owner-away`), o configurarlas | `guides/revisiones-automaticas.md` (en inglés, `guides/revisiones-automaticas.en.md`) |
+| Cuándo corren la revisión del plan y la del código, quién la lanza, con qué revisor, quién aprueba, cuándo el dueño cuenta como ausente (`skills/tycon-pipeline/scripts/marker.js owner-away`), o configurarlas | `guides/automatic-reviews.md` (en inglés, `guides/automatic-reviews.en.md`) |
 | Entender qué hace el pase adversarial del pipeline (el paso «Pase adversarial»), leer las pruebas con las que confirmó un hallazgo, o promoverlas a la suite (`skills/tycon-pipeline/scripts/marker.js promote-probe`) | `skills/tycon-pipeline/steps/step-08-adversarial-pass.md` |
 | Entender por qué un advisor reportó X, agregar/retirar reglas | `guides/advisor-rules-catalog.md` |
 | Armar un paquete de revisores propio para el stack de tu organización: qué archivos lleva, cuándo corre un revisor, cómo se activa y cómo se examina (con un ejemplo para Svelte y FastAPI) | `guides/reviewer-packs.md` (en inglés, `guides/reviewer-packs.en.md`) + `examples/packs/svelte-fastapi/` |

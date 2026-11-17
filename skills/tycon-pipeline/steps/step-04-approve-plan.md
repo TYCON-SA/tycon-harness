@@ -26,7 +26,7 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
   lente, «suposición falsa» (lo que el plan cree del código y no es cierto); la organización puede sumar las otras
   (`plan_review.lenses`). Corre con el revisor que elige la organización (`review_runner`; de fábrica, Claude) y sólo
   un hallazgo confirmado de gravedad «defecto» la rechaza (`review.blocking_severity`); lo demás confirmado son notas
-  para implementar. La guía entera: `guides/revisiones-automaticas.md`.
+  para implementar. La guía entera: `guides/automatic-reviews.md`.
 
 **El flujo, paso por paso.**
 
@@ -53,7 +53,7 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
      la preparación (el `--out` del comando): uno de otra ruta queda sin veredicto, «el resultado no vino del corredor».
      En una story de rutina con `plan_review.routine_approval: review` (de fábrica) su «aprobado» aprueba el plan; en
      una delicada o con `person` es **informativa**: informa, el plan lo aprueba el dueño y su cuadro dice el resultado.
-     Lo que garantiza (y lo que no): `guides/revisiones-automaticas.md`, «Qué garantiza la revisión que lanza la propia
+     Lo que garantiza (y lo que no): `guides/automatic-reviews.md`, «Qué garantiza la revisión que lanza la propia
      sesión».
 4. **Los cuatro resultados.**
    - **4a. Aprobado** (o aprobado con notas), en una story de rutina con `plan_review.routine_approval: review`. Con

@@ -308,7 +308,7 @@ it even with no coordinator: it can only stop too much.
 
 ## The automatic reviews: what the coordinator does
 
-When each review runs is set by the organization's configuration (`guides/revisiones-automaticas.en.md`). In each one,
+When each review runs is set by the organization's configuration (`guides/automatic-reviews.en.md`). In each one,
 the coordinator:
 
 - **Asks or not.** If the matrix says to ask, she asks the owner, with the options box, and records it: the session

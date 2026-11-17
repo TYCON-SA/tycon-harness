@@ -867,7 +867,7 @@ be, to copy it and open the request by hand.
   `deep_review`, in the profile repo. A maintainer reviews it.
 - **Plan review** and **What runs the review**, and the new options of **Adversarial pass** and of **Reviewer rounds**:
   the automatic reviews, of the plan and of the code. When each one runs, who approves it, with what reviewer and when
-  the owner counts as away; the whole guide is `guides/revisiones-automaticas.en.md`. They live in `team-repos.json` →
+  the owner counts as away; the whole guide is `guides/automatic-reviews.en.md`. They live in `team-repos.json` →
   `plan_review`, `review_runner`, `deep_review` and `review`, in the profile repo; a bad value falls back to the
   built-in only in its key. A maintainer reviews it. The options:
 
