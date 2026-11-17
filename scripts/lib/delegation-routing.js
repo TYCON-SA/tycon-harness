@@ -46,36 +46,58 @@ const no = (motivo, callar = false) => ({ ok: false, motivo, callar });
 function anotarError(casa, texto) {
   try { require('fs').appendFileSync(path.join(stateDir(casa), 'hook-errors.log'), `[${new Date().toISOString()}] delegation-routing: ${texto}\n`); } catch (_) { /* sin registro tampoco */ }
 }
+// el guion de este arnés con ese nombre: el de los controles de la base vive en scripts/ci, los demás al lado del pipeline
+const guionDelArnes = (nombre) => (nombre.endsWith('.sh')
+  ? path.join(__dirname, '..', 'ci', nombre)
+  : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre));
+function mismoArchivo(a, b) {
+  const real = (p) => { try { return require('fs').realpathSync(p); } catch (_) { return path.resolve(p); } };
+  return real(a) === real(b);
+}
 const comillas = (w) => (/^[\w@%+=:,./-]+$/.test(String(w)) ? String(w) : `'${String(w).split("'").join("'\\''")}'`);
 
 /**
- * Las palabras que corre la coordinadora: las de la sesión con la ruta del guion y las rutas de la tabla absolutas, cada
- * vez que aparecen (contra `cwd`, la carpeta del pedido, o contra la opción de `contra`, como las resuelve el guion), y
+ * Las palabras que corre la coordinadora: las de la sesión con la ruta del guion y las rutas de la tabla absolutas
+ * (contra `cwd`, la carpeta del pedido, o contra la opción de `contra`, como las resuelve el guion), y
  * `--for-session <destino>` al final. Una opción seguida de otra bandera, o al final, no tiene ruta y queda como vino.
- * null si la firma no está en la tabla, si una ruta viene con `=` o si hace falta la carpeta y no se sabe.
+ * `{ palabras }`, o `{ motivo }` si no se pueden armar: la firma no está en la tabla, ya trae `--for-session`, una ruta
+ * viene con `=` o más de una vez (el guion usa la última y la delegación miraría la primera), o hace falta la carpeta y
+ * no se sabe.
  */
-function palabrasRuteadas(firma, palabras, destino, cwd) {
+function rutear(firma, palabras, destino, cwd) {
   const t = RUTAS[firma];
-  if (!t || !Array.isArray(palabras) || !palabras.length) return null;
+  if (!t || !Array.isArray(palabras) || !palabras.length) return { motivo: `«${firma}» no tiene tabla de rutas` };
   const w = palabras.map(String);
-  if (w.includes('--for-session') || w.some((x) => x.startsWith('--for-session='))) return null;
-  if (t.rutas.some((o) => w.some((x) => x.startsWith(`${o}=`)))) return null;
+  if (w.includes('--for-session') || w.some((x) => x.startsWith('--for-session='))) return { motivo: 'el comando ya trae --for-session' };
+  const conIgual = t.rutas.find((o) => w.some((x) => x.startsWith(`${o}=`)));
+  if (conIgual) return { motivo: `${conIgual} viene con «=» y no se puede volver absoluta` };
+  const repetida = t.rutas.find((o) => w.indexOf(o) !== w.lastIndexOf(o));
+  if (repetida) return { motivo: `${repetida} viene más de una vez: el guion usa la última y la delegación miraría la primera` };
   const necesita = !path.isAbsolute(w[0]) || t.rutas.some((o) => w.includes(o)) || t.conPunto.length > 0;
-  if (necesita && !(typeof cwd === 'string' && path.isAbsolute(cwd))) return null;
-  if (!path.isAbsolute(w[0])) w[0] = path.resolve(cwd, w[0]);
+  if (necesita && !(typeof cwd === 'string' && path.isAbsolute(cwd))) return { motivo: 'no sé desde qué carpeta se pidió la firma' };
+  // la coordinadora lo corre sin ventana: sólo el guion de este arnés, nunca un archivo que eligió la sesión
+  const delArnes = guionDelArnes(path.basename(w[0]));
+  if (!mismoArchivo(path.resolve(cwd || '/', w[0]), delArnes)) return { motivo: `el guion no es el de este arnés (${w[0]})` };
+  w[0] = delArnes;
   const contra = t.contra || {};
   const conValor = (i) => i + 1 < w.length && !w[i + 1].startsWith('--');
-  // la base de una opción de `contra`: el último valor de la otra (ya absoluto), o la carpeta
+  // la base de una opción de `contra`: el valor de la otra (ya absoluto), o la carpeta
   const baseDe = (o) => {
-    const i = w.lastIndexOf(contra[o]);
+    const i = w.indexOf(contra[o]);
     return i >= 0 && conValor(i) ? w[i + 1] : cwd;
   };
   // primero las que se resuelven contra la carpeta, después las que dependen de otra
   for (const o of [...t.rutas].sort((a, b) => Number(Boolean(contra[a])) - Number(Boolean(contra[b])))) {
-    for (let i = 0; i < w.length; i++) if (w[i] === o && conValor(i)) w[i + 1] = path.resolve(contra[o] ? baseDe(o) : cwd, w[i + 1]);
+    const i = w.indexOf(o);
+    if (i >= 0 && conValor(i)) w[i + 1] = path.resolve(contra[o] ? baseDe(o) : cwd, w[i + 1]);
   }
   for (const o of t.conPunto) if (!w.includes(o)) w.push(o, path.resolve(cwd));
-  return [...w, '--for-session', String(destino)];
+  return { palabras: [...w, '--for-session', String(destino)] };
+}
+
+/** Las palabras de `rutear`, o null si no se pueden armar. */
+function palabrasRuteadas(firma, palabras, destino, cwd) {
+  return rutear(firma, palabras, destino, cwd).palabras || null;
 }
 
 /** El comando de las palabras canónicas (la ruta del guion primero), con comillas sólo donde hacen falta. */
@@ -116,12 +138,16 @@ function delegable({ firma, destino, casa, palabras, cwd, delegacion, plataforma
   const ses = sl().sesiones(casa);
   const x = ses.mapa.get(coord);
   const cwdCoord = (x && x.cwd) || null;
-  const w = palabrasRuteadas(firma, palabras, destino, cwd);
+  const ruteo = rutear(firma, palabras, destino, cwd);
+  const w = ruteo.palabras || null;
   const conRutas = w || [...(palabras || []), '--for-session', String(destino)];
   const i = conRutas.indexOf('--repo');
+  // sin comando ruteado, el --repo tal como vino: contra la carpeta del pedido, no contra la de la coordinadora
+  let repo = i >= 0 ? conRutas[i + 1] || null : null;
+  if (repo && !w && typeof cwd === 'string' && path.isAbsolute(cwd)) repo = path.resolve(cwd, repo);
   let r;
   try {
-    r = (delegacion || ((o) => require('./delegated-signing.js').delegaSinVentana(o)))({ firma, sesion: coord, destino, home: casa, estado: stateDir(casa), cwd: cwdCoord, repo: i >= 0 ? conRutas[i + 1] : null });
+    r = (delegacion || ((o) => require('./delegated-signing.js').delegaSinVentana(o)))({ firma, sesion: coord, destino, home: casa, estado: stateDir(casa), cwd: cwdCoord, repo });
   } catch (e) { r = { ok: false, motivo: `no pude consultar la delegación del perfil (${e.message})` }; }
   const motivo = (r && r.motivo) || 'la delegación no contestó';
   if (r && !r.ok && /no delega|sólo del dueño/.test(motivo)) return no(motivo, true);
@@ -129,7 +155,7 @@ function delegable({ firma, destino, casa, palabras, cwd, delegacion, plataforma
   if (sl().coordinadoraViva(casa, ses) !== coord) return no('no hay coordinadora confirmada y viva');
   if (!r || !r.ok) return no(motivo);
   if (!cwdCoord) return no('no sé desde qué carpeta trabaja la coordinadora');
-  if (!w) return no('no sé desde qué carpeta se pidió la firma');
+  if (!w) return no(ruteo.motivo);
   return { ok: true, coordinadora: coord, cwdCoord, palabras: w, comando: comandoDe(w) };
 }
 
@@ -187,10 +213,15 @@ function comprobarRenglon({ f, casa, delegacion, arnes, env }) {
 /** El renglón abierto con esa clave que se desvió a la coordinadora, o null: su firma lleva `routed`. */
 function renglonDesviado({ casa, key, ahora = Date.now(), arnes, env } = {}) {
   if (!key) return null;
-  try { return sl().abiertos(casa, { arnes, env, ahora }).filas.find((f) => f.key === key && f.delegable) || null; } catch (e) {
+  let leida;
+  try { leida = sl().abiertos(casa, { arnes, env, ahora }); } catch (e) {
     anotarError(casa, `no pude leer la lista de firmas para saber si la firma cerró un renglón desviado (${e.message}): queda sin routed`);
     return null;
   }
+  const f = leida.filas.find((x) => x.key === key && x.delegable) || null;
+  // un renglón que no se entiende sale de `filas`: si era éste, la firma queda sin routed, y queda dicho
+  if (!f && leida.problemas.length) anotarError(casa, `renglones de la lista que no se entienden (${leida.problemas.join('; ').slice(0, 300)}): si la firma cerraba uno desviado, queda sin routed`);
+  return f;
 }
 
 /** Los ids de `filas` que firma la coordinadora (desviados, dentro del plazo y con ella viva): no esperan al dueño. */

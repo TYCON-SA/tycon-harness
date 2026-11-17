@@ -398,6 +398,19 @@ test('RenglonAMano_SoloDelDuenoRepoDeLaCoordFormaRara_Saltados (T13) — @story-
   assert.match(motivos, /no tiene la forma de su firma/);
   // corridos igual por la coordinadora, el freno no delega
   assert.notStrictEqual(correLaCoordinadora(L, 'control-change', mano[0].delegable).r.via, 'delegacion');
+  // con un segundo --repo del repo de la coordinadora, el pedido no se desvía: la ventana dice por qué
+  const doble = EXTRA(` --repo ${L.ajeno} --repo ${L.propio}`);
+  const r = ow.decidir(pedido(L, 'ses-a', doble, { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default', id: 'toolu_doble' }));
+  assert.notStrictEqual(r.via, 'desviada', r.texto);
+  assert.match(r.texto, /No se desvió a la coordinadora: --repo viene más de una vez/);
+  assert.ok(!desviados(L.casa).some((f) => f.comando === doble), 'sin renglón desviado');
+  // un marker.js que escribió la sesión en su carpeta: la coordinadora no lo corre; la ventana dice por qué
+  fs.writeFileSync(path.join(L.ajeno, 'marker.js'), 'process.exit(0)\n');
+  const propio = 'node ./marker.js approve-pending --id DEF-nuevo --repo .';
+  const rp = ow.decidir(pedido(L, 'ses-a', propio, { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default', id: 'toolu_propio' }));
+  assert.notStrictEqual(rp.via, 'desviada', rp.texto);
+  assert.match(rp.texto, /No se desvió a la coordinadora: el guion no es el de este arnés/);
+  assert.ok(!desviados(L.casa).some((f) => f.comando === propio), 'sin renglón desviado');
   assert.notStrictEqual(correLaCoordinadora(L, 'pending-approval', mano[1].delegable).r.via, 'delegacion');
   assert.notStrictEqual(correLaCoordinadora(L, 'pending-approval', mano[2].delegable).r.via, 'delegacion');
 });
@@ -532,41 +545,49 @@ test('RutaManual_SinRenglonDesviado_SinRouted (T24) — @story-8.295 @ac-21', (t
 // Cómo se resuelve cada ruta del comando desviado, la no-regresión y los errores que quedan anotados
 // =====================================================================================================================
 
-test('PalabrasRuteadas_ResuelveCadaRutaComoElGuion (T25) — @story-8.295 @ac-1', () => {
+test('PalabrasRuteadas_ResuelveCadaRutaComoElGuion (T25) — @story-8.295 @ac-1', (t) => {
   const R = (firma, palabras, cwd = '/w/pedido') => DR.palabrasRuteadas(firma, palabras, 'ses-a', cwd);
-  // la ruta del guion relativa va absoluta: la coordinadora corre desde otra carpeta
-  assert.deepStrictEqual(R('pending-approval', ['skills/x/marker.js', 'approve-pending', '--id', 'D', '--repo', '.']),
-    ['/w/pedido/skills/x/marker.js', 'approve-pending', '--id', 'D', '--repo', '/w/pedido', '--for-session', 'ses-a']);
-  // una opción repetida se resuelve todas las veces
-  assert.deepStrictEqual(R('pending-approval', ['/g/m.js', 'approve-pending', '--repo', './a', '--repo', './b']),
-    ['/g/m.js', 'approve-pending', '--repo', '/w/pedido/a', '--repo', '/w/pedido/b', '--for-session', 'ses-a']);
+  const [M, P, C] = [MARKER, PIPELINE, CONTROLES];
+  // la ruta del guion relativa se resuelve contra la carpeta del pedido y tiene que ser el guion de este arnés
+  assert.deepStrictEqual(R('pending-approval', ['skills/tycon-pipeline/scripts/marker.js', 'approve-pending', '--id', 'D', '--repo', '.'], RAIZ),
+    [M, 'approve-pending', '--id', 'D', '--repo', RAIZ, '--for-session', 'ses-a']);
+  // un archivo con el mismo nombre que no es el del arnés (uno que escribió la sesión): no se rutea
+  const ajena = fs.mkdtempSync(path.join(os.tmpdir(), 'desvio-guion-'));
+  t.after(() => fs.rmSync(ajena, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(ajena, 'marker.js'), 'process.exit(0)\n');
+  assert.strictEqual(R('pending-approval', ['./marker.js', 'approve-pending', '--id', 'D', '--repo', '.'], ajena), null);
+  assert.strictEqual(R('pending-approval', [path.join(ajena, 'marker.js'), 'approve-pending', '--id', 'D', '--repo', '/r']), null);
+  // una opción repetida no se rutea: el guion usa la última y la delegación miraría la primera
+  assert.strictEqual(R('pending-approval', [M, 'approve-pending', '--repo', './a', '--repo', './b']), null);
+  assert.strictEqual(R('extra-round', [P, 'smart-reloop', '--extra-round', '--story', 'a.md', '--story', 'b.md']), null);
   // --story de la vuelta extra, contra su --repo (como pipeline.js), no contra la carpeta del pedido; sin --repo, contra
   // la carpeta, que es el --repo que se agrega
-  assert.deepStrictEqual(R('extra-round', ['/g/p.js', 'smart-reloop', '--extra-round', '--story', 'specs/s.md', '--repo', '/r']),
-    ['/g/p.js', 'smart-reloop', '--extra-round', '--story', '/r/specs/s.md', '--repo', '/r', '--for-session', 'ses-a']);
-  assert.deepStrictEqual(R('extra-round', ['/g/p.js', 'smart-reloop', '--extra-round', '--repo', 'sub', '--story', 'specs/s.md']),
-    ['/g/p.js', 'smart-reloop', '--extra-round', '--repo', '/w/pedido/sub', '--story', '/w/pedido/sub/specs/s.md', '--for-session', 'ses-a']);
-  assert.deepStrictEqual(R('extra-round', ['/g/p.js', 'smart-reloop', '--extra-round', '--story', 'specs/s.md']),
-    ['/g/p.js', 'smart-reloop', '--extra-round', '--story', '/w/pedido/specs/s.md', '--repo', '/w/pedido', '--for-session', 'ses-a']);
+  assert.deepStrictEqual(R('extra-round', [P, 'smart-reloop', '--extra-round', '--story', 'specs/s.md', '--repo', '/r']),
+    [P, 'smart-reloop', '--extra-round', '--story', '/r/specs/s.md', '--repo', '/r', '--for-session', 'ses-a']);
+  assert.deepStrictEqual(R('extra-round', [P, 'smart-reloop', '--extra-round', '--repo', 'sub', '--story', 'specs/s.md']),
+    [P, 'smart-reloop', '--extra-round', '--repo', '/w/pedido/sub', '--story', '/w/pedido/sub/specs/s.md', '--for-session', 'ses-a']);
+  assert.deepStrictEqual(R('extra-round', [P, 'smart-reloop', '--extra-round', '--story', 'specs/s.md']),
+    [P, 'smart-reloop', '--extra-round', '--story', '/w/pedido/specs/s.md', '--repo', '/w/pedido', '--for-session', 'ses-a']);
   // --story de compare-waiver queda tal cual: marker.js la resuelve contra el repo del marcador destino; sin rutas que
   // resolver, no hace falta la carpeta
-  assert.deepStrictEqual(R('compare-waiver', ['/g/m.js', 'compare-waiver', '--story', 'specs/s.md', '--command', 'c', '--reason', 'r'], null),
-    ['/g/m.js', 'compare-waiver', '--story', 'specs/s.md', '--command', 'c', '--reason', 'r', '--for-session', 'ses-a']);
+  assert.deepStrictEqual(R('compare-waiver', [M, 'compare-waiver', '--story', 'specs/s.md', '--command', 'c', '--reason', 'r'], null),
+    [M, 'compare-waiver', '--story', 'specs/s.md', '--command', 'c', '--reason', 'r', '--for-session', 'ses-a']);
   // con `=` no se sabe resolver: no se desvía
-  assert.strictEqual(R('pending-approval', ['/g/m.js', 'approve-pending', '--repo=/x']), null);
+  assert.strictEqual(R('pending-approval', [M, 'approve-pending', '--repo=/x']), null);
   // una opción al final, o seguida de otra bandera, no tiene ruta: queda como vino
-  assert.deepStrictEqual(R('pending-approval', ['/g/m.js', 'approve-pending', '--id', 'D', '--repo']),
-    ['/g/m.js', 'approve-pending', '--id', 'D', '--repo', '--for-session', 'ses-a']);
-  assert.deepStrictEqual(R('pending-approval', ['/g/m.js', 'approve-pending', '--repo', '--id', 'D']),
-    ['/g/m.js', 'approve-pending', '--repo', '--id', 'D', '--for-session', 'ses-a']);
+  assert.deepStrictEqual(R('pending-approval', [M, 'approve-pending', '--id', 'D', '--repo']),
+    [M, 'approve-pending', '--id', 'D', '--repo', '--for-session', 'ses-a']);
+  assert.deepStrictEqual(R('pending-approval', [M, 'approve-pending', '--repo', '--id', 'D']),
+    [M, 'approve-pending', '--repo', '--id', 'D', '--for-session', 'ses-a']);
   // hace falta la carpeta (guion relativo, una ruta, o una que vale `.`) y no se sabe: null; con todo absoluto, no hace falta
   assert.strictEqual(R('save', ['marker.js', 'complete-step', 'save'], 'relativa'), null);
-  assert.strictEqual(R('pending-approval', ['/g/m.js', 'approve-pending', '--repo', '.'], null), null);
-  assert.strictEqual(R('refresh-after-main', ['/g/c.sh', 'refresh'], null), null);
-  assert.deepStrictEqual(R('save', ['/g/m.js', 'complete-step', 'save'], null), ['/g/m.js', 'complete-step', 'save', '--for-session', 'ses-a']);
+  assert.strictEqual(R('pending-approval', [M, 'approve-pending', '--repo', '.'], null), null);
+  assert.strictEqual(R('refresh-after-main', [C, 'refresh'], null), null);
+  assert.deepStrictEqual(R('refresh-after-main', [C, 'refresh'], RAIZ), [C, 'refresh', '--root', RAIZ, '--for-session', 'ses-a']);
+  assert.deepStrictEqual(R('save', [M, 'complete-step', 'save'], null), [M, 'complete-step', 'save', '--for-session', 'ses-a']);
   // ya con --for-session, o una firma fuera de la tabla: null
-  assert.strictEqual(R('save', ['/g/m.js', 'complete-step', 'save', '--for-session', 'x']), null);
-  assert.strictEqual(R('adhoc-lane', ['/g/m.js', 'adhoc', 'open']), null);
+  assert.strictEqual(R('save', [M, 'complete-step', 'save', '--for-session', 'x']), null);
+  assert.strictEqual(R('adhoc-lane', [M, 'adhoc', 'open']), null);
 });
 
 test('NoRegresion_ListaApagadaSinDesignarCodex_ComoHoy (T26) — @story-8.295 @ac-20', (t) => {
@@ -640,4 +661,8 @@ test('PlazoYRenglon_LoQueNoSeLeeQuedaAnotado (T29) — @story-8.295 @ac-9 @ac-21
   sl.abiertos = () => { throw new Error('lista rota'); };
   assert.strictEqual(DR.renglonDesviado({ casa: L.casa, key: 'firma:x', ahora: AHORA, ...L.lista }), null);
   assert.match(errores(), /no pude leer la lista de firmas.*\(lista rota\): queda sin routed/);
+  // un renglón que no se entiende sale de la lista: si era el de la firma, queda sin routed, y dicho
+  sl.abiertos = () => ({ filas: [], problemas: ['firma-x: la parte desviada no se puede leer'] });
+  assert.strictEqual(DR.renglonDesviado({ casa: L.casa, key: 'firma:x', ahora: AHORA, ...L.lista }), null);
+  assert.match(errores(), /renglones de la lista que no se entienden \(firma-x: la parte desviada no se puede leer\)/);
 });
