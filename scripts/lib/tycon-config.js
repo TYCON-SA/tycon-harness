@@ -236,6 +236,10 @@ const VOCABULARIO = Object.freeze({
     // La lista de lo que espera a la persona (signature-list.js): `on` el freno anota y al volver se las pasan de a una;
     // `off` (o sin valor), como si no existiera. No aprueba nada, así que también vale desde la máquina.
     signature_list: 'opcion:on|off',
+    // Cuántos minutos espera a la coordinadora una firma delegable que pidió la sesión que trabaja y el freno le desvió
+    // (delegation-routing.js): pasado el plazo, el renglón vuelve al dueño. Sin valor, 10. Sólo del perfil: si la máquina
+    // pudiera decirlo, el agente se estiraría el plazo.
+    delegation_wait_minutes: 'entero:1-60',
   }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
@@ -256,8 +260,10 @@ const VOCABULARIO = Object.freeze({
   // del equipo es un error. Sin valor, las firmas van en el aviso del chat y nada se escribe en disco. `session_names`:
   // con qué nombres abre la coordinadora las sesiones nuevas (coordination.js open sin --name), el id de un tema de
   // fábrica o una lista propia (`sessionNames`, más abajo); con el orden de siempre, así cada dev elige los suyos.
-  // Sin valor, los pone quien abre la sesión.
-  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion' }),
+  // Sin valor, los pone quien abre la sesión. `second_heavy_min_free_pct`: con cuánta memoria libre del sistema, en
+  // porcentaje, se da el segundo turno de ejecución grande de pruebas (scripts/tools/heavy-turn.js); con el orden de
+  // siempre, porque cuánto aguanta depende de la máquina. Sin valor, 50; con 100, la máquina queda con un turno.
+  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100' }),
   // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
   // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
   office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
@@ -328,7 +334,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes']);
 // Hasta dónde puede subir cada tope del camino corto. El delegado, hasta 6: sube lo
 // mínimo, porque con riesgo normal ese carril no lleva revisores ni pase adversarial, y una historia de 6 archivos ya deja
 // de saltearse el pase. El de la firma común, hasta 12: evita el click aparte en un arreglo de 9 archivos y lo mantiene en
@@ -554,6 +560,7 @@ const VARIABLES = Object.freeze({
   'coordination.max_working': ['TYCON_COORDINATION_MAX_WORKING'],
   'coordination.owner_folder': ['TYCON_COORDINATION_OWNER_FOLDER'],
   'coordination.session_names': ['TYCON_COORDINATION_SESSION_NAMES'],
+  'coordination.second_heavy_min_free_pct': ['TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -1467,8 +1474,8 @@ function modelProvider(opts = {}) {
 }
 /**
  * La receta de la coordinadora, según una configuración YA cargada: `{ max_working: { value, origin }, owner_folder:
- * { value, origin }, session_names: { value, origin } }`. Sin valor, el tope es 3, la carpeta null y los nombres null,
- * los tres con origen `sin-valor`.
+ * { value, origin }, session_names: { value, origin }, second_heavy_min_free_pct: { value, origin } }`. Sin valor, el tope
+ * es 3, la carpeta null, los nombres null y el piso del segundo turno 50, todos con origen `sin-valor`.
  */
 function coordinacion(config) {
   const v = (config.valores && config.valores.coordination) || {};
@@ -1476,7 +1483,7 @@ function coordinacion(config) {
   const con = (clave, defecto) => (v[clave] === null || v[clave] === undefined
     ? { value: defecto, origin: 'sin-valor' }
     : { value: v[clave], origin: o[`coordination.${clave}`] });
-  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null) };
+  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null), second_heavy_min_free_pct: con('second_heavy_min_free_pct', 50) };
 }
 /**
  * Los topes del camino corto, según una configuración YA cargada: `{ coordinator_max_files: { value, origin }, max_files:

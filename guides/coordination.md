@@ -252,11 +252,11 @@ El mismo aviso trae dos cosas más:
 
 ## Lo pesado, con turno: la suite completa y los pases adversariales
 
-En la máquina corre **una tarea pesada por vez**: una ejecución grande de pruebas (el portón completo, de 100 suites o
-más, o las portables) o un pase adversarial: nunca dos, y la ejecución grande nunca al lado del pase. Los cazadores y verificadores del pase
-corren sus sondas en la máquina, no en la nube: un pase y una suite grande juntos agotaron la memoria y Claude Code cerró
-sesiones. Los revisores, el banco y el examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la
-memoria de nadie:
+En la máquina corre **un pase adversarial por vez**, y nunca al lado de una ejecución grande de pruebas (el portón
+completo, de 100 suites o más, o las portables). De ejecuciones grandes corren hasta **dos ejecuciones grandes** a la vez,
+la segunda sólo con memoria libre (abajo). Los cazadores y verificadores del pase corren sus sondas en la máquina, no en la
+nube: un pase y una suite grande juntos agotaron la memoria y Claude Code cerró sesiones. Los revisores, el banco y el
+examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la memoria de nadie:
 
 - **Un portón acotado sí corre al lado del pase.** Uno de 40 suites o menos corre con un pase en vuelo, uno por vez y con
   la memoria libre del sistema en 40 % o más. No pide turno a la coordinadora: lo decide el arnés al arrancar
@@ -265,11 +265,21 @@ memoria de nadie:
   con menos memoria libre, el portón espera al pase (sale 75 y dice por qué). La memoria se mira una vez, al arrancar; si
   no se puede medir, no frena, y se dice.
 
-- **La segunda ejecución grande no arranca.** Piden el turno (`scripts/tools/heavy-turn.js`) el corredor de las suites, cuando
-  va a correr 100 suites o más, esté acotado o no, y las portables enteras. Con el turno de otro proceso vivo no corren (el
-  portón de pruebas sale 75, su «esperá») y dicen quién lo tiene, cuántas suites corre, desde cuándo y cómo destrabarlo. Con
-  menos de 100 suites no se pide. Con un pase en vuelo de cualquier sesión viva, también la propia, tampoco corren, y dicen
-  de qué historia, de qué sesión y desde qué hora: el turno es de la máquina, no de la sesión.
+- **Dos ejecuciones grandes a la vez, con memoria libre.** Piden el turno (`scripts/tools/heavy-turn.js`) el corredor de
+  las suites, cuando va a correr 100 suites o más, esté acotado o no, las portables enteras y la suite rápida del arranque.
+  Con menos de 100 suites no se pide. El turno tiene dos lugares: sin ninguna corriendo, se toma uno; con una corriendo, la
+  segunda arranca sólo con la memoria libre del sistema en el piso o arriba, 50 % si nadie lo cambia. Debajo, o sin poder
+  medirla, una: el portón de pruebas sale 75 (su «esperá») y dice quién corre, la memoria medida, el piso con su origen y
+  cómo destrabarla. Con dos corriendo, la tercera espera igual. La memoria se mide una vez, al arrancar: la que ya corre
+  no se corta si después baja. Con un pase en vuelo de cualquier sesión viva, también la propia, no corre ninguna, y dicen
+  de qué historia, de qué sesión y desde qué hora: nunca al lado del pase, porque el turno es de la máquina, no de la
+  sesión. El piso se cambia con `coordination.second_heavy_min_free_pct` (de 1 a 100; con 100, la máquina queda con un
+  turno): en esta máquina con `tycon-config.js set`, para una sesión con la variable
+  `TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT`, o en el perfil del equipo, después de que todas las máquinas tengan esta
+  versión (una más vieja leería la clave como desconocida). El 50 sale de lo medido el 15/11 en 16 GB: dos portones de 4 a
+  la vez suman hasta ~2,4 GB de pico, y desde la mitad libre la máquina queda cerca de 35 %, lejos del 28 % en que se
+  cerraron sesiones. El corredor usa el `heavy-turn.js` del repo que prueba: una copia de antes de este cambio sigue
+  pidiendo un solo turno.
 - **El pase no se lanza con la máquina ocupada.** Con otro pase en vuelo, con una ejecución grande en curso, o con un
   portón acotado que no puede ir a su lado (de más de 40 suites, dos portones, o la memoria libre debajo del 40 %), el
   portón del pase (`pipeline.js deep-review-gate`) sale 3, y `pipeline.js next` pide esperar en vez de lanzar. La
@@ -282,14 +292,15 @@ memoria de nadie:
   (`marker.js mark-adversarial-skipped`). Si se relanza, vuelve a ocuparla. Una sesión que se cerró lo libera, y pasada una
   hora ya no frena, porque puede estar terminado o colgado, y se dice.
 
-`coordination.js status` muestra un solo renglón, «Turno de tarea pesada», con quién lo tiene y qué es; el portón acotado
-que corre al lado de un pase lo dice en su renglón, con cuántas suites. Sin coordinadora designada, todo responde como siempre: en la
+`coordination.js status` muestra un solo renglón, «Turno de tarea pesada», con quién lo tiene y qué es; con una ejecución
+grande, si el segundo turno está libre o cerrado, con la memoria y el piso; con dos, las dos. `heavy-turn.js holders` las
+lista. El portón acotado que corre al lado de un pase lo dice en su renglón, con cuántas suites. Sin coordinadora designada, todo responde como siempre: en la
 CI y en la nube no hay turno. `TYCON_SUITE_TURN=0` apaga el de la suite, y `TYCON_SUITE_TURN=1` lo pide aunque no haya
 coordinadora: sólo puede frenar de más.
 
 ## Las revisiones automáticas: qué hace la coordinadora
 
-Cuándo corre cada revisión lo dice la configuración de la organización (`guides/revisiones-automaticas.md`). En cada
+Cuándo corre cada revisión lo dice la configuración de la organización (`guides/automatic-reviews.md`). En cada
 una, la coordinadora:
 
 - **Pregunta o no.** Si la matriz dice preguntar, la pregunta al dueño la hace ella, con el cuadro de opciones, y la
@@ -393,13 +404,24 @@ probarla.
 - **Qué da `owner-next`.** Un renglón, el más viejo: un cuadro para mostrar sin cambiarle una letra, con un rótulo («Firma 2/5»),
   y el aviso para la sesión destino. **Un permiso va primero**, con su contador y su cuadro. Lo de la terminal, al final y sin
   cuadro. Si el plan todavía no se vio en esa pestaña y no trae «Qué hace» y «Archivos», lo da para escribirlo antes
-  del cuadro. Si un renglón no se puede mostrar,
-  o su repetición se niega, `owner-next --after <id>` da el siguiente.
+  del cuadro. Debajo de la pregunta imprime el **detalle** («Detalle (no va en el cuadro; mostralo si la persona lo
+  pide):»): lo que no entró en el cuadro, como la ruta del plan o del diff y los renglones enteros. El detalle no va en
+  el cuadro de opciones ni nombra los archivos de la firma, que el cuadro cuenta por zonas. Si el cuadro pasa el tope
+  del teléfono, suma el renglón «Este cuadro pasa el tope del teléfono (N de M letras)»: no frena nada. Si un renglón
+  no se puede mostrar, o su repetición se niega, `owner-next --after <id>` da el siguiente.
 - **Siempre repite el comando la sesión que lo pidió**, con o sin coordinadora. Con el «Sí», la coordinadora le manda el aviso,
   y la sesión repite el mismo comando dentro de los 30 minutos. Con un click sin usar, `owner-next` saltea ese renglón y dice
   que falta repetir.
 - **Con un «No»:** `coordination.js owner-reject <id>` saca el renglón y nombra la sesión a la que hay que avisarle. Un cuadro
   cerrado o resuelto solo deja el renglón, y la pasada se corta.
+- **Lo que firma la coordinadora por delegación.** Una firma delegable que la sesión que trabaja pidió para sí no llega a
+  la persona: el freno la desvía a la coordinadora (`guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). El
+  aviso la cuenta aparte («N firmas las firmás vos por delegación»), y `owner-wait` se la anuncia una vez. `owner-next`
+  no da un cuadro: da el comando para correr en su pestaña («Firmala vos por delegación, en tu pestaña, desde <carpeta>:
+  <comando>»). La coordinadora lo corre tal cual y le avisa a la sesión que ya quedó firmada: la sesión no repite nada.
+  Si no la firma en `approvals.delegation_wait_minutes` (10 por defecto), o deja de estar viva, el renglón pasa a la
+  persona con su cuadro de siempre, y `owner-wait` lo anuncia una vez. En `/office` sale en «En curso» con «la firma la
+  coordinadora», no en «Tu firma».
 
 Límites: si la persona se va antes de contestar, `/office` las sigue contando y se piden la próxima vez. Lo que pide otra
 sesión de fondo con `--for-session` sigue por mensaje a la coordinadora. Una pestaña sin permisos sigue mostrando su cuadro: si
@@ -744,11 +766,13 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
   vía (por ejemplo, la ventana a nombre del dueño), se le avisa al dueño enseguida y se rehace. Por qué: una firma a
   nombre del dueño que él no dio es una constancia falsa. Una pestaña que no pide permisos ya no firma por la ventana:
   el arnés lo niega. Un click o un «aprobado» que no anotó el gancho tampoco vale.
-- **Lo pesado, con turno.** La suite completa, el banco de controles, el examen de revisores y el portón completo corren
-  de a uno en la máquina, y el turno se le pide a la coordinadora. La suite completa y el pase, que no van juntos, además
+- **Lo pesado, con turno.** El banco de controles y el examen de revisores corren de a uno en la máquina, y el turno se
+  le pide a la coordinadora. La suite completa y el portón completo también piden turno, y corren hasta dos a la vez si la
+  memoria libre está en el piso (50 % si nadie lo cambia) o arriba; debajo, o sin poder medirla, de a uno. La coordinadora
+  da el «arrancá» de la segunda cuando su aviso dice que hay lugar. La suite completa y el pase, que no van juntos, además
   los frena el arnés (arriba, «Lo pesado, con turno»). Un portón de 40 suites o menos no pide turno: el arnés lo deja
-  correr al lado del pase, o lo hace esperar. La historia que el dueño marcó como prioridad pasa adelante en la fila. Por qué: dos a la vez
-  saturan la máquina y los dos tardan más.
+  correr al lado del pase, o lo hace esperar. La historia que el dueño marcó como prioridad pasa adelante en la fila. Por qué: más de
+  lo que la memoria aguanta satura la máquina, todos tardan más y Claude Code cierra sesiones.
 - **Antes de aprobar un pedido ajeno, se mira el diff.** Y un ok que cubre archivos sensibles que nadie revisó no se da:
   primero se separan. Por qué: aprobar sin mirar es firmar lo que no se vio.
 - **Una sesión «libre» puede estar esperando algo.** Cuando corre algo sin tocar archivos, anota qué hace con
@@ -829,7 +853,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Un número de historia nunca solo | nadie | Va en los mensajes, que no pasan por un control de texto. |
 | Una pestaña que no pide permisos no firma por la ventana | freno | El freno de la ventana niega la firma y dice cómo aprobarla con un click o un «aprobado»; lo que no los acepta, con el comando de la terminal. Que la vía diga «delegación» lo confirma la coordinadora. |
 | Un arreglo rápido con pantalla lleva maqueta y captura | freno | El freno de guardar no pasa sin las tres cosas, ni si no pudo medir. Mira la fecha de la captura, no qué muestra. |
-| Lo pesado de a uno, con turno | nadie | La suite completa, el pase adversarial y el portón acotado al lado del pase tienen su freno (arriba); el banco, el examen y el portón completo sin pase no. |
+| Lo pesado de a uno, con turno | nadie | La suite completa, el pase adversarial, el portón acotado al lado del pase y la segunda ejecución grande (con su piso de memoria) tienen su freno (arriba); el banco, el examen y el portón completo sin pase no. |
 | Mirar el diff antes de aprobar un pedido ajeno | nadie | Es criterio de quien aprueba. |
 | Una sesión que espera anota qué hace | nadie | Lo anota la sesión con `marker.js doing --waiting-for`; un aviso se lo recuerda, y nada la obliga. |
 | Comprobar que un pedido sigue en la cola | nadie | Mirarlo cada turno sería preguntarle a la red todo el tiempo. |

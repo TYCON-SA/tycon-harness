@@ -72,6 +72,7 @@ function historiaDelGuion(home, dir, { borrador = false } = {}) {
   const answers = path.join(tmp('respuestas'), 'answers.json');
   fs.writeFileSync(answers, JSON.stringify({
     title: 'El total del carrito suma el envío', asA: 'quien compra', iWant: 'ver el total con envío', soThat: 'no tener sorpresas',
+    problem: 'el total no muestra el envío', outcome: 'el total incluye el envío',   // la intención: sin ellas no escribe
     criteria: [{ given: 'un carrito con envío', when: 'abro el resumen', then: 'el total incluye el envío' }],
     tests: [{ name: 'Total_ConEnvio', criterion: 1, level: 'unit', scenario: 'envío de 500', expected: 'total + 500' }],
     verify: ['npm test'],   // sin cómo se corren las pruebas el guion no escribe

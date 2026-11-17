@@ -344,6 +344,23 @@ function problems(a) {
   if (!text(a.title)) out.push('falta el título');
   if (/["\\\n]/.test(a.title || '')) out.push('el título no puede llevar comillas dobles, barras invertidas ni saltos de línea (usá comillas simples)');
   for (const k of ['asA', 'iWant', 'soThat']) if (!text(a[k])) out.push(`falta «${{ asA: 'como', iWant: 'quiero', soThat: 'para' }[k]}»`);
+  // la intención: qué se quiere resolver y qué tiene que pasar (las preguntas, si hubo)
+  if (!text(a.problem)) out.push('falta «problem»: qué se quiere resolver');
+  if (!text(a.outcome)) out.push('falta «outcome»: qué tiene que pasar cuando esté resuelto');
+  if (a.questions !== undefined) {
+    if (!Array.isArray(a.questions)) out.push('«questions» tiene que ser una lista');
+    else {
+      a.questions.forEach((q, i) => {
+        for (const k of ['question', 'why', 'who']) {
+          if (!text(q && q[k])) out.push(`a la pregunta ${i + 1} le falta «${k}»`);
+          // lo que el lector de intenciones toma por un comentario, un bloque de código o una marca rompería la tabla
+          // (`--!>` también cierra un comentario en HTML)
+          else if (/<!--|--!?>|```|~~~|\[falta:/.test(q[k])) out.push(`la pregunta ${i + 1}: «${k}» no puede llevar «<!--», «-->», «--!>», «\`\`\`», «~~~» ni «[falta:»`);
+        }
+        if (typeof (q && q.blocks) !== 'boolean') out.push(`la pregunta ${i + 1}: «blocks» va true o false`);
+      });
+    }
+  }
   const criteria = Array.isArray(a.criteria) ? a.criteria : [];
   const tests = Array.isArray(a.tests) ? a.tests : [];
   if (!criteria.length) out.push('no hay ningún criterio de aceptación');
@@ -516,6 +533,44 @@ function render(a, number, verify, exists = () => false) {
   ].join('\n');
 }
 
+/** La intención de la historia (story-format.md, «La intención»): en borrador, con las preguntas como filas abiertas. */
+function renderIntent(a, id) {
+  const qs = a.questions || [];
+  return [
+    '---',
+    `id: ${id}`,
+    'status: draft',
+    `objective: ${JSON.stringify(oneLine(a.problem))}`,
+    'outcomes:',
+    `  - ${JSON.stringify(oneLine(a.outcome))}`,
+    '---',
+    '',
+    `# ${oneLine(a.title)}`,
+    '',
+    '## Preguntas abiertas',
+    '',
+    ...(qs.length
+      ? ['| # | Pregunta | Por qué importa | Quién contesta | Bloquea | Estado | Respuesta | Fuente |', '|---|---|---|---|---|---|---|---|',
+        ...qs.map((q, i) => `| Q${i + 1} | ${cell(q.question)} | ${cell(q.why)} | ${cell(q.who)} | ${q.blocks ? 'sí' : 'no'} | abierta |  | — |`)]
+      : ['Ninguna.']),
+    '',
+    '## Decisiones reservadas',
+    '',
+    'Ninguna.',
+    '',
+  ].join('\n');
+}
+
+/** Escribe `contenido` en `target` sin pisar nada: un archivo temporal y un enlace duro, que falla si el destino existe. */
+function writeNew(target, contenido) {
+  const tmpFile = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpFile, contenido, { flag: 'wx' });
+  try { fs.linkSync(tmpFile, target); } finally {
+    // si borrar el temporal falla, no tapa el error del enlace (un «ya existe» tiene que seguir diciéndose así)
+    try { fs.unlinkSync(tmpFile); } catch (_e) { /* el temporal queda; no cambia lo que se escribió */ }
+  }
+}
+
 function write(repo, answersPath, home, { thisRepo = false } = {}) {
   if (isBmad(repo)) throw new Refusal(`este repo es un proyecto BMAD (${BMAD_CONFIG}): la historia se crea con el flujo de BMAD, no con el modo primera vez`);
   // un repo que ya tiene historias propias, o cuyo producto las tiene en otro lado, no escribe una de primera vez
@@ -529,30 +584,37 @@ function write(repo, answersPath, home, { thisRepo = false } = {}) {
   if (bad.length) throw new Refusal(`no escribí la historia:\n${bad.map((p) => `  - ${p}`).join('\n')}`);
   const verify = verifyCommands(repo, answers);
   const { dir, number } = nextStory(repo);
-  const target = path.join(dir, `story-${number}-${slug(answers.title)}.md`);
-  if (fs.existsSync(target)) throw new Refusal(`no escribí la historia: ya existe ${target} y no lo piso`);
+  const name = `story-${number}-${slug(answers.title)}`;
+  const target = path.join(dir, `${name}.md`);
+  // la intención va al lado, con el mismo nombre (story-format.md, «La intención»)
+  const intentTarget = path.join(dir, `${name}.intent.md`);
+  for (const t of [target, intentTarget]) if (fs.existsSync(t)) throw new Refusal(`no escribí la historia: ya existe ${t} y no lo piso`);
   fs.mkdirSync(dir, { recursive: true });
-  const tmpFile = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(tmpFile, render(answers, number, verify, (f) => fs.existsSync(path.join(repo, f))), { flag: 'wx' });
-  try { fs.linkSync(tmpFile, target); } catch (e) {
-    fs.unlinkSync(tmpFile);
+  try { writeNew(target, render(answers, number, verify, (f) => fs.existsSync(path.join(repo, f)))); } catch (e) {
     if (e.code === 'EEXIST') throw new Refusal(`no escribí la historia: ya existe ${target} y no lo piso`);
     throw e;
   }
-  fs.unlinkSync(tmpFile);
+  // Una historia nueva nunca queda sin su intención, ni una intención sin su historia: lo que falla después de escribir
+  // la historia se deshace entero.
+  const undo = (why, paths) => {
+    const left = [];
+    for (const p of paths) { try { fs.unlinkSync(p); } catch (err) { if (err.code !== 'ENOENT') left.push(`${p} (${err.code || err.message})`); } }
+    if (left.length) throw new Refusal(`${why}, y tampoco pude borrar ${left.join(', ')}: borralos a mano, una historia sin su intención o sin su constancia no arranca`);
+    throw new Refusal(`${why}; no dejé nada escrito. Revisalo y volvé a correrlo`);
+  };
+  try { writeNew(intentTarget, renderIntent(answers, name)); } catch (e) {
+    undo(e.code === 'EEXIST' ? `no escribí la intención: ya existe ${intentTarget} y no lo piso` : `no pude escribir la intención ${intentTarget} (${e.code || e.message})`, [target]);
+  }
   // Sin constancia la historia no arranca sola: antes que dejarla a medias, no se deja.
   try { writeRecord(home, target, number); } catch (e) {
-    const why = `no pude dejar la constancia de la historia en la carpeta de estado del arnés (${e.code || e.message})`;
-    try { fs.unlinkSync(target); } catch (err) {
-      throw new Refusal(`${why}, y tampoco pude borrar ${target} (${err.code || err.message}): borrala a mano, sin la constancia no arranca sola`);
-    }
-    throw new Refusal(`${why}; no la dejé escrita. Revisá esa carpeta y volvé a correrlo`);
+    undo(`no pude dejar la constancia de la historia en la carpeta de estado del arnés (${e.code || e.message})`, [target, intentTarget]);
   }
   const rel = path.relative(repo, target).split(path.sep).join('/');
   // el cierre viaja en el resultado: lo que va sólo por la salida de errores el agente no lo dice
   const closing = `Listo, tu historia quedó en \`${rel}\`. Para implementarla, pedime: «implementemos la story ${rel}». ` +
     'Si el repo no tiene git o estás en `main`, el recorrido lo prepara solo: crea la rama de trabajo y te lo dice.';
-  return { path: target, story: number, phrase: `implementemos la story ${rel}`, closing };
+  // `path` va primero: el registro del validador toma el primer "path" de la salida
+  return { path: target, intent: intentTarget, story: number, phrase: `implementemos la story ${rel}`, closing };
 }
 
 function main(argv) {

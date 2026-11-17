@@ -315,3 +315,17 @@ test('T24 Terminal_EscriturasArmadasYCopiasAUnaCarpeta_SeJuzganIgual', () => {
   frena(comando(`cp ${sin} ~/.claude/`, c), 'cp a la carpeta');
   pasa(comando(`cp ${sin} ${c.h}/otra/`, c), 'cp a otra carpeta');
 });
+
+// T2 ControlsOff_ApagaUsesTheList @story-8.256 @ac-3 @ac-27
+// 🔴 Falla con: `apaga()` sin leer la lista única (la escotilla de la matriz con `1` pasaba en la configuración), o lo
+//    que ya se reconocía que deja de reconocerse.
+test('T2 ControlsOff_ApagaUsesTheList @story-8.256 @ac-3 @ac-27', () => {
+  assert.ok(CO.apaga('TYCON_RUNTIME_MATRIX_LEGACY', '1'), 'LEGACY=1');
+  assert.ok(!CO.apaga('TYCON_RUNTIME_MATRIX_LEGACY', '0'), 'LEGACY=0');
+  for (const [k, v] of [['TYCON_MUTATION_CHECK', 'off'], ['TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK', '1'], ['TYCON_STORY_REVIEW', '0']]) {
+    assert.ok(CO.apaga(k, v), `${k}=${v}`);
+  }
+  const c = casa();
+  const conf = config({ extra: { env: { TYCON_REPOS_ROOT: '/h/src', TYCON_RUNTIME_MATRIX_LEGACY: '1' } } });
+  frena(edicion('Write', { file_path: path.join(c.repo, '.claude', 'settings.json'), content: texto(conf) }, c), 'LEGACY en env');
+});

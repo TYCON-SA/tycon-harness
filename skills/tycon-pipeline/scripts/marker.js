@@ -40,6 +40,7 @@
  * Commands (resuelven el sessionId solos — la firma CLI no cambia):
  *   marker.js set '{"storyId":"...","stepsPending":[...]}'  → escribe el marker de esta sesión
  *   marker.js get          → marker de esta sesión, o `{}`
+ *   marker.js get --strict → igual, y sale 3 si el marcador de esta sesión existe y no se deja leer
  *   marker.js touch        → actualiza lastTouch
  *   marker.js complete-step <N>  → mueve step N pending→completed
  *   marker.js append-file <abs-path>  → agrega path a filesTouched (dedup)
@@ -405,6 +406,10 @@ function appendLog(fileName, obj, { estricto = false } = {}) {
   }
 }
 
+// Las rutas de la corrida, absolutas contra su repo y nunca contra la carpeta del proceso (lib/run-dir.js): las usan la
+// lectura y la escritura del marcador, así cualquier comando lo ve igual desde cualquier carpeta.
+const conRutas = (m) => require('./lib/run-dir.js').marcadorConRutas(m);
+
 // Marker de ESTA sesión. Primero el archivo per-session; si no, fallback al
 // legacy single-file (transición — readonly).
 function readMarker() {
@@ -412,7 +417,7 @@ function readMarker() {
   if (fs.existsSync(own)) {
     try {
       const m = JSON.parse(fs.readFileSync(own, 'utf8'));
-      if (m && m.storyId) return m;
+      if (m && m.storyId) return conRutas(m);
     } catch (_e) { /* ignore */ }
   }
   if (fs.existsSync(LEGACY_MARKER_PATH)) {
@@ -422,10 +427,10 @@ function readMarker() {
         const obj = JSON.parse(raw);
         if (obj && obj.storyId) {
           // legacy plano: pertenece a la sesión sintética `_legacy`.
-          return SID === '_legacy' ? obj : null;
+          return SID === '_legacy' ? conRutas(obj) : null;
         }
         const m = obj && obj[SID];
-        if (m && m.storyId) return m;
+        if (m && m.storyId) return conRutas(m);
       }
     } catch (_e) { /* ignore */ }
   }
@@ -461,7 +466,7 @@ function writeMarker(marker) {
   pruneStale();
   const p = markerFilePath(SID);
   const tmp = `${p}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(marker, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify(require('./lib/run-dir.js').marcadorConRutas(marker, { avisar: true }), null, 2) + '\n', 'utf8');
   fs.renameSync(tmp, p);
   avisarOficina();
 }
@@ -512,7 +517,10 @@ function clearMarker() {
 // El cierre de la ejecución de `sesion` en el registro, con su carpeta, y la copia de la apertura borrada
 // (lib/open-runs.js). Todo camino que borra un marcador pasa por acá: sin el cierre, la sesión quedaría con su apertura
 // sin marcador y frenaría como perdida. Que falle no frena el comando: se dice.
-function cerrarEjecucion(sesion, m, { extra, registrar: _registrar, ...campos } = {}) {
+function cerrarEjecucion(sesion, marcador, { extra, registrar: _registrar, ...campos } = {}) {
+  // el embudo de todo lo que cierra un marcador (clear, restore, la adopción): con la carpeta absoluta contra su repo, el
+  // cierre encuentra la copia de la apertura desde cualquier carpeta
+  const m = conRutas(marcador);
   try {
     require('./lib/open-runs.js').cerrar({
       sid: SID, sesion, runDir: (m && m.runDir) || null, story: m && m.storyId != null ? String(m.storyId) : null,
@@ -690,8 +698,9 @@ function cmdSet(payloadJson) {
       sessionModel, codexSession,
       // las suites que fallaron son de la corrida: heredadas, la primera corrida completa de la story nueva se negaría
       // (76) por suites que sólo rompió la anterior. Lo guardado de una completa verde, igual: la nueva compararía su
-      // carpeta con una completa de otra historia
-      testsFailed, testsGreenFull,
+      // carpeta con una completa de otra historia. La nota de la última corrida, igual: la primera de la story nueva
+      // saldría «entera», con el motivo de la vieja
+      testsFailed, testsGreenFull, testsSavedNote,
       // la tanda es de la historia: heredada, la matriz de la nueva mediría una tanda que no es suya
       batch, batchSetAt,
       ...carryOver
@@ -747,6 +756,16 @@ function cmdSet(payloadJson) {
       console.error('    el plan → pasá `stepsCompleted` con los pasos hechos (incluido approve-plan) en el mismo set: así no avisa.');
     }
   }
+  // El repo que queda guardado. Uno relativo o que falta, con la carpeta absoluta, sale de la carpeta (lib/run-dir.js);
+  // si no, es el argumento de este mismo proceso y se resuelve acá, al entrar, como el --repo de `start`.
+  const repoGuardado = (() => {
+    const pedido = payload.repoPath;
+    if (!(pedido && path.isAbsolute(pedido))) {
+      const deLaCarpeta = require('./lib/run-dir.js').rutasDeLaCorrida({ runDir: payload.runDir }).repoPath;
+      if (deLaCarpeta && path.isAbsolute(deLaCarpeta)) return deLaCarpeta;
+    }
+    return path.resolve(pedido || at(existing, 'repoPath') || process.cwd());
+  })();
   const marker = {
     // 🔴 Los campos DESCONOCIDOS del marker existente se PRESERVAN. Con una lista cerrada de campos,
     // todo lo que no estuviera enumerado acá se perdería en silencio: `checks`,
@@ -766,7 +785,7 @@ function cmdSet(payloadJson) {
     ...(existing || {}),
     storyId: payload.storyId,
     storyPath: payload.storyPath || at(existing, 'storyPath') || null,
-    repoPath: path.resolve(payload.repoPath || at(existing, 'repoPath') || process.cwd()),
+    repoPath: repoGuardado,
     // Dónde nace la evidencia de cierre: el repo de la STORY, aunque el código viva en
     // otro. Lo escribe `pipeline.js start`; lo leen el paso «Probar en vivo», el macro y `mark-dod-runtime-checked`.
     // 🔴 El spread de arriba preserva lo EXISTENTE, no lo que trae el payload: sin esta línea el
@@ -785,8 +804,13 @@ function cmdSet(payloadJson) {
     // La existente gana mientras siga en disco y sea del mismo repo que la que trae el pedido; si ya no está (o es de
     // otro repo), la que abrió `start` la reemplaza: si no, la carpeta nueva quedaría sin marcador que la nombre.
     runDir: (() => {
-      const vieja = at(existing, 'runDir');
-      const nueva = payload.runDir;
+      // las dos, absolutas ANTES de mirar el disco: la vieja contra el repo del marcador existente (ya la trae así
+      // `readMarker`), la nueva contra el que queda guardado; un `set` desde otra carpeta no pierde la vieja
+      const rd = require('./lib/run-dir.js');
+      const ubicada = rd.rutasDeLaCorrida({ repoPath: at(existing, 'repoPath'), runDir: at(existing, 'runDir') }).runDir;
+      // una vieja que no se pudo ubicar no se toma (no se busca en la carpeta del proceso): gana la nueva
+      const vieja = typeof ubicada === 'string' && path.isAbsolute(ubicada) ? ubicada : null;
+      const nueva = rd.rutasDeLaCorrida({ repoPath: repoGuardado, runDir: payload.runDir }).runDir;
       // por la ruta real: un enlace (/var y /private/var en macOS) no hace de la misma carpeta una de otro repo
       const real = (p) => { try { return fs.realpathSync(path.dirname(path.resolve(p))); } catch (_e) { return path.dirname(path.resolve(p)); } };
       const sigue = !!vieja && fs.existsSync(vieja) && (!nueva || real(vieja) === real(nueva));
@@ -1129,9 +1153,19 @@ function cmdSnapshotIter(nRaw, flags) {
   }, 2);
 }
 
-function cmdGet() {
+function cmdGet(opcion) {
   const marker = readMarker();
   process.stdout.write(JSON.stringify(nn(marker, {}), null, 2));
+  // `{}` dice lo mismo sin corrida que con un marcador roto: con --strict, el roto sale 3 para quien tiene que distinguirlos
+  if (opcion === '--strict' && !marker) {
+    let crudo = null;
+    try { crudo = fs.readFileSync(markerFilePath(SID), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return; }
+    let m = null;
+    try { m = crudo === null ? null : JSON.parse(crudo); } catch (_e) { m = null; }
+    if (m && typeof m === 'object' && !Array.isArray(m) && m.storyId) return;
+    console.error(`marker.js get: el marcador de la sesión ${SID} no se puede leer o no dice de qué story es`);
+    process.exitCode = 3;
+  }
 }
 
 function cmdTouch() {
@@ -1274,9 +1308,10 @@ function planParaLaPersona(planTxt) {
 function planVisto(marker, planTxt, { porElCuadro = false } = {}) {
   const visto = planEnLaConversacion(planTxt);
   if (!visto.legible || visto.mostrado) return visto;
-  // el cuadro de la firma muestra «Qué hace», los archivos y la ruta del plan completo (signature-sources.js): con esas
-  // dos secciones legibles, el click en el cuadro es aprobar viéndolo. Un «aprobado» escrito, la ventana o la terminal
-  // no lo muestran. El plan entero se muestra si la persona lo pide
+  // el cuadro de la firma muestra «Qué hace», cuántos archivos toca y de qué zonas, y dónde está el plan completo
+  // (owner-approvals.js `cuadroDe`; las rutas van a su detalle): con esas dos secciones legibles, el click en el cuadro es
+  // aprobar viéndolo: la cantidad y las zonas de los archivos alcanzan para decidir. Un «aprobado» escrito, la ventana o
+  // la terminal no lo muestran. El plan entero se muestra si la persona lo pide
   if (porElCuadro) {
     let secciones = null;
     try { secciones = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js')).seccionesDelPlan(planTxt); } catch (e) {
@@ -2945,20 +2980,27 @@ function cmdMarkTestsNotScoped(motivo) {
  *     carpeta en `red-full/` y su hash), para que repetir solas las rojas cierre sin otra completa (lib/failed-first.js);
  *   · `save-green`, `green-full` y `drop-green`: lo mismo para la última completa verde (`testsGreenFull`, carpeta
  *     `green-full/`), para que la próxima corrida corra sólo lo que cambió desde ella. Las dos guardan
- *     `--story-id`; `save-green` recibe además `--after-inherited <resumen>`, el de después del juez de heredados.
- * `record`, `clear`, `save-*` y `drop-*` escriben lo que mide la puerta: sólo los llama test-gate.sh (TYCON_TEST_GATE=1).
- * Sin corrida abierta: sale 0, no escribe nada y lo dice.
+ *     `--story-id`; `save-green` recibe además `--after-inherited <resumen>`, el de después del juez de heredados, y las
+ *     dos `--origin-at <ts>`, la hora de la completa de origen de un cierre. Si no pueden guardar salen 1 y lo de antes
+ *     queda como estaba;
+ *   · `run-end --mode <m> --reason <t> --exit <n> --saved verde|rojo|no [--saved-reason <t>] [--origin-at <ts>]
+ *     [--suites <n>] [--duration-ms <n>]`: al final de cada corrida del portón de arriba que terminó en verde o en rojo,
+ *     anota en el marcador la nota de esa corrida para su repo (`testsSavedNote`, una entrada por repo, con la historia)
+ *     y agrega a gates.log el renglón `test-gate-run`. Sin corrida abierta, sólo el renglón.
+ * `record`, `clear`, `save-*`, `drop-*` y `run-end` escriben lo que mide la puerta: sólo los llama test-gate.sh
+ * (TYCON_TEST_GATE=1). Sin corrida abierta: sale 0, no escribe nada en el marcador y lo dice.
  */
 const TESTS_FAILED_PENDING = 76;
 
 function cmdTestsFailed(argv) {
   const accion = argv[0];
   const opt = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
-  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> [--full-ts <ts>] | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] [--result <f> [--story-id <id>] [--sealed <f>] [--inherited] [--full-suite-by <quién>]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red|save-green --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] [--story-id <id>] [--after-inherited <f>] --repo <r> | red-full|green-full --repo <r> | drop-red|drop-green --repo <r>';
-  if (!['record', 'clear', 'pending', 'save-red', 'red-full', 'drop-red', 'save-green', 'green-full', 'drop-green'].includes(accion) || !opt('--repo')
+  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> [--full-ts <ts>] | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] [--result <f> [--story-id <id>] [--sealed <f>] [--inherited] [--full-suite-by <quién>]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red|save-green --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] [--story-id <id>] [--after-inherited <f>] [--origin-at <ts>] --repo <r> | red-full|green-full --repo <r> | drop-red|drop-green --repo <r> | run-end --repo <r> --mode <m> --reason <t> --exit <n> --saved verde|rojo|no [--saved-reason <t>] [--origin-at <ts>] [--suites <n>] [--duration-ms <n>]';
+  if (!['record', 'clear', 'pending', 'save-red', 'red-full', 'drop-red', 'save-green', 'green-full', 'drop-green', 'run-end'].includes(accion) || !opt('--repo')
     || (accion === 'record' && !opt('--summary')) || (accion === 'clear' && !opt('--path'))
     || (accion === 'pending' && (!opt('--suites') || !opt('--gate')))
-    || ((accion === 'save-red' || accion === 'save-green') && (!opt('--summary') || !opt('--measured')))) {
+    || ((accion === 'save-red' || accion === 'save-green') && (!opt('--summary') || !opt('--measured')))
+    || (accion === 'run-end' && (!opt('--mode') || !opt('--reason') || !opt('--exit') || !['verde', 'rojo', 'no'].includes(opt('--saved'))))) {
     console.error(uso);
     process.exit(2);
   }
@@ -2968,6 +3010,30 @@ function cmdTestsFailed(argv) {
   }
   const ff = require('./lib/failed-first.js');
   const marker = readMarker();
+  if (accion === 'run-end') {
+    // La nota de esta corrida (el portón la lee para decir «primera» y por qué no guardó la última) y su renglón en
+    // gates.log (lo lee `suite-times.js repeats`). Sin corrida abierta, sólo el renglón: la medición no depende del marcador.
+    const repoReal = (() => { try { return fs.realpathSync(opt('--repo')); } catch { return path.resolve(opt('--repo')); } })();
+    const num = (k) => { const v = Number(opt(k)); return opt(k) !== null && Number.isFinite(v) ? v : null; };
+    const guardo = opt('--saved');
+    const motivoNo = guardo === 'no' ? (opt('--saved-reason') || 'sin motivo') : null;
+    const story = marker ? (marker.storyId || null) : null;
+    if (marker) {
+      const notas = (Array.isArray(marker.testsSavedNote) ? marker.testsSavedNote : []).filter((x) => x && x.repo !== repoReal);
+      marker.testsSavedNote = [...notas, { repo: repoReal, storyId: story, at: nowIso(), guardo, motivo: motivoNo }];
+      marker.lastTouch = nowIso();
+      writeMarker(marker);
+    }
+    // estricto: si el renglón no se escribe, sale 1 y el portón lo dice (el informe no vería esta corrida)
+    try {
+      appendLog('gates.log', { name: 'test-gate-run', story, modo: opt('--mode'), motivo: opt('--reason'), origen_at: opt('--origin-at'),
+        suites: num('--suites'), duracion_ms: num('--duration-ms'), exit: num('--exit'), guardo, guardo_motivo: motivoNo }, { estricto: true });
+    } catch (e) {
+      process.stderr.write(`[test-gate] ⚠️  no pude escribir el renglón de esta corrida en gates.log (${e.message})\n`);
+      process.exit(1);
+    }
+    return;
+  }
   if (!marker) {
     // red-full y green-full los lee test-gate.sh como JSON: sin corrida, no hay nada guardado
     if (accion === 'red-full' || accion === 'green-full') process.stdout.write('null\n');
@@ -3017,10 +3083,11 @@ function cmdTestsFailed(argv) {
     let hash;
     try {
       hash = ff.saveGreen({ dir, summaryFile: opt('--summary'), lcovFile: opt('--coverage-file'), measuredFile: opt('--measured'), base: opt('--base'),
-        recorte: opt('--trim') || '', storyId: opt('--story-id') || marker.storyId || null, forgivenFile: opt('--after-inherited') });
+        recorte: opt('--trim') || '', storyId: opt('--story-id') || marker.storyId || null, forgivenFile: opt('--after-inherited'), origenAt: opt('--origin-at') });
     } catch (e) {
-      process.stderr.write(`[test-gate] ⚠️  no pude guardar la completa verde (${e.message}): la próxima corrida corre la completa entera\n`);
-      return;
+      // lo de antes queda entero (saveGreen escribe al lado y cambia al final): la próxima corrida compara contra eso
+      process.stderr.write(`[test-gate] ⚠️  no pude guardar este verde (${e.message}): queda lo guardado de antes\n`);
+      process.exit(1);
     }
     guardar([...otras, { repo, dir, hash, at: nowIso() }]);
     marker.lastTouch = nowIso();
@@ -3056,10 +3123,10 @@ function cmdTestsFailed(argv) {
     const dir = path.join(STATE_DIR, 'red-full', `${marker.sessionId || 'sesion'}-${require('crypto').createHash('sha1').update(repo).digest('hex').slice(0, 12)}`);
     let hash;
     try {
-      hash = ff.saveRed({ dir, summaryFile: opt('--summary'), lcovFile: opt('--coverage-file'), measuredFile: opt('--measured'), base: opt('--base'), recorte: opt('--trim') || '', storyId: opt('--story-id') || marker.storyId || null });
+      hash = ff.saveRed({ dir, summaryFile: opt('--summary'), lcovFile: opt('--coverage-file'), measuredFile: opt('--measured'), base: opt('--base'), recorte: opt('--trim') || '', storyId: opt('--story-id') || marker.storyId || null, origenAt: opt('--origin-at') });
     } catch (e) {
       process.stderr.write(`[test-gate] ⚠️  no pude guardar la completa roja (${e.message}): repetir solas no va a cerrar «Correr las pruebas»\n`);
-      return;
+      process.exit(1);
     }
     guardarRojas([...otrasRojas, { repo, dir, hash, at: nowIso() }]);
     marker.lastTouch = nowIso();
@@ -3411,7 +3478,12 @@ function cmdRunCheck(argv) {
       // el 77 del turno se anota aparte: `registrarRunCheck` sólo sabe de verde y rojo, y está congelada
       if (esSinTurno(name, cmdArgv, exitCode)) registrarSinTurno(name, cmdArgv, marker, exitCode, Date.now() - t0);
       else if (marcaQueNoPisaSinTurno(name, exitCode)) process.exitCode = exitCode;
-      else registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+      else {
+        registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+        // la corrida de un repo hermano es parte de la corrida que la lanzó: un renglón aparte, con el mismo comando, le
+        // dice al informe de repeticiones que no la cuente como otra (`registrarRunCheck` está congelada)
+        if (process.env.TYCON_TEST_GATE_COMPANION === '1') appendLog('gates.log', { name: 'run-check-companion', check: name, cmd: cmdArgv.join(' ') });
+      }
     } finally {
       soltar();
     }
@@ -5453,11 +5525,24 @@ function cmdSalidaPerdida(modo, sesion) {
   const abierta = podada && !podada.runDir ? (() => { const r = or.leerEventos(); return r.ok ? [...r.eventos].reverse().find((e) => e.sesion === String(sesion) && e.name === 'run-open') : null; })() : null;
   const dePodada = podada ? { name: 'pruned', story: String(podada.storyId), storyPath: podada.storyPath || null, repo: podada.repoPath || null, runDir: podada.runDir || (abierta && abierta.runDir) || null, ts: podada.startedAt || podada.lastTouch } : null;
   // la apertura: la vigente del registro o, sin registro, la copia del repo, o la de la podada
-  const apertura = ult && ult.name === 'run-open' ? ult : copias.length ? copias[copias.length - 1].copia : dePodada;
-  if (!apertura) {
+  const aperturaCruda = ult && ult.name === 'run-open' ? ult : copias.length ? copias[copias.length - 1].copia : dePodada;
+  if (!aperturaCruda) {
     console.error(`marker.js ${nombre}: la sesión ${sesion} no tiene una ejecución abierta (ni apertura en el registro ni copia en este repo): no hay nada que ${modo === 'lost' ? 'cerrar' : 'restaurar'}.`);
     process.exit(1);
   }
+  // sus rutas, absolutas contra su repo, antes de leer su copia, compararla, cerrarla o escribir el marcador (lib/run-dir.js):
+  // una apertura vieja con el repo «.» o una podada con la carpeta relativa no se buscan en la carpeta de este proceso
+  const ubicar = (a) => {
+    const r = require('./lib/run-dir.js').rutasDeLaCorrida({ repoPath: a.repo, runDir: a.runDir, storyPath: a.storyPath });
+    if (typeof r.runDir !== 'string' || !path.isAbsolute(r.runDir)) return { motivo: r.motivo || 'no trae la carpeta de la ejecución' };
+    return { apertura: { ...a, ...(r.repoPath ? { repo: r.repoPath } : {}), runDir: r.runDir, ...(r.storyPath ? { storyPath: r.storyPath } : {}) } };
+  };
+  const ubicada = ubicar(aperturaCruda);
+  if (!ubicada.apertura) {
+    console.error(`marker.js ${nombre}: no puedo ubicar la ejecución de la sesión ${sesion}: ${ubicada.motivo}. No se ${modo === 'lost' ? 'cerró' : 'restauró'} nada.`);
+    process.exit(1);
+  }
+  const apertura = ubicada.apertura;
   // restore pisa el marcador propio y --lost borra el de la sesión perdida: si el que se toca no se lee, no se puede
   // anotar lo que deja (antes de pedir la firma)
   frenarSiIlegible(markerFilePath(modo === 'lost' ? sesion : SID), modo === 'lost' ? sesion : SID, nombre);
@@ -5496,7 +5581,11 @@ function cmdSalidaPerdida(modo, sesion) {
   // restore: el marcador vuelve con lo que dice la copia de la apertura, en la sesión que la pide
   let copia = null;
   try { copia = JSON.parse(fs.readFileSync(path.join(apertura.runDir, 'run-open.json'), 'utf8')); } catch (_e) { copia = null; }
-  const base = copia && copia.sesion === sesion ? copia : apertura;
+  const copiaUbicada = copia && copia.sesion === sesion ? ubicar(copia) : null;
+  // una copia de esta sesión que no se ubica no se usa, y se dice: se restaura con la apertura elegida
+  if (copiaUbicada && !copiaUbicada.apertura) process.stderr.write(`⚠️  marker.js ${nombre}: la copia de la apertura no se puede ubicar (${copiaUbicada.motivo}): uso la apertura del registro.\n`);
+  const deLaCopia = copiaUbicada ? copiaUbicada.apertura : null;
+  const base = deLaCopia || apertura;
   // la ejecución propia de otra carpeta no se pisa callada: se cierra como reemplazada, como en `set`, con su cierre sin
   // ok anotado antes de tocar nada
   let previo = readMarker();
@@ -5731,7 +5820,7 @@ function cmdAdoptSession(sid) {
   }
   let other;
   try {
-    other = JSON.parse(fs.readFileSync(otherPath, 'utf8'));
+    other = conRutas(JSON.parse(fs.readFileSync(otherPath, 'utf8')));
   } catch (e) {
     console.error(`marker.js adopt-session: marker de ${safe} ilegible:`, e.message);
     process.exit(1);
@@ -7579,7 +7668,7 @@ switch (cmd) {
     cmdSet(arg1);
     break;
   case 'get':
-    cmdGet();
+    cmdGet(arg1);
     break;
   case 'touch':
     cmdTouch();

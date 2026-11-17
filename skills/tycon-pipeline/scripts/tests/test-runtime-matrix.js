@@ -295,7 +295,7 @@ for (const cmd of ['vstest.console.exe App.Tests.dll --logger:trx', '"C:/VS/Comm
   const rmPath = require.resolve('../runtime-matrix.js');
   delete require.cache[rmPath];
   const rmLegacy = require(rmPath);
-  const r = rmLegacy.compute({ storyPath: f.storyPath, gatesLogPath: fakeGatesLog });
+  const r = rmLegacy.compute({ storyPath: f.storyPath, gatesLogPath: fakeGatesLog, stateDir: path.join(f.ws, 'estado') });
   if (prev === undefined) delete process.env.TYCON_RUNTIME_MATRIX_LEGACY;
   else process.env.TYCON_RUNTIME_MATRIX_LEGACY = prev;
   delete require.cache[rmPath];
@@ -762,7 +762,7 @@ withWaiverLog(() => {
   process.env.TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK = '1';
   delete require.cache[require.resolve(path.join(__dirname, '..', 'runtime-matrix.js'))];
   const rmLegacy = require(path.join(__dirname, '..', 'runtime-matrix.js'));
-  const rLegacy = rmLegacy.compute({ storyPath: f2.storyPath, gatesLogPath: f2.gatesLog });
+  const rLegacy = rmLegacy.compute({ storyPath: f2.storyPath, gatesLogPath: f2.gatesLog, stateDir: path.join(f2.ws, 'estado') });
   check('la escotilla documentada desactiva la regla', (rLegacy.accionNoEjercida || []).length === 0,
     JSON.stringify(rLegacy.accionNoEjercida));
   delete process.env.TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK;
@@ -2476,6 +2476,25 @@ withWaiverLog(() => {
     con.visual.length === 0 && con.verdict === sin.verdict && con.notRun.includes(3) && con.green === false
       && /venció por web\/tests\/real\.spec\.ts, que prueba el criterio 3/.test(con.vencio),
     JSON.stringify({ con, sin }));
+}
+
+// T5 RuntimeMatrix_LegacyHatches_WriteBypassLine @story-8.256 @ac-6
+// 🔴 Falla con: una escotilla de la matriz que pasa sin dejar rastro en bypass.log, leída al cargar el módulo (no se
+//    ve el `env` de la llamada), o un renglón por cada cálculo (la matriz corre varias veces por comando).
+{
+  const f = makeWorkspace();
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-casa-'));
+  const estado = path.join(casa, 'estado');
+  const lineas = () => { try { return fs.readFileSync(path.join(estado, 'bypass.log'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_e) { return []; } };
+  for (const v of ['TYCON_RUNTIME_MATRIX_LEGACY', 'TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK']) {
+    for (let i = 0; i < 3; i++) rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, env: { [v]: '1' }, stateDir: estado, sessionId: 's-rmx' });
+  }
+  rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, env: {}, stateDir: estado, sessionId: 's-rmx' });
+  const l = lineas();
+  check('RuntimeMatrix_LegacyHatches_WriteBypassLine @story-8.256 @ac-6',
+    l.length === 2 && l.map((x) => x.kind).sort().join(',') === 'RUNTIME_MATRIX_LEGACY,RUNTIME_MATRIX_NO_MUTATION_CHECK'
+      && l.every((x) => x.story === '9.9' && x.sessionId === 's-rmx'),
+    JSON.stringify(l));
 }
 
 console.log('');

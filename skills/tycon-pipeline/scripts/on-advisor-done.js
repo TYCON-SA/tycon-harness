@@ -16,7 +16,13 @@
  * (`agent_id`) que contesta otra vez —por ejemplo con el detalle que le pidieron—, cuyos críticos se suman. Los demás
  * agentes no le interesan. Una transcripción que no pudo leer la anota como ilegible, con el motivo. Si no puede leer el
  * registro, no sabe de qué salida es la respuesta: no anota nada y lo dice en la salida de errores; el cierre ve la salida
- * sin reporte y frena. Sale 0 siempre: nunca frena el fin de un subagente.
+ * sin reporte y frena.
+ *
+ * El renglón de veredicto, pedido una vez: un revisor del set que cerró sin él (o sin texto, sin que fallara la lectura)
+ * recibe `{ decision: 'block', reason }` con el pedido de ese renglón, y sigue en su mismo contexto (probado: el mismo
+ * agente sigue y el gancho vuelve a correr con `stop_hook_active`). Lo que dice después se anota en la misma vuelta. Una
+ * vez por agente: con su `verdict-retry` anotado o con `stop_hook_active`, no se pide de nuevo. Sale 0 siempre, y
+ * cualquier falla al decidir el pedido sale sin `decision`: nunca deja a un subagente sin poder terminar por un error suyo.
  */
 
 const fs = require('fs');
@@ -77,14 +83,35 @@ function main() {
   const fromTranscript = reportFromTranscript(event.agent_transcript_path);
   const lastMessage = typeof event.last_assistant_message === 'string' ? event.last_assistant_message : '';
   const text = [fromTranscript.text, lastMessage].filter(Boolean).join('\n');
-  rc.recordReport({
+  const rep = rc.recordReport({
     stateDir: dir, sessionKey, advisor, agentId, iter: launch.iter, story: launch.story, run: launch.run, source: 'subagent-stop',
     text, error: text ? null : (fromTranscript.error || 'el revisor terminó sin texto'),
   });
+  return pedirElRenglon({ rc, event, rep, lines, launch, advisor, agentId, dir, sessionKey, transcriptError: fromTranscript.error });
+}
+
+/**
+ * El pedido del renglón de veredicto, o null. Sólo a un agente del set, con su reporte ilegible por falta del renglón (o
+ * sin texto) y no por un error de lectura, y una sola vez. Un error al decidir no pide nada.
+ */
+function pedirElRenglon({ rc, event, rep, lines, launch, advisor, agentId, dir, sessionKey, transcriptError }) {
+  try {
+    if (!rep || rep.readable || !agentId || transcriptError) return null;
+    if (event.stop_hook_active === true) return null;
+    if (rc.yaSePidio(lines, { advisor, agentId })) return null;
+    rc.recordVerdictRetry({ stateDir: dir, sessionKey, advisor, agentId, iter: launch.iter, story: launch.story, run: launch.run });
+    return { decision: 'block', reason: rc.VERDICT_REQUEST };
+  } catch (e) {
+    process.stderr.write(`on-advisor-done: no pude decidir el pedido del renglón de veredicto (${(e && e.message) || e}); el revisor termina como siempre\n`);
+    return null;
+  }
 }
 
 if (require.main === module) {
-  try { main(); } catch (e) {
+  try {
+    const pedido = main();
+    if (pedido) process.stdout.write(JSON.stringify(pedido));
+  } catch (e) {
     // nunca frena el fin de un subagente; lo que falló queda dicho en la salida de errores
     try { process.stderr.write(`on-advisor-done: no pude anotar el reporte (${(e && e.message) || e})\n`); } catch { /* nada */ }
   }

@@ -6,7 +6,8 @@
  * Cada renglón dice quién firmó (`signer`), por qué vía (`via`: window, terminal, delegation, command, la de un
  * comando de emergencia, o review, la coordinadora con la revisión automática del plan), si fue delegada, quién la pidió (`ordered_by`), sobre qué sesión (`target`), su id y su nivel
  * en el catálogo (signatures.js: una firma de hoy o un id de la tabla de niveles), la huella de la máquina
- * (machine-id.js), la hora, el motivo y el guion que la escribió (`source`).
+ * (machine-id.js), la hora, el motivo y el guion que la escribió (`source`). `routed`: la firma cerró un renglón de la
+ * lista que el freno desvió a la coordinadora.
  *
  * Lo escribe `firmar()` de owner-window.js, por donde pasan las firmas de los guiones, y lo puede llamar cualquier
  * camino nuevo de firma. Los registros de cada guion y el renglón `-signed` de `gates.log` siguen como estaban.
@@ -58,7 +59,7 @@ function maquina(huella) {
  * Agrega el renglón de una firma. `{ ok: true, path }` o `{ ok: false, error }`; nunca lanza.
  * `home`, `now` y `huella` se pasan en las pruebas.
  */
-function appendSignature({ signature, via, signer = null, orderedBy = null, target = null, reason = '', source = null, key = null, home, now = Date.now(), huella } = {}) {
+function appendSignature({ signature, via, signer = null, orderedBy = null, target = null, reason = '', source = null, key = null, routed = false, home, now = Date.now(), huella } = {}) {
   try {
     if (!VIAS.includes(via)) return { ok: false, error: `la vía «${via}» no es una de ${VIAS.join(', ')}` };
     const n = nivelDe(signature, DELEGADAS.includes(via));
@@ -68,6 +69,8 @@ function appendSignature({ signature, via, signer = null, orderedBy = null, targ
       signer, ordered_by: orderedBy, target, machine: maquina(huella), reason: una(reason, MOTIVO_MAX), source,
       // la clave del pedido (la de su fila en la lista de firmas): con ella, la firma cierra sólo ese pedido
       ...(key ? { key: String(key) } : {}),
+      // la firma cerró un renglón que el freno desvió a la coordinadora (delegation-routing.js)
+      ...(routed === true ? { routed: true } : {}),
     };
     const p = logPath(home);
     fs.mkdirSync(path.dirname(p), { recursive: true });

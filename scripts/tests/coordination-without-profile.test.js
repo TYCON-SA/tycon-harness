@@ -209,7 +209,8 @@ test('T11 SinPerfil_TurnosDeSuiteYPase_SePiden @story-8.199 @ac-9: la suite y el
   // the suite: another live process holds the turn, so this one waits and is told to ask the coordinator
   const first = HT.take({ home: m.home, env: { ...m.env, CLAUDE_CODE_SESSION_ID: 's-a' }, arnes: m.arnes, pid: process.pid, what: 'suites', now: NOW });
   assert.strictEqual(first.taken, true, first.message);
-  const second = HT.take({ home: m.home, env: { ...m.env, CLAUDE_CODE_SESSION_ID: 's-b' }, arnes: m.arnes, pid: process.ppid, what: 'suites', now: NOW });
+  // con el piso en 100 hay un solo turno (8.291): la prueba no depende de la memoria de la máquina
+  const second = HT.take({ home: m.home, env: { ...m.env, CLAUDE_CODE_SESSION_ID: 's-b', TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT: '100' }, arnes: m.arnes, pid: process.ppid, what: 'suites', now: NOW });
   assert.strictEqual(second.ok, false);
   assert.match(second.message, /pedile turno a la coordinadora/);
   HT.release({ home: m.home, pid: process.pid });

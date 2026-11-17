@@ -823,7 +823,7 @@ async function runMutationCheck({
     }
     // Una base «verde» que no corrió ninguna prueba no prueba nada: todo mutante sobreviviría. Las recetas que dejan
     // su resultado dicen cuántas corrieron (`node --test` no deja ninguno).
-    if (base && Number.isInteger(base.tests)) ctx.baseTests = base.tests;
+    if (Number.isInteger(base.tests)) ctx.baseTests = base.tests;
     if (nameFilter && base.tests === 0) {
       return fail2(`no medido: el filtro de la marca @story-${idHistoria} no dejó ninguna prueba en la base — no sigo con los mutantes`);
     }

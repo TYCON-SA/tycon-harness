@@ -247,7 +247,7 @@ rc=$(con_llave no-client)
   || no "T35 salió un pedido sin nombres a tachar"
 grep -q 'sin TypeSafe' "${TMP}/o.txt" && grep -qi 'nombres' "${TMP}/o.txt" && ok "T35 sin términos cliente lo dice" \
   || no "T35 no lo dice: $(cat "${TMP}/o.txt")"
-awk '/^## Nombres que se tachan/{p=1;next} /^## /{p=0} p&&/^```/{f=1} END{exit !f}' "${AQUI}/guides/reglas-para-revisores.md" \
+awk '/^## Nombres que se tachan/{p=1;next} /^## /{p=0} p&&/^```/{f=1} END{exit !f}' "${AQUI}/guides/reviewer-rules.md" \
   && no "T35 la guía todavía trae la lista de nombres (un bloque bajo «Nombres que se tachan»)" \
   || ok "T35 la guía ya no trae la lista de nombres: dice dónde vive"
 

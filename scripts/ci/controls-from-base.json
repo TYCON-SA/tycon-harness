@@ -8,7 +8,7 @@
     { "name": "npm-package-version", "mode": "range", "cmd": ["node", "scripts/ci/npm-package-version.js", "--root", "{root}", "--range", "{base}...{tip}"], "if_exists": ["scripts/ci/npm-package-version.js", "scripts/setup/npm/package.json"] }
   ],
   "controls": [
-    { "name": "story-frontmatter", "script": "scripts/lib/lint-story-frontmatter.js", "rules": ["scripts/metrics/rework-causes.json"] },
+    { "name": "story-frontmatter", "script": "scripts/lib/lint-story-frontmatter.js", "rules": ["scripts/metrics/rework-causes.json", "scripts/lib/vendor/intent-spec/schema.json"] },
     { "name": "ci-gate", "script": "scripts/ci/tycon-ci-gate.js", "rules": [] },
     { "name": "new-names", "script": "scripts/publishing/new-names.js", "rules": [
       "scripts/publishing/allowlist.json",
@@ -69,6 +69,7 @@
     ".engram/manifest.json",
     ".tycon/",
     "scripts/lib/test-scope-options.json",
+    "scripts/lib/env-switches.json",
     "onboarding/mini-class/i18n/en.json",
     "scripts/controls-bench/ultimo-banco.json",
     "scripts/controls-bench/ultimo-constancias.json",

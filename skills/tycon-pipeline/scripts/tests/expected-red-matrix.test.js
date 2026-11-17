@@ -430,7 +430,9 @@ test('T10 ExpectRed_Acmatrix_AsksPermission @story-8.252 @ac-9 — la firma prop
   const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
   const cuadro = ow.cuadroPara({ firma: 'escape:rojo-esperado-de-la-matriz', comando, palabras: null, destino: 's-t10', cwd: E.repo, casa: E.home, sesion: 's-t10' });
   assert.ok(!cuadro.error, cuadro.error);
-  for (const n of [1, 2, 3]) assert.match(cuadro.pregunta, new RegExp(`AC ${n}: [^|]*resultado`), cuadro.pregunta);
+  // dos renglones a la vista (el cuadro se lee en un teléfono); los demás, en su detalle
+  for (const n of [1, 2]) assert.match(cuadro.pregunta, new RegExp(`AC ${n}: [^|]*resultado`), cuadro.pregunta);
+  assert.ok(cuadro.detalle.some((l) => /AC 3: .*resultado/.test(l)), JSON.stringify(cuadro.detalle));
   assert.match(cuadro.pregunta, /T1, T2, T3/);
   assert.match(cuadro.pregunta, new RegExp(hasta));
   // envuelto, no se ve qué se firma: sin criterios a la vista, no hay cuadro

@@ -67,6 +67,9 @@ const { MODULES, moduleSource } = PARTS;
 const QUIET_STATES = new Set(['trabajando', 'prueba', 'firma', 'pregunta', 'espera', 'esperando']);
 // lo que le toca contestar a una persona: una firma o una pregunta. La coordinadora que espera eso no dice «Coordinando»
 const ASKS_OWNER = new Set(['firma', 'pregunta']);
+// lo que una firma ya aprobada deja de pedirle al dueño: el plan y el guardado, cada uno con la firma que lo aprueba
+// (signatures.js). Un cuadro de permiso en pantalla lo sigue esperando
+const REPEAT_WAITS = new Map([['que apruebes el plan', 'plan-approval'], [SAVE_WAIT, 'save']]);
 // Las clases de trabajo sin corrida abierta: lo que hacen se lee de su conversación.
 const NO_RUN_KINDS = new Set(['activity', 'nomarker', 'loose', 'note']);
 // El nombre del paso que espera la aprobación del dueño, como lo anota el archivo de estado de la sesión.
@@ -411,6 +414,21 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   const halfwayOf = new Map();
   for (const h of wip.halfwayItems || []) if (h && h.sid != null && h.kind === 'run') halfwayOf.set(String(h.sid), h);
   const toldOwner = [];
+  // la firma del registro ya aprobada (`aprobada`, de aprobadasSinRepetir) espera que su sesión repita el comando: no le
+  // pide nada al dueño. Con qué firmas aprobadas cuenta cada sesión (`repite`): deja de esperarlo por su plan o su
+  // guardado sólo si lo aprobado es esa firma (otra firma aprobada no aprueba el plan), y sólo sin un cuadro en pantalla
+  // (`onScreen`: ése lo contesta el dueño). Otra firma suya sin aprobar no lo cambia: va sola a «Tu firma»
+  // la desviada a la coordinadora (`conLaCoordinadora`, de delegation-routing.js) la firma ella: tampoco espera al dueño
+  const pendingSigs = signatures.filter((s) => !(s && (s.aprobada || s.conLaCoordinadora)));
+  const repite = new Map();
+  for (const s of signatures) {
+    if (!s || !s.aprobada || !s.destino) continue;
+    const k = String(s.destino);
+    repite.set(k, new Set([...(repite.get(k) || []), s.firma]));
+  }
+  // las sesiones con un cuadro en pantalla: no viaja en la foto, sólo decide acá
+  const onScreenAgents = new Set();
+  const repeats = (sid, espera, onScreen = false) => !onScreen && sid != null && REPEAT_WAITS.has(espera) && Boolean(repite.get(String(sid))) && repite.get(String(sid)).has(REPEAT_WAITS.get(espera));
   wip.rows.forEach((row, i) => {
     const d = (wip.details && wip.details[i]) || {};
     const x0 = (wip.extra && wip.extra[i]) || {};
@@ -440,14 +458,20 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     const knows = !replaced && Boolean(f) && !x.finishedOpen && ((x.kind === 'pipeline' && f.step) || x.kind === 'loose');
     const lastWrite = d.sid != null ? lastWrites.get(String(d.sid)) : undefined;
     const real = notStoppedYet(realState(x, dNow, fNow), lastWrite, Number(d.statusAt), nowMs);
+    // un cuadro en pantalla (un permiso, una pregunta): el estado de una ejecución sin el paso del plan ni el guardado
+    // terminado sigue esperando al dueño
+    const onScreen = ASKS_OWNER.has(realState({ kind: 'pipeline' }, dNow, fNow).estado);
     // «Corriendo pruebas» sólo con pruebas corriendo: estar en el paso no alcanza
     const tests = real.estado === 'prueba' ? runningTests(f && f.pid, processes, f ? f.tool : undefined) : undefined;
     if (tests === false || tests === null) real.estado = 'trabajando';
     // lo que espera algo manda también sobre la coordinadora
     const isCoordinator = Boolean(coordinatorSid) && d.sid === coordinatorSid;
     const prsSaid = waitingPrs && d.sid != null ? waitingPrs.get(String(d.sid)) : null;
-    // si ya pasó todo lo que esperaba, la espera vieja no se dice: se dice qué pasó
-    const waitingFor = (prsSaid && prsSaid.all) || workedAfterWait(x0, lastWrite, d.status) ? '' : plain(x0.waitingFor, { keepPrs: true });
+    // si ya pasó todo lo que esperaba, la espera vieja no se dice: se dice qué pasó. La que siguió trabajando la tapa sólo
+    // mientras no está quieta: quieta con la marca puesta, vuelve a esperar (la fila de turnos pide confirmar, a propósito).
+    // Quieta es lo que dice el estado de esta tarjeta (Codex por su archivo, el estado atrasado de Claude corregido)
+    const quietNow = real.estado === 'parada';
+    const waitingFor = (prsSaid && prsSaid.all) || (!quietNow && workedAfterWait(x0, lastWrite, d.status)) ? '' : plain(x0.waitingFor, { keepPrs: true });
     // quien declaró que espera a otro no está trabajando en eso, aunque siga escribiendo
     const declaredWait = Boolean(waitingFor) && !x.mark && !ASKS_OWNER.has(real.estado);
     const estado = isCoordinator && !ASKS_OWNER.has(real.estado) ? 'coordina' : declaredWait ? 'esperando' : real.estado;
@@ -468,8 +492,9 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     // la corrida en pausa sigue abierta: su historia es de esta tarjeta y la fila del tablero no manda
     if (!replacesClosed && x0.storyId) storyOfAgent.set(a, String(x0.storyId));
     // al dueño le toca lo que le espera a él: aprobar un plan o dar el ok de guardar
-    if (a.espera === 'que apruebes el plan') toldOwner.push(`Aprobar el plan: ${titulo || haciendo} (${row.session})`);
-    if (a.espera === SAVE_WAIT) toldOwner.push(`${SAVE_ASK}: ${titulo || haciendo} (${row.session})`);
+    if (onScreen) onScreenAgents.add(a);
+    if (a.espera === 'que apruebes el plan' && !repeats(d.sid, a.espera, onScreen)) toldOwner.push(`Aprobar el plan: ${titulo || haciendo} (${row.session})`);
+    if (a.espera === SAVE_WAIT && !repeats(d.sid, a.espera, onScreen)) toldOwner.push(`${SAVE_ASK}: ${titulo || haciendo} (${row.session})`);
     if (estado === 'pregunta') toldOwner.push(`Contestar: ${titulo || haciendo} (${row.session})`);
     // la promesa que la corrida anotó al arrancar; sin estimado, es también la hora de fin de la que sigue trabajando.
     // La que terminó y espera entrar no la toma: su hora es la de la cola, y sin ella no hay hora (como en /wip)
@@ -622,6 +647,9 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
       const h = halfwayOf.get(sid);
       const awaits = h && h.awaits ? h.awaits : f.step === PLAN_STEP_NAME ? 'plan' : null;
       const real = realState(awaits === 'save' ? { kind: 'finished' } : { kind: 'pipeline', current: awaits === 'plan' ? 'approve-plan' : null }, {}, f);
+      // un cuadro en pantalla: sin el paso del plan ni el guardado, sigue esperando al dueño
+      const onScreen = ASKS_OWNER.has(realState({ kind: 'pipeline' }, {}, f).estado);
+      if (onScreen) onScreenAgents.add(a);
       const mark = h && h.mark ? h.mark : null;
       const works = Boolean(f.step) || (f.sentence && f.sentence !== sessionState.NO_PIPELINE) || f.busy === true || Boolean(awaits) || Boolean(mark);
       a.estado = ASKS_OWNER.has(real.estado) ? real.estado : works ? real.estado : 'libre';
@@ -632,7 +660,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
       if (f.step) a.paso = f.step;
       if (a.espera === 'que apruebes el plan' || a.espera === SAVE_WAIT) {
         a.titulo = h ? unnumbered(h.text) : a.haciendo;
-        toldOwner.push(`${a.espera === SAVE_WAIT ? SAVE_ASK : 'Aprobar el plan'}: ${a.titulo} (${a.nombre})`);
+        if (!repeats(sid, a.espera, onScreen)) toldOwner.push(`${a.espera === SAVE_WAIT ? SAVE_ASK : 'Aprobar el plan'}: ${a.titulo} (${a.nombre})`);
       }
       if (h && h.storyId) storyOfAgent.set(a, String(h.storyId));
       if (a.estado !== 'libre') {
@@ -652,6 +680,45 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     }
     sidOf.set(a, sid);
     agents.push(a);
+  }
+  // la que espera su plan o su guardado ya aprobados no espera al dueño: está parada hasta que repita el comando. No
+  // `esperando`, que la contaría como trabada. Una sesión libre de /wip no espera un plan ni un guardado: no llega acá
+  const repeatSaid = (nombre, sid) => { const n = String(nombre || '').trim(); return `aprobada: espera que ${n && n !== '—' ? n : `— (${String(sid).slice(0, 8)})`} la repita`; };
+  // la firma que ya dice la tarjeta de cada sesión: la del plan o la del guardado que esperaba
+  const saidByCard = new Map();
+  for (const a of agents) {
+    if (a.estado !== 'firma' || !repeats(sidOf.get(a), a.espera, onScreenAgents.has(a))) continue;
+    saidByCard.set(String(sidOf.get(a)), REPEAT_WAITS.get(a.espera));
+    a.estado = 'parada';
+    a.espera = repeatSaid(a.nombre, sidOf.get(a));
+    a.parada = a.espera;
+  }
+  // las demás aprobadas (no son el plan ni el guardado que dice su tarjeta) van a «En curso» con su propia tarjeta, una
+  // por sesión, como las de «Tu firma»: de otro modo dejarían de verse
+  const repeatCards = [];
+  const approvedBySid = new Map();
+  for (const s of signatures) {
+    if (!s || !s.aprobada || !s.destino || !s.title || saidByCard.get(String(s.destino)) === s.firma) continue;
+    const k = String(s.destino);
+    approvedBySid.set(k, [...(approvedBySid.get(k) || []), s]);
+  }
+  for (const [sid, rows] of approvedBySid) {
+    rows.sort((p, q) => (p.at || 0) - (q.at || 0));
+    const agent = agents.find((a) => String(sidOf.get(a)) === sid);
+    const quien = agent ? agent.nombre : plain(rows[0].nombre) || '';
+    repeatCards.push({ titulo: `Firma: ${plain(rows[0].title)}${rows.length > 1 ? ` y ${rows.length - 1} más` : ''}`, quien: quien || `— (${sid.slice(0, 8)})`, espera: repeatSaid(quien, sid), sid, agent });
+  }
+  // las desviadas a la coordinadora van a «En curso», una tarjeta por sesión: las firma ella, no el dueño
+  const byCoordinator = new Map();
+  for (const s of signatures) {
+    if (!s || !s.conLaCoordinadora || s.aprobada || !s.destino || !s.title) continue;
+    byCoordinator.set(String(s.destino), [...(byCoordinator.get(String(s.destino)) || []), s]);
+  }
+  for (const [sid, rows] of byCoordinator) {
+    rows.sort((p, q) => (p.at || 0) - (q.at || 0));
+    const agent = agents.find((a) => String(sidOf.get(a)) === sid);
+    const quien = agent ? agent.nombre : plain(rows[0].nombre) || '';
+    repeatCards.push({ titulo: `Firma: ${plain(rows[0].title)}${rows.length > 1 ? ` y ${rows.length - 1} más` : ''}`, quien: quien || `— (${sid.slice(0, 8)})`, espera: 'la firma la coordinadora', sid, agent });
   }
   // la sesión dice cuántos agentes corren ahora; con agentes corriendo no está libre
   const notFree = new Set();
@@ -686,8 +753,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     estado: a.tipo === 'stalled' ? 'riesgo' : a.estado === 'espera' ? 'espera' : a.estado === 'firma' ? 'firma' : 'curso', // lo demás, una pregunta incluida, sigue en curso
     ...(a.marca ? { marca: a.marca } : {}),
   }));
-  const signatureCards = cardsOfSignatures(signatures, agents, sidOf);
-  raiseHands(agents, signatures, sidOf, coordinatorName);
+  const signatureCards = cardsOfSignatures(pendingSigs, agents, sidOf);
+  raiseHands(agents, pendingSigs, sidOf, coordinatorName);
   for (const s of signatureCards) {
     if (s.conTarjeta) continue;
     items.push({ titulo: s.titulo, quien: s.quien, estado: 'firma', estimadaIso: s.at == null ? null : localIso(s.at), pronosticoIso: null, fin: s.at == null ? null : { hora: dayHhmm(s.at), dif: '', cls: '' } });
@@ -737,7 +804,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   // «te toca» es sólo lo que pide una firma o una decisión del dueño: las firmas, lo que le preguntan y la lista del tablero,
   // que mantiene la coordinadora. Las notas no se leen: una frase no dice si es para ahora
   const teToca = [...signatureCards.filter((s) => !s.yaAvisada).map((s) => s.linea), ...toldOwner, ...((board && board.teToca) || [])];
-  const kanban = buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures: signatureCards.filter((s) => !s.conTarjeta), board, prAnswers, openPrs, openPrsNote, nowMs, projectOf, projectOfRepo, sidOf });
+  const kanban = buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures: signatureCards.filter((s) => !s.conTarjeta), repeatCards, board, prAnswers, openPrs, openPrsNote, nowMs, projectOf, projectOfRepo, sidOf });
   if (halfwayUnknown) kanban.medioCaminoNoSe = halfwayUnknown === 1 ? 'De un trabajo de una sesión cerrada no se pudo saber si dejó algo sin terminar.' : `De ${halfwayUnknown} trabajos de sesiones cerradas no se pudo saber si dejaron algo sin terminar.`;
   if (kanban.medioCamino.length || kanban.medioCaminoNoSe) kanban.medioCaminoLeido = `Leído a las ${hhmm(wip.halfwayReadAt || nowMs)}`;
   // las historias de los proyectos de la persona, de la lectura de fondo (`{ snap, nota, runs }`): van al final de «Sin
@@ -898,7 +965,7 @@ function ownerWaitsOf(data) {
  * sesión viva: la fila que dice «curso» sin una sesión que la haga va a «Sin sesión», y la ejecución marcada de una sesión
  * cerrada es esa misma fila, si la hay, o una tarjeta en esa columna.
  */
-function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures, board, prAnswers, openPrs = [], openPrsNote = null, nowMs = Date.now(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro', sidOf = new Map() }) {
+function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures, repeatCards = [], board, prAnswers, openPrs = [], openPrsNote = null, nowMs = Date.now(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro', sidOf = new Map() }) {
   const cols = KANBAN_COLUMNS.map(([id, nombre]) => ({ id, nombre, tarjetas: [] }));
   const col = (id) => cols.find((c) => c.id === id);
   // cómo se ordena «En curso»: lo que termina antes, arriba; después lo que espera o no tiene hora, y al final la coordinadora
@@ -950,6 +1017,12 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   for (const s of signatures) {
     const who = agents.find((a) => a.nombre === s.quien);
     col('firma').tarjetas.push(signedBy(withWork({ titulo: s.titulo, quien: s.quien, hora: s.at == null ? '' : dayHhmm(s.at) }, { proyecto: who ? (who.otroProyecto ? 'otro' : who.proyecto) : projectOf(null) }), s.sid, 'lista'));
+  }
+  // la firma ya aprobada que espera que su sesión la repita: no es del dueño, es de esa sesión
+  for (const r of repeatCards) {
+    const card = withWork({ titulo: r.titulo, quien: r.quien, hora: '', espera: r.espera }, { proyecto: r.agent ? (r.agent.otroProyecto ? 'otro' : r.agent.proyecto) : projectOf(null) });
+    inProgress.set(card, { tier: 1 });
+    col('curso').tarjetas.push(card);
   }
   // las ejecuciones marcadas de sesiones cerradas se cruzan con el tablero al final: pueden ser una de sus filas
   const parked = [];
@@ -2064,7 +2137,10 @@ function officeProcessAlive(sdir) {
   } catch { return false; }
 }
 
-/** Lee todo lo de esta máquina y arma los datos; guarda las promesas al día. */
+/**
+ * Lee todo lo de esta máquina y arma los datos; guarda las promesas al día. `arbol` y `validarAprobacion` van a la
+ * lectura de las firmas ya aprobadas (`aprobadasSinRepetir`); se pasan en las pruebas.
+ */
 async function collect(opts = {}) {
   const home = opts.home || os.homedir();
   const sdir = opts.stateDir || stateDir(home);
@@ -2077,6 +2153,16 @@ async function collect(opts = {}) {
     problems.push(...open.problemas);
     const names = sessionsBySid(opts.sessionsDir || path.join(claudeDir(home), 'sessions'), [], null);
     signatures = open.filas.map((f) => (f.destino && names.get(f.destino) ? { ...f, nombre: names.get(f.destino).name } : f));
+    // las ya aprobadas que esperan que su sesión las repita: el mismo chequeo que owner-next. Lo que no se pudo leer queda
+    // pendiente, con su motivo en los avisos
+    try {
+      const ya = signatureList.aprobadasSinRepetir({ casa: home, filas: open.filas, ahora: nowMs, ...(opts.arbol !== undefined ? { arbol: opts.arbol } : {}), ...(opts.validarAprobacion ? { validar: opts.validarAprobacion } : {}) });
+      problems.push(...ya.problemas);
+      if (ya.ids.size) signatures = signatures.map((f) => (ya.ids.has(f.id) ? { ...f, aprobada: true } : f));
+    } catch (e) { problems.push(`no se pudo saber qué firmas ya están aprobadas: ${e.message}`); }
+    // las desviadas a la coordinadora, dentro del plazo y con ella viva: las firma ella
+    const suyas = require(path.join(ROOT, 'scripts', 'lib', 'delegation-routing.js')).deLaCoordinadora({ casa: home, filas: open.filas, ahora: nowMs, arnes: opts.arnes, env: opts.env });
+    if (suyas.size) signatures = signatures.map((f) => (suyas.has(f.id) ? { ...f, conLaCoordinadora: true } : f));
   } catch (e) { problems.push(`las firmas pendientes no se pudieron leer: ${e.message}`); }
   const des = designacionVigente({ dir: sdir });
   if (des && des.error) problems.push(`no se sabe cuál es la coordinadora: ${des.error}`);
@@ -2157,8 +2243,9 @@ async function collect(opts = {}) {
     const hidden = hiddenCardsLine(data.kanban.ocultas, opts.memory);
     if (hidden) process.stderr.write(`${new Date(nowMs).toISOString()} ${hidden}\n`);
   }
-  // sólo con la oficina abierta: la primera pasada lee conversaciones enteras, y la foto fija y `--json` empezarían de cero cada vez
-  if (opts.envelopes && !opts.noTranscripts) data.tokens = readTokens(wip, states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
+  // con la oficina abierta, y en `--json` (`opts.tokens`): la primera pasada lee conversaciones enteras, y la foto fija
+  // empezaría de cero cada vez
+  if ((opts.envelopes || opts.tokens) && !opts.noTranscripts) data.tokens = readTokens(wip, states, remembered.tokens, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, cxNames });
   // el modelo y el esfuerzo de cada sesión, de su última respuesta: van con la persona, a su etiqueta y a sus tarjetas
   if (data.tokens) for (const a of data.agents) { const t = data.tokens[a.nombre]; if (t) { a.modelo = t.modelo; a.esfuerzo = t.esfuerzo; } }
   // lo del tablero que no es una fila: su resumen, lo que dice que le toca al dueño y cuándo se escribió
@@ -2345,8 +2432,9 @@ async function main(argv) {
   let data;
   // la foto que queda en un archivo no lleva nada de las conversaciones: eso sólo viaja en la foto viva
   // sin el proceso de la oficina, el tablero lo mueve esta foto; una foto de otra hora no escribe nada
+  // `--json` lee además los tokens: el modelo y el esfuerzo de cada sesión salen de ahí
   const sdir = stateDir(os.homedir());
-  try { data = await collect({ now: opts.now, noTranscripts: !opts.json && !opts.task, syncBoard: !opts.now && !officeProcessAlive(sdir) }); } catch (e) {
+  try { data = await collect({ now: opts.now, noTranscripts: !opts.json && !opts.task, tokens: Boolean(opts.json), syncBoard: !opts.now && !officeProcessAlive(sdir) }); } catch (e) {
     if (e.code === 'NO_STATE' || e.code === 'BAD_ARG') { process.stderr.write(`office.js: ${e.message}\n`); return 2; }
     throw e;
   }

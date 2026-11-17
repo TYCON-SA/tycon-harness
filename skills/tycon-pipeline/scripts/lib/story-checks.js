@@ -59,9 +59,12 @@ function stripFrontmatter(s) {
 // El título se reconoce sin importar mayúsculas y con `##` o `###`; también en castellano. Las palabras de cada
 // título viven en TITLE_WORDS para quien necesita el texto del título (el resumen de la story para los revisores).
 // `tests-result` y los títulos `Tests corridos` de la evidencia no son la tabla de la story.
+// `questions` y `reserved` son las dos secciones propias de una intención: su único lector es lib/intent.js.
 const TITLE_WORDS = {
   criteria: 'acceptance criteria|criterios de aceptaci[oó]n',
   tests: 'tests(?![\\w-])(?![ \\t]+corridos)',
+  questions: 'preguntas abiertas',
+  reserved: 'decisiones reservadas',
 };
 const HEADING_LINE = /^(#{1,6})[ \t]/;
 const FENCE_LINE = /^[ \t]*(```|~~~)/;

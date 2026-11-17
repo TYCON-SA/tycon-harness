@@ -68,6 +68,11 @@ function acotada(m, repo, out, extra = []) {
   return [RUNNER, repo, out, '--touched', touched, '--scoped-by-repo', 'la CI', ...extra];
 }
 const POSIX = { skip: process.platform === 'win32' ? 'enlaces simbólicos y bash' : false };
+// Un solo turno, como antes de la 8.291: con el piso en 100 la segunda nunca entra, sea cual sea la memoria de la
+// máquina. Lo usan las pruebas que miden «la segunda espera» con el turno de otro.
+const ONE_TURN = { TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT: '100' };
+// permisos de carpeta: sin efecto en Windows ni para root
+const POSIX_PERMS = { skip: process.platform === 'win32' || (process.getuid && process.getuid() === 0) ? 'permisos POSIX' : false };
 // un proceso vivo que no es éste: el «otro» corredor
 function otherProcess(t) {
   const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
@@ -80,7 +85,7 @@ test('HT1 SuiteTurn_SecondFullSuite_StopsAndSaysWho — con el turno de otra ses
   const other = otherProcess(t);
   const a = HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-uma' }, pid: other, what: 'suites portables' });
   assert.deepStrictEqual([a.ok, a.taken], [true, true]);
-  const b = HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 'otra' }, pid: process.pid, what: 'suites.json' });
+  const b = HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 'otra', ...ONE_TURN }, pid: process.pid, what: 'suites.json' });
   assert.strictEqual(b.ok, false);
   assert.match(b.message, /Ya corre una ejecución grande de pruebas en esta máquina: Uma \(suites portables, desde las \d\d:\d\d\)/);
   assert.match(b.message, /pedile turno a la coordinadora/);
@@ -122,7 +127,7 @@ test('HT4 SuiteTurn_FromAWorkingClone_ReadsTheInstalledProfile — el perfil est
   const other = otherProcess(t);
   fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'suites portables', at: Date.now() }));
-  const env = machineEnv(m);
+  const env = { ...machineEnv(m), ...ONE_TURN };
   const cli = path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js');
   const r = spawnSync(process.execPath, [cli, 'take', '--what', 'x', '--process', String(process.pid)], { env, encoding: 'utf8' });
   assert.strictEqual(r.status, HT.BUSY_EXIT, r.stderr);
@@ -136,7 +141,7 @@ test('HT4 SuiteTurn_FromAWorkingClone_ReadsTheInstalledProfile — el perfil est
   const sin = toy();
   fs.mkdirSync(path.dirname(HT.turnFile(sin.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(sin.home), JSON.stringify({ pid: other, session: 'Uma', what: 'x', at: Date.now() }));
-  const pide = spawnSync(process.execPath, [cli, 'take', '--what', 'x', '--process', String(process.pid)], { env: machineEnv(sin), encoding: 'utf8' });
+  const pide = spawnSync(process.execPath, [cli, 'take', '--what', 'x', '--process', String(process.pid)], { env: { ...machineEnv(sin), ...ONE_TURN }, encoding: 'utf8' });
   assert.strictEqual(pide.status, HT.BUSY_EXIT, pide.stderr);
   assert.match(pide.stderr, /pedile turno a la coordinadora/);
   // sin designada no hay a quién pedirle turno: corre
@@ -153,7 +158,7 @@ test('HT5 Turno_GrandeSinAcotar_NoArrancaConElTurnoAjeno — sin acotar y grande
   const { repo, primera } = repoConSuites(m, 100);
   fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'suites portables', at: Date.now() }));
-  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
+  const env = { ...machineEnv(m), ...ONE_TURN, TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
   const out = path.join(m.root, 'resumen.json');
   const full = spawnSync(process.execPath, [RUNNER, repo, out], { env, encoding: 'utf8', timeout: 60000 });
   assert.strictEqual(full.status, HT.BUSY_EXIT, `${full.stdout}\n${full.stderr}`);
@@ -176,7 +181,7 @@ test('HT5a Turno_AcotadaGrande_NoArrancaConElTurnoAjeno — acotada o no, con 10
   const { repo } = repoConSuites(m, 100);
   fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: '279 suites de otro', at: Date.now() }));
-  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
+  const env = { ...machineEnv(m), ...ONE_TURN, TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
   const out = path.join(m.root, 'resumen.json');
   const r = spawnSync(process.execPath, acotada(m, repo, out), { env, encoding: 'utf8', timeout: 60000 });
   assert.strictEqual(r.status, HT.BUSY_EXIT, `${r.stdout}\n${r.stderr}`);
@@ -193,7 +198,7 @@ test('HT5g Turno_MuchasDeclaradasPocasPorCorrer_NoLoPide — las diferidas no cu
   const { repo } = repoConSuites(m, 150, 5);
   fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'x', at: Date.now() }));
-  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
+  const env = { ...machineEnv(m), ...ONE_TURN, TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
   const out = path.join(m.root, 'resumen.json');
   const r = spawnSync(process.execPath, acotada(m, repo, out), { env, encoding: 'utf8', timeout: 60000 });
   assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
@@ -207,7 +212,7 @@ test('HT5h Turno_ModuloQueNoCarga_LoDiceYCorre — no poder mirar el turno no fr
   installed(m);
   const { repo } = repoConSuites(m, 100);
   fs.writeFileSync(path.join(repo, 'scripts', 'tools', 'heavy-turn.js'), 'throw new Error("módulo roto");\n');
-  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
+  const env = { ...machineEnv(m), ...ONE_TURN, TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
   const r = spawnSync(process.execPath, acotada(m, repo, path.join(m.root, 'resumen.json')), { env, encoding: 'utf8', timeout: 120000 });
   assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stderr, /no pude cargar el turno de las ejecuciones grandes \(módulo roto\): corro igual/);
@@ -221,7 +226,7 @@ test('HT5d Turno_AcotadaChica_CorreConElTurnoAjeno — con 99 suites corre', POS
   const { repo } = repoConSuites(m, 99);
   fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'x', at: Date.now() }));
-  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
+  const env = { ...machineEnv(m), ...ONE_TURN, TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
   const r = spawnSync(process.execPath, acotada(m, repo, path.join(m.root, 'resumen.json')), { env, encoding: 'utf8', timeout: 120000 });
   assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
   assert.strictEqual(JSON.parse(fs.readFileSync(HT.turnFile(m.home), 'utf8')).pid, other, 'el turno ajeno sigue');
@@ -250,7 +255,7 @@ test('HT5f Turno_LivianaDePocas_NoLoPide — sin acotar, con pocas suites por co
   const { repo } = repoConSuites(m, 3);
   fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'x', at: Date.now() }));
-  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
+  const env = { ...machineEnv(m), ...ONE_TURN, TYCON_SKILLS_DIR: path.join(ROOT, 'skills') };
   const r = spawnSync(process.execPath, [RUNNER, repo, path.join(m.root, 'resumen.json')], { env, encoding: 'utf8', timeout: 60000 });
   assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
 });
@@ -261,7 +266,7 @@ test('HT6 SuiteTurn_PortablesFull_StopsForReal — las portables enteras, con el
   const other = otherProcess(t);
   fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'suites portables', at: Date.now() }));
-  const r = spawnSync('bash', [path.join(ROOT, 'scripts', 'tests', 'portable-suites.test.sh')], { env: machineEnv(m), encoding: 'utf8', timeout: 60000, cwd: path.join(ROOT, 'scripts') });
+  const r = spawnSync('bash', [path.join(ROOT, 'scripts', 'tests', 'portable-suites.test.sh')], { env: { ...machineEnv(m), ...ONE_TURN }, encoding: 'utf8', timeout: 60000, cwd: path.join(ROOT, 'scripts') });
   assert.strictEqual(r.status, HT.BUSY_EXIT, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stderr, /Ya corre una ejecución grande de pruebas en esta máquina: Uma/);
   assert.match(r.stdout, /NO MEDIDO suites-portables/);
@@ -271,7 +276,7 @@ test('HT6 SuiteTurn_PortablesFull_StopsForReal — las portables enteras, con el
 test('HT7 SuiteTurn_TakenAtOnce_OneOwner — varios procesos a la vez, con o sin un turno muerto: uno solo lo tiene', { timeout: 120000 }, async () => {
   const m = toy();
   const mod = path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js');
-  const env = { ...machineEnv(m), TYCON_SUITE_TURN: '1' };
+  const env = { ...machineEnv(m), ...ONE_TURN, TYCON_SUITE_TURN: '1' };
   // cada uno espera la misma hora, intenta y dice si lo tomó. Sigue vivo hasta que probaron todos: si muere antes, otro
   // toma legítimamente un turno muerto y parecería un segundo dueño (con la máquina cargada, el arranque tarda).
   const racer = (at) => {
@@ -303,7 +308,7 @@ test('HT5b Turno_PortonGrande_Sale75 — por el portón de verdad: con el turno 
   fs.mkdirSync(path.dirname(HT.turnFile(m.home)), { recursive: true });
   fs.writeFileSync(HT.turnFile(m.home), JSON.stringify({ pid: other, session: 'Uma', what: 'suites portables', at: Date.now() }));
   const gate = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'test-gate.sh');
-  const env = { ...machineEnv(m), TYCON_SKILLS_DIR: path.join(ROOT, 'skills'), TYCON_GATE_ALL_SUITES: '1' };
+  const env = { ...machineEnv(m), ...ONE_TURN, TYCON_SKILLS_DIR: path.join(ROOT, 'skills'), TYCON_GATE_ALL_SUITES: '1' };
   const r = spawnSync('bash', [gate, repo], { env, encoding: 'utf8', timeout: 90000, cwd: repo });
   assert.strictEqual(r.status, 75, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stderr, /Ya corre una ejecución grande de pruebas en esta máquina: Uma/);
@@ -674,4 +679,272 @@ test('HT25 Guides_SmallGateBesidePass @story-8.286 @ac-13 — las guías y el pa
   const step = flat('skills/tycon-pipeline/steps/step-06-run-tests.md');
   assert.match(step, /pase adversarial en vuelo/);
   assert.match(step, /40 suites/);
+});
+
+// ── El segundo turno de ejecución grande, con la memoria libre en el piso (8.291) ───────────────────────────────────
+
+// Un lugar del turno tomado por `pid`, escrito como lo publica `take`: el primero (0) o el segundo (1).
+function slotOf(m, i, pid, fields = {}) {
+  const file = HT.slotFiles(m.home)[i];
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ pid, sid: `s-${i}`, session: i ? 'Segunda' : 'Primera', what: '204 suites de repo', at: Date.now() - (2 - i) * 60000, ...fields }));
+  return file;
+}
+const inForce = (m) => HT.holders({ home: m.home }).map((h) => h.pid);
+const secondAs = (m, pid, readMemory, env = {}) => HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-uma', ...env }, pid, what: '204 suites de repo', readMemory });
+
+// 🔴 mutación: no dar el segundo lugar (como antes), o darlo sin decir la memoria y el piso.
+test('HT29 SecondTurn_FreeMemory_Takes @story-8.291 @ac-1 — con la memoria libre en el piso o arriba, la segunda toma el otro lugar', (t) => {
+  const m = toy();
+  const first = otherProcess(t);
+  slotOf(m, 0, first);
+  const doing = path.join(stateDir(m.home), 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  fs.writeFileSync(path.join(doing, 's-uma.json'), JSON.stringify({ at: new Date().toISOString(), waitingFor: 'turno de suite', waitingSince: new Date().toISOString() }));
+  const mem = memory(62);
+  const { r, text } = said(() => secondAs(m, process.pid, mem));
+  assert.deepStrictEqual([r.ok, r.taken], [true, true], r.message);
+  assert.deepStrictEqual(inForce(m), [first, process.pid]);
+  assert.strictEqual(mem.calls, 1, 'la memoria se mide una vez');
+  assert.match(text, /segunda ejecución grande: memoria libre 62 %, piso 50 %/);
+  assert.ok(!fs.existsSync(path.join(doing, 's-uma.json')), 'la espera anotada de la sesión se borró');
+  const mine = JSON.parse(fs.readFileSync(HT.slotFiles(m.home)[1], 'utf8'));
+  assert.deepStrictEqual(Object.keys(mine).sort(), ['at', 'pid', 'session', 'sid', 'what']);
+});
+
+// 🔴 mutación: comparar al revés, o tomar el lugar igual con poca memoria (lo que cerró sesiones en la 8.228).
+test('HT30 SecondTurn_LowMemory_Waits @story-8.291 @ac-2 — debajo del piso espera, dice la memoria, el piso, su origen y quién corre', (t) => {
+  const m = toy();
+  const first = otherProcess(t);
+  slotOf(m, 0, first);
+  const r = secondAs(m, process.pid, memory(41));
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /Ya corre una ejecución grande de pruebas en esta máquina: Primera \(204 suites de repo, desde las \d\d:\d\d\)/);
+  assert.match(r.message, /41 %/);
+  assert.match(r.message, /piso 50 %, de fábrica/);
+  assert.match(r.message, new RegExp(`release --process ${first}`));
+  assert.ok(!fs.existsSync(HT.slotFiles(m.home)[1]), 'no escribió el segundo lugar');
+  // por la línea de comandos sale 77; el lector de memoria real no se puede inyectar ahí: el piso en 100 lo cierra igual
+  const cli = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'take', '--process', String(process.pid), '--what', 'x'], { env: { ...machineEnv(m), ...ONE_TURN, TYCON_SUITE_TURN: '1' }, encoding: 'utf8' });
+  assert.strictEqual(cli.status, HT.BUSY_EXIT, cli.stderr);
+});
+
+// 🔴 mutación: tratar «no pude medir» como en besidePass (deja pasar): el segundo turno es un extra.
+test('HT31 SecondTurn_MemoryUnreadable_Waits @story-8.291 @ac-3 — sin poder medir la memoria no se da el segundo turno', (t) => {
+  const m = toy();
+  slotOf(m, 0, otherProcess(t));
+  for (const reader of [() => { throw new Error('sin comando'); }, () => ({ pct: null, why: 'memory_pressure no dio el porcentaje' })]) {
+    const r = secondAs(m, process.pid, reader);
+    assert.strictEqual(r.ok, false);
+    assert.match(r.message, /no pude medir la memoria libre: (sin comando|memory_pressure no dio el porcentaje); sin medirla no se da el segundo turno/);
+    assert.ok(!fs.existsSync(HT.slotFiles(m.home)[1]), 'nada escrito');
+  }
+});
+
+// 🔴 mutación: un tercer lugar, o medir la memoria con los dos ocupados.
+test('HT32 ThirdRun_Waits_NamesBoth_NoMemoryRead @story-8.291 @ac-4 — con dos corriendo, la tercera espera y nombra a las dos', (t) => {
+  const m = toy();
+  const [a, b] = [otherProcess(t), otherProcess(t)];
+  slotOf(m, 0, a);
+  slotOf(m, 1, b);
+  const mem = memory(95);
+  const r = secondAs(m, process.pid, mem);
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /Primera \(204 suites de repo/);
+  assert.match(r.message, /Segunda \(204 suites de repo/);
+  assert.match(r.message, new RegExp(`release --process ${a}`));
+  assert.match(r.message, new RegExp(`release --process ${b}`));
+  assert.strictEqual(mem.calls, 0, 'con dos corriendo la memoria no se mide');
+});
+
+// 🔴 mutación: publicar el segundo lugar sin link, o que quien pierde el primero quede segundo sin medir.
+test('HT33 SecondTurn_TwoAtOnce_OneTakes @story-8.291 @ac-5 — dos piden el segundo lugar: lo toma uno; dos piden el primero con poca memoria: queda uno', (t) => {
+  const m = toy();
+  slotOf(m, 0, otherProcess(t));
+  const [x, y] = [otherProcess(t), otherProcess(t)];
+  const rx = secondAs(m, x, memory(70));
+  const ry = secondAs(m, y, memory(70));
+  assert.deepStrictEqual([rx.taken, ry.ok], [true, false]);
+  assert.match(ry.message, /Primera \(204 suites/);
+  assert.match(ry.message, /Segunda|204 suites de repo, desde/);
+  assert.match(ry.message, new RegExp(`release --process ${x}`));
+  // la máquina vacía y poca memoria: el que llega segundo encuentra el primer lugar recién publicado y mide
+  const v = toy();
+  const memA = memory(41);
+  const memB = memory(41);
+  const [p, q] = [otherProcess(t), otherProcess(t)];
+  assert.strictEqual(secondAs(v, p, memA).taken, true);
+  const lost = secondAs(v, q, memB);
+  assert.strictEqual(lost.ok, false);
+  assert.match(lost.message, /41 %/);
+  assert.strictEqual(memA.calls, 0, 'el primero no mide');
+  assert.strictEqual(memB.calls, 1, 'el que llega segundo mide');
+  assert.deepStrictEqual(inForce(v), [p]);
+});
+
+// 🔴 mutación: decidir por qué archivo queda libre en vez de por cuántas corren.
+test('HT34 FirstFree_SecondHeld_CountsAsSecond @story-8.291 @ac-6 — con sólo el segundo lugar tomado, la que llega cuenta como segunda', (t) => {
+  const m = toy();
+  const b = otherProcess(t);
+  slotOf(m, 1, b);
+  assert.strictEqual(secondAs(m, process.pid, memory(41)).ok, false);
+  assert.ok(!fs.existsSync(HT.slotFiles(m.home)[0]), 'no tomó el primer archivo con poca memoria');
+  const c = otherProcess(t);
+  assert.strictEqual(secondAs(m, c, memory(62)).taken, true);
+  assert.deepStrictEqual(inForce(m).sort(), [b, c].sort());
+});
+
+// 🔴 mutación: que la memoria de sobra deje correr una grande al lado de un pase.
+test('HT35 PassInFlight_NoTurnEvenWithMemory @story-8.291 @ac-7 — con un pase en vuelo no hay turno, haya una corriendo o no, y la memoria no se mide', (t) => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  passMarker(m, 's-ana', '7.7', 5);
+  const mem = memory(90);
+  const a = secondAs(m, process.pid, mem);
+  assert.strictEqual(a.ok, false);
+  assert.match(a.message, /pase adversarial de la 7\.7/);
+  slotOf(m, 0, otherProcess(t));
+  const b = secondAs(m, process.pid, mem);
+  assert.strictEqual(b.ok, false);
+  assert.match(b.message, /pase adversarial de la 7\.7/);
+  assert.strictEqual(mem.calls, 0);
+});
+
+// 🔴 mutación: soltar el lugar ajeno, cortar la que corre si baja la memoria, o no vencer el segundo lugar muerto.
+test('HT36 Release_OnlyOwnSlot_StaleFreed_NotCut @story-8.291 @ac-9 @ac-13 — se suelta sólo el propio; los muertos se van solos; la memoria baja y nadie se corta', (t) => {
+  const m = toy();
+  const [a, b] = [otherProcess(t), otherProcess(t)];
+  assert.strictEqual(secondAs(m, a, memory(62)).taken, true);
+  assert.strictEqual(secondAs(m, b, memory(62)).taken, true);
+  const low = memory(20);
+  assert.deepStrictEqual(inForce(m), [a, b]);
+  assert.strictEqual(secondAs(m, process.pid, low).ok, false);
+  assert.deepStrictEqual(inForce(m), [a, b], 'con 20 % siguen las dos');
+  assert.strictEqual(HT.release({ home: m.home, pid: a }), true);
+  assert.deepStrictEqual(inForce(m), [b]);
+  assert.strictEqual(HT.release({ home: m.home, pid: process.pid }), false, 'no suelta lo que no es suyo');
+  // un lugar de un proceso muerto y otro de hace más de tres horas se liberan solos al pedir el turno
+  const dead = Number(spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout);
+  const v = toy();
+  slotOf(v, 0, dead);
+  slotOf(v, 1, otherProcess(t), { at: Date.now() - 3 * 3600000 - 1000 });
+  const mem = memory(10);
+  assert.strictEqual(secondAs(v, process.pid, mem).taken, true);
+  assert.strictEqual(mem.calls, 0, 'vencidos los dos, es la primera');
+  assert.deepStrictEqual(inForce(v), [process.pid]);
+});
+
+// 🔴 mutación: contar el propio lugar como otra ejecución (ocupa los dos y mide de más).
+test('HT40 SamePid_Retake_NoSecondSlot @story-8.291 @ac-1 — quien ya tiene un lugar y lo vuelve a pedir no ocupa el otro', (t) => {
+  const m = toy();
+  const a = otherProcess(t);
+  slotOf(m, 0, a);
+  const mem = memory(62);
+  assert.strictEqual(secondAs(m, a, mem).taken, true);
+  assert.strictEqual(mem.calls, 0);
+  assert.deepStrictEqual(inForce(m), [a]);
+  assert.ok(!fs.existsSync(HT.slotFiles(m.home)[1]));
+});
+
+// 🔴 mutación: un piso fijo en el código, sin la configuración.
+test('HT37 SecondTurn_FloorFromConfig @story-8.291 @ac-10 — el piso de la máquina y el de la variable mandan', (t) => {
+  const m = toy();
+  const { rutaMaquina } = require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'));
+  fs.mkdirSync(path.dirname(rutaMaquina(m.home)), { recursive: true });
+  fs.writeFileSync(rutaMaquina(m.home), JSON.stringify({ coordination: { second_heavy_min_free_pct: 70 } }));
+  slotOf(m, 0, otherProcess(t));
+  const r = secondAs(m, process.pid, memory(62));
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /70 %/);
+  assert.match(r.message, /máquina/);
+  assert.deepStrictEqual(HT.secondTurnFloor({ home: m.home, env: {}, arnes: m.arnes }).value, 70);
+  assert.strictEqual(secondAs(m, process.pid, memory(62), { TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT: '60' }).taken, true);
+});
+
+// 🔴 mutación: dejar en las guías que la segunda nunca arranca, o no contar el piso y cómo se cambia.
+test('HT38 Guides_SecondHeavyTurn @story-8.291 @ac-16 — las guías y el paso de pruebas cuentan el segundo turno', () => {
+  const flat = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8').replace(/\s+/g, ' ');
+  const section = (text, heading) => { const s = text.indexOf(heading); assert.ok(s >= 0, `falta «${heading}»`); const e = text.indexOf(' ## ', s + 1); return text.slice(s, e < 0 ? undefined : e); };
+  const esAll = flat('guides/coordination.md');
+  const es = section(esAll, '## Lo pesado, con turno');
+  for (const k of ['dos ejecuciones grandes', '50 %', 'coordination.second_heavy_min_free_pct', 'sin poder medirla, una', 'nunca al lado del pase', 'no se corta']) assert.ok(es.includes(k), `es: ${k}`);
+  assert.doesNotMatch(esAll, /La segunda ejecución grande no arranca/);
+  assert.doesNotMatch(esAll, /el portón completo corre de a uno/);
+  const en = section(flat('guides/coordination.en.md'), '## Heavy work takes turns');
+  for (const k of ['two large runs', '50 %', 'coordination.second_heavy_min_free_pct', 'cannot be measured, one', 'never beside the pass', 'is not cut']) assert.ok(en.includes(k), `en: ${k}`);
+  assert.doesNotMatch(en, /The second large run does not start/);
+  const step = flat('skills/tycon-pipeline/steps/step-06-run-tests.md');
+  assert.match(step, /ya corren dos/);
+  assert.match(step, /la memoria no alcanza para la segunda/);
+  assert.match(step, /50 %/, 'el paso de pruebas dice el piso');
+});
+
+// 🔴 mutación: mover el primer lugar de archivo o de formato, o repetir el 50 como número suelto.
+test('HT39 FirstSlot_FormatAndHolder_Unchanged @story-8.291 @ac-17 — el primer lugar, holder y holder --json como antes; el 50 vive en un solo lugar', (t) => {
+  const m = toy();
+  assert.strictEqual(HT.slotFiles(m.home)[0], HT.turnFile(m.home));
+  assert.strictEqual(path.basename(HT.turnFile(m.home)), 'suite-turn.json');
+  const a = otherProcess(t);
+  assert.strictEqual(secondAs(m, a, memory(62)).taken, true);
+  const first = JSON.parse(fs.readFileSync(HT.turnFile(m.home), 'utf8'));
+  assert.deepStrictEqual(Object.keys(first).sort(), ['at', 'pid', 'session', 'sid', 'what']);
+  assert.strictEqual(secondAs(m, process.pid, memory(62)).taken, true);
+  assert.strictEqual(HT.holder({ home: m.home }).pid, a, 'holder es la más vieja');
+  const cli = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'holder', '--json'], { env: machineEnv(m), encoding: 'utf8' });
+  assert.deepStrictEqual(JSON.parse(cli.stdout), first);
+  const both = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'holders', '--json'], { env: machineEnv(m), encoding: 'utf8' });
+  assert.deepStrictEqual(JSON.parse(both.stdout).map((h) => h.pid), [a, process.pid]);
+  assert.strictEqual(HT.SECOND_HEAVY_MIN_FREE_PCT, 50);
+  // el código sin sus comentarios: un 50 en un comentario no es un número suelto
+  const code = (file) => fs.readFileSync(path.join(ROOT, 'scripts', 'tools', file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+  assert.deepStrictEqual(code('heavy-turn.js').match(/\b50\b/g), ['50'], 'un solo 50 en el código de heavy-turn.js: la constante');
+  assert.match(code('heavy-turn.js'), /const SECOND_HEAVY_MIN_FREE_PCT = 50;/);
+  assert.doesNotMatch(code('coordination.js'), /(second_heavy_min_free_pct|minFreePct|secondTurn)[^\n]*\b50\b/);
+});
+
+// 🔴 mutación: buscar el error del piso sólo por la clave con punto: un valor malo puesto por variable se ignora callado.
+test('HT41 SecondTurnFloor_BadEnvValue_SaysSo @story-8.291 @ac-10 @ac-14 — un piso inválido por variable cae al de fábrica y lo dice', (t) => {
+  const m = toy();
+  for (const bad of ['abc', '0', '101']) {
+    const f = HT.secondTurnFloor({ home: m.home, env: { TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT: bad }, arnes: m.arnes });
+    assert.deepStrictEqual([f.value, f.origin], [HT.SECOND_HEAVY_MIN_FREE_PCT, 'sin-valor'], bad);
+    assert.match(String(f.problem), /TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT/, `${bad}: dice qué valor no vale`);
+  }
+  // al decidir el segundo turno, el aviso sale por la salida de errores
+  slotOf(m, 0, otherProcess(t));
+  const { text } = said(() => secondAs(m, process.pid, memory(62), { TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT: 'abc' }));
+  assert.match(text, /uso el piso de fábrica/);
+});
+
+// 🔴 mutación: tragar cualquier error al soltar el lugar: uno que no se pudo borrar quedaría tomado hasta tres horas, callado.
+test('HT42 Release_CannotDelete_SaysSo @story-8.291 @ac-9 — si el lugar propio no se puede borrar, se dice', POSIX_PERMS, () => {
+  const m = toy();
+  const file = slotOf(m, 1, process.pid);
+  const dir = path.dirname(file);
+  fs.chmodSync(dir, 0o555);
+  try {
+    const { r, text } = said(() => HT.release({ home: m.home, pid: process.pid }));
+    assert.strictEqual(r, false);
+    assert.match(text, /no pude soltar el lugar del turno .*suite-turn-2\.json/);
+  } finally { fs.chmodSync(dir, 0o755); }
+  assert.strictEqual(HT.release({ home: m.home, pid: process.pid }), true);
+});
+
+// 🔴 mutación: que la línea de comandos no mida la memoria de verdad, o no publique el segundo lugar. Con el piso en 1 %
+// la memoria real de cualquier máquina que la mide lo pasa: la prueba no depende de cuánta haya.
+test('HT43 Cli_SecondTurn_RealMemory @story-8.291 @ac-1 @ac-2 @ac-9 — por la línea de comandos, con la memoria real: la segunda entra con piso 1 y espera con piso 100', { skip: ['darwin', 'linux'].includes(process.platform) ? false : 'la memoria se mide en macOS y Linux' }, (t) => {
+  const m = toy();
+  const first = otherProcess(t);
+  slotOf(m, 0, first);
+  const cli = path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js');
+  const env = (floor) => ({ ...machineEnv(m), TYCON_SUITE_TURN: '1', TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT: floor });
+  const closed = spawnSync(process.execPath, [cli, 'take', '--process', String(process.pid), '--what', 'x'], { env: env('100'), encoding: 'utf8' });
+  assert.strictEqual(closed.status, HT.BUSY_EXIT, closed.stderr);
+  assert.match(closed.stderr, /memoria libre en el piso o arriba, y está en \d+ % \(piso 100 %, de una variable\)/);
+  const open = spawnSync(process.execPath, [cli, 'take', '--process', String(process.pid), '--what', 'x'], { env: env('1'), encoding: 'utf8' });
+  assert.strictEqual(open.status, 0, open.stderr);
+  assert.match(open.stderr, /segunda ejecución grande: memoria libre \d+ %, piso 1 %, de una variable/);
+  assert.deepStrictEqual(inForce(m), [first, process.pid]);
+  spawnSync(process.execPath, [cli, 'release', '--process', String(process.pid)], { env: env('1'), encoding: 'utf8' });
+  assert.deepStrictEqual(inForce(m), [first], 'soltó sólo el suyo');
 });
