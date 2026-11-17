@@ -477,6 +477,27 @@ lectura de un pedido va por `pr-wait`. Una ejecución suelta de la CI no se vigi
 freno, al negar, dice que hay una consola de fondo viva que no es un vigilante de sólo lectura, y nunca muestra su línea
 de comando. En Windows no cambia nada.
 
+**La firma que pide la sesión que trabaja, para sí, va sola a la coordinadora.** Si la sesión que implementa corre una
+firma que el perfil delega, sin `--for-session`, y la coordinadora la podría firmar por delegación, el freno la niega
+sin ventana ni cuadro. A la sesión le dice que espere el aviso de la coordinadora, y en la lista de firmas deja el comando exacto que va a
+correr la coordinadora: el mismo, con `--for-session <sesión>` al final y las rutas absolutas, porque ella lo corre
+desde su carpeta. El freno pregunta las mismas llaves de arriba, como si ya lo corriera ella. Antes de desviar, gana una
+aprobación explícita de la persona (su click o su «aprobado»); lo de rutina en una pestaña sin permisos sigue «hecho y
+avisado»; y lo que el guion iba a negar (un pendiente ya aprobado) se niega con su texto, sin renglón.
+
+- `owner-next` le da ese comando sólo a la coordinadora, y sólo si el pedido está en la conversación de la sesión que lo
+  pidió: con su id, con ese mismo comando y con algo escrito después. Un renglón escrito a mano para otra sesión no la
+  hace firmar. A cualquier otra sesión no le da nada.
+- La firma sale como siempre, del proceso de la coordinadora y por la delegación; su renglón del registro común lleva
+  `routed: true`.
+- **El respaldo.** Si la coordinadora no la firma en `approvals.delegation_wait_minutes` (10 por defecto, de 1 a 60, sólo
+  del perfil), o deja de estar viva, el renglón se lee como del dueño, con su cuadro de siempre y una nota que dice por
+  qué. No depende de que ella lo lea.
+- **Lo que no se desvía:** las firmas sólo del dueño o que el perfil no delega; la máquina fuera de
+  `approvals.delegated_machines`; sin coordinadora confirmada y viva; la que pide la coordinadora para sí; Windows; y el
+  camino corto (`adhoc-lane`), porque abierto por la coordinadora el carril quedaría a su nombre y en su carpeta. Si una
+  firma delegable no se desvió, la ventana o el cuadro dicen el motivo («No se desvió a la coordinadora: …»).
+
 Pasar el tope de 8 archivos del camino corto (por defecto) es otra firma, `adhoc-lane:sobre-cupo`: la elige el dev con su
 click en el
 cuadro de la pestaña que hace el trabajo, o en su terminal, y queda anotado. Un «aprobado» escrito no la da, ni un click en

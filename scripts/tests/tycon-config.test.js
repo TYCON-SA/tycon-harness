@@ -1930,7 +1930,7 @@ test('8.63 · RelaySession_SoloDesdeElPerfil @story-8.63 @ac-11', () => {
   const r = cli(['set', 'approvals.relay_session', 'yo-mismo'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes']);
 });
 
 // ── Una persona marca cada criterio como probado a mano (qa.manual_check) ──────────────────────────────
@@ -2047,7 +2047,7 @@ test('8.88 T47 · Config_DelegatedSigning_MachineFileSetAndExplain @story-8.88 @
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
   assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /approvals\.delegated_signing = (off|sin valor).*vale sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes']);
 });
 
 // ── Qué firmas se delegan y en qué máquinas (approvals.delegated_signing en lista, approvals.delegated_machines) ──────
@@ -2694,4 +2694,38 @@ test('T-8.291a Config_SecondHeavyFloor_OrderAndRange @story-8.291 @ac-10 — var
     const roto = cargar({ home: casa(), arnes: arnesCon({ coordination: { second_heavy_min_free_pct: malo } }) });
     assert.ok(roto.errores.some((e) => e.clave === 'coordination.second_heavy_min_free_pct'), `${malo}: ${JSON.stringify(roto.errores.map((e) => e.clave))}`);
   }
+});
+
+// ── Cuánto espera a la coordinadora una firma desviada (approvals.delegation_wait_minutes, @story-8.295) ─────────────
+// Entero de 1 a 60, 10 por defecto, sólo del perfil: si la máquina pudiera decirlo, el agente se estiraría el plazo.
+
+test('Config_DelegationWaitMinutes_SoloDelPerfilYDe1a60 (T22) — @story-8.295 @ac-9 @ac-20', () => {
+  const DR = require(path.join(SCRIPTS, 'lib', 'delegation-routing.js'));
+  const { cargar } = require(LIB);
+  // del perfil vale
+  let home = casa();
+  const conPerfil = arnesCon({ approvals: { delegation_wait_minutes: 20 } });
+  let c = cargar({ home, env: {}, arnes: conPerfil });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.valores.approvals.delegation_wait_minutes, 20);
+  assert.equal(DR.plazoMs({ casa: home, arnes: conPerfil, env: {} }), 20 * 60000);
+  // sin nadie que lo diga, 10
+  assert.equal(DR.plazoMs({ casa: casa(), arnes: arnesCon(null), env: {} }), 10 * 60000);
+  // de la máquina no
+  home = casa();
+  maquina(home, { approvals: { delegation_wait_minutes: 45 } });
+  c = cargar({ home, env: {}, arnes: arnesCon(null) });
+  assert.notEqual(c.valores.approvals.delegation_wait_minutes, 45);
+  assert.equal(DR.plazoMs({ casa: home, arnes: arnesCon(null), env: {} }), 10 * 60000);
+  assert.ok(lib().PROFILE_ONLY.includes('approvals.delegation_wait_minutes'));
+  // fuera de rango: la clave rota
+  for (const malo of [0, 61]) {
+    const roto = cargar({ home: casa(), env: {}, arnes: arnesCon({ approvals: { delegation_wait_minutes: malo } }) });
+    assert.ok(roto.errores.some((e) => e.clave === 'approvals.delegation_wait_minutes'), `${malo}: ${JSON.stringify(roto.errores.map((e) => e.clave))}`);
+  }
+  // con la lista de firmas apagada no hay a dónde desviar: el desvío calla y todo sigue como hoy
+  home = casa();
+  maquina(home, { approvals: { signature_list: 'off' } });
+  const d = DR.delegable({ firma: 'extra-round', destino: 'ses-a', casa: home, palabras: ['/h/pipeline.js', 'smart-reloop', '--iter', '3', '--extra-round'], cwd: home, arnes: arnesCon(null), env: {}, delegacion: () => ({ ok: true }) });
+  assert.deepEqual([d.ok, d.callar], [false, true]);
 });
