@@ -356,7 +356,7 @@ const DESTINO_CON_SUBCOMANDO = new RegExp(String.raw`((?:^|[^<>&])(?:>{1,2}|\bte
 function posicionesDeComando(cmd) {
   const s = String(cmd || '');
   const es = new Array(s.length).fill(true);
-  for (const m of s.matchAll(/<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n([\s\S]*?\n)[ \t]*\2[ \t]*(?=\n|$)/g)) {
+  for (const m of s.matchAll(/<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n((?:[\s\S]*?\n)??)[ \t]*\2[ \t]*(?=\n|$)/g)) {
     const desde = m.index + m[0].indexOf('\n') + 1;
     for (let i = desde; i < m.index + m[0].length; i++) es[i] = false;
   }
@@ -1555,7 +1555,7 @@ function anidadosHasta(cmd) {
   const leidos = [];
   const hondos = [];
   const ver = (texto, nivel) => {
-    for (const g of guionesInternos(sinTextoDeHeredocs(texto))) {
+    for (const g of guionesInternos(sinCuerposDeTexto(texto))) {
       if (!String(g).trim()) continue;
       if (nivel >= TOPE_ANIDADOS) { hondos.push(g); continue; }
       leidos.push(g);
@@ -2681,6 +2681,39 @@ function sinTextoDeHeredocs(cmd) {
     if (!soloTexto(m)) continue;
     const fin = m.index + m[0].length;
     out += s.slice(hasta, fin - m[6].length - m[7].length) + m[7];
+    hasta = fin;
+  }
+  return out + s.slice(hasta);
+}
+
+// los programas que leen el cuerpo de un heredoc como texto (un mensaje o el texto de un pedido): no lo corren
+const LEE_EL_CUERPO_COMO_TEXTO = /^(?:git(?: -[cC] \S+)* commit|gh \S+|az \S+|grep|egrep|fgrep|rg|wc)(?: |$)/;
+
+/**
+ * El comando sin el cuerpo de los heredocs cuyo `$(…)` no corre, para leer lo anidado: la marca va entre comillas (el
+ * shell no expande el cuerpo) y lo lee como texto un programa que no es un shell (`git commit -F -`, `gh … --body-file
+ * -`, `grep`). `sinTextoDeHeredocs` se queda con esos cuerpos porque una redirección ahí podría seguir camino; un
+ * `$(…)` sin expandir, no. Con el cuerpo vacío, en un grupo o con algo detrás de la marca, el cuerpo se sigue mirando.
+ */
+function sinCuerposDeTexto(cmd) {
+  const s = sinTextoDeHeredocs(cmd);
+  if (!s.includes('<<')) return s;
+  const es = posicionesDeComando(s);
+  const comandoHasta = (fin) => { let t = ''; for (let i = 0; i < fin; i++) if (es[i]) t += s[i]; return t; };
+  let out = '';
+  let hasta = 0;
+  for (const m of s.matchAll(HEREDOC_ENTERO)) {
+    const [todo, ini, antes, comilla, marca, despues, cuerpo, cierre] = m;
+    if (antes.includes('<<') || despues.includes('<<')) break;
+    const linea = m.index + ini.length;
+    const abre = linea + antes.length;
+    if (!comilla || s.slice(0, linea).endsWith('\\\n') || cuerpo.split('\n')[0].trim() === marca) continue;
+    if (!es[abre] || antes.includes('#') || /\||>\(/.test(antes) || !DETRAS_DE_LA_MARCA.test(despues.replace(REDIRECCION_A_DESCRIPTOR, ' '))) continue;
+    if (GRUPO_O_CONTROL.test(comandoHasta(abre))) continue;
+    const w = palabras(sinPalabrasDelShell(tramos(antes).pop() || '')).filter((x) => x !== '').join(' ');
+    if (!LEE_EL_CUERPO_COMO_TEXTO.test(w)) continue;
+    const fin = m.index + todo.length;
+    out += s.slice(hasta, fin - cuerpo.length - cierre.length) + cierre;
     hasta = fin;
   }
   return out + s.slice(hasta);

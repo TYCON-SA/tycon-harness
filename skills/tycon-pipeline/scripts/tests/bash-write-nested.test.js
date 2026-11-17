@@ -106,6 +106,17 @@ test('T6 Heredoc_EmptyBody_ReadsWhatFollows', () => {
   frena(c, `cat <<'EOF' > n.txt\nEOF\nrm ${H}\nEOF`);
   frena(c, `cat <<'EOF'\nEOF\nrm ${H}\nEOF`);
   frena(c, `cat <<'EOF'\nEOF\necho x > ${H}\nEOF`);
+  // lo anidado detrás del heredoc vacío también corre
+  frena(c, `git commit -F - <<'EOF'\nEOF\necho $(rm ${H})\nEOF`);
+  frena(c, `cat <<'EOF'\nEOF\necho $(echo $(echo $(echo $(echo $(rm ${H})))))\nEOF`);
+  // un mensaje entre comillas detrás del heredoc vacío sigue siendo texto: el vacío no corre las posiciones de lo que sigue
+  pasa(c, `cat <<'EOF'\nEOF\ngit commit -m "$(cat <<'X'\nusar $(rm ${H})\nX\n)"`);
+  pasa(c, `cat <<'EOF'\nEOF\ngit commit -m "$(cat <<'X'\nusar $(rm ${H})\nX\n)"\ncat <<'EOF'\nEOF`);
+  // un borrador vaciado y una historia vaciada frenan como antes; el cuerpo vacío es lo que el shell escribe
+  frena(c, `cat > ${H} <<'EOF'\nEOF`);
+  const borrador = correr(c, `cat > specs/story-1.2.md <<'EOF'\nEOF\n---\nstory: "1.2"\nstatus: ready-for-dev\n---\nEOF`);
+  assert.strictEqual(borrador.salida, 2, borrador.stderr);
+  assert.match(borrador.stderr, /story-1\.2\.md/);
 });
 
 // T7 Script_HeredocToAbsolutePath_IsRead
@@ -171,6 +182,12 @@ test('T12 Still_Passes_TextThatDoesNotRun', () => {
   for (const cmd of [`echo '$(rm ${H})'`, `git commit -F - <<'EOF'\nrm ${H}\nEOF`,
     `git commit -m "$(cat <<'EOF'\nrm ${H}\n$(rm ${H})\nEOF\n)"`, `gh pr create --body 'rm ${H} y $(rm ${H})'`,
     `! git commit -m "rm ${H}"`]) pasa(c, cmd);
+  // con la marca entre comillas el shell no expande el cuerpo: su `$(…)` es texto para el programa que lo lee
+  for (const cmd of [`git commit -F - <<'EOF'\nusar $(rm ${H})\nEOF`, `gh pr create --body-file - <<'EOF'\nusar $(rm ${H})\nEOF`,
+    `grep x <<'EOF'\n$(rm ${H})\nEOF`]) pasa(c, cmd);
+  // sin comillas el shell sí lo expande, y a un shell el cuerpo le llega como guion
+  frena(c, `git commit -F - <<EOF\nusar $(rm ${H})\nEOF`);
+  frena(c, `bash <<'EOF'\necho $(rm ${H})\nEOF`);
 });
 
 // T13 Nested_SameAsDirect_NotStoryAndDraft
