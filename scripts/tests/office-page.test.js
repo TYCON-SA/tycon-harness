@@ -327,7 +327,7 @@ test('T284 Labels_Switch: siempre por defecto, y la elección se recuerda; si no
   assert.doesNotThrow(() => broken.guardarEtiquetas('mouse'));
   assert.match(html, /\.stage\.solo-mouse \.tag\{opacity:0;pointer-events:none\}/, 'ocultas, pero el teclado llega');
   assert.match(html, /\.stage\.solo-mouse \.tag\.ver,\.stage\.solo-mouse \.tag\.sel,\.stage\.solo-mouse \.tag:focus-visible\{opacity:1/);
-  assert.match(html, /e\.pointerType==="touch"&&!\(h&&\(h\.object===pnlFace\|\|h\.object===signFace\|\|h\.object===lampHit\)\)\)\{verEtiqueta/, 'al tocar, muestra la etiqueta y no abre el detalle');
+  assert.match(html, /e\.pointerType==="touch"&&!\(h&&\(h\.object===pnlFace\|\|h\.object===signFace\|\|h\.object===lampHit\|\|rackDe\(h\)\)\)\)\{verEtiqueta/, 'al tocar, muestra la etiqueta y no abre el detalle');
   assert.doesNotMatch(html, /solo-mouse[^}]*\.sobre/, 'el avioncito no se oculta');
 });
 
@@ -578,4 +578,109 @@ test('T13 Office_PanelSinDatos_SinDato @story-8.234 @ac-13 — sin historia, mod
   const vieja = ficha({ ...sola, historia: 'De una foto vieja' }, true);
   assert.strictEqual(vieja['De la historia'], 'De una foto vieja');
   assert.strictEqual('Historia' in vieja, false);
+});
+
+// ── The racks: memory and processor with their leds ─────────────────────────────────────────────────────────────────
+
+/** The part of page.js that decides what each rack shows, taken from the file and run here with toy leds. */
+function racksApi({ ledRate = 0, reduce = false } = {}) {
+  const src = PAGE_CODE();
+  const from = src.indexOf('const RACK_FILAS=');
+  const to = src.indexOf('const leds=[];function rack(', from);
+  assert.ok(from >= 0 && to > from, 'page.js trae la parte que decide los racks');
+  const led = (fila) => ({ userData: { fila, on: false }, material: { color: { hex: null, set(c) { this.hex = c; } } } });
+  const rack = (tipo) => ({ tipo, pct: null, leds: [...Array(9)].flatMap((_, u) => [0, 1, 2].map(() => led(u))) });
+  const racks = [rack('memoria'), rack('procesador')];
+  const rackTag = { style: { display: 'none' }, textContent: '' };
+  const stage = { getBoundingClientRect: () => ({ left: 10, top: 20 }) };
+  // eslint-disable-next-line no-new-func
+  const api = new Function('racks', 'rackTag', 'stage', 'ledRate', 'reduce', `${src.slice(from, to)};return{pintarRacks,textoRack,ledVisto,verRack}`)(racks, rackTag, stage, ledRate, reduce);
+  // the color of each row, bottom to top, and whether its three leds are lit
+  const rows = (r) => [...Array(9)].map((_, u) => { const l = r.leds.filter((m) => m.userData.fila === u); return { hex: [...new Set(l.map((m) => m.material.color.hex))], on: [...new Set(l.map((m) => m.userData.on))] }; });
+  return { ...api, racks, rackTag, rows };
+}
+const OFF = '#2a2d36';
+const UNMEASURED = '#5b606c';
+const lit = (n, hex) => [...Array(9)].map((_, u) => (u < n ? { hex: [hex], on: [true] } : { hex: [OFF], on: [false] }));
+
+test('T4 Racks_BarraSegunPorcentaje @story-8.301 @ac-3 — cada rack enciende de abajo para arriba las filas de su porcentaje, con su color', () => {
+  const r = racksApi();
+  r.pintarRacks({ memoria: 62, procesador: 90 });
+  assert.deepStrictEqual(r.rows(r.racks[0]), lit(6, '#ffb02e'), 'memoria: 6 filas encendidas en ámbar, el resto apagadas');
+  assert.deepStrictEqual(r.rows(r.racks[1]), lit(8, '#ff4d4d'), 'procesador: 8 filas en rojo');
+  // los cortes del color
+  for (const [p, hex] of [[59, '#3dff7a'], [60, '#ffb02e'], [84, '#ffb02e'], [85, '#ff4d4d'], [100, '#ff4d4d']]) {
+    r.pintarRacks({ memoria: p, procesador: 0 });
+    assert.deepStrictEqual(r.rows(r.racks[0]), lit(Math.round((p * 9) / 100), hex), `${p} %`);
+  }
+  // con 3 % no hay ninguna encendida, y las nueve quedan en el gris del apagado, no en el de sin medida
+  r.pintarRacks({ memoria: 3, procesador: 90 });
+  assert.deepStrictEqual(r.rows(r.racks[0]), lit(0));
+  assert.notStrictEqual(OFF, UNMEASURED);
+  // la página pinta los racks con cada foto, y el rack de x 8.75 es la memoria
+  const src = PAGE_CODE();
+  assert.match(src, /pintarRacks\(meta&&meta\.maquina\)/);
+  assert.match(src, /const racks=\[rack\(8\.75,4\.3,"memoria"\),rack\(9\.55,4\.3,"procesador"\)\];/);
+});
+
+test('T5 Racks_SinMedida_GrisFijo @story-8.301 @ac-4 — el rack sin su medida queda entero en gris tenue y fijo, nunca con la barra anterior', () => {
+  const r = racksApi({ ledRate: 4.8 });
+  r.pintarRacks({ memoria: 62, procesador: 35 });
+  r.pintarRacks({ procesador: 35 });
+  assert.deepStrictEqual(r.rows(r.racks[0]), [...Array(9)].map(() => ({ hex: [UNMEASURED], on: [false] })), 'sin la barra de la medida anterior');
+  assert.deepStrictEqual(r.rows(r.racks[1]), lit(3, '#3dff7a'), 'el otro, con su barra');
+  assert.ok(r.racks[0].leds.every((m, i) => [0.3, 1.7, 5.2].every((t) => r.ledVisto(m, i, t) === true)), 'fijas: no titilan');
+  // una medida que no es un porcentaje es una medida que no vino; sin foto de la máquina, los dos racks igual
+  r.pintarRacks({ memoria: 140, procesador: '35' });
+  for (const k of [0, 1]) assert.ok(r.rows(r.racks[k]).every((row) => row.hex[0] === UNMEASURED && row.on[0] === false));
+  r.pintarRacks(undefined);
+  for (const k of [0, 1]) assert.ok(r.rows(r.racks[k]).every((row) => row.hex[0] === UNMEASURED));
+});
+
+test('T6 Racks_Etiqueta_ConElNumero @story-8.301 @ac-5 — apuntar a un rack muestra su número; apuntar a otra cosa la oculta', () => {
+  const r = racksApi();
+  r.pintarRacks({ memoria: 62, procesador: 90 });
+  r.verRack(r.racks[0], { clientX: 110, clientY: 220 });
+  assert.deepStrictEqual([r.rackTag.textContent, r.rackTag.style.display, r.rackTag.style.left], ['Memoria en uso: 62 %', 'block', '100px']);
+  r.verRack(r.racks[1], { clientX: 110, clientY: 220 });
+  assert.strictEqual(r.rackTag.textContent, 'Procesador: 90 %');
+  // llega una foto sin las medidas con la etiqueta a la vista: la etiqueta lo dice
+  r.pintarRacks({});
+  assert.strictEqual(r.rackTag.textContent, 'Procesador: no medido');
+  r.verRack(r.racks[0], { clientX: 110, clientY: 220 });
+  assert.strictEqual(r.rackTag.textContent, 'Memoria: no medida');
+  r.verRack(null);
+  assert.strictEqual(r.rackTag.style.display, 'none', 'apuntar a otra cosa la oculta');
+  // el cableado: el rack se puede apuntar; el mouse lo muestra con las dos opciones de «Etiquetas»; el toque, antes de
+  // cualquier otra rama, y tocar otra cosa (o el vacío) la oculta; con «Al pasar el mouse» tocarlo no es tocar un escritorio
+  const src = PAGE_CODE();
+  assert.match(src, /intersectObjects\(\[pnlFace,lampHit,\.\.\.racks\.map\(r=>r\.hit\),/);
+  assert.match(src, /const h=apuntado\(e\),r=rackDe\(h\);renderer\.domElement\.style\.cursor=h&&!r\?"pointer":"grab";if\(e\.pointerType!=="touch"\)verRack\(r,e\);/, 'el mouse, sin mirar solo-mouse');
+  const up = src.slice(src.indexOf('renderer.domElement.addEventListener("pointerup"'), src.indexOf('let mueve=null'));
+  assert.match(up, /const h=apuntado\(e\);\n(?:\s*\/\/[^\n]*\n)*\s*if\(e\.pointerType==="touch"\)verRack\(rackDe\(h\),e\);/, 'el toque, primero');
+  assert.ok(up.indexOf('verRack(rackDe(h),e)') < up.indexOf('if(!h)return'), 'antes de salir por el vacío');
+  assert.match(up, /h\.object===lampHit\|\|rackDe\(h\)\)\)\)\{verEtiqueta/, 'con solo-mouse, el rack no es un escritorio');
+  assert.match(src, /stage\.addEventListener\("pointerleave",e=>\{if\(e\.pointerType!=="touch"\)\{verEtiqueta\(null\);verRack\(null\)\}\}\)/);
+  assert.match(src, /rackTag\.style\.cssText="[^"]*pointer-events:none/, 'la etiqueta no tapa a nadie: no recibe el mouse');
+});
+
+test('T8 Racks_TitilanConSesiones_ReducirMovimientoFijo @story-8.301 @ac-7 — los encendidos titilan con la cuenta de hoy; los apagados y el movimiento reducido, fijos', () => {
+  const r = racksApi({ ledRate: 4.8 });
+  r.pintarRacks({ memoria: 44, procesador: 0 });
+  const leds = [...r.racks[0].leds, ...r.racks[1].leds];
+  assert.strictEqual(leds.filter((m) => m.userData.on).length, 4 * 3, '4 filas encendidas');
+  let blinked = 0;
+  for (const t of [0.3, 1.7, 5.2]) {
+    leds.forEach((m, i) => {
+      const seen = r.ledVisto(m, i, t);
+      if (m.userData.on) { assert.strictEqual(seen, Math.sin(t * 4.8 * (1 + (i % 5) * 0.3) + i * 1.7) > -0.5, `led ${i} a ${t}`); if (!seen) blinked += 1; } else assert.strictEqual(seen, true, `el apagado ${i} no titila`);
+    });
+  }
+  assert.ok(blinked > 0, 'con tres sesiones trabajando, alguno se apaga en algún momento');
+  const still = racksApi({ ledRate: 4.8, reduce: true });
+  still.pintarRacks({ memoria: 44, procesador: 0 });
+  assert.ok([...still.racks[0].leds, ...still.racks[1].leds].every((m, i) => [0.3, 1.7, 5.2].every((t) => still.ledVisto(m, i, t))), 'con «reducir movimiento», fijos');
+  const src = PAGE_CODE();
+  assert.match(src, /leds\.forEach\(\(m,i\)=>m\.visible=ledVisto\(m,i,t\)\);/);
+  assert.match(src, /ledRate=ags\.filter\(a=>a\.estado==="trabajando"\|\|a\.estado==="prueba"\)\.length\*1\.6;/, 'el ritmo de hoy');
 });
