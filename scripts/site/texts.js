@@ -2672,6 +2672,23 @@ const TEXTOS = {
   'config.demoInvitar': { es: 'En el sitio demo no se escribe: no se invitó a nadie. En un sitio real, esto abriría un pull request para dar de alta a {correo} en la lista del sitio, y la invitación saldría cuando se apruebe.', en: 'The demo site writes nothing: nobody was invited. On a real site, this would open a request to add {correo} to the site list, and the invitation would go out once it is approved.' },
   'config.demoRevocar': { es: 'En el sitio demo no se escribe: no se sacó a nadie. En un sitio real, esto abriría un pull request para dar de baja a {correo} de la lista del sitio.', en: 'The demo site writes nothing: nobody was removed. On a real site, this would open a request to remove {correo} from the site list.' },
   'comoTrabaja.demoNoSeEscribe': { es: 'En el sitio demo no se escribe: no se abrió ningún pull request. En un sitio real, esta mejora del paquete «{pack}» abriría un pull request al repo del perfil para que alguien la revise.', en: 'The demo site writes nothing: no request was opened. On a real site, this change to the "{pack}" pack would open a request on the profile repo for someone to review.' },
+  // la pestaña «Horas y tokens» (tabs/workdays.js)
+  'pestana.horas': { es: 'Horas y tokens', en: 'Hours and tokens' },
+  'horas.lede': { es: 'Horas y tokens de las sesiones de agente, por máquina y por día. Un día sin archivo es «no medido», nunca cero.', en: 'Hours and tokens of the agent sessions, per machine and per day. A day with no file is "not measured", never zero.' },
+  'horas.dia': { es: 'Día', en: 'Day' },
+  'horas.total': { es: 'Total', en: 'Total' },
+  'horas.arnes': { es: 'Horas con el arnés trabajando', en: 'Hours with the harness working' },
+  'horas.sesion': { es: 'Horas de sesión', en: 'Session hours' },
+  'horas.tokens': { es: 'Tokens (lectura · escritura · caché)', en: 'Tokens (read · write · cache)' },
+  'horas.noMedido': { es: 'no medido', en: 'not measured' },
+  'horas.raro': { es: 'no medido (no se entendió el archivo)', en: 'not measured (the file could not be understood)' },
+  'horas.ilegible': { es: 'no medido (no se pudo leer)', en: 'not measured (could not be read)' },
+  'horas.espejoIlegible': { es: 'Los días que suben las máquinas no se pudieron leer en el sitio ({motivo}): la tabla no dice nada de ellas.', en: 'The days the machines upload could not be read on the site ({motivo}): the table says nothing about them.' },
+  'horas.horasNoMedidas': { es: 'horas no medidas', en: 'hours not measured' },
+  'horas.tokensNoMedidos': { es: 'tokens no medidos', en: 'tokens not measured' },
+  'horas.sinMedir1': { es: '1 máquina sin medir', en: '1 machine not measured' },
+  'horas.sinMedirN': { es: '{n} máquinas sin medir', en: '{n} machines not measured' },
+  'horas.sinMaquinas': { es: 'Todavía no llegó ningún día de ninguna máquina.', en: 'No day has arrived from any machine yet.' },
 };
 
 // lo que dice un proveedor de inicio de sesión que nombra su nube o su marca vive en su archivo (auth-providers/, la

@@ -361,15 +361,7 @@ function startingMessage(file) {
   } catch { return null; } finally { if (fd !== undefined) fs.closeSync(fd); }
 }
 
-const TOKEN_STEP_BYTES = 1024 * 1024;
-const newCount = () => ({ offset: 0, byMessage: new Map(), lectura: 0, escritura: 0, cache: 0, ultimo: null, codex: null, codexTurno: null });
-
-function addTurn(count, id, u) {
-  const now = { lectura: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0), escritura: u.output_tokens || 0, cache: u.cache_read_input_tokens || 0 };
-  const was = count.byMessage.get(id) || { lectura: 0, escritura: 0, cache: 0 };
-  for (const k of ['lectura', 'escritura', 'cache']) count[k] += now[k] - was[k];
-  count.byMessage.set(id, now);
-}
+const { dayTokens, newCount, addTurn, TOKEN_STEP_BYTES } = require('./transcript-tokens.js');
 
 function countLine(line, count, isAgent) {
   const claude = line.includes('"usage"');
@@ -543,4 +535,4 @@ function readConversation(file, { coordinator, isCoordinator = false, background
   return out;
 }
 
-module.exports = { officeOf, peerOf, readTranscript, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };
+module.exports = { officeOf, peerOf, readTranscript, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, dayTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };

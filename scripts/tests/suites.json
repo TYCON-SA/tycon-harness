@@ -88,6 +88,24 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.209: el tramo trabajado de cada sesión (scripts/lib/worked-time.js, el gancho session-state.js y el PostToolUse de Codex): abre con el prompt, cierra con el fin del turno o una espera de la persona, se parte a medianoche, la apertura del día una sola vez, la sesión muerta cierra en su último evento, apagado con TYCON_WORKDAYS=0. HOME temporal y zona fija.",
+      "raiz": "arnes",
+      "ruta": "tests/worked-time.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.209: el día cerrado de horas y tokens (scripts/metrics/workday-upload.js y su lugar en upload-runs.js): días locales, nunca el día en curso, «no medido» nunca cero, tokens por la hora de cada mensaje, Codex por diferencia, rearmado con los mismos tokens, sin ids ni rutas, la poda de 60 días. Sin red: un buzón de mentira local, HOME temporal y zona fija.",
+      "raiz": "arnes",
+      "ruta": "tests/workday-upload.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.209: la pestaña «Horas y tokens» del sitio (scripts/site/tabs/workdays.js): la bajada por el camino real del sitio (cloud/azure.js), la tabla con las dos horas, «no medido», quién la ve, la demo, el inglés y la guía. E1 y E2 con el Chromium fijo del arnés; sin él se saltean con constancia salvo con E2E_REQUIRED=1. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-workdays.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 4.7, tanda C: la noche que propone aprendizajes (scripts/instincts/instinct-nightly.js) — cuenta sin modelo lo que se repite en el equipo con las máquinas resueltas, «no medido» con null y nunca 0, los topes de 20 con modelo y 50 nuevas, lo decidido no se toca ni se vuelve a pedir, el saneado de lo que escribe el modelo y el modelo del pipeline; y lo que se apaga en cada máquina (el disparador, el comando y el aviso). Sin red: el buzón, el modelo y el guardado son funciones de prueba.",
       "raiz": "arnes",
       "ruta": "tests/instinct-nightly.test.js",

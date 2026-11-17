@@ -442,6 +442,35 @@ done by hand in the profile repo.
 **What to do:** if a piece is unclear or something is missing, "Suggest an improvement". If a pack of your organization
 says it cannot be used, it is fixed by hand in the profile repo: until then the harness does not load it either.
 
+### Hours and tokens
+
+**What it answers:** how long did each machine's agent sessions work, and how many tokens did they use, day by day?
+Maintainers only: a person with the developer role does not see the tab, and the `/api/horas` address answers that
+they have no permission.
+
+It is a table of the last 30 days, one column per machine and a total row per day. The day is each machine's own day
+(its time zone), and only closed days arrive: today is watched in the office. Each cell has:
+
+- **Hours with the harness working:** the time when at least one session was working on that machine. Two sessions at
+  the same time count once; it never goes over the hours of the day.
+- **Session hours:** the sum of the time of all sessions. Two sessions at the same time add up both, and it can go over 24.
+- **Tokens:** read, write and cache, as on the office card, from that day's messages in all the machine's conversations
+  (Claude with its agents, and Codex).
+
+A session works from the moment a turn starts until it ends, without counting the time it waits for the person (a
+permission, a question or a plan): a wait all night is not hours. The total of a day adds each kind of hours separately
+across machines and says how many were not measured.
+
+**«Not measured».** A machine with no file for a day says **not measured**, never zero: it may not have the mailbox set
+up, be off, or not have uploaded yet. If only a part could not be read, the cell says "hours not measured" or "tokens not
+measured", with the reason on mouse-over.
+
+**Turning it off on a machine:** `TYCON_WORKDAYS=0` in its environment. It records and uploads nothing, and the site
+shows it «not measured».
+
+**The Codex limit:** Codex does not say when it asks for a permission, so the time it waits for the person inside a turn
+counts as work. A Codex turn that is cut off without finishing counts up to its last tool.
+
 ### Configuration
 
 **What it answers:** how is the organization configured, and how is it changed? Only maintainers see it. The next part
