@@ -10,11 +10,13 @@
  *   - T17: una guía que se reescribió en el mismo commit que la movió (git deja de seguir su historial).
  *
  * Las rutas salen del mapa (`scripts/lib/renames.json`, las entradas de guías de esta mudanza), nunca escritas acá. La
- * copia pública no lleva el mapa: ahí la prueba dice NO MEDIDO, como `guides-moved.test.js`. Los reemplazos viven con el
- * mapa, así que T4 mide sobre el árbol armado (lo privado con el público encima). T17 necesita además el historial de
- * git de la guía: se corre en la copia pública pasándole el mapa del privado con TYCON_LEGACY_NAMES_MAP.
+ * copia pública no lleva el mapa: ahí la prueba dice NO MEDIDO, como `guides-moved.test.js`. Los reemplazos viven en el
+ * privado (el arnés instalado trae el mapa con la capa del equipo, pero no los reemplazos), así que T4 mide sólo donde
+ * está el privado: el árbol armado. T17 necesita además el historial de git de la guía: se corre en la copia pública
+ * pasándole el mapa del privado con TYCON_LEGACY_NAMES_MAP.
  *
- * stable-data: no crea commits ni lee el reloj; «commit» es el del historial que lee con `git log` y `git show`.
+ * Los commits del laboratorio llevan GIT_AUTHOR_DATE y GIT_COMMITTER_DATE fijos y el mantenimiento automático de git
+ * apagado; el resto sólo lee el historial con `git log` y `git show`.
  *
  * Correr: node --test scripts/tests/guide-links.test.js
  *         TYCON_LEGACY_NAMES_MAP=<privado>/scripts/lib/renames.json node --test scripts/tests/guide-links.test.js
@@ -29,8 +31,12 @@ const { spawnSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..', '..');
 const MAP = process.env.TYCON_LEGACY_NAMES_MAP || path.join(ROOT, 'scripts', 'lib', 'renames.json');
 const NOT_MEASURED = !fs.existsSync(MAP) && 'NO MEDIDO — copia pública sin el mapa (TYCON_LEGACY_NAMES_MAP lo pasa)';
-const SHIMS_ELSEWHERE = !NOT_MEASURED && !fs.existsSync(path.join(ROOT, 'scripts', 'lib', 'renames.json'))
-  && 'NO MEDIDO — el mapa vino de afuera y los reemplazos viven con él: corre sobre el árbol armado';
+/** Sin el privado en el árbol no hay reemplazos que medir; lo marca `.tycon/internal-forms.json`, que sólo vive ahí. */
+function shimsElsewhere(root) {
+  return !fs.existsSync(path.join(root, '.tycon', 'internal-forms.json'))
+    && 'NO MEDIDO — los reemplazos de las guías viven en el privado: corre sobre el árbol armado';
+}
+const SHIMS_ELSEWHERE = !NOT_MEASURED && shimsElsewhere(ROOT);
 const L = require(path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'));
 
 /** Las guías movidas a su nombre en inglés: entradas de archivo de `guides/` con su batch. Con el mapa y sin ninguna, falla. */
@@ -73,42 +79,99 @@ test('T4 Reemplazos_ApuntanALaNueva @story-8.45 @ac-5 — cada ruta vieja es el 
   assert.deepStrictEqual(huerfanos, [], 'reemplazos de guías sin su entrada en el mapa');
 });
 
-function git(args) {
-  const r = spawnSync('git', ['-C', ROOT, ...args], { encoding: 'utf8' });
+function git(root, args) {
+  const r = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
   assert.ok(!r.error && r.status === 0, `git ${args.join(' ')} falló: ${(r.error && r.error.message) || r.stderr}`);
   return r.stdout;
 }
-/** Los renombres de la ruta nueva siguiendo su historial: { commit, from, to } por cada uno. Sin historial, []. */
-function renamesOf(rel) {
+/** Los renombres de la ruta nueva siguiendo su historial: { commit, from, to } por cada uno. Sin renombres, []. */
+function renamesOf(root, rel) {
   const out = [];
   let commit = null;
-  for (const l of git(['log', '--follow', '-M', '--name-status', '--format=%H', '--', rel]).split('\n')) {
+  for (const l of git(root, ['log', '--follow', '-M', '--name-status', '--format=%H', '--', rel]).split('\n')) {
     if (/^[0-9a-f]{40}$/.test(l)) commit = l;
     const m = /^R\d+\t([^\t]+)\t([^\t]+)$/.exec(l);
     if (m) out.push({ commit, from: m[1], to: m[2] });
   }
   return out;
 }
+
+/**
+ * Lo que dejó el commit que movió cada guía. → { problemas, sinHistorial }. Un renombre que git sigue se compara
+ * renglón por renglón (un enlace a otra guía movida puede cambiar). Sin renombre, se mira el commit que agregó la ruta
+ * nueva: si en ese mismo commit se borró la vieja, la guía se reescribió al moverla y git perdió el renombre (problema);
+ * si no, este árbol no tiene el movimiento (un árbol armado parado en el otro repo) y no se mide.
+ */
+function movesProblems(root, moved) {
+  const aViejo = (s) => moved.reduce((acc, e) => acc.split(path.posix.basename(e.new)).join(path.posix.basename(e.old)), s);
+  const problemas = [];
+  const sinHistorial = [];
+  for (const e of moved) {
+    const move = renamesOf(root, e.new).find((h) => h.from === e.old && h.to === e.new);
+    if (!move) {
+      const alta = git(root, ['log', '--diff-filter=A', '--format=%H', '--', e.new]).split('\n').filter(Boolean).pop();
+      const borroLaVieja = alta && git(root, ['show', '--name-status', '--format=', alta]).split('\n').includes(`D\t${e.old}`);
+      if (borroLaVieja) problemas.push(`${e.new}: el commit que la movió la reescribió tanto que git perdió el renombre desde ${e.old}`);
+      else sinHistorial.push(e.new);
+      continue;
+    }
+    const antes = git(root, ['show', `${move.commit}^:${e.old}`]).split('\n');
+    const despues = git(root, ['show', `${move.commit}:${e.new}`]).split('\n');
+    if (despues.length !== antes.length) { problemas.push(`${e.new}: el commit que la movió agregó o sacó renglones`); continue; }
+    const distintos = despues.map((l, i) => i).filter((i) => despues[i] !== antes[i] && aViejo(despues[i]) !== antes[i]);
+    if (distintos.length) problemas.push(`${e.new}: renglones reescritos en el commit que la movió: ${distintos.map((i) => i + 1).join(', ')}`);
+  }
+  return { problemas, sinHistorial };
+}
 const NO_GIT = spawnSync('git', ['-C', ROOT, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' }).status !== 0
   && 'NO MEDIDO — sin historial de git en la raíz';
 
 test('T17 Contenido_IgualAlDeAntes @story-8.45 @ac-4 — el commit que mueve cada guía no cambia su texto, salvo los enlaces a otra guía movida', { skip: NOT_MEASURED || NO_GIT }, (t) => {
-  const moved = movedGuides();
-  // un enlace a otra guía movida puede cambiar en el mismo commit: se compara con los nombres nuevos llevados a los viejos
-  const aViejo = (s) => moved.reduce((acc, e) => acc.split(path.posix.basename(e.new)).join(path.posix.basename(e.old)), s);
-  const sinHistorial = [];
-  for (const e of moved) {
-    const hist = renamesOf(e.new);
-    if (!hist.length) { sinHistorial.push(e.new); continue; }
-    const move = hist.find((h) => h.from === e.old && h.to === e.new);
-    assert.ok(move, `${e.new}: git encuentra el renombre desde ${e.old} (${JSON.stringify(hist)})`);
-    const antes = git(['show', `${move.commit}^:${e.old}`]).split('\n');
-    const despues = git(['show', `${move.commit}:${e.new}`]).split('\n');
-    assert.strictEqual(despues.length, antes.length, `${e.new}: el commit que la movió no agregó ni sacó renglones`);
-    const distintos = despues.map((l, i) => i).filter((i) => despues[i] !== antes[i] && aViejo(despues[i]) !== antes[i]);
-    assert.deepStrictEqual(distintos.map((i) => i + 1), [], `${e.new}: renglones reescritos en el commit que la movió`);
-  }
-  // una guía sin historial en este árbol (un árbol armado parado en el otro repo) no se mide, y se dice; si ninguna
-  // tiene historial, la prueba entera queda NO MEDIDA
-  if (sinHistorial.length) t.skip(`NO MEDIDO para ${sinHistorial.join(', ')}: sin historial de renombres en este árbol`);
+  const { problemas, sinHistorial } = movesProblems(ROOT, movedGuides());
+  assert.deepStrictEqual(problemas, []);
+  // una guía sin el movimiento en este árbol no se mide, y se dice; si ninguna lo tiene, la prueba entera queda NO MEDIDA
+  if (sinHistorial.length) t.skip(`NO MEDIDO para ${sinHistorial.join(', ')}: este árbol no tiene el commit que la movió`);
+});
+
+// Laboratorio de T17 y T4: un repo de juguete con fechas fijas y sin el mantenimiento automático de git.
+function labRepo() {
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'guide-links-'));
+  const env = { ...process.env, GIT_AUTHOR_DATE: '2001-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2001-01-01T00:00:00Z',
+    GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.invalid', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.invalid' };
+  const run = (...args) => {
+    const r = spawnSync('git', ['-C', dir, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-c', 'commit.gpgsign=false', ...args], { encoding: 'utf8', env });
+    assert.strictEqual(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`);
+  };
+  run('init', '-q', '-b', 'main');
+  return { dir, run, write: (rel, text) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), text); } };
+}
+const lineas = (prefijo, n) => Array.from({ length: n }, (_, i) => `${prefijo} renglón ${i + 1} con texto propio para que git compare`).join('\n') + '\n';
+
+test('T17 laboratorio — una guía reescrita entera al moverla falla; una movida igual pasa; una sin su movimiento no se mide', () => {
+  const lab = labRepo();
+  lab.write('guides/vieja-a.md', lineas('a', 20));
+  lab.write('guides/vieja-b.md', lineas('b', 20));
+  lab.run('add', '-A'); lab.run('commit', '-q', '-m', 'guías');
+  lab.run('mv', 'guides/vieja-a.md', 'guides/new-a.md');
+  lab.run('mv', 'guides/vieja-b.md', 'guides/new-b.md');
+  lab.write('guides/new-a.md', lineas('otra', 20));
+  lab.write('guides/sin-movimiento.md', lineas('c', 5));
+  lab.run('add', '-A'); lab.run('commit', '-q', '-m', 'mover');
+  const e = (viejo, nuevo) => ({ kind: 'file', old: `guides/${viejo}.md`, new: `guides/${nuevo}.md`, batch: '8.45-Z' });
+  const r = movesProblems(lab.dir, [e('vieja-a', 'new-a'), e('vieja-b', 'new-b'), e('nunca-estuvo', 'sin-movimiento')]);
+  assert.strictEqual(r.problemas.length, 1, JSON.stringify(r));
+  assert.match(r.problemas[0], /new-a\.md: el commit que la movió la reescribió tanto que git perdió el renombre/);
+  assert.deepStrictEqual(r.sinHistorial, ['guides/sin-movimiento.md']);
+  fs.rmSync(lab.dir, { recursive: true, force: true });
+});
+
+test('T4 laboratorio — sin el privado en el árbol (el arnés instalado trae el mapa pero no los reemplazos) no se mide', () => {
+  const lab = fs.mkdtempSync(path.join(require('os').tmpdir(), 'guide-links-t4-'));
+  fs.mkdirSync(path.join(lab, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(lab, 'scripts', 'lib', 'renames.json'), '{"entries":[]}');
+  assert.match(String(shimsElsewhere(lab)), /NO MEDIDO/, 'con el mapa y sin el privado: no medido');
+  fs.mkdirSync(path.join(lab, '.tycon'));
+  fs.writeFileSync(path.join(lab, '.tycon', 'internal-forms.json'), '{}');
+  assert.strictEqual(shimsElsewhere(lab), false, 'con el privado: mide');
+  fs.rmSync(lab, { recursive: true, force: true });
 });
