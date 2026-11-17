@@ -223,6 +223,9 @@ test('T11 2.34-Lista_IgualALasLecturas @story-2.34 @ac-5 — RUTAS cubre lo que 
   for (const reg of Object.values(require(path.join(ROOT, 'scripts', 'nightly', 'findings', 'sources.js')).FUENTES)) {
     for (const c of [...FINDINGS.CARPETAS_VIVAS, 'decisions']) leidas.add(`inbox/${reg.carpeta}/${c}/x.yaml`);
   }
+  // «Aprendizajes»: las propuestas de la noche y su informe
+  const LEARNINGS = require(path.join(ROOT, 'scripts', 'site', 'tabs', 'learnings.js'));
+  for (const r of LEARNINGS.LECTURAS) leidas.add(r.endsWith('/') ? `${r}x.json` : r);
   assert.ok(leidas.size >= 7, `pocas lecturas encontradas: ${[...leidas].join(', ')}`);
   const cubre = (r) => COPIA.RUTAS.some((p) => (p.endsWith('/') ? r.startsWith(p) || r === p : r === p));
   assert.deepStrictEqual([...leidas].filter((r) => !cubre(r)), [], 'lecturas que la copia no trae');
@@ -235,6 +238,18 @@ test('T11 2.34-Lista_IgualALasLecturas @story-2.34 @ac-5 — RUTAS cubre lo que 
   const foto = COPIA.leerFoto(COPIA.armarFoto(COPIA.juntar(repo).archivos));
   assert.ok(foto.ok, foto.motivo);
   assert.ok(foto.archivos.some((a) => a.rel === 'marca/acme.png'), 'la lectura del logo: la copia no lo trae');
+});
+
+test('T21 4.13-OperationsCopy_IncludesProposals @story-4.13 @ac-9 @ac-22 — la copia trae las propuestas de la noche además de lo de antes', () => {
+  assert.ok(COPIA.RUTAS.includes('inbox/instincts/propuestas/'), 'RUTAS trae la carpeta de las propuestas');
+  assert.ok(COPIA.RUTAS.includes('.dashboard/'), 'el informe de la noche ya venía con .dashboard/');
+  const LEARNINGS = require(path.join(ROOT, 'scripts', 'site', 'tabs', 'learnings.js'));
+  assert.deepStrictEqual([...LEARNINGS.LECTURAS].sort(), ['.dashboard/instincts/', 'inbox/instincts/propuestas/']);
+  const repo = repoDeJuguete({ 'inbox/instincts/propuestas/a000000001.json': '{"huella":"a000000001"}\n', 'inbox/instincts/archived/x.yaml': 'no\n' });
+  const foto = COPIA.leerFoto(COPIA.armarFoto(COPIA.juntar(repo).archivos));
+  assert.ok(foto.ok, foto.motivo);
+  assert.ok(foto.archivos.some((a) => a.rel === 'inbox/instincts/propuestas/a000000001.json'));
+  assert.ok(!foto.archivos.some((a) => a.rel === 'inbox/instincts/archived/x.yaml'), 'sólo lo que lee el sitio');
 });
 
 // ── bajar ──────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -192,6 +192,18 @@ function escribirJson(archivo, datos) {
   fs.renameSync(tmp, archivo);
 }
 
+/**
+ * El archivo de una propuesta decidida, tal como queda en `inbox/instincts/propuestas/<huella>.json`: la propuesta con
+ * su `estado` (`aprobada` o `rechazada`) y su `decision` (`{ por, el, texto, pedido }` o `{ por, el, motivo }`). Lo
+ * escribe el sitio (pestaña Aprendizajes) con esta misma función, así lo que decide el sitio y lo que lee la noche no se
+ * separan. Un estado que no es una decisión tira.
+ */
+function archivoDecidido(propuesta, { estado, por, el, texto = null, motivo = null, pedido = null } = {}) {
+  if (estado !== 'aprobada' && estado !== 'rechazada') throw new Error(`archivoDecidido: estado «${estado}» no es una decisión`);
+  const decision = estado === 'aprobada' ? { por, el, texto, pedido } : { por, el, motivo };
+  return `${JSON.stringify({ ...propuesta, estado, decision }, null, 2)}\n`;
+}
+
 function informeVacio(fecha) {
   return { fecha, estado: null, motivo: null, parcial: false, uniones: null, maquinas: null, maquinas_sin_reportar: null,
     candidatos: null, ya_propuestas: null, nuevas: null, en_espera: null, con_redaccion: null, sin_redaccion: null, sin_completar: null,
@@ -427,7 +439,7 @@ function parseArgs(argv) {
   return a;
 }
 
-module.exports = { correrNoche, findTeamCandidates, huella, leerEspejo, MOTIVOS, RUTAS };
+module.exports = { correrNoche, findTeamCandidates, huella, leerEspejo, archivoDecidido, MOTIVOS, RUTAS, PROPUESTAS };
 
 if (require.main === module) {
   const a = parseArgs(process.argv.slice(2));
