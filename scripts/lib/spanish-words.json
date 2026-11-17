@@ -1016,6 +1016,10 @@
       "reason": "variable de entorno del propio Python (PYTHONDONTWRITEBYTECODE): no se puede renombrar; decidido por el dueño el 2026-10-28"
     },
     {
+      "words": ["pct"],
+      "reason": "abreviatura técnica en inglés de percent, usada en las claves de memoria del turno (8.286, 8.291: TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT); decidido por el dueño el 2026-11-16"
+    },
+    {
       "words": ["attr"],
       "reason": "parte de la opción --attr-source de git: no se puede renombrar; decidido por la coordinadora el 2026-10-31"
     },

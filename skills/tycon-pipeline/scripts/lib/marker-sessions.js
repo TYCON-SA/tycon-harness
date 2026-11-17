@@ -6,7 +6,7 @@
  * El estado que cambia mientras corre (la sesión sobre la que se trabaja, si se escribe o sólo se lee, si hace falta
  * un marcador) y las rutas del despachador se leen de `estado`, en el módulo compartido, en el momento de usarlos.
  */
-const { estado, ACTIVE_DIR, STALE_HOURS, STATE_DIR, STEPS_LIB, appendLog, at, avisarOficina, cerrarEjecucion, firmaDelDueno, frenarSiIlegible, frenarSiPerdida, fs, marcaDe, markerFilePath, nowIso, parkedPath, path, porDe, pruneStale, readMarker, sessionLiveness, syncSessionState, untilIso, warnPastUntil, writeMarker } = require('./marker-shared.js');
+const { estado, ACTIVE_DIR, STALE_HOURS, STATE_DIR, STEPS_LIB, appendLog, at, avisarOficina, cerrarEjecucion, conRutas, firmaDelDueno, frenarSiIlegible, frenarSiPerdida, fs, marcaDe, markerFilePath, nowIso, parkedPath, path, porDe, pruneStale, readMarker, sessionLiveness, syncSessionState, untilIso, warnPastUntil, writeMarker } = require('./marker-shared.js');
 
 // ============================================================
 // Cross-session discovery
@@ -181,11 +181,24 @@ function cmdSalidaPerdida(modo, sesion) {
   const abierta = podada && !podada.runDir ? (() => { const r = or.leerEventos(); return r.ok ? [...r.eventos].reverse().find((e) => e.sesion === String(sesion) && e.name === 'run-open') : null; })() : null;
   const dePodada = podada ? { name: 'pruned', story: String(podada.storyId), storyPath: podada.storyPath || null, repo: podada.repoPath || null, runDir: podada.runDir || (abierta && abierta.runDir) || null, ts: podada.startedAt || podada.lastTouch } : null;
   // la apertura: la vigente del registro o, sin registro, la copia del repo, o la de la podada
-  const apertura = ult && ult.name === 'run-open' ? ult : copias.length ? copias[copias.length - 1].copia : dePodada;
-  if (!apertura) {
+  const aperturaCruda = ult && ult.name === 'run-open' ? ult : copias.length ? copias[copias.length - 1].copia : dePodada;
+  if (!aperturaCruda) {
     console.error(`marker.js ${nombre}: la sesión ${sesion} no tiene una ejecución abierta (ni apertura en el registro ni copia en este repo): no hay nada que ${modo === 'lost' ? 'cerrar' : 'restaurar'}.`);
     process.exit(1);
   }
+  // sus rutas, absolutas contra su repo, antes de leer su copia, compararla, cerrarla o escribir el marcador (lib/run-dir.js):
+  // una apertura vieja con el repo «.» o una podada con la carpeta relativa no se buscan en la carpeta de este proceso
+  const ubicar = (a) => {
+    const r = require('./run-dir.js').rutasDeLaCorrida({ repoPath: a.repo, runDir: a.runDir, storyPath: a.storyPath });
+    if (typeof r.runDir !== 'string' || !path.isAbsolute(r.runDir)) return { motivo: r.motivo || 'no trae la carpeta de la ejecución' };
+    return { apertura: { ...a, ...(r.repoPath ? { repo: r.repoPath } : {}), runDir: r.runDir, ...(r.storyPath ? { storyPath: r.storyPath } : {}) } };
+  };
+  const ubicada = ubicar(aperturaCruda);
+  if (!ubicada.apertura) {
+    console.error(`marker.js ${nombre}: no puedo ubicar la ejecución de la sesión ${sesion}: ${ubicada.motivo}. No se ${modo === 'lost' ? 'cerró' : 'restauró'} nada.`);
+    process.exit(1);
+  }
+  const apertura = ubicada.apertura;
   // restore pisa el marcador propio y --lost borra el de la sesión perdida: si el que se toca no se lee, no se puede
   // anotar lo que deja (antes de pedir la firma)
   frenarSiIlegible(markerFilePath(modo === 'lost' ? sesion : estado.SID), modo === 'lost' ? sesion : estado.SID, nombre);
@@ -224,7 +237,11 @@ function cmdSalidaPerdida(modo, sesion) {
   // restore: el marcador vuelve con lo que dice la copia de la apertura, en la sesión que la pide
   let copia = null;
   try { copia = JSON.parse(fs.readFileSync(path.join(apertura.runDir, 'run-open.json'), 'utf8')); } catch (_e) { copia = null; }
-  const base = copia && copia.sesion === sesion ? copia : apertura;
+  const copiaUbicada = copia && copia.sesion === sesion ? ubicar(copia) : null;
+  // una copia de esta sesión que no se ubica no se usa, y se dice: se restaura con la apertura elegida
+  if (copiaUbicada && !copiaUbicada.apertura) process.stderr.write(`⚠️  marker.js ${nombre}: la copia de la apertura no se puede ubicar (${copiaUbicada.motivo}): uso la apertura del registro.\n`);
+  const deLaCopia = copiaUbicada ? copiaUbicada.apertura : null;
+  const base = deLaCopia || apertura;
   // la ejecución propia de otra carpeta no se pisa callada: se cierra como reemplazada, como en `set`, con su cierre sin
   // ok anotado antes de tocar nada
   let previo = readMarker();
@@ -376,7 +393,7 @@ function cmdAdoptSession(sid) {
   }
   let other;
   try {
-    other = JSON.parse(fs.readFileSync(otherPath, 'utf8'));
+    other = conRutas(JSON.parse(fs.readFileSync(otherPath, 'utf8')));
   } catch (e) {
     console.error(`marker.js adopt-session: marker de ${safe} ilegible:`, e.message);
     process.exit(1);

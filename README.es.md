@@ -94,7 +94,7 @@ las palabras que usa.
   tu pestaña pide permisos, el sí va en la ventana de permiso. No hay firma ni comando.
 
 Los frenos, los controles y las firmas de control del arnés son de quien lo mantiene. El detalle:
-[La medida justa](guides/que-hace-el-arnes.md#la-medida-justa-cuánto-papel-lleva-cada-cambio).
+[La medida justa](guides/what-the-harness-does.md#la-medida-justa-cuánto-papel-lleva-cada-cambio).
 
 ```mermaid
 flowchart TB

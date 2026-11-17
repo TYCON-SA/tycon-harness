@@ -224,6 +224,16 @@ function cmdSet(payloadJson) {
       console.error('    el plan → pasá `stepsCompleted` con los pasos hechos (incluido approve-plan) en el mismo set: así no avisa.');
     }
   }
+  // El repo que queda guardado. Uno relativo o que falta, con la carpeta absoluta, sale de la carpeta (lib/run-dir.js);
+  // si no, es el argumento de este mismo proceso y se resuelve acá, al entrar, como el --repo de `start`.
+  const repoGuardado = (() => {
+    const pedido = payload.repoPath;
+    if (!(pedido && path.isAbsolute(pedido))) {
+      const deLaCarpeta = require('./run-dir.js').rutasDeLaCorrida({ runDir: payload.runDir }).repoPath;
+      if (deLaCarpeta && path.isAbsolute(deLaCarpeta)) return deLaCarpeta;
+    }
+    return path.resolve(pedido || at(existing, 'repoPath') || process.cwd());
+  })();
   const marker = {
     // 🔴 Los campos DESCONOCIDOS del marker existente se PRESERVAN. Con una lista cerrada de campos,
     // todo lo que no estuviera enumerado acá se perdería en silencio: `checks`,
@@ -243,7 +253,7 @@ function cmdSet(payloadJson) {
     ...(existing || {}),
     storyId: payload.storyId,
     storyPath: payload.storyPath || at(existing, 'storyPath') || null,
-    repoPath: path.resolve(payload.repoPath || at(existing, 'repoPath') || process.cwd()),
+    repoPath: repoGuardado,
     // Dónde nace la evidencia de cierre: el repo de la STORY, aunque el código viva en
     // otro. Lo escribe `pipeline.js start`; lo leen el paso «Probar en vivo», el macro y `mark-dod-runtime-checked`.
     // 🔴 El spread de arriba preserva lo EXISTENTE, no lo que trae el payload: sin esta línea el
@@ -262,8 +272,13 @@ function cmdSet(payloadJson) {
     // La existente gana mientras siga en disco y sea del mismo repo que la que trae el pedido; si ya no está (o es de
     // otro repo), la que abrió `start` la reemplaza: si no, la carpeta nueva quedaría sin marcador que la nombre.
     runDir: (() => {
-      const vieja = at(existing, 'runDir');
-      const nueva = payload.runDir;
+      // las dos, absolutas ANTES de mirar el disco: la vieja contra el repo del marcador existente (ya la trae así
+      // `readMarker`), la nueva contra el que queda guardado; un `set` desde otra carpeta no pierde la vieja
+      const rd = require('./run-dir.js');
+      const ubicada = rd.rutasDeLaCorrida({ repoPath: at(existing, 'repoPath'), runDir: at(existing, 'runDir') }).runDir;
+      // una vieja que no se pudo ubicar no se toma (no se busca en la carpeta del proceso): gana la nueva
+      const vieja = typeof ubicada === 'string' && path.isAbsolute(ubicada) ? ubicada : null;
+      const nueva = rd.rutasDeLaCorrida({ repoPath: repoGuardado, runDir: payload.runDir }).runDir;
       // por la ruta real: un enlace (/var y /private/var en macOS) no hace de la misma carpeta una de otro repo
       const real = (p) => { try { return fs.realpathSync(path.dirname(path.resolve(p))); } catch (_e) { return path.dirname(path.resolve(p)); } };
       const sigue = !!vieja && fs.existsSync(vieja) && (!nueva || real(vieja) === real(nueva));

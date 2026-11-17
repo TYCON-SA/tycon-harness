@@ -93,7 +93,9 @@ test('DesignateRelay_NoQuote_NoClick_DeniesWithBoxNamingSession (T1)', (t) => {
   assert.deepStrictEqual(r.firmas, ['designation-set']);
   assert.ok(r.cuadro && r.cuadro.soloClick, JSON.stringify(r.cuadro));
   // la carpeta va en su propia línea: una ruta larga (las de la CI) no corta la que dice qué pasa
-  assert.ok(r.cuadro.pregunta.includes(`La sesión ${SES} pasa a ser la «coordinadora» de esta máquina · Su carpeta: ${lab.carpeta}.`), r.cuadro.pregunta);
+  // la sesión por sus 8 letras y la carpeta por su nombre; lo entero, en el detalle
+  assert.ok(r.cuadro.pregunta.includes(`La sesión ${SES.slice(0, 8)} pasa a ser la «coordinadora» de esta máquina · Su carpeta: ${path.basename(lab.carpeta)}.`), r.cuadro.pregunta);
+  assert.ok(r.cuadro.detalle.some((l) => l.includes(SES) && l.includes('pasa a ser')), JSON.stringify(r.cuadro.detalle));
   assert.match(r.texto, /Un mensaje escrito no vale, ni un click en otra pestaña/);
   assert.deepStrictEqual(lab.gates(), [], 'nada anotado');
 });

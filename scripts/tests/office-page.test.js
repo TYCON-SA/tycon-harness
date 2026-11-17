@@ -540,3 +540,42 @@ test('T5 Kanban_CountsUnchanged @story-8.251 @ac-5 — el encabezado y «En el k
   const sent = FIELDS_8251.pick(data, '/home/nadie');
   assert.deepStrictEqual(sent.kanban.columnas.find((c) => c.id === 'sinEmpezar').tarjetas.map((c) => c.titulo), ['Fila uno', 'Fila dos'], 'al sitio no viajan, como hoy');
 });
+
+// ── El panel de cada persona: la historia, el modelo y «sin dato» ──────────────────────────────────────────────────
+
+// `ficha` sacada de la página, con lo que usa alrededor: el panel abierto (abiertos=true) y la tarjeta chica (false)
+function fichaDeLaPagina() {
+  const html = page({ agents: [], items: [], kanban: null, meta: null });
+  const line = (name) => html.slice(html.indexOf(`function ${name}(`), html.indexOf('\n', html.indexOf(`function ${name}(`)));
+  const desde = html.indexOf('function ficha(a,abiertos)');
+  const src = html.slice(desde, html.indexOf('return r;}', desde) + 'return r;}'.length);
+  const ficha = new Function('DATA', 'AST', 'SOLO_COORDINA', 'finTxt', 'fmt', `${line('historiaDe')}; ${src}; return ficha;`)({}, {}, /^$/, () => null, (x) => x);
+  return (a, abiertos) => Object.fromEntries(ficha(a, abiertos).filter((r) => r.k).map((r) => [r.k, r.v]));
+}
+
+test('T9 Office_PanelConHistoria_RenglonHistoria @story-8.234 @ac-9 — el panel dice «Historia: número — título» aunque el trabajo diga otra cosa; la tarjeta chica, no', () => {
+  const ficha = fichaDeLaPagina();
+  const a = { nombre: 'Funes', comoTrabaja: 'Historia 8.215', historiaTitulo: 'El pase', titulo: 'Una tanda', haciendo: 'Va por el paso «Implementar».' };
+  const panel = ficha(a, true);
+  assert.strictEqual(panel.Historia, '8.215 — El pase');
+  assert.strictEqual(panel.Trabajo, 'Una tanda');
+  assert.strictEqual(panel.Haciendo, 'Va por el paso «Implementar».');
+  assert.strictEqual('Historia' in ficha(a, false), false, 'la tarjeta chica no cambia');
+});
+
+test('T13 Office_PanelSinDatos_SinDato @story-8.234 @ac-13 — sin historia, modelo ni esfuerzo, el panel lo dice con «sin dato»; la tarjeta chica no', () => {
+  const ficha = fichaDeLaPagina();
+  const sola = { nombre: 'Sand', titulo: 'Algo suelto' };
+  const panel = ficha(sola, true);
+  assert.strictEqual(panel.Historia, 'sin dato');
+  assert.strictEqual(panel.Modelo, 'sin dato · sin dato');
+  assert.strictEqual(ficha({ ...sola, modelo: 'Opus 5.5' }, true).Modelo, 'Opus 5.5 · sin dato');
+  // la tarjeta chica (la misma ficha, cerrada) no suma renglones vacíos
+  const chica = ficha(sola, false);
+  assert.strictEqual('Historia' in chica, false);
+  assert.strictEqual('Modelo' in chica, false);
+  // con el título de una foto vieja, sigue «De la historia», sin «sin dato» al lado
+  const vieja = ficha({ ...sola, historia: 'De una foto vieja' }, true);
+  assert.strictEqual(vieja['De la historia'], 'De una foto vieja');
+  assert.strictEqual('Historia' in vieja, false);
+});

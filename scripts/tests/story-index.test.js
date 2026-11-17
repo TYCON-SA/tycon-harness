@@ -86,6 +86,18 @@ test('StoryIndex_BuildsBothIndexesFromFrontmatter (T1) @story-8.226 @ac-1', () =
   assert.match(leer(dir, EPICS), /\| 1\.2 \| Alfa \| done \| `specs\/story-1\.2-alfa\.md` \|/);
 });
 
+test('StoryIndex_SkipsIntents (T48) @story-8.258 @ac-9', () => {
+  const dir = juguete('t48');
+  // la intención va al lado de su historia, con su mismo nombre y `.intent.md`; no declara `story:`
+  fs.writeFileSync(path.join(dir, 'specs', 'story-1.10-beta.intent.md'),
+    '---\nid: story-1.10-beta\nstatus: draft\nobjective: "o"\noutcomes:\n  - "o"\n---\n\n## Preguntas abiertas\n\nNinguna.\n\n## Decisiones reservadas\n\nNinguna.\n');
+  const r = correr(['--repo', dir, '--write']);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /intent\.md/, 'la intención no figura, ni como historia ilegible');
+  assert.strictEqual(leer(dir, EPICS).match(/specs\/story-1\.10-beta\.md/g).length, 1, 'la 1.10 sale una vez');
+  assert.doesNotMatch(leer(dir, EPICS), /\.intent\.md/);
+});
+
 test('StoryIndex_FixedOrderMatchesExpectedOutput (T2) @story-8.226 @ac-2', () => {
   const dir = juguete('t2');
   assert.strictEqual(correr(['--repo', dir, '--write']).code, 0);

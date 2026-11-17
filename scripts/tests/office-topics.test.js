@@ -816,7 +816,10 @@ test('Regresion_TrabajoDespuesDeLaEspera @story-8.184 @ac-17: las sesiones sin e
   const w = buildWip({ stateDir: m.sdir, sessionsDir: path.join(claudeDir(m.home), 'sessions'), now: new Date().toISOString(), home: m.home });
   assert.strictEqual(w.extra[0].touchedAt, touched);
   const run = (status, extra, lastWrite) => byName(buildOffice({ wip: wip([{ session: 'Paz', sid: 'p', status, extra: { kind: 'note', text: 'Su trabajo', waitingFor: 'x', waitingSince: since, ...extra } }]), lastWrites: new Map(lastWrite ? [['p', lastWrite]] : []), nowMs: Date.now() }).data, 'Paz').estado;
-  assert.notStrictEqual(run('idle', { touchedAt: touched }), 'esperando');
+  // los archivos tocados cuentan como trabajo mientras está ocupada; quieta con la marca puesta, en la oficina vuelve a
+  // esperar (8.234 AC 5). La fila de turnos sigue pidiendo confirmar (8.274 AC 6).
+  assert.notStrictEqual(run('busy', { touchedAt: touched }), 'esperando');
+  assert.strictEqual(run('idle', { touchedAt: touched }), 'esperando', '@story-8.234 @ac-5');
   assert.notStrictEqual(run('shell', {}, touched), 'esperando', 'corriendo un comando también está ocupada');
 });
 

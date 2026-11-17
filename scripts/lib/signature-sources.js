@@ -6,8 +6,10 @@
  * la firma, qué archivos toca y dónde está lo completo sale de lo mismo que el dueño firmaría si lo abriera: el plan
  * escrito, el diff de los controles, los criterios de la historia, el informe de hallazgos o la nota de la vuelta.
  *
- *   · `partesDe({ firma, palabras, cwd, marcador, estado, destino })` → `{ queHace, archivos, completo, fuente, cita }` (el
- *     plan suma `revision`, la línea del resultado de su revisión automática), o null si
+ *   · `partesDe({ firma, palabras, cwd, marcador, estado, destino })` → `{ queHace, archivos, completo, completoEnPalabras,
+ *     fuente, cita }` (el plan suma `revision`, la línea del resultado de su revisión automática; `completoEnPalabras` dice
+ *     dónde está lo completo sin la ruta, que va al detalle del cuadro; `queHaceALaVista`, cuando lo que se muestra no es
+ *     la fuente), o null si
  *     la firma no tiene fuente propia (la pregunta dice lo que hace el comando), o `{ error }` si no hay nada que firmar
  *     (un cambio de control con el diff vacío, o con rutas que la pregunta no mostraría tal como se firman: no hay
  *     cuadro y el pedido se niega). `fuente` es el texto exacto que se
@@ -25,6 +27,11 @@ const { spawnSync } = require('child_process');
 const PIPELINE = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js');
 const PLAN_FILE = 'step-02-bmad-plan.md';
 const LINEAS_DEL_PLAN = 3;
+// dónde está lo completo, en palabras: el cuadro no muestra la ruta (va a su detalle)
+const EL_PLAN = 'el plan, en la carpeta de la ejecución';
+const EL_INFORME = 'el informe de hallazgos de la ejecución';
+const LA_CARPETA = 'la carpeta de la ejecución';
+const laHistoria = (m) => (m && m.storyId ? `la historia ${m.storyId}` : 'la historia de la ejecución');
 const sha = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 
 /** El valor de `--opcion` en las palabras del comando (también `--opcion=valor`), o null. */
@@ -83,7 +90,8 @@ const renglones = (cuerpo) => (cuerpo || []).map((l) => l.replace(/^\s*(?:[-*]|\
 
 function seccionesDelPlan(texto) {
   const queHace = renglones(seccion(texto, 'Qué hace'));
-  const archivos = renglones(seccion(texto, 'Archivos')).flatMap((l) => l.split(/,\s+/)).map((a) => a.replace(/`/g, '').trim()).filter(Boolean);
+  // varios archivos en un renglón se separan por «, », salvo dentro de una anotación entre paréntesis («(nuevo, 20 líneas)»)
+  const archivos = renglones(seccion(texto, 'Archivos')).flatMap((l) => l.split(/,\s+(?![^(]*\))/)).map((a) => a.replace(/`/g, '').trim()).filter(Boolean);
   // todo lo que falta junto: de a una, la sesión se entera de la segunda en la vuelta siguiente
   const errores = [];
   if (!queHace.length) errores.push('el plan no dice qué hace en hasta 3 líneas: falta la sección «## Qué hace». Agregala al plan con hasta 3 líneas llanas de qué cambia');
@@ -120,9 +128,19 @@ function delPlan(palabras, m, { estado, destino } = {}) {
   const revision = revisionDelPlan(m, estado, destino);
   const fuente = revision ? `${texto}\n${revision.linea}\n${revision.detalle.join('\n')}` : texto;
   const s = seccionesDelPlan(texto);
-  // una falta por renglón: el cuadro corta cada renglón a 200, y las dos juntas no entran
-  if (s.error) return { queHace: s.errores, completo: ruta, fuente, cita, revision };
-  return { queHace: s.queHace, archivos: s.archivos, completo: ruta, fuente, cita, revision };
+  // una falta por renglón; si faltan las dos, a la vista van juntas en un renglón corto que el cuadro no corta, y cada
+  // una entera en el detalle
+  const corto = (e) => {
+    const f = /falta la sección «## ([^»]+)»/.exec(e);
+    if (f) return `le falta «## ${f[1]}»`;
+    const n = /«## Qué hace» tiene (\d+)/.exec(e);
+    return n ? `su «## Qué hace» tiene ${n[1]} líneas (van hasta ${LINEAS_DEL_PLAN})` : e;
+  };
+  const lasDos = s.errores && s.errores.length === 2 && s.errores.every((e) => /falta la sección/.test(e));
+  const aLaVista = !s.errores || s.errores.length < 2 ? null : lasDos ? ['al plan le faltan las secciones «## Qué hace» y «## Archivos»: agregalas antes de pedir la firma']
+    : [`el plan: ${s.errores.map(corto).join(' y ')}: corregilo antes de pedir la firma`];
+  if (s.error) return { queHace: s.errores, ...(aLaVista ? { queHaceALaVista: aLaVista } : {}), completo: ruta, completoEnPalabras: EL_PLAN, fuente, cita, revision };
+  return { queHace: s.queHace, archivos: s.archivos, completo: ruta, completoEnPalabras: EL_PLAN, fuente, cita, revision };
 }
 
 // sin programas externos: el cuadro se arma antes de la firma, y el repo lo nombra el comando. Las rutas van literales: un
@@ -264,7 +282,7 @@ function deControles(palabras, cwd, estado) {
     if (sinBlob) return noPude(sinBlob.motivo);
     // lo completo son los archivos mismos, en el repo: sus rutas ya van en «Archivos», y juntas no entrarían enteras
     return { queHace: [`Firma ${rutas.length} archivo(s) de control en su versión ${conArchivo ? `de ${firmada.slice(0, 12)}` : 'de la punta'} (sin base para comparar)`], archivos: rutas,
-      completo: raiz, fuente: JSON.stringify({ entradas: entradas || rutas, blobs }) };
+      completo: raiz, completoEnPalabras: `el repo ${path.basename(raiz)}`, fuente: JSON.stringify({ entradas: entradas || rutas, blobs }) };
   }
   // diff-tree, entre dos commits ya resueltos: el comando de bajo nivel no corre los conversores ni el diff externo
   // que pueda configurar el repo
@@ -298,7 +316,7 @@ function deControles(palabras, cwd, estado) {
     try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(completo, diff.stdout); } catch (_) { completo = null; }
   }
   const cuantas = cambiadas.length < rutas.length ? `${cambiadas.length} de ${rutas.length} archivo(s) de control pedidos` : `${rutas.length} archivo(s) de control`;
-  return { queHace: [`Cambia ${cuantas}: +${mas} −${menos} líneas`], archivos: rutas, completo, fuente: diff.stdout };
+  return { queHace: [`Cambia ${cuantas}: +${mas} −${menos} líneas`], archivos: rutas, completo, completoEnPalabras: completo ? 'el cambio, en un archivo de la ejecución' : null, fuente: diff.stdout };
 }
 
 const acsDe = (palabras) => [...new Set(String(valor(palabras, '--acs') || '').split(/[,\s]+/).filter(Boolean).map(Number))].filter((n) => Number.isInteger(n) && n > 0);
@@ -312,7 +330,7 @@ function deLaPruebaAMano(palabras, m) {
   let fallo = null;
   try { criterios = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'manual-checks.js')).criterios(historia); } catch (e) { fallo = e.code || e.message; }
   const lineas = acs.map((n) => { const c = criterios.find((x) => x.n === n); return `AC ${n}: ${c ? c.text : fallo ? `(no pude leer los criterios de la historia: ${fallo})` : '(no está en la historia)'}`; });
-  return lineas.length ? { criterios: acs, queHace: lineas, completo: historia, fuente: lineas.join('\n') } : null;
+  return lineas.length ? { criterios: acs, queHace: lineas, completo: historia, completoEnPalabras: laHistoria(m), fuente: lineas.join('\n') } : null;
 }
 
 function hallazgosDe(dir) {
@@ -324,7 +342,7 @@ function hallazgosDe(dir) {
   return { ruta, texto, lista: Array.isArray(j) ? j : (j && Array.isArray(j.findings) ? j.findings : []) };
 }
 
-/** El hallazgo crítico que se exime, del informe de hallazgos de la corrida. */
+/** El hallazgo crítico que se exime, del informe de hallazgos de la ejecución. */
 function delCritico(palabras, m) {
   const regla = valor(palabras, '--rule');
   if (!regla) return null;
@@ -333,13 +351,13 @@ function delCritico(palabras, m) {
   const nombre = `${regla}${archivo ? ` en ${archivo}` : ''}`;
   const h = hallazgosDe(carpetaDeLaCorrida(m));
   const archivos = archivo ? [archivo] : [];
-  if (!h.lista) return { queHace: [`Eximir ${nombre}: ${h.roto ? `no pude leer el informe de hallazgos${h.roto}` : 'no hay informe de hallazgos en esta ejecución'}`], archivos, completo: h.ruta, fuente: h.texto || '', cita };
+  if (!h.lista) return { queHace: [`Eximir ${nombre}: ${h.roto ? `no pude leer el informe de hallazgos${h.roto}` : 'no hay informe de hallazgos en esta ejecución'}`], archivos, completo: h.ruta, completoEnPalabras: EL_INFORME, fuente: h.texto || '', cita };
   const reglaDe = (f) => String(f.rule_id || f.ruleId || f.rule || '').trim();
   // la exención se anota con la clave regla|archivo (critical-waivers.js): sin --file sólo exime los que no tienen archivo
   const iguales = h.lista.filter((f) => f && reglaDe(f) === regla && String(f.file || '').trim() === String(archivo || '').trim());
-  if (!iguales.length) return { queHace: [`Eximir ${nombre}: no está en el informe de hallazgos`], archivos, completo: h.ruta, fuente: h.texto, cita };
+  if (!iguales.length) return { queHace: [`Eximir ${nombre}: no está en el informe de hallazgos`], archivos, completo: h.ruta, completoEnPalabras: EL_INFORME, fuente: h.texto, cita };
   const lineas = iguales.map((f) => `${regla}${f.file ? ` en ${f.file}` : ''}: ${String(f.summary || f.title || f.reason || '(sin texto)').replace(/\s+/g, ' ').trim()}`);
-  return { queHace: lineas, archivos: archivo ? archivos : [...new Set(iguales.map((f) => f.file).filter(Boolean))], completo: h.ruta, fuente: h.texto, cita };
+  return { queHace: lineas, archivos: archivo ? archivos : [...new Set(iguales.map((f) => f.file).filter(Boolean))], completo: h.ruta, completoEnPalabras: EL_INFORME, fuente: h.texto, cita };
 }
 
 /**
@@ -350,7 +368,7 @@ function delCritico(palabras, m) {
 function deLaVuelta(palabras, m) {
   const iter = valor(palabras, '--iter');
   const dir = carpetaDeLaCorrida(m);
-  if (!iter || !/^\d+$/.test(iter)) return dir ? { queHace: ['Una vuelta más de revisores sobre lo que quedó abierto'], completo: dir, fuente: '' } : null;
+  if (!iter || !/^\d+$/.test(iter)) return dir ? { queHace: ['Una vuelta más de revisores sobre lo que quedó abierto'], completo: dir, completoEnPalabras: LA_CARPETA, fuente: '' } : null;
   const ruta = dir ? path.join(dir, 'rethink', `iter-${iter}.json`) : null;
   const texto = ruta ? leer(ruta) : null;
   let n = null;
@@ -362,11 +380,13 @@ function deLaVuelta(palabras, m) {
     : texto !== null && texto !== undefined ? `Nota de la vuelta ${iter}: no se entiende${roto}`
       : roto ? `No pude leer la nota de repensar de la vuelta ${iter}${roto}` : `Sin nota de repensar de la vuelta ${iter}`;
   const ab = abiertoDeLaCorrida(dir);
-  return { queHace: [`Vuelta ${iter} de revisores`, ab.linea, deLaNota], completo: texto !== null && texto !== undefined ? ruta : dir, fuente: JSON.stringify({ abiertos: ab.lista, nota: texto || null }) };
+  const conNota = texto !== null && texto !== undefined;
+  // dos renglones, los que muestra el cuadro: la vuelta con lo abierto, y la nota (la fuente es lo abierto y la nota)
+  return { queHace: [`Vuelta ${iter} de revisores: ${ab.linea}`, deLaNota], completo: conNota ? ruta : dir, completoEnPalabras: conNota ? 'la nota de la vuelta, en la carpeta de la ejecución' : LA_CARPETA, fuente: JSON.stringify({ abiertos: ab.lista, nota: texto || null }) };
 }
 
 /**
- * Lo que sigue abierto en el informe de hallazgos de la corrida: `{ linea, lista }`, un tramo por hallazgo abierto en un
+ * Lo que sigue abierto en el informe de hallazgos de la ejecución: `{ linea, lista }`, un tramo por hallazgo abierto en un
  * solo renglón (la pregunta muestra tres renglones de «Qué hace», y la nota de la vuelta tiene que entrar). «No lo pude
  * leer» no es «nada», y una carpeta que no se ubica no es un informe que falta.
  */
@@ -459,7 +479,9 @@ function deLaDesignacion(firma, destino, cwd) {
   const verbo = firma === 'designation-set' ? 'pasa a ser' : 'deja de ser';
   // dos líneas: una carpeta larga no corta la que dice qué pasa
   const lineas = [`La sesión ${destino} ${verbo} la «${rol || 'coordinadora'}» de esta máquina`, `Su carpeta: ${cwd || process.cwd()}`];
-  return { queHace: lineas, fuente: lineas.join('\n') };
+  // la fuente queda como estaba (la huella no cambia); lo que se ve dice la sesión por sus 8 letras y la carpeta por su nombre
+  const aLaVista = [`La sesión ${String(destino).slice(0, 8)} ${verbo} la «${rol || 'coordinadora'}» de esta máquina`, `Su carpeta: ${path.basename(cwd || process.cwd())}`];
+  return { queHace: lineas, queHaceALaVista: aLaVista, fuente: lineas.join('\n') };
 }
 
 /**
@@ -489,7 +511,7 @@ function delRojoEsperado(palabras, m) {
     if (c.uncovered.length) lineas.push(`Sin cubrir por la lista (frenan igual): AC ${c.uncovered.join(', ')}`);
     if (c.unknown.length) lineas.push(`No están en la tabla de pruebas: ${c.unknown.join(', ')}`);
     const acs = c.covered.length ? `los AC ${c.covered.join(', ')}` : 'ningún criterio';
-    return { criterios: c.covered, queHace: lineas, completo: historia, fuente: lineas.join('\n'), que: `llevar al commit ${acs} sin evidencia en vivo (pruebas ${pruebas.join(', ')}), hasta el ${fecha}` };
+    return { criterios: c.covered, queHace: lineas, completo: historia, completoEnPalabras: laHistoria(m), fuente: lineas.join('\n'), que: `llevar al commit ${acs} sin evidencia en vivo (pruebas ${pruebas.join(', ')}), hasta el ${fecha}` };
   } catch (e) {
     return { error: `no pude calcular la matriz de la historia (${(e && e.message) || e}): sin sus criterios a la vista no se firma` };
   }
@@ -510,4 +532,4 @@ function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {
   return null;
 }
 
-module.exports = { partesDe, historiaDe, seccion, seccionesDelPlan, planDe, carpetaDeLaCorrida, valor, abiertoDeLaCorrida };
+module.exports = { partesDe, laHistoria, historiaDe, seccion, seccionesDelPlan, planDe, carpetaDeLaCorrida, valor, abiertoDeLaCorrida };

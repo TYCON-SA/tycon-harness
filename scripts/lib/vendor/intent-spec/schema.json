@@ -1,0 +1,181 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://intentspec.org/schema.json",
+    "title": "IntentSpec",
+    "description": "A portable, evidence-backed format for AI agent intent. Carries both the contract (what the agent must do) and the judgment (the evidence behind it).",
+    "type": "object",
+    "required": [
+        "id",
+        "status",
+        "objective",
+        "outcomes"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "description": "Unique identifier for the intent specification."
+        },
+        "status": {
+            "type": "string",
+            "enum": [
+                "draft",
+                "validated",
+                "approved",
+                "shipped",
+                "verified"
+            ],
+            "default": "draft"
+        },
+        "version": {
+            "type": "integer",
+            "default": 1
+        },
+        "objective": {
+            "type": "string",
+            "description": "The core problem to solve and why it matters."
+        },
+        "problemSeverity": {
+            "type": "string",
+            "enum": [
+                "low",
+                "medium",
+                "high",
+                "critical"
+            ],
+            "description": "Priority or severity of the problem."
+        },
+        "userGoal": {
+            "type": "string",
+            "description": "The specific goal the user is trying to achieve."
+        },
+        "outcomes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "string"
+            },
+            "description": "Observable state changes indicating success."
+        },
+        "healthMetrics": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "metrics that must not degrade."
+        },
+        "verification": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "How the outcomes are confirmed — the fastest automated check, a manual fallback, and the observable signal once shipped. Added in v1.2."
+        },
+        "scope": {
+            "type": "object",
+            "description": "What the implementation may touch, and what it must leave alone. Added in v1.2.",
+            "properties": {
+                "inScope": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "outOfScope": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "constraints": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Hard boundaries the agent must respect."
+        },
+        "edgeCases": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "scenario": {
+                        "type": "string"
+                    },
+                    "expectedBehavior": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "scenario",
+                    "expectedBehavior"
+                ]
+            }
+        },
+        "evidence": {
+            "type": "array",
+            "description": "Source observations that informed this spec — quotes, friction, observations, metrics, or requests. Optional. When present, each item can anchor to specific spec sections via the 'anchors' field.",
+            "items": {
+                "type": "object",
+                "required": [
+                    "type",
+                    "excerpt"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Stable identifier for cross-referencing (e.g., from a Pathmode workspace)."
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "friction",
+                            "quote",
+                            "observation",
+                            "metric",
+                            "request"
+                        ]
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "Where this came from — ticket ID, replay ID, interview transcript, dashboard URL."
+                    },
+                    "excerpt": {
+                        "type": "string",
+                        "description": "The actual observation, quote, or measurement."
+                    },
+                    "anchors": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "pattern": "^(objective|userGoal|outcome:[0-9]+|edgeCase:[0-9]+|constraint:[0-9]+|healthMetric:[0-9]+)$"
+                        },
+                        "description": "Spec sections this evidence backs. Use 'objective', 'userGoal', 'outcome:N', 'edgeCase:N', 'constraint:N', or 'healthMetric:N'."
+                    }
+                }
+            }
+        },
+        "strategicAlignment": {
+            "type": "string",
+            "enum": [
+                "high",
+                "medium",
+                "low",
+                "deviation"
+            ]
+        },
+        "alignmentNotes": {
+            "type": "string"
+        },
+        "createdAt": {
+            "type": "integer"
+        },
+        "updatedAt": {
+            "type": "integer"
+        }
+    }
+}

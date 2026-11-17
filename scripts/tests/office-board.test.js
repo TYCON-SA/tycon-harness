@@ -792,3 +792,182 @@ test('Oficina_NAnteriores_EjecutaLaPagina @story-8.282 @ac-25', () => {
   // sin filas viejas, no hay botón
   assert.strictEqual(boton(drawKanban(datos([])).body), undefined);
 });
+
+// ── «Tu firma» dice a quién espera: la firma aprobada y sin repetir ────────────────────────────────────────────────────
+
+// una firma del registro como la deja collect; `aprobada` la marca aprobadasSinRepetir (signature-list.js)
+const firmaDe = (destino, title, extra = {}) => ({ tipo: 'firma', id: `f-${destino}-${title}`, firma: 'manual-test', destino, title, at: NOW - 60000, ...extra });
+// la del plan, con la firma que lo aprueba (signatures.js)
+const planDe = (destino, title, extra = {}) => firmaDe(destino, title, { firma: 'plan-approval', ...extra });
+const doraPlan = (extra = {}) => wip([{ session: 'Dora', sid: 'd', status: 'idle', extra: { kind: 'pipeline', current: 'approve-plan', title: 'Lo de Dora', storyId: '9.9', ...extra } }]);
+const teTocaDe = (data) => data.meta.teToca.join(' | ');
+
+test('T14 Office_FirmaAprobadaSinRepetir_EsperaALaSesion @story-8.234 @ac-14: la firma aprobada sale de «Tu firma» y dice que espera a la sesión', () => {
+  // caso 1: la sesión espera su plan y la firma del plan ya está aprobada
+  let { data } = buildOffice({ wip: doraPlan(), signatures: [planDe('d', 'aprobar el plan de una story', { aprobada: true })], nowMs: NOW });
+  assert.deepStrictEqual(col(data, 'firma').tarjetas, [], 'no queda nada en «Tu firma»');
+  const enCurso = col(data, 'curso').tarjetas.find((c) => c.titulo === 'Lo de Dora');
+  assert.ok(enCurso, JSON.stringify(data.kanban.columnas));
+  assert.strictEqual(enCurso.espera, 'aprobada: espera que Dora la repita');
+  assert.strictEqual(byName(data, 'Dora').estado, 'parada');
+  assert.strictEqual(byName(data, 'Dora').mano, undefined, 'sin la mano «Espera tu firma»');
+  assert.doesNotMatch(teTocaDe(data), /Dora|aprobar el plan/, 'ni el renglón de la lista ni el «Aprobar el plan» de la sesión');
+  assert.deepStrictEqual(ownerWaitsOf(data), [], 'a la coordinadora no le llega como algo del dueño');
+  assert.match(data.kanban.linea, /Tu firma: 0/);
+  assert.match(data.kanban.linea, /Trabado: 0/, 'no se cuenta como trabada');
+
+  // caso 2: el plan aprobado y otra firma sin aprobar: el plan ya no le toca al dueño; la otra sí, sola en «Tu firma»
+  // («Te toca» no puede pedir un plan ya aprobado ni esconder la firma que de verdad falta)
+  ({ data } = buildOffice({ wip: doraPlan(), signatures: [planDe('d', 'aprobar el plan de una story', { aprobada: true }), firmaDe('d', 'marcar un criterio')], nowMs: NOW }));
+  assert.deepStrictEqual(titles(data, 'firma'), ['Firma: marcar un criterio'], JSON.stringify(col(data, 'firma').tarjetas));
+  assert.strictEqual(byName(data, 'Dora').estado, 'parada');
+  assert.strictEqual(byName(data, 'Dora').mano, 'dueno', 'la mano es por la firma que falta');
+  assert.match(data.kanban.linea, /Tu firma: 1/);
+  assert.match(teTocaDe(data), /Firmar: marcar un criterio \(Dora\)/);
+  assert.doesNotMatch(teTocaDe(data), /Aprobar el plan|aprobar el plan de una story/, 'la aprobada no suma');
+  assert.deepStrictEqual(ownerWaitsOf(data), [], 'la coordinadora no recibe el plan aprobado');
+
+  // caso 2b: el plan aprobado y otra firma también aprobada: las dos se ven, ninguna se pierde
+  ({ data } = buildOffice({ wip: doraPlan(), signatures: [planDe('d', 'aprobar el plan de una story', { aprobada: true }), firmaDe('d', 'pedir una vuelta más', { aprobada: true })], nowMs: NOW }));
+  assert.strictEqual(byName(data, 'Dora').estado, 'parada');
+  assert.ok(col(data, 'curso').tarjetas.some((c) => c.titulo === 'Firma: pedir una vuelta más' && c.espera === 'aprobada: espera que Dora la repita'), JSON.stringify(col(data, 'curso').tarjetas));
+  assert.deepStrictEqual(col(data, 'firma').tarjetas, []);
+
+  // caso 2c: el plan aprobado con un cuadro de permiso en pantalla: el cuadro lo contesta el dueño, no se esconde
+  ({ data } = buildOffice({ wip: wip([{ session: 'Dora', sid: 'd', status: 'waiting_for_permission', extra: { kind: 'pipeline', current: 'approve-plan', title: 'Lo de Dora' } }]),
+    signatures: [planDe('d', 'aprobar el plan de una story', { aprobada: true })], nowMs: NOW }));
+  assert.strictEqual(byName(data, 'Dora').estado, 'firma');
+  assert.strictEqual(byName(data, 'Dora').mano, 'dueno');
+  assert.match(teTocaDe(data), /Aprobar el plan: Lo de Dora \(Dora\)/);
+  assert.match(data.kanban.linea, /Tu firma: 1/);
+  // lo mismo con el cuadro anotado en el archivo de la sesión
+  ({ data } = buildOffice({ wip: doraPlan(), sessionFiles: [sessionFile('d', { name: 'Dora', waitingForOwner: true, waitingFor: 'un permiso' })],
+    signatures: [planDe('d', 'aprobar el plan de una story', { aprobada: true })], nowMs: NOW }));
+  assert.strictEqual(byName(data, 'Dora').estado, 'firma');
+
+  // caso 3: la sesión que se dibuja desde su archivo (Codex, sin fila en /wip), sin nombre: su id corto
+  ({ data } = buildOffice({ wip: wip([]), sessionFiles: [sessionFile('abcdef1234567', { tool: 'codex', busy: false, step: 'Aprobar el plan', sentence: 'Espera el plan.' })],
+    signatures: [planDe('abcdef1234567', 'aprobar el plan de otra story', { aprobada: true })], nowMs: NOW }));
+  assert.deepStrictEqual(col(data, 'firma').tarjetas, []);
+  assert.ok(col(data, 'curso').tarjetas.some((c) => c.espera === 'aprobada: espera que abcdef12 la repita'), JSON.stringify(col(data, 'curso').tarjetas));
+  assert.doesNotMatch(teTocaDe(data), /Aprobar el plan/);
+
+  // caso 4: un cuadro de permiso en pantalla no se toca, aunque un renglón suyo esté aprobado
+  ({ data } = buildOffice({ wip: wip([{ session: 'Alma', sid: 'a', status: 'waiting_for_permission', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Alma' } }]),
+    signatures: [firmaDe('a', 'marcar un criterio', { aprobada: true })], nowMs: NOW }));
+  assert.strictEqual(byName(data, 'Alma').estado, 'firma');
+  assert.strictEqual(col(data, 'firma').tarjetas.length, 1);
+  // y la aprobada no se pierde: su tarjeta en «En curso» dice que espera a la sesión
+  assert.ok(col(data, 'curso').tarjetas.some((c) => c.titulo === 'Firma: marcar un criterio' && c.espera === 'aprobada: espera que Alma la repita'), JSON.stringify(col(data, 'curso').tarjetas));
+
+  // caso 5: una sesión trabajando en otra cosa, con una firma aprobada: sigue trabajando, y la firma va a «En curso»
+  ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
+    signatures: [firmaDe('b', 'marcar un criterio', { aprobada: true })], nowMs: NOW }));
+  assert.strictEqual(byName(data, 'Bruno').estado, 'trabajando');
+  assert.deepStrictEqual(col(data, 'firma').tarjetas, []);
+  assert.ok(col(data, 'curso').tarjetas.some((c) => c.titulo === 'Firma: marcar un criterio' && c.espera === 'aprobada: espera que Bruno la repita'));
+  assert.strictEqual(byName(data, 'Bruno').mano, undefined);
+  // dos aprobadas de la misma sesión: una tarjeta, con la más vieja y cuántas más
+  ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
+    signatures: [firmaDe('b', 'marcar un criterio', { aprobada: true }), firmaDe('b', 'otro criterio', { aprobada: true, at: NOW })], nowMs: NOW }));
+  assert.deepStrictEqual(col(data, 'curso').tarjetas.filter((c) => /^Firma: /.test(c.titulo)).map((c) => c.titulo), ['Firma: marcar un criterio y 1 más']);
+
+  // caso 5b: el guardado aprobado (firma `save`) deja de pedir el ok de guardar, igual que el plan
+  ({ data } = buildOffice({ wip: wip([{ session: 'Eva', sid: 'e', status: 'idle', extra: { kind: 'finished', title: 'Lo de Eva' } }]),
+    signatures: [firmaDe('e', 'guardar la story', { firma: 'save', aprobada: true })], nowMs: NOW }));
+  assert.strictEqual(byName(data, 'Eva').estado, 'parada', JSON.stringify(byName(data, 'Eva')));
+  assert.strictEqual(byName(data, 'Eva').espera, 'aprobada: espera que Eva la repita');
+  assert.deepStrictEqual(col(data, 'firma').tarjetas, []);
+  assert.deepStrictEqual(data.meta.teToca, []);
+  // sin aprobar, el guardado sigue siendo del dueño
+  ({ data } = buildOffice({ wip: wip([{ session: 'Eva', sid: 'e', status: 'idle', extra: { kind: 'finished', title: 'Lo de Eva' } }]),
+    signatures: [firmaDe('e', 'guardar la story', { firma: 'save' })], nowMs: NOW }));
+  assert.strictEqual(byName(data, 'Eva').estado, 'firma');
+
+  // caso 5c: una aprobada de una sesión que no se dibuja: su tarjeta en «En curso» con el id corto
+  ({ data } = buildOffice({ wip: wip([]), signatures: [firmaDe('fedcba9876543', 'marcar un criterio', { aprobada: true })], nowMs: NOW }));
+  assert.ok(col(data, 'curso').tarjetas.some((c) => c.titulo === 'Firma: marcar un criterio' && c.quien === '— (fedcba98)' && c.espera === 'aprobada: espera que — (fedcba98) la repita'), JSON.stringify(col(data, 'curso').tarjetas));
+
+  // caso 6: la sesión espera su plan y lo aprobado es otra firma: el plan sigue siendo del dueño
+  ({ data } = buildOffice({ wip: doraPlan(), signatures: [firmaDe('d', 'marcar un criterio', { aprobada: true })], nowMs: NOW }));
+  assert.strictEqual(byName(data, 'Dora').estado, 'firma');
+  assert.strictEqual(byName(data, 'Dora').espera, 'que apruebes el plan');
+  assert.match(teTocaDe(data), /Aprobar el plan: Lo de Dora \(Dora\)/);
+  assert.match(data.kanban.linea, /Tu firma: 1/);
+  assert.ok(col(data, 'curso').tarjetas.some((c) => c.titulo === 'Firma: marcar un criterio' && c.espera === 'aprobada: espera que Dora la repita'));
+});
+
+test('T15 Office_FirmaSinAprobar_ComoHoy @story-8.234 @ac-15: sin aprobación, la firma sale como hoy', () => {
+  const { data } = buildOffice({ wip: doraPlan(), signatures: [planDe('d', 'aprobar el plan de una story')], nowMs: NOW });
+  assert.strictEqual(byName(data, 'Dora').estado, 'firma');
+  assert.strictEqual(byName(data, 'Dora').espera, 'que apruebes el plan');
+  assert.strictEqual(byName(data, 'Dora').mano, 'dueno');
+  assert.strictEqual(col(data, 'firma').tarjetas.length, 1);
+  assert.match(data.kanban.linea, /Tu firma: 1/);
+  assert.match(teTocaDe(data), /Aprobar el plan: Lo de Dora \(Dora\)/);
+  assert.deepStrictEqual(ownerWaitsOf(data).map((w) => w.quien), ['Dora']);
+  // la sesión desde su archivo, igual que hoy
+  const { data: d2 } = buildOffice({ wip: wip([]), sessionFiles: [sessionFile('abcdef1234567', { tool: 'codex', busy: false, step: 'Aprobar el plan', sentence: 'Espera el plan.' })],
+    signatures: [planDe('abcdef1234567', 'aprobar el plan de otra story')], nowMs: NOW });
+  assert.strictEqual(col(d2, 'firma').tarjetas.length, 1);
+  assert.match(teTocaDe(d2), /Aprobar el plan/);
+});
+
+// la foto real: collect lee el registro y marca las ya aprobadas con el mismo chequeo que owner-next
+const slG = require('../lib/signature-list.js');
+const oaG = require('../lib/owner-approvals.js');
+const MARKER_G = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+const { stateDir } = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+function homeConFirma() {
+  const home = fs.mkdtempSync(path.join(require('os').tmpdir(), 'office-g-'));
+  for (const d of ['active', 'adhoc', 'doing', 'office', 'coordination']) fs.mkdirSync(path.join(stateDir(home), d), { recursive: true });
+  fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', 'tycon.json'), JSON.stringify({ approvals: { signature_list: 'on' } }));
+  fs.writeFileSync(path.join(home, '.claude', 'sessions', 'ses-a.json'), JSON.stringify({ pid: process.pid, sessionId: 'ses-a', name: 'Ana', nameSource: 'user', status: 'idle', cwd: '/r' }));
+  const comando = `node ${MARKER_G} mark-tested --acs 3`;
+  slG.anotarFirma({ casa: home, firma: 'manual-test', titulo: 'marcar un criterio como probado a mano', sesion: 'ses-a', destino: 'ses-a', comando, palabras: require('../lib/owner-window.js').canonica(comando), cwd: '/r', ahora: NOW - 10 * 60000 });
+  const pregunta = slG.siguiente({ casa: home, sesion: 'ses-a', ahora: NOW, arbol: [], validar: () => ({ ok: false }) }).pregunta;
+  const clickHace = (min) => oaG.anotar(home, { tipo: 'click', sesion: 'ses-a', ts: new Date(NOW - min * 60000).toISOString(), tool_use_id: `tu-${min}`, pregunta, respuesta: oaG.APRUEBA });
+  return { home, clickHace };
+}
+const fotoG = (home, more = {}) => collect({ home, now: new Date(NOW).toISOString(), siteUrl: async () => ({ code: 3, out: '' }), quietMinutes: async () => ({ code: 3, out: '' }), arbol: [], ...more });
+const firmaG = (data) => JSON.stringify(data.kanban.columnas.find((c) => c.id === 'firma').tarjetas);
+const cursoG = (data) => data.kanban.columnas.find((c) => c.id === 'curso').tarjetas;
+
+test('T14 Office_FirmaAprobadaSinRepetir_EsperaALaSesion (la foto) @story-8.234 @ac-14: collect la marca y sale de «Tu firma»', async (t) => {
+  const { home, clickHace } = homeConFirma();
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  clickHace(2);
+  const data = await fotoG(home, { validarAprobacion: () => ({ ok: true }) });
+  assert.doesNotMatch(firmaG(data), /marcar un criterio/);
+  assert.ok(cursoG(data).some((c) => /marcar un criterio/.test(c.titulo) && c.espera === 'aprobada: espera que Ana la repita'), JSON.stringify(cursoG(data)));
+  assert.doesNotMatch(data.meta.teToca.join(' | '), /marcar un criterio/);
+});
+
+test('T15 Office_FirmaSinAprobar_ComoHoy (la foto) @story-8.234 @ac-15: vencida o sin poder leerla, sale como hoy y el motivo va a los avisos', async (t) => {
+  // vencida (31 minutos): en «Tu firma», sin aviso
+  let m = homeConFirma();
+  t.after(() => fs.rmSync(m.home, { recursive: true, force: true }));
+  m.clickHace(31);
+  let data = await fotoG(m.home, { validarAprobacion: () => ({ ok: true }) });
+  // como hoy: en «Tu firma», contada, en «Te toca» y con la mano «Espera tu firma» en Ana
+  const comoHoy = (d) => {
+    assert.match(firmaG(d), /marcar un criterio/);
+    assert.match(d.kanban.linea, /Tu firma: 1/);
+    assert.match(d.meta.teToca.join(' | '), /marcar un criterio/);
+    assert.strictEqual(byName(d, 'Ana').mano, 'dueno', JSON.stringify(d.agents.map((a) => [a.nombre, a.estado, a.mano])));
+  };
+  comoHoy(data);
+  assert.doesNotMatch(data.unreadable.join(' | '), /está aprobada/);
+  // el click de esta firma que no se pudo leer: en «Tu firma», con el motivo en los avisos de la foto
+  m = homeConFirma();
+  t.after(() => fs.rmSync(m.home, { recursive: true, force: true }));
+  m.clickHace(2);
+  data = await fotoG(m.home, { validarAprobacion: () => ({ ok: false, motivo: 'no encontré la transcripción de la sesión ses-a', noLeida: true }) });
+  comoHoy(data);
+  assert.match(data.unreadable.join(' | '), /no pude saber si «marcar un criterio.*» de ses-a está aprobada: .*no encontré la transcripción/);
+  // sin los procesos de la máquina, ninguna se da por aprobada, y se dice
+  data = await fotoG(m.home, { arbol: null, validarAprobacion: () => ({ ok: true }) });
+  comoHoy(data);
+  assert.match(data.unreadable.join(' | '), /no pude leer los procesos de la máquina/);
+});

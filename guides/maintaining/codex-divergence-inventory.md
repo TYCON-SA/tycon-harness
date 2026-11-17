@@ -319,7 +319,7 @@ de Windows, no nueva de este freno.
 (`agents/*.md`): al lanzarse como subagente no cargan el `CLAUDE.md` global, el README del arnés
 importado ni el `CLAUDE.md` del repo. Las reglas propias del repo les llegan por otro lado: la
 sección `## Reglas para revisores` de ese `CLAUDE.md`, que `pipeline.js` recorta y pega al principio
-del `context_file` como «reglas a verificar» (`guides/reglas-para-revisores.md`).
+del `context_file` como «reglas a verificar» (`guides/reviewer-rules.md`).
 `tycon-retrospective-capturer` y `tycon-dod-runtime-checker` quedan sin el campo a propósito.
 
 **Codex**: no hay equivalente de `omitClaudeMd`. El generador ignora la clave (parser plano de

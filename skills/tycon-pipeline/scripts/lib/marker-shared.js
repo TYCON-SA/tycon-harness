@@ -278,6 +278,10 @@ function appendLog(fileName, obj, { estricto = false } = {}) {
   }
 }
 
+// Las rutas de la corrida, absolutas contra su repo y nunca contra la carpeta del proceso (lib/run-dir.js): las usan la
+// lectura y la escritura del marcador, así cualquier comando lo ve igual desde cualquier carpeta.
+const conRutas = (m) => require('./run-dir.js').marcadorConRutas(m);
+
 // Marker de ESTA sesión. Primero el archivo per-session; si no, fallback al
 // legacy single-file (transición — readonly).
 function readMarker() {
@@ -285,7 +289,7 @@ function readMarker() {
   if (fs.existsSync(own)) {
     try {
       const m = JSON.parse(fs.readFileSync(own, 'utf8'));
-      if (m && m.storyId) return m;
+      if (m && m.storyId) return conRutas(m);
     } catch (_e) { /* ignore */ }
   }
   if (fs.existsSync(LEGACY_MARKER_PATH)) {
@@ -295,10 +299,10 @@ function readMarker() {
         const obj = JSON.parse(raw);
         if (obj && obj.storyId) {
           // legacy plano: pertenece a la sesión sintética `_legacy`.
-          return estado.SID === '_legacy' ? obj : null;
+          return estado.SID === '_legacy' ? conRutas(obj) : null;
         }
         const m = obj && obj[estado.SID];
-        if (m && m.storyId) return m;
+        if (m && m.storyId) return conRutas(m);
       }
     } catch (_e) { /* ignore */ }
   }
@@ -325,7 +329,7 @@ function writeMarker(marker) {
   pruneStale();
   const p = markerFilePath(estado.SID);
   const tmp = `${p}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(marker, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify(require('./run-dir.js').marcadorConRutas(marker, { avisar: true }), null, 2) + '\n', 'utf8');
   fs.renameSync(tmp, p);
   avisarOficina();
 }
@@ -351,7 +355,10 @@ function syncSessionState(sid) {
 // El cierre de la ejecución de `sesion` en el registro, con su carpeta, y la copia de la apertura borrada
 // (lib/open-runs.js). Todo camino que borra un marcador pasa por acá: sin el cierre, la sesión quedaría con su apertura
 // sin marcador y frenaría como perdida. Que falle no frena el comando: se dice.
-function cerrarEjecucion(sesion, m, { extra, registrar: _registrar, ...campos } = {}) {
+function cerrarEjecucion(sesion, marcador, { extra, registrar: _registrar, ...campos } = {}) {
+  // el embudo de todo lo que cierra un marcador (clear, restore, la adopción): con la carpeta absoluta contra su repo, el
+  // cierre encuentra la copia de la apertura desde cualquier carpeta
+  const m = conRutas(marcador);
   try {
     require('./open-runs.js').cerrar({
       sid: estado.SID, sesion, runDir: (m && m.runDir) || null, story: m && m.storyId != null ? String(m.storyId) : null,
@@ -609,9 +616,10 @@ function planParaLaPersona(planTxt) {
 function planVisto(marker, planTxt, { porElCuadro = false } = {}) {
   const visto = planEnLaConversacion(planTxt);
   if (!visto.legible || visto.mostrado) return visto;
-  // el cuadro de la firma muestra «Qué hace», los archivos y la ruta del plan completo (signature-sources.js): con esas
-  // dos secciones legibles, el click en el cuadro es aprobar viéndolo. Un «aprobado» escrito, la ventana o la terminal
-  // no lo muestran. El plan entero se muestra si la persona lo pide
+  // el cuadro de la firma muestra «Qué hace», cuántos archivos toca y de qué zonas, y dónde está el plan completo
+  // (owner-approvals.js `cuadroDe`; las rutas van a su detalle): con esas dos secciones legibles, el click en el cuadro es
+  // aprobar viéndolo: la cantidad y las zonas de los archivos alcanzan para decidir. Un «aprobado» escrito, la ventana o
+  // la terminal no lo muestran. El plan entero se muestra si la persona lo pide
   if (porElCuadro) {
     let secciones = null;
     try { secciones = require(path.join(estado.SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js')).seccionesDelPlan(planTxt); } catch (e) {
@@ -1051,4 +1059,4 @@ function formasDeFirmarArchivo(firma, archivo, sesion) {
   }
 }
 
-module.exports = { estado, isNil, nn, at, fs, os, path, stateDirOf, resolveSessionId, homeCommand, signatureCommand, STEPS_LIB, STATE_DIR, ACTIVE_DIR, LEGACY_MARKER_PATH, STALE_HOURS, PROPIA, PEDIDA, PREVIO, LOGS_DEL_CHEQUEO, PARA_OTRA_SESION, PARTICION, reglaParaOtra, ownerWindow, paraOtraSesion, ensureActiveDir, nowIso, markerFilePath, firmadaDespuesDe, pruneStale, appendLog, readMarker, sinFirmaNoSeEscribe, avisarOficina, writeMarker, syncSessionState, cerrarEjecucion, frenarSiIlegible, frenarSiPerdida, perdidaSinFrenar, vueltaCongeladaComprobada, comprobarLoRevisado, sellosDe, veredictoPaseAdversarial, paseAtendido, mensajeDelPaseAdversarial, PLAN_FILE, planDeLaCorrida, huellaDelPlan, planEnLaConversacion, planParaLaPersona, planVisto, anotarAprobacion, quienDeLasOpciones, firmaDelDueno, trabajarSobreElDestino, porDe, anotarOtraVuelta, PASO_ARRANCABLE, arrancable, anotarArranque, resolveStoryPath, markerStoryIsUi, markerScreenRule, screenRule, TANDAS_MEDIDAS, tandasMedidasDe, avisarBajaDePantalla, testsNotMeasuredLine, OLD_FLAGS, motivoDe, opcion, fechaLocal, sumarDias, esFecha, dondeViveLaHistoria, deudaDeLaMatriz, hermanosDeLaCorrida, carpetaDeLaCorrida, anotarSalteoEnElRegistro, quitarSalteoDelRegistro, parkedPath, marcaDe, esperaGuardar, conHoraDelPaso, sessionLiveness, untilIso, warnPastUntil, reposParaComparar, formasDeFirmarArchivo };
+module.exports = { estado, isNil, nn, at, fs, os, path, stateDirOf, resolveSessionId, homeCommand, signatureCommand, STEPS_LIB, STATE_DIR, ACTIVE_DIR, LEGACY_MARKER_PATH, STALE_HOURS, PROPIA, PEDIDA, PREVIO, LOGS_DEL_CHEQUEO, PARA_OTRA_SESION, PARTICION, reglaParaOtra, ownerWindow, paraOtraSesion, ensureActiveDir, nowIso, markerFilePath, firmadaDespuesDe, pruneStale, appendLog, conRutas, readMarker, sinFirmaNoSeEscribe, avisarOficina, writeMarker, syncSessionState, cerrarEjecucion, frenarSiIlegible, frenarSiPerdida, perdidaSinFrenar, vueltaCongeladaComprobada, comprobarLoRevisado, sellosDe, veredictoPaseAdversarial, paseAtendido, mensajeDelPaseAdversarial, PLAN_FILE, planDeLaCorrida, huellaDelPlan, planEnLaConversacion, planParaLaPersona, planVisto, anotarAprobacion, quienDeLasOpciones, firmaDelDueno, trabajarSobreElDestino, porDe, anotarOtraVuelta, PASO_ARRANCABLE, arrancable, anotarArranque, resolveStoryPath, markerStoryIsUi, markerScreenRule, screenRule, TANDAS_MEDIDAS, tandasMedidasDe, avisarBajaDePantalla, testsNotMeasuredLine, OLD_FLAGS, motivoDe, opcion, fechaLocal, sumarDias, esFecha, dondeViveLaHistoria, deudaDeLaMatriz, hermanosDeLaCorrida, carpetaDeLaCorrida, anotarSalteoEnElRegistro, quitarSalteoDelRegistro, parkedPath, marcaDe, esperaGuardar, conHoraDelPaso, sessionLiveness, untilIso, warnPastUntil, reposParaComparar, formasDeFirmarArchivo };

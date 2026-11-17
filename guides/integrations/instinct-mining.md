@@ -145,10 +145,23 @@ arma cada noche, a las 02:00 UTC, el pipeline de la organización `pipelines/ope
   catálogo del arnés, y por el saneado de la grabadora.
 - **Deja un archivo por propuesta** en `inbox/instincts/propuestas/<huella>.json` del repo de operaciones (como mucho 50
   nuevas por noche; las demás esperan a la siguiente) y el informe de la noche en `.dashboard/instincts/`. Lo decidido no
-  se vuelve a proponer ni se toca. Las propuestas se deciden en la pestaña Aprendizajes del sitio.
+  se vuelve a proponer ni se toca. Las propuestas se deciden en la pestaña Aprendizajes del sitio (ver abajo).
 - **El resumen de la mañana** suma la línea «aprendizajes: …» con las propuestas nuevas y las que esperan decisión.
 
 `/tycon-instincts` sigue sólo para las propuestas de antes (las de `pending/` y `promoted/`): ya no tiene `run`.
+
+### Dónde se decide y adónde va lo aprobado
+
+Las propuestas del equipo se deciden en la pestaña **Aprendizajes** del sitio de la organización, sólo para quien
+mantiene (`guides/organization-site.md`, «Aprendizajes»). Aprobar confirma el texto de la regla, en una línea, y un
+pedido al repo del perfil la agrega al bloque `packs/<paquete>/claude-md-blocks/team-learnings.md` de un paquete que la
+organización ya tiene: cada máquina del equipo la recibe en su `CLAUDE.md` (y en el `AGENTS.md` de Codex) con la
+próxima actualización. Rechazar pide un motivo. Las dos decisiones quedan en el archivo de la propuesta, por pedido al
+repo de operaciones, y la noche no las vuelve a proponer.
+
+**El repo de operaciones tiene que ser de lectura sólo para quienes mantienen.** Ahí viven las propuestas: lo que se
+repite en el trabajo de cada máquina, saneado pero no pensado para todo el equipo. En Azure DevOps, el grupo de los
+devs (`Readers`) con la lectura negada en ese repo; en GitHub, un repo privado con acceso sólo para quienes mantienen.
 
 ### Verificar instalación
 
