@@ -110,7 +110,7 @@ function laboratorio(t, { sensible = null, designada = COORD, plan = PLAN } = {}
   lab.constancia = (lanza = COORD) => path.join(estado, 'plan-review', lanza, `${DESTINO}.json`);
   /** El pedido de la ventana, como lo arma el freno ante el comando de ses-coord (con la delegación concedida o no). */
   lab.pedir = (cmd, { delegada = false } = {}) => ow.decidir({
-    evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+    evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
     escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora: AHORA,
     delegacion: delegada ? () => ({ ok: true, maquina: HUELLA }) : () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
   lab.comando = (args) => `node ${MARKER} ${args.map(comillas).join(' ')}`;
@@ -951,10 +951,11 @@ test('NoRegresion_PersonaYOtrasFirmas (T19) @story-1.29 @ac-19 @ac-20', (t) => {
   // otra firma delegada (el ok de guardar) firma sin pedir revisión: owner-window no la condiciona
   const casa = lab.home;
   const cmd = `node ${MARKER} approve-save --for-session ${DESTINO}`;
-  const pedido = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_02', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+  const pedido = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_02', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
     escapes: [], arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA, delegacion: () => ({ ok: true, maquina: HUELLA }), clasificar: () => null });
   assert.strictEqual(pedido.decision, 'allow');
-  const e = ow.exigir({ firma: 'save', argv: [MARKER, 'approve-save', '--for-session', DESTINO], pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: COORD });
+  // el guion de guardar pasa su control previo (los controles de la delegación); acá deja pasar
+  const e = ow.exigir({ firma: 'save', argv: [MARKER, 'approve-save', '--for-session', DESTINO], pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: COORD, antes: () => null });
   assert.deepStrictEqual([e.codigo, e.via], [0, 'delegacion']);
 });
 

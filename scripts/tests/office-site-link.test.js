@@ -1167,7 +1167,7 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
     { pid: 200, ppid: 100, inicio, comando: '/bin/bash /h/scripts/hooks/safety-guard-pre.sh' }, { pid: 201, ppid: 200, inicio, comando: 'node /h/scripts/lib/owner-window.js gate' }];
   const askedAt = Date.now();
   const asked = ow.decidir({
-    evento: { session_id: 's1', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: `node ${MARKER()} mark-tested --acs 3` } },
+    evento: { session_id: 's1', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: `node ${MARKER()} mark-tested --acs 3` } },
     arbol, pid: 201, casa: m.home, ahora: askedAt, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null, comprobar: () => null, aprobador: () => ({ label: 'Tu firma' }),
   });
   assert.strictEqual(asked.decision, 'ask', JSON.stringify(asked));
@@ -1201,7 +1201,7 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
   const ask = (id) => {
     const t0 = Date.now();
     const r = ow.decidir({
-      evento: { session_id: 's1', tool_use_id: id, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: `node ${MARKER()} mark-tested --acs 3` } },
+      evento: { session_id: 's1', tool_use_id: id, hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: `node ${MARKER()} mark-tested --acs 3` } },
       arbol, pid: 201, casa: m.home, ahora: Date.now(), delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null, comprobar: () => null, aprobador: () => ({ label: 'Tu firma' }),
     });
     return { r, ms: Date.now() - t0 };

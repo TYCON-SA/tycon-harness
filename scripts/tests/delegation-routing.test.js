@@ -148,7 +148,8 @@ function correLaCoordinadora(L, firma, cmd, { delegacion, clasificar } = {}) {
   const r = ow.decidir(pedido(L, 'ses-coord', cmd, { cwd: L.propio, arbol: DE_PESTANA, modo: 'default', delegacion, clasificar }));
   if (r.decision !== 'allow') return { r };
   const argv = ow.canonica(cmd);
-  const e = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(L.casa, cmd), casa: L.casa, ahora: AHORA + MIN, propia: 'ses-coord' });
+  // el guion de verdad pasa su control previo (sin él, la delegación no firma); acá deja pasar: lo prueba cada guion
+  const e = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(L.casa, cmd), casa: L.casa, ahora: AHORA + MIN, propia: 'ses-coord', antes: () => null });
   return { r, e };
 }
 const TEXTO_DESVIO = /^Esta firma la da la coordinadora por delegación: quedó anotada \(firma-[0-9a-f]+\)\. No le pidas nada a la persona ni repitas el comando: esperá su aviso\.$/;

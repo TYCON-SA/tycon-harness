@@ -1396,6 +1396,20 @@ function firmaDelDueno(firma, resumen, opciones = {}) {
   return trabajarSobreElDestino(ow, r);
 }
 
+// El control previo de lo que aprueba la revisión automática del plan sin persona (por la delegación o «hecho y avisado»):
+// la revisión que lanzó la sesión que firma, aprobada, sobre este plan y esta historia (lib/plan-review.js antesDeAprobar).
+// `{ via: 'revision', resumen, constancia }` para firmar, el `{ codigo, motivo }` de la revisión para no, y null con la
+// ventana, la terminal o un click.
+function antesDeLaRevision({ marker }) {
+  return (via) => {
+    if (via !== 'delegacion') return null;
+    const r = require('./lib/plan-review.js').antesDeAprobar({ estado: STATE_DIR, firmante: PROPIA, destino: SID, marker });
+    if (r.codigo) return r;
+    const c = r.constancia;
+    return { via: 'revision', resumen: `plan de ${marker.storyId}: revisión ${c.id} ${c.veredicto} (${c.modelo})`, constancia: c };
+  };
+}
+
 // Con la firma, el guion trabaja sobre la sesión destino (la corrida que vio el dueño, su marcador abierto): lo fija
 // owner-window.js, también para las bibliotecas y los procesos hijos. Sale 2 sin escribir si la corrida cambió.
 function trabajarSobreElDestino(ow, r) {
@@ -1679,12 +1693,13 @@ function cmdCompleteStep(nRaw, flags) {
       }
     }
     let revision = autoRevision;
+    const porLaRevision = antesDeLaRevision({ marker });
     const antesDelPlan = (via, registro) => {
       if (via === 'delegacion') {
-        const r = require('./lib/plan-review.js').antesDeAprobar({ estado: STATE_DIR, firmante: PROPIA, destino: SID, marker });
+        const r = porLaRevision(via);
         if (r.codigo) return r;
         revision = r.constancia;
-        return { via: 'revision', resumen: `plan de ${marker.storyId}: revisión ${revision.id} ${revision.veredicto} (${revision.modelo})` };
+        return { via: r.via, resumen: r.resumen };
       }
       // con la aprobación a la vista, sólo su click en el cuadro cuenta como ver el plan; sin ella (el chequeo previo del
       // freno, antes de dar el cuadro), el click todavía puede llegar
@@ -2842,7 +2857,15 @@ function cmdApproveMockup(flags) {
   if (!v.ok) no(`la maqueta no pasa mockup.js check (${p.mockup}):`, v.findings.map((x) => `- ${x.line ? `línea ${x.line}: ` : ''}${x.what}`));
   const sha = mk.mockupHash(html);
   const prev = marker.mockupApproval && marker.mockupApproval.sha256;
-  const firma = firmaDelDueno('plan-approval', `maqueta de ${marker.storyId}: ${cita}`);
+  // sin persona, la maqueta la reaprueba sólo la coordinadora con la revisión que ella lanzó; la de la propia sesión no
+  // cuenta para una pantalla (como la aprobación del plan sin --approved: una historia con pantalla no se aprueba sola)
+  const porLaRevision = antesDeLaRevision({ marker });
+  const antesDeLaMaqueta = (via) => {
+    if (via !== 'delegacion') return null;
+    if (PROPIA === SID) return { codigo: 1, motivo: 'la maqueta de una pantalla la reaprueba una persona o la coordinadora: la revisión que lanzó la propia sesión no cuenta para una pantalla' };
+    return porLaRevision(via);
+  };
+  const firma = firmaDelDueno('plan-approval', `maqueta de ${marker.storyId}: ${cita}`, { antes: antesDeLaMaqueta });
   const at = nowIso();
   try { mk.writeApproval({ approvalPath: p.approval, mockupPath: p.mockup, story: marker.storyId, sha256: sha, approvedAt: at }); } catch (e) {
     no(`no pude escribir la aprobación de la maqueta (${p.approval}): ${e.code || e.message}`);
@@ -5563,7 +5586,13 @@ function cmdSalidaPerdida(modo, sesion) {
     }
   }
   // el dueño lo aprueba en la ventana de permiso (o lo corre con --terminal): sin eso, el guion no cierra ni rearma nada
-  const firma = firmaDelDueno(porParticion ? 'lost-run:particion' : 'lost-run', `${modo === 'lost' ? `cerrar como perdida${porParticion ? ' (la partición de su historia la dejó sin objeto)' : ''}` : 'restaurar'} la ejecución de la story ${apertura.story} (sesión ${sesion})`);
+  // por la delegación: el cierre por partición, sólo con una historia de rutina; cerrar como perdida o restaurar, nunca
+  const antesDelCierre = (via) => {
+    if (via !== 'delegacion') return null;
+    if (!porParticion) return { codigo: 1, motivo: 'cerrar como perdida una ejecución, o restaurarla, lo decide una persona: por delegación no se firma' };
+    return require('./lib/plan-review.js').rutinaParaDelegar({ story: apertura.storyPath ? path.resolve(apertura.repo || process.cwd(), apertura.storyPath) : null, repo: apertura.repo || null });
+  };
+  const firma = firmaDelDueno(porParticion ? 'lost-run:particion' : 'lost-run', `${modo === 'lost' ? `cerrar como perdida${porParticion ? ' (la partición de su historia la dejó sin objeto)' : ''}` : 'restaurar'} la ejecución de la story ${apertura.story} (sesión ${sesion})`, { antes: antesDelCierre });
   const { via } = firma;
   const cita = null;
   // pedida para otra sesión, la constancia dice cuál la pidió (SID ya es la destino)
@@ -6363,7 +6392,8 @@ function cmdCompareWaiver(argv) {
     firmaDada = firmadoEnLaTerminal('compare-waiver', resumen);
     entrada = { tipo: 'manual', quien, via: 'compare-waiver (terminal)' };
   } else {
-    const firma = firmaDelDueno('compare-waiver', resumen);
+    // por la delegación, sólo en una historia de rutina
+    const firma = firmaDelDueno('compare-waiver', resumen, { antes: (via) => (via === 'delegacion' ? require('./lib/plan-review.js').rutinaParaDelegar({ marker: m }) : null) });
     firmaDada = firma;
     const q = quienFirmo(firma, process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona');
     entrada = { ...q, via: `compare-waiver (${q.via})` };
@@ -6467,7 +6497,11 @@ function cmdApprovePending(argv) {
   const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
   const { casaDeLaCuenta } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'real-home.js'));
   // la firma va al registro de la casa de la cuenta: es el que lee el pre-commit
-  const r = ow.exigir({ firma: PA.FIRMA, argv: process.argv.slice(1), resumen: `huella ${linea.huella} · ${id} · ${pendiente.linea.slice(0, 140)}`, casa: casaDeLaCuenta(), propia: undefined });
+  // sin persona, los mismos controles que la delegación, comprobados acá y no sólo en el freno: la sesión que pide no es
+  // la que abrió el pendiente, es la coordinadora confirmada, y el repo es de la sesión destino
+  const DS = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js'));
+  const antes = (via, reg) => DS.antesDelPendiente({ via, registro: reg, propia: PROPIA === '_nosession' ? null : PROPIA, pedida: PEDIDA, estado: STATE_DIR, cwd: process.cwd(), repo });
+  const r = ow.exigir({ firma: PA.FIRMA, argv: process.argv.slice(1), resumen: `huella ${linea.huella} · ${id} · ${pendiente.linea.slice(0, 140)}`, casa: casaDeLaCuenta(), propia: undefined, antes });
   if (r.codigo !== 0) { console.error(`🔒 marker.js approve-pending: no se aprobó ${id} — ${r.motivo}`); process.exit(r.codigo); }
   const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
   const q = r.via === 'terminal' ? { tipo: 'manual', quien: persona } : quienFirmo(r, persona);

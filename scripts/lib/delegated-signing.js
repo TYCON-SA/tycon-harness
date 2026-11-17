@@ -243,7 +243,7 @@ function reposDe(estado, sid, raiz, { estricto = false } = {}) {
 }
 
 /** Por qué el repo del pendiente no admite la delegación, o null: tiene que ser de `destino` y no de `sesion`. */
-function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz }) {
+function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz = raizDelRepo }) {
   // sin la carpeta del pedido no se sabe cuál es el checkout de la coordinadora
   if (!cwd) return 'el pedido no dice desde qué carpeta se corre';
   const delPendiente = raiz(path.resolve(cwd, repo || '.'));
@@ -260,6 +260,32 @@ function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz }) {
   if (delDestino === undefined) return `no pude leer el marcador o el arreglo rápido de la sesión ${destino}`;
   if (!delDestino.includes(delPendiente.clave)) return `${delPendiente.ruta} no es un repo donde trabaja la sesión ${destino} (ni su ejecución abierta ni su arreglo rápido)`;
   return null;
+}
+
+/**
+ * El control previo de aprobar un pendiente sin persona («hecho y avisado» o la delegación), el `antes` de
+ * `marker.js approve-pending`: null para firmar, o `{ codigo, motivo }`. Con la ventana, la terminal o un click, null.
+ * Las sesiones salen del registro de la firma (`sesion`, la que pidió, y `destino`); en el chequeo previo del freno el
+ * registro trae sólo la vía, y salen de `propia` y `pedida` (`--for-session`), como las arma el freno. Lo que mira, lo
+ * mismo que la delegación: la que pide no es la destino, es la coordinadora designada y confirmada (`designada`, de
+ * fábrica con la clave del perfil, `confirmedDesignation`), y el repo del pendiente es de la destino (`motivoDelRepo`).
+ */
+function antesDelPendiente({ via, registro, propia = null, pedida = null, estado, cwd, repo, raiz = raizDelRepo, designada } = {}) {
+  const sinPersona = via === 'delegacion' || (registro && ['avisado', 'delegacion'].includes(registro.via));
+  if (!sinPersona) return null;
+  const no = (motivo) => ({ codigo: 1, motivo });
+  const soloLaVia = !registro || Object.keys(registro).every((k) => k === 'via');
+  const sesion = soloLaVia ? propia : registro.sesion;
+  const destino = soloLaVia ? (pedida || propia) : registro.destino;
+  if (!sesion || !destino) return no('el registro de la firma no dice para qué sesión es: un pendiente no se aprueba sin persona sin saberlo');
+  if (sesion === destino) return no('un pendiente que abrió esta sesión lo aprueba una persona o la coordinadora, no ella misma');
+  const esLaCoordinadora = designada || ((s) => {
+    const d = confirmedDesignation({ state: estado, gates: path.join(estado, 'gates.log') });
+    return d.ok && d.designacion.sesion === s;
+  });
+  if (!esLaCoordinadora(sesion)) return no(`la sesión que pide no es la coordinadora designada (y confirmada por el dueño): ${sesion}`);
+  const m = motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz });
+  return m ? no(m) : null;
 }
 
 /**
@@ -320,6 +346,6 @@ function cli(argv) {
   return 2;
 }
 
-module.exports = { accountPaths, confirmationRecord, confirmaLaDesignacion, confirmedDesignation, delegaSinVentana, firmaPorElDueno, signerOf, NUNCA_DELEGABLES };
+module.exports = { accountPaths, confirmationRecord, confirmaLaDesignacion, confirmedDesignation, delegaSinVentana, firmaPorElDueno, signerOf, NUNCA_DELEGABLES, motivoDelRepo, antesDelPendiente };
 
 if (require.main === module) process.exit(cli(process.argv.slice(2)));

@@ -615,7 +615,17 @@ plan y abrir un arreglo rápido. Pasan por los mismos controles que la delegaci�
 
 - el ok de guardar, sólo con la historia limpia y sin nada sensible;
 - el plan, con la revisión automática aprobada y nunca uno delicado;
+- la maqueta (`approve-mockup`), igual que el plan, y nunca la de la propia sesión: la revisión que lanzó la sesión que
+  implementa no cuenta para una pantalla, así que en su pestaña sin permisos la maqueta pide el click;
+- el pendiente (`approve-pending`), sólo si lo pide la coordinadora confirmada para otra sesión y sobre un repo de esa
+  sesión: el que abrió una sesión no se lo aprueba ella misma;
 - el arreglo rápido, con el cupo delegado y sin tocar lo sensible.
+
+La regla vale para toda firma que sale sin persona, por «hecho y avisado» o por la delegación: pasa por el control
+previo de su guion, y una firma cuyo guion no trae ese control no sale por esas vías (pide el click). Lo que el perfil
+puede delegar y no tenía control propio (eximir de la comparación con main, preparar la prueba con navegador, cerrar
+una ejecución que la partición de su historia dejó sin objeto) sale sólo con una historia de rutina. Un evento de la
+herramienta que no dice el modo de la pestaña cuenta como una pestaña sin permisos.
 
 A la persona le llega el aviso por los canales de la sesión. Subir el tope de un arreglo rápido que ya existe sigue
 siendo una firma. Todo lo de nivel 2 y 3 también: eximir un crítico, saltear el pase, un criterio que no se prueba en

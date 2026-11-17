@@ -522,7 +522,7 @@ test('SignatureQuestion_WindowBoxAndList_SameText (T40)', (t) => {
   const arbol = [{ pid: 1, ppid: 0, inicio: 'Mon Nov 02 08:00:00 2026', comando: '/sbin/launchd' }, herramienta,
     { pid: 200, ppid: 100, inicio: herramienta.inicio, comando: '/bin/bash /h/scripts/hooks/safety-guard-pre.sh' },
     { pid: 201, ppid: 200, inicio: herramienta.inicio, comando: 'node /h/scripts/lib/owner-window.js gate' }];
-  const r = ow.decidir({ evento: { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: APRUEBA_PLAN }, cwd: c.repo },
+  const r = ow.decidir({ evento: { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: APRUEBA_PLAN }, cwd: c.repo },
     arbol, pid: 201, casa: c.casa, ahora: Date.parse('2026-11-04T12:30:00Z'), delegacion: () => ({ ok: false, motivo: 'sin delegación' }), clasificar: () => null, comprobar: () => null });
   assert.strictEqual(r.decision, 'ask', r.texto);
   assert.ok(r.texto.includes(q.texto), `la ventana no dice la pregunta del cuadro:\n${r.texto}\n${q.texto}`);
@@ -750,7 +750,7 @@ const delegacionReal = (o) => DS.delegaSinVentana({ ...o, perfil: () => PERFIL, 
 // el click lo valida el gancho de la herramienta; acá, la aprobación anotada y su búsqueda de verdad
 const aprobaciones = { buscar: (o) => oa.buscar({ ...o, validar: () => ({ ok: true }) }), consumir: oa.consumir, devolver: oa.devolver, coordinadoraConfirmada: () => null };
 const pedirControl = (c, cmd, { sesion = 'ses-coord', modo, comprobar = () => null } = {}) => ow.decidir({
-  evento: { session_id: sesion, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, cwd: c.repo, ...(modo ? { permission_mode: modo } : {}) },
+  evento: { session_id: sesion, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd }, cwd: c.repo, ...(modo ? { permission_mode: modo } : {}) },
   escapes: [], arbol: arbolDelFreno(), pid: 201, casa: c.casa, ahora: AHORA, delegacion: delegacionReal, clasificar: () => null,
   ...(comprobar ? { comprobar } : {}), aprobador: () => APPROVERS.maintainers, aprobaciones });
 const anotarClick = (c, sesion) => oa.anotar(c.casa, { tipo: 'click', sesion, ts: new Date(AHORA - 60000).toISOString(), tool_use_id: 'toolu_1', herramienta: { pid: 100, inicio: INICIO } });

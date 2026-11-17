@@ -642,6 +642,28 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
 }
 
 /**
+ * El control previo mínimo de una firma de rutina que el perfil puede delegar y no tiene uno propio (eximir de la
+ * comparación con main, preparar la prueba con navegador, cerrar una ejecución que la partición dejó sin objeto): la
+ * historia del destino no es delicada. null para firmar, o `{ codigo: 2, motivo }`. La historia y su repo salen del
+ * marcador, o de `story` y `repo` (sin marcador); con el marcador, también su plan y su tanda, como `antesDeAprobar`.
+ * Si no se puede saber, cuenta como delicada.
+ */
+function rutinaParaDelegar({ marker = null, story = null, repo = null } = {}) {
+  const storyFile = story || (marker ? storyDe(marker) : null);
+  if (!storyFile) return no('historia delicada o sin saber: la firma no dice de qué historia es, y sin persona no sale');
+  let planTexto = '';
+  let batch;
+  if (marker && marker.storyId != null) {
+    try { planTexto = planDe(marker).texto || ''; } catch (_) { planTexto = ''; }
+    let storyTexto = null;
+    try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
+    batch = batchDe(parteDe(marker, storyTexto));
+  }
+  const delicate = pipeline().computeDelicate({ story: storyFile, repo: repo || (marker && marker.repoPath) || undefined, planText: planTexto, batch });
+  return delicate.value ? no(`historia delicada (nivel 2): por delegación no se firma; la firma una persona (${delicate.reason})`) : null;
+}
+
+/**
  * Lo que la aprobación del plan comprueba con el pedido sin gastar: sólo por delegación; la ventana y la terminal, no.
  * La aprobación sin click de la propia sesión no pasa por acá: `complete-step approve-plan` llama a `antesDeAprobar`
  * directo, con la propia sesión como firmante y destino.
@@ -727,7 +749,7 @@ const rutaResultado = (estado, lanza, destino) => path.join(carpetaDe(estado, la
 
 module.exports = {
   rutaResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
-  ultimaDelDestino, antesDeAprobar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
+  ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, huellaDe, designadaDeVerdad, sha,
   tieneRenglon, parteDe, problemaDelAprobador, esProblemaDelAprobador, revisionesViejas,
 };

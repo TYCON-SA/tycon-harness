@@ -184,7 +184,7 @@ test('MarcaAMano_ForSession_EscribeLaCorridaDestino (T5) @story-8.142 @ac-2 @ac-
   const args = ['mark-tested', '--acs', '1,2', '--approved-by', 'Dev de Prueba', '--for-session', 's-dest'];
   const cmd = `node ${MARKER} ${args.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`;
   const ahora = Date.now();
-  const p = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+  const p = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
     escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
   assert.equal(p.decision, 'ask', p.texto);
   const r = spawnSync(process.execPath, [MARKER, ...args], { cwd: lab.repo, encoding: 'utf8',

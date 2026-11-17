@@ -379,7 +379,7 @@ const SIN_DELEGACION = () => ({ ok: false, motivo: 'sin delegación en la prueba
 
 function pedir(casa, cmd, { modo, aprobaciones, delegacion = SIN_DELEGACION } = {}) {
   const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
-  const evento = { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, ...(modo ? { permission_mode: modo } : {}) };
+  const evento = { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, permission_mode: modo || 'default' };
   return ow.decidir({ evento, escapes: [FIRMA], arbol: ARBOL, pid: 201, casa, ahora: AHORA, delegacion, clasificar: () => null, comprobar: () => null, aprobaciones });
 }
 

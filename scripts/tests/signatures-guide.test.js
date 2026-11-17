@@ -374,3 +374,15 @@ test('Coordinadora_FirmasPorClick_ReglasEnLaGuia — el dueño firma desde el ce
   const paso = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'steps', 'step-04-approve-plan.md'), 'utf8');
   assert.match(paso, /Salvo con el cuadro de la firma[\s\S]*?cuenta como plan visto/, 'step-04-approve-plan.md');
 });
+
+test('T19 SignaturesGuide_NotifiedSection_NamesMockupAndPending @story-8.255 @ac-19', () => {
+  const guia = fs.readFileSync(GUIA, 'utf8');
+  const titulo = '### Lo de rutina en una pestaña sin permisos: hecho y avisado';
+  const i = guia.indexOf(`\n${titulo}\n`);
+  assert.ok(i >= 0, `la guía no tiene la sección «${titulo}»`);
+  const resto = guia.slice(i + titulo.length + 2);
+  const fin = resto.search(/\n#{2,3} /);
+  const seccion = fin >= 0 ? resto.slice(0, fin) : resto;
+  for (const comando of ['approve-mockup', 'approve-pending']) assert.ok(seccion.includes(comando), `la sección no nombra ${comando}`);
+  assert.match(seccion, /control\s+previo/, 'la sección dice la regla');
+});
