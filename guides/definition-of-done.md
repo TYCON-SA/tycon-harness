@@ -132,10 +132,10 @@ curl -s -o /tmp/r -w "HTTP %{http_code}\n" \
 `TYCON_MEASURE <nombre>=<valor><unidad>` (por ejemplo, el p95 de 100 pedidos); la matriz compara contra la cota del
 criterio, y fuera de ella el criterio no sale verde.
 
-Lo que eso promete y lo que no: es **una corrida, en un entorno** (el de la máquina que corrió el humo, que va en su
+Lo que eso promete y lo que no: es **una ejecución, en un entorno** (el de la máquina que corrió el humo, que va en su
 procedencia). No es una prueba de carga ni dice nada de producción, y el servidor de CI no la ve: el portón del
 servidor sólo mira que existan los archivos. Un valor de `TYCON_MEASURE` es lo que el comando dice: el arnés garantiza
-que no se editó después de la corrida (lo confirma contra el espejo del home), no que el número sea una medición
+que no se editó después de la ejecución (lo confirma contra el espejo del home), no que el número sea una medición
 honesta. `duration_ms` sí lo toma el arnés, con el reloj de pared alrededor del comando.
 
 ### 1.bis. Smoke runtime de failure paths (obligatorio cuando la story tiene fallback/retry/circuit)
