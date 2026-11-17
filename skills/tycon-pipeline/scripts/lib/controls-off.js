@@ -37,7 +37,7 @@ const SIN_LISTA = 'no pude leer la lista de interruptores';
 
 /**
  * El lector de la lista: el del mismo árbol (el repo unido) o, con las skills en un clon aparte, el del lugar del arnés
- * (`~/.claude/tycon-harness`). Del lugar se toma sólo el enlace, nunca `TYCON_GUIDES_DIR`: la variable la puede poner
+ * (el enlace que crea el instalador). Del lugar se toma sólo el enlace, nunca `TYCON_GUIDES_DIR`: la variable la puede poner
  * el agente, y la lista decide qué apaga un control. Si no hay lector, uno que dice que no pudo leerla: `apaga()` juzga
  * sin la lista, que frena más.
  */
