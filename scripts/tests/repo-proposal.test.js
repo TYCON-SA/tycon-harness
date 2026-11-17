@@ -353,6 +353,26 @@ test('T37d ArchivosDelPedido_RutasYCuerpo_AzureYGithub — lo que trae un pedido
   }
 });
 
+// EstadoDelPedido_AbiertoAplicadoCerrado_AzureYGithub
+// 🔴 Falla con: un pedido cerrado sin mergear tomado por aprobado, o «no pude mirar» tomado por cerrado.
+test('T37e EstadoDelPedido_AbiertoAplicadoCerrado_AzureYGithub — cómo terminó un pedido que ya no está abierto', async () => {
+  const tokenApi = `api-${crypto.randomBytes(4).toString('hex')}`;
+  for (const plataforma of ['azure', 'github']) {
+    const api = plataforma === 'azure' ? await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'ops', token: tokenApi }) : await arrancarGithubFalso({ owner: 'acme', repo: 'ops', token: tokenApi });
+    try {
+      const casos = plataforma === 'azure'
+        ? [[{ status: 'active' }, 'abierto'], [{ status: 'completed' }, 'aplicado'], [{ status: 'abandoned' }, 'cerrado']]
+        : [[{ state: 'open' }, 'abierto'], [{ state: 'closed', merged_at: '2026-10-25T12:00:00Z' }, 'aplicado'], [{ state: 'closed', merged_at: null }, 'cerrado']];
+      casos.forEach(([estado], i) => api.st.pedidos.push(plataforma === 'azure'
+        ? { pullRequestId: i + 1, sourceRefName: 'refs/heads/team-config/decisiones-x-20261025-120000', targetRefName: 'refs/heads/main', title: 't', description: '', ...estado }
+        : { number: i + 1, html_url: `https://github.com/acme/ops/pull/${i + 1}`, title: 't', body: '', head: { ref: 'team-config/decisiones-x-20261025-120000' }, base: { ref: 'main' }, ...estado }));
+      const base = { remote: plataforma === 'azure' ? REMOTO_AZURE : REMOTO_GITHUB, credencial: { git: TOKEN, api: tokenApi }, urlBase: plataforma === 'azure' ? { azure: api.base } : { github: api.base } };
+      for (const [i, [, esperado]] of casos.entries()) assert.deepStrictEqual(await propuesta.estadoDelPedido({ ...base, numero: i + 1 }), { estado: esperado }, `${plataforma} ${esperado}`);
+      assert.ok((await propuesta.estadoDelPedido({ ...base, numero: 9 })).error, `${plataforma}: sin el pedido, un error`);
+    } finally { await api.cerrar(); }
+  }
+});
+
 test('T15c Registro_SinElCorreoDeQuienPropone @story-2.29 @ac-14 — el registro del sitio dice archivo y rama, no la persona', { skip: SIN_BACKEND }, async () => {
   const m = await montar({ plataforma: 'github' });
   try {

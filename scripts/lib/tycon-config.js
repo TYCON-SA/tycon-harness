@@ -236,6 +236,10 @@ const VOCABULARIO = Object.freeze({
     // La lista de lo que espera a la persona (signature-list.js): `on` el freno anota y al volver se las pasan de a una;
     // `off` (o sin valor), como si no existiera. No aprueba nada, así que también vale desde la máquina.
     signature_list: 'opcion:on|off',
+    // Cuántos minutos espera a la coordinadora una firma delegable que pidió la sesión que trabaja y el freno le desvió
+    // (delegation-routing.js): pasado el plazo, el renglón vuelve al dueño. Sin valor, 10. Sólo del perfil: si la máquina
+    // pudiera decirlo, el agente se estiraría el plazo.
+    delegation_wait_minutes: 'entero:1-60',
   }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
@@ -330,7 +334,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes']);
 // Hasta dónde puede subir cada tope del camino corto. El delegado, hasta 6: sube lo
 // mínimo, porque con riesgo normal ese carril no lleva revisores ni pase adversarial, y una historia de 6 archivos ya deja
 // de saltearse el pase. El de la firma común, hasta 12: evita el click aparte en un arreglo de 9 archivos y lo mantiene en

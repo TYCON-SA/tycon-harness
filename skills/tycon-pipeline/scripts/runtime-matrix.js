@@ -766,15 +766,29 @@ function tituloEjerceAc(titulo, n) {
   return new RegExp(`@ac-${n}\\b`).test(titulo);
 }
 
-// Escotilla propia (paralela a la de los smokes): sólo para desbloquear a alguien en el medio
-// de una story. Deja rastro a los gritos — la salida normal es ejecutar la acción o declararla.
-const LEGACY_NO_MUTATION_CHECK = process.env.TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK === '1';
+// Las dos escotillas de la matriz se leen en cada cálculo (`compute`, con su `env`), y cada una deja su renglón en
+// bypass.log (`anotarEscotillas`):
+//   · TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK=1 — no mira si la prueba de una acción la ejercitó. La salida normal es
+//     ejecutar la acción o declararla.
+//   · TYCON_RUNTIME_MATRIX_LEGACY=1 — apaga la clasificación: todo smoke cuenta como RUNTIME. Existe por si la
+//     clasificación bloquea a alguien del equipo en medio de una story y no hay tiempo de declarar
+//     `runtime_not_verifiable:`. NO es la salida normal — la salida normal es declarar el AC y waivearlo. Grita en las
+//     warnings.
+const ESCOTILLAS = [['TYCON_RUNTIME_MATRIX_LEGACY', 'RUNTIME_MATRIX_LEGACY'], ['TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK', 'RUNTIME_MATRIX_NO_MUTATION_CHECK']];
 
-// Escotilla de emergencia: apaga la clasificación (todo smoke cuenta como RUNTIME).
-// Existe por si la clasificación bloquea a alguien del equipo en medio de una story y no hay tiempo
-// de declarar `runtime_not_verifiable:`. NO es la salida normal — la salida normal es declarar el
-// AC y waivearlo, que deja rastro. Esto no deja ninguno, por eso grita en las warnings.
-const LEGACY_SMOKE_KINDS = process.env.TYCON_RUNTIME_MATRIX_LEGACY === '1';
+/**
+ * Un renglón en bypass.log por escotilla puesta, una vez por sesión, historia y día: la matriz se calcula varias veces
+ * por comando (el cierre, el gancho del commit, la guía de QA), y un renglón por cálculo contaría de más. La sesión
+ * sale de `opts.sessionId` o del ambiente; sin sesión, se anota en cada cálculo, con `sessionId: null`.
+ */
+function anotarEscotillas(env, sid, opts) {
+  const ES = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+  const sessionId = opts.sessionId || ES.sesionDe(env);
+  for (const [variable, kind] of ESCOTILLAS) {
+    if (env[variable] !== '1') continue;
+    ES.anotarEscape({ stateDir: opts.stateDir, sessionId, kind, variable, story: sid, unaVez: `${sid}`, storyPath: opts.storyPath || null });
+  }
+}
 
 // Ledger de smokes: JSONL {ts, story, acs, cmd, exit, via} escrito por smoke-run.sh.
 // Anti-forja: cada entry válida tiene un ESPEJO en ~/.claude/.tycon-pipeline/gates.log
@@ -1105,6 +1119,10 @@ function compute(opts) {
   }
   const { content, fm } = readStory(storyPath);
   const sid = storyIdFrom(fm, storyPath);
+  const env = opts.env || process.env;
+  const LEGACY_NO_MUTATION_CHECK = env.TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK === '1';
+  const LEGACY_SMOKE_KINDS = env.TYCON_RUNTIME_MATRIX_LEGACY === '1';
+  anotarEscotillas(env, sid, opts);
 
   if (/^dod_runtime_exempt:\s*true\b/m.test(fm)) {
     // el repo y los totales también en la exenta: el candado de la guía QA busca las pantallas desde

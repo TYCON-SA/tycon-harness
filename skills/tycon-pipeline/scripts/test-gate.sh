@@ -976,6 +976,8 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   fi
   if [[ "${TYCON_TEST_GATE_PART:-}" != "1" && "${TYCON_TEST_GATE_COMPANION:-}" != "1" ]]; then
     TG_TOP_FULL=1
+    # cuánto tardó la corrida de arriba, para su renglón en gates.log
+    _TG_T0_S="$(date +%s)"
     _tg_pend=0
     ( cd "$REPO" && node "$MARKER_JS" tests-failed pending --suites "$_TG_SUITES_FILE" --gate "$SCRIPT_DIR/test-gate.sh" --repo "$REPO_STORY" ${STORY_ARG:+--story "$STORY_ARG"} ) || _tg_pend=$?
     if [[ "$_tg_pend" == "76" ]]; then
@@ -1081,14 +1083,48 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # carpeta no cambió desde la completa ni desde cada repetición, cierra con lo guardado (la carpeta no cambió); si cambió
   # desde la completa (también por main traído), corren sólo las suites que leen lo cambiado, y cada repetida cuya
   # carpeta cambió después de repetirla vuelve a correr. Con cualquier duda (otro recorte, la lista de suites cambiada, lo
-  # guardado tocado), corre la completa como siempre. Después de una completa verde, lo mismo contra ella: siempre contra
-  # la completa de origen, nunca contra la última acotada; un cambio en un control, el instalador, lo compartido o la lista de suites, u otra historia,
-  # corre la completa como siempre. Sólo en un repo que acota el portón (la completa la corre después la CI del pedido) o
-  # en el árbol armado del privado (ahí la comparación es por repo). Lo guardado lo escriben `marker.js tests-failed
-  # save-red` y `save-green`, al final de una completa.
+  # guardado tocado), corre la completa como siempre. Después de un verde, lo mismo contra él: contra el último verde de la
+  # historia, que es una completa verde o el resumen juntado de un cierre en verde, nunca una acotada sola; un cambio en
+  # un control, el instalador, lo compartido o la lista de suites, u otra historia, corre la completa como siempre. Sólo
+  # en un repo que acota el portón (la completa la corre después la CI del pedido) o en el árbol armado del privado (ahí
+  # la comparación es por repo). Lo guardado lo escriben `marker.js tests-failed save-red` y `save-green`, al final de la
+  # corrida (bloque «Lo guardado de la historia»).
   _TG_RECORTE="${LIGHT_ARGS[*]-}"
   TG_CLOSE_MODE=""; TG_CLOSE_DIR=""; TG_CLOSE_ORIGIN=""
   _TG_MARKER_STORY="$(node "$MARKER_JS" get 2>/dev/null | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(t).storyId||""))}catch(e){}})' || true)"
+  # Cada corrida de arriba dice un solo renglón con su modo y su motivo, y lo anota al final. «primera»:
+  # el marcador no tiene la nota de una corrida terminada de esta historia en este repo (`testsSavedNote`); si la tiene
+  # y esa corrida no guardó, su motivo acompaña a «no hay un verde guardado».
+  TG_RUN_MODO=""; TG_RUN_MOTIVO=""; TG_RUN_TEXTO=""; TG_RUN_ORIGEN_AT=""
+  # `get` imprime `{}` sin corrida y también con un marcador roto: --strict sale distinto de 0 con el roto, y si no se
+  # pudo preguntar tampoco se sabe si es la primera
+  _TG_GET_RC=0
+  _TG_GET="$(node "$MARKER_JS" get --strict 2>/dev/null)" || _TG_GET_RC=$?
+  _TG_NOTA="?"
+  [[ "$_TG_GET_RC" == "0" && -n "$_TG_GET" ]] && _TG_NOTA="$(printf '%s' "$_TG_GET" | node -e '
+    let t=""; process.stdin.on("data",(d)=>{t+=d;}).on("end",()=>{ try {
+      if (!t.trim() || t.trim() === "null") return;
+      const m = JSON.parse(t); const fs = require("fs");
+      let r = process.argv[1]; try { r = fs.realpathSync(r); } catch (_) { /* la ruta tal cual */ }
+      const n = (Array.isArray(m.testsSavedNote) ? m.testsSavedNote : []).find((x) => x && x.repo === r && (x.storyId || null) === (m.storyId || null));
+      if (!n) return;
+      const d = new Date(n.at); const hh = Number.isNaN(d.getTime()) ? "??:??" : `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+      process.stdout.write(n.guardo === "no" ? `la última corrida, de las ${hh}, no guardó: ${n.motivo || "sin motivo"}` : "-");
+    } catch (e) { process.stdout.write("?"); } });' "$REPO_STORY" || true)"
+  # sin corrida abierta no hay nota: primera. Un marcador que no se deja leer no dice si es la primera: cuenta como
+  # entera, que nunca achica las repeticiones
+  _TG_PRIMERA_O_ENTERA=entera; [[ -z "$_TG_NOTA" ]] && _TG_PRIMERA_O_ENTERA=primera
+  [[ "$_TG_NOTA" == "?" ]] && _TG_NOTA="no pude leer el marcador: no sé si es la primera corrida"
+  _tg_completa() { TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="$1"; TG_RUN_TEXTO="corre la completa como siempre: $1"; }
+  if [[ "${TYCON_GATE_ALL_SUITES:-}" == "1" ]]; then
+    TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="TYCON_GATE_ALL_SUITES=1 pide correr todo"; TG_RUN_TEXTO="corre todo: $TG_RUN_MOTIVO"
+  elif [[ "${TG_AFTER_MAIN:-}" == "1" ]]; then
+    TG_RUN_MODO=acotada; TG_RUN_MOTIVO="lo único que cambió es lo que trajo main"; TG_RUN_TEXTO="$TG_RUN_MOTIVO"
+  elif [[ "$TG_CROSS" == "1" ]]; then
+    TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="la historia vive en otro repo: corren las suites que leen lo tocado"; TG_RUN_TEXTO="$TG_RUN_MOTIVO"
+  elif [[ -z "${TG_PRIVATE_TREE_DIR:-}" && -z "${TG_FULL_SUITE_BY:-}" ]]; then
+    TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="el repo no acota el portón"; TG_RUN_TEXTO="corre todo: $TG_RUN_MOTIVO"
+  fi
   if [[ "$TG_TOP_FULL" == "1" && ( -n "${TG_PRIVATE_TREE_DIR:-}" || -n "${TG_FULL_SUITE_BY:-}" ) && "${TYCON_GATE_ALL_SUITES:-}" != "1" \
     && "${TG_AFTER_MAIN:-}" != "1" ]]; then
     _tg_roja_rc=0
@@ -1097,10 +1133,14 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
       _tg_roja="$(cd "$REPO" && node "$MARKER_JS" tests-failed green-full --repo "$REPO_STORY")" || _tg_roja_rc=$?
     fi
     if [[ "$_tg_roja_rc" != "0" ]]; then
-      echo "[test-gate] corre la completa como siempre: no pude leer lo guardado de la última completa (salió $_tg_roja_rc)"
-    elif [[ -n "$_tg_roja" && "$_tg_roja" != "null" && ! -s "$RESULTS_DIR/measured-start.json" ]]; then
-      echo "[test-gate] corre la completa como siempre: no hay foto de la carpeta al arrancar para comparar con lo guardado"
-    elif [[ -n "$_tg_roja" && "$_tg_roja" != "null" ]]; then
+      _tg_completa "no pude leer lo guardado de la última completa (salió $_tg_roja_rc)"
+    elif [[ -z "$_tg_roja" || "$_tg_roja" == "null" ]]; then
+      TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="no hay un verde guardado de esta historia en esta sesión"
+      [[ -n "$_TG_NOTA" && "$_TG_NOTA" != "-" ]] && TG_RUN_MOTIVO="$TG_RUN_MOTIVO; $_TG_NOTA"
+      TG_RUN_TEXTO="corre la completa: $TG_RUN_MOTIVO"
+    elif [[ ! -s "$RESULTS_DIR/measured-start.json" ]]; then
+      _tg_completa "no hay foto de la carpeta al arrancar para comparar con lo guardado"
+    else
       _tg_dec="$(node -e '
         const [roja, inicio, repo, base, recorte, storyId, ff] = process.argv.slice(1);
         try {
@@ -1112,9 +1152,11 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
         } catch (e) { process.stdout.write(JSON.stringify({ mode: "full", reason: `no pude decidir (${e.message})` })); }
       ' "$_tg_roja" "$RESULTS_DIR/measured-start.json" "$REPO_RUN" "$_TG_BASE" "$_TG_RECORTE" "$_TG_MARKER_STORY" "$SCRIPT_DIR/lib/failed-first.js")"
       _tg_campo() { node -e 'try{const v=JSON.parse(process.argv[1])[process.argv[2]];process.stdout.write(Array.isArray(v)?v.join(","):String(v??""))}catch(e){}' "$_tg_dec" "$1"; }
-      TG_CLOSE_MODE="$(_tg_campo mode)"; TG_CLOSE_DIR="$(_tg_campo dir)"; TG_CLOSE_ORIGIN="$(_tg_campo origen)"
+      TG_CLOSE_MODE="$(_tg_campo mode)"; TG_CLOSE_DIR="$(_tg_campo dir)"; TG_CLOSE_ORIGIN="$(_tg_campo origen)"; TG_RUN_ORIGEN_AT="$(_tg_campo origen_at)"
       case "$TG_CLOSE_MODE" in
-        same) echo "[test-gate] la carpeta es la que midió la completa $TG_CLOSE_ORIGIN$([[ "$TG_CLOSE_ORIGIN" == "roja" ]] && echo ' y cada repetición'): no corro ninguna suite" ;;
+        same) TG_RUN_MODO="sin correr"
+              TG_RUN_TEXTO="la carpeta es la que midió la completa $TG_CLOSE_ORIGIN$([[ "$TG_CLOSE_ORIGIN" == "roja" ]] && echo ' y cada repetición'): no corro ninguna suite"
+              TG_RUN_MOTIVO="$TG_RUN_TEXTO" ;;
         changed)
           # `rerun_suites`: las repetidas cuya carpeta cambió después de repetirlas. Van aparte de los archivos:
           # son claves de la lista de suites, no rutas del repo, y el corredor las corre antes de cualquier filtro.
@@ -1125,16 +1167,19 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
             TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched-repetidas.json")
             # en el árbol armado, que ninguna suite lea lo cambiado es cerrar con lo guardado, no «sin acotar» (salida 7)
             [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
-            echo "[test-gate] la carpeta cambió desde la completa $TG_CLOSE_ORIGIN ($(_tg_campo files)): corren sólo las suites que leen lo cambiado$([[ -n "$(_tg_campo rerun)" ]] && echo " y las repetidas que quedaron viejas ($(_tg_campo rerun))")"
+            TG_RUN_MODO=acotada
+            TG_RUN_TEXTO="la carpeta cambió desde la completa $TG_CLOSE_ORIGIN ($(_tg_campo files)): corren sólo las suites que leen lo cambiado$([[ -n "$(_tg_campo rerun)" ]] && echo " y las repetidas que quedaron viejas ($(_tg_campo rerun))")"
+            TG_RUN_MOTIVO="$TG_RUN_TEXTO"
           else
-            echo "[test-gate] corre la completa como siempre: no pude leer las listas de la decisión sobre lo guardado"
-            TG_CLOSE_MODE=""; TG_CLOSE_ORIGIN=""
+            _tg_completa "no pude leer las listas de la decisión sobre lo guardado"
+            TG_CLOSE_MODE=""; TG_CLOSE_ORIGIN=""; TG_RUN_ORIGEN_AT=""
           fi ;;
         *) _tg_motivo="$(_tg_campo reason)"
-           echo "[test-gate] corre la completa como siempre: ${_tg_motivo:-no pude leer lo guardado}"; TG_CLOSE_MODE=""; TG_CLOSE_ORIGIN="" ;;
+           _tg_completa "${_tg_motivo:-no pude leer lo guardado}"; TG_CLOSE_MODE=""; TG_CLOSE_ORIGIN=""; TG_RUN_ORIGEN_AT="" ;;
       esac
     fi
   fi
+  [[ "$TG_TOP_FULL" == "1" && -n "$TG_RUN_MODO" ]] && echo "[test-gate] modo $TG_RUN_MODO · $TG_RUN_TEXTO"
   # el cierre con lo guardado corre run-check desde el repo del marcador: en el árbol armado, el privado de verdad
   _TG_CLOSE_CWD="$REPO_RUN"; [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && _TG_CLOSE_CWD="$REPO"
   # Lo que corrió por lo cambiado se junta con lo guardado de la completa (y las repeticiones, si era roja). Por run-check,
@@ -1249,42 +1294,106 @@ fi
 if [[ -n "${TG_MEASURED:-}" ]]; then
   _tg_anotar=record
   [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && _tg_anotar=record-tree
-  node "$SCRIPT_DIR/lib/after-main.js" "$_tg_anotar" "$REPO_RUN" "$RESULTS_DIR/measured-start.json" "$RESULTS_DIR/suites.json" "$SUITE_EXIT" "$TG_MEASURED" \
+  # el sexto archivo es la foto para lo guardado de la historia: la del arranque, aunque la carpeta haya cambiado
+  node "$SCRIPT_DIR/lib/after-main.js" "$_tg_anotar" "$REPO_RUN" "$RESULTS_DIR/measured-start.json" "$RESULTS_DIR/suites.json" "$SUITE_EXIT" "$TG_MEASURED" "$RESULTS_DIR/para-lo-guardado.json" \
     || echo "[test-gate] ⚠️  no pude anotar qué midió esta corrida: si después se trae main, corre lo de siempre" >&2
 fi
-# Lo guardado de la completa (story 8.208, y lo verde): una completa que midió todo lo suyo, sin cambios en la carpeta
-# mientras corría (lo que after-main.js anotó), en un repo que acota el portón o en el árbol armado, lo guarda: roja, para
-# repetir solas; verde, para correr después sólo lo cambiado. Una completa real reemplaza lo que había; la corrida que
-# cerró con lo guardado (o la que sólo midió lo que trajo main) no guarda una completa nueva.
+# Lo guardado de la historia, en un repo que acota el portón o en el árbol armado: una completa que midió todo lo suyo lo guarda, roja para repetir solas, verde para correr
+# después sólo lo cambiado; un cierre en verde con lo guardado guarda su resumen juntado como el nuevo verde, que es el
+# punto de partida de la próxima corrida (nunca una acotada sola: el juntado trae una suite por cada una de la completa de
+# origen). La foto es la del arranque (after-main.js, `para-lo-guardado.json`): si la carpeta cambió mientras corría, la
+# próxima corrida vuelve a correr lo que lee lo cambiado. Un cierre rojo, o uno que no se puede guardar, deja lo de antes.
+# Cada corrida terminada anota al final su modo, su motivo y si guardó (marker.js tests-failed run-end).
 if [[ "$TG_TOP_FULL" == "1" && "$RUNNER" == "suites-json" ]]; then
   _tg_drop() { ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed "drop-$1" --repo "$REPO_STORY" ) \
     || echo "[test-gate] ⚠️  no pude borrar lo guardado de una completa anterior ($1): la próxima corrida lo compara y, si no coincide, corre entera" >&2; }
-  _tg_guarda=0
-  [[ ( -n "${TG_PRIVATE_TREE_DIR:-}" || -n "${TG_FULL_SUITE_BY:-}" ) && "${TG_AFTER_MAIN:-}" != "1" && -z "${TG_CLOSE_MODE:-}" \
-    && -n "${TG_MEASURED:-}" && -s "$TG_MEASURED" ]] && _tg_guarda=1
-  if [[ "$_tg_guarda" == "1" && "$SUITE_EXIT" == "1" && "${TYCON_GATE_ALL_SUITES:-}" != "1" ]]; then
-    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed save-red --summary "$RESULTS_DIR/suites.json" --measured "$TG_MEASURED" \
-        --coverage-file "$RESULTS_DIR/coverage/lcov.info" --base "$_TG_BASE" --trim "${_TG_RECORTE:-}" --repo "$REPO_STORY" ) \
-      || echo "[test-gate] ⚠️  no pude guardar esta completa roja: repetir solas no va a cerrar «Correr las pruebas», la próxima completa corre entera" >&2
+  _tg_guardar() { ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed "$@" --repo "$REPO_STORY" ); }
+  TG_GUARDO=no; TG_GUARDO_MOTIVO=""
+  # la foto del arranque para lo guardado, o el motivo por el que no hay
+  _TG_FOTO="$RESULTS_DIR/para-lo-guardado.json"; _TG_FOTO_NO=""; _TG_FOTO_CAMBIO=""
+  if [[ -z "${TG_MEASURED:-}" || ! -s "$_TG_FOTO" ]]; then
+    _TG_FOTO_NO="no hay foto de la carpeta al arrancar"
+  else
+    _TG_FOTO_NO="$(node -e 'try{const f=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(f.no?`la corrida no midió todo lo suyo (${f.no})`:"")}catch(e){process.stdout.write(`no pude leer la foto del arranque (${e.message})`)}' "$_TG_FOTO")"
+    _TG_FOTO_CAMBIO="$(node -e 'try{process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).cambio_durante?"1":"")}catch(e){}' "$_TG_FOTO")"
+  fi
+  _tg_antes="$RESULTS_DIR/suites.json"; _tg_perdon=()
+  [[ -s "$RESULTS_DIR/suites-antes-del-perdon.json" ]] && { _tg_antes="$RESULTS_DIR/suites-antes-del-perdon.json"; _tg_perdon=(--after-inherited "$RESULTS_DIR/suites.json"); }
+  _tg_base_args=(--measured "$_TG_FOTO" --coverage-file "$RESULTS_DIR/coverage/lcov.info" --base "$_TG_BASE" --trim "${_TG_RECORTE:-}")
+  if [[ -z "${TG_PRIVATE_TREE_DIR:-}" && -z "${TG_FULL_SUITE_BY:-}" ]]; then
+    TG_GUARDO_MOTIVO="el repo no acota el portón"
+    _tg_drop red
     _tg_drop green
-  elif [[ "$_tg_guarda" == "1" && "$SUITE_EXIT" == "0" && "${_tg_perdonada:-}" == "1" && ! -s "$RESULTS_DIR/suites-antes-del-perdon.json" ]]; then
+  elif [[ "${TG_AFTER_MAIN:-}" == "1" ]]; then
+    # sólo midió lo que trajo main: lo rojo ya se usó; lo verde sigue siendo el origen de la próxima
+    TG_GUARDO_MOTIVO="corrió sólo lo que trajo main: lo guardado sigue"
+    _tg_drop red
+  elif [[ -n "${TG_CLOSE_MODE:-}" ]]; then
+    # el cierre con lo guardado: en verde, su resumen juntado (el de antes del juez de esta corrida) es el nuevo verde
+    if [[ "$SUITE_EXIT" != "0" ]]; then
+      TG_GUARDO_MOTIVO="salió en rojo: lo guardado sigue"
+    elif [[ "${_tg_perdonada:-}" == "1" && ! -s "$RESULTS_DIR/suites-antes-del-perdon.json" ]]; then
+      TG_GUARDO_MOTIVO="falta el resumen de antes del perdón"
+    elif [[ -n "$_TG_FOTO_NO" ]]; then
+      TG_GUARDO_MOTIVO="$_TG_FOTO_NO"
+    else
+      # can-save sale 0 si se puede guardar, 1 con el motivo; cualquier otra salida (se cayó) no guarda
+      _tg_no_cierre=""; _tg_can_rc=0
+      _tg_no_cierre="$(node "$SCRIPT_DIR/lib/failed-first.js" can-save "$_tg_antes")" || _tg_can_rc=$?
+      if [[ "$_tg_can_rc" != "0" ]]; then
+        TG_GUARDO_MOTIVO="${_tg_no_cierre:-no pude saber si el cierre se puede guardar (can-save salió $_tg_can_rc)}"
+      elif _tg_guardar save-green --summary "$_tg_antes" ${_tg_perdon[@]+"${_tg_perdon[@]}"} "${_tg_base_args[@]}" ${TG_RUN_ORIGEN_AT:+--origin-at "$TG_RUN_ORIGEN_AT"}; then
+        TG_GUARDO=verde
+        _tg_drop red
+        echo "[test-gate] guardé este verde (juntado con la completa de las $(node -e 'const d=new Date(process.argv[1]);process.stdout.write(Number.isNaN(d.getTime())?"??:??":`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`)' "${TG_RUN_ORIGEN_AT:-}")): la próxima corrida corre sólo lo que cambie desde acá"
+      else
+        TG_GUARDO_MOTIVO="no pude guardar este verde: queda lo guardado de antes"
+      fi
+    fi
+    [[ "$TG_GUARDO" == "no" ]] && echo "[test-gate] no guardo este cierre: $TG_GUARDO_MOTIVO; lo guardado de antes sigue"
+  elif [[ "$SUITE_EXIT" == "1" && "${TYCON_GATE_ALL_SUITES:-}" != "1" && -z "$_TG_FOTO_NO" ]]; then
+    if _tg_guardar save-red --summary "$RESULTS_DIR/suites.json" "${_tg_base_args[@]}"; then
+      TG_GUARDO=rojo
+      _tg_drop green
+    else
+      TG_GUARDO_MOTIVO="no pude guardar esta completa roja: queda lo guardado de antes"
+      echo "[test-gate] ⚠️  no pude guardar esta completa roja: repetir solas no va a cerrar «Correr las pruebas», la próxima completa corre entera" >&2
+    fi
+  elif [[ "$SUITE_EXIT" == "0" && "${_tg_perdonada:-}" == "1" && ! -s "$RESULTS_DIR/suites-antes-del-perdon.json" ]]; then
     # verde por lo heredado sin el resumen de antes del perdón: guardarla daría por verdes mañana las rojas de hoy
+    TG_GUARDO_MOTIVO="falta el resumen de antes del perdón"
     echo "[test-gate] ⚠️  no guardo esta completa verde: falta el resumen de antes del perdón; la próxima corrida corre la completa entera" >&2
     _tg_drop red
     _tg_drop green
-  elif [[ "$_tg_guarda" == "1" && "$SUITE_EXIT" == "0" ]]; then
-    _tg_antes="$RESULTS_DIR/suites.json"; _tg_perdon=()
-    [[ -s "$RESULTS_DIR/suites-antes-del-perdon.json" ]] && { _tg_antes="$RESULTS_DIR/suites-antes-del-perdon.json"; _tg_perdon=(--after-inherited "$RESULTS_DIR/suites.json"); }
-    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed save-green --summary "$_tg_antes" ${_tg_perdon[@]+"${_tg_perdon[@]}"} --measured "$TG_MEASURED" \
-        --coverage-file "$RESULTS_DIR/coverage/lcov.info" --base "$_TG_BASE" --trim "${_TG_RECORTE:-}" --repo "$REPO_STORY" ) \
-      || echo "[test-gate] ⚠️  no pude guardar esta completa verde: la próxima corrida corre la completa entera" >&2
-    _tg_drop red
-  elif [[ -n "${TG_CLOSE_MODE:-}" || "${TG_AFTER_MAIN:-}" == "1" ]]; then
-    # cerró con lo guardado: lo rojo ya se usó; lo verde sigue siendo el origen de la próxima
-    _tg_drop red
+  elif [[ "$SUITE_EXIT" == "0" && -z "$_TG_FOTO_NO" ]]; then
+    if _tg_guardar save-green --summary "$_tg_antes" ${_tg_perdon[@]+"${_tg_perdon[@]}"} "${_tg_base_args[@]}"; then
+      TG_GUARDO=verde
+      _tg_drop red
+    else
+      TG_GUARDO_MOTIVO="no pude guardar este verde: queda lo guardado de antes"
+      echo "[test-gate] ⚠️  no pude guardar esta completa verde: la próxima corrida corre la completa entera" >&2
+    fi
   else
+    if [[ "$SUITE_EXIT" == "1" && "${TYCON_GATE_ALL_SUITES:-}" == "1" ]]; then TG_GUARDO_MOTIVO="con TYCON_GATE_ALL_SUITES=1 una roja no se guarda"
+    elif [[ "$SUITE_EXIT" != "0" && "$SUITE_EXIT" != "1" ]]; then TG_GUARDO_MOTIVO="la corrida salió $SUITE_EXIT"
+    else TG_GUARDO_MOTIVO="${_TG_FOTO_NO:-no midió todo lo suyo}"; fi
     _tg_drop red
     _tg_drop green
+  fi
+  [[ "$TG_GUARDO" != "no" && "$_TG_FOTO_CAMBIO" == "1" ]] \
+    && echo "[test-gate] la carpeta cambió mientras corría: guardo con la foto del arranque; la próxima corrida vuelve a correr lo que lee lo cambiado durante la corrida"
+  # El renglón de la corrida (gates.log) y su nota en el marcador: sólo las que terminaron en verde o en rojo. La cortada
+  # por una señal, la sin turno y la ocupada salieron antes y no llegan acá.
+  if [[ -n "$TG_RUN_MODO" && ( "$SUITE_EXIT" == "0" || "$SUITE_EXIT" == "1" ) ]]; then
+    _tg_suites=0
+    if [[ "${TG_CLOSE_MODE:-}" == "changed" ]]; then _tg_suites_de="$RESULTS_DIR/suites-nuevas.json"
+    elif [[ "${TG_CLOSE_MODE:-}" == "same" ]]; then _tg_suites_de=""
+    else _tg_suites_de="$RESULTS_DIR/suites.json"; fi
+    [[ -n "$_tg_suites_de" ]] && _tg_suites="$(node -e 'try{const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).suites;process.stdout.write(String(Array.isArray(s)?s.length:0))}catch(e){process.stdout.write("0")}' "$_tg_suites_de")"
+    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed run-end --repo "$REPO_STORY" --mode "$TG_RUN_MODO" --reason "$TG_RUN_MOTIVO" \
+        --exit "$SUITE_EXIT" --saved "$TG_GUARDO" ${TG_GUARDO_MOTIVO:+--saved-reason "$TG_GUARDO_MOTIVO"} ${TG_RUN_ORIGEN_AT:+--origin-at "$TG_RUN_ORIGEN_AT"} \
+        --suites "$_tg_suites" --duration-ms "$(( ($(date +%s) - ${_TG_T0_S:-$(date +%s)}) * 1000 ))" ) \
+      || echo "[test-gate] ⚠️  no pude anotar esta corrida (modo y motivo) en el registro: el informe de repeticiones no la va a ver" >&2
   fi
 fi
 

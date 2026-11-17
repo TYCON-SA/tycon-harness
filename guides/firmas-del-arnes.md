@@ -113,7 +113,7 @@ firmar, y en la columna tu situación:
   la pestaña de la sesión designada, o en su terminal; ver «Aprobar en nombre del dueño»). Si la firma no está delegada, tu máquina no está en la lista o nadie confirmó la designación, la
   fila es igual que sin coordinadora. Lo que queda en 2 o más sale de esa lista.
 - \*\* **El plan de rutina, con y sin coordinadora**: cuándo corre la revisión automática lo dice la matriz de la
-  organización (`plan_review`, `guides/revisiones-automaticas.md`): en una delicada corre siempre; en una de rutina se
+  organización (`plan_review`, `guides/automatic-reviews.md`): en una delicada corre siempre; en una de rutina se
   le pregunta al dueño y, si el dueño está ausente, se revisa sin preguntar, se espera o se sigue sin revisión. Las tres
   salidas de una revisión: **aprobado** (también «aprobado con notas»: sólo un defecto rechaza), **rechazado** y
   **sin veredicto**. Con coordinadora, ella lanza la revisión (`marker.js plan-review --for-session <sesión>`) y aprueba en
@@ -201,6 +201,13 @@ Lo que tiene que cumplir esa aprobación:
   gasta: el motivo lo dice y hace falta un click nuevo.
   Lo que hace sale de lo que firmarías si lo abrieras, no de lo que escribió la sesión. La huella del sello incluye eso
   que se mostró: si el plan o el diff cambian después del cuadro, tu click ya no vale y el agente pide el cuadro de nuevo.
+- **El código del sello sale del pedido en forma canónica, no del comando tal como se escribió.** El mismo pedido escrito
+  de otra forma da el mismo cuadro y tu click le sirve: las opciones en otro orden, los criterios de `--acs` en otro orden
+  o repetidos, la historia por ruta relativa o absoluta (si las dos llevan al mismo archivo desde donde lo lee el guion).
+  Lo que cambia lo que firmás da otro código: otro valor, otra opción, otro criterio, la forma `--opcion=valor` (el guion
+  no la lee igual que `--opcion valor`), o lo que se mostró (el texto de un criterio, el plan, el diff). Un comando que
+  no tiene forma canónica (una palabra suelta entre las opciones, por ejemplo) se compara tal como se escribió. Los
+  códigos de antes no se migran: al actualizar el arnés, un cuadro que ya habías aprobado se pregunta una vez más.
 - **La das en la sesión que firma, o en la coordinadora con la designación confirmada.** Dada en la coordinadora, su proceso
   tiene que seguir vivo. La aprobación es tuya, no una delegación.
 - **El mensaje es un «aprobado» claro.** «Aprobado», «apruebo» o «sí, aprobado», sin preguntas, negaciones ni condiciones.
@@ -469,6 +476,27 @@ escrito a mano que sólo consulta: desde la línea de comando el freno no puede 
 lectura de un pedido va por `pr-wait`. Una ejecución suelta de la CI no se vigila de fondo. El
 freno, al negar, dice que hay una consola de fondo viva que no es un vigilante de sólo lectura, y nunca muestra su línea
 de comando. En Windows no cambia nada.
+
+**La firma que pide la sesión que trabaja, para sí, va sola a la coordinadora.** Si la sesión que implementa corre una
+firma que el perfil delega, sin `--for-session`, y la coordinadora la podría firmar por delegación, el freno la niega
+sin ventana ni cuadro. A la sesión le dice que espere el aviso de la coordinadora, y en la lista de firmas deja el comando exacto que va a
+correr la coordinadora: el mismo, con `--for-session <sesión>` al final y las rutas absolutas, porque ella lo corre
+desde su carpeta. El freno pregunta las mismas llaves de arriba, como si ya lo corriera ella. Antes de desviar, gana una
+aprobación explícita de la persona (su click o su «aprobado»); lo de rutina en una pestaña sin permisos sigue «hecho y
+avisado»; y lo que el guion iba a negar (un pendiente ya aprobado) se niega con su texto, sin renglón.
+
+- `owner-next` le da ese comando sólo a la coordinadora, y sólo si el pedido está en la conversación de la sesión que lo
+  pidió: con su id, con ese mismo comando y con algo escrito después. Un renglón escrito a mano para otra sesión no la
+  hace firmar. A cualquier otra sesión no le da nada.
+- La firma sale como siempre, del proceso de la coordinadora y por la delegación; su renglón del registro común lleva
+  `routed: true`.
+- **El respaldo.** Si la coordinadora no la firma en `approvals.delegation_wait_minutes` (10 por defecto, de 1 a 60, sólo
+  del perfil), o deja de estar viva, el renglón se lee como del dueño, con su cuadro de siempre y una nota que dice por
+  qué. No depende de que ella lo lea.
+- **Lo que no se desvía:** las firmas sólo del dueño o que el perfil no delega; la máquina fuera de
+  `approvals.delegated_machines`; sin coordinadora confirmada y viva; la que pide la coordinadora para sí; Windows; y el
+  camino corto (`adhoc-lane`), porque abierto por la coordinadora el carril quedaría a su nombre y en su carpeta. Si una
+  firma delegable no se desvió, la ventana o el cuadro dicen el motivo («No se desvió a la coordinadora: …»).
 
 Pasar el tope de 8 archivos del camino corto (por defecto) es otra firma, `adhoc-lane:sobre-cupo`: la elige el dev con su
 click en el

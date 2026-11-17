@@ -52,7 +52,7 @@ const GUIAS_ES = [
   'INDEX.md',
   'guides/firmas-del-arnes.md',
   'guides/git-commit-conventions.md',
-  'guides/que-hace-el-arnes.md',
+  'guides/what-the-harness-does.md',
   'guides/coordination.md',
   'guides/workflow-orchestration.md',
   'guides/piezas-del-arnes.md',

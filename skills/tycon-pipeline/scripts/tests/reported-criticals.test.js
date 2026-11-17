@@ -746,3 +746,199 @@ test('Findings_OtherSessionLaunches_NotCounted — las salidas de otra sesión, 
     if (prevSid === undefined) delete process.env.CLAUDE_CODE_SESSION_ID; else process.env.CLAUDE_CODE_SESSION_ID = prevSid;
   }
 });
+
+// ── 8.296: el renglón de veredicto se le pide una vez al mismo revisor ─────────────────────────────────────────────────
+//
+// 🔴 Mutaciones que los ponen en rojo: no pedir el renglón o pedirlo dos veces (T1, T3, T4), pedirlo con la transcripción
+// ilegible, fuera del set o con el registro roto (T5), perder un crítico mencionado antes del pedido (T6), contar el
+// pedido como salida nueva (T1, T7), dar por confirmado un crítico que sigue reportado (T16), y el texto del freno que no
+// distingue si ya se pidió (T17).
+
+const del = (role, text) => `${JSON.stringify({ type: role, message: { role, content: [{ type: 'text', text }] } })}\n`;
+
+/** Un revisor del set en vuelo, con su transcripción, y el gancho de fin listo para correr con el evento de Claude Code. */
+function revisorEnVuelo(l, { agentId = 'ag-v', advisor = SEC } = {}) {
+  l.anotar(LANZADO(at(-100), 1, advisor));
+  const dir = path.join(l.home, 'transcripts', 'subagents');
+  fs.mkdirSync(dir, { recursive: true });
+  const transcript = path.join(dir, `agent-${agentId}.jsonl`);
+  fs.writeFileSync(transcript, del('user', 'Revisá el cambio.'));
+  const decir = (texto) => fs.appendFileSync(transcript, del('assistant', texto));
+  const fin = (ev = {}) => {
+    const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'SubagentStop', session_id: SID, agent_id: agentId, agent_type: advisor, agent_transcript_path: transcript, stop_hook_active: false, ...ev }), env: l.env, encoding: 'utf8' });
+    let decision = null;
+    try { decision = r.stdout.trim() ? JSON.parse(r.stdout) : null; } catch (_) { decision = { crudo: r.stdout }; }
+    return { ...r, decision };
+  };
+  return { transcript, decir, fin };
+}
+
+test('Hook_SinVeredicto_PideElRenglonUnaVez @story-8.296 @ac-1 @ac-16', () => {
+  const l = lab();
+  const v = revisorEnVuelo(l);
+  v.decir('Limpio, 0 hallazgos');
+  const r = v.fin({ last_assistant_message: 'Limpio, 0 hallazgos' });
+  assert.equal(r.status, 0, out(r));
+  assert.ok(r.decision && r.decision.decision === 'block', `no pidió el renglón: ${r.stdout}`);
+  assert.match(r.decision.reason, /no trae el renglón de veredicto/);
+  assert.match(r.decision.reason, /Veredicto: limpio/);
+  assert.match(r.decision.reason, /Veredicto: hallazgos \(REGLA, REGLA\) · bloquea: sí\|no/);
+  const lineas = jsonl(l.registro);
+  const rep = lineas.filter((x) => x.kind === 'report');
+  assert.equal(rep.length, 1);
+  assert.equal(rep[0].readable, false);
+  const pedidos = lineas.filter((x) => x.kind === 'verdict-retry');
+  assert.equal(pedidos.length, 1, JSON.stringify(lineas));
+  assert.deepEqual([pedidos[0].advisor, pedidos[0].agent_id, pedidos[0].iter, pedidos[0].story, pedidos[0].run], [SEC, 'ag-v', 1, '9.92', l.run]);
+  // el pedido no es una salida nueva: ni otro launched ni una línea en el registro de lanzamientos
+  assert.equal(lineas.filter((x) => x.kind === 'launched').length, 1);
+  assert.equal(jsonl(path.join(l.state, 'advisor-runs', `${SID}.jsonl`)).filter((x) => !x.event).length, 0);
+  // el texto vacío sin error de la transcripción también lo pide (el revisor terminó sin decir nada)
+  const l2 = lab();
+  const v2 = revisorEnVuelo(l2, { agentId: 'ag-vacio' });
+  const r2 = v2.fin({ last_assistant_message: '' });
+  assert.ok(r2.decision && r2.decision.decision === 'block', `texto vacío: no pidió el renglón: ${r2.stdout}`);
+});
+
+test('Hook_SegundaParada_ConVeredicto_LegibleMismaVueltaSinBloquear @story-8.296 @ac-2 @ac-9', () => {
+  const l = lab();
+  const v = revisorEnVuelo(l);
+  v.decir('Limpio, 0 hallazgos');
+  assert.equal(v.fin().decision.decision, 'block');
+  v.decir('Veredicto: limpio');
+  // como lo manda Claude Code en la segunda parada (laboratorio de la Task 1)
+  const r = v.fin({ stop_hook_active: true, last_assistant_message: 'Veredicto: limpio' });
+  assert.equal(r.status, 0, out(r));
+  assert.equal(r.decision, null, `pidió otra vez: ${r.stdout}`);
+  const reps = jsonl(l.registro).filter((x) => x.kind === 'report');
+  assert.equal(reps.length, 2);
+  assert.equal(reps[1].readable, true, JSON.stringify(reps[1]));
+  assert.equal(reps[1].iter, 1, 'el reporte después del pedido no quedó en su vuelta');
+});
+
+test('Hook_SegundaParada_SinVeredicto_NoPideOtraVez @story-8.296 @ac-3', () => {
+  const l = lab();
+  const v = revisorEnVuelo(l);
+  v.decir('Limpio, 0 hallazgos');
+  assert.equal(v.fin().decision.decision, 'block');
+  v.decir('Sigo sin hallazgos.');
+  // sin stop_hook_active: lo que manda es el pedido ya anotado de ese agente
+  const r = v.fin({ stop_hook_active: false });
+  assert.equal(r.status, 0, out(r));
+  assert.equal(r.decision, null, `pidió dos veces: ${r.stdout}`);
+  const lineas = jsonl(l.registro);
+  assert.equal(lineas.filter((x) => x.kind === 'report' && !x.readable).length, 2);
+  assert.equal(lineas.filter((x) => x.kind === 'verdict-retry').length, 1);
+});
+
+test('Hook_StopHookActive_NoPide @story-8.296 @ac-3', () => {
+  const l = lab();
+  const v = revisorEnVuelo(l);
+  v.decir('Limpio, 0 hallazgos');
+  const r = v.fin({ stop_hook_active: true });
+  assert.equal(r.status, 0, out(r));
+  assert.equal(r.decision, null, r.stdout);
+  assert.equal(jsonl(l.registro).filter((x) => x.kind === 'verdict-retry').length, 0);
+});
+
+test('Hook_TranscripcionIlegibleOFueraDelSetORegistroRoto_NoPide @story-8.296 @ac-4 @ac-5', () => {
+  // la transcripción no se abre: el reporte es ilegible por error, no se le pide nada
+  const l = lab();
+  const v = revisorEnVuelo(l);
+  const r1 = v.fin({ agent_transcript_path: path.join(l.home, 'no-existe.jsonl'), last_assistant_message: '' });
+  assert.equal(r1.status, 0, out(r1));
+  assert.equal(r1.decision, null, r1.stdout);
+  assert.equal(jsonl(l.registro).filter((x) => x.kind === 'verdict-retry').length, 0);
+  // un agente fuera del set (sin launched)
+  const l2 = lab();
+  const t = path.join(l2.home, 'agent-suelto.jsonl');
+  fs.writeFileSync(t, del('assistant', 'Limpio, 0 hallazgos'));
+  const r2 = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'SubagentStop', session_id: SID, agent_id: 'ag-suelto', agent_type: SEC, agent_transcript_path: t }), env: l2.env, encoding: 'utf8' });
+  assert.equal(r2.status, 0, out(r2));
+  assert.equal(r2.stdout.trim(), '', r2.stdout);
+  // el registro existe y no se lee
+  const l3 = lab();
+  const v3 = revisorEnVuelo(l3);
+  v3.decir('Limpio, 0 hallazgos');
+  fs.chmodSync(l3.registro, 0o000);
+  try {
+    const r3 = v3.fin();
+    assert.equal(r3.status, 0, out(r3));
+    assert.equal(r3.decision, null, r3.stdout);
+    assert.match(r3.stderr, /no pude leer el registro de críticos/);
+  } finally { fs.chmodSync(l3.registro, 0o644); }
+});
+
+test('Hook_CriticoEntreCorchetesAntes_SigueContandoTrasLimpio @story-8.296 @ac-6 @ac-15', () => {
+  const l = lab();
+  const v = revisorEnVuelo(l);
+  v.decir('Encontré algo como [SEC-C3] en a.js.');
+  assert.equal(v.fin().decision.decision, 'block');
+  v.decir('Veredicto: limpio');
+  assert.equal(v.fin({ stop_hook_active: true }).decision, null);
+  const legible = jsonl(l.registro).filter((x) => x.kind === 'report' && x.readable).pop();
+  assert.ok(legible, 'sin reporte legible');
+  assert.deepEqual(legible.criticals, [{ rule: 'SEC-C3', count: 1 }], 'el pedido borró el crítico mencionado antes');
+  const w = l.writeFindings([]);
+  assert.notEqual(w.status, 0, out(w));
+  assert.match(out(w), /SEC-C3/);
+});
+
+test('Cruce_RelanzadoLegible_SinProblemaSinReporte @story-8.296 @ac-7 @ac-9', () => {
+  const rc = rcLib();
+  const lines = [
+    LANZADO(at(-100)),
+    REPORTE(at(-90), [], { readable: false, reason: 'el reporte no trae el renglón' }),
+    { ts: at(-89), kind: 'verdict-retry', advisor: SEC, agent_id: `ag-${SEC}-1`, iter: 1 },
+    REPORTE(at(-80), []),
+  ];
+  const r = rc.cross({ lines, findings: [] });
+  assert.deepEqual(r.problemas, [], JSON.stringify(r.problemas));
+});
+
+test('Cierre_ConfirmadoPorElMismoRevisor_FixedSinExencion @story-8.296 @ac-12', () => {
+  const rc = rcLib();
+  const AC = 'tycon-ac-coverage-checker';
+  const lines = [
+    LANZADO(at(-200), 1, AC), REPORTE(at(-190), [{ rule: 'ACCOV-C1', count: 1 }], { advisor: AC }),
+    LANZADO(at(-100), 2, AC), REPORTE(at(-90), [], { advisor: AC, iter: 2 }),
+  ];
+  const r = rc.cross({ lines, findings: [{ rule_id: 'ACCOV-C1', severity: 'CRITICAL', disposition: 'fixed', file: 'a.js' }] });
+  assert.deepEqual(r.problemas, [], JSON.stringify(r.problemas));
+});
+
+test('Seguridad_SigueReportadoOSinReporte_NoSeCierra @story-8.296 @ac-15', () => {
+  const rc = rcLib();
+  const AC = 'tycon-ac-coverage-checker';
+  const fixed = [{ rule_id: 'ACCOV-C1', severity: 'CRITICAL', disposition: 'fixed', file: 'a.js' }];
+  const base = [LANZADO(at(-200), 1, AC), REPORTE(at(-190), [{ rule: 'ACCOV-C1', count: 1 }], { advisor: AC }), LANZADO(at(-100), 2, AC)];
+  const sigue = rc.cross({ lines: [...base, REPORTE(at(-90), [{ rule: 'ACCOV-C1', count: 1 }], { advisor: AC, iter: 2 })], findings: fixed });
+  assert.ok(sigue.problemas.some((p) => p.tipo === 'arreglado-sin-comprobar'), JSON.stringify(sigue.problemas));
+  const ilegible = rc.cross({ lines: [...base,
+    REPORTE(at(-90), [], { advisor: AC, iter: 2, readable: false, reason: 'sin renglón' }),
+    { ts: at(-89), kind: 'verdict-retry', advisor: AC, agent_id: 'ag-x', iter: 2 },
+    REPORTE(at(-80), [], { advisor: AC, iter: 2, readable: false, reason: 'sin renglón' })], findings: fixed });
+  assert.ok(ilegible.problemas.some((p) => p.tipo === 'sin-reporte'), JSON.stringify(ilegible.problemas));
+  assert.ok(ilegible.problemas.some((p) => p.tipo === 'arreglado-sin-comprobar'), JSON.stringify(ilegible.problemas));
+});
+
+test('Renglones_SinReporte_DiceSiYaSeLePidio @story-8.296 @ac-8', () => {
+  const rc = rcLib();
+  const base = [LANZADO(at(-100)), REPORTE(at(-90), [], { readable: false, reason: 'el reporte no trae el renglón' })];
+  const conPedido = rc.cross({ lines: [...base, { ts: at(-89), kind: 'verdict-retry', advisor: SEC, agent_id: 'ag-1', iter: 1 }, REPORTE(at(-80), [], { readable: false, reason: 'el reporte no trae el renglón' })], findings: [] });
+  const p1 = conPedido.problemas.find((p) => p.tipo === 'sin-reporte');
+  assert.ok(p1, JSON.stringify(conPedido.problemas));
+  assert.match(p1.texto, /ya se le pidió el renglón una vez y no lo dio/);
+  const t1 = rc.renglones(conPedido, { marker: 'marker.js' }).join('\n');
+  assert.match(t1, /waive-critical --rule SIN-REPORTE --file tycon-plugin-security-basics/);
+  assert.doesNotMatch(t1, /continuá al mismo agente/);
+  const sinPedido = rc.cross({ lines: base, findings: [] });
+  const p2 = sinPedido.problemas.find((p) => p.tipo === 'sin-reporte');
+  assert.doesNotMatch(p2.texto, /ya se le pidió/);
+  const t2 = rc.renglones(sinPedido, { marker: 'marker.js' }).join('\n');
+  const pedir = t2.indexOf('continuá al mismo agente');
+  const eximir = t2.indexOf('waive-critical --rule SIN-REPORTE');
+  assert.ok(pedir >= 0, t2);
+  assert.ok(eximir > pedir, `la exención va después de cómo pedírselo: ${t2}`);
+  assert.match(t2, /sólo el renglón de veredicto/);
+});

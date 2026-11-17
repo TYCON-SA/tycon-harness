@@ -90,6 +90,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/temp-sweep.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/production-notice.js"
           },
           {
@@ -258,6 +262,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/extension-notices.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       },
@@ -271,6 +279,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/rebuild-before-verify.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-state.js"
           }
         ]
       }
@@ -444,8 +456,8 @@
       ]
     },
     {
-      "log": "session-state.js — Claude: SessionStart, SessionEnd, PermissionRequest, Notification (permission_prompt), PreToolUse de las preguntas, PostToolUse, UserPromptSubmit y Stop ↔ Codex: SessionStart, UserPromptSubmit y Stop (story 2.81, tanda A)",
-      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-01, story 2.81, decisión 7): Codex no avisa cuando pide un permiso ni cuando la sesión se cierra, y no tiene la herramienta de preguntas con opciones. De su lado el archivo de estado se crea al arrancar, el mensaje de la persona deja la sesión ocupada y el fin del turno la deja parada, sin anotar una espera; un pedido de permiso de Codex no se ve, y la oficina no lo inventa. El fin de la sesión se infiere: sin pid estable (decisión 24d), una sesión sin cambios hace más de 2 h se muestra inactiva, y su archivo no se borra. En Claude se anotan los dos momentos que Codex no tiene: el pedido de permiso (PermissionRequest, con qué pide, y Notification) y el cierre (SessionEnd, que borra el archivo).",
+      "log": "session-state.js — Claude: SessionStart, SessionEnd, PermissionRequest, Notification (permission_prompt), PreToolUse de las preguntas, PostToolUse, UserPromptSubmit y Stop ↔ Codex: SessionStart, UserPromptSubmit, Stop y PostToolUse de Bash y apply_patch (story 2.81, tanda A; el PostToolUse, story 8.209: sólo refresca el tramo trabajado de la sesión)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-01, story 2.81, decisión 7): Codex no avisa cuando pide un permiso ni cuando la sesión se cierra, y no tiene la herramienta de preguntas con opciones. De su lado el archivo de estado se crea al arrancar, el mensaje de la persona deja la sesión ocupada y el fin del turno la deja parada, sin anotar una espera; un pedido de permiso de Codex no se ve, y la oficina no lo inventa. El fin de la sesión se infiere: sin pid estable (decisión 24d), una sesión sin cambios hace más de 2 h se muestra inactiva, y su archivo no se borra. En Claude se anotan los dos momentos que Codex no tiene: el pedido de permiso (PermissionRequest, con qué pide, y Notification) y el cierre (SessionEnd, que borra el archivo). Su PostToolUse de Bash y apply_patch sólo refresca el tramo trabajado (`lastEventAt`, story 8.209): un turno de Codex que muere sin Stop cierra en su última herramienta.",
       "scripts": [
         "session-state.js"
       ]

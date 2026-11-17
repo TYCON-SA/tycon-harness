@@ -3,7 +3,7 @@
 /**
  * tool-names.js — el control de los nombres de las herramientas de horas fuera de su lugar.
  *
- * El núcleo del arnés no nombra herramientas (guides/constitucion.md): lo propio de cada una vive en su integración. Este
+ * El núcleo del arnés no nombra herramientas (guides/constitution.md): lo propio de cada una vive en su integración. Este
  * control cuenta los nombres de las integraciones de horas (el `name` de cada manifiesto `integrations/<n>/integration.json`
  * con `kind: "timeTracking"`, y el nombre de cada skill que trae) en lo que va al commit (el índice de git), fuera de las
  * zonas permitidas:

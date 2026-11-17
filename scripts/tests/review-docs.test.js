@@ -87,15 +87,15 @@ test('ReviewDocs_CoordinationDiceQueHaceLaCoordinadora (T43) @story-8.221 @ac-33
 });
 
 test('ReviewDocs_LaGuiaNuevaYSuRenglon (T44) @story-8.221 @ac-34', () => {
-  const es = leer('guides/revisiones-automaticas.md');
-  const en = leer('guides/revisiones-automaticas.en.md');
+  const es = leer('guides/automatic-reviews.md');
+  const en = leer('guides/automatic-reviews.en.md');
   for (const r of [/## Matriz 1: la revisión del plan/, /## Matriz 2: la revisión del código/, /## Matriz 3: con qué corre la revisión/]) assert.match(es, r);
   for (const r of [/## Matrix 1: the plan review/, /## Matrix 2: the code review/, /## Matrix 3: what runs the review/]) assert.match(en, r);
-  assert.match(leer('INDEX.md'), /guides\/revisiones-automaticas\.md/);
+  assert.match(leer('INDEX.md'), /guides\/automatic-reviews\.md/);
 });
 
 test('ReviewDocs_LosValoresDeFabricaCoincidenConElLector (T45) @story-8.221 @ac-35', () => {
-  for (const f of ['guides/revisiones-automaticas.md', 'guides/revisiones-automaticas.en.md', 'guides/organization-site.md', 'guides/organization-site.en.md']) {
+  for (const f of ['guides/automatic-reviews.md', 'guides/automatic-reviews.en.md', 'guides/organization-site.md', 'guides/organization-site.en.md']) {
     const o = opciones(leer(f));
     assert.strictEqual(o.length, 18, f);
     for (const x of o) assert.strictEqual(x.fabrica, deFabrica(x.clave), `${f} ${x.id} (${x.clave})`);
@@ -134,8 +134,8 @@ test('Medicion_VerificadoresAntesYDespues (T51) @story-8.221 @ac-40 — el mismo
 
 // 🔴 Mutaciones: una guía que no dice qué garantiza (o qué no) la revisión que lanza la propia sesión (T27).
 test('ReviewDocs_SelfReviewGuarantees (T27, las guías) @story-8.267 @ac-22', () => {
-  const es = leer('guides/revisiones-automaticas.md').split('### Qué garantiza la revisión que lanza la propia sesión')[1] || '';
-  const en = leer('guides/revisiones-automaticas.en.md').split('### What the review the session launches itself guarantees')[1] || '';
+  const es = leer('guides/automatic-reviews.md').split('### Qué garantiza la revisión que lanza la propia sesión')[1] || '';
+  const en = leer('guides/automatic-reviews.en.md').split('### What the review the session launches itself guarantees')[1] || '';
   for (const r of [/otro proceso/, /huellas/, /espera a una persona/, /approvals\.jsonl/, /plan-review\//, /\*\*no\*\* garantiza/, /routine_approval: person/, /mismo usuario del sistema/]) assert.match(es.split('\n## ')[0], r);
   for (const r of [/another process/, /fingerprints/, /waits for a person/, /approvals\.jsonl/, /plan-review\//, /\*\*not\*\* guarantee/, /routine_approval: person/, /same system user/]) assert.match(en.split('\n## ')[0], r);
 });
