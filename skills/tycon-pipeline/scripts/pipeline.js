@@ -2214,6 +2214,16 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     const ur = ultimoRevisorDeLaRonda(lineasRegistro || [], iter - 1);
     if (Number.isFinite(ur.ts)) ultimoRevisorMs = ur.ts;
   } catch { /* ídem */ }
+  // El PRIMER revisor de la vuelta: un arreglo hecho después de que salió el primero y antes del
+  // último quedaba adentro de la foto; cortando en el último, el delta no lo traía y la vuelta se cerraba sola con el
+  // texto de la historia. Sólo revisores (`esRevisor`): una exploración lanzada antes no mueve el corte. Qué revisores se
+  // re-corren lo sigue decidiendo la vista por revisor
+  let primerRevisorMs = null;
+  try {
+    const ls = require('./lib/late-snapshot.js');
+    const v = ls.vistaPorRevisor(lineasRegistro || [], iter - 1);
+    for (const [adv, t] of v.lanzamientos || []) if (ls.esRevisor(adv) && Number.isFinite(t) && (primerRevisorMs === null || t < primerRevisorMs)) primerRevisorMs = t;
+  } catch { /* sin registro, el corte es la foto o el último revisor, como antes */ }
   // Delta = UNIÓN de TRES fuentes (si fileEvents y mtime fueran either/or,
   // un fileEvents truncado, p.ej. por un
   // `marker.js set` mid-pipeline, o ediciones hechas SOLO por Bash
@@ -2235,7 +2245,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const fotoTardia = Number.isFinite(ultimoRevisorMs) && Number.isFinite(prevTsMs) && ultimoRevisorMs < prevTsMs;
   const horaDe = new Map();          // path → ms de la edición que lo mete en el delta
   if (prevTs) {
-    const cutoff = fotoTardia ? ultimoRevisorMs : prevTsMs;
+    const cutoff = Number.isFinite(primerRevisorMs) && Number.isFinite(prevTsMs) ? Math.min(primerRevisorMs, prevTsMs) : fotoTardia ? ultimoRevisorMs : prevTsMs;
     if (Array.isArray(marker.fileEvents) && marker.fileEvents.length) {
       deltaByEvents = delRepo(honesty.sinRuido([...new Set(
         marker.fileEvents
@@ -2266,7 +2276,8 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       } catch { /* ídem */ }
     }
     if (deltaByGit.length) sources.push('git working-tree post-snapshot');
-    if (fotoTardia) sources.push('corte movido al último revisor (la foto se fechó después)');
+    if (Number.isFinite(primerRevisorMs) && primerRevisorMs < prevTsMs) sources.push('corte en el primer revisor de la vuelta (lo editado mientras corría no se da por visto)');
+    else if (fotoTardia) sources.push('corte movido al último revisor (la foto se fechó después)');
   }
   const deltaSource = prevTs
     ? `unión(${sources.join(' ∪ ')})`
@@ -2374,6 +2385,20 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const skipped = [];
   for (const adv of fullSet.all) {
     let { affected, reason } = advisorAffectedByDelta(adv, delta);
+    // con el corte en el primer revisor, el delta trae lo editado mientras corría la vuelta: el revisor que se lanzó
+    // después de la última edición de un archivo ya vio esa versión, y ese archivo no lo repite
+    const lanzadoAdv = vista.medible ? vista.lanzamientos.get(adv) : undefined;
+    if (affected && lanzadoAdv !== undefined) {
+      const sinVer = delta.filter((f) => { const t = ultimaEdicion.get(f); return !(Number.isFinite(t) && t <= lanzadoAdv); });
+      if (!advisorAffectedByDelta(adv, sinVer).affected) {
+        affected = false;
+        reason = `ya vio lo que cambió: se lanzó en la vuelta ${iter - 1} (${new Date(lanzadoAdv).toISOString()}) después de la última edición de su alcance`;
+      } else {
+        // lo de su alcance que se editó después de su lanzamiento y quedó adentro de la foto: no lo vio
+        const tapados = sinVer.filter((f) => { const t = ultimaEdicion.get(f); return Number.isFinite(t) && t <= prevTsMs && advisorAffectedByDelta(adv, [f]).affected; });
+        if (tapados.length) noVistosPorRevisor[adv] = tapados;
+      }
+    }
     if (!affected && !vista.medible) {
       affected = true;
       reason = `no se sabe qué versión del cambio vio en la vuelta ${iter - 1} (${vista.motivo}) → se re-corre por las dudas`;

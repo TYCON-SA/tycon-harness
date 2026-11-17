@@ -1177,6 +1177,48 @@ function debeRetrospectiva(root) {
   return fs.existsSync(path.join(root, '.tycon')) || fs.existsSync(path.join(root, '.advisors'));
 }
 
+/**
+ * La rama a la que llega el `git push` de la sentencia `st`, o null si no se puede saber. Con refspec, su destino
+ * (`a:b` va a `b`, `HEAD` es la rama de HEAD, `refs/heads/` se saca; si alguno llega a main, main). Sin refspec, lo
+ * decide `push.default` (de fábrica `simple`): `current` empuja a la rama del mismo nombre; `simple`, `upstream` y
+ * `tracking`, a la rama de seguimiento (con otro nombre, `simple` lo rechaza: tampoco llega a la rama de HEAD).
+ * Indeterminables: `--all`, `--mirror`, `--tags`, `--delete`, un borrado `:x`, un comodín, `matching`, HEAD sin
+ * seguimiento o separado. `-u` / `--set-upstream` no cambian el destino.
+ */
+function destinoDelEmpuje(root, st, branch) {
+  const m = /\bpush\b([^|;&\n]*)/.exec(st);
+  if (!m) return null;
+  const palabras = m[1].trim().split(/\s+/).filter(Boolean).map((w) => w.replace(/^['"]|['"]$/g, ''));
+  const posicionales = [];
+  for (let i = 0; i < palabras.length; i++) {
+    const w = palabras[i];
+    if (/^(--all|--mirror|--tags|--delete|-d|--prune)$/.test(w)) return null;
+    if (/^(-o|--push-option|--repo|--receive-pack|--exec)$/.test(w)) { i++; continue; }
+    if (!w.startsWith('-')) posicionales.push(w);
+  }
+  const refspecs = posicionales.slice(1);
+  if (refspecs.length) {
+    const destinos = [];
+    for (const crudo of refspecs) {
+      const r = crudo.replace(/^\+/, '');
+      const i = r.indexOf(':');
+      const src = i >= 0 ? r.slice(0, i) : r;
+      const dst = i >= 0 ? r.slice(i + 1) : r;
+      if (r.includes('*') || !src || !dst) return null;
+      const d = (dst === 'HEAD' ? branch : dst).replace(/^refs\/heads\//, '');
+      if (!d || d === 'HEAD') return null;
+      destinos.push(d);
+    }
+    return destinos.find((d) => /^(main|master)$/.test(d)) || destinos[0];
+  }
+  if (!branch || branch === 'HEAD') return null;
+  const modo = git(root, ['config', '--get', 'push.default']) || 'simple';
+  if (modo === 'current') return branch;
+  if (!['simple', 'upstream', 'tracking'].includes(modo)) return null;
+  const sigue = git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+  return sigue && sigue.includes('/') ? sigue.slice(sigue.indexOf('/') + 1) : null;
+}
+
 /** Anota UNA entrega en el ledger. Devuelve la entry escrita, o null si no correspondía. */
 function anotar(event, cmd, punto, ctx) {
   const root = git(punto.dir, ['rev-parse', '--show-toplevel']);
@@ -1192,7 +1234,11 @@ function anotar(event, cmd, punto, ctx) {
   // `quiet-push-de-una-rama-con-main-en-el-nombre`).
   const mentionsMain = /\bpush\b[^|;&\n]*(?:[\s:"']|refs\/heads\/)(main|master)(?=$|[\s;&|"'])/.test(st);
   const onMain = /^(main|master)$/.test(branch) && !/\bpush\b[^|;&\n]*\b(dev|develop|feat|feature|fix|hotfix|release)\b/.test(st);
-  if (!ctx.isPrCreate && !mentionsMain && !onMain) return null;
+  // el destino del empuje, cuando se sabe, decide: con HEAD en main, `git push origin otra` o
+  // `main:otra` no llegan a main. Cuando no se sabe, como antes: ante la duda, se pide el latido
+  const destino = ctx.isPrCreate ? null : destinoDelEmpuje(root, st, branch);
+  const vaAMain = destino ? /^(main|master)$/.test(destino) : mentionsMain || onMain;
+  if (!ctx.isPrCreate && !vaAMain) return null;
   // Un repo de laboratorio no debe retrospectiva: no se anota, y `record` lo dice (cabecera, «LOS REPOS DE LABORATORIO»).
   const lab = juzgarLaboratorio(root);
   if (lab.laboratorio) { laboratoriosVistos.push({ root, sha: git(root, ['rev-parse', 'HEAD']).slice(0, 12), ...lab }); return null; }

@@ -604,6 +604,10 @@ test('T11 CartelYNext_MismoMarcador_DecidenIgual @story-8.195 @ac-11 — el cart
     texto: terminada({ repoPath: repo, fileEvents: [{ path: p('docs/a.md'), ts: at(30), code: false }] }),
     // los revisores volvieron a cerrar después del último paso: el último paso se pide de nuevo
     ultimoPasoViejo: terminada({ repoPath: repo, stepTimings: { reviewers: { startedAt: at(10), completedAt: at(20), lastCompletedAt: at(32), rounds: 2 }, findings: { completedAt: at(22) }, 'prepare-commit': { completedAt: at(25) } }, fileEvents: [{ path: p('src/a.ts'), ts: at(30), code: true }] }),
+    // con la hora del último revisor lanzado, «Preparar» se repite sólo si alguno se lanzó después @story-8.288 @ac-3 @ac-4
+    revisorDespuesDePreparar: terminada({ repoPath: repo, ultimoRevisorTs: at(30), stepTimings: { reviewers: { startedAt: at(10), completedAt: at(20), lastCompletedAt: at(32), rounds: 2 }, findings: { completedAt: at(22) }, 'prepare-commit': { completedAt: at(25) } } }),
+    vueltaSolaDespuesDePreparar: terminada({ repoPath: repo, ultimoRevisorTs: at(15), stepTimings: { reviewers: { startedAt: at(10), completedAt: at(20), lastCompletedAt: at(32), rounds: 2 }, findings: { completedAt: at(22) }, 'prepare-commit': { completedAt: at(25) } } }),
+    ultimoRevisorIlegible: terminada({ repoPath: repo, ultimoRevisorTs: 'x', stepTimings: { reviewers: { startedAt: at(10), completedAt: at(20), lastCompletedAt: at(32), rounds: 2 }, findings: { completedAt: at(22) }, 'prepare-commit': { completedAt: at(25) } } }),
     nada: terminada({ repoPath: repo }),
   };
   try {

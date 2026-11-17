@@ -517,6 +517,26 @@ function delRojoEsperado(palabras, m) {
   }
 }
 
+/**
+ * La salida de una ejecución perdida (`marker.js restore <sesión>` o `clear-session <sesión> --lost`): de qué historia y
+ * de qué sesión es, y cuándo se abrió. La apertura la busca la misma regla que el freno y marker.js (open-runs.js
+ * `aperturaParaSalida`), en la carpeta de estado del cuadro; sin apertura, null (la pregunta dice lo que hace el comando).
+ */
+function deLaSalidaPerdida(palabras, cwd, estado, destino) {
+  const sub = palabras[1];
+  const sesion = palabras[2] != null ? String(palabras[2]) : '';
+  const modo = sub === 'restore' ? 'restore' : sub === 'clear-session' && palabras.includes('--lost') ? 'lost' : null;
+  if (!modo || !sesion || sesion.startsWith('-')) return null;
+  const or = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'open-runs.js'));
+  const ap = or.aperturaParaSalida(sesion, { modo, cwd, estado: estado || undefined, propia: destino });
+  if (!ap) return null;
+  const t = new Date(ap.ts);
+  const dos = (n) => String(n).padStart(2, '0');
+  const hora = Number.isFinite(t.getTime()) ? `${dos(t.getHours())}:${dos(t.getMinutes())} del ${dos(t.getDate())}/${dos(t.getMonth() + 1)}` : 'una hora que no se puede leer';
+  const linea = `${modo === 'restore' ? 'Restaurar' : 'Cerrar como perdida'} la ejecución de la historia ${ap.story} (sesión ${sesion}), abierta ${ap.antes ? 'antes de las' : 'a las'} ${hora}`;
+  return { queHace: [linea], fuente: linea };
+}
+
 function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {}) {
   if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd);
   if (firma === 'escape:rojo-esperado-de-la-matriz') return delRojoEsperado(palabras, marcador);
@@ -529,6 +549,7 @@ function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {
   if (firma === 'adhoc-lane' || firma === 'adhoc-lane:sobre-cupo') return delArreglo(palabras, topes);
   if (firma === 'adhoc-lane:datos' && estado && destino) return delFrenoDeDatos(palabras, estado, destino);
   if (firma === 'adhoc-lane:guardado-ajeno') return estado && destino ? delGuardadoAjeno(estado, destino) : { error: 'no sé de qué sesión es el guardado ajeno' };
+  if (firma === 'lost-run') return deLaSalidaPerdida(palabras, cwd, estado, destino);
   return null;
 }
 

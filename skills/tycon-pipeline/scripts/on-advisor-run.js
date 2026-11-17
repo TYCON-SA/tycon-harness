@@ -308,6 +308,35 @@ function recordLaunch(o) {
     }
   }
 
+  // ── El lanzamiento de un revisor sin corrida no sale callado, y el de uno de la corrida anota su hora ──────────────
+  // Sin repo o sin historia el lanzamiento no se ata a ninguna corrida: queda un renglón con el motivo en el registro de la
+  // sesión. Con corrida, el revisor que figura en el `expected` de alguna vuelta de ella (los `step5-start` desde el último
+  // `run-start`) anota en el marcador `ultimoRevisorTs`: «Preparar» se repite sólo si alguno se lanzó después de su cierre
+  // (lib/steps.js prepareCommitStale). Un agente que no está en ninguna vuelta (exploración, otra etapa) no la mueve.
+  try {
+    const { esRevisor } = require('./lib/late-snapshot.js');
+    if (esRevisor(advisor) && (!repo || !story)) {
+      fs.appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: 'launch-unbound', advisor, motivo: !repo ? 'sin repo: no hay marcador ni repo git en la carpeta' : 'sin historia: la sesión no tiene una corrida abierta' }) + '\n', 'utf8');
+    } else if (esRevisor(advisor)) {
+      const parsed = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
+      let desde = 0;
+      parsed.forEach((d, i) => { if (d && d.event === 'run-start') desde = i + 1; });
+      const deLaCorrida = parsed.slice(desde).some((d) => d && d.event === 'step5-start' && Array.isArray(d.expected) && d.expected.includes(advisor));
+      const archivo = path.join(stateDirOf(os.homedir()), 'active', `${sessionId}.json`);
+      const m = deLaCorrida ? JSON.parse(fs.readFileSync(archivo, 'utf8')) : null;
+      if (m && String(m.storyId) === String(story)) {
+        const ahora = new Date().toISOString();
+        if (!(Date.parse(m.ultimoRevisorTs || '') >= Date.parse(ahora))) {
+          const tmp = `${archivo}.${process.pid}.tmp`;
+          fs.writeFileSync(tmp, JSON.stringify({ ...m, ultimoRevisorTs: ahora }, null, 2) + '\n', 'utf8');
+          fs.renameSync(tmp, archivo);
+        }
+      }
+    }
+  } catch (e) {
+    try { process.stderr.write(`on-advisor-run: no pude anotar el lanzamiento de ${advisor} para la corrida (${(e && e.message) || e})\n`); } catch { /* nada */ }
+  }
+
   // ── La FOTO del estado auditado, tomada sola ──────────────────────────────
   // 🔴 `snapshot-iter N` tiene un único momento correcto: ronda de advisors terminada, ANTES del
   // primer fix. Depender de que el orquestador se acuerde falla con el mismo síntoma:

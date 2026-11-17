@@ -173,7 +173,9 @@ export function readRun(text, now) {
   // «Preparar el commit» otra vez: los revisores cerraron después de su cierre. Es la copia de `prepareCommitStale` de
   // lib/steps.js (el cartel corre sin el arnés); la prueba de igualdad de harness-mods.test.js frena si se separan
   const prepEnd = endOf('prepare-commit');
-  const prepareAgain = scheme === 2 && completed.has('prepare-commit') && revEnd !== null && prepEnd !== null && revEnd > prepEnd;
+  const revisorTs = typeof m.ultimoRevisorTs === 'string' ? ms(m.ultimoRevisorTs) : null;
+  const prepareAgain = scheme === 2 && completed.has('prepare-commit') && revEnd !== null && prepEnd !== null && revEnd > prepEnd
+    && (revisorTs === null || revisorTs > prepEnd);
 
   const finished = (id) => {
     if (id === 'reviewers' && reloop) return false;

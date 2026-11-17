@@ -347,7 +347,11 @@ function prepareCommitStale(marker) {
   if (!marker || schemeOf(marker) !== 2 || !isDone(marker, 'prepare-commit')) return false;
   const cierre = reviewersClose(marker);
   const ultimo = Date.parse((((marker.stepTimings || {})['prepare-commit']) || {}).completedAt || '');
-  return cierre !== null && Number.isFinite(ultimo) && cierre > ultimo;
+  if (cierre === null || !Number.isFinite(ultimo) || cierre <= ultimo) return false;
+  // con la hora del último revisor lanzado (on-advisor-run.js la anota y sólo avanza): una vuelta que se cerró sola
+  // después de «Preparar» no lanzó ninguno y no cambió lo preparado. Sin la hora, o ilegible, como antes
+  const revisor = Date.parse(typeof marker.ultimoRevisorTs === 'string' ? marker.ultimoRevisorTs : '');
+  return !Number.isFinite(revisor) || revisor > ultimo;
 }
 
 /** ¿Está abierto Hallazgos? (los revisores cerrados y Hallazgos sin cerrar, en un marcador nuevo) */

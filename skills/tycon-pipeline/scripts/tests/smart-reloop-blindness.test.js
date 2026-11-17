@@ -420,3 +420,113 @@ test('SmartReloop_SinCodigoEnElCambio_NadieRepite — la historia y su carpeta q
   assert.ok(entry, 'la vuelta que se cierra sola queda anotada');
   assert.equal(entry.iter, 2);
 });
+
+// ── Las vueltas miran lo que cambió: el corte en el primer revisor, «Preparar» otra vez y el lanzamiento sin corrida ──
+
+/**
+ * Una vuelta 1 con un arreglo entre lanzamientos: A se lanza a t10, se edita `archivo` a t20 (en el repo del código), B se lanza a t30 (el
+ * último) y la foto sale a t30.3; a t40 se edita la historia, que vive en un repo de specs aparte.
+ */
+function vueltaDel15({ archivo = path.join('src', 'PluginManager.cs'), contenido = '// arreglo\ntry { Run(); } catch (Exception e) { Log(e); }\n' } = {}) {
+  const repo = mkRepoGit();
+  const specs = fs.mkdtempSync(path.join(os.tmpdir(), 'specs-8288-'));
+  const story = path.join(specs, 'story-9.3.1.md');
+  fs.writeFileSync(story, fs.readFileSync(path.join(repo, 'story.md')));
+  const real = path.join(repo, 'src', 'PluginManager.cs');
+  const editado = path.join(repo, archivo);
+  const A = 'tycon-plugin-security-basics';
+  const B = 'tycon-silent-failure-hunter';
+  const base = Date.now() - 120000;
+  const t = (s) => new Date(base + s * 1000).toISOString();
+  const seg = (s) => (base + s * 1000) / 1000;
+  fs.writeFileSync(real, '// base\ntry { Run(); } catch (Exception e) { Log(e); }\n');
+  fs.utimesSync(real, seg(-10), seg(-10));
+  fs.mkdirSync(path.dirname(editado), { recursive: true });
+  fs.writeFileSync(editado, contenido);
+  fs.utimesSync(editado, seg(20), seg(20));
+  fs.appendFileSync(story, 'texto nuevo de la historia\n');
+  fs.utimesSync(story, seg(40), seg(40));
+  const home = mkHome({
+    storyId: '9.3.1', repoPath: repo, storyPath: story,
+    filesTouched: [real, editado, story],
+    fileEvents: [{ path: editado, ts: t(20) }, { path: story, ts: t(40), code: false }],
+    iterations: { 1: { ts: t(30.3), filesSnapshot: [real] } },
+  });
+  escribirRegistro(home, [
+    { ts: t(0), event: 'step5-start', iter: 1, expected: [A, B], mode: 'advisors' },
+    { ts: t(10), advisor: A, story: '9.3.1', repo },
+    { ts: t(30), advisor: B, story: '9.3.1', repo },
+    { ts: t(30.2), event: 'auto-snapshot', iter: 1 },
+  ]);
+  const r = spawnSync(process.execPath,
+    [PIPELINE, 'smart-reloop', '--iter', '2', '--repo', repo, '--story', story, '--files', 'src/PluginManager.cs'],
+    { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: SID } });
+  assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+  const log = (() => { try { return fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8'); } catch { return ''; } })();
+  return { out: JSON.parse(r.stdout), editado, story, A, B, cerroSola: log.split('\n').some((l) => l.includes('smart-reloop-sin-codigo')) };
+}
+
+// T1 SmartReloop_CodeBetweenLaunches_ReRunsEarlyReviewers — @story-8.288 @ac-1
+// 🔴 Falla con: cortar el delta en el último revisor (o en la foto), que deja afuera el arreglo hecho entre los
+// lanzamientos y cierra la vuelta sola con sólo el texto de la historia.
+test('T1 SmartReloop_CodeBetweenLaunches_ReRunsEarlyReviewers @story-8.288 @ac-1', () => {
+  const { out, editado, A, cerroSola } = vueltaDel15();
+  assert.ok(out.delta_files.includes(editado), `el arreglo está en el delta: ${JSON.stringify(out.delta_files)}`);
+  assert.equal(cerroSola, false, 'la vuelta no se cierra sola');
+  assert.ok(out.rerun.includes(A), `${A} se lanzó antes del arreglo y se re-corre — rerun: ${out.rerun.join(', ')}`);
+});
+
+// T2 SmartReloop_OnlyTestsAndStoryText_ClosesItself — @story-8.288 @ac-2
+// 🔴 Falla con: que el corte nuevo cuente como código una prueba editada entre los lanzamientos.
+test('T2 SmartReloop_OnlyTestsAndStoryText_ClosesItself @story-8.288 @ac-2', () => {
+  const { out, cerroSola } = vueltaDel15({ archivo: path.join('tests', 'PluginManager.test.js'), contenido: 'test("x", () => {});\n' });
+  assert.equal(cerroSola, true, `sólo pruebas y texto de la historia: se cierra sola — rerun: ${out.rerun.join(', ')}`);
+  assert.deepEqual(out.rerun, []);
+});
+
+// T3 PrepareCommit_StoryTextAfterReviewers_NoNewRound — @story-8.288 @ac-3 @ac-4
+// 🔴 Falla con: decidir «Preparar» otra vez sólo por horas (una vuelta que se cerró sola lo pide) o por `fileEvents`
+// (no ve lo editado por consola y una vuelta posterior sin código lo taparía).
+test('T3 PrepareCommit_StoryTextAfterReviewers_NoNewRound @story-8.288 @ac-3 @ac-4', () => {
+  const S = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const T0 = Date.parse('2026-11-15T19:00:00Z');
+  const at = (min) => new Date(T0 + min * 60000).toISOString();
+  const m = (extra) => ({
+    storyId: '9.3.1', stepScheme: S.SCHEME, stepsCompleted: S.STEPS.map((s) => s.id), stepsPending: [],
+    stepTimings: { reviewers: { startedAt: at(10), completedAt: at(20), lastCompletedAt: at(32), rounds: 2 }, findings: { completedAt: at(22) }, 'prepare-commit': { completedAt: at(25) } },
+    ...extra,
+  });
+  // la vuelta de después de «Preparar» se cerró sola (sólo texto de la historia): ningún revisor se lanzó después
+  assert.equal(S.prepareCommitStale(m({ ultimoRevisorTs: at(15) })), false, 'sólo texto de la historia: no se prepara de nuevo');
+  // un revisor se lanzó después de «Preparar» (hubo código), aunque después venga otra vuelta sin código
+  assert.equal(S.prepareCommitStale(m({ ultimoRevisorTs: at(28) })), true, 'con código revisado después: se prepara de nuevo');
+  // sin la marca (un marcador de antes), como hoy: por horas
+  assert.equal(S.prepareCommitStale(m({})), true, 'sin la marca, como hoy');
+  assert.equal(S.prepareCommitStale(m({ ultimoRevisorTs: 'no es una hora' })), true, 'con la marca ilegible, como hoy');
+});
+
+// T8 AdvisorRun_WithoutRun_LogsWhy — @story-8.288 @ac-10
+// 🔴 Falla con: que el lanzamiento de un revisor sin corrida (sin repo o sin historia) salga callado.
+test('T8 AdvisorRun_WithoutRun_LogsWhy @story-8.288 @ac-10', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'unbound-home-'));
+  const sinGit = fs.mkdtempSync(path.join(os.tmpdir(), 'unbound-cwd-'));
+  const repo = mkRepoGit();
+  const lanzar = (cwd, agente) => {
+    const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-unbound', TYCON_AUTO_SNAPSHOT: '0' };
+    delete env.TYCON_HOME;
+    const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-advisor-run.js')], {
+      cwd, env, encoding: 'utf8',
+      input: JSON.stringify({ tool_name: 'Agent', session_id: 's-unbound', cwd, tool_input: { subagent_type: agente, prompt: 'x' } }),
+    });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  lanzar(sinGit, 'tycon-plugin-security-basics');
+  lanzar(repo, 'tycon-silent-failure-hunter');
+  lanzar(repo, 'Explore');
+  const estado = require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(home);
+  const lineas = fs.readFileSync(path.join(estado, 'advisor-runs', 's-unbound.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const sueltos = lineas.filter((l) => l.event === 'launch-unbound');
+  assert.deepEqual(sueltos.map((l) => l.advisor).sort(), ['tycon-plugin-security-basics', 'tycon-silent-failure-hunter'], 'los dos revisores sin corrida dejan su renglón; la exploración no');
+  assert.match(sueltos.find((l) => l.advisor === 'tycon-plugin-security-basics').motivo, /sin repo/);
+  assert.match(sueltos.find((l) => l.advisor === 'tycon-silent-failure-hunter').motivo, /sin historia/);
+});

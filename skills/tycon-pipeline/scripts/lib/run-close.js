@@ -151,19 +151,16 @@ if (require.main === module) {
       const or = require('./open-runs.js');
       const cmd = fs.readFileSync(0, 'utf8');
       const todas = llamadas(cmd, { shell: arg('--shell') === 'powershell' ? 'powershell' : 'bash' });
-      // la salida de una ejecución perdida: la firma es de la ejecución que abrió esa apertura
-      const aperturaDe = (s) => {
-        const ult = or.vigente(s);
-        if (ult && ult.name === 'run-open') return ult;
-        const raiz = or.raizDeGit(process.cwd());
-        const copias = raiz ? or.copiasDe(raiz, s) : [];
-        return copias.length ? copias[copias.length - 1].copia : null;
-      };
+      // la salida de una ejecución perdida: la firma es de la ejecución que abrió esa apertura. La busca la misma regla
+      // que marker.js (open-runs.js `aperturaParaSalida`): al restaurar, también la copia podada y el restore a medias.
+      // Sin `startedAt` en la podada, la hora es su último toque, y va con «antes de»
+      const aperturaDe = (s, modo) => or.aperturaParaSalida(s, { modo, cwd: process.cwd(), estado: stateDir(), propia: sid });
       pedidas = todas.map((l) => {
         const s = salidaPerdida(l);
         if (!s) return { l, esc: escapeDe(l, sid, cmd) };
-        const ap = s.sesion ? aperturaDe(s.sesion) : null;
-        return { l, esc: 'cerrar la ejecución', siempre: true, perdida: true, desde: (ap && ap.ts) || '-' };
+        const ap = s.sesion ? aperturaDe(s.sesion, l.sub === 'restore' ? 'restore' : 'lost') : null;
+        const desde = ap && ap.ts ? `${ap.antes ? 'antes de ' : ''}${ap.ts}` : '-';
+        return { l, esc: 'cerrar la ejecución', siempre: true, perdida: true, desde };
       }).filter((x) => x.esc);
     } catch (e) {
       pedidas = dudoso(`no pude leer el comando: ${e.message}`);
