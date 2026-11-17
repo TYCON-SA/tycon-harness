@@ -442,11 +442,11 @@
       "stderr": "🔒 save-check: la corrida no tiene un ok de guardar (saveOk): hay que pedirlo\n",
       "archivos": {}
     },
-    "designate-relay-sin-frase": {
+    "designate-relay-frase-sin-rol": {
       "status": 1,
       "signal": null,
       "stdout": "",
-      "stderr": "🚫 marker.js designate-relay: no se nombró a la coordinadora — no pude comprobar el click: la organización no usa una sesión que reenvía el ok de un dev (approvals.relay_session del perfil del equipo).\n   Respaldos: en la terminal de la persona, node <GUIONES>/marker.js designate-relay --terminal --for-session ses-contrato-8163;\n   o con su frase: node <GUIONES>/marker.js designate-relay --approved-by '<el dev>' --quote '<su frase>' y después node <ARNES>/scripts/lib/delegated-signing.js confirm-designation --terminal\n",
+      "stderr": "🚫 marker.js designate-relay: no se designó nada — la frase no nombra el rol «coordinadora».\n   Con una frase que nombra el rol (por ejemplo «Esta sesión es la coordinadora», con o sin tildes): node <GUIONES>/marker.js designate-relay --approved-by '<el dev>' --quote '<la frase>'\n",
       "archivos": {}
     },
     "withdraw-relay": {

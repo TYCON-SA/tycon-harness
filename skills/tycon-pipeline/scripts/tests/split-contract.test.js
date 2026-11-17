@@ -137,7 +137,9 @@ const CASOS = [
   { id: 'review-answer-sin-args', marcador: true, argv: ['review-answer'] },
   { id: 'owner-away-sin-args', argv: ['owner-away'] },
   { id: 'save-check-sin-args', marcador: true, argv: ['save-check'] },
-  { id: 'designate-relay-sin-frase', argv: ['designate-relay'] },
+  // con una frase que no nombra el rol: sin frase, la respuesta depende de las firmas del perfil del equipo, que se leen
+  // siempre del perfil del árbol (ninguna variable las cambia) y el árbol armado del portón lo trae
+  { id: 'designate-relay-frase-sin-rol', argv: ['designate-relay', '--approved-by', 'acme', '--quote', 'hola'] },
   { id: 'withdraw-relay', argv: ['withdraw-relay'] },
   { id: 'mark-tested-sin-args', marcador: true, argv: ['mark-tested'] },
   { id: 'mark-adversarial-launched', marcador: true, argv: ['mark-adversarial-launched', 'run-juguete', '4'] },
