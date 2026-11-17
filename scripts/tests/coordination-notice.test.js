@@ -1835,4 +1835,23 @@ test('8.289 T8 Aviso_FilaDelPortonLarga_ParaYReabre @story-8.289 @ac-12: con 2 o
   waitNote(t, 's-a', 'A', 50);
   stopped(t, 'pruned', 'd-1', '8.300');
   assert.strictEqual(gateLine(C.capNotice({ ...t.opts, readMemory: mem(55) })), undefined);
+  // (j) el marcador de un hilo de Codex vivo no es una detenida: Codex no deja archivo de sesión; uno quieto hace más de
+  // 3 h sí lo es, como en heavyPassesInFlight
+  // 🔴 mutación: decidir «sin sesión viva» sólo con las sesiones de Claude (se reabre la corrida que Codex está haciendo)
+  t = queue({ busy: 3 });
+  stopped(t, 'active', 'cx-vivo', '8.500');
+  stopped(t, 'active', 'cx-quieto', '8.501', { at: mins(300) });
+  const codexHome = path.join(t.root, 'codex');
+  fs.mkdirSync(codexHome);
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(codexHome, 'state_1.sqlite'));
+  db.exec('CREATE TABLE threads (id TEXT, name TEXT, updated_at_ms INTEGER, source TEXT)');
+  db.prepare('INSERT INTO threads VALUES (?, ?, ?, ?)').run('cx-vivo', 'Con Codex', mins(1), 'cli');
+  db.prepare('INSERT INTO threads VALUES (?, ?, ?, ?)').run('cx-quieto', 'Codex quieto', mins(4 * 60), 'cli');
+  db.close();
+  const s = C.status({ ...t.opts, codexHome, noTranscripts: true });
+  assert.deepStrictEqual(s.stopped.map((x) => x.sid), ['cx-quieto'], JSON.stringify(s.stopped));
+  line = gateLine(C.capNotice({ ...t.opts, codexHome, readMemory: mem(30) }));
+  assert.match(line, /reabrí la 8\.501/, line);
+  assert.doesNotMatch(line, /8\.500/, line);
 });

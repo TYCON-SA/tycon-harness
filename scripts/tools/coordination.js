@@ -231,7 +231,7 @@ function outsideWaitOf(home, sid, now) {
 }
 
 // Las corridas detenidas con su plan firmado, de la firma más vieja a la más nueva: los marcadores de `active/` cuya sesión
-// no vive y los de `pruned/`. Los filtros van en orden y el primero que falla la descarta: plan firmado, pasos pendientes,
+// no vive (ni de Claude ni un hilo de Codex con actividad reciente) y los de `pruned/`. Los filtros van en orden y el primero que falla la descarta: plan firmado, pasos pendientes,
 // tocada hace menos de 24 h, ningún otro marcador de su historia en `active/`, y recién al final la historia en
 // `in-progress`, leída de su archivo. Así un marcador terminado de una carpeta borrada no llega a «No pude leer».
 const STOPPED_FRESH_MS = 24 * 3600000;
@@ -536,6 +536,8 @@ function status(opts = {}) {
   for (const c of codexThreads(opts.codexHome || path.join(home, '.codex'), problems)) {
     const session = c.name || c.id.slice(0, 8);
     const ago = c.last ? now - c.last : null;
+    // Codex no deja archivo de sesión: su marcador sigue vivo mientras el hilo tuvo actividad hace poco, como en heavyPassesInFlight
+    if (c.last && now - c.last < CODEX_IDLE_MS) aliveSids.add(c.id);
     if (ago != null && ago >= 0 && ago < CODEX_WINDOW_MS) working.push({ session, sid: c.id, why: 'Codex, con actividad en los últimos 5 minutos', since: c.last });
     else if (ago != null && ago >= 0 && ago < CODEX_IDLE_MS) waiting.push({ session, sid: c.id, why: 'Codex, sin actividad en los últimos 5 minutos' });
     else if (ago == null) waiting.push({ session, sid: c.id, why: 'Codex, sin fecha de actividad' });
