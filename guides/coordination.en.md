@@ -619,6 +619,18 @@ it goes without text, `marker.js doing --waiting-for "<what it waits for>"`, and
 for. `marker.js` refuses any other note there: the step already says what the run does and when it ends, and a note on
 top would show the story paused. Leaving the story for other work is another session.
 
+**A stopped autonomous mode arrives as a row.** When the closing control stops an autonomous session (the round cap, or
+a round with no progress), it writes the time into its marker and leaves a request in the owner's list with the
+`autonomy-resume` signature: "does this session go back to autonomous mode?", with the reason, the time and the failures
+as they stood. The coordinator passes it with `owner-next` like any other; only the owner answers it, with their click
+(in the coordinator's tab or in the session's) or from their terminal (`marker.js resume-autonomy --terminal
+--for-session <session>`, which leaves a permit). The decision is taken by the stopped session itself with
+`marker.js resume-autonomy`: the message the coordinator sends it only wakes it up, and if the command exits 1 the
+session stays stopped. A "No" (`owner-reject`) is recorded and the session does not ask again on its own for that stop;
+only `resume-autonomy --ask-again` asks again. While it is stopped, neither `set-autonomous true`, nor `set` with another
+story, nor closing it without a signature, nor clearing it from another session are ways out. The panic button
+(`STOP_AUTONOMY`) leaves no row: a person lifts it by hand.
+
 **A pruned run can be recovered.** If it was pruned anyway ("abandonada: más de N h sin tocarse"), its marker was
 saved: the session that takes it back runs `marker.js restore <session>` (the pruned session), with the owner's usual
 signature, and it comes back with its done and pending steps, without repeating signatures.

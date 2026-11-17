@@ -2496,7 +2496,7 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
 const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
-  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'lost-run:particion'];
+  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'autonomy-resume', 'lost-run:particion'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
 test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {

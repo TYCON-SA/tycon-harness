@@ -135,19 +135,37 @@ function hardEscape() {
 }
 
 function escalate(sessionId, marker, reason, failures) {
+  const fallos = Array.isArray(failures) ? failures : [];
   marker.autonomous = false;       // desactiva el modo → el próximo stop se permite (no trap)
   marker.needs_human = true;
   marker.escalation_reason = reason;
+  // la detención entera, con su hora: de ahí salen el cuadro del dueño y la huella que ata su click a esta detención
+  marker.escalation = { reason, failures: fallos, iter: marker.iter || 0, at: new Date().toISOString() };
   writeMarker(sessionId, marker);
-  // La persona ve el rojo tal como quedó registrado, sin depender de que el agente lo transcriba.
-  const crudo = `🛑 El modo autónomo se detuvo: ${reason}. Sigue en rojo, tal cual:\n${failures.map((f) => `  - ${f}`).join('\n')}`;
+  // La decisión de seguir le llega al dueño como un pendiente (lib/autonomy-decision.js): el renglón en su lista, con el
+  // cuadro que sale de la detención. El botón de pánico no: lo saca una persona a mano. Si la lista no se pudo escribir,
+  // el cierre se deja pasar igual, y la decisión queda en la sesión o en la terminal del dueño.
+  const ad = require('./lib/autonomy-decision.js');
+  const markerJs = path.join(__dirname, 'marker.js');
+  const terminal = ad.comandoDeLaTerminal(markerJs, sessionId);
+  let decision;
+  if (/^hard-escape/.test(String(reason))) decision = ad.textoDelPanico(ad.panico(STATE_DIR, process.env) || 'STOP_AUTONOMY');
+  else {
+    let anotado;
+    try { anotado = ad.anotar({ casa: os.homedir(), sesion: sessionId, marker, cwd: marker.repoPath || process.cwd(), markerJs }); } catch (e) { anotado = { ok: false, motivo: String((e && e.message) || e) }; }
+    if (!anotado.ok) require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: marker.repoPath || null, name: 'autonomy-decision', status: 'error', motivo: anotado.motivo });
+    decision = ad.textoDelBloqueo({ anotado, terminal });
+  }
+  // La persona ve el rojo tal como quedó registrado, sin depender de que el agente lo transcriba, y cómo sigue desde su terminal.
+  const crudo = `🛑 El modo autónomo se detuvo: ${reason}. Sigue en rojo, tal cual:\n${fallos.map((f) => `  - ${f}`).join('\n')}\n` +
+    `Para que siga en autónomo, desde tu terminal: ${terminal}`;
   toPerson = toPerson ? `${toPerson}\n${crudo}` : crudo;
   // Un block de un solo tiro: fuerza a Claude a relayear al humano ANTES de cerrar; como
   // autonomous ya es false, el próximo intento de stop se permite.
   blockStop(
     `🛑 AUTONOMÍA DETENIDA — ${reason}. El loop NO converge.\n` +
-    `Fallos residuales:\n${failures.map((f) => `  - ${f}`).join('\n')}\n\n` +
-    `Reportá esto al humano y NO sigas iterando solo — necesita decisión humana.`,
+    `Fallos residuales:\n${fallos.map((f) => `  - ${f}`).join('\n')}\n\n` +
+    `Reportá esto al humano y NO sigas iterando solo — necesita decisión humana.\n${decision}`,
   );
 }
 

@@ -602,6 +602,17 @@ ejecución del pipeline abierta va sin texto, `marker.js doing --waiting-for "<q
 dice qué espera. Cualquier otra nota ahí `marker.js` la niega: el paso ya dice qué hace y a qué hora termina, y una nota
 encima mostraría la historia en pausa. Dejar la historia por otro trabajo es otra sesión.
 
+**La detención del modo autónomo llega como un renglón.** Cuando el control de cierre detiene una sesión autónoma (el tope
+de vueltas o una vuelta sin progreso), anota la hora en su marcador y deja en la lista del dueño un pedido con la firma
+`autonomy-resume`: «¿esta sesión vuelve al modo autónomo?», con el motivo, la hora y los fallos tal como quedaron. La
+coordinadora lo pasa con `owner-next` como cualquier otro; lo contesta sólo el dueño, con su click (en la pestaña de la
+coordinadora o en la de la sesión) o desde su terminal (`marker.js resume-autonomy --terminal --for-session <sesión>`,
+que deja un permiso). La decisión la toma la sesión detenida con `marker.js resume-autonomy`: el mensaje que la
+coordinadora le manda sólo la despierta, y si el comando sale 1 la sesión sigue detenida. Un «No» (`owner-reject`) queda
+anotado y la sesión no vuelve a preguntar sola por esa detención; sólo `resume-autonomy --ask-again` la pide de nuevo.
+Mientras está detenida, ni `set-autonomous true`, ni `set` con otra historia, ni cerrarla sin firma, ni borrarla desde
+otra sesión son salidas. El botón de pánico (`STOP_AUTONOMY`) no deja renglón: lo levanta una persona a mano.
+
 **Una ejecución podada se recupera.** Si igual se podó («abandonada: más de N h sin tocarse»), su marcador quedó
 guardado: la sesión que la retoma corre `marker.js restore <sesión>` (la sesión podada), con la firma del dueño de
 siempre, y vuelve con sus pasos hechos y pendientes, sin repetir firmas.

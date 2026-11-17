@@ -1830,6 +1830,7 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['adhoc-lane:sobre-cupo', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido","maxFiles":9}']],
     ['adhoc-lane:datos', ['node', M, 'adhoc', 'allow-data-change', '--changed', 'el botón pide al proceso', '--recommends', 'pasar', '--why', 'autorizo el cambio']],
     ['adhoc-lane:guardado-ajeno', ['node', M, 'adhoc', 'allow-foreign-save']],
+    ['autonomy-resume', ['node', M, 'resume-autonomy']],
     ['designation-confirm', ['node', D, 'confirm-designation']],
     // nombrar y retirar a la coordinadora con un click
     ['designation-set', ['node', M, 'designate-relay']],

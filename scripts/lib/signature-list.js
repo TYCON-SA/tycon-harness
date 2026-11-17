@@ -534,9 +534,15 @@ function rechazar({ casa, id, sesion }) {
       if (roto) return { ok: false, mensaje: `no entiendo ese renglón (${roto}): no lo saqué` };
       if (f.destino !== sesion && oa().coordinadoraConfirmada(casa) !== sesion) return { ok: false, mensaje: `«${id}» es de otra sesión: lo saca ella o la coordinadora` };
       escribir(casa, lista.filter((x) => x !== f));
+      // el «No» queda en el registro: la sesión destino puede saber que la persona ya dijo que no a ese pedido y no
+      // volver a preguntar sola (la decisión de seguir en autónomo lo lee). Sin poder anotarlo, el renglón sale igual
+      let sinAnotar = '';
+      try {
+        fs.appendFileSync(path.join(stateDir(casa), 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: sesion, name: 'signature-rejected', status: 'ok', firma: f.firma, destino: f.destino, key: f.key || null, id })}\n`);
+      } catch (e) { sinAnotar = ` No pude anotar el «No» en el registro (${e.message}): la sesión puede volver a preguntar.`; }
       const x = sesiones(casa).mapa.get(f.destino);
       const nombre = (x && x.name) || String(f.destino).slice(0, 8);
-      return { ok: true, destino: f.destino, nombre, mensaje: `Saqué ${id}. Su destino es ${nombre} (${f.destino}): avisale que la persona dijo que no.` };
+      return { ok: true, destino: f.destino, nombre, mensaje: `Saqué ${id}. Su destino es ${nombre} (${f.destino}): avisale que la persona dijo que no.${sinAnotar}` };
     });
   } catch (e) { return { ok: false, mensaje: `no saqué el renglón: ${e.message}` }; }
 }

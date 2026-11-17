@@ -243,6 +243,21 @@ function matches(prompt, patterns) {
 const NON_HUMAN_RE = /<task-notification>|<local-command-stdout>|<command-name>|SYSTEM NOTIFICATION - NOT USER INPUT|<system-reminder>/;
 const { prompt, sessionId, transcriptPath } = readEvent();
 if (!prompt) process.exit(0);
+
+// Una ejecución detenida por el control de cierre (`needs_human`) que despierta con un mensaje que no tipeó la persona:
+// el recordatorio de que la decisión es del dueño (lib/autonomy-decision.js). Va antes del corte de abajo porque un aviso
+// de tarea también la despierta. Fail-open: un error acá no frena el gancho.
+try {
+  const detenido = readMarker(sessionId);
+  if (detenido && detenido.needs_human === true) {
+    const sl = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-list.js'));
+    const s = sl.sesiones(os.homedir()).mapa.get(sessionId);
+    if (!sl.esDeLaPersona({ prompt, kind: s ? s.kind || 'interactive' : null, transcript: transcriptPath })) {
+      emit(require('./lib/autonomy-decision.js').recordatorio({ casa: os.homedir(), sesion: sessionId, marker: detenido }));
+    }
+  }
+} catch { /* fail-open */ }
+
 if (NON_HUMAN_RE.test(prompt)) process.exit(0);
 
 // El self-upgrade del SessionStart hook no vive acá: reescribiría
