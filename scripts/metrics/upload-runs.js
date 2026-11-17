@@ -773,7 +773,7 @@ function prepararJornadas({ dirRegistros, pasada }) {
     // sin el armado o sus piezas al lado (una copia suelta del guion), esta máquina no participa: no es «no pude». Otro
     // módulo que falta es una instalación rota, y se dice
     const falta = e && e.code === 'MODULE_NOT_FOUND' ? String(e.message).split('\n')[0] : '';
-    if (/(workday-upload|worked-time|session-transcript|session-state|state-dir)(\.js)?'/.test(falta)) return { dir, files: [], problema: null };
+    if (/(workday-upload|worked-time|transcript-tokens|session-state|state-dir)(\.js)?'/.test(falta)) return { dir, files: [], problema: null };
     return { dir, files: [], problema: `no se pudieron armar (${(e && e.code) || 'error'})` };
   }
 }

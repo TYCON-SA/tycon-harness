@@ -396,7 +396,7 @@ test('T46 Armado_RenglonDelGanchoMientrasLee_SeRearma @story-8.209 @ac-12', () =
   opened(w, '2026-11-11', '2026-11-11 08:00');
   span(w, '2026-11-11', 'a46', '2026-11-11 09:00', '2026-11-11 10:00');
   claudeConv(w, 'c46', [['2026-11-11 09:30', 1, 1, 0]], { mtime: at('2026-11-11 09:30') });
-  const ST = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
+  const ST = require(path.join(ROOT, 'scripts', 'lib', 'transcript-tokens.js'));
   const original = ST.dayTokens;
   let una = false;
   ST.dayTokens = (...args) => {

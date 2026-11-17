@@ -21,8 +21,6 @@ on:
     paths:
       - 'scripts/site/**'
       - 'scripts/tools/office/**'
-      - 'scripts/tools/office.js'
-      - 'scripts/tools/work-in-progress.js'
       - 'scripts/lib/**'
       - 'scripts/metrics/**'
       - 'scripts/instincts/instinct-upload.js'

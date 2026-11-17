@@ -31,7 +31,7 @@ const fs = require('fs');
 const path = require('path');
 
 const WT = require('../lib/worked-time.js');
-const ST = require('../lib/session-transcript.js');
+const TT = require('../lib/transcript-tokens.js');
 
 const WINDOW_DAYS = 30;
 const DAY_FILE = /^(\d{4}-\d{2}-\d{2})\.json$/;
@@ -161,8 +161,8 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
     if (!wanted.length) continue;
     const got = { conv: c, byDay: null, agents: [], problema: null, wanted: new Set(wanted.map((r) => r.day)) };
     try {
-      got.byDay = ST.dayTokens(c.file, { days: wanted });
-      for (const a of c.agents) got.agents.push(ST.dayTokens(a.file, { days: ranges.filter((r) => a.mtime >= r.desde), isAgent: true }));
+      got.byDay = TT.dayTokens(c.file, { days: wanted });
+      for (const a of c.agents) got.agents.push(TT.dayTokens(a.file, { days: ranges.filter((r) => a.mtime >= r.desde), isAgent: true }));
     } catch (e) { got.problema = e.code || 'error'; }
     perConv.push(got);
   }
