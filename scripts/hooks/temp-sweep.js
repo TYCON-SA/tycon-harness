@@ -119,7 +119,7 @@ function defaultRoots() {
   if (WIN) return [path.join(os.homedir(), 'AppData', 'Local', 'Temp')];
   if (process.platform !== 'darwin') return ['/tmp'];
   // el nombre que pide getconf empieza con el de la plataforma, en mayúsculas
-  const r = spawnSync('/usr/bin/getconf', [`${process.platform.toUpperCase()}_USER_TEMP_DIR`], { encoding: 'utf8', timeout: 5000 });
+  const r = spawnSync('/usr/bin/getconf', [`${process.platform.toUpperCase()}_USER_TEMP_DIR`], { windowsHide: true, encoding: 'utf8', timeout: 5000 });
   const user = r.status === 0 ? (r.stdout || '').trim() : '';
   return [...(user ? [user] : []), '/private/tmp'];
 }
@@ -178,7 +178,7 @@ function fromLsof() {
   // por su ruta del sistema: uno encontrado en el PATH podría ser otro programa
   const bin = ['/usr/sbin/lsof', '/usr/bin/lsof'].find((p) => fs.existsSync(p));
   if (!bin) return null;
-  const r = spawnSync(bin, ['-u', String(process.getuid()), '-Fn'], { encoding: 'utf8', timeout: LSOF_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync(bin, ['-u', String(process.getuid()), '-Fn'], { windowsHide: true, encoding: 'utf8', timeout: LSOF_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 });
   // lsof sale 1 cuando no pudo leer algún proceso y la lista sirve igual; cortado por una señal, queda por la mitad
   if (r.error || r.signal || (r.status !== 0 && r.status !== 1) || !r.stdout) return null;
   const out = new Set();
