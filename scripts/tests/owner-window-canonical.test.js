@@ -135,6 +135,15 @@ test('T20 Huella_RutaRelativaYAbsoluta_MismoCodigo @story-8.296 @ac-17', (t) => 
   const lejos = cuadroDe(casa, 'runtime-waiver', `node ${MARKER} runtime-waiver h/tres.md --acs 1`, repo);
   assert.ok(!lejos.error, lejos.error);
   assert.notStrictEqual(lejos.sello, abs.sello, 'dio por igual una ruta que el guion lee desde otra carpeta');
+  // `--for-session <id>` sale de la forma canónica, esté donde esté, y nada más sale con él
+  const sinDestino = ow.formaCanonica(ow.canonica(`node ${MARKER} runtime-waiver ${story} --acs 1 --approved-by x`));
+  assert.deepStrictEqual(ow.formaCanonica(ow.canonica(`node ${MARKER} runtime-waiver ${story} --for-session ses-b --acs 1 --approved-by x`)), sinDestino);
+  assert.deepStrictEqual(ow.formaCanonica(ow.canonica(`node ${MARKER} runtime-waiver ${story} --acs 1 --approved-by x --for-session ses-b`)), sinDestino);
+  // la historia que se normaliza es sólo la de runtime-waiver; sin casa, la relativa se lee desde la carpeta del pedido
+  assert.strictEqual(ow.historiaDelPedido(['marker.js', 'mark-tested', 'h/tres.md'], { cwd: repo, casa, destino: 'ses-a' }), null);
+  assert.strictEqual(ow.historiaDelPedido(['marker.js', 'runtime-waiver', '--acs', '1'], { cwd: repo, casa, destino: 'ses-a' }), null);
+  assert.strictEqual(ow.historiaDelPedido(['marker.js', 'runtime-waiver', 'h/tres.md'], { cwd: repo, destino: 'ses-a' }), fs.realpathSync(story));
+  assert.strictEqual(ow.historiaDelPedido(['marker.js', 'runtime-waiver', 'h/tres.md'], { cwd: repo, casa }), fs.realpathSync(story));
 });
 
 test('T21 Huella_CambiaLoQueSeFirma_OtroCodigo @story-8.296 @ac-18', (t) => {
@@ -190,9 +199,12 @@ test('T23 Huella_SinFormaCanonica_ComoHoy @story-8.296 @ac-20', (t) => {
   // sin forma canónica, la huella sale del texto: el orden distinto pregunta de nuevo
   const s = (cmd) => cuadroDe(casa, 'runtime-waiver', cmd).sello;
   assert.notStrictEqual(s(`node ${MARKER} runtime-waiver ${story} --acs 1,a --approved-by x`), s(`node ${MARKER} runtime-waiver ${story} --approved-by x --acs 1,a`));
-  // la historia que no existe: sin cuadro, como hoy
-  const c = cuadroDe(casa, 'runtime-waiver', `node ${MARKER} runtime-waiver /no/existe/9.94.md --acs 1`);
-  assert.ok(c.error, JSON.stringify(c));
+  // la historia que no existe, o un --acs sin un criterio de verdad (0, 1.5): sin cuadro, como hoy
+  for (const cmd of [`node ${MARKER} runtime-waiver /no/existe/9.94.md --acs 1`, `node ${MARKER} runtime-waiver ${story} --acs 0`,
+    `node ${MARKER} runtime-waiver ${story} --acs 1.5`]) {
+    const c = cuadroDe(casa, 'runtime-waiver', cmd);
+    assert.ok(c.error, `${cmd}: ${JSON.stringify(c)}`);
+  }
 });
 
 test('T24 Click_SelloDeAntes_NoSeToma_YLaGuiaLoDice @story-8.296 @ac-21', (t) => {
