@@ -2516,6 +2516,8 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     ['adhoc-lane:guardado-ajeno', `node ${MARKER} adhoc allow-foreign-save`],
     // cerrar una ejecución reemplazada por una partición: la bandera mal puesta se niega antes del cuadro
     ['lost-run:particion', `node ${MARKER} clear-session ses-a --lost --partition`],
+    // volver al modo autónomo: sin detención, con el botón de pánico o con el «No» del dueño se niega antes del cuadro
+    ['autonomy-resume', `node ${MARKER} resume-autonomy`],
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {
