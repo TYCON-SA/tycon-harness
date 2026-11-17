@@ -21,8 +21,8 @@
  *    de suite mal calculada, una suite con un caso de menos o renombrado, un `skip`
  *    nuevo, un peso o un tope menor, o una suite que pasó a correr sólo cuando se la toca.
  * stable-data: no crea commits ni lee el reloj; de git sólo lee el propio clon (`show`, `cat-file -e` y `rev-parse`).
- * 0 deps (node:test). Lee git del propio clon; en un clon recortado sin el commit de antes, T19 y T22 lo dicen y no
- * miden.
+ * 0 deps (node:test). Lee git del propio clon; sin el commit de antes (un clon recortado, o el árbol armado del privado,
+ * que no trae la historia del público), T19 y T22 lo dicen y no miden.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -40,12 +40,14 @@ const enCommit = (commit, rel) => {
   const r = git('show', `${commit}:${rel}`);
   return r.status === 0 ? r.stdout : null;
 };
-/** ¿Está el commit en este clon? En uno recortado puede faltar: la comparación no se mide. */
+/**
+ * ¿Está el commit en este clon? Puede faltar en un clon recortado o en una copia sin la historia del público (el árbol
+ * que arma el privado con el público encima): ahí la comparación no se mide, y se dice, porque no es un verde.
+ */
 function commitDisponible(t, commit) {
   if (git('cat-file', '-e', `${commit}^{commit}`).status === 0) return true;
   const recortado = git('rev-parse', '--is-shallow-repository').stdout.trim() === 'true';
-  assert.ok(recortado, `el commit de antes ${commit} no está en el clon, y el clon no está recortado`);
-  t.skip(`NO MEDIDO: clon recortado sin el commit de antes (${commit})`);
+  t.skip(`NO MEDIDO: ${recortado ? 'clon recortado' : 'copia sin la historia del público'}, sin el commit de antes (${commit}). No es un verde.`);
   return false;
 }
 
