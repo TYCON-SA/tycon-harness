@@ -1568,6 +1568,13 @@ test('T2 Maquina_MedidaQueFalla_NoVa @story-8.301 @ac-1 @ac-2 — la medida que 
   const tooRecent = { ...base(), previous: { at: NOW - 100, times: { busy: 0, total: 0 } }, readCpus: cpuReads(cpu(35, 65)) };
   assert.deepStrictEqual(await machineLoad(tooRecent), { memoria: 62, procesador: 35 });
   assert.deepStrictEqual(tooRecent.wait.ms, [150]);
+  // una lectura «del futuro» (el reloj del sistema se atrasó después de leerla) no vale: dos nuevas a 250 ms, nunca una
+  // espera del tamaño del salto
+  for (const jump of [4000, 3600000]) {
+    const future = { ...base(), previous: { at: NOW + jump, times: { busy: 0, total: 0 } }, readCpus: cpuReads(cpu(0, 0), cpu(35, 65)) };
+    assert.deepStrictEqual(await machineLoad(future), { memoria: 62, procesador: 35 }, `reloj atrasado ${jump} ms`);
+    assert.deepStrictEqual([future.wait.ms, future.readCpus.calls], [[250], 2], `reloj atrasado ${jump} ms`);
+  }
   // quien sólo lee lo que espera al dueño no mide la máquina
   const none = await collect({ home: emptyHome(), now: new Date(NOW).toISOString(), siteUrl: noSite, machine: false });
   assert.strictEqual(none.meta.maquina, undefined);

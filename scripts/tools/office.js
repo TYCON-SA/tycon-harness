@@ -2191,7 +2191,8 @@ async function machineLoad({ platform = process.platform, run, readFile, readCpu
   try {
     const prev = previous === undefined ? lastCpuRead : previous;
     const age = prev ? now() - prev.at : Infinity;
-    let first = age < CPU_PREVIOUS_MAX_MS ? prev.times : null;
+    // una lectura «del futuro» (el reloj se atrasó después de leerla) no vale: si no, se esperaría el tamaño del salto
+    let first = age >= 0 && age < CPU_PREVIOUS_MAX_MS ? prev.times : null;
     if (!first) { first = cpuTimes(readCpus()); await wait(CPU_GAP_MS); }
     // una lectura muy reciente se usa, pero el reloj del sistema tiene que llegar a avanzar
     else if (age < CPU_GAP_MS) await wait(CPU_GAP_MS - age);
