@@ -101,7 +101,10 @@ test('T30 PersonOk_SoloLoQueNoEsFirma @story-8.139 @ac-29 @ac-30 — exporta só
     }
   };
   for (const d of ['skills', 'scripts']) recorrer(path.join(RAIZ, d));
+  // delegation-routing.js lee la conversación sólo para saber si el pedido existe antes de darle el comando a la
+  // coordinadora: la firma sale igual del freno, por la delegación
   assert.deepEqual(importan.sort(), [
+    'scripts/lib/delegation-routing.js',
     'scripts/lib/signature-list.js',
     'skills/tycon-pipeline/scripts/lib/external-flags.js',
     // marker.js partido: la carga la hace su módulo compartido

@@ -167,8 +167,9 @@ function cmdSet(payloadJson) {
       sessionModel, codexSession,
       // las suites que fallaron son de la corrida: heredadas, la primera corrida completa de la story nueva se negaría
       // (76) por suites que sólo rompió la anterior. Lo guardado de una completa verde, igual: la nueva compararía su
-      // carpeta con una completa de otra historia
-      testsFailed, testsGreenFull,
+      // carpeta con una completa de otra historia. La nota de la última corrida, igual: la primera de la story nueva
+      // saldría «entera», con el motivo de la vieja
+      testsFailed, testsGreenFull, testsSavedNote,
       // la tanda es de la historia: heredada, la matriz de la nueva mediría una tanda que no es suya
       batch, batchSetAt,
       ...carryOver
@@ -344,9 +345,19 @@ function cmdSet(payloadJson) {
   process.stdout.write(JSON.stringify(marker, null, 2));
 }
 
-function cmdGet() {
+function cmdGet(opcion) {
   const marker = readMarker();
   process.stdout.write(JSON.stringify(nn(marker, {}), null, 2));
+  // `{}` dice lo mismo sin corrida que con un marcador roto: con --strict, el roto sale 3 para quien tiene que distinguirlos
+  if (opcion === '--strict' && !marker) {
+    let crudo = null;
+    try { crudo = fs.readFileSync(markerFilePath(estado.SID), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return; }
+    let m = null;
+    try { m = crudo === null ? null : JSON.parse(crudo); } catch (_e) { m = null; }
+    if (m && typeof m === 'object' && !Array.isArray(m) && m.storyId) return;
+    console.error(`marker.js get: el marcador de la sesión ${estado.SID} no se puede leer o no dice de qué story es`);
+    process.exitCode = 3;
+  }
 }
 
 function cmdTouch() {

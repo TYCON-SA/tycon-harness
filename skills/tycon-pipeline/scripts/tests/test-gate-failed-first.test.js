@@ -171,13 +171,15 @@ test('T25 Porton_CompletaRoja_GuardaLoMedido — la completa roja guarda su resu
   const n = lab({ a: 1, b: 1 });
   puerta(n);
   assert.equal(guardado(n), null);
-  // con la carpeta cambiada mientras corría la completa no se guarda: lo medido no es de ninguna carpeta
+  // con la carpeta cambiada mientras corría la completa se guarda con la foto del arranque: la próxima corrida vuelve a
+  // correr lo que lee lo cambiado durante la corrida
   const mueve = suite('a', '# lee docs/x.md\necho otra >> "$FF_TOUCH"');
   const c = lab({ a: 1, b: 1, acota: true, suiteA: mueve, suiteB: leeX('b') });
   fs.appendFileSync(path.join(c.repo, 'docs', 'x.md'), 'cambio de la historia\n');
   const rc = puerta(c, [], { FF_TOUCH: path.join(c.repo, 'docs', 'y.md') });
   assert.notEqual(rc.status, 0, rc.out);
-  assert.equal(guardado(c), null, `guardó una completa cuya carpeta cambió mientras corría:\n${rc.out}`);
+  assert.ok(guardado(c), `no guardó la completa roja con la foto del arranque:\n${rc.out}`);
+  assert.match(rc.out, /la carpeta cambió mientras corría: guardo con la foto del arranque/);
 });
 
 test('T26 Porton_RepetidasSolas_CarpetaIgual_CierraSinCompleta — no corre nada, deja el verde por run-check y lo dice', () => {

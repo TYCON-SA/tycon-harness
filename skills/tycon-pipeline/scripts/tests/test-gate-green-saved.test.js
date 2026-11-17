@@ -23,7 +23,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const SCRIPTS = path.resolve(__dirname, '..');
 const RAIZ = path.resolve(SCRIPTS, '..', '..', '..');
@@ -100,6 +100,7 @@ function escribirMarcador(l, extra = {}) {
 const marcador = (l) => JSON.parse(fs.readFileSync(markerFile(l), 'utf8'));
 const verde = (l) => (marcador(l).testsGreenFull || []).find((x) => x.repo === l.repo) || null;
 const roja = (l) => (marcador(l).testsRedFull || []).find((x) => x.repo === l.repo) || null;
+const meta = (g) => JSON.parse(fs.readFileSync(path.join(g.dir, 'meta.json'), 'utf8'));
 const corridas = (l) => { try { return fs.readFileSync(path.join(l.state, 'corridas'), 'utf8').split('\n').filter(Boolean).sort(); } catch (_) { return []; } };
 const limpiar = (l) => fs.rmSync(path.join(l.state, 'corridas'), { force: true });
 const constancia = (l) => JSON.parse(fs.readFileSync(path.join(l.repo, '.advisors', 'tests-result.json'), 'utf8'));
@@ -169,15 +170,16 @@ test('T3 GreenSaved_ChangedFile_RunsOnlyItsSuites @story-8.263 @ac-3 — corren 
   assert.deepEqual(c.changed_since_full, ['docs/b.md']);
 });
 
-test('T4 GreenSaved_ChainComparesWithOrigin @story-8.263 @ac-4 — la segunda corrida compara con la completa, no con la acotada', () => {
+test('T4 GreenSaved_ChainComparesWithLastGreen @story-8.263 @ac-4 @story-8.297 @ac-2 — la segunda corrida compara con el último verde juntado', () => {
+  // el cierre en verde, juntado, es el nuevo punto de partida
   const l = conCompletaVerde();
   const antes = verde(l);
   tocar(l, 'docs/b.md');
   assert.deepEqual(puerta(l).corridas, ['b']);
-  assert.deepEqual(verde(l), antes, 'una acotada en verde no reemplaza lo guardado');
+  assert.notEqual(verde(l).hash, antes.hash, 'el cierre en verde reemplaza lo guardado');
   tocar(l, 'docs/c.md');
   const r = puerta(l);
-  assert.deepEqual(r.corridas, ['b', 'c'], r.out);
+  assert.deepEqual(r.corridas, ['c'], r.out);
 });
 
 test('T5 GreenSaved_ScopedRed_KeepsSavedAndRepeatFirst @story-8.263 @ac-5 — una acotada roja anota sus rojas y lo guardado sigue', () => {
@@ -232,7 +234,7 @@ test('T7 GreenSaved_BaseTrimOrDeferred_RunsFull @story-8.263 @ac-6 @story-8.279 
   assert.match(r.out, /corre la completa como siempre: lo cambiado vuelve a hacer correr g\.test\.sh/, r.out);
 });
 
-test('T8 GreenSaved_RealFullReplaces_ClosedNeverSaves @story-8.263 @ac-7 — la completa reemplaza lo guardado; la que cerró con él, no', () => {
+test('T8 GreenSaved_RealFullReplaces_ClosedSavesJoined @story-8.263 @ac-7 @story-8.297 @ac-1 — la completa reemplaza lo guardado; la que cerró en verde guarda lo juntado', () => {
   const l = conCompletaVerde({ listas: true });
   tocar(l, 'scripts/ci/control-x.js', '// otro\n');
   estado(l, 'a', 1);
@@ -242,9 +244,11 @@ test('T8 GreenSaved_RealFullReplaces_ClosedNeverSaves @story-8.263 @ac-7 — la 
   assert.ok(roja(l), 'y guardó la roja');
   const c = conCompletaVerde();
   const antes = verde(c);
+  const metaAntes = meta(antes);
   tocar(c, 'docs/b.md');
   assert.equal(puerta(c).status, 0);
-  assert.deepEqual(verde(c), antes, 'la que cerró con lo guardado no escribe una completa nueva');
+  assert.notEqual(verde(c).hash, antes.hash, 'la que cerró en verde guarda lo juntado');
+  assert.equal(meta(verde(c)).origen_at, metaAntes.at, 'con la hora de la completa de origen');
 });
 
 test('T9 GreenSaved_Unreadable_OtherStory_RunsFull @story-8.263 @ac-11 — lo guardado tocado, de otra historia o sin foto corre la completa', () => {
@@ -344,4 +348,346 @@ test('T21 GreenSaved_InheritedReds_JudgedAgainAtClose @story-8.263 @ac-1 @ac-18 
   r = puerta(l);
   assert.notEqual(r.status, 0, r.out);
   assert.deepEqual((marcador(l).testsFailed || []).map((x) => x.ruta), [RUTA('c')], r.out);
+});
+
+// ── El último verde, la foto del arranque, el motivo de cada corrida ──────────────────────────────────────────────────
+// El cierre en verde con lo guardado pasa a ser el punto de partida; una carpeta que cambió mientras corría guarda con la
+// foto del arranque; cada corrida de arriba dice su modo y su motivo, lo anota en el marcador (testsSavedNote) y en
+// gates.log (test-gate-run).
+
+const GATES_LOG = (l) => path.join(l.home, '.claude', '.tycon-pipeline', 'gates.log');
+const registro = (l) => { try { return fs.readFileSync(GATES_LOG(l), 'utf8').split('\n').filter(Boolean).map((x) => JSON.parse(x)).filter((x) => x.name === 'test-gate-run'); } catch (_) { return []; } };
+const nota = (l) => (marcador(l).testsSavedNote || []).find((x) => x.repo === l.repo) || null;
+const lineasDeModo = (out) => out.split('\n').filter((x) => /^\[test-gate\] modo /.test(x));
+const GUARDE = /guardé este verde \(juntado con la completa de las \d\d:\d\d\): la próxima corrida corre sólo lo que cambie desde acá/;
+const fotoDeAhora = (l) => JSON.parse(spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'after-main.js'), 'snapshot', l.repo], { encoding: 'utf8' }).stdout).tree;
+const medidoDe = (g) => JSON.parse(fs.readFileSync(path.join(g.dir, 'medido.json'), 'utf8'));
+
+// Una suite que lee docs/a.md (corre con la historia) y, con GS_TOUCH, escribe ese archivo mientras corre.
+const ESCRITORA = { entrada: { raiz: 'arnes', ruta: 'tests/w.test.sh' }, texto: `#!/usr/bin/env bash
+# lee docs/a.md
+echo "w" >> "$GS_STATE/corridas"
+[ -n "\${GS_TOUCH:-}" ] && echo "durante" >> "$GS_TOUCH"
+exit 0
+` };
+// Una suite que lee docs/a.md y, con GS_SLEEP, se queda corriendo: para cortar el portón a mitad.
+const DORMIDA = { entrada: { raiz: 'arnes', ruta: 'tests/z.test.sh' }, texto: `#!/usr/bin/env bash
+# lee docs/a.md
+echo "z" >> "$GS_STATE/corridas"
+[ -n "\${GS_SLEEP:-}" ] && sleep 60
+exit 0
+` };
+
+/** El portón cortado con una señal mientras corre la suite dormida; devuelve su salida. */
+async function cortada(l) {
+  limpiar(l);
+  const p = spawn('bash', [TEST_GATE, l.repo], { cwd: l.repo, env: entorno(l, { GS_SLEEP: '1' }) });
+  let out = '';
+  p.stdout.on('data', (d) => { out += d; });
+  p.stderr.on('data', (d) => { out += d; });
+  const fin = new Promise((ok) => p.on('close', ok));
+  for (let i = 0; i < 300 && !corridas(l).includes('z'); i += 1) await new Promise((ok) => setTimeout(ok, 100));
+  assert.ok(corridas(l).includes('z'), `la suite dormida no arrancó:\n${out}`);
+  p.kill('SIGTERM');
+  await fin;
+  return out;
+}
+
+test('T1 LastGreen_CloseFromRed_BecomesNewGreen @story-8.297 @ac-1 — el cierre en verde desde una roja queda como el nuevo verde', () => {
+  // 🔴 mutación: dejar el cierre sin guardar deja a la historia sin nada guardado y verde(l) en null
+  const l = lab();
+  estado(l, 'a', 1);
+  assert.notEqual(puerta(l).status, 0);
+  const origen = meta(roja(l));
+  estado(l, 'a', 0);
+  assert.equal(puerta(l, ['--suite', RUTA('a')]).status, 0);
+  const r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.deepEqual(r.corridas, [], r.out);
+  assert.match(r.out, GUARDE);
+  const g = verde(l);
+  assert.ok(g, `no guardó el cierre:\n${r.out}`);
+  assert.equal(g.hash, ff().redHash(g.dir));
+  const m = meta(g);
+  assert.deepEqual([m.origen, m.storyId, m.origen_at], ['verde', '9.263', origen.at]);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(g.dir, 'resumen.json'), 'utf8')).suites.length, 3, 'el resumen juntado trae las tres');
+  assert.equal(medidoDe(g).tree, fotoDeAhora(l), 'con la foto de esa corrida');
+  assert.equal(roja(l), null, 'la roja de origen ya se usó');
+});
+
+test('T2 LastGreen_ChainOfFixes_RunsOnlyTheNewChange @story-8.297 @ac-1 @ac-2 — dos arreglos seguidos: el segundo corre sólo lo suyo', () => {
+  // 🔴 mutación: comparar contra la completa de origen hace correr b otra vez en el segundo arreglo
+  const l = conCompletaVerde();
+  tocar(l, 'docs/b.md');
+  let r = puerta(l);
+  assert.deepEqual(r.corridas, ['b'], r.out);
+  assert.match(r.out, GUARDE);
+  tocar(l, 'docs/c.md');
+  r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.deepEqual(r.corridas, ['c'], r.out);
+  assert.match(r.out, GUARDE, 'y vuelve a guardar');
+  assert.equal(medidoDe(verde(l)).tree, fotoDeAhora(l));
+});
+
+test('T3 LastGreen_CloseRed_KeepsLastGreen @story-8.297 @ac-3 — un cierre rojo deja lo guardado, verde o rojo', () => {
+  // 🔴 mutación: borrar la roja de origen al cerrar en rojo deja roja(o) en null
+  const v = conCompletaVerde();
+  const antes = verde(v);
+  tocar(v, 'docs/b.md');
+  estado(v, 'b', 1);
+  let r = puerta(v);
+  assert.notEqual(r.status, 0, r.out);
+  assert.deepEqual((marcador(v).testsFailed || []).map((x) => x.ruta), [RUTA('b')]);
+  assert.deepEqual(verde(v), antes, 'el verde de antes sigue');
+  const o = lab();
+  estado(o, 'a', 1);
+  assert.notEqual(puerta(o).status, 0);
+  estado(o, 'a', 0);
+  assert.equal(puerta(o, ['--suite', RUTA('a')]).status, 0);
+  const rojaAntes = roja(o);
+  tocar(o, 'docs/c.md');
+  estado(o, 'c', 1);
+  r = puerta(o);
+  assert.notEqual(r.status, 0, r.out);
+  assert.deepEqual((marcador(o).testsFailed || []).map((x) => x.ruta), [RUTA('c')], r.out);
+  assert.deepEqual(roja(o), rojaAntes, `la roja de origen sigue, con su repetida:\n${r.out}`);
+  assert.ok(JSON.parse(fs.readFileSync(path.join(rojaAntes.dir, 'repetidas.json'), 'utf8'))[RUTA('a')]);
+  assert.equal(verde(o), null);
+});
+
+test('T4 LastGreen_CloseNotFullyMeasured_KeepsOldAndSaysWhy @story-8.297 @ac-4 @ac-1 — lo que no se puede guardar no reemplaza lo de antes', () => {
+  // 🔴 mutación: guardar el cierre sin mirar el perdón de la roja de origen pasa a verde una suite perdonada ayer
+  // una ausente: la corrida sale roja y lo guardado sigue
+  const l = conCompletaVerde();
+  const antes = verde(l);
+  fs.rmSync(path.join(l.repo, 'scripts', 'tests', 'b.test.sh'));
+  let r = puerta(l);
+  assert.notEqual(r.status, 0, r.out);
+  assert.deepEqual(verde(l), antes, r.out);
+  assert.equal(nota(l).guardo, 'no');
+  assert.ok(nota(l).motivo, JSON.stringify(nota(l)));
+  // la roja de origen trae una suite perdonada por lo heredado (perdón parcial): el cierre en verde no la pasa a verde
+  const p = lab();
+  conFoto(p, ['c.test.sh']);
+  estado(p, 'a', 1);
+  estado(p, 'c', 1);
+  r = puerta(p);
+  assert.notEqual(r.status, 0, r.out);
+  assert.ok(roja(p), r.out);
+  estado(p, 'a', 0);
+  assert.equal(puerta(p, ['--suite', RUTA('a')]).status, 0);
+  r = puerta(p);
+  assert.equal(r.status, 0, r.out);
+  assert.equal(verde(p), null, `guardó como verde una roja perdonada:\n${r.out}`);
+  assert.match(r.out, /no guardo este cierre: lo guardado trae rojas perdonadas con la foto de otro día/);
+  assert.match(nota(p).motivo, /rojas perdonadas/);
+  // el perdón de esta corrida sí se guarda, con el resumen de antes del perdón: se vuelve a juzgar al cerrar
+  const h = lab();
+  conFoto(h, ['c.test.sh']);
+  estado(h, 'c', 1);
+  assert.equal(puerta(h).status, 0);
+  const primero = verde(h);
+  r = puerta(h);
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /ya estaba rojo/);
+  assert.notEqual(verde(h).hash, primero.hash, `el cierre perdonado en esta corrida se guarda:\n${r.out}`);
+  assert.deepEqual(meta(verde(h)).heredadas, [RUTA('c')], 'con la heredada para volver a juzgarla');
+});
+
+test('T18 Save_FailsMidway_KeepsPreviousAndNotes @story-8.297 @ac-4 @ac-8 — un guardado que falla deja lo de antes y lo anota', (t) => {
+  // 🔴 mutación: borrar la carpeta antes de copiar deja lo guardado vacío si la copia falla
+  const l = conCompletaVerde();
+  const antes = verde(l);
+  const casa = path.dirname(antes.dir);
+  // como root una carpeta de sólo lectura se escribe igual: la copia que falla no se puede armar, el resto sí
+  if (!(typeof process.getuid === 'function' && process.getuid() === 0)) {
+    tocar(l, 'docs/b.md');
+    fs.chmodSync(casa, 0o555);
+    t.after(() => fs.chmodSync(casa, 0o755));
+    const r = puerta(l);
+    fs.chmodSync(casa, 0o755);
+    assert.equal(r.status, 0, r.out);
+    assert.deepEqual(verde(l), antes, r.out);
+    assert.equal(antes.hash, ff().redHash(antes.dir), 'lo de antes está entero');
+    assert.match(r.out, /no pude guardar/);
+    assert.equal(nota(l).guardo, 'no');
+    assert.match(nota(l).motivo, /no pude guardar/);
+  }
+  // un --summary que no existe: sale 1, sin tocar lo guardado
+  const s = spawnSync(process.execPath, [path.join(SCRIPTS, 'marker.js'), 'tests-failed', 'save-green', '--summary', path.join(l.state, 'no-existe.json'),
+    '--measured', path.join(antes.dir, 'medido.json'), '--repo', l.repo], { cwd: l.repo, encoding: 'utf8', env: entorno(l, { TYCON_TEST_GATE: '1' }) });
+  assert.equal(s.status, 1, `${s.stdout}${s.stderr}`);
+  assert.deepEqual(verde(l), antes);
+  assert.equal(antes.hash, ff().redHash(antes.dir));
+  // los restos de un guardado que murió a mitad: una carpeta nueva se borra; sin la vigente, la vieja vuelve a su lugar
+  const casa2 = tmp('gs-restos-');
+  const dir = path.join(casa2, 'sesion-repo');
+  const opts = { dir, summaryFile: path.join(antes.dir, 'resumen.json'), measuredFile: path.join(antes.dir, 'medido.json'), base: null, recorte: '' };
+  ff().saveGreen(opts);
+  fs.mkdirSync(`${dir}.nuevo-999999`);
+  fs.renameSync(dir, `${dir}.viejo-999998`);
+  const h = ff().saveGreen(opts);
+  assert.deepEqual(fs.readdirSync(casa2), ['sesion-repo'], 'no quedan restos');
+  assert.equal(h, ff().redHash(dir));
+});
+
+test('T5 StartPhoto_GreenFolderChangedDuringRun_SavesAndNextRunsChanged @story-8.297 @ac-5 — una carpeta que cambia mientras corre guarda con la foto del arranque', () => {
+  // 🔴 mutación: guardar con la foto del final da por medido lo que cambia mientras corre, y c no vuelve a correr
+  const l = lab({ extra: [ESCRITORA] });
+  let r = puerta(l, [], { GS_TOUCH: path.join(l.repo, 'docs', 'c.md') });
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /la carpeta cambió mientras corría: guardo con la foto del arranque; la próxima corrida vuelve a correr lo que lee lo cambiado durante la corrida/);
+  assert.ok(verde(l), r.out);
+  assert.notEqual(medidoDe(verde(l)).tree, fotoDeAhora(l), 'la foto es la del arranque');
+  r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.deepEqual(r.corridas, ['c'], r.out);
+});
+
+test('T6 StartPhoto_RedFolderChangedDuringRun_SavesRed @story-8.297 @ac-6 — lo mismo con una roja', () => {
+  // 🔴 mutación: no guardar la roja con la carpeta cambiada deja la próxima corrida entera
+  const l = lab({ extra: [ESCRITORA] });
+  estado(l, 'a', 1);
+  let r = puerta(l, [], { GS_TOUCH: path.join(l.repo, 'docs', 'c.md') });
+  assert.notEqual(r.status, 0, r.out);
+  assert.ok(roja(l), `no guardó la roja:\n${r.out}`);
+  assert.notEqual(medidoDe(roja(l)).tree, fotoDeAhora(l), 'la foto es la del arranque');
+  estado(l, 'a', 0);
+  assert.equal(puerta(l, ['--suite', RUTA('a')]).status, 0);
+  r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /la carpeta cambió desde la completa roja \(docs\/c\.md\)/);
+  assert.deepEqual(r.corridas, ['c'], r.out);
+});
+
+test('T8 Decision_NothingSaved_SaysWhyWithLastNote @story-8.297 @ac-8 — sin nada guardado dice por qué, con la nota de la última', async () => {
+  // 🔴 mutación: leer la nota de cualquier repo o historia saca «entera» en la primera corrida de otra historia
+  const l = lab();
+  fs.rmSync(path.join(l.repo, 'scripts', 'tests', 'b.test.sh'));
+  let r = puerta(l);
+  let [linea] = lineasDeModo(r.out);
+  assert.match(linea, /^\[test-gate\] modo primera · corre la completa: no hay un verde guardado de esta historia en esta sesión$/, r.out);
+  assert.equal(nota(l).guardo, 'no');
+  git(l.repo, 'checkout', '--', 'scripts/tests/b.test.sh');
+  r = puerta(l);
+  [linea] = lineasDeModo(r.out);
+  assert.match(linea, /^\[test-gate\] modo entera · corre la completa: no hay un verde guardado de esta historia en esta sesión; la última corrida, de las \d\d:\d\d, no guardó: /, r.out);
+  // después de una cortada: la cortada no anotó nada
+  const c = lab({ extra: [DORMIDA] });
+  await cortada(c);
+  assert.equal(nota(c), null);
+  r = puerta(c);
+  assert.match(lineasDeModo(r.out)[0], /^\[test-gate\] modo primera /, r.out);
+  // una nota de otro repo, o de otra historia de la misma sesión, no cuenta
+  const o = lab();
+  escribirMarcador(o, { testsSavedNote: [{ repo: '/otro/repo', storyId: '9.263', at: new Date().toISOString(), guardo: 'no', motivo: 'de otro repo' }] });
+  assert.match(lineasDeModo(puerta(o).out)[0], /^\[test-gate\] modo primera /);
+  const s = lab();
+  assert.equal(puerta(s).status, 0);
+  assert.ok(nota(s));
+  const set = spawnSync(process.execPath, [path.join(SCRIPTS, 'marker.js'), 'set', JSON.stringify({ storyId: '9.264', storyPath: '', repoPath: s.repo }), '--replace'],
+    { cwd: s.repo, encoding: 'utf8', env: entorno(s) });
+  assert.equal(set.status, 0, `${set.stdout}${set.stderr}`);
+  assert.equal(marcador(s).testsSavedNote, undefined, 'marker.js set no la pasa a otra historia');
+  tocar(s, 'docs/a.md');
+  assert.match(lineasDeModo(puerta(s).out)[0], /^\[test-gate\] modo primera /);
+});
+
+test('T9 Decision_EveryMode_OneLine @story-8.297 @ac-8 — cada corrida dice un solo renglón con su modo', () => {
+  // 🔴 mutación: imprimir el renglón sólo en la completa deja callados el cierre y la acotada
+  const l = lab({ listas: true });
+  const modos = [];
+  const una = () => { const r = puerta(l); const ls = lineasDeModo(r.out); assert.equal(ls.length, 1, r.out); modos.push(ls[0].match(/modo (primera|entera|acotada|sin correr) · /)[1]); };
+  una();
+  una();
+  tocar(l, 'docs/b.md');
+  una();
+  tocar(l, 'scripts/ci/control-x.js', '// otro\n');
+  una();
+  assert.deepEqual(modos, ['primera', 'sin correr', 'acotada', 'entera']);
+});
+
+test('T19 Decision_UnreadableMarker_CountsAsWhole @story-8.297 @ac-8 @ac-10 — un marcador que no se deja leer cuenta como entera, no como primera', () => {
+  // 🔴 mutación: tomar el `{}` que imprime `get` con un marcador roto como «sin nota» achica las repeticiones
+  const l = conCompletaVerde();
+  fs.writeFileSync(markerFile(l), '{roto');
+  tocar(l, 'docs/b.md');
+  const r = puerta(l);
+  const ls = lineasDeModo(r.out);
+  assert.equal(ls.length, 1, r.out);
+  assert.match(ls[0], /^\[test-gate\] modo entera · /, r.out);
+  assert.match(ls[0], /no pude leer el marcador/);
+  assert.deepEqual(registro(l).map((x) => x.modo).slice(-1), ['entera']);
+});
+
+test('T10 GatesLog_RunLine_PerModeAndNotWhenCutOrNoTurn @story-8.297 @ac-9 — un renglón por corrida terminada, ninguno por la cortada ni la ocupada', async () => {
+  // 🔴 mutación: anotar desde el trap de salida suma renglones de corridas que no terminaron
+  const l = lab({ extra: [DORMIDA] });
+  await cortada(l);
+  assert.equal(registro(l).length, 0, 'la cortada no anota');
+  assert.equal(puerta(l).status, 0);
+  tocar(l, 'docs/b.md');
+  assert.equal(puerta(l).status, 0);
+  const lineas = registro(l);
+  assert.equal(lineas.length, 2, JSON.stringify(lineas));
+  for (const x of lineas) {
+    for (const k of ['ts', 'sessionId', 'repoPath', 'story', 'modo', 'motivo', 'origen_at', 'suites', 'duracion_ms', 'exit', 'guardo', 'guardo_motivo']) {
+      assert.ok(Object.prototype.hasOwnProperty.call(x, k), `${k}: ${JSON.stringify(x)}`);
+    }
+  }
+  assert.deepEqual(lineas.map((x) => [x.story, x.modo, x.guardo, x.exit]), [['9.263', 'primera', 'verde', 0], ['9.263', 'acotada', 'verde', 0]]);
+  assert.equal(lineas[1].suites, 1);
+  assert.equal(lineas[1].origen_at, meta(verde(l)).origen_at, 'la acotada nombra la hora de la completa de origen');
+  // ocupada: otra corrida de las pruebas en marcha en este repo (su candado recién creado)
+  const huella = require('crypto').createHash('sha1').update(l.repo).digest('hex').slice(0, 16);
+  const candado = path.join(l.home, '.claude', '.tycon-pipeline', 'run-check-locks', `tests-${huella}`);
+  fs.mkdirSync(candado, { recursive: true });
+  tocar(l, 'docs/c.md');
+  let r = puerta(l);
+  assert.equal(r.status, 75, r.out);
+  fs.rmSync(candado, { recursive: true, force: true });
+  assert.equal(registro(l).length, 2, 'la ocupada no anota');
+  // sin turno (77): con cien suites, el turno de la máquina lo tiene otra sesión
+  const muchas = Array.from({ length: 100 }, (_, i) => ({ entrada: { raiz: 'arnes', ruta: `tests/m${i}.test.sh` }, texto: suite(`m${i}`, 'docs/a.md') }));
+  const t = lab({ extra: muchas });
+  fs.mkdirSync(path.join(t.repo, 'scripts', 'tools'), { recursive: true });
+  fs.writeFileSync(path.join(t.repo, 'scripts', 'tools', 'heavy-turn.js'),
+    "module.exports = { BUSY_EXIT: 77, take: () => ({ ok: false, message: 'el turno lo tiene otra sesión (de prueba)' }) };\n");
+  r = puerta(t);
+  assert.equal(r.status, 75, r.out);
+  assert.match(r.out, /el turno lo tiene otra sesión \(de prueba\)/);
+  assert.equal(registro(t).length, 0, 'la sin turno no anota');
+});
+
+test('T14 Safety_ControlChangedAfterLastGreen_StillFullWithMotive @story-8.297 @ac-12 — después del último verde, un control corre la completa y lo dice', () => {
+  // 🔴 mutación: saltear los criterios de lo que pide la completa con un verde que salió de un cierre
+  const l = conCompletaVerde({ listas: true });
+  tocar(l, 'docs/b.md');
+  assert.match(puerta(l).out, GUARDE);
+  tocar(l, 'scripts/ci/control-x.js', '// otro\n');
+  const r = puerta(l);
+  assert.deepEqual(r.corridas, TODAS, r.out);
+  assert.match(lineasDeModo(r.out)[0], /^\[test-gate\] modo entera · corre la completa como siempre: cambió un control \(scripts\/ci\/control-x\.js\)$/, r.out);
+  const ultima = registro(l).pop();
+  assert.deepEqual([ultima.modo, ultima.motivo], ['entera', 'cambió un control (scripts/ci/control-x.js)']);
+});
+
+test('T15 NoScopeRepo_AsToday_WithRunLine @story-8.297 @ac-13 @ac-14 — un repo que no acota, y TYCON_GATE_ALL_SUITES=1, corren todo y lo anotan', () => {
+  // 🔴 mutación: guardar en un repo que no acota hace que su próxima corrida no corra todo
+  const l = lab();
+  git(l.repo, 'rm', '-q', '.test-gate.yaml');
+  git(l.repo, 'commit', '-q', '-m', 'sin acotar');
+  let r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.deepEqual(r.corridas, TODAS, r.out);
+  assert.equal(verde(l), null, 'no guarda');
+  let x = registro(l).pop();
+  assert.deepEqual([x.modo, x.motivo, x.guardo], ['primera', 'el repo no acota el portón', 'no']);
+  const a = lab();
+  r = puerta(a, [], { TYCON_GATE_ALL_SUITES: '1' });
+  assert.deepEqual(r.corridas, TODAS, r.out);
+  assert.ok(verde(a), 'guarda el verde, como hoy');
+  x = registro(a).pop();
+  assert.deepEqual([x.modo, x.motivo, x.guardo], ['primera', 'TYCON_GATE_ALL_SUITES=1 pide correr todo', 'verde']);
 });

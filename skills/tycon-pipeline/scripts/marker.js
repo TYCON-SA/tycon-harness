@@ -40,6 +40,7 @@
  * Commands (resuelven el sessionId solos — la firma CLI no cambia):
  *   marker.js set '{"storyId":"...","stepsPending":[...]}'  → escribe el marker de esta sesión
  *   marker.js get          → marker de esta sesión, o `{}`
+ *   marker.js get --strict → igual, y sale 3 si el marcador de esta sesión existe y no se deja leer
  *   marker.js touch        → actualiza lastTouch
  *   marker.js complete-step <N>  → mueve step N pending→completed
  *   marker.js append-file <abs-path>  → agrega path a filesTouched (dedup)
@@ -184,7 +185,7 @@ switch (cmd) {
     cargar('marker-lifecycle.js').cmdSet(arg1);
     break;
   case 'get':
-    cargar('marker-lifecycle.js').cmdGet();
+    cargar('marker-lifecycle.js').cmdGet(arg1);
     break;
   case 'touch':
     cargar('marker-lifecycle.js').cmdTouch();

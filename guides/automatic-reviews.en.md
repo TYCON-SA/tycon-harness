@@ -123,10 +123,20 @@ recorded, and stops if:
 - a critical is marked as refuted without the verifier's record;
 - a reviewer of the set left no line that can be read.
 
-An unreadable reviewer never counts as «no criticals». It is run again, or a person waives it: `marker.js
-waive-critical --rule SIN-REPORTE --file <reviewer> --reason '<why>'`. A delegated waiver is not enough to call something
-fixed: a new round of the reviewer or the owner closes it. A run with nothing recorded (for example, from before this
-check) says so in one line and goes on.
+An unreadable reviewer never counts as «no criticals». If it closed without the verdict line, the harness asks it for that
+line once, the same reviewer, without changing its review: in Claude Code, the hook that runs when a subagent ends keeps it
+going with that request; in Codex, the launcher runs it once more over the same context, with its own report. What it
+answers then counts in the same round, and the request adds no round and no launch. If it still doesn't give it, the close
+says so («it was already asked for the line once») and what is left is a person's waiver: `marker.js waive-critical
+--rule SIN-REPORTE --file <reviewer> --reason '<why>'`. If it was never asked (for example, the hook didn't run), the close
+first says how to ask the same agent. A delegated waiver is not enough to call something fixed: a new round of the
+reviewer or the owner closes it. A run with nothing recorded (for example, from before this check) says so in one line and
+goes on.
+
+The reviewer that reported a critical comes back in the next round while that critical is still open: even if the
+mechanical discount or the delta calculation leave it out of the set, and even if the agent hasn't written the findings
+yet. It leaves when a later report of its own no longer has it, or when the critical has a destination that holds:
+refuted with the verifier's record, deferred, or waived by the owner.
 
 ## The options
 
