@@ -418,7 +418,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   // pide nada al dueño. Con qué firmas aprobadas cuenta cada sesión (`repite`): deja de esperarlo por su plan o su
   // guardado sólo si lo aprobado es esa firma (otra firma aprobada no aprueba el plan), y sólo sin un cuadro en pantalla
   // (`onScreen`: ése lo contesta el dueño). Otra firma suya sin aprobar no lo cambia: va sola a «Tu firma»
-  const pendingSigs = signatures.filter((s) => !(s && s.aprobada));
+  // la desviada a la coordinadora (`conLaCoordinadora`, de delegation-routing.js) la firma ella: tampoco espera al dueño
+  const pendingSigs = signatures.filter((s) => !(s && (s.aprobada || s.conLaCoordinadora)));
   const repite = new Map();
   for (const s of signatures) {
     if (!s || !s.aprobada || !s.destino) continue;
@@ -706,6 +707,18 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     const agent = agents.find((a) => String(sidOf.get(a)) === sid);
     const quien = agent ? agent.nombre : plain(rows[0].nombre) || '';
     repeatCards.push({ titulo: `Firma: ${plain(rows[0].title)}${rows.length > 1 ? ` y ${rows.length - 1} más` : ''}`, quien: quien || `— (${sid.slice(0, 8)})`, espera: repeatSaid(quien, sid), sid, agent });
+  }
+  // las desviadas a la coordinadora van a «En curso», una tarjeta por sesión: las firma ella, no el dueño
+  const byCoordinator = new Map();
+  for (const s of signatures) {
+    if (!s || !s.conLaCoordinadora || s.aprobada || !s.destino || !s.title) continue;
+    byCoordinator.set(String(s.destino), [...(byCoordinator.get(String(s.destino)) || []), s]);
+  }
+  for (const [sid, rows] of byCoordinator) {
+    rows.sort((p, q) => (p.at || 0) - (q.at || 0));
+    const agent = agents.find((a) => String(sidOf.get(a)) === sid);
+    const quien = agent ? agent.nombre : plain(rows[0].nombre) || '';
+    repeatCards.push({ titulo: `Firma: ${plain(rows[0].title)}${rows.length > 1 ? ` y ${rows.length - 1} más` : ''}`, quien: quien || `— (${sid.slice(0, 8)})`, espera: 'la firma la coordinadora', sid, agent });
   }
   // la sesión dice cuántos agentes corren ahora; con agentes corriendo no está libre
   const notFree = new Set();
@@ -2147,6 +2160,9 @@ async function collect(opts = {}) {
       problems.push(...ya.problemas);
       if (ya.ids.size) signatures = signatures.map((f) => (ya.ids.has(f.id) ? { ...f, aprobada: true } : f));
     } catch (e) { problems.push(`no se pudo saber qué firmas ya están aprobadas: ${e.message}`); }
+    // las desviadas a la coordinadora, dentro del plazo y con ella viva: las firma ella
+    const suyas = require(path.join(ROOT, 'scripts', 'lib', 'delegation-routing.js')).deLaCoordinadora({ casa: home, filas: open.filas, ahora: nowMs, arnes: opts.arnes, env: opts.env });
+    if (suyas.size) signatures = signatures.map((f) => (suyas.has(f.id) ? { ...f, conLaCoordinadora: true } : f));
   } catch (e) { problems.push(`las firmas pendientes no se pudieron leer: ${e.message}`); }
   const des = designacionVigente({ dir: sdir });
   if (des && des.error) problems.push(`no se sabe cuál es la coordinadora: ${des.error}`);
