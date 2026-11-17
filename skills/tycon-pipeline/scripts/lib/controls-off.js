@@ -30,21 +30,27 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-// las variables que apagan un freno con cualquier valor que no sea 0 ni vacío: las de ESC-C1 en safety-guard-pre.sh y
-// los escapes que cuenta la revisión nocturna (ESCAPES de scripts/nightly/runs-review/rules.js; una prueba los cruza)
-const APAGAN_CON_CUALQUIERA = new Set(['TYCON_TEST_GATE', 'DOD_BYPASS', 'TYCON_NO_DEEP_REVIEW', 'TYCON_STATUS_GATE',
-  'TYCON_SAFETY_OFF', 'TYCON_PR_BY_HAND', 'TYCON_FULL_SUITE', 'TYCON_SESSION_GUARD_OK', 'TYCON_ENGRAM_MANIFEST_OK',
-  'TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK', 'STOP_AUTONOMY', 'TYCON_EVAL_SANDBOX']);
+// la lista única de las variables de entorno del arnés (scripts/lib/env-switches.json): dice cuáles apagan con
+// cualquier valor que no sea 0 ni vacío (`en_configuracion: cualquiera`) y con qué valores apaga cada una
+const ES = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+const SIN_LISTA = 'no pude leer la lista de interruptores';
 
-/** ¿La variable `nombre` con el valor `valor` apaga un control? Las mismas formas que HARNESS-C1 mira en el rc. */
+/**
+ * ¿La variable `nombre` con el valor `valor` apaga un control? Las mismas formas que HARNESS-C1 mira en el rc: la
+ * lista suma sus valores a las reglas generales. Sin la lista, cualquier `TYCON_*` con un valor no vacío apaga.
+ */
 function apaga(nombre, valor) {
   const n = String(nombre).toUpperCase();
   const v = String(valor == null ? '' : valor).trim().toLowerCase();
-  if (APAGAN_CON_CUALQUIERA.has(n)) return v !== '' && v !== '0';
-  if (/^TYCON_NO_/.test(n)) return ['1', 'on', 'true'].includes(v);
-  if (/^TYCON_/.test(n)) return ['0', 'off', 'false'].includes(v);
-  return false;
+  if (!ES.leer().ok) return /^TYCON_/.test(n) ? v !== '' : ['DOD_BYPASS', 'STOP_AUTONOMY'].includes(n) && v !== '' && v !== '0';
+  const e = ES.entrada(n);
+  if (e && e.en_configuracion === 'cualquiera') return v !== '' && v !== '0';
+  const general = /^TYCON_NO_/.test(n) ? ['1', 'on', 'true'].includes(v) : /^TYCON_/.test(n) && ['0', 'off', 'false'].includes(v);
+  return general || ES.apagaSegunLista(n, v) === true;
 }
+
+/** El motivo de un apagado, con la aclaración cuando se juzgó sin la lista. */
+const motivoApagado = (texto) => (ES.leer().ok ? texto : `${texto} (${SIN_LISTA}: cualquier TYCON_* con valor cuenta como apagado)`);
 
 // Las dos configuraciones de Claude Code, relativas a la casa o al repo: son enchufes de la herramienta, que se quedan
 // donde Claude Code las lee aunque el arnés se mude
@@ -108,7 +114,7 @@ function apagados(antes, despues, { home = os.homedir() } = {}) {
   const envA = a.env && typeof a.env === 'object' ? a.env : {};
   const envD = d.env && typeof d.env === 'object' ? d.env : {};
   for (const [k, v] of Object.entries(envD)) {
-    if (apaga(k, v) && !(Object.prototype.hasOwnProperty.call(envA, k) && apaga(k, envA[k]))) motivos.push(`pone ${k}=${v} en env, que apaga un control del arnés`);
+    if (apaga(k, v) && !(Object.prototype.hasOwnProperty.call(envA, k) && apaga(k, envA[k]))) motivos.push(motivoApagado(`pone ${k}=${v} en env, que apaga un control del arnés`));
   }
   // un hook está mientras siga en el mismo evento con un matcher que cubra el de antes; un duplicado sacado no saca nada
   const hd = hooksDelArnes(d, home);
@@ -396,7 +402,7 @@ function porElTexto(texto, conf, raw) {
   const m = [];
   if (PRENDE_DISABLE.test(texto)) m.push('pone disableAllHooks en true, que apaga todos los hooks del arnés');
   for (const a of texto.matchAll(VARIABLE_ASIGNADA)) {
-    if (apaga(a[1], a[3])) m.push(`pone ${a[1]}=${a[3]} en la configuración, que apaga un control del arnés`);
+    if (apaga(a[1], a[3])) m.push(motivoApagado(`pone ${a[1]}=${a[3]} en la configuración, que apaga un control del arnés`));
   }
   if (tieneControles(conf) && (SACA_HOOKS.some((re) => re.test(texto)) || tocaRenglonDeUnHook(texto, conf))) m.push(`saca hooks de ${raw}, que tiene registrados los del arnés`);
   return m;
