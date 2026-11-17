@@ -417,15 +417,15 @@ test('T12 Repeats_OldDays_FromCheckCommand_NoMotive @story-8.297 @ac-10 — los 
 
 test('T13 Repeats_NoLogOrNoRuns_Exit3 @story-8.297 @ac-11 — sin registro, ilegible o sin corridas en el rango: sale 3 y lo dice', (t) => {
   // 🔴 mutación: imprimir «0 h» y salir 0 haría pasar «sin datos» por «sin repeticiones»
-  // como root el archivo sin permisos se lee igual: el caso no se puede armar
-  if (typeof process.getuid === 'function' && process.getuid() === 0) { t.skip('como root un archivo sin permisos se lee igual'); return; }
   const dir = tmp('suite-times-sin-');
   const ilegible = path.join(dir, 'gates.log');
   fs.writeFileSync(ilegible, `${JSON.stringify(run(local(10, 9), 's1', '8.1', 'entera', 'x', 5))}\n`);
   fs.chmodSync(ilegible, 0o000);
   t.after(() => fs.chmodSync(ilegible, 0o644));
+  // como root el archivo sin permisos se lee igual: ese caso no se puede armar, los otros sí
+  const root = typeof process.getuid === 'function' && process.getuid() === 0;
   const fuera = gatesLog([run(local(10, 9), 's1', '8.1', 'entera', 'x', 5)]);
-  for (const args of [['--log', path.join(dir, 'no-existe.log')], ['--log', ilegible], ['--log', fuera, '--since', '2026-11-20']]) {
+  for (const args of [['--log', path.join(dir, 'no-existe.log')], ...(root ? [] : [['--log', ilegible]]), ['--log', fuera, '--since', '2026-11-20']]) {
     const r = cli('repeats', ...args);
     assert.equal(r.status, 3, `${args.join(' ')}: ${r.stdout}${r.stderr}`);
     assert.match(`${r.stdout}${r.stderr}`, /no hay corridas que leer/);

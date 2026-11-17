@@ -497,22 +497,23 @@ test('T4 LastGreen_CloseNotFullyMeasured_KeepsOldAndSaysWhy @story-8.297 @ac-4 @
 
 test('T18 Save_FailsMidway_KeepsPreviousAndNotes @story-8.297 @ac-4 @ac-8 — un guardado que falla deja lo de antes y lo anota', (t) => {
   // 🔴 mutación: borrar la carpeta antes de copiar deja lo guardado vacío si la copia falla
-  // como root una carpeta de sólo lectura se escribe igual: el caso no se puede armar
-  if (typeof process.getuid === 'function' && process.getuid() === 0) { t.skip('como root una carpeta de sólo lectura se escribe igual'); return; }
   const l = conCompletaVerde();
   const antes = verde(l);
   const casa = path.dirname(antes.dir);
-  tocar(l, 'docs/b.md');
-  fs.chmodSync(casa, 0o555);
-  t.after(() => fs.chmodSync(casa, 0o755));
-  const r = puerta(l);
-  fs.chmodSync(casa, 0o755);
-  assert.equal(r.status, 0, r.out);
-  assert.deepEqual(verde(l), antes, r.out);
-  assert.equal(antes.hash, ff().redHash(antes.dir), 'lo de antes está entero');
-  assert.match(r.out, /no pude guardar/);
-  assert.equal(nota(l).guardo, 'no');
-  assert.match(nota(l).motivo, /no pude guardar/);
+  // como root una carpeta de sólo lectura se escribe igual: la copia que falla no se puede armar, el resto sí
+  if (!(typeof process.getuid === 'function' && process.getuid() === 0)) {
+    tocar(l, 'docs/b.md');
+    fs.chmodSync(casa, 0o555);
+    t.after(() => fs.chmodSync(casa, 0o755));
+    const r = puerta(l);
+    fs.chmodSync(casa, 0o755);
+    assert.equal(r.status, 0, r.out);
+    assert.deepEqual(verde(l), antes, r.out);
+    assert.equal(antes.hash, ff().redHash(antes.dir), 'lo de antes está entero');
+    assert.match(r.out, /no pude guardar/);
+    assert.equal(nota(l).guardo, 'no');
+    assert.match(nota(l).motivo, /no pude guardar/);
+  }
   // un --summary que no existe: sale 1, sin tocar lo guardado
   const s = spawnSync(process.execPath, [path.join(SCRIPTS, 'marker.js'), 'tests-failed', 'save-green', '--summary', path.join(l.state, 'no-existe.json'),
     '--measured', path.join(antes.dir, 'medido.json'), '--repo', l.repo], { cwd: l.repo, encoding: 'utf8', env: entorno(l, { TYCON_TEST_GATE: '1' }) });
