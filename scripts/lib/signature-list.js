@@ -156,8 +156,14 @@ function claveDe(firma, destino, palabras, donde = {}) {
   try {
     const ow = require('./owner-window.js');
     canon = ow.formaCanonica(sin, { historia: ow.historiaDelPedido(sin, { cwd: donde.cwd, casa: donde.casa, destino }) });
-  } catch (_) { canon = null; }
-  return `firma:${sha(JSON.stringify([firma, destino, ...(canon || [path.basename(sin[0]), ...sin.slice(1)])])).slice(0, 32)}`;
+  } catch (e) {
+    // sin la forma canónica, la fila se anota con las palabras tal cual: el mismo pedido escrito de otra forma puede
+    // quedar en dos filas, y eso se dice
+    try { process.stderr.write(`signature-list: no pude armar la forma canónica del pedido (${(e && e.message) || e}); la fila va con el comando tal cual\n`); } catch (_) { /* nada */ }
+    canon = null;
+  }
+  // la canónica lleva su marca, como la huella del cuadro: nunca comparte fila con un pedido que no la tiene
+  return `firma:${sha(JSON.stringify([firma, destino, ...(canon ? ['forma-canonica', ...canon] : [path.basename(sin[0]), ...sin.slice(1)])])).slice(0, 32)}`;
 }
 
 function firmasDelRegistroComun(casa, problemas) {
