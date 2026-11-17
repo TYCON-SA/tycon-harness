@@ -77,10 +77,13 @@ test('T28 EnvSwitches_InventoryMatchesReaders @story-8.256 @ac-2', () => {
   const d = tmp('es-formas-');
   fs.mkdirSync(path.join(d, 'scripts'));
   fs.writeFileSync(path.join(d, 'scripts', 'a.js'), "const a = process.env.TYCON_ONE; const b = process.env['TYCON_TWO']; const c = env.TYCON_THREE; readEnv('TYCON_FOUR');\n");
-  fs.writeFileSync(path.join(d, 'scripts', 'b.sh'), 'X="${TYCON_FIVE:-}"; echo $TYCON_SIX\n');
+  // un guion lee también por el node que lleva adentro, y un `test-*.js` suelto es código, no una prueba
+  fs.writeFileSync(path.join(d, 'scripts', 'b.sh'), 'X="${TYCON_FIVE:-}"; echo $TYCON_SIX\nnode -e "const s = process.env.TYCON_SEVEN"\n');
+  fs.writeFileSync(path.join(d, 'scripts', 'test-scope.js'), 'process.env.TYCON_EIGHT;\n');
   fs.mkdirSync(path.join(d, 'scripts', 'tests'));
   fs.writeFileSync(path.join(d, 'scripts', 'tests', 'c.test.js'), 'process.env.TYCON_TEST_ONLY;\n');
-  assert.deepStrictEqual([...ES.lecturas(d).keys()].sort(), ['TYCON_FIVE', 'TYCON_FOUR', 'TYCON_ONE', 'TYCON_SIX', 'TYCON_THREE', 'TYCON_TWO']);
+  fs.writeFileSync(path.join(d, 'scripts', 'd.test.js'), 'process.env.TYCON_TEST_ONLY;\n');
+  assert.deepStrictEqual([...ES.lecturas(d).keys()].sort(), ['TYCON_EIGHT', 'TYCON_FIVE', 'TYCON_FOUR', 'TYCON_ONE', 'TYCON_SEVEN', 'TYCON_SIX', 'TYCON_THREE', 'TYCON_TWO']);
 });
 
 // T4 CrossCheck_EscC1AndHarnessC1MatchTheList @story-8.256 @ac-5
@@ -105,15 +108,19 @@ test('T4 CrossCheck_EscC1AndHarnessC1MatchTheList @story-8.256 @ac-5', () => {
     assert.ok(e, `${nombre} no está en la lista`);
     assert.ok(e.apagan.includes(valor), `${nombre}=${valor} no está entre los que apagan (${e.apagan})`);
   }
+  // Cada valor que apaga, y en mayúsculas cuando es una palabra (los lectores comparan sin mayúsculas): `ci` del chequeo
+  // de vida y `Off` se escapaban del freno.
   const h = tmp('es-rc-');
   for (const e of ES.leer().entradas.filter((x) => ES.apagaUnControl(x) && ['agente', 'hook', 'git-hook'].includes(x.proceso))) {
-    const valor = e.en_configuracion === 'cualquiera' ? '1' : e.apagan[0];
-    const cmd = `echo 'export ${e.nombre}=${valor}' >> ~/.zshrc`;
-    const input = JSON.stringify({ session_id: 's-es', tool_name: 'Bash', tool_input: { command: cmd }, cwd: h, permission_mode: 'bypassPermissions' });
-    const r = spawnSync('bash', [GUARD], { input, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: h, USERPROFILE: h } });
-    assert.strictEqual(r.status, 2, `${cmd} no frenó\n${r.stderr}`);
-    // las de ESC-C1 las frena antes la firma; las demás, HARNESS-C1
-    assert.match(r.stderr, e.firma ? /HARNESS-C1|ESC-C1/ : /HARNESS-C1/, cmd);
+    const valores = e.en_configuracion === 'cualquiera' ? ['1'] : e.apagan.flatMap((v) => (/[a-z]/.test(v) ? [v, v.toUpperCase(), v[0].toUpperCase() + v.slice(1)] : [v]));
+    for (const valor of valores) {
+      const cmd = `echo 'export ${e.nombre}=${valor}' >> ~/.zshrc`;
+      const input = JSON.stringify({ session_id: 's-es', tool_name: 'Bash', tool_input: { command: cmd }, cwd: h, permission_mode: 'bypassPermissions' });
+      const r = spawnSync('bash', [GUARD], { input, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: h, USERPROFILE: h } });
+      assert.strictEqual(r.status, 2, `${cmd} no frenó\n${r.stderr}`);
+      // las de ESC-C1 las frena antes la firma; las demás, HARNESS-C1
+      assert.match(r.stderr, e.firma ? /HARNESS-C1|ESC-C1/ : /HARNESS-C1/, cmd);
+    }
   }
 });
 
@@ -134,6 +141,13 @@ test('T7 AtddPreedit_OffWritesOncePerSessionAndDay @story-8.256 @ac-6', () => {
   } finally { if (antes === undefined) delete process.env.TYCON_ATDD_PREEDIT_GATE; else process.env.TYCON_ATDD_PREEDIT_GATE = antes; }
   const lineas = fs.readFileSync(path.join(st, 'bypass.log'), 'utf8').trim().split('\n').map((x) => JSON.parse(x));
   assert.deepStrictEqual(lineas.map((x) => `${x.kind}:${x.sessionId}`).sort(), ['ATDD_PREEDIT_GATE_OFF:s-dos', 'ATDD_PREEDIT_GATE_OFF:s-uno']);
+  // seis procesos a la par con la misma sesión y la misma clave: un solo renglón (la marca se toma de una sola vez)
+  const par = tmp('es-par-');
+  const uno = `require(${JSON.stringify(path.join(ROOT, 'scripts', 'lib', 'env-switches.js'))}).anotarEscape({ stateDir: ${JSON.stringify(par)}, sessionId: 's-par', kind: 'ATDD_PREEDIT_GATE_OFF', variable: 'TYCON_ATDD_PREEDIT_GATE', unaVez: 'gate' })`;
+  const guion = `const { spawn } = require('child_process'); let n = 0; for (let i = 0; i < 6; i++) spawn(process.execPath, ['-e', ${JSON.stringify(uno)}]).on('exit', () => { n++; });`;
+  const r = spawnSync(process.execPath, ['-e', guion], { encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(fs.readFileSync(path.join(par, 'bypass.log'), 'utf8').trim().split('\n').length, 1);
 });
 
 /** Una copia del árbol del arnés (sin pruebas) para romperle la lista sin tocar el clon. */

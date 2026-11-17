@@ -294,7 +294,7 @@ const CON_EFECTO = {
   TYCON_MUTATION_CHECK: (command) => argsDe(command, 'marker.js').some((r) => r[0] === 'complete-step' && (r[1] === 'run-tests' || r[1] === '4')),
   TYCON_STORY_GATE: (command) => corre(command, 'marker.js', ['adhoc', 'set']),
   // el portón de la revisión de la historia lo consultan `validators` y `story-review-gate`
-  TYCON_STORY_REVIEW: (command) => argsDe(command, 'pipeline.js').some((r) => r[0] === 'validators' || r[0] === 'story-review-gate'),
+  TYCON_STORY_REVIEW: (command) => argsDe(command, 'pipeline.js').some((r) => ['validators', 'validadores', 'story-review-gate'].includes(r[0])),
 };
 
 // Programas que corren otro programa: lo que corre de verdad viene después, y dónde corre ya no es seguro.

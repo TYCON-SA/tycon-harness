@@ -185,7 +185,8 @@ function main(argv) {
   // `ci`: los guiones del arnés que repiten el pre-commit sobre un rango (public-ci.sh, run-base-controls.sh) lo apagan
   // a propósito. Dentro de la CI no es una decisión de nadie y no se anota; esos guiones también corren en una máquina,
   // y ahí queda un renglón con su propio nombre, que la noche no cuenta como escape.
-  const valor = readEnv('TYCON_NO_LIVENESS_PRECOMMIT', { where: WHERE });
+  // Sin distinguir mayúsculas, como la lista única, el freno de la configuración y la revisión de la noche.
+  const valor = String(readEnv('TYCON_NO_LIVENESS_PRECOMMIT', { where: WHERE }) || '').trim().toLowerCase();
   if (valor === 'ci') {
     const ES = require(path.join(__dirname, '..', 'lib', 'env-switches.js'));
     const sessionId = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID;

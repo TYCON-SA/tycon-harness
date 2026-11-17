@@ -69,13 +69,14 @@ const escapesDeLaNoche = () => leer().entradas.filter((e) => e.noche).map((e) =>
 const NOMBRE = 'TYCON_[A-Z0-9_]+|DOD_BYPASS|STOP_AUTONOMY';
 // en .js: process.env.X, process.env['X'], env.X, env['X'] (el `env` inyectado) y readEnv('X' (legacy-names.js)
 const EN_JS = new RegExp(`\\benv(?:\\.(${NOMBRE})\\b|\\[\\s*['"](${NOMBRE})['"]\\s*\\])|readEnv\\(\\s*['"](${NOMBRE})['"]`, 'g');
-// en .sh: $X y ${X
-const EN_SH = new RegExp(`\\$\\{?(${NOMBRE})\\b`, 'g');
+// en .sh: $X y ${X, y también las formas de .js (el node que un guion lleva adentro lee `process.env.X`)
+const EN_SH = new RegExp(`\\$\\{?(${NOMBRE})\\b|\\benv\\.(${NOMBRE})\\b`, 'g');
 // en la lista de ganchos del instalador: `optin:X`, la variable con que el instalador decide si registra el gancho
 const LISTA_DE_GANCHOS = path.join('scripts', 'setup', 'hooks-list.json');
 const EN_GANCHOS = new RegExp(`optin:(${NOMBRE})\\b`, 'g');
 const CARPETAS_FUERA = new Set(['.git', 'node_modules', 'tests', '__tests__', 'test', 'controls-bench', 'fixtures']);
-const esPrueba = (nombre) => /\.test\.[cm]?js$|^test-.*\.js$/.test(nombre);
+// Una prueba fuera de las carpetas de pruebas se llama `*.test.js`; un `test-*.js` suelto es código (lib/test-scope.js).
+const esPrueba = (nombre) => /\.test\.[cm]?js$/.test(nombre);
 
 // Las carpetas del código del núcleo. `integrations/` queda afuera (cada integración lleva lo suyo), y también lo que
 // otro árbol pone encima del arnés (las historias, las tareas, la evidencia de un repo que lo usa).
@@ -101,7 +102,7 @@ function lecturas(raiz) {
       const re = new RegExp(ganchos ? EN_GANCHOS : h.name.endsWith('.sh') ? EN_SH : EN_JS);
       let m;
       while ((m = re.exec(texto))) {
-        const nombre = m[1] || m[2] || m[3];
+        const nombre = m[1] || m[2] || m[3] || m[4];
         if (!out.has(nombre)) out.set(nombre, new Set());
         out.get(nombre).add(path.relative(raiz, p).split(path.sep).join('/'));
       }
@@ -150,10 +151,16 @@ function anotarEscape({ stateDir, home = os.homedir(), sessionId, kind, variable
     if (unaVez && sessionId) {
       const seguro = (s) => String(s).replace(/[^A-Za-z0-9._-]/g, '_');
       marca = path.join(dir, 'escapes-anotados', `${seguro(kind)}-${seguro(sessionId)}-${seguro(unaVez)}-${ts.slice(0, 10)}`);
-      if (fs.existsSync(marca)) return false;
+      fs.mkdirSync(path.dirname(marca), { recursive: true });
+      // La marca se toma antes de escribir, y de una sola vez: dos procesos a la par no anotan el mismo escape dos veces.
+      try { fs.writeFileSync(marca, '', { flag: 'wx' }); } catch (e) { if (e.code === 'EEXIST') return false; throw e; }
     }
-    fs.appendFileSync(path.join(dir, 'bypass.log'), JSON.stringify({ ts, sessionId: sessionId || null, kind, variable, ...campos }) + '\n', 'utf8');
-    if (marca) { fs.mkdirSync(path.dirname(marca), { recursive: true }); fs.writeFileSync(marca, ''); }
+    try {
+      fs.appendFileSync(path.join(dir, 'bypass.log'), JSON.stringify({ ts, sessionId: sessionId || null, kind, variable, ...campos }) + '\n', 'utf8');
+    } catch (e) {
+      if (marca) { try { fs.unlinkSync(marca); } catch (_e) { /* la marca sin línea sólo pierde el aviso de hoy */ } }
+      throw e;
+    }
     return true;
   } catch (e) {
     process.stderr.write(`⚠️  no pude anotar el escape ${variable} en bypass.log (${e.code || e.message})\n`);

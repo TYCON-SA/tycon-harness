@@ -70,6 +70,10 @@ test('T8 Liveness_CiOutsideCi_Recorded @story-8.256 @ac-6', () => {
   const fuera = correr(['agents/tycon-silent-failure-hunter.md'], { TYCON_NO_LIVENESS_PRECOMMIT: 'ci', CLAUDE_CODE_SESSION_ID: 'sesion-1' });
   assert.strictEqual(fuera.status, 0, fuera.stderr);
   assert.deepStrictEqual(fuera.lineas.map((l) => `${l.kind}:${l.sessionId}`), ['LIVENESS_PRECOMMIT_CI_LOCAL:sesion-1']);
+  // `CI` en mayúsculas apaga igual, como lo cuentan la lista, el freno de la configuración y la noche
+  const mayus = correr(['agents/tycon-silent-failure-hunter.md'], { TYCON_NO_LIVENESS_PRECOMMIT: 'CI', CLAUDE_CODE_SESSION_ID: 'sesion-2' });
+  assert.strictEqual(mayus.status, 0, mayus.stderr);
+  assert.deepStrictEqual(mayus.lineas.map((l) => `${l.kind}:${l.sessionId}`), ['LIVENESS_PRECOMMIT_CI_LOCAL:sesion-2']);
   for (const marca of [{ TF_BUILD: 'True' }, { TF_BUILD: 'true' }, { GITHUB_ACTIONS: 'true' }]) {
     const dentro = correr(['agents/tycon-silent-failure-hunter.md'], { TYCON_NO_LIVENESS_PRECOMMIT: 'ci', CLAUDE_CODE_SESSION_ID: 'sesion-1', ...marca });
     assert.strictEqual(dentro.status, 0, dentro.stderr);
