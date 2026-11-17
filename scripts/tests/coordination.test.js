@@ -7,7 +7,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawnSync, spawn } = require('child_process'); // spawn: un proceso vivo ajeno (T47)
 
 const ROOT = path.join(__dirname, '..', '..');
 const COORD = path.join(ROOT, 'scripts', 'tools', 'coordination.js');
@@ -1817,9 +1817,10 @@ test('T5 CoordinationStatus_OneHeavyTurnLine @story-8.228 @ac-4: un solo rengló
   assert.doesNotMatch(text, /Pase adversarial en vuelo|Suite completa en curso/);
   fs.unlinkSync(path.join(t.state, 'active', 'pase-1.json'));
   heavyRun(t, { sid: 'pase-1', session: 'ConPase', what: '279 suites de repo' });
-  const withSuite = C.status(t.opts);
+  // con una corriendo, el renglón suma si entra una segunda (8.291): la memoria inyectada, para no depender de la máquina
+  const withSuite = C.status({ ...t.opts, readMemory: reader(62) });
   assert.strictEqual(withSuite.heavyTurn.kind, 'suite');
-  assert.match(C.statusText(withSuite), /^Turno de tarea pesada: ConPase \(279 suites de repo, desde las \d\d:\d\d\)$/m);
+  assert.match(C.statusText(withSuite), /^Turno de tarea pesada: ConPase \(279 suites de repo, desde las \d\d:\d\d\); segundo turno libre \(memoria libre 62 %, piso 50 %\)$/m);
 });
 
 // 🔴 mutación: seguir mirando `deepReviewDone` deja a un pase no medido frenando al de otra sesión.
@@ -2643,4 +2644,212 @@ test('8.281 T4e Close_PuestoCompartido_RamasDejadas_EnNoSe @story-8.281 @ac-7: s
   assert.strictEqual(r.closed, false, r.message);
   assert.doesNotMatch(r.message, /falta:/, r.message);
   assert.match(r.message, /no puedo separar.*la rama local wt\/una/, r.message);
+});
+
+// ── 8.275: owner-next da el detalle del cuadro debajo de la pregunta, sin la lista de archivos ───────────────────────
+
+// 🔴 Falla con: un detalle que no llega a quien muestra el cuadro, o que trae las rutas de los archivos de la firma.
+test('OwnerNext_PrintsDetailBelowQuestion_WithoutFileList (T15) @story-8.275 @ac-13', (t) => {
+  const sl = require('../lib/signature-list.js');
+  const ow = require('../lib/owner-window.js');
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-detalle-'));
+  t.after(() => fs.rmSync(raiz, { recursive: true, force: true }));
+  const casa = path.join(raiz, 'casa');
+  const estado = path.join(casa, '.claude', '.tycon-pipeline');
+  fs.mkdirSync(path.join(casa, '.claude', 'sessions'), { recursive: true });
+  fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
+  fs.writeFileSync(path.join(casa, '.claude', 'tycon.json'), JSON.stringify({ approvals: { signature_list: 'on' } }));
+  fs.writeFileSync(path.join(casa, '.claude', 'sessions', 'ses-a.json'), JSON.stringify({ pid: process.pid, sessionId: 'ses-a', name: 'A', nameSource: 'user', status: 'idle', cwd: '/r' }));
+  const arnes = path.join(raiz, 'arnes');
+  fs.mkdirSync(arnes);
+  // la corrida de la sesión, con su plan de 11 archivos
+  const repo = path.join(raiz, 'repo');
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  const git = (...a) => spawnSync('git', ['-C', repo, '-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'maintenance.auto=false', ...a], { encoding: 'utf8' });
+  git('init', '-q');
+  const historia = path.join(repo, 'specs', 'story-9.99-prueba.md');
+  fs.writeFileSync(historia, '---\nstory: "9.99"\ntitle: "Prueba"\nstatus: in-progress\n---\n\n# Story 9.99\n');
+  fs.writeFileSync(path.join(estado, 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: historia, repoPath: repo, startedAt: '2026-11-04T12:00:00Z',
+    stepScheme: 2, stepsCompleted: ['validate-story', 'plan'], stepsPending: ['approve-plan', 'implement'] }));
+  // la carpeta de la corrida, la misma que lee la fuente del plan
+  const run = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'run-dir.js')).resolveRunDir(repo, '9.99', true, historia);
+  const archivos = ['scripts/lib/a.js', 'scripts/lib/b.js', 'scripts/lib/c.js', 'scripts/tools/d.js', 'scripts/tests/a.test.js', 'scripts/tests/b.test.js', 'scripts/tests/c.test.js',
+    'guides/x.md', 'guides/y.md', 'specs/story-9.99-prueba.md', 'scripts/tests/suites.json'];
+  const planRuta = path.join(run, 'step-02-bmad-plan.md');
+  fs.writeFileSync(planRuta, ['# Plan', '', '## Qué hace', '', 'Hace algo.', '', '## Archivos', '', ...archivos.map((a) => `- ${a}`), ''].join('\n'));
+  // los tres controles, cambiados en un commit
+  const controles = ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/ci/c.sh'];
+  fs.mkdirSync(path.join(repo, 'scripts', 'ci'), { recursive: true });
+  for (const r of controles) fs.writeFileSync(path.join(repo, r), 'a=1\n');
+  git('add', '.'); git('commit', '-qm', 'base');
+  const base = git('rev-parse', 'HEAD').stdout.trim();
+  for (const r of controles) fs.writeFileSync(path.join(repo, r), 'a=1\nb=2\n');
+  git('commit', '-qam', 'cambio');
+  const entradas = JSON.stringify(controles.map((p) => ({ path: p, blob: git('rev-parse', `HEAD:${p}`).stdout.trim() })));
+  const MARKER = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  const CONTROLES = path.join(__dirname, '..', 'ci', 'run-base-controls.sh');
+  const pedidos = {
+    'plan-approval': `node ${MARKER} complete-step approve-plan --approved "pido el click del dueño"`,
+    'control-change': `bash ${CONTROLES} approve --root ${repo} --base ${base} --entries '${entradas}'`,
+  };
+  const ahora = Date.parse('2026-11-04T12:30:00Z');
+  for (const [firma, comando] of Object.entries(pedidos)) {
+    fs.rmSync(sl.archivo(casa), { force: true });
+    sl.anotarFirma({ casa, firma, titulo: firma, sesion: 'ses-a', destino: 'ses-a', comando, palabras: ow.canonica(comando), cwd: repo, ahora: ahora - 60000 });
+    const r = sl.siguiente({ casa, sesion: 'ses-a', ahora, arnes, env: {}, arbol: [] });
+    assert.strictEqual(r.tipo, 'firma', `${firma}: ${r.texto}`);
+    assert.ok(Array.isArray(r.detalle) && r.detalle.length, `${firma}: sin detalle`);
+    const out = C.ownerNextText(r, 'ses-a');
+    const i = out.indexOf('Detalle (no va en el cuadro; mostralo si la persona lo pide):');
+    assert.ok(i > out.indexOf(r.pregunta), `${firma}: ${out}`);
+    // lo que ve la persona: la pregunta y el detalle; el comando a repetir es de la sesión
+    const visto = out.slice(0, out.indexOf('Con «'));
+    for (const a of [...archivos, ...controles]) assert.ok(!visto.includes(a), `${firma}: se ve ${a}:\n${visto}`);
+    if (firma === 'plan-approval') assert.ok(visto.includes(planRuta), visto);
+    else assert.match(visto, /Completo en: \S+\.patch/);
+    // el texto de decidir para el mismo pedido
+    const q = ow.cuadroPara({ firma, comando, palabras: ow.canonica(comando), destino: 'ses-a', sesion: 'ses-a', cwd: repo, casa });
+    const d = ow.negarSinVentana('sin ventana', [firma], 'ses-a', q, true);
+    assert.ok(d.texto.includes('Detalle (no va en el cuadro; mostralo si la persona lo pide):'), d.texto);
+    for (const a of [...archivos, ...controles]) assert.ok(!d.texto.includes(a), `${firma}: decidir nombra ${a}`);
+  }
+});
+
+// 🔴 Falla con: el cuadro de un permiso cambiado por el formato nuevo de las firmas.
+test('SignatureList_PermissionBox_Unchanged (T15) @story-8.275 @ac-18', () => {
+  const sl = require('../lib/signature-list.js');
+  const pedido = 'rm -rf /r/repo/node_modules && npm ci';
+  const f = { id: 'p1', destino: 'ses-a', herramienta: 'Bash', carpeta: '/r/repo', pedido };
+  const c = sl.cuadroDePermiso(f);
+  const sha = require('crypto').createHash('sha256').update(pedido).digest('hex').slice(0, 8);
+  assert.strictEqual(c.pregunta, `¿Aprobás este pedido de Bash? (permiso p1 · sesión ses-a · código ${sha}) Carpeta: /r/repo. Pedido:\n${pedido}`);
+});
+
+// ── El segundo turno de ejecución grande, como lo ve la coordinadora (@story-8.291) ─────────────────────────────────
+
+const HTURN = require(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'));
+// Un lugar del turno de un proceso vivo (este, salvo que se diga otro), como lo publica heavy-turn.js: 0 el primero, 1 el segundo.
+function slot(t, i, fields) {
+  const file = HTURN.slotFiles(t.home)[i];
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ pid: process.pid, at: mins(i ? 5 : 10), ...fields }));
+}
+const reader = (pct) => { const r = () => { r.calls += 1; return pct == null ? { pct: null, why: 'memory_pressure no dio el porcentaje' } : { pct, why: null }; }; r.calls = 0; return r; };
+function coordinated(profile = { approvals: { relay_session: 'coordinadora' } }) {
+  const t = toy({ profile });
+  session(t, 'coord-1', 'Coordinadora', { status: 'busy' });
+  designate(t, 'coord-1');
+  return t;
+}
+
+// 🔴 mutación: mirar sólo la más vieja deja lanzar el pase al lado de la segunda ejecución grande.
+test('T44 AdversarialTurn_TwoHeavyRuns_PassWaits @story-8.291 @ac-8: con dos ejecuciones grandes, el pase espera y la línea nombra a las dos', () => {
+  const t = coordinated();
+  slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
+  slot(t, 1, { sid: 's-bea', session: 'Bea', what: '129 suites de repo' });
+  const r = C.adversarialTurn({ ...t.opts, sessionId: 's-b' });
+  assert.strictEqual(r.waiting_turn, true);
+  assert.deepStrictEqual(r.heavy_run, { session: 'Uma', what: '204 suites de repo', since: mins(10) });
+  assert.deepStrictEqual(r.heavy_runs.map((h) => h.session), ['Uma', 'Bea']);
+  assert.match(r.turn, /Uma, 204 suites de repo/);
+  assert.match(r.turn, /Bea, 129 suites de repo/);
+  // sólo la segunda (la primera terminó): también espera, y el formato de heavy_run es el de siempre
+  fs.rmSync(HTURN.slotFiles(t.home)[0]);
+  const s = C.adversarialTurn({ ...t.opts, sessionId: 's-b' });
+  assert.deepStrictEqual(s.heavy_run, { session: 'Bea', what: '129 suites de repo', since: mins(5) });
+});
+
+// 🔴 mutación: medir con dos o con ninguna, decir «libre» con la memoria debajo, o contar quieta a la que corre la segunda.
+test('T45 Status_SecondTurnLine @story-8.291 @ac-11 @ac-13: el renglón del turno dice si la segunda entra, con la memoria y el piso', () => {
+  const t = coordinated();
+  const line = (s) => C.statusText(s).split('\n').find((l) => l.startsWith('Turno de tarea pesada:'));
+  // (e) ninguna: libre, como hoy, y sin medir
+  const none = reader(62);
+  const e = C.status({ ...t.opts, readMemory: none });
+  assert.strictEqual(line(e), 'Turno de tarea pesada: libre');
+  assert.deepStrictEqual([e.suites, e.secondTurn.freePct, e.secondTurn.open, none.calls], [[], null, false, 0]);
+  assert.deepStrictEqual([e.secondTurn.minFreePct, e.secondTurn.origin], [50, 'sin-valor']);
+  slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
+  // (a) una, 62 %
+  const a = C.status({ ...t.opts, readMemory: reader(62) });
+  assert.match(line(a), /^Turno de tarea pesada: Uma \(204 suites de repo, desde las \d\d:\d\d\); segundo turno libre \(memoria libre 62 %, piso 50 %\)$/);
+  assert.deepStrictEqual([a.secondTurn.freePct, a.secondTurn.open], [62, true]);
+  assert.strictEqual(a.suite.session, 'Uma', 'suite sigue siendo la más vieja');
+  // (b) una, 41 %
+  const b = C.status({ ...t.opts, readMemory: reader(41) });
+  assert.match(line(b), /; segundo turno cerrado \(memoria libre 41 %, piso 50 %\)$/);
+  assert.strictEqual(b.secondTurn.open, false);
+  // (c) una, sin medir
+  const c = C.status({ ...t.opts, readMemory: reader(null) });
+  assert.match(line(c), /; segundo turno cerrado \(no pude medir la memoria libre\)$/);
+  assert.deepStrictEqual([c.secondTurn.freePct, c.secondTurn.open], [null, false]);
+  // (d) dos, 20 %: las dos se muestran, la memoria no se mide, y la de fondo que corre la segunda no está quieta
+  session(t, 's-bea', 'Bea', { kind: 'bg', status: 'idle', statusUpdatedAt: mins(40) });
+  slot(t, 1, { sid: 's-bea', session: 'Bea', what: '129 suites de repo' });
+  const low = reader(20);
+  const d = C.status({ ...t.opts, readMemory: low });
+  assert.match(line(d), /^Turno de tarea pesada: Uma \(204 suites de repo, desde las \d\d:\d\d\) y Bea \(129 suites de repo, desde las \d\d:\d\d\)$/);
+  assert.deepStrictEqual([d.suites.map((x) => x.session), d.secondTurn.freePct, d.secondTurn.open, low.calls], [['Uma', 'Bea'], null, false, 0]);
+  assert.ok(!d.quiet.some((q) => q.session === 'Bea'), `la que corre la segunda no está quieta: ${JSON.stringify(d.quiet)}`);
+});
+
+// 🔴 mutación: callar con una corriendo (como antes), o imprimir un porcentaje vacío cuando no se pudo medir.
+test('T46 CapNotice_QueueWithOneRunning @story-8.291 @ac-12: con gente en la fila, el aviso dice si la segunda entra y a quién darle el «arrancá»', () => {
+  const t = coordinated();
+  const opts = (pct) => ({ ...t.opts, sessionId: 'coord-1', readMemory: reader(pct) });
+  session(t, 's-ana', 'Ana', { status: 'idle', statusUpdatedAt: mins(30) });
+  const doing = path.join(t.state, 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  fs.writeFileSync(path.join(doing, 's-ana.json'), JSON.stringify({ text: 'implementar la historia', at: new Date(mins(10)).toISOString(), waitingFor: 'turno de suite', waitingSince: new Date(mins(10)).toISOString() }));
+  // (d) ninguna corriendo: el texto de hoy
+  assert.match(C.capNotice(opts(62)), /^Coordinación: no corre ninguna suite completa y hay 1 esperando turno: dale el «arrancá» a Ana\.$/m);
+  slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
+  // (a) una, 62 %
+  assert.match(C.capNotice(opts(62)), /^Coordinación: corre Uma \(204 suites de repo, desde las \d\d:\d\d\); hay lugar para una segunda \(memoria libre 62 %, piso 50 %\): dale el «arrancá» a Ana\.$/m);
+  // (b) una, 41 %
+  assert.match(C.capNotice(opts(41)), /^Coordinación: corre Uma \(.*\); la segunda no entra \(memoria libre 41 %, piso 50 %\): cuando termine, sigue Ana\.$/m);
+  // (e) una, sin medir: ni «null» ni un porcentaje vacío
+  const e = C.capNotice(opts(null));
+  assert.match(e, /la segunda no entra \(no pude medir la memoria libre\): cuando termine, sigue Ana\./);
+  assert.doesNotMatch(e, /null|\( ?%|libre +%/);
+  // (c) dos
+  slot(t, 1, { sid: 's-bea', session: 'Bea', what: '129 suites de repo' });
+  assert.match(C.capNotice(opts(62)), /^Coordinación: corren Uma \(.*\) y Bea \(.*\); cuando termine una, sigue Ana\.$/m);
+});
+
+// 🔴 mutación: dar el segundo lugar con el otro ilegible, frenar por el lector caído, o medir sin coordinadora.
+test('T47 Status_UnreadableSlot_And_NoCoordinator @story-8.291 @ac-14 @ac-15: lo que no se lee no da el segundo turno y se dice; sin coordinadora, nada', (t) => {
+  const m = coordinated();
+  const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
+  t.after(() => { try { other.kill('SIGKILL'); } catch { /* ya terminó */ } });
+  slot(m, 0, { pid: other.pid, sid: 's-uma', session: 'Uma', what: '204 suites de repo', at: Date.now() - 60000 });
+  fs.writeFileSync(HTURN.slotFiles(m.home)[1], '{ esto no es json');
+  const mem = reader(90);
+  const r = HTURN.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-b' }, pid: process.pid, what: 'x', readMemory: mem });
+  assert.strictEqual(r.ok, false, 'con el otro lugar ilegible no se da el segundo');
+  assert.match(r.message, /no se puede leer/);
+  assert.ok(C.status({ ...m.opts, now: Date.now(), readMemory: reader(90) }).problems.some((p) => /turno de las ejecuciones grandes/.test(p)), 'el estado lo dice');
+  // (b) el perfil roto: el piso de fábrica, y se dice
+  const roto = coordinated();
+  fs.writeFileSync(path.join(roto.arnes, 'perfil-equipo.json'), '{ roto');
+  const f = HTURN.secondTurnFloor({ home: roto.home, env: {}, arnes: roto.arnes });
+  assert.deepStrictEqual([f.value, f.origin], [HTURN.SECOND_HEAVY_MIN_FREE_PCT, 'sin-valor']);
+  assert.ok(f.problem, 'dice que no pudo leer la configuración');
+  // (c) sin coordinadora designada: nada se toma ni se mide
+  const libre = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  const none = reader(90);
+  for (const pid of [process.pid, other.pid]) {
+    const x = HTURN.take({ home: libre.home, arnes: libre.arnes, env: {}, pid, what: 'x', readMemory: none });
+    assert.deepStrictEqual([x.ok, x.taken], [true, false]);
+  }
+  assert.strictEqual(none.calls, 0);
+});
+
+// 🔴 mutación: tragar el error del lector de memoria: el estado dice «no pude medir» sin decir por qué.
+test('T48 Status_MemoryReaderThrows_SaysWhy @story-8.291 @ac-11 @ac-14: si medir la memoria falla, el estado lo cierra y anota el motivo', () => {
+  const t = coordinated();
+  slot(t, 0, { sid: 's-uma', session: 'Uma', what: '204 suites de repo' });
+  const s = C.status({ ...t.opts, readMemory: () => { throw new Error('memory_pressure no está'); } });
+  assert.deepStrictEqual([s.secondTurn.freePct, s.secondTurn.open], [null, false]);
+  assert.ok(s.problems.some((p) => /memoria libre.*memory_pressure no está/.test(p)), JSON.stringify(s.problems));
 });

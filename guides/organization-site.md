@@ -99,7 +99,7 @@ repos, productos y máquinas, lo que escribió cada uno) se ve como está. La ay
 
 **Lo que ves la primera vez** depende de quién sos para el sitio:
 
-- **Quien mantiene** ve todas las pestañas (Inicio, Ejecuciones, Mantenimiento, Proyectos, Arnés, Cómo trabaja,
+- **Quien mantiene** ve todas las pestañas (Inicio, Ejecuciones, Mantenimiento, Aprendizajes, Proyectos, Arnés, Cómo trabaja,
   Configuración y Ayuda), y en Inicio lo que espera una decisión de toda la organización.
 - **Una persona confirmada** ve Inicio, Ejecuciones, Proyectos y Ayuda, con lo suyo.
 - **Alguien que no está en la lista** ve sólo una página que dice con qué cuenta entró, que esa cuenta no está en la
@@ -256,6 +256,47 @@ final **Enviar para aprobar**: abre un solo pedido al repo de operaciones con to
 que otra persona lo aprueba. Si la organización prendió «Los cambios de un mantenedor» (`site.auto_apply`), el botón
 dice **Enviar** y lo enviado se guarda sin esperar a nadie: la revisión de esa noche lo aplica. Tus marcas quedan guardadas en el navegador hasta que las envíes o las borres. Cada término
 tiene su «?» con la explicación.
+
+### Aprendizajes
+
+**Qué contesta:** ¿qué hace el equipo una y otra vez que conviene volver regla para todos?
+
+Sólo para **quien mantiene**. Cada noche, la revisión de los instintos del equipo cuenta lo que se repite en las
+máquinas (las que tienen prendidos los aprendizajes en el perfil del equipo) y deja una propuesta por patrón en el repo
+de operaciones. Al lado del nombre, en el menú, va cuántas esperan tu decisión, por ejemplo «Aprendizajes (3)».
+
+**Qué se ve.** Arriba, la última noche: el día, si midió, qué modelo redactó y cuántas quedaron sin redactar. Debajo,
+las propuestas por decidir, primero las que aparecen en más máquinas y después las que se repiten más. Cada tarjeta dice
+qué se repite (la herramienta, el patrón y el repo), en cuántas máquinas, cuántas veces y entre qué días, y la regla
+sugerida con su confianza, o «sin redacción» y por qué. Nunca dice qué máquina ni qué persona lo hizo. Si la propuesta
+sugiere una pieza del arnés (un revisor, una skill, un gancho o una guía), la tarjeta trae **Proponer al arnés**, que
+abre un issue nuevo del repo público con el borrador escrito: lo enviás vos, con tu cuenta. Al fondo, cerrado de
+entrada, el historial de los últimos 30 días: quién decidió, cuándo, el texto aprobado o el motivo del rechazo. Cada
+aprobada dice si está **en el perfil** o si **no llegó al perfil** (por ejemplo, porque su pedido se cerró sin
+aplicar); en ese caso, **Volver a proponer al perfil** abre otra vez sólo el pedido al perfil.
+
+**Cómo se decide.** Como en Mantenimiento: marcás **Aprobar** o **Rechazar** en cada tarjeta (las marcas quedan en el
+navegador) y al final **Enviar para aprobar**. Aprobar abre la regla sugerida para que la corrijas: lo que va al equipo
+es el texto que confirmás, en una línea. Una propuesta sin redacción pide que la escribas. Rechazar pide un motivo, en
+una línea. Al enviar salen, como mucho, dos pedidos:
+
+1. con aprobadas, uno al repo del perfil, que agrega cada regla al bloque `team-learnings.md` de un paquete que la
+   organización ya tiene (`packs/<paquete>/claude-md-blocks/team-learnings.md`). Viene elegido el paquete que ya tiene
+   el bloque; si ninguno lo tiene, lo elegís. El bloque tiene un techo de 4.000 bytes: pasarlo frena el envío y hay que
+   sacar una regla a mano. Si la capa del perfil pide una versión del arnés anterior a los bloques de paquete, el mismo
+   pedido la sube;
+2. uno al repo de operaciones, que marca cada propuesta como aprobada o rechazada. La noche no vuelve a proponerlas.
+
+Lo aprobado llega a todas las máquinas con su próxima actualización. Mientras un pedido espera, sus propuestas dicen
+**Esperando aprobación** y no se pueden volver a enviar. Con un pedido de aprendizajes abierto en el perfil, aprobar otra
+regla espera a que se cierre (los dos cambiarían el mismo bloque); rechazar sigue andando. Si el pedido al perfil salió
+y el de operaciones falló, reenviar no abre otro pedido al perfil. Si una propuesta cambió desde que la viste, la página
+pide recargar y no pisa nada. Con `site.auto_apply`, el botón dice **Enviar** y no espera a nadie.
+
+**Qué necesita.** Las dos identidades de escritura del sitio: la de operaciones para rechazar y la del perfil para
+aprobar (cómo se configuran, en «Lo que necesita «Aprendizajes»», en la instalación). Sin alguna, la pestaña se ve
+entera, de sólo lectura, y cada botón dice qué le falta. Las propuestas viven en el repo de operaciones: ese repo tiene
+que ser de lectura sólo para quienes mantienen, no para todo el equipo.
 
 ### Proyectos
 
@@ -874,7 +915,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   repo del perfil. Lo revisa quien mantiene.
 - **Revisión del plan** y **Con qué corre la revisión**, y las opciones nuevas de **Pase adversarial** y de **Vueltas de
   revisores**: las revisiones automáticas, del plan y del código. Cuándo corre cada una, quién la aprueba, con qué
-  revisor y cuándo el dueño cuenta como ausente; la guía entera es `guides/revisiones-automaticas.md`. Quedan en
+  revisor y cuándo el dueño cuenta como ausente; la guía entera es `guides/automatic-reviews.md`. Quedan en
   `team-repos.json` → `plan_review`, `review_runner`, `deep_review` y `review`, en el repo del perfil; un valor malo cae
   al de fábrica sólo en su clave. Lo revisa quien mantiene. Las opciones:
 
@@ -994,6 +1035,8 @@ El sitio decide quién sos por tu correo, y sólo con la lista de «Quién entra
 | **Persona confirmada** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas | no | los productos en los que trabaja | no | no | no |
 | **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | no | los productos en los que trabaja | no | no | no |
 | **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no | no | no |
+
+**Aprendizajes** la ve sólo quien mantiene, como Mantenimiento: una persona confirmada no la ve en el menú.
 
 **Cómo se pasa de un rol a otro.** Lo decide quien mantiene, en Configuración, y entra cuando alguien aprueba el pedido:
 
@@ -1468,6 +1511,21 @@ repos de producto.
 
 Una organización puede elegir no pedir ese revisor en sus repos de producto, por ejemplo porque cada dev mergea solo a
 `main`. Entonces «Proponer» queda apagado en esos repos: se revisa el cambio, se descarga y el pedido se abre a mano.
+
+### Lo que necesita «Aprendizajes»
+
+La pestaña Aprendizajes escribe en dos repos, siempre por pull request:
+
+- `SITE_OPERATIONS_WRITE_TOKEN`, la identidad de escritura de operaciones: rechazar y marcar cada propuesta (su archivo
+  en la carpeta de propuestas del repo de operaciones). Con la copia de operaciones, escribe en el clon de escritura aparte, como
+  Configuración.
+- `SITE_PROFILE_REPO` con `SITE_PROFILE_WRITE_TOKEN`, la identidad de escritura del perfil: aprobar, que agrega la regla
+  al bloque `packs/<paquete>/claude-md-blocks/team-learnings.md` de un paquete del perfil.
+
+Sin una de las dos, la pestaña se ve entera, de sólo lectura, y cada botón dice qué variable le falta. El repo de
+operaciones tiene que ser de lectura sólo para quienes mantienen: ahí viven las propuestas, que son lo que se repite en
+el trabajo de cada máquina. En Azure DevOps, el grupo de los devs con la lectura negada en ese repo; en GitHub, un repo
+privado con acceso sólo para quienes mantienen.
 
 ### Invitar a alguien
 

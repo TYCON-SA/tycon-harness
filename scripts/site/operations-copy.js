@@ -63,6 +63,8 @@ const RUTAS = Object.freeze([
   // las fichas vivas de la noche y las decisiones que esperan aplicarse: «Lo que encontró la noche» (tabs/findings.js).
   // Las archivadas no: la sección no las muestra.
   ...['dependencies', 'watcher', 'runs-review'].flatMap((c) => ['pending', 'promoted', 'decisions'].map((d) => `inbox/${c}/${d}/`)),
+  // las propuestas de la noche de los instintos: la pestaña «Aprendizajes» (tabs/learnings.js); su informe ya viene con .dashboard/
+  'inbox/instincts/propuestas/',
   // el pipeline de la noche de cada fuente, en pipelines/ o en .github/workflows/: de su cron sale a qué hora se aplica
   // una decisión
   // (tabs/findings.js, `PIPELINE_DE`). Sólo esos archivos, no la carpeta: el resto de los pipelines el sitio no lo lee

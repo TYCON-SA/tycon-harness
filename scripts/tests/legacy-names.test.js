@@ -1732,3 +1732,29 @@ test('T-thin CheckMap_ThinTreeWithoutProfile_LooksHere — el árbol adelgazado 
   fs.rmSync(repo, { recursive: true, force: true });
   fs.rmSync(home, { recursive: true, force: true });
 });
+
+// Una guía que cambia de nombre en su misma carpeta (guides/<castellano>.md → guides/<inglés>.md) deja un
+// reemplazo de dos líneas cuyo enlace es el nombre nuevo solo, y el reemplazo de su par en inglés lleva al par nuevo.
+test('T7 WriteShims_GuiasConDosLineas @story-8.45 @ac-5 — una guía renombrada en su carpeta deja dos líneas con el enlace al nombre nuevo', () => {
+  const repo = tmp('shims-guias');
+  const vieja = `${W.vieja}-${W.copia}`;
+  write(repo, { 'guides/lab-guide.md': '# Guía\n', 'guides/lab-guide.en.md': '# Guide\n' });
+  const entries = [
+    { kind: 'file', old: `guides/${vieja}.md`, new: 'guides/lab-guide.md', batch: 'lab', callers: ['docs', 'same-repo'] },
+    { kind: 'file', old: `guides/${vieja}.en.md`, new: 'guides/lab-guide.en.md', batch: 'lab', callers: ['docs', 'same-repo'] },
+  ];
+  write(repo, { 'renames.json': mapOf(entries) });
+  const gen = spawnSync(process.execPath, [LIB, '--write-shims', '--map', path.join(repo, 'renames.json'), '--root', repo], { encoding: 'utf8', env: envWith({ HOME: repo }) });
+  assert.strictEqual(gen.status, 0, gen.stderr);
+  const { isShim, isGeneratedShim, shimTarget } = lib();
+  for (const [suf, nuevo] of [['.md', 'lab-guide.md'], ['.en.md', 'lab-guide.en.md']]) {
+    const rel = `guides/${vieja}${suf}`;
+    const text = fs.readFileSync(path.join(repo, rel), 'utf8');
+    const lines = text.replace(/\n$/, '').split('\n');
+    assert.strictEqual(lines.length, 2, `${rel}: dos líneas`);
+    assert.ok(lines[0].includes(`(${nuevo})`), `${rel}: el enlace es el nombre nuevo, en la misma carpeta (${lines[0]})`);
+    assert.ok(isShim(text) && isGeneratedShim(rel, text), `${rel}: el reemplazo generado`);
+    assert.strictEqual(shimTarget(path.join(repo, rel)), path.join(repo, 'guides', nuevo), `${rel}: lleva a ${nuevo}`);
+  }
+  fs.rmSync(repo, { recursive: true, force: true });
+});

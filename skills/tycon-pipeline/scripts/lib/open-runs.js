@@ -88,8 +88,13 @@ function anotar(home, linea) {
 /** Anota la apertura en el registro y escribe su copia en la carpeta de la ejecución (retomar la sobrescribe). */
 function abrir({ sid, story, storyPath, repo, runDir, motivo, home, ahora = new Date().toISOString() } = {}) {
   if (!sid || !runDir) throw new Error('abrir: faltan la sesión o la carpeta de la ejecución');
-  // absoluta: los frenos leen la copia desde otro directorio de trabajo
-  runDir = path.resolve(runDir);
+  // absolutas contra el repo de la ejecución, nunca contra la carpeta del proceso (lib/run-dir.js): los frenos leen la
+  // copia desde otro directorio de trabajo. Una carpeta relativa sin un repo absoluto no se anota.
+  const r = require('./run-dir.js').rutasDeLaCorrida({ repoPath: repo, runDir, storyPath });
+  if (!path.isAbsolute(r.runDir)) throw new Error(`abrir: no anoté la apertura: ${r.motivo}`);
+  runDir = r.runDir;
+  storyPath = r.storyPath;
+  repo = r.repoPath && path.isAbsolute(r.repoPath) ? r.repoPath : null;
   const apertura = { sesion: String(sid), story: String(story), ...(storyPath ? { storyPath } : {}), ...(repo ? { repo } : {}), runDir, ts: ahora };
   anotar(home, { ts: ahora, sessionId: String(sid), name: 'run-open', ...apertura, ...(motivo ? { motivo } : {}) });
   fs.mkdirSync(runDir, { recursive: true });
@@ -108,11 +113,16 @@ function cerrar({ sid, sesion, runDir, story, estado, motivo, via, cita, home, e
   const quien = String(sesion || sid);
   const ult = vigente(quien, { home });
   if (soloAbierta && !(ult && ult.name === 'run-open')) return false;
-  const carpeta = runDir || (ult && ult.name === 'run-open' ? ult.runDir : null);
+  // una carpeta relativa se ubica contra el repo que trae el cierre (`extra.repoPath`), nunca contra la carpeta del
+  // proceso; sin él se anota tal cual y no se busca su copia
+  const pedida = runDir ? require('./run-dir.js').rutasDeLaCorrida({ repoPath: extra && extra.repoPath, runDir }).runDir : null;
+  const carpeta = pedida || (ult && ult.name === 'run-open' ? ult.runDir : null);
   const historia = story != null ? String(story) : ult && ult.story != null ? String(ult.story) : null;
+  // una carpeta que no se pudo ubicar queda dicha en el cierre: su copia no se buscó y la pregunta la va a ver
+  const sinUbicar = !!carpeta && !path.isAbsolute(carpeta);
   anotar(home, { ts: ahora, sessionId: String(sid || quien), ...extra, name: 'run-close', sesion: quien, story: historia, runDir: carpeta || null,
-    estado: estado || null, motivo: motivo || null, via: via || null, ...(cita ? { cita } : {}) });
-  if (carpeta) {
+    estado: estado || null, motivo: motivo || null, via: via || null, ...(cita ? { cita } : {}), ...(sinUbicar ? { carpetaSinUbicar: true } : {}) });
+  if (carpeta && path.isAbsolute(carpeta)) {
     try {
       const c = JSON.parse(fs.readFileSync(copiaPath(carpeta), 'utf8'));
       if (c && c.sesion === quien) fs.unlinkSync(copiaPath(carpeta));

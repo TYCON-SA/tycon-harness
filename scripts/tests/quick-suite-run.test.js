@@ -157,9 +157,9 @@ test('QuickSuite_HeavyTurnTaken_NoRun_Logged — con el turno de las ejecuciones
   const f = suite(c, 'a');
   const turno = archivoDelTurno(c);
   fs.mkdirSync(path.dirname(turno), { recursive: true });
-  // otra ejecución grande viva: este proceso
+  // otra ejecución grande viva: este proceso. Con el piso en 100 hay un solo turno (8.291), sea cual sea la memoria
   fs.writeFileSync(turno, JSON.stringify({ pid: process.pid, sid: 'otra', session: 'Otra', what: 'suites portables', at: Date.now() }));
-  const r = correr(c, [f], { TYCON_SUITE_TURN: '1' });
+  const r = correr(c, [f], { TYCON_SUITE_TURN: '1', TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT: '100' });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(corridas(c, 'a'), 0, 'con el turno de otro, corrió igual');
   assert.match(fs.readFileSync(path.join(c.state, 'quick-suite.log'), 'utf8'), /suites portables.*este arranque no corre la suite rápida/);

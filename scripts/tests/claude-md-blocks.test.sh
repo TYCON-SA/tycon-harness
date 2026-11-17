@@ -281,7 +281,7 @@ else
 fi
 
 # C-27c · 🔴 una entrada MULTILÍNEA no se trunca. En markdown una viñeta sigue en las líneas
-# indentadas, y el README puede tener una ficha así (`guides/que-hace-el-arnes.md`).
+# indentadas, y el README puede tener una ficha así (`guides/what-the-harness-does.md`).
 # `entradasDe` devuelve el primer renglón —lo que hace falta para medir el tope por entrada— y con
 # eso una poda perdería bytes EN SILENCIO: el verificador compararía el mismo
 # texto truncado en los dos lados, o sea que se verificaría a sí mismo. Quien MUEVE texto usa

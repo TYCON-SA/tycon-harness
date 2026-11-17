@@ -270,7 +270,8 @@ function frenoDelCierre({ markerPath, estado, sid }) {
   }
   if (!r.delicado) return null;
   volverAlPlan(marker, { porDelicado: true });
-  fs.writeFileSync(markerPath, JSON.stringify(marker, null, 2));
+  // las rutas de la corrida, absolutas contra su repo, como las escribe marker.js (lib/run-dir.js)
+  fs.writeFileSync(markerPath, JSON.stringify(require('./run-dir.js').marcadorConRutas(marker, { avisar: true }), null, 2));
   try { io.appendLog(estado, 'gates.log', sid, { name: 'plan-reopened', status: 'ok', story: marker.storyId, motivo: 'el diff entero sale delicado', regla: r.delicado.rule, reason: r.delicado.reason }); } catch (_) { /* el freno sale igual */ }
   return {
     texto: [

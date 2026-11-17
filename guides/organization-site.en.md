@@ -102,7 +102,7 @@ the language you chose.
 
 **What you see the first time** depends on who you are for the site:
 
-- **A maintainer** sees every tab (Home, Runs, Maintenance, Projects, Harness, How it works, Configuration and Help),
+- **A maintainer** sees every tab (Home, Runs, Maintenance, Learnings, Projects, Harness, How it works, Configuration and Help),
   and in Home what is waiting for a decision across the organization.
 - **A confirmed person** sees Home, Runs, Projects and Help, with their own things.
 - **Someone who is not in the list** sees only a page saying which account they signed in with, that the account is
@@ -256,6 +256,48 @@ it opens a single pull request to the operations repo with all your choices. Not
 approves it. If the organization turned on "A maintainer's changes" (`site.auto_apply`), the button says **Send** and
 what you send is saved without waiting for anyone: that night's review applies it. Your marks stay saved in the browser until you send or clear them. Each term has its "?" with the
 explanation.
+
+### Learnings
+
+**What it answers:** what does the team do over and over that is worth turning into a rule for everyone?
+
+Only for **maintainers**. Every night, the team instincts review counts what keeps repeating across the machines (those
+with learnings turned on in the team profile) and leaves one proposal per pattern in the operations repo. Next to the
+name, in the menu, is how many are waiting for your decision, for example "Learnings (3)".
+
+**What you see.** At the top, the last night: the day, whether it measured, which model wrote the wording and how many
+were left without wording. Below, the proposals to decide, first those seen on more machines and then those that repeat
+more. Each card says what repeats (the tool, the pattern and the repo), on how many machines, how many times and between
+which days, and the suggested rule with its confidence, or "no wording" and why. It never says which machine or which
+person did it. If the proposal suggests a harness piece (a reviewer, a skill, a hook or a guide), the card has **Propose
+to the harness**, which opens a new issue on the public repo with the draft written: you send it, with your account. At
+the bottom, closed at first, the history of the last 30 days: who decided, when, the approved text or the reason for the
+rejection. Each approved one says whether it is **in the profile** or **did not reach the profile** (for example,
+because its request was closed without applying it); then **Propose to the profile again** opens only the profile
+request again.
+
+**How you decide.** As in Maintenance: you mark **Approve** or **Reject** on each card (the marks stay in the browser)
+and at the end **Send for approval**. Approve opens the suggested rule so you can correct it: what goes to the team is
+the text you confirm, in one line. A proposal without wording asks you to write it. Reject asks for a reason, in one
+line. Sending opens at most two requests:
+
+1. with approved ones, one to the profile repo, which adds each rule to the `team-learnings.md` block of a pack the
+   organization already has (`packs/<pack>/claude-md-blocks/team-learnings.md`). The pack that already has the block
+   comes selected; if none has it, you choose. The block has a ceiling of 4,000 bytes: going over it stops the send and
+   a rule has to be removed by hand. If the profile layer asks for a harness version older than pack blocks, the same
+   request raises it;
+2. one to the operations repo, which marks each proposal as approved or rejected. The night does not propose them again.
+
+What is approved reaches every machine with its next update. While a request waits, its proposals say **Waiting for
+approval** and cannot be sent again. With a learnings request open in the profile, approving another rule waits until it
+is closed (both would change the same block); rejecting still works. If the profile request went out and the operations
+one failed, sending again does not open another profile request. If a proposal changed since you saw it, the page asks
+you to reload and overwrites nothing. With `site.auto_apply`, the button says **Send** and waits for no one.
+
+**What it needs.** Both site write identities: the operations one to reject and the profile one to approve (how to set
+them, in "What «Learnings» needs", in the installation). Without one, the tab is shown in full, read-only, and each
+button says what it is missing. The proposals live in the operations repo: that repo has to be readable only for the
+maintainers, not for the whole team.
 
 ### Projects
 
@@ -896,7 +938,7 @@ be, to copy it and open the request by hand.
   `deep_review`, in the profile repo. A maintainer reviews it.
 - **Plan review** and **What runs the review**, and the new options of **Adversarial pass** and of **Reviewer rounds**:
   the automatic reviews, of the plan and of the code. When each one runs, who approves it, with what reviewer and when
-  the owner counts as away; the whole guide is `guides/revisiones-automaticas.en.md`. They live in `team-repos.json` →
+  the owner counts as away; the whole guide is `guides/automatic-reviews.en.md`. They live in `team-repos.json` →
   `plan_review`, `review_runner`, `deep_review` and `review`, in the profile repo; a bad value falls back to the
   built-in only in its key. A maintainer reviews it. The options:
 
@@ -1018,6 +1060,8 @@ The site decides who you are by your email, and only with the "Who gets into the
 | **Confirmed person** (a dev in the list) | "Your things" | those of their confirmed machines | no | the products they work on | no | no | no |
 | **Person with an unconfirmed machine** (a dev in the list) | "Your things" | those of their confirmed machines; the new machine's, not yet | no | the products they work on | no | no | no |
 | **No role** (not in the list) | only the page "Your account is not in the list" | no | no | no | no | no | no |
+
+**Learnings** is seen only by maintainers, like Maintenance: a confirmed person does not see it in the menu.
 
 **How you move from one role to another.** A maintainer decides it, in Configuration, and it goes in when someone
 approves the request:
@@ -1497,6 +1541,20 @@ to the product repos.
 
 An organization can choose not to require that reviewer on its product repos, for example because each dev merges to
 `main` alone. Then "Propose" stays off on those repos: you review the change, download it and open the request by hand.
+
+### What «Learnings» needs
+
+The Learnings tab writes to two repos, always through a pull request:
+
+- `SITE_OPERATIONS_WRITE_TOKEN`, the operations write identity: rejecting and marking each proposal (its file in
+  the proposals folder of the operations repo). With the operations copy, it writes to the separate write clone, like Configuration.
+- `SITE_PROFILE_REPO` with `SITE_PROFILE_WRITE_TOKEN`, the profile write identity: approving, which adds the rule to the
+  `packs/<pack>/claude-md-blocks/team-learnings.md` block of a profile pack.
+
+Without one of them, the tab is shown in full, read-only, and each button says which variable it is missing. The
+operations repo has to be readable only for the maintainers: the proposals live there, and they are what repeats in
+each machine's work. In Azure DevOps, the developers' group with read denied on that repo; in GitHub, a private repo
+with access only for the maintainers.
 
 ### Inviting someone
 

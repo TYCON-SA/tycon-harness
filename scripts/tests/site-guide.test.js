@@ -60,8 +60,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
 // de los botones entre paréntesis.
 const HUELLA_INSTALACION = {
-  es: '31790fef2e7c2fba700b7f3b8dd4c7032026a8adfcf4e5bda29dc15134eb1017',
-  en: '2a4a0ef6668bea2a49e51c11c39af1427371862e507de7a13d3e79d5f41049ad',
+  es: '805e689e224bee3f1835b826767fb52f62adbc766fdc064c28d2e7b9a87a4bb3',
+  en: '2d30b6df169e185dfd8ae03ccb7737f45c08d1bf2d913a80dbf634f49ee45d6c',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -441,7 +441,7 @@ test('T26 2.79-Guia_PestanasYBloquesComoElSitio @story-2.79 @ac-23 — pestañas
   // la sub-sección `### <título>` hasta la próxima `### ` o `## `
   const sub = (txt, titulo) => { const i = txt.indexOf(`\n### ${titulo}`); if (i < 0) return null; const r = txt.slice(i + 5); const j = r.search(/\n##+ /); return j < 0 ? r : r.slice(0, j); };
   // las pestañas de quien mantiene y las de una persona, como las arman las rutas del sitio (server.js y tabs/*.js)
-  const MANTIENE_VE = ['inicio', 'corridas', 'mantenimiento', 'proyectos', 'arnes', 'comoTrabaja', 'configuracion', 'ayuda'];
+  const MANTIENE_VE = ['inicio', 'corridas', 'mantenimiento', 'aprendizajes', 'proyectos', 'arnes', 'comoTrabaja', 'configuracion', 'ayuda'];
   const PERSONA_VE = ['inicio', 'corridas', 'proyectos', 'ayuda'];
   const LADOS = [
     { idioma: 'es', guia: GUIA, ingreso: 'El primer ingreso', mant: 'Mantenimiento', como: 'Cómo trabaja', viejo: /cinco pestañas|tres pestañas|tres bloques|otra vuelta de revisores/i },
@@ -492,5 +492,21 @@ test('T52 2.79-Guia_SinElIdDeLaFicha @story-2.79 @ac-42 — las dos guías no mu
     // lo que queda con «corridas» es una dirección, un archivo de captura o el nombre de una sección en castellano
     const sueltas = t.split('\n').filter((l) => /\bcorridas\b/.test(l.replace(/\([^)]*\.png\)/g, '').replace(/\/corridas\b/g, '').replace(/\*[^*]*corridas[^*]*\*/g, '')));
     assert.deepStrictEqual(sueltas, [], `${path.basename(guia)}: «corridas» suelto`);
+  }
+});
+
+test('T22 4.13-Guide_LearningsTabInRolesAndSections @story-4.13 @ac-20 — la sección «Aprendizajes» en los dos idiomas, con lo que necesita', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const sub = (txt, titulo) => { const i = txt.indexOf(`\n### ${titulo}`); if (i < 0) return null; const r = txt.slice(i + 5); const j = r.search(/\n##+ /); return j < 0 ? r : r.slice(0, j); };
+  for (const [idioma, guia] of [['es', GUIA], ['en', GUIA_EN]]) {
+    const g = leer(guia);
+    const s = (sub(g, t(idioma, 'pestana.aprendizajes')) || '').replace(/\s+/g, ' ');
+    assert.ok(s, `${idioma}: la sección ### ${t(idioma, 'pestana.aprendizajes')}`);
+    assert.ok(s.includes('team-learnings.md'), `${idioma}: dice adónde va lo aprobado`);
+    assert.match(s, idioma === 'es' ? /sólo para quienes mantienen/ : /only for the maintainers/, `${idioma}: el repo de operaciones, de lectura sólo para quienes mantienen`);
+    // las variables de la instalación van en la parte que ve sólo quien mantiene (la pestaña la lee también una persona)
+    assert.ok(!s.includes('SITE_'), `${idioma}: la pestaña no nombra variables`);
+    const necesita = (sub(g, idioma === 'es' ? 'Lo que necesita «Aprendizajes»' : 'What «Learnings» needs') || '').replace(/\s+/g, ' ');
+    for (const x of ['SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_WRITE_TOKEN']) assert.ok(necesita.includes(x), `${idioma}: «lo que necesita» nombra ${x}`);
   }
 });
