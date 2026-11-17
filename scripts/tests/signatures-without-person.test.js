@@ -174,7 +174,11 @@ const CALCULADAS = {
 // público llama (lo mira VERIFY_SIN_LLAMADORES)
 const CALCULADAS_SUELTAS = [{ archivo: 'scripts/lib/owner-window.js', args: /firma: val\('--signature'\)/, firmas: [] }];
 
-/** Los `.js` y `.sh` del árbol, sin pruebas, sin el banco y sin `on-red-test-edit.js` (su `firmaDelDueno` no es la de marker.js). */
+/**
+ * Los `.js` y `.sh` del árbol, sin pruebas (ni carpetas `tests/` ni archivos `*.test.*`), sin el banco, sin los
+ * laboratorios de `tasks/` (el árbol que arma el portón pone el privado debajo) y sin `on-red-test-edit.js` (su
+ * `firmaDelDueno` no es la de marker.js).
+ */
 function archivosDelArbol(raiz) {
   const out = [];
   const recorrer = (dir) => {
@@ -182,9 +186,9 @@ function archivosDelArbol(raiz) {
       const p = path.join(dir, e.name);
       const rel = path.relative(raiz, p).split(path.sep).join('/');
       if (e.isDirectory()) {
-        if (['.git', 'node_modules', 'tests', '.advisors'].includes(e.name) || rel === 'scripts/controls-bench') continue;
+        if (['.git', 'node_modules', 'tests', '.advisors', 'tasks'].includes(e.name) || rel === 'scripts/controls-bench') continue;
         recorrer(p);
-      } else if (/\.(js|sh)$/.test(e.name) && !rel.endsWith('on-red-test-edit.js')) out.push(rel);
+      } else if (/\.(js|sh)$/.test(e.name) && !/\.test\.(js|sh)$/.test(e.name) && !rel.endsWith('on-red-test-edit.js')) out.push(rel);
     }
   };
   recorrer(raiz);
