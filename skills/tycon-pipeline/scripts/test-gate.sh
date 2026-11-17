@@ -286,6 +286,9 @@ correr_hermanos_al_salir() {
       echo "[test-gate] ⚠️  el repo hermano $(basename "$root") salió 7 sin la constancia de «sin acotar»: es un rojo" >&2
       hrc=1
     fi
+    # 78: el hermano espera a main (lib/main-check.js). Hasta que la combinación de salidas lo entienda, cuenta como
+    # rojo: copiado tal cual, el total saldría 78 y taparía un rojo que llegue después. Nunca verde.
+    if [[ "$hrc" == "78" ]]; then echo "🟡 [test-gate] el repo hermano $(basename "$root") espera a main: hasta que se combine, cuenta como rojo" >&2; hrc=1; fi
     filas+="${root}"$'\x1f'"${scope}"$'\x1f'"${archivos}"$'\x1f'"${hrc}"$'\n'
     # Un rojo de verdad gana; «sin acotar» (7) gana sobre verde y sobre «sin pruebas» (3).
     if [[ "$final" == "0" || "$final" == "3" || "$final" == "7" ]] && [[ "$hrc" != "0" && "$hrc" != "3" && "$hrc" != "7" ]]; then final="$hrc"
@@ -400,6 +403,9 @@ correr_partes() {
     fi
     # un 7 de una parte sin la constancia de «sin acotar» es un rojo de verdad
     if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$out"; then hrc=1; fi
+    # 78: la parte espera a main (lib/main-check.js). Hasta que la combinación lo entienda, cuenta como rojo: copiado tal
+    # cual, el total saldría 78 y taparía un rojo que llegue después. Nunca verde.
+    if [[ "$hrc" == "78" ]]; then echo "🟡 [test-gate] la parte $scope espera a main: hasta que se combine, cuenta como rojo" >&2; hrc=1; fi
     filas+="${scope}"$'\x1f'"${hrc}"$'\n'
     # un rojo de verdad gana sobre «sin acotar» (7), y éste sobre verde y sobre «sin pruebas» (3)
     if [[ "$hrc" != "0" && "$hrc" != "3" && "$hrc" != "7" ]]; then
@@ -920,6 +926,9 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && _TG_ONE_ARGS=(--skills "$(_tg_tree_field skills)")
     echo "[test-gate] una sola suite: $SUITE_ONLY (mismo ambiente que la corrida completa; no escribe el check tests; en verde, saca su falla de la constancia de la completa)"
     _tg_rc=0
+    # la repetición vuelve a medir esta suite: sale de la espera a main (si era la última, la espera se borra)
+    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" waiting-on-main clear --repo "$REPO_STORY" --suite "$SUITE_ONLY" ) \
+      || echo "[test-gate] ⚠️  no pude sacar $SUITE_ONLY de la espera a main: queda anotada hasta la próxima corrida" >&2
     # La foto de la carpeta en que corre la repetición (story 8.208): para cerrar sin otra completa, la carpeta de ahora
     # tiene que ser ésta. Sin foto, la repetición no se suma y la completa corre entera.
     _TG_ONE_TREE=""
@@ -939,13 +948,23 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     _TG_ONE_INHERITED=""
     if [[ "$_tg_rc" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
       _tg_her=0
-      node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
+      TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
       if [[ "$_tg_her" == "0" ]]; then
         echo "🟡 [test-gate] $SUITE_ONLY ya estaba roja antes del cambio, en el nocturno de esta mañana o en la base: avisa y no frena, igual que en la validación del pedido" >&2
         ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests-suite -- node -e 'console.error(`test-gate: ${process.argv[1]} ya estaba roja antes del cambio: avisa, no frena`)' "$SUITE_ONLY" ) >&2 \
           || echo "[test-gate] ⚠️  no pude dejar en verde el check tests-suite: queda como lo dejó la corrida" >&2
         _tg_rc=0
         _TG_ONE_INHERITED=1
+      fi
+      # 78: la suite está roja también en la punta de main, con los mismos casos (el tercer juez, lib/main-check.js): es
+      # de main, no de la historia. La corrida espera a main: la espera queda anotada (marcador, registro de main roto,
+      # nota de la sesión) y la suite sale de la lista de repetir primero. No es verde ni rojo: no queda tests-result.json.
+      if [[ "$_tg_her" == "78" ]]; then
+        ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" waiting-on-main set --repo "$REPO_STORY" --tree "$REPO_RUN" --summary "$RESULTS_DIR/suites.json" ) \
+          || echo "[test-gate] ⚠️  no pude anotar la espera a main: el check tests queda como lo dejó la corrida" >&2
+        rm -f "$OUT_FILE"
+        echo "🟡 [test-gate] $SUITE_ONLY está roja también en la punta de main, con los mismos casos: la corrida espera a main (arriba, el registro). No es un rojo de la historia: no toques esa prueba ni el código por eso; no quedó tests-result.json." >&2
+        borrar_arbol_privado; trap - EXIT; exit 78
       fi
     fi
     if [[ "$_tg_rc" == "0" ]]; then
@@ -987,6 +1006,10 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
       exit 76
     fi
     [[ "$_tg_pend" == "0" ]] || echo "[test-gate] ⚠️  no pude leer la lista de las suites que fallaron (salida $_tg_pend): corro la completa igual" >&2
+    # La completa de arriba vuelve a medir todo: la espera a main de una corrida anterior se borra (si main sigue roto,
+    # la salida 78 de ésta la vuelve a anotar). Las partes y los hermanos no la tocan: son de la misma corrida.
+    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" waiting-on-main clear --repo "$REPO_STORY" ) \
+      || echo "[test-gate] ⚠️  no pude borrar la espera a main anterior: queda anotada hasta la próxima corrida" >&2
   fi
   BASE_JSON="$(TYCON_TEST_GATE_CROSS_REPO="$TG_CROSS" node "$SCRIPT_DIR/lib/coverage-base.js" "$REPO" 2>/dev/null)" || BASE_JSON=""
   [[ -n "$BASE_JSON" ]] || BASE_JSON='{"ref":null,"source":null,"descartadas":[{"source":"coverage-base","motivo":"no se pudo correr lib/coverage-base.js"}]}'
@@ -1277,13 +1300,26 @@ if [[ "$RUNNER" == "suites-json" && "$SUITE_EXIT" == "1" && -f "$RESULTS_DIR/sui
   cp "$RESULTS_DIR/suites.json" "$RESULTS_DIR/suites-antes-del-perdon.json" \
     || echo "[test-gate] ⚠️  no pude copiar el resumen de antes del perdón: si esta completa sale verde por lo heredado, no la guardo" >&2
   _tg_her=0
-  node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
+  TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
   if [[ "$_tg_her" == "0" ]]; then
     echo "🟡 [test-gate] todo lo rojo ya estaba rojo antes del cambio, en el nocturno de esta mañana o en la base (arriba, cuáles): avisa y no frena, igual que en la validación del pedido" >&2
     ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: lo rojo ya estaba rojo antes del cambio: avisa, no frena")' ) >&2 \
       || echo "[test-gate] ⚠️  no pude dejar en verde el check tests: queda como lo dejó la corrida" >&2
     SUITE_EXIT=0
     _tg_perdonada=1
+  fi
+  # 78: todo lo que quedó rojo está roto también en la punta de main, con los mismos casos (el tercer juez,
+  # lib/main-check.js): es de main, no de la historia. La corrida espera a main: la espera queda anotada (marcador,
+  # registro de main roto, nota de la sesión), nada entra en la lista de repetir primero, y no queda tests-result.json.
+  # No es verde ni rojo. Los repos hermanos no corren (como con el 75): el check de la sesión es uno solo y lo que
+  # escribiría un hermano no sería el total; combinarlos es de otra tanda de la historia.
+  if [[ "$_tg_her" == "78" ]]; then
+    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" waiting-on-main set --repo "$REPO_STORY" --tree "$REPO_RUN" --summary "$RESULTS_DIR/suites.json" ) \
+      || echo "[test-gate] ⚠️  no pude anotar la espera a main: el check tests queda como lo dejó la corrida" >&2
+    TG_NO_COMPANIONS="la corrida espera a main"
+    rm -f "$OUT_FILE"
+    echo "🟡 [test-gate] todo lo rojo está roto también en la punta de main, con los mismos casos: la corrida espera a main (arriba, el registro). No es un rojo de la historia: no toques esas pruebas ni el código por eso; no quedó tests-result.json." >&2
+    exit 78
   fi
 fi
 # La corrida completa reemplaza la lista de las que fallaron: roja, con sus fallas; verde (o sin fallas con su entrada), vacía.

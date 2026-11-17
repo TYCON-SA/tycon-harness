@@ -1426,6 +1426,156 @@ function firmadoEnLaTerminal(firma, resumen) {
 }
 
 /**
+ * La corrida espera a main (`checks.tests === 'espera-main'`, con `waitingOnMain` en el marcador): el rojo del portón es de
+ * main, no de la historia (lib/main-check.js). Ni verde ni rojo: el paso no cierra, y la historia no avanza hasta que
+ * main pase y su portón salga verde. Nunca cuenta como verde.
+ */
+function frenarEsperaMain(marker, n) {
+  const checks = marker.checks || {};
+  if (checks.tests !== 'espera-main' && checks['tests-suite'] !== 'espera-main') return;
+  const w = marker.waitingOnMain && typeof marker.waitingOnMain === 'object' ? marker.waitingOnMain : {};
+  const id = w.id || 'sin id';
+  const suites = Array.isArray(w.suites) && w.suites.length ? w.suites.map((r) => path.basename(String(r))).join(', ') : 'las suites del registro';
+  appendLog('gates.log', { name: 'tests-waiting-on-main', status: 'blocked', story: marker.storyId || null, step: n, id });
+  console.error(`marker.js complete-step ${n} BLOQUEADO — espera a main (${id}): la historia no avanza hasta que main pase y su portón salga verde.`);
+  console.error(`  main está roto en ${suites}: no es un rojo de la historia (no toques esas pruebas ni el código por eso).`);
+  console.error('  Cuando main pase (node <skills>/tycon-pipeline/scripts/lib/main-check.js status --repo <repo>), traé main y volvé a correr el portón.');
+  process.exit(1);
+}
+
+/** Lo mismo para pasar la historia a `review`/`done` o una tanda a `done`: con la corrida de esta sesión esperando a main, no. */
+function frenarEstadoSiEsperaMain(comando, storyPath) {
+  let m = null;
+  try { m = readMarker(); } catch (_e) { m = null; }
+  if (!m || !m.checks || m.checks.tests !== 'espera-main') return;
+  // sólo la historia de la corrida: otra historia no carga con esta espera
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(String(p)); } };
+  if (m.storyPath && real(m.storyPath) !== real(storyPath)) return;
+  const id = (m.waitingOnMain && m.waitingOnMain.id) || 'sin id';
+  appendLog('gates.log', { name: 'tests-waiting-on-main', status: 'blocked', story: m.storyId || null, step: comando, id });
+  console.error(`marker.js ${comando} BLOQUEADO — espera a main (${id}): la historia no avanza hasta que main pase y su portón salga verde.`);
+  process.exit(1);
+}
+
+// La espera a main en el archivo `doing` de la sesión, que es lo que la oficina y /wip leen: `waitingFor`,
+// `waitingSince` y `waitingKind: 'main'` (la clase de la espera), conservando el texto y la hora de la nota que hubiera.
+const doingFileOf = (sid) => path.join(STATE_DIR, 'doing', `${String(sid).replace(/[/\\]/g, '_')}.json`);
+function anotarEsperaMainEnDoing(id, now) {
+  if (!SID) return;
+  const file = doingFileOf(SID);
+  let prev = {};
+  try { prev = JSON.parse(fs.readFileSync(file, 'utf8')) || {}; } catch (_e) { prev = {}; }
+  const waitingFor = `espera a main (${id})`;
+  const waitingSince = prev.waitingFor === waitingFor && prev.waitingSince ? prev.waitingSince : now;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ ...prev, at: now, waitingFor, waitingSince, waitingKind: 'main' }));
+  avisarOficina();
+  appendLog('doing.log', { kind: 'DOING_SET', waitingFor, waitingKind: 'main' });
+}
+// Una medición nueva de las pruebas reemplaza la espera a main: la nota deja de decir que espera (si no tenía texto, se borra).
+function limpiarEsperaMainEnDoing() {
+  if (!SID) return;
+  const file = doingFileOf(SID);
+  let prev = null;
+  try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_e) { return; }
+  if (!prev || prev.waitingKind !== 'main') return;
+  const { waitingFor, waitingSince, waitingKind, ...rest } = prev;
+  if (rest.text) fs.writeFileSync(file, JSON.stringify({ ...rest, at: nowIso() }));
+  else { try { fs.unlinkSync(file); } catch (_e) { /* ya no estaba */ } }
+  avisarOficina();
+}
+
+/**
+ * `waiting-on-main set --repo <r> --tree <árbol> --summary <suites.json>`: la corrida espera a main (la salida 78 del
+ * portón: lo rojo está roto también en la punta de main, con los mismos casos; lib/main-check.js). Sólo lo llama
+ * test-gate.sh (TYCON_TEST_GATE=1). Suma la sesión al registro de main roto del repo del árbol medido (lo crea si no hay
+ * uno abierto), escribe `waitingOnMain` en el marcador, saca esas suites de la lista de «repetir primero» del repo y, si
+ * no queda otra roja de ese repo en la lista, deja el check `tests` (y `tests-suite`, si está) en `espera-main`: ni verde
+ * ni rojo. Si quedan rojas de la historia, el check sigue rojo y lo dice. Anota la espera en el archivo `doing` de la
+ * sesión. Sin corrida abierta no anota nada y lo dice.
+ * `waiting-on-main clear --repo <r> [--suite <ruta>]`: una medición nueva reemplaza la espera: la completa de arriba la
+ * borra al arrancar (todo se vuelve a medir), y la repetición de una suite sola saca esa suite de la espera (la última la
+ * borra). Las partes y los repos hermanos de una misma corrida no la tocan: un `run-check tests` suyo tampoco (por eso
+ * no se borra ahí).
+ */
+function cmdWaitingOnMain(argv) {
+  const accion = argv[0];
+  const opt = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
+  const uso = 'marker.js waiting-on-main: uso — waiting-on-main set --repo <repo> --tree <árbol medido> --summary <suites.json> | clear --repo <repo> [--suite <ruta>]';
+  if (!['set', 'clear'].includes(accion) || (accion === 'set' && (!opt('--repo') || !opt('--tree') || !opt('--summary'))) || (accion === 'clear' && !opt('--repo'))) {
+    console.error(uso);
+    process.exit(2);
+  }
+  if (process.env.TYCON_TEST_GATE !== '1') {
+    console.error(`marker.js waiting-on-main ${accion}: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)`);
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) { process.stdout.write(`marker.js waiting-on-main ${accion}: sin corrida abierta en esta sesión, no anoto nada\n`); return; }
+  const real = (x) => { try { return fs.realpathSync(x); } catch (_e) { return path.resolve(x); } };
+  if (accion === 'clear') {
+    const w = marker.waitingOnMain && typeof marker.waitingOnMain === 'object' ? marker.waitingOnMain : null;
+    if (!w || (w.repo && w.repo !== real(opt('--repo')))) return;
+    const suite = opt('--suite');
+    if (suite) {
+      const quedan = (Array.isArray(w.suites) ? w.suites : []).filter((r) => r !== suite);
+      if (quedan.length) {
+        marker.waitingOnMain = { ...w, suites: quedan };
+        marker.lastTouch = nowIso();
+        writeMarker(marker);
+        return;
+      }
+    }
+    delete marker.waitingOnMain;
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    limpiarEsperaMainEnDoing();
+    appendLog('gates.log', { name: 'waiting-on-main', status: 'cleared', story: marker.storyId || null, repo: w.repo || null, id: w.id || null, suite: suite || null });
+    return;
+  }
+  let w = null;
+  try { w = JSON.parse(fs.readFileSync(opt('--summary'), 'utf8')).waiting_on_main || null; } catch (e) {
+    console.error(`marker.js waiting-on-main set: no pude leer el resumen ${opt('--summary')} (${e.message})`);
+    process.exit(1);
+  }
+  if (!w || !Array.isArray(w.suites) || !w.suites.length) {
+    console.error('marker.js waiting-on-main set: el resumen no trae waiting_on_main: la corrida no espera a main');
+    process.exit(1);
+  }
+  let joined;
+  try {
+    joined = require('./lib/main-check.js').broken.join({ tree: opt('--tree'), sha: w.sha, suites: w.suites, session: SID, story: marker.storyId || null });
+  } catch (e) {
+    console.error(`marker.js waiting-on-main set: no pude anotar el registro de main roto (${e.message})`);
+    process.exit(1);
+  }
+  if (joined.broke) process.stderr.write(`[test-gate] ${joined.broke}\n`);
+  const rec = joined.record;
+  const repo = real(opt('--repo'));
+  const rutas = new Set(w.suites.map((s) => s.ruta));
+  const todas = Array.isArray(marker.testsFailed) ? marker.testsFailed : [];
+  marker.testsFailed = todas.filter((x) => !(x.repo === repo && rutas.has(x.ruta)));
+  // las que quedan marcadas como de main tampoco son rojas de la historia
+  const otrasRojas = marker.testsFailed.filter((x) => x.repo === repo && !(x.main && x.main.sha));
+  const since = nowIso();
+  marker.waitingOnMain = { repo, tree: real(opt('--tree')), id: rec.id, sha: w.sha, suites: [...rutas], since };
+  marker.checks = marker.checks || {};
+  if (!otrasRojas.length) {
+    for (const k of ['tests', ...(marker.checks['tests-suite'] ? ['tests-suite'] : [])]) {
+      marker.checks[k] = 'espera-main';
+      marker.checksProvenance = { ...(marker.checksProvenance || {}), [k]: 'test-gate' };
+      marker.checksAt = { ...(marker.checksAt || {}), [k]: since };
+    }
+  }
+  marker.lastTouch = since;
+  writeMarker(marker);
+  anotarEsperaMainEnDoing(rec.id, since);
+  appendLog('gates.log', { name: 'waiting-on-main', status: otrasRojas.length ? 'partial' : 'waiting', story: marker.storyId || null, repo, id: rec.id, sha: w.sha, suites: [...rutas] });
+  const nombres = (xs) => xs.map((r) => path.basename(String(r))).join(', ');
+  process.stdout.write(`main está roto en ${nombres([...rutas])}: espero a main (${rec.id})${otrasRojas.length ? `; siguen rojas de la historia: ${nombres(otrasRojas.map((x) => x.ruta))}` : ''}\n`);
+}
+
+/**
  * Las pruebas sin turno (`checks.tests === 'sin-turno'`): el portón no corrió porque otra sesión tenía el turno de las
  * ejecuciones grandes. Frena el paso diciendo eso, sin llamarlo rojo: no hay prueba que arreglar, hay que esperar el
  * turno. La deuda no lo cubre: no es un rojo que se deja a propósito, es una medición que falta.
@@ -1469,6 +1619,9 @@ function cmdCompleteStep(nRaw, flags) {
     console.error('  no le dictes cómo; si pregunta cómo seguir, señalale la guía del freno (guides/safety-guard.md, regla ESC-C3).');
     process.exit(2);
   }
+
+  // La corrida que espera a main no cierra «Correr las pruebas» ni «Preparar el pull request»: su rojo es de main.
+  if (controles.has('tests') || controles.has('commit')) frenarEsperaMain(marker, n);
 
   // El aviso de una parte del Arranque que falló sale en el resumen del cierre: queda a la vista hasta el final.
   if (controles.has('commit')) for (const l of STEPS_LIB.startWarningLines(marker)) console.error(`⚠️  ${l}`);
@@ -3050,12 +3203,18 @@ function cmdTestsFailed(argv) {
     try { resumen = JSON.parse(fs.readFileSync(opt('--summary'), 'utf8')); } catch (e) {
       process.stderr.write(`[test-gate] ⚠️  no pude leer el resumen ${opt('--summary')} (${e.message}): la lista de las que fallaron en este repo queda vacía\n`);
     }
-    marker.testsFailed = [...ajenas, ...ff.fromSummary(resumen, repo, undefined, opt('--full-ts'))];
+    // las que también están rojas en la punta de main (`main_fails`, del tercer juez) quedan marcadas: la lista no exige
+    // repetirlas; cuando no quede otra roja, la completa espera a main
+    const deMain = new Set(Array.isArray(resumen && resumen.main_fails) ? resumen.main_fails : []);
+    const mainSha = resumen && resumen.main_check && resumen.main_check.sha ? resumen.main_check.sha : null;
+    marker.testsFailed = [...ajenas, ...ff.fromSummary(resumen, repo, undefined, opt('--full-ts')).map((x) => (deMain.has(x.ruta) ? { ...x, main: { sha: mainSha } } : x))];
     for (const campo of ['checks', 'checksAt', 'checksProvenance']) if (marker[campo]) delete marker[campo]['tests-suite'];
     marker.lastTouch = nowIso();
     writeMarker(marker);
     const nuevas = marker.testsFailed.filter((x) => x.repo === repo);
-    if (nuevas.length) process.stderr.write(`[test-gate] suites que fallaron, anotadas para repetir primero: ${nuevas.map((x) => x.ruta).join(', ')}\n`);
+    const propias = nuevas.filter((x) => !(x.main && x.main.sha));
+    if (propias.length) process.stderr.write(`[test-gate] suites que fallaron, anotadas para repetir primero: ${propias.map((x) => x.ruta).join(', ')}\n`);
+    if (nuevas.length > propias.length) process.stderr.write(`[test-gate] de main (no hace falta repetirlas): ${nuevas.filter((x) => x.main && x.main.sha).map((x) => x.ruta).join(', ')}\n`);
     return;
   }
   // Lo guardado de la última completa verde de este repo: como lo rojo de abajo, en `green-full/` y con
@@ -3205,6 +3364,11 @@ function cmdTestsFailed(argv) {
   } catch (e) {
     process.stderr.write(`[test-gate] ⚠️  no pude leer ${opt('--suites')} (${e.message}): la lista queda como está\n`);
   }
+  if (!keep.length) return;
+  // las de main no se repiten: su rojo no es de la historia; con sólo ellas en la lista la completa corre y espera a main
+  const deMain = keep.filter((x) => x.main && x.main.sha);
+  if (deMain.length) process.stderr.write(`🟡 [test-gate] de main (no hace falta repetirlas: cuando no quede otra roja, la completa espera a main): ${deMain.map((x) => x.ruta).join(', ')}\n`);
+  keep = keep.filter((x) => !(x.main && x.main.sha));
   if (!keep.length) return;
   const q = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
   const base = ['bash', q(opt('--gate')), q(opt('--repo')), ...(opt('--story') ? [q(opt('--story'))] : [])].join(' ');
@@ -5726,7 +5890,9 @@ function cmdDoing(sub, arg) {
   const promisedAt = same && !corrects ? prev.promisedAt || prev.endAt || null : null;
   const waitingSince = !waitingFor ? null : (same && prev.waitingFor === waitingFor && prev.waitingSince) || now;
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ ...(text ? { text } : {}), at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
+  // la misma espera vuelta a anotar conserva su clase (`waitingKind`, la pone quien anota una espera a main)
+  const waitingKind = waitingFor && prev && prev.waitingFor === waitingFor && prev.waitingKind ? prev.waitingKind : null;
+  fs.writeFileSync(file, JSON.stringify({ ...(text ? { text } : {}), at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}), ...(waitingKind ? { waitingKind } : {}) }));
   avisarOficina();
   appendLog('doing.log', { kind: 'DOING_SET', ...(text ? { text } : {}), ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
   if (endAt) warnPastUntil('doing', endAt);
@@ -5898,6 +6064,8 @@ function cmdUpdateStoryStatus(storyPath, newStatus) {
     console.error(`marker.js update-story-status: status inválido '${newStatus}' — valores: ${VALID_STATUSES.join(' | ')}`);
     process.exit(2);
   }
+  // con la corrida esperando a main, la historia no pasa a review ni a done (el mismo freno que el rojo)
+  if (newStatus === 'review' || newStatus === 'done') frenarEstadoSiEsperaMain('update-story-status', storyPath);
   const content = fs.readFileSync(storyPath, 'utf8');
   // Frontmatter YAML entre los dos '---' del inicio del archivo.
   const fmRegex = /^(---\r?\n)([\s\S]*?)(\r?\n---\r?\n)/;
@@ -5945,6 +6113,8 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
     console.error(`marker.js update-pipeline-status: story file no existe: ${storyPath}`);
     process.exit(1);
   }
+  // con la corrida esperando a main, ninguna tanda pasa a done
+  if (newStatus === 'done') frenarEstadoSiEsperaMain('update-pipeline-status', storyPath);
   const content = fs.readFileSync(storyPath, 'utf8');
   const fmRegex = /^(---\r?\n)([\s\S]*?)(\r?\n---\r?\n)/;
   const m = content.match(fmRegex);
@@ -7832,6 +8002,9 @@ switch (cmd) {
     break;
   case 'doing':
     cmdDoing(arg1, arg2);
+    break;
+  case 'waiting-on-main':
+    cmdWaitingOnMain(process.argv.slice(3));
     break;
   case 'story-skill-bypass':
     cmdStorySkillBypass();

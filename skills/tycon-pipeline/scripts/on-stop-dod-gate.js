@@ -91,7 +91,10 @@ function computeGate(marker) {
     // lo arregla, espera el turno. Lo frenan los cierres de los pasos, no el del turno.
     // «rojo-esperado» (expect-red): un rojo que la historia en deuda deja a propósito; sin la deuda escrita es un rojo.
     const esperado = /^rojo-esperado/.test(String(status)) && !!marker.cierre && marker.cierre.estado === 'deuda';
-    if (status !== 'green' && !esperado && !(name === 'tests' && ['sin-acotar', 'sin-medir', 'sin-turno'].includes(status))) failures.push(`${name} → ${status}`);
+    // «espera-main» (tests, tests-suite): el rojo del portón es de main (lib/main-check.js) y la espera está anotada en el
+    // marcador: el agente no lo arregla, espera a main. Sin la espera anotada es un rojo como cualquiera.
+    const esperaMain = (name === 'tests' || name === 'tests-suite') && status === 'espera-main' && !!marker.waitingOnMain && typeof marker.waitingOnMain === 'object';
+    if (status !== 'green' && !esperado && !esperaMain && !(name === 'tests' && ['sin-acotar', 'sin-medir', 'sin-turno'].includes(status))) failures.push(`${name} → ${status}`);
   }
   // Sin checks registrados o todos verdes → green → deja parar (preserva pausas HITL).
   return { green: failures.length === 0, failures };
@@ -254,6 +257,11 @@ function main() {
     }
     if ((marker.checks || {}).tests === 'sin-turno') {
       toPerson = [toPerson, 'Las pruebas esperan el turno de la coordinadora: el portón no corrió y falta medirlas.'].filter(Boolean).join('\n');
+    }
+    if ((marker.checks || {}).tests === 'espera-main' && marker.waitingOnMain && typeof marker.waitingOnMain === 'object') {
+      const w = marker.waitingOnMain;
+      const suites = Array.isArray(w.suites) && w.suites.length ? w.suites.map((r) => path.basename(String(r))).join(', ') : 'las suites del registro';
+      toPerson = [toPerson, `main está roto en ${suites}: espero a main (${w.id || 'sin id'}). No es un rojo de la historia; la historia sigue cuando main pase.`].filter(Boolean).join('\n');
     }
     return allowStop();
   }
