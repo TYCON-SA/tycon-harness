@@ -1098,14 +1098,18 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   TG_RUN_MODO=""; TG_RUN_MOTIVO=""; TG_RUN_TEXTO=""; TG_RUN_ORIGEN_AT=""
   _TG_NOTA="$(node "$MARKER_JS" get 2>/dev/null | node -e '
     let t=""; process.stdin.on("data",(d)=>{t+=d;}).on("end",()=>{ try {
+      if (!t.trim() || t.trim() === "null") return;
       const m = JSON.parse(t); const fs = require("fs");
       let r = process.argv[1]; try { r = fs.realpathSync(r); } catch (_) { /* la ruta tal cual */ }
       const n = (Array.isArray(m.testsSavedNote) ? m.testsSavedNote : []).find((x) => x && x.repo === r && (x.storyId || null) === (m.storyId || null));
       if (!n) return;
       const d = new Date(n.at); const hh = Number.isNaN(d.getTime()) ? "??:??" : `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
       process.stdout.write(n.guardo === "no" ? `la última corrida, de las ${hh}, no guardó: ${n.motivo || "sin motivo"}` : "-");
-    } catch (e) { /* sin marcador legible: como sin nota */ } });' "$REPO_STORY" || true)"
+    } catch (e) { process.stdout.write("?"); } });' "$REPO_STORY" || true)"
+  # sin corrida abierta no hay nota: primera. Un marcador que no se deja leer no dice si es la primera: cuenta como
+  # entera, que nunca achica las repeticiones
   _TG_PRIMERA_O_ENTERA=entera; [[ -z "$_TG_NOTA" ]] && _TG_PRIMERA_O_ENTERA=primera
+  [[ "$_TG_NOTA" == "?" ]] && _TG_NOTA="no pude leer el marcador: no sé si es la primera corrida"
   _tg_completa() { TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="$1"; TG_RUN_TEXTO="corre la completa como siempre: $1"; }
   if [[ "${TYCON_GATE_ALL_SUITES:-}" == "1" ]]; then
     TG_RUN_MODO="$_TG_PRIMERA_O_ENTERA"; TG_RUN_MOTIVO="TYCON_GATE_ALL_SUITES=1 pide correr todo"; TG_RUN_TEXTO="corre todo: $TG_RUN_MOTIVO"
@@ -1328,10 +1332,11 @@ if [[ "$TG_TOP_FULL" == "1" && "$RUNNER" == "suites-json" ]]; then
     elif [[ -n "$_TG_FOTO_NO" ]]; then
       TG_GUARDO_MOTIVO="$_TG_FOTO_NO"
     else
-      _tg_no_cierre=""
-      _tg_no_cierre="$(node "$SCRIPT_DIR/lib/failed-first.js" can-save "$_tg_antes")" || true
-      if [[ -n "$_tg_no_cierre" ]]; then
-        TG_GUARDO_MOTIVO="$_tg_no_cierre"
+      # can-save sale 0 si se puede guardar, 1 con el motivo; cualquier otra salida (se cayó) no guarda
+      _tg_no_cierre=""; _tg_can_rc=0
+      _tg_no_cierre="$(node "$SCRIPT_DIR/lib/failed-first.js" can-save "$_tg_antes")" || _tg_can_rc=$?
+      if [[ "$_tg_can_rc" != "0" ]]; then
+        TG_GUARDO_MOTIVO="${_tg_no_cierre:-no pude saber si el cierre se puede guardar (can-save salió $_tg_can_rc)}"
       elif _tg_guardar save-green --summary "$_tg_antes" ${_tg_perdon[@]+"${_tg_perdon[@]}"} "${_tg_base_args[@]}" ${TG_RUN_ORIGEN_AT:+--origin-at "$TG_RUN_ORIGEN_AT"}; then
         TG_GUARDO=verde
         _tg_drop red

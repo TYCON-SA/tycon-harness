@@ -3013,8 +3013,14 @@ function cmdTestsFailed(argv) {
       marker.lastTouch = nowIso();
       writeMarker(marker);
     }
-    appendLog('gates.log', { name: 'test-gate-run', story, modo: opt('--mode'), motivo: opt('--reason'), origen_at: opt('--origin-at'),
-      suites: num('--suites'), duracion_ms: num('--duration-ms'), exit: num('--exit'), guardo, guardo_motivo: motivoNo });
+    // estricto: si el renglón no se escribe, sale 1 y el portón lo dice (el informe no vería esta corrida)
+    try {
+      appendLog('gates.log', { name: 'test-gate-run', story, modo: opt('--mode'), motivo: opt('--reason'), origen_at: opt('--origin-at'),
+        suites: num('--suites'), duracion_ms: num('--duration-ms'), exit: num('--exit'), guardo, guardo_motivo: motivoNo }, { estricto: true });
+    } catch (e) {
+      process.stderr.write(`[test-gate] ⚠️  no pude escribir el renglón de esta corrida en gates.log (${e.message})\n`);
+      process.exit(1);
+    }
     return;
   }
   if (!marker) {

@@ -102,7 +102,16 @@ function saveRed({ dir, summaryFile, lcovFile, measuredFile, base, recorte, stor
   }
   const nueva = `${dir}.nuevo-${process.pid}`;
   const vieja = `${dir}.viejo-${process.pid}`;
-  fs.rmSync(nueva, { recursive: true, force: true });
+  // los restos de un guardado que murió a mitad (una carpeta nueva o vieja de otro proceso): lo vigente es `dir`
+  const nombre = path.basename(dir);
+  let hermanos = [];
+  try { hermanos = fs.readdirSync(path.dirname(dir)); } catch (_) { /* la carpeta de estado todavía no existe */ }
+  for (const h of hermanos) {
+    const resto = path.join(path.dirname(dir), h);
+    // sin `dir`, una carpeta vieja es lo último guardado que quedó: vuelve a su lugar antes de reemplazarla
+    if (h.startsWith(`${nombre}.viejo-`) && !fs.existsSync(dir)) fs.renameSync(resto, dir);
+    else if (h.startsWith(`${nombre}.nuevo-`) || h.startsWith(`${nombre}.viejo-`)) fs.rmSync(resto, { recursive: true, force: true });
+  }
   try {
     fs.mkdirSync(nueva, { recursive: true });
     fs.copyFileSync(summaryFile, path.join(nueva, 'resumen.json'));
@@ -113,7 +122,11 @@ function saveRed({ dir, summaryFile, lcovFile, measuredFile, base, recorte, stor
     const habia = fs.existsSync(dir);
     if (habia) fs.renameSync(dir, vieja);
     try { fs.renameSync(nueva, dir); } catch (e) {
-      if (habia) fs.renameSync(vieja, dir);
+      if (habia) {
+        try { fs.renameSync(vieja, dir); } catch (e2) {
+          throw new Error(`${e.message}; y no pude devolver lo de antes a su lugar (${e2.message}): quedó en ${vieja}`);
+        }
+      }
       throw e;
     }
     if (habia) fs.rmSync(vieja, { recursive: true, force: true });

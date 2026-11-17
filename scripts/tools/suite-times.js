@@ -187,10 +187,13 @@ function repeatsCmd(o) {
   }
   const corridas = [];
   const checks = [];
+  // lo que parecía una corrida y no se pudo leer (un renglón cortado, una hora o un modo que no se entienden): no cuenta,
+  // y se dice cuánto fue, para que «menos repeticiones» nunca salga de no haber podido leer
+  let descartados = 0;
   for (const l of texto.split('\n')) {
     if (!l.includes('"test-gate-run"') && !l.includes('"check":"tests"')) continue;
     let j;
-    try { j = JSON.parse(l); } catch (_) { continue; }
+    try { j = JSON.parse(l); } catch (_) { descartados += 1; continue; }
     if (j.name === 'test-gate-run') {
       corridas.push({ t: Date.parse(j.ts), ses: j.sessionId || '?', story: j.story || null, modo: j.modo, motivo: j.motivo || null, ms: Number(j.duracion_ms) || 0 });
     } else if (j.check === 'tests') {
@@ -200,7 +203,10 @@ function repeatsCmd(o) {
   }
   // una corrida con su renglón también dejó su check: el check que cae dentro de ella (misma sesión) no se cuenta
   const cubierto = (c) => corridas.some((r) => r.ses === c.ses && c.t <= r.t && c.t >= r.t - r.ms - 60000);
-  const todas = [...corridas, ...checks.filter((c) => !cubierto(c))].filter((x) => Number.isFinite(x.t)).sort((a, b) => a.t - b.t);
+  const leibles = [...corridas, ...checks.filter((c) => !cubierto(c))];
+  const todas = leibles.filter((x) => Number.isFinite(x.t) && (!x.modo || MODOS.includes(x.modo))).sort((a, b) => a.t - b.t);
+  descartados += leibles.length - todas.length;
+  const aviso = descartados ? `${descartados} renglón(es) de corridas que no pude leer: no cuentan` : null;
   const vistas = new Set();
   const dias = new Map();
   for (const x of todas) {
@@ -209,7 +215,7 @@ function repeatsCmd(o) {
     let motivo = x.motivo;
     if (!modo) { modo = vistas.has(clave) ? ENTERA : PRIMERA; if (modo === ENTERA) motivo = SIN_MOTIVO; }
     vistas.add(clave);
-    if (x.t < desde || x.t > hasta || !MODOS.includes(modo)) continue;
+    if (x.t < desde || x.t > hasta) continue;
     const dia = diaLocal(x.t);
     if (!dias.has(dia)) dias.set(dia, { dia, primera: { n: 0, ms: 0 }, entera: { n: 0, ms: 0 }, acotada: { n: 0, ms: 0 }, sin_correr: { n: 0, ms: 0 }, motivos: new Map() });
     const d = dias.get(dia);
@@ -224,12 +230,12 @@ function repeatsCmd(o) {
     }
   }
   if (!dias.size) {
-    process.stdout.write(`suite-times: no hay corridas que leer en ${file}${o.since || o.until ? ' en ese rango' : ''}\n`);
+    process.stdout.write(`suite-times: no hay corridas que leer en ${file}${o.since || o.until ? ' en ese rango' : ''}${aviso ? ` (${aviso})` : ''}\n`);
     return 3;
   }
   const filas = [...dias.values()].sort((a, b) => a.dia.localeCompare(b.dia)).map(({ motivos, ...d }) => ({
     ...d, enteras_por_motivo: [...motivos.values()].sort((a, b) => b.ms - a.ms || a.motivo.localeCompare(b.motivo)) }));
-  if (o.json) { process.stdout.write(`${JSON.stringify({ log: file, desde: o.since || null, hasta: o.until || null, dias: filas }, null, 2)}\n`); return 0; }
+  if (o.json) { process.stdout.write(`${JSON.stringify({ log: file, desde: o.since || null, hasta: o.until || null, descartados, dias: filas }, null, 2)}\n`); return 0; }
   const horas = (ms) => `${(ms / 3600000).toFixed(1).replace('.', ',')} h`;
   const out = [`corridas del portón por día, de ${file}`];
   for (const d of filas) {
@@ -240,6 +246,7 @@ function repeatsCmd(o) {
     }
     for (const m of d.enteras_por_motivo) out.push(`      ${String(m.n).padStart(3)} · ${horas(m.ms).padStart(7)} · ${m.motivo}`);
   }
+  if (aviso) out.push(`⚠️  ${aviso}`);
   process.stdout.write(`${out.join('\n')}\n`);
   return 0;
 }

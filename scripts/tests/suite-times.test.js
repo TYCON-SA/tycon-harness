@@ -416,6 +416,13 @@ test('T13 Repeats_NoLogOrNoRuns_Exit3 @story-8.297 @ac-11 — sin registro, ileg
     assert.equal(r.status, 3, `${args.join(' ')}: ${r.stdout}${r.stderr}`);
     assert.match(`${r.stdout}${r.stderr}`, /no hay corridas que leer/);
   }
+  // un renglón cortado no cuenta, y se dice cuántos fueron
+  const cortado = path.join(tmp('suite-times-cortado-'), 'gates.log');
+  fs.writeFileSync(cortado, `${JSON.stringify(run(local(10, 9), 's1', '8.1', 'entera', 'x', 5))}\n{"name":"test-gate-run","ts":"2026-11-10T1\n`);
+  const conAviso = cli('repeats', '--log', cortado);
+  assert.equal(conAviso.status, 0, conAviso.stderr);
+  assert.match(conAviso.stdout, /1 renglón\(es\) de corridas que no pude leer: no cuentan/);
+  assert.equal(JSON.parse(cli('repeats', '--log', cortado, '--json').stdout).descartados, 1);
   // sin --log lee el de la carpeta de estado: con una casa vacía, tampoco hay
   const home = tmp('suite-times-home-');
   const r = spawnSync(process.execPath, [CLI, 'repeats'], { encoding: 'utf8', env: envWith({ HOME: home, USERPROFILE: home }) });

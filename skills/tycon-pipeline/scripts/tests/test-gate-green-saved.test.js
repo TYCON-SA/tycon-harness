@@ -517,6 +517,16 @@ test('T18 Save_FailsMidway_KeepsPreviousAndNotes @story-8.297 @ac-4 @ac-8 — un
   assert.equal(s.status, 1, `${s.stdout}${s.stderr}`);
   assert.deepEqual(verde(l), antes);
   assert.equal(antes.hash, ff().redHash(antes.dir));
+  // los restos de un guardado que murió a mitad: una carpeta nueva se borra; sin la vigente, la vieja vuelve a su lugar
+  const casa2 = tmp('gs-restos-');
+  const dir = path.join(casa2, 'sesion-repo');
+  const opts = { dir, summaryFile: path.join(antes.dir, 'resumen.json'), measuredFile: path.join(antes.dir, 'medido.json'), base: null, recorte: '' };
+  ff().saveGreen(opts);
+  fs.mkdirSync(`${dir}.nuevo-999999`);
+  fs.renameSync(dir, `${dir}.viejo-999998`);
+  const h = ff().saveGreen(opts);
+  assert.deepEqual(fs.readdirSync(casa2), ['sesion-repo'], 'no quedan restos');
+  assert.equal(h, ff().redHash(dir));
 });
 
 test('T5 StartPhoto_GreenFolderChangedDuringRun_SavesAndNextRunsChanged @story-8.297 @ac-5 — una carpeta que cambia mientras corre guarda con la foto del arranque', () => {
