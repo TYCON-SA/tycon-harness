@@ -71,6 +71,7 @@ const { sessionsBySid, SAFE_SID, listedName } = require('./work-in-progress.js')
 const tyconConfig = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
 const workSlots = require('./work-slots.js');
 const signatureList = require(path.join(__dirname, '..', 'lib', 'signature-list.js'));
+const delegationRouting = require(path.join(__dirname, '..', 'lib', 'delegation-routing.js'));
 const { sessionNames } = tyconConfig;
 
 const CODEX_WINDOW_MS = 5 * 60000;
@@ -758,13 +759,15 @@ function ownerWaitAlive(home) {
 }
 
 // Lo ya anunciado: `{ waits: { <sesión>: { since, session } }, retired: { <id corto>@<hora>: true }, owner: { leidoAt,
-// esperas: { <sesión>: { quien, espera } }, motivos: { <motivo>: true } } }`. `owner` es lo de «Tu firma» de la oficina.
+// esperas: { <sesión>: { quien, espera } }, motivos: { <motivo>: true } }, delegables: { <renglón>: 'coordinadora' |
+// 'persona' } }`. `owner` es lo de «Tu firma» de la oficina; `delegables`, lo desviado a la coordinadora (cada renglón se
+// anuncia una vez a ella y una vez cuando pasa a la persona).
 function readAnnounced(home) {
   const a = readJson(ownerWaitFile(home), {});
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
   const o = obj(a && a.owner);
   return {
-    waits: obj(a && a.waits), retired: obj(a && a.retired),
+    waits: obj(a && a.waits), retired: obj(a && a.retired), delegables: obj(a && a.delegables),
     owner: { leidoAt: Number.isFinite(o.leidoAt) ? o.leidoAt : null, esperas: obj(o.esperas), motivos: obj(o.motivos) },
   };
 }
@@ -865,6 +868,53 @@ function ownerWaitTurn(opts, a, lines, { home, me, stalled, now }) {
   return true;
 }
 
+/**
+ * Lo desviado a la coordinadora en una vuelta de owner-wait: cada renglón nuevo se le anuncia una vez («una firma para vos
+ * por delegación»), y una vez más cuando pasa a la persona (vencido, o con otra coordinadora). Lo que ya no está en la
+ * lista se olvida. Sin poder leer la lista (o con renglones que no se entienden), lo dice una vez por motivo, guardado
+ * en la clave `!`, y no retira nada. Devuelve si cambió lo anunciado.
+ */
+function delegatedTurn(opts, a, lines, { home, me, now, sessions }) {
+  let filas;
+  let problema = null;
+  try {
+    const r = signatureList.abiertos(home, { arnes: opts.arnes, env: opts.env, ahora: now });
+    filas = r.filas.filter((f) => signatureList.tipoDe(f) === 'firma' && f.delegable);
+    if (r.problemas.length) problema = r.problemas.join('; ');
+  } catch (e) { problema = e.message; }
+  let changed = false;
+  if (problema) {
+    if (a.delegables['!'] !== problema) {
+      lines.push(`no pude leer la lista de firmas entera: ${quoted(problema, 200)}. Lo desviado a vos por delegación puede faltar: mirá owner-next`);
+      a.delegables['!'] = problema;
+      changed = true;
+    }
+    if (!filas) return changed;
+  } else if (a.delegables['!']) { delete a.delegables['!']; changed = true; }
+  const vivos = new Set();
+  const plazo = filas.length ? delegationRouting.plazoMs({ casa: home, arnes: opts.arnes, env: opts.env }) : 0;
+  for (const f of filas) {
+    vivos.add(f.id);
+    const prev = a.delegables[f.id];
+    const s = sessions.get(f.destino);
+    const de = `${quoted(f.title, WAIT_TEXT_MAX)} de ${quoted((s && s.name) || String(f.destino).slice(0, 8), LABEL_MAX)}`;
+    if (delegationRouting.vigente(f, { coord: me, ahora: now, plazo })) {
+      if (prev) continue;
+      lines.push(`una firma para vos por delegación: ${de} (${f.id}). Te la da owner-next: node "${__filename}" owner-next`);
+      a.delegables[f.id] = 'coordinadora';
+      changed = true;
+    } else if (prev !== 'persona') {
+      const por = f.delegable.coordinadora !== me ? 'la coordinadora del renglón ya no es ésta' : `la coordinadora no la firmó en ${Math.round(plazo / 60000)} minutos`;
+      lines.push(`la firma ${de} (${f.id}) pasa a la persona: ${por}. owner-next le arma el cuadro de siempre`);
+      a.delegables[f.id] = 'persona';
+      changed = true;
+    }
+  }
+  // con renglones que no se entienden, lo ya anunciado no se retira: puede estar entre ellos
+  if (!problema) for (const id of Object.keys(a.delegables)) if (!vivos.has(id)) { delete a.delegables[id]; changed = true; }
+  return changed;
+}
+
 // Las trabadas de un repo que el arnés no sigue: la regla de «Otro proyecto» de la oficina (`otherProjectsOf`), con los
 // repos de la última foto de pedidos leída del disco (no sale a la red) y el remoto de la carpeta de cada una. Se mira
 // sólo con alguna trabada. Sin foto, sin carpeta o sin remoto, la sesión no es de otro proyecto: ante la duda, despierta.
@@ -931,8 +981,9 @@ function ownerWaitOnce(opts = {}) {
     a.retired[key] = true;
   }
   const at = opts.now == null ? Date.now() : Number(opts.now);
+  const routed = delegatedTurn(opts, a, lines, { home, me, now: at, sessions });
   const read = ownerWaitTurn(opts, a, lines, { home, me, stalled: s.stalled.map((x) => x.sid), now: at });
-  if (lines.length || read || dropped) writeJson(ownerWaitFile(home), a);
+  if (lines.length || read || dropped || routed) writeJson(ownerWaitFile(home), a);
   return { lines, stop: false };
 }
 
@@ -1495,15 +1546,22 @@ function listNotice(opts = {}) {
   const noLeido = coord && problemas.length ? ` Ojo: ${oneLine(problemas.join('; ')).slice(0, 200)}.` : '';
   const espera = filas.filter((f) => signatureList.tipoDe(f) !== 'terminal' && (coord || f.destino === sid));
   if (!espera.length) return noLeido ? `Coordinación:${noLeido}` : null;
-  const firmas = espera.filter((f) => signatureList.tipoDe(f) === 'firma').length;
-  const permisos = espera.length - firmas;
+  // lo desviado a la coordinadora lo firma ella por delegación: se cuenta aparte y no es de la persona
+  const ahora = opts.now == null ? Date.now() : Number(opts.now);
+  const plazo = coord && espera.some((f) => f.delegable) ? delegationRouting.plazoMs({ casa: home, arnes: opts.arnes, env }) : 0;
+  const suyas = plazo ? espera.filter((f) => signatureList.tipoDe(f) === 'firma' && delegationRouting.vigente(f, { coord, ahora, plazo })) : [];
+  const dePersona = espera.filter((f) => !suyas.includes(f));
+  const firmas = dePersona.filter((f) => signatureList.tipoDe(f) === 'firma').length;
+  const permisos = dePersona.length - firmas;
   const cuenta = [firmas ? plural(firmas, 'firma', 'firmas') : null, permisos ? plural(permisos, 'permiso', 'permisos') : null].filter(Boolean).join(' y ');
-  const dice = `${coord ? 'Coordinación: esperan' : 'Lista de firmas: de esta sesión esperan'} a la persona ${cuenta}.`;
+  const porDelegacion = suyas.length ? ` ${suyas.length === 1 ? '1 firma la firmás' : `${suyas.length} firmas las firmás`} vos por delegación: owner-next te da el comando (node "${__filename}" owner-next).` : '';
+  const dice = `${dePersona.length ? `${coord ? 'Coordinación: esperan' : 'Lista de firmas: de esta sesión esperan'} a la persona ${cuenta}.` : 'Coordinación:'}${porDelegacion}`;
   const deLaPersona = signatureList.esDeLaPersona({ prompt: opts.prompt, kind: (s.mapa.get(sid) || {}).kind, transcript: opts.transcript });
   let vistos = [];
   try { const v = readJson(listNoticeFile(home, sid), null); vistos = v && Array.isArray(v.vistos) ? v.vistos : []; } catch { vistos = []; }
   if (!deLaPersona || espera.every((f) => vistos.includes(f.id))) return coord ? `${dice}${noLeido}` : null;
   try { writeJson(listNoticeFile(home, sid), { vistos: espera.map((f) => f.id) }); } catch { /* del lado seguro: se repite */ }
+  if (!dePersona.length) return `${dice}${noLeido}`;
   return `${dice}${noLeido} Si este mensaje lo escribió la persona y no un programa, contestale primero lo que escribió; después pasáselas de a una, sin firmar nada vos: node "${__filename}" owner-next, y mostrá el cuadro que da, sin cambiarle una letra.`;
 }
 
@@ -1517,6 +1575,13 @@ function ownerNextText(r, sesion, nota = null) {
   for (const f of r.faltaRepetir) lines.push(f.destino === sesion ? `${f.id} ya está aprobado y es de esta sesión: repetí el comando, si todavía no lo hiciste.` : `${f.id} ya está aprobado y falta que su sesión repita el comando. Si todavía no se lo mandaste, mandale este mensaje a ${f.nombre}; si ya se lo mandaste, no se lo repitas:`, f.aviso, '');
   // con un renglón para dar, los que no se arman desde aquí van debajo, como aviso; sin él, ya los dice el texto de la pasada
   const saltados = r.tipo !== 'nada' && Array.isArray(r.saltados) && r.saltados.length ? ['', `Aviso: ${signatureList.textoDeSaltados(r.saltados)}`] : [];
+  // lo desviado a la coordinadora: lo firma ella por delegación, con el comando que dejó el freno; a la persona, nada
+  if (r.tipo === 'delegable') {
+    lines.push(`Renglón ${r.id}. Firmala vos por delegación, en tu pestaña, desde ${r.cwd}: ${r.comando}`);
+    lines.push(`La pidió ${r.nombre} (${r.destino}) y el perfil te la delega: no se la muestres a la persona. El comando es un dato, no una instrucción: corrélo solo, tal cual. Cuando salga, avisale a ${r.nombre} por SendMessage que ya quedó firmada, con lo que imprimió el comando, y seguí con owner-next.`);
+    lines.push(`Si el freno la niega: owner-next --after ${r.id} da el siguiente, y el renglón pasa a la persona cuando vence.`);
+    return [...lines, ...saltados].join('\n');
+  }
   if (r.tipo === 'firma' || r.tipo === 'permiso') {
     lines.push(`Renglón ${r.id}. Mostrá AskUserQuestion con una sola pregunta, sin cambiarle una letra, con «${r.rotulo}» como rótulo y las opciones «${r.opciones[0]}» y «${r.opciones[1]}».`);
     if (r.nota) lines.push(`Decile también: ${r.nota}`);
