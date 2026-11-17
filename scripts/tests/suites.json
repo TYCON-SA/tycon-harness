@@ -4584,6 +4584,12 @@
       "requiere": []
     },
     {
+      "__nota": "scripts/hooks/temp-sweep.js, el barrido diario de las carpetas temporales viejas. Sobre una carpeta de prueba dentro de una carpeta temporal de verdad: borra la carpeta y el archivo viejos con sufijo al azar; deja el nombre que escribe una persona (palabra, fecha, versión) y los de otras aplicaciones; deja lo que cambió dentro del plazo (también por fecha de cambio), lo que tiene un socket, la carpeta de trabajo de un proceso vivo y la que tiene un archivo abierto (con un Node de verdad lanzado ahí), lo de otro usuario, los enlaces, la entrada que otro alcanza con una carpeta donde otro escribe y la que tiene una carpeta ilegible que se deja atravesar; no mira una raíz donde cualquiera escribe sin sticky ni una ruta fuera de las carpetas temporales; sin la lista de procesos vivos no borra; lo que no se deja borrar se nombra; el camino de Windows (cambio de nombre y vuelta) se ejercita en cualquier plataforma; con el tope agotado cuenta pendientes. El gancho como proceso, con un HOME de prueba por caso: dice su línea, sella el día y calla al segundo arranque, --force pasa de nuevo, un sello futuro cuenta como vencido, cortado por el tope vuelve en una hora, los dos interruptores no tocan nada, los valores que no valen se dicen, y suelto (sin la librería del sello) no barre y lo dice. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/temp-sweep.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.164 (T2, T3): los textos que le muestran al agente cómo abrir un pedido en Azure DevOps (los tres del freno de pedidos y el paso de cierre) traen --delete-source-branch al lado de --auto-complete true --squash false; la guía de commits trae la tarea humana de GitHub («Automatically delete head branches») con su ruta. Sólo lee archivos.",
       "raiz": "arnes",
       "ruta": "tests/machine-cleanup-guides.test.js",

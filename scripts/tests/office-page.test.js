@@ -617,10 +617,10 @@ test('T4 Racks_BarraSegunPorcentaje @story-8.301 @ac-3 — cada rack enciende de
   r.pintarRacks({ memoria: 3, procesador: 90 });
   assert.deepStrictEqual(r.rows(r.racks[0]), lit(0));
   assert.notStrictEqual(OFF, UNMEASURED);
-  // la página pinta los racks con cada foto, y el rack de x 8.75 es la memoria
+  // la página pinta los racks con cada foto, y el rack del fondo de la esquina es la memoria
   const src = PAGE_CODE();
   assert.match(src, /pintarRacks\(meta&&meta\.maquina\)/);
-  assert.match(src, /const racks=\[rack\(8\.75,4\.3,"memoria"\),rack\(9\.55,4\.3,"procesador"\)\];/);
+  assert.match(src, /const racks=\[rack\(\.38,\.95,"memoria",Math\.PI\/2\),rack\(\.38,1\.75,"procesador",Math\.PI\/2\)\];/);
 });
 
 test('T5 Racks_SinMedida_GrisFijo @story-8.301 @ac-4 — el rack sin su medida queda entero en gris tenue y fijo, nunca con la barra anterior', () => {

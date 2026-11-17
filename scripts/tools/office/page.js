@@ -497,8 +497,9 @@ function prenderLampara(v){lamparaPrendida=v;lampShade.material.emissiveIntensit
 function tocarLampara(){prenderLampara(!lamparaPrendida);guardarLampara(lamparaPrendida)}
 prenderLampara(lamparaGuardada());
 const pnl=new THREE.Group();pnl.position.set(8.0,2.45,.06);scene.add(pnl);add(RB(2.95,2.5,.1,.06),M("#0f121c"),0,0,0,pnl);const pnlFace=add(new THREE.PlaneGeometry(2.82,2.35),new THREE.MeshBasicMaterial({map:texPanel,toneMapped:false}),0,0,.06,pnl,false);
-// racks: el de x 8.75 es la memoria y el de x 9.55 el procesador. Cada uno enciende, de abajo para arriba, las filas de
-// su porcentaje en uso; las encendidas titilan más rápido cuantas más sesiones están trabajando
+// racks, en la esquina del fondo y detrás de todos los escritorios: el del fondo es la memoria y el de adelante el
+// procesador. Cada uno enciende, de abajo para arriba, las filas de su porcentaje en uso; las encendidas titilan más rápido
+// cuantas más sesiones están trabajando
 const RACK_FILAS=9,LED_APAGADO="#2a2d36",LED_SIN_MEDIDA="#5b606c";
 const colorRack=p=>p>=85?"#ff4d4d":p>=60?"#ffb02e":"#3dff7a";
 // una medida que no es un porcentaje entero es una medida que no vino: el rack queda en gris, nunca con la barra anterior
@@ -511,11 +512,11 @@ function ledVisto(m,i,t){return m.userData.on&&ledRate&&!reduce?Math.sin(t*ledRa
 // la etiqueta de un rack se ve mientras el mouse lo apunta, o desde que el dedo lo toca hasta que toca otra cosa
 let rackVisto=null;
 function verRack(r,e){rackVisto=r;if(!r){rackTag.style.display="none";return}const b=stage.getBoundingClientRect();rackTag.textContent=textoRack(r);rackTag.style.left=(e.clientX-b.left)+"px";rackTag.style.top=(e.clientY-b.top-14)+"px";rackTag.style.display="block"}
-const leds=[];function rack(x,z,tipo){const g=new THREE.Group();g.position.set(x,0,z);scene.add(g);add(RB(.75,2.05,.7,.04),M("#22252f",{r:.45,m:.3}),0,1.025,0,g);const r={tipo,leds:[],pct:null,g};
+const leds=[];function rack(x,z,tipo,rot=0){const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=rot;scene.add(g);add(RB(.75,2.05,.7,.04),M("#22252f",{r:.45,m:.3}),0,1.025,0,g);const r={tipo,leds:[],pct:null,g};
   for(let u=0;u<9;u++){add(new THREE.BoxGeometry(.62,.16,.02),M("#14161d"),0,.25+u*.2,.355,g);for(let k=0;k<3;k++){const m=new THREE.Mesh(new THREE.BoxGeometry(.04,.03,.02),new THREE.MeshBasicMaterial({color:LED_SIN_MEDIDA,toneMapped:false}));m.userData={fila:u,on:false};m.position.set(.18+k*.06,.25+u*.2,.37);g.add(m);leds.push(m);r.leds.push(m)}}
   // lo que se apunta: el rack entero, invisible, como la lámpara
   r.hit=add(new THREE.BoxGeometry(.8,2.1,.75),new THREE.MeshBasicMaterial({visible:false}),0,1.05,0,g,false);return r}
-const racks=[rack(8.75,4.3,"memoria"),rack(9.55,4.3,"procesador")];plant(scene,9.45,0,2.35,1.1);
+const racks=[rack(.38,.95,"memoria",Math.PI/2),rack(.38,1.75,"procesador",Math.PI/2)];plant(scene,9.45,0,2.35,1.1);
 const rackDe=h=>(h&&racks.find(r=>r.hit===h.object))||null;
 // la etiqueta tiene el aspecto de las de las personas, pero no es una: no entra en su reparto ni recibe el mouse
 const rackTag=document.createElement("div");rackTag.className="rackTag";rackTag.style.cssText="position:absolute;display:none;transform:translate(-50%,-100%);pointer-events:none;z-index:2;background:rgba(24,20,34,.93);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:6px 11px;box-shadow:0 6px 18px rgba(0,0,0,.45);white-space:nowrap;color:#f4eefc;font:600 12.5px/1.2 var(--display)";labelsEl.appendChild(rackTag);
