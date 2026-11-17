@@ -653,6 +653,46 @@ body.demo .side{top:calc(var(--barra) + 36px);height:calc(100vh - var(--barra) -
 .m-estado:empty{display:none}
 .m-estado .m-sigue{display:block;margin-top:2px}
 .m-estado code{font:12px var(--mono)}
+/* Aprendizajes (tabs/learnings.js): la misma forma que Mantenimiento, con sus propios nombres. */
+.a-pantalla{padding-bottom:84px}
+.a-noche{color:var(--ink-2);font-size:14px;margin:0 0 14px}
+.a-bloque{margin:0 0 28px}
+.a-bloque>h2,.a-historial>summary{font:600 18px var(--serif);margin:0 0 6px}
+.a-carta{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:0 0 10px;box-shadow:var(--shadow)}
+.a-carta>header{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;margin:0 0 4px}
+.a-carta p{margin:6px 0;font-size:14px;line-height:1.5}
+.a-nombre{font-size:15px}
+.a-meta{color:var(--ink-3);font-size:12.5px}
+.a-sin{color:var(--ink-2)}
+.a-espera{color:var(--ink-2);font-size:13.5px;margin-top:10px}
+.a-decidir{margin-top:10px;font-size:13.5px}
+.a-decidir-tit{margin:0 0 6px;font-weight:600;color:var(--ink)}
+.a-acciones{display:flex;gap:8px}
+.a-elegir{padding:6px 14px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);font:13px var(--sans);cursor:pointer;min-height:36px}
+.a-elegir:hover{background:var(--wash)}
+.a-elegir[aria-pressed="true"]{background:var(--ink);color:var(--page);border-color:var(--ink)}
+.a-elegir[disabled]{opacity:.45;cursor:not-allowed}
+.a-elegir:focus-visible,.a-barra .btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.a-texto-caja,.a-motivo-caja{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin-top:8px;color:var(--ink-2)}
+.a-texto-caja[hidden],.a-motivo-caja[hidden]{display:none}
+.a-texto,.a-motivo{flex:1 1 320px;min-height:34px;padding:6px 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--page);color:var(--ink);font:13.5px var(--sans)}
+.a-historial{border-top:1px solid var(--line);padding-top:14px}
+.a-historial>summary{cursor:pointer}
+.a-lista{margin:8px 0 0;padding-left:18px;font-size:14px;line-height:1.6}
+.a-barra{position:sticky;bottom:0;display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:10px 14px;margin:0 -14px;background:var(--surface);border-top:1px solid var(--line-strong)}
+.a-barra .btn{padding:7px 12px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);font:13px var(--sans);cursor:pointer;min-height:36px}
+.a-barra .btn.prim{background:var(--ink);color:var(--page);border-color:var(--ink)}
+.a-barra .btn[disabled]{opacity:.45;cursor:not-allowed}
+.a-cuenta{font-weight:600;font-size:13.5px;min-width:72px}
+.a-cuenta:empty{display:none}
+.a-estado{flex-basis:100%;color:var(--ink-2);font-size:13px}
+.a-estado:empty{display:none}
+@media (max-width:640px){
+  .a-carta{padding:12px}
+  .a-acciones{width:100%}
+  .a-elegir{flex:1}
+  .a-barra{margin:0 -16px;padding:10px 16px}
+}
 @media (max-width:640px){
   .m-carta{padding:12px}
   .m-pie{flex-direction:column;align-items:stretch}
