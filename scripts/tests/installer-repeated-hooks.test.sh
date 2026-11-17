@@ -36,6 +36,9 @@
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
+# El freno de sesiones lo prende la sesión del arnés que corre la prueba (TYCON_SESSION_GUARD=1). Heredado, el aplicador
+# lo registra y cambia la cuenta de hooks: cada laboratorio nace sin él, como nace con su propia HOME.
+unset TYCON_SESSION_GUARD
 ONLY=""
 [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 case "$ONLY" in ""|CASE|HOOKSPATH) ;; *) echo "❌ installer-repeated-hooks: --only CASE|HOOKSPATH («${ONLY}» no existe)"; exit 2 ;; esac
