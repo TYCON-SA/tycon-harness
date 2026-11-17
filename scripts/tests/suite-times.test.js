@@ -372,7 +372,7 @@ test('T11 Repeats_FromRunLines_HoursByModeAndMotive @story-8.297 @ac-10 — por 
   assert.equal(texto.status, 0, texto.stderr);
   assert.match(texto.stdout, /2026-11-11/);
   assert.doesNotMatch(texto.stdout, /2026-11-10/);
-  assert.match(texto.stdout, /entera\D+2 corrida\(s\), 0,4 h/);
+  assert.match(texto.stdout, /entera\D+2 ejecución\(es\), 0,4 h/);
   assert.match(texto.stdout, /lo guardado es de otra historia \(8\.1\)/);
 });
 
@@ -405,13 +405,17 @@ test('T12 Repeats_OldDays_FromCheckCommand_NoMotive @story-8.297 @ac-10 — los 
   // se cortó (143) no cuenta; una salida que no se sabe leer no se pierde callada: cuenta entre las que no pude leer
   const h = gatesLog([
     run(local(14, 10), 's6', '7.6', 'primera', 'no hay un verde guardado de esta historia en esta sesión', 10),
-    { ...check(local(14, 10, 20), 's6', '7.6', `${RSJ} /hermano ${T}/suites.json --touched ${T}/touched.json --only-touched --coverage ${T}/cov --run-check tests`, 18), companion: true },
+    check(local(14, 10, 20), 's6', '7.6', `${RSJ} /hermano ${T}/suites.json --touched ${T}/touched.json --only-touched --coverage ${T}/cov --run-check tests`, 18),
+    { ts: local(14, 10, 20), sessionId: 's6', name: 'run-check-companion', check: 'tests', cmd: `${RSJ} /hermano ${T}/suites.json --touched ${T}/touched.json --only-touched --coverage ${T}/cov --run-check tests` },
+    // el mismo comando en otra sesión no es del hermano: cuenta
+    check(local(14, 10, 30), 's7', '7.7', `${RSJ} /hermano ${T}/suites.json --touched ${T}/touched.json --only-touched --coverage ${T}/cov --run-check tests`, 5),
     check(local(14, 10, 40), 's6', '7.6', `${RSJ} /r ${T}/suites.json --touched ${T}/touched.json --only-touched --coverage ${T}/cov --run-check tests`, 0, 7),
     check(local(14, 10, 50), 's6', '7.6', `${RSJ} /r ${T}/suites.json --touched ${T}/touched.json --coverage ${T}/cov --run-check tests`, 3, 143),
     check(local(14, 11), 's6', '7.6', `${RSJ} /r ${T}/suites.json --touched ${T}/touched.json --coverage ${T}/cov --run-check tests`, 2, 3),
   ]);
   const hj = JSON.parse(cli('repeats', '--log', h, '--json').stdout);
-  assert.deepEqual([hj.dias[0].primera.n, hj.dias[0].entera.n], [1, 0]);
+  // la del hermano no cuenta; la de la otra sesión es la primera de la suya
+  assert.deepEqual([hj.dias[0].primera.n, hj.dias[0].entera.n], [2, 0]);
   assert.equal(hj.descartados, 1);
 });
 
@@ -428,14 +432,14 @@ test('T13 Repeats_NoLogOrNoRuns_Exit3 @story-8.297 @ac-11 — sin registro, ileg
   for (const args of [['--log', path.join(dir, 'no-existe.log')], ...(root ? [] : [['--log', ilegible]]), ['--log', fuera, '--since', '2026-11-20']]) {
     const r = cli('repeats', ...args);
     assert.equal(r.status, 3, `${args.join(' ')}: ${r.stdout}${r.stderr}`);
-    assert.match(`${r.stdout}${r.stderr}`, /no hay corridas que leer/);
+    assert.match(`${r.stdout}${r.stderr}`, /no hay ejecuciones que leer/);
   }
   // un renglón cortado no cuenta, y se dice cuántos fueron
   const cortado = path.join(tmp('suite-times-cortado-'), 'gates.log');
   fs.writeFileSync(cortado, `${JSON.stringify(run(local(10, 9), 's1', '8.1', 'entera', 'x', 5))}\n{"name":"test-gate-run","ts":"2026-11-10T1\n`);
   const conAviso = cli('repeats', '--log', cortado);
   assert.equal(conAviso.status, 0, conAviso.stderr);
-  assert.match(conAviso.stdout, /1 renglón\(es\) de corridas que no pude leer: no cuentan/);
+  assert.match(conAviso.stdout, /1 renglón\(es\) de ejecuciones que no pude leer: no cuentan/);
   assert.equal(JSON.parse(cli('repeats', '--log', cortado, '--json').stdout).descartados, 1);
   // una fecha que no existe no apaga el filtro en silencio ni rueda al mes siguiente: sale 2 y lo dice
   for (const v of ['2026-02-31', '2026-13-45', '2026-11-17T25:00', '2026-02-31T10:00']) {

@@ -350,11 +350,16 @@ test('T20 RunCheck_CompanionRun_MarkedInGatesLog @story-8.297 @ac-10 — la corr
   const home = casa(); const d = repo();
   markerFalso(home, 'rc27', d);
   const log = path.join(home, '.claude', '.tycon-pipeline', 'gates.log');
-  const ultima = () => fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((x) => x.check === 'tests').pop();
+  const renglones = () => fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const marcas = () => renglones().filter((x) => x.name === 'run-check-companion');
   assert.equal(correr(home, d, 'tests', undefined, { sid: 'rc27' }).status, 0);
-  assert.equal(ultima().companion, undefined, 'la corrida propia no lleva la marca');
+  assert.equal(marcas().length, 0, 'la corrida propia no deja la marca');
   assert.equal(correr(home, d, 'tests', undefined, { sid: 'rc27', extra: { TYCON_TEST_GATE_COMPANION: '1' } }).status, 0);
-  assert.equal(ultima().companion, true);
+  const [m] = marcas();
+  const check = renglones().filter((x) => x.check === 'tests' && !x.name).pop();
+  assert.ok(m, 'la del hermano deja su renglón');
+  assert.deepEqual([m.check, m.cmd, m.sessionId], ['tests', check.cmd, check.sessionId], 'con el mismo comando y la misma sesión que su check');
+  assert.equal(check.companion, undefined, 'el renglón del check no cambia');
 });
 
 test('T20 RunCheck_Signal_SlowChild_HeldUntilItCloses @story-8.124 @ac-10 — con la señal, el candado sigue hasta que el hijo cierra', async () => {

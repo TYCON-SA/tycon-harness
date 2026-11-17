@@ -166,12 +166,13 @@ const diaLocal = (t) => { const d = new Date(t); return `${d.getFullYear()}-${St
 /**
  * Un check `tests` del portón de antes del renglón `test-gate-run`: la corrida que no se puede atar a un modo cuenta como
  * completa (primera o entera). Devuelve null si no es una corrida del portón que terminó (la que no corrió nada, la
- * cortada, una suite sola, la mitad juntada de un cierre acotado, la de un repo hermano, un comando que no es el
- * corredor), y `{ ilegible: true }` si salió con un código que no se sabe leer: no se sabe qué midió.
+ * cortada, una suite sola, la mitad juntada de un cierre acotado, un comando que no es el corredor), y
+ * `{ ilegible: true }` si salió con un código que no se sabe leer: no se sabe qué midió. La de un repo hermano la saca
+ * después su renglón `run-check-companion`.
  */
 function deUnCheck(c) {
   const cmd = String(c.cmd || '');
-  if (c.check !== 'tests' || c.provenance !== 'test-gate' || c.companion === true) return null;
+  if (c.check !== 'tests' || c.provenance !== 'test-gate') return null;
   if (/ --suite /.test(cmd)) return null;
   const merge = /failed-first\.js merge/.test(cmd);
   if (merge && / --new /.test(cmd)) return null;
@@ -184,7 +185,7 @@ function deUnCheck(c) {
   if (merge) modo = 'sin correr';
   else if (/touched-repetidas\.json/.test(cmd)) modo = 'acotada';
   else if (/arbol-privado/.test(cmd) && / --scoped-by-repo /.test(cmd) && !/ --only-touched/.test(cmd)) modo = 'acotada';
-  return { t: Date.parse(c.ts), ses: c.sessionId || '?', story: c.storyId || null, modo, motivo: null, ms: Number(c.durationMs) || 0 };
+  return { t: Date.parse(c.ts), ses: c.sessionId || '?', story: c.storyId || null, modo, motivo: null, ms: Number(c.durationMs) || 0, cmd };
 }
 
 function repeatsCmd(o) {
@@ -194,11 +195,12 @@ function repeatsCmd(o) {
   const hasta = o.until ? momento(o.until, true) : Infinity;
   let texto;
   try { texto = fs.readFileSync(file, 'utf8'); } catch (e) {
-    process.stdout.write(`suite-times: no hay corridas que leer (${file}: ${e.code || e.message})\n`);
+    process.stdout.write(`suite-times: no hay ejecuciones que leer (${file}: ${e.code || e.message})\n`);
     return 3;
   }
   const corridas = [];
   const checks = [];
+  const hermanos = [];
   // lo que parecía una corrida y no se pudo leer (un renglón cortado, una hora o un modo que no se entienden): no cuenta,
   // y se dice cuánto fue, para que «menos repeticiones» nunca salga de no haber podido leer
   let descartados = 0;
@@ -208,6 +210,8 @@ function repeatsCmd(o) {
     try { j = JSON.parse(l); } catch (_) { descartados += 1; continue; }
     if (j.name === 'test-gate-run') {
       corridas.push({ t: Date.parse(j.ts), ses: j.sessionId || '?', story: j.story || null, modo: j.modo, motivo: j.motivo || null, ms: Number(j.duracion_ms) || 0 });
+    } else if (j.name === 'run-check-companion') {
+      hermanos.push({ t: Date.parse(j.ts), ses: j.sessionId || '?', cmd: String(j.cmd || '') });
     } else if (j.check === 'tests') {
       const c = deUnCheck(j);
       if (c && c.ilegible) descartados += 1;
@@ -216,10 +220,13 @@ function repeatsCmd(o) {
   }
   // una corrida con su renglón también dejó su check: el check que cae dentro de ella (misma sesión) no se cuenta
   const cubierto = (c) => corridas.some((r) => r.ses === c.ses && c.t <= r.t && c.t >= r.t - r.ms - 60000);
-  const leibles = [...corridas, ...checks.filter((c) => !cubierto(c))];
+  // la corrida de un repo hermano es parte de la que la lanzó: `run-check` deja, al lado de su check, un renglón con el
+  // mismo comando y la misma sesión
+  const deHermano = (c) => hermanos.some((h) => h.ses === c.ses && h.cmd === c.cmd && Math.abs(h.t - c.t) <= 10000);
+  const leibles = [...corridas, ...checks.filter((c) => !cubierto(c) && !deHermano(c))];
   const todas = leibles.filter((x) => Number.isFinite(x.t) && (!x.modo || MODOS.includes(x.modo))).sort((a, b) => a.t - b.t);
   descartados += leibles.length - todas.length;
-  const aviso = descartados ? `${descartados} renglón(es) de corridas que no pude leer: no cuentan` : null;
+  const aviso = descartados ? `${descartados} renglón(es) de ejecuciones que no pude leer: no cuentan` : null;
   const vistas = new Set();
   const dias = new Map();
   for (const x of todas) {
@@ -243,19 +250,19 @@ function repeatsCmd(o) {
     }
   }
   if (!dias.size) {
-    process.stdout.write(`suite-times: no hay corridas que leer en ${file}${o.since || o.until ? ' en ese rango' : ''}${aviso ? ` (${aviso})` : ''}\n`);
+    process.stdout.write(`suite-times: no hay ejecuciones que leer en ${file}${o.since || o.until ? ' en ese rango' : ''}${aviso ? ` (${aviso})` : ''}\n`);
     return 3;
   }
   const filas = [...dias.values()].sort((a, b) => a.dia.localeCompare(b.dia)).map(({ motivos, ...d }) => ({
     ...d, enteras_por_motivo: [...motivos.values()].sort((a, b) => b.ms - a.ms || a.motivo.localeCompare(b.motivo)) }));
   if (o.json) { process.stdout.write(`${JSON.stringify({ log: file, desde: o.since || null, hasta: o.until || null, descartados, dias: filas }, null, 2)}\n`); return 0; }
   const horas = (ms) => `${(ms / 3600000).toFixed(1).replace('.', ',')} h`;
-  const out = [`corridas del portón por día, de ${file}`];
+  const out = [`ejecuciones del portón por día, de ${file}`];
   for (const d of filas) {
     out.push(d.dia);
     for (const modo of MODOS) {
       const v = d[claveDe(modo)];
-      out.push(`  ${modo.padEnd(11)} ${String(v.n).padStart(3)} corrida(s), ${horas(v.ms)}`);
+      out.push(`  ${modo.padEnd(11)} ${String(v.n).padStart(3)} ejecución(es), ${horas(v.ms)}`);
     }
     for (const m of d.enteras_por_motivo) out.push(`      ${String(m.n).padStart(3)} · ${horas(m.ms).padStart(7)} · ${m.motivo}`);
   }

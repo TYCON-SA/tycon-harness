@@ -3478,7 +3478,12 @@ function cmdRunCheck(argv) {
       // el 77 del turno se anota aparte: `registrarRunCheck` sólo sabe de verde y rojo, y está congelada
       if (esSinTurno(name, cmdArgv, exitCode)) registrarSinTurno(name, cmdArgv, marker, exitCode, Date.now() - t0);
       else if (marcaQueNoPisaSinTurno(name, exitCode)) process.exitCode = exitCode;
-      else registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+      else {
+        registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+        // la corrida de un repo hermano es parte de la corrida que la lanzó: un renglón aparte, con el mismo comando, le
+        // dice al informe de repeticiones que no la cuente como otra (`registrarRunCheck` está congelada)
+        if (process.env.TYCON_TEST_GATE_COMPANION === '1') appendLog('gates.log', { name: 'run-check-companion', check: name, cmd: cmdArgv.join(' ') });
+      }
     } finally {
       soltar();
     }
@@ -3622,8 +3627,6 @@ function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) 
     exit: exitCode,
     durationMs,
     storyId: marker ? marker.storyId : null,
-    // la corrida de un repo hermano es parte de la corrida que la lanzó: el informe de repeticiones no la cuenta aparte
-    ...(process.env.TYCON_TEST_GATE_COMPANION === '1' ? { companion: true } : {}),
     ...(exitCode === 0 ? {} : colaParaElRegistro(salida)),
   });
   process.stdout.write(`check ${name}: ${status} (${prov}, ${durationMs}ms)\n`);
