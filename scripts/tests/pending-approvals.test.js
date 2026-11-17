@@ -317,7 +317,9 @@ test('T23 el comando que se sugiere para aprobar es el que approve-pending acept
   assert.match(r.stderr, /approve-pending --id DEF-nuevo --repo \S+\n/);
   assert.doesNotMatch(r.stderr, /--for-session/);
   assert.doesNotMatch(SIGNATURES.find((x) => x.id === PA.FIRMA).command, /--for-session/);
-  assert.doesNotMatch(sg.blockMessage({ action: 'block', kind: 'pending-approvals', reason: 'x' }, { filePath: '/r/tasks/pending-approvals.jsonl' }), /--for-session/);
+  // el ejemplo del portón de escrituras es para la coordinadora, que aprueba el pendiente de otra sesión: ése sí lleva
+  // --for-session con la sesión que lo abrió, y la carpeta absoluta (ella corre desde la suya)
+  assert.match(sg.blockMessage({ action: 'block', kind: 'pending-approvals', reason: 'x' }, { filePath: '/r/tasks/pending-approvals.jsonl' }), /approve-pending --id <CÓDIGO> --repo <carpeta absoluta> --for-session <sesión que lo abrió>/);
 });
 
 // el servidor corre el pre-commit sobre el pedido entero y no tiene el registro del arnés de la máquina que firmó
