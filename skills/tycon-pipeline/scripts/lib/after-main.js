@@ -26,13 +26,15 @@
  *
  * Uso:
  *   node after-main.js snapshot <repo>                                  → imprime { head, tree } de la carpeta
- *   node after-main.js record <repo> <snapshot> <resumen> <exit> <salida> → anota lo medido si la corrida midió todo lo
- *        suyo y la carpeta no cambió mientras corría; si no, no deja nada
+ *   node after-main.js record <repo> <snapshot> <resumen> <exit> <salida> [<salida para lo guardado>] → anota lo medido
+ *        si la corrida midió todo lo suyo y la carpeta no cambió mientras corría; si no, no deja nada. Con el sexto
+ *        argumento escribe además la foto del arranque para lo guardado de la historia (`paraLoGuardado`), aunque la
+ *        carpeta haya cambiado, o `{ no }` con el motivo
  *   node after-main.js decide <repo> <medido> <snapshot> <salida>       → sale 0 y escribe lo tocado (la forma de
  *        touched-files.js) si sólo cambió main; sale 10 y dice por qué, si no
  *   node after-main.js snapshot-tree <privado> <público> <fuente> <commit> <equipo|-> <huella privado> <huella público>
  *        → la foto de los repos del árbol; sale 1 si no coincide con la huella de lo que se armó
- *   node after-main.js record-tree <árbol> <snapshot> <resumen> <exit> <salida>
+ *   node after-main.js record-tree <árbol> <snapshot> <resumen> <exit> <salida> [<salida para lo guardado>]
  *   node after-main.js decide-tree <medido> <snapshot> <salida>
  *
  * Casos: skills/tycon-pipeline/scripts/tests/test-gate-after-main.test.js
@@ -44,6 +46,8 @@ const { esPapeleoDeLaHuella } = require('./save-ok.js');
 
 const BASE = 'origin/main';
 const NO_APLICA = 10;
+const CAMBIO_DURANTE = 'la carpeta cambió mientras corría';
+const CAMBIO_DURANTE_ARBOL = 'una carpeta cambió mientras corría';
 const IDENTIDAD = { GIT_AUTHOR_NAME: 'portón', GIT_AUTHOR_EMAIL: 'gate@localhost', GIT_COMMITTER_NAME: 'portón', GIT_COMMITTER_EMAIL: 'gate@localhost' };
 
 function git(repo, args, env) {
@@ -99,18 +103,37 @@ const relativaAlRepo = (repo, ruta) => path.relative(real(repo), real(ruta)).spl
 function medido({ repo, inicio, resumen, exit }) {
   const r = lasQueFallaron({ repo, resumen, exit });
   if (r.no) return r;
-  if (arbolDeLaCarpeta(repo) !== inicio.tree) return { no: 'la carpeta cambió mientras corría' };
+  if (arbolDeLaCarpeta(repo) !== inicio.tree) return { no: CAMBIO_DURANTE };
   return { head: inicio.head, tree: inicio.tree, failed: r.failed };
+}
+
+/**
+ * La foto para lo guardado de la historia (failed-first.js): la del arranque, si la corrida midió todo lo suyo, aunque la
+ * carpeta haya cambiado mientras corría (`cambio_durante`): la corrida siguiente compara contra ella y vuelve a correr lo
+ * que lee lo cambiado durante la corrida. Lo de main (`medido`) sigue pidiendo la carpeta quieta. `{ no }` si no midió.
+ * `cambio` dice si la carpeta cambió; sin poder mirarla, cuenta como cambiada (la foto del arranque nunca da de más).
+ */
+function paraLoGuardado({ inicio, resumen, exit, cambio }) {
+  const r = midioTodo({ resumen, exit });
+  if (r) return { no: r };
+  return { ...inicio, cambio_durante: cambio };
+}
+
+/** null si la corrida midió todo lo suyo (salió verde o roja con nombre, sin ausentes ni sin medir); si no, el motivo. */
+function midioTodo({ resumen, exit }) {
+  if (exit !== 0 && exit !== 1) return `la corrida salió ${exit}`;
+  if (!resumen || resumen.no_medido) return 'la corrida no midió';
+  const pendientes = ['ausentes', 'unmeasured_suites'].find((k) => !Array.isArray(resumen[k]) || resumen[k].length);
+  if (pendientes) return `el resumen trae ${pendientes}`;
+  if (exit === 1 && !(Array.isArray(resumen.fallas) && resumen.fallas.length)) return 'salió en rojo sin una suite con nombre';
+  return null;
 }
 
 /** `{ failed }`, las rutas relativas a `repo` de lo que falló, o `{ no }` si la corrida no dice qué midió. */
 function lasQueFallaron({ repo, resumen, exit }) {
-  if (exit !== 0 && exit !== 1) return { no: `la corrida salió ${exit}` };
-  if (!resumen || resumen.no_medido) return { no: 'la corrida no midió' };
-  const pendientes = ['ausentes', 'unmeasured_suites'].find((k) => !Array.isArray(resumen[k]) || resumen[k].length);
-  if (pendientes) return { no: `el resumen trae ${pendientes}` };
+  const m = midioTodo({ resumen, exit });
+  if (m) return { no: m };
   const fallas = Array.isArray(resumen.fallas) ? resumen.fallas : [];
-  if (exit === 1 && !fallas.length) return { no: 'salió en rojo sin una suite con nombre' };
   const heredadas = (resumen.inherited && Array.isArray(resumen.inherited.suites)) ? resumen.inherited.suites : [];
   const todas = [...fallas, ...heredadas, ...(resumen.suites || []), ...(resumen.deferred_suites || []).map((d) => ({ ruta: d && d.suite }))];
   if (todas.some((s) => s && s.ruta && relativaAlRepo(repo, s.ruta).startsWith('../'))) return { no: 'hay suites fuera del repo' };
@@ -178,7 +201,7 @@ function medidoDelArbol({ arbol, inicio, resumen, exit }) {
   if (r.no) return r;
   const ahora = fotoDelArbol(inicio.origen);
   const igual = (k) => (ahora[k] && ahora[k].tree) === (inicio[k] && inicio[k].tree);
-  if (!['privado', 'publico', 'equipo'].every(igual)) return { no: 'una carpeta cambió mientras corría' };
+  if (!['privado', 'publico', 'equipo'].every(igual)) return { no: CAMBIO_DURANTE_ARBOL };
   return { ...inicio, failed: r.failed };
 }
 
@@ -259,14 +282,30 @@ function anotar(m, salida) {
   return 0;
 }
 
+/**
+ * Escribe la foto para lo guardado (o `{ no }` con el motivo, que el portón lee para decirlo). `m` es lo que dio lo de
+ * main: si ya vio la carpeta cambiada no se vuelve a mirar; si no la llegó a mirar, `otraVez` la mira.
+ */
+function anotarParaLoGuardado({ m, cambioVisto, otraVez, inicio, resumen, exit }, salida) {
+  if (!salida) return;
+  let cambio = false;
+  if (m.no === cambioVisto) cambio = true;
+  else if (m.no) { try { cambio = otraVez(); } catch (_) { cambio = true; } }
+  fs.writeFileSync(salida, `${JSON.stringify(paraLoGuardado({ inicio, resumen, exit, cambio }))}\n`);
+}
+
 function main(argv) {
   const [cmd, repo, ...resto] = argv;
   const uso = 'uso: after-main.js snapshot <repo> · record <repo> <snapshot> <resumen> <exit> <salida> · decide <repo> <medido> <snapshot> <salida> · snapshot-tree <privado> <público> <fuente> <commit> <equipo|-> <huella privado> <huella público> · record-tree <árbol> <snapshot> <resumen> <exit> <salida> · decide-tree <medido> <snapshot> <salida>';
   if (!repo) { console.error(uso); return 2; }
   if (cmd === 'snapshot') { process.stdout.write(`${JSON.stringify(foto(repo))}\n`); return 0; }
   if (cmd === 'record') {
-    const [inicioF, resumenF, exit, salida] = resto;
-    return anotar(medido({ repo, inicio: leer(inicioF), resumen: leer(resumenF), exit: Number(exit) }), salida);
+    // record <repo> <snapshot> <resumen> <exit> <salida> [<salida para lo guardado>]
+    const [inicioF, resumenF, exit, salida, guardado] = resto;
+    const inicio = leer(inicioF); const resumen = leer(resumenF);
+    const m = medido({ repo, inicio, resumen, exit: Number(exit) });
+    anotarParaLoGuardado({ m, cambioVisto: CAMBIO_DURANTE, otraVez: () => arbolDeLaCarpeta(repo) !== inicio.tree, inicio, resumen, exit: Number(exit) }, guardado);
+    return anotar(m, salida);
   }
   if (cmd === 'decide') {
     const [medidoF, inicioF, salida] = resto;
@@ -286,8 +325,13 @@ function main(argv) {
     return 0;
   }
   if (cmd === 'record-tree') {
-    const [inicioF, resumenF, exit, salida] = resto;
-    return anotar(medidoDelArbol({ arbol: repo, inicio: leer(inicioF), resumen: leer(resumenF), exit: Number(exit) }), salida);
+    // record-tree <árbol> <snapshot> <resumen> <exit> <salida> [<salida para lo guardado>]
+    const [inicioF, resumenF, exit, salida, guardado] = resto;
+    const inicio = leer(inicioF); const resumen = leer(resumenF);
+    const m = medidoDelArbol({ arbol: repo, inicio, resumen, exit: Number(exit) });
+    const otraVez = () => { const a = fotoDelArbol(inicio.origen); return !['privado', 'publico', 'equipo'].every((k) => (a[k] && a[k].tree) === (inicio[k] && inicio[k].tree)); };
+    anotarParaLoGuardado({ m, cambioVisto: CAMBIO_DURANTE_ARBOL, otraVez, inicio, resumen, exit: Number(exit) }, guardado);
+    return anotar(m, salida);
   }
   if (cmd === 'decide-tree') {
     // acá el primer argumento es el archivo de lo medido, no un repo: los repos vienen en la foto
@@ -306,4 +350,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { foto, medido, decidir, fotoDelArbol, medidoDelArbol, decidirDelArbol, cambiosDelArbol, huellaDeFoto, sinLaConstancia, NO_APLICA };
+module.exports = { foto, medido, paraLoGuardado, decidir, fotoDelArbol, medidoDelArbol, decidirDelArbol, cambiosDelArbol, huellaDeFoto, sinLaConstancia, NO_APLICA };

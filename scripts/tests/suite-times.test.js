@@ -335,3 +335,89 @@ test('T8 SlowSinRegistroSale3_RunsLista — sin datos sale 3 con el motivo; runs
   assert.equal(cli('runs', '--from', f, '--last', '0').status, 2);
   assert.equal(cli('slow', '--from', f, '--top', '0').status, 2);
 });
+
+// ── Las horas de repetición por día, desde gates.log ──────────────────────────────────────────────────────────────────
+const local = (dia, hora, min = 0) => new Date(2026, 10, dia, hora, min).toISOString();
+function gatesLog(lineas) {
+  const f = path.join(tmp('suite-times-gates-'), 'gates.log');
+  fs.writeFileSync(f, `${lineas.map((x) => JSON.stringify(x)).join('\n')}\n`);
+  return f;
+}
+const run = (ts, sessionId, story, modo, motivo, min) => ({ ts, sessionId, repoPath: '/r', name: 'test-gate-run', story, modo, motivo,
+  origen_at: null, suites: 3, duracion_ms: min * 60000, exit: 0, guardo: 'verde', guardo_motivo: null });
+const check = (ts, sessionId, storyId, cmd, min, exit = 0) => ({ ts, sessionId, repoPath: '/r', check: 'tests', status: exit ? `red:exit=${exit}` : 'green',
+  provenance: 'test-gate', cmd, exit, durationMs: min * 60000, storyId });
+const RSJ = 'node /x/lib/run-suites-json.js';
+
+test('T11 Repeats_FromRunLines_HoursByModeAndMotive @story-8.297 @ac-10 — por día, corridas y horas de cada modo, y las enteras por motivo', () => {
+  // 🔴 mutación: agrupar por hora UTC corre al día siguiente una corrida de la noche
+  const f = gatesLog([
+    run(local(10, 9), 's1', '8.1', 'primera', 'no hay un verde guardado de esta historia en esta sesión', 30),
+    run(local(10, 11), 's1', '8.1', 'entera', 'cambió un control (scripts/ci/x.js)', 20),
+    run(local(10, 12), 's1', '8.1', 'acotada', 'la carpeta cambió desde la completa verde', 5),
+    run(local(10, 23, 50), 's1', '8.1', 'sin correr', 'la carpeta es la que midió la completa verde', 0),
+    run(local(11, 9), 's2', '8.2', 'entera', 'lo guardado es de otra historia (8.1)', 10),
+    run(local(11, 10), 's2', '8.2', 'entera', 'lo guardado es de otra historia (8.1)', 15),
+    { ts: local(11, 10, 30), sessionId: 's2', name: 'tests-no-turn', status: 'blocked' },
+  ]);
+  const r = cli('repeats', '--log', f, '--json');
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  const j = JSON.parse(r.stdout);
+  assert.deepEqual(j.dias.map((d) => d.dia), ['2026-11-10', '2026-11-11']);
+  const [d1, d2] = j.dias;
+  assert.deepEqual([d1.primera, d1.entera, d1.acotada, d1.sin_correr], [{ n: 1, ms: 1800000 }, { n: 1, ms: 1200000 }, { n: 1, ms: 300000 }, { n: 1, ms: 0 }]);
+  assert.deepEqual(d2.entera, { n: 2, ms: 1500000 });
+  assert.deepEqual(d2.enteras_por_motivo, [{ motivo: 'lo guardado es de otra historia (8.1)', n: 2, ms: 1500000 }]);
+  const texto = cli('repeats', '--log', f, '--since', '2026-11-11', '--until', '2026-11-11');
+  assert.equal(texto.status, 0, texto.stderr);
+  assert.match(texto.stdout, /2026-11-11/);
+  assert.doesNotMatch(texto.stdout, /2026-11-10/);
+  assert.match(texto.stdout, /entera\D+2 corrida\(s\), 0,4 h/);
+  assert.match(texto.stdout, /lo guardado es de otra historia \(8\.1\)/);
+});
+
+test('T12 Repeats_OldDays_FromCheckCommand_NoMotive @story-8.297 @ac-10 — los días de antes se clasifican por el comando, sin achicar', () => {
+  // 🔴 mutación: contar la segunda completa de la misma historia y sesión como «primera» achica las repeticiones
+  const T = '/var/folders/T';
+  const f = gatesLog([
+    check(local(12, 8), 's9', '7.1', `node /x/lib/failed-first.js merge --dir /e/red-full/s9 --out ${T}/suites.json`, 0),
+    check(local(12, 9), 's9', '7.1', `${RSJ} /r ${T}/suites.json --touched ${T}/touched-repetidas.json --coverage ${T}/cov --run-check tests`, 4),
+    check(local(12, 9, 1), 's9', '7.1', `node /x/lib/failed-first.js merge --dir /e/green-full/s9 --new ${T}/suites-nuevas.json --out ${T}/suites.json`, 0),
+    check(local(12, 10), 's8', '7.2', `${RSJ} ${T}/arbol-privado-AB/arbol ${T}/suites.json --touched ${T}/touched.json --skills ${T}/arbol-privado-AB/arbol/skills --scoped-by-repo la CI --coverage ${T}/cov --run-check tests`, 6),
+    check(local(12, 11), 's1', '7.3', `${RSJ} /r ${T}/suites.json --touched ${T}/touched.json --only-touched --coverage ${T}/cov --run-check tests`, 30),
+    check(local(12, 12), 's1', '7.3', `${RSJ} /r ${T}/suites.json --touched ${T}/touched.json --only-touched --coverage ${T}/cov --run-check tests`, 20, 1),
+    check(local(12, 13), 's1', '7.3', `${RSJ} /r ${T}/suites.json --touched ${T}/touched.json --only-touched --coverage ${T}/cov --run-check tests`, 0, 77),
+    check(local(12, 14), 's1', '7.3', `${RSJ} /r ${T}/suites.json --suite tests/a.test.sh --run-check tests`, 3),
+  ]);
+  const r = cli('repeats', '--log', f, '--json');
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  const [d] = JSON.parse(r.stdout).dias;
+  assert.deepEqual([d.sin_correr.n, d.acotada.n, d.primera.n, d.entera.n], [1, 2, 1, 1]);
+  assert.deepEqual(d.enteras_por_motivo, [{ motivo: 'sin motivo: de antes del registro', n: 1, ms: 1200000 }]);
+  // la corrida con su renglón test-gate-run no se cuenta dos veces por su check tests
+  const g = gatesLog([
+    check(local(13, 9, 29), 's5', '7.5', `${RSJ} /r ${T}/suites.json --touched ${T}/touched.json --coverage ${T}/cov --run-check tests`, 29),
+    run(local(13, 9, 30), 's5', '7.5', 'primera', 'no hay un verde guardado de esta historia en esta sesión', 30),
+  ]);
+  const [e] = JSON.parse(cli('repeats', '--log', g, '--json').stdout).dias;
+  assert.deepEqual([e.primera.n, e.entera.n], [1, 0]);
+});
+
+test('T13 Repeats_NoLogOrNoRuns_Exit3 @story-8.297 @ac-11 — sin registro, ilegible o sin corridas en el rango: sale 3 y lo dice', (t) => {
+  // 🔴 mutación: imprimir «0 h» y salir 0 haría pasar «sin datos» por «sin repeticiones»
+  const dir = tmp('suite-times-sin-');
+  const ilegible = path.join(dir, 'gates.log');
+  fs.writeFileSync(ilegible, `${JSON.stringify(run(local(10, 9), 's1', '8.1', 'entera', 'x', 5))}\n`);
+  fs.chmodSync(ilegible, 0o000);
+  t.after(() => fs.chmodSync(ilegible, 0o644));
+  const fuera = gatesLog([run(local(10, 9), 's1', '8.1', 'entera', 'x', 5)]);
+  for (const args of [['--log', path.join(dir, 'no-existe.log')], ['--log', ilegible], ['--log', fuera, '--since', '2026-11-20']]) {
+    const r = cli('repeats', ...args);
+    assert.equal(r.status, 3, `${args.join(' ')}: ${r.stdout}${r.stderr}`);
+    assert.match(`${r.stdout}${r.stderr}`, /no hay corridas que leer/);
+  }
+  // sin --log lee el de la carpeta de estado: con una casa vacía, tampoco hay
+  const home = tmp('suite-times-home-');
+  const r = spawnSync(process.execPath, [CLI, 'repeats'], { encoding: 'utf8', env: envWith({ HOME: home, USERPROFILE: home }) });
+  assert.equal(r.status, 3, `${r.stdout}${r.stderr}`);
+});

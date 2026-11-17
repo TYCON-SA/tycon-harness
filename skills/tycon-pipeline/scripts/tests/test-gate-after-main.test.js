@@ -386,3 +386,30 @@ test('AmbienteHeredado_NoDecideQuienCorreLaCompleta — una variable de afuera n
   assert.equal(r.status, 0, r.out);
   assert.equal(artefacto(l).scoped_by_repo.full_suite_by, CI);
 });
+
+test('T7 AfterMain_FolderChangedDuringRun_StillNotRecorded @story-8.297 @ac-7 — la foto del arranque no sirve para lo que trajo main', (t) => {
+  // 🔴 mutación: anotar lo medido con la foto del arranque (como lo guardado de la historia) acota por main una carpeta
+  // que cambió mientras corría
+  const l = lab(t);
+  cambioDeLaHistoria(l);
+  // a lee lib/acme.js (corre con la historia) y, con TG_TOUCH, escribe lib/otro.js mientras corre
+  escribir(l.repo, 'scripts/tests/a.test.sh', `#!/usr/bin/env bash
+# prueba lib/acme.js
+echo "a" >> "$TG_STATE/corridas"
+[ -n "\${TG_TOUCH:-}" ] && echo "// durante" >> "$TG_TOUCH"
+true
+`);
+  process.env.TG_TOUCH = path.join(l.repo, 'lib', 'otro.js');
+  t.after(() => { delete process.env.TG_TOUCH; });
+  let r = puerta(l);
+  delete process.env.TG_TOUCH;
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /no anoto lo medido: la carpeta cambió mientras corría/);
+  assert.ok(!fs.existsSync(medido(l)), 'no quedó lo medido para main');
+  borrarCorridas(l);
+  git(l.repo, 'add', '-A');
+  git(l.repo, 'commit', '-q', '-m', 'la historia');
+  git(l.repo, 'merge', '-q', '--no-edit', mainAvanza(l, 'lib/nuevo.js'));
+  r = puerta(l);
+  assert.doesNotMatch(r.out, SOLO_MAIN, r.out);
+});

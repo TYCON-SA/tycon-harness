@@ -12,7 +12,8 @@
  *       la lista no se deja leer (y lo dice).
  *       node failed-first.js decide --dir --hash --repo --tree --base --trim → imprime la decisión (abajo, «Repetir
  *       solas cierra»); merge --dir --out [--new] [--changed] [--coverage] → arma el resumen juntado, sale 0 verde o 1
- *       rojo (una falla, una ausente o algo sin medir, como en una completa).
+ *       rojo (una falla, una ausente o algo sin medir, como en una completa); can-save <resumen juntado> → sale 0 si el
+ *       cierre en verde se puede guardar como el nuevo verde, 1 con el motivo si no.
  *
  * Casos: skills/tycon-pipeline/scripts/tests/test-gate-failed-first.test.js
  */
@@ -86,24 +87,40 @@ function redHash(dir) {
 }
 
 /**
- * Guarda lo que midió una completa. `origen`: «roja» (para cerrar repitiendo solas sus rojas) o «verde» (para correr
- * después sólo lo cambiado). `forgivenFile`: el resumen
+ * Guarda lo que midió una completa, o el resumen juntado de un cierre en verde. `origen`: «roja» (para cerrar repitiendo
+ * solas sus rojas) o «verde» (para correr después sólo lo cambiado). `forgivenFile`: el resumen
  * después del juez de heredados, si lo hubo; `summaryFile` es el de antes, con esas suites rojas: las que el juez perdonó
  * quedan anotadas en `heredadas` y se vuelven a juzgar al cerrar con lo guardado (con la foto del nocturno de ese día).
+ * `origenAt`: la hora de la completa de origen de un cierre (sin ella, la de esta corrida).
+ * Escribe en una carpeta nueva y la cambia por la anterior recién al final: si algo falla, lo de antes queda entero y tira.
  */
-function saveRed({ dir, summaryFile, lcovFile, measuredFile, base, recorte, storyId = null, origen = 'roja', forgivenFile = null, at = new Date().toISOString() }) {
+function saveRed({ dir, summaryFile, lcovFile, measuredFile, base, recorte, storyId = null, origen = 'roja', forgivenFile = null, origenAt = null, at = new Date().toISOString() }) {
   let heredadas = [];
   if (forgivenFile) {
     const despues = new Set((leerJson(forgivenFile).fallas || []).map(rutaDeFalla).filter(Boolean));
     heredadas = (leerJson(summaryFile).fallas || []).map(rutaDeFalla).filter((r) => r && !despues.has(r));
   }
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.mkdirSync(dir, { recursive: true });
-  fs.copyFileSync(summaryFile, path.join(dir, 'resumen.json'));
-  fs.copyFileSync(measuredFile, path.join(dir, 'medido.json'));
-  if (lcovFile && fs.existsSync(lcovFile)) fs.copyFileSync(lcovFile, path.join(dir, 'lcov.info'));
-  fs.writeFileSync(path.join(dir, 'meta.json'), `${JSON.stringify({ base: base || null, recorte: recorte || '', at, origen, storyId: storyId || null, heredadas })}\n`);
-  fs.writeFileSync(path.join(dir, 'repetidas.json'), '{}\n');
+  const nueva = `${dir}.nuevo-${process.pid}`;
+  const vieja = `${dir}.viejo-${process.pid}`;
+  fs.rmSync(nueva, { recursive: true, force: true });
+  try {
+    fs.mkdirSync(nueva, { recursive: true });
+    fs.copyFileSync(summaryFile, path.join(nueva, 'resumen.json'));
+    fs.copyFileSync(measuredFile, path.join(nueva, 'medido.json'));
+    if (lcovFile && fs.existsSync(lcovFile)) fs.copyFileSync(lcovFile, path.join(nueva, 'lcov.info'));
+    fs.writeFileSync(path.join(nueva, 'meta.json'), `${JSON.stringify({ base: base || null, recorte: recorte || '', at, origen_at: origenAt || at, origen, storyId: storyId || null, heredadas })}\n`);
+    fs.writeFileSync(path.join(nueva, 'repetidas.json'), '{}\n');
+    const habia = fs.existsSync(dir);
+    if (habia) fs.renameSync(dir, vieja);
+    try { fs.renameSync(nueva, dir); } catch (e) {
+      if (habia) fs.renameSync(vieja, dir);
+      throw e;
+    }
+    if (habia) fs.rmSync(vieja, { recursive: true, force: true });
+  } catch (e) {
+    fs.rmSync(nueva, { recursive: true, force: true });
+    throw e;
+  }
   return redHash(dir);
 }
 const saveGreen = (opts) => saveRed({ ...opts, origen: 'verde' });
@@ -366,9 +383,11 @@ function decide({ dir, hash, repo, tree, base, recorte, storyId = null }) {
   // su clave de la lista de suites (`rerun`), aparte de los archivos: no es una ruta del repo.
   const rerun = Object.entries(rep).filter(([, x]) => x.tree !== ahora).map(([r]) => r);
   const at = meta.at;
+  // la completa de origen: la de lo guardado, o la que dio origen al cierre que se guardó
+  const origenAt = meta.origen_at || meta.at;
   const origen = verde ? 'verde' : 'roja';
-  if (igual && !rerun.length) return { mode: 'same', at, origen, repetidas: Object.keys(rep).length };
-  return { mode: 'changed', at, origen, repetidas: Object.keys(rep).length, files, rerun };
+  if (igual && !rerun.length) return { mode: 'same', at, origen_at: origenAt, origen, repetidas: Object.keys(rep).length };
+  return { mode: 'changed', at, origen_at: origenAt, origen, repetidas: Object.keys(rep).length, files, rerun };
 }
 
 // La misma suite en dos corridas: por su entrada de la lista de suites. La ruta del resumen es absoluta, y en el árbol
@@ -402,7 +421,7 @@ function merge({ dir, newSummary = null, covDir = null, changed = [] }) {
   const suites = [...porRuta.values()];
   const origen = meta.origen === 'verde' ? 'verde' : 'roja';
   const out = { ...resumen, ...extra, suites, fallas, corridas: suites.length, verdes: suites.filter((s) => s.exit === 0).length,
-    cerrada: { completa: meta.at, repetidas: Object.keys(rep).length, nuevas, origen, cambiados: changed } };
+    cerrada: { completa: meta.at, origen_at: meta.origen_at || meta.at, repetidas: Object.keys(rep).length, nuevas, origen, cambiados: changed } };
   // lo guardado verde es de antes del perdón: el de las heredadas lo vuelve a dar el juez al final del portón, con la foto
   // del nocturno de ahora
   if (origen === 'verde') delete out.inherited;
@@ -424,9 +443,25 @@ function merge({ dir, newSummary = null, covDir = null, changed = [] }) {
 /** ¿El resumen juntado es rojo? Como en una completa: una falla, una ausente o algo sin medir. */
 const mergedRed = (out) => out.fallas.length > 0 || (out.ausentes || []).length > 0 || Boolean(out.no_medido);
 
+/**
+ * ¿Se puede guardar como el nuevo verde un cierre en verde? `juntado` es su resumen juntado de antes del juez de
+ * heredados de esta corrida. Devuelve null si se puede, o el motivo. Una suite que ya venía perdonada en lo guardado (una
+ * roja de origen guardada después de un perdón parcial) no tiene el resumen de antes de ese perdón: pasarla a verde
+ * haría que nadie la vuelva a juzgar con la foto del nocturno de otro día.
+ */
+function motivoParaNoGuardar(juntado) {
+  if (!juntado || !Array.isArray(juntado.suites)) return 'no pude leer el resumen juntado';
+  if (juntado.no_medido) return `no midió todo lo suyo (${juntado.no_medido})`;
+  if ((juntado.ausentes || []).length) return `${juntado.ausentes.length} suite(s) ausente(s)`;
+  if ((juntado.unmeasured_suites || []).length) return `${juntado.unmeasured_suites.length} suite(s) sin medir`;
+  const perdonadas = juntado.inherited && Array.isArray(juntado.inherited.suites) ? juntado.inherited.suites : [];
+  if (perdonadas.length) return 'lo guardado trae rojas perdonadas con la foto de otro día: no lo paso a verde';
+  return null;
+}
+
 const hhmm = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '??:??' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
-module.exports = { entries, find, fromSummary, prune, redHash, saveRed, saveGreen, addRepeat, rewriteResult, decide, merge, mergedRed, reEligible, dropRecords, changedFiles, claseQuePideLaCompleta, hhmm, RED_FILES };
+module.exports = { entries, find, fromSummary, prune, redHash, saveRed, saveGreen, addRepeat, rewriteResult, decide, merge, mergedRed, motivoParaNoGuardar, reEligible, dropRecords, changedFiles, claseQuePideLaCompleta, hhmm, RED_FILES };
 
 if (require.main === module) {
   const [cmd, suitesJson, ruta] = process.argv.slice(2);
@@ -462,8 +497,15 @@ if (require.main === module) {
       process.exit(2);
     }
   }
+  if (cmd === 'can-save') {
+    // can-save <resumen juntado> → 0 si el cierre se puede guardar como verde; 1 e imprime el motivo si no
+    let motivo;
+    try { motivo = motivoParaNoGuardar(leerJson(suitesJson)); } catch (e) { motivo = `no pude leer el resumen juntado (${e.message})`; }
+    if (motivo) process.stdout.write(motivo);
+    process.exit(motivo ? 1 : 0);
+  }
   if (cmd !== 'has' || !suitesJson || !ruta) {
-    console.error('uso: failed-first.js has <suites.json> <ruta> · decide … · merge …');
+    console.error('uso: failed-first.js has <suites.json> <ruta> · decide … · merge … · can-save <resumen>');
     process.exit(2);
   }
   try {

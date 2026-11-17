@@ -697,8 +697,9 @@ function cmdSet(payloadJson) {
       sessionModel, codexSession,
       // las suites que fallaron son de la corrida: heredadas, la primera corrida completa de la story nueva se negaría
       // (76) por suites que sólo rompió la anterior. Lo guardado de una completa verde, igual: la nueva compararía su
-      // carpeta con una completa de otra historia
-      testsFailed, testsGreenFull,
+      // carpeta con una completa de otra historia. La nota de la última corrida, igual: la primera de la story nueva
+      // saldría «entera», con el motivo de la vieja
+      testsFailed, testsGreenFull, testsSavedNote,
       // la tanda es de la historia: heredada, la matriz de la nueva mediría una tanda que no es suya
       batch, batchSetAt,
       ...carryOver
@@ -2968,20 +2969,27 @@ function cmdMarkTestsNotScoped(motivo) {
  *     carpeta en `red-full/` y su hash), para que repetir solas las rojas cierre sin otra completa (lib/failed-first.js);
  *   · `save-green`, `green-full` y `drop-green`: lo mismo para la última completa verde (`testsGreenFull`, carpeta
  *     `green-full/`), para que la próxima corrida corra sólo lo que cambió desde ella. Las dos guardan
- *     `--story-id`; `save-green` recibe además `--after-inherited <resumen>`, el de después del juez de heredados.
- * `record`, `clear`, `save-*` y `drop-*` escriben lo que mide la puerta: sólo los llama test-gate.sh (TYCON_TEST_GATE=1).
- * Sin corrida abierta: sale 0, no escribe nada y lo dice.
+ *     `--story-id`; `save-green` recibe además `--after-inherited <resumen>`, el de después del juez de heredados, y las
+ *     dos `--origin-at <ts>`, la hora de la completa de origen de un cierre. Si no pueden guardar salen 1 y lo de antes
+ *     queda como estaba;
+ *   · `run-end --mode <m> --reason <t> --exit <n> --saved verde|rojo|no [--saved-reason <t>] [--origin-at <ts>]
+ *     [--suites <n>] [--duration-ms <n>]`: al final de cada corrida del portón de arriba que terminó en verde o en rojo,
+ *     anota en el marcador la nota de esa corrida para su repo (`testsSavedNote`, una entrada por repo, con la historia)
+ *     y agrega a gates.log el renglón `test-gate-run`. Sin corrida abierta, sólo el renglón.
+ * `record`, `clear`, `save-*`, `drop-*` y `run-end` escriben lo que mide la puerta: sólo los llama test-gate.sh
+ * (TYCON_TEST_GATE=1). Sin corrida abierta: sale 0, no escribe nada en el marcador y lo dice.
  */
 const TESTS_FAILED_PENDING = 76;
 
 function cmdTestsFailed(argv) {
   const accion = argv[0];
   const opt = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
-  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> [--full-ts <ts>] | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] [--result <f> [--story-id <id>] [--sealed <f>] [--inherited] [--full-suite-by <quién>]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red|save-green --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] [--story-id <id>] [--after-inherited <f>] --repo <r> | red-full|green-full --repo <r> | drop-red|drop-green --repo <r>';
-  if (!['record', 'clear', 'pending', 'save-red', 'red-full', 'drop-red', 'save-green', 'green-full', 'drop-green'].includes(accion) || !opt('--repo')
+  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> [--full-ts <ts>] | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] [--result <f> [--story-id <id>] [--sealed <f>] [--inherited] [--full-suite-by <quién>]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red|save-green --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] [--story-id <id>] [--after-inherited <f>] [--origin-at <ts>] --repo <r> | red-full|green-full --repo <r> | drop-red|drop-green --repo <r> | run-end --repo <r> --mode <m> --reason <t> --exit <n> --saved verde|rojo|no [--saved-reason <t>] [--origin-at <ts>] [--suites <n>] [--duration-ms <n>]';
+  if (!['record', 'clear', 'pending', 'save-red', 'red-full', 'drop-red', 'save-green', 'green-full', 'drop-green', 'run-end'].includes(accion) || !opt('--repo')
     || (accion === 'record' && !opt('--summary')) || (accion === 'clear' && !opt('--path'))
     || (accion === 'pending' && (!opt('--suites') || !opt('--gate')))
-    || ((accion === 'save-red' || accion === 'save-green') && (!opt('--summary') || !opt('--measured')))) {
+    || ((accion === 'save-red' || accion === 'save-green') && (!opt('--summary') || !opt('--measured')))
+    || (accion === 'run-end' && (!opt('--mode') || !opt('--reason') || !opt('--exit') || !['verde', 'rojo', 'no'].includes(opt('--saved'))))) {
     console.error(uso);
     process.exit(2);
   }
@@ -2991,6 +2999,24 @@ function cmdTestsFailed(argv) {
   }
   const ff = require('./lib/failed-first.js');
   const marker = readMarker();
+  if (accion === 'run-end') {
+    // La nota de esta corrida (el portón la lee para decir «primera» y por qué no guardó la última) y su renglón en
+    // gates.log (lo lee `suite-times.js repeats`). Sin corrida abierta, sólo el renglón: la medición no depende del marcador.
+    const repoReal = (() => { try { return fs.realpathSync(opt('--repo')); } catch { return path.resolve(opt('--repo')); } })();
+    const num = (k) => { const v = Number(opt(k)); return opt(k) !== null && Number.isFinite(v) ? v : null; };
+    const guardo = opt('--saved');
+    const motivoNo = guardo === 'no' ? (opt('--saved-reason') || 'sin motivo') : null;
+    const story = marker ? (marker.storyId || null) : null;
+    if (marker) {
+      const notas = (Array.isArray(marker.testsSavedNote) ? marker.testsSavedNote : []).filter((x) => x && x.repo !== repoReal);
+      marker.testsSavedNote = [...notas, { repo: repoReal, storyId: story, at: nowIso(), guardo, motivo: motivoNo }];
+      marker.lastTouch = nowIso();
+      writeMarker(marker);
+    }
+    appendLog('gates.log', { name: 'test-gate-run', story, modo: opt('--mode'), motivo: opt('--reason'), origen_at: opt('--origin-at'),
+      suites: num('--suites'), duracion_ms: num('--duration-ms'), exit: num('--exit'), guardo, guardo_motivo: motivoNo });
+    return;
+  }
   if (!marker) {
     // red-full y green-full los lee test-gate.sh como JSON: sin corrida, no hay nada guardado
     if (accion === 'red-full' || accion === 'green-full') process.stdout.write('null\n');
@@ -3040,10 +3066,11 @@ function cmdTestsFailed(argv) {
     let hash;
     try {
       hash = ff.saveGreen({ dir, summaryFile: opt('--summary'), lcovFile: opt('--coverage-file'), measuredFile: opt('--measured'), base: opt('--base'),
-        recorte: opt('--trim') || '', storyId: opt('--story-id') || marker.storyId || null, forgivenFile: opt('--after-inherited') });
+        recorte: opt('--trim') || '', storyId: opt('--story-id') || marker.storyId || null, forgivenFile: opt('--after-inherited'), origenAt: opt('--origin-at') });
     } catch (e) {
-      process.stderr.write(`[test-gate] ⚠️  no pude guardar la completa verde (${e.message}): la próxima corrida corre la completa entera\n`);
-      return;
+      // lo de antes queda entero (saveGreen escribe al lado y cambia al final): la próxima corrida compara contra eso
+      process.stderr.write(`[test-gate] ⚠️  no pude guardar este verde (${e.message}): queda lo guardado de antes\n`);
+      process.exit(1);
     }
     guardar([...otras, { repo, dir, hash, at: nowIso() }]);
     marker.lastTouch = nowIso();
@@ -3079,10 +3106,10 @@ function cmdTestsFailed(argv) {
     const dir = path.join(STATE_DIR, 'red-full', `${marker.sessionId || 'sesion'}-${require('crypto').createHash('sha1').update(repo).digest('hex').slice(0, 12)}`);
     let hash;
     try {
-      hash = ff.saveRed({ dir, summaryFile: opt('--summary'), lcovFile: opt('--coverage-file'), measuredFile: opt('--measured'), base: opt('--base'), recorte: opt('--trim') || '', storyId: opt('--story-id') || marker.storyId || null });
+      hash = ff.saveRed({ dir, summaryFile: opt('--summary'), lcovFile: opt('--coverage-file'), measuredFile: opt('--measured'), base: opt('--base'), recorte: opt('--trim') || '', storyId: opt('--story-id') || marker.storyId || null, origenAt: opt('--origin-at') });
     } catch (e) {
       process.stderr.write(`[test-gate] ⚠️  no pude guardar la completa roja (${e.message}): repetir solas no va a cerrar «Correr las pruebas»\n`);
-      return;
+      process.exit(1);
     }
     guardarRojas([...otrasRojas, { repo, dir, hash, at: nowIso() }]);
     marker.lastTouch = nowIso();
