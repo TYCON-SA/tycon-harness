@@ -2893,3 +2893,175 @@ test('Aviso_SeparaLasDeLaCoordinadoraDeLasDelDueno (T21) — @story-8.295 @ac-7 
   assert.doesNotMatch(txt, /AskUserQuestion/);
   assert.match(txt, /avisale a Alma/);
 });
+
+// ── Nombres largos y respuestas tomadas (8.290) ─────────────────────────────────────────────────────────────────────
+// close y stop con un nombre largo que no pudieron confirmar, la lista de recién abiertas con nombres que empiezan igual,
+// y el archivo de respuestas que dejó tomado un proceso que ya no vive.
+
+test('T1 CloseStop_LongNameUnreadableFile_SaysCouldNotRead @story-8.290 @ac-1 @ac-2: sin poder leer el archivo de la sesión dice «no pude leer» con la ruta; legible y con otro nombre, «No encuentro»', () => {
+  // (a) fullSessionName directo: la carpeta y el archivo que no se pueden leer dan el problema con la ruta, no null
+  const a = toy();
+  const dir = path.join(a.home, '.claude', 'sessions');
+  session(a, 'sid-a', 'Alma');
+  assert.strictEqual(C.fullSessionName(a.home, 'sid-a'), 'Alma');
+  assert.strictEqual(C.fullSessionName(a.home, 'sid-nadie'), null, 'legible y sin la sesión: no está');
+  const file = path.join(dir, 'sid-a.json');
+  fs.chmodSync(file, 0o000);
+  try {
+    const p = C.fullSessionName(a.home, 'sid-a');
+    assert.ok(p && typeof p.problem === 'string', `devuelve el problema: ${JSON.stringify(p)}`);
+    assert.ok(p.problem.includes(file), p.problem);
+  } finally { fs.chmodSync(file, 0o644); }
+  fs.chmodSync(dir, 0o000);
+  try {
+    const p = C.fullSessionName(a.home, 'sid-a');
+    assert.ok(p && typeof p.problem === 'string' && p.problem.includes(dir), JSON.stringify(p));
+  } finally { fs.chmodSync(dir, 0o755); }
+  // (b) el archivo se vuelve ilegible entre la lectura de las sesiones y la del nombre completo: «no pude leer» con la ruta
+  const t = closeLab();
+  const largo = `${'x'.repeat(40)}-pedida`;
+  bg(t, largo, t.repo);
+  const suyo = path.join(t.home, '.claude', 'sessions', `sid-${largo}.json`);
+  const readSessionFile = (f) => {
+    if (f === suyo) throw Object.assign(new Error('permiso negado'), { code: 'EACCES' });
+    return fs.readFileSync(f, 'utf8');
+  };
+  const c = closeIt(t, largo, { readSessionFile });
+  assert.match(c.message, /No pude leer .*\(EACCES\): no cerré nada/, c.message);
+  assert.ok(c.message.includes(suyo), c.message);
+  assert.doesNotMatch(c.message, /No encuentro/);
+  const s = stopIt(t, largo, { readSessionFile });
+  assert.match(s.message, /No pude leer .*\(EACCES\): no paré nada/, s.message);
+  assert.deepStrictEqual(closed(t), [], 'no tocó nada');
+  // (c) ilegible desde antes: sale por la lectura de las sesiones, como hoy
+  fs.chmodSync(suyo, 0o000);
+  try {
+    assert.match(closeIt(t, largo).message, /No pude leer todas las sesiones/);
+  } finally { fs.chmodSync(suyo, 0o644); }
+  assert.deepStrictEqual(closed(t), []);
+  // (d) legible y con otro nombre completo que empieza igual: «No encuentro la sesión», como hoy
+  const u = closeLab();
+  session(u, 'sid-otra', `${'x'.repeat(40)}-otra`, { cwd: u.repo, kind: 'bg', jobId: 'job-otra', startedAt: 1000 });
+  assert.match(closeIt(u, largo).message, new RegExp(`No encuentro la sesión «${largo}»: no cerré nada`));
+  assert.match(stopIt(u, largo).message, new RegExp(`No encuentro la sesión «${largo}»: no paré nada`));
+  assert.deepStrictEqual(closed(u), []);
+});
+
+const launchedNames = (home) => JSON.parse(fs.readFileSync(C.launchedFile(home), 'utf8')).map((r) => r.name);
+function launchedList(t, names) {
+  fs.mkdirSync(path.dirname(C.launchedFile(t.home)), { recursive: true });
+  fs.writeFileSync(C.launchedFile(t.home), JSON.stringify(names.map((name) => ({ name, cwd: t.root, at: NOW, por: CALLER_SID }))));
+}
+
+test('T2 PruneLaunched_LongNamesSamePrefix_DropsOnlyTheNamed @story-8.290 @ac-3: dos nombres largos que empiezan igual; sale sólo el nombrado', () => {
+  const t = toy();
+  const pedida = `${'y'.repeat(40)}-pedida`;
+  const otra = `${'y'.repeat(40)}-otra`;
+  launchedList(t, [pedida, otra]);
+  // abrir de nuevo la pedida reemplaza sólo su renglón: la otra sigue contando para el tope
+  C.noteLaunched({ home: t.home, now: NOW, name: pedida, cwd: t.root, por: CALLER_SID });
+  assert.deepStrictEqual(launchedNames(t.home), [otra, pedida]);
+  // cerrar la otra saca sólo la otra
+  C.pruneLaunched({ home: t.home, now: NOW, drop: otra, sessions: new Map() });
+  assert.deepStrictEqual(launchedNames(t.home), [pedida]);
+});
+
+test('T3 PruneLaunched_ShortName_DropsAsToday @story-8.290 @ac-4: un nombre corto sale como hoy', () => {
+  const t = toy();
+  launchedList(t, ['n1', 'n2']);
+  C.noteLaunched({ home: t.home, now: NOW, name: 'n1', cwd: t.root, por: CALLER_SID });
+  assert.deepStrictEqual(launchedNames(t.home), ['n2', 'n1']);
+  C.pruneLaunched({ home: t.home, now: NOW, drop: 'n2', sessions: new Map() });
+  assert.deepStrictEqual(launchedNames(t.home), ['n1']);
+});
+
+// Las respuestas del dueño en otras pestañas: la conversación de la sesión con lo que tipeó la persona, y el renglón
+// que anota el gancho.
+const DEAD_PID = 2147483646;
+const huella = (s) => require('crypto').createHash('sha256').update(s).digest('hex');
+function replyChat(t, sid, said) {
+  const dir = path.join(t.home, '.claude', 'projects', '-repo');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${sid}.jsonl`);
+  fs.writeFileSync(file, said.map((m) => `${JSON.stringify({ type: 'user', message: { role: 'user', content: m }, origin: { kind: 'human' }, promptSource: 'typed', entrypoint: 'cli' })}\n`).join(''));
+  return file;
+}
+const replyRow = (t, sid, said) => `${JSON.stringify({ sid, at: new Date(NOW - 60000).toISOString(), text: said, sha: huella(said), transcript: path.join(t.home, '.claude', 'projects', '-repo', `${sid}.jsonl`), from: 0 })}\n`;
+function repliesDir(t) {
+  const dir = C.coordinationDir(t.home);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+const repliesPath = (t, suffix = '') => path.join(repliesDir(t), `owner-replies.jsonl${suffix}`);
+const takenLeft = (t) => fs.readdirSync(repliesDir(t)).filter((f) => f.endsWith('.leyendo')).sort();
+function deliver(t, extra = {}) {
+  const problems = [];
+  const lines = C.ownerReplyLines({ ...t.opts, ...extra }, 'sid-coord', problems);
+  return { text: lines.join('\n'), problems };
+}
+const times = (text, said) => text.split(`«${said}»`).length - 1;
+
+test('T4 OwnerReplies_OrphanTakenFile_DeliveredOnce @story-8.290 @ac-5: lo que dejó tomado un proceso caído se entrega una vez, haya o no respuestas nuevas', () => {
+  const t = toy();
+  replyChat(t, 'ses-a', ['la vieja', 'la nueva', 'sin archivo nuevo']);
+  fs.writeFileSync(repliesPath(t, `.${DEAD_PID}.leyendo`), replyRow(t, 'ses-a', 'la vieja'));
+  fs.writeFileSync(repliesPath(t), replyRow(t, 'ses-a', 'la nueva'));
+  const r = deliver(t);
+  assert.strictEqual(times(r.text, 'la vieja'), 1, r.text);
+  assert.strictEqual(times(r.text, 'la nueva'), 1, r.text);
+  assert.deepStrictEqual(r.problems, []);
+  assert.deepStrictEqual(takenLeft(t), [], 'los tomados se borran al terminar');
+  assert.doesNotMatch(deliver(t).text, /te contestaron/, 'la lectura siguiente no repite');
+  // sin archivo de respuestas: el huérfano (con la marca de una lectura) se recupera igual
+  fs.writeFileSync(repliesPath(t, `.${DEAD_PID}.a1b2c3.leyendo`), replyRow(t, 'ses-a', 'sin archivo nuevo'));
+  assert.ok(!fs.existsSync(repliesPath(t)));
+  const s = deliver(t);
+  assert.strictEqual(times(s.text, 'sin archivo nuevo'), 1, s.text);
+  assert.deepStrictEqual(takenLeft(t), []);
+});
+
+test('T5 OwnerReplies_LiveOrUnknownTakenFile_LeftAndSaid @story-8.290 @ac-6: el de un proceso vivo no se toca; el ilegible y el de pid raro quedan y se dicen', () => {
+  const t = toy();
+  replyChat(t, 'ses-a', ['en curso', 'ilegible', 'pid raro']);
+  const vivo = repliesPath(t, `.${process.pid}.leyendo`);
+  fs.writeFileSync(vivo, replyRow(t, 'ses-a', 'en curso'));
+  const ilegible = repliesPath(t, `.${DEAD_PID}.leyendo`);
+  fs.writeFileSync(ilegible, replyRow(t, 'ses-a', 'ilegible'));
+  const raro = repliesPath(t, '.abc.leyendo');
+  fs.writeFileSync(raro, replyRow(t, 'ses-a', 'pid raro'));
+  fs.chmodSync(ilegible, 0o000);
+  let r;
+  try { r = deliver(t); } finally { fs.chmodSync(ilegible, 0o644); }
+  assert.doesNotMatch(r.text, /te contestaron/, r.text);
+  assert.strictEqual(fs.readFileSync(vivo, 'utf8'), replyRow(t, 'ses-a', 'en curso'), 'el vivo queda intacto');
+  assert.ok(!r.problems.some((p) => p.includes(vivo)), 'el vivo no es un problema');
+  assert.ok(fs.existsSync(ilegible), 'el ilegible no se borra');
+  assert.ok(r.problems.some((p) => p.includes(ilegible)), JSON.stringify(r.problems));
+  assert.ok(fs.existsSync(raro), 'el de pid raro no se borra');
+  assert.ok(r.problems.some((p) => p.includes(raro)), JSON.stringify(r.problems));
+});
+
+test('T6 OwnerReplies_OrphanTakenByOther_NotReadTwice @story-8.290 @ac-5: si otro lector lo tomó antes, no se lee', () => {
+  const t = toy();
+  replyChat(t, 'ses-a', ['una sola vez']);
+  const huerfano = repliesPath(t, `.${DEAD_PID}.leyendo`);
+  fs.writeFileSync(huerfano, replyRow(t, 'ses-a', 'una sola vez'));
+  const renameOrphan = () => { throw Object.assign(new Error('ya no está'), { code: 'ENOENT' }); };
+  const r = deliver(t, { renameOrphan });
+  assert.doesNotMatch(r.text, /te contestaron/, r.text);
+  assert.deepStrictEqual(r.problems, []);
+  assert.ok(fs.existsSync(huerfano), 'no lo tomó: sigue donde lo dejó el otro');
+});
+
+test('T7 OwnerReplies_OwnPidLeftover_NotOverwritten @story-8.290 @ac-5 @ac-7: la toma nueva lleva marca y no pisa un tomado viejo del mismo pid', () => {
+  const t = toy();
+  replyChat(t, 'ses-a', ['la del viejo', 'la nueva']);
+  const viejo = repliesPath(t, `.${process.pid}.leyendo`);
+  fs.writeFileSync(viejo, replyRow(t, 'ses-a', 'la del viejo'));
+  fs.writeFileSync(repliesPath(t), replyRow(t, 'ses-a', 'la nueva'));
+  const r = deliver(t);
+  assert.strictEqual(times(r.text, 'la nueva'), 1, r.text);
+  assert.strictEqual(times(r.text, 'la del viejo'), 0, 'su pid vive: espera');
+  assert.strictEqual(fs.readFileSync(viejo, 'utf8'), replyRow(t, 'ses-a', 'la del viejo'), 'el viejo no se pisó');
+  assert.deepStrictEqual(takenLeft(t), [path.basename(viejo)], 'el tomado nuevo se borró y no quedó otro');
+});

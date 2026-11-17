@@ -1340,32 +1340,42 @@ function typedMessages(file, from = 0) {
  * a lo sumo 5 líneas y «(+N más)». Cada línea sale una vez, con el texto de la conversación, no el del archivo. La que
  * todavía no está en la conversación vuelve al archivo hasta 10 minutos; la de otro origen se descarta. Cada descarte que
  * no es el esperado, y lo que no se pudo leer, va a `problems`. Si algo falla a mitad de camino, lo tomado vuelve al
- * archivo: no se pierde.
+ * archivo: no se pierde. Lo que dejó tomado un proceso que ya no vive se lee junto con el archivo, haya o no uno nuevo.
  */
 function ownerReplyLines(opts, sid, problems) {
   const home = opts.home || require('os').homedir();
   const now = opts.now == null ? Date.now() : Number(opts.now);
   const file = repliesFile(home);
   const what = 'las respuestas de la persona en otras pestañas';
+  const parts = orphanReplies(opts, file, what, problems);
+  let fresh = true;
   try {
     if (fs.statSync(file).size >= REPLIES_MAX_BYTES) problems.push(`${what}: el archivo llegó a ${REPLIES_MAX_BYTES / 1024} KB y las nuevas no se anotan`);
   } catch (e) {
     if (e.code !== 'ENOENT') problems.push(`${what} (${e.code || e.message})`);
-    return [];
+    fresh = false;
   }
-  const taken = `${file}.${process.pid}.leyendo`;
-  try { fs.renameSync(file, taken); } catch (e) {
-    if (e.code !== 'ENOENT') problems.push(`${what} (${e.code || e.message})`);
-    return [];
+  if (fresh) {
+    const taken = takenName(file);
+    let moved = true;
+    try { fs.renameSync(file, taken); } catch (e) {
+      if (e.code !== 'ENOENT') problems.push(`${what} (${e.code || e.message})`);
+      moved = false;
+    }
+    if (moved) {
+      try { parts.push({ taken, text: fs.readFileSync(taken, 'utf8') }); } catch (e) {
+        // sin leerlo no se borra: vuelve a su lugar si nadie anotó otro mientras tanto, y si no, queda dicho dónde está
+        let kept = taken;
+        try { if (!fs.existsSync(file)) { fs.renameSync(taken, file); kept = file; } } catch { /* queda en el tomado */ }
+        problems.push(`${what} (${e.code || e.message}): quedaron en ${kept}`);
+      }
+    }
   }
-  let text;
-  try { text = fs.readFileSync(taken, 'utf8'); } catch (e) {
-    // sin leerlo no se borra: vuelve a su lugar si nadie anotó otro mientras tanto, y si no, queda dicho dónde está
-    let kept = taken;
-    try { if (!fs.existsSync(file)) { fs.renameSync(taken, file); kept = file; } } catch { /* queda en el tomado */ }
-    problems.push(`${what} (${e.code || e.message}): quedaron en ${kept}`);
-    return [];
-  }
+  if (!parts.length) return [];
+  const takens = parts.map((p) => p.taken);
+  // cada renglón una vez: un proceso que se cayó después de devolver al archivo lo que esperaba los tiene en los dos
+  const seen = new Set();
+  const text = parts.flatMap((p) => p.text.split('\n')).filter((l) => l.trim() && !seen.has(l) && seen.add(l)).map((l) => `${l}\n`).join('');
   const out = [];
   const back = [];
   // los mensajes de la persona que se pierden, por sesión: la coordinadora le pregunta a esa sesión qué le pidieron
@@ -1411,19 +1421,74 @@ function ownerReplyLines(opts, sid, problems) {
     back.length = 0;
     lost.clear();
     try { fs.appendFileSync(file, text, { mode: 0o600 }); } catch {
-      problems.push(`${what} (${e.code || e.message}): no las pude devolver; quedaron en ${taken}`);
+      problems.push(`${what} (${e.code || e.message}): no las pude devolver; quedaron en ${takens.join(', ')}`);
       return [];
     }
     problems.push(`${what} (${e.code || e.message}): las devolví para el próximo turno`);
   }
   if (back.length) {
-    try { fs.appendFileSync(file, back.map((l) => `${l}\n`).join(''), { mode: 0o600 }); } catch (e) {
-      problems.push(`${back.length} de ${what} no las pude guardar para el próximo turno (${e.code || e.message}): quedaron en ${taken}`);
+    const pending = back.map((l) => `${l}\n`).join('');
+    try { fs.appendFileSync(file, pending, { mode: 0o600 }); } catch (e) {
+      // en el tomado quedan sólo las que esperan: cuando este proceso ya no viva, otra lectura las recupera sin
+      // repetir las entregadas
+      let kept = takens.join(', ');
+      try {
+        fs.writeFileSync(takens[0], pending, { mode: 0o600 });
+        for (const x of takens.slice(1)) fs.unlinkSync(x);
+        kept = takens[0];
+      } catch { /* quedan como estaban */ }
+      problems.push(`${back.length} de ${what} no las pude guardar para el próximo turno (${e.code || e.message}): quedaron en ${kept}`);
       return lines();
     }
   }
-  try { fs.unlinkSync(taken); } catch { /* ya no está */ }
+  for (const x of takens) { try { fs.unlinkSync(x); } catch { /* ya no está */ } }
   return lines();
+}
+
+// El nombre tomado de una lectura: el pid y una marca propia, para no pisar uno que dejó otra lectura del mismo pid.
+const takenName = (file) => `${file}.${process.pid}.${require('crypto').randomBytes(6).toString('hex')}.leyendo`;
+
+/**
+ * Lo que dejó tomado (`<respuestas>.<pid>[.<marca>].leyendo`) un proceso que ya no vive, para leerlo con el archivo de
+ * respuestas: `[{ taken, text }]`. Cada uno se toma con un renombre propio antes de leerlo; si otro lector lo tomó antes
+ * (`ENOENT`), no se lee. El de un proceso vivo no se toca: vivo como en `sessionsBySid`, y un pid reciclado espera a la
+ * próxima lectura. El de un pid que no es número, o el que no se puede leer, se queda y va a `problems` con su ruta.
+ * `opts.renameOrphan` reemplaza ese renombre (pruebas).
+ */
+function orphanReplies(opts, file, what, problems) {
+  const rename = opts.renameOrphan || fs.renameSync;
+  const dir = path.dirname(file);
+  const prefix = `${path.basename(file)}.`;
+  let names;
+  try { names = fs.readdirSync(dir); } catch (e) {
+    if (e.code !== 'ENOENT') problems.push(`${what}: no pude buscar las tomadas en ${dir} (${e.code || e.message})`);
+    return [];
+  }
+  const out = [];
+  for (const f of names.sort()) {
+    if (!f.startsWith(prefix) || !f.endsWith('.leyendo')) continue;
+    const orphan = path.join(dir, f);
+    const pid = f.slice(prefix.length).split('.')[0];
+    if (!/^[1-9]\d*$/.test(pid)) {
+      problems.push(`${what}: no sé de qué proceso es ${orphan} (el pid no es un número): no lo toqué`);
+      continue;
+    }
+    let alive;
+    try { process.kill(Number(pid), 0); alive = true; } catch (e) { alive = e.code === 'EPERM'; }
+    if (alive) continue;
+    const taken = takenName(file);
+    try { rename(orphan, taken); } catch (e) {
+      if (e.code !== 'ENOENT') problems.push(`${what}: no pude tomar ${orphan} (${e.code || e.message})`);
+      continue;
+    }
+    try { out.push({ taken, text: fs.readFileSync(taken, 'utf8') }); } catch (e) {
+      // sin leerlo no se borra: vuelve a su nombre y la próxima lectura lo intenta de nuevo
+      let kept = taken;
+      try { fs.renameSync(taken, orphan); kept = orphan; } catch { /* queda en el tomado */ }
+      problems.push(`${what}: no pude leer ${kept} (${e.code || e.message})`);
+    }
+  }
+  return out;
 }
 
 // Una línea por sesión con mensajes perdidos, la más reciente primero: cuántos y hace cuánto el último, nunca el texto.
@@ -1889,7 +1954,8 @@ function launchedMatches(row, s) {
 function pruneLaunched({ home, now, drop = null, sessions = null }) {
   const list = readLaunched(home);
   const live = [...(sessions || sessionsBySid(path.join(claudeDir(home), 'sessions'), [], null)).values()].filter((s) => s.alive);
-  const dropped = (r) => drop !== null && typeof r.name === 'string' && listedName(r.name) === listedName(drop);
+  // el renglón guarda el nombre completo: comparado recortado, un nombre largo sacaría a otra que empieza igual
+  const dropped = (r) => drop !== null && r.name === drop;
   const keep = list.filter((r) => r && !dropped(r) && (now - r.at < LAUNCHED_KEEP_MS || live.some((s) => launchedMatches(r, s))));
   if (keep.length !== list.length) writeJson(launchedFile(home), keep);
   return keep;
@@ -2360,17 +2426,29 @@ function runGaps(sid, home) {
   return { missing, unknown };
 }
 
-// El nombre completo que anotó la sesión `sid` en su archivo, o `null` si no lo anotó o no se puede leer.
-function fullSessionName(home, sid) {
+/**
+ * El nombre completo que anotó la sesión `sid` en su archivo, `null` si no lo anotó (o no hay sesión con ese id), o
+ * `{ problem }` con la ruta y el motivo si no se pudo leer la carpeta o algún archivo y la sesión no estaba en los
+ * legibles: puede ser la suya. `opts.readSessionFile` reemplaza la lectura de cada archivo (pruebas).
+ */
+function fullSessionName(home, sid, opts = {}) {
+  const read = opts.readSessionFile || ((f) => fs.readFileSync(f, 'utf8'));
   const dir = path.join(claudeDir(home), 'sessions');
   let files = [];
-  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return null; }
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch (e) {
+    return e.code === 'ENOENT' ? null : { problem: `${dir} (${e.code || e.message})` };
+  }
+  let problem = null;
   for (const f of files) {
+    const file = path.join(dir, f);
     let s;
-    try { s = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+    try { s = JSON.parse(read(file)); } catch (e) {
+      if (!problem) problem = `${file} (${e.code || e.message})`;
+      continue;
+    }
     if (s && s.sessionId === sid) return typeof s.name === 'string' && s.name.trim() ? oneLine(s.name) : null;
   }
-  return null;
+  return problem ? { problem } : null;
 }
 
 /**
@@ -2397,7 +2475,15 @@ function namedSession(opts, w) {
   // la lista guarda los nombres largos recortados: uno largo se compara recortado y se confirma con el nombre completo
   // que anotó la sesión, porque dos nombres que empiezan igual quedan iguales en la lista
   const listed = listedName(name);
-  const found = [...sessions.entries()].filter(([sid, s]) => s.name === listed && (listed === name || fullSessionName(home, sid) === name));
+  const found = [];
+  for (const [sid, s] of sessions) {
+    if (s.name !== listed) continue;
+    if (listed === name) { found.push([sid, s]); continue; }
+    const full = fullSessionName(home, sid, opts);
+    // sin poder leer su archivo no se sabe si es la pedida: se dice, sin tocar nada
+    if (full && full.problem) return { error: `No pude leer ${full.problem}: ${nada}` };
+    if (full === name) found.push([sid, s]);
+  }
   const alive = found.filter(([, s]) => s.alive);
   if (!found.length) return { error: `No encuentro la sesión «${name}»: ${nada}` };
   if (alive.length > 1 || (!alive.length && found.length > 1)) return { error: `Hay más de una sesión «${name}»: ${nada}` };
@@ -2675,4 +2761,4 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, fullSessionName, ownerReplyLines, flags, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
