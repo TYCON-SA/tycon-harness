@@ -215,13 +215,11 @@ test('T19 Tokens_Codex_PorDiferencia @story-8.209 @ac-10', () => {
 test('T20 Tokens_SoloArchivosDelDia @story-8.209 @ac-10', () => {
   const w = world();
   opened(w, '2026-11-09', '2026-11-09 08:00');
-  const old = claudeConv(w, 'c20', [['2026-11-07 10:00', 10, 1, 1]], { mtime: at('2026-11-07 10:00') });
-  fs.chmodSync(old, 0o000);
-  try {
-    prepare(w, at('2026-11-10 09:00'));
-    const d = dayFile(w, '2026-11-09');
-    assert.strictEqual(d.tokens.medido, true, 'la conversación sin tocar desde antes del día no se abrió');
-  } finally { fs.chmodSync(old, 0o600); }
+  // trae un mensaje con la hora del 9, pero no se tocó desde el 7: si se abriera, el 9 lo contaría
+  claudeConv(w, 'c20', [['2026-11-09 10:00', 10, 1, 1]], { mtime: at('2026-11-07 10:00') });
+  prepare(w, at('2026-11-10 09:00'));
+  const d = dayFile(w, '2026-11-09');
+  assert.deepStrictEqual(d.tokens, { lectura: 0, escritura: 0, cache: 0, medido: true }, 'la conversación sin tocar desde antes del día no se abrió');
 });
 
 test('T21 Dia_ParteIlegible_NoMedidoConMotivo @story-8.209 @ac-11', () => {
@@ -249,8 +247,34 @@ test('T21 Dia_ParteIlegible_NoMedidoConMotivo @story-8.209 @ac-11', () => {
     assert.strictEqual(d.tokens.medido, false);
     assert.ok(d.tokens.motivo && !d.tokens.motivo.includes('/'), d.tokens.motivo);
     assert.strictEqual(d.horas.medido, true);
+    // los otros días que cubría la conversación rota, si se arman por otro rastro, tampoco salen medidos
   } finally { fs.chmodSync(bad, 0o600); }
   assert.ok(conv);
+  const w3 = world();
+  opened(w3, '2026-11-08', '2026-11-08 08:00');
+  const rota = claudeConv(w3, 'c21b', [['2026-11-09 09:30', 1, 1, 1]], { mtime: at('2026-11-09 10:00') });
+  fs.chmodSync(rota, 0o000);
+  try {
+    prepare(w3, at('2026-11-10 09:00'));
+    assert.strictEqual(dayFile(w3, '2026-11-08').tokens.medido, false, 'el 8 se arma por su apertura y la conversación rota lo cubría');
+  } finally { fs.chmodSync(rota, 0o600); }
+  // los totales guardados de Codex rotos: los tokens de Codex no se restan de otro lado, van sin medir
+  const w4 = world();
+  opened(w4, '2026-11-09', '2026-11-09 08:00');
+  fs.writeFileSync(path.join(workedDir(w4), 'codex-totals.json'), '{roto');
+  codexConv(w4, 'x21', [['2026-11-09 10:00', 300, 0, 40], ['2026-11-09 12:00', 400, 0, 60]], { mtime: at('2026-11-09 12:00') });
+  prepare(w4, at('2026-11-10 09:00'));
+  const t4 = dayFile(w4, '2026-11-09').tokens;
+  assert.strictEqual(t4.medido, false);
+  assert.match(t4.motivo, /totales guardados de Codex/);
+  // un renglón con uso que no se entiende se cuenta, no se pierde callado
+  const w5 = world();
+  opened(w5, '2026-11-09', '2026-11-09 08:00');
+  const f5 = claudeConv(w5, 'c21c', [['2026-11-09 09:30', 1, 1, 1]], { mtime: at('2026-11-09 10:00') });
+  fs.appendFileSync(f5, '{"type":"assistant","usage": roto\n');
+  fs.utimesSync(f5, new Date(at('2026-11-09 10:00')), new Date(at('2026-11-09 10:00')));
+  prepare(w5, at('2026-11-10 09:00'));
+  assert.strictEqual(dayFile(w5, '2026-11-09').tokens.ilegibles, 1);
 });
 
 test('T22 Dia_SinTrabajo_CeroMedido @story-8.209 @ac-11', () => {

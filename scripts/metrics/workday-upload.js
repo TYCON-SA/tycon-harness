@@ -11,8 +11,8 @@
  *                    tokens: { lectura, escritura, cache, medido: true } }
  *
  * `arnes_segundos` es el tiempo con al menos una sesión trabajando (la unión de los tramos); `sesion_segundos`, la suma.
- * Una parte que no se pudo leer va `{ medido: false, motivo }`, con el motivo sin rutas; `horas.ilegibles` y
- * `tokens.sin_hora` aparecen sólo si son más de cero. 🔴 NADA MÁS: ni ids de sesión, ni rutas, ni repos ni historias.
+ * Una parte que no se pudo leer va `{ medido: false, motivo }`, con el motivo sin rutas; `horas.ilegibles`,
+ * `tokens.sin_hora` y `tokens.ilegibles` aparecen sólo si son más de cero. 🔴 NADA MÁS: ni ids de sesión, ni rutas, ni repos ni historias.
  *
  * 🔴 SÓLO DÍAS LOCALES CERRADOS. «Hoy» es el día local de `now` (en la subida, TYCON_NOW o el reloj), y se arman los 30
  *    días anteriores: nunca el día en curso, nunca el día UTC de la preparación de los registros.
@@ -38,7 +38,12 @@ const DAY_FILE = /^(\d{4}-\d{2}-\d{2})\.json$/;
 const ARMADOS = 'armados.json';
 const CODEX_TOTALS = 'codex-totals.json';
 
-const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
+/** Un JSON propio: `{ value }`, `{ value: null }` si no está, o `{ value: null, problema }` si está y no se pudo leer. */
+function readJson(file) {
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch (e) { return e.code === 'ENOENT' ? { value: null } : { value: null, problema: e.code || 'error' }; }
+  try { return { value: JSON.parse(text) }; } catch { return { value: null, problema: 'JSON roto' }; }
+}
 function writeAtomic(file, text) {
   const tmp = `${file}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, text, { mode: 0o600 });
@@ -125,8 +130,11 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
   const days = [];
   for (let d = first; d < today; d = WT.addDays(d, 1)) days.push(d);
   const keepRecent = (o) => Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {}).filter(([d]) => d >= keepFrom));
-  const armados = keepRecent(readJson(path.join(wdir, ARMADOS)));
-  const totals = keepRecent(readJson(path.join(wdir, CODEX_TOTALS)));
+  const armados = keepRecent(readJson(path.join(wdir, ARMADOS)).value);
+  // los totales de Codex que no se pueden leer (no «no están»): los tokens de Codex de los días que se arman ahora no
+  // tienen de dónde restar y van sin medir, no contados de menos
+  const leidos = readJson(path.join(wdir, CODEX_TOTALS));
+  const totals = keepRecent(leidos.value);
 
   // qué días necesitan tokens leídos ahora: los de la ventana que nunca se armaron
   const marks = {};
@@ -144,7 +152,7 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
   for (const c of listed.convs) {
     const wanted = ranges.filter((r) => c.mtime >= r.desde || c.agents.some((a) => a.mtime >= r.desde));
     if (!wanted.length) continue;
-    const got = { conv: c, byDay: null, agents: [], problema: null };
+    const got = { conv: c, byDay: null, agents: [], problema: null, wanted: new Set(wanted.map((r) => r.day)) };
     try {
       got.byDay = ST.dayTokens(c.file, { days: wanted });
       for (const a of c.agents) got.agents.push(ST.dayTokens(a.file, { days: ranges.filter((r) => a.mtime >= r.desde), isAgent: true }));
@@ -171,20 +179,30 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
       dias[d] = 'sin_rastro';
       continue;
     } else {
-      const t = { lectura: 0, escritura: 0, cache: 0, sinHora: 0 };
+      const t = { lectura: 0, escritura: 0, cache: 0, sinHora: 0, ilegibles: 0 };
       let hubo = false;
-      let problema = null;
+      let hayCodex = false;
+      // el día en que se tocó por última vez una conversación que no se pudo leer se arma siempre (sin medir); los otros
+      // días que esa conversación cubría quedan sin medir sólo si se arman por otro rastro: sin eso, una conversación rota
+      // llenaría la ventana entera de días
+      let rotaEseDia = null;
+      let rotaCubria = null;
       const desde = WT.midnightOf(d);
       const hasta = WT.midnightOf(WT.addDays(d, 1));
       for (const g of perConv) {
-        // una conversación que no se pudo leer deja sin medir el día en que se tocó por última vez, no la ventana entera
-        if (g.problema) { if (g.conv.mtime >= desde && g.conv.mtime < hasta) problema = problema || g.problema; continue; }
+        if (g.problema) {
+          if (g.conv.mtime >= desde && g.conv.mtime < hasta) rotaEseDia = rotaEseDia || g.problema;
+          else if (g.wanted.has(d)) rotaCubria = rotaCubria || g.problema;
+          continue;
+        }
         const b = g.byDay[d];
         if (b) {
           hubo = hubo || b.hubo;
           t.sinHora += b.sinHora;
+          t.ilegibles += b.ilegibles;
           if (g.conv.kind === 'codex') {
             if (b.codex) {
+              hayCodex = true;
               const base = savedBefore(totals, g.conv.key, d) || b.codex.primero;
               const diff = codexDiff(base, b.codex.ultimo);
               for (const k of ['lectura', 'escritura', 'cache']) t[k] += diff[k];
@@ -197,15 +215,19 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
           if (!ab) continue;
           hubo = hubo || ab.hubo;
           t.sinHora += ab.sinHora;
+          t.ilegibles += ab.ilegibles;
           for (const k of ['lectura', 'escritura', 'cache']) t[k] += ab[k];
         }
       }
-      if (!rastroGancho && !hubo && !problema) { armados[d] = { vacio: true, armadoAt: Date.now() }; dias[d] = 'sin_rastro'; continue; }
+      if (!rastroGancho && !hubo && !rotaEseDia) { armados[d] = { vacio: true, armadoAt: Date.now() }; dias[d] = 'sin_rastro'; continue; }
       // una carpeta de conversaciones que no se pudo leer deja sin medir los tokens de los días que se arman
-      problema = problema || listed.problema;
-      tokens = problema
-        ? { medido: false, motivo: `una conversación no se pudo leer (${problema})` }
-        : { lectura: t.lectura, escritura: t.escritura, cache: t.cache, medido: true, ...(t.sinHora ? { sin_hora: t.sinHora } : {}) };
+      let motivo = null;
+      const rota = rotaEseDia || rotaCubria || listed.problema;
+      if (rota) motivo = `una conversación no se pudo leer (${rota})`;
+      else if (hayCodex && leidos.problema) motivo = `los totales guardados de Codex no se pudieron leer (${leidos.problema})`;
+      tokens = motivo
+        ? { medido: false, motivo }
+        : { lectura: t.lectura, escritura: t.escritura, cache: t.cache, medido: true, ...(t.sinHora ? { sin_hora: t.sinHora } : {}), ...(t.ilegibles ? { ilegibles: t.ilegibles } : {}) };
       dias[d] = 'armado';
     }
     let contenido;

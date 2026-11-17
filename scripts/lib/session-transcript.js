@@ -478,18 +478,18 @@ function readSessionTokens(file, counts, { modelSettings } = {}) {
  * `countLine`, que no mira la hora y de Codex guarda sólo el último total. Claude: lectura, escritura y caché de cada
  * respuesta con hora en el día, una vez por mensaje (`addTurn`); un agente (`isAgent`) cuenta sus renglones laterales.
  * Codex: el primer y el último total acumulado del día (`codex: { primero, ultimo }`), que resta quien llama. Una
- * respuesta sin hora no se cuenta: va a `sinHora` del día del renglón con hora anterior. `hubo`: hubo algún mensaje con
- * hora ese día. Tira si el archivo no se puede leer.
+ * respuesta sin hora no se cuenta: va a `sinHora` del día del renglón con hora anterior; un renglón con uso que no se
+ * entiende, igual, a `ilegibles`. `hubo`: hubo algún mensaje con hora ese día. Tira si el archivo no se puede leer.
  */
 function dayTokens(file, { days = [], isAgent = false } = {}) {
   const out = {};
-  for (const d of days) out[d.day] = { count: newCount(), sinHora: 0, hubo: false, primero: null, ultimo: null };
+  for (const d of days) out[d.day] = { count: newCount(), sinHora: 0, ilegibles: 0, hubo: false, primero: null, ultimo: null };
   const dayAt = (t) => { const d = days.find((x) => t >= x.desde && t < x.hasta); return d ? d.day : null; };
   let previo = null;
   const onLine = (line) => {
     if (!line.includes('"usage"') && !line.includes('"token_count"')) return;
     let d;
-    try { d = JSON.parse(line); } catch { return; }
+    try { d = JSON.parse(line); } catch { if (previo && out[previo]) out[previo].ilegibles += 1; return; }
     if (!d || typeof d !== 'object') return;
     const t = Date.parse(d.timestamp);
     const claude = d.type === 'assistant' && d.message && d.message.usage && typeof d.message.usage === 'object';
@@ -526,7 +526,7 @@ function dayTokens(file, { days = [], isAgent = false } = {}) {
   } finally { fs.closeSync(fd); }
   const result = {};
   for (const [day, b] of Object.entries(out)) {
-    result[day] = { lectura: b.count.lectura, escritura: b.count.escritura, cache: b.count.cache, sinHora: b.sinHora, hubo: b.hubo, codex: b.ultimo ? { primero: b.primero, ultimo: b.ultimo } : null };
+    result[day] = { lectura: b.count.lectura, escritura: b.count.escritura, cache: b.count.cache, sinHora: b.sinHora, ilegibles: b.ilegibles, hubo: b.hubo, codex: b.ultimo ? { primero: b.primero, ultimo: b.ultimo } : null };
   }
   return result;
 }

@@ -770,8 +770,10 @@ function prepararJornadas({ dirRegistros, pasada }) {
     const r = require('./workday-upload.js').prepareDays({ sdir: stateDirOf(os.homedir()), home: os.homedir(), outDir: dir, now: pasada, env: process.env });
     return { dir, files: r.files, problema: null };
   } catch (e) {
-    // sin el armado o sus módulos al lado (una copia suelta del guion), esta máquina no participa: no es «no pude»
-    if (e && e.code === 'MODULE_NOT_FOUND') return { dir, files: [], problema: null };
+    // sin el armado o sus piezas al lado (una copia suelta del guion), esta máquina no participa: no es «no pude». Otro
+    // módulo que falta es una instalación rota, y se dice
+    const falta = e && e.code === 'MODULE_NOT_FOUND' ? String(e.message).split('\n')[0] : '';
+    if (/(workday-upload|worked-time|session-transcript|session-state|state-dir)(\.js)?'/.test(falta)) return { dir, files: [], problema: null };
     return { dir, files: [], problema: `no se pudieron armar (${(e && e.code) || 'error'})` };
   }
 }

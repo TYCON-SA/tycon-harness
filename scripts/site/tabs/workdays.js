@@ -61,14 +61,22 @@ function jornadasDe(crudo) {
   return { maquinas };
 }
 
-/** Los días del espejo del buzón: `<espejo>/<máquina>/jornadas/<día>.json`. Lo que no se puede leer, como «no se entendió». */
+/**
+ * Los días del espejo del buzón: `<espejo>/<máquina>/jornadas/<día>.json`. Un archivo que no se puede leer, como «no se
+ * entendió»; la carpeta de una máquina que no se puede leer va en `ilegibles` (`{ <máquina>: código }`, sin rutas) y
+ * sigue en la tabla; el espejo entero que no se puede leer va en `problema`. Que no exista no es un problema: todavía no
+ * llegó nada.
+ */
 function leerJornadas(dirBuzon) {
   const crudo = {};
+  const ilegibles = {};
   let maquinas = [];
-  try { maquinas = fs.readdirSync(dirBuzon, { withFileTypes: true }).filter((e) => e.isDirectory() && MAQUINA.test(e.name)).map((e) => e.name); } catch { return { maquinas: {} }; }
+  try { maquinas = fs.readdirSync(dirBuzon, { withFileTypes: true }).filter((e) => e.isDirectory() && MAQUINA.test(e.name)).map((e) => e.name); } catch (e) {
+    return e.code === 'ENOENT' ? { maquinas: {}, ilegibles } : { maquinas: {}, ilegibles, problema: e.code || 'error' };
+  }
   for (const maq of maquinas) {
     let nombres = [];
-    try { nombres = fs.readdirSync(path.join(dirBuzon, maq, 'jornadas')); } catch { continue; }
+    try { nombres = fs.readdirSync(path.join(dirBuzon, maq, 'jornadas')); } catch (e) { if (e.code !== 'ENOENT') ilegibles[maq] = e.code || 'error'; continue; }
     crudo[maq] = {};
     for (const n of nombres) {
       const m = ARCHIVO.exec(n);
@@ -76,7 +84,7 @@ function leerJornadas(dirBuzon) {
       try { crudo[maq][m[1]] = fs.readFileSync(path.join(dirBuzon, maq, 'jornadas', n), 'utf8'); } catch { crudo[maq][m[1]] = null; }
     }
   }
-  return jornadasDe(crudo);
+  return { ...jornadasDe(crudo), ilegibles };
 }
 
 const diaMas = (dia, n) => new Date(Date.parse(`${dia}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
@@ -86,10 +94,11 @@ const diaMas = (dia, n) => new Date(Date.parse(`${dia}T00:00:00Z`) + n * 864e5).
  * máquinas, cada celda y el total de cada día. Celda: `{ estado: 'no_medido' | 'raro' | 'medido', horas, tokens,
  * horasMotivo, tokensMotivo }`. El total suma lo medido de cada máquina, cada hora por separado, y cuenta las no medidas.
  */
-function armarTabla({ maquinas }, { ayer }) {
-  const nombres = Object.keys(maquinas).sort();
+function armarTabla({ maquinas, ilegibles = {}, problema = null }, { ayer }) {
+  // una máquina cuya carpeta no se pudo leer sigue en la tabla, con sus celdas «no se pudo leer»
+  const nombres = [...new Set([...Object.keys(maquinas), ...Object.keys(ilegibles)])].sort();
   let nuevo = ayer;
-  for (const m of nombres) for (const d of Object.keys(maquinas[m])) if (d > nuevo) nuevo = d;
+  for (const m of Object.keys(maquinas)) for (const d of Object.keys(maquinas[m])) if (d > nuevo) nuevo = d;
   const dias = Array.from({ length: DIAS }, (_, i) => diaMas(nuevo, -i));
   const celdas = {};
   const totales = {};
@@ -97,9 +106,10 @@ function armarTabla({ maquinas }, { ayer }) {
     celdas[d] = {};
     const t = { arnes_segundos: 0, sesion_segundos: 0, lectura: 0, escritura: 0, cache: 0, no_medidas: 0 };
     for (const m of nombres) {
-      const v = maquinas[m][d];
+      const v = maquinas[m] ? maquinas[m][d] : null;
       let c;
-      if (!v) c = { estado: 'no_medido' };
+      if (ilegibles[m]) c = { estado: 'ilegible', motivo: ilegibles[m] };
+      else if (!v) c = { estado: 'no_medido' };
       else if (!v.ok) c = { estado: 'raro' };
       else {
         c = { estado: 'medido', horas: v.horas.medido ? v.horas : null, horasMotivo: v.horas.medido ? null : v.horas.motivo, tokens: v.tokens.medido ? v.tokens : null, tokensMotivo: v.tokens.medido ? null : v.tokens.motivo };
@@ -112,7 +122,7 @@ function armarTabla({ maquinas }, { ayer }) {
     }
     totales[d] = t;
   }
-  return { dias, maquinas: nombres, celdas, totales };
+  return { dias, maquinas: nombres, celdas, totales, problema };
 }
 
 const horasDe = (s) => `${(s / 3600).toFixed(1)} h`;
@@ -143,6 +153,7 @@ function htmlTabla(tabla, idioma) {
       const c = tabla.celdas[d][m];
       if (c.estado === 'no_medido') return `<td class="no-medido">${esc(t('horas.noMedido'))}</td>`;
       if (c.estado === 'raro') return `<td class="no-medido">${esc(t('horas.raro'))}</td>`;
+      if (c.estado === 'ilegible') return `<td class="no-medido"><span title="${esc(c.motivo)}">${esc(t('horas.ilegible'))}</span></td>`;
       return `<td>${lineas(idioma, c)}</td>`;
     }).join('');
     const tot = tabla.totales[d];
@@ -161,14 +172,20 @@ function crearRutas({ fuentes, log = () => {}, ahora = Date.now } = {}) {
   const tabla = () => {
     let jornadas = { maquinas: {} };
     try { jornadas = typeof fuentes.jornadas === 'function' ? fuentes.jornadas() : jornadas; } catch (e) { log(`horas y tokens: no se pudieron leer los días (${e.code || e.message})`); }
-    return armarTabla(jornadas, { ayer: diaMas(new Date(ahora()).toISOString().slice(0, 10), -1) });
+    const t = armarTabla(jornadas, { ayer: diaMas(new Date(ahora()).toISOString().slice(0, 10), -1) });
+    if (t.problema) log(`horas y tokens: el espejo del buzón no se pudo leer (${t.problema})`);
+    for (const [m, codigo] of Object.entries(jornadas.ilegibles || {})) log(`horas y tokens: los días de ${m} no se pudieron leer (${codigo})`);
+    return t;
   };
   return [
     {
       method: 'GET', path: '/horas', needs: solo, pestana: { id: 'horas', titulo: 'Horas y tokens', orden: 50 },
       handler: (ctx) => {
         const idioma = views.idiomaDe(ctx);
-        const cuerpo = `<p class="lede">${esc(TX.t(idioma, 'horas.lede'))}</p>${htmlTabla(tabla(), idioma)}`;
+        const tab = tabla();
+        // el espejo que no se pudo leer se dice arriba: la tabla vacía no es «no llegó nada»
+        const aviso = tab.problema ? `<p>${esc(TX.t(idioma, 'horas.espejoIlegible', { motivo: tab.problema }))}</p>` : '';
+        const cuerpo = `<p class="lede">${esc(TX.t(idioma, 'horas.lede'))}</p>${aviso}${htmlTabla(tab, idioma)}`;
         return { status: 200, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, TX.t(idioma, 'pestana.horas'), cuerpo) };
       },
     },

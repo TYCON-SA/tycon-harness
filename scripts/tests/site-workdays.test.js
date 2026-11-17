@@ -171,6 +171,22 @@ test('T32 Sitio_ArchivoRaro_NoMedidoYElResto @story-8.209 @ac-20', () => {
   for (const d of ['2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08']) assert.strictEqual(t.celdas[d]['maquina-a'].estado, 'raro', d);
   assert.strictEqual(t.celdas['2026-11-09']['maquina-a'].estado, 'medido', 'el resto igual');
   assert.match(WD().htmlTabla(t, 'es'), /no medido \(no se entendió el archivo\)/);
+  // la carpeta de una máquina que no se puede leer: la máquina sigue en la tabla, «no se pudo leer»
+  const dir = espejo({ 'maquina-a': { '2026-11-09': dia('2026-11-09') }, 'maquina-b': { '2026-11-09': dia('2026-11-09') } });
+  fs.chmodSync(path.join(dir, 'maquina-b', 'jornadas'), 0o000);
+  try {
+    const j = WD().leerJornadas(dir);
+    assert.ok(j.ilegibles['maquina-b']);
+    const t2 = WD().armarTabla(j, { ayer: '2026-11-09' });
+    assert.deepStrictEqual(t2.maquinas, ['maquina-a', 'maquina-b']);
+    assert.strictEqual(t2.celdas['2026-11-09']['maquina-b'].estado, 'ilegible');
+    assert.match(WD().htmlTabla(t2, 'es'), /no medido \(no se pudo leer\)/);
+  } finally { fs.chmodSync(path.join(dir, 'maquina-b', 'jornadas'), 0o700); }
+  // el espejo entero ilegible se dice, no es «no llegó nada»
+  const raiz = tmp('espejo-ilegible-');
+  fs.chmodSync(raiz, 0o000);
+  try { assert.ok(WD().leerJornadas(raiz).problema); } finally { fs.chmodSync(raiz, 0o700); }
+  assert.deepStrictEqual(WD().leerJornadas(path.join(raiz, 'no-existe')).problema, undefined, 'que no exista no es un problema');
 });
 
 test('T33 Sitio_Ingles_Textos @story-8.209 @ac-21', async () => {

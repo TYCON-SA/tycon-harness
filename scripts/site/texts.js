@@ -2681,6 +2681,8 @@ const TEXTOS = {
   'horas.tokens': { es: 'Tokens (lectura · escritura · caché)', en: 'Tokens (read · write · cache)' },
   'horas.noMedido': { es: 'no medido', en: 'not measured' },
   'horas.raro': { es: 'no medido (no se entendió el archivo)', en: 'not measured (the file could not be understood)' },
+  'horas.ilegible': { es: 'no medido (no se pudo leer)', en: 'not measured (could not be read)' },
+  'horas.espejoIlegible': { es: 'Los días que suben las máquinas no se pudieron leer en el sitio ({motivo}): la tabla no dice nada de ellas.', en: 'The days the machines upload could not be read on the site ({motivo}): the table says nothing about them.' },
   'horas.horasNoMedidas': { es: 'horas no medidas', en: 'hours not measured' },
   'horas.tokensNoMedidos': { es: 'tokens no medidos', en: 'tokens not measured' },
   'horas.sinMedir1': { es: '1 máquina sin medir', en: '1 machine not measured' },
