@@ -34,6 +34,8 @@ function entorno(home, extra = {}) {
   for (const k of FUERA_DEL_ENTORNO) delete env[k];
   return Object.assign(env, {
     HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_SESSION_ID: SID, TYCON_PACKS_DEFAULT: 'none',
+    // sin el perfil del equipo: el árbol armado del portón trae la capa del equipo y la foto se grabó sin ella
+    TYCON_PROFILE: '0',
     GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig-vacio'), TZ: 'UTC', LANG: 'C', LC_ALL: 'C',
     GIT_AUTHOR_NAME: 'acme', GIT_AUTHOR_EMAIL: 'acme@example.invalid', GIT_COMMITTER_NAME: 'acme',
     GIT_COMMITTER_EMAIL: 'acme@example.invalid', GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
@@ -239,6 +241,8 @@ function normalizar(texto, m) {
     .replace(/\b\d{8}-?\d{6}\b/g, '<SELLO>')
     .replace(/\b\d{13}\b/g, '<MS>')
     .replace(/\b[0-9a-f]{12,}\b/g, '<HEX>')
+    // el sello de la copia congelada de un repo depende del árbol, no de lo que hace el subcomando
+    .replace(/\brepo-[0-9a-f]{8}\b/g, 'repo-<SELLO>')
     .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, '<HORA>')
     .replace(/\b\d+(?:[.,]\d+)?\s?(ms|s|min)\b/g, '<N> $1')
     .replace(/"(pid|ppid|durationMs|duration_ms|ms)":\s?\d+/g, '"$1":<N>');

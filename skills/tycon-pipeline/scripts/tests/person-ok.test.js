@@ -104,10 +104,11 @@ test('T30 PersonOk_SoloLoQueNoEsFirma @story-8.139 @ac-29 @ac-30 — exporta só
   assert.deepEqual(importan.sort(), [
     'scripts/lib/signature-list.js',
     'skills/tycon-pipeline/scripts/lib/external-flags.js',
+    // marker.js partido: la carga la hace su módulo compartido
+    'skills/tycon-pipeline/scripts/lib/marker-shared.js',
     'skills/tycon-pipeline/scripts/lib/plan-display.js',
     'skills/tycon-pipeline/scripts/lib/story-claim-check.js',
     'skills/tycon-pipeline/scripts/lib/validator-record.js',
-    'skills/tycon-pipeline/scripts/marker.js',
   ]);
 });
 
@@ -130,7 +131,8 @@ test('8.141 T15 ElChatSale_SinLectoresDelCarril', () => {
   const lane = fs.existsSync(carril) ? JSON.parse(fs.readFileSync(carril, 'utf8')) : {};
   assert.equal(lane.recentPrompts, undefined, 'el archivo de carril no guarda los mensajes');
   for (const f of ['marker.js', path.join('lib', 'story-gate.js'), path.join('lib', 'story-gate-io.js'), path.join('lib', 'person-ok.js'), 'on-prompt.js']) {
-    const t = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+    // marker.js partido: el despachador más sus módulos de lib/
+    const t = f === 'marker.js' ? require('./lib/marker-source.js')(path.join(__dirname, '..')) : fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
     for (const re of [/mensajesConOrigen/, /classifyLane/, /\bTYCON_LANE_LLM\b/, /recentPrompts/, /reasonInPrompts/, /quotedPromptAsksStory/, /soloDelDueno/]) {
       assert.doesNotMatch(t, re, `${f} nombra ${re.source}`);
     }

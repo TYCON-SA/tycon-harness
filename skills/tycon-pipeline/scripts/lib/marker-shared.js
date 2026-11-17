@@ -28,7 +28,7 @@ const path = require('path');
 // La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
-const stateDirOf = (() => { const lib = path.join(estado.SCRIPTS_DIR, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { resolveSessionId } = require('./session-id.js');
 const { homeCommand, signatureCommand } = require('./home-command.js');
 // la tabla de los pasos: nombres, orden, equivalencia con el marcador viejo
