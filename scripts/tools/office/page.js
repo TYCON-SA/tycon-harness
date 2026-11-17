@@ -513,9 +513,9 @@ function ledVisto(m,i,t){return m.userData.on&&ledRate&&!reduce?Math.sin(t*ledRa
 let rackVisto=null;
 function verRack(r,e){rackVisto=r;if(!r){rackTag.style.display="none";return}const b=stage.getBoundingClientRect();rackTag.textContent=textoRack(r);rackTag.style.left=(e.clientX-b.left)+"px";rackTag.style.top=(e.clientY-b.top-14)+"px";rackTag.style.display="block"}
 const leds=[];function rack(x,z,tipo,rot=0){const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=rot;scene.add(g);add(RB(.75,2.05,.7,.04),M("#22252f",{r:.45,m:.3}),0,1.025,0,g);const r={tipo,leds:[],pct:null,g};
-  for(let u=0;u<9;u++){add(new THREE.BoxGeometry(.62,.16,.02),M("#14161d"),0,.25+u*.2,.355,g);for(let k=0;k<3;k++){const m=new THREE.Mesh(new THREE.BoxGeometry(.04,.03,.02),new THREE.MeshBasicMaterial({color:LED_SIN_MEDIDA,toneMapped:false}));m.userData={fila:u,on:false};m.position.set(.18+k*.06,.25+u*.2,.37);g.add(m);leds.push(m);r.leds.push(m)}}
+  for(let u=0;u<9;u++){add(new THREE.BoxGeometry(.62,.16,.02),M("#14161d"),0,.25+u*.2,.355,g);for(let k=0;k<3;k++){const m=new THREE.Mesh(new THREE.BoxGeometry(.04,.03,.02),new THREE.MeshBasicMaterial({color:LED_SIN_MEDIDA,toneMapped:false}));m.userData={fila:u,on:false};m.position.set(.18+k*.06,.25+u*.2,.37);g.add(m);leds.push(m);r.leds.push(m);}}
   // lo que se apunta: el rack entero, invisible, como la lámpara
-  r.hit=add(new THREE.BoxGeometry(.8,2.1,.75),new THREE.MeshBasicMaterial({visible:false}),0,1.05,0,g,false);return r}
+  r.hit=add(new THREE.BoxGeometry(.8,2.1,.75),new THREE.MeshBasicMaterial({visible:false}),0,1.05,0,g,false);return r;}
 const racks=[rack(.38,.95,"memoria",Math.PI/2),rack(.38,1.75,"procesador",Math.PI/2)];plant(scene,9.45,0,2.35,1.1);
 const rackDe=h=>(h&&racks.find(r=>r.hit===h.object))||null;
 // la etiqueta tiene el aspecto de las de las personas, pero no es una: no entra en su reparto ni recibe el mouse
