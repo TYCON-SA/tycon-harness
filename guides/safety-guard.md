@@ -323,6 +323,32 @@ Los dos piden la firma también para una sesión ajena, y los frena `ESC-C3` sin
 Límite: si se borran las tres piezas, en la sesión no se ve. Lo ve el portón de la CI, que pide el registro de autoría
 de la historia para mergear.
 
+### El marcador cambiado
+
+Que el marcador esté no alcanza: también tiene que ser el que escribió el arnés. Cada escritura legítima del marcador
+pasa por una sola librería (`lib/marker-seal.js`), que deja en `<estado>/seals/<sesión>.json` un **sello** con la huella
+de lo que escribió. Escribe con un candado por sesión, primero el sello y después el marcador. Antes de escribir
+compara: si el marcador en disco no coincide con su sello, no escribe, no sella y anota `marker-seal-mismatch` en
+`gates.log`. Así un gancho que escribe después de un cambio a mano no lo blanquea. El sello se reemplaza en cada
+escritura y se borra al cerrar la ejecución, así que no crece. Los sellos sin marcador de más de 7 días se podan.
+
+Una ejecución abierta por `start` anota `sellado: true` en su apertura. Si su marcador no coincide con el sello, o el
+sello falta, no se lee o es de otra sesión, frena lo mismo que la ejecución perdida, con el cartel «🔴 MARCADOR DE LA
+EJECUCIÓN CAMBIADO A MANO». Una apertura sin `sellado` es de antes y no se juzga por el sello. Volver el marcador a su
+versión anterior también frena, salvo mientras una escritura tiene el candado.
+
+**La salida es una sola:** `marker.js clear-session <sesión> --lost`, con la firma del dueño. También sirve con el
+marcador roto. `restore` no la saca: conserva el marcador que hay en disco y sellaría lo tocado a mano, así que frena
+y nombra `--lost`.
+
+Borrar o mover un sello frena «BORRADO DEL ESTADO DEL PIPELINE». Escribirle con una redirección frena «ESCRITURA DIRECTA
+AL ESTADO DEL PIPELINE», como todo lo que se escribe en la carpeta del estado.
+
+Límites: un programa que reescribe a la vez el marcador y su sello con la huella correcta no se ve en la sesión, porque
+falsificar el sello exige escribir en la carpeta protegida. Una instalación mezclada, con un gancho viejo que escribe sin
+sello sobre una apertura sellada, frena con la misma salida. El árbol instalado se actualiza entero, así que sólo pasa
+con una copia del arnés armada a mano.
+
 ## Log de bloqueos
 
 Cada bloqueo se loggea en `~/.claude/safety-guard.log`:

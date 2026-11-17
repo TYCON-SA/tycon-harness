@@ -83,14 +83,10 @@ function readMarker(sessionId) {
   return null;
 }
 
-// Escribe el marker de ESTA sesión en su archivo propio. Otra sesión escribe
-// otro archivo → cero contención.
+// Escribe el marker de ESTA sesión en su archivo propio, por la librería del sello (lib/marker-seal.js): si el marcador en
+// disco no coincide con su sello, no escribe y queda anotado en gates.log.
 function writeMarker(sessionId, marker) {
-  if (!fs.existsSync(ACTIVE_DIR)) fs.mkdirSync(ACTIVE_DIR, { recursive: true });
-  const p = markerFilePath(sessionId);
-  const tmp = `${p}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(marker, null, 2) + '\n', 'utf8');
-  fs.renameSync(tmp, p);
+  require('./lib/marker-seal.js').escribir({ sid: sessionId, estado: STATE_DIR, marker });
 }
 
 

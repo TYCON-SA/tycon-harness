@@ -1871,9 +1871,8 @@ function anotarModelosAvisados(keys) {
     const markerPath = path.join(stateDirOf(os.homedir()), 'active', `${sessionIdFileKey()}.json`);
     const m = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
     m.modelsWarned = [...new Set([...(Array.isArray(m.modelsWarned) ? m.modelsWarned : []), ...keys])];
-    const tmp = `${markerPath}.tmp-${process.pid}`;
-    fs.writeFileSync(tmp, JSON.stringify(m, null, 2));
-    fs.renameSync(tmp, markerPath);
+    // por la librería del sello (lib/marker-seal.js): si no coincide con su sello, no escribe
+    require('./lib/marker-seal.js').escribir({ sid: sessionIdFileKey(), estado: stateDirOf(os.homedir()), texto: JSON.stringify(m, null, 2) });
   } catch (_) { /* sin marcador o ilegible: se vuelve a avisar, que es lo de menos */ }
 }
 
@@ -1901,11 +1900,12 @@ function anotarEnMarker(campos, cambio) {
   Object.assign(m, campos);
   if (cambio) cambio(m);
   m.lastTouch = new Date().toISOString();
-  try {
-    const tmp = `${markerPath}.tmp-${process.pid}`;
-    fs.writeFileSync(tmp, JSON.stringify(m, null, 2));
-    fs.renameSync(tmp, markerPath);
-  } catch (e) { return { ok: false, motivo: `no pude escribir el marcador de esta sesión (${(e && (e.code || e.message)) || 'error'})` }; }
+  // por la librería del sello (lib/marker-seal.js): si no coincide con su sello, no escribe y dice por qué
+  let w;
+  try { w = require('./lib/marker-seal.js').escribir({ sid: sessionIdFileKey(), estado: stateDirOf(os.homedir()), texto: JSON.stringify(m, null, 2) }); } catch (e) {
+    w = { ok: false, motivo: (e && (e.code || e.message)) || 'error' };
+  }
+  if (!w.ok) return { ok: false, motivo: `no pude escribir el marcador de esta sesión (${w.motivo})` };
   return { ok: true, marker: m };
 }
 

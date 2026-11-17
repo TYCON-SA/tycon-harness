@@ -1100,6 +1100,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.121 B: el marcador cambiado a mano (no coincide con su sello) frena; la salida es clear-session --lost.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/marker-seal.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-close.test.js",
       "requiere": []

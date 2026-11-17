@@ -84,6 +84,12 @@ function entorno() {
   const gates = () => path.join(estado(), 'gates.log');
   const activo = (sid) => path.join(estado(), 'active', `${sid}.json`);
   const leerMarcador = (sid) => JSON.parse(fs.readFileSync(activo(sid), 'utf8'));
+  // el marcador de juguete se escribe por la librería del sello, como lo escribe el arnés: uno escrito a mano
+  // sobre una ejecución sellada frenaría como cambiado
+  const sellar = (sid, m) => {
+    const r = require(path.join(SCRIPTS, 'lib', 'marker-seal.js')).escribir({ sid, estado: estado(), texto: JSON.stringify(m) });
+    assert.ok(r.ok, `no pude escribir el marcador de juguete: ${r.motivo}`);
+  };
   const eventos = (sid) => {
     if (!fs.existsSync(gates())) return [];
     return fs.readFileSync(gates(), 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } })
@@ -99,7 +105,7 @@ function entorno() {
     const m = leerMarcador(sid);
     m.stepsCompleted = [...new Set([...(m.stepsCompleted || []), 'validate-story', 'plan', 'approve-plan'])];
     m.stepsPending = (m.stepsPending || []).filter((x) => !['validate-story', 'plan', 'approve-plan'].includes(x));
-    fs.writeFileSync(activo(sid), JSON.stringify(m));
+    sellar(sid, m);
   };
   // la apertura de la sesión, corrida `min` minutos al pasado en las dos piezas (la frase se compara contra ella)
   const atrasarApertura = (sid, min) => {
@@ -147,7 +153,7 @@ function entorno() {
     return { status: r.status, out: r.stderr || '' };
   };
   const frenado = (r) => r.status === 2 || /"decision":"block"/.test(r.out);
-  return { home, repo, story, otra, correr, estado, gates, activo, leerMarcador, eventos, apertura, copiaDe, arrancar, atrasarApertura,
+  return { home, repo, story, otra, correr, estado, gates, activo, leerMarcador, sellar, eventos, apertura, copiaDe, arrancar, atrasarApertura,
     conversacion, gancho, editar, consola, turno, commit, freno, frenado };
 }
 
@@ -225,7 +231,7 @@ test('T2 RunClose_CadaCaminoLegitimo_LoAnota @story-8.121 @ac-2 — clear, clear
   // un marcador sin carpeta (de antes del registro) se adopta, y lo dice
   E = entorno();
   fs.mkdirSync(path.dirname(E.activo('s-t2c5')), { recursive: true });
-  fs.writeFileSync(E.activo('s-t2c5'), JSON.stringify({ storyId: '9.9', sessionId: 's-t2c5', repoPath: E.repo, lastTouch: hace(1) }));
+  E.sellar('s-t2c5', { storyId: '9.9', sessionId: 's-t2c5', repoPath: E.repo, lastTouch: hace(1) });
   const rv = E.correr('marker.js', ['adopt-session', 's-t2c5'], 's-t2c6');
   assert.strictEqual(rv.status, 0, rv.stderr);
   assert.match(rv.stderr, /sin apertura/);
@@ -234,7 +240,7 @@ test('T2 RunClose_CadaCaminoLegitimo_LoAnota @story-8.121 @ac-2 — clear, clear
   E = entorno();
   E.arrancar('s-t2d');
   const viejo = E.leerMarcador('s-t2d');
-  fs.writeFileSync(E.activo('s-t2d'), JSON.stringify({ ...viejo, lastTouch: hace(25 * 60) }));
+  E.sellar('s-t2d', { ...viejo, lastTouch: hace(25 * 60) });
   E.correr('marker.js', ['list-all'], 's-otra');
   assert.ok(!fs.existsSync(E.activo('s-t2d')), 'la poda borró el marcador');
   sano(E, 's-t2d', 'pruneStale');
@@ -242,7 +248,7 @@ test('T2 RunClose_CadaCaminoLegitimo_LoAnota @story-8.121 @ac-2 — clear, clear
   // la poda de 6 h de on-prompt.js, con un pedido de implementar desde otra sesión
   E = entorno();
   E.arrancar('s-t2e');
-  fs.writeFileSync(E.activo('s-t2e'), JSON.stringify({ ...E.leerMarcador('s-t2e'), sessionId: 's-t2e', lastTouch: hace(7 * 60) }));
+  E.sellar('s-t2e', { ...E.leerMarcador('s-t2e'), sessionId: 's-t2e', lastTouch: hace(7 * 60) });
   E.correr('on-prompt.js', [], null);
   spawnSync(process.execPath, [path.join(SCRIPTS, 'on-prompt.js')], {
     input: JSON.stringify({ session_id: 's-otra', prompt: 'implementemos la story 9.9', cwd: E.repo }), encoding: 'utf8',
@@ -511,11 +517,11 @@ test('T11 EjecucionPerdida_SinVentana_NoSeCierra @story-8.121 @ac-11 — sin la 
     ['adopt-session', (E, sid) => E.correr('marker.js', ['adopt-session', sid], 's-ajena')],
     ['set', (E, sid) => E.correr('marker.js', ['set', JSON.stringify({ storyId: '9.8', storyPath: E.otra, repoPath: E.repo }), '--replace'], sid)],
     ['poda de marker.js', (E, sid) => {
-      fs.writeFileSync(E.activo(sid), JSON.stringify({ ...E.leerMarcador(sid), lastTouch: hace(25 * 60) }));
+      E.sellar(sid, { ...E.leerMarcador(sid), lastTouch: hace(25 * 60) });
       return E.correr('marker.js', ['list-all'], 's-ajena');
     }],
     ['poda de on-prompt', (E, sid) => {
-      fs.writeFileSync(E.activo(sid), JSON.stringify({ ...E.leerMarcador(sid), sessionId: sid, lastTouch: hace(7 * 60) }));
+      E.sellar(sid, { ...E.leerMarcador(sid), sessionId: sid, lastTouch: hace(7 * 60) });
       return spawnSync(process.execPath, [path.join(SCRIPTS, 'on-prompt.js')], {
         input: JSON.stringify({ session_id: 's-ajena', prompt: 'implementemos la story 9.9', cwd: E.repo }), encoding: 'utf8',
         env: { ...process.env, HOME: E.home, USERPROFILE: E.home, TYCON_GUIDES_DIR: RAIZ, TYCON_TIME_TRACKING: 'none' },
@@ -696,7 +702,7 @@ test('Prune_SignatureAfterCutoff_KeepsRun @story-8.270 @ac-1 — un marcador aje
   for (const campo of ['target', 'ordered_by']) {
     const E = entorno();
     E.arrancar('s-p1');
-    fs.writeFileSync(E.activo('s-p1'), JSON.stringify({ ...E.leerMarcador('s-p1'), sessionId: 's-p1', lastTouch: hace(7 * 60) }));
+    E.sellar('s-p1', { ...E.leerMarcador('s-p1'), sessionId: 's-p1', lastTouch: hace(7 * 60) });
     firmar(E, 's-p1', hace(60), campo);
     podarDesdeOnPrompt(E);
     assert.ok(fs.existsSync(E.activo('s-p1')), `${campo}: el marcador sigue`);
@@ -707,7 +713,7 @@ test('Prune_SignatureAfterCutoff_KeepsRun @story-8.270 @ac-1 — un marcador aje
 test('Prune_MarkerPruneStale_SignatureAfterCutoff_KeepsRun @story-8.270 @ac-2 — la poda de 24 h de marker.js, con una firma reciente', () => {
   const E = entorno();
   E.arrancar('s-p2');
-  fs.writeFileSync(E.activo('s-p2'), JSON.stringify({ ...E.leerMarcador('s-p2'), lastTouch: hace(25 * 60) }));
+  E.sellar('s-p2', { ...E.leerMarcador('s-p2'), lastTouch: hace(25 * 60) });
   firmar(E, 's-p2', hace(60));
   E.correr('marker.js', ['list-all'], 's-otra');
   assert.ok(fs.existsSync(E.activo('s-p2')), 'el marcador sigue');
@@ -719,7 +725,7 @@ test('Prune_SignatureLogUnreadable_DoesNotPrune @story-8.270 @ac-3 — un regist
   for (const [sid, horas, podar] of [['s-p3a', 7, (E) => podarDesdeOnPrompt(E)], ['s-p3b', 25, (E) => E.correr('marker.js', ['list-all'], 's-otra')]]) {
     const E = entorno();
     E.arrancar(sid);
-    fs.writeFileSync(E.activo(sid), JSON.stringify({ ...E.leerMarcador(sid), sessionId: sid, lastTouch: hace(horas * 60) }));
+    E.sellar(sid, { ...E.leerMarcador(sid), sessionId: sid, lastTouch: hace(horas * 60) });
     fs.mkdirSync(path.join(E.estado(), 'signatures.jsonl'));
     const r = podar(E);
     assert.ok(fs.existsSync(E.activo(sid)), `${sid}: el marcador sigue`);
@@ -732,7 +738,7 @@ test('Prune_SignatureLogUnreadable_DoesNotPrune @story-8.270 @ac-3 — un regist
 test('Prune_NoSignatureNoTouch_StillPrunes @story-8.270 @ac-18 — sin firmas nuevas se poda y se cierra como abandonada', () => {
   const E = entorno();
   E.arrancar('s-p4');
-  fs.writeFileSync(E.activo('s-p4'), JSON.stringify({ ...E.leerMarcador('s-p4'), sessionId: 's-p4', lastTouch: hace(7 * 60) }));
+  E.sellar('s-p4', { ...E.leerMarcador('s-p4'), sessionId: 's-p4', lastTouch: hace(7 * 60) });
   // una firma vieja (de antes del corte) y una de otra sesión no la dejan viva
   firmar(E, 's-p4', hace(8 * 60));
   firmar(E, 's-otra-mas', hace(10));

@@ -43,13 +43,11 @@ function markerPath(sessionId) {
 function readMarker(sessionId) {
   try { return JSON.parse(fs.readFileSync(markerPath(sessionId), 'utf8')); } catch { return null; }
 }
+// por la librería del sello (lib/marker-seal.js): si el marcador en disco no coincide con su sello, no escribe y queda
+// anotado en gates.log
 function writeMarker(sessionId, m) {
   try {
-    fs.mkdirSync(ACTIVE_DIR, { recursive: true });
-    const p = markerPath(sessionId);
-    const tmp = `${p}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(m, null, 2) + '\n', 'utf8');
-    fs.renameSync(tmp, p);
+    require('./lib/marker-seal.js').escribir({ sid: sessionId, estado: STATE_DIR, marker: m });
   } catch { /* best-effort */ }
 }
 

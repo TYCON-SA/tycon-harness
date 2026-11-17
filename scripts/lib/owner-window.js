@@ -1844,7 +1844,12 @@ function fijarDestino({ r, propia, necesitaMarcador = false, leerMarcador, casa,
   if (!SESION.test(destino)) return { codigo: 2, motivo: 'la sesión destino de la firma no se puede leer' };
   const leer = leerMarcador || ((sid) => marcadorEn(path.join(stateDir(casa === undefined ? casaDeLaCuenta() : casa), 'active', `${sid}.json`)));
   let hoy;
-  try { hoy = corridaDelMarcador(leer(destino)); } catch (e) { return { codigo: 2, motivo: e.message }; }
+  // un marcador que no se lee queda como lo anota la constancia (`corridaDe`): así el dueño puede cerrar como perdida una
+  // ejecución con el marcador roto a mano. El comando que necesita el marcador sigue frenando
+  try { hoy = corridaDelMarcador(leer(destino)); } catch (e) {
+    if (necesitaMarcador) return { codigo: 2, motivo: e.message };
+    hoy = { ilegible: true };
+  }
   if (necesitaMarcador && !hoy) return { codigo: 2, motivo: `la sesión ${destino} no tiene una ejecución abierta` };
   const vio = r.registro ? r.registro.corrida : undefined;
   if (vio !== undefined && JSON.stringify(vio) !== JSON.stringify(hoy)) {

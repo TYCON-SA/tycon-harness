@@ -270,8 +270,10 @@ function frenoDelCierre({ markerPath, estado, sid }) {
   }
   if (!r.delicado) return null;
   volverAlPlan(marker, { porDelicado: true });
-  // las rutas de la corrida, absolutas contra su repo, como las escribe marker.js (lib/run-dir.js)
-  fs.writeFileSync(markerPath, JSON.stringify(require('./run-dir.js').marcadorConRutas(marker, { avisar: true }), null, 2));
+  // las rutas de la corrida, absolutas contra su repo, como las escribe marker.js (lib/run-dir.js), por la librería del
+  // sello con la sesión (lib/marker-seal.js): si el marcador no coincide con su sello, no se escribe y no se guarda
+  const w = require('./marker-seal.js').escribir({ sid, estado, texto: JSON.stringify(require('./run-dir.js').marcadorConRutas(marker, { avisar: true }), null, 2) });
+  if (!w.ok) return { texto: `🔒 cierre: no pude volver el plan a una persona: ${w.motivo}. No se guarda.` };
   try { io.appendLog(estado, 'gates.log', sid, { name: 'plan-reopened', status: 'ok', story: marker.storyId, motivo: 'el diff entero sale delicado', regla: r.delicado.rule, reason: r.delicado.reason }); } catch (_) { /* el freno sale igual */ }
   return {
     texto: [

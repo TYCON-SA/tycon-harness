@@ -125,8 +125,10 @@ function currentStep(marker) {
   return conLista.length ? stepLabel(enSecuencia[0]) : null;   // sólo queda el cierre en ADO: terminó
 }
 
+// la clave de archivo del marcador es la de marker.js, no `safeSid` (que es la de los archivos propios de este aviso)
+const markerKey = (sid) => String(sid || '_nosession').replace(/[/\\]/g, '_');
 function readMarker(sid) {
-  try { return JSON.parse(fs.readFileSync(path.join(dirs().active, `${safeSid(sid)}.json`), 'utf8')); } catch { return null; }
+  try { return JSON.parse(fs.readFileSync(path.join(dirs().active, `${markerKey(sid)}.json`), 'utf8')); } catch { return null; }
 }
 
 // ── el hilo de la sesión ─────────────────────────────────────────────────────────────────────────────────────────
@@ -661,13 +663,14 @@ function noteFindingsWait(sid, which = 'noteFindingsWait') {
     return false;
   }
   if (!steps[which](m, new Date().toISOString())) return false;
-  const file = path.join(dirs().active, `${safeSid(sid)}.json`);
-  const tmp = `${file}.${process.pid}.tmp`;
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(m, null, 2));
-    fs.renameSync(tmp, file);
-  } catch (e) {
-    try { logLine({ session: sid, event: 'findings-wait-not-noted', reason: `no pude escribir el marcador (${e.code || 'error'})` }); } catch { /* sin registro tampoco */ }
+  // por la librería del sello, con la clave de archivo del marcador (lib/marker-seal.js): si no coincide con su sello, no
+  // escribe y queda en gates.log
+  let w;
+  try { w = require(path.join(SKILL_LIB, 'marker-seal.js')).escribir({ sid, estado: path.dirname(dirs().active), texto: JSON.stringify(m, null, 2) }); } catch (e) {
+    w = { ok: false, motivo: e.code || 'error' };
+  }
+  if (!w.ok) {
+    try { logLine({ session: sid, event: 'findings-wait-not-noted', reason: `no pude escribir el marcador (${w.motivo})` }); } catch { /* sin registro tampoco */ }
     return false;
   }
   return true;

@@ -1597,7 +1597,10 @@ function marcadoresTocados(cmd, cwd, stateDir) {
   const registros = [stateDir, installedTree.realPath(stateDir)].filter(Boolean).map((b) => path.join(b, 'gates.log'));
   // el registro de aperturas (`gates.log`) y la copia de una apertura (`.advisors/pipeline-runs/<carpeta>/run-open.json`):
   // las otras dos piezas de una ejecución abierta (lib/open-runs.js)
-  const pieza = (r) => registros.includes(r) || (path.basename(r) === 'run-open.json' && path.basename(path.dirname(path.dirname(r))) === 'pipeline-runs');
+  // y los sellos de los marcadores (`<estado>/seals/`, lib/marker-seal.js): la carpeta y sus archivos
+  const sellos = [stateDir, installedTree.realPath(stateDir)].filter(Boolean).map((b) => path.join(b, 'seals'));
+  const pieza = (r) => registros.includes(r) || sellos.includes(r) || sellos.includes(path.dirname(r))
+    || (path.basename(r) === 'run-open.json' && path.basename(path.dirname(path.dirname(r))) === 'pipeline-runs');
   return zonaTocada(cmd, cwd, stateDir, { carpeta: 'active', nombres: ['active', 'active.json'], pieza });
 }
 
@@ -3333,9 +3336,8 @@ function anotarBorradosDeLaStory({ stateDir, sessionId, marker, rutas, via }) {
       else m.otraVuelta = v;
     } catch (e) { delete m.otraVuelta; logHookError(e); }   // sin el campo, el cartel usa su regla de antes
     m.lastTouch = ts;
-    const tmp = `${archivo}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(m, null, 2) + '\n', 'utf8');
-    fs.renameSync(tmp, archivo);
+    // por la librería del sello (lib/marker-seal.js): si el marcador no coincide con su sello, no escribe y lo anota
+    require('./lib/marker-seal.js').escribir({ sid: sessionId || '_nosession', estado: stateDir, marker: m });
   } catch (e) { logHookError(e); }
   try {
     fs.appendFileSync(path.join(stateDir, 'gates.log'), JSON.stringify({

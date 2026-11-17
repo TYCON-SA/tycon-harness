@@ -1,0 +1,35 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "marcador-cambiado-con-python-la-edicion-siguiente-frena",
+          "type": "must-block",
+          "_por_que": "8.121 B: el marcador de una ejecución sellada, reescrito por un programa que no es la librería del sello (python3 -c), ya no coincide con su sello; el comando siguiente frena con el cartel, en vez de seguir con lo tocado a mano.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src .advisors/pipeline-runs/9.9-banco",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\" \"$S/seals\"; R=\"$(pwd -P)/.advisors/pipeline-runs/9.9-banco\"; T=2026-11-17T10:00:00.000Z; printf '{\"ts\":\"%s\",\"sessionId\":\"bench-cambiado\",\"name\":\"run-open\",\"sesion\":\"bench-cambiado\",\"story\":\"9.9\",\"repo\":\"%s\",\"runDir\":\"%s\",\"sellado\":true}\\n' \"$T\" \"$(pwd -P)\" \"$R\" >> \"$S/gates.log\"; printf '{\"sesion\":\"bench-cambiado\",\"story\":\"9.9\",\"repo\":\"%s\",\"runDir\":\"%s\",\"ts\":\"%s\"}' \"$(pwd -P)\" \"$R\" \"$T\" > \"$R/run-open.json\"; printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"bench-cambiado\",\"runDir\":\"%s\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" \"$R\" > \"$S/active/bench-cambiado.json\"; H=$(shasum -a 256 \"$S/active/bench-cambiado.json\" | cut -d' ' -f1); printf '{\"sesion\":\"bench-cambiado\",\"huella\":\"%s\",\"previa\":null,\"ts\":\"%s\"}' \"$H\" \"$T\" > \"$S/seals/bench-cambiado.json\"",
+            "M=\"$HOME/.claude/.tycon-pipeline/active/bench-cambiado.json\"; python3 -c \"import json,sys;p=sys.argv[1];m=json.load(open(p));m['stepsCompleted'].append('reviewers');json.dump(m,open(p,'w'))\" \"$M\" 2>/dev/null || sed -i.bak 's/implement/reviewers/' \"$M\""
+          ],
+          "stdin": { "session_id": "bench-cambiado", "tool_name": "Bash", "tool_input": { "command": "echo x > src/a.js" } },
+          "expect": { "exit": 2, "stderr_re": ["MARCADOR DE LA EJECUCIÓN CAMBIADO A MANO", "--lost"] }
+        },
+        {
+          "id": "marcador-cambiado-gemelo-con-su-sello-pasa",
+          "type": "must-not-block",
+          "_por_que": "8.121 B: el gemelo — la misma ejecución sellada con el marcador que coincide con su sello — no frena: sin esto, el control frenaría toda ejecución sellada.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src .advisors/pipeline-runs/9.9-banco",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\" \"$S/seals\"; R=\"$(pwd -P)/.advisors/pipeline-runs/9.9-banco\"; T=2026-11-17T10:00:00.000Z; printf '{\"ts\":\"%s\",\"sessionId\":\"bench-sano\",\"name\":\"run-open\",\"sesion\":\"bench-sano\",\"story\":\"9.9\",\"repo\":\"%s\",\"runDir\":\"%s\",\"sellado\":true}\\n' \"$T\" \"$(pwd -P)\" \"$R\" >> \"$S/gates.log\"; printf '{\"sesion\":\"bench-sano\",\"story\":\"9.9\",\"repo\":\"%s\",\"runDir\":\"%s\",\"ts\":\"%s\"}' \"$(pwd -P)\" \"$R\" \"$T\" > \"$R/run-open.json\"; printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"bench-sano\",\"runDir\":\"%s\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" \"$R\" > \"$S/active/bench-sano.json\"; H=$(shasum -a 256 \"$S/active/bench-sano.json\" | cut -d' ' -f1); printf '{\"sesion\":\"bench-sano\",\"huella\":\"%s\",\"previa\":null,\"ts\":\"%s\"}' \"$H\" \"$T\" > \"$S/seals/bench-sano.json\""
+          ],
+          "stdin": { "session_id": "bench-sano", "tool_name": "Bash", "tool_input": { "command": "echo x > src/a.js" } },
+          "expect": { "exit": 0, "stderr_not_re": ["CAMBIADO A MANO", "EJECUCIÓN PERDIDA"] }
+        }
+      ]
+    }
+  ]
+}

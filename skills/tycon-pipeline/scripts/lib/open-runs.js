@@ -15,7 +15,9 @@
  *     terminada que volvió a traer git: no frena;
  *   - c: la copia de la apertura vigente falta, no se puede leer, trae campos de cierre o no coincide (otra sesión sin
  *     su propia apertura vigente, otra historia, otra hora u otra carpeta);
- *   - ilegible: el registro existe y no se puede leer, con un marcador o una copia de la sesión a la vista.
+ *   - ilegible: el registro existe y no se puede leer, con un marcador o una copia de la sesión a la vista;
+ *   - cambiado: la apertura vigente es sellada y su marcador no coincide con su sello, o el sello falta, no se lee o es de
+ *     otra sesión (lib/marker-seal.js).
  * Sin ninguna de las tres piezas de la sesión, no hay ejecución y nada cambia.
  *
  * La salida es del dueño: `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, la firma `lost-run`
@@ -51,9 +53,9 @@ function mismaRuta(a, b, platform = process.platform) {
  * registro o `{ ok: false, error }` si existe y no se puede leer. Sólo se parsean los renglones que nombran un evento de
  * ejecución: el registro tiene megas de otros controles.
  */
-function leerEventos(home) {
+function leerEventos(home, archivo = gatesPath(home)) {
   let raw;
-  try { raw = fs.readFileSync(gatesPath(home)); } catch (e) {
+  try { raw = fs.readFileSync(archivo); } catch (e) {
     return e && e.code === 'ENOENT' ? { ok: false, ausente: true } : { ok: false, error: (e && (e.code || e.message)) || 'error' };
   }
   // corre en cada comando de consola: se buscan los dos nombres en los bytes y se parsea sólo su renglón, porque partir
@@ -95,7 +97,8 @@ function abrir({ sid, story, storyPath, repo, runDir, motivo, home, ahora = new 
   runDir = r.runDir;
   storyPath = r.storyPath;
   repo = r.repoPath && path.isAbsolute(r.repoPath) ? r.repoPath : null;
-  const apertura = { sesion: String(sid), story: String(story), ...(storyPath ? { storyPath } : {}), ...(repo ? { repo } : {}), runDir, ts: ahora };
+  // `sellado`: su marcador se juzga también por su sello (lib/marker-seal.js); una apertura sin él es de antes
+  const apertura = { sesion: String(sid), story: String(story), ...(storyPath ? { storyPath } : {}), ...(repo ? { repo } : {}), runDir, ts: ahora, sellado: true };
   anotar(home, { ts: ahora, sessionId: String(sid), name: 'run-open', ...apertura, ...(motivo ? { motivo } : {}) });
   fs.mkdirSync(runDir, { recursive: true });
   const tmp = `${copiaPath(runDir)}.${process.pid}.tmp`;
@@ -128,6 +131,8 @@ function cerrar({ sid, sesion, runDir, story, estado, motivo, via, cita, home, e
       if (c && c.sesion === quien) fs.unlinkSync(copiaPath(carpeta));
     } catch { /* sin copia, o ilegible: queda para que la pregunta la vea */ }
   }
+  // el sello de su marcador se va con la ejecución (lib/marker-seal.js)
+  require('./marker-seal.js').borrar({ sid: quien, home });
 }
 
 /** La raíz de git de la carpeta (sube hasta encontrar `.git`), o null. */
@@ -222,6 +227,11 @@ function perdida({ sid, cwd, home, platform = process.platform } = {}) {
     return deOtra ? null : r('c', 'copia-distinta', ult);
   }
   if (copia.ts !== ult.ts || String(copia.story) !== String(ult.story) || !mismaRuta(copia.runDir, ult.runDir, platform)) return r('c', 'copia-distinta', ult);
+  // una ejecución sellada: su marcador tiene que coincidir con su sello (lib/marker-seal.js)
+  if (ult.sellado === true) {
+    const sello = require('./marker-seal.js').revisar({ sid: s, home });
+    if (sello) return r('cambiado', sello.falta, ult);
+  }
   return null;
 }
 
@@ -234,10 +244,23 @@ const FALTA = {
   'copia-cerrada': 'la copia de la apertura (run-open.json) trae campos de un cierre: fue editada',
   'copia-distinta': 'la copia de la apertura (run-open.json) no coincide con el registro: fue editada',
   'registro-ilegible': 'el registro de aperturas (gates.log) existe y no se puede leer',
+  'marcador-cambiado': 'su marcador no coincide con su sello: se cambió por fuera del arnés',
+  sello: 'falta el sello de su marcador (seals/<sesión>.json): se borró o se movió',
+  'sello-ilegible': 'el sello de su marcador no se puede leer',
+  'sello-ajeno': 'el sello de su marcador es de otra sesión: fue editado',
 };
 
 /** El cartel del freno: qué pieza falta, de qué historia, desde cuándo y la salida. */
 function cartel(r, { markerJs = 'marker.js' } = {}) {
+  // con el marcador cambiado, restore no se ofrece: conserva el marcador en disco y sellaría lo tocado a mano
+  if (r.caso === 'cambiado') {
+    return [
+      `🔴 MARCADOR DE LA EJECUCIÓN CAMBIADO A MANO — la ejecución de la story ${r.story || '?'} (sesión ${r.sesion}), abierta ${r.desde || 'en una hora que no se pudo leer'}: ${FALTA[r.falta] || r.falta}.`,
+      'Hasta resolverla no se edita, no se escribe por consola, no se cierra el turno ni se commitea. Leer sí: cat, ls, grep, head, tail, git status/diff/log, marker.js get.',
+      'La salida la decide una persona, no el agente: la firma en la ventana de permiso o en su terminal (--terminal), con este comando:',
+      `  node ${markerJs} clear-session ${r.sesion} --lost   (la cierra como perdida)`,
+    ].join('\n');
+  }
   return [
     `🔴 EJECUCIÓN PERDIDA — la ejecución de la story ${r.story || '?'} (sesión ${r.sesion}), abierta ${r.desde || 'en una hora que no se pudo leer'}: ${FALTA[r.falta] || r.falta}.`,
     'Hasta resolverla no se edita, no se escribe por consola, no se cierra el turno ni se commitea. Leer sí: cat, ls, grep, head, tail, git status/diff/log, marker.js get.',

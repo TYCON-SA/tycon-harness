@@ -371,6 +371,8 @@ function pruneStale() {
       } catch (_e) { /* ignore */ }
     }
   }
+  // los sellos sin marcador de un proceso que murió sin cerrar (lib/marker-seal.js)
+  try { require('./lib/marker-seal.js').podarHuerfanos({ estado: STATE_DIR }); } catch (_e) { /* quedan para la próxima pasada */ }
 }
 
 // Append-only logs en STATE_DIR — trazabilidad durable de gates y bypasses.
@@ -463,10 +465,14 @@ function writeMarker(marker) {
   sinFirmaNoSeEscribe();
   ensureActiveDir();
   pruneStale();
-  const p = markerFilePath(SID);
-  const tmp = `${p}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(require('./lib/run-dir.js').marcadorConRutas(marker, { avisar: true }), null, 2) + '\n', 'utf8');
-  fs.renameSync(tmp, p);
+  // por la librería del sello (lib/marker-seal.js): si el marcador en disco no coincide con su sello, no se escribe
+  const r = require('./lib/marker-seal.js').escribir({ sid: SID, estado: STATE_DIR,
+    texto: JSON.stringify(require('./lib/run-dir.js').marcadorConRutas(marker, { avisar: true }), null, 2) + '\n' });
+  if (!r.ok) {
+    console.error(`🔒 marker.js: no escribí el marcador de la sesión ${SID}: ${r.motivo}.`);
+    console.error(`  Si se cambió a mano, la ejecución sale sólo con marker.js clear-session ${SID} --lost, que firma una persona en la ventana de permiso o en su terminal (--terminal).`);
+    process.exit(3);
+  }
   avisarOficina();
 }
 
@@ -555,7 +561,9 @@ function frenarSiPerdida(sesion, comando, cwd) {
   }
   if (!p) return;
   console.error(`marker.js ${comando}: la ejecución de la sesión ${sesion} está perdida (${p.caso}: ${p.falta}).`);
-  console.error(`  Sale sólo con marker.js clear-session ${sesion} --lost o marker.js restore ${sesion}: lo firma una persona en la ventana de permiso o en su terminal (--terminal).`);
+  // con el marcador cambiado, restore no sirve: conservaría lo tocado a mano
+  const salida = p.caso === 'cambiado' ? `marker.js clear-session ${sesion} --lost` : `marker.js clear-session ${sesion} --lost o marker.js restore ${sesion}`;
+  console.error(`  Sale sólo con ${salida}: lo firma una persona en la ventana de permiso o en su terminal (--terminal).`);
   process.exit(3);
 }
 
@@ -5494,9 +5502,20 @@ function cmdSalidaPerdida(modo, sesion) {
     process.exit(1);
   }
   const apertura = ubicada.apertura;
+  // un marcador que no coincide con su sello lo cambió algo que no es el arnés (lib/marker-seal.js)
+  const cambiado = (s) => { try { const p = or.perdida({ sid: String(s), cwd: apertura.repo || process.cwd() }); return !!(p && p.caso === 'cambiado'); } catch (_e) { return false; } };
+  // restore conserva el marcador de la misma historia que hay en disco: con uno cambiado, sellaría lo tocado a mano
+  if (modo === 'restore') {
+    for (const s of [...new Set([String(sesion), String(SID)])]) {
+      if (!cambiado(s)) continue;
+      console.error(`marker.js ${nombre}: el marcador de la sesión ${s} no coincide con su sello (se cambió por fuera del arnés): restore lo conservaría. No se restauró nada.`);
+      console.error(`  La ejecución sale sólo con marker.js clear-session ${s} --lost, que firma una persona en la ventana de permiso o en su terminal (--terminal).`);
+      process.exit(3);
+    }
+  }
   // restore pisa el marcador propio y --lost borra el de la sesión perdida: si el que se toca no se lee, no se puede
-  // anotar lo que deja (antes de pedir la firma)
-  frenarSiIlegible(markerFilePath(modo === 'lost' ? sesion : SID), modo === 'lost' ? sesion : SID, nombre);
+  // anotar lo que deja (antes de pedir la firma). Un marcador cambiado a mano se borra igual: lo que dice no vale
+  if (!(modo === 'lost' && cambiado(sesion))) frenarSiIlegible(markerFilePath(modo === 'lost' ? sesion : SID), modo === 'lost' ? sesion : SID, nombre);
   // una apertura sin hora legible está dañada: no se cierra ni se rearma a ciegas
   if (!Number.isFinite(Date.parse(apertura.ts))) {
     console.error(`marker.js ${nombre}: la apertura de la sesión ${sesion} no trae una hora legible (${apertura.ts}): está dañada, y no se ${modo === 'lost' ? 'cierra' : 'rearma'} a ciegas.`);
