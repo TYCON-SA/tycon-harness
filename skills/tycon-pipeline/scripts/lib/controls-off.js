@@ -32,8 +32,28 @@ const { spawnSync } = require('child_process');
 
 // la lista única de las variables de entorno del arnés (scripts/lib/env-switches.json): dice cuáles apagan con
 // cualquier valor que no sea 0 ni vacío (`en_configuracion: cualquiera`) y con qué valores apaga cada una
-const ES = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+const ES = cargarLista();
 const SIN_LISTA = 'no pude leer la lista de interruptores';
+
+/**
+ * El lector de la lista: el del mismo árbol (el repo unido) o, con las skills en un clon aparte, el del lugar del arnés
+ * (`~/.claude/tycon-harness`). Del lugar se toma sólo el enlace, nunca `TYCON_GUIDES_DIR`: la variable la puede poner
+ * el agente, y la lista decide qué apaga un control. Si no hay lector, uno que dice que no pudo leerla: `apaga()` juzga
+ * sin la lista, que frena más.
+ */
+function cargarLista() {
+  const rel = path.join('scripts', 'lib', 'env-switches.js');
+  const propio = path.join(__dirname, '..', '..', '..', '..', rel);
+  let ruta = fs.existsSync(propio) ? propio : null;
+  if (!ruta) {
+    try {
+      const lugar = require('./harness-path.js').soloEnlace().dir;
+      if (lugar && fs.existsSync(path.join(lugar, rel))) ruta = path.join(lugar, rel);
+    } catch (_) { /* sin lugar: sin lista */ }
+  }
+  try { if (ruta) return require(ruta); } catch (_) { /* un lector roto cuenta como sin lista */ }
+  return { leer: () => ({ ok: false, error: 'no encontré scripts/lib/env-switches.js', entradas: [] }), entrada: () => null, apagaSegunLista: () => null };
+}
 
 /**
  * ¿La variable `nombre` con el valor `valor` apaga un control? Las mismas formas que HARNESS-C1 mira en el rc: la
