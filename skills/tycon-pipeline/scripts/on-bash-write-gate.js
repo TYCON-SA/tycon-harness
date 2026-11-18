@@ -679,6 +679,15 @@ function sinContinuaciones(cmd) {
   return out;
 }
 
+// el comienzo de un archivo, sin leerlo entero: un ejecutable puede ser enorme y su línea `#!` no pide más
+function comienzoDe(real, bytes) {
+  const fd = fs.openSync(real, 'r');
+  try {
+    const buf = Buffer.alloc(bytes);
+    return buf.toString('utf8', 0, fs.readSync(fd, buf, 0, bytes, 0));
+  } finally { fs.closeSync(fd); }
+}
+
 /**
  * Los guiones que el comando corre desde un archivo (`python3 p.py a`, `time node p.js`, `./x.py`, `python3 -m x`,
  * `node -r ./p.js`), leídos: `[{ interprete, archivo, texto, argv, grande }]`. El intérprete se busca en cualquier
@@ -806,7 +815,7 @@ function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO
         try {
           const st = fs.statSync(real);
           if (!st.isFile() || !(st.mode & 0o111)) break;
-          const linea = fs.readFileSync(real, 'utf8').slice(0, 200).split('\n')[0];
+          const linea = comienzoDe(real, 200).split('\n')[0];
           // `#!/usr/bin/python3` · `#!/usr/bin/env -S python3 -u`: con `env`, el intérprete es su primera palabra
           const partes = linea.startsWith('#!') ? linea.slice(2).trim().split(/\s+/) : [];
           const interprete = nombreDeComando(partes[0]) === 'env'

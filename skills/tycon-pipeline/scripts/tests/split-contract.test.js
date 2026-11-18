@@ -639,11 +639,13 @@ test('T14 BashGate_DeepModule_BlocksNotCuts @story-8.163 @ac-14', () => {
 });
 
 test('T14 BashGate_ModuleWalk_ReadsAreBounded @story-8.163 @ac-14', () => {
-  // el mismo módulo pedido muchas veces se lee una sola
+  // el mismo módulo, pedido desde dos lados, se lee una sola vez
   const a = repoDelFreno();
   fs.mkdirSync(path.join(a.dir, 'herr'), { recursive: true });
   const repetido = path.join(a.dir, 'herr', 'a.js');
-  fs.writeFileSync(path.join(a.dir, 'herr', 'principal.js'), "require('./a.js');\n".repeat(500));
+  fs.writeFileSync(path.join(a.dir, 'herr', 'principal.js'), "require('./uno.js');\nrequire('./otro.js');\n");
+  fs.writeFileSync(path.join(a.dir, 'herr', 'uno.js'), "require('./a.js');\n");
+  fs.writeFileSync(path.join(a.dir, 'herr', 'otro.js'), "require('./a.js');\n");
   fs.writeFileSync(repetido, NO_ESCRIBE);
   const original = fs.readFileSync;
   let lecturas = 0;
@@ -659,6 +661,22 @@ test('T14 BashGate_ModuleWalk_ReadsAreBounded @story-8.163 @ac-14', () => {
   const guiones = bash().guionesEnArchivo('node herr/principal.js', [b.dir], [], 8192);
   assert.ok(guiones.some((g) => g.grande && !g.texto), 'agotado el tope, queda un guion sin leer');
   assert.ok(!guiones.some((g) => g.archivo.endsWith('despues.js') && g.texto), 'lo de después del tope no se lee');
+  // de un ejecutable nombrado se mira el comienzo: su línea `#!` no pide leerlo entero
+  if (process.platform !== 'win32') {
+    const c = repoDelFreno();
+    fs.mkdirSync(path.join(c.dir, 'herr'), { recursive: true });
+    const ejecutable = path.join(c.dir, 'herr', 'programa');
+    fs.writeFileSync(ejecutable, `#!/bin/sh\n# ${'x'.repeat(1024)}\n`, { mode: 0o755 });
+    let leidas = 0;
+    fs.readFileSync = (f, ...resto) => { if (String(f) === ejecutable) leidas++; return original(f, ...resto); };
+    try { assert.strictEqual(frenar(c, './herr/programa'), '', 'un ejecutable que no corre un intérprete de guiones no frena'); } finally { fs.readFileSync = original; }
+    assert.strictEqual(leidas, 0, 'el ejecutable no se lee entero para ver su primera línea');
+    // con un intérprete de guiones se sigue mirando lo que escribe
+    const d = repoDelFreno();
+    fs.mkdirSync(path.join(d.dir, 'herr'), { recursive: true });
+    fs.writeFileSync(path.join(d.dir, 'herr', 'guion'), `#!/usr/bin/env node\n${ESCRIBE_CONSTANCIA}`, { mode: 0o755 });
+    assert.notStrictEqual(frenar(d, './herr/guion'), '', 'un ejecutable de node que escribe una constancia frena');
+  }
 });
 
 // ── lo publicado ─────────────────────────────────────────────────────────────────────────────────────────────────────
