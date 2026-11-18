@@ -703,6 +703,8 @@ function cmdSet(payloadJson) {
       testsFailed, testsGreenFull, testsSavedNote,
       // la tanda es de la historia: heredada, la matriz de la nueva mediría una tanda que no es suya
       batch, batchSetAt,
+      // el pedido es de la corrida: heredado, el cierre de la nueva anunciaría un pedido que no es suyo
+      pr,
       ...carryOver
     } = existing;
     console.error(
@@ -5149,10 +5151,11 @@ function decirRenglonDelPaso(marker, paso) {
 
 /** Al cerrar la corrida: sus renglones y el renglón final, y un aviso por los canales de la sesión (uno por corrida). */
 function decirRenglonesDelCierre(marker, dump, runDir) {
-  const RL = require('./lib/run-lines.js');
+  let RL;
   let ls = [];
   let fin = null;
   try {
+    RL = require('./lib/run-lines.js');
     ls = RL.lines({ marker, runDir: runDir || marker.runDir, stateDir: STATE_DIR });
     fin = RL.final({ dump, runDir: runDir || marker.runDir, stateDir: STATE_DIR });
     for (const l of ls) process.stderr.write(`[corrida] ${l.text}\n`);
@@ -5166,6 +5169,7 @@ function decirRenglonesDelCierre(marker, dump, runDir) {
     const texto = RL.noticeText({ storyId: marker.storyId, title: tituloDeLaHistoria(marker), lines: ls, final: fin });
     const via = notify.canalesListos({ texto });
     if (via.problema) { process.stderr.write(`[corrida] el aviso del cierre no salió: ${via.problema}\n`); return; }
+    if (via.fallidos && via.fallidos.length) process.stderr.write(`[corrida] el aviso del cierre no salió por ${via.fallidos.join(' · ')}\n`);
     if (!via.canales.length) return;
     const r = notify.avisar({ canales: via.canales, texto, lado: 'sesion', mail: via.mail, chat: via.chat, reintentar: false });
     const fallidos = r.resultados.filter((x) => !x.entregado).map((x) => `${x.canal}: ${x.motivo || 'no se entregó'}`);
@@ -5199,21 +5203,20 @@ function cmdPr(numRaw, rest = []) {
     console.error('marker.js pr: no hay corrida viva en esta sesión: nombrá la historia con --story <id> para anotarlo en su último volcado');
     process.exit(2);
   }
-  const histDir = path.join(STATE_DIR, 'timing-history');
-  const prefijo = `${String(story).replace(/[^\w.-]/g, '_')}-`;
-  let archivos = [];
-  try { archivos = fs.readdirSync(histDir).filter((f) => f.startsWith(prefijo) && f.endsWith('.json')).sort(); } catch (_e) { archivos = []; }
-  if (!archivos.length) {
-    console.error(`marker.js pr: no encontré ningún volcado de la historia ${story} en ${histDir}`);
+  const RL = require('./lib/run-lines.js');
+  let repoDir = null;
+  try { repoDir = require('./lib/repo-attrib.js').gitRoot(process.cwd()); } catch (_e) { repoDir = null; }
+  const volcado = RL.ultimoVolcado({ stateDir: STATE_DIR, storyId: story, repoDir, pr: numero });
+  if (!volcado) {
+    console.error(`marker.js pr: no encontré ningún volcado de la historia ${story} de este repo en ${path.join(STATE_DIR, 'timing-history')}`);
     process.exit(1);
   }
-  const hist = path.join(histDir, archivos[archivos.length - 1]);
-  const dump = JSON.parse(fs.readFileSync(hist, 'utf8'));
-  dump.marker = { ...(dump.marker || {}), pr: { number: numero, merged } };
+  const { archivo: hist, dump } = volcado;
+  dump.marker = { ...dump.marker, pr: { number: numero, merged } };
   fs.writeFileSync(hist, JSON.stringify(dump, null, 2), 'utf8');
   // la copia en la carpeta de la corrida: el volcado con el mismo sello
-  const ts = archivos[archivos.length - 1].slice(prefijo.length, -'.json'.length);
-  const runDir = dump.marker.runDir || null;
+  const ts = path.basename(hist, '.json').slice(`${String(story).replace(/[^\w.-]/g, '_')}-`.length);
+  const runDir = RL.carpetaDe(dump.marker);
   if (runDir) {
     const copia = path.join(runDir, `timing-dump-${ts}.json`);
     try {
@@ -5223,7 +5226,7 @@ function cmdPr(numRaw, rest = []) {
     } catch (e) { process.stderr.write(`[marker] no pude anotar el pedido en la copia del volcado (${copia}: ${e.code || e.message})\n`); }
   }
   try {
-    process.stdout.write(`${require('./lib/run-lines.js').final({ dump, runDir, stateDir: STATE_DIR })}\n`);
+    process.stdout.write(`${RL.final({ dump, runDir, stateDir: STATE_DIR })}\n`);
   } catch (e) { process.stderr.write(`[marker] no pude armar el renglón final (${e.message})\n`); }
 }
 

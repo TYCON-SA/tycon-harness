@@ -350,22 +350,29 @@ function canalesDeLaSesion({ env = process.env, home = os.homedir() } = {}) {
 }
 
 /**
- * Los canales por donde esta sesión puede mandar ahora: `{ canales, mail, chat, problema }`. Los de `canalesDeLaSesion`;
- * sin la lista del perfil, Telegram sólo si está prendido en la máquina; y de ésos, los que pasan el ensayo (con bot, con
- * credencial). Sin ninguno, `canales: []` y no se manda nada. Un aviso de la sesión que no tiene que molestar si no hay
- * por dónde: el del cierre de una corrida.
+ * Los canales por donde esta sesión puede mandar ahora: `{ canales, mail, chat, problema, fallidos }`. Los de
+ * `canalesDeLaSesion`; sin la lista del perfil, Telegram sólo si está prendido en la máquina; y de ésos, los que pasan el
+ * ensayo (con bot, con credencial). `fallidos`: los configurados que no lo pasaron, cada uno con su motivo. Sin ninguno
+ * listo, `canales: []` y no se manda nada. Un aviso de la sesión que no tiene que molestar si no hay por dónde: el del
+ * cierre de una corrida.
  */
 function canalesListos({ env = process.env, home = os.homedir(), texto = '.' } = {}) {
   const s = canalesDeLaSesion({ env, home });
-  if (s.problema) return { canales: [], mail: null, chat: null, problema: s.problema };
+  if (s.problema) return { canales: [], mail: null, chat: null, problema: s.problema, fallidos: [] };
   if (s.origen === 'antes') {
     let tg;
-    try { tg = require('./tycon-config.js').integracionParaHook('telegram', { env, home }); } catch (e) { return { canales: [], mail: null, chat: null, problema: String((e && e.message) || e) }; }
-    if (!tg.ok) return { canales: [], mail: null, chat: null, problema: 'la configuración del arnés no se pudo leer' };
-    if (!tg.prendida) return { canales: [], mail: s.mail, chat: s.chat, problema: null };
+    try { tg = require('./tycon-config.js').integracionParaHook('telegram', { env, home }); } catch (e) { return { canales: [], mail: null, chat: null, problema: String((e && e.message) || e), fallidos: [] }; }
+    if (!tg.ok) return { canales: [], mail: null, chat: null, problema: 'la configuración del arnés no se pudo leer', fallidos: [] };
+    if (!tg.prendida) return { canales: [], mail: s.mail, chat: s.chat, problema: null, fallidos: [] };
   }
-  const canales = s.canales.filter((canal) => ensayo({ canal, texto, env, lado: 'sesion', mail: s.mail, chat: s.chat }).codigo === 0);
-  return { canales, mail: s.mail, chat: s.chat, problema: null };
+  const canales = [];
+  const fallidos = [];
+  for (const canal of s.canales) {
+    const e = ensayo({ canal, texto, env, lado: 'sesion', mail: s.mail, chat: s.chat });
+    if (e.codigo === 0) canales.push(canal);
+    else fallidos.push(`${canal}: ${String(e.error || 'no pasó el ensayo').trim().split('\n')[0]}`);
+  }
+  return { canales, mail: s.mail, chat: s.chat, problema: null, fallidos };
 }
 
 /**

@@ -22,17 +22,35 @@ const APPROVALS = require('./approvals.js');
 const { stateDir: stateDirDe } = require('./state-dir.js');
 
 const STEP_TIMES = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'metrics', 'step-times.js');
+const SECRET_SHAPES = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'provider-secret-shapes.js');
+const SANEADOR = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'metrics', 'tokens-digest.js');
 const MAX_MOTIVO = 120;
 const SIN_MOTIVO = 'sin motivo registrado';
 // lo que se lee de gates.log hacia atrás, como mucho: más que eso es una corrida de días y lo que falte queda «no medido»
 const MAX_GATES_BYTES = 32 * 1024 * 1024;
 const BLOQUE = 256 * 1024;
-// los frenos de «Preparar el pull request» que dicen por qué no salió
-const FRENOS_DEL_PEDIDO = new Set(['prepare-commit-controls', 'unreviewed-code', 'red-check', 'expected-red', 'step-order']);
+// los frenos de «Preparar el pull request»: los que se anotan con su paso (el nombre del paso, o su número viejo) y los
+// que se anotan sin él
+const PASO_DEL_PEDIDO = new Set(['prepare-commit', '8']);
+const FRENOS_SIN_PASO = new Set(['prepare-commit-controls', 'red-check', 'expected-red']);
+// quién firma en findings.json lo que encontró el pase adversarial, y qué hallazgo sigue sin cerrar
+const FIRMA_DEL_PASE = /^(adversarial-verify|pase adversarial)/i;
+const SIN_CERRAR = new Set(['open', 'deferred']);
 
-/** El motivo en una frase de 120 caracteres como mucho, cortada con «…». */
+/**
+ * El texto saneado: sin secretos, rutas ni ids de sesión. Un motivo es texto libre y sale a la terminal y a un canal
+ * externo. Sin saneador legible no se publica.
+ */
+function tapar(s) {
+  try {
+    const sinClaves = require(SECRET_SHAPES).redactShapes(require('./smoke-secrets.js').redact(s).text);
+    return require(SANEADOR).sanear(sinClaves);
+  } catch (_) { return SIN_MOTIVO; }
+}
+
+/** El motivo en una frase de 120 caracteres como mucho, sin secretos y cortada con «…». */
 function recortar(s) {
-  const t = String(s).replace(/\s+/g, ' ').trim();
+  const t = tapar(s).replace(/\s+/g, ' ').trim();
   return t.length <= MAX_MOTIVO ? t : `${t.slice(0, MAX_MOTIVO - 1)}…`;
 }
 
@@ -51,58 +69,82 @@ function duracion(ms) {
 const leerJson = (archivo) => { try { return JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch (_) { return null; } };
 
 /**
- * Las líneas de `gates.log` desde `since` (ISO) hasta el final, leídas de atrás hacia adelante: `{ lineas, completo }`.
- * `completo: false` si se cortó por el tope de bytes o el archivo no se pudo leer (lo que falte queda «no medido»). Nunca
- * escribe.
+ * Las líneas de `gates.log` desde `since` (ISO) hasta `until` (ISO, opcional), leídas de atrás hacia adelante:
+ * `{ lineas, completo }`. El registro no está del todo en orden: una línea con hora vieja no corta la lectura, que sigue
+ * hasta pasar un bloque entero sin nada de la corrida. `completo: false` si se cortó por el tope de bytes o el archivo no
+ * se pudo leer (lo que falte queda «no medido»). Nunca escribe.
  */
-function gatesSince({ stateDir, since, maxBytes = MAX_GATES_BYTES }) {
+function gatesSince({ stateDir, since, until = null, maxBytes = MAX_GATES_BYTES }) {
   const archivo = path.join(stateDir, 'gates.log');
   const desde = aMs(since);
+  const hasta = aMs(until);
   let fd;
   try { fd = fs.openSync(archivo, 'r'); } catch (e) { return { lineas: [], completo: e.code === 'ENOENT' }; }
   try {
-    const tam = fs.fstatSync(fd).size;
-    let pos = tam;
-    let resto = '';
+    let pos = fs.fstatSync(fd).size;
+    let resto = Buffer.alloc(0);
     let leidos = 0;
+    let vioAnteriores = false;
+    let sinLaCorrida = 0;
     const lineas = [];
+    const agregar = (crudo) => {
+      const l = crudo.toString('utf8');
+      if (!l.trim()) return;
+      let g; try { g = JSON.parse(l); } catch (_) { return; }
+      const t = aMs(g && g.ts);
+      if (desde !== null && t !== null && t < desde) { vioAnteriores = true; return; }
+      sinLaCorrida = 0;
+      if (hasta === null || t === null || t <= hasta) lineas.push(g);
+    };
     for (;;) {
       if (pos <= 0) {
-        if (resto.trim()) agregar(resto);
+        agregar(resto);
         return { lineas: lineas.reverse(), completo: true };
       }
+      if (vioAnteriores && sinLaCorrida >= BLOQUE) return { lineas: lineas.reverse(), completo: true };
       if (leidos >= maxBytes) return { lineas: lineas.reverse(), completo: false };
       const n = Math.min(BLOQUE, pos);
       pos -= n;
       leidos += n;
+      sinLaCorrida += n;
       const buf = Buffer.alloc(n);
       fs.readSync(fd, buf, 0, n, pos);
-      const partes = (buf.toString('utf8') + resto).split('\n');
-      resto = partes.shift();
-      for (let i = partes.length - 1; i >= 0; i -= 1) if (partes[i].trim() && agregar(partes[i]) === 'antes') return { lineas: lineas.reverse(), completo: true };
-    }
-    function agregar(l) {
-      let g; try { g = JSON.parse(l); } catch (_) { return null; }
-      const t = aMs(g && g.ts);
-      if (desde !== null && t !== null && t < desde) return 'antes';
-      lineas.push(g);
-      return null;
+      // se parte por bytes: un carácter de varios bytes puede caer justo en el borde del bloque
+      const junto = Buffer.concat([buf, resto]);
+      let fin = junto.length;
+      for (let i = junto.length - 1; i >= 0; i -= 1) {
+        if (junto[i] === 0x0a) { agregar(junto.subarray(i + 1, fin)); fin = i; }
+      }
+      resto = junto.subarray(0, fin);
     }
   } catch (_e) {
     return { lineas: [], completo: false };
   } finally { try { fs.closeSync(fd); } catch (_) { /* nada */ } }
 }
 
+/** La historia de la corrida como ruta absoluta, o null. */
+function rutaDeLaHistoria(m) {
+  if (!m.storyPath) return null;
+  return path.isAbsolute(m.storyPath) || !m.repoPath ? m.storyPath : path.join(m.repoPath, m.storyPath);
+}
+
+/** La carpeta de la corrida: la del marcador o, sin ella, la que encuentra el resto del arnés. */
+function carpetaDe(m) {
+  if (m.runDir) return m.runDir;
+  if (!m.repoPath || !m.storyId) return null;
+  try { return require('./run-dir.js').resolveRunDir(m.repoPath, m.storyId, false, rutaDeLaHistoria(m), { marker: m }); } catch (_) { return null; }
+}
+
 /** El contexto de una corrida: lo que leen los motivos, cargado una vez y a demanda. */
-function contexto({ marker, runDir, stateDir, gatesLog, home, env }) {
+function contexto({ marker, runDir, stateDir, gatesLog, home, env, until }) {
   const m = marker || {};
-  const dir = runDir || m.runDir || null;
+  const dir = runDir || carpetaDe(m);
   const estado = stateDir || stateDirDe(home || os.homedir());
   let gates = Array.isArray(gatesLog) ? { lineas: gatesLog, completo: true } : null;
   return {
     m, dir, estado, home: home || os.homedir(), env: env || process.env,
     gates() {
-      if (!gates) gates = gatesSince({ stateDir: estado, since: m.startedAt });
+      if (!gates) gates = gatesSince({ stateDir: estado, since: m.startedAt, until });
       return gates;
     },
   };
@@ -145,13 +187,13 @@ function resultadoDePruebas(c) {
 
 function hallazgos(c) {
   const h = RR.hallazgosDe(c.dir);
-  if (h.error) return { error: h.error, lista: [] };
-  return { lista: RR.abiertos(h.lista, { home: c.home, env: c.env }) };
+  if (h.error) return { error: h.error, lista: [], existe: true };
+  return { lista: RR.abiertos(h.lista, { home: c.home, env: c.env }), existe: h.existe };
 }
 
 function extras(c) {
   const g = c.gates();
-  return { n: g.lineas.filter((l) => l && l.name === 'extra-round' && String(l.story) === String(c.m.storyId)).length, completo: g.completo };
+  return { n: g.lineas.filter((l) => l && l.name === 'extra-round' && String(l.story) === String(c.m.storyId) && Number.isInteger(l.iter)).length, completo: g.completo };
 }
 
 function tope(c) {
@@ -161,21 +203,75 @@ function tope(c) {
 function matriz(c) {
   const dir = c.m.evidenceDir || (c.m.repoPath ? path.join(c.m.repoPath, '.advisors', 'dod-runtime') : null);
   if (!dir) return null;
+  // el nombre lleva la clave de la evidencia: con un número repetido en el repo no es el número solo
+  let prefijo;
+  try { prefijo = require('./evidence-key.js').evidencePrefix(rutaDeLaHistoria(c.m), c.m.storyId).prefix; } catch (_) { return null; }
+  if (!prefijo) return null;
   let txt;
-  try { txt = fs.readFileSync(path.join(dir, `${c.m.storyId}-runtime-matrix.md`), 'utf8'); } catch (_) { return null; }
+  try { txt = fs.readFileSync(path.join(dir, `${prefijo}runtime-matrix.md`), 'utf8'); } catch (_) { return null; }
   const filas = [];
   for (const l of txt.split('\n')) {
-    const f = /^\|\s*#(\d+)\s*\|\s*[^|]*?\b(RUNTIME|CODE-ONLY|SIN-EVIDENCIA|NOT-RUN|NOT-VERIFIABLE|WAIVED[\w-]*)\b/.exec(l);
+    const f = /^\|\s*#(\d+)\s*\|\s*[^|]*?\b(RUNTIME-PARCIAL|RUNTIME|CODE-ONLY|SIN-EVIDENCIA|NOT-RUN|NOT-VERIFIABLE|WAIVED[\w-]*)\b/.exec(l);
     if (f) filas.push({ ac: f[1], verde: f[2] === 'RUNTIME' || f[2].startsWith('WAIVED') });
   }
   return filas.length ? filas : null;
 }
 
+/** El último freno de este cierre de «Preparar el pull request»: de esta historia y este repo, desde que arrancó el paso. */
 function frenoDelPedido(c) {
-  const sid = c.m.sessionId;
-  const g = c.gates().lineas.filter((l) => l && l.status === 'blocked' && FRENOS_DEL_PEDIDO.has(l.name) && (!sid || l.sessionId === sid)).pop();
+  const m = c.m;
+  const st = m.stepTimings && m.stepTimings['prepare-commit'];
+  const desde = st ? aMs(st.startedAt) : null;
+  const g = c.gates().lineas.filter((l) => {
+    if (!l || l.status !== 'blocked') return false;
+    if (l.story !== undefined && l.story !== null && String(l.story) !== String(m.storyId)) return false;
+    if (l.repoPath && m.repoPath && l.repoPath !== m.repoPath) return false;
+    if (!(l.step !== undefined ? PASO_DEL_PEDIDO.has(String(l.step)) : FRENOS_SIN_PASO.has(l.name))) return false;
+    const t = aMs(l.ts);
+    return desde === null || t === null || t >= desde;
+  }).pop();
   if (!g) return null;
-  return g.motivo || g.reason || g.name;
+  return g.motivo || g.reason || g.error || g.name;
+}
+
+/** Los pases del pipeline de esta corrida; una revisión a mano (`--type revision`) no es el pase. */
+const pasesDelPipeline = (m) => (m.adversarialPasses || []).filter((p) => p && (!p.tipo || p.tipo === '5b'));
+
+/** ¿Hay otra vuelta de revisores pendiente? `{ round, archivos }`, null, o `{ noMedida: true }` si no se pudo saber. */
+function otraVuelta(m) {
+  try { return STEPS_LIB.reviewersRound(m); } catch (_) { return { noMedida: true }; }
+}
+
+/** El paso en el que está la corrida: el primero sin hacer, o los revisores si un arreglo pide otra vuelta. */
+function pasoActual(m) {
+  if (otraVuelta(m)) return 'reviewers';
+  return (STEPS_LIB.STEPS.find((s) => !STEPS_LIB.isDone(m, s.id) && !(s.id === 'adversarial-pass' && m.adversarialSkip)) || {}).id || null;
+}
+
+/** ¿La última validación de esta versión de la historia salió con críticos? */
+function validacionEnRojo(c) {
+  const sp = rutaDeLaHistoria(c.m);
+  if (!sp) return false;
+  try {
+    const r = require('./validation-record.js').readRecord(c.home, sp);
+    return r.estado === 'current' && r.record.resultado === 'rojo';
+  } catch (_) { return false; }
+}
+
+/** El resumen del primer hallazgo confirmado por el pase que `findings.json` no da por cerrado, o null. */
+function hallazgoDelPaseSinCerrar(c) {
+  if (!c.dir) return null;
+  const r = leerJson(path.join(c.dir, 'step-05b-adversarial.json'));
+  const confirmados = r && Array.isArray(r.confirmed) ? r.confirmed : [];
+  const delPase = RR.hallazgosDe(c.dir).lista.filter((f) => f && FIRMA_DEL_PASE.test(String(f.advisor || '')));
+  const norma = (p) => String(p || '').split(path.sep).join('/').replace(/^\.\//, '');
+  const mismoArchivo = (a, b) => { const x = norma(a); const y = norma(b); return !!x && !!y && (x === y || x.endsWith(`/${y}`) || y.endsWith(`/${x}`)); };
+  const sinCerrar = (f) => SIN_CERRAR.has(String(f.disposition || 'open').trim().toLowerCase());
+  const h = confirmados.find((x) => {
+    const suyos = delPase.filter((f) => mismoArchivo(f.file, x && x.file));
+    return !suyos.length || suyos.some(sinCerrar);
+  });
+  return h ? h.summary || SIN_MOTIVO : null;
 }
 
 /** `{ mark, motive }` de un paso empezado; null si no tiene renglón. */
@@ -184,9 +280,9 @@ function renglonDe(c, s, actual) {
   const done = STEPS_LIB.isDone(m, s.id);
   const empezado = done || !!(m.stepTimings && m.stepTimings[s.id] && m.stepTimings[s.id].startedAt);
   const checks = m.checks || {};
-  const rojo = (k) => /^red\b/.test(String(checks[k] || ''));
+  const rojo = (k) => /^(red\b|rojo-esperado)/.test(String(checks[k] || ''));
 
-  if (s.id === 'adversarial-pass' && !done && m.adversarialSkip) {
+  if (s.id === 'adversarial-pass' && m.adversarialSkip && !pasesDelPipeline(m).length) {
     const sk = m.adversarialSkip;
     return { mark: '–', motive: `salteado: ${sk.motivo || sk.reason || sk.why || SIN_MOTIVO}` };
   }
@@ -198,7 +294,8 @@ function renglonDe(c, s, actual) {
 
   switch (s.id) {
     case 'validate-story':
-      return done ? { mark: '✓', motive: 'validada; avisos sin registrar' } : { mark: '●', motive: enCurso(c, s.id) };
+      if (done) return { mark: '✓', motive: 'validada; avisos sin registrar' };
+      return { mark: validacionEnRojo(c) ? '✗' : '●', motive: SIN_MOTIVO };
     case 'approve-plan': {
       if (done) return { mark: '✓', motive: aprobacionDelPlan(c) || SIN_MOTIVO };
       return { mark: '●', motive: 'espera la firma de quien aprueba el plan' };
@@ -217,14 +314,24 @@ function renglonDe(c, s, actual) {
         const total = max === null || !ex.completo ? 'no medido' : String(max + ex.n);
         return { mark: '✗', motive: `vuelta ${n} de ${total}: ${bloq[0].regla}` };
       }
+      const pendiente = otraVuelta(m);
+      if (pendiente && pendiente.noMedida) return { mark: '●', motive: 'si falta otra vuelta: no medido' };
+      if (pendiente) return { mark: '●', motive: `falta la vuelta ${pendiente.round}: ${pendiente.archivos.length === 1 ? '1 archivo cambió' : `${pendiente.archivos.length} archivos cambiaron`} después de los revisores` };
       if (!done) return { mark: '●', motive: enCurso(c, s.id) };
       const max = tope(c);
       if (max === null) return { mark: '✓', motive: SIN_MOTIVO };
-      return { mark: '✓', motive: RR.linea({ n, max, abiertos: h.lista, noMirado: h.error || null }) };
+      // findings.json lo escribe «Hallazgos», después: sin él nadie miró lo abierto, y no se dice «nada»
+      const noMirado = h.error || (h.existe ? null : 'todavía no hay hallazgos anotados');
+      return { mark: '✓', motive: RR.linea({ n, max, abiertos: h.lista, noMirado }) };
     }
     case 'adversarial-pass': {
-      if (!done) return { mark: '●', motive: enCurso(c, s.id) };
-      const pase = (m.adversarialPasses || []).filter((p) => p && Number.isInteger(p.confirmados)).pop();
+      const pase = pasesDelPipeline(m).filter((p) => Number.isInteger(p.confirmados)).pop();
+      const abierto = hallazgoDelPaseSinCerrar(c);
+      if (!done) {
+        if (pase && pase.veredicto === 'no-medido') return { mark: '●', motive: `no medido: ${pase.motivo_no_medido || SIN_MOTIVO}` };
+        return { mark: '●', motive: abierto || enCurso(c, s.id) };
+      }
+      if (abierto) return { mark: '✗', motive: abierto };
       return { mark: '✓', motive: pase ? `${pase.confirmados} hallazgos confirmados` : SIN_MOTIVO };
     }
     case 'live-check': {
@@ -260,7 +367,7 @@ function motivoPruebas(c, enRojo) {
 function lines(opts) {
   const c = contexto(opts || {});
   if (STEPS_LIB.schemeOf(c.m) !== STEPS_LIB.SCHEME) return [];
-  const actual = (STEPS_LIB.STEPS.find((s) => !STEPS_LIB.isDone(c.m, s.id) && !(s.id === 'adversarial-pass' && c.m.adversarialSkip)) || {}).id || null;
+  const actual = pasoActual(c.m);
   const out = [];
   for (const s of STEPS_LIB.STEPS) {
     let r;
@@ -276,13 +383,17 @@ function stepLine(opts, id) {
   return l ? l.text : null;
 }
 
-/** El renglón para el Estado de /wip: el del último paso en ✗ si lo hay, si no el ●; null si no hay ninguno. */
+/** El renglón para el Estado de /wip: el del último paso cerrado si salió ✗; si no, el del paso actual; null si no hay. */
 function stateLine(opts) {
+  const m = (opts && opts.marker) || {};
   const ls = lines(opts);
+  const cerrado = ls.filter((l) => STEPS_LIB.isDone(m, l.id)).pop();
+  if (cerrado && cerrado.mark === '✗') return cerrado.text;
+  const actual = pasoActual(m);
+  const enCursoAhora = ls.find((l) => l.id === actual);
+  if (enCursoAhora) return enCursoAhora.text;
   const rojo = ls.filter((l) => l.mark === '✗').pop();
-  if (rojo) return rojo.text;
-  const curso = ls.find((l) => l.mark === '●');
-  return curso ? curso.text : null;
+  return rojo ? rojo.text : null;
 }
 
 function plural(n, uno, varios) { return `${n} ${n === 1 ? uno : varios}`; }
@@ -291,13 +402,14 @@ function plural(n, uno, varios) { return `${n} ${n === 1 ? uno : varios}`; }
 function final(opts) {
   const { dump } = opts || {};
   const m = (dump && dump.marker) || {};
-  const c = contexto({ ...opts, marker: m });
+  // lo de `gates.log` hasta el cierre: una corrida posterior de la misma historia no cambia este renglón
+  const c = contexto({ ...opts, marker: m, until: dump && dump.archivedAt });
   const partes = [];
 
   // qué entró
   let entro;
   if (m.pr && Number.isInteger(m.pr.number)) entro = m.pr.merged ? `entró el pedido #${m.pr.number}` : `pedido #${m.pr.number} abierto, espera la cola`;
-  else if (m.cierre && m.cierre.estado && m.cierre.estado !== 'completa') entro = `no entró: ${m.cierre.motivo || m.cierre.estado}`;
+  else if (m.cierre && m.cierre.estado && m.cierre.estado !== 'completa') entro = `no entró: ${recortar(m.cierre.motivo || m.cierre.estado)}`;
   else entro = 'pedido: no medido';
 
   // trabajo y espera
@@ -316,7 +428,8 @@ function final(opts) {
 
   // firmas del dueño y de la coordinadora
   const r = c.dir ? APPROVALS.leer(c.dir) : { existe: false, lineas: [] };
-  if (!r.existe || r.error) partes.push('firmas del dueño no medidas');
+  // una línea ilegible puede ser justo otra firma: el número no se puede dar
+  if (!r.existe || r.error || r.ilegibles) partes.push('firmas del dueño no medidas');
   else {
     const duenio = r.lineas.filter((l) => l && l.tipo === 'manual').length;
     const coord = r.lineas.filter((l) => l && l.tipo !== 'manual' && l.delegacion).length;
@@ -328,17 +441,64 @@ function final(opts) {
 /** El texto del aviso del cierre: el título, los renglones en ✗ y el renglón final. */
 function noticeText({ storyId, title, lines: ls, final: fin }) {
   const rojos = (ls || []).filter((l) => l.mark === '✗').map((l) => l.text);
-  return [`${storyId || '?'} · ${title || '(sin título)'}`, ...rojos, fin].join('\n');
+  return [`${storyId || '?'} · ${title ? tapar(title) : '(sin título)'}`, ...rojos, fin].join('\n');
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────
 
-function ultimoVolcado(estado, storyId) {
-  const dir = path.join(estado, 'timing-history');
-  let archivos = [];
-  try { archivos = fs.readdirSync(dir).filter((f) => f.startsWith(`${String(storyId).replace(/[^\w.-]/g, '_')}-`) && f.endsWith('.json')).sort(); } catch (_) { return null; }
-  const f = archivos.pop();
-  return f ? path.join(dir, f) : null;
+const canonica = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+
+function repoDe(dir) {
+  try { return dir ? require('./repo-attrib.js').realRepo(dir) : null; } catch (_) { return null; }
+}
+const mismoRepo = (a, b) => (a.remote && b.remote ? a.remote === b.remote : canonica(a.path) === canonica(b.path));
+
+/**
+ * El volcado de la última corrida de una historia en este repo: `{ archivo, dump }` o null. Va por la fecha del cierre, no
+ * por el nombre (los `-sin-cerrar` ordenan siempre últimos). Con `pr`, primero el que trae ese pedido; una corrida
+ * abandonada (`-sin-cerrar`) sólo si no hay otra. Un volcado de otro repo con el mismo número es otra historia.
+ */
+function ultimoVolcado({ stateDir, storyId, repoDir = null, pr = null }) {
+  const dir = path.join(stateDir, 'timing-history');
+  const prefijo = `${String(storyId).replace(/[^\w.-]/g, '_')}-`;
+  let nombres = [];
+  try { nombres = fs.readdirSync(dir).filter((f) => f.startsWith(prefijo) && f.endsWith('.json')); } catch (_) { return null; }
+  const propio = repoDe(repoDir);
+  const todos = [];
+  for (const f of nombres) {
+    const archivo = path.join(dir, f);
+    const dump = leerJson(archivo);
+    if (!dump || !dump.marker || String(dump.marker.storyId) !== String(storyId)) continue;
+    const suyo = dump.repo || repoDe(dump.marker.repoPath);
+    if (propio && suyo && !mismoRepo(propio, suyo)) continue;
+    let ms = aMs(dump.archivedAt);
+    if (ms === null) { try { ms = fs.statSync(archivo).mtimeMs; } catch (_) { ms = 0; } }
+    todos.push({ archivo, dump, ms, sinCerrar: dump.sinCerrar === true || f.endsWith('-sin-cerrar.json') });
+  }
+  todos.sort((a, b) => a.ms - b.ms);
+  const conPedido = pr ? todos.filter((v) => v.dump.marker.pr && v.dump.marker.pr.number === pr) : [];
+  const cerrados = todos.filter((v) => !v.sinCerrar);
+  const v = (conPedido.length ? conPedido : cerrados.length ? cerrados : todos).pop();
+  return v ? { archivo: v.archivo, dump: v.dump } : null;
+}
+
+/** El marcador vivo que pide la línea de comandos: el de esta sesión si está entre los que coinciden; si no, el más reciente. */
+function marcadorPedido(estado, story, id) {
+  const porRuta = /\.md$/.test(story) ? canonica(story) : null;
+  const sid = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID || null;
+  const vivos = [];
+  let nombres = [];
+  try { nombres = fs.readdirSync(path.join(estado, 'active')).filter((f) => f.endsWith('.json')); } catch (_) { return null; }
+  for (const f of nombres) {
+    const m = leerJson(path.join(estado, 'active', f));
+    if (!m) continue;
+    const sp = rutaDeLaHistoria(m);
+    if (porRuta ? sp && canonica(sp) === porRuta : String(m.storyId) === String(id)) vivos.push({ m, propio: path.basename(f, '.json') === sid });
+  }
+  const propio = vivos.find((v) => v.propio);
+  if (propio) return propio.m;
+  vivos.sort((a, b) => (aMs(b.m.lastTouch) || 0) - (aMs(a.m.lastTouch) || 0));
+  return vivos.length ? vivos[0].m : null;
 }
 
 function main(argv) {
@@ -347,17 +507,13 @@ function main(argv) {
   if (!story) { process.stderr.write('uso: node run-lines.js --story <ruta o id> [--final] [--json]\n'); return 2; }
   const estado = stateDirDe(os.homedir());
   const id = /\.md$/.test(story) ? ((/story-([\w.]+?)-/.exec(path.basename(story)) || [])[1] || story) : story;
-  let marker = null;
-  try {
-    for (const f of fs.readdirSync(path.join(estado, 'active'))) {
-      const m = leerJson(path.join(estado, 'active', f));
-      if (m && (String(m.storyId) === String(id) || (m.storyPath && path.resolve(m.storyPath) === path.resolve(story)))) { marker = m; break; }
-    }
-  } catch (_) { /* sin carpeta de marcadores */ }
+  const marker = marcadorPedido(estado, story, id);
   let dump = null;
   if (!marker) {
-    const v = ultimoVolcado(estado, id);
-    dump = v ? leerJson(v) : null;
+    let repoDir = null;
+    try { repoDir = require('./repo-attrib.js').gitRoot(/\.md$/.test(story) ? path.dirname(path.resolve(story)) : process.cwd()); } catch (_) { repoDir = null; }
+    const v = ultimoVolcado({ stateDir: estado, storyId: id, repoDir });
+    dump = v ? v.dump : null;
     if (!dump) { process.stderr.write(`run-lines: no hay corrida viva ni volcado de la historia ${id}\n`); return 1; }
   }
   const m = marker || dump.marker;
@@ -368,6 +524,6 @@ function main(argv) {
   return 0;
 }
 
-module.exports = { lines, stepLine, stateLine, final, noticeText, gatesSince, recortar, duracion, SIN_MOTIVO };
+module.exports = { lines, stepLine, stateLine, final, noticeText, gatesSince, ultimoVolcado, carpetaDe, recortar, duracion, SIN_MOTIVO };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
