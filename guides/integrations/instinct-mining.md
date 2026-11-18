@@ -139,14 +139,27 @@ arma cada noche, a las 02:00 UTC, el pipeline de la organización `pipelines/ope
 - **Cuenta sin modelo lo que se repite en el equipo** en los últimos 60 días: el mismo repo, la misma herramienta y los
   mismos 60 caracteres del resumen, ≥3 veces en ≥2 máquinas o ≥10 en una. Las máquinas se cuentan (una carpeta vieja
   unida cuenta como su nueva), nunca se nombran.
+- **Deja afuera el ruido**, antes de elegir qué redactar, con cuatro reglas: un conteo sin lección (una herramienta que
+  no graba contenido), una carpeta de trabajo, temporal o del estado del arnés, una ruta de una sola máquina, y una regla
+  de un solo proyecto que ese proyecto no pidió. Lo filtrado se cuenta en el informe y no ocupa lugar en el tope.
 - **El modelo de la noche escribe cada propuesta**: el que la organización elige en el sitio (`models.nightly`), con la
-  llave como variable secreta del pipeline. Como mucho 20 por noche; las demás, y todas si falta el modelo
-  o la llave, salen sólo con los números. Lo que el modelo escribe pasa por una revisión contra lo ya decidido y el
-  catálogo del arnés, y por el saneado de la grabadora.
-- **Deja un archivo por propuesta** en `inbox/instincts/propuestas/<huella>.json` del repo de operaciones (como mucho 50
-  nuevas por noche; las demás esperan a la siguiente) y el informe de la noche en `.dashboard/instincts/`. Lo decidido no
-  se vuelve a proponer ni se toca. Las propuestas se deciden en la pestaña Aprendizajes del sitio (ver abajo).
-- **El resumen de la mañana** suma la línea «aprendizajes: …» con las propuestas nuevas y las que esperan decisión.
+  llave como variable secreta del pipeline. Como mucho 20 por noche, primero las pendientes sin redacción y después las
+  nuevas. Lo que el modelo escribe pasa por una revisión contra lo ya decidido y el catálogo del arnés, y por el saneado
+  de la grabadora.
+- **Una propuesta nueva nace redactada** o descartada con su motivo, en `inbox/instincts/propuestas/<huella>.json` del
+  repo de operaciones. Lo que no llegó (por el tope, sin modelo, sin llave o con el modelo caído) espera sin archivo a otra
+  noche, y el informe lo cuenta por causa. Lo decidido no se vuelve a proponer ni se toca. Lo que ya estaba pendiente
+  tampoco se descarta solo: lo decide una persona. Las propuestas se deciden en la pestaña Aprendizajes del sitio (ver
+  abajo).
+- **Recomienda aprobar o rechazar cada pendiente**, con su porqué, en `.dashboard/instincts/recomendaciones.json`. Lo que
+  cae en una regla se recomienda rechazar sin llamar al modelo; el resto lo recomienda el modelo, hasta 30 por noche, en
+  una llamada aparte de la que redacta. Recomendar no cambia ningún archivo de propuesta, así no choca con un pull request
+  de decisiones abierto.
+- **Un proyecto pide sus propias reglas** con su nombre en `proyectos-con-reglas.json`, en la carpeta `inbox/instincts/`
+  del repo de operaciones (`{ "proyectos": ["<nombre de la carpeta del repo>"] }`), por pull request. Lo que la noche le había
+  descartado por esa regla vuelve a quedar pendiente.
+- **El resumen de la mañana** suma la línea «aprendizajes: …» con las propuestas nuevas y las que esperan decisión, y
+  avisa si algo quedó sin redactar por falta de modelo, de llave o por una falla.
 
 `/tycon-instincts` sigue sólo para las propuestas de antes (las de `pending/` y `promoted/`): ya no tiene `run`.
 

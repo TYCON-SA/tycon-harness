@@ -664,3 +664,219 @@ test('T26 4.13-History_ApprovedNotInProfile_ShowsAndReproposes @story-4.13 @ac-1
     assert.strictEqual(otra.reproponer, false);
   });
 });
+
+// ── 4.14: la recomendación de la noche, y decidir muchas juntas ─────────────────────────────────────────────────────────
+
+const H8 = 'a000000008'; const H9 = 'a000000009';
+const ARCHIVO_RECOS = '.dashboard/instincts/recomendaciones.json';
+const POR_MODELO_SI = 'Le sirve a todo el equipo';
+const POR_MODELO_NO = 'Ya lo cubre otra regla';
+const porRegla = (regla) => ({ recomendacion: { accion: 'rechazar', por: 'regla', regla, porque: 'texto de la noche' }, sin_recomendacion: null });
+const porModelo = (accion, porque) => ({ recomendacion: { accion, por: 'modelo', modelo: 'gemma4:31b', porque, el: '2026-11-16', de: 'abcdef0123' }, sin_recomendacion: null });
+const sinRecomendar = (motivo) => ({ recomendacion: null, sin_recomendacion: motivo });
+const pendienteExtra = (h) => ({ [`inbox/instincts/propuestas/${h}.json`]: json(prop(h, { redaccion: REGLA(`cuando ${h}`, `hacer ${h}`) })) });
+const conRecos = (porHuella, extra = {}) => ({ [ARCHIVO_RECOS]: json({ fecha: '2026-11-16', por_huella: porHuella }), ...extra });
+const cartaDe = (s, h) => (new RegExp(`<article class="a-carta"[^>]*data-huella="${h}"[\\s\\S]*?</article>`).exec(s) || [''])[0];
+const CUATRO = conRecos({ [H1]: porModelo('aprobar', POR_MODELO_SI), [H3]: porModelo('rechazar', POR_MODELO_NO), [H7]: porRegla('carpeta_de_trabajo'), [H2]: sinRecomendar('tope') }, pendienteExtra(H7));
+
+test('T12 4.14-Card_ShowsRecommendationAndWhy @story-4.14 @ac-12 @ac-18 — cada tarjeta dice qué recomienda la noche y por qué, sin nombrar el modelo', async () => {
+  await conSitio({ ops: CUATRO }, async ({ pagina, seccion, lead, modelo }) => {
+    for (const idioma of ['es', 'en']) {
+      const s = seccion((await pagina(`${lead}; sitio-idioma=${idioma}`)).texto);
+      const t = (k, v) => TX.t(idioma, k, v);
+      const aprueba = cartaDe(s, H1);
+      assert.ok(aprueba.includes(t('aprend.recomiendaAprobar')), `${idioma}: dice aprobar`);
+      assert.ok(aprueba.includes(`<span lang="es">${POR_MODELO_SI}</span>`), `${idioma}: el porqué del modelo, marcado en castellano`);
+      assert.ok(aprueba.includes(t('aprend.propusoModelo')), `${idioma}: dice que lo propuso el modelo`);
+      assert.strictEqual(aprueba.includes(TX.t('en', 'aprend.razonEnCastellano')), idioma === 'en', 'la nota de idioma, sólo fuera del castellano');
+      assert.ok(cartaDe(s, H3).includes(t('aprend.recomiendaRechazar')));
+      const regla = cartaDe(s, H7);
+      assert.ok(regla.includes(t('aprend.recomiendaRechazar')));
+      assert.ok(regla.includes(t('aprend.regla.carpeta_de_trabajo')), `${idioma}: la regla en llano y en su idioma`);
+      assert.ok(!regla.includes(t('aprend.propusoModelo')));
+      assert.ok(cartaDe(s, H2).includes(t('aprend.sinRec.tope')), `${idioma}: sin recomendación, dice por qué`);
+      for (const h of [H1, H2, H3, H7]) assert.doesNotMatch(cartaDe(s, h), /gemma/, 'el nombre del modelo no se muestra');
+    }
+    assert.doesNotMatch(JSON.stringify(cuerpo(await modelo()).pendientes), /gemma/, 'tampoco en lo que devuelve la API');
+  });
+  // sin el archivo, todavía no recomendó; con uno ilegible, se dice como con cualquier archivo
+  await conSitio({}, async ({ pagina, seccion }) => assert.ok(cartaDe(seccion((await pagina()).texto), H1).includes(TX.t('es', 'aprend.sinRec.todavia'))));
+  await conSitio({ ops: { [ARCHIVO_RECOS]: '{ no es json' } }, async ({ pagina, seccion, modelo }) => {
+    const m = cuerpo(await modelo());
+    assert.strictEqual(m.estado, 'ilegible');
+    assert.ok(m.frase.includes(ARCHIVO_RECOS));
+    assert.ok(cartaDe(seccion((await pagina()).texto), H1).includes(TX.t('es', 'aprend.sinRec.ilegible')));
+  });
+  // una recomendación de algo que ya no está pendiente no aparece
+  await conSitio({ ops: conRecos({ [H5]: porRegla('confianza') }) }, async ({ modelo }) => {
+    assert.ok(cuerpo(await modelo()).pendientes.every((p) => !p.recomendacion));
+  });
+  // una acción que no es ninguna de las dos no se muestra, aunque se llame como algo que todo objeto trae
+  await conSitio({ ops: conRecos({ [H1]: porModelo('constructor', POR_MODELO_SI) }) }, async ({ pagina, seccion }) => {
+    const carta = cartaDe(seccion((await pagina()).texto), H1);
+    assert.ok(carta.includes(TX.t('es', 'aprend.sinRec.todavia')));
+    assert.doesNotMatch(carta, /data-recomendada/);
+  });
+});
+
+test('T13 4.14-Card_RecommendedButtonHighlighted @story-4.14 @ac-13 — el botón recomendado va resaltado, como en Mantenimiento', async () => {
+  await conSitio({ ops: CUATRO }, async ({ pagina, seccion }) => {
+    const s = seccion((await pagina()).texto);
+    assert.match(cartaDe(s, H1), /<article[^>]*data-recomendada="approve"/);
+    assert.match(cartaDe(s, H1), /class="a-elegir recomendada" data-accion="approve"/);
+    assert.match(cartaDe(s, H1), /class="a-elegir" data-accion="reject"/);
+    assert.match(cartaDe(s, H3), /<article[^>]*data-recomendada="reject"/);
+    assert.match(cartaDe(s, H3), /class="a-elegir recomendada" data-accion="reject"/);
+    assert.doesNotMatch(cartaDe(s, H2), /data-recomendada|a-elegir recomendada/, 'sin recomendación, sin resaltado');
+    assert.ok(cartaDe(s, H1).indexOf(TX.t('es', 'aprend.decidir')) < cartaDe(s, H1).indexOf('data-accion="approve"'), 'los botones siguen bajo «Decidir»');
+  });
+});
+
+test('T14 4.14-Send_ManyRejectsSameMotive_OneRequest @story-4.14 @ac-15 — varias rechazadas con un motivo salen en un solo pedido', async () => {
+  const MOTIVO = 'ruido de una carpeta de trabajo';
+  const hs = [H1, H2, H3, H7, H8];
+  await conSitio({ ops: { ...pendienteExtra(H7), ...pendienteExtra(H8) } }, async ({ enviar, apiOps, ops }) => {
+    const j = cuerpo(await enviar({ marca: MARCA(), decisiones: hs.map((huella) => ({ huella, accion: 'reject', motivo: MOTIVO })) }));
+    assert.strictEqual(j.ok, true, j.message);
+    assert.strictEqual(apiOps.st.pedidos.length, 1);
+    for (const h of hs) {
+      const p = JSON.parse(enRama(ops, apiOps.st.pedidos[0].head.ref, `inbox/instincts/propuestas/${h}.json`));
+      assert.strictEqual(p.estado, 'rechazada');
+      assert.strictEqual(p.decision.motivo, MOTIVO);
+    }
+  });
+});
+
+test('T15 4.14-Cards_RuleDataAndChooseControls @story-4.14 @ac-15 — cada tarjeta se puede elegir y la barra elige por regla', async () => {
+  const ops = conRecos({ [H7]: porRegla('carpeta_de_trabajo'), [H8]: porRegla('carpeta_de_trabajo'), [H9]: porRegla('ruta_de_una_maquina'), [H1]: porModelo('rechazar', POR_MODELO_NO) },
+    { ...pendienteExtra(H7), ...pendienteExtra(H8), ...pendienteExtra(H9) });
+  await conSitio({ ops }, async ({ pagina, seccion }) => {
+    const s = seccion((await pagina()).texto);
+    for (const h of [H1, H2, H3, H7, H8, H9]) assert.match(cartaDe(s, h), /class="a-elige"/, `${h} tiene su casilla`);
+    assert.match(cartaDe(s, H7), /<article[^>]*data-regla="carpeta_de_trabajo"/);
+    assert.match(cartaDe(s, H9), /<article[^>]*data-regla="ruta_de_una_maquina"/);
+    assert.doesNotMatch(cartaDe(s, H1), /data-regla=/, 'la del modelo no es de ninguna regla');
+    const boton = (regla, n) => `data-regla="${regla}">${TX.t('es', 'aprend.elegirRegla', { regla: TX.t('es', `aprend.reglaNombre.${regla}`), n })}</button>`;
+    assert.ok(s.includes(boton('carpeta_de_trabajo', 2)), 'una elección por regla presente, con su cuenta');
+    assert.ok(s.includes(boton('ruta_de_una_maquina', 1)));
+    assert.ok(!s.includes('data-regla="conteo_sin_leccion"'), 'la regla que no está no se ofrece');
+    assert.match(s, /class="[^"]*a-motivo-grupo"/);
+    assert.ok(s.includes(TX.t('es', 'aprend.rechazarElegidas')));
+  });
+});
+
+test('T16 4.14-Send_UpTo200_201Is400 @story-4.14 @ac-16 — 200 decisiones en un pedido corto, leyendo una vez la política', async () => {
+  const hs = Array.from({ length: 260 }, (_, i) => `b${String(i).padStart(9, '0')}`);
+  const ops = Object.assign({}, ...hs.map(pendienteExtra));
+  const rechazos = (lista) => lista.map((huella) => ({ huella, accion: 'reject', motivo: 'ruido' }));
+  await conSitio({ ops }, async ({ enviar, apiOps, ops: repo }) => {
+    const politica = () => apiOps.llamadas.filter((l) => l.ruta.endsWith('/branches/main/protection')).length;
+    const j = cuerpo(await enviar({ marca: MARCA(), decisiones: rechazos(hs.slice(0, 200)) }));
+    assert.strictEqual(j.ok, true, j.message);
+    assert.strictEqual(apiOps.st.pedidos.length, 1);
+    const pedido = apiOps.st.pedidos[0];
+    assert.strictEqual(g(repo.bare, 'diff', '--name-only', `main...${pedido.head.ref}`).split('\n').length, 200);
+    assert.ok(pedido.body.length < 1000, `la descripción no crece con el envío: ${pedido.body.length}`);
+    assert.match(pedido.body, /200 se rechazan/);
+    assert.ok(!pedido.body.includes(hs[0]), 'con más de 50 no se nombra cada una');
+    assert.strictEqual(politica(), 1, 'la política de la rama se lee una sola vez');
+    const j2 = cuerpo(await enviar({ marca: MARCA(), decisiones: rechazos(hs.slice(200, 250)) }));
+    assert.strictEqual(j2.ok, true, j2.message);
+    for (const h of hs.slice(200, 250)) assert.ok(apiOps.st.pedidos[1].body.includes(h), 'hasta 50, cada una por su nombre');
+    const r = await enviar({ marca: MARCA(), decisiones: rechazos(hs.slice(0, 201)) });
+    assert.strictEqual(r.status, 400);
+    assert.strictEqual(apiOps.st.pedidos.length, 2, 'con 201 no se crea nada');
+  });
+});
+
+test('T17 4.14-NightLine_ShowsFilteredCount @story-4.14 @ac-17 — la línea de la noche dice cuánto dejó afuera y qué quedó sin redactar', async () => {
+  const informe = { ...INFORME, sin_redaccion: { tope: 0, fallo: 0, sin_modelo: 0, sin_llave: 0 }, filtradas: { conteo_sin_leccion: 2, carpeta_de_trabajo: 4, ruta_de_una_maquina: 1, un_solo_proyecto: null },
+    en_espera_por: { tope: 9, fallo: 1, sin_modelo: 0, sin_llave: 2 } };
+  await conSitio({ ops: { '.dashboard/instincts/instintos-2026-11-16.json': json(informe) } }, async ({ pagina, seccion }) => {
+    const s = seccion((await pagina()).texto);
+    assert.match(s, /Dejó afuera 7 por ruido/);
+    assert.match(s, /quedaron 3 sin redactar/, 'cuenta las que esperan por llave, modelo o falla, no las del tope');
+  });
+  await conSitio({}, async ({ pagina, seccion }) => assert.match(seccion((await pagina()).texto), /Dejó afuera \? por ruido/));
+  const { sin_redaccion: _s, ...sinClaves } = INFORME;
+  await conSitio({ ops: { '.dashboard/instincts/instintos-2026-11-16.json': json(sinClaves) } }, async ({ pagina, seccion }) => assert.match(seccion((await pagina()).texto), /quedaron \? sin redactar/));
+});
+
+// E1-E3 en un navegador de verdad: el cliente de la pestaña sólo se puede medir ahí. Playwright no es una dependencia del
+// arnés: se usa su versión fija; sin ella se saltean con constancia, salvo con la llave exigente (E2E_REQUIRED=1).
+const PINNED_PW = require('../lib/pinned-playwright.js');
+const PLAYWRIGHT = PINNED_PW.load();
+const SIN_NAVEGADOR = process.env.E2E_REQUIRED === '1' ? false : !PLAYWRIGHT && PINNED_PW.locate().why;
+async function enNavegador({ h, lead }, fn) {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const navegador = await PLAYWRIGHT.chromium.launch();
+  try {
+    const ctx = await navegador.newContext();
+    await ctx.setExtraHTTPHeaders({ cookie: lead });
+    const page = await ctx.newPage();
+    await page.route('**/api/aprendizajes/**', async (rt) => rt.fulfill({ response: await rt.fetch({ headers: { ...rt.request().headers(), cookie: lead, origin: 'http://127.0.0.1' } }) }));
+    await page.goto(`${h.base}/aprendizajes`);
+    await fn(page, (huella) => page.locator(`article[data-huella="${huella}"]`));
+  } finally { await navegador.close(); }
+}
+const marcada = (carta, accion) => carta.locator(`button[data-accion="${accion}"][aria-pressed="true"]`).count();
+
+test('E1 4.14-E2E_Learnings_FollowRecommendations @story-4.14 @ac-14 — seguir las recomendaciones marca cada tarjeta con su acción', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  await conSitio({ ops: CUATRO }, async (x) => enNavegador(x, async (page, carta) => {
+    await page.getByRole('button', { name: TX.t('es', 'aprend.seguir', { n: 3 }) }).click();
+    assert.strictEqual(await marcada(carta(H1), 'approve'), 1);
+    assert.strictEqual(await carta(H1).locator('.a-texto').inputValue(), 'cuando se toca el login: correr las pruebas de seguridad', 'la aprobación lleva la regla sugerida');
+    assert.strictEqual(await marcada(carta(H3), 'reject'), 1);
+    assert.strictEqual(await carta(H3).locator('.a-motivo').inputValue(), POR_MODELO_NO, 'el rechazo lleva el porqué');
+    assert.strictEqual(await carta(H7).locator('.a-motivo').inputValue(), TX.t('es', 'aprend.regla.carpeta_de_trabajo'));
+    assert.strictEqual(await carta(H2).locator('button[aria-pressed="true"]').count(), 0, 'la que no tiene recomendación queda sin marcar');
+    assert.strictEqual(await page.locator('.a-cuenta').innerText(), TX.t('es', 'aprend.barra.elegidas', { n: 3 }));
+    // los dos campos siguen editables
+    await carta(H3).locator('.a-motivo').fill('otro motivo');
+    assert.strictEqual(await carta(H3).locator('.a-motivo').inputValue(), 'otro motivo');
+  }));
+});
+
+test('E2 4.14-E2E_Learnings_BulkRejectOneMotive @story-4.14 @ac-15 — elegir varias y rechazarlas con un motivo', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const MOTIVO = 'no le sirve al equipo';
+  const ops = conRecos({ [H7]: porRegla('carpeta_de_trabajo'), [H8]: porRegla('carpeta_de_trabajo'), [H9]: porRegla('ruta_de_una_maquina') }, { ...pendienteExtra(H7), ...pendienteExtra(H8), ...pendienteExtra(H9) });
+  await conSitio({ ops }, async (x) => enNavegador(x, async (page, carta) => {
+    const cinco = [H1, H3, H7, H8, H9];
+    await carta(H1).locator('button[data-accion="approve"]').click();
+    for (const h of cinco) await carta(h).locator('.a-elige').check();
+    await page.locator('.a-motivo-grupo').fill(MOTIVO);
+    await page.getByRole('button', { name: TX.t('es', 'aprend.rechazarElegidas') }).click();
+    for (const h of cinco) {
+      assert.strictEqual(await marcada(carta(h), 'reject'), 1, `${h} queda rechazada`);
+      assert.strictEqual(await carta(h).locator('.a-motivo').inputValue(), MOTIVO);
+    }
+    assert.strictEqual(await marcada(carta(H1), 'approve'), 0, 'la que estaba para aprobar cambia');
+    assert.strictEqual(await page.locator('.a-elige:checked').count(), 0, 'la elección se vacía');
+    // elegir por regla toma sólo las de esa regla
+    await page.getByRole('button', { name: TX.t('es', 'aprend.elegirRegla', { regla: TX.t('es', 'aprend.reglaNombre.carpeta_de_trabajo'), n: 2 }) }).click();
+    assert.strictEqual(await carta(H7).locator('.a-elige').isChecked(), true);
+    assert.strictEqual(await carta(H8).locator('.a-elige').isChecked(), true);
+    assert.strictEqual(await carta(H9).locator('.a-elige').isChecked(), false);
+    assert.strictEqual(x.apiOps.st.pedidos.length, 0, 'nada se envía hasta «Enviar para aprobar»');
+    await page.getByRole('button', { name: TX.t('es', 'aprend.enviar') }).click();
+    await page.locator('.a-estado').filter({ hasText: TX.t('es', 'aprend.sigue.aprobar') }).waitFor({ timeout: 30000 });
+    assert.strictEqual(x.apiOps.st.pedidos.length, 1);
+    for (const h of cinco) {
+      const p = JSON.parse(enRama(x.ops, x.apiOps.st.pedidos[0].head.ref, `inbox/instincts/propuestas/${h}.json`));
+      assert.strictEqual(p.estado, 'rechazada', h);
+      assert.strictEqual(p.decision.motivo, MOTIVO, h);
+    }
+  }));
+});
+
+test('E3 4.14-E2E_Learnings_Over200_SendDisabled @story-4.14 @ac-16 — con más de 200 marcadas no se puede enviar', { skip: SIN_NAVEGADOR, timeout: 180000 }, async () => {
+  const hs = Array.from({ length: 201 }, (_, i) => `c${String(i).padStart(9, '0')}`);
+  const ops = conRecos(Object.fromEntries(hs.map((h) => [h, porRegla('carpeta_de_trabajo')])), Object.assign({}, ...hs.map(pendienteExtra)));
+  await conSitio({ ops }, async (x) => enNavegador(x, async (page, carta) => {
+    await page.getByRole('button', { name: TX.t('es', 'aprend.seguir', { n: 201 }) }).click();
+    assert.ok((await page.locator('.a-cuenta').innerText()).includes(TX.t('es', 'aprend.barra.sobran', { n: 1 })), 'la barra dice cuántas sobran');
+    assert.strictEqual(await page.locator('.a-enviar').isDisabled(), true);
+    await carta(hs[0]).locator('button[data-accion="reject"]').click();
+    assert.strictEqual(await page.locator('.a-enviar').isDisabled(), false, 'al bajar a 200 se puede enviar');
+  }));
+});

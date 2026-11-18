@@ -265,10 +265,12 @@ Sólo para **quien mantiene**. Cada noche, la revisión de los instintos del equ
 máquinas (las que tienen prendidos los aprendizajes en el perfil del equipo) y deja una propuesta por patrón en el repo
 de operaciones. Al lado del nombre, en el menú, va cuántas esperan tu decisión, por ejemplo «Aprendizajes (3)».
 
-**Qué se ve.** Arriba, la última noche: el día, si midió, qué modelo redactó y cuántas quedaron sin redactar. Debajo,
-las propuestas por decidir, primero las que aparecen en más máquinas y después las que se repiten más. Cada tarjeta dice
-qué se repite (la herramienta, el patrón y el repo), en cuántas máquinas, cuántas veces y entre qué días, y la regla
-sugerida con su confianza, o «sin redacción» y por qué. Nunca dice qué máquina ni qué persona lo hizo. Si la propuesta
+**Qué se ve.** Arriba, la última noche: el día, si midió, qué modelo redactó, cuántas quedaron sin redactar y cuántas dejó
+afuera por ruido. Debajo, las propuestas por decidir, primero las que aparecen en más máquinas y después las que se
+repiten más. Cada tarjeta dice qué se repite (la herramienta, el patrón y el repo), en cuántas máquinas, cuántas veces y
+entre qué días, y la regla sugerida con su confianza, o «sin redacción» y por qué. También dice si la noche recomienda
+aprobarla o rechazarla y por qué, con el botón recomendado **resaltado**, igual que en Mantenimiento: el porqué sale de
+una regla fija o del modelo que revisa cada noche, y si no hay recomendación, dice el motivo. Nunca dice qué máquina ni qué persona lo hizo. Si la propuesta
 sugiere una pieza del arnés (un revisor, una skill, un gancho o una guía), la tarjeta trae **Proponer al arnés**, que
 abre un issue nuevo del repo público con el borrador escrito: lo enviás vos, con tu cuenta. Al fondo, cerrado de
 entrada, el historial de los últimos 30 días: quién decidió, cuándo, el texto aprobado o el motivo del rechazo. Cada
@@ -278,7 +280,11 @@ aplicar); en ese caso, **Volver a proponer al perfil** abre otra vez sólo el pe
 **Cómo se decide.** Como en Mantenimiento: marcás **Aprobar** o **Rechazar** en cada tarjeta (las marcas quedan en el
 navegador) y al final **Enviar para aprobar**. Aprobar abre la regla sugerida para que la corrijas: lo que va al equipo
 es el texto que confirmás, en una línea. Una propuesta sin redacción pide que la escribas. Rechazar pide un motivo, en
-una línea. Al enviar salen, como mucho, dos pedidos:
+una línea. Para decidir muchas de una vez, **Seguir las recomendaciones** marca cada tarjeta con lo que recomienda la
+noche (la aprobación con su regla y el rechazo con su porqué, los dos editables). Con la casilla **Elegir** de cada
+tarjeta, o con **Elegir todas las de** una regla, juntás varias, y **Rechazar las elegidas** las marca con un mismo
+motivo. Nada de esto envía: revisás y recién ahí **Enviar para aprobar**, hasta 200 decisiones por vez. Al enviar salen,
+como mucho, dos pedidos:
 
 1. con aprobadas, uno al repo del perfil, que agrega cada regla al bloque `team-learnings.md` de un paquete que la
    organización ya tiene (`packs/<paquete>/claude-md-blocks/team-learnings.md`). Viene elegido el paquete que ya tiene
