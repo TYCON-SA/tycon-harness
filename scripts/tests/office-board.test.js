@@ -15,7 +15,7 @@ const {
   IDS, runMarkerFile, BEFORE_PLAN, CLOSED, sessionWith, atIso, KANBAN_BOARD, collectAt, localIsoAt, mixedOffice,
   WALL_ORDER, toyKanban, firmaCard, firmaData, wip, toyHome, toyMachine, storyFile, collectWith, drawKanban, toyRepo,
   parkMachine, openWallPanel, wallTexts, firmaOffice, filesOf, buildOffice, page, collect, buildBoard,
-  createEnvelopes, ownerWaitsOf
+  createEnvelopes, ownerWaitsOf, tinyDom
 } = require('./lib/office-fixtures.js');
 
 test('T6 PanelYTeToca: el panel cuenta el trabajo, las firmas y lo que quedó a medio camino; «te toca» sólo pide firmar', () => {
@@ -996,12 +996,31 @@ test('T5 Oficina_LineaVencida_NoSeMuestraYSeAvisa — @story-8.306 @ac-4 @ac-6',
   assert.deepStrictEqual(two.board.avisos, [], 'no es algo que la oficina no pudo leer');
   assert.strictEqual(photo({ Vigente: 2, Vencida: 30 }).data.meta.tocaAviso, oneNotice);
   assert.ok(!('tocaAviso' in photo({ Vigente: 2 }).data.meta), 'sin vencidas no hay aviso');
-  // la página lo dibuja debajo de la lista
-  const renderYou = page(two.data).match(/function renderYou\(.*\n/)[0];
-  const items = [];
-  const list = { replaceChildren: () => { items.length = 0; }, appendChild: (item) => items.push(item) };
-  new Function('document', 'el', `${renderYou};renderYou(["Vigente"],${JSON.stringify(twoNotice)});`)({ getElementById: () => list }, (tag, cls, text) => ({ cls, text }));
-  assert.deepStrictEqual(items.map((i) => i.text), ['Vigente', twoNotice]);
+  // se ve sin nada más en la página: el bloque que se pliega queda oculto, abierto o no, y el aviso está afuera
+  const html = page(two.data);
+  const summary = html.match(/const RESUMEN_KEY=[\s\S]*?b\.onclick=[^\n]*\n/)[0];
+  const paintNotice = html.match(/function pintarAvisoToca\(.*\n/)[0];
+  const el = html.match(/const el=(\([^\n]*\});\n/)[1];
+  const drawNotice = (notice, saved) => {
+    const { document, byId } = tinyDom();
+    for (const id of ['resumen', 'resumenLinea', 'resumenListas', 'tocaAviso']) byId[id] = document.createElement('div');
+    byId.resumen.classList = { toggle() {} };
+    byId.tocaAviso.hidden = true;
+    document.createTextNode = (textContent) => ({ textContent });
+    new Function('document', 'localStorage', `const el=${el};${summary}${paintNotice};pintarResumen(0,0);pintarAvisoToca(${JSON.stringify(notice)});`)(document, { getItem: () => saved, setItem() {} });
+    return byId;
+  };
+  for (const saved of [null, '1']) {
+    const shown = drawNotice(twoNotice, saved);
+    assert.strictEqual(shown.resumenListas.hidden, true, 'sin nada que mostrar, las listas no se abren');
+    assert.strictEqual(shown.tocaAviso.hidden, false, 'el aviso se ve igual');
+    assert.strictEqual(shown.tocaAviso.textContent, twoNotice);
+  }
+  assert.strictEqual(drawNotice(undefined, null).tocaAviso.hidden, true, 'sin vencidas queda oculto');
+  const between = html.slice(html.indexOf('<div class="resumen" id="resumen">'), html.indexOf('id="resumenListas"'));
+  assert.ok(between.includes('id="tocaAviso"'), 'dentro de #resumen y antes de lo que se pliega');
+  assert.ok(!between.includes('</div>'), 'sin cerrar #resumen antes');
+  assert.match(html, /pintarAvisoToca\(meta&&meta\.tocaAviso\)/, 'cada foto lo vuelve a pintar');
   // por el camino entero: no entra en «No se pudo leer», que es lo que la coordinadora lee para saber si miró todo
   const raw = JSON.stringify(tocaBoard({ Vigente: 2, Vencida: 30 }));
   const data = await collectWith(raw);

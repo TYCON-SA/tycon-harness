@@ -59,12 +59,13 @@ function renderHalfway(){const sec=document.getElementById("halfway"),k=DATA.kan
   if(k.medioCaminoLeido)sec.appendChild(el("p","none",k.medioCaminoLeido));
   half.forEach(i=>{const card=el("div","item");card.appendChild(el("b",null,i.titulo));card.appendChild(el("span","n",i.accion));sec.appendChild(card)});
   if(k.medioCaminoNoSe)sec.appendChild(el("p","none",k.medioCaminoNoSe))}
-// la lista de «Te toca a vos»; debajo, cuántas líneas del tablero vencieron, que no cuentan como algo para hacer
-function renderYou(you,aviso){const ul=document.getElementById("youList");ul.replaceChildren();you.forEach(t=>ul.appendChild(el("li",null,t)));if(aviso)ul.appendChild(el("li","nada",aviso));else if(!you.length)ul.appendChild(el("li","nada","Nada por ahora: no hay firmas pendientes ni pedidos en el tablero."))}
+// cuántas líneas del tablero vencieron: va fuera de lo que se pliega, que sin nada pendiente no se puede abrir
+function pintarAvisoToca(aviso){const p=document.getElementById("tocaAviso");p.hidden=!aviso;p.textContent=aviso||""}
 function renderTop(){
   document.getElementById("stamp").textContent=meta?"Al día a las "+meta.actualizado+(meta.pedidosLeidos?" · pedidos leídos a las "+meta.pedidosLeidos:""):"";
   const site=document.getElementById("site");if(SITE){site.href=SITE;site.hidden=false}else{site.removeAttribute("href");site.hidden=true}
-  const you=(meta&&meta.teToca)||[];renderYou(you,meta&&meta.tocaAviso);
+  const you=(meta&&meta.teToca)||[],ul=document.getElementById("youList");ul.replaceChildren();you.forEach(t=>ul.appendChild(el("li",null,t)));if(!you.length)ul.appendChild(el("li","nada","Nada por ahora: no hay firmas pendientes ni pedidos en el tablero."));
+  pintarAvisoToca(meta&&meta.tocaAviso);
   const aus=document.getElementById("ausente"),au=meta&&meta.ausente;aus.hidden=!au;aus.textContent=au?au.linea:"";
   const tr=document.getElementById("trabado"),stuck=(meta&&meta.trabado)||[];tr.hidden=!stuck.length;tr.replaceChildren();if(stuck.length){tr.appendChild(el("h2",null,"Trabado"));stuck.forEach(g=>{tr.appendChild(el("h3",null,g.titulo));const u=el("ul");(g.filas||[]).forEach(f=>u.appendChild(el("li",null,f)));tr.appendChild(u)})}
   pintarResumen(you.length,stuck.reduce((n,g)=>n+(g.filas||[]).length,0));

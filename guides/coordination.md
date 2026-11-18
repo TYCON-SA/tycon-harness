@@ -664,8 +664,8 @@ aparte para `save --from` va fuera de la carpeta de estado. Si algo lo cambió s
   las preguntas abiertas y de esta lista: las notas no se leen, así que lo que le toca al dueño va acá. `meta.resumen` se
   ignora, como `tablas`: la línea de arriba del kanban se arma sola de las tarjetas («Sale primero: T-52 … · 19:30 · Tu
   firma: 2 · Trabado: 1 · Tablero escrito a las 16:29», o «Nada con hora en curso»).
-- Una línea de `teToca` vence a las 24 horas: deja de mostrarse y la oficina dice cuántas vencieron debajo de «Te toca a
-  vos». Volver a guardarla
+- Una línea de `teToca` vence a las 24 horas: deja de mostrarse y la oficina dice cuántas vencieron en la franja del
+  resumen. Volver a guardarla
   no la renueva, porque `save --from` trae tu archivo entero; la renueva `due confirm`. `due drop` la saca del tablero:
   sacala también de tu archivo aparte, o el próximo `save --from` la devuelve con su fecha. Las firmas y las preguntas no
   vencen. La fecha va en `meta.teTocaDesde`, que escribe sólo `board.js`.
