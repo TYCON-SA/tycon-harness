@@ -265,8 +265,10 @@ function aperturaParaSalida(sesion, { modo = 'lost', cwd, home, estado, propia }
   const copias = raiz ? copiasDe(raiz, s) : [];
   if (copias.length) return { ...copias[copias.length - 1].copia, antes: false, deDonde: 'copia' };
   if (modo !== 'restore') return null;
-  const p = require('./story-gate-io.js').readPruned(dir, s);
-  if (p) {
+  // se lee acá y no con story-gate-io.js: esa pieza traería marker.js a todo lo que carga este módulo, también al sitio
+  let p = null;
+  try { p = JSON.parse(fs.readFileSync(path.join(dir, 'pruned', `${sessionIdFileKey(s)}.json`), 'utf8')); } catch { p = null; }
+  if (p && p.storyId) {
     // la podada no siempre trae su carpeta: la da su última apertura del registro
     const abierta = p.runDir ? null : [...eventos].reverse().find((e) => e.sesion === s && e.name === 'run-open');
     return { name: 'pruned', sesion: s, story: String(p.storyId), storyPath: p.storyPath || null, repo: p.repoPath || null,

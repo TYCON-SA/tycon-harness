@@ -70,7 +70,9 @@ test('T12 BashWriteGate_InPlaceEditWithSuffix_BlocksStory @story-8.288 @ac-15 @a
     const cambiaEstado = forma('s/^status: .*/status: done/');
     assert.match(freno(cambiaEstado), new RegExp(HISTORIA), `cambia el estado: frena — ${cambiaEstado}`);
     const soloCuerpo = forma('s/^Texto del cuerpo\\.$/Texto nuevo./');
-    assert.strictEqual(freno(soloCuerpo), '', `sólo el cuerpo: pasa — ${soloCuerpo}`);
+    // fuera de BSD, `-i ''` y `-i .bak` toman esa palabra por el guion, y `-i''` se lee como `-i ''`: el freno no las da por seguras
+    if (process.platform !== 'darwin' && /^sed -i( ''|''| \.bak) /.test(soloCuerpo)) assert.notStrictEqual(freno(soloCuerpo), '', `fuera de BSD: frena — ${soloCuerpo}`);
+    else assert.strictEqual(freno(soloCuerpo), '', `sólo el cuerpo: pasa — ${soloCuerpo}`);
   }
   assert.strictEqual(freno("sed -n '1,5p' specs/story-9.1.md"), '', 'leer no es escribir');
 });
