@@ -83,7 +83,7 @@ const FIELDS = {
     medioCaminoLeido: text,
   }),
   tablas: record({ hoy: TABLE, pendientes: TABLE, hechos: TABLE }),
-  meta: record({ actualizado: text, pedidosLeidos: text, teToca: list(text), trabado: list(record({ titulo: text, filas: list(text) })), extra: number, puestos: list(list(number)), sitio: text, quietMin: number, recorte: text,
+  meta: record({ actualizado: text, pedidosLeidos: text, teToca: list(text), tocaAviso: text, trabado: list(record({ titulo: text, filas: list(text) })), extra: number, puestos: list(list(number)), sitio: text, quietMin: number, recorte: text,
     // la memoria y el procesador en uso, para los racks: sólo los dos porcentajes, nada que diga qué máquina es
     maquina: record({ memoria: percent, procesador: percent }) }),
   rows: list(record({ work: text, state: text, end: text, session: text, folder })),

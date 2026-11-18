@@ -290,7 +290,7 @@ function richFoto() {
       { kind: 'run', text: 'Otro trabajo', unknown: true },
     ],
   };
-  const board = buildBoard({ meta: { actualizado: '2026-06-01T10:00', resumen: 'Resumen', teToca: ['Algo'] }, pendientes: [{ titulo: 'Pendiente', estado: 'espera', grupo: 'Hoy', quien: 'Omega', nota: 'Nota', termina: 'hoy', orden: 1, id: 'T-1' }, { titulo: 'Hecho', estado: 'hecho', quien: 'Beta', realIso: '2026-06-01T09:00', id: 'T-2' }, { titulo: 'La recalculada', estado: 'curso', historia: '7.6', id: 'T-3' }] });
+  const board = buildBoard({ meta: { actualizado: '2026-06-01T10:00', resumen: 'Resumen', teToca: ['Algo', 'Vencida'], teTocaDesde: { Vencida: '2026-05-20T10:00' } }, pendientes: [{ titulo: 'Pendiente', estado: 'espera', grupo: 'Hoy', quien: 'Omega', nota: 'Nota', termina: 'hoy', orden: 1, id: 'T-1' }, { titulo: 'Hecho', estado: 'hecho', quien: 'Beta', realIso: '2026-06-01T09:00', id: 'T-2' }, { titulo: 'La recalculada', estado: 'curso', historia: '7.6', id: 'T-3' }] }, { now: nowMs });
   // una firma pedida por una sesión: su persona levanta la mano y la tarjeta dice a quién espera (8.198)
   const { data } = buildOffice({
     wip, signatures: [{ title: 'Firma del plan', at: nowMs }, { id: 'f9', tipo: 'firma', destino: 's1', title: 'el carril de Alfa', at: nowMs }], nowMs, board, openPrsNote: 'Los pedidos no se pudieron leer.',

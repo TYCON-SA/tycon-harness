@@ -818,6 +818,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   const meta = {
     actualizado: hhmm(nowMs),
     teToca,
+    ...(board && board.tocaAviso ? { tocaAviso: board.tocaAviso } : {}),
     trabado: stuckGroups(agents, coordinatorName),
     extra: Math.max(0, agents.length - MAX_DESKS),
     puestos: deskSlots(agents.length),
@@ -1504,12 +1505,14 @@ function buildBoard(raw, { now = Date.now(), writtenAt = null } = {}) {
   // la fecha se busca con la línea entera: recién después se corta lo que se muestra
   const toca = boardTool.tocaState(raw, { now, writtenAt });
   const vencidas = toca.vencidas.length;
-  if (vencidas === 1) avisos.push('el tablero: 1 línea de «Te toca» venció (más de 24 h sin confirmar) y no se muestra: la coordinadora la confirma o la saca con board.js due');
-  else if (vencidas) avisos.push(`el tablero: ${vencidas} líneas de «Te toca» vencieron (más de 24 h sin confirmar) y no se muestran: la coordinadora las confirma o las saca con board.js due`);
+  // no va a `avisos`: ésos dicen que la oficina no pudo leer algo, y con eso la coordinadora no da por mirado lo del dueño
+  const tocaAviso = vencidas === 1 ? 'el tablero: 1 línea de «Te toca» venció (más de 24 h sin confirmar) y no se muestra: la coordinadora la confirma o la saca con board.js due'
+    : vencidas ? `el tablero: ${vencidas} líneas de «Te toca» vencieron (más de 24 h sin confirmar) y no se muestran: la coordinadora las confirma o las saca con board.js due` : null;
   // `meta.resumen` no se muestra: la línea de arriba del kanban se arma sola de las tarjetas
   return {
     actualizado: boardHour(meta.actualizado) || text(meta.actualizado),
     teToca: toca.vigentes.map(text).filter(Boolean),
+    tocaAviso,
     filas,
     avisos,
   };

@@ -682,7 +682,8 @@ says so once under «No se pudo leer». A badly written row is not saved: `board
   open questions and this list: notes are not read, so what the owner has to do goes here. `meta.resumen` is ignored, like
   `tablas`: the line above the kanban builds itself from the cards («Sale primero: T-52 … · 19:30 · Tu firma: 2 · Trabado:
   1 · Tablero escrito a las 16:29», or «Nada con hora en curso»).
-- A `teToca` line expires after 24 hours: it stops showing and the office says how many expired. Saving it again does not
+- A `teToca` line expires after 24 hours: it stops showing and the office says how many expired under «Te toca a vos».
+  Saving it again does not
   renew it, because `save --from` brings your whole file; `due confirm` renews it. `due drop` removes it from the board:
   remove it from your separate file too, or the next `save --from` brings it back with its date. Signatures and questions
   do not expire. The date lives in `meta.teTocaDesde`, which only `board.js` writes.

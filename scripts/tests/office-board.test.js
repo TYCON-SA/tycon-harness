@@ -989,13 +989,30 @@ test('T5 Oficina_LineaVencida_NoSeMuestraYSeAvisa — @story-8.306 @ac-4 @ac-6',
   const two = photo({ Vigente: 2, 'Vencida uno': 24, 'Vencida dos': 30 });
   assert.deepStrictEqual(two.data.meta.teToca, ['Firmar: la firma vieja', 'Vigente'], 'de esta lista leen la pared, el contador y el panel');
   for (const seen of [JSON.stringify(two.data), JSON.stringify(pick(two.data, '/home/nadie'))]) assert.ok(!seen.includes('Vencida'), 'el texto vencido no está en ninguna parte');
-  assert.deepStrictEqual(two.board.avisos, ['el tablero: 2 líneas de «Te toca» vencieron (más de 24 h sin confirmar) y no se muestran: la coordinadora las confirma o las saca con board.js due']);
-  assert.deepStrictEqual(photo({ Vigente: 2, Vencida: 30 }).board.avisos, ['el tablero: 1 línea de «Te toca» venció (más de 24 h sin confirmar) y no se muestra: la coordinadora la confirma o la saca con board.js due']);
-  assert.deepStrictEqual(photo({ Vigente: 2 }).board.avisos, []);
-  // por el camino entero: la foto de la máquina lo trae en lo que no se pudo leer
-  const data = await collectWith(JSON.stringify(tocaBoard({ Vigente: 2, Vencida: 30 })));
+  const twoNotice = 'el tablero: 2 líneas de «Te toca» vencieron (más de 24 h sin confirmar) y no se muestran: la coordinadora las confirma o las saca con board.js due';
+  const oneNotice = 'el tablero: 1 línea de «Te toca» venció (más de 24 h sin confirmar) y no se muestra: la coordinadora la confirma o la saca con board.js due';
+  assert.strictEqual(two.data.meta.tocaAviso, twoNotice);
+  assert.strictEqual(pick(two.data, '/home/nadie').meta.tocaAviso, twoNotice, 'viaja al sitio: sólo dice la cantidad');
+  assert.deepStrictEqual(two.board.avisos, [], 'no es algo que la oficina no pudo leer');
+  assert.strictEqual(photo({ Vigente: 2, Vencida: 30 }).data.meta.tocaAviso, oneNotice);
+  assert.ok(!('tocaAviso' in photo({ Vigente: 2 }).data.meta), 'sin vencidas no hay aviso');
+  // la página lo dibuja debajo de la lista
+  const renderYou = page(two.data).match(/function renderYou\(.*\n/)[0];
+  const items = [];
+  const list = { replaceChildren: () => { items.length = 0; }, appendChild: (item) => items.push(item) };
+  new Function('document', 'el', `${renderYou};renderYou(["Vigente"],${JSON.stringify(twoNotice)});`)({ getElementById: () => list }, (tag, cls, text) => ({ cls, text }));
+  assert.deepStrictEqual(items.map((i) => i.text), ['Vigente', twoNotice]);
+  // por el camino entero: no entra en «No se pudo leer», que es lo que la coordinadora lee para saber si miró todo
+  const raw = JSON.stringify(tocaBoard({ Vigente: 2, Vencida: 30 }));
+  const data = await collectWith(raw);
   assert.deepStrictEqual(data.meta.teToca, ['Vigente']);
-  assert.ok(data.unreadable.some((u) => /^el tablero: 1 línea de «Te toca» venció/.test(u)), data.unreadable.join(' | '));
+  assert.strictEqual(data.meta.tocaAviso, oneNotice);
+  assert.ok(!data.unreadable.some((u) => /Te toca/.test(u)), data.unreadable.join(' | '));
+  const { home, state } = toyHome();
+  fs.mkdirSync(path.join(state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(state, 'coordination', 'tablero.json'), raw);
+  const waits = JSON.parse(run(home, ['--owner-waits', '--now', new Date(NOW).toISOString()]));
+  assert.ok(!waits.problemas.some((p) => /Te toca/.test(p)), waits.problemas.join(' | '));
 });
 
 test('T13 Regresion_FirmasYPreguntasViejas_NoVencen — @story-8.306 @ac-13', () => {
