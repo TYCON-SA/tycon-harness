@@ -110,20 +110,34 @@ function git(root, args, { input, env, allowFail } = {}) {
   return r;
 }
 const trimNl = (s) => s.replace(/\n+$/, '');
+// Una corrida pregunta muchas veces lo mismo de la base. Con la versión escrita entera (40 caracteres) la respuesta no
+// cambia: se recuerda. «No está» (sale 1) se recuerda sólo si ya se sabe que ese commit existe: la corrida crea commits
+// (la fusión con main, la refirma) y un commit que todavía no existía puede aparecer. Con un nombre (`main`, `HEAD`) se
+// pregunta cada vez. Un error de git no se recuerda. TYCON_GIT_MEMO=0 lo apaga.
+const RECUERDO = new Map();
+const EXISTEN = new Set();
+const fija = (rev) => process.env.TYCON_GIT_MEMO !== '0' && /^[0-9a-f]{40}$/.test(String(rev));
+function recordado(root, rev, args, leer) {
+  if (!fija(rev)) return leer(git(root, args, { allowFail: true }));
+  const k = `${root}\0${args.join('\0')}`;
+  if (RECUERDO.has(k)) return RECUERDO.get(k);
+  const r = git(root, args, { allowFail: true });
+  const v = leer(r);
+  if (r.status === 0) { RECUERDO.set(k, v); EXISTEN.add(`${root}\0${rev}`); }
+  else if (r.status === 1 && EXISTEN.has(`${root}\0${rev}`)) RECUERDO.set(k, v);
+  return v;
+}
 function resolveCommit(root, rev) {
-  const r = git(root, ['rev-parse', '--verify', '-q', `${rev}^{commit}`], { allowFail: true });
-  return r.status === 0 ? trimNl(r.stdout) : null;
+  return recordado(root, rev, ['rev-parse', '--verify', '-q', `${rev}^{commit}`], (r) => (r.status === 0 ? trimNl(r.stdout) : null));
 }
 // un blob, por la ruta exacta desde la raíz (`rev:./x` resolvería contra la carpeta de quien llama)
 function blobOf(root, rev, p) {
   if (!p || p.startsWith('.') && (p.startsWith('./') || p.startsWith('../'))) return null;
-  const r = git(root, ['rev-parse', '--verify', '-q', `${rev}:${p}`], { allowFail: true });
-  return r.status === 0 ? trimNl(r.stdout) : null;
+  return recordado(root, rev, ['rev-parse', '--verify', '-q', `${rev}:${p}`], (r) => (r.status === 0 ? trimNl(r.stdout) : null));
 }
 function show(root, rev, p) {
   if (!blobOf(root, rev, p)) return null;
-  const r = git(root, ['cat-file', 'blob', `${rev}:${p}`], { allowFail: true });
-  return r.status === 0 ? r.stdout : null;
+  return recordado(root, rev, ['cat-file', 'blob', `${rev}:${p}`], (r) => (r.status === 0 ? r.stdout : null));
 }
 // muchos blobs con un solo git, `{ id → texto }`, o null si git falló; lo que no es un blob no está. Un proceso por constancia tarda más que el
 // tope del freno de seguridad con la máquina cargada, y el clasificador y el chequeo previo de la firma corren dentro de él
