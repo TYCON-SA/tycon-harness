@@ -236,3 +236,44 @@ test('T36 CapNotice_RetiradaSinAnunciar_LaLinea @story-8.202 @ac-29', () => {
   C.ownerWaitOnce(t.opts);
   assert.doesNotMatch(C.capNotice(t.opts) || '', /la cerró Claude Code/, 'ya anunciada');
 });
+
+// ── El motivo de un lugar libre a propósito, en /wip y en la oficina (@story-8.307, AC 13) ──────────────────────────
+
+test('T12 Wip_MotivoVigente_SeVeYVencidoNo @story-8.307 @ac-13', () => {
+  const FS = require(path.join(ROOT, 'scripts', 'lib', 'free-slots.js'));
+  const t = toy();
+  const rec = (extra = {}) => ({ at: iso(mins(10)), expiresAt: iso(NOW + 20 * 60000), sid: COORD, session: 'Coordinadora', kind: 'reason', reason: 'espero el merge de la 8.288', working: 2, cap: 6, memoryPct: 48, work: ['story:8.232'], ...extra });
+  FS.write(t.state, rec());
+  const u = [];
+  const list = W.freeSlotsNow(t.state, NOW, u);
+  assert.strictEqual(list.length, 1);
+  assert.deepStrictEqual(u, []);
+  assert.match(W.renderFreeSlots(list), /^\n\nLugares libres a propósito: Coordinadora, \d\d:\d\d a \d\d:\d\d: espero el merge de la 8\.288$/);
+  const wip = W.buildWip({ home: t.home, now: iso(NOW) });
+  assert.strictEqual(wip.freeSlots.length, 1);
+  assert.match(wip.text, /Lugares libres a propósito: Coordinadora, \d\d:\d\d a \d\d:\d\d: espero el merge de la 8\.288/);
+  // la oficina lee el mismo `wip` que /wip: una tarjeta `riesgo` con el mismo texto
+  const office = () => JSON.stringify(O.buildOffice({ wip: W.buildWip({ home: t.home, now: iso(NOW) }), nowMs: NOW }).data);
+  const all = office();
+  assert.match(all, /Lugares libres a propósito: Coordinadora, \d\d:\d\d a \d\d:\d\d: espero el merge de la 8\.288/);
+  assert.match(all, /"estado":"riesgo"/);
+  // el cierre sin motivo se ve igual que un motivo, en /wip y en la oficina
+  FS.write(t.state, rec({ kind: 'closed-without-reason', reason: 'cerró sin abrir ni motivo' }));
+  assert.match(W.renderFreeSlots(W.freeSlotsNow(t.state, NOW, [])), /cerró sin abrir ni motivo/);
+  assert.match(office(), /Lugares libres a propósito: Coordinadora, \d\d:\d\d a \d\d:\d\d: cerró sin abrir ni motivo/);
+  // vencido no sale en ninguna de las dos; el registro lo conserva
+  FS.write(t.state, rec({ expiresAt: iso(mins(1)) }));
+  assert.deepStrictEqual(W.freeSlotsNow(t.state, NOW, []), []);
+  assert.strictEqual(W.renderFreeSlots([]), '');
+  assert.doesNotMatch(office(), /Lugares libres a propósito/);
+  assert.strictEqual(fs.readFileSync(FS.files(t.state).log, 'utf8').trim().split('\n').length, 3);
+  // un archivo roto no rompe /wip: va a lo que no se pudo leer
+  fs.writeFileSync(FS.files(t.state).current, '{ roto');
+  const u2 = [];
+  assert.deepStrictEqual(W.freeSlotsNow(t.state, NOW, u2), []);
+  assert.strictEqual(u2.length, 1);
+  assert.match(u2[0], /lugares libres/i);
+  const wip2 = W.buildWip({ home: t.home, now: iso(NOW) });
+  assert.ok(wip2.text.length > 0);
+  assert.ok(wip2.unreadable.some((x) => /lugares libres/i.test(x)));
+});

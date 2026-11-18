@@ -144,6 +144,7 @@ const MEASURES = {
   'Dimensionar antes de asignar': 'nadie',
   'Una sesión que termina recibe trabajo o se cierra': 'aviso',
   'Una sesión que espera recibe lo liviano': 'aviso',
+  'Con lugar, memoria y trabajo listo, la coordinadora no cierra su turno': 'freno',
   'Un rojo no se deja': 'nadie',
   'No aflojar una revisión, no hacer papeleo': 'nadie',
   'Comprobar un mensaje para el equipo': 'nadie',
@@ -2240,6 +2241,20 @@ test('8.289 T7 Guia_LaSesionQueEspera_EnLosDosIdiomas @story-8.289 @ac-10: la re
   const fila = (f, regla) => fs.readFileSync(f, 'utf8').split('\n').find((l) => l.startsWith(`| ${regla} |`)) || '';
   assert.match(fila(GUIDE, 'Una sesión que espera recibe lo liviano'), /\| aviso \| El aviso de cada turno de la coordinadora/);
   assert.match(fila(GUIDE_EN, 'A waiting session gets the light work'), /\| aviso \| The coordinator's notice on each turn/);
+});
+
+test('8.307 T16 Guia_MaquinaLlena_EnLosDosIdiomas @story-8.307 @ac-18: la regla, keep-free, los 30 minutos, los tres bloqueos y su renglón freno, en las dos guías', () => {
+  const flat = (f, from, to) => { const t = fs.readFileSync(f, 'utf8'); return ((t.split(from)[1] || '').split(to)[0]).replace(/\s+/g, ' '); };
+  const es = flat(GUIDE, '## Las reglas del día a día', '## Qué mide cada regla');
+  const en = flat(GUIDE_EN, '## The everyday rules', '## What measures each rule');
+  assert.ok(es.includes('**Con lugar, memoria y trabajo listo, la coordinadora no cierra su turno.** Abre o retoma sesiones, o anota por qué no con `coordination.js keep-free`. Parar sesiones para cuidar la memoria no cuenta: el piso para abrir es 40 %. Por qué:'), es.slice(0, 200));
+  assert.ok(en.includes('**With a free slot, free memory and ready work, the coordinator does not close her turn.**'), 'la regla en inglés');
+  assert.ok(/does not close her turn\.\*\*[^|]*`coordination\.js keep-free`[^|]*40 %\. Why:/.test(en), 'la regla en inglés nombra keep-free, el piso y su porqué');
+  const fila = (f, regla) => fs.readFileSync(f, 'utf8').split('\n').find((l) => l.startsWith(`| ${regla} |`)) || '';
+  assert.match(fila(GUIDE, 'Con lugar, memoria y trabajo listo, la coordinadora no cierra su turno'), /\| freno \| .*keep-free.*30 min.*tres bloqueos/);
+  assert.match(fila(GUIDE_EN, 'With a free slot, free memory and ready work, the coordinator does not close her turn'), /\| freno \| .*keep-free.*30 min.*three blocks/);
+  assert.match(flat(GUIDE, '## El tope', '\n## '), /keep-free.*30 min.*tres bloqueos seguidos/);
+  assert.match(flat(GUIDE_EN, '## The cap', '\n## '), /keep-free.*30 min.*three blocks in a row/);
 });
 
 // ── pr-wait: the read-only watcher of a pull request, through the platform layer (@story-8.270, AC 26) ───────────────

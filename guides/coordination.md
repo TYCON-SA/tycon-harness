@@ -250,6 +250,18 @@ El mismo aviso trae dos cosas más:
   esperando turno. La espera de un pase no cuenta: a quien debe su pase lo despierta el aviso de arriba. `status` muestra la
   fila entera.
 
+**Con lugar, memoria y trabajo listo, el turno no cierra.** Un freno del cierre del turno (`coordination-fill-gate.js`),
+sólo para la coordinadora designada: si hay lugar (las otras que trabajan más la coordinadora, por debajo del tope: la
+misma cuenta que `open`), la memoria libre está en 40 % o más y hay al menos una historia lista sin sesión de su
+proyecto (`ready-for-dev` en la lectura de proyectos de la oficina, sin dependencias abiertas, sin pausa y sin ejecución
+en esta máquina), el turno no cierra: el freno dice qué hay y pide abrir una sesión o anotar por qué no, con
+`coordination.js keep-free --reason "<por qué>"`. El motivo vale 30 min y cubre sólo el trabajo listo que vio: una
+historia nueva lo vence; tres bloqueos seguidos y al cuarto cierre el freno deja pasar y lo anota como «cerró sin abrir
+ni motivo», que vale y se ve como un motivo (en `/wip`, «Lugares libres a propósito», y en la oficina). Con la lectura de
+proyectos vencida el freno no frena por historias y la manda a refrescar de fondo; sin poder leer el estado de la máquina
+o medir la memoria, tampoco. Las ejecuciones detenidas no entran: las sigue proponiendo el aviso de la fila larga del
+portón. No tiene interruptor: la salida es el motivo, que queda escrito.
+
 ## Lo pesado, con turno: la suite completa y los pases adversariales
 
 En la máquina corre **un pase adversarial por vez**, y nunca al lado de una ejecución grande de pruebas (el portón
@@ -809,6 +821,10 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
   vigila su pedido y se cierra al entrar. Con dos o más esperando el portón, la coordinadora para las últimas de la fila
   y reabre una ejecución detenida con plan firmado. Por qué: una sesión que espera ocupa un lugar sin hacer nada, y una
   historia que cae en ella queda atada a un pedido ajeno.
+- **Con lugar, memoria y trabajo listo, la coordinadora no cierra su turno.** Abre o retoma sesiones, o anota por qué no
+  con `coordination.js keep-free`. Parar sesiones para cuidar la memoria no cuenta: el piso para abrir es 40 %. Por qué:
+  cuatro veces en dos días la máquina quedó con 2 de 6 trabajando y seis historias firmadas esperando, con la memoria
+  libre arriba del piso; el aviso lo dijo y se ignoró. Esta regla la mide un freno (arriba, «El tope»).
 - **Con la fila de la suite larga no se abre una sesión para programar.** Si más de dos sesiones esperan turno de suite o
   portón, una sesión nueva se abre sólo para trabajo que no pide suite: escribir una historia, revisar o investigar. Las
   que sólo esperan su turno se pueden cerrar y retomar con su misma conversación cuando les toca (`claude respawn <id>`),
@@ -877,6 +893,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 | Dimensionar antes de asignar | nadie | Es criterio de la coordinadora. |
 | Una sesión que termina recibe trabajo o se cierra | aviso | El aviso de las sesiones de fondo quietas, pasados 15 minutos. |
 | Una sesión que espera recibe lo liviano | aviso | El aviso de cada turno de la coordinadora: nombra a la sesión de fondo que anotó que espera la CI, la cola o una firma, con hasta tres filas livianas del tablero, y propone una sesión nueva para una historia si hay lugar y memoria. Con dos o más en la fila del portón, dice a cuáles parar y qué ejecución detenida con plan firmado reabrir. Una sesión que no anotó su espera no se ve. |
+| Con lugar, memoria y trabajo listo, la coordinadora no cierra su turno | freno | El gancho del cierre del turno, sólo en la sesión designada: con lugar (las otras que trabajan más ella, por debajo del tope), memoria libre de 40 % o más y una historia lista sin sesión de su proyecto (sin dependencias abiertas ni pausa), no deja cerrar hasta que abra una sesión o anote el motivo con `coordination.js keep-free`, que vale 30 min y cubre sólo el trabajo que vio; tres bloqueos seguidos y al cuarto deja cerrar, anotado como «cerró sin abrir ni motivo». Las ejecuciones detenidas no entran: con dos o más esperando el portón, el aviso de la fila larga sigue proponiendo reabrir la más vieja. Sin poder leer el estado o medir la memoria, no frena. |
 | Un rojo no se deja | nadie | Los controles frenan lo propio; un rojo ajeno lo ve quien lo encuentra. |
 | No aflojar una revisión, no hacer papeleo | nadie | Es criterio: ningún dato separa una revisión de un papeleo. |
 | Comprobar un mensaje para el equipo | nadie | El mensaje sale por fuera de la máquina. |
