@@ -1059,6 +1059,12 @@ test('T2 Toca_GuardarOtraVez_NoRenueva — @story-8.306 @ac-2', () => {
   assert.strictEqual(saveToca(sdir, ['Una línea'], later, { teTocaDesde: { 'Una línea': isoAt(later) } }).code, 0);
   assert.deepStrictEqual(dates(sdir), { 'Una línea': isoAt(NOW) }, 'la fecha del archivo aparte se ignora');
   assert.deepStrictEqual(stateAt(sdir, later).vencidas, ['Una línea']);
+  // una fecha de este mismo minuto vale: no la reemplaza la hora del archivo
+  const sameMinute = stateDir();
+  saveToca(sameMinute, ['Una línea']);
+  fileAt(sameMinute, NOW - 25 * HOUR);
+  saveToca(sameMinute, ['Una línea']);
+  assert.deepStrictEqual(dates(sameMinute), { 'Una línea': isoAt(NOW) });
 });
 
 test('T3 Toca_LineaSacada_RecuerdaSuFecha — @story-8.306 @ac-3', () => {
