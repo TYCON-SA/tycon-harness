@@ -144,17 +144,11 @@
 // el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
 if (require.main === module) { try { require('./lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 
-// lo que comparten los módulos: el estado, las rutas de este despachador (las mismas de siempre, también por un
-// enlace) y lo que el despacho usa
-const shared = require('./lib/marker-shared.js');
-shared.estado.SCRIPTS_DIR = __dirname;
-shared.estado.MARKER_JS = __filename;
-const { paraOtraSesion } = shared;
-
 // cada grupo de subcomandos vive en su módulo de lib/, con la ruta escrita entera (el freno de guiones y
 // control-size.js siguen sólo una ruta literal). Se carga cuando un subcomando lo necesita: si falta o no carga,
 // lo dice en una línea y sale 2, nunca sigue como si el subcomando no existiera
 const CARGAS = {
+  'marker-shared.js': () => require('./lib/marker-shared.js'),
   'marker-lifecycle.js': () => require('./lib/marker-lifecycle.js'),
   'marker-sessions.js': () => require('./lib/marker-sessions.js'),
   'marker-complete-step.js': () => require('./lib/marker-complete-step.js'),
@@ -170,6 +164,13 @@ function cargar(modulo) {
     process.exit(2);
   }
 }
+
+// lo que comparten los módulos: el estado, las rutas de este despachador (las mismas de siempre, también por un
+// enlace) y lo que el despacho usa
+const shared = cargar('marker-shared.js');
+shared.estado.SCRIPTS_DIR = __dirname;
+shared.estado.MARKER_JS = __filename;
+const { paraOtraSesion } = shared;
 
 
 // Las opciones viejas siguen andando hasta el retiro (también desde una sesión abierta con las

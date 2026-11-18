@@ -486,6 +486,13 @@ test('T10 Split_MissingModule_FailsLoud @story-8.163 @ac-10', () => {
   assert.match(lineas[0], /lib\/marker-adhoc\.js/, 'nombra el módulo que falta');
   const otro = spawnSync(process.execPath, [path.join(copia, 'marker.js'), 'get'], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
   assert.strictEqual(otro.status, 0, `un subcomando de otro módulo sigue andando: ${otro.stderr}`);
+  // el compartido lo carga el despachador al arrancar: sin él tampoco sale el error largo de Node
+  fs.rmSync(path.join(copia, 'lib', 'marker-shared.js'));
+  const sinCompartido = spawnSync(process.execPath, [path.join(copia, 'marker.js'), 'get'], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+  assert.strictEqual(sinCompartido.status, 2, `sin el módulo compartido sale 2:\n${sinCompartido.stderr}`);
+  const renglones = sinCompartido.stderr.split('\n').filter((l) => l.trim());
+  assert.strictEqual(renglones.length, 1, `una sola línea con el motivo:\n${sinCompartido.stderr}`);
+  assert.match(renglones[0], /lib\/marker-shared\.js/, 'nombra el módulo compartido');
 });
 
 test('T15 Exports_SameKeysBeforeAndAfter @story-8.163 @ac-15', () => {
@@ -594,6 +601,21 @@ test('T14 BashGate_DeepModule_BlocksNotCuts @story-8.163 @ac-14', () => {
   const d = repoDelFreno();
   cadena(d.dir, niveles + 1, NO_ESCRIBE);
   assert.strictEqual(frenar(d, 'node herr/principal.js'), '', 'igual de hondo y sin escribir: no frena');
+  // lo que carga un módulo fuera del tope también se mira: dos niveles más allá frena igual, y sin escribir sigue sin frenar
+  const e = repoDelFreno();
+  cadena(e.dir, niveles + 2, ESCRIBE_CONSTANCIA);
+  assert.ok(frenar(e, 'node herr/principal.js').startsWith(FRENO_ENTERO), 'dos niveles más allá del tope, frena');
+  const f = repoDelFreno();
+  cadena(f.dir, niveles + 2, NO_ESCRIBE);
+  assert.strictEqual(frenar(f, 'node herr/principal.js'), '', 'dos niveles más allá y sin escribir: no frena');
+  // lo mismo pasado el tope de archivos: el último de la lista no escribe, pero carga al que escribe
+  const g = repoDelFreno();
+  fs.mkdirSync(path.join(g.dir, 'herr'), { recursive: true });
+  fs.writeFileSync(path.join(g.dir, 'herr', 'principal.js'), Array.from({ length: tope + 1 }, (_, i) => `require('./h${i + 1}.js');`).join('\n') + '\n');
+  for (let i = 1; i <= tope; i++) fs.writeFileSync(path.join(g.dir, 'herr', `h${i}.js`), NO_ESCRIBE);
+  fs.writeFileSync(path.join(g.dir, 'herr', `h${tope + 1}.js`), "require('./detras.js');\n");
+  fs.writeFileSync(path.join(g.dir, 'herr', 'detras.js'), ESCRIBE_CONSTANCIA);
+  assert.ok(frenar(g, 'node herr/principal.js').startsWith(FRENO_ENTERO), 'detrás del tope de archivos, frena');
   assert.ok(niveles > 2 && tope > 20, `el tope del recorrido tiene nombre y subió (niveles ${niveles}, archivos ${tope})`);
 });
 

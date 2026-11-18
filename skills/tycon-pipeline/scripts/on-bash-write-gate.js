@@ -712,17 +712,28 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
   // el guion y los módulos locales que importa, hasta RECORRIDO_NIVELES niveles y RECORRIDO_ARCHIVOS archivos; uno del
   // arnés no se revisa, pero lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la
   // cuenta aparte: no le comen el lugar a lo que corre después. Un guion nombrado en el comando se mira siempre. Lo que
-  // el tope deja afuera cuenta como grande: frena si no se pudo leer, o si escribe y nombra una historia o una constancia
+  // el tope deja afuera cuenta como grande: frena si no se pudo leer, o si escribe y nombra una historia o una constancia.
+  // Lo que carga un módulo de afuera también queda afuera, hasta agotarlo (`vistos` termina el recorrido): cortar ahí
+  // dejaría pasar al que escribe un nivel más abajo
   const modulos = { exentos: 0, revisados: 0 };
   const afuera = (interprete, real, leido, argv) => {
-    if (vistos.has(real)) return;
-    vistos.add(real);
-    out.push({ interprete, archivo: real, texto: leido ? leido.texto : '', argv, grande: true });
+    const pendientes = [[real, leido]];
+    while (pendientes.length) {
+      const [archivo, l] = pendientes.pop();
+      if (vistos.has(archivo)) continue;
+      vistos.add(archivo);
+      if (!instalado(archivo)) out.push({ interprete, archivo, texto: l ? l.texto : '', argv, grande: true });
+      if (!l) continue;
+      for (const m of importsLocales(familiaDe(interprete), l.texto, path.dirname(archivo))) {
+        const r = rutaReal(m, path.dirname(archivo));
+        if (r) pendientes.push([r, leer(r)]);
+      }
+    }
   };
   const agregar = (interprete, real, leido, argv, hondo = 0, exento = false) => {
     if (vistos.has(real)) return;
     const cuenta = exento ? 'exentos' : 'revisados';
-    if (hondo > 0 && modulos[cuenta]++ >= RECORRIDO_ARCHIVOS) { if (!exento) afuera(interprete, real, leido, argv); return; }
+    if (hondo > 0 && modulos[cuenta]++ >= RECORRIDO_ARCHIVOS) { afuera(interprete, real, leido, argv); return; }
     vistos.add(real);
     if (!exento) out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande });
     if (leido.grande && !exento) return;
@@ -730,7 +741,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
       const r = rutaReal(m, path.dirname(real));
       if (!r) continue;
       const l = leer(r);
-      if (hondo >= RECORRIDO_NIVELES) { if (!instalado(r)) afuera(interprete, r, l, argv); continue; }
+      if (hondo >= RECORRIDO_NIVELES) { afuera(interprete, r, l, argv); continue; }
       if (l) agregar(interprete, r, l, argv, hondo + 1, instalado(r));
     }
   };
