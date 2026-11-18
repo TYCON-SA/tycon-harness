@@ -703,6 +703,8 @@ function cmdSet(payloadJson) {
       testsFailed, testsGreenFull, testsSavedNote,
       // la tanda es de la historia: heredada, la matriz de la nueva mediría una tanda que no es suya
       batch, batchSetAt,
+      // el pedido es de la corrida: heredado, el cierre de la nueva anunciaría un pedido que no es suyo
+      pr,
       ...carryOver
     } = existing;
     console.error(
@@ -2512,6 +2514,7 @@ function cmdCompleteStep(nRaw, flags) {
   writeMarker(conHoraDelPaso(marker));
   syncSessionState(SID);
   process.stdout.write(JSON.stringify(marker, null, 2));
+  if (nuevo) decirRenglonDelPaso(marker, paso);
 }
 
 /**
@@ -5155,6 +5158,106 @@ function avisarCierreSinPasos(marker) {
   } catch { /* el aviso nunca frena el cierre */ }
 }
 
+// ── Los renglones de la corrida (lib/run-lines.js): lo que ve la persona al cerrar un paso y al cerrar la corrida ──
+// Nunca frenan: un error dice una línea y el comando sigue igual.
+
+function tituloDeLaHistoria(marker) {
+  try {
+    const sp = resolveStoryPath(marker.storyPath, marker) || marker.storyPath;
+    const t = /^title:\s*["']?(.*?)["']?\s*$/m.exec(fs.readFileSync(sp, 'utf8'));
+    return t ? t[1] : null;
+  } catch (_e) { return null; }
+}
+
+/** El renglón del paso recién cerrado, último por la salida de errores (la estándar es el marcador en JSON). */
+function decirRenglonDelPaso(marker, paso) {
+  try {
+    const l = require('./lib/run-lines.js').stepLine({ marker, stateDir: STATE_DIR }, paso);
+    if (l) process.stderr.write(`[paso] ${l}\n`);
+  } catch (e) { process.stderr.write(`[paso] no pude armar el renglón del paso (${e.message})\n`); }
+}
+
+/** Al cerrar la corrida: sus renglones y el renglón final, y un aviso por los canales de la sesión (uno por corrida). */
+function decirRenglonesDelCierre(marker, dump, runDir) {
+  let RL;
+  let ls = [];
+  let fin = null;
+  try {
+    RL = require('./lib/run-lines.js');
+    ls = RL.lines({ marker, runDir: runDir || marker.runDir, stateDir: STATE_DIR });
+    fin = RL.final({ dump, runDir: runDir || marker.runDir, stateDir: STATE_DIR });
+    for (const l of ls) process.stderr.write(`[corrida] ${l.text}\n`);
+    process.stderr.write(`[corrida] ${fin}\n`);
+  } catch (e) {
+    process.stderr.write(`[corrida] no pude armar los renglones de la corrida (${e.message})\n`);
+    return;
+  }
+  try {
+    const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
+    const texto = RL.noticeText({ storyId: marker.storyId, title: tituloDeLaHistoria(marker), lines: ls, final: fin });
+    const via = notify.canalesListos({ texto });
+    if (via.problema) { process.stderr.write(`[corrida] el aviso del cierre no salió: ${via.problema}\n`); return; }
+    if (via.fallidos && via.fallidos.length) process.stderr.write(`[corrida] el aviso del cierre no salió por ${via.fallidos.join(' · ')}\n`);
+    if (!via.canales.length) return;
+    const r = notify.avisar({ canales: via.canales, texto, lado: 'sesion', mail: via.mail, chat: via.chat, reintentar: false });
+    const fallidos = r.resultados.filter((x) => !x.entregado).map((x) => `${x.canal}: ${x.motivo || 'no se entregó'}`);
+    if (fallidos.length) process.stderr.write(`[corrida] el aviso del cierre no salió por ${fallidos.join(' · ')}\n`);
+  } catch (e) { process.stderr.write(`[corrida] el aviso del cierre no salió (${e.message})\n`); }
+}
+
+/**
+ * `marker.js pr <número> [--merged] [--story <id>]`: el pedido de la corrida. Con marcador vivo lo guarda en él (`pr`).
+ * Sin marcador (el cierre de la historia corre después del merge, con el marcador ya borrado), lo escribe en el último
+ * volcado de la historia y en su copia de la carpeta de la corrida, e imprime el renglón final.
+ */
+function cmdPr(numRaw, rest = []) {
+  const numero = Number(numRaw);
+  if (!Number.isInteger(numero) || numero <= 0) {
+    console.error('marker.js pr: uso — pr <número del pedido> [--merged] [--story <id>]');
+    process.exit(2);
+  }
+  const merged = rest.includes('--merged');
+  const i = rest.indexOf('--story');
+  const story = i >= 0 ? rest[i + 1] : null;
+  const vivo = readMarker();
+  if (vivo && (!story || String(vivo.storyId) === String(story))) {
+    vivo.pr = { number: numero, merged };
+    vivo.lastTouch = nowIso();
+    writeMarker(vivo);
+    process.stderr.write(`[marker] pedido #${numero}${merged ? ' (mergeado)' : ''} anotado en la corrida de la ${vivo.storyId}\n`);
+    return;
+  }
+  if (!story) {
+    console.error('marker.js pr: no hay corrida viva en esta sesión: nombrá la historia con --story <id> para anotarlo en su último volcado');
+    process.exit(2);
+  }
+  const RL = require('./lib/run-lines.js');
+  let repoDir = null;
+  try { repoDir = require('./lib/repo-attrib.js').gitRoot(process.cwd()); } catch (_e) { repoDir = null; }
+  const volcado = RL.ultimoVolcado({ stateDir: STATE_DIR, storyId: story, repoDir, pr: numero });
+  if (!volcado) {
+    console.error(`marker.js pr: no encontré ningún volcado de la historia ${story} de este repo en ${path.join(STATE_DIR, 'timing-history')}`);
+    process.exit(1);
+  }
+  const { archivo: hist, dump } = volcado;
+  dump.marker = { ...dump.marker, pr: { number: numero, merged } };
+  fs.writeFileSync(hist, JSON.stringify(dump, null, 2), 'utf8');
+  // la copia en la carpeta de la corrida: el volcado con el mismo sello
+  const ts = path.basename(hist, '.json').slice(`${String(story).replace(/[^\w.-]/g, '_')}-`.length);
+  const runDir = RL.carpetaDe(dump.marker);
+  if (runDir) {
+    const copia = path.join(runDir, `timing-dump-${ts}.json`);
+    try {
+      const c = JSON.parse(fs.readFileSync(copia, 'utf8'));
+      c.marker = { ...(c.marker || {}), pr: { number: numero, merged } };
+      fs.writeFileSync(copia, JSON.stringify(c, null, 2), 'utf8');
+    } catch (e) { process.stderr.write(`[marker] no pude anotar el pedido en la copia del volcado (${copia}: ${e.code || e.message})\n`); }
+  }
+  try {
+    process.stdout.write(`${RL.final({ dump, runDir, stateDir: STATE_DIR })}\n`);
+  } catch (e) { process.stderr.write(`[marker] no pude armar el renglón final (${e.message})\n`); }
+}
+
 function cmdClear(rest = []) {
   // Timing dump automático: el cierre del
   // pipeline archiva el marker completo + los gates de la sesión ANTES de borrar —
@@ -5261,6 +5364,7 @@ function cmdClear(rest = []) {
       //     es que el volcado quede con `consumo.estado: "no_medido"` y su motivo.
       // 1c) El cambio según git, después del rescate y con el mismo contrato: nunca rompe.
       const dumpFinal = guardarCambioDeCorrida(histFile, rescatarHiloYConsumo(histFile, dump));
+      let carpetaDelVolcado = null;
       // 2) Copia en el repo (pipeline-runs del run, si resuelve) — viaja con los
       //    artefactos de la story para la retro / el retrospective-capturer.
       if (marker.repoPath && fs.existsSync(marker.repoPath)) {
@@ -5285,6 +5389,7 @@ function cmdClear(rest = []) {
           fs.mkdirSync(target, { recursive: true });
         }
         fs.writeFileSync(path.join(target, `timing-dump-${ts}.json`), JSON.stringify(dumpFinal, null, 2), 'utf8');
+        carpetaDelVolcado = target;
       }
       process.stderr.write(`[marker] timing dump archivado: timing-history/${safeStory}-${ts}.json\n`);
       avisarCierreSinPasos(marker);
@@ -5304,6 +5409,8 @@ function cmdClear(rest = []) {
           `referencia ~60-100K tokens por agente · vara del historial: ~14 agentes/run\n`,
         );
       }
+      // Cómo terminó cada paso y con qué resultado cerró la corrida, después de la línea de costo; y un aviso
+      if (STEPS_LIB.schemeOf(marker) === STEPS_LIB.SCHEME) decirRenglonesDelCierre(marker, dumpFinal, marker.runDir || carpetaDelVolcado);
       // La oferta de la instalación completa al cerrar la primera historia: sale del cierre mecánico, después
       // de archivar el volcado (el volcado de ESTA corrida es la evidencia de que se cerró). Va a la salida estándar para
       // que el agente la muestre tal cual; un error se dice en un renglón y nunca frena el cierre.
@@ -7759,6 +7866,9 @@ switch (cmd) {
   case 'clear':
     cmdClear(process.argv.slice(3));
     break;
+  case 'pr':
+    cmdPr(arg1, process.argv.slice(4));
+    break;
   case 'is-active':
     cmdIsActive();
     break;
@@ -7928,7 +8038,7 @@ switch (cmd) {
   default:
     console.error(`marker.js: comando desconocido '${cmd}'`);
     console.error(
-      'Usage: marker.js <set|get|touch|complete-step|append-file|clear|is-active|' +
+      'Usage: marker.js <set|get|touch|complete-step|append-file|clear|pr|is-active|' +
         'list-all|find-by-story|clear-session|park|unpark|adopt-session|update-story-status|' +
         'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|set-size|snapshot-iter|' +
         'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|' +

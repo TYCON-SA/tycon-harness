@@ -345,6 +345,18 @@ líneas van tal cual al mensaje final, para que el dev decida. Nunca toca el che
 `TYCON_WORKTREE_SWEEP=0` no hace nada. Para lo que no pasa por el pipeline, el mismo guion corre al arrancar sesión una
 vez por día (`guides/git-worktrees.md` §7).
 
+## El pedido entró: anotarlo en la corrida
+
+El marcador ya se borró al preparar el pull request, así que el pedido mergeado se anota en el último volcado de la
+historia:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js pr <n> --merged --story <id>
+```
+
+Imprime el renglón final de la corrida («entró el pedido #<n> — 52 min de trabajo, 14 min de espera, 2 vueltas, 1 firma
+del dueño»). Repetí ese renglón final tal cual como última línea de tu mensaje al dev.
+
 ## Output
 
 Mensaje al dev al final:
@@ -360,7 +372,7 @@ Mensaje al dev al final:
 - Marker pipeline → cleared.
 - Carpetas de trabajo: <lo que dijo worktree-sweep.js — borradas, o las que quedaron y por qué>
 
-Listo.
+<el renglón final que imprimió `marker.js pr <n> --merged`, tal cual>
 ```
 
 ## Anti-patterns

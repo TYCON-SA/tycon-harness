@@ -260,10 +260,10 @@ Estado persistente por sesión en `~/.claude/.tycon-pipeline/active/<sessionId>.
 `sessionId` de `CLAUDE_CODE_SESSION_ID`; los hooks, del evento). Un marker nuevo sin «Aprobar el plan» queda en
 `bypass.log` como `MARKER_SKIPS_PLAN`.
 
-- Cerrar pasos EN ORDEN y POR NOMBRE: `marker.js complete-step <nombre>` (un número se niega: es ambiguo);
-  `approve-plan` con `--approved "<cita del user>"`. Freno de orden
-  `lib/steps.js` ORDER_REQUIRES (`--out-of-order` queda logueado). `reviewers` exige `checks.advisors` verde por
-  run-check de esta vuelta. Parte del Arranque que falla: `marker.js start-warning <time-tracking|ado> "<motivo>"`.
+- Cerrar pasos EN ORDEN y POR NOMBRE: `marker.js complete-step <nombre>` (un número se niega); su `[paso]`,
+  tal cual a la persona. `approve-plan` con `--approved "<cita del user>"`. Orden:
+  `lib/steps.js` ORDER_REQUIRES (`--out-of-order`, logueado). `reviewers` exige `checks.advisors` verde por
+  run-check de esta vuelta. Arranque que falla: `marker.js start-warning <time-tracking|ado> "<motivo>"`.
 - `pipeline.js next` anota el arranque del paso: cerrar el anterior → `next` → trabajar.
 - Checks: `marker.js run-check <name> -- <cmd>` (exit code real).
 - Recovery: `marker.js adopt-session <sid-viejo>` · `list-all` · `find-by-story <id>` ·

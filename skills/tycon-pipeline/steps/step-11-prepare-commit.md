@@ -217,8 +217,13 @@ firma de control del dueño, que no cambia.
 2. **Cerrar este paso** (`marker.js complete-step prepare-commit`): corre los controles del commit y toma la foto.
 3. **commitear** con el mensaje: no pregunta.
 4. Después, **empujar** la rama de trabajo: tampoco pregunta.
-5. Recién ahí, **abrir los pull requests**: la ventana de permiso pregunta, con la evidencia.
-6. Al final, **`marker.js clear`**, después del último push y del último pull request.
+5. Recién ahí, **abrir los pull requests**: la ventana de permiso pregunta, con la evidencia. Antes de pedir la
+   aprobación, mostrale a la persona los renglones de la corrida, uno por paso con su motivo
+   (`node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/run-lines.js --story <ruta de la story>`), tal cual.
+   Con el pedido abierto, anotalo en la corrida: `marker.js pr <número>`.
+6. Al final, **`marker.js clear`**, después del último push y del último pull request. Imprime los renglones y el
+   renglón final («pedido #12 abierto, espera la cola — 52 min de trabajo, …») y manda un aviso por los canales de la
+   sesión; repetí el renglón final al cerrar tu mensaje.
 
 ## Decisiones
 
