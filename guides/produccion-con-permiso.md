@@ -383,9 +383,11 @@ cierre seguro deja de funcionar. Cómo combinar los dos lo decide el dueño.
   Lo que lo frena es otra cosa: el freno mira adentro de los guiones que el comando corre y frena si
   nombran el llavero o un servidor declarados. Cerrar esto del todo (que sólo la puerta pueda leer la
   clave, con Touch ID) es el paso que sigue, todavía sin hacer.
-- **El freno lee texto.** Un nombre partido en pedazos que se arma al correr, o un intérprete que recibe
+- **El freno lee texto.** Un nombre partido en pedazos que se arma al correr, un intérprete que recibe
   el programa con `-e` o `-c` y lo arma por dentro (`node -e`, `python3 -c` con una lista de
-  argumentos), no se ven. Por eso la aprobación ya no depende del freno: la pide la puerta, aunque la
+  argumentos), o un archivo cuyo nombre llega recién al correr (`find … -exec bash {} \;`,
+  `echo x | xargs bash`) no se ven. Tampoco las recetas de `make -n` que se ejecutan igual (las que
+  empiezan con `+` o llaman a `$(MAKE)`): con `-n` el freno no mira las recetas. Por eso la aprobación ya no depende del freno: la pide la puerta, aunque la
   llame un guion o un hook propio.
 - **El cuadro de la puerta lo puede apretar una aplicación con permiso de Accesibilidad** (la terminal o
   el editor donde corre el asistente, si se lo diste). El freno frena los comandos que ve que lo intentan

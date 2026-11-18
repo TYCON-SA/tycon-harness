@@ -152,6 +152,11 @@ CUADRO_GUION=(
   -e 'display dialog (item 1 of argv) with title "Producción: ¿lo aprobás?" buttons {"Rechazar", "Aprobar"} default button "Rechazar" with icon caution giving up after 120'
   -e 'end run'
 )
+# 🔴 El cliente corre lo aprobado y nada más. go-sqlcmd lee su entorno: SQLCMDINI es un archivo de SQL que ejecuta al
+# arrancar (también con -Q), y SQLCMDDBNAME o SQLCMDSERVER cambian a dónde va. Heredarlos dejaría correr algo que el
+# cuadro no mostró, así que la puerta se los saca a sí misma antes de hacer nada.
+unset SQLCMDINI SQLCMDDBNAME SQLCMDSERVER SQLCMDUSER
+for v in $(compgen -e); do case "$v" in SQLCMD*) unset "$v" ;; esac; done
 APROBACION=""   # el campo que suma el registro de lo aprobado
 aprobar(){ # $1 = lo que muestra el cuadro, $2 = la forma (consulta | reclasificar | open-firewall)
   # SSH: el cuadro se abriría en la pantalla de la Mac, donde quizá no hay nadie, o no se abriría
@@ -187,7 +192,7 @@ case "${1:-}" in
   --close-firewall) MODO=close-firewall; HOST="${2:-}"
                     if [ $# -eq 4 ] && [ "$3" = "--session" ] && [[ "$4" =~ $SESION_VALIDA ]]; then SESION_CIERRE="$4"
                     elif [ $# -ne 2 ] || [ -z "$HOST" ]; then muere "uso: tycon-prod-sql --close-firewall <host>  (sólo el host: cierra la regla de esta máquina y ninguna otra)"; fi ;;
-  --reclassify)   MODO=reclasificar; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --reclassify <host>" ;;
+  --reclassify)   MODO=reclasificar; HOST="${2:-}"; [ $# -eq 2 ] && [ -n "$HOST" ] || muere "uso: tycon-prod-sql --reclassify <host>" ;;
   --verify)       MODO=verificar; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --verify" ;;
   # los candados: sola, sin host ni nada más (mira todos los servidores de producción declarados)
   --locks)        MODO=locks; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --locks  (sola: dice qué servidores de producción tienen el candado de Azure)" ;;
@@ -215,6 +220,7 @@ fi
 
 # ── la sentencia: en línea, un solo lote, sin argumentos de sqlcmd ────────────────────────────
 validar_sentencia(){
+  [ -n "${SENTENCIA//[[:space:]]/}" ] || muere "la sentencia está vacía: no hay nada para mostrar en el cuadro"
   case "$SENTENCIA" in
     -*) muere "la sentencia no puede empezar con «-»: no se aceptan argumentos de sqlcmd (ni -i, ni -Q, ni -v)" ;;
   esac
@@ -249,10 +255,21 @@ if [ "$MODO" = consulta ]; then
     if (/[\x00-\x08\x0b-\x1f\x7f-\x9f]/u.test(t)) fuera("tiene caracteres de control: en el cuadro se habría visto otra cosa que lo que corre");
     if (/[\u{ad}\u{34f}\u{61c}\u{115f}\u{1160}\u{17b4}\u{17b5}\u{180b}-\u{180e}\u{200b}-\u{200f}\u{202a}-\u{202e}\u{2028}\u{2029}\u{2060}-\u{206f}\u{2800}\u{3164}\u{fe00}-\u{fe0f}\u{feff}\u{ffa0}\u{fff9}-\u{fffc}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u.test(t)) fuera("tiene caracteres invisibles o de dirección: en el cuadro se habría leído otra cosa que lo que corre");
   ')" || muere "la sentencia ${motivo:-no se pudo revisar}: mandala sin esos caracteres"
-  # lo que el cuadro no muestra entero no se manda a aprobar: cada renglón largo cuenta como los que ocupa al cortarse
+  # lo que el cuadro no muestra entero no se manda a aprobar: cada renglón cuenta como los que ocupa al cortarse, con el
+  # ancho que ocupa en pantalla (un tabulador llega al múltiplo de 8 y un carácter ancho vale 2), como cuenta el freno
   printf '%s' "$SENTENCIA" | "$NODE" -e '
     const t = require("fs").readFileSync(0, "utf8"); const [max, maxR, cols] = process.argv.slice(1).map(Number);
-    const renglones = t.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil([...l].length / cols)), 0);
+    const doble = /[\u{1100}-\u{10ffff}]|\p{Extended_Pictographic}/u;
+    let renglones = 0;
+    for (const l of t.split("\n")) {
+      let filas = 1, col = 0;
+      for (const c of l) {
+        const ancho = c === "\t" ? 8 - (col % 8) : doble.test(c) ? 2 : 1;
+        if (col + ancho > cols) { filas++; col = 0; }
+        col += c === "\t" ? 8 - (col % 8) : ancho;
+      }
+      renglones += filas;
+    }
     process.exit([...t].length > max || renglones > maxR ? 2 : 0);
   ' "$CUADRO_MAX_CARACTERES" "$CUADRO_MAX_RENGLONES" "$CUADRO_COLUMNAS" \
     || muere "la sentencia es demasiado larga para que el cuadro la muestre entera: partila (el cuadro muestra hasta $CUADRO_MAX_CARACTERES caracteres en $CUADRO_MAX_RENGLONES renglones de $CUADRO_COLUMNAS)."

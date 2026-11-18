@@ -223,7 +223,7 @@ fi
 mundo(){ # $1 = modo del doble de security: ok | sin-entrada | confianza-ajena
   RAIZ="$TMP/sys"; CASA="$TMP/casa"; REPOS="$TMP/repos"
   rm -rf "$RAIZ" "$CASA" "$REPOS"
-  rm -f "$TMP/sqlcmd-q.bin" "$TMP/security-argv.log" "$TMP/sqlcmd-argv.log" "$TMP/sqlcmd-env.log" "$TMP/impostor.log" \
+  rm -f "$TMP/sqlcmd-q.bin" "$TMP/security-argv.log" "$TMP/sqlcmd-argv.log" "$TMP/sqlcmd-env.log" "$TMP/sqlcmd-heredado.log" "$TMP/impostor.log" \
         "$TMP/orden.log" "$TMP"/cuadro-arg-* "$TMP/cuadro-n" "$TMP/cuadro-modo" "$TMP/launchctl-modo"
   mkdir -p "$RAIZ/opt/tycon/bin" "$RAIZ/usr/bin" "$RAIZ/bin" "$RAIZ/usr/sbin" "$CASA/.claude/.tycon-pipeline" "$CASA/Desktop" "$REPOS/backend-acme/.tycon"
   ( cd "$REPOS/backend-acme" && git init -q . ) >/dev/null 2>&1
@@ -278,6 +278,7 @@ printf 'sqlcmd\n' >> "$TMP/orden.log"
 while [ \$# -gt 0 ]; do [ "\$1" = -Q ] && { printf '%s' "\$2" > "$TMP/sqlcmd-q.bin"; break; }; shift; done
 if [ -f "\$HOME/.sqlcmd/sqlconfig" ]; then printf 'SQLCMDPASSWORD=CLAVE-GUARDADA-EN-SQLCONFIG\n' >> "$TMP/sqlcmd-env.log"
 else printf 'SQLCMDPASSWORD=%s\n' "\${SQLCMDPASSWORD:-}" >> "$TMP/sqlcmd-env.log"; fi
+env | grep '^SQLCMD' | grep -v '^SQLCMDPASSWORD=' >> "$TMP/sqlcmd-heredado.log"
 echo "filaA"; echo "filaB"; echo "filaC"
 echo "algo salió mal en el servidor" >&2
 exit 1
@@ -765,6 +766,32 @@ justa="select '$(head -c 1100 /dev/zero | tr '\0' 'x')'"
 rc="$(puerta "$PROD" "$justa")"
 if [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ]; then ok "T-puerta-32 PuertaCuadro_SentenciaQueNoEntra_Sale2 · una dentro del tope sí llega al cuadro"
 else no "T-puerta-32 PuertaCuadro_SentenciaQueNoEntra_Sale2 · una dentro del tope no llegó al cuadro: rc=$rc · $(head -c 160 "$TMP/err")"; fi
+
+# T-puerta-33 · lo aprobado es todo lo que corre: el cliente no hereda SQLCMDINI (un archivo de SQL que go-sqlcmd ejecuta al
+# arrancar), SQLCMDDBNAME ni ninguna otra variable suya del que llama
+mundo ok
+printf 'delete from clientes\n' > "$TMP/ini.sql"
+rc="$(SQLCMDINI="$TMP/ini.sql" SQLCMDDBNAME=otra SQLCMDSERVER=otro SQLCMD_LO_QUE_SEA=1 puerta "$PROD" 'select 1')"
+if [ -f "$TMP/sqlcmd-argv.log" ] && [ ! -s "$TMP/sqlcmd-heredado.log" ] && grep -qx "SQLCMDPASSWORD=$CLAVE_MARCA" "$TMP/sqlcmd-env.log"; then
+  ok "T-puerta-33 Puerta_ClienteNoHeredaSuEntorno · sin SQLCMDINI ni otra variable suya, y con la clave del Llavero"
+else no "T-puerta-33 Puerta_ClienteNoHeredaSuEntorno · rc=$rc · heredó: $(tr '\n' ' ' < "$TMP/sqlcmd-heredado.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+
+# T-puerta-34 · lo que no se puede mostrar no llega al cuadro: vacío, sin host, o más ancho de lo que entra
+for vacia in '' '    '; do
+  mundo ok; rc="$(puerta "$PROD" "$vacia")"
+  if [ "$rc" = 2 ] && [ ! -s "$TMP/orden.log" ] && grep -q 'vacía' "$TMP/err"; then ok "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · sentencia en blanco («${vacia}»): sale 2 sin cuadro"
+  else no "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · «${vacia}»: rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+done
+mundo ok; rc="$(puerta --reclassify '')"
+if [ "$rc" = 2 ] && [ ! -s "$TMP/orden.log" ] && grep -q -- 'uso: .*--reclassify' "$TMP/err"; then ok "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · --reclassify sin host: dice cómo se usa y no abre el cuadro"
+else no "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · --reclassify '': rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null)"; fi
+ancha="$(node -e 'const r = "漢".repeat(60); console.log(Array(19).fill(r).join("\n"))')"
+tabs="select 1$(node -e 'process.stdout.write("\t".repeat(1150))'); delete from t"
+for caso in ancha tabs; do
+  mundo ok; rc="$(puerta "$PROD" "${!caso}")"
+  if [ "$rc" = 2 ] && [ ! -s "$TMP/orden.log" ] && grep -q 'demasiado larga' "$TMP/err"; then ok "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · $caso: cuenta su ancho en pantalla y no llega al cuadro"
+  else no "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · $caso: rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+done
 
 echo "— prod-sql: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]
