@@ -890,6 +890,20 @@ test('T29 PortonAcotadoPorElRepo_CorreSoloLoTocado — con --scoped-by-repo corr
   assert.equal(r.resumen.unscoped, undefined);
 });
 
+test('T19 RunSuites_MustMeasure_NoGreenWithoutRunning @story-8.279 @ac-31 — lo tocado que hay que medir y ninguna suite lo lee: sale 7, sin decir que acotó', () => {
+  // 🔴 rojo si: la marca no frena el cierre «ninguna suite lee lo tocado» → verde sin correr nada; o si la salida 7 conserva
+  //    `scoped` → el portón dice que corrieron las suites que leen lo tocado.
+  const f = hermanoLab();
+  const conMarca = runScopedByRepo(f, { touched: { known: true, files: ['docs/nada.md'], must_measure: true } });
+  assert.equal(conMarca.status, 7, `${conMarca.stdout}\n${conMarca.stderr}`);
+  assert.equal(conMarca.resumen.corridas, 0, JSON.stringify(conMarca.resumen));
+  assert.match(conMarca.resumen.unscoped.reason, /ninguna suite lee lo que la story tocó/);
+  assert.equal(conMarca.resumen.scoped, undefined, JSON.stringify(conMarca.resumen));
+  const sinMarca = runScopedByRepo(f, { touched: { known: true, files: ['docs/nada.md'] } });
+  assert.equal(sinMarca.status, 0, `${sinMarca.stdout}\n${sinMarca.stderr}`);
+  assert.equal(sinMarca.resumen.scoped.none_touched, true);
+});
+
 test('T30 PortonAcotadoPorElRepo_NadieLee_Verde_SinSaber_CorreTodo — si ninguna suite lee lo tocado sale verde y lo dice; sin saber qué se tocó, corre todo', () => {
   // 🔴 mutación: «ninguna lo lee» no debe salir 3 (rojo) ni 7 (el repo declaró que lo respalda la CI); «no sé» no debe
   //    acotar: saldría 7 sin correr nada, y una suite roja pasaría.
