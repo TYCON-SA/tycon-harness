@@ -138,7 +138,7 @@ test('RL3 Final_EnteredWorkWaitRoundsSignatures @story-8.293 @ac-3', () => {
   ].map((l) => JSON.stringify(l)).join('\n') + '\n');
   const gatesLog = [{ ts: at(70), name: 'extra-round', story: '9.9', iter: 3 }];
   const linea = RL.final({ dump: volcado(j, { pr: { number: 148, merged: true } }), runDir: j.runDir, stateDir: j.stateDir, gatesLog });
-  assert.strictEqual(linea, 'entró el pedido #148 — 52 min de trabajo, 14 min de espera, 2 vueltas (+1 extra), 1 firma del dueño y 2 de la coordinadora');
+  assert.strictEqual(linea, 'entró el pedido #148 — 52 min de trabajo, 14 min de espera, 2 vueltas (+1 extra), 1 firma de una persona y 2 de la coordinadora');
 });
 
 test('RL4 Final_NotEntered_And_NotMeasured @story-8.293 @ac-3', () => {
@@ -149,10 +149,10 @@ test('RL4 Final_NotEntered_And_NotMeasured @story-8.293 @ac-3', () => {
   assert.match(a, /^no entró: la persona la canceló — /);
   // (b) sin tiempos, sin registro de firmas y sin pedido: la línea sale igual
   const b = RL.final({ dump: volcado(j, { stepTimings: undefined }), runDir: sinFirmas, stateDir: j.stateDir, gatesLog: [] });
-  assert.strictEqual(b, 'pedido: no medido — trabajo no medido, espera no medida, 2 vueltas, firmas del dueño no medidas');
+  assert.strictEqual(b, 'pedido: no medido — trabajo no medido, espera no medida, 2 vueltas, firmas de una persona no medidas');
   // (c) pedido sin merge
   const c = RL.final({ dump: volcado(j, { pr: { number: 7 } }), runDir: j.runDir, stateDir: j.stateDir, gatesLog: [] });
-  assert.match(c, /^pedido #7 abierto, espera la cola — 52 min de trabajo, 14 min de espera, 2 vueltas, firmas del dueño no medidas$/);
+  assert.match(c, /^pedido #7 abierto, espera la cola — 52 min de trabajo, 14 min de espera, 2 vueltas, firmas de una persona no medidas$/);
 });
 
 test('RL5 SameText_SessionWipNotice @story-8.293 @ac-4', () => {
@@ -461,7 +461,7 @@ test('RG8 MarkerWithoutRunDir_SameTextAsWithIt @story-8.293 @ac-4', () => {
   const o = { marker: m, stateDir: j.stateDir, gatesLog: [], ...aislado(j) };
   assert.deepStrictEqual(textos(RL.lines(o)), textos(RL.lines({ ...o, runDir: j.runDir })));
   assert.strictEqual(deUnPaso(RL.lines(o), 'reviewers').text, '✗ Revisores — vuelta 1 de 3: SEC-C1');
-  assert.match(RL.final({ ...o, dump: { archivedAt: at(80), marker: m } }), /1 firma del dueño$/);
+  assert.match(RL.final({ ...o, dump: { archivedAt: at(80), marker: m } }), /1 firma de una persona$/);
 });
 
 test('RG9 GatesSince_Bytes_Order_AndEnd @story-8.293 @ac-3 @ac-4', () => {
@@ -493,7 +493,7 @@ test('RG9 GatesSince_Bytes_Order_AndEnd @story-8.293 @ac-3 @ac-4', () => {
 test('RG10 Final_UnreadableApprovals_NotMeasured @story-8.293 @ac-3', () => {
   const j = juguete();
   fs.writeFileSync(path.join(j.runDir, 'approvals.jsonl'), `${JSON.stringify({ que: 'plan', tipo: 'manual', quien: 'Ana' })}\n{"que":"guardar","tipo":"manual","qui\n`);
-  assert.match(RL.final({ dump: volcado(j), runDir: j.runDir, stateDir: j.stateDir, gatesLog: [], ...aislado(j) }), /firmas del dueño no medidas$/);
+  assert.match(RL.final({ dump: volcado(j), runDir: j.runDir, stateDir: j.stateDir, gatesLog: [], ...aislado(j) }), /firmas de una persona no medidas$/);
 });
 
 test('RG11 StateLine_CurrentStepUnlessLastClosedFailed @story-8.293 @ac-7', () => {

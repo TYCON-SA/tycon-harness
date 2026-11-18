@@ -1,7 +1,7 @@
 'use strict';
 if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 // lib/run-lines.js — los renglones de una corrida: uno por paso empezado («✓ Revisores — 2 vueltas de revisores…») y el
-// renglón final («entró el pedido #12 — 52 min de trabajo, 14 min de espera, 2 vueltas, 1 firma del dueño»).
+// renglón final («entró el pedido #12 — 52 min de trabajo, 14 min de espera, 2 vueltas, 1 firma de una persona»).
 //
 // Es la única pieza que arma ese texto: la sesión (`marker.js complete-step` y `clear`), /wip y el aviso del cierre lo
 // piden acá, y para el mismo marcador o volcado dicen lo mismo, carácter por carácter.
@@ -426,14 +426,14 @@ function final(opts) {
   const ex = extras(c);
   partes.push(`${plural(n, 'vuelta', 'vueltas')}${!ex.completo ? ' (extras: no medido)' : ex.n ? ` (+${ex.n} extra)` : ''}`);
 
-  // firmas del dueño y de la coordinadora
+  // firmas de una persona y de la coordinadora
   const r = c.dir ? APPROVALS.leer(c.dir) : { existe: false, lineas: [] };
   // una línea ilegible puede ser justo otra firma: el número no se puede dar
-  if (!r.existe || r.error || r.ilegibles) partes.push('firmas del dueño no medidas');
+  if (!r.existe || r.error || r.ilegibles) partes.push('firmas de una persona no medidas');
   else {
-    const duenio = r.lineas.filter((l) => l && l.tipo === 'manual').length;
+    const persona = r.lineas.filter((l) => l && l.tipo === 'manual').length;
     const coord = r.lineas.filter((l) => l && l.tipo !== 'manual' && l.delegacion).length;
-    partes.push(`${plural(duenio, 'firma del dueño', 'firmas del dueño')}${coord ? ` y ${coord} de la coordinadora` : ''}`);
+    partes.push(`${plural(persona, 'firma de una persona', 'firmas de una persona')}${coord ? ` y ${coord} de la coordinadora` : ''}`);
   }
   return `${entro} — ${partes.join(', ')}`;
 }
