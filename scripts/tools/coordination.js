@@ -222,12 +222,14 @@ function suiteWaitSince(home, sid, running) {
 // Lo que la sesión anotó que espera de afuera (la CI, la cola, un pedido, que algo entre, una firma, el dueño, la
 // validación) y desde cuándo; null sin una nota fresca así. Las palabras van enteras («firma» no calza en «confirma»), y la
 // espera de turno o de pase gana: ya tiene su aviso. La ventana es la fecha del archivo, como en hasFreshDoing.
+// las palabras de la espera de turno (heavy-turn.js `isTurnWait`) y las del pase, que gana sobre las de afuera
+const TURN_OR_PASS_WAIT = /suite|port[oó]n|turno|pase|adversarial/i;
 const OUTSIDE_WAIT = /(?<![\p{L}\p{N}])(ci|colas?|pedidos?|merges?|entr(?:e|en|a|ar|ó|o)|firmas?|dueñ[oa]s?|validaci[oó]n(?:es)?)(?![\p{L}\p{N}])/iu;
 function outsideWaitOf(home, sid, now) {
   if (!hasFreshDoing(home, sid, now)) return null;
   const note = readJson(path.join(stateDir(home), 'doing', `${sid}.json`), null);
   const what = note && typeof note.waitingFor === 'string' ? note.waitingFor : '';
-  if (!OUTSIDE_WAIT.test(what) || SUITE_WAIT.test(what) || PASS_WAIT.test(what)) return null;
+  if (!OUTSIDE_WAIT.test(what) || TURN_OR_PASS_WAIT.test(what)) return null;
   const since = Date.parse(note.waitingSince || note.at);
   return { waitingFor: label(what, 160), since: Number.isFinite(since) ? since : null };
 }
@@ -242,10 +244,10 @@ function stoppedRuns(home, now, markers, alive, nameOf, problems) {
   const dir = path.join(stateDir(home), 'pruned');
   let files = [];
   try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch (e) {
-    if (e.code !== 'ENOENT') problems.push(`las corridas podadas (${label(e.code || e.message, 120)})`);
+    if (e.code !== 'ENOENT') problems.push(`las ejecuciones podadas (${label(e.code || e.message, 120)})`);
   }
   for (const f of files) {
-    try { pruned.push({ sid: f.replace(/\.json$/, ''), m: JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')), active: false }); } catch (e) { problems.push(`la corrida podada ${label(f)} (${label(e.code || e.message, 120)})`); }
+    try { pruned.push({ sid: f.replace(/\.json$/, ''), m: JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')), active: false }); } catch (e) { problems.push(`la ejecución podada ${label(f)} (${label(e.code || e.message, 120)})`); }
   }
   const actives = [...markers].map(([sid, m]) => ({ sid, m, active: true }));
   const out = [];
@@ -259,7 +261,7 @@ function stoppedRuns(home, now, markers, alive, nameOf, problems) {
     if (actives.some((a) => a.sid !== x.sid && String(a.m.storyId) === String(m.storyId))) continue;
     let text;
     try { text = fs.readFileSync(String(m.storyPath), 'utf8'); } catch (e) {
-      problems.push(`la historia de la corrida detenida ${label(m.storyId)} (${label(e.code || e.message, 120)})`);
+      problems.push(`la historia de la ejecución detenida ${label(m.storyId)} (${label(e.code || e.message, 120)})`);
       continue;
     }
     const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
