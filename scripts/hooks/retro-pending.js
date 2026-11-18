@@ -1177,6 +1177,71 @@ function debeRetrospectiva(root) {
   return fs.existsSync(path.join(root, '.tycon')) || fs.existsSync(path.join(root, '.advisors'));
 }
 
+// Con `simple` y una rama de seguimiento de otro nombre, git rechaza el empuje: no llega a ninguna rama, tampoco a main.
+const EMPUJE_RECHAZADO = '(git lo rechaza)';
+
+/**
+ * La rama a la que llega el `git push` de la sentencia `st`, o null si no se puede saber. Con refspec, su destino
+ * (`a:b` va a `b`, `HEAD` es la rama de HEAD, `refs/heads/` se saca; si alguno llega a main, main). Sin refspec, lo
+ * decide `push.default` (de fábrica `simple`): `current` empuja a la rama del mismo nombre; `simple`, `upstream` y
+ * `tracking`, a la rama de seguimiento (con otro nombre, `simple` lo rechaza: tampoco llega a la rama de HEAD).
+ * Indeterminables: `--all`, `--mirror`, `--tags`, `--delete`, un borrado `:x`, un comodín, `matching`, HEAD sin
+ * seguimiento o separado, y cualquier palabra que no sea un nombre escrito tal cual (una variable, una sustitución, `@`).
+ * `-u` / `--set-upstream` y las redirecciones no cambian el destino. El verbo se busca después de `git` y de sus opciones:
+ * `-c push.default=…` no es el `push`, y dice el modo de este comando.
+ */
+function destinoDelEmpuje(root, st, branch) {
+  let palabras = null;
+  let modoDelComando = null;
+  for (const t of st.split(/[|;&\n]/)) {
+    const ws = t.trim().split(/\s+/).filter(Boolean).map((w) => w.replace(/^['"]|['"]$/g, ''));
+    const g = ws.findIndex((w) => /(^|\/)git$/.test(w));
+    if (g < 0) continue;
+    let v = g + 1;
+    let modo = null;
+    while (v < ws.length && ws[v].startsWith('-')) {
+      if (ws[v] === '-c') { const c = /^push\.default=(.*)$/i.exec(ws[v + 1] || ''); if (c) modo = c[1]; v += 2; }
+      else if (/^(-C|--git-dir|--work-tree|--namespace|--config-env)$/.test(ws[v])) v += 2;
+      else v++;
+    }
+    if (ws[v] === 'push') { palabras = ws.slice(v + 1); modoDelComando = modo; break; }
+  }
+  if (!palabras) return null;
+  const posicionales = [];
+  for (let i = 0; i < palabras.length; i++) {
+    const w = palabras[i];
+    if (/^\d*[<>]/.test(w)) { if (/^\d*(>>?|<)$/.test(w)) i++; continue; }
+    if (/^(--all|--mirror|--tags|--delete|-d|--prune)$/.test(w)) return null;
+    if (/^(-o|--push-option|--repo|--receive-pack|--exec)$/.test(w)) { i++; continue; }
+    if (!w.startsWith('-')) posicionales.push(w);
+  }
+  if (posicionales.length && /[$`()\\#]/.test(posicionales[0])) return null;
+  const refspecs = posicionales.slice(1);
+  if (refspecs.length) {
+    const destinos = [];
+    for (const crudo of refspecs) {
+      if (!/^\+?[\w./-]*(:[\w./-]*)?$/.test(crudo)) return null;
+      const r = crudo.replace(/^\+/, '');
+      const i = r.indexOf(':');
+      const src = i >= 0 ? r.slice(0, i) : r;
+      const dst = i >= 0 ? r.slice(i + 1) : r;
+      if (!src || !dst) return null;
+      const d = (dst === 'HEAD' ? branch : dst).replace(/^refs\/heads\//, '');
+      if (!d || d === 'HEAD') return null;
+      destinos.push(d);
+    }
+    return destinos.find((d) => /^(main|master)$/.test(d)) || destinos[0];
+  }
+  if (!branch || branch === 'HEAD') return null;
+  const modo = modoDelComando || git(root, ['config', '--get', 'push.default']) || 'simple';
+  if (modo === 'current') return branch;
+  if (!['simple', 'upstream', 'tracking'].includes(modo)) return null;
+  const sigue = git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+  if (!sigue || !sigue.includes('/')) return null;
+  const rama = sigue.slice(sigue.indexOf('/') + 1);
+  return modo === 'simple' && rama !== branch ? EMPUJE_RECHAZADO : rama;
+}
+
 /** Anota UNA entrega en el ledger. Devuelve la entry escrita, o null si no correspondía. */
 function anotar(event, cmd, punto, ctx) {
   const root = git(punto.dir, ['rev-parse', '--show-toplevel']);
@@ -1192,7 +1257,11 @@ function anotar(event, cmd, punto, ctx) {
   // `quiet-push-de-una-rama-con-main-en-el-nombre`).
   const mentionsMain = /\bpush\b[^|;&\n]*(?:[\s:"']|refs\/heads\/)(main|master)(?=$|[\s;&|"'])/.test(st);
   const onMain = /^(main|master)$/.test(branch) && !/\bpush\b[^|;&\n]*\b(dev|develop|feat|feature|fix|hotfix|release)\b/.test(st);
-  if (!ctx.isPrCreate && !mentionsMain && !onMain) return null;
+  // el destino del empuje, cuando se sabe, decide: con HEAD en main, `git push origin otra` o
+  // `main:otra` no llegan a main. Cuando no se sabe, como antes: ante la duda, se pide el latido
+  const destino = ctx.isPrCreate ? null : destinoDelEmpuje(root, st, branch);
+  const vaAMain = destino ? /^(main|master)$/.test(destino) : mentionsMain || onMain;
+  if (!ctx.isPrCreate && !vaAMain) return null;
   // Un repo de laboratorio no debe retrospectiva: no se anota, y `record` lo dice (cabecera, «LOS REPOS DE LABORATORIO»).
   const lab = juzgarLaboratorio(root);
   if (lab.laboratorio) { laboratoriosVistos.push({ root, sha: git(root, ['rev-parse', 'HEAD']).slice(0, 12), ...lab }); return null; }

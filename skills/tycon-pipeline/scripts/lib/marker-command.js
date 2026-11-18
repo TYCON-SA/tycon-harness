@@ -526,13 +526,17 @@ function escapeDe(llamada, sid, comando = null) {
 /**
  * La salida de una ejecución perdida (lib/open-runs.js): `marker.js clear-session <sesión> --lost` o `marker.js restore
  * <sesión>`. Pide la frase del dueño siempre, también sin marcador y para otra sesión. Un argumento que no se ve después
- * de la sesión puede ser `--lost`. Devuelve `{ sesion }` (null si la sesión no se ve) o null.
+ * de la sesión puede ser `--lost`. Devuelve `{ sesion }` (null si la sesión no se ve) o null; `restore` suma `destino`, la
+ * sesión de `--for-session` si se ve: es la que el restore escribe.
  */
 function salidaPerdida(llamada) {
   if (!llamada || llamada.guion !== 'marker') return null;
   const a = llamada.args || [];
   const sesion = a[0] && a[0].literal ? a[0].texto : null;
-  if (llamada.sub === 'restore') return { sesion };
+  if (llamada.sub === 'restore') {
+    const i = a.findIndex((x) => x.literal && x.texto === '--for-session');
+    return { sesion, ...(i >= 0 && a[i + 1] && a[i + 1].literal ? { destino: a[i + 1].texto } : {}) };
+  }
   if (llamada.sub === 'clear-session' && (llamada.porXargs || a.slice(1).some((x) => !x.literal || x.texto === '--lost'))) return { sesion };
   return null;
 }

@@ -269,6 +269,12 @@ function recordLaunch(o) {
   // la corrida, por el nombre de su carpeta (como la anota Codex): el cierre cruza sólo lo de su corrida, y una
   // ayudante que comparte el marcador escribe la misma. Sin marcador o sin carpeta, null
   const run = runDeLaSesion(sessionId, story);
+  // Un revisor sin repo o sin historia no se ata a ninguna corrida: su propio renglón dice por qué, en vez de salir callado.
+  // Va en el mismo renglón y no en uno aparte, para que el registro siga teniendo un renglón por lanzamiento
+  const { esRevisor } = require('./lib/late-snapshot.js');
+  const sinCorrida = esRevisor(advisor) && (!repo || !story)
+    ? (!repo ? 'sin repo: no hay marcador ni repo git en la carpeta' : 'sin historia: la sesión no tiene una corrida abierta')
+    : null;
   let lineError = null;
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -279,6 +285,7 @@ function recordLaunch(o) {
         ...(o.extra || {}),
         ...(retro && retro.repo ? { retro_repo: retro.repo } : {}),
         ...(retro && retro.sha ? { retro_sha: retro.sha } : {}),
+        ...(sinCorrida ? { sin_corrida: sinCorrida } : {}),
       }) + '\n',
       'utf8',
     );
@@ -306,6 +313,34 @@ function recordLaunch(o) {
       // sin el renglón, el cierre dice «no tiene registro» o «no pude leer»: nunca «no reportó nada». Queda dicho
       try { process.stderr.write(`on-advisor-run: no pude anotar el lanzamiento de ${advisor} en el registro de críticos (${(e && e.message) || e})\n`); } catch { /* nada */ }
     }
+  }
+
+  // ── El lanzamiento de un revisor de la corrida anota su hora ───────────────────────────────────────────────────────
+  // El revisor que figura en el `expected` de alguna vuelta de la corrida (los `step5-start` desde el último `run-start`)
+  // anota en el marcador `ultimoRevisorTs`: «Preparar» se repite sólo si alguno se lanzó después de su cierre
+  // (lib/steps.js prepareCommitStale). Un agente que no está en ninguna vuelta (exploración, otra etapa) no la mueve.
+  // El marcador lo escriben también marker.js y otros lanzamientos: si cambió entre leerlo y reemplazarlo se lee de nuevo,
+  // para no pisar lo que anotaron. Sin la marca, «Preparar» decide como antes.
+  try {
+    if (esRevisor(advisor) && !sinCorrida) {
+      const parsed = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
+      let desde = 0;
+      parsed.forEach((d, i) => { if (d && d.event === 'run-start') desde = i + 1; });
+      const deLaCorrida = parsed.slice(desde).some((d) => d && d.event === 'step5-start' && Array.isArray(d.expected) && d.expected.includes(advisor));
+      const archivo = path.join(stateDirOf(os.homedir()), 'active', `${sessionId}.json`);
+      for (let intento = 0; deLaCorrida && intento < 3; intento++) {
+        const crudo = fs.readFileSync(archivo, 'utf8');
+        const m = JSON.parse(crudo);
+        const ahora = new Date().toISOString();
+        if (String(m.storyId) !== String(story) || Date.parse(m.ultimoRevisorTs || '') >= Date.parse(ahora)) break;
+        const tmp = `${archivo}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify({ ...m, ultimoRevisorTs: ahora }, null, 2) + '\n', 'utf8');
+        if (fs.readFileSync(archivo, 'utf8') === crudo) { fs.renameSync(tmp, archivo); break; }
+        fs.unlinkSync(tmp);
+      }
+    }
+  } catch (e) {
+    try { process.stderr.write(`on-advisor-run: no pude anotar el lanzamiento de ${advisor} para la corrida (${(e && e.message) || e})\n`); } catch { /* nada */ }
   }
 
   // ── La FOTO del estado auditado, tomada sola ──────────────────────────────

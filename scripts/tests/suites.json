@@ -1027,6 +1027,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.288: la edición en el lugar con sufijo sobre una historia se juzga como sin sufijo (frena si cambia el estado, pasa si sólo cambia el cuerpo).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-in-place-suffix.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.278: el lector de comandos. marker.js y pipeline.js cuentan sólo donde se corren, no donde otro programa los nombra.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/marker-command.test.js",

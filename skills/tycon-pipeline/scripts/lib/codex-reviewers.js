@@ -239,6 +239,8 @@ async function run(o) {
     try { return fn(); } catch (e) { say(`reviewers-run: no pude anotar ${que} en el registro de críticos (${e.message || e}).`); return null; }
   };
   const procs = {};
+  // la hora del primer arranque de cada revisor: si se lo corre de nuevo, lo que vio primero es lo que menos vio
+  const primerArranque = {};
   const writePids = () => {
     try { fs.writeFileSync(pidsFile, JSON.stringify({ iter: start.iter ?? null, procs }, null, 2)); } catch { /* el relanzado sólo pierde el corte */ }
   };
@@ -263,6 +265,7 @@ async function run(o) {
     if (ch) {
       children.add(ch);
       procs[advisor] = { pid: ch.pid, startedAt: new Date().toISOString() };
+      if (!primerArranque[advisor]) primerArranque[advisor] = procs[advisor].startedAt;
       writePids();
       ch.stderr.on('data', (d) => { tail = (tail + d).slice(-4000); });
     }
@@ -336,7 +339,7 @@ async function run(o) {
     // Sólo un revisor que corrió pasa por la constancia común (cuenta para la ronda, la foto y el registro de autoría).
     // El que falló queda en su propia línea, sin `advisor`: `check-count` la nombra en el rojo y nada lo da por corrido.
     let rec = { ok: true };
-    if (corrio) rec = recordLaunch({ sessionId, cwd: repo, advisor, model: modelOf(advisor), extra: { launcher: 'pipeline', exit, report } });
+    if (corrio) rec = recordLaunch({ sessionId, cwd: repo, advisor, model: modelOf(advisor), extra: { launcher: 'pipeline', lanzado_ts: primerArranque[advisor], exit, report } });
     else {
       try {
         fs.appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: 'launch-failed', failed_advisor: advisor,
