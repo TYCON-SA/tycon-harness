@@ -4690,11 +4690,10 @@ function harnessTimeTool(opts = {}) {
 
 /**
  * Lo que la ejecución va a necesitar y esta máquina no tiene, antes de arrancar: `[{ id, falta, sin_eso, como }]`, vacía
- * si está todo. Tres cosas: el programa de la plataforma del pedido de trabajo (la primera palabra de los `rawCommands`
+ * si está todo. Dos cosas: el programa de la plataforma del pedido de trabajo (la primera palabra de los `rawCommands`
  * del conector que elige la capa: el núcleo no nombra herramientas), con la misma condición con que `next` pide esa
- * parte; la configuración de BMAD del repo (`_bmad/bmm/config.yaml`, sin la que `bmad-dev-story` se frena); y el
- * servidor MCP de la herramienta de horas elegida, donde lo lee Claude Code. Un detector que no puede preguntar no
- * inventa una falta: deja su motivo en `noMedido`. Nunca frena.
+ * parte; y el servidor MCP de la herramienta de horas elegida, donde lo lee Claude Code. Un detector que no puede
+ * preguntar no inventa una falta: deja su motivo en `noMedido`. Nunca frena.
  * @param {object} o repo · fm (frontmatter de la historia) · env · home · noMedido (lista donde quedan los detectores
  *   que no pudieron mirar, con su motivo)
  */
@@ -4719,15 +4718,6 @@ function computeMissingBeforeStart({ repo, fm, env = process.env, home = os.home
       }
     }
   } catch (e) { noMedido.push(`el programa de la plataforma (${motivo(e)})`); }
-
-  if (!fs.existsSync(path.join(repo, '_bmad', 'bmm', 'config.yaml'))) {
-    out.push({
-      id: 'bmad',
-      falta: `la configuración de BMAD del repo (\`_bmad/bmm/config.yaml\` en ${repo})`,
-      sin_eso: 'el plan lo arma el orquestador, sin BMAD: el skill de BMAD se frena sin esa configuración',
-      como: 'corré el skill `bmad-init` en el repo',
-    });
-  }
 
   // En Codex los servidores viven en su propia configuración, que despliega el instalador: acá no se mira.
   const esCodex = !!env.CODEX_SESSION_ID && !env.CLAUDE_CODE_SESSION_ID;
@@ -4977,8 +4967,8 @@ function computeToolingExpected(repo, opts = {}) {
 }
 
 // ── pipeline.js model-hint — sugerencia de modelo de sesión por complejidad ──
-// Los pasos de armar el plan, aprobarlo e implementar (plan BMAD + implementación) corren
-// INLINE en el main loop (tool Skill, no subagentes) → su modelo es el DE LA
+// Los pasos de armar el plan, aprobarlo e implementar corren
+// INLINE en el main loop (no en subagentes) → su modelo es el DE LA
 // SESIÓN y solo el user puede cambiarlo con /model. Este comando computa la
 // recomendación MECÁNICA para que el Arranque (preflight) la compare con el modelo
 // real de la sesión (el orquestador lo sabe por su system prompt) y sugiera el
