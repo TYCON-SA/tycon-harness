@@ -639,6 +639,9 @@ node <arnés>/scripts/tools/office/board.js set T-41 estado=curso quien=Sand not
 node <arnés>/scripts/tools/office/board.js close T-41 [--real AAAA-MM-DDTHH:MM]           # cerrarla
 node <arnés>/scripts/tools/office/board.js save --from <tu archivo aparte>                # el tablero entero
 node <arnés>/scripts/tools/office/board.js check                                          # validar sin escribir
+node <arnés>/scripts/tools/office/board.js due                                            # las líneas de «Te toca»
+node <arnés>/scripts/tools/office/board.js due confirm <id>                               # sigue en pie: cuenta de nuevo
+node <arnés>/scripts/tools/office/board.js due drop <id>                                  # sacarla
 ```
 
 Escribirlo a mano (Edit, Write o la consola) se frena con el comando que hace lo mismo. Leerlo sigue libre, y el archivo
@@ -661,6 +664,11 @@ aparte para `save --from` va fuera de la carpeta de estado. Si algo lo cambió s
   las preguntas abiertas y de esta lista: las notas no se leen, así que lo que le toca al dueño va acá. `meta.resumen` se
   ignora, como `tablas`: la línea de arriba del kanban se arma sola de las tarjetas («Sale primero: T-52 … · 19:30 · Tu
   firma: 2 · Trabado: 1 · Tablero escrito a las 16:29», o «Nada con hora en curso»).
+- Una línea de `teToca` vence a las 24 horas: deja de mostrarse y la oficina dice cuántas vencieron en la franja del
+  resumen. Volver a guardarla
+  no la renueva, porque `save --from` trae tu archivo entero; la renueva `due confirm`. `due drop` la saca del tablero:
+  sacala también de tu archivo aparte, o el próximo `save --from` la devuelve con su fecha. Las firmas y las preguntas no
+  vencen. La fecha va en `meta.teTocaDesde`, que escribe sólo `board.js`.
 
 «Terminados» es lo hecho hoy, con su hora; lo anterior, o sin `realIso`, va a la tabla «Hechos». «En curso» va por hora de
 fin: lo que sale primero arriba, lo que no tiene hora después y la coordinadora al final.

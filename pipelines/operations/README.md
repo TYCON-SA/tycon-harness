@@ -363,9 +363,10 @@ Para prenderla:
 
 Si tu organización prende la grabadora de instintos (`integrations.instincts: true` en el perfil del equipo), cada máquina
 sube al buzón lo que hace el agente, un día por vez. `instinct-proposals.yml` lo baja cada noche a las 02:00 UTC, cuenta
-sin modelo lo que se repite en el equipo y le pide al modelo de la noche que escriba cada propuesta (como mucho 20 por
-noche; las demás salen sólo con los números). Deja un archivo por propuesta en `inbox/instincts/propuestas/` y el informe
-de la noche en `.dashboard/instincts/`; las propuestas se deciden en la pestaña Aprendizajes del sitio.
+sin modelo lo que se repite en el equipo, deja afuera el ruido y le pide al modelo de la noche que escriba cada propuesta
+(como mucho 20 por noche; las demás esperan a otra noche). Deja un archivo por propuesta en `inbox/instincts/propuestas/`
+y, en `.dashboard/instincts/`, el informe de la noche y lo que recomienda hacer con cada pendiente; las propuestas se
+deciden en la pestaña Aprendizajes del sitio.
 
 Para prenderla:
 
@@ -375,7 +376,7 @@ Para prenderla:
    la noche sale «no medido».
 3. El modelo de la noche se elige en el sitio (la fila «El proceso de la noche»). La llave sale del grupo de variables
    que comparte con la revisión de dependencias: [el punto 13](#13-la-llave-del-modelo-de-la-noche-un-grupo-compartido).
-   Sin modelo o sin llave, las propuestas salen sólo con los números y el resumen lo dice.
+   Sin modelo o sin llave, las propuestas nuevas esperan a otra noche y el resumen lo dice.
 4. Nada más: desde que existe `.dashboard/instincts/`, el resumen de la mañana (`dependency-audit.yml`, 04:00) suma la
    línea «aprendizajes: …». Si una noche no dejó su informe, el resumen lo dice en vez de «sin propuestas nuevas».
 

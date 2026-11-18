@@ -4,7 +4,7 @@
  * para el HITL Checkpoint #1 (paso «Aprobar el plan») del tycon-pipeline.
  *
  * Filosofía TYCON: el determinismo vive en el script (template HTML fijo), el juicio
- * vive en el LLM (extrae el contenido del plan BMAD y lo pasa como JSON estructurado).
+ * vive en el LLM (extrae el contenido del plan y lo pasa como JSON estructurado).
  * NADA sale de la máquina: el HTML guarda el estado en localStorage del browser y el
  * feedback vuelve por copy-paste ("Exportar feedback"), sin servidor ni nube.
  *

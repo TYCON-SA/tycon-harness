@@ -108,3 +108,19 @@ test('T44 TeamStoriesTemplates_GithubGate_PublicWorkflowRules — las reglas de 
   // el espejo: la misma plantilla con un secreto sale rota en la regla `secrets`
   assert.ok(check(`${text}\n# \${{ secrets.X }}\n`).some((b) => b.rule === 'secrets'), 'el control ve un secreto agregado');
 });
+
+test('T11 Templates_RefVariableAndCommitPrinted — la versión del arnés sale de una variable (main por defecto) y se imprime el commit @ac-7', () => {
+  const az = fs.readFileSync(path.join(DIR, 'azure', 'stories-gate.yml'), 'utf8');
+  const gh = fs.readFileSync(path.join(DIR, 'github', 'stories-gate.yml'), 'utf8');
+  // Azure: la variable con main por defecto, el arnés bajado por esa versión (rama, etiqueta o commit) y el commit impreso
+  assert.match(az, /^ {2}harnessRef: 'main'$/m, 'Azure: harnessRef con main por defecto');
+  assert.match(az, /git -C "\$DEST" fetch --quiet --depth 1 "\$\(harnessRepoUrl\)" "\$\(harnessRef\)"/, 'Azure: baja la versión pedida, también un commit');
+  assert.match(az, /git -C "\$DEST" checkout --quiet FETCH_HEAD/);
+  assert.match(az, /echo "Arnés público en \$\(git -C "\$DEST" rev-parse HEAD\)/, 'Azure: imprime el commit entero');
+  // GitHub: la variable del repo, con main por defecto, y el commit impreso
+  assert.match(gh, /HARNESS_REF: \$\{\{ vars\.TYCON_HARNESS_REF \|\| 'main' \}\}/, 'GitHub: la versión sale de una variable, con main por defecto');
+  assert.match(gh, /git -C "\$\{TCG\}" fetch --quiet --depth 1 https:\/\/github\.com\/TYCON-SA\/tycon-harness\.git "\$\{HARNESS_REF\}"/, 'GitHub: baja la versión pedida, también un commit');
+  assert.match(gh, /git -C "\$\{TCG\}" checkout --quiet FETCH_HEAD/);
+  assert.match(gh, /echo "Arnés público en \$\(git -C "\$\{TCG\}" rev-parse HEAD\)/, 'GitHub: imprime el commit');
+  assert.doesNotMatch(gh, /--branch main/, 'GitHub: ya no baja main fijo');
+});

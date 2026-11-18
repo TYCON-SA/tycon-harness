@@ -672,7 +672,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       `⛔ tycon-pipeline — CÓDIGO ANTES DEL PLAN APROBADO (story ${marker?.storyId || '?'})`,
       viaLine + '',
       `  Ibas a editar código (${f}) y «Aprobar el plan» —el user aprueba el plan— todavía está PENDIENTE en el`,
-      '  marker. El orden del pipeline es: validar story → BMAD arma plan → EL USER LO APRUEBA → recién ahí',
+      '  marker. El orden del pipeline es: validar story → armar el plan → EL USER LO APRUEBA → recién ahí',
       '  tests (ATDD) y código. Saltearse el HITL del plan es exactamente lo que este portón impide.',
       '',
       '  Salidas:',

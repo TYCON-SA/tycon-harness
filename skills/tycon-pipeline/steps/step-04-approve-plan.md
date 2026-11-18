@@ -1,6 +1,6 @@
 # Aprobar el plan
 
-**Objetivo**: pedir aprobación explícita del usuario antes de que BMAD ejecute el plan.
+**Objetivo**: pedir aprobación explícita del usuario antes de ejecutar el plan.
 
 
 > ⏱️ **Espera humana**: este paso es uno de los dos que miden cuánto se esperó a una
@@ -132,7 +132,7 @@ otra corrida o de otra sesión no cuenta.
 ## Acción
 
 Presentar al usuario:
-1. El plan generado por BMAD en «Armar el plan»
+1. El plan escrito en «Armar el plan»
 2. La lista de archivos que va a modificar/crear
 3. Pregunta explícita. Aprobar un plan es una decisión importante (fija el diseño de la story), así que lleva su forma:
    «Recomiendo aprobarlo: {por qué}. {El contexto: qué hace el plan y qué deja afuera.} {Si hay caminos alternativos,
@@ -206,7 +206,7 @@ sin mandar nada a `plan.agent-native.com` — el plan del cliente NUNCA sale de 
 
 **Flujo cuando aplica:**
 
-1. Construir un JSON con el contenido del plan BMAD («Armar el plan»). Schema: `node scripts/visual-plan.js schema`.
+1. Construir un JSON con el contenido del plan («Armar el plan»). Schema: `node scripts/visual-plan.js schema`.
    Mapear: `objetivo`, `fileMap` (de la lista de archivos a crear/modificar), `tasks` (de las Tasks/Subtasks
    de la story), `flow` si el plan tiene un pipeline de datos claro, `code` para 1-2 snippets clave, y
    **`questions`** con las decisiones genuinas que el plan deja abiertas (contradicciones de la story,
@@ -233,7 +233,7 @@ un reemplazo del registro textual de «Armar el plan» (que queda en `step-02-bm
 ## Decisiones del usuario
 
 - **"Sí" / "dale" / "adelante"**: proceder a «Implementar».
-- **"No" / "esperá" / "cambiá X"**: **volver a «Armar el plan»** con el feedback del usuario. BMAD re-itera el plan.
+- **"No" / "esperá" / "cambiá X"**: **volver a «Armar el plan»** con el feedback del usuario. El orquestador rehace el plan.
 - **"cancelar" / "ya no"**: terminar el pipeline limpiamente. Registrar en el log de la corrida.
 
 ## Criterio de aprobación

@@ -265,11 +265,13 @@ Only for **maintainers**. Every night, the team instincts review counts what kee
 with learnings turned on in the team profile) and leaves one proposal per pattern in the operations repo. Next to the
 name, in the menu, is how many are waiting for your decision, for example "Learnings (3)".
 
-**What you see.** At the top, the last night: the day, whether it measured, which model wrote the wording and how many
-were left without wording. Below, the proposals to decide, first those seen on more machines and then those that repeat
-more. Each card says what repeats (the tool, the pattern and the repo), on how many machines, how many times and between
-which days, and the suggested rule with its confidence, or "no wording" and why. It never says which machine or which
-person did it. If the proposal suggests a harness piece (a reviewer, a skill, a hook or a guide), the card has **Propose
+**What you see.** At the top, the last night: the day, whether it measured, which model wrote the wording, how many were
+left without wording and how many it left out as noise. Below, the proposals to decide, first those seen on more machines
+and then those that repeat more. Each card says what repeats (the tool, the pattern and the repo), on how many machines,
+how many times and between which days, and the suggested rule with its confidence, or "no wording" and why. It also says
+whether the night recommends approving or rejecting it and why, with the recommended button **highlighted**, as in
+Maintenance: the reason comes from a fixed rule or from the model that reviews every night, and with no recommendation,
+the card says why. It never says which machine or which person did it. If the proposal suggests a harness piece (a reviewer, a skill, a hook or a guide), the card has **Propose
 to the harness**, which opens a new issue on the public repo with the draft written: you send it, with your account. At
 the bottom, closed at first, the history of the last 30 days: who decided, when, the approved text or the reason for the
 rejection. Each approved one says whether it is **in the profile** or **did not reach the profile** (for example,
@@ -279,7 +281,10 @@ request again.
 **How you decide.** As in Maintenance: you mark **Approve** or **Reject** on each card (the marks stay in the browser)
 and at the end **Send for approval**. Approve opens the suggested rule so you can correct it: what goes to the team is
 the text you confirm, in one line. A proposal without wording asks you to write it. Reject asks for a reason, in one
-line. Sending opens at most two requests:
+line. To decide many at once, **Follow the recommendations** marks each card with what the night recommends (the approval
+with its rule and the rejection with its reason, both editable). With each card's **Select** box, or **Select all for** a
+rule, you gather several, and **Reject the selected ones** marks them with one reason. None of this sends anything: you
+review and only then **Send for approval**, up to 200 decisions at a time. Sending opens at most two requests:
 
 1. with approved ones, one to the profile repo, which adds each rule to the `team-learnings.md` block of a pack the
    organization already has (`packs/<pack>/claude-md-blocks/team-learnings.md`). The pack that already has the block

@@ -1559,6 +1559,22 @@ aprendizajes "$D/inf.json" '{"parcial":true,"sin_redaccion":{"tope":0,"fallo":1,
 reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
 [ "$(linea_apr)" = "aprendizajes: 4 propuestas nuevas (4 sin redactar: sin llave, el modelo falló), 9 esperando decisión · lectura parcial del buzón · en la pestaña Aprendizajes del sitio" ] \
   && ok "4.7-T30 parcial y las causas sin redactar" || no "4.7-T30 parcial: «$(linea_apr)»"
+# 4.14-T10 Report_HasFilteredAndRecommended @story-4.14 @ac-6 @ac-11
+# 🔴 Falla con: una noche sin llave o con el modelo caído que se lee como una noche sin novedades, ahora que lo que no se
+#    redacta espera sin archivo; o el tope, que es lo normal, avisado como un problema.
+SIN_NADA='"sin_redaccion":{"tope":0,"fallo":0,"sin_modelo":0,"sin_llave":0}'
+aprendizajes "$D/inf.json" '{"nuevas":0,'"$SIN_NADA"',"en_espera_por":{"tope":7,"fallo":0,"sin_modelo":0,"sin_llave":3}}'
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
+[ "$(linea_apr)" = "aprendizajes: sin propuestas nuevas (3 sin redactar: sin llave), 9 esperando decisión · en la pestaña Aprendizajes del sitio" ] \
+  && ok "4.14-T10 sin llave avisa aunque no haya propuestas nuevas" || no "4.14-T10 sin llave: «$(linea_apr)»"
+aprendizajes "$D/inf.json" '{"nuevas":2,'"$SIN_NADA"',"en_espera_por":{"tope":0,"fallo":1,"sin_modelo":0,"sin_llave":0}}'
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
+[ "$(linea_apr)" = "aprendizajes: 2 propuestas nuevas (1 sin redactar: el modelo falló), 9 esperando decisión · en la pestaña Aprendizajes del sitio" ] \
+  && ok "4.14-T10 el modelo caído avisa junto a las nuevas" || no "4.14-T10 fallo: «$(linea_apr)»"
+aprendizajes "$D/inf.json" '{"nuevas":0,'"$SIN_NADA"',"en_espera_por":{"tope":40,"fallo":0,"sin_modelo":0,"sin_llave":0}}'
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
+[ "$(linea_apr)" = "aprendizajes: sin propuestas nuevas, 9 esperando decisión · en la pestaña Aprendizajes del sitio" ] \
+  && ok "4.14-T10 lo que espera por el tope no se avisa" || no "4.14-T10 tope: «$(linea_apr)»"
 aprendizajes "$D/inf.json" '{"estado":"no_medido","motivo":"sin_az","nuevas":null,"pendientes_total":null}'
 reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
 [ "$(linea_apr)" = "aprendizajes: ? (la noche no pudo leer el buzón)" ] && ok "4.7-T30 no_medido es «?», nunca 0" || no "4.7-T30 no_medido: «$(linea_apr)»"

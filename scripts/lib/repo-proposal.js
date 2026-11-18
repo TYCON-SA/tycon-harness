@@ -272,18 +272,24 @@ function exigeRevisor(p, archivo) {
  * filtro de ruta (`filenamePatterns`) cubre `archivo` (con el filtro, «Proponer» va archivo por archivo; sin
  * `archivo`, una política con filtro no alcanza). GitHub: la protección de la rama
  * (`required_pull_request_reviews.required_approving_review_count >= 1`) o una regla `pull_request` que la pida.
+ * `lecturas` (un Map) comparte lo leído entre varios archivos de un mismo pedido: se lee una vez y se evalúa por archivo.
  */
-async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archivo = null, aplicarSolo = false }) {
+async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archivo = null, aplicarSolo = false, lecturas = null }) {
   if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { ok: false, codigo: 'plataforma_desconocida', message: M('rp.sinPlataforma') };
   const cred = credenciales(credencial);
   const secretos = secretosDe(cred);
   const base = baseDe(remote, urlBase);
+  const leer = (url) => {
+    if (!lecturas) return llamar({ url, remote, cred, fetch: f, secretos });
+    if (!lecturas.has(url)) lecturas.set(url, llamar({ url, remote, cred, fetch: f, secretos }));
+    return lecturas.get(url);
+  };
   const noLeida = (r) => ({ ok: false, codigo: 'no_se_pudo_leer', message: M('rp.politicaIlegible', { rama: RAMA_PRINCIPAL, motivo: motivoCorto(r) }) });
   const sinPolitica = { ok: false, codigo: 'sin_politica', message: M('rp.sinPolitica', { rama: RAMA_PRINCIPAL }) };
   if (remote.platform === 'azure') {
-    const repo = await llamar({ url: `${base}/git/repositories/${encodeURIComponent(remote.repo)}?${API_AZURE}`, remote, cred, fetch: f, secretos });
+    const repo = await leer(`${base}/git/repositories/${encodeURIComponent(remote.repo)}?${API_AZURE}`);
     if (repo.status !== 200 || !repo.doc || !repo.doc.id) return noLeida(repo);
-    const pol = await llamar({ url: `${base}/policy/configurations?repositoryId=${encodeURIComponent(repo.doc.id)}&refName=${encodeURIComponent(`refs/heads/${RAMA_PRINCIPAL}`)}&${API_AZURE}`, remote, cred, fetch: f, secretos });
+    const pol = await leer(`${base}/policy/configurations?repositoryId=${encodeURIComponent(repo.doc.id)}&refName=${encodeURIComponent(`refs/heads/${RAMA_PRINCIPAL}`)}&${API_AZURE}`);
     if (pol.status !== 200 || !pol.doc || !Array.isArray(pol.doc.value)) return noLeida(pol);
     const validas = pol.doc.value
       .filter((p) => p && p.isEnabled === true && p.isBlocking === true && p.type && [TIPO_REVISORES_AZURE, TIPO_REQUERIDOS_AZURE].includes(p.type.displayName) && p.settings && Number(p.settings.minimumApproverCount) >= 1)
@@ -320,7 +326,7 @@ async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archi
     const n = Math.max(...cubren.map((p) => Number(p.settings.minimumApproverCount)));
     return { ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}` };
   }
-  const prot = await llamar({ url: `${base}/branches/${RAMA_PRINCIPAL}/protection`, remote, cred, fetch: f, secretos });
+  const prot = await leer(`${base}/branches/${RAMA_PRINCIPAL}/protection`);
   // en GitHub quien abre un pedido no puede aprobarlo: si entra solo depende de que el repo deje mergear a la identidad del
   // sitio sin aprobación, y eso se sabe recién al intentarlo
   const enGithub = (n) => ({ ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}`, ...(aplicarSolo ? { aplicaSolo: false, motivoAplicar: SIN_APLICAR_GITHUB } : {}) });
@@ -328,7 +334,7 @@ async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archi
     const n = Number((((prot.doc || {}).required_pull_request_reviews || {}).required_approving_review_count) || 0);
     if (n >= 1) return enGithub(n);
   } else if (prot.status !== 404) return noLeida(prot);
-  const reglas = await llamar({ url: `${base}/rules/branches/${RAMA_PRINCIPAL}`, remote, cred, fetch: f, secretos });
+  const reglas = await leer(`${base}/rules/branches/${RAMA_PRINCIPAL}`);
   if (reglas.status !== 200 || !Array.isArray(reglas.doc)) return noLeida(reglas);
   const n = Math.max(0, ...reglas.doc.filter((r) => r && r.type === 'pull_request' && r.parameters).map((r) => Number(r.parameters.required_approving_review_count) || 0));
   if (n >= 1) return enGithub(n);
@@ -666,8 +672,9 @@ async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, 
 
     // 4. la política de la rama principal, para CADA archivo (un filtro de ruta puede no cubrir alguno)
     let politica = null;
+    const lecturas = new Map();
     for (const x of lista) {
-      politica = await politicaDeRevision({ remote, credencial: cred, urlBase, fetch: f, archivo: x.archivo, aplicarSolo });
+      politica = await politicaDeRevision({ remote, credencial: cred, urlBase, fetch: f, archivo: x.archivo, aplicarSolo, lecturas });
       if (!politica.ok) return { ok: false, codigo: politica.codigo, message: politica.message };
     }
 
