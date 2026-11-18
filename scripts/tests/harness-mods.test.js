@@ -624,6 +624,29 @@ test('T11 CartelYNext_MismoMarcador_DecidenIgual @story-8.195 @ac-11 — el cart
   } finally { fs.rmSync(repo, { recursive: true, force: true }); }
 });
 
+// T3 (cartel) — @story-8.288 @ac-3 @ac-4
+test('T3 Cartel_StoryTextAfterReviewers_NoNewRound @story-8.288 @ac-3 @ac-4 — el cartel pide «Preparar» otra vez sólo si un revisor se lanzó después de su cierre', async () => {
+  const { readRun } = await mod('run.mjs');
+  const T = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
+  const vuelta = (lastCompletedAt, extra) => terminada({
+    otraVuelta: null, ...extra,
+    stepTimings: { reviewers: { startedAt: at(10), completedAt: at(20), lastCompletedAt, rounds: 2 }, findings: { completedAt: at(22) }, 'prepare-commit': { completedAt: at(25) } },
+  });
+  const casos = [
+    ['un revisor lanzado después de «Preparar»', vuelta(at(32), { ultimoRevisorTs: at(30) }), true],
+    ['la vuelta cerró después, pero el último revisor se lanzó antes', vuelta(at(32), { ultimoRevisorTs: at(15) }), false],
+    ['la marca ilegible: como antes', vuelta(at(32), { ultimoRevisorTs: 'x' }), true],
+    ['sin la marca: como antes', vuelta(at(32), {}), true],
+    ['los revisores cerraron antes de «Preparar»', vuelta(at(20), {}), false],
+    ['los revisores cerraron antes, con la marca después', vuelta(at(20), { ultimoRevisorTs: at(30) }), false],
+  ];
+  for (const [nombre, m, otraVez] of casos) {
+    const fila = readRun(JSON.stringify(m), NOW).rows.find((r) => r.id === 'prepare-commit');
+    assert.strictEqual(fila.state !== 'hecho', otraVez, `cartel — ${nombre}`);
+    assert.strictEqual(T.prepareCommitStale(m), otraVez, `pipeline — ${nombre}`);
+  }
+});
+
 test('T14 MarcadorViejo_PorNumero_SinCambios @story-8.195 @ac-14 — el marcador por número no tiene otra vuelta, aunque traiga el campo', async () => {
   const { readRun, boardLine } = await mod('run.mjs');
   const T = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
