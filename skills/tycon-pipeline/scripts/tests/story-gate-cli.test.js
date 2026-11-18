@@ -233,10 +233,10 @@ const adhocLog = (home) => { try { return fs.readFileSync(path.join(estadoDe(hom
 const declaracion = (home, sid) => { try { return JSON.parse(fs.readFileSync(io.adhocPath(estadoDe(home), sid), 'utf8')); } catch (_) { return null; } };
 
 // marker.js sin la ventana de prueba: sin pedido de la ventana, como lo corre un agente al que nadie le aprobó nada
-function markerSinVentana(home, sid, args, extraEnv = {}) {
+function markerSinVentana(home, sid, args, extraEnv = {}, opciones = {}) {
   const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, ...extraEnv };
   delete env.NODE_OPTIONS;
-  return spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...conLista(args)], { encoding: 'utf8', env, cwd: home });
+  return spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...conLista(args)], { encoding: 'utf8', env, cwd: home, ...opciones });
 }
 
 // marker.js con una terminal de verdad: una pseudo-terminal propia (Python, `pty.fork`), que contesta `respuesta` cuando
@@ -1681,4 +1681,69 @@ test('T29 Cuadro_SinRecomendacionOSinPorque_NoArma @story-8.196 @ac-13', () => {
   const sinFreno = markerSinVentana(h2, 'ses-c7', ALLOW('pasar'));
   assert.equal(sinFreno.status, 1);
   assert.match(sinFreno.stderr, /no hay un freno de datos/);
+});
+
+// ── los comandos de cierre y los bordes de «descartar» ─────────────────────────────────────────────────────────────
+const CIERRE_CITADO = () => `node '${fs.realpathSync(path.join(SCRIPTS, 'marker.js'))}' adhoc clear`;
+// un repo con `src/a.ts` guardado y cambiado en la copia de trabajo
+function repoConCambio() {
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-')));
+  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8' }).trim();
+  git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  fs.mkdirSync(path.join(repo, 'src'));
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'a\n');
+  git('add', '.'); git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'b\n');
+  return { repo, base: git('rev-parse', 'HEAD') };
+}
+
+// 🔴 Falla con: la ruta del arnés sin comillas: con un espacio, el comando que se pega no corre.
+test('T1 Historia_ComandoDeCierre_SaleCitado @story-8.222 @ac-1', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  carrilFrenado(home, 'ses-e1');
+  const r = markerSinVentana(home, 'ses-e1', ALLOW('historia'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes(CIERRE_CITADO()), r.stdout);
+});
+
+test('T2 AdhocSetDatosCambian_ComandoDeCierre_SaleCitado @story-8.222 @ac-1', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  fs.mkdirSync(path.join(estadoDe(home), 'adhoc'), { recursive: true });
+  fs.writeFileSync(io.adhocPath(estadoDe(home), 'ses-e2'), JSON.stringify({ reason: 'el botón del comprobante', maxFiles: 8, files: [], datos: 'sin-cambio' }));
+  const r = markerCli(home, 'ses-e2', ['adhoc', 'set', pedidoConDatos('cambian')]);
+  assert.equal(r.status, 3, r.stderr);
+  assert.ok(r.stderr.includes(CIERRE_CITADO()), r.stderr);
+});
+
+// 🔴 Falla con: «descartar» que mide sólo los repos anotados y no nombra lo que el freno midió en otro.
+test('T6 Descartar_ReposDelFreno_LosNombra @story-8.222 @ac-5', () => {
+  const { repo } = repoConCambio();
+  fs.writeFileSync(path.join(repo, 'src', 'suelto.ts'), 'de otra sesión\n');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  carrilFrenado(home, 'ses-e3', { frenoDatos: { ...FRENO_DATOS, repos: [repo] } });
+  let r = markerSinVentana(home, 'ses-e3', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /checkout '[0-9a-f]{7,}' -- 'src\/a\.ts'/);
+  assert.doesNotMatch(r.stdout, /suelto\.ts/, 'lo sin seguir que no es del carril queda afuera');
+  // un freno anotado antes de guardar sus repos
+  carrilFrenado(home, 'ses-e4');
+  r = markerSinVentana(home, 'ses-e4', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /src\/a\.ts/);
+});
+
+// 🔴 Falla con: un `git ls-tree` sin tope: el comando se cuelga, y si termina sin salida manda a borrar un archivo de la base.
+test('T8 Descartar_LsTreeColgado_DiceNoPudeSaber @story-8.222 @ac-6', () => {
+  if (process.platform === 'win32') return console.log('⏭ un git falso de shell: NO MEDIDO — en Windows no corre');
+  const { repo, base } = repoConCambio();
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'bin-'));
+  const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\nif [ "$3" = ls-tree ] && [ "$4" = -z ] && [ "$5" = --name-only ]; then exec sleep 30; fi\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  carrilFrenado(home, 'ses-e5', { files: [path.join(repo, 'src', 'a.ts')], bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-e5', ALLOW('descartar'), { PATH: `${bin}${path.delimiter}${process.env.PATH}` }, { timeout: 25000 });
+  assert.strictEqual(r.error, undefined, 'el comando no terminó a tiempo');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /no pude saber si .*src\/a\.ts/);
+  assert.doesNotMatch(r.stdout, /checkout|para borrar/);
 });

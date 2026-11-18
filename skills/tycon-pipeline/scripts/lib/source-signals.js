@@ -17,8 +17,8 @@
  *                              Un hallazgo: `{ id, strength, says, repo, file, line, borrada, texto }`; la línea de una
  *                              borrada es la del archivo de antes, y la débil no tiene línea. `fallas`: git que no
  *                              contestó, o un archivo nuevo que no se pudo leer; con una falla la medición está
- *                              incompleta.
- *   huella(hallazgos)          lo que cubre el click del dueño: las fuertes, contadas, sin el número de línea.
+ *                              incompleta. Sin base, un archivo seguido que ya no está es un aviso, no una falla.
+ *   huella(hallazgos)         lo que cubre el click del dueño: las fuertes, contadas, sin el número de línea.
  *   descripcion(h)             «una llamada a un proceso, src/a.tsx:42».
  */
 const fs = require('fs');
@@ -72,7 +72,8 @@ function cargar({ repo, packsDir } = {}) {
 }
 
 function gitPorDefecto(repo, args) {
-  const r = spawnSync('git', ['-C', repo, '-c', 'core.quotepath=false', ...args], { windowsHide: true, encoding: 'utf8', timeout: 10000, maxBuffer: SALIDA_MAX });
+  // rutas literales: `pages/[id].tsx` nombra ese archivo, no es un patrón que también traiga a `pages/i.tsx`
+  const r = spawnSync('git', ['-C', repo, '--literal-pathspecs', '-c', 'core.quotepath=false', ...args], { windowsHide: true, encoding: 'utf8', timeout: 10000, maxBuffer: SALIDA_MAX });
   if (r.error) throw r.error;
   if (r.status !== 0) throw new Error(String(r.stderr || '').split('\n')[0] || `git salió con ${r.status}`);
   return r.stdout;
@@ -87,7 +88,13 @@ function rutaDeCabecera(resto) {
   if (r.startsWith('"')) {
     const bytes = [];
     for (let i = 1; i < r.length && r[i] !== '"'; i++) {
-      if (r[i] !== '\\') { bytes.push(...Buffer.from(r[i], 'utf8')); continue; }
+      if (r[i] !== '\\') {
+        // el carácter entero: un emoji ocupa dos posiciones del texto
+        const c = String.fromCodePoint(r.codePointAt(i));
+        bytes.push(...Buffer.from(c, 'utf8'));
+        i += c.length - 1;
+        continue;
+      }
       const o = /^[0-7]{3}/.exec(r.slice(i + 1));
       if (o) { bytes.push(parseInt(o[0], 8)); i += 3; } else { i++; bytes.push(...Buffer.from(ESCAPES[r[i]] || r[i] || '', 'utf8')); }
     }
@@ -218,8 +225,12 @@ function buscar(adhoc, senales, { repos = [], sinSeguir = false, git = gitPorDef
       for (const rel of rels.filter((r) => sinSeguirDeGit.has(r) || !sha)) {
         let txt;
         try { txt = fs.readFileSync(path.join(repo, rel), 'utf8'); } catch (e) {
-          // borrado: no hay líneas que buscar. Cualquier otra cosa deja la medición incompleta
-          if (e && e.code === 'ENOENT') continue;
+          // borrado: no hay líneas que buscar, y sin base las que tenía un archivo seguido no se pueden ver. Cualquier otra
+          // cosa deja la medición incompleta
+          if (e && e.code === 'ENOENT') {
+            if (!sha && m.porRepo[repo].cambios.some((c) => c.ruta === rel)) avisos.push(`camino corto: ${rel} ya no está en ${repo} y ese repo no tiene base: sus líneas borradas no se miraron`);
+            continue;
+          }
           fallas.push(`camino corto: no pude leer ${rel} en ${repo} (${e && e.code ? e.code : String(e)})`);
           continue;
         }
