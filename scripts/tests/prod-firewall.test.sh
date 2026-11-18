@@ -161,6 +161,11 @@ echo "az de mentira: no sé hacer «$*»" >&2; exit 9
 SH
   } > "$RAIZ/opt/homebrew/bin/az"
   chmod +x "$RAIZ/usr/bin/security" "$RAIZ/usr/sbin/ioreg" "$RAIZ/opt/tycon/bin/sqlcmd" "$RAIZ/opt/homebrew/bin/az"
+  # abrir el firewall pide el cuadro de la puerta: el doble aprueba y anota que lo llamaron; la sesión es la de la Mac
+  mkdir -p "$RAIZ/bin"
+  printf '#!/usr/bin/env bash\nprintf "cuadro\\n" >> "%s/cuadro.log"\necho "button returned:Aprobar, gave up:false"\n' "$TMP" > "$RAIZ/usr/bin/osascript"
+  printf '#!/usr/bin/env bash\necho Aqua\n' > "$RAIZ/bin/launchctl"
+  chmod +x "$RAIZ/usr/bin/osascript" "$RAIZ/bin/launchctl"
   # un az impostor primero en el PATH: la puerta no lo usa (T30)
   mkdir -p "$TMP/impostor"; printf '#!/usr/bin/env bash\necho IMPOSTOR >> "%s/impostor.log"\n' "$TMP" > "$TMP/impostor/az"; chmod +x "$TMP/impostor/az"
   unset FAKE_SQLCMD FAKE_AZ FAKE_IP FAKE_UUID
@@ -168,7 +173,8 @@ SH
 
 puerta(){ # corre la puerta en el mundo falso; imprime el exit code. SES = la sesión que la llama (vacía = ninguna)
   printf '%s' "${FAKE_AZ:-ok}" > "$TMP/fake-az-mode"
-  env HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" \
+  # sin las variables de SSH: corrida por SSH, la puerta pediría la sesión de la Mac y la suite fallaría cerrada
+  env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" \
       PATH="$TMP/impostor:$PATH" CLAUDE_CODE_SESSION_ID="${SES:-}" TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-20}" \
       FAKE_SQLCMD="${FAKE_SQLCMD:-}" FAKE_AZ="${FAKE_AZ:-}" FAKE_IP="${FAKE_IP:-}" FAKE_UUID="${FAKE_UUID:-}" \
       bash "$PUERTA" "$@" >"$TMP/out" 2>"$TMP/err"
@@ -177,7 +183,7 @@ puerta(){ # corre la puerta en el mundo falso; imprime el exit code. SES = la se
 gancho(){ # $1 = evento, $2 = sesión → corre el hook con la puerta del repo y el mundo falso; imprime el exit code
   printf '%s' "${FAKE_AZ:-ok}" > "$TMP/fake-az-mode"
   printf '{"hook_event_name":"%s","session_id":"%s"}' "$1" "$2" | \
-    env HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" TYCON_PROD_GATE="$PUERTA" \
+    env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" TYCON_PROD_GATE="$PUERTA" \
         TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-20}" FAKE_AZ="${FAKE_AZ:-}" \
         node "$HOOK" >"$TMP/hook.out" 2>"$TMP/hook.err"
   echo $?

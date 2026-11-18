@@ -3,9 +3,11 @@
 #
 # POR QUÉ EXISTE (story 6.1 — guides/maintaining/incident-log.md#produccion-sin-permiso-2026-09-15): el 2026-09-15, en una sesión sobre un producto del equipo, una autorización puntual se
 # estiró sola a la tarea siguiente: ~9 consultas más contra producción sin pedir permiso. Acá cada
-# sentencia pasa por el cuadro de aprobación de Claude Code (la regla `ask` de la configuración
-# administrada cubre `Bash(/opt/tycon/bin/tycon-prod-sql *)`), y el freno `prod-access-guard.js`
-# prohíbe cualquier otro camino a esa base.
+# sentencia la aprueba una persona en un cuadro del sistema que abre LA PROPIA PUERTA (`aprobar`, más abajo),
+# antes de leer la clave: así la aprobación no depende de cómo se la llamó. Un guion guardado que llama a la
+# puerta no pasa por la regla `ask` de Claude Code, que mira el texto del comando; el cuadro propio sí lo ve.
+# La regla `ask` (`Bash(/opt/tycon/bin/tycon-prod-sql *)` en la configuración administrada) queda como segunda
+# capa, y el freno `prod-access-guard.js` prohíbe cualquier otro camino a esa base.
 #
 # LA CONTRASEÑA NUNCA PASA POR LA CONVERSACIÓN: vive en un llavero propio
 # (~/Library/Keychains/tycon-prod.keychain-db), la saca esta puerta y viaja al cliente de base por
@@ -134,6 +136,45 @@ anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaro
   printf '{"ts":"%s",%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" 2>/dev/null >> "$REGISTRO" || sin_registro "$REGISTRO"
 }
 
+# ── el cuadro propio: la aprobación de una persona, pedida por la puerta ──────────────────────
+# La consulta, `--reclassify` y `--open-firewall` lo piden antes de leer la clave, de tocar el índice o de llamar a `az`.
+# Sin respuesta, sin sesión gráfica o sin el programa del cuadro, la puerta sale 2: falla cerrada. El programa se busca
+# bajo la raíz, como `security`, y corre con un entorno limpio y un tope de tiempo propio.
+OSASCRIPT="$RAIZ/usr/bin/osascript"
+LAUNCHCTL="$RAIZ/bin/launchctl"
+CUADRO_ESPERA=120
+# Lo que el cuadro muestra entero: una sentencia más larga se rechaza antes de abrirlo, nunca se muestra cortada.
+CUADRO_MAX_CARACTERES=1200; CUADRO_MAX_RENGLONES=20; CUADRO_COLUMNAS=60
+# 🔴 El guion de AppleScript es FIJO: lo que se aprueba viaja como argumento (`argv`), nunca pegado al código. Una
+# sentencia con comillas o con `" & do shell script "…" & "` se muestra tal cual y no se ejecuta.
+CUADRO_GUION=(
+  -e 'on run argv'
+  -e 'display dialog (item 1 of argv) with title "Producción: ¿lo aprobás?" buttons {"Rechazar", "Aprobar"} default button "Rechazar" with icon caution giving up after 120'
+  -e 'end run'
+)
+# 🔴 El cliente corre lo aprobado y nada más. go-sqlcmd lee su entorno: SQLCMDINI es un archivo de SQL que ejecuta al
+# arrancar (también con -Q), y SQLCMDDBNAME o SQLCMDSERVER cambian a dónde va. Heredarlos dejaría correr algo que el
+# cuadro no mostró, así que la puerta se los saca a sí misma antes de hacer nada.
+unset SQLCMDINI SQLCMDDBNAME SQLCMDSERVER SQLCMDUSER
+for v in $(compgen -e); do case "$v" in SQLCMD*) unset "$v" ;; esac; done
+APROBACION=""   # el campo que suma el registro de lo aprobado
+aprobar(){ # $1 = lo que muestra el cuadro, $2 = la forma (consulta | reclasificar | open-firewall)
+  # SSH: el cuadro se abriría en la pantalla de la Mac, donde quizá no hay nadie, o no se abriría
+  if [ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ] || [ "$("$LAUNCHCTL" managername 2>/dev/null)" != Aqua ]; then
+    muere "el cuadro de producción necesita la sesión de la Mac: abrí la terminal en la Mac, no por SSH"
+  fi
+  [ -x "$OSASCRIPT" ] || muere "no encuentro el programa del cuadro de aprobación ($OSASCRIPT): sin cuadro no se aprueba nada, así que no sigo."
+  local respuesta
+  respuesta="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=en_US.UTF-8 \
+    /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$((CUADRO_ESPERA + 10))" "$OSASCRIPT" "${CUADRO_GUION[@]}" "$1" 2>/dev/null)" || respuesta=""
+  # 🔴 Al vencer, `osascript` sale 0 con «gave up:true»: la salida 0 sola no es una aprobación. Vale sólo esta respuesta exacta.
+  if [ "$respuesta" != "button returned:Aprobar, gave up:false" ]; then
+    anotar "\"host\":\"$HOST\",\"accion\":\"rechazada\",\"forma\":\"$2\",\"exit\":2"
+    muere "la persona no aprobó esta $([ "$2" = consulta ] && echo sentencia || echo operación) (rechazó el cuadro, se venció a los ${CUADRO_ESPERA} s o el cuadro no se pudo abrir): no se leyó la clave ni se cambió nada."
+  fi
+  APROBACION=',"aprobacion":"cuadro-propio"'
+}
+
 # ── argumentos ────────────────────────────────────────────────────────────────────────────────
 [ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-rows N]  ·  --load-key <host>  ·  --reclassify <host>  ·  --verify  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks  ·  --delete-group <grupo>"
 
@@ -151,7 +192,7 @@ case "${1:-}" in
   --close-firewall) MODO=close-firewall; HOST="${2:-}"
                     if [ $# -eq 4 ] && [ "$3" = "--session" ] && [[ "$4" =~ $SESION_VALIDA ]]; then SESION_CIERRE="$4"
                     elif [ $# -ne 2 ] || [ -z "$HOST" ]; then muere "uso: tycon-prod-sql --close-firewall <host>  (sólo el host: cierra la regla de esta máquina y ninguna otra)"; fi ;;
-  --reclassify)   MODO=reclasificar; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --reclassify <host>" ;;
+  --reclassify)   MODO=reclasificar; HOST="${2:-}"; [ $# -eq 2 ] && [ -n "$HOST" ] || muere "uso: tycon-prod-sql --reclassify <host>" ;;
   --verify)       MODO=verificar; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --verify" ;;
   # los candados: sola, sin host ni nada más (mira todos los servidores de producción declarados)
   --locks)        MODO=locks; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --locks  (sola: dice qué servidores de producción tienen el candado de Azure)" ;;
@@ -179,6 +220,7 @@ fi
 
 # ── la sentencia: en línea, un solo lote, sin argumentos de sqlcmd ────────────────────────────
 validar_sentencia(){
+  [ -n "${SENTENCIA//[[:space:]]/}" ] || muere "la sentencia está vacía: no hay nada para mostrar en el cuadro"
   case "$SENTENCIA" in
     -*) muere "la sentencia no puede empezar con «-»: no se aceptan argumentos de sqlcmd (ni -i, ni -Q, ni -v)" ;;
   esac
@@ -213,9 +255,28 @@ if [ "$MODO" = consulta ]; then
     if (/[\x00-\x08\x0b-\x1f\x7f-\x9f]/u.test(t)) fuera("tiene caracteres de control: en el cuadro se habría visto otra cosa que lo que corre");
     if (/[\u{ad}\u{34f}\u{61c}\u{115f}\u{1160}\u{17b4}\u{17b5}\u{180b}-\u{180e}\u{200b}-\u{200f}\u{202a}-\u{202e}\u{2028}\u{2029}\u{2060}-\u{206f}\u{2800}\u{3164}\u{fe00}-\u{fe0f}\u{feff}\u{ffa0}\u{fff9}-\u{fffc}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u.test(t)) fuera("tiene caracteres invisibles o de dirección: en el cuadro se habría leído otra cosa que lo que corre");
   ')" || muere "la sentencia ${motivo:-no se pudo revisar}: mandala sin esos caracteres"
+  # lo que el cuadro no muestra entero no se manda a aprobar: cada renglón cuenta como los que ocupa al cortarse, con el
+  # ancho que ocupa en pantalla (un tabulador llega al múltiplo de 8 y un carácter ancho vale 2), como cuenta el freno
+  printf '%s' "$SENTENCIA" | "$NODE" -e '
+    const t = require("fs").readFileSync(0, "utf8"); const [max, maxR, cols] = process.argv.slice(1).map(Number);
+    const doble = /[\u{1100}-\u{10ffff}]|\p{Extended_Pictographic}/u;
+    let renglones = 0;
+    for (const l of t.split("\n")) {
+      let filas = 1, col = 0;
+      for (const c of l) {
+        const ancho = c === "\t" ? 8 - (col % 8) : doble.test(c) ? 2 : 1;
+        if (col + ancho > cols) { filas++; col = 0; }
+        col += c === "\t" ? 8 - (col % 8) : ancho;
+      }
+      renglones += filas;
+    }
+    process.exit([...t].length > max || renglones > maxR ? 2 : 0);
+  ' "$CUADRO_MAX_CARACTERES" "$CUADRO_MAX_RENGLONES" "$CUADRO_COLUMNAS" \
+    || muere "la sentencia es demasiado larga para que el cuadro la muestre entera: partila (el cuadro muestra hasta $CUADRO_MAX_CARACTERES caracteres en $CUADRO_MAX_RENGLONES renglones de $CUADRO_COLUMNAS)."
 fi
 
 if [ "$MODO" = reclasificar ]; then
+  aprobar "Bajar $HOST a no producción en esta máquina: el freno deja de frenarlo y la puerta deja de atenderlo." reclasificar
   "$NODE" -e '
     const m = require(process.argv[1]);
     const host = m.normalizar(process.argv[2]);
@@ -228,7 +289,7 @@ if [ "$MODO" = reclasificar ]; then
     console.log(`«${host}» ya no se trata como producción en esta máquina.`);
     console.log("Si algún proyecto lo sigue declarando así en su .tycon/production.json, volverá a frenarse.");
   ' "$INDICE_JS" "$HOST" || muere "no pude reclasificar «${HOST}»"
-  anotar "\"host\":\"$HOST\",\"accion\":\"reclasificar\",\"exit\":0"
+  anotar "\"host\":\"$HOST\",\"accion\":\"reclasificar\"$APROBACION,\"exit\":0"
   exit 0
 fi
 
@@ -595,7 +656,7 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
   }
   ACCION="$MODO"; POR=""; [ -n "$SESION_CIERRE" ] && POR=',"por":"fin-de-sesion"'
   fallo_fw(){ # $1 = motivo · anota el intento y sale 2
-    anotar "\"host\":\"$HOST\",\"accion\":\"$ACCION\",\"regla\":\"${REGLA:-}\",\"sesion\":\"$SESION\"$POR,\"exit\":2"
+    anotar "\"host\":\"$HOST\",\"accion\":\"$ACCION\",\"regla\":\"${REGLA:-}\",\"sesion\":\"$SESION\"$POR$APROBACION,\"exit\":2"
     muere "$1"
   }
 
@@ -614,6 +675,8 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
     *) muere "«${HOST}» no es un Azure SQL (*.database.windows.net): la puerta sólo maneja el firewall de Azure SQL." ;;
   esac
   [[ "$CORTO" =~ ^[a-z0-9][a-z0-9-]*$ ]] || muere "el nombre corto del servidor («${CORTO}») no tiene forma de nombre de Azure SQL."
+  # abrir lo aprueba una persona antes de hacer nada; cerrar es la dirección segura y no pide cuadro (también al terminar la sesión)
+  [ "$MODO" = open-firewall ] && aprobar "Abrir el firewall de $HOST para esta máquina (se cierra solo al terminar la sesión)." open-firewall
 
   # el nombre de la regla: fijo por máquina, sin el nombre del equipo ni de la persona
   UUID="$("$RAIZ/usr/sbin/ioreg" -rd1 -c IOPlatformExpertDevice 2>/dev/null | sed -n 's/.*"IOPlatformUUID" = "\([^"]*\)".*/\1/p' | head -1)"
@@ -716,7 +779,7 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
   salida="$(regla_az "$OP" --start-ip-address "$IP" --end-ip-address "$IP" 2>&1)"; rc=$?
   [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): no sé si la regla quedó. Queda anotada: se cierra al terminar la sesión, o ya: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
   [ "$rc" = 0 ] || fallo_fw "az no pudo $([ "$OP" = create ] && echo crear || echo actualizar) la regla (código $rc): $(printf '%s' "$salida" | head -1). Queda anotada por si quedó a medias: se cierra al terminar la sesión."
-  anotar "\"host\":\"$HOST\",\"accion\":\"open-firewall\",\"regla\":\"$REGLA\",\"ip\":\"$IP\",\"sub\":\"$SUB\",\"rg\":\"$RG\",\"sesion\":\"$SESION\",\"exit\":0"
+  anotar "\"host\":\"$HOST\",\"accion\":\"open-firewall\",\"regla\":\"$REGLA\",\"ip\":\"$IP\",\"sub\":\"$SUB\",\"rg\":\"$RG\",\"sesion\":\"$SESION\"$APROBACION,\"exit\":0"
   echo "regla $REGLA abierta para $IP en $CORTO — se cierra sola al terminar esta sesión"
   exit 0
 fi
@@ -773,6 +836,12 @@ if [ "$MODO" = cargar-clave ]; then
 fi
 
 [ -f "$LLAVERO_PROPIO" ] || [ -n "$RAIZ" ] || dejar_command
+
+# 🔴 La persona aprueba ANTES de cualquier llamada a `security`: rechazado, la clave no se lee ni se mira su entrada.
+aprobar "Servidor: $HOST
+
+Sentencia:
+$SENTENCIA" consulta
 
 # (AC 21) la entrada tiene que confiar SÓLO en la herramienta del sistema. Si no se puede mirar, NO se
 # lee: «no pude verificar» no es «está bien» (revisores del Step 5, 2026-09-15).
@@ -862,5 +931,5 @@ FILAS="$(printf '%s\n' "$SALIDA" | wc -l | tr -d ' ')"
 printf '%s\n' "$SALIDA" | head -n "$MAX_FILAS"
 [ "$FILAS" -gt "$MAX_FILAS" ] && printf '… (cortado en %s de %s líneas; pedí más con --max-rows N)\n' "$MAX_FILAS" "$FILAS"
 printf 'rc=%s\n' "$RC"
-anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\",\"exit\":$RC,\"filas\":$FILAS"
+anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\"$APROBACION,\"exit\":$RC,\"filas\":$FILAS"
 exit "$RC"

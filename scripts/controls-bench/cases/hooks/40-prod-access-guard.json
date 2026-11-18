@@ -6094,6 +6094,202 @@
      "acme-sql"
     ]
    }
+    },
+    {
+     "id": "guion-guardado-que-llama-a-la-puerta-se-frena",
+     "type": "must-block",
+     "__doc": "Sonda p10: un guion que llama a la puerta. La regla de aprobación de Claude Code mira el texto del comando, y ahí no aparece la puerta: el freno mira adentro del guion. El banco arma el caso en una carpeta temporal, donde el freno ya leía los guiones, pero el análisis de siempre no buscaba la puerta adentro: el motivo exigido («llama a la puerta») sólo lo da la capa nueva. ROJO PREVIO: con el freno de antes, `bash scripts/consulta.sh` pasaba y consultaba producción sin ningún cuadro. (El guion que lee la clave, en cambio, el freno de antes ya lo frenaba en una carpeta temporal: ése se prueba fuera de ella, en prod-saved-scripts.test.sh.)",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "scripts/consulta.sh": "#!/usr/bin/env bash\n/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select 1'\n"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "bash scripts/consulta.sh"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "consulta\\.sh",
+       "llama a la puerta"
+      ]
+     }
+    },
+    {
+     "id": "npm-run-que-lee-la-clave-se-frena",
+     "type": "must-block",
+     "__doc": "Sonda p05: `npm run leer`, cuyo script lee la clave. El freno lee el script del package.json. ROJO PREVIO: pasaba, el texto del comando no nombra nada.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "package.json": "{\"name\": \"juguete\", \"scripts\": {\"leer\": \"/usr/bin/security find-generic-password -s tycon-prod-acme -w\", \"build\": \"echo armando\"}}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "npm run leer"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "package\\.json",
+       "leer",
+       "tycon-prod-acme"
+      ]
+     }
+    },
+    {
+     "id": "npm-run-que-no-nombra-nada-pasa",
+     "type": "must-not-block",
+     "__doc": "El reverso de la sonda p05: un script de npm que no nombra nada de producción pasa.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "package.json": "{\"name\": \"juguete\", \"scripts\": {\"leer\": \"/usr/bin/security find-generic-password -s tycon-prod-acme -w\", \"build\": \"echo armando\"}}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "npm run build"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
+    },
+    {
+     "id": "make-que-lee-la-clave-se-frena",
+     "type": "must-block",
+     "__doc": "Sonda p06: `make leer`, cuya receta lee la clave. El freno lee la receta del objetivo (y la de sus prerrequisitos). ROJO PREVIO: pasaba.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "Makefile": "leer:\n\t@/usr/bin/security find-generic-password -s tycon-prod-acme -w\n\ncompilar:\n\techo compilando\n"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "make leer"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "Makefile",
+       "leer",
+       "tycon-prod-acme"
+      ]
+     }
+    },
+    {
+     "id": "make-otro-objetivo-pasa",
+     "type": "must-not-block",
+     "__doc": "El reverso de la sonda p06: otro objetivo del mismo Makefile, que no nombra nada, pasa.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}",
+      "Makefile": "leer:\n\t@/usr/bin/security find-generic-password -s tycon-prod-acme -w\n\ncompilar:\n\techo compilando\n"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "make compilar"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
+    },
+    {
+     "id": "automatizar-la-pantalla-se-frena",
+     "type": "must-block",
+     "__doc": "El cuadro de producción lo contesta una persona: un `osascript` con System Events que aprieta una tecla podría contestarlo. ROJO PREVIO: pasaba.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "osascript -e 'tell application \"System Events\" to keystroke return'"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "pantalla"
+      ]
+     }
+    },
+    {
+     "id": "cliclick-se-frena",
+     "type": "must-block",
+     "__doc": "Lo mismo con `cliclick`, que hace clic en un punto de la pantalla. ROJO PREVIO: pasaba.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cliclick c:500,400"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "pantalla"
+      ]
+     }
+    },
+    {
+     "id": "osascript-display-notification-pasa",
+     "type": "must-not-block",
+     "__doc": "El reverso: un `osascript` que sólo muestra una notificación no aprieta nada y pasa.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "osascript -e 'display notification \"listo\"'"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
     }
    ]
   }
