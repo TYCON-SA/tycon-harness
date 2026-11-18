@@ -875,6 +875,9 @@ const FORMAS_EXTRA = [
     forma: /^PR abiertos hace más de \d+ días: (\d+( \(\+\d+ sin fecha legible\))?|\? \((no se pudo consultar|Azure DevOps apagado|GitHub todavía no se lee)\))$/ },
   { inicio: /^Main sin su CI\b/, sin: (l) => `${(/^Main sin su CI \(\d+ h\)/.exec(l) || ['Main sin su CI'])[0]}: ? (no se pudo consultar)`,
     forma: /^Main sin su CI \(\d+ h\): GitHub (\d+|\?) · Azure (\d+|\?) · reglas (al día|cambiaron|\?)$/ },
+  // el inventario de adopción del portón de CI (scripts/nightly/gate-adoption/gate-adoption.js): sólo números
+  { inicio: /^Portón de CI \(repos\)/, sin: () => 'Portón de CI (repos): ?',
+    forma: /^Portón de CI \(repos\): (requerido \d+ · con escape \d+ · pipeline sin política \d+ · sin portón \d+ · no aplica \d+ · no medido \d+|\?)$/ },
 ];
 
 /**
@@ -1744,5 +1747,5 @@ if (require.main === module) {
   try { codigo = main(process.argv.slice(2)); } catch (e) { console.error(`🔴 resumen-diario: error inesperado del guion: ${recortar((e && e.message) || String(e), 200)}`); codigo = 1; }
   process.exit(codigo);
 }
-module.exports = { armar, texto, identidad, entregado, comparar, rubrosDependencias, rubrosVigilante, parseArgs, TOPE, TOPE_MENSAJE, NOMBRES_CAUSA,
+module.exports = { armar, texto, identidad, entregado, comparar, rubrosDependencias, rubrosVigilante, parseArgs, seccionExtra, TOPE, TOPE_MENSAJE, NOMBRES_CAUSA,
   lineaDe, lineaEjecuciones, lineaFichas, lineasFichasDelClon, lineasCerrados, fichasDeLaConstancia };

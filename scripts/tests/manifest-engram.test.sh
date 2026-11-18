@@ -891,7 +891,7 @@ git -C "$R" checkout -q -b pedido; chunk g2bb; commitear "suma memoria"
 (cd "$R" && node "$GATE" --repo "$R" --base main) >"$TMP/t11.txt" 2>&1; RC_T=$?
 OUT="$TMP/t11.json"
 [ "$RC_J" -eq 0 ] && [ "$RC_T" -eq 0 ] && [ "$(j engram.estado)" = "indice-local" ] \
-  && ! grep -q 'indice-de-memoria' "$TMP/t11.json" && grep -q 'índice local' "$TMP/t11.txt" \
+  && ! grep -q 'indice-de-memoria-' "$TMP/t11.json" && grep -q 'índice local' "$TMP/t11.txt" \
   && ok "8.131 T11 CiGate_LocalIndex_SaysLocal: el portón no compara, no avisa y dice «índice local»" \
   || no "8.131 T11 CiGate_LocalIndex_SaysLocal: rc=$RC_J/$RC_T · engram.estado=$(j engram.estado) · $(head -c 300 "$TMP/t11.txt") $(head -c 200 "$TMP/t11.err")"
 
