@@ -670,6 +670,7 @@ body.demo .side{top:calc(var(--barra) + 36px);height:calc(100vh - var(--barra) -
 .a-acciones{display:flex;gap:8px}
 .a-elegir{padding:6px 14px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);font:13px var(--sans);cursor:pointer;min-height:36px}
 .a-elegir:hover{background:var(--wash)}
+.a-elegir.recomendada{border-color:var(--ink);border-width:2px}
 .a-elegir[aria-pressed="true"]{background:var(--ink);color:var(--page);border-color:var(--ink)}
 .a-elegir[disabled]{opacity:.45;cursor:not-allowed}
 .a-elegir:focus-visible,.a-barra .btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
@@ -685,6 +686,13 @@ body.demo .side{top:calc(var(--barra) + 36px);height:calc(100vh - var(--barra) -
 .a-barra .btn[disabled]{opacity:.45;cursor:not-allowed}
 .a-cuenta{font-weight:600;font-size:13.5px;min-width:72px}
 .a-cuenta:empty{display:none}
+.a-recomienda{margin:8px 0 0;font-size:13.5px;color:var(--ink-2)}
+.a-recomienda b{color:var(--ink)}
+.a-casilla{display:inline-flex;gap:6px;align-items:center;margin-top:8px;color:var(--ink-2);min-height:24px;cursor:pointer}
+.a-grupo{display:flex;flex-wrap:wrap;flex-basis:100%;gap:8px 10px;align-items:center;color:var(--ink-2);font-size:13.5px}
+.a-grupo label{display:flex;flex:1 1 320px;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.a-motivo-grupo{flex:1 1 200px;min-height:34px;padding:6px 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--page);color:var(--ink);font:13.5px var(--sans)}
+.a-grupo-cuenta:empty{display:none}
 .a-estado{flex-basis:100%;color:var(--ink-2);font-size:13px}
 .a-estado:empty{display:none}
 @media (max-width:640px){

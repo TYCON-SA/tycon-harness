@@ -7,9 +7,11 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *
  * Cada máquina graba lo que hace el agente (integrations/instincts/scripts/instinct-observe.js) y sube un día por vez
  * al buzón de la organización. Esta pieza la corre la noche de la organización (pipelines/operations/instinct-proposals.yml):
- * baja esos días, cuenta sin modelo lo que se repite en el equipo, le pide al modelo de la noche que escriba cada
- * propuesta, y deja un archivo por propuesta en `inbox/instincts/propuestas/<huella>.json` del repo de operaciones, que
- * se decide en la pestaña Aprendizajes del sitio.
+ * baja esos días, cuenta sin modelo lo que se repite en el equipo, deja afuera el ruido, le pide al modelo de la noche
+ * que escriba cada propuesta, y deja un archivo por propuesta en `inbox/instincts/propuestas/<huella>.json` del repo de
+ * operaciones, que se decide en la pestaña Aprendizajes del sitio. Lo que recomienda hacer con cada pendiente va aparte,
+ * en `.dashboard/instincts/recomendaciones.json`: recomendar no reescribe ninguna propuesta, así no choca con un pull
+ * request de decisiones abierto sobre ella.
  *
  * 🔴 «NO PUDE» NUNCA ES «NO HAY». Sin poder leer el buzón, sin ningún día bajado o con el perfil ilegible: no se llama
  *    al modelo, no se escribe ninguna propuesta, el informe del día dice `no_medido` con su motivo (de una lista
@@ -18,10 +20,12 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *    Las máquinas se cuentan; lo que escribe el modelo y el patrón pasan por el saneado de la grabadora.
  * 🔴 LO DECIDIDO NO SE TOCA. Una propuesta con archivo no vuelve a pedirse; la noche sólo completa una `pendiente` que
  *    salió sin redacción. Una aprobada, una rechazada o una descartada quedan byte por byte.
- * 🔴 SIN EL MODELO DE LA NOCHE, NINGÚN OTRO. Si `resolveNightly` no está listo, las propuestas salen sólo con los números.
+ * 🔴 LO PENDIENTE NO SE DESCARTA SOLO. Lo decide una persona: la noche le recomienda rechazarlo, con su motivo.
+ * 🔴 SIN EL MODELO DE LA NOCHE, NINGÚN OTRO. Si `resolveNightly` no está listo, lo nuevo espera a otra noche, sin archivo.
  *
- * Topes: el modelo escribe como mucho 20 propuestas por noche (en tandas de 15, el tope de `buildPrompt`); la noche
- * escribe como mucho 50 propuestas nuevas, y las que no entran esperan a la noche siguiente.
+ * Topes: el modelo escribe como mucho 20 propuestas por noche, primero las pendientes sin redacción y después las nuevas
+ * (en tandas de 15, el tope de `buildPrompt`), y recomienda como mucho 30. Una propuesta nueva nace redactada o descartada
+ * con su motivo; las demás esperan, sin archivo, a la noche siguiente.
  *
  * Uso: node scripts/instincts/instinct-nightly.js --profile <team-profile.json> --team-repos <team-repos.json>
  *        --mailbox <carpeta del espejo> --operations <árbol de operaciones> --today <AAAA-MM-DD> [--no-push] [--json]
@@ -45,11 +49,13 @@ const { sanitize } = require(path.join(ROOT, 'integrations', 'instincts', 'scrip
 const VENTANA_DIAS = 60;          // la misma que dice buildPrompt: «in last 60d»
 const DIAS_SIN_REPORTAR = 7;
 const TOPE_MODELO = 20;
-const TOPE_NUEVAS = 50;
+const TOPE_RECOMENDAR = 30;
 const TANDA = 15;                 // el tope de buildPrompt
 const MIN_CONFIANZA = 0.85;
 const PROPUESTAS = 'inbox/instincts/propuestas';
 const INFORMES = '.dashboard/instincts';
+const RECOMENDACIONES = `${INFORMES}/recomendaciones.json`;
+const PROYECTOS_CON_REGLAS = 'inbox/instincts/proyectos-con-reglas.json';
 const RUTAS = [PROPUESTAS, INFORMES];
 const DIA_ARCHIVO = /^(\d{4}-\d{2}-\d{2})\.jsonl\.gz$/;
 // los estados de la bajada (download-runs.js) con que la noche sigue, y los que la cortan
@@ -60,6 +66,41 @@ const BAJADA_A_MEDIAS = new Set(['sin_red', 'sin_permiso_a_mitad', 'parcial', 's
 const TOPE_BAJADA_MS = 25 * 60 * 1000;
 const MOTIVOS = Object.freeze(['perfil_ilegible', 'sin_dias', 'propuestas_ilegibles', 'sync_fallo',
   'sin_az', 'sin_sesion', 'sin_permiso', 'sin_contenedor', 'servicio_fallo', 'config_rota', 'apagado', 'bajada_fallo']);
+// por qué la noche recomienda rechazar, por regla: las de ruido y los motivos con que el modelo no dejó una regla útil.
+// El sitio muestra su propio texto de cada clave, en el idioma de quien mira
+const POR_QUE_REGLA = Object.freeze({
+  conteo_sin_leccion: 'Sólo cuenta cuántas veces se usó una herramienta: no deja ninguna lección.',
+  carpeta_de_trabajo: 'Viene de una carpeta de trabajo, de una temporal o del estado del arnés: no le sirve al equipo.',
+  ruta_de_una_maquina: 'Depende de una ruta de una sola máquina.',
+  un_solo_proyecto: 'Es una regla de un solo proyecto, y ese proyecto no pidió sus reglas.',
+  sin_propuesta: 'El modelo de la noche no encontró una regla que valga la pena.',
+  confianza: 'El modelo de la noche no confió lo suficiente en esta regla.',
+  ya_decidida: 'Repite una regla que ya se decidió.',
+  cubierta: 'Ya la cubre algo que existe en el arnés o en lo decidido.',
+});
+const ACCION_RECOMENDADA = Object.freeze({ approve: 'aprobar', reject: 'rechazar' });
+// lo que marca un patrón como ruido sólo cuenta al principio de una palabra o de un segmento de ruta
+const INICIO_DE_PALABRA = '(?:^|[\\s"\'=])';
+const INICIO_DE_SEGMENTO = '(?:^|[\\\\/\\s"\'=])';
+let carpetasDeTrabajo = null;
+/** Los patrones de carpeta de trabajo. El nombre de la carpeta de Claude Code lo sabe tycon-home; se pide recién al usarlo: el sitio carga este archivo y no llama al filtro. */
+function patronesDeCarpeta() {
+  if (carpetasDeTrabajo) return carpetasDeTrabajo;
+  const { claudeDir } = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'));
+  const deClaude = path.basename(claudeDir()).replace(/\./g, '\\.');
+  carpetasDeTrabajo = [
+    /--wt-/i,
+    new RegExp(`${INICIO_DE_SEGMENTO}${deClaude}[\\\\/]worktrees[\\\\/]`, 'i'),
+    new RegExp(`${INICIO_DE_PALABRA}(?:/tmp/|/private/tmp/|/var/folders/|/private/var/folders/|\\$TMPDIR\\b)`, 'i'),
+    new RegExp(`${INICIO_DE_SEGMENTO}AppData[\\\\/]Local[\\\\/]Temp(?:[\\\\/\\s]|$)`, 'i'),
+    new RegExp(`${INICIO_DE_SEGMENTO}\\.tycon[\\\\/]state[\\\\/]`, 'i'),
+    new RegExp(`${INICIO_DE_SEGMENTO}\\.advisors[\\\\/]`, 'i'),
+  ];
+  return carpetasDeTrabajo;
+}
+// distingue mayúsculas a propósito, y a `/c/` le pide un segmento de verdad: una ruta de API (`/users/42/`) o una dirección
+// de awk o sed (`'/a/ {`, `'/x/d'`) no son la ruta de una máquina
+const RUTA_DE_UNA_MAQUINA = new RegExp(`${INICIO_DE_PALABRA}(?:[a-zA-Z]:[\\\\/](?![\\\\/])|/[a-zA-Z]/(?:[^/\\s"']{2}|$)|/(?:Users|home)/[^/\\s"']+/)`);
 
 const log = (m) => process.stderr.write(`[instinct-nightly] ${m}\n`);
 const diasEntre = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 864e5);
@@ -72,6 +113,133 @@ function huella(clave) {
 // la clave de un patrón, sin distinguir mayúsculas: es la misma de la que sale su huella, así el mismo repo o resumen
 // escrito con otra capitalización en otra máquina es un patrón y no dos que se pisan en el mismo archivo
 const claveDe = (l) => `${l.repo}|${l.tool}|${String(l.summary || '').slice(0, 60).trim()}`.toLowerCase();
+
+/**
+ * Por qué un patrón es ruido, o null. Mira el repo y los 60 caracteres del resumen que forman la clave, ya saneados: es lo
+ * que guarda la propuesta (`repo`, `patron`), así un candidato y una propuesta se juzgan igual.
+ */
+function motivoDeRuido({ repo, summary }) {
+  const resumen = String(summary || '').slice(0, 60).trim();
+  if (!resumen) return 'conteo_sin_leccion';
+  if (patronesDeCarpeta().some((re) => re.test(String(repo || '')) || re.test(resumen))) return 'carpeta_de_trabajo';
+  return RUTA_DE_UNA_MAQUINA.test(resumen) ? 'ruta_de_una_maquina' : null;
+}
+
+/** El repo se guarda como ruta relativa: un proyecto se reconoce por su último segmento, sin el sufijo de una copia de trabajo. */
+const nombreDeProyecto = (repo) => (String(repo || '').trim().split(/[\\/]/).filter(Boolean).pop() || '').toLowerCase().replace(/--wt-.*$/, '');
+
+/**
+ * Los proyectos que pidieron sus propias reglas: `{ nombres, claves }`. Sin el archivo, ninguno. Un archivo que no se
+ * lee da `null` en los dos: no se sabe quién las pidió, y esa noche la regla no se aplica.
+ */
+function leerProyectosConReglas(ops) {
+  let texto;
+  try { texto = fs.readFileSync(path.join(ops, PROYECTOS_CON_REGLAS), 'utf8'); } catch (e) {
+    if (e && e.code === 'ENOENT') return { nombres: [], claves: new Set() };
+    log('no se pudo leer la lista de proyectos con reglas: esta noche no se aplica esa regla');
+    return { nombres: null, claves: null };
+  }
+  let lista = null;
+  try { lista = JSON.parse(texto).proyectos; } catch (_) { lista = null; }
+  if (!Array.isArray(lista) || !lista.every((x) => typeof x === 'string' && x.trim())) {
+    log('la lista de proyectos con reglas no tiene la forma esperada: esta noche no se aplica esa regla');
+    return { nombres: null, claves: null };
+  }
+  return { nombres: lista, claves: new Set(lista.map(nombreDeProyecto)) };
+}
+
+const esDeOtroProyecto = (redaccion, repo, proyectos) => Boolean(proyectos.claves && redaccion)
+  && String(redaccion.scope || '').trim().toLowerCase() === 'project' && !proyectos.claves.has(nombreDeProyecto(repo));
+
+/** La regla por la que la noche recomienda rechazar una pendiente, o null. El orden es el de la historia: la primera que cae. */
+function reglaDePendiente(p, proyectos) {
+  return motivoDeRuido({ repo: p.repo, summary: p.patron })
+    || (esDeOtroProyecto(p.redaccion, p.repo, proyectos) ? 'un_solo_proyecto' : null)
+    || (p.rechazo_sugerido && Object.hasOwn(POR_QUE_REGLA, p.rechazo_sugerido.motivo) ? p.rechazo_sugerido.motivo : null);
+}
+
+/** El pedido de recomendación: una llamada aparte de la que redacta, porque pedirle a quien propone que se censure lo apaga. */
+function promptDeRecomendacion(propuestas) {
+  const bloques = propuestas.map((p, i) => [`### P${i + 1}`, `herramienta: ${p.herramienta}`, `patrón: ${p.patron}`, `repo: ${p.repo}`,
+    `veces: ${p.veces}`, `máquinas: ${p.maquinas}`, `cuándo aplica: ${p.redaccion.trigger}`, `qué hacer: ${p.redaccion.action}`,
+    `alcance: ${p.redaccion.scope}`, `por qué: ${p.redaccion.reasoning}`].join('\n')).join('\n\n');
+  return `Sos quien revisa cada noche las propuestas de aprendizajes del equipo. Cada una es una regla que llegaría a todas las máquinas si una persona la aprueba.
+
+Para cada propuesta, recomendá aprobarla si le sirve a cualquiera del equipo y dice algo concreto que no es obvio; recomendá rechazarla si es trivial, si depende de un caso particular o si no se entiende qué pide.
+
+${bloques}
+
+Contestá SÓLO con una lista YAML, una entrada por propuesta, sin nada antes ni después:
+
+- p: <número de la propuesta>
+  recommend: approve | reject
+  why: <una sola frase en castellano, sin rutas, enlaces ni comillas>`;
+}
+
+/** La respuesta del pedido de recomendación: número de propuesta → `{ recommend, why }`, renglón por renglón. */
+function leerRecomendaciones(texto) {
+  const out = new Map();
+  let actual = null;
+  for (const linea of String(texto || '').split(/\r?\n/)) {
+    const p = linea.match(/^\s*-\s+p:\s*["']?P?(\d+)/i);
+    if (p) { actual = { recommend: '', why: '' }; out.set(Number(p[1]), actual); continue; }
+    const m = actual && linea.match(/^\s+(recommend|why):\s*(.*)$/);
+    if (m) actual[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
+  }
+  return out;
+}
+
+/** Lo que la noche anterior recomendó, por huella. Si no se lee, se dice y se vuelve a pedir, dentro del tope. */
+function leerRecomendacionesAnteriores(ops) {
+  try {
+    const d = JSON.parse(fs.readFileSync(path.join(ops, RECOMENDACIONES), 'utf8'));
+    return d && d.por_huella && typeof d.por_huella === 'object' ? d.por_huella : {};
+  } catch (e) {
+    if (!e || e.code !== 'ENOENT') log('las recomendaciones de la noche anterior no se pudieron leer: se vuelven a pedir');
+    return {};
+  }
+}
+
+/**
+ * La entrada de cada pendiente: `{ recomendacion, sin_recomendacion }`. Las reglas se recalculan siempre y no gastan
+ * llamadas; una recomendación del modelo vale mientras la redacción sea la misma (`de`).
+ */
+async function recomendarPendientes({ pendientes, anteriores, proyectos, noche, listo, sinModelo, llamar, env, today, limpio, sumar, fallo }) {
+  // el filtro de frases vive con las fichas de la noche: se carga recién acá, para que el sitio no lo necesite
+  const { razonSegura } = require(path.join(ROOT, 'scripts', 'nightly', 'findings', 'cycle.js'));
+  const entradas = {};
+  const sin = (x, motivo) => { entradas[x.huella] = { recomendacion: null, sin_recomendacion: motivo }; };
+  const cola = [];
+  for (const [huella, { p }] of pendientes) {
+    const regla = reglaDePendiente(p, proyectos);
+    if (regla) { entradas[huella] = { recomendacion: { accion: 'rechazar', por: 'regla', regla, porque: POR_QUE_REGLA[regla] }, sin_recomendacion: null }; continue; }
+    if (!p.redaccion || !p.redaccion.trigger) { sin({ huella }, 'sin_redaccion'); continue; }
+    const de = O.instinctHash(String(p.redaccion.trigger), String(p.redaccion.action || ''));
+    const previa = anteriores[huella] && anteriores[huella].recomendacion;
+    if (previa && previa.por === 'modelo' && previa.de === de) { entradas[huella] = { recomendacion: previa, sin_recomendacion: null }; continue; }
+    cola.push({ huella, p, de });
+  }
+  cola.sort((a, b) => ((b.p.maquinas || 0) - (a.p.maquinas || 0)) || ((b.p.veces || 0) - (a.p.veces || 0)) || (a.huella < b.huella ? -1 : 1));
+  if (!listo) cola.forEach((x) => sin(x, sinModelo));
+  const entran = listo ? cola.slice(0, TOPE_RECOMENDAR) : [];
+  if (listo) cola.slice(TOPE_RECOMENDAR).forEach((x) => sin(x, 'tope'));
+  for (let i = 0; i < entran.length; i += TANDA) {
+    const tanda = entran.slice(i, i + TANDA);
+    const r = await llamar({ prompt: promptDeRecomendacion(tanda.map((x) => x.p)), nightly: noche, env });
+    // con el modelo caído no se le sigue pidiendo esa noche
+    if (!r || !r.ok) { fallo((r && r.fallo) || 'red'); entran.slice(i).forEach((x) => sin(x, 'fallo')); break; }
+    sumar(r.tokens);
+    const respuestas = leerRecomendaciones(r.texto);
+    if (!respuestas.size) fallo('respuesta_ilegible');
+    tanda.forEach((x, j) => {
+      const v = respuestas.get(j + 1);
+      const accion = v && Object.hasOwn(ACCION_RECOMENDADA, v.recommend) && ACCION_RECOMENDADA[v.recommend];
+      if (!accion || !razonSegura(v.why)) { sin(x, 'respuesta_ilegible'); return; }
+      entradas[x.huella] = { recomendacion: { accion, por: 'modelo', modelo: limpio(noche.model), porque: limpio(v.why), el: today, de: x.de }, sin_recomendacion: null };
+    });
+  }
+  return Object.fromEntries(Object.keys(entradas).sort().map((h) => [h, entradas[h]]));
+}
 
 /**
  * Lo que se repite en el equipo. `lineas`: `{ maquina, dia, repo, tool, summary, ts, status }`, con la máquina ya
@@ -206,8 +374,8 @@ function archivoDecidido(propuesta, { estado, por, el, texto = null, motivo = nu
 
 function informeVacio(fecha) {
   return { fecha, estado: null, motivo: null, parcial: false, uniones: null, maquinas: null, maquinas_sin_reportar: null,
-    candidatos: null, ya_propuestas: null, nuevas: null, en_espera: null, con_redaccion: null, sin_redaccion: null, sin_completar: null,
-    descartadas: null, pendientes_total: null, ilegibles: null, dias_ilegibles: null, sin_repo: null, propuestas_ilegibles: null,
+    candidatos: null, ya_propuestas: null, nuevas: null, en_espera: null, en_espera_por: null, con_redaccion: null, sin_redaccion: null, sin_completar: null,
+    descartadas: null, filtradas: null, recomendadas: null, sin_recomendacion: null, pendientes_total: null, ilegibles: null, dias_ilegibles: null, sin_repo: null, propuestas_ilegibles: null,
     modelo: null, revision: null, tokens: null };
 }
 
@@ -283,18 +451,26 @@ async function correrNoche(opts) {
   // una propuesta que no se lee bloquea su huella: se cuenta, para que alguien la mire
   informe.propuestas_ilegibles = [...existentes.values()].filter((x) => x.p.estado === 'ilegible').length;
 
+  const limpio = (t) => (t == null ? null : sanitize(String(t), home));
+  const proyectos = leerProyectosConReglas(ops);
+  const filtradas = { conteo_sin_leccion: 0, carpeta_de_trabajo: 0, ruta_de_una_maquina: 0, un_solo_proyecto: proyectos.claves ? 0 : null };
   const candidatos = findTeamCandidates(espejo.lineas);
   const nuevos = [];
-  const aCompletar = new Set();
+  const aCompletar = [];
   let yaPropuestas = 0;
   for (const c of candidatos) {
     const e = existentes.get(c.huella);
-    if (!e) { nuevos.push(c); continue; }
+    // se juzga lo que guardaría la propuesta: lo filtrado no ocupa lugar en el tope ni queda en espera
+    const ruido = motivoDeRuido({ repo: limpio(c.repo), summary: limpio(c.summary) });
+    if (!e) {
+      if (ruido) filtradas[ruido]++; else nuevos.push(c);
+      continue;
+    }
     yaPropuestas++;
-    if (e.p.estado === 'pendiente' && e.p.redaccion == null) aCompletar.add(c.huella);
+    if (e.p.estado === 'pendiente' && e.p.redaccion == null && !ruido && !e.p.rechazo_sugerido) aCompletar.push(c);
   }
-  const entran = new Set(nuevos.slice(0, TOPE_NUEVAS).map((c) => c.huella));
-  const elegibles = candidatos.filter((c) => entran.has(c.huella) || aCompletar.has(c.huella));
+  // primero lo que ya espera una decisión sin redacción, después lo nuevo
+  const elegibles = [...aCompletar, ...nuevos];
 
   // el modelo de la noche, o ninguno
   let noche;
@@ -324,7 +500,7 @@ async function correrNoche(opts) {
   const fallo = (codigo) => { fallos[codigo] = (fallos[codigo] || 0) + 1; };
   for (let i = 0; i < aRedactar.length; i += TANDA) {
     const tanda = aRedactar.slice(i, i + TANDA);
-    const r = await llamar({ prompt: O.buildPrompt(tanda.map(paraElModelo), espejo.lineas.length), nightly: noche, env });
+    const r = await llamar({ prompt: O.buildPrompt(tanda.map(paraElModelo), espejo.lineas.length, { proyectosConReglas: proyectos.nombres || undefined }), nightly: noche, env });
     if (!r || !r.ok) { fallo((r && r.fallo) || 'red'); for (const c of tanda) resultado.set(c.huella, { tipo: 'sin', causa: 'fallo' }); continue; }
     sumar(r.tokens);
     const texto = String(r.texto || '');
@@ -377,48 +553,73 @@ async function correrNoche(opts) {
     }
   }
 
-  const limpio = (t) => (t == null ? null : sanitize(String(t), home));
   // todo lo que escribe el modelo pasa por el saneado, también los campos cortos
   const redaccionDe = (inst) => ({
     trigger: limpio(inst.trigger), action: limpio(inst.action), domain: limpio(inst.domain), scope: limpio(inst.scope),
     confidence: parseFloat(inst.confidence), reasoning: limpio(inst.reasoning || ''), tycon_artifact_suggestion: limpio(inst.tycon_artifact_suggestion),
   });
-  // «sin redactar» habla de las propuestas nuevas de esta noche; las pendientes viejas que no se pudieron completar se
-  // cuentan aparte (el resumen de la mañana dice «N nuevas (M sin redactar)», y M nunca puede pasar de N)
+  // una propuesta nueva nace redactada o descartada con su motivo: `sin_redaccion` queda en 0 y lo que no se pudo redactar
+  // espera sin archivo, contado por causa. Las pendientes viejas que no se pudieron completar se cuentan aparte
   const sinRedaccion = { tope: 0, fallo: 0, sin_modelo: 0, sin_llave: 0 };
   const sinCompletar = { tope: 0, fallo: 0, sin_modelo: 0, sin_llave: 0 };
+  const enEsperaPor = { tope: 0, fallo: 0, sin_modelo: 0, sin_llave: 0 };
+  let nuevasEscritas = 0;
   let conRedaccion = 0;
   let descartadas = 0;
   for (const c of elegibles) {
-    const r = resultado.get(c.huella) || { tipo: 'sin', causa: sinModelo || 'tope' };
+    let r = resultado.get(c.huella) || { tipo: 'sin', causa: sinModelo || 'tope' };
     const previa = existentes.get(c.huella);
     if (r.tipo === 'sin') {
-      (previa ? sinCompletar : sinRedaccion)[r.causa]++;
-      if (previa) continue;   // una pendiente sin redacción sigue como estaba
+      (previa ? sinCompletar : enEsperaPor)[r.causa]++;
+      continue;   // una pendiente sin redacción sigue como estaba, y una nueva espera a otra noche
     }
+    if (!previa && r.tipo === 'redactada' && esDeOtroProyecto(r.inst, c.repo, proyectos)) {
+      r = { tipo: 'descartada', motivo: 'un_solo_proyecto', inst: r.inst };
+      filtradas.un_solo_proyecto++;
+    }
+    // sólo una propuesta nueva nace descartada: lo que ya estaba pendiente lo decide una persona
+    const descartada = r.tipo === 'descartada' && !previa;
     const p = {
-      huella: c.huella, estado: r.tipo === 'descartada' ? 'descartada' : 'pendiente', herramienta: c.tool, repo: limpio(c.repo),
+      huella: c.huella, estado: descartada ? 'descartada' : 'pendiente', herramienta: c.tool, repo: limpio(c.repo),
       patron: limpio(c.summary), veces: c.veces, maquinas: c.maquinas, desde: c.desde, hasta: c.hasta,
       propuesta_el: previa && previa.p.propuesta_el ? previa.p.propuesta_el : today,
       redaccion: r.inst ? redaccionDe(r.inst) : null,
-      sin_redaccion: r.tipo === 'sin' ? r.causa : null,
-      modelo: r.tipo === 'sin' ? null : { provider: noche.provider, model: noche.model },
+      sin_redaccion: null,
+      modelo: { provider: noche.provider, model: noche.model },
       decision: null,
     };
-    if (r.tipo === 'descartada') {
+    if (descartada) {
       p.motivo_corto = r.motivo;
       if (r.cita) p.cita = r.cita;
       if (r.hash) p.hash_coincide = r.hash;
       descartadas++;
-    } else if (r.tipo === 'redactada') conRedaccion++;
+    } else if (r.tipo === 'descartada') p.rechazo_sugerido = { motivo: r.motivo, cita: r.cita || null };
+    else conRedaccion++;
+    if (!previa) nuevasEscritas++;
     escribirJson(path.join(dirPropuestas, `${c.huella}.json`), p);
   }
 
+  // un proyecto que entró a la lista recupera lo que la noche le había descartado por esa regla
+  for (const { p, archivo } of existentes.values()) {
+    if (p.estado !== 'descartada' || p.motivo_corto !== 'un_solo_proyecto' || !proyectos.claves || !proyectos.claves.has(nombreDeProyecto(p.repo))) continue;
+    const { motivo_corto: _motivo, ...resto } = p;
+    escribirJson(archivo, { ...resto, estado: 'pendiente' });
+  }
+
   const despues = leerPropuestas(dirPropuestas) || new Map();
+  const pendientes = [...despues].filter(([, x]) => x.p.estado === 'pendiente');
+  const porHuella = await recomendarPendientes({ pendientes, anteriores: leerRecomendacionesAnteriores(ops), proyectos, noche, listo, sinModelo, llamar, env, today, limpio, sumar, fallo });
+  escribirJson(path.join(ops, RECOMENDACIONES), { fecha: today, por_huella: porHuella });
+  const recomendadas = { regla: 0, modelo: 0 };
+  const sinRecomendacion = { fallo: 0, sin_modelo: 0, sin_llave: 0, tope: 0, sin_redaccion: 0, respuesta_ilegible: 0 };
+  for (const e of Object.values(porHuella)) {
+    if (e.recomendacion) recomendadas[e.recomendacion.por]++; else sinRecomendacion[e.sin_recomendacion]++;
+  }
   Object.assign(informe, {
-    estado: 'medido', motivo: null, candidatos: candidatos.length, ya_propuestas: yaPropuestas, nuevas: entran.size,
-    en_espera: nuevos.length - entran.size, con_redaccion: conRedaccion, sin_redaccion: sinRedaccion, sin_completar: sinCompletar, descartadas,
-    pendientes_total: [...despues.values()].filter((x) => x.p.estado === 'pendiente').length,
+    estado: 'medido', motivo: null, candidatos: candidatos.length, ya_propuestas: yaPropuestas, nuevas: nuevasEscritas,
+    en_espera: Object.values(enEsperaPor).reduce((a, b) => a + b, 0), en_espera_por: enEsperaPor, con_redaccion: conRedaccion,
+    sin_redaccion: sinRedaccion, sin_completar: sinCompletar, descartadas, filtradas, recomendadas, sin_recomendacion: sinRecomendacion,
+    pendientes_total: pendientes.length,
     tokens: tokens.informados ? { entrada: tokens.entrada, salida: tokens.salida } : null,
   });
   if (listo) informe.modelo.fallos = fallos;
@@ -439,7 +640,7 @@ function parseArgs(argv) {
   return a;
 }
 
-module.exports = { correrNoche, findTeamCandidates, huella, leerEspejo, archivoDecidido, MOTIVOS, RUTAS, PROPUESTAS };
+module.exports = { correrNoche, findTeamCandidates, huella, leerEspejo, archivoDecidido, motivoDeRuido, MOTIVOS, RUTAS, PROPUESTAS, RECOMENDACIONES };
 
 if (require.main === module) {
   const a = parseArgs(process.argv.slice(2));

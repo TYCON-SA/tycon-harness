@@ -65,12 +65,15 @@ function perfil(dir, prendida = true) {
 const listo = () => ({ ok: true, status: 'ok', provider: 'ollama', model: 'gemma4:31b-cloud', secret: { env: 'OLLAMA_API_KEY', present: true } });
 const bajado = () => async () => ({ codigo: 0, res: { estado: 'bajado', completo: true } });
 
+const ES_RECOMENDACION = /^Sos quien revisa cada noche/;
+
 /**
  * El modelo de prueba: cuenta sus llamadas y contesta una propuesta por candidato del prompt (o lo que diga `responder`).
- * La revisión contesta «none» para todas, salvo `cubre`.
+ * La revisión contesta «none» para todas, salvo `cubre`. El pedido de recomendación contesta «approve» para todas, o lo
+ * que diga `recomendar(i)`; `recomendacionCruda` reemplaza la respuesta entera.
  */
-function modelo({ responder, cubre = {}, caido = false } = {}) {
-  const m = { propuestas: [], revisiones: [] };
+function modelo({ responder, cubre = {}, caido = false, recomendar, recomendacionCruda } = {}) {
+  const m = { propuestas: [], revisiones: [], recomendaciones: [] };
   m.llamar = async ({ prompt }) => {
     if (caido) return { ok: false, fallo: 'http_500' };
     if (/^You are checking proposed/.test(prompt)) {
@@ -79,22 +82,32 @@ function modelo({ responder, cubre = {}, caido = false } = {}) {
       const ys = Array.from({ length: n }, (_, i) => `- p: ${i + 1}\n  covered_by: ${cubre[i + 1] || 'none'}\n  why: "x"`);
       return { ok: true, texto: ys.join('\n'), tokens: { entrada: 100, salida: 10 } };
     }
+    if (ES_RECOMENDACION.test(prompt)) {
+      m.recomendaciones.push(prompt);
+      if (recomendacionCruda !== undefined) return { ok: true, texto: recomendacionCruda, tokens: { entrada: 50, salida: 5 } };
+      const n = (prompt.match(/^### P\d+$/gm) || []).length;
+      const ys = Array.from({ length: n }, (_, i) => {
+        const r = { recommend: 'approve', why: 'Le sirve a todo el equipo', ...(recomendar ? recomendar(i + 1) : {}) };
+        return `- p: ${i + 1}\n  recommend: ${r.recommend}\n  why: "${r.why}"`;
+      });
+      return { ok: true, texto: ys.join('\n'), tokens: { entrada: 50, salida: 5 } };
+    }
     m.propuestas.push(prompt);
     const n = (prompt.match(/^### Candidate \d+ /gm) || []).length;
     const items = responder ? responder(n, m.propuestas.length) : Array.from({ length: n }, (_, i) => ({ i: i + 1 }));
-    const ys = items.map((x) => `- trigger: "${x.trigger || `cuando ${m.propuestas.length}-${x.i}`}"\n  action: "${x.action || `hacer ${m.propuestas.length}-${x.i}`}"\n  confidence: ${x.conf === undefined ? 0.9 : x.conf}\n  domain: "testing"\n  scope: project\n  candidate_index: ${x.idx === undefined ? x.i : x.idx}\n  tycon_artifact_suggestion: null\n  reasoning: "${x.reasoning || 'porque se repite'}"`);
+    const ys = items.map((x) => `- trigger: "${x.trigger || `cuando ${m.propuestas.length}-${x.i}`}"\n  action: "${x.action || `hacer ${m.propuestas.length}-${x.i}`}"\n  confidence: ${x.conf === undefined ? 0.9 : x.conf}\n  domain: "testing"\n  scope: ${x.scope || 'global'}\n  candidate_index: ${x.idx === undefined ? x.i : x.idx}\n  tycon_artifact_suggestion: null\n  reasoning: "${x.reasoning || 'porque se repite'}"`);
     return { ok: true, texto: ys.join('\n'), tokens: { entrada: 1000, salida: 200 } };
   };
   return m;
 }
 
 /** Corre la noche con todo de laboratorio; `guardados` junta los pedidos de guardado. */
-async function noche(base, { bajar = bajado(), resolver = listo, m = modelo(), guardar, today = HOY, noPush = false, prendida = true } = {}) {
+async function noche(base, { bajar = bajado(), resolver = listo, m = modelo(), guardar, today = HOY, noPush = false, prendida = true, home = '/home/lab' } = {}) {
   const cfg = perfil(base.dir, prendida);
   const guardados = [];
   const sincronizados = [];
   const r = await N.correrNoche({
-    ...cfg, mailbox: base.espejo, ops: base.ops, today, noPush, home: '/home/lab',
+    ...cfg, mailbox: base.espejo, ops: base.ops, today, noPush, home,
     deps: {
       bajar, resolveNightly: () => resolver(), llamar: m.llamar,
       sincronizar: (rutas) => { sincronizados.push(rutas); return { ok: true }; },
@@ -203,7 +216,7 @@ test('T21b Nightly_SameKeyOtherCase_OnePattern', async () => {
     'mac-b-22222222': { [d]: [...veces(1, d, 'Acme/App', 'npm run lint'), ...veces(1, d, 'acme/app', 'npm run lint')] },
     'mac-c-33333333': { [d]: veces(2, d, 'acme/app', 'npm run lint') },
   });
-  await noche(b, { resolver: () => ({ ok: false, status: 'not-configured' }) });
+  await noche(b);
   const ps = propuestasDe(b);
   assert.strictEqual(ps.length, 1);
   assert.strictEqual(ps[0].veces, 6);
@@ -246,7 +259,7 @@ test('T22 Nightly_SkipsKnownHuellasAndDecided', async () => {
   const m = modelo({ responder: (n) => Array.from({ length: n }, (_, i) => ({ i: i + 1 })) });
   // el prompt pide sólo «cinco» y «siete»: el modelo escribe para «cinco» lo que ya estaba decidido
   m.llamar = ((orig) => async (a) => {
-    if (/^You are checking proposed/.test(a.prompt)) return orig(a);
+    if (/^You are checking proposed/.test(a.prompt) || ES_RECOMENDACION.test(a.prompt)) return orig(a);
     m.propuestas.push(a.prompt);
     // (la clave va sin mayúsculas: es la misma de la que sale la huella)
     const orden = [...a.prompt.matchAll(/^project\|tool\|summary-prefix: acme\/api\|bash\|(.*)$/gm)].map((x) => x[1]);
@@ -324,12 +337,12 @@ test('T24 Nightly_ModelNotReady_NumbersOnlyNoFallback', async () => {
     const m = modelo();
     await noche(b, { resolver: () => ({ ok: false, status, provider: status === 'no-secret' ? 'ollama' : null, model: null }), m });
     assert.strictEqual(m.propuestas.length + m.revisiones.length, 0, status);
-    const ps = propuestasDe(b);
-    assert.strictEqual(ps.length, 3);
-    assert.ok(ps.every((p) => p.redaccion === null && p.sin_redaccion === causa && p.estado === 'pendiente'), status);
+    assert.strictEqual(propuestasDe(b).length, 0, `${status}: una propuesta nueva nace redactada o no nace`);
     const inf = informeDe(b);
     assert.strictEqual(inf.modelo.estado, status);
-    assert.strictEqual(inf.sin_redaccion[causa], 3);
+    assert.strictEqual(inf.en_espera, 3);
+    assert.strictEqual(inf.en_espera_por[causa], 3);
+    assert.strictEqual(inf.sin_redaccion[causa], 0);
   }
 });
 
@@ -342,13 +355,13 @@ test('T25 Nightly_CapTwenty_BatchesOfFifteen', async () => {
   assert.strictEqual((m.propuestas[0].match(/^### Candidate \d+ /gm) || []).length, 15);
   assert.strictEqual((m.propuestas[1].match(/^### Candidate \d+ /gm) || []).length, 5);
   const ps = propuestasDe(b);
-  assert.strictEqual(ps.length, 47);
+  assert.strictEqual(ps.length, 20, 'las que el tope no alcanzó no tienen archivo');
   assert.strictEqual(ps.filter((p) => p.redaccion).length, 20);
-  assert.strictEqual(ps.filter((p) => p.sin_redaccion === 'tope').length, 27);
   const conRed = ps.filter((p) => p.redaccion).map((p) => p.patron).sort();
   assert.deepStrictEqual(conRed, Array.from({ length: 20 }, (_, i) => `comando repetido número ${String(i).padStart(3, '0')}`));
   assert.strictEqual(informeDe(b).con_redaccion, 20);
-  assert.strictEqual(informeDe(b).sin_redaccion.tope, 27);
+  assert.strictEqual(informeDe(b).en_espera_por.tope, 27);
+  assert.strictEqual(informeDe(b).sin_redaccion.tope, 0);
 });
 
 test('T26 Nightly_ReviewDiscards_RecordedNotReasked', async () => {
@@ -408,10 +421,10 @@ test('T27b Nightly_EmptyOrGarbledAnswer_IsFailNotDiscard', async () => {
     const m = modelo();
     m.llamar = async ({ prompt }) => (/^You are checking proposed/.test(prompt) ? { ok: true, texto: '' } : { ok: true, texto, tokens: null });
     await noche(b, { m });
-    const ps = propuestasDe(b);
-    assert.ok(ps.every((p) => p.estado === 'pendiente' && p.redaccion === null && p.sin_redaccion === 'fallo'), JSON.stringify(texto));
+    assert.strictEqual(propuestasDe(b).length, 0, `${JSON.stringify(texto)}: esperan a otra noche, sin archivo`);
     const inf = informeDe(b);
-    assert.strictEqual(inf.sin_redaccion.fallo, 2);
+    assert.strictEqual(inf.en_espera_por.fallo, 2);
+    assert.strictEqual(inf.sin_redaccion.fallo, 0);
     assert.deepStrictEqual(inf.modelo.fallos, { respuesta_ilegible: 1 });
   }
   // propuestas que llegan pero ninguna con un candidate_index válido: tampoco es «no propuso nada»
@@ -419,7 +432,8 @@ test('T27b Nightly_EmptyOrGarbledAnswer_IsFailNotDiscard', async () => {
   espejo(sinIndice.espejo, patrones(2));
   const mi = modelo({ responder: () => [{ i: 1, idx: 'uno' }, { i: 2, idx: 99 }] });
   await noche(sinIndice, { m: mi });
-  assert.ok(propuestasDe(sinIndice).every((p) => p.estado === 'pendiente' && p.sin_redaccion === 'fallo'));
+  assert.strictEqual(propuestasDe(sinIndice).length, 0);
+  assert.strictEqual(informeDe(sinIndice).en_espera_por.fallo, 2);
   // «[]» es una respuesta: el modelo dijo que ninguno vale la pena, también con una frase antes o en un bloque json
   for (const texto of ['[]', 'Ninguno vale la pena:\n```yaml\n[]\n```', '```json\n[]\n```', 'Respuesta:\n[]']) {
     const b = base('t27b-vacio');
@@ -545,11 +559,11 @@ test('T44 Nightly_SilentMachines_AndNewProposalsCap', async () => {
   const inf = informeDe(b);
   assert.strictEqual(inf.maquinas_sin_reportar, 1);
   const ps = propuestasDe(b);
-  assert.strictEqual(ps.length, 50);
+  assert.strictEqual(ps.length, 20);
   assert.strictEqual(ps.filter((p) => p.redaccion).length, 20);
-  assert.strictEqual(inf.nuevas, 50);
-  assert.strictEqual(inf.en_espera, 70);
-  assert.strictEqual(inf.pendientes_total, 50);
+  assert.strictEqual(inf.nuevas, 20);
+  assert.strictEqual(inf.en_espera, 100);
+  assert.strictEqual(inf.pendientes_total, 20);
 });
 
 test('T47 Pipeline_Model_Schedule_Secrets_Effects', () => {
@@ -673,4 +687,318 @@ test('T17 4.13-Nightly_ReadsSiteDecision_NotReaskedAndInReview @story-4.13 @ac-1
   assert.match(m.revisiones[0], /cuando sitio rechaza[^\n]*Motivo del rechazo del sitio/);
   assert.doesNotMatch(m.revisiones[0], /Regla escrita a mano sin redaccion/, 'la que no tiene redacción no entra a la revisión');
   escritos.forEach((f, i) => assert.deepStrictEqual(fs.readFileSync(f), antes[i], `${path.basename(f)} queda byte por byte`));
+});
+
+// ── 4.14: la noche no propone ruido y recomienda cada propuesta ──────────────────────────────────────────────────────────
+
+const recomendacionesDe = (b) => JSON.parse(fs.readFileSync(path.join(b.ops, '.dashboard', 'instincts', 'recomendaciones.json'), 'utf8'));
+const entradaDe = (b, h) => recomendacionesDe(b).por_huella[h];
+const archivoDe = (b, h) => path.join(b.ops, 'inbox', 'instincts', 'propuestas', `${h}.json`);
+const bytesDe = (b, hs) => hs.map((h) => fs.readFileSync(archivoDe(b, h)));
+const redaccion = (trigger = 'cuando pasa algo', action = 'hacer lo que corresponde', scope = 'global') => ({ trigger, action, domain: 'testing', scope, confidence: 0.9, reasoning: 'se repite', tycon_artifact_suggestion: null });
+const hashDe = (r) => sha10(`${r.trigger}::${r.action}`);
+/** Una propuesta `pendiente` de antes; devuelve su huella. */
+function vieja(b, patron, { repo = 'acme/api', tool = 'Bash', ...extra } = {}) {
+  const huella = huellaDe(repo, tool, patron);
+  escribirPropuesta(b, { huella, estado: 'pendiente', herramienta: tool, repo, patron, veces: 6, maquinas: 2, desde: diaMenos(9), hasta: diaMenos(9),
+    propuesta_el: diaMenos(9), redaccion: null, sin_redaccion: 'tope', modelo: null, decision: null, ...extra });
+  return huella;
+}
+/** Candidatos de la lista `[repo, resumen, herramienta?]`, cada uno 3 veces en dos máquinas. */
+function candidatos(lista, dia = diaMenos(1)) {
+  const lineas = lista.flatMap(([repo, resumen, tool = 'Bash']) => veces(3, dia, repo, resumen, { tool }));
+  return { 'mac-a-11111111': { [dia]: lineas }, 'mac-b-22222222': { [dia]: lineas } };
+}
+const pedidosDe = (prompts) => prompts.flatMap((p) => [...p.matchAll(/^project\|tool\|summary-prefix: [^|]*\|[^|]*\|(.*)$/gm)].map((x) => x[1]));
+const proyectosConReglas = (b, nombres) => {
+  const f = path.join(b.ops, 'inbox', 'instincts', 'proyectos-con-reglas.json');
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, JSON.stringify({ proyectos: nombres }));
+};
+
+test('T1 4.14-Filter_EmptySummary_IsCountWithoutLesson @story-4.14 @ac-1 @ac-7 — una herramienta sin contenido no llega al modelo ni a un archivo', async () => {
+  const b = base('414-t1');
+  const d = diaMenos(1);
+  const sinContenido = ['CronDelete', 'TaskStop', 'mcp__externo__hacer'].flatMap((tool) => veces(12, d, 'acme/api', '', { tool }));
+  espejo(b.espejo, { 'mac-a-11111111': { [d]: [...sinContenido, ...veces(12, d, 'acme/api', 'npm run lint')] } });
+  const m = modelo();
+  await noche(b, { m });
+  assert.deepStrictEqual(pedidosDe(m.propuestas), ['npm run lint']);
+  assert.deepStrictEqual(propuestasDe(b).map((p) => p.patron), ['npm run lint']);
+  assert.strictEqual(informeDe(b).filtradas.conteo_sin_leccion, 3);
+  assert.strictEqual(informeDe(b).en_espera, 0, 'lo filtrado no queda en espera');
+});
+
+test('T2 4.14-Filter_WorktreeTempAndHarnessState @story-4.14 @ac-2 @ac-7 — carpetas de trabajo, temporales y estado del arnés, sin falsos positivos', async () => {
+  const ruido = ['cat acme--wt-uno/specs/x.md', 'ls .claude/worktrees/dos/', 'cd /private/tmp/x', 'rm /var/folders/a/T/x', 'type AppData\\Local\\Temp\\x',
+    'cat $HOME/.tycon/state/advisor-context/x', 'ls .advisors/x'];
+  for (const summary of ruido) assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), 'carpeta_de_trabajo', summary);
+  assert.strictEqual(N.motivoDeRuido({ repo: 'acme--wt-tres', summary: 'npm test' }), 'carpeta_de_trabajo', 'el repo también cuenta');
+  const pasan = ['cat $HOME/acme/tmp/x.md', 'node build/var/folders.js'];
+  for (const summary of pasan) assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), null, summary);
+  const b = base('414-t2');
+  // 25 de ruido no ocupan el tope de 20: lo que sirve se redacta igual
+  const muchos = Array.from({ length: 25 }, (_, i) => ['acme/api', `cd /private/tmp/caso-${i}`]);
+  espejo(b.espejo, candidatos([...muchos, ['acme--wt-tres', 'npm test'], ...pasan.map((s) => ['acme/api', s])]));
+  const m = modelo();
+  await noche(b, { m });
+  assert.deepStrictEqual(pedidosDe(m.propuestas).sort(), pasan.map((s) => s.toLowerCase()).sort());
+  assert.strictEqual(informeDe(b).filtradas.carpeta_de_trabajo, 26);
+  assert.strictEqual(informeDe(b).en_espera, 0);
+});
+
+test('T3 4.14-Filter_MachinePathsOutsideHome @story-4.14 @ac-3 — rutas de una unidad o de la casa de otra persona', () => {
+  // las casas ajenas van por partes: escritas enteras tienen la forma de una ruta de una máquina real
+  const otraMac = ['', 'Users', 'otra', 'x'].join('/');
+  const otroLinux = ['', 'home', 'otra', 'x'].join('/');
+  for (const summary of ['cd /c/Proyectos/acme', 'type C:\\Proyectos\\acme\\x.cs', 'd:/work/x', `cat ${otraMac}`, otroLinux]) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), 'ruta_de_una_maquina', summary);
+  }
+  for (const summary of ['cat $HOME/repos/acme/x.md', 'ls ~/repos/acme', 'ls $HOME/src/c/y', 'cat /etc/hosts']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), null, summary);
+  }
+  // lo que sólo se parece a una ruta de una máquina es un patrón del equipo: una ruta de API, una dirección de awk o sed
+  for (const summary of ['curl -s -X GET /users/42/orders', 'grep -rn "/users/:id/" src', "awk '/a/ {print}' f", "sed -i '/x/d' f", 'ls /a/b', 'curl x://acme']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), null, summary);
+  }
+  assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary: `${'x'.repeat(60)} cd /c/y` }), null, 'sólo cuentan los 60 caracteres de la clave');
+});
+
+test('T4 4.14-SingleProject_DiscardedUnlessOptedIn @story-4.14 @ac-4 — una regla de un solo proyecto, salvo que ese proyecto la pida', async () => {
+  const preparar = (nombre) => {
+    const b = base(nombre);
+    espejo(b.espejo, candidatos([['acme', 'npm run nueva'], ['src/beta', 'npm run beta'], ['acme', 'npm run vieja']]));
+    return { b, h: { nueva: huellaDe('acme', 'Bash', 'npm run nueva'), beta: huellaDe('src/beta', 'Bash', 'npm run beta'), vieja: vieja(b, 'npm run vieja', { repo: 'acme' }) } };
+  };
+  const deProyecto = () => modelo({ responder: (n) => Array.from({ length: n }, (_, i) => ({ i: i + 1, scope: 'project' })) });
+  const estado = (b, h) => JSON.parse(fs.readFileSync(archivoDe(b, h), 'utf8'));
+  const { b, h } = preparar('414-t4');
+  proyectosConReglas(b, [' Beta ']);
+  const m = deProyecto();
+  await noche(b, { m });
+  assert.match(m.propuestas[0], /Beta/, 'el pedido nombra el proyecto que pidió sus reglas');
+  assert.strictEqual(estado(b, h.nueva).estado, 'descartada');
+  assert.strictEqual(estado(b, h.nueva).motivo_corto, 'un_solo_proyecto');
+  assert.strictEqual(estado(b, h.beta).estado, 'pendiente', 'el repo se compara por su último segmento y sin mayúsculas');
+  assert.strictEqual(estado(b, h.vieja).estado, 'pendiente', 'lo que ya estaba pendiente no se descarta solo');
+  assert.strictEqual(entradaDe(b, h.vieja).recomendacion.regla, 'un_solo_proyecto');
+  assert.strictEqual(informeDe(b).filtradas.un_solo_proyecto, 1);
+  // sin el archivo, nadie pidió sus reglas
+  const sinLista = preparar('414-t4-sin');
+  await noche(sinLista.b, { m: deProyecto() });
+  assert.strictEqual(estado(sinLista.b, sinLista.h.nueva).estado, 'descartada');
+  assert.strictEqual(estado(sinLista.b, sinLista.h.beta).estado, 'descartada');
+  // un archivo que no se lee no es «nadie pidió nada»: esa noche la regla no se aplica
+  const rota = preparar('414-t4-rota');
+  fs.mkdirSync(path.join(rota.b.ops, 'inbox', 'instincts'), { recursive: true });
+  fs.writeFileSync(path.join(rota.b.ops, 'inbox', 'instincts', 'proyectos-con-reglas.json'), '{ esto no es json');
+  await noche(rota.b, { m: deProyecto() });
+  assert.strictEqual(estado(rota.b, rota.h.nueva).estado, 'pendiente');
+  assert.strictEqual(informeDe(rota.b).filtradas.un_solo_proyecto, null);
+  // el repo entra a la lista: vuelve lo que descartó la noche por esa regla, y sólo eso
+  const porConfianza = vieja(b, 'npm run floja', { repo: 'acme', estado: 'descartada', motivo_corto: 'confianza', sin_redaccion: null });
+  const antes = fs.readFileSync(archivoDe(b, porConfianza));
+  proyectosConReglas(b, ['Beta', 'ACME--wt-uno']);
+  await noche(b, { m: modelo(), today: '2026-11-01' });
+  assert.strictEqual(estado(b, h.nueva).estado, 'pendiente');
+  assert.strictEqual(estado(b, h.nueva).motivo_corto, undefined);
+  assert.deepStrictEqual(fs.readFileSync(archivoDe(b, porConfianza)), antes);
+  assert.strictEqual(entradaDe(b, h.vieja).recomendacion.por, 'modelo', 'la vieja deja de recomendarse por la regla');
+  assert.strictEqual(entradaDe(b, h.nueva).recomendacion.por, 'modelo');
+});
+
+test('T5 4.14-OldPending_GetRuleRecommendation_NotDiscarded @story-4.14 @ac-5 @ac-10 — lo pendiente recibe la recomendación de su regla sin que se toque su archivo', async () => {
+  const b = base('414-t5');
+  espejo(b.espejo, candidatos([['acme/api', 'npm run lint']]));
+  const conModelo = redaccion('cuando otra cosa', 'hacer otra cosa');
+  const pendientes = {
+    conteo_sin_leccion: vieja(b, '', { tool: 'CronDelete' }),
+    carpeta_de_trabajo: vieja(b, 'cd /private/tmp/x'),
+    ruta_de_una_maquina: vieja(b, 'cd /c/Proyectos/acme'),
+    un_solo_proyecto: vieja(b, 'npm run uno', { redaccion: redaccion('cuando uno', 'hacer uno', 'project'), sin_redaccion: null }),
+  };
+  const fueraDeVentana = vieja(b, 'ls .advisors/viejo');
+  const yaRecomendada = vieja(b, 'cd /tmp/y', { redaccion: conModelo, sin_redaccion: null });
+  const aprobada = vieja(b, 'cd /tmp/aprobada', { estado: 'aprobada', redaccion: redaccion('cuando apruebo', 'aprobar'), sin_redaccion: null, decision: { texto: 'aprobar' } });
+  const f = path.join(b.ops, '.dashboard', 'instincts', 'recomendaciones.json');
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, JSON.stringify({ fecha: diaMenos(1), por_huella: { [yaRecomendada]: { recomendacion: { accion: 'aprobar', por: 'modelo', modelo: 'm', porque: 'Sirve', el: diaMenos(1), de: hashDe(conModelo) }, sin_recomendacion: null } } }));
+  const todas = [...Object.values(pendientes), fueraDeVentana, yaRecomendada, aprobada];
+  const antes = bytesDe(b, todas);
+  for (const today of [HOY, '2026-11-01']) {
+    const m = modelo();
+    await noche(b, { m, today });
+    for (const [regla, h] of Object.entries(pendientes)) {
+      assert.strictEqual(entradaDe(b, h).recomendacion.por, 'regla', regla);
+      assert.strictEqual(entradaDe(b, h).recomendacion.regla, regla);
+      assert.strictEqual(entradaDe(b, h).recomendacion.accion, 'rechazar');
+      assert.ok(entradaDe(b, h).recomendacion.porque.length > 10, `${regla}: dice por qué`);
+    }
+    assert.strictEqual(entradaDe(b, fueraDeVentana).recomendacion.regla, 'carpeta_de_trabajo', 'también la que ya no es candidata');
+    assert.strictEqual(entradaDe(b, yaRecomendada).recomendacion.por, 'regla', 'la regla manda sobre la del modelo');
+    assert.strictEqual(entradaDe(b, aprobada), undefined, 'lo decidido no tiene entrada');
+    assert.ok(!m.recomendaciones.some((p) => /private\/tmp|npm run uno|cd \/tmp/.test(p)), 'por ellas no se llama al modelo');
+    assert.deepStrictEqual(bytesDe(b, todas), antes, 'ningún archivo de propuesta cambia');
+  }
+});
+
+test('T6 4.14-NewOnlyIfDrafted_OldPendingFirst @story-4.14 @ac-6 — primero lo pendiente, y lo nuevo nace redactado', async () => {
+  const pat = (i) => `comando repetido número ${String(i).padStart(3, '0')}`;
+  const b = base('414-t6');
+  espejo(b.espejo, patrones(35));
+  // las viejas son las últimas de la lista de candidatos: sólo pasan adelante si la noche las pone primero
+  const viejas = [30, 31, 32, 33, 34].map((i) => vieja(b, pat(i)));
+  const m = modelo();
+  await noche(b, { m });
+  const pedidos = pedidosDe(m.propuestas);
+  assert.strictEqual(pedidos.length, 20);
+  assert.deepStrictEqual(pedidos.slice(0, 5), [30, 31, 32, 33, 34].map(pat));
+  const ps = propuestasDe(b);
+  assert.strictEqual(ps.length, 20, '5 viejas y 15 nuevas');
+  assert.ok(ps.every((p) => p.redaccion), 'ninguna sin redacción');
+  assert.ok(viejas.every((h) => ps.find((p) => p.huella === h).redaccion));
+  const inf = informeDe(b);
+  assert.strictEqual(inf.nuevas, 15);
+  assert.strictEqual(inf.en_espera, 15);
+  assert.strictEqual(inf.en_espera_por.tope, 15);
+  assert.strictEqual(inf.sin_redaccion.tope, 0);
+  // con la tanda caída y sin llave, ningún archivo nuevo
+  const caida = base('414-t6-caida');
+  espejo(caida.espejo, patrones(3));
+  await noche(caida, { m: modelo({ caido: true }) });
+  assert.strictEqual(propuestasDe(caida).length, 0);
+  assert.strictEqual(informeDe(caida).en_espera_por.fallo, 3);
+  const sinLlave = base('414-t6-llave');
+  espejo(sinLlave.espejo, patrones(3));
+  await noche(sinLlave, { resolver: () => ({ ok: false, status: 'no-secret', provider: 'ollama', model: null }) });
+  assert.strictEqual(propuestasDe(sinLlave).length, 0);
+  assert.strictEqual(informeDe(sinLlave).en_espera_por.sin_llave, 3);
+  // una pendiente que el modelo no redacta o descarta al completarla sigue pendiente (D1)
+  const d1 = base('414-t6-d1');
+  espejo(d1.espejo, patrones(2));
+  const floja = vieja(d1, pat(0));
+  const sinPropuesta = vieja(d1, pat(1));
+  await noche(d1, { m: modelo({ responder: () => [{ i: 1, conf: 0.6 }] }) });
+  const de = (h) => JSON.parse(fs.readFileSync(archivoDe(d1, h), 'utf8'));
+  assert.strictEqual(de(floja).estado, 'pendiente');
+  assert.strictEqual(de(floja).rechazo_sugerido.motivo, 'confianza');
+  assert.ok(de(floja).redaccion, 'con la redacción que hubo');
+  assert.strictEqual(de(sinPropuesta).estado, 'pendiente');
+  assert.strictEqual(de(sinPropuesta).rechazo_sugerido.motivo, 'sin_propuesta');
+  assert.strictEqual(entradaDe(d1, floja).recomendacion.regla, 'confianza');
+  assert.strictEqual(entradaDe(d1, sinPropuesta).recomendacion.regla, 'sin_propuesta');
+  assert.strictEqual(informeDe(d1).descartadas, 0);
+  const m2 = modelo();
+  await noche(d1, { m: m2, today: '2026-11-01' });
+  assert.strictEqual(m2.propuestas.length, 0, 'no se vuelven a mandar a completar');
+});
+
+test('T7 4.14-Recommend_ModelApproveReject_Saved @story-4.14 @ac-8 — el modelo recomienda, y lo vigente no se vuelve a pedir', async () => {
+  const b = base('414-t7');
+  espejo(b.espejo, candidatos([['acme/api', 'npm run uno']]));
+  const r1 = redaccion('cuando uno', 'hacer uno');
+  const r2 = redaccion('cuando dos', 'hacer dos');
+  const uno = vieja(b, 'npm run uno', { redaccion: r1, sin_redaccion: null, maquinas: 3 });
+  const dos = vieja(b, 'npm run dos', { redaccion: r2, sin_redaccion: null });
+  const antes = bytesDe(b, [uno, dos]);
+  const m = modelo({ recomendar: (i) => (i === 1 ? { recommend: 'approve', why: 'Le sirve a todo el equipo' } : { recommend: 'reject', why: 'Ya lo cubre otra regla' }) });
+  await noche(b, { m });
+  assert.strictEqual(m.recomendaciones.length, 1);
+  assert.deepStrictEqual(entradaDe(b, uno), { recomendacion: { accion: 'aprobar', por: 'modelo', modelo: 'gemma4:31b-cloud', porque: 'Le sirve a todo el equipo', el: HOY, de: hashDe(r1) }, sin_recomendacion: null });
+  assert.deepStrictEqual(entradaDe(b, dos), { recomendacion: { accion: 'rechazar', por: 'modelo', modelo: 'gemma4:31b-cloud', porque: 'Ya lo cubre otra regla', el: HOY, de: hashDe(r2) }, sin_recomendacion: null });
+  assert.deepStrictEqual(bytesDe(b, [uno, dos]), antes, 'recomendar no toca las propuestas');
+  const m2 = modelo();
+  await noche(b, { m: m2, today: '2026-11-01' });
+  assert.strictEqual(m2.recomendaciones.length, 0, 'lo vigente no se vuelve a pedir');
+  assert.strictEqual(entradaDe(b, uno).recomendacion.el, HOY, 'y se conserva como estaba');
+  // con otra redacción, la recomendación era de otra cosa
+  vieja(b, 'npm run dos', { redaccion: redaccion('cuando dos', 'hacer otra cosa'), sin_redaccion: null });
+  const m3 = modelo();
+  await noche(b, { m: m3, today: '2026-11-02' });
+  assert.strictEqual(m3.recomendaciones.length, 1);
+  assert.match(m3.recomendaciones[0], /hacer otra cosa/);
+  assert.doesNotMatch(m3.recomendaciones[0], /hacer uno/);
+});
+
+test('T8 4.14-Recommend_UnsafeOrBadAnswer_NoRecommendation @story-4.14 @ac-9 — lo que no se puede mostrar no se guarda', async () => {
+  const b = base('414-t8');
+  espejo(b.espejo, patrones(1));
+  const hs = [1, 2, 3, 4, 5].map((i) => vieja(b, `npm run caso${i}`, { redaccion: redaccion(`cuando ${i}`, `hacer ${i}`), sin_redaccion: null, maquinas: 9 - i }));
+  const malas = { 1: { why: 'Mirar /etc/hosts antes' }, 2: { why: 'Ver https://acme.example/a' }, 3: { why: 'El pedido 1234567 lo cubre' }, 4: { recommend: 'archivar', why: 'Sirve' }, 5: { recommend: 'constructor', why: 'Sirve' } };
+  const m = modelo({ recomendar: (i) => malas[i] || {} });
+  await noche(b, { m });
+  for (const h of hs) assert.deepStrictEqual(entradaDe(b, h), { recomendacion: null, sin_recomendacion: 'respuesta_ilegible' }, h);
+  const m2 = modelo({ recomendacionCruda: 'no sé qué contestar' });
+  await noche(b, { m: m2, today: '2026-11-01' });
+  assert.ok(m2.recomendaciones.join('\n').includes('hacer 1'), 'se vuelve a pedir otra noche');
+  for (const h of hs) assert.strictEqual(entradaDe(b, h).sin_recomendacion, 'respuesta_ilegible');
+  assert.strictEqual(informeDe(b, '2026-11-01').modelo.fallos.respuesta_ilegible >= 1, true);
+  // un motivo guardado que no es ninguna regla no se recomienda, aunque se llame como algo que todo objeto trae
+  const b2 = base('414-t8-motivo');
+  espejo(b2.espejo, patrones(1));
+  const rara = vieja(b2, 'npm run rara', { rechazo_sugerido: { motivo: 'constructor', cita: null } });
+  await noche(b2, { m: modelo() });
+  assert.deepStrictEqual(entradaDe(b2, rara), { recomendacion: null, sin_recomendacion: 'sin_redaccion' });
+});
+
+test('T9 4.14-Recommend_NoModelNoKeyDownCap @story-4.14 @ac-9 — sin modelo, sin llave, caído o fuera del tope, se dice por qué y no se inventa nada', async () => {
+  const preparar = (nombre, n) => {
+    const b = base(nombre);
+    espejo(b.espejo, candidatos([['acme/api', 'npm run lint']]));
+    const hs = Array.from({ length: n }, (_, i) => vieja(b, `npm run caso${String(i).padStart(2, '0')}`, { redaccion: redaccion(`cuando ${i}`, `hacer ${i}`), sin_redaccion: null, veces: 100 - i }));
+    return { b, hs };
+  };
+  const casos = [['sin_modelo', { resolver: () => ({ ok: false, status: 'not-configured' }) }], ['sin_llave', { resolver: () => ({ ok: false, status: 'no-secret', provider: 'ollama', model: null }) }], ['fallo', { m: modelo({ caido: true }) }]];
+  for (const [motivo, o] of casos) {
+    const { b, hs } = preparar(`414-t9-${motivo}`, 2);
+    await noche(b, o);
+    for (const h of hs) assert.deepStrictEqual(entradaDe(b, h), { recomendacion: null, sin_recomendacion: motivo }, motivo);
+    assert.strictEqual(informeDe(b).sin_recomendacion[motivo], 2);
+  }
+  // el tope: 30 por noche, en tandas de 15
+  const { b, hs } = preparar('414-t9-tope', 35);
+  const sinRedaccion = vieja(b, 'npm run sin redactar');
+  const m = modelo();
+  await noche(b, { m });
+  assert.strictEqual(m.recomendaciones.length, 2, '30 en tandas de 15');
+  assert.strictEqual(hs.filter((h) => entradaDe(b, h).sin_recomendacion === 'tope').length, 5);
+  assert.strictEqual(informeDe(b).recomendadas.modelo, 30);
+  assert.strictEqual(informeDe(b).sin_recomendacion.tope, 6);
+  assert.strictEqual(entradaDe(b, sinRedaccion).sin_recomendacion, 'sin_redaccion');
+  // lo vigente sobrevive a una noche sin modelo
+  const vigente = hs[0];
+  const antes = entradaDe(b, vigente);
+  await noche(b, { resolver: () => ({ ok: false, status: 'not-configured' }), today: '2026-11-01' });
+  assert.deepStrictEqual(entradaDe(b, vigente), antes);
+  assert.strictEqual(entradaDe(b, hs[34]).sin_recomendacion, 'sin_modelo');
+});
+
+test('T10 4.14-Report_HasFilteredAndRecommended @story-4.14 @ac-6 @ac-7 @ac-11 — el informe cuenta lo filtrado, lo recomendado y lo que espera', async () => {
+  const b = base('414-t10');
+  espejo(b.espejo, candidatos([['acme/api', ''], ['acme/api', 'cd /private/tmp/a'], ['acme/api', 'cd /c/acme'], ['acme/api', 'npm run lint'], ['acme/api', 'npm run deploy']]));
+  vieja(b, 'npm run sin redactar');
+  vieja(b, 'cd /tmp/vieja');
+  await noche(b, { m: modelo({ responder: () => [{ i: 1, scope: 'project' }, { i: 2 }] }) });
+  const inf = informeDe(b);
+  assert.deepStrictEqual(inf.filtradas, { conteo_sin_leccion: 1, carpeta_de_trabajo: 1, ruta_de_una_maquina: 1, un_solo_proyecto: 1 });
+  assert.deepStrictEqual(inf.recomendadas, { regla: 1, modelo: 1 });
+  assert.deepStrictEqual(inf.sin_recomendacion, { fallo: 0, sin_modelo: 0, sin_llave: 0, tope: 0, sin_redaccion: 1, respuesta_ilegible: 0 });
+  assert.deepStrictEqual(inf.en_espera_por, { tope: 0, fallo: 0, sin_modelo: 0, sin_llave: 0 });
+  // lo que no se midió es null, y el archivo de la noche anterior no se toca
+  const antes = fs.readFileSync(path.join(b.ops, '.dashboard', 'instincts', 'recomendaciones.json'));
+  await noche(b, { bajar: async () => ({ codigo: 0, res: { estado: 'sin_az' } }), today: '2026-11-01' });
+  const sinMedir = informeDe(b, '2026-11-01');
+  for (const k of ['filtradas', 'recomendadas', 'sin_recomendacion', 'en_espera_por']) assert.strictEqual(sinMedir[k], null, k);
+  assert.deepStrictEqual(fs.readFileSync(path.join(b.ops, '.dashboard', 'instincts', 'recomendaciones.json')), antes);
+});
+
+test('T11 4.14-Recommend_TextIsSanitized @story-4.14 @ac-10 — el porqué del modelo pasa por el saneado antes de escribirse', async () => {
+  // una casa sin barras: pasa el filtro de frases, que rechaza toda ruta, y sólo la saca el saneado
+  const CASA = 'casa-lab-9';
+  const b = base('414-t11');
+  espejo(b.espejo, patrones(1));
+  const h = vieja(b, 'npm run uno', { redaccion: redaccion(), sin_redaccion: null, maquinas: 9 });
+  await noche(b, { home: CASA, m: modelo({ recomendar: () => ({ why: `Revisar ${CASA} antes de aprobar` }) }) });
+  assert.strictEqual(entradaDe(b, h).recomendacion.porque, 'Revisar $HOME antes de aprobar');
+  assert.ok(!fs.readFileSync(path.join(b.ops, '.dashboard', 'instincts', 'recomendaciones.json'), 'utf8').includes(CASA));
 });

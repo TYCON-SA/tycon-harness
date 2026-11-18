@@ -5,7 +5,8 @@
  * Qué resuelve: la noche de la organización (scripts/instincts/instinct-nightly.js) cuenta lo que se repite en las
  * máquinas del equipo y deja una propuesta por patrón en `inbox/instincts/propuestas/<huella>.json` del repo de
  * operaciones. Acá quien mantiene las decide sin abrir el repo, como en Mantenimiento: marca Aprobar o Rechazar en cada
- * tarjeta (las marcas quedan en el navegador) y envía todo junto.
+ * tarjeta (las marcas quedan en el navegador) y envía todo junto. Cada tarjeta dice qué recomienda la noche
+ * (`.dashboard/instincts/recomendaciones.json`), y se puede seguir la recomendación o rechazar varias con un motivo.
  *
  * Al enviar:
  *   1. si hay aprobadas, UN pedido al repo del perfil agrega cada regla, con el texto que confirmó quien mantiene y su
@@ -58,7 +59,13 @@ const TEXTO_MAX = 300;
 const CONTROL = /[\u0000-\u001f\u007f\u2028\u2029]/;
 // el techo del bloque del equipo, en bytes UTF-8: el bloque viaja en el contexto de cada sesión de cada máquina
 const TECHO = 4000;
-const TOPE_ENVIO = 100;
+const TOPE_ENVIO = 200;
+// hasta acá, la descripción del pedido nombra cada decisión; con más, las cuenta: los archivos del pedido ya las traen
+const NOMBRADAS_MAX = 50;
+// lo que la noche deja en su archivo de recomendaciones (instinct-nightly.js)
+const REGLAS = ['conteo_sin_leccion', 'carpeta_de_trabajo', 'ruta_de_una_maquina', 'un_solo_proyecto', 'sin_propuesta', 'confianza', 'ya_decidida', 'cubierta'];
+const SIN_RECOMENDACION = ['tope', 'fallo', 'sin_modelo', 'sin_llave', 'sin_redaccion', 'respuesta_ilegible'];
+const ACCION_RECOMENDADA = { aprobar: 'approve', rechazar: 'reject' };
 const VIGENCIA_PEDIDOS_MS = 60 * 1000;
 const VIGENCIA_HISTORIA_MS = 30 * 24 * 3600 * 1000;
 const RAMA = 'team-config/aprendizajes';
@@ -116,6 +123,15 @@ function ultimoInforme(dir) {
     const informe = JSON.parse(fs.readFileSync(path.join(dir, DIR_INFORMES, n), 'utf8'));
     return isObject(informe) ? { informe } : { ilegible: `${DIR_INFORMES}/${n}` };
   } catch { return { ilegible: `${DIR_INFORMES}/${n}` }; }
+}
+
+/** Lo que la noche recomendó: `{ estado: 'leido' | 'sin_archivo' | 'ilegible', por }`, con `por` indexado por huella. */
+function leerRecomendaciones(dir) {
+  const texto = leer(path.join(dir, NIGHT.RECOMENDACIONES));
+  if (texto === null) return { estado: 'sin_archivo', por: {} };
+  let doc = null;
+  try { doc = JSON.parse(texto); } catch { /* abajo */ }
+  return isObject(doc) && isObject(doc.por_huella) ? { estado: 'leido', por: doc.por_huella } : { estado: 'ilegible', por: {} };
 }
 
 /**
@@ -267,7 +283,22 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
   // ── el modelo de la pantalla ──
 
-  function filaPendiente(x, m, idioma) {
+  /** Qué recomienda la noche para una pendiente: el nombre del modelo no sale de acá, y lo que no tiene forma no se muestra. */
+  function recomendacionDe(huella, recos, idioma) {
+    const sin = (motivo) => ({ recomendacion: null, sinRecomendacion: T(idioma, `aprend.sinRec.${motivo}`) });
+    if (recos.estado === 'ilegible') return sin('ilegible');
+    const e = recos.por[huella];
+    if (!isObject(e)) return sin('todavia');
+    if (!isObject(e.recomendacion)) return sin(SIN_RECOMENDACION.includes(e.sin_recomendacion) ? e.sin_recomendacion : 'todavia');
+    const r = e.recomendacion;
+    const accion = Object.hasOwn(ACCION_RECOMENDADA, r.accion) ? ACCION_RECOMENDADA[r.accion] : null;
+    if (r.por === 'regla' && accion === 'reject' && REGLAS.includes(r.regla)) return { recomendacion: { accion, por: 'regla', regla: r.regla, porque: T(idioma, `aprend.regla.${r.regla}`) }, sinRecomendacion: null };
+    const porque = corto(r.porque);
+    if (r.por === 'modelo' && accion && unaLinea(porque)) return { recomendacion: { accion, por: 'modelo', regla: null, porque }, sinRecomendacion: null };
+    return sin('todavia');
+  }
+
+  function filaPendiente(x, m, idioma, recos) {
     const p = x.doc;
     const r = isObject(p.redaccion) && typeof p.redaccion.trigger === 'string' ? p.redaccion : null;
     const confianza = r && Number.isFinite(Number(r.confidence)) ? Number(r.confidence) : null;
@@ -279,7 +310,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       regla: r ? { trigger: corto(r.trigger), action: corto(r.action), confianza } : null,
       sinRedaccion: r ? null : T(idioma, 'aprend.sinRedaccion', { motivo: T(idioma, `aprend.motivo.${['tope', 'fallo', 'sin_modelo', 'sin_llave'].includes(p.sin_redaccion) ? p.sin_redaccion : 'otro'}`) }),
       sugerida: r ? `${corto(r.trigger, 140)}: ${corto(r.action, 150)}`.slice(0, TEXTO_MAX) : '',
-      esperando: esperandoDe(m, x.huella), alArnes,
+      esperando: esperandoDe(m, x.huella), alArnes, ...recomendacionDe(x.huella, recos, idioma),
     };
   }
 
@@ -290,7 +321,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const l = leerPropuestas(dir);
     const inf = ultimoInforme(dir);
     const informe = inf && inf.informe ? inf.informe : null;
-    const ilegibles = [...l.ilegibles, ...(inf && inf.ilegible ? [inf.ilegible] : [])];
+    const recos = leerRecomendaciones(dir);
+    const ilegibles = [...l.ilegibles, ...(inf && inf.ilegible ? [inf.ilegible] : []), ...(recos.estado === 'ilegible' ? [NIGHT.RECOMENDACIONES] : [])];
     const estado = ilegibles.length ? 'ilegible' : informe && informe.estado === 'apagado' ? 'apagado' : informe && informe.estado === 'no_medido' ? 'no_medido'
       : l.estado === 'sin_carpeta' ? 'sin_propuestas' : 'leido';
     const frase = estado === 'ilegible' ? T(idioma, 'aprend.ilegible', { archivos: ilegibles.join(', ') })
@@ -301,7 +333,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const pq = paquetes(idioma);
     const pendientes = l.lista.filter((x) => x.doc.estado === 'pendiente')
       .sort((a, b) => (b.doc.maquinas || 0) - (a.doc.maquinas || 0) || (b.doc.veces || 0) - (a.doc.veces || 0) || a.huella.localeCompare(b.huella))
-      .map((x) => filaPendiente(x, m, idioma));
+      .map((x) => filaPendiente(x, m, idioma, recos));
     const desde = new Date(ahora() - VIGENCIA_HISTORIA_MS).toISOString().slice(0, 10);
     const perfilLeido = m.perfil.estado === 'leido';
     const historial = l.lista.filter((x) => ['aprobada', 'rechazada'].includes(x.doc.estado) && isObject(x.doc.decision) && typeof x.doc.decision.el === 'string' && x.doc.decision.el >= desde)
@@ -314,9 +346,16 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         return { huella: x.huella, estado: x.doc.estado, patron: corto(x.doc.patron), quien: alias(d.por), el: corto(d.el, 10), texto: aprobada ? corto(d.texto) : null, motivo: aprobada ? null : corto(d.motivo),
           pedido: dePlataforma(d.pedido) ? d.pedido : null, enPerfil, esperando, reproponer: aprobada && enPerfil === false && !esperando && perfilLeido && unaLinea(d.texto) };
       });
+    const suma = (o) => Object.values(o).filter(Number.isInteger).reduce((a, b) => a + b, 0);
+    // lo que no se pudo redactar espera sin archivo: cuenta también; lo que espera por el tope es lo normal
+    const sinRedactar = (i) => {
+      if (!isObject(i.sin_redaccion) && !isObject(i.en_espera_por)) return null;
+      const { tope: _tope, ...porFalta } = isObject(i.en_espera_por) ? i.en_espera_por : {};
+      return suma(isObject(i.sin_redaccion) ? i.sin_redaccion : {}) + suma(porFalta);
+    };
     const noche = informe ? { fecha: corto(informe.fecha, 10), estado: corto(informe.estado, 20),
       modelo: isObject(informe.modelo) && informe.modelo.model ? `${corto(informe.modelo.provider, 30)} · ${corto(informe.modelo.model, 60)}` : null,
-      sinRedactar: isObject(informe.sin_redaccion) ? Object.values(informe.sin_redaccion).filter(Number.isInteger).reduce((a, b) => a + b, 0) : null } : null;
+      sinRedactar: sinRedactar(informe), filtradas: isObject(informe.filtradas) ? suma(informe.filtradas) : null } : null;
     const leidos = m.operaciones.estado === 'leido' && m.perfil.estado !== 'no_se_pudo';
     return { ...vacio, estado, frase, noche, pendientes, historial, paquetes: { lista: pq.lista, elegido: pq.elegido, frena: pq.frena, aviso: pq.aviso },
       pedidos: leidos ? { estado: 'leido', frase: null } : { estado: 'no_se_pudo', frase: T(idioma, 'aprend.sinPedidos') } };
@@ -328,21 +367,34 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const t = (k, v) => T(idioma, k, v);
     const frases = [m.frase, m.pedidos && m.pedidos.frase, m.paquetes && m.paquetes.aviso].filter(Boolean).map((x) => `<p class="q-note">${esc(x)}</p>`).join('');
     const n = m.noche;
-    const noche = n ? `<p class="a-noche">${esc(t('aprend.noche', { dia: dia(n.fecha), estado: t(`aprend.estadoNoche.${['medido', 'apagado', 'no_medido'].includes(n.estado) ? n.estado : 'otro'}`), modelo: n.modelo || t('aprend.sinModelo'), n: n.sinRedactar === null ? '?' : n.sinRedactar }))}</p>` : '';
+    const noche = n ? `<p class="a-noche">${esc(t('aprend.noche', { dia: dia(n.fecha), estado: t(`aprend.estadoNoche.${['medido', 'apagado', 'no_medido'].includes(n.estado) ? n.estado : 'otro'}`), modelo: n.modelo || t('aprend.sinModelo'), n: n.sinRedactar === null ? '?' : n.sinRedactar, filtradas: n.filtradas === null ? '?' : n.filtradas }))}</p>` : '';
     const puedeEnviar = m.pedidos && m.pedidos.estado === 'leido';
-    const boton = (accion, falta) => `<button type="button" class="a-elegir" data-accion="${accion}"${falta || !puedeEnviar ? ` disabled title="${esc(falta || m.pedidos.frase)}"` : ''} aria-pressed="false">${esc(t(`aprend.${CLAVE_DEL_BOTON[accion]}`))}</button>`;
+    const puedeRechazar = puedeEnviar && !m.escritura.rechazar;
+    const boton = (accion, falta, recomendada) => `<button type="button" class="a-elegir${recomendada ? ' recomendada' : ''}" data-accion="${accion}"${falta || !puedeEnviar ? ` disabled title="${esc(falta || m.pedidos.frase)}"` : ''} aria-pressed="false">${esc(t(`aprend.${CLAVE_DEL_BOTON[accion]}`))}</button>`;
+    // el porqué del modelo está en castellano: `lang` para quien lo lee en voz alta, y la nota en otro idioma
+    const recomendacion = (p) => {
+      const r = p.recomendacion;
+      if (!r) return `<p class="a-sin">${esc(p.sinRecomendacion)}</p>`;
+      const titulo = `<b>${esc(t(r.accion === 'approve' ? 'aprend.recomiendaAprobar' : 'aprend.recomiendaRechazar'))}</b>`;
+      if (r.por === 'regla') return `<p class="a-recomienda">${titulo} ${esc(r.porque)}</p>`;
+      return `<p class="a-recomienda">${titulo} <span lang="es">${esc(r.porque)}</span>${idioma === 'es' ? '' : ` ${esc(t('aprend.razonEnCastellano'))}`} <span class="a-meta">${esc(t('aprend.propusoModelo'))}</span></p>`;
+    };
     const enlace = (texto, url) => (url && ENLACE.test(url) ? `<a href="${esc(url)}" rel="noopener noreferrer" target="_blank">${esc(texto)}</a>` : esc(texto));
     const carta = (p) => {
       const numeros = t('aprend.numeros', { maquinas: p.maquinas === null ? '?' : p.maquinas, veces: p.veces === null ? '?' : p.veces, desde: dia(p.desde), hasta: dia(p.hasta) });
       const regla = p.regla ? `<p class="a-regla"><b>${esc(t('aprend.reglaSugerida'))}</b> ${esc(p.regla.trigger)} → ${esc(p.regla.action)}${p.regla.confianza === null ? '' : ` <span class="a-meta">${esc(t('aprend.confianza', { n: Math.round(p.regla.confianza * 100) }))}</span>`}</p>`
         : `<p class="a-sin">${esc(p.sinRedaccion)}</p>`;
+      // lo que ya espera un pull request no se vuelve a decidir: ni botones, ni casilla, ni resaltado
+      const recomendada = p.esperando || !p.recomendacion ? null : p.recomendacion.accion;
       const pie = p.esperando ? `<p class="a-espera">${enlace(t('aprend.esperando'), p.esperando.enlace)}</p>`
-        : `<div class="a-decidir"><p class="a-decidir-tit">${esc(t('aprend.decidir'))}</p><div class="a-acciones" role="group">${boton('approve', m.escritura.aprobar || (m.paquetes && m.paquetes.frena))}${boton('reject', m.escritura.rechazar)}</div>`
+        : `<div class="a-decidir"><p class="a-decidir-tit">${esc(t('aprend.decidir'))}</p><div class="a-acciones" role="group">${boton('approve', m.escritura.aprobar || (m.paquetes && m.paquetes.frena), recomendada === 'approve')}${boton('reject', m.escritura.rechazar, recomendada === 'reject')}</div>`
+          + `<label class="a-casilla"><input type="checkbox" class="a-elige"${puedeRechazar ? '' : ' disabled'}> ${esc(t('aprend.elegir'))}</label>`
           + `<label class="a-texto-caja" hidden>${esc(t('aprend.textoAprobado'))} <input type="text" class="a-texto" maxlength="${TEXTO_MAX}" value="${esc(p.sugerida)}" autocomplete="off"></label>`
           + `<label class="a-motivo-caja" hidden>${esc(t('aprend.motivoRechazo'))} <input type="text" class="a-motivo" maxlength="${TEXTO_MAX}" autocomplete="off"></label></div>`;
       const arnes = p.alArnes ? `<p><a class="btn" href="${esc(p.alArnes)}" rel="noopener noreferrer" target="_blank">${esc(t('aprend.alArnes'))}</a></p>` : '';
-      return `<article class="a-carta" data-huella="${esc(p.huella)}"><header><b class="a-nombre">${esc(p.herramienta || '?')} · ${esc(p.patron || '')}</b> <span class="a-meta">${esc(p.repo || '')}</span></header>`
-        + `<p class="a-meta">${esc(numeros)}</p>${regla}${arnes}${pie}</article>`;
+      const datos = `${recomendada ? ` data-recomendada="${recomendada}" data-porque="${esc(p.recomendacion.porque)}"` : ''}${recomendada && p.recomendacion.regla ? ` data-regla="${esc(p.recomendacion.regla)}"` : ''}`;
+      return `<article class="a-carta" data-huella="${esc(p.huella)}"${datos}><header><b class="a-nombre">${esc(p.herramienta || '?')} · ${esc(p.patron || '')}</b> <span class="a-meta">${esc(p.repo || '')}</span></header>`
+        + `<p class="a-meta">${esc(numeros)}</p>${regla}${recomendacion(p)}${arnes}${pie}</article>`;
     };
     const pendientes = `<div class="a-bloque"><h2>${esc(t('aprend.titulo', { n: m.pendientes.length }))}</h2>${m.pendientes.length ? m.pendientes.map(carta).join('') : `<p class="q-note">${esc(t('aprend.vacio'))}</p>`}</div>`;
     const decidida = (x) => {
@@ -356,9 +408,17 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const pq = m.paquetes || { lista: [] };
     const elegir = pq.lista.length > 1 || (pq.lista.length && !pq.elegido)
       ? `<label>${esc(t('aprend.paquete'))} <select class="a-paquete">${pq.elegido ? '' : `<option value="">${esc(t('aprend.elegiPaquete'))}</option>`}${pq.lista.map((x) => `<option value="${esc(x.nombre)}"${x.nombre === pq.elegido ? ' selected' : ''}>${esc(x.nombre)}${x.activo ? '' : ` (${esc(t('aprend.noActivo'))})`}</option>`).join('')}</select></label>` : '';
-    const textos = ['elegidas', 'faltaTexto', 'faltaMotivo', 'enviando', 'error', 'aprobar', 'rechazar', 'omitidas'].map((k) => ` data-t-${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${esc(t(`aprend.barra.${k}`))}"`).join('');
+    const textos = ['elegidas', 'faltaTexto', 'faltaMotivo', 'enviando', 'error', 'aprobar', 'rechazar', 'omitidas', 'sobran', 'elegidasGrupo'].map((k) => ` data-t-${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${esc(t(`aprend.barra.${k}`))}"`).join('');
+    // seguir las recomendaciones, y rechazar varias con un solo motivo: nada de esto envía, sólo marca
+    const porDecidir = m.pendientes.filter((p) => !p.esperando);
+    const cuantasPorRegla = REGLAS.map((regla) => [regla, porDecidir.filter((p) => p.recomendacion && p.recomendacion.regla === regla).length]).filter(([, n]) => n);
+    const inactivo = puedeRechazar ? '' : ' disabled';
+    const grupo = porDecidir.length ? `<button type="button" class="btn a-seguir" data-t="${esc(t('aprend.seguir', { n: '{n}' }))}" disabled>${esc(t('aprend.seguir', { n: porDecidir.filter((p) => p.recomendacion).length }))}</button>`
+      + `<div class="a-grupo">${cuantasPorRegla.map(([regla, n]) => `<button type="button" class="btn a-elegir-regla" title="${esc(t('aprend.elegirReglaAyuda'))}"${inactivo} data-regla="${regla}">${esc(t('aprend.elegirRegla', { regla: t(`aprend.reglaNombre.${regla}`), n }))}</button>`).join('')}`
+      + `<span class="a-grupo-cuenta" aria-live="polite"></span><label>${esc(t('aprend.motivoGrupo'))} <input type="text" class="a-motivo-grupo" maxlength="${TEXTO_MAX}" autocomplete="off"${inactivo}></label>`
+      + `<button type="button" class="btn a-rechazar-elegidas" disabled>${esc(t('aprend.rechazarElegidas'))}</button></div>` : '';
     const barra = m.pendientes.length || m.historial.some((x) => x.reproponer)
-      ? `<div class="a-barra"${textos}><span class="a-cuenta" aria-live="polite"></span>${elegir}<button type="button" class="btn prim a-enviar" disabled>${esc(t(m.aplicaSolo ? 'aprend.enviarSolo' : 'aprend.enviar'))}</button><button type="button" class="btn a-borrar">${esc(t('aprend.borrar'))}</button><span class="a-estado" aria-live="polite"></span></div>`
+      ? `<div class="a-barra" data-tope="${TOPE_ENVIO}"${textos}><span class="a-cuenta" aria-live="polite"></span>${elegir}<button type="button" class="btn prim a-enviar" disabled>${esc(t(m.aplicaSolo ? 'aprend.enviarSolo' : 'aprend.enviar'))}</button><button type="button" class="btn a-borrar">${esc(t('aprend.borrar'))}</button>${grupo}<span class="a-estado" aria-live="polite"></span></div>`
       : '';
     const contenido = m.estado === 'sin_clon' ? '' : noche + pendientes + historial + barra;
     return `<section id="aprendizajes" class="a-pantalla" data-token="${esc(tok)}">${frases}${contenido}<script src="/aprendizajes/cliente.js" defer></script></section>`;
@@ -516,9 +576,11 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         contenido: NIGHT.archivoDecidido(v.x.doc, v.accion === 'approve' ? { estado: 'aprobada', por: quien, el, texto: v.texto, pedido: perfil ? perfil.enlace : null } : { estado: 'rechazada', por: quien, el, motivo: v.motivo }),
         oidEsperado: oidDe(v.x.texto),
       }));
-      const secciones = lista.map((v) => `${v.huella} → ${v.accion}`);
+      const decisiones = lista.map((v) => `${v.huella} → ${v.accion}`);
+      const cuantas = (accion) => lista.filter((v) => v.accion === accion).length;
+      const secciones = lista.length <= NOMBRADAS_MAX ? decisiones : [`${cuantas('approve')} se aprueban`, `${cuantas('reject')} se rechazan`];
       const r = await RP.proponer({
-        clon, archivos, idCorto: `aprendizajes-${sha12(secciones)}`, secciones, quien, credencial: R.cred(), remote: R.remote(), urlBase: R.urlBase,
+        clon, archivos, idCorto: `aprendizajes-${sha12(decisiones)}`, secciones, quien, credencial: R.cred(), remote: R.remote(), urlBase: R.urlBase,
         exclusivo, now, fetch, log, aplicarSolo, titulo: `Decisiones sobre los aprendizajes (${lista.length})`,
       });
       if (r && r.codigo === 'cambio') {
@@ -560,8 +622,9 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 }
 
 // El cliente: marcar Aprobar (con el texto, editable) o Rechazar (con su motivo) en cada tarjeta; las marcas quedan en
-// el navegador hasta enviarlas o borrarlas. Un envío lleva su marca: reenviarlo después de una falla no abre otro pedido
-// al perfil. «Volver a proponer al perfil» manda sólo esa propuesta.
+// el navegador hasta enviarlas o borrarlas. «Seguir las recomendaciones» marca lo que recomienda la noche, y «Rechazar las
+// elegidas» marca varias con un motivo: ninguno envía. Un envío lleva su marca: reenviarlo después de una falla no abre
+// otro pedido al perfil. «Volver a proponer al perfil» manda sólo esa propuesta.
 const CLIENTE = `(function () {
   var s = document.getElementById('aprendizajes');
   var barra = s && s.querySelector('.a-barra');
@@ -574,6 +637,12 @@ const CLIENTE = `(function () {
   Array.prototype.forEach.call(s.querySelectorAll('article[data-huella]'), function (c) { vivas[c.getAttribute('data-huella')] = true; });
   Object.keys(marcas).forEach(function (k) { if (!vivas[k] || ['approve', 'reject'].indexOf(marcas[k] && marcas[k].accion) < 0) delete marcas[k]; });
   var enviando = false;
+  var elegidas = {};
+  var TOPE = Number(barra.getAttribute('data-tope')) || 0;
+  var motivoGrupo = barra.querySelector('.a-motivo-grupo');
+  var cartaDe = function (k) { return s.querySelector('article[data-huella="' + String(k).replace(/"/g, '') + '"]'); };
+  var sePuede = function (c, a) { var b = c.querySelector('button[data-accion="' + a + '"]'); return Boolean(b) && !b.disabled; };
+  var recomendadas = function () { return Array.prototype.filter.call(s.querySelectorAll('article[data-recomendada]'), function (c) { return sePuede(c, c.getAttribute('data-recomendada')); }); };
 ${BUSY.TRABAJANDO}
   var linea = function (x) { return String(x || '').replace(/[\\u0000-\\u001f\\u007f\\u2028\\u2029]+/g, ' ').trim(); };
   function guardar() { try { localStorage.setItem(GUARDA, JSON.stringify(marcas)); } catch (e) { /* sin almacenamiento: se pierde al recargar */ } }
@@ -597,10 +666,19 @@ ${BUSY.TRABAJANDO}
       var tc = c.querySelector('.a-texto-caja'), mc = c.querySelector('.a-motivo-caja');
       if (tc) { tc.hidden = x.accion !== 'approve'; var ti = tc.querySelector('input'); if (x.accion === 'approve' && typeof x.texto === 'string' && ti.value !== x.texto) ti.value = x.texto; ti.disabled = enviando; }
       if (mc) { mc.hidden = x.accion !== 'reject'; var mi = mc.querySelector('input'); if (x.accion === 'reject' && mi.value !== (x.motivo || '')) mi.value = x.motivo || ''; mi.disabled = enviando; }
+      var casilla = c.querySelector('.a-elige'); if (casilla) casilla.checked = Boolean(elegidas[k]);
     });
     var n = Object.keys(marcas).length;
-    barra.querySelector('.a-cuenta').textContent = n ? t('elegidas').replace('{n}', n) + (falta() ? ' ' + t('falta-motivo') : '') : '';
-    barra.querySelector('.a-enviar').disabled = !n || enviando || falta();
+    var sobran = TOPE && n > TOPE ? n - TOPE : 0;
+    barra.querySelector('.a-cuenta').textContent = n ? t('elegidas').replace('{n}', n) + (falta() ? ' ' + t('falta-motivo') : '') + (sobran ? ' ' + t('sobran').replace('{n}', sobran) : '') : '';
+    barra.querySelector('.a-enviar').disabled = !n || enviando || falta() || sobran > 0;
+    var seguir = barra.querySelector('.a-seguir');
+    if (seguir) { var r = recomendadas().length; seguir.textContent = seguir.getAttribute('data-t').replace('{n}', r); seguir.disabled = enviando || !r; }
+    if (motivoGrupo) {
+      var g = Object.keys(elegidas).length;
+      barra.querySelector('.a-grupo-cuenta').textContent = g ? t('elegidas-grupo').replace('{n}', g) : '';
+      barra.querySelector('.a-rechazar-elegidas').disabled = enviando || !g || !linea(motivoGrupo.value);
+    }
     guardar();
   }
   s.addEventListener('click', function (ev) {
@@ -618,11 +696,43 @@ ${BUSY.TRABAJANDO}
   });
   s.addEventListener('input', function (ev) {
     var c = ev.target.closest('article[data-huella]'); if (!c) return;
+    // la casilla «Elegir» también dispara este evento, antes que «change»: repintar acá la desmarcaría
+    var esTexto = ev.target.classList.contains('a-texto'); if (!esTexto && !ev.target.classList.contains('a-motivo')) return;
     var k = c.getAttribute('data-huella'); if (!marcas[k]) return;
-    if (ev.target.classList.contains('a-texto')) marcas[k].texto = ev.target.value;
-    if (ev.target.classList.contains('a-motivo')) marcas[k].motivo = ev.target.value;
+    if (esTexto) marcas[k].texto = ev.target.value; else marcas[k].motivo = ev.target.value;
     pintar();
   });
+  s.addEventListener('change', function (ev) {
+    if (!ev.target.classList.contains('a-elige')) return;
+    var k = ev.target.closest('article[data-huella]').getAttribute('data-huella');
+    if (ev.target.checked) elegidas[k] = true; else delete elegidas[k];
+    pintar();
+  });
+  barra.addEventListener('click', function (ev) {
+    if (enviando) return;
+    if (ev.target.closest('.a-seguir')) {
+      recomendadas().forEach(function (c) {
+        var a = c.getAttribute('data-recomendada');
+        marcas[c.getAttribute('data-huella')] = a === 'approve' ? { accion: a, texto: c.querySelector('.a-texto').value } : { accion: a, motivo: c.getAttribute('data-porque') || '' };
+      });
+      pintar();
+      return;
+    }
+    var porRegla = ev.target.closest('.a-elegir-regla');
+    if (porRegla && !porRegla.disabled) {
+      Array.prototype.forEach.call(s.querySelectorAll('article[data-regla="' + porRegla.getAttribute('data-regla') + '"]'), function (c) { if (c.querySelector('.a-elige')) elegidas[c.getAttribute('data-huella')] = true; });
+      pintar();
+      return;
+    }
+    if (ev.target.closest('.a-rechazar-elegidas')) {
+      var motivo = linea(motivoGrupo.value);
+      if (!motivo) return;
+      Object.keys(elegidas).forEach(function (k) { var c = cartaDe(k); if (c && sePuede(c, 'reject')) marcas[k] = { accion: 'reject', motivo: motivo }; });
+      elegidas = {}; motivoGrupo.value = '';
+      pintar();
+    }
+  });
+  if (motivoGrupo) motivoGrupo.addEventListener('input', pintar);
   barra.querySelector('.a-borrar').addEventListener('click', function () { marcas = {}; pintar(); });
   function mandar(decisiones, boton) {
     var estado = barra.querySelector('.a-estado');
@@ -634,7 +744,13 @@ ${BUSY.TRABAJANDO}
         .then(function (r) { return r.json().catch(function () { return { ok: false, message: String(r.status) }; }); })
         .then(function (j) {
           enviando = false; estado.textContent = '';
-          var quitar = function (k) { delete marcas[k]; var c = s.querySelector('[data-huella="' + String(k).replace(/"/g, '') + '"] .a-acciones'); if (c) c.parentNode.removeChild(c); };
+          var quitar = function (k) {
+            delete marcas[k]; delete elegidas[k];
+            var c = s.querySelector('[data-huella="' + String(k).replace(/"/g, '') + '"] .a-acciones'); if (c) c.parentNode.removeChild(c);
+            var carta = cartaDe(k); if (!carta) return;
+            var casilla = carta.querySelector('.a-casilla'); if (casilla) casilla.parentNode.removeChild(casilla);
+            carta.removeAttribute('data-recomendada'); carta.removeAttribute('data-regla');
+          };
           var omitidas = (j && j.omitidas) || [];
           if (j && j.ok) {
             try { localStorage.removeItem(GUARDA_MARCA); } catch (e) { /* nada */ }

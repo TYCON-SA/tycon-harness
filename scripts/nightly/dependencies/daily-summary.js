@@ -1359,10 +1359,14 @@ function lineaAprendizajes(archivo, hoy, { url, sitioPaso }) {
   const esperando = n(r.pendientes_total);
   if (r.estado !== 'medido' || nuevas === null || esperando === null) return noMidio;
   const sin = r.sin_redaccion && typeof r.sin_redaccion === 'object' ? r.sin_redaccion : {};
-  const causas = APR_CAUSAS.filter(([k]) => n(sin[k])).map(([, t]) => t);
-  const sinRedactar = APR_CAUSAS.reduce((s, [k]) => s + (n(sin[k]) || 0), 0);
+  // lo que no se pudo redactar espera sin archivo: una noche sin llave no se lee como una noche sin nada. Lo que espera
+  // por el tope no se avisa, es lo normal
+  const espera = r.en_espera_por && typeof r.en_espera_por === 'object' ? r.en_espera_por : {};
+  const cuantas = (k) => (n(sin[k]) || 0) + (k === 'tope' ? 0 : n(espera[k]) || 0);
+  const causas = APR_CAUSAS.filter(([k]) => cuantas(k)).map(([, t]) => t);
+  const sinRedactar = APR_CAUSAS.reduce((s, [k]) => s + cuantas(k), 0);
   const s = nuevas === 1 ? '' : 's';
-  const cabeza = nuevas ? `${nuevas} propuesta${s} nueva${s}${sinRedactar ? ` (${sinRedactar} sin redactar: ${causas.join(', ')})` : ''}` : 'sin propuestas nuevas';
+  const cabeza = `${nuevas ? `${nuevas} propuesta${s} nueva${s}` : 'sin propuestas nuevas'}${sinRedactar ? ` (${sinRedactar} sin redactar: ${causas.join(', ')})` : ''}`;
   const partes = [`aprendizajes: ${cabeza}, ${esperando} esperando decisión`];
   if (r.parcial === true) partes.push('lectura parcial del buzón');
   const calladas = n(r.maquinas_sin_reportar);

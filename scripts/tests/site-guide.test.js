@@ -510,3 +510,19 @@ test('T22 4.13-Guide_LearningsTabInRolesAndSections @story-4.13 @ac-20 — la se
     for (const x of ['SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_WRITE_TOKEN']) assert.ok(necesita.includes(x), `${idioma}: «lo que necesita» nombra ${x}`);
   }
 });
+
+test('T20 4.14-Guide_LearningsSectionsUpdated @story-4.14 @ac-19 — las guías dicen la recomendación, el rechazo en grupo y qué no propone la noche', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const seccion = (txt, titulo) => { const i = txt.indexOf(`\n### ${titulo}`); assert.ok(i >= 0, titulo); const r = txt.slice(i + 5); const j = r.search(/\n##+ /); return (j < 0 ? r : r.slice(0, j)).replace(/\s+/g, ' '); };
+  for (const [idioma, guia, resaltado] of [['es', GUIA, 'resaltado'], ['en', GUIA_EN, 'highlighted']]) {
+    const s = seccion(leer(guia), t(idioma, 'pestana.aprendizajes'));
+    const seguir = t(idioma, 'aprend.seguir', { n: 'N' }).replace(' (N)', '');
+    for (const x of [seguir, t(idioma, 'aprend.rechazarElegidas'), t(idioma, 'aprend.elegir'), resaltado]) assert.ok(s.includes(x), `${idioma}: la sección nombra «${x}»`);
+  }
+  const mineria = leer(path.join(ROOT, 'guides', 'integrations', 'instinct-mining.md')).replace(/\s+/g, ' ');
+  for (const x of ['recomendaciones.json', 'proyectos-con-reglas.json', 'carpeta de trabajo', 'ruta de una sola máquina', 'nace redactada', 'un solo proyecto']) assert.ok(mineria.includes(x), `la guía de instintos dice «${x}»`);
+  assert.ok(!mineria.includes('salen sólo con los números'), 'ya no dice que sin redacción la propuesta sale igual');
+  const operaciones = leer(path.join(ROOT, 'pipelines', 'operations', 'README.md'));
+  assert.ok(!operaciones.includes('sólo con los números'), 'la guía de los pipelines tampoco');
+  assert.ok(leer(path.join(ROOT, 'guides', 'piezas-del-arnes.md')).includes('recomendaciones.json'), 'la ficha nombra el archivo de la noche');
+});
