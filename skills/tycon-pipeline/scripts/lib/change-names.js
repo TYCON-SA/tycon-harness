@@ -40,7 +40,7 @@ const IF_LABEL = /^\s*(?:\}\s*)?(?:else\s+)?if\s*\(/;
 const EQ_LIT = new RegExp(`${ID}(?:\\.${ID}|\\[\\d+\\])*\\s*===?\\s*(['"\`])([^'"\`]+)\\1`, 'gu');
 
 function git(repo, args) {
-  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
+  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024, windowsHide: true });
 }
 
 /**
@@ -196,7 +196,7 @@ function enclosing(ctx, idx) {
 }
 
 function callSites(ctx, fn) {
-  const re = new RegExp(`(?<!${WORD}|\\.)${fn.replace(/\$/g, '\\$')}\\s*\\(`, 'u');
+  const re = new RegExp(`(?<!${WORD}|\\.)${fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(`, 'u');
   const out = [];
   ctx.lines.forEach((l, i) => { if (re.test(l) && fnName(l, ctx.forms) !== fn) out.push(i); });
   return out;
