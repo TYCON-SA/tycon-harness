@@ -1446,11 +1446,11 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 ## scripts/hooks/session-collision-guard.js
 
-**Qué es:** Avisa al abrir una sesión donde ya vive otra sobre el mismo checkout (siempre) y, si se prende con `TYCON_SESSION_GUARD=1`, impide que las dos toquen git a la vez.
+**Qué es:** Avisa al abrir una sesión donde ya vive otra en el mismo checkout; con `TYCON_SESSION_GUARD=1`, frena que las dos toquen git.
 
 **Por qué existe:** Con dos chats en el mismo clon, un commit de uno puede llevarse cambios del otro o caer en la rama que el otro acaba de cambiar, sin un solo error de git.
 
-**Quién la usa:** Hook al abrir la sesión (el aviso, siempre) y previo a los comandos de git de escritura (el freno, sólo si se prende); mira el disco con `scripts/lib/live-sessions.js`, no la salida.
+**Quién la usa:** Hook al abrir la sesión (aviso) y antes de un git que escribe (freno); mira el disco con `scripts/lib/live-sessions.js`.
 
 **Dónde se prueba:** `controls-bench/cases/hooks/38-session-collision-guard.json`
 

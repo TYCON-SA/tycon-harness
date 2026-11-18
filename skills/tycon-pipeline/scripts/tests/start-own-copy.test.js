@@ -261,6 +261,17 @@ test('SC6 Start_CoordinatorAlive_Or_Alone_AsToday @story-8.292 @ac-6', () => {
   assert.ok(!('work_copy' in b), JSON.stringify(b));
   assert.ok(!(b.warnings || []).some((w) => /otra sesión/.test(w)));
   assert.strictEqual(fs.realpathSync(miMarcador(L2.home).repoPath), fs.realpathSync(d2));
+  // (c) un repo sin origin (local): no hay main que traer; como hoy, con el aviso, y nada creado
+  // 🔴 mutación: pausar con PIPE-C10-own-copy (las corridas de juguete de otras suites no arrancarían)
+  const L3 = laboratorio();
+  const d3 = producto(L3);
+  git(L3.home, d3, 'remote', 'remove', 'origin');
+  otraViva(L3.home, d3);
+  const c = start(L3, path.join(d3, 'specs', 'story-1-1.md'), d3).json;
+  assert.strictEqual(c.ready, true, JSON.stringify(c));
+  assert.ok(!c.work_copy, JSON.stringify(c));
+  assert.ok((c.warnings || []).some((w) => /aaaa1111/.test(w) && /no tiene origin/.test(w)), JSON.stringify(c.warnings));
+  assert.ok(!fs.readdirSync(path.dirname(d3)).some((n) => n.includes('--wt-')), 'no se creó ninguna copia');
 });
 
 test('SC7 Step01_TellsAgentToMove @story-8.292 @ac-7', () => {

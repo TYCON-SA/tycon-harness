@@ -302,7 +302,7 @@ function others({ root, selfSessionId = '', selfTranscript = '', now = Date.now(
       if (!marcadorVivo(sid, m, { home, now, problems })) continue;
       const ya = byId.get(sid);
       if (ya) { ya.story = String(m.storyId); continue; }
-      byId.set(sid, { id: sid, why: `tiene abierta la corrida de la historia ${m.storyId}`, story: String(m.storyId), lastPrompt: null, min: null });
+      byId.set(sid, { id: sid, why: `tiene abierta la ejecución de la historia ${m.storyId}`, story: String(m.storyId), lastPrompt: null, min: null });
     }
   }
   const sessions = [...byId.values()].sort((a, b) => (a.min == null ? 1e9 : a.min) - (b.min == null ? 1e9 : b.min));

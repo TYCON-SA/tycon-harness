@@ -115,7 +115,11 @@ function constancia(texto, comando) {
   } catch { /* la constancia en stderr ya salió */ }
 }
 
-const lista = (vivas) => vivas.map((v) => `   · sesión ${v.id.slice(0, 8)}${v.min != null ? ` — hace ${v.min} min` : ''}${v.story ? ` — historia ${v.story}` : ''}${v.lastPrompt ? ` — último pedido: «${v.lastPrompt}»` : ''}`).join('\n');
+// por qué cuenta como viva (su transcripción, un subagente suyo o su corrida abierta), con la hora o la historia de
+// respaldo si la sesión no trae el motivo
+const porQue = (v) => [v.why || (v.min != null ? `hace ${v.min} min` : ''),
+  v.story && !(v.why || '').includes(`historia ${v.story}`) ? `historia ${v.story}` : ''].filter(Boolean).join(' — ');
+const lista = (vivas) => vivas.map((v) => `   · sesión ${v.id.slice(0, 8)}${porQue(v) ? ` — ${porQue(v)}` : ''}${v.lastPrompt ? ` — último pedido: «${v.lastPrompt}»` : ''}`).join('\n');
 const consejo = (raiz) => SIN_WORKTREE.test(raiz)
   ? `En ${path.basename(raiz)} el worktree está prohibido a propósito: acá UNA sola sesión toca git a la vez. Coordiná con la otra (o cerrala) antes de seguir.`
   : `Coordiná con esa sesión, o trabajá en un worktree propio: scripts/tools/tycon-worktree.sh (guides/git-worktrees.md).`;

@@ -80,7 +80,7 @@ test('SF1 Stash_TakesForeignFile_Blocks @story-8.292 @ac-12', () => {
     const r = gate(L, cmd, { cwd: cmd.startsWith('git stash') ? L.repo : os.tmpdir() });
     assert.strictEqual(r.status, 2, `${cmd}: ${r.stderr}`);
     assert.match(r.stderr, /a\.md.*aaaa1111/, cmd);
-    assert.match(r.stderr, /c\.md.*sin dueño conocido/, cmd);
+    assert.match(r.stderr, /c\.md.*ninguna sesión lo reclama/, cmd);
     assert.match(r.stderr, /git stash push -m "\[sesión bbbb2222\] [^"]*" -- b\.md/, cmd);
     assert.match(r.stderr, /TYCON_STASH_GUARD_OK=1/, cmd);
     assert.match(r.stderr, /la persona/, cmd);

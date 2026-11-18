@@ -3562,6 +3562,11 @@ function copiaPropiaDelArranque({ storyId, storyPath, repo }) {
   const pausa = (detail) => ({ pause: { id: 'PIPE-C10-own-copy', detail } });
   const main = sib.mainOf(raiz);
   if (!main) return pausa(`Hay otra sesión viva en este checkout (${quien}) y no pude ver el repo ${raiz}. No creé una copia ni escribí el marcador.`);
+  // un repo sin `origin` (uno local, de juguete) no tiene una main que traer ni adonde empujar la copia: sigue como
+  // siempre, con el aviso. Un `origin` que existe y no responde sí pausa (abajo)
+  if (sib.gitIn(raiz, ['remote', 'get-url', 'origin']).code !== 0) {
+    return { warning: `hay otra sesión viva en este checkout (${quien}) y el repo no tiene origin: no creo una copia; coordinala o esperala` };
+  }
   // de dónde nace: se trae main antes de comparar (sin red no se compara contra una punta vieja)
   const fetched = sib.gitIn(main, ['fetch', '--quiet', '--no-tags', 'origin', 'main']);
   if (fetched.code !== 0) return pausa(`Hay otra sesión viva en este checkout (${quien}) y no pude traer main de origin para crear la copia de la historia: ${fetched.err || `git salió con código ${fetched.code}`}. No creé una copia ni escribí el marcador.`);

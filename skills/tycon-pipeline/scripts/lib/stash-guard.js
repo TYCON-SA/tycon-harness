@@ -99,7 +99,7 @@ function escriturasDe(stateDir, sid) {
 }
 
 /** De quién es un archivo (ruta real): `{ sid, story, run }` o null. */
-function dueñoEntre(f, ajenos) {
+function quienReclama(f, ajenos) {
   for (const a of ajenos) {
     if (a.runDir && debajo(f, a.runDir)) return { sid: a.sessionId, story: a.storyId, run: true };
     if (a.files.has(f) || a.consola.has(f)) return { sid: a.sessionId, story: a.storyId, run: false };
@@ -172,13 +172,13 @@ function evaluar({ cmd, cwd, sessionId, stateDir, home = os.homedir() }) {
     const corridas = path.join(rraiz, '.advisors', 'pipeline-runs');
     const ajeno = (f) => {
       if (esPropio(f)) return null;
-      const d2 = dueñoEntre(f, ajenos);
+      const d2 = quienReclama(f, ajenos);
       if (d2) return d2;
       if (debajo(f, corridas)) return { sid: null, story: null, run: true };
       // sin marcador propio, lo que nadie reclama no es de nadie en particular: pasa
       return propio ? { sid: null, story: null, run: false } : null;
     };
-    const nombre = (f, dd) => `${path.relative(rraiz, f)} — ${dd.sid ? `${dd.run ? 'de la corrida de la sesión' : 'de la sesión'} ${corto(dd.sid)}${dd.story ? ` (historia ${dd.story})` : ''}` : dd.run ? 'de la corrida de otra sesión' : 'sin dueño conocido'}`;
+    const nombre = (f, dd) => `${path.relative(rraiz, f)} — ${dd.sid ? `${dd.run ? 'de la corrida de la sesión' : 'de la sesión'} ${corto(dd.sid)}${dd.story ? ` (historia ${dd.story})` : ''}` : dd.run ? 'de la corrida de otra sesión' : 'ninguna sesión lo reclama'}`;
     const conCorrida = otras.some((s) => s.story);
     const noCalcula = (motivo) => (conCorrida
       ? { block: `🔴 ${TAG} no pude calcular qué se llevaría \`git stash ${pedido.sub}\` en ${raiz} (${motivo}), y otra sesión viva tiene su corrida abierta ahí:\n${listaDeOtras(otras)}\n   Ante la duda, freno. ${salida}\n` }
@@ -211,7 +211,7 @@ function evaluar({ cmd, cwd, sessionId, stateDir, home = os.homedir() }) {
     if (ent.error) { const v = noCalcula(ent.error); if (v) return v; continue; }
     const archivos = ent.files.map((f) => real(path.join(raiz, f)));
     if (archivos.length && archivos.every((f) => esPropio(f))) continue;
-    const ajenosDeLaEntrada = archivos.filter((f) => !esPropio(f)).slice(0, MAX_NOMBRES).map((f) => `   · ${nombre(f, dueñoEntre(f, ajenos) || { sid: null, run: debajo(f, corridas) })}`).join('\n');
+    const ajenosDeLaEntrada = archivos.filter((f) => !esPropio(f)).slice(0, MAX_NOMBRES).map((f) => `   · ${nombre(f, quienReclama(f, ajenos) || { sid: null, run: debajo(f, corridas) })}`).join('\n');
     const verbo = pedido.sub === 'drop' ? 'borraría' : 'aplicaría en esta rama';
     return { block: `🔴 ${TAG} \`git stash ${pedido.sub} ${pedido.ref}\` ${verbo} una entrada que no es de esta sesión (no lleva la marca [sesión ${corto(sessionId)}] y tiene archivos que no son suyos), con otra sesión viva en el repo (la pila es común a todas sus copias):\n${ajenosDeLaEntrada || '   · (sin archivos que mostrar)'}\n   Las otras sesiones vivas:\n${listaDeOtras(otras)}\n   No se puede atribuir: decidilo con la persona. ${salida}\n` };
   }

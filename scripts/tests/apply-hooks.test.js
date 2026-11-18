@@ -1156,4 +1156,20 @@ test('T8292 ApplyHooks_SameScriptOneEventOnOneOff_RemovesOnlyTheOffEvent @story-
   assert.ok(commandsOf(s, 'SessionStart').some((c) => c.includes('dos-eventos.js')), 'apagado: el SessionStart queda');
   assert.ok(!commandsOf(s, 'PreToolUse').some((c) => c.includes('dos-eventos.js')), 'apagado: el PreToolUse se va');
   assert.match(r.report, /disabled by env var/);
+  // sin perfil que se pueda leer, el «siempre» queda como está: apagar el freno del mismo guion no se lo lleva
+  // 🔴 mutación: sacar lo apagado por guion sin mirar lo que queda como está en el otro evento (se va el SessionStart)
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dos-eventos-'));
+  fs.writeFileSync(path.join(dir, 'dos-eventos.js'), '');
+  const cmd = `node "${path.join(dir, 'dos-eventos.js')}"`;
+  const settings = { hooks: {
+    SessionStart: [{ matcher: '', hooks: [{ type: 'command', command: cmd }] }],
+    PreToolUse: [{ matcher: 'Bash|PowerShell', hooks: [{ type: 'command', command: cmd }] }],
+  } };
+  fs.writeFileSync(path.join(dir, 'hooks-list.json'), JSON.stringify(list));
+  const cargada = mod.loadList(path.join(dir, 'hooks-list.json'));
+  const d = mod.decide(cargada, { env: {}, integ: { state: 'ok', values: {} }, profile: { state: 'rota' }, minimalIds: new Set(), platform: 'posix', has: () => true });
+  const sin = mod.applyToSettings(settings, { list: cargada, decision: d, platform: 'posix', hooksDir: dir, skills: dir, env: {}, check: false, settingsPath: path.join(dir, 'settings.json') });
+  assert.ok(commandsOf(settings, 'SessionStart').some((c) => c.includes('dos-eventos.js')), 'sin perfil: el SessionStart queda');
+  assert.ok(!commandsOf(settings, 'PreToolUse').some((c) => c.includes('dos-eventos.js')), 'sin perfil: el PreToolUse apagado se va');
+  assert.deepStrictEqual(sin.removed.map((x) => x.event), ['PreToolUse']);
 });
