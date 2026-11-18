@@ -410,10 +410,11 @@ function piezasCentrales({ repo, plan, files, base }) {
   return out;
 }
 
-// ¿El texto nombra `n` como palabra entera? (`adhoc` sí en «adhoc set», no en «noadhocs»)
+// ¿El texto nombra `n` como palabra entera? (`adhoc` sí en «adhoc set», no en «noadhocs»; también con letras fuera del
+// ASCII, como los nombres que da change-names.js)
 function nombra(text, n) {
   const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?<![\\w$])${esc}(?![\\w$])`).test(text);
+  return new RegExp(`(?<![\\p{L}\\p{N}_$])${esc}(?![\\p{L}\\p{N}_$])`, 'u').test(text);
 }
 
 /**

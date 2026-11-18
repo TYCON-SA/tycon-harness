@@ -146,3 +146,31 @@ test('T9 ChangeNames_EnclosingByBraces_DispatchAndUnknown @story-8.302 @ac-2 @ac
   assert.equal(opcion.known, false, JSON.stringify(opcion));
   assert.match(opcion.reason, /git no conoce la base --output=\/tmp\/x/);
 });
+
+test('T10 ChangeNames_AdversarialRegressions @story-8.302 @ac-2 @ac-8 — las regresiones del pase adversarial: saltos por el camino largo, nombres borrados o renombrados, letras fuera del ASCII', () => {
+  // 🔴 mutación: un `seen` que no mira cuántos saltos quedan → falta cmdY; contar sólo el archivo nuevo → falta el
+  //    `case 'b'` borrado y el nombre viejo `a`; un identificador sólo ASCII o una flecha que no admite paréntesis en
+  //    sus parámetros → faltan naïveSort e inner. Las seis pruebas del pase (wf_dd601e70-a16) caen en estas tres causas.
+  const NIDO = [
+    'function cmdX() {', '  function walk() {', '    return 1;', '  }', '  walk();', '}',
+    'function wrapper() { return cmdX(); }', 'function otherUse() { return cmdX(); }',
+    'function cmdY() {', '  return wrapper();', '}', '',
+  ].join('\n');
+  const n = lab({ 'lib/nest.js': NIDO });
+  n.write('lib/nest.js', NIDO.replace('return 1;', 'return 2;'));
+  assert.deepEqual(changeNames({ repo: n.repo, file: 'lib/nest.js', base: n.base }).names.sort(), ['cmdX', 'cmdY', 'otherUse', 'walk', 'wrapper']);
+
+  const SW = ['function main(cmd) {', '  switch (cmd) {', "    case 'a':", '      f();', '      break;', "    case 'b':", '      g();', '      break;', "    case 'c':", '      h();', '      break;', '  }', '}', ''].join('\n');
+  const s = lab({ 'lib/sw.js': SW, 'lib/ren.js': ['function a() {', '  return 1;', '}', ''].join('\n') });
+  s.write('lib/sw.js', SW.replace("    case 'b':\n      g();\n      break;\n", ''));
+  assert.ok(changeNames({ repo: s.repo, file: 'lib/sw.js', base: s.base }).names.includes('b'), 'el case borrado cuenta');
+  s.write('lib/ren.js', ['function z() {', '  return 1;', '}', ''].join('\n'));
+  assert.deepEqual(changeNames({ repo: s.repo, file: 'lib/ren.js', base: s.base }).names.sort(), ['a', 'z']);
+
+  const UNI = ['function outer() {', '  function naïveSort() {', '    const a = 1;', '  }', '  const inner = (keep = new Set()) => {', '    return keep;', '  };', '  naïveSort();', '}', ''].join('\n');
+  const u = lab({ 'lib/uni.js': UNI });
+  u.write('lib/uni.js', UNI.replace('const a = 1;', 'const a = 2;'));
+  assert.ok(changeNames({ repo: u.repo, file: 'lib/uni.js', base: u.base }).names.includes('naïveSort'));
+  u.write('lib/uni.js', UNI.replace('return keep;', 'return [...keep];'));
+  assert.ok(changeNames({ repo: u.repo, file: 'lib/uni.js', base: u.base }).names.includes('inner'));
+});

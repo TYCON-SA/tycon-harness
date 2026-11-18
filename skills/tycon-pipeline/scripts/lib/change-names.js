@@ -22,18 +22,22 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const ID = '[A-Za-z_$][\\w$]*';
+// Un identificador de JavaScript, también con letras fuera del ASCII (`naïveSort`, `avisoDeLoQueContó`).
+const ID = '[\\p{L}_$][\\p{L}\\p{N}_$]*';
+const WORD = '[\\p{L}\\p{N}_$]';
 const KEYWORDS = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'with', 'else', 'do', 'try', 'finally']);
+// Los parámetros de una flecha pueden traer paréntesis adentro (`(keep = new Set()) =>`), o seguir en el renglón de abajo.
+const ARROW = `(?:\\(.*\\)\\s*=>|\\([^)]*$|${ID}\\s*=>)`;
 const JS_FN = [
-  new RegExp(`^\\s*(?:export\\s+)?(?:async\\s+)?function\\s*\\*?\\s*(${ID})\\s*\\(`),
-  new RegExp(`^\\s*(?:export\\s+)?(?:const|let|var)\\s+(${ID})\\s*=\\s*(?:async\\s+)?(?:function\\b|\\([^)]*\\)?\\s*(?:=>|$)|${ID}\\s*=>)`),
-  new RegExp(`^\\s*(${ID})\\s*:\\s*(?:async\\s+)?(?:function\\b|\\([^)]*\\)\\s*=>|${ID}\\s*=>)`),
-  new RegExp(`^\\s*(?:static\\s+)?(?:async\\s+)?(${ID})\\s*\\([^)]*\\)\\s*\\{`),
+  new RegExp(`^\\s*(?:export\\s+)?(?:async\\s+)?function\\s*\\*?\\s*(${ID})\\s*\\(`, 'u'),
+  new RegExp(`^\\s*(?:export\\s+)?(?:const|let|var)\\s+(${ID})\\s*=\\s*(?:async\\s+)?(?:function\\b|${ARROW})`, 'u'),
+  new RegExp(`^\\s*(${ID})\\s*:\\s*(?:async\\s+)?(?:function\\b|${ARROW})`, 'u'),
+  new RegExp(`^\\s*(?:static\\s+)?(?:async\\s+)?(${ID})\\s*\\([^)]*\\)\\s*\\{`, 'u'),
 ];
 const SH_FN = [/^\s*(?:function\s+)?([A-Za-z_][\w-]*)\s*\(\)\s*\{/, /^\s*function\s+([A-Za-z_][\w-]*)\s*\{/];
 const CASE = /^\s*case\s+(['"`])([^'"`]+)\1\s*:/;
 const IF_LABEL = /^\s*(?:\}\s*)?(?:else\s+)?if\s*\(/;
-const EQ_LIT = new RegExp(`${ID}(?:\\.${ID}|\\[\\d+\\])*\\s*===?\\s*(['"\`])([^'"\`]+)\\1`, 'g');
+const EQ_LIT = new RegExp(`${ID}(?:\\.${ID}|\\[\\d+\\])*\\s*===?\\s*(['"\`])([^'"\`]+)\\1`, 'gu');
 
 function git(repo, args) {
   return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
@@ -192,25 +196,26 @@ function enclosing(ctx, idx) {
 }
 
 function callSites(ctx, fn) {
-  const re = new RegExp(`(?<![\\w$.])${fn.replace(/\$/g, '\\$')}\\s*\\(`);
+  const re = new RegExp(`(?<!${WORD}|\\.)${fn.replace(/\$/g, '\\$')}\\s*\\(`, 'u');
   const out = [];
   ctx.lines.forEach((l, i) => { if (re.test(l) && fnName(l, ctx.forms) !== fn) out.push(i); });
   return out;
 }
 
-// Los nombres de un renglón: lo que lo encierra y, por cada función, lo que encierra a quien la llama (dos saltos).
+// Los nombres de un renglón: lo que lo encierra y, por cada función, lo que encierra a quien la llama (dos saltos). A una
+// función que se alcanza por dos caminos se la sigue con el que deja más saltos: el orden de la visita no corta nombres.
 function namesOf(ctx, idx) {
   const names = new Set();
   let labels = false;
-  const seen = new Set();
+  const seen = new Map();   // función → los saltos con que ya se siguió
   const visit = (i, saltos) => {
     let label = false;
     for (const c of enclosing(ctx, i)) {
       if (c.label) { labels = true; label = true; names.add(c.label); continue; }
       if (c.name === 'main' && label) continue;   // el despacho: ni cuenta ni se siguen sus llamadas
       names.add(c.name);
-      if (saltos > 0 && !seen.has(c.name)) {
-        seen.add(c.name);
+      if (saltos > 0 && saltos > (seen.has(c.name) ? seen.get(c.name) : 0)) {
+        seen.set(c.name, saltos);
         for (const s of callSites(ctx, c.name)) visit(s, saltos - 1);
       }
     }
@@ -220,18 +225,23 @@ function namesOf(ctx, idx) {
   return [...names];
 }
 
-// Los renglones del archivo nuevo que tocó cada tramo de `git diff -U0`.
+// Los renglones que tocó cada tramo de `git diff -U0`: los del archivo nuevo (`nuevos`) y los que se fueron o cambiaron
+// del archivo de la base (`viejos`).
 function changedLines(diff) {
-  const out = [];
+  const nuevos = [];
+  const viejos = [];
   for (const l of diff.split('\n')) {
-    const m = l.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
+    const m = l.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
     if (!m) continue;
-    const start = Number(m[1]);
-    const count = m[2] === undefined ? 1 : Number(m[2]);
-    if (count === 0) out.push(Math.max(start, 1));   // sólo borra: el renglón de al lado que quedó
-    else for (let i = 0; i < count; i++) out.push(start + i);
+    const oldStart = Number(m[1]);
+    const oldCount = m[2] === undefined ? 1 : Number(m[2]);
+    const start = Number(m[3]);
+    const count = m[4] === undefined ? 1 : Number(m[4]);
+    if (count === 0) nuevos.push(Math.max(start, 1));   // sólo borra: el renglón de al lado que quedó
+    else for (let i = 0; i < count; i++) nuevos.push(start + i);
+    for (let i = 0; i < oldCount; i++) viejos.push(oldStart + i);
   }
-  return out;
+  return { nuevos, viejos };
 }
 
 /**
@@ -254,19 +264,34 @@ function changeNames({ repo, file, base }) {
   try { diff = git(repo, ['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', base, '--', file]); } catch (e) {
     return { known: false, reason: `git diff falló (${String(e.stderr || e.message).trim().split('\n')[0]})` };
   }
-  const changed = changedLines(diff);
-  if (!changed.length) return { known: false, reason: `no cambió desde ${base.slice(0, 12)}` };
-  const lines = text.split('\n');
+  const { nuevos, viejos } = changedLines(diff);
+  if (!nuevos.length) return { known: false, reason: `no cambió desde ${base.slice(0, 12)}` };
   const sh = /\.(ba)?sh$/.test(file);
-  const b = sh ? bracesSh(lines) : bracesJs(lines);
-  if (!b.ok) return { known: false, reason: `no pude seguir las llaves de ${file}: ${b.reason}` };
-  const ctx = { lines, braces: b.braces, forms: sh ? SH_FN : JS_FN };
+  const contexto = (txt, cual) => {
+    const lines = txt.split('\n');
+    const b = sh ? bracesSh(lines) : bracesJs(lines);
+    if (!b.ok) throw new Error(`no pude seguir las llaves de ${file}${cual}: ${b.reason}`);
+    return { lines, braces: b.braces, forms: sh ? SH_FN : JS_FN };
+  };
+  let ctx;
+  let viejo = null;
+  try {
+    ctx = contexto(text, '');
+    if (viejos.length) viejo = contexto(git(repo, ['show', `${base}:./${file}`]), ` en ${base.slice(0, 12)}`);
+  } catch (e) {
+    return { known: false, reason: e.message };
+  }
   const names = [];
-  for (const n of changed) {
-    const idx = Math.min(n, lines.length) - 1;
+  for (const n of nuevos) {
+    const idx = Math.min(n, ctx.lines.length) - 1;
     const found = idx >= 0 ? namesOf(ctx, idx) : [];
     if (!found.length) return { known: false, reason: `el renglón ${n} cambió y no lo encierra ninguna función ni subcomando` };
     for (const x of found) if (!names.includes(x)) names.push(x);
+  }
+  // lo que se borró o se renombró suma su nombre viejo; un renglón viejo que nada encierra no agrega nada
+  for (const n of viejos) {
+    const idx = Math.min(n, viejo.lines.length) - 1;
+    for (const x of idx >= 0 ? namesOf(viejo, idx) : []) if (!names.includes(x)) names.push(x);
   }
   return { known: true, names };
 }
