@@ -300,7 +300,7 @@ coordinadora: sólo puede frenar de más.
 
 ## Las revisiones automáticas: qué hace la coordinadora
 
-Cuándo corre cada revisión lo dice la configuración de la organización (`guides/revisiones-automaticas.md`). En cada
+Cuándo corre cada revisión lo dice la configuración de la organización (`guides/automatic-reviews.md`). En cada
 una, la coordinadora:
 
 - **Pregunta o no.** Si la matriz dice preguntar, la pregunta al dueño la hace ella, con el cuadro de opciones, y la
@@ -414,6 +414,14 @@ probarla.
   que falta repetir.
 - **Con un «No»:** `coordination.js owner-reject <id>` saca el renglón y nombra la sesión a la que hay que avisarle. Un cuadro
   cerrado o resuelto solo deja el renglón, y la pasada se corta.
+- **Lo que firma la coordinadora por delegación.** Una firma delegable que la sesión que trabaja pidió para sí no llega a
+  la persona: el freno la desvía a la coordinadora (`guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). El
+  aviso la cuenta aparte («N firmas las firmás vos por delegación»), y `owner-wait` se la anuncia una vez. `owner-next`
+  no da un cuadro: da el comando para correr en su pestaña («Firmala vos por delegación, en tu pestaña, desde <carpeta>:
+  <comando>»). La coordinadora lo corre tal cual y le avisa a la sesión que ya quedó firmada: la sesión no repite nada.
+  Si no la firma en `approvals.delegation_wait_minutes` (10 por defecto), o deja de estar viva, el renglón pasa a la
+  persona con su cuadro de siempre, y `owner-wait` lo anuncia una vez. En `/office` sale en «En curso» con «la firma la
+  coordinadora», no en «Tu firma».
 
 Límites: si la persona se va antes de contestar, `/office` las sigue contando y se piden la próxima vez. Lo que pide otra
 sesión de fondo con `--for-session` sigue por mensaje a la coordinadora. Una pestaña sin permisos sigue mostrando su cuadro: si

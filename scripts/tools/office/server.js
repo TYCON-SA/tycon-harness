@@ -353,12 +353,15 @@ async function serve() {
   let pending = null;
   let running = false;
   let again = false;
+  // Lo que decide si una foto es nueva. La carga de la máquina (`meta.maquina`) no cuenta: cambia en cada lectura, y una
+  // foto que sólo cambia en ella no sale; los racks se ponen al día con la próxima novedad de la oficina.
+  const photoKey = (d) => JSON.stringify(d && d.meta && d.meta.maquina ? { ...d, meta: { ...d.meta, maquina: undefined } } : d);
   const recompute = async () => {
     if (running) { again = true; return; }
     running = true;
     try {
       const data = await snapshot();
-      const json = JSON.stringify(data);
+      const json = photoKey(data);
       if (json !== lastJson) { last = data; lastJson = json; broadcast(); }
       deliverCharlas();
     } catch (e) {
@@ -368,7 +371,7 @@ async function serve() {
       process.stderr.write(`${new Date().toISOString()} ${failed}: ${e && e.stack ? e.stack : e}\n`);
       if (last) {
         const shown = { ...last, unreadable: [...(last.unreadable || []).filter((u) => !u.startsWith(failed)), `${failed}: ${e.message}`] };
-        const json = JSON.stringify(shown);
+        const json = photoKey(shown);
         if (json !== lastJson) { last = shown; lastJson = json; broadcast(); }
       }
     } finally {
@@ -730,7 +733,7 @@ async function serve() {
   running = true;
   try {
     last = await snapshot();
-    lastJson = JSON.stringify(last);
+    lastJson = photoKey(last);
   } catch (e) {
     unwatch();
     // el candado se borra sólo si es el de este proceso: otro arranque pudo haberlo escrito encima

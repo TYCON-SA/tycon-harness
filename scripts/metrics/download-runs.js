@@ -58,6 +58,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   --instincts: baja también los días de instintos (`<maquina>/instincts/v<versión>/<día>.jsonl.gz`, la versión más
  *   nueva de cada día) a `<maquina>/instincts/<día>.jsonl.gz`. Traen comandos: sin la opción —el nocturno, el sitio—
  *   no se bajan y se cuentan en `omitidos`, uno por carpeta y día. Lo usa el que propone instintos.
+ *   --workdays: baja también los días de horas y tokens (`<maquina>/jornadas/v<versión>/<día>.json`, la versión más
+ *   nueva de cada día) a `<maquina>/jornadas/<día>.json`. Sin la opción se cuentan en `omitidos`, como los instintos. Lo
+ *   pide el sitio (`jornadas: true`, por scripts/site/cloud/azure.js) para la pestaña «Horas y tokens».
  *
  *   --merges-to <dir>: baja también los archivos de métricas de cada merge (`<maquina>/merges/<archivo>` y sus
  *   versiones, la más nueva de cada uno) al espejo, y deja en <dir> uno por merge de todas las máquinas: el que trae
@@ -103,7 +106,7 @@ const http = require('http');
 const https = require('https');
 const { spawnSync } = require('child_process');
 const { readEnv, resolveFile, prepareStateWrite } = require('../lib/legacy-names.js');
-const { leerConfig, integracionBuzon, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
+const { leerConfig, integracionBuzon, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_JORNADA, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
 
 // el nombre del archivo de métricas de un merge, el que escribe retro-heartbeat.js
 const FORMA_MERGE = /^metrics-[A-Za-z0-9._-]+\.json$/;
@@ -176,6 +179,10 @@ function formaDelNombre(nombre) {
   // un día de instintos: siempre con versión
   if (partes.length === 4 && partes[1] === 'instincts' && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[2]) && FORMA_INSTINTO.test(partes[3])) {
     return { maquina: partes[0], archivo: `instincts/${partes[3]}`, version: partes[2] };
+  }
+  // un día de horas y tokens: siempre con versión
+  if (partes.length === 4 && partes[1] === 'jornadas' && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[2]) && FORMA_JORNADA.test(partes[3])) {
+    return { maquina: partes[0], archivo: `jornadas/${partes[3]}`, version: partes[2] };
   }
   // el archivo de métricas de un merge: `<maquina>/merges/<archivo>` y, re-subido, `<maquina>/merges/v<versión>/<archivo>`
   if (partes.length === 4 && partes[1] === 'merges' && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[2]) && FORMA_MERGE.test(partes[3])) {
@@ -284,6 +291,7 @@ function tipoDelBlob(forma) {
   if (!forma) return 'ignorado';
   if (forma.archivo.startsWith('registros/')) return 'registros';
   if (forma.archivo.startsWith('instincts/')) return 'instintos';
+  if (forma.archivo.startsWith('jornadas/')) return 'jornadas';
   if (forma.archivo.startsWith('office-keys/')) return 'huella';
   if (forma.archivo.endsWith('.hilo.jsonl.gz')) return 'hilo';
   if (forma.archivo.endsWith('.cambio.json.gz')) return 'cambio';
@@ -327,7 +335,7 @@ async function informeDeReescrituras(opts = {}) {
     else if (b.modificado - b.creado > 1000) c.reescritos += 1;
   };
   const total = cuenta();
-  const porTipo = { registros: cuenta(), volcado: cuenta(), hilo: cuenta(), cambio: cuenta(), huella: cuenta(), instintos: cuenta(), ignorado: cuenta() };
+  const porTipo = { registros: cuenta(), volcado: cuenta(), hilo: cuenta(), cambio: cuenta(), huella: cuenta(), instintos: cuenta(), jornadas: cuenta(), ignorado: cuenta() };
   const porMaquina = new Map();
   for (const b of ls.blobs) {
     const forma = formaDelNombre(b.nombre);
@@ -860,6 +868,8 @@ async function bajar(opts = {}) {
     // los días de instintos traen comandos: se bajan sólo con `--instincts` (el que propone); sin la opción se
     // cuentan una vez por carpeta y día, no por versión
     if (forma.archivo.startsWith('instincts/') && opts.instintos !== true) { instintosOmitidos.add(`${forma.maquina}/${forma.archivo}`); continue; }
+    // los días de horas y tokens los baja quien los muestra (`--workdays`, el sitio); sin la opción, como los instintos
+    if (forma.archivo.startsWith('jornadas/') && opts.jornadas !== true) { instintosOmitidos.add(`${forma.maquina}/${forma.archivo}`); continue; }
     // los archivos de los merges los baja sólo quien los junta (`--merges-to`, el nocturno del tablero)
     if (forma.archivo.startsWith('merges/') && !opts.mergesA) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
     if (forma.archivo.startsWith('registros/')) {
@@ -1148,6 +1158,7 @@ if (require.main === module) {
     // así nunca se apaga el filtro en silencio
     hilosDesde: args.includes('--threads-since') ? (valor('--threads-since') || '') : undefined,
     instintos: args.includes('--instincts'),
+    jornadas: args.includes('--workdays'),
     // como `--threads-since`: sin valor, o con otra opción detrás, llega vacío y `bajar()` lo rechaza (si no, los
     // merges irían a `ignorados` con la bajada completa, sin que nadie se entere)
     mergesA: args.includes('--merges-to') ? (valor('--merges-to') && !valor('--merges-to').startsWith('--') ? path.resolve(valor('--merges-to')) : '') : undefined,

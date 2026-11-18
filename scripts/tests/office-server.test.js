@@ -526,7 +526,8 @@ test('T11 Shutdown_ReloadDoesNotKill: recargar la página no lo apaga', async ()
 
 test('T12 Shutdown_EightHourCap_AndSignals: el tope y las señales lo cierran; un candado ajeno queda', async () => {
   const m = toy();
-  openSync(m, { TYCON_OFFICE_MAX_MS: '900' });
+  // el tope deja lugar a la primera foto, que espera la carga de la máquina (hasta 1 s la memoria y 250 ms el procesador)
+  openSync(m, { TYCON_OFFICE_MAX_MS: '2500' });
   const lock = readLock(m);
   const p = page(lock);
   await p.next();

@@ -1,5 +1,5 @@
 {
-  "__doc": "Con qué corren la revisión del plan y la del código (workflow-lite.js). La organización elige la lista en team-repos.json → review_runner.order (de fábrica claude); si uno falla o llega a su tope, el agente se relanza con el siguiente. Cada corredor dice cómo se lanza, dónde deja la respuesta, de qué proveedor salen sus modelos, cómo se reconoce su tope y si corre confinado: en el modo código sólo corre uno confinado. Guía: guides/revisiones-automaticas.md.",
+  "__doc": "Con qué corren la revisión del plan y la del código (workflow-lite.js). La organización elige la lista en team-repos.json → review_runner.order (de fábrica claude); si uno falla o llega a su tope, el agente se relanza con el siguiente. Cada corredor dice cómo se lanza, dónde deja la respuesta, de qué proveedor salen sus modelos, cómo se reconoce su tope y si corre confinado: en el modo código sólo corre uno confinado. Guía: guides/automatic-reviews.md.",
   "name": "review-runner",
   "label": "Revisores automáticos",
   "kind": "reviewRunner",

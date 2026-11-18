@@ -1318,7 +1318,7 @@
     {
      "id": "borrar-la-memoria-con-comodin-se-frena",
      "type": "must-block",
-     "__doc": "AC 4/9 · `rm ~/.claude/.tycon-pipeline/produccion-*`: el comodín no nombra el archivo literal. ROJO PREVIO: pasaba y borraba memoria e índice (revisores del Step 5).",
+     "__doc": "AC 4/9 · `rm ~/.claude/.tycon-pipeline/production-*`: el comodín no nombra el archivo literal. ROJO PREVIO: pasaba y borraba memoria e índice (revisores del Step 5). Desde la 8.15 tanda D el estado se protege sólo con su nombre en inglés: el caso apunta a ése.",
      "files": {
       "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
      },
@@ -1329,7 +1329,7 @@
      "stdin": {
       "tool_name": "Bash",
       "tool_input": {
-       "command": "rm -f ~/.claude/.tycon-pipeline/produccion-*"
+       "command": "rm -f ~/.claude/.tycon-pipeline/production-*"
       }
      },
      "expect": {
@@ -2883,33 +2883,6 @@
       "stderr_re": [
        "escribe",
        "production-(index|memory)\\.json"
-      ],
-      "stderr_not_re": [
-       "no pude|no encontr|sin tiempo|no parece"
-      ]
-     }
-    },
-    {
-     "id": "brace-list-on-old-state-names-is-blocked",
-     "type": "must-block",
-     "__doc": "Story 8.14 · fila R3 (AC 3) · lo mismo que R2 con los nombres viejos, que se protegen mientras dure la escritura doble de la 8.9. ROJO PREVIO: en main 24151e89 (y 6e01463) sale 0.",
-     "files": {
-      "repos/r/.tycon/production.json": "{\"servers\": [{\"host\": \"x.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-x\"}]}"
-     },
-     "setup": [
-      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
-      "git -C repos/r init -q ."
-     ],
-     "stdin": {
-      "tool_name": "Bash",
-      "tool_input": {
-       "command": "rm -f ~/.claude/.tycon-pipeline/produccion-{indice,memoria}.json"
-      }
-     },
-     "expect": {
-      "exit": 2,
-      "stderr_re": [
-       "escribe"
       ],
       "stderr_not_re": [
        "no pude|no encontr|sin tiempo|no parece"

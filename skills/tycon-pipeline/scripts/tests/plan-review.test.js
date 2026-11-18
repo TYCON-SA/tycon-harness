@@ -1661,11 +1661,11 @@ test('PlanReview_DelicadaEsperaYLosDocsDicenLaRegla (T24) @story-8.267 @ac-19', 
   assert.strictEqual(r.codigo, 2);
   assert.match(r.motivo, /plan delicado/);
   const leer = (f) => fs.readFileSync(path.join(RAIZ, f), 'utf8');
-  for (const f of ['guides/revisiones-automaticas.md', 'guides/organization-site.md', 'guides/coordination.md', 'guides/firmas-del-arnes.md',
+  for (const f of ['guides/automatic-reviews.md', 'guides/organization-site.md', 'guides/coordination.md', 'guides/firmas-del-arnes.md',
     'skills/tycon-pipeline/steps/step-04-approve-plan.md']) {
     assert.match(leer(f), /plan_review\.routine_approval|routine_approval/, `${f} no nombra la llave nueva`);
   }
-  for (const f of ['guides/revisiones-automaticas.en.md', 'guides/organization-site.en.md', 'guides/coordination.en.md']) {
+  for (const f of ['guides/automatic-reviews.en.md', 'guides/organization-site.en.md', 'guides/coordination.en.md']) {
     assert.match(leer(f), /routine_approval/, `${f} no nombra la llave nueva`);
   }
   assert.match(leer('skills/tycon-pipeline/SKILL.md'), /un plan de rutina se aprueba con el aprobado de su revisión, con o sin\s+coordinadora; uno delicado, siempre el dev/);
@@ -1701,8 +1701,8 @@ test('PlanReview_SelfReview_GuaranteesAndDocs (T27) @story-8.267 @ac-22', (t) =>
   assert.ok(markerDe(lab).planApproval.revision);
   assert.ok(lab.aprobaciones().some((x) => x.que === 'plan' && /revisión automática \(opus\)/.test(x.quien)));
   // el párrafo de garantías, en los dos idiomas, con lo que no garantiza
-  const es = fs.readFileSync(path.join(RAIZ, 'guides', 'revisiones-automaticas.md'), 'utf8');
-  const en = fs.readFileSync(path.join(RAIZ, 'guides', 'revisiones-automaticas.en.md'), 'utf8');
+  const es = fs.readFileSync(path.join(RAIZ, 'guides', 'automatic-reviews.md'), 'utf8');
+  const en = fs.readFileSync(path.join(RAIZ, 'guides', 'automatic-reviews.en.md'), 'utf8');
   assert.match(es, /Qué garantiza la revisión que lanza la propia sesión/);
   assert.match(es, /\*\*no\*\* garantiza/i);
   assert.match(en, /What the review the session launches itself guarantees/);

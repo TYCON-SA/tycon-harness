@@ -220,7 +220,15 @@ function readEvent() {
 // se trae no es un cambio de este commit: ya pasó por su propio pedido, y cobrárselo frenaría el merge por historias
 // ajenas. Quedan afuera el archivo cuyo contenido en el índice es el de `MERGE_HEAD` y el borrado que tampoco existe
 // ahí. Lo que se resolvió a mano (distinto de los dos lados) sigue adentro.
+// El gancho la pide varias veces: se recuerda por carpeta y huella (lib/git-stamp.js, que lleva el índice en uso: con
+// los `add` simulados en una copia se vuelve a preguntar). Un error de git no se recuerda.
+const STAGED = new Map();
 function getStagedDiff(cwd) {
+  return require('./lib/git-stamp.js').memo(STAGED, cwd, 'staged', () => leerStagedDiff(cwd));
+}
+/** Olvida las listas recordadas (para las pruebas que cargan el gancho en su proceso). */
+function limpiarStaged() { STAGED.clear(); }
+function leerStagedDiff(cwd) {
   let diff;
   try {
     diff = execFileSync('git', ['diff', '--cached', '--name-only'], {
@@ -230,10 +238,10 @@ function getStagedDiff(cwd) {
       stdio: ['pipe', 'pipe', 'ignore'],
     });
   } catch {
-    return '';
+    return { valor: '', recordar: false };
   }
   const archivos = diff.split('\n').filter(Boolean);
-  if (archivos.length === 0) return diff;
+  if (archivos.length === 0) return { valor: diff, recordar: true };
   const env = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo();
   const git = (args, dir = cwd) => execFileSync('git', args, {
     windowsHide: true,
@@ -241,8 +249,9 @@ function getStagedDiff(cwd) {
   });
   try {
     git(['rev-parse', '-q', '--verify', 'MERGE_HEAD^{commit}']);
-  } catch {
-    return diff;
+  } catch (e) {
+    // sale 1: no hay merge en curso, y eso se recuerda; otro error de git se juzga igual, sin recordarlo
+    return { valor: diff, recordar: e && e.status === 1 };
   }
   try {
     // Todo desde la raíz y con `-z`: las rutas del diff son de la raíz (desde una subcarpeta, `ls-files` y `ls-tree` las
@@ -265,11 +274,11 @@ function getStagedDiff(cwd) {
     const enIndice = objetos(git(['ls-files', '-s', '-z', '--', ...crudas], raiz), 1, true);
     const enMerge = objetos(git(['ls-tree', '-r', '-z', 'MERGE_HEAD', '--', ...crudas], raiz), 2, false);
     const propios = archivos.filter((_, i) => enIndice.get(crudas[i]) !== enMerge.get(crudas[i]));
-    return propios.length ? propios.join('\n') + '\n' : '';
+    return { valor: propios.length ? propios.join('\n') + '\n' : '', recordar: true };
   } catch (e) {
     // sin poder comparar con MERGE_HEAD, se juzga todo como antes
     process.stderr.write(`⚠ freno de cierre: no pude comparar el merge con MERGE_HEAD (${(e && e.message) || e}); juzgo todos los archivos del commit\n`);
-    return diff;
+    return { valor: diff, recordar: false };
   }
 }
 
@@ -2093,7 +2102,7 @@ function main() {
 module.exports = {
   prepararIndiceConLosAdd,
   isGitCommit, usaNoVerify, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
-  looksLikeStorySpec, selectStorySpecs, storiesOutsidePattern, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff,
+  looksLikeStorySpec, selectStorySpecs, storiesOutsidePattern, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff, limpiarStaged,
 };
 
 if (require.main === module) {

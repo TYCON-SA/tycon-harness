@@ -57,6 +57,9 @@
  *    `<maquina>/instincts/v<versión>/<día>.jsonl.gz`: un día ya subido igual no se manda; con una línea tardía, sube
  *    entero con otra versión.
  *
+ * 🔴 Y LOS DÍAS DE HORAS Y TOKENS: en cada pasada, los días LOCALES cerrados de workday-upload.js suben con versión a
+ *    `<maquina>/jornadas/v<versión>/<día>.json` (ver prepararJornadas). TYCON_WORKDAYS=0 los apaga.
+ *
  * 🔴 Y LOS ARCHIVOS DE CADA MERGE: el latido (retro-heartbeat.js) deja un `metrics-*.json` por merge en la carpeta de
  *    estado (`<stateDir>/dashboard`, scripts/lib/merge-metrics.js). Suben después de los instintos y antes de las
  *    corridas, a `<maquina>/merges/<archivo>`; uno ya subido que cambió va a `<maquina>/merges/v<versión>/<archivo>`, y
@@ -157,6 +160,8 @@ const FORMA_REGISTRO = formaRegistro(REGISTROS);
 // Un día de instintos (`scripts/instincts/instinct-upload.js`): sube como `<maquina>/instincts/v<versión>/<día>`. La bajada
 // importa esta forma: una sola definición.
 const FORMA_INSTINTO = /^\d{4}-\d{2}-\d{2}\.jsonl\.gz$/;
+// Un día de horas y tokens (`scripts/metrics/workday-upload.js`): sube como `<maquina>/jornadas/v<versión>/<día>.json`
+const FORMA_JORNADA = /^\d{4}-\d{2}-\d{2}\.json$/;
 const DIAS_AVISO_VENCE = 30;
 
 /**
@@ -751,6 +756,29 @@ function prepararInstintos({ destino, dia, maquina, folder, registro, destinoBuz
 }
 
 /**
+ * Arma los días de horas y tokens en `<dirRegistros>/jornadas/` (scripts/metrics/workday-upload.js) y devuelve
+ * `{ dir, files, problema }`. Corre en cada pasada y no en la preparación diaria de los registros: ésa es por día UTC, y
+ * los días de las jornadas son locales de la máquina (con `pasada`, TYCON_NOW en las pruebas). Un día sube con
+ * versión: uno ya subido igual no se manda, y con un renglón tardío sube entero con otra versión. La salida trae
+ * `jornadas_a_subir` con esos nombres (también en --dry-run). Con TYCON_WORKDAYS=0 no arma nada y vacía la carpeta. Una
+ * copia suelta de este guion, sin los módulos del armado al lado, no participa. Nunca tira: lo que no se pudo armar va en
+ * `problema`, sin rutas.
+ */
+function prepararJornadas({ dirRegistros, pasada }) {
+  const dir = path.join(dirRegistros, 'jornadas');
+  try {
+    const r = require('./workday-upload.js').prepareDays({ sdir: stateDirOf(os.homedir()), home: os.homedir(), outDir: dir, now: pasada, env: process.env });
+    return { dir, files: r.files, problema: null };
+  } catch (e) {
+    // sin el armado o sus piezas al lado (una copia suelta del guion), esta máquina no participa: no es «no pude». Otro
+    // módulo que falta es una instalación rota, y se dice
+    const falta = e && e.code === 'MODULE_NOT_FOUND' ? String(e.message).split('\n')[0] : '';
+    if (/(workday-upload|worked-time|transcript-tokens|session-state|state-dir)(\.js)?'/.test(falta)) return { dir, files: [], problema: null };
+    return { dir, files: [], problema: `no se pudieron armar (${(e && e.code) || 'error'})` };
+  }
+}
+
+/**
  * Invalida la preparación local de registros: le quita `preparado` a la cobertura y anota la versión
  * fallida en `invalidado`, para que la pasada siguiente —aunque sea el mismo día— re-prepare el juego con un momento
  * posterior. Tira si no puede escribir.
@@ -1249,6 +1277,12 @@ async function subir(opts = {}) {
       }
     } catch (e) { if (e.code !== 'ENOENT') noLeidos.push(`días de instintos (${e.code || 'error'})`); }
   }
+  // los días de horas y tokens: en cada pasada, con el «hoy» local de la pasada, siempre con versión
+  const jornadas = prepararJornadas({ dirRegistros, pasada });
+  if (jornadas.problema) noLeidos.push(`días de horas y tokens (${jornadas.problema})`);
+  for (const f of jornadas.files) {
+    entradas.push({ dir: jornadas.dir, f, juego: null, clave: `${maquina}/jornadas/${f}`, blob: null, conVersion: (v) => `${maquina}/jornadas/${v}/${f}` });
+  }
   // los archivos de cada merge: primero se mudan los colgados de los clones a la carpeta de estado, después van a la
   // cola, entre los instintos y las corridas. Un archivo ya subido que cambió va a `merges/v<versión>/`.
   const MM = mergeLib();
@@ -1339,7 +1373,10 @@ async function subir(opts = {}) {
   res.a_subir = pendientes.length + (huellaPendiente ? 1 : 0);
   if (res.merges) res.merges.nuevos = pendientes.filter((p) => p.merge).length;
 
+  // los días de horas y tokens que subiría, con su nombre en el buzón (en seco, para ver qué se mandaría)
+  res.jornadas_a_subir = pendientes.filter((p) => p.clave.startsWith(`${maquina}/jornadas/`)).map((p) => p.blob);
   if (opts.dryRun) {
+    for (const b of res.jornadas_a_subir) log(`--dry-run: subiría ${b}`);
     log(`--dry-run: subiría ${res.a_subir} archivo(s) a ${maquina}/ en ${destino} — no se mandó nada`);
     return fin(0, 'dry_run');
   }
@@ -1558,7 +1595,7 @@ async function chequearSoloCrear(opts = {}) {
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
-module.exports = { sinCredencialesEnDirecciones, placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, formaRegistro, FORMA_INSTINTO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+module.exports = { sinCredencialesEnDirecciones, placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, formaRegistro, FORMA_INSTINTO, FORMA_JORNADA, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 /**
  * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.

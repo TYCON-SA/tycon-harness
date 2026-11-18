@@ -146,11 +146,24 @@ function coordinadoraViva(casa, s = sesiones(casa)) {
   return c && vive(s, c) === true ? c : null;
 }
 
-// la clave de un pedido: la firma, el destino y el comando, sin la ruta del guion ni `--for-session`
-function claveDe(firma, destino, palabras) {
+// la clave de un pedido: la firma, el destino y el comando, sin la ruta del guion ni `--for-session`, en la forma canónica
+// del cuadro (owner-window.js `formaCanonica`): el mismo pedido escrito de otra forma es la misma fila, y firmarlo la
+// cierra. Sin forma canónica, las palabras como se escribieron. `donde` ({ cwd, casa }) resuelve la historia relativa.
+function claveDe(firma, destino, palabras, donde = {}) {
   const i = palabras.indexOf('--for-session');
   const sin = palabras.filter((_, k) => i < 0 || (k !== i && k !== i + 1));
-  return `firma:${sha(JSON.stringify([firma, destino, path.basename(sin[0]), ...sin.slice(1)])).slice(0, 32)}`;
+  let canon = null;
+  try {
+    const ow = require('./owner-window.js');
+    canon = ow.formaCanonica(sin, { historia: ow.historiaDelPedido(sin, { cwd: donde.cwd, casa: donde.casa, destino }) });
+  } catch (e) {
+    // sin la forma canónica, la fila se anota con las palabras tal cual: el mismo pedido escrito de otra forma puede
+    // quedar en dos filas, y eso se dice
+    try { process.stderr.write(`signature-list: no pude armar la forma canónica del pedido (${(e && e.message) || e}); la fila va con el comando tal cual\n`); } catch (_) { /* nada */ }
+    canon = null;
+  }
+  // la canónica lleva su marca, como la huella del cuadro: nunca comparte fila con un pedido que no la tiene
+  return `firma:${sha(JSON.stringify([firma, destino, ...(canon ? ['forma-canonica', ...canon] : [path.basename(sin[0]), ...sin.slice(1)])])).slice(0, 32)}`;
 }
 
 function firmasDelRegistroComun(casa, problemas) {
@@ -210,6 +223,11 @@ function porQueNoSeEntiende(f) {
   if (falta.length) return `${nombre}: le falta ${falta.join(', ')}`;
   // el id va en un comando que se le pide correr al agente, y el destino en una ruta
   if (!SESION.test(String(f.id)) || !SESION.test(String(f.destino))) return `${nombre}: su id o su destino no se pueden leer`;
+  // la parte que se desvió a la coordinadora (delegation-routing.js): su comando y a quién se desvió, en texto
+  const d = f.delegable;
+  // el pedido es un id: lo que traiga otra cosa es texto de afuera que terminaría en el aviso a la coordinadora
+  if (d !== undefined && (!d || typeof d !== 'object' || Array.isArray(d) || typeof d.comando !== 'string' || typeof d.coordinadora !== 'string'
+    || !/^[\w-]{1,80}$/.test(String(d.tool_use_id)) || !SESION.test(d.coordinadora))) return `${nombre}: su parte desviada no se puede leer`;
   return Number.isFinite(f.at) ? null : `${nombre}: no dice su hora`;
 }
 
@@ -241,16 +259,21 @@ function abiertos(casa, { arnes, env, ahora = Date.now(), s } = {}) {
 /**
  * Anota lo que el freno negó con su cuadro. El mismo pedido con un renglón abierto no suma otro; uno cerrado, aunque siga
  * en el archivo, no se traga el pedido nuevo. `{ ok, id, nuevo }`; tira si no puede leer o escribir.
+ * `delegable`: lo que el freno desvió a la coordinadora (`{ comando, coordinadora, cwd, tool_use_id, plazo_min }`); la
+ * clave sale de su comando, el que corre ella, así su firma cierra este renglón. `comando` sigue siendo el que se tipeó.
  */
-function anotarFirma({ casa, firma, titulo, sesion, destino, comando, palabras, cwd, ahora = Date.now(), s }) {
-  const key = claveDe(firma, destino, palabras);
+function anotarFirma({ casa, firma, titulo, sesion, destino, comando, palabras, cwd, ahora = Date.now(), s, delegable }) {
+  const deLaClave = delegable ? ow().canonica(delegable.comando) : palabras;
+  if (!deLaClave) throw new Error('el comando desviado no se puede leer');
+  // el desviado lo corre la coordinadora desde su carpeta: la clave se arma desde ahí, como la arma el freno al firmar
+  const key = claveDe(firma, destino, deLaClave, { cwd: delegable ? delegable.cwd : cwd, casa });
   return conCandado(casa, () => {
     const lista = leer(casa);
     const cerrada = criterioDeCierre(casa, ahora, s || sesiones(casa), undefined, entender(lista).filas);
     const abierto = lista.find((f) => f && f.key === key && !cerrada(f));
     if (abierto) return { ok: true, id: abierto.id, nuevo: false };
     const id = `firma-${crypto.randomBytes(4).toString('hex')}`;
-    escribir(casa, [...lista.filter((f) => !(f && f.key === key)), { tipo: 'firma', id, key, firma, sesion, destino, comando, cwd: cwd || null, title: una(titulo), at: ahora }]);
+    escribir(casa, [...lista.filter((f) => !(f && f.key === key)), { tipo: 'firma', id, key, firma, sesion, destino, comando, cwd: cwd || null, title: una(titulo), at: ahora, ...(delegable ? { delegable } : {}) }]);
     return { ok: true, id, nuevo: true };
   });
 }
@@ -375,15 +398,60 @@ function cuadroDeLaFila(f, casa, can = ow().canonicaDe(f.comando)) {
 }
 
 /**
+ * ¿La firma de la fila `f` ya tiene su aprobación? El mismo chequeo para `owner-next` y la oficina: la forma del comando,
+ * su cuadro y `buscar` con la coordinadora `coord`. No se pide un click ya dado: `buscar` sólo lee, y vencido o con la
+ * coordinadora muerta no lo encuentra. `{ saltado }` si la fila no se arma desde aquí; si no, `{ can, cuadro, dado }`, y
+ * `error` si `buscar` tiró (`dado` queda sin aprobar).
+ */
+function aprobacionDe(f, { casa, coord, ahora, arbol, validar }) {
+  const can = ow().canonicaDe(f.comando);
+  const esSuya = can && (can.id === f.firma || (f.firma === 'refresh-after-main' && can.id === 'control-change'));
+  if (!esSuya) return { saltado: `su comando no tiene la forma de la firma «${una(f.firma)}»` };
+  const cuadro = cuadroDeLaFila(f, casa, can);
+  if (cuadro.error) return { saltado: `no pude armar su cuadro (${una(cuadro.error)})` };
+  try {
+    const dado = oa().buscar({ casa, sesion: f.destino, destino: f.destino, cuadro, coordinadora: coord, ahora, cwd: f.cwd, herramienta: procesoDe(casa, f.destino, arbol), ...(arbol !== undefined ? { arbol } : {}), ...(validar ? { validar } : {}) });
+    return { can, cuadro, dado };
+  } catch (e) { return { can, cuadro, dado: { ok: false }, error: e.message }; }
+}
+
+/**
+ * Las firmas de `filas` (las de `abiertos`) que ya tienen su aprobación y esperan que su sesión repita el comando: la
+ * oficina no se las pide al dueño. `{ ids, problemas }`: lo que no se pudo saber (una lectura que falló, `noLeida`) va a
+ * `problemas` y la firma queda sin aprobar; una negativa definitiva o una aprobación vencida, sin aviso.
+ */
+function aprobadasSinRepetir({ casa, filas, ahora = Date.now(), arbol, validar }) {
+  const ids = new Set();
+  const problemas = [];
+  const firmas = (filas || []).filter((f) => f && tipoDe(f) === 'firma' && f.destino);
+  if (!firmas.length) return { ids, problemas };
+  const coord = oa().coordinadoraConfirmada(casa);
+  // los procesos de la máquina, una vez por pasada y no una por firma: leerlos tarda unos 60 ms
+  const procesos = arbol !== undefined ? arbol : ow().arbolDeLaPlataforma();
+  // sin los procesos, `buscar` no puede confirmar de qué proceso es la aprobación de la propia sesión: ninguna se da por
+  // aprobada y se dice por qué
+  if (!procesos) return { ids, problemas: ['no pude leer los procesos de la máquina: no sé qué firmas ya están aprobadas'] };
+  for (const f of firmas) {
+    const ap = aprobacionDe(f, { casa, coord, ahora, arbol: procesos, validar });
+    if (ap.saltado) continue;
+    if (ap.dado.ok) { ids.add(f.id); continue; }
+    const motivo = ap.error || (ap.dado.noLeida ? ap.dado.motivo : null);
+    if (motivo) problemas.push(`no pude saber si «${una(f.title)}» de ${una(f.destino)} está aprobada: ${una(motivo)}`);
+  }
+  return { ids, problemas };
+}
+
+/**
  * Lo que sigue en la pasada para la sesión `sesion`: un solo renglón, el más viejo; primero los permisos, después las
  * firmas y al final lo de la terminal. La coordinadora confirmada pasa todos; otra sesión, aquellos de los que es destino.
- * `tipo` dice qué salió: `permiso` o `firma` (con su cuadro), `plan` (hay que escribir el plan antes), `terminal` (con
+ * `tipo` dice qué salió: `permiso` o `firma` (con su cuadro), `delegable` (para la coordinadora: el comando que firma ella
+ * por delegación, `comando` y la carpeta `cwd`), `plan` (hay que escribir el plan antes), `terminal` (con
  * `sigue`: sólo la persona lo cierra), `nada`, `apagada` o `sin-leer` (el registro está roto). Un renglón que no se arma
  * desde aquí (roto, o sin cuadro) no corta la pasada: va a `saltados` (`{ id, motivo, cwd }`) y sigue con el próximo;
  * si no queda otro, `nada` dice cuántos quedan y desde qué carpeta. Nunca anota una aprobación.
- * `arbol` y `validar` van a `buscar`; se pasan en las pruebas.
+ * `arbol` y `validar` van a `buscar`, y `delegacion` a la delegación del renglón desviado; se pasan en las pruebas.
  */
-function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env, arbol, validar }) {
+function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env, arbol, validar, delegacion }) {
   const l = llave({ casa, arnes, env });
   if (!l.encendida) return { tipo: 'apagada', texto: l.problema ? `No pude leer la llave de la lista de firmas (${una(l.problema)}): cuenta como apagada y no paso nada hasta arreglarla. Si había renglones, siguen en el registro.` : 'La lista de firmas está apagada (approvals.signature_list): no hay nada para pasar.', faltaRepetir: [], problemas: [] };
   const s = sesiones(casa);
@@ -410,6 +478,10 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
   // lo que no se arma desde aquí no corta la pasada: queda, con su motivo y la carpeta desde la que se pidió
   const saltados = [];
   const sale = (o) => ({ faltaRepetir, problemas, saltados, ...o });
+  // lo desviado a la coordinadora (delegation-routing.js): suyo mientras ella viva y no pase el plazo; después, del dueño
+  const DR = require('./delegation-routing.js');
+  const plazo = firmas.some((f) => f.delegable) ? DR.plazoMs({ casa, arnes, env }) : 0;
+  const viva = plazo ? coordinadoraViva(casa, s) : null;
 
   for (const f of enOrden.slice(desde)) {
     const tipo = tipoDe(f);
@@ -422,15 +494,23 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
       const legible = SESION.test(String(f.id));
       return sale({ tipo, id: f.id, titulo: una(f.title), archivo: f.file ? una(f.file) : null, ...(legible ? { sigue: `owner-next --after ${f.id}` } : {}), texto: `Esto se firma en tu terminal: «${una(f.title)}»${f.file ? `, abriendo ${una(f.file)}` : ''}.${legible ? ` Hecho, se cierra con signature-done ${f.id}.` : ''}` });
     }
-    const can = ow().canonicaDe(f.comando);
-    const esSuya = can && (can.id === f.firma || (f.firma === 'refresh-after-main' && can.id === 'control-change'));
-    if (!esSuya) { saltados.push({ id: f.id, motivo: `su comando no tiene la forma de la firma «${una(f.firma)}»`, cwd: f.cwd ? una(f.cwd) : null }); continue; }
-    const cuadro = cuadroDeLaFila(f, casa, can);
-    if (cuadro.error) { saltados.push({ id: f.id, motivo: `no pude armar su cuadro (${una(cuadro.error)})`, cwd: f.cwd ? una(f.cwd) : null }); continue; }
+    let delDesvio = null;
+    if (f.delegable) {
+      if (DR.vigente(f, { coord: viva, ahora, plazo })) {
+        // la firma la coordinadora: a otra sesión no se le da nada, ni el comando ni un cuadro
+        if (sesion !== viva) continue;
+        const c = DR.comprobarRenglon({ f, casa, delegacion, arnes, env });
+        if (c.saltado) { saltados.push({ id: f.id, motivo: c.saltado, cwd: f.cwd ? una(f.cwd) : null }); continue; }
+        if (c.ok) return sale({ tipo: 'delegable', id: f.id, destino: f.destino, nombre: nombreDe(f.destino), comando: f.delegable.comando, cwd: c.cwd });
+        delDesvio = `No se la di a la coordinadora para firmar por delegación: ${una(c.motivo).slice(0, 300)}.`;
+      } else delDesvio = viva !== f.delegable.coordinadora ? 'Se desvió a la coordinadora, pero la coordinadora ya no está: pasa a la persona.'
+        : `Se desvió a la coordinadora, pero la coordinadora no la firmó en ${Math.round(plazo / 60000)} minutos: pasa a la persona.`;
+    }
+    const ap = aprobacionDe(f, { casa, coord, ahora, arbol, validar });
+    if (ap.saltado) { saltados.push({ id: f.id, motivo: ap.saltado, cwd: f.cwd ? una(f.cwd) : null }); continue; }
+    const { can, cuadro, dado } = ap;
+    if (ap.error) problemas.push(`no pude mirar si ya estaba aprobado (${ap.error})`);
     let aviso = avisoALaSesion(f, can.palabras);
-    // no se pide un click ya dado. `buscar` sólo lee: vencido o con la coordinadora muerta, no lo encuentra y se vuelve a dar
-    let dado = { ok: false };
-    try { dado = oa().buscar({ casa, sesion: f.destino, destino: f.destino, cuadro, coordinadora: coord, ahora, cwd: f.cwd, herramienta: procesoDe(casa, f.destino, arbol), ...(arbol !== undefined ? { arbol } : {}), ...(validar ? { validar } : {}) }); } catch (e) { problemas.push(`no pude mirar si ya estaba aprobado (${e.message})`); }
     if (dado.ok) { faltaRepetir.push({ id: f.id, destino: f.destino, nombre: nombreDe(f.destino), aviso }); continue; }
     let nota = null;
     if (f.firma === 'plan-approval') {
@@ -446,6 +526,7 @@ function siguiente({ casa, sesion, after = null, ahora = Date.now(), arnes, env,
         else if (!visto.mostrado) return sale({ tipo: 'plan', id: f.id, destino: f.destino, nombre: nombreDe(f.destino), plan, texto: 'Antes del click, la persona tiene que ver el plan: escribilo tal cual en un mensaje tuyo y volvé a correr owner-next.' });
       }
     }
+    if (delDesvio) nota = nota ? `${delDesvio} ${nota}` : delDesvio;
     // el detalle y el aviso del tope van aparte de la pregunta: quien muestra el cuadro los da si la persona los pide
     return sale({ tipo, id: f.id, destino: f.destino, nombre: nombreDe(f.destino), rotulo: rotulo('Firma', firmas.indexOf(f) + 1, firmas.length), pregunta: cuadro.pregunta, sello: cuadro.sello, opciones: cuadro.opciones, aviso, nota,
       detalle: cuadro.detalle || [], pasaElTope: !!cuadro.pasaElTope, largo: cuadro.largo, tope: cuadro.tope });
@@ -534,4 +615,4 @@ function mensajesDe(ruta) {
   return fuera;
 }
 
-module.exports = { claveDe, archivo, candado, tipoDe, cuadroDeLaFila, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, textoDeSaltados, rechazar, esDeLaPersona };
+module.exports = { claveDe, archivo, candado, tipoDe, cuadroDeLaFila, aprobadasSinRepetir, leer, escribir, conCandado, llave, encendida, sesiones, vive, coordinadoraViva, abiertos, anotarFirma, anotarPermiso, alNegar, cuadroDePermiso, comandoParaRepetir, limpiar, siguiente, textoDeSaltados, rechazar, esDeLaPersona };

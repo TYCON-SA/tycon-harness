@@ -611,6 +611,17 @@ test('Repos_GitInitEnCarpetaTemporal_NoEntra (T31)', (t) => {
   assert.deepStrictEqual(SO.reposDeLaCorrida({ marker, hermanos: [hermano] }).sort(), [a, hermano].sort());
 });
 
+// Repos_FallaDeGitEnCarpetaTemporal_Entra
+// 🔴 Falla con: un repo de una carpeta temporal que queda fuera del ok porque git no pudo contestar si tiene `origin`
+// (salida 128), leído igual que «no tiene origin» (salida 2): ante la duda, el repo entra.
+test('Repos_FallaDeGitEnCarpetaTemporal_Entra', { skip: process.platform === 'win32' }, (t) => {
+  const a = repo(t, { 'LEEME.md': 'hola\n', 'specs/story-9.99.md': '---\nstory_id: "9.99"\n---\n' });
+  const toy = juguete(t);
+  const marker = corridaLimpia([a], { fileEvents: [{ path: path.join(a, 'LEEME.md'), ts: ANTES, code: true }, { path: path.join(toy, 'medir.js'), ts: ANTES, code: true }] });
+  gitQueFalla(t, 'remote get-url origin ');
+  assert.deepStrictEqual(SO.reposDeLaCorrida({ marker, hermanos: [] }).sort(), [a, toy].sort(), 'sin saber si tiene origin, entra');
+});
+
 // T32 Ok_NoCubreElRepoTemporal
 // 🔴 Falla con: el repo que quedó afuera de la corrida cubierto por su ok: mover el trabajo a una carpeta temporal
 // saltearía el ok de guardar. Un commit o un push ahí pide su propio ok.

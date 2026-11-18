@@ -43,6 +43,8 @@ const LOCAL_HOUR = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/;
 const text = { form: 'text' };
 const folder = { form: 'folder' };
 const number = { form: 'number' };
+// un porcentaje entero de 0 a 100: `number` sólo mira que el número sea finito
+const percent = { form: 'percent' };
 const flag = { form: 'flag' };
 const hour = { form: 'hour' };
 const action = { form: 'action' };
@@ -81,7 +83,9 @@ const FIELDS = {
     medioCaminoLeido: text,
   }),
   tablas: record({ hoy: TABLE, pendientes: TABLE, hechos: TABLE }),
-  meta: record({ actualizado: text, pedidosLeidos: text, teToca: list(text), trabado: list(record({ titulo: text, filas: list(text) })), extra: number, puestos: list(list(number)), sitio: text, quietMin: number, recorte: text }),
+  meta: record({ actualizado: text, pedidosLeidos: text, teToca: list(text), trabado: list(record({ titulo: text, filas: list(text) })), extra: number, puestos: list(list(number)), sitio: text, quietMin: number, recorte: text,
+    // la memoria y el procesador en uso, para los racks: sólo los dos porcentajes, nada que diga qué máquina es
+    maquina: record({ memoria: percent, procesador: percent }) }),
   rows: list(record({ work: text, state: text, end: text, session: text, folder })),
   free: list(text),
   unreadable: list(text),
@@ -166,6 +170,7 @@ function cleaned(spec, value, home, sanitize) {
     case 'folder': return typeof value === 'string' ? cut(folderName(value)) : undefined;
     case 'action': return typeof value === 'string' ? cut(withoutFile(value)) : undefined;
     case 'number': return Number.isFinite(value) ? value : undefined;
+    case 'percent': return Number.isInteger(value) && value >= 0 && value <= 100 ? value : undefined;
     case 'flag': return typeof value === 'boolean' ? value : undefined;
     case 'state': return spec.values.includes(value) ? value : undefined;
     case 'hour': return typeof value === 'string' && validHour(value) ? value : undefined;

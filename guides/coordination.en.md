@@ -308,7 +308,7 @@ it even with no coordinator: it can only stop too much.
 
 ## The automatic reviews: what the coordinator does
 
-When each review runs is set by the organization's configuration (`guides/revisiones-automaticas.en.md`). In each one,
+When each review runs is set by the organization's configuration (`guides/automatic-reviews.en.md`). In each one,
 the coordinator:
 
 - **Asks or not.** If the matrix says to ask, she asks the owner, with the options box, and records it: the session
@@ -428,6 +428,14 @@ turned on in the profile, or on the machine to try it out.
   the repetition is missing.
 - **On a «No»:** `coordination.js owner-reject <id>` removes the row and names the session to tell. A box that closes or
   resolves by itself leaves the row, and the pass stops there.
+- **What the coordinator signs by delegation.** A delegable signature that the working session asked for itself does not
+  reach the person: the gate routes it to the coordinator (`guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»).
+  The notice counts it apart («N firmas las firmás vos por delegación»), and `owner-wait` announces it to her once.
+  `owner-next` gives no box: it gives the command to run in her tab («Firmala vos por delegación, en tu pestaña, desde
+  <folder>: <command>»). The coordinator runs it as is and tells the session it is signed: the session repeats nothing.
+  If she does not sign it within `approvals.delegation_wait_minutes` (10 by default), or stops being alive, the row goes
+  to the person with its usual box, and `owner-wait` announces that once. In `/office` it shows under «En curso» with «la
+  firma la coordinadora», not under «Tu firma».
 
 Limits: if the person leaves before answering, `/office` keeps counting them and they are asked next time. What another
 background session asks with `--for-session` still goes by message to the coordinator. A tab without permissions still shows its

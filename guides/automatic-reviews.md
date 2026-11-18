@@ -2,7 +2,7 @@
 
 Antes de programar, un agente revisa el **plan** de la historia; después de programar, el **pase adversarial** ejecuta el
 código para buscarle defectos. Esta guía junta cuándo corre cada revisión, quién la lanza, con qué revisor, quién
-aprueba, cuándo el dueño cuenta como ausente y cómo se configura. En inglés: [revisiones-automaticas.en.md](revisiones-automaticas.en.md).
+aprueba, cuándo el dueño cuenta como ausente y cómo se configura. En inglés: [automatic-reviews.en.md](automatic-reviews.en.md).
 
 Todo se configura en el sitio de la organización, pestaña Configuración, «Cómo trabaja Claude» (secciones **Revisión del
 plan**, **Con qué corre la revisión**, **Pase adversarial** y **Vueltas de revisores**), y queda en `team-repos.json` del
@@ -122,10 +122,20 @@ Al escribir los hallazgos y al cerrar el paso «Hallazgos», el arnés compara `
 - un crítico figura como refutado sin la constancia del verificador;
 - un revisor del set no dejó un renglón que se pueda leer.
 
-Un revisor ilegible nunca cuenta como «sin críticos». Se vuelve a correr, o lo exime una persona: `marker.js
-waive-critical --rule SIN-REPORTE --file <revisor> --reason '<por qué>'`. Una exención por delegación no alcanza para dar algo por arreglado:
-eso lo cierra una vuelta nueva del revisor o el dueño. Una ejecución sin nada anotado (por ejemplo, de antes de este
-control) lo dice en una línea y sigue.
+Un revisor ilegible nunca cuenta como «sin críticos». Si cerró sin el renglón de veredicto, el arnés se lo pide una sola
+vez, al mismo revisor y sin que cambie su revisión: en Claude Code, el gancho del fin del subagente lo hace seguir con ese
+pedido; en Codex, el lanzador lo corre una vez más sobre el mismo contexto, con su propio reporte. Lo que conteste
+después cuenta en la misma vuelta, y el pedido no suma una vuelta ni una salida. Si tampoco lo da, el cierre lo dice
+(«ya se le pidió el renglón una vez») y queda la exención de una persona: `marker.js waive-critical --rule SIN-REPORTE
+--file <revisor> --reason '<por qué>'`. Si nunca se le pidió (por ejemplo, el gancho no corrió), el cierre dice primero
+cómo pedírselo al mismo agente. Una exención por delegación no alcanza para dar algo por arreglado: eso lo cierra una
+vuelta nueva del revisor o el dueño. Una ejecución sin nada anotado (por ejemplo, de antes de este control) lo dice en
+una línea y sigue.
+
+El revisor que reportó un crítico vuelve a la vuelta siguiente mientras ese crítico siga abierto: aunque el descuento
+mecánico o el cálculo por diferencias lo saquen del set, y aunque el agente todavía no haya escrito los hallazgos. Sale
+cuando un reporte suyo posterior ya no lo trae, o cuando el crítico tiene un destino que se sostiene: refutado con la
+constancia del verificador, diferido, o eximido por el dueño.
 
 ## Las opciones
 

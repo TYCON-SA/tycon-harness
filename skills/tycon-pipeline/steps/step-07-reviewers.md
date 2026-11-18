@@ -58,7 +58,7 @@ El script además:
   revisores no ven sus reglas propias»* (con `no_medido`, agregá el `motivo`). Nunca frena. Por
   qué pegadas y no leídas del `CLAUDE.md`: con el archivo entero cargado el revisor detectó 10 de
   20 violaciones plantadas; con la sección pegada, 17 de 20 y la mitad de tokens. Cómo se
-  escribe la sección: `~/.claude/tycon-harness/guides/reglas-para-revisores.md`.
+  escribe la sección: `~/.claude/tycon-harness/guides/reviewer-rules.md`.
 - **`batch_rule`** (ventana deslizante, 2026-07-30): **MÁXIMO 4 subagentes VIVOS a la
   vez** (máquina dev 8c/16GB — regla explícita acá, no solo en CLAUDE.md global). El cap
   es de CONCURRENCIA, no de orden: al llegar la notificación de que un advisor terminó,
