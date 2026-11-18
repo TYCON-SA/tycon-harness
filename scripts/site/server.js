@@ -823,6 +823,8 @@ async function main() {
       ...require('./tabs/findings.js').crearRutas({ cfg: v.cfg, fuentes, log }),
       // la pestaña Aprendizajes: lo que la noche propone que el equipo aprenda, que quien mantiene aprueba o rechaza
       ...require('./tabs/learnings.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
+      // la pestaña Horas y tokens: los días que suben las máquinas, sólo para quien mantiene
+      ...require('./tabs/workdays.js').crearRutas({ fuentes, log }),
       // la pestaña Oficinas: la misma página de la oficina local, con lo que llega de las máquinas
       ...require('./tabs/offices.js').crearRutas({ log }),
       // la pestaña Ayuda: la guía del sitio que viaja en la imagen, con lo que le toca a cada rol

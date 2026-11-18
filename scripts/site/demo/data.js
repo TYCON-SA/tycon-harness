@@ -516,4 +516,24 @@ function oficinasDeEjemplo(ahora = Date.now()) {
   ];
 }
 
-module.exports = { oficinasDeEjemplo, PAQUETE_DE_REVISORES, CAMPOS_DE_RIESGO, LEAD, ANA, BRUNO, INVITADA, PERFIL, RECETA_NETFX, REPOS, ADVISORS_DE_EJEMPLO, VERSION_DE_EJEMPLO, diasDe, volcadoMinimo, volcadoDeEjecucion, blobsDelBuzon, archivosDeOperaciones, operaciones, archivosDelPerfil };
+/**
+ * Los días de horas y tokens de ejemplo (la pestaña «Horas y tokens»), con la forma de `scripts/metrics/workday-upload.js`:
+ * `{ <máquina>: { <día>: texto } }` de los últimos 10 días. Dos máquinas inventadas; a `maquina-b` le falta el día más
+ * nuevo (no medido) y un día trae los tokens sin medir.
+ */
+function jornadasDeEjemplo(ahora = Date.now()) {
+  const dia = (n) => new Date(ahora - n * DIA_MS).toISOString().slice(0, 10);
+  const out = { 'maquina-a': {}, 'maquina-b': {} };
+  for (let n = 1; n <= 10; n += 1) {
+    const d = dia(n);
+    out['maquina-a'][d] = JSON.stringify({ v: 1, dia: d, tz: '-03:00', horas: { arnes_segundos: 3600 * (4 + (n % 3)), sesion_segundos: 3600 * (6 + (n % 4)), sesiones: 3 + (n % 2), medido: true },
+      tokens: { lectura: 120000 * n, escritura: 18000 * n, cache: 2400000 * n, medido: true } });
+    if (n === 1) continue;
+    // las horas de sesión nunca son menos que las horas con el arnés trabajando
+    out['maquina-b'][d] = JSON.stringify({ v: 1, dia: d, tz: '-03:00', horas: { arnes_segundos: 3600 * (2 + (n % 2)), sesion_segundos: 3600 * (2 + (n % 2) + (n % 3)), sesiones: 1 + (n % 3), medido: true },
+      tokens: n === 4 ? { medido: false, motivo: 'una conversación no se pudo leer (EACCES)' } : { lectura: 60000 * n, escritura: 9000 * n, cache: 900000 * n, medido: true } });
+  }
+  return out;
+}
+
+module.exports = { oficinasDeEjemplo, jornadasDeEjemplo, PAQUETE_DE_REVISORES, CAMPOS_DE_RIESGO, LEAD, ANA, BRUNO, INVITADA, PERFIL, RECETA_NETFX, REPOS, ADVISORS_DE_EJEMPLO, VERSION_DE_EJEMPLO, diasDe, volcadoMinimo, volcadoDeEjecucion, blobsDelBuzon, archivosDeOperaciones, operaciones, archivosDelPerfil };

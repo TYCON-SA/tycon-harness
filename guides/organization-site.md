@@ -440,6 +440,35 @@ repo del perfil.
 **Qué hacer:** si una pieza no se entiende o falta algo, «Proponer una mejora». Si un paquete de tu organización dice
 que no se puede usar, se arregla a mano en el repo del perfil: hasta entonces el arnés tampoco lo carga.
 
+### Horas y tokens
+
+**Qué contesta:** ¿cuánto trabajaron las sesiones de agente de cada máquina, y cuántos tokens consumieron, día por
+día? Sólo la ve quien mantiene: una persona con rol de programador no ve la pestaña, y la dirección `/api/horas` le
+contesta que no tiene permiso.
+
+Es una tabla de los últimos 30 días, una columna por máquina y una fila de total por día. El día es el de cada máquina
+(su zona horaria), y sólo llegan días cerrados: lo de hoy se mira en la oficina. Cada celda trae:
+
+- **Horas con el arnés trabajando:** el tiempo en que hubo al menos una sesión trabajando en esa máquina. Dos sesiones a
+  la vez cuentan una vez; nunca pasa de las horas del día.
+- **Horas de sesión:** la suma del tiempo de todas las sesiones. Dos sesiones a la vez suman las dos, y puede pasar de 24.
+- **Tokens:** lectura, escritura y caché, como en la tarjeta de la oficina, de los mensajes de ese día de todas las
+  conversaciones de la máquina (Claude con sus agentes, y Codex).
+
+Una sesión trabaja desde que empieza un turno hasta que lo cierra, sin contar el tiempo en que espera a la persona (un
+permiso, una pregunta o un plan): una espera toda la noche no son horas. El total de un día suma cada hora por separado
+entre las máquinas y dice cuántas no se midieron.
+
+**«No medido».** Una máquina sin archivo de un día dice **no medido**, nunca cero: puede no tener el buzón configurado,
+estar apagada o no haber subido todavía. Si sólo una parte no se pudo leer, la celda dice «horas no medidas» o «tokens
+no medidos», con el motivo al pasar el mouse.
+
+**Apagarlo en una máquina:** `TYCON_WORKDAYS=0` en su ambiente. No anota ni sube nada, y el sitio la muestra «no
+medido».
+
+**El límite de Codex:** Codex no avisa cuando pide un permiso, así que el tiempo en que espera a la persona dentro de un
+turno cuenta como trabajo. Un turno de Codex que se corta sin terminar suma hasta su última herramienta.
+
 ### Configuración
 
 **Qué contesta:** ¿cómo está configurada la organización, y cómo se cambia? Sólo la ve quien mantiene. La parte
@@ -474,7 +503,9 @@ conexión.
 
 **Qué sale de la máquina.** Lo mismo que muestra la oficina local: cada sesión con su nombre, su estado, su trabajo, su
 encargo, lo que está haciendo y su última acción; el tablero, las tablas, los tokens, los mensajes entre sesiones (los
-avioncitos) y la conversación de cada sesión, que se abre con «Ver conversación», como en la máquina. Cada texto sale sin
+avioncitos), la conversación de cada sesión, que se abre con «Ver conversación», como en la máquina, y los dos números
+de los racks: el porcentaje de memoria y el de procesador en uso, enteros de 0 a 100 (ni el nombre de la máquina, ni sus
+procesos, ni totales en bytes). Cada texto sale sin
 la carpeta personal ni las claves que se reconocen. La conversación viaja aparte de la foto, sólo a un sitio que la
 entiende, y el sitio la guarda sólo en memoria: nada de la oficina queda en su disco. Así, quien mantiene ve en vivo qué
 hace cada dev; cada dev lo sabe por la línea de la huella.

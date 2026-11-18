@@ -17,7 +17,7 @@
  *   T74 Mantenimiento_MenuConCuantasEsperan              T75 Mantenimiento_Envio_FormaYTope
  *   T76 Sitio_DecisionYaEnMain_NoPideRecargar           T77 Sitio_Decididas_NoReaparecen
  *   T78 Sitio_Envio_SeSigueSuNumero                      T79 Mantenimiento_Envio_DiceQuePasa
- *   T80 Mantenimiento_AplicaSolo_NoHablaDeAprobar
+ *   T80 Mantenimiento_AplicaSolo_NoHablaDeAprobar          T92 Sitio_PedidoAprobado_NoVuelveATeTocaDecidir
  *   T80 Mantenimiento_Cuentas_BajanConLoDecidido
  *   T81 Mantenimiento_YaDecididas_QueQuienCuandoYSiSeAplico   T82 Mantenimiento_Numeros_CambianSinRecargar
  *
@@ -1718,5 +1718,36 @@ test('T81 2.79-Mantenimiento_Listas_EstadoConFechaYNombresNuevos @story-2.79 @ac
   await conSitio({ dataDir: directo }, async ({ h, lead, lista }) => {
     assert.strictEqual((await lista()).json.decididas[0].vista_el, null);
     assert.match(filaDe((await h.pedir('/mantenimiento', { cookie: lead })).texto, `ejecuciones/${EJ2.id}`), /lead · decidida el 23\/10 · tarea 77<\/span>/, 'sin fecha vista, pero con la tarea de la foto: la nombra');
+  });
+});
+
+// Sitio_PedidoAprobado_NoVuelveATeTocaDecidir
+// 🔴 Falla con: una ficha cuyo pedido de decisiones ya se aprobó (completado en la plataforma) que vuelve a «Te toca
+//    decidir» hasta el próximo refresco del clon —quien mantiene la decide otra vez y abre un pedido repetido—, o una
+//    ficha de un pedido cerrado SIN aprobar que no vuelve a decidirse.
+test('T92 Sitio_PedidoAprobado_NoVuelveATeTocaDecidir — lo aprobado espera la noche aunque la foto no lo traiga; lo cerrado sin aprobar vuelve', { timeout: 60000 }, async () => {
+  await conSitio({}, async ({ api, lista, enviar, reloj }) => {
+    assert.strictEqual((await enviar(['vigilante', 'vig-uno', 'aceptar'], ['ejecuciones', EJ1.id, 'arreglar'])).json.ok, true);
+    reloj.t += 61000;
+    assert.deepStrictEqual((await lista()).json.espera.map((x) => x.numero), [1], 'mientras está abierto, espera aprobación');
+    // el dueño lo aprueba en la plataforma; el clon del sitio todavía no trae las decisiones
+    Object.assign(api.st.pedidos[0], { state: 'closed', merged_at: '2026-10-25T12:01:30Z' });
+    reloj.t += 61000;
+    const j = (await lista()).json;
+    assert.deepStrictEqual(j.toca.map((x) => x.id), ['vig-dos', 'dep-uno'], 'lo aprobado no vuelve a «Te toca decidir»');
+    assert.deepStrictEqual(j.espera, []);
+    assert.deepStrictEqual(j.decididas.map((x) => [x.id, x.accion, x.estado]).sort(), [[EJ1.id, 'arreglar', 'esta_noche'], ['vig-uno', 'aceptar', 'esta_noche']].sort(),
+      'aprobado: se aplica esta noche');
+    // decidirlo otra vez no abre otro pedido
+    const otra = await enviar(['vigilante', 'vig-uno', 'arreglar']);
+    assert.strictEqual(otra.json.codigo, 'nada_que_enviar', otra.texto);
+    assert.strictEqual(api.st.pedidos.length, 1);
+    // un pedido cerrado sin aprobar no decidió nada: su ficha vuelve
+    assert.strictEqual((await enviar(['vigilante', 'vig-dos', 'arreglar'])).json.ok, true);
+    reloj.t += 61000;
+    assert.deepStrictEqual((await lista()).json.espera.map((x) => x.numero), [2]);
+    api.st.pedidos[1].state = 'closed';
+    reloj.t += 61000;
+    assert.deepStrictEqual((await lista()).json.toca.map((x) => x.id), ['vig-dos', 'dep-uno'], 'cerrado sin aprobar: vuelve a decidirse');
   });
 });

@@ -252,6 +252,21 @@ test('ReviewersRun_WritesTheRunLine_CheckCountCountsIt @story-8.97 @ac-3', () =>
   assert.match(cc2.stderr, /sin reporte/);
 });
 
+// 🔴 Falla con: que el renglón, escrito al terminar el proceso, no diga cuándo arrancó: una vuelta siguiente daría por
+// visto lo que se editó mientras el revisor corría.
+test('ReviewersRun_RunLine_SaysWhenTheProcessStarted @story-8.288 @ac-1', () => {
+  const e = mkEnv();
+  const antes = Date.now();
+  const r = runReviewers(e);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const lines = ledger(e).filter((l) => l.launcher === 'pipeline');
+  assert.ok(lines.length > 0);
+  for (const l of lines) {
+    const t = Date.parse(l.lanzado_ts);
+    assert.ok(Number.isFinite(t) && t >= antes - 1000 && t <= Date.parse(l.ts), `${l.advisor}: arranque ${l.lanzado_ts}, renglón ${l.ts}`);
+  }
+});
+
 test('ReviewersRun_MissingCodexOrProfile_SaysWhichAndCountFailsClosed @story-8.97 @ac-10', () => {
   const sinCodex = mkEnv({ withCodex: false });
   const r1 = runReviewers(sinCodex);

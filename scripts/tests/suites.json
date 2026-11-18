@@ -88,6 +88,24 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.209: el tramo trabajado de cada sesión (scripts/lib/worked-time.js, el gancho session-state.js y el PostToolUse de Codex): abre con el prompt, cierra con el fin del turno o una espera de la persona, se parte a medianoche, la apertura del día una sola vez, la sesión muerta cierra en su último evento, apagado con TYCON_WORKDAYS=0. HOME temporal y zona fija.",
+      "raiz": "arnes",
+      "ruta": "tests/worked-time.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.209: el día cerrado de horas y tokens (scripts/metrics/workday-upload.js y su lugar en upload-runs.js): días locales, nunca el día en curso, «no medido» nunca cero, tokens por la hora de cada mensaje, Codex por diferencia, rearmado con los mismos tokens, sin ids ni rutas, la poda de 60 días. Sin red: un buzón de mentira local, HOME temporal y zona fija.",
+      "raiz": "arnes",
+      "ruta": "tests/workday-upload.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.209: la pestaña «Horas y tokens» del sitio (scripts/site/tabs/workdays.js): la bajada por el camino real del sitio (cloud/azure.js), la tabla con las dos horas, «no medido», quién la ve, la demo, el inglés y la guía. E1 y E2 con el Chromium fijo del arnés; sin él se saltean con constancia salvo con E2E_REQUIRED=1. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-workdays.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 4.7, tanda C: la noche que propone aprendizajes (scripts/instincts/instinct-nightly.js) — cuenta sin modelo lo que se repite en el equipo con las máquinas resueltas, «no medido» con null y nunca 0, los topes de 20 con modelo y 50 nuevas, lo decidido no se toca ni se vuelve a pedir, el saneado de lo que escribe el modelo y el modelo del pipeline; y lo que se apaga en cada máquina (el disparador, el comando y el aviso). Sin red: el buzón, el modelo y el guardado son funciones de prueba.",
       "raiz": "arnes",
       "ruta": "tests/instinct-nightly.test.js",
@@ -1009,6 +1027,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.288: la edición en el lugar con sufijo sobre una historia se juzga como sin sufijo (frena si cambia el estado, pasa si sólo cambia el cuerpo).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-in-place-suffix.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.278: el lector de comandos. marker.js y pipeline.js cuentan sólo donde se corren, no donde otro programa los nombra.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/marker-command.test.js",
@@ -1049,6 +1073,12 @@
       "__nota": "story 7.26: una story de dos repos — el pipeline sigue al repo hermano en los revisores, el contexto, el test-gate, las vueltas y el pase adversarial.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/companion-repos.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "cada proceso le pregunta a git una sola vez lo mismo (la huella de la carpeta, leída del disco); el gancho, la configuración, los hermanos y los controles de la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/git-memo.test.js",
       "requiere": []
     },
     {
@@ -1194,6 +1224,12 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-suites-json.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.302: los nombres de lo que cambió dentro de una pieza central (la función y el subcomando que lo encierran); ante la duda, «no sé» y el portón corre todas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/change-names.test.js",
       "requiere": []
     },
     {
@@ -4587,6 +4623,12 @@
       "__nota": "2026-10-16, pedido del dueño («borrá solas las carpetas ya mergeadas»): scripts/hooks/worktree-sweep.js. Con git de verdad (remoto desnudo, clon y worktrees en una carpeta temporal) y un HOME de prueba por caso: al arrancar borra el worktree limpio y mergeado con su rama y nunca el checkout principal; nombra y no toca los que tienen archivos modificados o sin seguimiento y los que tienen commits sin mergear; calla ante uno usado hace poco, y deja el recién creado, el bloqueado y el de la sesión; sella el día y calla en el segundo arranque; apagado por variable y en seco no toca nada. Con --story borra sólo los de esa story, trae origin antes de juzgar y deja el que tiene cambios. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/worktree-sweep.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "scripts/hooks/temp-sweep.js, el barrido diario de las carpetas temporales viejas. Sobre una carpeta de prueba dentro de una carpeta temporal de verdad: borra la carpeta y el archivo viejos con sufijo al azar; deja el nombre que escribe una persona (palabra, fecha, versión) y los de otras aplicaciones; deja lo que cambió dentro del plazo (también por fecha de cambio), lo que tiene un socket, la carpeta de trabajo de un proceso vivo y la que tiene un archivo abierto (con un Node de verdad lanzado ahí), lo de otro usuario, los enlaces, la entrada que otro alcanza con una carpeta donde otro escribe y la que tiene una carpeta ilegible que se deja atravesar; no mira una raíz donde cualquiera escribe sin sticky ni una ruta fuera de las carpetas temporales; sin la lista de procesos vivos no borra; lo que no se deja borrar se nombra; el camino de Windows (cambio de nombre y vuelta) se ejercita en cualquier plataforma; con el tope agotado cuenta pendientes. El gancho como proceso, con un HOME de prueba por caso: dice su línea, sella el día y calla al segundo arranque, --force pasa de nuevo, un sello futuro cuenta como vencido, cortado por el tope vuelve en una hora, los dos interruptores no tocan nada, los valores que no valen se dicen, y suelto (sin la librería del sello) no barre y lo dice. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/temp-sweep.test.js",
       "requiere": []
     },
     {

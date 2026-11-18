@@ -1543,6 +1543,8 @@
     "owner-email-notice.js::buzon-apagado-calla-y-no-sella": true,
     "worktree-sweep.js::borra-la-mergeada-y-nombra-la-que-tiene-cambios": true,
     "worktree-sweep.js::apagado-por-variable-calla": true,
+    "temp-sweep.js::borra-la-vieja-con-sufijo-al-azar-y-deja-las-demas": true,
+    "temp-sweep.js::apagado-por-variable-calla-y-no-borra": true,
     "wait-notice.js::corrida-activa-abre-la-espera-sin-frenar": true,
     "wait-notice.js::stop-hook-active-tambien-abre": true,
     "wait-notice.js::sin-telegram-no-escribe-nada": true,

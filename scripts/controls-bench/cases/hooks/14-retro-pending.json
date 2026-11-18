@@ -1948,6 +1948,346 @@
               }
             ]
           }
+        },
+        {
+          "id": "8288-quiet-head-en-main-push-a-otra-rama",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin otra-rama"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): con HEAD en main, un empuje a otra rama no llega a main: no pide latido."
+        },
+        {
+          "id": "8288-quiet-head-en-main-push-u-a-otra-rama",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push -u origin otra-rama"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): -u no cambia el destino: va a otra-rama."
+        },
+        {
+          "id": "8288-quiet-main-a-otra",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main:otra"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): el refspec main:otra va a otra, aunque nombre main."
+        },
+        {
+          "id": "8288-quiet-main-que-sigue-a-otra",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "git remote add origin https://example.invalid/x.git && git update-ref refs/remotes/origin/otra HEAD && git branch -q -u origin/otra"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): sin refspec, una main que sigue a origin/otra no empuja a main (con simple, git lo rechaza; con upstream va a otra)."
+        },
+        {
+          "id": "8288-pide-push-solo-siguiendo-main",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "git remote add origin https://example.invalid/x.git && git update-ref refs/remotes/origin/main HEAD && git branch -q -u origin/main"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): sin refspec, la main que sigue a origin/main llega a main."
+        },
+        {
+          "id": "8288-pide-push-origin-siguiendo-main",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "git remote add origin https://example.invalid/x.git && git update-ref refs/remotes/origin/main HEAD && git branch -q -u origin/main"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): git push origin, sin refspec: la rama de seguimiento es main."
+        },
+        {
+          "id": "8288-pide-push-origin-head",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin HEAD"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): HEAD en main: llega a main."
+        },
+        {
+          "id": "8288-pide-push-origin-main",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): llega a main, como hoy."
+        },
+        {
+          "id": "8288-pide-desde-otra-rama-head-a-main",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "git checkout -q -b feat/x"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin HEAD:main"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): desde otra rama, HEAD:main llega a main."
+        },
+        {
+          "id": "8288-pide-main-sin-seguimiento",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): sin refspec ni rama de seguimiento no se sabe el destino: ante la duda, pide como hoy."
+        },
+        {
+          "id": "8288-pide-push-all",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push --all"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): --all no tiene un destino solo: pide como hoy."
+        },
+        {
+          "id": "8288-pide-push-tags",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push --tags"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): --tags: indeterminable, pide como hoy."
+        },
+        {
+          "id": "8288-pide-borrado",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin :otra"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"branch\":\"main\""
+              }
+            ],
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending"
+            ]
+          },
+          "why": "Historia 8.288 (T11, AC 13-14): un refspec de borrado: indeterminable, pide como hoy."
         }
       ],
       "env": {

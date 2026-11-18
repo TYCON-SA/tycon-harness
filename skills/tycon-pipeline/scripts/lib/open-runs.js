@@ -51,9 +51,9 @@ function mismaRuta(a, b, platform = process.platform) {
  * registro o `{ ok: false, error }` si existe y no se puede leer. Sólo se parsean los renglones que nombran un evento de
  * ejecución: el registro tiene megas de otros controles.
  */
-function leerEventos(home) {
+function leerEventos(home, { archivo } = {}) {
   let raw;
-  try { raw = fs.readFileSync(gatesPath(home)); } catch (e) {
+  try { raw = fs.readFileSync(archivo || gatesPath(home)); } catch (e) {
     return e && e.code === 'ENOENT' ? { ok: false, ausente: true } : { ok: false, error: (e && (e.code || e.message)) || 'error' };
   }
   // corre en cada comando de consola: se buscan los dos nombres en los bytes y se parsea sólo su renglón, porque partir
@@ -225,6 +225,58 @@ function perdida({ sid, cwd, home, platform = process.platform } = {}) {
   return null;
 }
 
+/**
+ * La apertura de la ejecución de `sesion` para su salida perdida (`restore` o `clear-session --lost`), o null. Una sola
+ * regla para el freno (run-close.js), la pregunta del cuadro (signature-sources.js) y marker.js. Con `modo: 'restore'`
+ * manda primero lo que dice el marcador de `propia`, la sesión que el restore escribe, si tiene `restoredFrom` igual a la
+ * sesión: con pasos en `restorePendiente` es un restore a medias (`a-medias`), y sin pasos, con su apertura nueva vigente
+ * y la copia de esa apertura en su carpeta, uno terminado (`terminado`), que no se repite. Después, la apertura vigente
+ * del registro; si no, la última copia del repo de `cwd`; y sólo al restaurar, la copia podada por vieja. Todo se lee de
+ * una misma carpeta de estado: `estado`, o la de `home`. Devuelve los campos de la apertura más `ts` (su hora), `antes`
+ * (la hora es el último toque de la podada, no su arranque) y `deDonde`.
+ */
+function aperturaParaSalida(sesion, { modo = 'lost', cwd, home, estado, propia } = {}) {
+  if (!sesion) return null;
+  const s = String(sesion);
+  const dir = estado || stateDir(home || os.homedir());
+  const reg = leerEventos(home, { archivo: path.join(dir, 'gates.log') });
+  const eventos = reg.ok ? reg.eventos : [];
+  if (modo === 'restore' && propia) {
+    let m = null;
+    try { m = JSON.parse(fs.readFileSync(path.join(dir, 'active', `${sessionIdFileKey(propia)}.json`), 'utf8')); } catch { m = null; }
+    if (m && String(m.restoredFrom) === s) {
+      const campos = { sesion: s, storyPath: m.storyPath || null, repo: m.repoPath || null, runDir: m.runDir || null };
+      const r = m.restorePendiente;
+      if (r && Array.isArray(r.pasos) && r.pasos.length) {
+        return { ...campos, name: 'restore-a-medias', story: String(r.story != null ? r.story : m.storyId), ts: r.ts || null, antes: !!r.antes, deDonde: 'a-medias' };
+      }
+      const nueva = vigente(propia, { eventos });
+      let copia = null;
+      try { copia = m.runDir ? JSON.parse(fs.readFileSync(copiaPath(m.runDir), 'utf8')) : null; } catch { copia = null; }
+      if (nueva && nueva.name === 'run-open' && String(nueva.story) === String(m.storyId) && mismaRuta(nueva.runDir, m.runDir)
+        && copia && copia.sesion === String(propia) && copia.ts === nueva.ts) {
+        return { ...campos, name: 'restore-terminado', story: String(m.storyId), ts: m.restoredAt || nueva.ts, antes: false, deDonde: 'terminado' };
+      }
+    }
+  }
+  const ult = vigente(s, { eventos });
+  if (ult && ult.name === 'run-open') return { ...ult, antes: false, deDonde: 'registro' };
+  const raiz = raizDeGit(cwd);
+  const copias = raiz ? copiasDe(raiz, s) : [];
+  if (copias.length) return { ...copias[copias.length - 1].copia, antes: false, deDonde: 'copia' };
+  if (modo !== 'restore') return null;
+  // se lee acá y no con story-gate-io.js: esa pieza traería marker.js a todo lo que carga este módulo, también al sitio
+  let p = null;
+  try { p = JSON.parse(fs.readFileSync(path.join(dir, 'pruned', `${sessionIdFileKey(s)}.json`), 'utf8')); } catch { p = null; }
+  if (p && p.storyId) {
+    // la podada no siempre trae su carpeta: la da su última apertura del registro
+    const abierta = p.runDir ? null : [...eventos].reverse().find((e) => e.sesion === s && e.name === 'run-open');
+    return { name: 'pruned', sesion: s, story: String(p.storyId), storyPath: p.storyPath || null, repo: p.repoPath || null,
+      runDir: p.runDir || (abierta && abierta.runDir) || null, ts: p.startedAt || p.lastTouch || null, antes: !p.startedAt, deDonde: 'podada' };
+  }
+  return null;
+}
+
 const FALTA = {
   marcador: 'falta su marcador (el archivo de la sesión en la carpeta del estado): se borró o se movió',
   registro: 'falta el registro de aperturas (gates.log): se borró o se movió, y la copia de la apertura sigue en el repo',
@@ -247,4 +299,4 @@ function cartel(r, { markerJs = 'marker.js' } = {}) {
   ].join('\n');
 }
 
-module.exports = { CAMPOS_DE_CIERRE, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, cartel, gatesPath, markerPath };
+module.exports = { CAMPOS_DE_CIERRE, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, gatesPath, markerPath };

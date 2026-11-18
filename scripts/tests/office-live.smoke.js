@@ -6,6 +6,7 @@
 //
 //   node scripts/tests/office-live.smoke.js        sale 0 si todo pasó; 1 si algo no; 2 si no hay navegador
 //   node scripts/tests/office-live.smoke.js --labels    sólo las etiquetas de personas cerca (8.234, AC 12)
+//   node scripts/tests/office-live.smoke.js --racks     sólo los racks con la memoria y el procesador de la máquina
 //
 // La oficina corre con una HOME de juguete; el navegador se busca en la carpeta personal de quien lo corre.
 // stable-data: las sesiones de juguete se fechan con el reloj real a propósito, porque la oficina viva compara contra
@@ -649,6 +650,107 @@ async function labelsClose(playwright) {
   }
 }
 
+// The load of this machine measured here, apart from the office: memory in use (macOS `memory_pressure -Q`, Linux
+// /proc/meminfo) and processor in use in slices of 250 ms, like the office, all along `during`, which makes the office take
+// a new photo: the office measured one of those slices. A busy machine jumps from slice to slice, so what counts is the
+// lowest and the highest. null when it cannot be read.
+async function loadAround(during) {
+  let memoria = null;
+  try {
+    if (process.platform === 'darwin') {
+      const m = /memory free percentage:\s*(\d+)\s*%/i.exec(spawnSync('memory_pressure', ['-Q'], { encoding: 'utf8', timeout: 5000 }).stdout || '');
+      if (m) memoria = 100 - Number(m[1]);
+    } else if (process.platform === 'linux') {
+      const t = fs.readFileSync('/proc/meminfo', 'utf8');
+      const kb = (k) => Number((new RegExp(`^${k}:\\s*(\\d+)`, 'm').exec(t) || [])[1]);
+      memoria = Math.round(100 - (kb('MemAvailable') / kb('MemTotal')) * 100);
+    } else memoria = Math.round(100 - (os.freemem() / os.totalmem()) * 100);
+  } catch { memoria = null; }
+  const times = () => os.cpus().reduce((s, c) => { const all = Object.values(c.times).reduce((a, b) => a + b, 0); return { busy: s.busy + all - c.times.idle, total: s.total + all }; }, { busy: 0, total: 0 });
+  const slices = [];
+  let done = false;
+  const sampler = (async () => {
+    let prev = times();
+    while (!done) {
+      await sleep(250);
+      const t = times();
+      if (t.total > prev.total) slices.push(Math.round(((t.busy - prev.busy) / (t.total - prev.total)) * 100));
+      prev = t;
+    }
+  })();
+  try { await during(); } finally { done = true; await sampler; }
+  return { memoria, procesador: slices.length ? { min: Math.min(...slices), max: Math.max(...slices) } : null };
+}
+
+// The racks with the load of the machine (E1 of the racks): the real office in Chromium, light and dark. Each rack lights
+// the rows of its percentage (one row of tolerance against what is measured here at the same moment), and the mouse over
+// a rack shows its number. Leaves screenshots in OFFICE_RACKS_SHOTS, or in a temporary folder that it prints.
+async function racksLoad(playwright) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'office-racks-'));
+  const sdir = stateDir(home);
+  for (const d of ['active', 'adhoc', 'doing']) fs.mkdirSync(path.join(sdir, d), { recursive: true });
+  const sessions = path.join(claudeDir(home), 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  fs.writeFileSync(path.join(sessions, 's1.json'), JSON.stringify({ pid: process.pid, sessionId: 's1', name: 'Alfa', status: 'busy', statusUpdatedAt: Date.now() }));
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_OFFICE_NO_BROWSER: '1', TYCON_OFFICE_LINK: '0', TYCON_OFFICE_TEST: '1' };
+  const open = spawnSync(process.execPath, [OFFICE, '--open'], { input: '', env, encoding: 'utf8', timeout: 20000 });
+  const url = (open.stdout.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+/) || [])[0];
+  check(open.status === 0 && Boolean(url), `racks: la oficina arrancó (${url || open.stderr.trim()})`);
+  if (!url) return;
+  const lock = JSON.parse(fs.readFileSync(path.join(sdir, 'office', 'server.json'), 'utf8'));
+  const shots = process.env.OFFICE_RACKS_SHOTS || fs.mkdtempSync(path.join(os.tmpdir(), 'office-racks-shots-'));
+  fs.mkdirSync(shots, { recursive: true });
+  const browser = await playwright.chromium.launch();
+  try {
+    for (const scheme of ['light', 'dark']) {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: scheme });
+      // las fotos que llegan por la conexión viva: así se sabe cuándo llegó la que mide lo mismo que esta prueba
+      const frames = [];
+      page.on('websocket', (ws) => ws.on('framereceived', (f) => frames.push(String(f.payload))));
+      await page.goto(url);
+      await page.waitForFunction(() => window.tablero && window.tablero.started && window.tablero.racks, null, { timeout: 45000 });
+      // la escena ya dibujada baja su ritmo; recién ahí una foto nueva (otro carril de Alfa) mide lo mismo que esta prueba
+      await sleep(3000);
+      const title = `medida de los racks en ${scheme}`;
+      const now = await loadAround(async () => {
+        fs.writeFileSync(path.join(sdir, 'adhoc', 's1.json'), JSON.stringify({ reason: title, declaredAt: new Date().toISOString() }));
+        for (let i = 0; i < 60 && !frames.some((f) => f.includes(title)); i += 1) await sleep(250);
+      });
+      check(frames.some((f) => f.includes(title)), `racks ${scheme}: llegó la foto nueva`);
+      await sleep(500);
+      const racks = await page.evaluate(() => window.tablero.racks());
+      for (const r of racks) {
+        const measured = now[r.tipo];
+        if (measured === null) { check(r.pct === null, `racks ${scheme}: ${r.tipo} sin medida acá, y la oficina tampoco la inventa (${r.pct})`); continue; }
+        check(Number.isInteger(r.pct), `racks ${scheme}: la oficina midió ${r.tipo} (${r.pct})`);
+        check(r.encendidas === Math.round((r.pct * 9) / 100), `racks ${scheme}: el rack de ${r.tipo} dibuja ${r.encendidas} filas para su ${r.pct} %`);
+        const rowsOf = (p) => Math.round((p * 9) / 100);
+        const [lo, hi] = typeof measured === 'number' ? [measured, measured] : [measured.min, measured.max];
+        check(r.encendidas >= rowsOf(lo) - 1 && r.encendidas <= rowsOf(hi) + 1, `E1 E2E_Office_RacksConMedida (8.301 AC 1, 3) ${scheme}: ${r.tipo} con ${r.encendidas} filas encendidas; medido acá ${lo === hi ? `${lo} %` : `de ${lo} % a ${hi} %`} → ${rowsOf(lo) === rowsOf(hi) ? rowsOf(lo) : `${rowsOf(lo)} a ${rowsOf(hi)}`} filas, con una de tolerancia`);
+      }
+      // el mouse sobre cada rack muestra su número, y fuera se oculta
+      for (const r of racks) {
+        await page.mouse.move(r.x, r.y);
+        const tag = page.locator('.rackTag');
+        await tag.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+        const said = (await tag.isVisible()) ? await tag.innerText() : '(no se ve)';
+        const want = r.tipo === 'memoria' ? (r.pct === null ? 'Memoria: no medida' : `Memoria en uso: ${r.pct} %`) : (r.pct === null ? 'Procesador: no medido' : `Procesador: ${r.pct} %`);
+        check(said === want, `E1 (8.301 AC 5) ${scheme}: el mouse sobre el rack de ${r.tipo} dice «${said}»`);
+        if (r.tipo === 'memoria') await page.screenshot({ path: path.join(shots, `racks-${scheme}.png`) });
+      }
+      const box = await page.locator('#stage canvas').boundingBox();
+      await page.mouse.move(box.x + 20, box.y + 20);
+      await page.waitForTimeout(300);
+      check(!(await page.locator('.rackTag').isVisible()), `E1 (8.301 AC 5) ${scheme}: fuera del rack la etiqueta se oculta`);
+      await page.close();
+    }
+    console.log(`racks: capturas en ${shots}`);
+  } finally {
+    await browser.close();
+    try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }
+  }
+}
+
 async function main() {
   const playwright = PINNED_PW.load();
   if (!playwright) { console.error(`sin navegador: ${PINNED_PW.locate().why}`); return 2; }
@@ -662,6 +764,12 @@ async function main() {
   if (process.argv.includes('--messages')) {
     await talkToSession(playwright);
     console.log(fails.length ? `E1-E6 (8.183): FALLA (${fails.length})` : 'E1-E6 (8.183): OK');
+    return fails.length ? 1 : 0;
+  }
+  // sólo los racks con la carga de la máquina, con su propia oficina de juguete
+  if (process.argv.includes('--racks')) {
+    await racksLoad(playwright);
+    console.log(fails.length ? `E1 racks: FALLA (${fails.length})` : 'E1 racks: OK');
     return fails.length ? 1 : 0;
   }
   // sólo las etiquetas de personas cerca (8.234, AC 12), con su propia oficina de juguete
@@ -745,6 +853,7 @@ async function main() {
     await tablesByTopic(playwright, env, sdir);
     await taskNumbers(playwright);
     await labelsClose(playwright);
+    await racksLoad(playwright);
   } finally {
     await browser.close();
     try { process.kill(lock.pid, 'SIGKILL'); } catch { /* ya salió */ }

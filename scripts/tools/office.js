@@ -2137,6 +2137,94 @@ function officeProcessAlive(sdir) {
   } catch { return false; }
 }
 
+// La carga de la máquina para los racks de la oficina. La memoria es la que decide los turnos pesados (`freeMemory()` de
+// heavy-turn.js), con un tope propio: la foto no espera los 5 s del turno pesado.
+const MEMORY_TIMEOUT_MS = 1000;
+// un aviso del tope que llega más tarde que esto encontró al hilo ocupado: la respuesta pudo llegar y no haberse leído
+const MEMORY_LATE_MS = 100;
+// el procesador se mide entre dos lecturas: la anterior de este proceso, si es reciente, o dos separadas por CPU_GAP_MS
+const CPU_GAP_MS = 250;
+const CPU_PREVIOUS_MAX_MS = 10000;
+let lastCpuRead = null;
+
+/**
+ * El comando que mide la memoria libre en macOS, con el tope de la oficina. Corre sin shell y sin frenar al proceso vivo de
+ * la oficina mientras espera; devuelve lo que imprimió. El tope cuenta sólo el tiempo en que el hilo pudo leer la respuesta:
+ * si su aviso llega tarde porque el hilo estuvo ocupado armando la foto, da otra vuelta en vez de cortar al comando, que ya
+ * pudo haber contestado.
+ */
+function memoryCommand(exec = require('child_process').execFile, { now = Date.now, later = setTimeout, cancel = clearTimeout } = {}) {
+  return () => new Promise((resolve, reject) => {
+    let timer = null;
+    let child = null;
+    let done = false;
+    const settle = (fn, value) => { if (done) return; done = true; cancel(timer); fn(value); };
+    const arm = () => {
+      const due = now() + MEMORY_TIMEOUT_MS;
+      timer = later(() => {
+        if (done) return;
+        if (now() - due > MEMORY_LATE_MS) { arm(); return; }
+        settle(reject, Object.assign(new Error(`memory_pressure pasó su tope de ${MEMORY_TIMEOUT_MS} ms`), { code: 'ETIMEDOUT' }));
+        try { if (child) child.kill(); } catch { /* ya terminó */ }
+      }, MEMORY_TIMEOUT_MS);
+    };
+    arm();
+    child = exec('memory_pressure', ['-Q'], { encoding: 'utf8', windowsHide: true }, (err, stdout) => {
+      if (err) settle(reject, err);
+      else settle(resolve, String(stdout));
+    });
+  });
+}
+
+/** El tiempo de todos los procesadores juntos: cuánto estuvieron ocupados y cuánto pasó. */
+function cpuTimes(cpus) {
+  let busy = 0;
+  let total = 0;
+  for (const c of cpus) {
+    const t = (c && c.times) || {};
+    const all = Object.values(t).reduce((s, v) => s + (Number(v) || 0), 0);
+    total += all;
+    busy += all - (Number(t.idle) || 0);
+  }
+  return { busy, total };
+}
+
+/**
+ * La memoria y el procesador en uso, en porcentajes enteros: `{ memoria, procesador }`. La medida que no se pudo leer no
+ * va: nunca se inventa ni se repite una vieja. Los lectores se pasan en las pruebas; `previous` es la lectura anterior del
+ * procesador (`{ at, times }`, o null para no usar ninguna).
+ */
+async function machineLoad({ platform = process.platform, run, readFile, readCpus = os.cpus, freemem = os.freemem, totalmem = os.totalmem, wait = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, previous } = {}) {
+  const out = {};
+  try {
+    let free = null;
+    // en Windows `freeMemory()` no mide, y cambiarla cambiaría cuándo esa máquina recibe el segundo turno pesado
+    if (platform === 'win32') { const total = totalmem(); free = total > 0 ? (freemem() / total) * 100 : null; }
+    else {
+      // el comando corre antes y sin esperar: `freeMemory()` lee su texto como si lo hubiera corrido ella
+      const text = platform === 'darwin' ? await (run || memoryCommand())() : null;
+      free = require('./heavy-turn.js').freeMemory({ platform, run: () => text, readFile }).pct;
+    }
+    const used = Number.isFinite(free) ? Math.round(100 - free) : null;
+    if (used !== null && used >= 0 && used <= 100) out.memoria = used;
+  } catch { /* sin medida de memoria: no va */ }
+  try {
+    const prev = previous === undefined ? lastCpuRead : previous;
+    const age = prev ? now() - prev.at : Infinity;
+    // una lectura «del futuro» (el reloj se atrasó después de leerla) no vale: si no, se esperaría el tamaño del salto
+    let first = age >= 0 && age < CPU_PREVIOUS_MAX_MS ? prev.times : null;
+    if (!first) { first = cpuTimes(readCpus()); await wait(CPU_GAP_MS); }
+    // una lectura muy reciente se usa, pero el reloj del sistema tiene que llegar a avanzar
+    else if (age < CPU_GAP_MS) await wait(CPU_GAP_MS - age);
+    const second = cpuTimes(readCpus());
+    if (previous === undefined) lastCpuRead = { at: now(), times: second };
+    const total = second.total - first.total;
+    const used = total > 0 ? Math.round(((second.busy - first.busy) / total) * 100) : null;
+    if (used !== null && used >= 0 && used <= 100) out.procesador = used;
+  } catch { /* sin medida del procesador: no va */ }
+  return out;
+}
+
 /**
  * Lee todo lo de esta máquina y arma los datos; guarda las promesas al día. `arbol` y `validarAprobacion` van a la
  * lectura de las firmas ya aprobadas (`aprobadasSinRepetir`); se pasan en las pruebas.
@@ -2145,6 +2233,8 @@ async function collect(opts = {}) {
   const home = opts.home || os.homedir();
   const sdir = opts.stateDir || stateDir(home);
   const nowMs = opts.now ? Date.parse(opts.now) : Date.now();
+  // la carga de la máquina se mide mientras se arma el resto; `machine: false` no la mide (quien sólo lee las firmas)
+  const load = opts.machine === false ? null : machineLoad(opts.machine).catch(() => ({}));
   const wip = await wipNow(opts);
   const problems = [];
   let signatures = [];
@@ -2284,6 +2374,7 @@ async function collect(opts = {}) {
   const url = site.code === 0 ? String(site.out || '').trim() : '';
   if (/^https?:\/\/\S+$/i.test(url)) data.meta.sitio = url;
   else if (site.code === 2) data.unreadable.push(`la dirección del sitio no se pudo leer: ${String(site.out || '').trim().split('\n')[0] || 'sin motivo'}`);
+  if (load) data.meta.maquina = await load;
   if (!opts.readOnly) try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     // entero y después renombrado: otro lector (la foto fija y el proceso vivo leen el mismo) nunca lo ve a medias
@@ -2404,7 +2495,7 @@ async function main(argv) {
   // de las filas, ni las promesas), así no compite con la oficina viva
   if (opts.ownerWaits) {
     let data;
-    try { data = await collect({ now: opts.now, noTranscripts: false, syncBoard: false, readOnly: true }); } catch (e) {
+    try { data = await collect({ now: opts.now, noTranscripts: false, syncBoard: false, readOnly: true, machine: false }); } catch (e) {
       if (e.code === 'NO_STATE' || e.code === 'BAD_ARG') { process.stderr.write(`office.js: ${e.message}\n`); return 2; }
       throw e;
     }
@@ -2460,4 +2551,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, MODULES };
+module.exports = { workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, machineLoad, memoryCommand, MODULES };

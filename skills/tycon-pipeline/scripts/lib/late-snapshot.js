@@ -176,7 +176,8 @@ function vistaPorRevisor(lineas, iter) {
       continue;
     }
     if (typeof d.advisor !== 'string') continue;
-    const t = Date.parse(d.ts);
+    // el renglón de `reviewers-run` se escribe al terminar el proceso: su arranque va en `lanzado_ts`, y sin él no consta
+    const t = Date.parse(d.launcher === 'pipeline' ? d.lanzado_ts : d.ts);
     if (!Number.isFinite(t)) continue;
     const previo = lanzamientos.get(d.advisor);
     if (previo === undefined || t < previo) lanzamientos.set(d.advisor, t);

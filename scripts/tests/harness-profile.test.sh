@@ -437,6 +437,7 @@ PY
     #   scripts/hooks/owner-email-notice.js — tu correo de git, dicho una vez, con el buzón prendido
     #   scripts/hooks/wait-notice.js — el aviso de que una corrida espera a una persona, en sus seis eventos
     #   scripts/hooks/worktree-sweep.js — el barrido diario de las carpetas de trabajo ya mergeadas
+    #   scripts/hooks/temp-sweep.js — el barrido diario de las carpetas temporales viejas
     #   scripts/hooks/unclosed-runs-notice.js — las corridas que quedaron sin cerrar, dicho una vez por día
     #   scripts/hooks/deprecated-read-notice.js — avisa cuando se lee un archivo que el repo declara deprecado
     #   scripts/hooks/deprecated-session-notice.js — los archivos deprecados del repo, dichos al arrancar
@@ -471,7 +472,8 @@ PY
       scripts/hooks/cover-secrets.js
       scripts/hooks/office-message-rule.js scripts/hooks/office-inbox-watch.js=2
       scripts/hooks/background-question-guard.js scripts/hooks/finished-open-notice.js scripts/hooks/guard-auto-update.js
-      scripts/hooks/hook-failures-notice.js tycon-pipeline/scripts/reviewer-launch-gate.js tycon-pipeline/scripts/on-advisor-done.js)
+      scripts/hooks/hook-failures-notice.js tycon-pipeline/scripts/reviewer-launch-gate.js tycon-pipeline/scripts/on-advisor-done.js
+      scripts/hooks/temp-sweep.js)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
       rm -f "$2"
       python3 - "$1" "$2" "${T40_ADDED[@]}" <<'PY'

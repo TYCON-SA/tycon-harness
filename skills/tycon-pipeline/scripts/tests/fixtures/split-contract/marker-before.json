@@ -719,6 +719,7 @@
     "skills/tycon-pipeline/scripts/lib/reloop-code.js",
     "skills/tycon-pipeline/scripts/lib/repo-attrib.js",
     "skills/tycon-pipeline/scripts/lib/reported-criticals.js",
+    "skills/tycon-pipeline/scripts/lib/restore-steps.js",
     "skills/tycon-pipeline/scripts/lib/rethink.js",
     "skills/tycon-pipeline/scripts/lib/review-roster.js",
     "skills/tycon-pipeline/scripts/lib/review-rounds.js",

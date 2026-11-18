@@ -187,10 +187,11 @@ function reposDeLaCorrida({ marker = {}, hermanos = [] } = {}) {
   // un evento o un hermano fuera de todo repo no tiene qué guardar. Un repo que entra sólo por una edición, vive en una
   // carpeta temporal y no tiene `origin` (el `git init` de juguete con que la corrida midió algo) tampoco: el ok no lo
   // cubre, y un commit o un push ahí pide su propio ok (`vigente`). Un clon o un worktree de un repo real (con `origin`)
-  // entra aunque esté ahí, y los hermanos y lo que declara la story, siempre
+  // entra aunque esté ahí, y los hermanos y lo que declara la story, siempre. «Sin origin» es la salida 2 de git (no existe
+  // el remoto): si git no pudo contestar, no se sabe, y el repo entra
   const temporales = CARPETAS_TEMPORALES.map(real);
   const enTemporal = (r) => temporales.some((d) => r === d || r.startsWith(`${d}${path.sep}`));
-  const deJuguete = (r) => enTemporal(r) && !git(r, ['remote', 'get-url', 'origin']).ok;
+  const deJuguete = (r) => enTemporal(r) && git(r, ['remote', 'get-url', 'origin']).status === 2;
   const posibles = [
     ...(Array.isArray(marker.fileEvents) ? marker.fileEvents : []).map((e) => e && e.path).filter(Boolean).map(raizDe)
       .filter((r) => r && !deJuguete(r)),

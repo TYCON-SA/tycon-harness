@@ -2579,6 +2579,7 @@ const TEXTOS = {
   'control.@tcg:owner-approval-record.js': { es: 'Anota tu «aprobado» escrito o tu click en el cuadro de opciones, para que una firma pendiente lo use sin terminal, una sola vez.', en: 'Records your written approval or your click in the options box, so a pending signature can use it without the terminal, once.' },
   'control.@tcg:wait-notice.js': { es: 'Avisa por Telegram cuando una ejecución lleva rato esperando una respuesta tuya.', en: 'Sends a Telegram message when a run has been waiting on you for a while.' },
   'control.@tcg:worktree-sweep.js': { es: 'Borra solas las carpetas de trabajo que ya se mergearon a main.', en: 'Automatically deletes working folders whose changes are already merged into main.' },
+  'control.@tcg:temp-sweep.js': { es: 'Borra solas las carpetas temporales viejas que nadie usa, para que el arranque de la máquina no tarde en vaciarlas.', en: 'Automatically deletes stale temporary folders nothing is using, so machine startup does not spend minutes emptying them.' },
   'control.@tcg:office-message-rule.js': { es: 'Le explica a cada sesión qué es un mensaje que le escribís desde tu oficina, y que nunca vale como firma.', en: 'Tells each session what a message you write to it from your office is, and that it never counts as a signature.' },
   'control.@tcg:office-inbox-watch.js': { es: 'Espera los mensajes que le escribís a una sesión desde tu oficina y la despierta con ellos.', en: 'Waits for the messages you write to a session from your office and wakes it up with them.' },
   'control.@tcg:office-link-start.js': { es: 'Pide el alta de la máquina en la oficina del sitio y le manda lo mismo que ves en tu oficina local. Mientras trabajás, pone al día la configuración del equipo cada 30 minutos.', en: 'Enrolls this machine in the site office and sends it what you see in your local office. While you work, it brings the team configuration up to date every 30 minutes.' },
@@ -2671,6 +2672,23 @@ const TEXTOS = {
   'config.demoInvitar': { es: 'En el sitio demo no se escribe: no se invitó a nadie. En un sitio real, esto abriría un pull request para dar de alta a {correo} en la lista del sitio, y la invitación saldría cuando se apruebe.', en: 'The demo site writes nothing: nobody was invited. On a real site, this would open a request to add {correo} to the site list, and the invitation would go out once it is approved.' },
   'config.demoRevocar': { es: 'En el sitio demo no se escribe: no se sacó a nadie. En un sitio real, esto abriría un pull request para dar de baja a {correo} de la lista del sitio.', en: 'The demo site writes nothing: nobody was removed. On a real site, this would open a request to remove {correo} from the site list.' },
   'comoTrabaja.demoNoSeEscribe': { es: 'En el sitio demo no se escribe: no se abrió ningún pull request. En un sitio real, esta mejora del paquete «{pack}» abriría un pull request al repo del perfil para que alguien la revise.', en: 'The demo site writes nothing: no request was opened. On a real site, this change to the "{pack}" pack would open a request on the profile repo for someone to review.' },
+  // la pestaña «Horas y tokens» (tabs/workdays.js)
+  'pestana.horas': { es: 'Horas y tokens', en: 'Hours and tokens' },
+  'horas.lede': { es: 'Horas y tokens de las sesiones de agente, por máquina y por día. Un día sin archivo es «no medido», nunca cero.', en: 'Hours and tokens of the agent sessions, per machine and per day. A day with no file is "not measured", never zero.' },
+  'horas.dia': { es: 'Día', en: 'Day' },
+  'horas.total': { es: 'Total', en: 'Total' },
+  'horas.arnes': { es: 'Horas con el arnés trabajando', en: 'Hours with the harness working' },
+  'horas.sesion': { es: 'Horas de sesión', en: 'Session hours' },
+  'horas.tokens': { es: 'Tokens (lectura · escritura · caché)', en: 'Tokens (read · write · cache)' },
+  'horas.noMedido': { es: 'no medido', en: 'not measured' },
+  'horas.raro': { es: 'no medido (no se entendió el archivo)', en: 'not measured (the file could not be understood)' },
+  'horas.ilegible': { es: 'no medido (no se pudo leer)', en: 'not measured (could not be read)' },
+  'horas.espejoIlegible': { es: 'Los días que suben las máquinas no se pudieron leer en el sitio ({motivo}): la tabla no dice nada de ellas.', en: 'The days the machines upload could not be read on the site ({motivo}): the table says nothing about them.' },
+  'horas.horasNoMedidas': { es: 'horas no medidas', en: 'hours not measured' },
+  'horas.tokensNoMedidos': { es: 'tokens no medidos', en: 'tokens not measured' },
+  'horas.sinMedir1': { es: '1 máquina sin medir', en: '1 machine not measured' },
+  'horas.sinMedirN': { es: '{n} máquinas sin medir', en: '{n} machines not measured' },
+  'horas.sinMaquinas': { es: 'Todavía no llegó ningún día de ninguna máquina.', en: 'No day has arrived from any machine yet.' },
 };
 
 // lo que dice un proveedor de inicio de sesión que nombra su nube o su marca vive en su archivo (auth-providers/, la

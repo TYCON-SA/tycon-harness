@@ -55,6 +55,9 @@ function lab({ reportes = [], hallazgos = null, cambio = { 'a.js': 'module.expor
   fs.writeFileSync(path.join(repo, 'a.js'), 'module.exports = 1;\n');
   fs.writeFileSync(path.join(repo, 'notas.md'), 'notas\n');
   git('add', '.'); git('commit', '-qm', 'base');
+  // el código base es de antes de la vuelta 1: con la hora de ahora contaría como editado mientras corría
+  const antesDeLaVuelta = new Date(Date.now() - 900000);
+  fs.utimesSync(path.join(repo, 'a.js'), antesDeLaVuelta, antesDeLaVuelta);
   const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_LANE_LLM: '0', TYCON_PROFILE: '0', TYCON_PACKS_DEFAULT: 'none', TYCON_AUTO_SNAPSHOT: '0' };
   delete env.TYCON_HOME; delete env.CODEX_SESSION_ID; delete env.CLAUDE_CONFIG_DIR; delete env.NODE_TEST_CONTEXT;
   const state = stateDirOf(home);
