@@ -7,7 +7,8 @@
  * comando de emergencia, o review, la coordinadora con la revisión automática del plan), si fue delegada, quién la pidió (`ordered_by`), sobre qué sesión (`target`), su id y su nivel
  * en el catálogo (signatures.js: una firma de hoy o un id de la tabla de niveles), la huella de la máquina
  * (machine-id.js), la hora, el motivo y el guion que la escribió (`source`). `routed`: la firma cerró un renglón de la
- * lista que el freno desvió a la coordinadora.
+ * lista que el freno desvió a la coordinadora. `remote_control`: si la sesión donde contestó la persona tenía el control
+ * remoto encendido (true o false), o null si no contestó una persona o no se pudo saber.
  *
  * Lo escribe `firmar()` de owner-window.js, por donde pasan las firmas de los guiones, y lo puede llamar cualquier
  * camino nuevo de firma. Los registros de cada guion y el renglón `-signed` de `gates.log` siguen como estaban.
@@ -57,9 +58,10 @@ function maquina(huella) {
 
 /**
  * Agrega el renglón de una firma. `{ ok: true, path }` o `{ ok: false, error }`; nunca lanza.
+ * `remoteControl`: si la sesión donde contestó la persona tenía el control remoto encendido; sin el dato, null.
  * `home`, `now` y `huella` se pasan en las pruebas.
  */
-function appendSignature({ signature, via, signer = null, orderedBy = null, target = null, reason = '', source = null, key = null, routed = false, home, now = Date.now(), huella } = {}) {
+function appendSignature({ signature, via, signer = null, orderedBy = null, target = null, reason = '', source = null, key = null, routed = false, remoteControl = null, home, now = Date.now(), huella } = {}) {
   try {
     if (!VIAS.includes(via)) return { ok: false, error: `la vía «${via}» no es una de ${VIAS.join(', ')}` };
     const n = nivelDe(signature, DELEGADAS.includes(via));
@@ -67,6 +69,7 @@ function appendSignature({ signature, via, signer = null, orderedBy = null, targ
     const renglon = {
       ts: new Date(now).toISOString(), signature, level: n.level, covers: n.covers, via, delegated: DELEGADAS.includes(via),
       signer, ordered_by: orderedBy, target, machine: maquina(huella), reason: una(reason, MOTIVO_MAX), source,
+      remote_control: typeof remoteControl === 'boolean' ? remoteControl : null,
       // la clave del pedido (la de su fila en la lista de firmas): con ella, la firma cierra sólo ese pedido
       ...(key ? { key: String(key) } : {}),
       // la firma cerró un renglón que el freno desvió a la coordinadora (delegation-routing.js)
@@ -79,6 +82,15 @@ function appendSignature({ signature, via, signer = null, orderedBy = null, targ
   } catch (e) {
     return { ok: false, error: e.code || e.message };
   }
+}
+
+/**
+ * El control remoto de un renglón del registro: `true` o `false` si lo trae, y null si falta (un renglón escrito antes
+ * de que existiera el campo) o trae otra cosa. Un renglón viejo no dice que el control remoto estaba apagado.
+ */
+function remoteControlDe(renglon) {
+  const v = renglon && typeof renglon === 'object' ? renglon.remote_control : undefined;
+  return typeof v === 'boolean' ? v : null;
 }
 
 /**
@@ -129,4 +141,4 @@ function signedSince(sessionId, estado, cutoffMs) {
   return { viva: r.ts !== null && Date.parse(r.ts) >= cutoffMs };
 }
 
-module.exports = { FILE, VIAS, logPath, appendSignature, signaturePathsFor, lastSignatureFor, signedSince };
+module.exports = { FILE, VIAS, logPath, appendSignature, remoteControlDe, signaturePathsFor, lastSignatureFor, signedSince };

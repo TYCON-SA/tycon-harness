@@ -13,7 +13,7 @@ const os = require('os');
 const path = require('path');
 
 const oa = require('../lib/owner-approvals.js');
-const { registroDe } = require('../hooks/owner-approval-record.js');
+const { registroDe, conElProceso } = require('../hooks/owner-approval-record.js');
 
 const AHORA = Date.parse('2026-11-01T23:30:00Z');
 const hace = (min) => new Date(AHORA - min * 60000).toISOString();
@@ -1242,4 +1242,77 @@ test('T13 OwnerApprovals_OldFormatClick_NotSigned_RowStays @story-8.275 @ac-16 @
   transcripcion(casa, 'ses-a', [cuadro('toolu_1', otro.pregunta), respuesta('toolu_1', { pregunta: otro.pregunta })]);
   oa.anotar(casa, { ...click('toolu_1'), pregunta: otro.pregunta });
   assert.strictEqual(oa.buscar({ casa, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA }).motivo, 'lo que se mostró cambió: pedí el cuadro de nuevo');
+});
+
+// --- el control remoto de la sesión --------------------------------------------------------------------------------
+
+const DIEZ = '2026-11-17T10:00:00.000Z';
+const ARRANQUE = Date.parse('2026-11-17T09:00:00.000Z');
+/** El renglón `bridge_status`, tal como lo escribe un proceso de terminal al encender el control remoto. */
+const renglonRemoto = (ts) => ({ type: 'system', subtype: 'bridge_status', content: '/remote-control is active · Continue here, on your phone, or at https://claude.ai/code/session_x', isMeta: false, timestamp: ts, entrypoint: 'cli' });
+/** El registro de sesión del proceso 100, donde lo escribe Claude Code. */
+function registroDeSesion(casa, datos, pid = 100) {
+  const dir = path.join(casa, '.claude', 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${pid}.json`), typeof datos === 'string' ? datos : JSON.stringify({ pid, sessionId: 'ses-r', startedAt: ARRANQUE, ...datos }));
+}
+
+test('T2 ControlRemoto_RegistroDeSesionConBridge_DevuelveTrue @story-8.304 @ac-4', (t) => {
+  // la terminal y la extensión lo anotan igual, y la extensión no escribe `bridge_status` en la transcripción
+  for (const entrypoint of ['cli', 'claude-vscode']) {
+    const casa = casaNueva(t);
+    registroDeSesion(casa, { entrypoint, bridgeSessionId: 'session_x' });
+    transcripcion(casa, 'ses-r', [{ type: 'user', timestamp: '2026-11-17T09:50:00.000Z', message: { content: 'hola' } }]);
+    assert.strictEqual(oa.controlRemotoDelProceso(casa, 100, 'ses-r'), true, entrypoint);
+  }
+});
+
+test('T3 ControlRemoto_SinBridge_DevuelveFalse_AunqueUnProcesoAnteriorLoTuviera @story-8.304 @ac-4', (t) => {
+  const casa = casaNueva(t);
+  registroDeSesion(casa, { entrypoint: 'claude-vscode' });
+  // el renglón de un proceso anterior de la misma sesión no dice nada de éste
+  transcripcion(casa, 'ses-r', [renglonRemoto('2026-11-15T19:34:02.000Z')]);
+  assert.strictEqual(oa.controlRemotoDelProceso(casa, 100, 'ses-r'), false);
+  const sinTranscripcion = casaNueva(t);
+  registroDeSesion(sinTranscripcion, {});
+  assert.strictEqual(oa.controlRemotoDelProceso(sinTranscripcion, 100, 'ses-r'), false);
+});
+
+test('T4 ControlRemoto_SinPoderSaber_NullOSinDato @story-8.304 @ac-5', (t) => {
+  // este proceso encendió el control remoto y el registro ya no lo dice: se apagó o el campo cambió de nombre
+  const contradice = casaNueva(t);
+  registroDeSesion(contradice, {});
+  transcripcion(contradice, 'ses-r', [renglonRemoto('2026-11-17T09:00:05.000Z')]);
+  assert.strictEqual(oa.controlRemotoDelProceso(contradice, 100, 'ses-r'), null);
+  // la transcripción no dice qué proceso lo escribió: el de otra copia de la sesión, posterior al arranque, también es duda
+  const otraCopia = casaNueva(t);
+  registroDeSesion(otraCopia, { entrypoint: 'claude-vscode' });
+  transcripcion(otraCopia, 'ses-r', [renglonRemoto('2026-11-17T09:30:00.000Z')]);
+  assert.strictEqual(oa.controlRemotoDelProceso(otraCopia, 100, 'ses-r'), null);
+  // un registro ilegible, o una transcripción que no se lee
+  const rota = casaNueva(t);
+  registroDeSesion(rota, '{ a medio escribir');
+  assert.strictEqual(oa.controlRemotoDelProceso(rota, 100, 'ses-r'), null);
+  const carpeta = casaNueva(t);
+  registroDeSesion(carpeta, {});
+  fs.mkdirSync(path.join(carpeta, '.claude', 'projects', '-r-proyecto', 'ses-r.jsonl'), { recursive: true });
+  assert.strictEqual(oa.controlRemotoDelProceso(carpeta, 100, 'ses-r'), null);
+  // sin dato: el proceso no tiene registro, es de otra sesión, o no se sabe cuál es
+  const casa = casaNueva(t);
+  assert.strictEqual(oa.controlRemotoDelProceso(casa, 100, 'ses-r'), undefined);
+  registroDeSesion(casa, { sessionId: 'ses-otra', bridgeSessionId: 'session_x' });
+  assert.strictEqual(oa.controlRemotoDelProceso(casa, 100, 'ses-r'), undefined);
+  assert.strictEqual(oa.controlRemotoDelProceso(casa, undefined, 'ses-r'), undefined);
+});
+
+test('T13 GanchoDeAprobacion_AnotaElControlRemotoAlContestar @story-8.304 @ac-8', (t) => {
+  const casa = casaNueva(t);
+  registroDeSesion(casa, { bridgeSessionId: 'session_x' });
+  const r = conElProceso({ tipo: 'click', sesion: 'ses-r', ts: DIEZ }, { pid: 100, inicio: 'x' }, casa);
+  assert.deepStrictEqual([r.tipo, r.herramienta.pid, r.control_remoto], ['click', 100, true]);
+  // lo anotado queda: apagarlo después no cambia lo que había al contestar
+  oa.anotar(casa, r);
+  registroDeSesion(casa, {});
+  assert.strictEqual(oa.leerSesion(casa, 'ses-r')[0].control_remoto, true);
+  assert.strictEqual(conElProceso({ tipo: 'mensaje', sesion: 'ses-r', ts: DIEZ }, { pid: 100, inicio: 'x' }, casa).control_remoto, false);
 });

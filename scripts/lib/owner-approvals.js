@@ -432,6 +432,33 @@ const textoDe = (r) => {
 };
 const cerca = (r, ts) => { const t = Date.parse(r && r.timestamp); const u = Date.parse(ts); return Number.isFinite(t) && Number.isFinite(u) && Math.abs(t - u) <= MARGEN_MS; };
 
+// el renglón que un proceso de terminal escribe en la transcripción al encender el control remoto
+const CONTROL_REMOTO = 'bridge_status';
+
+/**
+ * ¿El proceso `pid` de la sesión `sesion` tiene ahora el control remoto encendido? Claude Code lo anota en el registro de
+ * sesión del proceso (`~/.claude/sessions/<pid>.json`, `bridgeSessionId`), en la terminal y en la extensión; la
+ * transcripción no sirve para esto: la extensión no escribe `bridge_status`, y el de un proceso anterior no dice nada del
+ * actual. Sin el campo es `false`, salvo que haya un `bridge_status` posterior a su arranque: se apagó, el campo cambió
+ * de nombre o lo escribió otra copia de la sesión, y la transcripción no dice cuál (`null`: se avisa de más, nunca de
+ * menos). También es `null` un registro ilegible o una transcripción que no se lee. `undefined`: no hay dato, porque el proceso no tiene registro o es de otra sesión (otra herramienta, un pid
+ * reusado). Dice que el control remoto estaba encendido, no desde qué aparato se contestó.
+ */
+function controlRemotoDelProceso(casa, pid, sesion) {
+  if (!Number.isInteger(pid)) return undefined;
+  let s;
+  try { s = JSON.parse(fs.readFileSync(path.join(carpetaClaude(casa), 'sessions', `${pid}.json`), 'utf8')); } catch (e) {
+    return e.code === 'ENOENT' ? undefined : null;
+  }
+  if (!s || s.sessionId !== sesion) return undefined;
+  if (typeof s.bridgeSessionId === 'string' && s.bridgeSessionId) return true;
+  const ruta = transcripcionDe(casa, sesion);
+  if (!ruta) return false;
+  try {
+    return renglones(ruta, { filtro: CONTROL_REMOTO }).some((r) => r && r.type === 'system' && r.subtype === CONTROL_REMOTO && Date.parse(r.timestamp) >= s.startedAt) ? null : false;
+  } catch (_) { return null; }
+}
+
 /**
  * El mensaje en la transcripción, tipeado por la persona a la hora del registro, después de un mensaje del agente que
  * trae el sello de la firma: `{ ok }` o `{ ok: false, motivo }`.
@@ -985,5 +1012,5 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
 }
 
 module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
-  anotar, leerSesion, consumir, devolver, transcripcionDe, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
+  anotar, leerSesion, consumir, devolver, transcripcionDe, controlRemotoDelProceso, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
   escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, validarEnClaude, plataformaDe, constanciaDeLaTerminal };

@@ -2649,7 +2649,7 @@ const aprobacionesDePrueba = ({ coordinadora = null } = {}) => ({
 });
 const pedirSinVentana = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, { ...DE_LA_COORD, permission_mode: 'bypassPermissions', ...(o.evento || {}) }),
   escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION,
-  clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(o), topes: o.topes });
+  clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(o), topes: o.topes, lanzarAviso: o.lanzarAviso });
 const anotarAprobacion = (casa, sesion, extra = {}) => oaReal.anotar(casa, { tipo: 'mensaje', sesion, ts: new Date(AHORA - 60000).toISOString(), texto: 'Aprobado',
   herramienta: { pid: 100, inicio: INICIO }, ...extra });
 const PERDIDA = `node ${MARKER} clear-session ses-a --lost`;
@@ -4219,4 +4219,252 @@ test('OwnerWindow_Box_ShowsMeasuredWithinCut @story-8.260 @ac-25', () => {
   const x = { ac: 1, text: 'responde '.repeat(30), reason: 'el laboratorio no deja medir '.repeat(10), coveredBy: 'T1', medida: 'medido 3010 ms; la cota es < 2000 ms' };
   const q = require('../lib/owner-approvals.js').cuadroDe({ firma: 'runtime-waiver', destino: 's-1', que: 'aceptar sin prueba en vivo el AC 1', criterios: [1], queHace: [ow.renglonALaVista(x)], huella: 'abcd1234' });
   assert.match(q.pregunta, /medido 3010 ms; la cota es < 2000 ms/, q.pregunta);
+});
+
+// --- la firma con el control remoto encendido ------------------------------------------------------------------------
+// Cada renglón del registro común dice si el proceso donde contestó la persona tenía el control remoto encendido, y se le
+// avisa si lo tenía o si no se pudo saber. Nada de lo que se acepta cambia: lo atado a la terminal sigue ahí y la delegación
+// no firma lo delicado.
+
+const firmasDe = (casa) => { try { return fs.readFileSync(require('../lib/signature-log.js').logPath(casa), 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
+/** El registro de sesión del proceso, donde Claude Code anota `bridgeSessionId` con el control remoto encendido. */
+function conProceso(casa, sesion, { pid = 100, bridge = true } = {}) {
+  const dir = path.join(casa, '.claude', 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${pid}.json`), JSON.stringify({ pid, sessionId: sesion, startedAt: AHORA - 3600000, ...(bridge ? { bridgeSessionId: 'session_x' } : {}) }));
+}
+const clickCon = (casa, control_remoto) => anotarAprobacion(casa, 'ses-coord', { tipo: 'click', tool_use_id: 'toolu_1', ...(control_remoto === undefined ? {} : { control_remoto }) });
+const firmarPlan = (casa, avisos, o = {}) => ow.exigir({ firma: 'plan-approval', argv: PLAN_ARGV, pid: 301, arbol: arbolDelGuion(casa, PLAN), casa, ahora: AHORA + 60000, propia: 'ses-coord', antes: () => null, notificar: (x) => avisos.push(x), ...o });
+
+test('T5 PlanDelicado_ClickConControlRemoto_FirmaPorClickConRemoteControlTrue @story-8.304 @ac-6 @ac-7', (t) => {
+  const casa = casaNueva(t);
+  clickCon(casa, true);
+  const r = pedirSinVentana(casa, PLAN);
+  assert.deepStrictEqual([r.decision, r.via], ['allow', 'click'], r.texto);
+  const avisos = [];
+  const e = firmarPlan(casa, avisos);
+  assert.deepStrictEqual([e.codigo, e.via], [0, 'click'], e.motivo);
+  const [f] = firmasDe(casa);
+  assert.deepStrictEqual([f.via, f.remote_control], ['click', true]);
+  assert.doesNotMatch(String(f.signer), /coordinadora|revisión/, 'a nombre de la persona');
+  assert.strictEqual(avisos.length, 1);
+  // el mismo camino con el control remoto apagado: el renglón dice false y no se avisa
+  const casa2 = casaNueva(t);
+  clickCon(casa2, false);
+  assert.strictEqual(pedirSinVentana(casa2, PLAN).decision, 'allow');
+  const sin = [];
+  assert.strictEqual(firmarPlan(casa2, sin).via, 'click');
+  assert.strictEqual(firmasDe(casa2)[0].remote_control, false);
+  assert.deepStrictEqual(sin, []);
+});
+
+test('T6 SoloTerminal_ClickConControlRemoto_NoFirma @story-8.304 @ac-9', (t) => {
+  const conClickAnotado = () => {
+    const casa = casaNueva(t);
+    conProceso(casa, 'ses-coord');
+    clickCon(casa, true);
+    return casa;
+  };
+  for (const [nombre, cmd] of [['escape:TYCON_SAFETY_OFF', 'TYCON_SAFETY_OFF=1 rm -rf build'], ['escape:TYCON_PROD_LINT', 'TYCON_PROD_LINT=0 sqlcmd -Q x']]) {
+    // sin ventana, el click no alcanza y se manda a la terminal
+    const casa = conClickAnotado();
+    const r = pedirSinVentana(casa, cmd, { escapes: [nombre] });
+    assert.strictEqual(r.decision, 'deny', `${nombre}: ${r.texto}`);
+    assert.match(r.texto, /terminal/, nombre);
+    assert.doesNotMatch(r.texto, /cuadro de opciones/, nombre);
+    assert.deepStrictEqual(firmasDe(casa), [], `${nombre}: no se firmó nada`);
+    // con ventana, la pide como hoy: el click tampoco la reemplaza
+    const conVentana = conClickAnotado();
+    const v = pedir(conVentana, cmd, { evento: DE_LA_COORD, escapes: [nombre], aprobaciones: aprobacionesDePrueba() });
+    assert.strictEqual(v.decision, 'ask', `${nombre}: ${v.texto}`);
+    assert.deepStrictEqual(firmasDe(conVentana), [], `${nombre}: la ventana todavía no firmó`);
+  }
+  // `emergency` está en la lista, pero no es una firma que se pida por la consola
+  const emergencia = pedirSinVentana(conClickAnotado(), 'ls', { escapes: ['emergency'] });
+  assert.strictEqual(emergencia.decision, 'deny', emergencia.texto);
+  assert.match(emergencia.texto, /no es una firma que se pida por consola/);
+  // otra firma de nivel 3, fuera de la lista: el click la aprueba, como hoy
+  const otra = pedirSinVentana(conClickAnotado(), 'TYCON_NEW_NAMES=0 git commit -m x', { escapes: ['escape:TYCON_NEW_NAMES'], lanzarAviso: () => {} });
+  assert.deepStrictEqual([otra.decision, otra.via], ['allow', 'click'], otra.texto);
+});
+
+test('T14 FirmasDelFreno_ClickConControlRemoto_AvisanSinRenglon @story-8.304 @ac-13', (t) => {
+  const { SIGNATURES, ONLY_IN_TERMINAL } = require('../lib/signatures.js');
+  // `escape:rojo-esperado-de-la-matriz` pide además la historia de una corrida para armar su cuadro; pasa por la misma rama
+  const afuera = new Set(['escape:merge-bypass', 'escape:rojo-esperado-de-la-matriz', ...ONLY_IN_TERMINAL]);
+  const firmas = SIGNATURES.filter((s) => s.kind === 'freno' && !afuera.has(s.id)).map((s) => s.id);
+  assert.ok(firmas.includes('escape:DOD_BYPASS') && firmas.includes('escape:TYCON_NEW_NAMES'), firmas.join(' '));
+  // cada una con su forma a la vista: la variable delante del comando, o el guion que la pide
+  const comandoDe = (firma) => {
+    const { command } = SIGNATURES.find((s) => s.id === firma);
+    return command.endsWith('<comando>') ? command.replace('<comando>', 'true') : `node ${MARKER} ${firma.slice('escape:'.length)}`;
+  };
+  const pedirCon = (casa, firma, via, control_remoto, lanzados) => ow.decidir({ evento: evento(comandoDe(firma), { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }), escapes: [firma], arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA,
+    delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, lanzarAviso: (d) => lanzados.push(d),
+    aprobaciones: { buscar: () => ({ ok: true, via, aprobacion: { id: 'a-1', sesion: 'ses-coord', texto: 'Aprobado', control_remoto } }), consumir: () => ({ ok: true }), devolver: () => {}, coordinadoraConfirmada: () => null } });
+  for (const firma of firmas) {
+    for (const via of ['click', 'mensaje']) {
+      for (const [control, avisos] of [[true, 1], [null, 1], [false, 0]]) {
+        const casa = casaNueva(t);
+        const lanzados = [];
+        const r = pedirCon(casa, firma, via, control, lanzados);
+        const caso = `${firma} por ${via}, control remoto ${control}`;
+        assert.deepStrictEqual([r.decision, r.via], ['allow', via], `${caso}: ${r.texto}`);
+        assert.strictEqual(lanzados.length, avisos, caso);
+        if (avisos) assert.deepStrictEqual([lanzados[0].firma, lanzados[0].via, lanzados[0].remoto], [firma, via, control], caso);
+        assert.deepStrictEqual(firmasDe(casa), [], `${caso}: no deja renglón`);
+      }
+    }
+  }
+});
+
+test('T7 PlanDelicado_AprobadoEscritoConControlRemoto_SeTrataComoHoy @story-8.304 @ac-10', (t) => {
+  // el «aprobado» escrito sobre la pregunta del cuadro: el freno decide lo mismo con y sin el control remoto encendido
+  const resultado = (control_remoto) => {
+    const casa = casaNueva(t);
+    anotarAprobacion(casa, 'ses-coord', { control_remoto });
+    const r = pedirSinVentana(casa, PLAN);
+    const avisos = [];
+    const e = firmarPlan(casa, avisos);
+    return { decision: r.decision, via: r.via, codigo: e.codigo, firmas: firmasDe(casa), avisos };
+  };
+  const con = resultado(true);
+  const sin = resultado(false);
+  assert.deepStrictEqual([con.decision, con.via, con.codigo], ['allow', 'mensaje', 0]);
+  assert.deepStrictEqual([sin.decision, sin.via, sin.codigo], ['allow', 'mensaje', 0]);
+  assert.deepStrictEqual([con.firmas[0].via, sin.firmas[0].via], ['message', 'message']);
+  assert.deepStrictEqual([con.firmas[0].remote_control, sin.firmas[0].remote_control], [true, false]);
+  assert.deepStrictEqual([con.avisos.length, sin.avisos.length], [1, 0]);
+});
+
+test('T8 PlanDelicado_DelegacionConControlRemoto_SeNiegaComoHoy @story-8.304 @ac-11', (t) => {
+  // la coordinadora firma por delegación, sin click del dueño: el guion niega lo delicado igual con el control remoto
+  for (const bridge of [true, false]) {
+    const casa = casaConDesignada(t);
+    conProceso(casa, 'ses-coord', { bridge });
+    const r = pedir(casa, PLAN, { evento: DE_LA_COORD, delegacion: delegacionReal() });
+    assert.strictEqual(r.via, 'delegacion', r.texto);
+    const e = firmarPlan(casa, [], { antes: (via) => (via === 'delegacion' ? { codigo: 2, motivo: 'la historia es delicada: el plan lo aprueba el dueño' } : null), notificar: () => assert.fail('no hay firma que avisar') });
+    assert.strictEqual(e.codigo, 2, `control remoto=${bridge}`);
+    assert.deepStrictEqual(firmasDe(casa), [], `control remoto=${bridge}: no se firmó nada`);
+  }
+});
+
+test('T10 FirmaConControlRemoto_MandaAvisoYSinRemotoNo @story-8.304 @ac-13', (t) => {
+  const firmaCon = (casa, remotoConocido, o = {}) => {
+    const enPantalla = [];
+    ow.firmar({ firma: 'plan-approval', via: 'click', sesion: 'ses-p', destino: 'ses-a', remotoConocido, casa, ahora: AHORA, persona: 'acme', avisar: (m) => enPantalla.push(m), ...o });
+    return enPantalla;
+  };
+  // encendido: un aviso que nombra lo firmado, el destino, la vía, la hora y el control remoto
+  const avisos = [];
+  firmaCon(casaNueva(t), true, { notificar: (x) => avisos.push(x) });
+  assert.strictEqual(avisos.length, 1);
+  for (const dice of [/aprobar el plan de una story/, /sesión ses-a/, /por click/, /2026-10-27 13:00 UTC/, /control remoto encendido/]) assert.match(avisos[0], dice);
+  // no se pudo saber: ante la duda se avisa, y el aviso lo dice
+  const duda = [];
+  const casaDuda = casaNueva(t);
+  firmaCon(casaDuda, null, { notificar: (x) => duda.push(x) });
+  assert.strictEqual(firmasDe(casaDuda)[0].remote_control, null);
+  assert.strictEqual(duda.length, 1);
+  assert.match(duda[0], /no se pudo saber si el control remoto estaba encendido/);
+  // apagado, o una herramienta que no lleva ese registro: ninguno
+  const nada = [];
+  firmaCon(casaNueva(t), false, { notificar: (x) => nada.push(x) });
+  firmaCon(casaNueva(t), undefined, { notificar: (x) => nada.push(x) });
+  // sin una persona que contestó, tampoco
+  firmaCon(casaNueva(t), null, { via: 'delegacion', notificar: (x) => nada.push(x) });
+  assert.deepStrictEqual(nada, []);
+  // el aviso que no sale: el renglón igual quedó escrito y se dice en pantalla
+  const casa4 = casaNueva(t);
+  const pantalla = firmaCon(casa4, true, { notificar: () => { throw new Error('sin red'); } });
+  assert.strictEqual(firmasDe(casa4)[0].remote_control, true);
+  assert.match(pantalla.join('\n'), /el aviso no salió \(sin red\); queda en el registro de firmas/);
+  // sin canales, `avisar` de notify.js dice «entregado» sin haber mandado nada: se dice en pantalla
+  const notify = require('../lib/notify.js');
+  const orig = { canalesDeLaSesion: notify.canalesDeLaSesion, avisar: notify.avisar };
+  t.after(() => Object.assign(notify, orig));
+  notify.canalesDeLaSesion = () => ({ canales: [], mail: null, chat: null, origen: 'perfil', problema: null });
+  notify.avisar = () => assert.fail('sin canales no hay por dónde mandar');
+  assert.match(firmaCon(casaNueva(t), true).join('\n'), /el aviso no salió: la sesión no tiene canales; queda en el registro de firmas/);
+});
+
+test('T12 MergeBypass_ClickConControlRemoto_AnotaYAvisaDesdeElFreno @story-8.304 @ac-8 @ac-13', (t) => {
+  const cmd = 'gh pr merge 5 --admin';
+  const pedirMerge = (casa, lanzados, control_remoto) => ow.decidir({ evento: evento(cmd, { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }), escapes: ['escape:merge-bypass'], arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA,
+    delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, lanzarAviso: (d) => lanzados.push(d),
+    aprobaciones: { buscar: () => ({ ok: true, via: 'click', aprobacion: { id: 'a-1', sesion: 'ses-coord', control_remoto } }), consumir: () => ({ ok: true }), devolver: () => {}, coordinadoraConfirmada: () => null } });
+  const casa = casaNueva(t);
+  const lanzados = [];
+  assert.strictEqual(pedirMerge(casa, lanzados, true).decision, 'allow');
+  assert.deepStrictEqual([firmasDe(casa)[0].via, firmasDe(casa)[0].remote_control], ['click', true]);
+  assert.deepStrictEqual(lanzados.map((d) => [d.firma, d.via, d.remoto]), [['escape:merge-bypass', 'click', true]]);
+  // sin el control remoto: el renglón dice false y no se avisa
+  const casa2 = casaNueva(t);
+  const ninguno = [];
+  assert.strictEqual(pedirMerge(casa2, ninguno, false).decision, 'allow');
+  assert.strictEqual(firmasDe(casa2)[0].remote_control, false);
+  assert.deepStrictEqual(ninguno, []);
+  // el proceso del aviso no tiene pantalla: si no arranca, no entiende sus datos o no llega, queda en hook-errors.log
+  const estado = (c) => require('../../skills/tycon-pipeline/scripts/lib/state-dir.js').stateDir(c);
+  const conRegistro = () => {
+    const c = casaNueva(t);
+    fs.mkdirSync(estado(c), { recursive: true });
+    return c;
+  };
+  const errores = (c) => fs.readFileSync(path.join(estado(c), 'hook-errors.log'), 'utf8');
+  const sinArrancar = conRegistro();
+  const hijo = new (require('events'))();
+  hijo.unref = () => {};
+  let lanzado;
+  ow.lanzarAvisoDeFirma({ firma: 'escape:merge-bypass' }, { casa: sinArrancar, spawn: (...a) => { lanzado = a; return hijo; } });
+  assert.ok(lanzado[1].includes('remote-signature-notice'));
+  hijo.emit('error', new Error('sin memoria'));
+  assert.match(errores(sinArrancar), /el proceso del aviso no arrancó \(sin memoria\)/);
+  // el freno sale apenas decide, y el error de arranque llega en el turno siguiente: tiene que alcanzar a anotarse
+  const alSalir = conRegistro();
+  const guion = `const ow = require(${JSON.stringify(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'))});
+    const spawn = () => { const h = new (require('events'))(); h.unref = () => {}; process.nextTick(() => h.emit('error', new Error('sin procesos'))); return h; };
+    ow.lanzarAvisoDeFirma({ firma: 'escape:merge-bypass' }, { casa: ${JSON.stringify(alSalir)}, spawn });
+    ow.salirTrasElAviso();`;
+  const salida = spawnSync(process.execPath, ['-e', guion], { encoding: 'utf8' });
+  assert.strictEqual(salida.status, 0, salida.stderr);
+  assert.match(errores(alSalir), /el proceso del aviso no arrancó \(sin procesos\)/);
+  const rotos = conRegistro();
+  ow.correrAvisoDeFirma('{ a medio', { casa: rotos });
+  assert.match(errores(rotos), /sus datos no se pudieron leer/);
+  const sinRed = conRegistro();
+  ow.correrAvisoDeFirma(JSON.stringify({ firma: 'escape:merge-bypass', via: 'click', sesion: 'ses-a', destino: 'ses-a', ahora: AHORA, remoto: true }), { casa: sinRed, notificar: () => { throw new Error('sin red'); } });
+  assert.match(errores(sinRed), /el aviso no salió \(sin red\)/);
+});
+
+test('T11 Firmar_RemoteControlSegunLaVia @story-8.304 @ac-7 @ac-8', (t) => {
+  const casa = casaNueva(t);
+  conProceso(casa, 'ses-p');
+  const callado = () => {};
+  const herramienta = { pid: 100 };
+  const via = (v, o = {}) => {
+    ow.firmar({ firma: 'plan-approval', via: v, sesion: 'ses-p', destino: 'ses-a', casa, ahora: AHORA, persona: 'acme', notificar: callado, ...o });
+    return firmasDe(casa).pop().remote_control;
+  };
+  // el click y el «aprobado»: lo que se anotó al contestar, aunque después cambie
+  assert.strictEqual(via('click', { remotoConocido: false }), false);
+  assert.strictEqual(via('mensaje', { remotoConocido: true }), true);
+  assert.strictEqual(via('click'), null, 'una aprobación anotada sin el dato');
+  // la ventana: el proceso de la sesión que firma, a la hora de la firma
+  assert.strictEqual(via('ventana', { herramienta }), true);
+  conProceso(casa, 'ses-p', { bridge: false });
+  assert.strictEqual(via('ventana', { herramienta }), false);
+  assert.strictEqual(via('ventana', { remotoConocido: false, herramienta: null }), false, 'la constancia de la terminal de otra herramienta');
+  assert.strictEqual(via('terminal', { remotoConocido: true }), false);
+  for (const v of ['delegacion', 'revision', 'avisado']) assert.strictEqual(via(v, { remotoConocido: true, herramienta }), null, v);
+  // la vía de un comando (la emergencia) no la contesta nadie en una sesión
+  assert.strictEqual(require('../lib/signature-log.js').appendSignature({ signature: 'emergency', via: 'command', home: casa, now: AHORA, huella: () => ({ huella: 'x' }) }).ok, true);
+  assert.strictEqual(firmasDe(casa).pop().remote_control, null, 'command');
+  // el guion que firma sin `casa` (approve-plan): el registro de sesión se busca en la casa de la cuenta
+  conProceso(casa, 'ses-p');
+  const anotados = [];
+  ow.firmar({ firma: 'plan-approval', via: 'ventana', sesion: 'ses-p', destino: 'ses-a', herramienta, ahora: AHORA, persona: 'acme', notificar: callado,
+    casaDeCuenta: () => casa, anotar: () => {}, appendSignature: (o) => { anotados.push(o.remoteControl); return { ok: true }; } });
+  assert.deepStrictEqual(anotados, [true]);
 });
