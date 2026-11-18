@@ -1015,3 +1015,206 @@ test('Regresion_HuellaIlegible_Avisa — @story-8.198 @ac-40', () => {
   fs.rmSync(path.join(sdir, 'coordination', 'tablero-huella.json'));
   assert.strictEqual(board.printCheck(sdir), null);
 });
+
+// ── Las líneas de «Te toca» vencen ──────────────────────────────────────────────────────────────────────────────────
+
+const crypto = require('crypto');
+
+const HOUR = 3600 * 1000;
+const DAY = 24 * HOUR;
+const pad2 = (n) => String(n).padStart(2, '0');
+const isoAt = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const tocaId = (line) => crypto.createHash('sha256').update(line).digest('hex').slice(0, 6);
+const quiet = (now) => ({ now, live: [] });
+const saveToca = (sdir, lines, now = NOW, more = {}) => board.save(sdir, { pendientes: [], meta: { teToca: lines, ...more } }, quiet(now));
+const boardRaw = (sdir) => JSON.parse(fs.readFileSync(boardFile(sdir), 'utf8'));
+const dates = (sdir) => boardRaw(sdir).meta.teTocaDesde;
+const fileAt = (sdir, ms) => fs.utimesSync(boardFile(sdir), ms / 1000, ms / 1000);
+const stateAt = (sdir, now, writtenAt = null) => board.tocaState(boardRaw(sdir), { now, writtenAt });
+const TOCA_WARNING = /⚠️ «Te toca» tiene 1 línea\(s\) vencida\(s\): board\.js due las lista/;
+const startedFact = (at) => ({ tipo: 'curso', clave: 'curso:s1', historia: '9.9', quien: 'Ana', titulo: 'Nueva', at });
+
+test('T1 Toca_LineaNueva_LlevaSuHora — @story-8.306 @ac-1 @ac-5', () => {
+  const sdir = stateDir();
+  assert.strictEqual(saveToca(sdir, ['  Mañana: firmar X  ']).code, 0);
+  assert.deepStrictEqual(dates(sdir), { 'Mañana: firmar X': isoAt(NOW) }, 'la clave va sin los espacios de los bordes');
+  const later = NOW + HOUR;
+  assert.strictEqual(board.add(sdir, ['titulo=Fila', 'estado=espera'], quiet(later)).code, 0);
+  assert.strictEqual(board.set(sdir, 'T-1', ['nota=otra'], quiet(later)).code, 0);
+  assert.strictEqual(board.close(sdir, 'T-1', quiet(later)).code, 0);
+  assert.strictEqual(board.sync(sdir, [startedFact(later)], quiet(later)).written, true);
+  assert.deepStrictEqual(dates(sdir), { 'Mañana: firmar X': isoAt(NOW) }, 'ninguna escritura la cambia');
+  // `sync` no trae líneas: la que encuentra sin fecha toma la hora que tenía el archivo
+  const byHand = stateDir();
+  writeRaw(byHand, { pendientes: [], meta: { teToca: ['A mano'] } });
+  fileAt(byHand, NOW);
+  assert.strictEqual(board.sync(byHand, [startedFact(later)], quiet(later)).written, true);
+  assert.deepStrictEqual(dates(byHand), { 'A mano': isoAt(NOW) });
+});
+
+test('T2 Toca_GuardarOtraVez_NoRenueva — @story-8.306 @ac-2', () => {
+  const sdir = stateDir();
+  saveToca(sdir, ['Una línea']);
+  const later = NOW + 30 * HOUR;
+  assert.strictEqual(saveToca(sdir, ['Una línea'], later, { teTocaDesde: { 'Una línea': isoAt(later) } }).code, 0);
+  assert.deepStrictEqual(dates(sdir), { 'Una línea': isoAt(NOW) }, 'la fecha del archivo aparte se ignora');
+  assert.deepStrictEqual(stateAt(sdir, later).vencidas, ['Una línea']);
+});
+
+test('T3 Toca_LineaSacada_RecuerdaSuFecha — @story-8.306 @ac-3', () => {
+  const back = stateDir();
+  saveToca(back, ['Vuelve']);
+  saveToca(back, [], NOW + DAY);
+  assert.deepStrictEqual(dates(back), { Vuelve: isoAt(NOW) }, 'fuera de la lista, la fecha sigue anotada');
+  saveToca(back, ['Vuelve'], NOW + 2 * DAY);
+  assert.deepStrictEqual(dates(back), { Vuelve: isoAt(NOW) });
+  assert.deepStrictEqual(stateAt(back, NOW + 2 * DAY).vencidas, ['Vuelve']);
+
+  const gone = stateDir();
+  saveToca(gone, ['Se olvida']);
+  saveToca(gone, [], NOW + DAY);
+  saveToca(gone, [], NOW + 30 * DAY);
+  assert.ok(!('teTocaDesde' in boardRaw(gone).meta), 'con 30 días y fuera de la lista, la fecha se borra');
+  const after = NOW + 31 * DAY;
+  saveToca(gone, ['Se olvida'], after);
+  assert.deepStrictEqual(dates(gone), { 'Se olvida': isoAt(after) }, 'vuelve como nueva');
+  assert.deepStrictEqual(stateAt(gone, after).vigentes, ['Se olvida']);
+});
+
+test('T4 Toca_Vencimiento_EnElBorde — @story-8.306 @ac-1 @ac-4', () => {
+  const sdir = stateDir();
+  saveToca(sdir, ['En el borde']);
+  assert.deepStrictEqual(stateAt(sdir, NOW + 24 * HOUR - 60000).vigentes, ['En el borde'], 'con 23 h 59 min sigue');
+  assert.deepStrictEqual(stateAt(sdir, NOW + 24 * HOUR).vencidas, ['En el borde'], 'con 24 h vence');
+  const long = 'x'.repeat(320);
+  const other = stateDir();
+  saveToca(other, [long]);
+  assert.deepStrictEqual(Object.keys(dates(other)), [long], 'la clave es el texto entero');
+  assert.deepStrictEqual(stateAt(other, NOW + 24 * HOUR).vencidas, [long]);
+});
+
+test('T6 Toca_SinFechaValida_CuentaDesdeElArchivo — @story-8.306 @ac-5', () => {
+  const bad = [undefined, { L: 'ayer' }, { L: 7 }, { L: isoAt(NOW + HOUR) }, ['L']];
+  for (const teTocaDesde of bad) {
+    const raw = { pendientes: [], meta: { teToca: ['L'], ...(teTocaDesde === undefined ? {} : { teTocaDesde }) } };
+    const name = JSON.stringify(teTocaDesde);
+    assert.deepStrictEqual(board.tocaState(raw, { now: NOW, writtenAt: NOW - 25 * HOUR }).vencidas, ['L'], `${name}: archivo de hace 25 h`);
+    assert.deepStrictEqual(board.tocaState(raw, { now: NOW, writtenAt: NOW - 2 * HOUR }).vigentes, ['L'], `${name}: archivo de hace 2 h`);
+    assert.deepStrictEqual(board.tocaState(raw, { now: NOW, writtenAt: null }).vigentes, ['L'], `${name}: sin hora del archivo`);
+    assert.deepStrictEqual(board.tocaState(raw, { now: NOW, writtenAt: NOW + HOUR }).vigentes, ['L'], `${name}: archivo del futuro`);
+  }
+  // la escritura le anota la hora que tenía el archivo: no la renueva
+  const sdir = stateDir();
+  writeRaw(sdir, { pendientes: [], meta: { teToca: ['L'] } });
+  fileAt(sdir, NOW - 25 * HOUR);
+  assert.strictEqual(saveToca(sdir, ['L']).code, 0);
+  assert.deepStrictEqual(dates(sdir), { L: isoAt(NOW - 25 * HOUR) });
+  assert.deepStrictEqual(stateAt(sdir, NOW).vencidas, ['L']);
+  // con el archivo del futuro no hay hora confiable: anota la de ahora
+  const future = stateDir();
+  writeRaw(future, { pendientes: [], meta: { teToca: ['L'] } });
+  fileAt(future, NOW + HOUR);
+  saveToca(future, ['L']);
+  assert.deepStrictEqual(dates(future), { L: isoAt(NOW) });
+});
+
+test('T7 TocaLista_DiceEdadEstadoYTexto — @story-8.306 @ac-7', () => {
+  const sdir = stateDir();
+  saveToca(sdir, ['Vieja'], NOW - 50 * HOUR);
+  saveToca(sdir, ['Vieja', 'Nueva'], NOW - 3 * HOUR);
+  const before = fs.readFileSync(boardFile(sdir), 'utf8');
+  const r = board.toca(sdir, { now: NOW });
+  assert.strictEqual(r.code, 0);
+  assert.deepStrictEqual(r.lines, [`${tocaId('Vieja')} · hace 2 d · vencida · Vieja`, `${tocaId('Nueva')} · hace 3 h · vigente · Nueva`]);
+  assert.strictEqual(fs.readFileSync(boardFile(sdir), 'utf8'), before);
+  const empty = stateDir();
+  saveToca(empty, []);
+  assert.deepStrictEqual(board.toca(empty, { now: NOW }), { code: 0, lines: ['no hay líneas en «Te toca»'] });
+  // sin tablero todavía no hay nada que listar, y no se crea
+  const none = stateDir();
+  assert.deepStrictEqual(board.toca(none, { now: NOW }), { code: 0, lines: ['no hay líneas en «Te toca»'] });
+  assert.ok(!fs.existsSync(boardFile(none)));
+});
+
+test('T8 TocaConfirm_RenuevaLaFecha — @story-8.306 @ac-8', () => {
+  const sdir = stateDir();
+  saveToca(sdir, ['Sigue en pie'], NOW - 30 * HOUR);
+  assert.deepStrictEqual(stateAt(sdir, NOW).vencidas, ['Sigue en pie']);
+  const r = board.tocaConfirm(sdir, tocaId('Sigue en pie'), quiet(NOW));
+  assert.strictEqual(r.code, 0, r.lines.join('\n'));
+  assert.deepStrictEqual(dates(sdir), { 'Sigue en pie': isoAt(NOW) });
+  assert.deepStrictEqual(stateAt(sdir, NOW).vigentes, ['Sigue en pie']);
+});
+
+test('T9 TocaDrop_SacaLaLinea — @story-8.306 @ac-9', () => {
+  const sdir = stateDir();
+  saveToca(sdir, ['Repetida', 'Repetida', 'Otra']);
+  const r = board.tocaDrop(sdir, tocaId('Repetida'), quiet(NOW + HOUR));
+  assert.strictEqual(r.code, 0, r.lines.join('\n'));
+  assert.deepStrictEqual(boardRaw(sdir).meta.teToca, ['Otra']);
+  assert.strictEqual(dates(sdir).Repetida, isoAt(NOW), 'la fecha sigue anotada');
+  assert.match(r.lines.join('\n'), /archivo aparte/);
+});
+
+test('T10 TocaCli_IdQueNoEsta_NoEscribe — @story-8.306 @ac-7 @ac-10', () => {
+  const sdir = stateDir();
+  saveToca(sdir, ['Una']);
+  const before = fs.readFileSync(boardFile(sdir), 'utf8');
+  for (const args of [['due', 'confirm', 'ffffff'], ['due', 'drop'], ['due', 'confirm'], ['due', 'borrar'], ['due', 'confirm', 'a', 'b']]) {
+    const r = cli(sdir, args);
+    assert.strictEqual(r.code, 2, args.join(' '));
+    assert.match(r.out, /board\.js due \[confirm <id> \| drop <id>\]/, args.join(' '));
+    assert.strictEqual(fs.readFileSync(boardFile(sdir), 'utf8'), before, args.join(' '));
+  }
+  const usage = cli(sdir, []);
+  assert.strictEqual(usage.code, 2);
+  assert.match(usage.out, /\| due/);
+});
+
+test('T11 Guardar_ConVencidas_Avisa — @story-8.306 @ac-11', () => {
+  const sdir = stateDir();
+  saveToca(sdir, ['Vencida'], NOW - 30 * HOUR);
+  saveToca(sdir, ['Vencida', 'Otra', 'Tercera'], NOW);
+  board.add(sdir, ['titulo=Fila', 'estado=espera'], quiet(NOW));
+  const raw = boardRaw(sdir);
+  const results = {
+    save: board.save(sdir, raw, quiet(NOW)),
+    set: board.set(sdir, 'T-1', ['nota=x'], quiet(NOW)),
+    confirm: board.tocaConfirm(sdir, tocaId('Otra'), quiet(NOW)),
+    drop: board.tocaDrop(sdir, tocaId('Tercera'), quiet(NOW)),
+    check: board.check(sdir, { now: NOW }),
+  };
+  for (const [name, r] of Object.entries(results)) {
+    assert.strictEqual(r.code, 0, name);
+    assert.match(r.lines.join('\n'), TOCA_WARNING, name);
+  }
+  const fresh = stateDir();
+  saveToca(fresh, ['Vigente']);
+  for (const r of [saveToca(fresh, ['Vigente']), board.check(fresh, { now: NOW })]) {
+    assert.strictEqual(r.code, 0);
+    assert.doesNotMatch(r.lines.join('\n'), /Te toca/);
+  }
+  // sin tablero todavía, `check` sigue sano y sin aviso
+  const none = board.check(stateDir(), { now: NOW });
+  assert.strictEqual(none.code, 0);
+  assert.doesNotMatch(none.lines.join('\n'), /Te toca/);
+});
+
+test('T12 Regresion_TableroSinLineas_SaleIgual — @story-8.306 @ac-12', () => {
+  const saved = (more) => { const sdir = stateDir(); const r = board.save(sdir, { pendientes: [], ...more }, quiet(NOW)); assert.strictEqual(r.code, 0, r.lines.join('\n')); return boardRaw(sdir); };
+  assert.ok(!('meta' in saved({})), 'no se crea meta');
+  assert.deepStrictEqual(saved({ meta: { actualizado: 'hoy' } }).meta, { actualizado: 'hoy' });
+  assert.strictEqual(saved({ meta: 'texto' }).meta, 'texto');
+  assert.deepStrictEqual(saved({ meta: { teToca: 'texto' } }).meta, { teToca: 'texto' });
+  assert.deepStrictEqual(saved({ meta: { teToca: ['ok', 3, null] } }).meta, { teToca: ['ok', 3, null], teTocaDesde: { ok: isoAt(NOW) } });
+});
+
+test('T15 Guia_DiceElVencimientoYLosComandos — @story-8.306 @ac-14', () => {
+  const guide = (name) => fs.readFileSync(path.join(__dirname, '..', '..', 'guides', name), 'utf8');
+  for (const [name, hours, separate] of [['coordination.md', /24 horas/, /archivo aparte/], ['coordination.en.md', /24 hours/, /separate file/]]) {
+    const text = guide(name);
+    assert.match(text, hours, name);
+    assert.match(text, separate, name);
+    for (const command of ['board.js due', 'due confirm', 'due drop']) assert.ok(text.includes(command), `${name}: ${command}`);
+  }
+});

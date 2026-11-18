@@ -8,6 +8,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const {
   OFFICE, PAGE_CODE, NOW, STEPS, byName, run, runMarker, BOARD, all, textOf, sessionFile, STEP_LIB, col, titles, hm,
@@ -970,4 +971,47 @@ test('T15 Office_FirmaSinAprobar_ComoHoy (la foto) @story-8.234 @ac-15: vencida 
   data = await fotoG(m.home, { arbol: null, validarAprobacion: () => ({ ok: true }) });
   comoHoy(data);
   assert.match(data.unreadable.join(' | '), /no pude leer los procesos de la máquina/);
+});
+
+// ── Las líneas de «Te toca» vencen ──────────────────────────────────────────────────────────────────────────────────
+
+const HOUR_MS = 3600 * 1000;
+// un tablero con cada línea y las horas que tiene: `{ 'texto': horas }`
+const tocaBoard = (ages) => ({ pendientes: [], meta: { teToca: Object.keys(ages), teTocaDesde: Object.fromEntries(Object.entries(ages).map(([line, h]) => [line, localIsoAt(NOW - h * HOUR_MS)])) } });
+const oldSignature = { id: 'f1', title: 'la firma vieja', at: NOW - 72 * HOUR_MS };
+
+test('T5 Oficina_LineaVencida_NoSeMuestraYSeAvisa — @story-8.306 @ac-4 @ac-6', async () => {
+  const { pick } = require(path.join(path.dirname(OFFICE), 'office', 'fields.js'));
+  const photo = (ages) => {
+    const board = buildBoard(tocaBoard(ages), { now: NOW, writtenAt: NOW });
+    return { board, data: buildOffice({ wip: wip([]), signatures: [oldSignature], nowMs: NOW, board }).data };
+  };
+  const two = photo({ Vigente: 2, 'Vencida uno': 24, 'Vencida dos': 30 });
+  assert.deepStrictEqual(two.data.meta.teToca, ['Firmar: la firma vieja', 'Vigente'], 'de esta lista leen la pared, el contador y el panel');
+  for (const seen of [JSON.stringify(two.data), JSON.stringify(pick(two.data, '/home/nadie'))]) assert.ok(!seen.includes('Vencida'), 'el texto vencido no está en ninguna parte');
+  assert.deepStrictEqual(two.board.avisos, ['el tablero: 2 líneas de «Te toca» vencieron (más de 24 h sin confirmar) y no se muestran: la coordinadora las confirma o las saca con board.js due']);
+  assert.deepStrictEqual(photo({ Vigente: 2, Vencida: 30 }).board.avisos, ['el tablero: 1 línea de «Te toca» venció (más de 24 h sin confirmar) y no se muestra: la coordinadora la confirma o la saca con board.js due']);
+  assert.deepStrictEqual(photo({ Vigente: 2 }).board.avisos, []);
+  // por el camino entero: la foto de la máquina lo trae en lo que no se pudo leer
+  const data = await collectWith(JSON.stringify(tocaBoard({ Vigente: 2, Vencida: 30 })));
+  assert.deepStrictEqual(data.meta.teToca, ['Vigente']);
+  assert.ok(data.unreadable.some((u) => /^el tablero: 1 línea de «Te toca» venció/.test(u)), data.unreadable.join(' | '));
+});
+
+test('T13 Regresion_FirmasYPreguntasViejas_NoVencen — @story-8.306 @ac-13', () => {
+  const board = buildBoard(tocaBoard({ Vencida: 30 }), { now: NOW, writtenAt: NOW });
+  const asking = wip([{ session: 'Alma', sid: 'a', status: 'waiting_for_input', statusAt: NOW - 72 * HOUR_MS, extra: { kind: 'loose' } }]);
+  const { data } = buildOffice({ wip: asking, signatures: [oldSignature], nowMs: NOW, board });
+  assert.deepStrictEqual(data.meta.teToca, ['Firmar: la firma vieja', 'Contestar: Story Alma (Alma)']);
+  // `sync` sin hechos no escribe, ni con una línea sin fecha ni sin tablero
+  const boardTool = require(path.join(path.dirname(OFFICE), 'office', 'board.js'));
+  const sdir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-toca-'));
+  const file = boardTool.paths(sdir).board;
+  assert.deepStrictEqual(boardTool.sync(sdir, [], { now: NOW, live: [] }).written, false);
+  assert.ok(!fs.existsSync(file), 'sin tablero no lo crea');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ pendientes: [], meta: { teToca: ['Sin fecha'] } }));
+  const before = { text: fs.readFileSync(file, 'utf8'), at: fs.statSync(file).mtimeMs };
+  assert.strictEqual(boardTool.sync(sdir, [], { now: NOW, live: [] }).written, false);
+  assert.deepStrictEqual({ text: fs.readFileSync(file, 'utf8'), at: fs.statSync(file).mtimeMs }, before);
 });

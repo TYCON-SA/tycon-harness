@@ -2396,3 +2396,15 @@ test('T7 Foto_MaquinaViajaAlSitio_SoloDosNumeros @story-8.301 @ac-6 — la memor
   assert.deepStrictEqual(ok.foto.meta.maquina, { memoria: 62, procesador: 35 });
   for (const bad of [140, 62.5, '62']) assert.strictEqual(limpiarFoto({ meta: { maquina: { memoria: bad } } }).ok, false, `el sitio rechaza ${JSON.stringify(bad)}`);
 });
+
+test('T14 Foto_NoLlevaLasFechas — @story-8.306 @ac-13', () => {
+  const { buildOffice, buildBoard } = office();
+  const { pick } = fields();
+  const nowMs = Date.parse('2026-06-01T12:00:00Z');
+  const board = buildBoard({ pendientes: [], meta: { teToca: ['Algo'], teTocaDesde: { Algo: '2026-06-01T08:00' } } }, { now: nowMs });
+  const { data } = buildOffice({ wip: { rows: [], details: [], extra: [], free: [], halfway: [], unreadable: [] }, nowMs, board });
+  assert.deepStrictEqual(data.meta.teToca, ['Algo']);
+  assert.ok(!JSON.stringify(data).includes('teTocaDesde'), 'la foto no lo trae');
+  data.meta.teTocaDesde = { Algo: '2026-06-01T08:00' };
+  assert.ok(!JSON.stringify(pick(data, '/home/nadie')).includes('teTocaDesde'), 'al sitio tampoco');
+});

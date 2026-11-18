@@ -1467,8 +1467,11 @@ function boardPr(v) {
   return Number.isInteger(numero) && numero > 0 ? { repo: v.repo.trim(), numero } : null;
 }
 
-/** Las filas del tablero para el kanban, sin leer nada; `raw` es el archivo ya leído. Tira si no tiene la forma. */
-function buildBoard(raw) {
+/**
+ * Las filas del tablero para el kanban, sin leer nada; `raw` es el archivo ya leído. Tira si no tiene la forma. `now` y
+ * `writtenAt` (la hora del archivo) deciden qué líneas de «Te toca» vencieron: ésas no salen y se avisa cuántas son.
+ */
+function buildBoard(raw, { now = Date.now(), writtenAt = null } = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('no es un objeto');
   if (raw.pendientes != null && !Array.isArray(raw.pendientes)) throw new Error('«pendientes» no es una lista');
   const meta = raw.meta && typeof raw.meta === 'object' && !Array.isArray(raw.meta) ? raw.meta : {};
@@ -1498,23 +1501,28 @@ function buildBoard(raw) {
   // lo escribió alguien a mano sin numerar: la oficina no escribe el tablero, lo dice una vez con el comando
   const sinNumero = filas.filter((f) => !f.numero).length;
   if (sinNumero) avisos.push(`el tablero tiene ${sinNumero === 1 ? '1 fila' : `${sinNumero} filas`} sin número: guardalo una vez con board.js save --from <tu archivo aparte>`);
+  // la fecha se busca con la línea entera: recién después se corta lo que se muestra
+  const toca = boardTool.tocaState(raw, { now, writtenAt });
+  const vencidas = toca.vencidas.length;
+  if (vencidas === 1) avisos.push('el tablero: 1 línea de «Te toca» venció (más de 24 h sin confirmar) y no se muestra: la coordinadora la confirma o la saca con board.js due');
+  else if (vencidas) avisos.push(`el tablero: ${vencidas} líneas de «Te toca» vencieron (más de 24 h sin confirmar) y no se muestran: la coordinadora las confirma o las saca con board.js due`);
   // `meta.resumen` no se muestra: la línea de arriba del kanban se arma sola de las tarjetas
   return {
     actualizado: boardHour(meta.actualizado) || text(meta.actualizado),
-    teToca: (Array.isArray(meta.teToca) ? meta.teToca : []).map(text).filter(Boolean),
+    teToca: toca.vigentes.map(text).filter(Boolean),
     filas,
     avisos,
   };
 }
 
 // El tablero de la coordinadora, y cuándo se escribió. Sin archivo, no hay tablero; uno roto o ilegible se dice en `problem`.
-function readBoard(file) {
+function readBoard(file, { now } = {}) {
   let raw;
   let writtenAt = null;
   try { raw = fs.readFileSync(file, 'utf8'); writtenAt = fs.statSync(file).mtimeMs; } catch (e) {
     return e.code === 'ENOENT' ? { board: null } : { board: null, problem: `el tablero de la coordinadora no se pudo leer (${e.code || e.message})` };
   }
-  try { return { board: buildBoard(JSON.parse(raw)), writtenAt }; } catch (e) {
+  try { return { board: buildBoard(JSON.parse(raw), { now, writtenAt }), writtenAt }; } catch (e) {
     return { board: null, problem: `el tablero de la coordinadora no se pudo leer (${e.message})` };
   }
 }
@@ -2285,7 +2293,7 @@ async function collect(opts = {}) {
   const quietMin = Number.isInteger(qn) && qn > 0 ? qn : QUIET_DEFAULT_MIN;
   if (q && q.code === 2) problems.push(`el umbral de la sesión callada no se pudo leer: ${String(q.out || '').trim().split('\n')[0] || 'sin motivo'}; uso ${QUIET_DEFAULT_MIN} min`);
   else if (q && q.code === 0 && quietMin !== qn) problems.push(`office.quiet_minutes no es un número de minutos (${String(q.out || '').trim().slice(0, 40)}); uso ${QUIET_DEFAULT_MIN} min`);
-  const board = readBoard(path.join(sdir, 'coordination', 'tablero.json'));
+  const board = readBoard(path.join(sdir, 'coordination', 'tablero.json'), { now: nowMs });
   if (board.problem) problems.push(board.problem);
   if (board.board) problems.push(...board.board.avisos);
   const edited = board.board ? boardEditedNotice(sdir) : null;
