@@ -275,7 +275,17 @@ function carpetaPrincipal(root) {
 // los restos de una copia adentro de otro repo le contestan a git con la raíz de ese otro. Se calcula una vez por proceso:
 // corre por cada entrada pendiente, en cada cierre de turno.
 const vigentes = new Map();
-const esRaiz = (d) => { const r = raizGit(d); return Boolean(r) && real(r) === real(d); };
+// La raíz de cada carpeta se pregunta una vez por proceso: el registro nombra muchas veces las mismas copias. Un «no
+// contestó» no se guarda, porque puede ser el tope de tiempo: la entrada siguiente vuelve a preguntar.
+const raices = new Map();
+const esRaiz = (d) => {
+  if (!raices.has(d)) {
+    const r = raizGit(d);
+    if (!r) return false;
+    raices.set(d, r);
+  }
+  return real(raices.get(d)) === real(d);
+};
 function carpetaVigente(e) {
   const clave = `${e.repoPath}|${e.principal || ''}|${e.sha}`;
   if (!vigentes.has(clave)) {
@@ -536,27 +546,46 @@ function resolverPedidos() {
 }
 
 // ¿El commit de la entrada está en la línea principal de main (`--first-parent`)? true · false · null (no se puede leer:
-// la carpeta ya no es un repo, o no tiene main). Una lista por carpeta y rama, una vez por proceso.
+// la carpeta ya no es un repo, o no tiene main). Una lista por repo y rama, una vez por proceso: las copias de trabajo de
+// un repo comparten sus ramas y las de `origin`, y este control corre en cada arranque y en cada cierre de turno.
 const lineasDeMain = new Map();
-function enLineaDeMain(e) {
-  const dir = carpetaVigente(e);
-  if (!esRaiz(dir)) return null;
-  const destino = ramaCorta(e.branch) || 'main';
+// La carpeta de git común de `dir`, leída de `.git` y `commondir` sin lanzar git. Si no se puede leer, la carpeta misma:
+// esa copia no comparte su lista con ninguna.
+function repoComun(dir) {
+  try {
+    const dotgit = path.join(dir, '.git');
+    if (fs.statSync(dotgit).isDirectory()) return real(dotgit);
+    const m = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(dotgit, 'utf8'));
+    if (!m) return real(dir);
+    const propia = path.resolve(dir, m[1]);
+    // un submódulo no tiene `commondir`: su carpeta de git es la común
+    let comun = propia;
+    try { comun = path.resolve(propia, fs.readFileSync(path.join(propia, 'commondir'), 'utf8').trim()); } catch { comun = propia; }
+    return real(comun);
+  } catch { return real(dir); }
+}
+// `{ ref, shas }` de la rama `destino` en el repo de `dir`; `shas` es null si git no pudo listarla. null si la rama no está.
+function lineaDeMain(dir, destino) {
+  const clave = `${repoComun(dir)}|${destino}`;
+  if (lineasDeMain.has(clave)) return lineasDeMain.get(clave);
   const ref = gitOrNull(dir, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${destino}`]) ? `origin/${destino}`
     : gitOrNull(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${destino}`]) ? destino : null;
   if (!ref) return null;
-  const clave = `${real(dir)}|${ref}`;
-  if (!lineasDeMain.has(clave)) {
-    let lista = null;
-    try { lista = execFileSync('git', ['-C', dir, 'rev-list', '--first-parent', ref], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000, maxBuffer: 256 * 1024 * 1024 }); } catch { lista = null; }
-    lineasDeMain.set(clave, lista === null ? null : new Set(lista.split('\n').filter(Boolean).map((s) => s.slice(0, 12))));
-  }
-  const linea = lineasDeMain.get(clave);
-  if (!linea) return null;
+  let lista = null;
+  try { lista = execFileSync('git', ['-C', dir, 'rev-list', '--first-parent', ref], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000, maxBuffer: 256 * 1024 * 1024 }); } catch { lista = null; }
+  const linea = { ref, shas: lista === null ? null : new Set(lista.split('\n').filter(Boolean).map((s) => s.slice(0, 12))) };
+  lineasDeMain.set(clave, linea);
+  return linea;
+}
+function enLineaDeMain(e) {
+  const dir = carpetaVigente(e);
+  if (!esRaiz(dir)) return null;
+  const linea = lineaDeMain(dir, ramaCorta(e.branch) || 'main');
+  if (!linea || !linea.shas) return null;
   const sha = String(e.sha).toLowerCase();
-  if (linea.has(sha.slice(0, 12))) return true;
+  if (linea.shas.has(sha.slice(0, 12))) return true;
   // una entrada que entró cuyo commit esta copia todavía no trajo (main atrasada): no se puede decir que esté fuera
-  if (e.estado === 'entro' && gitOrNull(dir, ['merge-base', '--is-ancestor', sha, ref]) === null) return null;
+  if (e.estado === 'entro' && gitOrNull(dir, ['merge-base', '--is-ancestor', sha, linea.ref]) === null) return null;
   return false;
 }
 

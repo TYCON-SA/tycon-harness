@@ -90,8 +90,8 @@ function laboratorio() {
   fs.copyFileSync(path.join(ROOT, 'scripts', 'hooks', 'retro-pending.js'), gancho);
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(arnes, 'scripts', 'lib'), { recursive: true });
   const ledger = path.join(home, '.claude', '.tycon-pipeline', 'retro-pending.jsonl');
-  const correr = (evento) => {
-    const r = spawnSync(process.execPath, [gancho], { input: JSON.stringify(evento), env: env(home), encoding: 'utf8' });
+  const correr = (evento, extra = {}) => {
+    const r = spawnSync(process.execPath, [gancho], { input: JSON.stringify(evento), env: { ...env(home), ...extra }, encoding: 'utf8' });
     return { status: r.status, stdout: r.stdout, stderr: r.stderr };
   };
   const renglones = () => (fs.existsSync(ledger) ? fs.readFileSync(ledger, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
@@ -100,7 +100,7 @@ function laboratorio() {
     dashboard: path.join(arnes, '.dashboard'),
     pedido: (command, cwd) => correr({ session_id: 's1', tool_name: 'Bash', tool_input: { command }, cwd }),
     cierre: (cwd) => correr({ session_id: 's1', hook_event_name: 'Stop', stop_hook_active: false, cwd }),
-    arranque: (cwd) => correr({ session_id: 's2', hook_event_name: 'SessionStart', source: 'startup', cwd }),
+    arranque: (cwd, extra) => correr({ session_id: 's2', hook_event_name: 'SessionStart', source: 'startup', cwd }, extra),
     corregir: (args, cwd) => {
       const r = spawnSync(process.execPath, [gancho, '--correct', ...args], { cwd, env: env(home), encoding: 'utf8' });
       return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -393,6 +393,38 @@ test('un commit que no entró a main no frena el cierre y sale en el aviso con -
   const { stdout } = lab.arranque(dir);
   assert.match(stdout, new RegExp(`${corto(fuera)}[^\\n]*--correct`), stdout);
   assert.doesNotMatch(stdout, /ya estaba en main/);
+});
+
+// Este control corre en cada arranque y en cada cierre de turno, con una entrada por cada pedido de cada copia de trabajo.
+test('las copias de trabajo de un repo comparten la lista de main: git la calcula una sola vez', () => {
+  const { dir, fuera } = repoConMain();
+  const copias = ['a', 'b', 'c'].map((n) => {
+    const copia = `${dir}--wt-${n}`;
+    git(dir, ['worktree', 'add', '--quiet', '-b', `copia-${n}`, copia, 'dev']);
+    return copia;
+  });
+  const lab = laboratorio();
+  for (const copia of copias) lab.sembrar({ repoPath: copia, sha: corto(fuera) });
+  const traza = path.join(tmp(), 'git.trace');
+  const { stdout } = lab.arranque(path.dirname(dir), { GIT_TRACE: traza });
+  for (const copia of copias) assert.ok(stdout.includes(`${copia} @ ${corto(fuera)}`), stdout);
+  const listas = fs.readFileSync(traza, 'utf8').split('\n').filter((l) => /built-in: git rev-list --first-parent/.test(l));
+  assert.strictEqual(listas.length, 1, listas.join('\n'));
+});
+
+test('dos clones del mismo proyecto no comparten la lista de main', () => {
+  const { dir } = repoConMain();
+  const clon = `${dir}-clon`;
+  git(path.dirname(dir), ['clone', '--quiet', '-b', 'main', dir, clon]);
+  const nuevo = commit(dir, 'nuevo.txt');
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: dir, sha: corto(nuevo) });
+  lab.sembrar({ repoPath: clon, sha: corto(nuevo) });
+  const { stdout } = lab.arranque(path.dirname(dir));
+  const [reclamado, noSePaga] = stdout.split('un latido no puede pagar');
+  assert.ok(reclamado.includes(`${dir} @ ${corto(nuevo)}`), stdout);
+  assert.ok(noSePaga.includes(`${clon} @ ${corto(nuevo)}`), stdout);
+  assert.ok(!noSePaga.includes(`${dir} @ ${corto(nuevo)}`), stdout);
 });
 
 test('un commit que entró a main después del pedido no lleva el aviso', () => {
