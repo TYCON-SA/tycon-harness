@@ -1378,7 +1378,10 @@ function leerMakefile(texto) {
 function llamaALaPuerta(texto, sp, anotar, prof = 0) {
   if (prof > 3) return false;
   // un patrón de `case` y los elementos de un arreglo están en renglón de comando sin ser comandos
-  const limpio = String(texto).replace(/^[ \t]*[^\s()=]+(?:\|[^\s()=]+)*\)(?=\s|$)/gm, '').replace(/(^|[\s;])[A-Za-z_]\w*\+?=\([^)]*\)/g, '$1');
+  const sinCase = String(texto).replace(/^[ \t]*[^\s()=]+\)(?=\s|$)/gm, '');
+  // sólo hasta el último `)`: sin un cierre por delante, cada `x=(` recorrería todo el resto del texto
+  const fin = sinCase.lastIndexOf(')') + 1;
+  const limpio = sinCase.slice(0, fin).replace(/(^|[\s;])[A-Za-z_]\w*\+?=\([^)]*\)/g, '$1') + sinCase.slice(fin);
   let partes;
   try { partes = sp.segmentos(limpio); } catch { anotar('no se pudo partir en comandos'); return false; }
   const adentro = (s) => llamaALaPuerta(s, sp, anotar, prof + 1);

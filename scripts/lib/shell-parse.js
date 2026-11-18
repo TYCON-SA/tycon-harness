@@ -336,8 +336,26 @@ const COMMAND_HEAD = String.raw`(?:if|then|else|elif|do|while|until|time(?:\s+-[
   + String.raw`|(?:for|select|foreach)\s+[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*\s*\([^()]*\)`
   + String.raw`|(?:if|elif|while|until)\s*(?:\[\[(?:[^\]]|\][^\]])*\]\]|\(\((?:[^)]|\)[^)])*\)\)))`;
 const POSICION_DE_COMANDO = new RegExp(String.raw`^\s*(?:${COMMAND_HEAD}\s+)*(?:${COMMAND_HEAD})?$`);
+// Se pregunta en cada `(` y en cada `{`. Con mucho texto acumulado se responde que sí sin recorrerlo: cortar ahí hace mirar
+// como comando lo que sigue, que es el lado seguro, y evita que un renglón largo tarde más que el tope del gancho.
+const MAX_ANTES_DE_COMANDO = 2048;
+const enPosicionDeComando = (cur) => cur.length > MAX_ANTES_DE_COMANDO || POSICION_DE_COMANDO.test(cur);
 const ABRE_CASE = /^\s*case\s+(?:"[^"]*"|'[^']*'|[^\s"'])+\s+in\s$/;
 const FUNCION = /\(\s*\)/y;                   // `f()`, `f ()`: definición de función (sticky: sin copiar el resto)
+// ¿`cur` termina en una palabra sin `=`, que podría ser el nombre de una función? Mira sólo esa palabra y con tope: se
+// pregunta en cada `(`. Pasado el tope responde que sí: lo decide `FUNCION`, y un nombre largo no esconde el cuerpo.
+const MAX_NOMBRE_DE_FUNCION = 256;
+function terminaEnNombre(cur) {
+  let fin = cur.length;
+  while (fin > 0 && /\s/.test(cur[fin - 1])) fin--;
+  let i = fin;
+  while (i > 0 && !/\s/.test(cur[i - 1])) {
+    if (cur[i - 1] === '=') return false;
+    if (fin - i >= MAX_NOMBRE_DE_FUNCION) return true;
+    i--;
+  }
+  return i < fin;
+}
 // `>!`, `>>!`, `>>|`, `&>!`, `>&!`, `>>&`… son de zsh (pisar o agregar aunque esté `noclobber`): el destino es un archivo
 // (8.14 #4: leído como `>` con destino `!`, el archivo real quedaba como argumento del programa)
 const OPERADOR_REDIR = /&>>[|!]?|&>[|!]?|>>&[|!]?|<<<|<<-|<<|<>|<&|>>[|!]?|>&[|!]?|>[|!]?|</y;
@@ -453,9 +471,9 @@ function lex(texto, opciones) {
       if (procesal) { corte('('); pila.push({ k: 'sub', w: [], llaves: 0 }); continue; }
       // `()` es definición de función sólo detrás de un NOMBRE: `a=()` es un arreglo vacío, no una función (8.14)
       FUNCION.lastIndex = i;
-      const funcion = /(?:^|\s)[^\s=]+\s*$/.test(cur) ? FUNCION.exec(s) : null;
+      const funcion = terminaEnNombre(cur) ? FUNCION.exec(s) : null;
       if (funcion) { corte('('); i += funcion[0].length - 1; corte(')'); continue; }   // `f()`, `f ()`: definición
-      if (POSICION_DE_COMANDO.test(cur)) { corte('('); pila.push({ k: 'sub', w: [], llaves: 0 }); continue; }
+      if (enPosicionDeComando(cur)) { corte('('); pila.push({ k: 'sub', w: [], llaves: 0 }); continue; }
       // paréntesis de PALABRA: `a(b|c)`, `x(N)`, `a=(x y)`, `@(a|b)` — sólo si cierra; si no, es un carácter
       if (cierreDe(s, i) >= 0) { T.w.push('paren'); cur += ch; continue; }
       cur += ch; continue;
@@ -465,7 +483,7 @@ function lex(texto, opciones) {
       corte(')'); T.llaves = 0; continue;
     }
     if (ch === '{') {
-      if (POSICION_DE_COMANDO.test(cur) && (nx === undefined || /\s/.test(nx))) {      // grupo `{ …; }`
+      if (enPosicionDeComando(cur) && (nx === undefined || /\s/.test(nx))) {      // grupo `{ …; }`
         corte(')'); pila.push({ k: 'grupo', w: [], llaves: 0 }); continue;
       }
       T.llaves++; cur += ch; continue;                                       // llave de palabra

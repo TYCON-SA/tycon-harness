@@ -336,6 +336,30 @@ frena "T-puerta-39 Freno_PantallaSinPalabrasExactas · un archivo por tubería" 
 frena "T-puerta-39 Freno_PantallaSinPalabrasExactas · un archivo como argumento" "osascript scripts/p.applescript" "pantalla"
 pasa "T-puerta-39 Freno_PantallaSinPalabrasExactas · leer procesos y filtrar por «click» no aprieta nada" "osascript -e 'tell application \"$SE\" to get name of every process' | grep -i click"
 
+# ── T-puerta-33 · un renglón hecho para trabar la lectura no cuelga al freno ─────────────────────
+{ head -1 "$JUG/scripts/consulta.sh"; node -e 'process.stdout.write("!|".repeat(2000) + "\n")'; tail -n +2 "$JUG/scripts/consulta.sh"; } > "$JUG/scripts/hostil.sh"
+payload="$(CMD="bash scripts/hostil.sh" CWD="$JUG" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:process.env.CWD,tool_input:{command:process.env.CMD}}))')"
+printf '%s' "$payload" | ( cd "$JUG" && env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 /usr/bin/perl -e 'alarm 8; exec @ARGV' node "$HOOK" ) >"$TMP/out" 2>"$TMP/err"; rc=$?
+if [ "$rc" = 2 ] && grep -qF "llama a la puerta" "$TMP/err"; then ok "T-puerta-33 Freno_RenglonQueTrabaLaLectura · lee el guion a tiempo y lo frena"
+else no "T-puerta-33 Freno_RenglonQueTrabaLaLectura · rc=$rc (142 = se colgó) · $(head -c 160 "$TMP/err" | tr '\n' ' ')"; fi
+
+for i in 1 2 3 4; do { head -1 "$JUG/scripts/consulta.sh"; node -e 'process.stdout.write("a=( ".repeat(15000) + "\n")'; [ "$i" != 4 ] || tail -n +2 "$JUG/scripts/consulta.sh"; } > "$JUG/scripts/arreglo$i.sh"; done
+payload="$(CMD="bash scripts/arreglo1.sh; bash scripts/arreglo2.sh; bash scripts/arreglo3.sh; bash scripts/arreglo4.sh" CWD="$JUG" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:process.env.CWD,tool_input:{command:process.env.CMD}}))')"
+printf '%s' "$payload" | ( cd "$JUG" && env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 /usr/bin/perl -e 'alarm 8; exec @ARGV' node "$HOOK" ) >"$TMP/out" 2>"$TMP/err"; rc=$?
+if [ "$rc" = 2 ] && grep -qF "llama a la puerta" "$TMP/err"; then ok "T-puerta-33 Freno_ArreglosSinCerrar · varios guiones con «x=(» sin cierre se leen a tiempo"
+else no "T-puerta-33 Freno_ArreglosSinCerrar · rc=$rc (142 = se colgó) · $(head -c 160 "$TMP/err" | tr '\n' ' ')"; fi
+
+a_tiempo(){ # $1 = etiqueta, $2 = comando: se frena por la puerta antes del tope (142 = se colgó)
+  local payload rc; payload="$(CMD="$2" CWD="$JUG" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:process.env.CWD,tool_input:{command:process.env.CMD}}))')"
+  printf '%s' "$payload" | ( cd "$JUG" && env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 /usr/bin/perl -e 'alarm 4; exec @ARGV' node "$HOOK" ) >"$TMP/out" 2>"$TMP/err"; rc=$?
+  if [ "$rc" = 2 ] && grep -qF "llama a la puerta" "$TMP/err"; then ok "$1"; else no "$1 · rc=$rc · $(head -c 160 "$TMP/err" | tr '\n' ' ')"; fi
+}
+{ head -1 "$JUG/scripts/consulta.sh"; node -e 'process.stdout.write("if [[ " + "a( ".repeat(20000) + "\n")'; tail -n +2 "$JUG/scripts/consulta.sh"; } > "$JUG/scripts/condicion.sh"
+a_tiempo "T-puerta-33 Freno_ParentesisSinCerrar · muchos «(» después de un «if [[» se leen a tiempo" "bash scripts/condicion.sh"
+nombre="$(node -e 'process.stdout.write("f".repeat(300))')"
+printf '#!/usr/bin/env bash\n%s(){ %s; }\n' "$nombre" "$(tail -n +2 "$JUG/scripts/consulta.sh")" > "$JUG/scripts/funcion-larga.sh"
+a_tiempo "T-puerta-33 Freno_FuncionDeNombreLargo · el cuerpo de la función se mira" "bash scripts/funcion-larga.sh"
+
 # ── T-puerta-40 · la medición no da verde sin haber medido ──────────────────────────────────────
 TRANS="$CASA/.claude/projects/p"; mkdir -p "$TRANS"
 renglon(){ C="$1" D="$2" node -e 'console.log(JSON.stringify({type:"assistant",cwd:process.env.D,message:{content:[{type:"tool_use",name:"Bash",input:{command:process.env.C}}]}}))'; }
