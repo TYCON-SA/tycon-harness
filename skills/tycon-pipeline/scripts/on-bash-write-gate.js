@@ -3677,6 +3677,22 @@ function handle(event, opts = {}) {
     try { coordinadora = coordinadoraPorConsola(event, opts); } catch (e) { logHookError(e); coordinadora = null; }
     if (coordinadora) return coordinadora;
   }
+  // el stash que se llevaría archivos de otra sesión viva, y el drop/pop/clear de lo que guardó otra
+  // (lib/stash-guard.js). Una falla del freno queda en hook-errors.log y deja pasar: el caso de «no pude calcular» lo decide él
+  if (!event?.tool_name || event.tool_name === 'Bash' || event.tool_name === 'PowerShell') {
+    let stash = null;
+    try {
+      const cmd = event?.tool_input?.command;
+      if (typeof cmd === 'string' && /\bstash\b/.test(cmd)) {
+        stash = require('./lib/stash-guard.js').evaluar({
+          cmd, cwd: nativePath(event?.cwd || process.cwd()), sessionId: resolveSessionId(event?.session_id),
+          stateDir: opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR,
+          avisar: (texto) => logHookError(texto, 'stash-guard sin medir'),
+        });
+      }
+    } catch (e) { logHookError(e, 'stash-guard'); stash = null; }
+    if (stash && stash.block) return stash;
+  }
   let deprecado = null;
   try {
     const cmd = event?.tool_input?.command;

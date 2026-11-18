@@ -173,12 +173,12 @@ if corre T32; then
   applier "$H" "$TREE" "$T/t32/install.out"
   [ "$RC" = 0 ] || mal "T32 el aplicador en minimal salió ${RC}: $(tail -n 3 "$T/t32/install.out" | tr '\n' ' ')"
   harness_hooks "$H" "$TREE" > "$T/t32/hooks.txt"; minimal_hooks > "$T/t32/want.txt"
-  # dieciséis: diez que anotan (uno ata cada revisor a su agente después de lanzarlo), los tres registros del que dice
+  # diecisiete: diez que anotan (uno ata cada revisor a su agente después de lanzarlo), los tres registros del que dice
   # los avisos (al arrancar, los de los paquetes; después de un comando, los de la plataforma, y después de uno que
-  # falló, porque Claude Code lo avisa con otro evento), el que tapa los secretos, el freno de comandos y el portón de
-  # edición
-  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 16 ] && ok "T32 la lista de efectos marca dieciséis hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no dieciséis"
-  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los dieciséis hooks de minimal" \
+  # falló, porque Claude Code lo avisa con otro evento), el que tapa los secretos, el freno de comandos, el portón de
+  # edición y el aviso de llegada de otra sesión en el mismo checkout (va siempre)
+  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 17 ] && ok "T32 la lista de efectos marca diecisiete hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no diecisiete"
+  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los diecisiete hooks de minimal" \
     || mal "T32 hooks registrados distintos de los de minimal: $(diff "$T/t32/want.txt" "$T/t32/hooks.txt" | grep '^[<>]' | head -6 | tr '\n' ' ')"
   # el freno de comandos destructivos y el portón de edición están en los dos perfiles (sin el portón, el agente puede
   # implementar una historia sin recorrido y nadie se entera); los demás, sólo en full
@@ -462,8 +462,10 @@ PY
     #   scripts/hooks/guard-auto-update.js — la actualización del freno de producción sin contraseña, al arrancar
     #   tycon-pipeline/scripts/reviewer-launch-gate.js — un revisor no sale antes que el pase adversarial que le toca
     #   tycon-pipeline/scripts/on-advisor-done.js — anota los críticos de un revisor apenas termina
+    #   scripts/hooks/session-collision-guard.js — el aviso de llegada de otra sesión viva, que ahora va siempre
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
+      scripts/hooks/session-collision-guard.js
       scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
       scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js=3 scripts/hooks/guard-update-notice.js
       scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js=2

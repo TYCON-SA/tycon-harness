@@ -12,11 +12,22 @@ cuando se corre una story a la vez, que es el caso del 95% del tiempo.
 
 ---
 
-> 🔴 **Esto se enforzó con un hook, hoy retirado**: `scripts/hooks/session-collision-guard.js`
-> frena `commit`/`checkout`/`switch`/`rebase`/`stash`/`reset`/`merge`/`pull` cuando OTRA sesión tuvo
-> actividad en el mismo checkout en los últimos 3 minutos, y avisa al abrir una sesión donde ya hay
-> otra viva. Por qué: con dos sesiones sobre el mismo checkout, un commit puede arrastrar una deleción ajena
-> del índice y otro caer en la rama de la otra sesión.
+> 🔴 **Dos sesiones sobre el mismo checkout**: lo que el arnés hace solo, sin depender de que el agente
+> se acuerde de una regla:
+>
+> - **El arranque de una historia crea su copia** cuando hay otra sesión viva en el checkout (su transcripción, un
+>   subagente suyo o su ejecución abierta), sin coordinadora viva y fuera del arnés y `agent-skills`: `pipeline.js start`
+>   la lleva a `<principal>--wt-<clave>` (PIPE-C10, `steps/step-01-start.md`).
+> - **El aviso de llegada sale siempre** (`scripts/hooks/session-collision-guard.js`, al abrir la sesión): nombra a la
+>   otra y le pide al agente que se lo diga a la persona.
+> - **Un stash que se llevaría archivos de otra sesión está frenado**, igual que el `drop`, `pop` o `clear` de lo que
+>   guardó otra (la pila de stash es común a todas las copias del repo). La salida es de la persona:
+>   `TYCON_STASH_GUARD_OK=1` pegado al comando, con constancia.
+>
+> El **freno de git** del mismo guion sigue opcional (`TYCON_SESSION_GUARD=1`): frena
+> `commit`/`checkout`/`switch`/`rebase`/`stash`/`reset`/`merge`/`pull` cuando OTRA sesión tuvo
+> actividad en el mismo checkout en los últimos 3 minutos. Por qué: con dos sesiones sobre el mismo checkout, un
+> commit puede arrastrar una deleción ajena del índice y otro caer en la rama de la otra sesión.
 > En los dos repos donde el worktree está prohibido (éste y `agent-skills`) el consejo es coordinar,
 > no abrir un worktree. Si la persona decide seguir igual porque está coordinado, el comando lleva
 > `TYCON_SESSION_GUARD_OK=1` pegado adelante: pasa y queda constancia, que la revisión de la noche
@@ -36,7 +47,7 @@ cuando se corre una story a la vez, que es el caso del 95% del tiempo.
 
 | Caso | Veredicto | Por qué |
 |---|---|---|
-| **2 pipelines de stories distintas, mismo repo, en paralelo** | ✅ un worktree por story (§3) | Compartiendo working tree hay un solo HEAD, el `git diff HEAD` repo-wide contamina cruzado el set de advisors y el coverage, y `.advisors/tests-result.json` es un único archivo que la 2da corrida pisa. PIPE-C0 ni siquiera lo detecta (matchea por storyId). |
+| **2 pipelines de stories distintas, mismo repo, en paralelo** | ✅ una copia por historia, que crea `start` sola con otra sesión viva (PIPE-C10; §3 para hacerla a mano) | Compartiendo working tree hay un solo HEAD, el `git diff HEAD` repo-wide contamina cruzado el set de advisors y el coverage, y `.advisors/tests-result.json` es un único archivo que la 2da corrida pisa. PIPE-C0 no lo detecta (matchea por storyId): lo ve PIPE-C10, por las sesiones vivas del checkout. |
 | **`/tycon-merge-to-main` sin congelar el working tree del dev** | ✅ worktree persistente `--merge` (§4) | El merge hoy checkoutea `<target>` EN TU working tree, corre build+tests ahí, y recién al final te devuelve la branch. Con working tree sucio directamente aborta o stashea. |
 | **Fan-outs (tool `Workflow` / `Agent`) con agentes que ESCRIBEN en paralelo** | ✅ `isolation: 'worktree'` (§5) | Aísla las escrituras de cada agente; el worktree se auto-limpia si el agente no cambió nada. |
 | Advisors del Step 5 del pipeline | ❌ | Son read-only por frontmatter (`Read, Grep, Glob`; ninguno tiene `Write`/`Edit` salvo `tycon-retrospective-capturer`). No hay nada que aislar. |

@@ -205,8 +205,15 @@ test('T8 Controles_EnSuPaso @story-2.61 @ac-6 — cada control en sus pasos; los
   const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
   const paso4 = html.slice(html.indexOf('id="paso-implement"'), html.indexOf('id="paso-run-tests"'));
   assert.ok(paso4.includes(`ct-chip frena">${TX().t('es', 'comoTrabaja.frena')}<`) && paso4.includes('on-atdd-preedit'), 'el paso Implementar muestra un control que frena');
-  const guardia = html.split('data-origin="harness"').find((x) => x.includes('session-collision-guard.js'));
-  assert.ok(guardia && guardia.includes(TX().t('es', 'comoTrabaja.opcional', { variable: 'TYCON_SESSION_GUARD' })) && !guardia.split('</li>')[0].includes('ct-chip frena'), 'opcional, apagado de fábrica');
+  // el guion tiene dos controles: el freno (PreToolUse), opcional y apagado de fábrica, y el aviso de llegada
+  // (SessionStart), que va siempre
+  const piezas = html.split('data-origin="harness"').map((x) => x.split('</li>')[0]).filter((x) => x.includes('session-collision-guard.js'));
+  const opcional = TX().t('es', 'comoTrabaja.opcional', { variable: 'TYCON_SESSION_GUARD' });
+  const guardia = piezas.find((x) => x.includes(TX().t('es', 'comoTrabaja.evento.PreToolUse')));
+  assert.ok(guardia && guardia.includes(opcional), 'el freno: opcional, apagado de fábrica');
+  // el opcional que avisa no dice que frena (hasta la 8.292 el aviso era opcional; hoy lo es sólo el freno, que sí frena)
+  const aviso = piezas.find((x) => x.includes(TX().t('es', 'comoTrabaja.evento.SessionStart')));
+  assert.ok(aviso && !aviso.includes(opcional) && !aviso.includes('ct-chip frena'), 'el aviso de llegada no es opcional ni frena');
 });
 
 // ════════════════════════════════════════ la pantalla ════════════════════════════════════════

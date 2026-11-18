@@ -2715,6 +2715,24 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.292: quién más vive en un checkout (scripts/lib/live-sessions.js): la transcripción con sus subagentes (también los de un Workflow) y el marcador del pipeline, la propia excluida, lo ilegible a problems; y dónde no se crea una copia propia.",
+      "raiz": "arnes",
+      "ruta": "tests/live-sessions.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.292: con otra sesión viva en el checkout, `start` lleva la historia a su propia copia (PIPE-C10): desde origin/main o HEAD, pausa con la historia sin commitear o si git falla, nunca en el arnés ni con coordinadora viva.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-own-copy.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.292: con otra sesión viva, ningún git stash se lleva archivos de otra sesión, y el drop/pop/clear de lo que guardó otra se frena (lib/stash-guard.js, desde el gate de Bash).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/stash-foreign-files.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.195: el aviso de arranque de lo terminado sin cerrar lista lo de toda la máquina con el comando de cada sesión, y calla sin nada.",
       "raiz": "arnes",
       "ruta": "tests/finished-open-notice.test.js",

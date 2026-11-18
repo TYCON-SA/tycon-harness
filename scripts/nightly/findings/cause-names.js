@@ -24,6 +24,7 @@ const NOMBRES_CAUSA = {
     STORY_REVIEW_OFF: 'revisión de la historia salteada', TYCON_STORY_REVIEW: 'revisión de la historia salteada',
     ATDD_PREEDIT_GATE_OFF: 'pruebas primero apagado',
     TYCON_SAFETY_OFF: 'freno de seguridad apagado', TYCON_SESSION_GUARD_OK: 'freno de sesiones salteado',
+    TYCON_STASH_GUARD_OK: 'freno del stash ajeno salteado',
     TYCON_ENGRAM_MANIFEST_OK: 'freno de memoria salteado', STOP_AUTONOMY: 'cierre sin esperar a la persona',
     DOD_EVIDENCE_MANUAL_WRITE: 'evidencia escrita a mano', SIZE_FORCED_LIGHT_WITH_CODE: 'pipeline liviano con código',
     'story-skill-bypass': 'freno de stories salteado', STORY_SKILL_BYPASS: 'freno de stories salteado',

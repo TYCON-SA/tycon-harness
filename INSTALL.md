@@ -297,7 +297,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `engram-pre-commit.sh` | PreToolUse (Bash) | En un `git commit` de un repo con su archivo .engram-project, exporta la memoria y la suma al commit; frena si el commit pierde una entrada del índice de memoria | Sí, por el índice | minimal y full | `TYCON_ENGRAM_HOOK=0` · sólo el freno del índice: `TYCON_ENGRAM_MANIFEST_GUARD=0`; integración engram (`TYCON_ENGRAM=0`) |
 | `telegram-zombie-sweep.sh` | SessionStart | Sólo en máquinas con el plugin oficial de Telegram: cierra sus lanzadores huérfanos | No | full | `TYCON_TG_ZOMBIE_SWEEP=0` |
 | `session-collision-guard.js` | PreToolUse (Bash) | Apagado por defecto. Prendido, frena tocar git si otra sesión viva trabaja sobre el mismo checkout | Sí | minimal y full | `TYCON_SESSION_GUARD=1` lo prende |
-| `session-collision-guard.js` | SessionStart | Apagado por defecto. Prendido, avisa al abrir una sesión donde ya hay otra viva | No | minimal y full | `TYCON_SESSION_GUARD=1` lo prende |
+| `session-collision-guard.js` | SessionStart | Avisa al abrir una sesión donde ya hay otra viva (también si sólo se mueve un subagente suyo o tiene su ejecución abierta) y le pide al agente que se lo diga a la persona | No | minimal y full | `TYCON_SESSION_GUARD=0` lo calla |
 
 ### 5. Verificar
 

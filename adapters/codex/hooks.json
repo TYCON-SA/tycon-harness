@@ -30,6 +30,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/session-collision-guard.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/dashboard-notice.js"
           },
           {
@@ -405,8 +409,8 @@
       ]
     },
     {
-      "log": "session-collision-guard.js — retirado del set canónico",
-      "verdict": "RETIRADO 2026-09-15 del lado Codex, igual que del lado Claude el 2026-09-07: frenaba trabajo legítimo. En Claude queda como opción apagada (TYCON_SESSION_GUARD=1); en Codex no se registra. El script y sus casos del banco siguen.",
+      "log": "session-collision-guard.js — el freno de git retirado del set canónico; el aviso de llegada registrado (story 8.292)",
+      "verdict": "El FRENO (PreToolUse) sigue RETIRADO del lado Codex desde el 2026-09-15, igual que del lado Claude el 2026-09-07: frenaba trabajo legítimo. En Claude queda como opción apagada (TYCON_SESSION_GUARD=1); en Codex no se registra. El AVISO de llegada (SessionStart) se registra en las dos desde la story 8.292 (2026-11-17): Codex dispara SessionStart con el mismo payload, y el aviso ve a la otra sesión por su marcador del pipeline (igual en las dos herramientas) y por las transcripciones de la carpeta de la propia (la de Codex mezcla cwds y se filtra por el cwd de cada una). Como todo cambio de guion, Codex pide aprobarlo otra vez (/hooks).",
       "scripts": [
         "session-collision-guard.js"
       ]

@@ -3560,6 +3560,121 @@ function tandaDelArranque(content, storyId, storyPath, nombre) {
   return { salida: { ready: true, story_id: storyId, actions_done: [`TANDA: anoté la tanda ${nombre} en la ejecución abierta de esta sesión.`], next: 'pipeline.js next te dice el próximo paso' } };
 }
 
+// ── PIPE-C10: la copia propia de la historia ───────────────────────────────────────────────────────────────────────
+// Con otra sesión viva en el checkout donde corre start (scripts/lib/live-sessions.js: su transcripción, sus subagentes
+// o su corrida abierta), sin coordinadora viva y fuera del arnés y agent-skills, la historia arranca en
+// `<principal>--wt-<clave>`. La copia nace de origin/main si la historia está ahí igual; si no, de HEAD si está
+// commiteada igual; sin commitear no se crea nada (no se mueve, ni se copia, ni se guarda en un stash ningún archivo).
+// `{}` (nadie más, como siempre) · `{ warning }` · `{ pause }` · `{ copy, storyInCopy, baseLabel, because }`.
+function copiaPropiaDelArranque({ storyId, storyPath, repo }) {
+  const SCRIPTS_DIR = path.join(__dirname, '..', '..', '..', 'scripts');
+  let live, sib, coord;
+  try {
+    live = require(path.join(SCRIPTS_DIR, 'lib', 'live-sessions.js'));
+    sib = require(path.join(SCRIPTS_DIR, 'lib', 'sibling-copy.js'));
+    coord = require(path.join(SCRIPTS_DIR, 'tools', 'coordination.js'));
+  } catch (e) {
+    return { warning: `no pude mirar si hay otra sesión viva en este checkout (${String(e.message).split('\n')[0]}): sigo como siempre` };
+  }
+  const raiz = live.raizDelRepo(repo);
+  if (!raiz) return {};
+  const r = live.others({ root: raiz, selfSessionId: sessionIdFileKey(), home: os.homedir() });
+  // la otra sesión de la MISMA historia ya la juzgó PIPE-C0 (pausa, o tanda en paralelo declarada): no cuenta acá
+  r.sessions = r.sessions.filter((s) => s.story !== String(storyId));
+  if (!r.sessions.length) {
+    // con una sola fuente ilegible tampoco se puede decir que no hay nadie
+    return r.problems.length ? { warning: `no pude ver si hay otra sesión viva en este checkout (${r.problems.join('; ')}): sigo como siempre` } : {};
+  }
+  const quien = r.sessions.map((s) => `la sesión ${s.id.slice(0, 8)}${s.story ? ` (historia ${s.story})` : s.lastPrompt ? ` («${s.lastPrompt}»)` : ''}`).join(' y ');
+  if (live.noOwnCopy(raiz)) {
+    return { warning: `hay otra sesión viva en este checkout (${quien}); en ${path.basename(raiz)} una sola sesión toca git a la vez (guides/git-worktrees.md §1): coordinala o esperala` };
+  }
+  let coordinadora = null;
+  try { coordinadora = coord.liveCoordinator({ home: os.homedir(), env: process.env }, null); } catch (e) {
+    return { warning: `hay otra sesión viva en este checkout (${quien}) y no pude saber si hay coordinadora (${String(e.message).split('\n')[0]}): no creo una copia; coordinala o esperala` };
+  }
+  if (coordinadora) {
+    return { warning: `hay otra sesión viva en este checkout (${quien}); la coordinadora (${coordinadora.name}) decide dónde trabaja cada sesión: no creo una copia` };
+  }
+  const pausa = (detail) => ({ pause: { id: 'PIPE-C10-own-copy', detail } });
+  const main = sib.mainOf(raiz);
+  if (!main) return pausa(`Hay otra sesión viva en este checkout (${quien}) y no pude ver el repo ${raiz}. No creé una copia ni escribí el marcador.`);
+  const because = `hay otra sesión viva en este checkout (${quien})`;
+  const ya = copiaYaAbierta({ storyId, storyPath, raiz, main, sib });
+  if (ya && ya.copy) return { ...ya, because };
+  const avisoYa = ya && ya.warning ? { warning: ya.warning } : {};
+  // un repo sin `origin` (uno local, de juguete) no tiene una main que traer ni adonde empujar la copia: sigue como
+  // siempre, con el aviso. Un `origin` que existe y no responde sí pausa (abajo)
+  if (sib.gitIn(raiz, ['remote', 'get-url', 'origin']).code !== 0) {
+    return { warning: `hay otra sesión viva en este checkout (${quien}) y el repo no tiene origin: no creo una copia; coordinala o esperala` };
+  }
+  // de dónde nace: se trae main antes de comparar (sin red no se compara contra una punta vieja)
+  const fetched = sib.gitIn(main, ['fetch', '--quiet', '--no-tags', 'origin', 'main']);
+  if (fetched.code !== 0) return pausa(`Hay otra sesión viva en este checkout (${quien}) y no pude traer main de origin para crear la copia de la historia: ${fetched.err || `git salió con código ${fetched.code}`}. No creé una copia ni escribí el marcador.`);
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const abs = real(path.resolve(storyPath));
+  const dentro = abs.startsWith(real(raiz) + path.sep);
+  const rel = dentro ? path.relative(real(raiz), abs).split(path.sep).join('/') : null;
+  let baseLabel = 'origin/main';
+  if (dentro) {
+    const texto = fs.readFileSync(abs, 'utf8');
+    const en = (ref) => { const s = sib.gitIn(raiz, ['show', `${ref}:${rel}`]); return s.code === 0 ? s.out : null; };
+    const limpio = sib.gitIn(raiz, ['status', '--porcelain', '--', rel]);
+    const igual = (otro) => otro != null && otro === texto.trim();
+    if (igual(en('origin/main'))) baseLabel = 'origin/main';
+    else if (limpio.code === 0 && !limpio.out && igual(en('HEAD'))) baseLabel = 'HEAD';
+    else return pausa(`Hay otra sesión viva en este checkout (${quien}) y la historia ${rel} no está commiteada (o tiene cambios sin commitear): la copia propia no la tendría. Commiteá la historia primero en su rama y volvé a correr start, o trabajá coordinado con la otra sesión. No creé una copia, no moví ni guardé en un stash ningún archivo, y no escribí el marcador.`);
+  }
+  const base = sib.gitIn(raiz, ['rev-parse', '--verify', `${baseLabel}^{commit}`]);
+  if (base.code !== 0) return pausa(`Hay otra sesión viva en este checkout (${quien}) y no pude leer ${baseLabel}: ${base.err}. No creé una copia ni escribí el marcador.`);
+  const clave = String(runDirKey(storyId, storyPath).key || storyId).replace(/[^\w.-]/g, '-');
+  const libre = sib.freeName(raiz, clave);
+  if (!libre.name) return pausa(`Hay otra sesión viva en este checkout (${quien}) y no encontré un nombre libre para la copia: ${libre.problem}. No creé una copia ni escribí el marcador.`);
+  const copy = sib.siblingCopy({ repo: raiz, name: libre.name, branch: `wt/${libre.name}`, base: base.out, closing: 'no la creé' });
+  if (!copy.ok) return pausa(`Hay otra sesión viva en este checkout (${quien}). ${copy.message} No escribí el marcador.`);
+  return { copy, baseLabel, because, storyInCopy: dentro ? path.join(copy.path, rel) : abs, ...avisoYa };
+}
+
+// La copia que esta sesión ya abrió para esta historia, si `start` se repite desde el checkout (tras compactar, por
+// ejemplo): se sigue en ella. Otra copia dejaría la primera, con su corrida, sin dueño. `{ copy, … }`, null (no tenía
+// ninguna) o `{ warning }` (no se puede saber o no se puede seguir en ella: se abre otra, y queda dicho).
+function copiaYaAbierta({ storyId, storyPath, raiz, main, sib }) {
+  let m;
+  try { m = JSON.parse(fs.readFileSync(path.join(stateDirOf(os.homedir()), 'active', `${sessionIdFileKey()}.json`), 'utf8')); } catch (e) {
+    return e.code === 'ENOENT' ? null : { warning: `no pude leer el marcador de esta sesión (${e.code || e.message}): si ya tenía una copia de esta historia, queda abandonada` };
+  }
+  if (!m || String(m.storyId) !== String(storyId) || typeof m.repoPath !== 'string' || !fs.existsSync(m.repoPath)) return null;
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const dir = real(m.repoPath);
+  if (dir === real(raiz) || sib.mainOf(dir) !== main) return null;
+  const abs = real(path.resolve(storyPath));
+  const storyInCopy = abs.startsWith(real(raiz) + path.sep) ? path.join(dir, path.relative(real(raiz), abs)) : abs;
+  const rama = sib.gitIn(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  if (rama.code !== 0 || !fs.existsSync(storyInCopy)) {
+    return { warning: `no puedo seguir en la copia ${dir} (${rama.code !== 0 ? rama.err : 'no tiene la historia'}): abro otra y esa queda abandonada` };
+  }
+  return { copy: { path: dir, main, branch: rama.out, created: false }, baseLabel: 'la copia que ya tenía', storyInCopy };
+}
+
+// Lo que no viaja con una copia (el `post_checklist` de scripts/tools/tycon-worktree.sh).
+function checklistDeLaCopia(dir) {
+  const out = [];
+  if (fs.existsSync(path.join(dir, 'package.json'))) out.push('npm install (node_modules no viaja con la copia)');
+  let dotnet = false;
+  try { dotnet = fs.readdirSync(dir).some((f) => f.endsWith('.sln') || (fs.statSync(path.join(dir, f)).isDirectory() && fs.readdirSync(path.join(dir, f)).some((g) => g.endsWith('.csproj')))); } catch { /* sin listar */ }
+  if (dotnet) out.push('dotnet restore (bin/obj no viajan)');
+  out.push('.env y secretos sin trackear: copiarlos a mano si una prueba en vivo los necesita');
+  return out;
+}
+
+// ¿El marcador de esta sesión quedó apuntando a la copia? (la re-entrada pudo pausar antes o después de escribirlo)
+function marcadorEnLaCopia(dir) {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(stateDirOf(os.homedir()), 'active', `${sessionIdFileKey()}.json`), 'utf8'));
+    return Boolean(m && m.repoPath && fs.realpathSync(m.repoPath) === fs.realpathSync(dir));
+  } catch { return false; }
+}
+
 function computeStart(args) {
   const { execFileSync } = require('child_process');
   const storyPath = args.story;
@@ -3659,6 +3774,30 @@ function computeStart(args) {
         + (ramaSinLeer ? `. No pude leer la rama de la otra sesión (${ramaSinLeer}): ante la duda, pauso.` : ''),
       options: 'retomar con `marker.js adopt-session <sid>` (copia el estado completo) / clear-session / trabajarla en otra copia del repo y otra rama / cancelar',
     });
+  }
+
+  // PIPE-C10: otra sesión viva en este checkout (una historia distinta, otro chat) → la historia arranca en su propia
+  // copia de trabajo, antes de escribir nada acá. Se re-entra a start dentro de la copia: los chequeos de
+  // siempre, el marcador y la carpeta de la corrida quedan allá, y el checkout compartido no cambia.
+  const warnings = [];
+  if (!pauses.length && !args.inOwnCopy) {
+    const cp = copiaPropiaDelArranque({ storyId, storyPath, repo });
+    if (cp.warning) warnings.push(cp.warning);
+    if (cp.pause) {
+      return { ready: false, story_id: storyId, pauses: [cp.pause], actions_done: actions, ...(warnings.length ? { warnings } : {}), note: 'NADA mutado: no creé una copia ni escribí el marcador. Resolvé la pausa y re-corré start.' };
+    }
+    if (cp.copy) {
+      const inner = computeStart({ ...args, repo: cp.copy.path, story: cp.storyInCopy, inOwnCopy: true });
+      const workCopy = { path: cp.copy.path, branch: cp.copy.branch, base: cp.baseLabel, created: cp.copy.created, because: cp.because, checklist: checklistDeLaCopia(cp.copy.path) };
+      const linea = `PIPE-C10: ${cp.because}: la historia arranca en su propia copia de trabajo ${cp.copy.path} (rama ${cp.copy.branch}, desde ${cp.baseLabel}). Seguí desde ahí: cada comando con cd a la copia y cada archivo por su ruta en la copia (step-01-start.md).`;
+      const juntos = [...warnings, ...(inner.warnings || [])];
+      if (!inner.ready && cp.copy.created && !marcadorEnLaCopia(cp.copy.path)) {
+        // la copia no sirve sin la corrida: se saca lo que se creó, y se dice si quedó algo
+        const sacada = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'sibling-copy.js')).removeCopy({ path: cp.copy.path, main: cp.copy.main, branch: cp.copy.branch, created: cp.copy.created });
+        return { ...inner, ...(juntos.length ? { warnings: juntos } : {}), note: `${inner.note || 'No arrancó.'} ${sacada ? 'Saqué la copia que había creado.' : `No pude sacar la copia ${cp.copy.path}: queda para el barrido.`}` };
+      }
+      return { ...inner, work_copy: workCopy, actions_done: [linea, ...(inner.actions_done || [])], ...(juntos.length ? { warnings: juntos } : {}) };
+    }
   }
 
   // PIPE-C1: branch guard.
@@ -3820,7 +3959,7 @@ function computeStart(args) {
   if (faltasNoMedidas.length) actions.push(`Falta antes de arrancar: no pude mirar ${faltasNoMedidas.join(' ni ')}; no es «está todo»`);
 
   if (pauses.length) {
-    return { ready: false, story_id: storyId, branch, pauses, ...faltasOut, actions_done: actions, note: 'NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.' };
+    return { ready: false, story_id: storyId, branch, pauses, ...faltasOut, actions_done: actions, ...(warnings.length ? { warnings } : {}), note: 'NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.' };
   }
 
   // el tamaño de la corrida y su tiempo estimado, ANTES de lanzar nada; quedan en el marcador.
@@ -3956,6 +4095,7 @@ function computeStart(args) {
     tooling: computeToolingExpected(repo),
     ...faltasOut,
     actions_done: actions,
+    ...(warnings.length ? { warnings } : {}),
     e2e_gap: e2eCfg.gap ? e2eCfg.warning : null,
     spec_stale: stale,
     next: 'pipeline.js next te dice el próximo paso (el aviso de trabajo, el pedido en ADO o validar la story)',
@@ -4030,6 +4170,9 @@ function recortarStart(result) {
   if (result.e2e_gap) breve.e2e_gap = result.e2e_gap;
   if (result.spec_stale) breve.spec_stale = result.spec_stale;
   breve.acciones = result.actions_done || [];
+  // la copia propia (PIPE-C10) y los avisos de otra sesión viva: el agente tiene que verlos sin abrir el JSON entero
+  if (result.work_copy) breve.work_copy = result.work_copy;
+  if (result.warnings && result.warnings.length) breve.warnings = result.warnings;
   breve.next = result.next || result.note || null;
   breve.completo = completo;
   return breve;

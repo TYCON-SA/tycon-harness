@@ -325,6 +325,9 @@ function decide(list, ctx) {
   const addKnown = (s) => { if (!known.includes(s)) known.push(s); };
   const profileOff = new Set();
   const leave = new Set();
+  // lo que queda como está, por evento y guion: un guion puede quedar como está en un evento y apagarse en otro
+  const leaveKeys = new Set();
+  const leaveIt = (h) => { leave.add(h.spec); leaveKeys.add(`${h.event}\0${h.spec}`); };
 
   for (const h of list.hooks) {
     if (windows && h.platforms.windows === false) continue;   // lo excluido en Windows no se registra ni se saca
@@ -332,7 +335,7 @@ function decide(list, ctx) {
     if (kind === 'time') {
       // sin saber cuál está elegida (un lector viejo que no tiene `time-tracking`), quedan como están
       const chosen = integOk ? ctx.integ.timeTracking : undefined;
-      if (chosen === undefined || chosen === null) { leave.add(h.spec); continue; }
+      if (chosen === undefined || chosen === null) { leaveIt(h); continue; }
       addKnown(h.spec);
       if (chosen === arg) active.push(h);
       continue;
@@ -347,7 +350,7 @@ function decide(list, ctx) {
         if (integOk) addKnown(h.spec);
         // el de una integración de prender y apagar, sin saber si está prendida, queda como está: su ruta de antes de
         // tener manifiesto tampoco se saca (la reemplazada, por su nombre de guion)
-        else if (intSpec(h.spec)) leave.add(h.spec);
+        else if (intSpec(h.spec)) leaveIt(h);
         if (integOn(arg)) active.push(h);
       }
       continue;
@@ -356,7 +359,7 @@ function decide(list, ctx) {
       if (isFull) { active.push(h); continue; }
       if (minimalIds.has(`${h.event}:${h.spec}`)) { active.push(h); continue; }
       if (isMinimal) { profileOff.add(h.spec); addKnown(h.spec); }
-      else leave.add(h.spec);
+      else leaveIt(h);
       continue;
     }
     // optin:<VARIABLE>
@@ -368,7 +371,7 @@ function decide(list, ctx) {
       else if (pstate !== 'ok' && !val && !h.brake) op = 2;
       else op = 0;
       if (op === 1 && isMinimal && val !== '0') profileOff.add(h.spec);
-      if (op === 2) { leave.add(h.spec); continue; }
+      if (op === 2) { leaveIt(h); continue; }
       addKnown(h.spec);
       if (op === 0 && (!h.needs || has(h.needs))) active.push(h);
       continue;
@@ -377,7 +380,7 @@ function decide(list, ctx) {
     const on = h.default === 'on' ? val !== '0' : val === '1';
     if (on && (!h.needs || has(h.needs))) active.push(h);
   }
-  return { active, known, profileOff, leave, full: isFull };
+  return { active, known, profileOff, leave, leaveKeys, full: isFull };
 }
 
 // ── Identidad de un hook (las dos reglas de hoy) ─────────────────────────────────────────────────────────────────
@@ -581,6 +584,12 @@ function applyToSettings(settings, o) {
   const active = o.decision.active.slice();
   const activeSpecs = new Set(active.map((h) => h.spec));
   const inactive = o.decision.known.filter((s) => !activeSpecs.has(s));
+  // un guion puede estar prendido en un evento y apagado en otro (el aviso de llegada de session-collision-guard.js va
+  // siempre; su freno, sólo con su variable): lo apagado se saca por evento y guion, no sólo por guion
+  const activeKeys = new Set(active.map((h) => `${h.event}\0${h.spec}`));
+  const offInEvent = (ev) => o.list.hooks.filter((h) => h.event === ev && activeSpecs.has(h.spec) && !activeKeys.has(`${ev}\0${h.spec}`)).map((h) => h.spec);
+  // …y lo que queda como está en un evento (sin perfil, un «siempre») no sale porque el mismo guion se apague en otro
+  const leftInEvent = (ev, s) => Boolean(o.decision.leaveKeys && o.decision.leaveKeys.has(`${ev}\0${s}`));
   const cmdOf = (hk) => (hk && typeof hk === 'object' && typeof hk.command === 'string' ? hk.command : '');
   const keptByLeave = new Set([...(o.decision.leave || [])].map(intSpec).filter(Boolean).map((i) => path.posix.basename(i.rel)));
   const revive = new Set();   // `${evento}\0${guion}` de una ruta vieja que salió por estar muerta
@@ -612,7 +621,7 @@ function applyToSettings(settings, o) {
           r.missing.push({ event: ev, matcher: entry.matcher || '', relpath: `${sup} (ruta vieja que no se puede comprobar; si su archivo se movió, corregila a mano)`, label: '' });
         }
         if (!what) {
-          const off = inactive.find((s) => (windows ? invokesRepoPath(cmd, repoPathOf(s)) : namesFile(cmd, resolve(s))));
+          const off = [...inactive, ...offInEvent(ev)].find((s) => !leftInEvent(ev, s) && (windows ? invokesRepoPath(cmd, repoPathOf(s)) : namesFile(cmd, resolve(s))));
           if (off) { what = off; why = o.decision.profileOff.has(off) ? 'fuera del perfil minimal' : 'disabled by env var'; }
         }
         if (!what) {

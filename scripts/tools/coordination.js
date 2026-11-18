@@ -2151,46 +2151,9 @@ function wtBranchNames(repo) {
   return { names: r.stdout.split('\n').map((l) => l.trim().replace(/^refs\/heads\/wt\//, '')).filter(Boolean) };
 }
 
-/**
- * La copia hermana de un repo para una sesión: `<carpeta principal>--wt-<nombre>`, desde `origin/main` recién traído.
- * No pisa ni reusa una copia o una rama `wt/<nombre>` que ya existen (pueden tener el trabajo de otra sesión); una rama
- * pedida con `--branch` que ya existe se usa y nunca se borra. `{ ok, path, main, branch, created }` o
- * `{ ok: false, message }`, con el primer renglón del error de git.
- */
-function siblingCopy({ repo, name, branch }) {
-  const no = (message) => ({ ok: false, message: oneLine(message) });
-  const common = gitIn(repo, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-  if (common.code !== 0 || !common.out) return no(`No pude ver el repo ${repo} (${common.err || `git salió con código ${common.code}`}): no la abrí.`);
-  const main = realDir(path.basename(common.out) === '.git' ? path.dirname(common.out) : common.out);
-  const copyPath = `${main}--wt-${name}`;
-  if (fs.existsSync(copyPath)) return no(`La copia ${copyPath} ya existe: no la piso ni la reuso; no la abrí.`);
-  const exists = gitIn(main, ['rev-parse', '--verify', '-q', `refs/heads/${branch}`]).code === 0;
-  if (exists && branch === `wt/${name}`) return no(`La rama ${branch} ya existe en ${main}: no la piso ni la reuso; no la abrí.`);
-  // sin red no se crea la copia desde una punta vieja
-  const fetched = gitIn(main, ['fetch', '--quiet', '--no-tags', 'origin', 'main']);
-  if (fetched.code !== 0) return no(`No pude traer main de origin en ${main} (${fetched.err || `git salió con código ${fetched.code}`}): no la abrí.`);
-  const add = exists
-    ? gitIn(main, ['worktree', 'add', '-q', copyPath, branch])
-    : gitIn(main, ['worktree', 'add', '-q', '--no-track', '-b', branch, copyPath, 'origin/main']);
-  if (add.code !== 0) {
-    // sólo se saca lo que este add pudo haber dejado: la carpeta si no existía antes, la rama si no existía antes
-    const left = removeCopy({ path: copyPath, main, branch, created: !exists }) ? '' : ` Quedó algo de la copia: lo saca el barrido.`;
-    return no(`No pude crear la copia ${copyPath} (${add.err || `git salió con código ${add.code}`}): no la abrí.${left}`);
-  }
-  return { ok: true, path: copyPath, main, branch, created: !exists };
-}
-
-/**
- * Saca una copia que `open` acaba de crear, y su rama si la creó él. Devuelve true si no quedó ninguna de las dos; lo
- * que no puede sacar queda para el barrido, y quien llama lo dice.
- */
-function removeCopy(copy) {
-  if (fs.existsSync(copy.path)) gitIn(copy.main, ['worktree', 'remove', '--force', copy.path]);
-  gitIn(copy.main, ['worktree', 'prune']);
-  if (copy.created) gitIn(copy.main, ['branch', '-D', copy.branch]);
-  const branchLeft = copy.created && gitIn(copy.main, ['rev-parse', '--verify', '-q', `refs/heads/${copy.branch}`]).code === 0;
-  return !fs.existsSync(copy.path) && !branchLeft;
-}
+// La copia hermana de un repo para una sesión (`<carpeta principal>--wt-<nombre>`, desde `origin/main` recién traído) y
+// cómo se saca si la apertura falla: viven en scripts/lib/sibling-copy.js, que comparte con `pipeline.js start`.
+const { siblingCopy, removeCopy } = require(path.join(__dirname, '..', 'lib', 'sibling-copy.js'));
 const removedNote = (copy) => (removeCopy(copy)
   ? 'Borré la copia y no reintenté.'
   : `No pude borrar la copia ${copy.path}${copy.created ? ` ni su rama ${copy.branch}` : ''}: queda para el barrido. No reintenté.`);

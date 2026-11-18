@@ -955,7 +955,8 @@ PY
   #    comandos destructivos en vez de al final de su bloque.
   TYCON_SESSION_GUARD=1 by_clone >/dev/null 2>&1; ORDER_REF="$(hooks_order)"
   by_clone >/dev/null 2>&1
-  [ "$(n_hooks_with session-collision-guard.js)" = 0 ] || mal "T37 la vara del orden: apagado, el freno de sesiones sigue registrado ($(n_hooks_with session-collision-guard.js))"
+  # apagado queda 1: el aviso de llegada (SessionStart) va siempre desde la story 8.292; el freno (PreToolUse) se va
+  [ "$(n_hooks_with session-collision-guard.js)" = 1 ] || mal "T37 la vara del orden: apagado, el freno de sesiones sigue registrado ($(n_hooks_with session-collision-guard.js); se espera sólo el aviso)"
   TYCON_SESSION_GUARD=1 by_link >/dev/null 2>&1
   [ "$(n_hooks_with session-collision-guard.js)" = 2 ] && [ -n "$ORDER_REF" ] && [ "$(hooks_order)" = "$ORDER_REF" ] \
     && ok "T37 un hook que entra por el enlace queda en su lugar: el mismo orden que cuando lo prende el clon" \

@@ -428,6 +428,8 @@ const MINIMAL_HOOKS = [
   'UserPromptSubmit:tycon-pipeline/scripts/on-prompt.js', 'PostToolUse:tycon-pipeline/scripts/hook-post-edit.js',
   'PostToolUse:tycon-pipeline/scripts/on-skill-invoke.js', 'PreToolUse:tycon-pipeline/scripts/on-advisor-run.js',
   'SessionStart:@tcg:harness-bootstrap-heal.sh', 'SessionStart:@tcg:branch-guard-notice.js',
+  // el aviso de llegada de otra sesión en el mismo checkout va siempre; su freno de git, no
+  'SessionStart:@tcg:session-collision-guard.js',
   // el freno de comandos destructivos y el portón de edición están en los dos perfiles: sin el
   // portón, en la mínima el agente implementa una historia sin recorrido y nadie se entera
   'PreToolUse:@tcg:safety-guard-pre.sh', 'PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js',
