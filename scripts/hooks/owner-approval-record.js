@@ -36,6 +36,11 @@ function registroDe(evento, { ahora = Date.now() } = {}) {
   return null;
 }
 
+/** El renglón que se anota: la aprobación, el proceso que la lanzó y si ese proceso tenía el control remoto encendido al contestar. */
+function conElProceso(r, herramienta, casa, oa = require(path.join(LIB, 'owner-approvals.js'))) {
+  return { ...r, herramienta, control_remoto: oa.controlRemotoDelProceso(casa, herramienta.pid, r.sesion) };
+}
+
 function main() {
   if (process.env.TYCON_OWNER_APPROVALS === '0') return;
   let evento;
@@ -47,7 +52,7 @@ function main() {
   // sólo lo que lanza la herramienta: un agente que corre este gancho a mano, o que abre otra sesión y le escribe, no anota
   const h = oa.lanzadoPorLaHerramienta({ casa });
   if (!h.ok) return;
-  oa.anotar(casa, { ...r, herramienta: h.herramienta });
+  oa.anotar(casa, conElProceso(r, h.herramienta, casa, oa));
 }
 
 if (require.main === module) {
@@ -55,4 +60,4 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { registroDe };
+module.exports = { registroDe, conElProceso };
