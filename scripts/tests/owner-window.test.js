@@ -4184,3 +4184,10 @@ test('OwnerWindow_RuntimeWaiver_MeasuredAcShowsBound @story-8.260 @ac-25', () =>
   assert.doesNotMatch(ow.renglonALaVista(con(null)), /lo medido/);
   assert.doesNotMatch(ow.textoDeLosCriterios([con(null)]), /lo medido/);
 });
+
+test('OwnerWindow_Box_ShowsMeasuredWithinCut @story-8.260 @ac-25', () => {
+  // el cuadro corta cada renglón: con razón y criterio largos, lo medido y la cota tienen que quedar en la pregunta
+  const x = { ac: 1, text: 'responde '.repeat(30), reason: 'el laboratorio no deja medir '.repeat(10), coveredBy: 'T1', medida: 'medido 3010 ms; la cota es < 2000 ms' };
+  const q = require('../lib/owner-approvals.js').cuadroDe({ firma: 'runtime-waiver', destino: 's-1', que: 'aceptar sin prueba en vivo el AC 1', criterios: [1], queHace: [ow.renglonALaVista(x)], huella: 'abcd1234' });
+  assert.match(q.pregunta, /medido 3010 ms; la cota es < 2000 ms/, q.pregunta);
+});

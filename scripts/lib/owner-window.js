@@ -780,7 +780,7 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
 }
 
 // lo medido y la cota de un criterio con cota (`medida`, de waiver-display.js); nada en uno sin marca
-const loMedido = (x, largo) => (x && x.medida ? `; lo medido: ${largo ? una(x.medida, largo) : x.medida}` : '');
+const loMedido = (x) => (x && x.medida ? `; lo medido: ${una(x.medida, 120)}` : '');
 
 /** Los criterios a eximir de un `runtime-waiver`, en una línea, para el texto de la ventana. */
 function textoDeLosCriterios(lista) {
@@ -821,7 +821,7 @@ function queDeLaExcepcion(lista) {
 // el renglón de un criterio de `runtime-waiver` como entra en la fuente de la huella: no cambia (un click ya dado sigue
 // atado a lo mismo). La razón va primero, porque el renglón se corta y, al final, no llegaba a verse. En un criterio con
 // cota, lo medido va al final: un click sobre otra medición no vale para la nueva; sin cota, el renglón es el de siempre
-const renglonDeLaExcepcion = (x) => `AC ${x.ac}: por qué no se prueba en vivo: ${una(razonDeclarada(x) || 'sin razón declarada', 150)}; lo cubre: ${una(x.coveredBy || '(ninguna prueba declarada)', 60)}; el criterio: ${una(x.text || '(sin texto en la historia)', 200)}${loMedido(x, 120)}`;
+const renglonDeLaExcepcion = (x) => `AC ${x.ac}: por qué no se prueba en vivo: ${una(razonDeclarada(x) || 'sin razón declarada', 150)}; lo cubre: ${una(x.coveredBy || '(ninguna prueba declarada)', 60)}; el criterio: ${una(x.text || '(sin texto en la historia)', 200)}${loMedido(x)}`;
 
 /** Las palabras sin `--for-session <sesión>`: el destino no cambia lo que se firma, sólo para quién. */
 function sinForSession(palabras) {
@@ -939,8 +939,9 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   return q;
 }
 
-// el renglón de un criterio de `runtime-waiver` como se ve en el cuadro: el cuadro lo corta entero, por oración
-const renglonALaVista = (x) => `AC ${x.ac}: por qué no se prueba en vivo: ${razonDeclarada(x) || 'sin razón declarada'}; lo cubre: ${x.coveredBy || '(ninguna prueba declarada)'}; el criterio: ${x.text || '(sin texto en la historia)'}${loMedido(x)}`;
+// el renglón de un criterio de `runtime-waiver` como se ve en el cuadro: el cuadro lo corta entero, por oración. Lo medido
+// y la cota van primero: son lo que se está perdonando, y al final el corte se los llevaría
+const renglonALaVista = (x) => `AC ${x.ac}: ${x.medida ? `lo medido: ${x.medida}; ` : ''}por qué no se prueba en vivo: ${razonDeclarada(x) || 'sin razón declarada'}; lo cubre: ${x.coveredBy || '(ninguna prueba declarada)'}; el criterio: ${x.text || '(sin texto en la historia)'}`;
 
 /**
  * El comando para el detalle del cuadro: el programa por su nombre y el resto como se pidió, salvo los valores de

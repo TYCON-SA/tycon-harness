@@ -97,3 +97,68 @@ test('Measures_ReadLines_LastWins_TopAndRejected @story-8.260 @ac-4 @ac-5', () =
   assert.strictEqual(t.dropped, 2);
   assert.strictEqual(t.measures[19].name, 'm19');
 });
+
+test('Measures_RawAcText_SubItemsHeadingsScenarios @story-8.260 @ac-11', () => {
+  const sc = require(path.join(__dirname, '..', 'lib', 'story-checks.js'));
+  const crudo = (cuerpo) => sc.acTextsFromSpec(['# S', '', '## Acceptance Criteria', '', ...cuerpo, ''].join('\n'), { crudo: true });
+  const de = (t) => M.marcas(t || '').marcas.map((m) => m.texto);
+  const MARCA = '@measure(duration < 2s)';
+  // sub-items numerados con sangría: son del criterio que los abre, y el siguiente no se lleva su marca
+  const a = crudo(['1. **Given** la consulta:', '   1. pide', `   2. responde ${MARCA}`, '2. **Then** otro']);
+  assert.deepStrictEqual([de(a[1]), de(a[2])], [[MARCA], []]);
+  // una lista y un subtítulo más profundo dentro de `### AC-N`
+  const b = crudo(['### AC-1 — rápido', '1. pide', `2. responde ${MARCA}`, '### AC-2 — otro', '1. nada']);
+  assert.deepStrictEqual([de(b[1]), de(b[2])], [[MARCA], []]);
+  const c = crudo(['### AC-1 — rápido', 'texto', '#### Detalle', MARCA, '### AC-2 — otro', 'nada']);
+  assert.deepStrictEqual([de(c[1]), de(c[2])], [[MARCA], []]);
+  // «Dado» dentro de un bloque: el bloque es del criterio
+  const d = crudo(['```gherkin', 'Dado la consulta', 'Cuando se pide', `Entonces responde ${MARCA}`, '```']);
+  assert.deepStrictEqual(de(d[1]), [MARCA]);
+  // la etiqueta sobre el escenario y el título son del escenario que abren, no del anterior
+  const e = crudo(['```gherkin', 'Scenario: uno', 'Given a', 'Then b', MARCA, 'Scenario: dos', 'Given c', 'Then d', '```']);
+  assert.deepStrictEqual([de(e[1]), de(e[2])], [[], [MARCA]]);
+  const f = crudo(['```gherkin', MARCA, 'Scenario: uno', 'Given a', 'Then b', `Scenario: dos ${MARCA}`, 'Given c', '```']);
+  assert.deepStrictEqual([de(f[1]), de(f[2])], [[MARCA], [MARCA]]);
+  // una marca suelta al final del último escenario sigue siendo suya
+  const g = crudo(['```gherkin', 'Scenario: uno', 'Given a', 'Then b', MARCA, '```']);
+  assert.deepStrictEqual(de(g[1]), [MARCA]);
+});
+
+test('Measures_NearMissMarks_Unreadable @story-8.260 @ac-11', () => {
+  for (const t of ['@Measure(duration < 2s)', '@measure (duration < 2s)', '@measure(duration < 2s', '@mide(duracion < 2s']) {
+    const r = M.marcas(`responde rápido ${t}`);
+    assert.strictEqual(r.marcas.length, 0, t);
+    assert.strictEqual(r.ilegibles.length, 1, t);
+  }
+  assert.strictEqual(M.marcas('@measure duration < 2s').ilegibles.length, 1);
+  for (const t of ['@measured el tiempo', 'una cuenta ana@measure','usa @measure/paquete', 'lo marca @mide en la guía']) {
+    assert.deepStrictEqual(M.marcas(t), { marcas: [], ilegibles: [] }, t);
+  }
+  // partida en dos renglones sigue siendo la marca
+  assert.strictEqual(M.marcas('responde @measure(duration\n  < 2s) siempre').marcas.length, 1);
+});
+
+test('Measures_Citations_DoubleBacktickTildeWrapped @story-8.260 @ac-11', () => {
+  for (const t of ['se escribe ``@measure(duration < 2s)`` así', 'se escribe `la marca\n@measure(duration < 2s)` así',
+    '~~~\n@measure(duration < 2s)\n~~~']) {
+    assert.deepStrictEqual(M.marcas(t), { marcas: [], ilegibles: [] }, t);
+  }
+  // un acento grave suelto no se come el resto del criterio
+  assert.strictEqual(M.marcas('un ` suelto\n\n@measure(duration < 2s)').marcas.length, 1);
+});
+
+test('Measures_TimeConversion_NoFloatDrift @story-8.260 @ac-10', () => {
+  const marca = (t) => M.marcas(t).marcas[0];
+  assert.strictEqual(M.comparar({ value: 2010, unit: 'ms' }, marca('@measure(t < 2.01s)')).cumple, false);
+  assert.strictEqual(M.comparar({ value: 2010, unit: 'ms' }, marca('@measure(t >= 2.01s)')).cumple, true);
+  assert.strictEqual(M.textoCota(marca('@measure(t < 2.01s)')), '< 2010 ms');
+  assert.strictEqual(M.textoMedido({ value: 2.01, unit: 's' }), '2010 ms');
+});
+
+test('Measures_LinePrefixAndPrototypeNames @story-8.260 @ac-5 @ac-10 @ac-12', () => {
+  assert.deepStrictEqual(M.leerRenglones('TYCON_MEASUREx=1\n').rejected, [1]);
+  assert.strictEqual(M.marcas('@measure(constructor < 2)').marcas[0].nombre, 'constructor');
+  const m = M.marcas('@measure(t < 2constructor)').marcas[0];
+  assert.strictEqual(M.comparar({ value: 1, unit: 'constructor' }, m).cumple, true);
+  assert.strictEqual(M.textoMedido({ value: 1, unit: 'valueOf' }), '1 valueOf');
+});

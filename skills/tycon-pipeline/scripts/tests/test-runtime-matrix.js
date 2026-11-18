@@ -2709,6 +2709,21 @@ withWaiverLog(() => {
       JSON.stringify({ h0, hM: rM.hash, cumple, hNo: rNo.hash, okDecl, no2: rNo.perAc[2].verdict, viejaVale }));
   });
 
+  // T35 — Matrix_SameTs_WorstReportedAnyOrder (AC 9): con el mismo sello se informa el peor, en cualquier orden
+  {
+    const mismo = (orden, marca = DUR) => { const f = conCriterios([marca]); const ts = tsHace(1); for (const ms of orden) humo(f, [1], { ms, ts }); return calc(f).perAc[1]; };
+    const a = mismo([2500, 3010]); const b = mismo([3010, 2500]);
+    // con `>`, el peor es el más chico; y si todos cumplen, también se informa el mismo en los dos órdenes
+    const MIN = '**Then** tarda al menos 2 s. @measure(duration > 2s)';
+    const c = mismo([1500, 1000], MIN); const d = mismo([1000, 1500], MIN);
+    const e = mismo([1005, 1500]); const g = mismo([1500, 1005]);
+    check('Matrix_SameTs_WorstReportedAnyOrder @story-8.260 @ac-9',
+      a.verdict === 'FUERA-DE-COTA' && a.medida.medido === 3010 && b.medida.medido === 3010
+        && c.medida.medido === 1000 && d.medida.medido === 1000
+        && e.verdict === 'RUNTIME' && e.medida.medido === 1500 && g.medida.medido === 1500,
+      JSON.stringify([a.medida, b.medida, c.medida, d.medida, e.medida, g.medida]));
+  }
+
   // T19 — Matrix_OldLinesAndUnmarkedAcs_Unchanged (AC 20): renglones sin duración y criterios sin marca no ganan campos
   {
     const f = conCriterios(['**Then** responde.', '**Then** otro.']);

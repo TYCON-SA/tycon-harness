@@ -108,7 +108,7 @@ function normalizar(texto, { raices = [], casas = [], heads = [], ramas = [] } =
   t = t.replace(/\(\d+(?:\.\d+)?ms\)/g, '(<MS>)');
   t = t.replace(/duration_ms \d+(?:\.\d+)?/g, 'duration_ms <MS>');
   // lo que mide el comando (smoke-run.sh lo guarda aparte): el valor varía entre corridas, el nombre no
-  t = t.replace(/^(TYCON_MEASURE [a-z][a-z0-9_.-]{0,39}=).*$/gm, '$1<N>');
+  t = t.replace(/^TYCON_MEASURE[^\S\n]+([a-z][a-z0-9_.-]{0,39})=.*$/gm, 'TYCON_MEASURE $1=<N>');
   // los segundos al final de un renglón de resumen del arnés (los que llevan « · » o arrancan con «ℹ»), no de cualquiera:
   // «timeout: 30s» contra «timeout: 600s» es un cambio
   t = t.split('\n').map((l) => (/ · |^ℹ /.test(l) ? l.replace(/(\s)\d+(?:\.\d+)?s$/, '$1<S>') : l)).join('\n');

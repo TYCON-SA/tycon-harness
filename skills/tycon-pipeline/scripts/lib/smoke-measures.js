@@ -34,10 +34,17 @@ const NOMBRE_RE = /^[a-z][a-z0-9_.-]{0,39}$/;
 const RENGLON_RE = /^TYCON_MEASURE\s+([a-z][a-z0-9_.-]{0,39})=([+-]?\d+(?:\.\d+)?) ?([A-Za-z%/]{1,12})?\s*$/;
 const RESERVADO = 'duration';
 const TOPE_NOMBRES = 20;
-const MARCA_RE = /@(measure|mide)\(([^)]*)\)/g;
+// Todo lo que se parece a una marca, escrito como sea (mayúsculas, un espacio, sin cerrar, sin paréntesis): lo que no
+// tiene la forma exacta es ilegible. No lo es un correo, `@measured`, un paquete `@measure/x` ni una mención en la prosa.
+const PARECE_MARCA_RE = /(?<![\w.@-])@(?:measure|mide)(?=[ \t]*\(|[ \t]+[A-Za-z][\w.-]*[ \t]*[<>])[^\n]*/gi;
+// la forma exacta; puede partirse en dos renglones, como cualquier texto de la historia
+const MARCA_RE = /^@(?:measure|mide)\(([^)]*)\)/;
 const INTERIOR_RE = /^\s*([A-Za-z][A-Za-z0-9_.-]*)\s*(<=|>=|<|>)\s*([+-]?\d+(?:\.\d+)?)\s*([A-Za-z%/]{1,12})?\s*$/;
-const ALIAS = { duracion: 'duration' };
-const TIEMPO = { ms: 1, s: 1000, min: 60000 };
+// sin prototipo: `constructor` es un nombre y una unidad válidos
+const ALIAS = Object.assign(Object.create(null), { duracion: 'duration' });
+const TIEMPO = Object.assign(Object.create(null), { ms: 1, s: 1000, min: 60000 });
+// a milisegundos, sin el error de la coma flotante: 2.01 s son 2010 ms, no 2009.9999999999998
+const enMs = (valor, unidad) => Math.round(valor * TIEMPO[unidad] * 1e6) / 1e6;
 
 function duracion(t0, t1) {
   const a = Number(t0);
@@ -55,7 +62,7 @@ function leerRenglones(texto) {
   let fuera = 0;
   String(texto || '').split('\n').forEach((crudo, i) => {
     const l = crudo.replace(/\r$/, '');
-    if (!/^TYCON_MEASURE\b/.test(l)) return;
+    if (!/^TYCON_MEASURE/.test(l)) return;
     const m = RENGLON_RE.exec(l);
     if (!m || m[1] === RESERVADO) { rechazados.push(i + 1); return; }
     const medida = { name: m[1], value: Number(m[2]), unit: m[3] || null };
@@ -72,28 +79,37 @@ function leerRenglones(texto) {
   return { measures: [...porNombre.values()], dropped: fuera ? nombresFuera.size : 0, rejected: rechazados };
 }
 
-/** El texto sin código en línea, sin bloques ``` y sin renglones de cita: una marca citada como ejemplo no es marca. */
+/**
+ * El texto sin bloques (``` o ~~~), sin renglones de cita y sin código en línea: una marca citada como ejemplo no es
+ * marca. El código en línea va entre tantos acentos graves como abre, y puede partirse en dos renglones de un párrafo.
+ */
 function sinCitas(texto) {
   const fuera = [];
-  let enBloque = false;
+  let cerco = null;
   for (const l of String(texto || '').split('\n')) {
-    if (/^[ \t]*```/.test(l)) { enBloque = !enBloque; continue; }
-    if (enBloque || /^[ \t]*>/.test(l)) continue;
+    const m = /^[ \t]*(```|~~~)/.exec(l);
+    if (m && (!cerco || cerco === m[1])) { cerco = cerco ? null : m[1]; continue; }
+    if (cerco || /^[ \t]*>/.test(l)) continue;
     fuera.push(l);
   }
-  return fuera.join('\n').replace(/`[^`\n]*`/g, ' ');
+  return fuera.join('\n').replace(/(?<!`)(`+)(?!`)(?:(?!\n[ \t]*\n)[\s\S])*?(?<!`)\1(?!`)/g, ' ');
 }
 
 function marcas(texto) {
   const out = { marcas: [], ilegibles: [] };
   const limpio = sinCitas(texto);
+  const re = new RegExp(PARECE_MARCA_RE);
   let m;
-  MARCA_RE.lastIndex = 0;
-  while ((m = MARCA_RE.exec(limpio)) !== null) {
-    const i = INTERIOR_RE.exec(m[2]);
+  while ((m = re.exec(limpio)) !== null) {
+    const exacta = MARCA_RE.exec(limpio.slice(m.index));
+    // el texto de la marca: la forma exacta, o hasta el primer paréntesis que cierra (si no hay, un pedazo del renglón)
+    const cierre = m[0].indexOf(')');
+    const texto = exacta ? exacta[0] : cierre >= 0 ? m[0].slice(0, cierre + 1) : m[0].slice(0, 60).trimEnd();
+    re.lastIndex = m.index + texto.length;
+    const i = exacta ? INTERIOR_RE.exec(exacta[1]) : null;
     const nombre = i ? (ALIAS[i[1]] || i[1]) : null;
-    if (!i || !NOMBRE_RE.test(nombre)) { out.ilegibles.push(m[0]); continue; }
-    out.marcas.push({ nombre, op: i[2], valor: Number(i[3]), unidad: i[4] || null, texto: m[0] });
+    if (!i || !NOMBRE_RE.test(nombre)) { out.ilegibles.push(texto.replace(/\s+/g, ' ').slice(0, 60)); continue; }
+    out.marcas.push({ nombre, op: i[2], valor: Number(i[3]), unidad: i[4] || null, texto });
   }
   return out;
 }
@@ -104,18 +120,18 @@ const cumpleOp = (a, op, b) => (op === '<' ? a < b : op === '<=' ? a <= b : op =
 function comparar(medida, marca) {
   const um = medida.unit || null;
   const uc = marca.unidad || null;
-  if (TIEMPO[um] && TIEMPO[uc]) return { cumple: cumpleOp(medida.value * TIEMPO[um], marca.op, marca.valor * TIEMPO[uc]) };
+  if (TIEMPO[um] && TIEMPO[uc]) return { cumple: cumpleOp(enMs(medida.value, um), marca.op, enMs(marca.valor, uc)) };
   if (um !== uc) return { sinMedicion: `unidad distinta (medido en ${um || 'sin unidad'}, la cota en ${uc || 'sin unidad'})` };
   return { cumple: cumpleOp(medida.value, marca.op, marca.valor) };
 }
 
 function textoCota(marca) {
-  if (TIEMPO[marca.unidad]) return `${marca.op} ${marca.valor * TIEMPO[marca.unidad]} ms`;
+  if (TIEMPO[marca.unidad]) return `${marca.op} ${enMs(marca.valor, marca.unidad)} ms`;
   return `${marca.op} ${marca.valor}${marca.unidad ? ` ${marca.unidad}` : ''}`;
 }
 
 function textoMedido(medida) {
-  if (TIEMPO[medida.unit]) return `${medida.value * TIEMPO[medida.unit]} ms`;
+  if (TIEMPO[medida.unit]) return `${enMs(medida.value, medida.unit)} ms`;
   return `${medida.value}${medida.unit ? ` ${medida.unit}` : ''}`;
 }
 
@@ -151,7 +167,7 @@ function campos(t0, t1, salida) {
   return { fragmento: frag, avisos };
 }
 
-module.exports = { duracion, leerRenglones, marcas, comparar, textoCota, textoMedido, campos, TIEMPO, TOPE_NOMBRES };
+module.exports = { duracion, leerRenglones, marcas, comparar, enMs, textoCota, textoMedido, campos, TIEMPO, TOPE_NOMBRES };
 
 if (require.main === module) {
   const [orden, ...resto] = process.argv.slice(2);

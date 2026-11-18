@@ -68,7 +68,7 @@ function entorno({ decl = [] } = {}) {
     ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0', TYCON_HOME: '',
     TYCON_TIME_TRACKING: 'none', TYCON_MUTATION_CHECK: 'off', TYCON_WAIT_NOTICE: '',
   });
-  const correr = (script, args, sid) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], {
+  const correr = (script, args, sid, antes = []) => spawnSync(process.execPath, [...antes, path.join(SCRIPTS, script), ...args], {
     encoding: 'utf8', env: env(sid), input: '', cwd: repo,
   });
   const dir = () => [path.join(home, '.tycon', 'state'), path.join(home, '.claude', '.tycon-pipeline')].find((d) => fs.existsSync(path.join(d, 'active')));
@@ -128,19 +128,25 @@ test('MatrixRed_NamesOutOfBoundAndUnmeasured @story-8.260 @ac-24', () => {
   const p = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-cota');
   assert.match(p.stderr, MATRIZ_ROJA, p.stderr);
   assert.ok(NOMBRA(p.stderr), p.stderr);
-  // el control del commit, al pasar la historia a review. Sin más, frena antes, por la cobertura de cierre (el criterio
-  // fuera de cota no cuenta por su humo); con un `-cierre.md` que nombra todo, la que frena es la matriz, y lo dice
+  // el control del commit, al pasar la historia a review
   const dod = path.join(E.repo, '.advisors', 'dod-runtime');
   LEDGER.append({ dodDir: dod, gatesLog: E.gatesLog(), story: '9.9', acs: [3] });
-  fs.writeFileSync(path.join(dod, '9.9-cierre.md'), '# Cierre 9.9\n- AC #1 verificado\n- AC #2 verificado\n- AC #3 verificado\n');
   fs.writeFileSync(E.story, historia({ status: 'review' }));
   E.git('add', E.story);
   const env = { ...process.env, HOME: E.home, USERPROFILE: E.home, CLAUDE_CODE_SESSION_ID: 's-cota', TYCON_CLOSURE_RECORD: 'off', TYCON_ADVISORS_GATE: 'off' };
   delete env.TYCON_HOME; delete env.NODE_TEST_CONTEXT; delete env.TYCON_WAIVER_LOG;
-  const c = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-pre-commit.js')], {
+  const commitear = () => spawnSync(process.execPath, [path.join(SCRIPTS, 'on-pre-commit.js')], {
     cwd: E.repo, env, encoding: 'utf8',
     input: JSON.stringify({ session_id: 's-cota', cwd: E.repo, tool_name: 'Bash', tool_input: { command: 'git commit -m "story 9.9"' } }),
   });
+  // frena primero la cobertura de cierre (el criterio fuera de cota no cuenta por su humo), y ya dice lo medido
+  const antes = commitear();
+  assert.strictEqual(antes.status, 2, antes.stderr);
+  assert.match(antes.stderr, /Criterios sin evidencia/, antes.stderr);
+  assert.ok(NOMBRA(antes.stderr), antes.stderr);
+  // con un `-cierre.md` que nombra todo, la que frena es la matriz, y lo dice
+  fs.writeFileSync(path.join(dod, '9.9-cierre.md'), '# Cierre 9.9\n- AC #1 verificado\n- AC #2 verificado\n- AC #3 verificado\n');
+  const c = commitear();
   assert.strictEqual(c.status, 2, c.stderr);
   assert.match(c.stderr, /matriz de verificación runtime ROJA/, c.stderr);
   assert.ok(NOMBRA(c.stderr), c.stderr);
@@ -180,7 +186,22 @@ test('RuntimeWaiver_TerminalPrompt_ShowsMeasured @story-8.260 @ac-25', () => {
   assert.match(con, /Lo medido: medido 3010 ms; la cota es < 2000 ms[\s\S]*¿Aprobás saltar/);
   const sin = wd.preguntaDeTerminal({ ac: 1, texto: 'algo', reason: 'x', cov: 'T1', medida: null });
   assert.doesNotMatch(sin, /Lo medido/);
-  // y marker.js la usa (no arma la suya)
-  const marker = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
-  assert.match(marker, /preguntaDeTerminal\(/);
+  // y el comando la muestra: corre con la terminal reemplazada, que contesta «no» a todo, así que no se firma nada
+  const E = entorno({ decl: DECL1 });
+  E.arrancar('s-tty');
+  E.humos();
+  E.pruebasVerdes();
+  LEDGER.append({ dodDir: path.join(E.repo, '.advisors', 'dod-runtime'), gatesLog: E.gatesLog(), story: '9.9', acs: [3] });
+  const visto = path.join(E.home, 'terminal.txt');
+  const terminal = path.join(E.home, 'terminal-de-juguete.js');
+  fs.writeFileSync(terminal, [
+    `const W = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'runtime-waiver.js'))});`,
+    'W.esWindows = () => false;',
+    'W.hasTty = () => true;',
+    `W.promptTty = (t) => { require('fs').appendFileSync(${JSON.stringify(visto)}, t + '\\n'); return 'no'; };`,
+  ].join('\n'));
+  const r = E.correr('marker.js', ['runtime-waiver', E.story, '--terminal'], 's-tty', ['-r', terminal]);
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.match(fs.readFileSync(visto, 'utf8'), /Lo medido: medido 3010 ms; la cota es < 2000 ms[\s\S]*¿Aprobás saltar/);
+  assert.match(r.stderr, /sin waiver/, r.stderr);
 });

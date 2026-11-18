@@ -402,3 +402,10 @@ test('ComparePrevious_MeasureValuesNormalized @story-8.260 @ac-18', () => {
   assert.notStrictEqual(n('TYCON_MEASURE p95=180ms\n'), n('TYCON_MEASURE p99=180ms\n'));
   assert.strictEqual(n('TYCON_MEASURE p95=175 ms\n'), n('TYCON_MEASURE p95=180ms\n'));
 });
+
+test('ComparePrevious_MeasureAnySpacing @story-8.260 @ac-18', () => {
+  const n = (t) => cp().normalizar(t, {});
+  for (const sep of ['  ', '\t']) {
+    assert.strictEqual(n(`TYCON_MEASURE${sep}p95=180ms\n`), n(`TYCON_MEASURE${sep}p95=210ms\n`), JSON.stringify(sep));
+  }
+});

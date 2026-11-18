@@ -914,8 +914,16 @@ function juzgarMedida(textoCrudo, humos) {
     const juicio = (e) => ({ e, v: valorDe(e), c: smokeMeasures.comparar(valorDe(e), marca) });
     const malo = (j) => j.c.sinMedicion !== undefined || j.c.cumple === false;
     const nuevo = Math.max(...con.map((e) => e.tsMs));
-    const delSello = con.filter((e) => e.tsMs === nuevo).map(juicio);
-    const decide = delSello.find((j) => j.c.sinMedicion !== undefined) || delSello.find(malo) || delSello[0];
+    // Con el mismo sello decide el peor, y el orden de los renglones no cuenta: primero el que no se puede comparar,
+    // después el que no cumple, y entre iguales el más lejos de la cota; el entorno sólo desempata.
+    const enBase = (j) => (smokeMeasures.TIEMPO[j.v.unit] ? smokeMeasures.enMs(j.v.value, j.v.unit) : j.v.value);
+    const haciaArriba = marca.op === '<' || marca.op === '<=';
+    const gravedad = (j) => (j.c.sinMedicion !== undefined ? 2 : j.c.cumple === false ? 1 : 0);
+    const delSello = con.filter((e) => e.tsMs === nuevo).map(juicio).sort((a, b) => gravedad(b) - gravedad(a)
+      || String(a.c.sinMedicion || '').localeCompare(String(b.c.sinMedicion || ''))
+      || (haciaArriba ? enBase(b) - enBase(a) : enBase(a) - enBase(b))
+      || JSON.stringify(a.e.env || null).localeCompare(JSON.stringify(b.e.env || null)));
+    const decide = delSello[0];
     const fuera = con.map(juicio).filter(malo).length;
     const res = { ...base, medido: decide.v.value, unidad: decide.v.unit, medidoTexto: smokeMeasures.textoMedido(decide.v),
       humo: decide.e.ts, ...(decide.e.env ? { entorno: decide.e.env } : {}),

@@ -1778,6 +1778,8 @@ function main() {
         evidencePath: evidence.path,
         evidenceEsRegistro: !!evidence.esRegistro,
         fuentes: fuentesBuscadas(calc),
+        // un criterio con cota fuera de la cota o sin medición sí corrió: se dice lo medido, no sólo «sin evidencia»
+        medidas: calc.matrix ? calc.rm.lineasDeMedida(calc.matrix) : [],
       });
       continue;
     }
@@ -2015,6 +2017,7 @@ function main() {
       const fu = v.fuentes || {};
       const nada = (xs) => !xs || xs.length === 0;
       lines.push(`     Criterios sin evidencia: ${v.missingAcs.join(', ')}`);
+      for (const l of (v.medidas || [])) lines.push(`     ${l}`);
       lines.push('     Se buscaron en:');
       lines.push(`       · el informe elegido: ${v.evidencePath}${v.evidenceEsRegistro ? ' (es el registro de pruebas de humo: sus criterios se cuentan por la fuente 1, no por el texto)' : ''}`);
       if (fu.error) {
