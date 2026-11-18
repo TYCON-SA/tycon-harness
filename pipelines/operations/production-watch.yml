@@ -78,6 +78,18 @@ parameters:
     displayName: 'Entradas a main sin su CI — compilaciones que exige la rama principal (números, separados por coma)'
     type: string
     default: ''
+  # El inventario de adopción del portón de CI (scripts/nightly/gate-adoption/gate-adoption.js): en qué repos la rama
+  # principal lo exige. Vacíos, el paso no corre. Azure DevOps: los proyectos de la organización, separados por coma;
+  # GitHub: la organización, y la variable secreta GH_TOKEN en la definición, con lectura sobre los repos privados (sin
+  # ella la línea sale «?»).
+  - name: gateAdoptionAzureProjects
+    displayName: 'Portón de CI por repo — proyectos de Azure DevOps (separados por coma; vacío: no se mide)'
+    type: string
+    default: ''
+  - name: gateAdoptionGithubOrg
+    displayName: 'Portón de CI por repo — organización de GitHub (vacío: no se mide)'
+    type: string
+    default: ''
 
 resources:
   repositories:
@@ -227,6 +239,41 @@ jobs:
             MAIN_AZ_REPO: ${{ parameters.mainEntriesAzureRepo }}
             MAIN_AZ_BUILDS: ${{ parameters.mainEntriesRequiredBuilds }}
 
+      - ${{ if or(ne(parameters.gateAdoptionAzureProjects, ''), ne(parameters.gateAdoptionGithubOrg, '')) }}:
+        - script: |
+            # En qué repos la rama principal exige el portón de CI: sólo LEE, y deja la línea que el resumen pega al final.
+            # Un repo que no se pudo medir sale «no medido», nunca «sin portón»; si la lista de repos no se leyó entera, la
+            # línea sale «?». En los dos casos el paso queda naranja y el resumen se entrega igual.
+            set -uo pipefail
+            # Una variable que no está en la definición NO llega vacía: Azure deja el literal `$(NOMBRE)`. Se trata como ausente.
+            case "${GH_TOKEN:-}" in *'$('*) unset GH_TOKEN ;; esac
+            OUT="$(Agent.TempDirectory)/gate-adoption.txt"
+            : > "$OUT"
+            FALLO=0
+            LINEAS=()
+            if [ -n "${GATE_AZ_PROJECTS}" ]; then
+              node scripts/nightly/gate-adoption/gate-adoption.js azure --org "$(System.CollectionUri)" --project "${GATE_AZ_PROJECTS}" --out "$OUT.azure" || FALLO=1
+              LINEAS+=("$OUT.azure")
+            fi
+            if [ -n "${GATE_GH_ORG}" ]; then
+              node scripts/nightly/gate-adoption/gate-adoption.js github --org "${GATE_GH_ORG}" --out "$OUT.github" || FALLO=1
+              LINEAS+=("$OUT.github")
+            fi
+            # Una sola línea para el resumen: la suma de las plataformas medidas. Si a una le falta su línea (el guion se
+            # cayó antes de escribirla) o salió «?», la suma sale «?»: una plataforma sin medir no se cuenta como cero.
+            node scripts/nightly/gate-adoption/gate-adoption.js juntar --out "$OUT" "${LINEAS[@]}" || FALLO=1
+            if [ "$FALLO" != 0 ]; then
+              echo "##vso[task.logissue type=warning]El portón de CI por repo no se pudo medir del todo: el resumen lo va a decir."
+              exit 1
+            fi
+          displayName: 'Medir dónde se exige el portón de CI'
+          continueOnError: true
+          env:
+            AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+            GH_TOKEN: $(GH_TOKEN)
+            GATE_AZ_PROJECTS: ${{ parameters.gateAdoptionAzureProjects }}
+            GATE_GH_ORG: ${{ parameters.gateAdoptionGithubOrg }}
+
       # El perfil de la organización, para los canales del resumen y del aviso, y si su team-repos.json es el de operaciones
       # (la noche lee el de operaciones; las máquinas, el del perfil). Si difieren, o si el perfil no se pudo leer, la
       # corrida queda naranja (nunca roja) y lo dice; sin perfil, el aviso sale por el canal de operations.json → notify.
@@ -276,6 +323,11 @@ jobs:
             [ -s "$MAIN_TXT" ] || echo "Main sin su CI (72 h): GitHub ? · Azure ? · reglas ?" > "$MAIN_TXT"
             EX+=(--extra "$MAIN_TXT")
           fi
+          if [ "${GATE_ADOPTION_ON:-}" = "True" ]; then
+            GATE_TXT="$(Agent.TempDirectory)/gate-adoption.txt"
+            [ -s "$GATE_TXT" ] || echo "Portón de CI (repos): ?" > "$GATE_TXT"
+            EX+=(--extra "$GATE_TXT")
+          fi
           ERR=$(mktemp)
           node scripts/nightly/dependencies/daily-summary.js deliver --source vigilante --today "$HOY" ${PF[@]+"${PF[@]}"} ${EX[@]+"${EX[@]}"} \
             --operations "$(Build.SourcesDirectory)/operations.json" \
@@ -303,6 +355,8 @@ jobs:
           CLONE_TOKEN: $(System.AccessToken)
           # True si el paso de las entradas a main está configurado: su línea va al resumen aunque el paso no la escriba
           MAIN_ENTRIES_ON: ${{ or(ne(parameters.mainEntriesGithubRepo, ''), ne(parameters.mainEntriesAzureRepo, '')) }}
+          # Lo mismo para el portón de CI por repo
+          GATE_ADOPTION_ON: ${{ or(ne(parameters.gateAdoptionAzureProjects, ''), ne(parameters.gateAdoptionGithubOrg, '')) }}
 
       - script: |
           set -eu
