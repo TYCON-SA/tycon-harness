@@ -462,8 +462,10 @@ PY
     #   scripts/hooks/guard-auto-update.js — la actualización del freno de producción sin contraseña, al arrancar
     #   tycon-pipeline/scripts/reviewer-launch-gate.js — un revisor no sale antes que el pase adversarial que le toca
     #   tycon-pipeline/scripts/on-advisor-done.js — anota los críticos de un revisor apenas termina
+    #   scripts/hooks/session-collision-guard.js — el aviso de llegada de otra sesión viva, que ahora va siempre
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
+      scripts/hooks/session-collision-guard.js
       scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
       scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js=3 scripts/hooks/guard-update-notice.js
       scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js=2
