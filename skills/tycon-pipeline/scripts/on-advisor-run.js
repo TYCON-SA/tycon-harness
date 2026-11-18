@@ -269,6 +269,12 @@ function recordLaunch(o) {
   // la corrida, por el nombre de su carpeta (como la anota Codex): el cierre cruza sólo lo de su corrida, y una
   // ayudante que comparte el marcador escribe la misma. Sin marcador o sin carpeta, null
   const run = runDeLaSesion(sessionId, story);
+  // Un revisor sin repo o sin historia no se ata a ninguna corrida: su propio renglón dice por qué, en vez de salir callado.
+  // Va en el mismo renglón y no en uno aparte, para que el registro siga teniendo un renglón por lanzamiento
+  const { esRevisor } = require('./lib/late-snapshot.js');
+  const sinCorrida = esRevisor(advisor) && (!repo || !story)
+    ? (!repo ? 'sin repo: no hay marcador ni repo git en la carpeta' : 'sin historia: la sesión no tiene una corrida abierta')
+    : null;
   let lineError = null;
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -279,6 +285,7 @@ function recordLaunch(o) {
         ...(o.extra || {}),
         ...(retro && retro.repo ? { retro_repo: retro.repo } : {}),
         ...(retro && retro.sha ? { retro_sha: retro.sha } : {}),
+        ...(sinCorrida ? { sin_corrida: sinCorrida } : {}),
       }) + '\n',
       'utf8',
     );
@@ -308,16 +315,12 @@ function recordLaunch(o) {
     }
   }
 
-  // ── El lanzamiento de un revisor sin corrida no sale callado, y el de uno de la corrida anota su hora ──────────────
-  // Sin repo o sin historia el lanzamiento no se ata a ninguna corrida: queda un renglón con el motivo en el registro de la
-  // sesión. Con corrida, el revisor que figura en el `expected` de alguna vuelta de ella (los `step5-start` desde el último
-  // `run-start`) anota en el marcador `ultimoRevisorTs`: «Preparar» se repite sólo si alguno se lanzó después de su cierre
+  // ── El lanzamiento de un revisor de la corrida anota su hora ───────────────────────────────────────────────────────
+  // El revisor que figura en el `expected` de alguna vuelta de la corrida (los `step5-start` desde el último `run-start`)
+  // anota en el marcador `ultimoRevisorTs`: «Preparar» se repite sólo si alguno se lanzó después de su cierre
   // (lib/steps.js prepareCommitStale). Un agente que no está en ninguna vuelta (exploración, otra etapa) no la mueve.
   try {
-    const { esRevisor } = require('./lib/late-snapshot.js');
-    if (esRevisor(advisor) && (!repo || !story)) {
-      fs.appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: 'launch-unbound', advisor, motivo: !repo ? 'sin repo: no hay marcador ni repo git en la carpeta' : 'sin historia: la sesión no tiene una corrida abierta' }) + '\n', 'utf8');
-    } else if (esRevisor(advisor)) {
+    if (esRevisor(advisor) && !sinCorrida) {
       const parsed = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
       let desde = 0;
       parsed.forEach((d, i) => { if (d && d.event === 'run-start') desde = i + 1; });

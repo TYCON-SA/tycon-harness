@@ -525,8 +525,9 @@ test('T8 AdvisorRun_WithoutRun_LogsWhy @story-8.288 @ac-10', () => {
   lanzar(repo, 'Explore');
   const estado = require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(home);
   const lineas = fs.readFileSync(path.join(estado, 'advisor-runs', 's-unbound.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  const sueltos = lineas.filter((l) => l.event === 'launch-unbound');
-  assert.deepEqual(sueltos.map((l) => l.advisor).sort(), ['tycon-plugin-security-basics', 'tycon-silent-failure-hunter'], 'los dos revisores sin corrida dejan su renglón; la exploración no');
-  assert.match(sueltos.find((l) => l.advisor === 'tycon-plugin-security-basics').motivo, /sin repo/);
-  assert.match(sueltos.find((l) => l.advisor === 'tycon-silent-failure-hunter').motivo, /sin historia/);
+  assert.equal(lineas.length, 3, 'un renglón por lanzamiento: el motivo no agrega otro');
+  const sueltos = lineas.filter((l) => l.sin_corrida);
+  assert.deepEqual(sueltos.map((l) => l.advisor).sort(), ['tycon-plugin-security-basics', 'tycon-silent-failure-hunter'], 'los dos revisores sin corrida dicen por qué; la exploración no');
+  assert.match(sueltos.find((l) => l.advisor === 'tycon-plugin-security-basics').sin_corrida, /sin repo/);
+  assert.match(sueltos.find((l) => l.advisor === 'tycon-silent-failure-hunter').sin_corrida, /sin historia/);
 });
