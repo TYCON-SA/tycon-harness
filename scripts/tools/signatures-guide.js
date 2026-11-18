@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * signatures-guide.js — las tablas de guides/firmas-del-arnes.md salen del catálogo de firmas.
+ * signatures-guide.js — las tablas de guides/owner-signatures.md salen del catálogo de firmas.
  *
  * La guía es prosa escrita a mano con tres tablas generadas de scripts/lib/signatures.js: los niveles (LEVELS), las
  * firmas que se piden hoy (SIGNATURES) y los grupos (GROUPS). Cada tabla va entre `<!-- generado: <nombre> -->`
@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const cat = require('../lib/signatures.js');
 
-const GUIA = path.resolve(__dirname, '..', '..', 'guides', 'firmas-del-arnes.md');
+const GUIA = path.resolve(__dirname, '..', '..', 'guides', 'owner-signatures.md');
 
 const OTRA_SESION = { yes: 'sí', no: 'no, en la pestaña de esa sesión', pending: 'todavía sin comando' };
 const otraSesion = (s) => (cat.ONLY_IN_TERMINAL.includes(s.id) ? 'no, sólo en tu terminal' : OTRA_SESION[s.otherSession]);

@@ -29,7 +29,7 @@
  * Ninguna frase, opción ni variable saltea la ventana. El texto nombra la forma (`git push`, `… pr create`…) y el repo,
  * nunca el comando: un comando puede traer una credencial.
  *
- * Lo que no ve (lo dice guides/firmas-del-arnes.md): un guion o un programa que guarda sin nombrar git en el comando
+ * Lo que no ve (lo dice guides/owner-signatures.md): un guion o un programa que guarda sin nombrar git en el comando
  * (un archivo de guion corrido por su nombre, un programa que lee el comando de un archivo), los alias propios del
  * programa de la plataforma, los comandos de pedido que no lo crean ni lo mergean (la API, marcarlo listo, cambiarlo),
  * y los commits que hacen `merge`, `cherry-pick`, `revert`, `am` o `commit-tree`.

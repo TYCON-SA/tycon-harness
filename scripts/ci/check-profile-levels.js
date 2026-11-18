@@ -55,7 +55,7 @@ function main(argv) {
   for (const r of rejected) {
     console.error(`  ${r.id}: nivel ${r.level}${r.via === r.id ? '' : ` (la trae el grupo «${r.via}»)`}`);
   }
-  console.error('Sacalas de approvals.delegated_signing: una excepción o algo irreversible lo firma una persona (guides/firmas-del-arnes.md).');
+  console.error('Sacalas de approvals.delegated_signing: una excepción o algo irreversible lo firma una persona (guides/owner-signatures.md).');
   return 1;
 }
 

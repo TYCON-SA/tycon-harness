@@ -792,7 +792,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   (sin click, la frase de antes queda de respaldo). Se retira con `marker.js withdraw-relay`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
-  Debajo está **quién firma cada cosa**: una fila por cada firma del catálogo (`guides/firmas-del-arnes.md`), con tres
+  Debajo está **quién firma cada cosa**: una fila por cada firma del catálogo (`guides/owner-signatures.md`), con tres
   opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso; donde la ventana no
   llega, aprueba con un click en el cuadro de opciones o un «aprobado» escrito; o firma en su terminal.
   «Delegada a la coordinadora» (`approvals.delegated_signing`) deja que esa sesión la firme en nombre del dueño, y su
@@ -804,7 +804,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   la lista de abajo (`approvals.delegated_machines`), nombradas por su huella: las que el buzón de ejecuciones vio se
   agregan con un botón, y otra escribiendo su huella. De fábrica, en ninguna. Todo vale sólo desde acá, nunca desde
   una máquina.
-  Más abajo está **el nivel de cada firma**: una fila por cada firma de la tabla de niveles (`guides/firmas-del-arnes.md`,
+  Más abajo está **el nivel de cada firma**: una fila por cada firma de la tabla de niveles (`guides/owner-signatures.md`,
   «Los niveles»), con su nivel de fábrica: 1 rutina, 2 excepción, 3 irreversible. El selector empieza en ese nivel, así
   que la organización puede subirlo y nunca bajarlo (`approvals.levels`). Rige el mayor entre la tabla y el perfil.
   La coordinadora firma sola sólo la rutina: una firma que queda en 2 o más no se ofrece para delegar. Si estaba
@@ -817,7 +817,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   fondo), con un click o un «aprobado». Sin nadie que conteste, todo lo
   que no está delegado espera: el sistema no mira la hora, pide la firma igual y, si nadie contesta, la sesión queda
   frenada en ese paso. Con Codex, que no tiene ventana, todo se firma en la terminal. La matriz completa
-  está en `guides/firmas-del-arnes.md`, «Quién firma cada nivel».
+  está en `guides/owner-signatures.md`, «Quién firma cada nivel».
 
   El commit y el empuje de la rama de trabajo los hace el agente sin preguntar: la persona aprueba el pull request, y
   cada empuje a una rama compartida, en la ventana de permiso.
@@ -838,7 +838,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   \* Sólo si esa firma está en «Delegada a la coordinadora» y tu máquina está en «En qué máquinas vale lo delegado»;
   si no, es igual que sin coordinadora. \*\* La revisión automática del plan la lanza la coordinadora o, sin ella, la
   propia sesión, y aprueba un plan de rutina sólo si dice «aprobado» (salvo que la organización pida el click: la opción
-  O4, `plan_review.routine_approval: person`); el de una story delicada lo aprueba siempre el dev. Por qué cada rutina es rutina, y las notas, en `guides/firmas-del-arnes.md`.
+  O4, `plan_review.routine_approval: person`); el de una story delicada lo aprueba siempre el dev. Por qué cada rutina es rutina, y las notas, en `guides/owner-signatures.md`.
 
   **Dónde se configura**, todo en esta sección:
   - **A · si hay coordinadora**: «¿Quién pasa la autorización para saltarse un control grave?», con «¿Cómo la llaman?»
@@ -849,7 +849,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   - **En cada máquina**, la designación: el dueño se lo pide a la sesión elegida, la sesión corre
     `marker.js designate-relay` y el dueño hace click en su cuadro; ese click la nombra y la confirma para firmar lo
     delegado. Con la frase de respaldo, además corre `node scripts/lib/delegated-signing.js confirm-designation` y el
-    dueño lo aprueba con un click, o en su terminal (ver `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Se la reconoce por su
+    dueño lo aprueba con un click, o en su terminal (ver `guides/owner-signatures.md`, «Aprobar en nombre del dueño»). Se la reconoce por su
     conversación, sigue valiendo si se reinicia, y hay que repetirla tras un chat nuevo o un `/clear`. Si nadie la
     designó, nadie confirmó la designación, o la sesión está cerrada, no hay coordinadora: todo le llega al dev.
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
@@ -886,7 +886,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   organización tenga prendida «Los cambios de un mantenedor»: abre el pedido y lo aprueba una persona que no sea quien lo
   propone. Si la rama principal del repo del perfil no exige un revisor así, «Proponer» queda apagado y dice por qué.
   Ni la máquina ni una variable cambian los topes. Queda en `team-profile.json` → `short_path.coordinator_max_files` y
-  `short_path.max_files`; quién firma qué, en `guides/firmas-del-arnes.md`.
+  `short_path.max_files`; quién firma qué, en `guides/owner-signatures.md`.
 - **La oficina de /office**: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que la oficina diga
   «sin novedades desde las HH:MM» (de 1 a 1440; sin valor, 15). Lo mide la página con su propio reloj, sin preguntarle
   nada a la máquina; una sesión en un paso largo sigue viva y sólo se marca callada. Queda en `team-profile.json` →

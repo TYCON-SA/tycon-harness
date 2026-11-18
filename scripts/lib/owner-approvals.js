@@ -30,7 +30,7 @@
  *
  * La parte de acá no depende de la herramienta salvo las funciones de Claude Code (la transcripción, las capas, el
  * árbol de procesos). En Codex no vale el click ni un mensaje: su conversación no distingue lo que tipeó la persona de
- * lo que mete un programa (guides/firmas-del-arnes.md §«En Codex»). Ahí la constancia es la firma en la terminal
+ * lo que mete un programa (guides/owner-signatures.md §«En Codex»). Ahí la constancia es la firma en la terminal
  * (harness-sign.js `acknowledge`): un renglón `plataforma: 'codex'`, `via: 'terminal'`, y una marca aparte que tiene que
  * coincidir. La acepta sólo quien la pide con `plataformas` que incluye `'codex'`; las firmas de hoy no.
  */

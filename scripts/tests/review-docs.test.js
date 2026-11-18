@@ -47,7 +47,7 @@ function deFabrica(clave) {
 }
 
 test('ReviewDocs_FirmasDelArnesDiceLaMatrizDelPlan (T39) @story-8.221 @ac-29', () => {
-  const g = leer('guides/firmas-del-arnes.md');
+  const g = leer('guides/owner-signatures.md');
   const nota = g.split('\n').filter((l) => l.startsWith('- \\*\\*') || l.startsWith('  ')).join('\n');
   for (const salida of [/\*\*aprobado\*\*/, /\*\*rechazado\*\*/, /\*\*sin veredicto\*\*/]) assert.match(nota, salida);
   assert.match(g, /plan_review/);

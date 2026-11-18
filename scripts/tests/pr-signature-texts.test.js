@@ -50,7 +50,7 @@ const GUIAS_ES = [
   'skills/tycon-pipeline/SKILL.md',
   'README.es.md',
   'INDEX.md',
-  'guides/firmas-del-arnes.md',
+  'guides/owner-signatures.md',
   'guides/git-commit-conventions.md',
   'guides/what-the-harness-does.md',
   'guides/coordination.md',

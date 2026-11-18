@@ -198,7 +198,7 @@ if tope_alcanza "$TOPE_K" "$RELOJ_K" && ! tope_alcanza 10 7; then ok "T33k · el
 else no "T33k · el tope del hook («${TOPE_K}» s) no llega al doble del reloj del lanzador («${RELOJ_K}» s)"; fi
 
 # T33q · la guía dice qué pasa cuando el freno no contesta a tiempo, y el límite que el arnés no puede cerrar.
-GUIA_Q="$AQUI/guides/produccion-con-permiso.md"
+GUIA_Q="$AQUI/guides/production-with-permission.md"
 if grep -q "no contesta a tiempo" "$GUIA_Q" && grep -qi "frena" "$GUIA_Q" && grep -qi "reinstal" "$GUIA_Q" \
    && grep -q "30 s" "$GUIA_Q" && grep -q "Claude Code" "$GUIA_Q"; then ok "T33q · la guía dice qué pasa cuando el freno no contesta a tiempo y el límite de los 30 s"
 else no "T33q · la guía no explica qué pasa cuando el freno no contesta a tiempo (o le falta el límite de los 30 s)"; fi

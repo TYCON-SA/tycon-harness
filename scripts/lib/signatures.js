@@ -3,7 +3,7 @@
  * signatures.js — el catálogo de las firmas del dueño (@story-8.139).
  *
  * Una entrada por cada cosa que un freno le pide firmar a una persona. Lo leen el lector de la configuración (con qué
- * ids se escriben `approvals.delegated_signing` y `approvals.owner_only`) y la guía `guides/firmas-del-arnes.md`, que
+ * ids se escriben `approvals.delegated_signing` y `approvals.owner_only`) y la guía `guides/owner-signatures.md`, que
  * trae una fila por entrada. Sin dependencias: lo carga el lector.
  *
  * Cada entrada:

@@ -1363,8 +1363,8 @@
   }
  },
  "guide": {
-  "__doc": "T26: las frases del AC 18 en guides/produccion-con-permiso.md",
-  "file": "guides/produccion-con-permiso.md",
+  "__doc": "T26: las frases del AC 18 en guides/production-with-permission.md",
+  "file": "guides/production-with-permission.md",
   "phrases": [
    "no sabe qué grupo contiene qué",
    "az group delete",

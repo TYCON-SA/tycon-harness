@@ -4187,7 +4187,7 @@ test('OwnerWindow_WatcherOtherShapes_StillBlocks @story-8.270 @ac-14 @ac-15 @ac-
 });
 
 test('Guide_DelegatedSign_NamesReadOnlyWatchers @story-8.270 @ac-17 — la guía de las firmas nombra el vigilante y por qué lo demás frena', () => {
-  const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
+  const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'owner-signatures.md'), 'utf8');
   const inicio = guia.indexOf('## Aprobar en nombre del dueño');
   assert.ok(inicio >= 0, 'falta la sección de la firma por delegación');
   const seccion = guia.slice(inicio, guia.indexOf('\n## ', inicio + 5));

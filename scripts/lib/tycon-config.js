@@ -1043,7 +1043,7 @@ function soloRutinaDelegada(plano, datos, archivo, ignoradas, seccion) {
   }
   if (!salen.length) return;
   plano['approvals.delegated_signing'] = quedan.length ? quedan : 'off';
-  ignoradas.push({ archivo, clave: `${seccion}.delegated_signing`, motivo: `${salen.map((x) => `${x.id} (nivel ${x.n})`).join(', ')} no se delega: la coordinadora firma sola sólo la rutina (nivel 1); una excepción o algo irreversible lo firma una persona (guides/firmas-del-arnes.md)` });
+  ignoradas.push({ archivo, clave: `${seccion}.delegated_signing`, motivo: `${salen.map((x) => `${x.id} (nivel ${x.n})`).join(', ')} no se delega: la coordinadora firma sola sólo la rutina (nivel 1); una excepción o algo irreversible lo firma una persona (guides/owner-signatures.md)` });
 }
 
 /** null si el valor es del tipo; si no, el motivo. */
@@ -1106,20 +1106,20 @@ function validarTipo(tipo, valor) {
       // las firmas del catálogo (signatures.js): `firmas` acepta además los nombres de grupo y `off`; `firmas-ids`, sólo ids
       const cat = catalogoDeFirmas();
       if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
-      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids()], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
-      if (!Array.isArray(valor) || !valor.length) return `tiene que ser una lista no vacía de ids de firma (guides/firmas-del-arnes.md), no ${JSON.stringify(valor)}`;
+      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids()], valor, 'un id de firma de guides/owner-signatures.md, un grupo, u «off»');
+      if (!Array.isArray(valor) || !valor.length) return `tiene que ser una lista no vacía de ids de firma (guides/owner-signatures.md), no ${JSON.stringify(valor)}`;
       const malo = valor.find((v) => typeof v !== 'string' || !cat.isId(v.trim()));
-      if (malo !== undefined) return `${JSON.stringify(malo)} no es un id de firma (guides/firmas-del-arnes.md; un grupo no vale acá)`;
+      if (malo !== undefined) return `${JSON.stringify(malo)} no es un id de firma (guides/owner-signatures.md; un grupo no vale acá)`;
       return new Set(valor.map((v) => v.trim())).size === valor.length ? null : `la lista repite una firma: ${JSON.stringify(valor)}`;
     }
     case 'niveles': {
       // un nivel por id de la tabla de niveles (signatures.js, LEVELS), entero de 1 a 3, nunca menor que el de la tabla
       const cat = catalogoDeFirmas();
       if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
-      if (!esObjeto(valor) || !Object.keys(valor).length) return `tiene que ser un objeto no vacío { "<id de firma>": <nivel> } (guides/firmas-del-arnes.md, «Los niveles»), no ${JSON.stringify(valor)}`;
+      if (!esObjeto(valor) || !Object.keys(valor).length) return `tiene que ser un objeto no vacío { "<id de firma>": <nivel> } (guides/owner-signatures.md, «Los niveles»), no ${JSON.stringify(valor)}`;
       for (const [id, n] of Object.entries(valor)) {
         const base = cat.effectiveLevel(id);
-        if (base === null) return `«${id}» no está en la tabla de niveles (guides/firmas-del-arnes.md, «Los niveles»)`;
+        if (base === null) return `«${id}» no está en la tabla de niveles (guides/owner-signatures.md, «Los niveles»)`;
         if (!Number.isInteger(n) || n < 1 || n > 3) return `el nivel de «${id}» tiene que ser un entero de 1 a 3, no ${JSON.stringify(n)}`;
         if (n < base) return `«${id}» es de nivel ${base} en la tabla: el perfil sólo puede subir un nivel, no bajarlo a ${n}`;
       }
