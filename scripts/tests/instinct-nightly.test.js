@@ -736,6 +736,9 @@ test('T2 4.14-Filter_WorktreeTempAndHarnessState @story-4.14 @ac-2 @ac-7 — car
   assert.strictEqual(N.motivoDeRuido({ repo: 'acme--wt-tres', summary: 'npm test' }), 'carpeta_de_trabajo', 'el repo también cuenta');
   const pasan = ['cat $HOME/acme/tmp/x.md', 'node build/var/folders.js'];
   for (const summary of pasan) assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), null, summary);
+  // el punto de .claude sigue siendo un punto: otra letra en su lugar no es la carpeta de Claude
+  assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary: 'ls acme/.claude/worktrees/dos/' }), 'carpeta_de_trabajo');
+  assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary: 'ls acme/xclaude/worktrees/dos/' }), null);
   const b = base('414-t2');
   // 25 de ruido no ocupan el tope de 20: lo que sirve se redacta igual
   const muchos = Array.from({ length: 25 }, (_, i) => ['acme/api', `cd /private/tmp/caso-${i}`]);

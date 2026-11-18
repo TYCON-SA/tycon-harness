@@ -87,7 +87,7 @@ let carpetasDeTrabajo = null;
 function patronesDeCarpeta() {
   if (carpetasDeTrabajo) return carpetasDeTrabajo;
   const { claudeDir } = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'));
-  const deClaude = path.basename(claudeDir()).replace(/\./g, '\\.');
+  const deClaude = path.basename(claudeDir()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   carpetasDeTrabajo = [
     /--wt-/i,
     new RegExp(`${INICIO_DE_SEGMENTO}${deClaude}[\\\\/]worktrees[\\\\/]`, 'i'),
