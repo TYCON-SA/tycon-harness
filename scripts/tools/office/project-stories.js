@@ -459,8 +459,8 @@ function runsOfThisMachine({ stateDir, now = Date.now(), problems = null }) {
   const out = [];
   const doubt = (what) => { if (problems) problems.push(what); };
   const take = (m) => { if (m && m.storyPath) out.push({ archivo: path.basename(String(m.storyPath)), sessionId: m.sessionId || null }); };
-  const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { doubt(`la corrida ${path.basename(f)} (${e.code || 'rota'})`); return null; } };
-  try { for (const f of fs.readdirSync(path.join(stateDir, 'active'))) if (f.endsWith('.json')) take(read(path.join(stateDir, 'active', f))); } catch (e) { if (e.code !== 'ENOENT') doubt(`las corridas de active/ (${e.code || e.message})`); }
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { doubt(`la ejecución ${path.basename(f)} (${e.code || 'rota'})`); return null; } };
+  try { for (const f of fs.readdirSync(path.join(stateDir, 'active'))) if (f.endsWith('.json')) take(read(path.join(stateDir, 'active', f))); } catch (e) { if (e.code !== 'ENOENT') doubt(`las ejecuciones de active/ (${e.code || e.message})`); }
   const hist = path.join(stateDir, 'timing-history');
   let names = [];
   try { names = fs.readdirSync(hist); } catch (e) { if (e.code !== 'ENOENT') doubt(`los cierres de timing-history/ (${e.code || e.message})`); }
