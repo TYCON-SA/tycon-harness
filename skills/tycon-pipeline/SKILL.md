@@ -1,11 +1,11 @@
 ---
 name: tycon-pipeline
-description: Orquesta el pipeline completo TYCON — valida la story con tycon-story-validator, invoca el skill BMAD apropiado (bmad-dev-story / bmad-agent-dev / bmad-agent-quick-flow-solo-dev) en plan mode, aprueba el plan con el usuario, ejecuta la implementación con build-gate, invoca los advisors en paralelo (set computado mecánicamente por `pipeline.js mech-check` + `pipeline.js advisors` — ver sección "Revisores: checklist" abajo), consolida los reportes, y prepara el commit sin ejecutarlo. Usar cuando el usuario pide "implementemos la story X", "implementar historia", "apply tycon pipeline" o equivalentes.
+description: Orquesta el pipeline completo TYCON — valida la story con tycon-story-validator, escribe el plan, lo aprueba con el usuario, ejecuta la implementación con build-gate, invoca los advisors en paralelo (set computado mecánicamente por `pipeline.js mech-check` + `pipeline.js advisors` — ver sección "Revisores: checklist" abajo), consolida los reportes, y prepara el commit sin ejecutarlo. Usar cuando el usuario pide "implementemos la story X", "implementar historia", "apply tycon pipeline" o equivalentes.
 ---
 
 # tycon-pipeline
 
-Orquesta el workflow TYCON completo: skills BMAD + advisors TYCON con checkpoints HITL. Este archivo tiene
+Orquesta el workflow TYCON completo: plan, código y advisors TYCON con checkpoints HITL. Este archivo tiene
 las REGLAS; el porqué de cada una (con su medición) vive en el archivo de su paso. Los guiones se corren con el comando
 entero, `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js <subcomando>` (igual `marker.js`; en
 Codex, `~/.codex/skills/…`): no se buscan.
@@ -246,7 +246,7 @@ PAUSA sin mutar ante conflicto cross-sesión, rama protegida o pipeline abandona
 `pipeline.js next` da el próximo (`step_name`: su nombre llano) y su archivo: leer SOLO ése. El orden:
 
 1 Arranque (`start`; opcionales: aviso de trabajo, pedido en ADO) · 2 Validar la historia (`validate-story`) ·
-3 Armar el plan (`plan`, BMAD) · 4 Aprobar el plan (`approve-plan`) · 5 Implementar (`implement`: pruebas primero,
+3 Armar el plan (`plan`) · 4 Aprobar el plan (`approve-plan`) · 5 Implementar (`implement`: pruebas primero,
 build-gate) · 6 Correr las pruebas (`run-tests`: `test-gate.sh <repo> <story_path>` —con la RUTA— suite completa una
 vez: 0 verde · ≠0 rojo · 3 sin medir · 4 FRENO sin deducir el proyecto: `test-gate.sh <repo> <story> <subdir>` · 5 falta el
 corredor · 6 salió 0 sin correr pruebas; después `pipeline.js dep-gate`) · 7 Revisores (`reviewers`; vuelta N si hubo
@@ -288,7 +288,7 @@ Kill-switches del dev: `TYCON_STORY_GATE=off` (apaga la edición, no la firma),
 
 ## Terminación y logging
 
-Termina en: CRITICAL al validar la story sin override, BMAD no puede implementar, user cancela al aprobar el
+Termina en: CRITICAL al validar la story sin override, story imposible de implementar, user cancela al aprobar el
 plan o en «Hallazgos», build roto sin continuar, o el commit preparado. Lo que no se pudo, antes `close-as-debt` («Implementar»); después, `marker.js clear`.
 
 Run dir `.advisors/pipeline-runs/<clave>-<sello>/` — lo da `pipeline.js run-dir --story <s> --repo <r> --create`,
@@ -301,7 +301,7 @@ DoD para `on-pre-commit.js`), `step-05b-adversarial.md`, `step-06-consolidated-r
 
 ## Anti-patterns
 
-Nunca `git commit`/`git push` sin aprobación explícita · no modifica skills BMAD · no saltea advisors a
+Nunca `git commit`/`git push` sin aprobación explícita · no modifica skills de terceros · no saltea advisors a
 pedido · no saltea checkpoints HITL que corresponden · no reemplaza el juicio del dev.
 
 Post-pipeline: la retro del merge la escribe `retro-heartbeat.js` en `/tycon-merge-to-main`; los aprendizajes

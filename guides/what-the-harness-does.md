@@ -376,7 +376,7 @@ Once pasos y un cierre aparte, con vos decidiendo en tres puntos:
 Arranque               → ¿sesión fresca? ¿repo limpio? ¿qué esfuerzo pide esta story?
                          arranca el reloj y la tarea pasa a Activa en Azure DevOps
 Validar la historia    → ¿está bien escrita? ¿los ACs son verificables?
-Armar el plan          → BMAD planifica la implementación
+Armar el plan          → la sesión escribe el plan de la implementación
 ⏸ Aprobar el plan      → vos, o la sesión coordinadora con riesgo normal
 Implementar            → con portón de build
 Correr las pruebas
