@@ -338,6 +338,19 @@ const COMMAND_HEAD = String.raw`(?:if|then|else|elif|do|while|until|time(?:\s+-[
 const POSICION_DE_COMANDO = new RegExp(String.raw`^\s*(?:${COMMAND_HEAD}\s+)*(?:${COMMAND_HEAD})?$`);
 const ABRE_CASE = /^\s*case\s+(?:"[^"]*"|'[^']*'|[^\s"'])+\s+in\s$/;
 const FUNCION = /\(\s*\)/y;                   // `f()`, `f ()`: definición de función (sticky: sin copiar el resto)
+// ¿`cur` termina en una palabra sin `=`, que podría ser el nombre de una función? Mira sólo esa palabra y con tope: se
+// pregunta en cada `(`, y recorrer todo lo acumulado cada vez hace que un renglón largo tarde más que el tope del gancho.
+const MAX_NOMBRE_DE_FUNCION = 256;
+function terminaEnNombre(cur) {
+  let fin = cur.length;
+  while (fin > 0 && /\s/.test(cur[fin - 1])) fin--;
+  let i = fin;
+  while (i > 0 && !/\s/.test(cur[i - 1])) {
+    if (cur[i - 1] === '=' || fin - i >= MAX_NOMBRE_DE_FUNCION) return false;
+    i--;
+  }
+  return i < fin;
+}
 // `>!`, `>>!`, `>>|`, `&>!`, `>&!`, `>>&`… son de zsh (pisar o agregar aunque esté `noclobber`): el destino es un archivo
 // (8.14 #4: leído como `>` con destino `!`, el archivo real quedaba como argumento del programa)
 const OPERADOR_REDIR = /&>>[|!]?|&>[|!]?|>>&[|!]?|<<<|<<-|<<|<>|<&|>>[|!]?|>&[|!]?|>[|!]?|</y;
@@ -453,7 +466,7 @@ function lex(texto, opciones) {
       if (procesal) { corte('('); pila.push({ k: 'sub', w: [], llaves: 0 }); continue; }
       // `()` es definición de función sólo detrás de un NOMBRE: `a=()` es un arreglo vacío, no una función (8.14)
       FUNCION.lastIndex = i;
-      const funcion = /(?:^|\s)[^\s=]+\s*$/.test(cur) ? FUNCION.exec(s) : null;
+      const funcion = terminaEnNombre(cur) ? FUNCION.exec(s) : null;
       if (funcion) { corte('('); i += funcion[0].length - 1; corte(')'); continue; }   // `f()`, `f ()`: definición
       if (POSICION_DE_COMANDO.test(cur)) { corte('('); pila.push({ k: 'sub', w: [], llaves: 0 }); continue; }
       // paréntesis de PALABRA: `a(b|c)`, `x(N)`, `a=(x y)`, `@(a|b)` — sólo si cierra; si no, es un carácter
