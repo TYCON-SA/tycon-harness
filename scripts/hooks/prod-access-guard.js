@@ -444,6 +444,40 @@ function decidir(entrada) {
     }
   }
 
+  // ── 1b. apretar el cuadro por programa ──────────────────────────────────────────────────────
+  // La puerta pide su aprobación en un cuadro del sistema; un `osascript` con System Events o `cliclick` lo podría
+  // contestar sin nadie delante. Esto frena lo que se ve: una aplicación con permiso de Accesibilidad que no pase por
+  // acá queda como límite escrito de la guía.
+  const guardados = escondidos.guardados || [];
+  if (automatizaLaPantalla([...ejecutados, ...guardados], tokens, PREFIJOS, segmentos)) {
+    frenar('ese comando aprieta botones o teclas de la pantalla (osascript con System Events, o cliclick): el cuadro de producción lo contesta una persona, no un programa.', [
+      'En una máquina con el freno de producción no se automatiza la pantalla desde el asistente.',
+      'Si lo necesitás para otra cosa, corrélo vos en tu terminal, fuera del asistente.',
+    ], { cmd }, 'produccion', { sinPuerta: true });
+  }
+
+  // ── 1c. los guiones guardados, `npm run` y `make` ─────────────────────────────────────────────
+  // Lo que el comando corre y ya vivía en el disco se mira sólo por lo DECLARADO en el índice de esta máquina (llaveros y
+  // hosts de producción) y por la puerta en posición de programa. Lo que no se pudo leer deja pasar y queda anotado.
+  for (const nm of escondidos.noMirados || []) {
+    try { registrar({ cmd }, { tipo: 'no-mirado', motivo: nm.motivo, ruta: nm.ruta }); } catch { /* el registro es ayuda, no evidencia */ }
+  }
+  const malo = guardadoQueFrena(guardados, tokens, PREFIJOS, segmentos, () => {
+    if (vencido()) frenar('el freno se quedó sin tiempo mirando lo que corre este comando, y eso nombra algo de bases.', [], { cmd });
+    let ind;
+    try { ind = require(require('path').join(__dirname, '..', 'production', 'production-index.js')).leer({ home: process.env.HOME }); } catch (e) {
+      frenar(`no pude leer el índice de servidores (${e.message}), y lo que corre este comando nombra algo de bases.`, [], { cmd });
+    }
+    if (ind.memoria_alterada) frenar('la memoria de producción fue tocada a mano (su huella no cierra), y lo que corre este comando nombra algo de bases.', [], { cmd });
+    return ind;
+  });
+  if (malo) {
+    frenar(`${malo.ruta} ${malo.que}, y este comando lo corre.`, [
+      'Un guion, un script de npm o una receta de make que toca producción no se corre desde el asistente:',
+      'la consulta va por la puerta, de a una sentencia, y la aprobás en el cuadro.',
+    ], { cmd, causa: malo.causa }, 'produccion');
+  }
+
   // ── 2. escrituras al catálogo o al índice (AC 9; story 8.14: leídas como las lee el shell) ────
   // Cada palabra se expande como la expandirían zsh y bash (llaves, rangos, formas de zsh, `$'…'`, variables y
   // arreglos del propio comando), se miran TODAS las redirecciones y la carpeta de trabajo, y se siguen los nombres
@@ -717,6 +751,13 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
   // contenido del archivo. Lo decide `heredocAlimentaShell` (2026-09-16); el destino de esa
   // redirección lo juzga `escrituraProtegida` sobre la línea del `<<`, que `sinHeredocs` conserva.
   let opaco = false;
+  // los guiones que ya vivían en el disco (y el texto de un `npm run` o de un `make`), y lo que no se pudo leer de ellos
+  const guardados = []; const noMirados = [];
+  const guardado = (ruta, porShell, carpeta) => {
+    const r = leerGuardado(ruta, carpeta);
+    if (r.noMirado) noMirados.push(r.noMirado);
+    else if (r.texto !== undefined) guardados.push({ ruta: r.ruta, texto: r.texto, shell: porShell });
+  };
   // `contenido`: el texto sólo se guarda en un archivo que este comando no ejecuta (`heredocSoloAArchivo`); no se lee
   // buscando servidores ni el Llavero
   const agregar = (t, shell, contenido = false, ps = false, codigo = false) => {
@@ -745,10 +786,25 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
       !shell && (Boolean(INTERPRETES[progH]) || CORRE_ARCHIVO.has(progH)));
   }
 
+  // La carpeta en que corre cada tramo: la del evento, movida por los `cd`/`pushd` del mismo comando. Un `cd` a algo
+  // que no se puede leer (una variable) la deja en null: lo relativo de ahí en adelante queda «no mirado».
+  const pathM = require('path');
+  let carpeta = carpetaDelComando || process.cwd();
   for (const { texto } of partes) {
     const t = tokensDeSegmento(texto, tokens, PREFIJOS);
     if (!t.length) continue;
     const prog = basename(t[0]);
+    if (CAMBIAN_CARPETA.has(prog)) {
+      const destino = t.slice(1).find((x) => !x.startsWith('-'));
+      if (prog === 'popd') carpeta = null;
+      else if (destino === undefined) carpeta = process.env.HOME || null;
+      else if (NO_LITERAL.test(destino) || /[*?[\]{}]/.test(destino)) carpeta = null;
+      else {
+        const d = desescapar(sinComillas(destino)).replace(/^~(?=\/|$)/, process.env.HOME || '~');
+        carpeta = pathM.isAbsolute(d) ? d : (carpeta === null ? null : pathM.resolve(carpeta, d));
+      }
+      continue;
+    }
     // (b) `eval …`: todo lo que sigue es un comando
     if (prog === 'eval') { agregar(t.slice(1).join(' '), true); continue; }
     // (c) el argumento del intérprete (`bash -c '…'`, `python3 -c '…'`, `node -e '…'`)
@@ -767,7 +823,10 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
       }
     }
     // (d) el CONTENIDO del script que este comando ejecuta (el camino fácil: escribirlo y correrlo)
-    if (CORRE_ARCHIVO.has(progN) || /^\.?\//.test(t[0])) {
+    // el shell busca por ruta todo programa cuyo nombre lleva una barra (`scripts/x.sh`, `../x.sh`, `/abs/x.sh`) o empieza
+    // con `~/`: todos esos corren un archivo, no sólo los que empiezan con `./`
+    const porRuta = t[0].includes('/') || /^~\//.test(t[0]);
+    if (CORRE_ARCHIVO.has(progN) || porRuta) {
       for (let i = CORRE_ARCHIVO.has(progN) ? 1 : 0; i < t.length; i++) {
         const a = t[i];
         if (!a || a.startsWith('-')) continue;
@@ -779,7 +838,9 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
         // instalación, `node scripts/hooks/prod-access-guard.js` (probar el propio hook) se frenaba a
         // sí mismo, porque su código fuente habla del Llavero (2026-09-15, en vivo).
         const esc = a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const abs = require('path').resolve(ruta);          // un `bash leer.sh` también cuenta
+        // contra la carpeta del tramo (la del evento y sus `cd`), no contra la del proceso del freno
+        if (carpeta === null && !pathM.isAbsolute(ruta)) { noMirados.push({ ruta, motivo: 'la carpeta del comando no se puede saber (un cd que no se puede leer)' }); break; }
+        const abs = pathM.resolve(carpeta || '/', ruta);   // un `bash leer.sh` también cuenta
         // Las piezas del propio freno NO son texto escondido: su código fuente habla del Llavero y de
         // los clientes de base porque ESO es lo que vigilan. Leerlas como si fueran un guion ajeno
         // hace que el freno se frene a sí mismo (2026-09-15).
@@ -796,17 +857,23 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
           || /\/scratchpad\//.test(abs));
         const loEscribeEsteComando = new RegExp(`>\\s*['"]?${esc}`).test(cmd)
           || new RegExp(`(?:tee|cp|mv|install)\\b[^\\n]*${esc}`).test(cmd);
+        // el guion lo corre un shell (`bash x.sh`, `./x.sh`) o un intérprete: el paso del borrado en Azure lo lee como
+        // comandos en el primer caso y como código en el segundo
+        const porShell = ES_SHELL.has(prog) || prog === 'source' || prog === '.' || (porRuta && !CORRE_ARCHIVO.has(progN));
+        if (esDelFreno) break;
+        // Un guion que ya vivía en el disco tampoco queda afuera: `bash scripts/consulta.sh` llamaba a la puerta sin
+        // ningún cuadro. Se mira aparte (`guardados`) y sólo por lo DECLARADO en el índice de la máquina: con el análisis
+        // de siempre, un guion cualquiera que nombra un servidor de prueba frenaría el trabajo normal.
+        if (!esTemporal && !loEscribeEsteComando) { guardado(abs, porShell); break; }
         try {
-          if (esDelFreno || (!esTemporal && !loEscribeEsteComando)) break;   // ya vivía en el disco: no se mira adentro
-          const st = fs.statSync(ruta);
+          const st = fs.statSync(abs);
           // `shell: false` a propósito: el CONTENIDO se mira por si nombra un servidor o el Llavero,
           // pero sus escrituras son suyas, no de este comando.
-          // el guion lo corre un shell (`bash x.sh`, `./x.sh`) o un intérprete: el paso del borrado en Azure lo lee como
-          // comandos en el primer caso y como código en el segundo
-          const porShell = ES_SHELL.has(prog) || prog === 'source' || prog === '.' || /^\.?\//.test(t[0]);
           if (st.isFile() && st.size <= MAX_ESCONDIDO) {
-            const texto = fs.readFileSync(ruta, 'utf8');
+            const texto = fs.readFileSync(abs, 'utf8');
             agregar(texto, false, false, false, !porShell);
+            // y el juicio de los guardados: el análisis de siempre no busca la puerta adentro de un guion
+            guardados.push({ ruta: abs, texto, shell: porShell });
             const e = out.find((y) => y.texto === texto);
             if (e && porShell) e.guion = true;
           }
@@ -815,9 +882,220 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
         break;                                   // sólo el primer argumento no-bandera: el script
       }
     }
+    // (e) lo que corre `npm|yarn|pnpm run <script>` y `make <objetivo>`: el texto del script o de la receta
+    const delGestor = textoDeGestor(t, progN, carpeta);
+    if (delGestor) {
+      if (delGestor.noMirado) noMirados.push(delGestor.noMirado);
+      for (const g of delGestor.textos) {
+        guardados.push({ ruta: g.ruta, texto: g.texto, shell: true });
+        // un nivel más: si ese texto corre un archivo, se mira ese archivo (y no lo que ése corra)
+        for (const { ruta, porShell } of archivosQueCorre(g.texto)) guardado(ruta, porShell, g.carpeta);
+      }
+    }
   }
   out.opaco = opaco;
+  out.guardados = guardados;
+  out.noMirados = noMirados;
   return out;
+}
+
+// ── los guiones guardados ─────────────────────────────────────────────────────────────────────
+/** Lee un guion que ya vivía en el disco; lo que no se puede leer va a `noMirados`, nunca frena. */
+function leerGuardado(ruta, carpeta) {
+  const fs = require('fs'); const path = require('path');
+  const abs = path.resolve(carpeta || carpetaDelComando || process.cwd(), ruta.replace(/^~(?=\/)/, process.env.HOME || ''));
+  let st;
+  try { st = fs.statSync(abs); } catch (e) {
+    return e && e.code === 'EACCES' ? { noMirado: { ruta: abs, motivo: 'sin permiso de lectura' } } : {};   // no existe: no corre nada
+  }
+  if (!st.isFile()) return {};
+  // un programa compilado (`/usr/bin/git`, el `node` de Homebrew) no es un guion: no hay texto que mirar
+  const binario = (buf) => buf.subarray(0, 4096).includes(0);
+  try {
+    if (st.size > MAX_ESCONDIDO) {
+      const fd = fs.openSync(abs, 'r'); const cab = Buffer.alloc(4096);
+      try { fs.readSync(fd, cab, 0, 4096, 0); } finally { fs.closeSync(fd); }
+      return binario(cab) ? {} : { noMirado: { ruta: abs, motivo: `más grande que el tope de lectura (${MAX_ESCONDIDO / 1024} KB)` } };
+    }
+    const buf = fs.readFileSync(abs);
+    return binario(buf) ? {} : { ruta: abs, texto: buf.toString('utf8') };
+  } catch (e) {
+    return { noMirado: { ruta: abs, motivo: e && e.code === 'EACCES' ? 'sin permiso de lectura' : `ilegible (${(e && e.code) || e})` } };
+  }
+}
+
+/** Los archivos que corre un texto de shell (`node scripts/x.js`, `bash y.sh`, `./z.sh`). */
+function archivosQueCorre(texto) {
+  const { segmentos, tokens, PREFIJOS } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
+  const out = [];
+  let partes = [];
+  try { partes = segmentos(texto); } catch { return out; }
+  for (const { texto: s } of partes) {
+    const t = tokensDeSegmento(s, tokens, PREFIJOS);
+    if (!t.length) continue;
+    const p = basename(t[0]).toLowerCase().replace(/\.exe$/, '');
+    if (!CORRE_ARCHIVO.has(p) && !/^\.?\//.test(t[0])) continue;
+    const a = /^\.?\//.test(t[0]) && !CORRE_ARCHIVO.has(p) ? t[0] : t.slice(1).find((x) => x && !x.startsWith('-') && /[./]/.test(x));
+    if (a && !NO_LITERAL.test(a)) out.push({ ruta: a, porShell: ES_SHELL.has(p) || p === 'source' || p === '.' || a === t[0] });
+  }
+  return out;
+}
+
+const GESTORES = new Set(['npm', 'yarn', 'pnpm']);
+/** ¿Existe un archivo con ESE nombre exacto? (en macOS `makefile` encuentra `Makefile`: el disco no distingue mayúsculas) */
+function existeExacto(ruta) {
+  const path = require('path');
+  try { return require('fs').readdirSync(path.dirname(ruta)).includes(path.basename(ruta)); } catch { return false; }
+}
+const NPM_ATAJOS = { test: 'test', t: 'test', tst: 'test', start: 'start', stop: 'stop', restart: 'restart' };
+const CON_CARPETA = new Set(['--prefix', '-C', '--dir', '--cwd']);
+/**
+ * El texto que corre `npm|yarn|pnpm run <s>` (con sus `pre`/`post`) o `make [objetivo…]`, leído de `package.json` o del
+ * `Makefile` de la carpeta del comando. → `{ textos: [{ruta, texto, carpeta}], noMirado? }`, o null si no es eso.
+ */
+function textoDeGestor(t, prog, base) {
+  const fs = require('fs'); const path = require('path');
+  if (!GESTORES.has(prog) && prog !== 'make' && prog !== 'gmake') return null;
+  if (base === null) return { textos: [], noMirado: { ruta: prog, motivo: 'la carpeta del comando no se puede saber (un cd que no se puede leer)' } };
+  if (GESTORES.has(prog)) {
+    let carpeta = base; const resto = [];
+    for (let i = 1; i < t.length; i++) {
+      if (CON_CARPETA.has(t[i]) && t[i + 1] !== undefined) { carpeta = path.resolve(base, t[++i]); continue; }
+      const pegada = /^--(?:prefix|dir|cwd)=(.+)$/.exec(t[i]);
+      if (pegada) { carpeta = path.resolve(base, pegada[1]); continue; }
+      if (t[i] === '--') break;
+      if (!t[i].startsWith('-')) resto.push(t[i]);
+    }
+    const [sub, arg] = resto;
+    if (!sub) return null;
+    // como npm: el package.json más cercano, subiendo desde la carpeta
+    let dir = carpeta;
+    while (!existeExacto(path.join(dir, 'package.json')) && path.dirname(dir) !== dir) dir = path.dirname(dir);
+    if (existeExacto(path.join(dir, 'package.json'))) carpeta = dir;
+    const archivo = path.join(carpeta, 'package.json');
+    const leido = leerGuardado(archivo);
+    let scripts = null;
+    if (leido.texto !== undefined) { try { scripts = JSON.parse(leido.texto).scripts || {}; } catch { scripts = null; } }
+    let nombre = null;
+    if (sub === 'run' || sub === 'run-script' || sub === 'rum' || sub === 'urn') nombre = arg || null;
+    else if (prog === 'npm' && NPM_ATAJOS[sub]) nombre = NPM_ATAJOS[sub];
+    else if (prog !== 'npm' && scripts && Object.prototype.hasOwnProperty.call(scripts, sub)) nombre = sub;   // `yarn leer`, `pnpm leer`
+    if (!nombre || NO_LITERAL.test(nombre)) return null;
+    if (leido.noMirado) return { textos: [], noMirado: { ...leido.noMirado, motivo: `package.json ${leido.noMirado.motivo}` } };
+    if (leido.texto === undefined) return { textos: [], noMirado: { ruta: archivo, motivo: 'no hay package.json' } };
+    if (!scripts) return { textos: [], noMirado: { ruta: archivo, motivo: 'package.json ilegible' } };
+    if (typeof scripts[nombre] !== 'string') return { textos: [], noMirado: { ruta: archivo, motivo: `package.json no tiene el script «${nombre}»` } };
+    const textos = [`pre${nombre}`, nombre, `post${nombre}`].filter((n) => typeof scripts[n] === 'string')
+      .map((n) => ({ ruta: `${archivo} (script «${n}»)`, texto: scripts[n], carpeta }));
+    return { textos };
+  }
+  if (prog === 'make' || prog === 'gmake') {
+    let carpeta = base; let archivo = null; let opcionRara = null; const objetivos = [];
+    for (let i = 1; i < t.length; i++) {
+      const x = t[i];
+      if ((x === '-C' || x === '--directory') && t[i + 1] !== undefined) { carpeta = path.resolve(carpeta, t[++i]); continue; }
+      if (/^-C./.test(x)) { carpeta = path.resolve(carpeta, x.slice(2)); continue; }
+      if (x.startsWith('--directory=')) { carpeta = path.resolve(carpeta, x.slice('--directory='.length)); continue; }
+      if ((x === '-f' || x === '--file') && t[i + 1] !== undefined) { archivo = t[++i]; continue; }
+      const f = /^(?:-f(.+)|--file=(.+))$/.exec(x);
+      if (f) { archivo = f[1] || f[2]; continue; }
+      if ((x === '-I' || x === '-o' || x === '-W') && t[i + 1] !== undefined) { i++; continue; }
+      // una opción larga con valor que no se conoce puede nombrar otro archivo de recetas: lo mirado quizá no es lo que corre
+      if (/^--[^=]+=/.test(x)) { opcionRara = x.slice(0, x.indexOf('=')); continue; }
+      if (x.startsWith('-') || x.includes('=')) continue;
+      objetivos.push(x);
+    }
+    const candidatos = archivo ? [path.resolve(carpeta, archivo)] : ['GNUmakefile', 'makefile', 'Makefile'].map((n) => path.join(carpeta, n));
+    const ruta = candidatos.find(existeExacto) || candidatos[candidatos.length - 1];
+    const leido = leerGuardado(ruta);
+    if (leido.noMirado) return { textos: [], noMirado: leido.noMirado };
+    if (leido.texto === undefined) return { textos: [], noMirado: { ruta, motivo: 'no hay Makefile' } };
+    const recetas = recetasDeMake(leido.texto);
+    const pedidos = objetivos.length ? objetivos : (recetas.primero ? [recetas.primero] : []);
+    const textos = []; const faltan = [];
+    // make corre antes los prerrequisitos: sus recetas también son lo que corre este comando
+    const vistos = new Set(); const cola = [...pedidos];
+    while (cola.length && vistos.size < 200) {
+      const o = cola.shift();
+      if (vistos.has(o)) continue;
+      vistos.add(o);
+      if (!recetas.por.has(o)) { if (pedidos.includes(o)) faltan.push(o); continue; }   // un prerrequisito sin regla es un archivo
+      if (recetas.por.get(o)) textos.push({ ruta: `${ruta} (objetivo «${o}»)`, texto: recetas.por.get(o), carpeta });
+      cola.push(...(recetas.deps.get(o) || []));
+    }
+    const motivos = [];
+    if (faltan.length) motivos.push(`el Makefile no tiene receta para «${faltan.join('», «')}»`);
+    if (opcionRara) motivos.push(`make trae una opción que no sé leer («${opcionRara}»)`);
+    return { textos, noMirado: motivos.length ? { ruta, motivo: motivos.join(' · ') } : undefined };
+  }
+  return null;
+}
+
+/** Las recetas de un Makefile por objetivo (sin el `@`, `-` o `+` del principio), y el objetivo por defecto. */
+function recetasDeMake(texto) {
+  const por = new Map(); const deps = new Map(); let primero = null; let actuales = null;
+  const lineas = texto.replace(/\\\r?\n/g, ' ').split(/\r?\n/);
+  const sumar = (l) => { const r = l.replace(/^\s*[@+-]+\s*/, ''); for (const o of actuales) por.set(o, (por.get(o) ? `${por.get(o)}\n` : '') + r); };
+  for (const l of lineas) {
+    if (l.startsWith('\t')) { if (actuales) sumar(l.slice(1)); continue; }
+    if (!l.trim() || /^\s*#/.test(l)) continue;
+    const m = /^([^\s:#=][^:=]*?)\s*::?(?!=)([^;]*)(?:;(.*))?$/.exec(l);
+    if (!m) { actuales = null; continue; }
+    actuales = m[1].trim().split(/\s+/);
+    const prev = m[2].replace(/\|/g, ' ').trim().split(/\s+/).filter(Boolean);
+    for (const o of actuales) { if (!por.has(o)) por.set(o, ''); deps.set(o, [...(deps.get(o) || []), ...prev]); }
+    if (!primero) primero = actuales.find((o) => !o.startsWith('.') && !o.includes('%')) || null;
+    if (m[3] !== undefined && m[3].trim()) sumar(m[3]);
+  }
+  return { por, deps, primero };
+}
+
+/**
+ * El juicio de los guiones guardados: frena si alguno nombra un llavero declarado, un host declarado como producción, o
+ * (en un texto de shell) la puerta en posición de programa. Sólo lee el índice si algún texto nombra algo de bases.
+ * → `{ ruta, que, causa }` del primero que frena, o null.
+ */
+function guardadoQueFrena(guardados, tokens, PREFIJOS, segmentos, leerIndice) {
+  const conTexto = guardados.filter((g) => typeof g.texto === 'string' && g.texto);
+  if (!conTexto.length) return null;
+  const NOMBRA_PUERTA_EN = (texto) => {
+    let partes = [];
+    try { partes = segmentos(texto); } catch { return false; }
+    return partes.some(({ texto: s }) => {
+      const t = tokensDeSegmento(s, tokens, PREFIJOS);
+      return t.length > 0 && (t[0] === PUERTA || basename(t[0]) === NOMBRE_PUERTA);
+    });
+  };
+  for (const g of conTexto) if (g.shell && NOMBRA_PUERTA_EN(g.texto)) return { ruta: g.ruta, que: 'llama a la puerta de producción', causa: 'base-de-produccion' };
+  const candidatos = conTexto.filter((g) => /tycon-prod-/i.test(g.texto) || CRUDO.test(g.texto) || /\.database\.windows\.net/i.test(g.texto));
+  if (!candidatos.length) return null;
+  const indice = leerIndice();
+  const prod = Object.entries(indice.hosts || {}).filter(([, h]) => h && h.ambiente === 'produccion');
+  const llaveros = [...new Set(prod.map(([, h]) => h.llavero).filter(Boolean))];
+  for (const g of candidatos) {
+    for (const l of llaveros) if (new RegExp(`(?<![\\w.-])${escRe(l)}(?![\\w.-])`).test(g.texto)) return { ruta: g.ruta, que: `nombra el llavero de producción «${l}»`, causa: 'llavero' };
+    for (const [h] of prod) if (new RegExp(`(?<![\\w-])${escRe(h)}(?![\\w-])`, 'i').test(g.texto)) return { ruta: g.ruta, que: `nombra el servidor de producción «${h}»`, causa: 'base-de-produccion' };
+  }
+  return null;
+}
+
+// ── automatizar la pantalla: el cuadro de producción lo contesta una persona ────────────────────
+const ACCION_DE_PANTALLA = /\b(?:click|keystroke|key\s+code|keyCode)\b/i;
+/** ¿Algún texto que corre aprieta botones de la pantalla? (`cliclick`, u `osascript` con System Events y un clic o tecla) */
+function automatizaLaPantalla(textos, tokens, PREFIJOS, segmentos) {
+  let corrOsascript = false;
+  for (const x of textos) {
+    if (!(x.shell || x === textos[0])) continue;
+    let partes = [];
+    try { partes = segmentos(x.texto); } catch { continue; }
+    for (const { texto: s } of partes) {
+      const t = tokensDeSegmento(s, tokens, PREFIJOS);
+      const p = t.length ? basename(t[0]).toLowerCase() : '';
+      if (p === 'cliclick') return true;
+      if (p === 'osascript') corrOsascript = true;
+    }
+  }
+  return corrOsascript && textos.some((x) => /System\s+Events/i.test(x.texto) && ACCION_DE_PANTALLA.test(x.texto));
 }
 
 /**
