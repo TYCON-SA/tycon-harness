@@ -654,9 +654,14 @@ function rutinaParaDelegar({ marker = null, story = null, repo = null } = {}) {
   let planTexto = '';
   let batch;
   if (marker && marker.storyId != null) {
-    try { planTexto = planDe(marker).texto || ''; } catch (_) { planTexto = ''; }
-    let storyTexto = null;
-    try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
+    let plan;
+    try { plan = planDe(marker); } catch (e) { plan = { error: e.message }; }
+    if (plan.error) return no(`historia delicada o sin saber: no pude leer su plan (${plan.error}), y sin persona no sale`);
+    planTexto = plan.texto || '';
+    let storyTexto;
+    try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (e) {
+      return no(`historia delicada o sin saber: no pude leer la historia (${e.code || e.message}), y sin persona no sale`);
+    }
     batch = batchDe(parteDe(marker, storyTexto));
   }
   const delicate = pipeline().computeDelicate({ story: storyFile, repo: repo || (marker && marker.repoPath) || undefined, planText: planTexto, batch });

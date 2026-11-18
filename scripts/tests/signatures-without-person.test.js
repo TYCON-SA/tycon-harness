@@ -106,15 +106,26 @@ test('T4 Decidir_Avisado_PassesViaToPrecheck @story-8.255 @ac-3', (t) => {
   const casa = casaNueva(t);
   const cmd = `node ${MARKER} approve-pending --id DEF-x --repo /r`;
   const vias = [];
-  const r = ow.decidir({
+  const decidir = (comprobar) => ow.decidir({
     evento: { session_id: 'ses-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, permission_mode: 'bypassPermissions' },
     escapes: [], arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }),
-    clasificar: () => null, comprobar: (o) => { vias.push(o.via); return { ok: true }; }, aprobador: () => ({ label: 'El dueño' }),
+    clasificar: () => null, comprobar: (o) => { vias.push(o.via); return comprobar(o); }, aprobador: () => ({ label: 'El dueño' }),
     aprobaciones: { buscar: () => ({ ok: false, motivo: 'no hay un click' }), consumir: () => ({ ok: true }), devolver: () => {}, coordinadoraConfirmada: () => null },
   });
+  const r = decidir(() => ({ ok: true }));
   assert.strictEqual(r.decision, 'allow', r.texto);
   assert.strictEqual(r.via, 'avisado');
   assert.ok(vias.includes('avisado'), `el chequeo previo recibe la vía avisado (recibió ${JSON.stringify(vias)})`);
+  // sin persona no sale, con ella sí: se niega con el cuadro para aprobarla con un click
+  const conClick = decidir((o) => (o.via === 'avisado' ? { niega: 'falta el control' } : { ok: true }));
+  assert.strictEqual(conClick.decision, 'deny', conClick.texto);
+  assert.match(conClick.texto, /sin persona el control previo de la firma la niega: falta el control/);
+  assert.ok(conClick.cuadro && !conClick.cuadro.error, 'trae el cuadro del click');
+  // se negaría también con persona: su texto, sin cuadro
+  const igual = decidir(() => ({ niega: 'el pendiente no existe' }));
+  assert.strictEqual(igual.decision, 'deny', igual.texto);
+  assert.match(igual.texto, /el pendiente no existe/);
+  assert.ok(!igual.cuadro, 'sin cuadro: un click no lo arreglaría');
 });
 
 // ── los modos de falla ───────────────────────────────────────────────────────────────────────────────────────────

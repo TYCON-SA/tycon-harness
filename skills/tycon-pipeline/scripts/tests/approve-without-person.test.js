@@ -336,7 +336,8 @@ function comparacion(t, { sensible }) {
     filesTouched: [path.join(repo, 'cli.js')], fileEvents: [] }));
   const correr = (opciones) => spawnSync(process.execPath, [MARKER, 'compare-waiver', '--story', storyPath, '--command', 'cli.js', '--reason', 'usa la red'],
     { cwd: repo, encoding: 'utf8', env: conVentana(ambiente(home, 's-cw'), opciones) });
-  return { correr, runDir: () => require(PIPELINE).resolveRunDir(repo, '9.9', true, storyPath), estado };
+  const marcador = () => JSON.parse(fs.readFileSync(path.join(estado, 'active', 's-cw.json'), 'utf8'));
+  return { correr, runDir: () => require(PIPELINE).resolveRunDir(repo, '9.9', true, storyPath), estado, marcador };
 }
 
 /** e2e-setup.js: una tienda con su página y su historia con pantalla, y npm/npx de mentira. */
@@ -456,4 +457,14 @@ test('T13 DelegatedLevelOne_DelicateStory_Denied @story-8.255 @ac-12', (t) => {
   assert.notStrictEqual(xl.status, 0, salida(xl));
   assert.match(xl.stderr, /cerrar como perdida una ejecución, o restaurarla, lo decide una persona/);
   assert.ok(!ll.cerrada(), 'lost-run por delegación: sigue abierta');
+  // sin poder leer el plan o la historia no se sabe si es de rutina: cuenta como delicada
+  const cwl = comparacion(t, { sensible: false });
+  const m = cwl.marcador();
+  assert.strictEqual(PR().rutinaParaDelegar({ marker: m }), null);
+  const plan = path.join(cwl.runDir(), 'step-02-bmad-plan.md');
+  fs.mkdirSync(plan);
+  assert.match(PR().rutinaParaDelegar({ marker: m }).motivo, /no pude leer su plan/);
+  fs.rmdirSync(plan);
+  fs.rmSync(m.storyPath);
+  assert.match(PR().rutinaParaDelegar({ marker: m }).motivo, /no pude leer la historia/);
 });
