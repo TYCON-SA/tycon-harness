@@ -20,6 +20,12 @@ if (require.main === module) { try { require('../../lib/node-floor.js').guard();
  * No sale a la red ni escribe en ningún clon: sólo lee (rev-parse, log, ls-tree, cat-file) y la hora del FETCH_HEAD.
  * Quién tiene cada historia no se guarda acá: lo dice la oficina al armar su foto, con las ejecuciones de esta máquina
  * (runsOfThisMachine, whoOf), porque este archivo puede tener media hora.
+ *
+ * Cada proyecto trae `repos` (el remoto del lugar y los de los repos trabajados que leen de ahí), y cada historia que
+ * declara `depends_on:` trae `pendientes` con lo que todavía no está en `done` ni en revisión en ese mismo lugar (sin
+ * rama principal traída, todo lo declarado queda pendiente: lo leído es de la copia), y `pausa` con la fecha de
+ * `paused_until:` si la tiene. Lo lee el freno del cierre del turno de la coordinadora (scripts/tools/coordination.js
+ * `fillCheck`); la oficina no muestra esos campos.
  */
 const fs = require('fs');
 const os = require('os');
@@ -44,6 +50,9 @@ const AUTOMATIC = new Set(['sdk-cli', 'codex_exec']);
 // lo que entra: el grupo «en curso» del vocabulario y las listas para programar (la única constante)
 const READY = 'ready-for-dev';
 const ENTER = new Set([...STATES.groups.en_curso, READY]);
+// Una dependencia está resuelta con su historia cerrada o en revisión (en `main`: varias quedan en revisión por el papeleo
+// de cierre). La revisión se nombra por su alias del vocabulario: el canónico escrito a mano lo frena la prueba de la oficina.
+const RESOLVED = new Set([...STATES.groups.cerrado, STATES.alias['ready-for-review']].filter(Boolean));
 const BRANCHES = ['origin/HEAD', 'origin/main', 'origin/master'];
 
 /** El estado canónico de un valor del encabezado, o null si el vocabulario no lo conoce. */
@@ -207,8 +216,53 @@ function scalar(fm, key) {
   return v || null;
 }
 
+// El comentario de un valor sin comillas (`[]  # no espera a otra`) se saca antes de leer la lista, como hace `scalar`.
+const uncommented = (v) => String(v).replace(/\s+#.*$/, '').trim();
+const unquoted = (v) => String(v).trim().replace(/^(['"])(.*)\1$/, '$2').trim();
+
+// `null`, `~` y vacío son el nulo de YAML: ni una dependencia ni una lista
+const yamlNull = (v) => v === '' || v === '~' || /^null$/i.test(v);
+
 /**
- * Lo que dice una historia: `{ story }` si entra, `{ unread: true }` si dice ser historia y no se puede leer, o null si
+ * La lista de `depends_on:` del encabezado: en la misma línea (`["8.9", "8.12"]`, también `[]`) o con guiones debajo;
+ * `null` si no la declara. El bloque de guiones llega hasta la próxima clave de primer nivel (el mismo lector que
+ * `followup_of:`, scripts/lib/followup-of.js): los guiones van con o sin sangría, y un comentario o un renglón vacío en
+ * el medio no lo corta; los finales de línea de Windows se leen igual. Lo que no se entiende (una lista sin cerrar, un
+ * valor suelto, un renglón del bloque que no es un item) queda como texto: cuenta pendiente.
+ */
+function dependsList(fm) {
+  const text = String(fm).replace(/\r\n?/g, '\n');
+  const m = /^depends_on[ \t]*:(.*)$/m.exec(text);
+  if (!m) return null;
+  const value = uncommented(m[1]);
+  if (value.startsWith('[')) {
+    if (!value.endsWith(']')) return [value];
+    return value.slice(1, -1).split(',').map(unquoted).filter((x) => !yamlNull(x));
+  }
+  if (value !== '') return yamlNull(unquoted(value)) ? [] : [unquoted(value)];
+  // si el lector del bloque no se puede cargar, la dependencia queda pendiente con el motivo: no se cae la lectura entera
+  let body;
+  try { body = require(path.join(ROOT, 'scripts', 'lib', 'followup-of.js')).cuerpoBloque(text.slice(m.index + m[0].length)); } catch (e) { return [`depends_on sin leer (${e.code || e.message})`]; }
+  const out = [];
+  for (const line of body.split('\n')) {
+    if (!line.trim() || /^[ \t]*#/.test(line)) continue;
+    const it = /^[ \t]*-[ \t]*(.*)$/.exec(line);
+    if (!it) return [line.trim()];
+    const item = unquoted(uncommented(it[1]));
+    if (item && !yamlNull(item)) out.push(item);
+  }
+  return out;
+}
+
+/** La fecha de `paused_until:` (AAAA-MM-DD), o null. */
+function pausedDate(fm) {
+  const m = /^(\d{4}-\d\d-\d\d)/.exec(scalar(fm, 'paused_until') || '');
+  return m ? m[1] : null;
+}
+
+/**
+ * Lo que dice una historia: `{ story, dependsOn }` si entra, `{ out: true, id, estado }` si no entra (su número y su estado
+ * resuelven las dependencias de las que sí entran), `{ unread: true }` si dice ser historia y no se puede leer, o null si
  * no es una historia (un .md sin `story:` en el encabezado).
  */
 function parseStory(text, archivo) {
@@ -222,8 +276,12 @@ function parseStory(text, archivo) {
   if (!id) return null;
   const estado = canonical(scalar(fm, 'status'));
   if (!estado) return { unread: true };
-  if (!ENTER.has(estado)) return { out: true };
-  return { story: { id: id.replace(/\s+#.*$/, ''), archivo, titulo: scalar(fm, 'title'), estado, prioridad: scalar(fm, 'priority'), trabajo: scalar(fm, 'work_item') } };
+  const numero = id.replace(/\s+#.*$/, '');
+  if (!ENTER.has(estado)) return { out: true, id: numero, estado };
+  const story = { id: numero, archivo, titulo: scalar(fm, 'title'), estado, prioridad: scalar(fm, 'priority'), trabajo: scalar(fm, 'work_item') };
+  const pausa = pausedDate(fm);
+  if (pausa) story.pausa = pausa;
+  return { story, dependsOn: dependsList(fm) };
 }
 
 /** La rama principal traída: la primera que existe de origin/HEAD, origin/main y origin/master; null si ninguna. */
@@ -260,12 +318,18 @@ function readPlace(place, run) {
   if (!r) return { problem: 'no es un repo de git' };
   const rel = path.relative(place.repo, place.dir).split(path.sep).join('/');
   const historias = [];
+  // las dependencias declaradas y el estado de TODAS las historias leídas: resuelven `pendientes` y no se guardan
+  const declared = [];
+  const estados = new Map();
   let sinLeer = 0;
   const add = (text, archivo) => {
     const s = parseStory(text, archivo);
     if (!s) return;
-    if (s.unread) sinLeer += 1;
-    else if (s.story) historias.push(s.story);
+    if (s.unread) { sinLeer += 1; return; }
+    if (s.out) { estados.set(String(s.id), s.estado); return; }
+    estados.set(String(s.story.id), s.story.estado);
+    historias.push(s.story);
+    if (Array.isArray(s.dependsOn) && s.dependsOn.length) declared.push([s.story, s.dependsOn]);
   };
   const ref = mainRef(place.repo, run);
   if (ref) {
@@ -288,6 +352,11 @@ function readPlace(place, run) {
     }
   } else {
     for (const f of workingMarkdown(place.dir)) { try { add(fs.readFileSync(f, 'utf8'), path.basename(f)); } catch { sinLeer += 1; } }
+  }
+  // sin rama principal traída, lo leído es de la copia y no confirma nada en main: toda dependencia declarada queda pendiente
+  for (const [story, deps] of declared) {
+    const pendientes = ref ? deps.filter((d) => !RESOLVED.has(estados.get(String(d)))) : deps.slice();
+    if (pendientes.length) story.pendientes = pendientes;
   }
   return { historias, sinLeer, traidoAt: fetchedAt(r.common), deTuCopia: !ref, problem: null, common: r.common, root: r.root };
 }
@@ -349,6 +418,8 @@ function collect({ home = os.homedir(), now = Date.now(), env = process.env, ema
     traidoAt: r.read.traidoAt,
     deTuCopia: r.read.deTuCopia,
     sinLeer: r.read.sinLeer,
+    // el remoto del lugar y los de los repos trabajados que leen de ahí: así el freno sabe de qué proyecto es cada historia
+    repos: [...new Set([r.remote, ...r.worked].filter(Boolean))],
     historias: r.read.historias,
   }));
   return { at: new Date(now).toISOString(), proyectos, sinHistorias: [...new Set(sinHistorias)], commitsPropios: p.ownCommits };
@@ -379,15 +450,20 @@ function refresh({ stateDir, now = Date.now(), read }) {
   }
 }
 
-/** Las ejecuciones de esta máquina: los marcadores de active/ y los cierres de timing-history/ de las últimas 24 h. */
-function runsOfThisMachine({ stateDir, now = Date.now() }) {
+/**
+ * Las ejecuciones de esta máquina: los marcadores de active/ y los cierres de timing-history/ de las últimas 24 h. Lo que
+ * no se pudo leer (una carpeta sin permiso, un archivo roto) va a `problems` si quien llama lo pasa: el freno del cierre
+ * del turno no cuenta ninguna historia con una corrida en duda.
+ */
+function runsOfThisMachine({ stateDir, now = Date.now(), problems = null }) {
   const out = [];
+  const doubt = (what) => { if (problems) problems.push(what); };
   const take = (m) => { if (m && m.storyPath) out.push({ archivo: path.basename(String(m.storyPath)), sessionId: m.sessionId || null }); };
-  const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
-  try { for (const f of fs.readdirSync(path.join(stateDir, 'active'))) if (f.endsWith('.json')) take(read(path.join(stateDir, 'active', f))); } catch { /* sin ejecuciones */ }
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { doubt(`la ejecución ${path.basename(f)} (${e.code || 'rota'})`); return null; } };
+  try { for (const f of fs.readdirSync(path.join(stateDir, 'active'))) if (f.endsWith('.json')) take(read(path.join(stateDir, 'active', f))); } catch (e) { if (e.code !== 'ENOENT') doubt(`las ejecuciones de active/ (${e.code || e.message})`); }
   const hist = path.join(stateDir, 'timing-history');
   let names = [];
-  try { names = fs.readdirSync(hist); } catch { /* sin cierres */ }
+  try { names = fs.readdirSync(hist); } catch (e) { if (e.code !== 'ENOENT') doubt(`los cierres de timing-history/ (${e.code || e.message})`); }
   for (const f of names) {
     if (!f.endsWith('.json')) continue;
     try { if (now - fs.statSync(path.join(hist, f)).mtimeMs > RUNS_MS) continue; } catch { continue; }
@@ -492,4 +568,4 @@ if (require.main === module) {
   process.stdout.write(`${JSON.stringify(r)}\n`);
 }
 
-module.exports = { WORK_DAYS, gitRunner, sessionFolders, projectsOf, placesFor, parseStory, readPlace, collect, refresh, runsOfThisMachine, runOf, whoOf, loadProducts, readSnapshot, view };
+module.exports = { WORK_DAYS, READY, gitRunner, sessionFolders, projectsOf, placesFor, remoteKey, parseStory, readPlace, collect, refresh, runsOfThisMachine, runOf, whoOf, loadProducts, readSnapshot, inOrder, view };

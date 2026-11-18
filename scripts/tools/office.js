@@ -801,6 +801,11 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     const quien = plain(r.session) || r.short;
     items.push({ titulo: `${quien}: la cerró Claude Code (${plain(r.reason)}), quieta ${r.idleMin} min`, quien, estado: 'riesgo', estimadaIso: null, pronosticoIso: null, fin: null, espera: `para levantarla: claude respawn ${r.short}` });
   }
+  // la coordinadora dejó lugares libres a propósito, o cerró su turno sin abrir ni motivo: se ve como un riesgo, con el motivo
+  for (const r of wip.freeSlots || []) {
+    const FS = require(path.join(ROOT, 'scripts', 'lib', 'free-slots.js'));
+    items.push({ titulo: FS.line(r), quien: plain(r.session || String(r.sid || '').slice(0, 8)), estado: 'riesgo', estimadaIso: null, pronosticoIso: null, fin: null, espera: `vale hasta las ${hhmm(Date.parse(r.expiresAt))}` });
+  }
   // «te toca» es sólo lo que pide una firma o una decisión del dueño: las firmas, lo que le preguntan y la lista del tablero,
   // que mantiene la coordinadora. Las notas no se leen: una frase no dice si es para ahora
   const teToca = [...signatureCards.filter((s) => !s.yaAvisada).map((s) => s.linea), ...toldOwner, ...((board && board.teToca) || [])];
