@@ -968,7 +968,7 @@ function alcanceDeMedida(m) {
 }
 
 const SALIDAS_DE_MEDIDA = 'Tres salidas: se mide de nuevo (re-correr el humo vía smoke-run.sh); se cambia el criterio (y eso cambia la historia); '
-  + 'o se declara imposible en `runtime_not_verifiable:` con su prueba y lo firma el dueño (`marker.js runtime-waiver`).';
+  + 'o se declara imposible en `runtime_not_verifiable:` con su prueba y lo firma una persona (`marker.js runtime-waiver`).';
 
 /** Los renglones que imprimen el freno del commit y «Preparar el commit» para los criterios con la marca que no salieron verdes. */
 function lineasDeMedida(r) {
@@ -2044,7 +2044,7 @@ function compute(opts) {
   }
   for (const n of acs) {
     if ((perAc[n].verdict === 'FUERA-DE-COTA' || perAc[n].verdict === 'SIN-MEDICION') && waived.has(n)) {
-      warnings.push(`AC#${n} tiene un waiver pero NO está declarado imposible — no cuenta: está ${perAc[n].verdict}. Medilo de nuevo, cambiá el criterio, o declaralo en runtime_not_verifiable con su prueba para que lo firme el dueño.`);
+      warnings.push(`AC#${n} tiene un waiver pero NO está declarado imposible — no cuenta: está ${perAc[n].verdict}. Medilo de nuevo, cambiá el criterio, o declaralo en runtime_not_verifiable con su prueba para que lo firme una persona.`);
     }
     if (perAc[n].verdict === 'NOT-RUN' && waived.has(n)) {
       warnings.push(`AC#${n} tiene un waiver pero NO está declarado imposible — un waiver no puede saltear un AC no-corrido. Corrélo (E2E/smoke) o declaralo en runtime_not_verifiable con su test.`);

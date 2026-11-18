@@ -111,7 +111,7 @@ function hastaPrepararElCommit(E, sid, extra = {}) {
 }
 const MATRIZ_ROJA = /matriz de verificación runtime \(DODRT-C6\) ROJA/;
 const NOMBRA = (txt) => /AC #1: medido 3010 ms; la cota es < 2000 ms/.test(txt) && /AC #2: sin medición/.test(txt)
-  && /se mide de nuevo/.test(txt) && /se cambia el criterio/.test(txt) && /lo firma el dueño/.test(txt);
+  && /se mide de nuevo/.test(txt) && /se cambia el criterio/.test(txt) && /lo firma una persona/.test(txt);
 
 test('MatrixRed_NamesOutOfBoundAndUnmeasured @story-8.260 @ac-24', () => {
   const E = entorno();

@@ -2629,7 +2629,7 @@ withWaiverLog(() => {
         && rW.perAc[1].verdict === 'WAIVED-USER' && rW.green
         && rS.perAc[1].verdict === 'WAIVED-USER' && rN.perAc[1].verdict === 'WAIVED-USER'
         && rI.perAc[1].verdict === 'FUERA-DE-COTA'
-        && /se mide de nuevo/.test(rm.renderMd(r0)) && /se cambia el criterio/.test(rm.renderMd(r0)) && /lo firma el dueño/.test(rm.renderMd(r0)),
+        && /se mide de nuevo/.test(rm.renderMd(r0)) && /se cambia el criterio/.test(rm.renderMd(r0)) && /lo firma una persona/.test(rm.renderMd(r0)),
       JSON.stringify({ r0: r0.perAc[1].verdict, sp: rSinPrueba.perAc[1].verdict, d: rD.perAc[1].verdict, w: rW.perAc[1].verdict, s: rS.perAc[1].verdict, n: rN.perAc[1].verdict, i: rI.perAc[1].verdict }));
   });
 
