@@ -7196,7 +7196,7 @@ function cmdAdhocAllowDataChange(io) {
   if (v.recommends === 'historia') {
     process.stdout.write([
       'Escribí la historia: un cambio que cambia de dónde sale un dato o quién lo ve no es camino corto, aunque sea corto.',
-      `  1. Cerrá el carril: node ${__filename} adhoc clear (lo tocado queda en la copia de trabajo, sin guardar).`,
+      `  1. Cerrá el carril: node ${citar(__filename)} adhoc clear (lo tocado queda en la copia de trabajo, sin guardar).`,
       '  2. Creá la historia con la skill tycon-create-story, con lo que cambió y quién tiene que poder verlo.',
     ].join('\n') + '\n');
     process.exit(0);
@@ -7204,9 +7204,9 @@ function cmdAdhocAllowDataChange(io) {
   if (v.recommends === 'descartar') {
     // sólo los archivos del carril, cada uno contra la base que usa su repo; lo que no es del carril no se toca. Vuelve a
     // la base lo que la base tiene; lo que no tiene es nuevo del carril, aunque ya esté guardado en la rama. Lo que no se
-    // puede saber no se manda a borrar
+    // puede saber no se manda a borrar. Los repos son los del carril y los que midió el freno
     const base = require('./lib/adhoc-base.js');
-    const medida = base.medirLoPropio(a);
+    const medida = base.medirLoPropio(a, { repos: Array.isArray(f.repos) ? f.repos : [] });
     // lo propio, como lo cuenta el tope sin mirar si es implementación: lo sin seguir de otra sesión no entra
     const porRepo = base.rutasDe(medida, a, { como: 'propio' });
     const lineas = ['Descartá lo del carril: vuelven a su base sólo estos archivos, y después se cierra el carril.'];
@@ -7227,7 +7227,7 @@ function cmdAdhocAllowDataChange(io) {
       const sinSaber = [];
       for (const rel of rels) {
         if (!sha) { sinSaber.push(rel); continue; }
-        const r = require('child_process').spawnSync('git', ['-C', repo, 'ls-tree', '-z', '--name-only', sha, '--', rel], { windowsHide: true, encoding: 'utf8' });
+        const r = require('child_process').spawnSync('git', ['-C', repo, 'ls-tree', '-z', '--name-only', sha, '--', rel], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
         if (r.error || r.status !== 0) sinSaber.push(rel);
         else (r.stdout.split('\0').includes(rel) ? enLaBase : nuevos).push(rel);
       }
@@ -7511,7 +7511,7 @@ function cmdAdhoc(sub, payloadJson) {
     }
     if (payload.datos === 'cambian') {
       console.error('🔒 marker.js adhoc set: esto va por historia, aunque sea corta: un cambio que cambia de dónde sale un dato o quién lo puede ver no es camino corto. Ante la duda, historia.');
-      if (actual) console.error(`  No cambié el arreglo rápido abierto: cerralo con node ${__filename} adhoc clear (lo tocado queda en la copia de trabajo, sin guardar) y escribí la historia.`);
+      if (actual) console.error(`  No cambié el arreglo rápido abierto: cerralo con node ${citar(__filename)} adhoc clear (lo tocado queda en la copia de trabajo, sin guardar) y escribí la historia.`);
       console.error('  La historia se escribe con la skill tycon-create-story.');
       process.exit(3);
     }

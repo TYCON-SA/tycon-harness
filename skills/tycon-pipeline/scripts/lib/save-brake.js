@@ -1726,8 +1726,8 @@ function textoDeLaMaqueta(r) {
  * Un carril cuyo cambio trae una señal fuerte (una llamada a un proceso, un chequeo de rol, la autorización de un
  * endpoint: las declara el paquete del stack) no guarda: `{ texto, huella }`. Lo levanta sólo el click del dueño sobre esa
  * huella (`datosPermitido`, de `marker.js adhoc allow-data-change`). Con sólo señales débiles, `{ mostrar }`: una línea
- * para la ventana. Sin señales, null. Sin medir no guarda. El freno queda anotado en el carril (`frenoDatos`): de ahí lo
- * leen el comando que pide el click y su cuadro. `opciones.cargar` y `opciones.medir` se pasan en las pruebas.
+ * para la ventana. Sin señales, null. Sin medir no guarda. El freno queda anotado en el carril (`frenoDatos`, con los repos
+ * que midió): de ahí lo leen el comando que pide el click y su cuadro. `opciones.cargar` y `opciones.medir` se pasan en las pruebas.
  * `registrar`: el freno, sus avisos y `frenoDatos` quedan escritos sólo en la vuelta que decide. `medida`: la de esta vuelta.
  */
 function frenoDeDatos(a, sid, home, repos, { sinSeguir = false, cargar, medir, registrar = true, medida } = {}) {
@@ -1763,7 +1763,7 @@ function frenoDeDatos(a, sid, home, repos, { sinSeguir = false, cargar, medir, r
     return mostrar ? { mostrar } : null;
   }
   if (!registrar) return { huella, texto: 'frenaría' };
-  io.writeAdhoc(dir, sid, { ...a, frenoDatos: { huella, hallazgos: fuertes.slice(0, 20), at: new Date().toISOString() } });
+  io.writeAdhoc(dir, sid, { ...a, frenoDatos: { huella, hallazgos: fuertes.slice(0, 20), repos, at: new Date().toISOString() } });
   io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto que cambia de dónde sale un dato o quién lo ve: ${ss.descripcion(fuertes[0])}`, huella });
   const marker = require('./story-gate.js').MARKER_JS;
   const mas = fuertes.length > 1 ? `; y ${fuertes.length - 1} más` : '';

@@ -669,14 +669,16 @@ function mergeALaVista(comando) {
  * El renglón del registro común de firmas cuando la persona aprobó con un click o un «aprobado». Con la ventana no hay
  * renglón: el freno no ve el Sí. Si no se puede escribir, la firma ya se dio: avisa por el registro de fallos del freno.
  */
-function anotarMergeBypass({ via, sesion, destino, comando, casa, ahora }) {
+function anotarMergeBypass({ via, sesion, destino, comando, casa, ahora, remotoConocido, lanzarAviso = lanzarAvisoDeFirma }) {
   let quien = null;
   try { quien = os.userInfo().username; } catch (_) { quien = null; }
+  const remoto = controlRemotoDeLaFirma({ via, sesion, remotoConocido, casa });
   let r;
   try {
     r = require('./signature-log.js').appendSignature({ signature: MERGE_BYPASS, via: VIA_COMUN[via] || via, signer: quien, orderedBy: sesion, target: destino,
-      reason: una(comando, 200), source: 'owner-window.js', home: casa, now: ahora });
+      reason: una(comando, 200), source: 'owner-window.js', remoteControl: remoto, home: casa, now: ahora });
   } catch (e) { r = { ok: false, error: e.message }; }
+  avisarFirmaDelFreno({ firma: MERGE_BYPASS, via, sesion, destino, casa, ahora, remoto, lanzarAviso });
   if (r && r.ok) return;
   try { fs.appendFileSync(path.join(stateDir(casa), 'hook-errors.log'), `[${new Date(ahora).toISOString()}] owner-window: la firma merge-bypass se dio y no quedó en el registro común (${(r && r.error) || 'sin respuesta'})\n`); } catch (_) { /* sin registro tampoco */ }
 }
@@ -1241,7 +1243,7 @@ function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado, cw
  * firmas; se pasa en las pruebas. `topes`: los del camino corto (`{ delegado, maximo }`), para las pruebas; sin ellos,
  * se leen una vez del perfil del equipo y valen para todo lo que decide.
  */
-function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes } = {}) {
+function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes } = {}) {
   if (!topes) topes = topesDelCaminoCorto(casa);
   const enWindows = plataforma === 'win32';
   // los criterios de un runtime-waiver, calculados una vez para el cuadro y para el detalle
@@ -1514,7 +1516,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     try {
       escribirRegistro(casa, { firma: firmaGuion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
         sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString(), corrida: corridaDe(casa, destino),
-        ...(delegada ? { via: 'delegacion', maquina: delegada.maquina, ...(routed ? { routed: true } : {}) } : aprobada ? { via: aprobada.via, aprobacion: aprobada.aprobacion.id, aprobada_en: aprobada.aprobacion.sesion }
+        ...(delegada ? { via: 'delegacion', maquina: delegada.maquina, ...(routed ? { routed: true } : {}) } : aprobada ? { via: aprobada.via, aprobacion: aprobada.aprobacion.id, aprobada_en: aprobada.aprobacion.sesion, aprobada_remoto: aprobada.aprobacion.control_remoto }
           : avisado ? { via: 'avisado' } : {}), ...(sinAprobacion ? { sin_aprobacion: una(sinAprobacion, 300) } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
     } catch (e) {
       if (aprobada) oa.devolver(casa, aprobada.aprobacion);
@@ -1523,7 +1525,14 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   }
   if (delegada) return { decision: 'allow', via: 'delegacion', relevo: sesion, firmas: pendientes, texto: 'firmada por la delegación del perfil' };
   if (aprobada) {
-    if (pendientes[0] === MERGE_BYPASS) anotarMergeBypass({ via: aprobada.via, sesion, destino, comando, casa, ahora });
+    const remotoConocido = aprobada.aprobacion.control_remoto;
+    const conAviso = lanzarAviso ? { lanzarAviso } : {};
+    if (pendientes[0] === MERGE_BYPASS) {
+      anotarMergeBypass({ via: aprobada.via, sesion, destino, comando, casa, ahora, remotoConocido, ...conAviso });
+    } else if ((firmaDe(pendientes[0]) || {}).kind === 'freno') {
+      // no pasan por `firmar` ni dejan renglón: el aviso es lo único que cuenta que se dieron
+      avisarFirmaDelFreno({ firma: pendientes[0], via: aprobada.via, sesion, destino, casa, ahora, remoto: controlRemotoDeLaFirma({ via: aprobada.via, sesion, remotoConocido, casa }), ...conAviso });
+    }
     const como = aprobada.via === 'click' ? 'tu click en el cuadro de opciones' : `tu mensaje «${una(aprobada.aprobacion.texto, 80)}»`;
     return { decision: 'allow', via: aprobada.via, relevo: sesion, firmas: pendientes, texto: `aprobada por ${como}: ${firmaDe(pendientes[0]) ? firmaDe(pendientes[0]).approves : pendientes[0]}` };
   }
@@ -1673,9 +1682,12 @@ const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delega
  * `anotar(renglon)`: el guion que lo escribe en su propio registro (marker.js, con su carpeta de estado).
  * Después, el renglón del registro común de las firmas; si no se puede escribir, avisa y la firma sigue. `routed`: la
  * firma cierra un renglón que el freno desvió a la coordinadora.
- * `persona`, `huella`, `appendSignature` y `avisar` se pasan en las pruebas.
+ * El renglón común dice si el proceso donde contestó la persona tenía el control remoto encendido
+ * (`controlRemotoDeLaFirma`: `remotoConocido`, lo anotado al contestar, y `herramienta`, el proceso de la ventana). Si lo
+ * tenía, o no se pudo saber, se le avisa por los canales de la sesión (`notificar(texto)`, o notify.js).
+ * `persona`, `huella`, `appendSignature`, `avisar`, `notificar` y `casaDeCuenta` se pasan en las pruebas.
  */
-function firmar({ firma, via, sesion = null, destino = null, resumen = '', key = null, routed = false, casa, ahora = Date.now(), anotar, extra, persona, huella, appendSignature, avisar } = {}) {
+function firmar({ firma, via, sesion = null, destino = null, resumen = '', key = null, routed = false, remotoConocido, herramienta = null, casa, ahora = Date.now(), anotar, extra, persona, huella, appendSignature, avisar, notificar, casaDeCuenta } = {}) {
   // lo que el guion suma al renglón (el ok de guardar, sus huellas) va primero: no pisa quién ni cómo se firmó
   const renglon = { ...(typeof extra === 'function' ? extra({ via, sesion, destino }) : extra || {}), name: `${firma}-signed`, status: 'ok', via, sesion, destino, resumen: una(resumen, 200) };
   if (anotar) anotar(renglon);
@@ -1693,13 +1705,92 @@ function firmar({ firma, via, sesion = null, destino = null, resumen = '', key =
   const escribir = appendSignature || require('./signature-log.js').appendSignature;
   // al lado del gates.log que recibió el renglón -signed: el guion que anota lo escribe en la carpeta de estado de su HOME
   const home = casa !== undefined ? casa : anotar ? os.homedir() : undefined;
+  const remoto = controlRemotoDeLaFirma({ via, sesion, remotoConocido, herramienta, casa, casaDeCuenta });
+  const enPantalla = avisar || ((m) => console.error(m));
   let r;
   try {
     r = escribir({ signature: firma, via: VIA_COMUN[via] || via, signer: quien, orderedBy: sesion, target: destino, reason: resumen,
-      source: path.basename(process.argv[1] || '') || null, ...(key ? { key } : {}), ...(routed ? { routed: true } : {}), home, now: ahora, huella });
+      source: path.basename(process.argv[1] || '') || null, ...(key ? { key } : {}), ...(routed ? { routed: true } : {}), remoteControl: remoto, home, now: ahora, huella });
   } catch (e) { r = { ok: false, error: e.message }; }
-  if (!r || !r.ok) (avisar || ((m) => console.error(m)))(`⚠️ la firma se dio, pero no quedó en el registro común de firmas: ${(r && r.error) || 'sin respuesta'}`);
+  if (!r || !r.ok) enPantalla(`⚠️ la firma se dio, pero no quedó en el registro común de firmas: ${(r && r.error) || 'sin respuesta'}`);
+  if (hayQueAvisar(remoto, via)) avisarFirmaADistancia({ firma, via, sesion, destino, ahora, remoto, notificar, avisar: enPantalla });
   avisarOficina(destino || sesion, home);
+}
+
+/**
+ * ¿El proceso donde contestó la persona tenía el control remoto encendido? Según la vía: el click o el «aprobado», lo que
+ * anotó el gancho al contestar (`remotoConocido`); la ventana, el proceso de la sesión que firma, ahora, salvo que quien
+ * llama ya lo sepa; la terminal se tipea en la máquina (false); lo demás no lo contestó una persona. `true` o `false`,
+ * `null` si no se pudo saber y `undefined` si no hay dato (`controlRemotoDelProceso`). Nunca frena la firma. Los registros
+ * de sesión viven en la casa de la cuenta, también cuando el guion firma sin `casa` o con otra HOME.
+ */
+function controlRemotoDeLaFirma({ via, sesion, remotoConocido, herramienta, casa, casaDeCuenta = casaDeLaCuenta }) {
+  if (via === 'terminal') return false;
+  if (via === 'click' || via === 'mensaje') return remotoConocido;
+  if (via !== 'ventana') return undefined;
+  if (typeof remotoConocido === 'boolean') return remotoConocido;
+  try {
+    return require('./owner-approvals.js').controlRemotoDelProceso(casa === undefined ? casaDeCuenta() : casa, herramienta && herramienta.pid, sesion);
+  } catch (_) { return null; }
+}
+
+// ante la duda se avisa, si contestó una persona: un click a distancia sin aviso es lo que no puede pasar
+const CONTESTA_UNA_PERSONA = new Set(['click', 'mensaje', 'ventana']);
+const hayQueAvisar = (remoto, via) => remoto === true || (remoto === null && CONTESTA_UNA_PERSONA.has(via));
+
+/** El aviso de una firma que escribe el freno, en un proceso aparte: el freno tiene un plazo corto y la red puede tardar. */
+function lanzarAvisoDeFirma(datos, { casa, spawn = require('child_process').spawn } = {}) {
+  const hijo = spawn(process.execPath, [__filename, 'remote-signature-notice', JSON.stringify(datos)], { detached: true, windowsHide: true, stdio: 'ignore' });
+  hijo.on('error', (e) => anotarAvisoPerdido(`el proceso del aviso no arrancó (${e.message})`, casa));
+  hijo.unref();
+}
+
+/** El aviso de una firma que aprobó el freno, si hace falta. */
+function avisarFirmaDelFreno({ firma, via, sesion, destino, casa, ahora, remoto, lanzarAviso = lanzarAvisoDeFirma }) {
+  if (!hayQueAvisar(remoto, via)) return;
+  try { lanzarAviso({ firma, via, sesion, destino, ahora, remoto }, { casa }); } catch (e) { anotarAvisoPerdido(`el proceso del aviso no arrancó (${e.message})`, casa); }
+}
+
+/** La salida del freno: un turno después, para que el error de arranque del aviso alcance a anotarse. */
+function salirTrasElAviso() {
+  setImmediate(() => process.exit(0));
+}
+
+/** Lo que corre ese proceso. No tiene pantalla: lo que no salga queda en hook-errors.log. */
+function correrAvisoDeFirma(argumento, { casa, notificar } = {}) {
+  const avisar = (m) => anotarAvisoPerdido(m, casa);
+  try {
+    avisarFirmaADistancia({ ...JSON.parse(argumento), notificar, avisar });
+  } catch (e) { avisar(`el aviso no salió: sus datos no se pudieron leer (${e.message})`); }
+}
+
+/** Un aviso de firma que se perdió sin pantalla donde decirlo. */
+function anotarAvisoPerdido(motivo, casa) {
+  try {
+    fs.appendFileSync(path.join(stateDir(casa === undefined ? casaDeLaCuenta() : casa), 'hook-errors.log'), `[${new Date().toISOString()}] owner-window: firma a distancia: ${motivo}\n\n`);
+  } catch (_) { /* sin registro tampoco */ }
+}
+
+/**
+ * El aviso de una firma dada con el control remoto encendido, o sin poder saberlo, por los canales de la sesión: quien
+ * tenga la cuenta o el teléfono del dueño puede contestar el cuadro, y así el dueño se entera en el momento. Si no sale,
+ * se dice en pantalla (`avisar`) y la firma sigue: el registro de firmas es la constancia.
+ */
+function avisarFirmaADistancia({ firma, via, sesion, destino, ahora, remoto = true, notificar, avisar }) {
+  const s = firmaDe(firma);
+  const hora = `${new Date(ahora).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+  const como = remoto === true ? 'Firma con el control remoto encendido' : 'Firma de la que no se pudo saber si el control remoto estaba encendido';
+  const texto = `${como}: ${s ? s.approves : firma}, sesión ${destino || sesion}, por ${VIA_COMUN[via] || via}, a las ${hora}. Si no la diste vos, mirá el registro de firmas.`;
+  try {
+    if (notificar) { notificar(texto); return; }
+    const notify = require('./notify.js');
+    const c = notify.canalesDeLaSesion();
+    if (c.problema) { avisar(`⚠️ firma a distancia: el aviso no salió (${c.problema}); queda en el registro de firmas`); return; }
+    // sin canales, `avisar` da por entregado lo que nadie recibió
+    if (!c.canales || !c.canales.length) { avisar('⚠️ firma a distancia: el aviso no salió: la sesión no tiene canales; queda en el registro de firmas'); return; }
+    const r = notify.avisar({ canales: c.canales, mail: c.mail, chat: c.chat, texto, lado: 'sesion' });
+    if (!r || !r.entregado) avisar('⚠️ firma a distancia: el aviso no salió por ningún canal; queda en el registro de firmas');
+  } catch (e) { avisar(`⚠️ firma a distancia: el aviso no salió (${e.message}); queda en el registro de firmas`); }
 }
 
 // --- las firmas sobre un archivo ------------------------------------------------------------------------------------
@@ -1975,7 +2066,8 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   const que = (v.previo && v.previo.resumen) || resumen || v.registro.comando;
   // la clave del pedido, la misma con que la lista de firmas anotó su fila: la firma cierra ese pedido y no sus hermanos
   const key = claveDelPedido({ firma, destino: v.registro.destino, comando: v.registro.comando, argv, casa });
-  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado) ? que : (resumen || v.registro.comando), key, routed: v.registro.routed === true, casa, ahora, anotar, extra });
+  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado) ? que : (resumen || v.registro.comando), key, routed: v.registro.routed === true,
+    remotoConocido: v.registro.via === 'terminal' ? false : v.registro.aprobada_remoto, herramienta: v.registro.herramienta, casa, ahora, anotar, extra, notificar });
   // el ok de guardar y el arreglo rápido ya avisaron desde los controles de la delegación de su guion
   if (avisado && !AVISA_SU_GUION.has(firma)) avisarHecho({ firma, sesion: v.registro.sesion, destino: v.registro.destino, que, notificar });
   return { codigo: 0, via, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro };
@@ -2026,7 +2118,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
 
 module.exports = { renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, formasDeFirmar,
-  SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos };
+  SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
@@ -2045,6 +2137,12 @@ if (require.main === module) {
     } catch (e) { r = negarCon(`no pude decidir la firma (${e.message})`, escapes.filter((id) => firmaDe(id))); }
     const ask = r.decision === 'ask' ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: r.texto } }) : undefined;
     lineas({ decision: r.decision, firma: (r.firmas || [])[0], via: r.via, relevo: r.relevo, texto: r.texto, json: ask });
+    salirTrasElAviso();
+    return;
+  }
+  if (sub === 'remote-signature-notice') {
+    // el aviso de una firma que escribió el freno (`lanzarAvisoDeFirma`)
+    correrAvisoDeFirma(argv[1]);
     process.exit(0);
   }
   if (sub === 'sign-forms') {

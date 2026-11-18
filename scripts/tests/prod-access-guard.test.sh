@@ -1217,5 +1217,23 @@ fi
 if [ -z "$t33_falta" ]; then ok "8.14 T33 Guide_DeclaresShellFormsAndLimits (las formas, la medición y los cinco límites)"
 else no "8.14 T33 Guide_DeclaresShellFormsAndLimits — falta:$t33_falta"; fi
 
+# ── T-puerta-12 Guia_LosLimitesReales — la guía no promete una barrera que no existe ──────────────────────────────
+# La guía decía que a un programa propio lo frena que «no tiene la clave»: cualquier programa de la cuenta la lee con
+# /usr/bin/security sin cuadro. Lo que dice ahora son los cinco límites reales.
+t12_falta=""
+if [ -f "$GUIA" ]; then
+  grep -q "no tiene la clave" "$GUIA" && t12_falta="$t12_falta todavía dice «no tiene la clave»;"
+  for limite in "Cualquier programa de tu cuenta puede leer la clave" "El freno lee texto" "permiso de Accesibilidad" \
+                "El modo sin permisos de Claude Code" "más grande que 64 KB"; do
+    grep -qF -- "$limite" "$GUIA" || t12_falta="${t12_falta} el límite «${limite}»;"
+  done
+  grep -qF "la propia puerta abre un cuadro del sistema" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «Cómo funciona»;"
+  grep -qF "Dos cuadros por sentencia" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «El día a día»;"
+else
+  t12_falta=" la guía no existe ($GUIA);"
+fi
+if [ -z "$t12_falta" ]; then ok "T-puerta-12 Guia_LosLimitesReales (sin «no tiene la clave», con los cinco límites y el cuadro propio)"
+else no "T-puerta-12 Guia_LosLimitesReales — falta:$t12_falta"; fi
+
 echo "— prod-guard: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

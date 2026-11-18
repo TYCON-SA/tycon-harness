@@ -656,9 +656,12 @@ function main(argv, env = process.env) {
       : `[suites.json] ${c.file}: no sé qué cambió adentro (${c.reason}): corren las ${c.rutas.size} suites que la nombran`);
   }
 
-  if (byRepo) resumen.scoped = { by: 'repo', full_suite_by: fullSuiteBy, none_touched: false };
+  // Lo tocado que hay que medir (`must_measure`, lib/touched-files.js) y ninguna suite que lo lea: no se acotó nada, y la
+  // corrida sale 7 más abajo. Sin esto cerraría en verde sin haber medido.
+  const sinMedir = touched.must_measure === true && !parallel.length && !exclusives.length && !resumen.ausentes.length;
+  if (byRepo && !sinMedir) resumen.scoped = { by: 'repo', full_suite_by: fullSuiteBy, none_touched: false };
   // Acotada por el repo y ninguna suite lee lo tocado: verde, dicho. La CI del pedido corre la completa antes del merge.
-  if (byRepo && touched.known && !parallel.length && !exclusives.length && !resumen.ausentes.length) {
+  if (byRepo && !sinMedir && touched.known && !parallel.length && !exclusives.length && !resumen.ausentes.length) {
     resumen.scoped.none_touched = true;
     console.log(`[suites.json] ninguna suite lee lo tocado; la suite completa la corre la CI del pedido (${fullSuiteBy})`);
     escribir(out, resumen);

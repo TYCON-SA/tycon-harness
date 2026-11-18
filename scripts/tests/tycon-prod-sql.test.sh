@@ -223,8 +223,9 @@ fi
 mundo(){ # $1 = modo del doble de security: ok | sin-entrada | confianza-ajena
   RAIZ="$TMP/sys"; CASA="$TMP/casa"; REPOS="$TMP/repos"
   rm -rf "$RAIZ" "$CASA" "$REPOS"
-  rm -f "$TMP/sqlcmd-q.bin" "$TMP/security-argv.log" "$TMP/sqlcmd-argv.log" "$TMP/sqlcmd-env.log" "$TMP/impostor.log"
-  mkdir -p "$RAIZ/opt/tycon/bin" "$RAIZ/usr/bin" "$CASA/.claude/.tycon-pipeline" "$CASA/Desktop" "$REPOS/backend-acme/.tycon"
+  rm -f "$TMP/sqlcmd-q.bin" "$TMP/security-argv.log" "$TMP/sqlcmd-argv.log" "$TMP/sqlcmd-env.log" "$TMP/sqlcmd-heredado.log" "$TMP/impostor.log" \
+        "$TMP/orden.log" "$TMP"/cuadro-arg-* "$TMP/cuadro-n" "$TMP/cuadro-modo" "$TMP/launchctl-modo"
+  mkdir -p "$RAIZ/opt/tycon/bin" "$RAIZ/usr/bin" "$RAIZ/bin" "$RAIZ/usr/sbin" "$CASA/.claude/.tycon-pipeline" "$CASA/Desktop" "$REPOS/backend-acme/.tycon"
   ( cd "$REPOS/backend-acme" && git init -q . ) >/dev/null 2>&1
   cat > "$REPOS/backend-acme/.tycon/production.json" <<JSON
 {"servers":[{"host":"$PROD","environment":"produccion","keychain":"tycon-prod-acme"},
@@ -234,6 +235,7 @@ JSON
   cat > "$RAIZ/usr/bin/security" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$TMP/security-argv.log"
+printf 'security %s\n' "\$*" >> "$TMP/orden.log"
 case "\$1" in
   find-generic-password)
     case "\${SECURITY_MODE:-ok}" in
@@ -272,14 +274,34 @@ SH
   cat > "$RAIZ/opt/tycon/bin/sqlcmd" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$TMP/sqlcmd-argv.log"
+printf 'sqlcmd\n' >> "$TMP/orden.log"
 while [ \$# -gt 0 ]; do [ "\$1" = -Q ] && { printf '%s' "\$2" > "$TMP/sqlcmd-q.bin"; break; }; shift; done
 if [ -f "\$HOME/.sqlcmd/sqlconfig" ]; then printf 'SQLCMDPASSWORD=CLAVE-GUARDADA-EN-SQLCONFIG\n' >> "$TMP/sqlcmd-env.log"
 else printf 'SQLCMDPASSWORD=%s\n' "\${SQLCMDPASSWORD:-}" >> "$TMP/sqlcmd-env.log"; fi
+env | grep '^SQLCMD' | grep -v '^SQLCMDPASSWORD=' >> "$TMP/sqlcmd-heredado.log"
 echo "filaA"; echo "filaB"; echo "filaC"
 echo "algo salió mal en el servidor" >&2
 exit 1
 SH
   chmod +x "$RAIZ/opt/tycon/bin/sqlcmd"
+  # doble del programa del cuadro: anota que lo llamaron (en el registro de orden común) y cada argumento en su archivo,
+  # y contesta lo que diga $TMP/cuadro-modo (la puerta lo corre con el entorno limpio: una variable no le llegaría)
+  cat > "$RAIZ/usr/bin/osascript" <<SH
+#!/usr/bin/env bash
+printf 'cuadro\n' >> "$TMP/orden.log"
+n=0; for a in "\$@"; do n=\$((n+1)); printf '%s' "\$a" > "$TMP/cuadro-arg-\$n"; done; printf '%s' "\$n" > "$TMP/cuadro-n"
+case "\$(cat "$TMP/cuadro-modo" 2>/dev/null || echo aprobar)" in
+  aprobar) echo "button returned:Aprobar, gave up:false" ;;
+  rechazar) echo "button returned:Rechazar, gave up:false" ;;
+  vencer) echo "button returned:, gave up:true" ;;
+  *) echo "execution error: No user interaction allowed. (-1713)" >&2; exit 1 ;;
+esac
+SH
+  # la sesión gráfica: Aqua, salvo que el caso diga otra cosa
+  printf '#!/usr/bin/env bash\ncat "%s/launchctl-modo" 2>/dev/null || echo Aqua\n' "$TMP" > "$RAIZ/bin/launchctl"
+  # el identificador de la máquina, para que las formas del firewall sigan de largo hasta buscar az
+  printf '#!/usr/bin/env bash\necho %s\n' "'  \"IOPlatformUUID\" = \"00000000-0000-0000-0000-000000000001\"'" > "$RAIZ/usr/sbin/ioreg"
+  chmod +x "$RAIZ/usr/bin/osascript" "$RAIZ/bin/launchctl" "$RAIZ/usr/sbin/ioreg"
   # y la casa del dev tiene esa config
   mkdir -p "$CASA/.sqlcmd"; printf 'currentcontext: prueba\n' > "$CASA/.sqlcmd/sqlconfig"
   # un impostor en el PATH, que la puerta NO debe usar (T29)
@@ -294,8 +316,9 @@ SH
   export SECURITY_MODE="${1:-ok}"
 }
 
-puerta(){ # corre la puerta con el mundo falso; imprime el exit code
-  env HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" \
+puerta(){ # corre la puerta con el mundo falso; imprime el exit code. Sin las variables de SSH: corrida por SSH, la
+  # suite no tiene que fallar cerrada (T-puerta-24 las pone a propósito, con `puerta_con`)
+  env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" \
       PATH="$TMP/impostor:$PATH" SECURITY_MODE="$SECURITY_MODE" \
       bash "$PUERTA" "$@" >"$TMP/out" 2>"$TMP/err"
   echo $?
@@ -620,6 +643,155 @@ puerta "$PROD" 'select top 3 Id
 from Articulos' >/dev/null
 if printf 'select top 3 Id\nfrom Articulos' | cmp -s - "$TMP/sqlcmd-q.bin"; then ok "6.6 T11 Gate_Inline_SameRules_Unchanged · una buena de dos renglones llega al cliente tal cual"
 else no "6.6 T11 Gate_Inline_SameRules_Unchanged · la buena no llegó al cliente: $(cat "$TMP/err")"; fi
+
+# ── el cuadro propio: la puerta pide su aprobación, antes de leer la clave ────────────────────────────────────────────
+# Caso que lo motiva: la aprobación de cada sentencia era sólo la regla `ask` de Claude Code, que mira el texto del
+# comando. Un guion guardado que llamaba a la puerta consultaba producción sin ningún cuadro.
+modo_cuadro(){ printf '%s' "$1" > "$TMP/cuadro-modo"; }
+sin_security(){ ! grep -q '^security' "$TMP/orden.log" 2>/dev/null; }
+ultimo_arg(){ cat "$TMP/cuadro-arg-$(cat "$TMP/cuadro-n" 2>/dev/null)" 2>/dev/null; }
+
+# T-puerta-1 · el cuadro recibe host y sentencia, y recién después se lee la clave y se llama al cliente
+mundo ok
+rc="$(puerta "$PROD" 'select top 3 * from Articulos')"
+primero="$(head -1 "$TMP/orden.log" 2>/dev/null)"
+if [ "$primero" = cuadro ] && grep -q '^security .*-w' "$TMP/orden.log" && grep -q '^sqlcmd' "$TMP/orden.log" \
+   && ultimo_arg | grep -F "$PROD" >/dev/null && ultimo_arg | grep -F 'select top 3 * from Articulos' >/dev/null; then
+  ok "T-puerta-1 PuertaPideCuadro_AntesDeLeerLaClave · el cuadro va primero, con host y sentencia; después security -w y el cliente"
+else no "T-puerta-1 PuertaPideCuadro_AntesDeLeerLaClave · orden: $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · cuadro: $(ultimo_arg | head -c 120)"; fi
+if grep '"accion":"consulta"' "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null | grep '"aprobacion":"cuadro-propio"' >/dev/null; then
+  ok "T-puerta-1 PuertaPideCuadro_AntesDeLeerLaClave · el registro de la consulta dice cuadro-propio"
+else no "T-puerta-1 PuertaPideCuadro_AntesDeLeerLaClave · el registro no dice cuadro-propio: $(tail -1 "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null)"; fi
+
+# T-puerta-2 · lo piden la consulta, --reclassify y --open-firewall; las otras cinco formas no
+mundo ok
+puerta --reclassify "$PROD" >/dev/null
+if [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ] && ultimo_arg | grep -F "Bajar $PROD a no producción" >/dev/null \
+   && grep '"accion":"reclasificar"' "$CASA/.claude/.tycon-pipeline/production.log" | grep '"aprobacion":"cuadro-propio"' >/dev/null; then
+  ok "T-puerta-2 PuertaCuadro_FormasQueLoPidenYLasQueNo · --reclassify pide el cuadro con la acción y el host, y lo anota"
+else no "T-puerta-2 PuertaCuadro_FormasQueLoPidenYLasQueNo · --reclassify: orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(ultimo_arg | head -c 120)"; fi
+mundo ok; modo_cuadro rechazar
+rc="$(puerta --reclassify "$PROD")"
+if [ "$rc" = 2 ] && grep -q "no aprobó" "$TMP/err" && ! grep -q '"accion":"reclasificar"' "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null; then
+  ok "T-puerta-2 PuertaCuadro_FormasQueLoPidenYLasQueNo · --reclassify rechazado no reclasifica"
+else no "T-puerta-2 PuertaCuadro_FormasQueLoPidenYLasQueNo · --reclassify rechazado: rc=$rc · $(head -c 160 "$TMP/err")"; fi
+mundo ok; modo_cuadro rechazar
+rc="$(puerta --open-firewall "$PROD")"
+if [ "$rc" = 2 ] && [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ] && ultimo_arg | grep -F "Abrir el firewall de $PROD" >/dev/null && grep -q "no aprobó" "$TMP/err"; then
+  ok "T-puerta-2 PuertaCuadro_FormasQueLoPidenYLasQueNo · --open-firewall pide el cuadro antes de hacer nada"
+else no "T-puerta-2 PuertaCuadro_FormasQueLoPidenYLasQueNo · --open-firewall: rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+for forma in "--verify" "--locks" "--load-key $PROD" "--close-firewall $PROD" "--delete-group grupo-de-prueba"; do
+  mundo ok
+  # shellcheck disable=SC2086
+  puerta $forma >/dev/null
+  if ! grep -q '^cuadro' "$TMP/orden.log" 2>/dev/null; then ok "T-puerta-2 PuertaCuadro_FormasQueLoPidenYLasQueNo · ${forma%% *} no pide el cuadro"
+  else no "T-puerta-2 PuertaCuadro_FormasQueLoPidenYLasQueNo · ${forma%% *} pidió el cuadro"; fi
+done
+
+# T-puerta-3 · la sentencia viaja sólo como argumento: el guion de AppleScript es el mismo con cualquier sentencia
+mundo ok
+puerta "$PROD" 'select 1' >/dev/null
+guion_a="$(n="$(cat "$TMP/cuadro-n")"; i=1; while [ "$i" -lt "$n" ]; do cat "$TMP/cuadro-arg-$i"; printf '\n'; i=$((i+1)); done)"
+mundo ok
+MALA="select '\" & do shell script \"touch $TMP/inyectado\" & \"' as x, 'a\\b' as \"y\""
+puerta "$PROD" "$MALA" >/dev/null
+guion_b="$(n="$(cat "$TMP/cuadro-n")"; i=1; while [ "$i" -lt "$n" ]; do cat "$TMP/cuadro-arg-$i"; printf '\n'; i=$((i+1)); done)"
+if [ -n "$guion_a" ] && [ "$guion_a" = "$guion_b" ] && ultimo_arg | grep -F "$MALA" >/dev/null && [ ! -e "$TMP/inyectado" ] \
+   && ! printf '%s' "$guion_b" | grep -F 'do shell script' >/dev/null; then
+  ok "T-puerta-3 PuertaCuadro_SentenciaLiteral_SinInyeccion · la sentencia llega intacta por argv y el guion no cambia"
+else no "T-puerta-3 PuertaCuadro_SentenciaLiteral_SinInyeccion · guion igual: $([ "$guion_a" = "$guion_b" ] && echo sí || echo no) · arg: $(ultimo_arg | head -c 160)"; fi
+
+# T-puerta-5 · desde bash puro, sin nada de Claude Code: el cuadro se pide igual, y sin aprobación no se lee la clave
+mundo ok; modo_cuadro rechazar
+env -i HOME="$CASA" PATH=/usr/bin:/bin TYCON_PROD_TEST_PATH="$(dirname "$(command -v node)")" TYCON_PROD_ROOT="$RAIZ" \
+    TYCON_REPOS_ROOT="$REPOS" bash "$PUERTA" "$PROD" 'select 1' >"$TMP/out" 2>"$TMP/err"; rc=$?
+if [ "$rc" = 2 ] && [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ] && sin_security && ! grep -q '^sqlcmd' "$TMP/orden.log" \
+   && grep -q "la persona no aprobó esta sentencia" "$TMP/err"; then
+  ok "T-puerta-5 Puerta_SinClaudeCode_PideCuadro · el cuadro fue llamado, antes de cualquier security; sale 2"
+else no "T-puerta-5 Puerta_SinClaudeCode_PideCuadro · rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+
+# T-puerta-23 · rechazo, vencimiento (osascript sale 0 con gave up:true) y error: ni security ni cliente, y el registro
+for m in rechazar vencer error; do
+  mundo ok; modo_cuadro "$m"
+  rc="$(puerta "$PROD" 'select 1')"
+  if [ "$rc" = 2 ] && sin_security && ! grep -q '^sqlcmd' "$TMP/orden.log" && grep -q "la persona no aprobó esta sentencia" "$TMP/err" \
+     && grep -q '"accion":"rechazada"' "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null; then
+    ok "T-puerta-23 PuertaCuadro_RechazoVencidoOError · $m: sale 2 sin security ni cliente, y queda «rechazada»"
+  else no "T-puerta-23 PuertaCuadro_RechazoVencidoOError · $m: rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+done
+
+# T-puerta-24 · sin la sesión de la Mac (otra sesión que Aqua, o por SSH) sale 2 antes de abrir el cuadro
+mundo ok; printf 'Background\n' > "$TMP/launchctl-modo"
+rc="$(puerta "$PROD" 'select 1')"
+if [ "$rc" = 2 ] && grep -q "el cuadro de producción necesita la sesión de la Mac: abrí la terminal en la Mac, no por SSH" "$TMP/err" && [ ! -s "$TMP/orden.log" ]; then
+  ok "T-puerta-24 Puerta_SinSesionGrafica_Frena · launchctl dice Background: sale 2 sin cuadro ni clave"
+else no "T-puerta-24 Puerta_SinSesionGrafica_Frena · Background: rc=$rc · $(head -c 160 "$TMP/err")"; fi
+mundo ok
+env HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" SSH_CONNECTION="10.0.0.1 50000 10.0.0.2 22" bash "$PUERTA" "$PROD" 'select 1' >"$TMP/out" 2>"$TMP/err"; rc=$?
+if [ "$rc" = 2 ] && grep -q "no por SSH" "$TMP/err" && [ ! -s "$TMP/orden.log" ]; then
+  ok "T-puerta-24 Puerta_SinSesionGrafica_Frena · por SSH: sale 2 sin cuadro ni clave"
+else no "T-puerta-24 Puerta_SinSesionGrafica_Frena · SSH: rc=$rc · $(head -c 160 "$TMP/err")"; fi
+
+# T-puerta-25 · sin el programa del cuadro, falla cerrada
+mundo ok; rm -f "$RAIZ/usr/bin/osascript"
+rc="$(puerta "$PROD" 'select 1')"
+if [ "$rc" = 2 ] && sin_security && ! grep -q '^sqlcmd' "$TMP/orden.log" 2>/dev/null; then
+  ok "T-puerta-25 Puerta_SinProgramaDelCuadro_Frena · sale 2 sin leer la clave"
+else no "T-puerta-25 Puerta_SinProgramaDelCuadro_Frena · rc=$rc · $(head -c 160 "$TMP/err")"; fi
+
+# T-puerta-28 · el cierre del firewall (con y sin --session, como lo corre el fin de sesión) no pide cuadro
+for args in "--close-firewall $PROD --session 0123456789abcdef" "--close-firewall $PROD"; do
+  mundo ok
+  # shellcheck disable=SC2086
+  puerta $args >/dev/null
+  if ! grep -q '^cuadro' "$TMP/orden.log" 2>/dev/null; then ok "T-puerta-28 CierreDeFirewall_SinCuadro · «${args//$PROD/<host>}» no pide el cuadro"
+  else no "T-puerta-28 CierreDeFirewall_SinCuadro · «${args//$PROD/<host>}» pidió el cuadro"; fi
+done
+
+# T-puerta-32 · una sentencia que el cuadro no muestra entera sale 2 antes de abrirlo
+mundo ok
+larga="select '$(head -c 1300 /dev/zero | tr '\0' 'x')'"
+rc="$(puerta "$PROD" "$larga")"
+if [ "$rc" = 2 ] && grep -q "la sentencia es demasiado larga para que el cuadro la muestre entera: partila" "$TMP/err" && [ ! -s "$TMP/orden.log" ]; then
+  ok "T-puerta-32 PuertaCuadro_SentenciaQueNoEntra_Sale2 · más caracteres que el tope: sale 2 sin cuadro ni clave"
+else no "T-puerta-32 PuertaCuadro_SentenciaQueNoEntra_Sale2 · larga: rc=$rc · $(head -c 160 "$TMP/err")"; fi
+mundo ok
+renglones="select 1$(i=0; while [ $i -lt 21 ]; do printf '\n, %s' "$i"; i=$((i+1)); done)"
+rc="$(puerta "$PROD" "$renglones")"
+if [ "$rc" = 2 ] && grep -q "demasiado larga" "$TMP/err" && [ ! -s "$TMP/orden.log" ]; then
+  ok "T-puerta-32 PuertaCuadro_SentenciaQueNoEntra_Sale2 · más renglones que el tope: sale 2 sin cuadro ni clave"
+else no "T-puerta-32 PuertaCuadro_SentenciaQueNoEntra_Sale2 · renglones: rc=$rc · $(head -c 160 "$TMP/err")"; fi
+mundo ok
+justa="select '$(head -c 1100 /dev/zero | tr '\0' 'x')'"
+rc="$(puerta "$PROD" "$justa")"
+if [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ]; then ok "T-puerta-32 PuertaCuadro_SentenciaQueNoEntra_Sale2 · una dentro del tope sí llega al cuadro"
+else no "T-puerta-32 PuertaCuadro_SentenciaQueNoEntra_Sale2 · una dentro del tope no llegó al cuadro: rc=$rc · $(head -c 160 "$TMP/err")"; fi
+
+# T-puerta-33 · lo aprobado es todo lo que corre: el cliente no hereda SQLCMDINI (un archivo de SQL que go-sqlcmd ejecuta al
+# arrancar), SQLCMDDBNAME ni ninguna otra variable suya del que llama
+mundo ok
+printf 'delete from clientes\n' > "$TMP/ini.sql"
+rc="$(SQLCMDINI="$TMP/ini.sql" SQLCMDDBNAME=otra SQLCMDSERVER=otro SQLCMD_LO_QUE_SEA=1 puerta "$PROD" 'select 1')"
+if [ -f "$TMP/sqlcmd-argv.log" ] && [ ! -s "$TMP/sqlcmd-heredado.log" ] && grep -qx "SQLCMDPASSWORD=$CLAVE_MARCA" "$TMP/sqlcmd-env.log"; then
+  ok "T-puerta-33 Puerta_ClienteNoHeredaSuEntorno · sin SQLCMDINI ni otra variable suya, y con la clave del Llavero"
+else no "T-puerta-33 Puerta_ClienteNoHeredaSuEntorno · rc=$rc · heredó: $(tr '\n' ' ' < "$TMP/sqlcmd-heredado.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+
+# T-puerta-34 · lo que no se puede mostrar no llega al cuadro: vacío, sin host, o más ancho de lo que entra
+for vacia in '' '    '; do
+  mundo ok; rc="$(puerta "$PROD" "$vacia")"
+  if [ "$rc" = 2 ] && [ ! -s "$TMP/orden.log" ] && grep -q 'vacía' "$TMP/err"; then ok "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · sentencia en blanco («${vacia}»): sale 2 sin cuadro"
+  else no "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · «${vacia}»: rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+done
+mundo ok; rc="$(puerta --reclassify '')"
+if [ "$rc" = 2 ] && [ ! -s "$TMP/orden.log" ] && grep -q -- 'uso: .*--reclassify' "$TMP/err"; then ok "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · --reclassify sin host: dice cómo se usa y no abre el cuadro"
+else no "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · --reclassify '': rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null)"; fi
+ancha="$(node -e 'const r = "漢".repeat(60); console.log(Array(19).fill(r).join("\n"))')"
+tabs="select 1$(node -e 'process.stdout.write("\t".repeat(1150))'); delete from t"
+for caso in ancha tabs; do
+  mundo ok; rc="$(puerta "$PROD" "${!caso}")"
+  if [ "$rc" = 2 ] && [ ! -s "$TMP/orden.log" ] && grep -q 'demasiado larga' "$TMP/err"; then ok "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · $caso: cuenta su ancho en pantalla y no llega al cuadro"
+  else no "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · $caso: rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+done
 
 echo "— prod-sql: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

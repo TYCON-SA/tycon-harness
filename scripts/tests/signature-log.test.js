@@ -31,7 +31,7 @@ const renglones = (casa) => {
   return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
 };
 
-const CAMPOS = ['ts', 'signature', 'level', 'covers', 'via', 'delegated', 'signer', 'ordered_by', 'target', 'machine', 'reason', 'source'];
+const CAMPOS = ['ts', 'signature', 'level', 'covers', 'via', 'delegated', 'signer', 'ordered_by', 'target', 'machine', 'reason', 'source', 'remote_control'];
 
 test('appendSignature escribe un renglón con todos los campos', (t) => {
   const casa = casaNueva(t);
@@ -242,4 +242,22 @@ test('SignatureLog_CarriesRequestKey — el renglón lleva la clave del pedido c
   assert.strictEqual(ow.claveDelPedido({ firma: 'compare-waiver', destino: 'ses-a', comando: cmd, argv: [] }), esperada);
   // sin un comando que se pueda leer, con las palabras del guion (las mismas después del shell)
   assert.strictEqual(ow.claveDelPedido({ firma: 'compare-waiver', destino: 'ses-a', comando: null, argv: ['/otra/ruta/marker.js', 'compare-waiver', '--story', 's', '--command', 'b.js', '--reason', 'porque'] }), esperada);
+});
+
+test('T9 RegistroDeFirmas_RemoteControl_TrueFalseONull @story-8.304 @ac-8b', (t) => {
+  const casa = casaNueva(t);
+  for (const remoteControl of [true, false, null]) {
+    assert.ok(log.appendSignature({ signature: 'plan-approval', via: 'click', target: 'ses-a', remoteControl, home: casa, now: AHORA, huella: HUELLA }).ok);
+  }
+  // sin el parámetro nuevo, desconocido; un valor que no es booleano, también
+  log.appendSignature({ signature: 'plan-approval', via: 'click', target: 'ses-a', home: casa, now: AHORA, huella: HUELLA });
+  log.appendSignature({ signature: 'plan-approval', via: 'click', target: 'ses-a', remoteControl: 'sí', home: casa, now: AHORA, huella: HUELLA });
+  const rs = renglones(casa);
+  assert.deepStrictEqual(rs.map((r) => r.remote_control), [true, false, null, null, null]);
+  assert.deepStrictEqual(rs.map(log.remoteControlDe), [true, false, null, null, null]);
+  // un renglón escrito antes de que existiera el campo es desconocido, nunca «apagado»
+  const viejo = { ts: '2026-11-01T09:00:00.000Z', signature: 'plan-approval', via: 'click', signer: 'acme', target: 'ses-a' };
+  assert.strictEqual(log.remoteControlDe(viejo), null);
+  assert.strictEqual(log.remoteControlDe({ ...viejo, remote_control: 'true' }), null);
+  assert.strictEqual(log.remoteControlDe(null), null);
 });

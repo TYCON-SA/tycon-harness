@@ -20,10 +20,13 @@ Dos causas, y las dos se arreglan con lo mismo:
 ## Cómo funciona, en una línea cada cosa
 
 - **Una sola puerta**: `/opt/tycon/bin/tycon-prod-sql <host> 'select …'`. Es lo único que consulta
-  producción, y **abre el cuadro de aprobación**: vos leés la sentencia antes de que corra.
+  producción, y **la propia puerta abre un cuadro del sistema** con el servidor y la sentencia: vos la
+  leés y la aprobás antes de que se lea la clave. Ese cuadro sale aunque a la puerta la llame un guion,
+  porque lo pide ella y no el asistente. El cuadro de Claude Code sigue además, como segunda capa.
 - **Un freno** prohíbe todo otro camino a esa base: `sqlcmd` directo, `az sql`, una cadena de
   conexión, leer la clave del Llavero, escribir el catálogo, o invocar la puerta de cualquier forma
-  que no sea la canónica.
+  que no sea la canónica. También mira adentro de los guiones que el comando corre, aunque ya
+  estuvieran en el disco, y de lo que corren `npm run` y `make`.
 - **Un catálogo por proyecto** (`<repo>/.tycon/production.json`) dice qué servidores son de
   producción. **Lo que nadie declaró se trata como producción**, así que un servidor nuevo se frena
   hasta que alguien lo declare.
@@ -167,6 +170,15 @@ Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda
 🔴 **En el cuadro: «Permitir», nunca «Permitir siempre».** El punto entero de esto es que cada
 sentencia se mire. Y si te aparece un cuadro del Llavero **sin que vos hayas aprobado una sentencia
 antes**, denegá: algo está leyendo la clave por otro camino.
+
+**Dos cuadros por sentencia.** Primero el de Claude Code (el comando entero); después, el de la puerta: un cuadro
+del sistema titulado «Producción: ¿lo aprobás?», con el servidor y la sentencia, y «Rechazar» marcado por defecto.
+Recién con «Aprobar» la puerta lee la clave y consulta. Si no contestás en 2 minutos, se da por rechazada. Lo
+mismo pasa al bajar un servidor a no producción (`--reclassify`) y al abrir el firewall (`--open-firewall`); cerrar
+el firewall, `--verify`, `--locks` y `--load-key` no piden cuadro. **El cuadro necesita la sesión de la Mac**: por
+SSH, o desde una sesión sin pantalla, la puerta no consulta (falla cerrada, a propósito). Y la sentencia tiene que
+entrar entera en el cuadro: hasta 1.200 caracteres en 20 renglones de 60; una más larga se rechaza antes de abrirlo,
+para que nunca apruebes una sentencia cortada.
 
 **La consulta va siempre en línea.** El cuadro muestra el comando y nada más: lo que trae un archivo no se ve
 antes de aprobar, así que la puerta no acepta archivos. Una consulta puede ocupar varios renglones dentro de
@@ -365,9 +377,28 @@ cierre seguro deja de funcionar. Cómo combinar los dos lo decide el dueño.
   sesión.
 - **La contraseña de producción vive también en otras casas** que esto no toca: la configuración del
   App Service, `dotnet user-secrets`, y un `appsettings.Production.json` si alguien lo baja.
-- **Un programa que se conecta por dentro** (Python con `pyodbc`, un `node` propio) no nombra el
-  servidor: el freno no lo ve. La barrera ahí es que no tiene la clave.
-- **Un hook propio del dev** corre como el usuario y puede llamar la puerta sin el cuadro.
+- 🔴 **Cualquier programa de tu cuenta puede leer la clave** con `/usr/bin/security`, sin cuadro: la
+  entrada del Llavero confía en esa herramienta, y el llavero no se bloquea solo. Un programa que se
+  conecta por dentro (Python con `pyodbc`, un `node` propio) no nombra el servidor y el freno no lo ve.
+  Lo que lo frena es otra cosa: el freno mira adentro de los guiones que el comando corre y frena si
+  nombran el llavero o un servidor declarados. Cerrar esto del todo (que sólo la puerta pueda leer la
+  clave, con Touch ID) es el paso que sigue, todavía sin hacer.
+- **El freno lee texto.** Un nombre partido en pedazos que se arma al correr, un intérprete que recibe
+  el programa con `-e` o `-c` y lo arma por dentro (`node -e`, `python3 -c` con una lista de
+  argumentos), o un archivo cuyo nombre llega recién al correr (`find … -exec bash {} \;`,
+  `echo x | xargs bash`) no se ven. Tampoco las recetas de `make -n` que se ejecutan igual (las que
+  empiezan con `+` o llaman a `$(MAKE)`): con `-n` el freno no mira las recetas. Por eso la aprobación ya no depende del freno: la pide la puerta, aunque la
+  llame un guion o un hook propio.
+- **El cuadro de la puerta lo puede apretar una aplicación con permiso de Accesibilidad** (la terminal o
+  el editor donde corre el asistente, si se lo diste). El freno frena los comandos que ve que lo intentan
+  (`osascript` con System Events y un clic o una tecla, `cliclick`), pero eso es otra vez texto. Touch ID,
+  cuando llegue, no lo puede contestar ningún programa.
+- **El modo sin permisos de Claude Code** (`--permission-mode bypassPermissions`) respeta las reglas que
+  preguntan, según su documentación y según la prueba en vivo con una regla de juguete. Igual, el cuadro
+  de la puerta no depende de ese modo: lo pide la puerta.
+- **Un guion más grande que 64 KB, o que no se puede leer, no se mira.** Tampoco un `npm run` sin ese
+  script en el `package.json`, ni una receta de `make` que no se encuentra. El freno deja pasar (no frena
+  trabajo normal por no poder leer) y lo anota en el registro de producción como «no mirado».
 - **Sin snapshot de shell, el freno le pregunta al shell de login en vivo** qué es cada nombre que
   podría quedarse con la puerta (desde el 2026-09-16: Claude Code 2.1.272 ya no escribe snapshot y
   corre cada comando como `zsh -c -l`). Un archivo de arranque que le mienta a esa pregunta

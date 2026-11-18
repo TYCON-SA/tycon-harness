@@ -506,6 +506,73 @@ test('T10 SourceSignals_SinMotivo_TextoCompleto @story-8.283 @ac-19 @ac-20 — e
   }
 });
 
+// ── los bordes de lo que se mide ────────────────────────────────────────────────────────────────────────────────────
+// 🔴 Falla con: una ruta con corchetes tomada como patrón: el diff trae al vecino que la medida ya había sacado.
+test('T3 Signals_RutaConCorchetes_NoMideAlVecino @story-8.222 @ac-2', (t) => {
+  const base = { 'pages/[id].tsx': 'a\n', 'pages/i.tsx': 'b\n' };
+  const d = repo(t, base);
+  const a = carril([d]);
+  escribir(d, 'pages/[id].tsx', 'a2\n');
+  sh(d, 'commit', '-qam', 'el carril');
+  // el vecino lo trae un merge en curso de main: difiere de la base, y no es del carril
+  sh(d, 'checkout', '-q', 'main');
+  escribir(d, 'pages/i.tsx', 'executeQuery("x");\n');
+  sh(d, 'commit', '-qam', 'en main');
+  sh(d, 'push', '-q', 'origin', 'main');
+  sh(d, 'checkout', '-q', RAMA);
+  sh(d, 'merge', '-q', '--no-commit', '--no-ff', 'origin/main');
+  const r = buscar(a);
+  assert.deepStrictEqual(r.fallas, []);
+  assert.deepStrictEqual(fuertes(r), [], JSON.stringify(r.hallazgos));
+  const e = repo(t, base, 'corchetes');
+  escribir(e, 'pages/[id].tsx', 'executeQuery("x");\n');
+  assert.deepStrictEqual(fuertes(buscar(carril([e]))).map((h) => h.file), ['pages/[id].tsx']);
+});
+
+// 🔴 Falla con: la ruta entre comillas recorrida por mitades de carácter: el informe y la huella nombran otro archivo.
+test('T4 Signals_RutaConEmojiEntreComillas_LlegaEntera @story-8.222 @ac-3', () => {
+  const cabeceras = (r) => `diff --git ${r} ${r}\n--- ${r}\n+++ ${r}\n@@ -0,0 +1 @@\n+x\n`;
+  const lineas = SS().lineasDelDiff(cabeceras('"src/t\\"😀.ts"') + cabeceras('"src/a\\303\\261.ts"'));
+  assert.deepStrictEqual(lineas.map((l) => l.file), ['src/t"😀.ts', 'src/añ.ts']);
+  const hallazgo = (file) => ({ id: 'proceso', strength: 'strong', repo: '/r', file, borrada: false, texto: 'x' });
+  assert.strictEqual(SS().huella([hallazgo(lineas[0].file)]), SS().huella([hallazgo('src/t"😀.ts')]));
+});
+
+// 🔴 Falla con: un archivo seguido que ya no está, saltado en silencio en un repo sin base; o el aviso dado a un archivo
+// que git no seguía.
+test('T5 Signals_SinBaseArchivoSeguidoAusente_AvisaConSuNombre @story-8.222 @ac-4', (t) => {
+  const d = repo(t);
+  const medida = { porRepo: { [d]: { base: { sha: null, de: 'sin-base' }, cambios: [{ ruta: 'src/seguido.ts', vieja: null }], sinSeguir: ['src/suelto.ts'], anotados: ['src/ignorado.ts'] } },
+    avisos: [], fallas: [], sinMedir: [] };
+  const r = buscar(carril([d], { files: [path.join(d, 'src', 'ignorado.ts')] }), conDebiles(), { medida });
+  assert.deepStrictEqual(r.fallas, []);
+  assert.strictEqual(r.avisos.filter((m) => /src\/seguido\.ts/.test(m) && /líneas borradas no se miraron/.test(m)).length, 1, JSON.stringify(r.avisos));
+  assert.ok(!r.avisos.some((m) => /suelto|ignorado/.test(m)), JSON.stringify(r.avisos));
+});
+
+// 🔴 Falla con: un freno que no anota los repos que midió: «descartar» no puede nombrar sus archivos.
+test('T7 FrenoDeDatos_AnotaLosReposQueMidio @story-8.222 @ac-5', (t) => {
+  const d = repo(t);
+  const e = repo(t, {}, 'otro');
+  escribir(d, 'src/a.tsx', 'executeQuery("x");\n');
+  const h = home(t);
+  const r = frenar(carril([d, e]), h, [d, e]);
+  const anotado = JSON.parse(fs.readFileSync(path.join(h, '.claude', '.tycon-pipeline', 'adhoc', `${SID}.json`), 'utf8')).frenoDatos;
+  assert.deepStrictEqual(anotado.repos, [d, e]);
+  assert.strictEqual(anotado.huella, r.huella);
+  assert.strictEqual(r.huella, SS().huella(anotado.hallazgos), 'los repos no entran en la huella');
+});
+
+// 🔴 Falla con: rutas literales que pierden un archivo renombrado o uno con un espacio en el nombre.
+test('T9 Signals_RutasLiterales_RenombradoYConEspacioSiguenMidiendo @story-8.222 @ac-7', (t) => {
+  const d = repo(t, { 'src/viejo.tsx': 'uno\ndos\ntres\ncuatro\ncinco\n', 'src/my file.tsx': 'a\n' });
+  sh(d, 'mv', 'src/viejo.tsx', 'src/nuevo.tsx');
+  escribir(d, 'src/nuevo.tsx', 'uno\ndos\ntres\ncuatro\ncinco\nexecuteQuery("x");\n');
+  escribir(d, 'src/my file.tsx', 'a\nexecuteQuery("y");\n');
+  sh(d, 'add', '-A');
+  assert.deepStrictEqual(fuertes(buscar(carril([d]))).map((h) => h.file).sort(), ['src/my file.tsx', 'src/nuevo.tsx']);
+});
+
 // ── los textos ──────────────────────────────────────────────────────────────────────────────────────────────────────
 // el texto en un renglón: las guías cortan las frases a 120 columnas
 const leer = (r) => fs.readFileSync(path.join(RAIZ, r), 'utf8').replace(/\s+/g, ' ');

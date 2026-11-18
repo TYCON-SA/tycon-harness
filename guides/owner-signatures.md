@@ -175,8 +175,32 @@ Con Claude Code, la mayoría de las firmas no piden la terminal. El camino depen
 
 **El plan se aprueba con el cuadro.** Si el plan trae «Qué hace» y «Archivos», el cuadro de su firma muestra qué hace,
 cuántos archivos toca y de qué zonas, y dónde está el plan completo, y tu click cuenta como plan visto: no hace falta que el agente lo pegue antes en la conversación.
-El plan entero te lo muestran si lo pedís. Vale sólo el click: un «aprobado» escrito, la ventana de permiso o la
-terminal no muestran esas secciones. Un plan sin esas dos secciones sí tiene que estar entero en la conversación.
+El plan entero te lo muestran si lo pedís. Vale sólo el click para contar como plan visto: un «aprobado» escrito, la
+ventana de permiso o la terminal no muestran esas secciones. Un plan sin esas dos secciones sí tiene que estar entero en
+la conversación.
+
+**A distancia, igual.** Si la sesión tiene el control remoto encendido, el cuadro lo podés contestar desde claude.ai o
+desde el teléfono, en la sesión que firma o en la coordinadora: tu click firma el plan, también el de una historia
+delicada. Es el mismo cuadro con la misma prueba: la pregunta la arma el freno, el agente no puede contestarla, el click
+sirve una vez para ese plan y vence a los 30 minutos. Lo probado es el click desde el teléfono; desde claude.ai en un
+navegador no se midió. Tu «aprobado» escrito sobre esa pregunta también sigue valiendo.
+Lo que hoy sólo se firma en la terminal (apagar el freno de seguridad o el control de producción, y la emergencia) sigue
+ahí, con o sin control remoto. Las demás firmas de nivel 3 (`control-change`, `escape:TYCON_NEW_NAMES` y
+`escape:merge-bypass`) se aprueban como en la máquina, así que también a distancia.
+
+El riesgo que se acepta: quien tenga tu cuenta de claude.ai o tu teléfono con la sesión abierta puede contestar el
+cuadro o escribir «aprobado», y el arnés no distingue si fuiste vos. Por eso:
+
+- **Cada renglón del registro de firmas (`signatures.jsonl`) trae `remote_control`.** `true` si el proceso donde
+  contestaste tenía el control remoto encendido en ese momento, `false` si no, y `null` si no contestó una persona
+  (delegación, revisión, hecho y avisado, un comando) o no se pudo saber. Un renglón escrito antes de que existiera el
+  campo se lee como `null`. Quiere decir «tenía el control remoto encendido», no «la respuesta llegó del teléfono»: la
+  respuesta no dice desde qué aparato se dio, y con el control remoto encendido también podés contestar en la máquina.
+- **Cada firma tuya con el control remoto encendido, o de la que no se pudo saber, te llega como aviso** por los canales
+  de la sesión: qué se firmó, para qué sesión, por qué vía y a qué hora. Si no la diste vos, te enterás en el momento.
+  También avisan las firmas que aprueba el freno con tu click o tu «aprobado», aunque no dejen renglón en el registro. Lo
+  que aprobás en la ventana de permiso de una de ésas no pasa por el arnés y no avisa. Si el aviso no sale, la firma
+  queda dada: se dice en pantalla o, si la aprobó el freno, en `hook-errors.log`.
 
 Lo que tiene que cumplir esa aprobación:
 
