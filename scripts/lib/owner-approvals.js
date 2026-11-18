@@ -437,7 +437,7 @@ const CONTROL_REMOTO = 'bridge_status';
 
 /**
  * ¿El proceso `pid` de la sesión `sesion` tiene ahora el control remoto encendido? Claude Code lo anota en el registro de
- * sesión del proceso (`~/.claude/sessions/<pid>.json`, `bridgeSessionId`), en la terminal y en la extensión; la
+ * sesión del proceso (`sessions/<pid>.json`, `bridgeSessionId`), en la terminal y en la extensión; la
  * transcripción no sirve para esto: la extensión no escribe `bridge_status`, y el de un proceso anterior no dice nada del
  * actual. Sin el campo es `false`, salvo que haya un `bridge_status` posterior a su arranque: se apagó, el campo cambió
  * de nombre o lo escribió otra copia de la sesión, y la transcripción no dice cuál (`null`: se avisa de más, nunca de
