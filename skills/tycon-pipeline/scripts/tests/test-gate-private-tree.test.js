@@ -1013,3 +1013,106 @@ test('T7d PrivateGate_UnknownTouched_StaysUnscoped @story-8.279 @ac-11 — las d
   assert.strictEqual(sola.status, 0, `${sola.stdout}${sola.stderr}`);
   assert.ok(fs.existsSync(marca), 'sola, corre todas: por eso van las dos');
 });
+
+// ── Papeles commiteados en el árbol armado: sólo se suman pruebas ────────────────────────────────────────────────────
+// La rama de cada repo sale de `main`, y lo de la historia se commitea después: sin eso `main..HEAD` da 0 y la prueba no
+// mide el caso. `TYCON_COVERAGE_BASE` hace de marcador en el privado; en el público no existe y su base es la bifurcación.
+function labRamaDeLaHistoria({ modificar }) {
+  const lab = labConAlcance({ modificar });
+  lab.base = git(lab.priv, 'rev-parse', 'HEAD');
+  for (const repo of [lab.priv, lab.pub]) git(repo, 'checkout', '-q', '-b', 'story/9.36-lab');
+  return lab;
+}
+function commitear(repo, rel, texto) {
+  escribir(repo, rel, texto);
+  git(repo, 'add', '-A', '-f');
+  git(repo, 'commit', '-q', '-m', `toca ${rel}`);
+}
+const portónDeLaRama = (lab) => portón(lab, { TYCON_COVERAGE_BASE: lab.base });
+function sinAcotarSinCorrer(r) {
+  assert.strictEqual(r.code, 7, r.salida);
+  assert.match(r.salida, /sin acotar/, r.salida);
+  assert.ok(!nombra(r, 'pub-lib.test.js') && !nombra(r, 'otra.test.js') && !nombra(r, 'demo.test.js'), r.salida);
+  assert.doesNotMatch(r.salida, /corrieron sólo las suites que leen lo tocado/, r.salida);
+}
+
+test('T17a PrivateGate_DocsCommitted_PublicCodeRuns @story-8.279 @ac-29 — papeles commiteados y código del público que una suite nombra: esa suite corre', () => {
+  // 🔴 rojo si: el «no sé» del privado sigue anulando al público → sale 7 sin correr nada (los portones de la 8.254 y la 8.260).
+  const lab = labRamaDeLaHistoria({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  commitear(lab.priv, 'docs/x.md', 'v2\n');
+  commitear(lab.pub, 'scripts/lib/pub-lib.js', 'module.exports = 1; // tocado\n');
+  const r = portónDeLaRama(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.ok(nombra(r, 'pub-lib.test.js'), r.salida);
+  assert.ok(!nombra(r, 'otra.test.js'), r.salida);
+  assert.doesNotMatch(r.salida, /sin acotar/, r.salida);
+});
+
+test('T17b PrivateGate_DocsCommitted_NoSuites_StaysUnscoped @story-8.279 @ac-29 @ac-31 — papeles commiteados sin código: ninguna suite y sigue en «sin acotar»', () => {
+  // 🔴 rojo si: saber lo tocado alcanza para cerrar → verde sin haber medido nada.
+  const lab = labRamaDeLaHistoria({ modificar: ['docs/x.md'] });
+  commitear(lab.priv, 'docs/x.md', 'v2\n');
+  sinAcotarSinCorrer(portónDeLaRama(lab));
+});
+
+test('T17c PrivateGate_DocsCommitted_UnnamedCode_StaysUnscoped @story-8.279 @ac-29 @ac-31 — código del público que ninguna suite nombra: sigue en «sin acotar»', () => {
+  // 🔴 rojo si: el caso que rechazó la tercera revisión del plan: pasaba de 7 a verde sin correr nada.
+  const lab = labRamaDeLaHistoria({ modificar: ['Pub/scripts/lib/sin-suite.js'] });
+  commitear(lab.priv, 'docs/x.md', 'v2\n');
+  commitear(lab.pub, 'scripts/lib/sin-suite.js', 'module.exports = 1;\n');
+  sinAcotarSinCorrer(portónDeLaRama(lab));
+});
+
+test('T17d PrivateGate_YamlCommitted_StaysUnscoped @story-8.279 @ac-27 @ac-29 — un .yaml commiteado que ninguna suite nombra: sigue en «sin acotar»', () => {
+  // 🔴 rojo si: la marca depende de que el diff sea sólo `.md` → un .yaml no pasa por la guarda y cierra en verde.
+  const lab = labRamaDeLaHistoria({ modificar: ['specs/estado.yaml'] });
+  commitear(lab.priv, 'specs/estado.yaml', 'a: 1\n');
+  sinAcotarSinCorrer(portónDeLaRama(lab));
+});
+
+function ramaConMarcador(modificar, sid) {
+  const lab = labRamaDeLaHistoria({ modificar });
+  const m = conMarcador(lab, sid);
+  return { lab, m, env: { CLAUDE_CODE_SESSION_ID: m.CLAUDE_CODE_SESSION_ID, TYCON_COVERAGE_BASE: lab.base } };
+}
+function commitearPapelesYCodigoSinSuite(lab) {
+  git(lab.priv, 'commit', '-q', '-am', 'papeles');
+  commitear(lab.pub, 'scripts/lib/sin-suite.js', 'module.exports = 1;\n');
+}
+
+test('T21a PrivateGate_SavedGreenWithoutSuites_NotMeasured @story-8.279 @ac-32 — un verde guardado que no corrió ninguna suite no cuenta como medido', () => {
+  // 🔴 rojo si: lo guardado reemplaza a la marca → código que ninguna suite nombra cierra con «más 0 suites por lo cambiado».
+  const { lab, m, env } = ramaConMarcador(['docs/x.md', 'Pub/scripts/lib/sin-suite.js'], 'pt-sin-medir');
+  fs.appendFileSync(path.join(lab.priv, 'docs/x.md'), 'v2\n');
+  const papeles = portón(lab, env);
+  assert.strictEqual(papeles.code, 0, papeles.salida);
+  assert.strictEqual((m.leer().testsGreenFull || []).length, 1, `guarda el verde de los papeles\n${papeles.salida}`);
+  commitearPapelesYCodigoSinSuite(lab);
+  sinAcotarSinCorrer(portón(lab, env));
+});
+
+test('T21b PrivateGate_SavedGreenThatRan_ClosesAsToday @story-8.279 @ac-32 — un verde guardado que sí corrió suites sigue cerrando con lo guardado', () => {
+  // 🔴 rojo si: la marca descarta todo lo guardado → cada arreglo después del portón vuelve a pedir lo que ya se midió.
+  const { lab, m, env } = ramaConMarcador(['docs/x.md', 'Pub/scripts/lib/pub-lib.js', 'Pub/scripts/lib/sin-suite.js'], 'pt-medido');
+  fs.appendFileSync(path.join(lab.priv, 'docs/x.md'), 'v2\n');
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/pub-lib.js'), '// tocado\n');
+  const medido = portón(lab, env);
+  assert.strictEqual(medido.code, 0, medido.salida);
+  assert.ok(nombra(medido, 'pub-lib.test.js'), medido.salida);
+  assert.strictEqual((m.leer().testsGreenFull || []).length, 1, `guarda el verde que midió\n${medido.salida}`);
+  commitearPapelesYCodigoSinSuite(lab);
+  const r = portón(lab, env);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.match(r.salida, /más 0 suites por lo cambiado/, r.salida);
+});
+
+test('T21c SavedGreen_UnknownTouched_MustMeasure @story-8.279 @ac-32 — sin saber qué se tocó, lo guardado tampoco alcanza', () => {
+  // 🔴 rojo si: un archivo de lo tocado ausente o con «no sé» se lee como «no hace falta medir» → verde guardado sin medir.
+  const { mustMeasureFrom } = require(path.join(SCRIPTS, 'lib', 'failed-first.js'));
+  const dir = tmp('pt-tocado-');
+  const con = (nombre, datos) => { escribir(dir, nombre, JSON.stringify(datos)); return path.join(dir, nombre); };
+  assert.strictEqual(mustMeasureFrom(path.join(dir, 'no-esta.json')), true);
+  assert.strictEqual(mustMeasureFrom(con('no-se.json', { known: false })), true);
+  assert.strictEqual(mustMeasureFrom(con('marca.json', { known: true, must_measure: true })), true);
+  assert.strictEqual(mustMeasureFrom(con('conocido.json', { known: true, files: ['docs/x.md'] })), false);
+});

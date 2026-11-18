@@ -13,6 +13,9 @@
  * Sin base, o con git fallando, `known: false` con el motivo: el que llama corre todo. Lo mismo si el diff no trae
  * ningún archivo con seguimiento que no sea documentación (vacío, sólo sin seguimiento, sólo `.md`) y la rama trae
  * commits que la principal no tiene: pueden ser de la story, commiteados antes de la base.
+ * El árbol armado del privado pasa `onlyCommitsBeforeBase`: ahí sólo los commits que la base contiene dejan el «no sé»,
+ * porque el diff ve todos los posteriores. Con esa opción, una rama con commits propios sale con `must_measure: true`: lo
+ * tocado se sabe, pero sin correr alguna suite no vale como medido. Las demás llamadas siguen sin la opción.
  * Límites conocidos:
  *   · en un repo sin remoto, con los commits de la story sobre la propia `main` local, `main..HEAD` da 0 y no se ven
  *     como propios. Pedir el remoto haría correr todo en cualquier repo sin él; un clon real tiene `origin/main`;
@@ -38,6 +41,8 @@ const { parseDeclaredFiles } = require('./test-scope');
 const PATTERN_RE = /^(?!(?:.*\/)?\.{1,2}\/)(?:[^*?[\]{}\s/]+\/)*[^*?[\]{}\s/]+\/\*\*$/;
 // Documentación: un cambio sólo de esto no muestra el código de la story.
 const DOCS_RE = /\.(md|markdown)$/i;
+// La constancia que reescribe el propio portón: con seguimiento en el privado, aparece en el diff después de cada corrida.
+const CONSTANCIA_DEL_PORTON_RE = /(^|\/)\.advisors\/dod-runtime\/[^/]+-tests-result\.json$/;
 
 function isValidPattern(p) {
   return typeof p === 'string' && PATTERN_RE.test(p);
@@ -68,9 +73,22 @@ function branchCommits(repo) {
   return { error: 'no hay rama principal (origin/main, origin/master, main ni master) contra la que contar los commits propios de la rama' };
 }
 
+/**
+ * Cuántos commits de la rama contiene la base: los que el diff contra ella no ve. Comprueba antes que la base sea un
+ * commit, porque `git rev-list <main>..<árbol>` no falla: sale 0.
+ */
+function commitsBeforeBase(repo, baseRef, main) {
+  if (git(repo, ['rev-parse', '--verify', '-q', `${baseRef}^{commit}`]).error) {
+    return { error: `la base ${String(baseRef).slice(0, 12)} no es un commit` };
+  }
+  const c = git(repo, ['rev-list', '--count', `${main}..${baseRef}`]);
+  if (c.error) return { error: `no pude contar los commits anteriores a la base (${c.error})` };
+  return { count: Number(c.out.trim()) || 0 };
+}
+
 const lines = (s) => String(s || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
 
-function touchedFiles({ repo, storyPath, baseRef, baseSource } = {}) {
+function touchedFiles({ repo, storyPath, baseRef, baseSource, onlyCommitsBeforeBase = false } = {}) {
   const sources = { declared: [], diff: [], untracked: [] };
   let storyError = null;
   if (storyPath) {
@@ -109,16 +127,31 @@ function touchedFiles({ repo, storyPath, baseRef, baseSource } = {}) {
   // seguimiento, un .md) no es la story. Sin un cambio de código con seguimiento, si la rama trae commits propios no se
   // sabe; tampoco si no hay rama principal contra la que contarlos.
   // Con la bifurcación como base no hace falta: el diff ya ve todos los commits propios de la rama.
-  if (baseSource !== 'bifurcacion' && !sources.diff.some((f) => !DOCS_RE.test(f))) {
+  // En el árbol armado la constancia del portón no cuenta: si contara, la respuesta cambiaría entre dos corridas iguales.
+  const muestraCodigo = (f) => !DOCS_RE.test(f) && !(onlyCommitsBeforeBase && CONSTANCIA_DEL_PORTON_RE.test(f));
+  const sinCodigoALaVista = baseSource !== 'bifurcacion' && !sources.diff.some(muestraCodigo);
+  let mustMeasure = false;
+  if (sinCodigoALaVista || onlyCommitsBeforeBase) {
     const que = files.length ? 'lo tocado no trae código con seguimiento' : 'lo tocado sale vacío';
     const propios = branchCommits(repo);
-    if (propios.error) return unknown(`${que} y ${propios.error}`);
-    if (propios.count > 0) {
-      return unknown(`${que} pero la rama trae ${propios.count} commit(s) que ${propios.main} no tiene: pueden ser de la story`);
+    if (propios.error) {
+      if (sinCodigoALaVista) return unknown(`${que} y ${propios.error}`);
+      mustMeasure = true;
+    } else if (propios.count > 0) {
+      if (!onlyCommitsBeforeBase) {
+        return unknown(`${que} pero la rama trae ${propios.count} commit(s) que ${propios.main} no tiene: pueden ser de la story`);
+      }
+      const antes = commitsBeforeBase(repo, baseRef, propios.main);
+      if (sinCodigoALaVista && antes.error) return unknown(`${que} y ${antes.error}`);
+      if (sinCodigoALaVista && antes.count > 0) {
+        return unknown(`${que} pero la base trae ${antes.count} commit(s) de la rama que ${propios.main} no tiene: pueden ser de la story`);
+      }
+      mustMeasure = true;
     }
   }
   // Una story ilegible con git sano: lo tocado de verdad sí se vio; se deja dicho igual.
-  return { known: true, files, sources, reason: storyError || null, base: { ref: baseRef, source: baseSource || null } };
+  return { known: true, files, sources, reason: storyError || null, base: { ref: baseRef, source: baseSource || null },
+    ...(mustMeasure ? { must_measure: true } : {}) };
 }
 
 if (require.main === module) {

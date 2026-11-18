@@ -300,7 +300,7 @@ function touchedIn(repo, story) {
   const { touchedFiles } = require('./touched-files.js');
   let r;
   try {
-    r = touchedFiles({ repo, storyPath: story || '', baseRef: ref, baseSource: source });
+    r = touchedFiles({ repo, storyPath: story || '', baseRef: ref, baseSource: source, onlyCommitsBeforeBase: true });
   } catch (e) {
     r = { known: false, files: [], sources: {}, reason: `touched-files falló en ${repo}: ${e.message}` };
   }
@@ -317,7 +317,7 @@ function touchedBoth(repo, pub, story) {
   // `bases`: contra qué commit de cada repo se cuentan las líneas tocadas (test-gate-report.js): en el árbol armado, la
   // base del privado sola contaba todo el público como tocado
   return { known, files: [...new Set([...(a.files || []), ...(b.files || [])])], sources: { private: a.sources, public: b.sources },
-    bases: [a.base, b.base].filter(Boolean), reason };
+    bases: [a.base, b.base].filter(Boolean), reason, ...(a.must_measure || b.must_measure ? { must_measure: true } : {}) };
 }
 
 module.exports = { isThinPrivate, detectThin, findPublic, cloneWithDisk, teamLayer, build, touchedBoth, NoPublic };

@@ -1142,15 +1142,16 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
       _tg_completa "no hay foto de la carpeta al arrancar para comparar con lo guardado"
     else
       _tg_dec="$(node -e '
-        const [roja, inicio, repo, base, recorte, storyId, ff] = process.argv.slice(1);
+        const [roja, inicio, repo, base, recorte, storyId, ff, tocado] = process.argv.slice(1);
         try {
           const r = JSON.parse(roja); const foto = JSON.parse(require("fs").readFileSync(inicio, "utf8"));
           // en el árbol armado la foto es la de cada repo; fuera, el árbol de la carpeta
           const tree = foto && foto.privado && foto.publico ? foto : foto.tree;
-          const d = require(ff).decide({ dir: r.dir, hash: r.hash, repo, tree, base: base || null, recorte, storyId: storyId || null });
+          const lib = require(ff);
+          const d = lib.decide({ dir: r.dir, hash: r.hash, repo, tree, base: base || null, recorte, storyId: storyId || null, mustMeasure: lib.mustMeasureFrom(tocado) });
           process.stdout.write(JSON.stringify({ ...d, dir: r.dir }));
         } catch (e) { process.stdout.write(JSON.stringify({ mode: "full", reason: `no pude decidir (${e.message})` })); }
-      ' "$_tg_roja" "$RESULTS_DIR/measured-start.json" "$REPO_RUN" "$_TG_BASE" "$_TG_RECORTE" "$_TG_MARKER_STORY" "$SCRIPT_DIR/lib/failed-first.js")"
+      ' "$_tg_roja" "$RESULTS_DIR/measured-start.json" "$REPO_RUN" "$_TG_BASE" "$_TG_RECORTE" "$_TG_MARKER_STORY" "$SCRIPT_DIR/lib/failed-first.js" "$RESULTS_DIR/touched.json")"
       _tg_campo() { node -e 'try{const v=JSON.parse(process.argv[1])[process.argv[2]];process.stdout.write(Array.isArray(v)?v.join(","):String(v??""))}catch(e){}' "$_tg_dec" "$1"; }
       TG_CLOSE_MODE="$(_tg_campo mode)"; TG_CLOSE_DIR="$(_tg_campo dir)"; TG_CLOSE_ORIGIN="$(_tg_campo origen)"; TG_RUN_ORIGEN_AT="$(_tg_campo origen_at)"
       case "$TG_CLOSE_MODE" in

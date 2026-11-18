@@ -10,7 +10,7 @@
  *
  * Uso:  node failed-first.js has <suites.json> <ruta>   → sale 0 si la ruta es una entrada de la lista, 1 si no, 2 si
  *       la lista no se deja leer (y lo dice).
- *       node failed-first.js decide --dir --hash --repo --tree --base --trim → imprime la decisión (abajo, «Repetir
+ *       node failed-first.js decide --dir --hash --repo --tree --base --trim [--touched] → imprime la decisión (abajo, «Repetir
  *       solas cierra»); merge --dir --out [--new] [--changed] [--coverage] → arma el resumen juntado, sale 0 verde o 1
  *       rojo (una falla, una ausente o algo sin medir, como en una completa); can-save <resumen juntado> → sale 0 si el
  *       cierre en verde se puede guardar como el nuevo verde, 1 con el motivo si no.
@@ -344,7 +344,15 @@ function claseQuePideLaCompleta(files, { raiz }) {
 const esFotoDelArbol = (t) => Boolean(t) && typeof t === 'object' && t.privado && t.publico;
 const huellaDe = (t) => (esFotoDelArbol(t) ? require('./after-main.js').huellaDeFoto(t) : t);
 
-function decide({ dir, hash, repo, tree, base, recorte, storyId = null }) {
+// ¿Lo tocado pide medir? También sin saber qué se tocó: no hay con qué decir que lo guardado alcanza. Un archivo que no se
+// deja leer lanza, y quien llama corre la completa.
+function mustMeasureFrom(touchedFile) {
+  if (!fs.existsSync(touchedFile)) return true;
+  const t = leerJson(touchedFile);
+  return t.known !== true || t.must_measure === true;
+}
+
+function decide({ dir, hash, repo, tree, base, recorte, storyId = null, mustMeasure = false }) {
   const full = (reason) => ({ mode: 'full', reason });
   if (!dir || !fs.existsSync(dir) || redHash(dir) !== hash) return full('lo guardado no coincide con su constancia');
   let meta; let medido; let resumen; let rep;
@@ -361,6 +369,8 @@ function decide({ dir, hash, repo, tree, base, recorte, storyId = null }) {
   // sin la historia de la corrida no se sabe si lo guardado es suyo: ante la duda, la completa
   if (meta.storyId && !storyId) return full(`no sé de qué historia es esta corrida: lo guardado es de la ${meta.storyId}`);
   if (meta.storyId && storyId && meta.storyId !== storyId) return full(`lo guardado es de otra historia (${meta.storyId})`);
+  // lo tocado hay que medirlo y lo guardado no corrió ninguna suite: cerrar con eso sería un verde sin medir
+  if (mustMeasure && !(resumen.suites || []).length) return full(`${deLa} no corrió ninguna suite y lo tocado hay que medirlo`);
   // main traído: lo que trajo ya está en la carpeta de ahora, así que cuenta como un cambio más, con los criterios de lo
   // que pide la completa aunque lo guardado sea rojo
   const baseCambio = (meta.base || null) !== (base || null);
@@ -474,14 +484,15 @@ function motivoParaNoGuardar(juntado) {
 
 const hhmm = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '??:??' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
-module.exports = { entries, find, fromSummary, prune, redHash, saveRed, saveGreen, addRepeat, rewriteResult, decide, merge, mergedRed, motivoParaNoGuardar, reEligible, dropRecords, changedFiles, claseQuePideLaCompleta, hhmm, RED_FILES };
+module.exports = { entries, find, fromSummary, prune, redHash, saveRed, saveGreen, addRepeat, rewriteResult, decide, mustMeasureFrom, merge, mergedRed, motivoParaNoGuardar, reEligible, dropRecords, changedFiles, claseQuePideLaCompleta, hhmm, RED_FILES };
 
 if (require.main === module) {
   const [cmd, suitesJson, ruta] = process.argv.slice(2);
   const opt = (k) => { const a = process.argv; const i = a.indexOf(k); return i >= 0 ? a[i + 1] : null; };
   if (cmd === 'decide') {
-    // decide --dir <d> --hash <h> --repo <r> --tree <árbol> --base <sha> --trim <texto>
-    const d = decide({ dir: opt('--dir'), hash: opt('--hash'), repo: opt('--repo'), tree: opt('--tree'), base: opt('--base') || null, recorte: opt('--trim') || '' });
+    // decide --dir <d> --hash <h> --repo <r> --tree <árbol> --base <sha> --trim <texto> [--touched <lo tocado>]
+    const tocado = opt('--touched');
+    const d = decide({ dir: opt('--dir'), hash: opt('--hash'), repo: opt('--repo'), tree: opt('--tree'), base: opt('--base') || null, recorte: opt('--trim') || '', mustMeasure: tocado ? mustMeasureFrom(tocado) : false });
     process.stdout.write(`${JSON.stringify(d)}\n`);
     process.exit(0);
   }
