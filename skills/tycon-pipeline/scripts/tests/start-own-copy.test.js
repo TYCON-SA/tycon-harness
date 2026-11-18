@@ -274,6 +274,43 @@ test('SC6 Start_CoordinatorAlive_Or_Alone_AsToday @story-8.292 @ac-6', () => {
   assert.ok(!fs.readdirSync(path.dirname(d3)).some((n) => n.includes('--wt-')), 'no se creó ninguna copia');
 });
 
+test('SC8 Start_RepeatedFromCheckout_ReusesItsCopy @story-8.292 @ac-2', () => {
+  // 🔴 mutación: crear otra copia y dejar la primera, con su corrida, sin dueño
+  const L = laboratorio();
+  const d = producto(L);
+  const story = path.join(d, 'specs', 'story-1-1.md');
+  otraViva(L.home, d);
+  const uno = start(L, story, d).json;
+  assert.strictEqual(uno.work_copy.created, true, JSON.stringify(uno));
+  const dos = start(L, story, d).json;
+  assert.strictEqual(dos.ready, true, JSON.stringify(dos));
+  assert.strictEqual(dos.work_copy.path, uno.work_copy.path);
+  assert.strictEqual(dos.work_copy.branch, uno.work_copy.branch);
+  assert.strictEqual(dos.work_copy.created, false);
+  assert.strictEqual(fs.readdirSync(path.dirname(d)).filter((n) => n.includes('--wt-')).length, 1, 'una sola copia');
+  assert.strictEqual(fs.realpathSync(miMarcador(L.home).repoPath), fs.realpathSync(uno.work_copy.path));
+  // con el marcador propio ilegible no se sabe qué copia tenía: abre otra, y lo dice
+  // 🔴 mutación: tomar el marcador roto como «no había copia» sin avisar
+  fs.writeFileSync(path.join(stateDir(L.home), 'active', `${SID}.json`), '{roto');
+  const tres = start(L, story, d).json;
+  assert.ok((tres.warnings || []).some((w) => /no pude leer el marcador de esta sesión/.test(w)), JSON.stringify(tres.warnings));
+});
+
+test('SC9 Start_OneSourceUnreadable_SaysSo @story-8.292 @ac-6', { skip: process.getuid && process.getuid() === 0 ? 'como root se lee todo' : false }, () => {
+  // 🔴 mutación: avisar sólo si fallan las dos fuentes: con una ilegible y la otra sin nadie, seguir callado
+  const L = laboratorio();
+  const d = producto(L);
+  const projects = path.join(L.home, '.claude', 'projects');
+  fs.mkdirSync(projects, { recursive: true });
+  fs.chmodSync(projects, 0o000);
+  try {
+    const r = start(L, path.join(d, 'specs', 'story-1-1.md'), d).json;
+    assert.strictEqual(r.ready, true, JSON.stringify(r));
+    assert.ok(!r.work_copy, JSON.stringify(r));
+    assert.ok((r.warnings || []).some((w) => /no pude ver si hay otra sesión/.test(w)), JSON.stringify(r.warnings));
+  } finally { fs.chmodSync(projects, 0o755); }
+});
+
 test('SC7 Step01_TellsAgentToMove @story-8.292 @ac-7', () => {
   // 🔴 mutación: volver a pedir el worktree a mano, o mandar a EnterWorktree (no entra a una copia hermana)
   const doc = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-01-start.md'), 'utf8');

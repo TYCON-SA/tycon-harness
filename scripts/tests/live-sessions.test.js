@@ -142,6 +142,18 @@ test('LS4 Unreadable_GoesToProblems @story-8.292 @ac-1 @ac-11', { skip: process.
   } finally { fs.chmodSync(projects, 0o755); }
 });
 
+test('LS6 Transcript_RepoPathWithUnderscoreOrSpace_IsFound @story-8.292 @ac-1', () => {
+  // 🔴 mutación: cambiar sólo separadores y puntos; Claude Code cambia por `-` todo lo que no sea letra o número
+  const t = toy();
+  for (const nombre of ['mi_repo', 'mi repo', 'mi~repo']) {
+    const checkout = repo(t, nombre);
+    const dir = path.join(t.home, '.claude', 'projects', checkout.replace(/[^a-zA-Z0-9]/g, '-'));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'aaaa1111-otra.jsonl'), `${JSON.stringify({ type: 'user', cwd: checkout, message: { role: 'user', content: 'pedido' } })}\n`);
+    assert.deepStrictEqual(others(t, checkout).sessions.map((s) => s.id), ['aaaa1111-otra'], nombre);
+  }
+});
+
 test('LS5 NoOwnCopy_HarnessCopiesAndAgentSkills @story-8.292 @ac-5', () => {
   // 🔴 mutación: mirar sólo el último tramo de la ruta (no ve la copia --wt- del arnés)
   const t = toy();

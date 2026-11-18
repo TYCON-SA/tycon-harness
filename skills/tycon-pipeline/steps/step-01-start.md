@@ -57,8 +57,10 @@ ni `agent-skills`, crea la copia de trabajo de la historia (`<principal>--wt-<cl
 
 Con la historia sin commitear, `start` pausa con `PIPE-C10-own-copy` sin tocar nada: commiteala en su rama y volvé a
 correr `start`, o coordiná con la otra sesión. La misma pausa sale si traer main o crear la copia falla (con el primer
-renglón del error). En el arnés y en `agent-skills` no crea copia: `warnings` dice que una sola sesión toca git a la
-vez; con coordinadora viva tampoco, porque ella decide dónde trabaja cada sesión. Los recursos suman por máquina: una
+renglón del error). Si `start` se repite desde el checkout, sigue en la copia que la sesión ya abrió para esa historia
+(`work_copy.created: false`). En el arnés y en `agent-skills` no crea copia: `warnings` dice que una sola sesión toca
+git a la vez; con coordinadora viva tampoco, porque ella decide dónde trabaja cada sesión, y en un repo sin `origin`
+tampoco, porque no hay main que traer. Los recursos suman por máquina: una
 suite completa a la vez y el segundo pipeline con `TYCON_5B_EARLY=0` (`step-06-run-tests.md` §Riesgo multi-sesión).
 Detalle: `~/.claude/tycon-harness/guides/git-worktrees.md`.
 

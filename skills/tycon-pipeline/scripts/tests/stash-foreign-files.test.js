@@ -171,6 +171,92 @@ test('SF4 Stash_Alone_Or_Escape_Passes @story-8.292 @ac-15 @ac-16', () => {
   assert.match(roto.stderr, /no pude calcular/);
 });
 
+test('SF6 Stash_MessageGluedToFlags_IsNotAPath @story-8.292 @ac-12', () => {
+  // 🔴 mutación: tomar el mensaje por una ruta: el filtro no coincide con nada y el stash ajeno pasa
+  const L = laboratorio();
+  dosSesiones(L);
+  for (const cmd of ['git stash push -um "wip"', 'git stash push -qum wip', 'git stash push -m"a b"', 'git stash push --message="a b" -u', "git stash push -u --message='a b'"]) {
+    const r = gate(L, cmd);
+    assert.strictEqual(r.status, 2, `${cmd}: ${r.stderr}`);
+    assert.match(r.stderr, /a\.md.*aaaa1111/, cmd);
+  }
+  assert.strictEqual(gate(L, 'git stash push -m"[sesión bbbb2222] mío" -- b.md').status, 0, 'con rutas propias, el mensaje pegado pasa');
+});
+
+test('SF7 Stash_FileNamesWithAccentsOrSpaces_AreRecognized @story-8.292 @ac-12 @ac-14', () => {
+  // 🔴 mutación: leer los nombres de git sin -z: salen entre comillas y con escapes, y no coinciden con ninguna ruta
+  const L = laboratorio();
+  const mio = 'acción mía.md';
+  const suyo = 'decisión.md';
+  fs.writeFileSync(path.join(L.repo, mio), 'x\n');
+  fs.writeFileSync(path.join(L.repo, suyo), 'x\n');
+  git(L.home, L.repo, 'add', '-A');
+  git(L.home, L.repo, 'commit', '-q', '-m', 'con acentos');
+  marcador(L, OTRA, { storyId: '9.9', filesTouched: [path.join(L.repo, suyo)] });
+  marcador(L, MIA, { storyId: '8.8', filesTouched: [path.join(L.repo, mio)] });
+  cambiar(L, mio);
+  assert.strictEqual(gate(L, 'git stash').status, 0, 'sólo lo propio, con acento y espacio');
+  cambiar(L, suyo);
+  const r = gate(L, 'git stash');
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /decisión\.md.*aaaa1111/);
+  assert.ok(r.stderr.includes(`-- '${mio}'`), r.stderr);
+  // una entrada sin marca con sólo lo propio, con acento: es de la sesión
+  git(L.home, L.repo, 'checkout', '-q', '--', suyo);
+  git(L.home, L.repo, 'stash', 'push', '-q', '-m', 'sin marca');
+  const pop = gate(L, 'git stash pop');
+  assert.strictEqual(pop.status, 0, pop.stderr);
+});
+
+test('SF8 Stash_LetsThroughUnmeasured_SaysSo @story-8.292 @ac-16', () => {
+  // 🔴 mutación: dejar pasar sin decir nada cuando git falla o cuando no se puede leer lo que la sesión escribió
+  const { evaluar } = require(path.join(SCRIPTS, 'lib', 'stash-guard.js'));
+  const otraPorTranscripcion = (L) => {
+    const dir = path.join(L.home, '.claude', 'projects', L.repo.replace(/[^a-zA-Z0-9]/g, '-'));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${OTRA}.jsonl`), `${JSON.stringify({ type: 'user', cwd: L.repo, message: { role: 'user', content: 'pedido' } })}\n`);
+  };
+  const correr = (L) => {
+    const avisos = [];
+    const v = evaluar({ cmd: 'git stash', cwd: L.repo, sessionId: MIA, stateDir: stateDir(L.home), home: L.home, avisar: (m) => avisos.push(m) });
+    return { v, avisos };
+  };
+  // (a) git no calcula y la otra sesión no tiene corrida abierta: pasa, y queda dicho
+  const A = laboratorio();
+  otraPorTranscripcion(A);
+  fs.writeFileSync(path.join(A.repo, '.git', 'index'), 'roto');
+  const a = correr(A);
+  assert.strictEqual(a.v, null);
+  assert.ok(a.avisos.some((m) => /no pude calcular/.test(m)), a.avisos.join('\n'));
+  // (b) el marcador propio no se lee
+  const B = laboratorio();
+  otraPorTranscripcion(B);
+  fs.mkdirSync(path.join(stateDir(B.home), 'active'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir(B.home), 'active', `${MIA}.json`), '{roto');
+  const b = correr(B);
+  assert.ok(b.avisos.some((m) => /marcador/.test(m) && /bbbb2222/.test(m)), b.avisos.join('\n'));
+  // (c) el registro de lo escrito por consola no se lee
+  const C = laboratorio();
+  otraPorTranscripcion(C);
+  marcador(C, MIA, { storyId: '8.8' });
+  fs.mkdirSync(path.join(stateDir(C.home), 'console-writes', `${MIA}.jsonl`), { recursive: true });
+  const c = correr(C);
+  assert.ok(c.avisos.some((m) => /consola/.test(m) && /bbbb2222/.test(m)), c.avisos.join('\n'));
+  // (d) las sesiones vivas no se pueden leer: pasa porque no ve a nadie, y lo dice
+  if (!(process.getuid && process.getuid() === 0)) {
+    const D = laboratorio();
+    cambiar(D, 'a.md');
+    const projects = path.join(D.home, '.claude', 'projects');
+    fs.mkdirSync(projects, { recursive: true });
+    fs.chmodSync(projects, 0o000);
+    try {
+      const d = correr(D);
+      assert.strictEqual(d.v, null);
+      assert.ok(d.avisos.some((m) => /no pude leer las transcripciones/.test(m)), d.avisos.join('\n'));
+    } finally { fs.chmodSync(projects, 0o755); }
+  }
+});
+
 test('SF5 MergeToMain_NoStashOptionWithOtherSession_GuideSaysIt @story-8.292 @ac-17 @ac-18', () => {
   // 🔴 mutación: ofrecer el stash con otra sesión viva, devolver stash@{0} en vez de la entrada marcada, o dejar la guía vieja
   const merge = (f) => fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-merge-to-main', 'steps', f), 'utf8');

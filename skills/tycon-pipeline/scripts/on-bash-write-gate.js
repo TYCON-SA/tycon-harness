@@ -3687,6 +3687,7 @@ function handle(event, opts = {}) {
         stash = require('./lib/stash-guard.js').evaluar({
           cmd, cwd: nativePath(event?.cwd || process.cwd()), sessionId: resolveSessionId(event?.session_id),
           stateDir: opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR,
+          avisar: (texto) => logHookError(texto, 'stash-guard sin medir'),
         });
       }
     } catch (e) { logHookError(e, 'stash-guard'); stash = null; }

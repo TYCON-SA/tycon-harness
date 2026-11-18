@@ -50,14 +50,29 @@ function git(dir, args) {
 // Las piezas del arnés: la lib de sesiones vive en scripts/ del mismo árbol (skills/tycon-pipeline/scripts/lib → raíz).
 const libDelArnes = (nombre) => require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', nombre));
 
-/** Las palabras de una sentencia, con las comillas simples o dobles respetadas. */
+/** Las palabras de una sentencia como las ve la consola: una comilla puede abrir en medio (`--message="a b"`, `-m"a b"`). */
 function palabras(s) {
   const out = [];
-  const re = /"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+)/g;
-  let m;
-  while ((m = re.exec(s))) out.push(m[1] != null ? m[1] : m[2] != null ? m[2] : m[3]);
+  let cur = null;
+  let comilla = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (comilla) {
+      if (c === comilla) comilla = null;
+      else if (c === '\\' && comilla === '"' && i + 1 < s.length) cur += s[++i];
+      else cur += c;
+    } else if (c === '"' || c === "'") { comilla = c; cur = cur || ''; }
+    else if (c === '\\' && i + 1 < s.length) cur = (cur || '') + s[++i];
+    else if (/\s/.test(c)) { if (cur !== null) out.push(cur); cur = null; }
+    else cur = (cur || '') + c;
+  }
+  if (cur !== null) out.push(cur);
   return out;
 }
+
+const citar = (f) => (/^[\w./@+:=-]+$/.test(f) ? f : `'${f.replace(/'/g, `'\\''`)}'`);
+// los nombres de git separados por NUL: con renglones, un nombre con acento o espacio sale citado y con escapes
+const nombres = (out) => out.split('\0').filter(Boolean);
 
 /** Lo que pide un `git … stash …`: `{ sub, flags, paths, ref }`. */
 function leerStash(st) {
@@ -78,7 +93,14 @@ function leerStash(st) {
     if (a === '-m' || a === '--message') { k++; continue; }
     if (/^--message=/.test(a)) continue;
     if (a.startsWith('--')) { flags.add(a); continue; }
-    if (a.startsWith('-') && a.length > 1) { for (const c of a.slice(1)) flags.add(`-${c}`); continue; }
+    if (a.startsWith('-') && a.length > 1) {
+      // banderas cortas juntas: `-m` se lleva el resto de la palabra o, si no queda nada, la palabra siguiente
+      for (let j = 1; j < a.length; j++) {
+        if (a[j] === 'm') { if (j === a.length - 1) k++; break; }
+        flags.add(`-${a[j]}`);
+      }
+      continue;
+    }
     if (sub === 'push') paths.push(a);
     else if (sub === 'pop' || sub === 'drop' || sub === 'apply') ref = ref || a;
   }
@@ -86,16 +108,23 @@ function leerStash(st) {
   return { sub, flags, paths, ref };
 }
 
-function marcador(stateDir, sid) {
-  try { return JSON.parse(fs.readFileSync(path.join(stateDir, 'active', `${String(sid).replace(/[/\\]/g, '_')}.json`), 'utf8')); } catch { return null; }
+function marcador(stateDir, sid, avisar) {
+  try { return JSON.parse(fs.readFileSync(path.join(stateDir, 'active', `${String(sid).replace(/[/\\]/g, '_')}.json`), 'utf8')); } catch (e) {
+    if (e.code !== 'ENOENT') avisar(`no pude leer el marcador de la sesión ${corto(sid)} (${e.code || e.message}): lo suyo no cuenta como propio`);
+    return null;
+  }
 }
 
 /** Lo que escribió por consola una sesión (el registro de este gate), por ruta real. */
-function escriturasDe(stateDir, sid) {
+function escriturasDe(stateDir, sid, avisar) {
   try {
-    const { lineas } = require('./undeclared-changes.js').consoleWritesOf(stateDir, sid);
+    const { lineas, problemas } = require('./undeclared-changes.js').consoleWritesOf(stateDir, sid);
+    for (const p of problemas || []) avisar(`lo escrito por consola de la sesión ${corto(sid)}: ${p}`);
     return new Set(lineas.map((l) => l && l.path).filter((p) => typeof p === 'string').map(real));
-  } catch { return new Set(); }
+  } catch (e) {
+    avisar(`no pude leer lo escrito por consola de la sesión ${corto(sid)} (${e.code || e.message})`);
+    return new Set();
+  }
 }
 
 /** De quién es un archivo (ruta real): `{ sid, story, run }` o null. */
@@ -109,24 +138,24 @@ function quienReclama(f, ajenos) {
 
 /** Los archivos que se llevaría un guardado, relativos a la raíz. `{ files }` o `{ error }`. */
 function seLlevaria(raiz, { flags, paths }) {
-  const cambiados = git(raiz, ['diff', '--name-only', 'HEAD']);
+  const cambiados = git(raiz, ['diff', '--name-only', '-z', 'HEAD']);
   if (cambiados.code !== 0) return { error: cambiados.err || `git salió con código ${cambiados.code}` };
-  const lista = cambiados.out.split('\n').filter(Boolean);
+  const lista = nombres(cambiados.out);
   const todos = flags.has('-a') || flags.has('--all');
   if (todos || flags.has('-u') || flags.has('--include-untracked')) {
-    const otros = git(raiz, ['ls-files', '--others', ...(todos ? [] : ['--exclude-standard'])]);
+    const otros = git(raiz, ['ls-files', '--others', '-z', ...(todos ? [] : ['--exclude-standard'])]);
     if (otros.code !== 0) return { error: otros.err || `git salió con código ${otros.code}` };
-    lista.push(...otros.out.split('\n').filter(Boolean));
+    lista.push(...nombres(otros.out));
   }
   return { files: [...new Set(lista)] };
 }
 
 /** Los archivos de una entrada de la pila (con los sin trackear que guardó), relativos a la raíz. */
 function deLaEntrada(raiz, ref) {
-  const r = git(raiz, ['stash', 'show', '--name-only', '--include-untracked', ref]);
-  if (r.code === 0) return { files: r.out.split('\n').filter(Boolean) };
-  const sin = git(raiz, ['stash', 'show', '--name-only', ref]);
-  return sin.code === 0 ? { files: sin.out.split('\n').filter(Boolean) } : { error: sin.err || r.err };
+  const r = git(raiz, ['stash', 'show', '--name-only', '-z', '--include-untracked', ref]);
+  if (r.code === 0) return { files: nombres(r.out) };
+  const sin = git(raiz, ['stash', 'show', '--name-only', '-z', ref]);
+  return sin.code === 0 ? { files: nombres(sin.out) } : { error: sin.err || r.err };
 }
 
 function constancia(stateDir, cmd) {
@@ -141,9 +170,10 @@ const salida = 'Si la persona decide seguir igual, la salida es suya, no del age
 const listaDeOtras = (vivas) => vivas.map((s) => `   · sesión ${corto(s.id)}${s.story ? ` — historia ${s.story}` : ''}${s.lastPrompt ? ` — último pedido: «${s.lastPrompt}»` : ''}`).join('\n');
 
 /**
- * El veredicto para un comando de consola: null (pasa) o `{ block }`. `opts`: `{ cmd, cwd, sessionId, stateDir, home, env }`.
+ * El veredicto para un comando de consola: null (pasa) o `{ block }`. `opts`: `{ cmd, cwd, sessionId, stateDir, home,
+ * avisar }`; `avisar(texto)` recibe lo que no se pudo medir, para que un paso sin medir quede dicho.
  */
-function evaluar({ cmd, cwd, sessionId, stateDir, home = os.homedir() }) {
+function evaluar({ cmd, cwd, sessionId, stateDir, home = os.homedir(), avisar = () => {} }) {
   if (typeof cmd !== 'string' || !/\bgit\b[\s\S]*\bstash\b/.test(cmd)) return null;
   const destino = libDelArnes('git-target.js');
   const live = libDelArnes('live-sessions.js');
@@ -156,18 +186,22 @@ function evaluar({ cmd, cwd, sessionId, stateDir, home = os.homedir() }) {
     if (!raiz) continue;
     const guarda = GUARDAN.has(pedido.sub);
     const scope = guarda ? 'checkout' : 'repo';
-    const otras = live.others({ root: raiz, selfSessionId: sessionId, home, scope }).sessions;
+    const vivas = live.others({ root: raiz, selfSessionId: sessionId, home, scope });
+    vivas.problems.forEach(avisar);
+    const otras = vivas.sessions;
     if (!otras.length) continue;
     if (ESCAPE.test(cmd)) { constancia(stateDir, cmd); return null; }
     const rraiz = real(raiz);
     // quién reclama qué: los marcadores presentes (con cualquier edad) y lo que cada sesión escribió por consola
-    const marcadores = live.claims({ root: raiz, home }).markers;
-    const propio = marcador(stateDir, sessionId);
+    const reclamos = live.claims({ root: raiz, home });
+    reclamos.problems.forEach(avisar);
+    const marcadores = reclamos.markers;
+    const propio = marcador(stateDir, sessionId, avisar);
     const misArchivos = new Set((propio && Array.isArray(propio.filesTouched) ? propio.filesTouched : []).filter((f) => typeof f === 'string').map(real));
-    const miConsola = escriturasDe(stateDir, sessionId);
+    const miConsola = escriturasDe(stateDir, sessionId, avisar);
     const miRun = propio && typeof propio.runDir === 'string' && propio.runDir ? real(propio.runDir) : null;
-    const ajenos = marcadores.filter((m) => m.sessionId !== sessionId).map((m) => ({ ...m, consola: escriturasDe(stateDir, m.sessionId) }));
-    for (const s of otras) if (!ajenos.some((a) => a.sessionId === s.id)) ajenos.push({ sessionId: s.id, storyId: s.story, files: new Set(), runDir: null, consola: escriturasDe(stateDir, s.id) });
+    const ajenos = marcadores.filter((m) => m.sessionId !== sessionId).map((m) => ({ ...m, consola: escriturasDe(stateDir, m.sessionId, avisar) }));
+    for (const s of otras) if (!ajenos.some((a) => a.sessionId === s.id)) ajenos.push({ sessionId: s.id, storyId: s.story, files: new Set(), runDir: null, consola: escriturasDe(stateDir, s.id, avisar) });
     const esPropio = (f) => misArchivos.has(f) || miConsola.has(f) || (miRun && debajo(f, miRun));
     const corridas = path.join(rraiz, '.advisors', 'pipeline-runs');
     const ajeno = (f) => {
@@ -180,9 +214,11 @@ function evaluar({ cmd, cwd, sessionId, stateDir, home = os.homedir() }) {
     };
     const nombre = (f, dd) => `${path.relative(rraiz, f)} — ${dd.sid ? `${dd.run ? 'de la corrida de la sesión' : 'de la sesión'} ${corto(dd.sid)}${dd.story ? ` (historia ${dd.story})` : ''}` : dd.run ? 'de la corrida de otra sesión' : 'ninguna sesión lo reclama'}`;
     const conCorrida = otras.some((s) => s.story);
-    const noCalcula = (motivo) => (conCorrida
-      ? { block: `🔴 ${TAG} no pude calcular qué se llevaría \`git stash ${pedido.sub}\` en ${raiz} (${motivo}), y otra sesión viva tiene su corrida abierta ahí:\n${listaDeOtras(otras)}\n   Ante la duda, freno. ${salida}\n` }
-      : null);
+    const noCalcula = (motivo) => {
+      if (conCorrida) return { block: `🔴 ${TAG} no pude calcular qué se llevaría \`git stash ${pedido.sub}\` en ${raiz} (${motivo}), y otra sesión viva tiene su corrida abierta ahí:\n${listaDeOtras(otras)}\n   Ante la duda, freno. ${salida}\n` };
+      avisar(`no pude calcular qué toca \`git stash ${pedido.sub}\` en ${raiz} (${motivo}): lo dejé pasar, ninguna otra sesión viva tiene su corrida abierta`);
+      return null;
+    };
 
     if (guarda) {
       const calc = seLlevaria(raiz, pedido);
@@ -195,7 +231,7 @@ function evaluar({ cmd, cwd, sessionId, stateDir, home = os.homedir() }) {
       const propios = archivos.filter((f) => esPropio(f)).map((f) => path.relative(rraiz, f));
       const nombres = malos.slice(0, MAX_NOMBRES).map(([f, dd]) => `   · ${nombre(f, dd)}`).join('\n') + (malos.length > MAX_NOMBRES ? `\n   · y ${malos.length - MAX_NOMBRES} más` : '');
       const sugerido = propios.length
-        ? `\`git stash push -m "[sesión ${corto(sessionId)}] <motivo>" -- ${propios.join(' ')}\``
+        ? `\`git stash push -m "[sesión ${corto(sessionId)}] <motivo>" -- ${propios.map(citar).join(' ')}\``
         : 'nada: no hay cambios propios para guardar';
       return { block: `🔴 ${TAG} con otra sesión viva en este checkout (${raiz}), este \`git stash\` se llevaría archivos que no son de esta sesión:\n${nombres}\n   Las otras sesiones vivas:\n${listaDeOtras(otras)}\n   Caso real: un stash así se llevó la corrida de la otra sesión, que rehízo todo.\n   Qué hacer: guardá sólo lo propio, con la marca de la sesión: ${sugerido}; o arrancá la historia en su propia copia (pipeline.js start la crea con otra sesión viva).\n   ${salida}\n` };
     }

@@ -46,9 +46,10 @@ const ABSENT = ['ENOENT', 'ENOTDIR'];
 const ventanaMs = (env = process.env) => (Number(env.TYCON_SESSION_GUARD_MIN) || VENTANA_MIN_DEFAULT) * 60 * 1000;
 const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
 const sinBarras = (sid) => String(sid || '').replace(/[/\\]/g, '_');
-// Claude Code nombra la carpeta con la ruta del cwd cambiando los separadores por `-`; se prueban las dos variantes
-// (con y sin los puntos cambiados) para no depender de ese detalle.
-const encode = (p) => [p.replace(/[/\\:]/g, '-'), p.replace(/[/\\:.]/g, '-')];
+// Claude Code nombra la carpeta con la ruta del cwd cambiando por `-` todo lo que no sea letra o número (`_`, espacios,
+// `~`, acentos); se prueban también las formas con sólo los separadores, y con los puntos, para no depender de ese
+// detalle. Dos rutas que dan la misma carpeta se separan después por el cwd de cada transcripción.
+const encode = (p) => [p.replace(/[^a-zA-Z0-9]/g, '-'), p.replace(/[/\\:]/g, '-'), p.replace(/[/\\:.]/g, '-')];
 
 function git(dir, args) {
   const r = spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', timeout: 5000 });
