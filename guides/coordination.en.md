@@ -657,6 +657,9 @@ node <harness>/scripts/tools/office/board.js set T-41 estado=curso quien=Sand no
 node <harness>/scripts/tools/office/board.js close T-41 [--real YYYY-MM-DDTHH:MM]          # close it
 node <harness>/scripts/tools/office/board.js save --from <your separate file>              # the whole board
 node <harness>/scripts/tools/office/board.js check                                         # check without writing
+node <harness>/scripts/tools/office/board.js due                                           # the «Te toca» lines
+node <harness>/scripts/tools/office/board.js due confirm <id>                              # still valid: count again
+node <harness>/scripts/tools/office/board.js due drop <id>                                 # remove it
 ```
 
 Writing it by hand (Edit, Write or the console) is stopped with the command that does the same. Reading it stays free, and
@@ -679,6 +682,11 @@ says so once under «No se pudo leer». A badly written row is not saved: `board
   open questions and this list: notes are not read, so what the owner has to do goes here. `meta.resumen` is ignored, like
   `tablas`: the line above the kanban builds itself from the cards («Sale primero: T-52 … · 19:30 · Tu firma: 2 · Trabado:
   1 · Tablero escrito a las 16:29», or «Nada con hora en curso»).
+- A `teToca` line expires after 24 hours: it stops showing and the office says how many expired in the summary strip.
+  Saving it again does not
+  renew it, because `save --from` brings your whole file; `due confirm` renews it. `due drop` removes it from the board:
+  remove it from your separate file too, or the next `save --from` brings it back with its date. Signatures and questions
+  do not expire. The date lives in `meta.teTocaDesde`, which only `board.js` writes.
 
 «Terminados» is what was done today, with its time; anything older, or with no `realIso`, goes to the «Hechos» table. «En
 curso» goes by end time: what ends first on top, what has no time after, and the coordinator last.
