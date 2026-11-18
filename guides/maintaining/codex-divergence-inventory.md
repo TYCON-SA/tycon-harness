@@ -205,9 +205,8 @@ Scripts afectados: `pipeline.js`, `marker.js`, `adversarial-verify.workflow.js`,
 | `tycon-skill-scout`, `tycon-story-followup-link`, `tycon-new-migration`, `check-story-drift` | 1-6 rutas cada una | ② |
 | `tycon-story-work-item` | ninguna | ① |
 
-**Skills BMAD que el pipeline invoca** (las únicas que hay que verificar explícitamente, no las ~100):
-`bmad-dev-story`, `bmad-agent-dev`, `bmad-agent-quick-flow-solo-dev`, `bmad-code-review`,
-`bmad-testarch-atdd`, `bmad-plan`.
+**Skills BMAD que el pipeline nombra** (las únicas que hay que verificar explícitamente, no las ~100; ninguna está en el
+camino de una historia): `bmad-code-review`, `bmad-agent-analyst`, `bmad-testarch-atdd`, `bmad-plan`.
 
 ---
 

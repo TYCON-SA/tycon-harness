@@ -402,3 +402,9 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story
 **Si «Cerrar la historia» sigue inmediatamente** después de este paso: el `status: review` se sobreescribe a `done` allá. NO es opcional saltearlo — siempre mutá `review` acá aunque vayas a «Cerrar la historia» después; el costo del double-write es trivial y deja el log de mutación más auditable.
 
 **Si el update falla** (frontmatter sin línea `status:` por algún motivo raro): WARNING al usuario pero NO bloquear el commit prep — el dev puede setearlo manualmente.
+
+**El índice `sprint-status.yaml`** se toca sólo si hay uno manual, como en «Implementar». Se busca en la carpeta que dice
+`implementation_artifacts` en `_bmad/bmm/config.yaml` o, sin esa clave, junto a la historia, y
+`node ~/.claude/tycon-harness/scripts/tools/story-index.js --repo <repo> --mode` dice de qué tipo es. Con `manual` y sin
+aviso, el renglón de la historia pasa a `review`, sin tocar los demás. Con `generated` no se edita. Si el comando imprime
+un aviso, falla o no está, tampoco: se dice en una línea y se sigue. Si no se encuentra, se dice en una línea y se sigue.
