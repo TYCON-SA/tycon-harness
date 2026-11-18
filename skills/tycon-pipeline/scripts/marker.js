@@ -2341,6 +2341,8 @@ function cmdCompleteStep(nRaw, flags) {
             // con tanda anotada, la firma nombra la sesión: así la terminal mide la misma tanda que esta matriz
             console.error(`     ${signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} runtime-waiver ${storyPath}${matrix.batch && SID !== '_nosession' ? ` --for-session ${SID}` : ''}`);
           }
+          // los criterios con cota: lo medido y la cota de cada uno, y las tres salidas
+          for (const l of require('./runtime-matrix.js').lineasDeMedida(matrix)) console.error(`  ${l}`);
           // La firma que existe pero se descartó se DICE: sin esto, «esperan waiver» parece que el dev no firmó.
           for (const l of require('./runtime-matrix.js').avisoFirmasDescartadas(matrix, storyPath)) console.error(`  ${l}`);
           if (matrix.chainOk === false) console.error('  🚨 hay líneas de esta story descartadas por la cadena del registro de firmas — causa probable: una edición a mano.');
@@ -4027,6 +4029,9 @@ function deudaDeLaMatriz(marker, matrix) {
   if ((matrix.notVerifiable || []).length) motivos.push(`🔴 la deuda no exime los imposibles-declarados sin firma: ${lista(matrix.notVerifiable)}`);
   if ((matrix.accionNoEjercida || []).length) motivos.push(`🔴 la deuda no exime la evidencia que no ejerció la acción: ${lista(matrix.accionNoEjercida)}`);
   if ((matrix.sinImagen || []).length) motivos.push(`🔴 la deuda no exime los criterios de pantalla sin imagen: ${lista(matrix.sinImagen)}`);
+  // corrieron y su medida no cumple la cota del criterio, o falta: se miden de nuevo, se cambia el criterio o se firman
+  if ((matrix.fueraDeCota || []).length) motivos.push(`🔴 la deuda no exime los criterios fuera de la cota: ${lista(matrix.fueraDeCota)}`);
+  if ((matrix.sinMedicion || []).length) motivos.push(`🔴 la deuda no exime los criterios sin medición: ${lista(matrix.sinMedicion)}`);
   if ((matrix.noLeidos || []).length) motivos.push(`🔴 la deuda no exime el código declarado que la matriz no pudo leer: ${matrix.noLeidos.map((x) => x.rel || x).join(', ')}`);
   return { acepta: motivos.length === 0 && c.covered.length > 0, acs: c.covered, tests, until: er.until, motivos };
 }
@@ -6936,13 +6941,8 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
     const texto = matrix.perAc[n].text;
     let ans;
     try {
-      ans = waiver.promptTty(
-        `\n──────── AC #${n} ────────\n` +
-        `QUÉ DICE EL AC:\n  ${texto ? texto : '(no se pudo citar del spec — abrí la story antes de aprobar)'}\n\n` +
-        `Por qué NO se puede verificar corriendo la app:\n  ${reason}\n` +
-        `Cubierto por (test que ya corrió): ${cov}\n\n` +
-        `¿Aprobás saltar la verificación POR-LA-APP de AC#${n}? (si / no) > `,
-      );
+      ans = waiver.promptTty(require('./lib/waiver-display.js').preguntaDeTerminal({ ac: n, texto, reason, cov,
+        medida: require('./runtime-matrix.js').textoDeMedida(matrix.perAc[n]) }));
     } catch (e) {
       console.error(`🔒 ${e.message}`);
       process.exit(2);

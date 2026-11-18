@@ -2497,6 +2497,245 @@ withWaiverLog(() => {
     JSON.stringify(l));
 }
 
+// ---------------------------------------------------------------- criterio con cota (@measure)
+// Un criterio con un número («responde en menos de 2 s») lleva la marca `@measure(duration < 2s)`: la matriz compara lo
+// que midió el humo (`duration_ms`, o un `TYCON_MEASURE` del comando) con esa cota. Fuera de la cota o sin medición, el
+// criterio no sale verde. Sin marca, nada cambia.
+{
+  const L = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
+  const tsHace = (min) => new Date(Date.now() - min * 60 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+  // un taller con los criterios dados (uno por renglón numerado) y una prueba de integración por criterio
+  const conCriterios = (acs, { ack = [], tests = null, cuerpo = null } = {}) => {
+    const f = makeWorkspace({ ack });
+    const fm = fs.readFileSync(f.storyPath, 'utf8').split('\n## Acceptance Criteria')[0];
+    const filas = tests || acs.map((_, i) => `| T${i + 1} | \`FeatureTests.Caso${i + 1}\` | ${i + 1} | integration | x | y |`);
+    fs.writeFileSync(f.storyPath, fm + '\n' + (cuerpo || ['', '## Acceptance Criteria', '', ...acs.map((t, i) => `${i + 1}. ${t}`), ''].join('\n')) +
+      ['', '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', ...filas, ''].join('\n'));
+    return f;
+  };
+  const humo = (f, acs, o = {}) => L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs, cmd: o.cmd || 'curl -s http://app/x',
+    ts: o.ts, durationMs: o.ms, measures: o.measures, enRegistro: o.enRegistro, env: o.env });
+  const calc = (f, extra = {}) => rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, activeDir: fs.mkdtempSync(path.join(os.tmpdir(), 'cota-')), ...extra });
+  const DUR = '**Given** la consulta, **Then** responde en menos de 2 s. @measure(duration < 2s)';
+  const p95 = (v) => [{ name: 'p95', value: v, unit: 'ms' }];
+
+  // T9 — Matrix_DurationOverBound_FueraDeCota (AC 7, 10, 14)
+  {
+    const f = conCriterios([DUR]); humo(f, [1], { ms: 3010 });
+    const r = calc(f); const md = rm.renderMd(r);
+    const g = conCriterios([DUR]); humo(g, [1], { ms: 1005 });
+    const rg = calc(g);
+    const h = conCriterios(['**Then** responde rápido. @measure(duration < 2s) @measure(p95 <= 200ms)']); humo(h, [1], { ms: 1005, measures: p95(250) });
+    const rh = calc(h);
+    const PANT = '**Then** el usuario ve la lista enseguida. @pantalla @measure(duration < 2s)';
+    const s1 = conCriterios([PANT]); humo(s1, [1], { ms: 1005 });
+    const s2 = conCriterios([PANT]); humo(s2, [1], { ms: 3010 });
+    check('Matrix_DurationOverBound_FueraDeCota @story-8.260 @ac-7 @ac-10 @ac-14',
+      r.perAc[1].verdict === 'FUERA-DE-COTA' && !r.green && r.fueraDeCota.includes(1) && r.pendientes.includes(1) && !r.notRun.includes(1)
+        && /medido 3010 ms; la cota es < 2000 ms \(humo /.test(md)
+        && rg.perAc[1].verdict === 'RUNTIME' && rg.green
+        && rh.perAc[1].verdict === 'FUERA-DE-COTA' && rh.perAc[1].medida.nombre === 'p95'
+        && calc(s1).perAc[1].verdict === 'SIN-EVIDENCIA' && calc(s2).perAc[1].verdict === 'FUERA-DE-COTA',
+      JSON.stringify({ r: r.perAc[1], rg: rg.perAc[1].verdict, rh: rh.perAc[1].medida, s1: calc(s1).perAc[1].verdict, s2: calc(s2).perAc[1].verdict }));
+  }
+
+  // T10 — Matrix_EmittedMeasure_RuntimeOutOrMissing (AC 8)
+  {
+    const P = '**Then** el percentil 95 no pasa de 200 ms. @measure(p95 <= 200ms)';
+    const v = (marca, o) => { const f = conCriterios([marca]); humo(f, [1], o); return calc(f).perAc[1]; };
+    const a = v(P, { ms: 100, measures: p95(180) });
+    const b = v(P, { ms: 100, measures: p95(250) });
+    const c = v(P, { ms: 100 });
+    const sinDur = [v(DUR, {}), v(DUR, { ms: null }), v(DUR, { ms: -5 })];
+    check('Matrix_EmittedMeasure_RuntimeOutOrMissing @story-8.260 @ac-8',
+      a.verdict === 'RUNTIME' && b.verdict === 'FUERA-DE-COTA' && c.verdict === 'SIN-MEDICION'
+        && /ningún humo fresco del criterio trae la medida p95/.test(c.medida.motivo)
+        && sinDur.every((x) => x.verdict === 'SIN-MEDICION' && /ningún humo fresco del criterio trae la medida duration/.test(x.medida.motivo)),
+      JSON.stringify({ a: a.verdict, b: b.verdict, c: c.medida, d: sinDur.map((x) => [x.verdict, x.medida && x.medida.motivo]) }));
+  }
+
+  // T11 — Matrix_LatestFreshDecides_OthersListed_UnitTestNotCounted (AC 9)
+  {
+    const f = conCriterios([DUR]);
+    humo(f, [1], { ms: 3010, ts: tsHace(3) }); humo(f, [1], { ms: 2500, ts: tsHace(2) }); humo(f, [1], { ms: 1005, ts: tsHace(1) });
+    const r = calc(f); const md = rm.renderMd(r);
+    // el de node --test (más nuevo, dentro) no cuenta para la medida, tampoco con la variable vieja
+    const u = conCriterios([DUR]);
+    humo(u, [1], { ms: 3010, ts: tsHace(2) }); humo(u, [1], { ms: 100, ts: tsHace(1), cmd: 'node --test x.test.js' });
+    const ru = calc(u); const rl = calc(u, { env: { TYCON_RUNTIME_MATRIX_LEGACY: '1' } });
+    // el simulado no cuenta, ni antes ni después del corte
+    const sim = (startedAt) => {
+      const s = conCriterios([DUR]);
+      fs.writeFileSync(path.join(s.repo, 'probe.mjs'), "import { setupServer } from 'msw/node';\nsetupServer().listen();\n");
+      humo(s, [1], { ms: 3010, ts: tsHace(2) }); humo(s, [1], { ms: 100, ts: tsHace(1), cmd: 'node probe.mjs' });
+      return calc(s, startedAt ? { startedAt } : {}).perAc[1];
+    };
+    const simDespues = sim(null); const simAntes = sim('2000-01-01T00:00:00Z');
+    // dos con el mismo ts: decide el peor, en los dos órdenes
+    const mismo = (orden) => { const s = conCriterios([DUR]); const ts = tsHace(1); for (const ms of orden) humo(s, [1], { ms, ts }); return calc(s).perAc[1].verdict; };
+    check('Matrix_LatestFreshDecides_OthersListed_UnitTestNotCounted @story-8.260 @ac-9',
+      r.perAc[1].verdict === 'RUNTIME' && /2 de 3 fuera de cota/.test(md)
+        && ru.perAc[1].verdict === 'FUERA-DE-COTA' && rl.perAc[1].verdict === 'FUERA-DE-COTA'
+        && simDespues.medida.medido === 3010 && simAntes.verdict === 'FUERA-DE-COTA'
+        && mismo([1005, 3010]) === 'FUERA-DE-COTA' && mismo([3010, 1005]) === 'FUERA-DE-COTA',
+      JSON.stringify({ r: r.perAc[1].verdict, ru: ru.perAc[1].verdict, rl: rl.perAc[1].verdict, sd: simDespues, sa: simAntes.verdict, m1: mismo([1005, 3010]), m2: mismo([3010, 1005]) }));
+  }
+
+  // T12 — Matrix_UnreadableMark_SinMedicion (AC 11)
+  {
+    const a = conCriterios(['**Then** responde. @measure(p95 ~ 2)']); humo(a, [1], { ms: 100 });
+    const ra = calc(a);
+    const largo = conCriterios([`**Then** ${'responde bien y sin errores '.repeat(30)} @measure(duration < 2s)`]); humo(largo, [1], { ms: 3010 });
+    const citada = conCriterios(['**Then** se escribe `@measure(duration < 2s)` en el criterio.']); humo(citada, [1], { ms: 3010 });
+    const gh = conCriterios([], { cuerpo: ['', '## Acceptance Criteria', '', '```gherkin', 'Given la consulta', 'When se pide',
+      'Then responde @measure(duration < 2s)', '```', ''].join('\n'), tests: ['| T1 | `FeatureTests.Caso1` | 1 | integration | x | y |'] });
+    humo(gh, [1], { ms: 3010 });
+    const sinHumo = conCriterios(['**Then** responde. @measure(p95 ~ 2)', '**Then** otro.']);
+    const rs = calc(sinHumo);
+    const hoy = calc(conCriterios(['**Then** responde.', '**Then** otro.']));
+    check('Matrix_UnreadableMark_SinMedicion @story-8.260 @ac-11',
+      ra.perAc[1].verdict === 'SIN-MEDICION' && /marca ilegible: @measure\(p95 ~ 2\)/.test(ra.perAc[1].medida.motivo)
+        && ra.warnings.some((w) => /marca ilegible/.test(w))
+        && calc(largo).perAc[1].verdict === 'FUERA-DE-COTA' && calc(citada).perAc[1].verdict === 'RUNTIME'
+        && calc(gh).perAc[1].verdict === 'FUERA-DE-COTA'
+        && rs.perAc[1].verdict === hoy.perAc[1].verdict && rs.warnings.some((w) => /marca ilegible/.test(w)),
+      JSON.stringify({ a: ra.perAc[1], l: calc(largo).perAc[1].verdict, c: calc(citada).perAc[1].verdict, g: calc(gh).perAc[1].verdict, s: rs.perAc[1].verdict, h: hoy.perAc[1].verdict }));
+  }
+
+  // T13 — Matrix_MeasuredAc_DeclaredThenWaived (AC 13)
+  withWaiverLog(() => {
+    const DECL = (cov) => ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el entorno de prueba no deja medir"', `    covered_by: ${cov}`];
+    const fuera = (ack, conPrueba) => { const f = conCriterios([DUR], { ack }); humo(f, [1], { ms: 3010 }); if (conPrueba) writeTestsResult(f.advDir, '9.9', true, new Date().toISOString()); return f; };
+    const r0 = calc(fuera([], true));
+    const rSinPrueba = calc(fuera(DECL('TX'), false));
+    const fD = fuera(DECL('T1'), true); const rD = calc(fD); const mdD = rm.renderMd(rD);
+    const firmar = (f, r) => waiverLib.appendWaiver({ story: '9.9', acs: [1], matrixHash: r.hash, approvedBy: 'DevA', nowIso: new Date().toISOString(),
+      declHashByAc: { 1: waiverLib.declHashFor('el entorno de prueba no deja medir', 'T1') } });
+    firmar(fD, rD); const rW = calc(fD);
+    const fS = conCriterios(['**Then** el p95 no pasa de 200 ms. @measure(p95 <= 200ms)'], { ack: DECL('T1') });
+    humo(fS, [1], { ms: 100 }); writeTestsResult(fS.advDir, '9.9', true, new Date().toISOString());
+    firmar(fS, calc(fS)); const rS = calc(fS);
+    const fN = conCriterios([DUR], { ack: DECL('T1') }); writeTestsResult(fN.advDir, '9.9', true, new Date().toISOString());
+    firmar(fN, calc(fN)); const rN = calc(fN);
+    // una firma sobre el fuera de cota sin declarar: se ignora
+    const fI = fuera([], true); const rI0 = calc(fI);
+    waiverLib.appendWaiver({ story: '9.9', acs: [1], matrixHash: rI0.hash, approvedBy: 'DevA', nowIso: new Date().toISOString() });
+    const rI = calc(fI);
+    check('Matrix_MeasuredAc_DeclaredThenWaived @story-8.260 @ac-13',
+      r0.perAc[1].verdict === 'FUERA-DE-COTA' && !r0.green
+        && rSinPrueba.perAc[1].verdict === 'FUERA-DE-COTA' && rSinPrueba.warnings.some((w) => /AC#1/.test(w) && /sigue FUERA-DE-COTA/.test(w))
+        && !rSinPrueba.warnings.some((w) => /AC#1/.test(w) && /NO-CORRIDO/.test(w))
+        && rD.perAc[1].verdict === 'NOT-VERIFIABLE' && /declarado imposible de medir; medido 3010 ms, la cota es < 2000 ms/.test(mdD)
+        && rW.perAc[1].verdict === 'WAIVED-USER' && rW.green
+        && rS.perAc[1].verdict === 'WAIVED-USER' && rN.perAc[1].verdict === 'WAIVED-USER'
+        && rI.perAc[1].verdict === 'FUERA-DE-COTA'
+        && /se mide de nuevo/.test(rm.renderMd(r0)) && /se cambia el criterio/.test(rm.renderMd(r0)) && /lo firma una persona/.test(rm.renderMd(r0)),
+      JSON.stringify({ r0: r0.perAc[1].verdict, sp: rSinPrueba.perAc[1].verdict, d: rD.perAc[1].verdict, w: rW.perAc[1].verdict, s: rS.perAc[1].verdict, n: rN.perAc[1].verdict, i: rI.perAc[1].verdict }));
+  });
+
+  // T14 — Matrix_NoRuntime_KeepsVerdict_AddsMeasureNote (AC 14)
+  {
+    const f = conCriterios([DUR, '**Then** responde.']);
+    writeTestsResult(f.advDir, '9.9', true, new Date().toISOString());
+    humo(f, [1, 2], { ms: 100, cmd: 'node --test x.test.js' });
+    const r = calc(f);
+    const p = conCriterios(['**When** el usuario crea el pedido, **Then** queda guardado en menos de 2 s. @measure(duration < 2s)']);
+    humo(p, [1], { ms: 3010, cmd: 'curl -s http://app/pedidos' });
+    const rp = calc(p);
+    check('Matrix_NoRuntime_KeepsVerdict_AddsMeasureNote @story-8.260 @ac-14',
+      r.perAc[1].verdict === r.perAc[2].verdict && /además pide la medida duration/.test(rm.renderMd(r))
+        && rp.perAc[1].verdict === 'FUERA-DE-COTA',
+      JSON.stringify({ v1: r.perAc[1].verdict, v2: r.perAc[2].verdict, p: rp.perAc[1].verdict }));
+  }
+
+  // T15 — Matrix_EditedDurationInLedger_NotCounted (AC 15)
+  {
+    const editado = (o) => { const f = conCriterios([o.marca || DUR, '**Then** responde.']); humo(f, [1, 2], o); return calc(f); };
+    const a = editado({ ms: 3010, enRegistro: { duration_ms: 1005 } });
+    const b = editado({ ms: 1005, enRegistro: { duration_ms: 100 } });
+    const c = editado({ marca: '**Then** p95 bajo. @measure(p95 <= 200ms)', ms: 10, measures: p95(1800), enRegistro: { measures: p95(180) } });
+    const f = conCriterios([DUR]);
+    humo(f, [1], { ms: 3010, ts: tsHace(2) }); humo(f, [1], { ms: 3010, ts: tsHace(1), enRegistro: { duration_ms: 1005 } });
+    const d = calc(f);
+    const noConf = (r) => r.perAc[1].verdict === 'SIN-MEDICION' && /no confirmada por el espejo/.test(r.perAc[1].medida.motivo);
+    check('Matrix_EditedDurationInLedger_NotCounted @story-8.260 @ac-15',
+      noConf(a) && noConf(b) && noConf(c) && a.perAc[2].verdict === 'RUNTIME'
+        && d.perAc[1].verdict === 'FUERA-DE-COTA' && /no confirmada por el espejo/.test(rm.renderMd(d)),
+      JSON.stringify({ a: a.perAc[1], b: b.perAc[1].verdict, c: c.perAc[1].verdict, a2: a.perAc[2].verdict, d: d.perAc[1] }));
+  }
+
+  // T16 — Matrix_Report_SaysOneRunNotLoad (AC 16)
+  {
+    const f = conCriterios([DUR]); humo(f, [1], { ms: 1005, env: { os: 'darwin', node: 'v22', tool: 'claude' } });
+    const md = rm.renderMd(calc(f));
+    const RAIZ = path.join(__dirname, '..', '..', '..', '..');
+    const dod = fs.readFileSync(path.join(RAIZ, 'guides', 'definition-of-done.md'), 'utf8');
+    const sf = fs.readFileSync(path.join(RAIZ, 'story-format.md'), 'utf8');
+    const dice = (t) => /no es una prueba de carga/i.test(t) && /servidor de CI/.test(t) && /TYCON_MEASURE/.test(t) && /lo que el comando dice/.test(t);
+    check('Matrix_Report_SaysOneRunNotLoad @story-8.260 @ac-16',
+      /una corrida en darwin \(claude\), \d{4}-\d{2}-\d{2}; no es una prueba de carga ni dice nada de producción/.test(md) && dice(dod) && dice(sf),
+      md.split('\n').find((l) => l.startsWith('| #1')));
+  }
+
+  // T18 — Matrix_HashSameWithoutMarks_WaiverStillApplies (AC 19)
+  withWaiverLog(() => {
+    const DECL = ['runtime_not_verifiable:', '  - ac: 2', '    reason: "esquema, no observable"', '    covered_by: T2'];
+    // el mismo sello en todos: el hash nombra la evidencia por su sello
+    const TS = tsHace(1);
+    const armar = (ac1, conMedidas) => {
+      const f = conCriterios([ac1, '**Then** el esquema queda.'], { ack: DECL });
+      writeTestsResult(f.advDir, '9.9', true, new Date().toISOString());
+      humo(f, [1], conMedidas ? { ms: 1005, measures: p95(10), ts: TS } : { ts: TS });
+      return f;
+    };
+    const sinMarca = '**Then** responde.';
+    const h0 = calc(armar(sinMarca, false)).hash;
+    const fM = armar(sinMarca, true); const rM = calc(fM);
+    // una firma anclada a la declaración (la de hoy) y una vieja, anclada sólo al hash
+    waiverLib.appendWaiver({ story: '9.9', acs: [2], matrixHash: rM.hash, approvedBy: 'DevA', nowIso: new Date().toISOString(),
+      declHashByAc: { 2: waiverLib.declHashFor('esquema, no observable', 'T2') } });
+    const decl = () => calc(fM).perAc[2].verdict;
+    const okDecl = decl() === 'WAIVED-USER';
+    const cumple = (() => { const f = armar(`${sinMarca} @measure(duration < 2s)`, true); return calc(f).hash; })();
+    const fNo = armar(`${sinMarca} @measure(duration < 1s)`, true); const rNo = calc(fNo);
+    // la vieja, sólo por hash: en otro registro, para ver que deja de aplicar cuando el hash cambia
+    const viejaVale = withWaiverLog(() => {
+      waiverLib.appendWaiver({ story: '9.9', acs: [2], matrixHash: rM.hash, approvedBy: 'DevA', nowIso: new Date().toISOString() });
+      return [calc(fM).perAc[2].verdict, calc(fNo).perAc[2].verdict];
+    });
+    check('Matrix_HashSameWithoutMarks_WaiverStillApplies @story-8.260 @ac-19',
+      h0 === rM.hash && okDecl && cumple === rM.hash && rNo.hash !== rM.hash && rNo.perAc[2].verdict === 'WAIVED-USER'
+        && viejaVale[0] === 'WAIVED-USER' && viejaVale[1] === 'NOT-VERIFIABLE',
+      JSON.stringify({ h0, hM: rM.hash, cumple, hNo: rNo.hash, okDecl, no2: rNo.perAc[2].verdict, viejaVale }));
+  });
+
+  // T35 — Matrix_SameTs_WorstReportedAnyOrder (AC 9): con el mismo sello se informa el peor, en cualquier orden
+  {
+    const mismo = (orden, marca = DUR) => { const f = conCriterios([marca]); const ts = tsHace(1); for (const ms of orden) humo(f, [1], { ms, ts }); return calc(f).perAc[1]; };
+    const a = mismo([2500, 3010]); const b = mismo([3010, 2500]);
+    // con `>`, el peor es el más chico; y si todos cumplen, también se informa el mismo en los dos órdenes
+    const MIN = '**Then** tarda al menos 2 s. @measure(duration > 2s)';
+    const c = mismo([1500, 1000], MIN); const d = mismo([1000, 1500], MIN);
+    const e = mismo([1005, 1500]); const g = mismo([1500, 1005]);
+    check('Matrix_SameTs_WorstReportedAnyOrder @story-8.260 @ac-9',
+      a.verdict === 'FUERA-DE-COTA' && a.medida.medido === 3010 && b.medida.medido === 3010
+        && c.medida.medido === 1000 && d.medida.medido === 1000
+        && e.verdict === 'RUNTIME' && e.medida.medido === 1500 && g.medida.medido === 1500,
+      JSON.stringify([a.medida, b.medida, c.medida, d.medida, e.medida, g.medida]));
+  }
+
+  // T19 — Matrix_OldLinesAndUnmarkedAcs_Unchanged (AC 20): renglones sin duración y criterios sin marca no ganan campos
+  {
+    const f = conCriterios(['**Then** responde.', '**Then** otro.']);
+    humo(f, [1]); humo(f, [2], { ms: 1005, measures: p95(10) });
+    const r = calc(f);
+    check('Matrix_OldLinesAndUnmarkedAcs_Unchanged @story-8.260 @ac-20',
+      r.perAc[1].verdict === 'RUNTIME' && r.perAc[2].verdict === 'RUNTIME' && !('medida' in r.perAc[1]) && !('medida' in r.perAc[2])
+        && !/FUERA-DE-COTA|SIN-MEDICION|cota/.test(rm.renderMd(r)),
+      JSON.stringify(r.perAc));
+  }
+}
+
 console.log('');
 if (failures > 0) {
   console.error(`✗ ${failures} caso(s) fallando`);

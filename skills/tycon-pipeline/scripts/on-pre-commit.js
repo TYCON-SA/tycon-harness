@@ -1787,6 +1787,8 @@ function main() {
         evidencePath: evidence.path,
         evidenceEsRegistro: !!evidence.esRegistro,
         fuentes: fuentesBuscadas(calc),
+        // un criterio con cota fuera de la cota o sin medición sí corrió: se dice lo medido, no sólo «sin evidencia»
+        medidas: calc.matrix ? calc.rm.lineasDeMedida(calc.matrix) : [],
       });
       continue;
     }
@@ -1840,6 +1842,8 @@ function main() {
           pendientes: matrix.pendientes,
           notRun: matrix.notRun || [],
           notVerifiable: matrix.notVerifiable || [],
+          // los criterios con cota fuera de la cota o sin medición, con lo medido, la cota y las tres salidas
+          medidas: rm.lineasDeMedida(matrix),
           hash: matrix.hash,
           chainOk: matrix.chainOk,
           // las firmas descartadas, y el texto con la ruta REAL (la matriz corrió sobre una copia tmp)
@@ -2022,6 +2026,7 @@ function main() {
       const fu = v.fuentes || {};
       const nada = (xs) => !xs || xs.length === 0;
       lines.push(`     Criterios sin evidencia: ${v.missingAcs.join(', ')}`);
+      for (const l of (v.medidas || [])) lines.push(`     ${l}`);
       lines.push('     Se buscaron en:');
       lines.push(`       · el informe elegido: ${v.evidencePath}${v.evidenceEsRegistro ? ' (es el registro de pruebas de humo: sus criterios se cuentan por la fuente 1, no por el texto)' : ''}`);
       if (fu.error) {
@@ -2051,6 +2056,7 @@ function main() {
         lines.push(`     🟪 imposibles-declarados (esperan waiver del USUARIO): ${v.notVerifiable.map(n => '#' + n).join(', ')}`);
         lines.push(`        node <skill>/scripts/marker.js runtime-waiver <ruta-story.md>   (requiere /dev/tty)`);
       }
+      for (const l of (v.medidas || [])) lines.push(`     ${l}`);
       for (const l of (v.avisoDescartadas || [])) lines.push(`     ${l}`);
       if (v.chainOk === false) lines.push(`     🚨 hay líneas de esta story descartadas por la cadena del registro de firmas — causa probable: una edición a mano.`);
     } else if (v.reason === 'matrix-structural') {

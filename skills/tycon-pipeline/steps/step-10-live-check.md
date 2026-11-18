@@ -97,6 +97,28 @@ una grabación** (`.png` o `.webm`) del navegador real, atada a ese AC. Si corri
 - **Las stories que ya estaban en curso** cuando se publicó la regla (por la fecha de arranque de su marcador, o el
   `created:` de la story) no se frenan por esto: la matriz les muestra un aviso con cómo sacar la captura.
 
+## Un humo que mide: el criterio con cota
+
+Un criterio con un número lleva su cota en el texto: `@measure(duration < 2s)` o `@measure(p95 <= 200ms)`
+(`story-format.md` §5). Su humo es el de siempre, por `smoke-run.sh`; el envoltorio anota solo lo que tardó el comando
+(`duration_ms`, en el registro y en el espejo). Si el criterio pide otra medida, el comando la imprime **al final** de su
+salida, un renglón por medida:
+
+```bash
+smoke-run.sh <evidence-dir> <ruta-de-la-story.md> --acs 4 --pass-if 'el p95 de 100 pedidos no pasa de 200 ms' -- \
+  node .advisors/9.9-p95.js     # mide 100 pedidos e imprime al final: TYCON_MEASURE p95=180ms
+```
+
+- Al final, porque la salida guardada se recorta a 8 KB (el principio y el final): si la salida pasa ese tope y trajo
+  medidas, el humo lo avisa. El valor se guarda igual, en el renglón del registro.
+- Un renglón `TYCON_MEASURE` mal formado o con el nombre reservado `duration` no se guarda (`measures_rejected`, con su
+  número de renglón en el aviso). Hasta 20 nombres; un nombre repetido: gana el último.
+- Si hace falta repetir para tener un percentil, lo repite el comando y emite el agregado: el arnés no repite corridas ni
+  elige umbrales. Decide el humo más nuevo; los otros salen en la matriz con cuántos quedaron fuera de la cota.
+- Fuera de la cota el criterio queda `FUERA-DE-COTA`; sin la medida, `SIN-MEDICION`. Se mide de nuevo, se cambia el
+  criterio, o se declara imposible y lo firma el dueño. La medición vale para esa corrida en esa máquina: no es una
+  prueba de carga ni dice nada de producción.
+
 ## Por qué este step existe
 
 Sin un step explícito para verificar el gate DoD declarado en

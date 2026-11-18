@@ -211,6 +211,13 @@ HERMANOS_JSON="$(node "$(cd "$(dirname "$0")" && pwd)/lib/companion-repos.js" an
 # barras de progreso).
 SALIDA_TMP="$(mktemp "${TMPDIR:-/tmp}/smoke-run.XXXXXX" 2>/dev/null)" || SALIDA_TMP=""
 GUARDAR_SALIDA=0
+# ── Cuánto tardó el comando ──
+# El reloj de pared justo antes de lanzarlo y justo después de que vuelve, en las dos ramas de abajo: no cuenta la espera
+# de la copia de la salida, el tapado, la imagen ni `--compare`. Lo lee `node` (bash 3.2 no tiene reloj en ms): su
+# arranque suma decenas de ms, siempre de más. Sin lib/smoke-measures.js, el renglón queda con `duration_ms: null` y el
+# motivo; el código de salida y el resto, como siempre.
+MEASURES_JS="$(cd "$(dirname "$0")" && pwd)/lib/smoke-measures.js"
+reloj(){ [ -f "$MEASURES_JS" ] && node "$MEASURES_JS" clock 2>/dev/null; }
 trap '[ -n "$SALIDA_TMP" ] && rm -f "$SALIDA_TMP" "$SALIDA_TMP.rc"' EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
@@ -220,8 +227,10 @@ if [ -n "$SALIDA_TMP" ]; then
   # mantiene abierta la salida de error de quien llamó a smoke-run.sh (su error queda igual en `.rc`).
   # El `.rc` se escribe sólo si el temporal sigue ahí: con un proceso de fondo, `tee` termina después de que el trap
   # ya borró los dos, y escribirlo igual dejaría un archivo suelto en $TMPDIR.
+  T0="$(reloj)"
   "${RUN_CMD[@]}" > >(exec sh -c 'tee "$1"; rc=$?; [ -e "$1" ] && echo "$rc" > "$2"' smoke-run-tee "$SALIDA_TMP" "$SALIDA_TMP.rc" 2>/dev/null) 2>&1
   EXIT=$?
+  T1="$(reloj)"
   ESPERA=0
   while [ ! -s "$SALIDA_TMP.rc" ] && [ "$ESPERA" -lt 50 ]; do sleep 0.1; ESPERA=$((ESPERA + 1)); done
   if [ ! -s "$SALIDA_TMP.rc" ]; then
@@ -237,8 +246,20 @@ if [ -n "$SALIDA_TMP" ]; then
   fi
 else
   echo "[smoke-run] ⚠️ no pude crear un temporal para la salida: el humo corre igual y queda con output: null (la matriz no lo cuenta)." >&2
+  T0="$(reloj)"
   "${RUN_CMD[@]}"
   EXIT=$?
+  T1="$(reloj)"
+fi
+
+# ── La duración y las medidas que imprimió el comando (`TYCON_MEASURE <nombre>=<valor><unidad>`) ──
+# Las medidas se leen del temporal, entero, antes de que el trap lo borre; sin temporal, sólo la duración. El mismo
+# fragmento va al registro y al espejo: la matriz confirma la medida contra el espejo, como el código de salida.
+if [ -f "$MEASURES_JS" ] && MEAS_FIELD="$(node "$MEASURES_JS" fields "$T0" "$T1" ${SALIDA_TMP:+"$SALIDA_TMP"})" && [ -n "$MEAS_FIELD" ]; then
+  :
+else
+  MEAS_FIELD=',"duration_ms":null,"duration_error":"no se pudo leer el reloj: falta lib/smoke-measures.js o node no respondió"'
+  echo "[smoke-run] ⚠️ la duración del comando no se pudo medir ($MEASURES_JS): el renglón queda con duration_ms: null." >&2
 fi
 
 ACS_JSON="[$(echo "$ACS" | tr ',' '\n' | grep -E '^[0-9]+$' | paste -sd, -)]"
@@ -353,16 +374,16 @@ PROV="$(node "$(cd "$(dirname "$0")" && pwd)/lib/frozen-tree.js" procedencia "$R
 PROV_FIELD=""
 [ -n "$PROV" ] && PROV_FIELD=",$PROV"
 
-ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke-run.sh"%s,"v":2%s%s,"target":%s}' \
-  "$TS" "$STORY_ID" "$ACS_JSON" "$CMD_JSON" "$EXIT" "$MUT_FIELD" "$LEDGER_EXTRA" "$PROV_FIELD" "$TARGET_JSON")
+ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke-run.sh"%s,"v":2%s%s%s,"target":%s}' \
+  "$TS" "$STORY_ID" "$ACS_JSON" "$CMD_JSON" "$EXIT" "$MUT_FIELD" "$MEAS_FIELD" "$LEDGER_EXTRA" "$PROV_FIELD" "$TARGET_JSON")
 
 printf '%s\n' "$ENTRY" >> "$EVIDENCE_DIR/$STORY_ID-smoke-ledger.jsonl"
 
 MIRROR_DIR="$HOME/.claude/.tycon-pipeline"
 mkdir -p "$MIRROR_DIR"
 # la procedencia también va al espejo (fuera del repo): editarla en el registro del repo se nota al compararlos
-printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s,"v":2%s%s,"target":%s}\n' \
-  "$TS" "$REPO_JSON" "$STORY_ID" "$ACS_JSON" "$EXIT" "$MUT_FIELD" "$MIRROR_EXTRA" "$PROV_FIELD" "$TARGET_JSON" >> "$MIRROR_DIR/gates.log"
+printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s,"v":2%s%s%s,"target":%s}\n' \
+  "$TS" "$REPO_JSON" "$STORY_ID" "$ACS_JSON" "$EXIT" "$MUT_FIELD" "$MEAS_FIELD" "$MIRROR_EXTRA" "$PROV_FIELD" "$TARGET_JSON" >> "$MIRROR_DIR/gates.log"
 
 echo "[smoke-run] story=$STORY_ID acs=$ACS exit=$EXIT mutates=$MUTATES → ledger + gates.log" >&2
 

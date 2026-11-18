@@ -244,11 +244,13 @@ function criteriaOf(specContent) {
 // por diseño: si un AC no se puede aislar, se omite del mapa y el llamador cae a su texto de siempre
 // (nunca rompe el waiver por no poder citar). Cubre los tres estilos que `parseAcsFromSpec` reconoce:
 // heading (`### AC-1`), lista numerada (`1. **Given** …`) y bullet (`- **AC1**`).
-function acTextsFromSpec(specContent, { maxChars = 600 } = {}) {
+// `crudo: true` devuelve el texto entero de cada criterio (`textosCrudos`): lo usa la matriz para leer las marcas de cota.
+function acTextsFromSpec(specContent, { maxChars = 600, crudo = false } = {}) {
   const out = {};
   if (!specContent) return out;
   const section = acSectionOf(specContent);
   if (section == null) return out;
+  if (crudo) return textosCrudos(section);
   const lines = section.split('\n');
   // Marcadores de arranque de AC, en el mismo orden de preferencia que parseAcsFromSpec: las formas viejas y, si no
   // hay ninguna, la otra forma que use la story. El Gherkin vive dentro de los bloques ```: en esa
@@ -296,6 +298,96 @@ function acTextsFromSpec(specContent, { maxChars = 600 } = {}) {
     if (cur !== null) buf.push(raw);
   }
   flush();
+  return out;
+}
+
+// Un título de escenario y una etiqueta de Gherkin (o de su forma en castellano): abren el escenario que sigue.
+const ESCENARIO_RE = /^[ \t]*(?:scenario(?: outline)?|escenario|esquema del escenario|feature|caracter[ií]stica)[ \t]*:/i;
+const ETIQUETA_RE = /^[ \t]*@\S/;
+
+/**
+ * El texto entero de cada criterio, renglones tal cual, sin limpiar ni cortar: `{ [n]: texto }`. Una marca de cota vale
+ * para el criterio donde está escrita, así que los límites son los de la forma en que la historia escribe sus
+ * criterios, la misma que elige `parseAcsFromSpec`:
+ *   · `### AC-N`: una lista numerada y un subtítulo más profundo son de ese criterio; lo cierra un título de su nivel.
+ *   · lista numerada: arrancan los renglones de la sangría menor; un sub-item con más sangría es del criterio que lo abre.
+ *   · Gherkin y «Dado»: un bloque con algún arranque es del criterio, y el título del escenario y sus etiquetas van con
+ *     el `Given` que sigue, aunque estén antes. Un bloque sin arranque es un ejemplo y no se lee.
+ * Con un número repetido (listas que reinician) los textos se suman: una marca nunca se pierde por eso.
+ */
+function textosCrudos(section) {
+  const lines = section.split('\n');
+  const numeros = (form) => [...section.matchAll(new RegExp(FORM[form].re.source, 'gm'))].map((m) => parseInt(m[1], 10));
+  const titulos = numeros('titulo-ac');
+  const numerados = numeros('numerada');
+  const corrida = numerados.length > 0 && numerados.every((x, i) => i === 0 || x > numerados[i - 1]);
+  const porTitulo = titulos.length > 0 && !(corrida && Math.max(...numerados) > Math.max(...titulos));
+  const forma = porTitulo ? 'titulo-ac' : numerados.length ? 'numerada' : numeros('vineta-ac').length ? 'vineta-ac' : null;
+  const nueva = forma ? null : newFormStarts(section);
+  const porLinea = new Map(nueva ? nueva.starts.map((s) => [s.line, s.n]) : []);
+  const conEscenarios = !!nueva && (nueva.form === 'gherkin' || nueva.form === 'dado');
+  // qué renglones están en un bloque ``` y si ese bloque trae el arranque de un criterio
+  const bloque = new Array(lines.length).fill(null);
+  for (let i = 0, abierto = null; i < lines.length; i++) {
+    if (/^[ \t]*```/.test(lines[i])) { abierto = abierto ? null : { propio: false }; bloque[i] = 'cerco'; continue; }
+    if (!abierto) continue;
+    bloque[i] = abierto;
+    if (porLinea.has(i)) abierto.propio = true;
+  }
+  const sangria = (l) => /^[ \t]*/.exec(l)[0].replace(/\t/g, '    ').length;
+  const deLaLista = lines.filter((l, i) => !bloque[i] && FORM.numerada.re.test(l)).map(sangria);
+  const base = deLaLista.length ? Math.min(...deLaLista) : 0;
+  const arranque = (l, i) => {
+    if (nueva) return porLinea.has(i) ? porLinea.get(i) : null;
+    if (bloque[i]) return null;
+    const m = FORM[forma].re.exec(l);
+    if (!m || (forma === 'numerada' && sangria(l) > base)) return null;
+    return parseInt(m[1], 10);
+  };
+  const nivelDe = (l) => { const m = /^(#{2,4})[ \t]+\S/.test(l) ? /^#+/.exec(l) : null; return m ? m[0].length : 0; };
+  const out = {};
+  let cur = null;
+  let nivelCur = 0;
+  let buf = [];
+  let antes = [];   // lo que va con el próximo arranque: el escenario, sus etiquetas, el principio del bloque
+  const cerrar = () => {
+    if (cur !== null) out[cur] = out[cur] === undefined ? buf.join('\n') : `${out[cur]}\n${buf.join('\n')}`;
+    cur = null;
+    buf = [];
+  };
+  // una etiqueta es del escenario que viene si lo que sigue, salteando blancos y otras etiquetas, es un escenario
+  const anunciaEscenario = (i) => {
+    for (let k = i + 1; k < lines.length; k++) {
+      if (!lines[k].trim() || ETIQUETA_RE.test(lines[k])) continue;
+      return ESCENARIO_RE.test(lines[k]);
+    }
+    return false;
+  };
+  for (const [i, raw] of lines.entries()) {
+    const b = bloque[i];
+    if (b === 'cerco') { antes = []; continue; }
+    if (b && !b.propio) continue;
+    const n = arranque(raw, i);
+    if (n !== null) {
+      cerrar();
+      cur = n;
+      nivelCur = forma === 'titulo-ac' ? nivelDe(raw) : 0;
+      buf = [...antes, raw];
+      antes = [];
+      continue;
+    }
+    const nivel = b ? 0 : nivelDe(raw);
+    if (nivel && (!nivelCur || nivel <= nivelCur)) { cerrar(); antes = []; continue; }
+    if (/^[ \t]*>/.test(raw)) continue;
+    if (conEscenarios && (ESCENARIO_RE.test(raw) || (ETIQUETA_RE.test(raw) && anunciaEscenario(i)))) {
+      cerrar();
+      antes.push(raw);
+      continue;
+    }
+    if (cur !== null) buf.push(raw);
+    else if (conEscenarios && (b || ETIQUETA_RE.test(raw))) antes.push(raw);
+  }
+  cerrar();
   return out;
 }
 

@@ -251,3 +251,23 @@ test('WaiverDisplay_UsesMarkerBatchMatrix @story-8.240 @ac-11 — la ventana mue
   // con el marcador de otra historia, la firma mide todas
   assert.equal(wd.matrixForSignature(story, { ...marker, storyPath: path.join(repo, 'specs', 'otra.md') }).batch, null);
 });
+
+test('WaiverDisplay_MeasuredAc_ShowsMeasuredAndBound @story-8.260 @ac-25', () => {
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  const fuera = { nombre: 'duration', medido: 3010, medidoTexto: '3010 ms', unidad: 'ms', cota: '< 2000 ms', estado: 'fuera' };
+  const matriz = (medido) => ({ notVerifiable: [1, 2, 3], perAc: {
+    1: { verdict: 'NOT-VERIFIABLE', text: 'responde en menos de 2 s', declReason: 'r', coveredBy: 'T1', medida: { ...fuera, medido, medidoTexto: `${medido} ms` } },
+    2: { verdict: 'NOT-VERIFIABLE', text: 'p95 bajo', declReason: 'r', coveredBy: 'T2', medida: { nombre: 'p95', medido: null, cota: '<= 200 ms', estado: 'sin-medicion', motivo: 'ningún humo fresco del criterio trae la medida p95' } },
+    3: { verdict: 'NOT-VERIFIABLE', text: TEXTO, declReason: RAZON, coveredBy: 'T1' },
+  } });
+  const a = wd.criteriosDe('/x.md', [1, 2, 3], matriz(3010));
+  const b = wd.criteriosDe('/x.md', [1, 2, 3], matriz(4500));
+  const msg = wd.bloque({ storyId: '9.94', criterios: a.lista });
+  assert.match(msg, /AC 1: [^\n]*Lo medido: medido 3010 ms; la cota es < 2000 ms/);
+  assert.match(msg, /AC 2: [^\n]*Lo medido: sin medición/);
+  assert.doesNotMatch(msg.split('\n').find((l) => l.startsWith('AC 3:')), /Lo medido/);
+  // la huella cambia con lo medido; la del criterio sin marca es la de siempre
+  assert.notStrictEqual(a.lista[0].sha, b.lista[0].sha);
+  assert.strictEqual(a.lista[2].sha, wd.huella(TEXTO, RAZON, 'T1'));
+  assert.strictEqual(a.lista[2].medida, undefined);
+});
