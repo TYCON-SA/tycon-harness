@@ -353,9 +353,9 @@ function medir(o) {
     for (const d of despachadores) {
       if (d.modulos <= umbral.modulos && d.niveles <= umbral.niveles) continue;
       if (tocadosReales && !d.archivos.some((a) => tocadosReales.has(a))) continue;
-      avisos.push(`${d.ruta} carga ${d.modulos} módulos locales en ${d.niveles} niveles; el freno de guiones no suma`
-        + ` módulos pasado el módulo ${freno.tope.modulos} de cada cuenta del comando y no mira lo que cargan los del`
-        + ` nivel ${freno.tope.niveles} (aviso con más de ${String(umbral.modulos).replace('.', ',')} módulos o más de`
+      avisos.push(`${d.ruta} carga ${d.modulos} módulos locales en ${d.niveles} niveles; pasado el módulo`
+        + ` ${freno.tope.modulos} de cada cuenta del comando o el nivel ${freno.tope.niveles}, el freno de guiones juzga`
+        + ` lo que sigue como un guion que no se lee entero (aviso con más de ${String(umbral.modulos).replace('.', ',')} módulos o más de`
         + ` ${String(umbral.niveles).replace('.', ',')} niveles, no frena)`);
     }
   }
@@ -398,7 +398,7 @@ function texto(j) {
   }
   const r = j.recorrido;
   if (r.tope) {
-    l.push(`recorrido del freno (${r.freno}): no mira lo que cargan los del nivel ${r.tope.niveles}; no suma módulos pasado el ${r.tope.modulos} de cada cuenta del comando`);
+    l.push(`recorrido del freno (${r.freno}): pasado el nivel ${r.tope.niveles} o el módulo ${r.tope.modulos} de cada cuenta del comando, lo que sigue se juzga como un guion que no se lee entero`);
     for (const d of r.despachadores) l.push(`  ${d.ruta}: ${d.modulos} módulos locales en ${d.niveles} niveles`);
   }
   for (const a of j.avisos) l.push(`⚠️ control-size: ${a}`);

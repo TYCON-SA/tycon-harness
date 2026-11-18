@@ -542,11 +542,11 @@ function repoDelFreno() {
   return { raiz, estado, dir };
 }
 
-function frenar(r, command) {
+function frenar(r, command, installedRoots = []) {
   const antes = process.env.TYCON_NO_RUN_CHANGE;
   process.env.TYCON_NO_RUN_CHANGE = '1';
   try {
-    const x = bash().handle({ tool_name: 'Bash', session_id: 'sesion-split', cwd: r.dir, tool_input: { command } }, { stateDir: r.estado, installedRoots: [] });
+    const x = bash().handle({ tool_name: 'Bash', session_id: 'sesion-split', cwd: r.dir, tool_input: { command } }, { stateDir: r.estado, installedRoots });
     return x && x.block ? String(x.block) : '';
   } finally { if (antes === undefined) delete process.env.TYCON_NO_RUN_CHANGE; else process.env.TYCON_NO_RUN_CHANGE = antes; }
 }
@@ -616,7 +616,49 @@ test('T14 BashGate_DeepModule_BlocksNotCuts @story-8.163 @ac-14', () => {
   fs.writeFileSync(path.join(g.dir, 'herr', `h${tope + 1}.js`), "require('./detras.js');\n");
   fs.writeFileSync(path.join(g.dir, 'herr', 'detras.js'), ESCRIBE_CONSTANCIA);
   assert.ok(frenar(g, 'node herr/principal.js').startsWith(FRENO_ENTERO), 'detrás del tope de archivos, frena');
+  // un ciclo pasado el tope termina, sin frenar
+  const h = repoDelFreno();
+  cadena(h.dir, niveles + 2, `require('./m${niveles + 1}.js');\n`);
+  assert.strictEqual(frenar(h, 'node herr/principal.js'), '', 'un ciclo pasado el tope termina y no frena');
+  // pasado el tope, lo que no se puede leer no se da por bueno
+  if (process.platform !== 'win32' && process.getuid() !== 0) {
+    const i = repoDelFreno();
+    cadena(i.dir, niveles + 1, NO_ESCRIBE);
+    fs.chmodSync(path.join(i.dir, 'herr', `m${niveles + 1}.js`), 0o000);
+    assert.ok(frenar(i, 'node herr/principal.js').startsWith(FRENO_ENTERO), 'un módulo ilegible pasado el tope frena');
+  }
+  // uno instalado pasado el tope no se juzga, pero lo que carga sí
+  const j = repoDelFreno();
+  const arnes = path.join(j.raiz, 'arnes');
+  fs.mkdirSync(arnes);
+  cadena(j.dir, niveles, "require('../../arnes/puente.js');\n");
+  fs.writeFileSync(path.join(arnes, 'puente.js'), "require('../repo/herr/detras.js');\n");
+  fs.writeFileSync(path.join(j.dir, 'herr', 'detras.js'), ESCRIBE_CONSTANCIA);
+  assert.ok(frenar(j, 'node herr/principal.js', [arnes]).startsWith(FRENO_ENTERO), 'detrás de uno instalado, frena');
   assert.ok(niveles > 2 && tope > 20, `el tope del recorrido tiene nombre y subió (niveles ${niveles}, archivos ${tope})`);
+});
+
+test('T14 BashGate_ModuleWalk_ReadsAreBounded @story-8.163 @ac-14', () => {
+  // el mismo módulo pedido muchas veces se lee una sola
+  const a = repoDelFreno();
+  fs.mkdirSync(path.join(a.dir, 'herr'), { recursive: true });
+  const repetido = path.join(a.dir, 'herr', 'a.js');
+  fs.writeFileSync(path.join(a.dir, 'herr', 'principal.js'), "require('./a.js');\n".repeat(500));
+  fs.writeFileSync(repetido, NO_ESCRIBE);
+  const original = fs.readFileSync;
+  let lecturas = 0;
+  fs.readFileSync = (f, ...resto) => { if (String(f) === repetido) lecturas++; return original(f, ...resto); };
+  try { assert.strictEqual(frenar(a, 'node herr/principal.js'), '', 'un módulo que no escribe no frena'); } finally { fs.readFileSync = original; }
+  assert.strictEqual(lecturas, 1, 'el módulo repetido se lee una vez');
+  // gastado el tope de lectura no se lee más, y lo que falta cuenta como que no se pudo leer
+  const b = repoDelFreno();
+  fs.mkdirSync(path.join(b.dir, 'herr'), { recursive: true });
+  fs.writeFileSync(path.join(b.dir, 'herr', 'principal.js'), "require('./grande.js');\nrequire('./despues.js');\n");
+  fs.writeFileSync(path.join(b.dir, 'herr', 'grande.js'), `// ${'x'.repeat(20000)}\n`);
+  fs.writeFileSync(path.join(b.dir, 'herr', 'despues.js'), NO_ESCRIBE);
+  const guiones = bash().guionesEnArchivo('node herr/principal.js', [b.dir], [], 8192);
+  assert.ok(guiones.some((g) => g.grande && !g.texto), 'agotado el tope, queda un guion sin leer');
+  assert.ok(!guiones.some((g) => g.archivo.endsWith('despues.js') && g.texto), 'lo de después del tope no se lee');
 });
 
 // ── lo publicado ─────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -567,6 +567,9 @@ const GUION_TOPE_DURO = 64 * 1024 * 1024;
 // 121 módulos en 14 niveles) por dos. Lo que queda más allá no se corta callado: se juzga como un guion que no se lee entero
 const RECORRIDO_NIVELES = 28;
 const RECORRIDO_ARCHIVOS = 242;
+// lo que un comando puede hacerle leer al freno entre todos sus guiones y módulos (lo medido en los despachadores son
+// unos 3 MB): el freno corre antes de cada comando, y un guion armado a propósito no le agota la memoria
+const RECORRIDO_BYTES = 2 * GUION_TOPE_DURO;
 const ESCANEO_REINTENTO_MS = 3000;
 const CORCHETE_TOPE = 64;
 const CLASES_POSIX = {
@@ -685,7 +688,7 @@ function sinContinuaciones(cmd) {
  * módulos locales que importa. Un guion de la instalación del arnés no cuenta, por la ruta real ya resuelta: el
  * orquestador escribe historias. Un guion que un tramo sólo nombra tampoco (`tramoQueSoloNombra`).
  */
-function guionesEnArchivo(cmd, bases, instalados = []) {
+function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO_BYTES) {
   const out = [];
   const vistos = new Set();
   const escritos = heredocs(cmd).filter((h) => h.target);
@@ -700,14 +703,30 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
   // lo que git contestó, por esta llamada: un módulo que importan varios se pregunta una vez
   const memo = { porRuta: new Map() };
   const instalado = (real) => instalados.some((r) => isInsideReal(r, real)) || versionadoEnElArbolPropio(real, memo);
-  const leer = (real) => {
+  const leerDelDisco = (real) => {
     try {
       const st = fs.statSync(real);
       if (!st.isFile()) return null;
       if (st.size > GUION_TOPE_DURO) return { texto: '', grande: true };
+      gastado += Math.max(st.size, 4096);
       const texto = fs.readFileSync(real, 'utf8').replace(/\u0000/g, ' ');
       return { texto, grande: st.size > GUION_TOPE };
     } catch { return null; }
+  };
+  // cada archivo se lee una vez. Gastado el tope no se lee más: lo que falta cuenta como un guion que no se pudo leer
+  const lecturas = new Map();
+  let gastado = 0;
+  let agotado = false;
+  const leer = (real) => {
+    if (!lecturas.has(real)) {
+      const sinLugar = gastado > topeDeLectura;
+      if (sinLugar && !agotado) {
+        agotado = true;
+        out.push({ interprete: '', archivo: real, texto: '', argv: [], grande: true });
+      }
+      lecturas.set(real, sinLugar ? { texto: '', grande: true } : leerDelDisco(real));
+    }
+    return lecturas.get(real);
   };
   // el guion y los módulos locales que importa, hasta RECORRIDO_NIVELES niveles y RECORRIDO_ARCHIVOS archivos; uno del
   // arnés no se revisa, pero lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la
@@ -717,16 +736,18 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
   // dejaría pasar al que escribe un nivel más abajo
   const modulos = { exentos: 0, revisados: 0 };
   const afuera = (interprete, real, leido, argv) => {
-    const pendientes = [[real, leido]];
-    while (pendientes.length) {
-      const [archivo, l] = pendientes.pop();
-      if (vistos.has(archivo)) continue;
+    const pendientes = [];
+    const anotar = (archivo, l) => {
       vistos.add(archivo);
       if (!instalado(archivo)) out.push({ interprete, archivo, texto: l ? l.texto : '', argv, grande: true });
-      if (!l) continue;
+      if (l) pendientes.push([archivo, l]);
+    };
+    if (!vistos.has(real)) anotar(real, leido);
+    while (pendientes.length) {
+      const [archivo, l] = pendientes.pop();
       for (const m of importsLocales(familiaDe(interprete), l.texto, path.dirname(archivo))) {
         const r = rutaReal(m, path.dirname(archivo));
-        if (r) pendientes.push([r, leer(r)]);
+        if (r && !vistos.has(r)) anotar(r, leer(r));
       }
     }
   };
@@ -844,7 +865,7 @@ function importsLocales(familia, texto, dir) {
       out.push(m[2], ...['.js', '.cjs', '.mjs', '.ts', '/index.js'].map((e) => m[2] + e));
     }
   }
-  return out.filter((r) => { try { return fs.statSync(path.join(dir, r)).isFile(); } catch { return false; } });
+  return [...new Set(out)].filter((r) => { try { return fs.statSync(path.join(dir, r)).isFile(); } catch { return false; } });
 }
 
 /**
@@ -4124,7 +4145,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA };
+module.exports = { handle, guionesEnArchivo, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA };
 
 if (require.main === module) {
   const cruda = leerEntrada();
