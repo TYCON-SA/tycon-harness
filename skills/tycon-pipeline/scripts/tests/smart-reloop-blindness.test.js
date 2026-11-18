@@ -427,7 +427,7 @@ test('SmartReloop_SinCodigoEnElCambio_NadieRepite — la historia y su carpeta q
  * Una vuelta 1 con un arreglo entre lanzamientos: A se lanza a t10, se edita `archivo` a t20 (en el repo del código), B se lanza a t30 (el
  * último) y la foto sale a t30.3; a t40 se edita la historia, que vive en un repo de specs aparte.
  */
-function vueltaDel15({ archivo = path.join('src', 'PluginManager.cs'), contenido = '// arreglo\ntry { Run(); } catch (Exception e) { Log(e); }\n' } = {}) {
+function vueltaDel15({ archivo = path.join('src', 'PluginManager.cs'), contenido = '// arreglo\ntry { Run(); } catch (Exception e) { Log(e); }\n', editaEn = 20, registro = null } = {}) {
   const repo = mkRepoGit();
   const specs = fs.mkdtempSync(path.join(os.tmpdir(), 'specs-8288-'));
   const story = path.join(specs, 'story-9.3.1.md');
@@ -443,16 +443,16 @@ function vueltaDel15({ archivo = path.join('src', 'PluginManager.cs'), contenido
   fs.utimesSync(real, seg(-10), seg(-10));
   fs.mkdirSync(path.dirname(editado), { recursive: true });
   fs.writeFileSync(editado, contenido);
-  fs.utimesSync(editado, seg(20), seg(20));
+  fs.utimesSync(editado, seg(editaEn), seg(editaEn));
   fs.appendFileSync(story, 'texto nuevo de la historia\n');
   fs.utimesSync(story, seg(40), seg(40));
   const home = mkHome({
     storyId: '9.3.1', repoPath: repo, storyPath: story,
     filesTouched: [real, editado, story],
-    fileEvents: [{ path: editado, ts: t(20) }, { path: story, ts: t(40), code: false }],
+    fileEvents: [{ path: editado, ts: t(editaEn) }, { path: story, ts: t(40), code: false }],
     iterations: { 1: { ts: t(30.3), filesSnapshot: [real] } },
   });
-  escribirRegistro(home, [
+  escribirRegistro(home, registro ? registro({ t, A, B, repo }) : [
     { ts: t(0), event: 'step5-start', iter: 1, expected: [A, B], mode: 'advisors' },
     { ts: t(10), advisor: A, story: '9.3.1', repo },
     { ts: t(30), advisor: B, story: '9.3.1', repo },
@@ -463,17 +463,57 @@ function vueltaDel15({ archivo = path.join('src', 'PluginManager.cs'), contenido
     { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: SID } });
   assert.equal(r.status, 0, `stderr: ${r.stderr}`);
   const log = (() => { try { return fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8'); } catch { return ''; } })();
-  return { out: JSON.parse(r.stdout), editado, story, A, B, cerroSola: log.split('\n').some((l) => l.includes('smart-reloop-sin-codigo')) };
+  return { out: JSON.parse(r.stdout), stderr: r.stderr, editado, story, A, B, cerroSola: log.split('\n').some((l) => l.includes('smart-reloop-sin-codigo')) };
 }
 
 // T1 SmartReloop_CodeBetweenLaunches_ReRunsEarlyReviewers — @story-8.288 @ac-1
 // 🔴 Falla con: cortar el delta en el último revisor (o en la foto), que deja afuera el arreglo hecho entre los
 // lanzamientos y cierra la vuelta sola con sólo el texto de la historia.
 test('T1 SmartReloop_CodeBetweenLaunches_ReRunsEarlyReviewers @story-8.288 @ac-1', () => {
-  const { out, editado, A, cerroSola } = vueltaDel15();
+  const { out, editado, A, B, cerroSola } = vueltaDel15();
   assert.ok(out.delta_files.includes(editado), `el arreglo está en el delta: ${JSON.stringify(out.delta_files)}`);
   assert.equal(cerroSola, false, 'la vuelta no se cierra sola');
   assert.ok(out.rerun.includes(A), `${A} se lanzó antes del arreglo y se re-corre — rerun: ${out.rerun.join(', ')}`);
+  assert.ok(out.skipped.some((s) => s.name === B), `${B} se lanzó después del arreglo: ya lo vio — rerun: ${out.rerun.join(', ')}`);
+  assert.ok((out.no_vistos_por_revisor[A] || []).includes(editado), 'la salida dice qué no vio el que se lanzó antes');
+});
+
+// 🔴 Falla con: decidir el cierre sin código sólo por el delta: lo editado antes del primer lanzamiento queda afuera del
+// corte, y el revisor que esa vuelta salteó no lo vio nunca.
+test('T1 SmartReloop_SkippedReviewerHasUnseenCode_DoesNotClose @story-8.288 @ac-1', () => {
+  const { out, B, cerroSola } = vueltaDel15({ editaEn: 5, registro: ({ t, A, repo }) => [
+    { ts: t(0), event: 'step5-start', iter: 1, expected: [A], mode: 'advisors' },
+    { ts: t(10), advisor: A, story: '9.3.1', repo },
+    { ts: t(30.2), event: 'auto-snapshot', iter: 1 },
+  ] });
+  assert.equal(cerroSola, false, 'un revisor tiene código sin ver: la vuelta no se cierra sola');
+  assert.ok(out.rerun.includes(B), `${B} estaba salteado y no vio lo editado — rerun: ${out.rerun.join(', ')}`);
+});
+
+// 🔴 Falla con: leer como hora de lanzamiento el renglón de `reviewers-run`, que se escribe al terminar el proceso.
+test('T1 SmartReloop_ReviewerProcessLine_UsesItsStartTime @story-8.288 @ac-1', () => {
+  const uno = vueltaDel15({ registro: ({ t, A, B, repo }) => [
+    { ts: t(0), event: 'step5-start', iter: 1, expected: [A, B], mode: 'reviewers-run' },
+    { ts: t(10), lanzado_ts: t(5), launcher: 'pipeline', advisor: A, story: '9.3.1', repo },
+    { ts: t(30), lanzado_ts: t(5), launcher: 'pipeline', advisor: B, story: '9.3.1', repo },
+  ] });
+  assert.deepEqual([uno.A, uno.B].filter((a) => !uno.out.rerun.includes(a)), [], `los dos arrancaron antes del arreglo — rerun: ${uno.out.rerun.join(', ')}`);
+  const viejo = vueltaDel15({ registro: ({ t, A, B, repo }) => [
+    { ts: t(0), event: 'step5-start', iter: 1, expected: [A, B], mode: 'reviewers-run' },
+    { ts: t(30), launcher: 'pipeline', advisor: B, story: '9.3.1', repo },
+    { ts: t(10), advisor: A, story: '9.3.1', repo },
+  ] });
+  assert.ok(viejo.out.rerun.includes(viejo.B), 'un renglón del proceso sin su arranque no dice qué vio: se re-corre');
+});
+
+// 🔴 Falla con: contar como «foto tardía» lo editado entre lanzamientos, que algún revisor sí vio.
+test('T1 SmartReloop_FixBetweenLaunches_IsNotALateSnapshot @story-8.288 @ac-1', () => {
+  const normal = vueltaDel15();
+  assert.ok(!normal.out.suspect_late_snapshot, 'el arreglo entre lanzamientos no es una foto tardía');
+  assert.doesNotMatch(normal.stderr, /tapó/);
+  const tardia = vueltaDel15({ editaEn: 30.1 });
+  assert.ok(tardia.out.suspect_late_snapshot, 'lo editado entre el último lanzamiento y la foto sí lo es');
+  assert.ok(tardia.out.late_snapshot_files.includes(tardia.editado));
 });
 
 // T2 SmartReloop_OnlyTestsAndStoryText_ClosesItself — @story-8.288 @ac-2

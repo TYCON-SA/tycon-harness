@@ -308,4 +308,118 @@ test('T6 Restore_FailsWritingMarker_ClosesNothing @story-8.288 @ac-8', () => {
   assert.strictEqual(r4.falto, 'abrir');
   assert.match(String(r4.error), /no pude abrir/);
   assert.deepStrictEqual(guardado.pasos.map((p) => p.que), ['abrir', 'podada']);
+
+  // el guardado falla DESPUÉS de un paso hecho: no se confunde con «no se escribió el marcador», ni acusa al paso siguiente
+  let escrituras = 0;
+  const r5 = correrRestore({ pendiente: pendiente(), pasos: pasos(), escribirMarcador: () => { if (++escrituras === 2) throw new Error('EACCES'); } });
+  assert.strictEqual(r5.falto, 'guardado');
+  assert.strictEqual(r5.hecho, 'apertura');
+  const { queFalto } = require(RESTORE_STEPS);
+  assert.match(queFalto(r1), /no se cerró ni se abrió nada/);
+  assert.match(queFalto(r2), /«reemplazada»/);
+  assert.match(queFalto(r5), /«apertura» se hizo/);
+  assert.doesNotMatch(queFalto(r5), /no se cerró ni se abrió nada/);
+});
+
+/** Hace fallar un paso del restore real, como un registro sin espacio por un momento. */
+function conFalla(paso) {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'falla-restore-')), 'falla.js');
+  fs.writeFileSync(f, `const or = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'open-runs.js'))});
+const { cerrar, abrir } = or;
+or.cerrar = (a) => {
+  if (${JSON.stringify(paso)} === 'apertura' && a.estado === 'perdida') throw new Error('sin espacio');
+  if (${JSON.stringify(paso)} === 'reemplazada' && a.estado === 'abortada') throw new Error('sin espacio');
+  return cerrar(a);
+};
+or.abrir = (a) => { if (${JSON.stringify(paso)} === 'abrir') throw new Error('sin espacio'); return abrir(a); };
+`);
+  return conVentana({ NODE_OPTIONS: `--require ${f}` });
+}
+const eventos = (E) => fs.readFileSync(path.join(E.estado, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
+  .filter((e) => e.name === 'run-open' || e.name === 'run-close');
+const cuenta = (E) => {
+  const ev = eventos(E);
+  return {
+    aperturaCerrada: ev.filter((e) => e.name === 'run-close' && /^restaurada en la sesión/.test(e.motivo || '')).length,
+    reemplazada: ev.filter((e) => e.name === 'run-close' && /^reemplazada por restore/.test(e.motivo || '')).length,
+    abierta: ev.filter((e) => e.name === 'run-open' && e.motivo === 'restaurada').length,
+  };
+};
+const pendientes = (E, s) => { const p = E.leer(s).restorePendiente; return p ? p.pasos.map((x) => x.que) : null; };
+
+// T6 (por el guion) — @story-8.288 @ac-8
+// 🔴 Falla con: mirar la apertura vigente o la copia podada antes que la lista del restore a medias: la repetición rehace
+// todo, pierde el cierre del marcador previo y cierra o abre dos veces.
+test('T6 Restore_RepeatedAfterFailure_CompletesOnlyWhatWasLeft @story-8.288 @ac-8', () => {
+  // con la copia podada todavía en disco
+  const E = entorno();
+  const copia = podada(E);
+  E.arrancar('s-espera', 1);
+  const r1 = E.correr('marker.js', ['restore', 's-podada'], 's-espera', conFalla('reemplazada'));
+  assert.notStrictEqual(r1.status, 0, 'el restore sale con error');
+  assert.match(r1.stderr, /«reemplazada»/, 'y dice qué faltó');
+  assert.deepStrictEqual(pendientes(E, 's-espera'), ['reemplazada', 'abrir', 'podada']);
+  assert.ok(fs.existsSync(copia), 'la copia podada se borra en el último paso');
+  const r2 = E.correr('marker.js', ['restore', 's-podada'], 's-espera', conVentana({}));
+  assert.strictEqual(r2.status, 0, r2.stderr + r2.stdout);
+  assert.deepStrictEqual(cuenta(E), { aperturaCerrada: 1, reemplazada: 1, abierta: 1 });
+  assert.strictEqual(pendientes(E, 's-espera'), null);
+  assert.ok(!fs.existsSync(copia));
+
+  // con la apertura todavía vigente en el registro: falló el primer cierre
+  const V = entorno();
+  V.arrancar('s-podada', 1);
+  V.arrancar('s-espera', 1);
+  assert.notStrictEqual(V.correr('marker.js', ['restore', 's-podada'], 's-espera', conFalla('apertura')).status, 0);
+  assert.deepStrictEqual(pendientes(V, 's-espera'), ['apertura', 'reemplazada', 'abrir']);
+  const r3 = V.correr('marker.js', ['restore', 's-podada'], 's-espera', conVentana({}));
+  assert.strictEqual(r3.status, 0, r3.stderr + r3.stdout);
+  assert.deepStrictEqual(cuenta(V), { aperturaCerrada: 1, reemplazada: 1, abierta: 1 });
+});
+
+// 🔴 Falla con: repetir un paso que ya se hizo y cuyo guardado falló: abriría o cerraría dos veces.
+test('T6 Restore_StepAlreadyDone_IsNotRepeated @story-8.288 @ac-8', () => {
+  const E = entorno();
+  podada(E);
+  assert.strictEqual(E.correr('marker.js', ['restore', 's-podada'], 's-espera', conVentana({})).status, 0);
+  const antes = cuenta(E);
+  const m = E.leer('s-espera');
+  m.restorePendiente = { sesion: 's-podada', story: '9.6', ts: hace(30), antes: false, pasos: [
+    { que: 'apertura', sesion: 's-podada', runDir: m.runDir, story: '9.6' },
+    { que: 'abrir', story: '9.6', storyPath: m.storyPath, repo: m.repoPath, runDir: m.runDir },
+  ] };
+  fs.writeFileSync(E.activo('s-espera'), JSON.stringify(m));
+  const r = E.correr('marker.js', ['restore', 's-podada'], 's-espera', conVentana({}));
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.deepStrictEqual(cuenta(E), antes, 'lo ya hecho no se hace de nuevo');
+  assert.strictEqual(pendientes(E, 's-espera'), null);
+});
+
+// 🔴 Falla con: que un restore terminado de la propia sesión se rehaga porque su apertura nueva sigue vigente.
+test('T6 Restore_AlreadyFinished_IsNotRepeated @story-8.288 @ac-8', () => {
+  const E = entorno();
+  podada(E);
+  assert.strictEqual(E.correr('marker.js', ['restore', 's-podada'], 's-podada', conVentana({})).status, 0);
+  const antes = eventos(E).length;
+  const r = E.correr('marker.js', ['restore', 's-podada'], 's-podada');
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /ya está restaurada/);
+  assert.strictEqual(eventos(E).length, antes, 'no cerró ni abrió nada, y no pidió firma');
+  assert.strictEqual(frenoDe(E, 'node marker.js restore s-podada --for-session s-podada'), null, 'el freno no pide firmar lo que no hace nada');
+});
+
+// T4 (el freno y --for-session) — @story-8.288 @ac-5 @ac-8
+// 🔴 Falla con: buscar el restore a medias en la sesión que pide y no en la destino: el freno niega sin ventana lo que el
+// cuadro y el guion sí encuentran.
+test('T4 Restore_ForSession_GuardLooksAtTheTargetSession @story-8.288 @ac-5 @ac-8', () => {
+  const E = entorno();
+  const copia = podada(E);
+  E.arrancar('s-espera', 1);
+  assert.notStrictEqual(E.correr('marker.js', ['restore', 's-podada'], 's-espera', conFalla('reemplazada')).status, 0);
+  fs.rmSync(copia);
+  const ts = E.leer('s-espera').restorePendiente.ts;
+  assert.strictEqual(frenoDe(E, 'node marker.js restore s-podada --for-session s-espera')[3], ts);
+  assert.strictEqual(frenoDe(E, 'node marker.js restore s-podada')[3], '-', 'sin --for-session mira la sesión que pide, que no lo tiene');
+  const p = require(SOURCES).partesDe({ firma: 'lost-run', palabras: ['marker.js', 'restore', 's-podada', '--for-session', 's-espera'], cwd: E.repo, estado: E.estado, destino: 's-espera' });
+  assert.match(p.queHace.join(' '), /9\.6/);
 });

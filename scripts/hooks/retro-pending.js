@@ -1177,34 +1177,55 @@ function debeRetrospectiva(root) {
   return fs.existsSync(path.join(root, '.tycon')) || fs.existsSync(path.join(root, '.advisors'));
 }
 
+// Con `simple` y una rama de seguimiento de otro nombre, git rechaza el empuje: no llega a ninguna rama, tampoco a main.
+const EMPUJE_RECHAZADO = '(git lo rechaza)';
+
 /**
  * La rama a la que llega el `git push` de la sentencia `st`, o null si no se puede saber. Con refspec, su destino
  * (`a:b` va a `b`, `HEAD` es la rama de HEAD, `refs/heads/` se saca; si alguno llega a main, main). Sin refspec, lo
  * decide `push.default` (de fábrica `simple`): `current` empuja a la rama del mismo nombre; `simple`, `upstream` y
  * `tracking`, a la rama de seguimiento (con otro nombre, `simple` lo rechaza: tampoco llega a la rama de HEAD).
  * Indeterminables: `--all`, `--mirror`, `--tags`, `--delete`, un borrado `:x`, un comodín, `matching`, HEAD sin
- * seguimiento o separado. `-u` / `--set-upstream` no cambian el destino.
+ * seguimiento o separado, y cualquier palabra que no sea un nombre escrito tal cual (una variable, una sustitución, `@`).
+ * `-u` / `--set-upstream` y las redirecciones no cambian el destino. El verbo se busca después de `git` y de sus opciones:
+ * `-c push.default=…` no es el `push`, y dice el modo de este comando.
  */
 function destinoDelEmpuje(root, st, branch) {
-  const m = /\bpush\b([^|;&\n]*)/.exec(st);
-  if (!m) return null;
-  const palabras = m[1].trim().split(/\s+/).filter(Boolean).map((w) => w.replace(/^['"]|['"]$/g, ''));
+  let palabras = null;
+  let modoDelComando = null;
+  for (const t of st.split(/[|;&\n]/)) {
+    const ws = t.trim().split(/\s+/).filter(Boolean).map((w) => w.replace(/^['"]|['"]$/g, ''));
+    const g = ws.findIndex((w) => /(^|\/)git$/.test(w));
+    if (g < 0) continue;
+    let v = g + 1;
+    let modo = null;
+    while (v < ws.length && ws[v].startsWith('-')) {
+      if (ws[v] === '-c') { const c = /^push\.default=(.*)$/i.exec(ws[v + 1] || ''); if (c) modo = c[1]; v += 2; }
+      else if (/^(-C|--git-dir|--work-tree|--namespace|--config-env)$/.test(ws[v])) v += 2;
+      else v++;
+    }
+    if (ws[v] === 'push') { palabras = ws.slice(v + 1); modoDelComando = modo; break; }
+  }
+  if (!palabras) return null;
   const posicionales = [];
   for (let i = 0; i < palabras.length; i++) {
     const w = palabras[i];
+    if (/^\d*[<>]/.test(w)) { if (/^\d*(>>?|<)$/.test(w)) i++; continue; }
     if (/^(--all|--mirror|--tags|--delete|-d|--prune)$/.test(w)) return null;
     if (/^(-o|--push-option|--repo|--receive-pack|--exec)$/.test(w)) { i++; continue; }
     if (!w.startsWith('-')) posicionales.push(w);
   }
+  if (posicionales.length && /[$`()\\#]/.test(posicionales[0])) return null;
   const refspecs = posicionales.slice(1);
   if (refspecs.length) {
     const destinos = [];
     for (const crudo of refspecs) {
+      if (!/^\+?[\w./-]*(:[\w./-]*)?$/.test(crudo)) return null;
       const r = crudo.replace(/^\+/, '');
       const i = r.indexOf(':');
       const src = i >= 0 ? r.slice(0, i) : r;
       const dst = i >= 0 ? r.slice(i + 1) : r;
-      if (r.includes('*') || !src || !dst) return null;
+      if (!src || !dst) return null;
       const d = (dst === 'HEAD' ? branch : dst).replace(/^refs\/heads\//, '');
       if (!d || d === 'HEAD') return null;
       destinos.push(d);
@@ -1212,11 +1233,13 @@ function destinoDelEmpuje(root, st, branch) {
     return destinos.find((d) => /^(main|master)$/.test(d)) || destinos[0];
   }
   if (!branch || branch === 'HEAD') return null;
-  const modo = git(root, ['config', '--get', 'push.default']) || 'simple';
+  const modo = modoDelComando || git(root, ['config', '--get', 'push.default']) || 'simple';
   if (modo === 'current') return branch;
   if (!['simple', 'upstream', 'tracking'].includes(modo)) return null;
   const sigue = git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
-  return sigue && sigue.includes('/') ? sigue.slice(sigue.indexOf('/') + 1) : null;
+  if (!sigue || !sigue.includes('/')) return null;
+  const rama = sigue.slice(sigue.indexOf('/') + 1);
+  return modo === 'simple' && rama !== branch ? EMPUJE_RECHAZADO : rama;
 }
 
 /** Anota UNA entrega en el ledger. Devuelve la entry escrita, o null si no correspondía. */

@@ -2321,28 +2321,6 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     return out;
   }
 
-  // ── Sin código en el cambio, la vuelta se cierra sola ─────────────────────────────────
-  // Lo que pide otra vuelta lo decide lib/reloop-code.js, igual que `next`: la historia (sus marcas, su
-  // `runtime_not_verifiable:`) y su carpeta qa no repiten revisores. Un delta vacío del todo sigue abajo: ése es
-  // una foto mal fechada.
-  if (delta.length && !delta.some((f) => require('./lib/reloop-code.js').pideOtraVuelta(f, { storyPath: story }))) {
-    logGate({ repoPath: repo, name: 'smart-reloop', check: 'smart-reloop-sin-codigo', status: 'closed', iter, delta });
-    return {
-      ...fullSet,
-      iter,
-      mode: 'smart-reloop',
-      all_iter1: fullSet.all,
-      rerun_count: 0,
-      rerun: [],
-      rerun_reasons: [],
-      skipped_count: fullSet.all.length,
-      skipped: fullSet.all.map((name) => ({ name, reason: 'el cambio no trae código: la vuelta se cierra sola' })),
-      delta_files: delta,
-      delta_source: deltaSource,
-      no_code_delta: true,
-    };
-  }
-
   // ── La versión del cambio que vio CADA revisor ─────────────────────────────────────
   // 🔴 El delta de arriba es de la VUELTA: mira desde la foto, y la foto se toma sola al lanzar el
   // último revisor. Un arreglo hecho mientras corrían los demás, antes de ese último lanzamiento, queda
@@ -2378,6 +2356,35 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   }
   const enElDelta = new Set(delta);
   const noVistosDesde = (ms) => [...ultimaEdicion].filter(([p, t]) => t > ms && !enElDelta.has(p)).map(([p]) => p);
+
+  // ── Sin código en el cambio, la vuelta se cierra sola ─────────────────────────────────
+  // Lo que pide otra vuelta lo decide lib/reloop-code.js, igual que `next`: la historia (sus marcas, su
+  // `runtime_not_verifiable:`) y su carpeta qa no repiten revisores. Un delta vacío del todo sigue abajo: ése es
+  // una foto mal fechada. No se cierra si a algún revisor le queda código de su alcance sin ver: lo editado antes del
+  // primer lanzamiento queda afuera del corte, y el revisor que la vuelta salteó no lo vio nunca.
+  const pideVuelta = (f) => require('./lib/reloop-code.js').pideOtraVuelta(f, { storyPath: story });
+  const tieneCodigoSinVer = (adv) => {
+    const lanzado = vista.lanzamientos.get(adv);
+    return noVistosDesde(lanzado !== undefined ? lanzado : vista.inicioMs).some((f) => pideVuelta(f) && advisorAffectedByDelta(adv, [f]).affected);
+  };
+  if (delta.length && !delta.some(pideVuelta) && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
+    logGate({ repoPath: repo, name: 'smart-reloop', check: 'smart-reloop-sin-codigo', status: 'closed', iter, delta });
+    return {
+      ...fullSet,
+      iter,
+      mode: 'smart-reloop',
+      all_iter1: fullSet.all,
+      rerun_count: 0,
+      rerun: [],
+      rerun_reasons: [],
+      skipped_count: fullSet.all.length,
+      skipped: fullSet.all.map((name) => ({ name, reason: 'el cambio no trae código: la vuelta se cierra sola' })),
+      delta_files: delta,
+      delta_source: deltaSource,
+      no_code_delta: true,
+    };
+  }
+
   const noVistosPorRevisor = {};       // revisor → archivos de su alcance editados después de su lanzamiento
   const sinVista = [];                 // revisores re-corridos porque no se sabe qué versión vieron
 
@@ -2448,8 +2455,12 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // 🔴 El aviso sale TAMBIÉN por stderr: el orquestador puede filtrar este JSON con un
   // `python3 -c` que imprime sólo `correr/hints/ctx`, y entonces la advertencia existe y no la lee nadie.
   // Un aviso que vive sólo dentro de un JSON que el llamador puede filtrar no es un control.
+  // Sólo lo editado entre el último lanzamiento y la foto: lo de antes del último lanzamiento lo vio ese revisor.
+  const entreUltimoYFoto = (t) => Number.isFinite(t) && t > ultimoRevisorMs && t <= prevTsMs;
+  const eventosDe = (f) => (Array.isArray(marker.fileEvents) ? marker.fileEvents : []).filter((e) => e && e.path === f && e.ts);
   const lateSnapshotFiles = fotoTardia
-    ? delta.filter((f) => { const t = horaDe.get(f); return Number.isFinite(t) && t <= prevTsMs; })
+    ? delta.filter((f) => entreUltimoYFoto(horaDe.get(f)) || entreUltimoYFoto(ultimaEdicion.get(f))
+      || eventosDe(f).some((e) => entreUltimoYFoto(new Date(e.ts).getTime())))
     : [];
   if (lateSnapshotFiles.length) {
     process.stderr.write(

@@ -153,12 +153,14 @@ if (require.main === module) {
       const todas = llamadas(cmd, { shell: arg('--shell') === 'powershell' ? 'powershell' : 'bash' });
       // la salida de una ejecución perdida: la firma es de la ejecución que abrió esa apertura. La busca la misma regla
       // que marker.js (open-runs.js `aperturaParaSalida`): al restaurar, también la copia podada y el restore a medias.
-      // Sin `startedAt` en la podada, la hora es su último toque, y va con «antes de»
-      const aperturaDe = (s, modo) => or.aperturaParaSalida(s, { modo, cwd: process.cwd(), estado: stateDir(), propia: sid });
+      // Sin `startedAt` en la podada, la hora es su último toque, y va con «antes de». El restore a medias o terminado se
+      // busca en la sesión que el restore escribe: la de `--for-session`, si la trae. Uno terminado no hace nada: no se firma
+      const aperturaDe = (s, modo, propia) => or.aperturaParaSalida(s, { modo, cwd: process.cwd(), estado: stateDir(), propia });
       pedidas = todas.map((l) => {
         const s = salidaPerdida(l);
         if (!s) return { l, esc: escapeDe(l, sid, cmd) };
-        const ap = s.sesion ? aperturaDe(s.sesion, l.sub === 'restore' ? 'restore' : 'lost') : null;
+        const ap = s.sesion ? aperturaDe(s.sesion, l.sub === 'restore' ? 'restore' : 'lost', s.destino || sid) : null;
+        if (ap && ap.deDonde === 'terminado') return { l, esc: null };
         const desde = ap && ap.ts ? `${ap.antes ? 'antes de ' : ''}${ap.ts}` : '-';
         return { l, esc: 'cerrar la ejecución', siempre: true, perdida: true, desde };
       }).filter((x) => x.esc);

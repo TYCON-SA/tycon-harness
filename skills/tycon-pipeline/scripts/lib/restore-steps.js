@@ -32,7 +32,7 @@ function pisaMarcadorVivo({ sid, previo, story, ahora = Date.now(), staleHours }
  * Corre los pasos de `pendiente.pasos` en orden. `pasos` trae una función por nombre (`apertura`, `reemplazada`,
  * `abrir`, `podada`) que recibe los datos del paso; `escribirMarcador(pendiente)` guarda la lista que queda. Devuelve
  * `{ ok: true }`, o `{ ok: false, falto, error }` con el paso que no se pudo (`marcador` si no se pudo ni escribir el
- * marcador: entonces no corrió nada).
+ * marcador: entonces no corrió nada; `guardado`, con `hecho`, si el paso corrió y no se pudo guardar la lista).
  */
 function correrRestore({ pendiente, pasos, escribirMarcador }) {
   const resto = { ...pendiente, pasos: [...(pendiente.pasos || [])] };
@@ -44,9 +44,16 @@ function correrRestore({ pendiente, pasos, escribirMarcador }) {
     try { hecho = pasos[paso.que](paso) !== false; } catch (e) { hecho = false; error = (e && e.message) || String(e); }
     if (!hecho) return { ok: false, falto: paso.que, error };
     resto.pasos.shift();
-    try { escribirMarcador(resto); } catch (e) { return { ok: false, falto: resto.pasos.length ? resto.pasos[0].que : 'marcador', error: (e && e.message) || String(e) }; }
+    try { escribirMarcador(resto); } catch (e) { return { ok: false, falto: 'guardado', hecho: paso.que, error: (e && e.message) || String(e) }; }
   }
   return { ok: true };
 }
 
-module.exports = { ORDEN, pisaMarcadorVivo, correrRestore };
+/** Lo que el restore le dice a la persona cuando `correrRestore` no terminó. */
+function queFalto(r) {
+  if (r.falto === 'marcador') return 'no pude escribir el marcador nuevo: no se cerró ni se abrió nada';
+  if (r.falto === 'guardado') return `«${r.hecho}» se hizo, pero no pude guardar lo que falta: la ejecución restaurada sigue viva; repetí el mismo restore y corre sólo lo que falta`;
+  return `quedó sin hacer «${r.falto}»: la ejecución restaurada sigue viva; repetí el mismo restore y corre sólo lo que falta`;
+}
+
+module.exports = { ORDEN, pisaMarcadorVivo, correrRestore, queFalto };

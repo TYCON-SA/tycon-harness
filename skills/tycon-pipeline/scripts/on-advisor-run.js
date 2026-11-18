@@ -319,6 +319,8 @@ function recordLaunch(o) {
   // El revisor que figura en el `expected` de alguna vuelta de la corrida (los `step5-start` desde el último `run-start`)
   // anota en el marcador `ultimoRevisorTs`: «Preparar» se repite sólo si alguno se lanzó después de su cierre
   // (lib/steps.js prepareCommitStale). Un agente que no está en ninguna vuelta (exploración, otra etapa) no la mueve.
+  // El marcador lo escriben también marker.js y otros lanzamientos: si cambió entre leerlo y reemplazarlo se lee de nuevo,
+  // para no pisar lo que anotaron. Sin la marca, «Preparar» decide como antes.
   try {
     if (esRevisor(advisor) && !sinCorrida) {
       const parsed = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
@@ -326,14 +328,15 @@ function recordLaunch(o) {
       parsed.forEach((d, i) => { if (d && d.event === 'run-start') desde = i + 1; });
       const deLaCorrida = parsed.slice(desde).some((d) => d && d.event === 'step5-start' && Array.isArray(d.expected) && d.expected.includes(advisor));
       const archivo = path.join(stateDirOf(os.homedir()), 'active', `${sessionId}.json`);
-      const m = deLaCorrida ? JSON.parse(fs.readFileSync(archivo, 'utf8')) : null;
-      if (m && String(m.storyId) === String(story)) {
+      for (let intento = 0; deLaCorrida && intento < 3; intento++) {
+        const crudo = fs.readFileSync(archivo, 'utf8');
+        const m = JSON.parse(crudo);
         const ahora = new Date().toISOString();
-        if (!(Date.parse(m.ultimoRevisorTs || '') >= Date.parse(ahora))) {
-          const tmp = `${archivo}.${process.pid}.tmp`;
-          fs.writeFileSync(tmp, JSON.stringify({ ...m, ultimoRevisorTs: ahora }, null, 2) + '\n', 'utf8');
-          fs.renameSync(tmp, archivo);
-        }
+        if (String(m.storyId) !== String(story) || Date.parse(m.ultimoRevisorTs || '') >= Date.parse(ahora)) break;
+        const tmp = `${archivo}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify({ ...m, ultimoRevisorTs: ahora }, null, 2) + '\n', 'utf8');
+        if (fs.readFileSync(archivo, 'utf8') === crudo) { fs.renameSync(tmp, archivo); break; }
+        fs.unlinkSync(tmp);
       }
     }
   } catch (e) {

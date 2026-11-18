@@ -5519,8 +5519,12 @@ function cmdSalidaPerdida(modo, sesion) {
   const io = require('./lib/story-gate-io.js');
   const podada = modo === 'restore' ? io.readPruned(STATE_DIR, sesion) : null;
   // la apertura, con la misma regla que el freno y la pregunta del cuadro (open-runs.js aperturaParaSalida): la vigente
-  // del registro, la copia del repo y, al restaurar, la podada o el restore a medias de esta sesión
+  // del registro, la copia del repo y, al restaurar, la podada; antes que todo eso, el restore a medias o terminado de esta sesión
   const aperturaCruda = or.aperturaParaSalida(sesion, { modo: modo === 'lost' ? 'lost' : 'restore', cwd: process.cwd(), estado: STATE_DIR, propia: SID });
+  if (aperturaCruda && aperturaCruda.deDonde === 'terminado') {
+    process.stdout.write(`ya está restaurada: la ejecución de la story ${aperturaCruda.story} sigue en la sesión ${SID}. No hay nada que repetir.\n`);
+    return;
+  }
   const aMedias = !!aperturaCruda && aperturaCruda.deDonde === 'a-medias';
   if (!aperturaCruda) {
     console.error(`marker.js ${nombre}: la sesión ${sesion} no tiene una ejecución abierta (ni apertura en el registro ni copia en este repo): no hay nada que ${modo === 'lost' ? 'cerrar' : 'restaurar'}.`);
@@ -5585,16 +5589,22 @@ function cmdSalidaPerdida(modo, sesion) {
   }
   // lo que hace el restore después de la firma va en orden y deja escrito lo que falta (lib/restore-steps.js): primero el
   // marcador nuevo con la lista, después cada cierre y la apertura nueva. Un paso que falla corta ahí, y repetir el mismo
-  // restore corre sólo lo que quedó, con los datos guardados en la lista
+  // restore corre sólo lo que quedó, con los datos guardados en la lista. Un paso que corrió y no se pudo sacar de la
+  // lista sigue ahí: cada uno mira en el registro si ya está hecho, para no cerrar ni abrir dos veces
+  const yaCerrada = (s, motivo) => { const v = or.vigente(s); return !!v && v.name === 'run-close' && String(v.motivo || '').startsWith(motivo); };
   const pasosDelRestore = {
-    apertura: (p) => or.cerrar({ sid: SID, sesion: p.sesion, runDir: p.runDir, story: p.story, estado: 'perdida', via, cita, extra: porDe(firma), motivo: `restaurada en la sesión ${SID}${desde !== SID ? ` (pedido desde la sesión ${desde})` : ''}` }),
-    reemplazada: (p) => cerrarEjecucion(SID, p.previo, { registrar: false, estado: 'abortada', motivo: `reemplazada por restore ${sesion} (story ${p.story})`, extra: porDe(firma) }),
-    abrir: (p) => or.abrir({ sid: SID, story: p.story, storyPath: p.storyPath, repo: p.repo, runDir: p.runDir, motivo: 'restaurada' }),
+    apertura: (p) => (yaCerrada(p.sesion, 'restaurada en la sesión') ? true : or.cerrar({ sid: SID, sesion: p.sesion, runDir: p.runDir, story: p.story, estado: 'perdida', via, cita, extra: porDe(firma), motivo: `restaurada en la sesión ${SID}${desde !== SID ? ` (pedido desde la sesión ${desde})` : ''}` })),
+    reemplazada: (p) => (yaCerrada(SID, `reemplazada por restore ${sesion} `) ? true : cerrarEjecucion(SID, p.previo, { registrar: false, estado: 'abortada', motivo: `reemplazada por restore ${sesion} (story ${p.story})`, extra: porDe(firma) })),
+    abrir: (p) => {
+      const v = or.vigente(SID);
+      if (v && v.name === 'run-open' && String(v.story) === String(p.story) && or.mismaRuta(v.runDir, p.runDir)) return true;
+      return or.abrir({ sid: SID, story: p.story, storyPath: p.storyPath, repo: p.repo, runDir: p.runDir, motivo: 'restaurada' });
+    },
     podada: (p) => { try { fs.unlinkSync(path.join(STATE_DIR, 'pruned', `${String(p.sesion).replace(/[/\\]/g, '_')}.json`)); } catch (e) { if (e.code !== 'ENOENT') throw e; } },
   };
   const terminar = (r, story) => {
     if (!r.ok) {
-      console.error(`marker.js ${nombre}: ${r.falto === 'marcador' ? 'no pude escribir el marcador nuevo: no se cerró ni se abrió nada' : `quedó sin hacer «${r.falto}»: la ejecución restaurada sigue viva; repetí el mismo restore y corre sólo lo que falta`}${r.error ? ` (${r.error})` : ''}.`);
+      console.error(`marker.js ${nombre}: ${require('./lib/restore-steps.js').queFalto(r)}${r.error ? ` (${r.error})` : ''}.`);
       process.exit(1);
     }
     sacarMarca(sesion);

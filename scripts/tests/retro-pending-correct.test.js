@@ -113,6 +113,61 @@ function laboratorio() {
 const corto = (sha) => sha.slice(0, 12);
 const motivoDelCierre = (lab, cwd) => { const { stdout } = lab.cierre(cwd); return stdout ? JSON.parse(stdout).reason : ''; };
 
+// ── a qué rama llega el empuje ───────────────────────────────────────────────────────────────────
+
+/** Un repo bajo el arnés con `main` siguiendo a `origin/main`; `origin` no existe: ninguna prueba sale a la red. */
+function repoConSeguimiento() {
+  const { dir } = repoConMain();
+  git(dir, ['remote', 'add', 'origin', path.join(path.dirname(dir), 'no-esta.git')]);
+  for (const r of ['main', 'otra']) git(dir, ['update-ref', `refs/remotes/origin/${r}`, 'HEAD']);
+  git(dir, ['branch', '--quiet', '-u', 'origin/main', 'main']);
+  return dir;
+}
+const pideLatido = (lab, dir, command) => {
+  fs.rmSync(lab.ledger, { force: true });
+  lab.pedido(command, dir);
+  return lab.renglones().length > 0;
+};
+
+// T11 RetroPending_PushDestination — @story-8.288 @ac-13 @ac-14
+// 🔴 Falla con: tomar por refspec lo que no lo es (una redirección, una variable, una sustitución) o el `push` de
+// `-c push.default=…`: el destino sale con un nombre que no es main y un empuje real a main queda sin latido.
+test('T11 RetroPending_WordsThatAreNotARefspec_AskAsBefore @story-8.288 @ac-14', () => {
+  const dir = repoConSeguimiento();
+  const lab = laboratorio();
+  for (const c of [
+    'git push origin 2>&1', 'git push origin 2>&1 | tail -5', 'git push origin > /tmp/empuje.log', 'git push origin @',
+    'git push origin "$RAMA"', 'git push origin $(git branch --show-current)', 'git push origin `git branch --show-current`',
+    'git push origin HEAD:$DESTINO', 'git -c push.default=current push', 'git -c push.default=current push origin main',
+    'git -C . push origin main', 'git push --mirror origin', 'git push --delete origin otra', 'git push -d origin otra',
+    "git push origin 'refs/heads/*:refs/heads/*'",
+  ]) assert.ok(pideLatido(lab, dir, c), `con HEAD en main pide el latido: ${c}`);
+});
+
+test('T11 RetroPending_RedirectionsAndGitOptions_KeepTheRealDestination @story-8.288 @ac-13', () => {
+  const dir = repoConSeguimiento();
+  const lab = laboratorio();
+  for (const c of [
+    'git push origin otra 2>&1', 'git push origin otra 2>&1 | tail -5', 'git push origin otra > /tmp/empuje.log 2>&1',
+    'git push origin otra 2>/dev/null', 'git -c push.default=current push origin otra', 'git -C . push origin otra',
+  ]) assert.ok(!pideLatido(lab, dir, c), `va a otra: no pide el latido: ${c}`);
+});
+
+test('T11 RetroPending_NoRefspec_FollowsPushDefault @story-8.288 @ac-14', () => {
+  const dir = repoConSeguimiento();
+  const lab = laboratorio();
+  git(dir, ['checkout', '--quiet', '-b', 'otra']);
+  git(dir, ['branch', '--quiet', '-u', 'origin/main', 'otra']);
+  assert.ok(!pideLatido(lab, dir, 'git push'), 'con `simple`, otro nombre: git lo rechaza y no llega a main');
+  assert.ok(pideLatido(lab, dir, 'git -c push.default=upstream push'), '`upstream` sí va a la rama que sigue');
+  assert.ok(!pideLatido(lab, dir, 'git -c push.default=current push'), '`current` va a la rama del mismo nombre');
+  git(dir, ['checkout', '--quiet', 'main']);
+  git(dir, ['branch', '--quiet', '-u', 'origin/otra', 'main']);
+  assert.ok(!pideLatido(lab, dir, 'git push'), 'una main que sigue a origin/otra no llega a main');
+  git(dir, ['config', 'push.default', 'current']);
+  assert.ok(pideLatido(lab, dir, 'git push'), 'con `current`, la main va a main aunque siga a otra');
+});
+
 // ── al abrir el pedido ───────────────────────────────────────────────────────────────────────────
 
 test('con la referencia del remoto vieja en la copia, anota la punta que contesta el remoto y la trae', () => {
