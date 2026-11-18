@@ -66,6 +66,10 @@ const NODES = new Set(['node', 'nodejs']);
 const NIVELES_DE_LA_CONSOLA = 3;
 // lo que anota la aprobación en Windows; un pedido sin esto sería de la ventana de permiso
 const VIAS_DE_WINDOWS = new Set(['click', 'mensaje']);
+// las vías que escribe el freno en el registro (sin vía: la ventana); las dos sin persona pasan siempre por el control
+// previo del guion (`antes`), y una firma sin él no sale por ellas
+const VIAS_DEL_REGISTRO = new Set(['click', 'mensaje', 'avisado', 'delegacion']);
+const SIN_PERSONA = new Set(['avisado', 'delegacion']);
 const SIN_GIT_BASH = 'esta máquina no tiene Git Bash: instalá Git para Windows (winget install Git.Git, y volvé a abrir la herramienta), que hace falta para los controles que son guiones de bash y para firmar con un click; mientras tanto, para firmar queda --terminal, en la ventana nueva de tres palabras';
 const buscarGitBash = () => require('./git-bash.js').findGitBash({ platform: 'win32' });
 const SHS = new Set(['bash', 'sh']);
@@ -1360,9 +1364,11 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // una pestaña que no pide permisos aprueba sola lo que se manda a la ventana: el renglón quedaría a nombre del dueño
   // sin su Sí. Lo que afloja un control se niega ahí, con el comando de la terminal; lo de rutina se hace y queda en el
   // registro como «hecho y avisado» (`rutinaSinPermisos`). Sólo los modos que preguntan llevan a la ventana; uno
-  // desconocido no pregunta. Sin el dato, la de siempre
+  // desconocido no pregunta, y un evento sin el dato tampoco: si la herramienta dejara de mandarlo en una pestaña sin
+  // permisos, la ventana se aprobaría sola a nombre del dueño
   const modo = evento.permission_mode == null ? null : String(evento.permission_mode);
-  const sinVentana = modo !== null && !MODOS_QUE_PREGUNTAN.has(modo);
+  const sinVentana = modo === null || !MODOS_QUE_PREGUNTAN.has(modo);
+  const laPestana = modo === null ? 'la herramienta no dice si esta pestaña pide permisos' : `esta pestaña no pide permisos (${una(modo, 40)})`;
   // el desvío (delegation-routing.js): lo que la sesión que trabaja pide para sí y la coordinadora puede firmar por
   // delegación no va a la persona. Se niega sin ventana ni cuadro y queda en la lista con el comando que corre ella. Antes
   // gana la aprobación explícita de la persona; lo de rutina en una pestaña sin permisos sigue «hecho y avisado»; y lo que
@@ -1428,7 +1434,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
       if (enWindows || deFondo || !rutina.ok) {
         const donde = soloClick ? (firmaGuion === SOBRE_CUPO ? 'pasar el tope del camino corto no se aprueba en la ventana' : 'esto lo firma el dueño con un click en esta pestaña, no la ventana')
           : clickDelDueno ? 'esto lo firma sólo el click del dueño, no la ventana ni la delegación' : enWindows ? 'en Windows la ventana de permiso no firma' : deFondo ? 'esta sesión corre de fondo: la ventana de permiso no le llega a nadie seguro'
-          : `esta pestaña no pide permisos (${una(modo, 40)}): la ventana se aprobaría sola, sin el Sí del dueño`;
+          : `${laPestana}: la ventana se aprobaría sola, sin el Sí del dueño`;
         const anotado = anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras: can && can.palabras, cuadro, cwd: evento.cwd, ahora, deFondo, lista });
         // la sesión que abrió la coordinadora le manda el cuadro a ella; lo que no se pudo leer lo anota la función, y sin
         // poder cargarla, el texto de siempre
@@ -1469,10 +1475,19 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   // no es JSON») sin decir cómo pedir las rutas de nuevo
   const vistaDeControl = esDeControl(pendientes) ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios }) : null;
   if (vistaDeControl && vistaDeControl.error) return negarSinCuadroDeControl(vistaDeControl.error, pendientes);
-  // el guion dice antes si se negaría: entonces no hay ventana ni registro (sin respuesta, la ventana se abre como siempre)
+  // el guion dice antes si se negaría: entonces no hay ventana ni registro (sin respuesta, la ventana se abre como siempre).
+  // Con «hecho y avisado», el guion comprueba con esa vía su control previo: si sin persona no sale pero con ella sí, se
+  // niega como lo que no es de rutina, con el cuadro para aprobarlo con un click; si se negaría igual, con su texto
   if (guion && !delegada && !comprobado && CON_PRECHEQUEO.has(firmaGuion)) {
     let c = null;
-    try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: aprobada ? aprobada.via : null }); } catch (_) { c = null; }
+    try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: aprobada ? aprobada.via : avisado ? 'avisado' : null }); } catch (_) { c = null; }
+    let conPersona = null;
+    if (c && c.niega && avisado) { try { conPersona = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: null }); } catch (_) { conPersona = null; } }
+    if (c && c.niega && conPersona && conPersona.ok) {
+      const cuadro = pendientes.length === 1 ? cuadroPara({ firma: pendientes[0], comando, palabras: can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios }) : null;
+      const anotado = anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras: can.palabras, cuadro, cwd: evento.cwd, ahora, deFondo, lista });
+      return negarSinVentana(`${laPestana}, y sin persona el control previo de la firma la niega: ${una(c.niega, 600)}; ${sinAprobacion || 'no hay un click'}`, pendientes, paraTerminal, cuadro, deFondo, anotado);
+    }
     if (c && c.niega) {
       return { decision: 'deny', firmas: pendientes, texto: `No abrí la ventana: el comando se iba a negar antes de usar la firma, y el «Sí» se perdería. Lo que dijo: ${una(c.niega, 800)}. Arreglá eso y volvé a pedirla` };
     }
@@ -1625,12 +1640,16 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
     // sólo vale el último pedido: el más nuevo se consume y los anteriores vencen
     validos.sort((a, b) => Date.parse(b.reg.ts) - Date.parse(a.reg.ts));
     const [ultimo, ...viejos] = validos;
-    // lo que el guion comprueba con el pedido a la vista y sin gastarlo (la vía la escribió el freno en el registro)
+    // lo que el guion comprueba con el pedido a la vista y sin gastarlo (la vía la escribió el freno en el registro); una
+    // vía que no se conoce no se lee como la ventana
+    const viaDelRegistro = ultimo.reg.via;
+    if (viaDelRegistro != null && !VIAS_DEL_REGISTRO.has(viaDelRegistro)) return no(`vía desconocida en el registro de la ventana (${una(viaDelRegistro, 40)})`);
+    // lo hecho y avisado en una pestaña sin permisos pasa por los mismos controles que la delegación
+    const sinPersona = SIN_PERSONA.has(viaDelRegistro);
+    if (sinPersona && !antes) return { ok: false, codigo: 1, motivo: `esta firma la da una persona: su guion no trae el control previo con que sale sin ella (${viaDelRegistro === 'avisado' ? 'hecho y avisado' : 'la delegación'}). ${comoAprobar(firma, ultimo.reg, casa)}` };
     let previo = null;
     if (antes) {
-      // lo hecho y avisado en una pestaña sin permisos pasa por los mismos controles que la delegación
-      const sinPersona = ['delegacion', 'avisado'].includes(ultimo.reg.via);
-      previo = antes(sinPersona ? 'delegacion' : 'ventana', ultimo.reg);
+      try { previo = antes(sinPersona ? 'delegacion' : 'ventana', ultimo.reg); } catch (e) { return { ok: false, codigo: 2, motivo: `no pude comprobar el control previo (${(e && e.message) || e})` }; }
       // lo que no se firma sin la persona dice cómo se aprueba con ella, y por qué no contó lo que ya hubiera aprobado
       if (previo && previo.codigo) return { ok: false, codigo: previo.codigo, motivo: sinPersona ? `${previo.motivo}. ${comoAprobar(firma, ultimo.reg, casa)}` : previo.motivo };
     }
@@ -1908,10 +1927,16 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   // firmar, sin gastar el pedido y sin hacer lo que la firma autoriza
   const ambienteDelChequeo = env !== undefined ? env : process.env;
   if (ambienteDelChequeo[PRECHEQUEO] === '1') {
+    // con la aprobación que el freno va a gastar, su vía; con «hecho y avisado», ésa; sin ninguna, todavía no hay registro.
+    // Sin persona, lo mismo que va a comprobar `verificar`: sin control previo no sale, y el control es el de la delegación
+    const via = ambienteDelChequeo[PRECHEQUEO_VIA];
+    const sinPersona = SIN_PERSONA.has(via);
+    if (sinPersona && !antes) return { codigo: 1, motivo: 'esta firma la da una persona: su guion no trae el control previo con que sale sin ella', destino, sesion: propia || null };
     if (antes) {
-      // con la aprobación que el freno va a gastar, su vía; sin ella, todavía no hay registro
-      const via = ambienteDelChequeo[PRECHEQUEO_VIA];
-      const n = antes(argv.includes('--terminal') ? 'terminal' : 'ventana', via ? { via } : null);
+      let n;
+      try { n = antes(sinPersona ? 'delegacion' : argv.includes('--terminal') ? 'terminal' : 'ventana', via ? { via } : null); } catch (e) {
+        return { codigo: 2, motivo: `no pude comprobar el control previo (${(e && e.message) || e})`, destino, sesion: propia || null };
+      }
       if (n && n.codigo) return { codigo: n.codigo, motivo: n.motivo, destino, sesion: propia || null };
     }
     (escribir || ((t) => process.stdout.write(t)))(`${PRECHEQUEO_OK}\n`);

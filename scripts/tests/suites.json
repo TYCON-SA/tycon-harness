@@ -662,6 +662,12 @@
       "requiere": []
     },
     {
+      "__nota": "lo que se firma sin persona pasa el control previo de su guion: la maqueta (nunca la de la propia sesión), el pendiente (la coordinadora confirmada, sobre un repo de la sesión destino) y lo de rutina que el perfil delega (sólo con una historia de rutina). Los guiones de verdad en una casa de juguete; unos veinte segundos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/approve-without-person.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la oferta de la prueba con navegador: la muestra el arnés sólo con pantalla y sin navegador; preparar y declarar la deuda piden la respuesta de la persona; la deuda afloja el cierre sólo con sus dos marcas.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/browser-test-offer.test.js",
@@ -3021,6 +3027,12 @@
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "una firma sin persona («hecho y avisado» o la delegación) sale sólo con el control previo de su guion: sin él se niega sin gastar el pedido, también en el chequeo previo del freno; y la prueba de cruce: cada llamada de firma del árbol que puede salir sin persona pasa su control previo. En proceso; un segundo.",
+      "raiz": "arnes",
+      "ruta": "tests/signatures-without-person.test.js",
       "requiere": []
     },
     {

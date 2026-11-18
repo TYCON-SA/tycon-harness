@@ -90,13 +90,19 @@ function dentroDeVerdad(repo, p) {
  * La aprobación de la persona en la ventana de permiso (o con --terminal, en su terminal). La cita y el reenvío ya no
  * firman. `{ codigo: 0, via }` o `{ codigo, motivo }`.
  */
-function firmaDeLaPersona(argv, resumen, propia = PROPIA) {
+function firmaDeLaPersona(argv, resumen, propia = PROPIA, { sub, story, repo } = {}) {
   if (argv.includes('--relayed-by') || argv.includes('--ok')) {
     return { codigo: 2, motivo: 'la cita o el reenvío ya no firman: la persona lo aprueba en la ventana de permiso (este comando sin --ok ni --relayed-by) o en su terminal (--terminal)' };
   }
   const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  // por la delegación: preparar, sólo en una historia de rutina; decir que no (nivel 2), nunca
+  const antes = (via) => {
+    if (via !== 'delegacion') return null;
+    if (sub !== 'prepare') return { codigo: 1, motivo: 'decir que no a la prueba con navegador lo decide una persona: por delegación no se firma' };
+    return require('./lib/plan-review.js').rutinaParaDelegar({ story, repo });
+  };
   const r = ow.exigir({ firma: 'browser-test', argv: process.argv.slice(1), resumen,
-    propia,
+    propia, antes,
     anotar: (renglon) => bt.anotar(stateDir(), { ts: new Date().toISOString(), ...renglon }) });
   if (r.codigo !== 0) return { codigo: 2, motivo: r.motivo };
   // recién con la firma dada, el proceso pasa a trabajar sobre la sesión destino
@@ -264,7 +270,7 @@ function cmdPrepare(argv) {
   if (paginaRel && !CARPETA_SEGURA.test(paginaRel)) { process.stderr.write(`e2e-setup.js prepare: la carpeta de la página (${paginaRel}) tiene caracteres que no puedo poner en un comando\n`); return 2; }
   // el lector del bloque e2e: corta en el primer espacio: una carpeta con espacios quedaría mal leída
   if (!CARPETA_SEGURA.test(rel(repo, pkg))) { process.stderr.write(`e2e-setup.js prepare: la carpeta del package.json (${rel(repo, pkg)}) tiene caracteres que .tycon/advisors.yaml no puede leer\n`); return 2; }
-  const ok = firmaDeLaPersona(argv, `preparar la prueba con navegador de la historia ${id} en ${repo}`);
+  const ok = firmaDeLaPersona(argv, `preparar la prueba con navegador de la historia ${id} en ${repo}`, PROPIA, { sub: 'prepare', story: h.path, repo });
   if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js prepare: no preparo nada — ${ok.motivo}\n`); return 2; }
   const advisors = path.join(repo, '.tycon', 'advisors.yaml');
   const yaTeniaE2e = fs.existsSync(advisors) && /^e2e\s*:/m.test(fs.readFileSync(advisors, 'utf8'));
@@ -383,7 +389,7 @@ function cmdDefer(argv) {
   const propia = PROPIA === '_nosession' && oferta.sessionId ? oferta.sessionId : PROPIA;
   const m = txt.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) { process.stderr.write('e2e-setup.js defer: la historia no tiene frontmatter\n'); return 2; }
-  const ok = firmaDeLaPersona(argv, `dejar pendiente la prueba con navegador de la historia ${id}: «${cita}»`, propia);
+  const ok = firmaDeLaPersona(argv, `dejar pendiente la prueba con navegador de la historia ${id}: «${cita}»`, propia, { sub: 'defer', story: h.path, repo });
   if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js defer: no anoto nada — ${ok.motivo}\n`); return 2; }
   const fecha = new Date().toISOString().slice(0, 10);
   const motivo = `${fecha} — la persona: «${cita}»`.replace(/\\/g, '\\\\').replace(/"/g, '\\"');

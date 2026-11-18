@@ -80,7 +80,7 @@ const designaciones = (lab) => lab.gates().filter((g) => g.name === 'relay-desig
 
 /** El freno de verdad sobre un comando de esta sesión, con el árbol de procesos de la prueba. */
 function frenar(lab, comando, { sesion = SES } = {}) {
-  return ow.decidir({ evento: { session_id: sesion, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: comando }, cwd: lab.carpeta },
+  return ow.decidir({ evento: { session_id: sesion, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: comando }, cwd: lab.carpeta },
     escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.casa, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null, comprobar: () => null });
 }
 const cuadroDe = (lab, firma, comando, sesion = SES) => ow.cuadroPara({ firma, comando, palabras: ow.canonica(comando), destino: sesion, sesion, cwd: lab.carpeta, casa: lab.casa });

@@ -84,13 +84,17 @@ function arbolDelGuion(casa, cmd, { consola, padre = 100, tool = herramienta(), 
     { pid: 301, ppid: 300, inicio: INICIO, comando: cmd }, ...extra];
 }
 
-const evento = (command, extra = {}) => ({ session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, ...extra });
+// una pestaña que pregunta: el evento sin el modo cuenta como sin ventana (lo mide Decidir_NoPermissionMode_FollowsDecision3)
+const evento = (command, extra = {}) => ({ session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, permission_mode: 'default', ...extra });
 // sin `delegacion`, ninguna firma se delega: la delegación de verdad lee el perfil y la huella de esta máquina
 const SIN_DELEGACION = () => ({ ok: false, motivo: 'sin delegación en la prueba' });
 // sin `aprobador`, el texto de un repo del arnés: el de verdad mira el remoto de la carpeta del evento
 const { APPROVERS } = require(path.join(__dirname, '..', 'lib', 'approver.js'));
 const DEL_ARNES = () => APPROVERS.maintainers;
 const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES, aprobaciones: o.aprobaciones, topes: o.topes });
+// el control previo con que el guion de verdad pide una firma que puede salir sin persona (sin él, la delegación y
+// «hecho y avisado» no firman); acá deja pasar: lo que comprueba lo prueba cada guion
+const CONTROL_DEL_GUION = () => null;
 const registros =(casa) => { try { return fs.readdirSync(ow.carpeta(casa)); } catch (_) { return []; } };
 const vigentes = (casa) => registros(casa).filter((f) => f.endsWith('.json'));
 const gates = (casa) => { try { return fs.readFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
@@ -655,7 +659,7 @@ test('OwnerWindow_Delegado_SinVentana (T23)', (t) => {
     assert.strictEqual(reg.via, 'delegacion');
     assert.strictEqual(reg.maquina, HUELLA);
     assert.strictEqual(reg.sesion, 'ses-coord');
-    const e = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-coord' });
+    const e = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-coord', antes: CONTROL_DEL_GUION });
     assert.strictEqual(e.codigo, 0, e.motivo);
     assert.strictEqual(e.via, 'delegacion', 'el guion firma con via: delegacion');
     assert.strictEqual(gates(casa).filter((x) => x.name === `${firma}-signed`)[0].via, 'delegacion');
@@ -860,7 +864,7 @@ test('OwnerWindow_Refirma_DelegadaSinVentana + OwnerWindow_RefirmaNoComprobada_P
   // el guion de la refirma consume ese registro; el de un cambio de control, no
   assert.strictEqual(ow.verificar({ firma: 'control-change', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000 }).ok, false);
   // el guion lo corre la coordinadora, la sesión que pidió
-  const e = ow.exigir({ firma: 'refresh-after-main', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: DE_LA_COORD.session_id });
+  const e = ow.exigir({ firma: 'refresh-after-main', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: DE_LA_COORD.session_id, antes: CONTROL_DEL_GUION });
   assert.strictEqual(e.codigo, 0, e.motivo);
   assert.strictEqual(e.via, 'delegacion');
   assert.strictEqual(e.registro.refirma_de, 'h'.repeat(64));
@@ -1373,7 +1377,7 @@ test('Constancias_DicenViaQuienYDestino_SinCita (T46) @story-8.139 @ac-30', (t) 
   // por la delegación
   const casa = casaConDesignada(t);
   pedir(casa, PLAN, { evento: DE_LA_COORD, delegacion: delegacionReal() });
-  assert.strictEqual(ow.exigir({ firma: 'plan-approval', argv: PLAN_ARGV, pid: 301, arbol: arbolDelGuion(casa, PLAN), casa, ahora: AHORA + 60000, propia: DE_LA_COORD.session_id }).codigo, 0);
+  assert.strictEqual(ow.exigir({ firma: 'plan-approval', argv: PLAN_ARGV, pid: 301, arbol: arbolDelGuion(casa, PLAN), casa, ahora: AHORA + 60000, propia: DE_LA_COORD.session_id, antes: CONTROL_DEL_GUION }).codigo, 0);
   const d = gates(casa).find((x) => x.name === 'plan-approval-signed');
   mira(d, 'delegación');
   assert.strictEqual(d.via, 'delegacion');
@@ -1821,16 +1825,41 @@ test('Freno_PestanaSinPermisos_NiegaLoQueAfloja_ConElComandoDeLaTerminal', (t) =
     assert.match(r.texto, /--terminal/, `${modo}: el comando de la terminal`);
     assert.strictEqual(registros(casa).length, 0, `${modo}: sin registro de ventana`);
   }
-  for (const modo of ['default', 'acceptEdits', 'plan', undefined]) {
+  for (const modo of ['default', 'acceptEdits', 'plan']) {
     const casa = casaNueva(t);
-    const ev = modo === undefined ? DE_LA_COORD : { ...DE_LA_COORD, permission_mode: modo };
-    assert.strictEqual(pedir(casa, SAVE, { evento: ev }).decision, 'ask', String(modo));
+    assert.strictEqual(pedir(casa, SAVE, { evento: { ...DE_LA_COORD, permission_mode: modo } }).decision, 'ask', modo);
   }
   // la delegación no pasa por la ventana: en una pestaña sin permisos sigue firmando
   const conSave = { ...PERFIL, delegated_signing: ['save'] };
   const r = pedir(casaConDesignada(t), SAVE, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }, delegacion: delegacionReal({ perfil: conSave }) });
   assert.strictEqual(r.decision, 'allow', r.texto);
   assert.strictEqual(r.via, 'delegacion');
+});
+
+// Un evento sin el modo de la pestaña cuenta como una pestaña sin ventana: si la herramienta deja de mandarlo, la ventana
+// no se aprueba sola a nombre del dueño. Lo de rutina va a «hecho y avisado»; lo de nivel 2 pide el click
+test('T14 Decidir_NoPermissionMode_FollowsDecision3 @story-8.255 @ac-14', (t) => {
+  const sinModo = (cmd) => { const e = evento(cmd, DE_LA_COORD); delete e.permission_mode; return e; };
+  const plan = `node ${MARKER} complete-step approve-plan --approved "dale" --for-session ses-a`;
+  let casa = casaNueva(t);
+  const r = ow.decidir({ evento: sinModo(plan), escapes: [], arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA, delegacion: SIN_DELEGACION,
+    clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: aprobacionesDePrueba() });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'avisado');
+  casa = casaNueva(t);
+  const w = ow.decidir({ evento: sinModo(`node ${MARKER} waive-critical --rule SEC-C1 --reason "lo cubre otra capa"`), escapes: [], arbol: arbolDelFreno(), pid: 201,
+    casa, ahora: AHORA, delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: aprobacionesDePrueba() });
+  assert.strictEqual(w.decision, 'deny', w.texto);
+  assert.match(w.texto, /click/);
+  assert.strictEqual(registros(casa).length, 0, 'sin registro de ventana');
+});
+
+// Lo de nivel 2 en una pestaña sin permisos sigue negado en el freno (la sonda de la auditoría: waive-critical en bypass)
+test('T18 Decidir_LevelTwoInBypassTab_StillDenied @story-8.255 @ac-18', (t) => {
+  const casa = casaNueva(t);
+  const r = pedir(casa, `node ${MARKER} waive-critical --rule SEC-C1 --reason "lo cubre otra capa"`, { evento: { ...DE_LA_COORD, permission_mode: 'bypassPermissions' } });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.strictEqual(registros(casa).length, 0);
 });
 
 // Lo de rutina en una pestaña sin permisos: se hace y queda «hecho y avisado». El guion pasa por los mismos controles
@@ -1893,7 +1922,7 @@ test('ApproveSave_SeisLlaves (T13) @story-8.143 @ac-8', (t) => {
   const r = pedir(casa, SAVE, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: conSave }) });
   assert.strictEqual(r.decision, 'allow', r.texto);
   assert.strictEqual(r.via, 'delegacion');
-  const e = ow.exigir({ firma: 'save', argv: SAVE_ARGV, pid: 301, arbol: arbolDelGuion(casa, SAVE), casa, ahora: AHORA + 60000, propia: 'ses-coord' });
+  const e = ow.exigir({ firma: 'save', argv: SAVE_ARGV, pid: 301, arbol: arbolDelGuion(casa, SAVE), casa, ahora: AHORA + 60000, propia: 'ses-coord', antes: CONTROL_DEL_GUION });
   assert.strictEqual(e.codigo, 0, e.motivo);
   assert.strictEqual(e.via, 'delegacion');
   // sin cada llave, por vez: la ventana (o la negación), nunca la delegación
@@ -2024,7 +2053,7 @@ test('8.141 T11 AdhocSet_ForSession_Delegada_SinVentana', (t) => {
   assert.strictEqual(reg.firma, 'adhoc-lane');
   assert.strictEqual(reg.sesion, 'ses-coord');
   assert.strictEqual(reg.destino, 'ses-a');
-  const e = ow.exigir({ firma: 'adhoc-lane', argv: ADHOC_PARA_A_ARGV, pid: 301, arbol: arbolDelGuion(casa, ADHOC_PARA_A), casa, ahora: AHORA + 60000, propia: 'ses-coord' });
+  const e = ow.exigir({ firma: 'adhoc-lane', argv: ADHOC_PARA_A_ARGV, pid: 301, arbol: arbolDelGuion(casa, ADHOC_PARA_A), casa, ahora: AHORA + 60000, propia: 'ses-coord', antes: CONTROL_DEL_GUION });
   assert.strictEqual(e.codigo, 0, e.motivo);
   assert.strictEqual(e.via, 'delegacion');
   assert.strictEqual(e.sesion, 'ses-coord');
@@ -2183,7 +2212,7 @@ test('Pendiente_CoordinadoraDesignada_RepoDeOtraSesion_FirmaSinVentana (a)', (t)
   assert.strictEqual(reg.sesion, 'ses-coord');
   // el guion de la coordinadora firma con via: delegacion, y la constancia dice que fue ella por delegación
   const argv = [MARKER, 'approve-pending', '--id', 'DEF-nuevo', '--repo', ajeno, '--for-session', 'ses-a'];
-  const e = ow.exigir({ firma: 'pending-approval', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: undefined });
+  const e = ow.exigir({ firma: 'pending-approval', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: undefined, antes: CONTROL_DEL_GUION });
   assert.strictEqual(e.codigo, 0, e.motivo);
   assert.strictEqual(e.via, 'delegacion');
   const q = ow.quienFirmo(e, 'el-dev');

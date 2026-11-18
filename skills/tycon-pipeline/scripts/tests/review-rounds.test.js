@@ -349,7 +349,7 @@ function vueltaParaOtra(lab, iter, extra, { pedir = true, sesion = COORD } = {})
   const args = [PIPELINE, 'smart-reloop', '--iter', String(iter), '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js', ...extra];
   const cmd = `node ${args.join(' ')}`;
   if (pedir) {
-    const p = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+    const p = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
       escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null, comprobar: () => null });
     assert.equal(p.decision, 'ask', p.texto);
   }
@@ -422,7 +422,7 @@ test('VueltaExtra_ForSession_SinFirmaPendiente_NoSirve @story-8.142 @ac-2', () =
 /** El pedido de la ventana de la sesión de la corrida, con el chequeo de verdad en la HOME del laboratorio. */
 function pedirConChequeo(lab, iter, extra = []) {
   const cmd = `node ${[PIPELINE, 'smart-reloop', '--iter', String(iter), '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js', '--extra-round', ...extra].join(' ')}`;
-  return ow.decidir({ evento: { session_id: SID, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, cwd: lab.repo },
+  return ow.decidir({ evento: { session_id: SID, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd }, cwd: lab.repo },
     escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null,
     comprobar: (o) => ow.comprobarConElGuion({ ...o, env: lab.env }) });
 }
@@ -519,7 +519,7 @@ function vueltaDesdeOtraCarpeta(lab, cwd, iter, extra, { pedir = true, delegada 
   const args = [PIPELINE, 'smart-reloop', '--iter', String(iter), ...extra];
   const cmd = `node ${args.join(' ')}`;
   if (pedir) {
-    const p = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, cwd },
+    const p = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd }, cwd },
       escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, clasificar: () => null, comprobar: () => null,
       delegacion: () => (delegada ? { ok: true, maquina: 'm-prueba' } : { ok: false, motivo: 'sin delegación en la prueba' }) });
     assert.deepEqual([p.decision, p.via], delegada ? ['allow', 'delegacion'] : ['ask', undefined], p.texto);

@@ -293,7 +293,7 @@ function laboratorioOtraSesion(t) {
   }
   /** El pedido de la ventana, como lo arma el freno ante el comando de ses-coord. */
   lab.pedir = (cmd, { delegacion = () => ({ ok: false, motivo: 'sin delegación en la prueba' }) } = {}) => ow.decidir({
-    evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+    evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
     escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora: AHORA, delegacion, clasificar: () => null });
   /** El guion que corre ses-coord con la ventana aprobada (el árbol del comando); `sesionEn`: su variable de sesión al salir. */
   lab.correr = (args) => {
@@ -444,7 +444,9 @@ test('Guion_ForSession_SalidaDeOtraSesion_PorDelegacionYSinFirma', (t) => {
   };
   const delegacion = (perfil) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella: HUELLA }) });
   const DELEGA = { ...PERFIL, delegated_signing: ['lost-run'] };
-  // la ejecución perdida de ses-a, cerrada o rearmada desde la designada: con lost-run delegada, sin ventana
+  // la ejecución perdida de ses-a, cerrada o rearmada desde la designada: aunque el perfil inyectado delegue lost-run (el
+  // lector del perfil de verdad lo saca, es de nivel 2), el freno deja pasar y el guion la niega: cerrarla como perdida
+  // o restaurarla lo decide una persona. El pedido no se gasta y la ejecución sigue abierta
   for (const args of [['clear-session', DESTINO, '--lost', '--for-session', DESTINO], ['restore', DESTINO, '--for-session', DESTINO]]) {
     const lab = laboratorioOtraSesion(t);
     designar(lab);
@@ -452,11 +454,11 @@ test('Guion_ForSession_SalidaDeOtraSesion_PorDelegacionYSinFirma', (t) => {
     const p = lab.pedir(lab.comando(args), { delegacion: delegacion(DELEGA) });
     assert.strictEqual(p.decision, 'allow', `${args[0]}: ${p.texto}`);
     const r = lab.correr(args);
-    assert.strictEqual(r.status, 0, `${args[0]}: ${r.stdout}${r.stderr}`);
-    const firmada = lab.gates().filter((g) => g.name === 'lost-run-signed');
-    assert.strictEqual(firmada.length, 1, args[0]);
-    assert.deepStrictEqual([firmada[0].sesion, firmada[0].destino, firmada[0].via], [COORD, DESTINO, 'delegacion'], args[0]);
-    assert.ok(lab.gates().some((g) => g.name === 'run-close' && g.sesion === DESTINO && g.por === COORD), `${args[0]}: el cierre dice quién lo pidió`);
+    assert.notStrictEqual(r.status, 0, `${args[0]}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /cerrar como perdida una ejecución, o restaurarla, lo decide una persona/, args[0]);
+    assert.strictEqual(lab.gates().filter((g) => g.name === 'lost-run-signed').length, 0, args[0]);
+    assert.ok(!lab.gates().some((g) => g.name === 'run-close' && g.sesion === DESTINO), `${args[0]}: la ejecución sigue abierta`);
+    assert.strictEqual(lab.vigentes().length, 1, `${args[0]}: el pedido no se gasta`);
     // sin lost-run en el perfil, la misma salida pide la ventana del dueño
     const otro = laboratorioOtraSesion(t);
     designar(otro);
@@ -561,7 +563,7 @@ function correrGuion(lab, guion, args, sid = COORD) {
 }
 const comandoDe = (guion, args) => `node ${guion} ${args.map(comillas).join(' ')}`;
 const pedirDe = (lab, guion, args, sid = COORD) => ow.decidir({
-  evento: { session_id: sid, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: comandoDe(guion, args) }, cwd: lab.repo },
+  evento: { session_id: sid, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: comandoDe(guion, args) }, cwd: lab.repo },
   escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
 
 test('ForceManual_Canonica_PideFirma (T8) @story-8.142 @ac-5 @ac-8', (t) => {

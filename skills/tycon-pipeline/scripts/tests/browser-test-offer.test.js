@@ -418,7 +418,7 @@ test('Defer_ForSession_SeAnotaParaLaSesionDestino @story-8.142 @ac-2 @ac-3', () 
     const argv = [path.join(SCRIPTS, 'e2e-setup.js'), ...args];
     const cmd = `node ${argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`;
     if (pedir) {
-      const p = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+      const p = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
         escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
       assert.equal(p.decision, 'ask', p.texto);
     }
@@ -444,7 +444,7 @@ test('Defer_ForSession_SeAnotaParaLaSesionDestino @story-8.142 @ac-2 @ac-3', () 
   fs.writeFileSync(path.join(stateOf(home), 'active', 's-otra.json'), JSON.stringify({ storyId: '7.7', sessionId: 's-otra', startedAt: new Date(ahora).toISOString() }));
   const argvAjena = ['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-otra'];
   const cmdAjena = `node ${[path.join(SCRIPTS, 'e2e-setup.js'), ...argvAjena].map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`;
-  const negada = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmdAjena }, cwd: c.repo },
+  const negada = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmdAjena }, cwd: c.repo },
     escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
   assert.equal(negada.decision, 'deny', negada.texto);
   assert.match(negada.texto, /7\.7/);

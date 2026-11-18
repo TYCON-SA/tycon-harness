@@ -212,7 +212,7 @@ const arbolDelGuion = (casa, cmd) => [...BASE, herramienta,
   { pid: 301, ppid: 300, inicio: INICIO, comando: cmd }];
 const { APPROVERS } = require(path.join(__dirname, '..', 'lib', 'approver.js'));
 const pedir = (casa, cmd, ahora) => ow.decidir({
-  evento: { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+  evento: { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
   escapes: [], arbol: arbolDelFreno(), pid: 201, casa, ahora, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }),
   clasificar: () => null, comprobar: () => null, aprobador: () => APPROVERS.maintainers,
 });
