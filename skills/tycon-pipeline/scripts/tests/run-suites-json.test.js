@@ -1529,3 +1529,102 @@ test('T-8.286b RunSuites_GateBesidePass_Exit77NoResult @story-8.286 @ac-1 @ac-2:
   assert.equal(anotados.length, 1, JSON.stringify(anotados));
   assert.equal(anotados[0].suites, 20);
 });
+
+// ── 8.302: la pieza central ─────────────────────────────────────────────────────────────────────────────────────────
+// Repo git de juguete: `scripts/lib/pieza.js` en la base, `n` suites de una línea que la nombran (s1 y s2 nombran además
+// `cambiada`; la primera se llama `pieza-x`) y un cambio sin commitear: dentro de `cambiada`, o en un renglón que no
+// encierra ninguna función (`arriba`).
+const PIEZA = ['const ARRIBA = 1;', 'function cambiada(x) {', '  return x;', '}', 'function otra(y) {', '  return y;', '}', ''].join('\n');
+function gitLab(dir, ...args) {
+  const env = { ...process.env, GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' };
+  return spawnSync('git', ['-C', dir, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-c', 'core.hooksPath=/dev/null',
+    '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { encoding: 'utf8', env }).stdout.trim();
+}
+function piezaLab(n, { cambio = 'cambiada' } = {}) {
+  const rutas = Array.from({ length: n }, (_, i) => (i === 0 ? 'tests/pieza-x.test.sh' : `tests/s${i}.test.sh`));
+  const f = armar({ diarias: rutas.map((ruta) => ({ raiz: 'arnes', ruta })) });
+  rutas.forEach((ruta, i) => f.escribir('arnes', ruta, `# lee scripts/lib/pieza.js${i === 1 || i === 2 ? ' y prueba cambiada' : ''}\nexit 0\n`));
+  f.escribir('arnes', 'lib/pieza.js', PIEZA);
+  gitLab(f.repo, 'init', '-q');
+  gitLab(f.repo, 'add', '-A');
+  gitLab(f.repo, 'commit', '-qm', 'base');
+  const base = gitLab(f.repo, 'rev-parse', 'HEAD');
+  f.escribir('arnes', 'lib/pieza.js', cambio === 'arriba' ? PIEZA.replace('ARRIBA = 1', 'ARRIBA = 2') : PIEZA.replace('return x;', 'return x + 1;'));
+  return { ...f, base };
+}
+const tocada = (l, extra = {}) => ({ known: true, files: ['scripts/lib/pieza.js'], base: { ref: l.base, source: 'la prueba' }, ...extra });
+const diferidas = (r) => r.resumen.deferred_suites.map((d) => path.basename(d.suite));
+
+test('T1 ScopedByRepo_CentralPiece_RunsOnlyNear @story-8.302 @ac-1 @ac-3 @ac-4 @ac-11 — una pieza que nombran 40 suites: corren sólo las que nombran lo que cambió o llevan su nombre', () => {
+  // 🔴 mutación: sin la regla de cercanía corren las 40; sin el nombre del archivo (`pieza-x`) corren 2; sin el renglón
+  //    por pieza, quien ve el portón no sabe cuántas quedaron afuera ni cómo correrlas.
+  const l = piezaLab(40);
+  const r = runScopedByRepo(l, { touched: tocada(l) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.resumen.corridas, 3, JSON.stringify(r.resumen.suites));
+  assert.equal(r.resumen.deferred_suites.length, 37);
+  for (const n of ['pieza-x.test.sh', 's1.test.sh', 's2.test.sh']) assert.ok(!diferidas(r).includes(n), `${n} corre`);
+  for (const d of r.resumen.deferred_suites) {
+    assert.match(d.reason, /^lee scripts\/lib\/pieza\.js, que nombran 40 suites, pero no nombra lo que cambió \(cambiada\); la suite completa la corre la CI del pedido \(la CI de GitHub del pedido\)$/);
+  }
+  assert.match(r.stdout, /DIFERIDA s3\.test\.sh — lee scripts\/lib\/pieza\.js, que nombran 40 suites/);
+  assert.match(r.stdout, /scripts\/lib\/pieza\.js: corrieron 3 de las 40 suites que la nombran \(para correrlas todas: TYCON_GATE_ALL_SUITES=1\)/);
+  assert.deepEqual(r.resumen.scoped, { by: 'repo', full_suite_by: 'la CI de GitHub del pedido', none_touched: false });
+});
+
+test('T2 ScopedByRepo_BelowThreshold_AsToday @story-8.302 @ac-1 @ac-9 — con 39 suites no es pieza central: corren todas las que la nombran', () => {
+  // 🔴 mutación: tope en 39 (o `>` en vez de `>=` corrido hacia abajo) → difiere 36 de un archivo que no es central.
+  const l = piezaLab(39);
+  const r = runScopedByRepo(l, { touched: tocada(l) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.resumen.corridas, 39);
+  assert.equal(r.resumen.deferred_suites.length, 0);
+  assert.doesNotMatch(r.stdout, /suites que la nombran/);
+});
+
+test('T3 ScopedByRepo_NamesUnknown_RunsAll @story-8.302 @ac-6 — sin saber qué cambió adentro corren las 40, con el motivo', () => {
+  // 🔴 mutación: tratar «no sé» como «no nombra nada» → difiere 37 (o 39) sin saber qué cambió.
+  const arriba = piezaLab(40, { cambio: 'arriba' });
+  const r = runScopedByRepo(arriba, { touched: tocada(arriba) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.resumen.corridas, 40);
+  assert.match(r.stdout, /scripts\/lib\/pieza\.js: no sé qué cambió adentro \(el renglón 1 cambió y no lo encierra ninguna función ni subcomando\): corren las 40 suites que la nombran/);
+  const sinBase = piezaLab(40);
+  const r2 = runScopedByRepo(sinBase, { touched: { known: true, files: ['scripts/lib/pieza.js'] } });
+  assert.equal(r2.status, 0, `${r2.stdout}\n${r2.stderr}`);
+  assert.equal(r2.resumen.corridas, 40);
+  assert.match(r2.stdout, /scripts\/lib\/pieza\.js: no sé qué cambió adentro \(touched\.json no trae la base\): corren las 40 suites que la nombran/);
+});
+
+test('T4 ScopedByRepo_OtherTouchedOrStorySuite_StillRuns @story-8.302 @ac-5 @ac-10 — la que nombra otro archivo tocado, la tocada y la repetida corren aunque nombren la pieza', () => {
+  // 🔴 mutación: aplicar la cercanía a toda suite que nombra la pieza → s5 (nombra otro.js), s6 (tocada) o s7 (repetida)
+  //    quedan diferidas.
+  const l = piezaLab(40);
+  l.escribir('arnes', 'tests/s5.test.sh', '# lee scripts/lib/pieza.js y scripts/lib/otro.js\nexit 0\n');
+  l.escribir('arnes', 'lib/otro.js', 'module.exports = 1;\n');
+  const r = runScopedByRepo(l, { touched: tocada(l, {
+    files: ['scripts/lib/pieza.js', 'scripts/lib/otro.js', 'scripts/tests/s6.test.sh'],
+    rerun_suites: ['tests/s7.test.sh'],
+  }) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  for (const n of ['s5.test.sh', 's6.test.sh', 's7.test.sh']) assert.ok(!diferidas(r).includes(n), `${n} corre: ${diferidas(r)}`);
+  assert.equal(r.resumen.corridas, 6, JSON.stringify(r.resumen.suites));
+  assert.match(r.stdout, /scripts\/lib\/pieza\.js: corrieron 6 de las 40 suites que la nombran/);
+});
+
+test('T8 NotScopedByRepo_NoCentralRule @story-8.302 @ac-9 — sin el portón acotado por el repo, con TYCON_GATE_ALL_SUITES=1 o con --suite, lo de hoy', () => {
+  // 🔴 mutación: aplicar la regla fuera de `byRepo` → la corrida sin acotar, la de todas o la pedida difieren suites.
+  const l = piezaLab(40);
+  const sinAcotar = runWith(l, { touched: tocada(l) });
+  assert.equal(sinAcotar.status, 0, `${sinAcotar.stdout}\n${sinAcotar.stderr}`);
+  assert.equal(sinAcotar.resumen.corridas, 40);
+  const tf = path.join(l.root, 'touched.json');
+  const args = [RUNNER, l.repo, path.join(l.root, 'o.json'), '--skills', l.skills, '--touched', tf, '--scoped-by-repo', 'la CI'];
+  const todas = spawnSync('node', args, { encoding: 'utf8', env: { ...process.env, TYCON_GATE_ALL_SUITES: '1' } });
+  assert.equal(todas.status, 0, todas.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(l.root, 'o.json'), 'utf8')).corridas, 40);
+  const una = spawnSync('node', [...args, '--suite', 'tests/s9.test.sh'], { encoding: 'utf8' });
+  assert.equal(una.status, 0, una.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(l.root, 'o.json'), 'utf8')).corridas, 1);
+  for (const out of [sinAcotar.stdout, todas.stdout, una.stdout]) assert.doesNotMatch(out, /suites que la nombran|no nombra lo que cambió/);
+});
