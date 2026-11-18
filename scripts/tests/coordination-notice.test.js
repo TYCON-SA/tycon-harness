@@ -1559,3 +1559,299 @@ test('T8 Coordinacion_ApagadoOSinDesignar_Calla @story-8.180 @ac-8: con el aviso
   estado(sin, 'ses-b', { waitingForOwner: true, waitingFor: 'una respuesta' });
   assert.strictEqual(C.capNotice({ ...sin.opts, sessionId: 'ses-a' }), null);
 });
+
+// ── La sesión que espera algo de afuera y la fila del portón larga (@story-8.289) ─────────────────────────────────────
+
+// Una sesión de fondo, quieta, con su nota de `marker.js doing --waiting-for` (fresca: la fecha del archivo es la de hoy).
+function outsideNote(t, sid, name, waitingFor, minutesAgo = 30, extra = {}) {
+  bg(t, sid, name, minutesAgo, extra);
+  fs.mkdirSync(path.join(t.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'doing', `${sid}.json`), JSON.stringify({ text: 'vigilar el pedido', at: new Date(mins(minutesAgo)).toISOString(), waitingFor, waitingSince: new Date(mins(minutesAgo)).toISOString() }));
+}
+const BOARD = (t) => path.join(t.state, 'coordination', 'tablero.json');
+function board(t, rows) {
+  fs.mkdirSync(path.dirname(BOARD(t)), { recursive: true });
+  fs.writeFileSync(BOARD(t), JSON.stringify({ pendientes: rows }));
+}
+const row = (id, titulo, extra = {}) => ({ ...(id ? { id } : {}), titulo, estado: 'sin-empezar', grupo: 'Hoy', ...extra });
+const mem = (pct, why = null) => () => ({ pct, why });
+const noMem = () => { throw new Error('la memoria no se tenía que medir'); };
+const outsideLines = (n) => (n || '').split('\n').filter((l) => / espera .* desde las \d\d:\d\d/.test(l) && !/turno/.test(l));
+
+test('8.289 T1 Status_EsperaDeAfuera_SaleEnSuLista @story-8.289 @ac-1 @ac-2: sólo las de fondo cuya nota fresca nombra la CI, la cola o una firma, sin espera de turno', () => {
+  // 🔴 mutación: buscar las palabras sin límite de palabra («confirma» entra), dejar que gane la palabra de afuera sobre la
+  // de turno («la CI y el turno del portón» entra), o no mirar si es de fondo (la interactiva entra)
+  const t = toy();
+  outsideNote(t, 's-1', 'Pedido', 'que entre el pedido 12', 40);
+  outsideNote(t, 's-2', 'Ci', 'la CI del pedido', 30);
+  outsideNote(t, 's-3', 'Firma', 'la firma del dueño', 20);
+  outsideNote(t, 's-4', 'Suite', 'turno de la suite');
+  outsideNote(t, 's-5', 'Pase', 'el pase');
+  outsideNote(t, 's-6', 'Adversarial', 'la revisión adversarial');
+  outsideNote(t, 's-7', 'Ambas', 'la CI y el turno del portón');
+  outsideNote(t, 's-8', 'Decidir', 'decidir el ciclo');
+  outsideNote(t, 's-9', 'Confirma', 'confirma');
+  outsideNote(t, 's-10', 'Vieja', 'que entre el pedido 14');
+  const old = new Date(NOW - 4 * 3600000);
+  fs.utimesSync(path.join(t.state, 'doing', 's-10.json'), old, old);
+  bg(t, 's-11', 'SinNota', 30);
+  session(t, 's-12', 'Interactiva', { kind: 'interactive' });
+  fs.writeFileSync(path.join(t.state, 'doing', 's-12.json'), JSON.stringify({ text: 'x', waitingFor: 'que entre el pedido 13', waitingSince: new Date(mins(10)).toISOString() }));
+  outsideNote(t, 's-13', 'Ocupada', 'que entre el pedido 15', 30, { status: 'busy' });
+  const s = C.status({ ...t.opts, noTranscripts: true });
+  assert.deepStrictEqual(s.outsideWaiting.map((w) => w.session).sort(), ['Ci', 'Firma', 'Pedido'], JSON.stringify(s.outsideWaiting));
+  const pedido = s.outsideWaiting.find((w) => w.session === 'Pedido');
+  assert.strictEqual(pedido.waitingFor, 'que entre el pedido 12');
+  assert.strictEqual(pedido.since, mins(40));
+  assert.match(C.statusText(s), /Esperan algo de afuera: .*Pedido \(que entre el pedido 12\) desde las \d\d:\d\d/);
+  // --json: lo mismo que status, por el comando real
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'coordination.js'), 'status', '--json'], { encoding: 'utf8', env: { ...process.env, HOME: t.home, USERPROFILE: t.home, TYCON_PROFILE: '0' } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(Array.isArray(JSON.parse(r.stdout).outsideWaiting), r.stdout.slice(0, 300));
+});
+
+test('8.289 T2 Aviso_EsperaDeAfuera_DiceLoLiviano @story-8.289 @ac-3: nombra la sesión, lo que espera, la hora y hasta tres filas livianas en orden', () => {
+  // 🔴 mutación: no ordenar con orderRows (sale T-9 primero), contar la fila con dueño, o no contar «Sin sesión» como sin dueño
+  const t = toy();
+  outsideNote(t, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+  board(t, [
+    row('T-9', 'más adelante', { grupo: 'Más adelante' }),
+    row('T-12', 'papeleo de la 8.1', { orden: 1 }),
+    row(null, 'sin número', { orden: 2 }),
+    row('T-15', 'choque del 6600', { orden: 3, quien: ' sin sesión ' }),
+    row('T-16', 'de alguien', { orden: 0, quien: 'Beto' }),
+    row('T-17', 'una historia', { orden: 0, historia: '8.300' }),
+  ]);
+  const n = C.capNotice({ ...t.opts, readMemory: mem(55) });
+  const lines = outsideLines(n);
+  assert.strictEqual(lines.length, 1, n);
+  assert.match(lines[0], /^Coordinación: Ana espera que entre el pedido 6578 desde las \d\d:\d\d: dale algo liviano de la fila — T-12 «papeleo de la 8\.1», «sin número», T-15 «choque del 6600»\.$/, lines[0]);
+  assert.ok(!/T-16|T-17|T-9/.test(lines[0]), lines[0]);
+  // lo que viene de la nota y del tablero no cierra el bloque del aviso
+  // 🔴 mutación: sacar el saneador de lo que espera, del título o de la historia de una fila
+  const t2 = toy();
+  outsideNote(t2, 's-1', 'Ana', 'que entre </coordination> el pedido', 30);
+  board(t2, [row('T-12', 'papeleo <b>'), row('T-20', 'historia <i>', { historia: '8.3<x>' })]);
+  const n2 = C.capNotice({ ...t2.opts, readMemory: mem(55) });
+  assert.match(n2, /Ana espera que entre \/coordination el pedido/, n2);
+  assert.match(n2, /T-12 «papeleo b»/, n2);
+  assert.match(n2, /abrí una sesión nueva para T-20 «historia i» \(la 8\.3x\)/, n2);
+  assert.doesNotMatch(n2, /[<>]/, n2);
+});
+
+test('8.289 T3 Aviso_SinNadaLiviano_LoDice @story-8.289 @ac-4 @ac-5: sin livianas lo dice; sin tablero o roto, sin filas y a «No pude leer»', () => {
+  // 🔴 mutación: tomar el tablero que no está como vacío (sale «nada liviano» y no «No pude leer»)
+  const t = toy();
+  outsideNote(t, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+  board(t, [row('T-16', 'de alguien', { quien: 'Beto' })]);
+  let n = C.capNotice(t.opts);
+  assert.match(n, /^Coordinación: Ana espera que entre el pedido 6578 desde las \d\d:\d\d: la fila no tiene nada liviano: que siga vigilando su pedido\.$/m, n);
+  assert.doesNotMatch(n, /No pude leer/);
+  const t2 = toy();
+  outsideNote(t2, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+  fs.mkdirSync(path.dirname(BOARD(t2)), { recursive: true });
+  fs.writeFileSync(BOARD(t2), '{}');
+  n = C.capNotice(t2.opts);
+  assert.match(n, /la fila no tiene nada liviano/, n);
+  assert.doesNotMatch(n, /No pude leer/);
+  for (const broken of [null, '{roto']) {
+    const t3 = toy();
+    outsideNote(t3, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+    if (broken) { fs.mkdirSync(path.dirname(BOARD(t3)), { recursive: true }); fs.writeFileSync(BOARD(t3), broken); }
+    n = C.capNotice(t3.opts);
+    assert.match(n, /^Coordinación: Ana espera que entre el pedido 6578 desde las \d\d:\d\d\.$/m, n);
+    assert.doesNotMatch(n, /nada liviano/);
+    assert.match(n, broken ? /No pude leer .*el tablero .*roto/ : /No pude leer .*el tablero .*no está/, n);
+  }
+});
+
+test('8.289 T4 Aviso_HistoriaConLugarYMemoria_ProponeSesionNueva @story-8.289 @ac-6 @ac-8: propone una sesión nueva, nunca la que espera; sin la que espera no mide', () => {
+  // 🔴 mutación: proponer sin una sesión esperando, o medir la memoria antes de mirar lo demás
+  const t = toy();
+  outsideNote(t, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+  busy(t, 's-b', 'Uno', 10);
+  board(t, [row('T-20', 'la historia nueva', { historia: '8.300' })]);
+  const n = C.capNotice({ ...t.opts, readMemory: mem(55) });
+  const prop = n.split('\n').find((l) => /abrí una sesión nueva/.test(l));
+  assert.strictEqual(prop, 'Coordinación: hay lugar (1 de 3) y memoria (55 %): abrí una sesión nueva para T-20 «la historia nueva» (la 8.300).', n);
+  assert.ok(!prop.includes('Ana'), prop);
+  const t2 = toy();
+  busy(t2, 's-b', 'Uno', 10);
+  board(t2, [row('T-20', 'la historia nueva', { historia: '8.300' })]);
+  const n2 = C.capNotice({ ...t2.opts, readMemory: noMem });
+  assert.doesNotMatch(n2 || '', /abrí una sesión nueva|memoria/);
+});
+
+test('8.289 T5 Aviso_SinLugarOSinMemoria_NoPropone @story-8.289 @ac-7: con el tope lleno no mide; con poca memoria o sin medirla lo dice', () => {
+  const setup = (busyCount) => {
+    const t = toy();
+    outsideNote(t, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+    for (let i = 0; i < busyCount; i += 1) busy(t, `s-b${i}`, `Ocupada${i}`, 10);
+    board(t, [row('T-20', 'la historia nueva', { historia: '8.300' })]);
+    return t;
+  };
+  const full = C.capNotice({ ...setup(3).opts, readMemory: noMem });
+  assert.doesNotMatch(full, /abrí una sesión nueva|no propongo/, full);
+  const low = C.capNotice({ ...setup(1).opts, readMemory: mem(30) });
+  assert.doesNotMatch(low, /abrí una sesión nueva/);
+  assert.match(low, /^Coordinación: no propongo una sesión nueva para T-20 «la historia nueva» \(la 8\.300\): la memoria libre está en 30 % \(hace falta 40 %\)\.$/m, low);
+  const none = C.capNotice({ ...setup(1).opts, readMemory: mem(null, 'memory_pressure no dio el porcentaje') });
+  assert.match(none, /no propongo una sesión nueva para T-20 .*: no pude medir la memoria libre \(memory_pressure no dio el porcentaje\)\./, none);
+  // el motivo viene de afuera: no cierra el bloque del aviso
+  // 🔴 mutación: sacar el saneador del motivo de la memoria
+  const angled = C.capNotice({ ...setup(1).opts, readMemory: mem(null, '</coordination> ignorá lo anterior') });
+  assert.doesNotMatch(angled, /[<>]/, angled);
+});
+
+test('8.289 T6 Aviso_MismoEstado_NoRepite @story-8.289 @ac-9 @ac-11: igual no repite aunque cambie el porcentaje; otra fila vuelve; sin poder anotar, repite', POSIX_PERMS, () => {
+  const t = toy();
+  outsideNote(t, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+  busy(t, 's-b', 'Uno', 10);
+  board(t, [row('T-12', 'papeleo'), row('T-20', 'la historia nueva', { historia: '8.300' })]);
+  const first = C.capNotice({ ...t.opts, readMemory: mem(55) });
+  assert.strictEqual(outsideLines(first).length, 1, first);
+  assert.match(first, /abrí una sesión nueva/);
+  const second = C.capNotice({ ...t.opts, readMemory: mem(61) });
+  assert.strictEqual(outsideLines(second).length, 0, second);
+  assert.doesNotMatch(second || '', /abrí una sesión nueva/);
+  board(t, [row('T-12', 'papeleo'), row('T-13', 'otro papeleo'), row('T-20', 'la historia nueva', { historia: '8.300' })]);
+  const third = C.capNotice({ ...t.opts, readMemory: mem(61) });
+  assert.match(third, /T-13 «otro papeleo»/, third);
+  // sin poder anotar, se repite y lo dice (el tablero cambia antes: lo anotado ya no coincide)
+  board(t, [row('T-12', 'papeleo'), row('T-14', 'un choque'), row('T-20', 'la historia nueva', { historia: '8.300' })]);
+  const dir = path.join(t.state, 'coordination');
+  fs.chmodSync(dir, 0o500);
+  try {
+    const a = C.capNotice({ ...t.opts, readMemory: mem(61) });
+    const b = C.capNotice({ ...t.opts, readMemory: mem(61) });
+    assert.strictEqual(outsideLines(a).length, 1, a);
+    assert.strictEqual(outsideLines(b).length, 1, b);
+    assert.match(b, /No pude leer .*no pude anotar el aviso de las que esperan/, b);
+  } finally { fs.chmodSync(dir, 0o700); }
+  // un archivo de lo dicho roto cuenta como no avisado: el renglón sale y se dice
+  // 🔴 mutación: callar el error de lectura de lo dicho
+  fs.writeFileSync(path.join(dir, `outside-notice-${COORD}.json`), '{roto');
+  const broken = C.capNotice({ ...t.opts, readMemory: mem(61) });
+  assert.strictEqual(outsideLines(broken).length, 1, broken);
+  assert.match(broken, /No pude leer .*el archivo del aviso de las que esperan .*lo cuento como no avisado/, broken);
+  // cuando ya nadie espera y no se puede anotar que se fue, lo dice: si no, al volver igual quedaría callado sin rastro
+  // 🔴 mutación: tragar el error de anotar la clave vacía
+  C.capNotice({ ...t.opts, readMemory: mem(61) });
+  fs.rmSync(path.join(t.state, 'doing', 's-1.json'));
+  fs.chmodSync(dir, 0o500);
+  try {
+    const gone = C.capNotice({ ...t.opts, readMemory: mem(61) });
+    assert.match(gone || '', /No pude leer .*no pude anotar el aviso de las que esperan/, gone);
+  } finally { fs.chmodSync(dir, 0o700); }
+});
+
+// Una corrida detenida con su plan firmado: el marcador, en `active/` o en `pruned/`, y su historia en disco.
+function stopped(t, where, sid, storyId, { at = mins(120), pending = ['implement'], touched = mins(60), status = 'in-progress', story = true } = {}) {
+  const storyPath = path.join(t.root, 'specs', `story-${storyId}.md`);
+  if (story) { fs.mkdirSync(path.dirname(storyPath), { recursive: true }); fs.writeFileSync(storyPath, `---\nstatus: ${status}\n---\n# ${storyId}\n`); }
+  const dir = path.join(t.state, where);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${sid}.json`), JSON.stringify({ sessionId: sid, storyId, storyPath, stepsPending: pending, lastTouch: new Date(touched).toISOString(),
+    ...(at ? { planApproval: { mode: 'x', text: 'ok', at: new Date(at).toISOString() } } : {}) }));
+}
+const gateLine = (n) => (n || '').split('\n').find((l) => /esperan el portón/.test(l));
+
+test('8.289 T8 Aviso_FilaDelPortonLarga_ParaYReabre @story-8.289 @ac-12: con 2 o más en la fila, a cuáles parar y qué reabrir o abrir', () => {
+  // 🔴 mutación: nombrar a la primera para parar, elegir la detenida más nueva, contar una detenida viva, terminada o vieja,
+  // o leer la historia antes que los demás filtros (la terminada sin historia va a «No pude leer»)
+  const queue = (opts = {}) => {
+    const t = toy();
+    waitNote(t, 's-a', 'A', 50);
+    waitNote(t, 's-b', 'B', 40);
+    waitNote(t, 's-c', 'C', 30);
+    waitNote(t, 's-e', 'E', 45);
+    marker(t, 's-e', { storyId: '9.9', lastTouch: new Date(mins(5)).toISOString() });
+    for (let i = 0; i < (opts.busy || 0); i += 1) busy(t, `s-w${i}`, `W${i}`, 10);
+    board(t, opts.light === false ? [row('T-16', 'de alguien', { quien: 'Beto' })] : [row('T-12', 'papeleo')]);
+    return t;
+  };
+  // (a) 3 de 3, poca memoria y una detenida firmada en pruned/: para B y C y la reabre
+  let t = queue({ busy: 3 });
+  stopped(t, 'pruned', 'd-1', '8.300');
+  let line = gateLine(C.capNotice({ ...t.opts, readMemory: mem(30) }));
+  assert.match(line, /^Coordinación: 3 sesiones esperan el portón: pará B y C, y reabrí la 8\.300 \(sesión d-1\)\.$/, line);
+  assert.ok(!/\bA\b|\bE\b/.test(line.replace('Coordinación', '')), line);
+  // (i) igual, no repite
+  assert.strictEqual(gateLine(C.capNotice({ ...t.opts, readMemory: mem(30) })), undefined);
+  // (b) dos detenidas: la de plan más viejo
+  t = queue({ busy: 3 });
+  stopped(t, 'pruned', 'd-1', '8.300', { at: mins(60) });
+  stopped(t, 'active', 'd-2', '8.301', { at: mins(200) });
+  session(t, 'd-2', 'Dora', { pid: deadPid() });
+  assert.match(gateLine(C.capNotice({ ...t.opts, readMemory: mem(30) })), /reabrí la 8\.301 \(sesión Dora\)/);
+  // (c) ninguna cuenta: viva, sin plan, terminada, de una historia done, con otro marcador, vieja, ilegible y terminada sin historia
+  t = queue({ busy: 1 });
+  stopped(t, 'active', 'v-1', '8.401');
+  session(t, 'v-1', 'Viva', { status: 'busy', statusUpdatedAt: mins(1) });
+  stopped(t, 'pruned', 'p-1', '8.402', { at: null });
+  stopped(t, 'active', 'p-2', '8.403', { pending: [] });
+  stopped(t, 'pruned', 'p-3', '8.404', { status: 'done' });
+  stopped(t, 'pruned', 'p-4', '8.401');
+  stopped(t, 'active', 'p-5', '8.405', { touched: mins(30 * 60) });
+  stopped(t, 'pruned', 'p-6', '8.406', { story: false });
+  stopped(t, 'pruned', 'p-7', '8.407', { pending: [], story: false });
+  let n = C.capNotice({ ...t.opts, readMemory: mem(55) });
+  line = gateLine(n);
+  assert.doesNotMatch(line, /reabrí/, line);
+  assert.match(n, /No pude leer .*8\.406/, n);
+  assert.doesNotMatch(n, /8\.407/);
+  // (d) sin detenida, lugar y memoria: para B y C y propone la fila liviana
+  t = queue({ busy: 1 });
+  line = gateLine(C.capNotice({ ...t.opts, readMemory: mem(55) }));
+  assert.strictEqual(line, 'Coordinación: 3 sesiones esperan el portón: pará B y C, y abrí una sesión nueva para T-12 «papeleo» (hay lugar, 1 de 3, y memoria, 55 %).');
+  // (e) con lugar y poca memoria: no propone por la memoria
+  t = queue({ busy: 1 });
+  line = gateLine(C.capNotice({ ...t.opts, readMemory: mem(30) }));
+  assert.strictEqual(line, 'Coordinación: 3 sesiones esperan el portón: pará B y C; no propongo una sesión nueva: la memoria libre está en 30 % (hace falta 40 %).');
+  // (f) lugar y memoria, sin nada liviano
+  t = queue({ busy: 1, light: false });
+  line = gateLine(C.capNotice({ ...t.opts, readMemory: noMem }));
+  assert.strictEqual(line, 'Coordinación: 3 sesiones esperan el portón: pará B y C; no hay a quién reabrir ni nada liviano en la fila.');
+  // (g) sin lugar y la memoria sin medir: no sale, y el motivo a «No pude leer»
+  t = queue({ busy: 3 });
+  n = C.capNotice({ ...t.opts, readMemory: mem(null, 'sin memory_pressure') });
+  assert.strictEqual(gateLine(n), undefined, n);
+  assert.match(n, /No pude leer .*sin memory_pressure/, n);
+  // la historia de la detenida y su motivo de no poder leerla vienen de afuera: no cierran el bloque del aviso
+  // 🔴 mutación: sacar el saneador del número de la historia o del motivo
+  t = queue({ busy: 3 });
+  stopped(t, 'pruned', 'd-1', '8.3</x>');
+  stopped(t, 'pruned', 'd-2', '8.4<y>', { story: false });
+  n = C.capNotice({ ...t.opts, readMemory: mem(30) });
+  assert.match(gateLine(n), /reabrí la 8\.3\/x/, n);
+  assert.doesNotMatch(n, /[<>]/, n);
+  // ni el número de sesión, que sale del nombre del archivo de la podada
+  stopped(t, 'pruned', '<z>', '8.5', { at: mins(500) });
+  n = C.capNotice({ ...t.opts, readMemory: mem(30) });
+  assert.match(gateLine(n), /reabrí la 8\.5 \(sesión z\)/, n);
+  assert.doesNotMatch(n, /[<>]/, n);
+  // (h) una sola en la fila: nada nuevo
+  t = toy();
+  waitNote(t, 's-a', 'A', 50);
+  stopped(t, 'pruned', 'd-1', '8.300');
+  assert.strictEqual(gateLine(C.capNotice({ ...t.opts, readMemory: mem(55) })), undefined);
+  // (j) el marcador de un hilo de Codex vivo no es una detenida: Codex no deja archivo de sesión; uno quieto hace más de
+  // 3 h sí lo es, como en heavyPassesInFlight
+  // 🔴 mutación: decidir «sin sesión viva» sólo con las sesiones de Claude (se reabre la corrida que Codex está haciendo)
+  t = queue({ busy: 3 });
+  stopped(t, 'active', 'cx-vivo', '8.500');
+  stopped(t, 'active', 'cx-quieto', '8.501', { at: mins(300) });
+  const codexHome = path.join(t.root, 'codex');
+  fs.mkdirSync(codexHome);
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(codexHome, 'state_1.sqlite'));
+  db.exec('CREATE TABLE threads (id TEXT, name TEXT, updated_at_ms INTEGER, source TEXT)');
+  db.prepare('INSERT INTO threads VALUES (?, ?, ?, ?)').run('cx-vivo', 'Con Codex', mins(1), 'cli');
+  db.prepare('INSERT INTO threads VALUES (?, ?, ?, ?)').run('cx-quieto', 'Codex quieto', mins(4 * 60), 'cli');
+  db.close();
+  const s = C.status({ ...t.opts, codexHome, noTranscripts: true });
+  assert.deepStrictEqual(s.stopped.map((x) => x.sid), ['cx-quieto'], JSON.stringify(s.stopped));
+  line = gateLine(C.capNotice({ ...t.opts, codexHome, readMemory: mem(30) }));
+  assert.match(line, /reabrí la 8\.501/, line);
+  assert.doesNotMatch(line, /8\.500/, line);
+});

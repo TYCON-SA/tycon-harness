@@ -1070,6 +1070,12 @@
       "requiere": []
     },
     {
+      "__nota": "cada proceso le pregunta a git una sola vez lo mismo (la huella de la carpeta, leída del disco); el gancho, la configuración, los hermanos y los controles de la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/git-memo.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el portón mide el repo privado adelgazado sobre el árbol armado (clon del privado, sus cambios del disco y el público de la rama debajo), con las skills del árbol y nunca las instaladas.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/test-gate-private-tree.test.js",
@@ -1206,6 +1212,12 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-suites-json.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.302: los nombres de lo que cambió dentro de una pieza central (la función y el subcomando que lo encierran); ante la duda, «no sé» y el portón corre todas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/change-names.test.js",
       "requiere": []
     },
     {

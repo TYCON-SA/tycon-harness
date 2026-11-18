@@ -77,6 +77,10 @@ source "$RAIZ/scripts/tests/lib/harness-lab.sh"
 # pasa sus 20 s de espera, sale 0 y sigue aparte con el candado tomado, y el comando siguiente de la prueba sale 3
 # «otra sesión está actualizando». El arranque desprendido con su candado lo mide harness-update.test.sh (T39L).
 export TYCON_STARTUP_DETACH=0
+# El freno de sesiones lo prende la sesión del arnés que corre la prueba (TYCON_SESSION_GUARD=1). Heredado, el aplicador
+# lo registra en cada llamada y T37 no puede medir su apagado: cada laboratorio nace sin él, como nace con su propia HOME,
+# y T37 lo prende a mano donde lo necesita.
+unset TYCON_SESSION_GUARD
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 # los dos nombres del lugar del arnés, de su constante
 PLACE_NAME="$(node -e 'process.stdout.write(require(process.argv[1]).PLACE_NAME)' "$RAIZ/scripts/setup/harness/place.js")"
