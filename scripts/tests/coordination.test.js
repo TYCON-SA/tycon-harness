@@ -143,6 +143,7 @@ const MEASURES = {
   'Mirar la sesión que pasó el doble de lo que dijo': 'nadie',
   'Dimensionar antes de asignar': 'nadie',
   'Una sesión que termina recibe trabajo o se cierra': 'aviso',
+  'Una sesión que espera recibe lo liviano': 'aviso',
   'Un rojo no se deja': 'nadie',
   'No aflojar una revisión, no hacer papeleo': 'nadie',
   'Comprobar un mensaje para el equipo': 'nadie',
@@ -2228,6 +2229,17 @@ test('8.212 T11 Guia_LaReglaDiceFreno @story-8.212 @ac-10: la regla de no cambia
   // the limit: what a script saved in a file writes from inside is left out on purpose
   assert.match(es, /guion guardado en un archivo/i, es);
   assert.match(en, /script saved in a file/i, en);
+});
+
+test('8.289 T7 Guia_LaSesionQueEspera_EnLosDosIdiomas @story-8.289 @ac-10: la regla está en las reglas del día a día y su renglón en qué mide cada regla, en las dos guías', () => {
+  const section = (f, from, to) => { const t = fs.readFileSync(f, 'utf8'); return (t.split(from)[1] || '').split(to)[0]; };
+  const es = section(GUIDE, '## Las reglas del día a día', '## Qué mide cada regla');
+  const en = section(GUIDE_EN, '## The everyday rules', '## What measures each rule');
+  assert.match(es, /\*\*Una sesión que espera \(la CI, la cola o una firma\) no queda quieta\.\*\* La coordinadora le da lo liviano de la fila:\s+papeleo, choques, borradores\. Una historia nueva con pipeline va en una sesión nueva, no en la que espera, que sólo\s+vigila su pedido y se cierra al entrar\. Con dos o más esperando el portón, la coordinadora para las últimas de la fila\s+y reabre una ejecución detenida con plan firmado\. Por qué:/);
+  assert.match(en, /\*\*A session that waits \(the CI, the queue or a signature\) does not sit idle\.\*\*[\s\S]*?a new session, not in the one that\s+waits[\s\S]*?reopens a stopped run with a signed plan\. Why:/);
+  const fila = (f, regla) => fs.readFileSync(f, 'utf8').split('\n').find((l) => l.startsWith(`| ${regla} |`)) || '';
+  assert.match(fila(GUIDE, 'Una sesión que espera recibe lo liviano'), /\| aviso \| El aviso de cada turno de la coordinadora/);
+  assert.match(fila(GUIDE_EN, 'A waiting session gets the light work'), /\| aviso \| The coordinator's notice on each turn/);
 });
 
 // ── pr-wait: the read-only watcher of a pull request, through the platform layer (@story-8.270, AC 26) ───────────────
