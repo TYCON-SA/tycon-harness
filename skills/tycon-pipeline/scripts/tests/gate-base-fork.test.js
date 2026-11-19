@@ -155,6 +155,7 @@ test('T12 Porton_LineaYResumenDeSeleccion — el portón dice qué eligió, desd
   const sinMain = gateLab({ main: false });
   commitFive(sinMain);
   const rs = gate(sinMain);
-  assert.match(rs.out, /sin acotar: .*: corren 20 de 20/, rs.out);
-  assert.equal(ran(sinMain).length, 20);
+  // sin saber qué se tocó, la completa no corre en la máquina: sale «sin acotar» y la cubre la CI del pedido
+  assert.match(rs.out, /sin acotar: la cubre la CI del pedido/, rs.out);
+  assert.equal(ran(sinMain).length, 0);
 });

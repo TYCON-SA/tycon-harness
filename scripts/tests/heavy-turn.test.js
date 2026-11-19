@@ -65,7 +65,8 @@ function repoConSuites(m, n, nombran = n) {
 function acotada(m, repo, out, extra = []) {
   const touched = path.join(m.root, 'tocado.json');
   fs.writeFileSync(touched, JSON.stringify({ known: true, files: ['lib/x.js'], sources: {}, reason: null }));
-  return [RUNNER, repo, out, '--touched', touched, '--scoped-by-repo', 'la CI', ...extra];
+  // con el tope de la máquina de fábrica (60) una acotada no llega a pedir turno: acá el tope va en 200
+  return [RUNNER, repo, out, '--touched', touched, '--scoped-by-repo', 'la CI', '--max-suites', '200', ...extra];
 }
 const POSIX = { skip: process.platform === 'win32' ? 'enlaces simbólicos y bash' : false };
 // Un solo turno, como antes de la 8.291: con el piso en 100 la segunda nunca entra, sea cual sea la memoria de la
