@@ -1775,7 +1775,10 @@ test('Descartar_MovidoSoloMayusculas_NoBorraLoDevuelto @story-8.190', () => {
   const home = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'home-'));
   const largo = Array.from({ length: 20 }, (_, i) => `const v${i} = ${i};`).join('\n') + '\n';
   const { repo, git, base } = repoDescartar({ 'src/util.ts': largo });
-  if (git('config', '--bool', 'core.ignorecase') !== 'true') return console.log('⏭ el disco distingue mayúsculas: NO MEDIDO');
+  // `git init` escribe core.ignorecase sólo en un disco que no distingue mayúsculas: sin la llave (Linux), `git config`
+  // sale 1, y eso también es «distingue»
+  const ignora = spawnSync('git', ['-C', repo, 'config', '--bool', 'core.ignorecase'], { encoding: 'utf8' });
+  if (String(ignora.stdout).trim() !== 'true') return console.log('⏭ el disco distingue mayúsculas: NO MEDIDO');
   git('mv', '-f', 'src/util.ts', 'src/Util.ts');
   fs.writeFileSync(path.join(repo, 'src', 'Util.ts'), `${largo}executeQuery("x");\n`);
   git('add', '-A'); git('commit', '-qm', 'el carril');
