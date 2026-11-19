@@ -1181,9 +1181,12 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
   await sleep(700);
   const waits = 'tu respuesta en su pantalla';
   assert.ok(!says(site, waits), 'el estado todavía no está escrito');
-  fs.writeFileSync(path.join(m.sessions, 's1.json'), JSON.stringify({ pid: process.pid, sessionId: 's1', name: 'Alfa', nameSource: 'user', status: 'waiting_for_permission', statusUpdatedAt: 2000 }));
+  const stateFile = path.join(m.sessions, 's1.json');
+  fs.writeFileSync(stateFile, JSON.stringify({ pid: process.pid, sessionId: 's1', name: 'Alfa', nameSource: 'user', status: 'waiting_for_permission', statusUpdatedAt: 2000 }));
+  // como los otros dos cambios: se cuenta desde que hay algo que mostrar, no desde antes de la espera de 700 ms
+  const stateAt = fs.statSync(stateFile).mtimeMs;
   assert.ok(await until(() => says(page, waits) && says(site, waits), 3000), 'la espera llegó');
-  assert.ok(says(site, waits).at - askedAt < 2000, 'en menos de 2 s');
+  assert.ok(says(site, waits).at - stateAt < 2000, `en menos de 2 s desde que se escribió el estado (tardó ${says(site, waits).at - stateAt} ms)`);
   // quien espera sigue diciendo por qué paso va; lo que espera va aparte, y la tarjeta del sitio lo dice igual que la local
   const asking = (holder) => says(holder, waits).data.agents.find((a) => a.nombre === 'Alfa');
   assert.strictEqual(asking(site).estado, 'firma');
