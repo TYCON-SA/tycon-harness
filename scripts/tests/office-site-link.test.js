@@ -1813,13 +1813,16 @@ function hookOn(m, event, more = {}, prompt = 'seguí') {
   });
 }
 // La puesta al día de juguete: cuenta cada corrida, tarda `sleepMs` y, si se le da `site`, deja esa dirección en el perfil
-// del árbol, como la capa nueva del equipo.
+// del árbol, como la capa nueva del equipo. Anota también el proceso aparte que la lanzó, antes de contar la corrida.
+const refreshes = new Set();
 function refreshFake(m, { sleepMs = 0, site = undefined, status = 'refreshed' } = {}) {
   const dir = tmp('team-refresh-');
   const file = path.join(dir, 'fake-harness.js');
   const runs = path.join(dir, 'runs.log');
+  const parents = path.join(dir, 'parents.log');
   const profile = inTree('team-profile.json');
   fs.writeFileSync(file, `const fs = require('fs');
+fs.appendFileSync(${JSON.stringify(parents)}, process.ppid + '\\n');
 fs.appendFileSync(${JSON.stringify(runs)}, process.argv.slice(2).join(' ') + '\\n');
 setTimeout(() => {
   const site = ${JSON.stringify(site === undefined ? null : site)};
@@ -1827,8 +1830,15 @@ setTimeout(() => {
   console.log(JSON.stringify({ status: ${JSON.stringify(status)}, profileChanged: site !== null, lines: [] }));
 }, ${sleepMs});
 `);
-  return { file, runs: () => { try { return fs.readFileSync(runs, 'utf8').trim().split('\n').filter(Boolean); } catch { return []; } } };
+  const linesOf = (f) => { try { return fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean); } catch { return []; } };
+  const fake = { file, runs: () => linesOf(runs), parents: () => linesOf(parents).map(Number) };
+  refreshes.add(fake);
+  return fake;
 }
+// El perfil del árbol es de todas las pruebas: un proceso aparte que sigue vivo leería la dirección del sitio de la prueba
+// siguiente y le pediría el alta con la clave de otra máquina. Por eso cada prueba espera a que salgan los suyos.
+const REFRESH_EXIT_MS = 24000;
+const refreshesExited = () => until(() => [...refreshes].every((fake) => fake.parents().every((pid) => !alive(pid))), REFRESH_EXIT_MS);
 const stampOf = (m) => path.join(m.sdir, 'office', 'team-refresh.json');
 const ageStamp = (m, minutes) => fs.writeFileSync(stampOf(m), JSON.stringify({ at: new Date(Date.now() - minutes * 60000).toISOString() }));
 function countersOf(lock) {
@@ -1894,6 +1904,7 @@ test('T44 CadaTreintaMinutos_SinEsperar: un pedido lanza la puesta al día apart
   assert.ok(await until(() => off.runs().length === 1, 8000));
   await sleep(800);
   assert.strictEqual(logOf(m).split('\n').length, lines, 'sin capa, nada que anotar cada 30 min');
+  assert.ok(await refreshesExited(), 'los procesos aparte terminaron');
 });
 
 // Cada paso del enlace sin abrir sesión espera esto: el gancho lanza aparte un proceso que pide el alta, arma la clave,
@@ -1903,16 +1914,22 @@ const LINK_STEP_MS = 24000;
 
 // El enlace sin abrir sesión, paso por paso: la capa nueva trae `siteUrl`, y la máquina pide el alta en `site`, arma su
 // clave, lanza el proceso de la oficina y la foto llega. Falle o no un paso, el proceso que el gancho haya lanzado se para:
-// el gancho lo lanza aunque el alta falle, y sin esto quedaría vivo hasta su propio apagado.
+// el gancho lo lanza aunque el alta falle, y sin esto quedaría vivo hasta su propio apagado. Cuenta sólo el alta con la
+// huella de esta máquina.
 async function linkFlow(site, siteUrl, m, stepMs) {
   const fake = refreshFake(m, { site: siteUrl });
+  const ownEnrolls = () => {
+    const key = siteLink().readKey(m.sdir);
+    return key ? site.enrolls.filter((body) => JSON.parse(body).fingerprint === key.fingerprint).length : 0;
+  };
   try {
     assert.strictEqual((await hookOn(m, 'UserPromptSubmit', { TYCON_TEAM_REFRESH_RUN: fake.file })).status, 0);
-    assert.ok(await until(() => site.enrolls.length === 1, stepMs), 'pidió el alta sin abrir sesión');
+    assert.ok(await until(() => ownEnrolls() === 1, stepMs), 'pidió el alta sin abrir sesión');
     assert.ok(siteLink().readKey(m.sdir), 'armó su clave');
     assert.ok(await until(() => readLock(m), stepMs), 'lanzó el proceso de la oficina');
     assert.ok(await until(() => site.fotos.length >= 1, stepMs), 'y la foto llegó al sitio, sin página abierta');
   } finally {
+    await refreshesExited();
     await until(() => readLock(m), LINK_STEP_MS);
     const lock = readLock(m);
     if (lock && lock.pid) started.add(lock.pid);
@@ -1941,6 +1958,7 @@ test('T45 Enlace_LlegaSiteUrl_PideElAltaYLanza: la capa nueva trae site.url y la
   await sleep(800);
   assert.strictEqual(siteLink().readKey(n.sdir), null, 'sin dirección no arma clave');
   assert.strictEqual(readLock(n), null, 'ni lanza el proceso');
+  assert.ok(await refreshesExited(), 'los procesos aparte terminaron');
   await site.stop();
 });
 
