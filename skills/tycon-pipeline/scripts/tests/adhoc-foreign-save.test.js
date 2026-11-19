@@ -19,10 +19,11 @@
  *
  * stable-data: crea repos de git en carpetas temporales; la configuración global de git es un archivo de la prueba y la
  * del sistema no se lee. Nunca toca el repo real.
- * Correr: node --test skills/tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js
+ * Correr: node --test skills/tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (todo). El portón y el nocturno
+ * corren sus partes, adhoc-foreign-save.p<k>.test.js (cuáles pruebas, lo dice suite-parts.json de esta carpeta).
  */
 
-const { test } = require('node:test');
+const test = require('./lib/suite-parts.js').test;
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');

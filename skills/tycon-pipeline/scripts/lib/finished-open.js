@@ -236,6 +236,13 @@ function tocadoDe(adhoc, file) {
  * de sesiones que ya no están, sin tocarse hace más de 7 días, no se miran uno por uno: se cuentan, y su lista queda en
  * `finished-open-viejos.txt` de la carpeta de estado para cerrarlos con un comando.
  */
+// las dos formas de la salida perdida, con la ruta estable: las mismas que el cartel de los frenos (open-runs.js)
+function salidaPerdida(sid, home) {
+  const { salidas } = require('./open-runs.js').formasDeSalida({ sesion: sid }, { home });
+  const forma = (x) => (x.sinCitar ? '' : `${x.ventana} (en la ventana) · `) + (x.terminal ? `${x.terminal} (en la terminal)` : '');
+  return salidas.map((x) => `${forma(x)} — ${x.que}`).join('; o ');
+}
+
 function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJs = 'marker.js', isAlive, topeMs = TOPE_MS } = {}) {
   const ctx = contexto({ home, stateDir, now, env, topeMs });
   const items = [];
@@ -271,7 +278,7 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
       let noSe = null;
       try { perdida = require('./open-runs.js').perdida({ sid, cwd: m.data.repoPath, home }); } catch (err) { noSe = causa(String(err.message || err).split('\n')[0]); }
       cierre = noSe ? { texto: `no pude ver si su ejecución está perdida (${noSe}): no doy comando` }
-        : perdida ? { texto: `su ejecución está perdida: ${node} clear-session ${sid} --lost (lo firma una persona)` }
+        : perdida ? { texto: `su ejecución está perdida; la salida la firma una persona: ${salidaPerdida(sid, home)}` }
           : comoSeCierra(vidaDe(sid), `${node} clear-session ${sid}`);
     }
     items.push({ sid, tipo: 'ejecucion', texto: `${quien}: terminó${e.desde === null ? '' : ` hace ${hace(e.desde, now)}`} y sigue abierta; ${cierre.texto}` });

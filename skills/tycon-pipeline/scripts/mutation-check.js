@@ -605,10 +605,27 @@ async function runMutationCheck({
       'sin tests declarados no se puede chequear que los mutantes mueran'
     );
   }
-  const absTests = declaredTests.map((f) => (path.isAbsolute(f) ? f : path.join(repo, f)));
-  const faltantes = absTests.filter((f) => !fs.existsSync(f));
+  const absDe = (f) => (path.isAbsolute(f) ? f : path.join(repo, f));
+  // Una prueba que todavía no existe porque es de una tanda estacionada (`blocked`) no se corre ni frena: la historia la
+  // ata a esa tanda (lib/batch-scope.js, la misma regla de la matriz). Atada también a otra tanda, o a ninguna, frena.
+  const { tandasQueNombran } = require(path.join(__dirname, 'lib', 'batch-scope.js'));
+  const deTandaBloqueada = [];
+  const faltantes = [];
+  for (const f of declaredTests.filter((t) => !fs.existsSync(absDe(t)))) {
+    const atadas = tandasQueNombran(storyText, f);
+    if (atadas.length && atadas.every((t) => t.status === 'blocked')) deTandaBloqueada.push({ file: f, tandas: atadas.map((t) => t.name) });
+    else faltantes.push(absDe(f));
+  }
   if (faltantes.length) {
     return fail2(`la story declara tests que NO existen en disco: ${faltantes.join(', ')}`);
+  }
+  const absTests = declaredTests.filter((f) => !deTandaBloqueada.some((d) => d.file === f)).map(absDe);
+  if (deTandaBloqueada.length) {
+    ctx.testsDeTandaBloqueada = deTandaBloqueada;
+    log(`mutation-check: no corro ${deTandaBloqueada.map((d) => `${d.file} (tanda ${d.tandas.join(', ')})`).join(', ')}: es de una tanda estacionada y todavía no existe`);
+  }
+  if (!absTests.length) {
+    return fail2('todas las pruebas que la story declara son de tandas estacionadas y todavía no existen: no hay con qué matar los mutantes');
   }
   // La receta que corre esas pruebas: la del paquete o proyecto más cercano (lib/test-runners.js, scopedRecipe), con
   // su comando acotado a esos archivos. Ante la DUDA —dos recetas, dos paquetes, una receta que no sabe acotar, el

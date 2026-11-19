@@ -360,7 +360,8 @@ test('OwnerApprovals_TypedEntries_StillValid (T16) @story-8.237 @ac-15', (t) => 
     assert.deepStrictEqual(oa.validarEnClaude(mensaje(), CTX(casa)), { ok: true }, r.entrypoint);
   }
   const fuente = fs.readFileSync(path.join(__dirname, '..', 'lib', 'owner-approvals.js'), 'utf8');
-  assert.match(fuente, /^const TIPEADO = \{ cli: \['typed'\], 'claude-vscode': \['sdk'\] \};$/m);
+  // `queued` (lo escrito mientras el agente trabaja, también por el control remoto) se sumó en la 8.319: ver su T19
+  assert.match(fuente, /^const TIPEADO = \{ cli: \['typed', 'queued'\], 'claude-vscode': \['sdk'\] \};$/m);
 });
 
 // La pregunta entera, no sólo el sello: con el sello pegado a otra pregunta, la persona aprobaría una cosa y firmaría otra.

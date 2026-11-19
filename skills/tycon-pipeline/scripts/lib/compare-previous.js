@@ -22,8 +22,8 @@
  * absoluta fuera de los clones y las casas escribe. Un `git push` por ruta absoluta falla por falta de remoto y de
  * protocolo, sin marca: el resultado es el de la comparación.
  *
- * Topes por variable: TYCON_COMPARE_MAX (humos comparados por corrida, 10), TYCON_COMPARE_TIMEOUT_MS (cada corrida,
- * 60 s; después SIGTERM y a los 5 s SIGKILL) y TYCON_COMPARE_TOTAL_MS (todo, por corrida del pipeline, 5 min). Pasado
+ * Topes por variable: TYCON_COMPARE_MAX (humos comparados con el código de ahora por corrida, 10; ver
+ * `humosQueCuentan`), TYCON_COMPARE_TIMEOUT_MS (cada corrida, 60 s; después SIGTERM y a los 5 s SIGKILL) y TYCON_COMPARE_TOTAL_MS (todo, por corrida del pipeline, 5 min). Pasado
  * cualquiera: «no comparado: tope». Los clones viven en `<estado>/compare-previous/<sesión>/`; se borran al cerrar la
  * corrida, y al empezar se barren los de las corridas que ya no están abiertas.
  */
@@ -424,6 +424,20 @@ function informeVerificado(runDir, stateDir) {
 }
 
 /**
+ * Los humos de la corrida que cuentan para TYCON_COMPARE_MAX: los que compararon (igual o distinto) contra el código de
+ * ahora. No cuentan los «no comparado» ni los «nuevo», que no corrieron los dos lados, ni los de un código que ya cambió:
+ * ésos ya no valen y el humo se vuelve a correr. El que no se puede comparar con el código de ahora sí cuenta. El tiempo
+ * de todos sigue contando para TYCON_COMPARE_TOTAL_MS. `{ n, viejas }`; sella los repos sólo si las comparadas llegan
+ * al tope.
+ */
+function humosQueCuentan(previas, tope = Infinity) {
+  const comparadas = previas.filter((e) => CUMPLE.has(e.resultado));
+  if (comparadas.length < tope) return { n: comparadas.length, viejas: 0 };
+  const { viejas } = delCodigoDeAhora(comparadas);
+  return { n: comparadas.length - viejas.length, viejas: viejas.length };
+}
+
+/**
  * Compara un humo: `argv` es el comando (con `{raiz}` literal si lo dice), `cmd` su texto ya tapado (el que guarda el
  * registro), `cwd` la carpeta desde donde corre el humo. Anota la entrada en el informe de `runDir` y la devuelve:
  * `{ resultado: 'igual' | 'distinto' | 'nuevo' | 'no-comparado', motivo?, main?, cambio?, diff?, encierro, ... }`.
@@ -438,7 +452,8 @@ async function compararHumo({ argv, cmd, cwd = process.cwd(), runDir, sid, state
   const noComparado = (motivo, extra = {}) => fin({ resultado: 'no-comparado', motivo, ...extra });
   barrer(stateDir);
   const previas = leerInforme(runDir).filter((e) => e.sid === sid);
-  if (previas.length >= tp.humos) return noComparado(`tope: ya hubo ${previas.length} humo(s) comparado(s) en esta corrida (TYCON_COMPARE_MAX=${tp.humos})`);
+  const cuentan = humosQueCuentan(previas, tp.humos);
+  if (cuentan.n >= tp.humos) return noComparado(`tope: ya hubo ${cuentan.n} humo(s) comparado(s) con el código de ahora en esta corrida (TYCON_COMPARE_MAX=${tp.humos})`);
   const gastado = previas.reduce((s, e) => s + (Number(e.ms) || 0), 0);
   const quedaMs = tp.totalMs - gastado;
   if (quedaMs <= 0) return noComparado(`tope: la corrida ya usó ${gastado} ms de comparación (TYCON_COMPARE_TOTAL_MS=${tp.totalMs})`);

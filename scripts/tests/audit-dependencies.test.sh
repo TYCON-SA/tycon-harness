@@ -515,4 +515,31 @@ corre --type nuget --json >/dev/null
 v=$(node -e 'const h = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).hallazgos[0]; console.log([h.severidad, !!h.gravedad_sin_dato, h.advisories.length].join(" "));' "$TMP/out.txt" 2>&1)
 [ "$v" = "high false 2" ] && ok "T10 8.55 nuget: con empate, la gravedad informada gana a la sin dato" || no "T10 8.55 empate nuget: $v"
 
+# ── npm en Windows (@story-8.319, D4): el npm-cli.js al lado del npm.cmd del PATH, con el mismo Node, sin shell ────────
+# Windows se simula con `plataforma: 'win32'` y el separador del PATH de esta máquina; el npm-cli.js de juguete dice con
+# qué lo corrieron.
+W="$TMP/win"; mkdir -p "$W/con/node_modules/npm/bin" "$W/solo" "$W/vacio"
+: > "$W/con/npm.cmd"; : > "$W/solo/npm.cmd"
+cat > "$W/con/node_modules/npm/bin/npm-cli.js" <<'CLI'
+console.log(JSON.stringify({ argv: process.argv.slice(2), node: process.execPath }));
+CLI
+NODE_BIN="$(command -v node)"
+corre_win(){ ( unset TYCON_DEP_CMD; PATH="$1" "$NODE_BIN" -e '
+  const a = require(process.argv[1]);
+  const r = a.correr("npm", ["audit", "--json"], process.cwd(), 0, { plataforma: process.argv[2], separador: require("path").delimiter });
+  console.log(JSON.stringify(r));' "$GUION" "${2:-win32}" ); }
+v=$(corre_win "$W/vacio$(node -p 'require("path").delimiter')$W/con")
+node -e 'const r = JSON.parse(process.argv[1]); const o = JSON.parse(r.stdout); process.exit(r.ok && o.argv.join(" ") === "audit --json" && o.node === process.execPath ? 0 : 1)' "$v" \
+  && ok "T13 8.319 Windows: corre el npm-cli.js de al lado del npm.cmd con el mismo Node" || no "T13 8.319 npm en Windows: $v"
+grep -Eq "shell:[[:space:]]*true[[:space:]]*[,}]" "$GUION" && no "T13 8.319 audit-dependencies.js usa shell: true" || ok "T13 8.319 sin shell: true"
+v=$(corre_win "$W/vacio")
+case "$v" in *'"ok":false'*'no se pudo ejecutar npm: no hay npm.cmd en el PATH'*) ok "T14 8.319 Windows sin npm.cmd: no mide y lo dice" ;; *) no "T14 8.319 sin npm.cmd: $v" ;; esac
+v=$(corre_win "$W/solo")
+case "$v" in *'"ok":false'*'no se pudo ejecutar npm: hay npm.cmd en'*'npm-cli.js'*) ok "T14 8.319 Windows con npm.cmd sin npm-cli.js: no mide y lo dice" ;; *) no "T14 8.319 sin npm-cli.js: $v" ;; esac
+v=$(corre_win "$W/solo" darwin)
+case "$v" in *'npm-cli.js'*) no "T14 8.319 fuera de Windows buscó npm-cli.js: $v" ;; *) ok "T14 8.319 fuera de Windows, npm como hoy" ;; esac
+v=$( TYCON_DEP_CMD="$TMP/doble.sh" PATH="$W/vacio:$PATH" node -e '
+  const a = require(process.argv[1]); console.log(JSON.stringify(a.correr("npm", ["--version"], process.cwd(), 0, { plataforma: "win32" })));' "$GUION" )
+case "$v" in *'no hay npm.cmd'*) no "T14 8.319 con TYCON_DEP_CMD igual buscó npm.cmd: $v" ;; *) ok "T14 8.319 con TYCON_DEP_CMD, como hoy" ;; esac
+
 [ "$fallos" -eq 0 ] && { echo "✅ auditar-dependencias: todo verde ($casos casos)"; exit 0; } || { echo "❌ auditar-dependencias: $fallos fallo(s)"; exit 1; }
