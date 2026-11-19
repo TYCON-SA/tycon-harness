@@ -10,9 +10,9 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  * Ahora esa pasada, y la de todo humo cuyo programa es un guion de laboratorio, corre acá:
  *   - `HOME` y `USERPROFILE` son una carpeta nueva de `mkdtemp`, con `TMPDIR`, `TMP` y `TEMP` adentro; `TYCON_HOME`,
  *     `CLAUDE_CONFIG_DIR` y `CODEX_HOME` no llegan; `TYCON_TEST_RUN=1` sí;
- *   - la red de escritura de las pruebas (scripts/tests/lib/real-home-guard.js) frena todo `node` que escriba en
- *     `~/.tycon`, `~/.claude`, `~/.codex` o `TYCON_HOME` de la casa de la cuenta, y lo anota; un intento anotado hace
- *     fallar el humo aunque el comando se haya tragado el error;
+ *   - la red de escritura de las pruebas (scripts/tests/lib/real-home-guard.js) frena todo `node` que escriba en las
+ *     carpetas del arnés de la casa de la cuenta (la propia, la de Claude Code, la de Codex y `TYCON_HOME`: `vigiladas`),
+ *     y lo anota; un intento anotado hace fallar el humo aunque el comando se haya tragado el error;
  *   - en macOS, además, `sandbox-exec` deja escribir sólo en esa carpeta y en las raíces admitidas; la red queda abierta.
  *     Si el sistema no deja abrir el encierro (una sesión ya encerrada), se dice y sigue con la red de escritura.
  * Las raíces admitidas son la del repo del comando y, para un guion suelto, su carpeta; no se admite una que sea la
