@@ -3342,6 +3342,12 @@
       "requiere": []
     },
     {
+      "__nota": "El análisis de seguridad (code scanning) de cada pedido abierto de GitHub, como lo lee el conector, con una llamada de mentira: sin su control, en rojo, corriendo, con alertas abiertas o sin poder leerse nunca es verde; la regla de la rama dice si lo exige.",
+      "raiz": "arnes",
+      "ruta": "tests/github-code-scanning.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "La CI de un commit y la cola de la organización por la capa de plataforma, contra el az y el gh de mentira: las etapas de la corrida, la cola de los dos lados con quién y desde cuándo, la validación con el pipeline declarado, y los guiones sólo de Azure DevOps que en GitHub dicen no_soportado (o no_medido si no pudieron preguntar).",
       "raiz": "arnes",
       "ruta": "tests/platform-ci-queue.test.js",

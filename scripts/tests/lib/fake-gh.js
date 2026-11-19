@@ -30,6 +30,7 @@
 //   "remotes": { "<o>/<r>": "<ruta del repo bare>" }   POST pulls exige que la rama `head` exista allá (422 si no), como GitHub
 //   "projects": { "<dueño>#<número>": { id, fields: [ { id, name, dataType } ], items: { "<nodo del issue>": { id, values: { <id del campo>: n } } } } }
 //   "graphql_error": { type, message }   toda consulta GraphQL contesta ese error (un token sin permiso de proyectos)
+// GET repos/o/r/code-scanning/…: 404 «no analysis found», como un repo sin análisis de seguridad (para eso, `fail`).
 // POST graphql (Projects v2): la consulta del proyecto de un dueño (organización o usuario) con sus campos, agregar un
 // issue (idempotente, como GitHub) y cargar el número de un campo. Un proyecto que no existe contesta NOT_FOUND.
 // Los issues traen `node_id` (`I_<o>/<r>#<n>`), el nodo con que GraphQL los nombra.
@@ -407,4 +408,6 @@ if (method === 'POST' && base === 'graphql') {
   }
   gqlErr('UNKNOWN', 'consulta GraphQL de prueba desconocida');
 }
+// el análisis de seguridad: el repo de prueba no tiene, como contesta GitHub («no analysis found»)
+if (method === 'GET' && /^repos\/[^/]+\/[^/]+\/code-scanning\//.test(ruta)) err(404, 'no analysis found');
 err(404, `ruta de prueba desconocida: ${method} ${ruta}`);
