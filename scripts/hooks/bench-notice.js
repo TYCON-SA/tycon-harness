@@ -445,9 +445,14 @@ function estadoDelBancoNocturno() {
       ? `✅ banco de controles nocturno (${fecha}): ${casos} caso(s), sin rojos${foto.nota}`
       : `🟡 banco de controles nocturno (${fecha}): la foto no dice que haya corrido ningún caso — no es verde${foto.nota}`];
   }
+  // La foto junta dice por qué; una de antes de juntar sólo pudo quedar sin medir por el tiempo.
+  const motivos = rep.nomedidoPorMotivo && typeof rep.nomedidoPorMotivo === 'object'
+    ? Object.entries(rep.nomedidoPorMotivo).filter(([, n]) => typeof n === 'number' && n > 0).sort((a, b) => b[1] - a[1])
+      .map(([m, n]) => `${n}: ${limpio(m)}`).join(' · ')
+    : '';
   return [`${rojos ? '🔴' : '🟡'} banco de controles nocturno (${fecha}): ${rep.failed || 0} rojos`
     + ` · paridad rota ${rep.parityBreaks || 0} · regresiones ${rep.baselineRegressions || 0}`
-    + (nm ? ` · 🟡 ${nm} NO MEDIDO(s) (se les agotó el tiempo — la ejecución no está completa)` : '')
+    + (nm ? ` · 🟡 ${nm} NO MEDIDO(s) (${motivos || 'se les agotó el tiempo'} — la ejecución no está completa)` : '')
     + ' · detalle: scripts/controls-bench/ultimo-banco.json' + foto.nota];
 }
 

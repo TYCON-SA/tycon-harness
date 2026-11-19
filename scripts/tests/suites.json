@@ -4558,6 +4558,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/bench-os-split.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/hostile-command-text.test.js",
       "requiere": []
     },
