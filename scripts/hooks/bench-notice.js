@@ -654,6 +654,36 @@ try {
 } catch (e) {
   console.log(`examen de revisores: no pude evaluar si está corriendo (${limpio(e && e.message)}) — asumilo NO medido`);
 }
+
+// Main roto en esta máquina (skills/tycon-pipeline/scripts/lib/main-check.js): una línea por registro abierto en
+// `<estado>/main-check/*.json`, leídos sin cargar ese guion. Un archivo que no se deja leer se dice: no medido no es «sin
+// main roto». Cerrado el registro (main pasó), deja de salir. Va en su propio `try`, como el examen.
+function estadoDeMainRoto() {
+  const dir = path.join(stateDirOf(require('os').homedir()), 'main-check');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort(); } catch { return []; }
+  const out = [];
+  for (const f of files) {
+    let s;
+    try { s = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (e) { out.push(`🟡 main roto: no pude leer ${limpio(f, 80)} (${limpio(e && e.message, 80)}): no medido`); continue; }
+    const repo = limpio(s && s.repo ? path.basename(String(s.repo)) : f.replace(/-[0-9a-f]{8}\.json$/, ''), 80);
+    for (const r of Array.isArray(s && s.broken) ? s.broken : []) {
+      if (!r || r.closed) continue;
+      const d = new Date(r.since);
+      const hh = Number.isNaN(d.getTime()) ? '??:??' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      const suites = (Array.isArray(r.suites) ? r.suites : []).map((x) => path.basename(String(x))).join(', ');
+      const n = Array.isArray(r.waiting) ? r.waiting.length : 0;
+      const arreglo = r.fix && r.fix.pr ? `pedido #${limpio(r.fix.pr, 12)}` : r.fix && r.fix.session ? `lo tomó ${limpio(String(r.fix.session).slice(0, 8), 8)}, sin pedido` : 'nadie lo tomó';
+      out.push(`🔴 main roto en ${repo} desde ${hh} (${limpio(r.id, 20)}): ${limpio(suites)}; esperan ${n} sesiones; arreglo: ${arreglo}`);
+    }
+  }
+  return out;
+}
+try {
+  for (const l of estadoDeMainRoto()) console.log(l);
+} catch (e) {
+  console.log(`main roto: no pude evaluar los registros (${limpio(e && e.message)}) — asumilo NO medido`);
+}
 // Lo mismo con el viaje de los resultados de la noche: su estado vive en la carpeta de estado, no en .bench/, y se dice
 // aunque esta máquina no tenga .bench/.
 try {

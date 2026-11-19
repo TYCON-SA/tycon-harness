@@ -247,31 +247,70 @@ function rewriteResult(outFile, entrada, { fullTs, storyId = null, at = new Date
 const leerJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 const rutaDeFalla = (f) => (f && f.entrada && f.entrada.ruta) || null;
 
+// La misma suite en dos corridas: por su entrada de la lista de suites. La ruta del resumen es absoluta, y en el árbol
+// armado la carpeta temporal cambia en cada corrida; sin entrada (un resumen viejo), la ruta.
+const claveDeSuite = (s) => (s && s.entrada && s.entrada.ruta ? `${s.entrada.raiz || ''}:${s.entrada.ruta}` : s && s.ruta);
+
 /**
- * Las suites que la completa roja difirió y que lo cambiado vuelve a hacer correr: por sus carpetas
- * (`gate_only_when_touching`) o por el grupo `installer` de `scripts/ci/heavy-suites.json`. Una corrida de sólo lo
- * cambiado no las vería (lee lo cambiado, no lo de la story). Tira si no puede leer los criterios.
+ * Las suites que lo cambiado vuelve a hacer correr por sus carpetas, diferidas o ya medidas por la completa: las de
+ * carpeta (`gate_only_when_touching`) cuya carpeta toca `files` y, sólo con `instalador` (lo guardado rojo fuera del
+ * árbol armado: con lo guardado verde, el instalador tocado ya pide la completa), las del grupo `installer` de
+ * `scripts/ci/heavy-suites.json` que `files` no saltea. Una corrida de sólo lo cambiado no las vería: leen sus
+ * carpetas sin nombrarlas. Devuelve `[{ raiz, ruta, nombre, motivo }]`, cada suite una sola vez (una ya medida que
+ * también figure como diferida vieja, sin `entrada`, va con el motivo de la medida). Tira si no puede leer los criterios
+ * y, con `sinEntrada`, si una diferida no tiene entrada en la lista de suites: sin ella no se sabe cuál es su carpeta.
  */
-function reEligible(repo, resumen, files) {
+function suitesPorSusCarpetas(repo, files, resumen, { instalador = false } = {}) {
+  const diferidas = (resumen.deferred_suites || []).filter((x) => x && typeof x.suite === 'string');
+  const medidas = resumen.suites || [];
+  if (!files.length || (!diferidas.length && !medidas.length)) return [];
   const { touches } = require('./touched-files');
-  const diferidas = (resumen.deferred_suites || []).filter((d) => d && typeof d.suite === 'string');
-  if (!diferidas.length || !files.length) return [];
-  const lista = entries(path.join(repo, 'scripts', 'tests', 'suites.json'));
+  const rutaLista = path.join(repo, 'scripts', 'tests', 'suites.json');
+  // sin lista de suites no hay carpetas que mirar: ninguna medida vuelve; una diferida, en cambio, no se puede ubicar
+  if (!fs.existsSync(rutaLista)) {
+    if (diferidas.length) throw new Error(`no hay lista de suites en ${rutaLista}`);
+    return [];
+  }
+  const lista = entries(rutaLista);
   const heavy = path.join(repo, 'scripts', 'ci', 'heavy-suites.json');
-  let installer = null;
-  if (fs.existsSync(heavy)) {
+  let grupo = null;
+  if (instalador && fs.existsSync(heavy)) {
     const crit = require(path.join(repo, 'scripts', 'ci', 'suites-for-change.js')).groupCriterion(heavy, 'installer');
     if (crit.problem) throw new Error(crit.problem);
-    installer = crit;
+    if (typeof crit.incluye !== 'function') throw new Error('scripts/ci/suites-for-change.js no trae incluye');
+    grupo = crit;
   }
-  const out = [];
+  // la entrada de la lista: por el `entrada` del resumen si lo trae; si no (un resumen viejo), por el final de su ruta
+  const entradaDe = (x, rutaAbs) => {
+    if (x && x.entrada && typeof x.entrada.ruta === 'string') return lista.find((s) => s.ruta === x.entrada.ruta && (s.raiz || '') === (x.entrada.raiz || '')) || null;
+    return typeof rutaAbs === 'string' ? lista.find((s) => typeof s.ruta === 'string' && rutaAbs.endsWith(`/${s.ruta}`)) || null : null;
+  };
+  const porQue = (e) => {
+    if (Array.isArray(e.gate_only_when_touching) && touches(files, e.gate_only_when_touching)) return e.gate_only_when_touching.join(', ');
+    const nombre = path.basename(e.ruta);
+    if (grupo && grupo.incluye(nombre) && !grupo.skips(nombre, files)) return 'el instalador';
+    return null;
+  };
+  const clave = (e) => `${e.raiz || ''}:${e.ruta}`;
+  const out = new Map();
+  const anotar = (e, motivo) => out.set(clave(e), { raiz: e.raiz, ruta: e.ruta, nombre: path.basename(e.ruta), motivo });
+  for (const s of medidas) {
+    const e = entradaDe(s, s && s.ruta);
+    const que = e && porQue(e);
+    if (que) anotar(e, `lo cambiado toca ${que}, que lee sin nombrar`);
+  }
   for (const d of diferidas) {
-    const e = lista.find((s) => typeof s.ruta === 'string' && d.suite.endsWith(`/${s.ruta}`));
-    const nombre = path.basename(d.suite);
-    if (e && Array.isArray(e.gate_only_when_touching) && touches(files, e.gate_only_when_touching)) out.push(nombre);
-    else if (installer && /grupo installer/.test(String(d.reason || '')) && !installer.skips(nombre, files)) out.push(nombre);
+    const e = entradaDe(d, d.suite);
+    if (!e) {
+      const err = new Error(`no encuentro en la lista de suites la diferida ${path.basename(d.suite)}: corre la completa`);
+      err.sinEntrada = true;
+      throw err;
+    }
+    if (out.has(clave(e))) continue;
+    const que = porQue(e);
+    if (que) anotar(e, `la completa la difirió y lo cambiado toca ${que}`);
   }
-  return out;
+  return [...out.values()];
 }
 
 /** Saca del lcov los registros (`SF:` … `end_of_record`) de los archivos de `files` (rutas relativas al repo). */
@@ -352,7 +391,10 @@ function mustMeasureFrom(touchedFile) {
   return t.known !== true || t.must_measure === true;
 }
 
-function decide({ dir, hash, repo, tree, base, recorte, storyId = null, mustMeasure = false }) {
+// `esperaMain`: las suites que esperan a main en este repo (marker.js waiting-on-main suites), por su clave de la lista.
+// Una espera no es una medida: vuelven a correr aunque la carpeta sea la misma, y no hace falta repetirlas solas.
+function decide({ dir, hash, repo, tree, base, recorte, storyId = null, mustMeasure = false, esperaMain = [] }) {
+  const enEspera = new Set(Array.isArray(esperaMain) ? esperaMain.filter((r) => typeof r === 'string') : []);
   const full = (reason) => ({ mode: 'full', reason });
   if (!dir || !fs.existsSync(dir) || redHash(dir) !== hash) return full('lo guardado no coincide con su constancia');
   let meta; let medido; let resumen; let rep;
@@ -377,11 +419,12 @@ function decide({ dir, hash, repo, tree, base, recorte, storyId = null, mustMeas
   if ((meta.recorte || '') !== (recorte || '')) return full(`esta corrida no tiene el mismo recorte que ${deLa}`);
   const heredadas = new Set(meta.heredadas || []);
   const fallas = (resumen.fallas || []).map(rutaDeFalla).filter(Boolean);
-  const sinRepetir = fallas.filter((r) => !rep[r] && !heredadas.has(r));
+  const sinRepetir = fallas.filter((r) => !rep[r] && !heredadas.has(r) && !enEspera.has(r));
   if (sinRepetir.length) return full(`falta repetir sola: ${sinRepetir.join(', ')}`);
   const ahora = huellaDe(tree);
   const igual = ahora === (arbol ? huellaDe(medido) : medido.tree);
   let files = [];
+  let reactivadas = [];
   if (!igual) {
     let cambios;
     if (arbol) {
@@ -397,25 +440,27 @@ function decide({ dir, hash, repo, tree, base, recorte, storyId = null, mustMeas
       try { c = claseQuePideLaCompleta(cambios, { raiz: repo }); } catch (e) { return full(`no pude leer los criterios de lo que pide la completa (${e.message})`); }
       if (c) return full(`cambió ${c.clase} (${c.archivo})`);
     } else if (files.some((f) => SUITE_LISTS.includes(f))) return full('cambió la lista de suites: una suite nueva no está en lo guardado');
-    let vuelven;
-    try { vuelven = reEligible(repo, resumen, files); } catch (e) { return full(`no pude ver qué suites difirió la completa (${e.message})`); }
-    if (vuelven.length) return full(`lo cambiado vuelve a hacer correr ${vuelven.join(', ')}, que ${deLa} difirió`);
+    // las suites que lo cambiado vuelve a hacer correr por sus carpetas (diferidas o ya medidas) corren sin filtros junto
+    // a las que leen lo cambiado, no la completa: van aparte de los archivos, con su entrada de la lista y su motivo. El
+    // grupo del instalador cuenta sólo con lo guardado rojo fuera del árbol: en los otros casos ya lo frenó la clase.
+    try {
+      reactivadas = suitesPorSusCarpetas(repo, files, resumen, { instalador: !(verde || arbol || baseCambio) });
+    } catch (e) {
+      return e.sinEntrada ? full(e.message) : full(`no pude ver qué suites vuelven a correr por sus carpetas (${e.message})`);
+    }
   }
   // Una repetición cuya carpeta ya no es la de ahora vuelve a correr: así un arreglo deshecho después de repetir vuelve
   // a dar rojo. Para saber que es vieja alcanza la huella que guardó (también la de una línea del árbol armado). Va por
   // su clave de la lista de suites (`rerun`), aparte de los archivos: no es una ruta del repo.
-  const rerun = Object.entries(rep).filter(([, x]) => x.tree !== ahora).map(([r]) => r);
+  // las que esperan a main se suman: con `rerun` no vacío, la decisión nunca es `same`
+  const rerun = [...new Set([...Object.entries(rep).filter(([, x]) => x.tree !== ahora).map(([r]) => r), ...enEspera])];
   const at = meta.at;
   // la completa de origen: la de lo guardado, o la que dio origen al cierre que se guardó
   const origenAt = meta.origen_at || meta.at;
   const origen = verde ? 'verde' : 'roja';
   if (igual && !rerun.length) return { mode: 'same', at, origen_at: origenAt, origen, repetidas: Object.keys(rep).length };
-  return { mode: 'changed', at, origen_at: origenAt, origen, repetidas: Object.keys(rep).length, files, rerun };
+  return { mode: 'changed', at, origen_at: origenAt, origen, repetidas: Object.keys(rep).length, files, rerun, reactivadas };
 }
-
-// La misma suite en dos corridas: por su entrada de la lista de suites. La ruta del resumen es absoluta, y en el árbol
-// armado la carpeta temporal cambia en cada corrida; sin entrada (un resumen viejo), la ruta.
-const claveDeSuite = (s) => (s && s.entrada && s.entrada.ruta ? `${s.entrada.raiz || ''}:${s.entrada.ruta}` : s && s.ruta);
 
 /**
  * El resumen de la completa con las repeticiones (y, si las hay, las suites que corrieron por lo cambiado) en lugar de
@@ -440,6 +485,9 @@ function merge({ dir, newSummary = null, covDir = null, changed = [] }) {
     extra.ausentes = [...new Set([...(resumen.ausentes || []), ...ausentes])];
     extra.unmeasured_suites = [...(resumen.unmeasured_suites || []), ...(newSummary.unmeasured_suites || [])];
     if (newSummary.no_medido) extra.no_medido = newSummary.no_medido;
+    // una diferida que corrió en lo nuevo (volvió por su carpeta) deja de ser diferida: sale por su `entrada`, la misma
+    // clave con que se junta su resultado; una de un resumen viejo, sin `entrada`, se queda (vuelve a correr de más)
+    extra.deferred_suites = (resumen.deferred_suites || []).filter((d) => !(d && d.entrada && corridas.has(claveDeSuite(d))));
   }
   const suites = [...porRuta.values()];
   const origen = meta.origen === 'verde' ? 'verde' : 'roja';
@@ -484,7 +532,7 @@ function motivoParaNoGuardar(juntado) {
 
 const hhmm = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '??:??' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
-module.exports = { entries, find, fromSummary, prune, redHash, saveRed, saveGreen, addRepeat, rewriteResult, decide, mustMeasureFrom, merge, mergedRed, motivoParaNoGuardar, reEligible, dropRecords, changedFiles, claseQuePideLaCompleta, hhmm, RED_FILES };
+module.exports = { entries, find, fromSummary, prune, redHash, saveRed, saveGreen, addRepeat, rewriteResult, decide, mustMeasureFrom, merge, mergedRed, motivoParaNoGuardar, suitesPorSusCarpetas, dropRecords, changedFiles, claseQuePideLaCompleta, hhmm, RED_FILES };
 
 if (require.main === module) {
   const [cmd, suitesJson, ruta] = process.argv.slice(2);

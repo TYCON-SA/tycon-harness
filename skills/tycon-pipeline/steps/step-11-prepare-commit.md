@@ -228,7 +228,9 @@ firma de control del dueño, que no cambia.
    sea `wt/<sesión>`.
 6. Al final, **`marker.js clear`**, después del último push y del último pull request. Imprime los renglones y el
    renglón final («pedido #12 abierto, espera la cola — 52 min de trabajo, …») y manda un aviso por los canales de la
-   sesión; repetí el renglón final al cerrar tu mensaje.
+   sesión; repetí el renglón final al cerrar tu mensaje. Cerrá la ejecución antes de borrar o mover su carpeta de
+   trabajo (`git worktree remove`, `rm -rf`, `mv`): la copia de la apertura vive ahí, y sin ella la ejecución queda
+   perdida. La consola frena ese borrado con «cerrá la ejecución antes» (`guides/safety-guard.md`, «La ejecución perdida»).
 
 ## Decisiones
 

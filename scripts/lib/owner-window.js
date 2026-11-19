@@ -1597,7 +1597,19 @@ function comoAprobar(firma, reg, casa) {
  * ¿El guion de `firma` (proceso `pid`, argumentos `argv` desde el guion) viene del «Sí» de una ventana? `{ ok, registro }`
  * consume el registro; `{ ok: false, motivo }` no escribe nada.
  */
+/**
+ * El control previo de una excepción de trámite cuyo guion no trae uno propio (signatures.js DELEGABLE_EXCEPTIONS): por
+ * la delegación del perfil no hay más que comprobar, porque las llaves las miró el freno al dejar el pedido; «hecho y
+ * avisado» no la firma nunca. null para las demás firmas: sin control previo, no salen sin una persona.
+ */
+function antesDeTramite(firma) {
+  if (!DELEGABLE_EXCEPTIONS.includes(firma)) return null;
+  return (via, registro) => ((via === 'avisado' || (registro && registro.via === 'avisado'))
+    ? { codigo: 1, motivo: 'esta firma la da una persona, o la coordinadora por la delegación del perfil: «hecho y avisado» no la firma' } : null);
+}
+
 function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, sesion, destino, antes, plataforma = process.platform, gitBash = buscarGitBash, terminal = null } = {}) {
+  antes = antes || antesDeTramite(firma);
   const enWindows = plataforma === 'win32';
   const s = firmaDe(firma);
   // `terminal`: el comando entero de la terminal, cuando el guion lo sabe armar (con su ruta y sus argumentos)
@@ -1918,17 +1930,12 @@ function comoSeFirma(firma, archivo) {
   return `marker.js sign-file ${firma} ${rutaParaLaConsola(archivo)}`;
 }
 
-/** Por qué un cartel no da la forma de la terminal. */
-const SIN_SESION_TERMINAL = 'la forma de tu terminal necesita la sesión del agente, que este freno no conoce';
-const sesionConocida = (sesion) => typeof sesion === 'string' && sesion !== '' && sesion !== '_nosession';
+// la forma de la terminal para cualquier comando: la misma función que usan los carteles de la ejecución perdida
+const { enLaTerminal, SIN_SESION_TERMINAL } = require(path.join(LIB, 'home-command.js'));
 
-/**
- * La forma de la terminal de la persona: la sesión va siempre, porque la terminal no la tiene en el ambiente. Sin una
- * sesión conocida, `null` (el cartel dice SIN_SESION_TERMINAL).
- */
+/** La forma de la terminal de una firma sobre un archivo (`enLaTerminal` con `sign-file`). */
 function comoSeFirmaEnLaTerminal(firma, archivo, sesion) {
-  if (!sesionConocida(sesion)) return null;
-  return `${comoSeFirma(firma, archivo)} --terminal --for-session ${sesion}`;
+  return enLaTerminal(comoSeFirma(firma, archivo), sesion);
 }
 
 /**
@@ -2030,6 +2037,7 @@ function claveDelPedido({ firma, destino, comando, argv, cwd = process.cwd(), ca
 }
 
 function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir, antes, extra, aprobador, env, escribir, notificar, avisarSinAprobacion, terminal = null } = {}) {
+  antes = antes || antesDeTramite(firma);
   // sin variable de sesión (la terminal del dueño) el guion no tiene sesión propia: la dice --for-session
   if (propia === '_nosession') propia = null;
   const i = argv.indexOf('--for-session');
@@ -2145,8 +2153,8 @@ function quienFirmo({ via, sesion } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica,historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
-  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, formasDeFirmar,
+module.exports = { detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 
 if (require.main === module) {
