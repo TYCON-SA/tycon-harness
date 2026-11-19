@@ -40,6 +40,10 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  * CLI:  node main-check.js status --repo <repo> [--json]
  *   Sin correr nada: la última punta medida, cada suite con su resultado y quién la midió, y el registro de main roto,
  *   abierto o cerrado. Sale 0; 1 si el repo no es git; 2 con un pedido mal hecho.
+ *       node main-check.js wait --repo <repo> --id <id>
+ *   La espera de fondo (`wait`, abajo): sale 0 cuando main pasó, 3 pasado su tope, 2 sin ese registro.
+ *       node main-check.js branch-check --repo <repo> --id <id>
+ *   Dice si main ya pasó y esta rama no lo trae; si no, no imprime nada. Sale 0.
  */
 const crypto = require('crypto');
 const fs = require('fs');
@@ -289,7 +293,9 @@ function verdictOf(falla, result) {
  * base. Devuelve `{ sha, at, suites: [{ ruta, raiz, casos, verdict, motivo, measuredBy, measuredAt }], lines }`: `lines`
  * son los avisos (un candado roto, el registro cerrado).
  */
-function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFAULTS.max, timeout = DEFAULTS.timeout, lockWait, fetchTimeout, session, home } = {}) {
+// `atajo`: si el árbol medido está en la punta y sin cambios, el rojo del portón es el de main (vale cuando el portón acaba
+// de correr esas suites en ese árbol). `wait` lo apaga: sus fallas no salen de una corrida de ahora.
+function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFAULTS.max, timeout = DEFAULTS.timeout, lockWait, fetchTimeout, session, home, atajo = true } = {}) {
   const at = new Date().toISOString();
   const lines = [];
   const suites = [];
@@ -340,7 +346,7 @@ function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFA
   if (toMeasure.length) {
     const head = g(tree, 'rev-parse', 'HEAD').stdout.trim();
     const dirty = g(tree, 'status', '--porcelain');
-    if (head === sha && dirty.status === 0 && !dirty.stdout.trim()) {
+    if (atajo && head === sha && dirty.status === 0 && !dirty.stdout.trim()) {
       // el árbol ES la punta de main, sin cambios: el rojo del portón es el de main
       for (const f of toMeasure) {
         const casos = Array.isArray(f.casos) ? f.casos.map(String) : [];
@@ -437,6 +443,8 @@ function join({ tree, sha, suites, session, story, home }) {
     for (const s of suites) {
       if (!rec.suites.includes(s.ruta)) rec.suites.push(s.ruta);
       if (Array.isArray(s.casos) && s.casos.length) rec.casos[s.ruta] = s.casos.map(String);
+      // la raíz de la suite en la lista: la espera de fondo vuelve a medirla sin una corrida del portón al lado
+      if (s.raiz) rec.raiz = { ...(rec.raiz || {}), [s.ruta]: s.raiz };
     }
     if (sha && sha !== rec.sha) rec.sha = sha;
     if (!rec.waiting.some((w) => w && w.session === sid)) rec.waiting.push({ session: sid, since: now, ...(story ? { story } : {}) });
@@ -460,6 +468,80 @@ function saveResult({ tree, sha, ruta, result, session, home }) {
     return closeIfGreen(state, sha);
   });
   return { closed: out, broke };
+}
+
+// ── la espera de fondo y la rama que no trae main ───────────────────────────────────────────────────────────────────
+
+// el turno de las ejecuciones grandes, del repo de este guion (como run-capped.js): da el piso de memoria libre
+const HEAVY_TURN = path.resolve(__dirname, '..', '..', '..', '..', 'scripts', 'tools', 'heavy-turn.js');
+const WAIT_DEFAULTS = { interval: 300, max: 8 * 3600 };
+
+/** ¿La memoria libre está debajo del piso del segundo turno? `{ bajo, texto }`; sin poder medirla, no posterga y lo dice. */
+function memoriaParaMedir(readMemory) {
+  try {
+    const ht = require(HEAVY_TURN);
+    const floor = ht.secondTurnFloor();
+    const mem = (readMemory || ht.freeMemory)();
+    if (mem.pct == null) return { bajo: false, texto: `no pude medir la memoria libre (${mem.why}): mido igual` };
+    return mem.pct < floor.value ? { bajo: true, texto: `memoria libre ${mem.pct} %, debajo del piso de ${floor.value} %` } : { bajo: false, texto: null };
+  } catch (e) { return { bajo: false, texto: `no pude leer el piso de memoria (${String(e.message).split('\n')[0]}): mido igual` }; }
+}
+
+/**
+ * Espera que main pase sin el portón: cada `interval` segundos trae `origin/main` y, con una punta nueva y la memoria
+ * sobre el piso del segundo turno, mide en la copia todas las suites del registro (`max` es su cantidad, no el tope del
+ * portón; sin el atajo del árbol en la punta). El juez cierra el registro si todas pasan. `{ code, line }`: 0 con el
+ * registro cerrado, 3 pasado `max` segundos, 2 sin registro con ese `id` o sin repo.
+ */
+function wait({ repo, id, interval, max, home, session, readMemory, now = Date.now, sleepMs = sleep, log = (l) => process.stdout.write(`${l}\n`) } = {}) {
+  const warn = [];
+  const intervalS = interval !== undefined ? interval : intEnv(process.env.TYCON_MAIN_CHECK_WAIT_INTERVAL_S, 'TYCON_MAIN_CHECK_WAIT_INTERVAL_S', WAIT_DEFAULTS.interval, warn);
+  const maxS = max !== undefined ? max : intEnv(process.env.TYCON_MAIN_CHECK_WAIT_MAX_S, 'TYCON_MAIN_CHECK_WAIT_MAX_S', WAIT_DEFAULTS.max, warn);
+  for (const w of warn) log(`main-check wait: ${w}`);
+  const mainRepo = mainRepoOf(repo);
+  if (!mainRepo) return { code: 2, line: `main-check wait: ${repo} no es un repo de git` };
+  const paths = statePaths(mainRepo, home);
+  const deadline = now() + maxS * 1000;
+  let medido = null;
+  for (;;) {
+    const rec = readState(paths, mainRepo).broken.find((r) => r && r.id === id);
+    if (!rec) return { code: 2, line: `main-check wait: no hay un registro ${id} de main roto en ${mainRepo}` };
+    if (rec.closed) return { code: 0, line: `main pasó: ${rec.closedSha}; traé main y repetí el portón` };
+    const fetch = spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, 'fetch', '--quiet', 'origin', '+refs/heads/main:refs/remotes/origin/main'],
+      { windowsHide: true, encoding: 'utf8', timeout: DEFAULTS.fetchTimeout * 1000 });
+    const rev = g(repo, 'rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main^{commit}');
+    const sha = rev.status === 0 ? rev.stdout.trim() : '';
+    if (fetch.status !== 0 || !sha) log(`main-check wait: no pude traer origin/main (${fetch.error ? fetch.error.message : lastLine(fetch) || 'sin punta'}): vuelvo a probar`);
+    else if (sha !== rec.sha && sha !== medido) {
+      const mem = memoriaParaMedir(readMemory);
+      if (mem.texto) log(`main-check wait: ${mem.texto}${mem.bajo ? ': postergo la medición' : ''}`);
+      if (!mem.bajo) {
+        const lista = suitesOf(repo).entries || [];
+        const raizDe = (ruta) => (rec.raiz && rec.raiz[ruta]) || ((lista.find((s) => s && s.ruta === ruta) || {}).raiz) || null;
+        const fallas = (rec.suites || []).map((ruta) => ({ ruta, entrada: { raiz: raizDe(ruta), ruta }, casos: (rec.casos && rec.casos[ruta]) || [] }));
+        const j = judge({ tree: repo, fallas, max: fallas.length, atajo: false, session, home });
+        for (const l of j.lines) log(l);
+        medido = sha;
+        continue;
+      }
+    }
+    if (now() >= deadline) return { code: 3, line: `main-check wait: pasaron ${maxS} s y main sigue roto (${id}): volvé a esperar, o mirá quién lo arregla (status)` };
+    sleepMs(intervalS * 1000);
+  }
+}
+
+/**
+ * Con el registro `id` cerrado y la rama sin el commit con que main pasó, la línea que lo dice; si no (la rama lo trae,
+ * el commit no está en el repo, o no hay registro), null: nunca se afirma sin poder comprobarlo.
+ */
+function branchCheck({ repo, id, home } = {}) {
+  const mainRepo = mainRepoOf(repo);
+  if (!mainRepo) return null;
+  const rec = readState(statePaths(mainRepo, home), mainRepo).broken.find((r) => r && r.id === id);
+  if (!rec || !rec.closedSha) return null;
+  if (g(repo, 'merge-base', '--is-ancestor', rec.closedSha, 'HEAD').status !== 1) return null;
+  const suites = (rec.suites || []).map((r) => path.basename(String(r))).join(', ');
+  return `main ya pasó (${String(rec.closedSha).slice(0, 10)}) y esta rama no lo trae: traé main y repetí el portón antes de tocar ${suites || 'esas suites'}`;
 }
 
 // ── status ──────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -498,15 +580,23 @@ function statusLines(s) {
   return out;
 }
 
-module.exports = { judge, broken: { join, openRecord, closeIfGreen }, saveResult, status, statusLines, mainRepoOf, repoKey, statePaths, readState, takeLock, releaseLock, DEFAULTS, CASE_CAP };
+module.exports = { judge, broken: { join, openRecord, closeIfGreen }, saveResult, status, statusLines, wait, branchCheck, mainRepoOf, repoKey, statePaths, readState, takeLock, releaseLock, DEFAULTS, WAIT_DEFAULTS, CASE_CAP };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
   const val = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
-  if (cmd !== 'status' || !val('--repo')) {
-    process.stderr.write('uso: node main-check.js status --repo <repo> [--json]\n');
+  const uso = 'uso: node main-check.js status --repo <repo> [--json] | wait --repo <repo> --id <id> | branch-check --repo <repo> --id <id>\n';
+  if (!val('--repo') || !['status', 'wait', 'branch-check'].includes(cmd) || (cmd !== 'status' && !val('--id'))) {
+    process.stderr.write(uso);
     process.exitCode = 2;
+  } else if (cmd === 'wait') {
+    const r = wait({ repo: val('--repo'), id: val('--id') });
+    process.stdout.write(`${r.line}\n`);
+    process.exitCode = r.code;
+  } else if (cmd === 'branch-check') {
+    const l = branchCheck({ repo: val('--repo'), id: val('--id') });
+    if (l) process.stdout.write(`${l}\n`);
   } else {
     const s = status({ repo: val('--repo') });
     if (argv.includes('--json')) process.stdout.write(`${JSON.stringify(s, null, 2)}\n`);

@@ -379,9 +379,12 @@ test('TG1 Gate_AllMainFails_Exit78_NotInTestsFailed @story-8.294 @ac-5 — el po
   assert.equal(m.checks.tests, 'espera-main', JSON.stringify(m.checks));
   assert.equal(m.checksProvenance.tests, 'test-gate');
   assert.deepEqual(m.testsFailed || [], [], 'la suite quedó en testsFailed');
-  assert.ok(m.waitingOnMain && m.waitingOnMain.id === 'main-1', JSON.stringify(m.waitingOnMain));
-  assert.match(m.waitingOnMain.sha, /^[0-9a-f]{40}$/);
-  assert.deepEqual([...m.waitingOnMain.suites].sort(), [A, C]);
+  // la espera es una lista con una entrada por repo
+  assert.ok(Array.isArray(m.waitingOnMain) && m.waitingOnMain.length === 1, JSON.stringify(m.waitingOnMain));
+  const w = m.waitingOnMain[0];
+  assert.ok(w.id === 'main-1' && w.repo === l.repo, JSON.stringify(w));
+  assert.match(w.sha, /^[0-9a-f]{40}$/);
+  assert.deepEqual([...w.suites].sort(), [A, C]);
   const d = leer(doingFile(l));
   assert.equal(d.waitingKind, 'main');
   assert.equal(d.waitingFor, 'espera a main (main-1)');
@@ -395,8 +398,8 @@ test('TG1 Gate_AllMainFails_Exit78_NotInTestsFailed @story-8.294 @ac-5 — el po
   // `marker.js doing --waiting-for` con el mismo texto conserva la clase de la espera
   assert.equal(marker(l, ['doing', '--waiting-for', 'espera a main (main-1)']).status, 0);
   assert.equal(leer(doingFile(l)).waitingKind, 'main');
-  // main arregla a y c: la completa siguiente borra la espera al arrancar, main pasa, y el rojo que queda (la rama no
-  // trajo main) es de la historia: tests rojo, sin espera, y el registro se cerró
+  // main arregla a y c: la completa siguiente las vuelve a correr y las saca de la espera, main pasa, y el rojo que queda
+  // (la rama no trajo main) es de la historia: tests rojo, sin espera, y el registro se cerró
   arreglarMain(l, ['a', 'c']);
   const r2 = puerta(l);
   assert.equal(r2.status, 1, r2.out);

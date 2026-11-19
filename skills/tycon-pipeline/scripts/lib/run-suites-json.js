@@ -114,7 +114,7 @@ const PIEZA_CENTRAL_MIN = 40;
 // este corredor (correr todo): heredada, una suite que corre su propio portón de juguete dejaría de acotar y daría rojo.
 const DEL_PORTON = ['TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_STORY_REPO',
   'TYCON_TEST_GATE_CROSS_REPO', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED', 'TYCON_SUITE_HOMES_ROOT', 'TYCON_GATE_PROCESS',
-  'TYCON_GATE_ALL_SUITES'];
+  'TYCON_GATE_ALL_SUITES', 'TYCON_TEST_GATE_RUN'];
 
 function launch(p, covDir, env0) {
   const ej = p.ruta.endsWith('.js') ? process.execPath : 'bash';
@@ -519,6 +519,8 @@ function main(argv, env = process.env) {
   const touched = readTouched(touchedFile);
   const rerun = new Set(touched.known && Array.isArray(touched.rerun_suites) ? touched.rerun_suites.filter((r) => typeof r === 'string') : []);
   const rerunHallada = new Set();
+  // el motivo de una repetida, si quien armó lo tocado lo da (`rerun_reasons`: las que esperan a main, test-gate.sh)
+  const motivoDeRepetida = (k) => (touched.rerun_reasons && typeof touched.rerun_reasons[k] === 'string' ? touched.rerun_reasons[k] : 'se repitió sola y la carpeta cambió después: vuelve a correr');
   // Las suites que vuelven por sus carpetas (failed-first.js `decide`, `reactivadas`): claves `<raiz>:<ruta>` de la lista,
   // con su motivo aparte. Corren sin pasar por los filtros, como las repetidas viejas. Con `--suite` no se miran: quien
   // pidió una sola ya sabe lo que corre, y una reactivada de otra lista no es una ausente de esa corrida.
@@ -601,7 +603,7 @@ function main(argv, env = process.env) {
     // se la reconoce por su entrada de la lista, la misma clave con que se guardó la repetición.
     if (rerun.has(p.entrada.ruta)) {
       rerunHallada.add(p.entrada.ruta);
-      console.log(`REPETIDA ${p.name} — se repitió sola y la carpeta cambió después: vuelve a correr`);
+      console.log(`REPETIDA ${p.name} — ${motivoDeRepetida(p.entrada.ruta)}`);
       (p.exclusive ? exclusives : parallel).push(p);
       continue;
     }

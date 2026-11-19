@@ -1130,6 +1130,12 @@
       "requiere": []
     },
     {
+      "__nota": "la espera a main donde se cruza con la repetición sola, las suites que vuelven, lo guardado y los repos hermanos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-main-wait.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-skill-gate.test.js",
       "requiere": []

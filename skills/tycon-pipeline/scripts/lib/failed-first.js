@@ -391,7 +391,10 @@ function mustMeasureFrom(touchedFile) {
   return t.known !== true || t.must_measure === true;
 }
 
-function decide({ dir, hash, repo, tree, base, recorte, storyId = null, mustMeasure = false }) {
+// `esperaMain`: las suites que esperan a main en este repo (marker.js waiting-on-main suites), por su clave de la lista.
+// Una espera no es una medida: vuelven a correr aunque la carpeta sea la misma, y no hace falta repetirlas solas.
+function decide({ dir, hash, repo, tree, base, recorte, storyId = null, mustMeasure = false, esperaMain = [] }) {
+  const enEspera = new Set(Array.isArray(esperaMain) ? esperaMain.filter((r) => typeof r === 'string') : []);
   const full = (reason) => ({ mode: 'full', reason });
   if (!dir || !fs.existsSync(dir) || redHash(dir) !== hash) return full('lo guardado no coincide con su constancia');
   let meta; let medido; let resumen; let rep;
@@ -416,7 +419,7 @@ function decide({ dir, hash, repo, tree, base, recorte, storyId = null, mustMeas
   if ((meta.recorte || '') !== (recorte || '')) return full(`esta corrida no tiene el mismo recorte que ${deLa}`);
   const heredadas = new Set(meta.heredadas || []);
   const fallas = (resumen.fallas || []).map(rutaDeFalla).filter(Boolean);
-  const sinRepetir = fallas.filter((r) => !rep[r] && !heredadas.has(r));
+  const sinRepetir = fallas.filter((r) => !rep[r] && !heredadas.has(r) && !enEspera.has(r));
   if (sinRepetir.length) return full(`falta repetir sola: ${sinRepetir.join(', ')}`);
   const ahora = huellaDe(tree);
   const igual = ahora === (arbol ? huellaDe(medido) : medido.tree);
@@ -449,7 +452,8 @@ function decide({ dir, hash, repo, tree, base, recorte, storyId = null, mustMeas
   // Una repetición cuya carpeta ya no es la de ahora vuelve a correr: así un arreglo deshecho después de repetir vuelve
   // a dar rojo. Para saber que es vieja alcanza la huella que guardó (también la de una línea del árbol armado). Va por
   // su clave de la lista de suites (`rerun`), aparte de los archivos: no es una ruta del repo.
-  const rerun = Object.entries(rep).filter(([, x]) => x.tree !== ahora).map(([r]) => r);
+  // las que esperan a main se suman: con `rerun` no vacío, la decisión nunca es `same`
+  const rerun = [...new Set([...Object.entries(rep).filter(([, x]) => x.tree !== ahora).map(([r]) => r), ...enEspera])];
   const at = meta.at;
   // la completa de origen: la de lo guardado, o la que dio origen al cierre que se guardó
   const origenAt = meta.origen_at || meta.at;
