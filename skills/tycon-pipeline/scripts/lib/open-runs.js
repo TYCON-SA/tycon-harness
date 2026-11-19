@@ -305,12 +305,21 @@ function markerRel(home) {
  * con `--terminal --for-session <sesión>` (null sin una sesión conocida). Con una carpeta personal que no se puede citar,
  * `signatureCommand` lo da con `$HOME`, que no es una firma: `sinCitar` y sólo vale la terminal.
  */
-function formaDeMarker(resto, sesion, { home } = {}) {
-  const { signatureCommand, enLaTerminal } = require('./home-command.js');
+/**
+ * `node "<carpeta personal>/<skills instaladas>/…/marker.js"`: el comando de marker.js por la ruta estable, el mismo para
+ * todos los carteles y firmas que lo imprimen (@story-8.318, 8.319). Con una carpeta que no se puede citar, con `$HOME`.
+ */
+function markerEstable(home) {
+  const { signatureCommand } = require('./home-command.js');
   const casa = home || os.homedir();
   const rel = markerRel(casa);
   // sin tycon-home.js, la ruta de al lado: se imprime, no se carga
-  const base = rel ? signatureCommand(rel, casa) : `node "${path.resolve(__dirname, '..', 'marker.js')}"`;
+  return rel ? signatureCommand(rel, casa) : `node "${path.resolve(__dirname, '..', 'marker.js')}"`;
+}
+
+function formaDeMarker(resto, sesion, { home } = {}) {
+  const { enLaTerminal } = require('./home-command.js');
+  const base = markerEstable(home);
   const comando = `${base} ${resto}`;
   return { ventana: comando, terminal: enLaTerminal(comando, sesion), sinCitar: base.includes('$HOME') };
 }
@@ -457,4 +466,4 @@ function dentroDe(hijo, padre, platform = process.platform) {
   return false;
 }
 
-module.exports = { CAMPOS_DE_CIERRE, markerRel, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, hayAbiertas, dentroDe, casaConComodin, gatesPath, markerPath };
+module.exports = { CAMPOS_DE_CIERRE, markerRel, markerEstable, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, hayAbiertas, dentroDe, casaConComodin, gatesPath, markerPath };

@@ -255,20 +255,22 @@ function frenosDeArchivo(t) {
 }
 
 /** El argv de una forma impresa (`marker.js sign-file <firma> <archivo> …`), con la ruta entera del guion. */
+// la forma va con `node "<ruta estable>/marker.js"` (8.319): se lee como la lee la consola, y el guion es el de este árbol
 function argvDe(forma) {
-  const partes = String(forma).split(' ');
-  assert.strictEqual(partes[0], 'marker.js', `la forma empieza con el guion: ${forma}`);
-  return [MARKER, ...partes.slice(1)];
+  const w = ow.canonica(forma);
+  assert.ok(w && /marker\.js$/.test(w[0]), `la forma corre marker.js: ${forma}`);
+  return [MARKER, ...w.slice(1)];
 }
+const N_FIRMA = () => `${ow.markerEstable()} sign-file`;
 
 // ── T1 — las dos formas, de una sola fuente ────────────────────────────────────────────────────────────────────────
 
 test('TerminalForm_HasTerminalAndSession (T1) @story-8.165 @ac-1', () => {
   assert.strictEqual(typeof ow.comoSeFirmaEnLaTerminal, 'function', 'owner-window.js exporta la forma de la terminal');
   assert.strictEqual(ow.comoSeFirmaEnLaTerminal('dod_runtime_exempt', '/r/a b.md', 'ses-a'),
-    "marker.js sign-file dod_runtime_exempt '/r/a b.md' --terminal --for-session ses-a");
+    `${N_FIRMA()} dod_runtime_exempt "/r/a b.md" --terminal --for-session ses-a`);
   assert.strictEqual(ow.comoSeFirmaEnLaTerminal('dod_runtime_exempt', '/r/specs/story-9.99.md', 'ses-a'),
-    'marker.js sign-file dod_runtime_exempt /r/specs/story-9.99.md --terminal --for-session ses-a');
+    `${N_FIRMA()} dod_runtime_exempt "/r/specs/story-9.99.md" --terminal --for-session ses-a`);
   // sin sesión no hay forma de la terminal, y se dice por qué
   for (const sin of [null, undefined, '', '_nosession']) {
     assert.strictEqual(ow.comoSeFirmaEnLaTerminal('dod_runtime_exempt', '/r/x.md', sin), null, `sin sesión (${sin}): ninguna forma de terminal`);
@@ -277,8 +279,8 @@ test('TerminalForm_HasTerminalAndSession (T1) @story-8.165 @ac-1', () => {
   assert.strictEqual(f.terminal, null);
   assert.match(f.renglones.join('\n'), /sesión del agente/, 'el cartel sin sesión dice que la terminal necesita la sesión del agente');
   assert.ok(f.renglones.join('\n').includes(ow.comoSeFirma('dod_runtime_exempt', '/r/x.md')), 'y da la forma de la ventana');
-  // la forma de la ventana no cambia
-  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md'), 'marker.js sign-file dod_runtime_exempt /r/specs/story-9.99.md');
+  // la forma de la ventana, con node y la ruta estable (8.319, AC 7)
+  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md'), `${N_FIRMA()} dod_runtime_exempt "/r/specs/story-9.99.md"`);
   // el catálogo da la forma de la terminal de cada firma de archivo con la sesión del agente
   for (const firma of SIG.FIRMAS_DE_ARCHIVO) {
     const s = SIG.SIGNATURES.find((x) => x.id === `escape:${firma}`);
@@ -349,7 +351,7 @@ test('EveryFileSignature_WindowFormUnblocks (T5) @story-8.165 @ac-4 @ac-9', (t) 
     const casa = casaNueva(t);
     assert.notStrictEqual(escribir(casa, 'ses-a'), true, `${firma}: antes de firmar, frena`);
     const forma = ow.comoSeFirma(firma, archivo);
-    const cmd = `node ${MARKER} ${forma.slice('marker.js '.length)}`;
+    const cmd = forma.replace(/^node "[^"]*"/, `node ${MARKER}`);
     const ahora = Date.now();
     const r = pedir(casa, cmd, ahora);
     assert.strictEqual(r.decision, 'ask', `${cmd}: ${r.texto}`);

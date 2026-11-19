@@ -294,14 +294,23 @@ test('T12 Cartel_DiceCuandoNoHayVentana @story-8.318 @ac-11 — no dice «no el 
   assert.match(t, /consola PowerShell de la herramienta o en Codex no hay cuadro/);
 });
 
-test('T13 Cartel_ComandoImpreso_CorreEnPowerShell51PwshYCmd @story-8.318 @ac-12 — cada comando del cartel, con get, llega a marker.js en las tres consolas', { skip: !WIN && 'sólo en Windows: la corre el trabajo windows de la CI del pedido' }, () => {
-  const E = entorno();
+test('T13 Cartel_ComandoImpreso_CorreEnPowerShell51PwshYCmd @story-8.318 @ac-12 @story-8.319 @ac-9 — cada comando impreso, con get, llega a marker.js en las tres consolas', { skip: !WIN && 'sólo en Windows: la corre el trabajo windows de la CI del pedido' }, () => {
+  // una carpeta personal y un archivo con espacio y acento: el rojo aparece aunque la máquina no los tenga (8.319, AC 9)
+  const E = entorno({ nombreCasa: 'Carpeta Ñandú' });
   const or = require(OR);
   const { salidas } = or.formasDeSalida({ sesion: 's-t13' }, { home: E.home });
   const conGet = [];
   for (const x of salidas) {
     for (const forma of [x.ventana, x.terminal]) conGet.push(forma.replace(/ (?:clear-session s-t13 --lost|restore s-t13)/, ' get'));
   }
+  // la 8.319: la forma de la terminal de una firma sobre un archivo, y la del arreglo rápido con --repo
+  const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
+  const archivo = path.join(E.base, 'Carpeta Ñandú', 'a b.md');
+  const firma = ow.formasDeFirmar('ALLOW_DOD_EVIDENCE_WRITE', archivo, 's-t13', { casa: E.home }).terminal;
+  assert.ok(firma, 'la forma de la terminal de sign-file');
+  conGet.push(firma.replace(' sign-file ALLOW_DOD_EVIDENCE_WRITE ', ' get '));
+  const { signatureCommand } = require(path.join(SCRIPTS, 'lib', 'home-command.js'));
+  conGet.push(`${signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js', E.home)} get --reason "arreglo de prueba" --data sin-cambio --file src/a.js --terminal --for-session s-t13 --repo "${E.repo}"`);
   const consolas = [
     ['powershell.exe', (c) => spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', c], { encoding: 'utf8', env: E.env('s-t13') })],
     ['pwsh', (c) => spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', c], { encoding: 'utf8', env: E.env('s-t13') })],
@@ -403,7 +412,9 @@ test('T16c BorrarCarpeta_SinRetrocesoNiEscapeIncompleto @story-8.318 @ac-13 — 
   // las dos entradas que hacían retroceder la expresión de los envoltorios, y la de las palabras de control
   // crece en línea con el largo: cuatro veces más largo tarda a lo sumo unas ocho veces más (una que retrocede, miles),
   // y nunca más de 10 s. Un tope fijo depende de la máquina: en la CI esto tarda el doble
-  const mide = (texto) => { const t0 = process.hrtime.bigint(); gate.carpetasQueBorraOMueve(texto); return Number(process.hrtime.bigint() - t0) / 1e6; };
+  // la mediana de tres: una pausa del recolector en una sola medida no la vuelve roja
+  const una = (texto) => { const t0 = process.hrtime.bigint(); gate.carpetasQueBorraOMueve(texto); return Number(process.hrtime.bigint() - t0) / 1e6; };
+  const mide = (texto) => [una(texto), una(texto), una(texto)].sort((a, b) => a - b)[1];
   for (const [cabeza, pieza] of [['env', ' -/env'], ['env', ' -c 0'], ['if', ' ( '], ['then', '  ']]) {
     mide(`${cabeza}${pieza.repeat(500)}`);
     const corto = mide(`${cabeza}${pieza.repeat(5000)}`);
