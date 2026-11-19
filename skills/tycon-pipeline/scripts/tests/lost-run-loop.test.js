@@ -310,7 +310,7 @@ test('T13 Cartel_ComandoImpreso_CorreEnPowerShell51PwshYCmd @story-8.318 @ac-12 
   assert.ok(firma, 'la forma de la terminal de sign-file');
   conGet.push(firma.replace(' sign-file ALLOW_DOD_EVIDENCE_WRITE ', ' get '));
   const { signatureCommand } = require(path.join(SCRIPTS, 'lib', 'home-command.js'));
-  conGet.push(`${signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js', E.home)} get --reason "arreglo de prueba" --data sin-cambio --file src/a.js --repo "${E.repo}" --terminal --for-session s-t13`);
+  conGet.push(`${signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js', E.home)} get --reason "arreglo de prueba" --data sin-cambio --file src/a.js --terminal --for-session s-t13 --repo "${E.repo}"`);
   const consolas = [
     ['powershell.exe', (c) => spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', c], { encoding: 'utf8', env: E.env('s-t13') })],
     ['pwsh', (c) => spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', c], { encoding: 'utf8', env: E.env('s-t13') })],

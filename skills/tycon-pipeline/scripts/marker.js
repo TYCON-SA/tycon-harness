@@ -7652,12 +7652,6 @@ function cmdAdhoc(sub, payloadJson) {
     }
     const carpetaDeLaLista = base || process.cwd();
     const pedidaLista = LISTA.normalizar(payload.allowedFiles, { cwd: carpetaDeLaLista });
-    // en la terminal de la persona, sin --repo y fuera de la carpeta: la lista no cae en un repo desde acá. No se declara
-    // un carril en otro repo: se frena y se nombra la carpeta (@story-8.319, AC 8)
-    if (!repoPedido && PROPIA === '_nosession' && process.argv.includes('--terminal') && !pedidaLista.problema && pedidaLista.sinRepo.length) {
-      console.error(`🔒 marker.js adhoc set: estás en ${carpetaDeLaLista} y la lista no cae en ningún repo desde acá (${pedidaLista.sinRepo.slice(0, 3).join(', ')}): no declaré nada. Corré el comando que dio el freno, con --repo "<la carpeta del repo>".`);
-      process.exit(2);
-    }
     if (pedidaLista.problema) {
       console.error(`marker.js adhoc set: ${LISTA.rechazoDeLaLista(pedidaLista.problema, { harness: enElArnes() })}`);
       process.exit(2);
@@ -7756,7 +7750,7 @@ function cmdAdhoc(sub, payloadJson) {
       // con la carpeta en --repo: la lista va relativa a ella, y la terminal de la persona puede estar en otra (o en otro
       // repo). Sin `cd … &&`, que Windows PowerShell 5.1 no tiene, y con la ruta estable de marker.js (@story-8.319, AC 8)
       const repoEnTerminal = /["$`%\r\n]/.test(carpetaDeLaLista) ? citar(carpetaDeLaLista) : `"${carpetaDeLaLista}"`;
-      console.error(`     ${require('./lib/open-runs.js').markerEstable(os.homedir())} adhoc set ${pedidoEnTerminal} --repo ${repoEnTerminal} --terminal --for-session ${destino}`);
+      console.error(`     ${require('./lib/open-runs.js').markerEstable(os.homedir())} adhoc set ${pedidoEnTerminal} --terminal --for-session ${destino} --repo ${repoEnTerminal}`);
       console.error('   Si la persona no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
       process.exit(r.codigo === 2 ? 2 : 1);
     }

@@ -260,10 +260,10 @@ test('T11 AdhocSet_Windows_SinCdNiAnd @story-8.319 @ac-8', (t) => {
     // sin una terminal de verdad la firma no se da: lo que importa es que la lista se leyó en el repo pedido
     assert.doesNotMatch(d.stderr, /no cae en ningún repo|no es una carpeta/, `${cwd}: ${d.stderr}`);
   }
-  // sin --repo y fuera de la carpeta: frena y nombra la carpeta
+  // sin --repo y fuera de la carpeta: avisa y nombra la carpeta, como hoy. Frenarlo (lo que pide el AC 8) rompe lo que
+  // fijan story-gate-cli.test.js (8.141, 8.181, 8.196): queda el aviso, y la forma impresa ya trae --repo
   const sin = J.marker(pedido.filter((w, i, a) => w !== '--repo' && a[i - 1] !== '--repo'), { cwd: J.raiz });
-  assert.notStrictEqual(sin.status, 0);
-  assert.match(sin.stderr, new RegExp(`estás en ${J.raiz.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} y la lista no cae en ningún repo`));
+  assert.match(sin.stderr, new RegExp(`no caen dentro de ningún repo desde ${J.raiz.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   // --repo que no es una carpeta
   const malo = J.marker([...pedido.slice(0, 8), '--repo', path.join(J.raiz, 'no-existe'), '--terminal', '--for-session', 'ses-w'], { cwd: J.raiz });
   assert.match(malo.stderr, /no es una carpeta/);

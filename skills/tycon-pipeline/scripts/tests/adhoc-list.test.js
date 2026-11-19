@@ -493,7 +493,7 @@ test('P2v15 Lista_FueraDeTodoRepo_Avisa — @story-8.174 @ac-25', () => {
   assert.notEqual(sin.status, 0);
   assert.doesNotMatch(sin.stderr, /no caen dentro de ningún repo/);
   // la carpeta va en --repo, sin `cd … &&` (8.319, AC 8)
-  assert.match(sin.stderr, /adhoc set .* --repo ".*producto" --terminal --for-session/);
+  assert.match(sin.stderr, /adhoc set .* --terminal --for-session \S+ --repo ".*producto"/);
   assert.doesNotMatch(sin.stderr, /&& node /);
 });
 
