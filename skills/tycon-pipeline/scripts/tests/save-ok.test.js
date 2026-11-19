@@ -271,6 +271,25 @@ test('Delegada_Sensible_Sale2 (T7) @story-8.143 @ac-5', (t) => {
   assert.deepStrictEqual(SO.sensibles({ repos: [limpio] }), []);
 });
 
+// 🔴 Falla con: `save:sensible` delegada en el perfil y la coordinadora igual frenada por lo sensible; o lo sensible
+// firmado sin que el perfil nombre la forma.
+test('Delegada_Sensible_ConLaFormaDelegada_Firma', (t) => {
+  const d = repo(t, { 'scripts/lib/signatures.js': 'x\n', 'LEEME.md': 'z\n' });
+  escribir(d, 'scripts/lib/owner-window.js', 'a\n');
+  const m = corridaLimpia([d]);
+  const orden = [];
+  const r = SO.antesDeFirmar({ via: 'delegacion', marker: m, repos: [d], findings: [], firmasDeLaCorrida: [], canales: canalQueEntrega, mandar: entrega(orden), sensibleDelegado: true });
+  assert.strictEqual(r.codigo, 0, JSON.stringify(r));
+  assert.strictEqual(orden.length, 1, 'el dueño se entera igual');
+  assert.strictEqual(porDelegacion(m, { repos: [d] }).codigo, 2, 'sin la forma delegada, lo firma una persona');
+  // la forma se delega con su nombre, con las llaves de siempre, y no la trae `save`
+  const DS = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js'));
+  const delega = (delegated_signing) => DS.delegaSinVentana({ firma: 'save:sensible', sesion: 'coord', destino: 'ses-a', estado: fs.mkdtempSync(path.join(os.tmpdir(), 'so-ds-')),
+    perfil: () => ({ delegated_signing, owner_only: [], delegated_machines: [] }), huella: () => ({ huella: 'h' }) });
+  assert.match(delega(['save']).motivo, /no delega «save:sensible»/);
+  assert.match(delega(['save', 'save:sensible']).motivo, /delegated_machines/);
+});
+
 test('Ventana_NoLimpiaNiSensible_Firma (T8) @story-8.143 @ac-4 @ac-5', (t) => {
   const a = repo(t);
   escribir(a, 'scripts/lib/owner-window.js', 'a\n');

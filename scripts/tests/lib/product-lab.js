@@ -265,7 +265,8 @@ function gatesLog(home) {
   return path.join(d, 'gates.log');
 }
 
-function humo(c, clave, tsSeg) {
+/** `hermanos`: el ancla de cada repo hermano, en el registro y en el espejo. `script`: el guion que corrió el humo. */
+function humo(c, clave, tsSeg, { acs = [1, 2], hermanos, script } = {}) {
   const dodDir = path.join(c.repos['Lab-Historias'], '.advisors', 'dod-runtime');
   fs.mkdirSync(dodDir, { recursive: true });
   // La salida va escrita acá con un nombre fijo: la del ayudante lleva un sufijo al azar y cambiaría el hash del commit.
@@ -274,15 +275,22 @@ function humo(c, clave, tsSeg) {
   fs.mkdirSync(path.dirname(path.join(dodDir, salida)), { recursive: true });
   fs.writeFileSync(path.join(dodDir, salida), texto);
   const outputSha = crypto.createHash('sha256').update(texto).digest('hex');
-  ledgerLine.append({ dodDir, gatesLog: gatesLog(c.home), story: clave, acs: [1, 2], ts: iso(tsSeg), cmd: 'curl -s http://app/pedido', v2: { pasaSi: 'responde 200', output: salida, outputSha } });
+  const espejo = gatesLog(c.home);
+  const enRegistro = { ...(hermanos ? { target: { hermanos } } : {}), ...(script ? { script, script_sha: crypto.createHash('sha256').update(script).digest('hex') } : {}) };
+  ledgerLine.append({ dodDir, gatesLog: espejo, story: clave, acs, ts: iso(tsSeg), cmd: 'curl -s http://app/pedido', enRegistro, v2: { pasaSi: 'responde 200', output: salida, outputSha } });
+  if (hermanos) {
+    const lineas = fs.readFileSync(espejo, 'utf8').trimEnd().split('\n');
+    lineas[lineas.length - 1] = JSON.stringify({ ...JSON.parse(lineas[lineas.length - 1]), hermanos });
+    fs.writeFileSync(espejo, `${lineas.join('\n')}\n`);
+  }
 }
 
 /** Una historia en el repo de historias, con su evidencia commiteada: el humo a la hora `t` y el commit a `t + 5`. */
-function historiaConEvidencia(c, { id, nombre, tema = 'cobranza', archivos, t, clave, status, marca, lista }) {
+function historiaConEvidencia(c, { id, nombre, tema = 'cobranza', archivos, t, clave, status, marca, lista, delHumo }) {
   const repo = c.repos['Lab-Historias'];
   const rel = `specs/${tema}/stories/${id.replace('.', '-')}-${nombre}.md`;
   const abs = escribir(repo, rel, historiaTexto({ id, titulo: nombre, archivos, status, marca, lista }));
-  humo(c, clave || id, t);
+  humo(c, clave || id, t, delHumo);
   commit(c, repo, `docs(${id}): evidencia`, t + 5);
   return abs;
 }
@@ -534,6 +542,21 @@ function hermanoAtrasado(c, archivo) {
 }
 
 const MARCA_DEL_FRENO = 'Pruebas: smoke runtime.';
+
+// La regla de la entrada: una historia probada en una rama `wt/`, con el ancla de esa rama, que después entra a main.
+const CONSULTA = 'src/Entrada/Consulta.cs';
+const anclaDe = (c, rama) => ({ repo: 'Lab-Backend', commit: correrGit(c, c.repos['Lab-Backend'], ['rev-parse', rama]) });
+function probadaEnRama(c, id, nombre, delHumo = {}) {
+  cambiarEnRama(c, c.repos['Lab-Backend'], 'wt/Sesion-1', CONSULTA, T0 + 7000);
+  return historiaConEvidencia(c, { id, nombre, archivos: [delBackend(CONSULTA)], t: T0 + 7005, delHumo: { hermanos: [anclaDe(c, 'wt/Sesion-1')], ...delHumo } });
+}
+function otraFusion(c, rama, t) {
+  const backend = c.repos['Lab-Backend'];
+  bajar(c, backend);
+  cambiarEnRama(c, backend, rama, CONSULTA, t);
+  fusionar(c, backend, rama, 'main', t + 10);
+  return c.pedido;
+}
 
 // ---------------------------------------------------------------- los casos
 
@@ -800,6 +823,68 @@ const CASOS = [
     corre: (c, x) => matriz(c, x.historia),
     // La matriz busca la ruta también en el hermano: la encuentra, y el aviso nombra el commit que la cambió después
     juzga: (m) => esperaRojo(m, { nombra: ['forms/pedido/helper.cs'], aviso: /commit \w+ (es posterior|después)/i }),
+  },
+  {
+    id: 'entrada-igual-cambia-otra', ac: 24,
+    prepara: (c) => {
+      const historia = probadaEnRama(c, '1.20', 'entrada');
+      fusionar(c, c.repos['Lab-Backend'], 'wt/Sesion-1', 'main', T0 + 7100);
+      otraFusion(c, 'wt/Sesion-2', T0 + 7200);
+      bajar(c, c.repos['Lab-Backend']);
+      return { historia };
+    },
+    corre: (c, x) => matriz(c, x.historia),
+    juzga: (m) => esperaVerde(m, /entró igual a lo probado/),
+  },
+  {
+    id: 'propia-antes-de-entrar', ac: 24,
+    prepara: (c) => {
+      const backend = c.repos['Lab-Backend'];
+      const historia = probadaEnRama(c, '1.21', 'cambio-antes');
+      correrGit(c, backend, ['checkout', '-q', 'wt/Sesion-1']);
+      fs.appendFileSync(path.join(backend, CONSULTA), '// después de probar\n');
+      commit(c, backend, 'fix: después de probar', T0 + 7050);
+      correrGit(c, backend, ['push', '-q', 'origin', 'wt/Sesion-1'], T0 + 7050);
+      fusionar(c, backend, 'wt/Sesion-1', 'main', T0 + 7100);
+      bajar(c, backend);
+      return { historia };
+    },
+    corre: (c, x) => matriz(c, x.historia),
+    juzga: (m) => esperaRojo(m, { nombra: [delBackend(CONSULTA)], aviso: /no es lo que se probó/ }),
+  },
+  {
+    id: 'propia-despues-de-entrar', ac: 24,
+    prepara: (c) => {
+      const historia = probadaEnRama(c, '1.22', 'cambio-despues');
+      fusionar(c, c.repos['Lab-Backend'], 'wt/Sesion-1', 'main', T0 + 7100);
+      const pedido = otraFusion(c, 'wt/Sesion-2', T0 + 7200);
+      bajar(c, c.repos['Lab-Backend']);
+      const historias = c.repos['Lab-Historias'];
+      escribir(historias, '.advisors/dod-runtime/1.22-pedidos.jsonl', `${JSON.stringify({ historia: '1.22', clave: '1.22', repo: 'Lab-Backend', pedido, ts: iso(T0 + 7300) })}\n`);
+      commit(c, historias, 'docs(1.22): pedido', T0 + 7300);
+      return { historia };
+    },
+    corre: (c, x) => matriz(c, x.historia),
+    juzga: (m) => esperaRojo(m, { nombra: [delBackend(CONSULTA)], aviso: /la propia historia/ }),
+  },
+  {
+    id: 'guion-adaptado-tras-entrar', ac: 24,
+    prepara: (c) => {
+      const historia = probadaEnRama(c, '1.23', 'guion', { acs: [1], script: '.advisors/dod-runtime/1.23-humo.js' });
+      fusionar(c, c.repos['Lab-Backend'], 'wt/Sesion-1', 'main', T0 + 7100);
+      bajar(c, c.repos['Lab-Backend']);
+      humo(c, '1.23', T0 + 7150, { hermanos: [anclaDe(c, 'main')], script: '.advisors/dod-runtime/1.23-humo-adaptado.js' });
+      commit(c, c.repos['Lab-Historias'], 'docs(1.23): repetición', T0 + 7155);
+      otraFusion(c, 'wt/Sesion-2', T0 + 7200);
+      bajar(c, c.repos['Lab-Backend']);
+      return { historia };
+    },
+    corre: (c, x) => matriz(c, x.historia),
+    // el humo original entró igual y cuenta; la repetición es posterior a la entrada y no usa la regla
+    juzga: (m) => {
+      if (m.acs[0] !== 'RUNTIME' || m.acs[1] === 'RUNTIME') return falla(`esperaba el criterio 1 en vivo y el 2 sin evidencia, dio ${m.acs.join(',')}`);
+      return m.avisos.some((a) => /guion distinto/.test(a)) ? OK : falla('la matriz no avisó el guion distinto');
+    },
   },
 ];
 

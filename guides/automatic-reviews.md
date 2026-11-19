@@ -26,7 +26,7 @@ instalador, producción, una migración, o declara `sensible:`. En duda, delicad
 
 | ¿Delicada? | ¿Se corre? (de fábrica) | Quién aprueba si sale «aprobado» |
 |---|---|---|
-| Sí | Siempre, sin preguntar (`plan_review.delicate: always`) | El dueño, con el resultado en el cuadro |
+| Sí | Siempre, sin preguntar (`plan_review.delicate: always`) | El dueño, con el resultado en el cuadro. Si el perfil delega `plan-approval:delicada`, la coordinadora, sólo con el «aprobado» de la revisión que lanzó ella |
 | No | Se le pregunta al dueño (`plan_review.routine: ask`). Dueño ausente: se revisa (`plan_review.routine_owner_away: review`) | La revisión, con o sin coordinadora (`plan_review.routine_approval: review`): con coordinadora, ella firma en nombre del dueño; sin coordinadora, se aprueba sin click. Con `person`, el dueño |
 
 La lanza la coordinadora (`marker.js plan-review --for-session <sesión>`); sin coordinadora, la propia sesión
@@ -36,7 +36,7 @@ falsa»: lo que el plan cree del código y no es cierto. Los resultados:
 
 | Resultado | Qué pasa |
 |---|---|
-| «aprobado» | Rutina: se aprueba, con o sin coordinadora (con coordinadora, ella firma; sin ella, `complete-step approve-plan` cierra sin click). Delicada, o con `plan_review.routine_approval: person`: le llega al dueño con «revisado, sin hallazgos» |
+| «aprobado» | Rutina: se aprueba, con o sin coordinadora (con coordinadora, ella firma; sin ella, `complete-step approve-plan` cierra sin click). Delicada, o con `plan_review.routine_approval: person`: le llega al dueño con «revisado, sin hallazgos» (una delicada la aprueba la coordinadora si el perfil delega `plan-approval:delicada`) |
 | «aprobado con notas» | Confirmados por debajo del corte de gravedad: cuenta como aprobado, la sesión los corrige al implementar y el cuadro los muestra |
 | «rechazado» | Sólo por un confirmado en el corte (de fábrica, un defecto). La sesión corrige el plan y la revisión vuelve a correr. Llega al dueño al tope de rechazos seguidos (`review.max_rounds`, de fábrica 3), o enseguida con `plan_review.rejected_reaches_owner: true` |
 | «sin veredicto» | Le llega al dueño con «no se pudo revisar: <motivo>». Si el plan cambió mientras corría, se reintenta una vez |

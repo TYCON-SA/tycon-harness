@@ -1017,8 +1017,8 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
 }
 
 /**
- * La coordinadora firma sola sólo la rutina: de `delegated_signing` sale toda firma que llega a nivel 2 o más con lo que
- * sube `approvals.levels` (`signatures.js`, delegatedLevel). No es un error: lo demás se sigue delegando, y la salida se
+ * La coordinadora firma sola la rutina y las excepciones de trámite: de `delegated_signing` sale toda firma que no es
+ * delegable con lo que sube `approvals.levels` (`signatures.js`, delegable). No es un error: lo demás se sigue delegando, y la salida se
  * dice como ignorada. Con `levels` escrito y roto no se sabe qué subió el dueño: no se delega nada (su error ya está).
  * Un grupo de antes que trae alguna se abre en sus ids.
  */
@@ -1037,13 +1037,15 @@ function soloRutinaDelegada(plano, datos, archivo, ignoradas, seccion) {
   const quedan = [];
   for (const valor of lista) {
     for (const id of cat.expand(valor)) {
-      const n = cat.delegatedLevel(id, subidos);
-      if (n >= 2) { if (!salen.some((x) => x.id === id)) salen.push({ id, n }); } else if (!quedan.includes(id)) quedan.push(id);
+      // una forma (plan-approval:delicada, save:sensible) no es una firma: su nivel es el de la tabla, o 2
+      const n = cat.delegatedLevel(id, subidos) || cat.effectiveLevel(id, subidos) || 2;
+      // una excepción se delega sólo por su nombre: un grupo de antes no la trae
+      if (!cat.delegable(id, subidos) || (n >= 2 && valor !== id)) { if (!salen.some((x) => x.id === id)) salen.push({ id, n }); } else if (!quedan.includes(id)) quedan.push(id);
     }
   }
   if (!salen.length) return;
   plano['approvals.delegated_signing'] = quedan.length ? quedan : 'off';
-  ignoradas.push({ archivo, clave: `${seccion}.delegated_signing`, motivo: `${salen.map((x) => `${x.id} (nivel ${x.n})`).join(', ')} no se delega: la coordinadora firma sola sólo la rutina (nivel 1); una excepción o algo irreversible lo firma una persona (guides/firmas-del-arnes.md)` });
+  ignoradas.push({ archivo, clave: `${seccion}.delegated_signing`, motivo: `${salen.map((x) => `${x.id} (nivel ${x.n})`).join(', ')} no se delega: la coordinadora firma sola la rutina (nivel 1) y las excepciones de trámite que lista la guía; las demás excepciones y lo irreversible los firma una persona (guides/firmas-del-arnes.md)` });
 }
 
 /** null si el valor es del tipo; si no, el motivo. */
@@ -1106,7 +1108,7 @@ function validarTipo(tipo, valor) {
       // las firmas del catálogo (signatures.js): `firmas` acepta además los nombres de grupo y `off`; `firmas-ids`, sólo ids
       const cat = catalogoDeFirmas();
       if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
-      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids()], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
+      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids(), ...cat.formNames()], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
       if (!Array.isArray(valor) || !valor.length) return `tiene que ser una lista no vacía de ids de firma (guides/firmas-del-arnes.md), no ${JSON.stringify(valor)}`;
       const malo = valor.find((v) => typeof v !== 'string' || !cat.isId(v.trim()));
       if (malo !== undefined) return `${JSON.stringify(malo)} no es un id de firma (guides/firmas-del-arnes.md; un grupo no vale acá)`;

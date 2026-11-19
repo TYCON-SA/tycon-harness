@@ -99,10 +99,17 @@ function tapar(texto) {
   return out;
 }
 
-/** ¿Una `/` en este punto empieza un literal de regex? Sí después de un operador, una apertura o una palabra clave. */
+/**
+ * ¿Una `/` en este punto empieza un literal de regex? Sí después de un operador, una apertura o una palabra clave.
+ * Mira hacia atrás desde el final y sólo la cola: `tapar` la llama en cada `/` con todo lo leído, y una expresión sobre
+ * el texto entero hace la cuenta cuadrática en un archivo grande.
+ */
 function empiezaRegex(previo) {
-  const t = previo.replace(/\s+$/, '');
-  if (!t) return true;
+  let fin = previo.length;
+  while (fin > 0 && /\s/.test(previo[fin - 1])) fin--;
+  if (!fin) return true;
+  // la palabra clave más larga tiene 6 letras: con 16 queda lugar para el límite de palabra de adelante
+  const t = previo.slice(Math.max(0, fin - 16), fin);
   if (/[(,=:[!&|?{};+\-*%<>~^]$/.test(t)) return true;
   return /\b(return|typeof|case|do|else|in|of|new|delete|void|throw|await|yield)$/.test(t);
 }

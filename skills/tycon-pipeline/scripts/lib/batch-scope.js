@@ -258,6 +258,8 @@ function frenoDelCierre({ markerPath, estado, sid }) {
     return { texto: '🔒 cierre: el diff entero salió delicado y «Aprobar el plan» volvió a una persona. Hasta que lo apruebe ella, no se guarda (la aprobación de la coordinadora no alcanza).' };
   }
   if (!marker || !marker.planApproval || marker.planApproval.mode !== 'revision') return null;
+  // la coordinadora ya lo aprobó como delicado, con `plan-approval:delicada` delegada en el perfil: no hay qué reabrir
+  if (marker.planApproval.delicada === true) return null;
   const path = require('path');
   const repo = marker.repoPath || null;
   const story = marker.storyPath ? (path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(repo || process.cwd(), marker.storyPath)) : null;

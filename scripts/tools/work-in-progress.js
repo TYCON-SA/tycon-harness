@@ -1071,11 +1071,13 @@ function hourOfNote(d) {
   return {
     ...(Number.isFinite(until) ? { endAt: until, hourAt: at, promiseAt: at } : {}),
     ...(Number.isFinite(first) ? { promisedAt: first } : {}),
-    ...(d.waitingFor ? { waitingFor: String(d.waitingFor), waitingSince: Number.isFinite(since) ? since : null } : {}),
+    ...(d.waitingFor ? { waitingFor: String(d.waitingFor), waitingSince: Number.isFinite(since) ? since : null, ...waitingKindOf(d) } : {}),
   };
 }
 // una espera que ya empieza diciéndolo («espera a main (main-1)») no lo dice dos veces
 const waitText = (w) => (/^espera\b/i.test(String(w)) ? String(w) : `espera ${w}`);
+// a qué espera, si la nota lo dice: la oficina la pone en su grupo
+const waitingKindOf = (d) => (d.waitingKind === 'main' || d.waitingKind === 'session' ? { waitingKind: d.waitingKind } : {});
 const waitingEnd = (d) => {
   const since = Date.parse(d.waitingSince);
   return `${waitText(d.waitingFor)}${Number.isFinite(since) ? ` desde las ${hhmm(since)}` : ''}`;
@@ -1535,7 +1537,7 @@ function buildWip(opts = {}) {
     // una nota sin texto es la espera de una historia (`doing --waiting-for`): sin la historia abierta no dice qué hace
     if (!pipe && !d.text) continue;
     if (pipe) {
-      if (d.waitingFor) { Object.assign(extra[pipe.i], { waitingFor: String(d.waitingFor), waitingSince: hourOfNote(d).waitingSince }); rows[pipe.i].end = waitingEnd(d); }
+      if (d.waitingFor) { Object.assign(extra[pipe.i], { waitingFor: String(d.waitingFor), waitingSince: hourOfNote(d).waitingSince, ...waitingKindOf(d) }); rows[pipe.i].end = waitingEnd(d); }
       else {
         // la hora de la nota es de la ejecución si la nombra o si la de su paso ya venció; si no, es de lo que hace mientras tanto
         const run = extra[pipe.i];
