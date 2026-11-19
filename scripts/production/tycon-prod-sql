@@ -194,11 +194,19 @@ soltar_turno(){ [ "$TENGO_TURNO" = 1 ] && [ "$(cat "$TURNO/pid" 2>/dev/null)" = 
 trap soltar_turno EXIT
 # una puerta terminada por señal también suelta su turno: sin esto bash sale sin correr el trap de EXIT
 trap 'exit 143' TERM; trap 'exit 130' INT; trap 'exit 129' HUP
+# cuándo se tocó una carpeta, en segundos; si no se puede leer, ahora. `stat -f %m` es el de macOS; en Linux (la CI)
+# `stat -f` habla del sistema de archivos y sale 0 con otro texto, así que se acepta sólo un número
+segundos_de(){
+  local s
+  s="$(stat -f %m "$1" 2>/dev/null)"; [[ "$s" =~ ^[0-9]+$ ]] || s="$(stat -c %Y "$1" 2>/dev/null)"
+  [[ "$s" =~ ^[0-9]+$ ]] || s="$(date +%s)"
+  printf '%s' "$s"
+}
 turno_abandonado(){
   local pid edad
   pid="$(cat "$TURNO/pid" 2>/dev/null)"
   if [[ "$pid" =~ ^[0-9]+$ ]] && ! kill -0 "$pid" 2>/dev/null; then return 0; fi
-  edad=$(( $(date +%s) - $(stat -f %m "$TURNO" 2>/dev/null || date +%s) ))
+  edad=$(( $(date +%s) - $(segundos_de "$TURNO") ))
   # sin pid escrito todavía: recién creado; se da por abandonado sólo si pasó lo que dura un cuadro
   [ "$edad" -gt $((CUADRO_ESPERA + 30)) ]
 }
@@ -220,7 +228,7 @@ tomar_turno(){ # $1 = lo que dice quién pide (para el que espera)
       continue
     fi
     # el candado del rescate se tiene unos milisegundos: uno más viejo que 10 s es de una puerta que murió adentro
-    if [ -d "$TURNO.rescate" ] && [ $(( $(date +%s) - $(stat -f %m "$TURNO.rescate" 2>/dev/null || date +%s) )) -gt 10 ]; then
+    if [ -d "$TURNO.rescate" ] && [ $(( $(date +%s) - $(segundos_de "$TURNO.rescate") )) -gt 10 ]; then
       rmdir "$TURNO.rescate" 2>/dev/null
     fi
     if [ $(( $(date +%s) - desde )) -ge "$TURNO_ESPERA" ]; then
