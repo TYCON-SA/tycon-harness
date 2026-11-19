@@ -113,7 +113,8 @@ function historiaSensible({ declarados, codigo }) {
   try {
     const ok = require('./save-ok.js');
     if (declarados.some((rel) => formasDe(rel).some((f) => ok.esSensible(f)))) return true;
-    if (codigo.some((abs) => { const rel = desdeSuRepo(abs); return rel !== null && ok.esSensible(rel); })) return true;
+    // un archivo fuera de un repo no se sabe dónde cae en la lista: cuenta como sensible
+    if (codigo.some((abs) => { const rel = desdeSuRepo(abs); return rel === null || ok.esSensible(rel); })) return true;
     return codigo.some((abs) => ok.requiereSensible(fs.readFileSync(abs, 'utf8')));
   } catch (_) {
     return true;

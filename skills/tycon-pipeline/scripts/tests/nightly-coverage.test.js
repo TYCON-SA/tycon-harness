@@ -84,6 +84,11 @@ test('HistoriaSensible_RutaDesdeArribaOConPunto_EsSensible @story-8.310 @ac-13',
     assert.strictEqual(historiaSensible({ declarados: [rel], codigo: [] }), true, rel);
   }
   assert.strictEqual(historiaSensible({ declarados: ['src/a.js'], codigo: [] }), false);
+  // un archivo de código fuera de cualquier repo no se sabe dónde cae: sensible
+  const suelto = path.join(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'suelto-'))), 'x.js');
+  temporales.push(path.dirname(suelto));
+  fs.writeFileSync(suelto, '// x\n');
+  assert.strictEqual(historiaSensible({ declarados: ['src/x.js'], codigo: [suelto] }), true);
 });
 
 test('T15 Signatures_ReglaDeEntrada_EsSensible @story-8.310 @ac-15', () => {
