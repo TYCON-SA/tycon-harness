@@ -480,6 +480,37 @@ test('Guion_ForSession_SalidaDeOtraSesion_PorDelegacionYSinFirma', (t) => {
   assert.strictEqual(otra.leer(DESTINO), antes, 'no tocó el marcador de ses-a');
 });
 
+// 🔴 Falla con: el freno deja pasar una excepción de trámite delegada y su guion la niega («no trae el control previo»):
+// owner-next la daría por delegada y la coordinadora no la podría firmar.
+test('ExcepcionesDeTramite_ForSession_ElGuionFirmaPorDelegacion', (t) => {
+  const designar = (lab) => {
+    const d = { name: 'relay-designation', status: 'ok', ts: new Date(AHORA - 3600000).toISOString(), sesion: COORD, rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
+    fs.appendFileSync(path.join(lab.estadoDir, 'gates.log'), `${[d, DS.confirmationRecord(d, new Date(AHORA - 3500000).toISOString())].map((l) => JSON.stringify(l)).join('\n')}\n`);
+  };
+  const delegacion = (perfil) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella: HUELLA }) });
+  const casos = [
+    ['escape:force-manual', (lab) => ['set-check', 'tests', 'green', '--force-manual', '--for-session', DESTINO]],
+    ['escape:ALLOW_DOD_EVIDENCE_WRITE', (lab) => ['sign-file', 'ALLOW_DOD_EVIDENCE_WRITE', path.join(lab.repo, '.advisors', 'dod.md'), '--for-session', DESTINO]],
+    ['escape:red-control-test-edit', (lab) => ['sign-file', 'red-control-test-edit', path.join(lab.repo, 'scripts', 'tests', 'x.test.js'), '--for-session', DESTINO]],
+  ];
+  for (const [firma, armar] of casos) {
+    const lab = laboratorioOtraSesion(t);
+    designar(lab);
+    const args = armar(lab);
+    const p = lab.pedir(lab.comando(args), { delegacion: delegacion({ ...PERFIL, delegated_signing: [firma] }) });
+    assert.deepStrictEqual([p.decision, p.via], ['allow', 'delegacion'], `${firma}: ${p.texto}`);
+    const r = lab.correr(args);
+    assert.strictEqual(r.status, 0, `${firma}: ${r.stdout}${r.stderr}`);
+    const firmadas = lab.gates().filter((g) => g.name === `${firma}-signed`);
+    assert.deepStrictEqual(firmadas.map((g) => g.via), ['delegacion'], firma);
+    assert.strictEqual(lab.vigentes().length, 0, `${firma}: el pedido se gasta`);
+    // sin su nombre en el perfil, la misma firma pide la ventana del dueño
+    const otro = laboratorioOtraSesion(t);
+    designar(otro);
+    assert.strictEqual(otro.pedir(otro.comando(armar(otro)), { delegacion: delegacion(PERFIL) }).decision, 'ask', `${firma} sin delegar`);
+  }
+});
+
 test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {
   const designar = (lab, { sesion = COORD, confirmada = true } = {}) => {
     const d = { name: 'relay-designation', status: 'ok', ts: new Date(AHORA - 3600000).toISOString(), sesion, rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
