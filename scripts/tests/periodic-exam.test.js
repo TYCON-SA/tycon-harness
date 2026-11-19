@@ -31,6 +31,7 @@ const NOMBRADOR = path.join(TCG, 'scripts', 'controls-bench', 'report-name.js');
 
 const E = require(EXAMEN);
 const N = require(NOMBRADOR);
+const RT = require(path.join(TCG, 'scripts', 'lib', 'result-travel.js'));
 
 // El estado renombrado a inglés: el nombre viejo sale del mapa (no se escribe literal).
 // En la copia pública el mapa no viaja: esos casos se saltean con motivo (sin nombre viejo no hay nada que migrar).
@@ -141,7 +142,8 @@ function banco(opts = {}) {
   fs.chmodSync(rutaSonda, 0o755);
 
   return { raiz, casa, repo, remoto, rutaCfg, rutaRunner, rutaSonda, bitacora, git, reporteSuites, reporteBanco,
-    reporteQueViaja: path.join(repo, E.RUTA_REPORTE_QUE_VIAJA),
+    // el reporte se guarda en la carpeta de estado de la casa y viaja desde ahí: el clon no se toca
+    reporteQueViaja: RT.keptPath('exam', E.RUTA_REPORTE_QUE_VIAJA, casa),
     intento: path.join(repo, 'scripts', 'controls-bench', '.bench', 'examen-intento.json'),
     sello: path.join(casa, '.claude', '.tycon-pipeline', 'periodic-exam-last-run'),
     lock: path.join(repo, 'scripts', 'controls-bench', '.bench', 'examen.lock') };
@@ -775,7 +777,7 @@ test('T39 el candado se toma ANTES de la sonda: dos ejecuciones simultáneas, un
 });
 
 test('T40 si el resultado no llegó a viajar, la propia máquina se entera', () => {
-  // Con el push rechazado, el sello y el reporte local quedan
+  // Con el push rechazado, el sello y el reporte guardado quedan
   // frescos, así que en la máquina designada —la única que puede arreglarlo— no se notaría nada.
   // La denuncia tiene que salir por el aviso, no sólo por el log de launchd: un canal invisible.
   const b = banco();
@@ -785,11 +787,10 @@ test('T40 si el resultado no llegó a viajar, la propia máquina se entera', () 
   fs.chmodSync(hook, 0o755);
 
   const r = correr(b);
-  assert.notStrictEqual(r.status, 0);
-  const intento = JSON.parse(fs.readFileSync(b.intento, 'utf8'));
-  assert.strictEqual(intento.estado, 'no-viajo', 'queda registrado que midió pero no llegó a nadie');
+  assert.strictEqual(r.status, 5, r.stdout + r.stderr);
+  assert.strictEqual(RT.readStatus(b.casa).pieces.exam.ok, false, 'queda registrado que midió pero no llegó a nadie (story 8.312)');
   const a = avisar(b);
-  assert.match(a.stdout, /no viaj|no lleg/i, 'y el aviso de ESTA máquina lo dice');
+  assert.match(a.stdout, /no se pudo publicar/i, 'y el aviso de ESTA máquina lo dice');
 });
 
 test('T45 la sonda prueba LAS DOS sesiones con una consulta real, no sólo la versión', () => {
@@ -854,17 +855,25 @@ test('T28 dry_run_dice_que_haria_sin_gastar_nada', () => {
 // T9 / T10 — el resultado viaja
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-test('T9 staging_selectivo: con el árbol sucio, sólo entra el reporte', () => {
+// Lo que hay en la rama de resultados del remoto: las rutas de sus archivos (vacío si no existe).
+const enLaRama = (b) => {
+  const r = spawnSync('git', ['-C', b.remoto, 'ls-tree', '-r', '--name-only', RT.BRANCH], { encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.split('\n').filter(Boolean) : [];
+};
+
+test('T9 staging_selectivo: con el árbol sucio, el clon no se toca y viaja sólo el reporte', () => {
   const b = banco();
   fs.writeFileSync(path.join(b.repo, 'no-mio.txt'), 'cambio del dev, no es del examen\n');
   fs.writeFileSync(path.join(b.repo, 'README.md'), 'editado por el dev\n');
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: b.repo, encoding: 'utf8' });
 
   const r = correr(b);
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
 
-  const tocados = execFileSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: b.repo, encoding: 'utf8' })
-    .split('\n').map((x) => x.trim()).filter(Boolean);
-  assert.deepStrictEqual(tocados, [E.RUTA_REPORTE_QUE_VIAJA], 'sólo el reporte, nunca git add -A');
+  // el resultado viaja como entrada de la rama de resultados, nunca como commit del clon
+  assert.strictEqual(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: b.repo, encoding: 'utf8' }), head, 'el clon no suma commits');
+  const viajo = enLaRama(b).filter((f) => f.includes('/files/'));
+  assert.ok(viajo.length === 1 && viajo[0].endsWith(`/files/${E.RUTA_REPORTE_QUE_VIAJA}`), `sólo el reporte, nunca git add -A — ${viajo}`);
 
   const sucio = execFileSync('git', ['status', '--porcelain'], { cwd: b.repo, encoding: 'utf8' });
   assert.match(sucio, /no-mio\.txt/, 'el trabajo del dev queda intacto y sin commitear');
@@ -873,9 +882,7 @@ test('T9 staging_selectivo: con el árbol sucio, sólo entra el reporte', () => 
 
 test('T9b staging_selectivo: lo que el dev YA tenía en el stage tampoco se lo lleva puesto', () => {
   // El caso que T9 no cubre: el dev dejó algo preparado en el stage y se fue a dormir. A las
-  // 2 de la mañana el examen commitea su reporte — y si el commit usara el índice tal como está,
-  // se llevaría ese trabajo ajeno adentro, con un mensaje que habla de otra cosa. `git add` de
-  // una sola ruta NO alcanza: lo que decide qué entra al commit es el índice ENTERO.
+  // 2 de la mañana el examen publica su reporte — y nada de lo que el dev dejó puede viajar ni cambiar.
   const b = banco();
   fs.writeFileSync(path.join(b.repo, 'del-dev.txt'), 'a medio terminar\n');
   b.git('add', '--', 'del-dev.txt');
@@ -883,24 +890,20 @@ test('T9b staging_selectivo: lo que el dev YA tenía en el stage tampoco se lo l
   const r = correr(b);
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
 
-  const tocados = execFileSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: b.repo, encoding: 'utf8' })
-    .split('\n').map((x) => x.trim()).filter(Boolean);
-  assert.deepStrictEqual(tocados, [E.RUTA_REPORTE_QUE_VIAJA], '🔴 el trabajo del dev NO entra al commit del examen');
+  assert.ok(!enLaRama(b).some((f) => f.endsWith('del-dev.txt')), '🔴 el trabajo del dev NO viaja con el examen');
   assert.match(execFileSync('git', ['status', '--porcelain'], { cwd: b.repo, encoding: 'utf8' }),
     /^A {2}del-dev\.txt$/m, 'y le queda tal cual lo había dejado: preparado, sin commitear');
 });
 
-test('T10b el push usa la rama actual, no la rama por defecto del remoto', () => {
-  // `git push origin HEAD` funciona, pero `git pull --rebase origin HEAD` resuelve la rama por
-  // DEFECTO del remoto. En un repo cuya rama de trabajo no es la default, el reintento traería la
-  // rama equivocada — y el reintento existe justamente para el caso en que alguien más movió la rama.
+test('T10b con el clon en otra rama, viaja a la rama de resultados y la rama del clon no se empuja', () => {
+  // El reporte va siempre a la rama de resultados, y la rama en la que trabaja la persona no se toca.
   const b = banco();
   b.git('checkout', '-q', '-b', 'rama-de-trabajo');
-  b.git('push', '-q', '-u', 'origin', 'rama-de-trabajo');
   const r = correr(b);
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
-  const remoto = execFileSync('git', ['-C', b.remoto, 'log', '-1', '--name-only', '--format=', 'rama-de-trabajo'], { encoding: 'utf8' });
-  assert.match(remoto, /ultimo-examen\.json/, 'el reporte llegó a la rama en la que se estaba trabajando');
+  assert.ok(enLaRama(b).some((f) => f.endsWith(`/files/${E.RUTA_REPORTE_QUE_VIAJA}`)), 'el reporte llegó a la rama de resultados');
+  assert.notStrictEqual(spawnSync('git', ['-C', b.remoto, 'rev-parse', '--verify', '--quiet', 'refs/heads/rama-de-trabajo']).status, 0,
+    'la rama del clon no se empujó');
 });
 
 test('T10 push_fallido_conserva_el_resultado: el reporte sobrevive en disco y el log lo dice', () => {
@@ -913,7 +916,7 @@ test('T10 push_fallido_conserva_el_resultado: el reporte sobrevive en disco y el
 
   const r = correr(b);
   assert.notStrictEqual(r.status, 0, 'el resultado no llegó a nadie: eso necesita un humano');
-  assert.match(r.stdout + r.stderr, /push/i, 'lo dice en el log');
+  assert.match(r.stdout + r.stderr, /empuj/i, 'lo dice en el log');
   assert.match(r.stdout + r.stderr, /3|reintent/i, 'reintentó');
   assert.ok(fs.existsSync(b.reporteQueViaja), '🔴 el resultado NO se borra');
   const rep = JSON.parse(fs.readFileSync(b.reporteQueViaja, 'utf8'));
@@ -1803,7 +1806,7 @@ test('T73 exam_reads_maintainers_clone: en la versión bajada, --dry-run lee la 
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /máquina designada: Devas-Mac-mini/, `la máquina designada sale del clon — «${r.stdout}»`);
   assert.match(r.stdout, /HOY LE TOCA/, 'y le toca correr');
-  assert.ok(r.stdout.includes(path.join(b.repo, E.RUTA_REPORTE_QUE_VIAJA)), `el reporte que viaja va al clon — «${r.stdout}»`);
+  assert.ok(r.stdout.includes(`publica desde:     ${b.repo}`), `el reporte viaja desde el clon (story 8.312) — «${r.stdout}»`);
   assert.match(r.stdout, /del clon de mantenimiento/, 'y lo dice');
 });
 
@@ -1872,7 +1875,8 @@ test('T76 exam_own_config_wins: un árbol que designa máquina (un clon completo
     { encoding: 'utf8', env: ambienteDeLaMaquina(b, { TYCON_EXAM_MACHINE: 'Devas-Mac-mini' }) });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /máquina designada: Otra-Mac/, `manda la configuración propia — «${r.stdout}»`);
-  assert.ok(r.stdout.includes(path.join(b.arbol, E.RUTA_REPORTE_QUE_VIAJA)), 'y el reporte queda en el árbol propio');
+  // el árbol propio se nombra por su ruta real (en macOS, /var es /private/var)
+  assert.ok(r.stdout.includes(`publica desde:     ${fs.realpathSync(b.arbol)}`), `y el reporte viaja desde el árbol propio — «${r.stdout}»`);
   // y una máquina que no usa la versión bajada tampoco mira el clon de mantenimiento
   const c = maquinaConClonDeMantenimiento({ release: false });
   const r2 = spawnSync(process.execPath, [path.join(c.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--dry-run'],
@@ -2308,7 +2312,7 @@ test('T79 exam_reads_team_key_from_maintainers_clone: la máquina designada sale
   assert.match(r.stdout, /HOY LE TOCA/, 'y le toca correr');
   assert.match(r.stdout, /monday, thursday 03:00/, `la frecuencia sale del árbol instalado — «${r.stdout}»`);
   assert.ok(r.stdout.includes(path.join(b.repo, '.tycon', 'exam-config.json')), `y dice de dónde salió la máquina — «${r.stdout}»`);
-  assert.ok(r.stdout.includes(path.join(b.repo, E.RUTA_REPORTE_QUE_VIAJA)), 'el reporte que viaja va al clon');
+  assert.ok(r.stdout.includes(`publica desde:     ${b.repo}`), 'el reporte viaja desde el clon');
   // control: sin la clave del equipo en el clon, nadie designado
   fs.rmSync(path.join(b.repo, '.tycon', 'exam-config.json'));
   const sin = spawnSync(process.execPath, [path.join(b.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--dry-run'],

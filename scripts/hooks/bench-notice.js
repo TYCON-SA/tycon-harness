@@ -109,8 +109,20 @@ try { ({ rubrosNoMedidos } = require(path.join(__dirname, '..', 'controls-bench'
 // (vacía) callaría sobre el examen y dejaría el sello de la corrida sin reporte que lo respalde.
 let LUGAR_EXAMEN = null;
 try { if (EXAMEN && typeof EXAMEN.lugarDelExamen === 'function') LUGAR_EXAMEN = EXAMEN.lugarDelExamen(); } catch { /* clon viejo */ }
-const RUTA_EXAMEN = leerVariable('TYCON_EXAM_REPORT')
-  || (LUGAR_EXAMEN ? path.join(LUGAR_EXAMEN.repo, EXAMEN.RUTA_REPORTE_QUE_VIAJA) : path.join(__dirname, '..', 'controls-bench', 'ultimo-examen.json'));
+// El camino de los resultados de la noche (scripts/lib/result-travel.js): dónde se guardan y si viajaron. Sin él (clon
+// viejo, o el hook copiado solo), no hay nada de eso que leer.
+let VIAJE = null;
+try { VIAJE = require(path.join(__dirname, '..', 'lib', 'result-travel.js')); } catch { /* clon viejo */ }
+// El reporte del examen más nuevo, por `ts`, entre el del clon y el guardado en la carpeta de estado: uno publicado que el
+// clon todavía no bajó vive en el estado, y leer sólo el del clon denunciaría un examen viejo. Con la variable, manda ella.
+const RUTA_EXAMEN = leerVariable('TYCON_EXAM_REPORT') || (() => {
+  const delClon = LUGAR_EXAMEN ? path.join(LUGAR_EXAMEN.repo, EXAMEN.RUTA_REPORTE_QUE_VIAJA) : path.join(__dirname, '..', 'controls-bench', 'ultimo-examen.json');
+  if (!VIAJE || !EXAMEN) return delClon;
+  let guardado;
+  try { guardado = VIAJE.keptPath('exam', EXAMEN.RUTA_REPORTE_QUE_VIAJA); } catch { return delClon; }
+  const fecha = (p) => { const r = readJson(p); const t = r && r.ts ? Date.parse(r.ts) : NaN; return Number.isFinite(t) ? t : -Infinity; };
+  return fecha(guardado) > fecha(delClon) ? guardado : delClon;
+})();
 
 function readJson(p) {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
@@ -568,6 +580,66 @@ function estadoDelExamen(benchDir) {
   return lineas;
 }
 
+// El nocturno lleva las entradas a main cerca de las 07:15 UTC; lo publicado después espera a la noche siguiente.
+// 36 h cubren una noche perdida por la hora, no dos.
+const PLAZO_DEL_NOCTURNO_MS = 36 * 60 * 60 * 1000;
+/**
+ * ¿Viajaron los resultados de la noche? (scripts/lib/result-travel.js). Una línea por pieza que no pudo publicar; y de lo
+ * publicado, lo que `carried.json` de `origin/main` del clon dice rechazado, o que no llegó a main en el plazo. Sin salir
+ * a la red: con la copia del clon anterior al plazo, no se sabe, y se dice con el comando para traerla.
+ */
+function estadoDelViaje() {
+  if (!VIAJE) return [];
+  const QUE = 'resultados de la noche';
+  const st = VIAJE.readStatus();
+  if (st.state === 'missing') return [];
+  if (st.state === 'unreadable') return [`🟠 ${QUE}: no sé si viajaron — no puedo leer ${limpio(st.path, 300)} (${limpio(st.why)})`];
+  let ND = null;
+  try { ND = require(path.join(__dirname, '..', 'lib', 'night-data.js')); } catch { /* clon viejo */ }
+  const dir = LUGAR_EXAMEN && LUGAR_EXAMEN.repo;
+  let llevados = null;
+  const leerLlevados = () => {
+    if (llevados) return llevados;
+    if (!ND || !dir) return (llevados = { state: 'unknown', why: 'no sé cuál es el clon de mantenimiento' });
+    const r = ND.readPublished(dir, VIAJE.CARRIED);
+    if (r.from !== 'published') return (llevados = { state: 'unknown', why: r.why || 'no pude leer lo publicado' });
+    if (r.state === 'missing') return (llevados = { state: 'ok', entries: {} });
+    try {
+      const d = JSON.parse(r.text);
+      return (llevados = { state: 'ok', entries: d && d.entries && typeof d.entries === 'object' ? d.entries : {} });
+    } catch { return (llevados = { state: 'unknown', why: `${VIAJE.CARRIED} de main no es JSON` }); }
+  };
+  const lineas = [];
+  for (const [pieza, nombre] of Object.entries(VIAJE.PIECES)) {
+    const p = st.pieces[pieza];
+    if (!p || typeof p !== 'object') continue;
+    if (p.ok === false) {
+      lineas.push(`🔴 ${QUE}: ${nombre} no se pudo publicar (${limpio(String(p.at || '?').slice(0, 10), 10)}): ${limpiarLinea(p.motivo || 'sin motivo', 300)}`
+        + ` — lo medido quedó guardado en ${limpio(path.join(VIAJE.rootDir(), pieza), 300)}`);
+      continue;
+    }
+    if (!p.entry || !p.publishedAt) continue;
+    const t = Date.parse(p.publishedAt);
+    const fecha = limpio(String(p.publishedAt).slice(0, 10), 10);
+    const c = leerLlevados();
+    const e = c.entries && c.entries[p.entry];
+    if (e && e.status === 'carried') continue;
+    if (e && e.status === 'rejected') {
+      lineas.push(`🔴 ${QUE}: ${nombre} (publicado el ${fecha}) no entró a main: ${limpiarLinea(e.reason || 'sin motivo', 200)} — el nocturno rechazó su entrada`);
+      continue;
+    }
+    if (Number.isNaN(t) || Date.now() - t <= PLAZO_DEL_NOCTURNO_MS) continue;
+    const vieja = c.state === 'ok' ? ND.copyAfter(dir, t + PLAZO_DEL_NOCTURNO_MS) : c.why;
+    if (vieja) {
+      lineas.push(`🟠 ${QUE}: no sé si ${nombre} (publicado el ${fecha}) llegó a main — ${limpio(vieja, 200)}`);
+      if (ND && dir) lineas.push(ND.fetchHint(dir));
+      continue;
+    }
+    lineas.push(`🔴 ${QUE}: ${nombre} se publicó el ${fecha} y no llegó a main en 36 h — revisar el trabajo NightResults del pipeline "Banco de controles (nocturno)"`);
+  }
+  return lineas;
+}
+
 // 🔴 El examen se evalúa Y SE IMPRIME acá arriba, en su propio `try`, ANTES de tocar nada del
 // banco. Todo lo de abajo vive dentro de un único bloque que atrapa cualquier error y se calla
 // (fail-open: un aviso jamás puede romper el arranque de sesión) — así que si la denuncia del
@@ -579,6 +651,13 @@ try {
   for (const l of estadoDelExamen(BENCH)) console.log(l);
 } catch (e) {
   console.log(`examen de revisores: no pude evaluar si está corriendo (${limpio(e && e.message)}) — asumilo NO medido`);
+}
+// Lo mismo con el viaje de los resultados de la noche: su estado vive en la carpeta de estado, no en .bench/, y se dice
+// aunque esta máquina no tenga .bench/.
+try {
+  for (const l of estadoDelViaje()) console.log(l);
+} catch (e) {
+  console.log(`resultados de la noche: no pude evaluar si viajaron (${limpio(e && e.message)}) — asumilo NO medido`);
 }
 if (NOCTURNOS) {
   try {
@@ -665,13 +744,10 @@ try {
     }
     if (r.kind === 'examen-periodico-intento') {
       // Un intento que no terminó NO es un verde y NO es una medición: es un "no pude mirar".
-      if (r.estado === 'no-viajo') {
-        // Midió bien, pero el resultado no llegó a nadie. En la máquina que lo corrió el sello y el
-        // reporte local quedan frescos, así que sin esta línea el único lugar donde se sabría sería
-        // el log de launchd — un canal invisible.
-        problems.push(`el examen midió pero el resultado NO VIAJÓ (${String(r.ts || '').slice(0, 16)}): ${r.motivo || 'sin motivo'}`
-          + ` — el resto del equipo no lo ve; hay que pushearlo a mano`);
-      } else if (r.estado !== 'completo') {
+      // `no-viajo` es un intento de antes de la rama de resultados: midió bien. Que un resultado no viajó lo dice ahora la
+      // línea de los resultados de la noche; acá no es «incompleto».
+      if (r.estado === 'no-viajo') continue;
+      if (r.estado !== 'completo') {
         problems.push(`el examen de revisores quedó INCOMPLETO (${String(r.ts || '').slice(0, 16)}): ${r.motivo || 'sin motivo registrado'}`
           + ` — es una ejecución que NO midió, no un resultado`);
       }
