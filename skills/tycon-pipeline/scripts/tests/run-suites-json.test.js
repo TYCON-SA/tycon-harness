@@ -1655,6 +1655,22 @@ test('T4b RunSuites_CentralPiece_ReactivatedRunsAndDeferredHasEntry @story-8.299
   for (const d of r.resumen.deferred_suites) assert.deepEqual(Object.keys(d.entrada || {}).sort(), ['raiz', 'ruta'], JSON.stringify(d));
 });
 
+test('RunSuites_RerunAndReactivated_RunsOnceNotAbsent @story-8.309 @ac-6 @ac-7 — una suite repetida que además vuelve por sus carpetas corre una vez y no sale ausente', () => {
+  // 🔴 mutación: la rama de las repetidas no la anota como hallada entre las que vuelven, y la corrida sale roja por una
+  //    «ausente» que corrió en verde (también una suite en espera a main cuya carpeta se tocó).
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/g.test.js', gate_only_when_touching: ['G/**'] }] });
+  f.escribir('arnes', 'tests/g.test.js', 'process.exit(0)');
+  const tf = path.join(f.root, 'touched.json');
+  fs.writeFileSync(tf, JSON.stringify({ known: true, files: ['G/a.js'], sources: {}, rerun_suites: ['tests/g.test.js'], reactivated_suites: ['arnes:tests/g.test.js'] }));
+  const out = path.join(f.root, 'o.json');
+  const r = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, '--touched', tf, '--scoped-by-repo', 'la CI'], { encoding: 'utf8' });
+  const res = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.deepEqual(res.ausentes, []);
+  assert.deepEqual(res.suites.map((s) => s.entrada.ruta), ['tests/g.test.js'], 'corrió una sola vez');
+  assert.doesNotMatch(r.stdout, /AUSENTE/);
+});
+
 test('T4 RunSuites_Reactivated_PastFiltersOrAbsent @story-8.299 @ac-3 @ac-4 @ac-9 — una reactivada corre sin filtros, una que no está en la lista es ausente, con --suite no se miran, y cada diferida trae su entrada', () => {
   // 🔴 mutación: pasar la reactivada por los filtros la vuelve a diferir (no nombra lo tocado) y lo guardado queda sin
   // medirla; una reactivada que no está en la lista, salteada callada, dejaría verde lo que nadie corrió.

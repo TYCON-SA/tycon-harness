@@ -603,6 +603,8 @@ function main(argv, env = process.env) {
     // se la reconoce por su entrada de la lista, la misma clave con que se guardó la repetición.
     if (rerun.has(p.entrada.ruta)) {
       rerunHallada.add(p.entrada.ruta);
+      // si además vuelve por sus carpetas, también quedó hallada: corre una sola vez, y no es una ausente
+      if (reactivadas.has(`${p.entrada.raiz}:${p.entrada.ruta}`)) reactivadaHallada.add(`${p.entrada.raiz}:${p.entrada.ruta}`);
       console.log(`REPETIDA ${p.name} — ${motivoDeRepetida(p.entrada.ruta)}`);
       (p.exclusive ? exclusives : parallel).push(p);
       continue;

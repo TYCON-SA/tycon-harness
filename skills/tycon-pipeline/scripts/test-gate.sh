@@ -961,11 +961,17 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # Roja con una suite que esperaba a main: si main ya pasó y esta rama no lo trae, se dice antes de que se arregle la
   # suite (lib/main-check.js branch-check, que no afirma nada que no pueda comprobar).
   _tg_branch_check() {
-    local id linea
-    id="$(node -e 'try{const w=JSON.parse(process.argv[1]);const r=JSON.parse(require("fs").readFileSync(process.argv[2],"utf8"));const rojas=new Set((r.fallas||[]).map((f)=>f&&f.entrada&&f.entrada.ruta));if(w.id&&(w.suites||[]).some((s)=>rojas.has(s)))process.stdout.write(w.id)}catch(e){}' "$TG_WAIT_JSON" "$RESULTS_DIR/suites.json")"
+    local id linea rc=0
+    id="$(node -e 'try{const w=JSON.parse(process.argv[1]);const r=JSON.parse(require("fs").readFileSync(process.argv[2],"utf8"));const rojas=new Set((r.fallas||[]).map((f)=>f&&f.entrada&&f.entrada.ruta));if(w.id&&(w.suites||[]).some((s)=>rojas.has(s)))process.stdout.write(w.id)}catch(e){process.stdout.write("?")}' "$TG_WAIT_JSON" "$RESULTS_DIR/suites.json")"
+    if [[ "$id" == "?" ]]; then
+      echo "🟡 [test-gate] no pude comprobar si main ya pasó (la espera o el resumen no se dejan leer): si una suite esperaba a main, traé main antes de tocarla" >&2
+      return 0
+    fi
     [[ -n "$id" ]] || return 0
-    linea="$(node "$SCRIPT_DIR/lib/main-check.js" branch-check --repo "$REPO_RUN" --id "$id" 2>/dev/null || true)"
-    [[ -n "$linea" ]] && echo "🔴 [test-gate] $linea" >&2
+    linea="$(node "$SCRIPT_DIR/lib/main-check.js" branch-check --repo "$REPO_RUN" --id "$id" 2>&1)" || rc=$?
+    if [[ "$rc" != "0" ]]; then echo "🟡 [test-gate] no pude comprobar si main ya pasó (branch-check salió $rc: ${linea%%$'\n'*})" >&2
+    elif [[ "$linea" == "no pude comprobar"* ]]; then echo "🟡 [test-gate] $linea" >&2
+    elif [[ -n "$linea" ]]; then echo "🔴 [test-gate] $linea" >&2; fi
     return 0
   }
   if [[ -n "$SUITE_ONLY" ]]; then
@@ -1013,7 +1019,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
       # nota de la sesión) y la suite sale de la lista de repetir primero. No es verde ni rojo: no queda tests-result.json.
       if [[ "$_tg_her" == "78" ]]; then
         # --merge: la espera de las otras suites sigue; esta repetición suma la suya, no la reemplaza
-        ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" waiting-on-main set --repo "$REPO_STORY" --tree "$REPO_RUN" --summary "$RESULTS_DIR/suites.json" --run "$TYCON_TEST_GATE_RUN" --merge ) \
+        ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" waiting-on-main set --repo "$REPO_STORY" --tree "$REPO_RUN" --summary "$RESULTS_DIR/suites.json" --run "$TYCON_TEST_GATE_RUN" --merge --single-suite ) \
           || echo "[test-gate] ⚠️  no pude anotar la espera a main: el check tests queda como lo dejó la corrida" >&2
         rm -f "$OUT_FILE"
         echo "🟡 [test-gate] $SUITE_ONLY está roja también en la punta de main, con los mismos casos: la corrida espera a main (arriba, el registro). No es un rojo de la historia: no toques esa prueba ni el código por eso; no quedó tests-result.json." >&2

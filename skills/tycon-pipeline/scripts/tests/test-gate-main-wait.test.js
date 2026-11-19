@@ -165,6 +165,9 @@ test('T5 MainWait_SingleSuiteRerun_Exit78 @story-8.309 @ac-5 — --suite de una 
   const repetidas = () => leer(path.join(roja(l).dir, 'repetidas.json'));
   r = puerta(l, ['--suite', RUTA('a')]);
   assert.equal(r.status, 78, r.out);
+  // la repetición sola no es la completa: no cambia el check de la completa, que sigue con su rojo (b, y lo que la
+  // completa haya dejado sin medir)
+  assert.match(String(marcador(l).checks.tests), /^red/, 'una --suite con 78 escondió el rojo de la completa');
   assert.ok(!(marcador(l).testsFailed || []).some((x) => x.ruta === RUTA('a')), 'a sigue en la lista');
   assert.deepEqual(esperaDe(l).suites, [RUTA('a')]);
   assert.equal(repetidas()[RUTA('a')], undefined, 'la repetición que espera a main se sumó a lo guardado');
@@ -177,6 +180,21 @@ test('T5 MainWait_SingleSuiteRerun_Exit78 @story-8.309 @ac-5 — --suite de una 
   r = puerta(l);
   assert.equal(r.status, 78, r.out);
   assert.doesNotMatch(r.out, /Repetí primero/);
+});
+
+test('T5b MainWait_SingleSuiteRerun_DoesNotHideFullRunRed @story-8.309 @ac-5 — una --suite con 78 no deja la completa en espera-main si la completa dejó un rojo que no está en la lista (una ausente)', () => {
+  // 🔴 mutación: la repetición sola deja `tests` en espera-main mirando sólo la lista de las que fallaron, que no trae las
+  //    ausentes ni las no medidas: el cierre del turno deja parar con un rojo propio de la historia.
+  const entradas = [{ raiz: 'arnes', ruta: RUTA('a') }, { raiz: 'arnes', ruta: RUTA('c') }, { raiz: 'arnes', ruta: RUTA('z') }];
+  const l = repoDeJuguete({ entradas, enMain: { a: ROJA('a'), c: ROJA('c') } });
+  escribirMarcador(l);
+  // la completa con el tope del juez en 1: a de main, c sin medir en main (sigue en la lista), z ausente
+  let r = puerta(l, [], { TYCON_MAIN_CHECK_MAX: '1' });
+  assert.equal(r.status, 1, r.out);
+  assert.match(r.out, /AUSENTE/);
+  r = puerta(l, ['--suite', RUTA('c')]);
+  assert.equal(r.status, 78, r.out);
+  assert.match(String(marcador(l).checks.tests), /^red/, 'la repetición sola escondió la ausente de la completa');
 });
 
 // ── T6: una suite que vuelve por sus carpetas, frente al juez ────────────────────────────────────────────────────────
@@ -420,6 +438,28 @@ test('MainWait_SameRun_PartsSum_NewRunReplaces @story-8.309 @ac-9 — dos partes
   assert.equal(esperas(l).length, 1, 'una entrada por repo');
   // el registro de main roto guarda la raíz de cada suite, para la espera de fondo
   assert.equal(estadoDeMain(l).data.broken[0].raiz[RUTA('a')], 'arnes');
+});
+
+test('MainWait_TwoRepos_OrderAndSinceKept @story-8.309 @ac-9 — con dos repos esperando, una corrida nueva no cambia el orden de los ids ni la hora de la espera', () => {
+  // 🔴 mutación: mover al final la entrada que se escribe da vuelta el texto de la nota y reinicia «desde las».
+  const l = repoDeJuguete({ enMain: { a: suite('a') } });
+  const otro = repoDeJuguete({ enMain: { a: suite('a') }, nombre: 'mw-otro-' });
+  escribirMarcador(l);
+  const resumen = (repo) => {
+    const f = path.join(tmp('mw-orden-'), 'suites.json');
+    fs.writeFileSync(f, JSON.stringify({ suites: [], fallas: [], ausentes: [], waiting_on_main: { sha: repo.base, suites: [{ ruta: RUTA('a'), raiz: 'arnes', casos: ['✖ a-1'] }] } }));
+    return f;
+  };
+  const set = (repo, run) => marker(l, ['waiting-on-main', 'set', '--repo', repo.repo, '--tree', repo.repo, '--summary', resumen(repo), '--run', run], { TYCON_TEST_GATE: '1' });
+  const nota = () => leer(path.join(l.home, '.claude', '.tycon-pipeline', 'doing', `${SID}.json`));
+  assert.equal(set(l, 'corrida-1').status, 0);
+  assert.equal(set(otro, 'corrida-1').status, 0);
+  const antes = nota();
+  const orden = esperas(l).map((w) => w.repo);
+  assert.equal(set(l, 'corrida-2').status, 0);
+  assert.deepEqual(esperas(l).map((w) => w.repo), orden, 'la corrida nueva cambió el orden');
+  assert.equal(nota().waitingFor, antes.waitingFor);
+  assert.equal(nota().waitingSince, antes.waitingSince, 'la hora de la espera se reinició');
 });
 
 test('MainWait_Mark_OnlyWithWait @story-8.309 @ac-9 · TG6 SharedCheck_MarkAfterGreenSibling @story-8.294 @ac-18 —mark deja el check en espera-main sólo con una espera anotada', () => {

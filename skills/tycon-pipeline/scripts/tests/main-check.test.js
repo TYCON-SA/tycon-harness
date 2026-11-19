@@ -649,3 +649,91 @@ test('MB5 Notice_OfficeWip_Fix_OpenAndClose @story-8.294 @ac-13 @ac-15 — el ar
   fs.writeFileSync(path.join(l.home, '.claude', '.tycon-pipeline', 'main-check', 'roto-1234.json'), '{ no es json');
   assert.match(aviso(), /main roto: no pude leer .*roto-1234\.json.*no medido/);
 });
+
+// ── Lo que encontró el pase adversarial de la 8.309 ─────────────────────────────────────────────────────────────────
+
+test('MC6 Wait_NotMeasured_TriesTheSameTipAgain @story-8.309 @ac-8 — una punta que no se pudo medir (copia ocupada) se vuelve a medir, y se dice por qué no', () => {
+  // 🔴 mutación: dar por medida la punta con un `no-se` deja el registro abierto hasta otro commit en main o las 8 h.
+  const l = lab();
+  unir(l, 's1', [A]);
+  arreglarMain(l, ['a']);
+  const r = conLib(l, `
+    const fs = require('fs');
+    const p = mc.statePaths(mc.mainRepoOf(${JSON.stringify(l.repo)}));
+    fs.mkdirSync(require('path').dirname(p.copyLock), { recursive: true });
+    fs.writeFileSync(p.copyLock, JSON.stringify({ pid: process.ppid, session: 'otra', since: new Date().toISOString(), touched: new Date().toISOString() }));
+    const log = [];
+    const w = mc.wait({ repo: ${JSON.stringify(l.repo)}, id: 'main-1', interval: 0, max: 5, readMemory: () => ({ pct: 90 }), log: (x) => log.push(x), sleepMs: () => { try { fs.unlinkSync(p.copyLock); } catch (_) {} } });
+    process.stdout.write(JSON.stringify({ w, log }));`, { TYCON_MAIN_CHECK_LOCK_WAIT_S: '0' });
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.w.code, 0, JSON.stringify(out));
+  assert.ok(out.log.some((x) => /no pude medir .*otra sesión está midiendo main/.test(x)), `no dijo por qué no midió: ${JSON.stringify(out.log)}`);
+});
+
+test('MC7 Close_AllCachedGreen_ClosesTheRecord @story-8.309 @ac-8 — con todas las suites ya guardadas en verde en una punta más nueva, el juicio y la espera cierran el registro', () => {
+  // 🔴 mutación: cerrar sólo cuando se midió algo nuevo deja el registro abierto con main verde.
+  const l = lab();
+  // A juzga en la punta vieja (main roto); B mide la punta arreglada sin registro abierto; después A se suma con su sha
+  const f1 = resumen(l, [[A, ['a-1']]]);
+  aplicar(l, f1, { CLAUDE_CODE_SESSION_ID: 'sA' });
+  const shaViejo = leer(f1).main_check.sha;
+  arreglarMain(l, ['a']);
+  assert.equal(aplicar(l, resumen(l, [[A, ['a-1']]]), { CLAUDE_CODE_SESSION_ID: 'sB' }).status, 1);
+  conLib(l, `mc.broken.join({ tree: ${JSON.stringify(l.repo)}, sha: ${JSON.stringify(shaViejo)}, suites: [{ ruta: ${JSON.stringify(A)}, raiz: 'arnes', casos: ['✖ a-1'] }], session: 'sA' });`);
+  const abierto = estadoDe(l).broken.find((b) => !b.closed);
+  assert.ok(abierto, 'no quedó un registro abierto para probar');
+  assert.equal(aplicar(l, resumen(l, [[A, ['a-1']]]), { CLAUDE_CODE_SESSION_ID: 'sA' }).status, 1);
+  assert.ok(estadoDe(l).broken.find((b) => b.id === abierto.id).closed, 'el juicio con todo en la caché no cerró el registro');
+});
+
+test('MC8 Close_OlderTip_DoesNotClose @story-8.309 @ac-8 — un verde de una punta más vieja que la del registro no lo cierra', () => {
+  // 🔴 mutación: cerrar con cualquier punta distinta dice «main pasó» con main roto.
+  const l = lab({ conCambio: false });
+  const viejo = l.base;
+  const otro = tmp('mc-otro-');
+  git(otro, 'clone', '-q', l.remoto, otro);
+  fs.writeFileSync(path.join(otro, 'docs-nuevo.md'), 'x\n');
+  git(otro, 'add', '-A'); git(otro, 'commit', '-q', '-m', 'otro'); git(otro, 'push', '-q', 'origin', 'main');
+  const nuevo = sha(otro);
+  git(l.repo, 'fetch', '-q', 'origin');
+  conLib(l, `mc.broken.join({ tree: ${JSON.stringify(l.repo)}, sha: ${JSON.stringify(nuevo)}, suites: [{ ruta: ${JSON.stringify(A)}, raiz: 'arnes', casos: [] }], session: 's1' });
+    mc.saveResult({ tree: ${JSON.stringify(l.repo)}, sha: ${JSON.stringify(viejo)}, ruta: ${JSON.stringify(A)}, result: { estado: 'verde' }, session: 's2' });`);
+  assert.equal(estadoDe(l).broken[0].closed, null, 'lo cerró una punta más vieja');
+  conLib(l, `mc.saveResult({ tree: ${JSON.stringify(l.repo)}, sha: ${JSON.stringify(nuevo)}, ruta: ${JSON.stringify(A)}, result: { estado: 'verde' }, session: 's2' });`);
+  assert.equal(estadoDe(l).broken[0].closed, null, 'la misma punta del registro no lo cierra');
+});
+
+test('MC9 Lock_EmptyFile_NotBrokenAtOnce @story-8.309 @ac-8 — un candado recién creado y todavía vacío no se rompe; uno vacío y viejo, sí', () => {
+  // 🔴 mutación: romper al instante un candado vacío deja a dos procesos con la misma copia de main.
+  const d = tmp('mc-candado-');
+  const f = path.join(d, 'x.lock');
+  const mc = require(LIB);
+  fs.writeFileSync(f, '', { flag: 'wx' });
+  const r = mc.takeLock(f, { staleMs: 900000, waitMs: 300, pollMs: 50, session: 's' });
+  assert.equal(r.ok, false, JSON.stringify(r));
+  const viejo = new Date(Date.now() - 60000);
+  fs.utimesSync(f, viejo, viejo);
+  const r2 = mc.takeLock(f, { staleMs: 900000, waitMs: 300, pollMs: 50, session: 's' });
+  assert.equal(r2.ok, true, JSON.stringify(r2));
+  assert.match(String(r2.broke), /ilegible/);
+  mc.releaseLock(f);
+});
+
+test('MC10 State_Unreadable_NotOverwritten_SaysIt @story-8.309 @ac-8 — un archivo de estado roto no se pisa, y branch-check dice que no pudo comprobar', () => {
+  // 🔴 mutación: leerlo como vacío y escribir encima borra los registros de main roto; callar el «no pude» deja pasar una
+  //    rama que no trae el arreglo de main.
+  const l = lab();
+  unir(l, 's1', [A]);
+  const { file } = (() => { const dir = path.join(l.home, '.claude', '.tycon-pipeline', 'main-check'); return { file: path.join(dir, fs.readdirSync(dir).find((x) => x.endsWith('.json'))) }; })();
+  fs.writeFileSync(file, '{ roto');
+  const j = unir(l, 's2', [A]);
+  assert.notEqual(j.status, 0, 'se sumó sobre un archivo roto');
+  assert.equal(fs.readFileSync(file, 'utf8'), '{ roto', 'pisó el archivo roto');
+  const bc = spawnSync(process.execPath, [LIB, 'branch-check', '--repo', l.repo, '--id', 'main-1'], { encoding: 'utf8', env: entorno(l) });
+  assert.match(`${bc.stdout}${bc.stderr}`, /no pude comprobar si main ya pasó/);
+  // status tampoco lo lee como «sin mediciones»: lo dice y sale 1
+  const st = spawnSync(process.execPath, [LIB, 'status', '--repo', l.repo], { encoding: 'utf8', env: entorno(l) });
+  assert.equal(st.status, 1, st.stdout);
+  assert.match(st.stdout, /no se deja leer/);
+  assert.doesNotMatch(st.stdout, /sin mediciones de main guardadas/);
+});

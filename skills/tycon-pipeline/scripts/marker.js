@@ -1519,12 +1519,13 @@ function limpiarEsperaMainEnDoing() {
  * punta de main, con los mismos casos; lib/main-check.js). Sólo lo llama test-gate.sh (TYCON_TEST_GATE=1). La espera es
  * una lista con una entrada por repo (el de la historia o un hermano): `{ repo, tree, id, sha, suites, since, run }`.
  *
- * `set --repo <r> --tree <árbol> --summary <suites.json> [--run <id>] [--merge]`: suma la sesión al registro de main roto
+ * `set --repo <r> --tree <árbol> --summary <suites.json> [--run <id>] [--merge] [--single-suite]`: suma la sesión al registro de main roto
  *   del repo del árbol medido (lo crea si no hay uno abierto) y anota la entrada del repo. Con el mismo `run` (las partes
  *   de una misma corrida, que heredan TYCON_TEST_GATE_RUN) o con `--merge` (la repetición de una suite sola) suma las
  *   suites a la entrada que había; si no, la reemplaza. Saca esas suites de la lista de «repetir primero» del repo y, si
  *   no queda otra roja de ese repo en la lista, deja el check `tests` (y `tests-suite`, si está) en `espera-main`: ni verde
- *   ni rojo. Anota la espera en el archivo `doing` de la sesión.
+ *   ni rojo; con `--single-suite` (la repetición de una suite sola), sólo `tests-suite`. Anota la espera en el archivo
+ *   `doing` de la sesión. La entrada de un repo que ya esperaba se reemplaza en su lugar.
  * `clear --repo <r> --measured <resumen>`: saca de la entrada del repo sólo las suites que corrieron en esta corrida (las
  *   de `suites` y `fallas` del resumen, por su entrada): una corrida que salió 0 sin correrlas (una cruzada, la de un
  *   hermano, una acotada) no las borra. Una entrada vacía se borra; sin ninguna, un check que dice `espera-main` pasa a
@@ -1560,7 +1561,6 @@ function cmdWaitingOnMain(argv) {
   const esperas = esperasMain(marker);
   const repo = opt('--repo') ? real(opt('--repo')) : null;
   const deEste = esperas.find((w) => w.repo === repo) || null;
-  const otras = esperas.filter((w) => w !== deEste);
   const nombres = (xs) => xs.map((r) => path.basename(String(r))).join(', ');
   const guardar = (lista, now) => {
     if (lista.length) marker.waitingOnMain = lista;
@@ -1617,7 +1617,8 @@ function cmdWaitingOnMain(argv) {
     const quedan = (Array.isArray(deEste.suites) ? deEste.suites : []).filter((r) => !medidas.has(r));
     const sacadas = (deEste.suites || []).filter((r) => medidas.has(r));
     if (!sacadas.length) return;
-    const lista = quedan.length ? [...otras, { ...deEste, suites: quedan }] : otras;
+    // en su lugar: el orden de las esperas no cambia por cuál se escribió último (la nota de la sesión y su hora dependen de él)
+    const lista = esperas.flatMap((w) => (w !== deEste ? [w] : quedan.length ? [{ ...deEste, suites: quedan }] : []));
     const now = nowIso();
     if (!lista.length) {
       for (const k of ['tests', 'tests-suite']) {
@@ -1662,14 +1663,17 @@ function cmdWaitingOnMain(argv) {
   const since = nowIso();
   const entrada = { repo, tree: real(opt('--tree')), id: rec.id, sha: w.sha, suites: [...rutas], since: suma && deEste.since ? deEste.since : since, run };
   marker.checks = marker.checks || {};
-  if (!otrasRojas.length) {
-    for (const k of ['tests', ...(marker.checks['tests-suite'] ? ['tests-suite'] : [])]) {
+  // la repetición de una suite sola (`--single-suite`) no es la completa: deja en espera sólo su check. El de la completa
+  // sigue como lo dejó ella: la lista de las que fallaron no trae sus ausentes ni lo que no midió
+  const singleSuite = argv.includes('--single-suite');
+  if (!otrasRojas.length || singleSuite) {
+    for (const k of singleSuite ? ['tests-suite'] : ['tests', ...(marker.checks['tests-suite'] ? ['tests-suite'] : [])]) {
       marker.checks[k] = 'espera-main';
       marker.checksProvenance = { ...(marker.checksProvenance || {}), [k]: 'test-gate' };
       marker.checksAt = { ...(marker.checksAt || {}), [k]: since };
     }
   }
-  guardar([...otras, entrada], since);
+  guardar(deEste ? esperas.map((w) => (w === deEste ? entrada : w)) : [...esperas, entrada], since);
   appendLog('gates.log', { name: 'waiting-on-main', status: otrasRojas.length ? 'partial' : 'waiting', story: marker.storyId || null, repo, id: rec.id, sha: w.sha, suites: [...rutas] });
   process.stdout.write(`main está roto en ${nombres([...rutas])}: espero a main (${rec.id})${otrasRojas.length ? `; siguen rojas de la historia: ${nombres(otrasRojas.map((x) => x.ruta))}` : ''}\n`);
 }

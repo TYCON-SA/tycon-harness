@@ -63,6 +63,7 @@ const FILE_LOCK_STALE_MS = 30 * 1000;
 const FILE_LOCK_WAIT_MS = 10 * 1000;
 const COPY_LOCK_STALE_MS = 15 * 60 * 1000;
 const COPY_LOCK_POLL_MS = 2000;
+const LOCK_EMPTY_GRACE_MS = 5000;
 const DEFAULTS = { max: 3, timeout: 600, lockWait: 900, fetchTimeout: 120 };
 
 const g = (dir, ...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', dir, ...a], { windowsHide: true, encoding: 'utf8' });
@@ -132,22 +133,30 @@ function takeLock(file, { staleMs, waitMs, pollMs, session }) {
   const deadline = Date.now() + waitMs;
   let broke = null;
   for (;;) {
+    // el candado nace con su contenido: se escribe aparte y se enlaza (falla si ya está), así nadie lo lee vacío
+    const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       const now = new Date().toISOString();
-      fs.writeFileSync(file, JSON.stringify({ pid: process.pid, session, since: now, touched: now }), { flag: 'wx' });
+      fs.writeFileSync(tmp, JSON.stringify({ pid: process.pid, session, since: now, touched: now }));
+      fs.linkSync(tmp, file);
       return { ok: true, broke };
     } catch (e) {
       if (e.code !== 'EEXIST') return { ok: false, held: null, motivo: `no pude escribir el candado (${e.message})` };
+    } finally {
+      try { fs.unlinkSync(tmp); } catch (_) { /* no llegó a existir */ }
     }
     const held = readLock(file);
-    const stale = lockStale(held, staleMs);
+    // uno que no se deja leer puede ser de otro guion que lo está escribiendo: se rompe sólo si ya es viejo
+    let edad = Infinity;
+    try { edad = Date.now() - fs.statSync(file).mtimeMs; } catch (_) { /* ya no está: la vuelta siguiente lo toma */ }
+    const stale = !held && edad < LOCK_EMPTY_GRACE_MS ? null : lockStale(held, staleMs);
     if (stale) {
       try { fs.unlinkSync(file); } catch (_) { /* otro lo rompió primero */ }
       broke = `candado de ${held ? `la sesión ${shortSid(held.session)}` : 'nadie'} roto: ${stale}`;
       continue;
     }
-    if (Date.now() >= deadline) return { ok: false, held, motivo: `otra sesión está midiendo main (${shortSid(held.session)}, desde las ${hhmm(held.since)})` };
+    if (Date.now() >= deadline) return { ok: false, held, motivo: held ? `otra sesión está midiendo main (${shortSid(held.session)}, desde las ${hhmm(held.since)})` : 'otra sesión está tomando el candado de main (todavía no se deja leer)' };
     sleep(pollMs);
   }
 }
@@ -164,22 +173,31 @@ function releaseLock(file) {
 
 const emptyState = (mainRepo) => ({ repo: mainRepo, results: {}, broken: [], next_id: 1 });
 
+/**
+ * El archivo de estado del repo. Sin archivo, el estado vacío. Uno que está y no se deja leer trae `unreadable` con el
+ * motivo: no es «no hay nada», y nadie lo pisa (`updateState` se niega).
+ */
 function readState(paths, mainRepo) {
-  try {
-    const s = JSON.parse(fs.readFileSync(paths.file, 'utf8'));
-    if (!s || typeof s !== 'object') return emptyState(mainRepo);
-    return { ...emptyState(mainRepo), ...s, results: s.results && typeof s.results === 'object' ? s.results : {}, broken: Array.isArray(s.broken) ? s.broken : [] };
-  } catch (_) { return emptyState(mainRepo); }
+  let text;
+  try { text = fs.readFileSync(paths.file, 'utf8'); } catch (e) {
+    return e.code === 'ENOENT' ? emptyState(mainRepo) : { ...emptyState(mainRepo), unreadable: errLine(e) };
+  }
+  let s;
+  try { s = JSON.parse(text); } catch (e) { return { ...emptyState(mainRepo), unreadable: errLine(e) }; }
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return { ...emptyState(mainRepo), unreadable: 'no es un objeto' };
+  return { ...emptyState(mainRepo), ...s, results: s.results && typeof s.results === 'object' ? s.results : {}, broken: Array.isArray(s.broken) ? s.broken : [] };
 }
 /**
  * Lee, cambia y guarda el archivo bajo su candado. `fn(state)` cambia UNA sección (relee lo demás tal como está, así una
- * escritura nunca pisa la otra sección); devuelve lo que `fn` devuelva. Lanza si no pudo tomar el candado o escribir.
+ * escritura nunca pisa la otra sección); devuelve lo que `fn` devuelva. Lanza si no pudo tomar el candado, si el archivo
+ * no se deja leer (no lo pisa) o si no pudo escribir.
  */
 function updateState(paths, mainRepo, session, fn) {
   const lock = takeLock(paths.lock, { staleMs: FILE_LOCK_STALE_MS, waitMs: FILE_LOCK_WAIT_MS, pollMs: 50, session });
   if (!lock.ok) throw new Error(`no pude tomar el candado del archivo de main-check (${lock.motivo})`);
   try {
     const state = readState(paths, mainRepo);
+    if (state.unreadable) throw new Error(`el archivo de main-check ${paths.file} no se deja leer (${state.unreadable}): no lo piso; arreglalo o borralo a conciencia`);
     const out = fn(state);
     const tmp = `${paths.file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`);
@@ -199,17 +217,22 @@ function saveResults(state, sha, measured, session) {
   for (const old of shas.slice(KEPT_SHAS)) delete state.results[old];
 }
 const latestAt = (bySuite) => Math.max(0, ...Object.values(bySuite || {}).map((r) => Date.parse(r && r.at) || 0));
+// `nuevo` desciende de `viejo` en el repo de `tree`; sin poder comprobarlo, no
+const masNuevaEn = (tree) => (viejo, nuevo) => g(tree, 'merge-base', '--is-ancestor', viejo, nuevo).status === 0;
 
 /** El registro abierto de main roto, o null. */
 const openRecord = (state) => state.broken.find((r) => r && !r.closed) || null;
 
 /**
- * Cierra el registro abierto si en `results[sha]` todas sus suites están verdes y `sha` es otra punta que la suya.
- * Devuelve el registro cerrado o null.
+ * Cierra el registro abierto si en `results[sha]` todas sus suites están verdes y `sha` es otra punta que la suya y más
+ * nueva (`esMasNueva(viejo, nuevo)`; sin ella, cualquier otra). Una punta más vieja que la del registro no lo cierra: un
+ * juicio que trajo main antes del commit que lo rompió y guardó tarde diría «main pasó» con main roto. Devuelve el
+ * registro cerrado o null.
  */
-function closeIfGreen(state, sha) {
+function closeIfGreen(state, sha, { esMasNueva } = {}) {
   const rec = openRecord(state);
   if (!rec || !sha || rec.sha === sha) return null;
+  if (esMasNueva && rec.sha && !esMasNueva(rec.sha, sha)) return null;
   const at = state.results[sha] || {};
   if (!(rec.suites || []).every((ruta) => at[ruta] && at[ruta].estado === 'verde')) return null;
   rec.closed = new Date().toISOString();
@@ -392,12 +415,19 @@ function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFA
     }
   }
 
-  // Lo medido se guarda (lo que no se pudo, no), y con la punta nueva el registro abierto se cierra si todo pasa.
-  if (Object.keys(measured).length) {
+  // Lo medido se guarda (lo que no se pudo, no), y con la punta nueva el registro abierto se cierra si todo pasa. Sin nada
+  // nuevo que guardar, también: el registro puede tener todas sus suites ya en verde en esta punta, guardadas por otra
+  // sesión antes de que el registro se abriera.
+  const cierraConLoGuardado = () => {
+    const st = readState(paths, mainRepo);
+    const rec = openRecord(st);
+    return Boolean(rec && rec.sha !== sha && (rec.suites || []).length && rec.suites.every((r) => ((st.results[sha] || {})[r] || {}).estado === 'verde'));
+  };
+  if (Object.keys(measured).length || cierraConLoGuardado()) {
     try {
       const { out, broke } = updateState(paths, mainRepo, sid, (state) => {
-        saveResults(state, sha, measured, sid);
-        return closeIfGreen(state, sha);
+        if (Object.keys(measured).length) saveResults(state, sha, measured, sid);
+        return closeIfGreen(state, sha, { esMasNueva: masNuevaEn(tree) });
       });
       if (broke) lines.push(`main-check: ${broke}`);
       if (out) {
@@ -545,7 +575,7 @@ function saveResult({ tree, sha, ruta, result, session, home }) {
   const paths = statePaths(mainRepo, home);
   const { out, broke } = updateState(paths, mainRepo, sid, (state) => {
     saveResults(state, sha, { [ruta]: result }, sid);
-    return closeIfGreen(state, sha);
+    return closeIfGreen(state, sha, { esMasNueva: masNuevaEn(tree) });
   });
   const fila = cerrarFila(out, home);
   if (fila) process.stderr.write(`${fila}\n`);
@@ -586,7 +616,9 @@ function wait({ repo, id, interval, max, home, session, readMemory, now = Date.n
   const deadline = now() + maxS * 1000;
   let medido = null;
   for (;;) {
-    const rec = readState(paths, mainRepo).broken.find((r) => r && r.id === id);
+    const st = readState(paths, mainRepo);
+    if (st.unreadable) return { code: 2, line: `main-check wait: el archivo de main-check ${paths.file} no se deja leer (${st.unreadable}): no puedo esperar a main` };
+    const rec = st.broken.find((r) => r && r.id === id);
     if (!rec) return { code: 2, line: `main-check wait: no hay un registro ${id} de main roto en ${mainRepo}` };
     if (rec.closed) return { code: 0, line: `main pasó: ${rec.closedSha}; traé main y repetí el portón` };
     const fetch = spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, 'fetch', '--quiet', 'origin', '+refs/heads/main:refs/remotes/origin/main'],
@@ -603,8 +635,11 @@ function wait({ repo, id, interval, max, home, session, readMemory, now = Date.n
         const fallas = (rec.suites || []).map((ruta) => ({ ruta, entrada: { raiz: raizDe(ruta), ruta }, casos: (rec.casos && rec.casos[ruta]) || [] }));
         const j = judge({ tree: repo, fallas, max: fallas.length, atajo: false, session, home });
         for (const l of j.lines) log(l);
-        medido = sha;
-        continue;
+        // una suite que no se pudo medir (la copia ocupada, un tope) no da la punta por medida: la vuelta siguiente la
+        // vuelve a medir, y se dice por qué no
+        const noSe = j.suites.filter((s) => s.verdict === 'no-se');
+        for (const s of noSe) log(`main-check wait: no pude medir ${s.ruta} en ${sha.slice(0, 10)} (${String(s.motivo).replace(/^no se pudo medir main: /, '')}): vuelvo a probar`);
+        if (!noSe.length) { medido = sha; continue; }
       }
     }
     if (now() >= deadline) return { code: 3, line: `main-check wait: pasaron ${maxS} s y main sigue roto (${id}): volvé a esperar, o mirá quién lo arregla (status)` };
@@ -618,8 +653,10 @@ function wait({ repo, id, interval, max, home, session, readMemory, now = Date.n
  */
 function branchCheck({ repo, id, home } = {}) {
   const mainRepo = mainRepoOf(repo);
-  if (!mainRepo) return null;
-  const rec = readState(statePaths(mainRepo, home), mainRepo).broken.find((r) => r && r.id === id);
+  if (!mainRepo) return `no pude comprobar si main ya pasó: ${repo} no es un repo de git`;
+  const st = readState(statePaths(mainRepo, home), mainRepo);
+  if (st.unreadable) return `no pude comprobar si main ya pasó: el archivo de main-check no se deja leer (${st.unreadable})`;
+  const rec = st.broken.find((r) => r && r.id === id);
   if (!rec || !rec.closedSha) return null;
   if (g(repo, 'merge-base', '--is-ancestor', rec.closedSha, 'HEAD').status !== 1) return null;
   const suites = (rec.suites || []).map((r) => path.basename(String(r))).join(', ');
@@ -634,6 +671,8 @@ function status({ repo, home } = {}) {
   if (!mainRepo) return { ok: false, motivo: `${repo || process.cwd()} no es un repo de git` };
   const paths = statePaths(mainRepo, home);
   const state = readState(paths, mainRepo);
+  // un archivo roto no es «sin mediciones»
+  if (state.unreadable) return { ok: false, motivo: `el archivo ${paths.file} no se deja leer (${state.unreadable})` };
   const shas = Object.keys(state.results).sort((a, b) => latestAt(state.results[b]) - latestAt(state.results[a]));
   const latest = shas[0] || null;
   const suites = latest ? Object.entries(state.results[latest]).map(([ruta, r]) => ({ ruta, ...r })) : [];
