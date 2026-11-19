@@ -92,8 +92,11 @@ JS
   printf '#!/bin/sh\necho "Invalid API key · Please run /login" >&2\nexit 1\n' > "$W/sonda-vencida.sh"
   chmod +x "$W/sonda-ok.sh" "$W/sonda-vencida.sh"
   export W TCG
-  REPORTE="$W/repo/scripts/controls-bench/ultimo-examen.json"
   SELLO="$W/casa/.claude/.tycon-pipeline/periodic-exam-last-run"
+  # el reporte se guarda en la carpeta de estado de la casa, la misma del sello, y viaja desde ahí a la rama de
+  # resultados (scripts/lib/result-travel.js)
+  VIAJE="$(dirname "$SELLO")/result-travel"
+  REPORTE="$VIAJE/exam/scripts/controls-bench/ultimo-examen.json"
   INTENTO="$W/repo/scripts/controls-bench/.bench/examen-intento.json"
 }
 
@@ -214,19 +217,21 @@ case "$1" in
   echo "del dev" > "$W/repo/del-dev.txt"
   ( cd "$W/repo" && git add -- del-dev.txt )
   echo "sucio" >> "$W/repo/README.md"
+  ANTES="$(cd "$W/repo" && git rev-parse HEAD)"
   correr --force >"$W/out" 2>&1 || fail "no corrió: $(cat "$W/out")"
-  T="$(cd "$W/repo" && git show --name-only --format= HEAD | tr -d ' \n')"
-  [ "$T" = "scripts/controls-bench/ultimo-examen.json" ] || fail "el commit tocó: $T"
-  ( cd "$W/repo" && git status --porcelain | grep -q 'del-dev.txt' ) || fail "se llevó el trabajo del dev"
-  ok "sólo el reporte entra al commit; lo del dev queda intacto" ;;
+  T="$(git -C "$W/remoto.git" ls-tree -r --name-only night-results | grep '/files/' | sed 's#^runs/[^/]*/files/##' | tr -d ' \n')"
+  [ "$T" = "scripts/controls-bench/ultimo-examen.json" ] || fail "la entrada lleva: $T"
+  [ "$(cd "$W/repo" && git rev-parse HEAD)" = "$ANTES" ] || fail "el clon sumó un commit"
+  ( cd "$W/repo" && git status --porcelain | grep -q '^A  del-dev.txt' ) || fail "se llevó el trabajo del dev"
+  ok "sólo el reporte viaja, a la rama de resultados; el clon y lo del dev quedan intactos" ;;
 
 10) armar
   printf '#!/bin/sh\nexit 1\n' > "$W/remoto.git/hooks/pre-receive"; chmod +x "$W/remoto.git/hooks/pre-receive"
   correr --force >"$W/out" 2>&1 && fail "salió 0 con el push rechazado"
-  grep -qi 'push' "$W/out" || fail "no lo dice en el log: $(cat "$W/out")"
+  grep -qi 'empuj' "$W/out" || fail "no lo dice en el log: $(cat "$W/out")"
   grep -qE '3|reintent' "$W/out" || fail "no reintentó"
   [ -f "$REPORTE" ] || fail "borró el resultado"
-  node -e "const r=require('$INTENTO'); if(r.estado!=='no-viajo') process.exit(1)" || fail "no quedó constancia de que no viajó"
+  node -e "const s=require('$VIAJE/status.json'); if(!s.exam||s.exam.ok!==false) process.exit(1)" || fail "no quedó constancia de que no viajó"
   ok "con el push rechazado el resultado sobrevive, se reintenta y queda dicho" ;;
 
 11) armar

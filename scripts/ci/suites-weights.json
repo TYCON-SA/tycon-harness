@@ -63,6 +63,8 @@
     "public-push-guard.test.js": 38,
     "bench-vacuity.test.sh": 38,
     "periodic-exam.test.js": 103,
+    "result-travel.test.js": 50,
+    "carry-night-results.test.js": 25,
     "site-demo.test.js": 6,
     "integrations-off.p2.test.sh": 37,
     "stuck-pr-notice.test.js": 37,

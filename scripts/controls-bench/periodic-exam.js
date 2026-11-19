@@ -146,8 +146,6 @@ const CANDADO_VENCE_MS = 48 * 60 * 60 * 1000;
 // a las 48 h del vencimiento, así que un candado genuinamente corrupto no se lleva un turno entero.
 const CANDADO_EN_ESCRITURA_MS = 10 * 1000;
 
-const REINTENTOS_DE_PUSH = 3;
-
 // Los días de `scheduled_days` se escriben en inglés. Un día que la tabla no conoce se denuncia: descartarlo callado
 // dejaría el examen programado un día menos.
 const DIAS = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
@@ -656,43 +654,29 @@ function actualizarRepo(repo, log) {
 }
 
 /**
- * Stagea SOLO el reporte (nunca `git add -A`) y pushea con reintento por rebase. `rutas` y `mensaje` los pasa
- * otra pieza que viaja por el mismo camino (la revisión de la semana); sin ellos, el reporte del examen.
+ * El camino de los resultados (scripts/lib/result-travel.js): se guardan en la carpeta de estado y viajan como una entrada
+ * a la rama de resultados, que un nocturno lleva a main. El clon no se toca: ni un commit, ni un archivo. Sin la
+ * biblioteca al lado (el banco copia este archivo suelto) el resultado no viaja, y se dice.
  */
-function viajar(repo, log, rutas = [RUTA_REPORTE_QUE_VIAJA], mensaje = `chore(examen): resultado del examen de revisores ${new Date().toISOString().slice(0, 10)}`) {
-  // 🔴 `timeout` + `GIT_TERMINAL_PROMPT=0`: bajo launchd no hay nadie que
-  // conteste un pedido de contraseña. Sin esto, un git que pregunta se queda esperando para
-  // siempre, y el label de launchd queda ocupado — el examen deja de correr hasta que alguien
-  // lo note por la denuncia de los 8 días. Colgar es peor que fallar.
-  const git = (...a) => spawnSync('git', ['-C', repo, ...a],
-    { encoding: 'utf8', timeout: 120000, env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0' }) });
-  const add = git('add', '--', ...rutas);   // hace falta: el reporte puede ser nuevo
-  if (add.status !== 0) return { ok: false, motivo: `git add falló: ${add.stderr}` };
-  if (git('diff', '--quiet', 'HEAD', '--', ...rutas).status === 0) {
-    log('el reporte no cambió: no hay nada que commitear'); return { ok: true };
+function caminoDeResultados() {
+  try { return require(path.join(__dirname, '..', 'lib', 'result-travel.js')); } catch (e) {
+    if (e && e.code === 'MODULE_NOT_FOUND') return null;
+    throw e;
   }
-  // 🔴 `--only -- <ruta>`: lo que decide qué entra a un commit es el índice ENTERO, no el último
-  // `git add`. Sin esto, un commit de las 2 de la mañana se lleva puesto lo que el dev haya dejado
-  // preparado antes de irse a dormir — dentro de un commit cuyo mensaje habla de otra cosa.
-  // El orden importa: todo lo que va DESPUÉS de `--` es ruta, así que el mensaje va antes.
-  const commit = git('commit', '-q', '--only', '-m', mensaje, '--', ...rutas);
-  if (commit.status !== 0) return { ok: false, motivo: `git commit falló: ${commit.stderr || commit.stdout}` };
+}
+const SIN_CAMINO = 'falta scripts/lib/result-travel.js al lado del examen: el resultado no viaja';
 
-  // La rama por NOMBRE: `pull --rebase origin HEAD` resuelve la rama por defecto DEL REMOTO, que
-  // no tiene por qué ser en la que se está trabajando — y el reintento existe justamente para
-  // cuando alguien más movió esta rama.
-  const rama = (git('rev-parse', '--abbrev-ref', 'HEAD').stdout || '').trim() || 'HEAD';
-  for (let intento = 1; intento <= REINTENTOS_DE_PUSH; intento++) {
-    const push = git('push', 'origin', rama);
-    if (push.status === 0) { log(`resultado pusheado a ${rama} (intento ${intento})`); return { ok: true }; }
-    log(`push rechazado (intento ${intento} de ${REINTENTOS_DE_PUSH}): ${(push.stderr || '').trim().split('\n').pop()}`);
-    if (intento === REINTENTOS_DE_PUSH) break;
-    const rebase = git('pull', '--rebase', 'origin', rama);
-    if (rebase.status !== 0) { git('rebase', '--abort'); log(`el rebase falló: ${(rebase.stderr || '').trim()}`); break; }
-  }
-  // 🔴 El archivo NO se borra ni se revierte: la medición fue buena, lo que falló fue el
-  // transporte. Queda en disco para que una persona lo pushee a mano.
-  return { ok: false, motivo: `no se pudo pushear tras ${REINTENTOS_DE_PUSH} reintentos — el resultado quedó en ${rutas.join(', ')}` };
+/** Dónde se guarda el resultado de una pieza; sin la biblioteca, en el repo, como siempre. */
+function dondeSeGuarda(pieza, rel, repo, home) {
+  const RT = caminoDeResultados();
+  return RT ? RT.keptPath(pieza, rel, home) : path.join(repo, rel);
+}
+
+/** Publica el resultado de una pieza. `archivos`: `[{ path, mode, source | text }]`. → `{ ok, motivo }` */
+function publicar(repo, log, pieza, archivos, mensaje, home) {
+  const RT = caminoDeResultados();
+  if (!RT) return { ok: false, motivo: SIN_CAMINO };
+  return RT.publish({ repo, piece: pieza, files: archivos, message: mensaje, home, log });
 }
 
 /**
@@ -887,8 +871,11 @@ async function main(argv) {
     // el día que no existe se marca acá también: --dry-run es el primer paso de la revisión a mano del examen
     for (const d of dias.desconocidos) console.log(`  ⚠ «${d}» no es un día: --install-task no instala el disparador hasta que se corrija`);
     console.log(`  última completa:   ${ctx.sello || '(nunca)'}`);
-    console.log(`  reporte que viaja: ${path.join(repo, RUTA_REPORTE_QUE_VIAJA)}`);
-    console.log(`  después del examen: los casos de guía (${contarCasosDeGuia()}), sólo si el examen terminó entero; mismo apagado TYCON_NO_NIGHTLY_EXAM · resultado: ${path.join(repo, RUTA_GUIAS_QUE_VIAJA)}`);
+    const RT = caminoDeResultados();
+    const viaje = RT ? ` → entrada en la rama ${RT.BRANCH}; un nocturno la lleva a main` : ` (${SIN_CAMINO})`;
+    console.log(`  reporte que viaja: ${dondeSeGuarda('exam', RUTA_REPORTE_QUE_VIAJA, repo)}${viaje}`);
+    console.log(`  publica desde:     ${repo} (su origin; el clon no se toca)`);
+    console.log(`  después del examen: los casos de guía (${contarCasosDeGuia()}), sólo si el examen terminó entero; mismo apagado TYCON_NO_NIGHTLY_EXAM · resultado: ${dondeSeGuarda('guides', RUTA_GUIAS_QUE_VIAJA, repo)}`);
     return 0;
   }
 
@@ -1029,7 +1016,8 @@ async function main(argv) {
       // poder saberlo leyendo el reporte. En el log de launchd no lo ve nadie.
       ...(actualizacion.ok ? {} : { codigo_desactualizado: actualizacion.motivo }),
     });
-    escribirJsonAtomico(path.join(repo, RUTA_REPORTE_QUE_VIAJA), reporte);
+    const destino = dondeSeGuarda('exam', RUTA_REPORTE_QUE_VIAJA, repo);
+    escribirJsonAtomico(destino, reporte);
     examenCompleto = true;
     registrarIntento(benchDir, { estado: 'completo', motivo: 'terminó entero', inicio, fin: reporte.fin });
     fs.mkdirSync(path.dirname(rutaSello()), { recursive: true });
@@ -1048,13 +1036,12 @@ async function main(argv) {
       + ` paridad=${nm.paridad ? 'no medida' : medicion.paridadReal}`
       + ` regresiones=${medicion.baselineRegressions}`);
 
-    const v = viajar(repo, log);
+    const v = publicar(repo, log, 'exam', [{ path: RUTA_REPORTE_QUE_VIAJA, mode: 'replace', source: destino }],
+      `chore(examen): resultado del examen de revisores ${new Date().toISOString().slice(0, 10)}`);
     if (!v.ok) {
-      // 🔴 El sello y el reporte local quedan frescos, así que en ESTA máquina —la única que
-      // puede arreglarlo— no se notaría nada: la denuncia viviría sólo en el log de launchd, un canal invisible.
-      // Por eso queda como intento, y el aviso lo grita.
+      // 🔴 El sello y el reporte guardado quedan frescos, así que en ESTA máquina —la única que puede arreglarlo— no se
+      // notaría nada. El fallo queda en el estado de los resultados (result-travel.js), y el aviso del arranque lo dice.
       log(`EL RESULTADO NO VIAJÓ: ${v.motivo}`);
-      registrarIntento(benchDir, { estado: 'no-viajo', motivo: v.motivo, fase: 'viaje', inicio, fin: reporte.fin });
       return 5;
     }
     return 0;
@@ -1106,21 +1093,37 @@ function casosDeGuia(argv, deps = {}) {
   if (!deps.spawn && !inyectado && leerVariable('TYCON_EXAM_RUNNER')) return { corrio: false, motivo: 'examen con corredor inyectado' };
   const repo = deps.repo || lugarDelExamen().repo;
   const log = deps.log || ((m) => console.error(`examen-periodico: ${m}`));
-  const salida = path.join(repo, RUTA_GUIAS_QUE_VIAJA);
-  const args = [inyectado || path.join(__dirname, 'guide-runner.js'), '--json', salida];
-  const r = (deps.spawn || spawnSync)(process.execPath, args, { stdio: 'inherit', timeout: 60 * 60000 });
-  if (r && r.status === null) log(`los casos de guía no terminaron (${r.signal || (r.error && r.error.code) || 'sin código'})`);
-  else if (r && r.status !== 0) log(`los casos de guía salieron ${r.status}: el informe dice cuáles no pudo medir`);
-  // un informe que no se escribió no viaja; el anterior queda como estaba (nunca se borra)
-  if (fs.existsSync(salida)) {
-    const v = (deps.viajar || viajar)(repo, log, [RUTA_GUIAS_QUE_VIAJA], `chore(examen): casos de guía ${new Date().toISOString().slice(0, 10)}`);
-    if (!v.ok) log(`los casos de guía NO VIAJARON: ${v.motivo}`);
-  }
+  const salida = dondeSeGuarda('guides', RUTA_GUIAS_QUE_VIAJA, repo, deps.home);
+  // El corredor escribe en un temporal que arranca con el informe anterior de fecha mayor —el guardado o el de main—:
+  // guide-runner.js lo lee para conservar las guías que esta vez no se midieron. Pasa al nombre final sólo si el
+  // corredor lo reescribió (su `ts` cambió): un informe guardado de antes no se republica.
+  const temporal = `${salida}.${process.pid}.nuevo`;
+  const RT = caminoDeResultados();
+  const deMain = RT ? RT.readMain(repo, RUTA_GUIAS_QUE_VIAJA) : null;
+  const candidatos = [leerJson(salida), deMain && deMain.state === 'ok' ? (() => { try { return JSON.parse(deMain.text); } catch (_) { return null; } })() : null];
+  const semilla = candidatos.filter((x) => x && Number.isFinite(Date.parse(x.ts))).sort((x, y) => Date.parse(y.ts) - Date.parse(x.ts))[0] || null;
+  fs.mkdirSync(path.dirname(temporal), { recursive: true });
+  if (semilla) fs.writeFileSync(temporal, JSON.stringify(semilla, null, 2) + '\n'); else fs.rmSync(temporal, { force: true });
+  const args = [inyectado || path.join(__dirname, 'guide-runner.js'), '--json', temporal];
+  let r;
+  try {
+    r = (deps.spawn || spawnSync)(process.execPath, args, { stdio: 'inherit', timeout: 60 * 60000 });
+    if (r && r.status === null) log(`los casos de guía no terminaron (${r.signal || (r.error && r.error.code) || 'sin código'})`);
+    else if (r && r.status !== 0) log(`los casos de guía salieron ${r.status}: el informe dice cuáles no pudo medir`);
+    const nuevo = leerJson(temporal);
+    // un informe que no se reescribió no viaja; el guardado queda como estaba (nunca se borra)
+    if (nuevo && (!semilla || nuevo.ts !== semilla.ts)) {
+      fs.renameSync(temporal, salida);
+      const v = (deps.publicar || publicar)(repo, log, 'guides', [{ path: RUTA_GUIAS_QUE_VIAJA, mode: 'replace', source: salida }],
+        `chore(examen): casos de guía ${new Date().toISOString().slice(0, 10)}`, deps.home);
+      if (!v.ok) log(`los casos de guía NO VIAJARON: ${v.motivo}`);
+    }
+  } finally { fs.rmSync(temporal, { force: true }); }
   return { corrio: true, codigo: r && r.status };
 }
 
 module.exports = {
-  VEJEZ_MS, RUTA_REPORTE_QUE_VIAJA, RUTA_GUIAS_QUE_VIAJA, CANDADO_EN_ESCRITURA_MS, viajar, revisionSemanal, casosDeGuia,
+  VEJEZ_MS, RUTA_REPORTE_QUE_VIAJA, RUTA_GUIAS_QUE_VIAJA, CANDADO_EN_ESCRITURA_MS, publicar, revisionSemanal, casosDeGuia,
   leerConfig, lugarDelExamen, designaMaquina, identidadesDeMaquina, esMaquinaDesignada, periodoCumplido, estadoDelCandado,
   motivoDeGit, colaDeError,
   plistDeseado, diasProgramados, decidir, instalarTarea, liberarCandado, tomarCandado, main,
