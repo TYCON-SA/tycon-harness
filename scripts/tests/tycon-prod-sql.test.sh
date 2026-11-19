@@ -837,7 +837,7 @@ while read -r que _; do
   [ "$que" = abre ] && abiertos=$((abiertos+1)); [ "$que" = cierra ] && abiertos=$((abiertos-1))
   [ "$abiertos" -gt "$max" ] && max=$abiertos
 done < "$TMP/cuadros.log"
-if [ "$(grep -c '^abre' "$TMP/cuadros.log")" = 3 ] && [ "$max" = 1 ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production-dialog.lock" ]; then
+if [ "$(grep -c '^abre' "$TMP/cuadros.log")" = 3 ] && [ "$max" = 1 ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production-dialog.turn" ]; then
   ok "T-puerta-36 PuertaCuadro_UnoPorVez · tres pedidos a la vez abren tres cuadros, nunca dos juntos, y el turno queda libre"
 else no "T-puerta-36 PuertaCuadro_UnoPorVez · máximo abiertos a la vez: $max · log: $(tr '\n' '|' < "$TMP/cuadros.log")"; fi
 
@@ -858,9 +858,9 @@ else no "T-puerta-37 PuertaCuadro_TopeDeEspera · rc=$rc · cuadros: $(grep -c '
 
 # T-puerta-38 · un turno de una puerta que ya no corre (la mataron) no traba a la siguiente
 mundo ok
-mkdir -p "$CASA/.claude/.tycon-pipeline/production-dialog.lock"; printf '999999' > "$CASA/.claude/.tycon-pipeline/production-dialog.lock/pid"
+printf '999999\nuna puerta muerta' > "$CASA/.claude/.tycon-pipeline/production-dialog.turn"
 rc="$(TYCON_PROD_TEST_DIALOG_WAIT=3 puerta "$PROD" 'select 1')"
-if [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production-dialog.lock" ]; then
+if [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production-dialog.turn" ]; then
   ok "T-puerta-38 PuertaCuadro_TurnoAbandonado · el turno de un proceso muerto se toma y el cuadro se abre"
 else no "T-puerta-38 PuertaCuadro_TurnoAbandonado · rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
 
@@ -869,7 +869,7 @@ else no "T-puerta-38 PuertaCuadro_TurnoAbandonado · rc=$rc · orden $(tr '\n' '
 peor=0
 for ronda in 1 2 3; do
   mundo ok; cuadro_lento 1
-  mkdir -p "$CASA/.claude/.tycon-pipeline/production-dialog.lock"; printf '999999' > "$CASA/.claude/.tycon-pipeline/production-dialog.lock/pid"
+  printf '999999\nuna puerta muerta' > "$CASA/.claude/.tycon-pipeline/production-dialog.turn"
   for i in 1 2 3 4 5 6; do ( TYCON_PROD_TEST_DIALOG_WAIT=30 puerta "$PROD" "select $i" >/dev/null; ) & done; wait
   abiertos=0; max=0
   while read -r que _; do
@@ -881,11 +881,11 @@ done
 if [ "$peor" = 1 ]; then ok "T-puerta-40 PuertaCuadro_TurnoAbandonado_EnRafaga · tres rondas de seis puertas sobre un turno muerto: nunca dos cuadros abiertos"
 else no "T-puerta-40 PuertaCuadro_TurnoAbandonado_EnRafaga · hubo $peor cuadros abiertos a la vez"; fi
 
-# T-puerta-41 · si el turno no se puede crear, sale enseguida y dice eso, no que hay otro cuadro abierto. Un archivo
-# donde va la carpeta del turno hace fallar su `mkdir` sin quitarle la escritura al resto del estado (sin escritura, la
+# T-puerta-41 · si el turno no se puede crear, sale enseguida y dice eso, no que hay otro cuadro abierto. Una carpeta
+# donde va el archivo del turno hace fallar su creación sin quitarle la escritura al resto del estado (sin escritura, la
 # puerta ya frena antes, al leer el índice)
 mundo ok
-printf 'no es una carpeta' > "$CASA/.claude/.tycon-pipeline/production-dialog.lock"
+mkdir -p "$CASA/.claude/.tycon-pipeline/production-dialog.turn"
 # stable-data: mide cuánto tarda la puerta, no afirma ninguna fecha
 desde=$(date +%s)
 rc="$(puerta "$PROD" 'select 1')"
