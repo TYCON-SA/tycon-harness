@@ -103,6 +103,32 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 - `git push --force-with-lease` a branches que NO son `main`/`master`/`dev`/`release/*` — rebase de feature branch propia es válido.
 - Lectura de `.env` vía `grep`/`awk`/`sed` — el bloqueo es solo sobre `cat`/`less`/`more`/`head`/`tail` (modos típicos de "miremos qué hay acá"). Workflows automatizados que extraen una key específica con `grep` siguen funcionando.
 
+## Cuando un freno no alcanza a decidir
+
+La regla: un freno que no alcanzó a decidir no deja pasar. Hoy la cumplen dos de los diez frenos de consola; los otros
+ocho no tienen reloj propio y, si se cuelgan, Claude Code los corta al vencer el tope de la herramienta y el comando
+corre. El freno de producción va aparte, en la configuración administrada: tiene su reloj, y si su gancho falla el
+comando no corre ([producción con permiso](produccion-con-permiso.md)).
+
+| Freno | Reloj propio | Si se traba |
+|---|---|---|
+| `on-pre-commit.js` | No | Pasa a los 600 s |
+| `pr-one-per-repo-guard.js` | No | Pasa a los 600 s |
+| `pr-auto-complete-guard.js` | No | Pasa a los 600 s |
+| `session-cap-guard.js` | No | Pasa a los 600 s |
+| `public-push-guard.js` | No | Pasa a los 600 s |
+| `on-bash-write-gate.js` | 20 s (`TYCON_BASH_GATE_TIMEOUT_S`, de 1 a 50) | Frena y pide reintentar |
+| `safety-guard-pre.sh` | 20 s (`TYCON_SAFETY_TIMEOUT_S`, de 1 a 50) | Frena y pide reintentar |
+| `test-scope-guard-pre.sh` | No | Pasa a los 600 s |
+| `engram-pre-commit.sh` | No | Pasa a los 600 s |
+| `session-collision-guard.js` | No | Pasa a los 600 s |
+
+Lo que el reloj no cubre: si a un freno lo matan desde afuera, o no arranca, el comando pasa. No se les pone
+`onFailure` a estos ganchos a propósito: viven en la carpeta del usuario, y una actualización a medias dejaría a todas
+las sesiones de la máquina sin consola. En `on-bash-write-gate.js`, en Windows o con un Node sin `process.execve`, un
+análisis trabado en una llamada del sistema tampoco se corta: pasa a los 600 s. Un programa que el análisis haya
+lanzado puede seguir corriendo después de que el freno frenó.
+
 ## Saltear el freno: lo decide la persona
 
 Cada salteo es una firma de la persona, con su comando; la lista entera está en

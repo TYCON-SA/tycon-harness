@@ -28,6 +28,8 @@
  * que escribe y nombra una historia o una constancia, leído como texto (`frenaLaRed`); lo demás sigue. Cada una queda en
  * hook-errors.log: «FRENÓ POR FALLA» o «FAILED OPEN». Límite conocido: un error de sintaxis en este archivo no llega a
  * correr nada.
+ * El análisis corre en un hilo y `lib/gate-clock.js` mira el reloj (20 s, `TYCON_BASH_GATE_TIMEOUT_S`): si no alcanza a
+ * decidir, el comando no corre. Sin esa biblioteca, el análisis corre acá, sin reloj, y queda «FAILED OPEN».
  *
  * ── SEGUNDA RESPONSABILIDAD: la puerta Bash del freno de STORY A MANO ────────────────
  * El caso que motiva ese freno son los heredocs de Bash —
@@ -54,6 +56,16 @@
  */
 
 'use strict';
+
+// Antes de todo módulo del arnés: el hilo principal sólo mira el reloj, y este mismo archivo corre en un hilo aparte
+const { isMainThread, workerData, parentPort } = require('worker_threads');
+let relojRoto = null;
+if (require.main === module && isMainThread) {
+  try {
+    require('./lib/gate-clock.js').vigilar({ archivo: __filename });
+    return;
+  } catch (e) { relojRoto = e; }
+}
 
 const fs = require('fs');
 const os = require('os');
@@ -122,24 +134,33 @@ let entradaCruda = null;
 let yaDecidio = false;
 function leerEntrada() {
   if (entradaCruda === null) {
+    // la segunda lectura recibe el texto que ya leyó el análisis: la entrada estándar no se puede leer dos veces
+    if (!isMainThread && workerData && typeof workerData.entrada === 'string') entradaCruda = workerData.entrada;
     // sin texto no hay qué frenar: el comando pasa sin mirarse
-    try { entradaCruda = fs.readFileSync(0, 'utf8'); } catch (e) { entradaCruda = ''; logHookError(e, 'FAILED OPEN'); }
+    else try { entradaCruda = fs.readFileSync(0, 'utf8'); } catch (e) { entradaCruda = ''; logHookError(e, 'FAILED OPEN'); }
+    if (!isMainThread && parentPort) parentPort.postMessage({ entrada: entradaCruda });
   }
   return entradaCruda;
+}
+function salirPorLaRedConLaEntrada(e) {
+  const cruda = leerEntrada();
+  let texto = textoDeUnaEntradaRota(cruda);
+  try { texto = JSON.parse(cruda).tool_input.command; } catch { /* entrada rota o sin comando: se lee el texto entero */ }
+  salirPorLaRed(e, texto);
 }
 if (require.main === module) {
   // lo que `try` no alcanza: un módulo de los de abajo que no carga, o una falla después de decidir, en los avisos
   process.on('uncaughtException', (e) => {
     if (yaDecidio) { logHookError(e); process.exit(0); }
-    const cruda = leerEntrada();
-    let texto = textoDeUnaEntradaRota(cruda);
-    try { texto = JSON.parse(cruda).tool_input.command; } catch { /* entrada rota o sin comando: se lee el texto entero */ }
-    salirPorLaRed(e, texto);
+    salirPorLaRedConLaEntrada(e);
   });
 }
 
 // la carpeta del estado, de una sola pieza. Sin `lib/state-dir.js`: la red de arriba la necesita aunque ese módulo no cargue
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+if (relojRoto) logHookError(relojRoto, 'FAILED OPEN');
+// la segunda lectura va acá: necesita la carpeta del estado para su renglón, y ninguno de los módulos de abajo
+if (require.main === module && !isMainThread && workerData && workerData.modo === 'net') salirPorLaRedConLaEntrada(workerData.falla);
 const { isCodeFile, isManifestFile, NEVER_CODE_SEGMENTS } = require('./lib/story-gate.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 // Con respaldo, como en dispatch.js y on-write-collision.js: sin la lib (un skill instalado a medias) el portón no puede
@@ -1115,9 +1136,77 @@ function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
   return [...vistos.values()];
 }
 
+const DELIMITADOR_DE_HEREDOC = /-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)/y;
+
+function sinBlancosAlBorde(linea) {
+  let ini = 0;
+  let fin = linea.length;
+  while (ini < fin && (linea[ini] === ' ' || linea[ini] === '\t')) ini++;
+  while (fin > ini && (linea[fin - 1] === ' ' || linea[fin - 1] === '\t')) fin--;
+  return linea.slice(ini, fin);
+}
+
+/** Los delimitadores que abre el renglón, en orden: lo de adentro de comillas y lo que sigue a un `$((` no abre nada. */
+function* delimitadoresQueAbre(linea) {
+  const aritmetica = linea.indexOf('$((');
+  const tope = aritmetica < 0 ? linea.length : Math.min(linea.length, aritmetica + 3);
+  for (let i = 0; i < tope; i++) {
+    const c = linea[i];
+    if (c === '"' || c === "'") {
+      const cierra = linea.indexOf(c, i + 1);
+      if (cierra < 0) return;
+      i = cierra;
+    } else if (c === '<' && linea[i + 1] === '<' && linea[i - 1] !== '<' && linea[i + 2] !== '<') {
+      DELIMITADOR_DE_HEREDOC.lastIndex = i + 2;
+      const m = DELIMITADOR_DE_HEREDOC.exec(linea);
+      if (m) yield m[2];
+    }
+  }
+}
+
+/**
+ * El comando sin los cuerpos de sus heredocs ni sus renglones de cierre. Va por renglones, con los cierres en un índice:
+ * con muchas aperturas sin cierre, una expresión que busca el cierre desde cada una es cuadrática. Un heredoc sin cierre
+ * queda como está.
+ */
+function quitarCuerposDeHeredoc(cmd) {
+  const s = String(cmd || '');
+  if (!s.includes('<<')) return s;
+  const lineas = s.split('\n');
+  const renglonesDe = new Map();
+  lineas.forEach((linea, n) => {
+    const clave = sinBlancosAlBorde(linea);
+    if (renglonesDe.has(clave)) renglonesDe.get(clave).push(n); else renglonesDe.set(clave, [n]);
+  });
+  const cierreTras = (delimitador, n) => {
+    const renglones = renglonesDe.get(delimitador) || [];
+    let bajo = 0;
+    let alto = renglones.length;
+    while (bajo < alto) {
+      const medio = (bajo + alto) >> 1;
+      if (renglones[medio] > n) alto = medio; else bajo = medio + 1;
+    }
+    return bajo < renglones.length ? renglones[bajo] : -1;
+  };
+  const out = [];
+  for (let n = 0; n < lineas.length; n++) {
+    out.push(lineas[n]);
+    if (n === lineas.length - 1) break;
+    for (const delimitador of delimitadoresQueAbre(lineas[n])) {
+      const cierre = cierreTras(delimitador, n);
+      if (cierre >= 0) {
+        out.push('');
+        n = cierre;
+        break;
+      }
+    }
+  }
+  return out.join('\n');
+}
+
 /** Los tramos de un comando (`;`, `&&`, `||`, `|`, salto de línea), sin cortar adentro de las comillas ni de los heredocs. */
 function tramos(cmd) {
-  const s = String(cmd || '').replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  const s = quitarCuerposDeHeredoc(cmd);
   const out = [];
   let q = null;
   let actual = '';
@@ -1254,6 +1343,21 @@ const BUSCADOR_EJECUTA = {
 const BUSCADORES = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack']);
 // la salida de un comando que la ejecuta otro: ahí lo citado puede terminar corriendo
 const A_UN_SHELL = /\|&?\s*(?:(?:\/|[^\s-]\S*\/)?(?:sudo|env|busybox|command|exec|nohup|nice|time)(?:\s+-\S+)*\s+)*(?:\S*\/)?(?:sh|bash|zsh|dash|ksh|fish|xargs|eval|source|python\d*(?:\.\d+)?|node|perl|ruby|php|pwsh|powershell)\b/;
+const TOPE_DE_TUBERIAS = 500;
+let enteroMirado = null;
+let enteroVaAUnShell = false;
+
+// Se pregunta una vez por tramo sobre el mismo comando, y la búsqueda arranca en cada `|`: se recuerda la última
+// respuesta y, pasado el tope, se contesta que sí, que es lo que hace mirar de más: nada cuenta como citado.
+function vaAUnShell(entero) {
+  const texto = String(entero || '');
+  if (texto === enteroMirado) return enteroVaAUnShell;
+  let tuberias = 0;
+  for (let i = texto.indexOf('|'); i >= 0 && tuberias <= TOPE_DE_TUBERIAS; i = texto.indexOf('|', i + 1)) tuberias++;
+  enteroMirado = texto;
+  enteroVaAUnShell = tuberias > TOPE_DE_TUBERIAS || A_UN_SHELL.test(texto);
+  return enteroVaAUnShell;
+}
 
 /**
  * Los textos con blancos de un tramo que se citan y no se ejecutan: el patrón y los argumentos de un buscador (`grep`,
@@ -1262,7 +1366,7 @@ const A_UN_SHELL = /\|&?\s*(?:(?:\/|[^\s-]\S*\/)?(?:sudo|env|busybox|command|exe
  */
 function textosCitados(tramo, entero) {
   const out = new Set();
-  if (A_UN_SHELL.test(String(entero || ''))) return out;
+  if (vaAUnShell(entero)) return out;
   const words = palabras(String(tramo).trim().replace(PREFIJO, '')).filter((w) => w !== '');
   const c = path.basename(words[0] || '').toLowerCase();
   const busca = (BUSCADORES.has(c) || (c === 'git' && words[1] === 'grep'))
@@ -4118,7 +4222,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA };
+module.exports = { handle, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
 
 if (require.main === module) {
   const cruda = leerEntrada();

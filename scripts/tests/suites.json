@@ -1057,6 +1057,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-gate-clock.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/replace-section.test.js",
       "requiere": []
     },
@@ -4533,6 +4538,16 @@
       "__nota": "el aviso de arranque de las fallas de los controles: cuenta por control las de las últimas 24 horas de hook-errors.log (todas las formas de línea), deja afuera lo viejo, lo del freno de producción y lo que no es una falla, calla sin fallas y dice cuando no puede leer el registro.",
       "raiz": "arnes",
       "ruta": "tests/hook-failures-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/undecided-guards.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/hostile-command-text.test.js",
       "requiere": []
     },
     {

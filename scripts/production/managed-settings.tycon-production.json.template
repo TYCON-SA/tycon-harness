@@ -46,7 +46,8 @@
           {
             "type": "command",
             "command": "/opt/tycon/node-shim.sh",
-            "timeout": 30
+            "timeout": 30,
+            "onFailure": "block"
           }
         ]
       }
