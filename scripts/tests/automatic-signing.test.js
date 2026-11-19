@@ -56,7 +56,8 @@ const pedir = (casa, cmd, o = {}) => ow.decidir({
   evento: { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, permission_mode: 'default', ...(o.evento || {}) },
   escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: AHORA,
   delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), tramite: o.tramite || NO_TRAMITE,
-  clasificar: () => null, comprobar: o.comprobar || (() => null), aprobador: () => ({ label: 'Arnés' }),
+  clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: () => ({ label: 'Arnés' }),
+  huellaDeLaMaquina: o.huella || (() => ({ huella: 'f'.repeat(16) })),
 });
 const vigentes = (casa) => { try { return fs.readdirSync(ow.carpeta(casa)).filter((f) => f.endsWith('.json')); } catch (_) { return []; } };
 const leer = (casa, archivo) => { try { return fs.readFileSync(path.join(casa, '.claude', '.tycon-pipeline', archivo), 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
@@ -72,6 +73,23 @@ test('AutomaticSigning_Tramite_SinVentanaNiCuadro', (t) => {
   const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), v[0]), 'utf8'));
   assert.strictEqual(reg.via, 'automatica');
   assert.strictEqual(reg.firma, 'plan-approval');
+  assert.strictEqual(reg.maquina, 'f'.repeat(16), 'el registro dice en qué máquina se firmó');
+  // sin la huella de la máquina no sale sola
+  const sinHuella = pedir(casaNueva(t), PLAN, { tramite: DE_TRAMITE, huella: () => ({ error: 'sin huella' }) });
+  assert.strictEqual(sinHuella.decision, 'ask');
+  assert.match(sinHuella.texto, /no pude leer la huella de esta máquina/);
+});
+
+test('AutomaticSigning_RefirmaTrasTraerMain_LlevaLaMaquinaYDeQueEsRefirma', (t) => {
+  const casa = casaNueva(t);
+  const CONTROLES = path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh');
+  const r = pedir(casa, `bash ${CONTROLES} approve --base origin/main`, { tramite: (ids) => ({ ok: ids.every((x) => x === 'refresh-after-main') }),
+    clasificar: () => ({ clase: 'refresh-after-main', refirma_de: 'abc123' }) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.deepStrictEqual(r.firmas, ['refresh-after-main']);
+  const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), vigentes(casa)[0]), 'utf8'));
+  assert.strictEqual(reg.maquina, 'f'.repeat(16));
+  assert.strictEqual(reg.refirma_de, 'abc123');
 });
 
 test('AutomaticSigning_ConsolaDeFondoOPestanaSinPermisos_SaleIgual', (t) => {
@@ -95,10 +113,32 @@ test('AutomaticSigning_ControlPrevioNiega_VaALaPersonaConElArbol', (t) => {
   assert.match(n.texto, /consola de fondo/);
 });
 
-test('AutomaticSigning_NoTramiteOConEscape_NoSaleSola', (t) => {
+test('AutomaticSigning_NoTramite_NoSaleSola', (t) => {
   assert.strictEqual(pedir(casaNueva(t), PLAN, { tramite: () => ({ ok: false, motivo: 'el perfil no la lista' }) }).decision, 'ask');
-  const e = pedir(casaNueva(t), `node ${MARKER} set-check dod green --force-manual`, { escapes: ['escape:force-manual'], tramite: DE_TRAMITE });
-  assert.notStrictEqual(e.via, 'automatica', 'un escape no sale como firma de trámite por este camino');
+  const e = pedir(casaNueva(t), `node ${MARKER} set-check dod green --force-manual`, { escapes: ['escape:force-manual'], tramite: () => ({ ok: false, motivo: null }) });
+  assert.notStrictEqual(e.via, 'automatica', 'un escape que el perfil no pone como trámite no sale solo');
+});
+
+test('AutomaticSigning_EscapeDeTramite_SaleSinVentanaYSinRegistroDeLaVentana', (t) => {
+  const casa = casaNueva(t);
+  // un escape por variable, armado por partes: el nombre entero en el fuente lo frena el propio freno de seguridad
+  const variable = ['TYCON', 'STATUS', 'GATE'].join('_');
+  // stable-data: el comando es sólo el texto que juzga el freno; no se corre ni crea ningún commit
+  const r = pedir(casa, `${variable}=off git commit -m x`, { escapes: [`escape:${variable}`], tramite: DE_TRAMITE, arbol: arbolDelFreno([consolaDeFondo(casa)]) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'automatica');
+  assert.deepStrictEqual(r.firmas, [`escape:${variable}`]);
+  // un escape no deja pedido de la ventana: su constancia la escribe el freno de seguridad
+  assert.strictEqual(vigentes(casa).length, 0);
+});
+
+test('AutomaticSigning_LaConstanciaDelEscape_GuardaLaViaYAutorizaElCierre', (t) => {
+  const casa = casaNueva(t);
+  require('../lib/guard-record.js').anotar({ freno: 'safety-guard', regla: 'ESC-C4', veredicto: 'escape', via: 'automatica', sesion: 'ses-a', escape: 'cerrar-como-deuda', cmd: 'x', home: casa });
+  const l = leer(casa, 'frenos.jsonl').find((x) => x.freno === 'safety-guard');
+  assert.ok(l, 'quedó la constancia');
+  assert.strictEqual(l.via, 'automatica');
+  assert.ok(require('../../skills/tycon-pipeline/scripts/lib/run-close.js').VIAS_DE_CIERRE.includes(l.via), 'el cierre la cuenta como autorizada');
 });
 
 test('AutomaticSigning_ElGuionFirmaConLaConstanciaDelArnes', (t) => {

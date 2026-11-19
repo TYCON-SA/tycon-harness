@@ -58,8 +58,9 @@ const FIRMANTE = 'arnés (firma de trámite)';
 function aviso({ firma, destino, que }) {
   const s = require('./signatures.js').SIGNATURES.find((x) => x.id === firma);
   const nombre = s ? s.approves : firma;
-  const texto = String(que || '').replace(/\s+/g, ' ').trim();
-  return `✅ firma de trámite, la dio el arnés: ${nombre}${destino ? ` (sesión ${destino})` : ''}${texto ? ` — ${texto.length > 160 ? `${texto.slice(0, 160)}…` : texto}` : ''}`;
+  // por caracteres, no por unidades de UTF-16: un corte en medio de un emoji dejaría medio carácter
+  const texto = [...String(que || '').replace(/\s+/g, ' ').trim()];
+  return `✅ firma de trámite, la dio el arnés: ${nombre}${destino ? ` (sesión ${destino})` : ''}${texto.length ? ` — ${texto.length > 160 ? `${texto.slice(0, 160).join('')}…` : texto.join('')}` : ''}`;
 }
 
 module.exports = { esDeTramite, todasDeTramite, aviso, FIRMANTE, SOLO_DEL_DUENO };

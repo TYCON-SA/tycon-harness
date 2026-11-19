@@ -1244,7 +1244,7 @@ function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado, cw
  * firmas; se pasa en las pruebas. `topes`: los del camino corto (`{ delegado, maximo }`), para las pruebas; sin ellos,
  * se leen una vez del perfil del equipo y valen para todo lo que decide.
  */
-function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes } = {}) {
+function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, huellaDeLaMaquina, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes } = {}) {
   if (!topes) topes = topesDelCaminoCorto(casa);
   const enWindows = plataforma === 'win32';
   // los criterios de un runtime-waiver, calculados una vez para el cuadro y para el detalle
@@ -1304,11 +1304,11 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     try { casa = casaDeLaCuenta(userInfo ? { userInfo } : undefined); } catch (e) { return negar(`no se pudo resolver la casa de la cuenta (${e.message})`, pedidas); }
   }
   let pendientes = pedidas;
-  // la firma de trámite la da el arnés solo (automatic-signing.js): sólo un guion, sin escapes en el mismo comando
+  // la firma de trámite la da el arnés solo (automatic-signing.js): un guion sin escapes, o escapes sin guion
   const deTramite = (ids) => {
     try { return (tramite || require('./automatic-signing.js').todasDeTramite)(ids, { home: casa }); } catch (e) { return { ok: false, motivo: `no pude leer qué firmas son de trámite (${e.message})` }; }
   };
-  let automatica = guion && !escapes.length ? deTramite(pendientes) : { ok: false, motivo: null };
+  let automatica = (guion && !escapes.length) || (!guion && escapes.length) ? deTramite(pendientes) : { ok: false, motivo: null };
   // el árbol: la herramienta, sin otra herramienta ni consola por arriba, con pantalla y sin consolas de fondo
   arbol = arbolDeLaPlataforma(arbol, plataforma);
   if (!arbol) return negar('no pude leer los procesos de la máquina', pendientes);
@@ -1369,16 +1369,24 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
       try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: 'automatica' }); } catch (e) { c = { niega: `no pude correr el chequeo del guion (${e.message})` }; }
       if (c && c.niega) automatica = { ok: false, motivo: una(c.niega, 300) };
     }
+    // la máquina donde se firmó, como en la delegación: la constancia de la refirma la exige (run-base-controls.sh)
+    let maquina = null;
+    if (automatica.ok) {
+      try { const fp = (huellaDeLaMaquina || (() => require('./machine-id.js').huella()))(); maquina = fp && !fp.error && fp.huella ? fp.huella : null; } catch (_) { maquina = null; }
+      if (!maquina) automatica = { ok: false, motivo: 'no pude leer la huella de esta máquina' };
+    }
     if (automatica.ok) {
       try {
         escribirRegistro(casa, { firma: firmaGuion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
           sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString(), corrida: corridaDe(casa, destino),
-          via: 'automatica', ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
+          via: 'automatica', maquina, ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
       } catch (e) {
         return negar(`no se pudo escribir el registro de la firma de trámite (${e.code || e.message})`, pendientes);
       }
       return { decision: 'allow', via: 'automatica', relevo: sesion, firmas: pendientes, texto: `firma de trámite: la da el arnés, sin persona (${firmaDe(firmaGuion).approves})` };
     }
+  } else if (automatica.ok && !guion && escapes.length) {
+    return { decision: 'allow', via: 'automatica', relevo: sesion, firmas: pendientes, texto: `firma de trámite: la da el arnés, sin persona (${pendientes.map((id) => firmaDe(id).approves).join('; ')})` };
   } else if (automatica.ok) automatica = { ok: false, motivo: null };
   const sinAutomatica = automatica.motivo ? `No salió como firma de trámite: ${una(automatica.motivo, 200)}` : null;
   if (saltoElArbol) { const n = arbolNiega(); if (n) return n; }

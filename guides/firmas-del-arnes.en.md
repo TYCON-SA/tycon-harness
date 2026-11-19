@@ -31,5 +31,6 @@ harness sessions and product sessions, on any machine, with no list of machines.
   level 3, with the emergency), turning off a guard or skipping the tests or the adversarial pass (all of
   `approvals.owner_only`: `TYCON_SAFETY_OFF`, `TYCON_TEST_GATE`, `DOD_BYPASS`, `adversarial-skip`, `no-deep-review` and
   the rest), and naming or removing the coordinator. None of those goes out on its own even if a profile lists it.
-- **The routine escapes** (the `escape:…` entries in the list, which go through the safety guard) still ask the person or
-  the coordinator: the safety guard does not sign them on its own yet.
+- **The routine escapes** (the `escape:…` entries in the list, which go through the safety guard) also go out on their
+  own, each in its usual form and with no other signature in the same command. The safety guard writes their record with
+  via `automatica`, and it counts for what asks for it later (closing as debt, the expected red of the matrix).

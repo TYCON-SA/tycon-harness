@@ -818,8 +818,7 @@ be, to copy it and open the request by hand.
   permission window; where the window does not reach, approves with a click in the options box or a written "aprobado";
   or signs at their terminal. "Delegated to the coordinator" (`approvals.delegated_signing`) makes it routine: the
   harness gives it on its own, in any session, with or without a coordinator (`guides/firmas-del-arnes.md`, «Las firmas
-  de trámite las da el arnés»); the escapes in that list are still signed by the coordinator on the owner's behalf, and
-  its sentence is recorded; what is delegated is not protected against an
+  de trámite las da el arnés»), and its sentence is recorded; what is delegated is not protected against an
   agent: if the coordinator decides to approve it on its own, the harness cannot tell it apart from the owner's ok, so
   delegate only low-risk things. "Owner only" (`approvals.owner_only`) locks it: the site does not offer to delegate it,
   and it does not offer it for what cannot be signed from another session's tab either. The fixed notice says so:
