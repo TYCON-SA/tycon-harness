@@ -1949,6 +1949,12 @@ exec ${JSON.stringify(process.execPath)} "$@"
     // la ventana pide la firma que se nombró, no la del permiso de la evidencia para todas
     assert.deepStrictEqual([...ow.firmasDelComando(`node ${marker} sign-file ${firma} ${evidencia}`)], [`escape:${firma}`], firma);
   }
+  // la coordinadora la pide para otra sesión (`--for-session`, por la delegación del perfil): tampoco es crear el permiso
+  const paraOtra = freno(`node ${marker} sign-file ALLOW_DOD_EVIDENCE_WRITE ${evidencia} --for-session ses-b_1`, { path: dir });
+  assert.strictEqual(veredicto(paraOtra), 'ask', paraOtra.stderr);
+  assert.doesNotMatch(paraOtra.stderr, /ESC-C5/);
+  // y lo que venga pegado después de la sesión sigue frenando
+  assert.match(freno(`node ${marker} sign-file ALLOW_DOD_EVIDENCE_WRITE ${evidencia} --for-session ses-b; touch .advisors/ALLOW_DOD_EVIDENCE_WRITE`, { path: dir }).stderr, /ESC-C5/);
   // el permiso escrito por la consola, solo o detrás de la firma, sigue frenando
   for (const c of [
     `node -e "require('fs').writeFileSync('.advisors/ALLOW_DOD_EVIDENCE_WRITE', '')"`,
