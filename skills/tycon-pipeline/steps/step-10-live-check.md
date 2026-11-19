@@ -68,7 +68,8 @@ reporter JSON de Playwright). Sin esa sección la matriz no puede distinguir mir
 **Calibración** (los verbos se eligieron midiendo sobre stories reales): sólo formas verbales,
 nunca sustantivos derivados — "sin importar su asignación" o "el cierre de ruta" describen
 un criterio de lectura y no deben disparar la regla. Escotilla con rastro:
-`TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK=1`.
+`TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK=1`, que se retira el 2026-12-01; la salida normal es ejecutar la acción en
+la prueba o, si el verbo no es una acción, declararlo con `@runtime-exempt(DODRT-C8)`.
 
 **Al escribir un E2E**: si el AC dice que el usuario puede hacer algo, el test lo hace —
 aprieta el botón y verifica qué pasó de verdad. Un `expect(boton).toBeVisible()` no cubre

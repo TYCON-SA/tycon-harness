@@ -112,8 +112,9 @@ fan-out no ocurrió (partes del Arranque salteadas, orden secuencial), lanzar lo
      portón dice que corre (riesgo NORMAL y sin constancia vigente: la historia se escribió sin `tycon-create-story`,
      cambió después de la revisión, o la constancia es `no-medido`). Sale en el mismo mensaje paralelo que el
      validador, con el `modelo` que trae. Con constancia vigente no se lanza nada: anotar en el log del paso la `linea`
-     del portón («revisión previa vigente: <resultado>, <N> hallazgos, <modelo>»). Con riesgo bajo o apagada
-     (`TYCON_STORY_REVIEW=0`), registrar el salteo con su motivo (`story-review-record --result saltado --reason …`).
+     del portón («revisión previa vigente: <resultado>, <N> hallazgos, <modelo>»). Con riesgo bajo, registrar el
+     salteo con su motivo (`story-review-record --result saltado --reason …`). Apagada (`TYCON_STORY_REVIEW=0`, que pide
+     la firma `escape:TYCON_STORY_REVIEW` de la persona), el salteo lo anota su lector: no se registra a mano.
 
 3. Recibir los reportes de los subagentes.
 

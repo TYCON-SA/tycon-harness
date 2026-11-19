@@ -4542,6 +4542,10 @@ function computeStoryReviewGate({ story, env = process.env, home = os.homedir() 
     // el salteo lo anota el portón, no el modelo
     const ES = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
     ES.anotarEscape({ home, sessionId: ES.sesionDe(env), kind: 'STORY_REVIEW_OFF', variable: 'TYCON_STORY_REVIEW', story: path.resolve(story), riesgo: rc.risk });
+    // antes de la fecha de corte de la lista única, el agente lee el aviso; desde ese día la variable pide la firma
+    if (ES.antesDelCorte('TYCON_STORY_REVIEW')) {
+      process.stderr.write(`⚠️  TYCON_STORY_REVIEW=0: desde ${ES.corteDe('TYCON_STORY_REVIEW')} esto pide la firma del dueño (escape:TYCON_STORY_REVIEW); hasta entonces pasa, avisado y anotado.\n`);
+    }
     return { run: false, record: estado, riesgo: rc.risk, motivo: 'apagado', nota: 'TYCON_STORY_REVIEW=0' };
   }
   if (rc.risk === 'LOW') return { run: false, record: estado, riesgo: 'LOW', motivo: 'riesgo-bajo', criterios: rc.criteria };

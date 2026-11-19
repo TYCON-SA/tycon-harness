@@ -78,6 +78,8 @@ const LEVELS_EN = Object.freeze({
   'escape:trust-ran': 'count reviewers with no record that they ran',
   'escape:TYCON_TEST_GATE': 'skip only the test gate of the commit',
   'escape:TYCON_STATUS_GATE': "change a story's status by hand",
+  'escape:TYCON_MUTATION_CHECK': 'skip the mutation check of the tests',
+  'escape:TYCON_STORY_REVIEW': "skip the story's review before planning",
   'escape:story-skill-bypass': 'write a story without the story skill',
   'escape:red-control-test-edit': "edit a control's old test that was failing",
   'escape:set-autonomous': 'change the autonomous mode of a run',
@@ -118,6 +120,8 @@ const LEVELS = Object.freeze([
   ['escape:trust-ran', 2, AMBOS, 'contar revisores sin constancia de que corrieron'],
   ['escape:TYCON_TEST_GATE', 2, AMBOS, 'saltear sólo el portón de pruebas del commit'],
   ['escape:TYCON_STATUS_GATE', 2, AMBOS, 'cambiar a mano el estado de una historia'],
+  ['escape:TYCON_MUTATION_CHECK', 2, AMBOS, 'saltear el chequeo de mutantes de las pruebas'],
+  ['escape:TYCON_STORY_REVIEW', 2, AMBOS, 'saltear la revisión de la historia antes del plan'],
   ['escape:story-skill-bypass', 2, AMBOS, 'escribir una historia sin la skill de historias'],
   ['escape:red-control-test-edit', 2, AMBOS, 'editar una prueba vieja de un control que estaba en rojo'],
   ['escape:set-autonomous', 2, AMBOS, 'cambiar el modo autónomo de una ejecución'],
@@ -133,8 +137,9 @@ const LEVELS = Object.freeze([
 ].map(([id, level, profiles, approves]) => Object.freeze({ id, level, profiles, approves, approvesEn: LEVELS_EN[id] || null })));
 
 // lo que cubre cada firma de hoy que no es su propio id de la tabla: las dos que juntan dos cosas de distinto peso y
-// los siete escapes que hacen lo mismo que otra firma
+// los ocho escapes que hacen lo mismo que otra firma
 const COVERS = Object.freeze({
+  'escape:no-mutation': ['escape:TYCON_MUTATION_CHECK'],
   'save': ['save', 'save:sensible'],
   'browser-test': ['browser-test:prepare', 'browser-test:no'],
   'escape:dod_runtime_exempt': ['runtime-waiver'],
@@ -161,6 +166,8 @@ const POR_VARIABLE = [
   ['DOD_BYPASS', '1', 'saltear los controles del commit (queda anotado)'],
   ['TYCON_NO_DEEP_REVIEW', '1', 'apagar el pase adversarial de una ejecución'],
   ['TYCON_STATUS_GATE', 'off', 'cambiar a mano el estado de una story'],
+  ['TYCON_MUTATION_CHECK', 'off', 'saltear el chequeo de mutantes de las pruebas'],
+  ['TYCON_STORY_REVIEW', '0', 'saltear la revisión de la historia antes del plan'],
 ];
 
 const CON_NOMBRE = [
@@ -172,6 +179,7 @@ const CON_NOMBRE = [
   ['rojo-esperado-de-la-matriz', 'llevar al commit criterios sin evidencia en vivo, hasta una fecha', 'marker.js expect-red acmatrix --tests <T1,T2> --until <AAAA-MM-DD>'],
   ['force-manual', 'marcar a mano el estado de un control', 'marker.js set-check <control> <estado> --force-manual [--for-session <D>]'],
   ['trust-ran', 'contar los revisores sin la constancia de que corrieron', 'pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]'],
+  ['no-mutation', 'cerrar «Correr las pruebas» sin el chequeo de mutantes, con motivo', 'marker.js complete-step run-tests --no-mutation --reason <motivo>'],
   ['ALLOW_DOD_EVIDENCE_WRITE', 'escribir a mano la evidencia de la prueba en vivo', 'file'],
   ['dod_runtime_exempt', 'eximir una story de la prueba en vivo', 'file'],
   ['no-deep-review', 'saltear el pase adversarial de una ejecución', 'pipeline.js start --no-deep-review'],
@@ -191,6 +199,9 @@ const SI_SALE_MAL = Object.freeze({
   'escape:no-deep-review': 'la ejecución arranca sin el pase adversarial, y un error que él encontraría puede llegar a main',
   'escape:TYCON_STATUS_GATE': 'la historia cambia de estado sin los controles del orquestador, y puede quedar como hecha sin estarlo',
   'escape:cambiar-el-estado': 'el estado de la historia se escribe a mano, y puede quedar como hecha sin estarlo',
+  'escape:TYCON_MUTATION_CHECK': 'las pruebas cuentan sin el chequeo de mutantes, y una prueba que no verifica nada pasa por buena',
+  'escape:no-mutation': 'el paso se cierra sin el chequeo de mutantes, y una prueba que no verifica nada pasa por buena',
+  'escape:TYCON_STORY_REVIEW': 'la historia llega al plan sin su revisión previa, y un hueco que ella encontraría pasa a programarse',
   'escape:story-skill-bypass': 'la historia se escribe sin el validador ni la revisión previa, y puede llegar al plan con huecos',
   'escape:red-control-test-edit': 'la prueba de un control se corrige para que pase, y el control puede quedar apagado sin que nadie lo decida',
   'escape:set-autonomous': 'la ejecución cambia cómo se frena sola ante un control en rojo',
@@ -255,6 +266,9 @@ const APPROVES_EN = {
   'escape:DOD_BYPASS': "skip the commit's controls (it is logged)",
   'escape:TYCON_NO_DEEP_REVIEW': "turn off a run's adversarial pass",
   'escape:TYCON_STATUS_GATE': "change a story's status by hand",
+  'escape:TYCON_MUTATION_CHECK': 'skip the mutation check of the tests',
+  'escape:TYCON_STORY_REVIEW': "skip the story's review before planning",
+  'escape:no-mutation': 'close «Run the tests» without the mutation check, with a reason',
   'escape:story-skill-bypass': 'write a story without the story skill',
   'escape:red-control-test-edit': "edit a control's old test that was failing",
   'escape:set-autonomous': "change a run's autonomous mode",
@@ -275,7 +289,10 @@ const APPROVES_EN = {
 const FIRMAS_DE_ARCHIVO = Object.freeze(CON_NOMBRE.filter((f) => f[2] === 'file').map((f) => f[0]));
 // los escapes que pide su propio guion, con su forma canónica: la terminal es esa forma con --terminal
 const POR_GUION = Object.freeze(['force-manual', 'trust-ran']);
-const kindDe = (id) => (!id.startsWith('escape:') || [...FIRMAS_DE_ARCHIVO, ...POR_GUION].includes(id.slice('escape:'.length)) ? 'guion' : 'freno');
+// los escapes que pide su paso, en la sesión que lo corre: el guion pide la firma justo antes de saltear, y no se pide
+// para otra sesión ni entra al grupo que se delega junto
+const POR_SU_PASO = Object.freeze(['no-mutation']);
+const kindDe = (id) => (!id.startsWith('escape:') || [...FIRMAS_DE_ARCHIVO, ...POR_GUION, ...POR_SU_PASO].includes(id.slice('escape:'.length)) ? 'guion' : 'freno');
 const sobreArchivo = (nombre) => `marker.js sign-file ${nombre} <archivo>`;
 
 const SIGNATURES = Object.freeze([
@@ -321,6 +338,7 @@ const SIGNATURES = Object.freeze([
     // la terminal de la persona no tiene la sesión en el ambiente: sin --for-session la constancia no la usaría nadie
     if (command === 'file') return { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: 'no', terminal: `${sobreArchivo(nombre)} --terminal --for-session <sesión del agente>` };
     if (POR_GUION.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'yes', terminal: `${command.replace(' [--for-session <D>]', '')} --terminal` };
+    if (POR_SU_PASO.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: `${command} --terminal --for-session <sesión>` };
     return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando' };
   }),
 ].map((s) => {
@@ -336,7 +354,7 @@ const SIGNATURES = Object.freeze([
 const ESCAPES = SIGNATURES.filter((s) => s.id.startsWith('escape:')).map((s) => s.id);
 // lo que nunca se delega (delegated-signing.js NUNCA_DELEGABLES) tampoco entra al grupo que se delega junto
 const FUERA_DEL_GRUPO = Object.freeze(['merge-bypass', 'red-control-test-edit']);
-const ESCAPES_DEL_GRUPO = ESCAPES.filter((id) => !POR_GUION.includes(id.slice('escape:'.length)) && !FUERA_DEL_GRUPO.includes(id.slice('escape:'.length)));
+const ESCAPES_DEL_GRUPO = ESCAPES.filter((id) => ![...POR_GUION, ...POR_SU_PASO].includes(id.slice('escape:'.length)) && !FUERA_DEL_GRUPO.includes(id.slice('escape:'.length)));
 
 const GROUPS = Object.freeze(Object.fromEntries(['refresh-after-main', 'adversarial-skip', 'critical-waiver', 'escape-phrases',
   'plan-approval', 'browser-test', 'runtime-waiver', 'compare-waiver', 'manual-test', 'extra-round', 'control-change', 'lost-run']

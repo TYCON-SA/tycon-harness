@@ -791,18 +791,48 @@ function tituloEjerceAc(titulo, n) {
 //     clasificación bloquea a alguien del equipo en medio de una story y no hay tiempo de declarar
 //     `runtime_not_verifiable:`. NO es la salida normal — la salida normal es declarar el AC y waivearlo. Grita en las
 //     warnings.
+// Las dos se retiran en la fecha de corte de la lista única de interruptores (`enforce_from` en
+// scripts/lib/env-switches.json): hasta ese día funcionan, avisan la fecha y anotan; desde ese día se ignoran, y el aviso
+// nombra su salida normal (`escotillasVigentes`). La fecha de hoy es `opts.today`, para las pruebas.
 const ESCOTILLAS = [['TYCON_RUNTIME_MATRIX_LEGACY', 'RUNTIME_MATRIX_LEGACY'], ['TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK', 'RUNTIME_MATRIX_NO_MUTATION_CHECK']];
+const SALIDA_NORMAL = {
+  TYCON_RUNTIME_MATRIX_LEGACY: 'declarar el criterio en `runtime_not_verifiable:` con su `covered_by:` y aceptarlo con la firma `runtime-waiver`',
+  TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK: 'ejecutar la acción en la prueba (y marcarla `@mutates`), o, si el verbo no es una acción, declararlo con `@runtime-exempt(DODRT-C8)`',
+};
 
 /**
- * Un renglón en bypass.log por escotilla puesta, una vez por sesión, historia y día: la matriz se calcula varias veces
+ * Las escotillas puestas en `env`, separadas por la fecha de corte: `{ vigentes: Set, avisos: [] }`. Un aviso por cada
+ * una puesta: antes del corte, la fecha en que se retira; desde el corte, que se ignora y cuál es su salida normal.
+ */
+function escotillasVigentes(env, today) {
+  const ES = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+  const vigentes = new Set();
+  const avisos = [];
+  // cada una por su nombre a la vista: el inventario de la lista única busca así a sus lectores
+  const puestas = { TYCON_RUNTIME_MATRIX_LEGACY: env.TYCON_RUNTIME_MATRIX_LEGACY === '1',
+    TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK: env.TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK === '1' };
+  for (const [variable] of ESCOTILLAS) {
+    if (!puestas[variable]) continue;
+    if (ES.antesDelCorte(variable, today)) {
+      vigentes.add(variable);
+      avisos.push(`${variable}=1 se retira el ${ES.corteDe(variable)}: desde ese día no vale. La salida normal: ${SALIDA_NORMAL[variable]}.`);
+    } else {
+      avisos.push(`${variable}=1 ya no vale (se retiró el ${ES.corteDe(variable) || 'día de su corte'}) y se ignora. La salida normal: ${SALIDA_NORMAL[variable]}.`);
+    }
+  }
+  return { vigentes, avisos };
+}
+
+/**
+ * Un renglón en bypass.log por escotilla vigente, una vez por sesión, historia y día: la matriz se calcula varias veces
  * por comando (el cierre, el gancho del commit, la guía de QA), y un renglón por cálculo contaría de más. La sesión
  * sale de `opts.sessionId` o del ambiente; sin sesión, se anota en cada cálculo, con `sessionId: null`.
  */
-function anotarEscotillas(env, sid, opts) {
+function anotarEscotillas(env, sid, opts, vigentes) {
   const ES = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
   const sessionId = opts.sessionId || ES.sesionDe(env);
   for (const [variable, kind] of ESCOTILLAS) {
-    if (env[variable] !== '1') continue;
+    if (!vigentes.has(variable)) continue;
     ES.anotarEscape({ stateDir: opts.stateDir, sessionId, kind, variable, story: sid, unaVez: `${sid}`, storyPath: opts.storyPath || null });
   }
 }
@@ -1252,9 +1282,10 @@ function compute(opts) {
   const { content, fm } = readStory(storyPath);
   const sid = storyIdFrom(fm, storyPath);
   const env = opts.env || process.env;
-  const LEGACY_NO_MUTATION_CHECK = env.TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK === '1';
-  const LEGACY_SMOKE_KINDS = env.TYCON_RUNTIME_MATRIX_LEGACY === '1';
-  anotarEscotillas(env, sid, opts);
+  const escotillas = escotillasVigentes(env, opts.today || new Date());
+  const LEGACY_NO_MUTATION_CHECK = escotillas.vigentes.has('TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK');
+  const LEGACY_SMOKE_KINDS = escotillas.vigentes.has('TYCON_RUNTIME_MATRIX_LEGACY');
+  anotarEscotillas(env, sid, opts, escotillas.vigentes);
 
   if (/^dod_runtime_exempt:\s*true\b/m.test(fm)) {
     // el repo y los totales también en la exenta: el candado de la guía QA busca las pantallas desde
@@ -1872,6 +1903,7 @@ function compute(opts) {
   if (LEGACY_SMOKE_KINDS) {
     warnings.push('🚨 TYCON_RUNTIME_MATRIX_LEGACY=1 — todo smoke cuenta como RUNTIME sin mirar el comando. Es el bug que este gate vino a arreglar: la matriz PUEDE estar mintiendo. Sacá la variable en cuanto puedas.');
   }
+  warnings.push(...escotillas.avisos);
 
   // Sólo de la evidencia que de verdad cuenta: un gate sin espejo o con pruebas apagadas no cuenta, y avisar por qué
   // siguió contando uno de sus archivos confundiría.

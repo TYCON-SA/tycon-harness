@@ -79,14 +79,14 @@ function nuevaHome(conversacion, opciones) {
  * Corre el freno con ese comando. `conversacion` null = sin registro. `codex` manda la entrada como la manda Codex (con
  * `turn_id`): Codex no tiene ventana de permiso, así que ahí la ventana niega siempre, y el cartel se puede medir.
  */
-function freno(comando, { conversacion = [], forjados = [], herramienta = 'Bash', env = {}, home = nuevaHome(conversacion, { forjados }), path: extraPath, codex = false, transcript, timeout } = {}) {
+function freno(comando, { conversacion = [], forjados = [], herramienta = 'Bash', env = {}, home = nuevaHome(conversacion, { forjados }), path: extraPath, codex = false, transcript, timeout, hook = HOOK, permisos } = {}) {
   const e = { ...process.env, HOME: home, USERPROFILE: home, ...env };
   for (const k of Object.keys(e)) if (/^TYCON_/.test(k) && !(k in env)) delete e[k];
   // en Windows la variable se llama `Path`: una `PATH` aparte al lado deja a spawn sin encontrar bash
   const clavePath = Object.keys(e).find((k) => k.toUpperCase() === 'PATH') || 'PATH';
   if (extraPath) e[clavePath] = `${extraPath}${path.delimiter}${e[clavePath] || ''}`;
-  const r = spawnSync('bash', [HOOK], {
-    input: JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: herramienta, tool_input: { command: comando }, cwd: home, ...(codex ? { turn_id: 'turn-1' } : {}), ...(transcript ? { transcript_path: transcript } : {}) }),
+  const r = spawnSync('bash', [hook], {
+    input: JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: herramienta, tool_input: { command: comando }, cwd: home, ...(codex ? { turn_id: 'turn-1' } : {}), ...(transcript ? { transcript_path: transcript } : {}), ...(permisos ? { permission_mode: permisos } : {}) }),
     env: e, encoding: 'utf8', ...(timeout ? { timeout } : {}),
   });
   return { status: r.status, stderr: r.stderr || '', stdout: r.stdout || '', home };
@@ -1826,7 +1826,8 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['save', ['node', M, 'approve-save', '--for-session', 'ses-b']],
     ['escape:force-manual', ['node', M, 'set-check', 'tests', 'green', '--force-manual']],
     ['escape:trust-ran', ['node', P, 'check-count', '--repo', '/r', '--story', 's.md', '--trust-ran']],
-    ['adhoc-lane', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido"}']],
+    ['escape:no-mutation', ['node', M, 'complete-step', 'run-tests', '--no-mutation', '--reason', 'refactor sin código nuevo']],
+    ['adhoc-lane',['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido"}']],
     ['adhoc-lane:sobre-cupo', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido","maxFiles":9}']],
     ['adhoc-lane:datos', ['node', M, 'adhoc', 'allow-data-change', '--changed', 'el botón pide al proceso', '--recommends', 'pasar', '--why', 'autorizo el cambio']],
     ['adhoc-lane:guardado-ajeno', ['node', M, 'adhoc', 'allow-foreign-save']],
@@ -2012,4 +2013,75 @@ test('T10 FormasViejas_Escondidas_SiguenFrenando @story-8.142 @ac-8 — los dos 
     { env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8' });
   assert.notStrictEqual(g.status, 0, g.stderr);
   assert.strictEqual(fs.readFileSync(marcador, 'utf8'), antes, 'el marcador quedó igual');
+});
+
+// ── Lo que debilita la evidencia pide la firma de nivel 2, con su fecha de corte ──────────────────────────────────────
+// La fecha vive en la lista única de interruptores (scripts/lib/env-switches.json). El freno se corre desde una copia
+// temporal del árbol con la lista reescrita (fecha pasada o futura): ni el reloj ni una variable de la máquina la mueven.
+
+const arbolesConCorte = new Map();
+function arbolConCorte(fecha) {
+  if (arbolesConCorte.has(fecha)) return arbolesConCorte.get(fecha);
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'se-corte-')));
+  const skills = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts');
+  const fuera = [path.join(RAIZ, 'scripts', 'tests'), path.join(RAIZ, 'scripts', 'controls-bench'), path.join(skills, 'tests')];
+  const filtro = (src) => !fuera.includes(src) && path.basename(src) !== 'node_modules';
+  fs.cpSync(path.join(RAIZ, 'scripts'), path.join(dir, 'scripts'), { recursive: true, filter: filtro });
+  fs.cpSync(skills, path.join(dir, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: filtro });
+  const lista = path.join(dir, 'scripts', 'lib', 'env-switches.json');
+  const datos = JSON.parse(fs.readFileSync(lista, 'utf8'));
+  for (const e of datos.entradas) if (e.enforce_from) e.enforce_from = fecha;
+  fs.writeFileSync(lista, JSON.stringify(datos, null, 1));
+  const r = { dir, hook: path.join(dir, 'scripts', 'hooks', 'safety-guard-pre.sh') };
+  arbolesConCorte.set(fecha, r);
+  return r;
+}
+const renglonesDe = (home) => {
+  try { return fs.readFileSync(path.join(require(path.join(LIB, 'state-dir.js')).stateDir(home), 'bypass.log'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; }
+};
+
+// T11 EscC1_MutationCheckOff_AsksSignature @story-8.256 @ac-10 @ac-15 @ac-26
+// 🔴 Falla con: `TYCON_MUTATION_CHECK=off` (en la línea, con `export` o traída por un `--env-file`) que pasa sin firma
+//    desde la fecha de corte; `=0`, que no apaga nada, frenado o pidiendo firma; antes del corte, sin el aviso o sin renglón.
+test('T11 EscC1_MutationCheckOff_AsksSignature @story-8.256 @ac-10 @ac-15 @ac-26', () => {
+  const pasada = arbolConCorte('2000-01-01');
+  const futura = arbolConCorte('2099-01-01');
+  const m = path.join(pasada.dir, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  const linea = `TYCON_MUTATION_CHECK=off node ${m} complete-step run-tests`;
+  for (const cmd of [linea, `export TYCON_MUTATION_CHECK=off; node ${m} complete-step run-tests`, `TYCON_MUTATION_CHECK=OFF node ${m} complete-step run-tests`]) {
+    for (const permisos of ['bypassPermissions', 'default']) {
+      const r = freno(cmd, { hook: pasada.hook, permisos });
+      assert.notStrictEqual(veredicto(r), 'allow', `${cmd} (${permisos}): ${r.stderr}`);
+      if (veredicto(r) === 'deny') assert.match(r.stderr, /ESC-C1/, cmd);
+    }
+  }
+  const envFile = freno(`node --env-file=f ${m} complete-step run-tests`, { hook: pasada.hook });
+  assert.strictEqual(envFile.status, 2, envFile.stderr);
+  assert.match(envFile.stderr, /ESC-C1/);
+  // `=0` no apaga nada: ni firma ni renglón
+  const cero = freno(`TYCON_MUTATION_CHECK=0 node ${m} complete-step run-tests`, { hook: pasada.hook });
+  assert.strictEqual(veredicto(cero), 'allow', cero.stderr);
+  assert.strictEqual(renglonesDe(cero.home).filter((x) => x.kind === 'ESCAPE_NOTICE_PERIOD').length, 0);
+  // antes del corte: pasa, le avisa a la persona y deja el renglón
+  const antes = freno(linea.replace(pasada.dir, futura.dir), { hook: futura.hook, permisos: 'bypassPermissions' });
+  assert.strictEqual(veredicto(antes), 'allow', antes.stderr);
+  assert.match(antes.stdout, /desde 2099-01-01 esto pide la firma del dueño/);
+  assert.deepStrictEqual(renglonesDe(antes.home).filter((x) => x.kind === 'ESCAPE_NOTICE_PERIOD').map((x) => x.variable), ['TYCON_MUTATION_CHECK']);
+});
+
+// T13 EscC1_StoryReviewZero_AsksSignature @story-8.256 @ac-12
+// 🔴 Falla con: `TYCON_STORY_REVIEW=0` que pasa sin firma desde la fecha de corte, o un `--env-file` delante de
+//    `validators` (o de su nombre viejo, `validadores`) que pasa.
+test('T13 EscC1_StoryReviewZero_AsksSignature @story-8.256 @ac-12', () => {
+  const pasada = arbolConCorte('2000-01-01');
+  const p = path.join(pasada.dir, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js');
+  const r = freno(`TYCON_STORY_REVIEW=0 node ${p} validators --story s.md --repo .`, { hook: pasada.hook });
+  assert.notStrictEqual(veredicto(r), 'allow', r.stderr);
+  if (veredicto(r) === 'deny') assert.match(r.stderr, /ESC-C1/);
+  else assert.match(r.stdout, /permissionDecision/);
+  for (const sub of ['validators', 'validadores']) {
+    const e = freno(`node --env-file=f ${p} ${sub} --story s.md --repo .`, { hook: pasada.hook });
+    assert.strictEqual(e.status, 2, `${sub}: ${e.stderr}`);
+    assert.match(e.stderr, /ESC-C1/, sub);
+  }
 });

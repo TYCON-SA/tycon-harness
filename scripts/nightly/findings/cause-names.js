@@ -22,6 +22,7 @@ const NOMBRES_CAUSA = {
     RUNTIME_MATRIX_LEGACY: 'prueba en vivo con todo humo como ejecución real', TYCON_RUNTIME_MATRIX_LEGACY: 'prueba en vivo con todo humo como ejecución real',
     RUNTIME_MATRIX_NO_MUTATION_CHECK: 'prueba de mutación salteada',
     STORY_REVIEW_OFF: 'revisión de la historia salteada', TYCON_STORY_REVIEW: 'revisión de la historia salteada',
+    ESCAPE_NOTICE_PERIOD: 'escape avisado antes de su fecha de corte', COVERAGE_BELOW_FLOOR: 'umbral de cobertura bajado en la máquina',
     ATDD_PREEDIT_GATE_OFF: 'pruebas primero apagado',
     TYCON_SAFETY_OFF: 'freno de seguridad apagado', TYCON_SESSION_GUARD_OK: 'freno de sesiones salteado',
     TYCON_STASH_GUARD_OK: 'freno del stash ajeno salteado',

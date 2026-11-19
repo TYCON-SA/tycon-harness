@@ -57,8 +57,9 @@ const EQUIVALENTES = { GIT_NO_VERIFY: '--no-verify', ATDD_BYPASS: 'atddBypass', 
   STORY_GATE_OFF_ADHOC: 'TYCON_STORY_GATE', RUNTIME_MATRIX_LEGACY: 'TYCON_RUNTIME_MATRIX_LEGACY',
   RUNTIME_MATRIX_NO_MUTATION_CHECK: 'TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK', STORY_REVIEW_OFF: 'TYCON_STORY_REVIEW' };
 // Los renglones del registro que no son escapes: el chequeo de vida con `ci` fuera de la CI (los guiones del arnés que
-// lo ponen también corren en una máquina).
-const NO_CUENTAN = ['LIVENESS_PRECOMMIT_CI_LOCAL'];
+// lo ponen también corren en una máquina), y el aviso del freno antes de la fecha de corte de un escape (el comando y el
+// renglón de su lector ya cuentan ese escape).
+const NO_CUENTAN = ['LIVENESS_PRECOMMIT_CI_LOCAL', 'ESCAPE_NOTICE_PERIOD'];
 // Los valores con que marker.js prende una bandera (cmdSetFlag) y deja prendido el modo automático (cmdSetAutonomous):
 // cualquier otro valor de set-autonomous lo apaga.
 const PRENDE_BANDERA = ['true', '1'];
@@ -809,4 +810,4 @@ function revisar({ volcado, lineasHilo, registros }) {
 }
 
 module.exports = { CODIGOS, ESCAPES, VALOR_QUE_APAGA, EQUIVALENTES, ACCIONES_DE_PARTE, RUTAS_DEL_ARNES, RUTAS_INSTALADAS, CIERRE_DESDE, APARTE,
-  banderasDePartes, segmentos, argsDe, corre, comandos, revisar, claseDeError, horasSinMedir, HORAS_SIN_MEDIR };
+  banderasDePartes, segmentos, argsDe, corre, comandos, revisar, claseDeError, horasSinMedir, HORAS_SIN_MEDIR, categoriaDeLinea };

@@ -1698,6 +1698,12 @@
       "requiere": []
     },
     {
+      "__nota": "Lo que da por buena la evidencia sin verificarla pide la firma de nivel 2: la bandera --no-mutation con motivo y firma, el período de aviso hasta la fecha de corte de la lista única, y los textos que nombran la firma. Casa de juguete y copias temporales del árbol.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/evidence-escape.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/undeclared-changes.test.js",
       "requiere": []
