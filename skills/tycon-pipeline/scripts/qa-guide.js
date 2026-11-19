@@ -654,6 +654,44 @@ function screenRoots(repoRoot, notes, storyPath) {
   return [repoRoot, path.dirname(repoRoot), ...companions];
 }
 
+// La tanda que mide esta corrida: la del marcador de esta sesión, si es de esta historia (la misma lectura que la matriz
+// por línea de comando y que el marcador al cerrar). `{ batches, changed }`, o null sin sesión, sin marcador, sin tanda o
+// si algo no se pudo leer: entonces la pantalla se mira por la historia entera, como sin tandas.
+function tandasDeLaCorrida(abs) {
+  try {
+    const sid = require(path.join(__dirname, 'lib', 'session-id.js')).sessionIdFileKey();
+    if (sid === '_nosession') return null;
+    const dir = require(path.join(__dirname, 'lib', 'state-dir.js')).stateDir(require('os').homedir());
+    const marker = JSON.parse(fs.readFileSync(path.join(dir, 'active', `${sid}.json`), 'utf8'));
+    const rmx = require(path.join(__dirname, 'runtime-matrix.js'));
+    const op = rmx.opcionesDeTandaDelMarcador(marker, abs);
+    if (!op.batch || !Array.isArray(op.changed)) return null;
+    const medidas = rmx.compute({ storyPath: abs, ...op }).measuredBatches;
+    return Array.isArray(medidas) && medidas.length ? { batches: medidas, changed: op.changed } : null;
+  } catch { return null; }
+}
+
+// Una pantalla que falta y nombra a un repo hermano puede haber entrado a main del hermano sin que su copia la bajara:
+// sacarla de la lista sería borrar una pantalla que existe. Se dice, por hermano. Sin red: el arnés no trae el hermano.
+function hermanoAtrasado(missing, companions) {
+  if (!companions.length) return '';
+  const lib = require(path.join(__dirname, 'lib', 'companion-repos.js'));
+  const porHermano = new Map();
+  for (const entrada of missing) {
+    const d = String(entrada || '').replace(/\\/g, '/').replace(/^\.\//, '').trim();
+    const pref = lib.parseRepoPrefixed(d);
+    const c = companions.find((x) => {
+      const n = lib.label(x);
+      return pref ? path.basename(pref.ref) === n : d.startsWith(`${n}/`) || d.startsWith(`../${n}/`);
+    });
+    if (c) porHermano.set(c, [...(porHermano.get(c) || []), entrada]);
+  }
+  return [...porHermano].map(([c, lista]) => {
+    const n = lib.label(c);
+    return ` · ${lista.join(', ')} ${lista.length > 1 ? 'son' : 'es'} de ${n}: la copia de ${n} puede estar atrasada (no bajó lo que entró a main). Traela al día (git pull en ${n}) antes de sacarla de la lista.`;
+  }).join('');
+}
+
 // Un campo del archivo de legibilidad de la pantalla: `clave: a, b` en la línea, o `clave:` y debajo `- a` / `- b`.
 function readListField(md, key) {
   const lines = md.split('\n');
@@ -683,7 +721,7 @@ function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot, storyPath }) {
   const { found, missing } = ui.screenFiles(fm, body, busqueda.roots, busqueda.resolve);
   // Una pantalla declarada que no está no se puede revisar: frena. Callada, una story cuyas
   // pantallas no se encuentran pasaría el candado sin que nadie mirara nada.
-  if (missing.length) problems.push(`(7) Pantallas declaradas por la story que no están en el disco (no se pueden revisar): ${missing.join(', ')} — si la story ya no las toca, sacalas de la lista; si viven en otro repo, declaralo en .tycon/advisors.yaml → evidence.companion_repos`);
+  if (missing.length) problems.push(`(7) Pantallas declaradas por la story que no están en el disco (no se pueden revisar): ${missing.join(', ')} — si la story ya no las toca, sacalas de la lista; si viven en otro repo, declaralo en .tycon/advisors.yaml → evidence.companion_repos${hermanoAtrasado(missing, busqueda.roots.slice(2))}`);
   // Una pantalla que está pero no se lee tampoco se puede revisar, haya o no marcas citadas.
   for (const s of found) {
     try { fs.accessSync(s.abs, fs.constants.R_OK); } catch (e) { problems.push(`(7) No pude leer la pantalla ${s.rel} (${e.code || e.message}): no se puede revisar lo que no se ve.`); }
@@ -1033,10 +1071,14 @@ function main() {
     // maqueta es de esa tanda. La guía de los criterios de backend, sí. Si lo que cambió en el repo toca pantalla, se
     // revisa igual.
     const uiSignal = require(path.join(__dirname, 'lib', 'ui-signal.js'));
-    const alcance = uiSignal.screenScope(content, matrix.repoRoot, { changed: uiSignal.changedFiles(matrix.repoRoot) });
-    if (alcance.note && !alcance.blocked.length) console.log(`   · ${alcance.note}`);
+    // Con una corrida por tanda, la pantalla de OTRA tanda tampoco se revisa en ésta (la misma regla que el marcador).
+    const tanda = tandasDeLaCorrida(abs);
+    const alcance = uiSignal.screenScope(content, matrix.repoRoot, tanda || { changed: uiSignal.changedFiles(matrix.repoRoot) });
+    const deOtraTanda = alcance.blocked.length ? alcance.blocked : (!alcance.active && alcance.otherBatches) || [];
+    const cuyaTanda = alcance.blocked.length ? `la tanda bloqueada ${deOtraTanda.join(', ')}` : `la tanda ${deOtraTanda.join(', ')}`;
+    if (alcance.note && !deOtraTanda.length) console.log(`   · ${alcance.note}`);
     let pantalla = { problems: [], notes: [], screens: [] };
-    const deTandaBloqueada = alcance.blocked.length > 0;
+    const deTandaBloqueada = deOtraTanda.length > 0;
     if (!deTandaBloqueada) {
       pantalla = uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot: matrix.repoRoot, storyPath: abs });
       problems.push(...pantalla.problems);
@@ -1048,7 +1090,7 @@ function main() {
     } else {
       if (alcance.note) console.log(`   · ${alcance.note}`);
       if (opt('--mockup-sha') || isFile(path.join(qaDir, `${qk}-mockup-approval.json`))) {
-        console.log(`   · la maqueta aprobada es de la tanda bloqueada ${alcance.blocked.join(', ')}: se compara cuando la tanda deje de estar bloqueada.`);
+        console.log(`   · la maqueta aprobada es de ${cuyaTanda}: se compara en la corrida que mida esa tanda.`);
       }
     }
     if (problems.length) {
@@ -1057,7 +1099,7 @@ function main() {
       for (const v of qaViejos) console.error(`   · ${v} no cuenta: el número ${sid} lo comparten varias stories de este repo y ese archivo no dice de cuál es (no se tocó). La guía de esta story va en ${qk}-….`);
       process.exit(2);
     }
-    console.log(`✅ qa-guide --check OK (story ${sid}): pasos-tester presentes, cubren los ${runtimeAcs.length} ACs corridos, sin jerga, legibilidad OK, usuario de prueba declarado, los ${acs.length} ACs con titular legible, y ${!deTandaBloqueada ? `la pantalla revisada (${pantalla.screens.length} archivo/s)` : `la pantalla sin revisar: es de la tanda bloqueada ${alcance.blocked.join(', ')}`}.`);
+    console.log(`✅ qa-guide --check OK (story ${sid}): pasos-tester presentes, cubren los ${runtimeAcs.length} ACs corridos, sin jerga, legibilidad OK, usuario de prueba declarado, los ${acs.length} ACs con titular legible, y ${!deTandaBloqueada ? `la pantalla revisada (${pantalla.screens.length} archivo/s)` : `la pantalla sin revisar: es de ${cuyaTanda}`}.`);
     process.exit(0);
   }
 

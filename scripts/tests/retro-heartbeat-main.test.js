@@ -178,6 +178,36 @@ test('T1 Pedido_Anota_NumeroYEsperando: el número del pedido de az y de gh, y s
   assert.match(sin.stderr, /no pude leer el número del pedido/);
 });
 
+// Las formas en que az contesta con `--query`, tomadas de pedidos reales: sin leerlas, el pedido quedaba sin número y
+// la punta de su rama se reclamaba como si fuera la fusión.
+test('T1b Pedido_NumeroEnLasFormasDeAz_YSinNumeroNoFrena: un pedido creado no es un merge', () => {
+  const formas = [
+    ['pullRequestId 6758 active\n', 6758],
+    [JSON.stringify({ id: 6788, draft: true, status: 'active' }, null, 2), 6788],
+    ['6756\n', 6756],
+    [`cat: /tmp/x/pr-body.md: No such file or directory\n${JSON.stringify({ id: 6778, merge: 'succeeded', status: 'active' }, null, 2)}`, 6778],
+  ];
+  for (const [salida, numero] of formas) {
+    const { dir } = repoDelCaso();
+    const lab = laboratorio({ extra: { TYCON_RETRO_ASK_PR: '0' } });
+    const e = pedidoEsperando(lab, dir, salida);
+    assert.strictEqual(e.pr, numero, salida);
+    assert.strictEqual(e.estado, 'esperando', salida);
+  }
+  // un número suelto entre otras líneas no es el del pedido
+  const { dir } = repoDelCaso();
+  const lab = laboratorio({ extra: { TYCON_RETRO_ASK_PR: '0' } });
+  assert.strictEqual(pedidoEsperando(lab, dir, '3\nalgo más\n').pr, undefined);
+  // sin número, y con la punta ya en la línea de main: no frena el cierre, y el aviso de arranque lo lista con --correct
+  const caso = repoDelCaso();
+  const lab2 = laboratorio({ extra: { TYCON_RETRO_ASK_PR: '0' } });
+  const enMain = caso.directo.slice(0, 12);
+  lab2.sembrar({ repoPath: caso.dir, sha: enMain, cmd: 'az repos pr create --source-branch dev --target-branch main' });
+  assert.doesNotMatch(motivoDelCierre(lab2.cierre(caso.dir)), new RegExp(enMain));
+  const a = lab2.arranque(caso.dir, { TYCON_RETRO_PENDING_MIN_AGE_MIN: '0' });
+  assert.match(a.stdout, new RegExp(`${enMain}[^\\n]*pedido sin su número[^\\n]*--correct`), a.stdout);
+});
+
 // El `origin` que le da al gancho la identidad del repo para la capa de plataforma (sin fetch: nadie lo trae).
 const ORIGEN = { azure: 'https://dev.azure.com/acme/producto/_git/acme-backend', github: 'https://github.com/acme/acme-backend' };
 function conOrigen(dir, plataforma = 'azure') { git(dir, ['remote', 'add', 'origin', ORIGEN[plataforma]]); return dir; }
@@ -346,7 +376,8 @@ test('T8 EntradaVieja_FueraDeMain_NoFrenaYAvisaConCorregir', () => {
   const enMain = caso.directo.slice(0, 12);
   const anuladoEnMain = caso.fusionAMain.slice(0, 12);
   lab.sembrar({ repoPath: caso.dir, sha: deDev });
-  lab.sembrar({ repoPath: caso.dir, sha: enMain });
+  // un push a main que está en main se reclama como siempre (un pedido sin número en main ya no: ver T1b)
+  lab.sembrar({ repoPath: caso.dir, sha: enMain, cmd: 'git push origin main' });
   lab.sembrar({ repoPath: caso.dir, sha: anuladoEnMain, cmd: 'git push origin main' });
   latido(lab.dashboard, caso.dir, caso.fusionAMain, { anulado: ANULADO });
   // una que entró con un commit fuera de la línea de main
