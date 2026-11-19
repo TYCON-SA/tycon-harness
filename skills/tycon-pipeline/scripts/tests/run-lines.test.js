@@ -676,3 +676,104 @@ test('MK5 Set_NewStory_DropsThePr @story-8.293 @ac-3', () => {
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(E.leer(sid).pr, undefined);
 });
+
+// ── el registro de pedidos ───────────────────────────────────────────────────────────────────
+
+const REGISTRO = (E, clave = '9.9') => path.join(E.repo, '.advisors', 'dod-runtime', `${clave}-pedidos.jsonl`);
+const renglones = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+function repoAparte(E, nombre) {
+  const r = path.join(E.base, nombre);
+  fs.mkdirSync(r, { recursive: true });
+  const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-C', r, ...a], { stdio: 'ignore' });
+  g('init', '-q', '-b', 'main');
+  g('remote', 'add', 'origin', `https://example.invalid/${nombre}.git`);
+  fs.writeFileSync(path.join(r, 'a.js'), '1\n');
+  g('add', '.'); g('commit', '-qm', 'inicio');
+  g('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  return { r, g };
+}
+function conCommitPropio({ r, g }) {
+  fs.writeFileSync(path.join(r, 'a.js'), '2\n');
+  g('add', '.'); g('commit', '-qm', 'propio');
+  return r;
+}
+
+test('T17 MarkerPr_ConCorrida_EscribeRenglonSinRepetir @story-8.310 @ac-17', () => {
+  const E = entorno();
+  fs.mkdirSync(path.dirname(REGISTRO(E)), { recursive: true });
+  const sid = 't17';
+  E.escribir(sid, E.base9(sid));
+  const pub = repoAparte(E, 'publico').r;
+  const otro = repoAparte(E, 'tercero').r;
+  for (const a of [['pr', '12', '--repo', pub], ['pr', '12', '--repo', pub], ['pr', '13', '--repo', otro], ['pr', '14', '--repo', E.repo]]) {
+    const x = E.correr(a, sid);
+    assert.strictEqual(x.status, 0, x.stderr);
+  }
+  assert.deepStrictEqual(renglones(REGISTRO(E)).map((l) => [l.historia, l.clave, l.repo, l.pedido]), [['9.9', '9.9', 'publico', 12], ['9.9', '9.9', 'tercero', 13]]);
+  assert.ok(renglones(REGISTRO(E)).every((l) => l.ts));
+  assert.deepStrictEqual(E.leer(sid).pr, { number: 14, merged: false, repo: 'repo' });
+  assert.strictEqual(E.correr(['pr', '15', '--repo', path.join(E.base, 'no-existe')], sid).status, 2);
+});
+
+test('T17b MarkerClear_RepoConCommitsNoAnotado_Avisa @story-8.310 @ac-17', () => {
+  const E = entorno();
+  fs.mkdirSync(path.dirname(REGISTRO(E)), { recursive: true });
+  const conRenglon = conCommitPropio(repoAparte(E, 'con-renglon'));
+  const sinNada = conCommitPropio(repoAparte(E, 'sin-nada'));
+  const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-C', E.repo, ...a], { stdio: 'ignore' });
+  g('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  g('commit', '-q', '--allow-empty', '-m', 'propio');
+  const sid = 't17b';
+  const eventos = [conRenglon, sinNada].map((r) => ({ path: path.join(r, 'a.js'), ts: at(1) }));
+  E.escribir(sid, E.base9(sid, { stepsCompleted: [...TODOS], stepsPending: [], deepReviewDone: true, dodRuntimeChecked: true, fileEvents: eventos }));
+  assert.strictEqual(E.correr(['pr', '20', '--repo', conRenglon], sid).status, 0);
+  assert.strictEqual(E.correr(['pr', '21', '--repo', E.repo], sid).status, 0);
+  const c = E.correr(['clear'], sid);
+  assert.strictEqual(c.status, 0, c.stderr);
+  const avisos = c.stderr.split('\n').filter((l) => /sin pedido anotado/.test(l));
+  assert.strictEqual(avisos.length, 1, c.stderr);
+  assert.match(avisos[0], /sin-nada/);
+});
+
+test('T18 MarkerPr_SinMarcador_ConHistoria_YSinCarpeta @story-8.310 @ac-18', () => {
+  const E = entorno();
+  const dod = path.dirname(REGISTRO(E));
+  const pub = repoAparte(E, 'publico').r;
+  // un número repetido: la clave de la historia lleva su tema
+  const a = path.join(E.repo, 'specs', 'ventas', 'story-9.9-a.md');
+  const b = path.join(E.repo, 'specs', 'compras', 'story-9.9-b.md');
+  fs.rmSync(E.story);
+  fs.mkdirSync(path.dirname(a), { recursive: true });
+  fs.mkdirSync(path.dirname(b), { recursive: true });
+  fs.writeFileSync(a, '---\nstory: "9.9"\ntitle: "a"\nstatus: review\n---\n# a\n');
+  fs.writeFileSync(b, '---\nstory: "9.9"\ntitle: "b"\nstatus: review\n---\n# b\n');
+  const sid = 't18';
+  E.escribir(sid, E.base9(sid, { storyPath: a, stepsCompleted: [...TODOS], stepsPending: [], deepReviewDone: true, dodRuntimeChecked: true }));
+  assert.strictEqual(E.correr(['clear'], sid).status, 0);
+  const hist = path.join(E.stateDir, 'timing-history');
+  const volcado = () => fs.readdirSync(hist).filter((f) => f.startsWith('9.9-')).map((f) => fs.readFileSync(path.join(hist, f), 'utf8')).join('');
+  const antes = volcado();
+  const base = ['pr', '30', '--merged', '--story', '9.9', '--repo', pub];
+  // sin --story-path no se sabe la clave
+  assert.strictEqual(E.correr(base, 'x').status, 2);
+  // sin carpeta de evidencia, error y nada escrito
+  assert.strictEqual(E.correr([...base, '--story-path', a], 'x').status, 1);
+  assert.strictEqual(volcado(), antes, 'el volcado no se toca');
+  fs.mkdirSync(dod, { recursive: true });
+  const ok = E.correr([...base, '--story-path', a], 'x');
+  assert.strictEqual(ok.status, 0, ok.stderr);
+  const archivos = fs.readdirSync(dod).filter((f) => f.endsWith('-pedidos.jsonl'));
+  assert.deepStrictEqual(archivos, ['ventas__9.9-pedidos.jsonl']);
+  assert.deepStrictEqual(renglones(path.join(dod, archivos[0])).map((l) => [l.repo, l.pedido, l.clave]), [['publico', 30, 'ventas__9.9']]);
+  // con un marcador vivo, --story-path escribe igual, también para el repo de la historia
+  const vivo = 't18-vivo';
+  E.escribir(vivo, E.base9(vivo, { storyPath: a }));
+  assert.strictEqual(E.correr(['pr', '31', '--merged', '--story', '9.9', '--repo', E.repo, '--story-path', a], vivo).status, 0);
+  assert.ok(renglones(path.join(dod, archivos[0])).some((l) => l.pedido === 31 && l.repo === 'repo'));
+  // sin volcado en esta máquina: el renglón se escribe y sale bien
+  fs.rmSync(hist, { recursive: true, force: true });
+  const sinVolcado = E.correr(['pr', '32', '--merged', '--story', '9.9', '--repo', E.repo, '--story-path', a], 'y');
+  assert.strictEqual(sinVolcado.status, 0, sinVolcado.stderr);
+  assert.match(sinVolcado.stderr, /volcado/);
+  assert.ok(renglones(path.join(dod, archivos[0])).some((l) => l.pedido === 32));
+});

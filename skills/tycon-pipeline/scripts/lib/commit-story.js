@@ -8,11 +8,17 @@
  *
  * El nombre de la rama lo escribe una persona: una rama mal nombrada engaña a esta respuesta. El título de `Merged PR N:` no
  * cuenta, porque es texto libre: `fix 1.2 redondeo` no dice que sea de la historia 1.2.
+ *
+ * Con las ramas por sesión (`wt/<sesión>`) la rama no dice nada. La regla de la entrada (lib/evidence-vs-commit.js) suma dos
+ * datos: el número de pedido del asunto, cruzado con el registro de pedidos, y los asuntos de los commits de la fusión. Esos
+ * asuntos son texto libre, así que `nombraLaHistoria` sólo sirve para decir «es propia», que vence de más y nunca deja pasar.
  */
 const path = require('path');
 const { ramaNombraLaStory } = require('./companion-repos.js');
+const { claveDePedido } = require('./story-requests.js');
 
 const ASUNTO_DE_PEDIDO = /^Merge pull request (#?)\d+ from (\S+?)(?: into \S+)?$/;
+const ASUNTOS_CON_NUMERO = [/^Merge pull request #?(\d+) from \S/, /^Merged PR (\d+):/];
 
 /** La rama del asunto que escribe la plataforma al fusionar un pedido, o null. En GitHub va precedida por la organización. */
 function ramaDelAsunto(asunto) {
@@ -60,4 +66,33 @@ function historiaDeLaRama(rama, { propia, catalogo }) {
   return elegida.archivo === propia.archivo ? 'propia' : { numero: elegida.numero };
 }
 
-module.exports = { ramaDelAsunto, historiaDeLaRama };
+/** El número de pedido del asunto que escribe la plataforma, o null. */
+function pedidoDelAsunto(asunto) {
+  for (const re of ASUNTOS_CON_NUMERO) {
+    const m = String(asunto || '').match(re);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+/**
+ * De qué historia es una fusión: 'propia' si el registro o la rama lo dicen; si no, `{ numero }` de la que digan; si no,
+ * null. Un renglón de otra historia no le quita a la fusión lo que su rama dice que es propio. `pedidos`: el `porPedido` de
+ * lib/story-requests.js. `propia`: `{ numero, archivo, clave }`.
+ */
+function historiaDeLaFusion(asunto, { repo, propia, catalogo, pedidos }) {
+  const numero = pedidoDelAsunto(asunto);
+  const filas = (numero && pedidos && pedidos.get(claveDePedido(repo, numero))) || [];
+  if (filas.some((f) => f.clave === propia.clave)) return 'propia';
+  const porRama = historiaDeLaRama(ramaDelAsunto(asunto), { propia, catalogo });
+  if (porRama === 'propia') return 'propia';
+  return filas.length ? { numero: filas[0].historia } : porRama;
+}
+
+/** ¿El asunto de un commit nombra a la historia? Por el número entero: `9.9` no está en `9.91`, `19.9` ni `9.9.1`. */
+function nombraLaHistoria(asunto, numero) {
+  const n = String(numero).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^\\w.])${n}(?![\\w]|\\.\\d)`).test(String(asunto || ''));
+}
+
+module.exports = { ramaDelAsunto, historiaDeLaRama, pedidoDelAsunto, historiaDeLaFusion, nombraLaHistoria };

@@ -5205,23 +5205,56 @@ function decirRenglonesDelCierre(marker, dump, runDir) {
   } catch (e) { process.stderr.write(`[corrida] el aviso del cierre no salió (${e.message})\n`); }
 }
 
+// El renglón del registro de pedidos (lib/story-requests.js) para una historia dada por su ruta. Sale con error sin escribir
+// nada si no se puede saber su clave o no existe su carpeta de evidencia.
+function anotarEnElRegistro({ storyFile, id, repo, numero }) {
+  const { key, error } = require('./lib/evidence-key.js').keyInfoOr(storyFile, String(id));
+  if (!key) {
+    console.error(`marker.js pr: no pude saber la clave de la historia ${id}: ${error || 'sin motivo'}`);
+    process.exit(1);
+  }
+  const { dir } = require('./lib/evidence-config.js').evidenceDirForStory(storyFile);
+  let hayCarpeta = false;
+  try { hayCarpeta = Boolean(dir) && fs.statSync(dir).isDirectory(); } catch (_e) { hayCarpeta = false; }
+  if (!hayCarpeta) {
+    console.error(`marker.js pr: la historia ${id} no tiene carpeta de evidencia (${dir || 'sin repo'}): no anoté el pedido #${numero}`);
+    process.exit(1);
+  }
+  const r = require('./lib/story-requests.js').anotar({ dir, clave: key, historia: String(id), repo, pedido: numero });
+  if (r.escrito) process.stderr.write(`[marker] pedido #${numero} de ${repo} anotado en ${path.basename(r.archivo)}\n`);
+}
+
 /**
- * `marker.js pr <número> [--merged] [--story <id>]`: el pedido de la corrida. Con marcador vivo lo guarda en él (`pr`).
- * Sin marcador (el cierre de la historia corre después del merge, con el marcador ya borrado), lo escribe en el último
- * volcado de la historia y en su copia de la carpeta de la corrida, e imprime el renglón final.
+ * `marker.js pr <número> [--merged] [--story <id>] [--repo <carpeta>] [--story-path <ruta>]`: el pedido de la corrida. Con
+ * marcador vivo lo guarda en él (`pr`). Sin marcador (el cierre de la historia corre después del merge, con el marcador ya
+ * borrado), lo escribe en el último volcado de la historia y en su copia de la carpeta de la corrida, e imprime el renglón final.
+ * El registro de pedidos: un pedido de otro repo se anota al abrirlo, para commitearlo antes del pedido de la historia. El del
+ * repo de la historia no: dejaría un archivo sin commitear, y lo anota el cierre con `--story-path`, la ruta en su copia limpia.
  */
 function cmdPr(numRaw, rest = []) {
   const numero = Number(numRaw);
-  if (!Number.isInteger(numero) || numero <= 0) {
-    console.error('marker.js pr: uso — pr <número del pedido> [--merged] [--story <id>]');
+  const opcion = (nombre) => { const k = rest.indexOf(nombre); return k >= 0 ? (rest[k + 1] || '') : null; };
+  const story = opcion('--story');
+  const repoArg = opcion('--repo');
+  const storyPathArg = opcion('--story-path');
+  if (!Number.isInteger(numero) || numero <= 0 || repoArg === '' || storyPathArg === '') {
+    console.error('marker.js pr: uso — pr <número del pedido> [--merged] [--story <id>] [--repo <carpeta>] [--story-path <ruta de la historia>]');
     process.exit(2);
   }
   const merged = rest.includes('--merged');
-  const i = rest.indexOf('--story');
-  const story = i >= 0 ? rest[i + 1] : null;
+  const SR = require('./lib/story-requests.js');
+  const repoNombre = repoArg ? SR.nombreDelRepo(repoArg) : null;
+  if (repoArg && !repoNombre) {
+    console.error(`marker.js pr: ${repoArg} no es un repo de git`);
+    process.exit(2);
+  }
   const vivo = readMarker();
   if (vivo && (!story || String(vivo.storyId) === String(story))) {
-    vivo.pr = { number: numero, merged };
+    const storyFile = storyPathArg || resolveStoryPath(vivo.storyPath, vivo);
+    const repo = repoNombre || (vivo.repoPath ? SR.nombreDelRepo(vivo.repoPath) : null);
+    const delaHistoria = storyFile ? SR.nombreDelRepo(path.dirname(storyFile)) : null;
+    if (repo && storyFile && (storyPathArg || repo !== delaHistoria)) anotarEnElRegistro({ storyFile, id: vivo.storyId, repo, numero });
+    vivo.pr = { number: numero, merged, ...(repoNombre ? { repo: repoNombre } : {}) };
     vivo.lastTouch = nowIso();
     writeMarker(vivo);
     process.stderr.write(`[marker] pedido #${numero}${merged ? ' (mergeado)' : ''} anotado en la corrida de la ${vivo.storyId}\n`);
@@ -5231,16 +5264,26 @@ function cmdPr(numRaw, rest = []) {
     console.error('marker.js pr: no hay corrida viva en esta sesión: nombrá la historia con --story <id> para anotarlo en su último volcado');
     process.exit(2);
   }
+  if (repoNombre && !storyPathArg) {
+    console.error('marker.js pr: sin corrida viva, --repo necesita --story-path <ruta de la historia>: el número solo no alcanza para saber su clave');
+    process.exit(2);
+  }
+  if (repoNombre) anotarEnElRegistro({ storyFile: storyPathArg, id: story, repo: repoNombre, numero });
   const RL = require('./lib/run-lines.js');
   let repoDir = null;
   try { repoDir = require('./lib/repo-attrib.js').gitRoot(process.cwd()); } catch (_e) { repoDir = null; }
   const volcado = RL.ultimoVolcado({ stateDir: STATE_DIR, storyId: story, repoDir, pr: numero });
   if (!volcado) {
+    if (repoNombre) {
+      process.stderr.write(`[marker] no encontré el volcado de la historia ${story} en esta máquina: el pedido quedó en el registro, no en el volcado\n`);
+      return;
+    }
     console.error(`marker.js pr: no encontré ningún volcado de la historia ${story} de este repo en ${path.join(STATE_DIR, 'timing-history')}`);
     process.exit(1);
   }
   const { archivo: hist, dump } = volcado;
-  dump.marker = { ...dump.marker, pr: { number: numero, merged } };
+  const pedido = { number: numero, merged, ...(repoNombre ? { repo: repoNombre } : {}) };
+  dump.marker = { ...dump.marker, pr: pedido };
   fs.writeFileSync(hist, JSON.stringify(dump, null, 2), 'utf8');
   // la copia en la carpeta de la corrida: el volcado con el mismo sello
   const ts = path.basename(hist, '.json').slice(`${String(story).replace(/[^\w.-]/g, '_')}-`.length);
@@ -5249,13 +5292,34 @@ function cmdPr(numRaw, rest = []) {
     const copia = path.join(runDir, `timing-dump-${ts}.json`);
     try {
       const c = JSON.parse(fs.readFileSync(copia, 'utf8'));
-      c.marker = { ...(c.marker || {}), pr: { number: numero, merged } };
+      c.marker = { ...(c.marker || {}), pr: pedido };
       fs.writeFileSync(copia, JSON.stringify(c, null, 2), 'utf8');
     } catch (e) { process.stderr.write(`[marker] no pude anotar el pedido en la copia del volcado (${copia}: ${e.code || e.message})\n`); }
   }
   try {
     process.stdout.write(`${RL.final({ dump, runDir, stateDir: STATE_DIR })}\n`);
   } catch (e) { process.stderr.write(`[marker] no pude armar el renglón final (${e.message})\n`); }
+}
+
+// Avisa, sin frenar, los repos de la corrida con commits propios cuyo pedido no quedó anotado: sin él, la regla de la entrada
+// no va a reconocer esa fusión como de esta historia. Nunca rompe el cierre.
+function avisarPedidosSinAnotar(marker) {
+  try {
+    const SR = require('./lib/story-requests.js');
+    const storyFile = resolveStoryPath(marker.storyPath, marker);
+    const { key } = require('./lib/evidence-key.js').keyInfoOr(storyFile, String(marker.storyId));
+    const { dir } = require('./lib/evidence-config.js').evidenceDirForStory(storyFile, marker.repoPath);
+    const anotados = new Set();
+    for (const [k, filas] of SR.leer({ dirs: dir ? [dir] : [] }).porPedido) if (filas.some((f) => f.clave === key)) anotados.add(k.split('#')[0]);
+    const pr = marker.pr;
+    if (pr) anotados.add(pr.repo || SR.nombreDelRepo(marker.repoPath));
+    for (const repo of reposParaComparar(marker)) {
+      const nombre = SR.nombreDelRepo(repo);
+      if (!nombre || anotados.has(nombre)) continue;
+      const r = require('child_process').spawnSync('git', ['rev-list', '--count', 'origin/main..HEAD'], { cwd: repo, encoding: 'utf8', windowsHide: true });
+      if (r.status === 0 && Number(r.stdout.trim()) > 0) process.stderr.write(`[marker] ${nombre}: tiene commits de la corrida y sin pedido anotado (marker.js pr <número> --repo <carpeta>)\n`);
+    }
+  } catch (e) { process.stderr.write(`[marker] no pude revisar los pedidos anotados (${e.message})\n`); }
 }
 
 function cmdClear(rest = []) {
@@ -5393,6 +5457,7 @@ function cmdClear(rest = []) {
       }
       process.stderr.write(`[marker] timing dump archivado: timing-history/${safeStory}-${ts}.json\n`);
       avisarCierreSinPasos(marker);
+      avisarPedidosSinAnotar(marker);
       // Línea de costo al cierre — mecánica, siempre, sin flags. Compara contra la vara del
       // historial para que el número signifique algo sin tener que ir a buscarlo.
       if (costo.spawns) {
