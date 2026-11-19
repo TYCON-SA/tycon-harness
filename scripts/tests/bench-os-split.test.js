@@ -14,7 +14,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const RUNNER = path.join(ROOT, 'scripts', 'controls-bench', 'runner.js');
 const MERGE = path.join(ROOT, 'scripts', 'controls-bench', 'merge-reports.js');
 const NOTICE = path.join(ROOT, 'scripts', 'hooks', 'bench-notice.js');
-const PIPELINE = path.join(ROOT, 'pipelines', 'azure-pipelines-banco.yml');
+const PIPELINE = path.join(ROOT, 'pipelines/azure-pipelines-banco.yml');
 const SIN_PRIVADO = fs.existsSync(PIPELINE) ? false : 'NO MEDIDO: el pipeline vive en el repo privado; corre en el árbol armado';
 
 const temporal = (t) => {
