@@ -90,8 +90,8 @@ after(() => { for (const d of temporales) fs.rmSync(d, { recursive: true, force:
 const deCaso = (id) => reales.find((r) => r.id === id);
 
 /** Un caso de la lista: pasa si anda, o si falla por el motivo con que está declarado en la lista de huecos. */
-function casoEsperado(nombre, id, ac) {
-  test(`${nombre} @story-8.193 @ac-${ac}`, () => {
+function casoEsperado(nombre, id, ac, historia = '8.193') {
+  test(`${nombre} @story-${historia} @ac-${ac}`, () => {
     const r = deCaso(id);
     assert.ok(r, `el caso ${id} no corrió`);
     const j = juicio.find((x) => x.id === id);
@@ -219,6 +219,10 @@ casoEsperado('T38 Caso_NumeroRepetidoFusion', 'numero-repetido-fusion', 39);
 casoEsperado('T39 Caso_RutaRelativaAlHermano', 'ruta-relativa-al-hermano', 40);
 casoEsperado('T51 Caso_ComentarioSinSangria', 'comentario-sin-sangria', 41);
 casoEsperado('T52 Caso_ListaPartida', 'lista-partida', 42);
+casoEsperado('L1 Caso_EntradaIgualCambiaOtra', 'entrada-igual-cambia-otra', 24, '8.310');
+casoEsperado('L2 Caso_PropiaAntesDeEntrar', 'propia-antes-de-entrar', 24, '8.310');
+casoEsperado('L3 Caso_PropiaDespuesDeEntrar', 'propia-despues-de-entrar', 24, '8.310');
+casoEsperado('L4 Caso_GuionAdaptadoTrasEntrar', 'guion-adaptado-tras-entrar', 24, '8.310');
 
 // ---------------------------------------------------------------- los huecos conocidos
 

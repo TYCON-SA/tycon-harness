@@ -30,6 +30,12 @@
  *      lib/commit-story.js, o, para un commit de la rama de la historia que todavía no está en origin/main, la rama; si no
  *      se sabe, vence toda.
  *
+ * La regla de la entrada no es una más de esta lista: `entrada` responde aparte, y la pide la matriz cuando una evidencia no
+ * cuenta (runtime-matrix.js). Una historia queda probada si lo que entró a origin/main es, por contenido, lo que se probó;
+ * lo que otra historia cambie después lo avisa el nocturno. Se compara en la línea de primer padre: lo probado contra el último
+ * commit anterior a la evidencia («ya estaba») o contra el primero posterior que cambió el archivo (la entrada). Un cambio
+ * posterior propio la vence: lo es si lo dice el registro de pedidos, la rama, o el asunto de uno de sus commits.
+ *
  * Una evidencia guardada en el mismo commit que un archivo editado después de la prueba da verde en la regla 4: no se
  * distingue en git. Lo frena antes el freno del commit, que calcula esta misma regla con el archivo sin commitear.
  *
@@ -43,7 +49,7 @@
 const { execFileSync } = require('child_process');
 const path = require('path');
 const { isTestPath } = require('./atdd-order.js');
-const { ramaDelAsunto, historiaDeLaRama } = require('./commit-story.js');
+const { ramaDelAsunto, historiaDeLaRama, historiaDeLaFusion, nombraLaHistoria } = require('./commit-story.js');
 
 const TIEMPO_MAX_MS = 10000;
 // La historia entera de un registro de humos con sus cambios cabe holgada; si no cabe, git no contesta y la evidencia no cuenta.
@@ -51,6 +57,7 @@ const SALIDA_MAX_BYTES = 64 * 1024 * 1024;
 const FORMATO_DE_COMMIT = '%H %ct %h';
 // Abre cada commit en la historia de un registro: un byte que no aparece en un renglón de texto.
 const MARCA_DE_COMMIT = '\x01';
+const MAIN = 'origin/main';
 
 /** `{ codigo, salida }`; `codigo: null` si git no pudo contestar (no está, no es un repo accesible, venció el tiempo). */
 function correrGitDeVerdad(carpeta, args, env) {
@@ -79,20 +86,28 @@ const SIN_RESPUESTA = (regla) => NO_CUENTA('sin-respuesta', regla);
 /**
  * Un juez por cálculo: guarda cada respuesta de git, así una pregunta se hace una sola vez.
  * `repoDelIndice`: la raíz del repo al que pertenece GIT_INDEX_FILE, si está puesta.
- * `historia`: `{ numero, archivo, catalogo }`, con `catalogo()` la lista `[{ numero, archivo }]` del repo de la historia, o
- * null si no se pudo leer. Sin ella no hay reglas que dependan de saber de qué historia es un commit.
+ * `historia`: `{ numero, archivo, catalogo, clave?, pedidos? }`, con `catalogo()` la lista `[{ numero, archivo }]` del repo de
+ * la historia, o null si no se pudo leer, y `pedidos()` lo que devuelve `leer` de lib/story-requests.js. Sin ella no hay reglas
+ * que dependan de saber de qué historia es un commit.
  */
 function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, historia = null } = {}) {
   const respuestas = new Map();
   const base = entornoBase();
   let catalogoLeido;
+  let pedidosLeidos;
+  const pedidosDeLaHistoria = () => {
+    if (pedidosLeidos === undefined) pedidosLeidos = historia.pedidos().porPedido;
+    return pedidosLeidos;
+  };
   const historiaDe = (rama) => {
     if (!historia) return null;
     if (catalogoLeido === undefined) catalogoLeido = historia.catalogo();
     return historiaDeLaRama(rama, { propia: historia, catalogo: catalogoLeido });
   };
 
-  function preguntar(carpeta, args, env = base) {
+  function preguntar(carpeta, pedido, env = base) {
+    // con `log.showSignature` prendido, git escribe la firma de cada commit antes del formato pedido y se leería como un commit
+    const args = pedido[0] === 'log' ? ['log', '--no-show-signature', ...pedido.slice(1)] : pedido;
     const clave = `${env === base ? '' : 'indice\0'}${carpeta}\0${args.join('\0')}`;
     if (!respuestas.has(clave)) respuestas.set(clave, correrGit(carpeta, args, env));
     return respuestas.get(clave);
@@ -328,13 +343,19 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return guardo || ancla.commit;
   }
 
-  // El ancla de la evidencia para este repo, si tiene. El nombre es el de su checkout principal, igual desde un worktree.
-  function anclaDelRepo(carpeta, evidencia) {
-    if (!Array.isArray(evidencia.ancla)) return null;
+  // El nombre del repo: el de su checkout principal, igual desde un worktree.
+  function nombreDelRepo(carpeta) {
     const comun = preguntar(carpeta, ['rev-parse', '--git-common-dir']);
     if (comun.codigo !== 0) return null;
     const dir = path.resolve(carpeta, comun.salida.trim());
-    const nombre = path.basename(path.basename(dir) === '.git' ? path.dirname(dir) : dir);
+    return path.basename(path.basename(dir) === '.git' ? path.dirname(dir) : dir);
+  }
+
+  // El ancla de la evidencia para este repo, si tiene.
+  function anclaDelRepo(carpeta, evidencia) {
+    if (!Array.isArray(evidencia.ancla)) return null;
+    const nombre = nombreDelRepo(carpeta);
+    if (!nombre) return null;
     return evidencia.ancla.find((a) => a && a.repo === nombre && a.commit) || null;
   }
 
@@ -482,7 +503,128 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return NO_CUENTA('otro-repo', 5, { commit: corto, sinFusion: padres.length === 1 });
   }
 
-  return { vigencia, commitDeLaEvidencia };
+  // El blob de un archivo en una versión: su id, null si ahí no está, undefined si git no contestó.
+  function blobEn(carpeta, rev, rel) {
+    const r = preguntar(carpeta, ['rev-parse', '--verify', '-q', `${rev}:${rel}`]);
+    if (r.codigo === 0) return r.salida.trim();
+    return r.codigo === 1 ? null : undefined;
+  }
+
+  // Lo que probó la evidencia y hasta qué hora mirar, o null si no se puede saber.
+  function loProbado(carpeta, rel, evidencia, guardada, mismoRepo) {
+    const hora = Math.floor(evidencia.tsMs / 1000);
+    if (mismoRepo) {
+      const s = evidencia.sello;
+      if (s && !s.tree) return null;
+      const conSello = s && preguntar(carpeta, ['cat-file', '-e', `${s.tree}^{tree}`]).codigo === 0;
+      const blob = blobEn(carpeta, conSello ? s.tree : guardada.commit, rel);
+      return blob ? { blob, hora: Number.isFinite(guardada.hora) ? Math.min(hora, guardada.hora) : hora, version: guardada.commit } : null;
+    }
+    const ancla = anclaDelRepo(carpeta, evidencia);
+    if (!ancla) return null;
+    const hayCommit = preguntar(carpeta, ['cat-file', '-e', `${ancla.commit}^{commit}`]).codigo === 0;
+    const version = hayCommit ? ancla.commit : undefined;
+    if (ancla.huellas && Object.prototype.hasOwnProperty.call(ancla.huellas, rel)) return ancla.huellas[rel] ? { blob: ancla.huellas[rel], hora, version } : null;
+    if (!hayCommit) return null;
+    const blob = blobEn(carpeta, ancla.commit, rel);
+    return blob ? { blob, hora, version } : null;
+  }
+
+  const lineasDe = (r) => r.salida.split('\n').filter(Boolean);
+
+  // ¿Es de esta historia un commit de la línea principal? 'propia', `{ numero }`, null si no se sabe, o undefined si git no
+  // contestó. Los asuntos de sus commits sólo pueden decir «propia»: son texto libre.
+  function deQuienEs(carpeta, { asunto, padres }) {
+    const pedidos = historia.pedidos ? pedidosDeLaHistoria() : null;
+    if (catalogoLeido === undefined) catalogoLeido = historia.catalogo();
+    const repo = nombreDelRepo(carpeta);
+    const deLa = (a) => historiaDeLaFusion(a, { repo, propia: historia, catalogo: catalogoLeido, pedidos });
+    const de = deLa(asunto);
+    if (de === 'propia') return de;
+    let asuntos = [asunto];
+    if (padres.length > 1) {
+      // también las fusiones de adentro: en un producto con `dev`, el pedido de la historia entra a `dev` y `dev` a main
+      const r = preguntar(carpeta, ['log', '--format=%s', `${padres[0]}..${padres[1]}`]);
+      if (r.codigo !== 0) return undefined;
+      asuntos = lineasDe(r);
+    }
+    return asuntos.some((a) => nombraLaHistoria(a, historia.numero) || deLa(a) === 'propia') ? 'propia' : de;
+  }
+
+  /**
+   * La regla de la entrada para un archivo. null si no se aplica, y entonces decide lo de siempre. Si no: `{ cuenta: true,
+   * regla: 'entrada', commit, yaEstaba, ajenas, sinHistoria }`, con `commit` null si el archivo ya estaba así antes de la
+   * evidencia, o `{ cuenta: false, regla: 'entrada', motivo, commit }`. Una duda de git siempre da null: nunca «entró igual».
+   */
+  function entrada({ archivo, evidencia }) {
+    if (!historia || !Number.isFinite(evidencia.tsMs)) return null;
+    const carpeta = path.dirname(archivo);
+    const nombre = path.basename(archivo);
+    const raizArchivo = raizDe(carpeta);
+    if (!raizArchivo) return null;
+    const conIndice = entornoDelIndice(raizArchivo);
+    const enGit = preguntar(carpeta, ['ls-files', '-v', '--', nombre], conIndice);
+    if (enGit.codigo !== 0) return null;
+    const letra = enGit.salida.trim().charAt(0);
+    if (!letra || letra === 'S' || letra !== letra.toUpperCase()) return null;
+    const estado = preguntar(carpeta, ['status', '--porcelain', '--', nombre], conIndice);
+    if (estado.codigo !== 0 || estado.salida.trim()) return null;
+    const rel = rutaEnElRepo(carpeta, nombre);
+    if (!rel) return null;
+
+    const carpetaEvidencia = path.dirname(evidencia.ruta);
+    const raizEvidencia = raizDe(carpetaEvidencia);
+    if (!raizEvidencia || !historiaEntera(carpetaEvidencia) || !historiaEntera(carpeta)) return null;
+    const guardada = commitDeLaEvidencia(evidencia);
+    if (guardada.fallo || !guardada.commit) return null;
+    if (preguntar(carpeta, ['rev-parse', '--verify', '-q', `${MAIN}^{commit}`]).codigo !== 0) return null;
+    // un commit de esta copia que todavía no está en main y cambió el archivo: lo probado ya no es lo que hay
+    const sinFusionar = preguntar(carpeta, ['log', '--format=%H', `${MAIN}..HEAD`, '--', nombre]);
+    if (sinFusionar.codigo !== 0 || sinFusionar.salida.trim()) return null;
+
+    const probado = loProbado(carpeta, rel, evidencia, guardada, raizArchivo === raizEvidencia);
+    if (!probado) return null;
+    const antes = preguntar(carpeta, ['rev-list', '-1', '--first-parent', `--before=@${probado.hora}`, MAIN]);
+    if (antes.codigo !== 0 || !antes.salida.trim()) return null;
+    let desde = antes.salida.trim();
+    const enAntes = blobEn(carpeta, desde, rel);
+    if (enAntes === undefined) return null;
+    let commit = null;
+    if (enAntes !== probado.blob) {
+      const cambios = preguntar(carpeta, ['log', '--first-parent', '--reverse', '--format=%H %h', `${desde}..${MAIN}`, '--', nombre]);
+      if (cambios.codigo !== 0) return null;
+      const primero = lineasDe(cambios)[0];
+      if (!primero) return null;
+      const [largo, corto] = primero.split(' ');
+      const entro = blobEn(carpeta, largo, rel);
+      if (entro === undefined) return null;
+      if (entro !== probado.blob) return NO_CUENTA('entro-otro-contenido', 'entrada', { commit: corto, desde: probado.version });
+      if (preguntar(carpeta, ['merge-base', '--is-ancestor', largo, 'HEAD']).codigo !== 0) return null;
+      desde = largo;
+      commit = corto;
+    }
+
+    const despues = preguntar(carpeta, ['log', '--first-parent', '--reverse', '--format=%h%x09%P%x09%s', `${desde}..${MAIN}`, '--', nombre]);
+    if (despues.codigo !== 0) return null;
+    const ajenas = [];
+    const sinHistoria = [];
+    for (const linea of lineasDe(despues)) {
+      const [corto, padres, ...resto] = linea.split('\t');
+      const de = deQuienEs(carpeta, { asunto: resto.join('\t'), padres: padres.split(' ').filter(Boolean) });
+      if (de === undefined) return null;
+      if (de === 'propia') return NO_CUENTA('cambio-propio-tras-entrar', 'entrada', { commit: corto, fusion: corto, desde: probado.version });
+      if (de) ajenas.push({ commit: corto, historia: de.numero });
+      else sinHistoria.push(corto);
+    }
+    return { cuenta: true, regla: 'entrada', commit, yaEstaba: commit === null, ajenas, sinHistoria };
+  }
+
+  // Los criterios que nombra una prueba, con las marcas de la regla 6. `desde`: la versión que juzgó la evidencia.
+  function criteriosDe({ archivo, desde }) {
+    return criteriosDeLaPrueba(archivo, path.dirname(archivo), path.basename(archivo), desde);
+  }
+
+  return { vigencia, commitDeLaEvidencia, entrada, criteriosDe };
 }
 
 /** Por qué no cuenta, en una frase para el aviso de la matriz. Sin rutas ni texto de git: la matriz viaja por git. */
@@ -496,6 +638,8 @@ function motivoEnPalabras({ motivo, commit, sinFusion, tree, error }) {
       // un commit directo y un squash se ven igual: el squash borra la hora de cada cambio, y no queda con qué comparar
       return sinFusion ? `${causa}; si es un squash de esta historia, borró la hora de cada cambio y hay que repetir la prueba` : causa;
     }
+    case 'entro-otro-contenido': return `lo que entró a main en ${commit || '(sin identificar)'} no es lo que se probó`;
+    case 'cambio-propio-tras-entrar': return `lo cambió la propia historia en ${commit || '(sin identificar)'}, después de probarlo`;
     case 'sin-commitear': return 'tiene cambios sin commitear';
     case 'fuera-de-git': return 'no está en git';
     case 'oculto-para-git': return 'está marcado para que git no lo mire (assume-unchanged o skip-worktree)';

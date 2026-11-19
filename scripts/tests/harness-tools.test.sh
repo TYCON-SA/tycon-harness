@@ -71,10 +71,11 @@ run_writers() { # run_writers <home>
   for m in blocking-meter large-read-meter response-style-meter; do
     printf '{"transcript_path":"%s","session_id":"s-lab","cwd":"%s"}' "$t" "$h" | in_home "$h" node "$ROOT/scripts/hooks/$m.js" >/dev/null 2>&1
   done
-  # el aviso de retrospectivas sella su día sólo con una serie vieja: una foto de hace meses donde la máquina la escribe
+  # el aviso de retrospectivas sella su día sólo con una serie vieja, y también lee la historia del árbol, que puede
+  # estar al día: una foto donde la máquina la escribe asegura que haya serie, y el umbral -1 la da por vieja siempre
   local dash; dash="$(in_home "$h" node -e 'const m = require(process.argv[1]).machineDashboard(process.argv[2]); process.stdout.write(m.dir || "")' "$ROOT/scripts/lib/night-data.js" "$ROOT" 2>/dev/null)"
   [ -n "$dash" ] && mkdir -p "$dash" && printf '{}' > "$dash/metrics-2026-01-01.json"
-  in_home "$h" node "$ROOT/scripts/hooks/retro-staleness-notice.js" < /dev/null >/dev/null 2>&1
+  in_home "$h" TYCON_RETRO_STALENESS_DAYS=-1 node "$ROOT/scripts/hooks/retro-staleness-notice.js" < /dev/null >/dev/null 2>&1
   rm -f "$t"
 }
 # lo que los escritores dejan, relativo a la carpeta de los registros sueltos y a la del estado

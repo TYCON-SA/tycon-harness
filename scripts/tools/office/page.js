@@ -40,7 +40,7 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
     // en «Sin sesión», las tarjetas de historia de tus proyectos van juntas en una línea que se abre, después de las demás
     const plegadas=c.id==="sinEmpezar"?list.filter(i=>i.local===true):[];
     const tarjeta=(i,dest)=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero));if(typeof numeroMarcado==="string"&&i.numero===numeroMarcado)card.classList.add("marcada")}card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · "),quienEs=(DATA.agents||[]).find(a=>a.nombre===String(i.quien||"").split(" · ")[0]),mod=quienEs&&(quienEs.modelo||quienEs.esfuerzo)?(quienEs.modelo||"sin dato")+" · "+(quienEs.esfuerzo||"sin dato"):"";if(mod)card.appendChild(el("span","m mod",mod));if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
-      [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota].forEach(v=>{if(v)card.appendChild(el("span","n",v))});if(i.mano)card.appendChild(el("span","mano "+i.mano,"✋ "+(i.mano==="coordinadora"?"Espera a la Coordinadora":"Espera tu firma")));dest.appendChild(card)};
+      [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota,i.ficha&&i.ficha.linea].forEach(v=>{if(v)card.appendChild(el("span","n",v))});if(i.mano)card.appendChild(el("span","mano "+i.mano,"✋ "+(i.mano==="coordinadora"?"Espera a la Coordinadora":"Espera tu firma")));dest.appendChild(card)};
     list.filter(i=>!plegadas.includes(i)).forEach(i=>tarjeta(i,col));
     if(plegadas.length){const linea=el("button","plegadas","Historias de tus proyectos · "+plegadas.length),caja=el("div","plegadas-lista");linea.type="button";plegadas.forEach(i=>tarjeta(i,caja));
       const pintar=()=>{const abierta=historiasAbiertas.has(c.id);caja.hidden=!abierta;linea.setAttribute("aria-expanded",String(abierta))};
@@ -59,12 +59,16 @@ function renderHalfway(){const sec=document.getElementById("halfway"),k=DATA.kan
   if(k.medioCaminoLeido)sec.appendChild(el("p","none",k.medioCaminoLeido));
   half.forEach(i=>{const card=el("div","item");card.appendChild(el("b",null,i.titulo));card.appendChild(el("span","n",i.accion));sec.appendChild(card)});
   if(k.medioCaminoNoSe)sec.appendChild(el("p","none",k.medioCaminoNoSe))}
+// las esperas en sus tres grupos: van fuera de lo que se pliega, que sin nada en «Te toca» no se puede abrir
+const GRUPOS_ESPERA=[["dueno","Esperan al dueño"],["main","Esperan a main"],["sesion","Esperan a otra sesión"]];
+function renderEsperan(esperan){const e=document.getElementById("esperan");e.replaceChildren();GRUPOS_ESPERA.forEach(([k,t])=>{const l=(esperan&&esperan[k])||[];if(!l.length)return;e.appendChild(el("h3",null,t));const u=el("ul");l.forEach(x=>u.appendChild(el("li",null,x)));e.appendChild(u)});e.hidden=!e.children.length}
 // cuántas líneas del tablero vencieron: va fuera de lo que se pliega, que sin nada pendiente no se puede abrir
 function pintarAvisoToca(aviso){const p=document.getElementById("tocaAviso");p.hidden=!aviso;p.textContent=aviso||""}
 function renderTop(){
   document.getElementById("stamp").textContent=meta?"Al día a las "+meta.actualizado+(meta.pedidosLeidos?" · pedidos leídos a las "+meta.pedidosLeidos:""):"";
   const site=document.getElementById("site");if(SITE){site.href=SITE;site.hidden=false}else{site.removeAttribute("href");site.hidden=true}
   const you=(meta&&meta.teToca)||[],ul=document.getElementById("youList");ul.replaceChildren();you.forEach(t=>ul.appendChild(el("li",null,t)));if(!you.length)ul.appendChild(el("li","nada","Nada por ahora: no hay firmas pendientes ni pedidos en el tablero."));
+  renderEsperan(meta&&meta.esperan);
   pintarAvisoToca(meta&&meta.tocaAviso);
   const aus=document.getElementById("ausente"),au=meta&&meta.ausente;aus.hidden=!au;aus.textContent=au?au.linea:"";
   const tr=document.getElementById("trabado"),stuck=(meta&&meta.trabado)||[];tr.hidden=!stuck.length;tr.replaceChildren();if(stuck.length){tr.appendChild(el("h2",null,"Trabado"));stuck.forEach(g=>{tr.appendChild(el("h3",null,g.titulo));const u=el("ul");(g.filas||[]).forEach(f=>u.appendChild(el("li",null,f)));tr.appendChild(u)})}
@@ -164,6 +168,8 @@ function ficha(a,abiertos){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k
   if(a.agentesAhora)r.push({k:"",v:a.agentesAhora});
   add("Última acción",a.ultimaAccion);add("Espera",a.espera);add("Parada",a.parada);add("Novedades",a.callada);
   if(a.mano)add("Mano levantada",[a.manoEtiqueta,a.manoPor].filter(Boolean).join(" · "));
+  // por qué espera al dueño: propone, nunca firma
+  if(a.ficha){add("Riesgo",a.ficha.riesgo);add("Pedido",a.ficha.pedido);add("Propuesta",a.ficha.accion)}
   if(abiertos||a.modelo||a.esfuerzo)add("Modelo",(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"));
   const ms=AST[a.mientrasEstado];add("Mientras tanto",a.mientras?a.mientras+(ms?" ("+ms[0].toLowerCase()+")":""):"");
   add("En pausa",a.enPausa);

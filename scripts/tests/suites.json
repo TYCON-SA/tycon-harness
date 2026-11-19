@@ -1216,6 +1216,18 @@
       "requiere": []
     },
     {
+      "__nota": "el registro de pedidos de cada historia y de qué historia es una fusión, aunque venga de una rama por sesión (8.310)",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-requests.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "qué criterios tienen una prueba que corre de noche, lo que pide la regla de la entrada a firmas y frenos (8.310)",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/nightly-coverage.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la fusión de la propia historia no vence su evidencia, un cambio de otra historia en una prueba tampoco, y el código que la evidencia no probó sigue sin contar. Lab con repos de git de verdad; corre también la suite de la regla (8.192)",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/evidence-vs-merge.test.js",
@@ -2162,6 +2174,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/office-photo.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/owner-wait-card.test.js",
       "requiere": []
     },
     {

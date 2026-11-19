@@ -339,6 +339,17 @@ El skill `tycon-pipeline` termina en `step-11-prepare-commit` con el commit hech
 
 2. **Gate 2 (smoke check runtime)** — manual del QA/UAT, post-pipeline. La transición `review` → `done` queda fuera del scope automático del pipeline.
 
+### La evidencia de una historia que ya entró a `main`
+
+Una historia cierra con el código con que entró a `main`, no con el `main` de hoy: si entró igual a lo que se probó, las fusiones
+de otras historias no obligan a repetir la prueba. La entrada se reconoce en la línea de primer padre de `origin/main`: lo
+probado se compara con el último commit anterior a la evidencia y, si no era igual, con el primer commit posterior que cambió el
+archivo. Lo que rompan lo avisa el nocturno, sin reabrirla. Si la propia historia cambió su
+código, sus pruebas o lo que ellas cargan después de probar, la evidencia vence. En firmas y frenos el criterio necesita además una
+prueba de noche; en lo demás, sin ella, queda el riesgo escrito en «Aceptado sin cobertura posterior». Una fusión sin historia conocida
+no vence y se nombra en el aviso. De quién es cada fusión lo dicen su rama, sus commits y `<clave>-pedidos.jsonl`, un registro
+editable. El detalle: `guides/accov-governance-protocol.md`, §7.
+
 ### El cierre recortado (2026-09-16)
 
 En el paso «Probar en vivo» del pipeline, lo que **frena** es mecánico y se quedó: la matriz por AC (cada criterio
