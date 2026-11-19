@@ -41,6 +41,10 @@
 // más de 10 minutos (en la coordinadora, o en el arranque cuando la lectura en vivo llega a su tope) no se afirma que
 // sigue fuera de la cola: pudo entrar después, y con cola GitHub no trae el auto-merge. Se dice de cuándo es la lectura.
 //
+// SIN CHOQUE Y SIN AUTO-COMPLETAR, en Azure: un pedido no borrador, sin choque y sin auto-completar, igual más de 10
+// minutos, sale con el comando para ponerle auto-completar, también en el turno de la coordinadora. La lista de Azure no
+// trae sus controles: no se dice «listo», sólo que nadie lo va a completar.
+//
 // LOS PEDIDOS DE LA PERSONA, para /office: la lectura de fondo deja en `own-prs.json` los pedidos abiertos cuyo autor es la
 // persona, de todos sus repos, con una consulta por lugar: una búsqueda en GitHub y una por cada organización de Azure de los
 // repos declarados. Quién es sale de las herramientas de la máquina; lo que no se puede saber o leer se dice en `fallos`.
@@ -287,7 +291,8 @@ function verdesSinEntrar(repos, leidas, previo, ahora, minutos = verdeMin(), { l
   const trabados = [];
   const estado = {};
   for (const repo of repos) {
-    if (repo.platform !== 'github') continue;
+    if (repo.platform !== 'github' && repo.platform !== 'azure') continue;
+    const azure = repo.platform === 'azure';
     const base = claveDe(repo);
     const r = leidas[base];
     if (!r || !r.ok || !Array.isArray(r.value)) {
@@ -307,6 +312,14 @@ function verdesSinEntrar(repos, leidas, previo, ahora, minutos = verdeMin(), { l
       if (ms < minutos * 60000) continue;
       const creado = Date.parse(p.createdAt);
       const vieja = lecturaDeHace[base];
+      // en Azure la lista no trae sus controles: «limpio» sólo dice que no choca, así que no se afirma que está listo.
+      // Sin auto-completar nadie lo completa; con él puesto, entra solo cuando sus controles pasen
+      // el comando para ponérselo lo da el conector (`autoCompleteCommand`)
+      if (azure) {
+        trabados.push({ ms, creado: Number.isFinite(creado) ? creado : Infinity, number: p.number,
+          linea: `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) sin choque y sin auto-completar hace ${haceDe(ms)}${Number.isFinite(vieja) && vieja >= FOTO_MS ? ` según la lectura de hace ${haceDe(vieja)}` : ''}: nadie lo va a completar — ponele auto-completar${p.autoCompleteCommand ? ` con ${limpio(p.autoCompleteCommand, 200)}` : ''} · ${limpio(p.sourceBranch, 120)}` });
+        continue;
+      }
       // con sus controles requeridos en verde pero el análisis de seguridad no: no está listo, y no se pide encolarlo
       const sinAnalisis = analisisNoVerde(p);
       if (sinAnalisis) {
@@ -495,7 +508,9 @@ function coordinatorLines({ home = os.homedir(), tree = path.resolve(process.env
     return { lines: [], problem: `los pedidos listos sin encolar: sin lectura de la última hora${lanzada ? ', sigue midiendo de fondo' : ' y no pude lanzar la lectura de fondo'}` };
   }
   // lo mismo con un repo que la última lectura no pudo leer
-  const sinLeer = declarados.repos.filter((r) => r.platform === 'github' && !(foto.lecturas[claveDe(r)] && foto.lecturas[claveDe(r)].ok)).map((r) => limpio(r.repo, 60));
+  // (una plataforma sin la operación no es una lectura fallida: se calla, como en el arranque)
+  const leida = (r) => { const x = foto.lecturas[claveDe(r)]; return Boolean(x && (x.ok || x.reason === 'no_soportado')); };
+  const sinLeer = declarados.repos.filter((r) => (r.platform === 'github' || r.platform === 'azure') && !leida(r)).map((r) => limpio(r.repo, 60));
   const relojArchivo = path.join(dir, 'green-prs.json');
   const previo = leerJson(relojArchivo) || {};
   // con la foto de más de FOTO_MS, ninguno se da por fuera de la cola (la lectura nueva ya se lanzó)
