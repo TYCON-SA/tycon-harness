@@ -200,7 +200,9 @@ test('T43c · BatchC4_FoldersPathsNotValues — el pre-commit de agent-skills co
 
 test('T43d · BatchC4_FoldersPathsNotValues — la ruta vieja de los frenos corre el de verdad', { skip: SKIP_PUBLIC || (!SKILLS && 'sin agent-skills') }, () => {
   const p = publishing();
-  const env = cleanEnv({ TYCON_SKILLS_DIR: SKILLS });
+  // El reemplazo anota el uso de la ruta vieja en la HOME: con la real, esta prueba ensuciaría el registro de la máquina.
+  const home = tmp('home');
+  const env = cleanEnv({ HOME: home, TYCON_SKILLS_DIR: SKILLS });
   const cases = [['new-names.js', ['--range', 'HEAD...HEAD', '--json']], ['spanish-names.js', ['--check-map', '--repo', RAIZ]]];
   for (const [s, args] of cases) {
     const viaOld = spawnSync(process.execPath, [path.join(RAIZ, p.old, s), ...args], { cwd: RAIZ, encoding: 'utf8', env });
@@ -208,6 +210,8 @@ test('T43d · BatchC4_FoldersPathsNotValues — la ruta vieja de los frenos corr
     assert.ok(firstLines(path.join(RAIZ, p.old, s)).includes(`${SHIM_MARK} ${p.new}/${s}`), `${p.old}/${s} no es el reemplazo`);
     assert.strictEqual(viaOld.status, viaNew.status, `${s}: la ruta vieja sale ${viaOld.status} y la nueva ${viaNew.status}`);
     assert.strictEqual(viaOld.stdout.replace(/"ms":\d+/g, ''), viaNew.stdout.replace(/"ms":\d+/g, ''), `${s}: otra salida por la ruta vieja`);
+    const used = fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'legacy-names.jsonl'), 'utf8');
+    assert.ok(used.includes(`"old":"${p.old}/${s}"`), `${p.old}/${s}: el uso no quedó anotado en la HOME de la prueba`);
   }
 });
 
