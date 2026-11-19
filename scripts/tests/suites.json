@@ -745,6 +745,12 @@
       "requiere": []
     },
     {
+      "__nota": "la constancia de la revisión previa de una historia vale en otra copia del mismo repo: la clave de la validación, y la de antes se sigue leyendo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-review-record.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.277: una deuda pagada antes del commit se levanta con marker.js lift-debt; los rojos esperados vuelven a ser rojos y «Preparar» pide todo en verde.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/lift-debt.test.js",
@@ -1142,6 +1148,17 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/main-check.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la espera a main donde se cruza con la repetición sola, las suites que vuelven, lo guardado y los repos hermanos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-main-wait.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-skill-gate.test.js",
       "requiere": []
     },
@@ -1155,6 +1172,12 @@
       "__nota": "story 8.121: la ejecución perdida (marcador, apertura o copia que faltan) frena, y su salida es del dueño.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/lost-marker.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.318: la ejecución perdida frena el cierre de turno una vez por turno, el cartel da comandos que andan en Windows y la consola frena borrar la carpeta de una ejecución abierta.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/lost-run-loop.test.js",
       "requiere": []
     },
     {
@@ -3344,6 +3367,12 @@
       "__nota": "Los pedidos de cambio por la capa de plataforma: abrir uno en Azure DevOps y en GitHub contra el az y el gh de mentira (reusar el abierto, releerlo por rama si la respuesta no trae el número, lo que no abre), listar los de GitHub, el freno de un pedido por repo y los nocturnos que leen las dos plataformas.",
       "raiz": "arnes",
       "ruta": "tests/platform-change-request.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El análisis de seguridad (code scanning) de cada pedido abierto de GitHub, como lo lee el conector, con una llamada de mentira: sin su control, en rojo, corriendo, con alertas abiertas o sin poder leerse nunca es verde; la regla de la rama dice si lo exige.",
+      "raiz": "arnes",
+      "ruta": "tests/github-code-scanning.test.js",
       "requiere": []
     },
     {

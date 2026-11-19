@@ -180,6 +180,19 @@ SSH, o desde una sesión sin pantalla, la puerta no consulta (falla cerrada, a p
 entrar entera en el cuadro: hasta 1.200 caracteres en 20 renglones de 60; una más larga se rechaza antes de abrirlo,
 para que nunca apruebes una sentencia cortada.
 
+**El cuadro dice quién pide.** Su primera línea es la carpeta del proyecto y la sesión: «Pide: Cliente/Codigo · sesión
+0123abcd (principal)». Desde una terminal, fuera de Claude Code, dice eso. Si no reconocés la sesión, rechazá.
+
+**Un cuadro por vez.** Si llega un pedido mientras hay un cuadro abierto, espera a que contestes ése; no se apilan. Si
+en 90 segundos no se contesta, el pedido que esperaba sale sin abrir su cuadro ni leer la clave, y dice qué sesión tiene
+el cuadro abierto. Quien pide lo vuelve a intentar después, de a una consulta por vez.
+
+**Un subagente no usa la puerta.** El freno lo frena con cualquier forma de la puerta: el cuadro lo contesta una
+persona que mira la sesión principal, y un subagente, sobre todo uno en segundo plano, le apila cuadros de algo que no
+está siguiendo (pasó: diecinueve consultas en 26 segundos). El subagente devuelve las sentencias y la sesión principal
+las corre de a una. Claude Code avisa al freno cuando llama un subagente, pero no si es de fondo: por eso se frenan
+todos.
+
 **La consulta va siempre en línea.** El cuadro muestra el comando y nada más: lo que trae un archivo no se ve
 antes de aprobar, así que la puerta no acepta archivos. Una consulta puede ocupar varios renglones dentro de
 las comillas simples. Si le pedís a la puerta un archivo, el freno no deja pasar el comando y, cuando el archivo

@@ -234,7 +234,7 @@ who is waiting and why, and the cap with where it comes from.
 
 ### How many stories at once, who launches the heavy work and when the owner is written to
 
-Three rules for the coordinator, for any organization:
+Four rules for the coordinator, for any organization:
 
 - **A cap on stories in the full cycle.** A story is in the cycle from the moment it starts until it lands on `main`.
   With the cap full, the coordinator neither starts nor resumes another one until one lands: the rest wait in line with
@@ -248,6 +248,10 @@ Three rules for the coordinator, for any organization:
 - **To the owner, one message per hour with what is theirs; what blocks, at once.** What waits for their signature or
   decision without blocking anyone goes together, in one message per hour. What blocks the work (a signature without
   which a session cannot go on, a red control nobody can unblock) is told right away.
+- **What comes from the same case goes together.** If a report or a case brings a main fix and minor annoyances from the
+  same use, the coordinator assigns them all in the same session, not the main one now and the minor ones later. Only
+  what affects other people or teams stays out, such as another product's pipeline: that goes to the owner as a separate
+  decision.
 
 The cap brakes on every path the agent takes, not only through `open`. Before each command, a brake checks whether the
 command opens a background Claude session: `claude --bg`, or `claude` running in the background (`&`, `nohup`, `setsid`,

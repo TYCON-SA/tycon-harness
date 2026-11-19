@@ -2105,3 +2105,24 @@ test('T214 Fila_EsperaDeTurnoConPruebaPesadaCorriendo_GanaElRegistro: la espera 
   fs.writeFileSync(path.join(coord, 'gates', '999999.json'), '{ esto no es json');
   assert.ok(run(m).unreadable.some((u) => u.includes('999999.json')), 'el portón que no se lee se dice');
 });
+
+// 🔴 Falla con: «espera espera a main (main-1)», o la sesión que tomó el arreglo de main sin decirlo.
+test('MB5 Wip_MainWaitAndFix_Texts @story-8.294 @ac-14: la espera a main no dice «espera» dos veces, y la sesión que arregla main sale «arregla main (<id>)»', () => {
+  const m = toyMachine();
+  const at = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+  fs.mkdirSync(path.join(m.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'esper000-1.json'), JSON.stringify({ reason: 'un arreglo chico', declaredAt: at(30), lastTouch: at(5) }));
+  fs.writeFileSync(path.join(m.state, 'doing', 'esper000-1.json'), JSON.stringify({ text: 'otro trabajo', at: at(10), waitingFor: 'espera a main (main-1)', waitingSince: at(10), waitingKind: 'main' }));
+  session(m, process.pid, 'esper000-1', 'esper', { status: 'idle' });
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'arreg000-2.json'), JSON.stringify({ reason: 'el arreglo de main', declaredAt: at(30), lastTouch: at(5) }));
+  session(m, process.pid, 'arreg000-2', 'arreg', { status: 'idle' });
+  fs.mkdirSync(path.join(m.state, 'main-check'), { recursive: true });
+  fs.writeFileSync(path.join(m.state, 'main-check', 'acme-1234abcd.json'), JSON.stringify({ broken: [{ id: 'main-1', suites: ['tests/a.test.sh'], waiting: [{ session: 'esper000-1' }], fix: { session: 'arreg000-2', pr: 12 }, closed: null }] }));
+  const r = run(m);
+  const of = (name) => r.rows[r.rows.findIndex((x) => x.session.startsWith(name))];
+  assert.match(String(of('esper').end), /^espera a main \(main-1\)/, JSON.stringify(of('esper')));
+  assert.match(String(of('arreg').state), /arregla main \(main-1\)/, JSON.stringify(of('arreg')));
+  // cerrado el registro, ya no lo dice
+  fs.writeFileSync(path.join(m.state, 'main-check', 'acme-1234abcd.json'), JSON.stringify({ broken: [{ id: 'main-1', suites: [], waiting: [], fix: { session: 'arreg000-2' }, closed: NOW }] }));
+  assert.doesNotMatch(String(run(m).rows.find((x) => x.session.startsWith('arreg')).state), /arregla main/);
+});

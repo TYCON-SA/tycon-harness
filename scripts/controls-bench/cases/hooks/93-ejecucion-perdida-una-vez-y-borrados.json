@@ -1,0 +1,159 @@
+{
+  "__doc": "8.318: la ejecución perdida pide la firma una vez por turno, y la consola frena borrar o mover la carpeta de una ejecución abierta. El caso real (19/11, una máquina Windows del equipo): se borró la carpeta de trabajo de una historia ya mergeada con la ejecución abierta; su copia de la apertura se fue con ella, y el cierre de turno pidió la firma unas diez veces seguidas. Los casos fijan los dos lados: el primer cierre frena y el segundo seguido pasa con el aviso; `git worktree remove` de una carpeta con una ejecución abierta frena, y borrar sin ejecución abierta (o con una copia vieja sin apertura vigente) pasa. Lo demás (las formas de Windows, el prune, el barrido) lo cubren lost-run-loop.test.js y worktree-sweep.test.js.",
+  "hooks": [
+    {
+      "hook": "on-stop-dod-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-stop-dod-gate.js",
+      "event": "Stop",
+      "matcher": "",
+      "cases": [
+        {
+          "id": "ejecucion-perdida-primer-cierre-del-turno-frena",
+          "type": "must-block",
+          "_por_que": "8.318 AC 1: con la ejecución perdida (falta su copia de la apertura), el primer cierre del turno frena con el cartel y anota el contador. ROJO PREVIO: sin freno, el agente sigue como si no hubiera pipeline.",
+          "setup": [
+            "git init -q -b main .",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\" .advisors/pipeline-runs/9.9-banco; R=\"$(pwd -P)/.advisors/pipeline-runs/9.9-banco\"; T=2026-11-19T10:00:00.000Z; printf '{\"ts\":\"%s\",\"sessionId\":\"bench-turno\",\"name\":\"run-open\",\"sesion\":\"bench-turno\",\"story\":\"9.9\",\"repo\":\"%s\",\"runDir\":\"%s\"}\\n' \"$T\" \"$(pwd -P)\" \"$R\" >> \"$S/gates.log\"; printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"bench-turno\",\"runDir\":\"%s\",\"stepsCompleted\":[\"start\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" \"$R\" > \"$S/active/bench-turno.json\""
+          ],
+          "stdin": {
+            "hook_event_name": "Stop",
+            "session_id": "bench-turno",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "EJECUCIÓN PERDIDA",
+              "--terminal --for-session bench-turno"
+            ],
+            "stdout_not_re": [
+              "versions/"
+            ]
+          }
+        },
+        {
+          "id": "ejecucion-perdida-segundo-cierre-seguido-deja-cerrar",
+          "type": "must-not-block",
+          "_por_que": "8.318 AC 2: el segundo cierre seguido deja cerrar el turno, con el cartel para la persona en systemMessage. ROJO PREVIO: el bucle del 19/11, unas diez firmas pedidas seguidas.",
+          "setup": [
+            "git init -q -b main .",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\" .advisors/pipeline-runs/9.9-banco; R=\"$(pwd -P)/.advisors/pipeline-runs/9.9-banco\"; T=2026-11-19T10:00:00.000Z; printf '{\"ts\":\"%s\",\"sessionId\":\"bench-turno\",\"name\":\"run-open\",\"sesion\":\"bench-turno\",\"story\":\"9.9\",\"repo\":\"%s\",\"runDir\":\"%s\"}\\n' \"$T\" \"$(pwd -P)\" \"$R\" >> \"$S/gates.log\"; printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"bench-turno\",\"runDir\":\"%s\",\"stepsCompleted\":[\"start\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" \"$R\" > \"$S/active/bench-turno.json\"",
+            "printf '{\"hook_event_name\":\"Stop\",\"session_id\":\"bench-turno\",\"cwd\":\"%s\"}' \"$(pwd -P)\" | node \"$SKILLS/skills/tycon-pipeline/scripts/on-stop-dod-gate.js\" > /dev/null"
+          ],
+          "stdin": {
+            "hook_event_name": "Stop",
+            "session_id": "bench-turno",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "systemMessage",
+              "a la segunda"
+            ],
+            "stdout_not_re": [
+              "\"decision\"\\s*:\\s*\"block\""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "ejecucion-abierta-worktree-remove-frena",
+          "type": "must-block",
+          "_por_que": "8.318 AC 13: `git worktree remove` de una carpeta con una ejecución abierta adentro (de otra sesión) frena con «cerrá la ejecución antes» y el comando de su sesión. ROJO PREVIO: la carpeta se borra y la ejecución queda perdida.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b.test -c user.name=b commit -q --allow-empty -m inicio && git worktree add -q wt -b feat/wt 2>/dev/null && printf '.advisors/\\n' >> .git/info/exclude",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S\" wt/.advisors/pipeline-runs/9.9-banco; R=\"$(pwd -P)/wt/.advisors/pipeline-runs/9.9-banco\"; printf '{\"ts\":\"2026-11-19T10:00:00.000Z\",\"sessionId\":\"bench-otra\",\"name\":\"run-open\",\"sesion\":\"bench-otra\",\"story\":\"9.9\",\"repo\":\"%s/wt\",\"runDir\":\"%s\"}\\n' \"$(pwd -P)\" \"$R\" >> \"$S/gates.log\"; printf '{\"sesion\":\"bench-otra\",\"story\":\"9.9\",\"runDir\":\"%s\",\"ts\":\"2026-11-19T10:00:00.000Z\"}' \"$R\" > \"$R/run-open.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-borra",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git worktree remove --force wt"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "CERRÁ LA EJECUCIÓN ANTES",
+              "story 9\\.9 \\(sesión bench-otra\\)",
+              "clear-session bench-otra"
+            ]
+          }
+        },
+        {
+          "id": "sin-ejecucion-abierta-rm-rf-de-una-carpeta-pasa",
+          "type": "must-not-block",
+          "_por_que": "8.318 AC 15: `rm -rf` de una carpeta sin ejecución abierta pasa como siempre: el freno no frena borrar.",
+          "setup": [
+            "git init -q -b main . && mkdir -p basura/sub && printf x > basura/sub/a.txt"
+          ],
+          "stdin": {
+            "session_id": "bench-borra",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "rm -rf basura"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "CERRÁ LA EJECUCIÓN ANTES"
+            ]
+          }
+        },
+        {
+          "id": "sin-ejecucion-abierta-worktree-remove-pasa",
+          "type": "must-not-block",
+          "_por_que": "8.318 AC 15: `git worktree remove` de una carpeta sin ejecución abierta pasa.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b.test -c user.name=b commit -q --allow-empty -m inicio && git worktree add -q wt -b feat/wt 2>/dev/null && printf '.advisors/\\n' >> .git/info/exclude"
+          ],
+          "stdin": {
+            "session_id": "bench-borra",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git worktree remove wt"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "CERRÁ LA EJECUCIÓN ANTES"
+            ]
+          }
+        },
+        {
+          "id": "copia-vieja-sin-apertura-vigente-rm-rf-pasa",
+          "type": "must-not-block",
+          "_por_que": "8.318 AC 15 y D4: una copia de la apertura sin su apertura vigente en gates.log (de antes del registro) no deja la carpeta pegada: «abierta» se lee en el registro, no en el disco.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b.test -c user.name=b commit -q --allow-empty -m inicio && git worktree add -q wt -b feat/wt 2>/dev/null && printf '.advisors/\\n' >> .git/info/exclude",
+            "mkdir -p wt/.advisors/pipeline-runs/9.9-vieja && printf '{\"sesion\":\"bench-vieja\",\"story\":\"9.9\",\"ts\":\"2026-01-01T00:00:00.000Z\"}' > wt/.advisors/pipeline-runs/9.9-vieja/run-open.json"
+          ],
+          "stdin": {
+            "session_id": "bench-borra",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "rm -rf wt"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "CERRÁ LA EJECUCIÓN ANTES"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

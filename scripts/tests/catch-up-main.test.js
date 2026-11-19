@@ -192,6 +192,55 @@ test('T6 Ayudante_RepetidoQueYaVeniaDeMain_NoSeToca', (t) => {
   assert.match(epics, /\| 8\.2 \| la de la rama \| — \| en revisión \|/);
 });
 
+// La unión de git repite los dos lados de un choque: una historia que sólo cambió en main, pegada a una que cambió la
+// rama, quedaba dos veces, y la primera copia era la vieja.
+test('Ayudante_HistoriaQueSoloCambioMain_QuedaUnaVezConLoDeMain', (t) => {
+  const lab = armar(t, {
+    ramaHace: (l) => {
+      l.escribir(EPICS, l.leer(EPICS).replace('| 8.2 | la de la rama | — | lista |', '| 8.2 | la de la rama | — | en revisión |'));
+      l.escribir(SPRINT, l.leer(SPRINT).replace('8-2-rama: ready-for-dev', '8-2-rama: review'));
+    },
+    mainHace: (l) => {
+      l.escribir(EPICS, l.leer(EPICS).replace('| 8.1 | la base | — | hecha |', '| 8.1 | la base | — | archivada |'));
+      l.escribir(SPRINT, l.leer(SPRINT).replace('8-1-base: done', '8-1-base: archived'));
+    },
+  });
+  const r = correr(lab);
+  assert.equal(r.code, 0, r.out);
+  const epics = lab.leer(EPICS);
+  const sprint = lab.leer(SPRINT);
+  assert.equal(cuenta(epics, /^\| 8\.1 \|/), 1, epics);
+  assert.match(epics, /\| 8\.1 \| la base \| — \| archivada \|/);
+  assert.equal(cuenta(sprint, /^\s*8-1-base:/), 1, sprint);
+  assert.match(sprint, /8-1-base: archived/);
+  assert.equal(cuenta(epics, /^\| 8\.2 \|/), 1, epics);
+  assert.match(epics, /\| 8\.2 \| la de la rama \| — \| en revisión \|/);
+  assert.equal(cuenta(sprint, /^\s*8-2-rama:/), 1, sprint);
+  assert.match(sprint, /8-2-rama: review/);
+});
+
+test('UnRenglonPorHistoria_CadaLadoConLoSuyo', async (t) => {
+  const { unRenglonPorHistoria } = require(HELPER);
+  const base = ['x:', '  8-1-a: done', '  8-2-b: ready-for-dev', '  8-3-c: backlog', ''].join('\n');
+  await t.test('lo que sacó main no vuelve aunque la rama lo traiga sin tocar', () => {
+    const rama = base.replace('8-2-b: ready-for-dev', '8-2-b: review');
+    const main = base.replace('  8-1-a: done\n', '');
+    const unido = ['x:', '  8-1-a: done', '  8-2-b: review', '  8-2-b: ready-for-dev', '  8-3-c: backlog', ''].join('\n');
+    assert.equal(unRenglonPorHistoria(unido, base, rama, main), ['x:', '  8-2-b: review', '  8-3-c: backlog', ''].join('\n'));
+  });
+  await t.test('los dos cambiaron la misma historia, cada uno a su manera: queda la de la rama', () => {
+    const rama = base.replace('8-3-c: backlog', '8-3-c: in-progress');
+    const main = base.replace('8-3-c: backlog', '8-3-c: ready-for-dev');
+    const unido = ['x:', '  8-1-a: done', '  8-2-b: ready-for-dev', '  8-3-c: in-progress', '  8-3-c: ready-for-dev', ''].join('\n');
+    assert.equal(unRenglonPorHistoria(unido, base, rama, main), rama);
+  });
+  await t.test('los dos sumaron el mismo renglón: queda una vez', () => {
+    const rama = base.replace('  8-3-c: backlog\n', '  8-3-c: backlog\n  8-4-d: backlog\n');
+    const unido = rama.replace('  8-4-d: backlog\n', '  8-4-d: backlog\n  8-4-d: backlog\n');
+    assert.equal(unRenglonPorHistoria(unido, base, rama, rama), rama);
+  });
+});
+
 test('T7 Ayudante_Firmas_TodasYEnOrden', (t) => {
   const lab = armar(t);
   const r = correr(lab);

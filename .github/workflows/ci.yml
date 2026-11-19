@@ -183,6 +183,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # los comandos que imprime la ejecución perdida, pegados en Windows PowerShell 5.1, PowerShell 7 y cmd (8.318, AC 12):
+      # sale con el código de la prueba, así que un rojo pone rojo el trabajo y el pedido no entra
+      - name: Los comandos de la ejecución perdida en las tres consolas de Windows
+        run: |
+          node --test --test-name-pattern "T13 " skills/tycon-pipeline/scripts/tests/lost-run-loop.test.js
+          exit $LASTEXITCODE
       - name: El ensayo de Windows de este escenario
         env:
           SCENARIO: ${{ matrix.scenario }}

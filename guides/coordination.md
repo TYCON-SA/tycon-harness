@@ -227,7 +227,7 @@ espera y por qué, y el tope con su origen.
 
 ### Cuántas historias a la vez, quién lanza lo pesado y cuándo se le escribe al dueño
 
-Tres reglas de la coordinadora, para cualquier organización:
+Cuatro reglas de la coordinadora, para cualquier organización:
 
 - **Un tope de historias en el ciclo completo.** Una historia está en el ciclo desde que se arranca hasta que entra a
   `main`. Con el tope lleno, la coordinadora no arranca ni retoma otra hasta que una entre: las demás quedan en fila con
@@ -241,6 +241,10 @@ Tres reglas de la coordinadora, para cualquier organización:
 - **Al dueño, un mensaje por hora con lo suyo; lo que frena, al instante.** Lo que espera su firma o su decisión sin
   frenar a nadie va junto, en un mensaje por hora. Lo que frena el trabajo (una firma sin la cual una sesión no sigue,
   un control en rojo que nadie puede destrabar) se le avisa en el momento.
+- **Lo que sale del mismo caso va junto.** Si un reporte o un caso trae un arreglo principal y molestias menores del
+  mismo uso, la coordinadora las encarga todas en la misma sesión, no la principal ahora y las menores después. Queda
+  afuera sólo lo que toca a otras personas o equipos, como un pipeline de otro producto: eso va al dueño como decisión
+  aparte.
 
 El tope frena por cualquier camino del agente, no sólo por `open`. Antes de cada comando, un freno mira si el comando
 abre una sesión de Claude de fondo: `claude --bg`, o `claude` corriendo de fondo (`&`, `nohup`, `setsid`, `tmux new -d`,

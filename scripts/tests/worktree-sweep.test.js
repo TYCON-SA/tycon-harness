@@ -241,3 +241,61 @@ test('BranchNamesStory_StoryWithRegexCharacters_IsLiteral', () => {
   assert.ok(!branchNamesStory('feat/8.11-x', '8.1+'));
   assert.ok(!branchNamesStory('feat/x', '8.1|x'));
 });
+
+// ── una carpeta con una ejecución abierta no se borra (@story-8.318) ─────────────────────────────────────────────────
+
+const openRuns = require(path.join(REPO, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'open-runs.js'));
+
+/** Abre una ejecución con su carpeta dentro de `wt` (la apertura en el gates.log de la casa del lugar). */
+function abrirEn(L, wt, sid, story = '9.9') {
+  // la carpeta de las ejecuciones va ignorada, como en los repos de verdad: su copia no ensucia la carpeta
+  fs.appendFileSync(path.join(L.repo, '.git', 'info', 'exclude'), '.advisors/\n');
+  return openRuns.abrir({ sid, story, repo: wt, runDir: path.join(wt, '.advisors', 'pipeline-runs', `${story}-${sid}`), home: L.home });
+}
+
+test('T19 WorktreeSweep_NoBorraCarpetaConEjecucionAbierta @story-8.318 @ac-16 — a mitad o terminada, no la borra y la nombra con la historia y la sesión', () => {
+  const L = lugar();
+  const mitad = carpeta(L, 'producto-wt-mitad', 'feat/mitad');
+  const fin = carpeta(L, 'producto-wt-fin', 'feat/fin');
+  mergear(L, 'feat/mitad');
+  mergear(L, 'feat/fin');
+  abrirEn(L, mitad, 's-mitad', '9.1');
+  abrirEn(L, fin, 's-fin', '9.2');
+  const r = correr(L);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.ok(fs.existsSync(mitad) && fs.existsSync(fin), 'borró una carpeta con una ejecución abierta');
+  assert.match(r.out, /producto-wt-mitad \(tiene una ejecución abierta \(story 9\.1, sesión s-mitad\)\)/);
+  assert.match(r.out, /producto-wt-fin \(tiene una ejecución abierta \(story 9\.2, sesión s-fin\)\)/);
+});
+
+test('T20 WorktreeSweep_SinEjecucionAbierta_BorraComoHoy @story-8.318 @ac-15 @ac-16 — sin ejecución, y con una copia vieja sin apertura vigente, la borra', () => {
+  const L = lugar();
+  const sin = carpeta(L, 'producto-wt-sin', 'feat/sin');
+  const vieja = carpeta(L, 'producto-wt-vieja', 'feat/vieja');
+  mergear(L, 'feat/sin');
+  mergear(L, 'feat/vieja');
+  // la ejecución de la vieja ya se cerró: su copia quedó (de antes del registro, o restaurada por git)
+  const a = abrirEn(L, vieja, 's-vieja');
+  openRuns.cerrar({ sid: 's-vieja', sesion: 's-vieja', home: L.home, motivo: 'prueba' });
+  fs.mkdirSync(a.runDir, { recursive: true });
+  fs.writeFileSync(path.join(a.runDir, 'run-open.json'), JSON.stringify({ sesion: 's-vieja', story: '9.9', runDir: a.runDir, ts: a.ts }));
+  const r = correr(L);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /borré 2 ya mergeada\(s\)/, r.out);
+  assert.ok(!fs.existsSync(sin) && !fs.existsSync(vieja));
+});
+
+test('T21 WorktreeSweep_RegistroIlegible_NoBorraNinguna @story-8.318 @ac-17 — sin poder leer gates.log no borra y lo dice', { skip: (process.platform === 'win32' || (process.getuid && process.getuid() === 0)) && 'los permisos de lectura no se niegan igual en Windows ni como root' }, () => {
+  const L = lugar();
+  const wt = carpeta(L, 'producto-wt-x', 'feat/x');
+  mergear(L, 'feat/x');
+  abrirEn(L, path.join(L.base, 'otra'), 's-otra');
+  const log = path.join(stateDir(L.home), 'gates.log');
+  fs.chmodSync(log, 0o000);
+  try {
+    const r = correr(L);
+    assert.strictEqual(r.rc, 0, r.err);
+    assert.ok(fs.existsSync(wt), 'borró sin poder ver');
+    assert.match(r.out, /producto-wt-x \(no pude ver si tiene una ejecución abierta/);
+  } finally { fs.chmodSync(log, 0o644); }
+});
