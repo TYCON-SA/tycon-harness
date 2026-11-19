@@ -570,3 +570,70 @@ test('Regresion_Pagina_DibujaElAvisoDeLaLectura @story-8.185 @ac-15 — la colum
   const { body } = OF.drawKanban(data);
   assert.match(texto(body), /No pude leer los pendientes de tus proyectos/, '«Sin sesión» lo dice');
 });
+
+// ── Las dependencias abiertas, la pausa y los repos de cada proyecto (@story-8.307) ─────────────────────────────────
+
+test('T13 ProjectStories_PendientesYRepos @story-8.307 @ac-6 @ac-7 @ac-19 — pendientes con done y review resueltas, el comentario no rompe la lista, pausa, repos sin repetidos y view igual', () => {
+  const raiz = tmp('raiz');
+  const archivos = {
+    'specs/a.md': historia('9.1', 'ready-for-dev', { depends_on: '["9.2", "9.3"]' }),
+    'specs/b.md': historia('9.2', 'done'),
+    'specs/c.md': historia('9.3', 'review'),
+    'specs/d.md': historia('9.4', 'ready-for-dev', { depends_on: '["9.5", "9.9"]' }),
+    'specs/e.md': historia('9.5', 'draft'),
+    'specs/f.md': historia('9.6', 'ready-for-dev', { depends_on: '\n  - "9.2"\n  - "9.3"' }),
+    'specs/g.md': historia('9.7', 'ready-for-dev', { depends_on: '9.8 y 9.2' }),
+    'specs/h.md': historia('9.8', 'ready-for-dev', { depends_on: '[]  # no espera a otra historia' }),
+    'specs/i.md': historia('9.10', 'ready-for-dev', { depends_on: '["9.2"]  # de la 9.2, la tanda E' }),
+    'specs/j.md': historia('9.11', 'ready-for-dev', { paused_until: '2027-01-05' }),
+  };
+  const r = repo(raiz, 'r', { remoto: 'https://github.com/acme/r.git', archivos });
+  const out = PS.collect(base({ home: casa([{ cwd: r }]) }));
+  const p = out.proyectos[0];
+  const by = Object.fromEntries(p.historias.map((h) => [h.id, h]));
+  assert.deepStrictEqual(Object.keys(by).sort(), ['9.1', '9.10', '9.11', '9.3', '9.4', '9.6', '9.7', '9.8'], 'las done y draft no entran al archivo');
+  assert.strictEqual(by['9.1'].pendientes, undefined, 'done y review resuelven');
+  assert.deepStrictEqual(by['9.4'].pendientes, ['9.5', '9.9'], 'draft e inexistente quedan pendientes');
+  assert.strictEqual(by['9.6'].pendientes, undefined, 'la lista con guiones también resuelve');
+  assert.deepStrictEqual(by['9.7'].pendientes, ['9.8 y 9.2'], 'lo que no se entiende queda pendiente, tal cual');
+  assert.strictEqual(by['9.8'].pendientes, undefined, 'el comentario del final no vuelve ilegible la lista vacía');
+  assert.strictEqual(by['9.10'].pendientes, undefined, 'el comentario del final no vuelve ilegible una dependencia resuelta');
+  assert.strictEqual(by['9.11'].pausa, '2027-01-05');
+  assert.strictEqual(by['9.1'].pausa, undefined);
+  // formas válidas de YAML que la lectura tiene que entender (las encontró el pase adversarial): la lista sin sangría, un
+  // comentario o un renglón vacío dentro del bloque, un archivo con CRLF, y el nulo de YAML (null, ~), que no es una
+  // dependencia
+  const crlf = (txt) => txt.replace(/\n/g, '\r\n');
+  const formas = repo(raiz, 'formas', { remoto: 'https://github.com/acme/formas.git', archivos: {
+    'specs/a.md': historia('5.1', 'ready-for-dev', { depends_on: '\n- "5.9"' }),
+    'specs/b.md': historia('5.2', 'ready-for-dev', { depends_on: '\n  # la base primero\n  - "5.9"' }),
+    'specs/c.md': historia('5.3', 'ready-for-dev', { depends_on: '\n\n  - "5.9"' }),
+    'specs/d.md': crlf(historia('5.4', 'ready-for-dev', { depends_on: '[]  # no espera a otra' })),
+    'specs/e.md': crlf(historia('5.5', 'ready-for-dev', { depends_on: '\n  - "5.9"' })),
+    'specs/f.md': historia('5.6', 'ready-for-dev', { depends_on: 'null' }),
+    'specs/g.md': historia('5.7', 'ready-for-dev', { depends_on: '~' }),
+    'specs/h.md': historia('5.8', 'ready-for-dev', { depends_on: '\n  - "5.9"\n  - null' }),
+  } });
+  const bf = Object.fromEntries(PS.collect(base({ home: casa([{ cwd: formas }]) })).proyectos[0].historias.map((h) => [h.id, h]));
+  for (const id of ['5.1', '5.2', '5.3', '5.5', '5.8']) assert.deepStrictEqual(bf[id].pendientes, ['5.9'], `${id}: la 5.9 (que no existe) sigue pendiente`);
+  for (const id of ['5.4', '5.6', '5.7']) assert.strictEqual(bf[id].pendientes, undefined, `${id}: no declara dependencias`);
+  assert.ok(!('dependsOn' in by['9.1']) && !/"estados"/.test(JSON.stringify(out)), 'ni las dependencias crudas ni los estados se guardan');
+  assert.deepStrictEqual(p.repos, ['github/acme/r']);
+  // sin rama principal traída, lo leído es de la copia: toda dependencia declarada queda pendiente
+  const copia = repo(raiz, 'copia', { remoto: 'https://github.com/acme/copia.git', traida: false, archivos: { 'specs/a.md': historia('9.1', 'ready-for-dev', { depends_on: '["9.2"]' }), 'specs/b.md': historia('9.2', 'done') } });
+  const pc = PS.collect(base({ home: casa([{ cwd: copia }]) })).proyectos[0];
+  assert.strictEqual(pc.deTuCopia, true);
+  assert.deepStrictEqual(pc.historias.find((h) => h.id === '9.1').pendientes, ['9.2']);
+  // dos repos trabajados que leen del mismo lugar: repos trae el remoto del lugar y los de los dos, sin repetidos
+  const historias = repo(raiz, 'historias', { remoto: 'https://github.com/acme/historias.git', archivos: { 'specs/x.md': historia('7.1', 'ready-for-dev') } });
+  const back = repo(raiz, 'back', { remoto: 'https://github.com/acme/back.git', archivos: { '.tycon/advisors.yaml': 'stories:\n  repo: ../historias\n' } });
+  const out3 = PS.collect(base({ home: casa([{ cwd: back }, { cwd: historias }]) }));
+  const row3 = out3.proyectos.find((x) => x.historias.some((h) => h.id === '7.1'));
+  assert.deepStrictEqual([...row3.repos].sort(), ['github/acme/back', 'github/acme/historias']);
+  // la oficina dibuja lo mismo que antes: los campos nuevos no se muestran
+  const v = PS.view({ snap: out, now: Date.now() });
+  assert.doesNotMatch(JSON.stringify(v), /pendientes|pausa|repos/);
+  assert.strictEqual(typeof PS.remoteKey, 'function');
+  assert.strictEqual(typeof PS.inOrder, 'function');
+  assert.strictEqual(PS.READY, 'ready-for-dev');
+});

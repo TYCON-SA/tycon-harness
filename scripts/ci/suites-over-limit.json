@@ -241,6 +241,18 @@
         "why": "92 s medidos en la validación de la rama, la primera en la que corrió: sólo corre si el cambio toca los pipelines, el texto del alta o los guiones de Windows. No se perfiló en este tramo.",
         "until": "la medición final de la story 8.22 (tramo H)"
       }
+    },
+    "periodic-exam.test.js": {
+      "nightly": true,
+      "why": "Decisión del dueño del 2026-11-18. Pesa 103 s (103 pruebas, la mayor de 10 s) y mide el lanzador del examen de revisores y que un examen sin terminar no parezca verde. Sigue corriendo en cada pedido y en la cola de la CI pública, que no lee esta lista; sale sólo de la validación del privado. Costo aceptado: un cambio del privado que la rompa se ve a la noche siguiente."
+    },
+    "public-ci.test.sh": {
+      "nightly": true,
+      "why": "Decisión del dueño del 2026-11-18, que reemplaza la nota del 2026-11-09 (corría en la validación como siempre). Pesa 160 s (350 verificaciones de public-ci.sh y de las reglas de ci.yml), y partirla exige cortar por dentro su bloque más largo, de 65 s. Sigue corriendo en cada pedido y en la cola de la CI pública, que no lee esta lista; sale sólo de la validación del privado, donde se cortó por tiempo en cuatro corridas. Costo aceptado: un cambio del privado que la rompa se ve a la noche siguiente."
+    },
+    "test-gate-private-tree.test.js": {
+      "nightly": true,
+      "why": "Decisión del dueño del 2026-11-18. Pesa 150 s (51 pruebas que arman repos de juguete, la mayor de 49 s con la máquina cargada) y mide el portón sobre el árbol armado del privado. Sigue corriendo en cada pedido y en la cola de la CI pública, que no lee esta lista; sale sólo de la validación del privado. Costo aceptado: un cambio del privado que la rompa se ve a la noche siguiente."
     }
   }
 }
