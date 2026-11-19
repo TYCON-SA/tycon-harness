@@ -2739,7 +2739,7 @@ withWaiverLog(() => {
 // ---------------------------------------------------------------- la regla de la entrada a main (historia 8.310)
 // Estas necesitan git de verdad: un repo con su origin/main, ramas y fusiones de pedido.
 {
-  const { execFileSync } = require('child_process');
+  const { execFileSync, spawnSync } = require('child_process');
   const ledgerLine = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
   const BASE = Math.floor(Date.now() / 1000) - 12 * 3600;
 
@@ -2914,9 +2914,12 @@ withWaiverLog(() => {
     L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
     const antes = fs.readFileSync(L.storyPath, 'utf8');
     const r = L.calc();
-    const aviso = fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'hooks', 'bench-notice.js'), 'utf8');
+    // el aviso de la suite roja con lo que entró desde su última noche verde: se corre la prueba que lo mide
+    const noche = spawnSync(process.execPath, ['--test', '--test-name-pattern=SuitesRed_NamesThePullRequestsSinceItsLastGreenNight',
+      path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'night-notices.test.js')], { encoding: 'utf8', env: { ...process.env, HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-noche-')) } });
+    const avisoMedido = noche.status === 0 && /# pass 1|ℹ pass 1/.test(noche.stdout) && !/# fail [1-9]|ℹ fail [1-9]/.test(noche.stdout);
     check('Entrada_CambioAjenoConSuiteEnRojo_NoTocaLaHistoria @story-8.310 @ac-12',
-      fs.readFileSync(L.storyPath, 'utf8') === antes && veredicto(r, 1) === 'RUNTIME' && aviso.includes('entró desde su última noche verde'));
+      fs.readFileSync(L.storyPath, 'utf8') === antes && veredicto(r, 1) === 'RUNTIME' && avisoMedido, noche.stdout.slice(-400) + noche.stderr.slice(-400));
   }
 
   // T13: lo sensible sin prueba de noche no cuenta por la entrada, ni con un humo ni con un portón E2E
