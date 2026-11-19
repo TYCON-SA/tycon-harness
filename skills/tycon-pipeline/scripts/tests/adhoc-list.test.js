@@ -893,8 +893,12 @@ test('T12 Delegacion_VariosRepos_SeNiega — @story-8.316 @ac-8', () => {
   assert.notEqual(amp.status, 0);
   assert.match(amp.stderr, /2 repos/);
   assert.deepStrictEqual(leerCarril(h2, 's12b').allowedFiles, [path.join(c.R, 'docs/a.md')]);
-  // sin carpeta, una entrada `<Nombre>/…` no se puede resolver: no se delega
-  assert.match(ow.pasaDelCupoDelegado(palabras(['B/src/A.cs']), 3, null) || '', /sin la carpeta/);
+  // sin la carpeta de la sesión destino, una entrada `<Nombre>/…` no se puede resolver: el guion no abre nada
+  const h3 = tmp('home-');
+  const sinCarpeta = marker(h3, 'coord12', ['adhoc', 'set', pedido({ allowedFiles: ['B/src/A.cs'] }), '--for-session', 'desconocida12'], { cwd: c.R, delegadaPor: 'coord12' });
+  assert.equal(sinCarpeta.status, 2, sinCarpeta.stderr);
+  assert.match(sinCarpeta.stderr, /no sé la carpeta de la sesión desconocida12/);
+  assert.ok(!fs.existsSync(path.join(estado(h3), 'adhoc', 'desconocida12.json')));
   // una lista de un solo repo se delega como hoy (sin otro motivo para negarla)
   assert.equal(ow.pasaDelCupoDelegado(palabras(['docs/a.md']), 3, c.R), null);
   assert.equal(ow.pasaDelCupoDelegado(palabras(['B/src/A.cs']), 3, c.R), null);
