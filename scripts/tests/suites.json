@@ -886,6 +886,28 @@
       ]
     },
     {
+      "raiz": "arnes",
+      "__nota": "story 8.312: los resultados de la noche viajan por la rama night-results sin tocar el clon, y un fallo se ve al arrancar. Remotos desnudos de juguete, casa temporal; corre sus casos de a cuatro.",
+      "ruta": "tests/result-travel.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/lib/**",
+        "scripts/controls-bench/**",
+        "scripts/hooks/**",
+        "scripts/nightly/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
+      "__nota": "story 8.312: el nocturno lleva a main lo pendiente de night-results, sin repetir, sin perder y rechazando lo que no tiene forma de resultado.",
+      "ruta": "tests/carry-night-results.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/ci/**",
+        "scripts/lib/**"
+      ]
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-gate-cli.test.js",
       "requiere": []
@@ -1993,6 +2015,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/prod-firewall.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/prod-firewall-deleted-server.test.sh",
       "requiere": []
     },
     {
@@ -3149,6 +3176,12 @@
       "__nota": "qué dice el portón de CI que verificó (scripts/ci/tycon-ci-gate.js): el nivel de cada chequeo en la salida y en --json, la línea verde que dice que el servidor no re-ejecutó nada, las exenciones con su razón (también en bloque) y la exención sin razón que avisa hasta EXEMPT_REASON_FROM y frena desde ese día. Repos de juguete, HOME vacía, sin red.",
       "raiz": "arnes",
       "ruta": "tests/ci-gate-what-it-verified.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "lo que el portón de CI empieza a frenar (scripts/ci/tycon-ci-gate.js): la evidencia que declara FAIL o no se puede leer, la que está en el disco y no en git, y la carpeta de corrida que por la fecha en que entró en git pide registro de autoría; avisa hasta STRICT_EVIDENCE_FROM y frena desde ese día",
+      "raiz": "arnes",
+      "ruta": "tests/ci-gate-reads-verdict.test.js",
       "requiere": []
     },
     {

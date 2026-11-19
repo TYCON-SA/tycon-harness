@@ -767,6 +767,19 @@ test('Delicado_ConRevisionAprobada_EsperaAlDev (T11) @story-1.29 @ac-9', (t) => 
   const r = aprobarPorDelegacion(lab);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /plan delicado \(nivel 2\): lo aprueba el dev/);
+  // con `plan-approval:delicada` delegada en el perfil, lo aprueba la coordinadora con su revisión aprobada; sin esa
+  // revisión no, y la propia sesión nunca. (Va en este caso: la lista de casos de esta suite está fija.)
+  const delegaDelicada = () => true;
+  const m = JSON.parse(lab.leer(DESTINO));
+  const conLaForma = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: m, delegaDelicada });
+  assert.strictEqual(conLaForma.codigo, 0, JSON.stringify(conLaForma));
+  assert.strictEqual(conLaForma.constancia.delicate.value, true);
+  const propia = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: m, delegaDelicada });
+  assert.match(propia.motivo, /plan delicado \(nivel 2\): lo aprueba el dev/);
+  const sinRevision = laboratorio(t, { sensible: 'seguridad' });
+  const s2 = PR().antesDeAprobar({ estado: sinRevision.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(sinRevision.leer(DESTINO)), delegaDelicada });
+  assert.strictEqual(s2.codigo, 2);
+  assert.match(s2.motivo, /no hay una revisión automática/);
 });
 
 // ── el «aprobado» del dueño en la pestaña de la coordinadora: la firma es suya, y lo delicado pasa ────────────────────

@@ -133,7 +133,7 @@ function parseFrontmatter(content) {
 }
 
 const { isWorkStoryId, storiesConfigForGate } = require('./lib/story-discovery.js');
-const { esEvidenciaDeCierre, ES_EVIDENCIA_ADEMAS, coberturaDeLaUnion } = require('./lib/closing-evidence.js');
+const { esEvidenciaDeCierre, ES_EVIDENCIA_ADEMAS, coberturaDeLaUnion, evidenciaDeclaraFail } = require('./lib/closing-evidence.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 
 /**
@@ -689,15 +689,7 @@ function findAdvisorsEvidence(cwd, storyId, opts = {}) {
 
 // Busca archivo de evidencia DoD para una storyId dada en el repo cwd.
 // Devuelve el path + content del archivo MÁS RECIENTE encontrado (por filename
-// timestamp), o null si no existe.
-// Los tres formatos con los que el pipeline escribe un veredicto: `verdict=FAIL` (gate E2E),
-// `- verdict: FAIL` / `VERDICT: **FAIL**` (narrativas) y `## Verdict global` seguido de FAIL.
-function evidenciaDeclaraFail(content) {
-  if (!content) return false;
-  if (/(^|\n)[ \t]*(?:[-*][ \t]*)?(?:\*\*)?verdict(?:[ \t]+global)?(?:\*\*)?[ \t]*[:=][ \t]*(?:\*\*)?[ \t]*FAIL\b/i.test(content)) return true;
-  if (/##[ \t]*verdict[ \t]+global[ \t]*\n+[ \t]*(?:\*\*)?FAIL\b/i.test(content)) return true;
-  return false;
-}
+// timestamp), o null si no existe. Qué evidencia declara FAIL lo decide `evidenciaDeclaraFail` de lib/closing-evidence.js.
 // `opts.storyPath`: con la ruta de la story se busca por la CLAVE de su evidencia
 // (lib/evidence-key.js) — con un número repetido en el repo, `<id>-*` es la evidencia de cualquiera de las
 // stories que lo comparten. Si la clave no se puede decidir, no hay evidencia (fail-closed): dar por buena

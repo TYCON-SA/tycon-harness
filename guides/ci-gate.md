@@ -21,8 +21,8 @@ presente», «ejecución registrada» o «no medido». Un ✅ no quiere decir «
 ## Lo que el portón NO resuelve
 
 - **No re-ejecuta nada**: no compila, no corre pruebas, no levanta la app. Lo que corrió, corrió en la máquina del dev.
-- **No lee lo que dice la evidencia de cierre**: una evidencia que dice «hola» pasa el chequeo de evidencia (nivel
-  «archivo presente»).
+- **De lo que dice la evidencia de cierre sólo lee si declara FAIL**: una evidencia que dice «hola» pasa (nivel
+  «ejecución registrada: no declara FAIL»), aunque la corrida no haya probado nada.
 - **Lo escrito en la máquina del dev no tiene procedencia**: el registro de autoría y el de aprobaciones son «ejecución
   registrada»: tienen forma válida, no prueban quién los escribió.
 - **La exención no se firma en el servidor**: se exige y se muestra su razón (`<campo>_reason`), no quién la autorizó.
@@ -78,7 +78,7 @@ sería peor que no tenerlo.
 | Chequeo | Qué atrapa |
 |---|---|
 | **Frontmatter legible** | Una story cuyo frontmatter no cierra. Las tools del arnés no dan error con eso: la **saltean en silencio** (medido en un producto del equipo: 4 stories invisibles durante 2 meses, una tapando una deuda de evidencia). |
-| **Evidencia de cierre** | Una story que pasa a `review`/`done` sin su `.advisors/dod-runtime/<id>-*.md` **en el repo** (un `.md` real: la matriz por AC, el self-audit y el plan manual no cuentan — 2026-09-05). Es la mitad del gate local que no depende de la sesión. Si el código vive en otro repo, la evidencia igual nace acá: ver §"Stories en un repo, código en otro". Escape declarado: `dod_runtime_exempt: true` + razón, que lo decide la persona (el arnés le pide la firma `marker.js sign-file dod_runtime_exempt <historia>` en cualquier estado, también al crear la story). |
+| **Evidencia de cierre** | Una story que pasa a `review`/`done` sin su `.advisors/dod-runtime/<id>-*.md` **en el repo** (un `.md` real: la matriz por AC, el self-audit y el plan manual no cuentan — 2026-09-05). Es la mitad del gate local que no depende de la sesión. Si el código vive en otro repo, la evidencia igual nace acá: ver §"Stories en un repo, código en otro". Escape declarado: `dod_runtime_exempt: true` + razón, que lo decide la persona (el arnés le pide la firma `marker.js sign-file dod_runtime_exempt <historia>` en cualquier estado, también al crear la story). La evidencia se busca en git (en el índice con `--staged`), y de lo que dice sólo se lee si declara FAIL (§«Límite conocido»). |
 | **Constancia de revisores** | Una story que pasa a `done` sin una corrida del pipeline en el repo (`.advisors/pipeline-runs/<id>-…`). Es el ADVISORS-GATE del pre-commit en su mitad verificable desde el servidor (la otra mitad vive en el `gates.log` local). Escape: `advisors_exempt: true` + razón. |
 
 | **Índice de memoria** (2026-09-17) | Un cambio que deja la memoria de engram a medio declarar: entradas que la rama base declara y este cambio ya no, o archivos de memoria nuevos sin entrada. `engram sync --import` lee el ÍNDICE, no la carpeta, así que un archivo sin entrada **no existe para las demás máquinas y no da error**; y una entrada perdida no vuelve sola. Mismo criterio que el freno del commit (`scripts/lib/manifest-engram.js`) y misma asimetría: lo que este cambio ROMPE frena, lo heredado y lo no comparable avisan. Sólo lee algo si el diff toca `.engram/`. **Acá importa especialmente**: es lo único que ve los commits hechos fuera del asistente — la web de Azure, otra máquina, un hook salteado. |
@@ -345,6 +345,7 @@ recién al pull request, después del push. Con el freno en git, ese commit no s
 | lo nuevo | el commit (`HEAD`) | el índice (`git show :ruta`) |
 | lo de antes | la rama destino del pull request | el último commit (`HEAD`) |
 | alcance | todo lo que el pull request agrega | sólo lo que este commit agrega |
+| dónde busca la evidencia | lo que trae el commit | el índice: lo que el commit va a llevar |
 
 Lo ya commiteado **no se vuelve a reclamar**: si mordiera en cada commit por una story cerrada hace
 semanas, el freno se apagaría en una semana. Y `--staged` **ignora `--base`** a propósito: en un
@@ -367,24 +368,24 @@ comparar** (no poder mirar nunca se reporta como limpio).
 Con Azure DevOps, cómo se encola la validación de una rama sin dejar validaciones viejas de la misma rama en la cola:
 `guides/integrations/ado-en-el-nucleo.md`, §«El portón de la CI: validar una rama del arnés».
 
-## Límite conocido: el portón mira que la evidencia EXISTA, no lo que dice adentro (2026-09-06)
+## Límite conocido: de lo que dice la evidencia, el portón sólo lee si declara FAIL
 
-Un `<id>-dod-runtime-checker.md` que dice literalmente «🔴 1 CRITICAL (bloquea `review`)» cuenta
-para el portón como evidencia válida: sólo mira el **nombre** del archivo. No es una regresión —siempre fue
-así—, pero con el criterio de nombres endurecido (matriz, self-audit y plan manual ya no cuentan), el
-de contenido es el agujero que queda.
+El portón lee el veredicto con la misma regla que el freno local (`evidenciaDeclaraFail`, en
+`lib/closing-evidence.js`; el portón lleva una copia comparada por `closing-evidence-parity.test.js`): un FAIL en
+cualquiera de los tres formatos que escribe el pipeline (`verdict=FAIL`, `- verdict: FAIL`, `## Verdict global` + FAIL).
+Si toda la evidencia de cierre de la historia declara FAIL, sale `evidencia-de-cierre-falla`. El registro de humos
+(`-smoke-ledger.jsonl`) no se lee como texto: cuenta como «no FAIL» si tiene al menos una línea con salida 0. Un archivo
+que no es texto, o que git no devuelve, no deja pasar: `veredicto-no-leido`.
 
-**Se declara, no se cierra todavía.** Para leer el veredicto hace
-falta que todos los generadores lo escriban igual, y hoy conviven dos formatos de tags de AC
-(`AC #N` y `@ac-N`). Un lector de contenido sobre formatos
-que divergen sería un tercer lector parcial: más deuda, no menos. Primero un formato de veredicto
-ÚNICO, después el chequeo.
+La evidencia se busca en git: en lo que trae el commit, o en el índice con `--staged`. La que está en el disco y no en
+git sale `sin-evidencia-de-cierre`, y el mensaje nombra el `.gitignore` como causa posible. La carpeta de corrida, igual,
+y su registro de autoría se exige por la fecha en que la carpeta entró en git, no por la fecha del nombre, que elige
+quien crea la carpeta.
 
-Mientras tanto, la división de trabajo es ésta: el portón verifica que la evidencia **existe** en el
-repo de la story. El freno local (`on-pre-commit.js`) sí lee el contenido, y
-lo hace en dos partes: `evidenciaDeclaraFail` descarta una corrida que
-declara **FAIL** en cualquiera de los tres formatos que escribe el pipeline (`verdict=FAIL`,
-`- verdict: FAIL`, `## Verdict global` + FAIL) — si es la única, bloquea diciéndolo—, y
-`parseAcsFromEvidence` cuenta qué ACs **menciona** (no si cada mención es un ✅:
-`AC #1 ❌` cuenta como mención). Quien lea un ✅ del portón tiene que
-saber que es «hay evidencia», no «la evidencia aprobó».
+**Entra avisando.** Todo esto avisa hasta el 2026-12-07 y frena desde ese día. Lo que ya frenaba antes (sin evidencia
+ni en git ni en el disco) sigue frenando.
+
+**Lo que sigue sin mirar.** Una evidencia que dice «hola» sigue pasando: no declara FAIL. El portón no cuenta qué
+criterios menciona la evidencia ni si cada mención es un ✅; eso lo hace el freno local (`parseAcsFromEvidence`, y la
+matriz por criterio). Quien lea un ✅ del portón tiene que saber que es «hay evidencia y no declara FAIL», no «la
+evidencia aprobó».

@@ -225,6 +225,23 @@ pestaña Configuración, «Las sesiones de cada máquina»), y cada máquina pue
 aguanta depende de ella. Sin valor en ningún lado, el tope es 3. `coordination.js status` muestra quién trabaja, quién
 espera y por qué, y el tope con su origen.
 
+### Cuántas historias a la vez, quién lanza lo pesado y cuándo se le escribe al dueño
+
+Tres reglas de la coordinadora, para cualquier organización:
+
+- **Un tope de historias en el ciclo completo.** Una historia está en el ciclo desde que se arranca hasta que entra a
+  `main`. Con el tope lleno, la coordinadora no arranca ni retoma otra hasta que una entre: las demás quedan en fila con
+  `marker.js park --queue`. El tope es `coordination.max_stories_in_cycle`, de 1 a 20; sin valor en ningún lado, 4. Sigue
+  el mismo orden que `coordination.max_working`: la variable (`TYCON_COORDINATION_MAX_STORIES_IN_CYCLE`), la máquina
+  (`tycon-config.js set`) y el perfil del equipo. `coordination.js status` lo muestra con su origen. Hoy es una regla
+  que cumple la coordinadora: ningún freno la mide.
+- **Las sesiones lanzan lo pesado directo, y el arnés decide.** Una sesión que tiene que correr las pruebas o el pase
+  los lanza sin pedirle permiso a la coordinadora: el arnés dice si hay lugar (el turno de la máquina) y, si no, cuándo
+  volver. La coordinadora no da turnos: sólo avisa cuando se libera el lugar.
+- **Al dueño, un mensaje por hora con lo suyo; lo que frena, al instante.** Lo que espera su firma o su decisión sin
+  frenar a nadie va junto, en un mensaje por hora. Lo que frena el trabajo (una firma sin la cual una sesión no sigue,
+  un control en rojo que nadie puede destrabar) se le avisa en el momento.
+
 El tope frena por cualquier camino del agente, no sólo por `open`. Antes de cada comando, un freno mira si el comando
 abre una sesión de Claude de fondo: `claude --bg`, o `claude` corriendo de fondo (`&`, `nohup`, `setsid`, `tmux new -d`,
 `screen -dm`, `Start-Process`, la ejecución de fondo de la herramienta), también envuelto en `env`, `sudo`, `bash -c`,
@@ -332,7 +349,8 @@ una, la coordinadora:
 - **Aprueba en nombre del dueño sólo con «aprobado»** sobre ese mismo plan, con `plan_review.routine_approval` (O4) en
   `review` y `plan-approval` delegado. Sin coordinadora, ese mismo «aprobado» de la revisión que lanza la propia sesión
   aprueba el plan de rutina sin click: alcanza en los dos casos. Con `person`, el plan de rutina lo firma siempre una
-  persona. Rechazado o sin veredicto, el plan espera; un plan delicado lo firma siempre el dueño.
+  persona. Rechazado o sin veredicto, el plan espera. Un plan delicado lo firma el dueño, salvo que el perfil delegue
+  `plan-approval:delicada`: entonces lo aprueba la coordinadora con ese mismo «aprobado» de la revisión que ella lanzó.
   **El plan que aprueba es el de una parte**: si la ejecución anotó su tanda (`set-batch`) y la parte vale (con su
   `files:` o, sin `files:`, con los archivos que la historia le ata a la tanda más los que no ata a ninguna), la delicada
   se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide el diff
@@ -366,6 +384,10 @@ Después la pide por la vía que corresponde:
   pestaña de la coordinadora, en la ventana de permiso, con las reglas de la firma delegada. Se firma en el momento y
   no deja pendiente. Si la delegación no aplica y la pestaña de la coordinadora no pide permisos, la ventana no se abre,
   porque en esa pestaña nadie diría Sí: la firma se niega y la negativa dice cómo pedir el click o el «aprobado».
+  Además de la rutina, el perfil puede delegar las excepciones de trámite (`guides/firmas-del-arnes.md`, «Qué excepciones
+  se delegan»). `owner-next` no da el cuadro para una firma de otra sesión que el perfil le delega a la coordinadora, ni
+  para una que su pestaña no puede contestar (las de sólo click): en su lugar dice la vía que anda, que es el comando
+  con `--for-session` para firmarla ella, o el click en la pestaña de la sesión que la pidió.
 
 Lo que pide contraseña va siempre por la terminal: la contraseña la escribe sólo el dueño. Cuando el dueño firmó,
 `coordination.js signature-done <id>` borra el archivo y el pendiente. Carpeta vacía y ningún pendiente quiere decir
@@ -464,8 +486,9 @@ sesión?». Entre ellas, marcar un control a mano (`marker.js set-check <control
 --trust-ran --for-session <D>`) y aceptar un criterio imposible de probar en vivo (`marker.js runtime-waiver <historia>
 --acs <n> --for-session <D>`). La historia es la de la ejecución abierta de `<D>`: si no, el guion sale sin escribir. La
 ventana se le abre al dueño en la pestaña de la coordinadora (si esa pestaña no pide permisos, se niega y se aprueba con
-su click o su «aprobado»). Las tres son de nivel 2, así que ninguna se le puede delegar: el arnés rechaza un perfil que lo
-intente (`guides/firmas-del-arnes.md`).
+su click o su «aprobado»). Las tres son de nivel 2 y de trámite: se le delegan sólo si el perfil del equipo las nombra en
+`approvals.delegated_signing`, y entonces las firma ella sin ventana y quedan en el registro con vía «delegación». Qué
+excepciones se delegan y cuáles quedan sólo del dueño lo dice `guides/firmas-del-arnes.md`, «Qué excepciones se delegan».
 
 ### Los mensajes de la oficina
 

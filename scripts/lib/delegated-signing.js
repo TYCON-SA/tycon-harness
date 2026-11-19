@@ -26,7 +26,7 @@ const NUNCA_DELEGABLES = new Map([
   ['designation-set', 'nombrar o retirar a la coordinadora lo firma el dueño con su click en la pestaña de esa sesión: no se delega'],
   ['designation-withdraw', 'nombrar o retirar a la coordinadora lo firma el dueño con su click en la pestaña de esa sesión: no se delega'],
   ['escape:merge-bypass', 'mergear salteando la cola y la CI de main es sólo del dueño: no se delega'],
-  ['escape:red-control-test-edit', 'editar la prueba de un control que estaba en rojo es sólo del dueño: no se delega'],
+  ['adhoc-lane:datos', 'dejar pasar un cambio de datos o de permisos sin historia es sólo del dueño: no se delega'],
 ]);
 
 const safeSid = (s) => String(s).replace(/[/\\]/g, '_');
@@ -129,6 +129,10 @@ function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, pe
   // su constancia nombra al dueño en la huella: aunque el perfil la liste, no tiene vía delegada
   if (firma === 'adversarial-skip') return no('saltear el pase adversarial es sólo del dueño: no se delega');
   if (NUNCA_DELEGABLES.has(firma)) return no(NUNCA_DELEGABLES.get(firma));
+  const cat = require('./signatures.js');
+  // del nivel 2 se delegan sólo las excepciones de trámite; lo demás, y todo el nivel 3, es sólo del dueño aunque un
+  // perfil lo liste (el lector del perfil ya lo saca: esto cubre a quien lee la lista sin ese lector)
+  if (!cat.delegable(firma)) return no(`«${firma}» es sólo del dueño: no se delega`);
   if (destino === sesion) {
     // la coordinadora que aprueba un pendiente sin nombrar la sesión que lo abrió ve por qué le toca la ventana
     if (SOBRE_UN_REPO.has(firma) && esLaDesignada(estado, sesion)) return no('un pendiente se aprueba por delegación con --for-session <la sesión que lo abrió>');
@@ -139,13 +143,14 @@ function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, pe
     a = perfil ? perfil() : profileLists({ env, home, arnes }).approvals;
   } catch (e) { return no(`no pude leer el perfil del equipo (${e.message})`); }
   a = a || {};
-  const cat = require('./signatures.js');
   // owner_only sólo restringe: ahí escape-phrases cubre también los escapes que el grupo no delega
   const ids = (v, o) => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : []).flatMap((x) => cat.expand(x, o));
   const malFormada = ['owner_only', 'delegated_signing', 'delegated_machines'].find((k) => a[k] != null && !Array.isArray(a[k]) && !(k !== 'delegated_machines' && typeof a[k] === 'string'));
   if (malFormada) return no(`no pude leer approvals.${malFormada} del perfil: no es una lista`);
   if (ids(a.owner_only, { restringe: true }).includes(firma)) return no(`«${firma}» es sólo del dueño (approvals.owner_only)`);
   if (!ids(a.delegated_signing).includes(firma)) return no(`el perfil del equipo no delega «${firma}» (approvals.delegated_signing)`);
+  // lo que el perfil subió con approvals.levels deja de delegarse (lo saca también su lector)
+  if (a.levels && typeof a.levels === 'object' && !cat.delegable(firma, a.levels)) return no(`«${firma}» es sólo del dueño: el perfil le subió el nivel (approvals.levels)`);
   let fp;
   try { fp = (huella || (() => require('./machine-id.js').huella()))(); } catch (e) { return no(`no pude leer la huella de esta máquina (${e.message})`); }
   if (!fp || fp.error || !fp.huella) return no(`no pude leer la huella de esta máquina: ${(fp && fp.error) || 'sin huella'}`);
