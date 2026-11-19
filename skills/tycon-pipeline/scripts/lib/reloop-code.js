@@ -48,14 +48,16 @@ function raizDelRepo(abs) {
  * copia), la que dice su `commondir`. Sin git (sólo el sistema de archivos: corre en cada edición). null si no se lee.
  */
 function comunDe(raiz) {
+  // la versión nativa devuelve las mayúsculas del disco: en uno que no las distingue, «MiRepo» y «mirepo» son el mismo
+  const realDe = (p) => { const r = fs.realpathSync.native(p); return process.platform === 'win32' ? r.toLowerCase() : r; };
   try {
     const g = path.join(raiz, '.git');
-    if (fs.statSync(g).isDirectory()) return fs.realpathSync(g);
+    if (fs.statSync(g).isDirectory()) return realDe(g);
     const m = fs.readFileSync(g, 'utf8').match(/^gitdir:\s*(.+?)\s*$/m);
     if (!m) return null;
     const dir = path.resolve(raiz, m[1]);
     const comun = path.join(dir, 'commondir');
-    return fs.realpathSync(fs.existsSync(comun) ? path.resolve(dir, fs.readFileSync(comun, 'utf8').trim()) : dir);
+    return realDe(fs.existsSync(comun) ? path.resolve(dir, fs.readFileSync(comun, 'utf8').trim()) : dir);
   } catch (_) { return null; }
 }
 
@@ -70,7 +72,9 @@ function fueraDeLaCorrida(raiz, { storyPath, repoPath }) {
   const repos = new Set(deLaCorrida);
   for (const r of deLaCorrida) {
     const cfg = parseEvidenceConfig(r);
-    for (const h of [...cfg.roots, ...cfg.missing]) repos.add(path.resolve(r, String(h)));
+    // un hermano declarado que no está en disco: no se sabe dónde está su código, y un archivo de otro repo puede ser suyo
+    if (cfg.missing.length) return false;
+    for (const h of cfg.roots) repos.add(path.resolve(r, String(h)));
   }
   const comunes = new Set();
   for (const r of repos) {

@@ -161,6 +161,38 @@ test('Reloop_CodeInAnotherWorktreeOfADeclaredSibling_StillRounds', (t) => {
   assert.equal(pideOtraVuelta(path.join(copia, 'src', 'b.js'), { storyPath: story, repoPath: copia }), true);
 });
 
+// 🔴 Falla con (pase adversarial): un hermano declarado que no está en disco, escrito con un nombre suelto o con «~/»,
+//    resuelto como una carpeta DENTRO del repo de la corrida: no genera duda, y el código del hermano clonado en otro
+//    lado deja de pedir otra vuelta.
+test('Reloop_DeclaredSiblingMissing_StillRounds', (t) => {
+  for (const forma of ['zzfront', '~/zzfront', '../zzfront']) {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'reloop-code-falta-'));
+    t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+    const back = path.join(base, 'wts', 'back--wt-x');
+    fs.mkdirSync(path.join(back, '.tycon'), { recursive: true });
+    execFileSync('git', ['init', '-q', back]);
+    fs.writeFileSync(path.join(back, '.tycon', 'advisors.yaml'), `evidence:\n  companion_repos:\n    - ${forma}\n`);
+    const otro = path.join(base, 'otra', 'zzfront');
+    fs.mkdirSync(otro, { recursive: true });
+    execFileSync('git', ['init', '-q', otro]);
+    const story = path.join(back, 'specs', 'story-9-9.md');
+    assert.equal(pideOtraVuelta(path.join(otro, 'src', 'a.js'), { storyPath: story, repoPath: back }), true, forma);
+  }
+});
+
+// 🔴 Falla con (pase adversarial): el repo de la corrida escrito con otras mayúsculas, en un disco que no las distingue:
+//    su propio código sale «de otro repo» y no pide otra vuelta.
+test('Reloop_RunRepoWithOtherCase_StillRounds', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'reloop-code-may-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const real = path.join(base, 'MiRepo');
+  execFileSync('git', ['init', '-q', real]);
+  const otra = path.join(base, 'mirepo');
+  if (!fs.existsSync(otra)) return console.log('⏭ el disco distingue mayúsculas: NO MEDIDO');
+  assert.equal(pideOtraVuelta(path.join(real, 'src', 'a.js'), { storyPath: path.join(otra, 'specs', 's.md'), repoPath: otra }), true);
+  assert.equal(pideOtraVuelta(path.join(otra, 'src', 'a.js'), { storyPath: path.join(real, 'specs', 's.md'), repoPath: real }), true);
+});
+
 test('Reloop_CodeInRepoOrWorktree_StillRounds @story-8.270 @ac-25 — código en un repo o en un worktree (con .git archivo) sigue pidiendo otra vuelta', (t) => {
   const { dir, story } = repo(t, { git: true });
   assert.equal(pideOtraVuelta(path.join(dir, 'src', 'a.js'), { storyPath: story }), true);

@@ -1548,6 +1548,7 @@ function computeMechDiscount(allList, args) {
     kept: allList.filter((a) => !discounted.some((d) => d.name === a)),
     mech_findings: mech.findings || [],
     mech_ambiguous_count: (mech.ambiguous || []).length,
+    mech_ambiguous_rules: [...new Set((mech.ambiguous || []).map((a) => String(a.rule || '')))],
   };
 }
 
@@ -1591,8 +1592,20 @@ function criticosMecanicos(args) {
   if (all.error) return { ...vacio, error: `el registro de críticos (${all.error})` };
   const lines = rc.linesOfRun(all.lines, { story: marker.storyId, since: marker.startedAt || null, ...rc.corridaDelMarcador(marker, runDir) });
   const reportadas = new Set(lines.filter((l) => l.kind === 'report').flatMap((l) => (l.criticals || []).map((c) => c.rule)));
-  return { ...vacio, reglas: [...new Set(vivos.map((f) => String(f.rule_id || f.rule)).filter((r) => !reportadas.has(r)))] };
+  const reglas = [...new Set(vivos.map((f) => String(f.rule_id || f.rule)).filter((r) => !reportadas.has(r)))];
+  // por regla, cuántos tienen ya su destino (diferido, refutado, eximido): mech-check los puede seguir reportando
+  const conDestino = {};
+  for (const r of reglas) {
+    conDestino[r] = (h.lista || []).filter((f) => String(f.rule_id || f.rule) === r && String(f.severity || '').toUpperCase() === 'CRITICAL'
+      && ['deferred', 'refuted', 'waived'].includes(String(f.disposition || '').toLowerCase())).length;
+  }
+  return { ...vacio, reglas, conDestino };
 }
+
+// Las reglas que mech-check mira siempre sobre la historia, haga lo que haga el cambio: su ausencia en una vuelta quiere
+// decir que se arregló. Las demás (DEFTR mira los archivos que se le pasan, WIRING depende del paquete, las de los
+// revisores no las corre) no se pueden comprobar así.
+const REGLAS_QUE_MECH_COMPRUEBA = new Set(['ACCOV-C1', 'ACCOV-C5']);
 
 function revisoresPorConfirmar(args) {
   const vacio = { agregar: [], fuera: [], error: null };
@@ -7715,16 +7728,23 @@ function main() {
     // mech-check ya corrió arriba (el descuento); si el crítico sigue, o no se pudo mirar, la vuelta no se cierra
     if (result.no_code_delta) {
       const cm = criticosMecanicos(args);
-      const sigue = (regla) => disc && disc.mech_findings.some((f) => f.rule === regla && String(f.severity || '').toUpperCase() === 'CRITICAL');
       const noSe = cm.error ? `no pude saber cuáles son (${cm.error})` : cm.reglas.length && !disc ? 'no pude volver a correr mech-check' : null;
       if (noSe) {
         result.no_code_delta = false;
         result.mech_still_open = [{ rule: null, reason: noSe }];
       } else if (cm.reglas.length) {
-        const abiertos = cm.reglas.filter(sigue);
+        // por instancia: los que mech-check sigue reportando, menos los que ya tienen su destino en findings.json
+        const vivos = (regla) => disc.mech_findings.filter((f) => f.rule === regla && String(f.severity || '').toUpperCase() === 'CRITICAL').length;
+        const ambiguas = new Set(disc.mech_ambiguous_rules || []);
+        const abiertos = [];
+        for (const rule of cm.reglas) {
+          if (!REGLAS_QUE_MECH_COMPRUEBA.has(rule)) abiertos.push({ rule, reason: 'mech-check no la evalúa: no la puedo comprobar sin un revisor' });
+          else if (ambiguas.has(rule)) abiertos.push({ rule, reason: 'mech-check la deja ambigua: no la puedo comprobar sin un revisor' });
+          else if (vivos(rule) > (cm.conDestino[rule] || 0)) abiertos.push({ rule, reason: 'findings.json lo da por arreglado y mech-check lo sigue reportando' });
+        }
         if (abiertos.length) {
           result.no_code_delta = false;
-          result.mech_still_open = abiertos.map((rule) => ({ rule, reason: 'findings.json lo da por arreglado y mech-check lo sigue reportando' }));
+          result.mech_still_open = abiertos;
         } else result.mech_confirmed = cm.reglas;
       }
       if (result.mech_still_open) {
