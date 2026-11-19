@@ -378,6 +378,9 @@ function casaConComodin(ruta, patron, platform = process.platform) {
   const t0 = n(patron);
   const corte = t0.search(/[*?[]/);
   const fija = corte < 0 ? t0 : t0.slice(0, t0.lastIndexOf('/', corte) + 1);
+  // con muchos comodines la comparación puede volverse lenta (cada `*` multiplica los intentos): con más de seis, vale la
+  // carpeta fija de adelante, que es más de lo que borra (frena de más, nunca de menos ni colgado)
+  if ((t0.match(/[*?[]/g) || []).length > 6) return dentroDe(ruta, fija || '/', platform);
   const patrones = [t0];
   try { const r = n(fs.realpathSync.native(fija || '/')); if (r && r + '/' !== fija && r !== fija) patrones.push(`${r}/${t0.slice(fija.length)}`); } catch { /* no existe: vale el patrón dicho */ }
   const compilar = (t) => {
@@ -446,4 +449,4 @@ function dentroDe(hijo, padre, platform = process.platform) {
   return false;
 }
 
-module.exports = { CAMPOS_DE_CIERRE, MARKER_REL, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, hayAbiertas, dentroDe, gatesPath, markerPath };
+module.exports = { CAMPOS_DE_CIERRE, MARKER_REL, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, hayAbiertas, dentroDe, casaConComodin, gatesPath, markerPath };

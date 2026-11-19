@@ -398,6 +398,27 @@ test('T16b BorrarCarpeta_FormasDelPaseAdversarial @story-8.318 @ac-13 @ac-15 —
   }
 });
 
+test('T16c BorrarCarpeta_SinRetrocesoNiEscapeIncompleto @story-8.318 @ac-13 — CodeQL del pedido: el freno no se cuelga y cita bien', () => {
+  const gate = require(path.join(SCRIPTS, 'on-bash-write-gate.js'));
+  // las dos entradas que hacían retroceder la expresión de los envoltorios, y la de las palabras de control
+  for (const largo of [`env${' -/env'.repeat(20000)}`, `env${' -c 0'.repeat(20000)}`, `if${' ( '.repeat(20000)}x`, `then${'  '.repeat(20000)}(`]) {
+    const t0 = Date.now();
+    gate.carpetasQueBorraOMueve(largo);
+    assert.ok(Date.now() - t0 < 2000, `tardó ${Date.now() - t0} ms con ${largo.slice(0, 20)}…`);
+  }
+  // un comodín con muchas estrellas no cuelga la comparación con la ejecución abierta
+  const or = require(OR);
+  const t1 = Date.now();
+  assert.strictEqual(or.casaConComodin(`/a/${'b'.repeat(3000)}c`, `/a/${'*b'.repeat(40)}*x`), true, 'con muchas estrellas vale la carpeta fija: frena de más');
+  assert.ok(Date.now() - t1 < 2000);
+  // una ruta con barra invertida y comilla detrás de xargs: la palabra vuelve igual
+  const raro = 'a\\"b';
+  const r = gate.carpetasQueBorraOMueve(`echo x | xargs rm -rf '${raro}'`);
+  assert.deepStrictEqual(r.rutas.map((x) => x.raw), [raro]);
+  // y los envoltorios siguen viéndose
+  assert.deepStrictEqual(gate.carpetasQueBorraOMueve('sudo -u nadie nice -5 env -u X rm -rf /a/wt').rutas.map((x) => x.raw), ['/a/wt']);
+});
+
 test('T17b WorktreePrune_RutaPorUnEnlace_Frena @story-8.318 @ac-14 — la apertura anotada por un enlace y git con la ruta real', { skip: WIN && 'los enlaces de carpeta no se arman igual en Windows' }, () => {
   const E = entorno();
   const wt = carpetaDeTrabajo(E);
