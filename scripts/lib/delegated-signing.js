@@ -15,12 +15,10 @@
  *   node delegated-signing.js confirm-designation [--terminal]   (la sesión designada, con la firma de la persona; o el dueño en su terminal)
  */
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
 const PIPELINE_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
-const CONFIRMED = 'relay-designation-confirmed';
 // lo que no tiene vía delegada aunque el perfil lo liste, con el motivo que se dice: nombrar y retirar a la coordinadora,
 // y mergear salteando la CI (es lo mismo que aflojar todos los controles juntos). El motivo dice «sólo del dueño»: la
 // ventana lo calla, porque no delegar es lo normal (owner-window.js)
@@ -31,7 +29,6 @@ const NUNCA_DELEGABLES = new Map([
   ['escape:red-control-test-edit', 'editar la prueba de un control que estaba en rojo es sólo del dueño: no se delega'],
 ]);
 
-const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const safeSid = (s) => String(s).replace(/[/\\]/g, '_');
 
 /** La casa de la cuenta: la inyectada, o la del sistema (nunca `HOME`). */
@@ -65,20 +62,11 @@ function appendGatesLine(p, obj) {
   fs.appendFileSync(p.gates, `${JSON.stringify(obj)}\n`);
 }
 
-/**
- * El renglón que confirma una designación y la ata a ESA designación: por sesión y por la hora de su renglón, que es
- * única por designación, y por la frase si la tiene (una designación por click no tiene: `cita_sha: null`).
- */
-function confirmationRecord(designacion, ts, extra = {}) {
-  return { name: CONFIRMED, status: 'ok', ts, sesion: designacion.sesion, designacion_ts: designacion.ts, cita_sha: designacion.cita ? sha(designacion.cita) : null, ...extra };
-}
-
-/** ¿Este renglón confirma esta designación? La única comparación: la usan confirmedDesignation y owner-approvals.js. */
-function confirmaLaDesignacion(linea, designacion) {
-  const want = confirmationRecord(designacion, null);
-  return !!linea && linea.name === CONFIRMED && linea.status === 'ok' && linea.sesion === want.sesion
-    && !!want.designacion_ts && linea.designacion_ts === want.designacion_ts && (linea.cita_sha === undefined ? null : linea.cita_sha) === want.cita_sha;
-}
+// La confirmación y su comparación viven con la regla de quién es la coordinadora (critical-waivers.js): una sola fuente,
+// que también lee un clon de sólo skills. Acá se reexportan para quien ya las pedía de este archivo.
+const waivers = () => require(path.join(PIPELINE_LIB, 'critical-waivers.js'));
+const confirmationRecord = (designacion, ts, extra) => waivers().confirmationRecord(designacion, ts, extra);
+const confirmaLaDesignacion = (linea, designacion) => waivers().confirmaLaDesignacion(linea, designacion);
 
 /**
  * ¿La organización deja que la coordinadora firme por el dueño? Sólo con `approvals.relay_session` en el perfil del
@@ -305,13 +293,18 @@ function cli(argv) {
   const [cmd] = argv;
   if (cmd === 'confirm-designation') {
     // sin la clave no hay firma que delegar: se dice antes de abrir una ventana, pedir la terminal o mostrar un cuadro
+    const p = accountPaths(accountHome());
+    // una prueba no escribe el estado real (historia 8.314): lo primero, antes de cualquier otro motivo
+    const prueba = require('./lab-home.js').pruebaSobreLoReal(p.state);
+    if (prueba) { console.error(`🔒 confirm-designation: ${prueba}. No se confirmó nada.`); return 2; }
     const f = firmaPorElDueno();
     if (!f.ok) { console.error(`🔒 confirm-designation: no se confirmó nada — ${f.motivo}.`); return 1; }
     const rw = require(path.join(PIPELINE_LIB, 'runtime-waiver.js'));
-    const p = accountPaths(accountHome());
     const cw = require(path.join(PIPELINE_LIB, 'critical-waivers.js'));
-    const d = cw.designacionVigente({ dir: p.state });
-    if (!d || d.error) { console.error((d && d.error) || 'ninguna sesión de esta máquina está designada'); return 1; }
+    const vigente = cw.designacionVigente({ dir: p.state });
+    if (!vigente || vigente.error) { console.error((vigente && vigente.error) || 'ninguna sesión de esta máquina está designada'); return 1; }
+    // con una designación pendiente (otra, posterior a la confirmada) se confirma ésa: la nombran la terminal y el cuadro
+    const d = vigente.pendiente || vigente;
     // en Windows la terminal no se lee: el mismo comando corre en una ventana nueva, y la frase se escribe adentro
     if (argv.includes('--terminal') && rw.esWindows()) {
       if (process.env[rw.MARCA_VENTANA] !== '1') {
@@ -326,7 +319,7 @@ function cli(argv) {
     // la terminal, la frase. Una firma que no dio una persona no confirma nada
     if (!argv.includes('--terminal') && !rw.hasTty()) {
       const propia = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || '';
-      if (propia !== d.sesion) { console.error(`🔒 confirm-designation: se corre desde la pestaña de la sesión designada (${d.sesion}), o en la terminal del dueño.`); return 1; }
+      if (propia !== d.sesion && propia !== vigente.sesion) { console.error(`🔒 confirm-designation: se corre desde la pestaña de la sesión designada (${d.sesion})${d.sesion !== vigente.sesion ? ` o de la vigente (${vigente.sesion})` : ''}, o en la terminal del dueño.`); return 1; }
       const r = require('./owner-window.js').exigir({ firma: 'designation-confirm', argv: [__filename, ...argv], resumen: `la sesión ${d.sesion} es la «${d.rol}» de esta máquina`, propia });
       if (r.codigo !== 0) { console.error(`🔒 confirm-designation: ${r.motivo}`); return r.codigo === 2 ? 2 : 1; }
       if (!['ventana', 'click', 'mensaje'].includes(r.via)) { console.error(`🔒 confirm-designation: la firma volvió por ${r.via}, y esto lo confirma una persona: no se confirmó nada.`); return 1; }

@@ -191,7 +191,8 @@ test('UndesignateRelay_OtherDesignatedWhileWaiting_DoesNotWithdrawIt', (t) => {
   const lab = laboratorio(t);
   assert.strictEqual(lab.correr(['designate-relay']).status, 0);
   const otra = { name: 'relay-designation', status: 'ok', ts: '2026-11-05T09:00:00.000Z', sesion: OTRA, rol: 'coordinadora', quien: 'la persona', via: 'click' };
-  const r = lab.correr(['withdraw-relay'], { durante: [otra] });
+  // nombrada con su click, que deja también su confirmación: una línea sin confirmar no desplaza a la confirmada (8.314)
+  const r = lab.correr(['withdraw-relay'], { durante: [otra, ds.confirmationRecord({ ...otra, cita: null }, otra.ts, { via: 'click' })] });
   assert.strictEqual(r.status, 1, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /no se retiró a la coordinadora — esta sesión no es la coordinadora \(la vigente es 66666666/);
   assert.ok(!designaciones(lab).some((g) => g.status === 'retirada'), 'no se anotó la retirada');
@@ -343,4 +344,97 @@ test('DesignateRelay_Click_IsConfirmedForDelegation', (t) => {
   t.after(() => { cw.sesionQueReenvia = leer; });
   assert.strictEqual(ds.confirmedDesignation(p).ok, true);
   assert.strictEqual(oa.coordinadoraConfirmada(lab.casa), SES);
+});
+
+// --- historia 8.314: designar y retirar con una designación confirmada en pie -----------------------------------------
+
+/** Otra sesión nombrada con su click, con su confirmación. */
+function otraConfirmada(lab) {
+  const d = { name: 'relay-designation', status: 'ok', ts: '2026-11-04T09:00:00.000Z', sesion: OTRA, rol: 'coordinadora', quien: 'la persona', via: 'click' };
+  fs.appendFileSync(path.join(lab.estado, 'gates.log'), `${JSON.stringify(d)}\n${JSON.stringify(ds.confirmationRecord({ ...d, cita: null }, d.ts, { via: 'click' }))}\n`);
+  return d;
+}
+// el texto de hoy de la firma de retirar, en el catálogo
+const APRUEBA_RETIRAR = require(path.join(LIB, 'signatures.js')).SIGNATURES.find((s) => s.id === 'designation-withdraw').approves;
+const FRASE = ['designate-relay', '--approved-by', 'el dueño', '--quote', 'Esta sesión es la coordinadora'];
+
+test('T16 Designar_PorClickYPorFrase_SeComprueban @story-8.314 @ac-9 @ac-13 @ac-19', (t) => {
+  // por click, con otra confirmada vigente: el click la reemplaza
+  const click = laboratorio(t);
+  otraConfirmada(click);
+  const c = click.correr(['designate-relay']);
+  assert.strictEqual(c.status, 0, `${c.stdout}${c.stderr}`);
+  assert.strictEqual(click.vigente().sesion, SES);
+  assert.strictEqual(click.vigente().pendiente, undefined);
+  // por frase, con rol en el perfil: queda pendiente hasta que el dueño la confirme
+  const frase = laboratorio(t);
+  otraConfirmada(frase);
+  const f = frase.correr(FRASE);
+  assert.strictEqual(f.status, 0, `${f.stdout}${f.stderr}`);
+  assert.strictEqual(frase.vigente().sesion, OTRA);
+  assert.strictEqual(frase.vigente().pendiente.sesion, SES);
+  assert.match(f.stderr, /pendiente/);
+  // por frase, sin rol en el perfil: no se puede confirmar, así que no se escribe
+  const sinRol = laboratorio(t, { perfil: null });
+  otraConfirmada(sinRol);
+  const antes = designaciones(sinRol).length;
+  const s = sinRol.correr(FRASE);
+  assert.strictEqual(s.status, 1, `${s.stdout}${s.stderr}`);
+  assert.match(s.stderr, /retir/);
+  assert.strictEqual(designaciones(sinRol).length, antes, 'no escribió');
+});
+
+/** El archivo de sesión de Claude Code, con el proceso que la corre. */
+const sesionViva = (lab, sid, pid = process.pid) => {
+  const dir = path.join(lab.casa, '.claude', 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${sid.slice(0, 8)}.json`), JSON.stringify({ sessionId: sid, pid, cwd: lab.carpeta, name: sid.slice(0, 8) }));
+};
+
+test('T24 Retirar_SesionMuerta_ConFirmaDelDueno @story-8.314 @ac-13', (t) => {
+  const retiradas = (lab) => designaciones(lab).filter((g) => g.status === 'retirada');
+  const RETIRAR = ['withdraw-relay', '--session', OTRA];
+  // la vigente ya no vive (no deja archivo) y la que pide sí: se retira con la firma, y anota quién la pidió
+  const lab = laboratorio(t, { perfil: null });
+  otraConfirmada(lab);
+  sesionViva(lab, SES);
+  assert.strictEqual(lab.correr(FRASE).status, 1, 'con la vigente en pie no se designa por frase');
+  const r = lab.correr(RETIRAR);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.strictEqual(lab.pidio().firma, 'designation-withdraw');
+  const [ret] = retiradas(lab);
+  assert.deepStrictEqual({ sesion: ret.sesion, pedida_por: ret.pedida_por }, { sesion: OTRA, pedida_por: SES });
+  assert.strictEqual(lab.vigente(), null);
+  assert.strictEqual(lab.correr(FRASE).status, 0, 'designate-relay vuelve a andar');
+  // la sesión vive, un archivo de sesión ilegible, la carpeta de sesiones vacía, sin firma: no se retira
+  const casos = [
+    ['viva', (l) => { sesionViva(l, SES); sesionViva(l, OTRA); }, undefined],
+    ['ilegible', (l) => { sesionViva(l, SES); fs.writeFileSync(path.join(l.casa, '.claude', 'sessions', 'rota.json'), '{'); }, undefined],
+    ['vacía', (l) => { fs.mkdirSync(path.join(l.casa, '.claude', 'sessions'), { recursive: true }); }, undefined],
+    ['sin firma', (l) => { sesionViva(l, SES); }, { codigo: 1, motivo: 'la persona dijo que no' }],
+  ];
+  for (const [caso, armar, firma] of casos) {
+    const l = laboratorio(t, { perfil: null });
+    otraConfirmada(l);
+    armar(l);
+    const n = l.correr(RETIRAR, firma ? { firma } : {});
+    assert.strictEqual(n.status, 1, `${caso}: ${n.stdout}${n.stderr}`);
+    assert.deepStrictEqual(retiradas(l), [], `${caso}: sin renglón`);
+    assert.strictEqual(l.vigente().sesion, OTRA, caso);
+  }
+  // lo que ve el dueño nombra a la sesión que se retira: el cuadro, el aviso de firma a distancia y la lista
+  const comando = `node ${MARKER} withdraw-relay --session ${OTRA}`;
+  const cuadro = cuadroDe(lab, 'designation-withdraw', comando);
+  assert.ok(cuadro.pregunta.includes(OTRA.slice(0, 8)) && /deja de ser/.test(cuadro.pregunta), cuadro.pregunta);
+  assert.ok(!cuadro.pregunta.includes('Su carpeta'), cuadro.pregunta);
+  const palabras = ow.canonica(comando);
+  assert.strictEqual(ow.retiraA(palabras, SES), OTRA);
+  assert.strictEqual(ow.retiraA(ow.canonica(`node ${MARKER} withdraw-relay --session ${SES}`), SES), null, 'la propia sesión es una retirada de siempre');
+  assert.strictEqual(ow.retiraA(ow.canonica(`node ${MARKER} withdraw-relay`), SES), null);
+  const aviso = (que) => { let texto = null; ow.avisarFirmaADistancia({ firma: 'designation-withdraw', via: 'click', sesion: SES, destino: SES, ahora: AHORA, que, notificar: (x) => { texto = x; } }); return texto; };
+  const conOtra = aviso(`la sesión ${OTRA}, que ya no vive, deja de ser la «coordinadora» de esta máquina (la pide la sesión ${SES})`);
+  assert.ok(conOtra.includes(OTRA) && /deja de ser/.test(conOtra), conOtra);
+  assert.ok(aviso(null).includes(APRUEBA_RETIRAR), 'sin otra sesión, el texto de hoy');
+  assert.match(ow.tituloDeLaFirma('designation-withdraw', palabras, SES), /otra sesión/);
+  assert.strictEqual(ow.tituloDeLaFirma('designation-withdraw', ow.canonica(`node ${MARKER} withdraw-relay`), SES), APRUEBA_RETIRAR);
 });

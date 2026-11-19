@@ -592,6 +592,19 @@ correrlo.
   y uno que escribe por ruta absoluta fuera de los clones y las casas escribe. Con `sandbox-exec` (macOS) esa escritura
   se corta; con `unshare` (Linux) o sin encierro, no. El informe dice qué encierro hubo. Tampoco se cuidan la CPU ni la
   memoria más allá del tiempo.
+- **La casa aparte** (historia 8.314): un humo comparado, y todo humo cuyo programa es un guion de laboratorio (en
+  `.advisors/dod-runtime/`, o suelto en una carpeta temporal fuera de todo repo), corre con una casa aparte: `HOME` es una
+  carpeta nueva de `mktemp`, no llegan `TYCON_HOME`, `CLAUDE_CONFIG_DIR` ni `CODEX_HOME`, y una red de escritura frena
+  todo `node` que escriba en `~/.tycon`, `~/.claude` o `~/.codex` de la casa de la cuenta (el humo falla y nombra la
+  ruta, aunque el guion se trague el error). Sólo se puede escribir en la raíz del repo del comando y en la carpeta de un
+  guion suelto. En macOS, además, el encierro del sistema, con la red abierta (los guiones hablan con `localhost`); si la
+  sesión ya corre encerrada no se puede abrir otro, y el humo lo dice. Sin casa o sin la red de escritura, no corre. El
+  humo común sigue como siempre, con la marca `TYCON_TEST_RUN=1`, con la que el tablero y la designación de la
+  coordinadora se niegan a escribir el estado real.
+- **Un guion de laboratorio arranca negándose a la casa real**: su primera línea es
+  `require('<arnés>/scripts/lib/lab-home.js').refuseRealHome('<nombre>')` (sale 3 si `HOME` es la casa de la cuenta o
+  está adentro), y arma su casa de juguete con `labHouse('<nombre>')`, nunca en `process.env.HOME`. En un guion de
+  consola: `node <arnés>/scripts/lib/lab-home.js check <nombre> || exit 3`.
 - **La exención**, cuando un candidato no se puede comparar (por ejemplo, porque usa la red y nunca da «igual»):
   `node <skill>/scripts/marker.js compare-waiver --story <spec.md> --command <candidato> --reason "<por qué>"`. Pide la
   firma `compare-waiver` (nivel 1) en la ventana del dueño, o la de la coordinadora si el perfil del equipo la suma a

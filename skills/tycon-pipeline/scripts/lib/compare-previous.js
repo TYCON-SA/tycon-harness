@@ -149,9 +149,11 @@ function encierro(env = process.env) {
   return { nombre: 'ninguno', corta: 'nada: corren con las otras capas' };
 }
 const sbplString = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-function perfilSandbox(escribibles) {
+// `red`: deja la red abierta (la corrida aislada de un humo, historia 8.314: sus guiones hablan con localhost); la
+// comparación la corta
+function perfilSandbox(escribibles, { red = false } = {}) {
   const permitidas = [...new Set(escribibles.flatMap((p) => [p, real(p)]))].map((p) => `(subpath ${sbplString(p)})`).join(' ');
-  return `(version 1)(allow default)(deny network*)(deny file-write* (require-not (require-any ${permitidas} (subpath "/dev"))))`;
+  return `(version 1)(allow default)${red ? '' : '(deny network*)'}(deny file-write* (require-not (require-any ${permitidas} (subpath "/dev"))))`;
 }
 
 /** El git de verdad, para los reemplazos: el primero del PATH que no es el de compare-shims. */
@@ -1096,7 +1098,7 @@ function freno({ storyPath, repos, runDir, stateDir, story, marker = null }) {
   return { medido: true, candidatos: c.candidatos, sinRepo: c.sinRepo, bloquea: !!(j.faltan.length || j.noDeclaradas.length), lineas, avisos, juicio: j };
 }
 
-module.exports = { compararHumo, normalizar, comparar, tocaLoReal, encierro, barrer, limpiar, leerInforme, anotarEntrada, informeVerificado, raizDelHumo, reposDeLaSesion, archivoQueCorre, topes,
+module.exports = { compararHumo, normalizar, comparar, tocaLoReal, encierro, perfilSandbox, barrer, limpiar, leerInforme, anotarEntrada, informeVerificado, raizDelHumo, reposDeLaSesion, archivoQueCorre, topes,
   candidatos, archivosDeLaTanda, rutaDeLaLista, juicio, freno, rutasAModificar, alcanceDe, analizar, declara, cambiosDeclarados, ultimas, delCodigoDeAhora, leerInformeDetallado, seguro, INFORME, AVISOS };
 
 // La línea de comando, para smoke-run.sh:

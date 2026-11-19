@@ -6802,10 +6802,11 @@ function firmaDeLaDesignacion(firma, resumen, antes, alNegar) {
 // el respaldo: la frase nombra el rol (el de `approvals.relay_session` o, sin perfil, «coordinadora») y, con el rol del
 // perfil, la sesión firma en nombre del dueño cuando él la confirma (scripts/lib/delegated-signing.js
 // `confirm-designation`); sin él, las firmas siguen yendo a la ventana del dueño. Una designación nueva reemplaza a la
-// anterior.
+// anterior; con otra confirmada en pie, la nueva por frase queda pendiente hasta que el dueño la confirme (historia 8.314).
 function cmdDesignateRelay(argv) {
   const cw = require('./lib/critical-waivers.js');
   const { val } = opcionesDe(argv);
+  negarSiEsPruebaSobreLoReal('designate-relay');
   if (!argv.some((a) => a === '--quote' || a.startsWith('--quote='))) return designarPorClick(cw);
   const r = cw.designar({ approvedBy: val('--approved-by'), quote: val('--quote') });
   if (!r.ok) {
@@ -6814,16 +6815,38 @@ function cmdDesignateRelay(argv) {
     process.exit(1);
   }
   const e = r.entrada;
+  // sin el rol en el perfil la frase no se puede confirmar: con otra confirmada en pie, la línea quedaría pendiente para siempre
+  // el rol se mira como lo mira el click (sesionQueReenvia): es lo que pide confirm-designation para confirmar
+  const confirmada = cw.designacionConfirmada();
+  if (confirmada && !confirmada.error && confirmada.sesion !== e.sesion && !cw.sesionQueReenvia().valor) {
+    console.error(`🚫 marker.js designate-relay: no se designó nada — la sesión ${confirmada.sesion} es la coordinadora confirmada, y sin approvals.relay_session en el perfil esta designación no se puede confirmar. Primero hay que retirarla: desde su pestaña, node ${__filename} withdraw-relay; si ya no vive, desde ésta, node ${__filename} withdraw-relay --session ${confirmada.sesion}.`);
+    process.exit(1);
+  }
   appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion: e.sesion, rol: e.rol, quien: e.quien, cita: e.cita, cita_cuando: e.cita_cuando });
-  const quedo = cw.designacionVigente();
+  // lo escrito se comprueba con la última designación: la vigente puede seguir siendo la confirmada
+  const quedo = cw.ultimaDesignacion();
   if (!quedo || quedo.error || quedo.sesion !== e.sesion) {
     console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
     process.exit(2);
+  }
+  const vigente = cw.designacionVigente();
+  if (vigente && !vigente.error && vigente.sesion !== e.sesion) {
+    console.error(`⏳ La designación de esta sesión (${e.sesion}) quedó pendiente: la coordinadora sigue siendo ${vigente.sesion}, confirmada, hasta que una persona confirme ésta. Corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal.`);
+    process.exit(0);
   }
   if (r.firma) console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma: corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal`);
   else console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}: ordena esta máquina, y las firmas siguen yendo a la ventana de la persona${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ' (el perfil del equipo no tiene approvals.relay_session)'}.`);
   console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(__dirname, '..', '..', '..', 'guides', 'coordination.md')}`);
   process.exit(0);
+}
+
+// Una prueba (`TYCON_TEST_RUN=1`, la marca que pone smoke-run.sh) no escribe la designación del estado real de la
+// máquina (historia 8.314): sale 2 sin escribir. Si no se puede saber, también.
+function negarSiEsPruebaSobreLoReal(cmd) {
+  if (String(process.env.TYCON_TEST_RUN || '').trim() !== '1') return;
+  let motivo;
+  try { motivo = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'lab-home.js')).pruebaSobreLoReal(STATE_DIR); } catch (e) { motivo = `una prueba no escribe el estado sin saber si es el real (${e.message})`; }
+  if (motivo) { console.error(`🚫 marker.js ${cmd}: ${motivo}. No se escribió nada.`); process.exit(2); }
 }
 
 function designarPorClick(cw) {
@@ -6844,7 +6867,7 @@ function designarPorClick(cw) {
   const rol = cw.sesionQueReenvia().valor;
   const r = firmaDeLaDesignacion('designation-set', `la sesión ${sesion} pasa a ser la «${rol}» de esta máquina`, antes, noSeNombro);
   appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion, rol, quien: 'la persona', via: r.via });
-  const quedo = cw.designacionVigente();
+  const quedo = cw.ultimaDesignacion();
   if (!quedo || quedo.error || quedo.sesion !== sesion) {
     console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
     process.exit(2);
@@ -6858,32 +6881,66 @@ function designarPorClick(cw) {
 
 // `withdraw-relay` retira a la coordinadora: lo corre ella misma, y el dueño lo firma con su click en el cuadro de
 // esa sesión (`designation-withdraw`) o en su terminal. Queda un renglón `retirada`: el registro no se borra.
-function cmdWithdrawRelay() {
+// Con `--session <id>`, otra sesión retira a una vigente que ya no vive (historia 8.314): así una coordinadora que murió
+// no deja la máquina trabada. Una sesión cerrada no deja su archivo, así que «ya no vive» es no figurar viva en una lista
+// de sesiones bien leída; si no se puede saber, no se retira. El renglón anota quién la pidió.
+// `'viva'`, `'muerta'` o el motivo por el que no se sabe. Vale «muerta» sólo con la lista de sesiones leída sin archivos
+// ilegibles y con viva la sesión que pide (o alguna, si no dice su id): una lista vacía o rota no prueba nada.
+function vidaDeLaSesion(objetivo) {
+  let wip;
+  let claude;
+  try {
+    wip = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'work-in-progress.js'));
+    claude = require(path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js')).claudeDir(require('os').homedir());
+  } catch (e) { return `no pude cargar la lista de sesiones: ${e.message}`; }
+  const ilegibles = [];
+  let sesiones;
+  try { sesiones = wip.sessionsBySid(path.join(claude, 'sessions'), ilegibles, path.join(claude, 'projects')); } catch (e) { return `no pude leer las sesiones: ${e.message}`; }
+  if (ilegibles.length) return `hay archivos de sesión que no se leen: ${ilegibles[0]}`;
+  const viva = (sid) => { const s = sesiones.get(sid); return !!(s && s.alive); };
+  if (viva(objetivo)) return 'viva';
+  const pideViva = SID && SID !== '_nosession' ? viva(SID) : [...sesiones.values()].some((s) => s.alive);
+  return pideViva ? 'muerta' : 'la lista de sesiones no muestra viva a la que pide';
+}
+
+function cmdWithdrawRelay(argv = []) {
   const cw = require('./lib/critical-waivers.js');
   const sesion = SID;
+  const { val } = opcionesDe(argv);
+  const pedida = val('--session');
+  const objetivo = pedida || sesion;
+  const otra = objetivo !== sesion;
+  negarSiEsPruebaSobreLoReal('withdraw-relay');
   const d = cw.designacionVigente();
   const noSeRetiro = (motivo) => console.error(`🚫 marker.js withdraw-relay: no se retiró a la coordinadora — ${motivo}.`);
   // se lee de nuevo en cada llamada: mientras la firma espera, otra sesión puede quedar nombrada
   const antes = () => {
+    if (otra && !/^[\w-]+$/.test(String(objetivo))) return { codigo: 1, motivo: `--session ${objetivo} no es el identificador de una sesión` };
     const ahora = cw.designacionVigente();
     if (!ahora) return { codigo: 1, motivo: 'no hay coordinadora en esta máquina' };
     if (ahora.error) return { codigo: 2, motivo: ahora.error };
-    if (ahora.sesion !== sesion) return { codigo: 1, motivo: `esta sesión no es la coordinadora (la vigente es ${ahora.sesion})` };
+    if (ahora.sesion !== objetivo) return { codigo: 1, motivo: otra ? `la sesión ${objetivo} no es la coordinadora (la vigente es ${ahora.sesion})` : `esta sesión no es la coordinadora (la vigente es ${ahora.sesion})` };
     if (d && !d.error && ahora.ts !== d.ts) return { codigo: 1, motivo: 'la designación cambió mientras se esperaba la firma: corré el comando de nuevo' };
+    if (otra) {
+      const vida = vidaDeLaSesion(objetivo);
+      if (vida !== 'muerta') return { codigo: 1, motivo: vida === 'viva' ? `la sesión ${objetivo} sigue viva: la retira ella, desde su pestaña` : `no se puede saber si la sesión ${objetivo} sigue viva (${vida}): no la retiro` };
+    }
     return null;
   };
   const previo = antes();
   if (previo) { noSeRetiro(previo.motivo); process.exit(previo.codigo); }
-  const r = firmaDeLaDesignacion('designation-withdraw', `la sesión ${sesion} deja de ser la «${d.rol}» de esta máquina`, antes, noSeRetiro);
+  const resumenDeLaFirma = otra ? `la sesión ${objetivo}, que ya no vive, deja de ser la «${d.rol}» de esta máquina (la pide la sesión ${sesion})` : `la sesión ${sesion} deja de ser la «${d.rol}» de esta máquina`;
+  const r = firmaDeLaDesignacion('designation-withdraw', resumenDeLaFirma, antes, noSeRetiro);
   const despues = antes();
   if (despues) { noSeRetiro(despues.motivo); process.exit(despues.codigo); }
-  appendLog('gates.log', { name: cw.DESIGNACION, status: cw.RETIRADA, ts: nowIso(), sesion, rol: d.rol, quien: 'la persona', via: r.via });
+  appendLog('gates.log', { name: cw.DESIGNACION, status: cw.RETIRADA, ts: nowIso(), sesion: objetivo, rol: d.rol, quien: 'la persona', via: r.via, ...(otra ? { pedida_por: sesion } : {}) });
   const quedo = cw.designacionVigente();
-  if (quedo && !quedo.error && quedo.sesion === sesion) {
+  if (quedo && !quedo.error && quedo.sesion === objetivo) {
     console.error('🚫 marker.js withdraw-relay: no pude dejar la retirada en el registro del arnés.');
     process.exit(2);
   }
-  console.error(`✅ Esta sesión (${sesion}) dejó de ser la «${d.rol}» de esta máquina: las firmas vuelven a la persona hasta que nombre otra.`);
+  if (otra) console.error(`✅ La sesión ${objetivo} dejó de ser la «${d.rol}» de esta máquina (la pidió ${sesion}): las firmas vuelven a la persona hasta que nombre otra.`);
+  else console.error(`✅ Esta sesión (${sesion}) dejó de ser la «${d.rol}» de esta máquina: las firmas vuelven a la persona hasta que nombre otra.`);
   process.exit(0);
 }
 
@@ -8001,7 +8058,7 @@ switch (cmd) {
     cmdDesignateRelay(process.argv.slice(3));
     break;
   case 'withdraw-relay':
-    cmdWithdrawRelay();
+    cmdWithdrawRelay(process.argv.slice(3));
     break;
   case 'mark-tested':
     cmdMarkTested(process.argv.slice(3));

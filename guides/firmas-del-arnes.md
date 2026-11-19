@@ -111,7 +111,8 @@ firmar, y en la columna tu situación:
 - \* **La coordinadora** firma sin ventana sólo lo que el perfil pone en `approvals.delegated_signing`, en las máquinas de
   `approvals.delegated_machines`, y sólo con la designación confirmada por el dueño (`designation-confirm`: con un click en
   la pestaña de la sesión designada, o en su terminal; ver «Aprobar en nombre del dueño»). Si la firma no está delegada, tu máquina no está en la lista o nadie confirmó la designación, la
-  fila es igual que sin coordinadora. Lo que queda en 2 o más sale de esa lista.
+  fila es igual que sin coordinadora. Lo que queda en 2 o más sale de esa lista. Una designación de otra sesión anotada
+  después y sin confirmar no desplaza a la confirmada: firma la confirmada hasta que el dueño confirme la otra.
 - \*\* **El plan de rutina, con y sin coordinadora**: cuándo corre la revisión automática lo dice la matriz de la
   organización (`plan_review`, `guides/automatic-reviews.md`): en una delicada corre siempre; en una de rutina se
   le pregunta al dueño y, si el dueño está ausente, se revisa sin preguntar, se espera o se sigue sin revisión. Las tres

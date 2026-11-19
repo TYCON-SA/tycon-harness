@@ -1224,3 +1224,168 @@ test('T15 Guia_DiceElVencimientoYLosComandos — @story-8.306 @ac-14', () => {
     for (const command of ['board.js due', 'due confirm', 'due drop']) assert.ok(text.includes(command), `${name}: ${command}`);
   }
 });
+
+// ── historia 8.314: una prueba no escribe el tablero real, y el tablero se puede recuperar ───────────────────────────
+
+const RAIZ_8314 = path.join(__dirname, '..', '..');
+const MARKER_8314 = path.join(RAIZ_8314, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+const DS_8314 = path.join(RAIZ_8314, 'scripts', 'lib', 'delegated-signing.js');
+// la casa de la cuenta, simulada en el proceso que corre el guion (os.userInfo, que es lo que mira el arnés)
+const PRECARGA_8314 = "const os = require('os'); const h = process.env.TEST_ACCOUNT_HOME; if (h) os.userInfo = () => ({ homedir: h, username: 'prueba', uid: 1, gid: 1, shell: null });\n";
+function cuenta8314(t) {
+  const b = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tablero-8314-')));
+  t.after(() => fs.rmSync(b, { recursive: true, force: true }));
+  const casa = path.join(b, 'cuenta');
+  const estado = path.join(casa, '.tycon', 'state');
+  fs.mkdirSync(path.join(estado, 'coordination'), { recursive: true });
+  const pre = path.join(b, 'precarga.js');
+  fs.writeFileSync(pre, PRECARGA_8314);
+  return { b, casa, estado, pre };
+}
+function correr8314(c, argv, { cwd = c.b, env = {} } = {}) {
+  const e = { ...process.env, HOME: c.casa, USERPROFILE: c.casa, TYCON_HOME: '', TEST_ACCOUNT_HOME: c.casa, TYCON_PROFILE: '0', TYCON_LANE_LLM: '0',
+    CLAUDE_CODE_SESSION_ID: '11111111-2222-3333-4444-555555555555', NODE_OPTIONS: `--require "${c.pre}"`, ...env };
+  delete e.NODE_TEST_CONTEXT;
+  // la marca de prueba, sólo cuando el caso la pone: corrida por smoke-run.sh la trae el ambiente
+  if (!('TYCON_TEST_RUN' in env)) delete e.TYCON_TEST_RUN;
+  for (const [k, v] of Object.entries(env)) if (v === undefined) delete e[k];
+  const r = require('child_process').spawnSync(process.execPath, argv, { cwd, env: e, encoding: 'utf8' });
+  return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
+}
+const bytes = (sdir) => ['tablero.json', 'tablero-numeros.json'].map((f) => { try { return fs.readFileSync(path.join(sdir, 'coordination', f), 'utf8'); } catch (_) { return null; } });
+
+test('T17 Tablero_EnPrueba_NoEscribeElReal @story-8.314 @ac-14', (t) => {
+  const c = cuenta8314(t);
+  const linea = 'firmar el plan de la 9.9';
+  assert.strictEqual(board.save(c.estado, { pendientes: [row('Una'), row('Dos')], meta: { teToca: [linea] } }, quiet(NOW)).code, 0);
+  assert.strictEqual(board.save(c.estado, { pendientes: [row('Una', { id: 'T-1' }), row('Dos', { id: 'T-2' })], meta: { teToca: [linea] } }, quiet(NOW)).code, 0);
+  const copia = fs.readdirSync(path.join(c.estado, 'coordination', 'board-backups'))[0];
+  const desde = path.join(c.b, 'aparte.json');
+  fs.writeFileSync(desde, JSON.stringify({ pendientes: [row('Otra')] }));
+  const hechos = path.join(c.b, 'hechos.json');
+  fs.writeFileSync(hechos, JSON.stringify([startedFact(NOW)]));
+  const NUEVA = ['titulo=Nueva', 'estado=curso', 'grupo=Hoy'];
+  const escriben = [['save', '--from', desde], ['add', ...NUEVA],['set', 'T-1', 'nota=x'], ['close', 'T-1'], ['sync', '--facts', hechos],
+    ['restore', copia], ['due', 'confirm', tocaId(linea)], ['due', 'drop', tocaId(linea)]];
+  const enlace = path.join(c.b, 'enlace');
+  fs.symlinkSync(c.estado, enlace);
+  const otraCasa = path.join(c.b, 'otra-casa');
+  fs.mkdirSync(path.join(otraCasa, 'state', 'coordination'), { recursive: true });
+  const formas = [
+    ['directo', [], {}, c.b],
+    ['--state-dir relativo', ['--state-dir', 'state'], {}, path.join(c.casa, '.tycon')],
+    ['enlace simbólico', ['--state-dir', enlace], {}, c.b],
+    ['TYCON_HOME en otra carpeta', ['--state-dir', c.estado], { TYCON_HOME: otraCasa }, c.b],
+  ];
+  const antes = bytes(c.estado);
+  for (const [forma, extra, env, cwd] of formas) {
+    for (const args of escriben) {
+      const r = correr8314(c, [BOARD_JS, ...args, ...extra], { cwd, env: { TYCON_TEST_RUN: '1', ...env } });
+      assert.strictEqual(r.code, 2, `${forma} · ${args.join(' ')}: ${r.out}`);
+      assert.match(r.out, /una prueba/, `${forma} · ${args[0]}`);
+    }
+    assert.deepStrictEqual(bytes(c.estado), antes, `${forma}: no cambió un byte`);
+  }
+  // con otra carpeta de estado, como hoy: por --state-dir, y por TYCON_HOME
+  const otra = path.join(c.b, 'otro-estado');
+  fs.mkdirSync(path.join(otra, 'coordination'), { recursive: true });
+  assert.strictEqual(correr8314(c, [BOARD_JS, 'add', ...NUEVA, '--state-dir', otra], { env: { TYCON_TEST_RUN: '1' } }).code, 0);
+  assert.strictEqual(readRows(otra).length, 1);
+  const r = correr8314(c, [BOARD_JS, 'add', ...NUEVA], { env: { TYCON_TEST_RUN: '1', TYCON_HOME: otraCasa } });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(readRows(path.join(otraCasa, 'state')).length, 1);
+});
+
+const copiasDe = (sdir) => { try { return fs.readdirSync(path.join(sdir, 'coordination', 'board-backups')).sort(); } catch (_) { return []; } };
+const filas = (n, prefijo = 'F') => Array.from({ length: n }, (_, i) => row(`${prefijo}${i + 1}`, { orden: i }));
+
+test('T18 Save_CopiaAntesYTopaLaCaida @story-8.314 @ac-15 @ac-16', () => {
+  // un save normal copia antes el tablero que reemplaza
+  const sdir = stateDir();
+  board.save(sdir, { pendientes: filas(2) }, quiet(NOW));
+  assert.deepStrictEqual(copiasDe(sdir), [], 'un tablero que no existía no se copia');
+  const previo = fs.readFileSync(boardFile(sdir), 'utf8');
+  assert.strictEqual(board.save(sdir, { pendientes: readRows(sdir) }, quiet(NOW)).code, 0);
+  assert.strictEqual(copiasDe(sdir).length, 1);
+  assert.strictEqual(fs.readFileSync(path.join(sdir, 'coordination', 'board-backups', copiasDe(sdir)[0]), 'utf8'), previo);
+  // se guardan las 30 más nuevas
+  for (let i = 0; i < 31; i++) board.save(sdir, { pendientes: readRows(sdir) }, quiet(NOW + i * 1000));
+  assert.strictEqual(copiasDe(sdir).length, 30);
+  // sin poder copiar, no reemplaza
+  const sinCopia = stateDir();
+  board.save(sinCopia, { pendientes: filas(2) }, quiet(NOW));
+  fs.writeFileSync(path.join(sinCopia, 'coordination', 'board-backups'), 'un archivo donde va la carpeta');
+  const antes = fs.readFileSync(boardFile(sinCopia), 'utf8');
+  const r = board.save(sinCopia, { pendientes: filas(3) }, quiet(NOW));
+  assert.strictEqual(r.code, 2, r.lines.join('\n'));
+  assert.strictEqual(fs.readFileSync(boardFile(sinCopia), 'utf8'), antes);
+  // de 221 filas a 1: frena sin --allow-shrink, guarda con ella (y copia igual)
+  const grande = stateDir();
+  board.save(grande, { pendientes: filas(221) }, quiet(NOW));
+  const tablero221 = fs.readFileSync(boardFile(grande), 'utf8');
+  const frena = board.save(grande, { pendientes: filas(1, 'Prueba') }, quiet(NOW));
+  assert.strictEqual(frena.code, 2);
+  assert.match(frena.lines.join('\n'), /221/);
+  assert.match(frena.lines.join('\n'), /--allow-shrink/);
+  assert.strictEqual(fs.readFileSync(boardFile(grande), 'utf8'), tablero221);
+  assert.deepStrictEqual(copiasDe(grande), [], 'frenado, no copia');
+  assert.strictEqual(board.save(grande, { pendientes: filas(1, 'Prueba') }, { ...quiet(NOW), allowShrink: true }).code, 0);
+  assert.strictEqual(readRows(grande).length, 1);
+  assert.strictEqual(copiasDe(grande).length, 1);
+  // de 9 filas a 1: no llega al tope
+  const chico = stateDir();
+  board.save(chico, { pendientes: filas(9) }, quiet(NOW));
+  assert.strictEqual(board.save(chico, { pendientes: filas(1, 'Prueba') }, quiet(NOW)).code, 0);
+});
+
+test('T19 Restore_VuelveConSusNumeros @story-8.314 @ac-17', () => {
+  const sdir = stateDir();
+  const linea = 'firmar el plan de la 9.9';
+  board.save(sdir, { pendientes: filas(12), meta: { teToca: [linea] } }, quiet(NOW));
+  const original = readRows(sdir);
+  const fecha = dates(sdir)[linea];
+  // un save que achicó (a propósito) y se llevó la línea de «Te toca»
+  assert.strictEqual(board.save(sdir, { pendientes: filas(1, 'Prueba') }, { ...quiet(NOW + 2 * HOUR), allowShrink: true }).code, 0);
+  const [copia] = copiasDe(sdir);
+  const lista = board.backups(sdir);
+  assert.strictEqual(lista.code, 0);
+  const renglon = lista.lines.find((l) => l.includes(copia));
+  assert.ok(renglon && /12 filas/.test(renglon) && /12 abiertas/.test(renglon), lista.lines.join('\n'));
+  const r = board.restore(sdir, copia, quiet(NOW + 40 * DAY));
+  assert.strictEqual(r.code, 0, r.lines.join('\n'));
+  assert.deepStrictEqual(readRows(sdir).map((x) => [x.id, x.titulo]), original.map((x) => [x.id, x.titulo]), 'cada fila con su número');
+  assert.strictEqual(dates(sdir)[linea], fecha, 'la línea de «Te toca» con la fecha de la copia');
+  assert.strictEqual(copiasDe(sdir).length, 2, 'antes copió el actual');
+  // un nombre que no está, o que sale de la carpeta: no escribe
+  const ahora = fs.readFileSync(boardFile(sdir), 'utf8');
+  for (const nombre of ['tablero-no-existe.json', '../tablero.json', 'x']) {
+    assert.strictEqual(board.restore(sdir, nombre, quiet(NOW)).code, 2, nombre);
+    assert.strictEqual(fs.readFileSync(boardFile(sdir), 'utf8'), ahora, nombre);
+  }
+});
+
+test('T21 Designar_EnPrueba_SeNiega @story-8.314 @ac-14 @ac-19', (t) => {
+  const c = cuenta8314(t);
+  const gates = path.join(c.estado, 'gates.log');
+  const antes = () => { try { return fs.readFileSync(gates, 'utf8'); } catch (_) { return ''; } };
+  const comandos = [
+    [MARKER_8314, 'designate-relay', '--approved-by', 'el dueño', '--quote', 'Esta sesión es la coordinadora'],
+    [MARKER_8314, 'designate-relay'],
+    [MARKER_8314, 'withdraw-relay'],
+    [DS_8314, 'confirm-designation'],
+  ];
+  for (const argv of comandos) {
+    const registro = antes();
+    const r = correr8314(c, argv, { env: { TYCON_TEST_RUN: '1' } });
+    assert.strictEqual(r.code, 2, `${argv.slice(1).join(' ')}: ${r.out}`);
+    assert.match(r.out, /una prueba/, argv[1]);
+    assert.strictEqual(antes(), registro, `${argv[1]}: sin renglón nuevo`);
+  }
+  // sin la variable, como hoy
+  const frase = correr8314(c, comandos[0]);
+  assert.strictEqual(frase.code, 0, frase.out);
+  assert.ok(antes().includes('"relay-designation"'), 'la designación quedó anotada');
+  const confirmar = correr8314(c, comandos[3]);
+  assert.notStrictEqual(confirmar.code, 2, confirmar.out);
+  assert.match(confirmar.out, /relay_session/, 'sin rol en el perfil, el motivo de hoy');
+});

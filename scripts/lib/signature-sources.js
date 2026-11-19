@@ -472,10 +472,20 @@ function delGuardadoAjeno(estado, destino) {
  * Nombrar o retirar a la coordinadora: qué sesión, en qué carpeta. El id solo no le dice nada al dueño; la carpeta sí.
  * El rol es el que nombra el perfil del equipo (`approvals.relay_session`).
  */
-function deLaDesignacion(firma, destino, cwd) {
+// lo que se firma al retirar a OTRA sesión (`withdraw-relay --session <id>`, historia 8.314): el título de la lista y del cuadro
+const RETIRAR_OTRA = 'retirar a otra sesión de coordinadora de la máquina';
+
+function deLaDesignacion(firma, destino, cwd, palabras) {
   if (!destino) return null;
   let rol = null;
   try { rol = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js')).sesionQueReenvia().valor; } catch (_) { rol = null; }
+  const otra = firma === 'designation-withdraw' && palabras && palabras[1] === 'withdraw-relay' ? valor(palabras, '--session') : null;
+  if (otra && otra !== destino) {
+    // la que se retira ya no vive: el cuadro la nombra a ella, y dice quién lo pide y desde dónde
+    const lineas = [`La sesión ${otra} deja de ser la «${rol || 'coordinadora'}» de esta máquina: ya no vive`, `La pide la sesión ${destino}, desde ${cwd || process.cwd()}`];
+    const aLaVista = [`La sesión ${String(otra).slice(0, 8)} deja de ser la «${rol || 'coordinadora'}» de esta máquina: ya no vive`, `La pide la sesión ${String(destino).slice(0, 8)}, desde ${path.basename(cwd || process.cwd())}`];
+    return { queHace: lineas, queHaceALaVista: aLaVista, fuente: lineas.join('\n'), que: RETIRAR_OTRA };
+  }
   const verbo = firma === 'designation-set' ? 'pasa a ser' : 'deja de ser';
   // dos líneas: una carpeta larga no corta la que dice qué pasa
   const lineas = [`La sesión ${destino} ${verbo} la «${rol || 'coordinadora'}» de esta máquina`, `Su carpeta: ${cwd || process.cwd()}`];
@@ -538,7 +548,7 @@ function deLaSalidaPerdida(palabras, cwd, estado, destino) {
 }
 
 function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {}) {
-  if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd);
+  if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd, palabras);
   if (firma === 'escape:rojo-esperado-de-la-matriz') return delRojoEsperado(palabras, marcador);
   if (!palabras) return null;
   if (firma === 'plan-approval') return delPlan(palabras, marcador, { estado, destino });
@@ -553,4 +563,4 @@ function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {
   return null;
 }
 
-module.exports = { partesDe, laHistoria, historiaDe, seccion, seccionesDelPlan, planDe, carpetaDeLaCorrida, valor, abiertoDeLaCorrida };
+module.exports = { RETIRAR_OTRA, partesDe, laHistoria,historiaDe, seccion, seccionesDelPlan, planDe, carpetaDeLaCorrida, valor, abiertoDeLaCorrida };
