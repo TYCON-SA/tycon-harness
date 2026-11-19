@@ -444,7 +444,7 @@ producción instala una vez, con tu contraseña, el permiso:
 sudo bash ~/.tycon/harness/scripts/production/install-guard.sh --allow-auto-update
 ```
 
-Qué habilita, qué ensaya antes de reemplazar y qué no se instala solo: [guides/produccion-con-permiso.md](../guides/produccion-con-permiso.md).
+Qué habilita, qué ensaya antes de reemplazar y qué no se instala solo: [guides/production-with-permission.md](../guides/production-with-permission.md).
 
 ## Qué escribe en tu máquina y qué hace solo
 

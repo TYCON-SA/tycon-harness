@@ -106,7 +106,7 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 ## Saltear el freno: lo decide la persona
 
 Cada salteo es una firma de la persona, con su comando; la lista entera está en
-[las firmas del dueño](firmas-del-arnes.md). Ninguna frase abre una regla de este freno: para eso está la emergencia. En
+[las firmas del dueño](owner-signatures.md). Ninguna frase abre una regla de este freno: para eso está la emergencia. En
 las demás firmas, donde la ventana no llega, vale el «aprobado» que la persona tipea: lo anota un gancho al enviar el
 mensaje. Un encargo, otra sesión o Telegram no firman. Hay cuatro formas, y ninguna la puede usar el agente solo:
 
@@ -137,9 +137,9 @@ Una firma sobre un archivo deja una constancia que consume el Edit o Write sigui
 
 **Con un click o un «aprobado» (Claude Code)**, donde la ventana no llega: una pestaña que no pide permisos, una sesión
 de fondo o Windows, donde la ventana no firma y sólo vale por la consola Bash
-([En Windows](firmas-del-arnes.md#en-windows)). El freno niega el comando y le dice al agente qué mostrar: el cuadro de opciones con una sola pregunta, o el
+([En Windows](owner-signatures.md#en-windows)). El freno niega el comando y le dice al agente qué mostrar: el cuadro de opciones con una sola pregunta, o el
 mismo texto en el chat, con «firma <id>». Con el click o el «aprobado» de la persona, el agente repite el comando. Vale
-una vez y vence a los 30 minutos. Las reglas están en [Aprobar sin terminal](firmas-del-arnes.md#aprobar-sin-terminal). No
+una vez y vence a los 30 minutos. Las reglas están en [Aprobar sin terminal](owner-signatures.md#aprobar-sin-terminal). No
 lo aceptan `TYCON_SAFETY_OFF`, `TYCON_PROD_LINT`, la emergencia ni saltear el pase adversarial.
 
 **En la terminal de la persona**, donde no hay freno: el comando de la columna «Firmarla en la terminal» de esa lista

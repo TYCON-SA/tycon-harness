@@ -15,7 +15,7 @@ Sin revisión aprobada no se aprueba solo: ni el de riesgo bajo ni por la sesió
 aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
 
 - **una persona**, en la ventana de permiso; donde la ventana no llega (una pestaña sin permisos, una sesión de fondo),
-  con un click en el cuadro de opciones o un «aprobado» escrito, según `guides/firmas-del-arnes.md`, «Aprobar sin
+  con un click en el cuadro de opciones o un «aprobado» escrito, según `guides/owner-signatures.md`, «Aprobar sin
   terminal»; o en su terminal (`--approved "<su respuesta>"`, o `--terminal`); o
 - **la revisión automática, en un plan de rutina** (`plan_review.routine_approval: review`, de fábrica): con
   coordinadora, ella firma por delegación con la revisión que lanzó; sin coordinadora, `complete-step approve-plan` sin

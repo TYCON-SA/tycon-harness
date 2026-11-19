@@ -9,7 +9,7 @@
  * POR QUÉ EXISTE (story 6.1, Task 3): la primera versión de la regla de escrituras, que pasaba todas las
  * pruebas, frenaba 313 de 4.000 comandos reales (7,8 %) que no tocaban ninguna base — un `find` con
  * `*.json`, un `rm -rf node_modules/*`. Ninguna prueba lo había visto; lo vio esta medición. Umbral en
- * guides/produccion-con-permiso.md: **0 frenados que no nombran bases** antes de instalar.
+ * guides/production-with-permission.md: **0 frenados que no nombran bases** antes de instalar.
  *
  * PRIVACIDAD: no imprime ningún comando; sólo cuenta y agrupa motivos (con los valores entre «…» tapados). Los frenados
  * por un guion guardado se listan aparte con la ruta del guion, para que una persona los mire uno por uno.

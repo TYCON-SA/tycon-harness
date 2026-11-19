@@ -452,7 +452,7 @@ sudo bash ~/.tycon/harness/scripts/production/install-guard.sh --allow-auto-upda
 ```
 
 What it enables, what it rehearses before replacing and what does not install itself:
-[guides/produccion-con-permiso.md](../guides/produccion-con-permiso.md).
+[guides/production-with-permission.md](../guides/production-with-permission.md).
 
 ## What it writes on your machine and what it does on its own
 

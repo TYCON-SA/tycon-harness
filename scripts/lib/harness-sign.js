@@ -22,7 +22,7 @@
  *
  * `acknowledge` es la constancia de una persona pedida desde Codex (`harness.js sign acknowledge --session <sesión>
  * --seal <sello> --text <texto>`): la conversación de Codex no distingue lo que tipeó la persona de lo que mete un
- * programa (guides/firmas-del-arnes.md §«En Codex»), así que se da en su terminal, con la misma pregunta que `sign`. No
+ * programa (guides/owner-signatures.md §«En Codex»), así que se da en su terminal, con la misma pregunta que `sign`. No
  * es una firma del catálogo: no va al registro común. Deja una marca en `terminal-acknowledgments/` de la carpeta de
  * estado, atada al renglón exacto que anota en el registro de aprobaciones (owner-approvals.js `anotar`), y
  * `buscar` exige las dos. No firma si entre los procesos que la lanzaron está la herramienta del agente o Codex.
@@ -262,7 +262,7 @@ function pedidoVigente({ casa, numero, ahora }) {
 function sign({ id, reason = '', request = null, commit = false, target = null, orderedBy = null, signer, via = 'terminal', tty, append, levels = {}, casa, cwd = process.cwd(), ahora = Date.now(), argv = process.argv.slice(1), origen, arbol } = {}) {
   const no = (code, ...lines) => ({ code, lines });
   const e = entrada(id);
-  if (!e) return no(2, `harness sign: «${id}» no es un id del catálogo de firmas (guides/firmas-del-arnes.md)`);
+  if (!e) return no(2, `harness sign: «${id}» no es un id del catálogo de firmas (guides/owner-signatures.md)`);
   if (via !== 'terminal') {
     return no(2, `harness sign: ${id === EMERGENCIA ? 'la emergencia' : 'esta firma'} se da en tu terminal, nunca por la ventana ni por la delegación`);
   }
