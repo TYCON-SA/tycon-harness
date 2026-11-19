@@ -1998,6 +1998,17 @@ withWaiverLog(() => {
     check('T10 SimulatedServer_Vias_UnaPorCaso @story-8.220 @ac-1', !fallas.length && delAyudante, JSON.stringify({ fallas, ay }));
   }
 
+  // T10b — un archivo grande, con comentarios largos y una división por renglón, se lee en segundos: mirar si una `/`
+  // abre una regex no recorre todo lo leído (así tardaba 30 s en 300 KB, y el freno corta el cuadro del dueño a los 20).
+  {
+    const bloque = `/* ${'x'.repeat(400)} */\nconst a = b / c; // ${'y'.repeat(200)}\n`;
+    const grande = bloque.repeat(Math.ceil(300000 / bloque.length));
+    const t0 = Date.now();
+    const hallados = sim.simulaServidor(grande);
+    const ms = Date.now() - t0;
+    check('T10b SimulatedServer_ArchivoGrande_SeLeeEnSegundos', ms < 3000 && hallados.length === 0, JSON.stringify({ ms, hallados: hallados.length }));
+  }
+
   // T11 — el paso «Probar en vivo» escribe las dos reglas.
   {
     const paso = fs.readFileSync(path.join(__dirname, '..', '..', 'steps', 'step-10-live-check.md'), 'utf8');
