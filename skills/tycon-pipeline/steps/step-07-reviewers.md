@@ -4,7 +4,7 @@
 
 ## Inputs
 
-- `modified_files`: lista de archivos modificados por BMAD (del paso Implementar)
+- `modified_files`: lista de archivos modificados (del paso Implementar)
 - `repo_path`: path del repo
 
 ## Forma canónica (H17 §4) — `pipeline.js`, NO inferir a mano
@@ -316,7 +316,7 @@ mitad y UNO al completarse (2 por iteración, fijos). Nunca un mensaje por advis
 
 **Opt-in `bmad-code-review` (2026-07-30)**: si el dev pidió code-review para esta story, sus
 3 reviewers entran al MISMO pool de slots (≤4 vivos) como si fueran advisors del set — el
-permiso de correrlo en paralelo con los advisors TYCON está en `bmad-contract.md` L99.
+permiso de correrlo en paralelo con los advisors TYCON está en `bmad-contract.md`, en su sección.
 
 El set lo devuelve el script. Los cuatro de abajo son el **set de completitud** que arma
 `pipeline.js advisors`, y no entran los cuatro siempre: `tycon-story-validator` y

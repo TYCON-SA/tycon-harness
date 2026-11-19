@@ -23,8 +23,10 @@ pr: none
 # no necesita lectura sobre ningún repo del arnés ni autorizar un recurso.
 
 variables:
-  # De dónde se baja el arnés: su repo público y la rama. Un fork propio del arnés se apunta acá;
-  # el resto del pipeline no cambia.
+  # De dónde se baja el arnés: su repo público y la versión. Un fork propio del arnés se apunta acá;
+  # el resto del pipeline no cambia. `harnessRef` es `main` por defecto: cada arreglo del portón llega
+  # esa misma noche. Para fijarla, una rama, una etiqueta o un commit; fijada, el repo queda atrás en
+  # los arreglos hasta que la sube. El commit que se usó queda impreso en cada corrida.
   harnessRepoUrl: 'https://github.com/TYCON-SA/tycon-harness.git'
   harnessRef: 'main'
 
@@ -53,8 +55,11 @@ stages:
               set -euo pipefail
               DEST="$(Agent.BuildDirectory)/tcg"
               rm -rf "$DEST"
-              git clone --quiet --depth 1 --single-branch --branch "$(harnessRef)" --no-tags "$(harnessRepoUrl)" "$DEST"
-              echo "Arnés público en $(git -C "$DEST" rev-parse --short HEAD)"
+              # `clone --branch` no acepta un commit: se baja la versión con fetch y se pasa a ella con checkout
+              git init --quiet "$DEST"
+              git -C "$DEST" fetch --quiet --depth 1 "$(harnessRepoUrl)" "$(harnessRef)"
+              git -C "$DEST" checkout --quiet FETCH_HEAD
+              echo "Arnés público en $(git -C "$DEST" rev-parse HEAD) ($(harnessRef))"
             displayName: 'Fetch harness (public GitHub, no credentials)'
           - task: NodeTool@0
             inputs:

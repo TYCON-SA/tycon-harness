@@ -258,6 +258,18 @@ The same notice carries two more things:
   session is not waiting for its turn. Waiting for a pass does not count: the notice above wakes the session that owes its pass.
   `status` shows the whole queue.
 
+**With a free slot, free memory and ready work, the turn does not close.** A turn-closing brake
+(`coordination-fill-gate.js`), only for the designated coordinator: if there is a free slot (the others working plus the
+coordinator, below the cap: the same count as `open`), free memory is at 40 % or more and there is at least one ready
+story without a session from her project (`ready-for-dev` in the office's project reading, with no open dependencies, no
+pause and no run on this machine), the turn does not close: the brake says what there is and asks to open a session or
+to write down why not, with `coordination.js keep-free --reason "<why>"`. The reason lasts 30 min and covers only the
+ready work it saw: a new story voids it; three blocks in a row and on the fourth close the brake lets the turn end and
+notes it as «cerró sin abrir ni motivo», which counts and shows like a reason (in `/wip`, «Lugares libres a propósito»,
+and in the office). With the project reading stale the brake does not block for stories and sends it to refresh in the
+background; unable to read the machine's state or to measure memory, it does not block either. Stopped runs are not
+included: the long-queue notice keeps proposing them. It has no switch: the way out is the reason, which stays written.
+
 ## Heavy work takes turns: the full suite and adversarial passes
 
 The machine runs **one adversarial pass at a time**, and never beside a large test run (the full gate, of 100 suites or
@@ -657,6 +669,9 @@ node <harness>/scripts/tools/office/board.js set T-41 estado=curso quien=Sand no
 node <harness>/scripts/tools/office/board.js close T-41 [--real YYYY-MM-DDTHH:MM]          # close it
 node <harness>/scripts/tools/office/board.js save --from <your separate file>              # the whole board
 node <harness>/scripts/tools/office/board.js check                                         # check without writing
+node <harness>/scripts/tools/office/board.js due                                           # the «Te toca» lines
+node <harness>/scripts/tools/office/board.js due confirm <id>                              # still valid: count again
+node <harness>/scripts/tools/office/board.js due drop <id>                                 # remove it
 ```
 
 Writing it by hand (Edit, Write or the console) is stopped with the command that does the same. Reading it stays free, and
@@ -679,6 +694,11 @@ says so once under «No se pudo leer». A badly written row is not saved: `board
   open questions and this list: notes are not read, so what the owner has to do goes here. `meta.resumen` is ignored, like
   `tablas`: the line above the kanban builds itself from the cards («Sale primero: T-52 … · 19:30 · Tu firma: 2 · Trabado:
   1 · Tablero escrito a las 16:29», or «Nada con hora en curso»).
+- A `teToca` line expires after 24 hours: it stops showing and the office says how many expired in the summary strip.
+  Saving it again does not
+  renew it, because `save --from` brings your whole file; `due confirm` renews it. `due drop` removes it from the board:
+  remove it from your separate file too, or the next `save --from` brings it back with its date. Signatures and questions
+  do not expire. The date lives in `meta.teTocaDesde`, which only `board.js` writes.
 
 «Terminados» is what was done today, with its time; anything older, or with no `realIso`, goes to the «Hechos» table. «En
 curso» goes by end time: what ends first on top, what has no time after, and the coordinator last.
@@ -832,6 +852,11 @@ They come from a whole day of coordinating several sessions. Each says what to d
   waits, which only watches its pull request and is closed when it gets in. With two or more waiting for the gate, the
   coordinator stops the last ones in the queue and reopens a stopped run with a signed plan. Why: a waiting session
   holds a slot doing nothing, and a story that lands on it gets tied to someone else's pull request.
+- **With a free slot, free memory and ready work, the coordinator does not close her turn.** She opens or resumes
+  sessions, or writes down why not with `coordination.js keep-free`. Stopping sessions to save memory does not count:
+  the floor to open is 40 %. Why: four times in two days the machine was left with 2 of 6 working and six signed stories
+  waiting, with free memory above the floor; the notice said so and was ignored. A brake measures this rule (above,
+  «The cap»).
 - **With a long suite queue, no session is opened to program.** If more than two sessions are waiting for the suite or
   gate turn, a new session is opened only for work that does not need the suite: writing a story, reviewing or
   researching. Those that only wait for their turn can be closed and resumed with the same conversation when their turn
@@ -901,6 +926,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | Size before assigning | nadie | It is the coordinator's judgment call. |
 | A session that finishes gets work or is closed | aviso | The notice about idle background sessions, after 15 minutes. |
 | A waiting session gets the light work | aviso | The coordinator's notice on each turn: it names the background session that noted it waits for the CI, the queue or a signature, with up to three light rows from the board, and proposes a new session for a story when there is a slot and memory. With two or more in the gate queue, it says which to stop and which stopped run with a signed plan to reopen. A session that did not note its wait is not seen. |
+| With a free slot, free memory and ready work, the coordinator does not close her turn | freno | The turn-closing hook, only in the designated session: with a free slot (the others working plus her, below the cap), free memory at 40 % or more and a ready story without a session from her project (no open dependencies, no pause), it won't let the turn end until she opens a session or writes the reason with `coordination.js keep-free`, which lasts 30 min and covers only the work it saw; three blocks in a row and on the fourth it lets the turn close, noted as «cerró sin abrir ni motivo». Stopped runs are not included: with two or more waiting for the gate, the long-queue notice keeps proposing to reopen the oldest. Unable to read the state or measure memory, it does not block. |
 | A red is not left behind | nadie | The controls stop your own; someone else's red is seen by whoever finds it. |
 | Do not loosen a review, do not do paperwork | nadie | It is a judgment call: no data separates a review from paperwork. |
 | Check a message for the team | nadie | The message goes out outside the machine. |

@@ -341,8 +341,11 @@ function loQueYaExiste() {
 // ============================================================
 // LLM prompt
 // ============================================================
-function buildPrompt(candidates, totalObs) {
+function buildPrompt(candidates, totalObs, { proyectosConReglas } = {}) {
   const top = candidates.slice(0, 15); // cap para no inflar el prompt
+  // sólo la noche del equipo lo pasa: busca reglas para todos, salvo los proyectos que pidieron las suyas
+  const alcance = !Array.isArray(proyectosConReglas) ? ''
+    : `- We are looking for rules useful to the whole team: use scope: global. ${proyectosConReglas.length ? `Use scope: project only for these projects, which asked for their own rules: ${proyectosConReglas.join(', ')}.` : 'No project asked for its own rules.'}\n`;
   const blocks = top.map((c, i) => {
     const sample = c.items.slice(0, 3).map((o) => `  - ts:${o.ts} status:${o.status} summary:"${o.summary}"`).join('\n');
     return `### Candidate ${i + 1} (occurred ${c.count}× in last 60d)\nproject|tool|summary-prefix: ${c.key}\nsample observations:\n${sample}`;
@@ -378,7 +381,7 @@ Rules:
 - tycon_artifact_suggestion: only if the pattern is strong enough to justify a new automation. Most patterns are just instincts (artifact_suggestion=null).
 - candidate_index is REQUIRED and must be the number of the Candidate block this instinct came from.
   It is used to attach the REAL occurrence count; do not invent an evidence count.
-- Output ONLY a single YAML array. If no instincts qualify, output an empty array: \`[]\`.`;
+${alcance}- Output ONLY a single YAML array. If no instincts qualify, output an empty array: \`[]\`.`;
 }
 
 // ============================================================

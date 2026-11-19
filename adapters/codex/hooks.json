@@ -474,6 +474,13 @@
       ]
     },
     {
+      "log": "Stop — SOLO Claude Code (la coordinadora no deja la máquina vacía)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-18, story 8.307): coordination-fill-gate.js frena el cierre del turno de la sesión designada coordinadora con lugar, memoria libre y una historia lista sin sesión. Codex no coordina (coordinate se lo dice y no sigue: sus mensajes a otra sesión no pasan por una herramienta que el arnés pueda mirar), así que de su lado no hay turno que frenar y el freno no se registra.",
+      "scripts": [
+        "coordination-fill-gate.js"
+      ]
+    },
+    {
       "log": "PreToolUse · AskUserQuestion|mcp__spokenly__ask_user_dictation — SOLO Claude Code (las preguntas de una sesión que abrió la coordinadora)",
       "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-04, story 8.211): background-question-guard.js le niega el cuadro de opciones y el dictado a una sesión de fondo que abrió coordination.js open, con la coordinadora confirmada y viva. Codex no abre sesiones de fondo (coordination.js open se lo niega) ni tiene esas herramientas en el modo normal, así que de su lado no hay a quién frenar y el freno no se registra.",
       "scripts": [

@@ -1,6 +1,13 @@
 # El portón de CI — lo que igual se verifica cuando el commit ya llegó al servidor
 
-> ## ✅ Estado: ADOPTADO Y **BLOQUEANTE** en el piloto (frontend y backend de un producto del equipo, 2026-08-30)
+**Qué significa su visto bueno: hay archivos con el nombre correcto y lo que el servidor verificó él mismo; el servidor no re-ejecuta nada.**
+Cada chequeo dice su nivel en la salida y en `--json` (`verificacion`): «verificado por el servidor», «archivo
+presente», «ejecución registrada» o «no medido». Un ✅ no quiere decir «se probó».
+
+> **Adopción, medido el 2026-08-31** (el piloto de un producto del equipo es del 2026-08-30): 13 repos de cuatro
+> productos, código y especificaciones, y el portón vigilaba 470 de 470 historias (33 antes de corregir **dónde**
+> estaba instalado: la trampa (c), más abajo). Es una medición de esa fecha, no el estado de hoy: el de hoy lo
+> dice cada noche el inventario de adopción (§«Dónde no está: el inventario de cada noche»).
 >
 > Con "un solo dev, siempre en la misma máquina, con el arnés puesto", un control cuyo caso no
 > existe es ceremonia. El portón se adopta porque **el equipo son varias personas, a veces sobre
@@ -8,15 +15,58 @@
 >
 > **Bloqueante desde el primer día**, no en modo aviso: en modo aviso, si el portón no puede ni
 > arrancar (un permiso), el merge pasa igual, con apariencia de control instalado. "No pude ni
-> arrancar" y "corrí y avisé" son resultados distintos, y el aviso no los distingue.
->
-> ## ✅ Rollout COMPLETO en los cuatro productos (2026-08-31) — **13 repos**
->
-> Totora, Ceibo, URUTAU y Lapacho, código **y especificaciones**. Cobertura medida:
-> **33 de 470 stories → 470 de 470**.
->
-> 🔴 Ese salto no es del rollout: es de haber corregido **dónde** estaba instalado. Ver la
-> trampa (c) más abajo — el portón llevaba un día instalado y vigilaba el 7% de las stories.
+> arrancar" y "corrí y avisé" son resultados distintos, y el aviso no los distingue. Frena sólo donde la rama
+> principal exige su compilación (la política de rama en Azure, el control requerido en GitHub).
+
+## Lo que el portón NO resuelve
+
+- **No re-ejecuta nada**: no compila, no corre pruebas, no levanta la app. Lo que corrió, corrió en la máquina del dev.
+- **No lee lo que dice la evidencia de cierre**: una evidencia que dice «hola» pasa el chequeo de evidencia (nivel
+  «archivo presente»).
+- **Lo escrito en la máquina del dev no tiene procedencia**: el registro de autoría y el de aprobaciones son «ejecución
+  registrada»: tienen forma válida, no prueban quién los escribió.
+- **La exención no se firma en el servidor**: se exige y se muestra su razón (`<campo>_reason`), no quién la autorizó.
+  Una exención sin razón avisa hasta el 2026-12-03 y frena desde ese día (`exencion-sin-razon`).
+- **Es opt-in por repo**: un repo sin el pipeline, o sin la política que lo exige, no tiene red del servidor y no da
+  error. Lo cuenta el inventario de cada noche.
+- **Sólo mira historias que pasan a `review`/`done`**: un cambio de código que no toca una historia pasa (§«Lo que este
+  control NO cubre»).
+
+## Dónde no está: el inventario de cada noche
+
+`scripts/nightly/gate-adoption/gate-adoption.js` lee por la API de Azure DevOps (los proyectos de la organización) o
+de GitHub (la organización), sin clonar, y da un estado por repo:
+
+| Estado | Qué quiere decir |
+|---|---|
+| `requerido` | la rama principal exige una compilación cuyo YAML nombra `tycon-ci-gate.js` |
+| `requerido-con-escape` | lo mismo, y ese YAML trae `continueOnError: true`, `continue-on-error: true` o `\|\| true` en una línea que no es comentario (en cualquier paso: el guion no separa pasos) |
+| `pipeline-sin-política` | hay una compilación cuyo YAML lo nombra y la rama no la exige |
+| `sin-portón` | ningún YAML lo nombra |
+| `no-aplica` | repo vacío, archivado o sin rama principal |
+| `no-medido` | la API no contestó, contestó un error o un 403, o el YAML no se pudo leer. Nunca `sin-portón` |
+
+`requerido` no prueba que el portón corra de verdad: dice que la rama exige una compilación cuyo YAML lo nombra. No
+mira si la definición de la compilación está habilitada ni si el paso que lo nombra se ejecuta.
+
+Además, la cuenta es la de los repos que la credencial ve. Sin credencial no se mide nada y la línea sale `?` (GitHub
+listaría sólo los repos públicos); una credencial sin alcance sobre los repos privados los deja afuera sin error, y eso
+no se puede detectar desde la API.
+
+El detalle por repo queda en el registro del pipeline; al resumen diario llega una sola línea, sólo con números:
+`Portón de CI (repos): requerido N · con escape N · pipeline sin política N · sin portón N · no aplica N · no medido N`
+(`?` si la lista de repos no se pudo leer entera). Mide la rama principal de cada repo. Con Azure y GitHub a la vez, la
+línea es la suma de las dos; si a una le falta la suya, sale `?`. Lo corre la revisión nocturna (`production-watch.yml`) cuando la
+organización carga sus parámetros: `gateAdoptionAzureProjects` (proyectos separados por coma) o
+`gateAdoptionGithubOrg`. Con GitHub, la compilación nocturna necesita además la variable secreta `GH_TOKEN`, con lectura
+sobre los repos privados de la organización.
+
+## La versión del portón que baja cada organización
+
+Las dos plantillas del repo de historias (`stories-gate.yml`, Azure y GitHub) bajan el arnés de `main` por defecto e
+imprimen el commit que usaron, para poder reproducir un veredicto viejo. Para fijarla, una variable: `harnessRef` en
+Azure, la variable del repo `TYCON_HARNESS_REF` en GitHub (rama, etiqueta o commit). Quien la fija queda atrás en los
+arreglos hasta que la sube.
 
 ## Qué chequea — y por qué sólo esto
 
@@ -306,7 +356,7 @@ pre-commit lo de antes es siempre el último commit, no una rama remota.
 node scripts/ci/tycon-ci-gate.js --repo ~/SourceCode/MiRepo --base origin/main
 node scripts/ci/tycon-ci-gate.js --repo ~/SourceCode/MiRepo --base origin/main --json
 node scripts/ci/tycon-ci-gate.js --repo ~/SourceCode/MiRepo --staged   # lo que estás por commitear
-node scripts/ci/tycon-ci-gate.js --selftest      # 22 casos, sin tocar nada
+node scripts/ci/tycon-ci-gate.js --selftest      # el autotest, sin tocar nada
 ```
 
 Exit 0 = al día · exit 1 = hay stories que no deberían haber llegado al servidor, **o no se pudo

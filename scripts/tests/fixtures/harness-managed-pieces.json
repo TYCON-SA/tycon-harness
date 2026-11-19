@@ -83,6 +83,7 @@
     { "kind": "hook", "id": "SessionStart:@tcg:deprecated-session-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:@tcg:retro-pending.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "Stop:@tcg:retro-pending.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
+    { "kind": "hook", "id": "Stop:@tcg:coordination-fill-gate.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:retro-pending.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:retro-staleness-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:nightly", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:bench-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },

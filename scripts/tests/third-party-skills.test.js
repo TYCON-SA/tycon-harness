@@ -12,11 +12,13 @@
  *     no pague nada.
  *
  * Todo con repos de juguete (git de verdad, env de scripts/lib/clean-git-env.js) y manifiestos SINTÉTICOS por
- * --manifest; nunca el real (ése lo mira third-party-real.test.sh). T22 lee la documentación real del arnés.
+ * --manifest; nunca el real (ése lo mira third-party-real.test.sh). T22 lee la documentación real del arnés, y
+ * ManifiestoDeBmad_NoCambiaCommitsNiArboles lee las entradas reales de BMAD, sin red.
  */
 
 const test = require('node:test');
 const assert = require('node:assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -378,4 +380,17 @@ test('T22 Docs_PointToManifest — cada guía nombra el manifiesto; INSTALL ya n
   const paragraphs = bmad.split(/\n\s*\n/).filter((p) => /third-party-skills\.json/.test(p));
   for (const p of paragraphs) assert.doesNotMatch(p, /\b\d+\.\d+\.\d+\b/, `bmad-contract.md afirma una versión junto al manifiesto: ${p.slice(0, 160)}`);
   assert.match(read('guides/maintaining/publicacion-espejo.md'), /^#+ .*Las skills de terceros/m);
+});
+
+// ── las skills de BMAD quedan en su versión ───────────────────────────────────────────────────────────────────
+// Actualizar BMAD a propósito cambia esta huella: se recalcula en ese mismo cambio.
+const HUELLA_DE_BMAD = '3fe675b45b2bed3352aab6b38e45d0bdf2970366b345cdf679c1e37359029265';
+
+test('T6 ManifiestoDeBmad_NoCambiaCommitsNiArboles @story-8.305 @ac-7', () => {
+  const m = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'publishing', 'third-party-skills.json'), 'utf8'));
+  const deBmad = m.third_party.filter((e) => e.target.startsWith('skills/bmad-'));
+  assert.strictEqual(deBmad.length, 42);
+  assert.ok(deBmad.every((e) => e.publish === true), 'sin publish: true, una skill sin used_by sale de la copia pública');
+  const filas = deBmad.map((e) => [e.target, e.from, m.origins[e.from].commit, e.path, e.tree, e.publish]).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  assert.strictEqual(crypto.createHash('sha256').update(JSON.stringify(filas)).digest('hex'), HUELLA_DE_BMAD);
 });

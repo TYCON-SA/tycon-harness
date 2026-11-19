@@ -16,6 +16,10 @@
  * título ni su hora prometida, y una fila hecha no vuelve atrás. Con una lectura incompleta no aplica lo que sale de no
  * ver algo. Sobre un tablero sin números o con una regla rota no escribe y avisa.
  *
+ * Cada línea de `meta.teToca` tiene su fecha en `meta.teTocaDesde`, que escribe sólo este comando. A las 24 horas vence y
+ * la oficina deja de mostrarla. Volver a guardarla no la renueva, porque `save` trae el archivo aparte entero: la renueva
+ * `due confirm`.
+ *
  * Uso:
  *   board.js save --from <archivo>                 el tablero entero, desde el archivo aparte de la coordinadora
  *   board.js add titulo=… [campo=valor…]           una fila nueva
@@ -23,7 +27,10 @@
  *   board.js close <T-n> [--real AAAA-MM-DDTHH:MM] la cierra: hecho, con la hora de ahora o la dada
  *   board.js check                                 valida sin escribir
  *   board.js sync --facts <archivo> [--complete]   aplica hechos (lo llama la oficina)
- *   [--state-dir <carpeta>]                        otra carpeta de estado (pruebas)
+ *   board.js due                                   lista las líneas de «Te toca», con su edad y su estado
+ *   board.js due confirm <id>                      la línea vuelve a contar desde ahora
+ *   board.js due drop <id>                         saca la línea
+ *   [--state-dir <carpeta>]                      otra carpeta de estado (pruebas)
  * Sale 0 si escribió (o si `check` no encontró nada), 2 si no escribió por una regla, un candado o un cambio.
  *
  * Casos: scripts/tests/office-task-numbers.test.js
@@ -46,9 +53,14 @@ function validLocalHour(s) {
   const t = new Date(y, mo - 1, d, h, mi);
   return t.getFullYear() === y && t.getMonth() === mo - 1 && t.getDate() === d && t.getHours() === h && t.getMinutes() === mi;
 }
+const localMs = (s) => { const [y, mo, d, h, mi] = s.split(/[-T:]/).map(Number); return new Date(y, mo - 1, d, h, mi).getTime(); };
 const LOCK_WAIT_MS = 5000;
 const LOCK_STALE_MS = 30 * 1000;
 const FACTS_KEPT = 500;
+// una línea de «Te toca» vence a las 24 horas de su fecha; fuera de la lista, la fecha se recuerda 30 días
+const TOCA_EXPIRES_MS = 24 * 3600 * 1000;
+const TOCA_KEEP_MS = 30 * 24 * 3600 * 1000;
+const TOCA_USAGE = 'uso: board.js due [confirm <id> | drop <id>]';
 // los campos que `set` y `add` aceptan; `ultimoHecho` lo escribe sólo `sync`
 const FIELDS = ['titulo', 'estado', 'grupo', 'orden', 'quien', 'nota', 'pronosticoIso', 'termina', 'realIso', 'historia', 'tema', 'pedido'];
 
@@ -205,9 +217,73 @@ function quienWarnings(rows, live) {
   return out;
 }
 
+// ── Las líneas de «Te toca» ─────────────────────────────────────────────────────────────────────────────────────────
+
+const metaOf = (raw) => (raw.meta && typeof raw.meta === 'object' && !Array.isArray(raw.meta) ? raw.meta : null);
+const tocaId = (key) => sha(key).slice(0, 6);
+const usableFileHour = (at, now) => (Number.isFinite(at) && at <= now ? at : null);
+
+/** La clave de cada línea de `meta.teToca`: su texto entero, sin los espacios de los bordes. Lo que no es texto no cuenta. */
+function tocaKeys(raw) {
+  const meta = metaOf(raw);
+  return meta && Array.isArray(meta.teToca) ? meta.teToca.map(str).filter(Boolean) : [];
+}
+
+/** Las fechas de `meta.teTocaDesde` que valen, por clave: una hora que existe y no es posterior a `now`. */
+function tocaDates(raw, now) {
+  const meta = metaOf(raw);
+  const all = meta && meta.teTocaDesde;
+  if (!all || typeof all !== 'object' || Array.isArray(all)) return new Map();
+  return new Map(Object.entries(all).filter(([, v]) => typeof v === 'string' && validLocalHour(v) && localMs(v) <= now));
+}
+
+/** La hora del archivo del tablero; `null` si no está o no se puede leer. */
+function boardWrittenAt(sdir) {
+  try { return fs.statSync(paths(sdir).board).mtimeMs; } catch { return null; }
+}
+
+/**
+ * Cada línea con su edad y si venció: `{ lineas: [{ clave, id, edadMs, vencida }], vigentes, vencidas }`. Sin fecha válida
+ * la edad se cuenta desde `writtenAt`, y sin esa hora la línea no vence: no se sabe cuánto tiene.
+ */
+function tocaState(raw, { now = Date.now(), writtenAt = null } = {}) {
+  const dates = tocaDates(raw, now);
+  const fileHour = usableFileHour(writtenAt, now);
+  const lineas = tocaKeys(raw).map((clave) => {
+    const since = dates.has(clave) ? localMs(dates.get(clave)) : fileHour;
+    const edadMs = since == null ? null : now - since;
+    return { clave, id: tocaId(clave), edadMs, vencida: edadMs != null && edadMs >= TOCA_EXPIRES_MS };
+  });
+  return { lineas, vigentes: lineas.filter((l) => !l.vencida).map((l) => l.clave), vencidas: lineas.filter((l) => l.vencida).map((l) => l.clave) };
+}
+
+function tocaWarning(raw, opts) {
+  const n = tocaState(raw, opts).vencidas.length;
+  return n ? [`⚠️ «Te toca» tiene ${n} línea(s) vencida(s): board.js due las lista`] : [];
+}
+
+/**
+ * Pone en `raw` las fechas de sus líneas. Salen de lo que había en disco (`before`), nunca de lo que trae `raw`: el archivo
+ * aparte no puede renovar una línea. Una que ya estaba sin fecha toma la hora que tenía el archivo, y `renew` son las
+ * claves que pasan a la hora de ahora. Un `meta` de otra forma queda como vino.
+ */
+function stampToca(raw, before, renew, now) {
+  const meta = metaOf(raw);
+  if (raw.meta != null && !meta) return;
+  const stamp = localIso(now);
+  const fileHour = usableFileHour(before.writtenAt, now);
+  const known = fileHour == null ? stamp : localIso(fileHour);
+  const dates = new Map();
+  for (const key of tocaKeys(raw)) dates.set(key, renew.includes(key) ? stamp : before.dates.get(key) || (before.keys.has(key) ? known : stamp));
+  for (const [key, at] of before.dates) if (!dates.has(key) && now - localMs(at) < TOCA_KEEP_MS) dates.set(key, at);
+  const { teTocaDesde: _ignored, ...rest } = meta || {};
+  if (meta || dates.size) raw.meta = dates.size ? { ...rest, teTocaDesde: Object.fromEntries(dates) } : rest;
+}
+
 /**
  * Escribe el tablero que devuelve `change(raw)` con el candado. `change` recibe el tablero crudo leído adentro del candado
- * y devuelve `{ raw, lines }` o `{ code, lines }` para no escribir. Valida, numera, escribe aparte y renombra.
+ * y devuelve `{ raw, lines, renew }` o `{ code, lines }` para no escribir; `renew` son las líneas de «Te toca» que vuelven
+ * a contar desde ahora. Valida, numera, escribe aparte y renombra.
  */
 function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(), beforeRename = null, afterRename = null } = {}) {
   return withLock(sdir, () => {
@@ -215,6 +291,8 @@ function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(
     let numbers;
     let numbersText;
     try { current = readBoardRaw(sdir); numbers = readNumbers(sdir); numbersText = readJson(paths(sdir).numbers, null).text; } catch (e) { return { code: 2, lines: [`⛔ ${e.message}: no escribí nada`] }; }
+    // antes de `change`, que puede cambiar el tablero leído
+    const before = { keys: new Set(tocaKeys(current.raw)), dates: tocaDates(current.raw, now), writtenAt: boardWrittenAt(sdir) };
     const res = change(current.raw, numbers);
     if (res.code != null) return res;
     const raw = res.raw;
@@ -222,7 +300,9 @@ function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(
     const problems = rowProblems(rows, numbers);
     if (problems.length) return { code: 2, lines: ['⛔ no escribí nada: estas filas rompen una regla', ...problemLines(problems)] };
     const n = numberRows(rows, numbers);
-    const text = `${JSON.stringify({ ...raw, pendientes: rows }, null, 2)}\n`;
+    stampToca(raw, before, res.renew || [], now);
+    const saved = { ...raw, pendientes: rows };
+    const text = `${JSON.stringify(saved, null, 2)}\n`;
     const p = paths(sdir);
     // el contador va antes que el tablero: un tablero con números que el contador no tiene los daría otra vez. Si el
     // tablero no se escribe, el contador vuelve a como estaba y esos números no se gastan
@@ -243,6 +323,7 @@ function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(
     if (n.numeradas.length) lines.push(`numeré ${n.numeradas.length}: ${n.numeradas.join(', ')}`);
     if (n.recuperadas.length) lines.push(`recuperé por su título: ${n.recuperadas.join(', ')}`);
     lines.push(...quienWarnings(rows, live || liveSessions(home, sdir)));
+    lines.push(...tocaWarning(saved, { now, writtenAt: now }));
     return { code: 0, lines: [`✅ tablero guardado (${rows.length} filas)`, ...lines] };
   });
 }
@@ -312,14 +393,59 @@ function close(sdir, id, { real = null, ...opts } = {}) {
 }
 
 /** Valida el tablero que hay, sin escribir. */
-function check(sdir) {
+function check(sdir, { now = Date.now() } = {}) {
   let current;
   let numbers;
   try { current = readBoardRaw(sdir); numbers = readNumbers(sdir); } catch (e) { return { code: 2, lines: [`⛔ ${e.message}`] }; }
   const ps = rowProblems(current.raw.pendientes, numbers);
   const sin = current.raw.pendientes.filter((r) => r && !r.id);
   if (sin.length) ps.push({ fila: sin.map(nameOf).join(', '), regla: 'sin número: guardalo una vez con board.js save --from <tu archivo aparte>' });
-  return ps.length ? { code: 2, lines: ['⛔ el tablero tiene filas que rompen una regla', ...problemLines(ps)] } : { code: 0, lines: [`✅ el tablero está sano (${current.raw.pendientes.length} filas)`] };
+  const warning = tocaWarning(current.raw, { now, writtenAt: boardWrittenAt(sdir) });
+  return ps.length ? { code: 2, lines: ['⛔ el tablero tiene filas que rompen una regla', ...problemLines(ps), ...warning] } : { code: 0, lines: [`✅ el tablero está sano (${current.raw.pendientes.length} filas)`, ...warning] };
+}
+
+function ageText(ms) {
+  if (ms == null) return 'sin fecha conocida';
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 60) return `hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `hace ${hours} h` : `hace ${Math.floor(hours / 24)} d`;
+}
+
+/** Lista las líneas de «Te toca», sin escribir. */
+function toca(sdir, { now = Date.now() } = {}) {
+  let current;
+  try { current = readBoardRaw(sdir); } catch (e) { return { code: 2, lines: [`⛔ ${e.message}`] }; }
+  const { lineas } = tocaState(current.raw, { now, writtenAt: boardWrittenAt(sdir) });
+  if (!lineas.length) return { code: 0, lines: ['no hay líneas en «Te toca»'] };
+  return { code: 0, lines: lineas.map((l) => `${l.id} · ${ageText(l.edadMs)} · ${l.vencida ? 'vencida' : 'vigente'} · ${l.clave}`) };
+}
+
+const tocaKeyOf = (raw, id) => tocaKeys(raw).find((key) => tocaId(key) === id) || null;
+const tocaUnknown = (id) => ({ code: 2, lines: [`⛔ no hay una línea ${id} en «Te toca»`, TOCA_USAGE] });
+
+function tocaConfirm(sdir, id, opts = {}) {
+  return write(sdir, (raw) => {
+    const key = tocaKeyOf(raw, id);
+    return key ? { raw, renew: [key], lines: [`confirmé ${id}: vuelve a contar desde ahora`] } : tocaUnknown(id);
+  }, opts);
+}
+
+function tocaDrop(sdir, id, opts = {}) {
+  return write(sdir, (raw) => {
+    const key = tocaKeyOf(raw, id);
+    if (!key) return tocaUnknown(id);
+    const meta = metaOf(raw);
+    return { raw: { ...raw, meta: { ...meta, teToca: meta.teToca.filter((line) => str(line) !== key) } }, lines: [`saqué ${id}: sacala también de tu archivo aparte, o el próximo save --from la devuelve con su fecha`] };
+  }, opts);
+}
+
+// Lo que está mal en los argumentos de `due`; null si se puede correr.
+function tocaArgsProblem([sub, id, ...extra]) {
+  if (sub == null) return null;
+  if (sub !== 'confirm' && sub !== 'drop') return `«due» no tiene el subcomando «${sub}»`;
+  if (!id) return `«due ${sub}» va con el identificador de la línea`;
+  return extra.length ? `sobran argumentos: ${extra.join(' ')}` : null;
 }
 
 // ── Los hechos ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -406,7 +532,7 @@ function lastFactLine(sdir, id) {
  * pudo escribir (un tablero sin números o roto, el candado).
  */
 function sync(sdir, facts, { complete = false, now = Date.now(), ...opts } = {}) {
-  const checked = check(sdir);
+  const checked = check(sdir, { now });
   if (checked.code !== 0) return { code: 2, written: false, lines: checked.lines, aviso: 'el tablero no se movió solo: tiene filas sin número o que rompen una regla; corré board.js check' };
   const usable = (facts || []).filter((f) => f && f.clave && Number.isFinite(f.at));
   // sin hechos no se toma el candado: la oficina vigila la carpeta y cada foto pediría otra
@@ -508,11 +634,16 @@ function main(argv, { home = os.homedir(), out = (t) => process.stdout.write(`${
     let facts = [];
     try { facts = factsFile ? JSON.parse(fs.readFileSync(factsFile, 'utf8')) : []; } catch (e) { res = { code: 2, lines: [`⛔ ${factsFile} no se pudo leer (${e.message})`] }; }
     if (!res) res = sync(sdir, facts, { complete, home });
-  } else res = { code: 2, lines: ['uso: board.js save --from <archivo> | add titulo=… [campo=valor…] | set <T-n> campo=valor… | close <T-n> [--real AAAA-MM-DDTHH:MM] | check | sync --facts <archivo> [--complete]'] };
+  } else if (cmd === 'due') {
+    const problem = tocaArgsProblem(rest);
+    if (problem) res = { code: 2, lines: [`⛔ ${problem}`, TOCA_USAGE] };
+    else if (!rest.length) res = toca(sdir);
+    else res = (rest[0] === 'confirm' ? tocaConfirm : tocaDrop)(sdir, rest[1], { home });
+  } else res = { code: 2, lines: ['uso: board.js save --from <archivo> | add titulo=… [campo=valor…] | set <T-n> campo=valor… | close <T-n> [--real AAAA-MM-DDTHH:MM] | check | sync --facts <archivo> [--complete] | due [confirm <id> | drop <id>]'] };
   for (const l of res.lines) (res.code === 0 ? out : err)(l);
   return res.code;
 }
 
-module.exports = { paths, taskId, orderRows, readNumbers, readBoardRaw, rowProblems, numberRows, quienWarnings, save, add, set, close, check, sync, mergeFacts, readFacts, lastFactLine, printCheck, ESTADOS, ID, main };
+module.exports = { paths, taskId, orderRows, readNumbers, readBoardRaw, rowProblems, numberRows, quienWarnings, save, add, set, close, check, sync, tocaState, toca, tocaConfirm, tocaDrop, mergeFacts, readFacts, lastFactLine, printCheck, ESTADOS, ID, main };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

@@ -25,16 +25,24 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
+      # La versión del arnés: `main` por defecto, o la variable del repo TYCON_HARNESS_REF (una rama, una etiqueta o un
+      # commit) para fijarla. Fijada, el repo queda atrás en los arreglos hasta que la sube. El commit que se usó queda
+      # impreso, para poder reproducir un veredicto viejo.
       - name: El portón del arnés contra la rama destino del pedido
         env:
           BASE: ${{ github.base_ref }}
+          HARNESS_REF: ${{ vars.TYCON_HARNESS_REF || 'main' }}
         run: |
           set -u
           TCG="${RUNNER_TEMP}/tcg"
-          if ! git clone --quiet --depth 1 --single-branch --branch main --no-tags https://github.com/TYCON-SA/tycon-harness.git "${TCG}"; then
-            echo "::error::no pude bajar el arnés público: un control que no corrió no está aprobado"
+          # `clone --branch` no acepta un commit: se baja la versión con fetch y se pasa a ella con checkout
+          if ! { git init --quiet "${TCG}" \
+            && git -C "${TCG}" fetch --quiet --depth 1 https://github.com/TYCON-SA/tycon-harness.git "${HARNESS_REF}" \
+            && git -C "${TCG}" checkout --quiet FETCH_HEAD; }; then
+            echo "::error::no pude bajar el arnés público en ${HARNESS_REF}: un control que no corrió no está aprobado"
             exit 1
           fi
+          echo "Arnés público en $(git -C "${TCG}" rev-parse HEAD) (${HARNESS_REF})"
           GATE="${TCG}/scripts/ci/tycon-ci-gate.js"
           if [ ! -f "${GATE}" ]; then
             echo "::error::no encontré el portón en ${GATE}: un control ausente no es un control aprobado"

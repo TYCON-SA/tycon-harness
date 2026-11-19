@@ -190,14 +190,14 @@ Esta sección define **cuándo invocar subagentes advisor** en conjunto con los 
 
 ### Regla general
 
-Después de invocar un skill BMAD que **implementa código** o **modifica artefactos críticos**, invocar los advisors Core correspondientes **antes de preparar el commit**.
+Después de **implementar código** o **modificar artefactos críticos**, en el pipeline o con un skill BMAD usado a mano, invocar los advisors Core correspondientes **antes de preparar el commit**.
 
 ### Skills BMAD que disparan advisors
 
 | Skill BMAD | Advisor(s) a invocar después | Phase |
 |---|---|---|
 | `tycon-create-story` / `bmad-edit-prd` → genera/edita una story | `tycon-story-validator` | pre (antes de pasar a implementación) |
-| `bmad-dev-story`, `bmad-quick-dev`, `bmad-agent-dev` → implementan código | `tycon-plugin-dotnet-conventions` + `tycon-plugin-tests-coverage` + `tycon-plugin-security-basics` en paralelo | during/post |
+| `bmad-dev-story`, `bmad-quick-dev`, `bmad-agent-dev`, usados a mano → implementan código | `tycon-plugin-dotnet-conventions` + `tycon-plugin-tests-coverage` + `tycon-plugin-security-basics` en paralelo | during/post |
 | Cualquier merge a `main` — salvo el push que trajo SÓLO tests/docs sin cerrar una story, que `retro-pending.js` exime por los ARCHIVOS del push (nunca por el mensaje) y CUENTA (`--report`); un merge de story la pide siempre, por repo. Desde 2026-09-16 la escribe un script, no un agente; el agente queda a pedido con «retro con modelo» | `scripts/metrics/retro-heartbeat.js` (latido: un segundo, sin modelo) · `tycon-retrospective-capturer` sólo a pedido | post-push (paso 10b) |
 
 ### Cómo invocar los advisors
@@ -228,7 +228,7 @@ No mostrar al dev 3 reportes separados — siempre consolidar.
 El pipeline tiene 3 puntos donde el humano aprueba explícitamente:
 
 1. **Aprobar la story** (después de `tycon-create-story` + `tycon-story-validator`)
-2. **Aprobar el plan de implementación** (después de `bmad-dev-story` en plan mode)
+2. **Aprobar el plan de implementación** (después de «Armar el plan»)
 3. **Aprobar o pedir cambios** (después del reporte consolidado de advisors + `bmad-code-review`)
 
 **El agente NUNCA commitea/pushea sin aprobación explícita en el paso 3**, aunque todos los advisors reporten OK. Ver [`git-commit-conventions.md`](git-commit-conventions.md).
@@ -258,7 +258,7 @@ Los advisors Core skipean automático si no aplican al repo:
 
 ### Skill orchestrator `tycon-pipeline`
 
-Para implementar una story se invoca el skill `tycon-pipeline`: encapsula BMAD → advisors → reporte consolidado → checkpoints HITL, y calcula él mismo qué advisors corren (`pipeline.js mech-check` + `pipeline.js advisors`). Para una story, esta sección describe lo que el skill orquesta y no se coordina a mano (§9.3). El código fuera de una story (p. ej. `bmad-quick-dev` en el carril ad-hoc) sigue la regla general: los revisores Core se invocan a mano antes del commit.
+Para implementar una story se invoca el skill `tycon-pipeline`: encapsula plan → implementación → advisors → reporte consolidado → checkpoints HITL, y calcula él mismo qué advisors corren (`pipeline.js mech-check` + `pipeline.js advisors`). Para una story, esta sección describe lo que el skill orquesta y no se coordina a mano (§9.3). El código fuera de una story (p. ej. `bmad-quick-dev` en el carril ad-hoc) sigue la regla general: los revisores Core se invocan a mano antes del commit.
 
 ---
 
@@ -414,7 +414,7 @@ Wireados en `~/.claude/settings.json` bajo `UserPromptSubmit`, `PostToolUse`, y 
 El user pide "implementemos la `<N.M>`" y el orchestrator (Claude) **va paso a paso manual** en lugar de invocar `Skill(skill="tycon-pipeline")`. Resultado:
 - El preflight del «Arranque» se saltea.
 - «Validar la historia» corre a mano.
-- «Armar el plan», «Aprobar el plan» e «Implementar» (BMAD plan + approve + execute) se reemplazan por edición directa.
+- «Armar el plan», «Aprobar el plan» e «Implementar» se reemplazan por edición directa.
 - **Los revisores NO se corren**, y nadie lo nota hasta el cierre.
 
 Causa raíz: el skill activa solo con invocación explícita; si el agente no la reconoce, todo el flujo se salta. Sin un mecanismo persistente, nada dice "estás mid-impl de una story". Solución implementada: marker + hooks (Reglas 9.1, 9.2).
@@ -425,7 +425,7 @@ La sesión A implementa una task de backend de una story, con build verde y spec
 
 **Sin discovery cross-sesión, la sesión B va a**:
 - Re-ejecutar desde cero desde el «Arranque» hasta «Aprobar el plan».
-- Re-correr «Validar la historia» (el validador) + «Armar el plan» (BMAD plan, Amelia).
+- Re-correr «Validar la historia» (el validador) + «Armar el plan».
 - Re-preguntar al user las decisiones ya tomadas.
 - Re-implementar archivos ya creados en la sesión A → colisión Write sobre archivos no commiteados.
 - Re-escribir código con el spec drift no detectado (columnas asumidas que no existen en el schema real).

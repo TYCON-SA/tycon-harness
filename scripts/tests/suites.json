@@ -2313,6 +2313,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/coordination-fill-gate.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "sin perfil del equipo la coordinadora ordena y no firma. También la corre el ensayo de firmas de Windows (scripts/tests/windows/waiver-probe.js).",
       "raiz": "arnes",
       "ruta": "tests/coordination-without-profile.test.js",
@@ -3115,6 +3120,18 @@
       "__nota": "las entradas a la rama principal sin su CI (scripts/nightly/main-entries/main-entries.js): GitHub es un servidor local que contesta como su API y Azure un az de mentira. No medido no es cero. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/main-entries.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el inventario de adopción del portón de CI (scripts/nightly/gate-adoption/gate-adoption.js): Azure DevOps y GitHub son servidores locales en su modo de varios repos. Los seis estados por repo, la línea sólo con números, las páginas de la lista y el «?» cuando no se lee entera; un repo que no se pudo medir nunca es «sin portón». Lee también el paso de production-watch.yml. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/gate-adoption.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "qué dice el portón de CI que verificó (scripts/ci/tycon-ci-gate.js): el nivel de cada chequeo en la salida y en --json, la línea verde que dice que el servidor no re-ejecutó nada, las exenciones con su razón (también en bloque) y la exención sin razón que avisa hasta EXEMPT_REASON_FROM y frena desde ese día. Repos de juguete, HOME vacía, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/ci-gate-what-it-verified.test.js",
       "requiere": []
     },
     {

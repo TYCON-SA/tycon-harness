@@ -8,13 +8,14 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const {
   OFFICE, PAGE_CODE, NOW, STEPS, byName, run, runMarker, BOARD, all, textOf, sessionFile, STEP_LIB, col, titles, hm,
   IDS, runMarkerFile, BEFORE_PLAN, CLOSED, sessionWith, atIso, KANBAN_BOARD, collectAt, localIsoAt, mixedOffice,
   WALL_ORDER, toyKanban, firmaCard, firmaData, wip, toyHome, toyMachine, storyFile, collectWith, drawKanban, toyRepo,
   parkMachine, openWallPanel, wallTexts, firmaOffice, filesOf, buildOffice, page, collect, buildBoard,
-  createEnvelopes, ownerWaitsOf
+  createEnvelopes, ownerWaitsOf, tinyDom
 } = require('./lib/office-fixtures.js');
 
 test('T6 PanelYTeToca: el panel cuenta el trabajo, las firmas y lo que quedó a medio camino; «te toca» sólo pide firmar', () => {
@@ -970,4 +971,83 @@ test('T15 Office_FirmaSinAprobar_ComoHoy (la foto) @story-8.234 @ac-15: vencida 
   data = await fotoG(m.home, { arbol: null, validarAprobacion: () => ({ ok: true }) });
   comoHoy(data);
   assert.match(data.unreadable.join(' | '), /no pude leer los procesos de la máquina/);
+});
+
+// ── Las líneas de «Te toca» vencen ──────────────────────────────────────────────────────────────────────────────────
+
+const HOUR_MS = 3600 * 1000;
+// un tablero con cada línea y las horas que tiene: `{ 'texto': horas }`
+const tocaBoard = (ages) => ({ pendientes: [], meta: { teToca: Object.keys(ages), teTocaDesde: Object.fromEntries(Object.entries(ages).map(([line, h]) => [line, localIsoAt(NOW - h * HOUR_MS)])) } });
+const oldSignature = { id: 'f1', title: 'la firma vieja', at: NOW - 72 * HOUR_MS };
+
+test('T5 Oficina_LineaVencida_NoSeMuestraYSeAvisa — @story-8.306 @ac-4 @ac-6', async () => {
+  const { pick } = require(path.join(path.dirname(OFFICE), 'office', 'fields.js'));
+  const photo = (ages) => {
+    const board = buildBoard(tocaBoard(ages), { now: NOW, writtenAt: NOW });
+    return { board, data: buildOffice({ wip: wip([]), signatures: [oldSignature], nowMs: NOW, board }).data };
+  };
+  const two = photo({ Vigente: 2, 'Vencida uno': 24, 'Vencida dos': 30 });
+  assert.deepStrictEqual(two.data.meta.teToca, ['Firmar: la firma vieja', 'Vigente'], 'de esta lista leen la pared, el contador y el panel');
+  for (const seen of [JSON.stringify(two.data), JSON.stringify(pick(two.data, '/home/nadie'))]) assert.ok(!seen.includes('Vencida'), 'el texto vencido no está en ninguna parte');
+  const twoNotice = 'el tablero: 2 líneas de «Te toca» vencieron (más de 24 h sin confirmar) y no se muestran: la coordinadora las confirma o las saca con board.js due';
+  const oneNotice = 'el tablero: 1 línea de «Te toca» venció (más de 24 h sin confirmar) y no se muestra: la coordinadora la confirma o la saca con board.js due';
+  assert.strictEqual(two.data.meta.tocaAviso, twoNotice);
+  assert.strictEqual(pick(two.data, '/home/nadie').meta.tocaAviso, twoNotice, 'viaja al sitio: sólo dice la cantidad');
+  assert.deepStrictEqual(two.board.avisos, [], 'no es algo que la oficina no pudo leer');
+  assert.strictEqual(photo({ Vigente: 2, Vencida: 30 }).data.meta.tocaAviso, oneNotice);
+  assert.ok(!('tocaAviso' in photo({ Vigente: 2 }).data.meta), 'sin vencidas no hay aviso');
+  // se ve sin nada más en la página: el bloque que se pliega queda oculto, abierto o no, y el aviso está afuera
+  const html = page(two.data);
+  const summary = html.match(/const RESUMEN_KEY=[\s\S]*?b\.onclick=[^\n]*\n/)[0];
+  const paintNotice = html.match(/function pintarAvisoToca\(.*\n/)[0];
+  const el = html.match(/const el=(\([^\n]*\});\n/)[1];
+  const drawNotice = (notice, saved) => {
+    const { document, byId } = tinyDom();
+    for (const id of ['resumen', 'resumenLinea', 'resumenListas', 'tocaAviso']) byId[id] = document.createElement('div');
+    byId.resumen.classList = { toggle() {} };
+    byId.tocaAviso.hidden = true;
+    document.createTextNode = (textContent) => ({ textContent });
+    new Function('document', 'localStorage', `const el=${el};${summary}${paintNotice};pintarResumen(0,0);pintarAvisoToca(${JSON.stringify(notice)});`)(document, { getItem: () => saved, setItem() {} });
+    return byId;
+  };
+  for (const saved of [null, '1']) {
+    const shown = drawNotice(twoNotice, saved);
+    assert.strictEqual(shown.resumenListas.hidden, true, 'sin nada que mostrar, las listas no se abren');
+    assert.strictEqual(shown.tocaAviso.hidden, false, 'el aviso se ve igual');
+    assert.strictEqual(shown.tocaAviso.textContent, twoNotice);
+  }
+  assert.strictEqual(drawNotice(undefined, null).tocaAviso.hidden, true, 'sin vencidas queda oculto');
+  const between = html.slice(html.indexOf('<div class="resumen" id="resumen">'), html.indexOf('id="resumenListas"'));
+  assert.ok(between.includes('id="tocaAviso"'), 'dentro de #resumen y antes de lo que se pliega');
+  assert.ok(!between.includes('</div>'), 'sin cerrar #resumen antes');
+  assert.match(html, /pintarAvisoToca\(meta&&meta\.tocaAviso\)/, 'cada foto lo vuelve a pintar');
+  // por el camino entero: no entra en «No se pudo leer», que es lo que la coordinadora lee para saber si miró todo
+  const raw = JSON.stringify(tocaBoard({ Vigente: 2, Vencida: 30 }));
+  const data = await collectWith(raw);
+  assert.deepStrictEqual(data.meta.teToca, ['Vigente']);
+  assert.strictEqual(data.meta.tocaAviso, oneNotice);
+  assert.ok(!data.unreadable.some((u) => /Te toca/.test(u)), data.unreadable.join(' | '));
+  const { home, state } = toyHome();
+  fs.mkdirSync(path.join(state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(state, 'coordination', 'tablero.json'), raw);
+  const waits = JSON.parse(run(home, ['--owner-waits', '--now', new Date(NOW).toISOString()]));
+  assert.ok(!waits.problemas.some((p) => /Te toca/.test(p)), waits.problemas.join(' | '));
+});
+
+test('T13 Regresion_FirmasYPreguntasViejas_NoVencen — @story-8.306 @ac-13', () => {
+  const board = buildBoard(tocaBoard({ Vencida: 30 }), { now: NOW, writtenAt: NOW });
+  const asking = wip([{ session: 'Alma', sid: 'a', status: 'waiting_for_input', statusAt: NOW - 72 * HOUR_MS, extra: { kind: 'loose' } }]);
+  const { data } = buildOffice({ wip: asking, signatures: [oldSignature], nowMs: NOW, board });
+  assert.deepStrictEqual(data.meta.teToca, ['Firmar: la firma vieja', 'Contestar: Story Alma (Alma)']);
+  // `sync` sin hechos no escribe, ni con una línea sin fecha ni sin tablero
+  const boardTool = require(path.join(path.dirname(OFFICE), 'office', 'board.js'));
+  const sdir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-toca-'));
+  const file = boardTool.paths(sdir).board;
+  assert.deepStrictEqual(boardTool.sync(sdir, [], { now: NOW, live: [] }).written, false);
+  assert.ok(!fs.existsSync(file), 'sin tablero no lo crea');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ pendientes: [], meta: { teToca: ['Sin fecha'] } }));
+  const before = { text: fs.readFileSync(file, 'utf8'), at: fs.statSync(file).mtimeMs };
+  assert.strictEqual(boardTool.sync(sdir, [], { now: NOW, live: [] }).written, false);
+  assert.deepStrictEqual({ text: fs.readFileSync(file, 'utf8'), at: fs.statSync(file).mtimeMs }, before);
 });

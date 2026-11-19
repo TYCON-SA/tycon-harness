@@ -875,6 +875,9 @@ const FORMAS_EXTRA = [
     forma: /^PR abiertos hace más de \d+ días: (\d+( \(\+\d+ sin fecha legible\))?|\? \((no se pudo consultar|Azure DevOps apagado|GitHub todavía no se lee)\))$/ },
   { inicio: /^Main sin su CI\b/, sin: (l) => `${(/^Main sin su CI \(\d+ h\)/.exec(l) || ['Main sin su CI'])[0]}: ? (no se pudo consultar)`,
     forma: /^Main sin su CI \(\d+ h\): GitHub (\d+|\?) · Azure (\d+|\?) · reglas (al día|cambiaron|\?)$/ },
+  // el inventario de adopción del portón de CI (scripts/nightly/gate-adoption/gate-adoption.js): sólo números
+  { inicio: /^Portón de CI \(repos\)/, sin: () => 'Portón de CI (repos): ?',
+    forma: /^Portón de CI \(repos\): (requerido \d+ · con escape \d+ · pipeline sin política \d+ · sin portón \d+ · no aplica \d+ · no medido \d+|\?)$/ },
 ];
 
 /**
@@ -1359,10 +1362,14 @@ function lineaAprendizajes(archivo, hoy, { url, sitioPaso }) {
   const esperando = n(r.pendientes_total);
   if (r.estado !== 'medido' || nuevas === null || esperando === null) return noMidio;
   const sin = r.sin_redaccion && typeof r.sin_redaccion === 'object' ? r.sin_redaccion : {};
-  const causas = APR_CAUSAS.filter(([k]) => n(sin[k])).map(([, t]) => t);
-  const sinRedactar = APR_CAUSAS.reduce((s, [k]) => s + (n(sin[k]) || 0), 0);
+  // lo que no se pudo redactar espera sin archivo: una noche sin llave no se lee como una noche sin nada. Lo que espera
+  // por el tope no se avisa, es lo normal
+  const espera = r.en_espera_por && typeof r.en_espera_por === 'object' ? r.en_espera_por : {};
+  const cuantas = (k) => (n(sin[k]) || 0) + (k === 'tope' ? 0 : n(espera[k]) || 0);
+  const causas = APR_CAUSAS.filter(([k]) => cuantas(k)).map(([, t]) => t);
+  const sinRedactar = APR_CAUSAS.reduce((s, [k]) => s + cuantas(k), 0);
   const s = nuevas === 1 ? '' : 's';
-  const cabeza = nuevas ? `${nuevas} propuesta${s} nueva${s}${sinRedactar ? ` (${sinRedactar} sin redactar: ${causas.join(', ')})` : ''}` : 'sin propuestas nuevas';
+  const cabeza = `${nuevas ? `${nuevas} propuesta${s} nueva${s}` : 'sin propuestas nuevas'}${sinRedactar ? ` (${sinRedactar} sin redactar: ${causas.join(', ')})` : ''}`;
   const partes = [`aprendizajes: ${cabeza}, ${esperando} esperando decisión`];
   if (r.parcial === true) partes.push('lectura parcial del buzón');
   const calladas = n(r.maquinas_sin_reportar);
@@ -1740,5 +1747,5 @@ if (require.main === module) {
   try { codigo = main(process.argv.slice(2)); } catch (e) { console.error(`🔴 resumen-diario: error inesperado del guion: ${recortar((e && e.message) || String(e), 200)}`); codigo = 1; }
   process.exit(codigo);
 }
-module.exports = { armar, texto, identidad, entregado, comparar, rubrosDependencias, rubrosVigilante, parseArgs, TOPE, TOPE_MENSAJE, NOMBRES_CAUSA,
+module.exports = { armar, texto, identidad, entregado, comparar, rubrosDependencias, rubrosVigilante, parseArgs, seccionExtra, TOPE, TOPE_MENSAJE, NOMBRES_CAUSA,
   lineaDe, lineaEjecuciones, lineaFichas, lineasFichasDelClon, lineasCerrados, fichasDeLaConstancia };

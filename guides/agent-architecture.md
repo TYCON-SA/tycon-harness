@@ -7,7 +7,7 @@
 
 ## TL;DR
 
-El equipo usa BMAD v6.3.0 como framework canónico. Los **advisors** (subagentes custom TYCON) se intercalan con los skills BMAD para aplicar reglas TYCON que BMAD no conoce.
+El equipo usa BMAD v6.3.0 para producir las specs; el pipeline planifica e implementa sin sus skills. Los **advisors** (subagentes custom TYCON) se intercalan en el pipeline para aplicar reglas TYCON que BMAD no conoce.
 
 - **Un solo concepto: `ADVISOR`** con dos tags: `phase` y `severity`
 - **CRITICAL bloquea merge** (no commit local). WARNING/INFO son advisory puro.
@@ -46,8 +46,8 @@ Dónde en el workflow corre:
 
 | Phase | Cuándo corre | Ejemplo |
 |---|---|---|
-| `pre` | Antes de invocar un skill BMAD principal | Validar una story antes de `bmad-dev-story` |
-| `during` / `post` | Después de que BMAD produjo output, antes de commit/merge | Revisar código implementado contra convenciones .NET |
+| `pre` | Antes de implementar | Validar una story antes de «Implementar» |
+| `during` / `post` | Después de implementar, antes de commit/merge | Revisar código implementado contra convenciones .NET |
 | `post-commit` | Después del commit (async, no bloquea nada) | Capturar learnings, trackear warnings ignorados |
 
 ### `severity`
@@ -68,7 +68,7 @@ Qué autoridad tiene su output:
 
 ### 1. `tycon-story-validator` (pre, WARNING/CRITICAL)
 
-**Qué hace:** antes de invocar `bmad-dev-story` (o cualquier skill BMAD que implemente código), valida la story contra Mary+GOLD:
+**Qué hace:** antes de implementar (en el pipeline, o con una skill BMAD usada a mano), valida la story contra Mary+GOLD:
 
 - Frontmatter completo (epic, story, title, status, sprint, priority, approach, depends_on)
 - ACs numerados secuencialmente y agrupados con H3
@@ -304,7 +304,7 @@ equivalencia manda; corregirlo es otra story.
          ↓
 3. [humano aprueba la story]  ← HITL checkpoint #1
          ↓
-4. /bmad-dev-story (plan mode)
+4. «Armar el plan» (lo escribe el orquestador)
          ↓
 5. [humano aprueba el plan]  ← HITL checkpoint #2
          ↓
@@ -423,13 +423,14 @@ Un CRITICAL bloquea merge. Para hacer override:
 
 ### Regla dura: no forkear skills BMAD
 
-Los advisors son **wrappers que corren antes/después** de skills BMAD. Nunca modifican el skill en sí. Eso mantiene compatibilidad con upstream.
+Los advisors corren **antes y después** de implementar. Nunca modifican un skill BMAD. Eso mantiene compatibilidad con upstream.
 
 ### Contratos con BMAD
 
-Cada advisor documenta en su SKILL.md qué outputs de BMAD lee:
+El pipeline planifica e implementa sin skills BMAD, así que una versión nueva no cambia ese camino. Lo que todavía
+depende de BMAD está en [`bmad-contract.md`](maintaining/bmad-contract.md):
 
-- Si `bmad-dev-story` cambia su output (v6.4, v7), el advisor puede romperse
+- Si `bmad-code-review` cambia su output, hay que revisar cómo se consolida
 - Los tests E2E del pipeline en CI detectan esto antes de que llegue a devs
 
 ### Cuándo proponer PR upstream vs subagente custom

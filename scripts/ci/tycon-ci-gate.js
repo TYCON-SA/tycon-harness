@@ -32,11 +32,26 @@
  *   6. **Examen del revisor que cambia** — un cambio a `agents/<revisor>.md` trae el resultado del examen de ese revisor
  *      sobre ese archivo exacto, con puntaje igual o mayor que la línea de base (`controls-bench/reviewer-change-check.js`).
  *
- * Los seis son MECÁNICOS: sin modelo, sin red, sin estado de sesión.
+ * Todos corren sin modelo, sin red y sin estado de sesión, pero no verifican lo mismo. Cada chequeo dice su nivel en la
+ * salida y en `--json` (`verificacion`):
+ *
+ *   · LOS QUE VERIFICA EL SERVIDOR él mismo con el repo: el frontmatter legible (1), el índice de memoria (5) y el
+ *     examen del revisor que cambia (6, recalcula el puntaje).
+ *   · LOS QUE SÓLO MIRAN QUE EXISTA un archivo con el nombre esperado: la evidencia de cierre (2) y la constancia de
+ *     revisores (3). Una evidencia que dice «hola» los pasa.
+ *   · Los que leen un registro con forma válida de que algo corrió («ejecución registrada»): el registro de autoría (4)
+ *     y el de aprobaciones (4b). Que tenga forma válida no prueba que lo escribió el pipeline.
+ *   · «No medido»: un chequeo que esta vez no se hizo (el examen sin su control junto a este guion, el índice local o
+ *     que no se pudo comparar, la regla que no cargó, el chequeo que una exención perdona). Nunca va como verificado.
+ *
+ * El servidor no re-ejecuta nada: no compila, no corre pruebas, no levanta la app. Las exenciones se listan con su
+ * razón, que se exige (`exencion-sin-razon`: avisa hasta EXEMPT_REASON_FROM y frena desde ese día), pero no se firman
+ * acá: el portón no sabe quién las autorizó.
  *
  * ── ADOPCIÓN ────────────────────────────────────────────────────────────────────────────────────
  * Opt-in por repo: meter un paso nuevo en un pipeline de cliente
- * es decisión del dev, no de un script. El snippet de ADO está en `guides/ci-gate.md`.
+ * es decisión del dev, no de un script. El snippet de ADO está en `guides/ci-gate.md`. Dónde no está lo dice cada noche
+ * el inventario de adopción (`scripts/nightly/gate-adoption/gate-adoption.js`).
  *
  * Uso:  node tycon-ci-gate.js [--repo <dir>] [--base <ref>] [--staged] [--json] [--selftest]
  *       `--staged` mira lo que está por commitearse (para el `.githooks/pre-commit` del repo) en
@@ -99,6 +114,80 @@ function escalar(fm, clave) {
 }
 
 const LISTOS = new Set(['review', 'done']);
+
+// Los cuatro niveles de un chequeo (ver la cabecera). Van literales en `--json`.
+const NIVELES = Object.freeze({
+  ARCHIVO: 'archivo-presente',
+  REGISTRO: 'ejecucion-registrada',
+  SERVIDOR: 'verificado-por-el-servidor',
+  NO_MEDIDO: 'no-medido',
+});
+const NIVEL_EN_PALABRAS = {
+  'archivo-presente': 'archivo presente',
+  'ejecucion-registrada': 'ejecución registrada',
+  'verificado-por-el-servidor': 'verificado por el servidor',
+  'no-medido': 'no medido',
+};
+
+// Una exención sin su razón entra avisando: hasta esta fecha avisa y deja pasar; desde esta fecha frena. Son dos semanas
+// desde que el portón empieza a pedirla, para que cada repo complete las razones de sus historias cerradas. Ninguna
+// variable de ambiente la mueve: la fecha se compara con el `hoy` que recibe `revisar`.
+const EXEMPT_REASON_FROM = '2026-12-03';
+const EXENCIONES = ['dod_runtime_exempt', 'advisors_exempt'];
+
+/** La fecha UTC del día, `AAAA-MM-DD`. */
+function hoyUtc() { return new Date().toISOString().slice(0, 10); }
+
+/**
+ * La razón de una exención (`<campo>_reason`), o null si falta, está vacía o es un nulo de YAML (`~`, `null`). `escalar`
+ * es de una línea: con una razón en bloque (`|` o `>`) devolvería el indicador, que no es una razón. Acá se juntan las
+ * líneas indentadas que siguen al indicador, o a la clave sin valor (una razón escrita en la línea de abajo).
+ */
+function razonDe(fm, campo) {
+  const lineas = String(fm).split('\n');
+  const clave = new RegExp(`^${campo}_reason\\s*:`);
+  const i = lineas.findIndex((l) => clave.test(l));
+  if (i === -1) return null;
+  let valor = lineas[i].replace(clave, '').trim();
+  // entre comillas, la razón es lo de adentro; sin comillas, un `#` después de un espacio empieza un comentario
+  const entre = /^(["'])(.*)\1(\s+#.*)?$/.exec(valor);
+  if (entre) return entre[2].trim() || null;
+  valor = valor.replace(/(^|\s)#.*$/, '').trim();
+  if (!valor && /^\s*#/.test(lineas[i].replace(clave, ''))) return null;
+  if (!valor || /^[|>][+-]?\d*$/.test(valor)) {
+    const bloque = [];
+    for (let j = i + 1; j < lineas.length && (/^\s+\S/.test(lineas[j]) || !lineas[j].trim()); j++) {
+      if (lineas[j].trim()) bloque.push(lineas[j].trim());
+    }
+    return bloque.length ? bloque.join(' ') : null;
+  }
+  return !/^(~|null|Null|NULL)$/.test(valor) ? valor : null;
+}
+
+/**
+ * El nivel del examen de revisores: lo verifica el servidor si su control está junto a este guion y pudo comparar; si
+ * no estaba, o no pudo comparar (`examen.error`), no se midió.
+ */
+function nivelDelExamen(controlPresente, examen) {
+  return controlPresente && !(examen && examen.error) ? NIVELES.SERVIDOR : NIVELES.NO_MEDIDO;
+}
+
+/** El nivel de un chequeo que busca un archivo con la clave de la story: sin clave, o exento, no se buscó nada. */
+function nivelDeBusqueda(exenta, clave) { return exenta || !clave ? NIVELES.NO_MEDIDO : NIVELES.ARCHIVO; }
+
+// la razón la escribe quien abre el pedido: antes de imprimirla, que no pueda dar órdenes al registro (`##vso[…]`)
+const textoDeAfuera = (t) => String(t).replace(/#{2,}/g, '#');
+
+/**
+ * El nivel del chequeo del índice de memoria, según lo que devolvió `revisarIndiceDeMemoria`: null si el diff no lo
+ * toca (no se nombra), no medido si el índice es local o no se pudo comparar, y del servidor si se comparó.
+ */
+function nivelDelIndice(mem) {
+  if (!mem) return null;
+  if (mem.engram && mem.engram.estado === 'indice-local') return NIVELES.NO_MEDIDO;
+  if ((mem.avisos || []).some((a) => a.regla === 'indice-de-memoria-no-comparable')) return NIVELES.NO_MEDIDO;
+  return NIVELES.SERVIDOR;
+}
 
 // El árbol vacío de git. Con él se puede pedir un `diff --cached` en un repo que todavía no tiene
 // ningún commit — ahí `HEAD` no existe y la forma corta falla.
@@ -626,13 +715,16 @@ function revisarIndiceDeMemoria(repo, base, staged) {
   return { engram: r };
 }
 
-function revisar({ repo, base, staged }) {
+// `hoy` (`AAAA-MM-DD`): contra él se comparan las fechas de corte escritas en el código. Por defecto, la fecha UTC del día.
+function revisar({ repo, base, staged, hoy = hoyUtc() }) {
   const hallazgos = [];
   const avisos = [];
   const revisadas = [];
   const aprobaciones = [];
+  const verificacion = [];
+  const exenciones = [];
   const { files, error } = mdDelDiff(repo, base, staged);
-  if (error) return { error, hallazgos, revisadas };
+  if (error) return { error, hallazgos, revisadas, verificacion, exenciones };
 
   // Qué es "lo nuevo" y qué es "lo de antes" depende de dónde corre el portón. En el servidor lo
   // nuevo ya es un commit (HEAD) y lo de antes es la rama destino del pull request. En el
@@ -700,9 +792,31 @@ function revisar({ repo, base, staged }) {
     // Perezosa: sólo se recorre el repo si alguna de las dos reglas la necesita.
     let prefStory;
     const prefijoDeLaStory = () => (prefStory !== undefined ? prefStory : (prefStory = prefijoDeEvidencia(idBruto, path.join(repo, rel))));
+    // con el archivo: dos historias pueden declarar el mismo número
+    const nivel = (chequeo, n) => verificacion.push({ story: idBruto, archivo: rel, chequeo, nivel: n });
+
+    // (1) su frontmatter se leyó: lo verificó el servidor
+    nivel('frontmatter-legible', NIVELES.SERVIDOR);
+
+    // Las exenciones, con su razón. Sin razón: avisa hasta EXEMPT_REASON_FROM y frena desde ese día (por `destino`, así
+    // `review → done` en el pre-commit sigue avisando).
+    for (const campo of EXENCIONES) {
+      if (!new RegExp(`^${campo}:\\s*true\\b`, 'm').test(fmNuevo)) continue;
+      const razon = razonDe(fmNuevo, campo);
+      exenciones.push({ story: idBruto, archivo: rel, campo, razon });
+      if (razon) continue;
+      const desde = hoy >= EXEMPT_REASON_FROM;
+      const canal = desde ? destino : avisos;
+      const cuando = !desde ? `Avisa hasta el ${EXEMPT_REASON_FROM} y frena desde ese día`
+        : canal === hallazgos ? 'Frena'
+          : `Desde el ${EXEMPT_REASON_FROM} en el pedido frena; acá (\`review → done\` antes del commit) avisa`;
+      canal.push({ archivo: rel, story: idBruto, regla: 'exencion-sin-razon',
+        mensaje: `declara \`${campo}: true\` sin \`${campo}_reason\`. La exención apaga un chequeo del portón: su razón va escrita en la story, que es lo único que el servidor puede mostrar (no sabe quién la autorizó). ${cuando}.` });
+    }
 
     // (2) evidencia de cierre en el repo
     const exentaDod = /^dod_runtime_exempt:\s*true\b/m.test(fmNuevo);
+    nivel('evidencia-de-cierre', exentaDod ? NIVELES.NO_MEDIDO : nivelDeBusqueda(false, prefijoDeLaStory()));
     if (!exentaDod && !hayEvidencia(repo, 'dod-runtime', idBruto, path.join(repo, rel), prefijoDeLaStory())) {
       // Igual que la constancia de revisores (abajo): sin clave el portón no miró, y la salida no es declarar una
       // exención — que taparía un número repetido — sino arreglar lo que impide calcularla.
@@ -725,7 +839,11 @@ function revisar({ repo, base, staged }) {
       for (const h of apr.hallazgos) if (!(exentaAdv && POR_FALTA.has(h.regla))) destino.push({ archivo: rel, story: idBruto, ...h });
       if (!exentaAdv) for (const a of apr.avisos) avisos.push({ archivo: rel, story: idBruto, ...a });
       aprobaciones.push({ story: idBruto, archivo: rel, ...apr.resumen });
+      // Sin la lib, o sin ningún registro en sus carpetas de corrida, el registro no se leyó.
+      const leido = !!approvalsLib && runDirsDeStory(repo, idBruto, path.join(repo, rel)).some(({ dir }) => approvalsLib.leer(dir).existe);
+      nivel('registro-de-aprobaciones', leido ? NIVELES.REGISTRO : NIVELES.NO_MEDIDO);
     }
+    if (estadoNuevo === 'done') nivel('constancia-de-revisores', exentaAdv ? NIVELES.NO_MEDIDO : nivelDeBusqueda(false, prefijoDeLaStory()));
     if (estadoNuevo === 'done' && !exentaAdv && !hayEvidencia(repo, 'pipeline-runs', idBruto, path.join(repo, rel), prefijoDeLaStory())) {
       const pref = prefijoDeLaStory();
       // Sin clave el portón NO miró (falla cerrado): el hallazgo lo dice, no sólo el aviso por stderr.
@@ -752,6 +870,9 @@ function revisar({ repo, base, staged }) {
     // Vuelve a frenar con TYCON_ROSTER_NAMES=block, y `write-findings` la deja casi imposible de
     // fallar (el firmante de un hallazgo se ELIGE de los revisores que corrieron, no se tipea):
     // cuando eso esté, se revisa si vuelve a frenar o si directamente sobra.
+    // ejecución registrada sólo si alguna carpeta de corrida trae su registro: sin él, el portón no leyó nada
+    const conRegistro = () => runDirsDeStory(repo, idBruto, path.join(repo, rel)).some(({ dir }) => fs.existsSync(path.join(dir, 'review-roster.json')));
+    if (estadoNuevo === 'done') nivel('registro-de-autoria', !exentaAdv && conRegistro() ? NIVELES.REGISTRO : NIVELES.NO_MEDIDO);
     if (estadoNuevo === 'done' && !exentaAdv) {
       // 🔴 El canal lo decide el PROPIO hallazgo, no la regla entera: uno que trae
       // su `tramo` fue validado al escribirse contra el registro de esa corrida, así que si igual
@@ -771,17 +892,20 @@ function revisar({ repo, base, staged }) {
     for (const h of (mem.hallazgos || [])) hallazgos.push(h);
     for (const a of (mem.avisos || [])) avisos.push(a);
   }
+  const nivelMem = nivelDelIndice(mem);
+  if (nivelMem) verificacion.push({ story: null, chequeo: 'indice-de-memoria', nivel: nivelMem });
 
   // (6) el examen del revisor que cambia — a nivel REPO, sólo si el control está junto a este guion
   const examenPath = path.join(__dirname, '..', 'controls-bench', 'reviewer-change-check.js');
-  if (fs.existsSync(examenPath)) {
-    const examen = require(examenPath).checkReviewerChange({ repo, base, staged });
+  const examen = fs.existsSync(examenPath) ? require(examenPath).checkReviewerChange({ repo, base, staged }) : null;
+  verificacion.push({ story: null, chequeo: 'examen-de-revisores', nivel: nivelDelExamen(!!examen, examen) });
+  if (examen) {
     if (examen.error) hallazgos.push({ archivo: 'agents/', regla: 'reviewer-exam-not-comparable', mensaje: `no pude comparar los cambios de revisores: ${examen.error}. Comando: \`node scripts/controls-bench/reviewer-change-check.js check\`` });
     for (const h of examen.hallazgos) hallazgos.push({ archivo: h.archivo, regla: h.regla, mensaje: `${h.mensaje} Comando: \`${h.comando}\`` });
     for (const a of examen.avisos) avisos.push(a);
   }
 
-  return { hallazgos, avisos, revisadas, aprobaciones, archivos: files.length, ...(mem && mem.engram ? { engram: mem.engram } : {}) };
+  return { hallazgos, avisos, revisadas, aprobaciones, verificacion, exenciones, archivos: files.length, ...(mem && mem.engram ? { engram: mem.engram } : {}) };
 }
 
 // ── selftest ────────────────────────────────────────────────────────────────────────────────────
@@ -829,7 +953,7 @@ function selftest() {
   fs.mkdirSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260825'), { recursive: true });
   const completo = revisar({ repo: tmp, base });
 
-  conStory(story('done', 'dod_runtime_exempt: true\nadvisors_exempt: true\n'));
+  conStory(story('done', 'dod_runtime_exempt: true\ndod_runtime_exempt_reason: autoprueba\nadvisors_exempt: true\nadvisors_exempt_reason: autoprueba\n'));
   fs.rmSync(path.join(tmp, '.advisors'), { recursive: true, force: true });
   const exenta = revisar({ repo: tmp, base });
 
@@ -848,7 +972,7 @@ function selftest() {
   const medicion = revisar({ repo: tmp, base });
 
   // ── Regla 4: registro de autoría ────────────────────────────────────────────────────────────
-  conStory(story('done', 'dod_runtime_exempt: true\n'));
+  conStory(story('done', 'dod_runtime_exempt: true\ndod_runtime_exempt_reason: autoprueba\n'));
   const runPost = path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260901120000');
   fs.mkdirSync(runPost, { recursive: true });
   // (a) run POSTERIOR al corte y sin roster → frena
@@ -1241,20 +1365,42 @@ function main() {
   // memoria», «deriva heredada»— se tragaría y el portón imprimiría ✅. Nunca se da por bueno
   // lo que no se pudo medir.
   if (r.engram && r.engram.estado === 'indice-local') console.log(`ℹ️  índice de memoria: ${r.engram.motivo} (no se compara).`);
+  // Lo que dice toda línea verde: el visto bueno es «hay archivos con el nombre correcto y lo que el servidor verificó
+  // él mismo», no «se probó».
+  const SIN_REEJECUTAR = 'El servidor no re-ejecutó nada: no compiló, no corrió pruebas ni levantó la app.';
   if (!r.revisadas.length && !r.hallazgos.length && !(r.avisos || []).length) {
-    console.log(`✅ tycon-ci-gate: ninguna story pasa a review/done en ${dondeMira} (${r.archivos} .md mirados).`);
+    console.log(`✅ tycon-ci-gate: ninguna story pasa a review/done en ${dondeMira} (${r.archivos} .md mirados). ${SIN_REEJECUTAR}`);
     return 0;
   }
+  const verif = r.verificacion || [];
+  const enPalabras = (lista) => lista.map((v) => `${v.chequeo.replace(/-/g, ' ')}: ${NIVEL_EN_PALABRAS[v.nivel] || v.nivel}`).join(' · ');
   if (r.revisadas.length) {
     console.log(`tycon-ci-gate: ${r.revisadas.length} story(s) declarándose lista(s):`);
-    for (const s of r.revisadas) console.log(`   · ${s.story} (${s.de} → ${s.a}) — ${s.archivo}`);
+    for (const s of r.revisadas) {
+      console.log(`   · ${s.story} (${s.de} → ${s.a}) — ${s.archivo}`);
+      const deLaStory = verif.filter((v) => v.archivo === s.archivo);
+      if (deLaStory.length) console.log(`     chequeos: ${enPalabras(deLaStory)}`);
+    }
+  }
+  const delRepo = verif.filter((v) => v.story === null);
+  if (delRepo.length) console.log(`   chequeos del repo: ${enPalabras(delRepo)}`);
+  const exen = r.exenciones || [];
+  if (exen.length) {
+    console.log(`   ${exen.length} exención(es): ${exen.map((e) => `${e.campo} (razón: ${e.razon ? textoDeAfuera(e.razon) : 'FALTA'})`).join(' · ')}`);
+    console.log('   (la razón la escribe la story; el servidor no sabe quién autorizó la exención)');
   }
   for (const a of r.aprobaciones || []) {
     const total = a.manual + a.automatica;
     if (!total) continue;
     console.log(`   aprobaciones de ${a.story}: ${a.manual} ${a.manual === 1 ? 'manual' : 'manuales'} · ${a.automatica} ${a.automatica === 1 ? 'automática' : 'automáticas'}${a.sinNombrar ? ` (${a.sinNombrar} sin nombrar)` : ''}`);
   }
-  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla) && h.regla !== 'sin-registro-de-aprobaciones');
+  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla) && h.regla !== 'sin-registro-de-aprobaciones' && h.regla !== 'exencion-sin-razon');
+  // Su propio bloque: no depende de `review → done` ni de TYCON_REVIEW_A_DONE, sino de una fecha.
+  const avisosDeExencion = (r.avisos || []).filter((h) => h.regla === 'exencion-sin-razon');
+  if (avisosDeExencion.length) {
+    console.error(`\n⚠️  AVISO — exenciones sin su razón (avisa hasta el ${EXEMPT_REASON_FROM}; desde ese día frena):`);
+    for (const h of avisosDeExencion) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
+  }
   const avisosDeAprobaciones = (r.avisos || []).filter((h) => h.regla === 'sin-registro-de-aprobaciones');
   if (avisosDeAprobaciones.length) {
     console.error('\n⚠️  AVISO — ejecuciones sin registro de aprobaciones (no frena):');
@@ -1294,7 +1440,7 @@ function main() {
     console.error(`\n⚠️  AVISO — el índice de memoria de engram (no frena, pero NO es «está bien»):`);
     for (const h of avisosDeMemoria) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
   }
-  if (!r.hallazgos.length) { console.log(r.avisos && r.avisos.length ? '✅ Nada que frene (el aviso de arriba se mide, no frena).' : '✅ Todas traen su evidencia en el repo.'); return 0; }
+  if (!r.hallazgos.length) { console.log(`${r.avisos && r.avisos.length ? '✅ Nada que frene (el aviso de arriba se mide, no frena).' : '✅ Todas traen su evidencia en el repo: los archivos con el nombre correcto y lo que el servidor verificó él mismo (arriba, chequeo por chequeo).'} ${SIN_REEJECUTAR}`); return 0; }
   console.error(`\n❌ tycon-ci-gate — ${r.hallazgos.length} problema(s):`);
   for (const h of r.hallazgos) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
   if (staged) {
@@ -1324,4 +1470,4 @@ if (require.main === module) process.exitCode = main();
 // `mdDelDiff` y `contenidoEn` se exportan para que `cierre-recortado` T12 pueda
 // EJECUTARLAS en vez de comparar sus bytes contra `main`. Comparar texto no distingue una mejora
 // de un deterioro: cualquier cambio sale rojo.
-module.exports = { llaveFrena, revisar, revisarAprobaciones, frontmatter, declaraSerStory, escalar, hayEvidencia, prefijoDeEvidencia, runDirsDeStory, validarRoster, advisoresEnFindings, FUENTES_SINTETICAS, esEvidenciaDeCierre, NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, mdDelDiff, contenidoEn };
+module.exports = { EXEMPT_REASON_FROM, NIVELES, nivelDelExamen, nivelDeBusqueda, nivelDelIndice, razonDe, llaveFrena, revisar, revisarAprobaciones, frontmatter, declaraSerStory, escalar, hayEvidencia, prefijoDeEvidencia, runDirsDeStory, validarRoster, advisoresEnFindings, FUENTES_SINTETICAS, esEvidenciaDeCierre, NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, mdDelDiff, contenidoEn };
