@@ -350,8 +350,9 @@ the coordinator:
 - **Approves on the owner's behalf only with «approved»** on that same plan, with `plan_review.routine_approval` (O4)
   on `review` and `plan-approval` delegated. Without a coordinator, that same «approved» of the review the session
   launches itself approves the routine plan without a click: it is enough in both cases. With `person`, a routine plan
-  is always signed by a person. Rejected or without a verdict, the plan waits; a delicate plan is always signed by the
-  owner. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
+  is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan is signed by the owner, unless
+  the profile delegates `plan-approval:delicada`: then the coordinator approves it with that same «approved» from the
+  review she launched. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
   (with its `files:` or, without `files:`, with the files the story ties to it plus those it ties to no batch),
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
@@ -387,7 +388,11 @@ Then she asks for it through the path that applies:
   given from the coordinator's tab, in the permission window, under the delegated signing rules. It is signed on the
   spot and leaves no pending entry. If delegation does not apply and the coordinator's tab does not ask for permissions,
   the window does not open, because in that tab nobody would say Yes: the signature is refused, and the refusal says how
-  to ask for the click or the «aprobado».
+  to ask for the click or the «aprobado». Besides routine, the profile can delegate the procedural exceptions
+  (`guides/firmas-del-arnes.md`, «Qué excepciones se delegan»). `owner-next` does not give the box for another session's
+  signature that the profile delegates to the coordinator, nor for one her tab cannot answer (the click-only ones):
+  instead it says the route that works, which is the command with `--for-session` for her to sign it, or the click in
+  the tab of the session that asked.
 
 What asks for a password always goes through the terminal: only the owner types the password. Once the owner signed,
 `coordination.js signature-done <id>` deletes the file and the pending entry. An empty folder and no pending entries
@@ -488,8 +493,10 @@ otra sesión?». Among them: setting a check by hand (`marker.js set-check <cont
 --story <s> --trust-ran --for-session <D>`) and accepting a criterion that cannot be tested live (`marker.js
 runtime-waiver <historia> --acs <n> --for-session <D>`). The story is the one of `<D>`'s open run: otherwise the script
 exits without writing. The window opens for the owner in the coordinator's tab (if that tab does not ask for
-permissions, it is refused and approved with their click or «aprobado»). All three are level 2, so none can be delegated to
-her: the harness rejects a profile that tries (`guides/firmas-del-arnes.md`).
+permissions, it is refused and approved with their click or «aprobado»). All three are level 2 and procedural: they are delegated to
+her only if the team profile names them in `approvals.delegated_signing`, and then she signs them without a window and
+they are logged with the «delegación» route. Which exceptions can be delegated and which stay with the owner is in
+`guides/firmas-del-arnes.md`, «Qué excepciones se delegan».
 
 ### Messages from the office
 

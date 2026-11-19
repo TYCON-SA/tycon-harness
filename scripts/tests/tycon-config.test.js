@@ -2500,9 +2500,16 @@ test('niveles T7 TyconConfig_Delegacion_SoloRutina', () => {
   assert.equal(lib().delegaFirma(c.valores, 'plan-approval'), false);
   assert.deepEqual(c.ignoradas.map((x) => x.clave), ['approvals.delegated_signing']);
   assert.match(c.ignoradas[0].motivo, /plan-approval \(nivel 2\)/);
-  c = con({ delegated_signing: ['extra-round', 'control-change', 'runtime-waiver'] });
+  c = con({ delegated_signing: ['extra-round', 'control-change', 'adversarial-skip'] });
   assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round'], 'las de la tabla en 2 o 3 también salen');
-  assert.match(c.ignoradas[0].motivo, /control-change \(nivel 3\).*runtime-waiver \(nivel 2\)/);
+  assert.match(c.ignoradas[0].motivo, /control-change \(nivel 3\).*adversarial-skip \(nivel 2\)/);
+  // las excepciones de trámite se delegan por su nombre, con las dos formas (el plan delicado y el guardado sensible)
+  c = con({ delegated_signing: ['extra-round', 'runtime-waiver', 'lost-run', 'escape:set-autonomous', 'plan-approval:delicada', 'save:sensible'] });
+  assert.deepEqual([c.errores, c.ignoradas], [[], []]);
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round', 'runtime-waiver', 'lost-run', 'escape:set-autonomous', 'plan-approval:delicada', 'save:sensible']);
+  // lo que el perfil sube a 3 vuelve al dueño
+  c = con({ delegated_signing: ['extra-round', 'runtime-waiver'], levels: { 'runtime-waiver': 3 } });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round']);
   c = con({ delegated_signing: 'control-change' });
   assert.equal(c.valores.approvals.delegated_signing, 'off', 'si no queda ninguna, ninguna');
   c = con({ delegated_signing: ['extra-round', 'escape-phrases'] });

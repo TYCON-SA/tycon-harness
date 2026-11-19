@@ -3,7 +3,7 @@
   "files": [
     { "copy": "lib/shell-parse.js", "source": "scripts/lib/shell-parse.js", "reviewed": "e22002da2282016bb23f27885fd7e0d8a15e96c4" },
     { "copy": "lib/repos-root.js", "source": "scripts/lib/repos-root.js", "reviewed": "7b4df4954fd7d3b97b1743eb7f362ac29b543195" },
-    { "copy": "lib/tycon-config.js", "source": "scripts/lib/tycon-config.js", "reviewed": "e2bd1d3256737aae7dc35214a5167e841170768a" },
+    { "copy": "lib/tycon-config.js", "source": "scripts/lib/tycon-config.js", "reviewed": "f640cdd1a8119df44ba61ff6e472f1d8d09b7655" },
     { "copy": "lib/skills-dir.js", "source": "scripts/lib/skills-dir.js", "reviewed": "78fba972b0cfae3f95f71f5335e6642dd2bd25bf" },
     { "copy": "lib/guard-record.js", "source": "scripts/lib/guard-record.js", "reviewed": "9484a3f54142e4d05c0ab0059c229921157cf120" },
     { "copy": "lib/legacy-names.js", "source": "scripts/lib/legacy-names.js", "reviewed": "913e0584d294cdcb08d28ef1b4c825eec320fe84" },

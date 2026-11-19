@@ -813,7 +813,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   Más abajo está **el nivel de cada firma**: una fila por cada firma de la tabla de niveles (`guides/firmas-del-arnes.md`,
   «Los niveles»), con su nivel de fábrica: 1 rutina, 2 excepción, 3 irreversible. El selector empieza en ese nivel, así
   que la organización puede subirlo y nunca bajarlo (`approvals.levels`). Rige el mayor entre la tabla y el perfil.
-  La coordinadora firma sola sólo la rutina: una firma que queda en 2 o más no se ofrece para delegar. Si estaba
+  La pantalla ofrece delegar sólo la rutina: una firma que queda en 2 o más no se ofrece para delegar (las excepciones de
+  trámite se delegan escribiendo su nombre en el perfil; `guides/firmas-del-arnes.md`, «Qué excepciones se delegan»). Si estaba
   delegada, subirla la saca de la delegación en el mismo cambio. Si el perfil la trae delegada igual, el arnés la saca al
   leerlo y lo avisa como ignorada; lo demás se sigue delegando. Volver al nivel de fábrica saca la firma de
   `approvals.levels`. Proponer niveles pide que la capa del equipo exija una versión del arnés que ya sepa leerlos.

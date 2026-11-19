@@ -247,12 +247,18 @@ function enTerminal(e) {
 test('T3 AllowForeignSave_SoloLaPersona @story-8.236 @ac-3', () => {
   const e = escenario('t3');
   e.decidir('git commit -m constancia');
-  for (const opts of [{}, { delegadaPor: 'ses-coord' }, { via: 'avisado' }, { via: 'mensaje' }, { via: 'una-que-no-existe' }]) {
+  for (const opts of [{}, { via: 'avisado' }, { via: 'mensaje' }, { via: 'una-que-no-existe' }]) {
     const r = permitir(e, opts);
     assert.notStrictEqual(r.status, 0, `${JSON.stringify(opts)}: ${r.stdout}${r.stderr}`);
     assert.strictEqual(permiso(e), null, `${JSON.stringify(opts)}: no anota`);
   }
   assert.ok(!adhocLog(e).some((x) => x.kind === 'ADHOC_FOREIGN_SAVE_ALLOWED'));
+  // la coordinadora, por la delegación del perfil (una excepción de trámite): anota, y dice la vía
+  const d = escenario('t3-delegada');
+  d.decidir('git commit -m constancia');
+  const rd = permitir(d, { delegadaPor: 'ses-coord' });
+  assert.strictEqual(rd.status, 0, `${rd.stdout}${rd.stderr}`);
+  assert.strictEqual(permiso(d).via, 'delegacion');
 
   // el pedido cambia entre el cuadro y el anotado: no anota
   const cambia = path.join(tmp('cambia-'), 'cambia.js');
