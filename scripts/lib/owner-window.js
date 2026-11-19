@@ -1618,7 +1618,19 @@ function comoAprobar(firma, reg, casa) {
  * ¿El guion de `firma` (proceso `pid`, argumentos `argv` desde el guion) viene del «Sí» de una ventana? `{ ok, registro }`
  * consume el registro; `{ ok: false, motivo }` no escribe nada.
  */
+/**
+ * El control previo de una excepción de trámite cuyo guion no trae uno propio (signatures.js DELEGABLE_EXCEPTIONS): por
+ * la delegación del perfil no hay más que comprobar, porque las llaves las miró el freno al dejar el pedido; «hecho y
+ * avisado» no la firma nunca. null para las demás firmas: sin control previo, no salen sin una persona.
+ */
+function antesDeTramite(firma) {
+  if (!DELEGABLE_EXCEPTIONS.includes(firma)) return null;
+  return (via, registro) => ((via === 'avisado' || (registro && registro.via === 'avisado'))
+    ? { codigo: 1, motivo: 'esta firma la da una persona, o la coordinadora por la delegación del perfil: «hecho y avisado» no la firma' } : null);
+}
+
 function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, sesion, destino, antes, plataforma = process.platform, gitBash = buscarGitBash, terminal = null } = {}) {
+  antes = antes || antesDeTramite(firma);
   const enWindows = plataforma === 'win32';
   const s = firmaDe(firma);
   // `terminal`: el comando entero de la terminal, cuando el guion lo sabe armar (con su ruta y sus argumentos)
@@ -2050,6 +2062,7 @@ function claveDelPedido({ firma, destino, comando, argv, cwd = process.cwd(), ca
 }
 
 function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir, antes, extra, aprobador, env, escribir, notificar, avisarSinAprobacion, terminal = null } = {}) {
+  antes = antes || antesDeTramite(firma);
   // sin variable de sesión (la terminal del dueño) el guion no tiene sesión propia: la dice --for-session
   if (propia === '_nosession') propia = null;
   const i = argv.indexOf('--for-session');

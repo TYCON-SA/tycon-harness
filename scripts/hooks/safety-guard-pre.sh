@@ -956,7 +956,8 @@ if [[ -n "$_c5_esc" ]]; then
   # que llevar al marker.js de este arnés, no a uno que sólo se llama igual
   # entre las palabras, sólo espacios: un salto de línea o un tab parte el comando en dos para la consola
   # se mira el comando tal como llega, no el limpio: la limpieza borra acentos graves y barras que la consola sí ejecuta
-  _c5_firma="^ *node +([A-Za-z0-9_./~:-]+) +sign-file +allow_dod_evidence_write +[A-Za-z0-9_./~:@%+=,-]+ *\$"
+  # con `--for-session <sesión>` al final la pide la coordinadora para otra sesión, por la delegación del perfil
+  _c5_firma="^ *node +([A-Za-z0-9_./~:-]+) +sign-file +allow_dod_evidence_write +[A-Za-z0-9_./~:@%+=,-]+( +--for-session +[A-Za-z0-9_-]+)? *\$"
   shopt -s nocasematch
   if [[ "$CMD" =~ $_c5_firma ]]; then
     shopt -u nocasematch
