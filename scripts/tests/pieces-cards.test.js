@@ -168,6 +168,10 @@ test('T12 Pieces_IndexListsEveryCardOnce', () => {
   const extra = listed.filter((x) => !all.includes(x));
   assert.ok(all.length >= MIN_CARDS, `los grupos tienen ${all.length} fichas; se esperaban al menos ${MIN_CARDS}`);
   assert.deepEqual({ missing, extra, twice }, { missing: [], extra: [], twice: [] }, 'el índice y las fichas de los grupos no coinciden');
+  // una pieza tiene una sola ficha: el mismo título en dos grupos (o dos veces en uno) es una ficha de más
+  const titles = groups().flatMap((g) => sections(g.text).map((s) => s.title));
+  const repeated = [...new Set(titles.filter((x, i) => titles.indexOf(x) !== i))];
+  assert.deepEqual(repeated, [], `fichas con el mismo título en más de un lugar:\n${repeated.join('\n')}`);
   // la línea de la ficha que nombra los archivos que la acompañan va también en el índice: se buscan por nombre
   for (const g of groups()) {
     for (const s of sections(g.text)) {

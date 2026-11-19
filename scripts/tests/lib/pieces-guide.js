@@ -12,10 +12,14 @@ const path = require('node:path');
 const INDEX = 'guides/piezas-del-arnes.md';
 const GROUPS_DIR = 'guides/pieces';
 
-/** Las rutas relativas del índice y de cada archivo de grupo, el índice primero y los grupos en orden alfabético. */
+/**
+ * Las rutas relativas del índice y de cada archivo de grupo, el índice primero y los grupos en orden alfabético.
+ * Sin grupos falla: una prueba que revisa archivo por archivo pasaría en verde mirando sólo el índice.
+ */
 function piecesFiles(root) {
   const dir = path.join(root, GROUPS_DIR);
   const groups = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort().map((f) => `${GROUPS_DIR}/${f}`) : [];
+  if (!groups.length) throw new Error(`no encontré las fichas de la guía de piezas en ${GROUPS_DIR}/: sin ellas no se mide nada`);
   return [INDEX, ...groups];
 }
 
