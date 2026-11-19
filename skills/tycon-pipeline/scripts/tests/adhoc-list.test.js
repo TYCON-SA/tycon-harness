@@ -1011,7 +1011,7 @@ test('T24 Guias_DicenLaForma — @story-8.316 @ac-18', () => {
   for (const [rel, frases] of [
     ['guides/coordination.md', [/<Nombre>\/<ruta>/, /rama principal del remoto/, /en los dos sentidos/, /no se delega/, /adhoc test --repo/]],
     ['guides/coordination.en.md', [/<Name>\/<path>/, /remote's main branch/, /both\s+ways/, /not delegated/, /adhoc test --repo/]],
-    ['guides/firmas-del-arnes.md', [/<Nombre>\/<ruta>/, /rama principal del remoto/, /en los dos sentidos/, /no se delega/, /adhoc test --repo/]],
+    ['guides/firmas-del-arnes.md', [/<Nombre>\/<ruta>/, /rama principal del remoto/, /en los dos\s+sentidos/, /no se delega/, /adhoc test --repo/]],
   ]) {
     const t = leer(rel);
     for (const re of frases) assert.match(t, re, `${rel}: ${re}`);

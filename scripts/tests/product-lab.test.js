@@ -45,7 +45,7 @@ function huellaDe(raices) {
   return out;
 }
 
-/** Una versión del arnés de juguete: los cuatro guiones, cada uno con el código que se le pase, o ninguno con `null`. */
+/** Una versión del arnés de juguete: los guiones del laboratorio, cada uno con el código que se le pase, o ninguno con `null`. */
 function juguete(guiones = {}) {
   const dir = carpeta();
   const RUTAS = lab.rutasDeComandos(dir);
@@ -54,6 +54,8 @@ function juguete(guiones = {}) {
     freno: 'console.error("freno de juguete");',
     guia: 'console.log("qa-guide --check de juguete");',
     retro: 'console.error("retro-pending de juguete");',
+    arreglo: 'console.error("marker de juguete"); process.exitCode = 2;',
+    edicion: 'console.error("portón de edición de juguete"); process.exitCode = 2;',
   };
   for (const [nombre, ruta] of Object.entries(RUTAS)) {
     const codigo = nombre in guiones ? guiones[nombre] : porDefecto[nombre];
