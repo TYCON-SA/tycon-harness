@@ -1351,7 +1351,14 @@ test('T54 Pedido_SinResponsable_SinAsignadoConMotivo', async () => {
   otra('RR-C', { veredicto: 'arreglo', pedido_motivo: 'plataforma-caida' });
   otra('RR-D', { veredicto: 'arreglo', pedido_motivo: 'sin-confirmar' });
   otra('RR-E', { veredicto: 'arreglo', pedido_motivo: 'sin-configurar' });
-  assert.match(DS.lineaFichas('ejecuciones', path.join(sin.base, 'inbox', 'runs-review'), '2026-10-25'), / · sin asignado 1 · pedido sin crear 3$/);
+  // y el pedido sin crear dice el motivo de cada uno, no sólo cuántos
+  const conMotivo = DS.lineaFichas('ejecuciones', path.join(sin.base, 'inbox', 'runs-review'), '2026-10-25');
+  assert.match(conMotivo, / · sin asignado 1 · pedido sin crear 3 \(rechazado por la plataforma 1, sin confirmar 1, sin configurar 1\)$/, conMotivo);
+  // la constancia acepta el renglón nuevo y el de una noche de antes, sin el paréntesis
+  assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: [conMotivo] }), [conMotivo]);
+  const deAntes = 'fichas de ejecuciones: vivas 4 · nuevas 0 · reaparecidas 0 · resueltas 0 · pedido sin crear 3';
+  assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: [deAntes] }), [deAntes]);
+  assert.strictEqual(DS.fichasDeLaConstancia({ fichas: [`${deAntes} (otro motivo 3)`] }), null);
   // y el del vigilante, con su formato
   const vig = opsConArreglos({ owners: { owners: { default: '<x>@acme.example' } } });
   await cycle.pedirTrabajo({ base: vig.base, fuente: 'vigilante', operations: vig.operations, run: plataforma(() => ({ ok: true, value: { id: 79 } })).run });
