@@ -46,6 +46,18 @@ function esEvidenciaDeCierre(nombre) {
   return f.endsWith('.md') && !NO_ES_EVIDENCIA_DE_CIERRE.some((re) => re.test(f));
 }
 
+/**
+ * ¿La evidencia declara FAIL? Los tres formatos con los que el pipeline escribe un veredicto: `verdict=FAIL` (gate E2E),
+ * `- verdict: FAIL` / `VERDICT: **FAIL**` (narrativas) y `## Verdict global` seguido de FAIL. Un FAIL en prosa no cuenta.
+ * El portón de CI lleva una copia, que `closing-evidence-parity.test.js` compara con ésta.
+ */
+function evidenciaDeclaraFail(content) {
+  if (!content) return false;
+  if (/(^|\n)[ \t]*(?:[-*][ \t]*)?(?:\*\*)?verdict(?:[ \t]+global)?(?:\*\*)?[ \t]*[:=][ \t]*(?:\*\*)?[ \t]*FAIL\b/i.test(content)) return true;
+  if (/##[ \t]*verdict[ \t]+global[ \t]*(?:\r?\n)+[ \t]*(?:\*\*)?FAIL\b/i.test(content)) return true;
+  return false;
+}
+
 /*
  * ── La unión de las tres fuentes, por AC ───────────────────────────────────────
  * Elegir UN archivo de evidencia (el que nombra más criterios) y exigirle que nombre TODOS no sirve: las
@@ -79,4 +91,4 @@ function coberturaDeLaUnion(matriz) {
   return { porAc, cubiertos: new Set(porAc.keys()) };
 }
 
-module.exports = { NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, esEvidenciaDeCierre, coberturaDeLaUnion };
+module.exports = { NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, esEvidenciaDeCierre, evidenciaDeclaraFail, coberturaDeLaUnion };
