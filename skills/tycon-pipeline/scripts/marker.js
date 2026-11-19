@@ -2469,7 +2469,8 @@ function cmdCompleteStep(nRaw, flags) {
     let foto;
     try {
       const repos = so.reposDeLaCorrida({ marker, hermanos: hermanosDeLaCorrida(marker) });
-      foto = repos.length ? so.fotoDelPedido({ repos }) : { codigo: 2, motivo: 'no pude ubicar los repos de la corrida para la foto del pull request (ninguno)' };
+      // con la historia, los controles del privado encuentran el público de la rama que la nombra (save-ok.js)
+      foto = repos.length ? so.fotoDelPedido({ repos, story: resolveStoryPath(marker.storyPath, marker) || null }) : { codigo: 2, motivo: 'no pude ubicar los repos de la corrida para la foto del pull request (ninguno)' };
     } catch (e) {
       foto = { codigo: 2, motivo: `no pude ubicar los repos de la corrida para la foto del pull request (${e.message})` };
     }
