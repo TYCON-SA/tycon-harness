@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 
 const SEGUNDOS_POR_DEFECTO = 20;
+const ESPERA_DE_ENTREGA_MS = 2000;
 
 /** El reloj en segundos: un entero de 1 a 50, escrito sin ceros adelante. Cualquier otro valor da el de siempre. */
 function segundosDelReloj(valor) {
@@ -45,6 +46,15 @@ function salirConDos() {
 }
 
 /**
+ * Le pasa al hilo principal el texto leído y espera que llegue. La entrada estándar no se puede leer dos veces, y un
+ * mensaje de un hilo que se cae enseguida puede perderse: sin el texto, la segunda lectura no vería el comando.
+ */
+function entregarEntrada(puerto, datos, entrada) {
+  puerto.postMessage({ entrada });
+  if (datos && datos.recibido) Atomics.wait(datos.recibido, 0, 0, ESPERA_DE_ENTREGA_MS);
+}
+
+/**
  * Corre `archivo` en un hilo y sale con su veredicto (0 o 2). Si termina de otra forma, otro hilo lee el comando con la
  * red de fallas (`modo: 'net'`); si tampoco contesta, o si se acaba el tiempo, el comando no corre.
  */
@@ -64,11 +74,16 @@ function vigilar({ archivo, archivoRed = archivo, segundos = segundosDelReloj(pr
   const lanzar = (destino, modo, alCaer, extra = {}) => {
     let visto = false;
     const caer = (e) => { if (!visto) { visto = true; alCaer(e); } };
+    const recibido = new Int32Array(new SharedArrayBuffer(4));
     let hilo;
     try {
-      hilo = new Worker(destino, { workerData: { modo, ...(entrada === null ? {} : { entrada }), ...extra } });
+      hilo = new Worker(destino, { workerData: { modo, recibido, ...(entrada === null ? {} : { entrada }), ...extra } });
     } catch (e) { caer(e); return; }
-    hilo.on('message', (m) => { if (m && typeof m.entrada === 'string') entrada = m.entrada; });
+    hilo.on('message', (m) => {
+      if (m && typeof m.entrada === 'string') entrada = m.entrada;
+      Atomics.store(recibido, 0, 1);
+      Atomics.notify(recibido, 0);
+    });
     hilo.on('error', caer);
     hilo.on('exit', (codigo) => {
       if (visto) return;
@@ -85,4 +100,4 @@ function vigilar({ archivo, archivoRed = archivo, segundos = segundosDelReloj(pr
   });
 }
 
-module.exports = { vigilar, segundosDelReloj };
+module.exports = { vigilar, segundosDelReloj, entregarEntrada };

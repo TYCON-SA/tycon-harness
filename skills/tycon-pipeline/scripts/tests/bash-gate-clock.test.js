@@ -33,7 +33,7 @@ if (workerData.modo === 'net') {
   process.exit(String(workerData.entrada).includes('escribe') ? 2 : 0);
 }
 const entrada = fs.readFileSync(0, 'utf8');
-parentPort.postMessage({ entrada });
+require(process.env.CLOCK_LIB).entregarEntrada(parentPort, workerData, entrada);
 if (modo === 'loop') for (;;);
 if (modo === 'regex') /(a+)+$/.test('a'.repeat(60) + 'b');
 if (modo === 'hung') spawnSync('sleep', ['30']);
@@ -134,6 +134,14 @@ test('T3 BashGateClock_AnalysisCrash_UsesTheNet @story-8.308 @ac-3 — un análi
   noDecidio(c.correr('net-crashes', 'ls'), 'red caída');
   noDecidio(c.correr('net-missing', 'ls', { TOY_NET_FILE: path.join(c.dir, 'missing.js') }), 'red sin lanzar');
   assert.match(c.registro(), /FRENÓ POR FALLA/);
+});
+
+test('T3c BashGateClock_CrashRightAfterReading_TheNetSeesTheCommand @story-8.308 @ac-3 — el texto leído llega a la red aunque el hilo caiga enseguida', (t) => {
+  const c = corral(t);
+  for (let n = 0; n < 40; n++) {
+    assert.strictEqual(c.correr('exit-1', 'escribe specs/h.md').status, 2, `exit-1, vuelta ${n}`);
+    assert.strictEqual(c.correr('fatal', 'escribe specs/h.md').status, 2, `fatal, vuelta ${n}`);
+  }
 });
 
 test('T4 BashGateClock_TimeoutEnv_Bounds @story-8.308 @ac-4 — sólo un entero de 1 a 50 cambia el reloj', () => {
