@@ -158,7 +158,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   mano (`qa_guide: auto|off|always`).
 - **I.ii — mutantes**: `run-tests` corre `mutation-check.js` (Jest, Vitest, .NET, pytest, `node --test`, `scoped`)
   sobre lo declarado; frena si NINGÚN mutante murió (otra receta: avisa hasta el 2026-11-18 y frena desde ese día);
-  sobrevivientes → aviso. Escapes (persona): `TYCON_MUTATION_CHECK=off` / `--no-mutation`.
+  sobrevivientes → aviso. Saltearlo pide la firma `escape:no-mutation` (`--no-mutation --reason`; o `TYCON_MUTATION_CHECK=off`).
 - **Modo autónomo Nivel 1 (default ON)**: el Stop-hook `on-stop-dod-gate.js` no deja cerrar el turno con
   un check registrado en rojo (cap 6 iteraciones, no-progreso → escala). Opt-out `--no-autonomous` /
   `TYCON_PIPELINE_NO_AUTONOMOUS=1`; pánico `touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY`. Los checks se

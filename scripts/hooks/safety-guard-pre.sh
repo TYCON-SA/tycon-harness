@@ -105,9 +105,10 @@ _sg_pid=$$
 
 # Fail-open: cualquier error inesperado → exit 0 (no bloquear). Si una firma ya pidió la ventana de permiso, la salida
 # 0 la emite igual: sin ella el comando correría sin que la persona lo apruebe.
-OW_ASK_JSON=""
+OW_ASK_JSON=""; OW_AVISO_JSON=""
 salida_ok() {
-  if [[ -n "$OW_ASK_JSON" ]]; then printf '%s\n' "$OW_ASK_JSON"; fi
+  if [[ -n "$OW_ASK_JSON" ]]; then printf '%s\n' "$OW_ASK_JSON"
+  elif [[ -n "$OW_AVISO_JSON" ]]; then printf '%s\n' "$OW_AVISO_JSON"; fi
   exit 0
 }
 # La salida por error deja su línea en hook-errors.log de la carpeta del estado (tycon_state_dir, la que leen el aviso de
@@ -254,9 +255,9 @@ fi
 # (ask, deny, allow o none), OW_TEXTO, OW_FIRMA, OW_VIA, OW_RELEVO y OW_JSON (lo que se emite para pedir la ventana).
 # Sin con qué consultar, o si la consulta se cae, niega: lo que no se pudo decidir lo firma la persona en su terminal.
 OW_ESCAPES=()
-OW_DECISION=""; OW_TEXTO=""; OW_FIRMA=""; OW_VIA=""; OW_RELEVO=""; OW_JSON=""
+OW_DECISION=""; OW_TEXTO=""; OW_FIRMA=""; OW_VIA=""; OW_RELEVO=""; OW_JSON=""; OW_AVISOS=""
 ow_gate() {
-  OW_DECISION=""; OW_FIRMA="${1:-}"; OW_VIA=""; OW_RELEVO=""; OW_JSON=""
+  OW_DECISION=""; OW_FIRMA="${1:-}"; OW_VIA=""; OW_RELEVO=""; OW_JSON=""; OW_AVISOS=""
   OW_TEXTO="no pude consultar la ventana de permiso. Esta firma se da en tu terminal"
   local lib out k args=()
   lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/owner-window.js" || lib=""
@@ -270,6 +271,7 @@ ow_gate() {
         firma=*) OW_FIRMA="${k#firma=}" ;;
         via=*) OW_VIA="${k#via=}" ;;
         relevo=*) OW_RELEVO="${k#relevo=}" ;;
+        avisos=*) OW_AVISOS="${k#avisos=}" ;;
         json=*) OW_JSON="${k#json=}" ;;
       esac
     done <<< "$out"
@@ -554,7 +556,9 @@ fi
 
 # `TYCON_PROD_LINT=0` ya no apaga la revisión del catálogo de producción (la salida es la emergencia del commit): no se
 # mira, porque escrita no hace nada.
-for _esc in TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_DEEP_REVIEW TYCON_STATUS_GATE; do
+# `TYCON_MUTATION_CHECK` (saltea los mutantes) y `TYCON_STORY_REVIEW` (saltea la revisión de la historia) las apaga un
+# solo valor (`off` sin distinguir mayúsculas, y `0`): frena ése y uno que no se lee; el que no apaga pasa.
+for _esc in TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_DEEP_REVIEW TYCON_STATUS_GATE TYCON_MUTATION_CHECK TYCON_STORY_REVIEW; do
   # el filtro barato primero: sin el nombre de la variable (sin distinguir mayúsculas, por PowerShell) no hay nada que
   # mirar, y las expresiones de abajo no corren sobre un comando largo que no la nombra
   shopt -s nocasematch
@@ -592,6 +596,33 @@ for _esc in TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_DEEP_REVIEW TYCO
     # PowerShell: `${env:NOMBRE}=…` y `[Environment]::SetEnvironmentVariable('NOMBRE', …)` (sin comillas ya)
     _esc_ps2="\\\$\\{env:${_esc_min}\\}[[:space:]]*=([^=]|\$)|setenvironmentvariable\\([[:space:]]*${_esc_min}[[:space:]]*,"
     if [[ "$_esc_sin0" =~ $_esc_asig || "$_esc_sin0" =~ $_esc_decl || "$_esc_sin0" =~ $_esc_ps2 ]]; then _esc_hit=1; fi
+  elif [[ "$_esc" == "TYCON_MUTATION_CHECK" || "$_esc" == "TYCON_STORY_REVIEW" ]]; then
+    # sólo un valor la apaga: se sacan las asignaciones al que no apaga, escrito literal (`=0`, `=1`), y frena la que
+    # pone el que apaga, una que no se lee (con un `$` o una comilla invertida en el valor) o una que suma (`+=`). En
+    # minúsculas, como arriba: el lector de los mutantes no distingue mayúsculas, y PowerShell tampoco en el nombre
+    case "$_esc" in
+      TYCON_MUTATION_CHECK) _esc_min="tycon_mutation_check"; _esc_si="0"; _esc_no="off" ;;
+      *) _esc_min="tycon_story_review"; _esc_si="1"; _esc_no="0" ;;
+    esac
+    _esc_low="$(printf '%s' "$_esc_cmd" | tr '[:upper:]' '[:lower:]')" || _esc_low=""
+    if [[ -z "$_esc_low" ]]; then
+      _esc_sin0=""; _esc_hit=1
+    else
+      _esc_sin0="$(printf '%s' "$_esc_low" | sed -E "s/(^|[^a-z0-9_])${_esc_min}=${_esc_si}([[:space:];)&|]|\$)/\1 \2/g")" || { _esc_sin0=""; _esc_hit=1; }
+      if [[ -z "$_esc_sin0" ]]; then _esc_hit=1; fi
+    fi
+    # la comilla invertida en el valor la borró el paso sin comillas: se mira en el comando como llegó
+    _esc_inv="${_esc}[[:space:]]*\+?=[^[:space:];&|)]*\`"
+    shopt -s nocasematch
+    [[ "$_esc_fuente" =~ $_esc_inv ]] && _esc_hit=1
+    shopt -u nocasematch
+    _esc_val="(${_esc_no}([[:space:];)&|]|\$)|[^[:space:];&|)]*\\\$)"
+    _esc_asig="(^|[^a-z0-9_])${_esc_min}(\+=|=${_esc_val})"
+    tool_is_ps && _esc_asig="(^|[^a-z0-9_])${_esc_min}[[:space:]]*(\+=|=[[:space:]]*${_esc_val})"
+    # sin `=` el valor no se ve (`printf -v`, `read`, `declare -x` sin valor): frena
+    _esc_decl="(^|[^a-z0-9_-])(export|declare|typeset|local|readonly|read|printf|set-item|new-item|set-variable|set-content)[[:space:]][^;&|]*${_esc_min}([^a-z0-9_=]|\$)"
+    _esc_ps2="\\\$\\{env:${_esc_min}\\}[[:space:]]*=|setenvironmentvariable\\([[:space:]]*${_esc_min}[[:space:]]*,"
+    if [[ "$_esc_sin0" =~ $_esc_asig || "$_esc_sin0" =~ $_esc_decl || "$_esc_sin0" =~ $_esc_ps2 ]]; then _esc_hit=1; fi
   else
   # las asignaciones `=1` literales no apagan nada: se sacan antes de buscar las demás
   _esc_sin1="$_esc_cmd"
@@ -621,7 +652,7 @@ ESC_VARIABLE=""; ESC_VALOR=""
 esc_c1_negar() {
   # las del pipeline, sin la receta: el agente no aprende a ponerse la variable
   case "$1" in
-    TYCON_TEST_GATE|DOD_BYPASS|TYCON_NO_DEEP_REVIEW|TYCON_STATUS_GATE) ESC_CARTEL="$OW_TEXTO
+    TYCON_TEST_GATE|DOD_BYPASS|TYCON_NO_DEEP_REVIEW|TYCON_STATUS_GATE|TYCON_MUTATION_CHECK|TYCON_STORY_REVIEW) ESC_CARTEL="$OW_TEXTO
 Esto lo decide la persona, no el agente: lo aprueba ella en la ventana de permiso de la herramienta, o lo corre ella en su terminal.
 Si la historia no se pudo terminar, la salida normal es dejarla como deuda: marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>." ;;
     TYCON_NEW_NAMES) ESC_CARTEL="$OW_TEXTO
@@ -641,6 +672,12 @@ Saltear este freno lo decide la persona, no el agente: se repite el comando con 
     TYCON_STATUS_GATE) block "ESC-C1" \
         "TYCON_STATUS_GATE apaga el freno que no deja pasar una historia a review o done escribiendo el archivo a mano." \
         "El estado lo cambia el orquestador, que corre los controles del cierre: node \"\$HOME/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js\" update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona, en la ventana de permiso." ;;
+    TYCON_MUTATION_CHECK) block "ESC-C1" \
+        "TYCON_MUTATION_CHECK=off saltea el chequeo de mutantes: las pruebas cuentan sin que nadie mire si verifican algo (también si la trae un --env-file)." \
+        "Cerrá el paso sin la variable: el chequeo corre solo. Saltearlo lo decide la persona, con su firma escape:TYCON_MUTATION_CHECK." ;;
+    TYCON_STORY_REVIEW) block "ESC-C1" \
+        "TYCON_STORY_REVIEW=0 saca la revisión de la historia antes del plan (también si la trae un --env-file)." \
+        "Corré la validación sin la variable: la revisión corre sola. Saltearla lo decide la persona, con su firma escape:TYCON_STORY_REVIEW." ;;
     TYCON_NEW_NAMES) block "ESC-C1" \
         "TYCON_NEW_NAMES=0 apaga, al commitear, el freno de nombres reales (clientes, personas, servidores) en lo que se publica." \
         "Reemplazá el nombre por uno inventado, o pedí su excepción en la lista. ¿Sólo la nombrabas en un texto (un heredoc, un -m)? Este freno mira el comando entero: escribí ese texto en un archivo." ;;
@@ -842,7 +879,7 @@ fi
 # terminal. Casos: scripts/tests/owner-window.test.js (la decisión) y scripts/tests/safety-escape.test.js (el freno).
 ow_regla() { # $1 = la firma → la regla con que frena o deja constancia
   case "$1" in
-    escape:TYCON_SAFETY_OFF|escape:TYCON_PROD_LINT|escape:TYCON_NEW_NAMES|escape:TYCON_TEST_GATE|escape:DOD_BYPASS|escape:TYCON_NO_DEEP_REVIEW|escape:TYCON_STATUS_GATE) echo "ESC-C1" ;;
+    escape:TYCON_SAFETY_OFF|escape:TYCON_PROD_LINT|escape:TYCON_NEW_NAMES|escape:TYCON_TEST_GATE|escape:DOD_BYPASS|escape:TYCON_NO_DEEP_REVIEW|escape:TYCON_STATUS_GATE|escape:TYCON_MUTATION_CHECK|escape:TYCON_STORY_REVIEW) echo "ESC-C1" ;;
     escape:cerrar-como-deuda|escape:rojo-esperado-de-la-matriz) echo "ESC-C4" ;;
     plan-approval) echo "ESC-C6" ;;
     control-change|refresh-after-main) echo "ESC-C7" ;;
@@ -908,18 +945,27 @@ if [[ "$_ow_mira" != "1" ]]; then ow_vencer; fi
 if [[ "$_ow_mira" == "1" ]]; then
   [[ -n "$_c3_sid" ]] || { _c3_sid="$(read_field session_id 2>/dev/null)" || _c3_sid=""; }
   ow_gate ${OW_ESCAPES[@]+"${OW_ESCAPES[@]}"}
+  # lo que pasó por el período de aviso deja su constancia con esa vía, decida lo que decida el resto
+  if [[ "$OW_DECISION" != "deny" ]]; then
+    for _ow_e in $OW_AVISOS; do constancia "$(ow_regla "$_ow_e")" escape aviso "" "$_c3_sid" "${_ow_e#escape:}"; done
+  fi
   case "$OW_DECISION" in
     deny) ow_negar ;;
     ask)
       OW_ASK_JSON="$OW_JSON"
       for _ow_e in ${OW_ESCAPES[@]+"${OW_ESCAPES[@]}"}; do
+        [[ " $OW_AVISOS " == *" $_ow_e "* ]] && continue
         _ow_det=""; [[ "$_ow_e" == "escape:rojo-esperado-de-la-matriz" ]] && _ow_det="${_c3_detalle:-}"
         constancia "$(ow_regla "$_ow_e")" escape ventana "" "$_c3_sid" "${_ow_e#escape:}" "" "$_ow_det"
       done ;;
-    # la aprobación explícita de la persona (un click o un «aprobado») queda con su vía: la dio ella, no la delegación
+    # la aprobación explícita de la persona (un click o un «aprobado») queda con su vía: la dio ella, no la delegación.
+    # Lo que pasó por el período de aviso antes de su fecha de corte, con la suya
     allow) _ow_camino=delegacion; case "$OW_VIA" in click|mensaje) _ow_camino="$OW_VIA" ;; esac
-      _ow_det=""; [[ "$OW_FIRMA" == "escape:rojo-esperado-de-la-matriz" ]] && _ow_det="${_c3_detalle:-}"
-      constancia "$(ow_regla "$OW_FIRMA")" escape "$_ow_camino" "$OW_RELEVO" "$_c3_sid" "${OW_FIRMA#escape:}" "" "$_ow_det" ;;
+      OW_AVISO_JSON="$OW_JSON"
+      if [[ "$OW_VIA" != "aviso" ]]; then
+        _ow_det=""; [[ "$OW_FIRMA" == "escape:rojo-esperado-de-la-matriz" ]] && _ow_det="${_c3_detalle:-}"
+        constancia "$(ow_regla "$OW_FIRMA")" escape "$_ow_camino" "$OW_RELEVO" "$_c3_sid" "${OW_FIRMA#escape:}" "" "$_ow_det"
+      fi ;;
     none)
       # la salida de una ejecución perdida que la ventana no reconoce como su firma (otro subcomando): no se firma acá
       if [[ -n "$_c3_perdida" ]]; then

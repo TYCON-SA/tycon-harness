@@ -29,6 +29,8 @@ const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'cont
   'runtime-waiver', 'compare-waiver', 'manual-test', 'browser-test', 'lost-run', 'lost-run:particion', 'adversarial-skip', 'pending-approval', 'adhoc-lane', 'adhoc-lane:sobre-cupo', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno',
   'escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'escape:TYCON_NEW_NAMES', 'escape:TYCON_TEST_GATE',
   'escape:DOD_BYPASS', 'escape:TYCON_NO_DEEP_REVIEW', 'escape:TYCON_STATUS_GATE',
+  // lo que da por buena la evidencia sin verificarla: los mutantes (la variable y la bandera) y la revisión de la historia
+  'escape:TYCON_MUTATION_CHECK', 'escape:TYCON_STORY_REVIEW', 'escape:no-mutation',
   'escape:story-skill-bypass', 'escape:red-control-test-edit', 'escape:set-autonomous', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda',
   'escape:rojo-esperado-de-la-matriz',
   'escape:force-manual', 'escape:trust-ran', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:dod_runtime_exempt',
@@ -229,6 +231,7 @@ const TABLA_DE_NIVELES = [
   ['browser-test:no', 2, ['dev', 'mant']], ['adversarial-skip', 2, ['dev', 'mant']], ['lost-run', 2, ['dev', 'mant']],
   ['escape:force-manual', 2, ['dev', 'mant']], ['escape:trust-ran', 2, ['dev', 'mant']],
   ['escape:TYCON_TEST_GATE', 2, ['dev', 'mant']], ['escape:TYCON_STATUS_GATE', 2, ['dev', 'mant']],
+  ['escape:TYCON_MUTATION_CHECK', 2, ['dev', 'mant']], ['escape:TYCON_STORY_REVIEW', 2, ['dev', 'mant']],
   ['escape:story-skill-bypass', 2, ['dev', 'mant']], ['escape:red-control-test-edit', 2, ['dev', 'mant']], ['escape:set-autonomous', 2, ['dev', 'mant']],
   ['designation-confirm', 2, ['dev', 'mant']], ['designation-set', 2, ['dev', 'mant']], ['designation-withdraw', 2, ['dev', 'mant']],
   ['control-change', 3, ['mant']], ['escape:TYCON_SAFETY_OFF', 3, ['dev', 'mant']], ['escape:TYCON_PROD_LINT', 3, ['dev', 'mant']],
@@ -248,6 +251,7 @@ const CUBRE = {
   'escape:cerrar-como-deuda': ['lost-run'],
   'escape:rojo-esperado-de-la-matriz': ['lost-run'],
   'escape:cambiar-el-estado': ['escape:TYCON_STATUS_GATE'],
+  'escape:no-mutation': ['escape:TYCON_MUTATION_CHECK'],
 };
 
 // niveles T1 Catalogo_TablaDeNiveles
@@ -256,7 +260,7 @@ test('niveles T1 Catalogo_TablaDeNiveles', () => {
   const cat = require(CATALOGO);
   assert.deepStrictEqual(cat.LEVELS.map((l) => [l.id, l.level, [...l.profiles]]), TABLA_DE_NIVELES);
   const cuenta = [1, 2, 3].map((n) => cat.LEVELS.filter((l) => l.level === n).length);
-  assert.deepStrictEqual(cuenta, [9, 21, 6], '9 de rutina (con compare-waiver y lost-run:particion), 21 de excepción (con adhoc-lane:guardado-ajeno y red-control-test-edit), 6 irreversibles');
+  assert.deepStrictEqual(cuenta, [9, 23, 6], '9 de rutina (con compare-waiver y lost-run:particion), 23 de excepción (con adhoc-lane:guardado-ajeno y red-control-test-edit), 6 irreversibles');
   for (const l of cat.LEVELS) assert.ok(typeof l.approves === 'string' && l.approves.trim(), `${l.id}: falta qué aprueba`);
 });
 

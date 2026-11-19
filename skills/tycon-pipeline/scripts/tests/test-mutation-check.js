@@ -723,7 +723,7 @@ test('gate: TYCON_MUTATION_CHECK=off → ni se invoca, y el apagado queda en byp
   let llamadas = 0;
   const r = runMutationGate({
     marker: MARKER_FAKE, opts: [], env: { TYCON_MUTATION_CHECK: 'off' },
-    appendLog: h.appendLog, log: h.log,
+    appendLog: h.appendLog, log: h.log, today: new Date('2099-01-01T00:00:00Z'),
     invokeCheck: () => { llamadas += 1; return { code: 0, result: {} }; },
   });
   assert.equal(llamadas, 0, 'apagado global: el chequeo NI se invoca');
@@ -731,7 +731,13 @@ test('gate: TYCON_MUTATION_CHECK=off → ni se invoca, y el apagado queda en byp
   assert.equal(h.entries['gates.log'].length, 0);
   assert.equal(h.entries['bypass.log'].length, 1, 'el apagado no es silencioso: la noche lo cuenta');
   assert.equal(h.entries['bypass.log'][0].kind, 'MUTATION_CHECK_OFF');
-  assert.equal(h.lines.length, 0, 'y no suma un aviso en la consola');
+  assert.equal(h.lines.length, 0, 'desde la fecha de corte no suma un aviso en la consola (lo pide el freno con la firma)');
+  // antes de la fecha de corte de la lista única de interruptores: el agente lee el aviso, una sola línea, con la fecha
+  const h2 = gateHarness();
+  runMutationGate({ marker: MARKER_FAKE, opts: [], env: { TYCON_MUTATION_CHECK: 'off' }, appendLog: h2.appendLog, log: h2.log,
+    today: new Date('2026-11-01T00:00:00Z'), invokeCheck: () => ({ code: 0, result: {} }) });
+  assert.equal(h2.lines.length, 1);
+  assert.match(h2.lines[0], /esto pide la firma del dueño/);
 });
 
 test('gate: TYCON_MUTATION_CHECK=OFF (mayúsculas) apaga igual, como lo cuenta la noche', async () => {

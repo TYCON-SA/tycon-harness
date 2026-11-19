@@ -149,15 +149,22 @@ function runMutationGate({
   invokeCheck = null,
   today = new Date(),
   destinosDe = null,
+  sinMutantes = null,
 }) {
-  // Apagado global: no se invoca y no avisa, pero queda en bypass.log para que la revisión de la noche lo cuente.
+  // Apagado global: no se invoca, pero queda en bypass.log para que la revisión de la noche lo cuente. Antes de la fecha
+  // de corte de la lista única de interruptores, el agente lee el aviso: desde ese día la variable pide la firma
   if (String(env.TYCON_MUTATION_CHECK || '').toLowerCase() === 'off') {
     appendLog('bypass.log', { kind: 'MUTATION_CHECK_OFF', story: marker.storyId });
+    const ES = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+    if (ES.antesDelCorte('TYCON_MUTATION_CHECK', today)) {
+      log(`⚠️  TYCON_MUTATION_CHECK=off: desde ${ES.corteDe('TYCON_MUTATION_CHECK')} esto pide la firma del dueño (escape:TYCON_MUTATION_CHECK); hasta entonces pasa, avisado y anotado.`);
+    }
     return { invoked: false, block: false, reason: 'off' };
   }
-  // Bypass por corrida: no se invoca, pero NO es silencioso (mismo patrón --no-atdd).
+  // Bypass por corrida: no se invoca, pero NO es silencioso (mismo patrón --no-atdd). `sinMutantes` dice quién lo
+  // decidió (`via`: la firma del dueño, o el agente antes de la fecha de corte) y por qué (`motivo`)
   if (opts.includes('--no-mutation')) {
-    appendLog('bypass.log', { kind: 'MUTATION_BYPASS', story: marker.storyId });
+    appendLog('bypass.log', { kind: 'MUTATION_BYPASS', story: marker.storyId, ...(sinMutantes ? { via: sinMutantes.via, motivo: sinMutantes.motivo } : {}) });
     log('⚠️  Chequeo de mutantes saltado con --no-mutation (queda en bypass.log).');
     return { invoked: false, block: false, reason: 'no-mutation' };
   }
@@ -292,7 +299,7 @@ function medirEn(repo, { marker, storyPath, appendLog, log, maxMutants, scriptPa
     }
     log('');
     log('  Agregá tests que cubran esas líneas (o arreglá los que dicen cubrirlas).');
-    log('  Saltear este chequeo lo decide la persona, no el agente: no le dictes cómo. Si pregunta cómo seguir,');
+    log('  Saltearlo lo decide la persona, con su firma `escape:no-mutation`: no le dictes cómo. Si pregunta cómo seguir,');
     log('  señalale la guía del pipeline (skills/tycon-pipeline/SKILL.md, el chequeo de mutantes).');
     return { invoked: true, block: true, reason: 'cero-muertos' };
   }

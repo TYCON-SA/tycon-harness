@@ -367,7 +367,7 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
 
 /**
  * Lo que la llamada pide decidir a la persona: 'set-autonomous', 'cerrar la ejecución', 'force-manual', 'trust-ran',
- * 'no-deep-review' o null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
+ * 'no-deep-review', la variable que un `--env-file` puede traer ('TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW') o null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
  */
 // Las opciones que llevan valor, por guion: lo que va después de una de ellas es su valor (`--repo $PWD`). Las de
 // `pipeline.js` se leen de su propio lector de opciones (las que consumen `argv[++i]`), así una opción nueva no queda
@@ -488,10 +488,14 @@ function escapeDe(llamada, sid, comando = null) {
     // apagar el pase adversarial al arrancar la historia o al consultar el portón; un `--env-file` delante del guion
     // puede traer `TYCON_NO_DEEP_REVIEW` sin que el comando la muestre
     if (sub === 'start' || sub === 'deep-review-gate') return pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : null;
+    // la revisión de la historia (`validators`, su nombre viejo y su portón): el archivo puede traer TYCON_STORY_REVIEW
+    if (llamada.envFile && ['validators', 'validadores', 'story-review-gate', null].includes(sub)) return 'TYCON_STORY_REVIEW';
     // sin subcomando a la vista: puede ser cualquiera de los dos
     if (sub === null && llamada.dudosa) return pide('--trust-ran') ? 'trust-ran' : pide('--no-deep-review') ? 'no-deep-review' : null;
     return null;
   }
+  // cerrar las pruebas (por su nombre, el del marcador viejo o en una variable): el archivo puede traer TYCON_MUTATION_CHECK
+  if (sub === 'complete-step' && llamada.envFile && (!args[0] || !lit(args[0]) || ['run-tests', 'implement', '4'].includes(args[0].texto))) return 'TYCON_MUTATION_CHECK';
   // `set-check <nombre> <estado> --force-manual`: un control declarado a mano, en cualquier estado
   if (sub === 'set-check') return pide('--force-manual') && !porSuGuion('force-manual') ? 'force-manual' : null;
   // `mark-adversarial-skipped --no-deep-review`: abandonar el pase aunque el portón diga que corre
