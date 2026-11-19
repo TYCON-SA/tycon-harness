@@ -969,7 +969,10 @@ const EJ_CONSTANCIA = 'ejecuciones: ? (la constancia de las 04:00 no se pudo lee
 // el renglón de las fichas de cada fuente: los mismos rubros para todas, con reaparecidas y resueltas medidas en las
 // tres (la noche las controla). La constancia sigue aceptando «? (no medido)»: la de una noche de antes lo traía.
 const FUENTES_FICHAS = ['dependencias', 'vigilante', 'ejecuciones'];
-const RENGLON_FICHAS = /^fichas de (dependencias|vigilante|ejecuciones): (\? \(no se pudieron leer\)|vivas \d+ · nuevas \d+ · reaparecidas (\d+|\? \(no medido\)) · resueltas (\d+|\? \(no medido\))( · ilegibles \d+)?( · sin asignado \d+)?( · pedido sin crear \d+)?)$/;
+// cada motivo de un pedido sin crear, en llano y en el orden del renglón. La constancia de una noche de antes trae el
+// número solo, sin el paréntesis: también vale
+const MOTIVOS_SIN_CREAR = { 'plataforma-caida': 'rechazado por la plataforma', 'sin-confirmar': 'sin confirmar', 'sin-configurar': 'sin configurar' };
+const RENGLON_FICHAS = /^fichas de (dependencias|vigilante|ejecuciones): (\? \(no se pudieron leer\)|vivas \d+ · nuevas \d+ · reaparecidas (\d+|\? \(no medido\)) · resueltas (\d+|\? \(no medido\))( · ilegibles \d+)?( · sin asignado \d+)?( · pedido sin crear \d+( \((rechazado por la plataforma|sin confirmar|sin configurar) \d+(, (rechazado por la plataforma|sin confirmar|sin configurar) \d+){0,2}\))?)?)$/;
 // el renglón de cada ficha que volvió con pedido (hasta tres por fuente) y el que dice cuántas más
 const TOPE_VOLVIO = 3;
 const RENGLON_VOLVIO = /^↩️ volvió en (vigilante|ejecuciones): ([\p{L}\p{N} ()._-]{1,60}) — (avisado en el pedido [A-Za-z0-9._-]{1,20}|el aviso al pedido [A-Za-z0-9._-]{1,20} queda para mañana)$/u;
@@ -1067,9 +1070,14 @@ function lineaFichas(fuente, dirFuente, hoy) {
   // de otra forma después, guarda su motivo viejo y ya no cuenta
   const arreglos = vistas.filter((v) => v.veredicto === 'arreglo' && v.estado !== 'resuelta');
   const sinAsignado = arreglos.filter((v) => ['sin-responsable', 'plataforma-sin-asignado'].includes(v.pedido_motivo)).length;
-  const sinCrear = arreglos.filter((v) => ['plataforma-caida', 'sin-confirmar', 'sin-configurar'].includes(v.pedido_motivo)).length;
+  // el pedido sin crear dice por qué: la plataforma lo rechazó, no se sabe si se creó, o falta dónde crearlo
+  const porMotivo = Object.entries(MOTIVOS_SIN_CREAR)
+    .map(([motivo, llano]) => [llano, arreglos.filter((v) => v.pedido_motivo === motivo).length])
+    .filter(([, n]) => n > 0);
+  const sinCrear = porMotivo.reduce((t, [, n]) => t + n, 0);
+  const detalle = porMotivo.map(([llano, n]) => `${llano} ${n}`).join(', ');
   return `fichas de ${fuente}: vivas ${vivas.length} · nuevas ${nuevas} · reaparecidas ${reaparecidas} · resueltas ${resueltas}`
-    + `${ilegibles ? ` · ilegibles ${ilegibles}` : ''}${sinAsignado ? ` · sin asignado ${sinAsignado}` : ''}${sinCrear ? ` · pedido sin crear ${sinCrear}` : ''}`;
+    + `${ilegibles ? ` · ilegibles ${ilegibles}` : ''}${sinAsignado ? ` · sin asignado ${sinAsignado}` : ''}${sinCrear ? ` · pedido sin crear ${sinCrear} (${detalle})` : ''}`;
 }
 
 /**

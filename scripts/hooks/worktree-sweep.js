@@ -24,6 +24,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *     el borrado va sin `--force`: si git ve algo, se niega él también;
  *   · una carpeta con commits que no están en origin/main (o en la rama por defecto de origin);
  *   · una carpeta bloqueada (`git worktree lock`), una que ya no existe en disco, o la que contiene el cwd de esta sesión;
+ *   · una carpeta con una ejecución abierta adentro (su apertura vigente en gates.log, lib/open-runs.js): borrarla deja
+ *     la ejecución perdida. Si el registro no se puede leer, no se borra ninguna (@story-8.318);
  *   · al arrancar, además: una carpeta usada en las últimas horas (puede ser de otra sesión viva que acaba de mergear y
  *     sigue ahí) y una recién creada sin trabajo propio (su HEAD es justo la punta de origin/main).
  * Al arrancar no se hace `git fetch`: con los refs de origin viejos se borra de menos, nunca de más.
@@ -138,8 +140,16 @@ function branchNamesStory(branch, story) {
  * Evalúa (y, si no es `dryRun`, borra) las carpetas de trabajo de los repos dados.
  * Devuelve { removed: [...], kept: [{ name, why }], branchKept: [...], checked, unreadable: [...] }.
  */
-function sweep({ repos, cwd, story = null, idleMs = 0, now = Date.now(), dryRun = false, fetch = false }) {
+function sweep({ repos, cwd, story = null, idleMs = 0, now = Date.now(), dryRun = false, fetch = false, home = os.homedir() }) {
   const res = { removed: [], kept: [], branchKept: [], checked: 0, unreadable: [] };
+  // las ejecuciones abiertas (gates.log), leídas una vez y sólo si alguna carpeta llega a borrarse (@story-8.318)
+  let abiertas;
+  const abiertaEn = (wt) => {
+    if (abiertas === undefined) abiertas = ejecucionesAbiertas(home);
+    if (!abiertas.ok) return { why: `no pude ver si tiene una ejecución abierta (${abiertas.error})` };
+    const a = abiertas.lib.abiertasDentro(wt, { eventos: abiertas.eventos }).abiertas[0];
+    return a ? { why: `tiene una ejecución abierta (story ${a.story || '?'}, sesión ${a.sesion})` } : null;
+  };
   for (const repo of repos) {
     const list = listWorktrees(repo);
     if (!list) { res.unreadable.push(path.basename(repo)); continue; }
@@ -164,6 +174,9 @@ function sweep({ repos, cwd, story = null, idleMs = 0, now = Date.now(), dryRun 
       const merged = git(repo, ['merge-base', '--is-ancestor', head, target.sha]).ok;
       if (!merged) { res.kept.push({ name, why: `commits sin mergear a ${target.name}` }); continue; }
       if (!story && head === target.sha) continue;
+      // con la carpeta de una ejecución abierta adentro, borrarla deja la ejecución perdida: se cierra antes
+      const abierta = abiertaEn(w.path);
+      if (abierta) { res.kept.push({ name, why: abierta.why }); continue; }
       if (dryRun) { res.removed.push(name); continue; }
       const rm = git(repo, ['worktree', 'remove', w.path]);
       if (!rm.ok) { res.kept.push({ name, why: `git no la quiso borrar (${rm.err.split('\n')[0] || 'sin motivo'})` }); continue; }
@@ -175,6 +188,52 @@ function sweep({ repos, cwd, story = null, idleMs = 0, now = Date.now(), dryRun 
     }
   }
   return res;
+}
+
+/**
+ * Las aperturas y cierres de gates.log: `{ ok: true, lib, eventos }`, o `{ ok: false, error }` si no se pueden leer o
+ * este archivo viaja sin skills/tycon-pipeline/scripts/lib/open-runs.js. Sin saber, ninguna carpeta se borra.
+ */
+function ejecucionesAbiertas(home) {
+  const libPath = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'open-runs.js');
+  let lib;
+  try { lib = require(libPath); } catch (e) {
+    if (!e || e.code !== 'MODULE_NOT_FOUND') return { ok: false, error: `no pude cargar open-runs.js (${(e && (e.code || e.message)) || e})` };
+    lib = lectorSuelto();
+  }
+  try {
+    const r = lib.leerEventos(home);
+    if (!r.ok && !r.ausente) return { ok: false, error: `gates.log: ${r.error}` };
+    return { ok: true, lib, eventos: r.ok ? r.eventos : [] };
+  } catch (e) { return { ok: false, error: e.code || e.message }; }
+}
+
+/**
+ * La lectura de las aperturas cuando este archivo viaja suelto, sin open-runs.js (el banco lo copia solo): los renglones
+ * `run-open` y `run-close` de gates.log, el último de cada sesión, y la carpeta adentro por prefijo de ruta.
+ */
+function lectorSuelto() {
+  return {
+    leerEventos(home) {
+      let raw;
+      try { raw = fs.readFileSync(path.join(stateDirOf(home || os.homedir()), 'gates.log'), 'utf8'); } catch (e) {
+        return e && e.code === 'ENOENT' ? { ok: false, ausente: true } : { ok: false, error: (e && (e.code || e.message)) || 'error' };
+      }
+      const eventos = [];
+      for (const l of raw.split('\n')) {
+        if (!l.includes('"run-open"') && !l.includes('"run-close"')) continue;
+        try { const o = JSON.parse(l); if (o && (o.name === 'run-open' || o.name === 'run-close') && o.sesion) eventos.push(o); } catch (_) { /* otro renglón */ }
+      }
+      return { ok: true, eventos };
+    },
+    abiertasDentro(carpeta, { eventos = [] } = {}) {
+      const ultimo = new Map();
+      for (const e of eventos) ultimo.set(e.sesion, e);
+      const abiertas = [...ultimo.values()].filter((e) => e.name === 'run-open' && e.runDir && inside(e.runDir, carpeta))
+        .map((e) => ({ sesion: e.sesion, story: e.story != null ? String(e.story) : null, runDir: e.runDir }));
+      return { ok: true, abiertas };
+    },
+  };
 }
 
 function names(list) {

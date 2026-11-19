@@ -390,8 +390,11 @@ test('Notice_GithubOneQueryPerRepo_NoChecksRead', () => {
   const r = correr(w, { FAKE_GH_LOG: log });
   assert.strictEqual(r.rc, 0, r.err);
   const rutas = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l).ruta);
-  // una consulta, sin la lista REST ni una lectura de controles por pedido (eso agotaba el tope de 5 s)
-  assert.deepStrictEqual(rutas, ['graphql'], rutas.join(' · '));
+  // una consulta, sin la lista REST ni una lectura de controles por pedido (eso agotaba el tope de 5 s). Por repo, como
+  // mucho las dos lecturas que dicen si tiene análisis de seguridad; los controles y la regla vienen en la consulta
+  const porRepo = rutas.filter((r) => /^repos\/acme\/harness\/code-scanning\/(default-setup|analyses\?per_page=1)$/.test(r));
+  assert.ok(porRepo.length <= 2, rutas.join(' · '));
+  assert.deepStrictEqual(rutas.filter((r) => !porRepo.includes(r)), ['graphql'], rutas.join(' · '));
 });
 
 test('Notice_SlowRead_FinishesInBackground_NextStartUsesIt', async () => {
@@ -941,4 +944,50 @@ test('Requeue_UnreadableRecordIsSaid — la coordinadora se entera si los intent
   fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(Date.now() - 60000).toISOString(), repos, lecturas: { 'acme/harness': { ok: true, value: [] } } }));
   fs.writeFileSync(path.join(dir, 'requeued-prs.json'), '[1,2]');
   assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree }).problem, /no pude leer los pedidos re-encolados/);
+});
+
+// ── el análisis de seguridad: sin él en verde, un pedido no está listo ──────────────────────────────────────────────────
+// La cola de GitHub sólo exige lo que la regla de la rama pide: un pedido con el análisis de seguridad en rojo o sin
+// correr sale CLEAN o UNSTABLE igual. El conector trae `codeScanning` por pedido; el aviso no lo da por listo ni lo
+// re-encola si no está en verde.
+const analisis = (estado, motivo = null) => ({ codeScanning: { estado, motivo } });
+
+test('CodeScanning_GreenIdle_NotReadyWithoutIt — con el análisis en rojo, corriendo, sin correr o ilegible: no pide encolar', () => {
+  const ahora = Date.parse('2026-11-01T22:00:00Z');
+  const previo = { 'acme/harness#1': { estado: 'verde-sin-auto', punta: 'c1', vistoDesde: '2026-11-01T21:00:00Z' } };
+  for (const [estado, motivo] of [['rojo', 'el análisis de seguridad terminó en failure'], ['falta', 'el análisis de seguridad no corrió en la punta'], ['corriendo', null], ['no-se-pudo', 'no pude leer las alertas abiertas del pedido']]) {
+    const [t] = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(1, analisis(estado, motivo))] } }, previo, ahora, 10).trabados;
+    assert.ok(t, estado);
+    assert.match(t.linea, /pedido 1 \(harness\) con los controles requeridos en verde hace 1 h, pero no está listo: /, estado);
+    assert.match(t.linea, motivo ? new RegExp(motivo) : /el análisis de seguridad está corriendo/, estado);
+    assert.doesNotMatch(t.linea, /gh pr merge|encolalo con/, `${estado}: no da el comando para encolarlo`);
+  }
+  // verde, sin análisis en el repo, o una plataforma que no lo trae: lo de siempre
+  for (const o of [analisis('verde'), analisis('no-aplica'), {}]) {
+    const [t] = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(1, o)] } }, previo, ahora, 10).trabados;
+    assert.match(t.linea, /listo y sin auto-merge hace 1 h, fuera de la cola: nadie lo va a mergear — encolalo con gh pr merge 1/, JSON.stringify(o));
+  }
+});
+
+test('CodeScanning_Requeue_NotWithoutIt — no se re-encola sin el análisis en verde, y dice por qué', () => {
+  const r = SPN().paraReencolar([ghRepo], leidasDe(listo(7, analisis('falta', 'el análisis de seguridad no corrió en la punta'))), {});
+  assert.deepStrictEqual(r.encolar, []);
+  assert.match(r.esperan[0].linea, /no lo re-encolo porque su análisis de seguridad no está en verde \(el análisis de seguridad no corrió en la punta\)/);
+  assert.strictEqual(SPN().paraReencolar([ghRepo], leidasDe(listo(7, analisis('verde'))), {}).encolar.length, 1, 'en verde, se re-encola');
+});
+
+test('CodeScanning_RuleNotRequired_OnlyWithAnAffectedPr — la regla que no lo exige se dice una vez por repo, sólo con un pedido afectado', () => {
+  const sin = { codeScanningRequired: false, baseBranch: 'main' };
+  const lineas = SPN().reglaSinAnalisis([ghRepo], { 'acme/harness': { ok: true, value: [verde(2, { ...sin, ...analisis('falta', 'no corrió') }), verde(1, { ...sin, ...analisis('rojo', 'en rojo') }), verde(3, { ...sin, ...analisis('verde') })] } });
+  assert.strictEqual(lineas.length, 1);
+  assert.match(lineas[0], /harness: la regla de main no exige el análisis de seguridad, así que la cola deja entrar un pedido con él en rojo o sin correr \(hoy: 1, 2\)\. Exigirlo cambia las reglas del repo: lo decide el dueño\./);
+  // todos en verde, sin mirar, borradores o sin análisis en el repo: no hay nada nuevo que decir en cada turno
+  for (const o of [analisis('verde'), analisis('sin-mirar'), { ...analisis('falta'), draft: true }, analisis('no-aplica'), {}]) {
+    assert.deepStrictEqual(SPN().reglaSinAnalisis([ghRepo], { 'acme/harness': { ok: true, value: [verde(1, { ...sin, ...o })] } }), [], JSON.stringify(o));
+  }
+  // la regla lo exige, o no se supo: nada
+  for (const v of [true, null, undefined]) {
+    assert.deepStrictEqual(SPN().reglaSinAnalisis([ghRepo], { 'acme/harness': { ok: true, value: [verde(1, { codeScanningRequired: v, ...analisis('falta') })] } }), [], String(v));
+  }
+  assert.deepStrictEqual(SPN().reglaSinAnalisis([ghRepo], { 'acme/harness': { ok: false } }), []);
 });

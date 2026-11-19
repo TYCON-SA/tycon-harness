@@ -1640,6 +1640,37 @@ test('T3 ScopedByRepo_NamesUnknown_RunsAll @story-8.302 @ac-6 — sin saber qué
   assert.match(r2.stdout, /scripts\/lib\/pieza\.js: no sé qué cambió adentro \(touched\.json no trae la base\): corren las 40 suites que la nombran/);
 });
 
+test('T3b ScopedByRepo_MergedTree_ReadsTheBaseOfTheRepoThatHasTheFile — en el árbol armado (`bases`, una por repo) lee el cambio contra la base del repo que tiene el archivo', () => {
+  // 🔴 mutación: leer sólo `touched.base` (lo que hacía antes) → sin base, corren las 40; tomar la primera base sin mirar
+  //    en qué repo está el archivo → «no sé» contra el repo que no lo tiene, corren las 40; aceptar el archivo en los dos
+  //    repos → se compara contra una base adivinada.
+  const l = piezaLab(40);
+  const otro = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-json-privado-'));
+  gitLab(otro, 'init', '-q');
+  fs.writeFileSync(path.join(otro, 'LEEME'), 'x\n');
+  gitLab(otro, 'add', '-A');
+  gitLab(otro, 'commit', '-qm', 'base');
+  const basePriv = { repo: otro, ref: gitLab(otro, 'rev-parse', 'HEAD'), source: 'la prueba' };
+  const basePub = { repo: l.repo, ref: l.base, source: 'la prueba' };
+  const arbol = (bases) => ({ known: true, files: ['scripts/lib/pieza.js'], bases });
+  const r = runScopedByRepo(l, { touched: arbol([basePriv, basePub]) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.resumen.corridas, 3, JSON.stringify(r.resumen.suites));
+  assert.match(r.stdout, /scripts\/lib\/pieza\.js: corrieron 3 de las 40 suites que la nombran/);
+  assert.equal(r.resumen.seleccion.bases.length, 2);
+  // el archivo en los dos repos: no se adivina, corren las 40 con el motivo
+  fs.mkdirSync(path.join(otro, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(otro, 'scripts', 'lib', 'pieza.js'), PIEZA);
+  const dos = runScopedByRepo(l, { touched: arbol([basePriv, basePub]) });
+  assert.equal(dos.resumen.corridas, 40);
+  assert.match(dos.stdout, /pieza\.js está en 2 de los repos del árbol: no sé contra qué base comparar/);
+  // en ninguno: tampoco
+  fs.rmSync(path.join(otro, 'scripts'), { recursive: true, force: true });
+  const sinArchivo = runScopedByRepo(l, { touched: arbol([basePriv]) });
+  assert.equal(sinArchivo.resumen.corridas, 40);
+  assert.match(sinArchivo.stdout, /no está en ningún repo de las bases de touched\.json/);
+});
+
 test('T4 ScopedByRepo_OtherTouchedOrStorySuite_StillRuns @story-8.302 @ac-5 @ac-10 — la que nombra otro archivo tocado, la tocada y la repetida corren aunque nombren la pieza', () => {
   // 🔴 mutación: aplicar la cercanía a toda suite que nombra la pieza → s5 (nombra otro.js), s6 (tocada) o s7 (repetida)
   //    quedan diferidas.
