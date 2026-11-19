@@ -1074,10 +1074,33 @@ function hourOfNote(d) {
     ...(d.waitingFor ? { waitingFor: String(d.waitingFor), waitingSince: Number.isFinite(since) ? since : null } : {}),
   };
 }
+// una espera que ya empieza diciéndolo («espera a main (main-1)») no lo dice dos veces
+const waitText = (w) => (/^espera\b/i.test(String(w)) ? String(w) : `espera ${w}`);
 const waitingEnd = (d) => {
   const since = Date.parse(d.waitingSince);
-  return `espera ${d.waitingFor}${Number.isFinite(since) ? ` desde las ${hhmm(since)}` : ''}`;
+  return `${waitText(d.waitingFor)}${Number.isFinite(since) ? ` desde las ${hhmm(since)}` : ''}`;
 };
+
+/**
+ * Las sesiones que tomaron el arreglo de un registro de main roto abierto (`<estado>/main-check/*.json`, que escribe
+ * skills/tycon-pipeline/scripts/lib/main-check.js `fix`), con sus ids. Se lee sin cargar ese guion; un archivo que no se
+ * deja leer se salta (lo dice el aviso del arranque).
+ */
+function mainFixers(sdir) {
+  const out = new Map();
+  let files = [];
+  try { files = fs.readdirSync(path.join(sdir, 'main-check')).filter((f) => f.endsWith('.json')); } catch { return out; }
+  for (const f of files) {
+    let s;
+    try { s = JSON.parse(fs.readFileSync(path.join(sdir, 'main-check', f), 'utf8')); } catch { continue; }
+    for (const r of Array.isArray(s && s.broken) ? s.broken : []) {
+      if (!r || r.closed || !r.fix || !r.fix.session || !r.id) continue;
+      const sid = String(r.fix.session);
+      out.set(sid, [...(out.get(sid) || []), String(r.id)]);
+    }
+  }
+  return out;
+}
 
 // Qué hace una sesión según un archivo que tocó: el repo, y la rama si no es la principal o la primera carpeta dentro del
 // repo si lo es; la story, de una rama `story/<id>…` o de un archivo `specs/story-<id>-…`; `root`, la raíz del repo o
@@ -1616,6 +1639,9 @@ function buildWip(opts = {}) {
   const testSids = testSessionsOf(sessions, files, () => (opts.processes !== undefined ? opts.processes : require(path.join(ROOT, 'scripts', 'lib', 'owner-window.js')).leerArbol()));
   const notes = rowSids.map((sid, i) => (testSids.has(String(sid)) ? '' : stateNote(extra[i], details[i], files.get(String(sid)))));
   rows.forEach((r, i) => { const n = promiseNote(extra[i], nowMs); if (n) r.promise = n; });
+  // la sesión que tomó el arreglo de main lo dice en su fila: es uno solo para todas las que esperan
+  const fixers = mainFixers(sdir);
+  rows.forEach((r, i) => { const ids = fixers.get(String(rowSids[i])); if (ids) r.state = `${r.state} · arregla main (${ids.join(', ')})`; });
   // la libre que espera algo: /office la pone en «Tu firma» y /wip lo dice igual
   const freeNotes = new Map(free.map((name, i) => {
     if (testSids.has(String(freeSids[i]))) return [name, 'sesión de prueba'];

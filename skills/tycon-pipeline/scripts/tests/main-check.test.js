@@ -531,3 +531,121 @@ test('MB1 Broken_OneRecord_JoinsAndExtends @story-8.294 @ac-9 — tres corridas,
   assert.equal(st.broken.length, 2);
   assert.equal(st.broken[1].closed, null);
 });
+
+// ── T12-T15: el tablero, la espera de fondo, el arreglo y el aviso ───────────────────────────────────────────────────
+
+const BOARD = path.resolve(SCRIPTS, '..', '..', '..', 'scripts', 'tools', 'office', 'board.js');
+const NOTICE = path.resolve(SCRIPTS, '..', '..', '..', 'scripts', 'hooks', 'bench-notice.js');
+const filas = (l) => {
+  const f = path.join(l.home, '.claude', '.tycon-pipeline', 'coordination', 'tablero.json');
+  return fs.existsSync(f) ? (leer(f).pendientes || []) : null;
+};
+/** `broken.join` de la sesión `sesion` con `suites` (rutas), en otro proceso, con el ambiente del laboratorio. */
+function unir(l, sesion, suites, extra = {}) {
+  return conLib(l, `const r = mc.broken.join({ tree: ${JSON.stringify(l.repo)}, sha: ${JSON.stringify(l.base)}, suites: ${JSON.stringify(suites.map((ruta) => ({ ruta, raiz: 'arnes', casos: ['✖ x'] })))}, session: ${JSON.stringify(sesion)} }); process.stdout.write(JSON.stringify({ id: r.record.id, fila: r.record.fila || null, tablero: r.board || null }));`, { CLAUDE_CODE_SESSION_ID: sesion, ...extra });
+}
+/** `wait` por la biblioteca: la memoria la da la prueba, no la máquina. */
+function esperar(l, id, { pct = 90, interval = 0, max = 60 } = {}) {
+  const r = conLib(l, `const r = mc.wait({ repo: ${JSON.stringify(l.repo)}, id: ${JSON.stringify(id)}, interval: ${interval}, max: ${max}, readMemory: () => ({ pct: ${pct} }) }); process.stdout.write(r.line + '\\n'); process.exitCode = r.code;`);
+  return { status: r.status, out: `${r.stdout}\n${r.stderr}` };
+}
+
+test('MB2 Board_OneRowPerId_OnlyWithCoordinator @story-8.294 @ac-11 — con coordinadora, una fila por id que cambia su título al ampliarse; sin coordinadora, el tablero no se toca', () => {
+  // 🔴 mutación: una fila por corrida; buscar la fila por su título (la de main-2 pisaría la cerrada de main-1); escribir
+  //    el tablero sin coordinadora.
+  const l = lab();
+  const con = { TYCON_SUITE_TURN: '1' };
+  const a1 = JSON.parse(unir(l, 's1', [A], con).stdout);
+  assert.equal(a1.id, 'main-1');
+  assert.match(String(a1.fila), /^T-\d+$/, JSON.stringify(a1));
+  assert.equal(JSON.parse(unir(l, 's2', [A], con).stdout).fila, a1.fila);
+  let f = filas(l);
+  assert.equal(f.length, 1, JSON.stringify(f));
+  assert.equal(f[0].estado, 'riesgo');
+  assert.match(f[0].titulo, /^Arreglar main en mc-repo-\w+ \(main-1\): a\.test\.sh$/);
+  unir(l, 's3', [A, C], con);
+  f = filas(l);
+  assert.equal(f.length, 1);
+  assert.match(f[0].titulo, /\(main-1\): a\.test\.sh, c\.test\.sh$/, 'el título no cambió al ampliarse');
+  // main pasa: el registro y su fila se cierran; un rojo nuevo con las mismas suites abre main-2 con otra fila
+  arreglarMain(l, ['a', 'c']);
+  assert.equal(aplicar(l, resumen(l, [[A, ['a-1']], [C, ['c-1']]]), con).status, 1);
+  f = filas(l);
+  assert.equal(f[0].estado, 'hecho', 'la fila no se cerró con main verde');
+  const a2 = JSON.parse(unir(l, 's4', [A, C], con).stdout);
+  assert.equal(a2.id, 'main-2');
+  assert.notEqual(a2.fila, a1.fila);
+  f = filas(l);
+  assert.equal(f.length, 2);
+  assert.equal(f.find((x) => x.id === a1.fila).estado, 'hecho', 'la fila cerrada de main-1 se volvió a abrir');
+  assert.match(f.find((x) => x.id === a2.fila).titulo, /\(main-2\)/);
+  // sin coordinadora: nada
+  const sin = lab();
+  assert.equal(JSON.parse(unir(sin, 's1', [A], { TYCON_SUITE_TURN: '0' }).stdout).fila, null);
+  assert.equal(filas(sin), null, 'escribió el tablero sin coordinadora');
+});
+
+test('MB3 Wait_PollsWithoutMeasuring_ResumesOnGreen @story-8.294 @ac-12 — sin punta nueva no mide; con la punta que arregla todo cierra, aun con cuatro suites y con el árbol en la punta', () => {
+  // 🔴 mutación: medir en cada vuelta; cortar en el tope de 3 del portón (el registro de cuatro no cierra nunca); usar
+  //    el atajo del árbol en la punta (toma el rojo de la historia por el de main).
+  let l = lab();
+  unir(l, 's1', [A, B, C, S]);
+  limpiarCorridas(l);
+  let r = esperar(l, 'main-1', { max: 0 });
+  assert.equal(r.status, 3, r.out);
+  assert.match(r.out, /main sigue roto \(main-1\)/);
+  assert.ok(corridas(l).every((c) => !c.includes('--main-check')), `midió sin punta nueva:\n${corridas(l).join('\n')}`);
+  const nuevo = arreglarMain(l, ['a', 'c', 's']);
+  r = esperar(l, 'main-1');
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, new RegExp(`main pasó: ${nuevo}; traé main y repetí el portón`));
+  assert.equal(estadoDe(l).broken[0].closedSha, nuevo);
+  // el árbol de la sesión ya en la punta y limpio: igual mide en la copia
+  l = lab({ conCambio: false });
+  unir(l, 's1', [A]);
+  arreglarMain(l, ['a']);
+  git(l.repo, 'fetch', '-q', 'origin');
+  git(l.repo, 'checkout', '-q', '--detach', 'origin/main');
+  r = esperar(l, 'main-1');
+  assert.equal(r.status, 0, r.out);
+});
+
+test('MB4 Wait_Timeout_LowMemory_DeadSession @story-8.294 @ac-12 — al tope sale 3 y la espera sigue; con poca memoria posterga; sin registro sale 2; status dice si main pasó', () => {
+  const l = lab();
+  unir(l, 's1', [A]);
+  arreglarMain(l, ['a']);
+  limpiarCorridas(l);
+  let r = esperar(l, 'main-1', { pct: 1, max: 0 });
+  assert.equal(r.status, 3, r.out);
+  assert.match(r.out, /memoria libre 1 %, debajo del piso de \d+ %: postergo la medición/);
+  assert.ok(corridas(l).every((c) => !c.includes('--main-check')), 'midió con la memoria debajo del piso');
+  assert.equal(estadoDe(l).broken[0].closed, null);
+  assert.equal(esperar(l, 'main-9').status, 2);
+  // la sesión que esperaba ya no está: status dice si main pasó, sin correr nada
+  assert.match(spawnSync(process.execPath, [LIB, 'status', '--repo', l.repo], { encoding: 'utf8', env: entorno(l) }).stdout, /registro main-1 abierto/);
+  assert.equal(esperar(l, 'main-1').status, 0);
+  assert.match(spawnSync(process.execPath, [LIB, 'status', '--repo', l.repo], { encoding: 'utf8', env: entorno(l) }).stdout, /registro main-1 cerrado a las \d\d:\d\d: main pasó/);
+});
+
+test('MB5 Notice_OfficeWip_Fix_OpenAndClose @story-8.294 @ac-13 @ac-15 — el arreglo es uno solo; el aviso de arranque lo dice mientras está abierto, y deja de salir al cerrarse', () => {
+  // 🔴 mutación: un segundo fix que pisa al primero; un aviso que sigue saliendo con el registro cerrado.
+  const l = lab();
+  unir(l, 's1', [A]);
+  unir(l, 's2', [A]);
+  const fix = (sesion, extra = []) => spawnSync(process.execPath, [LIB, 'fix', '--repo', l.repo, '--id', 'main-1', '--session', sesion, ...extra], { encoding: 'utf8', env: entorno(l) });
+  let f = fix('s1', ['--pr', '12']);
+  assert.equal(f.status, 0, f.stderr);
+  f = fix('s2');
+  assert.equal(f.status, 1);
+  assert.match(`${f.stdout}${f.stderr}`, /el arreglo de main-1 ya lo tiene s1 \(pedido #12\)/);
+  assert.equal(estadoDe(l).broken[0].fix.session, 's1');
+  assert.equal(spawnSync(process.execPath, [LIB, 'fix', '--repo', l.repo, '--id', 'main-9', '--session', 's1'], { encoding: 'utf8', env: entorno(l) }).status, 2);
+  const aviso = () => spawnSync(process.execPath, [NOTICE], { encoding: 'utf8', env: entorno(l, { TYCON_BENCH_DIR: tmp('mc-banco-') }) }).stdout;
+  assert.match(aviso(), /main roto en mc-repo-\w+ desde \d\d:\d\d \(main-1\): a\.test\.sh; esperan 2 sesiones; arreglo: pedido #12/);
+  arreglarMain(l, ['a']);
+  assert.equal(esperar(l, 'main-1').status, 0);
+  assert.doesNotMatch(aviso(), /main roto en/);
+  // un archivo del registro que no se deja leer se dice: no medido no es «sin main roto»
+  fs.writeFileSync(path.join(l.home, '.claude', '.tycon-pipeline', 'main-check', 'roto-1234.json'), '{ no es json');
+  assert.match(aviso(), /main roto: no pude leer .*roto-1234\.json.*no medido/);
+});

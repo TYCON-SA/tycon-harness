@@ -44,6 +44,8 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  *   La espera de fondo (`wait`, abajo): sale 0 cuando main pasó, 3 pasado su tope, 2 sin ese registro.
  *       node main-check.js branch-check --repo <repo> --id <id>
  *   Dice si main ya pasó y esta rama no lo trae; si no, no imprime nada. Sale 0.
+ *       node main-check.js fix --repo <repo> --id <id> --session <sesión> [--pr <n>]
+ *   Anota quién arregla main (`fix`, abajo): sale 0; 1 si ya lo tiene otra sesión o el registro se cerró; 2 sin él.
  */
 const crypto = require('crypto');
 const fs = require('fs');
@@ -398,7 +400,11 @@ function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFA
         return closeIfGreen(state, sha);
       });
       if (broke) lines.push(`main-check: ${broke}`);
-      if (out) lines.push(`main-check: main pasó: ${sha.slice(0, 10)} — el registro ${out.id} se cierra`);
+      if (out) {
+        lines.push(`main-check: main pasó: ${sha.slice(0, 10)} — el registro ${out.id} se cierra`);
+        const fila = cerrarFila(out, home);
+        if (fila) lines.push(fila);
+      }
       for (const [ruta, r] of Object.entries(measured)) results[ruta] = { ...r, at: new Date().toISOString(), session: sid, cached: false };
     } catch (e) {
       lines.push(`main-check: medí main pero no pude guardar el resultado (${e.message}): la próxima corrida vuelve a medir`);
@@ -427,6 +433,55 @@ function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFA
  * un sha distinto (la punta medida ahora) mueve el del registro. Un rojo después de uno cerrado abre otro. Devuelve el
  * registro y, si lo hubo, el aviso del candado roto.
  */
+// ── el tablero de la oficina ────────────────────────────────────────────────────────────────────────────────────────
+
+const ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const BOARD = path.join(ROOT, 'scripts', 'tools', 'office', 'board.js');
+const boardStateDir = (home) => require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(home || os.homedir());
+const errLine = (e) => String((e && e.message) || e).split('\n')[0].slice(0, 200);
+const tituloDeFila = (mainRepo, rec) => `Arreglar main en ${path.basename(mainRepo)} (${rec.id}): ${(rec.suites || []).map((r) => path.basename(String(r))).join(', ')}`;
+
+/**
+ * La fila del registro en el tablero, sólo con una coordinadora designada y viva (heavy-turn.js `coordinator`): una por
+ * `id`, que se suma una vez (board.js `add`, estado `riesgo`) y cuyo número queda en el registro; si el registro se
+ * amplía, esa fila, por su número, cambia el título. El `id` en el título la hace única entre las abiertas: una fila
+ * cerrada de un registro viejo no se toca. Corre bajo el candado del archivo de estado: primero ése, después el del
+ * tablero. Devuelve el aviso de un fallo, o null; un fallo no frena la espera.
+ */
+function filaDelTablero(rec, mainRepo, { home, cambio }) {
+  if (rec.fila && !cambio) return null;
+  let B;
+  let sdir;
+  try {
+    const ht = require(HEAVY_TURN);
+    if (typeof ht.coordinator !== 'function' || !ht.coordinator({ home: home || os.homedir(), env: process.env })) return null;
+    B = require(BOARD);
+    sdir = boardStateDir(home);
+  } catch (e) { return `main-check: no pude ver si hay coordinadora (${errLine(e)}): el tablero no se toca`; }
+  const titulo = tituloDeFila(mainRepo, rec);
+  try {
+    if (rec.fila) {
+      const r = B.set(sdir, rec.fila, [`titulo=${titulo}`], { home: home || os.homedir() });
+      return r.code === 0 ? null : `main-check: no pude cambiar la fila ${rec.fila} del tablero (${(r.lines || [])[0] || `salió ${r.code}`})`;
+    }
+    const r = B.add(sdir, [`titulo=${titulo}`, 'estado=riesgo'], { home: home || os.homedir() });
+    if (r.code !== 0) return `main-check: no pude sumar la fila de ${rec.id} al tablero (${(r.lines || [])[0] || `salió ${r.code}`})`;
+    const fila = (B.readBoardRaw(sdir).raw.pendientes || []).filter((x) => x && x.titulo === titulo && x.estado !== 'hecho').pop();
+    if (!fila || !fila.id) return `main-check: sumé la fila de ${rec.id} al tablero pero no encontré su número`;
+    rec.fila = fila.id;
+    return null;
+  } catch (e) { return `main-check: el tablero falló (${errLine(e)}): la espera sigue igual`; }
+}
+
+/** Con el registro cerrado, su fila del tablero se cierra por su número (board.js `close`). Devuelve el aviso de un fallo, o null. */
+function cerrarFila(rec, home) {
+  if (!rec || !rec.fila) return null;
+  try {
+    const r = require(BOARD).close(boardStateDir(home), rec.fila, { home: home || os.homedir() });
+    return r.code === 0 ? null : `main-check: no pude cerrar la fila ${rec.fila} del tablero (${(r.lines || [])[0] || `salió ${r.code}`})`;
+  } catch (e) { return `main-check: no pude cerrar la fila ${rec.fila} del tablero (${errLine(e)})`; }
+}
+
 function join({ tree, sha, suites, session, story, home }) {
   const mainRepo = mainRepoOf(tree);
   if (!mainRepo) throw new Error(`${tree} no es un repo de git`);
@@ -440,6 +495,7 @@ function join({ tree, sha, suites, session, story, home }) {
       state.next_id += 1;
       state.broken.push(rec);
     }
+    const antes = rec.suites.length;
     for (const s of suites) {
       if (!rec.suites.includes(s.ruta)) rec.suites.push(s.ruta);
       if (Array.isArray(s.casos) && s.casos.length) rec.casos[s.ruta] = s.casos.map(String);
@@ -448,9 +504,33 @@ function join({ tree, sha, suites, session, story, home }) {
     }
     if (sha && sha !== rec.sha) rec.sha = sha;
     if (!rec.waiting.some((w) => w && w.session === sid)) rec.waiting.push({ session: sid, since: now, ...(story ? { story } : {}) });
-    return rec;
+    const board = filaDelTablero(rec, mainRepo, { home, cambio: rec.suites.length !== antes });
+    return { rec, board };
   });
-  return { record: out, broke, paths };
+  if (out.board) process.stderr.write(`${out.board}\n`);
+  return { record: out.rec, broke, paths, board: out.board };
+}
+
+/**
+ * Anota quién arregla main en el registro `id` (y su pedido, si lo hay). El arreglo es uno solo para todas las que
+ * esperan: un segundo `fix` de otra sesión no lo pisa y dice quién lo tiene. `{ code, line }`: 0 anotado, 1 tomado por
+ * otra o ya cerrado, 2 sin ese registro.
+ */
+function fix({ repo, id, session, pr, home }) {
+  const mainRepo = mainRepoOf(repo);
+  if (!mainRepo) return { code: 2, line: `main-check fix: ${repo} no es un repo de git` };
+  const sid = session || sessionOf();
+  const { out } = updateState(statePaths(mainRepo, home), mainRepo, sid, (state) => {
+    const rec = state.broken.find((r) => r && r.id === id);
+    if (!rec) return { code: 2, line: `main-check fix: no hay un registro ${id} de main roto` };
+    if (rec.closed) return { code: 1, line: `main-check fix: el registro ${id} ya se cerró: main pasó (${String(rec.closedSha).slice(0, 10)})` };
+    if (rec.fix && rec.fix.session && rec.fix.session !== sid) {
+      return { code: 1, line: `main-check fix: el arreglo de ${id} ya lo tiene ${shortSid(rec.fix.session)}${rec.fix.pr ? ` (pedido #${rec.fix.pr})` : ''}` };
+    }
+    rec.fix = { session: sid, ...(pr ? { pr } : {}), since: new Date().toISOString() };
+    return { code: 0, line: `main-check fix: el arreglo de ${id} queda a nombre de ${shortSid(sid)}${pr ? ` (pedido #${pr})` : ''}` };
+  });
+  return out;
 }
 
 /**
@@ -467,6 +547,8 @@ function saveResult({ tree, sha, ruta, result, session, home }) {
     saveResults(state, sha, { [ruta]: result }, sid);
     return closeIfGreen(state, sha);
   });
+  const fila = cerrarFila(out, home);
+  if (fila) process.stderr.write(`${fila}\n`);
   return { closed: out, broke };
 }
 
@@ -580,16 +662,23 @@ function statusLines(s) {
   return out;
 }
 
-module.exports = { judge, broken: { join, openRecord, closeIfGreen }, saveResult, status, statusLines, wait, branchCheck, mainRepoOf, repoKey, statePaths, readState, takeLock, releaseLock, DEFAULTS, WAIT_DEFAULTS, CASE_CAP };
+module.exports = { judge, broken: { join, openRecord, closeIfGreen, fix }, saveResult, status, statusLines, wait, branchCheck, mainRepoOf, repoKey, statePaths, readState, takeLock, releaseLock, DEFAULTS, WAIT_DEFAULTS, CASE_CAP };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
   const val = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
-  const uso = 'uso: node main-check.js status --repo <repo> [--json] | wait --repo <repo> --id <id> | branch-check --repo <repo> --id <id>\n';
-  if (!val('--repo') || !['status', 'wait', 'branch-check'].includes(cmd) || (cmd !== 'status' && !val('--id'))) {
+  const uso = 'uso: node main-check.js status --repo <repo> [--json] | wait --repo <repo> --id <id> | branch-check --repo <repo> --id <id> | fix --repo <repo> --id <id> --session <sesión> [--pr <n>]\n';
+  const pr = val('--pr');
+  if (!val('--repo') || !['status', 'wait', 'branch-check', 'fix'].includes(cmd) || (cmd !== 'status' && !val('--id'))
+    || (cmd === 'fix' && (!val('--session') || (pr !== null && !/^[1-9]\d*$/.test(pr))))) {
     process.stderr.write(uso);
     process.exitCode = 2;
+  } else if (cmd === 'fix') {
+    let r;
+    try { r = fix({ repo: val('--repo'), id: val('--id'), session: val('--session'), pr: pr ? Number(pr) : null }); } catch (e) { r = { code: 1, line: `main-check fix: ${errLine(e)}` }; }
+    (r.code === 0 ? process.stdout : process.stderr).write(`${r.line}\n`);
+    process.exitCode = r.code;
   } else if (cmd === 'wait') {
     const r = wait({ repo: val('--repo'), id: val('--id') });
     process.stdout.write(`${r.line}\n`);

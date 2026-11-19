@@ -382,7 +382,7 @@ function conHermano(principal, hermano) {
   return { l, s, story };
 }
 
-test('T9 MainWait_SiblingRepo_RedBeatsWait @story-8.309 @ac-9 — 78 y 0 → 78; 0 y 78 → 78; 78 y 1 → 1; 1 y 78 → 1; 78 y 78 → 78 con dos esperas', () => {
+test('T9 MainWait_SiblingRepo_RedBeatsWait @story-8.309 @ac-9 · TG5 Companions_78Combines_RedWins @story-8.294 @ac-17 @ac-18 —78 y 0 → 78; 0 y 78 → 78; 78 y 1 → 1; 1 y 78 → 1; 78 y 78 → 78 con dos esperas', () => {
   // 🔴 mutación: copiar el 78 del hermano tal cual (tapa un rojo); contarlo como rojo (pierde la espera); dejar el check
   //    en verde porque el hermano corrió después.
   for (const [p, s, total] of [['78', '0', 78], ['0', '78', 78], ['78', '1', 1], ['1', '78', 1], ['78', '78', 78]]) {
@@ -422,7 +422,7 @@ test('MainWait_SameRun_PartsSum_NewRunReplaces @story-8.309 @ac-9 — dos partes
   assert.equal(estadoDeMain(l).data.broken[0].raiz[RUTA('a')], 'arnes');
 });
 
-test('MainWait_Mark_OnlyWithWait @story-8.309 @ac-9 — mark deja el check en espera-main sólo con una espera anotada', () => {
+test('MainWait_Mark_OnlyWithWait @story-8.309 @ac-9 · TG6 SharedCheck_MarkAfterGreenSibling @story-8.294 @ac-18 —mark deja el check en espera-main sólo con una espera anotada', () => {
   const l = repoDeJuguete({ enMain: { a: suite('a') } });
   escribirMarcador(l, { checks: { tests: 'green' } });
   let m = marker(l, ['waiting-on-main', 'mark'], { TYCON_TEST_GATE: '1' });

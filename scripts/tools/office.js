@@ -520,7 +520,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     if (x.mark) { a.marca = x.mark; a.haciendo = x.mark; a.termina = x.mark; }
     // sin hora, se dice que no la hay: un texto en el lugar de la hora parece una hora
     else if (prsSaid && prsSaid.all) a.termina = prsSaid.text;
-    else if (waitingFor) a.termina = `espera ${waitingFor}${prsSaid ? ` · ${prsSaid.text}` : ''}`;
+    // una espera que ya empieza diciéndolo («espera a main (main-1)») no lo dice dos veces
+    else if (waitingFor) a.termina = `${/^espera\b/i.test(waitingFor) ? '' : 'espera '}${waitingFor}${prsSaid ? ` · ${prsSaid.text}` : ''}`;
     else if (workChanged) a.termina = verdict;
     else if (waiting) a.termina = 'esperando entrar';
     else if (estado !== 'coordina' && endAt == null) a.termina = 'sin hora estimada';
