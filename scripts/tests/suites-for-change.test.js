@@ -1211,3 +1211,21 @@ test('Direct_AddedOrRemoved_RunsTheSuitesThatListTheRepo — un archivo nuevo o 
   assert.deepStrictEqual(unknown.run.sort(), ['a.test.js', 'c.test.js'], 'sin la lista de altas y bajas: ante la duda, corre');
   assert.match(unknown.err, /no sé si el cambio agrega o borra archivos/);
 });
+
+test('T11 GroupCriterion_Incluye @story-8.299 @ac-2 — incluye dice si una suite es del grupo; skips no cambia', () => {
+  // 🔴 mutación: un incluye que devuelva siempre false deja a las suites del grupo sin volver por sus carpetas; skips
+  // devuelve false para una suite de afuera, y eso no dice si es del grupo.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-for-change-group-'));
+  const heavy = path.join(dir, 'heavy-suites.json');
+  fs.writeFileSync(heavy, JSON.stringify({ groups: { installer: { patterns: ['installer/**'] } },
+    suites: { 'i.test.sh': { group: 'installer', patterns: ['scripts/tests/i.test.sh'] }, 'other.test.sh': { patterns: ['lib/**'] } } }));
+  const crit = require(SCRIPT).groupCriterion(heavy, 'installer');
+  assert.equal(crit.problem, undefined, String(crit.problem));
+  assert.equal(typeof crit.incluye, 'function', 'groupCriterion trae incluye');
+  assert.equal(crit.incluye('i.test.sh'), true);
+  assert.equal(crit.incluye('other.test.sh'), false);
+  assert.equal(crit.incluye('no-esta.test.sh'), false);
+  assert.equal(crit.skips('other.test.sh', ['lib/x.js']), false, 'fuera del grupo nunca se difiere por el grupo');
+  assert.equal(crit.skips('i.test.sh', ['lib/x.js']), true, 'del grupo y sin tocar el instalador: se difiere');
+  assert.equal(crit.skips('i.test.sh', ['installer/x.sh']), false, 'del grupo y con el instalador tocado: corre');
+});
