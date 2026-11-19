@@ -203,6 +203,23 @@ test('T26 Carry_InvalidEntry_RejectedOthersPass @story-8.312 @ac-17', () => {
   assert.match(r.out, /rechaz/i, 'la corrida lo avisa');
 });
 
+test('T33 Carry_FutureDate_RejectedRealOneApplies @story-8.312 @ac-17', () => {
+  // una fecha futura ganaría siempre la comparación de fechas y dejaría afuera a los resultados reales
+  const w = world();
+  const futura = '20991231T000000000Z-exam-aaaaa5';
+  rawEntry(w, futura, { schema: 1, id: futura, piece: 'exam', ts: '2026-11-18T00:00:00.000Z', files: [{ path: EXAM_REL, mode: 'replace' }] },
+    { [EXAM_REL]: exam('2099-12-31T00:00:00.000Z') });
+  const real = w.publish('exam', [{ path: EXAM_REL, mode: 'replace', text: exam('2026-11-18T05:10:00.000Z') }]);
+  const d = w.checkout();
+  const r = carry(d);
+  assert.strictEqual(r.code, 0, r.out);
+  const c = carried(d);
+  assert.strictEqual(c.entries[futura].status, 'rejected', 'la del futuro queda rechazada');
+  assert.match(c.entries[futura].reason, /futur|posterior/i, c.entries[futura].reason);
+  assert.strictEqual(c.entries[real].status, 'carried');
+  assert.match(read(d, EXAM_REL), /2026-11-18T05:10/, 'el examen real llega al disco');
+});
+
 test('T32 Carry_NoBranchExitsZero_UnreadableBranchFails @story-8.312 @ac-18', () => {
   const w = world();
   const d = w.checkout();

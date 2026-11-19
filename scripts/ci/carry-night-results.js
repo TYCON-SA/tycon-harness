@@ -66,8 +66,12 @@ function dateOf(rule, text) {
   return Number.isFinite(t) ? { ok: true, t } : { ok: false, why: `no trae ${rule.date}` };
 }
 
+// Un archivo entero con fecha más allá de la corrida ganaría siempre la comparación de fechas y dejaría afuera a los
+// resultados reales que lleguen después: se rechaza. El día de margen cubre relojes de máquina corridos.
+const FUTURE_MARGIN_MS = 24 * 60 * 60 * 1000;
+
 /** Valida una entrada entera; devuelve lo que se aplicaría, o el motivo para rechazarla. */
-function check(id, entryText, readFile) {
+function check(id, entryText, readFile, now = Date.now()) {
   let e;
   try { e = JSON.parse(entryText); } catch (_) { return { why: 'entry.json no es JSON' }; }
   if (!e || e.schema !== 1 || e.id !== id || !RT.PIECES[e.piece] || !Array.isArray(e.files)) return { why: 'entry.json no tiene la forma de una entrada' };
@@ -81,6 +85,7 @@ function check(id, entryText, readFile) {
     if (f.mode === 'replace') {
       const d = dateOf(rule, body);
       if (!d.ok) return { why: `${f.path}: ${d.why}` };
+      if (d.t > now + FUTURE_MARGIN_MS) return { why: `${f.path}: su fecha es posterior a esta corrida (fecha futura)` };
       files.push({ ...f, body, t: d.t, rule });
     } else {
       const sections = RT.sectionsOf(body);
