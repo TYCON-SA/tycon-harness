@@ -769,6 +769,27 @@ test('Delicado_ConRevisionAprobada_EsperaAlDev (T11) @story-1.29 @ac-9', (t) => 
   assert.match(r.stderr, /plan delicado \(nivel 2\): lo aprueba el dev/);
 });
 
+// 🔴 Falla con: `plan-approval:delicada` delegada en el perfil y el plan delicado igual esperando al dev; o un plan
+// delicado aprobado por la revisión de la propia sesión, o sin el «aprobado» de la revisión de la coordinadora.
+test('Delicado_ConLaFormaDelegada_LoApruebaLaCoordinadoraConSuRevision', (t) => {
+  const delegaDelicada = () => true;
+  const sinRevision = laboratorio(t, { sensible: 'seguridad' });
+  const s = PR().antesDeAprobar({ estado: sinRevision.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(sinRevision.leer(DESTINO)), delegaDelicada });
+  assert.strictEqual(s.codigo, 2);
+  assert.match(s.motivo, /no hay una revisión automática/);
+  const lab = laboratorio(t, { sensible: 'seguridad' });
+  lab.revisar(APROBADO);
+  const m = JSON.parse(lab.leer(DESTINO));
+  const a = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: m, delegaDelicada });
+  assert.strictEqual(a.codigo, 0, JSON.stringify(a));
+  assert.strictEqual(a.constancia.delicate.value, true);
+  // la propia sesión nunca: ni con la forma delegada
+  const propia = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: m, delegaDelicada });
+  assert.match(propia.motivo, /plan delicado \(nivel 2\): lo aprueba el dev/);
+  // y sin la forma en el perfil (la delegación de verdad, sin perfil en la casa de la prueba), espera al dev
+  assert.match(PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: m }).motivo, /plan delicado \(nivel 2\): lo aprueba el dev/);
+});
+
 // ── el «aprobado» del dueño en la pestaña de la coordinadora: la firma es suya, y lo delicado pasa ────────────────────
 const oa = require(path.join(RAIZ, 'scripts', 'lib', 'owner-approvals.js'));
 /** Lo que deja un «aprobado» tipeado en la pestaña de ses-coord: la transcripción con lo que dijo el agente, y el registro del gancho. */

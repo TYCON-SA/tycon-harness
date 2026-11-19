@@ -442,7 +442,8 @@ test('T13 DelegatedLevelOne_DelicateStory_Denied @story-8.255 @ac-12', (t) => {
   const v = bv.correr(['defer', '--approved-by', 'Dev', '--no', 'no, por ahora no'], 's-bt', {});
   assert.strictEqual(v.status, 0, salida(v));
   assert.match(fs.readFileSync(bv.story, 'utf8'), /browser_test: deferred/);
-  // cerrar una ejecución perdida por la partición de su historia: la de rutina sí; la delicada y la de nivel 2, no
+  // cerrar una ejecución perdida por la partición de su historia: la de rutina sí; la delicada, no. La de nivel 2
+  // (`lost-run`) sale por delegación: es una excepción de trámite, y el perfil la delega con su nombre
   const ld = particion(t, { sensible: true });
   const xd = ld.correr(['--lost', '--partition'], DELEGADA);
   assert.notStrictEqual(xd.status, 0, salida(xd));
@@ -454,9 +455,8 @@ test('T13 DelegatedLevelOne_DelicateStory_Denied @story-8.255 @ac-12', (t) => {
   assert.ok(lr.cerrada());
   const ll = particion(t, { sensible: false });
   const xl = ll.correr(['--lost'], DELEGADA);
-  assert.notStrictEqual(xl.status, 0, salida(xl));
-  assert.match(xl.stderr, /cerrar como perdida una ejecución, o restaurarla, lo decide una persona/);
-  assert.ok(!ll.cerrada(), 'lost-run por delegación: sigue abierta');
+  assert.strictEqual(xl.status, 0, salida(xl));
+  assert.ok(ll.cerrada(), 'lost-run por delegación: la cierra la coordinadora');
   // sin poder leer el plan o la historia no se sabe si es de rutina: cuenta como delicada
   const cwl = comparacion(t, { sensible: false });
   const m = cwl.marcador();

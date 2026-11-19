@@ -112,14 +112,15 @@ const cupoDelegado = (pedido, tope = DELEGATED_ADHOC_MAX_FILES) => Math.min(pedi
 /**
  * El cupo que queda al declarar: el pedido, el que ya tenía o el de la organización. Lo hecho por delegación o en una
  * pestaña sin permisos va con el cupo delegado. Pedir sin número no achica lo que la persona ya eligió con su click:
- * trabaría el arreglo. `topes`: `{ delegado, maximo }` de la organización; sin ellos, los de fábrica.
+ * trabaría el arreglo. `topes`: `{ delegado, maximo }` de la organización; sin ellos, los de fábrica. `sobreCupo`: la
+ * coordinadora firmó pasar el tope (`adhoc-lane:sobre-cupo`, delegada en el perfil): el cupo pedido no se recorta.
  */
-function cupoAlDeclarar({ pedido, existing, via, topes }) {
+function cupoAlDeclarar({ pedido, existing, via, topes, sobreCupo = false }) {
   const delegado = topes && Number.isInteger(topes.delegado) ? topes.delegado : DELEGATED_ADHOC_MAX_FILES;
   const maximo = topes && Number.isInteger(topes.maximo) ? topes.maximo : DEFAULT_ADHOC_MAX_FILES;
   const cupo = pedido !== undefined ? pedido : (existing ? existing.maxFiles : maximo);
   const porDelegacion = via === 'delegacion' || via === 'avisado';
-  return porDelegacion && !(pedido === undefined && existing && existing.sobreCupo) ? cupoDelegado(cupo, delegado) : cupo;
+  return porDelegacion && !sobreCupo && !(pedido === undefined && existing && existing.sobreCupo) ? cupoDelegado(cupo, delegado) : cupo;
 }
 /** El cupo de un carril: el suyo, o `defecto` (el tope de la organización) si no trae uno que se pueda leer. */
 const cupoDelCarril = (adhoc, defecto = DEFAULT_ADHOC_MAX_FILES) => (Number.isFinite(Number(adhoc && adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0 ? Number(adhoc.maxFiles) : defecto);
