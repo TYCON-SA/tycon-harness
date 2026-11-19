@@ -147,6 +147,10 @@ lo aceptan `TYCON_SAFETY_OFF`, `TYCON_PROD_LINT`, la emergencia ni saltear el pa
 acepta el click. También es la forma de toda firma que el freno no puede decidir: el comando escondido detrás de otro (`cd … && <firma>`), la
 herramienta lanzada por otra herramienta o por su consola, una consola de fondo viva, o en Windows la consola PowerShell
 y las formas de consola que no son la medida. En Windows, además, un escape se firma siempre ahí. El cartel de cada freno trae el comando de la terminal.
+En Windows la firma por cuadro o por «aprobado» anda sólo desde la consola Bash de Git: desde la consola PowerShell el
+freno no ofrece ni la ventana, ni el cuadro, ni el «aprobado», sino la consola Bash de Git o la terminal, con un solo
+comando para las tres consolas (`node "<ruta>/marker.js" … --terminal --for-session <sesión>`; detalle en
+[En Windows](firmas-del-arnes.md#en-windows)).
 
 Algunas firmas las puede dar la coordinadora desde su pestaña, si el perfil del equipo se las delega
 (`approvals.delegated_signing`); las que son sólo del dueño, no (`approvals.owner_only`). La constancia de cada escape
@@ -304,11 +308,18 @@ su apertura o sin `gates.log`; la copia no coincide con su apertura, no se puede
 `gates.log` no se puede leer. Lo que no se puede decidir frena.
 
 Con la ejecución perdida frena, con el cartel «🔴 EJECUCIÓN PERDIDA» (qué pieza falta, la historia y cuándo se abrió):
-toda edición de código (Edit, Write, `apply_patch`), también con un carril ad-hoc o con `story_gate: false`; el cierre
-del turno; el commit en el repo de la ejecución; y en la consola, todo lo que no está en una lista cerrada. La lista:
+toda edición de código (Edit, Write, `apply_patch`), también con un carril ad-hoc o con `story_gate: false`; el commit en
+el repo de la ejecución; y en la consola, todo lo que no está en una lista cerrada. La lista:
 `marker.js` y `pipeline.js` para leer y para la salida, `git status`, `git diff`, `git log`, y `cat`, `ls`, `grep`,
 `head` y `tail` sin redirección. `gates.log` y `run-open.json` son además rutas protegidas de la primera capa, al lado
 del marcador.
+
+**El cierre del turno frena una vez por turno: el turno se cierra a la segunda.** El primer cierre con la ejecución perdida frena con el cartel; el
+segundo seguido deja cerrar el turno, con el cartel para la persona (no hace falta que el agente lo copie), y anota en
+`gates.log` un renglón `ejecucion-perdida-espera`. El turno siguiente vuelve a frenar a la primera. El contador vive en
+la carpeta del estado (`lost-run-stop/<sesión>.json`) y nombra la apertura; `stop_hook_active` no decide nada, porque lo
+pone cualquier gancho de cierre. Si el contador no se puede leer o anotar, frena siempre. Dejar cerrar el turno no abre
+nada más: editar, escribir por la consola, commitear y `marker.js clear` siguen frenados hasta la firma.
 
 **La salida es del dueño.** La firma en la ventana de permiso, con un click o un «aprobado» donde la ventana no llega, o
 en su terminal con `--terminal`, uno de estos dos comandos:
@@ -319,6 +330,31 @@ en su terminal con `--terminal`, uno de estos dos comandos:
 
 Los dos piden la firma también para una sesión ajena, y los frena `ESC-C3` sin ella.
 `clear-session <sesión>` sin `--lost` y sin marcador no cierra nada y dice que hace falta `--lost`.
+
+El cartel da cada comando en sus dos formas, con la ruta estable de `marker.js` bajo la carpeta personal, entre comillas
+dobles y sin `~` (Windows PowerShell no lo expande) ni la carpeta numerada de la versión (cambia al actualizar):
+
+- **la de la ventana**: `node "<carpeta personal>/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js" clear-session <sesión> --lost`.
+  La lanza el agente por la consola Bash y la persona la aprueba en el cuadro;
+- **la de la terminal**: la misma con `--terminal --for-session <sesión>` al final. Con la consola PowerShell de la
+  herramienta o en Codex no hay cuadro, y va ésta. Anda igual en Windows PowerShell 5.1, PowerShell 7, cmd y bash.
+
+Con una carpeta personal que no se puede citar (trae `$`, `"` o una comilla invertida), el comando sale con `$HOME`, que
+no es una firma de la ventana, y el cartel lo manda a la terminal.
+
+**Borrar o mover la carpeta de una ejecución abierta frena antes.** Si se borra la carpeta de trabajo de una historia
+con la ejecución abierta, su copia de la apertura se va con ella y la ejecución queda perdida. La consola frena, con el
+cartel «🔒 CERRÁ LA EJECUCIÓN ANTES» (la historia, la sesión y el comando), estos comandos sobre una carpeta que contiene
+la carpeta de una ejecución abierta, o sobre una de arriba: `git worktree remove` (también con `--force` y con
+`git -C <principal>`), `git worktree move`, `mv`, `Move-Item`, `Rename-Item`, `rm -r`, `Remove-Item -Recurse`, `rd /s` y
+`cmd /c rmdir`. También `git worktree prune`, si poda una carpeta que ya no existe con una ejecución abierta adentro; con
+un git que no dice qué poda (anterior a 2.31) frena si hay una ejecución abierta en la máquina. «Abierta» se lee en
+`gates.log`: el último renglón de la sesión es `run-open`. Una copia vieja sin apertura vigente no frena. La salida es
+cerrar la ejecución con `marker.js clear` antes de borrar o mover la carpeta (`clear-session <sesión>` desde su sesión, si
+es de otra), y repetir el comando. Si `gates.log` no se puede leer, frena con el motivo. El barrido de las carpetas ya
+mergeadas (`worktree-sweep.js`) tampoco borra una carpeta con una ejecución abierta: la nombra con la historia y la
+sesión. Lo que no ve: un guion que borra por dentro (`tycon-worktree.sh rm`, `node -e`), `git clean -fdx` dentro de la
+carpeta, y el Explorador o el IDE. Ahí sigue la cura de siempre: la ejecución perdida.
 
 Límite: si se borran las tres piezas, en la sesión no se ve. Lo ve el portón de la CI, que pide el registro de autoría
 de la historia para mergear.

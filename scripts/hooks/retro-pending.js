@@ -286,6 +286,10 @@ const esRaiz = (d) => {
   }
   return real(raices.get(d)) === real(d);
 };
+// El repo de una entrada, sea cual sea la copia desde donde se anotó: su carpeta principal, o la suya.
+function identidadDeRepo(e) {
+  return real(e.principal || e.repoPath);
+}
 function carpetaVigente(e) {
   const clave = `${e.repoPath}|${e.principal || ''}|${e.sha}`;
   if (!vigentes.has(clave)) {
@@ -361,7 +365,7 @@ function yaEstabaEnMain(e) {
 }
 function comandoDeCorregir(e) {
   // la sha anotada (la de un pedido que entró es la de su rama, no la que reclama ahora): `--correct` busca por ésa
-  return `node "${__filename}" --correct --repo "${e.repoPath}" --sha ${e.pedidoDe || e.sha} --real <commit del pedido> --reason "<por qué>"`;
+  return `node "${__filename}" --correct --repo "${carpetaVigente(e)}" --sha ${e.pedidoDe || e.sha} --real <commit del pedido> --reason "<por qué>"`;
 }
 const avisoYaEnMain = (e) => (yaEstabaEnMain(e) ? `\n      ⚠ ese commit ya estaba en ${ramaCorta(e.branch) || 'main'} antes del pedido: la entrada puede haber anotado una rama de origen vieja. Si es así, la corrige una persona con el commit real: ${comandoDeCorregir(e)}` : '');
 
@@ -390,7 +394,11 @@ function corregir(argv) {
   // dos renglones de la misma entrada (mismo repo y sha) son una sola
   cand = [...new Map(cand.map((e) => [`${e.repoPath}@${e.sha}`, e])).values()];
   if (!cand.length) return salir(`ninguna entrada que pida retrospectiva con la sha ${sha}${repo ? ` en ${repo}` : ''}`);
-  if (cand.length > 1) return salir(`hay ${cand.length} entradas con la sha ${sha}: elegí una con --repo <carpeta anotada>:\n${cand.map((e) => `  - ${e.repoPath} (${String(e.ts || '').slice(0, 16)}, ${e.cmd || ''})`).join('\n')}`);
+  // el mismo commit anotado desde dos copias del mismo repo es una entrega: se corrigen juntas (el aviso la muestra una
+  // vez), también cuando `--repo` nombra la carpeta exacta de una de ellas
+  const unaEntrega = (x) => identidadDeRepo(x) === identidadDeRepo(cand[0]) && x.sha === cand[0].sha;
+  const copias = [...new Map(lineas.filter((x) => x && x.repoPath && x.sha && !x.exento && unaEntrega(x)).map((x) => [`${x.repoPath}@${x.sha}`, x])).values()];
+  if (!cand.every(unaEntrega)) return salir(`hay ${cand.length} entradas con la sha ${sha}: elegí una con --repo <carpeta anotada>:\n${cand.map((e) => `  - ${e.repoPath} (${String(e.ts || '').slice(0, 16)}, ${e.cmd || ''})`).join('\n')}`);
   const e = cand[0];
   // la carpeta de la entrada, o su principal; si ninguna está, la carpeta desde donde se corre, si es un repo con ese commit
   const desdeAca = raizGit(process.cwd());
@@ -404,10 +412,11 @@ function corregir(argv) {
   if (gitOrNull(dir, ['merge-base', '--is-ancestor', e.sha, completo]) === null) return salir(`el commit ${realArg} no trae al anotado (${e.sha}): la corrección apunta al commit que el pedido mergeó, que lo contiene`);
   const quien = git(dir, ['config', '--get', 'user.name']) || (() => { try { return os.userInfo().username; } catch { return null; } })() || 'sin nombre';
   const c = { ts: new Date().toISOString(), tipo: 'correccion', entrada: { repo: e.repoPath, sha: e.sha, ts: e.ts }, real: completo.slice(0, 12), motivo, quien, carpeta: dir, sesion: sessionIdOf({}) };
+  const renglones = copias.map((x) => JSON.stringify({ ...c, entrada: { repo: x.repoPath, sha: x.sha, ts: x.ts } }) + '\n').join('');
   // el catch de `main` se traga todo (un gancho no rompe nada): una corrección que no se pudo escribir se dice acá
   try {
     fs.mkdirSync(STATE_DIR, { recursive: true });
-    fs.appendFileSync(LEDGER, JSON.stringify(c) + '\n', 'utf8');
+    fs.appendFileSync(LEDGER, renglones, 'utf8');
   } catch (err) {
     return salir(`no pude escribir la corrección en el registro ${LEDGER} (${err.code || err.message}): no se corrigió nada`);
   }
@@ -437,11 +446,33 @@ const CONSULTA_CADA_MS = 10 * 60000;
 const CONSULTAS_POR_PASADA = 3;
 const topeDeConsulta = () => Number(process.env.TYCON_RETRO_ASK_PR_MS) > 0 ? Number(process.env.TYCON_RETRO_ASK_PR_MS) : 10000;
 
+/**
+ * Los números de pedido de la salida del comando que crea el pedido en Azure. La salida entera trae el número con su
+ * nombre de campo; con una consulta que recorta la salida, sale en otras formas, y sin leerlas el pedido quedaba sin número, anotado por la punta de su rama como si fuera un
+ * merge (los casos reales: `pullRequestId 6758 active`, `{ "id": 6788, "status": "active" }`, `6756` solo). Se leen
+ * en ese orden y la primera forma que aparece decide: un número suelto vale sólo si la salida entera son números.
+ */
+function numerosDeAz(salida) {
+  const conNombre = [...salida.matchAll(/\bpullRequestId\b["']?(?:\s*:\s*|\s+)(\d+)\b/g)].map((m) => Number(m[1]));
+  if (conNombre.length) return conNombre;
+  const deObjeto = (d) => (d && typeof d === 'object' && !Array.isArray(d) && Number.isInteger(d.id) && 'status' in d ? [d.id] : []);
+  const texto = salida.trim();
+  const desde = texto.search(/[[{]/);
+  for (const trozo of [texto, desde >= 0 ? texto.slice(desde) : null].filter(Boolean)) {
+    let d;
+    try { d = JSON.parse(trozo); } catch { continue; }
+    const ids = Array.isArray(d) ? d.flatMap(deObjeto) : deObjeto(d);
+    if (ids.length) return ids;
+  }
+  const renglones = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  return renglones.length && renglones.every((l) => /^\d+$/.test(l)) ? renglones.map(Number) : [];
+}
+
 /** El número de cada pedido de la salida de la herramienta: `pullRequestId` de az, la dirección `…/pull/N` de gh. */
 function numerosDePedido(event) {
   const r = event && event.tool_response;
   const salida = typeof r === 'string' ? r : r && typeof r === 'object' ? [r.stdout, r.output, r.content].filter((x) => typeof x === 'string').join('\n') : '';
-  const az = [...salida.matchAll(/"pullRequestId"\s*:\s*(\d+)/g)].map((m) => Number(m[1]));
+  const az = numerosDeAz(salida);
   const web = [...salida.matchAll(/\/pull(?:request)?\/(\d+)\b/g)].map((m) => Number(m[1]));
   // la capa de plataforma (`platform.js change-request open`) contesta `{ ok, value: { id, url } }`: el número es `value.id`
   // (su url de Azure es la de la API, `…/pullRequests/N`, que no es la dirección web)
@@ -636,14 +667,18 @@ function cubiertaPorUnAnulado(entry) {
  * que sólo cubría un latido anulado; no frenan y el aviso de arranque las lista con `--correct`).
  */
 function estadoDelRegistro() {
-  const seen = new Set();
   const out = { pendientes: [], esperando: [], fueraDeMain: [] };
-  for (const e of entradasCorregidas()) {
-    // Exento (sólo tests/docs): contado, nunca reclamado — ni por el gate ni por el aviso.
-    if (e.exento) continue;
-    const key = `${real(e.repoPath)}@${e.sha}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+  // Exento (sólo tests/docs): contado, nunca reclamado — ni por el gate ni por el aviso.
+  const todas = entradasCorregidas().filter((e) => !e.exento);
+  // El repo, no la copia: el mismo commit anotado desde dos copias del mismo repo (dos worktrees) es UNA entrega, y se
+  // reclama una vez (con la carpeta que sigue en pie: `carpetaVigente`). De las copias juzga la que sabe más de su pedido
+  // (con número o con estado), sea cual sea el orden en que se anotaron; si ninguna, la primera.
+  const clave = (e) => `${identidadDeRepo(e)}@${e.sha}`;
+  const sabe = (e) => Boolean(e.pr || e.estado || e.corregida);
+  const elegida = new Map();
+  for (const e of todas) { const p = elegida.get(clave(e)); if (!p || (!sabe(p) && sabe(e))) elegida.set(clave(e), e); }
+  for (const e of todas) {
+    if (elegida.get(clave(e)) !== e) continue;
     if (e.estado === 'abandonado') continue;
     if (e.estado === 'esperando') { out.esperando.push(e); continue; }
     if (coveredByMetrics(e)) continue;
@@ -652,6 +687,10 @@ function estadoDelRegistro() {
     if (fs.existsSync(e.repoPath) && juzgarLaboratorio(e.repoPath).laboratorio) continue;
     if (!e.corregida) {
       if (cubiertaPorUnAnulado(e)) { out.fueraDeMain.push({ ...e, porAnulado: true }); continue; }
+      // Un pedido creado no es un merge. Sin su número no se le puede preguntar a la plataforma si entró ni con qué
+      // commit: la entrada quedó por la punta de la rama, que no es la fusión aunque ya esté en la línea de main. No
+      // frena (se ve en el aviso de arranque, con su `--correct`), ni cuando no se puede leer la línea de main.
+      if (!e.pr && e.estado !== 'entro' && RE_PEDIDO.test(String(e.cmd || ''))) { out.fueraDeMain.push({ ...e, sinNumero: true }); continue; }
       if ((e.pr || e.estado === 'entro' || RE_PEDIDO.test(String(e.cmd || ''))) && enLineaDeMain(e) === false) { out.fueraDeMain.push(e); continue; }
     }
     out.pendientes.push(e);
@@ -1321,7 +1360,10 @@ function anotar(event, cmd, punto, ctx) {
   if (ctx.isPrCreate && !ctx.sha && ctx.punta) entry.punta = ctx.punta;   // la punta cayó a HEAD, dicho
   const principal = carpetaPrincipal(root);
   if (principal && real(principal) !== real(root)) entry.principal = principal;
-  if (readJsonl(LEDGER).some((e) => e.repoPath === root && e.sha === entry.sha)) return null;
+  // la misma entrega anotada desde otra copia del mismo repo (otro worktree) no se anota dos veces, salvo que la nueva
+  // traiga el número del pedido que la anterior no tenía
+  const mismaEntrega = (e) => e.sha === entry.sha && (e.repoPath === root || identidadDeRepo(e) === identidadDeRepo(entry));
+  if (readJsonl(LEDGER).some((e) => mismaEntrega(e) && (e.repoPath === root || e.pr || !entry.pr))) return null;
   fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.appendFileSync(LEDGER, JSON.stringify(entry) + '\n', 'utf8');
   return entry;
@@ -1467,13 +1509,13 @@ function gate(event) {
   const lines = [];
   if (mine.length) {
     lines.push(`  Merges de ESTA sesión sin su archivo (${mine.length}):`);
-    for (const e of mine) lines.push(`    - ${e.repoPath} @ ${e.sha} (${cuando(e)}) → ${launchHint(e)}${avisoYaEnMain(e)}`);
+    for (const e of mine) lines.push(`    - ${carpetaVigente(e)} @ ${e.sha} (${cuando(e)}) → ${launchHint(e)}${avisoYaEnMain(e)}`);
   }
   if (foreign.length) {
     const grupos = porRepo(foreign);
     lines.push(`  Repo(s) con merge(s) de OTRA sesión sin su archivo (${grupos.length}):`);
     for (const [primero, ...resto] of grupos) {
-      lines.push(`    - ${primero.repoPath} @ ${primero.sha} (${cuando(primero)}) → ${launchHint(primero)}${avisoYaEnMain(primero)}`);
+      lines.push(`    - ${carpetaVigente(primero)} @ ${primero.sha} (${cuando(primero)}) → ${launchHint(primero)}${avisoYaEnMain(primero)}`);
       resto.forEach((e, i) => lines.push(`      ${i === 0 ? `y ${resto.length} más en ese repo: ` : '· '}${e.sha} (${cuando(e)}) → ${launchHint(e)}${avisoYaEnMain(e)}`));
     }
   }
@@ -1495,10 +1537,10 @@ function underOrEqual(a, b) {
 }
 // Un pendiente "es de esta sesión" si su repo cae bajo el cwd (workspace que contiene repos, ej.
 // Ceibo/ → CeiboBackend) o el cwd cae dentro del repo (sesión abierta en un subdirectorio).
+// La carpeta principal del repo también cuenta: una sesión en el repo es del merge que anotó una de sus copias.
 function belongsToCwd(entry, cwd) {
-  const r = real(carpetaVigente(entry));
   const c = real(cwd);
-  return underOrEqual(r, c) || underOrEqual(c, r);
+  return [real(carpetaVigente(entry)), identidadDeRepo(entry)].some((r) => underOrEqual(r, c) || underOrEqual(c, r));
 }
 // Lo que no frena y se dice al arrancar, sólo de este repo/workspace: los pedidos de los que no se sabe si entraron y las
 // entradas que un latido no puede pagar, cada una con el comando de `--correct`.
@@ -1512,8 +1554,8 @@ function lineasQueNoFrenan(registro, saber, cwd) {
   }
   const fuera = registro.fueraDeMain.filter(deAca);
   if (fuera.length) {
-    out.push(`⚠️ retro-pending: ${fuera.length} entrada(s) que un latido no puede pagar (su commit no está en la línea de main, o su latido se anuló): no frenan. Las corrige una persona con el commit que el pedido dejó en main:`);
-    for (const e of fuera) out.push(`  - ${e.repoPath} @ ${e.sha} (${String(e.ts || '').slice(0, 16)}${e.porAnulado ? ', su latido se anuló' : ''}) → ${comandoDeCorregir(e)}`);
+    out.push(`⚠️ retro-pending: ${fuera.length} entrada(s) que un latido no puede pagar (su commit no está en la línea de main, es de un pedido sin su número, o su latido se anuló): no frenan. Las corrige una persona con el commit que el pedido dejó en main:`);
+    for (const e of fuera) out.push(`  - ${carpetaVigente(e)} @ ${e.sha} (${String(e.ts || '').slice(0, 16)}${e.porAnulado ? ', su latido se anuló' : e.sinNumero ? `, pedido sin su número${yaEstabaEnMain(e) ? `; su commit ya estaba en ${ramaCorta(e.branch) || 'main'} antes del pedido` : ''}` : ''}) → ${comandoDeCorregir(e)}`);
   }
   return out;
 }
@@ -1546,7 +1588,7 @@ function notice(event) {
     if (cuerpo) emitir(cuerpo);
     return;
   }
-  const lines = local.map((e) => `  - ${e.repoPath} @ ${e.sha} (${String(e.ts || '').slice(0, 16)})${avisoYaEnMain(e)}`);
+  const lines = local.map((e) => `  - ${carpetaVigente(e)} @ ${e.sha} (${String(e.ts || '').slice(0, 16)})${avisoYaEnMain(e)}`);
   const scopeLabel = scopeAll ? '' : ' de ESTE proyecto';
   process.stdout.write(`<system-reminder>\n🔴 retro-pending: ${local.length} merge(s) a main${scopeLabel} SIN retrospectiva (ningún metrics-*.json cubre ese repo+commit):\n${lines.join('\n')}\nLanzá el latido por cada uno, un segundo y sin modelo (${launchHint(local[0])}).${extra ? '\n' + extra : ''}${foreignLine ? '\n' + foreignLine : ''}${cuentaLine ? '\n' + cuentaLine : ''} Off: TYCON_RETRO_PENDING=0.\n</system-reminder>\n`);
 }

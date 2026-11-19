@@ -218,7 +218,8 @@ function enCola(ctx, prs) {
 // sacó de la cola o le apagó el auto-merge.
 const CONSULTA_ABIERTOS = 'query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){'
   + 'pullRequests(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{number isDraft mergeable '
-  + 'id reviewDecision commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}} '
+  + 'id reviewDecision baseRefName baseRef{branchProtectionRule{requiredStatusCheckContexts} rules(first:100){totalCount nodes{type parameters{__typename ... on RequiredStatusChecksParameters{requiredStatusChecks{context}}}}}} commits(last:1){nodes{commit{committedDate statusCheckRollup{state contexts(first:100){totalCount '
+  + 'nodes{__typename ... on CheckRun{name status conclusion checkSuite{app{slug}}}}}}}}} '
   + 'mergeStateStatus headRefName headRefOid createdAt title author{login} autoMergeRequest{enabledAt} mergeQueueEntry{state} '
   + 'timelineItems(last:1,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT,AUTO_MERGE_DISABLED_EVENT]){nodes{__typename '
   + '... on RemovedFromMergeQueueEvent{reason createdAt beforeCommit{oid}} ... on AutoMergeDisabledEvent{reason reasonCode createdAt}}} '
@@ -263,11 +264,100 @@ function deGraphql(p) {
     headCommittedAt: punta ? String(punta.committedDate || '') : '',
     headPushedAt: empuje ? String(empuje.createdAt || '') : '',
     autoMergeSince: p.autoMergeRequest ? String(p.autoMergeRequest.enabledAt || '') : null,
+    baseBranch: String(p.baseRefName || ''),
+    // si la regla de la rama destino exige los resultados del análisis: viene en la misma consulta
+    _exige: exigeElAnalisis(p.baseRef),
+    // lo cuenta `analisisDe` y se saca antes de devolver el pedido
+    _rollup: punta && punta.statusCheckRollup ? punta.statusCheckRollup.contexts || null : null,
   };
 }
 
+// EL ANÁLISIS DE SEGURIDAD (code scanning). GitHub informa cada análisis con un control de la app
+// `github-advanced-security`, y ese control no es requerido salvo que la regla de la rama lo pida: sin él, el estado
+// del pedido (`mergeStateStatus`) sale CLEAN o UNSTABLE con el análisis en rojo o sin correr, y la cola lo deja entrar.
+// Por eso el pedido lleva su propio `codeScanning`: `{ estado, motivo }`, con estado
+//   verde        el control está en la punta, terminó en success y el pedido no tiene alertas abiertas
+//   rojo         el control falló, o el pedido tiene alertas abiertas
+//   corriendo    el control está en la punta y todavía no terminó
+//   falta        el repo tiene análisis y la punta no tiene su control (no corrió)
+//   no-aplica    el repo no tiene análisis de seguridad
+//   no-se-pudo   algo no se pudo leer: nunca es verde
+//   sin-mirar    un borrador o uno en choque: no se lee hasta que pueda entrar
+// y `codeScanningRequired` (true, false o null si no se supo): si la regla de la rama destino exige sus resultados.
+const APP_DEL_ANALISIS = 'github-advanced-security';
+// el nombre del control que deja la configuración automática de GitHub: exigido como control requerido, también cuenta
+const CONTROL_DEL_ANALISIS = 'CodeQL';
+
+/**
+ * Si la rama destino exige el análisis: por la regla de code scanning, o con su control entre los requeridos (de una
+ * regla o de la protección clásica). true, false, o null si no se supo (sin rama, o la lista de reglas cortada).
+ */
+function exigeElAnalisis(ref) {
+  if (!ref || !ref.rules || !Array.isArray(ref.rules.nodes) || Number(ref.rules.totalCount) > ref.rules.nodes.length) return null;
+  const requeridos = new Set(ref.branchProtectionRule && Array.isArray(ref.branchProtectionRule.requiredStatusCheckContexts) ? ref.branchProtectionRule.requiredStatusCheckContexts : []);
+  for (const r of ref.rules.nodes) {
+    if (r && r.type === 'CODE_SCANNING') return true;
+    const checks = r && r.parameters && Array.isArray(r.parameters.requiredStatusChecks) ? r.parameters.requiredStatusChecks : [];
+    for (const c of checks) if (c && c.context) requeridos.add(c.context);
+  }
+  return requeridos.has(CONTROL_DEL_ANALISIS);
+}
+
+/** Si el repo tiene análisis de seguridad: `{ hay: true|false }` o `{ problema }`. */
+function analisisDelRepo(ctx, repo, llamar = gh) {
+  const d = llamar(ctx, 'GET', `repos/${repo}/code-scanning/default-setup`);
+  if (!d.problem && d.value && d.value.state === 'configured') return { hay: true };
+  // la configuración avanzada (un flujo propio) no aparece ahí: alcanza con que haya un análisis subido
+  const a = llamar(ctx, 'GET', `repos/${repo}/code-scanning/analyses?per_page=1`);
+  if (!a.problem) return { hay: Array.isArray(a.value) && a.value.length > 0 };
+  // GitHub contesta 404 o 403 «no habilitado» cuando el repo no tiene análisis: eso es no-aplica, no un error
+  const texto = String((a.problem && a.problem.detail) || '');
+  // un 404 cualquiera no alcanza: también lo da una credencial que no ve los análisis
+  if (/no analysis found|not enabled|advanced security must be enabled/i.test(texto)) return { hay: false };
+  return { problema: `no pude saber si el repo tiene análisis de seguridad (${texto.slice(0, 120)})` };
+}
+
+/** El análisis de un pedido, de los controles de su punta y de sus alertas abiertas. */
+function analisisDelPedido(ctx, repo, p, rollup, llamar = gh, { conAlertas = true, sinTiempo = false } = {}) {
+  if (!rollup || !Array.isArray(rollup.nodes)) return { estado: 'no-se-pudo', motivo: 'GitHub no dio los controles de la punta' };
+  if (Number(rollup.totalCount) > rollup.nodes.length) return { estado: 'no-se-pudo', motivo: `la punta tiene ${rollup.totalCount} controles y se leyeron ${rollup.nodes.length}` };
+  const suyos = rollup.nodes.filter((n) => n && n.__typename === 'CheckRun' && n.checkSuite && n.checkSuite.app && n.checkSuite.app.slug === APP_DEL_ANALISIS);
+  if (!suyos.length) return { estado: 'falta', motivo: 'el análisis de seguridad no corrió (o todavía no empezó) en la punta' };
+  if (suyos.some((n) => String(n.status || '').toUpperCase() !== 'COMPLETED')) return { estado: 'corriendo', motivo: 'el análisis de seguridad todavía corre' };
+  const malo = suyos.find((n) => String(n.conclusion || '').toUpperCase() !== 'SUCCESS');
+  if (malo) return { estado: 'rojo', motivo: `el análisis de seguridad terminó en ${String(malo.conclusion || 'sin resultado').toLowerCase()}` };
+  if (!conAlertas) return { estado: 'sin-mirar', motivo: 'sus alertas no se leen hasta que pueda entrar' };
+  if (sinTiempo) return { estado: 'no-se-pudo', motivo: 'no hubo tiempo de leer sus alertas en esta lectura' };
+  const alertas = llamar(ctx, 'GET', `repos/${repo}/code-scanning/alerts?ref=${encodeURIComponent(`refs/pull/${p.number}/merge`)}&state=open&per_page=100`);
+  if (alertas.problem || !Array.isArray(alertas.value)) return { estado: 'no-se-pudo', motivo: 'no pude leer las alertas abiertas del pedido' };
+  if (alertas.value.length) return { estado: 'rojo', motivo: `${alertas.value.length === 100 ? '100 o más' : alertas.value.length} alerta(s) del análisis de seguridad abierta(s)` };
+  return { estado: 'verde', motivo: null };
+}
+
+/** Le pone a cada pedido su `codeScanning` y su `codeScanningRequired`, y le saca lo que se leyó para eso. */
+function conAnalisis(ctx, repo, pedidos, llamar = gh, { hasta = Infinity, ahora = Date.now } = {}) {
+  // una lectura por repo, y sólo si hay un pedido que no sea borrador; la regla de la rama vino en la consulta
+  const delRepo = !pedidos.some((p) => !p.draft) ? { hay: false }
+    : ahora() > hasta ? { problema: 'no hubo tiempo de saber si el repo tiene análisis de seguridad' } : analisisDelRepo(ctx, repo, llamar);
+  for (const p of pedidos) {
+    const rollup = p._rollup;
+    const exige = p._exige;
+    delete p._rollup;
+    delete p._exige;
+    if (delRepo.problema) p.codeScanning = { estado: 'no-se-pudo', motivo: delRepo.problema };
+    else if (!delRepo.hay) p.codeScanning = { estado: 'no-aplica', motivo: null };
+    else if (p.draft) p.codeScanning = { estado: 'sin-mirar', motivo: 'no se mira hasta que pueda entrar' };
+    // las alertas (una lectura por pedido) sólo para el que podría estar listo: limpio y fuera de la cola
+    // pasado el tope de la lectura no se lee nada más: lo que quedó sin leer nunca es verde
+    else p.codeScanning = analisisDelPedido(ctx, repo, p, rollup, llamar, { conAlertas: p.mergeState === 'clean' && p.inQueue !== true, sinTiempo: ahora() > hasta });
+    p.codeScanningRequired = delRepo.hay ? exige : null;
+  }
+  return pedidos;
+}
+
 /** Con `queue: true` y sin rama: los abiertos de una sola consulta GraphQL, sin leer los controles de cada uno. */
-function listaConCola(ctx, repo) {
+function listaConCola(ctx, repo, deadlineMs) {
+  const desde = Date.now();
   const [owner, name] = repo.split('/');
   const value = [];
   let after = null;
@@ -277,7 +367,7 @@ function listaConCola(ctx, repo) {
     const prs = g.value && g.value.data && g.value.data.repository && g.value.data.repository.pullRequests;
     if (!prs || !Array.isArray(prs.nodes)) return no('no_medido', 'GitHub contestó los pedidos abiertos sin forma');
     for (const p of prs.nodes) if (p && Number.isInteger(p.number)) value.push(deGraphql(p));
-    if (!prs.pageInfo || !prs.pageInfo.hasNextPage) return { ok: true, value };
+    if (!prs.pageInfo || !prs.pageInfo.hasNextPage) return { ok: true, value: conAnalisis(ctx, repo, value, gh, { hasta: Number(deadlineMs) > 0 ? desde + Number(deadlineMs) * 0.8 : Infinity }) };
     after = prs.pageInfo.endCursor;
   }
   return no('no_medido', `tope de ${MAX_PAGINAS} páginas: la lista no se leyó entera`);
@@ -318,7 +408,7 @@ function leerPedido(args, ctx) {
 function listarPedidos(args, ctx) {
   const repo = repoDe(ctx);
   if (!repo) return no('rechazado', 'el repo no trae dueño/nombre de GitHub (team-repos.json)');
-  if (args.queue === true && !args.sourceBranch) return listaConCola(ctx, repo);
+  if (args.queue === true && !args.sourceBranch) return listaConCola(ctx, repo, args.deadlineMs);
   // con `sourceBranch`, los abiertos de esa rama, cada uno leído entero: la lista de GitHub no trae `mergeable`. Se
   // filtra por `head.ref` y no con `head=<dueño>:<rama>`: con un repo transferido o una organización renombrada, el
   // dueño del origin es el viejo y GitHub contesta ese filtro con una lista vacía, sin error (la sesión saldría libre);
@@ -378,4 +468,4 @@ function asignados(args, ctx) {
 
 module.exports = { 'change-request.open': abrirPedido, 'change-request.list': listarPedidos, 'change-request.read': leerPedido, 'assigned.list': asignados };
 // los ayudantes que reusa la lectura de la CI y de la cola (y la limpieza, para las pruebas), fuera del mapa de operaciones
-for (const [k, v] of Object.entries({ todas, controles, repoDe, MALOS, sinSalteos })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });
+for (const [k, v] of Object.entries({ todas, controles, repoDe, MALOS, sinSalteos, deGraphql, conAnalisis })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });

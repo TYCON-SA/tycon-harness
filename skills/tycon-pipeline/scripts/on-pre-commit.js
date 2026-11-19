@@ -1189,7 +1189,7 @@ function main() {
       p = { caso: 'ilegible', falta: `no pude revisar las piezas de la ejecución (${e.message})`, sesion: String(sessionId) };
     }
     if (p) {
-      process.stderr.write(or.cartel(p, { markerJs: path.join(__dirname, 'marker.js') }) + '\n');
+      process.stderr.write(or.cartel(p) + '\n');
       process.exit(2);
     }
     // con el plan aprobado por la coordinadora, un commit por fuera del paso de cerrar también mide el diff entero

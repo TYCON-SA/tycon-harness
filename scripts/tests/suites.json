@@ -1175,6 +1175,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.318: la ejecución perdida frena el cierre de turno una vez por turno, el cartel da comandos que andan en Windows y la consola frena borrar la carpeta de una ejecución abierta.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/lost-run-loop.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-close.test.js",
       "requiere": []
@@ -1873,9 +1879,27 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "__nota": "Parte 1 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
       "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p1.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 2 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p2.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 3 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p3.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 4 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p4.test.js",
       "requiere": []
     },
     {
@@ -3131,6 +3155,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.319: en Windows el freno y la lista de firmas del dueño ofrecen sólo la vía de firma que anda en esa consola; el comando de la terminal se pega tal cual; adhoc set con --repo; el «aprobado» encolado vale.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-signature-routes.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "una firma sin persona («hecho y avisado» o la delegación) sale sólo con el control previo de su guion: sin él se niega sin gastar el pedido, también en el chequeo previo del freno; y la prueba de cruce: cada llamada de firma del árbol que puede salir sin persona pasa su control previo. En proceso; un segundo.",
       "raiz": "arnes",
       "ruta": "tests/signatures-without-person.test.js",
@@ -3356,6 +3386,12 @@
       "__nota": "Los pedidos de cambio por la capa de plataforma: abrir uno en Azure DevOps y en GitHub contra el az y el gh de mentira (reusar el abierto, releerlo por rama si la respuesta no trae el número, lo que no abre), listar los de GitHub, el freno de un pedido por repo y los nocturnos que leen las dos plataformas.",
       "raiz": "arnes",
       "ruta": "tests/platform-change-request.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El análisis de seguridad (code scanning) de cada pedido abierto de GitHub, como lo lee el conector, con una llamada de mentira: sin su control, en rojo, corriendo, con alertas abiertas o sin poder leerse nunca es verde; la regla de la rama dice si lo exige.",
+      "raiz": "arnes",
+      "ruta": "tests/github-code-scanning.test.js",
       "requiere": []
     },
     {
