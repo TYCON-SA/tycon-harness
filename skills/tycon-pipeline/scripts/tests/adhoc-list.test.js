@@ -1017,3 +1017,36 @@ test('T24 Guias_DicenLaForma — @story-8.316 @ac-18', () => {
     for (const re of frases) assert.match(t, re, `${rel}: ${re}`);
   }
 });
+
+// ── lo que encontró el pase adversarial (8.316) ─────────────────────────────────────────────────────────────────────
+
+test('P1 Grupo_FormasDeYaml_SeLeenTodas — @story-8.316 @ac-2', () => {
+  const e = RG().entradasDe;
+  assert.deepStrictEqual(e('repo_group:\n- A\n- B\n'), ['A', 'B'], 'guiones sin sangría');
+  assert.deepStrictEqual(e('repo_group:\n  - A\n  # el del frente\n  - B\n'), ['A', 'B'], 'un comentario entre guiones');
+  assert.deepStrictEqual(e('repo_group:\n  - A\n\n  - B\notra: 1\n'), ['A', 'B'], 'un renglón en blanco');
+  assert.deepStrictEqual(e('repo_group:\n  - A  # el back\n  - "B"\n'), ['A', 'B'], 'un comentario al final');
+  assert.deepStrictEqual(e('repo_group: # los hermanos\n  - A\n'), ['A'], 'un comentario después de la llave');
+  assert.deepStrictEqual(e('repo_group: [A, "B"] # en línea\n'), ['A', 'B']);
+  assert.strictEqual(e('otra: 1\n'), null);
+  assert.strictEqual(e('repo_group:\notra: 1\n'), null);
+});
+
+test('P2 Lista_CarpetaComunAlLado_NoEsUnHermano — @story-8.316 @ac-5', () => {
+  const c = tresRepos('p2-316');
+  // una carpeta común (no es un repo) al lado de R, fuera del grupo: `docs/nuevo.md` es una carpeta nueva de R
+  fs.mkdirSync(path.join(c.raiz, 'docs'));
+  assert.deepStrictEqual(norma(['docs/nuevo.md'], c.R).lista, [path.join(c.R, 'docs/nuevo.md')]);
+  // y su código se cuenta con el prefijo, como una carpeta de R
+  fs.mkdirSync(path.join(c.raiz, 'tests'));
+  assert.strictEqual(lista().esCodigoRel('tests/A.cs', { cwd: c.R }), false);
+});
+
+test('P3 Lista_PedidaPorUnEnlace_NombraLasRutasDelRepo — @story-8.316 @ac-11', () => {
+  const c = tresRepos('p3-316');
+  const enlace = path.join(tmp('p3-enlace-'), 'R');
+  fs.symlinkSync(c.R, enlace);
+  const n = norma(['src/a.js', 'B/src/A.cs'], enlace);
+  assert.ok(n.lista, n.problema);
+  assert.deepStrictEqual(n.lista.map((f) => lista().relDeLaLista(f, enlace, n.hermanos)).sort(), ['B/src/A.cs', 'src/a.js']);
+});

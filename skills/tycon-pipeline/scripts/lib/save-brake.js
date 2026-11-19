@@ -1545,9 +1545,11 @@ function frenoDeLasPruebas(a, sid, home, { registrar = true, medida } = {}) {
     return { texto: textoFaltanLasPruebas({ porque, archivos: enRepo, comando, repo: nombre }) };
   };
   const porqueDe = (p) => (!p ? 'no hay una corrida de pruebas' : p.codigo !== 0 ? `la última corrida salió con ${p.codigo}` : 'el código cambió después de la última corrida');
-  // con código en más de un repo, una corrida en verde por repo (`adhoc test --repo`): la general no cuenta
-  const conCodigo = base.reposDelCarril(a).filter((r) => archivos.some((f) => f.startsWith(r + path.sep)));
-  if (conCodigo.length > 1) {
+  // un carril de varios repos (la misma cuenta que `adhoc test --repo`: todos los repos del carril) pide una corrida en
+  // verde por cada repo con código, con `--repo`: la general no cuenta, porque corre en la carpeta de la sesión
+  const delCarril = base.reposDelCarril(a);
+  const conCodigo = delCarril.filter((r) => archivos.some((f) => f.startsWith(r + path.sep)));
+  if (delCarril.length > 1) {
     const corridas = a.pruebasPorRepo || {};
     for (const repo of conCodigo.sort()) {
       const huella = base.huellaDelCarril(a, m, { repo });

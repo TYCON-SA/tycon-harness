@@ -7742,6 +7742,7 @@ function cmdAdhoc(sub, payloadJson) {
     // con `--repo`, la corrida de ese repo, con su huella; en un carril de un solo repo también vale como la general
     const conRepo = repo ? { pruebasPorRepo: { ...(ahora.pruebasPorRepo || {}), [repo]: { ...pruebas, huella: huellaDelRepo } } } : {};
     const unSoloRepo = !repo || adhocBase.reposDelCarril(ahora).length <= 1;
+    if (!repo && adhocBase.reposDelCarril(ahora).length > 1) console.error('⚠ marker.js adhoc test: este camino corto es de varios repos: para guardar cuenta la corrida de cada repo con código, con --repo <Nombre>.');
     io.writeAdhoc(STATE_DIR, SID, { ...ahora, ...(unSoloRepo ? { pruebas } : {}), ...conRepo });
     appendLog('adhoc.log', { kind: 'ADHOC_TEST', comando: pruebas.comando, codigo, huella, ...(repo ? { repo } : {}) });
     console.error(codigo === 0 ? 'marker.js adhoc test: en verde; anotado en el camino corto.' : `marker.js adhoc test: salió con ${codigo}; anotado: así no guarda.`);
@@ -8079,7 +8080,7 @@ function cmdAdhoc(sub, payloadJson) {
       ...(existing && existing.untilAt ? { untilAt: existing.untilAt } : {}),
       // las rutas anotadas, la marca de riesgo y las constancias, con el motivo que sea: valen por su huella, y declarar
       // el carril de nuevo no las vence
-      ...(existing ? Object.fromEntries(['rutas', 'riesgoAlto', 'revisoresEsperados', 'revisores', 'pase', 'pruebas']
+      ...(existing ? Object.fromEntries(['rutas', 'riesgoAlto', 'revisoresEsperados', 'revisores', 'pase', 'pruebas', 'pruebasPorRepo']
         .filter((k) => existing[k] !== undefined).map((k) => [k, existing[k]])) : {}),
     };
     // abrir trae la base de cada repo de la lista, como el primer toque: sin red abre igual, con la base «sin traer» y el

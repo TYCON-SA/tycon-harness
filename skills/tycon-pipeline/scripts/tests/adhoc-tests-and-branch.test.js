@@ -320,3 +320,34 @@ test('T19 Guardar_DosRepos_PruebasPorRepo — @story-8.316 @ac-14', () => {
   const g2 = guardar(d.R, 's19b', h2);
   assert.ok(!(g2 && g2.texto), JSON.stringify(g2));
 });
+
+test('P4 Guardar_CodigoEnUnoDeDos_PideLaDeEseRepo — @story-8.316 @ac-14', () => {
+  // un carril de dos repos con código sólo en B (R tiene una guía): cuenta la corrida de B con --repo, no la general
+  const h = tmp('home-');
+  const c = tresRepos('p4-316');
+  const a = escribir(c.B, 'src/a.js');
+  const g = escribir(c.R, 'docs/g.md');
+  for (const d of [c.B, c.R]) git(d, 'add', '.');
+  const bases = Object.fromEntries([c.R, c.B].map((d) => [d, { sha: git(d, 'rev-parse', 'HEAD'), traida: true }]));
+  conCarril(h, 'p4', { allowedFiles: [a, g], files: [a, g], bases, cwd: c.R });
+  git(c.B, 'switch', '-q', '-c', 'arreglo');
+  // la general corre en la carpeta de la sesión (R, sin código): avisa que no cuenta, y guardar sigue frenando
+  const general = marker(h, 'p4', ['adhoc', 'test', '--', process.execPath, '-e', 'process.exit(0)'], { cwd: c.R });
+  assert.match(general.stderr, /varios repos.*--repo/);
+  let r = guardar(c.B, 'p4', h);
+  assert.ok(r && /faltan las pruebas de B/.test(r.texto) && /adhoc test --repo B --/.test(r.texto), JSON.stringify(r));
+  // la de B con --repo: pasa
+  assert.equal(verdeEn(h, 'p4', c.R, 'B').status, 0);
+  r = guardar(c.B, 'p4', h);
+  assert.ok(!(r && r.texto), JSON.stringify(r));
+  // declararlo de nuevo (ampliar la lista, con el click de la persona) conserva la corrida de cada repo
+  const antes = leerCarril(h, 'p4').pruebasPorRepo;
+  assert.ok(antes && antes[c.B] && antes[c.B].codigo === 0, JSON.stringify(antes));
+  const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
+  const env = { ...process.env, HOME: h, USERPROFILE: h, CLAUDE_CODE_SESSION_ID: 'p4' };
+  delete env.NODE_OPTIONS;
+  const amp = spawnSync(process.execPath, [MARKER, 'adhoc', 'set', JSON.stringify({ reason: 'arreglo del combo de clientes', datos: 'sin-cambio', allowedFiles: ['docs/g.md', 'docs/h.md', 'B/src/a.js'] })],
+    { cwd: c.R, encoding: 'utf8', env: conVentana(env, { via: 'click' }) });
+  assert.equal(amp.status, 0, amp.stderr);
+  assert.deepStrictEqual(leerCarril(h, 'p4').pruebasPorRepo, antes);
+});

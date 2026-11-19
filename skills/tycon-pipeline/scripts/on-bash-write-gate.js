@@ -2759,6 +2759,9 @@ function argumentosDeCopia(c, args) {
       if (w === '-t' || w === '--target-directory') { carpeta = args[++i] ?? null; continue; }
       const pegado = /^(?:--target-directory=|-t)(.+)$/.exec(w);
       if (pegado) { carpeta = pegado[1]; continue; }
+      // `-t` dentro de un grupo de cortas (`-Dt dir`, `-vtdir`): la carpeta es lo que sigue a la `t`, o la palabra que sigue
+      const enGrupo = /^-([A-Za-z]*?)t(.*)$/.exec(w);
+      if (enGrupo && !w.startsWith('--') && /^[A-Za-z]*$/.test(enGrupo[1])) { carpeta = enGrupo[2] || (args[++i] ?? null); continue; }
     }
     if (w.startsWith('--')) { if (!w.includes('=') && tabla.largas.includes(w)) i++; continue; }
     // un grupo de cortas (`-avz`, `-ae ssh`): la primera que lleva valor se queda con el resto del grupo o, si es la

@@ -885,6 +885,10 @@ test('CopiaConOpcionDeValor_ElValorNoEsDestino', () => {
     `rsync -a -- --exclude ${HISTORIA}`,
     `install -m 644 /tmp/s.txt ${HISTORIA}`,
     'install -t specs /tmp/story-9.9-algo.md',
+    // `-t` dentro de un grupo de cortas, la forma de GNU de siempre (8.316, pase adversarial)
+    'install -Dt specs /tmp/story-9.9-algo.md',
+    'install -vt specs /tmp/story-9.9-algo.md',
+    'install -Dvtspecs /tmp/story-9.9-algo.md',
   ]) {
     const r = consola(h, c);
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);

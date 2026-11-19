@@ -57,14 +57,31 @@ function checkoutPrincipal(dir) {
   return principal;
 }
 
-/** Las entradas de `repo_group` de un yaml: la lista en línea o la de guiones, sin comillas. null si no está. */
+// sin el comentario del final (` # …`) y sin comillas
+const sinComentario = (s) => String(s).replace(/(^|\s)#.*$/, '').trim();
+const sinComillas = (s) => s.replace(/^['"]|['"]$/g, '');
+
+/**
+ * Las entradas de `repo_group` de un yaml: la lista en línea o la de guiones (con o sin sangría, con renglones en blanco
+ * o de comentario en el medio y comentarios al final), sin comillas. null si no está.
+ */
 function entradasDe(texto) {
-  const t = String(texto || '');
-  const enLinea = t.match(/^repo_group:\s*\[([^\]]*)\]/m);
-  if (enLinea) return enLinea[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
-  const guiones = t.match(/^repo_group:[ \t]*\r?\n((?:[ \t]+-[ \t]+.*(?:\r?\n|$))+)/m);
-  if (guiones) return guiones[1].split(/\r?\n/).map((l) => (l.match(/-\s+(.*)/) || [])[1]).filter(Boolean).map((s) => s.trim().replace(/^['"]|['"]$/g, ''));
-  return null;
+  const renglones = String(texto || '').split(/\r?\n/);
+  const i = renglones.findIndex((l) => /^repo_group:/.test(l));
+  if (i < 0) return null;
+  const resto = sinComentario(renglones[i].slice('repo_group:'.length));
+  const enLinea = resto.match(/^\[([^\]]*)\]$/);
+  if (enLinea) return enLinea[1].split(',').map((s) => sinComillas(s.trim())).filter(Boolean);
+  if (resto) return null;
+  const out = [];
+  for (const l of renglones.slice(i + 1)) {
+    if (!l.trim() || /^\s*#/.test(l)) continue;
+    const m = l.match(/^\s*-\s+(.*)$/);
+    if (!m) break;
+    const v = sinComillas(sinComentario(m[1]));
+    if (v) out.push(v);
+  }
+  return out.length ? out : null;
 }
 
 /**
@@ -110,7 +127,7 @@ function hermanoDeEdicion(raiz, n) {
   if (!incluye(g.grupo, n)) {
     const mal = g.invalidas.find((e) => clave(path.basename(e)) === clave(n));
     if (mal) return { problema: `${g.nombre} declara «${mal}» en repo_group: va el nombre de la carpeta, solo («${path.basename(mal)}»)` };
-    return { problema: `${n} no está en repo_group de ${g.nombre} (origin/${g.rama})` };
+    return { problema: `${n} no está en repo_group de ${g.nombre} (origin/${g.rama})`, fueraDelGrupo: true };
   }
   const halladas = carpetasLlamadas(g.padre, n);
   if (!halladas.length) return { problema: `${n} no existe al lado de ${g.nombre} (${g.padre})` };
@@ -145,7 +162,9 @@ function prefijoDeHermano(rel, cwd) {
   if (!al.length) return null;
   let ents = [];
   try { ents = fs.readdirSync(cwd); } catch (_) { ents = []; }
-  return { nombre: partes[0], resto: partes.slice(1).join('/'), dir: path.join(padre, al[0]), local: incluye(ents, partes[0]) };
+  const dir = path.join(padre, al[0]);
+  // `esRepo`: tiene su `.git`. Una carpeta común al lado que no está en el grupo no hace de la entrada la de un hermano
+  return { nombre: partes[0], resto: partes.slice(1).join('/'), dir, local: incluye(ents, partes[0]), esRepo: fs.existsSync(path.join(dir, '.git')) };
 }
 
 module.exports = { grupoDelRemoto, hermanoDeEdicion, prefijoDeHermano, problemaDelNombre, checkoutPrincipal, entradasDe, clave };

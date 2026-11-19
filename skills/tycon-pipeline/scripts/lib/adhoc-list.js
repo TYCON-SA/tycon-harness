@@ -95,6 +95,8 @@ function deUnHermano(s, cwd, hermanos) {
   const h = RG.hermanoDeEdicion(cwd, p.nombre);
   // una carpeta propia con el nombre de un repo de al lado: si el repo es un hermano declarado, no se sabe cuál es
   if (p.local) return h.problema ? null : { problema: `«${s}» es ambigua: ${p.nombre} es una carpeta de ${cwd} y también el repo hermano ${h.nombre}; renombrá la carpeta o pedí la lista desde otra` };
+  // una carpeta común de al lado (no es un repo) que no está en el grupo: la entrada es una ruta de `cwd`, como siempre
+  if (h.problema && h.fueraDelGrupo && !p.esRepo) return null;
   if (h.problema) return { problema: `«${s}» nombra el repo ${p.nombre}, que no vale como hermano: ${h.problema}` };
   hermanos.set(h.raiz, h.nombre);
   return { raiz: h.raiz, nombre: h.nombre, resto: p.resto };
@@ -105,7 +107,8 @@ function relDeLaLista(abs, cwd, hermanos = new Map()) {
   for (const [raiz, nombre] of hermanos) {
     if (abs.startsWith(raiz + path.sep)) return `${nombre}/${norm(path.relative(raiz, abs))}`;
   }
-  return path.relative(cwd, abs) || abs;
+  // contra la carpeta real: la lista guarda rutas reales, y una carpeta pedida por un enlace daría `../…`
+  return path.relative(sinEnlaces(cwd), abs) || abs;
 }
 
 /**
@@ -242,7 +245,8 @@ function esCodigoRel(rel, { cwd = null } = {}) {
   // como la cuenta `normalizar`: sin los espacios de los bordes (un espacio al final no saca un archivo del tope)
   let s = norm(String(rel || '').trim());
   const p = cwd ? require('./repo-group.js').prefijoDeHermano(s, cwd) : null;
-  if (p && !p.local) s = p.resto;
+  // sólo un repo de al lado: una carpeta común con ese nombre no saca el prefijo
+  if (p && !p.local && p.esRepo) s = p.resto;
   return gate.isCodeFile(s) && isImplPath(s);
 }
 
