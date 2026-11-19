@@ -530,6 +530,18 @@ function decidir(entrada) {
     return !LECTORES_DE_TEXTO.has(prog);
   });
   if (invocaLaPuerta) {
+    // 🔴 Un subagente no usa la puerta, con ninguna forma: la persona que contesta el cuadro mira la sesión principal, y
+    // un subagente de fondo puede lanzar decenas de consultas en segundos y apilarle cuadros de algo que no sigue.
+    // Claude Code pone `agent_id` en el evento sólo cuando llama un subagente, y no dice si es de fondo: el entorno de su
+    // consola es igual al de la sesión principal, así que la puerta sola no lo distingue. Se frenan todos.
+    if (typeof payload.agent_id === 'string' && payload.agent_id) {
+      frenar('un subagente no puede usar la puerta de producción.', [
+        'Cada consulta la aprueba una persona en un cuadro, y esa persona mira la sesión principal, no la de un subagente:',
+        'un subagente (más aún uno en segundo plano) le apila cuadros de algo que no está siguiendo.',
+        'Qué hacer: que el subagente devuelva las sentencias que necesita, y que la sesión principal las corra por la',
+        'puerta de a una, esperando cada respuesta.',
+      ], { cmd }, 'puerta-subagente');
+    }
     const limpio = cmd.trim();
     // 🔴 UN SOLO segmento: el host de la forma canónica era `\S+` y aceptaba `;`, `&&`, `|`, `$(…)`
     // y `` ` `` — el shell parte ahí y la segunda mitad corría SIN pasar por la puerta (ejecución

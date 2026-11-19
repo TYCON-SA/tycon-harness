@@ -793,5 +793,95 @@ for caso in ancha tabs; do
   else no "T-puerta-34 PuertaCuadro_SinNadaQueMostrar · $caso: rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
 done
 
+# ── un cuadro por vez, y el cuadro dice quién pide ─────────────────────────────────────────────────────────────────
+# Sin turno, una ráfaga de consultas apila cuadros; y sin decir quién pide, con dos sesiones a la vez no se sabe de cuál
+# viene cada uno.
+REG="$CASA/.claude/.tycon-pipeline/production.log"
+
+# T-puerta-35 · la primera línea del cuadro dice la carpeta y la sesión; desde una terminal, que es una terminal
+mundo ok
+mkdir -p "$TMP/proyectos/Cliente/Codigo"
+rc="$(cd "$TMP/proyectos/Cliente/Codigo" && CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=0123abcd-4567-89ef-0123-456789abcdef puerta "$PROD" 'select 1')"
+if [ "$(ultimo_arg | head -1)" = "Pide: Cliente/Codigo · sesión 0123abcd (principal)" ] && ultimo_arg | grep -F "Servidor: $PROD" >/dev/null; then
+  ok "T-puerta-35 PuertaCuadro_DiceQuienPide · carpeta y sesión en la primera línea, antes del servidor"
+else no "T-puerta-35 PuertaCuadro_DiceQuienPide · cuadro: $(ultimo_arg | head -3 | tr '\n' '|')"; fi
+mundo ok
+rc="$(unset CLAUDECODE CLAUDE_CODE_SESSION_ID; cd "$TMP/proyectos/Cliente/Codigo" && puerta "$PROD" 'select 1')"
+if [ "$(ultimo_arg | head -1)" = "Pide: Cliente/Codigo · una terminal, fuera de Claude Code" ]; then
+  ok "T-puerta-35 PuertaCuadro_DiceQuienPide · sin Claude Code, dice que es una terminal"
+else no "T-puerta-35 PuertaCuadro_DiceQuienPide · terminal: $(ultimo_arg | head -1)"; fi
+mundo ok
+raro="$TMP/proyectos/Producción/a$(printf '\xe2\x80\xae')b"; mkdir -p "$raro"
+rc="$(cd "$raro" && CLAUDE_CODE_SESSION_ID=0123abcd-4567-89ef-0123-456789abcdef puerta "$PROD" 'select 1')"
+if [ "$(ultimo_arg | head -1)" = "Pide: Producción/a?b · sesión 0123abcd (principal)" ]; then
+  ok "T-puerta-35 PuertaCuadro_DiceQuienPide · la tilde se ve, y un carácter de dirección sale como «?»"
+else no "T-puerta-35 PuertaCuadro_DiceQuienPide · carpeta rara: $(ultimo_arg | head -1)"; fi
+
+# el doble del cuadro que tarda: anota cuándo abrió y cerró cada uno
+cuadro_lento(){ # $1 = segundos que tarda en contestar
+  cat > "$RAIZ/usr/bin/osascript" <<SH
+#!/usr/bin/env bash
+printf 'abre %s\n' "\$\$" >> "$TMP/cuadros.log"
+sleep $1
+printf 'cierra %s\n' "\$\$" >> "$TMP/cuadros.log"
+echo "button returned:Aprobar, gave up:false"
+SH
+  chmod +x "$RAIZ/usr/bin/osascript"; rm -f "$TMP/cuadros.log"
+}
+
+# T-puerta-36 · tres pedidos a la vez: los cuadros se abren de a uno (nunca dos abiertos), y los tres se contestan
+mundo ok; cuadro_lento 1
+for i in 1 2 3; do ( puerta "$PROD" "select $i" >/dev/null; ) & done; wait
+abiertos=0; max=0
+while read -r que _; do
+  [ "$que" = abre ] && abiertos=$((abiertos+1)); [ "$que" = cierra ] && abiertos=$((abiertos-1))
+  [ "$abiertos" -gt "$max" ] && max=$abiertos
+done < "$TMP/cuadros.log"
+if [ "$(grep -c '^abre' "$TMP/cuadros.log")" = 3 ] && [ "$max" = 1 ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production-dialog.lock" ]; then
+  ok "T-puerta-36 PuertaCuadro_UnoPorVez · tres pedidos a la vez abren tres cuadros, nunca dos juntos, y el turno queda libre"
+else no "T-puerta-36 PuertaCuadro_UnoPorVez · máximo abiertos a la vez: $max · log: $(tr '\n' '|' < "$TMP/cuadros.log")"; fi
+
+# T-puerta-37 · si el cuadro abierto no se contesta antes del tope, el segundo sale 2 sin cuadro ni clave, y dice de quién es
+mundo ok; cuadro_lento 4
+( cd "$TMP/proyectos/Cliente/Codigo" && CLAUDE_CODE_SESSION_ID=0123abcd-4567-89ef-0123-456789abcdef puerta "$PROD" 'select 1' >/dev/null ) &
+primero=$!
+sleep 1
+rm -f "$TMP/orden.log"
+rc="$(TYCON_PROD_TEST_DIALOG_WAIT=1 puerta "$PROD" 'select 2')"
+# antes de que termine la primera, que sí está aprobada: después lee la clave y pisa la salida de error
+cp "$TMP/err" "$TMP/err-37"; sin_clave_37=0; grep -q '^security' "$TMP/orden.log" 2>/dev/null || sin_clave_37=1
+wait "$primero"
+if [ "$rc" = 2 ] && grep -q "ya hay un cuadro de producción abierto esperando respuesta" "$TMP/err-37" && grep -q "Cliente/Codigo · sesión 0123abcd" "$TMP/err-37" \
+   && [ "$(grep -c '^abre' "$TMP/cuadros.log")" = 1 ] && [ "$sin_clave_37" = 1 ] && grep -q '"accion":"sin-turno"' "$REG"; then
+  ok "T-puerta-37 PuertaCuadro_TopeDeEspera · vencida la espera sale 2, nombra quién tiene el cuadro, no abre otro ni lee la clave, y lo anota"
+else no "T-puerta-37 PuertaCuadro_TopeDeEspera · rc=$rc · cuadros: $(grep -c '^abre' "$TMP/cuadros.log") · sin clave: $sin_clave_37 · $(head -c 200 "$TMP/err-37")"; fi
+
+# T-puerta-38 · un turno de una puerta que ya no corre (la mataron) no traba a la siguiente
+mundo ok
+mkdir -p "$CASA/.claude/.tycon-pipeline/production-dialog.lock"; printf '999999' > "$CASA/.claude/.tycon-pipeline/production-dialog.lock/pid"
+rc="$(TYCON_PROD_TEST_DIALOG_WAIT=3 puerta "$PROD" 'select 1')"
+if [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production-dialog.lock" ]; then
+  ok "T-puerta-38 PuertaCuadro_TurnoAbandonado · el turno de un proceso muerto se toma y el cuadro se abre"
+else no "T-puerta-38 PuertaCuadro_TurnoAbandonado · rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+
+# T-puerta-39 · el freno no deja a un subagente llamar a la puerta, con ninguna forma; a la sesión principal no la frena por eso
+mundo ok
+freno_puerta(){ # $1 = comando · $2 = campo extra del evento (o vacío)
+  node -e 'const [c, extra] = process.argv.slice(1); const e = { tool_name: "Bash", hook_event_name: "PreToolUse", session_id: "s1", tool_input: { command: c } }; if (extra) e.agent_id = extra; process.stdout.write(JSON.stringify(e));' "$1" "$2" \
+    | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 node "$HOOK" >/dev/null 2>"$TMP/freno-err"; echo $?
+}
+for cmd in "/opt/tycon/bin/tycon-prod-sql $PROD 'select 1'" "/opt/tycon/bin/tycon-prod-sql --verify" "/opt/tycon/bin/tycon-prod-sql --open-firewall $PROD"; do
+  rc="$(freno_puerta "$cmd" a535a3bec91651866)"
+  if [ "$rc" = 2 ] && grep -q "un subagente no puede usar la puerta de producción" "$TMP/freno-err" && grep -q "que la sesión principal las corra" "$TMP/freno-err"; then
+    ok "T-puerta-39 Freno_SubagenteNoUsaLaPuerta · «${cmd#/opt/tycon/bin/tycon-prod-sql }» desde un subagente: frena y dice qué hacer"
+  else no "T-puerta-39 Freno_SubagenteNoUsaLaPuerta · «${cmd#/opt/tycon/bin/tycon-prod-sql }»: rc=$rc · $(head -c 200 "$TMP/freno-err")"; fi
+done
+rc="$(freno_puerta "/opt/tycon/bin/tycon-prod-sql $PROD 'select 1'" '')"
+if ! grep -q "subagente" "$TMP/freno-err"; then ok "T-puerta-39 Freno_SubagenteNoUsaLaPuerta · la sesión principal no se frena por ser subagente"
+else no "T-puerta-39 Freno_SubagenteNoUsaLaPuerta · la principal recibió el mensaje de subagente: $(head -c 200 "$TMP/freno-err")"; fi
+if grep -q '"regla":"puerta-subagente"' "$CASA/.claude/.tycon-pipeline/guard-decisions.jsonl" 2>/dev/null || grep -rqs '"puerta-subagente"' "$CASA/.claude/.tycon-pipeline"; then
+  ok "T-puerta-39 Freno_SubagenteNoUsaLaPuerta · el bloqueo queda anotado con su regla"
+else no "T-puerta-39 Freno_SubagenteNoUsaLaPuerta · no encontré la regla puerta-subagente en el registro de decisiones: $(ls "$CASA/.claude/.tycon-pipeline")"; fi
+
 echo "— prod-sql: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

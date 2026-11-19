@@ -160,15 +160,78 @@ CUADRO_GUION=(
 unset SQLCMDINI SQLCMDDBNAME SQLCMDSERVER SQLCMDUSER
 for v in $(compgen -e); do case "$v" in SQLCMD*) unset "$v" ;; esac; done
 APROBACION=""   # el campo que suma el registro de lo aprobado
+
+# ── quién pide: la carpeta y la sesión, en la primera línea del cuadro ─────────────────────────
+# Con dos sesiones pidiendo a la vez, la persona tiene que saber de cuál viene cada cuadro. La carpeta es la
+# del comando (las dos últimas partes) y la sesión, la que Claude Code pone en el entorno de la consola. Un subagente no
+# llega acá: lo frena el freno (`prod-access-guard.js`), que es el único que sabe si llama un subagente, porque el
+# entorno de su consola es igual al de la sesión principal (medido en Claude Code 2.1.312).
+quien_pide(){
+  local carpeta sesion
+  # las dos últimas partes; lo que no sea una letra latina, un dígito o `._ /-` sale como «?» (un carácter invisible o
+  # de dirección haría ver otra carpeta)
+  carpeta="$(/usr/bin/perl -CSA -e '
+    my @p = grep { length } split m{/}, $ARGV[0]; my $c = join "/", @p[($#p > 0 ? $#p - 1 : 0) .. $#p];
+    $c =~ s/[^A-Za-z0-9._ \/\x{C0}-\x{17F}-]/?/g; print substr($c, 0, 60)' "$PWD" 2>/dev/null)"
+  [ -n "$carpeta" ] || carpeta="(sin carpeta)"
+  sesion="${CLAUDE_CODE_SESSION_ID:-}"
+  if [[ "$sesion" =~ $SESION_VALIDA ]]; then printf 'Pide: %s · sesión %s (principal)' "$carpeta" "${sesion:0:8}"
+  elif [ -n "${CLAUDECODE:-}" ]; then printf 'Pide: %s · una sesión de Claude Code sin identificador' "$carpeta"
+  else printf 'Pide: %s · una terminal, fuera de Claude Code' "$carpeta"; fi
+}
+
+# ── un cuadro por vez ─────────────────────────────────────────────────────────────────────────
+# Una ráfaga de consultas no apila cuadros: la persona contesta de a uno. El turno es una carpeta
+# (`mkdir` es atómico): el que la crea abre su cuadro, los demás esperan a que se conteste, hasta un tope, y si se vence
+# salen 2 diciendo quién tiene el cuadro abierto. Un turno cuyo dueño ya no corre, o más viejo que lo que puede durar
+# un cuadro, se da por abandonado y se toma.
+TURNO="$_ESTADO/production-dialog.lock"
+# la espera se acorta sólo en las pruebas (sin el freno instalado), como TYCON_PROD_ROOT
+TURNO_ESPERA=90
+if [ "$INSTALADO" = 0 ] && [[ "${TYCON_PROD_TEST_DIALOG_WAIT:-}" =~ ^[0-9]+$ ]]; then TURNO_ESPERA="$TYCON_PROD_TEST_DIALOG_WAIT"; fi
+TENGO_TURNO=0
+soltar_turno(){ [ "$TENGO_TURNO" = 1 ] && [ "$(cat "$TURNO/pid" 2>/dev/null)" = "$$" ] && rm -rf "$TURNO" 2>/dev/null; TENGO_TURNO=0; return 0; }
+trap soltar_turno EXIT
+turno_abandonado(){
+  local pid edad
+  pid="$(cat "$TURNO/pid" 2>/dev/null)"
+  if [[ "$pid" =~ ^[0-9]+$ ]] && ! kill -0 "$pid" 2>/dev/null; then return 0; fi
+  edad=$(( $(date +%s) - $(stat -f %m "$TURNO" 2>/dev/null || date +%s) ))
+  # sin pid escrito todavía: recién creado; se da por abandonado sólo si pasó lo que dura un cuadro
+  [ "$edad" -gt $((CUADRO_ESPERA + 30)) ]
+}
+tomar_turno(){ # $1 = lo que dice quién pide (para el que espera)
+  mkdir -p "$(dirname "$TURNO")" 2>/dev/null
+  local desde; desde=$(date +%s)
+  while :; do
+    if mkdir "$TURNO" 2>/dev/null; then
+      printf '%s' "$$" > "$TURNO/pid"; printf '%s' "$1" > "$TURNO/quien"; TENGO_TURNO=1; return 0
+    fi
+    if turno_abandonado; then mv "$TURNO" "$TURNO.abandonado.$$" 2>/dev/null && rm -rf "$TURNO.abandonado.$$"; continue; fi
+    if [ $(( $(date +%s) - desde )) -ge "$TURNO_ESPERA" ]; then
+      # lo escribió otra puerta con quien_pide(), ya saneado: acá sólo se le sacan los caracteres de control
+      local otro; otro="$(tr -d '\000-\037\177' < "$TURNO/quien" 2>/dev/null | head -c 200)"
+      anotar "\"host\":\"$HOST\",\"accion\":\"sin-turno\",\"exit\":2"
+      muere "ya hay un cuadro de producción abierto esperando respuesta${otro:+ ($otro)} y la puerta abre uno por vez. Esperé ${TURNO_ESPERA} s y no se contestó: no abrí otro ni leí la clave. Que la persona conteste ese cuadro, y después volvé a intentar, de a una consulta por vez."
+    fi
+    sleep 1
+  done
+}
+
 aprobar(){ # $1 = lo que muestra el cuadro, $2 = la forma (consulta | reclasificar | open-firewall)
   # SSH: el cuadro se abriría en la pantalla de la Mac, donde quizá no hay nadie, o no se abriría
   if [ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ] || [ "$("$LAUNCHCTL" managername 2>/dev/null)" != Aqua ]; then
     muere "el cuadro de producción necesita la sesión de la Mac: abrí la terminal en la Mac, no por SSH"
   fi
   [ -x "$OSASCRIPT" ] || muere "no encuentro el programa del cuadro de aprobación ($OSASCRIPT): sin cuadro no se aprueba nada, así que no sigo."
-  local respuesta
+  local respuesta pide
+  pide="$(quien_pide)"
+  tomar_turno "$pide"
   respuesta="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=en_US.UTF-8 \
-    /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$((CUADRO_ESPERA + 10))" "$OSASCRIPT" "${CUADRO_GUION[@]}" "$1" 2>/dev/null)" || respuesta=""
+    /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$((CUADRO_ESPERA + 10))" "$OSASCRIPT" "${CUADRO_GUION[@]}" "$pide
+
+$1" 2>/dev/null)" || respuesta=""
+  soltar_turno
   # 🔴 Al vencer, `osascript` sale 0 con «gave up:true»: la salida 0 sola no es una aprobación. Vale sólo esta respuesta exacta.
   if [ "$respuesta" != "button returned:Aprobar, gave up:false" ]; then
     anotar "\"host\":\"$HOST\",\"accion\":\"rechazada\",\"forma\":\"$2\",\"exit\":2"
