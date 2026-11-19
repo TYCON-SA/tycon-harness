@@ -288,12 +288,17 @@ const SELECTION_ITSELF = ['scripts/ci/suites-for-change.js', 'scripts/ci/suite-d
  * El criterio de un grupo de heavy-suites.json para quien corre suites fuera de este guion (el portón de las stories,
  * lib/run-suites-json.js): `skips(name, files)` dice si la suite `name` del grupo se puede dejar para el banco nocturno
  * porque el cambio (`files`, rutas del repo) no toca los patrones del grupo, los suyos ni cómo se eligen las suites.
- * Una suite que no es del grupo nunca se saltea. `problem` si el archivo no se deja leer: entonces no se saltea ninguna.
+ * Una suite que no es del grupo nunca se saltea, y `skips` no dice si lo es: eso lo dice `incluye(name)`, para quien
+ * necesita saber qué suites del grupo vuelven a correr aunque una completa anterior las haya diferido o medido.
+ * `problem` si el archivo no se deja leer: entonces no se saltea ninguna.
  */
 function groupCriterion(file, groupName) {
   const heavy = readHeavy(file);
   if (heavy.problem) return { problem: heavy.problem };
   return {
+    incluye(name) {
+      return heavy.grouped.get(name) === groupName;
+    },
     skips(name, files) {
       if (heavy.grouped.get(name) !== groupName) return false;
       const norm = files.map((f) => String(f).replace(/\\/g, '/'));

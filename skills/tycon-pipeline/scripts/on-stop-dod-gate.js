@@ -80,6 +80,12 @@ function blockStop(reason) {                              // Claude NO para, con
 // check-count` al momento del commit / escritura de frontmatter (la capa correcta). Separación
 // de responsabilidades: Stop hook = "no pares con algo rojo"; hooks de commit = "no cierres
 // sin evidencia completa".
+// Las esperas a main anotadas (marker.js waiting-on-main): una lista por repo; la de un marcador de antes, un objeto.
+function esperasMain(marker) {
+  const w = marker && marker.waitingOnMain;
+  if (Array.isArray(w)) return w.filter((x) => x && typeof x === 'object');
+  return w && typeof w === 'object' ? [w] : [];
+}
 function computeGate(marker) {
   const checks = marker.checks || {};
   const failures = [];
@@ -91,7 +97,10 @@ function computeGate(marker) {
     // lo arregla, espera el turno. Lo frenan los cierres de los pasos, no el del turno.
     // «rojo-esperado» (expect-red): un rojo que la historia en deuda deja a propósito; sin la deuda escrita es un rojo.
     const esperado = /^rojo-esperado/.test(String(status)) && !!marker.cierre && marker.cierre.estado === 'deuda';
-    if (status !== 'green' && !esperado && !(name === 'tests' && ['sin-acotar', 'sin-medir', 'sin-turno'].includes(status))) failures.push(`${name} → ${status}`);
+    // «espera-main» (tests, tests-suite): el rojo del portón es de main (lib/main-check.js) y la espera está anotada en el
+    // marcador: el agente no lo arregla, espera a main. Sin la espera anotada es un rojo como cualquiera.
+    const esperaMain = (name === 'tests' || name === 'tests-suite') && status === 'espera-main' && esperasMain(marker).length > 0;
+    if (status !== 'green' && !esperado && !esperaMain && !(name === 'tests' && ['sin-acotar', 'sin-medir', 'sin-turno'].includes(status))) failures.push(`${name} → ${status}`);
   }
   // Sin checks registrados o todos verdes → green → deja parar (preserva pausas HITL).
   return { green: failures.length === 0, failures };
@@ -254,6 +263,13 @@ function main() {
     }
     if ((marker.checks || {}).tests === 'sin-turno') {
       toPerson = [toPerson, 'Las pruebas esperan el turno de la coordinadora: el portón no corrió y falta medirlas.'].filter(Boolean).join('\n');
+    }
+    const esperas = esperasMain(marker);
+    if ((marker.checks || {}).tests === 'espera-main' && esperas.length) {
+      const rutas = esperas.flatMap((w) => (Array.isArray(w.suites) ? w.suites : []));
+      const suites = rutas.length ? [...new Set(rutas.map((r) => path.basename(String(r))))].join(', ') : 'las suites del registro';
+      const ids = [...new Set(esperas.map((w) => w.id).filter(Boolean))].join(', ') || 'sin id';
+      toPerson = [toPerson, `main está roto en ${suites}: espero a main (${ids}). No es un rojo de la historia; la historia sigue cuando main pase.`].filter(Boolean).join('\n');
     }
     return allowStop();
   }
