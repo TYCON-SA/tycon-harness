@@ -518,6 +518,21 @@ mundo_grupo; grupo sub-1 "$GRUPO" --
 puerta --delete-group "$GRUPO" >/dev/null
 grep '^account list' "$TMP/az.log" | grep 'Warned' | grep 'PastDue' >/dev/null && ok "6.5 T9 · la búsqueda del grupo mira también las suscripciones Warned y PastDue" || no "6.5 T9 · suscripciones: $(grep '^account list' "$TMP/az.log")"
 
+# ── T1b · el borrado lo aprueba el cuadro de la puerta: sin su «Aprobar» no se pide nada a Azure ─────────────────────
+# La configuración administrada ya no pregunta por la puerta: este cuadro es la única aprobación de un borrado
+mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+rc="$(puerta --delete-group "$GRUPO")"
+if [ "$rc" = 0 ] && grep -q '^cuadro' "$TMP/cuadro.log" 2>/dev/null; then ok "6.5 T1b BorrarGrupo_PideElCuadro · el borrado aprobado pasó por el cuadro de la puerta"
+else no "6.5 T1b BorrarGrupo_PideElCuadro · rc=$rc · cuadro: $(cat "$TMP/cuadro.log" 2>/dev/null)"; fi
+for respuesta in 'button returned:Rechazar, gave up:false' 'button returned:, gave up:true'; do
+  mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+  printf '#!/usr/bin/env bash\necho "%s"\n' "$respuesta" > "$RAIZ/usr/bin/osascript"
+  rc="$(puerta --delete-group "$GRUPO")"
+  if [ "$rc" = 2 ] && [ -z "$(borrados)" ] && grep -q "no aprobó esta operación" "$TMP/err"; then
+    ok "6.5 T1b BorrarGrupo_PideElCuadro · con «${respuesta%%,*}» sale 2 y no le pide el borrado a Azure"
+  else no "6.5 T1b BorrarGrupo_PideElCuadro · «${respuesta}»: rc=$rc · borrados: $(borrados) · $(head -c 160 "$TMP/err")"; fi
+done
+
 # ── T2 · la línea del registro ──────────────────────────────────────────────────────────────────────────────────
 mundo_grupo; SES=$SES_A; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
 puerta --delete-group "$GRUPO" >/dev/null
