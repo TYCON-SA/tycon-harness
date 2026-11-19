@@ -218,6 +218,23 @@ pestaña Configuración, «Las sesiones de cada máquina»), y cada máquina pue
 aguanta depende de ella. Sin valor en ningún lado, el tope es 3. `coordination.js status` muestra quién trabaja, quién
 espera y por qué, y el tope con su origen.
 
+### Cuántas historias a la vez, quién lanza lo pesado y cuándo se le escribe al dueño
+
+Tres reglas de la coordinadora, para cualquier organización:
+
+- **Un tope de historias en el ciclo completo.** Una historia está en el ciclo desde que se arranca hasta que entra a
+  `main`. Con el tope lleno, la coordinadora no arranca ni retoma otra hasta que una entre: las demás quedan en fila con
+  `marker.js park --queue`. El tope es `coordination.max_stories_in_cycle`, de 1 a 20; sin valor en ningún lado, 4. Sigue
+  el mismo orden que `coordination.max_working`: la variable (`TYCON_COORDINATION_MAX_STORIES_IN_CYCLE`), la máquina
+  (`tycon-config.js set`) y el perfil del equipo. `coordination.js status` lo muestra con su origen. Hoy es una regla
+  que cumple la coordinadora: ningún freno la mide.
+- **Las sesiones lanzan lo pesado directo, y el arnés decide.** Una sesión que tiene que correr las pruebas o el pase
+  los lanza sin pedirle permiso a la coordinadora: el arnés dice si hay lugar (el turno de la máquina) y, si no, cuándo
+  volver. La coordinadora no da turnos: sólo avisa cuando se libera el lugar.
+- **Al dueño, un mensaje por hora con lo suyo; lo que frena, al instante.** Lo que espera su firma o su decisión sin
+  frenar a nadie va junto, en un mensaje por hora. Lo que frena el trabajo (una firma sin la cual una sesión no sigue,
+  un control en rojo que nadie puede destrabar) se le avisa en el momento.
+
 El tope frena por cualquier camino del agente, no sólo por `open`. Antes de cada comando, un freno mira si el comando
 abre una sesión de Claude de fondo: `claude --bg`, o `claude` corriendo de fondo (`&`, `nohup`, `setsid`, `tmux new -d`,
 `screen -dm`, `Start-Process`, la ejecución de fondo de la herramienta), también envuelto en `env`, `sudo`, `bash -c`,
