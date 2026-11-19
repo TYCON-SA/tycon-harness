@@ -2953,8 +2953,13 @@ withWaiverLog(() => {
     const lista = labEntrada({ iniciales: { 'src/x.js': '// x0\n', 'scripts/setup/hooks-list.json': '{}\n' }, declarados: ['src/x.js', 'scripts/setup/hooks-list.json'] });
     lista.entra({ 'src/x.js': '// x1\n' }, [1, 2]);
     lista.otra({ 'src/x.js': '// x2\n' }, 2, BASE + 400);
+    // el control: la misma forma sin lo sensible cuenta, así que el rojo de arriba es por la prueba de noche
+    const control = labEntrada({ iniciales: { 'src/x.js': '// x0\n' }, declarados: ['src/x.js'] });
+    control.entra({ 'src/x.js': '// x1\n' }, [1, 2]);
+    control.otra({ 'src/x.js': '// x2\n' }, 2, BASE + 400);
+    const porNoche = (r) => veredicto(r, 1) !== 'RUNTIME' && /AC#1[^\n]*prueba que corra de noche/.test(avisos(r));
     check('Matriz_CargaUnArchivoDeFirmas_EsSensible @story-8.310 @ac-13',
-      veredicto(carga.calc(), 1) !== 'RUNTIME' && veredicto(lista.calc(), 1) !== 'RUNTIME'
+      porNoche(carga.calc()) && porNoche(lista.calc()) && veredicto(control.calc(), 1) === 'RUNTIME'
         && noche.historiaSensible({ declarados: ['src/x.js'], codigo: ['/no/existe/x.js'] }) === true
         && noche.historiaSensible({ declarados: ['src/x.js'], codigo: [] }) === false);
   }
