@@ -367,7 +367,9 @@ const SENSITIVE = Object.freeze([
   'scripts/lib/test-scope.js', 'scripts/lib/test-scope-options.json', '.test-gate.yaml',
   // lo que decide si se frena al guardar lo no revisado y qué evidencia en vivo cuenta
   'skills/tycon-pipeline/scripts/lib/frozen-tree.js', 'skills/tycon-pipeline/scripts/runtime-matrix.js',
-  'skills/tycon-pipeline/scripts/smoke-run.sh',
+  'skills/tycon-pipeline/scripts/smoke-run.sh', 'skills/tycon-pipeline/scripts/lib/evidence-vs-commit.js',
+  'skills/tycon-pipeline/scripts/lib/commit-story.js', 'skills/tycon-pipeline/scripts/lib/story-requests.js',
+  'skills/tycon-pipeline/scripts/lib/nightly-coverage.js',
   // lo que decide si el dueño se entera
   'scripts/lib/notify.js', 'scripts/lib/notify-mail.js', 'scripts/lib/tycon-*-notify.sh',
   'scripts/lib/integrations.js', 'scripts/lib/tycon-config.js',
