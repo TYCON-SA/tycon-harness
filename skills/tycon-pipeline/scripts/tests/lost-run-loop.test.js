@@ -401,10 +401,14 @@ test('T16b BorrarCarpeta_FormasDelPaseAdversarial @story-8.318 @ac-13 @ac-15 —
 test('T16c BorrarCarpeta_SinRetrocesoNiEscapeIncompleto @story-8.318 @ac-13 — CodeQL del pedido: el freno no se cuelga y cita bien', () => {
   const gate = require(path.join(SCRIPTS, 'on-bash-write-gate.js'));
   // las dos entradas que hacían retroceder la expresión de los envoltorios, y la de las palabras de control
-  for (const largo of [`env${' -/env'.repeat(20000)}`, `env${' -c 0'.repeat(20000)}`, `if${' ( '.repeat(20000)}x`, `then${'  '.repeat(20000)}(`]) {
-    const t0 = Date.now();
-    gate.carpetasQueBorraOMueve(largo);
-    assert.ok(Date.now() - t0 < 2000, `tardó ${Date.now() - t0} ms con ${largo.slice(0, 20)}…`);
+  // crece en línea con el largo: cuatro veces más largo tarda a lo sumo unas ocho veces más (una que retrocede, miles),
+  // y nunca más de 10 s. Un tope fijo depende de la máquina: en la CI esto tarda el doble
+  const mide = (texto) => { const t0 = process.hrtime.bigint(); gate.carpetasQueBorraOMueve(texto); return Number(process.hrtime.bigint() - t0) / 1e6; };
+  for (const [cabeza, pieza] of [['env', ' -/env'], ['env', ' -c 0'], ['if', ' ( '], ['then', '  ']]) {
+    mide(`${cabeza}${pieza.repeat(500)}`);
+    const corto = mide(`${cabeza}${pieza.repeat(5000)}`);
+    const largo = mide(`${cabeza}${pieza.repeat(20000)}`);
+    assert.ok(largo < 10000 && largo < corto * 8 + 300, `${cabeza}${pieza}…: ${Math.round(corto)} ms con 5000 y ${Math.round(largo)} ms con 20000`);
   }
   // un comodín con muchas estrellas no cuelga la comparación con la ejecución abierta
   const or = require(OR);

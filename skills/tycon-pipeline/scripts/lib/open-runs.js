@@ -290,9 +290,14 @@ const FALTA = {
 };
 
 // la ruta estable de marker.js bajo la carpeta de la persona: no cambia al actualizar (la carpeta numerada de la versión
-// sí, y en Windows es la que ve `__dirname`) y no lleva `~`, que PowerShell no expande (@story-8.318)
-const MARKER_REL = '.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
-const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+// sí, y en Windows es la que ve `__dirname`) y no lleva `~`, que PowerShell no expande (@story-8.318). La carpeta de las
+// skills instaladas la sabe tycon-home.js; sin él (este archivo viaja suelto), marker.js de al lado
+const TYCON_HOME_LIB = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js');
+function markerRel(home) {
+  if (!fs.existsSync(TYCON_HOME_LIB)) return null;
+  const dir = require(TYCON_HOME_LIB).installedSkillsDir(home);
+  return path.relative(home, path.join(dir, 'skills', 'tycon-pipeline', 'scripts', 'marker.js')).split(path.sep).join('/');
+}
 
 /**
  * El comando `node "<ruta estable>/marker.js" <resto>` y las dos formas de lanzarlo: `{ ventana, terminal, sinCitar }`.
@@ -301,10 +306,13 @@ const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', '..', '
  * `signatureCommand` lo da con `$HOME`, que no es una firma: `sinCitar` y sólo vale la terminal.
  */
 function formaDeMarker(resto, sesion, { home } = {}) {
-  const { signatureCommand } = require('./home-command.js');
-  const base = signatureCommand(MARKER_REL, home || os.homedir());
+  const { signatureCommand, enLaTerminal } = require('./home-command.js');
+  const casa = home || os.homedir();
+  const rel = markerRel(casa);
+  // sin tycon-home.js, la ruta de al lado: se imprime, no se carga
+  const base = rel ? signatureCommand(rel, casa) : `node "${path.resolve(__dirname, '..', 'marker.js')}"`;
   const comando = `${base} ${resto}`;
-  return { ventana: comando, terminal: ownerWindow().enLaTerminal(comando, sesion), sinCitar: base.includes('$HOME') };
+  return { ventana: comando, terminal: enLaTerminal(comando, sesion), sinCitar: base.includes('$HOME') };
 }
 
 /**
@@ -318,7 +326,7 @@ function formasDeSalida(r, { home } = {}) {
     { ...formaDeMarker(`clear-session ${s} --lost`, s, { home }), que: 'la cierra como perdida' },
     { ...formaDeMarker(`restore ${s}`, s, { home }), que: 'la reabre desde la copia de la apertura' },
   ];
-  const { SIN_SESION_TERMINAL } = ownerWindow();
+  const { SIN_SESION_TERMINAL } = require('./home-command.js');
   const sinCitar = salidas[0].sinCitar;
   const renglones = [];
   if (!sinCitar) {
@@ -449,4 +457,4 @@ function dentroDe(hijo, padre, platform = process.platform) {
   return false;
 }
 
-module.exports = { CAMPOS_DE_CIERRE, MARKER_REL, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, hayAbiertas, dentroDe, casaConComodin, gatesPath, markerPath };
+module.exports = { CAMPOS_DE_CIERRE, markerRel, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, hayAbiertas, dentroDe, casaConComodin, gatesPath, markerPath };

@@ -3553,7 +3553,7 @@ function carpetasQueBorraOMueve(cmd) {
     // comillas pegadas a la palabra sin espacios adentro (`wt-"a"`): la misma palabra
     .replace(/(?<=[^\s=])(["'])([^"'\s]*)\1/g, '$2')
     // una redirección no cambia qué se borra ni dónde (`cd X >/dev/null && rm -rf wt`)
-    .replace(/[ \t]+\d?>{1,2}&?[ \t]*(?:\/dev\/null|&?\d|NUL)\b/gi, '')
+    .replace(/(?<=[ \t])\d?>{1,2}&?[ \t]*(?:\/dev\/null|&?\d|NUL)\b/gi, '')
     .replace(/(^|[;&|(\n]\s*)cmd(?:\.exe)?\s+\/[ck]\s+/gi, '$1')
     .replace(/(^|[;&|(\n{]\s*)(?:pushd|set-location|sl|chdir)(?=\s)/gi, '$1cd')
     // un subshell o un grupo que abre el tramo (`(cd x && …)`, `{ rm …; }`): sin la llave ni el paréntesis
