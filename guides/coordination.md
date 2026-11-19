@@ -524,7 +524,7 @@ principal, sea su propio checkout principal (no un worktree) y se declare con es
 carpeta ni de la rama local: un grupo commiteado sin subir no vale. Con otra sesión viva en el hermano, no se abre. Una
 lista de más de un repo no se delega, ni se delega ampliar una sumándole un repo: la aprueba el dueño con su click o en su
 terminal, y el cuadro empieza por los repos y cuántos archivos de cada uno. Las pruebas van por repo, cada una en su
-carpeta: `marker.js adhoc test --repo <Nombre> -- <comando>`. Al guardar, cada repo que cambió código pide su corrida en
+carpeta: `marker.js adhoc test --repo <Nombre> -- <comando>`. Al guardar, cada repo que cambió código pide sus pruebas en
 verde.
 
 **Declararlo de nuevo conserva todo.** Con otro cupo o con otro motivo, el carril sigue con su lista, su marca de riesgo
