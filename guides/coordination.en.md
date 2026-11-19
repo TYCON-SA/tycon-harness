@@ -225,6 +225,23 @@ Configuration tab, "The sessions on each machine"), and each machine can change 
 can take depends on the machine. With no value anywhere, the cap is 3. `coordination.js status` shows who is working,
 who is waiting and why, and the cap with where it comes from.
 
+### How many stories at once, who launches the heavy work and when the owner is written to
+
+Three rules for the coordinator, for any organization:
+
+- **A cap on stories in the full cycle.** A story is in the cycle from the moment it starts until it lands on `main`.
+  With the cap full, the coordinator neither starts nor resumes another one until one lands: the rest wait in line with
+  `marker.js park --queue`. The cap is `coordination.max_stories_in_cycle`, from 1 to 20; with no value anywhere, 4. It
+  follows the same order as `coordination.max_working`: the variable (`TYCON_COORDINATION_MAX_STORIES_IN_CYCLE`), the
+  machine (`tycon-config.js set`) and the team profile. `coordination.js status` shows it with its origin. Today it is a
+  rule the coordinator follows: no brake measures it.
+- **Sessions launch the heavy work directly, and the harness decides.** A session that has to run the tests or the pass
+  launches them without asking the coordinator: the harness says whether there is room (the machine's turn) and, if not,
+  when to come back. The coordinator does not hand out turns: she only tells when the place frees up.
+- **To the owner, one message per hour with what is theirs; what blocks, at once.** What waits for their signature or
+  decision without blocking anyone goes together, in one message per hour. What blocks the work (a signature without
+  which a session cannot go on, a red control nobody can unblock) is told right away.
+
 The cap brakes on every path the agent takes, not only through `open`. Before each command, a brake checks whether the
 command opens a background Claude session: `claude --bg`, or `claude` running in the background (`&`, `nohup`, `setsid`,
 `tmux new -d`, `screen -dm`, `Start-Process`, the tool's background execution), also wrapped in `env`, `sudo`,

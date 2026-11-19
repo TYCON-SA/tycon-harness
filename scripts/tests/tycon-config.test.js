@@ -2683,6 +2683,26 @@ test('RetireD_GuardConfigCopyOnlyNewKeys @story-8.15 @ac-14 — la copia del fre
   assert.equal(copia.valor(cDos, 'paths.repos'), raiz);
 });
 
+// ── El tope de historias en el ciclo completo: coordination.max_stories_in_cycle ─────────────────────────────────────
+
+// 🔴 Falla con: la clave sin el orden variable › máquina › perfil, otro número de fábrica que 4, o un valor fuera de
+// rango que el lector acepta.
+test('Config_MaxStoriesInCycle_OrderAndRange — variable, máquina, perfil, 4 de fábrica; 0 y 21 son errores', () => {
+  const home = casa();
+  maquina(home, { coordination: { max_stories_in_cycle: 6 } });
+  const perfil = arnesCon({ coordination: { max_stories_in_cycle: 5 } });
+  const v = cargar({ home, arnes: perfil, env: { TYCON_COORDINATION_MAX_STORIES_IN_CYCLE: '2' } });
+  assert.deepEqual(v.errores, []);
+  assert.deepEqual(lib().coordinacion(v).max_stories_in_cycle, { value: 2, origin: 'env' });
+  assert.deepEqual(lib().coordinacion(cargar({ home, arnes: perfil })).max_stories_in_cycle, { value: 6, origin: 'maquina' });
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: perfil })).max_stories_in_cycle, { value: 5, origin: 'perfil' });
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: arnesCon({}) })).max_stories_in_cycle, { value: 4, origin: 'sin-valor' });
+  for (const malo of [0, 21]) {
+    const roto = cargar({ home: casa(), arnes: arnesCon({ coordination: { max_stories_in_cycle: malo } }) });
+    assert.ok(roto.errores.some((e) => e.clave === 'coordination.max_stories_in_cycle'), `${malo}: ${JSON.stringify(roto.errores.map((e) => e.clave))}`);
+  }
+});
+
 // ── El piso del segundo turno de ejecución grande (@story-8.291): coordination.second_heavy_min_free_pct ─────────────
 
 // 🔴 Falla con: la clave sin el orden variable › máquina › perfil, otro número de fábrica que 50, o un valor fuera de
