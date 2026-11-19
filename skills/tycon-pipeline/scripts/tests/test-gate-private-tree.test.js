@@ -998,7 +998,7 @@ test('T7c Gate_NoScopeFile_RunsAllAsToday @story-8.279 @ac-11 @ac-25 — sin la 
   assert.strictEqual(c.stdout.trim(), 'la validación de prueba del privado');
 });
 
-test('T7d PrivateGate_UnknownTouched_StaysUnscoped @story-8.279 @ac-11 — las dos marcas juntas, sin saber qué se tocó: 7 sin correr nada; `--scoped-by-repo` sola correría todas', () => {
+test('T7d PrivateGate_UnknownTouched_StaysUnscoped @story-8.279 @ac-11 — las dos marcas juntas, sin saber qué se tocó: 7 sin correr nada; `--scoped-by-repo` sola, también', () => {
   const lab = laboratorio();
   const arbolDir = tmp('arbol-sin-tocado-');
   escribir(arbolDir, 'scripts/tests/suites.json', JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/u.test.js' }] }));
@@ -1010,8 +1010,9 @@ test('T7d PrivateGate_UnknownTouched_StaysUnscoped @story-8.279 @ac-11 — las d
   assert.strictEqual(dos.status, 7, `${dos.stdout}${dos.stderr}`);
   assert.ok(!fs.existsSync(marca), 'no corrió ninguna suite');
   const sola = correr(['--scoped-by-repo', 'la validación de prueba del privado']);
-  assert.strictEqual(sola.status, 0, `${sola.stdout}${sola.stderr}`);
-  assert.ok(fs.existsSync(marca), 'sola, corre todas: por eso van las dos');
+  // la completa no corre en la máquina: sin saber qué se tocó, tampoco con la marca del repo sola
+  assert.strictEqual(sola.status, 7, `${sola.stdout}${sola.stderr}`);
+  assert.ok(!fs.existsSync(marca), 'sola, tampoco corre ninguna');
 });
 
 // ── Papeles commiteados en el árbol armado: sólo se suman pruebas ────────────────────────────────────────────────────

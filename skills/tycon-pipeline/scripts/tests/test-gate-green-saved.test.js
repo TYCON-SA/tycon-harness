@@ -651,6 +651,9 @@ test('T10 GatesLog_RunLine_PerModeAndNotWhenCutOrNoTurn @story-8.297 @ac-9 — u
   // sin turno (77): con cien suites, el turno de la máquina lo tiene otra sesión
   const muchas = Array.from({ length: 100 }, (_, i) => ({ entrada: { raiz: 'arnes', ruta: `tests/m${i}.test.sh` }, texto: suite(`m${i}`, 'docs/a.md') }));
   const t = lab({ extra: muchas });
+  // con el tope de la máquina de fábrica (60) una acotada no llega a pedir turno: este repo lo sube
+  fs.writeFileSync(path.join(t.repo, '.test-gate.yaml'), 'test_gate:\n  scope: touched\n  full_suite_by: "la CI de prueba"\n  max_local_suites: 200\n');
+  git(t.repo, 'add', '-A'); git(t.repo, 'commit', '-q', '-m', 'tope');
   fs.mkdirSync(path.join(t.repo, 'scripts', 'tools'), { recursive: true });
   fs.writeFileSync(path.join(t.repo, 'scripts', 'tools', 'heavy-turn.js'),
     "module.exports = { BUSY_EXIT: 77, take: () => ({ ok: false, message: 'el turno lo tiene otra sesión (de prueba)' }) };\n");
