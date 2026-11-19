@@ -1653,7 +1653,7 @@ function buildWip(opts = {}) {
   const retired = retiredNow(home, nowMs, sessions, unreadable);
   const freeSlots = freeSlotsNow(sdir, nowMs, unreadable);
   const text = render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes, extra.map((x) => x.stepLine || null)) + renderRetired(retired) + renderFreeSlots(freeSlots);
-  return { testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, retired, freeSlots, text };
+  return { testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, retired, freeSlots, mainFixers: Object.fromEntries(fixers), text };
 }
 
 // El motivo vigente con que la coordinadora dejó lugares libres a propósito, o su cierre sin motivo (scripts/lib/free-slots.js):

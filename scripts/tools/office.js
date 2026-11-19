@@ -138,6 +138,8 @@ const LIBRARY = /^(?:three|node|vue|next|nuxt|d3|chart|express|react|angular|emb
 const JOINED = /^\p{L}+(?:-(?:a|al|de|del|en|y|o|to|by|and|or)-\p{L}+)+$/iu;
 // varios números de tarea juntos («T-126/T-127») son las filas que nombra, no una ruta
 const TASK_LIST = /^T-[1-9]\d*(?:\/T-[1-9]\d*)+$/i;
+// el registro de main roto («main-1») dice cuál espera: no es una ruta ni un código
+const MAIN_ID = /^main-[1-9]\d*$/;
 const technical = (w) =>
   SECRET(w)
   || w.includes('\\')
@@ -145,7 +147,7 @@ const technical = (w) =>
   || (w.includes('/') && !/^\/[a-z][a-z-]*$/.test(w) && !TASK_LIST.test(w) && !/^\d{1,2}\/\d{1,2}(?:\/\d{2,4})?$/.test(w) && (/\/.*\//.test(w) || /^[.~/]/.test(w) || /[._-]/.test(w)))
   || /^\.[a-z][\w.-]*$/.test(w)
   || (FILE_EXT.test(w) && /^[\w.-]+$/.test(w) && !/^[A-Z][a-z]+\.js$/.test(w) && !LIBRARY.test(w))
-  || (/^[a-z0-9_]+(?:-[a-z0-9_]+)+$/.test(w) && !/^\d+(?:-\d+)+$/.test(w) && !JOINED.test(w) && (/\d|_/.test(w) || /-.*-/.test(w)));
+  || (/^[a-z0-9_]+(?:-[a-z0-9_]+)+$/.test(w) && !/^\d+(?:-\d+)+$/.test(w) && !JOINED.test(w) && !MAIN_ID.test(w) && (/\d|_/.test(w) || /-.*-/.test(w)));
 const withCuts = (t, opts = {}) => BEFORE_WORDS(unnumbered(t, opts), opts.keepPrs)
   .split(/(\s+)/)
   .map((tok) => {
@@ -532,6 +534,9 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     if (x.steps) { a.pasos = x.steps; a.avance = x.progress; }
     a.fin = a.termina ? { hora: a.termina, dif: '', cls: '' } : null;
     if (waitingFor && !x.mark && Number.isFinite(x0.waitingSince)) a.fin.dif = `desde las ${hhmm(x0.waitingSince)}`;
+    // la sesión que tomó el arreglo de main lo dice, como en /wip: es uno solo para todas las que esperan
+    const fixIds = (wip.mainFixers || {})[String(d.sid)];
+    if (Array.isArray(fixIds) && fixIds.length && !x.mark) a.haciendo = `${a.haciendo ? `${a.haciendo} · ` : ''}arregla main (${fixIds.join(', ')})`;
     if (endAt != null && !waiting) {
       // sin historia, la promesa es del trabajo que se declaró, y de esa declaración: otro arreglo u otra nota de la misma
       // sesión no la hereda, ni una nota nueva con el mismo texto
