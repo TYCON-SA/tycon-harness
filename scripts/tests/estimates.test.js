@@ -785,7 +785,7 @@ test('T36 Censo @story-2.75 @ac-33', () => {
     assert.doesNotMatch(codigo, /execSync|shell\s*:\s*true/, p);
   }
   for (const p of piezas.slice(0, 2)) assert.doesNotMatch(fs.readFileSync(path.join(ROOT, p), 'utf8'), /azure|github|clockify|solidtime/i, p);
-  const guia = fs.readFileSync(path.join(ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const guia = require('./lib/pieces-guide.js').piecesText(ROOT);
   const detalle = fs.readFileSync(path.join(ROOT, 'guides', 'maintaining', 'piezas-en-detalle.md'), 'utf8');
   for (const p of piezas) {
     assert.match(guia, new RegExp(`^## ${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), `${p}: sin ficha en piezas-del-arnes.md`);

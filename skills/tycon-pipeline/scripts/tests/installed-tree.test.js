@@ -127,7 +127,7 @@ test('T10 Survey_NormalRunWritesOutsideTree', () => {
 });
 
 test('T12 PiecesCard_NamesInstalledTree', () => {
-  const card = fs.readFileSync(path.join(REPO_ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const card = require('../../../../scripts/tests/lib/pieces-guide.js').piecesText(REPO_ROOT);
   assert.match(card, /árbol instalado/);
   assert.match(card, /se cambia con un pedido a su repo, no editando la instalación/);
   assert.match(card, /En Codex frena su sandbox/, 'lo medido de Codex (AC 10) está en la ficha');

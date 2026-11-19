@@ -323,7 +323,7 @@ test('T40 Suites_LaColaNoLaSaltea @story-8.193 @ac-21', () => {
 // ---------------------------------------------------------------- la guía
 
 test('T28 Guia_NombraMedidaYCasoNuevo @story-8.193 @ac-26 @ac-27', () => {
-  const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const guia = require('./lib/pieces-guide.js').piecesText(RAIZ);
   const i = guia.indexOf('\n## scripts/tests/lib/product-lab.js\n');
   assert.ok(i >= 0, 'la guía no tiene la pieza del laboratorio');
   const fin = guia.indexOf('\n## ', i + 1);

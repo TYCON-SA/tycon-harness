@@ -398,7 +398,9 @@ for f in scripts/tests/suites.json artifacts/mapa-arnes.html guides/piezas-del-a
     *) PAT='scripts/nightly/projects/snapshot.js' ;;
   esac
   if [ "$INTERNO" = 0 ] && [ ! -f "$RAIZ/$f" ]; then echo "  ⏭️   — T14 NO MEDIDO: la copia pública no trae $f. No es un verde."; continue; fi
-  grep -q "$PAT" "$RAIZ/$f" && ok "T14 $f nombra la pieza" || mal "T14 $f no nombra $PAT"
+  # la guía de piezas es su índice y sus grupos (guides/pieces/)
+  DONDE=("$RAIZ/$f"); [ "$f" = guides/piezas-del-arnes.md ] && DONDE+=("$RAIZ/guides/pieces")
+  grep -rq "$PAT" "${DONDE[@]}" && ok "T14 $f nombra la pieza" || mal "T14 $f no nombra $PAT"
 done
 
 # ── T15 · SnapshotSdlc_IdenticoConYSinElPaso ──
