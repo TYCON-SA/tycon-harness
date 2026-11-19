@@ -278,7 +278,7 @@ test('T12 AdhocSet_AvisaLasPruebasPorErrores @story-8.319 @ac-10 @ac-11', (t) =>
   const antes = fuente.slice(Math.max(0, j - 300), j);
   assert.match(antes, /process\.stdout\.write\(JSON\.stringify\(obj, null, 2\) \+ '\\n'\);\s*\n\s*\/\/[^\n]*\n\s*$/, 'va justo después del JSON, por la salida de errores');
   const linea = fuente.slice(j, fuente.indexOf('\n', j));
-  assert.ok(linea.includes("signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} adhoc test -- <el comando de las pruebas>. Si cambiás código después, se vence.`);"), linea);
+  assert.ok(linea.includes("markerEstable(os.homedir())} adhoc test -- <el comando de las pruebas>. Si cambiás código después, se vence.`);"), linea);
   void t;
 });
 

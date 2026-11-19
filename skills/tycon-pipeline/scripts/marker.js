@@ -7755,9 +7755,8 @@ function cmdAdhoc(sub, payloadJson) {
       console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
       // con la carpeta en --repo: la lista va relativa a ella, y la terminal de la persona puede estar en otra (o en otro
       // repo). Sin `cd … &&`, que Windows PowerShell 5.1 no tiene, y con la ruta estable de marker.js (@story-8.319, AC 8)
-      const { signatureCommand } = require('./lib/home-command.js');
       const repoEnTerminal = /["$`%\r\n]/.test(carpetaDeLaLista) ? citar(carpetaDeLaLista) : `"${carpetaDeLaLista}"`;
-      console.error(`     ${signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} adhoc set ${pedidoEnTerminal} --repo ${repoEnTerminal} --terminal --for-session ${destino}`);
+      console.error(`     ${require('./lib/open-runs.js').markerEstable(os.homedir())} adhoc set ${pedidoEnTerminal} --repo ${repoEnTerminal} --terminal --for-session ${destino}`);
       console.error('   Si la persona no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
       process.exit(r.codigo === 2 ? 2 : 1);
     }
@@ -7836,7 +7835,7 @@ function cmdAdhoc(sub, payloadJson) {
     }
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     // el aviso de las pruebas, al abrir y no recién al guardar; por la salida de errores: el JSON queda igual (@story-8.319)
-    console.error(`Si este camino corto cambia código, guardar pide una corrida en verde: ${require('./lib/home-command.js').signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} adhoc test -- <el comando de las pruebas>. Si cambiás código después, se vence.`);
+    console.error(`Si este camino corto cambia código, guardar pide una corrida en verde: ${require('./lib/open-runs.js').markerEstable(os.homedir())} adhoc test -- <el comando de las pruebas>. Si cambiás código después, se vence.`);
     process.exit(0);
   }
   console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N,"mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}\' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc allow-data-change --changed "…" --recommends pasar|historia|descartar --why "…" | adhoc allow-foreign-save | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');

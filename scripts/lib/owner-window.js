@@ -1951,8 +1951,8 @@ function confirmarConsumos(lista, { paso = true } = {}) {
 const rutaParaLaConsola = (archivo) => (archivo
   ? (/^[A-Za-z0-9_./:@%+=,-]+$/.test(archivo) ? archivo : `'${String(archivo).replace(/'/g, "'\\''")}'`) : '<archivo>');
 
-// marker.js por la ruta estable bajo la carpeta personal: no cambia al actualizar y no lleva `~` (@story-8.318)
-const MARKER_REL = '.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+// marker.js por la ruta estable bajo la carpeta personal: no cambia al actualizar y no lleva `~` (lib/open-runs.js)
+const markerEstable = (casa) => require(path.join(LIB, 'open-runs.js')).markerEstable(casa);
 // lo que ninguna cita lee igual en PowerShell 5.1, PowerShell 7, cmd y bash, entre comillas dobles (@story-8.319)
 const NO_SE_CITA = /["$`%\r\n]/;
 
@@ -1962,9 +1962,8 @@ const NO_SE_CITA = /["$`%\r\n]/;
  * entre comillas dobles (@story-8.319); un archivo que no se cita así va como lo lee bash.
  */
 function comoSeFirma(firma, archivo, { casa } = {}) {
-  const { signatureCommand } = require(path.join(LIB, 'home-command.js'));
   const a = archivo ? (NO_SE_CITA.test(String(archivo)) ? rutaParaLaConsola(archivo) : `"${archivo}"`) : '<archivo>';
-  return `${signatureCommand(MARKER_REL, casa || os.homedir())} sign-file ${firma} ${a}`;
+  return `${markerEstable(casa || os.homedir())} sign-file ${firma} ${a}`;
 }
 
 /** Por qué una firma sobre `archivo` no tiene forma de la terminal, o null si la tiene. */
@@ -2198,7 +2197,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
 }
 
 module.exports = { renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
-  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, MARKER_REL,
+  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, markerEstable,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 
 if (require.main === module) {

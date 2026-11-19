@@ -1566,7 +1566,7 @@ test('Ventana_ArchivoConTilde_MuestraLaRutaDeLaCasa (pase adversarial) @story-8.
 
 test('ComoSeFirma_RutaConCaracteresDeLaConsola_VaEntreComillas (pase adversarial) @story-8.139 @ac-43', () => {
   // con node y la ruta estable de marker.js, y el archivo entre comillas dobles (8.319, AC 6 y 7)
-  const N = `${require('../../skills/tycon-pipeline/scripts/lib/home-command.js').signatureCommand(ow.MARKER_REL)} sign-file dod_runtime_exempt `;
+  const N = `${ow.markerEstable()} sign-file dod_runtime_exempt `;
   assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md'), `${N}"/r/specs/story-9.99.md"`);
   assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt'), `${N}<archivo>`);
   for (const ruta of ["/r/it's $HOME (1).md", '/r/a b;c&d.md', '/r/`x`.md']) {

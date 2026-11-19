@@ -261,7 +261,7 @@ function argvDe(forma) {
   assert.ok(w && /marker\.js$/.test(w[0]), `la forma corre marker.js: ${forma}`);
   return [MARKER, ...w.slice(1)];
 }
-const N_FIRMA = () => `${require('../../skills/tycon-pipeline/scripts/lib/home-command.js').signatureCommand(ow.MARKER_REL)} sign-file`;
+const N_FIRMA = () => `${ow.markerEstable()} sign-file`;
 
 // ── T1 — las dos formas, de una sola fuente ────────────────────────────────────────────────────────────────────────
 
