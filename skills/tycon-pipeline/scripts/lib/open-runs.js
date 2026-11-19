@@ -374,17 +374,38 @@ function abiertasDentro(carpeta, { home, eventos, platform = process.platform, c
  */
 function casaConComodin(ruta, patron, platform = process.platform) {
   const n = (p) => (platform === 'win32' ? String(p).replace(/\\/g, '/').toLowerCase() : String(p)).replace(/\/+$/, '');
-  let re = '';
-  for (let i = 0, t = n(patron); i < t.length; i++) {
-    const c = t[i];
-    if (c === '*') re += '[^/]*';
-    else if (c === '?') re += '[^/]';
-    else if (c === '[') { const f = t.indexOf(']', i + 1); if (f > i) { re += `[${t.slice(i + 1, f).replace(/^!/, '^').replace(/\\/g, '\\\\')}]`; i = f; } else re += '\\['; }
-    else re += c.replace(/[.+^${}()|\\]/g, '\\$&');
-  }
-  const rx = new RegExp(`^${re}(?:/|$)`, platform === 'win32' ? 'i' : '');
-  const hijo = n(ruta);
-  return rx.test(hijo) || [hijo].concat((() => { try { return [n(fs.realpathSync.native(ruta))]; } catch { return []; } })()).some((h) => rx.test(h));
+  // la parte fija de adelante, con los enlaces resueltos: `/var/…` y `/private/var/…` en macOS son la misma
+  const t0 = n(patron);
+  const corte = t0.search(/[*?[]/);
+  const fija = corte < 0 ? t0 : t0.slice(0, t0.lastIndexOf('/', corte) + 1);
+  const patrones = [t0];
+  try { const r = n(fs.realpathSync.native(fija || '/')); if (r && r + '/' !== fija && r !== fija) patrones.push(`${r}/${t0.slice(fija.length)}`); } catch { /* no existe: vale el patrón dicho */ }
+  const compilar = (t) => {
+    let re = '';
+    for (let i = 0; i < t.length; i++) {
+      const c = t[i];
+      // como el shell: un comodín al empezar el tramo no casa con un nombre que empieza con punto
+      const alEmpezar = i === 0 || t[i - 1] === '/';
+      if (c === '*') re += alEmpezar ? '(?!\\.)[^/]*' : '[^/]*';
+      else if (c === '?') re += alEmpezar ? '[^/.]' : '[^/]';
+      else if (c === '[') {
+        const f = t.indexOf(']', i + 1);
+        if (f > i) {
+          const dentro = t.slice(i + 1, f);
+          const niega = /^[!^]/.test(dentro);
+          const cuerpo = dentro.replace(/^[!^]/, '').replace(/[\\\]]/g, '\\$&');
+          // la clase nunca cruza de un tramo a otro
+          re += `${alEmpezar ? '(?!\\.)' : ''}[${niega ? '^/' : ''}${cuerpo}]`;
+          i = f;
+        } else re += '\\[';
+      } else re += c.replace(/[.+^${}()|\\]/g, '\\$&');
+    }
+    return new RegExp(`^${re}(?:/|$)`, platform === 'win32' ? 'i' : '');
+  };
+  const rxs = patrones.map(compilar);
+  const hijos = [n(ruta)];
+  try { hijos.push(n(fs.realpathSync.native(ruta))); } catch { /* ya no existe */ }
+  return rxs.some((rx) => hijos.some((h) => rx.test(h)));
 }
 
 /** Cuántas ejecuciones abiertas hay en la máquina (en cualquier carpeta o unidad): `{ ok, n }` o `{ ok: false, error }`. */

@@ -3534,7 +3534,14 @@ function carpetasQueBorraOMueve(cmd) {
   // `cmd /c`, `pushd` y `Set-Location` cambian de forma, no de efecto; las palabras de control del shell (`if`, `then`,
   // `do`, `else`, `time`, `!`, `{`, `(`) no son el comando
   const sinCmd = String(cmd || '')
-    .replace(/\$\(\s*pwd\s*\)/g, '$PWD')
+    // la continuación de línea junta los renglones
+    .replace(/\\\r?\n/g, ' ')
+    // `cd` solo va a la carpeta personal; `cd "<carpeta>"` sin espacios es `cd <carpeta>`
+    .replace(/(^|[;&|(\n]\s*)cd(?=\s*(?:[;&|\n)]|$))/g, '$1cd $HOME')
+    .replace(/\bcd\s+"([^"\s]*)"/g, 'cd $1')
+    .replace(/\$\(\s*pwd\s*\)|\$\{PWD(?::?[-?=+][^}]*)?\}/g, '$PWD')
+    // los envoltorios que corren otro comando (con sus opciones y valores): `sudo -u x`, `doas`, `env -u X`, `time -p`…
+    .replace(/(^|[;&|(\n]\s*)(?:(?:\S*\/)?(?:sudo|doas|setsid|ionice|nice|env|command|time|nohup|stdbuf|chrt|taskset)(?:\s+(?:-[ugnc]\s+\S+|-\S+|[A-Za-z_]\w*=\S*|\d+))*\s+)+(?=\S)/g, '$1')
     // comillas pegadas a la palabra sin espacios adentro (`wt-"a"`): la misma palabra
     .replace(/(?<=[^\s=])(["'])([^"'\s]*)\1/g, '$2')
     // una redirección no cambia qué se borra ni dónde (`cd X >/dev/null && rm -rf wt`)
@@ -3576,7 +3583,10 @@ function carpetasQueBorraOMueve(cmd) {
         const e = words.findIndex((w) => /^-exec(?:dir)?$/.test(w));
         const porNombre = words.some((w) => /^-(?:i?name|i?path|i?wholename|i?regex|newer\w*|[acm]time|[acm]min|size|perm|user|group)$/.test(w));
         if (e > 0 && !porNombre && recursivo(words.slice(e + 1))) {
-          for (const w of words.slice(1)) { if (w.startsWith('-') || w === '!' || w === '(') break; rutas.push({ raw: w }); }
+          // `-H`, `-L` y `-P` van antes de las carpetas
+          const desde = words.slice(1);
+          while (/^-[HLP]$/.test(desde[0] || '')) desde.shift();
+          for (const w of desde) { if (w.startsWith('-') || w === '!' || w === '(') break; rutas.push({ raw: w }); }
         }
       }
       // adentro de un texto sólo cuando lo corre otro shell (`bash -c '…'`): el texto de un `echo` o un mensaje no borra
@@ -3656,6 +3666,16 @@ function borraEjecucionAbierta(event) {
   // las carpetas desde donde puede correr: las del original y las del texto sin subshells ni `pushd`, también adentro
   // de un `bash -c '…'`
   const cwds = [...new Set([cmd, ...textos].flatMap((t) => carpetasDelComando(conLosCdDeSiempre(t), baseCwd)))];
+  // `{1..3}` y `{a..c}` como el shell, en una lista con coma (hasta 64)
+  const conRangos = (raw) => String(raw).replace(/\{(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])\}/g, (m, a, b) => {
+    const num = /\d/.test(a);
+    const x = num ? Number(a) : a.charCodeAt(0);
+    const y = num ? Number(b) : b.charCodeAt(0);
+    if (Math.abs(y - x) > 63) return m;
+    const out = [];
+    for (let v = x; x <= y ? v <= y : v >= y; v += x <= y ? 1 : -1) out.push(num ? String(v) : String.fromCharCode(v));
+    return `{${out.join(',')}}`;
+  });
   // `$PWD` y `$(pwd)` son la carpeta del comando; una ruta que no se resuelve se mira por su parte fija de adelante
   // (`../wt-$X` mira `..`): lo que se borra está adentro de esa carpeta
   const fija = (raw) => {
@@ -3680,7 +3700,7 @@ function borraEjecucionAbierta(event) {
   const comodines = [];
   for (const desde of cwds) {
     for (const d of rutas) {
-      for (const raw of expandirLlaves(d.raw)) {
+      for (const raw of expandirLlaves(conRangos(d.raw))) {
         const r = resolver(raw, d.base, desde);
         if (!r.abs) continue;
         // un comodín no se expande (la lista tiene tope y su orden depende del disco): se compara con cada ejecución

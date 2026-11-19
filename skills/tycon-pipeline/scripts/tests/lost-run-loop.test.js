@@ -379,11 +379,18 @@ test('T16b BorrarCarpeta_FormasDelPaseAdversarial @story-8.318 @ac-13 @ac-15 —
     [`cd ${E.repo} >/dev/null 2>&1 && rm -rf ../repo-wt-a`, 'Bash'], [`cd ${wt} && rm -rf $(pwd)`, 'Bash'], [`trash ${wt}`, 'Bash'],
     [`rd /s/q ${wt}`, 'PowerShell'], [`eval rm -rf ${wt}`, 'Bash'], ['rm -rf repo-wt-"a"', 'Bash'], ['rm -rf repo-wt\\-a', 'Bash'],
     ['rm -rf repo-wt-*', 'Bash'], [`mv -vt /tmp ${wt}`, 'Bash'],
+    // la cuarta vuelta
+    [`sudo -u nadie rm -rf ${wt}`, 'Bash'], [`env -u X rm -rf ${wt}`, 'Bash'], [`time -p rm -rf ${wt}`, 'Bash'], [`rm -rf \\\n  ${wt}`, 'Bash'],
+    [`find -L ${wt} -exec rm -rf {} +`, 'Bash'], ['rm -rf "${PWD:?}/repo-wt-a"', 'Bash'], ['rm -rf repo-wt-{a..c}', 'Bash'],
+    [`cd "${E.base}" && rm -rf repo-wt-a`, 'Bash'],
   ];
   for (const [c, tool] of frenan) {
     const r = E.consola('s-t16b', c, E.base, tool);
     assert.match(r.out, ANTES, `${c}: ${r.out}`);
   }
+  // `rm -rf *` adentro de la carpeta de trabajo no se lleva `.advisors`: el comodín no casa con un nombre con punto
+  const adentro = E.consola('s-t16b', 'rm -rf *', wt);
+  assert.doesNotMatch(adentro.out, ANTES, adentro.out);
   const pasan = [`echo "rm -rf ${wt}"`, `rm -f ${wt}`, 'rm -rf nada-*', `git -C ${E.repo} worktree prune`, `find ${E.base} -name '*.tmp' -exec rm -rf {} +`, 'git worktree prune --dry-run', 'git worktree prune -n', `rmdir ${wt}`, `git commit -m "git worktree remove ${wt}"`];
   for (const c of pasan) {
     const r = E.consola('s-t16b', c, c.startsWith('git worktree') ? E.repo : E.base);
