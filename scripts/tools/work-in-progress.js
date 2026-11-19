@@ -1625,8 +1625,29 @@ function buildWip(opts = {}) {
   // los repos de las corridas con fila: /office los reconoce al preguntar por un pedido que nombra el tablero
   const runRepos = [...new Set([...pipeRows.values()].map(({ m }) => m.repoPath).filter((p) => typeof p === 'string' && path.isAbsolute(p)))];
   const retired = retiredNow(home, nowMs, sessions, unreadable);
-  const text = render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes, extra.map((x) => x.stepLine || null)) + renderRetired(retired);
-  return { testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, retired, text };
+  const freeSlots = freeSlotsNow(sdir, nowMs, unreadable);
+  const text = render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes, extra.map((x) => x.stepLine || null)) + renderRetired(retired) + renderFreeSlots(freeSlots);
+  return { testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, retired, freeSlots, text };
+}
+
+// El motivo vigente con que la coordinadora dejó lugares libres a propósito, o su cierre sin motivo (scripts/lib/free-slots.js):
+// a lo sumo uno. Un archivo roto se dice en `unreadable`; vencido o ausente, nada.
+function freeSlotsNow(sdir, nowMs, unreadable) {
+  try {
+    const r = require(path.join(ROOT, 'scripts', 'lib', 'free-slots.js')).current(sdir, nowMs);
+    if (r.problem) unreadable.push(`los lugares libres a propósito: ${shown(r.problem)}`);
+    return r.record ? [r.record] : [];
+  } catch (e) {
+    unreadable.push(`los lugares libres a propósito (${shown((e && e.message) || e)})`);
+    return [];
+  }
+}
+
+// Su renglón en /wip, debajo de la tabla, con su rótulo: quién, hasta cuándo y por qué (el mismo texto que la oficina).
+function renderFreeSlots(list) {
+  if (!list || !list.length) return '';
+  const FS = require(path.join(ROOT, 'scripts', 'lib', 'free-slots.js'));
+  return `\n\n${list.map((r) => FS.line(r)).join('\n')}`;
 }
 
 // Las sesiones de fondo que Claude Code cerró y no volvieron (scripts/lib/claude-retired.js). Un registro que existe y no se
@@ -1798,4 +1819,4 @@ if (require.main === module) {
 // el nombre de una sesión como lo deja `sessionsBySid`: quien lo compara con uno guardado lo recorta igual
 const listedName = (s) => cut(s, NAME_MAX);
 
-module.exports = { touchedField, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName, buildWip, wipNow, renderRetired, retiredNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };
+module.exports = { touchedField, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName, buildWip, wipNow, renderRetired, retiredNow, renderFreeSlots, freeSlotsNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };

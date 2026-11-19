@@ -39,6 +39,12 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            (cada 120 s por defecto) y termina con 0 e imprime el estado cuando deja de estar abierto;
  *                            con 2 si la lectura falla tres veces seguidas. De fondo no le quita a la coordinadora la
  *                            firma por delegación (scripts/lib/owner-window.js)
+ *   keep-free --reason "<por qué>"
+ *                            la coordinadora anota por qué deja lugares libres: con lugar, memoria libre y una historia
+ *                            lista, el freno del cierre del turno (scripts/hooks/coordination-fill-gate.js, `fillCheck`)
+ *                            no la deja cerrar hasta que abra una sesión o deje este motivo, que vale 30 minutos y cubre
+ *                            sólo el trabajo listo que vio (scripts/lib/free-slots.js). Sale 2 sin motivo o con uno de
+ *                            menos de 15 letras; 1 si no hay nada que justificar
  *
  * Además, sin línea de comandos: `capNotice` es el aviso que la coordinadora ve en cada turno
  * (scripts/hooks/coordination-notice.js): el tope, las sesiones de fondo quietas, la fila de la suite completa parada
@@ -61,9 +67,10 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  */
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const SKILL_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
+const FS = require(path.join(__dirname, '..', 'lib', 'free-slots.js'));
 const { stateDir, claudeDir } = require(path.join(SKILL_LIB, 'state-dir.js'));
 const { adversarialInFlight } = require(path.join(SKILL_LIB, 'codex-reviewers.js'));
 const { rolDeCoordinar, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
@@ -1723,6 +1730,166 @@ function capNotice(opts = {}) {
   return lines.length ? lines.join('\n') : null;
 }
 
+// ── El freno del cierre del turno: la coordinadora no deja la máquina vacía ──
+
+// la lectura de proyectos la refresca la oficina sólo con alguien mirando: pasada esta edad, la pide el freno, de fondo
+const SNAPSHOT_REFRESH_MS = 30 * 60000;
+// cuántas historias listas nombra el freno; la lista entera va en el motivo
+const FILL_SHOWN = 5;
+const MUTE_MEMORY = () => ({ pct: null, why: 'el freno no la mide acá' });
+
+/**
+ * Pide la lectura de proyectos de fondo, sin esperarla; el candado de `refresh` evita dos a la vez. Nunca tira: la lectura
+ * es ayuda, y si no se pudo pedir el próximo cierre la vuelve a pedir; lo que falló queda en `problems`, que es el rastro.
+ */
+function launchRefresh(launcher, problems = []) {
+  const failed = (e) => problems.push(`el refresco de la lectura de proyectos no salió (${label((e && (e.code || e.message)) || e, 120)})`);
+  try {
+    if (launcher) { launcher(); return; }
+    const child = spawn(process.execPath, [path.join(__dirname, 'office', 'project-stories.js'), '--refresh'], { detached: true, stdio: 'ignore', windowsHide: true });
+    // el error de un lanzamiento de fondo llega después: sin oyente tiraría al proceso entero; si llega cuando quien llamó ya
+    // salió, no queda rastro (lanza el Node de este mismo proceso, así que casi no pasa)
+    child.on('error', failed);
+    child.unref();
+  } catch (e) { failed(e); }
+}
+
+/**
+ * Las historias listas sin sesión del proyecto de la coordinadora, de la prioridad más urgente a la menos y por número:
+ * `[{ key: 'story:<id>', kind: 'story', id, titulo, prioridad }]`. Salen de la lectura de proyectos (project-stories.js), y
+ * cuentan sólo las `ready-for-dev` de los proyectos cuyo `repos` trae el remoto de la carpeta de la coordinadora, leídos de
+ * la rama principal (no `deTuCopia`), sin `pausa` de hoy o futura, sin `pendientes`, sin corrida en esta máquina, y que
+ * ninguna fila del tablero sin `hecho` nombre, salvo una `sin-empezar` libre. Las corridas detenidas no entran (las sigue
+ * nombrando el aviso de la fila larga del portón). Ante la duda, nada cuenta: una lectura ausente, vencida o sin `repos`,
+ * una carpeta sin remoto, un tablero que existe y no se lee o una corrida que no se lee dejan la lista vacía, y lo que no
+ * se pudo leer queda en `problems`.
+ */
+function readyStories({ home, now, cwd, launcher, problems }) {
+  const PS = require('./office/project-stories.js');
+  const sdir = stateDir(home);
+  const { snap } = PS.readSnapshot(sdir, now);
+  const at = snap ? Date.parse(snap.at) : NaN;
+  if (!snap || !(now - at < SNAPSHOT_REFRESH_MS)) launchRefresh(launcher, problems);
+  if (!snap) { problems.push('la lectura de proyectos (no está, está rota o pasó de una hora): la pedí de fondo'); return []; }
+  let mine = null;
+  try { mine = PS.remoteKey(cwd); } catch (e) { problems.push(`el remoto de la carpeta de la coordinadora (${label(e.message, 120)})`); return []; }
+  if (!mine) { problems.push('la carpeta de la coordinadora no tiene remoto: no sé de qué proyecto es'); return []; }
+  let rows;
+  try { rows = require('./office/board.js').readBoardRaw(sdir).raw.pendientes.filter((r) => r && typeof r === 'object'); } catch (e) {
+    problems.push(`el tablero (${label(e.message, 160)})`);
+    return [];
+  }
+  const free = (r) => { const q = typeof r.quien === 'string' ? r.quien.trim().toLowerCase() : ''; return !q || q === 'sin sesión'; };
+  const named = (r) => (typeof r.historia === 'string' ? r.historia.trim() !== '' : r.historia != null);
+  const taken = new Set(rows.filter((r) => named(r) && r.estado !== 'hecho' && !(r.estado === 'sin-empezar' && free(r))).map((r) => String(r.historia).trim()));
+  const before = problems.length;
+  const runs = PS.runsOfThisMachine({ stateDir: sdir, now, problems });
+  // una corrida que no se lee puede ser la de cualquiera de estas historias: ante la duda, ninguna cuenta
+  if (problems.length > before) return [];
+  const today = localDate(now);
+  const out = [];
+  // un mismo remoto arma una fila por cada lugar de historias del repo: se recorren todas
+  for (const p of snap.proyectos || []) {
+    if (!Array.isArray(p.repos) || !p.repos.includes(mine) || p.deTuCopia) continue;
+    for (const st of p.historias || []) {
+      if (!st || st.estado !== PS.READY) continue;
+      if (st.pausa && String(st.pausa) >= today) continue;
+      if (Array.isArray(st.pendientes) && st.pendientes.length) continue;
+      if (PS.runOf(st, runs)) continue;
+      const id = String(st.id);
+      if (taken.has(id)) continue;
+      out.push({ key: `story:${id}`, kind: 'story', id, titulo: st.titulo || st.archivo || null, prioridad: st.prioridad || null });
+    }
+  }
+  // el mismo número leído de dos lugares del remoto: se ordenan todas (prioridad, número, título) y queda la primera, no
+  // la del lugar que la lectura puso antes, para que el texto del freno no cambie entre refrescos
+  const seen = new Set();
+  return PS.inOrder([...out].sort((a, b) => String(a.titulo || '').localeCompare(String(b.titulo || '')))).filter((w) => !seen.has(w.key) && seen.add(w.key));
+}
+
+/** El texto del freno: la cuenta, la memoria, hasta FILL_SHOWN historias y el comando del motivo. Ningún comando para abrir. */
+function fillReason(r) {
+  const opened = r.recent ? ` — ${r.recent} ya se ${r.recent === 1 ? 'abrió' : 'abrieron'} hace menos de 10 min` : '';
+  const lines = [`⛔ Coordinación: hay lugar (${r.working} otras trabajando de un tope de ${r.cap}, con vos ${r.working + 1}), memoria libre ${r.memoryPct} % y trabajo listo${opened}. Abrí una sesión antes de cerrar el turno:`];
+  for (const w of r.work.slice(0, FILL_SHOWN)) lines.push(`  · historia lista: ${label(w.id)} «${label(w.titulo || 'sin título', 80)}»${w.prioridad ? ` (${label(w.prioridad, 8)})` : ''}`);
+  if (r.work.length > FILL_SHOWN) lines.push(`  (+${r.work.length - FILL_SHOWN} más)`);
+  lines.push(`El encargo lleva «nada pesado sin turno de la coordinadora». Si no vas a abrir ninguna, anotá por qué: node ${__filename} keep-free --reason "<por qué>" (vale 30 min).`);
+  if (r.problems.length) lines.push(`No pude leer: ${label(r.problems.join(' · '), 300)}.`);
+  return lines.join('\n');
+}
+
+/**
+ * ¿La coordinadora puede cerrar su turno? `{ block, why, reason, work, keys, working, cap, memoryPct, recent, session,
+ * problems }`. Frena (`block`) con lugar, memoria libre y al menos una historia lista sin sesión, salvo que un motivo
+ * vigente (free-slots.js) cubra ese trabajo. Cuando no frena, `why` dice por qué: `no-coordinadora` · `estado-ilegible` ·
+ * `sin-lugar` · `sin-trabajo` · `recien-abiertas` · `motivo-vigente` · `memoria`. El orden importa: sin lugar no se lee la
+ * lectura de proyectos ni el tablero; sin trabajo listo no se mide la memoria. «Hay lugar» se cuenta como `open`: las otras
+ * que trabajan más la coordinadora, por debajo del tope. Lo usan el gancho Stop (scripts/hooks/coordination-fill-gate.js) y
+ * `keep-free`, con `ignoreReason` (un motivo vigente se renueva). Para las pruebas: `now`, `readMemory`, `refreshLauncher`
+ * y `cwd` (la carpeta de la coordinadora).
+ */
+function fillCheck(opts = {}) {
+  const home = opts.home || require('os').homedir();
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  const sid = sessionOf(opts);
+  const out = { block: false, why: null, reason: null, work: [], keys: [], working: null, cap: null, memoryPct: null, recent: 0, session: null, problems: [] };
+  const who = coordinatorRole(opts, sid);
+  if (!who) return { ...out, why: 'no-coordinadora' };
+  // la memoria del segundo turno no la mide el freno: `status` la mediría con exactamente una ejecución grande corriendo
+  const s = status({ ...opts, home, now, noTranscripts: true, readMemory: MUTE_MEMORY });
+  const me = [...s.working, ...s.waiting].find((w) => w.sid === sid);
+  out.session = me ? me.session : label(String(sid).slice(0, 8));
+  out.problems = who.problem ? [who.problem, ...s.problems] : [...s.problems];
+  if (out.problems.length) return { ...out, why: 'estado-ilegible' };
+  const others = s.working.filter((w) => w.sid !== sid);
+  out.working = others.length;
+  out.cap = s.cap.value;
+  if (others.length + 1 >= s.cap.value) return { ...out, why: 'sin-lugar' };
+  out.work = readyStories({ home, now, cwd: opts.cwd || process.cwd(), launcher: opts.refreshLauncher, problems: out.problems });
+  out.keys = out.work.map((w) => w.key);
+  if (!out.work.length) return { ...out, why: 'sin-trabajo' };
+  // una sesión nueva tarda en anotar su historia: cada una descuenta un trabajo, sin saber cuál tomó
+  out.recent = recentOpened(home, now, out.problems).length;
+  if (out.work.length - out.recent <= 0) return { ...out, why: 'recien-abiertas' };
+  if (!opts.ignoreReason) {
+    const cur = FS.current(stateDir(home), now);
+    if (cur.problem) out.problems.push(`el motivo de los lugares libres (${label(cur.problem, 160)}): lo cuento como no anotado`);
+    if (FS.covers(cur.record, out.keys, now)) return { ...out, why: 'motivo-vigente' };
+  }
+  const m = measureMemory(opts);
+  out.memoryPct = m.pct;
+  if (m.pct == null) out.problems.push(`la memoria libre (${label(m.why || 'sin motivo', 120)})`);
+  if (m.pct == null || m.pct < PROPOSE_MIN_FREE_PCT) return { ...out, why: 'memoria' };
+  out.block = true;
+  out.reason = fillReason(out);
+  return out;
+}
+
+/**
+ * `keep-free --reason`: anota por qué la coordinadora deja lugares libres. `{ code, message, record? }`: 2 sin motivo o con
+ * uno corto; 1 si no hay nada que justificar (no es la designada, el estado no se lee, no hay lugar, no hay trabajo, las
+ * recién abiertas lo cubren, o la memoria no llega al piso); 0 con el motivo anotado. Un motivo vigente no es rechazo: el
+ * nuevo lo reemplaza, y la historia conserva los dos.
+ */
+function keepFree(opts = {}) {
+  const reason = opts.reason;
+  if (typeof reason !== 'string' || !reason.trim()) return { code: 2, message: 'keep-free pide --reason "<por qué no abrís nada>": sin motivo no se deja un lugar libre.' };
+  if (FS.reasonLength(reason) < FS.MIN_REASON) return { code: 2, message: `El motivo tiene menos de ${FS.MIN_REASON} letras: decí por qué no abrís nada, para quien lo lea en /wip.` };
+  const r = fillCheck({ ...opts, ignoreReason: true });
+  const no = (message) => ({ code: 1, message });
+  if (r.why === 'no-coordinadora') return no('keep-free lo corre la coordinadora designada: esta sesión no lo es.');
+  if (r.why === 'estado-ilegible') return no(`No pude leer el estado de la máquina (${label(r.problems.join(' · '), 200)}): sin saber si hay lugar no se anota un motivo.`);
+  if (r.why === 'sin-lugar') return no(`No hay lugar (${r.working} otras trabajando de un tope de ${r.cap}): no hay nada que justificar.`);
+  if (r.why === 'sin-trabajo') return no(`No hay trabajo listo: no hay nada que justificar.${r.problems.length ? ` No pude leer: ${label(r.problems.join(' · '), 200)}.` : ''}`);
+  if (r.why === 'recien-abiertas') return no(`Las ${r.recent} sesión(es) recién abiertas cubren el trabajo listo: no hay nada que justificar.`);
+  if (r.why === 'memoria') return no(`La memoria libre no llega al piso (${r.memoryPct == null ? 'no se pudo medir' : `${r.memoryPct} %`}): el freno no frenaría, no hay nada que justificar.`);
+  const home = opts.home || require('os').homedir();
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  const rec = FS.record({ kind: 'reason', at: now, sid: sessionOf(opts), session: r.session, reason, working: r.working, cap: r.cap, memoryPct: r.memoryPct, work: r.keys });
+  try { FS.write(stateDir(home), rec); } catch (e) { return no(`No pude anotar el motivo (${label(e.code || e.message, 120)}).`); }
+  return { code: 0, message: `Anotado: vale hasta las ${hhmm(rec.expiresAt)} y cubre ${rec.work.length} historia(s) lista(s); si aparece otra, el freno vuelve.`, record: rec };
+}
+
 const listNoticeFile = (home, sid) => path.join(coordinationDir(home), `list-notice-${sid}.json`);
 const plural = (n, una, varias) => `${n} ${n === 1 ? una : varias}`;
 
@@ -2831,7 +2998,12 @@ function main(argv) {
       return r.code;
     });
   }
-  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n> | stop --name <n> | owner-wait | pr-wait --repo <org/repo> --number <n> [--interval <s>]\n');
+  if (cmd === 'keep-free') {
+    const r = keepFree({ ...base, reason: f.reason });
+    (r.code === 0 ? process.stdout : process.stderr).write(`${r.code === 0 ? '' : 'coordination.js: '}${r.message}\n`);
+    return r.code;
+  }
+  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n> | stop --name <n> | owner-wait | pr-wait --repo <org/repo> --number <n> [--interval <s>] | keep-free --reason "<por qué>"\n');
   return 2;
 }
 
@@ -2841,4 +3013,4 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, flags, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };

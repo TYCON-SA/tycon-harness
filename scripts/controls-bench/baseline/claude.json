@@ -1605,6 +1605,8 @@
     "on-pre-commit.js::freno-de-guardar-pedido-del-camino-rapido-pregunta": true,
     "on-pre-commit.js::freno-de-guardar-gemelo-carril-sin-firma-pasa": true,
     "office-link-start.js::OficinaBench_CanalDeVuelta_UnaOrdenDelSitioSeDescartaYCierra": true,
-    "office-link-start.js::OficinaBench_AlPedir_SinSitioNiPuestaAlDia_NoDiceNada": true
+    "office-link-start.js::OficinaBench_AlPedir_SinSitioNiPuestaAlDia_NoDiceNada": true,
+    "coordination-fill-gate.js::el-caso-real-lugar-memoria-e-historia-lista-frena": true,
+    "coordination-fill-gate.js::una-sesion-de-trabajo-cierra-sin-ruido": true
   }
 }
