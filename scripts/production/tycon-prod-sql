@@ -655,7 +655,12 @@ EOF
 
   # 🔴 Probado que no tiene nada de producción, el borrado lo aprueba una persona en el cuadro de la puerta: no tiene vuelta
   # atrás, y es la única aprobación que tiene (la configuración administrada no pregunta por la puerta)
-  aprobar "Borrar el grupo de recursos ${GRUPO_B} (suscripción ${SUB}): ${RECURSOS_N} recurso(s), ${SERVIDORES_N} servidor(es) SQL, ninguno declarado como producción${LISTA_S:+:${LISTA_S}}. No tiene vuelta atrás." borrar-grupo
+  # lo que no tiene vuelta atrás va primero, y la lista con tope: el cuadro no puede cortar justo la advertencia
+  # shellcheck disable=SC2206 # los nombres ya pasaron su charset (HOST_VALIDO): sin espacios ni comodines
+  _servs=($LISTA_S)
+  LISTA_C=" ${_servs[*]:0:5}"; [ "${#_servs[@]}" -gt 5 ] && LISTA_C="$LISTA_C y $(( ${#_servs[@]} - 5 )) más"
+  [ "${#_servs[@]}" -gt 0 ] || LISTA_C=""
+  aprobar "No tiene vuelta atrás: borrar el grupo de recursos ${GRUPO_B} (suscripción ${SUB}), con ${RECURSOS_N} recurso(s) y ${SERVIDORES_N} servidor(es) SQL, ninguno declarado como producción${LISTA_C:+:${LISTA_C}}." borrar-grupo
 
   # el pedido de borrado
   salida="$(correr_az group delete -n "$GRUPO_B" --subscription "$SUB" --yes --no-wait 2>&1)"; rc=$?

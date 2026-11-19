@@ -524,6 +524,15 @@ mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
 rc="$(puerta --delete-group "$GRUPO")"
 if [ "$rc" = 0 ] && grep -q '^cuadro' "$TMP/cuadro.log" 2>/dev/null; then ok "6.5 T1b BorrarGrupo_PideElCuadro · el borrado aprobado pasó por el cuadro de la puerta"
 else no "6.5 T1b BorrarGrupo_PideElCuadro · rc=$rc · cuadro: $(cat "$TMP/cuadro.log" 2>/dev/null)"; fi
+# el cuadro empieza por lo que no tiene vuelta atrás, y la lista de servidores tiene tope: el cuadro no corta la advertencia
+S7=("$STAGING" "$STAGING" "$STAGING" "$STAGING" "$STAGING" "$STAGING" "$STAGING")
+T7=(Microsoft.Sql/servers Microsoft.Sql/servers Microsoft.Sql/servers Microsoft.Sql/servers Microsoft.Sql/servers Microsoft.Sql/servers Microsoft.Sql/servers)
+mundo_grupo; grupo sub-1 "$GRUPO" "${S7[@]}" -- "${T7[@]}"
+printf '#!/usr/bin/env bash\nprintf "%%s" "${@: -1}" > "%s/cuadro-texto"\necho "button returned:Rechazar, gave up:false"\n' "$TMP" > "$RAIZ/usr/bin/osascript"
+puerta --delete-group "$GRUPO" >/dev/null
+if grep -q "^Pide: .*" "$TMP/cuadro-texto" 2>/dev/null && grep -q "^No tiene vuelta atrás: borrar el grupo de recursos $GRUPO" "$TMP/cuadro-texto" && grep -q "y 2 más" "$TMP/cuadro-texto"; then
+  ok "6.5 T1b BorrarGrupo_PideElCuadro · el cuadro dice primero que no tiene vuelta atrás, y lista cinco servidores y cuántos más"
+else no "6.5 T1b BorrarGrupo_PideElCuadro · texto del cuadro: $(head -c 400 "$TMP/cuadro-texto" 2>/dev/null)"; fi
 for respuesta in 'button returned:Rechazar, gave up:false' 'button returned:, gave up:true'; do
   mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
   printf '#!/usr/bin/env bash\necho "%s"\n' "$respuesta" > "$RAIZ/usr/bin/osascript"
