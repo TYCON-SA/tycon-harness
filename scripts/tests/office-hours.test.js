@@ -38,6 +38,22 @@ test('T12 HoraPasada: una hora de fin que ya pasó no es un pronóstico: dice qu
   assert.strictEqual(finTxt(byName(data, 'Justa')).dif, 'en hora', 'la que todavía no llegó a su hora sigue en hora');
 });
 
+test('MainWaitFix_Office @story-8.294 @ac-14: la espera a main dice su id una sola vez, y la sesión que arregla main sale «arregla main (<id>)»', () => {
+  // 🔴 mutación: el id «main-1» cortado por técnico deja «espera a main» sin saber cuál; sin leer quién arregla, la
+  //    tarjeta de esa sesión no lo dice.
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Espera', sid: 'e', status: 'idle', statusAt: NOW - 600000, extra: { kind: 'note', text: 'otro trabajo', waitingFor: 'espera a main (main-1)', waitingSince: NOW - 60000, waitingKind: 'main' } },
+      { session: 'Arregla', sid: 'f', extra: { kind: 'loose', reason: 'el arreglo de main' } },
+      { session: 'Otra', sid: 'o', extra: { kind: 'loose', reason: 'otra cosa' } },
+    ], { mainFixers: { f: ['main-1'] } }),
+    nowMs: NOW,
+  });
+  assert.strictEqual(byName(data, 'Espera').termina, 'espera a main (main-1)');
+  assert.match(String(byName(data, 'Arregla').haciendo), /arregla main \(main-1\)/, JSON.stringify(byName(data, 'Arregla')));
+  assert.doesNotMatch(String(byName(data, 'Otra').haciendo), /arregla main/);
+});
+
 test('T4 HoraPrometida: la primera hora vista se guarda y la de ahora se compara contra ella', () => {
   const first = NOW + 30 * 60000;
   const later = NOW + 90 * 60000;

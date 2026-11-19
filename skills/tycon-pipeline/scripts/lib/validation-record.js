@@ -40,14 +40,21 @@ function repoDe(storyReal) {
 }
 
 /**
- * La constancia de una historia: la clave es su repo y su ruta dentro del repo, así la escrita en una copia vale en otra
- * del mismo repo. Una historia fuera de git usa la clave de antes (la ruta real), la misma que `readRecord` busca
- * después de la nueva.
+ * La clave de una historia: su repo y su ruta dentro del repo, así la constancia escrita en una copia vale en otra del
+ * mismo repo. null fuera de git. La usa también la constancia de la revisión previa (story-review-record.js).
+ */
+function claveDeHistoria(storyPath) {
+  const r = repoDe(realPath(storyPath) || path.resolve(storyPath));
+  return r ? `${r.repo}\n${r.rel}` : null;
+}
+
+/**
+ * La constancia de una historia, por su clave. Una historia fuera de git usa la clave de antes (la ruta real), la misma
+ * que `readRecord` busca después de la nueva.
  */
 function recordFile(home, storyPath) {
-  const real = realPath(storyPath) || path.resolve(storyPath);
-  const r = repoDe(real);
-  return r ? archivoDeClave(home, `${r.repo}\n${r.rel}`) : recordFileViejo(home, storyPath);
+  const clave = claveDeHistoria(storyPath);
+  return clave ? archivoDeClave(home, clave) : recordFileViejo(home, storyPath);
 }
 
 /** La clave de antes: la ruta real de la historia. Las constancias escritas así se siguen leyendo. */
@@ -117,4 +124,4 @@ function linea(leida, omitidos) {
   return `validación previa vigente: verde, ${leida.record.hora}, no se vuelve a lanzar ${omitidos.join(', ')}`;
 }
 
-module.exports = { RECORD_DIR, RESULTS, recordFile, recordFileViejo, problemas, writeRecord, readRecord, omitirVigentes, linea };
+module.exports = { RECORD_DIR, RESULTS, claveDeHistoria, recordFile, recordFileViejo, problemas, writeRecord, readRecord, omitirVigentes, linea };

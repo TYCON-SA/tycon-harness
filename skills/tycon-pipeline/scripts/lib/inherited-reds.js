@@ -32,6 +32,15 @@
  *    Topes: TYCON_INHERITED_BASE_MAX suites por corrida (3; 0 apaga esta parte y deja todo como antes) y
  *    TYCON_INHERITED_BASE_TIMEOUT_S segundos por suite (600).
  *
+ * 3. LA PUNTA DE MAIN (lib/main-check.js). Lo que la foto y la base no perdonaron se mide sobre la última versión de
+ *    `origin/main`, en una copia de main que se reusa, con el resultado de main guardado entre sesiones. Corre sólo cuando
+ *    quien llama lo pide (`TYCON_MAIN_CHECK=1`, que pone el portón): corrido a mano se juzga como antes. Lo que main también
+ *    tiene roto, con los mismos casos, es de main: sigue rojo en el resumen (`fallas`, el informe y lo guardado lo ven rojo)
+ *    y queda nombrado en `main_fails`; si no queda otra cosa roja, la corrida espera a main (`waiting_on_main`, salida 78).
+ *    Un «no sé» (sin origin, la copia no se pudo armar, el tope, la suite no está en main, el árbol armado del privado) deja
+ *    el rojo como de la historia. Topes: TYCON_MAIN_CHECK_MAX suites (3; 0 apaga el juez) y TYCON_MAIN_CHECK_TIMEOUT_S
+ *    segundos por suite (600).
+ *
  * Lo heredado sale de `fallas` y de `ausentes` del resumen de run-suites-json.js y pasa a `inherited.suites`, cada una
  * con `measured_on` (`snapshot` o `base`). La cabecera `inherited` lleva la fecha de la foto (null sin foto que
  * perdonara) y, si alguna salió de la base, `base: {sha, at}`. Lo medido en la base queda en `base_check`, con el
@@ -41,7 +50,8 @@
  *
  * CLI: node inherited-reds.js apply <árbol> <resumen suites.json> [--assembled]
  *   0 todo lo rojo ya estaba rojo · 1 queda algún rojo nuevo (o sin medir) · 2 no se pudo decidir · 10 no aplica (sin
- *   foto y con la medición en la base apagada)
+ *   foto y con la medición en la base apagada) · 78 todo lo que queda rojo está roto igual en la punta de main: la
+ *   corrida espera a main (sólo con TYCON_MAIN_CHECK=1)
  */
 const fs = require('fs');
 const os = require('os');
@@ -59,14 +69,16 @@ const RUN_CAPPED = path.resolve(__dirname, '..', '..', '..', '..', 'scripts', 'c
 const nombre = (ruta) => path.basename(String(ruta));
 const rutaDe = (f) => (f && f.entrada && typeof f.entrada.ruta === 'string' ? f.entrada.ruta : null);
 
-/** Un tope de la variable `clave`; uno que no es un entero ≥ 0 vale el de por defecto y se dice en `avisos`. */
-function entero(clave, porDefecto, avisos) {
-  const v = process.env[clave];
+/** Un tope leído de la variable `clave` (su valor en `v`); uno que no es un entero ≥ 0 vale el de por defecto y se dice. */
+function enteroDe(v, clave, porDefecto, avisos) {
   if (v === undefined || v === '') return porDefecto;
   const n = Number(v);
   if (Number.isInteger(n) && n >= 0) return n;
   avisos.push(`${clave}=${v} no es un entero ≥ 0: uso ${porDefecto}`);
   return porDefecto;
+}
+function entero(clave, porDefecto, avisos) {
+  return enteroDe(process.env[clave], clave, porDefecto, avisos);
 }
 
 /** Lo que el juez imprime con `--json`: el objeto va primero, y después sus avisos. */
@@ -272,8 +284,13 @@ function apply(tree, summaryPath, { assembled = false } = {}) {
   const lines = [];
   const max = entero('TYCON_INHERITED_BASE_MAX', 3, lines);
   const timeout = entero('TYCON_INHERITED_BASE_TIMEOUT_S', 600, lines) || 600;
+  // El tercer juez corre sólo cuando quien llama lo pide (el portón pone TYCON_MAIN_CHECK=1): corrido a mano, se juzga
+  // como antes. Sus topes se leen literales, para que la lista única de variables los reconozca con su lector.
+  const maxMain = enteroDe(process.env.TYCON_MAIN_CHECK_MAX, 'TYCON_MAIN_CHECK_MAX', 3, lines);
+  const timeoutMain = enteroDe(process.env.TYCON_MAIN_CHECK_TIMEOUT_S, 'TYCON_MAIN_CHECK_TIMEOUT_S', 600, lines) || 600;
+  const mainOn = process.env.TYCON_MAIN_CHECK === '1' && maxMain > 0;
   const hayFoto = fs.existsSync(path.join(tree, JUDGE)) && fs.existsSync(path.join(tree, SNAPSHOT));
-  if (!hayFoto && max === 0) {
+  if (!hayFoto && max === 0 && !mainOn) {
     return { code: 10, lines: [...lines, 'sin foto nocturna o sin el juez de los pedidos en el árbol: lo rojo se juzga como siempre'] };
   }
   let summary;
@@ -293,7 +310,8 @@ function apply(tree, summaryPath, { assembled = false } = {}) {
   let snap = null;
   if (hayFoto) {
     const foto = porLaFoto(tree, rojos, fallas);
-    if (!foto.ok && max === 0) return { code: 2, lines: [...lines, foto.line] };
+    // sin la base ni el juez de main no queda quién decida: 2; con el juez de main prendido, sigue hasta él
+    if (!foto.ok && max === 0 && !mainOn) return { code: 2, lines: [...lines, foto.line] };
     if (!foto.ok) lines.push(`${foto.line}; lo rojo se mide en la base`);
     else {
       snap = foto.snap;
@@ -324,7 +342,27 @@ function apply(tree, summaryPath, { assembled = false } = {}) {
     }
     if (m.heredadas.length) baseCheck.inheritedBase = { sha: m.base, at };
   }
-  if (heredadas.length || baseCheck) {
+  // 3. LA PUNTA DE MAIN (lib/main-check.js): lo que la foto y la base no perdonaron se mide sobre la última versión de
+  // origin/main. Lo que main también tiene roto, con los mismos casos, es de main: sigue rojo en el resumen (el informe
+  // y lo guardado de la completa roja lo ven rojo, como hoy) y queda nombrado en `main_fails`; si no queda otra cosa
+  // roja, la corrida espera a main (78). Un «no sé» deja el rojo como de la historia: nadie espera por un «no sé».
+  let mainCheck = null;
+  let esperaMain = false;
+  if (mainOn && (fallas.length || ausentes.length)) {
+    const m = require('./main-check.js').judge({ tree, fallas, ausentes, assembled, max: maxMain, timeout: timeoutMain });
+    mainCheck = { sha: m.sha, at: m.at, suites: m.suites };
+    lines.push(...m.lines);
+    const deMain = m.suites.filter((s) => s.verdict === 'main-falla');
+    for (const s of m.suites) {
+      lines.push(s.verdict === 'main-falla'
+        ? `de main: ${nombre(s.ruta)} — ${s.motivo} (${(m.sha || '').slice(0, 10)}); no es de la historia`
+        : `${nombre(s.ruta)}: ${s.motivo}`);
+    }
+    summary.main_fails = deMain.map((s) => s.ruta);
+    esperaMain = deMain.length > 0 && m.suites.every((s) => s.verdict === 'main-falla') && deMain.length === fallas.length && !ausentes.length;
+    if (esperaMain) summary.waiting_on_main = { sha: m.sha, suites: deMain.map((s) => ({ ruta: s.ruta, raiz: s.raiz, casos: s.casos })) };
+  }
+  if (heredadas.length || baseCheck || mainCheck) {
     summary.fallas = fallas;
     summary.ausentes = ausentes;
     if (heredadas.length) {
@@ -335,14 +373,16 @@ function apply(tree, summaryPath, { assembled = false } = {}) {
       delete baseCheck.inheritedBase;
       summary.base_check = baseCheck;
     }
+    if (mainCheck) summary.main_check = mainCheck;
     const tmpOut = `${summaryPath}.${process.pid}.tmp`;
     fs.writeFileSync(tmpOut, `${JSON.stringify(summary, null, 2)}\n`);
     fs.renameSync(tmpOut, summaryPath);
   }
+  if (esperaMain) return { code: 78, lines };
   return { code: fallas.length + ausentes.length ? 1 : 0, lines };
 }
 
-module.exports = { apply };
+module.exports = { apply, casosNuevos };
 
 if (require.main === module) {
   const [cmd, tree, summaryPath, ...resto] = process.argv.slice(2);
