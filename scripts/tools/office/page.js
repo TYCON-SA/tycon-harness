@@ -59,16 +59,16 @@ function renderHalfway(){const sec=document.getElementById("halfway"),k=DATA.kan
   if(k.medioCaminoLeido)sec.appendChild(el("p","none",k.medioCaminoLeido));
   half.forEach(i=>{const card=el("div","item");card.appendChild(el("b",null,i.titulo));card.appendChild(el("span","n",i.accion));sec.appendChild(card)});
   if(k.medioCaminoNoSe)sec.appendChild(el("p","none",k.medioCaminoNoSe))}
-// las esperas en sus tres grupos, debajo de «Te toca a vos»
+// las esperas en sus tres grupos: van fuera de lo que se pliega, que sin nada en «Te toca» no se puede abrir
 const GRUPOS_ESPERA=[["dueno","Esperan al dueño"],["main","Esperan a main"],["sesion","Esperan a otra sesión"]];
-function renderEsperan(box,esperan){if(!box)return;let e=document.getElementById("esperan");if(!e){e=el("div");e.id="esperan";box.appendChild(e)}e.replaceChildren();GRUPOS_ESPERA.forEach(([k,t])=>{const l=(esperan&&esperan[k])||[];if(!l.length)return;e.appendChild(el("h3",null,t));const u=el("ul");l.forEach(x=>u.appendChild(el("li",null,x)));e.appendChild(u)})}
+function renderEsperan(esperan){const e=document.getElementById("esperan");e.replaceChildren();GRUPOS_ESPERA.forEach(([k,t])=>{const l=(esperan&&esperan[k])||[];if(!l.length)return;e.appendChild(el("h3",null,t));const u=el("ul");l.forEach(x=>u.appendChild(el("li",null,x)));e.appendChild(u)});e.hidden=!e.children.length}
 // cuántas líneas del tablero vencieron: va fuera de lo que se pliega, que sin nada pendiente no se puede abrir
 function pintarAvisoToca(aviso){const p=document.getElementById("tocaAviso");p.hidden=!aviso;p.textContent=aviso||""}
 function renderTop(){
   document.getElementById("stamp").textContent=meta?"Al día a las "+meta.actualizado+(meta.pedidosLeidos?" · pedidos leídos a las "+meta.pedidosLeidos:""):"";
   const site=document.getElementById("site");if(SITE){site.href=SITE;site.hidden=false}else{site.removeAttribute("href");site.hidden=true}
   const you=(meta&&meta.teToca)||[],ul=document.getElementById("youList");ul.replaceChildren();you.forEach(t=>ul.appendChild(el("li",null,t)));if(!you.length)ul.appendChild(el("li","nada","Nada por ahora: no hay firmas pendientes ni pedidos en el tablero."));
-  renderEsperan(document.getElementById("you"),meta&&meta.esperan);
+  renderEsperan(meta&&meta.esperan);
   pintarAvisoToca(meta&&meta.tocaAviso);
   const aus=document.getElementById("ausente"),au=meta&&meta.ausente;aus.hidden=!au;aus.textContent=au?au.linea:"";
   const tr=document.getElementById("trabado"),stuck=(meta&&meta.trabado)||[];tr.hidden=!stuck.length;tr.replaceChildren();if(stuck.length){tr.appendChild(el("h2",null,"Trabado"));stuck.forEach(g=>{tr.appendChild(el("h3",null,g.titulo));const u=el("ul");(g.filas||[]).forEach(f=>u.appendChild(el("li",null,f)));tr.appendChild(u)})}
