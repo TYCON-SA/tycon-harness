@@ -563,7 +563,9 @@ function frenarSiPerdida(sesion, comando, cwd) {
   }
   if (!p) return;
   console.error(`marker.js ${comando}: la ejecución de la sesión ${sesion} está perdida (${p.caso}: ${p.falta}).`);
-  console.error(`  Sale sólo con marker.js clear-session ${sesion} --lost o marker.js restore ${sesion}: lo firma una persona en la ventana de permiso o en su terminal (--terminal).`);
+  // las dos formas, con la ruta estable: las mismas que el cartel de los frenos (lib/open-runs.js formasDeSalida)
+  console.error('  Sale sólo con una de estas salidas, que firma una persona:');
+  for (const l of require('./lib/open-runs.js').formasDeSalida({ ...p, sesion: String(sesion) }).renglones) console.error(`  ${l}`);
   process.exit(3);
 }
 

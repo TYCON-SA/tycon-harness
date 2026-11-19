@@ -772,6 +772,9 @@ else
   altered "el ensayo de Windows sin un escenario" "windows" 'return t.replace("scenario: [all, waiver, old-node, npx]", "scenario: [all, waiver, old-node]");'
   altered "el ensayo de Windows en otra máquina" "windows" 'return t.replace("runs-on: windows-latest", "runs-on: ubuntu-latest");'
   altered "el ensayo de Windows que no corre el guion" "windows" 'return t.replace(/node scripts\/ci\/windows-rehearsal\.js /, "node scripts/tests/windows/rehearse.js ");'
+  # los comandos de la ejecución perdida en las tres consolas (8.318, AC 12): el paso existe y sale con el código de la prueba
+  altered "sin el paso de las tres consolas de Windows" "windows" 'return t.replace(/ *node --test --test-name-pattern "T13 " skills\/tycon-pipeline\/scripts\/tests\/lost-run-loop\.test\.js\n/, "");'
+  altered "el paso de las tres consolas no sale con el código de la prueba" "windows" 'return t.replace(/(lost-run-loop\.test\.js\n) *exit \$LASTEXITCODE\n/, "$1");'
   altered "el chequeo final no espera al ensayo de Windows" "aggregate-job" 'return t.replace("needs: [checks, installer-floor, windows]", "needs: [checks, installer-floor]");'
   altered "una parte fija fuera del piso del instalador" "parts" 'return t.replace(/TYCON_PUBLIC_CI_PART: \$\{\{ matrix\.part \}\}/, "TYCON_PUBLIC_CI_PART: installer-floor");'
   altered "con un Node fijo" "node-matrix" 'return t.replace(/node-version: .*$/m, "node-version: 22");'

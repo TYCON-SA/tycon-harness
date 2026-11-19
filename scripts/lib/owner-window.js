@@ -1911,17 +1911,12 @@ function comoSeFirma(firma, archivo) {
   return `marker.js sign-file ${firma} ${rutaParaLaConsola(archivo)}`;
 }
 
-/** Por qué un cartel no da la forma de la terminal. */
-const SIN_SESION_TERMINAL = 'la forma de tu terminal necesita la sesión del agente, que este freno no conoce';
-const sesionConocida = (sesion) => typeof sesion === 'string' && sesion !== '' && sesion !== '_nosession';
+// la forma de la terminal para cualquier comando: la misma función que usan los carteles de la ejecución perdida
+const { enLaTerminal, SIN_SESION_TERMINAL } = require(path.join(LIB, 'home-command.js'));
 
-/**
- * La forma de la terminal de la persona: la sesión va siempre, porque la terminal no la tiene en el ambiente. Sin una
- * sesión conocida, `null` (el cartel dice SIN_SESION_TERMINAL).
- */
+/** La forma de la terminal de una firma sobre un archivo (`enLaTerminal` con `sign-file`). */
 function comoSeFirmaEnLaTerminal(firma, archivo, sesion) {
-  if (!sesionConocida(sesion)) return null;
-  return `${comoSeFirma(firma, archivo)} --terminal --for-session ${sesion}`;
+  return enLaTerminal(comoSeFirma(firma, archivo), sesion);
 }
 
 /**
@@ -2138,7 +2133,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
 }
 
 module.exports = { renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
-  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, formasDeFirmar,
+  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 
 if (require.main === module) {

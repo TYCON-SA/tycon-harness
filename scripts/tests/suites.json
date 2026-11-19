@@ -1175,6 +1175,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.318: la ejecución perdida frena el cierre de turno una vez por turno, el cartel da comandos que andan en Windows y la consola frena borrar la carpeta de una ejecución abierta.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/lost-run-loop.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-close.test.js",
       "requiere": []
