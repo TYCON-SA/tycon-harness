@@ -50,7 +50,7 @@ const repoAz = (name, o = {}) => ({ name, id: `id-${name}`, defaultBranch: 'refs
 
 test('T6 Adoption_FourStates_Azure — requerido, pipeline sin política, sin portón y no medido @ac-4 @ac-5', (t) => conPat(async () => {
   const a = await conAdo(t, [
-    repoAz('con-politica', { archivos: { 'azure-pipelines.yml': YAML_CON }, definiciones: [{ id: 11, name: 'gate', yaml: '/azure-pipelines.yml' }], politicas: [politicaDeCompilacion('id-con-politica', 11)] }),
+    repoAz('con-politica', { archivos: { 'ci.yml': YAML_CON }, definiciones: [{ id: 11, name: 'gate', yaml: '/ci.yml' }], politicas: [politicaDeCompilacion('id-con-politica', 11)] }),
     repoAz('sin-politica', { archivos: { 'ci.yml': YAML_CON }, definiciones: [{ id: 12, name: 'gate', yaml: 'ci.yml' }] }),
     repoAz('sin-porton', { archivos: { 'ci.yml': YAML_SIN }, definiciones: [{ id: 13, name: 'ci', yaml: 'ci.yml' }] }),
     repoAz('politica-caida', { archivos: { 'ci.yml': YAML_CON }, definiciones: [{ id: 14, name: 'gate', yaml: 'ci.yml' }], politicas500: true }),
