@@ -3147,6 +3147,12 @@
       "requiere": []
     },
     {
+      "__nota": "lo que el portón de CI empieza a frenar (scripts/ci/tycon-ci-gate.js): la evidencia que declara FAIL o no se puede leer, la que está en el disco y no en git, y la carpeta de corrida que por la fecha en que entró en git pide registro de autoría; avisa hasta STRICT_EVIDENCE_FROM y frena desde ese día",
+      "raiz": "arnes",
+      "ruta": "tests/ci-gate-reads-verdict.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la lista de lo que espera a la persona (scripts/lib/signature-list.js): el registro, lo que lo cierra, la pasada de a una y la llave.",
       "raiz": "arnes",
       "ruta": "tests/signature-list.test.js",
