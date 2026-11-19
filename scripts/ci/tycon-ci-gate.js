@@ -1069,8 +1069,9 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
         (esAviso ? avisos : destino).push({ archivo: rel, story: idBruto, ...h });
       }
       // Lo de arriba mira el disco y la fecha del nombre, y frena como siempre. Si no reclamó nada, se mira git: la fecha
-      // en que la carpeta entró, que no elige quien la crea. Lo que encuentra sale por la regla de fecha.
-      if (!autoria.length && carpetasGit.length) {
+      // en que la carpeta entró, que no elige quien la crea. Lo que encuentra sale por la regla de fecha. La incoherencia
+      // del disco no es un reclamo: con ella sola, un registro que no está en git pasaría.
+      if (!autoria.some((h) => h.regla !== 'roster-incoherente') && carpetasGit.length) {
         const a = autoriaPorGit({ repo, refNuevo, refViejo: refDeAntes(), carpetas: carpetasGit });
         for (const c of a.contradictorias) {
           avisos.push({ archivo: rel, story: idBruto, regla: 'carpeta-fecha-contradictoria',

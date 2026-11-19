@@ -166,6 +166,11 @@ test('T16 SondaA_FolderNewInPr_RequiresRoster — una carpeta nueva en el pedido
   s.escribir('.advisors/pipeline-runs/1.1-20261110120000/review-roster.json', JSON.stringify(ROSTER));
   s.agregar('specs/1-1.md', '.advisors/dod-runtime/1.1-20261110.md', '.advisors/pipeline-runs/1.1-20261110120000/nota.txt');
   assert.deepStrictEqual(reglas(revisar(s, DESDE, { staged: true }).hallazgos), ['sin-registro-de-autoria']);
+  // …tampoco si el disco suma un aviso de incoherencia: un aviso no es un reclamo de la mirada del disco
+  s.escribir('.advisors/pipeline-runs/1.1-20261110120000/findings.json', JSON.stringify([{ advisor: 'fantasma', rule_id: 'X-1' }]));
+  const conAviso = revisar(s, DESDE, { staged: true });
+  assert.deepStrictEqual(reglas(conAviso.avisos).filter((x) => x === 'roster-incoherente'), ['roster-incoherente']);
+  assert.deepStrictEqual(reglas(conAviso.hallazgos), ['sin-registro-de-autoria']);
 });
 
 /** Una carpeta de corrida sin registro que ya está en la base, con su commit en `fecha`. */
