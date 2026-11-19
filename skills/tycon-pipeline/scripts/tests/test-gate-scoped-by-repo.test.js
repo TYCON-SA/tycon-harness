@@ -129,19 +129,20 @@ function sinSaberQueSeToco() {
   fs.writeFileSync(path.join(l.repo, 'scripts', 'tests', 'b.test.sh'), '#!/usr/bin/env bash\necho b >> "$TG_STATE/corridas"\nexit 1\n');
   git(l.repo, 'add', '-A'); git(l.repo, 'commit', '-q', '-m', 'b roja');
   const r = puerta(l);
-  assert.notEqual(r.status, 0, r.out);
-  assert.notEqual(r.status, 7, r.out);
-  assert.deepEqual(corridas(l), ['a', 'b'], r.out);
-  assert.match(r.out, /el repo acota el portón, pero no sé qué se tocó .*: corren todas las suites/);
+  // la completa no corre en la máquina: sin saber qué se tocó no corre nada y sale «sin acotar», que no es verde
+  assert.equal(r.status, 7, r.out);
+  assert.deepEqual(corridas(l), [], r.out);
+  assert.match(r.out, /sin acotar: la cubre la CI del pedido/);
   assert.doesNotMatch(r.out, /en esta máquina corrieron sólo las suites que leen lo tocado/);
   const art = artefacto(l);
-  assert.equal(art.suite_green, false, JSON.stringify(art));
-  assert.equal(art.unscoped, undefined);
+  assert.notEqual(art.suite_green, true, JSON.stringify(art));
+  assert.equal(art.unscoped, true);
   assert.equal(art.scoped_by_repo, undefined);
 }
 
-test('T4 PortonAcotado_SinSaberQueSeToco_CorreTodo_YUnaRojaFrena — con la clave y la base del marcador ilegible corre todas, y una roja sale roja', () => {
-  // 🔴 mutación: acotar sin saber qué se tocó sale «sin acotar» sin correr nada, y el cierre lo acepta con la suite b roja.
+test('T4 PortonAcotado_SinSaberQueSeToco_NoCorreNada_YNoEsVerde — con la clave y la base del marcador ilegible sale «sin acotar» sin correr', () => {
+  // 🔴 mutación: sin saber qué se tocó, correr todas las suites en la máquina (la completa la corre la CI del pedido), o
+  // cerrar en verde sin haber corrido nada.
   sinSaberQueSeToco();
 });
 
@@ -214,6 +215,8 @@ test('T19 ScopedGate_AnnouncesSizeBeforeTurn @story-8.279 @ac-4 — el acotado d
 test('T20 ScopedGate_LargeAnnouncesAlmostFull @story-8.279 @ac-5 — un acotado de cien suites o más dice «casi una completa», antes de pedir el turno y sin repetir el aviso lento', () => {
   // 🔴 mutación: el renglón sale después de `turn.take`, o se imprime además el «🔴 portón lento» de siempre.
   const l = lab({ clave: true });
+  // con el tope de la máquina de fábrica (60) un acotado no llega a cien: este repo lo sube (va en el commit de abajo)
+  fs.appendFileSync(path.join(l.repo, '.test-gate.yaml'), '  max_local_suites: 200\n');
   const tests = path.join(l.repo, 'scripts', 'tests');
   const lista = [];
   for (let i = 0; i < 100; i += 1) {

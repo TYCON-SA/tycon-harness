@@ -395,8 +395,8 @@ test('TG1 Gate_AllMainFails_Exit78_NotInTestsFailed @story-8.294 @ac-5 — el po
   const st = estadoDe(l);
   assert.equal(st.broken.length, 1);
   assert.deepEqual(st.broken[0].waiting.map((w) => w.session), [SID]);
-  // `marker.js doing --waiting-for` con el mismo texto conserva la clase de la espera
-  assert.equal(marker(l, ['doing', '--waiting-for', 'espera a main (main-1)']).status, 0);
+  // `marker.js doing --waiting-for` con el mismo texto la vuelve a anotar con su clase, dicha con `--kind`
+  assert.equal(marker(l, ['doing', '--waiting-for', 'espera a main (main-1)', '--kind', 'main']).status, 0);
   assert.equal(leer(doingFile(l)).waitingKind, 'main');
   // main arregla a y c: la completa siguiente las vuelve a correr y las saca de la espera, main pasa, y el rojo que queda
   // (la rama no trajo main) es de la historia: tests rojo, sin espera, y el registro se cerró

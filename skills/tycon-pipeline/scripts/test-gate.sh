@@ -1517,9 +1517,10 @@ if [[ "$TG_TOP_FULL" == "1" && "$RUNNER" == "suites-json" ]]; then
   fi
   [[ "$TG_GUARDO" != "no" && "$_TG_FOTO_CAMBIO" == "1" ]] \
     && echo "[test-gate] la carpeta cambió mientras corría: guardo con la foto del arranque; la próxima corrida vuelve a correr lo que lee lo cambiado durante la corrida"
-  # El renglón de la corrida (gates.log) y su nota en el marcador: sólo las que terminaron en verde o en rojo. La cortada
-  # por una señal, la sin turno y la ocupada salieron antes y no llegan acá.
-  if [[ -n "$TG_RUN_MODO" && ( "$SUITE_EXIT" == "0" || "$SUITE_EXIT" == "1" ) ]]; then
+  # El renglón de la corrida (gates.log) y su nota en el marcador: sólo las que terminaron en verde, en rojo o «sin
+  # acotar» (7: no se supo qué se tocó y la completa no corre en la máquina). La cortada por una señal, la sin turno y la
+  # ocupada salieron antes y no llegan acá.
+  if [[ -n "$TG_RUN_MODO" && ( "$SUITE_EXIT" == "0" || "$SUITE_EXIT" == "1" || "$SUITE_EXIT" == "7" ) ]]; then
     _tg_suites=0
     if [[ "${TG_CLOSE_MODE:-}" == "changed" ]]; then _tg_suites_de="$RESULTS_DIR/suites-nuevas.json"
     elif [[ "${TG_CLOSE_MODE:-}" == "same" ]]; then _tg_suites_de=""
@@ -1630,7 +1631,8 @@ fi
 # TYCON_GATE_ALL_SUITES=1, o sin saber qué se tocó, corrió todo y su resumen no trae `scoped`).
 if [[ -n "${TG_FULL_SUITE_BY:-}" && "$RUNNER" == "suites-json" ]] \
   && node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scoped ? 0 : 1)' "$RESULTS_DIR/suites.json" 2>/dev/null; then
-  echo "[test-gate] la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY): en esta máquina corrieron sólo las suites que leen lo tocado" >&2
+  _tg_tope="$(node -e 'try{const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scoped.capped;if(c)process.stdout.write(`, hasta el tope de ${c.max} (las ${c.deferred} menos cercanas quedan para esa CI)`)}catch(e){}' "$RESULTS_DIR/suites.json" 2>/dev/null || true)"
+  echo "[test-gate] la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY): en esta máquina corrieron sólo las suites que leen lo tocado${_tg_tope}" >&2
 fi
 
 exit "$SUITE_EXIT"

@@ -695,7 +695,7 @@ function statusLines(s) {
   const b = s.broken;
   if (!b) out.push('  sin registro de main roto');
   else if (!b.closed) {
-    const fix = b.fix ? `${shortSid(b.fix.session)}${b.fix.pr ? ` (pedido #${b.fix.pr})` : ''}` : 'sin dueño';
+    const fix = b.fix ? `${shortSid(b.fix.session)}${b.fix.pr ? ` (pedido #${b.fix.pr})` : ''}` : 'nadie lo tomó';
     out.push(`  registro ${b.id} abierto desde las ${hhmm(b.since)} (main ${String(b.sha).slice(0, 10)}): ${b.suites.join(', ')}; esperan ${b.waiting.length} sesión(es): ${b.waiting.map((w) => shortSid(w.session)).join(', ')}; arreglo: ${fix}`);
   } else out.push(`  registro ${b.id} cerrado a las ${hhmm(b.closed)}: main pasó (${String(b.closedSha).slice(0, 10)}); esperaban ${b.waiting.length} sesión(es)`);
   return out;

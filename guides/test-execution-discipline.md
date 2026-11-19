@@ -4,6 +4,10 @@
 > La suite completa corre **en el portón de `/tycon-merge-to-main`, cuando el dev la pide, o una vez
 > al cierre del Step 4 del pipeline de stories** (`test-gate.sh`), **nunca dos veces seguidas** y
 > **nunca en paralelo con un fan-out de subagentes**.
+>
+> **En un repo que acota el portón (`test_gate` en `.test-gate.yaml`, como el arnés), la suite completa no corre nunca
+> en la máquina del dev**: `test-gate.sh` corre sólo las suites cercanas a lo que cambió, con un tope, y la completa la
+> corre la CI del pedido.
 
 ## El problema
 
@@ -54,8 +58,15 @@ Se agrava cuando, **al mismo tiempo**, el agente tiene **8–11 subagentes (advi
    para la CI del pedido. En el árbol armado del privado vale lo mismo, comparando cada repo: el privado y el público. Si
    además cambió el perfil del equipo, o el público salió de otro lado, corre lo de siempre.
 
-   *Sin base avisa antes de arrancar*: en un repo que acota el portón, si no se sabe qué se tocó corren todas las suites.
-   Lo dice antes de la primera, con la cantidad y cómo acotarla: `TYCON_COVERAGE_BASE="$(git merge-base origin/main HEAD)"`.
+   *La completa no corre en la máquina*: en un repo que acota el portón corren sólo las suites que leen lo tocado, y
+   como mucho 60 (el tope de la máquina; el repo lo cambia con `test_gate.max_local_suites`). Si son más (se tocó un
+   archivo de control o una pieza central que nombran cientos), corren las más cercanas al cambio: la suite tocada, la
+   que se llama como el archivo, la que lo nombra por su ruta. Las demás quedan diferidas, con su motivo, para la CI del
+   pedido, y el cierre lo dice: «la suite completa la corre la CI del pedido (…), hasta el tope de 60». Las suites
+   tocadas y las repetidas que quedaron viejas corren siempre.
+
+   *Sin base no corre nada*: si no se sabe qué se tocó, el portón sale 7 («sin acotar: la cubre la CI del pedido») en
+   vez de correr todas las suites, y dice cómo dar la base: `TYCON_COVERAGE_BASE="$(git merge-base origin/main HEAD)"`.
 
    *Una ejecución grande espera su turno*: en una máquina con coordinadora, desde 100 suites por correr, acotada o no, va una
    por vez. Si otra tiene el turno, el portón sale 75 sin correr nada y dice quién lo tiene.
@@ -288,7 +299,8 @@ esta regla.
 ## Checklist rápido antes de correr tests
 
 - ¿Estoy iterando? → **solo el archivo tocado**, con filtro.
-- ¿Voy a correr la suite completa? → ¿es el portón de `/tycon-merge-to-main`, el `test-gate.sh`
+- ¿Voy a correr la suite completa? → en un repo que acota el portón (`test_gate`), **no**: la corre la CI del pedido.
+  En los demás: ¿es el portón de `/tycon-merge-to-main`, el `test-gate.sh`
   del pipeline o lo pide el dev? Si no → **no**. ¿Ya la corrí en este diff, o hay subagentes
   corriendo? Si sí a cualquiera → **no**.
 - ¿El proyecto tiene cap de `maxWorkers` en la config? → si no, **agregarlo** (es el fix durable).
