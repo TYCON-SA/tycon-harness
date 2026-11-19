@@ -1642,3 +1642,49 @@ test('T8 NotScopedByRepo_NoCentralRule @story-8.302 @ac-9 — sin el portón aco
   assert.equal(JSON.parse(fs.readFileSync(path.join(l.root, 'o.json'), 'utf8')).corridas, 1);
   for (const out of [sinAcotar.stdout, todas.stdout, una.stdout]) assert.doesNotMatch(out, /suites que la nombran|no nombra lo que cambió/);
 });
+
+test('T4b RunSuites_CentralPiece_ReactivatedRunsAndDeferredHasEntry @story-8.299 @ac-3 @ac-4 @story-8.309 — la cercanía no difiere una suite que vuelve, y lo que difiere trae su entrada', () => {
+  // 🔴 mutación: la regla de la pieza central antes que la de las que vuelven difiere s3; sin `entrada` en su rama, lo
+  //    guardado no puede sacar de las diferidas una suite que después corrió.
+  const l = piezaLab(40);
+  const r = runScopedByRepo(l, { touched: tocada(l, { reactivated_suites: ['arnes:tests/s3.test.sh'] }) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.ok(!diferidas(r).includes('s3.test.sh'), 's3 vuelve por sus carpetas: corre');
+  assert.match(r.stdout, /VUELVE   s3\.test\.sh/);
+  assert.equal(r.resumen.deferred_suites.length, 36);
+  for (const d of r.resumen.deferred_suites) assert.deepEqual(Object.keys(d.entrada || {}).sort(), ['raiz', 'ruta'], JSON.stringify(d));
+});
+
+test('T4 RunSuites_Reactivated_PastFiltersOrAbsent @story-8.299 @ac-3 @ac-4 @ac-9 — una reactivada corre sin filtros, una que no está en la lista es ausente, con --suite no se miran, y cada diferida trae su entrada', () => {
+  // 🔴 mutación: pasar la reactivada por los filtros la vuelve a diferir (no nombra lo tocado) y lo guardado queda sin
+  // medirla; una reactivada que no está en la lista, salteada callada, dejaría verde lo que nadie corrió.
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/a.test.js' },
+    { raiz: 'arnes', ruta: 'tests/g.test.js', gate_only_when_touching: ['G/**'] },
+    { raiz: 'arnes', ruta: 'tests/h.test.js', gate_only_when_touching: ['H/**'] },
+  ] });
+  f.escribir('arnes', 'tests/a.test.js', '// lib/x.js\nprocess.exit(0)');
+  f.escribir('arnes', 'tests/g.test.js', 'process.exit(0)');
+  f.escribir('arnes', 'tests/h.test.js', 'process.exit(0)');
+  const tf = path.join(f.root, 'touched.json');
+  fs.writeFileSync(tf, JSON.stringify({ known: true, files: ['lib/x.js'], sources: {}, reactivated_suites: ['arnes:tests/g.test.js', 'arnes:tests/zz.test.js'],
+    reactivated_reasons: { 'arnes:tests/g.test.js': 'la completa la difirió y lo cambiado toca G/**' } }));
+  const base = (out) => [RUNNER, f.repo, path.join(f.root, out), '--skills', f.skills, '--touched', tf, '--scoped-by-repo', 'la CI'];
+  const leer = (out) => JSON.parse(fs.readFileSync(path.join(f.root, out), 'utf8'));
+  let r = spawnSync('node', base('o1.json'), { encoding: 'utf8' });
+  let res = leer('o1.json');
+  assert.notEqual(r.status, 0, `la ausente es rojo\n${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /^VUELVE\s+g\.test\.js — la completa la difirió y lo cambiado toca G\/\*\*$/m, r.stdout);
+  assert.ok(res.suites.some((s) => s.entrada.ruta === 'tests/g.test.js' && s.exit === 0), `g corrió aunque no nombra lo tocado\n${r.stdout}`);
+  assert.deepEqual(res.ausentes, ['arnes:tests/zz.test.js']);
+  assert.match(r.stdout, /^AUSENTE\s+arnes:tests\/zz\.test\.js — lo cambiado la vuelve a hacer correr, pero ya no está en la lista de suites$/m, r.stdout);
+  const h = res.deferred_suites.find((d) => d.suite.endsWith('/tests/h.test.js'));
+  assert.deepEqual(h && h.entrada, { raiz: 'arnes', ruta: 'tests/h.test.js' }, JSON.stringify(res.deferred_suites));
+  // con --suite de otra: sólo esa, y ninguna ausente por las reactivadas
+  r = spawnSync('node', [...base('o2.json'), '--suite', 'tests/a.test.js'], { encoding: 'utf8' });
+  res = leer('o2.json');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(res.suites.map((s) => s.entrada.ruta), ['tests/a.test.js']);
+  assert.deepEqual(res.ausentes, []);
+  assert.doesNotMatch(r.stdout, /VUELVE|zz\.test\.js/);
+});

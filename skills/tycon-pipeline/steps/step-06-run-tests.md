@@ -105,6 +105,10 @@ La corrida siguiente compara la carpeta con la del último verde:
   no cambió»).
 - Si cambió algo, corren sólo las suites que leen lo cambiado y se juntan con lo guardado («la completa de las HH:MM
   más N suites por lo cambiado (…)»).
+- Si lo cambiado toca la carpeta de una suite de carpeta (`gate_only_when_touching`), o el instalador con lo guardado
+  rojo, esa suite también corre, sin pasar por los filtros, aunque la completa la haya diferido o ya medido («… y las que
+  vuelven por sus carpetas (…)», con el renglón «VUELVE» del corredor); una que ya no está en la lista cuenta como
+  ausente. Lo guardado deja de tenerla como diferida cuando corrió.
 - Corre la completa como siempre, y la línea dice por qué, si cambió un control (`scripts/ci/controls-from-base.json`),
   el instalador o algo compartido (`scripts/ci/heavy-suites.json`), la lista de suites, la base o el recorte; en el
   privado, algo bajo `pipelines/`, `scripts/ci/`, `scripts/hooks/` o `.githooks/`; si lo guardado es de otra historia

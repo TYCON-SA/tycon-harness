@@ -1153,23 +1153,32 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
         } catch (e) { process.stdout.write(JSON.stringify({ mode: "full", reason: `no pude decidir (${e.message})` })); }
       ' "$_tg_roja" "$RESULTS_DIR/measured-start.json" "$REPO_RUN" "$_TG_BASE" "$_TG_RECORTE" "$_TG_MARKER_STORY" "$SCRIPT_DIR/lib/failed-first.js" "$RESULTS_DIR/touched.json")"
       _tg_campo() { node -e 'try{const v=JSON.parse(process.argv[1])[process.argv[2]];process.stdout.write(Array.isArray(v)?v.join(","):String(v??""))}catch(e){}' "$_tg_dec" "$1"; }
+      # los nombres de una lista de suites de la decisión (`reactivadas`: `{ raiz, ruta, nombre, motivo }`), para el renglón
+      _tg_campo_nombres() { node -e 'try{const v=JSON.parse(process.argv[1])[process.argv[2]];process.stdout.write(Array.isArray(v)?v.map((x)=>x&&x.nombre).filter(Boolean).join(", "):"")}catch(e){}' "$_tg_dec" "$1"; }
       TG_CLOSE_MODE="$(_tg_campo mode)"; TG_CLOSE_DIR="$(_tg_campo dir)"; TG_CLOSE_ORIGIN="$(_tg_campo origen)"; TG_RUN_ORIGEN_AT="$(_tg_campo origen_at)"
       case "$TG_CLOSE_MODE" in
         same) TG_RUN_MODO="sin correr"
               TG_RUN_TEXTO="la carpeta es la que midió la completa $TG_CLOSE_ORIGIN$([[ "$TG_CLOSE_ORIGIN" == "roja" ]] && echo ' y cada repetición'): no corro ninguna suite"
               TG_RUN_MOTIVO="$TG_RUN_TEXTO" ;;
         changed)
-          # `rerun_suites`: las repetidas cuya carpeta cambió después de repetirlas. Van aparte de los archivos:
-          # son claves de la lista de suites, no rutas del repo, y el corredor las corre antes de cualquier filtro.
-          # Las listas salen de la decisión entera (JSON), no de un texto partido por comas; si no se dejan leer, la completa:
-          # unas repetidas viejas que no vuelven a correr dejarían en verde un arreglo deshecho.
-          if node -e 'const [f, dec, base] = process.argv.slice(1); const d = JSON.parse(dec); const rerun = d.rerun || []; if (!Array.isArray(d.files) || !Array.isArray(rerun)) throw new Error("la decisión no trae sus listas"); require("fs").writeFileSync(f, JSON.stringify({ known: true, files: d.files, rerun_suites: rerun, sources: {}, reason: null, base: { ref: base || null, source: "repetidas" } }))' \
+          # `rerun_suites`: las repetidas cuya carpeta cambió después de repetirlas; `reactivated_suites`: las que vuelven
+          # por sus carpetas (diferidas o medidas por la completa), con su motivo aparte en `reactivated_reasons`. Van aparte
+          # de los archivos: son claves de la lista de suites, no rutas del repo, y el corredor las corre antes de cualquier
+          # filtro. Las listas salen de la decisión entera (JSON), no de un texto partido por comas; si no se dejan leer, la
+          # completa: unas repetidas viejas que no vuelven a correr dejarían en verde un arreglo deshecho.
+          if node -e 'const [f, dec, base] = process.argv.slice(1); const d = JSON.parse(dec); const rerun = d.rerun || []; const vuelven = d.reactivadas || []; if (!Array.isArray(d.files) || !Array.isArray(rerun) || !Array.isArray(vuelven)) throw new Error("la decisión no trae sus listas"); const clave = (x) => `${x.raiz}:${x.ruta}`; require("fs").writeFileSync(f, JSON.stringify({ known: true, files: d.files, rerun_suites: rerun, reactivated_suites: vuelven.map(clave), reactivated_reasons: Object.fromEntries(vuelven.map((x) => [clave(x), x.motivo])), sources: {}, reason: null, base: { ref: base || null, source: "repetidas" } }))' \
             "$RESULTS_DIR/touched-repetidas.json" "$_tg_dec" "$_TG_BASE"; then
             TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched-repetidas.json")
             # en el árbol armado, que ninguna suite lea lo cambiado es cerrar con lo guardado, no «sin acotar» (salida 7)
             [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --scoped-by-repo "${TG_FULL_SUITE_BY:-la CI del pedido}")
             TG_RUN_MODO=acotada
-            TG_RUN_TEXTO="la carpeta cambió desde la completa $TG_CLOSE_ORIGIN ($(_tg_campo files)): corren sólo las suites que leen lo cambiado$([[ -n "$(_tg_campo rerun)" ]] && echo " y las repetidas que quedaron viejas ($(_tg_campo rerun))")"
+            _tg_vuelven="$(_tg_campo_nombres reactivadas)"
+            _tg_viejas="$([[ -n "$(_tg_campo rerun)" ]] && echo " y las repetidas que quedaron viejas ($(_tg_campo rerun))")"
+            if [[ -n "$_tg_vuelven" ]]; then
+              TG_RUN_TEXTO="la carpeta cambió desde la completa $TG_CLOSE_ORIGIN ($(_tg_campo files)): corren las suites que leen lo cambiado y las que vuelven por sus carpetas ($_tg_vuelven)$_tg_viejas"
+            else
+              TG_RUN_TEXTO="la carpeta cambió desde la completa $TG_CLOSE_ORIGIN ($(_tg_campo files)): corren sólo las suites que leen lo cambiado$_tg_viejas"
+            fi
             TG_RUN_MOTIVO="$TG_RUN_TEXTO"
           else
             _tg_completa "no pude leer las listas de la decisión sobre lo guardado"

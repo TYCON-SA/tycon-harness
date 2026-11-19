@@ -519,6 +519,12 @@ function main(argv, env = process.env) {
   const touched = readTouched(touchedFile);
   const rerun = new Set(touched.known && Array.isArray(touched.rerun_suites) ? touched.rerun_suites.filter((r) => typeof r === 'string') : []);
   const rerunHallada = new Set();
+  // Las suites que vuelven por sus carpetas (failed-first.js `decide`, `reactivadas`): claves `<raiz>:<ruta>` de la lista,
+  // con su motivo aparte. Corren sin pasar por los filtros, como las repetidas viejas. Con `--suite` no se miran: quien
+  // pidió una sola ya sabe lo que corre, y una reactivada de otra lista no es una ausente de esa corrida.
+  const reactivadas = new Set(touched.known && !suiteOnly && Array.isArray(touched.reactivated_suites) ? touched.reactivated_suites.filter((r) => typeof r === 'string') : []);
+  const motivoDeVuelta = (k) => (touched.reactivated_reasons && typeof touched.reactivated_reasons[k] === 'string' ? touched.reactivated_reasons[k] : 'lo cambiado la vuelve a hacer correr');
+  const reactivadaHallada = new Set();
   let light = argv.includes('--light');
   // acotar sin saber qué se tocó sería no correr nada: el acotado por el repo sólo vale con lo tocado conocido
   const byRepo = Boolean(fullSuiteBy) && !allSuites && touched.known;
@@ -599,12 +605,21 @@ function main(argv, env = process.env) {
       (p.exclusive ? exclusives : parallel).push(p);
       continue;
     }
+    // Una suite que vuelve por sus carpetas corre sin pasar por los filtros: la carpeta (la volvería a diferir si la story
+    // no la toca) y «no lee lo tocado» (lee sus carpetas sin nombrarlas). Se la reconoce por la raíz y la ruta de su entrada.
+    const claveDeEntrada = `${p.entrada.raiz}:${p.entrada.ruta}`;
+    if (reactivadas.has(claveDeEntrada)) {
+      reactivadaHallada.add(claveDeEntrada);
+      console.log(`VUELVE   ${p.name} — ${motivoDeVuelta(claveDeEntrada)}`);
+      (p.exclusive ? exclusives : parallel).push(p);
+      continue;
+    }
     if (p.gate && !allSuites) {
       // Editar la propia suite la hace correr aunque no toque sus carpetas.
       const propia = ownPaths(repo, p.ruta);
       if (touched.known && !touches(touched.files, p.gate) && !propia.some((o) => touched.files.includes(o))) {
         const reason = `corre de noche y en el control del PR; esta story no toca ${p.gate.join(', ')}`;
-        resumen.deferred_suites.push({ suite: p.ruta, reason });
+        resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
         console.log(`DIFERIDA ${p.name} — ${reason}`);
         continue;
       }
@@ -615,13 +630,13 @@ function main(argv, env = process.env) {
     }
     if (!p.fromSkills && !allSuites && touched.known && installer().skips(p.name, touched.files)) {
       const reason = 'corre de noche y en el control del PR; esta story no toca el instalador (el grupo installer de scripts/ci/heavy-suites.json)';
-      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
     }
     if (onlyTouched && touched.known && !namesTouched(repo, p.ruta, touched.files)) {
       const reason = byRepo ? `no lee lo tocado; la suite completa la corre la CI del pedido (${fullSuiteBy})` : 'la corrida cruzada (la del repo hermano, o con la story en otro repo) corre sólo las suites que leen lo tocado; la completa la corre la CI del pedido';
-      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
     }
@@ -629,13 +644,13 @@ function main(argv, env = process.env) {
     const lejos = centrales.length && !p.gate ? lejana(repo, p, touched.files, centrales) : null;
     if (lejos) {
       const reason = `${lejos.map((c) => `lee ${c.file}, que nombran ${c.rutas.size} suites, pero no nombra lo que cambió (${c.names.join(', ')})`).join('; ')}; la suite completa la corre la CI del pedido (${fullSuiteBy})`;
-      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
     }
     if (light && touched.known && !allSuites && !readsTouched(repo, p.ruta, touched.files)) {
       const reason = 'diferida por corrida liviana: no lee ningún archivo tocado';
-      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
     }
@@ -647,6 +662,12 @@ function main(argv, env = process.env) {
     if (rerunHallada.has(r)) continue;
     resumen.ausentes.push(r);
     console.log(`AUSENTE  ${r} — se repitió sola y la carpeta cambió después, pero ya no está en la lista de suites: no se pudo volver a correr`);
+  }
+  // Lo mismo para una que vuelve por sus carpetas y ya no está en la lista: ausente (es rojo), nunca salteada callada.
+  for (const k of reactivadas) {
+    if (reactivadaHallada.has(k)) continue;
+    resumen.ausentes.push(k);
+    console.log(`AUSENTE  ${k} — lo cambiado la vuelve a hacer correr, pero ya no está en la lista de suites`);
   }
 
   for (const c of centrales) {
