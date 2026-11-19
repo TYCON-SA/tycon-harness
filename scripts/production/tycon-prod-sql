@@ -6,8 +6,10 @@
 # sentencia la aprueba una persona en un cuadro del sistema que abre LA PROPIA PUERTA (`aprobar`, más abajo),
 # antes de leer la clave: así la aprobación no depende de cómo se la llamó. Un guion guardado que llama a la
 # puerta no pasa por la regla `ask` de Claude Code, que mira el texto del comando; el cuadro propio sí lo ve.
-# La regla `ask` (`Bash(/opt/tycon/bin/tycon-prod-sql *)` en la configuración administrada) queda como segunda
-# capa, y el freno `prod-access-guard.js` prohíbe cualquier otro camino a esa base.
+# Es la ÚNICA ventana: la configuración administrada no pregunta por la puerta, porque su permiso no agregaba control
+# (lo que corre sin el cuadro propio lo prueba tycon-prod-sql.test.sh, «sin el cuadro no se hace nada») y duplicaba
+# las ventanas. El freno `prod-access-guard.js` prohíbe cualquier otro camino a esa base. El cuadro se abre sólo en la
+# pantalla de la Mac: nunca por SSH, y ninguna aprobación a distancia lo reemplaza.
 #
 # LA CONTRASEÑA NUNCA PASA POR LA CONVERSACIÓN: vive en un llavero propio
 # (~/Library/Keychains/tycon-prod.keychain-db), la saca esta puerta y viaja al cliente de base por
@@ -139,7 +141,8 @@ anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaro
 }
 
 # ── el cuadro propio: la aprobación de una persona, pedida por la puerta ──────────────────────
-# La consulta, `--reclassify` y `--open-firewall` lo piden antes de leer la clave, de tocar el índice o de llamar a `az`.
+# La consulta, `--reclassify` y `--open-firewall` lo piden antes de leer la clave, de tocar el índice o de llamar a `az`;
+# `--delete-group`, cuando ya probó que el grupo no tiene nada de producción y antes de pedir el borrado.
 # Sin respuesta, sin sesión gráfica o sin el programa del cuadro, la puerta sale 2: falla cerrada. El programa se busca
 # bajo la raíz, como `security`, y corre con un entorno limpio y un tope de tiempo propio.
 OSASCRIPT="$RAIZ/usr/bin/osascript"
@@ -250,7 +253,7 @@ $1"; then TENGO_TURNO=1; return 0; fi
   done
 }
 
-aprobar(){ # $1 = lo que muestra el cuadro, $2 = la forma (consulta | reclasificar | open-firewall)
+aprobar(){ # $1 = lo que muestra el cuadro, $2 = la forma (consulta | reclasificar | open-firewall | borrar-grupo)
   # SSH: el cuadro se abriría en la pantalla de la Mac, donde quizá no hay nadie, o no se abriría
   if [ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ] || [ "$("$LAUNCHCTL" managername 2>/dev/null)" != Aqua ]; then
     muere "el cuadro de producción necesita la sesión de la Mac: abrí la terminal en la Mac, no por SSH"
@@ -658,6 +661,15 @@ EOF
       *) fallo_grupo "el grupo tiene «${h}», que no está declarado en ningún proyecto de esta máquina: no sé si es producción, así que no lo borro. Declaralo, o que lo borre una persona en su terminal." ;;
     esac
   done
+
+  # 🔴 Probado que no tiene nada de producción, el borrado lo aprueba una persona en el cuadro de la puerta: no tiene vuelta
+  # atrás, y es la única aprobación que tiene (la configuración administrada no pregunta por la puerta)
+  # lo que no tiene vuelta atrás va primero, y la lista con tope: el cuadro no puede cortar justo la advertencia
+  # shellcheck disable=SC2206 # los nombres ya pasaron su charset (HOST_VALIDO): sin espacios ni comodines
+  _servs=($LISTA_S)
+  LISTA_C=" ${_servs[*]:0:5}"; [ "${#_servs[@]}" -gt 5 ] && LISTA_C="$LISTA_C y $(( ${#_servs[@]} - 5 )) más"
+  [ "${#_servs[@]}" -gt 0 ] || LISTA_C=""
+  aprobar "No tiene vuelta atrás: borrar el grupo de recursos ${GRUPO_B} (suscripción ${SUB}), con ${RECURSOS_N} recurso(s) y ${SERVIDORES_N} servidor(es) SQL, ninguno declarado como producción${LISTA_C:+:${LISTA_C}}." borrar-grupo
 
   # el pedido de borrado
   salida="$(correr_az group delete -n "$GRUPO_B" --subscription "$SUB" --yes --no-wait 2>&1)"; rc=$?

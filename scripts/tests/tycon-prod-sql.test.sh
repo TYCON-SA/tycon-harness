@@ -913,5 +913,36 @@ if grep -q '"regla":"puerta-subagente"' "$CASA/.claude/.tycon-pipeline/guard-dec
   ok "T-puerta-39 Freno_SubagenteNoUsaLaPuerta · el bloqueo queda anotado con su regla"
 else no "T-puerta-39 Freno_SubagenteNoUsaLaPuerta · no encontré la regla puerta-subagente en el registro de decisiones: $(ls "$CASA/.claude/.tycon-pipeline")"; fi
 
+# T-puerta-42 · sin el cuadro propio no se hace nada: la medición que deja sacar la ventana de Claude Code. Cada forma que
+# consulta o cambia algo, con el cuadro ausente, rechazado, vencido o roto, sale 2 sin leer la clave, sin conectarse y sin
+# anotar el cambio; y las que no piden cuadro no consultan ni cambian nada que no se deshaga
+for forma in consulta reclasificar firewall; do
+  for m in sin-programa rechazar vencer error; do
+    mundo ok
+    if [ "$m" = sin-programa ]; then rm -f "$RAIZ/usr/bin/osascript"; else modo_cuadro "$m"; fi
+    case "$forma" in
+      consulta) rc="$(puerta "$PROD" 'select 1')" ;;
+      reclasificar) rc="$(puerta --reclassify "$PROD")" ;;
+      firewall) rc="$(puerta --open-firewall "$PROD")" ;;
+    esac
+    if [ "$rc" = 2 ] && sin_security && ! grep -q '^sqlcmd' "$TMP/orden.log" 2>/dev/null && [ ! -s "$TMP/sqlcmd-argv.log" ] \
+       && ! grep -qE '"accion":"(consulta|reclasificar|open-firewall)"' "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null; then
+      ok "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · $forma con el cuadro $m: sale 2 sin clave, sin conectarse y sin cambiar nada"
+    else no "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · $forma con el cuadro $m: rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+  done
+done
+for forma in "--verify" "--locks" "--load-key $PROD" "--close-firewall $PROD"; do
+  mundo ok; rm -f "$RAIZ/usr/bin/osascript"
+  # shellcheck disable=SC2086
+  puerta $forma >/dev/null
+  if [ ! -s "$TMP/sqlcmd-argv.log" ] && ! grep -q -- '-w' "$TMP/security-argv.log" 2>/dev/null; then
+    ok "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · ${forma%% *} no pide cuadro y no lee la clave ni se conecta"
+  else no "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · ${forma%% *} leyó la clave o se conectó sin cuadro"; fi
+done
+# y la configuración administrada ya no pregunta por la puerta: su cuadro es la única ventana
+if ! grep -qF 'Bash(/opt/tycon/bin/tycon-prod-sql' "$AQUI/scripts/production/managed-settings.tycon-production.json.template"; then
+  ok "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · la plantilla administrada no tiene regla de preguntar por la puerta"
+else no "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · la plantilla administrada todavía pregunta por la puerta: dos ventanas por consulta"; fi
+
 echo "— prod-sql: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]
