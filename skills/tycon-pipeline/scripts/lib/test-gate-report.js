@@ -129,9 +129,10 @@ function resolverUmbral(covMinTxt, env = process.env, homeDir = os.homedir(), { 
   }
   if (n >= piso.threshold) return { threshold: n, source: 'maquina', problems };
   const de = piso.source === 'organizacion' ? 'el de la organización' : 'el de fábrica';
+  const debajoDe = piso.source === 'organizacion' ? 'del de la organización' : 'del de fábrica';
   const ES = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
   if (ES.antesDelCorte('TYCON_COVERAGE_MIN', today)) {
-    problems.push(`TYCON_COVERAGE_MIN=${n} baja el umbral por debajo de ${de} (${piso.threshold}): desde ${ES.corteDe('TYCON_COVERAGE_MIN')} la máquina no baja el umbral y se usa ${piso.threshold}`);
+    problems.push(`TYCON_COVERAGE_MIN=${n} baja el umbral por debajo ${debajoDe} (${piso.threshold}): desde ${ES.corteDe('TYCON_COVERAGE_MIN')} la máquina no baja el umbral y se usa ${piso.threshold}`);
     ES.anotarEscape({ home: homeDir, sessionId: ES.sesionDe(env), kind: 'COVERAGE_BELOW_FLOOR', variable: 'TYCON_COVERAGE_MIN', unaVez: 'TYCON_COVERAGE_MIN',
       ahora: today instanceof Date ? today : new Date(today), valor: n, piso: piso.threshold });
     return { threshold: n, source: 'maquina', problems };

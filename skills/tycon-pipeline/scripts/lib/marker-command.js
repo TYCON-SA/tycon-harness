@@ -377,7 +377,7 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
 const CON_VALOR_MARKER = ['--files', '--reason', '--run', '--result', '--model', '--classes', '--tests', '--own', '--in',
   '--deferred', '--type', '--approved', '--approved-by', '--delegated-by', '--agent', '--relayed-by', '--quote', '--debt',
   '--rule', '--file', '--iter', '--story', '--repo', '--mockup-approved', '--evidence-dir', '--max-mutants', '--cost-tier',
-  '--session-model', '-r'];
+  '--session-model', '--for-session', '-r'];
 const conValorCache = {};
 function opcionesConValor(guion) {
   if (guion !== 'pipeline') return conValorCache.marker || (conValorCache.marker = new Set(CON_VALOR_MARKER));
@@ -494,8 +494,9 @@ function escapeDe(llamada, sid, comando = null) {
     if (sub === null && llamada.dudosa) return pide('--trust-ran') ? 'trust-ran' : pide('--no-deep-review') ? 'no-deep-review' : null;
     return null;
   }
-  // cerrar las pruebas (por su nombre, el del marcador viejo o en una variable): el archivo puede traer TYCON_MUTATION_CHECK
-  if (sub === 'complete-step' && llamada.envFile && (!args[0] || !lit(args[0]) || ['run-tests', 'implement', '4'].includes(args[0].texto))) return 'TYCON_MUTATION_CHECK';
+  // cerrar las pruebas (por su nombre, el del marcador viejo o en una variable): el archivo puede traer TYCON_MUTATION_CHECK.
+  // El nombre se compara sin los espacios de los costados, como lo lee marker.js
+  if (sub === 'complete-step' && llamada.envFile && (!args[0] || !lit(args[0]) || ['run-tests', 'implement', '4'].includes(args[0].texto.trim()))) return 'TYCON_MUTATION_CHECK';
   // `set-check <nombre> <estado> --force-manual`: un control declarado a mano, en cualquier estado
   if (sub === 'set-check') return pide('--force-manual') && !porSuGuion('force-manual') ? 'force-manual' : null;
   // `mark-adversarial-skipped --no-deep-review`: abandonar el pase aunque el portón diga que corre

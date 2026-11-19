@@ -809,6 +809,7 @@ test('T29 ResolverUmbral_NoOrgFloorIsFactoryDefault @story-8.256 @ac-14', () => 
     r = correr('1', guias, antes);
     assert.deepStrictEqual([r.threshold, r.source], [1, 'maquina']);
     assert.deepStrictEqual(r.renglones.map((l) => l.kind), ['COVERAGE_BELOW_FLOOR']);
+    assert.ok(r.problems.some((p) => p.includes('por debajo del de fábrica (75)')), JSON.stringify(r.problems));
   }
 });
 

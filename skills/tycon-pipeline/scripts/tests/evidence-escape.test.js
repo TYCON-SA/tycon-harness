@@ -85,9 +85,11 @@ const decidir = (command, escapes, ahora, casa) => ow.decidir({ evento: evento(c
 test('T26 NormalRun_NoNewSignatures @story-8.256 @ac-25', () => {
   for (const c of ['node marker.js complete-step run-tests', 'node marker.js complete-step implement',
     'node pipeline.js validators --story specs/story-9.9.md --repo .', 'node marker.js complete-step live-check',
-    'node marker.js complete-step "$PASO"']) {
+    'node marker.js complete-step "$PASO"', 'node marker.js complete-step run-tests --for-session "$SID"']) {
     assert.deepStrictEqual([...ow.firmasDelComando(c)], [], c);
   }
+  // aprobar el plan con la sesión en una variable pide la firma del plan, no la de los mutantes
+  assert.deepStrictEqual([...ow.firmasDelComando('node marker.js complete-step approve-plan --for-session "$SID" --approved "ok"')], ['plan-approval']);
 });
 
 // T16 EscC1_NoticePeriod_BothSides @story-8.256 @ac-11 @ac-15
@@ -127,6 +129,12 @@ test('T16 EscC1_NoticePeriod_BothSides @story-8.256 @ac-11 @ac-15', () => {
 test('T12 NoMutation_NeedsReasonAndSignature @story-8.256 @ac-11', () => {
   assert.deepStrictEqual([...ow.firmasDelComando('node marker.js complete-step run-tests --no-mutation --reason "x"')], ['escape:no-mutation']);
   assert.deepStrictEqual([...ow.firmasDelComando('node marker.js complete-step implement --no-mutation --reason x')], ['escape:no-mutation']);
+  // un --env-file delante del paso de las pruebas, también con espacios en el nombre del paso (marker.js los recorta)
+  const MC = require(path.join(SCRIPTS, 'lib', 'marker-command.js'));
+  for (const paso of ['run-tests', '" run-tests"', '"run-tests "']) {
+    const c = `node --env-file=.e marker.js complete-step ${paso}`;
+    assert.deepStrictEqual(MC.llamadas(c).map((l) => MC.escapeDe(l, 's')), ['TYCON_MUTATION_CHECK'], c);
+  }
   const sid = 's-ee-mut';
   // sin motivo, o en un paso sin pruebas: sale 2 antes de pedir nada
   let { casa } = casaEnPruebas(sid);

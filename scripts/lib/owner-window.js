@@ -502,6 +502,9 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null) {
   if (guion === 'marker.js') {
     const pide = llamada ? markerCommand().lectorDeBanderas(llamada) : con;
     if (sub === 'set-check' && pide('--force-manual')) return 'escape:force-manual';
+    // la firma la piden la cita del plan o la de la maqueta, como en marker.js; el plan que se aprueba solo, no. Va antes
+    // que los mutantes: aprobar el plan no corre las pruebas, y con `--no-mutation` el guion sale 2 antes de firmar
+    if (sub === 'complete-step' && ['approve-plan', '3'].includes(String(a[0] || '').trim()) && (con('--approved') || con('--mockup-approved'))) return 'plan-approval';
     // cerrar un paso sin los mutantes, en cualquier paso: el guion niega el que no corre las pruebas. La bandera se lee
     // desde el segundo argumento, así un paso en una variable (`complete-step "$PASO"`) no la pide
     if (sub === 'complete-step') {
@@ -509,8 +512,6 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null) {
         : (b) => pal.slice(1).some((w) => !w.literal || w.texto === b || w.texto.startsWith(`${b}=`));
       if (pideDespues('--no-mutation')) return 'escape:no-mutation';
     }
-    // la firma la piden la cita del plan o la de la maqueta, como en marker.js; el plan que se aprueba solo, no
-    if (sub === 'complete-step' && ['approve-plan', '3'].includes(String(a[0] || '').trim()) && (con('--approved') || con('--mockup-approved'))) return 'plan-approval';
     if (sub === 'approve-mockup') return 'plan-approval';
     if (sub === 'waive-critical') return 'critical-waiver';
     if (sub === 'mark-tested') return 'manual-test';
