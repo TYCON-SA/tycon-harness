@@ -1210,7 +1210,7 @@ function destinosBorrados(cmd) {
 const LECTORES_DE_FIND = String.raw`(?:wc|cat|head|tail|grep|egrep|fgrep|rg|ls|stat|file|echo|printf|du|basename|dirname|readlink|realpath|shasum|sha1sum|sha256sum|md5|md5sum|cksum|jq|diff|cmp|test)(?=[\s;'"]|$)`;
 const BORRA_O_MUEVE = new RegExp([
   // el comando con su ruta (`/bin/rm`) o con la barra que saltea un alias (`\rm`) es el mismo comando
-  String.raw`(?:^|[\s;&|(` + '`' + String.raw`'"])(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:rm|rmdir|unlink|mv|move|remove-item|move-item|rename-item|shred|trash|truncate)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
+  String.raw`(?:^|[\s;&|(` + '`' + String.raw`'"])(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:rm|rmdir|unlink|mv|move|remove-item|move-item|rename-item|rni|shred|trash|truncate)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
   String.raw`(?:^|[;&|(` + '`' + String.raw`'"\n]|\bcmd(?:\.exe)?\s+/[ck])\s*(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:del|erase|rd|ren|mi|ri)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
   String.raw`(?:^|\s)--?delete\b`,
   String.raw`(?:^|\s)-exec(?:dir)?\s+(?!` + LECTORES_DE_FIND + ')',
@@ -1572,17 +1572,19 @@ function origenesMovidos(cmd) {
     const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
     if (!words.length) continue;
     const c = nombreDeComando(words[0]);
-    if (!['mv', 'move', 'mi', 'move-item', 'rename-item', 'ren'].includes(c)) continue;
+    if (!['mv', 'move', 'mi', 'move-item', 'rename-item', 'ren', 'rni'].includes(c)) continue;
     const args = [];
+    // el destino dicho con su nombre (`-Destination`, `-NewName`, `-t`): entonces todos los sueltos son orígenes
+    let destinoNombrado = false;
     for (let i = 1; i < words.length; i++) {
       // `-t` y `--target-directory` de mv nombran el destino; `-T` (sin carpeta destino) no lleva valor
-      if (/^-(?:destination|newname)$/i.test(words[i]) || /^(?:-t|--target-directory)$/.test(words[i])) { i++; continue; }
+      if (/^-(?:destination|newname)$/i.test(words[i]) || /^(?:-t|--target-directory)$/.test(words[i])) { destinoNombrado = true; i++; continue; }
       if (/^-(?:path|literalpath)$/i.test(words[i])) { if (words[i + 1]) args.push(words[++i]); continue; }
       if (words[i].startsWith('-')) continue;
       args.push(words[i]);
     }
-    // el último es el destino (salvo con -t, que ya se salteó)
-    out.push(...(/(?:^|\s)-(?:t|-target-directory)\b/.test(tramo) ? args : args.slice(0, -1)));
+    // si no, el último es el destino
+    out.push(...(destinoNombrado || /(?:^|\s)-(?:t|-target-directory)\b/.test(tramo) ? args : args.slice(0, -1)));
   }
   return out;
 }
@@ -3546,13 +3548,30 @@ function carpetasQueBorraOMueve(cmd) {
     return false;
   };
   const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'cmd', 'pwsh', 'powershell', 'eval', 'xargs', 'env', 'sudo', 'nohup', 'nice', 'time']);
+  const textos = [sinCmd];
   const ver = (texto, nivel) => {
     for (const tramo of tramos(texto)) {
-      const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
-      if (recursivo(words)) for (const d of destinosBorrados(tramo)) if (d.kind === 'delete' && !d.git) rutas.push({ raw: d.raw });
-      for (const raw of origenesMovidos(tramo)) rutas.push({ raw });
+      let words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
+      let tramoDe = tramo;
+      // `xargs [opciones] rm -rf <ruta>`: el comando es lo que sigue a las opciones de xargs
+      if (nombreDeComando(words[0] || '') === 'xargs') {
+        let k = 1;
+        while (k < words.length && words[k].startsWith('-')) k += /^-(?:I|n|P|L|d|E|s|a)$/.test(words[k]) ? 2 : 1;
+        words = words.slice(k);
+        tramoDe = words.map((w) => (/[\s'"]/.test(w) ? `"${w.replace(/"/g, '\\"')}"` : w)).join(' ');
+      }
+      if (recursivo(words)) for (const d of destinosBorrados(tramoDe)) if (d.kind === 'delete' && !d.git) rutas.push({ raw: d.raw });
+      for (const raw of origenesMovidos(tramoDe)) rutas.push({ raw });
+      // `find <carpetas> -exec rm -r {}` sin elegir por nombre: borra las carpetas enteras
+      if (nombreDeComando(words[0] || '') === 'find') {
+        const e = words.findIndex((w) => /^-exec(?:dir)?$/.test(w));
+        const porNombre = words.some((w) => /^-(?:i?name|i?path|i?wholename|i?regex|newer\w*|[acm]time|[acm]min|size|perm|user|group)$/.test(w));
+        if (e > 0 && !porNombre && recursivo(words.slice(e + 1))) {
+          for (const w of words.slice(1)) { if (w.startsWith('-') || w === '!' || w === '(') break; rutas.push({ raw: w }); }
+        }
+      }
       // adentro de un texto sólo cuando lo corre otro shell (`bash -c '…'`): el texto de un `echo` o un mensaje no borra
-      if (nivel < 2 && SHELLS.has(nombreDeComando(words[0] || ''))) for (const w of words.slice(1)) if (/\s/.test(w)) ver(w, nivel + 1);
+      if (nivel < 2 && SHELLS.has(nombreDeComando(words[0] || ''))) for (const w of words.slice(1)) if (/\s/.test(w)) { textos.push(w); ver(w, nivel + 1); }
       if (nombreDeComando(words[0] || '') !== 'git') continue;
       let i = 1;
       let base = null;
@@ -3575,7 +3594,7 @@ function carpetasQueBorraOMueve(cmd) {
   // la lista con coma de PowerShell (`Remove-Item a,b -Recurse`): cada una, además de la palabra entera
   const conComas = [];
   for (const r of rutas) { conComas.push(r); if (/,/.test(r.raw)) for (const x of r.raw.split(',')) if (x.trim()) conComas.push({ ...r, raw: x.trim() }); }
-  return { rutas: conComas, prune, texto: sinCmd };
+  return { rutas: conComas, prune, texto: sinCmd, textos };
 }
 
 /**
@@ -3622,11 +3641,12 @@ function borraEjecucionAbierta(event) {
   if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
   const cmd = event?.tool_input?.command;
   if (!cmd || !BORRA_O_MUEVE.test(String(cmd))) return null;
-  const { rutas, prune, texto } = carpetasQueBorraOMueve(cmd);
+  const { rutas, prune, textos } = carpetasQueBorraOMueve(cmd);
   if (!rutas.length && !prune.length) return null;
   const baseCwd = nativePath(event?.cwd || process.cwd());
-  // las carpetas desde donde puede correr, leídas en el texto sin subshells ni `pushd` (y en el original, por las dudas)
-  const cwds = [...new Set([...carpetasDelComando(conLosCdDeSiempre(texto), baseCwd), ...carpetasDelComando(conLosCdDeSiempre(cmd), baseCwd)])];
+  // las carpetas desde donde puede correr: las del original y las del texto sin subshells ni `pushd`, también adentro
+  // de un `bash -c '…'`
+  const cwds = [...new Set([cmd, ...textos].flatMap((t) => carpetasDelComando(conLosCdDeSiempre(t), baseCwd)))];
   // `$PWD` y `$(pwd)` son la carpeta del comando; una ruta que no se resuelve se mira por su parte fija de adelante
   // (`../wt-$X` mira `..`): lo que se borra está adentro de esa carpeta
   const fija = (raw) => {
@@ -3684,8 +3704,8 @@ function borraEjecucionAbierta(event) {
   }
   if (motivos.length) {
     // sin saber qué se poda, pesa sólo si hay alguna ejecución abierta en la máquina
-    const todas = or.abiertasDentro(path.parse(baseCwd).root);
-    if (!todas.ok || todas.abiertas.length) {
+    const todas = or.hayAbiertas();
+    if (!todas.ok || todas.n > 0) {
       return frena(`🔒 CERRÁ LA EJECUCIÓN ANTES — ${via}: ${[...new Set(motivos)].join('; ')}. Hay una ejecución abierta en esta máquina y podar podría borrar el último rastro de su carpeta: lo que no se puede decidir frena. Cerrá la ejecución antes, o mirá con \`git worktree list --porcelain\` qué se poda.`, [...new Set(motivos)].join('; '));
     }
   }

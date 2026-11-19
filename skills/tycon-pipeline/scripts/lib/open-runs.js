@@ -368,6 +368,15 @@ function abiertasDentro(carpeta, { home, eventos, platform = process.platform } 
   return { ok: true, abiertas };
 }
 
+/** Cuántas ejecuciones abiertas hay en la máquina (en cualquier carpeta o unidad): `{ ok, n }` o `{ ok: false, error }`. */
+function hayAbiertas({ home } = {}) {
+  const r = leerEventos(home);
+  if (!r.ok && !r.ausente) return { ok: false, error: r.error };
+  const ultimo = new Map();
+  for (const e of r.ok ? r.eventos : []) ultimo.set(e.sesion, e);
+  return { ok: true, n: [...ultimo.values()].filter((e) => e.name === 'run-open').length };
+}
+
 /** ¿`hijo` es `padre` o está adentro? Como el sistema: en Windows sin distinguir barras ni mayúsculas; con los enlaces resueltos. */
 function dentroDe(hijo, padre, platform = process.platform) {
   // con los enlaces resueltos aunque la ruta ya no exista (una carpeta podada): se resuelve la carpeta de arriba que
@@ -397,4 +406,4 @@ function dentroDe(hijo, padre, platform = process.platform) {
   return false;
 }
 
-module.exports = { CAMPOS_DE_CIERRE, MARKER_REL, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, dentroDe, gatesPath, markerPath };
+module.exports = { CAMPOS_DE_CIERRE, MARKER_REL, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, hayAbiertas, dentroDe, gatesPath, markerPath };
