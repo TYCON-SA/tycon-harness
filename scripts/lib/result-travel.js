@@ -30,7 +30,7 @@ const { spawnSync } = require('child_process');
 
 // La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los laboratorios
 // copian carpetas sueltas de scripts/; ahí vale la ruta de siempre, que es la misma.
-const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return fs.existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || os.homedir(), '.claude', '.tycon-pipeline'); })();
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 
 const BRANCH = 'night-results';
 const CARRIED = '.dashboard/night-results/carried.json';
