@@ -370,9 +370,24 @@ function abiertasDentro(carpeta, { home, eventos, platform = process.platform } 
 
 /** ¿`hijo` es `padre` o está adentro? Como el sistema: en Windows sin distinguir barras ni mayúsculas; con los enlaces resueltos. */
 function dentroDe(hijo, padre, platform = process.platform) {
+  // con los enlaces resueltos aunque la ruta ya no exista (una carpeta podada): se resuelve la carpeta de arriba que
+  // existe y se le suma el resto (`/var/…` y `/private/var/…` en macOS son la misma)
+  const real = (p) => {
+    let d = String(p);
+    const resto = [];
+    for (let i = 0; i < 64; i++) {
+      try { return path.join(fs.realpathSync.native(d), ...[...resto].reverse()); } catch { /* sube */ }
+      const arriba = path.dirname(d);
+      if (arriba === d) return null;
+      resto.push(path.basename(d));
+      d = arriba;
+    }
+    return null;
+  };
   const formas = (p) => {
     const out = [String(p)];
-    try { out.push(fs.realpathSync.native(String(p))); } catch { /* no existe o no se lee: vale la ruta dicha */ }
+    const r = platform === process.platform ? real(p) : null;
+    if (r) out.push(r);
     return out.map((x) => (platform === 'win32' ? x.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() : path.resolve(x)));
   };
   const sep = platform === 'win32' ? '/' : path.sep;

@@ -361,6 +361,39 @@ test('T16 RmCarpetaConEjecucionAbierta_Frena @story-8.318 @ac-13 — rm -rf de l
   assert.ok(fs.existsSync(wt));
 });
 
+test('T16b BorrarCarpeta_FormasDelPaseAdversarial @story-8.318 @ac-13 @ac-15 — las que el pase encontró: frenan las que borran, pasan las que no', () => {
+  const E = entorno();
+  const wt = carpetaDeTrabajo(E);
+  E.abrir('s-otra', wt);
+  const frenan = [
+    [`mv -T ${wt} ${wt}-2`, 'Bash'], [`if true; then rm -rf ${wt}; fi`, 'Bash'], [`time rm -rf ${wt}`, 'Bash'], [`! rm -rf ${wt}`, 'Bash'],
+    [`for x in 1; do rm -rf ${wt}; done`, 'Bash'], [`{ rm -rf ${wt}; }`, 'Bash'], ['rm -rf {nada,repo-wt-a}', 'Bash'], ['rm -rf $PWD/repo-wt-a', 'Bash'],
+    ['rm -rf "$(pwd)/repo-wt-a"', 'Bash'], ['rm -rf ./repo-wt-$X', 'Bash'], [`Remove-Item ${E.base}/nada,${wt} -Recurse`, 'PowerShell'],
+    ['(cd repo && rm -rf ../repo-wt-a)', 'Bash'], ['pushd repo; rm -rf ../repo-wt-a', 'Bash'], [`bash -c "rm -rf ${wt}"`, 'Bash'],
+    [`git -C /no/existe -C ${E.repo} worktree remove ../repo-wt-a`, 'Bash'],
+  ];
+  for (const [c, tool] of frenan) {
+    const r = E.consola('s-t16b', c, E.base, tool);
+    assert.match(r.out, ANTES, `${c}: ${r.out}`);
+  }
+  const pasan = [`echo "rm -rf ${wt}"`, `rm -f ${wt}`, 'git worktree prune --dry-run', 'git worktree prune -n', `rmdir ${wt}`, `git commit -m "git worktree remove ${wt}"`];
+  for (const c of pasan) {
+    const r = E.consola('s-t16b', c, c.startsWith('git worktree') ? E.repo : E.base);
+    assert.doesNotMatch(r.out, ANTES, `${c}: ${r.out}`);
+  }
+});
+
+test('T17b WorktreePrune_RutaPorUnEnlace_Frena @story-8.318 @ac-14 — la apertura anotada por un enlace y git con la ruta real', { skip: WIN && 'los enlaces de carpeta no se arman igual en Windows' }, () => {
+  const E = entorno();
+  const wt = carpetaDeTrabajo(E);
+  const enlace = path.join(E.base, 'enlace');
+  fs.symlinkSync(E.base, enlace, 'dir');
+  E.or.abrir({ sid: 's-otra', story: '9.9', repo: path.join(enlace, 'repo-wt-a'), runDir: path.join(enlace, 'repo-wt-a', '.advisors', 'pipeline-runs', '9.9-x'), home: E.home });
+  fs.rmSync(wt, { recursive: true, force: true });
+  const r = E.consola('s-t17b', 'git worktree prune', E.repo);
+  assert.match(r.out, ANTES, r.out);
+});
+
 test('T17 WorktreePrune_ConEjecucionAbiertaEnLaLista_Frena @story-8.318 @ac-14 — poda una carpeta con la apertura vigente; sin ninguna, pasa; sin el campo prunable, frena', () => {
   const E = entorno();
   const wt = carpetaDeTrabajo(E);

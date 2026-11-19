@@ -1575,7 +1575,8 @@ function origenesMovidos(cmd) {
     if (!['mv', 'move', 'mi', 'move-item', 'rename-item', 'ren'].includes(c)) continue;
     const args = [];
     for (let i = 1; i < words.length; i++) {
-      if (/^-(?:destination|t|target-directory|newname)$/i.test(words[i])) { i++; continue; }
+      // `-t` y `--target-directory` de mv nombran el destino; `-T` (sin carpeta destino) no lleva valor
+      if (/^-(?:destination|newname)$/i.test(words[i]) || /^(?:-t|--target-directory)$/.test(words[i])) { i++; continue; }
       if (/^-(?:path|literalpath)$/i.test(words[i])) { if (words[i + 1]) args.push(words[++i]); continue; }
       if (words[i].startsWith('-')) continue;
       args.push(words[i]);
@@ -3527,33 +3528,54 @@ function ejecucionPerdida(event) {
  * `git worktree prune` (la de `-C`, o null para la del comando).
  */
 function carpetasQueBorraOMueve(cmd) {
-  const sinCmd = String(cmd || '').replace(/(^|[;&|(\n]\s*)cmd(?:\.exe)?\s+\/[ck]\s+/gi, '$1');
+  // `cmd /c`, `pushd` y `Set-Location` cambian de forma, no de efecto; las palabras de control del shell (`if`, `then`,
+  // `do`, `else`, `time`, `!`, `{`, `(`) no son el comando
+  const sinCmd = String(cmd || '')
+    .replace(/(^|[;&|(\n]\s*)cmd(?:\.exe)?\s+\/[ck]\s+/gi, '$1')
+    .replace(/(^|[;&|(\n{]\s*)(?:pushd|set-location|sl|chdir)(?=\s)/gi, '$1cd')
+    .replace(/(^|[;&|\n]|\b(?:then|do|else|elif)\b)(\s*(?:(?:if|while|until|then|do|else|elif|time|!|\{|\()\s+|\(\s*))+/g, '$1 ');
   const rutas = [];
   const prune = [];
+  // un borrado cuenta si puede llevarse una carpeta con algo adentro: `rm` con `-r`, `Remove-Item` (y sus alias) con
+  // `-Recurse`, `rd`/`rmdir` con `/s`. `rm -f <carpeta>` o un `rmdir` de una carpeta vacía no se la llevan
+  const recursivo = (words) => {
+    const c = nombreDeComando(words[0] || '');
+    const resto = words.slice(1);
+    if (c === 'rm') return resto.some((w) => /^-[a-zA-Z]*[rR]/.test(w) || w === '--recursive');
+    if (['rd', 'rmdir', 'remove-item', 'ri', 'del', 'erase'].includes(c)) return resto.some((w) => /^\/s$/i.test(w) || /^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?$/i.test(w));
+    return false;
+  };
+  const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'cmd', 'pwsh', 'powershell', 'eval', 'xargs', 'env', 'sudo', 'nohup', 'nice', 'time']);
   const ver = (texto, nivel) => {
-    for (const d of destinosBorrados(texto)) if (d.kind === 'delete' && !d.git) rutas.push({ raw: d.raw });
-    for (const raw of origenesMovidos(texto)) rutas.push({ raw });
     for (const tramo of tramos(texto)) {
       const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
-      const citados = textosCitados(tramo, texto);
-      if (nivel < 2) for (const w of palabras(tramo)) if (/\s/.test(w) && !citados.has(w)) ver(w, nivel + 1);
+      if (recursivo(words)) for (const d of destinosBorrados(tramo)) if (d.kind === 'delete' && !d.git) rutas.push({ raw: d.raw });
+      for (const raw of origenesMovidos(tramo)) rutas.push({ raw });
+      // adentro de un texto sólo cuando lo corre otro shell (`bash -c '…'`): el texto de un `echo` o un mensaje no borra
+      if (nivel < 2 && SHELLS.has(nombreDeComando(words[0] || ''))) for (const w of words.slice(1)) if (/\s/.test(w)) ver(w, nivel + 1);
       if (nombreDeComando(words[0] || '') !== 'git') continue;
       let i = 1;
       let base = null;
       while (i < words.length && words[i].startsWith('-')) {
-        if (words[i] === '-C') { base = base ? `${base}/${words[i + 1]}` : words[i + 1]; i += 2; continue; }
+        // varios `-C` se encadenan como git: uno absoluto empieza de nuevo
+        if (words[i] === '-C') { const v = words[i + 1]; base = base && !(path.isAbsolute(v) || /^[A-Za-z]:[\\/]/.test(v)) ? `${base}/${v}` : v; i += 2; continue; }
         if (['-c', '--git-dir', '--work-tree', '--namespace'].includes(words[i])) { i += 2; continue; }
         i++;
       }
       if (words[i] !== 'worktree') continue;
       const sub = words[i + 1];
+      const opciones = words.slice(i + 2).filter((w) => w.startsWith('-'));
       const resto = words.slice(i + 2).filter((w) => !w.startsWith('-'));
       if ((sub === 'remove' || sub === 'move') && resto[0]) rutas.push({ raw: resto[0], ...(base ? { base } : {}) });
-      if (sub === 'prune') prune.push(base);
+      // `--dry-run` (`-n`) sólo dice qué podaría
+      if (sub === 'prune' && !opciones.some((w) => w === '-n' || w === '--dry-run')) prune.push(base);
     }
   };
   ver(sinCmd, 0);
-  return { rutas, prune };
+  // la lista con coma de PowerShell (`Remove-Item a,b -Recurse`): cada una, además de la palabra entera
+  const conComas = [];
+  for (const r of rutas) { conComas.push(r); if (/,/.test(r.raw)) for (const x of r.raw.split(',')) if (x.trim()) conComas.push({ ...r, raw: x.trim() }); }
+  return { rutas: conComas, prune, texto: sinCmd };
 }
 
 /**
@@ -3600,25 +3622,38 @@ function borraEjecucionAbierta(event) {
   if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
   const cmd = event?.tool_input?.command;
   if (!cmd || !BORRA_O_MUEVE.test(String(cmd))) return null;
-  const { rutas, prune } = carpetasQueBorraOMueve(cmd);
+  const { rutas, prune, texto } = carpetasQueBorraOMueve(cmd);
   if (!rutas.length && !prune.length) return null;
   const baseCwd = nativePath(event?.cwd || process.cwd());
-  const cwds = carpetasDelComando(conLosCdDeSiempre(cmd), baseCwd);
+  // las carpetas desde donde puede correr, leídas en el texto sin subshells ni `pushd` (y en el original, por las dudas)
+  const cwds = [...new Set([...carpetasDelComando(conLosCdDeSiempre(texto), baseCwd), ...carpetasDelComando(conLosCdDeSiempre(cmd), baseCwd)])];
+  // `$PWD` y `$(pwd)` son la carpeta del comando; una ruta que no se resuelve se mira por su parte fija de adelante
+  // (`../wt-$X` mira `..`): lo que se borra está adentro de esa carpeta
+  const fija = (raw) => {
+    const i = String(raw).search(/[$`]/);
+    if (i <= 0) return null;
+    const pre = String(raw).slice(0, i);
+    return /[\\/]$/.test(pre) ? pre : path.dirname(pre);
+  };
   const resolver = (raw, base, desde) => {
-    const ruta = expandirRuta(cmd, raw);
-    if (ruta.sinResolver.length) return null;
+    const conPwd = String(raw).replace(/\$\{?PWD\}?|\$\(\s*pwd\s*\)/g, () => desde);
     let dir = desde;
-    if (base) { const b = expandirRuta(cmd, base); if (b.sinResolver.length) return null; dir = resolveTarget(b.valor, desde, process.platform, { homeVariable: true }); }
-    return resolveTarget(ruta.valor, dir, process.platform, { homeVariable: true });
+    if (base) { const b = expandirRuta(cmd, base); if (b.sinResolver.length) return { sinResolver: true }; dir = resolveTarget(b.valor, desde, process.platform, { homeVariable: true }); }
+    const ruta = expandirRuta(cmd, conPwd);
+    if (!ruta.sinResolver.length) return { abs: resolveTarget(ruta.valor, dir, process.platform, { homeVariable: true }) };
+    const f = fija(conPwd);
+    return f ? { abs: resolveTarget(f, dir, process.platform, { homeVariable: true }), aproximada: true } : { sinResolver: true };
   };
   const esCarpeta = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
   const carpetas = new Set();
   for (const desde of cwds) {
     for (const d of rutas) {
-      const abs = resolver(d.raw, d.base, desde);
-      if (!abs) continue;
-      const lista = /[*?[]/.test(abs) ? expandirComodin(abs, desde) : [abs];
-      for (const x of lista) if (esCarpeta(x)) carpetas.add(x);
+      for (const raw of expandirLlaves(d.raw)) {
+        const r = resolver(raw, d.base, desde);
+        if (!r.abs) continue;
+        const lista = /[*?[]/.test(r.abs) ? expandirComodin(r.abs, desde) : [r.abs];
+        for (const x of lista) if (esCarpeta(x)) carpetas.add(x);
+      }
     }
   }
   const sid = resolveSessionId(event?.session_id);
