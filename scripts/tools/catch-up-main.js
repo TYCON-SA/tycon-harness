@@ -14,8 +14,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * QUÉ HACE. `node scripts/tools/catch-up-main.js --repo <dir> [--push]`
  *   1. Trae `origin/main` y lo mezcla en la rama actual sin commitear.
  *   2. Si choca sólo en esos tres archivos, junta los dos lados de cada uno con `git merge-file --union` sobre sus tres
- *      versiones (base, rama, main). En los índices queda un renglón por historia: si la rama cambió el de una historia
- *      y la unión lo repitió, queda el de la rama. En las firmas, cada línea una vez, en orden de hora, y ninguna firma
+ *      versiones (base, rama, main). En los índices, cada historia queda con lo que le hizo cada lado: la que cambió
+ *      un solo lado queda con ese cambio, una vez; si los dos cambiaron su renglón, cada uno a su manera, queda el de
+ *      la rama. En las firmas, cada línea una vez, en orden de hora, y ninguna firma
  *      que era válida en un lado queda descartada por la cadena. Si los índices de main son generados (traen la
  *      cabecera de `scripts/tools/story-index.js`), no se unen: se regeneran desde el frontmatter ya mezclado.
  *   3. Commitea el merge con un commit normal, con todos los controles, y con `--push` lo empuja sin forzar.
@@ -77,25 +78,61 @@ function porClave(texto) {
   return m;
 }
 
-/** Deja un solo renglón por cada historia que la rama cambió, el de la rama; lo demás queda como lo dejó la unión. */
-function unRenglonPorHistoria(unido, base, rama) {
+const contar = (rs) => {
+  const c = new Map();
+  for (const r of rs || []) c.set(r, (c.get(r) || 0) + 1);
+  return c;
+};
+
+/**
+ * Los renglones que le tocan a una historia después del merge, juntando lo que hizo cada lado sobre la base: un renglón
+ * que un lado sacó o cambió no vuelve aunque el otro lado lo traiga sin tocar, y uno que los dos sumaron igual queda una
+ * vez. Si los dos lados cambiaron el único renglón de la historia, cada uno a su manera, queda el de la rama.
+ */
+function renglonesDe(b, r, m) {
+  if ((r || []).length === 1 && (m || []).length === 1 && (b || []).length <= 1 && r[0] !== m[0] && r[0] !== (b || [])[0] && m[0] !== (b || [])[0]) {
+    return contar([r[0]]);
+  }
+  const cb = contar(b);
+  const cr = contar(r);
+  const cm = contar(m);
+  const quedan = new Map();
+  for (const l of new Set([...cb.keys(), ...cr.keys(), ...cm.keys()])) {
+    const nb = cb.get(l) || 0;
+    const dr = (cr.get(l) || 0) - nb;
+    const dm = (cm.get(l) || 0) - nb;
+    const d = dr > 0 && dm > 0 ? Math.max(dr, dm) : dr < 0 && dm < 0 ? Math.min(dr, dm) : dr + dm;
+    if (nb + d > 0) quedan.set(l, nb + d);
+  }
+  return quedan;
+}
+
+/**
+ * Deja en cada historia los renglones que le tocan juntando los dos lados (renglonesDe), en el lugar donde los puso la
+ * unión: la unión de git repite los dos lados de un choque, y con eso una historia que la rama no tocó quedaba dos
+ * veces, con su renglón viejo primero. Lo que no es renglón de historia queda como lo dejó la unión.
+ */
+function unRenglonPorHistoria(unido, base, rama, main) {
   const enBase = porClave(base);
   const enRama = porClave(rama);
-  const propias = new Map();
-  for (const [k, rs] of enRama) {
-    if (rs.length === 1 && (enBase.get(k) || []).join('\n') !== rs[0]) propias.set(k, rs[0]);
+  const enMain = porClave(main);
+  const quedan = new Map();
+  for (const k of new Set([...enBase.keys(), ...enRama.keys(), ...enMain.keys()])) {
+    quedan.set(k, renglonesDe(enBase.get(k), enRama.get(k), enMain.get(k)));
   }
-  const vistas = new Set();
   const salida = [];
-  const renglones = unido.split('\n');
-  for (const r of renglones) {
+  for (const r of unido.split('\n')) {
     const k = claveDe(r);
-    if (k && propias.has(k) && renglones.filter((x) => claveDe(x) === k).length > 1) {
-      if (r !== propias.get(k) || vistas.has(k)) continue;
-      vistas.add(k);
+    if (k) {
+      const q = quedan.get(k);
+      const n = (q && q.get(r)) || 0;
+      if (!n) continue;
+      q.set(r, n - 1);
     }
     salida.push(r);
   }
+  const faltan = [...quedan.values()].flatMap((q) => [...q].filter(([, n]) => n > 0).map(([l]) => l));
+  if (faltan.length) throw new Salida(1, `la unión no dejó lugar para ${faltan.length} renglón(es) de historia: ${faltan[0].slice(0, 80)}`);
   return salida.join('\n');
 }
 
@@ -141,7 +178,7 @@ function resolver(git, repo, archivo, tmp) {
   const f = (n, c) => { const p = path.join(tmp, n); fs.writeFileSync(p, c); return p; };
   const m = git(['merge-file', '--union', '-p', f('rama', rama), f('base', base), f('main', main)]);
   if (m.code < 0 || m.code > 127) throw new Salida(5, `git merge-file falló con ${archivo}: ${m.err.trim()}`);
-  const unido = archivo === FIRMAS ? unirFirmas(m.out, rama, main, tmp) : unRenglonPorHistoria(m.out, base, rama);
+  const unido = archivo === FIRMAS ? unirFirmas(m.out, rama, main, tmp) : unRenglonPorHistoria(m.out, base, rama, main);
   fs.writeFileSync(path.join(repo, archivo), unido);
   const a = git(['add', '--', archivo]);
   if (a.code !== 0) throw new Salida(5, `git add ${archivo} falló: ${a.err.trim()}`);
