@@ -188,6 +188,25 @@ test('T10 Compare_Topes_PorVariable @story-8.167 @ac-9 — TYCON_COMPARE_MAX y T
   assert.match(lento.motivo, /tope/);
 });
 
+test('T10b Compare_Tope_CuentaSoloLasDelCodigoDeAhora — un «no comparado» y un humo de código viejo no gastan el tope; el tiempo total sí', () => {
+  // 🔴 mutación: contar todas las previas (lo de antes) → el humo después del cambio da «tope»; no contar las del código
+  //    de ahora → el tercero compara; sacar las vencidas también del tiempo → TYCON_COMPARE_TOTAL_MS deja de frenar.
+  const L = laboratorio({ cambio: 'console.log("hola");\n// uno\n' });
+  const max = { TYCON_COMPARE_MAX: '1' };
+  assert.strictEqual(L.comparar(['sudo', 'true'], max).e.resultado, 'no-comparado', 'se niega sin correrlo');
+  assert.strictEqual(L.comparar(node('tool.js'), max).e.resultado, 'igual', 'el «no comparado» no gastó el tope');
+  const lleno = L.comparar(node('tool.js'), max).e;
+  assert.strictEqual(lleno.resultado, 'no-comparado');
+  assert.match(lleno.motivo, /tope: ya hubo 1 humo\(s\) comparado\(s\) con el código de ahora/);
+  fs.writeFileSync(path.join(L.repo, 'tool.js'), 'console.log("hola");\n// dos\n');
+  assert.strictEqual(L.comparar(node('tool.js'), max).e.resultado, 'igual', 'el humo del código viejo ya no vale: vuelve a correr');
+  assert.match(L.comparar(node('tool.js'), max).e.motivo, /tope: ya hubo 1 humo/);
+  // el tiempo de todos sigue contando
+  const total = L.comparar(node('tool.js'), { TYCON_COMPARE_MAX: '10', TYCON_COMPARE_TOTAL_MS: '1' }).e;
+  assert.strictEqual(total.resultado, 'no-comparado');
+  assert.match(total.motivo, /TYCON_COMPARE_TOTAL_MS=1/);
+});
+
 test('T11 Compare_Limpieza_TambienDespuesDeMatarlo @story-8.167 @ac-9 — no queda ningún clon y git worktree list no cambia', async () => {
   const L = laboratorio({ sid: 's-cp11' });
   // las carpetas de los worktrees (el HEAD cambia con el commit de la prueba)

@@ -366,13 +366,15 @@ test('con la copia borrada, desde una carpeta que no tiene el commit no corrige'
 
 // ── el aviso de «ya estaba en main» ──────────────────────────────────────────────────────────────
 
-test('si el commit del pedido ya estaba en main antes del pedido, el cierre lo dice con el comando de corregir', () => {
+// Un pedido creado no es un merge: el commit de un pedido sin su número no frena el cierre, aunque esté en main.
+test('si el commit del pedido ya estaba en main antes del pedido, no frena y el aviso lo dice con el comando de corregir', () => {
   const { dir, viejo } = repoConMain();
   const lab = laboratorio();
   lab.sembrar({ repoPath: dir, sha: corto(viejo) });
-  const motivo = motivoDelCierre(lab, dir);
-  assert.match(motivo, /ya estaba en main antes del pedido/);
-  assert.ok(motivo.includes(`--correct --repo "${dir}" --sha ${corto(viejo)}`), motivo);
+  assert.doesNotMatch(motivoDelCierre(lab, dir), new RegExp(corto(viejo)));
+  const { stdout } = lab.arranque(dir);
+  assert.match(stdout, /ya estaba en main antes del pedido/);
+  assert.ok(stdout.includes(`--correct --repo "${dir}" --sha ${corto(viejo)}`), stdout);
 });
 
 test('el aviso de arranque también lo dice', () => {
@@ -404,7 +406,8 @@ test('las copias de trabajo de un repo comparten la lista de main: git la calcul
     return copia;
   });
   const lab = laboratorio();
-  for (const copia of copias) lab.sembrar({ repoPath: copia, sha: corto(fuera) });
+  // con número (sin estado: una entrada vieja), que es la que se juzga contra la línea de main
+  for (const copia of copias) lab.sembrar({ repoPath: copia, sha: corto(fuera), pr: 7 });
   const traza = path.join(tmp(), 'git.trace');
   const { stdout } = lab.arranque(path.dirname(dir), { GIT_TRACE: traza });
   for (const copia of copias) assert.ok(stdout.includes(`${copia} @ ${corto(fuera)}`), stdout);
@@ -418,8 +421,8 @@ test('dos clones del mismo proyecto no comparten la lista de main', () => {
   git(path.dirname(dir), ['clone', '--quiet', '-b', 'main', dir, clon]);
   const nuevo = commit(dir, 'nuevo.txt');
   const lab = laboratorio();
-  lab.sembrar({ repoPath: dir, sha: corto(nuevo) });
-  lab.sembrar({ repoPath: clon, sha: corto(nuevo) });
+  lab.sembrar({ repoPath: dir, sha: corto(nuevo), pr: 7 });
+  lab.sembrar({ repoPath: clon, sha: corto(nuevo), pr: 7 });
   const { stdout } = lab.arranque(path.dirname(dir));
   const [reclamado, noSePaga] = stdout.split('un latido no puede pagar');
   assert.ok(reclamado.includes(`${dir} @ ${corto(nuevo)}`), stdout);
@@ -472,4 +475,31 @@ test('un hermano sin el commit de la entrada no cuenta como su principal', () =>
   lab.sembrar({ repoPath: copia, sha: 'abcdefabcdef', cmd: 'git push origin main' });
   // desde la carpeta que agrupa a los dos: la copia queda a un nivel, dentro del alcance del cierre
   assert.ok(motivoDelCierre(lab, path.dirname(dir)).includes(`--repo "${copia}" --merge abcdefabcdef`));
+});
+
+// ── el mismo commit anotado desde dos copias del mismo repo ─────────
+
+test('--correct con la carpeta de una copia corrige todas las copias de esa entrega', () => {
+  const { dir, viejo, real } = repoConMain();
+  const lab = laboratorio();
+  for (const n of ['a', 'b']) lab.sembrar({ repoPath: `${dir}--wt-${n}`, principal: dir, sha: corto(viejo) });
+  const r = lab.corregir(['--repo', `${dir}--wt-a`, '--sha', corto(viejo), '--real', real, '--reason', 'la copia tenía dev atrasada'], dir);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const corregidas = lab.renglones().filter((x) => x.tipo === 'correccion').map((x) => x.entrada.repo).sort();
+  assert.deepStrictEqual(corregidas, [`${dir}--wt-a`, `${dir}--wt-b`]);
+});
+
+test('de dos copias del mismo commit se juzga la que trae el número del pedido, en cualquier orden', () => {
+  for (const orden of [['sin', 'con'], ['con', 'sin']]) {
+    const { dir, fuera } = repoConMain();
+    const lab = laboratorio();
+    const entradas = {
+      sin: { repoPath: `${dir}--wt-a`, principal: dir, sha: corto(fuera) },
+      con: { repoPath: dir, sha: corto(fuera), pr: 77, plataforma: 'azure', estado: 'esperando' },
+    };
+    for (const k of orden) lab.sembrar(entradas[k]);
+    const { stdout } = lab.arranque(dir, { TYCON_RETRO_ASK_PR: '0' });
+    assert.doesNotMatch(stdout, /pedido sin su número/, `${orden.join(',')}: ${stdout}`);
+    assert.doesNotMatch(motivoDelCierre(lab, dir), new RegExp(corto(fuera)));
+  }
 });

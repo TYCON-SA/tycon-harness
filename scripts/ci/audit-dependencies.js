@@ -158,11 +158,35 @@ function esperar(ms) {
   spawnSync(process.execPath, ['-e', `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${ms})`]);
 }
 
-function correr(cmd, args, cwd, timeoutMs) {
-  const real = process.env.TYCON_DEP_CMD || cmd;
+/**
+ * npm en Windows (@story-8.319, D4): `npm.cmd` no se corre sin `shell: true` (Node 18.20 y 20.12 en adelante salen con
+ * EINVAL, el arreglo del CVE-2024-27980), y con `shell: true` los argumentos pasan por cmd. Se corre el `npm-cli.js`
+ * que está al lado del primer `npm.cmd` del PATH, con el mismo Node: `{ cli }`, o `{ motivo }` si no está. Supuesto: la
+ * instalación oficial de Node pone `npm.cmd` y `node_modules/npm` en la misma carpeta; con un atajo de otro gestor
+ * (Volta, Scoop, nvm-windows) puede no estar, y entonces no mide y lo dice.
+ */
+function npmDeWindows({ env = process.env, existe = fs.existsSync, separador = ';' } = {}) {
+  const ruta = env.PATH || env.Path || '';
+  for (const dir of String(ruta).split(separador).map((d) => d.trim().replace(/^"|"$/g, '')).filter(Boolean)) {
+    if (!existe(path.join(dir, 'npm.cmd'))) continue;
+    const cli = path.join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    return existe(cli) ? { cli } : { motivo: `hay npm.cmd en ${dir} pero no su npm-cli.js al lado (${cli}): puede ser el atajo de otro gestor de Node` };
+  }
+  return { motivo: 'no hay npm.cmd en el PATH' };
+}
+
+function correr(cmd, args, cwd, timeoutMs, { plataforma = process.platform, separador } = {}) {
+  let real = process.env.TYCON_DEP_CMD || cmd;
+  let argumentos = args;
   const opts = { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, TYCON_DEP_REAL: cmd } };
   if (timeoutMs > 0) opts.timeout = timeoutMs;
-  const r = spawnSync(real, args, opts);
+  if (cmd === 'npm' && !process.env.TYCON_DEP_CMD && plataforma === 'win32') {
+    const n = npmDeWindows({ ...(separador ? { separador } : {}) });
+    if (!n.cli) return { ok: false, motivo: `no se pudo ejecutar npm: ${n.motivo}`, salida: '' };
+    real = process.execPath;
+    argumentos = [n.cli, ...args];
+  }
+  const r = spawnSync(real, argumentos, opts);
   // 🔴 Un registro que NO CONTESTA se corta por tiempo. Si el registro de avisos se degrada, UNA
   // llamada puede tardar cientos de segundos. Sin tiempo de espera, el paso por formulario de un
   // producto del equipo (33 llamadas) se come 40 minutos contra un techo de 60 por trabajo, y el
@@ -543,4 +567,4 @@ function main() {
 // el repo sale «no devolvió JSON legible (exit 0)», o sea NO MEDIDO, con un motivo que no
 // nombra la causa real. Con `exitCode` el proceso termina solo cuando terminó de escribir.
 if (require.main === module) process.exitCode = main();
-module.exports = { auditar, leerDeclaracion, parseArgs, SEVERIDADES_GRAVES };
+module.exports = { auditar, leerDeclaracion, parseArgs, SEVERIDADES_GRAVES, correr, npmDeWindows };

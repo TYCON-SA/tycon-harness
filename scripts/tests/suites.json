@@ -1879,9 +1879,27 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "__nota": "Parte 1 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
       "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p1.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 2 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p2.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 3 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p3.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 4 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p4.test.js",
       "requiere": []
     },
     {
@@ -3139,6 +3157,12 @@
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.319: en Windows el freno y la lista de firmas del dueño ofrecen sólo la vía de firma que anda en esa consola; el comando de la terminal se pega tal cual; adhoc set con --repo; el «aprobado» encolado vale.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-signature-routes.test.js",
       "requiere": []
     },
     {

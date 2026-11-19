@@ -8021,7 +8021,18 @@ function cmdAdhoc(sub, payloadJson) {
     // pedida por otra sesión (la coordinadora, desde su carpeta), la lista va relativa a la carpeta de trabajo de la
     // sesión destino; la terminal de una persona y la propia sesión, a la del proceso
     const deOtraSesion = pedida && PROPIA !== '_nosession' && pedida !== PROPIA;
-    const base = deOtraSesion ? LISTA.carpetaDeLaSesion({ casa: os.homedir(), sesion: pedida }) : process.cwd();
+    // `--repo <carpeta>`: la carpeta de la lista dicha, para que la terminal de la persona pueda estar en cualquier otra
+    // (@story-8.319, AC 8)
+    const repoPedido = (() => { const i = process.argv.indexOf('--repo'); return i >= 0 ? process.argv[i + 1] : null; })();
+    if (repoPedido !== null) {
+      let esCarpeta = false;
+      try { esCarpeta = !!repoPedido && fs.statSync(path.resolve(repoPedido)).isDirectory(); } catch (_) { esCarpeta = false; }
+      if (!esCarpeta) {
+        console.error(`marker.js adhoc set: --repo «${String(repoPedido).slice(0, 200)}» no es una carpeta: no declaré nada.`);
+        process.exit(2);
+      }
+    }
+    const base = repoPedido ? path.resolve(repoPedido) : deOtraSesion ? LISTA.carpetaDeLaSesion({ casa: os.homedir(), sesion: pedida }) : process.cwd();
     const conRelativas = Array.isArray(payload.allowedFiles) && payload.allowedFiles.some((f) => typeof f === 'string' && f.trim() && !path.isAbsolute(f.trim()) && !/^[A-Za-z]:[\\/]/.test(f.trim()));
     if (!base && conRelativas) {
       console.error(`marker.js adhoc set: no sé la carpeta de la sesión ${pedida}: que lo pida esa sesión, o una persona desde su terminal en esa carpeta.`);
@@ -8124,9 +8135,10 @@ function cmdAdhoc(sub, payloadJson) {
       console.error(`🔒 marker.js adhoc set: la persona no lo aprobó — ${r.motivo}`);
       console.error('   El arreglo rápido lo aprueba una persona, no el agente: en la ventana de permiso, corriendo este comando solo y en su forma');
       console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
-      // con la carpeta: la lista va relativa a ella, y la terminal de la persona puede estar en otra
-      const irALaCarpeta = process.platform === 'win32' ? `cd /d "${carpetaDeLaLista}"` : `cd ${citar(carpetaDeLaLista)}`;
-      console.error(`     ${irALaCarpeta} && node ${__filename} adhoc set ${pedidoEnTerminal} --terminal --for-session ${destino}`);
+      // con la carpeta en --repo: la lista va relativa a ella, y la terminal de la persona puede estar en otra (o en otro
+      // repo). Sin `cd … &&`, que Windows PowerShell 5.1 no tiene, y con la ruta estable de marker.js (@story-8.319, AC 8)
+      const repoEnTerminal = /["$`%\r\n]/.test(carpetaDeLaLista) ? citar(carpetaDeLaLista) : `"${carpetaDeLaLista}"`;
+      console.error(`     ${require('./lib/open-runs.js').markerEstable(os.homedir())} adhoc set ${pedidoEnTerminal} --terminal --for-session ${destino} --repo ${repoEnTerminal}`);
       console.error('   Si la persona no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
       process.exit(r.codigo === 2 ? 2 : 1);
     }
@@ -8204,6 +8216,8 @@ function cmdAdhoc(sub, payloadJson) {
       console.error(`⚠ marker.js adhoc set: por la delegación el cupo queda en hasta ${maxFiles} archivos (${antes}); uno mayor lo aprueba una persona en su ventana.`);
     }
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
+    // el aviso de las pruebas, al abrir y no recién al guardar; por la salida de errores: el JSON queda igual (@story-8.319)
+    console.error(`Si este camino corto cambia código, guardar pide una corrida en verde: ${require('./lib/open-runs.js').markerEstable(os.homedir())} adhoc test -- <el comando de las pruebas>. Si cambiás código después, se vence.`);
     process.exit(0);
   }
   console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N,"mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}\' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc allow-data-change --changed "…" --recommends pasar|historia|descartar --why "…" | adhoc allow-foreign-save | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
@@ -8249,7 +8263,7 @@ function cmdSignFile(firma, archivo) {
   // en la terminal del dueño no hay sesión: sin --for-session la constancia no la usaría ninguna escritura
   if (SID === '_nosession' && process.argv.includes('--terminal')) {
     console.error('🔒 marker.js sign-file: sin --for-session no sé qué sesión va a escribir el archivo, y la firma no le serviría a ninguna.');
-    console.error(`   Corré: ${ow.comoSeFirmaEnLaTerminal(firma, archivo, '<id de la sesión del agente>')}`);
+    console.error(`   Corré: ${ow.comoSeFirmaEnLaTerminal(firma, archivo, '<id de la sesión del agente>') || ow.sinFormaDeTerminal(archivo)}`);
     process.exit(2);
   }
   const r = firmaDelDueno(`escape:${firma}`, `${firma} sobre ${archivo}`);
