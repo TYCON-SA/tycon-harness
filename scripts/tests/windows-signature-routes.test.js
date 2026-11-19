@@ -205,6 +205,20 @@ test('T8b Renglon_YaAbierto_RecibeLaMarca @story-8.319 @ac-3 — del pase advers
   assert.strictEqual(filas[0].consola, 'powershell', 'el renglón abierto quedó marcado');
 });
 
+test('T9b SignFile_RutaDeRed_SinFormaDeTerminal @story-8.319 @ac-6 — del pase adversarial', () => {
+  const r = ow.formasDeFirmar('ALLOW_DOD_EVIDENCE_WRITE', '\\\\servidor\\carpeta\\a.md', 'ses-a', { casa: '/Users/x' });
+  assert.strictEqual(r.terminal, null, 'dos barras invertidas: bash las lee como una');
+  assert.match(r.renglones[1], /dos barras invertidas/);
+});
+
+test('T4b OwnerNext_AdhocEnJson_LaTerminalVaPorBanderas @story-8.319 @ac-3 — del pase adversarial', () => {
+  const cmd = `node ${MARKER} adhoc set '{"reason":"arreglar el texto del cartel","maxFiles":2,"datos":"sin-cambio","allowedFiles":["src/a.js"]}'`;
+  const s = require('../lib/signatures.js').SIGNATURES.find((x) => x.id === 'adhoc-lane');
+  const t = sl.enLaTerminalDeLaFila({ comando: cmd, destino: 'ses-a', cwd: '/r/repo' }, s);
+  assert.match(t, /adhoc set --reason "arreglar el texto del cartel" --max-files 2 --data sin-cambio --file src\/a\.js --repo "\/r\/repo" --terminal --for-session ses-a/);
+  assert.doesNotMatch(t, /'\{/, 'sin JSON entre comillas simples');
+});
+
 test('T11b AdhocSet_LaVentanaLeeElRepo @story-8.319 @ac-8 — del pase adversarial', () => {
   const palabras = [MARKER, 'adhoc', 'set', '{}', '--terminal', '--for-session', 'ses-a', '--repo', '/otro/repo'];
   assert.strictEqual(ow.carpetaDelPedido({ palabras, cwd: '/aca', sesion: 'ses-a' }), path.resolve('/otro/repo'));

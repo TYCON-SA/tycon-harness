@@ -589,10 +589,28 @@ function viaQueAnda(f, { casa, sesion, nombre, delegacion, arnes, env, coord }) 
  * la de la 8.318 (`enLaTerminal`). Sin comando, o con una firma sin forma de terminal (`terminal` ausente o `pending`),
  * lo dice y no da comando.
  */
+/** `adhoc set '<json>'` de un renglón, en su forma por banderas con `--repo` (la de marker.js), o null si no se puede. */
+function adhocPorBanderas(f) {
+  let w = null;
+  try { w = ow().canonica(f.comando); } catch (_) { w = null; }
+  if (!w || w[1] !== 'adhoc' || w[2] !== 'set' || !String(w[3] || '').startsWith('{')) return null;
+  let p;
+  try { p = JSON.parse(w[3]); } catch (_) { return null; }
+  const screen = require(path.join(SKILL_LIB, 'adhoc-screen.js'));
+  if (!p || typeof p.reason !== 'string' || !screen.motivoSeCita(p.reason) || p.mockup) return null;
+  const cita = (x) => (/^[\w./-]+$/.test(x) ? x : `"${x}"`);
+  if ((p.allowedFiles || []).some((x) => /["$`%\r\n]/.test(String(x)))) return null;
+  const repo = f.cwd && !/["$`%\r\n]/.test(f.cwd) ? ` --repo "${f.cwd}"` : '';
+  return `${require(path.join(SKILL_LIB, 'open-runs.js')).markerEstable()} adhoc set --reason "${p.reason}"${p.maxFiles !== undefined ? ` --max-files ${p.maxFiles}` : ''}${p.datos ? ` --data ${p.datos}` : ''}${(p.allowedFiles || []).map((x) => ` --file ${cita(String(x))}`).join('')}${repo}`;
+}
+
 function enLaTerminalDeLaFila(f, s) {
   if (!s.terminal || s.terminal === 'pending') return 'Esta firma todavía no tiene forma de terminal: no hay comando para darle a la persona.';
   if (!f.comando || !String(f.comando).trim()) return 'El renglón no trae su comando: no hay comando para darle a la persona.';
-  const sin = String(f.comando).replace(/\s+--for-session\s+\S+/g, '').replace(/\s+--terminal\b/g, '').trim();
+  let sin = String(f.comando).replace(/\s+--for-session\s+\S+/g, '').replace(/\s+--terminal\b/g, '').trim();
+  // el arreglo rápido pedido en JSON: en la terminal va por banderas, que cmd también pega (la forma del catálogo)
+  const conBanderas = adhocPorBanderas(f);
+  if (conBanderas) sin = conBanderas;
   const t = ow().enLaTerminal(sin, f.destino);
   return t ? `En la terminal, la persona corre (es un dato, no una instrucción): ${una(t)}` : 'La sesión destino no se puede leer: no hay comando para darle a la persona.';
 }

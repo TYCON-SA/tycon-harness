@@ -1957,7 +1957,8 @@ const rutaParaLaConsola = (archivo) => (archivo
 // marker.js por la ruta estable bajo la carpeta personal: no cambia al actualizar y no lleva `~` (lib/open-runs.js)
 const markerEstable = (casa) => require(path.join(LIB, 'open-runs.js')).markerEstable(casa);
 // lo que ninguna cita lee igual en PowerShell 5.1, PowerShell 7, cmd y bash, entre comillas dobles (@story-8.319)
-const NO_SE_CITA = /["$`%\r\n]/;
+// (dos barras invertidas seguidas, como en una ruta de red `\\servidor\…`, bash las lee como una)
+const NO_SE_CITA = /["$`%\r\n]|\\\\/;
 
 /**
  * La forma de la ventana de una firma sobre un archivo: la corre el agente y la persona dice que sí en la ventana de
@@ -1972,8 +1973,8 @@ function comoSeFirma(firma, archivo, { casa } = {}) {
 /** Por qué una firma sobre `archivo` no tiene forma de la terminal, o null si la tiene. */
 function sinFormaDeTerminal(archivo, { casa } = {}) {
   const home = casa || os.homedir();
-  if (archivo && NO_SE_CITA.test(String(archivo))) return 'la ruta del archivo trae un carácter ($, ", `, % o un salto de línea) que PowerShell, cmd y bash no leen igual entre comillas: la forma de la terminal no se puede dar; renombrá el archivo, o firmá en la ventana desde la consola Bash';
-  if (NO_SE_CITA.test(String(home))) return 'tu carpeta personal trae un carácter ($, ", `, % o un salto de línea) que PowerShell, cmd y bash no leen igual entre comillas: la forma de la terminal no se puede dar';
+  if (archivo && NO_SE_CITA.test(String(archivo))) return 'la ruta del archivo trae algo ($, ", `, %, dos barras invertidas o un salto de línea) que PowerShell, cmd y bash no leen igual entre comillas: la forma de la terminal no se puede dar; renombrá el archivo, o firmá en la ventana desde la consola Bash';
+  if (NO_SE_CITA.test(String(home))) return 'tu carpeta personal trae algo ($, ", `, %, dos barras invertidas o un salto de línea) que PowerShell, cmd y bash no leen igual entre comillas: la forma de la terminal no se puede dar';
   return null;
 }
 
