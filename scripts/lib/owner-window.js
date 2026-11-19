@@ -1975,18 +1975,8 @@ function sinFormaDeTerminal(archivo, { casa } = {}) {
   return null;
 }
 
-/** Por qué un cartel no da la forma de la terminal. */
-const SIN_SESION_TERMINAL = 'la forma de tu terminal necesita la sesión del agente, que este freno no conoce';
-const sesionConocida = (sesion) => typeof sesion === 'string' && sesion !== '' && sesion !== '_nosession';
-
-/**
- * La forma de la terminal de la persona para cualquier comando de marker.js: la sesión va siempre, porque la terminal no
- * la tiene en el ambiente. Sin una sesión conocida, `null` (el cartel dice SIN_SESION_TERMINAL).
- */
-function enLaTerminal(comando, sesion) {
-  if (!sesionConocida(sesion)) return null;
-  return `${comando} --terminal --for-session ${sesion}`;
-}
+// la forma de la terminal para cualquier comando: la misma función que usan los carteles de la ejecución perdida
+const { enLaTerminal, SIN_SESION_TERMINAL } = require(path.join(LIB, 'home-command.js'));
 
 /** La forma de la terminal de una firma sobre un archivo (`enLaTerminal` con `sign-file`), o null sin sesión o sin cita. */
 function comoSeFirmaEnLaTerminal(firma, archivo, sesion, { casa } = {}) {

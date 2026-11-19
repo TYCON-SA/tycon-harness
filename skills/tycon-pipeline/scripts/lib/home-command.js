@@ -36,4 +36,18 @@ function signatureCommand(ruta, carpeta = os.homedir()) {
   return `node "${carpeta}/${ruta}"`;
 }
 
-module.exports = { homeCommand, homePath, signatureCommand };
+/** Por qué un cartel no da la forma de la terminal. */
+const SIN_SESION_TERMINAL = 'la forma de tu terminal necesita la sesión del agente, que este freno no conoce';
+const sesionConocida = (sesion) => typeof sesion === 'string' && sesion !== '' && sesion !== '_nosession';
+
+/**
+ * La forma de la terminal de la persona para cualquier comando de marker.js: la sesión va siempre, porque la terminal no
+ * la tiene en el ambiente. Sin una sesión conocida, `null` (el cartel dice SIN_SESION_TERMINAL). Vive acá, y no en
+ * owner-window.js, para que la pidan los carteles sin cargar la ventana (@story-8.318).
+ */
+function enLaTerminal(comando, sesion) {
+  if (!sesionConocida(sesion)) return null;
+  return `${comando} --terminal --for-session ${sesion}`;
+}
+
+module.exports = { homeCommand, homePath, signatureCommand, enLaTerminal, SIN_SESION_TERMINAL, sesionConocida };

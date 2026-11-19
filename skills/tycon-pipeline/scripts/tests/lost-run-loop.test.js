@@ -407,6 +407,31 @@ test('T16b BorrarCarpeta_FormasDelPaseAdversarial @story-8.318 @ac-13 @ac-15 —
   }
 });
 
+test('T16c BorrarCarpeta_SinRetrocesoNiEscapeIncompleto @story-8.318 @ac-13 — CodeQL del pedido: el freno no se cuelga y cita bien', () => {
+  const gate = require(path.join(SCRIPTS, 'on-bash-write-gate.js'));
+  // las dos entradas que hacían retroceder la expresión de los envoltorios, y la de las palabras de control
+  // crece en línea con el largo: cuatro veces más largo tarda a lo sumo unas ocho veces más (una que retrocede, miles),
+  // y nunca más de 10 s. Un tope fijo depende de la máquina: en la CI esto tarda el doble
+  const mide = (texto) => { const t0 = process.hrtime.bigint(); gate.carpetasQueBorraOMueve(texto); return Number(process.hrtime.bigint() - t0) / 1e6; };
+  for (const [cabeza, pieza] of [['env', ' -/env'], ['env', ' -c 0'], ['if', ' ( '], ['then', '  ']]) {
+    mide(`${cabeza}${pieza.repeat(500)}`);
+    const corto = mide(`${cabeza}${pieza.repeat(5000)}`);
+    const largo = mide(`${cabeza}${pieza.repeat(20000)}`);
+    assert.ok(largo < 10000 && largo < corto * 8 + 300, `${cabeza}${pieza}…: ${Math.round(corto)} ms con 5000 y ${Math.round(largo)} ms con 20000`);
+  }
+  // un comodín con muchas estrellas no cuelga la comparación con la ejecución abierta
+  const or = require(OR);
+  const t1 = Date.now();
+  assert.strictEqual(or.casaConComodin(`/a/${'b'.repeat(3000)}c`, `/a/${'*b'.repeat(40)}*x`), true, 'con muchas estrellas vale la carpeta fija: frena de más');
+  assert.ok(Date.now() - t1 < 2000);
+  // una ruta con barra invertida y comilla detrás de xargs: la palabra vuelve igual
+  const raro = 'a\\"b';
+  const r = gate.carpetasQueBorraOMueve(`echo x | xargs rm -rf '${raro}'`);
+  assert.deepStrictEqual(r.rutas.map((x) => x.raw), [raro]);
+  // y los envoltorios siguen viéndose
+  assert.deepStrictEqual(gate.carpetasQueBorraOMueve('sudo -u nadie nice -5 env -u X rm -rf /a/wt').rutas.map((x) => x.raw), ['/a/wt']);
+});
+
 test('T17b WorktreePrune_RutaPorUnEnlace_Frena @story-8.318 @ac-14 — la apertura anotada por un enlace y git con la ruta real', { skip: WIN && 'los enlaces de carpeta no se arman igual en Windows' }, () => {
   const E = entorno();
   const wt = carpetaDeTrabajo(E);

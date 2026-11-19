@@ -197,12 +197,43 @@ function sweep({ repos, cwd, story = null, idleMs = 0, now = Date.now(), dryRun 
 function ejecucionesAbiertas(home) {
   const libPath = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'open-runs.js');
   let lib;
-  try { lib = require(libPath); } catch (e) { return { ok: false, error: `no encontré open-runs.js (${e.code || e.message})` }; }
+  try { lib = require(libPath); } catch (e) {
+    if (!e || e.code !== 'MODULE_NOT_FOUND') return { ok: false, error: `no pude cargar open-runs.js (${(e && (e.code || e.message)) || e})` };
+    lib = lectorSuelto();
+  }
   try {
     const r = lib.leerEventos(home);
     if (!r.ok && !r.ausente) return { ok: false, error: `gates.log: ${r.error}` };
     return { ok: true, lib, eventos: r.ok ? r.eventos : [] };
   } catch (e) { return { ok: false, error: e.code || e.message }; }
+}
+
+/**
+ * La lectura de las aperturas cuando este archivo viaja suelto, sin open-runs.js (el banco lo copia solo): los renglones
+ * `run-open` y `run-close` de gates.log, el último de cada sesión, y la carpeta adentro por prefijo de ruta.
+ */
+function lectorSuelto() {
+  return {
+    leerEventos(home) {
+      let raw;
+      try { raw = fs.readFileSync(path.join(stateDirOf(home || os.homedir()), 'gates.log'), 'utf8'); } catch (e) {
+        return e && e.code === 'ENOENT' ? { ok: false, ausente: true } : { ok: false, error: (e && (e.code || e.message)) || 'error' };
+      }
+      const eventos = [];
+      for (const l of raw.split('\n')) {
+        if (!l.includes('"run-open"') && !l.includes('"run-close"')) continue;
+        try { const o = JSON.parse(l); if (o && (o.name === 'run-open' || o.name === 'run-close') && o.sesion) eventos.push(o); } catch (_) { /* otro renglón */ }
+      }
+      return { ok: true, eventos };
+    },
+    abiertasDentro(carpeta, { eventos = [] } = {}) {
+      const ultimo = new Map();
+      for (const e of eventos) ultimo.set(e.sesion, e);
+      const abiertas = [...ultimo.values()].filter((e) => e.name === 'run-open' && e.runDir && inside(e.runDir, carpeta))
+        .map((e) => ({ sesion: e.sesion, story: e.story != null ? String(e.story) : null, runDir: e.runDir }));
+      return { ok: true, abiertas };
+    },
+  };
 }
 
 function names(list) {

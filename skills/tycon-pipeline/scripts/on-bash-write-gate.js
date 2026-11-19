@@ -3530,6 +3530,16 @@ function ejecucionPerdida(event) {
  * también detrás de `cmd /c`, y la carpeta de `git worktree remove|move`. `prune` trae la carpeta desde la que corre cada
  * `git worktree prune` (la de `-C`, o null para la del comando).
  */
+// las palabras de control del shell y los envoltorios que corren otro comando (@story-8.318)
+// `time` va con los envoltorios: lleva opciones (`time -p`)
+const CONTROL = new Set(['if', 'while', 'until', 'then', 'do', 'else', 'elif', '!', '{', '(']);
+const ENVOLTORIOS = new Set(['sudo', 'doas', 'setsid', 'ionice', 'nice', 'env', 'command', 'exec', 'time', 'timeout', 'nohup', 'stdbuf', 'chrt', 'taskset']);
+/**
+ * Las palabras otra vez como un tramo: entre comillas simples las que lo necesitan, donde la barra y la comilla doble
+ * son letras; una comilla simple se cierra, se escapa y se vuelve a abrir (`'\''`).
+ */
+const comoTramo = (words) => words.map((w) => (/[\s'"\\$`]/.test(w) ? `'${w.split("'").join("'\\''")}'` : w)).join(' ');
+
 function carpetasQueBorraOMueve(cmd) {
   // `cmd /c`, `pushd` y `Set-Location` cambian de forma, no de efecto; las palabras de control del shell (`if`, `then`,
   // `do`, `else`, `time`, `!`, `{`, `(`) no son el comando
@@ -3540,15 +3550,14 @@ function carpetasQueBorraOMueve(cmd) {
     .replace(/(^|[;&|(\n]\s*)cd(?=\s*(?:[;&|\n)]|$))/g, '$1cd $HOME')
     .replace(/\bcd\s+"([^"\s]*)"/g, 'cd $1')
     .replace(/\$\(\s*pwd\s*\)|\$\{PWD(?::?[-?=+][^}]*)?\}/g, '$PWD')
-    // los envoltorios que corren otro comando (con sus opciones y valores): `sudo -u x`, `doas`, `env -u X`, `time -p`…
-    .replace(/(^|[;&|(\n]\s*)(?:(?:\S*\/)?(?:sudo|doas|setsid|ionice|nice|env|command|time|nohup|stdbuf|chrt|taskset)(?:\s+(?:-[ugnc]\s+\S+|-\S+|[A-Za-z_]\w*=\S*|\d+))*\s+)+(?=\S)/g, '$1')
     // comillas pegadas a la palabra sin espacios adentro (`wt-"a"`): la misma palabra
     .replace(/(?<=[^\s=])(["'])([^"'\s]*)\1/g, '$2')
     // una redirección no cambia qué se borra ni dónde (`cd X >/dev/null && rm -rf wt`)
-    .replace(/[ \t]+\d?>{1,2}&?[ \t]*(?:\/dev\/null|&?\d|NUL)\b/gi, '')
+    .replace(/(?<=[ \t])\d?>{1,2}&?[ \t]*(?:\/dev\/null|&?\d|NUL)\b/gi, '')
     .replace(/(^|[;&|(\n]\s*)cmd(?:\.exe)?\s+\/[ck]\s+/gi, '$1')
     .replace(/(^|[;&|(\n{]\s*)(?:pushd|set-location|sl|chdir)(?=\s)/gi, '$1cd')
-    .replace(/(^|[;&|\n]|\b(?:then|do|else|elif)\b)(\s*(?:(?:if|while|until|then|do|else|elif|time|!|\{|\()\s+|\(\s*))+/g, '$1 ');
+    // un subshell o un grupo que abre el tramo (`(cd x && …)`, `{ rm …; }`): sin la llave ni el paréntesis
+    .replace(/(^|[;&|\n])[ \t]*[({]+/g, '$1 ');
   const rutas = [];
   const prune = [];
   // un borrado cuenta si puede llevarse una carpeta con algo adentro: `rm` con `-r`, `Remove-Item` (y sus alias) con
@@ -3565,14 +3574,29 @@ function carpetasQueBorraOMueve(cmd) {
   const textos = [sinCmd];
   const ver = (texto, nivel) => {
     for (const tramo of tramos(texto)) {
-      let words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
+      // sin PREFIJO: los envoltorios se sacan acá, con sus opciones (`sudo -u x`: PREFIJO dejaría `x` como el comando)
+      let words = palabras(tramo.trim()).filter((w) => w !== '');
       let tramoDe = tramo;
+      // las palabras de control (`then`, `do`, `!`, `time`…) y los envoltorios que corren otro comando, con sus opciones
+      // y valores (`sudo -u x`, `env -u X`, `nice -5`): se sacan de a una palabra, sin una expresión que pueda retroceder
+      let sacadas = 0;
+      for (let vuelta = 0; vuelta < 64 && words.length; vuelta++) {
+        const c = nombreDeComando(words[0]);
+        if (CONTROL.has(words[0]) || /^[A-Za-z_]\w*=/.test(words[0])) { words.shift(); sacadas++; continue; }
+        if (!ENVOLTORIOS.has(c)) break;
+        words.shift(); sacadas++;
+        while (words.length && (words[0].startsWith('-') || /^[A-Za-z_]\w*=/.test(words[0]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[0]))) {
+          const op = words.shift();
+          if (/^-[ugnc]$/.test(op) && words.length) words.shift();
+        }
+      }
+      if (sacadas) tramoDe = comoTramo(words);
       // `xargs [opciones] rm -rf <ruta>` y `eval rm -rf <ruta>`: el comando es lo que sigue
       if (['xargs', 'eval'].includes(nombreDeComando(words[0] || ''))) {
         let k = 1;
         while (nombreDeComando(words[0]) === 'xargs' && k < words.length && words[k].startsWith('-')) k += /^-(?:I|n|P|L|d|E|s|a)$/.test(words[k]) ? 2 : 1;
         words = words.slice(k);
-        tramoDe = words.map((w) => (/[\s'"]/.test(w) ? `"${w.replace(/"/g, '\\"')}"` : w)).join(' ');
+        tramoDe = comoTramo(words);
       }
       if (recursivo(words)) for (const d of destinosBorrados(tramoDe)) if (d.kind === 'delete' && !d.git) rutas.push({ raw: d.raw });
       for (const raw of origenesMovidos(tramoDe)) rutas.push({ raw });
