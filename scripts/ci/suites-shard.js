@@ -152,6 +152,22 @@
  * cuando al trabajo pedido no le toca ninguna suite: no es un pedido negado (2) ni una lista vacía. `list`, `plan`,
  * `jobs` y `merge` tienen que recibir la opción los cuatro, o `merge` esperaría otro reparto. El nocturno no la pasa.
  *
+ * EL TRABAJO DEL BANCO TAMBIÉN LLEVA SUITES (`--bench-load <segundos>`, sólo junto con `--exclusive-apart`): con dos
+ * carriles en la organización, el banco y dos trabajos de suites son tres pedidos, y la segunda pata espera carril
+ * 18 a 28 min en cada validación del repo de mantenimiento. Con la opción el trabajo del banco entra al reparto
+ * como un trabajo más que ARRANCA CARGADO: los segundos del banco (los que pasa quien llama: el tope del banco, 600,
+ * para dejarle lugar colgado; 0 si el cambio no lo corre) más los topes de las que corren solas del plan, todo por
+ * `bench_rate` del juego pedido (`bench_rate_measured` con `--measured`): cuánto reparto hace un trabajo por segundo de
+ * reloj, porque el banco y las exclusivas corren solos y las comunes de a dos. Cada suite común va al trabajo más
+ * liviano, el del banco incluido (a igual carga, los de suites primero), pero al del banco sólo mientras no pase lo que
+ * entra en un trabajo de 40 min (`job_deadline`, o `job_deadline_measured`): su tope no se sube. `list --shard bench`
+ * da las exclusivas y después las comunes que le tocaron; `jobs` cuenta lo que el del banco puede llevar (su plazo menos
+ * su carga de arranque: contra `job_budget` la carga sola ya lo llena) y pide 1 trabajo de suites donde antes pedía 2; `long`
+ * compara el trabajo de suites MÁS cargado con el plazo (también sin `--measured`); `plan` dice la carga de arranque.
+ * `list`, `plan`, `jobs`, `long` y `merge` tienen que recibir el MISMO número, o `merge` esperaría otro reparto (`caps`
+ * no la necesita). Un juego sin `bench_rate` o sin el plazo, o sin `suite_cap`, es un pedido negado: la carga no se
+ * adivina. Sin la opción, la salida de siempre, byte por byte.
+ *
  * Red: scripts/tests/suites-shard.test.js · scripts/tests/nightly-suites-shards.test.js (los pasos del YAML)
  */
 
@@ -178,7 +194,8 @@ const USAGE = 'uso: suites-shard.js list --shard <i> --of <n> --skills <dir> --s
   + '     opciones: --suites <suites.json> · --weights <pesos.json> · --scripts <raíz scripts del arnés> · --only <archivo>\n'
   + '               --weight-set <nombre> (un juego de pesos del archivo; la validación de cada rama pide «pr»)\n'
   + '               --exclusive-apart (las exclusive de suites.json van al trabajo del banco: list --shard bench)\n'
-  + '               --measured <carpeta> (list, plan, merge, jobs y long: el reparto con los tiempos medidos en Azure)\n';
+  + '               --measured <carpeta> (list, plan, merge, jobs y long: el reparto con los tiempos medidos en Azure)\n'
+  + '               --bench-load <segundos> (con --exclusive-apart: el trabajo del banco también lleva suites, y arranca cargado)\n';
 /** El trabajo del banco, como trabajo de suites: su nombre en `--shard` y en la carpeta que publica. */
 const BENCH_SHARD = 'bench';
 
@@ -253,7 +270,7 @@ function readWeights(file, set = null) {
   // El juego del nocturno no trae `job_budget`: el nocturno corre siempre todos sus trabajos. Su `suite_cap` (el de
   // arriba) es el tope de cada suite del banco nocturno.
   if (set === null) {
-    return { ...base, budget: null, deadline: null, budgetMeasured: null, deadlineMeasured: null, cap: readCapRule(data.suite_cap, `el archivo de pesos (${file})`),
+    return { ...base, budget: null, deadline: null, budgetMeasured: null, deadlineMeasured: null, benchRate: null, benchRateMeasured: null, cap: readCapRule(data.suite_cap, `el archivo de pesos (${file})`),
       warnMinutes: readWarnMinutes(data, `el archivo de pesos (${file})`) };
   }
   const chosen = data[set];
@@ -262,7 +279,7 @@ function readWeights(file, set = null) {
   if (chosen.job_budget !== undefined && !(typeof chosen.job_budget === 'number' && Number.isFinite(chosen.job_budget) && chosen.job_budget > 0)) {
     throw new Refused(`el juego de pesos «${set}» (${file}) trae «job_budget» y no es un número mayor que 0: ${JSON.stringify(chosen.job_budget)}`);
   }
-  for (const key of ['job_deadline', 'job_budget_measured', 'job_deadline_measured']) {
+  for (const key of ['job_deadline', 'job_budget_measured', 'job_deadline_measured', 'bench_rate', 'bench_rate_measured']) {
     if (chosen[key] !== undefined && !(typeof chosen[key] === 'number' && Number.isFinite(chosen[key]) && chosen[key] > 0)) {
       throw new Refused(`el juego de pesos «${set}» (${file}) trae «${key}» y no es un número mayor que 0: ${JSON.stringify(chosen[key])}`);
     }
@@ -274,6 +291,8 @@ function readWeights(file, set = null) {
     deadline: chosen.job_deadline === undefined ? null : chosen.job_deadline,
     budgetMeasured: chosen.job_budget_measured === undefined ? null : chosen.job_budget_measured,
     deadlineMeasured: chosen.job_deadline_measured === undefined ? null : chosen.job_deadline_measured,
+    benchRate: chosen.bench_rate === undefined ? null : chosen.bench_rate,
+    benchRateMeasured: chosen.bench_rate_measured === undefined ? null : chosen.bench_rate_measured,
     cap: readCapRule(chosen.suite_cap, `el juego de pesos «${set}» (${file})`),
     warnMinutes: readWarnMinutes(chosen, `el juego de pesos «${set}» (${file})`),
   };
@@ -338,20 +357,53 @@ function weightOf(suite, weights) {
  * menos (a igual carga, el de número más bajo). Devuelve, por trabajo, sus suites en el orden de suites.json y su carga.
  */
 function assign(suites, weights, count) {
+  return distribute(suites, weights, count, null).shards;
+}
+
+/**
+ * El reparto, con o sin el trabajo del banco (`bench`: `{ preload, room }`). El del banco arranca con `preload` y se
+ * lleva una suite sólo si es ESTRICTAMENTE el más liviano (a igual carga ganan los de suites, así ninguno queda vacío)
+ * y si con ella no pasa `room`. Devuelve los trabajos de suites y, con banco, `bench: { load, suites }`.
+ */
+function distribute(suites, weights, count, bench) {
   const shards = Array.from({ length: count }, () => ({ load: 0, picked: [] }));
+  const extra = bench ? { load: bench.preload, picked: [] } : null;
   const order = suites
     .map((suite, position) => ({ suite, position, weight: weightOf(suite, weights) }))
     .sort((a, b) => (b.weight - a.weight) || (a.suite.name < b.suite.name ? -1 : a.suite.name > b.suite.name ? 1 : 0));
   for (const item of order) {
     let lightest = shards[0];
     for (const shard of shards) if (shard.load < lightest.load) lightest = shard;
+    if (extra && extra.load < lightest.load && extra.load + item.weight <= bench.room) lightest = extra;
     lightest.load += item.weight;
     lightest.picked.push(item);
   }
-  return shards.map((shard) => ({
+  const done = (shard) => ({
     load: shard.load,
     suites: shard.picked.sort((a, b) => a.position - b.position).map((item) => item.suite),
-  }));
+  });
+  return { shards: shards.map(done), bench: extra ? done(extra) : null };
+}
+
+/**
+ * `--bench-load <segundos>`: null sin la opción. Con ella, la carga de arranque del trabajo del banco y lo más que puede
+ * llevar, en las unidades del reparto: `bench_rate` (o `bench_rate_measured`) × (los segundos del banco + el tope de
+ * cada exclusiva del plan), y el plazo de un trabajo de 40 min. Cualquier dato que falte es un pedido negado.
+ */
+function readBenchLoad(argv, { apart, weights, measured, byName, exclusives }) {
+  if (!argv.includes('--bench-load')) return null;
+  const text = option(argv, '--bench-load');
+  const seconds = typeof text === 'string' && /^\d+(\.\d+)?$/.test(text) ? Number(text) : null;
+  if (seconds === null) throw new Refused(`--bench-load tiene que ser los segundos del banco, un número de 0 en adelante (vino ${JSON.stringify(text)})`);
+  if (!apart) throw new Refused('--bench-load va sólo con --exclusive-apart: sin las que corren solas aparte no hay trabajo del banco en el reparto');
+  const kind = measured ? '_measured' : '';
+  const rate = measured ? weights.benchRateMeasured : weights.benchRate;
+  if (rate === null) throw new Refused(`el juego de pesos no trae «bench_rate${kind}» (cuánto reparto hace un trabajo por segundo de reloj): la carga del banco no se adivina`);
+  const room = measured ? weights.deadlineMeasured : weights.deadline;
+  if (room === null) throw new Refused(`el juego de pesos no trae «job_deadline${kind}» (lo que entra en un trabajo de 40 min): lo que puede llevar el trabajo del banco no se adivina`);
+  if (weights.cap === null) throw new Refused('el juego de pesos no trae «suite_cap»: sin el tope de las que corren solas, la carga del banco no se adivina');
+  const caps = exclusives.reduce((sum, suite) => sum + (byName ? measuredCapOf(suite, weights, byName)[0] : capOf(suite, weights)), 0);
+  return { seconds, caps, preload: rate * (seconds + caps), room };
 }
 
 /**
@@ -396,8 +448,9 @@ function load(argv, { measure = false } = {}) {
   let weights = readWeights(option(argv, '--weights') || path.join(__dirname, 'suites-weights.json'), set);
   let measured = null;
   let byWeight = null;
+  let byName = null;
   if (measure && argv.includes('--measured')) {
-    const { byName } = readMeasured(argv, weights);
+    ({ byName } = readMeasured(argv, weights));
     const own = {};
     for (const suite of suites) {
       const median = measuredMedian(byName.get(suite.name), weights.cap.measured);
@@ -412,7 +465,10 @@ function load(argv, { measure = false } = {}) {
   }
   // --exclusive-apart (tramo I): las que corren solas no entran al reparto; son la lista del trabajo del banco
   const apart = argv.includes('--exclusive-apart');
-  return { suites, weights, measured, byWeight, apart, regular: apart ? suites.filter((s) => !s.exclusive) : suites, bench: apart ? suites.filter((s) => s.exclusive) : [] };
+  const bench = apart ? suites.filter((s) => s.exclusive) : [];
+  // --bench-load: el trabajo del banco entra al reparto, cargado de entrada (los topes, con lo medido si vino la carpeta)
+  const benchLoad = measure ? readBenchLoad(argv, { apart, weights, measured, byName, exclusives: bench }) : null;
+  return { suites, weights, measured, byWeight, apart, benchLoad, regular: apart ? suites.filter((s) => !s.exclusive) : suites, bench };
 }
 
 /** Cuántas de `suites` salieron de lo medido y cuántas de su peso, para el registro. */
@@ -425,10 +481,13 @@ function measuredCounts(suites, measured) {
 function prepare(argv) {
   const count = positiveInteger(option(argv, '--of'));
   if (count === null) throw new Refused(`--of tiene que ser un entero mayor que 0 (vino ${JSON.stringify(option(argv, '--of'))})`);
-  const { suites, weights, measured, byWeight, apart, regular, bench } = load(argv, { measure: true });
+  const { suites, weights, measured, byWeight, apart, regular, bench, benchLoad } = load(argv, { measure: true });
   // Con todo el plan en el trabajo del banco se pide igual UN trabajo de suites (la matriz no puede quedar sin patas).
   if (count > Math.max(regular.length, bench.length ? 1 : 0)) throw new Refused(`--of ${count} pasa la cantidad de suites (${regular.length}): algún trabajo quedaría vacío`);
-  return { count, suites, weights, measured, byWeight, apart, bench, shards: assign(regular, weights, count) };
+  const split = distribute(regular, weights, count, benchLoad);
+  // Lo que corre el trabajo del banco: las que corren solas y, con --bench-load, las comunes que le tocaron.
+  const benchSuites = split.bench ? [...bench, ...split.bench.suites] : bench;
+  return { count, suites, weights, measured, byWeight, apart, bench, benchLoad, benchSplit: split.bench, benchSuites, shards: split.shards };
 }
 
 function commandList(argv, write) {
@@ -436,12 +495,16 @@ function commandList(argv, write) {
   const scriptsRoot = option(argv, '--scripts');
   if (!skillsRoot) throw new Refused('falta --skills <carpeta de skills>: sin ella no sé dónde viven las suites de agent-skills');
   if (!scriptsRoot) throw new Refused('falta --scripts <raíz scripts del arnés>: sin ella no sé dónde viven las suites del arnés');
-  const { count, shards, apart, bench } = prepare(argv);
+  const { count, shards, apart, benchSuites, benchLoad } = prepare(argv);
   const asked = option(argv, '--shard');
   let picked;
   if (apart && asked === BENCH_SHARD) {
-    if (!bench.length) throw new Nothing('ninguna suite corre sola en este plan: el trabajo del banco no tiene suites que correr');
-    picked = bench;
+    if (!benchSuites.length) {
+      throw new Nothing(benchLoad
+        ? 'ninguna suite corre sola en este plan y ninguna común le tocó: el trabajo del banco no tiene suites que correr'
+        : 'ninguna suite corre sola en este plan: el trabajo del banco no tiene suites que correr');
+    }
+    picked = benchSuites;
   } else {
     const index = positiveInteger(asked);
     if (index === null || index > count) throw new Refused(`--shard tiene que ser un entero entre 1 y ${count}${apart ? ` o «${BENCH_SHARD}»` : ''} (vino ${JSON.stringify(asked)})`);
@@ -454,12 +517,18 @@ function commandList(argv, write) {
 }
 
 function commandPlan(argv, write) {
-  const { count, suites, weights, measured, byWeight, shards, bench } = prepare(argv);
+  const { count, suites, weights, measured, byWeight, shards, bench, benchLoad: started, benchSplit } = prepare(argv);
   const width = String(suites.length).length;
   const lines = shards.map((shard, i) => `trabajo ${i + 1} de ${count}: ${String(shard.suites.length).padStart(width)} suite(s) · ~${Math.round(shard.load)} s (${Math.round(shard.load / 60)} min)`);
   const benchLoad = bench.reduce((sum, suite) => sum + weightOf(suite, weights), 0);
-  if (bench.length) lines.push(`trabajo del banco: ${bench.length} suite(s) que corren solas · ~${Math.round(benchLoad)} s (${Math.round(benchLoad / 60)} min), de a una, después del banco`);
-  const total = shards.reduce((sum, shard) => sum + shard.load, 0) + benchLoad;
+  if (started) {
+    const common = benchSplit.load - started.preload;
+    lines.push(`trabajo del banco: ${bench.length} suite(s) que corren solas y ${benchSplit.suites.length} del reparto (~${Math.round(common)} s) · `
+      + `arranca cargado con ~${Math.round(started.preload)} (el banco, ${Math.round(started.seconds)} s, y los topes de las que corren solas, ${Math.round(started.caps)} s) · lleva hasta ~${Math.round(started.room)}`);
+  } else if (bench.length) {
+    lines.push(`trabajo del banco: ${bench.length} suite(s) que corren solas · ~${Math.round(benchLoad)} s (${Math.round(benchLoad / 60)} min), de a una, después del banco`);
+  }
+  const total = shards.reduce((sum, shard) => sum + shard.load, 0) + benchLoad + (started ? benchSplit.load - started.preload : 0);
   const head = `total: ${suites.length} suite(s) · ~${Math.round(total)} s (${Math.round(total / 60)} min)`;
   if (measured) {
     lines.push(`${head} · ${measuredCounts(suites, measured)}`);
@@ -501,15 +570,20 @@ function commandJobs(argv, write, complain) {
     budget = typeof text === 'string' && /^\d+(\.\d+)?$/.test(text) && Number(text) > 0 ? Number(text) : null;
     if (budget === null) throw new Refused(`--budget tiene que ser un número de segundos mayor que 0 (vino ${JSON.stringify(text)})`);
   }
-  const { weights, measured, byWeight, regular, bench } = load(argv, { measure: true });
+  const { weights, measured, byWeight, regular, bench, benchLoad: started } = load(argv, { measure: true });
   if (budget === null) budget = measured ? weights.budgetMeasured : weights.budget;
   if (budget === null && measured) throw new Refused('el juego de pesos no trae «job_budget_measured» (lo medido que entra en un trabajo) y no vino --budget: el número de trabajos no se adivina');
   if (budget === null) throw new Refused('el juego de pesos no trae «job_budget» (lo que entra en un trabajo) y no vino --budget: el número de trabajos no se adivina');
   // El peso que cuenta es el de las que corren en los trabajos de suites: las que corren solas van al del banco.
   const total = regular.reduce((sum, suite) => sum + weightOf(suite, weights), 0);
-  const count = Math.max(1, Math.min(max, regular.length || 1, Math.ceil(total / budget)));
+  // Con --bench-load, el trabajo del banco se lleva lo que entra en su plazo de 40 min menos su carga de arranque: eso no
+  // lo tienen que llevar los trabajos de suites. Contra el plazo y no contra `job_budget`: la carga de arranque cuenta al
+  // banco colgado y a cada exclusiva cortada, y sola ya llena el presupuesto de un trabajo (nunca bajaría de 2 a 1).
+  const benchRoom = started ? Math.max(0, started.room - started.preload) : 0;
+  const count = Math.max(1, Math.min(max, regular.length || 1, Math.ceil(Math.max(0, total - benchRoom) / budget)));
   const benchLoad = bench.reduce((sum, suite) => sum + weightOf(suite, weights), 0);
-  const aside = bench.length ? ` · ${bench.length} suite(s) que corren solas van al trabajo del banco (~${Math.round(benchLoad)} s)` : '';
+  let aside = bench.length ? ` · ${bench.length} suite(s) que corren solas van al trabajo del banco (~${Math.round(benchLoad)} s)` : '';
+  if (started) aside += ` · el trabajo del banco arranca con ~${Math.round(started.preload)} y lleva ~${Math.round(benchRoom)} más del reparto`;
   if (measured) complain(`suites: ${count} trabajo(s) de un máximo de ${max} · ~${Math.round(total)} s medidos · ${budget} s medidos por trabajo · ${measuredCounts(regular, measured)}${aside}\n`);
   else complain(`suites: ${count} trabajo(s) de un máximo de ${max} · ~${Math.round(total)} s de peso · ${budget} s por trabajo${aside}${byWeight || ''}\n`);
   write(`${count}\n`);
@@ -528,11 +602,18 @@ function commandLong(argv, write, complain) {
   if (minutes === null || longMinutes === null || longMinutes <= minutes) {
     throw new Refused(`--minutes y --long-minutes tienen que ser enteros mayores que 0, el largo mayor (vinieron ${JSON.stringify(option(argv, '--minutes'))} y ${JSON.stringify(option(argv, '--long-minutes'))})`);
   }
-  const { weights, measured, byWeight, regular } = load(argv, { measure: true });
+  const { weights, measured, byWeight, regular, benchLoad: started } = load(argv, { measure: true });
   let perJob;
   let deadline;
   let head;
-  if (measured) {
+  if (started) {
+    // Con el trabajo del banco en el reparto: el trabajo de suites MÁS cargado de ese reparto, por peso o por lo medido.
+    deadline = started.room;
+    const split = distribute(regular, weights, Math.min(of, regular.length || 1), started);
+    perJob = Math.max(...split.shards.map((shard) => shard.load));
+    const over = started.preload > started.room ? ` · ⚠️ el trabajo del banco ya arranca con ~${Math.round(started.preload)}, más de lo que entra en él` : '';
+    head = `suites: ~${Math.round(perJob)} s ${measured ? 'medidos' : 'de peso'} en el trabajo de suites más cargado (el del banco se lleva ~${Math.round(split.bench.load - started.preload)}) y en uno de ${minutes} min entran ~${deadline}${byWeight || ''}${over}`;
+  } else if (measured) {
     deadline = weights.deadlineMeasured;
     if (deadline === null) throw new Refused(`el juego de pesos no trae «job_deadline_measured» (lo medido que entra en un trabajo de ${minutes} min): si hace falta el trabajo largo no se adivina`);
     perJob = Math.max(...assign(regular, weights, Math.min(of, regular.length || 1)).map((shard) => shard.load));
@@ -809,7 +890,7 @@ function commandMerge(argv, write) {
   const out = option(argv, '--out');
   if (!artifacts) throw new Refused('falta --artifacts <carpeta con lo que publicó cada trabajo>');
   if (!out) throw new Refused('falta --out <carpeta donde dejar lo de todos los trabajos juntos>');
-  const { count, shards, bench } = prepare(argv);
+  const { count, shards, benchSuites } = prepare(argv);
   const ran = [];
   const failures = [];
   const retries = {};
@@ -817,7 +898,7 @@ function commandMerge(argv, write) {
   const lines = [];
   // Cada trabajo de suites, y el del banco si el plan trae suites que corren solas (tramo I): a los dos se les exige lo mismo.
   const jobs = shards.map((shard, i) => ({ key: i + 1, name: `trabajo ${i + 1}`, title: `trabajo ${i + 1} de ${count}`, suites: shard.suites }));
-  if (bench.length) jobs.push({ key: BENCH_SHARD, name: 'trabajo del banco', title: 'trabajo del banco', suites: bench });
+  if (benchSuites.length) jobs.push({ key: BENCH_SHARD, name: 'trabajo del banco', title: 'trabajo del banco', suites: benchSuites });
   jobs.forEach((job) => {
     const number = job.name.replace(/^trabajo /, '');
     const found = latestAttempt(artifacts, job.key);
