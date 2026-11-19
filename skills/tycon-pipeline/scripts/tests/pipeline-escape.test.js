@@ -97,7 +97,7 @@ test('T6 EvidenceGuard_ConstanciaViejaOFrase_YaNoPasa @story-8.96 @story-8.139 �
   const flag = conPermiso(conConstancia, { constancia: LINEA() });
   const r = escribirEvidencia(conConstancia);
   assert.strictEqual(r.status, 2, r.stderr);
-  assert.match(r.stderr, /marker\.js sign-file ALLOW_DOD_EVIDENCE_WRITE/);
+  assert.match(r.stderr, /marker\.js"? sign-file ALLOW_DOD_EVIDENCE_WRITE/);
   assert.ok(fs.existsSync(flag), 'el permiso no se consume');
 
   const conFrase = nuevaHome([deLaPersona('lo creé yo: autorizo ALLOW_DOD_EVIDENCE_WRITE')]);
@@ -124,7 +124,7 @@ test('T9 FrontmatterWrite_ExencionNueva_PideLaFrase @story-8.96 — agregarla a 
   const r = correr(ENCABEZADO, home, agregarExencion(f));
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /lo decide la persona/);
-  assert.match(r.stderr, /marker\.js sign-file dod_runtime_exempt /);
+  assert.match(r.stderr, /marker\.js"? sign-file dod_runtime_exempt /);
   // un Write que reescribe una historia en review con la exención
   const enReview = historia(home, 'review');
   const contenido = fs.readFileSync(enReview, 'utf8').replace('qa_guide: off\n', 'dod_runtime_exempt: true\nqa_guide: off\n');
@@ -153,7 +153,7 @@ test('T10 FrontmatterWrite_ExencionQueYaEstaba_Pasa @story-8.96 — la que ya es
   const crear = { tool_name: 'Write', tool_input: { file_path: nueva, content: contenido } };
   const r = correr(ENCABEZADO, home, crear);
   assert.strictEqual(r.status, 2, r.stderr);
-  assert.match(r.stderr, /marker\.js sign-file dod_runtime_exempt /);
+  assert.match(r.stderr, /marker\.js"? sign-file dod_runtime_exempt /);
   // con la frase de la persona, crearla exenta no pasa
   const conFrase = nuevaHome([deLaPersona('Es puro texto. Autorizo dod_runtime_exempt')], 'Write');
   const nuevaNo = path.join(conFrase, 'repo', 'specs', 'story-9.10-nueva.md');

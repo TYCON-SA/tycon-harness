@@ -1308,7 +1308,7 @@ test('SignFile_SinConstancia_NiegaYNombraElComando (T45) @story-8.139 @ac-43', (
   for (const [firma, , escribir] of frenosDeArchivo(t)) {
     const r = escribir(casaNueva(t), 'ses-a');
     assert.notStrictEqual(r, true, `${firma}: sin constancia frena`);
-    assert.match(String(r), new RegExp(`marker\\.js sign-file ${escRe(firma)}`), `${firma}: nombra el comando`);
+    assert.match(String(r), new RegExp(`marker\\.js"? sign-file ${escRe(firma)}`), `${firma}: nombra el comando`);
     assert.doesNotMatch(String(r), /«autorizo/, `${firma}: no dicta una frase`);
   }
 });
@@ -1350,7 +1350,7 @@ test('SignFile_OtroArchivoOVencida_Niega (T45) @story-8.139 @ac-43', (t) => {
     ow.firmarArchivo({ firma, via: 'ventana', sesion: 'ses-a', archivo, casa, ahora: Date.now() - 31 * 60000 });
     const r = escribir(casa, 'ses-a');
     assert.notStrictEqual(r, true, `${firma}: vencida no vale`);
-    assert.match(String(r), /marker\.js sign-file/, `${firma}: vencida, nombra el comando`);
+    assert.match(String(r), /marker\.js"? sign-file/, `${firma}: vencida, nombra el comando`);
   }
   // una firma que no es de archivo no se pide con sign-file
   const casa = casaNueva(t);
@@ -1565,11 +1565,14 @@ test('Ventana_ArchivoConTilde_MuestraLaRutaDeLaCasa (pase adversarial) @story-8.
 });
 
 test('ComoSeFirma_RutaConCaracteresDeLaConsola_VaEntreComillas (pase adversarial) @story-8.139 @ac-43', () => {
-  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md'), 'marker.js sign-file dod_runtime_exempt /r/specs/story-9.99.md');
-  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt'), 'marker.js sign-file dod_runtime_exempt <archivo>');
+  // con node y la ruta estable de marker.js, y el archivo entre comillas dobles (8.319, AC 6 y 7)
+  const N = `${require('../../skills/tycon-pipeline/scripts/lib/home-command.js').signatureCommand(ow.MARKER_REL)} sign-file dod_runtime_exempt `;
+  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md'), `${N}"/r/specs/story-9.99.md"`);
+  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt'), `${N}<archivo>`);
   for (const ruta of ["/r/it's $HOME (1).md", '/r/a b;c&d.md', '/r/`x`.md']) {
     const linea = ow.comoSeFirma('dod_runtime_exempt', ruta);
-    const arg = linea.slice('marker.js sign-file dod_runtime_exempt '.length);
+    assert.ok(linea.startsWith(N), linea);
+    const arg = linea.slice(N.length);
     const eco = spawnSync('bash', ['-c', `printf %s ${arg}`], { encoding: 'utf8' });
     assert.strictEqual(eco.stdout, ruta, `${ruta}: copiado tal cual, la consola lee la misma ruta (${linea})`);
   }

@@ -3120,6 +3120,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.319: en Windows el freno y la lista de firmas del dueño ofrecen sólo la vía de firma que anda en esa consola; el comando de la terminal se pega tal cual; adhoc set con --repo; el «aprobado» encolado vale.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-signature-routes.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "una firma sin persona («hecho y avisado» o la delegación) sale sólo con el control previo de su guion: sin él se niega sin gastar el pedido, también en el chequeo previo del freno; y la prueba de cruce: cada llamada de firma del árbol que puede salir sin persona pasa su control previo. En proceso; un segundo.",
       "raiz": "arnes",
       "ruta": "tests/signatures-without-person.test.js",

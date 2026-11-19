@@ -8,8 +8,8 @@
  *
  * Un comando de firma no lleva `$HOME`: la forma de la firma (`canonica` de scripts/lib/owner-window.js) exige palabras
  * literales, para que lo que corre no dependa de una variable del entorno. Ese va con la carpeta absoluta, salvo que la
- * carpeta traiga un carácter que dentro de comillas dobles corte el comando o lo cambie (`"`, `$`, comilla invertida, un
- * salto de línea): entonces sale con `$HOME`, que no es una firma y se firma en la terminal.
+ * carpeta traiga un carácter que dentro de comillas dobles corte el comando o lo cambie (`"`, `$`, comilla invertida, `%`,
+ * un salto de línea): entonces sale con `$HOME`, que no es una firma y se firma en la terminal.
  *
  * Uso: homeCommand('<ruta>/marker.js') → node "$HOME/<ruta>/marker.js"
  *      homePath('<ruta>/marker.js') → "$HOME/<ruta>/marker.js" (la ruta sola, para una constante que se
@@ -31,7 +31,8 @@ function homeCommand(ruta) {
 
 /** `node "<carpeta>/<ruta>"` con la carpeta absoluta de la persona; con una carpeta que no se puede citar, la de `$HOME`. */
 function signatureCommand(ruta, carpeta = os.homedir()) {
-  if (!carpeta || /["$`\r\n]/.test(carpeta)) return homeCommand(ruta);
+  // `%` lo expande cmd adentro de las comillas (`%USERNAME%`): tampoco se cita igual en las cuatro consolas (@story-8.319)
+  if (!carpeta || /["$`%\r\n]/.test(carpeta)) return homeCommand(ruta);
   return `node "${carpeta}/${ruta}"`;
 }
 
