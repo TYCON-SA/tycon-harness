@@ -886,6 +886,28 @@
       ]
     },
     {
+      "raiz": "arnes",
+      "__nota": "story 8.312: los resultados de la noche viajan por la rama night-results sin tocar el clon, y un fallo se ve al arrancar. Remotos desnudos de juguete, casa temporal; corre sus casos de a cuatro.",
+      "ruta": "tests/result-travel.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/lib/**",
+        "scripts/controls-bench/**",
+        "scripts/hooks/**",
+        "scripts/nightly/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
+      "__nota": "story 8.312: el nocturno lleva a main lo pendiente de night-results, sin repetir, sin perder y rechazando lo que no tiene forma de resultado.",
+      "ruta": "tests/carry-night-results.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/ci/**",
+        "scripts/lib/**"
+      ]
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-gate-cli.test.js",
       "requiere": []

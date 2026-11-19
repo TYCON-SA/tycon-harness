@@ -788,7 +788,7 @@ test('Pase_RechazarFilaQueNoSeEntiende — @story-8.153 @ac-13', (t) => {
 });
 
 // 🔴 Falla con: la coordinadora mostrando en su pestaña el cuadro de sólo click de otra sesión, que ahí nunca cuenta.
-test('OwnerNext_SoloClickDeOtraSesion_NoLePasaALaCoordinadora — @story-8.207 @ac-15', (t) => {
+test('OwnerNext_SoloClickDeOtraSesion_SinCuadroYConLaViaQueAnda — @story-8.207 @ac-15', (t) => {
   const toy = casaNueva(t);
   designar(toy.casa);
   sesion(toy.casa, 'ses-coord');
@@ -797,10 +797,20 @@ test('OwnerNext_SoloClickDeOtraSesion_NoLePasaALaCoordinadora — @story-8.207 @
   const nombrar = `node ${MARKER} designate-relay`;
   sl.anotarFirma({ casa: toy.casa, firma: 'designation-set', titulo: 'nombrar a esta sesión coordinadora', sesion: 'ses-b', destino: 'ses-b', comando: nombrar, palabras: palabras(nombrar), cwd: '/r', ahora: antes(20) });
   firma(toy);
-  const r = sl.siguiente(opts(toy, { sesion: 'ses-coord', validar: () => ({ ok: false }) }));
+  // la de sólo click de otra sesión no lleva cuadro: sale con la vía que anda (el click en esa pestaña, o la terminal)
+  const sinCuadro = sl.siguiente(opts(toy, { sesion: 'ses-coord', validar: () => ({ ok: false }), delegacion: () => ({ ok: false, motivo: 'no se delega' }) }));
+  assert.strictEqual(sinCuadro.tipo, 'via', JSON.stringify(sinCuadro));
+  assert.strictEqual(sinCuadro.destino, 'ses-b');
+  assert.strictEqual(sinCuadro.pregunta, undefined, 'sin cuadro');
+  assert.match(sinCuadro.texto, /no se aprueba desde esta pestaña.*click en el cuadro de la pestaña de ses-b.*designate-relay --terminal/);
+  const r = sl.siguiente(opts(toy, { sesion: 'ses-coord', after: sinCuadro.id, validar: () => ({ ok: false }), delegacion: () => ({ ok: false, motivo: 'no se delega' }) }));
   // la de otra sesión que no es de sólo click sí le llega
   assert.strictEqual(r.tipo, 'firma', JSON.stringify(r));
   assert.strictEqual(r.destino, 'ses-a');
+  // y si el perfil se la delega a la coordinadora, tampoco lleva cuadro: la firma ella con --for-session
+  const suya = sl.siguiente(opts(toy, { sesion: 'ses-coord', after: sinCuadro.id, validar: () => ({ ok: false }), delegacion: (o) => ({ ok: o.sesion === 'ses-coord' && o.destino === 'ses-a', maquina: 'm' }) }));
+  assert.deepStrictEqual([suya.tipo, suya.delegada, suya.destino], ['via', true, 'ses-a'], JSON.stringify(suya));
+  assert.match(suya.texto, /el perfil te la delega.*--for-session ses-a/);
   const despues = sl.siguiente(opts(toy, { sesion: 'ses-coord', after: r.id, validar: () => ({ ok: false }) }));
   assert.strictEqual(despues.tipo, 'nada', JSON.stringify(despues));
   // el renglón sigue abierto para la sesión destino, que lo ve en su propia pestaña

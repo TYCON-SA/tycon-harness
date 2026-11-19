@@ -28,12 +28,34 @@ const { check } = require(GUION);
 const perfil = (delegated_signing) => ({ approvals: { delegated_signing } });
 
 // niveles T5 Perfil_DelegaNivel2o3_Rechaza
-// 🔴 Falla con: un perfil que delega una excepción o un cambio de control y el validador lo deja pasar.
+// 🔴 Falla con: un perfil que delega una excepción que no es de trámite o un cambio de control y el validador lo deja pasar.
 test('niveles T5 Perfil_DelegaNivel2o3_Rechaza', () => {
-  const r = check(perfil(['plan-approval', 'runtime-waiver', 'control-change', 'escape:force-manual', 'escape:trust-ran']));
+  const r = check(perfil(['plan-approval', 'runtime-waiver', 'control-change', 'escape:force-manual', 'escape:trust-ran',
+    'escape:DOD_BYPASS', 'adversarial-skip', 'escape:TYCON_TEST_GATE', 'escape:story-skill-bypass', 'adhoc-lane:datos', 'designation-confirm', 'escape:merge-bypass']));
   assert.deepStrictEqual(r.rejected.map((x) => [x.id, x.level]),
-    [['runtime-waiver', 2], ['control-change', 3], ['escape:force-manual', 2], ['escape:trust-ran', 2]]);
+    [['control-change', 3], ['escape:DOD_BYPASS', 2], ['adversarial-skip', 2], ['escape:TYCON_TEST_GATE', 2], ['escape:story-skill-bypass', 2],
+      ['adhoc-lane:datos', 2], ['designation-confirm', 2], ['escape:merge-bypass', 3]]);
   assert.ok(r.rejected.every((x) => x.via === x.id), 'nombradas por su id');
+});
+
+// 🔴 Falla con: una excepción de trámite rechazada aunque el perfil la nombre, o una que entra escondida en un grupo.
+test('niveles Perfil_ExcepcionesDeTramite_PasanSoloPorSuNombre', () => {
+  const cat = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
+  const deTramite = [...cat.DELEGABLE_EXCEPTIONS, ...cat.formNames()];
+  assert.deepStrictEqual(deTramite.slice().sort(), ['adhoc-lane:guardado-ajeno', 'adhoc-lane:sobre-cupo', 'critical-waiver', 'escape:ALLOW_DOD_EVIDENCE_WRITE',
+    'escape:TYCON_STATUS_GATE', 'escape:cambiar-el-estado', 'escape:cerrar-como-deuda', 'escape:cerrar-la-ejecucion', 'escape:force-manual',
+    'escape:red-control-test-edit', 'escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous', 'escape:trust-ran', 'lost-run', 'manual-test',
+    'plan-approval:delicada', 'runtime-waiver', 'save:sensible']);
+  assert.deepStrictEqual(check(perfil(deTramite)).rejected, []);
+  // el grupo de antes no las trae: las que son de trámite también salen si vienen por el grupo
+  const porGrupo = check(perfil(['escape-phrases'])).rejected;
+  assert.ok(porGrupo.some((x) => x.id === 'escape:set-autonomous' && x.via === 'escape-phrases'));
+  // lo que el perfil sube a 3 deja de ser delegable, y una rutina subida a 2 también
+  assert.strictEqual(cat.delegable('runtime-waiver', { 'runtime-waiver': 3 }), false);
+  assert.strictEqual(cat.delegable('extra-round', { 'extra-round': 2 }), false);
+  assert.strictEqual(cat.delegable('save:sensible', { 'save:sensible': 3 }), false);
+  assert.strictEqual(cat.delegable('plan-approval:delicada', { 'plan-approval': 2 }), false);
+  assert.strictEqual(cat.delegable('no-existe'), false);
 });
 
 // niveles T6 Perfil_GrupoConExcepcion_Rechaza
@@ -49,7 +71,7 @@ test('niveles T6 Perfil_GrupoConExcepcion_Rechaza', () => {
 // niveles T10 Perfil_ConEspacios_Rechaza
 // 🔴 Falla con: un valor con espacios alrededor, que el lector del perfil recorta y delega, y el validador no reconoce.
 test('niveles T10 Perfil_ConEspacios_Rechaza', () => {
-  assert.deepStrictEqual(check(perfil(' critical-waiver ')).rejected.map((x) => x.id), ['critical-waiver'], 'valor solo');
+  assert.deepStrictEqual(check(perfil(' adversarial-skip ')).rejected.map((x) => x.id), ['adversarial-skip'], 'valor solo');
   const r = check(perfil(['escape:DOD_BYPASS ', ' escape-phrases']));
   assert.ok(r.rejected.some((x) => x.id === 'escape:DOD_BYPASS' && x.via === 'escape:DOD_BYPASS'), 'en la lista, recortado');
   assert.ok(r.rejected.some((x) => x.via === 'escape-phrases'), 'un grupo con espacios');

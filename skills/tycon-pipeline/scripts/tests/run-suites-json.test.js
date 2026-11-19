@@ -904,9 +904,9 @@ test('T19 RunSuites_MustMeasure_NoGreenWithoutRunning @story-8.279 @ac-31 — lo
   assert.equal(sinMarca.resumen.scoped.none_touched, true);
 });
 
-test('T30 PortonAcotadoPorElRepo_NadieLee_Verde_SinSaber_CorreTodo — si ninguna suite lee lo tocado sale verde y lo dice; sin saber qué se tocó, corre todo', () => {
+test('T30 PortonAcotadoPorElRepo_NadieLee_Verde_SinSaber_NoCorreNada — si ninguna suite lee lo tocado sale verde y lo dice; sin saber qué se tocó, sale 7 sin correr', () => {
   // 🔴 mutación: «ninguna lo lee» no debe salir 3 (rojo) ni 7 (el repo declaró que lo respalda la CI); «no sé» no debe
-  //    acotar: saldría 7 sin correr nada, y una suite roja pasaría.
+  //    correr todas las suites en la máquina (la completa la corre la CI del pedido) ni salir verde.
   const f = hermanoLab();
   const nadieLee = runScopedByRepo(f, { touched: { known: true, files: ['docs/nada.md'] } });
   assert.equal(nadieLee.status, 0, `${nadieLee.stdout}\n${nadieLee.stderr}`);
@@ -914,11 +914,10 @@ test('T30 PortonAcotadoPorElRepo_NadieLee_Verde_SinSaber_CorreTodo — si ningun
   assert.equal(nadieLee.resumen.scoped.none_touched, true);
   assert.match(nadieLee.stdout, /ninguna suite lee lo tocado; la suite completa la corre la CI del pedido/);
   const sinSaber = runScopedByRepo(f, { touched: { known: false, files: [], reason: 'la base cayó a HEAD' } });
-  assert.equal(sinSaber.status, 0, sinSaber.stdout);
-  assert.equal(sinSaber.resumen.corridas, 2, JSON.stringify(sinSaber.resumen));
-  assert.equal(sinSaber.resumen.unscoped, undefined);
+  assert.equal(sinSaber.status, 7, sinSaber.stdout);
+  assert.equal(sinSaber.resumen.corridas, 0, JSON.stringify(sinSaber.resumen));
+  assert.match(sinSaber.resumen.unscoped.reason, /la base cayó a HEAD.*la cubre la CI del pedido.*TYCON_COVERAGE_BASE/);
   assert.equal(sinSaber.resumen.scoped, undefined);
-  assert.match(sinSaber.stdout, /no sé qué se tocó \(la base cayó a HEAD\): corren todas las suites/);
   // una suite roja entre las elegidas sigue siendo rojo
   f.escribir('arnes', 'tests/lee.test.js', "// lee scripts/lib/acme.js\nprocess.exit(1)\n");
   const roja = runScopedByRepo(f, { touched: { known: true, files: ['scripts/lib/acme.js'] } });
@@ -1395,16 +1394,47 @@ function repoQueAcota() {
   return f;
 }
 
-test('SinBase_RepoQueAcota_AvisaAntesDeLaPrimeraSuite — dice cuántas corren y cómo acotarla, antes de arrancar', () => {
-  // 🔴 mutación: avisar al final, o sin la cantidad, deja correr una hora sin que nadie pueda decidir cortarla.
+test('SinBase_RepoQueAcota_NoCorreNada_YDiceComoSeguir — la completa no corre en la máquina', () => {
+  // 🔴 mutación: sin base, correr todas las suites deja la máquina una hora ocupada con lo que corre la CI del pedido.
   const f = repoQueAcota();
   const r = spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'o.json'), '--skills', f.skills, '--scoped-by-repo', 'la CI'], { encoding: 'utf8' });
-  assert.equal(r.status, 0, r.stderr);
-  const aviso = r.stdout.indexOf('sin base:');
-  assert.ok(aviso >= 0, r.stdout);
-  assert.ok(aviso < r.stdout.search(/^ok {7}/m), `el aviso va antes de la primera suite\n${r.stdout}`);
-  assert.match(r.stdout, /corren todas las suites \(2\)/);
-  assert.match(r.stdout, /TYCON_COVERAGE_BASE="\$\(git merge-base origin\/main HEAD\)"/);
+  assert.equal(r.status, 7, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /^ok {7}/m, 'no corre ninguna suite');
+  assert.match(r.stderr, /sin acotar — .*la cubre la CI del pedido/);
+  assert.match(r.stderr, /TYCON_COVERAGE_BASE="\$\(git merge-base origin\/main HEAD\)"/);
+});
+
+test('TopeDeLaMaquina_MasSuitesQueElTope_CorrenLasMasCercanas — las demás quedan para la CI del pedido', () => {
+  // 🔴 mutación: sin tope, tocar una pieza que nombran cientos de suites las corre todas en la máquina del dev.
+  const f = repoQueAcota();
+  const escribir = (rel, texto) => { const p = path.join(f.repo, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, texto); };
+  const lista = JSON.parse(fs.readFileSync(path.join(f.repo, 'scripts', 'tests', 'suites.json'), 'utf8'));
+  // seis suites que leen lo tocado: una se llama como el archivo, otra lo nombra por su ruta, las demás por su nombre
+  const nuevas = { 'pieza-propia.test.sh': 'pieza.js', 'por-ruta.test.sh': 'lib/pieza.js', 'n1.test.sh': 'pieza.js', 'n2.test.sh': 'pieza.js', 'n3.test.sh': 'pieza.js', 'tocada.test.sh': 'nada' };
+  for (const [nombre, lee] of Object.entries(nuevas)) {
+    escribir(`scripts/tests/${nombre}`, `#!/usr/bin/env bash\n# lee ${lee}\nexit 0\n`);
+    lista.diarias.push({ raiz: 'arnes', ruta: `tests/${nombre}` });
+  }
+  fs.writeFileSync(path.join(f.repo, 'scripts', 'tests', 'suites.json'), JSON.stringify(lista));
+  const touched = path.join(f.root, 't.json');
+  fs.writeFileSync(touched, JSON.stringify({ known: true, files: ['lib/pieza.js', 'scripts/tests/tocada.test.sh'], sources: {} }));
+  const out = path.join(f.root, 'o.json');
+  const correr3 = (extra) => spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, '--touched', touched, '--scoped-by-repo', 'la CI', ...extra], { encoding: 'utf8' });
+  const r = correr3(['--max-suites', '3']);
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const resumen = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.deepEqual(resumen.scoped.capped, { max: 3, chosen: 6, deferred: 3 });
+  const diferidas = resumen.deferred_suites.filter((d) => /pasa el tope de 3 suites de la máquina/.test(d.reason)).map((d) => path.basename(d.suite)).sort();
+  assert.deepEqual(diferidas, ['n1.test.sh', 'n2.test.sh', 'n3.test.sh'], 'quedan afuera las menos cercanas');
+  assert.match(r.stdout, /tope de la máquina: 6 suites leen lo tocado; corren las 3 más cercanas y 3 quedan para la CI del pedido \(la CI\)/);
+  assert.equal(resumen.corridas, 3);
+  // la suite tocada corre siempre, aunque el tope sea menor
+  const uno = correr3(['--max-suites', '1']);
+  assert.equal(uno.status, 0, `${uno.stdout}\n${uno.stderr}`);
+  assert.doesNotMatch(JSON.stringify(JSON.parse(fs.readFileSync(out, 'utf8')).deferred_suites), /tocada\.test\.sh/);
+  // dentro del tope no se difiere nada por él
+  const todas = correr3([]);
+  assert.equal(JSON.parse(fs.readFileSync(out, 'utf8')).scoped.capped, undefined, todas.stdout);
 });
 
 test('ConBase_NoAvisa — sabiendo qué se tocó, y en un repo que no acota, no hay aviso', () => {

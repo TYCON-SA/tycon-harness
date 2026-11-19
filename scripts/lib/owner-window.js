@@ -43,7 +43,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc } = require('./signatures.js');
+const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, LOST_RUN_PARTICION, DELEGABLE_EXCEPTIONS, firmaDelPedidoAdhoc } = require('./signatures.js');
 const { approverOf } = require('./approver.js');
 const { casaDeLaCuenta } = require('./real-home.js');
 
@@ -1349,11 +1349,15 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   let sinDelegar = null;
   if (delegacion === undefined) delegacion = (o) => require('./delegated-signing.js').delegaSinVentana(o);
   // en Windows no se delega: sólo firman el click y el «aprobado»
-  // lo que sólo aprueba un click en la pestaña que trabaja no se delega, aunque el perfil lo nombre, y tampoco va a la ventana
+  // lo que sólo aprueba un click en la pestaña que trabaja no va a la ventana; se delega sólo si es una excepción de
+  // trámite que el perfil nombra (pasar el tope del camino corto), pedida por la coordinadora para otra sesión
   const soloClick = pendientes.length === 1 && !!(firmaDe(pendientes[0]) || {}).soloClick;
-  // lo que aprueba sólo el click del dueño tampoco se delega ni va a la ventana; su click vale también en la coordinadora
+  // lo que aprueba sólo el click del dueño tampoco va a la ventana; su click vale también en la coordinadora, y se
+  // delega con la misma condición (el guardado ajeno; el freno de los datos, nunca: delegated-signing.js)
   const clickDelDueno = pendientes.length === 1 && !!(firmaDe(pendientes[0]) || {}).clickDelDueno;
-  if (!enWindows && !soloClick && !clickDelDueno) try {
+  // una firma de click que no es de esas no llega a preguntarle a la delegación, diga lo que diga el perfil
+  const clickDelegable = !(soloClick || clickDelDueno) || DELEGABLE_EXCEPTIONS.includes(pendientes[0]);
+  if (!enWindows && clickDelegable) try {
     const estado = stateDir(casa);
     const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras) }));
     if (rs.every((r) => r && r.ok)) delegada = rs[0];
@@ -1363,6 +1367,10 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // la lista pedida para otra sesión se mira con la carpeta de esa sesión, no con la de quien pide
   const fueraDelCupo = delegada && firmaGuion === 'adhoc-lane' ? pasaDelCupoDelegado(can && can.palabras, topes.delegado, carpetaDelPedido({ palabras: can && can.palabras, cwd: evento.cwd || null, casa, sesion })) : null;
   if (fueraDelCupo) { delegada = null; sinDelegar = fueraDelCupo; }
+  // un cuadro de sólo click no se contesta desde la pestaña de otra sesión: para otra, sólo la delegación del perfil
+  if (destino !== sesion && soloClick && !delegada) {
+    return negar(`«${firmaDe(pendientes[0]).approves}» se pide para otra sesión sólo por la delegación del perfil${sinDelegar ? ` (${una(sinDelegar, 200)})` : ''}: la aprueba la persona con un click en la pestaña de esa sesión`, pendientes);
+  }
   // una pestaña que no pide permisos aprueba sola lo que se manda a la ventana: el renglón quedaría a nombre del dueño
   // sin su Sí. Lo que afloja un control se niega ahí, con el comando de la terminal; lo de rutina se hace y queda en el
   // registro como «hecho y avisado» (`rutinaSinPermisos`). Sólo los modos que preguntan llevan a la ventana; uno

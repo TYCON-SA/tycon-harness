@@ -217,7 +217,14 @@ const PARA_OTRA_SESION = {
 // cerrar la ejecución que la partición de su historia dejó sin objeto: la forma de rutina de la salida perdida
 const PARTICION = { firma: 'lost-run:particion', nombra: 3, si: (a) => a.includes('--lost') && a.includes('--partition') };
 // la regla del subcomando para firmar por otra sesión; `clear-session --lost --partition` tiene la suya
-const reglaParaOtra = (argv) => (argv[2] === 'clear-session' && PARTICION.si(argv) ? PARTICION : PARA_OTRA_SESION[argv[2]]);
+// dejar pasar un guardado ajeno y las firmas sobre un archivo: la coordinadora las pide para otra sesión (el catálogo dice
+// cuáles, `otherSession`); trabajan sobre el carril o la constancia de esa sesión, no sobre un marcador
+const reglaParaOtra = (argv) => {
+  if (argv[2] === 'clear-session' && PARTICION.si(argv)) return PARTICION;
+  if (argv[2] === 'adhoc' && argv[3] === 'allow-foreign-save') return { firma: 'adhoc-lane:guardado-ajeno' };
+  if (argv[2] === 'sign-file') return { firma: `escape:${argv[3]}` };
+  return PARA_OTRA_SESION[argv[2]];
+};
 
 const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
 
@@ -1731,7 +1738,9 @@ function cmdCompleteStep(nRaw, flags) {
     // la huella del plan aprobado: con ella, anotar la parte después no lo reabre si no cambió (set-batch)
     const planSha = huellaDelPlan(marker).sha;
     marker.planApproval = { mode: porRevision ? 'revision' : 'user', text: textoPlan, at: at3, ...(planSha ? { planSha } : {}),
-      ...(porRevision ? { revision: { id: revision.id, veredicto: revision.veredicto, modelo: revision.modelo, lanzo: revision.lanzo } } : {}), ...firmaPlan.constancia };
+      ...(porRevision ? { revision: { id: revision.id, veredicto: revision.veredicto, modelo: revision.modelo, lanzo: revision.lanzo } } : {}),
+      // un plan delicado que aprobó la coordinadora por delegación (`plan-approval:delicada`): el cierre no lo reabre por delicado
+      ...(porRevision && revision.delicate && revision.delicate.value === true ? { delicada: true } : {}), ...firmaPlan.constancia };
     appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...firmaPlan.constancia });
     // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; por la revisión, automática a
     // nombre de la revisión. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
@@ -5782,10 +5791,12 @@ function cmdSalidaPerdida(modo, sesion) {
     }
   }
   // el dueño lo aprueba en la ventana de permiso (o lo corre con --terminal): sin eso, el guion no cierra ni rearma nada
-  // por la delegación: el cierre por partición, sólo con una historia de rutina; cerrar como perdida o restaurar, nunca
+  // por la delegación: el cierre por partición, sólo con una historia de rutina; cerrar como perdida o restaurar, con
+  // `lost-run` delegado en el perfil
   const antesDelCierre = (via) => {
     if (via !== 'delegacion') return null;
-    if (!porParticion) return { codigo: 1, motivo: 'cerrar como perdida una ejecución, o restaurarla, lo decide una persona: por delegación no se firma' };
+    // cerrar como perdida o restaurar: la coordinadora, si el perfil le delega `lost-run` (lo miró el freno de la firma)
+    if (!porParticion) return null;
     return require('./lib/plan-review.js').rutinaParaDelegar({ story: apertura.storyPath ? path.resolve(apertura.repo || process.cwd(), apertura.storyPath) : null, repo: apertura.repo || null });
   };
   const firma = firmaDelDueno(porParticion ? 'lost-run:particion' : 'lost-run', `${modo === 'lost' ? `cerrar como perdida${porParticion ? ' (la partición de su historia la dejó sin objeto)' : ''}` : 'restaurar'} la ejecución de la story ${apertura.story} (sesión ${sesion})`, { antes: antesDelCierre });
@@ -6809,7 +6820,13 @@ function cmdApproveSave(argv) {
       let firmas;
       try { firmas = firmasDeLaCorrida(m); } catch (e) { return { codigo: 2, motivo: `la coordinadora no puede dar el ok: no pude leer el registro de firmas (${e.code || e.message}). Lo firma una persona: ni el agente ni la coordinadora` }; }
       const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
-      datos = { findings, firmasDeLaCorrida: firmas, canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) };
+      // lo sensible: sólo si el perfil le delega a la coordinadora la forma `save:sensible`, con las mismas llaves
+      let sensibleDelegado = false;
+      try {
+        const cat = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js'));
+        sensibleDelegado = !!require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js')).delegaSinVentana({ firma: cat.SAVE_SENSIBLE, sesion: PROPIA, destino: SID, estado: STATE_DIR, home: os.homedir() }).ok;
+      } catch (e) { sensibleDelegado = false; }
+      datos = { findings, firmasDeLaCorrida: firmas, canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o), sensibleDelegado };
     }
     const r = so.antesDeFirmar({ via, marker: m, repos, ...datos });
     if (r.codigo) return r;
@@ -7386,8 +7403,8 @@ function cmdAdhocAllowForeignSave(io) {
     console.error(`     node ${citar(__filename)} adhoc allow-foreign-save --terminal --for-session ${citar(SID)}`);
     process.exit(r.codigo === 2 ? 2 : 1);
   }
-  if (!['click', 'terminal'].includes(r.via)) {
-    console.error(`🔒 marker.js adhoc allow-foreign-save: esto lo aprueba sólo el click de una persona o su terminal, y volvió por ${r.via}; no anoté nada.`);
+  if (!['click', 'terminal', 'delegacion'].includes(r.via)) {
+    console.error(`🔒 marker.js adhoc allow-foreign-save: esto lo aprueba sólo el click de una persona o su terminal (o la coordinadora, si el perfil se lo delega), y volvió por ${r.via}; no anoté nada.`);
     process.exit(1);
   }
   // el click vale para el pedido que mostró el cuadro: si cambió mientras tanto, no se anota
@@ -7404,7 +7421,7 @@ function cmdAdhocAllowForeignSave(io) {
   fs.writeFileSync(tmp, JSON.stringify(permiso, null, 2), 'utf8');
   fs.renameSync(tmp, f);
   appendLog('adhoc.log', { kind: 'ADHOC_FOREIGN_SAVE_ALLOWED', huella: p.huella, comando: p.comando, repo: p.repo, rama: p.rama, guarda: fa.lineasDe(p, { todo: true }), via: r.via, by: r.sesion || SID });
-  process.stdout.write('adhoc: una persona dejó pasar este guardado una vez. Repetí el mismo comando en los próximos 30 minutos, sin cambiar nada.\n');
+  process.stdout.write(`adhoc: ${r.via === 'delegacion' ? 'la coordinadora, por delegación,' : 'una persona'} dejó pasar este guardado una vez. Repetí el mismo comando en los próximos 30 minutos, sin cambiar nada.\n`);
   process.exit(0);
 }
 
@@ -7689,7 +7706,7 @@ function cmdAdhoc(sub, payloadJson) {
       }
       const so = require('./lib/save-ok.js');
       const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
-      const cupo = cupoAlDeclarar({ pedido: payload.maxFiles, existing: actual, via: viaPedida, topes });
+      const cupo = cupoAlDeclarar({ pedido: payload.maxFiles, existing: actual, via: viaPedida, topes, sobreCupo: firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo) === firmas.SOBRE_CUPO && viaPedida === 'delegacion' });
       // el de una pestaña sin permisos lo abrió la propia sesión, sin firma: «hecho y avisado»
       const quien = registro && registro.via === 'avisado' ? `la sesión ${registro.sesion} abrió sin firma (pestaña sin permisos)` : 'la coordinadora abrió';
       const a = so.avisar({ texto: `Arreglo rápido: ${quien} el de la sesión ${destino}: «${reason}» · hasta ${cupo} archivos, sin tocar lo sensible.`,
@@ -7730,19 +7747,19 @@ function cmdAdhoc(sub, payloadJson) {
       console.error(`🔒 marker.js adhoc set: la firma volvió por una vía que no conozco (${r.via}); no declaré nada.`);
       process.exit(1);
     }
-    // pasar el tope lo elige una persona: su click o su terminal
-    if (firmaDelPedido === firmas.SOBRE_CUPO && !['click', 'terminal'].includes(r.via)) {
-      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click de la persona o su terminal, y volvió por ${r.via}; no declaré nada.`);
+    // pasar el tope lo elige una persona, con su click o su terminal, o la coordinadora si el perfil se lo delega
+    if (firmaDelPedido === firmas.SOBRE_CUPO && !['click', 'terminal', 'delegacion'].includes(r.via)) {
+      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click de la persona o su terminal (o la coordinadora, si el perfil se lo delega), y volvió por ${r.via}; no declaré nada.`);
       process.exit(1);
     }
     const via = r.via;
     const by = r.sesion || SID;
     const existing = io.readAdhoc(STATE_DIR, destino);
     const pedido = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : topes.maximo);
-    const maxFiles = cupoAlDeclarar({ pedido: payload.maxFiles, existing, via, topes });
+    const maxFiles = cupoAlDeclarar({ pedido: payload.maxFiles, existing, via, topes, sobreCupo: firmaDelPedido === firmas.SOBRE_CUPO });
     // la marca del sobre cupo: la pone la firma nueva y se conserva mientras el cupo siga por encima del tope. Un carril
     // anterior con más que el tope no la tiene: termina con su número, sin pedirla
-    const sobreCupo = firmaDelPedido === firmas.SOBRE_CUPO ? { sobreCupo: true, cupoPedido: maxFiles, eligio: 'persona' }
+    const sobreCupo = firmaDelPedido === firmas.SOBRE_CUPO ? { sobreCupo: true, cupoPedido: maxFiles, eligio: via === 'delegacion' ? 'coordinadora' : 'persona' }
       : existing && existing.sobreCupo && maxFiles > topes.maximo ? { sobreCupo: true, cupoPedido: existing.cupoPedido, eligio: existing.eligio } : {};
     const obj = {
       reason, maxFiles,

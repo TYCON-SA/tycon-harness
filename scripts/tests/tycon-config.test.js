@@ -2500,9 +2500,16 @@ test('niveles T7 TyconConfig_Delegacion_SoloRutina', () => {
   assert.equal(lib().delegaFirma(c.valores, 'plan-approval'), false);
   assert.deepEqual(c.ignoradas.map((x) => x.clave), ['approvals.delegated_signing']);
   assert.match(c.ignoradas[0].motivo, /plan-approval \(nivel 2\)/);
-  c = con({ delegated_signing: ['extra-round', 'control-change', 'runtime-waiver'] });
+  c = con({ delegated_signing: ['extra-round', 'control-change', 'adversarial-skip'] });
   assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round'], 'las de la tabla en 2 o 3 también salen');
-  assert.match(c.ignoradas[0].motivo, /control-change \(nivel 3\).*runtime-waiver \(nivel 2\)/);
+  assert.match(c.ignoradas[0].motivo, /control-change \(nivel 3\).*adversarial-skip \(nivel 2\)/);
+  // las excepciones de trámite se delegan por su nombre, con las dos formas (el plan delicado y el guardado sensible)
+  c = con({ delegated_signing: ['extra-round', 'runtime-waiver', 'lost-run', 'escape:set-autonomous', 'plan-approval:delicada', 'save:sensible'] });
+  assert.deepEqual([c.errores, c.ignoradas], [[], []]);
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round', 'runtime-waiver', 'lost-run', 'escape:set-autonomous', 'plan-approval:delicada', 'save:sensible']);
+  // lo que el perfil sube a 3 vuelve al dueño
+  c = con({ delegated_signing: ['extra-round', 'runtime-waiver'], levels: { 'runtime-waiver': 3 } });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round']);
   c = con({ delegated_signing: 'control-change' });
   assert.equal(c.valores.approvals.delegated_signing, 'off', 'si no queda ninguna, ninguna');
   c = con({ delegated_signing: ['extra-round', 'escape-phrases'] });
@@ -2674,6 +2681,26 @@ test('RetireD_GuardConfigCopyOnlyNewKeys @story-8.15 @ac-14 — la copia del fre
   const cDos = copia.cargar({ home: conLosDos, arnes: arnesCon(null), env: {} });
   assert.deepEqual(cDos.errores, []);
   assert.equal(copia.valor(cDos, 'paths.repos'), raiz);
+});
+
+// ── El tope de historias en el ciclo completo: coordination.max_stories_in_cycle ─────────────────────────────────────
+
+// 🔴 Falla con: la clave sin el orden variable › máquina › perfil, otro número de fábrica que 4, o un valor fuera de
+// rango que el lector acepta.
+test('Config_MaxStoriesInCycle_OrderAndRange — variable, máquina, perfil, 4 de fábrica; 0 y 21 son errores', () => {
+  const home = casa();
+  maquina(home, { coordination: { max_stories_in_cycle: 6 } });
+  const perfil = arnesCon({ coordination: { max_stories_in_cycle: 5 } });
+  const v = cargar({ home, arnes: perfil, env: { TYCON_COORDINATION_MAX_STORIES_IN_CYCLE: '2' } });
+  assert.deepEqual(v.errores, []);
+  assert.deepEqual(lib().coordinacion(v).max_stories_in_cycle, { value: 2, origin: 'env' });
+  assert.deepEqual(lib().coordinacion(cargar({ home, arnes: perfil })).max_stories_in_cycle, { value: 6, origin: 'maquina' });
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: perfil })).max_stories_in_cycle, { value: 5, origin: 'perfil' });
+  assert.deepEqual(lib().coordinacion(cargar({ home: casa(), arnes: arnesCon({}) })).max_stories_in_cycle, { value: 4, origin: 'sin-valor' });
+  for (const malo of [0, 21]) {
+    const roto = cargar({ home: casa(), arnes: arnesCon({ coordination: { max_stories_in_cycle: malo } }) });
+    assert.ok(roto.errores.some((e) => e.clave === 'coordination.max_stories_in_cycle'), `${malo}: ${JSON.stringify(roto.errores.map((e) => e.clave))}`);
+  }
 });
 
 // ── El piso del segundo turno de ejecución grande (@story-8.291): coordination.second_heavy_min_free_pct ─────────────
