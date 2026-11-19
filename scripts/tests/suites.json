@@ -4553,6 +4553,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/safety-guard-sign.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/hostile-command-text.test.js",
       "requiere": []
     },

@@ -703,6 +703,11 @@ function sinContinuaciones(cmd) {
  * módulos locales que importa. Un guion de la instalación del arnés no cuenta, por la ruta real ya resuelta: el
  * orquestador escribe historias. Un guion que un tramo sólo nombra tampoco (`tramoQueSoloNombra`).
  */
+function rutaRealDelGuion(valor, base) {
+  const crudo = valor.startsWith('~/') ? os.homedir() + valor.slice(1) : path.isAbsolute(valor) ? valor : `${base}${path.sep}${valor}`;
+  try { return fs.realpathSync.native(crudo); } catch { return null; }
+}
+
 function guionesEnArchivo(cmd, bases, instalados = []) {
   const out = [];
   const vistos = new Set();
@@ -711,10 +716,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
   const palabrasDe = (tramo) => palabras(tramo.trim().replace(PREFIJO, '')).map(sinGrupo).filter((w) => w !== '');
   // la ruta real del guion tal como la abre el intérprete: unida a la carpeta sin normalizar, para que `enlace/..` se
   // resuelva por donde lleva el enlace y no por el texto (la versión nativa: la otra normaliza el `..` antes)
-  const rutaReal = (valor, base) => {
-    const crudo = valor.startsWith('~/') ? os.homedir() + valor.slice(1) : path.isAbsolute(valor) ? valor : `${base}${path.sep}${valor}`;
-    try { return fs.realpathSync.native(crudo); } catch { return null; }
-  };
+  const rutaReal = rutaRealDelGuion;
   // lo que git contestó, por esta llamada: un módulo que importan varios se pregunta una vez
   const memo = { porRuta: new Map() };
   const instalado = (real) => instalados.some((r) => isInsideReal(r, real)) || versionadoEnElArbolPropio(real, memo);
@@ -3162,6 +3164,62 @@ function comandosPorOtroPrograma(cmd, cwd) {
   return [...new Set(out)];
 }
 
+const NO_VA_FUERA_DEL_FOR = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'eval', 'source', '.', 'xargs', 'find']);
+
+/**
+ * Las palabras de los bucles del comando, si lo de afuera sólo lee: cada tubería que nombra una historia está hecha de
+ * lectores y afuera no corre un shell. null si no se puede afirmar: entonces cuentan todas las palabras. Un `pipeline.js`
+ * es lector sólo si es el instalado y sus opciones no piden otra cosa (`tramoQueSoloNombra`).
+ */
+function palabrasDelBucleSiFueraSoloSeLee(cmd, bases, instalados) {
+  const { tramos: lista, subs, abierta, conParentesis } = require('./lib/marker-command.js').tramos(String(cmd), 'bash');
+  if (abierta || conParentesis || subs.length || lista.some((t) => t.heredocs.length)) return null;
+  const delBucle = [];
+  const fuera = [];
+  let hondo = 0;
+  let recienCerrado = false;
+  for (const t of lista) {
+    const w = t.palabras.map((p) => p.texto);
+    const abreBucle = ['for', 'while', 'until'].includes(w[0]);
+    if (t.tras === '|' && (recienCerrado || abreBucle)) return null;
+    recienCerrado = false;
+    if (abreBucle) hondo++;
+    if (hondo > 0) {
+      delBucle.push(...w);
+      if (w[0] === 'done') { hondo--; recienCerrado = true; }
+      continue;
+    }
+    if (w[0] === 'done' || w[0] === 'do') return null;
+    fuera.push(t);
+  }
+  if (hondo !== 0) return null;
+  const memo = { porRuta: new Map() };
+  const esGuionInstalado = (valor, nombre) => {
+    const reales = bases.map((b) => rutaRealDelGuion(valor, b)).filter(Boolean);
+    return reales.length > 0 && reales.every((r) => path.basename(r) === nombre
+      && (instalados.some((x) => isInsideReal(x, r)) || versionadoEnElArbolPropio(r, memo)));
+  };
+  const lee = (t) => {
+    const w = t.palabras.map((p) => p.texto);
+    if (w.some((x) => /[<>]/.test(x))) return false;
+    if (LECTORES_DE_HISTORIA.has(w[0])) return true;
+    if (!/^node(?:js)?$/.test(nombreDeComando(w[0])) || !w[1]) return false;
+    if (PIPELINE_LEE.has(w[2]) && w.slice(3).every((x) => !x.startsWith('--output'))
+      && esGuionInstalado(expandirRuta(cmd, w[1]).valor, 'pipeline.js')) return true;
+    return tramoQueSoloNombra(cmd, w.map((x) => (/\s/.test(x) ? `'${x.replace(/'/g, '')}'` : x)).join(' '), esGuionInstalado);
+  };
+  const cadenas = [];
+  for (const t of fuera) {
+    if (t.tras === '|' && cadenas.length) cadenas[cadenas.length - 1].push(t);
+    else cadenas.push([t]);
+    const w = t.palabras.map((p) => p.texto);
+    if (NO_VA_FUERA_DEL_FOR.has(path.basename(w[0] || '')) || w.includes('for')) return null;
+    if (!lee(t) && t.palabras.some((p) => !p.literal)) return null;
+  }
+  const nombra = (t) => t.palabras.some((p) => NOMBRA_RUTA_DE_HISTORIA.test(p.texto));
+  return cadenas.every((c) => !c.some(nombra) || c.every(lee)) ? delBucle : null;
+}
+
 /**
  * El estado de una historia: `'draft'`, otro estado, `''` (historia sin `status:`), o null si no es una historia. Sin la
  * marca de orden de bytes y con CRLF. Un archivo que existe y no se puede leer cuenta como historia (del lado que frena).
@@ -3185,7 +3243,7 @@ function estadoDeHistoria(abs) {
  * estado lo cambia marker.js. Un borrador pasa sólo si el comando lo reescribe entero con un heredoc legible que lo
  * deja en borrador (ahí lo juzga el freno de la historia sin validar); escribirle encima de otra forma podría cerrarla.
  */
-function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin = [], hondo = 0) {
+function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin = [], hondo = 0, instalados = []) {
   const enSitio = editaEnSitio(cmd);
   const destinosB = destinosBorrados(cmd);
   // más allá del tope no se sabe qué corre: si nombra la ruta de una historia y escribe o borra, frena por el texto
@@ -3194,7 +3252,7 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   // programa: se mira como otro comando, un nivel
   if (hondo === 0) {
     for (const texto of [...guionesDeShellEscritos(cmd, [...new Set([cwd, sesion])]), ...comandosPorOtroPrograma(cmd, cwd)]) {
-      const h = historiasPorConsola(texto, cwd, extractWriteTargets(texto, { keep: () => true }), sesion, [], hondo + 1);
+      const h = historiasPorConsola(texto, cwd, extractWriteTargets(texto, { keep: () => true }), sesion, [], hondo + 1, instalados);
       if (h.length) return h;
     }
   }
@@ -3252,7 +3310,8 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
     ...movidosFueraDeMd(cmd),
     ...destinosDeCopia(cmd),
     ...textosDeGuion,
-    ...(enSitio || FOR_IN.test(cmd) ? nombradas : []),
+    // con un `for`, cuentan todas las palabras salvo que lo de afuera del bucle sólo lea
+    ...(enSitio ? nombradas : (FOR_IN.test(cmd) ? (palabrasDelBucleSiFueraSoloSeLee(cmd, [...new Set([cwd, sesion])], instalados) || nombradas) : [])),
   ];
   // una carpeta cuenta por las historias que tiene adentro cuando el comando la borra, la repone o la edita en el lugar
   // (`git checkout <rama> -- specs/`, `git restore .`, `grep -rl x specs | xargs sed -i`)
@@ -3688,12 +3747,11 @@ function anotarEscriturasConsola(stateDir, sessionId, rutas, kind = null) {
 // esta lista con palabras literales, sin redirecciones, sin `$(…)`, sin heredocs y sin asignaciones delante.
 const LEE = new Set(['cat', 'ls', 'grep', 'head', 'tail']);
 const MARKER_LEE = new Set(['get', 'list-all', 'find-by-story', 'clear-session', 'restore']);
-const PIPELINE_LEE = new Set(['risk-class', 'followups-status']);
 // Los programas que leen los archivos que reciben y no corren ninguno. Sin `awk`, `rg --pre`, `sort --compress-program`
-// ni `open`, que pueden correr lo que se les da; `sed` va aparte (`sedQueLee`). Y los comandos de `pipeline.js` que
-// reciben una lista de archivos y la miran sin correrla
+// ni `open`, que pueden correr lo que se les da; `sed` va aparte (`sedQueLee`). Las listas de `pipeline.js` son las
+// mismas que usa el freno de la firma
 const LEE_ARCHIVOS = new Set([...LEE, 'wc', 'stat']);
-const PIPELINE_LISTA = new Set(['advisors', 'check-count', 'smart-reloop', 'deep-review-gate', 'mech-check', 'risk-class', 'model-hint']);
+const { PIPELINE_LEE, PIPELINE_LISTA } = require('./lib/marker-command.js');
 // Lo que puede ir en el mismo comando sin cambiar qué programa corre un nombre: un programa aparte no toca al shell. Lo
 // que sí lo toca (`hash -p`, `source`, `export`, un alias, una función) no está, sin hacer falta conocerlo uno por uno
 const VECINOS = new Set([...LEE_ARCHIVOS, 'sed', 'git', 'node', 'nodejs', 'cd', 'echo', 'printf', 'pwd', 'true', 'false', 'test', '[',
@@ -4237,7 +4295,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   const targets = extractWriteTargets(cmdDestinos, { keep });
   if (!skillOff) {
     // una historia que existe y no está en borrador no se escribe por consola (con o sin ejecución abierta)
-    const historias = historiasPorConsola(cmd, cwd, targets, baseCwd, sub.destinos);
+    const historias = historiasPorConsola(cmd, cwd, targets, baseCwd, sub.destinos, 0, installedRoots);
     if (historias.length) {
       return { block: require('./lib/story-gate.js').storyByConsoleMessage(historias, `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`) + '\n' };
     }
