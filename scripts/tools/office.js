@@ -32,7 +32,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * `--open` abre la oficina viva: arranca el proceso local de office/server.js (o reusa el que ya está) y abre su
  * dirección; la página recibe cada cambio por WebSocket. `--out` escribe la foto fija en un archivo, y `--json` imprime
  * los datos. `--owner-waits` imprime, para la coordinadora (`coordination.js owner-next` y `owner-wait`), lo que «Tu firma»
- * tiene esperando a una sesión (`ownerWaitsOf`), sin escribir nada. La foto fija es un solo archivo, sin nada de afuera: la librería 3D (three.js 0.160.0, MIT, en
+ * tiene esperando a una sesión (`ownerWaitsOf`), con su ficha, sin escribir nada. La foto fija es un solo archivo, sin nada de afuera: la librería 3D (three.js 0.160.0, MIT, en
  * office/vendor/three/) va adentro, y si el navegador no puede dibujar en 3D se ve la tabla. Sólo mira: no cambia nada
  * del trabajo de las sesiones.
  *
@@ -59,6 +59,7 @@ const STORY_STATE_WORD = { 'ready-for-dev': 'lista', 'in-progress': 'en curso', 
 const NO_NUMBER = 'sin número';
 const signatureList = require(path.join(ROOT, 'scripts', 'lib', 'signature-list.js'));
 const sessionState = require(path.join(ROOT, 'scripts', 'lib', 'session-state.js'));
+const waitCard = require(path.join(ROOT, 'scripts', 'lib', 'owner-wait-card.js'));
 const { readTranscript, codexTranscript, peerMessagesSince, readConversation, readSessionTokens, TAIL_BYTES } = require(path.join(ROOT, 'scripts', 'lib', 'session-transcript.js'));
 
 const PARTS = require('./office/page-parts.js');
@@ -67,6 +68,7 @@ const { MODULES, moduleSource } = PARTS;
 const QUIET_STATES = new Set(['trabajando', 'prueba', 'firma', 'pregunta', 'espera', 'esperando']);
 // lo que le toca contestar a una persona: una firma o una pregunta. La coordinadora que espera eso no dice «Coordinando»
 const ASKS_OWNER = new Set(['firma', 'pregunta']);
+const OWNER_WAITS_CARDS_MS = 25000;
 // lo que una firma ya aprobada deja de pedirle al dueño: el plan y el guardado, cada uno con la firma que lo aprueba
 // (signatures.js). Un cuadro de permiso en pantalla lo sigue esperando
 const REPEAT_WAITS = new Map([['que apruebes el plan', 'plan-approval'], [SAVE_WAIT, 'save']]);
@@ -374,7 +376,7 @@ function stuckGroups(agents, coordinatorName) {
  * Devuelve `{ data, promises }`, con las promesas ya al día para guardarlas.
  */
 function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorName = null, promises = {}, nowMs = Date.now(),
-  sessionFiles = [], codexNames: cxNames = new Map(), runningAgents = new Map(), quietMin = QUIET_DEFAULT_MIN, isAlive, board = null, prAnswers = new Map(), transcripts = null, lastWrites = new Map(), processes = null, openPrs = [], openPrsNote = null, waitingPrs = null, testSessions = new Set(), personSessions = new Set(), otherProjects = new Set(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro', projectStories = null } = {}) {
+  sessionFiles = [], codexNames: cxNames = new Map(), runningAgents = new Map(), quietMin = QUIET_DEFAULT_MIN, isAlive, board = null, prAnswers = new Map(), transcripts = null, lastWrites = new Map(), processes = null, openPrs = [], openPrsNote = null, waitingPrs = null, testSessions = new Set(), personSessions = new Set(), otherProjects = new Set(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro', projectStories = null, ownerCard = null } = {}) {
   const kept = {};
   for (const [k, p] of Object.entries(promises || {})) {
     if (p && Number.isFinite(p.at) && Number.isFinite(p.seen) && nowMs - p.seen < PROMISE_KEEP_MS) kept[k] = p;
@@ -387,6 +389,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   const sidOf = new Map();
   // el paso de cada tarjeta de una ejecución, para decir si sus agentes revisan
   const stepOf = new Map();
+  // lo que anotó que espera cada tarjeta, o que su pedido choca con main: decide su grupo de esperas
+  const waitOf = new Map();
   const quiet =Number.isFinite(quietMin) && quietMin > 0 ? quietMin : QUIET_DEFAULT_MIN;
   const fileEnd = (f) => { const t = Date.parse(f && f.endAt); return Number.isFinite(t) ? t : null; };
   // la última novedad, para la página y su reloj: quieta más que el umbral, «sin novedades desde las HH:MM»
@@ -601,6 +605,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     if (f && (QUIET_STATES.has(a.estado) || a.estado === 'parada')) novelty(a, f, x.activityAt, lastWrite);
     sidOf.set(a, d.sid);
     if (x.current) stepOf.set(a, x.current);
+    const crashes = /choca con main/.test(row.state || '');
+    if (crashes || (waitingFor && !x.mark)) waitOf.set(a, { que: waitingFor, kind: x0.waitingKind, choca: crashes, pedidos: crashingPrsOf(row.state) });
     agents.push(a);
   });
   // la coordinadora quieta no está libre: coordina a las demás. Una libre que espera algo, por su archivo o por lo que dice
@@ -830,11 +836,62 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     quietMin: quiet,
   };
   kanban.linea = boardLine(kanban, { trabado: meta.trabado });
+  const esperan = placeWaits({ agents, kanban, sidOf, waitOf, ownerCard });
+  if (esperan) meta.esperan = esperan;
   const facts = boardFacts({ agents, storyOfAgent, sidOf, board, prAnswers, halfwayCards, nowMs });
   // la tabla dice lo mismo que las tarjetas, en llano
   const rows = agents.filter((a) => a.tipo).map((a) => ({ work: a.titulo || '', state: a.mientras ? `${a.haciendo} Mientras tanto: ${a.mientras}.` : a.haciendo, end: a.fin ? a.fin.hora + (a.fin.dif ? ` · ${a.fin.dif}` : '') : '', session: a.nombre, folder: a.carpeta || '' }));
   cerradas.sort((a, b) => (b.ultimaNovedad || 0) - (a.ultimaNovedad || 0));
   return { data: { agents, items, kanban, meta, rows, free: (wip.free || []).filter((name) => !notFree.has(name)), unreadable: wip.unreadable || [], cerradas }, promises: kept, facts: facts.list, factsComplete: facts.complete && !halfwayUnknown };
+}
+
+/** Los pedidos que chocan con main según la fila de /wip («x #236 (choca con main)»), con la clave de su tarjeta. */
+function crashingPrsOf(state) {
+  return [...String(state || '').matchAll(/(\S+) [#!](\d+)(?: \(borrador\))? \(choca con main\)/g)].map((m) => topics.workKey({ pedido: { repo: m[1], numero: m[2] } }));
+}
+
+/**
+ * La ficha de lo que espera al dueño (`ownerCard`, si la hay) en sus tarjetas y en quien levantó la mano, y las esperas en
+ * sus tres grupos: `{ dueno, main, sesion }`, un renglón por espera, o null sin esperas. Lo que le falte a una ficha queda
+ * dentro de ella: `unreadable` es lo que la coordinadora toma por una foto incompleta.
+ */
+function placeWaits({ agents, kanban, sidOf, waitOf, ownerCard }) {
+  const cardOf = (row, sid) => {
+    if (!ownerCard) return null;
+    try { return ownerCard({ row, sid }) || null; } catch (_) { return waitCard.failedCard(row); }
+  };
+  const originOf = (a) => (!ASKS_OWNER.has(a.estado) ? 'lista' : a.estado === 'pregunta' ? 'pregunta' : a.espera === 'que apruebes el plan' ? 'plan' : a.espera === SAVE_WAIT ? 'guardar' : 'cuadro');
+  const rows = [];
+  const bySession = new Map();
+  // el pedido de una sesión que ya cuenta como su espera no se cuenta otra vez por su tarjeta
+  const prsOfSessions = new Set();
+  for (const a of agents) {
+    const sid = sidOf.get(a);
+    const clave = `sesion:${sid == null ? a.nombre : sid}`;
+    if (a.mano === 'dueno') {
+      const ficha = cardOf({ origen: originOf(a), quien: a.nombre }, sid);
+      if (ficha) { a.ficha = ficha; bySession.set(String(sid), ficha); }
+      rows.push({ clave, quien: a.nombre, dueno: true, linea: ficha ? ficha.linea : null });
+    }
+    const w = waitOf.get(a);
+    if (w) {
+      rows.push({ clave, quien: a.nombre, waitingFor: w.que, waitingKind: w.kind, choca: w.choca, otro: Boolean(a.otroProyecto) });
+      for (const pr of w.pedidos) prsOfSessions.add(pr);
+    }
+  }
+  kanban.columnas.find((c) => c.id === 'firma').tarjetas.forEach((t, i) => {
+    if (!t.origen) return;
+    // la tarjeta de la sesión es la de su espera; una firma de la lista propone lo suyo, aunque vaya a esa sesión
+    const ficha = (t.origen === 'sesion' && t.sid != null && bySession.get(String(t.sid))) || cardOf({ origen: t.origen === 'sesion' ? 'cuadro' : t.origen, quien: t.quien }, t.sid);
+    if (ficha) t.ficha = ficha;
+    rows.push({ clave: t.sid != null ? `sesion:${t.sid}` : `${t.origen}#${i}`, quien: t.quien, dueno: true, linea: ficha ? ficha.linea : null });
+  });
+  for (const t of kanban.columnas.find((c) => c.id === 'entrando').tarjetas) {
+    if (t.motivo === 'choca con main' && !prsOfSessions.has(t.clave)) rows.push({ clave: t.clave, quien: t.quien || t.titulo, choca: true });
+  }
+  const groups = waitCard.waitGroups(rows);
+  if (!groups.dueno.length && !groups.main.length && !groups.sesion.length) return null;
+  return Object.fromEntries(Object.entries(groups).map(([k, list]) => [k, list.map(waitCard.waitText)]));
 }
 
 /**
@@ -959,7 +1016,7 @@ function ownerWaitsOf(data) {
   return [...bySession.values()].map((t) => {
     const nombre = String(t.quien || '').trim();
     const quien = nombre && nombre !== '—' ? nombre : t.sid == null ? '—' : `— (${t.sid.slice(0, 8)})`;
-    return { sid: t.sid, quien, trabajo: String(t.titulo || ''), espera: t.espera || 'algo de vos', cerrada: t.origen === 'medio' };
+    return { sid: t.sid, quien, trabajo: String(t.titulo || ''), espera: t.espera || 'algo de vos', cerrada: t.origen === 'medio', ...(t.ficha ? { ficha: t.ficha } : {}) };
   });
 }
 
@@ -1112,6 +1169,10 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   // el pedido que ya se unió a cada fila, con su repo: el mismo número en otro repo es otro pedido
   const joinedPr = new Map();
   for (const p of openPrs) {
+    if (p.waiting && !p.ajeno && p.conflict && onBoard.has(prKey(p.repoName, p.number))) {
+      const row = boardCards.find((b) => b.id === 'entrando' && b.f.pedido && prKey(b.f.pedido.repo, b.f.pedido.numero) === prKey(p.repoName, p.number));
+      if (row && !row.card.motivo) row.card.motivo = 'choca con main';
+    }
     if (!p.waiting || p.ajeno || onBoard.has(prKey(p.repoName, p.number))) continue;
     const b = rowOfPr(p);
     const own = b && (!b.card.pedido || joinedPr.get(b.card) === prKey(p.repoName, p.number));
@@ -2341,7 +2402,10 @@ async function collect(opts = {}) {
   const personSessions = new Set([...sessions].filter(([, s]) => s.kind === 'interactive').map(([sid]) => String(sid)));
   // las historias de tus proyectos: lo que dejó la lectura de fondo, que la foto no espera, y las ejecuciones de esta máquina
   const projectStories = { ...PS.readSnapshot(sdir, nowMs), runs: PS.runsOfThisMachine({ stateDir: sdir, now: nowMs }) };
-  const { data, promises, facts, factsComplete } = buildOffice({ wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf), projectOf, projectOfRepo, projectStories });
+  // la ficha de cada espera, con un solo tiempo para todas; quien llama con su propio límite lo pasa en `riskUntil`
+  const budget = waitCard.newBudget({ until: opts.riskUntil });
+  const ownerCard = ({ row, sid }) => waitCard.card({ row, marker: waitCard.markerOf(sdir, sid), budget });
+  const { data, promises, facts, factsComplete } = buildOffice({ ownerCard, wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf), projectOf, projectOfRepo, projectStories });
   // el tablero se mueve solo con los hechos de esta foto: lo hace sólo quien tiene el candado de la oficina, con board.js
   if (opts.syncBoard && board.board && !opts.readOnly) syncBoardFromPhoto(sdir, facts, factsComplete && open.measured !== false, problems, { now: nowMs, home, sync: opts.boardSync });
   // por qué no sale una tarjeta, al registro del proceso de la oficina (su salida de errores va a server.log): sólo él
@@ -2511,7 +2575,8 @@ async function main(argv) {
   // de las filas, ni las promesas), así no compite con la oficina viva
   if (opts.ownerWaits) {
     let data;
-    try { data = await collect({ now: opts.now, noTranscripts: false, syncBoard: false, readOnly: true, machine: false }); } catch (e) {
+    // quien lo llama corta a los 30 s, y antes de las fichas ya pudieron irse hasta 20 en preguntar por los pedidos
+    try { data = await collect({ now: opts.now, noTranscripts: false, syncBoard: false, readOnly: true, machine: false, riskUntil: Date.now() + OWNER_WAITS_CARDS_MS }); } catch (e) {
       if (e.code === 'NO_STATE' || e.code === 'BAD_ARG') { process.stderr.write(`office.js: ${e.message}\n`); return 2; }
       throw e;
     }

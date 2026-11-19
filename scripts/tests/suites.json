@@ -2161,6 +2161,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/owner-wait-card.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/pr-signature-texts.test.js",
       "requiere": []
     },

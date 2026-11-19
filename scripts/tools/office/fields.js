@@ -62,6 +62,8 @@ const tableRow = (fields) => ({ form: 'tableRow', fields });
 const TABLE = record({ titulo: text, columnas: list(text), filas: list(tableRow({ grupo: text, que: text, col: text, trabajos: list(record({ titulo: text, numero: text, quien: text, como: text })) })), escrito: text, cruce: text, vacio: text });
 // a quién espera la mano levantada de una sesión
 const HANDS = ['dueno', 'coordinadora'];
+// por qué algo espera al dueño: su riesgo, su pedido y la acción propuesta, sin rutas ni nombres de archivo
+const WAIT_CARD = record({ riesgo: text, pedido: text, accion: text, linea: text });
 
 const FIELDS = {
   agents: list(record({
@@ -69,21 +71,21 @@ const FIELDS = {
     espera: text, parada: text, callada: text, mientras: text, mientrasEstado: oneOf(AGENT_STATES), enPausa: text,
     fin: END, horaPorque: text, estimadaIso: hour, avance: number, carpeta: folder, pasos: list(record({ name: text, done: flag })), novedadMs: number, sinPid: flag,
     // a quién espera la mano levantada, y con qué modelo y qué esfuerzo corre la sesión
-    mano: oneOf(HANDS), manoEtiqueta: text, manoPor: text, modelo: text, esfuerzo: text,
+    ficha: WAIT_CARD, mano: oneOf(HANDS), manoEtiqueta: text, manoPor: text, modelo: text, esfuerzo: text,
   })),
   kanban: record({
     escrito: text,
     linea: text,
     columnas: list(record({
       id: oneOf(KANBAN_COLUMNS), nombre: text, nota: text,
-      tarjetas: list(record({ titulo: text, numero: text, quien: text, hora: text, grupo: text, espera: text, marca: text, motivo: text, nota: text, otro: flag, mano: oneOf(HANDS), pedido: record({ numero: number, sitio: oneOf(PR_SITES), ruta: text }) })),
+      tarjetas: list(record({ ficha: WAIT_CARD, titulo: text, numero: text, quien: text, hora: text, grupo: text, espera: text, marca: text, motivo: text, nota: text, otro: flag, mano: oneOf(HANDS), pedido: record({ numero: number, sitio: oneOf(PR_SITES), ruta: text }) })),
     })),
     medioCamino: list(record({ titulo: text, quien: text, accion: text })),
     medioCaminoNoSe: text,
     medioCaminoLeido: text,
   }),
   tablas: record({ hoy: TABLE, pendientes: TABLE, hechos: TABLE }),
-  meta: record({ actualizado: text, pedidosLeidos: text, teToca: list(text), tocaAviso: text, trabado: list(record({ titulo: text, filas: list(text) })), extra: number, puestos: list(list(number)), sitio: text, quietMin: number, recorte: text,
+  meta: record({ esperan: record({ dueno: list(text), main: list(text), sesion: list(text) }), actualizado: text, pedidosLeidos: text, teToca: list(text), tocaAviso: text, trabado: list(record({ titulo: text, filas: list(text) })), extra: number, puestos: list(list(number)), sitio: text, quietMin: number, recorte: text,
     // la memoria y el procesador en uso, para los racks: sólo los dos porcentajes, nada que diga qué máquina es
     maquina: record({ memoria: percent, procesador: percent }) }),
   rows: list(record({ work: text, state: text, end: text, session: text, folder })),
