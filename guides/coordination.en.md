@@ -531,6 +531,15 @@ The test of each file on the list does not need to be named. Outside the list no
 another signature. The details (which reasons are not delegated, one delegated fix per repo) are in
 `guides/firmas-del-arnes.md`.
 
+**Files of a sibling repo: `<Name>/<path>`.** From the stories repo, for example, the list names `Backend/src/A.cs` or
+`Forms/src/x.tsx`, with no «..» and no absolute paths. It only works for a repo that sits next to the main checkout, is
+its own main checkout (not a worktree) and is declared with this one in `repo_group` of `.tycon/advisors.yaml`, both
+ways. The group is read from the remote's main branch (`origin/HEAD`), not from the folder or the local branch: a group
+committed but not pushed does not count. With another live session in the sibling, it does not open. A list of more than
+one repo is not delegated, nor is widening one by adding a repo: the owner approves it with their click or in their
+terminal, and the box starts with the repos and how many files each one has. Tests go per repo, each in its folder:
+`marker.js adhoc test --repo <Name> -- <command>`. When saving, every repo that changed code needs its green run.
+
 **Declaring it again keeps everything.** With another quota or another reason, the lane keeps its list, its high-risk mark
 and its records, which hold while what they measured does not change. A new task in the same session goes on a new branch
 from `main`: on the previous task's branch, its commits count toward the quota.

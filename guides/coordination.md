@@ -517,6 +517,16 @@ marker.js adhoc set '{"reason":"el combo de clientes no filtra por sucursal","da
 La prueba de cada archivo de la lista no hace falta nombrarla. Fuera de la lista no se edita ni se guarda; ampliarla es
 otra firma. El detalle (qué motivo no se delega, uno delegado por repo) está en `guides/firmas-del-arnes.md`.
 
+**Archivos de un repo hermano: `<Nombre>/<ruta>`.** Desde el repo de historias, por ejemplo, la lista nombra
+`Backend/src/A.cs` o `Forms/src/x.tsx`, sin «..» ni rutas absolutas. Vale sólo para un repo que esté al lado del checkout
+principal, sea su propio checkout principal (no un worktree) y se declare con este en `repo_group` de
+`.tycon/advisors.yaml`, en los dos sentidos. El grupo se lee de la rama principal del remoto (`origin/HEAD`), no de la
+carpeta ni de la rama local: un grupo commiteado sin subir no vale. Con otra sesión viva en el hermano, no se abre. Una
+lista de más de un repo no se delega, ni se delega ampliar una sumándole un repo: la aprueba el dueño con su click o en su
+terminal, y el cuadro empieza por los repos y cuántos archivos de cada uno. Las pruebas van por repo, cada una en su
+carpeta: `marker.js adhoc test --repo <Nombre> -- <comando>`. Al guardar, cada repo que cambió código pide su corrida en
+verde.
+
 **Declararlo de nuevo conserva todo.** Con otro cupo o con otro motivo, el carril sigue con su lista, su marca de riesgo
 y sus constancias, que valen mientras no cambie lo que miden. Una tarea nueva en la misma sesión va en una rama nueva desde
 `main`: en la rama de la anterior, sus commits cuentan para el cupo.

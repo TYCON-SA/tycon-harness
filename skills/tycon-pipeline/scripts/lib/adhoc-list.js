@@ -54,14 +54,21 @@ function normalizar(entradas, { cwd = process.cwd() } = {}) {
   if (!Array.isArray(entradas) || !entradas.length) return { problema: 'la lista de archivos ("allowedFiles") está vacía: nombrá los archivos que va a tocar, uno por uno' };
   const out = new Set();
   const sinRepo = [];
+  const hermanos = new Map();
   for (const e of entradas) {
     const s = typeof e === 'string' ? e.trim() : '';
     if (!s) return { problema: 'la lista de archivos tiene una entrada vacía' };
     if (COMODIN.test(s)) return { problema: `«${s}» tiene un comodín: la lista nombra los archivos uno por uno` };
     if (path.isAbsolute(s) || /^[A-Za-z]:[\\/]/.test(s)) return { problema: `«${s}» es una ruta absoluta: va relativa a la carpeta donde se pide` };
-    if (norm(s).split('/').includes('..')) return { problema: `«${s}» sube de carpeta con «..»: la lista nombra archivos de esta carpeta para abajo` };
     if (/[\\/]$/.test(s)) return { problema: `«${s}» es una carpeta: la lista nombra archivos, uno por uno` };
-    const abs = sinEnlaces(path.resolve(cwd, s));
+    // `<Nombre>/<ruta>` de un repo hermano: se mira antes del «..», que sigue negado dentro de la ruta
+    const h = deUnHermano(s, cwd, hermanos);
+    if (h && h.problema) return { problema: h.problema };
+    if (norm(s).split('/').includes('..')) return { problema: `«${s}» sube de carpeta con «..»: la lista nombra archivos de esta carpeta para abajo; la de un repo hermano va como <Nombre>/<ruta>` };
+    const pedida = h ? path.join(h.raiz, h.resto) : path.resolve(cwd, s);
+    const abs = sinEnlaces(pedida);
+    // con los enlaces resueltos, la ruta de un hermano queda dentro de su raíz real
+    if (h && !abs.startsWith(h.raiz + path.sep)) return { problema: `«${s}» sale de la raíz de ${h.nombre}` };
     let carpeta = false;
     try { carpeta = fs.statSync(abs).isDirectory(); } catch (_) { carpeta = false; }
     if (carpeta) return { problema: `«${s}» es una carpeta: la lista nombra archivos, uno por uno` };
@@ -69,9 +76,77 @@ function normalizar(entradas, { cwd = process.cwd() } = {}) {
     // editar, y cada edición real frena como fuera de la lista: se avisa, con la ruta completa
     if (!raizDe(abs)) sinRepo.push(abs);
     // el nombre como se escribió (con sus carpetas reales): si es un enlace, la lista lo nombra a él, no a su destino
-    out.add(escritoDe(path.resolve(cwd, s)));
+    out.add(escritoDe(pedida));
   }
-  return { lista: [...out].sort(), sinRepo };
+  return { lista: [...out].sort(), sinRepo, hermanos };
+}
+
+/**
+ * Si `s` es `<Nombre>/<ruta>` de un repo hermano (repo-group.js): `{ raiz, nombre, resto }`, o `{ problema }` si nombra
+ * una carpeta al lado del repo que no vale como hermano, o es ambigua con una carpeta de `cwd`. null: una ruta de `cwd`,
+ * como siempre. `hermanos` (raíz real → nombre) junta los resueltos.
+ */
+function deUnHermano(s, cwd, hermanos) {
+  const RG = require('./repo-group.js');
+  const p = RG.prefijoDeHermano(s, cwd);
+  if (!p) return null;
+  const malNombre = RG.problemaDelNombre(p.nombre);
+  if (malNombre) return { problema: malNombre };
+  const h = RG.hermanoDeEdicion(cwd, p.nombre);
+  // una carpeta propia con el nombre de un repo de al lado: si el repo es un hermano declarado, no se sabe cuál es
+  if (p.local) return h.problema ? null : { problema: `«${s}» es ambigua: ${p.nombre} es una carpeta de ${cwd} y también el repo hermano ${h.nombre}; renombrá la carpeta o pedí la lista desde otra` };
+  if (h.problema) return { problema: `«${s}» nombra el repo ${p.nombre}, que no vale como hermano: ${h.problema}` };
+  hermanos.set(h.raiz, h.nombre);
+  return { raiz: h.raiz, nombre: h.nombre, resto: p.resto };
+}
+
+/** La entrada de la lista como se escribe: `<Nombre>/<ruta>` para un hermano de `hermanos`, o relativa a `cwd`. */
+function relDeLaLista(abs, cwd, hermanos = new Map()) {
+  for (const [raiz, nombre] of hermanos) {
+    if (abs.startsWith(raiz + path.sep)) return `${nombre}/${norm(path.relative(raiz, abs))}`;
+  }
+  return path.relative(cwd, abs) || abs;
+}
+
+/**
+ * Si `repoRoot` es un repo al lado del checkout principal del repo de `cwd` que no vale como hermano: el texto de por
+ * qué («el repo Z, que no está en repo_group de R…»), o null. Lo usa el portón de la lista al frenar.
+ */
+function repoVecinoFueraDelGrupo({ repoRoot, cwd }) {
+  if (!repoRoot || !cwd) return null;
+  try {
+    const RG = require('./repo-group.js');
+    const principal = RG.checkoutPrincipal(cwd);
+    const raiz = sinEnlaces(repoRoot);
+    if (!principal || raiz === principal || path.dirname(raiz) !== path.dirname(principal)) return null;
+    const h = RG.hermanoDeEdicion(cwd, path.basename(raiz));
+    return h.problema ? `el repo ${path.basename(raiz)}, que no vale como hermano de ${path.basename(principal)} (${h.problema})` : null;
+  } catch (_) { return null; }
+}
+
+/** Los repos de una lista ya normalizada (sus raíces reales), sin repetir. */
+function reposDeLaLista(lista) { return [...new Set((lista || []).map(raizDe).filter(Boolean))]; }
+
+/**
+ * El repo `nombre` del carril `adhoc`, para `adhoc test --repo`: `{ raiz }` o `{ problema }`. Vale el repo de la sesión
+ * (el nombre de su checkout principal) o un hermano declarado en los dos sentidos, y tiene que tener archivos en la lista.
+ */
+function repoDelCarril(adhoc, nombre, { cwd = process.cwd() } = {}) {
+  const RG = require('./repo-group.js');
+  const mal = RG.problemaDelNombre(nombre);
+  if (mal) return { problema: mal };
+  const repos = reposDeLaLista(adhoc && adhoc.allowedFiles);
+  const propio = RG.checkoutPrincipal(cwd);
+  let raiz = null;
+  if (propio && RG.clave(path.basename(propio)) === RG.clave(nombre)) {
+    raiz = repos.find((r) => RG.checkoutPrincipal(r) === propio) || null;
+  } else {
+    const h = RG.hermanoDeEdicion(cwd, nombre);
+    if (h.problema) return { problema: h.problema };
+    raiz = repos.find((r) => r === h.raiz) || null;
+  }
+  if (!raiz) return { problema: `${nombre} no tiene archivos en la lista de este camino corto` };
+  return { raiz };
 }
 
 /**
@@ -157,12 +232,17 @@ function esCodigo(abs) {
   return isImplPath(raiz ? norm(path.relative(raiz, abs)) : norm(abs));
 }
 
-/** ¿Cuenta como código una ruta relativa, sin mirar el disco? Para lo que decide antes de abrir (la firma, la ventana). */
-function esCodigoRel(rel) {
+/**
+ * ¿Cuenta como código una ruta relativa, sin leer el remoto? Para lo que decide antes de abrir (la firma, la ventana).
+ * Con `cwd`, la de un repo hermano (`<Nombre>/<ruta>`) se mira sin el prefijo, como la cuenta `esCodigo` en su repo.
+ */
+function esCodigoRel(rel, { cwd = null } = {}) {
   const gate = require('./story-gate.js');
   const { isImplPath } = require('./atdd-order.js');
   // como la cuenta `normalizar`: sin los espacios de los bordes (un espacio al final no saca un archivo del tope)
-  const s = norm(String(rel || '').trim());
+  let s = norm(String(rel || '').trim());
+  const p = cwd ? require('./repo-group.js').prefijoDeHermano(s, cwd) : null;
+  if (p && !p.local) s = p.resto;
   return gate.isCodeFile(s) && isImplPath(s);
 }
 
@@ -376,6 +456,6 @@ function fueraDeLaLista({ lista, filePath, real, repoRoot, home = os.homedir(), 
 }
 
 module.exports = {
-  sinEnlaces, unidadEnMayuscula, faltanEnLaNueva, normalizar, carpetaDeLaSesion, raizDe, esCodigo, esCodigoRel, contar, problemaDeTopes, problemaDelMotivo, variosTemas, vago, sinUnaPersona,
+  sinEnlaces, unidadEnMayuscula, faltanEnLaNueva, normalizar, relDeLaLista, reposDeLaLista, repoDelCarril, repoVecinoFueraDelGrupo, carpetaDeLaSesion, raizDe, esCodigo, esCodigoRel, contar, problemaDeTopes, problemaDelMotivo, variosTemas, vago, sinUnaPersona,
   esPapeleo, esPapeleoDeLaLista, esPruebaDe, esTemporal, fueraDeLaLista, rechazoDeLaLista, textoDeAmpliar, textoOtroCarril, riesgoDeLaLista, textoDelRiesgo,
 };

@@ -235,3 +235,88 @@ test('T45 SinSobreCupo_LaRamaNoFrena — @story-8.174 @ac-43', () => {
   const d = guardar(dir, 's45c', h3);
   assert.ok(!d || !d.texto || !/creá una rama/.test(d.texto), JSON.stringify(d));
 });
+
+// ── las pruebas por repo (8.316) ────────────────────────────────────────────────────────────────────────────────────
+
+/** R, B y F al lado, declarados entre los tres en la rama principal del remoto. */
+function tresRepos(nombre) {
+  const raiz = tmp(`${nombre}-`);
+  const [R, B, F] = ['R', 'B', 'F'].map((n) => repo(raiz, n));
+  const grupo = { R: ['B', 'F'], B: ['R', 'F'], F: ['R', 'B'] };
+  for (const [n, d] of [['R', R], ['B', B], ['F', F]]) {
+    escribir(d, '.tycon/advisors.yaml', `repo_group: [${grupo[n].join(', ')}]\n`);
+    git(d, 'add', '.');
+    commitear(d, 'grupo');
+    git(d, 'push', '-q', 'origin', 'main');
+  }
+  return { raiz, R, B, F };
+}
+/** Un carril con código preparado en B y en F (y una guía en R). */
+function conCodigoEnDos(nombre, h, sid) {
+  const c = tresRepos(nombre);
+  const a = escribir(c.B, 'src/a.js');
+  const b = escribir(c.F, 'src/b.js');
+  const g = escribir(c.R, 'docs/g.md');
+  for (const d of [c.B, c.F, c.R]) git(d, 'add', '.');
+  const bases = Object.fromEntries([c.R, c.B, c.F].map((d) => [d, { sha: git(d, 'rev-parse', 'HEAD'), traida: true }]));
+  conCarril(h, sid, { allowedFiles: [a, b, g], files: [a, b, g], bases, cwd: c.R });
+  return c;
+}
+const verdeEn = (h, sid, cwd, nombre) => marker(h, sid, ['adhoc', 'test', '--repo', nombre, '--', process.execPath, '-e', 'process.exit(0)'], { cwd });
+
+test('T18 Pruebas_PorRepo_CorrenEnSuCarpeta — @story-8.316 @ac-13', () => {
+  const h = tmp('home-');
+  const c = conCodigoEnDos('t18-316', h, 's18');
+  // corre con la raíz de B como carpeta y anota en pruebasPorRepo, con la huella de B
+  const r = marker(h, 's18', ['adhoc', 'test', '--repo', 'B', '--', process.execPath, '-e', 'console.log(process.cwd())'], { cwd: c.R });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(fs.realpathSync(r.stdout.trim()), c.B);
+  const a = leerCarril(h, 's18');
+  const p = a.pruebasPorRepo[c.B];
+  assert.ok(p && p.codigo === 0 && /^[0-9a-f]{64}$/.test(p.huella), JSON.stringify(a.pruebasPorRepo));
+  assert.equal(p.huella, require(path.join(SCRIPTS, 'lib', 'adhoc-base.js')).huellaDelCarril(a, undefined, { repo: c.B }));
+  // en un carril de varios repos, la corrida de un repo no se anota como la general
+  assert.equal(a.pruebas, undefined);
+  // un nombre fuera del grupo (o raro) sale 2 y no corre nada
+  repo(c.raiz, 'Z');
+  const marca = path.join(c.raiz, 'corrio');
+  for (const nombre of ['Z', '..', '-x']) {
+    const mal = marker(h, 's18', ['adhoc', 'test', '--repo', nombre, '--', process.execPath, '-e', `require("fs").writeFileSync(${JSON.stringify(marca)}, "x")`], { cwd: c.R });
+    assert.equal(mal.status, 2, nombre);
+    assert.match(mal.stderr, /no corrí nada/);
+    assert.ok(!fs.existsSync(marca), nombre);
+  }
+});
+
+test('T19 Guardar_DosRepos_PruebasPorRepo — @story-8.316 @ac-14', () => {
+  const h = tmp('home-');
+  const c = conCodigoEnDos('t19-316', h, 's19');
+  for (const d of [c.B, c.F]) git(d, 'switch', '-q', '-c', 'arreglo');
+  // sin ninguna: frena y nombra un repo
+  let g = guardar(c.B, 's19', h);
+  assert.ok(g && /faltan las pruebas de (B|F)/.test(g.texto) && /adhoc test --repo (B|F) --/.test(g.texto), JSON.stringify(g));
+  // sólo la corrida general: no cuenta en un carril de varios repos
+  assert.equal(marker(h, 's19', ['adhoc', 'test', '--', process.execPath, '-e', 'process.exit(0)'], { cwd: c.R }).status, 0);
+  g = guardar(c.B, 's19', h);
+  assert.ok(g && /faltan las pruebas de/.test(g.texto), JSON.stringify(g));
+  // verde sólo en B: frena y nombra F
+  assert.equal(verdeEn(h, 's19', c.R, 'B').status, 0);
+  g = guardar(c.B, 's19', h);
+  assert.ok(g && /faltan las pruebas de F/.test(g.texto) && /src\/b\.js/.test(g.texto), JSON.stringify(g));
+  // verde en los dos: pasa
+  assert.equal(verdeEn(h, 's19', c.R, 'F').status, 0);
+  g = guardar(c.B, 's19', h);
+  assert.ok(!(g && g.texto), JSON.stringify(g));
+  // un carril de un solo repo: como hoy, y `--repo R` también escribe `pruebas`
+  const h2 = tmp('home-');
+  const d = tresRepos('t19b-316');
+  const a = escribir(d.R, 'src/a.js');
+  git(d.R, 'add', '.');
+  conCarril(h2, 's19b', { allowedFiles: [a], files: [a], bases: { [d.R]: { sha: git(d.R, 'rev-parse', 'HEAD'), traida: true } }, cwd: d.R });
+  git(d.R, 'switch', '-q', '-c', 'arreglo');
+  assert.ok(/faltan las pruebas\./.test((guardar(d.R, 's19b', h2) || {}).texto || ''));
+  assert.equal(verdeEn(h2, 's19b', d.R, 'R').status, 0);
+  assert.equal(leerCarril(h2, 's19b').pruebas.codigo, 0);
+  const g2 = guardar(d.R, 's19b', h2);
+  assert.ok(!(g2 && g2.texto), JSON.stringify(g2));
+});
