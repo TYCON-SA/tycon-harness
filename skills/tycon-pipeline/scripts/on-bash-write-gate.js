@@ -3579,18 +3579,19 @@ function carpetasQueBorraOMueve(cmd) {
       let tramoDe = tramo;
       // las palabras de control (`then`, `do`, `!`, `time`…) y los envoltorios que corren otro comando, con sus opciones
       // y valores (`sudo -u x`, `env -u X`, `nice -5`): se sacan de a una palabra, sin una expresión que pueda retroceder
-      let sacadas = 0;
-      for (let vuelta = 0; vuelta < 64 && words.length; vuelta++) {
-        const c = nombreDeComando(words[0]);
-        if (CONTROL.has(words[0]) || /^[A-Za-z_]\w*=/.test(words[0])) { words.shift(); sacadas++; continue; }
-        if (!ENVOLTORIOS.has(c)) break;
-        words.shift(); sacadas++;
-        while (words.length && (words[0].startsWith('-') || /^[A-Za-z_]\w*=/.test(words[0]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[0]))) {
-          const op = words.shift();
-          if (/^-[ugnc]$/.test(op) && words.length) words.shift();
+      // con un índice y un solo corte al final: `shift()` mueve el arreglo entero en cada palabra (cuadrático)
+      let k0 = 0;
+      for (let vuelta = 0; vuelta < 64 && k0 < words.length; vuelta++) {
+        const w0 = words[k0];
+        if (CONTROL.has(w0) || /^[A-Za-z_]\w*=/.test(w0)) { k0++; continue; }
+        if (!ENVOLTORIOS.has(nombreDeComando(w0))) break;
+        k0++;
+        while (k0 < words.length && (words[k0].startsWith('-') || /^[A-Za-z_]\w*=/.test(words[k0]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[k0]))) {
+          const op = words[k0++];
+          if (/^-[ugnc]$/.test(op) && k0 < words.length) k0++;
         }
       }
-      if (sacadas) tramoDe = comoTramo(words);
+      if (k0) { words = words.slice(k0); tramoDe = comoTramo(words); }
       // `xargs [opciones] rm -rf <ruta>` y `eval rm -rf <ruta>`: el comando es lo que sigue
       if (['xargs', 'eval'].includes(nombreDeComando(words[0] || ''))) {
         let k = 1;

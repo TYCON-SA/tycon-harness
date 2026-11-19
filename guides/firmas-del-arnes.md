@@ -337,6 +337,19 @@ Esto no firma en Windows:
 Una consola de fondo viva frena, y también una PowerShell viva, porque no se puede leer qué corre. Se cierra, o se firma en
 la terminal.
 
+**El freno ofrece sólo lo que anda en tu consola.** En Windows la firma por cuadro o por «aprobado» anda sólo desde la
+consola Bash de Git. Si el agente pidió la firma desde la consola PowerShell, el freno no le ofrece la ventana, el cuadro
+ni el «aprobado»: le dice que la corra por la consola Bash de Git (si está) o te da la forma de la terminal. Un escape o un
+guion `.sh` van sólo por la terminal, también desde Bash de Git. La lista de firmas guarda con qué consola se pidió cada
+una, y `owner-next` le da a la coordinadora la terminal en lugar del cuadro cuando el cuadro no firmaría; lo mismo con una
+firma que no se da desde la pestaña de otra sesión.
+
+**Un solo comando para las tres consolas.** La forma de la terminal es `node "<carpeta personal>/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js" …`,
+con comillas dobles, sin `~`, sin `cd` ni `&&`, y con `--terminal --for-session <sesión>` al final: se pega igual en
+Windows PowerShell 5.1, PowerShell 7 y cmd (y en bash). El arreglo rápido lleva además `--repo "<carpeta>"`, así tu terminal
+puede estar en cualquier carpeta. Una ruta o una carpeta personal con `$`, `"`, una comilla invertida, `%` o un salto de
+línea no se cita igual en las cuatro: ahí el freno no da la forma de la terminal y dice por qué.
+
 Los límites de esto:
 
 - La forma de la consola se midió en una sola máquina (extensión de VS Code 2.1.289, Git Bash). Con otra versión u otra
