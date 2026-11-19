@@ -788,6 +788,37 @@ function labEntrada() {
   return { ws, codigo, historias, evidencia, a: path.join(codigo, 'src/a.js'), b: path.join(codigo, 'src/b.js'), prueba: path.join(codigo, 'tests/a.test.js'), anclaCommit };
 }
 
+test('Entrada_CambioPropioQueEntraPorDev_Vence @story-8.310 @ac-7', () => {
+  const f = labEntrada();
+  fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+  // la historia corrige su código después: su pedido entra a dev con su número registrado, y después dev entra a main
+  git(f.codigo, ['switch', '-q', '-C', 'dev', 'main']);
+  enRama(f.codigo, 'wt/Dos', { 'src/a.js': '// a2 propio\n' }, BASE_ENTRADA + 350, 'cambio', 'dev');
+  git(f.codigo, ['switch', '-q', 'dev']);
+  git(f.codigo, ['merge', '-q', '--no-ff', '-m', 'Merge pull request #12 from org/wt/Dos into dev', 'wt/Dos'], conFecha(BASE_ENTRADA + 360));
+  git(f.codigo, ['switch', '-q', 'main']);
+  git(f.codigo, ['merge', '-q', '--no-ff', '-m', 'Merge pull request #13 from org/dev into main', 'dev'], conFecha(BASE_ENTRADA + 400));
+  fijarOrigen(f.codigo);
+  const r = juezDeEntrada([['Codigo#12', ['9.9']]]).entrada({ archivo: f.a, evidencia: f.evidencia });
+  assert.strictEqual(r && r.motivo, 'cambio-propio-tras-entrar', JSON.stringify(r));
+});
+
+test('Entrada_GitConFirmaEnElLog_NoLeeLaFirmaComoCommit @story-8.310 @ac-8', () => {
+  const f = labEntrada();
+  fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+  enRama(f.codigo, 'wt/Dos', { 'src/a.js': '// a2 de otra\n' }, BASE_ENTRADA + 350);
+  fusionarPedido(f.codigo, 'wt/Dos', 12, BASE_ENTRADA + 400);
+  // con log.showSignature=true y commits firmados, git escribe la firma antes del formato pedido
+  const conFirma = (carpeta, args, env) => {
+    const r = evidencia().correrGitDeVerdad(carpeta, args, env);
+    if (args.includes('log') && !args.includes('--no-show-signature') && r.codigo === 0 && r.salida) r.salida = `gpg: Firma hecha con la llave X\n${r.salida}`;
+    return r;
+  };
+  const real = juezDeEntrada([['Codigo#12', ['9.8']]]).entrada({ archivo: f.a, evidencia: f.evidencia });
+  const firmado = juezDeEntrada([['Codigo#12', ['9.8']]], { correrGit: conFirma }).entrada({ archivo: f.a, evidencia: f.evidencia });
+  assert.deepStrictEqual(firmado, real);
+});
+
 function juezDeEntrada(filas = [], extra = {}) {
   const porPedido = new Map();
   for (const [clave, h] of filas) porPedido.set(clave, h.map((x) => ({ historia: x, clave: x })));

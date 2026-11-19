@@ -50,7 +50,7 @@ test('T19 HistoriaDeFusion_PorNumero_RamaWt @story-8.310 @ac-19', () => {
   assert.strictEqual(deLaFusion('Merge pull request #13 from org/story/9.9-algo', p), 'propia');
 });
 
-test('T19 Vigencia_NoLeeElRegistro @story-8.310 @ac-19', () => {
+test('Vigencia_NoLeeElRegistro @story-8.310 @ac-19', () => {
   const repo = carpeta();
   const fecha = `${HORA_FIJA} +0000`;
   const git = (...a) => execFileSync('git', ['-c', 'user.name=Lab', '-c', 'user.email=l@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', ...a],
@@ -100,7 +100,7 @@ test('T21 HistoriaDeFusion_DosHistorias_MismoPedido @story-8.310 @ac-21', () => 
   assert.ok(otra && otra !== 'propia', 'para otra historia es ajena');
 });
 
-test('T17 Anotar_NoRepite @story-8.310 @ac-17', () => {
+test('Anotar_NoRepite @story-8.310 @ac-17', () => {
   const dir = carpeta();
   assert.strictEqual(registro.anotar({ dir, clave: '9.9', historia: '9.9', repo: 'Codigo', pedido: 5 }).escrito, true);
   assert.strictEqual(registro.anotar({ dir, clave: '9.9', historia: '9.9', repo: 'Codigo', pedido: 5 }).escrito, false);
@@ -111,8 +111,35 @@ test('T23 Guias_DicenLaReglaDeEntrada @story-8.310 @ac-25', () => {
   for (const g of ['guides/accov-governance-protocol.md', 'guides/definition-of-done.md']) {
     const t = fs.readFileSync(path.join(RAIZ, g), 'utf8');
     for (const re of [/entr[óo] a `?main`?/i, /cambio propio|la propia historia/i, /nocturno/i, /prueba de noche/i, /riesgo escrito|Aceptado sin cobertura posterior/i,
-      /lo que (ellas )?cargan/i, /sin historia conocida/i, /pedidos\.jsonl/, /editable|se puede editar/i]) {
+      /lo que (ellas )?cargan/i, /sin historia conocida/i, /pedidos\.jsonl/, /editable|se puede editar/i,
+      // cómo se reconoce la entrada: en la línea de primer padre, contra el último commit anterior y el primero posterior
+      /primer padre/i, /último commit anterior/i, /primer commit posterior/i]) {
       assert.match(t, re, `${g} no dice ${re}`);
     }
   }
+});
+
+test('NombraLaHistoria_ComoUnaRama_GuionYMayusculas @story-8.310 @ac-7', () => {
+  assert.strictEqual(nombraLaHistoria('fix(8-310): la prueba', '8.310'), true, 'con guion, como la acepta una rama');
+  assert.strictEqual(nombraLaHistoria('arreglo de la oc-1', 'OC-1'), true, 'sin distinguir mayúsculas');
+  assert.strictEqual(nombraLaHistoria('feat(8.3101): otra', '8.310'), false);
+  assert.strictEqual(nombraLaHistoria('fix(18-310): otra', '8.310'), false);
+});
+
+test('Anotar_ArchivoSinSaltoFinal_NoFundeRenglones @story-8.310 @ac-17', () => {
+  const dir = carpeta();
+  const archivo = path.join(dir, '9.9-pedidos.jsonl');
+  fs.writeFileSync(archivo, JSON.stringify({ historia: '9.9', clave: '9.9', repo: 'Codigo', pedido: 1, ts: 'x' }));
+  registro.anotar({ dir, clave: '9.9', historia: '9.9', repo: 'Codigo', pedido: 2 });
+  const { porPedido, ilegibles } = registro.leer({ dirs: [dir] });
+  assert.deepStrictEqual([...porPedido.keys()].sort(), ['Codigo#1', 'Codigo#2']);
+  assert.deepStrictEqual(ilegibles, []);
+});
+
+test('Leer_CarpetaQueNoSePuedeLeer_LoDice @story-8.310 @ac-20', () => {
+  const dir = carpeta();
+  const noEsCarpeta = path.join(dir, 'archivo');
+  fs.writeFileSync(noEsCarpeta, 'x');
+  const { ilegibles } = registro.leer({ dirs: [noEsCarpeta, path.join(dir, 'no-existe')] });
+  assert.deepStrictEqual(ilegibles, [{ archivo: noEsCarpeta, linea: null }], 'una carpeta que falta no se avisa; una que no se puede leer, sí');
 });

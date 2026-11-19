@@ -5205,23 +5205,25 @@ function decirRenglonesDelCierre(marker, dump, runDir) {
   } catch (e) { process.stderr.write(`[corrida] el aviso del cierre no salió (${e.message})\n`); }
 }
 
-// El renglón del registro de pedidos (lib/story-requests.js) para una historia dada por su ruta. Sale con error sin escribir
-// nada si no se puede saber su clave o no existe su carpeta de evidencia.
-function anotarEnElRegistro({ storyFile, id, repo, numero }) {
+// El renglón del registro de pedidos (lib/story-requests.js) para una historia dada por su ruta. Si no se puede saber su
+// clave o no existe su carpeta de evidencia no escribe nada: con `estricto` sale con error; si no, lo avisa y sigue, y el
+// pedido queda sólo en el marcador.
+function anotarEnElRegistro({ storyFile, id, repo, numero, estricto }) {
+  const noPude = (motivo) => {
+    if (estricto) { console.error(`marker.js pr: ${motivo}`); process.exit(1); }
+    process.stderr.write(`[marker] ${motivo}; el pedido queda sólo en la corrida\n`);
+    return false;
+  };
+  if (!fs.existsSync(storyFile)) return noPude(`no encuentro la historia ${storyFile}: no anoté el pedido #${numero}`);
   const { key, error } = require('./lib/evidence-key.js').keyInfoOr(storyFile, String(id));
-  if (!key) {
-    console.error(`marker.js pr: no pude saber la clave de la historia ${id}: ${error || 'sin motivo'}`);
-    process.exit(1);
-  }
+  if (!key) return noPude(`no pude saber la clave de la historia ${id}: ${error || 'sin motivo'}`);
   const { dir } = require('./lib/evidence-config.js').evidenceDirForStory(storyFile);
   let hayCarpeta = false;
   try { hayCarpeta = Boolean(dir) && fs.statSync(dir).isDirectory(); } catch (_e) { hayCarpeta = false; }
-  if (!hayCarpeta) {
-    console.error(`marker.js pr: la historia ${id} no tiene carpeta de evidencia (${dir || 'sin repo'}): no anoté el pedido #${numero}`);
-    process.exit(1);
-  }
+  if (!hayCarpeta) return noPude(`la historia ${id} no tiene carpeta de evidencia (${dir || 'sin repo'}): no anoté el pedido #${numero}`);
   const r = require('./lib/story-requests.js').anotar({ dir, clave: key, historia: String(id), repo, pedido: numero });
   if (r.escrito) process.stderr.write(`[marker] pedido #${numero} de ${repo} anotado en ${path.basename(r.archivo)}\n`);
+  return true;
 }
 
 /**
@@ -5250,10 +5252,13 @@ function cmdPr(numRaw, rest = []) {
   }
   const vivo = readMarker();
   if (vivo && (!story || String(vivo.storyId) === String(story))) {
-    const storyFile = storyPathArg || resolveStoryPath(vivo.storyPath, vivo);
-    const repo = repoNombre || (vivo.repoPath ? SR.nombreDelRepo(vivo.repoPath) : null);
-    const delaHistoria = storyFile ? SR.nombreDelRepo(path.dirname(storyFile)) : null;
-    if (repo && storyFile && (storyPathArg || repo !== delaHistoria)) anotarEnElRegistro({ storyFile, id: vivo.storyId, repo, numero });
+    // sin --repo no se sabe de qué repo es el número: queda sólo en la corrida
+    if (repoNombre) {
+      const storyFile = storyPathArg || resolveStoryPath(vivo.storyPath, vivo);
+      const delaHistoria = storyFile ? SR.nombreDelRepo(path.dirname(storyFile)) : null;
+      if (!storyFile) process.stderr.write(`[marker] no sé dónde está la historia ${vivo.storyId}: el pedido #${numero} queda sólo en la corrida\n`);
+      else if (storyPathArg || repoNombre !== delaHistoria) anotarEnElRegistro({ storyFile, id: vivo.storyId, repo: repoNombre, numero, estricto: Boolean(storyPathArg) });
+    }
     vivo.pr = { number: numero, merged, ...(repoNombre ? { repo: repoNombre } : {}) };
     vivo.lastTouch = nowIso();
     writeMarker(vivo);
@@ -5268,7 +5273,7 @@ function cmdPr(numRaw, rest = []) {
     console.error('marker.js pr: sin corrida viva, --repo necesita --story-path <ruta de la historia>: el número solo no alcanza para saber su clave');
     process.exit(2);
   }
-  if (repoNombre) anotarEnElRegistro({ storyFile: storyPathArg, id: story, repo: repoNombre, numero });
+  if (repoNombre) anotarEnElRegistro({ storyFile: storyPathArg, id: story, repo: repoNombre, numero, estricto: true });
   const RL = require('./lib/run-lines.js');
   let repoDir = null;
   try { repoDir = require('./lib/repo-attrib.js').gitRoot(process.cwd()); } catch (_e) { repoDir = null; }
@@ -5309,15 +5314,18 @@ function avisarPedidosSinAnotar(marker) {
     const storyFile = resolveStoryPath(marker.storyPath, marker);
     const { key } = require('./lib/evidence-key.js').keyInfoOr(storyFile, String(marker.storyId));
     const { dir } = require('./lib/evidence-config.js').evidenceDirForStory(storyFile, marker.repoPath);
+    // sólo cuenta un renglón de esta corrida: uno de un pedido anterior no cubre los commits de ahora
     const anotados = new Set();
-    for (const [k, filas] of SR.leer({ dirs: dir ? [dir] : [] }).porPedido) if (filas.some((f) => f.clave === key)) anotados.add(k.split('#')[0]);
+    const deEstaCorrida = (f) => f.clave === key && (!marker.startedAt || (f.ts && f.ts >= marker.startedAt));
+    for (const [k, filas] of SR.leer({ dirs: dir ? [dir] : [] }).porPedido) if (filas.some(deEstaCorrida)) anotados.add(k.split('#')[0]);
     const pr = marker.pr;
     if (pr) anotados.add(pr.repo || SR.nombreDelRepo(marker.repoPath));
     for (const repo of reposParaComparar(marker)) {
       const nombre = SR.nombreDelRepo(repo);
       if (!nombre || anotados.has(nombre)) continue;
       const r = require('child_process').spawnSync('git', ['rev-list', '--count', 'origin/main..HEAD'], { cwd: repo, encoding: 'utf8', windowsHide: true });
-      if (r.status === 0 && Number(r.stdout.trim()) > 0) process.stderr.write(`[marker] ${nombre}: tiene commits de la corrida y sin pedido anotado (marker.js pr <número> --repo <carpeta>)\n`);
+      if (r.status !== 0) process.stderr.write(`[marker] ${nombre}: no pude ver si tiene commits sin pedido anotado (git no contestó)\n`);
+      else if (Number(r.stdout.trim()) > 0) process.stderr.write(`[marker] ${nombre}: tiene commits de la corrida y sin pedido anotado (marker.js pr <número> --repo <carpeta>)\n`);
     }
   } catch (e) { process.stderr.write(`[marker] no pude revisar los pedidos anotados (${e.message})\n`); }
 }

@@ -735,6 +735,51 @@ test('T17b MarkerClear_RepoConCommitsNoAnotado_Avisa @story-8.310 @ac-17', () =>
   assert.match(avisos[0], /sin-nada/);
 });
 
+test('MarkerClear_RenglonDeUnPedidoViejo_AvisaIgual @story-8.310 @ac-17', () => {
+  const E = entorno();
+  fs.mkdirSync(path.dirname(REGISTRO(E)), { recursive: true });
+  const viejo = conCommitPropio(repoAparte(E, 'viejo'));
+  // un renglón de un pedido anterior a esta corrida no cubre los commits de ahora
+  fs.writeFileSync(REGISTRO(E), `${JSON.stringify({ historia: '9.9', clave: '9.9', repo: 'viejo', pedido: 3, ts: new Date(T0 - 86400000).toISOString() })}\n`);
+  const sid = 'clear-viejo';
+  E.escribir(sid, E.base9(sid, { stepsCompleted: [...TODOS], stepsPending: [], deepReviewDone: true, dodRuntimeChecked: true, fileEvents: [{ path: path.join(viejo, 'a.js'), ts: at(1) }] }));
+  const c = E.correr(['clear'], sid);
+  assert.strictEqual(c.status, 0, c.stderr);
+  assert.match(c.stderr, /viejo: tiene commits de la corrida y sin pedido anotado/);
+});
+
+test('MarkerPr_SinRepo_ConCorridaEnOtroRepo_SoloMarcador @story-8.310 @ac-17', () => {
+  const E = entorno();
+  fs.mkdirSync(path.dirname(REGISTRO(E)), { recursive: true });
+  const codigo = repoAparte(E, 'codigo').r;
+  const sid = 'pr-sin-repo';
+  E.escribir(sid, E.base9(sid, { repoPath: codigo }));
+  const x = E.correr(['pr', '40'], sid);
+  assert.strictEqual(x.status, 0, x.stderr);
+  assert.deepStrictEqual(renglones(REGISTRO(E)), [], 'sin --repo no se sabe de qué repo es el número: no va al registro');
+  assert.strictEqual(E.leer(sid).pr.number, 40);
+});
+
+test('MarkerPr_ConCorrida_SinCarpetaDeEvidencia_AvisaYGuarda @story-8.310 @ac-17', () => {
+  const E = entorno();
+  const pub = repoAparte(E, 'publico').r;
+  const sid = 'pr-sin-carpeta';
+  E.escribir(sid, E.base9(sid));
+  const x = E.correr(['pr', '41', '--repo', pub], sid);
+  assert.strictEqual(x.status, 0, x.stderr);
+  assert.match(x.stderr, /carpeta de evidencia/);
+  assert.deepStrictEqual(E.leer(sid).pr, { number: 41, merged: false, repo: 'publico' });
+});
+
+test('MarkerPr_SinMarcador_ClaveIncalculable_NoEscribe @story-8.310 @ac-18', () => {
+  const E = entorno();
+  fs.mkdirSync(path.dirname(REGISTRO(E)), { recursive: true });
+  const pub = repoAparte(E, 'publico').r;
+  const x = E.correr(['pr', '42', '--merged', '--story', '9.9', '--repo', pub, '--story-path', path.join(E.repo, 'specs', 'no-existe.md')], 'z');
+  assert.strictEqual(x.status, 1, x.stderr);
+  assert.deepStrictEqual(fs.readdirSync(path.dirname(REGISTRO(E))), []);
+});
+
 test('T18 MarkerPr_SinMarcador_ConHistoria_YSinCarpeta @story-8.310 @ac-18', () => {
   const E = entorno();
   const dod = path.dirname(REGISTRO(E));

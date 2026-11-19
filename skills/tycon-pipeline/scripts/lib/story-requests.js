@@ -38,26 +38,29 @@ function renglonesDe(archivo) {
 /** Agrega el renglón si no está. `{ escrito, archivo }`. La carpeta tiene que existir: quien llama decide qué hacer si no. */
 function anotar({ dir, clave, historia, repo, pedido, ahora = new Date() }) {
   const archivo = archivoDe(dir, clave);
-  let existentes = [];
-  try { existentes = renglonesDe(archivo); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-  const repetido = existentes.some((l) => {
+  let texto = '';
+  try { texto = fs.readFileSync(archivo, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  const repetido = texto.split('\n').filter((l) => l.trim()).some((l) => {
     try { const r = JSON.parse(l); return r.clave === clave && r.repo === repo && r.pedido === pedido; } catch (_) { return false; }
   });
   if (repetido) return { escrito: false, archivo };
-  fs.appendFileSync(archivo, `${JSON.stringify({ historia, clave, repo, pedido, ts: ahora.toISOString() })}\n`);
+  // un archivo editado a mano puede quedar sin salto final: pegado al anterior, se perderían los dos renglones
+  const separador = texto && !texto.endsWith('\n') ? '\n' : '';
+  fs.appendFileSync(archivo, `${separador}${JSON.stringify({ historia, clave, repo, pedido, ts: ahora.toISOString() })}\n`);
   return { escrito: true, archivo };
 }
 
 /**
- * Todos los registros de esas carpetas. `porPedido`: Map de `<repo>#<número>` a `[{ historia, clave }]`. `ilegibles`:
- * `[{ archivo, linea }]`, con `linea` null si no se pudo leer el archivo entero. Un renglón roto no tapa a los demás.
+ * Todos los registros de esas carpetas. `porPedido`: Map de `<repo>#<número>` a `[{ historia, clave, ts }]`, con la hora
+ * más nueva de esa historia. `ilegibles`: `[{ archivo, linea }]`, con `linea` null si no se pudo leer el archivo o la
+ * carpeta entera. Una carpeta que no existe no es ilegible: la historia no tiene evidencia. Un renglón roto no tapa a los demás.
  */
 function leer({ dirs }) {
   const porPedido = new Map();
   const ilegibles = [];
   for (const dir of dirs) {
     let nombres;
-    try { nombres = fs.readdirSync(dir); } catch (_) { continue; }
+    try { nombres = fs.readdirSync(dir); } catch (e) { if (e.code !== 'ENOENT') ilegibles.push({ archivo: dir, linea: null }); continue; }
     for (const nombre of nombres.filter((n) => n.endsWith(SUFIJO)).sort()) {
       const archivo = path.join(dir, nombre);
       let lineas;
@@ -68,7 +71,10 @@ function leer({ dirs }) {
         if (!renglonValido(r)) { ilegibles.push({ archivo, linea: i + 1 }); return; }
         const k = claveDePedido(r.repo, r.pedido);
         if (!porPedido.has(k)) porPedido.set(k, []);
-        if (!porPedido.get(k).some((x) => x.clave === r.clave)) porPedido.get(k).push({ historia: r.historia, clave: r.clave });
+        const ya = porPedido.get(k).find((x) => x.clave === r.clave);
+        const ts = typeof r.ts === 'string' ? r.ts : null;
+        if (!ya) porPedido.get(k).push({ historia: r.historia, clave: r.clave, ts });
+        else if (ts && (!ya.ts || ts > ya.ts)) ya.ts = ts;
       });
     }
   }

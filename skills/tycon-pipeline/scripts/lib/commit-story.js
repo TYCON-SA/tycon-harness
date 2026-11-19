@@ -89,10 +89,13 @@ function historiaDeLaFusion(asunto, { repo, propia, catalogo, pedidos }) {
   return filas.length ? { numero: filas[0].historia } : porRama;
 }
 
-/** ¿El asunto de un commit nombra a la historia? Por el número entero: `9.9` no está en `9.91`, `19.9` ni `9.9.1`. */
+/**
+ * ¿El asunto de un commit nombra a la historia? Por el número entero: `9.9` no está en `9.91`, `19.9` ni `9.9.1`. Como en una
+ * rama, sin distinguir mayúsculas y con punto o guion entre las partes: `8-310` es la `8.310`.
+ */
 function nombraLaHistoria(asunto, numero) {
-  const n = String(numero).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(^|[^\\w.])${n}(?![\\w]|\\.\\d)`).test(String(asunto || ''));
+  const n = String(numero).split(/[.-]/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[.-]');
+  return new RegExp(`(^|[^\\w.-])${n}(?![\\w]|[.-]\\d)`, 'i').test(String(asunto || ''));
 }
 
 module.exports = { ramaDelAsunto, historiaDeLaRama, pedidoDelAsunto, historiaDeLaFusion, nombraLaHistoria };

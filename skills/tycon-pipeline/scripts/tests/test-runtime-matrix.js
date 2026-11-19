@@ -2743,7 +2743,7 @@ withWaiverLog(() => {
   const ledgerLine = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
   const BASE = Math.floor(Date.now() / 1000) - 12 * 3600;
 
-  function labEntrada({ iniciales = {}, declarados, acs = [1, 2], pipelines = [], filas } = {}) {
+  function labEntrada({ iniciales = {}, declarados, acs = [1, 2], pipelines = [], filas, frente = [] } = {}) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-entrada-'));
     const repo = path.join(fs.realpathSync(ws), 'Proj');
     fs.mkdirSync(repo);
@@ -2754,7 +2754,7 @@ withWaiverLog(() => {
     const escribir = (rel, texto) => { const a = path.join(repo, rel); fs.mkdirSync(path.dirname(a), { recursive: true }); fs.writeFileSync(a, texto); return a; };
     const tabla = filas || [`| T1 | \`FeatureTests.Caso\` | ${acs.join(',')} | integration | x | y |`];
     const historia = ['---', 'story: 9.9', 'status: in-progress', ...(pipelines.length ? ['pipelines:', ...pipelines] : []), 'files_to_modify:',
-      ...declarados.map((d) => `  - ${d}`), '---', '', '## Acceptance Criteria', '',
+      ...declarados.map((d) => `  - ${d}`), ...frente, '---', '', '## Acceptance Criteria', '',
       ...acs.map((n) => `${n}. **Given** algo ${n}, **When** pasa, **Then** resultado ${n}.`), '',
       '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', ...tabla, ''].join('\n');
     const storyPath = escribir('specs/stories/9-9-lab.md', historia);
@@ -2972,6 +2972,68 @@ withWaiverLog(() => {
     check('Matriz_SoloEnVivo_RiesgoEscrito @story-8.310 @ac-16',
       veredicto(r, 1) === 'RUNTIME' && md.includes('Aceptado sin cobertura posterior') && md.includes('si otra historia lo rompe, ninguna prueba de noche lo va a avisar')
         && md.includes(nadie) && /pudieron ser de esta misma historia/.test(md) && !rm.renderMd(limpio.calc()).includes('Aceptado sin cobertura posterior'), md.slice(0, 600));
+  }
+
+  // El aviso nombra todas las fusiones del código declarado; sólo lo que cargan las pruebas se resume
+  {
+    const L = labEntrada(SIMPLE);
+    L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    const cortos = [];
+    for (let i = 0; i < 7; i++) cortos.push(L.otra({ 'src/a.js': `// a${i + 2}\n` }, 2 + i, BASE + 400 + i * 100));
+    const a = avisos(L.calc());
+    const C = labEntrada({ iniciales: { 'src/a.js': '// a0\n', 'src/ayuda.js': '// h0\n', 'tests/a.test.js': "// x @story-9.9 @ac-1\nrequire('../src/ayuda.js');\n" }, declarados: ['src/a.js', 'tests/a.test.js'] });
+    C.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    for (let i = 0; i < 7; i++) C.otra({ 'src/ayuda.js': `// h${i + 1}\n` }, 2 + i, BASE + 400 + i * 100);
+    C.otra({ 'src/a.js': '// a2\n' }, 20, BASE + 1200);
+    const ac = avisos(C.calc());
+    check('Matriz_Entrada_CodigoDeclarado_NombraTodasLasFusiones @story-8.310 @ac-5',
+      cortos.every((c) => a.includes(c)) && !/y \d+ más/.test(a) && /src\/ayuda\.js[^\n]*y 2 más/.test(ac), `${a}\n${ac}`);
+  }
+
+  // Un portón E2E que cuenta por su entrada pone en el riesgo sólo los criterios que cubre
+  {
+    const G = labEntrada({ iniciales: { 'src/a.js': '// a0\n' }, declarados: ['src/a.js'], filas: ['| E1 | `story-9-9.spec.ts::flujo` | 1 | e2e | x | y |'] });
+    G.rama('wt/Uno', { 'src/a.js': '// a1\n' }, BASE + 100);
+    const ms = (BASE + 150) * 1000;
+    const compacto = new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    G.escribir(`.advisors/dod-runtime/9.9-e2e-gate-${compacto}.md`, ['# Gate', '**Spec filter**: story-9-9.spec.ts', '```', 'verdict=PASS', '```', '- skipped: 0', ''].join('\n'));
+    fs.appendFileSync(G.gatesLog, `${JSON.stringify({ ts: new Date(ms).toISOString(), check: 'dod', status: 'green', provenance: 'run-check', cmd: 'bash e2e-gate.sh /fe 9.9 /dir story-9-9.spec.ts', exit: 0 })}\n`);
+    G.guardar('evidencia', BASE + 200);
+    G.fusion('wt/Uno', 1, BASE + 300);
+    G.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    const r = G.calc();
+    const riesgo = (r.aceptadoSinCobertura || []).map((x) => x.ac);
+    check('Matriz_PortonPorEntrada_RiesgoSoloDeLoQueCubre @story-8.310 @ac-16',
+      veredicto(r, 1) === 'RUNTIME' && veredicto(r, 2) !== 'RUNTIME' && riesgo.includes(1) && !riesgo.includes(2), JSON.stringify([veredicto(r, 1), veredicto(r, 2), riesgo]));
+  }
+
+  // Un humo que hoy cuenta y tiene un criterio vencido no pierde los demás en una historia sensible
+  {
+    const sensible = 'skills/tycon-pipeline/scripts/marker.js';
+    const L = labEntrada({ iniciales: { [sensible]: '// m0\n', 'tests/a.test.js': '// @story-9.9 @ac-1\n' }, declarados: [sensible, 'tests/a.test.js'] });
+    L.entra({ [sensible]: '// m1\n' }, [1, 2]);
+    L.rama('story/9.9-prueba', { 'tests/a.test.js': '// @story-9.9 @ac-1 corregida\n' }, BASE + 350);
+    L.fusion('story/9.9-prueba', 2, BASE + 400);
+    const r = L.calc();
+    check('Matriz_HumoQueHoyCuenta_ConUnCriterioVencido_NoPierdeLosDemas @story-8.310 @ac-13',
+      veredicto(r, 1) !== 'RUNTIME' && veredicto(r, 2) === 'RUNTIME', `${JSON.stringify([veredicto(r, 1), veredicto(r, 2)])} ${avisos(r)}`);
+  }
+
+  // También es sensible una historia que borra un archivo de la lista, que lo nombra desde la carpeta de arriba o que
+  // declara un archivo que no se puede leer
+  {
+    const caso = (opciones) => {
+      const L = labEntrada(opciones);
+      L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+      L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+      return veredicto(L.calc(), 1);
+    };
+    const borra = caso({ ...SIMPLE, frente: ['files_to_delete:', '  - scripts/lib/notify.js'] });
+    const desdeArriba = caso({ iniciales: { 'src/a.js': '// a0\n', 'skills/tycon-pipeline/scripts/marker.js': '// m\n' }, declarados: ['src/a.js', 'Proj/skills/tycon-pipeline/scripts/marker.js'] });
+    const falta = caso({ ...SIMPLE, declarados: ['src/a.js', 'src/falta.js'] });
+    const comun = caso(SIMPLE);
+    check('Matriz_BorraONombraDesdeArribaOFalta_EsSensible @story-8.310 @ac-13',
+      borra !== 'RUNTIME' && desdeArriba !== 'RUNTIME' && falta !== 'RUNTIME' && comun === 'RUNTIME', JSON.stringify({ borra, desdeArriba, falta, comun }));
   }
 }
 

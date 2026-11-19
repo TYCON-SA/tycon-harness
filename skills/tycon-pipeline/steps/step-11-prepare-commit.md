@@ -222,8 +222,9 @@ firma de control del dueño, que no cambia.
    (`node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/run-lines.js --story <ruta de la story>`), tal cual.
    Abrí primero el pedido de cada repo que no es el de la historia, y anotalo con `marker.js pr <número> --repo <carpeta>`:
    deja un renglón en `<clave>-pedidos.jsonl`, en la carpeta de evidencia. Commiteá y empujá ese archivo en la rama de la
-   historia antes de abrir su pedido. Al final, con el pedido del repo de la historia abierto, `marker.js pr <número>`: ése
-   queda sólo en la corrida, y su renglón lo escribe el cierre. Así se sabe de qué historia es cada fusión aunque su rama
+   historia antes de abrir su pedido. Al final, con el pedido del repo de la historia abierto,
+   `marker.js pr <número> --repo <carpeta del repo de la historia>`: ése queda sólo en la corrida, y su renglón lo escribe el
+   cierre. Sin `--repo` el número también queda sólo en la corrida, sin saber de qué repo es. Así se sabe de qué historia es cada fusión aunque su rama
    sea `wt/<sesión>`.
 6. Al final, **`marker.js clear`**, después del último push y del último pull request. Imprime los renglones y el
    renglón final («pedido #12 abierto, espera la cola — 52 min de trabajo, …») y manda un aviso por los canales de la

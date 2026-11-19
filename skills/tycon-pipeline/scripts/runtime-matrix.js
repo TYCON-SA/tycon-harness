@@ -124,15 +124,16 @@ const MOTIVOS_DE_LA_ENTRADA = new Set(['otra-version', 'cambio-posterior', 'otro
 const RIESGO_SIN_COBERTURA = 'si otra historia lo rompe, ninguna prueba de noche lo va a avisar';
 
 // Por qué una evidencia siguió contando aunque el archivo cambió: lo que el control afloja se dice.
-function avisoDeLoQueContó({ rel, via, fusion, commit, historia, regla, ajenas, sinHistoria }) {
+function avisoDeLoQueContó({ rel, via, fusion, commit, historia, regla, ajenas, sinHistoria, carga }) {
   if (regla === 'entrada') {
-    const tope = (l) => (l.length > TOPE_DE_FUSIONES ? `${l.slice(0, TOPE_DE_FUSIONES).join(', ')} y ${l.length - TOPE_DE_FUSIONES} más` : l.join(', '));
+    // el código declarado nombra todas sus fusiones; lo que carga una prueba puede haber cambiado decenas de veces
+    const tope = (l) => (carga && l.length > TOPE_DE_FUSIONES ? `${l.slice(0, TOPE_DE_FUSIONES).join(', ')} y ${l.length - TOPE_DE_FUSIONES} más` : l.join(', '));
     const despues = [
       ajenas.length ? `otra historia: ${tope(ajenas.map((a) => `${a.commit} (${a.historia})`))}` : null,
       sinHistoria.length ? `sin historia conocida: ${tope(sinHistoria)}` : null,
     ].filter(Boolean).join(' · ');
     const inicio = commit ? `entró igual a lo probado en ${commit}` : 'ya estaba en main como se probó';
-    return `${rel}: ${inicio}${despues ? `; después lo cambiaron: ${despues}` : ''} → la evidencia sigue contando.`;
+    return `${rel}${carga ? ` (lo carga ${carga})` : ''}: ${inicio}${despues ? `; después lo cambiaron: ${despues}` : ''} → la evidencia sigue contando.`;
   }
   return via
     ? `${rel}: lo trajo la fusión ${fusion} de esta historia, igual a como estaba su rama a la hora de la evidencia; se supone que la evidencia corrió sobre esa rama → sigue contando.`
@@ -188,7 +189,7 @@ function readStory(storyPath) {
 // re-exporta desde acá para no romper a quien la importa de este archivo.
 const evidenceKeyLib = require(path.join(__dirname, 'lib', 'evidence-key.js'));
 const { storyIdFrom } = evidenceKeyLib;
-const { parseDeclaredFiles } = require(path.join(__dirname, 'lib', 'test-scope.js'));
+const { parseDeclaredFiles, parseFilesToDelete } = require(path.join(__dirname, 'lib', 'test-scope.js'));
 
 // Parsea el bloque `runtime_not_verifiable:` del frontmatter — la declaración por-AC de
 // "materialmente imposible de verificar corriendo la app" (con razón + test que lo cubre):
@@ -1589,8 +1590,10 @@ function compute(opts) {
   const historiaEsSensible = () => {
     if (sensibleCalculada === undefined) {
       // un archivo declarado que no se pudo leer no se sabe qué carga: cuenta como sensible
+      // también lo que la historia borra, como en el ok de guardar
       sensibleCalculada = noLeidos.length > 0 || coberturaNocturna.historiaSensible({
-        declarados: parseDeclaredFiles(content, { allForms: true }), codigo: codeFiles.filter((f) => !esPruebaDeclarada(f)).map((f) => f.abs),
+        declarados: [...parseDeclaredFiles(content, { allForms: true }), ...parseFilesToDelete(content)],
+        codigo: codeFiles.filter((f) => !esPruebaDeclarada(f)).map((f) => f.abs),
       });
     }
     return sensibleCalculada;
@@ -1600,8 +1603,10 @@ function compute(opts) {
     if (!conPruebaDeNoche) {
       conPruebaDeNoche = new Set();
       const pruebas = codeFiles.filter(esPruebaDeclarada).map((f) => f.abs);
+      // un caso del banco cuenta si la historia lo declara: no es código, así que no está en codeFiles
+      const declarados = parseDeclaredFiles(content, { allForms: true });
       for (const raiz of new Set(codeFiles.map((f) => coberturaNocturna.raizConSuites(f.abs)).filter(Boolean))) {
-        for (const n of coberturaNocturna.criteriosConPruebaDeNoche({ raiz, historia: sid, pruebas })) conPruebaDeNoche.add(n);
+        for (const n of coberturaNocturna.criteriosConPruebaDeNoche({ raiz, historia: sid, pruebas, declarados })) conPruebaDeNoche.add(n);
       }
     }
     return conPruebaDeNoche;
@@ -1610,8 +1615,10 @@ function compute(opts) {
    * La segunda pasada: ¿la evidencia cuenta por el código con que la historia entró a main? null si no se aplica y queda lo
    * de hoy; `{ cuenta: false, … }` si lo que entró no es lo probado o la historia lo cambió después. Hace falta código
    * declarado que haya entrado: una prueba o un `.json` no alcanzan. Pruebas y lo que cargan vencen sólo sus criterios.
+   * `criterios`: los que pueden contar por su entrada (todos los de la evidencia, o sólo los que hoy vencieron). A ésos, y
+   * sólo a ésos, se les pide la prueba de noche: `porEntrada` dice cuáles cuentan así.
    */
-  const porSuEntrada = (evidencia) => {
+  const porSuEntrada = (evidencia, criterios) => {
     const fuera = deOtrasTandas(evidencia.acs);
     const contadas = [];
     const vencidos = new Map();
@@ -1641,16 +1648,19 @@ function compute(opts) {
     for (const c of cargados) {
       if (!pruebasDelAlcance.has(c.prueba)) continue;
       const e = juez.entrada({ archivo: c.abs, evidencia });
-      if (e && e.cuenta) { contadas.push({ ...e, rel: c.rel }); continue; }
+      if (e && e.cuenta) { contadas.push({ ...e, rel: c.rel, carga: c.prueba }); continue; }
       const hoy = juez.vigencia({ archivo: c.abs, mtimeMs: c.mt, evidencia });
       if (!e && hoy.cuenta && !(hoy.regla === 6 && hoy.historia)) continue;
       if (!venceSusCriterios(c.criterios, { rel: c.rel, carga: c.prueba })) return null;
     }
     if (!entro) return null;
-    const sinNoche = (evidencia.acs || acs).filter((n) => !criteriosDeNoche().has(n));
+    const candidatos = criterios.filter((n) => !vencidos.has(n));
+    const sinNoche = candidatos.filter((n) => !criteriosDeNoche().has(n));
     const sensible = sinNoche.length > 0 && historiaEsSensible();
-    if (sensible) for (const n of sinNoche) if (!vencidos.has(n)) vencidos.set(n, { criterios: [n], rel: null, sinNoche: true });
-    return { cuenta: true, regla: 'entrada', contadas, vencidos, riesgo: sensible ? [] : sinNoche };
+    if (sensible) for (const n of sinNoche) vencidos.set(n, { criterios: [n], rel: null, sinNoche: true });
+    return {
+      cuenta: true, regla: 'entrada', contadas, vencidos, porEntrada: new Set(candidatos.filter((n) => !vencidos.has(n))), riesgo: sensible ? [] : sinNoche,
+    };
   };
   const vigenciaDe = (ev, evidencia) => {
     if (!vigencias.has(ev)) {
@@ -1686,8 +1696,13 @@ function compute(opts) {
       if (v.cuenta) for (const p of porCriterio) for (const n of p.criterios) if (!vencidos.has(n)) vencidos.set(n, p);
       let resultado = { ...v, contadas: v.cuenta ? contadas : [], vencidos };
       if (v.cuenta ? vencidos.size > 0 : MOTIVOS_DE_LA_ENTRADA.has(v.motivo)) {
-        const e = porSuEntrada(evidencia);
-        if (e && e.cuenta) resultado = e;
+        // Si hoy cuenta, la entrada sólo puede devolver los criterios que vencieron: los demás siguen como hoy.
+        const deLaEvidencia = (evidencia.acs || acs).filter((n) => acs.includes(n));
+        const e = porSuEntrada(evidencia, v.cuenta ? [...vencidos.keys()] : deLaEvidencia);
+        if (e && e.cuenta && v.cuenta) {
+          const siguen = new Map([...vencidos].filter(([n]) => e.vencidos.has(n)).map(([n, p]) => [n, e.vencidos.get(n).sinNoche ? e.vencidos.get(n) : p]));
+          resultado = { ...resultado, contadas: [...contadas, ...e.contadas], vencidos: siguen, porEntrada: e.porEntrada, riesgo: e.riesgo, regla: 'entrada' };
+        } else if (e && e.cuenta) resultado = e;
         else if (e && !v.cuenta) resultado = { ...e, contadas: [], vencidos: new Map() };
       }
       vigencias.set(ev, resultado);
@@ -1865,21 +1880,24 @@ function compute(opts) {
   }
   for (const aviso of dejadasContar) warnings.push(aviso);
 
-  // --- lo que cuenta por su entrada: los criterios sensibles sin prueba de noche, y el riesgo que queda escrito
-  const riesgoPorCriterio = new Map();
+  // --- lo que cuenta por su entrada: los criterios sensibles sin prueba de noche. El riesgo escrito se arma por criterio,
+  // más abajo, con la evidencia que de verdad le dio el veredicto
   for (const ev of [...freshPassGates, ...freshSmokes]) {
     const v = vigencias.get(ev);
     if (v.regla !== 'entrada') continue;
     const nombre = ev.ts && ev.acs ? `El humo ${ev.ts}` : `El portón ${path.basename(ev.path)}`;
     for (const [n, p] of v.vencidos) if (p.sinNoche) warnings.push(`AC#${n}: ${nombre} cuenta sólo por su entrada a main y toca firmas o frenos: al criterio le falta una prueba que corra de noche → no cuenta para él.`);
-    for (const n of v.riesgo) {
-      // el riesgo es de lo que cuenta sólo por su entrada: no de un criterio vencido ni de uno con otro humo vigente
-      if (v.vencidos.has(n) || freshSmokes.some((s) => vigencias.get(s).regla !== 'entrada' && s.acs.includes(n) && valePara(s, n))) continue;
-      if (!riesgoPorCriterio.has(n)) riesgoPorCriterio.set(n, new Set());
-      for (const c of v.contadas) for (const h of c.sinHistoria) riesgoPorCriterio.get(n).add(h);
-    }
   }
-  const aceptadoSinCobertura = [...riesgoPorCriterio].sort((a, b) => a[0] - b[0]).map(([ac, sinHistoria]) => ({ ac, sinHistoria: [...sinHistoria] }));
+  const aceptadoSinCobertura = [];
+  // Un criterio va al riesgo escrito si toda la evidencia que lo da por corrido cuenta para él sólo por su entrada, y es
+  // de una historia que no toca firmas ni frenos. Con otra evidencia vigente, el riesgo no es de esta regla.
+  const alRiesgo = (n, usadas) => {
+    const vs = usadas.map((ev) => vigencias.get(ev));
+    if (!vs.length || !vs.every((v) => v.porEntrada && v.porEntrada.has(n)) || !vs.some((v) => v.riesgo && v.riesgo.includes(n))) return;
+    const sinHistoria = new Set();
+    for (const v of vs) for (const c of v.contadas) for (const h of c.sinHistoria || []) sinHistoria.add(h);
+    aceptadoSinCobertura.push({ ac: n, sinHistoria: [...sinHistoria] });
+  };
   if (pedidosLeidos) {
     for (const archivo of new Set(pedidosLeidos.ilegibles.map((i) => path.basename(i.archivo)))) warnings.push(`Registro de pedidos ${archivo}: tiene renglones ilegibles → se ignoran.`);
   }
@@ -1973,11 +1991,12 @@ function compute(opts) {
       return false;
     });
     const gatesDelAc = freshPassGates.filter((g) => valePara(g, n));
+    const usadas = [];
     for (const re of rowEvidence) {
       if (!re.row.acRefs.includes(n)) continue;
       if (re.tier === 'runtime') {
         const gate = re.gates.find((g) => valePara(g, n));
-        if (gate) { runtime.push(`${re.row.tid} (${path.basename(gate.path)})`); fuentes.e2e.push(path.basename(gate.path)); }
+        if (gate) { runtime.push(`${re.row.tid} (${path.basename(gate.path)})`); fuentes.e2e.push(path.basename(gate.path)); usadas.push(gate); }
         else vencido.push(`${re.row.tid} (${re.ref}): ${vencioPor(re.gates[0], n)}`);
       } else if (re.tier === 'code') code.push(`${re.row.tid} (${re.ref})`);
       for (const h of re.simulado || []) simulados.push({ ac: n, ...h, fuente: `${re.row.tid}, portón E2E` });
@@ -1989,10 +2008,11 @@ function compute(opts) {
       // `node --test` o un gate de build, es evidencia de CÓDIGO — legítima, pero de otra clase:
       // el AC cae a NOT-VERIFIABLE/NOT-RUN y pasa por el camino explícito (declaración +
       // waiver del usuario) en vez de colarse como 🟢 RUNTIME.
-      if (e.evidenceKind === 'app-run' || LEGACY_SMOKE_KINDS) runtime.push(`smoke ${e.ts}`);
+      if (e.evidenceKind === 'app-run' || LEGACY_SMOKE_KINDS) { runtime.push(`smoke ${e.ts}`); usadas.push(e); }
       else code.push(`smoke ${e.ts} (${e.evidenceKind})`);
     }
     let verdict = runtime.length ? 'RUNTIME' : code.length ? 'CODE-ONLY' : 'SIN-EVIDENCIA';
+    if (verdict === 'RUNTIME') alRiesgo(n, usadas);
 
     // DODRT-C8: un AC que describe una ACCIÓN necesita evidencia de que la acción se EJECUTÓ,
     // no de que la pantalla se vio. Ver el bloque de la regla arriba.

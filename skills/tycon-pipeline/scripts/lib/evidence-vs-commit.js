@@ -105,7 +105,9 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return historiaDeLaRama(rama, { propia: historia, catalogo: catalogoLeido });
   };
 
-  function preguntar(carpeta, args, env = base) {
+  function preguntar(carpeta, pedido, env = base) {
+    // con `log.showSignature` prendido, git escribe la firma de cada commit antes del formato pedido y se leería como un commit
+    const args = pedido[0] === 'log' ? ['log', '--no-show-signature', ...pedido.slice(1)] : pedido;
     const clave = `${env === base ? '' : 'indice\0'}${carpeta}\0${args.join('\0')}`;
     if (!respuestas.has(clave)) respuestas.set(clave, correrGit(carpeta, args, env));
     return respuestas.get(clave);
@@ -535,15 +537,18 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
   function deQuienEs(carpeta, { asunto, padres }) {
     const pedidos = historia.pedidos ? pedidosDeLaHistoria() : null;
     if (catalogoLeido === undefined) catalogoLeido = historia.catalogo();
-    const de = historiaDeLaFusion(asunto, { repo: nombreDelRepo(carpeta), propia: historia, catalogo: catalogoLeido, pedidos });
+    const repo = nombreDelRepo(carpeta);
+    const deLa = (a) => historiaDeLaFusion(a, { repo, propia: historia, catalogo: catalogoLeido, pedidos });
+    const de = deLa(asunto);
     if (de === 'propia') return de;
     let asuntos = [asunto];
     if (padres.length > 1) {
-      const r = preguntar(carpeta, ['log', '--no-merges', '--format=%s', `${padres[0]}..${padres[1]}`]);
+      // también las fusiones de adentro: en un producto con `dev`, el pedido de la historia entra a `dev` y `dev` a main
+      const r = preguntar(carpeta, ['log', '--format=%s', `${padres[0]}..${padres[1]}`]);
       if (r.codigo !== 0) return undefined;
       asuntos = lineasDe(r);
     }
-    return asuntos.some((a) => nombraLaHistoria(a, historia.numero)) ? 'propia' : de;
+    return asuntos.some((a) => nombraLaHistoria(a, historia.numero) || deLa(a) === 'propia') ? 'propia' : de;
   }
 
   /**

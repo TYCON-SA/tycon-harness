@@ -45,9 +45,11 @@ const orden = (s) => [...s].sort((a, b) => a - b);
 
 test('T14 NightlyCoverage_DiariasYBanco_SemanalesNo @story-8.310 @ac-14', () => {
   const { raiz, pruebas } = arnes();
-  escribir(raiz, 'scripts/controls-bench/cases/hooks/90-caso.json', JSON.stringify({ __doc: 'T9 Caso @story-9.9 @ac-6.' }));
-  escribir(raiz, 'scripts/controls-bench/cases/advisors/revisor.json', JSON.stringify({ __doc: 'T9 Caso @story-9.9 @ac-7.' }));
-  escribir(raiz, 'scripts/controls-bench/cases/guides/guia.json', JSON.stringify({ __doc: 'T9 Caso @story-9.9 @ac-8.' }));
+  pruebas.push(escribir(raiz, 'scripts/controls-bench/cases/hooks/90-caso.json', JSON.stringify({ __doc: 'T9 Caso @story-9.9 @ac-6.' })));
+  pruebas.push(escribir(raiz, 'scripts/controls-bench/cases/advisors/revisor.json', JSON.stringify({ __doc: 'T9 Caso @story-9.9 @ac-7.' })));
+  pruebas.push(escribir(raiz, 'scripts/controls-bench/cases/guides/guia.json', JSON.stringify({ __doc: 'T9 Caso @story-9.9 @ac-8.' })));
+  // un caso del banco que la historia no declara no le da cobertura
+  escribir(raiz, 'scripts/controls-bench/cases/hooks/93-no-declarado.json', JSON.stringify({ __doc: 'T9 Caso @story-9.9 @ac-10.' }));
   // las marcas de la historia y del criterio en renglones distintos no dicen que esa prueba mire ese criterio
   pruebas.push(escribir(raiz, 'scripts/tests/diaria2.test.js', "// @story-9.9\ntest('otra @story-1.1 @ac-9', f);\n"));
   fs.writeFileSync(path.join(raiz, 'scripts/tests/suites.json'), JSON.stringify({
@@ -61,13 +63,27 @@ test('T14 NightlyCoverage_DiariasYBanco_SemanalesNo @story-8.310 @ac-14', () => 
 
 test('T14b NightlyCoverage_ListaOCasoIlegible_NoCuenta @story-8.310 @ac-14', () => {
   const roto = arnes({ suites: '{ esto no es json' });
-  escribir(roto.raiz, 'scripts/controls-bench/cases/hooks/90-caso.json', JSON.stringify({ __doc: '@story-9.9 @ac-6' }));
+  roto.pruebas.push(escribir(roto.raiz, 'scripts/controls-bench/cases/hooks/90-caso.json', JSON.stringify({ __doc: '@story-9.9 @ac-6' })));
   assert.deepStrictEqual(orden(criteriosConPruebaDeNoche({ raiz: roto.raiz, historia: '9.9', pruebas: roto.pruebas })), [6], 'sin lista no cuenta ninguna suite, y el banco sigue');
   const { raiz, pruebas } = arnes();
-  escribir(raiz, 'scripts/controls-bench/cases/hooks/91-roto.json', '{ "__doc": "@story-9.9 @ac-7"');
-  escribir(raiz, 'scripts/controls-bench/cases/hooks/92-bien.json', JSON.stringify({ casos: [{ nota: '@story-9.9 @ac-8' }] }));
+  pruebas.push(escribir(raiz, 'scripts/controls-bench/cases/hooks/91-roto.json', '{ "__doc": "@story-9.9 @ac-7"'));
+  pruebas.push(escribir(raiz, 'scripts/controls-bench/cases/hooks/92-bien.json', JSON.stringify({ casos: [{ nota: '@story-9.9 @ac-8' }] })));
   assert.deepStrictEqual(orden(criteriosConPruebaDeNoche({ raiz, historia: '9.9', pruebas })), [1, 2, 3, 8], 'un caso roto no cuenta y no tapa a los otros');
   assert.deepStrictEqual(orden(criteriosConPruebaDeNoche({ raiz: path.join(raiz, 'no-existe'), historia: '9.9', pruebas })), []);
+});
+
+test('NightlyCoverage_RenglonConOtraHistoria_SoloSusCriterios @story-8.310 @ac-14', () => {
+  const { raiz, pruebas } = arnes();
+  fs.writeFileSync(pruebas[0], "test('T1 @story-9.9 @ac-1 @story-9.8 @ac-2', f);\ntest('T2 @story-9.8 @ac-3 @story-9.9 @ac-4', f);\n");
+  assert.deepStrictEqual(orden(criteriosConPruebaDeNoche({ raiz, historia: '9.9', pruebas: [pruebas[0]] })), [1, 4]);
+});
+
+test('HistoriaSensible_RutaDesdeArribaOConPunto_EsSensible @story-8.310 @ac-13', () => {
+  const { historiaSensible } = require(path.join(__dirname, '..', 'lib', 'nightly-coverage.js'));
+  for (const rel of ['./skills/tycon-pipeline/scripts/marker.js', 'Proj/skills/tycon-pipeline/scripts/marker.js', '../Proj/skills/tycon-pipeline/scripts/marker.js']) {
+    assert.strictEqual(historiaSensible({ declarados: [rel], codigo: [] }), true, rel);
+  }
+  assert.strictEqual(historiaSensible({ declarados: ['src/a.js'], codigo: [] }), false);
 });
 
 test('T15 Signatures_ReglaDeEntrada_EsSensible @story-8.310 @ac-15', () => {
