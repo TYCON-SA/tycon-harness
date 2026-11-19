@@ -444,9 +444,8 @@ test('Guion_ForSession_SalidaDeOtraSesion_PorDelegacionYSinFirma', (t) => {
   };
   const delegacion = (perfil) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella: HUELLA }) });
   const DELEGA = { ...PERFIL, delegated_signing: ['lost-run'] };
-  // la ejecución perdida de ses-a, cerrada o rearmada desde la designada: aunque el perfil inyectado delegue lost-run (el
-  // lector del perfil de verdad lo saca, es de nivel 2), el freno deja pasar y el guion la niega: cerrarla como perdida
-  // o restaurarla lo decide una persona. El pedido no se gasta y la ejecución sigue abierta
+  // la ejecución perdida de ses-a, cerrada o rearmada desde la designada: con lost-run delegado en el perfil (una
+  // excepción de trámite), el freno deja pasar y el guion firma por delegación
   for (const args of [['clear-session', DESTINO, '--lost', '--for-session', DESTINO], ['restore', DESTINO, '--for-session', DESTINO]]) {
     const lab = laboratorioOtraSesion(t);
     designar(lab);
@@ -454,11 +453,10 @@ test('Guion_ForSession_SalidaDeOtraSesion_PorDelegacionYSinFirma', (t) => {
     const p = lab.pedir(lab.comando(args), { delegacion: delegacion(DELEGA) });
     assert.strictEqual(p.decision, 'allow', `${args[0]}: ${p.texto}`);
     const r = lab.correr(args);
-    assert.notStrictEqual(r.status, 0, `${args[0]}: ${r.stdout}${r.stderr}`);
-    assert.match(r.stderr, /cerrar como perdida una ejecución, o restaurarla, lo decide una persona/, args[0]);
-    assert.strictEqual(lab.gates().filter((g) => g.name === 'lost-run-signed').length, 0, args[0]);
-    assert.ok(!lab.gates().some((g) => g.name === 'run-close' && g.sesion === DESTINO), `${args[0]}: la ejecución sigue abierta`);
-    assert.strictEqual(lab.vigentes().length, 1, `${args[0]}: el pedido no se gasta`);
+    assert.strictEqual(r.status, 0, `${args[0]}: ${r.stdout}${r.stderr}`);
+    const firmadas = lab.gates().filter((g) => g.name === 'lost-run-signed');
+    assert.deepStrictEqual(firmadas.map((g) => g.via), ['delegacion'], args[0]);
+    assert.strictEqual(lab.vigentes().length, 0, `${args[0]}: el pedido se gasta`);
     // sin lost-run en el perfil, la misma salida pide la ventana del dueño
     const otro = laboratorioOtraSesion(t);
     designar(otro);

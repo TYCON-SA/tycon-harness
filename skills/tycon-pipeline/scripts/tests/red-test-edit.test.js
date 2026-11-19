@@ -147,12 +147,16 @@ test('ControlTest_AsksOwnerOnlySignature (T3) @story-8.166 @ac-3', (t) => {
   const abs = path.join(lab.repo, 'scripts', 'tests', 'del-freno.test.js');
   ow.firmarArchivo({ firma: 'red-control-test-edit', via: 'ventana', sesion: 'ses-a', archivo: abs, casa: lab.casa, ahora: Date.now() });
   assert.ok(!frena(lab.correr('scripts/tests/del-freno.test.js')), 'con la firma del dueño, pasa');
-  // es sólo del dueño: un perfil que la delega igual no la deja firmar a la coordinadora
+  // es una excepción de trámite: sin su nombre en el perfil no se delega, y con él siguen valiendo las demás llaves
   const ds = require(path.join(RAIZ, 'scripts', 'lib', 'delegated-signing.js'));
-  const d = ds.delegaSinVentana({ firma: 'escape:red-control-test-edit', sesion: 'coord', destino: 'ses-a', home: lab.casa, estado: lab.estado,
-    perfil: () => ({ delegated_signing: ['escape:red-control-test-edit'], owner_only: [], delegated_machines: ['*'] }), huella: () => ({ huella: 'h' }) });
-  assert.strictEqual(d.ok, false);
-  assert.match(d.motivo, /sólo del dueño|no se delega/);
+  const delega = (delegated_signing) => ds.delegaSinVentana({ firma: 'escape:red-control-test-edit', sesion: 'coord', destino: 'ses-a', home: lab.casa, estado: lab.estado,
+    perfil: () => ({ delegated_signing, owner_only: [], delegated_machines: ['*'] }), huella: () => ({ huella: 'h' }) });
+  const sinNombrar = delega(['plan-approval']);
+  assert.strictEqual(sinNombrar.ok, false);
+  assert.match(sinNombrar.motivo, /no delega/);
+  const nombrada = delega(['escape:red-control-test-edit']);
+  assert.strictEqual(nombrada.ok, false);
+  assert.match(nombrada.motivo, /delegated_machines/, 'pasa la lista del perfil y sigue con las demás llaves');
   // y está en el catálogo como firma de archivo, fuera del grupo que se delega junto
   const SIG = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
   assert.ok(SIG.FIRMAS_DE_ARCHIVO.includes('red-control-test-edit'));
