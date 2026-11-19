@@ -1658,10 +1658,11 @@ function repoDescartar(archivos) {
   git('add', '.'); git('commit', '-qm', 'base');
   return { repo, git, base: git('rev-parse', 'HEAD') };
 }
-// Corre lo que «descartar» manda a correr: el checkout tal cual, y el borrado de los archivos que lista como nuevos.
+// Corre lo que «descartar» manda a correr, en su orden: los comandos de git tal cual, y el borrado de los archivos que
+// lista como nuevos.
 function correrDescartar(stdout) {
   for (const l of stdout.split('\n')) {
-    if (/^ {2}git -C .* checkout /.test(l)) execFileSync('bash', ['-c', l.trim()], { encoding: 'utf8' });
+    if (/^ {2}git -C /.test(l)) execFileSync('bash', ['-c', l.trim()], { encoding: 'utf8' });
     const m = /^ {2}archivos nuevos del carril, para borrar: (.*)$/.exec(l);
     if (m) execFileSync('bash', ['-c', `rm -f -- ${m[1]}`], { encoding: 'utf8' });
   }
@@ -1721,6 +1722,116 @@ test('Descartar_RutaConCorchetes_NoPisaOtrosArchivos @story-8.190', () => {
   correrDescartar(r.stdout);
   assert.equal(fs.readFileSync(path.join(repo, 'src', '[id].ts'), 'utf8'), 'p\n', 'no volvió el archivo del carril');
   assert.equal(fs.readFileSync(path.join(repo, 'src', 'i.ts'), 'utf8'), 'de otra sesión\n', 'pisó src/i.ts');
+});
+
+// 🔴 Falla con: las reglas de ignorar leídas del árbol de hoy: el carril que vacía el .gitignore hace que el .env de antes
+//    (que la base ignoraba) salga nuevo y se mande a borrar.
+test('Descartar_GitignoreCambiado_ElIgnoradoDeLaBaseNoSeBorra @story-8.190', () => {
+  const home = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'home-'));
+  const { repo, git, base } = repoDescartar({ '.gitignore': '.env\n', 'src/a.ts': 'a\n' });
+  fs.writeFileSync(path.join(repo, '.env'), 'CLAVE=de-antes\n');
+  fs.writeFileSync(path.join(repo, '.gitignore'), '');
+  fs.writeFileSync(path.join(repo, '.env'), 'CLAVE=del-carril\n');
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'executeQuery("x");\n');
+  git('add', '.gitignore', 'src/a.ts'); git('commit', '-qm', 'el carril');
+  carrilFrenado(home, 'ses-dg', { files: ['.env', '.gitignore', 'src/a.ts'].map((r) => path.join(repo, r)), bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-dg', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  correrDescartar(r.stdout);
+  assert.ok(fs.existsSync(path.join(repo, '.env')), `se borró el .env\n${r.stdout}`);
+  assert.equal(fs.readFileSync(path.join(repo, '.gitignore'), 'utf8'), '.env\n');
+});
+
+// 🔴 Falla con: una regla que el carril agrega para su propio archivo nuevo lo hace pasar por «ignorado» y queda.
+test('Descartar_ReglaNuevaDelCarril_SuArchivoNuevoSeBorra @story-8.190', () => {
+  const home = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'home-'));
+  const { repo, base } = repoDescartar({ '.gitignore': 'node_modules\n', 'src/a.ts': 'a\n' });
+  fs.writeFileSync(path.join(repo, 'src', 'gen.ts'), 'del carril\n');
+  fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules\nsrc/gen.ts\n');
+  carrilFrenado(home, 'ses-dr', { files: ['src/gen.ts', '.gitignore'].map((r) => path.join(repo, r)), bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-dr', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  correrDescartar(r.stdout);
+  assert.ok(!fs.existsSync(path.join(repo, 'src', 'gen.ts')), `quedó el archivo nuevo del carril\n${r.stdout}`);
+});
+
+// 🔴 Falla con: un archivo que el carril agregó a git a la fuerza (sigue una regla de ignorar) contado como ignorado: no
+//    se borra aunque es del carril y git lo tiene en la rama.
+test('Descartar_AgregadoALaFuerza_SeBorra @story-8.190', () => {
+  const home = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'home-'));
+  const { repo, git, base } = repoDescartar({ '.gitignore': '*.local\n', 'src/a.ts': 'a\n' });
+  fs.writeFileSync(path.join(repo, 'app.local'), 'del carril\n');
+  git('add', '-f', 'app.local'); git('commit', '-qm', 'el carril');
+  carrilFrenado(home, 'ses-df', { files: [path.join(repo, 'app.local')], bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-df', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  correrDescartar(r.stdout);
+  assert.ok(!fs.existsSync(path.join(repo, 'app.local')), `quedó el archivo del carril\n${r.stdout}`);
+});
+
+// 🔴 Falla con: un movimiento que sólo cambia mayúsculas, en un disco que no las distingue: la ruta vieja y la nueva son el
+//    mismo archivo, y el borrado de la nueva se lleva el que el checkout acaba de devolver.
+test('Descartar_MovidoSoloMayusculas_NoBorraLoDevuelto @story-8.190', () => {
+  const home = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'home-'));
+  const largo = Array.from({ length: 20 }, (_, i) => `const v${i} = ${i};`).join('\n') + '\n';
+  const { repo, git, base } = repoDescartar({ 'src/util.ts': largo });
+  if (git('config', '--bool', 'core.ignorecase') !== 'true') return console.log('⏭ el disco distingue mayúsculas: NO MEDIDO');
+  git('mv', '-f', 'src/util.ts', 'src/Util.ts');
+  fs.writeFileSync(path.join(repo, 'src', 'Util.ts'), `${largo}executeQuery("x");\n`);
+  git('add', '-A'); git('commit', '-qm', 'el carril');
+  carrilFrenado(home, 'ses-dk', { files: [path.join(repo, 'src', 'Util.ts')], bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-dk', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  correrDescartar(r.stdout);
+  assert.deepEqual(fs.readdirSync(path.join(repo, 'src')), ['util.ts'], r.stdout);
+  assert.equal(fs.readFileSync(path.join(repo, 'src', 'util.ts'), 'utf8'), largo);
+});
+
+// 🔴 Falla con: un archivo movido dos veces (en un commit del carril y otra vez preparado) que vuelve a su ruta del medio y
+//    no a la de la base.
+test('Descartar_MovidoDosVeces_VuelveALaBase @story-8.190', () => {
+  const home = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'home-'));
+  const largo = Array.from({ length: 20 }, (_, i) => `const v${i} = ${i};`).join('\n') + '\n';
+  const { repo, git, base } = repoDescartar({ 'src/a.ts': largo });
+  git('mv', 'src/a.ts', 'src/medio.ts'); git('commit', '-qm', 'el carril 1');
+  git('mv', 'src/medio.ts', 'src/fin.ts');
+  fs.writeFileSync(path.join(repo, 'src', 'fin.ts'), `${largo}executeQuery("x");\n`);
+  git('add', '-A');
+  carrilFrenado(home, 'ses-d2', { files: [path.join(repo, 'src', 'fin.ts')], bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-d2', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  correrDescartar(r.stdout);
+  assert.equal(fs.readFileSync(path.join(repo, 'src', 'a.ts'), 'utf8'), largo, `no volvió a la ruta de la base\n${r.stdout}`);
+  assert.ok(!fs.existsSync(path.join(repo, 'src', 'fin.ts')), 'quedó la ruta nueva');
+});
+
+// 🔴 Falla con: un movimiento sin commitear: lo impreso borra la ruta nueva del disco pero la deja preparada, y el próximo
+//    commit la vuelve a agregar.
+test('Descartar_MovidoSinCommitear_NoQuedaPreparado @story-8.190', () => {
+  const home = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'home-'));
+  const largo = Array.from({ length: 20 }, (_, i) => `const v${i} = ${i};`).join('\n') + '\n';
+  const { repo, git, base } = repoDescartar({ 'src/viejo.ts': largo });
+  git('mv', 'src/viejo.ts', 'src/nuevo.ts');
+  fs.writeFileSync(path.join(repo, 'src', 'nuevo.ts'), `${largo}executeQuery("x");\n`);
+  git('add', '-A');
+  carrilFrenado(home, 'ses-du', { files: [path.join(repo, 'src', 'nuevo.ts')], bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-du', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  correrDescartar(r.stdout);
+  assert.equal(git('status', '--porcelain'), '', `quedó algo preparado o cambiado\n${r.stdout}`);
+});
+
+// 🔴 Falla con: un nombre que empieza con «:» leído por git como una instrucción: «:memory:» no sale ignorado y se manda a
+//    borrar.
+test('Descartar_NombreConDosPuntos_SigueIgnorado @story-8.190', () => {
+  const home = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'home-'));
+  const { repo, base } = repoDescartar({ '.gitignore': ':memory:\n', 'src/a.ts': 'a\n' });
+  fs.writeFileSync(path.join(repo, ':memory:'), 'de antes\n');
+  carrilFrenado(home, 'ses-dp', { files: [path.join(repo, ':memory:')], bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-dp', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  correrDescartar(r.stdout);
+  assert.ok(fs.existsSync(path.join(repo, ':memory:')), `se borró\n${r.stdout}`);
 });
 
 // 🔴 Falla con: el texto libre de la sesión pegado sin escapar en el comando que corre el dueño en su terminal.
