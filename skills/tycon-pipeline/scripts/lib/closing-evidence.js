@@ -54,7 +54,7 @@ function esEvidenciaDeCierre(nombre) {
 function evidenciaDeclaraFail(content) {
   if (!content) return false;
   if (/(^|\n)[ \t]*(?:[-*][ \t]*)?(?:\*\*)?verdict(?:[ \t]+global)?(?:\*\*)?[ \t]*[:=][ \t]*(?:\*\*)?[ \t]*FAIL\b/i.test(content)) return true;
-  if (/##[ \t]*verdict[ \t]+global[ \t]*\n+[ \t]*(?:\*\*)?FAIL\b/i.test(content)) return true;
+  if (/##[ \t]*verdict[ \t]+global[ \t]*(?:\r?\n)+[ \t]*(?:\*\*)?FAIL\b/i.test(content)) return true;
   return false;
 }
 

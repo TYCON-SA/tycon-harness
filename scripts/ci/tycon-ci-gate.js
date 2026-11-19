@@ -263,18 +263,40 @@ function esEvidenciaDeCierre(f) {
 function evidenciaDeclaraFail(content) {
   if (!content) return false;
   if (/(^|\n)[ \t]*(?:[-*][ \t]*)?(?:\*\*)?verdict(?:[ \t]+global)?(?:\*\*)?[ \t]*[:=][ \t]*(?:\*\*)?[ \t]*FAIL\b/i.test(content)) return true;
-  if (/##[ \t]*verdict[ \t]+global[ \t]*\n+[ \t]*(?:\*\*)?FAIL\b/i.test(content)) return true;
+  if (/##[ \t]*verdict[ \t]+global[ \t]*(?:\r?\n)+[ \t]*(?:\*\*)?FAIL\b/i.test(content)) return true;
   return false;
 }
 
-/** Lo que hay en git: el índice con `--staged`, `HEAD` sin él. `{ lista }` o `{ error }`: un git que falla no es «no hay». */
+/**
+ * Lo que hay en git: el árbol que va a escribir el commit con `--staged`, `HEAD` sin él. `{ lista, submodulos }` o
+ * `{ error }`: un git que falla no es «no hay». Con `--staged` se lista el árbol de `write-tree` y no `ls-files`: una
+ * ruta anotada con `git add -N` está en el índice sin contenido y el commit no la lleva. `submodulos`: los del primer
+ * nivel, donde también busca el disco; git del repo no lista lo que tienen adentro.
+ */
 function archivosEnGit(repo, staged) {
   try {
-    const salida = staged ? git(repo, ['ls-files', '-z']) : git(repo, ['ls-tree', '-r', '-z', '--name-only', 'HEAD']);
-    return { lista: salida.split('\0').filter(Boolean) };
+    const arbol = staged ? git(repo, ['write-tree']).trim() : 'HEAD';
+    const lista = [];
+    const submodulos = [];
+    for (const e of git(repo, ['ls-tree', '-r', '-z', arbol]).split('\0')) {
+      const m = /^\d+ (\w+) [0-9a-f]+\t(.+)$/s.exec(e);
+      if (!m) continue;
+      if (m[1] === 'blob') lista.push(m[2]);
+      else if (m[1] === 'commit' && !m[2].includes('/')) submodulos.push(m[2]);
+    }
+    return { lista, submodulos };
   } catch (_e) {
     return { error: staged ? 'git no listó lo que está por commitearse' : 'git no listó lo que trae el commit' };
   }
+}
+
+/** ¿Algún submódulo del primer nivel trae en el disco lo de la clave? Ahí el portón no puede decir «no está en git». */
+function enSubmodulo(repo, sub, prefijo, enGit) {
+  return !!(enGit && enGit.submodulos) && enGit.submodulos.some((s) => {
+    try {
+      return fs.readdirSync(path.join(repo, s, '.advisors', sub)).some((f) => f.startsWith(prefijo) && (sub !== 'dod-runtime' || esEvidenciaDeCierre(f)));
+    } catch (_e) { return false; }
+  });
 }
 
 // `.advisors/<sub>/<nombre>[/<archivo>]`, en la raíz o un nivel más abajo (monorepos), como la búsqueda en el disco.
@@ -992,7 +1014,10 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
     } else if (!exentaDod) {
       nivel('veredicto-de-la-evidencia', NIVELES.NO_MEDIDO);
     }
-    if (!exentaDod && !dodEnGit.length && hayEvidencia(repo, 'dod-runtime', idBruto, path.join(repo, rel), prefijoDeLaStory())) {
+    const dodEnDisco = !exentaDod && !dodEnGit.length && hayEvidencia(repo, 'dod-runtime', idBruto, path.join(repo, rel), prefijoDeLaStory());
+    if (dodEnDisco && enSubmodulo(repo, 'dod-runtime', prefijoDeLaStory(), gitDod)) {
+      // en un submódulo: pasa como antes de leer git, y su veredicto queda «no medido» (arriba)
+    } else if (dodEnDisco) {
       estricto('sin-evidencia-de-cierre', `pasa a \`${estadoNuevo}\` y ${noEstaEnGit(`su evidencia de cierre (\`.advisors/dod-runtime/${prefijoDeLaStory()}*\`)`, gitDod && gitDod.error)}.`);
     } else if (!exentaDod && !dodEnGit.length) {
       // Igual que la constancia de revisores (abajo): sin clave el portón no miró, y la salida no es declarar una
@@ -1025,7 +1050,10 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
     const gitRuns = estadoNuevo === 'done' && !exentaAdv && prefijoDeLaStory() ? listaDeGit() : null;
     const carpetasGit = gitRuns && gitRuns.lista ? carpetasEnGit(gitRuns.lista, prefijoDeLaStory()) : [];
     const constanciaEnGit = carpetasGit.some(({ nombre }) => nombre.startsWith(prefijoDeLaStory()));
-    if (estadoNuevo === 'done' && !exentaAdv && !constanciaEnGit && hayEvidencia(repo, 'pipeline-runs', idBruto, path.join(repo, rel), prefijoDeLaStory())) {
+    const runsEnDisco = estadoNuevo === 'done' && !exentaAdv && !constanciaEnGit && hayEvidencia(repo, 'pipeline-runs', idBruto, path.join(repo, rel), prefijoDeLaStory());
+    if (runsEnDisco && enSubmodulo(repo, 'pipeline-runs', prefijoDeLaStory(), gitRuns)) {
+      // en un submódulo: pasa como antes de leer git
+    } else if (runsEnDisco) {
       estricto('sin-constancia-de-revisores', `pasa a \`done\` y ${noEstaEnGit(`su carpeta de revisores (\`.advisors/pipeline-runs/${prefijoDeLaStory()}*/\`)`, gitRuns && gitRuns.error)}.`);
     } else if (estadoNuevo === 'done' && !exentaAdv && !constanciaEnGit) {
       const pref = prefijoDeLaStory();

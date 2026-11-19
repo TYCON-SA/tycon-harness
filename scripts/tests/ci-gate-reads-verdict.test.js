@@ -69,7 +69,8 @@ const revisar = (r, hoy, { staged = false, base } = {}) => gate.revisar({ repo: 
 
 test('T12 SondaC_FailVerdict_Blocks — la única evidencia declara FAIL, en sus tres formas, y frena desde la fecha @story-8.259 @ac-9', (t) => {
   assert.match(String(DESDE), /^\d{4}-\d{2}-\d{2}$/, 'el portón exporta STRICT_EVIDENCE_FROM');
-  for (const texto of ['verdict=FAIL\n', '- verdict: FAIL\n', '## Verdict global\n\nFAIL\n']) {
+  // la última, con los fines de línea de Windows tal como los guarda git
+  for (const texto of ['verdict=FAIL\n', '- verdict: FAIL\n', '## Verdict global\n\nFAIL\n', '# x\r\n## Verdict global\r\n\r\nFAIL\r\n']) {
     const r = aCerrar(t, 'review', { '.advisors/dod-runtime/1.1-20261110.md': texto });
     const res = revisar(r, DESDE);
     assert.deepStrictEqual(reglas(res.hallazgos), ['evidencia-de-cierre-falla'], `«${texto.trim()}»: ${JSON.stringify(res.hallazgos)}`);
@@ -147,6 +148,30 @@ test('T15 SondaD_StagedReadsIndex — con --staged la evidencia se busca en el �
   c.escribir('.advisors/pipeline-runs/1.1-20261110120000/review-roster.json', JSON.stringify(ROSTER));
   const res = revisar(c, DESDE, { staged: true });
   assert.deepStrictEqual(reglas(res.hallazgos), ['sin-constancia-de-revisores'], JSON.stringify(res.hallazgos));
+  // `git add -N` anota la ruta sin su contenido y el commit no la lleva: no está en lo que se va a commitear
+  const n = repoDeJuguete(t);
+  n.story('done'); n.agregar('specs/1-1.md');
+  n.escribir('.advisors/dod-runtime/1.1-20261110.md', 'verdict=FAIL\n');
+  n.escribir('.advisors/pipeline-runs/1.1-20261110120000/review-roster.json', JSON.stringify(ROSTER));
+  n.git('add', '-N', '.advisors');
+  const conN = revisar(n, DESDE, { staged: true });
+  assert.deepStrictEqual(reglas(conN.hallazgos), ['sin-evidencia-de-cierre', 'sin-constancia-de-revisores'], JSON.stringify(conN.hallazgos));
+  assert.match(de(conN.hallazgos, 'sin-evidencia-de-cierre')[0].mensaje, /git add/);
+
+  // la evidencia commiteada en un submódulo: git del repo no la lista, y eso no es «está sólo en el disco»
+  for (const staged of [false, true]) {
+    const m = repoDeJuguete(t);
+    const sub = path.join(m.dir, 'backend');
+    fs.mkdirSync(path.join(sub, '.advisors', 'dod-runtime'), { recursive: true });
+    fs.writeFileSync(path.join(sub, '.advisors', 'dod-runtime', '1.1-20261115.md'), '- verdict: PASS\n');
+    const enSub = (...a) => execFileSync('git', ['-C', sub, '-c', 'user.email=b@b', '-c', 'user.name=b', ...a], { stdio: 'pipe' });
+    enSub('init', '-q', '-b', 'main', '.'); enSub('add', '-A'); enSub('commit', '-q', '-m', 'sub');
+    m.story('review');
+    if (staged) m.git('add', '-A'); else m.commit();
+    const res2 = revisar(m, DESDE, { staged });
+    assert.deepStrictEqual(res2.hallazgos, [], `submódulo, staged=${staged}: ${JSON.stringify(res2.hallazgos)}`);
+    assert.deepStrictEqual(de(res2.avisos, 'sin-evidencia-de-cierre'), [], `submódulo, staged=${staged}: no avisa «sólo en el disco»`);
+  }
 });
 
 test('T16 SondaA_FolderNewInPr_RequiresRoster — una carpeta nueva en el pedido pide su registro, con el nombre que traiga @story-8.259 @ac-12', (t) => {
