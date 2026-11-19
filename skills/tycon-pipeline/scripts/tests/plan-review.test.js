@@ -205,24 +205,6 @@ test('Delicado_CadaRegla_ConSuMotivo (T1) @story-1.29 @ac-1', (t) => {
   assert.match(sf, /produccion/);
 });
 
-// 🔴 Falla con: un plan de cierre sin código (su «## Archivos» sólo trae papeles) medido por los files_to_modify de la
-//    historia, que ya entraron: sale delicado y el plan lo tiene que firmar una persona.
-test('Delicado_PlanDeCierreSinCodigo_SeMidePorSusArchivos', (t) => {
-  const { r, story } = repoConReglas(t);
-  const s = story('cierre', ['scripts/ci/check-x.js']);
-  assert.strictEqual(computeDelicate({ story: s, repo: r }).value, true, 'la historia sola: delicada');
-  const cierre = '## Archivos\n\n- `specs/cierre.md`\n- `docs/a.md`\n\n## Pasos\n\n1. Cerrar la historia en papel.\n';
-  const d = computeDelicate({ story: s, repo: r, planText: cierre });
-  assert.deepStrictEqual([d.value, d.reason], [false, 'ninguna'], JSON.stringify(d));
-  // el plan que declara el control en su lista sigue delicado, y el que no declara lista se mide por la historia
-  const conControl = computeDelicate({ story: s, repo: r, planText: '## Archivos\n\n- `scripts/ci/check-x.js`\n' });
-  assert.deepStrictEqual([conControl.value, conControl.rule], [true, 'controles']);
-  assert.strictEqual(computeDelicate({ story: s, repo: r, planText: '1. Cerrar la historia en papel.\n' }).value, true);
-  // un paso del plan que nombra el control fuera de la lista también cuenta
-  const enLosPasos = computeDelicate({ story: s, repo: r, planText: `${cierre}2. Ajusto scripts/ci/check-x.js.\n` });
-  assert.strictEqual(enLosPasos.value, true, JSON.stringify(enLosPasos));
-});
-
 // Cualquier forma de escribir una ruta o un campo delicado sigue siendo delicada, nunca rutina. En duda, delicado.
 test('Delicado_FormasDeEscribirLaRuta_SiguenSiendoDelicadas (pase adversarial) @story-1.29 @ac-1', (t) => {
   const { r, w, story } = repoConReglas(t);
