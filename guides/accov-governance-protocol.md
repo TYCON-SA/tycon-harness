@@ -455,7 +455,7 @@ Si una evidencia no cuenta por lo de arriba, la matriz hace una segunda pasada. 
 **Cómo se reconoce la entrada.** En la línea de primer padre de `origin/main`, lo probado se compara con el último commit anterior
 a la evidencia: si ya era igual, el archivo «ya estaba». Si no, con el primer commit posterior que cambió el archivo: si deja otro
 contenido, no entró lo que se probó, aunque después vuelva. Hace falta código declarado, sin contar pruebas ni `.json`, que haya entrado
-después de la evidencia. Una evidencia corrida después de la entrada se juzga como hasta ahora.
+después de la evidencia. Una evidencia tomada después de la entrada se juzga como hasta ahora.
 
 **Las pruebas y lo que cargan** se juzgan igual: un cambio ajeno no vence, y uno propio vence sólo los criterios de esa prueba. Con
 tandas que declaran `files`, lo que es sólo de otra tanda no cuenta.
