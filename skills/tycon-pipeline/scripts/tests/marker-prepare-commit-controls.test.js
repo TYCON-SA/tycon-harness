@@ -156,6 +156,64 @@ test('8.242-PrepararElPedido_CierrePorMarker_SinFotoSale2_ConVerdeLaToma (T29) @
   assert.strictEqual(c.marcador.prepareCommitHuellas[0].arbol, SO.huella(c.repo).arbol);
 });
 
+/**
+ * Un privado adelgazado de juguete con su hermano público declarado, y un gancho que corre `scripts/x.js` del arnés que
+ * le toque (`TYCON_GUIDES_DIR` o el «instalado», que no lo trae). `ramaPublica` es la rama del público.
+ */
+function privadoConPublico(t, ramaPublica) {
+  const instalado = tmp(t, 'foto-instalado-');
+  fs.mkdirSync(path.join(instalado, 'scripts'));
+  const pub = repo(t);
+  fs.writeFileSync(path.join(pub, 'version.json'), '{"version":"0.0.0"}\n');
+  fs.mkdirSync(path.join(pub, 'scripts'));
+  fs.writeFileSync(path.join(pub, 'scripts', 'x.js'), '// el guion nuevo del pedido público\n');
+  sh(pub, 'checkout', '-q', '-b', ramaPublica);
+  const priv = repo(t);
+  for (const [rel, txt] of [['.tycon/internal-forms.json', JSON.stringify({ layout: 'thin' })], ['scripts/ci/overlay-harness.js', '// de juguete\n'],
+    ['.tycon/advisors.yaml', `evidence:\n  companion_repos:\n    - ../${path.basename(pub)}\n`], ['specs/story-9.1-la-foto.md', '---\nstory: "9.1"\n---\n']]) {
+    fs.mkdirSync(path.dirname(path.join(priv, rel)), { recursive: true });
+    fs.writeFileSync(path.join(priv, rel), txt);
+  }
+  const anota = path.join(instalado, 'uso.txt');
+  gancho(t, priv, `d="\${TYCON_GUIDES_DIR:-${instalado}}"; printf '%s' "$d" > ${JSON.stringify(anota)}
+[ -f "$d/scripts/x.js" ] || { echo "falta scripts/x.js en $d" >&2; exit 1; }`);
+  return { priv, pub, instalado, story: path.join(priv, 'specs', 'story-9.1-la-foto.md'), uso: () => fs.readFileSync(anota, 'utf8') };
+}
+
+// 🔴 Falla con: un cierre de «Preparar» que no le pasa la historia a la foto (el guion nuevo de un público en una rama
+// que nombra la historia no se encuentra hasta el merge público), que la pasa tal cual sin resolver una ruta relativa, o
+// que con una rama que no nombra la historia toma ese público igual.
+test('PrepareCommit_PassesStoryToThePhoto @story-8.309 @ac-2 — con la historia, la foto encuentra el público de la rama que la nombra', (t) => {
+  const antes = process.env.TYCON_GUIDES_DIR;
+  delete process.env.TYCON_GUIDES_DIR;
+  t.after(() => { if (antes === undefined) delete process.env.TYCON_GUIDES_DIR; else process.env.TYCON_GUIDES_DIR = antes; });
+  // la rama pública se llama distinto que la privada (story/la-prueba) y nombra la historia
+  const p = privadoConPublico(t, 'wt/retoma-9.1');
+  let r = SO.fotoDelPedido({ repos: [p.priv], story: p.story });
+  assert.ok(Array.isArray(r.huellas), `con la historia: ${JSON.stringify(r)}`);
+  assert.strictEqual(p.uso(), p.pub, 'corre con el público de la historia');
+  // sin la historia, como hoy: el arnés instalado, que no trae el guion
+  r = SO.fotoDelPedido({ repos: [p.priv] });
+  assert.strictEqual(r.codigo, 2, JSON.stringify(r));
+  assert.strictEqual(p.uso(), p.instalado);
+  // una rama que no se llama como la privada ni nombra la historia no se toma, aunque venga la historia
+  const q = privadoConPublico(t, 'wt/acme-3');
+  r = SO.fotoDelPedido({ repos: [q.priv], story: q.story });
+  assert.strictEqual(r.codigo, 2, JSON.stringify(r));
+  assert.strictEqual(q.uso(), q.instalado);
+  // el cierre de «Preparar» le pasa la historia, resuelta como en el resto de marker.js (también relativa al repo)
+  const marker = fs.readFileSync(path.join(__dirname, '..', 'marker.js'), 'utf8');
+  assert.match(marker, /so\.fotoDelPedido\(\{ repos, story: resolveStoryPath\(marker\.storyPath, marker\) \|\| null \}\)/);
+});
+
+// 🔴 Falla con: un cierre que se cae, o que no toma la foto, cuando el marcador guarda la historia con una ruta relativa.
+test('PrepareCommit_RelativeStoryPath_PhotoTaken @story-8.309 @ac-2 — con la ruta de la historia relativa al repo, el paso cierra con su foto', { skip: process.platform === 'win32' }, (t) => {
+  const c = cierrePorMarker(t, { extra: { storyPath: path.join('specs', 'story-9.9-foto.md') } });
+  assert.strictEqual(c.r.status, 0, c.salida);
+  assert.ok((c.marcador.stepsCompleted || []).includes('prepare-commit'), c.salida);
+  assert.strictEqual(c.marcador.prepareCommitHuellas[0].arbol, SO.huella(c.repo).arbol);
+});
+
 // 🔴 Falla con: un marcador del esquema de números que cierra el paso 8 sin tomar la foto (el pull request frena para
 // siempre), o un cierre de otro paso que la toma.
 test('8.242-PrepararElPedido_EsquemaViejo_ElPaso8TomaLaFoto @story-8.242 @ac-4', () => {
