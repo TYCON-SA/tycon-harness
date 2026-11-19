@@ -85,7 +85,7 @@ function check(id, entryText, readFile, now = Date.now()) {
     if (f.mode === 'replace') {
       const d = dateOf(rule, body);
       if (!d.ok) return { why: `${f.path}: ${d.why}` };
-      if (d.t > now + FUTURE_MARGIN_MS) return { why: `${f.path}: su fecha es posterior a esta corrida (fecha futura)` };
+      if (d.t > now + FUTURE_MARGIN_MS) return { why: `${f.path}: su fecha es posterior a esta ejecución (fecha futura)` };
       files.push({ ...f, body, t: d.t, rule });
     } else {
       const sections = RT.sectionsOf(body);

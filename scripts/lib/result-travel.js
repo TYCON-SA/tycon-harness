@@ -73,7 +73,7 @@ function clean(text) {
 }
 
 function git(dir, args, { env, input } = {}) {
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', input, timeout: GIT_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024,
+  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', input, timeout: GIT_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, windowsHide: true,
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(env || {}) } });
   const timedOut = Boolean(r.error && r.error.code === 'ETIMEDOUT');
   return { ok: r.status === 0, status: r.status, raw: String(r.stdout || ''), out: String(r.stdout || '').trim(),
@@ -219,7 +219,7 @@ function publish({ repo, piece, files, message, home, log = () => {} }) {
     if (!url.ok || !url.out) return fail(why(url, 'el clon no tiene origin'));
     const transport = path.join(root, 'transport.git');
     if (!fs.existsSync(path.join(transport, 'HEAD'))) {
-      const init = spawnSync('git', ['init', '--quiet', '--bare', transport], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS });
+      const init = spawnSync('git', ['init', '--quiet', '--bare', transport], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true });
       if (init.status !== 0) return fail(`no pude armar la copia de transporte: ${String(init.stderr || '').trim()}`);
     }
     // una ruta local relativa vale desde el clon; leída desde la copia de transporte apuntaría a otro lado
