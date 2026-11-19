@@ -19,7 +19,8 @@
  * Sin ninguna de las tres piezas de la sesión, no hay ejecución y nada cambia.
  *
  * La salida es del dueño: `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, la firma `lost-run`
- * en la ventana de permiso o en su terminal. Desde la sesión designada, para otra sesión (`--for-session <sesión>`),
+ * en la ventana de permiso o en su terminal. El cartel da las dos formas con la ruta estable (`formasDeSalida`), y
+ * `abiertasDentro` dice qué ejecución abierta se perdería al borrar o mover una carpeta (@story-8.318). Desde la sesión designada, para otra sesión (`--for-session <sesión>`),
  * corre sin ventana si el perfil la delega: lo decide la ventana con `approvals.delegated_signing`.
  */
 const fs = require('fs');
@@ -288,15 +289,97 @@ const FALTA = {
   'registro-ilegible': 'el registro de aperturas (gates.log) existe y no se puede leer',
 };
 
-/** El cartel del freno: qué pieza falta, de qué historia, desde cuándo y la salida. */
-function cartel(r, { markerJs = 'marker.js' } = {}) {
+// la ruta estable de marker.js bajo la carpeta de la persona: no cambia al actualizar (la carpeta numerada de la versión
+// sí, y en Windows es la que ve `__dirname`) y no lleva `~`, que PowerShell no expande (@story-8.318)
+const MARKER_REL = '.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+
+/**
+ * El comando `node "<ruta estable>/marker.js" <resto>` y las dos formas de lanzarlo: `{ ventana, terminal, sinCitar }`.
+ * `ventana` lo corre el agente por la consola Bash y la persona lo aprueba en el cuadro; `terminal` lo pega la persona,
+ * con `--terminal --for-session <sesión>` (null sin una sesión conocida). Con una carpeta personal que no se puede citar,
+ * `signatureCommand` lo da con `$HOME`, que no es una firma: `sinCitar` y sólo vale la terminal.
+ */
+function formaDeMarker(resto, sesion, { home } = {}) {
+  const { signatureCommand } = require('./home-command.js');
+  const base = signatureCommand(MARKER_REL, home || os.homedir());
+  const comando = `${base} ${resto}`;
+  return { ventana: comando, terminal: ownerWindow().enLaTerminal(comando, sesion), sinCitar: base.includes('$HOME') };
+}
+
+/**
+ * La salida de una ejecución perdida, con sus dos formas: `{ salidas: [{ ventana, terminal, que }], renglones }`. Una sola
+ * función para los seis lugares que la imprimen (el cierre de turno, la consola, editar, el commit, marker.js y el aviso
+ * del arranque): ninguno arma la ruta a mano.
+ */
+function formasDeSalida(r, { home } = {}) {
+  const s = String(r.sesion);
+  const salidas = [
+    { ...formaDeMarker(`clear-session ${s} --lost`, s, { home }), que: 'la cierra como perdida' },
+    { ...formaDeMarker(`restore ${s}`, s, { home }), que: 'la reabre desde la copia de la apertura' },
+  ];
+  const { SIN_SESION_TERMINAL } = ownerWindow();
+  const sinCitar = salidas[0].sinCitar;
+  const renglones = [];
+  if (!sinCitar) {
+    renglones.push('En la ventana de permiso: el agente la lanza por la consola Bash y la persona la aprueba en el cuadro.');
+    for (const x of salidas) renglones.push(`  ${x.ventana}   (${x.que})`);
+  } else {
+    renglones.push('Tu carpeta personal tiene un carácter que no se puede citar: el comando sale con $HOME, que no es una firma de la ventana, y va en la terminal.');
+  }
+  renglones.push('En la terminal de la persona: con la consola PowerShell de la herramienta o en Codex no hay cuadro, y va ésta.');
+  for (const x of salidas) renglones.push(x.terminal ? `  ${x.terminal}   (${x.que})` : `  ${SIN_SESION_TERMINAL}`);
+  return { salidas, renglones };
+}
+
+/** El cartel del freno: qué pieza falta, de qué historia, desde cuándo y la salida, con sus dos formas. */
+function cartel(r, { home } = {}) {
   return [
     `🔴 EJECUCIÓN PERDIDA — la ejecución de la story ${r.story || '?'} (sesión ${r.sesion}), abierta ${r.desde || 'en una hora que no se pudo leer'}: ${FALTA[r.falta] || r.falta}.`,
-    'Hasta resolverla no se edita, no se escribe por consola, no se cierra el turno ni se commitea. Leer sí: cat, ls, grep, head, tail, git status/diff/log, marker.js get.',
-    'La salida la decide una persona, no el agente: la firma en la ventana de permiso o en su terminal (--terminal), con uno de estos comandos:',
-    `  node ${markerJs} clear-session ${r.sesion} --lost   (la cierra como perdida)`,
-    `  node ${markerJs} restore ${r.sesion}                (la reabre desde la copia de la apertura)`,
+    'Hasta resolverla no se edita, no se escribe por consola ni se commitea, y el turno se cierra a la segunda. Leer sí: cat, ls, grep, head, tail, git status/diff/log, marker.js get.',
+    'La salida la firma una persona, con uno de estos comandos:',
+    ...formasDeSalida(r, { home }).renglones,
   ].join('\n');
 }
 
-module.exports = { CAMPOS_DE_CIERRE, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, gatesPath, markerPath };
+/**
+ * Las ejecuciones abiertas cuya carpeta (`runDir`) está dentro de `carpeta`, o es ella: `{ ok: true, abiertas }` o
+ * `{ ok: false, error }` si el registro existe y no se puede leer. «Abierta» se lee en gates.log: una sesión cuyo último
+ * evento es `run-open` (decisión 4 de la 8.318). La copia del disco no decide: una vieja sin apertura vigente no deja la
+ * carpeta pegada. `carpeta` puede ser una lista; cada abierta trae en `en` la carpeta que la contiene.
+ */
+function abiertasDentro(carpeta, { home, eventos, platform = process.platform } = {}) {
+  const carpetas = [].concat(carpeta || []).filter(Boolean);
+  if (!carpetas.length) return { ok: true, abiertas: [] };
+  let ev = eventos;
+  if (!ev) {
+    const r = leerEventos(home);
+    if (!r.ok && !r.ausente) return { ok: false, error: r.error };
+    ev = r.ok ? r.eventos : [];
+  }
+  const ultimo = new Map();
+  for (const e of ev) ultimo.set(e.sesion, e);
+  const abiertas = [];
+  for (const e of ultimo.values()) {
+    if (e.name !== 'run-open' || !e.runDir) continue;
+    const en = carpetas.find((c) => dentroDe(e.runDir, c, platform));
+    if (en) abiertas.push({ sesion: e.sesion, story: e.story != null ? String(e.story) : null, runDir: e.runDir, ts: e.ts || null, en });
+  }
+  return { ok: true, abiertas };
+}
+
+/** ¿`hijo` es `padre` o está adentro? Como el sistema: en Windows sin distinguir barras ni mayúsculas; con los enlaces resueltos. */
+function dentroDe(hijo, padre, platform = process.platform) {
+  const formas = (p) => {
+    const out = [String(p)];
+    try { out.push(fs.realpathSync.native(String(p))); } catch { /* no existe o no se lee: vale la ruta dicha */ }
+    return out.map((x) => (platform === 'win32' ? x.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() : path.resolve(x)));
+  };
+  const sep = platform === 'win32' ? '/' : path.sep;
+  for (const h of formas(hijo)) for (const q of formas(padre)) {
+    if (h === q || h.startsWith(q.endsWith(sep) ? q : q + sep)) return true;
+  }
+  return false;
+}
+
+module.exports = { CAMPOS_DE_CIERRE, MARKER_REL, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, dentroDe, gatesPath, markerPath };

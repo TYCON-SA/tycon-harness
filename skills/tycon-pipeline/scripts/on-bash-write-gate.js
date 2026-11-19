@@ -1214,7 +1214,8 @@ const BORRA_O_MUEVE = new RegExp([
   String.raw`(?:^|[;&|(` + '`' + String.raw`'"\n]|\bcmd(?:\.exe)?\s+/[ck])\s*(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:del|erase|rd|ren|mi|ri)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
   String.raw`(?:^|\s)--?delete\b`,
   String.raw`(?:^|\s)-exec(?:dir)?\s+(?!` + LECTORES_DE_FIND + ')',
-  String.raw`\bgit\b[^\n;&|]*\s(?:rm|clean|checkout|restore|mv)\b`,
+  // `git worktree move` ya casa por `move` suelto, en la primera forma (@story-8.318)
+  String.raw`\bgit\b[^\n;&|]*\s(?:rm|clean|checkout|restore|mv|worktree\s+(?:remove|prune))\b`,
   String.raw`\b(?:unlinkSync|unlink|rmSync|rm|rmdirSync|rmdir|renameSync|rename|rmtree|removedirs|remove|replace|move|delete|rm_rf|rm_r|remove_dir|remove_entry(?:_secure)?)\s*\(`,
   String.raw`\bunlink\b`,
 ].join('|'), 'i');
@@ -3513,7 +3514,147 @@ function ejecucionPerdida(event) {
   if (soloLee(cmd, event?.tool_name === 'PowerShell' ? 'powershell' : 'bash', nativePath(event?.cwd || process.cwd()))) return null;
   const io = require('./lib/story-gate-io.js');
   io.appendLog(io.DEFAULT_STATE_DIR, 'gates.log', sessionId, { name: 'story-gate', status: 'blocked', kind: 'ejecucion-perdida', via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`, story: p.story, reason: `ejecución perdida (${p.caso}): ${p.falta}` });
-  return { block: or.cartel(p, { markerJs: path.join(__dirname, 'marker.js') }) + '\n' };
+  return { block: or.cartel(p) + '\n' };
+}
+
+// ── la carpeta de una ejecución abierta no se borra ni se mueve: primero se cierra la ejecución (@story-8.318) ────────
+
+/**
+ * Lo que el comando borra o mueve, para buscar adentro una ejecución abierta: `{ rutas: [{ raw, base? }], prune: [base] }`.
+ * Los borrados de un programa que borra (`rm -r`, `Remove-Item`, `rd`, `del`; no los de `git rm|checkout|restore`, que sólo
+ * tocan lo versionado, ni `find -delete`, que borra por nombre), los orígenes de `mv`, `Move-Item` y `Rename-Item`,
+ * también detrás de `cmd /c`, y la carpeta de `git worktree remove|move`. `prune` trae la carpeta desde la que corre cada
+ * `git worktree prune` (la de `-C`, o null para la del comando).
+ */
+function carpetasQueBorraOMueve(cmd) {
+  const sinCmd = String(cmd || '').replace(/(^|[;&|(\n]\s*)cmd(?:\.exe)?\s+\/[ck]\s+/gi, '$1');
+  const rutas = [];
+  const prune = [];
+  const ver = (texto, nivel) => {
+    for (const d of destinosBorrados(texto)) if (d.kind === 'delete' && !d.git) rutas.push({ raw: d.raw });
+    for (const raw of origenesMovidos(texto)) rutas.push({ raw });
+    for (const tramo of tramos(texto)) {
+      const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
+      const citados = textosCitados(tramo, texto);
+      if (nivel < 2) for (const w of palabras(tramo)) if (/\s/.test(w) && !citados.has(w)) ver(w, nivel + 1);
+      if (nombreDeComando(words[0] || '') !== 'git') continue;
+      let i = 1;
+      let base = null;
+      while (i < words.length && words[i].startsWith('-')) {
+        if (words[i] === '-C') { base = base ? `${base}/${words[i + 1]}` : words[i + 1]; i += 2; continue; }
+        if (['-c', '--git-dir', '--work-tree', '--namespace'].includes(words[i])) { i += 2; continue; }
+        i++;
+      }
+      if (words[i] !== 'worktree') continue;
+      const sub = words[i + 1];
+      const resto = words.slice(i + 2).filter((w) => !w.startsWith('-'));
+      if ((sub === 'remove' || sub === 'move') && resto[0]) rutas.push({ raw: resto[0], ...(base ? { base } : {}) });
+      if (sub === 'prune') prune.push(base);
+    }
+  };
+  ver(sinCmd, 0);
+  return { rutas, prune };
+}
+
+/**
+ * Las carpetas de trabajo que un `git worktree prune` corrido en `dir` olvidaría: las que git marca `prunable`.
+ * `{ ok: true, carpetas }`, o `{ ok: false, motivo }` si git no se pudo leer o no trae el campo `prunable` (anterior a
+ * 2.31): una carpeta anotada que ya no existe, sin la marca, no se sabe si se poda.
+ */
+function lasQuePoda(dir) {
+  const r = require('child_process').spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: dir, encoding: 'utf8', timeout: 10000, windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+  if (r.status !== 0) return { ok: false, motivo: `no pude leer las carpetas de trabajo de git (${String(r.stderr || (r.error && r.error.code) || 'sin salida').trim().split('\n')[0]})` };
+  const lista = [];
+  let cur = null;
+  for (const l of String(r.stdout).split(/\r?\n/)) {
+    if (l.startsWith('worktree ')) { cur = { path: nativePath(l.slice(9)), prunable: false, locked: false }; lista.push(cur); }
+    else if (cur && (l === 'prunable' || l.startsWith('prunable '))) cur.prunable = true;
+    else if (cur && (l === 'locked' || l.startsWith('locked '))) cur.locked = true;
+  }
+  const hayCampo = lista.some((w) => w.prunable);
+  const faltan = lista.slice(1).filter((w) => !w.locked && !fs.existsSync(w.path));
+  if (!hayCampo && faltan.length) return { ok: false, motivo: 'este git no marca qué carpetas poda (le falta el campo «prunable», anterior a 2.31): no pude saber qué se poda' };
+  return { ok: true, carpetas: lista.slice(1).filter((w) => w.prunable).map((w) => w.path) };
+}
+
+/** El cartel de «cerrá la ejecución antes»: cada ejecución con su historia, su sesión y cómo se cierra. */
+function cartelBorraAbierta(abiertas, sid, via) {
+  const or = require('./lib/open-runs.js');
+  const lineas = [`🔒 CERRÁ LA EJECUCIÓN ANTES — ${via} borra o mueve la carpeta de una ejecución abierta. Si se va, la ejecución queda perdida y para salir hace falta la firma de una persona.`];
+  for (const a of abiertas) {
+    const propia = a.sesion === String(sid);
+    const f = or.formaDeMarker(propia ? 'clear' : `clear-session ${a.sesion}`, a.sesion);
+    lineas.push(`  · story ${a.story || '?'} (sesión ${a.sesion}), su carpeta ${a.runDir}, dentro de ${a.en}.`);
+    lineas.push(propia
+      ? `    Cerrala antes, después del último push y del último pedido: ${f.ventana}`
+      : `    Es de otra sesión: se cierra desde esa sesión, con ${f.ventana}. Si esa sesión ya no está, la cierra una persona en su terminal: ${f.terminal}`);
+  }
+  lineas.push('Con la ejecución cerrada, el mismo comando pasa.');
+  return lineas.join('\n');
+}
+
+// El comando borra o mueve una carpeta que contiene la carpeta de una ejecución abierta (D4 de la 8.318: abierta según
+// gates.log). Sólo mira cuando el comando borra o mueve, y lee el registro sólo si hay una carpeta que exista en el disco
+// (o un `git worktree prune`). Un registro que no se puede leer frena: lo indecidible frena (8.121, decisión 13).
+function borraEjecucionAbierta(event) {
+  if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
+  const cmd = event?.tool_input?.command;
+  if (!cmd || !BORRA_O_MUEVE.test(String(cmd))) return null;
+  const { rutas, prune } = carpetasQueBorraOMueve(cmd);
+  if (!rutas.length && !prune.length) return null;
+  const baseCwd = nativePath(event?.cwd || process.cwd());
+  const cwds = carpetasDelComando(conLosCdDeSiempre(cmd), baseCwd);
+  const resolver = (raw, base, desde) => {
+    const ruta = expandirRuta(cmd, raw);
+    if (ruta.sinResolver.length) return null;
+    let dir = desde;
+    if (base) { const b = expandirRuta(cmd, base); if (b.sinResolver.length) return null; dir = resolveTarget(b.valor, desde, process.platform, { homeVariable: true }); }
+    return resolveTarget(ruta.valor, dir, process.platform, { homeVariable: true });
+  };
+  const esCarpeta = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+  const carpetas = new Set();
+  for (const desde of cwds) {
+    for (const d of rutas) {
+      const abs = resolver(d.raw, d.base, desde);
+      if (!abs) continue;
+      const lista = /[*?[]/.test(abs) ? expandirComodin(abs, desde) : [abs];
+      for (const x of lista) if (esCarpeta(x)) carpetas.add(x);
+    }
+  }
+  const sid = resolveSessionId(event?.session_id);
+  const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
+  const frena = (texto, reason, story) => {
+    // el registro se carga recién al frenar: una falla suya no cambia lo que pasa sin frenar
+    try { const io = require('./lib/story-gate-io.js'); io.appendLog(io.DEFAULT_STATE_DIR, 'gates.log', sid, { name: 'story-gate', status: 'blocked', kind: 'borra-ejecucion-abierta', via, story: story || null, reason }); } catch { /* el registro no traba el freno */ }
+    return { block: texto + '\n' };
+  };
+  const motivos = [];
+  if (prune.length) {
+    for (const desde of cwds) for (const b of prune) {
+      const dir = b ? resolver(b, null, desde) : desde;
+      if (!dir) { motivos.push('no pude resolver la carpeta del `git worktree prune`'); continue; }
+      const r = lasQuePoda(dir);
+      if (!r.ok) motivos.push(r.motivo);
+      else for (const c of r.carpetas) carpetas.add(c);
+    }
+  }
+  if (!carpetas.size && !motivos.length) return null;
+  const or = require('./lib/open-runs.js');
+  const r = or.abiertasDentro([...carpetas]);
+  if (!r.ok) {
+    return frena(`🔒 CERRÁ LA EJECUCIÓN ANTES — ${via} borra o mueve carpetas, y no pude leer el registro de aperturas (gates.log: ${r.error}): no sé si adentro hay una ejecución abierta, y lo que no se puede decidir frena.`, `registro ilegible: ${r.error}`);
+  }
+  if (r.abiertas.length) {
+    return frena(cartelBorraAbierta(r.abiertas, sid, via), `borra o mueve la carpeta de ${r.abiertas.map((a) => `la ejecución de la story ${a.story} (sesión ${a.sesion})`).join(', ')}`, r.abiertas[0].story);
+  }
+  if (motivos.length) {
+    // sin saber qué se poda, pesa sólo si hay alguna ejecución abierta en la máquina
+    const todas = or.abiertasDentro(path.parse(baseCwd).root);
+    if (!todas.ok || todas.abiertas.length) {
+      return frena(`🔒 CERRÁ LA EJECUCIÓN ANTES — ${via}: ${[...new Set(motivos)].join('; ')}. Hay una ejecución abierta en esta máquina y podar podría borrar el último rastro de su carpeta: lo que no se puede decidir frena. Cerrá la ejecución antes, o mirá con \`git worktree list --porcelain\` qué se poda.`, [...new Set(motivos)].join('; '));
+    }
+  }
+  return null;
 }
 
 // Lo que la coordinadora escribe o borra por la consola y el lector de destinos de siempre no ve: el origen de un `mv`,
@@ -3671,6 +3812,11 @@ function handle(event, opts = {}) {
     let perdida = null;
     try { perdida = ejecucionPerdida(event); } catch (e) { logHookError(e); perdida = { block: `🔴 EJECUCIÓN PERDIDA — no pude revisar las piezas de la ejecución (${e.message}): frena hasta poder mirarlas.\n` }; }
     if (perdida) return perdida;
+  }
+  {
+    let abierta = null;
+    try { abierta = borraEjecucionAbierta(event); } catch (e) { logHookError(e); abierta = { block: `🔒 CERRÁ LA EJECUCIÓN ANTES — no pude revisar si el comando borra la carpeta de una ejecución abierta (${e.message}): frena hasta poder mirarlo.\n` }; }
+    if (abierta) return abierta;
   }
   {
     let coordinadora = null;
@@ -4118,7 +4264,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA };
+module.exports = { handle, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA };
 
 if (require.main === module) {
   const cruda = leerEntrada();

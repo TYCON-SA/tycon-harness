@@ -213,6 +213,10 @@ const SHAPE = [
   '        with:',
   '          fetch-depth: 0',
   '          persist-credentials: false',
+  '      - name: Los comandos de la ejecución perdida en las tres consolas de Windows',
+  '        run: |',
+  '          node --test --test-name-pattern "T13 " skills/tycon-pipeline/scripts/tests/lost-run-loop.test.js',
+  '          exit $LASTEXITCODE',
   '      - name: El ensayo de Windows de este escenario',
   '        env:',
   '          SCENARIO: ${{ matrix.scenario }}',
@@ -712,6 +716,9 @@ const RULES = [
       const have = decl.length === 1 ? listAt(lines, lines.indexOf(decl[0])) : [];
       if (have.join(',') !== want.join(',')) return `el job \`windows\` ensaya los escenarios ${want.join(', ')}, todos y una vez (uno que falta queda sin ensayar), y dice: ${have.join(', ') || 'nada'}${decl.length ? ` (línea ${at(decl)})` : ''}`;
       if (!job.some((l) => /^node scripts\/ci\/windows-rehearsal\.js --scenario "\$env:SCENARIO" /.test(l.body))) return 'el job `windows` corre `node scripts/ci/windows-rehearsal.js` con el escenario de la matriz';
+      // los comandos de la ejecución perdida en las tres consolas (8.318, AC 12), con el código de la prueba
+      const consolas = job.findIndex((l) => l.body === 'node --test --test-name-pattern "T13 " skills/tycon-pipeline/scripts/tests/lost-run-loop.test.js');
+      if (consolas < 0 || !job[consolas + 1] || job[consolas + 1].body !== 'exit $LASTEXITCODE') return 'el job `windows` corre la T13 de `lost-run-loop.test.js` (los comandos de la ejecución perdida en PowerShell 5.1, PowerShell 7 y cmd) y sale con su código';
       return null;
     },
   },

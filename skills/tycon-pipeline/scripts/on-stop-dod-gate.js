@@ -53,6 +53,43 @@ function writeMarker(sessionId, m) {
   } catch { /* best-effort */ }
 }
 
+// El contador del freno de la ejecución perdida: un archivo por sesión con la apertura que frenó (@story-8.318). Tope 1:
+// frena el primer cierre y deja pasar el segundo seguido. `stop_hook_active` no decide nada: lo pone cualquier gancho de
+// Stop. A diferencia de coordination-fill-gate.js, un contador que no se puede leer o anotar frena (lo indecidible frena,
+// 8.121 decisión 13): el bucle vuelve, pero no se abre el freno sin saber.
+const LOST_DIR = path.join(STATE_DIR, 'lost-run-stop');
+const contadorPath = (sid) => path.join(LOST_DIR, `${String(sid || '_nosession').replace(/[^\w.-]/g, '_')}.json`);
+const aperturaDe = (p) => (p.desde ? String(p.desde) : `caso:${p.caso}`);
+function borrarContador(sid) {
+  try { fs.unlinkSync(contadorPath(sid)); } catch (e) {
+    if (e && e.code !== 'ENOENT') process.stderr.write(`[tycon-pipeline] no pude borrar el contador de la ejecución perdida (${e.code || e.message})\n`);
+  }
+}
+/** ¿Este cierre ya frenó una vez por la misma apertura? Si sí, borra el contador; si no, lo anota en 1. */
+function yaFreno(sid, p) {
+  const f = contadorPath(sid);
+  let c = null;
+  try { c = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {
+    if (e && e.code !== 'ENOENT' && !(e instanceof SyntaxError)) {
+      process.stderr.write(`[tycon-pipeline] no pude leer el contador de la ejecución perdida (${e.code || e.message}): frena\n`);
+      return false;
+    }
+  }
+  if (c && c.sesion === String(sid) && c.apertura === aperturaDe(p) && Number(c.frenos) >= 1) {
+    borrarContador(sid);
+    return true;
+  }
+  try {
+    fs.mkdirSync(LOST_DIR, { recursive: true });
+    const tmp = `${f}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ sesion: String(sid), apertura: aperturaDe(p), frenos: 1, at: new Date().toISOString() }) + '\n', 'utf8');
+    fs.renameSync(tmp, f);
+  } catch (e) {
+    process.stderr.write(`[tycon-pipeline] no pude anotar el contador de la ejecución perdida (${e.code || e.message}): frena igual\n`);
+  }
+  return false;
+}
+
 // Lo que la persona tiene que ver al cerrar (una historia que quedó en borrador sin validar): va con la salida que toque.
 let toPerson = null;
 function allowStop() {                                    // sin output → Claude para
@@ -161,13 +198,26 @@ function main() {
   const sessionId = resolveSessionId(event.session_id);
 
   // Una ejecución abierta a la que le falta una pieza no deja cerrar el turno (lib/open-runs.js): la salida es del dueño.
+  // Frena una vez por turno: el segundo cierre seguido pasa, con el cartel para la persona (@story-8.318). Editar, la
+  // consola, el commit y `marker.js clear` siguen frenados hasta la firma.
   {
     const or = require('./lib/open-runs.js');
     let p;
     try { p = or.perdida({ sid: sessionId, cwd: event.cwd || process.cwd() }); } catch (e) {
       p = { caso: 'ilegible', falta: `no pude revisar las piezas de la ejecución (${e.message})`, sesion: String(sessionId) };
     }
-    if (p) return blockStop(or.cartel(p, { markerJs: path.join(__dirname, 'marker.js') }));
+    if (!p) { borrarContador(sessionId); }
+    else {
+      const texto = or.cartel(p);
+      if (yaFreno(sessionId, p)) {
+        try {
+          require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'story-gate', status: 'allowed', kind: 'ejecucion-perdida-espera', story: p.story || null, reason: `el turno se cierra a la segunda con la ejecución perdida (${p.caso}): ${p.falta}` });
+        } catch (e) { process.stderr.write(`[tycon-pipeline] no pude anotar la espera de la ejecución perdida (${e.message})\n`); }
+        toPerson = `${texto}\nEl turno se cerró a la segunda: la ejecución sigue perdida hasta que una persona firme la salida.`;
+        return allowStop();
+      }
+      return blockStop(texto);
+    }
   }
 
   // Un borrador de la sesión sin validar: la orden concreta al agente, hasta un tope; después, el aviso a la persona.
