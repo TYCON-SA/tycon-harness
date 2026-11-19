@@ -326,13 +326,18 @@ test('T6 AgentSkillsPreCommit_StopsForeignCopy — frena la skill ajena copiada;
   };
   git(repo, ['add', '.githooks']);
   git(repo, ['commit', '-q', '-m', 'hook']);
+  // El tope sigue a la carga de la máquina: 1 s más cinco arranques de node medidos ahora (unos 40 ms con la máquina
+  // libre). Con la máquina cargada todo tarda más, y un tope fijo daba rojo sin que el control hubiera cambiado.
+  const arranque = () => { const t0 = Date.now(); spawnSync(process.execPath, ['-e', '0']); return Date.now() - t0; };
+  const tope = () => 1000 + 5 * Math.min(arranque(), arranque());
 
   write(repo, { 'skills/foo/SKILL.md': 'ajena copiada\n' });
   git(repo, ['add', 'skills/foo']);
   const r1 = commitWithHook('copio una ajena');
+  const tope1 = tope();
   assert.strictEqual(r1.status, 1, r1.out);
   assert.match(r1.out, /skills\/foo/);
-  assert.ok(r1.ms < 1000, `el control tardó ${r1.ms} ms`);
+  assert.ok(r1.ms < tope1, `el control tardó ${r1.ms} ms (tope ${tope1} ms)`);
   git(repo, ['reset', '-q', '--hard', 'HEAD']);
   fs.rmSync(path.join(repo, 'skills', 'foo'), { recursive: true, force: true });
 
@@ -350,8 +355,9 @@ test('T6 AgentSkillsPreCommit_StopsForeignCopy — frena la skill ajena copiada;
   write(repo, { 'notes/today.md': 'n\n' });
   git(repo, ['add', 'notes']);
   const r2 = commitWithHook('sólo notas');
+  const tope2 = tope();
   assert.strictEqual(r2.status, 0, r2.out);
-  assert.ok(r2.ms < 1000, `el commit sin rutas de skills tardó ${r2.ms} ms`);
+  assert.ok(r2.ms < tope2, `el commit sin rutas de skills tardó ${r2.ms} ms (tope ${tope2} ms)`);
 
   // si el git que pregunta «¿qué toca este commit?» falla, el control corre igual (con el manifiesto roto, frena):
   // un git de mentira que falla sólo en `diff --cached` y delega todo lo demás en el de verdad. El hook se corre

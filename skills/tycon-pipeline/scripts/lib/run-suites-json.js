@@ -398,7 +398,7 @@ function nombres(f) {
  * suites de la lista o más (con la regla de `namesTouched`), cada uno con lo que cambió adentro según change-names.js
  * contra la base de touched.json. `names: null` es «no sé qué cambió» (con `reason`): esa pieza no difiere nada.
  */
-function piezasCentrales({ repo, plan, files, base }) {
+function piezasCentrales({ repo, plan, files, bases }) {
   const { classifyFile } = require('./run-size.js');
   const candidatas = files.filter((f) => !esSuite(f) && classifyFile(f).kind === 'code');
   if (!candidatas.length) return [];
@@ -409,11 +409,35 @@ function piezasCentrales({ repo, plan, files, base }) {
     const rutas = new Set(plan.filter((p, i) => textos[i] !== null && formas.some((n) => textos[i].includes(n))).map((p) => p.ruta));
     if (rutas.size < PIEZA_CENTRAL_MIN) continue;
     let c = { known: false, reason: 'touched.json no trae la base' };
+    const b = baseDelArchivo(repo, bases, f);
+    if (b.reason) c = { known: false, reason: b.reason };
     // una falla al leer el cambio es «no sé», nunca un portón caído
-    if (base && base.ref) { try { c = changeNames({ repo, file: f, base: base.ref }); } catch (e) { c = { known: false, reason: `no pude leer el cambio (${e.message})` }; } }
+    else if (b.ref) { try { c = changeNames({ repo: b.repo, file: f, base: b.ref }); } catch (e) { c = { known: false, reason: `no pude leer el cambio (${e.message})` }; } }
     out.push({ file: f, stem: path.posix.basename(f).replace(/\.[^.]+$/, ''), rutas, names: c.known ? c.names : null, reason: c.known ? null : c.reason });
   }
   return out;
+}
+
+/**
+ * Las bases de touched.json: la de un repo (`base`, de touched-files.js) o, en el árbol armado, la de cada repo
+ * (`bases`, de private-tree.js: cada una con su `repo`). Sin `repo`, la base es del repo que se mide.
+ */
+function basesDeLoTocado(touched) {
+  if (touched.base && typeof touched.base.ref === 'string' && touched.base.ref) return [{ ...touched.base, repo: touched.base.repo || null }];
+  if (!Array.isArray(touched.bases)) return [];
+  return touched.bases.filter((b) => b && typeof b.ref === 'string' && b.ref && typeof b.repo === 'string' && b.repo);
+}
+
+/**
+ * Contra qué repo y qué base se lee el cambio de `file`: con una base sola, ésa; en el árbol armado, la del único repo
+ * que tiene el archivo. En los dos, o en ninguno, es «no sé» (`reason`): no se adivina contra qué base comparar.
+ */
+function baseDelArchivo(repo, bases, file) {
+  if (!bases.length) return { ref: null };
+  if (bases.length === 1 && !bases[0].repo) return { repo, ref: bases[0].ref };
+  const con = bases.filter((b) => fs.existsSync(path.join(b.repo, file)));
+  if (con.length === 1) return { repo: con[0].repo, ref: con[0].ref };
+  return { reason: con.length ? `${file} está en ${con.length} de los repos del árbol: no sé contra qué base comparar` : `${file} no está en ningún repo de las bases de touched.json` };
 }
 
 // ¿El texto nombra `n` como palabra entera? (`adhoc` sí en «adhoc set», no en «noadhocs»; también con letras fuera del
@@ -626,7 +650,7 @@ function main(argv, env = process.env) {
     return installerCrit;
   };
   // Con el portón acotado por el repo, las piezas centrales tocadas: sus suites lejanas al cambio quedan para la CI.
-  const centrales = byRepo && !light ? piezasCentrales({ repo, plan, files: touched.files, base: touched.base }) : [];
+  const centrales = byRepo && !light ? piezasCentrales({ repo, plan, files: touched.files, bases: basesDeLoTocado(touched) }) : [];
   const rootMissing = !isDir(skills);
   if (plan.some((p) => p.fromSkills)) console.log(`[suites.json] raíz agent-skills: ${skills} (salió de: ${skillsRoot.source})`);
   for (const p of plan) {
@@ -873,10 +897,15 @@ function main(argv, env = process.env) {
   // El repo acota el portón y no se sabe qué se tocó: corre todo. Se dice acá, lo último antes de la primera suite, con la
   // cantidad y cómo acotarla: quien la lanzó puede cortarla. La base tiene que ser ancestro de HEAD: `origin/main` solo
   // no sirve en una rama atrasada.
-  const base = touched.base && touched.base.ref ? touched.base : null;
-  resumen.seleccion = { base: base ? base.ref : null, fuente: base ? base.source : null, tocados: touched.known ? touched.files.length : null, corren: count, total: plan.length };
+  const basesSel = basesDeLoTocado(touched);
+  const base = basesSel.length === 1 ? basesSel[0] : null;
+  resumen.seleccion = { base: base ? base.ref : null, fuente: base ? base.source : null,
+    ...(basesSel.length > 1 ? { bases: basesSel.map((b) => ({ repo: b.repo, ref: b.ref, fuente: b.source || null })) } : {}),
+    tocados: touched.known ? touched.files.length : null, corren: count, total: plan.length };
+  const desde = base ? ` desde ${base.ref.slice(0, 7)} (${base.source})`
+    : basesSel.length > 1 ? ` desde ${basesSel.map((b) => `${b.ref.slice(0, 7)} en ${path.basename(b.repo)}`).join(' y ')}` : '';
   console.log(touched.known
-    ? `[suites.json] acotado a lo tocado: ${touched.files.length} archivos${base ? ` desde ${base.ref.slice(0, 7)} (${base.source})` : ''}: corren ${count} de ${plan.length}`
+    ? `[suites.json] acotado a lo tocado: ${touched.files.length} archivos${desde}: corren ${count} de ${plan.length}`
     : `[suites.json] sin acotar: ${touched.reason || 'no sé qué se tocó'}: corren ${count} de ${plan.length}`);
 
   const live = new Set();
