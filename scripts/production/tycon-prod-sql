@@ -34,7 +34,9 @@
 # usuario: Homebrew o el instalador de Microsoft). Rompe la regla de «sólo binarios de root» y se acepta con tres
 # condiciones: (a) `az` se busca en una lista fija de rutas absolutas, nunca en el PATH; (b) nunca recibe la clave de
 # la base ni nada del Llavero (corre con un entorno limpio); (c) sólo se le piden `account list`, `sql server list`,
-# `sql server show` y `sql server firewall-rule show|create|update|delete`, siempre con el nombre fijo `tycon-gate-<id de la máquina>`.
+# `sql server show` y `sql server firewall-rule show|create|update|delete`, siempre con el nombre fijo `tycon-gate-<id de la máquina>`,
+# y, al cerrar una regla sin lugar anotado, la consulta de si el nombre del servidor está libre (`rest` a
+# `Microsoft.Sql/checkNameAvailability`, que sólo lee).
 # La regla es de UNA sola IP, la que el propio Azure SQL informa al rechazar la conexión (error 40615): no se llama a
 # ningún servicio externo para saberla.
 #
@@ -381,9 +383,10 @@ correr_az(){ env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C /usr/
 # Deja SUB y RG del servidor CORTO. Ante una falla llama a $FALLA_AZ con el motivo y devuelve 1: el firewall sale ahí
 # (fallo_fw); los candados anotan «no sé» y siguen con el próximo servidor. $TOPE_DICE completa el motivo del tope.
 # Con `cero-vale`, un servidor que no aparece en ninguna suscripción devuelve 2 sin llamar a $FALLA_AZ, pero sólo si az
-# pudo listar todas: una suscripción que no contestó puede ser justo la que lo tiene.
+# pudo listar todas: una suscripción que no contestó puede ser justo la que lo tiene. Deja en SUB_LISTADA la primera
+# suscripción con forma válida (vacía si no hubo ninguna): la consulta del nombre se hace contra una de la cuenta.
 ubicar_servidor(){
-  local subs salida rc s rg encontrados=0 fallidas=0; SUB=""; RG=""
+  local subs salida rc s rg encontrados=0 fallidas=0; SUB=""; RG=""; SUB_LISTADA=""
   # las suscripciones activas: Enabled, y también Warned y PastDue, que siguen operando y tienen recursos
   subs="$(correr_az account list --query "$SUBS_ACTIVAS" -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
   salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
@@ -391,6 +394,7 @@ ubicar_servidor(){
   [ "$rc" = 0 ] || { "$FALLA_AZ" "az no pudo listar las suscripciones (código $rc): $(printf '%s' "$salida" | head -1). Si no iniciaste sesión: az login"; return 1; }
   for s in $subs; do
     printf '%s' "$s" | grep -qE '^[A-Za-z0-9-]+$' || continue
+    [ -n "$SUB_LISTADA" ] || SUB_LISTADA="$s"
     rg="$(correr_az sql server list --subscription "$s" --query "[?name=='$CORTO'].resourceGroup" -o tsv 2>/dev/null)"; rc=$?
     [ "$rc" = 142 ] && { "$FALLA_AZ" "az no contestó en ${AZ_TOPE} s (tope) al buscar el servidor. Reintentá."; return 1; }
     [ "$rc" = 0 ] || fallidas=$((fallidas+1))
@@ -703,7 +707,9 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
     # grupo): az pregunta por ese servidor puntual y tiene que contestar «no existe». Un listado vacío no alcanza: Azure
     # no muestra lo que la cuenta ya no puede ver, y un permiso vencido se leería como un servidor borrado. Si dice que
     # no existe, se busca en las demás suscripciones por si se movió. Sin lugar anotado (una regla abierta antes de
-    # anotarlo), un servidor que no aparece sigue siendo «no sé».
+    # anotarlo), un servidor que no aparece en ninguna suscripción se da por cerrado sólo si Azure dice que su nombre
+    # está libre: el nombre forma el punto de conexión público, así que no lo puede tener ningún servidor, tampoco uno
+    # que la cuenta no ve. Cualquier otra respuesta es «no sé».
     LUGAR="$(estado_fw location "$HOST" 2>/dev/null)" || LUGAR=""
     SUB_ANOTADA="${LUGAR%%|*}"; RG_ANOTADO="${LUGAR#*|}"
     [[ "$SUB_ANOTADA" =~ ^[A-Za-z0-9-]+$ ]] && [[ "$RG_ANOTADO" =~ ^[A-Za-z0-9._()-]+$ ]] || { SUB_ANOTADA=""; RG_ANOTADO=""; }
@@ -724,7 +730,31 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
       anotar "\"host\":\"$HOST\",\"accion\":\"close-firewall\",\"regla\":\"$REGLA\",\"sesion\":\"$SESION\"$POR,\"servidor\":\"borrado\",\"exit\":0"
       exit 0
     fi
-    [ "$UBICADO" = 1 ] || ubicar_servidor
+    if [ "$UBICADO" != 1 ]; then
+      ubicar_servidor cero-vale; rc=$?
+      if [ "$rc" = 2 ]; then
+        NO_APARECE="el servidor «${CORTO}» aparece en 0 lugar(es) entre tus suscripciones"
+        [ -n "$SUB_LISTADA" ] || fallo_fw "${NO_APARECE}, y tu cuenta no tiene ninguna suscripción válida donde mirarlo: no sé si sigue existiendo."
+        # stdout y stderr aparte: una advertencia de az en stderr no puede cambiar la respuesta
+        NOMBRE="$(correr_az rest --method post \
+          --uri "https://management.azure.com/subscriptions/$SUB_LISTADA/providers/Microsoft.Sql/checkNameAvailability?api-version=2023-08-01" \
+          --headers Content-Type=application/json \
+          --body "{\"name\":\"$CORTO\",\"type\":\"Microsoft.Sql/servers\"}" \
+          --query available -o json 2>"$_ESTADO/.az-err-$$")"; rc=$?
+        salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
+        [ "$rc" = 142 ] && fallo_fw "${NO_APARECE} y az no contestó en ${AZ_TOPE} s (tope) si su nombre está libre: no sé si sigue existiendo. Queda anotada como abierta."
+        [ "$rc" = 0 ] || fallo_fw "${NO_APARECE} y az no pudo consultar si su nombre está libre (código $rc): $(printf '%s' "$salida" | head -1). No sé si sigue existiendo: queda anotada como abierta."
+        [ "$NOMBRE" = false ] && fallo_fw "${NO_APARECE}, pero Azure dice que su nombre está en uso: el servidor existe en un lugar que tu cuenta no ve. Queda anotada como abierta."
+        [ "$NOMBRE" = true ] || fallo_fw "${NO_APARECE} y la consulta del nombre trajo una respuesta que no entiendo: no sé si sigue existiendo. Queda anotada como abierta."
+        # con la prueba: se saca del estado sólo si nadie la volvió a abrir mientras se preguntaba (sin entrada, una
+        # que haya aparecido tampoco coincide), y el cierre se anota sólo si el estado se pudo escribir
+        sacada="$(estado_fw remove "$HOST" "${REV:-sin-entrada}")" || fallo_fw "no pude sacar la regla del estado del firewall: no la doy por cerrada. Queda anotada como abierta."
+        [ "$sacada" = reabierta ] && fallo_fw "la regla $REGLA se volvió a abrir mientras preguntaba si el servidor existe: no la doy por cerrada."
+        echo "el servidor $CORTO ya no existe: no aparece en ninguna de tus suscripciones y Azure dice que su nombre está libre. Doy por cerrada la regla $REGLA (se borró con el servidor)"
+        anotar "\"host\":\"$HOST\",\"accion\":\"close-firewall\",\"regla\":\"$REGLA\",\"sesion\":\"$SESION\"$POR,\"servidor\":\"borrado\",\"prueba\":\"nombre-libre\",\"exit\":0"
+        exit 0
+      fi
+    fi
     salida="$(regla_az show 2>&1)"; rc=$?
     [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): la regla queda anotada como abierta. Reintentá: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
     if [ "$rc" = 0 ]; then
