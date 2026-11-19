@@ -127,6 +127,10 @@ function main() {
   if (!ls.ok) { console.error(`carry-night-results: no pude mirar ${RT.BRANCH}: ${quiet(ls.err)}`); return 1; }
   const f = git(repo, ['fetch', '--quiet', a.remote, `+refs/heads/${RT.BRANCH}:${TIP_REF}`]);
   if (!f.ok) { console.error(`carry-night-results: no pude traer ${RT.BRANCH}: ${quiet(f.err)}`); return 1; }
+  // una rama sin `runs/` (alguien empujó otra cosa) es «nada que llevar», igual que una rama que no existe
+  const top = git(repo, ['ls-tree', '--name-only', TIP_REF]);
+  if (!top.ok) { console.error(`carry-night-results: no pude listar la rama: ${quiet(top.err)}`); return 1; }
+  if (!top.out.split('\n').includes('runs')) { save(); console.log(`${RT.BRANCH} no trae entradas: nada que llevar`); return 0; }
   const list = git(repo, ['ls-tree', '--name-only', `${TIP_REF}:runs`]);
   if (!list.ok) { console.error(`carry-night-results: no pude listar las entradas: ${quiet(list.err)}`); return 1; }
 

@@ -220,6 +220,22 @@ test('T33 Carry_FutureDate_RejectedRealOneApplies @story-8.312 @ac-17', () => {
   assert.match(read(d, EXAM_REL), /2026-11-18T05:10/, 'el examen real llega al disco');
 });
 
+test('T35 Carry_BranchWithoutRuns_ExitsZeroEmptyRecord @story-8.312 @ac-18', () => {
+  // cualquiera con permiso de escritura puede empujar a la rama: una sin entradas es «nada que llevar», no un nocturno rojo
+  const w = world();
+  const d0 = path.join(w.raiz, 'sin-runs');
+  execFileSync('git', ['init', '-q', '-b', RT.BRANCH, d0]);
+  git(d0, ['config', 'user.email', 'lab@example.com']); git(d0, ['config', 'user.name', 'Lab']);
+  write(d0, 'README.md', 'nada\n');
+  git(d0, ['add', '-A']); git(d0, ['commit', '-q', '-m', 'sin entradas']);
+  git(d0, ['push', '-q', w.remote, `HEAD:refs/heads/${RT.BRANCH}`]);
+  const d = w.checkout();
+  const r = carry(d);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.deepStrictEqual(carried(d), { schema: 1, entries: {} });
+  assert.deepStrictEqual(changed(d), [RT.CARRIED]);
+});
+
 test('T32 Carry_NoBranchExitsZero_UnreadableBranchFails @story-8.312 @ac-18', () => {
   const w = world();
   const d = w.checkout();

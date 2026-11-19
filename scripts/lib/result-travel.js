@@ -140,13 +140,19 @@ function readMain(repo, rel) {
   return show.ok ? { state: 'ok', text: show.raw } : { state: 'error', text: null, motivo: why(show, 'no pude leer main') };
 }
 
-/** Las secciones de la revisión semanal de un texto: `[{ date, n, marker, text }]`. Lo que no es una sección, afuera. */
+/**
+ * Las secciones de la revisión semanal de un texto: `[{ date, n, marker, text }]`. Lo que no es una sección, afuera. Una
+ * sección abre en un encabezado seguido de su marca: una línea con forma de encabezado dentro del texto de una propuesta
+ * no la parte.
+ */
 function sectionsOf(text) {
   const out = [];
   let cur = null;
-  for (const line of String(text || '').replace(/\r\n/g, '\n').split('\n')) {
-    if (SECTION_HEAD.test(line)) { if (cur) out.push(cur); cur = { lines: [line] }; } else if (cur) cur.lines.push(line);
-  }
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  lines.forEach((line, i) => {
+    const opens = SECTION_HEAD.test(line) && (!cur || MARKER.test(lines[i + 1] || ''));
+    if (opens) { if (cur) out.push(cur); cur = { lines: [line] }; } else if (cur) cur.lines.push(line);
+  });
   if (cur) out.push(cur);
   return out.map((s) => {
     const body = `${s.lines.join('\n').replace(/\s*$/, '')}\n`;
@@ -216,7 +222,10 @@ function publish({ repo, piece, files, message, home, log = () => {} }) {
       const init = spawnSync('git', ['init', '--quiet', '--bare', transport], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS });
       if (init.status !== 0) return fail(`no pude armar la copia de transporte: ${String(init.stderr || '').trim()}`);
     }
-    const setUrl = git(transport, ['config', 'remote.origin.url', url.out]);
+    // una ruta local relativa vale desde el clon; leída desde la copia de transporte apuntaría a otro lado
+    const isLocal = !/^[a-z][a-z0-9+.-]*:\/\//i.test(url.out) && !/^[^/\\]+:/.test(url.out);
+    const target = isLocal && !path.isAbsolute(url.out) ? path.resolve(repo, url.out) : url.out;
+    const setUrl = git(transport, ['config', 'remote.origin.url', target]);
     if (!setUrl.ok) return fail(why(setUrl, 'no pude armar la copia de transporte'));
     const who = (k, def) => { const r = git(repo, ['config', k]); return r.ok && r.out ? r.out : def; };
     const name = who('user.name', 'arnés');

@@ -346,6 +346,29 @@ test('T13 Notice_UnreadableState_SaysItDoesNotKnow @story-8.312 @ac-11', () => {
   assert.match(l[0], /no sé si/);
 });
 
+test('T36 Publish_RelativeOrigin_ResolvedFromClone @story-8.312 @ac-2', () => {
+  // la copia de transporte vive en la carpeta de estado: una ruta relativa leída desde ahí apunta a otro lado
+  const w = world();
+  git(w.clone, ['remote', 'set-url', 'origin', path.relative(w.clone, w.remote)]);
+  const r = publishExam(w, new Date().toISOString());
+  assert.strictEqual(r.ok, true, r.motivo);
+  const b = branch(w);
+  assert.ok(b && b.ids.length === 1, 'la entrada llegó a night-results del remoto');
+});
+
+test('T37 WeeklyReview_HeadingInsideProposal_OneSection @story-8.312 @ac-4', () => {
+  const CARRY = require(path.join(ROOT, 'scripts', 'ci', 'carry-night-results.js'));
+  const texto = '## Revisión semanal 2026-11-17 — una — ⏳ PENDIENTE\n<!-- revision-semanal:2026-11-17:1 -->\n\n'
+    + 'La propuesta cita un encabezado:\n## Revisión semanal 2026-11-10 — otra cosa\n\nY sigue.\n';
+  const s = RT.sectionsOf(texto);
+  assert.strictEqual(s.length, 1, JSON.stringify(s));
+  assert.strictEqual(s[0].marker, '<!-- revision-semanal:2026-11-17:1 -->');
+  assert.ok(s[0].text.includes('Y sigue.'), 'el texto entero queda en la sección');
+  const entrada = { schema: 1, id: '20261117T000000000Z-weekly-aaaaa1', piece: 'weekly', ts: '2026-11-17T00:00:00.000Z', files: [{ path: LIST_REL, mode: 'append' }] };
+  const v = CARRY.check(entrada.id, JSON.stringify(entrada), () => texto, Date.parse('2026-11-17T12:00:00.000Z'));
+  assert.ok(!v.why, `la validación del nocturno la acepta: ${v.why}`);
+});
+
 test('T34 Notice_LibraryMissing_StaysQuiet @story-8.312 @ac-19', () => {
   // el aviso y la librería viajan juntos: sin ella el aviso calla, con o sin el examen al lado, como esperan los casos del
   // banco que lo copian solo
