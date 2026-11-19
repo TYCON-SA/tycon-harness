@@ -5810,6 +5810,7 @@ function sessionLiveness(sid) {
 // `promisedAt` la primera hora que prometió, contra la que la oficina compara. La primera corrección, en los 10 minutos de
 // la primera hora anotada, es un error de tipeo y la reemplaza; una sola, para que corregir seguido no renueve la ventana.
 // `--waiting-for "<qué espera>"`: no tiene hora porque depende de otro; queda desde cuándo (`waitingSince`), que no cambia mientras espere lo mismo.
+// `--kind main|session`, sólo con `--waiting-for`: a qué espera (`waitingKind`), para que la oficina la ponga en su grupo; sin él, a otra sesión.
 // La hora de fin que declara una sesión, «HH:MM», como fecha completa: la de hoy; la de mañana si quedaría más de 12 h
 // antes de ahora (a las 23:00, «01:30» es de mañana); la de ayer si quedaría más de 18 h después (a las 00:10, «23:30» es
 // de anoche, y ya pasó). Una hora mal escrita es null.
@@ -5866,18 +5867,30 @@ function cmdDoing(sub, arg) {
     process.stdout.write('doing: borrada\n');
     return;
   }
+  // antes de mirar la corrida: un `--kind` mal puesto es error de uso con una historia abierta o sin ella
+  const kindAt = process.argv.indexOf('--kind');
+  const waitingKind = kindAt >= 0 ? process.argv[kindAt + 1] : null;
+  const forAt = process.argv.indexOf('--waiting-for');
+  const waitsFor = forAt >= 0 && process.argv[forAt + 1] && !process.argv[forAt + 1].startsWith('--');
+  const kindArgs = process.argv.filter((a) => a === '--kind' || a.startsWith('--kind='));
+  if (kindArgs.length && (kindArgs.length > 1 || kindAt < 0 || !waitsFor || !['main', 'session'].includes(waitingKind))) {
+    console.error('marker.js doing: --kind va una vez, con --waiting-for y su texto, y vale main o session');
+    process.exit(2);
+  }
+  // la clase puede ir antes que la espera: es la misma espera sin texto
+  const waitOnly = sub === '--waiting-for' || (sub === '--kind' && waitsFor);
   // con una ejecución abierta, su paso ya dice qué hace y a qué hora termina: una nota encima la muestra en pausa. Pasa
   // sólo la espera de un turno sin texto, que es de la historia (la respetan las podas y el aviso al dueño)
   // un marcador ilegible no es «sin historia»: frena en vez de anotar como si no hubiera
   frenarSiIlegible(markerFilePath(SID), SID, 'doing');
   const run = readMarker();
-  if (run && sub !== '--waiting-for') {
+  if (run && !waitOnly) {
     console.error(`marker.js doing: no se anotó nada — esta sesión tiene abierta la historia ${run.storyId}, y su paso ya dice qué hace y a qué hora termina; si deja la historia por otro trabajo, eso es otra sesión (si espera un turno: marker.js doing --waiting-for "<qué espera>")`);
     process.exit(3);
   }
   let prev = null;
   try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_e) { /* sin nota, o rota: no hay nada que conservar */ }
-  const onlyHour = sub === '--until' || sub === '--waiting-for';
+  const onlyHour = sub === '--until' || waitOnly;
   if (onlyHour && !run && !(prev && prev.text)) { console.error('marker.js doing: sin una nota anotada, la hora va con su texto — uso: marker.js doing "<qué hago>" --until HH:MM'); process.exit(2); }
   const text = run ? '' : onlyHour ? prev.text : String(sub || '').replace(/\s+/g, ' ').trim();
   if (!run && (text.length < 8 || text.length > 200)) {
@@ -5907,7 +5920,7 @@ function cmdDoing(sub, arg) {
   const promisedAt = same && !corrects ? prev.promisedAt || prev.endAt || null : null;
   const waitingSince = !waitingFor ? null : (same && prev.waitingFor === waitingFor && prev.waitingSince) || now;
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ ...(text ? { text } : {}), at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince } : {}) }));
+  fs.writeFileSync(file, JSON.stringify({ ...(text ? { text } : {}), at: now, ...(endAt ? { endAt } : {}), ...(promisedAt ? { promisedAt } : {}), ...(firstHourAt ? { firstHourAt } : {}), ...(corrects || (same && prev.hourCorrected) ? { hourCorrected: true } : {}), ...(waitingFor ? { waitingFor, waitingSince, ...(waitingKind ? { waitingKind } : {}) } : {}) }));
   avisarOficina();
   appendLog('doing.log', { kind: 'DOING_SET', ...(text ? { text } : {}), ...(endAt ? { endAt } : {}), ...(waitingFor ? { waitingFor } : {}) });
   if (endAt) warnPastUntil('doing', endAt);
