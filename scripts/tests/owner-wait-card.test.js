@@ -335,3 +335,44 @@ test('OWR7 Doing_KindUsageErrors @story-8.293 @ac-13', (t) => {
   assert.strictEqual(note().waitingFor, 'que main arranque');
   assert.strictEqual(note().waitingKind, 'main');
 });
+
+test('OWR8 Waits_SeenWithNothingToDo @story-8.293 @ac-13', () => {
+  // sin nada en «Te toca», el bloque que se pliega no se abre: las esperas van afuera y se ven igual
+  const { data } = buildOffice({ wip: toyWip([waiting('Sesion', 'a Pedro', { waitingKind: 'session' })]), nowMs: NOW, ownerCard: stubCard });
+  assert.deepStrictEqual(data.meta.teToca, []);
+  assert.strictEqual(data.meta.esperan.sesion.length, 1, JSON.stringify(data.meta.esperan));
+  const html = page(data);
+  const count = (str, what) => str.split(what).length - 1;
+  const folded = html.indexOf('id="resumenListas"'), at = html.indexOf('<div class="esperan" id="esperan"');
+  assert.ok(folded > html.indexOf('<div class="resumen" id="resumen">') && at > folded, JSON.stringify([folded, at]));
+  const after = html.slice(folded, at);
+  assert.strictEqual(count(after, '</div>') - count(after, '<div'), 1, 'después de cerrar lo que se pliega');
+  assert.strictEqual(count(html.slice(at, html.indexOf('<div class="interruptor">')), '</div>'), 2, 'y antes de cerrar #resumen');
+  assert.match(html, /renderEsperan\(meta&&meta\.esperan\)/, 'cada foto la vuelve a pintar');
+  const el = html.match(/const el=(\([^\n]*\});\n/)[1];
+  const summary = html.match(/const RESUMEN_KEY=[\s\S]*?b\.onclick=[^\n]*\n/)[0];
+  const groups = html.match(/const GRUPOS_ESPERA=[^\n]*\nfunction renderEsperan\([^\n]*\n/)[0];
+  const text = (n) => (n.textContent || '') + n.children.map(text).join('');
+  const draw = (esperan) => {
+    const node = (tag) => {
+      const n = { tag, className: '', textContent: '', hidden: false, children: [], attrs: {} };
+      n.appendChild = (c) => { n.children.push(c); return c; };
+      n.replaceChildren = (...cs) => { n.children = cs; };
+      n.setAttribute = (k, v) => { n.attrs[k] = v; };
+      return n;
+    };
+    const byId = {};
+    for (const id of ['resumen', 'resumenLinea', 'resumenListas', 'esperan']) byId[id] = node('div');
+    byId.resumen.classList = { toggle() {} };
+    const document = { createElement: node, getElementById: (id) => byId[id] || null, createTextNode: (textContent) => ({ textContent, children: [] }) };
+    new Function('document', 'localStorage', `const el=${el};${summary}${groups};pintarResumen(0,0);renderEsperan(${JSON.stringify(esperan)});`)(document, { getItem: () => '1', setItem() {} });
+    return byId;
+  };
+  const shown = draw(data.meta.esperan);
+  assert.strictEqual(shown.resumenListas.hidden, true, 'sin nada que mostrar, las listas no se abren');
+  assert.strictEqual(shown.esperan.hidden, false, 'las esperas se ven igual');
+  assert.match(text(shown.esperan), /Esperan a otra sesión/);
+  assert.match(text(shown.esperan), /Sesion/);
+  assert.strictEqual(draw({ dueno: [], main: [], sesion: [] }).esperan.hidden, true, 'sin esperas queda oculto');
+  assert.strictEqual(draw(undefined).esperan.hidden, true);
+});

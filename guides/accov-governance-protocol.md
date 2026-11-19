@@ -437,7 +437,33 @@ de prueba afuera. De qué historia es un commit se lee del nombre de la rama, en
 sabe, vence: un commit directo, un squash, `Merged PR N: título`, una rama sin historia o con dos. Un cambio de otra historia en
 una prueba no vence por decisión del dueño, y afloja el control a propósito: una prueba que esa historia cambió puede no probar
 ya lo mismo. La misma historia que corrige su prueba después de la evidencia, sí la vence: esa prueba quizá daba verde por estar
-mal. Un cambio de código vence siempre, aunque venga junto con una prueba.
+mal. Un cambio de código vence, aunque venga junto con una prueba, salvo por la regla de la entrada que sigue.
+
+### La historia se cierra con el código con que entró a main
+
+Si una evidencia no cuenta por lo de arriba, la matriz hace una segunda pasada. Son cinco reglas:
+
+1. Una historia queda terminada si el código con que entró a `main` es, por contenido, el que se probó. Se juzga contra el
+   commit de entrada, no contra el `main` de hoy.
+2. Si la propia historia tocó su código o su prueba después de probar, la evidencia vence.
+3. Lo que otra historia rompa después lo avisa el nocturno, como rotura nueva, sin reabrir la historia.
+4. Firmas y frenos necesitan además una prueba de noche: una suite de `diarias` o un caso de `cases/hooks` del banco, con
+   las marcas de la historia y del criterio juntas. Sensible es lo mismo que para el ok de guardar: la lista `SENSITIVE`, y el código que
+   carga un archivo de firmas o de avisos.
+5. Lo demás, sin prueba de noche, se acepta con el riesgo escrito: la matriz lo lista en «Aceptado sin cobertura posterior».
+
+**Cómo se reconoce la entrada.** En la línea de primer padre de `origin/main`, lo probado se compara con el último commit anterior
+a la evidencia: si ya era igual, el archivo «ya estaba». Si no, con el primer commit posterior que cambió el archivo: si deja otro
+contenido, no entró lo que se probó, aunque después vuelva. Hace falta código declarado, sin contar pruebas ni `.json`, que haya entrado
+después de la evidencia. Una evidencia tomada después de la entrada se juzga como hasta ahora.
+
+**Las pruebas y lo que cargan** se juzgan igual: un cambio ajeno no vence, y uno propio vence sólo los criterios de esa prueba. Con
+tandas que declaran `files`, lo que es sólo de otra tanda no cuenta.
+
+**De quién es una fusión posterior.** Es propia, y vence, si lo dice el registro de pedidos, si su rama nombra la historia o si el
+asunto de alguno de sus commits nombra su número. Una fusión sin historia conocida no vence: se nombra en el aviso, y si era de la propia
+historia la regla 2 no la ve. El registro es `<clave>-pedidos.jsonl`, en la carpeta de evidencia; se puede editar a mano, como el
+nombre de una rama, y por eso sólo se usa acá, donde únicamente puede vencer de más.
 
 El ancla la anotan el humo y el portón al correr, por cada repo hermano: su commit y la huella de hasta 50 archivos sin commitear. Vale
 la del espejo: el registro y el portón viajan con el código y se editan. Si su commit no está en el clon, o el hermano no dejó

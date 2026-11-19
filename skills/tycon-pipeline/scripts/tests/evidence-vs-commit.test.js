@@ -741,3 +741,273 @@ test('EvidenceVsCommit_StoryNumberWithRegexChars_ReadsItsCriteria @story-8.263 @
     assert.deepStrictEqual([r.cuenta, r.regla, r.criterios], [false, 6, [4]], `${numero}: ${JSON.stringify(r)}`);
   }
 });
+
+// ---------------------------------------------------------------- la regla de la entrada a main (historia 8.310)
+
+const BASE_ENTRADA = Math.floor(Date.now() / 1000) - 12 * 3600;
+const HISTORIA_ENTRADA = { numero: '9.9', clave: '9.9', archivo: '/h/9.9.md' };
+
+function fijarOrigen(repo) { git(repo, ['update-ref', 'refs/remotes/origin/main', 'refs/heads/main']); }
+const conFecha = (t) => ({ GIT_COMMITTER_DATE: `${t} +0000`, GIT_AUTHOR_DATE: `${t} +0000` });
+const blobDe = (repo, rev, rel) => git(repo, ['rev-parse', `${rev}:${rel}`]);
+
+function enRama(repo, rama, cambios, t, mensaje = 'cambio', desde = 'main') {
+  git(repo, ['switch', '-q', '-C', rama, desde]);
+  for (const [rel, texto] of Object.entries(cambios)) escribir(repo, rel, texto);
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', mensaje], conFecha(t));
+  return git(repo, ['rev-parse', 'HEAD']);
+}
+
+// Una fusión de pedido a main, con el asunto que escribe la plataforma. Devuelve su commit corto.
+function fusionarPedido(repo, rama, numero, t) {
+  git(repo, ['switch', '-q', 'main']);
+  git(repo, ['merge', '-q', '--no-ff', '-m', `Merge pull request #${numero} from org/${rama}`, rama], conFecha(t));
+  fijarOrigen(repo);
+  return git(repo, ['rev-parse', '--short', 'HEAD']);
+}
+
+/** El repo del código (`Codigo`, con `origin/main`) y el de las historias, con el renglón del humo ya commiteado. */
+function labEntrada() {
+  const ws = carpeta();
+  const codigo = repoNuevo(ws, 'Codigo');
+  const historias = repoNuevo(ws, 'Historias');
+  escribir(codigo, 'src/a.js', '// a0\n');
+  escribir(codigo, 'src/b.js', '// b0\n');
+  escribir(codigo, 'tests/a.test.js', '// @story-9.9 @ac-1\n');
+  git(codigo, ['add', '-A']);
+  git(codigo, ['commit', '-q', '-m', 'inicio'], conFecha(BASE_ENTRADA));
+  fijarOrigen(codigo);
+  const tsHumo = BASE_ENTRADA + 200;
+  const anclaCommit = enRama(codigo, 'wt/Uno', { 'src/a.js': '// a1 probado\n' }, BASE_ENTRADA + 100);
+  const linea = JSON.stringify({ ts: new Date(tsHumo * 1000).toISOString(), story: '9.9', acs: [1], exit: 0 });
+  const ruta = escribir(historias, '.advisors/dod-runtime/9.9-smoke-ledger.jsonl', `${linea}\n`);
+  git(historias, ['add', '-A']);
+  git(historias, ['commit', '-q', '-m', 'evidencia'], conFecha(BASE_ENTRADA + 250));
+  const evidencia = { ruta, tsMs: tsHumo * 1000, linea, ancla: [{ repo: 'Codigo', commit: anclaCommit }] };
+  return { ws, codigo, historias, evidencia, a: path.join(codigo, 'src/a.js'), b: path.join(codigo, 'src/b.js'), prueba: path.join(codigo, 'tests/a.test.js'), anclaCommit };
+}
+
+test('Entrada_CambioPropioQueEntraPorDev_Vence @story-8.310 @ac-7', () => {
+  const f = labEntrada();
+  fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+  // la historia corrige su código después: su pedido entra a dev con su número registrado, y después dev entra a main
+  git(f.codigo, ['switch', '-q', '-C', 'dev', 'main']);
+  enRama(f.codigo, 'wt/Dos', { 'src/a.js': '// a2 propio\n' }, BASE_ENTRADA + 350, 'cambio', 'dev');
+  git(f.codigo, ['switch', '-q', 'dev']);
+  git(f.codigo, ['merge', '-q', '--no-ff', '-m', 'Merge pull request #12 from org/wt/Dos into dev', 'wt/Dos'], conFecha(BASE_ENTRADA + 360));
+  git(f.codigo, ['switch', '-q', 'main']);
+  git(f.codigo, ['merge', '-q', '--no-ff', '-m', 'Merge pull request #13 from org/dev into main', 'dev'], conFecha(BASE_ENTRADA + 400));
+  fijarOrigen(f.codigo);
+  const r = juezDeEntrada([['Codigo#12', ['9.9']]]).entrada({ archivo: f.a, evidencia: f.evidencia });
+  assert.strictEqual(r && r.motivo, 'cambio-propio-tras-entrar', JSON.stringify(r));
+});
+
+test('Entrada_GitConFirmaEnElLog_NoLeeLaFirmaComoCommit @story-8.310 @ac-8', () => {
+  const f = labEntrada();
+  fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+  enRama(f.codigo, 'wt/Dos', { 'src/a.js': '// a2 de otra\n' }, BASE_ENTRADA + 350);
+  fusionarPedido(f.codigo, 'wt/Dos', 12, BASE_ENTRADA + 400);
+  // con log.showSignature=true y commits firmados, git escribe la firma antes del formato pedido
+  const conFirma = (carpeta, args, env) => {
+    const r = evidencia().correrGitDeVerdad(carpeta, args, env);
+    if (args.includes('log') && !args.includes('--no-show-signature') && r.codigo === 0 && r.salida) r.salida = `gpg: Firma hecha con la llave X\n${r.salida}`;
+    return r;
+  };
+  const real = juezDeEntrada([['Codigo#12', ['9.8']]]).entrada({ archivo: f.a, evidencia: f.evidencia });
+  const firmado = juezDeEntrada([['Codigo#12', ['9.8']]], { correrGit: conFirma }).entrada({ archivo: f.a, evidencia: f.evidencia });
+  assert.deepStrictEqual(firmado, real);
+});
+
+function juezDeEntrada(filas = [], extra = {}) {
+  const porPedido = new Map();
+  for (const [clave, h] of filas) porPedido.set(clave, h.map((x) => ({ historia: x, clave: x })));
+  return evidencia().crearJuez({
+    historia: { ...HISTORIA_ENTRADA, catalogo: () => [{ numero: '9.9', archivo: '/h/9.9.md' }, { numero: '9.8', archivo: '/h/9.8.md' }], pedidos: () => ({ porPedido, ilegibles: [] }) },
+    ...extra,
+  });
+}
+
+test('T1 Entrada_OtroRepo_IgualYDespuesCambiaOtra_Cuenta @story-8.310 @ac-1', () => {
+  const f = labEntrada();
+  const blob = blobDe(f.codigo, f.anclaCommit, 'src/a.js');
+  f.evidencia.ancla = [{ repo: 'Codigo', commit: `${f.anclaCommit}`, huellas: { 'src/a.js': blob } }];
+  const entrada = fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+  enRama(f.codigo, 'wt/Dos', { 'src/a.js': '// a2 de otra\n' }, BASE_ENTRADA + 350);
+  const ajena = fusionarPedido(f.codigo, 'wt/Dos', 12, BASE_ENTRADA + 400);
+  enRama(f.codigo, 'wt/Tres', { 'src/a.js': '// a3 de nadie\n' }, BASE_ENTRADA + 450);
+  const nadie = fusionarPedido(f.codigo, 'wt/Tres', 13, BASE_ENTRADA + 500);
+  const r = juezDeEntrada([['Codigo#12', ['9.8']]]).entrada({ archivo: f.a, evidencia: f.evidencia });
+  assert.strictEqual(r.cuenta, true, JSON.stringify(r));
+  assert.strictEqual(r.regla, 'entrada');
+  assert.strictEqual(r.commit, entrada);
+  assert.deepStrictEqual(r.ajenas, [{ commit: ajena, historia: '9.8' }]);
+  assert.deepStrictEqual(r.sinHistoria, [nadie]);
+});
+
+test('T1b Entrada_SinHuella_ComparaConElCommitDelAncla @story-8.310 @ac-1', () => {
+  const f = labEntrada();
+  const entrada = fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+  const r = juezDeEntrada().entrada({ archivo: f.a, evidencia: f.evidencia });
+  assert.strictEqual(r.cuenta, true, JSON.stringify(r));
+  assert.strictEqual(r.commit, entrada);
+});
+
+test('T1c Entrada_PortonE2E_ConAncla_Cuenta @story-8.310 @ac-1', () => {
+  const f = labEntrada();
+  const ruta = escribir(f.historias, '.advisors/dod-runtime/9.9-e2e-gate-20260101T000000Z.md', 'verdict=PASS\n');
+  git(f.historias, ['add', '-A']);
+  git(f.historias, ['commit', '-q', '-m', 'porton'], conFecha(BASE_ENTRADA + 260));
+  fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+  const r = juezDeEntrada().entrada({ archivo: f.a, evidencia: { ruta, tsMs: f.evidencia.tsMs, ancla: f.evidencia.ancla } });
+  assert.strictEqual(r.cuenta, true, JSON.stringify(r));
+  assert.strictEqual(r.regla, 'entrada');
+});
+
+test('T2 Entrada_MismoRepo_SelloYCommitDeLaEvidencia_Cuentan @story-8.310 @ac-2', () => {
+  for (const conSello of [true, false]) {
+    const repo = repoNuevo(carpeta(), 'Proj');
+    const a = escribir(repo, 'src/a.js', '// a0\n');
+    git(repo, ['add', '-A']);
+    git(repo, ['commit', '-q', '-m', 'inicio'], conFecha(BASE_ENTRADA));
+    fijarOrigen(repo);
+    enRama(repo, 'wt/Uno', { 'src/a.js': '// a1\n' }, BASE_ENTRADA + 100);
+    const tree = git(repo, ['rev-parse', 'HEAD^{tree}']);
+    const linea = JSON.stringify({ ts: new Date((BASE_ENTRADA + 200) * 1000).toISOString(), story: '9.9', acs: [1], exit: 0 });
+    const ruta = escribir(repo, '.advisors/dod-runtime/9.9-smoke-ledger.jsonl', `${linea}\n`);
+    git(repo, ['add', '-A']);
+    git(repo, ['commit', '-q', '-m', 'evidencia'], conFecha(BASE_ENTRADA + 250));
+    const entrada = fusionarPedido(repo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+    enRama(repo, 'wt/Dos', { 'src/a.js': '// a2\n' }, BASE_ENTRADA + 350);
+    fusionarPedido(repo, 'wt/Dos', 12, BASE_ENTRADA + 400);
+    const ev = { ruta, tsMs: (BASE_ENTRADA + 200) * 1000, linea, ...(conSello ? { sello: { tree } } : {}) };
+    const r = juezDeEntrada().entrada({ archivo: a, evidencia: ev });
+    assert.strictEqual(r.cuenta, true, `${conSello}: ${JSON.stringify(r)}`);
+    assert.strictEqual(r.commit, entrada);
+  }
+});
+
+test('T3 Entrada_YaEstabaEnMain_ConOtroQueEntro_Cuenta @story-8.310 @ac-3', () => {
+  const f = labEntrada();
+  fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+  enRama(f.codigo, 'wt/Dos', { 'src/b.js': '// b1 de otra\n' }, BASE_ENTRADA + 350);
+  fusionarPedido(f.codigo, 'wt/Dos', 12, BASE_ENTRADA + 400);
+  const ajena = juezDeEntrada().entrada({ archivo: f.b, evidencia: f.evidencia });
+  assert.strictEqual(ajena.cuenta, true, JSON.stringify(ajena));
+  assert.strictEqual(ajena.yaEstaba, true);
+  assert.strictEqual(ajena.commit, null, 'lo que ya estaba no trae commit de entrada');
+  const propia = juezDeEntrada([['Codigo#12', ['9.9']]]).entrada({ archivo: f.b, evidencia: f.evidencia });
+  assert.strictEqual(propia.cuenta, false, JSON.stringify(propia));
+  assert.strictEqual(propia.motivo, 'cambio-propio-tras-entrar');
+});
+
+test('T6 Entrada_PrimerCambioDistinto_NoCuentaAunqueVuelva @story-8.310 @ac-6', () => {
+  const f = labEntrada();
+  enRama(f.codigo, 'wt/Dos', { 'src/a.js': '// otra cosa\n' }, BASE_ENTRADA + 250);
+  const primera = fusionarPedido(f.codigo, 'wt/Dos', 12, BASE_ENTRADA + 300);
+  enRama(f.codigo, 'wt/Tres', { 'src/a.js': '// a1 probado\n' }, BASE_ENTRADA + 350);
+  fusionarPedido(f.codigo, 'wt/Tres', 13, BASE_ENTRADA + 400);
+  const r = juezDeEntrada().entrada({ archivo: f.a, evidencia: f.evidencia });
+  assert.strictEqual(r.cuenta, false, JSON.stringify(r));
+  assert.strictEqual(r.motivo, 'entro-otro-contenido');
+  assert.strictEqual(r.commit, primera);
+  assert.match(evidencia().motivoEnPalabras(r), /no es lo que se prob/);
+});
+
+test('T7 Entrada_FusionPropiaPosterior_NoCuenta @story-8.310 @ac-7', () => {
+  const f = labEntrada();
+  fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+  enRama(f.codigo, 'wt/Dos', { 'src/a.js': '// a2 propio\n' }, BASE_ENTRADA + 350);
+  const propia = fusionarPedido(f.codigo, 'wt/Dos', 12, BASE_ENTRADA + 400);
+  const r = juezDeEntrada([['Codigo#12', ['9.9']]]).entrada({ archivo: f.a, evidencia: f.evidencia });
+  assert.strictEqual(r.cuenta, false, JSON.stringify(r));
+  assert.strictEqual(r.motivo, 'cambio-propio-tras-entrar');
+  assert.strictEqual(r.fusion, propia);
+  assert.ok(evidencia().motivoEnPalabras(r).includes(propia));
+});
+
+test('T7b Entrada_AsuntoNombraLaHistoria_EsPropia @story-8.310 @ac-7 @ac-19', () => {
+  const caso = (mensaje, filas = [], aplastada = false) => {
+    const f = labEntrada();
+    fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+    if (aplastada) {
+      git(f.codigo, ['switch', '-q', 'main']);
+      escribir(f.codigo, 'src/a.js', '// a2\n');
+      git(f.codigo, ['add', '-A']);
+      git(f.codigo, ['commit', '-q', '-m', mensaje], conFecha(BASE_ENTRADA + 400));
+      fijarOrigen(f.codigo);
+    } else {
+      enRama(f.codigo, 'wt/Dos', { 'src/a.js': '// a2\n' }, BASE_ENTRADA + 350, mensaje);
+      fusionarPedido(f.codigo, 'wt/Dos', 12, BASE_ENTRADA + 400);
+    }
+    return juezDeEntrada(filas).entrada({ archivo: f.a, evidencia: f.evidencia });
+  };
+  assert.strictEqual(caso('fix(9.9): corrijo lo mío').motivo, 'cambio-propio-tras-entrar');
+  const parecido = caso('fix(9.91): otra historia');
+  assert.strictEqual(parecido.cuenta, true, JSON.stringify(parecido));
+  assert.strictEqual(parecido.sinHistoria.length, 1);
+  assert.strictEqual(caso('Merged PR 40: fix(9.9) aplastado', [], true).motivo, 'cambio-propio-tras-entrar');
+  assert.strictEqual(caso('fix(9.9): con renglón ajeno', [['Codigo#12', ['9.8']]]).motivo, 'cambio-propio-tras-entrar', 'un renglón de otra historia no lo vuelve ajeno');
+});
+
+test('T8 Entrada_SinDatosOGitMudo_NoSeAplica @story-8.310 @ac-8', () => {
+  const armado = () => { const f = labEntrada(); fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300); return f; };
+  let f = armado();
+  assert.strictEqual(juezDeEntrada().entrada({ archivo: f.a, evidencia: { ...f.evidencia, ancla: undefined } }), null, 'sin ancla');
+  f = armado();
+  git(f.codigo, ['update-ref', '-d', 'refs/remotes/origin/main']);
+  assert.strictEqual(juezDeEntrada().entrada({ archivo: f.a, evidencia: f.evidencia }), null, 'sin origin/main');
+  const con = (filtro) => juezDeEntrada([], { correrGit: (c, a, e) => (filtro(a) ? { codigo: null, salida: '' } : evidencia().correrGitDeVerdad(c, a, e)) });
+  f = armado();
+  assert.strictEqual(juezDeEntrada([], { correrGit: (c, a, e) => (a[1] === '--is-shallow-repository' ? { codigo: 0, salida: 'true\n' } : evidencia().correrGitDeVerdad(c, a, e)) }).entrada({ archivo: f.a, evidencia: f.evidencia }), null, 'clon cortado');
+  assert.strictEqual(con((a) => a[0] === 'rev-list').entrada({ archivo: f.a, evidencia: f.evidencia }), null, 'git no contesta');
+  assert.strictEqual(con((a) => a[0] === 'merge-base').entrada({ archivo: f.a, evidencia: f.evidencia }), null, 'no se sabe si la entrada está en HEAD');
+  f = armado();
+  git(f.codigo, ['switch', '-q', '--detach', 'main~1']);
+  assert.strictEqual(juezDeEntrada().entrada({ archivo: f.a, evidencia: f.evidencia }), null, 'la entrada no está en HEAD');
+});
+
+test('T9 Entrada_SinCommitearYEvidenciaSinCommitear_ComoHoy @story-8.310 @ac-9', () => {
+  let f = labEntrada();
+  fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+  fs.appendFileSync(f.a, '// sin commitear\n');
+  assert.strictEqual(juezDeEntrada().entrada({ archivo: f.a, evidencia: f.evidencia }), null);
+  assert.strictEqual(juezDeEntrada().vigencia({ archivo: f.a, mtimeMs: Date.now(), evidencia: f.evidencia }).motivo, 'sin-commitear');
+  f = labEntrada();
+  fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+  const linea = JSON.stringify({ ts: 'sin-commitear', story: '9.9', acs: [2], exit: 0 });
+  fs.appendFileSync(f.evidencia.ruta, `${linea}\n`);
+  const ev = { ...f.evidencia, linea };
+  assert.strictEqual(juezDeEntrada().entrada({ archivo: f.a, evidencia: ev }), null);
+  assert.strictEqual(juezDeEntrada().vigencia({ archivo: f.a, mtimeMs: Date.now(), evidencia: ev }).motivo, 'evidencia-sin-commitear');
+});
+
+test('T10 Entrada_PruebasYCargados_PropioVence_AjenoNo @story-8.310 @ac-10', () => {
+  const caso = (filas, texto = '// cambiada\n') => {
+    const f = labEntrada();
+    enRama(f.codigo, 'wt/Uno', { 'tests/a.test.js': '// @story-9.9 @ac-1 probada\n' }, BASE_ENTRADA + 150, 'prueba', 'wt/Uno');
+    f.evidencia.ancla = [{ repo: 'Codigo', commit: git(f.codigo, ['rev-parse', 'wt/Uno']) }];
+    fusionarPedido(f.codigo, 'wt/Uno', 11, BASE_ENTRADA + 300);
+    enRama(f.codigo, 'wt/Dos', { 'tests/a.test.js': texto }, BASE_ENTRADA + 350);
+    fusionarPedido(f.codigo, 'wt/Dos', 12, BASE_ENTRADA + 400);
+    return { f, r: juezDeEntrada(filas).entrada({ archivo: f.prueba, evidencia: f.evidencia }) };
+  };
+  assert.strictEqual(caso([['Codigo#12', ['9.8']]]).r.cuenta, true, 'de otra historia');
+  assert.strictEqual(caso([]).r.cuenta, true, 'sin historia conocida');
+  const propia = caso([['Codigo#12', ['9.9']]]);
+  assert.strictEqual(propia.r.motivo, 'cambio-propio-tras-entrar');
+  assert.deepStrictEqual(juezDeEntrada().criteriosDe({ archivo: propia.f.prueba, desde: propia.r.desde }), [1], 'vence sólo sus criterios, aunque el cambio les haya sacado la marca');
+  const f = labEntrada();
+  enRama(f.codigo, 'wt/Dos', { 'tests/a.test.js': '// entró otra\n' }, BASE_ENTRADA + 100);
+  fusionarPedido(f.codigo, 'wt/Dos', 12, BASE_ENTRADA + 300);
+  f.evidencia.ancla = [{ repo: 'Codigo', commit: f.anclaCommit, huellas: { 'tests/a.test.js': blobDe(f.codigo, 'main~1', 'src/b.js') } }];
+  assert.strictEqual(juezDeEntrada().entrada({ archivo: f.prueba, evidencia: f.evidencia }).motivo, 'entro-otro-contenido');
+});
+
+test('T22 Entrada_SinFusionEnMain_ComoHoy @story-8.310 @ac-26', () => {
+  const f = labEntrada();
+  const juez = juezDeEntrada();
+  assert.strictEqual(juez.entrada({ archivo: f.a, evidencia: f.evidencia }), null, 'la rama no entró');
+  const hoy = evidencia().crearJuez().vigencia({ archivo: f.a, mtimeMs: Date.now(), evidencia: f.evidencia });
+  assert.deepStrictEqual(juez.vigencia({ archivo: f.a, mtimeMs: Date.now(), evidencia: f.evidencia }), hoy);
+});

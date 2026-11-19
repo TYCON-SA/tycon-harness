@@ -645,6 +645,12 @@ const deadline = (left, minStart = 2) => ({ SUITES_JOB_STARTED: String(Math.floo
 const events = (dir) => (fs.existsSync(path.join(dir, 'events')) ? fs.readFileSync(path.join(dir, 'events'), 'utf8') : '').split('\n').filter(Boolean)
   .map((l) => { const [kind, name, pass, ms] = l.split(' '); return { kind, name, pass: Number(pass), ms: Number(ms) }; });
 const shardFile = (r, f) => (fs.existsSync(path.join(r.artifact, f)) ? fs.readFileSync(path.join(r.artifact, f), 'utf8') : '');
+/**
+ * Las pasadas de `name` que terminaron solas: la suite de juguete anota «end» sólo si su `sleep` llegó al final. Una
+ * pasada cortada arranca y no lo anota. No se mide con el reloj de la prueba: ese suma el arranque de bash y de node,
+ * y con la máquina cargada pasa cualquier margen.
+ */
+const finished = (dir, name) => events(dir).filter((e) => e.kind === 'end' && e.name === name).map((e) => e.pass);
 
 test('T9 RunSuites_CutSuite_RetriedAloneWithDoubleCap_Green — la cortada se reintenta al final, sola y con el doble', { skip: NO_CUT_RETRY }, () => {
   const dir = cutJob([['lab-slow.test.sh', timed(3)], ['lab-one.test.sh', timed(1)], ['lab-two.test.sh', timed(1)]],
@@ -678,10 +684,10 @@ test('T10 RunSuites_CutThenRed_IsRedWithRetryOutput — si sola sale roja, es ro
 
 test('T11 RunSuites_CutTwice_NotMeasured — cortada dos veces: no medida, con los dos topes', { skip: NO_CUT_RETRY }, () => {
   const dir = cutJob([['lab-hang.test.sh', timed(10)]], { caps: { 'lab-hang.test.sh': 2 } });
-  const t0 = Date.now();
   const r = runShard(dir, 1, 1);
   assert.strictEqual(r.code, 0, r.out);
-  assert.ok(Date.now() - t0 < 15000, `se corta las dos veces (${Date.now() - t0} ms)`);
+  assert.strictEqual(events(dir).filter((e) => e.kind === 'start' && e.name === 'lab-hang.test.sh').length, 2, 'dos pasadas');
+  assert.deepStrictEqual(finished(dir, 'lab-hang.test.sh'), [], 'se corta las dos veces: ninguna pasada llega a sus 10 s');
   assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean), ['lab-hang.test.sh(no-medida)']);
   assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', 'lab-hang.test.sh(no-medida).txt'), 'utf8'), /pasó su tope dos veces: 2 s acompañada y 4 s sola/);
   assert.deepStrictEqual(JSON.parse(shardFile(r, 'retries.json')), {}, 'no entra en las dos pasadas');
@@ -701,10 +707,9 @@ test('T12 RunSuites_NoTimeForRetry_NotMeasured — sin tiempo para el tope doble
 test('T13 RunSuites_PassCappedByJobDeadline — ninguna pasada pasa el plazo del trabajo', { skip: NO_CUT_RETRY }, () => {
   // de a una: la primera se come el plazo, y la segunda llega sin tiempo
   const dir = cutJob([['lab-a-long.test.sh', timed(10)], ['lab-b-late.test.sh', timed(0)]], { caps: { 'lab-a-long.test.sh': 60, 'lab-b-late.test.sh': 60 } });
-  const t0 = Date.now();
   const r = runShard(dir, 1, 1, { env: { ...deadline(6), SUITES_JOBS: '1' } });
   assert.strictEqual(r.code, 0, r.out);
-  assert.ok(Date.now() - t0 < 12000, `la primera se corta en el plazo, no en su tope de 60 s (${Date.now() - t0} ms)`);
+  assert.deepStrictEqual(finished(dir, 'lab-a-long.test.sh'), [], 'la primera se corta en el plazo, no en su tope de 60 s: no llega a sus 10 s');
   assert.deepStrictEqual(shardFile(r, 'failures.txt').split('\n').filter(Boolean).sort(), ['lab-a-long.test.sh(no-medida)', 'lab-b-late.test.sh(no-medida)']);
   for (const n of ['lab-a-long.test.sh', 'lab-b-late.test.sh']) {
     assert.match(fs.readFileSync(path.join(r.artifact, 'red-output', `${n}(no-medida).txt`), 'utf8'), /sin tiempo en el trabajo/, n);
@@ -714,10 +719,9 @@ test('T13 RunSuites_PassCappedByJobDeadline — ninguna pasada pasa el plazo del
   // Sin caps.tsv y sin poder calcularlo (el juguete no trae las suites con tope propio del juego pr): sin tope propio,
   // la pasada queda acotada por el plazo.
   const bare = cutJob([['lab-a-long.test.sh', timed(10)]]);
-  const t1 = Date.now();
   const rb = runShard(bare, 1, 1, { env: deadline(6) });
   assert.strictEqual(rb.code, 0, rb.out);
-  assert.ok(Date.now() - t1 < 10000, `sin tope, el plazo la corta (${Date.now() - t1} ms)`);
+  assert.deepStrictEqual(finished(bare, 'lab-a-long.test.sh'), [], 'sin tope, el plazo la corta: no llega a sus 10 s');
   assert.match(rb.out, /no llegaron los topes de Validar: los calculo por peso/);
   assert.deepStrictEqual(shardFile(rb, 'failures.txt').split('\n').filter(Boolean), ['lab-a-long.test.sh(no-medida)']);
   assert.ok(fs.existsSync(path.join(rb.artifact, 'finished')), rb.out);
