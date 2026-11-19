@@ -76,30 +76,47 @@ function repoDe(p) {
 
 // ── Qué corre el comando ────────────────────────────────────────────────────────────────────────────────────────────
 
-/** El comando sin lo que va delante del programa: `VAR=valor`, `env`, `timeout`, `nohup`, `time`, `nice`, `command`, `exec`. */
-function sinEnvolturas(argv) {
+// las palabras del shell que van antes de un programa en un tramo (`then node g.js`, `do …`, `! …`, `{ …`)
+const PALABRAS_DEL_SHELL = new Set(['then', 'do', 'else', 'elif', 'if', 'while', 'until', '!', '{', '(', '}', ')']);
+
+/**
+ * El comando sin lo que va delante del programa: `VAR=valor`, `env`, `timeout`, `nohup`, `time`, `nice`, `command`,
+ * `exec` y las palabras del shell. `chdir`: la carpeta de un `env -C <dir>`, para leer el programa desde ahí.
+ */
+function envolturas(argv) {
   let a = argv.map(String);
+  let chdir = null;
   const saltarOpciones = (conValor) => {
-    while (a.length && a[0].startsWith('-') && a[0] !== '-') { const f = a[0]; a = a.slice(1); if (conValor.includes(f) && a.length) a = a.slice(1); }
+    while (a.length && a[0].startsWith('-') && a[0] !== '-') {
+      const f = a[0];
+      a = a.slice(1);
+      if (/^(-C|--chdir)=/.test(f)) chdir = f.slice(f.indexOf('=') + 1);
+      if (conValor.includes(f) && a.length) { if (f === '-C' || f === '--chdir') chdir = a[0]; a = a.slice(1); }
+    }
   };
-  for (let vuelta = 0; vuelta < 10; vuelta++) {
+  for (let vuelta = 0; vuelta < 20; vuelta++) {
     while (a.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(a[0])) a = a.slice(1);
     const w = a.length ? path.basename(a[0]) : '';
+    if (PALABRAS_DEL_SHELL.has(a[0])) { a = a.slice(1); continue; }
     if (w === 'env') { a = a.slice(1); for (;;) { const antes = a.length; saltarOpciones(['-u', '--unset', '-C', '--chdir', '-S']); while (a.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(a[0])) a = a.slice(1); if (a.length === antes) break; } continue; }
     if (w === 'timeout') { a = a.slice(1); saltarOpciones(['-s', '--signal', '-k', '--kill-after']); a = a.slice(1); continue; }
     if (w === 'nice') { a = a.slice(1); saltarOpciones(['-n', '--adjustment']); continue; }
     if (['time', 'nohup', 'command', 'exec'].includes(w)) { a = a.slice(1); saltarOpciones(['-a']); continue; }
     break;
   }
-  return a;
+  return { a, chdir };
 }
-/** El texto de un `bash -c`, `sh -c` o `zsh -c` (también `-lc`, `-ec`…), o null si no es eso. */
+const sinEnvolturas = (argv) => envolturas(argv).a;
+/**
+ * El texto de un `bash -c`, `sh -c` o `zsh -c` (también `-lc`, `-ec`, `-euo pipefail -c`…), o null si no es eso. Una `o`
+ * en las letras juntas pide el nombre de la opción en la palabra siguiente, como `-o` sola.
+ */
 function textoDelShell(a) {
   if (!a.length || !SHELL.test(path.basename(a[0]))) return null;
   for (let i = 1; i < a.length; i++) {
     const t = a[i];
     if (/^-[A-Za-z]*c[A-Za-z]*$/.test(t)) return a[i + 1] == null ? '' : a[i + 1];
-    if (t === '-o' || t === '+o' || t === '-O' || t === '+O') { i++; continue; }
+    if (/^[-+][A-Za-z]*[oO][A-Za-z]*$/.test(t)) { i++; continue; }
     if (!/^[-+]/.test(t)) return null;
   }
   return null;
@@ -107,26 +124,54 @@ function textoDelShell(a) {
 /** Las carpetas de laboratorio sueltas: las temporales del sistema y la de la sesión de fondo. */
 const temporales = (env) => [os.tmpdir(), env.TMPDIR, env.TMP, env.TEMP, '/tmp', '/private/tmp', env.CLAUDE_JOB_DIR && path.join(env.CLAUDE_JOB_DIR, 'tmp')]
   .filter((t) => t && path.isAbsolute(String(t)));
+// las variables que apuntan a una carpeta temporal: un comando que las nombra no se puede leer sin correrlo
+const RE_VARIABLE_TEMPORAL = /\$\{?(TMPDIR|TMP|TEMP|CLAUDE_JOB_DIR)\b/;
 const nombraLaboratorio = (texto, env) => String(texto).includes(`.advisors${path.sep}dod-runtime${path.sep}`)
-  || String(texto).includes('.advisors/dod-runtime/') || temporales(env).some((t) => String(texto).includes(String(t).replace(/[\\/]+$/, '')));
+  || String(texto).includes('.advisors/dod-runtime/') || RE_VARIABLE_TEMPORAL.test(String(texto))
+  || temporales(env).some((t) => String(texto).includes(String(t).replace(/[\\/]+$/, '')));
+// lo que un intérprete puede correr: un guion por su extensión, o un archivo que se puede ejecutar
+const RE_GUION = /\.(c?js|mjs|ts|cts|mts|sh|bash|zsh|py|rb|pl)$/i;
+function guionDeLaboratorio(palabra, dirs, env) {
+  const t = String(palabra);
+  if (!t || /[$`*?]/.test(t) || t.startsWith('-')) return null;
+  for (const d of dirs) {
+    const f = path.resolve(d, t);
+    let st;
+    try { st = fs.statSync(f); } catch (_) { continue; }
+    if (!st.isFile() || !(RE_GUION.test(f) || (st.mode & 0o111))) continue;
+    if (esLaboratorio(f, env)) return f;
+  }
+  return null;
+}
 
 /**
- * Los archivos que corre el comando, en la posición de programa: `{ archivos, dudoso }`. `dudoso`: un `bash -c` que no se
- * pudo leer y nombra una carpeta de laboratorio (sin `shell-parse.js`, en un clon de sólo skills).
+ * Los archivos que corre el comando: `{ archivos, dudoso }`. Además del programa de cada tramo, toda palabra del comando
+ * que es un guion existente en una carpeta de laboratorio cuenta: así un guion detrás de un segundo intérprete (`npx tsx`),
+ * de una opción con valor o adentro de un `if … then` no se escapa. `dudoso`: un comando que nombra una carpeta de
+ * laboratorio o sus variables y no se pudo leer entero (sin `shell-parse.js`, o con variables).
  */
 function programas(argv, { cwd, raiz, env, profundidad = 0 }) {
-  const a = sinEnvolturas(argv);
+  const { a, chdir } = envolturas(argv);
   if (!a.length) return { archivos: [], dudoso: false };
+  const desde = chdir && !/[$`~]/.test(chdir) ? path.resolve(cwd, chdir) : cwd;
+  const out = { archivos: [], dudoso: false };
+  const sumarPalabras = (palabras, dir) => {
+    for (const p of palabras) { const f = guionDeLaboratorio(p, [...new Set([dir, cwd])], env); if (f) out.archivos.push(f); }
+  };
   const texto = textoDelShell(a);
   if (texto === null) {
-    const f = cp().archivoQueCorre(a, { cwd, raiz });
-    return { archivos: f ? [f] : [], dudoso: false };
+    const f = cp().archivoQueCorre(a, { cwd: desde, raiz });
+    if (f) out.archivos.push(f);
+    sumarPalabras(a.slice(1), desde);
+    out.dudoso = a.slice(1).some((p) => RE_VARIABLE_TEMPORAL.test(p));
+    return out;
   }
   let sp = null;
   try { sp = profundidad < 4 ? require(SHELL_PARSE) : null; } catch (_) { sp = null; }
   if (!sp) return { archivos: [], dudoso: nombraLaboratorio(texto, env) };
-  const out = { archivos: [], dudoso: false };
-  let dir = cwd;
+  // con variables de una carpeta temporal no se sabe adónde apunta: cuenta como de laboratorio
+  out.dudoso = RE_VARIABLE_TEMPORAL.test(texto);
+  let dir = desde;
   let segs;
   try { segs = sp.segmentos(texto); } catch (_) { return { archivos: [], dudoso: nombraLaboratorio(texto, env) }; }
   for (const seg of segs) {
@@ -137,6 +182,7 @@ function programas(argv, { cwd, raiz, env, profundidad = 0 }) {
     const r = programas(p, { cwd: dir, raiz, env, profundidad: profundidad + 1 });
     out.archivos.push(...r.archivos);
     out.dudoso = out.dudoso || r.dudoso;
+    sumarPalabras(palabras, dir);
   }
   return out;
 }
@@ -162,7 +208,7 @@ function noSeAdmite(r, casa, env) {
   if (dentroDe(casa, r)) return 'es la casa de la cuenta o la contiene';
   if (vigiladas(casa, env).some((v) => dentroDe(v, r))) return 'contiene una carpeta del arnés';
   let instalado = [];
-  try { instalado = require('./installed-tree.js').roots({ home: casa }); } catch (_) { instalado = []; }
+  try { instalado = require('./installed-tree.js').roots({ home: casa }); } catch (e) { return `no pude saber si es el arnés instalado (${e.message})`; }
   if (instalado.some((i) => dentroDe(r, i))) return 'es el arnés instalado';
   return null;
 }
@@ -179,8 +225,10 @@ function decide({ argv, compare = false, covers = [], root = null, cwd = process
   if (compare) {
     try { casa = casaDe(userInfo); } catch (e) { return no(`no pude saber cuál es la casa de la cuenta (${e.message})`); }
     const a = argv.map(String);
-    // la ruta del intérprete no cuenta: un node instalado bajo la casa no es escribir en ella
-    const resto = a.length && INTERPRETE.test(path.basename(a[0])) ? a.slice(1) : a;
+    // la ruta del intérprete no cuenta: un node instalado bajo la casa no es escribir en ella. Es la primera palabra
+    // después de los prefijos (`env VAR=…`, `timeout N`); los prefijos y sus valores sí cuentan
+    const i = a.length - sinEnvolturas(a).length;
+    const resto = i < a.length && INTERPRETE.test(path.basename(a[i])) ? [...a.slice(0, i), ...a.slice(i + 1)] : a;
     const m = cp().tocaLoReal(resto.join(' '), { raicesReales: [], casaReal: casa });
     if (m) return no(`${m}: un humo comparado no corre así. Nombrá el archivo del repo con {raiz} (node {raiz}/<archivo>), o copiá el guion a una carpeta temporal de afuera de la casa`);
   }
@@ -220,7 +268,12 @@ function encierroAbre() {
   const r = spawnSync('/usr/bin/sandbox-exec', ['-p', '(version 1)(allow default)', '/usr/bin/true'], { windowsHide: true, stdio: 'ignore', timeout: 5000 });
   return !r.error && r.status === 0;
 }
-const intentosDe = (log) => { try { return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (_) { return { fn: '?', targets: [l] }; } }); } catch (_) { return []; } };
+// Los intentos anotados por la red. Sin registro, ninguno; un registro que no se puede leer no es «ninguno»: `{ error }`
+function intentosDe(log) {
+  let texto;
+  try { texto = fs.readFileSync(log, 'utf8'); } catch (e) { return e.code === 'ENOENT' ? [] : { error: e.code || e.message }; }
+  return texto.split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (_) { return { fn: '?', targets: [l] }; } });
+}
 
 /** Corre el comando aislado. Devuelve una promesa con el código de salida. */
 function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cwd(), err = (t) => process.stderr.write(t) } = {}) {
@@ -270,7 +323,10 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
       let codigo = code !== null ? code : 128 + ((os.constants.signals || {})[signal] || 1);
       if (error && code === null) { err(`[aislada] ⛔ no pude correr el comando: ${error.message}\n`); codigo = 127; }
       const intentos = intentosDe(log);
-      if (intentos.length) {
+      if (intentos.error) {
+        err(`[aislada] ⛔ no pude leer el registro de la red de escritura (${intentos.error}): no sé si el comando intentó escribir en la casa de la cuenta\n`);
+        if (codigo === 0) codigo = 3;
+      } else if (intentos.length) {
         const rutas = [...new Set(intentos.flatMap((i) => i.targets || []))];
         err(`[aislada] ⛔ el comando intentó escribir en la casa de la cuenta (frenado): ${rutas.join(' · ')}\n`);
         if (codigo === 0) codigo = 3;
@@ -288,6 +344,7 @@ if (require.main === module) {
   const opts = corte >= 0 ? argv.slice(0, corte) : argv;
   const comando = corte >= 0 ? argv.slice(corte + 1) : [];
   const todos = (k) => opts.flatMap((o, i) => (o === k && opts[i + 1] !== undefined ? [opts[i + 1]] : []));
+  // @spec-first-exempt(SPEC-C1): el subcomando `decide` lo nombra el plan firmado de la historia 8.314 (step-02-bmad-plan.md, «Tareas → 2. La corrida aislada»); decidido por la coordinadora, 19/11
   if (opts[0] === 'decide') {
     const d = decide({ argv: comando, compare: opts.includes('--compare'), covers: String(todos('--covers')[0] || '').split(',').map((s) => s.trim()).filter(Boolean), root: todos('--root')[0] || null });
     if (d.codigo) { process.stderr.write(`[smoke-run] ⛔ ${d.motivo} — no se corre.\n`); process.exit(d.codigo); }

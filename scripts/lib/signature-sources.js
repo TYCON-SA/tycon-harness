@@ -479,7 +479,10 @@ function deLaDesignacion(firma, destino, cwd, palabras) {
   if (!destino) return null;
   let rol = null;
   try { rol = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js')).sesionQueReenvia().valor; } catch (_) { rol = null; }
-  const otra = firma === 'designation-withdraw' && palabras && palabras[1] === 'withdraw-relay' ? valor(palabras, '--session') : null;
+  // `--session <id>` separado, como lo leen marker.js y retiraA: la forma pegada (`--session=<id>`) marker.js la niega, y
+  // el cuadro no puede nombrar a una sesión que el comando no retira
+  const i = firma === 'designation-withdraw' && palabras && palabras[1] === 'withdraw-relay' ? palabras.indexOf('--session') : -1;
+  const otra = i >= 0 && palabras[i + 1] != null && !String(palabras[i + 1]).startsWith('-') ? String(palabras[i + 1]) : null;
   if (otra && otra !== destino) {
     // la que se retira ya no vive: el cuadro la nombra a ella, y dice quién lo pide y desde dónde
     const lineas = [`La sesión ${otra} deja de ser la «${rol || 'coordinadora'}» de esta máquina: ya no vive`, `La pide la sesión ${destino}, desde ${cwd || process.cwd()}`];

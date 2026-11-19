@@ -17,7 +17,6 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  *
  * CLI (para un guion de shell):
  *   node lab-home.js check <nombre>   sale 3 con la casa real; 0 si sigue
- *   node lab-home.js house <nombre>   imprime una casa nueva; sale 3 si caería adentro de la casa de la cuenta
  */
 const fs = require('fs');
 const os = require('os');
@@ -50,19 +49,23 @@ function adentro(p, base) {
   return a === b || a.startsWith(b.endsWith(path.sep) ? b : b + path.sep);
 }
 
-const casaDelAmbiente = (env) => String((process.platform === 'win32' ? env.USERPROFILE || env.HOME : env.HOME || env.USERPROFILE) || '').trim();
+const casaDelAmbiente = (env, platform = process.platform) => String((platform === 'win32' ? env.USERPROFILE || env.HOME : env.HOME || env.USERPROFILE) || '').trim();
 
 /**
  * La primera línea de un guion de laboratorio: con `HOME` igual a la casa de la cuenta, adentro de ella, o sin `HOME`,
  * sale 3 sin hacer nada y dice cómo correrlo. Devuelve la casa con que sigue.
  */
-function refuseRealHome(nombre, { env = process.env, userInfo, exit = process.exit, err = (t) => process.stderr.write(t) } = {}) {
+function refuseRealHome(nombre, { env = process.env, userInfo, exit = process.exit, err = (t) => process.stderr.write(t), platform = process.platform } = {}) {
   const quien = String(nombre || 'guion de laboratorio');
-  const h = casaDelAmbiente(env);
+  const h = casaDelAmbiente(env, platform);
   let motivo = null;
   if (!h) motivo = 'no dice su HOME';
   else {
-    try { if (adentro(h, casaDeLaCuenta({ userInfo }))) motivo = `su HOME (${h}) es la casa real de la cuenta`; } catch (e) { motivo = `no pude saber cuál es la casa de la cuenta (${e.message})`; }
+    try {
+      const casa = casaDeLaCuenta({ userInfo });
+      // la casa que da `labHouse` en Windows vive en la carpeta temporal del perfil: ésa no es la casa real
+      if (adentro(h, casa) && !temporalDeWindows(h, casa, platform)) motivo = `su HOME (${h}) es la casa real de la cuenta`;
+    } catch (e) { motivo = `no pude saber cuál es la casa de la cuenta (${e.message})`; }
   }
   if (motivo) {
     err(`🚫 ${quien}: no corre con la casa real: ${motivo}. Corrélo con una casa nueva, por ejemplo HOME="$(mktemp -d "\${TMPDIR:-/tmp}/lab.XXXXXX")" ${quien}, o por smoke-run.sh, que le da una casa aparte.\n`);
@@ -72,8 +75,8 @@ function refuseRealHome(nombre, { env = process.env, userInfo, exit = process.ex
 }
 
 /** ¿`base` es la carpeta temporal del sistema de Windows, que vive adentro del perfil? */
-function temporalDeWindows(base, casa) {
-  return process.platform === 'win32' && adentro(base, path.join(casa, 'AppData', 'Local', 'Temp'));
+function temporalDeWindows(base, casa, platform = process.platform) {
+  return platform === 'win32' && adentro(base, path.join(casa, 'AppData', 'Local', 'Temp'));
 }
 
 /** Una carpeta nueva de `mkdtemp`, fuera de la casa de la cuenta. Tira si la carpeta temporal cae adentro de ella. */
@@ -115,10 +118,8 @@ module.exports = { refuseRealHome, labHouse, pruebaSobreLoReal, estadosDeLaCuent
 if (require.main === module) {
   const [cmd, nombre] = process.argv.slice(2);
   if (cmd === 'check') refuseRealHome(nombre);
-  else if (cmd === 'house') {
-    try { process.stdout.write(`${labHouse(nombre)}\n`); } catch (e) { process.stderr.write(`🚫 lab-home.js house: ${e.message}\n`); process.exit(3); }
-  } else {
-    process.stderr.write('uso: lab-home.js check <nombre> | house <nombre>\n');
+  else {
+    process.stderr.write('uso: lab-home.js check <nombre>\n');
     process.exit(2);
   }
 }

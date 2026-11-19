@@ -350,6 +350,55 @@ test('T23 Guias_DicenLaRegla @story-8.314 @ac-20', () => {
   assert.match(leer('guides/firmas-del-arnes.md'), /sin confirmar no desplaza/);
 });
 
+// ── Los hallazgos del pase adversarial (vuelta 1) ─────────────────────────────────────────────────────────────────
+
+test('Pase_LaboratorioEscondidoEnElComando_SeAisla @story-8.314 @ac-5', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const lab = carpeta(t, 'lab-pase-');
+  for (const f of ['g.js', 'pre.js', 'x.ts']) fs.writeFileSync(path.join(lab, f), "console.log('lab');\n");
+  fs.writeFileSync(path.join(lab, 'run.sh'), 'node g.js\n');
+  const otro = carpeta(t, 'no-lab-');
+  const decidir = (argv) => iso().decide({ argv, cwd: otro, env: ambiente(c), userInfo: c.userInfo }).modo;
+  const g = path.join(lab, 'g.js');
+  const casos = [
+    ['letras juntas con -o', ['bash', '-euo', 'pipefail', '-c', `node '${g}'`]],
+    ['guion de shell con -euo', ['bash', '-euo', 'pipefail', path.join(lab, 'run.sh')]],
+    ['adentro de un for', ['bash', '-c', `for i in 1; do node '${g}'; done`]],
+    ['adentro de un if', ['bash', '-c', `if true; then node '${g}'; fi`]],
+    ['detrás de !', ['bash', '-c', `! node '${g}'`]],
+    ['con la variable de la carpeta temporal', ['bash', '-c', 'node "$TMPDIR/g.js"']],
+    ['detrás de dos intérpretes', ['npx', 'tsx', path.join(lab, 'x.ts')]],
+    ['detrás de una opción con valor', [process.execPath, '-r', path.join(lab, 'pre.js'), g]],
+    ['con env -C', ['env', '-C', lab, process.execPath, 'g.js']],
+  ];
+  for (const [caso, argv] of casos) assert.strictEqual(decidir(argv), 'aislada', caso);
+  // lo que sólo escribe en un temporal sigue siendo común
+  assert.strictEqual(decidir(['sh', '-c', `echo x > '${path.join(lab, 'nuevo.txt')}'`]), 'comun');
+});
+
+test('Pase_InterpreteDetrasDeUnPrefijo_NoNombraLaCasa @story-8.314 @ac-3', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), { 'tool.js': GUION_AMBIENTE });
+  const node = path.join(c.casa, 'bin', 'node');
+  const d = iso().decide({ argv: ['env', 'FOO=1', node, 'tool.js'], compare: true, cwd: r, env: ambiente(c), userInfo: c.userInfo });
+  assert.strictEqual(d.codigo, undefined, d.motivo);
+  assert.strictEqual(d.modo, 'aislada');
+  // un prefijo que sí nombra la casa sigue frenando
+  const conCasa = iso().decide({ argv: ['env', `FOO=${path.join(c.casa, 'x')}`, node, 'tool.js'], compare: true, cwd: r, env: ambiente(c), userInfo: c.userInfo });
+  assert.strictEqual(conCasa.codigo, 2);
+});
+
+test('Pase_CasaDeLaboratorioEnWindows_NoSeNiega @story-8.314 @ac-6', (t) => {
+  const c = cuenta(t);
+  const lh = require(LAB);
+  const salio = (env) => {
+    try { lh.refuseRealHome('prueba', { env, userInfo: c.userInfo, platform: 'win32', exit: (n) => { throw Object.assign(new Error('salió'), { salida: n }); }, err: () => {} }); return null; } catch (e) { if (e.salida === undefined) throw e; return e.salida; }
+  };
+  assert.strictEqual(salio({ USERPROFILE: path.join(c.casa, 'AppData', 'Local', 'Temp', 'tycon-lab-prueba-x') }), null, 'la que da labHouse');
+  assert.strictEqual(salio({ USERPROFILE: c.casa }), 3, 'la casa de la cuenta');
+  assert.strictEqual(salio({ USERPROFILE: path.join(c.casa, 'Documents') }), 3, 'adentro, fuera del temporal');
+});
+
 test('T99 RedDeLasPruebas_NadaTocoLaCasaReal @story-8.314', () => {
   assert.deepStrictEqual(GUARD.attempts(), [], GUARD.describe());
 });

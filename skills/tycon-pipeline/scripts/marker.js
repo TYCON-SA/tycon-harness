@@ -6907,6 +6907,11 @@ function cmdWithdrawRelay(argv = []) {
   const cw = require('./lib/critical-waivers.js');
   const sesion = SID;
   const { val } = opcionesDe(argv);
+  // la forma pegada (`--session=<id>`) no se lee como la separada: se niega, para que el cuadro y lo que se hace coincidan
+  if (argv.some((a) => String(a).startsWith('--session='))) {
+    console.error('🚫 marker.js withdraw-relay: no se retiró a la coordinadora — escribí la sesión separada: --session <id>.');
+    process.exit(1);
+  }
   const pedida = val('--session');
   const objetivo = pedida || sesion;
   const otra = objetivo !== sesion;

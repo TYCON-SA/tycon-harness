@@ -84,7 +84,11 @@ function hits(p, { follow = false } = {}) {
 }
 function refuse(fn, targets) {
   const where = (new Error().stack || '').split('\n').slice(3, 8).map((l) => l.trim());
-  try { raw.appendFileSync(LOG, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, fn, targets, argv: process.argv.slice(1, 4), stack: where })}\n`); } catch (_) { /* sin registro igual frena */ }
+  try { raw.appendFileSync(LOG, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, fn, targets, argv: process.argv.slice(1, 4), stack: where })}\n`); } catch (le) {
+    // sin registro igual frena; y como quien lo lee no se va a enterar, lo dice y este proceso no sale 0
+    try { process.stderr.write(`real-home-guard: frené ${fn} sobre ${targets.join(' → ')} y no pude anotarlo (${le.code || le.message})\n`); } catch (_) { /* sin salida de error */ }
+    process.on('exit', (code) => { if (!code) process.exitCode = 3; });
+  }
   const e = new Error(`real-home-guard: ${fn} sobre la casa real, frenado: ${targets.join(' → ')}`);
   e.code = 'EPERM';
   return e;

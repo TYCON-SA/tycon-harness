@@ -436,5 +436,15 @@ test('T24 Retirar_SesionMuerta_ConFirmaDelDueno @story-8.314 @ac-13', (t) => {
   assert.ok(conOtra.includes(OTRA) && /deja de ser/.test(conOtra), conOtra);
   assert.ok(aviso(null).includes(APRUEBA_RETIRAR), 'sin otra sesión, el texto de hoy');
   assert.match(ow.tituloDeLaFirma('designation-withdraw', palabras, SES), /otra sesión/);
+  // la forma pegada (hallazgo del pase): el comando la niega y el cuadro no nombra a la otra sesión
+  const pegada = laboratorio(t, { perfil: null });
+  otraConfirmada(pegada);
+  sesionViva(pegada, SES);
+  const p = pegada.correr(['withdraw-relay', `--session=${OTRA}`]);
+  assert.strictEqual(p.status, 1, `${p.stdout}${p.stderr}`);
+  assert.match(p.stderr, /--session <id>/);
+  assert.deepStrictEqual(retiradas(pegada), []);
+  const cuadroPegado = cuadroDe(pegada, 'designation-withdraw', `node ${MARKER} withdraw-relay --session=${OTRA}`);
+  assert.ok(!cuadroPegado.pregunta.includes(OTRA.slice(0, 8)), cuadroPegado.pregunta);
   assert.strictEqual(ow.tituloDeLaFirma('designation-withdraw', ow.canonica(`node ${MARKER} withdraw-relay`), SES), APRUEBA_RETIRAR);
 });
