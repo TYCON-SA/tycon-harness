@@ -13,6 +13,11 @@
  * no pide otra vuelta: no está en ningún pedido y el sello de lo guardado no lo mira (un guion de ayuda que la sesión
  * deja en una carpeta sin git). Un archivo borrado dentro de un repo sigue encontrando la raíz: la búsqueda sube por las
  * carpetas aunque la suya ya no exista.
+ *
+ * Con el repo de la corrida (`repoPath`), tampoco pide otra vuelta un archivo de un repo que no es el de la corrida, ni
+ * el de la historia, ni un hermano declarado (`evidence.companion_repos`): una prueba del pase en un laboratorio con su
+ * propio git. Un repo se reconoce por su carpeta git común, así que cualquier copia (worktree) de uno de ellos, en la
+ * rama que sea, sigue contando. Si algo de eso no se puede leer, pide: ante la duda, se revisa.
  */
 const fs = require('fs');
 const path = require('path');
@@ -38,7 +43,47 @@ function raizDelRepo(abs) {
   }
 }
 
-function pideOtraVuelta(file, { storyPath } = {}) {
+/**
+ * La carpeta git común de una raíz de repo, la misma para todas sus copias: `.git` si es carpeta; si es archivo (una
+ * copia), la que dice su `commondir`. Sin git (sólo el sistema de archivos: corre en cada edición). null si no se lee.
+ */
+function comunDe(raiz) {
+  try {
+    const g = path.join(raiz, '.git');
+    if (fs.statSync(g).isDirectory()) return fs.realpathSync(g);
+    const m = fs.readFileSync(g, 'utf8').match(/^gitdir:\s*(.+?)\s*$/m);
+    if (!m) return null;
+    const dir = path.resolve(raiz, m[1]);
+    const comun = path.join(dir, 'commondir');
+    return fs.realpathSync(fs.existsSync(comun) ? path.resolve(dir, fs.readFileSync(comun, 'utf8').trim()) : dir);
+  } catch (_) { return null; }
+}
+
+/** ¿El repo de `raiz` no es ninguno de la corrida? false si no se puede saber. */
+function fueraDeLaCorrida(raiz, { storyPath, repoPath }) {
+  const propio = comunDe(raiz);
+  if (!propio) return false;
+  const deLaCorrida = [repoPath, storyPath ? path.dirname(path.resolve(String(storyPath))) : null]
+    .filter(Boolean).map((d) => raizDelRepo(path.join(path.resolve(String(d)), '_')));
+  if (deLaCorrida.includes(null)) return false;
+  const { parseEvidenceConfig } = require('./evidence-config.js');
+  const repos = new Set(deLaCorrida);
+  for (const r of deLaCorrida) {
+    const cfg = parseEvidenceConfig(r);
+    for (const h of [...cfg.roots, ...cfg.missing]) repos.add(path.resolve(r, String(h)));
+  }
+  const comunes = new Set();
+  for (const r of repos) {
+    // un hermano que no está en disco: no se sabe si el archivo es suyo
+    const rr = raizDelRepo(path.join(r, '_'));
+    const c = rr && comunDe(rr);
+    if (!c) return false;
+    comunes.add(c);
+  }
+  return !comunes.has(propio);
+}
+
+function pideOtraVuelta(file, { storyPath, repoPath } = {}) {
   if (!file) return false;
   const abs = path.resolve(String(file));
   if (abs.split(/[\\/]/).slice(0, -1).some((seg) => CARPETAS_DEL_ARNES.has(seg))) return false;
@@ -52,6 +97,7 @@ function pideOtraVuelta(file, { storyPath } = {}) {
   const raiz = raizDelRepo(abs);
   if (raiz === null) return false;
   if (require('./atdd-order.js').isTestPath(path.relative(raiz, abs).split(path.sep).join('/'))) return false;
+  if (repoPath) { try { if (fueraDeLaCorrida(raiz, { storyPath, repoPath })) return false; } catch (_) { /* pide */ } }
   return true;
 }
 

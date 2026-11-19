@@ -325,3 +325,25 @@ test('Set_TextosDeMech_NombranElRevisorQueVuelve @story-8.296 @ac-13', () => {
   const ayuda = L.correr([]);
   assert.match(ayuda.stderr, /DESCUENTA advisors cubiertos \(MECH-2\)[\s\S]{0,200}nunca saca a un revisor con críticos abiertos/, 'la ayuda de advisors no lo dice');
 });
+
+// 🔴 Falla con: una vuelta sin código que se cierra sola con un crítico de mech-check dado por arreglado en findings.json
+//    (no lo reportó ningún revisor, así que el cruce no lo mira) sin volver a correr mech-check: el crítico sigue y nadie
+//    lo comprueba.
+test('Set_SinCodigo_CriticoMecanicoArreglado_SeVuelveAComprobar', () => {
+  const sinTest = (L) => {
+    const t = fs.readFileSync(L.story, 'utf8').replace('1. **Given** algo **When** pasa **Then** resultado.\n', '1. **Given** algo **When** pasa **Then** resultado.\n2. **Given** otra cosa **When** pasa **Then** otro resultado.\n');
+    fs.writeFileSync(L.story, t);
+  };
+  const L = lab({ hallazgos: ARREGLADO('ACCOV-C5'), cambio: { 'notas.md': 'otras\n' }, foto: true });
+  sinTest(L);
+  const r = L.reloop();
+  assert.ok(r.j, salida(r));
+  assert.notStrictEqual(r.j.no_code_delta, true, `la vuelta se cerró sola con el crítico mecánico vivo: ${salida(r)}`);
+  assert.deepStrictEqual((r.j.mech_still_open || []).map((m) => m.rule), ['ACCOV-C5'], salida(r));
+  // arreglado de verdad (la historia sin el criterio sin prueba): se comprueba y la vuelta se cierra
+  const ok = lab({ hallazgos: ARREGLADO('ACCOV-C5'), cambio: { 'notas.md': 'otras\n' }, foto: true });
+  const r2 = ok.reloop();
+  assert.ok(r2.j, salida(r2));
+  assert.strictEqual(r2.j.no_code_delta, true, salida(r2));
+  assert.deepStrictEqual(r2.j.mech_confirmed, ['ACCOV-C5'], salida(r2));
+});

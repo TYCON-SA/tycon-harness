@@ -196,7 +196,7 @@ function handle(event) {
     // `code`: si la edición pide otra vuelta de revisores (lib/reloop-code.js). Lo leen `next` y el cartel para decidir
     // lo mismo (el cartel corre sin el clasificador del arnés). Si la regla falla, pide: ante la duda, se revisa
     let code;
-    try { code = require('./lib/reloop-code.js').pideOtraVuelta(filePath, { storyPath: marker.storyPath }); } catch (_) { code = true; }
+    try { code = require('./lib/reloop-code.js').pideOtraVuelta(filePath, { storyPath: marker.storyPath, repoPath: marker.repoPath }); } catch (_) { code = true; }
     marker.fileEvents.push({ path: filePath, ts: new Date().toISOString(), code });
     if (marker.fileEvents.length > 500) {
       marker.fileEvents = marker.fileEvents.slice(-500);

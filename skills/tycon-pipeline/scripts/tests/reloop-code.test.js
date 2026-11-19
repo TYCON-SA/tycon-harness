@@ -84,6 +84,9 @@ test('T8b OtraVuelta_DosReposMismaRuta_NombraLosDos @story-8.195 @ac-2 — dos a
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   for (const r of ['back', 'front']) fs.mkdirSync(path.join(base, r, '.git'), { recursive: true });
   const back = path.join(base, 'back');
+  // front es el hermano declarado: sin declararlo, sus archivos no son de la corrida
+  fs.mkdirSync(path.join(back, '.tycon'));
+  fs.writeFileSync(path.join(back, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - ../front\n');
   const story = path.join(back, 'specs', 'story-9-9.md');
   const m = marcador(back, story, []);
   m.fileEvents = [path.join(back, 'src', 'index.ts'), path.join(base, 'front', 'src', 'index.ts'), path.join(back, 'src', 'index.ts')]
@@ -116,6 +119,46 @@ test('Reloop_FileOutsideAnyRepo_NoRound @story-8.270 @ac-24 — un guion escrito
   assert.equal(reviewersRound(m), null, 'sin otra vuelta, aunque el evento diga código');
   // un archivo borrado dentro del repo sigue encontrando la raíz: sigue contando
   assert.equal(pideOtraVuelta(path.join(dir, 'src', 'borrado', 'x.js'), { storyPath: story }), true);
+});
+
+// 🔴 Falla con: una prueba del pase escrita en un laboratorio con su propio git (una carpeta temporal con `git init`), fuera
+//    del repo de la corrida y de sus hermanos declarados, contada como código: reabre «Revisores».
+test('Reloop_ProbeInLabRepoOutsideTheRun_NoRound', (t) => {
+  const { dir, story } = repo(t, { git: true });
+  const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'reloop-code-lab-'));
+  t.after(() => fs.rmSync(lab, { recursive: true, force: true }));
+  execFileSync('git', ['init', '-q', lab]);
+  const prueba = path.join(lab, 'p1.js');
+  assert.equal(pideOtraVuelta(prueba, { storyPath: story, repoPath: dir }), false);
+  // sin el repo de la corrida no se sabe qué repos son suyos: sigue pidiendo, como antes
+  assert.equal(pideOtraVuelta(prueba, { storyPath: story }), true);
+  const m = marcador(dir, story, []);
+  m.fileEvents = [{ path: prueba, ts: '2026-11-03T10:05:00.000Z', code: true }];
+  assert.equal(reviewersRound(m), null, 'la prueba del laboratorio no pide otra vuelta');
+  // el código del repo de la corrida sigue pidiendo
+  assert.equal(pideOtraVuelta(path.join(dir, 'src', 'a.js'), { storyPath: story, repoPath: dir }), true);
+});
+
+// 🔴 Falla con: un archivo en otra copia (worktree) de un repo hermano declarado, en otra rama, tomado como «fuera de la
+//    corrida»: el código de la story en el hermano dejaría de reabrir «Revisores».
+test('Reloop_CodeInAnotherWorktreeOfADeclaredSibling_StillRounds', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'reloop-code-hermano-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const specs = path.join(base, 'specs-repo');
+  const codigo = path.join(base, 'codigo');
+  const g = (cwd, ...a) => execFileSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
+  for (const r of [specs, codigo]) { fs.mkdirSync(r); execFileSync('git', ['init', '-q', '-b', 'main', r]); }
+  fs.mkdirSync(path.join(specs, '.tycon'));
+  fs.writeFileSync(path.join(specs, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - ../codigo\n');
+  fs.writeFileSync(path.join(codigo, 'a.js'), 'a\n');
+  g(codigo, 'add', '.'); g(codigo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'b');
+  const copia = path.join(base, 'codigo--wt-otra');
+  g(codigo, 'worktree', 'add', '-q', '-b', 'otra-rama', copia);
+  const story = path.join(specs, 'specs', 'story-9-9.md');
+  assert.equal(pideOtraVuelta(path.join(copia, 'src', 'b.js'), { storyPath: story, repoPath: specs }), true);
+  assert.equal(pideOtraVuelta(path.join(codigo, 'src', 'b.js'), { storyPath: story, repoPath: specs }), true);
+  // la corrida en el repo del código, con la historia en el de specs: el código cuenta
+  assert.equal(pideOtraVuelta(path.join(copia, 'src', 'b.js'), { storyPath: story, repoPath: copia }), true);
 });
 
 test('Reloop_CodeInRepoOrWorktree_StillRounds @story-8.270 @ac-25 — código en un repo o en un worktree (con .git archivo) sigue pidiendo otra vuelta', (t) => {
