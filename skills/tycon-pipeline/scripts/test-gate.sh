@@ -1383,9 +1383,10 @@ if [[ "$TG_TOP_FULL" == "1" && "$RUNNER" == "suites-json" ]]; then
   fi
   [[ "$TG_GUARDO" != "no" && "$_TG_FOTO_CAMBIO" == "1" ]] \
     && echo "[test-gate] la carpeta cambió mientras corría: guardo con la foto del arranque; la próxima corrida vuelve a correr lo que lee lo cambiado durante la corrida"
-  # El renglón de la corrida (gates.log) y su nota en el marcador: sólo las que terminaron en verde o en rojo. La cortada
-  # por una señal, la sin turno y la ocupada salieron antes y no llegan acá.
-  if [[ -n "$TG_RUN_MODO" && ( "$SUITE_EXIT" == "0" || "$SUITE_EXIT" == "1" ) ]]; then
+  # El renglón de la corrida (gates.log) y su nota en el marcador: sólo las que terminaron en verde, en rojo o «sin
+  # acotar» (7: no se supo qué se tocó y la completa no corre en la máquina). La cortada por una señal, la sin turno y la
+  # ocupada salieron antes y no llegan acá.
+  if [[ -n "$TG_RUN_MODO" && ( "$SUITE_EXIT" == "0" || "$SUITE_EXIT" == "1" || "$SUITE_EXIT" == "7" ) ]]; then
     _tg_suites=0
     if [[ "${TG_CLOSE_MODE:-}" == "changed" ]]; then _tg_suites_de="$RESULTS_DIR/suites-nuevas.json"
     elif [[ "${TG_CLOSE_MODE:-}" == "same" ]]; then _tg_suites_de=""
