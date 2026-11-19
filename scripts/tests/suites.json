@@ -893,9 +893,8 @@
       "gate_only_when_touching": [
         "scripts/lib/**",
         "scripts/controls-bench/**",
-        "scripts/hooks/bench-notice.js",
-        "scripts/hooks/git-pre-push-global.sh",
-        "scripts/nightly/weekly-review/**"
+        "scripts/hooks/**",
+        "scripts/nightly/**"
       ]
     },
     {
@@ -904,7 +903,7 @@
       "ruta": "tests/carry-night-results.test.js",
       "requiere": [],
       "gate_only_when_touching": [
-        "scripts/ci/carry-night-results.js",
+        "scripts/ci/**",
         "scripts/lib/**"
       ]
     },
