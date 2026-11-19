@@ -192,6 +192,8 @@ if [ "$INSTALADO" = 0 ] && [[ "${TYCON_PROD_TEST_DIALOG_WAIT:-}" =~ ^[0-9]+$ ]];
 TENGO_TURNO=0
 soltar_turno(){ [ "$TENGO_TURNO" = 1 ] && [ "$(cat "$TURNO/pid" 2>/dev/null)" = "$$" ] && rm -rf "$TURNO" 2>/dev/null; TENGO_TURNO=0; return 0; }
 trap soltar_turno EXIT
+# una puerta terminada por señal también suelta su turno: sin esto bash sale sin correr el trap de EXIT
+trap 'exit 143' TERM; trap 'exit 130' INT; trap 'exit 129' HUP
 turno_abandonado(){
   local pid edad
   pid="$(cat "$TURNO/pid" 2>/dev/null)"
@@ -207,7 +209,20 @@ tomar_turno(){ # $1 = lo que dice quién pide (para el que espera)
     if mkdir "$TURNO" 2>/dev/null; then
       printf '%s' "$$" > "$TURNO/pid"; printf '%s' "$1" > "$TURNO/quien"; TENGO_TURNO=1; return 0
     fi
-    if turno_abandonado; then mv "$TURNO" "$TURNO.abandonado.$$" 2>/dev/null && rm -rf "$TURNO.abandonado.$$"; continue; fi
+    # el turno no se puede crear: la carpeta del estado no se escribe, o en su lugar hay algo que no es una carpeta. No se
+    # mira si el turno existe: la puerta que lo tenía puede soltarlo entre el `mkdir` y esta línea
+    if [ ! -w "$(dirname "$TURNO")" ] || { [ -e "$TURNO" ] && [ ! -d "$TURNO" ]; }; then muere "no pude crear el turno del cuadro en $(dirname "$TURNO"): sin turno no abro el cuadro ni leo la clave. Revisá que esa carpeta se pueda escribir."; fi
+    # 🔴 Tomar un turno abandonado va de a una puerta, y se vuelve a mirar adentro: dos que vieron el mismo turno muerto,
+    # sin esto, se llevaban también el turno vivo que la primera acababa de crear, y quedaban dos cuadros abiertos.
+    if turno_abandonado && mkdir "$TURNO.rescate" 2>/dev/null; then
+      turno_abandonado && rm -rf "$TURNO"
+      rmdir "$TURNO.rescate" 2>/dev/null
+      continue
+    fi
+    # el candado del rescate se tiene unos milisegundos: uno más viejo que 10 s es de una puerta que murió adentro
+    if [ -d "$TURNO.rescate" ] && [ $(( $(date +%s) - $(stat -f %m "$TURNO.rescate" 2>/dev/null || date +%s) )) -gt 10 ]; then
+      rmdir "$TURNO.rescate" 2>/dev/null
+    fi
     if [ $(( $(date +%s) - desde )) -ge "$TURNO_ESPERA" ]; then
       # lo escribió otra puerta con quien_pide(), ya saneado: acá sólo se le sacan los caracteres de control
       local otro; otro="$(tr -d '\000-\037\177' < "$TURNO/quien" 2>/dev/null | head -c 200)"

@@ -864,6 +864,36 @@ if [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ] && [ ! -e "$CASA/.clau
   ok "T-puerta-38 PuertaCuadro_TurnoAbandonado · el turno de un proceso muerto se toma y el cuadro se abre"
 else no "T-puerta-38 PuertaCuadro_TurnoAbandonado · rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
 
+# T-puerta-40 · un turno abandonado y una ráfaga: lo toma una sola puerta, y nunca quedan dos cuadros abiertos a la vez
+# (dos que vieron el mismo turno muerto se llevaban también el turno vivo que la primera acababa de crear)
+peor=0
+for ronda in 1 2 3; do
+  mundo ok; cuadro_lento 1
+  mkdir -p "$CASA/.claude/.tycon-pipeline/production-dialog.lock"; printf '999999' > "$CASA/.claude/.tycon-pipeline/production-dialog.lock/pid"
+  for i in 1 2 3 4 5 6; do ( TYCON_PROD_TEST_DIALOG_WAIT=30 puerta "$PROD" "select $i" >/dev/null; ) & done; wait
+  abiertos=0; max=0
+  while read -r que _; do
+    [ "$que" = abre ] && abiertos=$((abiertos+1)); [ "$que" = cierra ] && abiertos=$((abiertos-1))
+    [ "$abiertos" -gt "$max" ] && max=$abiertos
+  done < "$TMP/cuadros.log"
+  [ "$max" -gt "$peor" ] && peor=$max
+done
+if [ "$peor" = 1 ]; then ok "T-puerta-40 PuertaCuadro_TurnoAbandonado_EnRafaga · tres rondas de seis puertas sobre un turno muerto: nunca dos cuadros abiertos"
+else no "T-puerta-40 PuertaCuadro_TurnoAbandonado_EnRafaga · hubo $peor cuadros abiertos a la vez"; fi
+
+# T-puerta-41 · si el turno no se puede crear, sale enseguida y dice eso, no que hay otro cuadro abierto. Un archivo
+# donde va la carpeta del turno hace fallar su `mkdir` sin quitarle la escritura al resto del estado (sin escritura, la
+# puerta ya frena antes, al leer el índice)
+mundo ok
+printf 'no es una carpeta' > "$CASA/.claude/.tycon-pipeline/production-dialog.lock"
+# stable-data: mide cuánto tarda la puerta, no afirma ninguna fecha
+desde=$(date +%s)
+rc="$(puerta "$PROD" 'select 1')"
+tardo=$(( $(date +%s) - desde ))
+if [ "$rc" = 2 ] && grep -q "no pude crear el turno del cuadro" "$TMP/err" && ! grep -q "ya hay un cuadro" "$TMP/err" && [ ! -s "$TMP/orden.log" ] && [ "$tardo" -lt 10 ]; then
+  ok "T-puerta-41 PuertaCuadro_TurnoQueNoSeCrea · sale 2 en ${tardo} s, sin cuadro ni clave, diciendo que no pudo crear el turno"
+else no "T-puerta-41 PuertaCuadro_TurnoQueNoSeCrea · rc=$rc · tardó ${tardo} s · $(head -c 200 "$TMP/err")"; fi
+
 # T-puerta-39 · el freno no deja a un subagente llamar a la puerta, con ninguna forma; a la sesión principal no la frena por eso
 mundo ok
 freno_puerta(){ # $1 = comando · $2 = campo extra del evento (o vacío)
