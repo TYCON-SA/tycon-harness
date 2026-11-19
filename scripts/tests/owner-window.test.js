@@ -88,10 +88,12 @@ function arbolDelGuion(casa, cmd, { consola, padre = 100, tool = herramienta(), 
 const evento = (command, extra = {}) => ({ session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, permission_mode: 'default', ...extra });
 // sin `delegacion`, ninguna firma se delega: la delegación de verdad lee el perfil y la huella de esta máquina
 const SIN_DELEGACION = () => ({ ok: false, motivo: 'sin delegación en la prueba' });
+// sin `tramite`, ninguna firma es de trámite: la de verdad lee las listas del perfil del equipo
+const SIN_TRAMITE = () => ({ ok: false, motivo: null });
 // sin `aprobador`, el texto de un repo del arnés: el de verdad mira el remoto de la carpeta del evento
 const { APPROVERS } = require(path.join(__dirname, '..', 'lib', 'approver.js'));
 const DEL_ARNES = () => APPROVERS.maintainers;
-const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES, aprobaciones: o.aprobaciones, topes: o.topes });
+const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, tramite: o.tramite || SIN_TRAMITE, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES, aprobaciones: o.aprobaciones, topes: o.topes });
 // el control previo con que el guion de verdad pide una firma que puede salir sin persona (sin él, la delegación y
 // «hecho y avisado» no firman); acá deja pasar: lo que comprueba lo prueba cada guion
 const CONTROL_DEL_GUION = () => null;
@@ -3598,7 +3600,7 @@ function casaDeLista(t, { llave = 'on', coord = 'viva', confirmada = true } = {}
 }
 const SIN_PERFIL = (casa) => { const a = path.join(casa, 'arnes-vacio'); fs.mkdirSync(a, { recursive: true }); return { arnes: a, env: {} }; };
 const pedirConLista = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || ARBOL_DE_FONDO, pid: 201, casa, ahora: o.ahora || AHORA,
-  delegacion: o.delegacion || SIN_DELEGACION, clasificar: () => null, comprobar: o.comprobar || (() => null), aprobador: DEL_ARNES, aprobaciones: o.aprobaciones, lista: SIN_PERFIL(casa) });
+  delegacion: o.delegacion || SIN_DELEGACION, tramite: o.tramite || SIN_TRAMITE, clasificar: () => null, comprobar: o.comprobar || (() => null), aprobador: DEL_ARNES, aprobaciones: o.aprobaciones, lista: SIN_PERFIL(casa) });
 const renglones = (casa) => { try { return JSON.parse(fs.readFileSync(sl.archivo(casa), 'utf8')); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } };
 
 test('Freno_NiegaConCuadro_DejaUnRenglon (T1) — @story-8.153 @ac-1', (t) => {

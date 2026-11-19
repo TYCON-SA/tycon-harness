@@ -148,8 +148,9 @@ acepta el click. También es la forma de toda firma que el freno no puede decidi
 herramienta lanzada por otra herramienta o por su consola, una consola de fondo viva, o en Windows la consola PowerShell
 y las formas de consola que no son la medida. En Windows, además, un escape se firma siempre ahí. El cartel de cada freno trae el comando de la terminal.
 
-Algunas firmas las puede dar la coordinadora desde su pestaña, si el perfil del equipo se las delega
-(`approvals.delegated_signing`); las que son sólo del dueño, no (`approvals.owner_only`). La constancia de cada escape
+Las firmas de guion que el perfil del equipo pone como trámite (`approvals.delegated_signing`) las da el arnés solo
+(`guides/firmas-del-arnes.md`, «Las firmas de trámite las da el arnés»). Los escapes de esa lista todavía los firma la
+coordinadora desde su pestaña, o una persona; los que son sólo del dueño, nunca otro (`approvals.owner_only`). La constancia de cada escape
 anota la sesión y el nombre del escape. Cerrar como deuda (`ESC-C4`) deja la ejecución con `cierre: deuda` y la deuda,
 y sigue hasta el commit. El rojo esperado de la matriz (`marker.js expect-red acmatrix --tests <T1,T2> --until
 <AAAA-MM-DD>`, también `ESC-C4`) lleva al commit los criterios sin evidencia en vivo que cubre la lista, hasta la fecha

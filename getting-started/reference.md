@@ -31,6 +31,9 @@ Ten words, each with a single meaning on these pages:
 - **Story**: the document for one change, with its acceptance criteria and its tests.
 - **Workflow**: what a story goes through, from validation to the prepared commit (`tycon-pipeline`).
 - **Plan**: what the agent is going to do in a story; it does not write code until you approve it.
+- **Routine signatures**: the approvals your organization lists as routine in its profile; the harness gives them on
+  its own and tells you in one line. What stays with you: changing the controls, what cannot be undone and
+  production, and turning off a guard (`guides/firmas-del-arnes.en.md`).
 - **Reviewers**: the AI agents that check a change against their rules. The person who approves is the "approver".
 - **Guard**: a check that denies a command, an edit or the end of a turn; it does not just warn.
 - **Run**: one pass of the workflow over a story, with its timings and what the reviewers said.

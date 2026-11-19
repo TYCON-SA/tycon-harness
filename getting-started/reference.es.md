@@ -31,6 +31,9 @@ Diez palabras, cada una con un solo sentido en estas páginas:
 - **Historia** (story): el documento de un cambio, con sus criterios de aceptación y sus pruebas.
 - **Recorrido**: lo que hace una historia, de la validación al commit preparado (`tycon-pipeline`).
 - **Plan**: lo que el agente va a hacer en una historia; no programa hasta que lo aprobás.
+- **Firmas de trámite**: las aprobaciones que tu organización pone como trámite en su perfil; el arnés las da solo y
+  te avisa en una línea. A vos te quedan el cambio de controles, lo irreversible y producción, y apagar un freno
+  (`guides/firmas-del-arnes.md`).
 - **Revisores**: los agentes de IA que miran un cambio contra sus reglas. A la persona que aprueba se la llama «quien aprueba».
 - **Freno**: un control que deniega un comando, una edición o el cierre de un turno; no sólo avisa.
 - **Corrida**: una pasada del recorrido sobre una historia, con sus tiempos y lo que dijeron los revisores.

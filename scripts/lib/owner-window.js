@@ -65,11 +65,12 @@ const NODES = new Set(['node', 'nodejs']);
 // los procesos de Bash entre el guion y la herramienta en Windows, medidos: el de `Git\\bin` y dos de `Git\\usr\\bin`
 const NIVELES_DE_LA_CONSOLA = 3;
 // lo que anota la aprobación en Windows; un pedido sin esto sería de la ventana de permiso
-const VIAS_DE_WINDOWS = new Set(['click', 'mensaje']);
-// las vías que escribe el freno en el registro (sin vía: la ventana); las dos sin persona pasan siempre por el control
-// previo del guion (`antes`), y una firma sin él no sale por ellas
-const VIAS_DEL_REGISTRO = new Set(['click', 'mensaje', 'avisado', 'delegacion']);
-const SIN_PERSONA = new Set(['avisado', 'delegacion']);
+const VIAS_DE_WINDOWS = new Set(['click', 'mensaje', 'automatica']);
+// las vías que escribe el freno en el registro (sin vía: la ventana); las tres sin persona pasan siempre por el control
+// previo del guion (`antes`), y una firma sin él no sale por ellas. `automatica`: la firma de trámite, que da el arnés
+// (automatic-signing.js)
+const VIAS_DEL_REGISTRO = new Set(['click', 'mensaje', 'avisado', 'delegacion', 'automatica']);
+const SIN_PERSONA = new Set(['avisado', 'delegacion', 'automatica']);
 const SIN_GIT_BASH = 'esta máquina no tiene Git Bash: instalá Git para Windows (winget install Git.Git, y volvé a abrir la herramienta), que hace falta para los controles que son guiones de bash y para firmar con un click; mientras tanto, para firmar queda --terminal, en la ventana nueva de tres palabras';
 const buscarGitBash = () => require('./git-bash.js').findGitBash({ platform: 'win32' });
 const SHS = new Set(['bash', 'sh']);
@@ -1243,7 +1244,7 @@ function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado, cw
  * firmas; se pasa en las pruebas. `topes`: los del camino corto (`{ delegado, maximo }`), para las pruebas; sin ellos,
  * se leen una vez del perfil del equipo y valen para todo lo que decide.
  */
-function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes } = {}) {
+function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes } = {}) {
   if (!topes) topes = topesDelCaminoCorto(casa);
   const enWindows = plataforma === 'win32';
   // los criterios de un runtime-waiver, calculados una vez para el cuadro y para el detalle
@@ -1303,6 +1304,11 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     try { casa = casaDeLaCuenta(userInfo ? { userInfo } : undefined); } catch (e) { return negar(`no se pudo resolver la casa de la cuenta (${e.message})`, pedidas); }
   }
   let pendientes = pedidas;
+  // la firma de trámite la da el arnés solo (automatic-signing.js): sólo un guion, sin escapes en el mismo comando
+  const deTramite = (ids) => {
+    try { return (tramite || require('./automatic-signing.js').todasDeTramite)(ids, { home: casa }); } catch (e) { return { ok: false, motivo: `no pude leer qué firmas son de trámite (${e.message})` }; }
+  };
+  let automatica = guion && !escapes.length ? deTramite(pendientes) : { ok: false, motivo: null };
   // el árbol: la herramienta, sin otra herramienta ni consola por arriba, con pantalla y sin consolas de fondo
   arbol = arbolDeLaPlataforma(arbol, plataforma);
   if (!arbol) return negar('no pude leer los procesos de la máquina', pendientes);
@@ -1314,9 +1320,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // herramienta, pero la ventana de permiso no le llega a nadie seguro. Ahí sólo vale la aprobación explícita
   const esConsola = (p) => (enWindows ? esConsolaDeWindows(p) : desenvolver(p.comando, casa) !== null);
   const otra = (p) => (esHerramienta(p) && !esAnfitrionDeFondoDe(tool, p, arriba[i + 1])) || esConsola(p);
-  if (arriba.slice(i + 1).some(otra)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
   const deFondo = arriba.slice(i + 1).some(esHerramienta);
-  if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);
   // una consola de fondo frena, salvo el owner-wait de la coordinadora y los vigilantes de sólo lectura (sólo en Mac y
   // Linux: en Windows no se midió). El motivo nunca lleva la línea de comando de la consola
   const viva = (p) => {
@@ -1325,7 +1329,16 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     const comando = desenvolver(p.comando, casa);
     return !esOwnerWait(comando) && !esVigilanteDeLectura(comando);
   };
-  if (arbol.some((p) => p.ppid === tool.pid && viva(p))) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva que no es un vigilante de sólo lectura', pendientes);
+  // estos tres existen para que la ventana le llegue a una persona: una firma de trámite no abre ventana, y los mira sólo
+  // si al final no sale sola
+  const arbolNiega = () => {
+    if (arriba.slice(i + 1).some(otra)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
+    if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);
+    if (arbol.some((p) => p.ppid === tool.pid && viva(p))) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva que no es un vigilante de sólo lectura', pendientes);
+    return null;
+  };
+  const saltoElArbol = automatica.ok;
+  if (!saltoElArbol) { const n = arbolNiega(); if (n) return n; }
   const destino = destinoDe(can && can.palabras, sesion, guion);
   if (!SESION.test(destino)) return negar(sesionNombrada(guion, can && can.palabras) !== null ? 'la sesión que nombra el comando no se puede leer' : 'la sesión de --for-session no se puede leer', pendientes);
   const pedida = forSessionDe(can && can.palabras);
@@ -1344,6 +1357,31 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     // pendientes queda sólo con la refirma porque un guion no viaja con escapes (lo niega `guion && escapes.length` arriba)
     if (c && c.clase === REFIRMA && typeof c.refirma_de === 'string') { firmaGuion = REFIRMA; refirmaDe = c.refirma_de; pendientes = [REFIRMA]; }
   }
+  // la firma de trámite: el arnés la da solo, sin ventana, sin cuadro y sin coordinadora. La refirma tras traer main se
+  // conoce recién acá. Pasa por lo mismo que lo que sale sin persona: el cupo del camino corto y el control previo del
+  // guion; lo que eso niega va a una persona, con los controles del árbol de siempre
+  if (!automatica.ok && firmaGuion === REFIRMA && !escapes.length) automatica = deTramite(pendientes);
+  if (automatica.ok && guion && pendientes.length === 1) {
+    const cupo = firmaGuion === 'adhoc-lane' ? rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa, topes, cwd: evento.cwd || null, sesion }) : { ok: true };
+    if (!cupo.ok) automatica = { ok: false, motivo: cupo.motivo };
+    else if (CON_PRECHEQUEO.has(firmaGuion)) {
+      let c = null;
+      try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: 'automatica' }); } catch (e) { c = { niega: `no pude correr el chequeo del guion (${e.message})` }; }
+      if (c && c.niega) automatica = { ok: false, motivo: una(c.niega, 300) };
+    }
+    if (automatica.ok) {
+      try {
+        escribirRegistro(casa, { firma: firmaGuion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
+          sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString(), corrida: corridaDe(casa, destino),
+          via: 'automatica', ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
+      } catch (e) {
+        return negar(`no se pudo escribir el registro de la firma de trámite (${e.code || e.message})`, pendientes);
+      }
+      return { decision: 'allow', via: 'automatica', relevo: sesion, firmas: pendientes, texto: `firma de trámite: la da el arnés, sin persona (${firmaDe(firmaGuion).approves})` };
+    }
+  } else if (automatica.ok) automatica = { ok: false, motivo: null };
+  const sinAutomatica = automatica.motivo ? `No salió como firma de trámite: ${una(automatica.motivo, 200)}` : null;
+  if (saltoElArbol) { const n = arbolNiega(); if (n) return n; }
   // la delegación: cada firma con todas las llaves del perfil corre sin ventana (AC 22-25)
   let delegada = null;
   let sinDelegar = null;
@@ -1554,6 +1592,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // los criterios enteros)
   const detalle = vista && Array.isArray(vista.detalle) && vista.detalle.length ? `Lo que no entra en el cuadro: ${vista.detalle.join(' · ')}. ` : '';
   const texto = `${aprobador(evento.cwd).label}: ${pregunta} ${detalle}`
+    + (sinAutomatica ? `${sinAutomatica}. ` : '')
     + (sinDelegar ? `No se firmó por delegación: ${una(sinDelegar, 200)}. ` : '')
     + (noSeDesvio ? `${noSeDesvio}. ` : '')
     + `Si preferís, firmala en tu terminal: ${terminalDe(pendientes, destino)}.`
@@ -1683,7 +1722,7 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
 
 // la vía de la firma en el registro común (signature-log.js). `revision`: la coordinadora por delegación, respaldada por el
 // veredicto aprobado de la revisión automática que ella lanzó (la aprobación del plan)
-const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delegation', revision: 'review', avisado: 'notified', click: 'click', mensaje: 'message' };
+const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delegation', revision: 'review', avisado: 'notified', click: 'click', mensaje: 'message', automatica: 'automatic' };
 
 /**
  * El renglón `<firma>-signed` del gates.log: cómo se firmó, quién y para quién. Va antes de la constancia del guion.
@@ -1706,7 +1745,7 @@ function firmar({ firma, via, sesion = null, destino = null, resumen = '', key =
   }
   // por la revisión que lanzó la propia sesión (sin coordinadora): firma la revisión, no una coordinadora
   const propia = via === 'revision' && sesion && sesion === destino;
-  let quien = via === 'delegacion' ? `coordinadora (sesión ${sesion})` : propia ? `revisión automática (sesión ${sesion})`
+  let quien = via === 'automatica' ? require('./automatic-signing.js').FIRMANTE : via === 'delegacion' ? `coordinadora (sesión ${sesion})` : propia ? `revisión automática (sesión ${sesion})`
     : via === 'revision' ? `coordinadora (sesión ${sesion}), vía revisión automática`
     : via === 'avisado' ? `sesión ${sesion}, en una pestaña sin permisos (hecho y avisado)` : persona;
   if (quien === undefined) { try { quien = os.userInfo().username; } catch (_) { quien = null; } }
@@ -2064,20 +2103,27 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   // guion antes (`antes`) la respalda con la revisión automática, con via: revision y el resumen de la revisión. El de una
   // pestaña sin permisos firma con via: avisado, y se avisa a la persona por los canales de la sesión
   const avisado = v.registro.via === 'avisado';
-  const porRevision = !avisado && v.registro.via === 'delegacion' && v.previo && v.previo.via === 'revision';
+  const automatica = v.registro.via === 'automatica';
+  const porRevision = !avisado && !automatica && v.registro.via === 'delegacion' && v.previo && v.previo.via === 'revision';
   const explicita = v.registro.via === 'click' || v.registro.via === 'mensaje';
-  const via = avisado ? 'avisado' : porRevision ? 'revision' : v.registro.via === 'delegacion' ? 'delegacion' : explicita ? v.registro.via : 'ventana';
+  const via = automatica ? 'automatica' : avisado ? 'avisado' : porRevision ? 'revision' : v.registro.via === 'delegacion' ? 'delegacion' : explicita ? v.registro.via : 'ventana';
   // una aprobación de la persona que no contó y la delegación firmó igual: quien corrió el comando cree que firmó ella
-  if (['delegacion', 'revision', 'avisado'].includes(via) && v.registro.sin_aprobacion && !/^no hay un click/.test(v.registro.sin_aprobacion)) {
+  if (['delegacion', 'revision', 'avisado', 'automatica'].includes(via) && v.registro.sin_aprobacion && !/^no hay un click/.test(v.registro.sin_aprobacion)) {
     (avisarSinAprobacion || ((t) => process.stderr.write(t)))(`⚠️ no contó la aprobación de la persona, y esto se firmó por ${via}: ${v.registro.sin_aprobacion}\n`);
   }
   const que = (v.previo && v.previo.resumen) || resumen || v.registro.comando;
   // la clave del pedido, la misma con que la lista de firmas anotó su fila: la firma cierra ese pedido y no sus hermanos
   const key = claveDelPedido({ firma, destino: v.registro.destino, comando: v.registro.comando, argv, casa });
-  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado) ? que : (resumen || v.registro.comando), key, routed: v.registro.routed === true,
+  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado || automatica) ? que : (resumen || v.registro.comando), key, routed: v.registro.routed === true,
     remotoConocido: v.registro.via === 'terminal' ? false : v.registro.aprobada_remoto, herramienta: v.registro.herramienta, casa, ahora, anotar, extra, notificar });
   // el ok de guardar y el arreglo rápido ya avisaron desde los controles de la delegación de su guion
   if (avisado && !AVISA_SU_GUION.has(firma)) avisarHecho({ firma, sesion: v.registro.sesion, destino: v.registro.destino, que, notificar });
+  // la firma de trámite avisa en una línea, y el guion la trata como la delegación: lo que sale sin persona pasa por sus
+  // controles más estrictos (el cupo del camino corto, el riesgo de cada ruta). `automatica` dice que no firmó nadie
+  if (automatica) {
+    (avisarSinAprobacion || ((t) => process.stderr.write(t)))(`${require('./automatic-signing.js').aviso({ firma, destino: v.registro.destino, que })}\n`);
+    return { codigo: 0, via: 'delegacion', automatica: true, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro };
+  }
   return { codigo: 0, via, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro };
 }
 
@@ -2115,7 +2161,8 @@ function fijarDestino({ r, propia, necesitaMarcador = false, leerMarcador, casa,
  * Quién firmó, para la constancia del guion, a partir de lo que devolvió `exigir`: por la delegación del perfil firmó
  * la coordinadora (la sesión del evento) en nombre de `persona`; por la ventana o por la terminal, la persona.
  */
-function quienFirmo({ via, sesion } = {}, persona) {
+function quienFirmo({ via, sesion, automatica } = {}, persona) {
+  if (automatica) return { tipo: 'automatica', quien: require('./automatic-signing.js').FIRMANTE, via: 'firma de trámite · arnés' };
   if (via === 'delegacion') return { tipo: 'automatica', quien: `coordinadora (sesión ${sesion})`, delegacion: persona, via: 'delegada · coordinadora' };
   if (via === 'revision') return { tipo: 'automatica', quien: `coordinadora (sesión ${sesion}), vía revisión automática`, delegacion: persona, via: 'revisión automática · coordinadora' };
   if (via === 'avisado') return { tipo: 'automatica', quien: `sesión ${sesion}, en una pestaña sin permisos`, delegacion: persona, via: 'hecho y avisado' };

@@ -193,9 +193,10 @@ organization chose to download the conversations ("Run conversations" section).
 
 The detail also has the **«Signatures»** card: what was signed in that run, when (in UTC), who and how. The signatures
 come from the machine's **common signature log**: those of the run's session, from its start to its close. At the top,
-the count; then one row per signature, with one of three marks: **«Yours»** (you signed it, in the window, the
+the count; then one row per signature, with one of four marks: **«Yours»** (you signed it, in the window, the
 terminal, a click or a written "approved"), **«By delegation»** (the coordinator gave it on your behalf; it has its own
-color and the ⇄ glyph) or **«Done and notified»** (a session without permissions did it and told you: it is not your
+color and the ⇄ glyph), **«By the harness (routine)»** (a routine signature the harness gives on its own) or
+**«Done and notified»** (a session without permissions did it and told you: it is not your
 signature). A signature requested by another session says so, with the first 8 characters of that session. A signature
 recorded in the log of another folder (the HOME one, when it is not the account's) says so too. The texts are uploaded
 sanitized (no paths, emails or credentials), capped in length, without any full session id, and capped at 200
@@ -815,8 +816,10 @@ be, to copy it and open the request by hand.
   Below it is **who signs each thing**: one row for each signature in the catalog
   (`guides/firmas-del-arnes.md`), with three choices. "In the owner's window" is the default: the owner answers in the
   permission window; where the window does not reach, approves with a click in the options box or a written "aprobado";
-  or signs at their terminal. "Delegated to the coordinator" (`approvals.delegated_signing`) lets that
-  session sign it on the owner's behalf, and its sentence is recorded; what is delegated is not protected against an
+  or signs at their terminal. "Delegated to the coordinator" (`approvals.delegated_signing`) makes it routine: the
+  harness gives it on its own, in any session, with or without a coordinator (`guides/firmas-del-arnes.md`, «Las firmas
+  de trámite las da el arnés»); the escapes in that list are still signed by the coordinator on the owner's behalf, and
+  its sentence is recorded; what is delegated is not protected against an
   agent: if the coordinator decides to approve it on its own, the harness cannot tell it apart from the owner's ok, so
   delegate only low-risk things. "Owner only" (`approvals.owner_only`) locks it: the site does not offer to delegate it,
   and it does not offer it for what cannot be signed from another session's tab either. The fixed notice says so:
