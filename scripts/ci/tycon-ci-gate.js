@@ -985,7 +985,7 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
       if (v.estado === 'no-leido') nivel('veredicto-de-la-evidencia', NIVELES.NO_MEDIDO);
       else nivel('veredicto-de-la-evidencia', NIVELES.REGISTRO, v.estado === 'pasa' ? 'no declara FAIL' : 'declara FAIL');
       if (v.estado === 'falla') {
-        estricto('evidencia-de-cierre-falla', `pasa a \`${estadoNuevo}\` y toda su evidencia de cierre declara FAIL (${dodEnGit.length} archivo(s)). El portón sólo lee eso: que una no declare FAIL no prueba que pasó. Hace falta una corrida que no falle.`);
+        estricto('evidencia-de-cierre-falla', `pasa a \`${estadoNuevo}\` y toda su evidencia de cierre declara FAIL (${dodEnGit.length} archivo(s)). El portón sólo lee eso: que una no declare FAIL no prueba que pasó. Hace falta una ejecución que no falle.`);
       } else if (v.estado === 'no-leido') {
         estricto('veredicto-no-leido', `pasa a \`${estadoNuevo}\` y no pude leer el veredicto de su evidencia de cierre: ${v.ilegibles.join(', ')}. No es «está bien»: es «no lo pude leer».`);
       }
@@ -1075,10 +1075,10 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
         const a = autoriaPorGit({ repo, refNuevo, refViejo: refDeAntes(), carpetas: carpetasGit });
         for (const c of a.contradictorias) {
           avisos.push({ archivo: rel, story: idBruto, regla: 'carpeta-fecha-contradictoria',
-            mensaje: `\`${c.rel}/\` trae en el nombre el ${c.fechaNombre}, antes del corte del registro de autoría, y entró en git el ${c.fechaGit}, después. No se le exige el registro (una corrida vieja que entró por squash o por una migración); si no lo es, revisalo. Avisa y no frena.` });
+            mensaje: `\`${c.rel}/\` trae en el nombre el ${c.fechaNombre}, antes del corte del registro de autoría, y entró en git el ${c.fechaGit}, después. No se le exige el registro (una ejecución vieja que entró por squash o por una migración); si no lo es, revisalo. Avisa y no frena.` });
         }
         if (a.exige.length) {
-          estricto('sin-registro-de-autoria', `pasa a \`done\` y ninguna carpeta de corrida trae en git un \`review-roster.json\` válido, y lo piden: ${a.exige.map((c) => `\`${c.rel}/\` (${c.motivo})`).join(', ')}. La fecha sale de git, no del nombre: el nombre lo elige quien crea la carpeta. Lo escribe el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.`);
+          estricto('sin-registro-de-autoria', `pasa a \`done\` y ninguna carpeta de ejecución trae en git un \`review-roster.json\` válido, y lo piden: ${a.exige.map((c) => `\`${c.rel}/\` (${c.motivo})`).join(', ')}. La fecha sale de git, no del nombre: el nombre lo elige quien crea la carpeta. Lo escribe el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.`);
         }
       }
     }
@@ -1603,7 +1603,7 @@ function main() {
   }
   const avisosDeFecha = (r.avisos || []).filter((h) => h.regla === 'carpeta-fecha-contradictoria');
   if (avisosDeFecha.length) {
-    console.error('\n⚠️  AVISO — carpetas de corrida cuya fecha en el nombre no coincide con la de git (no frena):');
+    console.error('\n⚠️  AVISO — carpetas de ejecución cuya fecha en el nombre no coincide con la de git (no frena):');
     for (const h of avisosDeFecha) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
   }
   // Su propio bloque: no depende de `review → done` ni de TYCON_REVIEW_A_DONE, sino de una fecha.
