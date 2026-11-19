@@ -412,7 +412,9 @@ test('T16c BorrarCarpeta_SinRetrocesoNiEscapeIncompleto @story-8.318 @ac-13 — 
   // las dos entradas que hacían retroceder la expresión de los envoltorios, y la de las palabras de control
   // crece en línea con el largo: cuatro veces más largo tarda a lo sumo unas ocho veces más (una que retrocede, miles),
   // y nunca más de 10 s. Un tope fijo depende de la máquina: en la CI esto tarda el doble
-  const mide = (texto) => { const t0 = process.hrtime.bigint(); gate.carpetasQueBorraOMueve(texto); return Number(process.hrtime.bigint() - t0) / 1e6; };
+  // la mediana de tres: una pausa del recolector en una sola medida no la vuelve roja
+  const una = (texto) => { const t0 = process.hrtime.bigint(); gate.carpetasQueBorraOMueve(texto); return Number(process.hrtime.bigint() - t0) / 1e6; };
+  const mide = (texto) => [una(texto), una(texto), una(texto)].sort((a, b) => a - b)[1];
   for (const [cabeza, pieza] of [['env', ' -/env'], ['env', ' -c 0'], ['if', ' ( '], ['then', '  ']]) {
     mide(`${cabeza}${pieza.repeat(500)}`);
     const corto = mide(`${cabeza}${pieza.repeat(5000)}`);
