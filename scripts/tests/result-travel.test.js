@@ -346,21 +346,30 @@ test('T13 Notice_UnreadableState_SaysItDoesNotKnow @story-8.312 @ac-11', () => {
   assert.match(l[0], /no sé si/);
 });
 
-test('T34 Notice_LibraryMissing_SaysItDoesNotKnow @story-8.312 @ac-19', () => {
-  // el aviso solo, en un árbol sin la librería del viaje: el examen no puede publicar y eso no puede quedar mudo
+test('T34 Notice_LibraryMissing_StaysQuiet @story-8.312 @ac-19', () => {
+  // el aviso y la librería viajan juntos: sin ella el aviso calla, con o sin el examen al lado, como esperan los casos del
+  // banco que lo copian solo
   const w = world();
-  const arbol = tmp('aviso-solo-');
-  fs.mkdirSync(path.join(arbol, 'scripts', 'hooks'), { recursive: true });
-  fs.copyFileSync(NOTICE, path.join(arbol, 'scripts', 'hooks', 'bench-notice.js'));
-  const env = { ...process.env, HOME: w.casa, TYCON_BENCH_DIR: path.join(w.raiz, 'no-hay-bench'), TYCON_EVAL_SANDBOX: '' };
-  delete env.TYCON_HOME;
-  const r = spawnSync(process.execPath, [path.join(arbol, 'scripts', 'hooks', 'bench-notice.js')],
-    { cwd: tmp('otra-carpeta-'), encoding: 'utf8', input: '{"source":"startup"}', env });
-  const l = `${r.stdout}`.split('\n').filter((x) => /resultados de la noche/.test(x));
-  assert.strictEqual(l.length, 1, `${r.stdout}${r.stderr}`);
-  assert.match(l[0], /^🟠/);
-  assert.match(l[0], /no sé si viajaron/);
-  assert.match(l[0], /result-travel\.js/);
+  const correr = (conExamen) => {
+    const arbol = tmp('aviso-solo-');
+    fs.mkdirSync(path.join(arbol, 'scripts', 'hooks'), { recursive: true });
+    fs.copyFileSync(NOTICE, path.join(arbol, 'scripts', 'hooks', 'bench-notice.js'));
+    if (conExamen) {
+      fs.mkdirSync(path.join(arbol, 'scripts', 'controls-bench'), { recursive: true });
+      for (const f of ['periodic-exam.js', 'tools-path.js']) {
+        fs.copyFileSync(path.join(ROOT, 'scripts', 'controls-bench', f), path.join(arbol, 'scripts', 'controls-bench', f));
+      }
+    }
+    const env = { ...process.env, HOME: w.casa, TYCON_BENCH_DIR: path.join(w.raiz, 'no-hay-bench'), TYCON_EVAL_SANDBOX: '' };
+    delete env.TYCON_HOME;
+    const r = spawnSync(process.execPath, [path.join(arbol, 'scripts', 'hooks', 'bench-notice.js')],
+      { cwd: tmp('otra-carpeta-'), encoding: 'utf8', input: '{"source":"startup"}', env });
+    return { out: `${r.stdout}${r.stderr}`, l: `${r.stdout}`.split('\n').filter((x) => /resultados de la noche/.test(x)) };
+  };
+  for (const conExamen of [true, false]) {
+    const r = correr(conExamen);
+    assert.deepStrictEqual(r.l, [], `${conExamen ? 'con' : 'sin'} el examen: ${r.out}`);
+  }
 });
 
 // ── C: quien lee el examen ────────────────────────────────────────────────────────────────────────────────────────

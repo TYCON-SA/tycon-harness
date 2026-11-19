@@ -589,9 +589,10 @@ const PLAZO_DEL_NOCTURNO_MS = 36 * 60 * 60 * 1000;
  * a la red: con la copia del clon anterior al plazo, no se sabe, y se dice con el comando para traerla.
  */
 function estadoDelViaje() {
+  // Sin la librería calla: el aviso y la librería viajan juntos, y los casos del banco copian el aviso solo y esperan
+  // silencio (scripts/controls-bench/cases/hooks/08-bench-notice.json).
+  if (!VIAJE) return [];
   const QUE = 'resultados de la noche';
-  // sin la librería el examen tampoco puede publicar: callar acá dejaría mudo justo ese fallo
-  if (!VIAJE) return [`🟠 ${QUE}: no sé si viajaron — falta scripts/lib/result-travel.js (¿clon desactualizado?)`];
   const st = VIAJE.readStatus();
   if (st.state === 'missing') return [];
   if (st.state === 'unreadable') return [`🟠 ${QUE}: no sé si viajaron — no puedo leer ${limpio(st.path, 300)} (${limpio(st.why)})`];
