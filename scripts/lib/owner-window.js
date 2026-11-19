@@ -1304,11 +1304,12 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     try { casa = casaDeLaCuenta(userInfo ? { userInfo } : undefined); } catch (e) { return negar(`no se pudo resolver la casa de la cuenta (${e.message})`, pedidas); }
   }
   let pendientes = pedidas;
-  // la firma de trámite la da el arnés solo (automatic-signing.js): un guion sin escapes, o escapes sin guion
+  // la firma de trámite la da el arnés solo (automatic-signing.js): un guion sin escapes, o un escape sin guion
   const deTramite = (ids) => {
     try { return (tramite || require('./automatic-signing.js').todasDeTramite)(ids, { home: casa }); } catch (e) { return { ok: false, motivo: `no pude leer qué firmas son de trámite (${e.message})` }; }
   };
-  let automatica = (guion && !escapes.length) || (!guion && escapes.length) ? deTramite(pendientes) : { ok: false, motivo: null };
+  // un solo escape: la constancia del freno de seguridad es una por comando, y un segundo quedaría sin la suya
+  let automatica = (guion && !escapes.length) || (!guion && escapes.length === 1) ? deTramite(pendientes) : { ok: false, motivo: null };
   // el árbol: la herramienta, sin otra herramienta ni consola por arriba, con pantalla y sin consolas de fondo
   arbol = arbolDeLaPlataforma(arbol, plataforma);
   if (!arbol) return negar('no pude leer los procesos de la máquina', pendientes);
@@ -1385,7 +1386,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
       }
       return { decision: 'allow', via: 'automatica', relevo: sesion, firmas: pendientes, texto: `firma de trámite: la da el arnés, sin persona (${firmaDe(firmaGuion).approves})` };
     }
-  } else if (automatica.ok && !guion && escapes.length) {
+  } else if (automatica.ok && !guion && escapes.length === 1) {
     return { decision: 'allow', via: 'automatica', relevo: sesion, firmas: pendientes, texto: `firma de trámite: la da el arnés, sin persona (${pendientes.map((id) => firmaDe(id).approves).join('; ')})` };
   } else if (automatica.ok) automatica = { ok: false, motivo: null };
   const sinAutomatica = automatica.motivo ? `No salió como firma de trámite: ${una(automatica.motivo, 200)}` : null;

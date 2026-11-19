@@ -130,6 +130,10 @@ test('AutomaticSigning_EscapeDeTramite_SaleSinVentanaYSinRegistroDeLaVentana', (
   assert.deepStrictEqual(r.firmas, [`escape:${variable}`]);
   // un escape no deja pedido de la ventana: su constancia la escribe el freno de seguridad
   assert.strictEqual(vigentes(casa).length, 0);
+  // dos escapes en el mismo comando no salen solos: la constancia del freno es una por comando
+  const otra = ['TYCON', 'NEW', 'NAMES'].join('_');
+  const dos = pedir(casaNueva(t), `${variable}=off ${otra}=0 git commit -m x`, { escapes: [`escape:${variable}`, `escape:${otra}`], tramite: DE_TRAMITE });
+  assert.notStrictEqual(dos.via, 'automatica');
 });
 
 test('AutomaticSigning_LaConstanciaDelEscape_GuardaLaViaYAutorizaElCierre', (t) => {
