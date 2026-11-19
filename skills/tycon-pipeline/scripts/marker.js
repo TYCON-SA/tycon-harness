@@ -7321,21 +7321,33 @@ function cmdAdhocAllowDataChange(io) {
         if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) lineas.push(`  ⚠ no pude saber si ${path.join(repo, rel)} está en la base: miralo a mano antes de restaurarlo o borrarlo.`);
       }
     }
+    const gitDe = (repo, args) => require('child_process').spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
     for (const repo of Object.keys(porRepo)) {
-      const rels = porRepo[repo];
-      if (!rels.length) continue;
+      // un archivo movido entra con sus dos rutas: la vieja vuelve de la base y la nueva, si la base no la tiene, se borra
+      const delCarril = new Set(porRepo[repo]);
+      const rels = new Set(delCarril);
+      for (const c of medida.porRepo[repo].cambios || []) if (c.vieja && (delCarril.has(c.ruta) || delCarril.has(c.vieja))) { rels.add(c.ruta); rels.add(c.vieja); }
+      if (!rels.size) continue;
       const { sha } = medida.porRepo[repo].base;
       const enLaBase = [];
       const nuevos = [];
+      const ignorados = [];
       const sinSaber = [];
-      for (const rel of rels) {
+      for (const rel of [...rels].sort()) {
         if (!sha) { sinSaber.push(rel); continue; }
-        const r = require('child_process').spawnSync('git', ['-C', repo, 'ls-tree', '-z', '--name-only', sha, '--', rel], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
-        if (r.error || r.status !== 0) sinSaber.push(rel);
-        else (r.stdout.split('\0').includes(rel) ? enLaBase : nuevos).push(rel);
+        // la ruta es un nombre, no un patrón: «src/[id].ts» no nombra src/i.ts
+        const r = gitDe(repo, ['--literal-pathspecs', 'ls-tree', '-z', '--name-only', sha, '--', rel]);
+        if (r.error || r.status !== 0) { sinSaber.push(rel); continue; }
+        if (r.stdout.split('\0').includes(rel)) { enLaBase.push(rel); continue; }
+        // lo que git ignora no está en la base aunque existiera antes del carril (un .env): git no lo puede devolver.
+        // check-ignore toma nombres, no patrones (y no acepta --literal-pathspecs)
+        const ig = gitDe(repo, ['check-ignore', '-q', '--no-index', '--', rel]);
+        if (ig.error || (ig.status !== 0 && ig.status !== 1)) sinSaber.push(rel);
+        else (ig.status === 0 ? ignorados : nuevos).push(rel);
       }
-      if (enLaBase.length) lineas.push(`  git -C ${citar(repo)} checkout ${citar(sha)} -- ${enLaBase.map(citar).join(' ')}`);
+      if (enLaBase.length) lineas.push(`  git -C ${citar(repo)} checkout ${citar(sha)} -- ${enLaBase.map((r) => citar(`:(literal)${r}`)).join(' ')}`);
       if (nuevos.length) lineas.push(`  archivos nuevos del carril, para borrar: ${nuevos.map((r) => citar(path.join(repo, r))).join(' ')}`);
+      for (const rel of ignorados) lineas.push(`  ⚠ ${path.join(repo, rel)}: git lo ignora y no lo puede devolver (pudo existir antes del carril): no lo borres; deshacé a mano lo que le cambiaste.`);
       for (const rel of sinSaber) lineas.push(`  ⚠ no pude saber si ${path.join(repo, rel)} está en la base: miralo a mano antes de restaurarlo o borrarlo.`);
     }
     lineas.push(`  Después: node ${citar(__filename)} adhoc clear`);

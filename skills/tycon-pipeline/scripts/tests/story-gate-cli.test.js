@@ -1582,7 +1582,7 @@ test('T28 Cuadro_EscribirHistoriaYDescartar_TextosSinFirma @story-8.196 @ac-13',
   assert.match(r.stdout, /historia/);
   r = markerSinVentana(home, 'ses-c4', ALLOW('descartar'));
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /checkout '[0-9a-f]{7,}' -- 'src\/a\.ts'/);
+  assert.match(r.stdout, /checkout '[0-9a-f]{7,}' -- ':\(literal\)src\/a\.ts'/);
   assert.match(r.stdout, /src\/nuevo\.ts/);
   assert.match(r.stdout, /adhoc clear/);
   assert.strictEqual(declaracion(home, 'ses-c4').datosPermitido, undefined, 'sin firma');
@@ -1607,7 +1607,7 @@ test('T28 Cuadro_Descartar_ClasificaContraLaBase @story-8.196 @ac-13', () => {
   const r = markerSinVentana(home, 'ses-c8', ALLOW('descartar'));
   assert.equal(r.status, 0, r.stderr);
   const restaurar = r.stdout.split('\n').find((l) => / checkout /.test(l)) || '';
-  assert.match(restaurar, /'src\/a\.ts'/);
+  assert.match(restaurar, /':\(literal\)src\/a\.ts'/);
   assert.doesNotMatch(restaurar, /hecho\.ts/, 'no está en la base: no se restaura');
   assert.match(r.stdout.split('\n').find((l) => /para borrar/.test(l)) || '', /hecho\.ts/);
   // la base no se puede leer: no clasifica, y no manda a borrar nada
@@ -1647,6 +1647,80 @@ test('T52 Descartar_ListaLaDeHoy_SinLoAjeno @story-8.190 @ac-35', () => {
   assert.match(r.stdout, /src\/hecho\.ts/);
   assert.match(r.stdout.split('\n').find((l) => /para borrar/.test(l)) || '', /nuevo\.ts/);
   assert.doesNotMatch(r.stdout, /ajeno\.ts/);
+});
+
+// Un repo de juguete para «descartar»: la base con `archivos`, y la función git del repo.
+function repoDescartar(archivos) {
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'repo-')));
+  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8' }).trim();
+  git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  for (const [rel, t] of Object.entries(archivos)) { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), t); }
+  git('add', '.'); git('commit', '-qm', 'base');
+  return { repo, git, base: git('rev-parse', 'HEAD') };
+}
+// Corre lo que «descartar» manda a correr: el checkout tal cual, y el borrado de los archivos que lista como nuevos.
+function correrDescartar(stdout) {
+  for (const l of stdout.split('\n')) {
+    if (/^ {2}git -C .* checkout /.test(l)) execFileSync('bash', ['-c', l.trim()], { encoding: 'utf8' });
+    const m = /^ {2}archivos nuevos del carril, para borrar: (.*)$/.exec(l);
+    if (m) execFileSync('bash', ['-c', `rm -f -- ${m[1]}`], { encoding: 'utf8' });
+  }
+}
+
+// 🔴 Falla con: un archivo movido en el carril que «descartar» manda a borrar en su ruta nueva sin devolver la vieja: el
+//    archivo de la base desaparece.
+test('Descartar_ArchivoMovido_DevuelveLaRutaVieja @story-8.190', () => {
+  const home = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'home-'));
+  // un archivo largo y un cambio chico: git lo ve como movido (con su ruta vieja), no como borrado y nuevo
+  const largo = Array.from({ length: 20 }, (_, i) => `const v${i} = ${i};`).join('\n') + '\n';
+  const { repo, git, base } = repoDescartar({ 'src/viejo.ts': largo });
+  git('mv', 'src/viejo.ts', 'src/nuevo.ts');
+  fs.writeFileSync(path.join(repo, 'src', 'nuevo.ts'), `${largo}executeQuery("x");\n`);
+  git('add', '-A'); git('commit', '-qm', 'el carril');
+  assert.match(git('diff', '--name-status', '-M', base, 'HEAD'), /^R\d+\tsrc\/viejo\.ts\tsrc\/nuevo\.ts/m, 'git no lo vio como movido');
+  carrilFrenado(home, 'ses-dm', { files: [path.join(repo, 'src', 'nuevo.ts')], bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-dm', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout.split('\n').find((l) => / checkout /.test(l)) || '', /viejo\.ts/, r.stdout);
+  correrDescartar(r.stdout);
+  assert.equal(fs.readFileSync(path.join(repo, 'src', 'viejo.ts'), 'utf8'), largo, 'la ruta vieja no volvió');
+  assert.ok(!fs.existsSync(path.join(repo, 'src', 'nuevo.ts')), 'la ruta nueva quedó');
+});
+
+// 🔴 Falla con: un archivo que git ignora (un .env) y que ya existía antes del carril, mandado a borrar porque la base no
+//    lo tiene: git no lo puede devolver.
+test('Descartar_ArchivoIgnorado_NoSeMandaABorrar @story-8.190', () => {
+  const home = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'home-'));
+  const { repo } = repoDescartar({ '.gitignore': '.env\n', 'src/a.ts': 'a\n' });
+  fs.writeFileSync(path.join(repo, '.env'), 'CLAVE=de-antes\n');
+  const base = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  // el carril edita el .env y un archivo seguido
+  fs.writeFileSync(path.join(repo, '.env'), 'CLAVE=del-carril\n');
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'executeQuery("x");\n');
+  carrilFrenado(home, 'ses-di', { files: [path.join(repo, '.env'), path.join(repo, 'src', 'a.ts')], bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-di', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout.split('\n').find((l) => /para borrar/.test(l)) || '', /\.env/, r.stdout);
+  assert.match(r.stdout, /⚠ .*\.env.*git (lo ignora|no lo puede devolver)/, r.stdout);
+  correrDescartar(r.stdout);
+  assert.ok(fs.existsSync(path.join(repo, '.env')), 'se borró el .env');
+  assert.equal(fs.readFileSync(path.join(repo, 'src', 'a.ts'), 'utf8'), 'a\n');
+});
+
+// 🔴 Falla con: la ruta pasada a git como patrón: «src/[id].ts» también nombra src/i.ts y src/d.ts, y el checkout, que
+//    alguien corre después, pisa lo que otra sesión cambió en esos archivos entretanto.
+test('Descartar_RutaConCorchetes_NoPisaOtrosArchivos @story-8.190', () => {
+  const home = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'home-'));
+  const { repo, base } = repoDescartar({ 'src/[id].ts': 'p\n', 'src/i.ts': 'i\n', 'src/d.ts': 'd\n' });
+  fs.writeFileSync(path.join(repo, 'src', '[id].ts'), 'executeQuery("x");\n');
+  carrilFrenado(home, 'ses-dc', { files: [path.join(repo, 'src', '[id].ts')], bases: { [repo]: { sha: base, traida: true } } });
+  const r = markerSinVentana(home, 'ses-dc', ALLOW('descartar'));
+  assert.equal(r.status, 0, r.stderr);
+  // entre que el comando se da y que alguien lo corre, otra sesión cambia src/i.ts
+  fs.writeFileSync(path.join(repo, 'src', 'i.ts'), 'de otra sesión\n');
+  correrDescartar(r.stdout);
+  assert.equal(fs.readFileSync(path.join(repo, 'src', '[id].ts'), 'utf8'), 'p\n', 'no volvió el archivo del carril');
+  assert.equal(fs.readFileSync(path.join(repo, 'src', 'i.ts'), 'utf8'), 'de otra sesión\n', 'pisó src/i.ts');
 });
 
 // 🔴 Falla con: el texto libre de la sesión pegado sin escapar en el comando que corre el dueño en su terminal.
@@ -1723,7 +1797,7 @@ test('T6 Descartar_ReposDelFreno_LosNombra @story-8.222 @ac-5', () => {
   carrilFrenado(home, 'ses-e3', { frenoDatos: { ...FRENO_DATOS, repos: [repo] } });
   let r = markerSinVentana(home, 'ses-e3', ALLOW('descartar'));
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /checkout '[0-9a-f]{7,}' -- 'src\/a\.ts'/);
+  assert.match(r.stdout, /checkout '[0-9a-f]{7,}' -- ':\(literal\)src\/a\.ts'/);
   assert.doesNotMatch(r.stdout, /suelto\.ts/, 'lo sin seguir que no es del carril queda afuera');
   // un freno anotado antes de guardar sus repos
   carrilFrenado(home, 'ses-e4');
@@ -1738,7 +1812,7 @@ test('T8 Descartar_LsTreeColgado_DiceNoPudeSaber @story-8.222 @ac-6', () => {
   const { repo, base } = repoConCambio();
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'bin-'));
   const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
-  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\nif [ "$3" = ls-tree ] && [ "$4" = -z ] && [ "$5" = --name-only ]; then exec sleep 30; fi\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\ncase " $* " in *" ls-tree -z --name-only "*) exec sleep 30 ;; esac\nexec "${real}" "$@"\n`, { mode: 0o755 });
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   carrilFrenado(home, 'ses-e5', { files: [path.join(repo, 'src', 'a.ts')], bases: { [repo]: { sha: base, traida: true } } });
   const r = markerSinVentana(home, 'ses-e5', ALLOW('descartar'), { PATH: `${bin}${path.delimiter}${process.env.PATH}` }, { timeout: 25000 });
