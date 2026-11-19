@@ -1088,7 +1088,8 @@ function main() {
       for (const nota of maqueta.notes) console.log(`   · ${nota}`);
       problems.push(...layerEvidence({ qaDir, qk, evidenceDirs, key: matrix.key || sid }).problems);
     } else {
-      if (alcance.note) console.log(`   · ${alcance.note}`);
+      // la baja por tanda de la corrida ya la dice quien mide la tanda (el marcador); la línea final la repite corta
+      if (alcance.note && alcance.blocked.length) console.log(`   · ${alcance.note}`);
       if (opt('--mockup-sha') || isFile(path.join(qaDir, `${qk}-mockup-approval.json`))) {
         console.log(`   · la maqueta aprobada es de ${cuyaTanda}: se compara en la corrida que mida esa tanda.`);
       }
