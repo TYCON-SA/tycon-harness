@@ -314,11 +314,11 @@ for y in ${NIGHTLY_YAMLS[@]+"${NIGHTLY_YAMLS[@]}"} "$PR_YAML"; do
   if code_of "$y" | grep -E 'SK="\$\(node scripts/lib/skills-dir\.js --skills\)"' > /dev/null; then ok "T15 $B pide la raíz de las skills a scripts/lib/skills-dir.js (la regla de resolveSkillsDirs)"
   else bad "T15 $B no pide la raíz de las skills a scripts/lib/skills-dir.js --skills"; fi
 done
-# el banco sigue incluyendo la plantilla en sus dos trabajos, con la lista de productos de siempre
+# el banco incluye la plantilla en sus tres trabajos de bash (Linux, macOS y las suites), con la lista de productos de siempre
 if [ ${#NIGHTLY_YAMLS[@]} -gt 0 ]; then
   N_TEMPLATE="$(code_of "$BENCH_YAML" | grep -c 'template: /pipelines/templates/fetch-repos.yml')"
-  if [ "$N_TEMPLATE" = 2 ] && ! code_of "$BENCH_YAML" | grep 'productRegistry' >/dev/null; then ok "T15 el banco incluye la plantilla en sus dos trabajos, con la lista de productos por defecto"
-  else bad "T15 el banco incluye la plantilla $N_TEMPLATE vez/veces (esperaba 2) o le pasa otra lista"; fi
+  if [ "$N_TEMPLATE" = 3 ] && ! code_of "$BENCH_YAML" | grep 'productRegistry' >/dev/null; then ok "T15 el banco incluye la plantilla en sus tres trabajos, con la lista de productos por defecto"
+  else bad "T15 el banco incluye la plantilla $N_TEMPLATE vez/veces (esperaba 3) o le pasa otra lista"; fi
 fi
 # la historia entera se pide desde el checkout (la plantilla la completa si igual vino recortado)
 for y in $([ ${#NIGHTLY_YAMLS[@]} -gt 0 ] && printf '%s' "$BENCH_YAML") "$PR_YAML"; do

@@ -208,15 +208,17 @@ const yaml = () => fs.readFileSync(PIPELINE, 'utf8');
 
 test('T14 Pipeline_HasTheNewJobs @story-8.300 @ac-1 @ac-2 @ac-4', { skip: SIN_PRIVADO }, () => {
   const y = yaml();
-  assert.match(y, /imagen: macOS-latest/);
-  assert.match(y, /imagen: windows-latest/);
-  assert.match(y, /runner\.js --tool both --only-not-on linux --baseline check --json/);
-  assert.ok((y.match(/CODIGO=\$\{PIPESTATUS\[0\]\}/g) || []).length >= 2);
+  assert.match(y, /vmImage: 'macOS-latest'/);
+  assert.match(y, /vmImage: 'windows-latest'/);
+  assert.strictEqual((y.match(/runner\.js --tool both --only-not-on linux --baseline check --json/g) || []).length, 2);
+  assert.ok((y.match(/CODIGO=\$\{PIPESTATUS\[0\]\}/g) || []).length >= 4, 'Linux, macOS, Windows y el paso que junta');
   assert.match(y, /merge-reports\.js --base [^\n]*--add [^\n]*--add /);
   const juntar_ = y.indexOf('merge-reports.js --base');
   const copia = y.indexOf('banco-$HOY.json');
   assert.ok(copia > juntar_, 'la copia del día sale del reporte junto');
-  assert.match(y, /artifact: 'banco-\$\{\{ otro\.so \}\}'[\s\S]{0,120}condition: always\(\)/);
+  for (const so of ['linux', 'darwin', 'win32']) assert.match(y, new RegExp(`artifact: 'banco-${so}'\\n\\s+condition: always\\(\\)`), so);
+  // el reporte de la noche anterior está en el repo: si el banco de Linux no midió, no se entrega como si fuera de hoy
+  assert.match(y, /Agent\.JobStatus\)" in Succeeded\|SucceededWithIssues\)[\s\S]{0,300}cp ultimo-banco\.json/);
 });
 
 test('T12 PipelineMergeStep_DoesNotHideTheError @story-8.300 @ac-6 @ac-7', { skip: SIN_PRIVADO }, (t) => {
