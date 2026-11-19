@@ -375,12 +375,16 @@ test('T16b BorrarCarpeta_FormasDelPaseAdversarial @story-8.318 @ac-13 @ac-15 —
     [`echo x | xargs rm -rf ${wt}`, 'Bash'], [`find ${wt} -maxdepth 0 -exec rm -rf {} +`, 'Bash'],
     [`Move-Item -Path ${wt} -Destination ${wt}-2`, 'PowerShell'], [`Rename-Item -LiteralPath ${wt} -NewName repo-wt-b`, 'PowerShell'],
     [`rni ${wt} repo-wt-b`, 'PowerShell'], [`bash -c 'cd ${E.repo} && rm -rf ../repo-wt-a'`, 'Bash'],
+    // la tercera vuelta
+    [`cd ${E.repo} >/dev/null 2>&1 && rm -rf ../repo-wt-a`, 'Bash'], [`cd ${wt} && rm -rf $(pwd)`, 'Bash'], [`trash ${wt}`, 'Bash'],
+    [`rd /s/q ${wt}`, 'PowerShell'], [`eval rm -rf ${wt}`, 'Bash'], ['rm -rf repo-wt-"a"', 'Bash'], ['rm -rf repo-wt\\-a', 'Bash'],
+    ['rm -rf repo-wt-*', 'Bash'], [`mv -vt /tmp ${wt}`, 'Bash'],
   ];
   for (const [c, tool] of frenan) {
     const r = E.consola('s-t16b', c, E.base, tool);
     assert.match(r.out, ANTES, `${c}: ${r.out}`);
   }
-  const pasan = [`echo "rm -rf ${wt}"`, `rm -f ${wt}`, `find ${E.base} -name '*.tmp' -exec rm -rf {} +`, 'git worktree prune --dry-run', 'git worktree prune -n', `rmdir ${wt}`, `git commit -m "git worktree remove ${wt}"`];
+  const pasan = [`echo "rm -rf ${wt}"`, `rm -f ${wt}`, 'rm -rf nada-*', `git -C ${E.repo} worktree prune`, `find ${E.base} -name '*.tmp' -exec rm -rf {} +`, 'git worktree prune --dry-run', 'git worktree prune -n', `rmdir ${wt}`, `git commit -m "git worktree remove ${wt}"`];
   for (const c of pasan) {
     const r = E.consola('s-t16b', c, c.startsWith('git worktree') ? E.repo : E.base);
     assert.doesNotMatch(r.out, ANTES, `${c}: ${r.out}`);

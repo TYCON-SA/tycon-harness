@@ -1578,7 +1578,8 @@ function origenesMovidos(cmd) {
     let destinoNombrado = false;
     for (let i = 1; i < words.length; i++) {
       // `-t` y `--target-directory` de mv nombran el destino; `-T` (sin carpeta destino) no lleva valor
-      if (/^-(?:destination|newname)$/i.test(words[i]) || /^(?:-t|--target-directory)$/.test(words[i])) { destinoNombrado = true; i++; continue; }
+      if (/^-(?:destination|newname)$/i.test(words[i]) || /^(?:-[a-zA-SU-Z]*t|--target-directory)$/.test(words[i])) { destinoNombrado = true; i++; continue; }
+      if (/^--target-directory=/.test(words[i])) { destinoNombrado = true; continue; }
       if (/^-(?:path|literalpath)$/i.test(words[i])) { if (words[i + 1]) args.push(words[++i]); continue; }
       if (words[i].startsWith('-')) continue;
       args.push(words[i]);
@@ -3533,6 +3534,11 @@ function carpetasQueBorraOMueve(cmd) {
   // `cmd /c`, `pushd` y `Set-Location` cambian de forma, no de efecto; las palabras de control del shell (`if`, `then`,
   // `do`, `else`, `time`, `!`, `{`, `(`) no son el comando
   const sinCmd = String(cmd || '')
+    .replace(/\$\(\s*pwd\s*\)/g, '$PWD')
+    // comillas pegadas a la palabra sin espacios adentro (`wt-"a"`): la misma palabra
+    .replace(/(?<=[^\s=])(["'])([^"'\s]*)\1/g, '$2')
+    // una redirección no cambia qué se borra ni dónde (`cd X >/dev/null && rm -rf wt`)
+    .replace(/[ \t]+\d?>{1,2}&?[ \t]*(?:\/dev\/null|&?\d|NUL)\b/gi, '')
     .replace(/(^|[;&|(\n]\s*)cmd(?:\.exe)?\s+\/[ck]\s+/gi, '$1')
     .replace(/(^|[;&|(\n{]\s*)(?:pushd|set-location|sl|chdir)(?=\s)/gi, '$1cd')
     .replace(/(^|[;&|\n]|\b(?:then|do|else|elif)\b)(\s*(?:(?:if|while|until|then|do|else|elif|time|!|\{|\()\s+|\(\s*))+/g, '$1 ');
@@ -3544,7 +3550,8 @@ function carpetasQueBorraOMueve(cmd) {
     const c = nombreDeComando(words[0] || '');
     const resto = words.slice(1);
     if (c === 'rm') return resto.some((w) => /^-[a-zA-Z]*[rR]/.test(w) || w === '--recursive');
-    if (['rd', 'rmdir', 'remove-item', 'ri', 'del', 'erase'].includes(c)) return resto.some((w) => /^\/s$/i.test(w) || /^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?$/i.test(w));
+    // `/s` también pegado a otros (`/s/q`, `/q/s`)
+    if (['rd', 'rmdir', 'remove-item', 'ri', 'del', 'erase'].includes(c)) return resto.some((w) => /^(?:\/[a-z])*\/s(?:\/[a-z])*$/i.test(w) || /^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?$/i.test(w));
     return false;
   };
   const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'cmd', 'pwsh', 'powershell', 'eval', 'xargs', 'env', 'sudo', 'nohup', 'nice', 'time']);
@@ -3553,15 +3560,17 @@ function carpetasQueBorraOMueve(cmd) {
     for (const tramo of tramos(texto)) {
       let words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
       let tramoDe = tramo;
-      // `xargs [opciones] rm -rf <ruta>`: el comando es lo que sigue a las opciones de xargs
-      if (nombreDeComando(words[0] || '') === 'xargs') {
+      // `xargs [opciones] rm -rf <ruta>` y `eval rm -rf <ruta>`: el comando es lo que sigue
+      if (['xargs', 'eval'].includes(nombreDeComando(words[0] || ''))) {
         let k = 1;
-        while (k < words.length && words[k].startsWith('-')) k += /^-(?:I|n|P|L|d|E|s|a)$/.test(words[k]) ? 2 : 1;
+        while (nombreDeComando(words[0]) === 'xargs' && k < words.length && words[k].startsWith('-')) k += /^-(?:I|n|P|L|d|E|s|a)$/.test(words[k]) ? 2 : 1;
         words = words.slice(k);
         tramoDe = words.map((w) => (/[\s'"]/.test(w) ? `"${w.replace(/"/g, '\\"')}"` : w)).join(' ');
       }
       if (recursivo(words)) for (const d of destinosBorrados(tramoDe)) if (d.kind === 'delete' && !d.git) rutas.push({ raw: d.raw });
       for (const raw of origenesMovidos(tramoDe)) rutas.push({ raw });
+      // `trash <carpeta>` la saca entera (a la papelera)
+      if (nombreDeComando(words[0] || '') === 'trash') for (const w of words.slice(1)) if (!w.startsWith('-')) rutas.push({ raw: w });
       // `find <carpetas> -exec rm -r {}` sin elegir por nombre: borra las carpetas enteras
       if (nombreDeComando(words[0] || '') === 'find') {
         const e = words.findIndex((w) => /^-exec(?:dir)?$/.test(w));
@@ -3656,7 +3665,9 @@ function borraEjecucionAbierta(event) {
     return /[\\/]$/.test(pre) ? pre : path.dirname(pre);
   };
   const resolver = (raw, base, desde) => {
-    const conPwd = String(raw).replace(/\$\{?PWD\}?|\$\(\s*pwd\s*\)/g, () => desde);
+    // comillas y escapes pegados a la palabra (`wt-"a"`, `wt\-a`) son la misma ruta; en Windows la barra invertida separa
+    const limpia = String(raw).replace(/["']/g, '').replace(process.platform === 'win32' ? /^$/ : /\\(.)/g, '$1');
+    const conPwd = limpia.replace(/\$\{?PWD\}?|\$\(\s*pwd\s*\)/g, () => desde);
     let dir = desde;
     if (base) { const b = expandirRuta(cmd, base); if (b.sinResolver.length) return { sinResolver: true }; dir = resolveTarget(b.valor, desde, process.platform, { homeVariable: true }); }
     const ruta = expandirRuta(cmd, conPwd);
@@ -3666,13 +3677,15 @@ function borraEjecucionAbierta(event) {
   };
   const esCarpeta = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
   const carpetas = new Set();
+  const comodines = [];
   for (const desde of cwds) {
     for (const d of rutas) {
       for (const raw of expandirLlaves(d.raw)) {
         const r = resolver(raw, d.base, desde);
         if (!r.abs) continue;
-        const lista = /[*?[]/.test(r.abs) ? expandirComodin(r.abs, desde) : [r.abs];
-        for (const x of lista) if (esCarpeta(x)) carpetas.add(x);
+        // un comodín no se expande (la lista tiene tope y su orden depende del disco): se compara con cada ejecución
+        if (/[*?[]/.test(r.abs)) comodines.push(r.abs);
+        else if (esCarpeta(r.abs)) carpetas.add(r.abs);
       }
     }
   }
@@ -3686,16 +3699,16 @@ function borraEjecucionAbierta(event) {
   const motivos = [];
   if (prune.length) {
     for (const desde of cwds) for (const b of prune) {
-      const dir = b ? resolver(b, null, desde) : desde;
+      const dir = b ? resolver(b, null, desde).abs : desde;
       if (!dir) { motivos.push('no pude resolver la carpeta del `git worktree prune`'); continue; }
       const r = lasQuePoda(dir);
       if (!r.ok) motivos.push(r.motivo);
       else for (const c of r.carpetas) carpetas.add(c);
     }
   }
-  if (!carpetas.size && !motivos.length) return null;
+  if (!carpetas.size && !motivos.length && !comodines.length) return null;
   const or = require('./lib/open-runs.js');
-  const r = or.abiertasDentro([...carpetas]);
+  const r = or.abiertasDentro([...carpetas], { comodines });
   if (!r.ok) {
     return frena(`🔒 CERRÁ LA EJECUCIÓN ANTES — ${via} borra o mueve carpetas, y no pude leer el registro de aperturas (gates.log: ${r.error}): no sé si adentro hay una ejecución abierta, y lo que no se puede decidir frena.`, `registro ilegible: ${r.error}`);
   }

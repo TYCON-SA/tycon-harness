@@ -348,9 +348,9 @@ function cartel(r, { home } = {}) {
  * evento es `run-open` (decisión 4 de la 8.318). La copia del disco no decide: una vieja sin apertura vigente no deja la
  * carpeta pegada. `carpeta` puede ser una lista; cada abierta trae en `en` la carpeta que la contiene.
  */
-function abiertasDentro(carpeta, { home, eventos, platform = process.platform } = {}) {
+function abiertasDentro(carpeta, { home, eventos, platform = process.platform, comodines = [] } = {}) {
   const carpetas = [].concat(carpeta || []).filter(Boolean);
-  if (!carpetas.length) return { ok: true, abiertas: [] };
+  if (!carpetas.length && !comodines.length) return { ok: true, abiertas: [] };
   let ev = eventos;
   if (!ev) {
     const r = leerEventos(home);
@@ -362,10 +362,29 @@ function abiertasDentro(carpeta, { home, eventos, platform = process.platform } 
   const abiertas = [];
   for (const e of ultimo.values()) {
     if (e.name !== 'run-open' || !e.runDir) continue;
-    const en = carpetas.find((c) => dentroDe(e.runDir, c, platform));
+    const en = carpetas.find((c) => dentroDe(e.runDir, c, platform)) || comodines.find((g) => casaConComodin(e.runDir, g, platform));
     if (en) abiertas.push({ sesion: e.sesion, story: e.story != null ? String(e.story) : null, runDir: e.runDir, ts: e.ts || null, en });
   }
   return { ok: true, abiertas };
+}
+
+/**
+ * ¿`ruta` o una carpeta de arriba casa con el comodín `patron` (`*`, `?`, `[…]` del shell, cada uno dentro de un tramo)?
+ * Así un `rm -rf wt-*` se compara con cada ejecución abierta sin expandir la lista en el disco.
+ */
+function casaConComodin(ruta, patron, platform = process.platform) {
+  const n = (p) => (platform === 'win32' ? String(p).replace(/\\/g, '/').toLowerCase() : String(p)).replace(/\/+$/, '');
+  let re = '';
+  for (let i = 0, t = n(patron); i < t.length; i++) {
+    const c = t[i];
+    if (c === '*') re += '[^/]*';
+    else if (c === '?') re += '[^/]';
+    else if (c === '[') { const f = t.indexOf(']', i + 1); if (f > i) { re += `[${t.slice(i + 1, f).replace(/^!/, '^').replace(/\\/g, '\\\\')}]`; i = f; } else re += '\\['; }
+    else re += c.replace(/[.+^${}()|\\]/g, '\\$&');
+  }
+  const rx = new RegExp(`^${re}(?:/|$)`, platform === 'win32' ? 'i' : '');
+  const hijo = n(ruta);
+  return rx.test(hijo) || [hijo].concat((() => { try { return [n(fs.realpathSync.native(ruta))]; } catch { return []; } })()).some((h) => rx.test(h));
 }
 
 /** Cuántas ejecuciones abiertas hay en la máquina (en cualquier carpeta o unidad): `{ ok, n }` o `{ ok: false, error }`. */
