@@ -1386,6 +1386,7 @@ test('T21 Designar_EnPrueba_SeNiega @story-8.314 @ac-14 @ac-19', (t) => {
   assert.strictEqual(frase.code, 0, frase.out);
   assert.ok(antes().includes('"relay-designation"'), 'la designación quedó anotada');
   const confirmar = correr8314(c, comandos[3]);
+  // sin la marca no se niega por ella: sigue con sus motivos de siempre (el perfil, la firma), que dependen del árbol
   assert.notStrictEqual(confirmar.code, 2, confirmar.out);
-  assert.match(confirmar.out, /relay_session/, 'sin rol en el perfil, el motivo de hoy');
+  assert.doesNotMatch(confirmar.out, /una prueba/, 'sin la marca, no la nombra');
 });
