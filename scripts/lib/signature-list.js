@@ -271,6 +271,11 @@ function anotarFirma({ casa, firma, titulo, sesion, destino, comando, palabras, 
     const lista = leer(casa);
     const cerrada = criterioDeCierre(casa, ahora, s || sesiones(casa), undefined, entender(lista).filas);
     const abierto = lista.find((f) => f && f.key === key && !cerrada(f));
+    // un renglón abierto que llega pedido otra vez desde Windows recibe la marca: sin ella owner-next armaría el cuadro
+    // que en esa consola no firma (@story-8.319)
+    if (abierto && ((consola === 'powershell' && abierto.consola !== 'powershell') || (windows === 'solo-terminal' && abierto.windows !== 'solo-terminal'))) {
+      escribir(casa, lista.map((f) => (f === abierto ? { ...f, ...(consola === 'powershell' ? { consola } : {}), ...(windows === 'solo-terminal' ? { windows } : {}) } : f)));
+    }
     if (abierto) return { ok: true, id: abierto.id, nuevo: false };
     const id = `firma-${crypto.randomBytes(4).toString('hex')}`;
     // en Windows, la consola con que se pidió (D2 de la 8.319): owner-next no adivina la de la sesión destino

@@ -1241,6 +1241,9 @@ function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, to
  * trabajo de esa sesión (su transcripción), o null si no se sabe (el guion lo niega igual); si no, `cwd`, la del evento.
  */
 function carpetaDelPedido({ palabras, cwd, casa, sesion }) {
+  // `--repo <carpeta>` manda, como en marker.js: la lista va relativa a ella (@story-8.319)
+  const r = (palabras || []).indexOf('--repo');
+  if (r >= 0 && palabras[r + 1]) return path.resolve(cwd || process.cwd(), palabras[r + 1]);
   const i = (palabras || []).indexOf('--for-session');
   const pedida = i >= 0 ? palabras[i + 1] : null;
   if (!pedida || pedida === sesion) return cwd;

@@ -195,6 +195,22 @@ test('T8 Renglon_GuardaLaConsola @story-8.319 @ac-3', (t) => {
   assert.strictEqual(filas[0].consola, 'powershell');
 });
 
+test('T8b Renglon_YaAbierto_RecibeLaMarca @story-8.319 @ac-3 — del pase adversarial', (t) => {
+  const toy = casaNueva(t);
+  sesion(toy.casa, 'ses-a');
+  renglon(toy);
+  renglon(toy, { consola: 'powershell' });
+  const filas = JSON.parse(fs.readFileSync(sl.archivo(toy.casa), 'utf8'));
+  assert.strictEqual(filas.length, 1);
+  assert.strictEqual(filas[0].consola, 'powershell', 'el renglón abierto quedó marcado');
+});
+
+test('T11b AdhocSet_LaVentanaLeeElRepo @story-8.319 @ac-8 — del pase adversarial', () => {
+  const palabras = [MARKER, 'adhoc', 'set', '{}', '--terminal', '--for-session', 'ses-a', '--repo', '/otro/repo'];
+  assert.strictEqual(ow.carpetaDelPedido({ palabras, cwd: '/aca', sesion: 'ses-a' }), path.resolve('/otro/repo'));
+  assert.strictEqual(ow.carpetaDelPedido({ palabras: palabras.slice(0, 7), cwd: '/aca', sesion: 'ses-a' }), '/aca');
+});
+
 // ── Un comando que se pega tal cual (AC 6-8, 10, 11) ────────────────────────────────────────────────────────────────
 
 test('T9 SignFile_FormaDeLaTerminal_SePega @story-8.319 @ac-6', () => {
