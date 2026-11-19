@@ -60,8 +60,8 @@ const known = new Map();
 
 /** «delicada», «de rutina» o «sin dato (<motivo>)». */
 function riskOfRun(marker, budget, now = Date.now()) {
-  if (marker && marker.unreadable) return sinDato('no pude leer la corrida');
-  if (!marker || !marker.storyPath) return sinDato('sin corrida');
+  if (marker && marker.unreadable) return sinDato('no pude leer la ejecución');
+  if (!marker || !marker.storyPath) return sinDato('sin ejecución');
   const dir = carpetaDe(marker);
   const key = [storyOf(marker), marker.repoPath || '', mtimeOf(storyOf(marker)), dir ? mtimeOf(path.join(dir, PLAN_FILE)) : null, marker.batch || ''].join('|');
   const seen = known.get(key);
@@ -99,7 +99,7 @@ function actionFor(row) {
 /** La ficha de una espera: `{ riesgo, pedido?, accion, linea }`. Sale siempre. */
 function card({ row, marker, riskOf = riskOfRun, budget }) {
   let riesgo;
-  try { riesgo = marker ? riskOf(marker, budget) : sinDato('sin corrida'); } catch (_) { riesgo = sinDato('la cuenta del riesgo falló'); }
+  try { riesgo = marker ? riskOf(marker, budget) : sinDato('sin ejecución'); } catch (_) { riesgo = sinDato('la cuenta del riesgo falló'); }
   const number = marker && marker.pr && marker.pr.number;
   const accion = actionFor(row);
   return { riesgo, ...(Number.isInteger(number) ? { pedido: `#${number}` } : {}), accion, linea: `${riesgo} · ${accion}` };

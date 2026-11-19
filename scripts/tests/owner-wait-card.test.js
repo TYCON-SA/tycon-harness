@@ -86,9 +86,9 @@ test('OW1 Card_RiskPrAction @story-8.293 @ac-9', (t) => {
 
 test('OW2 Card_MissingData_SaysSinDato @story-8.293 @ac-10', (t) => {
   const row = { origen: 'pregunta', quien: 'Ana' };
-  // sin corrida
+  // sin ejecución
   const none = CARD.card({ row, marker: null });
-  assert.match(none.riesgo, /^sin dato \(.+\)$/);
+  assert.strictEqual(none.riesgo, 'sin dato (sin ejecución)');
   assert.strictEqual(none.accion, 'contestar la pregunta en la sesión Ana');
   // la cuenta dice que no pudo saber: la historia no se lee
   const gone = toyRun(t);
@@ -103,7 +103,7 @@ test('OW2 Card_MissingData_SaysSinDato @story-8.293 @ac-10', (t) => {
   const late = CARD.card({ row, marker: toyRun(t), budget: { until: 0 } });
   assert.match(late.riesgo, /^sin dato \(.*tiempo.*\)$/);
   // la ficha sale siempre, y lo que le falta no pasa a lo que la oficina no pudo leer
-  const { data } = buildOffice({ wip: toyWip([{ session: 'Ana', status: 'waiting' }]), nowMs: NOW, ownerCard: () => ({ riesgo: 'sin dato (sin corrida)', accion: 'x', linea: 'sin dato (sin corrida) · x' }) });
+  const { data } = buildOffice({ wip: toyWip([{ session: 'Ana', status: 'waiting' }]), nowMs: NOW, ownerCard: () => ({ riesgo: 'sin dato (sin ejecución)', accion: 'x', linea: 'sin dato (sin ejecución) · x' }) });
   assert.deepStrictEqual(data.unreadable, []);
 });
 
@@ -286,13 +286,13 @@ test('OWR5 Card_FailureStillSaysSinDato @story-8.293 @ac-10', (t) => {
   // el motivo no trae el texto del error
   const thrown = CARD.card({ row, marker: toyRun(t), riskOf: () => { throw new Error('/ruta/interna'); } });
   assert.doesNotMatch(thrown.riesgo, /ruta/);
-  // un marcador roto no es «sin corrida»
+  // un marcador roto no es «sin ejecución»
   const home = tmp(t, 'owner-marker-');
   fs.mkdirSync(path.join(home, 'active'));
   fs.writeFileSync(path.join(home, 'active', 'rota.json'), '{ no es json');
   const broken = CARD.markerOf(home, 'rota');
   assert.ok(broken, 'un marcador ilegible no se confunde con no tener corrida');
-  assert.match(CARD.card({ row, marker: broken }).riesgo, /^sin dato \(.*leer.*\)$/);
+  assert.strictEqual(CARD.card({ row, marker: broken }).riesgo, 'sin dato (no pude leer la ejecución)');
   assert.strictEqual(CARD.markerOf(home, 'ninguna'), null);
 });
 
