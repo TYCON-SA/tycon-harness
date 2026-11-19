@@ -1911,11 +1911,23 @@ function guionDeSedSinEfectos(guion) {
 }
 
 /**
- * Los `sed` en el lugar de un comando cuando todos nombran sus archivos tal cual: `[{ sed, opciones, guiones, archivo }]`,
- * con el archivo como palabra (una variable del comando ya resuelta). null si algún editor en el lugar no es así: un
- * `perl`/`ruby`/`awk`/`ed`, un `sed` detrás de `xargs`, `find -exec`, un `for` o adentro de `bash -c`, un archivo con
- * comodín, llaves, `~+`, `$(…)` o una variable que no se resuelve, un guion que lee, escribe o corre algo aparte, o
- * una opción que no se conoce. Con esa forma, lo que el editor escribe es sólo lo que nombra.
+ * ¿La palabra es un nombre tal cual o un comodín que se expande igual en bash y en zsh (`*`, `?` y corchetes, tramo por
+ * tramo)? No lo es con `**` (zsh baja por todas las carpetas) ni con `^`, `~` (fuera del principio), `#`, `<` o `>`,
+ * que zsh puede leer como parte del comodín.
+ */
+function comodinSimple(w) {
+  const s = String(w);
+  if (!/[*?[\]]/.test(s)) return true;
+  return !/\*\*|[\^#<>]/.test(s) && !/.~/.test(s);
+}
+
+/**
+ * Los `sed` en el lugar de un comando cuando todos nombran sus archivos: `[{ sed, opciones, guiones, archivo }]`, con el
+ * archivo como palabra (una variable del comando ya resuelta) o como un comodín simple (`comodinSimple`), que se expande
+ * desde cada carpeta donde puede correr. null si algún editor en el lugar no es así: un `perl`/`ruby`/`awk`/`ed`, un
+ * `sed` detrás de `xargs`, `find -exec`, un `for` o adentro de `bash -c`, un archivo con otro comodín, llaves, `~+`,
+ * `$(…)` o una variable que no se resuelve, un guion que lee, escribe o corre algo aparte, o una opción que no se
+ * conoce. Con esa forma, lo que el editor escribe es sólo lo que nombra.
  */
 function sedsLiterales(cmd) {
   if (FOR_IN.test(String(cmd || ''))) return null;
@@ -1967,9 +1979,9 @@ function sedsLiterales(cmd) {
     if (!guiones.length) { if (!archivos.length) return null; guiones.push(archivos.shift()); }
     if (!archivos.length || !guiones.every(guionDeSedSinEfectos)) return null;
     for (const a of archivos) {
-      if (!a || /[*?[\]{}]/.test(a) || /^~[+-]/.test(a) || a.includes('@')) return null;
+      if (!a || /[{}]/.test(a) || /^~[+-]/.test(a) || a.includes('@') || !comodinSimple(a)) return null;
       const ex = expandirRuta(cmd, a);
-      if (ex.sinResolver.length || /[*?[\]{}]/.test(ex.valor)) return null;
+      if (ex.sinResolver.length || /[{}]/.test(ex.valor) || !comodinSimple(ex.valor)) return null;
       out.push({ sed: words[0], opciones, guiones, archivo: ex.valor });
     }
   }
@@ -2133,7 +2145,13 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     }
     const sueltos = args.filter((w) => !w.startsWith('-') && !w.startsWith('<'));
     if (['cp', 'mv', 'git mv', 'install', 'rsync', 'ditto', 'scp', 'ln'].includes(c)) {
-      const copia = destinoDeLaCopia(args, ['cp', 'mv', 'install', 'ln'].includes(c));
+      // el valor de una opción de `rsync`, `scp`, `install` o `ditto` (`--exclude x`) no es el destino
+      let deLaCopia = args;
+      if (OPCIONES_CON_VALOR[c]) {
+        const { sueltos, carpeta } = argumentosDeCopia(c, args);
+        deLaCopia = carpeta ? ['--target-directory', carpeta, ...sueltos] : sueltos;
+      }
+      const copia = destinoDeLaCopia(deLaCopia, ['cp', 'mv', 'install', 'ln'].includes(c));
       if (!copia) continue;
       if (es(copia.destino)) { out.push(copia.destino); continue; }
       // cp, install, scp y rsync sólo bajan a una carpeta con su opción
@@ -2703,6 +2721,55 @@ function dentroDeUnRepo(p) {
   }
 }
 
+// Las opciones de cada copiador que llevan su valor en la palabra que sigue: ese valor (un patrón de `--exclude`, el
+// programa de `-e`, el puerto de `scp -P`) no es un origen ni el destino. Sólo las que significan lo mismo en las
+// versiones de GNU y de BSD: tomar de más una opción que no lleva valor haría perder el destino. Las largas van sin sus
+// dos guiones: son las opciones de esos programas, no nombres del arnés
+const conGuiones = (nombres) => nombres.map((n) => `--${n}`);
+const OPCIONES_CON_VALOR = {
+  rsync: {
+    cortas: 'efBTM@',
+    largas: conGuiones(['exclude', 'include', 'exclude-from', 'include-from', 'filter', 'files-from', 'rsh',
+      'rsync-path', 'info', 'debug', 'stderr', 'backup-dir', 'suffix', 'chmod', 'chown', 'copy-as',
+      'block-size', 'max-delete', 'max-size', 'min-size', 'max-alloc', 'partial-dir', 'usermap', 'groupmap',
+      'timeout', 'contimeout', 'modify-window', 'temp-dir', 'compare-dest', 'copy-dest', 'link-dest',
+      'compress-choice', 'zc', 'compress-level', 'zl', 'skip-compress', 'address', 'port', 'sockopts',
+      'out-format', 'log-file', 'log-file-format', 'password-file', 'bwlimit', 'stop-after', 'stop-at',
+      'write-batch', 'only-write-batch', 'read-batch', 'protocol', 'iconv', 'checksum-choice', 'cc',
+      'checksum-seed', 'remote-option', 'outbuf', 'early-input']),
+  },
+  scp: { cortas: 'cDFiJloPSX', largas: [] },
+  install: { cortas: 'mog', largas: conGuiones(['mode', 'owner', 'group', 'suffix', 'strip-program']) },
+  ditto: { cortas: '', largas: conGuiones(['arch', 'bom']) },
+};
+
+/**
+ * Las palabras sueltas de un copiador (orígenes y destino) y la carpeta de `install -t`: sin sus opciones ni el valor de
+ * las que lo llevan aparte (`rsync a/ b/ --exclude x`, `rsync -e ssh a h:b`). Después de `--` todo es suelto.
+ */
+function argumentosDeCopia(c, args) {
+  const tabla = OPCIONES_CON_VALOR[c] || { cortas: '', largas: [] };
+  const sueltos = [];
+  let carpeta = null;
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '--') { sueltos.push(...args.slice(i + 1)); break; }
+    if (!w.startsWith('-') || w === '-') { sueltos.push(w); continue; }
+    if (c === 'install') {
+      if (w === '-t' || w === '--target-directory') { carpeta = args[++i] ?? null; continue; }
+      const pegado = /^(?:--target-directory=|-t)(.+)$/.exec(w);
+      if (pegado) { carpeta = pegado[1]; continue; }
+    }
+    if (w.startsWith('--')) { if (!w.includes('=') && tabla.largas.includes(w)) i++; continue; }
+    // un grupo de cortas (`-avz`, `-ae ssh`): la primera que lleva valor se queda con el resto del grupo o, si es la
+    // última, con la palabra que sigue
+    const letras = w.slice(1);
+    const k = [...letras].findIndex((l) => tabla.cortas.includes(l));
+    if (k >= 0 && k === letras.length - 1) i++;
+  }
+  return { sueltos, carpeta };
+}
+
 /** Los destinos de los que copian sin que `extractWriteTargets` los vea: `install`, `rsync`, `ditto`, `scp`, `curl -o`, `wget -O`. */
 function destinosDeCopia(cmd) {
   const out = [];
@@ -2710,8 +2777,10 @@ function destinosDeCopia(cmd) {
     const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
     const c = nombreDeComando(words[0]);
     if (['install', 'rsync', 'ditto', 'scp'].includes(c)) {
-      const sueltos = words.slice(1).filter((w) => !w.startsWith('-'));
-      if (sueltos.length >= 2) out.push(sueltos[sueltos.length - 1]);
+      const { sueltos, carpeta } = argumentosDeCopia(c, words.slice(1));
+      // `install -t <carpeta>`: cada origen llega a la carpeta con su nombre
+      if (carpeta) out.push(carpeta, ...sueltos.map((s) => `${carpeta.replace(/[\\/]+$/, '')}/${s.split(/[\\/]/).pop()}`));
+      else if (sueltos.length >= 2) out.push(sueltos[sueltos.length - 1]);
     }
     if (c === 'curl' || c === 'wget') {
       for (let i = 1; i < words.length; i++) {
@@ -2969,8 +3038,12 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
       else sedsDe.set(abs, [...(sedsDe.get(abs) || []), ...seds.filter((x) => x.archivo === raw)]);
     };
     for (const base of bases) {
-      const rutas = /[*?[]/.test(valor) ? expandirComodin(valor.replace(/^~(?=\/|$)/, os.homedir()), base)
+      // el comodín de un `sed` que nombra sus archivos cuenta sólo por lo que expande: recortado, puede dejar una
+      // historia afuera
+      const aviso = {};
+      const rutas = /[*?[]/.test(valor) ? expandirComodin(valor.replace(/^~(?=\/|$)/, os.homedir()), base, aviso)
         : [resolveTarget(valor, base, process.platform, { homeVariable: true })];
+      if (aviso.recortado && deSed.has(raw)) cdSinResolver.push(`${raw} (más de 200 coincidencias desde ${base})`);
       for (const abs of rutas) {
         let esCarpeta = false;
         try { esCarpeta = porCarpeta.has(raw) && !NEVER_CODE_SEGMENTS.has(path.basename(abs)) && fs.statSync(abs).isDirectory(); } catch { /* no existe */ }

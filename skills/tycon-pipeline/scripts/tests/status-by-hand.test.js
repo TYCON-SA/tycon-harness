@@ -857,6 +857,75 @@ test('EdicionSinFormaConocida_PalabraQueNoEsArchivo', () => {
   }
 });
 
+// CopiaConOpcionDeValor_ElValorNoEsDestino
+// `rsync a b --exclude x`: el valor de una opción que lo lleva aparte (`--exclude`, `-e`, `scp -P`, `install -m`) se
+// tomaba como el destino de la copia, y un patrón que nombraba una historia frenaba como si se la escribiera.
+// 🔴 Falla con: el valor de la opción leído como la última palabra suelta, o el destino real perdido al saltearlo.
+test('CopiaConOpcionDeValor_ElValorNoEsDestino', () => {
+  const h = nuevaHome();
+  const fuera = fs.mkdtempSync(path.join(os.tmpdir(), 'copia-'));
+  for (const c of [
+    `rsync -a notas.md ${fuera}/ --exclude ${HISTORIA}`,
+    // a una carpeta que todavía no existe: tampoco es la copia de una constancia
+    `rsync -a notas.md ${fuera}/nueva/ --exclude ${HISTORIA}`,
+    `rsync -a notas.md ${fuera}/ --include ${HISTORIA} --exclude '*'`,
+    `rsync -a notas.md ${fuera}/ --exclude-from ${HISTORIA}`,
+    `rsync -a notas.md ${fuera}/ -f '- x' --filter ${HISTORIA}`,
+    `rsync -av notas.md ${fuera}/ -e ${HISTORIA}`,
+    `scp notas.md ${fuera}/ -P ${HISTORIA}`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+  // el destino sigue siendo la última palabra suelta, con la opción antes, después o con `--`
+  for (const c of [
+    `rsync -a notas.md ${HISTORIA} --exclude x`,
+    `rsync --exclude x -e ssh notas.md ${HISTORIA}`,
+    `rsync -a --exclude=x notas.md ${HISTORIA}`,
+    `rsync -a -- --exclude ${HISTORIA}`,
+    `install -m 644 /tmp/s.txt ${HISTORIA}`,
+    'install -t specs /tmp/story-9.9-algo.md',
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /HISTORIA ESCRITA POR CONSOLA/, c);
+  }
+});
+
+// SedConComodin_CarpetaGrande_MiraLoQueNombra
+// Un `sed -i` con un comodín, después de un `cd` a una carpeta con más de 500 `.md`, frenaba por la carpeta entera («no
+// la recorro»), aunque el comodín nombrara pocos archivos y ninguno fuera una historia. Un comodín simple cuenta por lo
+// que expande, como un nombre tal cual; lo que no se sabe expandir igual que el shell sigue mirando la carpeta.
+// 🔴 Falla con: recorrer la carpeta del `cd` cuando el `sed` nombra sus archivos, o dejar pasar lo que el comodín no ve.
+test('SedConComodin_CarpetaGrande_MiraLoQueNombra', () => {
+  const h = nuevaHome();
+  const docs = path.join(h.repo, 'docs');
+  fs.mkdirSync(path.join(docs, 'g'), { recursive: true });
+  for (let i = 0; i < 510; i++) fs.writeFileSync(path.join(docs, 'g', `n${i}.md`), '# n\n');
+  fs.writeFileSync(path.join(docs, 'guia-a.md'), '# a\n');
+  fs.writeFileSync(path.join(docs, 'guia-b.md'), '# b\n');
+  for (const c of [
+    "cd docs; sed -i.bak 's/a/b/' guia-*.md",
+    "cd docs && sed -i.bak 's/a/b/' guia-?.md g/n1.md && git diff",
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+  for (const c of [
+    // la carpeta, cuando los archivos salen de otro comando o de un comodín que zsh expande distinto
+    "cd docs; grep -l a guia-*.md | xargs sed -i.bak 's/a/b/'",
+    "cd docs; sed -i.bak 's/a/b/' **/*.md",
+    // un comodín que expande a más de lo que se revisa
+    "cd docs; sed -i.bak 's/a/b/' g/*.md",
+    // la historia que el comodín nombra
+    "cd specs; sed -i.bak 's/^status: .*/status: done/' story-*.md",
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /HISTORIA ESCRITA POR CONSOLA/, c);
+  }
+});
+
 // ── El sed que cambia lo que el encabezado cuida, más allá del estado de arriba ───────────────────────────────────────
 // Un `sed` que nombra su historia se ensaya sobre una copia y pasa si no la cierra. Medía sólo los `status:` de arriba:
 // una tanda del bloque `pipelines` pasada a `done`, o el número de la historia cambiado, pasaban por consola y frenaban
