@@ -166,6 +166,20 @@ test('T7 MergeReports_NotMeasured_IsNotARegression @story-8.300 @ac-8', () => {
   assert.strictEqual(j.baselineRegressions, 1);
 });
 
+// 🔴 Falla con: tomar una línea de base que no se pudo leer como «0 regresiones»: no se comparó, y el reporte lo dice.
+test('T7b MergeReports_NoBaseline_SaysItDidNotCompare @story-8.300 @ac-8', (t) => {
+  const dir = temporal(t);
+  const base = path.join(dir, 'banco-linux.json');
+  fs.writeFileSync(base, JSON.stringify(conMac()));
+  const out = path.join(dir, 'junto.json');
+  const r = spawnSync(process.execPath, [MERGE, '--base', base, '--out', out], { encoding: 'utf8', env: { ...process.env, TYCON_BENCH_BASELINE: path.join(dir, 'no-esta.json') } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const junto = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.strictEqual(junto.baselineRegressions, null, 'sin línea de base no hay cuenta de regresiones');
+  assert.match(junto.sinLineaDeBase, /no-esta\.json/);
+  assert.match(r.stdout, /regresiones sin comparar/);
+});
+
 test('T8 MergeReports_CountersAreRecomputed @story-8.300 @ac-4 @ac-12', () => {
   const j = juntar([
     trabajo('linux', reporte('linux', { 'g::a': caso({ claude: rojo, codex: rojo }), 'g::p': caso({ claude: verde, codex: rojo }), 'g::m': caso({ claude: salteado('l'), codex: salteado('l') }, ['darwin']) })),

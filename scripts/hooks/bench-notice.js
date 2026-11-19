@@ -436,6 +436,8 @@ function estadoDelBancoNocturno() {
   }
   const rojos = (rep.failed || 0) + (rep.parityBreaks || 0) + (rep.baselineRegressions || 0);
   const nm = rep.nomedido || 0;
+  const sinBase = rep.sinLineaDeBase ? ' · regresiones sin comparar: no había línea de base legible' : '';
+  if (sinBase && rojos === 0 && nm === 0) return [`🟡 banco de controles nocturno (${fecha}): ${Number(rep.ran) || 0} caso(s), sin rojos${sinBase}${foto.nota}`];
   if (rojos === 0 && nm === 0) {
     if (!foto.espera) return [];   // fresco y limpio: silencio, como siempre
     // En la máquina que espera los nocturnos habla igual, y dice ✅ sólo si la foto dice que corrió algún caso:
@@ -453,7 +455,7 @@ function estadoDelBancoNocturno() {
   return [`${rojos ? '🔴' : '🟡'} banco de controles nocturno (${fecha}): ${rep.failed || 0} rojos`
     + ` · paridad rota ${rep.parityBreaks || 0} · regresiones ${rep.baselineRegressions || 0}`
     + (nm ? ` · 🟡 ${nm} NO MEDIDO(s) (${motivos || 'se les agotó el tiempo'} — la ejecución no está completa)` : '')
-    + ' · detalle: scripts/controls-bench/ultimo-banco.json' + foto.nota];
+    + sinBase + ' · detalle: scripts/controls-bench/ultimo-banco.json' + foto.nota];
 }
 
 // ── ¿El sello diario lo escribió el JOB, o una mano? ─────────────────────────

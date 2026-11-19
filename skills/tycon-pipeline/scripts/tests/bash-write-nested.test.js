@@ -303,6 +303,60 @@ test('T13 Nested_RunnersThatOnlyRead_Pass @story-8.308 @ac-13', () => {
   ]) pasa(c, cmd);
 });
 
+// Lo que confirmó el pase adversarial de la corrida: formas de `find`, `xargs` y heredocs que escriben la historia y
+// pasaban, y formas que sólo leen y se frenaban.
+// 🔴 Falla con: tomar todo `-name` como filtro positivo, buscar `xargs` sólo como primera palabra cruda, no leer el
+//    heredoc que entra a un shell por una tubería, o tomar el valor de una opción como el nombre del guion.
+test('T12b Adversarial_FormsThatWrite_Block @story-8.308 @ac-12', () => {
+  const c = corral();
+  for (const cmd of [
+    'find specs -not -name README.md -exec rm {} \\;',
+    'find specs ! -name README.md -exec rm {} +',
+    "find specs -type f ! -name '*.txt' -exec mv {} /tmp/ \\;",
+    'find specs -name sub -prune -o -exec rm {} \\;',
+    "find specs -name 'story-[!x]*.md' -exec rm {} \\;",
+    "find specs -name '[!R]*.md' -exec rm {} \\;",
+    'find specs ! -name otra-cosa.txt -exec tee -a {} \\;',
+    `echo ${H} | { xargs rm; }`,
+    `echo ${H} | time xargs rm`,
+    `echo ${H} | ! xargs rm`,
+    `echo ${H} | xargs -J % rm %`,
+    `echo ${H} | xargs -L 1 -J % rm %`,
+    `echo ${H} | xargs -R 1 -I % rm %`,
+    `echo ${H} | xargs -S 255 -I % rm %`,
+    `echo ${H} | xargs --max-args 1 rm`,
+    `echo ${H} | xargs --max-args=1 rm`,
+    `echo ${H} | xargs --delimiter , rm`,
+    `echo ${H} | xargs -I {} sh -c 'rm {}'`,
+    `echo ${H} | xargs -I{} sh -c 'rm {}'`,
+    `cat <<'EOF' | bash\nrm ${H}\nEOF`,
+    `cat <<EOF | sh\ntruncate -s 0 ${H}\nEOF`,
+    `cat <<'EOF' | sh -s\nrm ${H}\nEOF`,
+    `cat <<'EOF' | bash -s\nsed -i s/a/b/ ${H}\nEOF`,
+    `cat > x.txt <<'EOF'\nrm ${H}\nEOF\nbash -o errexit x.txt`,
+    `cat > x.txt <<'EOF'\nrm ${H}\nEOF\nsh -o nounset x.txt`,
+    `echo x # <<EOF\nrm ${H}\nEOF`,
+    `echo "a\\" <<EOF"\nrm ${H}\nEOF`,
+  ]) frena(c, cmd);
+});
+
+// 🔴 Falla con: leer el cuerpo de un heredoc que no va a un shell, o reemplazar la palabra entera del marcador de `xargs -I`.
+test('T13b Adversarial_FormsThatOnlyRead_Pass @story-8.308 @ac-13', () => {
+  const c = corral();
+  for (const cmd of [
+    `cat <<A > notes.txt; bash <<B\nrm ${H}\nA\necho hola\nB`,
+    `cat <<A > /tmp/n.txt; cat <<B > /tmp/m.txt\nhola\nA\necho ${H} | xargs rm\nB`,
+    `echo ${H} | xargs -I{} cp {} /tmp/bk.md`,
+    `echo ${H} | xargs -I% cp % /tmp/bk.md`,
+    `echo ${H} | xargs -n1 -I{} cp {} /tmp/`,
+    `echo ${H} | xargs -I {} cp {} {}.bak`,
+    'ls specs/*.md | xargs -I{} cp {} /tmp/probe/',
+    `echo ${H} | xargs --replace={} cp {} /tmp/x.md`,
+    `echo ${H} | xargs -i cp {} /tmp/x.md`,
+    `bash scripts/check.sh <<'EOF'\nrm ${H}\nEOF`,
+  ]) pasa(c, cmd);
+});
+
 // T15 Bench_FrenoComandosAnidados
 // 🔴 Falla con: un caso del banco que no corre o que da otra salida que la esperada.
 test('T15 Bench_FrenoComandosAnidados', () => {

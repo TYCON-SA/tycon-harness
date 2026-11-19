@@ -133,11 +133,15 @@ function main(argv) {
   }
   const archivoBase = process.env.TYCON_BENCH_BASELINE || path.join(__dirname, 'baseline', 'claude.json');
   let base = {};
-  try { base = JSON.parse(fs.readFileSync(archivoBase, 'utf8')).cases || {}; } catch { console.log('merge-reports: sin línea de base legible: no se comparan regresiones'); }
+  let sinLineaDeBase = null;
+  try { base = JSON.parse(fs.readFileSync(archivoBase, 'utf8')).cases || {}; } catch (e) { sinLineaDeBase = `no se pudo leer ${archivoBase}: ${e.message}`; }
   const junto = juntar(trabajos, base);
+  // sin línea de base no se comparó: la cuenta no es cero, no existe
+  if (sinLineaDeBase) Object.assign(junto, { baselineRegressions: null, sinLineaDeBase });
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   fs.writeFileSync(out, `${JSON.stringify(junto, null, 2)}\n`);
-  console.log(`merge-reports: ${junto.ran} corridos · ${junto.failed} rojos · ${junto.nomedido} sin medir · regresiones ${junto.baselineRegressions}`);
+  console.log(`merge-reports: ${junto.ran} corridos · ${junto.failed} rojos · ${junto.nomedido} sin medir · `
+    + (sinLineaDeBase ? `regresiones sin comparar (${sinLineaDeBase})` : `regresiones ${junto.baselineRegressions}`));
   return 0;
 }
 

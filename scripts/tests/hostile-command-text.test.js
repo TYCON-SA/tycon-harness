@@ -83,9 +83,20 @@ test('T10i HostileText_HeredocWalk_SameAsTheExpression @story-8.308 @ac-10 — e
   for (const c of [
     'ls', 'cat <<EOF\nrm x\nEOF\nls', 'cat <<EOF\nEOF\nls', "cat <<'E'\nx\nE", 'cat <<"E" | sh\nx\n  E  \nls', 'cat <<-E\n\tx\n\tE\nls',
     'cat <<E\nsin cierre', 'cat <<<E\nx\nE', 'echo $((1<<2))\nx\n2', 'echo "<<E"\nx\nE', "echo '<<E'\nx\nE", 'echo "a <<E\nx\nE',
-    'cat <<A <<B\nx\nA\ny\nB\nls', 'cat <<A\n<<B\nA\nB', 'cat <<-\nx', 'cat <<$V\nx\n$V', 'cat <<E', '<<E\nE', 'cat <<<<E\nx\nE',
-    'cat <<NO <<SI\nx\nSI\nls', 'cat <<E;ls\nx\nE\nls', 'cat <<E\nx\nE\r\nls\nE',
+    'cat <<A\n<<B\nA\nB', 'cat <<-\nx', 'cat <<$V\nx\n$V', 'cat <<E', '<<E\nE', 'cat <<<<E\nx\nE',
+    'cat <<E;ls\nx\nE\nls', 'cat <<E\nx\nE\r\nls\nE',
   ]) igual(c);
+  // Donde la expresión vieja se equivocaba, el recorrido hace lo que hace el shell: dos heredocs en un renglón se leen uno
+  // detrás del otro, uno sin cierre se come el resto, y un `<<` escapado, entre comillas o en un comentario no abre nada.
+  for (const [c, queda] of [
+    ['cat <<A <<B\nx\nA\ny\nB\nls', 'cat <<A <<B\n\n\nls'],
+    ['cat <<NO <<SI\nx\nSI\nls', 'cat <<NO <<SI\nx\nSI\nls'],
+    ['echo x # <<E\nrm y\nE', 'echo x # <<E\nrm y\nE'],
+    ['echo "a\\" <<E"\nrm y\nE', 'echo "a\\" <<E"\nrm y\nE'],
+    ['echo \\<<E\nrm y\nE', 'echo \\<<E\nrm y\nE'],
+  ]) assert.strictEqual(quitarCuerposDeHeredoc(c), queda, JSON.stringify(c));
+  // la comparación al azar, donde las dos lecturas coinciden: un solo heredoc por renglón y sin barras invertidas
+  const comparable = (c) => !c.includes('\\') && c.split('\n').every((l) => (l.match(/(?<!<)<<(?!<)/g) || []).length < 2);
   const PIEZAS = ['<<', '<<<', '<<-', 'E', 'F', "'", '"', ' ', '\t', '\n', '\n', 'E\n', '\nF', '$((', ';', '|', 'x', '-', '$', '\\'];
   let semilla = 8308;
   let conCuerpo = 0;
@@ -95,6 +106,7 @@ test('T10i HostileText_HeredocWalk_SameAsTheExpression @story-8.308 @ac-10 — e
       semilla = (semilla * 1103515245 + 12345) % 2147483648;
       c += PIEZAS[(semilla >> 8) % PIEZAS.length];
     }
+    if (!comparable(c)) continue;
     igual(c);
     if (quitarCuerposDeHeredoc(c) !== c) conCuerpo++;
   }
