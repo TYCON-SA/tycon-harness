@@ -29,6 +29,12 @@
 # Pasos: version identidad wiql wi revisiones estados categorias campos grupo miembros equipo iteracion crear comentario actualizar prs lote
 #        grupos-agentes pedidos-agentes (la cola de la organización)
 #        pr-listar pr-crear pr-actualizar pr-ver (los pedidos de cambio de un repo: `repos pr list|create|update|show`)
+#        repo-ver politicas (la regla de aprobación de una rama: `repos show` y `repos policy list`)
+#
+# · `repo-ver`: `repos show --repository R --project P` → `repo-R.json`; sin fixture, `{id: 'id-R', name: R,
+#   defaultBranch: 'refs/heads/main'}`.
+# · `politicas`: `repos policy list --repository-id ID --branch refs/heads/B --project P` → `politicas-ID.json` (la lista
+#   tal cual, sin filtrar: el filtro por rama y por tipo es del lector); sin fixture, `[]` (una rama sin reglas).
 #
 # · `categorias`: `devops invoke --area wit --resource workitemtypecategories --route-parameters project=P` →
 #   `categorias-P.json`; sin fixture, un proceso cuyo elemento de backlog por defecto es el Bug.
@@ -146,6 +152,8 @@ else if (tiene('repos', 'pr', 'list')) paso = 'pr-listar';
 else if (tiene('repos', 'pr', 'create')) paso = 'pr-crear';
 else if (tiene('repos', 'pr', 'update')) paso = 'pr-actualizar';
 else if (tiene('repos', 'pr', 'show')) paso = 'pr-ver';
+else if (tiene('repos', 'policy', 'list')) paso = 'politicas';
+else if (args[0] === 'repos' && args[1] === 'show') paso = 'repo-ver';
 else if (tiene('pipelines', 'runs', 'list')) paso = 'builds';
 else if (tiene('pipelines', 'runs', 'show')) paso = 'corrida';
 else if (tiene('pipelines', 'list')) paso = 'definiciones';
@@ -521,6 +529,16 @@ switch (paso) {
     const st = arg('--state');
     if (st) fs.writeFileSync(path.join(FIX, `estado-${arg('--id')}`), st);
     out({ id: Number(arg('--id')), fields: st ? { 'System.State': st, 'System.Reason': String(leerFix(`motivo-${arg('--id')}`) || 'Fixed and verified').trim() } : {} });
+    break;
+  }
+  case 'repo-ver': {
+    const r = arg('--repository');
+    out(fixJson(`repo-${r}.json`, { id: `id-${r}`, name: r, defaultBranch: 'refs/heads/main' }));
+    break;
+  }
+  case 'politicas': {
+    if (!arg('--repository-id') || !arg('--branch')) falla('repos policy list: falta --repository-id o --branch');
+    out(fixJson(`politicas-${arg('--repository-id')}.json`, []));
     break;
   }
   default: falla(`doble-az: paso sin respuesta: ${paso}`, 2);

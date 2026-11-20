@@ -1735,6 +1735,19 @@ function cmdCompleteStep(nRaw, flags) {
   // La corrida que espera a main no cierra «Correr las pruebas» ni «Preparar el pull request»: su rojo es de main.
   if (controles.has('tests') || controles.has('commit')) frenarEsperaMain(marker, n);
 
+  // Saltear los mutantes va con su motivo, y sólo en el paso que corre las pruebas: se niega antes de pedir la firma
+  const motivoSinMutantes = opts.includes('--no-mutation') ? optVal('--reason') : null;
+  if (opts.includes('--no-mutation')) {
+    if (!motivoSinMutantes || !motivoSinMutantes.trim() || motivoSinMutantes.startsWith('--')) {
+      console.error('marker.js complete-step: --no-mutation va con su motivo: --reason "<por qué esta vez no se miden los mutantes>". No se escribió nada.');
+      process.exit(2);
+    }
+    if (!controles.has('tests')) {
+      console.error(`marker.js complete-step: --no-mutation sólo va en el paso que corre las pruebas («Correr las pruebas»); ${n} no las corre. No se escribió nada.`);
+      process.exit(2);
+    }
+  }
+
   // El aviso de una parte del Arranque que falló sale en el resumen del cierre: queda a la vista hasta el final.
   if (controles.has('commit')) for (const l of STEPS_LIB.startWarningLines(marker)) console.error(`⚠️  ${l}`);
   // Cada prueba vieja que estaba en rojo y se editó llega al mensaje del commit con su razón (note-red-test).
@@ -2191,9 +2204,23 @@ function cmdCompleteStep(nRaw, flags) {
     // (CERO mutantes muertos). Sobrevivientes → aviso; estructural (story sin tests) o cualquier
     // problema del chequeo mismo → fail-open. Todo queda en gates.log. Escapes: --no-mutation
     // (bypass.log) · TYCON_MUTATION_CHECK=off. Semántica y tests: lib/mutation-gate.js.
+    // `--no-mutation` pide la firma `escape:no-mutation` desde la fecha de corte de TYCON_MUTATION_CHECK en la lista
+    // única de interruptores; antes, pasa avisando, y el renglón dice que lo decidió el agente. Se pide acá, justo antes
+    // de saltear: el chequeo previo de la ventana recorre el mismo camino que el cierre.
     {
       const { runMutationGate } = require('./lib/mutation-gate.js');
-      const g = runMutationGate({ marker, opts, appendLog });
+      let sinMutantes = null;
+      if (opts.includes('--no-mutation')) {
+        const ES = require('./lib/controls-off.js').listaDeInterruptores();
+        if (ES.antesDelCorte('TYCON_MUTATION_CHECK')) {
+          console.error(`⚠️  --no-mutation: desde ${ES.corteDe('TYCON_MUTATION_CHECK')} esto pide la firma de una persona (escape:no-mutation); hasta entonces pasa, avisado y anotado.`);
+          sinMutantes = { via: 'agente', motivo: motivoSinMutantes };
+        } else {
+          const f = firmaDelDueno('escape:no-mutation', `cerrar ${n} de ${marker.storyId || 'la historia'} sin el chequeo de mutantes: ${motivoSinMutantes}`);
+          sinMutantes = { via: f.via || 'ventana', motivo: motivoSinMutantes };
+        }
+      }
+      const g = runMutationGate({ marker, opts, appendLog, sinMutantes });
       if (g.block) process.exit(1);
     }
   }

@@ -719,7 +719,7 @@ test('T10 7.31-Umbral_MaquinaOrganizacionDefecto @story-7.31 @ac-9 — el umbral
     return d;
   };
   const casos = [
-    ['60', conOrg(80), 60, 'maquina', null],
+    ['90', conOrg(80), 90, 'maquina', null],
     ['abc', conOrg(80), 80, 'organizacion', /TYCON_COVERAGE_MIN/],
     ['0', conOrg(80), 80, 'organizacion', /TYCON_COVERAGE_MIN/],
     ['', conOrg(80), 80, 'organizacion', null],
@@ -746,6 +746,73 @@ test('T10 7.31-Umbral_MaquinaOrganizacionDefecto @story-7.31 @ac-9 — el umbral
 });
 
 // ── El portón de pruebas ────────────────────────────────────────────────────────────────────────────────────────────────
+// El piso del umbral de cobertura: la máquina sólo lo sube. Desde la fecha de corte de la lista
+// única de interruptores, un valor de la máquina menor que el de la organización (o que el de fábrica, sin
+// organización) no se usa; antes, se usa con aviso y renglón. La fecha se inyecta: el reloj no cambia el resultado.
+const pisoDelUmbral = () => {
+  const { resolverUmbral } = require(REPORT);
+  const ES = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+  const corte = ES.corteDe('TYCON_COVERAGE_MIN');
+  const antes = new Date(Date.parse(`${corte}T00:00:00Z`) - 86400000);
+  const despues = new Date(Date.parse(`${corte}T00:00:00Z`) + 3600000);
+  const arbol = (team) => {
+    const d = tmpReal('tgr-piso-');
+    fs.mkdirSync(path.join(d, 'scripts'));
+    fs.writeFileSync(path.join(d, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/bash\n');
+    if (team !== undefined) fs.writeFileSync(path.join(d, 'team-repos.json'), JSON.stringify({ version: 1,
+      public: { platform: 'github', org: 'acme', repo: 'harness' }, profile: { platform: 'azure', org: 'acme', project: 'Main', repo: 'team-profile' },
+      operations: { platform: 'azure', org: 'acme', project: 'Main', repo: 'team-operations' }, ...team }));
+    return d;
+  };
+  const correr = (maquina, guias, today) => {
+    const casa = tmpReal('tgr-piso-casa-');
+    const r = resolverUmbral(maquina, { TYCON_GUIDES_DIR: guias, CLAUDE_CODE_SESSION_ID: 's-piso' }, casa, { today });
+    let renglones = [];
+    try { renglones = fs.readFileSync(path.join(require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(casa), 'bypass.log'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { /* sin renglones */ }
+    return { ...r, renglones };
+  };
+  return { arbol, correr, antes, despues, corte };
+};
+
+// T15 ResolverUmbral_MachineCannotLowerOrg @story-8.256 @ac-14
+// 🔴 Falla con: la máquina bajando el umbral de la organización desde el corte, una máquina mayor que no gana, o un
+//    valor menor antes del corte sin su aviso o sin su renglón.
+test('T15 ResolverUmbral_MachineCannotLowerOrg @story-8.256 @ac-14', () => {
+  const { arbol, correr, antes, despues } = pisoDelUmbral();
+  const org = arbol({ coverage: { min_touched_lines_pct: 75 } });
+  let r = correr('1', org, despues);
+  assert.deepStrictEqual([r.threshold, r.source], [75, 'organizacion']);
+  assert.ok(r.problems.some((p) => /TYCON_COVERAGE_MIN/.test(p) && /\b1\b/.test(p)), JSON.stringify(r.problems));
+  r = correr('90', org, despues);
+  assert.deepStrictEqual([r.threshold, r.source], [90, 'maquina']);
+  r = correr('', org, despues);
+  assert.deepStrictEqual([r.threshold, r.source], [75, 'organizacion']);
+  r = correr('1', org, antes);
+  assert.deepStrictEqual([r.threshold, r.source], [1, 'maquina']);
+  assert.ok(r.problems.some((p) => /esto pide la firma del dueño|no baja/.test(p)), JSON.stringify(r.problems));
+  assert.deepStrictEqual(r.renglones.map((l) => l.kind), ['COVERAGE_BELOW_FLOOR']);
+});
+
+// T29 ResolverUmbral_NoOrgFloorIsFactoryDefault @story-8.256 @ac-14
+// 🔴 Falla con: sin umbral de la organización (sin archivo, o con su sección inválida), la máquina bajando el 75 de
+//    fábrica desde el corte.
+test('T29 ResolverUmbral_NoOrgFloorIsFactoryDefault @story-8.256 @ac-14', () => {
+  const { arbol, correr, antes, despues } = pisoDelUmbral();
+  for (const guias of [arbol(), arbol({ coverage: { min_touched_lines_pct: 101 } })]) {
+    let r = correr('1', guias, despues);
+    assert.deepStrictEqual([r.threshold, r.source], [75, 'por_defecto']);
+    assert.ok(r.problems.some((p) => /TYCON_COVERAGE_MIN/.test(p) && /\b1\b/.test(p)), JSON.stringify(r.problems));
+    r = correr('90', guias, despues);
+    assert.deepStrictEqual([r.threshold, r.source], [90, 'maquina']);
+    r = correr('', guias, despues);
+    assert.deepStrictEqual([r.threshold, r.source], [75, 'por_defecto']);
+    r = correr('1', guias, antes);
+    assert.deepStrictEqual([r.threshold, r.source], [1, 'maquina']);
+    assert.deepStrictEqual(r.renglones.map((l) => l.kind), ['COVERAGE_BELOW_FLOOR']);
+    assert.ok(r.problems.some((p) => p.includes('por debajo del de fábrica (75)')), JSON.stringify(r.problems));
+  }
+});
+
 test('T1 8.55-ClaveHeredada_NoCambiaElResultado @story-8.55 @ac-1 — la clave de la evidencia que exporta un test-gate.sh de afuera no cambia el resultado', () => {
   // 🔴 rojo: test-gate.sh exporta TYCON_EVIDENCE_KEY (o _FAILED) cuando recibe la ruta de una story, y esta suite corre
   //    dentro de él: el informe nombraba la copia sellada con la clave de afuera y dos casos de esta suite salían rojos.

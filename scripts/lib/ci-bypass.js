@@ -16,7 +16,9 @@
  *     `mergePullRequest`, `mergeBranch`, `updateRef` o `updateRefs`.
  *   · api-rules: `gh api` que escribe sobre una regla (`repos/<d>/<r>/rulesets`, `orgs/<o>/rulesets`) o la protección de
  *     una rama (`repos/<d>/<r>/branches/<rama>/protection…`), o `graphql` con una mutación de reglas o de protección.
- *   · az-bypass: `az repos pr update|create --bypass-policy` cierto; `az repos policy … create|update|delete`;
+ *   · az-bypass: `az repos pr update|create --bypass-policy` cierto; `az repos policy … create|update|delete`, salvo
+ *     crear una que sólo suma un requisito (`approver-count`, `build`, `required-reviewer`, `comment-required`,
+ *     `work-item-linking`: endurece la rama);
  *     `az devops security permission update` con los bits 128, 32768, 2048 u 8192 (o un `--allow-bit` que no se lee);
  *     `az rest` o `az devops invoke` que escriben sobre pedidos, políticas o permisos. Vale igual con la ruta completa
  *     del programa y con `python -m azure.cli`.
@@ -69,6 +71,8 @@ const MUTACION_REGLAS = /\b(createRepositoryRuleset|updateRepositoryRuleset|dele
 const RUTA_MERGE = /(^|\/)repos\/[^/\s]+\/[^/\s]+\/(pulls\/[^/\s]+\/merge|merges)\/?(\?|$)/i;
 const RUTA_RAMA = /(^|\/)repos\/[^/\s]+\/[^/\s]+\/git\/refs\/heads\/[^\s?]+/i;
 const RUTA_REGLAS = /(^|\/)(repos\/[^/\s]+\/[^/\s]+|orgs\/[^/\s]+)\/rulesets(\/|\?|$)|(^|\/)repos\/[^/\s]+\/[^/\s]+\/branches\/[^\s]+\/protection(\/|\?|$)/i;
+// la colección de conjuntos de reglas, sin número ni consulta: un POST ahí crea uno nuevo
+const RUTA_REGLAS_NUEVA = /^\/?(repos\/[^/\s]+\/[^/\s]+|orgs\/[^/\s]+)\/rulesets\/?$/i;
 // una ruta que arma la terminal y puede ser una de las de arriba: empieza o termina con una variable, o nombra una parte
 const RUTA_ARMADA_SENSIBLE = /^\$|\$[^/]*$|\/(pulls|branches)\/|\/merges?(\/|\?|$)|rulesets|protection|git\/refs/i;
 // Lo que delata la forma en un texto que el lector NO lee entero (`bash -c`, `eval`, una sustitución, una variable, un
@@ -172,6 +176,10 @@ function deApi(ps) {
   if (!sensible) return null;
   if (!ruta.literal || otraArmada || metodoIlegible) return escondido('una palabra de `gh api` que escribe la arma la terminal (el método o la ruta): escribila tal cual', 'api-merge');
   if (RUTA_MERGE.test(r)) return legible('api-merge', 'mergear por la API saltea la cola y la CI de main');
+  // crear un conjunto de reglas nuevo (POST a la colección) endurece: GitHub aplica todos los que tocan la rama, y lo que
+  // uno nuevo deja saltear vale sólo para él. Cambiar o borrar uno (PUT, PATCH, DELETE a su número) sí puede aflojar.
+  const post = metodo ? /^post$/i.test(metodo) : (campos || entrada !== null);
+  if (post && RUTA_REGLAS_NUEVA.test(r)) return null;
   if (RUTA_REGLAS.test(r)) return legible('api-rules', 'cambiar las reglas o la protección de una rama por la API saltea la CI de main');
   // mover una rama es PATCH; crearla (POST) o borrarla (DELETE) no hace entrar nada a main
   if (/^patch$/i.test(metodo || '')) return legible('api-merge', 'mover una rama por la API saltea la cola y la CI de main');
@@ -244,6 +252,10 @@ function deGh(cmd, opts) {
 const AZ = /(^|\/|\\)az(\.cmd|\.exe)?$/i;
 const PYTHON = /(^|\/|\\)py(thon)?(\d+(\.\d+)?)?(\.exe)?$/i;
 const BITS = 128 | 32768 | 2048 | 8192;
+// Las políticas de Azure DevOps que, nuevas, sólo suman un requisito: aprobadores, compilación, revisores obligatorios,
+// comentarios resueltos y tareas vinculadas. La estrategia de merge, el tamaño de archivo, las rutas y la forma genérica
+// (`policy create --config`) no están: una nueva puede permitir lo que otra no, o su contenido no se lee.
+const ENDURECE_AZ = new Set(['approver-count', 'build', 'required-reviewer', 'comment-required', 'work-item-linking']);
 const RECURSO_AZ = /pullrequests|policy\/configurations|accesscontrolentries|accesscontrollists/i;
 const RECURSO_INVOKE = /^(pullrequests|configurations|accesscontrolentries|accesscontrollists)$/i;
 // las opciones de az que deciden una forma: az acepta su prefijo único, y el lector las lleva a su nombre entero
@@ -293,7 +305,9 @@ function formaDeAz(seg, i) {
     return escondido('el valor de --bypass-policy no se puede leer: escribilo tal cual', 'az-bypass');
   }
   if (a === 'repos' && b === 'policy' && pos.slice(2, 4).some((x) => ['create', 'update', 'delete'].includes(x))) {
-    return legible('az-bypass', 'crear, cambiar o borrar una política de la rama');
+    // crear una de las políticas que sólo suman un requisito endurece la rama: Azure DevOps exige todas las que aplican
+    if (pos[3] === 'create' && ENDURECE_AZ.has(pos[2])) return null;
+    return legible('az-bypass', 'cambiar o borrar una política de la rama, o crear una que puede aflojarla');
   }
   if (a === 'devops' && b === 'security' && pos[2] === 'permission' && pos[3] === 'update') {
     const bit = v('allow-bit');

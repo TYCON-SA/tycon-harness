@@ -110,19 +110,39 @@ const OBS_HASTA = '2026-10-06';
 const COVERAGE_DEFAULT = 75;
 
 /**
- * El umbral de cobertura y de dónde salió: `TYCON_COVERAGE_MIN` de la máquina (test-gate.sh lo
- * pasa como <cov_min>) > `coverage.min_touched_lines_pct` de la organización (team-repos.json del árbol del arnés,
- * leído con scripts/lib/team-repos.js) > 75. Un valor que no sirve no se usa: se pasa al siguiente y el motivo queda en
- * `problems`. `{ threshold, source: 'maquina' | 'organizacion' | 'por_defecto', problems }`.
+ * El umbral de cobertura y de dónde salió. El piso es `coverage.min_touched_lines_pct` de la organización
+ * (team-repos.json del árbol del arnés, leído con scripts/lib/team-repos.js), o 75 sin él. `TYCON_COVERAGE_MIN` de la
+ * máquina (test-gate.sh lo pasa como <cov_min>) sólo lo sube: uno menor, desde la fecha de corte de la lista única de
+ * interruptores, no se usa; antes, se usa con aviso y un renglón COVERAGE_BELOW_FLOOR por sesión y día. Un valor que no
+ * sirve no se usa, y el motivo queda en `problems`. `opciones.today`: la fecha de hoy, para las pruebas.
+ * `{ threshold, source: 'maquina' | 'organizacion' | 'por_defecto', problems }`.
  */
-function resolverUmbral(covMinTxt, env = process.env, homeDir = os.homedir()) {
+function resolverUmbral(covMinTxt, env = process.env, homeDir = os.homedir(), { today = new Date() } = {}) {
   const problems = [];
+  const piso = umbralDeLaOrganizacion(env, homeDir, problems);
   const crudo = covMinTxt === undefined || covMinTxt === null ? '' : String(covMinTxt).trim();
-  if (crudo) {
-    const n = Number(crudo);
-    if (Number.isFinite(n) && n > 0 && n <= 100) return { threshold: n, source: 'maquina', problems };
+  if (!crudo) return { ...piso, problems };
+  const n = Number(crudo);
+  if (!(Number.isFinite(n) && n > 0 && n <= 100)) {
     problems.push(`TYCON_COVERAGE_MIN: tiene que ser un porcentaje de 1 a 100 (es ${JSON.stringify(crudo).slice(0, 40)}); no se usa`);
+    return { ...piso, problems };
   }
+  if (n >= piso.threshold) return { threshold: n, source: 'maquina', problems };
+  const de = piso.source === 'organizacion' ? 'el de la organización' : 'el de fábrica';
+  const debajoDe = piso.source === 'organizacion' ? 'del de la organización' : 'del de fábrica';
+  const ES = require('./controls-off.js').listaDeInterruptores();
+  if (ES.antesDelCorte('TYCON_COVERAGE_MIN', today)) {
+    problems.push(`TYCON_COVERAGE_MIN=${n} baja el umbral por debajo ${debajoDe} (${piso.threshold}): desde ${ES.corteDe('TYCON_COVERAGE_MIN')} la máquina no baja el umbral y se usa ${piso.threshold}`);
+    ES.anotarEscape({ home: homeDir, sessionId: ES.sesionDe(env), kind: 'COVERAGE_BELOW_FLOOR', variable: 'TYCON_COVERAGE_MIN', unaVez: 'TYCON_COVERAGE_MIN',
+      ahora: today instanceof Date ? today : new Date(today), valor: n, piso: piso.threshold });
+    return { threshold: n, source: 'maquina', problems };
+  }
+  problems.push(`TYCON_COVERAGE_MIN=${n} es menor que ${de} (${piso.threshold}): la máquina sólo sube el umbral; no se usa`);
+  return { ...piso, problems };
+}
+
+/** El umbral de la organización, o el de fábrica: `{ threshold, source }`. Lo que no se pudo leer va a `problems`. */
+function umbralDeLaOrganizacion(env, homeDir, problems) {
   try {
     const tree = require('./harness-path.js').rutaArnesHook({ env, home: homeDir }).dir;
     const file = tree ? path.join(tree, 'team-repos.json') : null;
@@ -133,13 +153,13 @@ function resolverUmbral(covMinTxt, env = process.env, homeDir = os.homedir()) {
       if (!r.ok) problems.push(`${file}: no se pudo usar (${r.problems.map((p) => `${p.path || '(archivo)'}: ${p.message}`).join('; ').slice(0, 200)})`);
       else if (sec && sec.length) problems.push(`${sec[0].path}: ${sec[0].message}; no se usa`);
       else if (r.data && r.data.coverage && Number.isInteger(r.data.coverage.min_touched_lines_pct)) {
-        return { threshold: r.data.coverage.min_touched_lines_pct, source: 'organizacion', problems };
+        return { threshold: r.data.coverage.min_touched_lines_pct, source: 'organizacion' };
       }
     }
   } catch (e) {
     problems.push(`no pude leer el umbral de la organización (${e && e.message ? e.message : e})`);
   }
-  return { threshold: COVERAGE_DEFAULT, source: 'por_defecto', problems };
+  return { threshold: COVERAGE_DEFAULT, source: 'por_defecto' };
 }
 
 // ── utilidades con la semántica de Python ────────────────────────────────────────────────────────────────────
@@ -1239,7 +1259,7 @@ function calzaPorTerminacion(a, b) {
   return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 }
 
-module.exports = { informe, calzaPorTerminacion, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, OBS_HASTA, isCodeFile };
+module.exports = { informe, calzaPorTerminacion, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, OBS_HASTA, isCodeFile, resolverUmbral };
 
 if (require.main === module) {
   try {
