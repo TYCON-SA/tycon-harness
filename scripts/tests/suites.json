@@ -2100,6 +2100,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/prod-emergency.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/lint-production-json.test.sh",
       "requiere": []
     },
