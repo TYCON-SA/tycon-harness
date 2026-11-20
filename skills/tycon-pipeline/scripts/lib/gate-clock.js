@@ -19,12 +19,11 @@ function segundosDelReloj(valor) {
   return n <= 50 ? n : SEGUNDOS_POR_DEFECTO;
 }
 
-// Se carga recién acá: el comando que el freno decide bien no paga este módulo.
+// la carpeta del estado, de una sola pieza: el reloj anota aunque el resto del arnés no cargue
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+
 function carpetaDelEstado() {
-  const lib = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js');
-  try {
-    return fs.existsSync(lib) ? require(lib).stateDir(os.homedir()) : path.join(os.homedir(), '.claude', '.tycon-pipeline');
-  } catch { return os.tmpdir(); }
+  try { return stateDirOf(os.homedir()); } catch { return os.tmpdir(); }
 }
 
 function anotar(motivo) {
