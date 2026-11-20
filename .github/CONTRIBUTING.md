@@ -1,12 +1,17 @@
 # Cómo contribuir
 
-Pull requests are welcome. This repository is where the harness is written, not an exported copy: send your change as a pull request to `main`. Anyone can send one with code: it runs the repository's validation, and TYCON reviews it and decides. If it is accepted, it is merged here, with your commits. For now, the automatic validation does not run on pull requests from a fork, so TYCON reviews those by hand. Contributions are accepted under the Apache License 2.0, with no CLA. Issues and pull requests are welcome in English or in Spanish.
+Pull requests are welcome. This repository is where the harness is written, not an exported copy: send your change as a pull request to `main`. Anyone can send one with code: it runs the repository's validation, and TYCON reviews it and decides. If it is accepted, it is merged here, with your commits. A pull request from a fork runs the same validation once a maintainer approves the run (see «From a fork» below). Contributions are accepted under the Apache License 2.0, with no CLA. Issues and pull requests are welcome in English or in Spanish.
 
 ## In English, in short
 
 - **Where**: a pull request to `main` of this repository. The harness used to live in one private repository, with the
   core and each team's own material together. When it was opened, it was split: the core lives here, and each team
   keeps its own material in its own private repository.
+- **From a fork**: fork the repository, make a branch, and open a pull request to `main`. Because you are an outside
+  contributor, the CI waits until a maintainer clicks «Approve and run workflows»: this is for safety, so code from
+  outside does not run before someone has looked at it. After that, the CI runs as on any other pull request.
+- **Big change? Open an issue first**: say what you want to do, so we can agree on it before you work. A small fix can
+  go straight to a pull request.
 - **Green CI**: the `public-ci` check and CodeQL code scanning must both pass. Run the CI locally with
   `bash scripts/ci/public-ci.sh` (it is long: the portable suites alone take about an hour), or only the suites near
   your change (see «Antes de abrir un pull request» below).
@@ -28,8 +33,19 @@ privado. Por eso un cambio al núcleo va como pull request a `main` de este repo
 - **Si se acepta**, se mergea acá, con tus commits: el crédito queda en la historia del repo.
 - **Si no se acepta**, se cierra con su motivo.
 
-Por ahora, la validación automática no corre sobre un pull request que viene de una copia del repo (un fork): esos los
-revisa TYCON a mano.
+**Antes de un cambio grande, abrí un issue** contando qué querés hacer, así lo acordamos antes de que trabajes. Un
+arreglo chico puede ir directo como pull request.
+
+## Desde una copia del repo (un fork)
+
+Si nunca colaboraste en este repo, el camino es éste:
+
+1. Hacé un fork: tu propia copia del repo en tu cuenta de GitHub.
+2. En tu copia, creá una rama y hacé ahí tu cambio.
+3. Abrí un pull request de esa rama a `main` de este repo.
+4. Esperá a que un mantenedor apruebe la corrida. Como venís de afuera, la CI no arranca sola: un mantenedor aprieta
+   «Approve and run workflows». Es por seguridad, para que el código de afuera no corra sin que alguien lo mire antes.
+5. Después la CI corre como en cualquier pull request, y lo que tiene que dar verde es lo mismo (la sección siguiente).
 
 ## Lo que tiene que dar verde
 
