@@ -39,6 +39,13 @@ const RUTAS = Object.freeze({
   save: Object.freeze({ rutas: [], conPunto: [] }),
   'plan-approval': Object.freeze({ rutas: [], conPunto: [] }),
   'lost-run:particion': Object.freeze({ rutas: [], conPunto: [] }),
+  // las excepciones de trámite que el perfil puede delegar y cuyo guion trabaja sobre el marcador de la sesión destino.
+  // `absoluta`: la posición de una ruta sin opción (la historia de `runtime-waiver`); relativa, no se desvía
+  'critical-waiver': Object.freeze({ rutas: [], conPunto: [] }),
+  'runtime-waiver': Object.freeze({ rutas: [], conPunto: [], absoluta: 2 }),
+  'manual-test': Object.freeze({ rutas: [], conPunto: [] }),
+  'lost-run': Object.freeze({ rutas: [], conPunto: [] }),
+  'escape:force-manual': Object.freeze({ rutas: [], conPunto: [] }),
 });
 
 const no = (motivo, callar = false) => ({ ok: false, motivo, callar });
@@ -73,6 +80,7 @@ function rutear(firma, palabras, destino, cwd) {
   if (conIgual) return { motivo: `${conIgual} viene con «=» y no se puede volver absoluta` };
   const repetida = t.rutas.find((o) => w.indexOf(o) !== w.lastIndexOf(o));
   if (repetida) return { motivo: `${repetida} viene más de una vez: el guion usa la última y la delegación miraría la primera` };
+  if (t.absoluta && w[t.absoluta] && !w[t.absoluta].startsWith('--') && !path.isAbsolute(w[t.absoluta])) return { motivo: `${w[t.absoluta]} viene con ruta relativa y no se puede volver absoluta` };
   const necesita = !path.isAbsolute(w[0]) || t.rutas.some((o) => w.includes(o)) || t.conPunto.length > 0;
   if (necesita && !(typeof cwd === 'string' && path.isAbsolute(cwd))) return { motivo: 'no sé desde qué carpeta se pidió la firma' };
   // la coordinadora lo corre sin ventana: sólo el guion de este arnés, nunca un archivo que eligió la sesión
@@ -152,6 +160,8 @@ function delegable({ firma, destino, casa, palabras, cwd, delegacion, plataforma
   const motivo = (r && r.motivo) || 'la delegación no contestó';
   if (r && !r.ok && /no delega|sólo del dueño/.test(motivo)) return no(motivo, true);
   if (!RUTAS[firma]) return no(`«${firma}» no va a la coordinadora: su efecto depende de quién la corre`, true);
+  // una excepción (nivel 2) sin delegar es lo normal: no se dice, cualquiera sea el motivo
+  if ((!r || !r.ok) && cat.delegatedLevel(firma) >= 2) return no(motivo, true);
   if (sl().coordinadoraViva(casa, ses) !== coord) return no('no hay coordinadora confirmada y viva');
   if (!r || !r.ok) return no(motivo);
   if (!cwdCoord) return no('no sé desde qué carpeta trabaja la coordinadora');

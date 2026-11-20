@@ -904,9 +904,9 @@ test('T19 RunSuites_MustMeasure_NoGreenWithoutRunning @story-8.279 @ac-31 — lo
   assert.equal(sinMarca.resumen.scoped.none_touched, true);
 });
 
-test('T30 PortonAcotadoPorElRepo_NadieLee_Verde_SinSaber_CorreTodo — si ninguna suite lee lo tocado sale verde y lo dice; sin saber qué se tocó, corre todo', () => {
+test('T30 PortonAcotadoPorElRepo_NadieLee_Verde_SinSaber_NoCorreNada — si ninguna suite lee lo tocado sale verde y lo dice; sin saber qué se tocó, sale 7 sin correr', () => {
   // 🔴 mutación: «ninguna lo lee» no debe salir 3 (rojo) ni 7 (el repo declaró que lo respalda la CI); «no sé» no debe
-  //    acotar: saldría 7 sin correr nada, y una suite roja pasaría.
+  //    correr todas las suites en la máquina (la completa la corre la CI del pedido) ni salir verde.
   const f = hermanoLab();
   const nadieLee = runScopedByRepo(f, { touched: { known: true, files: ['docs/nada.md'] } });
   assert.equal(nadieLee.status, 0, `${nadieLee.stdout}\n${nadieLee.stderr}`);
@@ -914,11 +914,10 @@ test('T30 PortonAcotadoPorElRepo_NadieLee_Verde_SinSaber_CorreTodo — si ningun
   assert.equal(nadieLee.resumen.scoped.none_touched, true);
   assert.match(nadieLee.stdout, /ninguna suite lee lo tocado; la suite completa la corre la CI del pedido/);
   const sinSaber = runScopedByRepo(f, { touched: { known: false, files: [], reason: 'la base cayó a HEAD' } });
-  assert.equal(sinSaber.status, 0, sinSaber.stdout);
-  assert.equal(sinSaber.resumen.corridas, 2, JSON.stringify(sinSaber.resumen));
-  assert.equal(sinSaber.resumen.unscoped, undefined);
+  assert.equal(sinSaber.status, 7, sinSaber.stdout);
+  assert.equal(sinSaber.resumen.corridas, 0, JSON.stringify(sinSaber.resumen));
+  assert.match(sinSaber.resumen.unscoped.reason, /la base cayó a HEAD.*la cubre la CI del pedido.*TYCON_COVERAGE_BASE/);
   assert.equal(sinSaber.resumen.scoped, undefined);
-  assert.match(sinSaber.stdout, /no sé qué se tocó \(la base cayó a HEAD\): corren todas las suites/);
   // una suite roja entre las elegidas sigue siendo rojo
   f.escribir('arnes', 'tests/lee.test.js', "// lee scripts/lib/acme.js\nprocess.exit(1)\n");
   const roja = runScopedByRepo(f, { touched: { known: true, files: ['scripts/lib/acme.js'] } });
@@ -1395,16 +1394,47 @@ function repoQueAcota() {
   return f;
 }
 
-test('SinBase_RepoQueAcota_AvisaAntesDeLaPrimeraSuite — dice cuántas corren y cómo acotarla, antes de arrancar', () => {
-  // 🔴 mutación: avisar al final, o sin la cantidad, deja correr una hora sin que nadie pueda decidir cortarla.
+test('SinBase_RepoQueAcota_NoCorreNada_YDiceComoSeguir — la completa no corre en la máquina', () => {
+  // 🔴 mutación: sin base, correr todas las suites deja la máquina una hora ocupada con lo que corre la CI del pedido.
   const f = repoQueAcota();
   const r = spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'o.json'), '--skills', f.skills, '--scoped-by-repo', 'la CI'], { encoding: 'utf8' });
-  assert.equal(r.status, 0, r.stderr);
-  const aviso = r.stdout.indexOf('sin base:');
-  assert.ok(aviso >= 0, r.stdout);
-  assert.ok(aviso < r.stdout.search(/^ok {7}/m), `el aviso va antes de la primera suite\n${r.stdout}`);
-  assert.match(r.stdout, /corren todas las suites \(2\)/);
-  assert.match(r.stdout, /TYCON_COVERAGE_BASE="\$\(git merge-base origin\/main HEAD\)"/);
+  assert.equal(r.status, 7, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /^ok {7}/m, 'no corre ninguna suite');
+  assert.match(r.stderr, /sin acotar — .*la cubre la CI del pedido/);
+  assert.match(r.stderr, /TYCON_COVERAGE_BASE="\$\(git merge-base origin\/main HEAD\)"/);
+});
+
+test('TopeDeLaMaquina_MasSuitesQueElTope_CorrenLasMasCercanas — las demás quedan para la CI del pedido', () => {
+  // 🔴 mutación: sin tope, tocar una pieza que nombran cientos de suites las corre todas en la máquina del dev.
+  const f = repoQueAcota();
+  const escribir = (rel, texto) => { const p = path.join(f.repo, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, texto); };
+  const lista = JSON.parse(fs.readFileSync(path.join(f.repo, 'scripts', 'tests', 'suites.json'), 'utf8'));
+  // seis suites que leen lo tocado: una se llama como el archivo, otra lo nombra por su ruta, las demás por su nombre
+  const nuevas = { 'pieza-propia.test.sh': 'pieza.js', 'por-ruta.test.sh': 'lib/pieza.js', 'n1.test.sh': 'pieza.js', 'n2.test.sh': 'pieza.js', 'n3.test.sh': 'pieza.js', 'tocada.test.sh': 'nada' };
+  for (const [nombre, lee] of Object.entries(nuevas)) {
+    escribir(`scripts/tests/${nombre}`, `#!/usr/bin/env bash\n# lee ${lee}\nexit 0\n`);
+    lista.diarias.push({ raiz: 'arnes', ruta: `tests/${nombre}` });
+  }
+  fs.writeFileSync(path.join(f.repo, 'scripts', 'tests', 'suites.json'), JSON.stringify(lista));
+  const touched = path.join(f.root, 't.json');
+  fs.writeFileSync(touched, JSON.stringify({ known: true, files: ['lib/pieza.js', 'scripts/tests/tocada.test.sh'], sources: {} }));
+  const out = path.join(f.root, 'o.json');
+  const correr3 = (extra) => spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, '--touched', touched, '--scoped-by-repo', 'la CI', ...extra], { encoding: 'utf8' });
+  const r = correr3(['--max-suites', '3']);
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const resumen = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.deepEqual(resumen.scoped.capped, { max: 3, chosen: 6, deferred: 3 });
+  const diferidas = resumen.deferred_suites.filter((d) => /pasa el tope de 3 suites de la máquina/.test(d.reason)).map((d) => path.basename(d.suite)).sort();
+  assert.deepEqual(diferidas, ['n1.test.sh', 'n2.test.sh', 'n3.test.sh'], 'quedan afuera las menos cercanas');
+  assert.match(r.stdout, /tope de la máquina: 6 suites leen lo tocado; corren las 3 más cercanas y 3 quedan para la CI del pedido \(la CI\)/);
+  assert.equal(resumen.corridas, 3);
+  // la suite tocada corre siempre, aunque el tope sea menor
+  const uno = correr3(['--max-suites', '1']);
+  assert.equal(uno.status, 0, `${uno.stdout}\n${uno.stderr}`);
+  assert.doesNotMatch(JSON.stringify(JSON.parse(fs.readFileSync(out, 'utf8')).deferred_suites), /tocada\.test\.sh/);
+  // dentro del tope no se difiere nada por él
+  const todas = correr3([]);
+  assert.equal(JSON.parse(fs.readFileSync(out, 'utf8')).scoped.capped, undefined, todas.stdout);
 });
 
 test('ConBase_NoAvisa — sabiendo qué se tocó, y en un repo que no acota, no hay aviso', () => {
@@ -1610,6 +1640,37 @@ test('T3 ScopedByRepo_NamesUnknown_RunsAll @story-8.302 @ac-6 — sin saber qué
   assert.match(r2.stdout, /scripts\/lib\/pieza\.js: no sé qué cambió adentro \(touched\.json no trae la base\): corren las 40 suites que la nombran/);
 });
 
+test('T3b ScopedByRepo_MergedTree_ReadsTheBaseOfTheRepoThatHasTheFile — en el árbol armado (`bases`, una por repo) lee el cambio contra la base del repo que tiene el archivo', () => {
+  // 🔴 mutación: leer sólo `touched.base` (lo que hacía antes) → sin base, corren las 40; tomar la primera base sin mirar
+  //    en qué repo está el archivo → «no sé» contra el repo que no lo tiene, corren las 40; aceptar el archivo en los dos
+  //    repos → se compara contra una base adivinada.
+  const l = piezaLab(40);
+  const otro = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-json-privado-'));
+  gitLab(otro, 'init', '-q');
+  fs.writeFileSync(path.join(otro, 'LEEME'), 'x\n');
+  gitLab(otro, 'add', '-A');
+  gitLab(otro, 'commit', '-qm', 'base');
+  const basePriv = { repo: otro, ref: gitLab(otro, 'rev-parse', 'HEAD'), source: 'la prueba' };
+  const basePub = { repo: l.repo, ref: l.base, source: 'la prueba' };
+  const arbol = (bases) => ({ known: true, files: ['scripts/lib/pieza.js'], bases });
+  const r = runScopedByRepo(l, { touched: arbol([basePriv, basePub]) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.resumen.corridas, 3, JSON.stringify(r.resumen.suites));
+  assert.match(r.stdout, /scripts\/lib\/pieza\.js: corrieron 3 de las 40 suites que la nombran/);
+  assert.equal(r.resumen.seleccion.bases.length, 2);
+  // el archivo en los dos repos: no se adivina, corren las 40 con el motivo
+  fs.mkdirSync(path.join(otro, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(otro, 'scripts', 'lib', 'pieza.js'), PIEZA);
+  const dos = runScopedByRepo(l, { touched: arbol([basePriv, basePub]) });
+  assert.equal(dos.resumen.corridas, 40);
+  assert.match(dos.stdout, /pieza\.js está en 2 de los repos del árbol: no sé contra qué base comparar/);
+  // en ninguno: tampoco
+  fs.rmSync(path.join(otro, 'scripts'), { recursive: true, force: true });
+  const sinArchivo = runScopedByRepo(l, { touched: arbol([basePriv]) });
+  assert.equal(sinArchivo.resumen.corridas, 40);
+  assert.match(sinArchivo.stdout, /no está en ningún repo de las bases de touched\.json/);
+});
+
 test('T4 ScopedByRepo_OtherTouchedOrStorySuite_StillRuns @story-8.302 @ac-5 @ac-10 — la que nombra otro archivo tocado, la tocada y la repetida corren aunque nombren la pieza', () => {
   // 🔴 mutación: aplicar la cercanía a toda suite que nombra la pieza → s5 (nombra otro.js), s6 (tocada) o s7 (repetida)
   //    quedan diferidas.
@@ -1641,4 +1702,66 @@ test('T8 NotScopedByRepo_NoCentralRule @story-8.302 @ac-9 — sin el portón aco
   assert.equal(una.status, 0, una.stderr);
   assert.equal(JSON.parse(fs.readFileSync(path.join(l.root, 'o.json'), 'utf8')).corridas, 1);
   for (const out of [sinAcotar.stdout, todas.stdout, una.stdout]) assert.doesNotMatch(out, /suites que la nombran|no nombra lo que cambió/);
+});
+
+test('T4b RunSuites_CentralPiece_ReactivatedRunsAndDeferredHasEntry @story-8.299 @ac-3 @ac-4 @story-8.309 — la cercanía no difiere una suite que vuelve, y lo que difiere trae su entrada', () => {
+  // 🔴 mutación: la regla de la pieza central antes que la de las que vuelven difiere s3; sin `entrada` en su rama, lo
+  //    guardado no puede sacar de las diferidas una suite que después corrió.
+  const l = piezaLab(40);
+  const r = runScopedByRepo(l, { touched: tocada(l, { reactivated_suites: ['arnes:tests/s3.test.sh'] }) });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.ok(!diferidas(r).includes('s3.test.sh'), 's3 vuelve por sus carpetas: corre');
+  assert.match(r.stdout, /VUELVE   s3\.test\.sh/);
+  assert.equal(r.resumen.deferred_suites.length, 36);
+  for (const d of r.resumen.deferred_suites) assert.deepEqual(Object.keys(d.entrada || {}).sort(), ['raiz', 'ruta'], JSON.stringify(d));
+});
+
+test('RunSuites_RerunAndReactivated_RunsOnceNotAbsent @story-8.309 @ac-6 @ac-7 — una suite repetida que además vuelve por sus carpetas corre una vez y no sale ausente', () => {
+  // 🔴 mutación: la rama de las repetidas no la anota como hallada entre las que vuelven, y la corrida sale roja por una
+  //    «ausente» que corrió en verde (también una suite en espera a main cuya carpeta se tocó).
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/g.test.js', gate_only_when_touching: ['G/**'] }] });
+  f.escribir('arnes', 'tests/g.test.js', 'process.exit(0)');
+  const tf = path.join(f.root, 'touched.json');
+  fs.writeFileSync(tf, JSON.stringify({ known: true, files: ['G/a.js'], sources: {}, rerun_suites: ['tests/g.test.js'], reactivated_suites: ['arnes:tests/g.test.js'] }));
+  const out = path.join(f.root, 'o.json');
+  const r = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, '--touched', tf, '--scoped-by-repo', 'la CI'], { encoding: 'utf8' });
+  const res = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.deepEqual(res.ausentes, []);
+  assert.deepEqual(res.suites.map((s) => s.entrada.ruta), ['tests/g.test.js'], 'corrió una sola vez');
+  assert.doesNotMatch(r.stdout, /AUSENTE/);
+});
+
+test('T4 RunSuites_Reactivated_PastFiltersOrAbsent @story-8.299 @ac-3 @ac-4 @ac-9 — una reactivada corre sin filtros, una que no está en la lista es ausente, con --suite no se miran, y cada diferida trae su entrada', () => {
+  // 🔴 mutación: pasar la reactivada por los filtros la vuelve a diferir (no nombra lo tocado) y lo guardado queda sin
+  // medirla; una reactivada que no está en la lista, salteada callada, dejaría verde lo que nadie corrió.
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/a.test.js' },
+    { raiz: 'arnes', ruta: 'tests/g.test.js', gate_only_when_touching: ['G/**'] },
+    { raiz: 'arnes', ruta: 'tests/h.test.js', gate_only_when_touching: ['H/**'] },
+  ] });
+  f.escribir('arnes', 'tests/a.test.js', '// lib/x.js\nprocess.exit(0)');
+  f.escribir('arnes', 'tests/g.test.js', 'process.exit(0)');
+  f.escribir('arnes', 'tests/h.test.js', 'process.exit(0)');
+  const tf = path.join(f.root, 'touched.json');
+  fs.writeFileSync(tf, JSON.stringify({ known: true, files: ['lib/x.js'], sources: {}, reactivated_suites: ['arnes:tests/g.test.js', 'arnes:tests/zz.test.js'],
+    reactivated_reasons: { 'arnes:tests/g.test.js': 'la completa la difirió y lo cambiado toca G/**' } }));
+  const base = (out) => [RUNNER, f.repo, path.join(f.root, out), '--skills', f.skills, '--touched', tf, '--scoped-by-repo', 'la CI'];
+  const leer = (out) => JSON.parse(fs.readFileSync(path.join(f.root, out), 'utf8'));
+  let r = spawnSync('node', base('o1.json'), { encoding: 'utf8' });
+  let res = leer('o1.json');
+  assert.notEqual(r.status, 0, `la ausente es rojo\n${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /^VUELVE\s+g\.test\.js — la completa la difirió y lo cambiado toca G\/\*\*$/m, r.stdout);
+  assert.ok(res.suites.some((s) => s.entrada.ruta === 'tests/g.test.js' && s.exit === 0), `g corrió aunque no nombra lo tocado\n${r.stdout}`);
+  assert.deepEqual(res.ausentes, ['arnes:tests/zz.test.js']);
+  assert.match(r.stdout, /^AUSENTE\s+arnes:tests\/zz\.test\.js — lo cambiado la vuelve a hacer correr, pero ya no está en la lista de suites$/m, r.stdout);
+  const h = res.deferred_suites.find((d) => d.suite.endsWith('/tests/h.test.js'));
+  assert.deepEqual(h && h.entrada, { raiz: 'arnes', ruta: 'tests/h.test.js' }, JSON.stringify(res.deferred_suites));
+  // con --suite de otra: sólo esa, y ninguna ausente por las reactivadas
+  r = spawnSync('node', [...base('o2.json'), '--suite', 'tests/a.test.js'], { encoding: 'utf8' });
+  res = leer('o2.json');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(res.suites.map((s) => s.entrada.ruta), ['tests/a.test.js']);
+  assert.deepEqual(res.ausentes, []);
+  assert.doesNotMatch(r.stdout, /VUELVE|zz\.test\.js/);
 });

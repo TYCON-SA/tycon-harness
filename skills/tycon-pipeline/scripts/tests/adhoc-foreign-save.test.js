@@ -19,10 +19,11 @@
  *
  * stable-data: crea repos de git en carpetas temporales; la configuración global de git es un archivo de la prueba y la
  * del sistema no se lee. Nunca toca el repo real.
- * Correr: node --test skills/tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js
+ * Correr: node --test skills/tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (todo). El portón y el nocturno
+ * corren sus partes, adhoc-foreign-save.p<k>.test.js (cuáles pruebas, lo dice suite-parts.json de esta carpeta).
  */
 
-const { test } = require('node:test');
+const test = require('./lib/suite-parts.js').test;
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
@@ -247,12 +248,18 @@ function enTerminal(e) {
 test('T3 AllowForeignSave_SoloLaPersona @story-8.236 @ac-3', () => {
   const e = escenario('t3');
   e.decidir('git commit -m constancia');
-  for (const opts of [{}, { delegadaPor: 'ses-coord' }, { via: 'avisado' }, { via: 'mensaje' }, { via: 'una-que-no-existe' }]) {
+  for (const opts of [{}, { via: 'avisado' }, { via: 'mensaje' }, { via: 'una-que-no-existe' }]) {
     const r = permitir(e, opts);
     assert.notStrictEqual(r.status, 0, `${JSON.stringify(opts)}: ${r.stdout}${r.stderr}`);
     assert.strictEqual(permiso(e), null, `${JSON.stringify(opts)}: no anota`);
   }
   assert.ok(!adhocLog(e).some((x) => x.kind === 'ADHOC_FOREIGN_SAVE_ALLOWED'));
+  // la coordinadora, por la delegación del perfil (una excepción de trámite): anota, y dice la vía
+  const d = escenario('t3-delegada');
+  d.decidir('git commit -m constancia');
+  const rd = permitir(d, { delegadaPor: 'ses-coord' });
+  assert.strictEqual(rd.status, 0, `${rd.stdout}${rd.stderr}`);
+  assert.strictEqual(permiso(d).via, 'delegacion');
 
   // el pedido cambia entre el cuadro y el anotado: no anota
   const cambia = path.join(tmp('cambia-'), 'cambia.js');

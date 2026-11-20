@@ -3,7 +3,8 @@
 //
 // La deja `pipeline.js story-review-record` en la carpeta de estado del arnés, donde el agente no escribe (el portón
 // de escrituras niega esa carpeta): una marca en la historia se podría escribir a mano y no probaría nada. Se guarda
-// por la ruta real de la historia, como la de first-time-record.js. Vale mientras la huella de la historia sea la misma;
+// con la clave de la validación (validation-record.js): el repo y la ruta de la historia dentro del repo, así la escrita
+// en una copia vale en otra del mismo repo. Vale mientras la huella de la historia sea la misma;
 // la huella ignora lo que el avance del trabajo cambia (el Change Log, el Dev Agent Record, los follow-ups de los
 // revisores y el estado), así una corrida no invalida la revisión y un criterio cambiado sí.
 const fs = require('fs');
@@ -24,10 +25,18 @@ function realPath(p) {
   try { return fs.realpathSync.native(p); } catch { return null; }
 }
 
+const archivoDeClave = (home, texto) => path.join(stateDir(home), RECORD_DIR, `${crypto.createHash('sha256').update(texto).digest('hex').slice(0, 32)}.json`);
+
+/** La constancia por la clave de la historia; fuera de git, la de antes. */
 function recordFile(home, storyPath) {
-  const real = realPath(storyPath) || path.resolve(storyPath);
-  const key = crypto.createHash('sha256').update(real).digest('hex').slice(0, 32);
-  return path.join(stateDir(home), RECORD_DIR, `${key}.json`);
+  // se pide acá y no al cargar: validation-record.js carga este archivo por `huella`
+  const clave = require('./validation-record.js').claveDeHistoria(storyPath);
+  return clave ? archivoDeClave(home, clave) : recordFileViejo(home, storyPath);
+}
+
+/** La clave de antes: la ruta real de la historia. Las constancias escritas así se siguen leyendo. */
+function recordFileViejo(home, storyPath) {
+  return archivoDeClave(home, realPath(storyPath) || path.resolve(storyPath));
 }
 
 /**
@@ -117,9 +126,12 @@ function writeRecord(home, storyPath, datos) {
  * cambió) · current. Una constancia ilegible es none: ante la duda, se revisa.
  */
 function readRecord(home, storyPath) {
-  let record;
-  try { record = JSON.parse(fs.readFileSync(recordFile(home, storyPath), 'utf8')); } catch { return { estado: 'none', record: null }; }
-  if (!record || !RESULTS.includes(record.resultado)) return { estado: 'none', record: null };
+  // la clave nueva primero; después la de antes, mientras quede alguna constancia escrita así
+  const leer = (f) => { try { const r = JSON.parse(fs.readFileSync(f, 'utf8')); return r && RESULTS.includes(r.resultado) ? r : null; } catch { return null; } };
+  const nueva = recordFile(home, storyPath);
+  const vieja = recordFileViejo(home, storyPath);
+  const record = leer(nueva) || (vieja !== nueva ? leer(vieja) : null);
+  if (!record) return { estado: 'none', record: null };
   if (record.resultado === 'no-medido') return { estado: 'unmeasured', record };
   let actual = null;
   try { actual = huella(fs.readFileSync(storyPath, 'utf8')); } catch { actual = null; }
@@ -142,4 +154,4 @@ function resumenVolcado(home, storyPath) {
   };
 }
 
-module.exports = { RECORD_DIR, RESULTS, MOTIVOS, DESTINOS, huella, recordFile, problemas, writeRecord, readRecord, resumenVolcado };
+module.exports = { RECORD_DIR, RESULTS, MOTIVOS, DESTINOS, huella, recordFile, recordFileViejo, problemas, writeRecord, readRecord, resumenVolcado };

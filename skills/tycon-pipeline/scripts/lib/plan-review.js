@@ -604,14 +604,16 @@ function lineaDelCuadro({ estado, destino, marker, config }) {
  * coordinadora apruebe; después la constancia. Todo se vuelve a calcular ahora: el plan, la story y si es delicada.
  * `delegacion(o)` (opcional) mira la delegación del perfil; sin ella, la miró antes el freno de la firma.
  */
-function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion, home }) {
+function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion, home, delegaDelicada = delicadaDelegada }) {
   const plan = planDe(marker);
   const storyFile = storyDe(marker);
   let storyTexto = null;
   try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
   const parte = parteDe(marker, storyTexto);
   const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parte) });
-  if (delicate.value) return no(`plan delicado (nivel 2): lo aprueba el dev, no la revisión (${delicate.reason})`);
+  // un plan delicado: sólo la coordinadora para otra sesión, con `plan-approval:delicada` delegada en el perfil; la
+  // revisión que lanzó la propia sesión no lo aprueba nunca. Lo demás (su revisión, aprobada, sobre este plan) sigue igual
+  if (delicate.value && (firmante === destino || !delegaDelicada({ sesion: firmante, destino, estado, home }))) return no(`plan delicado (nivel 2): lo aprueba el dev, no la revisión (${delicate.reason})`);
   const cfg = configUsada(config);
   if (cfg.plan_review.routine_approval !== 'review') return no(`${PIDE_EL_CLICK(cfg)}: ${ESPERA}`);
   const malEscrita = problemaDelAprobador(config);
@@ -639,6 +641,15 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   if (eligioSeguir({ estado, destino, huellaPlan: c.huellas.plan })) return no(`para este plan se eligió seguir sin revisión: lo firma una persona`);
   if (!APROBADOS.includes(c.veredicto)) return no(`${ESPERA} (la revisión dijo ${c.veredicto})`);
   return { codigo: 0, via: 'revision', constancia: c };
+}
+
+/** ¿El perfil le delega a la coordinadora `sesion` el plan de una historia delicada de `destino`? Con todas las llaves. */
+function delicadaDelegada({ sesion, destino, estado, home }) {
+  try {
+    const raiz = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib');
+    const forma = require(path.join(raiz, 'signatures.js')).PLAN_DELICADO;
+    return !!require(path.join(raiz, 'delegated-signing.js')).delegaSinVentana({ firma: forma, sesion, destino, estado, ...(home ? { home } : {}) }).ok;
+  } catch (_) { return false; }
 }
 
 /**

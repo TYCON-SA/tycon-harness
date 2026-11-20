@@ -1308,7 +1308,7 @@ test('SignFile_SinConstancia_NiegaYNombraElComando (T45) @story-8.139 @ac-43', (
   for (const [firma, , escribir] of frenosDeArchivo(t)) {
     const r = escribir(casaNueva(t), 'ses-a');
     assert.notStrictEqual(r, true, `${firma}: sin constancia frena`);
-    assert.match(String(r), new RegExp(`marker\\.js sign-file ${escRe(firma)}`), `${firma}: nombra el comando`);
+    assert.match(String(r), new RegExp(`marker\\.js"? sign-file ${escRe(firma)}`), `${firma}: nombra el comando`);
     assert.doesNotMatch(String(r), /«autorizo/, `${firma}: no dicta una frase`);
   }
 });
@@ -1350,7 +1350,7 @@ test('SignFile_OtroArchivoOVencida_Niega (T45) @story-8.139 @ac-43', (t) => {
     ow.firmarArchivo({ firma, via: 'ventana', sesion: 'ses-a', archivo, casa, ahora: Date.now() - 31 * 60000 });
     const r = escribir(casa, 'ses-a');
     assert.notStrictEqual(r, true, `${firma}: vencida no vale`);
-    assert.match(String(r), /marker\.js sign-file/, `${firma}: vencida, nombra el comando`);
+    assert.match(String(r), /marker\.js"? sign-file/, `${firma}: vencida, nombra el comando`);
   }
   // una firma que no es de archivo no se pide con sign-file
   const casa = casaNueva(t);
@@ -1565,11 +1565,14 @@ test('Ventana_ArchivoConTilde_MuestraLaRutaDeLaCasa (pase adversarial) @story-8.
 });
 
 test('ComoSeFirma_RutaConCaracteresDeLaConsola_VaEntreComillas (pase adversarial) @story-8.139 @ac-43', () => {
-  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md'), 'marker.js sign-file dod_runtime_exempt /r/specs/story-9.99.md');
-  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt'), 'marker.js sign-file dod_runtime_exempt <archivo>');
+  // con node y la ruta estable de marker.js, y el archivo entre comillas dobles (8.319, AC 6 y 7)
+  const N = `${ow.markerEstable()} sign-file dod_runtime_exempt `;
+  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md'), `${N}"/r/specs/story-9.99.md"`);
+  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt'), `${N}<archivo>`);
   for (const ruta of ["/r/it's $HOME (1).md", '/r/a b;c&d.md', '/r/`x`.md']) {
     const linea = ow.comoSeFirma('dod_runtime_exempt', ruta);
-    const arg = linea.slice('marker.js sign-file dod_runtime_exempt '.length);
+    assert.ok(linea.startsWith(N), linea);
+    const arg = linea.slice(N.length);
     const eco = spawnSync('bash', ['-c', `printf %s ${arg}`], { encoding: 'utf8' });
     assert.strictEqual(eco.stdout, ruta, `${ruta}: copiado tal cual, la consola lee la misma ruta (${linea})`);
   }
@@ -2897,25 +2900,62 @@ test('T5 OwnerWindow_CupoQueNoSePuedeLeer_CuentaComoSobreCupo @story-8.181 @ac-2
   assert.strictEqual(ow.canonicaDe(conPesos).id, 'adhoc-lane');
 });
 
-test('T6 AdhocSet_SobreCupo_NoSaleConDelegacion @story-8.181 @ac-3', (t) => {
-  const delegacion = () => ({ ok: true, maquina: 'm' });
-  // aunque el perfil la nombre: no se delega
+test('T6 AdhocSet_SobreCupo_DelegadaSoloParaOtraSesion @story-8.181 @ac-3', (t) => {
+  // la delegación de verdad nunca firma para la sesión que pide: la propia sesión sigue con el cuadro de sólo click
+  const delegacion = (o) => (o.destino !== o.sesion ? { ok: true, maquina: 'm' } : { ok: false, motivo: 'la sesión que implementa no se firma sola sin ventana' });
   const casa = casaNueva(t);
   const r = pedir(casa, pedidoDe(9), { delegacion });
   assert.strictEqual(r.decision, 'deny', r.texto);
   assert.ok(r.cuadro && r.cuadro.soloClick, 'trae el cuadro para la persona');
   assert.strictEqual(registros(casa).length, 0);
-  // y la coordinadora no lo pide por otra pestaña
-  const ajena = pedirConDelegacion(casaNueva(t), pedidoDe(9, ' --for-session ses-a'));
+  // la coordinadora la pide por otra pestaña sólo si el perfil se la delega: sin delegación, se niega sin ventana
+  const ajena = pedir(casaNueva(t), pedidoDe(9, ' --for-session ses-b'));
   assert.strictEqual(ajena.decision, 'deny', ajena.texto);
-  assert.match(ajena.texto, /no se corre desde la pestaña de otra sesión/);
+  assert.match(ajena.texto, /se pide para otra sesión sólo por la delegación del perfil/);
+  // con la delegación, firma sin ventana y el registro dice la vía
+  const otra = casaNueva(t);
+  const delegada = pedir(otra, pedidoDe(9, ' --for-session ses-b'), { delegacion });
+  assert.deepStrictEqual([delegada.decision, delegada.via], ['allow', 'delegacion'], delegada.texto);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(ow.carpeta(otra), registros(otra)[0]), 'utf8')).via, 'delegacion');
+});
+
+// 🔴 Falla con: una excepción de trámite que el perfil delega y el freno igual manda a la ventana; o una que no es de
+// trámite firmada por delegación.
+test('ExcepcionesDeTramite_ParaOtraSesion_FirmanPorDelegacion', (t) => {
+  const delegacion = (o) => (o.destino !== o.sesion ? { ok: true, maquina: 'm' } : { ok: false, motivo: 'la sesión que implementa no se firma sola sin ventana' });
+  const casos = [
+    ['escape:red-control-test-edit', `node ${MARKER} sign-file red-control-test-edit /r/scripts/tests/x.test.js --for-session ses-b`],
+    ['escape:cambiar-el-estado', `node ${MARKER} sign-file cambiar-el-estado /r/sprint-status.yaml --for-session ses-b`],
+    ['escape:ALLOW_DOD_EVIDENCE_WRITE', `node ${MARKER} sign-file ALLOW_DOD_EVIDENCE_WRITE /r/.advisors/dod.json --for-session ses-b`],
+    ['critical-waiver', `node ${MARKER} waive-critical --rule SEC-C1 --reason "lo cubre otra capa" --for-session ses-b`],
+    ['manual-test', `node ${MARKER} mark-tested --acs 3 --for-session ses-b`],
+    ['escape:force-manual', `node ${MARKER} set-check tests green --force-manual --for-session ses-b`],
+  ];
+  for (const [firma, cmd] of casos) {
+    const casa = casaNueva(t);
+    const r = pedir(casa, cmd, { delegacion });
+    assert.deepStrictEqual([r.decision, r.via, r.firmas], ['allow', 'delegacion', [firma]], `${cmd}: ${r.texto}`);
+    const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), vigentes(casa)[0]), 'utf8'));
+    assert.deepStrictEqual([reg.firma, reg.via, reg.destino], [firma, 'delegacion', 'ses-b'], cmd);
+  }
+  // las firmas sobre un archivo que no son de trámite siguen sin correrse desde otra pestaña
+  for (const nombre of ['story-skill-bypass', 'dod_runtime_exempt']) {
+    const r = pedir(casaNueva(t), `node ${MARKER} sign-file ${nombre} /r/x.md --for-session ses-b`, { delegacion });
+    assert.strictEqual(r.decision, 'deny', nombre);
+    assert.match(r.texto, /no se corre desde la pestaña de otra sesión/, nombre);
+  }
 });
 
 // 🔴 Falla con: la negativa desde otra pestaña sólo en el freno: el guion correría si el freno no lo mira.
 test('AdhocSet_SobreCupo_ParaOtraSesion_ElGuionTambienLoNiega @story-8.181 @ac-3', () => {
+  // sin el pedido que deja el freno (la delegación del perfil), el guion no firma para otra sesión
   const r = ow.exigir({ firma: SOBRE_CUPO, argv: [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp","allowedFiles":["src/sp.js"],"maxFiles":9}', '--for-session', 'ses-b'], propia: 'ses-a' });
-  assert.strictEqual(r.codigo, 1, JSON.stringify(r));
-  assert.match(r.motivo, /se corre desde la sesión destino/);
+  assert.notStrictEqual(r.codigo, 0, JSON.stringify(r));
+  assert.match(r.motivo, /no pasó por la ventana/);
+  // la que no es de trámite sigue sin correrse desde otra pestaña
+  const datos = ow.exigir({ firma: 'adhoc-lane:datos', argv: [MARKER, 'adhoc', 'allow-data-change', '--changed', 'x', '--recommends', 'pasar', '--why', 'y', '--for-session', 'ses-b'], propia: 'ses-a' });
+  assert.strictEqual(datos.codigo, 1, JSON.stringify(datos));
+  assert.match(datos.motivo, /se corre desde la sesión destino/);
 });
 
 // 🔴 Falla con: la lista cruda, con pruebas y sondas, que niega un cupo que alcanza y empuja a la firma de sobre cupo.

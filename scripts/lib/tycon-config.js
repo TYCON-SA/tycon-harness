@@ -263,7 +263,10 @@ const VOCABULARIO = Object.freeze({
   // Sin valor, los pone quien abre la sesión. `second_heavy_min_free_pct`: con cuánta memoria libre del sistema, en
   // porcentaje, se da el segundo turno de ejecución grande de pruebas (scripts/tools/heavy-turn.js); con el orden de
   // siempre, porque cuánto aguanta depende de la máquina. Sin valor, 50; con 100, la máquina queda con un turno.
-  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100' }),
+  // `max_stories_in_cycle`: cuántas historias puede tener la coordinadora en el ciclo completo a la vez (de arrancadas a
+  // entradas a main); con el tope lleno no arranca ni retoma otra hasta que una entre, y las demás quedan en fila. Con el
+  // orden de siempre. Sin valor, 4.
+  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20' }),
   // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
   // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
   office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
@@ -561,6 +564,7 @@ const VARIABLES = Object.freeze({
   'coordination.owner_folder': ['TYCON_COORDINATION_OWNER_FOLDER'],
   'coordination.session_names': ['TYCON_COORDINATION_SESSION_NAMES'],
   'coordination.second_heavy_min_free_pct': ['TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT'],
+  'coordination.max_stories_in_cycle': ['TYCON_COORDINATION_MAX_STORIES_IN_CYCLE'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -1017,8 +1021,8 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
 }
 
 /**
- * La coordinadora firma sola sólo la rutina: de `delegated_signing` sale toda firma que llega a nivel 2 o más con lo que
- * sube `approvals.levels` (`signatures.js`, delegatedLevel). No es un error: lo demás se sigue delegando, y la salida se
+ * La coordinadora firma sola la rutina y las excepciones de trámite: de `delegated_signing` sale toda firma que no es
+ * delegable con lo que sube `approvals.levels` (`signatures.js`, delegable). No es un error: lo demás se sigue delegando, y la salida se
  * dice como ignorada. Con `levels` escrito y roto no se sabe qué subió el dueño: no se delega nada (su error ya está).
  * Un grupo de antes que trae alguna se abre en sus ids.
  */
@@ -1037,13 +1041,15 @@ function soloRutinaDelegada(plano, datos, archivo, ignoradas, seccion) {
   const quedan = [];
   for (const valor of lista) {
     for (const id of cat.expand(valor)) {
-      const n = cat.delegatedLevel(id, subidos);
-      if (n >= 2) { if (!salen.some((x) => x.id === id)) salen.push({ id, n }); } else if (!quedan.includes(id)) quedan.push(id);
+      // una forma (plan-approval:delicada, save:sensible) no es una firma: su nivel es el de la tabla, o 2
+      const n = cat.delegatedLevel(id, subidos) || cat.effectiveLevel(id, subidos) || 2;
+      // una excepción se delega sólo por su nombre: un grupo de antes no la trae
+      if (!cat.delegable(id, subidos) || (n >= 2 && valor !== id)) { if (!salen.some((x) => x.id === id)) salen.push({ id, n }); } else if (!quedan.includes(id)) quedan.push(id);
     }
   }
   if (!salen.length) return;
   plano['approvals.delegated_signing'] = quedan.length ? quedan : 'off';
-  ignoradas.push({ archivo, clave: `${seccion}.delegated_signing`, motivo: `${salen.map((x) => `${x.id} (nivel ${x.n})`).join(', ')} no se delega: la coordinadora firma sola sólo la rutina (nivel 1); una excepción o algo irreversible lo firma una persona (guides/firmas-del-arnes.md)` });
+  ignoradas.push({ archivo, clave: `${seccion}.delegated_signing`, motivo: `${salen.map((x) => `${x.id} (nivel ${x.n})`).join(', ')} no se delega: la coordinadora firma sola la rutina (nivel 1) y las excepciones de trámite que lista la guía; las demás excepciones y lo irreversible los firma una persona (guides/firmas-del-arnes.md)` });
 }
 
 /** null si el valor es del tipo; si no, el motivo. */
@@ -1106,7 +1112,7 @@ function validarTipo(tipo, valor) {
       // las firmas del catálogo (signatures.js): `firmas` acepta además los nombres de grupo y `off`; `firmas-ids`, sólo ids
       const cat = catalogoDeFirmas();
       if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
-      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids()], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
+      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids(), ...cat.formNames()], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
       if (!Array.isArray(valor) || !valor.length) return `tiene que ser una lista no vacía de ids de firma (guides/firmas-del-arnes.md), no ${JSON.stringify(valor)}`;
       const malo = valor.find((v) => typeof v !== 'string' || !cat.isId(v.trim()));
       if (malo !== undefined) return `${JSON.stringify(malo)} no es un id de firma (guides/firmas-del-arnes.md; un grupo no vale acá)`;
@@ -1474,8 +1480,9 @@ function modelProvider(opts = {}) {
 }
 /**
  * La receta de la coordinadora, según una configuración YA cargada: `{ max_working: { value, origin }, owner_folder:
- * { value, origin }, session_names: { value, origin }, second_heavy_min_free_pct: { value, origin } }`. Sin valor, el tope
- * es 3, la carpeta null, los nombres null y el piso del segundo turno 50, todos con origen `sin-valor`.
+ * { value, origin }, session_names: { value, origin }, second_heavy_min_free_pct: { value, origin },
+ * max_stories_in_cycle: { value, origin } }`. Sin valor, el tope es 3, la carpeta null, los nombres null, el piso del
+ * segundo turno 50 y el tope de historias en el ciclo 4, todos con origen `sin-valor`.
  */
 function coordinacion(config) {
   const v = (config.valores && config.valores.coordination) || {};
@@ -1483,7 +1490,7 @@ function coordinacion(config) {
   const con = (clave, defecto) => (v[clave] === null || v[clave] === undefined
     ? { value: defecto, origin: 'sin-valor' }
     : { value: v[clave], origin: o[`coordination.${clave}`] });
-  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null), second_heavy_min_free_pct: con('second_heavy_min_free_pct', 50) };
+  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null), second_heavy_min_free_pct: con('second_heavy_min_free_pct', 50), max_stories_in_cycle: con('max_stories_in_cycle', 4) };
 }
 /**
  * Los topes del camino corto, según una configuración YA cargada: `{ coordinator_max_files: { value, origin }, max_files:

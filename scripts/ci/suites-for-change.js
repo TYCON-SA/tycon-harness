@@ -142,15 +142,21 @@ function nightlyMeasured(file, now = Date.now()) {
 const DIRECT_RUNS_ALL = /^(pipelines\/|scripts\/setup\/|\.githooks\/)|(^|\/)install-tycon-hooks\.[^/]+$|(^|\/)tycon-ci-gate\.js$|^scripts\/production\/install-guard\.[^/]+$|^skills\/tycon-pipeline\/scripts\/lib\/touched-files\.js$/;
 
 /**
- * ¿El código de la suite (`text`) nombra el archivo `f`? Su ruta, su nombre con extensión, o su nombre sin extensión
- * como palabra entera, si tiene 4 letras o más (`w` suelta no nombra `w.js`).
+ * ¿El código de la suite (`text`) nombra el archivo `f`? Su ruta, su nombre con extensión, o su nombre sin extensión si
+ * tiene 4 letras o más (`w` suelta no nombra `w.js`); cada uno como palabra entera, no pegado a una letra, un dígito, `_`
+ * ni `-`: `DATABASE` no nombra un archivo `BASE`, ni `estate.js` a `state.js`. El nombre sin extensión seguido de un
+ * punto sí cuenta (`state.json` nombra a `state.js` por `state`): ante la duda, corre.
  */
 function names(text, f) {
   const base = path.posix.basename(f);
-  if (text.includes(f) || text.includes(base)) return true;
+  if (nombraEntero(text, f) || nombraEntero(text, base)) return true;
   const stem = base.replace(/\.[^.]+$/, '');
-  if (stem.length < 4) return false;
-  const esc = stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return stem.length >= 4 && nombraEntero(text, stem);
+}
+
+function nombraEntero(text, s) {
+  if (!s || !text.includes(s)) return false;
+  const esc = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(^|[^A-Za-z0-9_-])${esc}([^A-Za-z0-9_-]|$)`).test(text);
 }
 
@@ -288,12 +294,17 @@ const SELECTION_ITSELF = ['scripts/ci/suites-for-change.js', 'scripts/ci/suite-d
  * El criterio de un grupo de heavy-suites.json para quien corre suites fuera de este guion (el portón de las stories,
  * lib/run-suites-json.js): `skips(name, files)` dice si la suite `name` del grupo se puede dejar para el banco nocturno
  * porque el cambio (`files`, rutas del repo) no toca los patrones del grupo, los suyos ni cómo se eligen las suites.
- * Una suite que no es del grupo nunca se saltea. `problem` si el archivo no se deja leer: entonces no se saltea ninguna.
+ * Una suite que no es del grupo nunca se saltea, y `skips` no dice si lo es: eso lo dice `incluye(name)`, para quien
+ * necesita saber qué suites del grupo vuelven a correr aunque una completa anterior las haya diferido o medido.
+ * `problem` si el archivo no se deja leer: entonces no se saltea ninguna.
  */
 function groupCriterion(file, groupName) {
   const heavy = readHeavy(file);
   if (heavy.problem) return { problem: heavy.problem };
   return {
+    incluye(name) {
+      return heavy.grouped.get(name) === groupName;
+    },
     skips(name, files) {
       if (heavy.grouped.get(name) !== groupName) return false;
       const norm = files.map((f) => String(f).replace(/\\/g, '/'));

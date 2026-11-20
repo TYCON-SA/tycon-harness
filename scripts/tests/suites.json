@@ -745,6 +745,12 @@
       "requiere": []
     },
     {
+      "__nota": "la constancia de la revisión previa de una historia vale en otra copia del mismo repo: la clave de la validación, y la de antes se sigue leyendo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-review-record.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.277: una deuda pagada antes del commit se levanta con marker.js lift-debt; los rojos esperados vuelven a ser rojos y «Preparar» pide todo en verde.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/lift-debt.test.js",
@@ -883,6 +889,28 @@
         "scripts/controls-bench/**",
         "scripts/lib/**",
         "guides/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
+      "__nota": "story 8.312: los resultados de la noche viajan por la rama night-results sin tocar el clon, y un fallo se ve al arrancar. Remotos desnudos de juguete, casa temporal; corre sus casos de a cuatro.",
+      "ruta": "tests/result-travel.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/lib/**",
+        "scripts/controls-bench/**",
+        "scripts/hooks/**",
+        "scripts/nightly/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
+      "__nota": "story 8.312: el nocturno lleva a main lo pendiente de night-results, sin repetir, sin perder y rechazando lo que no tiene forma de resultado.",
+      "ruta": "tests/carry-night-results.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/ci/**",
+        "scripts/lib/**"
       ]
     },
     {
@@ -1120,6 +1148,17 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/main-check.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la espera a main donde se cruza con la repetición sola, las suites que vuelven, lo guardado y los repos hermanos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-main-wait.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-skill-gate.test.js",
       "requiere": []
     },
@@ -1133,6 +1172,12 @@
       "__nota": "story 8.121: la ejecución perdida (marcador, apertura o copia que faltan) frena, y su salida es del dueño.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/lost-marker.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.318: la ejecución perdida frena el cierre de turno una vez por turno, el cartel da comandos que andan en Windows y la consola frena borrar la carpeta de una ejecución abierta.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/lost-run-loop.test.js",
       "requiere": []
     },
     {
@@ -1840,9 +1885,27 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "__nota": "Parte 1 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
       "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p1.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 2 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p2.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 3 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p3.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 4 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p4.test.js",
       "requiere": []
     },
     {
@@ -1999,6 +2062,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/prod-firewall.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/prod-firewall-deleted-server.test.sh",
       "requiere": []
     },
     {
@@ -3093,6 +3161,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.319: en Windows el freno y la lista de firmas del dueño ofrecen sólo la vía de firma que anda en esa consola; el comando de la terminal se pega tal cual; adhoc set con --repo; el «aprobado» encolado vale.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-signature-routes.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "una firma sin persona («hecho y avisado» o la delegación) sale sólo con el control previo de su guion: sin él se niega sin gastar el pedido, también en el chequeo previo del freno; y la prueba de cruce: cada llamada de firma del árbol que puede salir sin persona pasa su control previo. En proceso; un segundo.",
       "raiz": "arnes",
       "ruta": "tests/signatures-without-person.test.js",
@@ -3150,6 +3224,12 @@
       "__nota": "qué dice el portón de CI que verificó (scripts/ci/tycon-ci-gate.js): el nivel de cada chequeo en la salida y en --json, la línea verde que dice que el servidor no re-ejecutó nada, las exenciones con su razón (también en bloque) y la exención sin razón que avisa hasta EXEMPT_REASON_FROM y frena desde ese día. Repos de juguete, HOME vacía, sin red.",
       "raiz": "arnes",
       "ruta": "tests/ci-gate-what-it-verified.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "lo que el portón de CI empieza a frenar (scripts/ci/tycon-ci-gate.js): la evidencia que declara FAIL o no se puede leer, la que está en el disco y no en git, y la carpeta de corrida que por la fecha en que entró en git pide registro de autoría; avisa hasta STRICT_EVIDENCE_FROM y frena desde ese día",
+      "raiz": "arnes",
+      "ruta": "tests/ci-gate-reads-verdict.test.js",
       "requiere": []
     },
     {
@@ -3312,6 +3392,12 @@
       "__nota": "Los pedidos de cambio por la capa de plataforma: abrir uno en Azure DevOps y en GitHub contra el az y el gh de mentira (reusar el abierto, releerlo por rama si la respuesta no trae el número, lo que no abre), listar los de GitHub, el freno de un pedido por repo y los nocturnos que leen las dos plataformas.",
       "raiz": "arnes",
       "ruta": "tests/platform-change-request.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El análisis de seguridad (code scanning) de cada pedido abierto de GitHub, como lo lee el conector, con una llamada de mentira: sin su control, en rojo, corriendo, con alertas abiertas o sin poder leerse nunca es verde; la regla de la rama dice si lo exige.",
+      "raiz": "arnes",
+      "ruta": "tests/github-code-scanning.test.js",
       "requiere": []
     },
     {

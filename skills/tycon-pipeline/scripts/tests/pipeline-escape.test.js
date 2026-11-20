@@ -97,7 +97,7 @@ test('T6 EvidenceGuard_ConstanciaViejaOFrase_YaNoPasa @story-8.96 @story-8.139 �
   const flag = conPermiso(conConstancia, { constancia: LINEA() });
   const r = escribirEvidencia(conConstancia);
   assert.strictEqual(r.status, 2, r.stderr);
-  assert.match(r.stderr, /marker\.js sign-file ALLOW_DOD_EVIDENCE_WRITE/);
+  assert.match(r.stderr, /marker\.js"? sign-file ALLOW_DOD_EVIDENCE_WRITE/);
   assert.ok(fs.existsSync(flag), 'el permiso no se consume');
 
   const conFrase = nuevaHome([deLaPersona('lo creé yo: autorizo ALLOW_DOD_EVIDENCE_WRITE')]);
@@ -124,7 +124,7 @@ test('T9 FrontmatterWrite_ExencionNueva_PideLaFrase @story-8.96 — agregarla a 
   const r = correr(ENCABEZADO, home, agregarExencion(f));
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /lo decide la persona/);
-  assert.match(r.stderr, /marker\.js sign-file dod_runtime_exempt /);
+  assert.match(r.stderr, /marker\.js"? sign-file dod_runtime_exempt /);
   // un Write que reescribe una historia en review con la exención
   const enReview = historia(home, 'review');
   const contenido = fs.readFileSync(enReview, 'utf8').replace('qa_guide: off\n', 'dod_runtime_exempt: true\nqa_guide: off\n');
@@ -153,7 +153,7 @@ test('T10 FrontmatterWrite_ExencionQueYaEstaba_Pasa @story-8.96 — la que ya es
   const crear = { tool_name: 'Write', tool_input: { file_path: nueva, content: contenido } };
   const r = correr(ENCABEZADO, home, crear);
   assert.strictEqual(r.status, 2, r.stderr);
-  assert.match(r.stderr, /marker\.js sign-file dod_runtime_exempt /);
+  assert.match(r.stderr, /marker\.js"? sign-file dod_runtime_exempt /);
   // con la frase de la persona, crearla exenta no pasa
   const conFrase = nuevaHome([deLaPersona('Es puro texto. Autorizo dod_runtime_exempt')], 'Write');
   const nuevaNo = path.join(conFrase, 'repo', 'specs', 'story-9.10-nueva.md');
@@ -444,9 +444,8 @@ test('Guion_ForSession_SalidaDeOtraSesion_PorDelegacionYSinFirma', (t) => {
   };
   const delegacion = (perfil) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella: HUELLA }) });
   const DELEGA = { ...PERFIL, delegated_signing: ['lost-run'] };
-  // la ejecución perdida de ses-a, cerrada o rearmada desde la designada: aunque el perfil inyectado delegue lost-run (el
-  // lector del perfil de verdad lo saca, es de nivel 2), el freno deja pasar y el guion la niega: cerrarla como perdida
-  // o restaurarla lo decide una persona. El pedido no se gasta y la ejecución sigue abierta
+  // la ejecución perdida de ses-a, cerrada o rearmada desde la designada: con lost-run delegado en el perfil (una
+  // excepción de trámite), el freno deja pasar y el guion firma por delegación
   for (const args of [['clear-session', DESTINO, '--lost', '--for-session', DESTINO], ['restore', DESTINO, '--for-session', DESTINO]]) {
     const lab = laboratorioOtraSesion(t);
     designar(lab);
@@ -454,11 +453,10 @@ test('Guion_ForSession_SalidaDeOtraSesion_PorDelegacionYSinFirma', (t) => {
     const p = lab.pedir(lab.comando(args), { delegacion: delegacion(DELEGA) });
     assert.strictEqual(p.decision, 'allow', `${args[0]}: ${p.texto}`);
     const r = lab.correr(args);
-    assert.notStrictEqual(r.status, 0, `${args[0]}: ${r.stdout}${r.stderr}`);
-    assert.match(r.stderr, /cerrar como perdida una ejecución, o restaurarla, lo decide una persona/, args[0]);
-    assert.strictEqual(lab.gates().filter((g) => g.name === 'lost-run-signed').length, 0, args[0]);
-    assert.ok(!lab.gates().some((g) => g.name === 'run-close' && g.sesion === DESTINO), `${args[0]}: la ejecución sigue abierta`);
-    assert.strictEqual(lab.vigentes().length, 1, `${args[0]}: el pedido no se gasta`);
+    assert.strictEqual(r.status, 0, `${args[0]}: ${r.stdout}${r.stderr}`);
+    const firmadas = lab.gates().filter((g) => g.name === 'lost-run-signed');
+    assert.deepStrictEqual(firmadas.map((g) => g.via), ['delegacion'], args[0]);
+    assert.strictEqual(lab.vigentes().length, 0, `${args[0]}: el pedido se gasta`);
     // sin lost-run en el perfil, la misma salida pide la ventana del dueño
     const otro = laboratorioOtraSesion(t);
     designar(otro);
@@ -480,6 +478,37 @@ test('Guion_ForSession_SalidaDeOtraSesion_PorDelegacionYSinFirma', (t) => {
   assert.strictEqual(c.status, 2, `${c.stdout}${c.stderr}`);
   assert.match(c.stderr, new RegExp(`clear-session ${DESTINO}`));
   assert.strictEqual(otra.leer(DESTINO), antes, 'no tocó el marcador de ses-a');
+});
+
+// 🔴 Falla con: el freno deja pasar una excepción de trámite delegada y su guion la niega («no trae el control previo»):
+// owner-next la daría por delegada y la coordinadora no la podría firmar.
+test('ExcepcionesDeTramite_ForSession_ElGuionFirmaPorDelegacion', (t) => {
+  const designar = (lab) => {
+    const d = { name: 'relay-designation', status: 'ok', ts: new Date(AHORA - 3600000).toISOString(), sesion: COORD, rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
+    fs.appendFileSync(path.join(lab.estadoDir, 'gates.log'), `${[d, DS.confirmationRecord(d, new Date(AHORA - 3500000).toISOString())].map((l) => JSON.stringify(l)).join('\n')}\n`);
+  };
+  const delegacion = (perfil) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella: HUELLA }) });
+  const casos = [
+    ['escape:force-manual', (lab) => ['set-check', 'tests', 'green', '--force-manual', '--for-session', DESTINO]],
+    ['escape:ALLOW_DOD_EVIDENCE_WRITE', (lab) => ['sign-file', 'ALLOW_DOD_EVIDENCE_WRITE', path.join(lab.repo, '.advisors', 'dod.md'), '--for-session', DESTINO]],
+    ['escape:red-control-test-edit', (lab) => ['sign-file', 'red-control-test-edit', path.join(lab.repo, 'scripts', 'tests', 'x.test.js'), '--for-session', DESTINO]],
+  ];
+  for (const [firma, armar] of casos) {
+    const lab = laboratorioOtraSesion(t);
+    designar(lab);
+    const args = armar(lab);
+    const p = lab.pedir(lab.comando(args), { delegacion: delegacion({ ...PERFIL, delegated_signing: [firma] }) });
+    assert.deepStrictEqual([p.decision, p.via], ['allow', 'delegacion'], `${firma}: ${p.texto}`);
+    const r = lab.correr(args);
+    assert.strictEqual(r.status, 0, `${firma}: ${r.stdout}${r.stderr}`);
+    const firmadas = lab.gates().filter((g) => g.name === `${firma}-signed`);
+    assert.deepStrictEqual(firmadas.map((g) => g.via), ['delegacion'], firma);
+    assert.strictEqual(lab.vigentes().length, 0, `${firma}: el pedido se gasta`);
+    // sin su nombre en el perfil, la misma firma pide la ventana del dueño
+    const otro = laboratorioOtraSesion(t);
+    designar(otro);
+    assert.strictEqual(otro.pedir(otro.comando(armar(otro)), { delegacion: delegacion(PERFIL) }).decision, 'ask', `${firma} sin delegar`);
+  }
 });
 
 test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {

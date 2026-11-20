@@ -487,7 +487,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     if (p) {
       const verdict = { action: 'block', kind: 'ejecucion-perdida', reason: `ejecución perdida (${p.caso}): ${p.falta}` };
       appendLog(stateDir, 'gates.log', sessionId, { name: 'story-gate', status: 'blocked', kind: verdict.kind, file: abs, via: via || null, story: p.story, reason: verdict.reason });
-      return { verdict, message: or.cartel(p, { markerJs: path.join(__dirname, '..', 'marker.js') }), ctx: { filePath: abs, perdida: p, via } };
+      return { verdict, message: or.cartel(p), ctx: { filePath: abs, perdida: p, via } };
     }
   }
   // repoContext se llama hasta tres veces: lo que no pudo mirar queda en UN renglón de gates.log por llamada a evaluate

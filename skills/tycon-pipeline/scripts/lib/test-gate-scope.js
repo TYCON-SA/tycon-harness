@@ -11,7 +11,8 @@
  *     full_suite_by: "la CI de GitHub del pedido (control obligatorio de la cola de merge)"
  *
  * Con eso test-gate.sh corre en la máquina sólo las suites que leen lo tocado (run-suites-json.js --scoped-by-repo) y
- * el cierre dice quién corre la completa. Sin la clave, o con la clave mal escrita, corre todo como siempre: un valor
+ * el cierre dice quién corre la completa. `max_local_suites: <n>` (opcional) cambia el tope de suites que corren en la
+ * máquina: pasado el tope corren las más cercanas al cambio y las demás quedan para esa CI. Sin la clave, o con la clave mal escrita, corre todo como siempre: un valor
  * que no se entiende no acota. `full_suite_by` es obligatorio: acotar sin decir quién corre la completa no vale.
  *
  * Esta clave AFLOJA el portón, así que se lee de lo COMMITEADO (config-source.js, `archivoParaFreno`): escribirla en la
@@ -43,7 +44,11 @@ function parseScope(txt) {
   if (!SCOPES.includes(block.scope)) return { scope: 'full', problem: `test_gate.scope tiene que ser ${SCOPES.join(' o ')}, no ${JSON.stringify(block.scope || '')}` };
   if (block.scope === 'full') return { scope: 'full' };
   if (!block.full_suite_by) return { scope: 'full', problem: 'test_gate.scope: touched pide full_suite_by (quién corre la suite completa antes del merge)' };
-  return { scope: 'touched', fullSuiteBy: block.full_suite_by };
+  // el tope de suites de la máquina (opcional): un entero mayor que cero; mal escrito, rige el de fábrica y se dice
+  const max = block.max_local_suites;
+  if (max === undefined || max === '') return { scope: 'touched', fullSuiteBy: block.full_suite_by };
+  if (!/^[1-9]\d{0,3}$/.test(max)) return { scope: 'touched', fullSuiteBy: block.full_suite_by, problem: `test_gate.max_local_suites tiene que ser un entero de 1 a 9999, no ${JSON.stringify(max)}: rige el tope de fábrica` };
+  return { scope: 'touched', fullSuiteBy: block.full_suite_by, maxLocalSuites: Number(max) };
 }
 
 /** La decisión para un repo, leída de lo commiteado. */
@@ -59,7 +64,7 @@ if (require.main === module) {
   const repo = process.argv[2];
   if (!repo) { console.error('uso: test-gate-scope.js <repo>'); process.exit(2); }
   const r = scopeOf(repo);
-  if (r.problem) console.error(`[test-gate] ⚠️  ${r.problem}: corre la suite entera`);
+  if (r.problem) console.error(`[test-gate] ⚠️  ${r.problem}${r.scope === 'touched' ? '' : ': corre la suite entera'}`);
   if (r.scope !== 'touched') process.exit(10);
   process.stdout.write(r.fullSuiteBy);
 }

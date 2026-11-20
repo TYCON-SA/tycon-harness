@@ -143,7 +143,7 @@ test('isCreatorSkill / ttlMsFrom / markState', () => {
 test('blockMessage: nombra el archivo, pide draft y el validador; saltearlo lo firma la persona en la ventana, sin darle al agente cómo apagarlo @story-8.139 @ac-43', () => {
   const m = gate.blockMessage({ kind: 'new-not-draft', reason: 'x' }, { filePath: '/r/specs/story-as1.md', via: 'Write' });
   assert.match(m, /story-as1\.md/); assert.match(m, /status: draft/); assert.match(m, /tycon-story-validator/);
-  assert.match(m, /lo decide la persona/); assert.match(m, /marker\.js sign-file story-skill-bypass \/r\/specs\/story-as1\.md/);
+  assert.match(m, /lo decide la persona/); assert.match(m, /marker\.js"? sign-file story-skill-bypass "?\/r\/specs\/story-as1\.md/);
   // ni una frase que dictar ni la variable que apaga el freno: la firma la da la persona en la ventana, no el agente
   assert.doesNotMatch(m, /«autorizo/); assert.doesNotMatch(m, /TYCON_STORY_SKILL_GATE/);
   assert.match(gate.blockMessage({ kind: 'draft-promote', reason: 'desde la terminal' }, { filePath: '/r/x.md' }), /tool Edit/);
@@ -398,7 +398,7 @@ test('T25 Bypass_FraseDeLaPersona_YaNoPasa @story-8.139 @ac-43: «autorizo story
   conversacion('s-ok', [persona('escribila a mano, autorizo story-skill-bypass')]);
   const r = escribir(mkRepo({ yaml: TOTORA_PATTERN }), 's-ok', { stateDir: st });
   assert.equal(r.verdict.action, 'block');
-  assert.match(r.message, /marker\.js sign-file story-skill-bypass/);
+  assert.match(r.message, /marker\.js"? sign-file story-skill-bypass/);
   assert.ok(!fs.existsSync(path.join(st, 'bypass.log')), 'anotó un salteo sin firma');
 });
 

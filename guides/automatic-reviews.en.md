@@ -26,7 +26,7 @@ installer, production, a migration, or declares `sensible:`. In doubt, delicate.
 
 | Delicate? | Does it run? (built-in) | Who approves on «approved» |
 |---|---|---|
-| Yes | Always, without asking (`plan_review.delicate: always`) | The owner, with the result in the box |
+| Yes | Always, without asking (`plan_review.delicate: always`) | The owner, with the result in the box. If the profile delegates `plan-approval:delicada`, the coordinator, only with the «approved» of the review she launched |
 | No | The owner is asked (`plan_review.routine: ask`). Owner away: it reviews (`plan_review.routine_owner_away: review`) | The review, with or without a coordinator (`plan_review.routine_approval: review`): with a coordinator, she signs on the owner's behalf; without one, it is approved without a click. With `person`, the owner |
 
 The coordinator launches it (`marker.js plan-review --for-session <session>`); without a coordinator, the session
@@ -36,7 +36,7 @@ informs on a delicate story or with `plan_review.routine_approval: person`. Buil
 
 | Result | What happens |
 |---|---|
-| «approved» | Routine: it is approved, with or without a coordinator (with one, she signs; without one, `complete-step approve-plan` closes without a click). Delicate, or with `plan_review.routine_approval: person`: it reaches the owner with «reviewed, no findings» |
+| «approved» | Routine: it is approved, with or without a coordinator (with one, she signs; without one, `complete-step approve-plan` closes without a click). Delicate, or with `plan_review.routine_approval: person`: it reaches the owner with «reviewed, no findings» (a delicate one is approved by the coordinator if the profile delegates `plan-approval:delicada`) |
 | «approved with notes» | Confirmed findings below the severity cut: it counts as approved, the session fixes them while coding and the box shows them |
 | «rejected» | Only for a confirmed finding at the cut (built-in, a bug). The session fixes the plan and the review runs again. It reaches the owner at the cap of rejections in a row (`review.max_rounds`, built-in 3), or right away with `plan_review.rejected_reaches_owner: true` |
 | «no verdict» | It reaches the owner with «could not review: <reason>». If the plan changed while it ran, it is retried once |

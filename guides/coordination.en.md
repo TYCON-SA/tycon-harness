@@ -225,6 +225,27 @@ Configuration tab, "The sessions on each machine"), and each machine can change 
 can take depends on the machine. With no value anywhere, the cap is 3. `coordination.js status` shows who is working,
 who is waiting and why, and the cap with where it comes from.
 
+### How many stories at once, who launches the heavy work and when the owner is written to
+
+Four rules for the coordinator, for any organization:
+
+- **A cap on stories in the full cycle.** A story is in the cycle from the moment it starts until it lands on `main`.
+  With the cap full, the coordinator neither starts nor resumes another one until one lands: the rest wait in line with
+  `marker.js park --queue`. The cap is `coordination.max_stories_in_cycle`, from 1 to 20; with no value anywhere, 4. It
+  follows the same order as `coordination.max_working`: the variable (`TYCON_COORDINATION_MAX_STORIES_IN_CYCLE`), the
+  machine (`tycon-config.js set`) and the team profile. `coordination.js status` shows it with its origin. Today it is a
+  rule the coordinator follows: no brake measures it.
+- **Sessions launch the heavy work directly, and the harness decides.** A session that has to run the tests or the pass
+  launches them without asking the coordinator: the harness says whether there is room (the machine's turn) and, if not,
+  when to come back. The coordinator does not hand out turns: she only tells when the place frees up.
+- **To the owner, one message per hour with what is theirs; what blocks, at once.** What waits for their signature or
+  decision without blocking anyone goes together, in one message per hour. What blocks the work (a signature without
+  which a session cannot go on, a red control nobody can unblock) is told right away.
+- **What comes from the same case goes together.** If a report or a case brings a main fix and minor annoyances from the
+  same use, the coordinator assigns them all in the same session, not the main one now and the minor ones later. Only
+  what affects other people or teams stays out, such as another product's pipeline: that goes to the owner as a separate
+  decision.
+
 The cap brakes on every path the agent takes, not only through `open`. Before each command, a brake checks whether the
 command opens a background Claude session: `claude --bg`, or `claude` running in the background (`&`, `nohup`, `setsid`,
 `tmux new -d`, `screen -dm`, `Start-Process`, the tool's background execution), also wrapped in `env`, `sudo`,
@@ -333,8 +354,9 @@ the coordinator:
 - **Approves on the owner's behalf only with «approved»** on that same plan, with `plan_review.routine_approval` (O4)
   on `review` and `plan-approval` delegated. Without a coordinator, that same «approved» of the review the session
   launches itself approves the routine plan without a click: it is enough in both cases. With `person`, a routine plan
-  is always signed by a person. Rejected or without a verdict, the plan waits; a delicate plan is always signed by the
-  owner. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
+  is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan is signed by the owner, unless
+  the profile delegates `plan-approval:delicada`: then the coordinator approves it with that same «approved» from the
+  review she launched. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
   (with its `files:` or, without `files:`, with the files the story ties to it plus those it ties to no batch),
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
@@ -370,7 +392,11 @@ Then she asks for it through the path that applies:
   given from the coordinator's tab, in the permission window, under the delegated signing rules. It is signed on the
   spot and leaves no pending entry. If delegation does not apply and the coordinator's tab does not ask for permissions,
   the window does not open, because in that tab nobody would say Yes: the signature is refused, and the refusal says how
-  to ask for the click or the «aprobado».
+  to ask for the click or the «aprobado». Besides routine, the profile can delegate the procedural exceptions
+  (`guides/firmas-del-arnes.md`, «Qué excepciones se delegan»). `owner-next` does not give the box for another session's
+  signature that the profile delegates to the coordinator, nor for one her tab cannot answer (the click-only ones):
+  instead it says the route that works, which is the command with `--for-session` for her to sign it, or the click in
+  the tab of the session that asked.
 
 What asks for a password always goes through the terminal: only the owner types the password. Once the owner signed,
 `coordination.js signature-done <id>` deletes the file and the pending entry. An empty folder and no pending entries
@@ -471,8 +497,10 @@ otra sesión?». Among them: setting a check by hand (`marker.js set-check <cont
 --story <s> --trust-ran --for-session <D>`) and accepting a criterion that cannot be tested live (`marker.js
 runtime-waiver <historia> --acs <n> --for-session <D>`). The story is the one of `<D>`'s open run: otherwise the script
 exits without writing. The window opens for the owner in the coordinator's tab (if that tab does not ask for
-permissions, it is refused and approved with their click or «aprobado»). All three are level 2, so none can be delegated to
-her: the harness rejects a profile that tries (`guides/firmas-del-arnes.md`).
+permissions, it is refused and approved with their click or «aprobado»). All three are level 2 and procedural: they are delegated to
+her only if the team profile names them in `approvals.delegated_signing`, and then she signs them without a window and
+they are logged with the «delegación» route. Which exceptions can be delegated and which stay with the owner is in
+`guides/firmas-del-arnes.md`, «Qué excepciones se delegan».
 
 ### Messages from the office
 

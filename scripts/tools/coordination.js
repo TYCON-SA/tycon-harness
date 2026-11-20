@@ -142,7 +142,7 @@ function recipe({ home, arnes, env }) {
     // el piso del segundo turno, de la constante de heavy-turn.js: el número vive en un solo lugar
     let floor = null;
     try { floor = require('./heavy-turn.js').SECOND_HEAVY_MIN_FREE_PCT; } catch { /* sin el módulo del turno no hay piso que decir */ }
-    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, session_names: { value: null, origin: 'sin-valor' }, second_heavy_min_free_pct: { value: floor, origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
+    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, session_names: { value: null, origin: 'sin-valor' }, second_heavy_min_free_pct: { value: floor, origin: 'sin-valor' }, max_stories_in_cycle: { value: 4, origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
   }
 }
 
@@ -580,7 +580,7 @@ function status(opts = {}) {
   // las corridas detenidas con plan firmado se buscan sólo con la fila del portón larga: es lo único que las nombra
   const stopped = suiteWaiting.filter((w) => !w.worked).length >= 2 ? stoppedRuns(home, now, markers, aliveSids, nameOf, problems) : null;
   return {
-    now, working, waiting, quiet, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, adversarial, stalled, asking,
+    now, working, waiting, quiet, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
     suite: suiteRow, suites: suiteRows, secondTurn, heavyTurn, gates,
     signatures,
@@ -594,6 +594,8 @@ const hhmm = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()
 function statusText(s) {
   const lines = [`Trabajando: ${s.working.length} de ${s.cap.value} (tope ${ORIGIN[s.cap.origin] || s.cap.origin})`];
   for (const w of s.working) lines.push(`  · ${w.session} — ${w.why}`);
+  // el tope de historias en el ciclo completo: la regla de la coordinadora (guides/coordination.md); acá va el número
+  if (s.storiesCap && s.storiesCap.value) lines.push(`Historias en el ciclo completo: hasta ${s.storiesCap.value} (tope ${ORIGIN[s.storiesCap.origin] || s.storiesCap.origin}); las demás, en fila`);
   if (s.stalled && s.stalled.length) lines.push(`Trabadas: ${s.stalled.map((x) => `${x.session}: esperando un permiso${x.tool ? ` (${permissionText(x)})` : ''}, hace ${Math.max(0, Math.floor((s.now - x.since) / 60000))} min`).join(' · ')}`);
   lines.push(`Esperando: ${s.waiting.length}`);
   for (const w of s.waiting) lines.push(`  · ${w.session} — ${w.why}`);

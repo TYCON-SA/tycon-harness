@@ -579,7 +579,8 @@ correrlo.
   todo subcomando. Un guion de laboratorio que llama a los comandos por dentro los declara con
   `--covers <archivo>[:<subcomando>]` (sólo con `{raiz}` en el comando y si están en la lista); quedan «cubierto por
   declaración», y «Preparar el commit» lo avisa como a una exención.
-- **Topes**: hasta 10 humos comparados por corrida (`TYCON_COMPARE_MAX`), 60 segundos por cada una de las dos corridas
+- **Topes**: hasta 10 humos comparados por corrida (`TYCON_COMPARE_MAX`; cuentan los que compararon contra el código
+  de ahora: un «no comparado» o un humo de un código que ya cambió no gastan el tope), 60 segundos por cada una de las dos corridas
   (`TYCON_COMPARE_TIMEOUT_MS`; después `SIGTERM` y a los 5 segundos `SIGKILL`) y 5 minutos en total
   (`TYCON_COMPARE_TOTAL_MS`). Pasado cualquiera: «no comparado: tope». De la salida de cada lado se compara hasta 1 MB:
   si alguna pasa y lo comparado da igual, el resultado es «no comparado» (la diferencia podría estar después del corte). Los dos clones de cada repo se reusan entre los

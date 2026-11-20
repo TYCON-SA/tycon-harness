@@ -1229,6 +1229,39 @@ function repoCommiteado() {
   return { repo, base };
 }
 
+// Una historia de dos tandas con una prueba que todavía no existe porque es de la segunda; `estado` es el de esa tanda.
+function storyConTandaB(repo, estado) {
+  const p = path.join(repo, `story-tanda-${estado}.md`);
+  fs.writeFileSync(p, [
+    '---', 'story: "MUT-2"', 'epic: fixtures', 'status: in-progress',
+    'files_to_create:', '  - "calc.js"', '  - "calc.test.js"', '  - "split.test.js"  # tanda B',
+    'pipelines:', '  - name: A-calc', '    status: in-progress', '    acs: [1]',
+    '  - name: B-split', `    status: ${estado}`, '    acs_pending: [2]',
+    '---', '', '# Story fixture — una prueba de una tanda estacionada', '',
+  ].join('\n'));
+  return p;
+}
+
+test('una prueba declarada de una tanda estacionada que todavía no existe no deja sin medir a las otras', async () => {
+  // 🔴 mutación: sin mirar las tandas (lo de antes) → «declara tests que NO existen» y sale 2; aceptar una tanda que no
+  //    está estacionada → la prueba que falta de verdad deja de frenar.
+  const repo = mkRepo();
+  const corridos = [];
+  const r = await checker.runMutationCheck({
+    repo, storyPath: storyConTandaB(repo, 'blocked'),
+    runTests: ({ mutant, testFiles }) => { corridos.push(...(testFiles || [])); return { code: mutant ? 1 : 0 }; }, log: () => {},
+  });
+  assert.equal(r.exitCode, 0, JSON.stringify(r.result));
+  assert.deepEqual(r.result.testsDeTandaBloqueada, [{ file: 'split.test.js', tandas: ['B-split'] }]);
+  assert.ok(r.result.total >= 1, `muta lo de la tanda que se entrega (total=${r.result.total})`);
+  assert.ok(!corridos.some((f) => /split\.test\.js/.test(f)), `no corre la que no existe: ${corridos}`);
+  const activa = await checker.runMutationCheck({
+    repo, storyPath: storyConTandaB(repo, 'in-progress'), runTests: () => ({ code: 0 }), log: () => {},
+  });
+  assert.equal(activa.exitCode, 2);
+  assert.match(activa.result.motivo, /declara tests que NO existen en disco: .*split\.test\.js/);
+});
+
 test('con el trabajo commiteado, muta contra la base del marcador, no contra HEAD', async () => {
   const { repo, base } = repoCommiteado();
   const r = await checker.runMutationCheck({
