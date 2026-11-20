@@ -193,7 +193,9 @@ test('T8 MergeReports_CountersAreRecomputed @story-8.300 @ac-4 @ac-12', () => {
 function aviso(t, foto) {
   const dir = temporal(t);
   const p = path.join(dir, 'banco.json');
-  fs.writeFileSync(p, JSON.stringify({ ts: new Date().toISOString(), origen: 'azure-pipelines', ...foto }));
+  // la foto es siempre de ahora: un informe juntado trae el `ts` fijo de `reporte`, y una foto de más de dos días el aviso
+  // la cuenta como un banco que NO ESTÁ CORRIENDO (el caso se pondría rojo solo, con el paso de los días)
+  fs.writeFileSync(p, JSON.stringify({ origen: 'azure-pipelines', ...foto, ts: new Date().toISOString() }));
   return spawnSync(process.execPath, [NOTICE], { encoding: 'utf8', env: { ...process.env, HOME: dir, TYCON_NIGHTLY: '1', TYCON_BENCH_REPORT: p, TYCON_SUITES_REPORT: path.join(dir, 'no-hay.json') } }).stdout;
 }
 
