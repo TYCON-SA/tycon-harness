@@ -27,8 +27,14 @@ const literales = (clave) => {
 const RUTAS = literales('paths').map((r) => new RegExp(r));
 const EXPRESIONES = literales('regexes').map((r) => new RegExp(r));
 
-// generic-api-key de gitleaks v8.30.1 (cmd/generate/config/rules/generic.go, armada por GenerateSemiGenericRegex)
-const GENERIC = /[\w.-]{0,50}?(?:access|auth|(?-i:[Aa]pi|API)|credential|creds|key|passw(?:or)?d|secret|token)(?:[ \t\w.-]{0,20})[\s'"]{0,3}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)[\x60'"\s=]{0,5}([\w.=-]{10,150}|[a-z0-9][a-z0-9+/]{11,}={0,3})(?:[\x60'"\s;]|\\[nr]|$)/gi;
+// generic-api-key de gitleaks v8.30.1 (cmd/generate/config/rules/generic.go, armada por GenerateSemiGenericRegex). Allá
+// es toda sin mayúsculas salvo «api», con `(?i)` y `(?-i:…)`; Node 22 (el piso del arnés) no lee banderas por tramo, así
+// que cada letra de lo que no distingue mayúsculas va como su clase: `[aA]`.
+const sinMayusculas = (t) => t.replace(/[a-z]/g, (c) => `[${c}${c.toUpperCase()}]`);
+const PALABRAS = ['access', 'auth', 'credential', 'creds', 'key', 'passw(?:or)?d', 'secret', 'token'].map(sinMayusculas);
+const GENERIC = new RegExp(`[\\w.-]{0,50}?(?:${PALABRAS.slice(0, 2).join('|')}|[Aa]pi|API|${PALABRAS.slice(2).join('|')})`
+  + `(?:[ \\t\\w.-]{0,20})[\\s'"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'"\\s=]{0,5}`
+  + `([\\w.=-]{10,150}|[a-zA-Z0-9][a-zA-Z0-9+/]{11,}={0,3})(?:[\\x60'"\\s;]|\\\\[nrNR]|$)`, 'g');
 
 /** Lo que gitleaks frenaría en `renglon` del archivo `ruta`: cada tramo de generic-api-key que la excepción no cubre. */
 function frena(ruta, renglon, { conExcepcion = true } = {}) {
