@@ -140,6 +140,12 @@ function nightlyMeasured(file, now = Date.now()) {
 // deja pasar: el pipeline, el instalador (también el del freno de producción), el portón de CI y la regla con que
 // elige las carpetas, o los ganchos de git.
 const DIRECT_RUNS_ALL = /^(pipelines\/|scripts\/setup\/|\.githooks\/)|(^|\/)install-tycon-hooks\.[^/]+$|(^|\/)tycon-ci-gate\.js$|^scripts\/production\/install-guard\.[^/]+$|^skills\/tycon-pipeline\/scripts\/lib\/touched-files\.js$/;
+// Los YAML de `pipelines/` que no eligen ni corren las pruebas de un pedido, ni lo dejan pasar: los nocturnos, el de
+// Windows (se lanza a mano sobre una rama), el de los índices (corre al empujar a main) y los de operaciones. Siguen la
+// regla común: corren las suites que los nombran. La lista es la de los que NO, cerrada: un YAML que no está acá (el de
+// la validación del pedido, el pre-commit que exige la política de rama, las plantillas, uno nuevo) corre todo.
+const DIRECT_PIPELINE_OWN_SUITES = /^pipelines\/(operations\/|azure-pipelines(-(banco|dependencias|indices|public-leak-check|tablero|vigilante|windows))?\.yml$)/;
+const runsAllDirect = (f) => DIRECT_RUNS_ALL.test(f) && !DIRECT_PIPELINE_OWN_SUITES.test(f);
 
 /**
  * ¿El código de la suite (`text`) nombra el archivo `f`? Su ruta, su nombre con extensión, o su nombre sin extensión si
@@ -578,7 +584,7 @@ function main(argv) {
   const direct = argv.includes('--direct');
   if (direct && listed.known && changed.known) {
     const files = listed.files.map((f) => f.replace(/\\/g, '/'));
-    const all = [...new Set([...itself, ...files.filter((f) => DIRECT_RUNS_ALL.test(f))])];
+    const all = [...new Set([...itself, ...files.filter(runsAllDirect)])];
     const net = nightlyMeasured(arg(argv, '--nightly'));
     if (all.length) process.stderr.write(`ℹ️  el cambio toca cómo se eligen o corren las pruebas (${all.join(', ')}): corre todo\n`);
     else if (net.problem) process.stderr.write(`ℹ️  --direct no saltea nada: no hay red para lo salteado (${net.problem})\n`);
