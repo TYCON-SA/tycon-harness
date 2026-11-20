@@ -70,6 +70,7 @@ const READERS = {
   'skills/tycon-pipeline/scripts/lib/adhoc-list.js': 'scripts/tests/suites.json (dispara)',
   'skills/tycon-pipeline/scripts/lib/failed-first.js': 'scripts/tests/suites.json (dispara)',
   'skills/tycon-pipeline/scripts/lib/inherited-reds.js': 'scripts/tests/suites.json (dispara)',
+  'skills/tycon-pipeline/scripts/lib/isolated-run.js': 'scripts/tests/lib/real-home-guard.js, la red que precarga en la corrida aislada (scripts/tests/lib/: dispara)',
   'skills/tycon-pipeline/scripts/lib/main-check.js': 'scripts/tests/suites.json (dispara)',
   'skills/tycon-pipeline/scripts/lib/nightly-coverage.js': 'scripts/tests/suites.json (dispara)',
   'skills/tycon-pipeline/scripts/lib/run-suites-json.js': 'scripts/tests/suites.json (dispara)',
