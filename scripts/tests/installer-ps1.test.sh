@@ -1118,9 +1118,14 @@ if suite_part 2; then   # ── parte 2 de 2: de (u) al final ──
 OLD_HARNESS=TYCON_HARNESS_LOCK_HELD=1
 SH_HOOKS=(safety-guard-pre.sh test-scope-guard-pre.sh engram-pre-commit.sh)
 sh_state() { local s="$1" r out=""; for r in "${SH_HOOKS[@]}"; do out="$out$(hook_n "$s" PreToolUse "$(shell_m "$r")" "$r")"; done; printf '%s' "$out"; }   # <settings> → «111» = los tres una vez
-# (el reporte nombra un hook por evento y guion: las dos filas PostToolUse de rebuild-before-verify.js son UN id, así que
-# los registrados son un id menos; sin los .sh, otros tres menos — los dos números, de la lista declarada)
-REPORT_IDS=$((TEAM_HOOKS - 1)); NO_SH_IDS=$((REPORT_IDS - ${#SH_HOOKS[@]}))
+# (el reporte nombra un hook por evento y guion: dos filas del mismo guion en el mismo evento —las PostToolUse de
+# rebuild-before-verify.js, las PreToolUse de background-question-guard.js— son UN id; sin los .sh, otros tres menos —
+# los números, de la lista declarada)
+SAME_ID_ROWS="$(node -e '
+const h = require(process.argv[1]).hooks.filter((x) => !(x.platforms && x.platforms.windows === false) && x.when === "always");
+process.stdout.write(String(h.length - new Set(h.map((x) => x.event + " " + x.spec)).size));
+' "$CLONE/scripts/setup/hooks-list.json")"
+REPORT_IDS=$((TEAM_HOOKS - SAME_ID_ROWS)); NO_SH_IDS=$((REPORT_IDS - ${#SH_HOOKS[@]}))
 # un harness.js de antes tampoco declara los eventos nuevos: sus hooks no van al informe (los ids, de la lista declarada)
 NEW_EVENT_IDS="$(node -e '
 const [lista, apply] = process.argv.slice(1);
@@ -1227,7 +1232,7 @@ JS
 HW="$(new_home widen)"; SW="$HW/.claude/settings.json"
 installer "$HW" "${HELD[@]}" "${TEAM[@]}" > "$T/n0.out" 2>&1
 node "$T/widen.js" old "$SW" "$SW"; cp "$SW" "$T/n.old.json"
-if [ "$(node "$T/widen.js" state "$SW")" != "14 2/2" ]; then no "(v) no pude armar la settings.json de antes: «$(node "$T/widen.js" state "$SW")» (esperaba «14 2/2»)"; fi
+if [ "$(node "$T/widen.js" state "$SW")" != "15 2/2" ]; then no "(v) no pude armar la settings.json de antes: «$(node "$T/widen.js" state "$SW")» (esperaba «15 2/2»)"; fi
 installer "$HW" "${HELD[@]}" "${TEAM[@]}" > "$T/n1.out" 2>&1; RC=$?
 BAD="$(wrong_counts "$SW" 1 "${SHELL_ROWS[@]}")"
 RB="$(hook_n "$SW" PostToolUse 'Bash|PowerShell' rebuild-before-verify.js)$(hook_n "$SW" PostToolUse 'Edit|Write' rebuild-before-verify.js)$(hook_n "$SW" PostToolUse '*' rebuild-before-verify.js)"
@@ -1236,8 +1241,8 @@ if [ "$RC" -eq 0 ] && [ -z "$BAD" ] && [ "$RB" = 112 ] && [ "$(node "$T/widen.js
 else no "(v) una settings.json de antes (rc $RC):${BAD:- —} · rebuild «${RB}» (esperaba 112) · estado «$(node "$T/widen.js" state "$SW")» (esperaba «0 2/2») · $(brief "$T/n1.out" 200)"; fi
 N="$(grep -c 'matcher ampliado' "$T/n1.out")"
 OLD_SG="$(node -e 'const s=require(process.argv[1]);for(const e of s.hooks.PreToolUse)for(const h of e.hooks)if(/safety-guard-pre\.sh"$/.test(h.command))console.log(h.command)' "$T/n.old.json")"
-if [ "$N" = 14 ] && same_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh "$OLD_SG"; then ok "(v) el reporte dice cada matcher ampliado (14) y el guion conserva su comando tal cual"
-else no "(v) el reporte nombra $N matcher(s) ampliado(s) (esperaba 14); safety-guard quedó «$(hook_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh)» (antes «${OLD_SG}»)"; fi
+if [ "$N" = 15 ] && same_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh "$OLD_SG"; then ok "(v) el reporte dice cada matcher ampliado (15) y el guion conserva su comando tal cual"
+else no "(v) el reporte nombra $N matcher(s) ampliado(s) (esperaba 15); safety-guard quedó «$(hook_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh)» (antes «${OLD_SG}»)"; fi
 cp "$SW" "$T/n.after.json"
 installer "$HW" "${HELD[@]}" "${TEAM[@]}" > "$T/n2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && cmp -s "$SW" "$T/n.after.json"; then ok "(v) una segunda ejecución deja settings.json byte a byte igual"
