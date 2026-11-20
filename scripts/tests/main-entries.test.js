@@ -68,11 +68,12 @@ function github(t, { commits, corridas = [], padre = null, falla = null }) {
 }
 
 /** El `az` de mentira: los pedidos completados, el repo y sus políticas, desde una carpeta. `basura`: contesta texto. */
-function azFalso(t, { pedidos = [], politicas = [], basura = false, falla = false } = {}) {
+function azFalso(t, { pedidos = [], politicas = [], empujes = [], basura = false, falla = false, fallaEmpujes = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'main-entries-az-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.writeFileSync(path.join(dir, 'pedidos.json'), JSON.stringify(pedidos));
   fs.writeFileSync(path.join(dir, 'politicas.json'), JSON.stringify(politicas));
+  fs.writeFileSync(path.join(dir, 'empujes.json'), JSON.stringify(empujes));
   const az = path.join(dir, 'az');
   fs.writeFileSync(az, `#!/usr/bin/env node
 const fs = require('fs'); const path = require('path');
@@ -86,6 +87,12 @@ if (args[0] === 'devops' && args[1] === 'invoke' && v('--resource') === 'pullReq
   const todos = JSON.parse(fs.readFileSync(path.join(D, 'pedidos.json'), 'utf8'));
   process.stdout.write(JSON.stringify({ count: 0, value: todos.slice(skip, skip + 100) })); process.exit(0);
 }
+if (args[0] === 'devops' && args[1] === 'invoke' && v('--resource') === 'pushes') {
+  if (${fallaEmpujes}) { process.stderr.write('ERROR: empujes de mentira\\n'); process.exit(1); }
+  const skip = Number((args.find((a) => a.startsWith('$skip=')) || '$skip=0').slice(6));
+  const todos = JSON.parse(fs.readFileSync(path.join(D, 'empujes.json'), 'utf8'));
+  process.stdout.write(JSON.stringify({ count: 0, value: todos.slice(skip, skip + 100) })); process.exit(0);
+}
 if (args[0] === 'repos' && args[1] === 'show') { process.stdout.write(JSON.stringify({ id: 'id-del-repo', name: v('--repository') })); process.exit(0); }
 if (args[0] === 'repos' && args[1] === 'policy' && args[2] === 'list') { process.stdout.write(fs.readFileSync(path.join(D, 'politicas.json'), 'utf8')); process.exit(0); }
 process.stderr.write('az de mentira: no sé contestar ' + args.join(' ') + '\\n'); process.exit(2);
@@ -93,7 +100,11 @@ process.stderr.write('az de mentira: no sé contestar ' + args.join(' ') + '\\n'
   return az;
 }
 const pedido = (id, horas, bypass) => ({ pullRequestId: id, status: 'completed', closedDate: hace(horas), targetRefName: 'refs/heads/main',
-  completionOptions: { bypassPolicy: bypass }, title: `pedido ${id}` });
+  completionOptions: { bypassPolicy: bypass }, title: `pedido ${id}`, lastMergeCommit: { commitId: `fusion-${id}`.padEnd(40, '0') } });
+// un empuje a main: `punta` es el commit que deja; `quien`, quién empujó
+const empuje = (id, horas, punta, quien = { displayName: 'Una Persona', uniqueName: 'persona@acme.example' }) => ({ pushId: id, date: hace(horas), pushedBy: quien,
+  refUpdates: [{ name: 'refs/heads/main', newObjectId: punta }] });
+const COMPILACION = { displayName: 'p Build Service (acme)', uniqueName: 'Build\\0f0f0f0f-aaaa-bbbb-cccc-000000000000' };
 const politica = (build, { enabled = true, blocking = true } = {}) => ({ id: build * 10, isEnabled: enabled, isBlocking: blocking, type: { displayName: 'Build' },
   settings: { buildDefinitionId: build, scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: 'id-del-repo' }] } });
 
@@ -198,4 +209,35 @@ test('T20 NoMedido_NoEsCero @story-8.241 @ac-10 @ac-12 @ac-13', async (t) => {
   // la línea es una sola, con números: ni commits, ni pedidos, ni motivos
   assert.strictEqual(fs.readFileSync(out, 'utf8').split('\n').filter(Boolean).length, 1);
   assert.doesNotMatch(linea, /acme|pedido|no se pudo/);
+});
+
+// 🔴 El caso (riesgo 58): un empuje directo a main en Azure, sin pedido (con la política apagada, o por quien puede
+// saltearla), no lo veía ninguna noche: sólo se contaban los pedidos que saltearon las políticas.
+test('Azure_EmpujeDirectoAMain_SeCuenta', async (t) => {
+  const az = azFalso(t, {
+    pedidos: [pedido(1, 5, false), pedido(2, 20, true)],
+    politicas: [politica(194), politica(170)],
+    empujes: [
+      empuje(10, 5, pedido(1, 5, false).lastMergeCommit.commitId),   // el del pedido 1: no cuenta
+      empuje(11, 20, pedido(2, 20, true).lastMergeCommit.commitId),  // el del pedido 2: ya cuenta como pedido salteado
+      empuje(12, 3, 'c'.padEnd(40, '3')),                             // directo: cuenta
+      empuje(13, 2, 'd'.padEnd(40, '4'), COMPILACION),                // la cuenta de compilación (la versión): no cuenta
+      empuje(14, 100, 'e'.padEnd(40, '5')),                           // fuera de la ventana: no cuenta
+      { pushId: 15, date: hace(1), pushedBy: { displayName: 'Otra Persona' } },  // sin la punta: no se sabe de qué es, cuenta
+    ],
+  });
+  const out = salida(t);
+  const r = await correr([...AZ_ARGS, '--out', out], { TYCON_ADO_CMD: az });
+  assert.strictEqual(r.code, 0, r.err + r.out);
+  const linea = fs.readFileSync(out, 'utf8').trim();
+  assert.match(linea, /Azure 3 · reglas al día$/, `un pedido salteado y dos empujes directos\n${r.out}`);
+  assert.match(r.out, /2 empuje\(s\) directo\(s\) a main en 72 h, sin pedido/);
+  assert.match(r.out, /empuje 12 /);
+  assert.doesNotMatch(r.out, /empuje 1[0134] /, 'los de pedidos, la compilación y lo de afuera de la ventana no cuentan');
+  // sin poder leer los empujes, la cuenta de Azure no es un número: no medido no es cero
+  const sinEmpujes = azFalso(t, { pedidos: [pedido(1, 5, false)], politicas: [politica(194), politica(170)], fallaEmpujes: true });
+  const out2 = salida(t);
+  const r2 = await correr([...AZ_ARGS, '--out', out2], { TYCON_ADO_CMD: sinEmpujes });
+  assert.strictEqual(r2.code, 1, r2.err + r2.out);
+  assert.match(fs.readFileSync(out2, 'utf8').trim(), /Azure \? · reglas al día$/);
 });
