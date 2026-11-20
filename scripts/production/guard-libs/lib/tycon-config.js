@@ -217,6 +217,7 @@ const VOCABULARIO = Object.freeze({
   // cómo se actualiza el freno y el proveedor de modelos: el freno no los usa, pero los acepta para no leer como ROTA una
   // configuración que los trae
   guard: Object.freeze({ update: 'aceptada' }),
+  pull_requests: Object.freeze({ team_authors: 'aceptada' }),
   models: Object.freeze({ provider: 'aceptada' }),
   // la receta de la coordinadora (el tope de sesiones, la carpeta de firmas y el piso del segundo turno de ejecución
   // grande): el freno no las usa, pero las acepta
