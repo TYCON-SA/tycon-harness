@@ -616,6 +616,8 @@ function deLaSalidaPerdida(palabras, cwd, estado, destino) {
 function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes, casa } = {}) {
   if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd, palabras);
   if (firma === 'escape:rojo-esperado-de-la-matriz') return delRojoEsperado(palabras, marcador);
+  // volver al modo autónomo: el cuadro sale de la detención que el control de cierre anotó en el marcador de la sesión
+  if (firma === 'autonomy-resume') return require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'autonomy-decision.js')).partes(marcador, { casa, sesion: destino });
   if (!palabras) return null;
   if (firma === 'plan-approval') return delPlan(palabras, marcador, { estado, destino });
   if (firma === 'control-change' || firma === 'refresh-after-main') return deControles(palabras, cwd, estado);
