@@ -538,8 +538,9 @@ otra firma. El detalle (qué motivo no se delega, uno delegado por repo) está e
 principal, sea su propio checkout principal (no un worktree) y se declare con este en `repo_group` de
 `.tycon/advisors.yaml`, en los dos sentidos. El grupo se lee de la rama principal del remoto (`origin/HEAD`), no de la
 carpeta ni de la rama local: un grupo commiteado sin subir no vale. Con otra sesión viva en el hermano, no se abre. Una
-lista de más de un repo no se delega, ni se delega ampliar una sumándole un repo: la aprueba el dueño con su click o en su
-terminal, y el cuadro empieza por los repos y cuántos archivos de cada uno. Las pruebas van por repo, cada una en su
+lista de más de un repo se firma y se delega como una de un solo repo: los hermanos salen del grupo declarado, sin
+preguntarle al dueño, y un repo que no está en el grupo no entra por ninguna vía. El cuadro empieza por los repos y
+cuántos archivos de cada uno. Las pruebas van por repo, cada una en su
 carpeta: `marker.js adhoc test --repo <Nombre> -- <comando>`. Al guardar, cada repo que cambió código pide sus pruebas en
 verde.
 

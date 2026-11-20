@@ -473,8 +473,12 @@ test('un hermano sin el commit de la entrada no cuenta como su principal', () =>
   const lab = laboratorio();
   const copia = `${dir}--slot-1`;
   lab.sembrar({ repoPath: copia, sha: 'abcdefabcdef', cmd: 'git push origin main' });
-  // desde la carpeta que agrupa a los dos: la copia queda a un nivel, dentro del alcance del cierre
-  assert.ok(motivoDelCierre(lab, path.dirname(dir)).includes(`--repo "${copia}" --merge abcdefabcdef`));
+  // desde la carpeta que agrupa a los dos: la copia queda a un nivel. Sin la copia ni un hermano con el commit, ningún latido
+  // la paga: no corta, y el aviso nombra la copia, no al hermano
+  const { stdout } = lab.cierre(path.dirname(dir));
+  const salida = JSON.parse(stdout);
+  assert.strictEqual(salida.decision, undefined, stdout);
+  assert.ok(salida.systemMessage.includes(`${copia} @ abcdefabcdef`) && !salida.systemMessage.includes(`--repo "${dir}"`), salida.systemMessage);
 });
 
 // ── el mismo commit anotado desde dos copias del mismo repo ─────────

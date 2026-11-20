@@ -625,7 +625,7 @@
     "retro-pending.js::bloquea-merge-ajeno-aunque-alguien-lanzo-el-capturer-para-ese-repo": true,
     "retro-pending.js::reclama-una-vez-por-repo-los-merges-ajenos-del-mismo-repo": true,
     "retro-pending.js::deja-parar-si-el-pendiente-es-de-un-repo-de-LABORATORIO": true,
-    "retro-pending.js::bloquea-pendiente-de-un-repo-en-carpeta-temporal-que-ya-no-esta": true,
+    "retro-pending.js::avisa-sin-cortar-pendiente-propio-de-una-carpeta-que-ya-no-esta": true,
     "retro-pending.js::avisa-merge-sin-retrospectiva": true,
     "retro-pending.js::avisa-merge-de-subrepo-del-workspace": true,
     "retro-pending.js::quiet-lanzamiento-merge-de-otro-proyecto": true,

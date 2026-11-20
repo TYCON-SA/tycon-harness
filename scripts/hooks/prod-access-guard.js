@@ -323,9 +323,11 @@ function caracterQueEngana(texto) {
   return null;
 }
 
-// el cuadro muestra unos 20 renglones de una terminal de 80 columnas (76 sin su margen) y corta el principio sin aviso
+// el cuadro corta el principio sin aviso: el tope es el de la puerta (tycon-prod-sql), 20 renglones de 60 columnas y
+// hasta 1200 caracteres
 const TOPE_RENGLONES = 20;
-const COLUMNAS_CUADRO = 76;
+const COLUMNAS_CUADRO = 60;
+const TOPE_CARACTERES = 1200;
 // Todo lo que está desde U+1100 (donde empiezan los anchos) cuenta 2, y un emoji también: así no hace falta la tabla
 // entera de anchos de Unicode, y lo que en verdad es angosto se cuenta de más, nunca de menos.
 const ANCHO_DOBLE = /[\u{1100}-\u{10ffff}]|\p{Extended_Pictographic}/u;
@@ -559,8 +561,10 @@ function decidir(entrada) {
       const v = leerArchivoDeConsulta(fa[2]);
       const listo = v.error ? null : `${PUERTA} ${fa[1]} '${v.texto.replace(/'/g, "'\\''")}'${fa[4] ? ` --max-rows ${fa[4]}` : ''}`;
       const renglones = listo ? renglonesDePantalla(listo) : 0;
+      const caracteres = listo ? [...listo].length : 0;
       const problema = v.error || sentenciaQueLaPuertaRechaza(v.texto)
-        || (renglones > TOPE_RENGLONES ? `la consulta ocupa ${renglones} renglones de pantalla y el cuadro muestra unos ${TOPE_RENGLONES}: partila en consultas más cortas` : null);
+        || (renglones > TOPE_RENGLONES ? `la consulta ocupa ${renglones} renglones de pantalla y el cuadro muestra unos ${TOPE_RENGLONES}: partila en consultas más cortas` : null)
+        || (caracteres > TOPE_CARACTERES ? `la consulta tiene ${caracteres} caracteres y el cuadro muestra hasta ${TOPE_CARACTERES}: partila en consultas más cortas` : null);
       if (problema) frenar(motivo, [`Y ${fa[2]} no se puede pasar a una consulta en línea: ${problema}.`, enLinea], { cmd }, 'puerta-no-canonica');
       frenar(motivo, ['El comando con la consulta del archivo en línea, listo para correr:', listo], { cmd }, 'puerta-no-canonica');
     }
@@ -571,7 +575,8 @@ function decidir(entrada) {
     // el cuadro corta sin aviso el principio de un comando largo: la consulta en línea tiene un tope de renglones
     if (canonica && CANONICA.test(limpio)) {
       const n = renglonesDePantalla(cmd);   // el cuadro recibe también lo que el shell ignora al final
-      if (n > TOPE_RENGLONES) frenar(`el cuadro muestra unos ${TOPE_RENGLONES} renglones; este comando ocupa ${n}: partí la consulta en consultas más cortas.`, [
+      const c = [...cmd].length;
+      if (n > TOPE_RENGLONES || c > TOPE_CARACTERES) frenar(`el cuadro muestra unos ${TOPE_RENGLONES} renglones de ${COLUMNAS_CUADRO} columnas y hasta ${TOPE_CARACTERES} caracteres; este comando ocupa ${n} renglones y ${c} caracteres: partí la consulta en consultas más cortas.`, [
         'Lo que no entra se corta por arriba, sin aviso: aprobarías un comando sin haber visto su principio.',
       ], { cmd }, 'puerta-no-canonica');
     }

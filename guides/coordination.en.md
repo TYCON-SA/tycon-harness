@@ -551,8 +551,9 @@ another signature. The details (which reasons are not delegated, one delegated f
 its own main checkout (not a worktree) and is declared with this one in `repo_group` of `.tycon/advisors.yaml`, both
 ways. The group is read from the remote's main branch (`origin/HEAD`), not from the folder or the local branch: a group
 committed but not pushed does not count. With another live session in the sibling, it does not open. A list of more than
-one repo is not delegated, nor is widening one by adding a repo: the owner approves it with their click or in their
-terminal, and the box starts with the repos and how many files each one has. Tests go per repo, each in its folder:
+one repo is signed and delegated like a single-repo one: the siblings come from the declared group, without asking the
+owner, and a repo that is not in the group gets in by no route. The box starts with the repos and how many files each
+one has. Tests go per repo, each in its folder:
 `marker.js adhoc test --repo <Name> -- <command>`. When saving, every repo that changed code needs its green run.
 
 **Declaring it again keeps everything.** With another quota or another reason, the lane keeps its list, its high-risk mark
