@@ -186,11 +186,13 @@ if (require.main === module) {
     }
     // apagar el pase adversarial pide la firma siempre, también sin ejecución: `pipeline.js start` la crea. Un comando
     // que no se pudo leer, también
-    if (hay === 0 && esc !== 'no-deep-review' && !siempre) continue;
+    // los mutantes y la revisión de la historia por un `--env-file`, también: se piden como su variable
+    const deArchivo = esc === 'TYCON_MUTATION_CHECK' || esc === 'TYCON_STORY_REVIEW';
+    if (hay === 0 && esc !== 'no-deep-review' && !deArchivo && !siempre) continue;
     // cerrar como deuda, el rojo esperado de la matriz, declarar un control a mano y dar por corridos los revisores piden
     // la firma siempre que haya una ejecución: no dependen de cómo esté (renovar la fecha del rojo esperado se hace con la
     // ejecución en verde)
-    const aplica = siempre || esc === 'cerrar como deuda' || esc === 'rojo esperado de la matriz' || esc === 'force-manual' || esc === 'trust-ran' || esc === 'no-deep-review' ? true
+    const aplica = siempre || deArchivo || esc === 'cerrar como deuda' || esc === 'rojo esperado de la matriz' || esc === 'force-manual' || esc === 'trust-ran' || esc === 'no-deep-review' ? true
       : esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || r.abierta;
     if (!aplica) continue;
     process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '')}\n`);

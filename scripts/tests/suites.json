@@ -1754,6 +1754,12 @@
       "requiere": []
     },
     {
+      "__nota": "Lo que da por buena la evidencia sin verificarla pide la firma de nivel 2: la bandera --no-mutation con motivo y firma, el período de aviso hasta la fecha de corte de la lista única, y los textos que nombran la firma. Casa de juguete y copias temporales del árbol.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/evidence-escape.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/undeclared-changes.test.js",
       "requiere": []
@@ -3342,6 +3348,12 @@
       "__nota": "story 8.116: la copia del lector que usa el freno de producción (scripts/production/guard-libs/lib/tycon-config.js) conoce todas las claves del lector principal; si no, un perfil con una clave nueva se lee en el freno como configuración rota.",
       "raiz": "arnes",
       "ruta": "tests/guard-libs-vocabulary.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "La copia propia del freno de producción (scripts/production/guard-libs/) es regla firmada del inventario de la revisión: cambiarla pide la constancia del dueño, porque ningún banco la corre.",
+      "raiz": "arnes",
+      "ruta": "tests/guard-libs-signed.test.js",
       "requiere": []
     },
     {

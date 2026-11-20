@@ -1215,6 +1215,32 @@ test('Direct_WhenInDoubt_RunsEverything — sin foto, foto vieja, foto sin la li
   }
 });
 
+test('Direct_NightlyPipeline_RunsItsOwnSuites — un YAML nocturno o a mano no cambia qué corre un pedido; el del pedido, el pre-commit y las plantillas sí', { skip: NO_RULE }, () => {
+  // 🔴 rojo: tocar el YAML del banco nocturno (o uno de operaciones) hacía correr todas las suites del pedido
+  const dir = depsRepo();
+  nightlyRan(dir, { ran: ALL4, complete: true });
+  const nocturnos = ['pipelines/azure-pipelines-banco.yml', 'pipelines/azure-pipelines-tablero.yml', 'pipelines/azure-pipelines-windows.yml',
+    'pipelines/azure-pipelines.yml', 'pipelines/operations/team-dashboard.yml', 'pipelines/operations/github/site-update.yml'];
+  fs.writeFileSync(path.join(dir, 'scripts', 'tests', 'a.test.js'), `require('../lib/util.js'); const y = [${nocturnos.map((n) => `'${n}'`).join(', ')}];\n`);
+  // d recorre la carpeta sin nombrar ningún YAML (arma los nombres por partes): también los prueba, y corre
+  fs.writeFileSync(path.join(dir, 'scripts', 'tests', 'd.test.js'), "const e = path.join(ROOT, 'scripts', 'publishing', 'export.js'); const dir = path.join(ROOT, 'pipelines'); const n = ['', '-x'].map((s) => `azure${s}.yml`);\n");
+  for (const f of nocturnos) {
+    const p = directPlan(dir, [f]);
+    assert.deepStrictEqual(p.run.sort(), ['a.test.js', 'd.test.js'], `${f}: corren la suite que lo nombra y la que recorre la carpeta\n${p.err}`);
+    assert.doesNotMatch(p.err, /cómo se eligen o corren las pruebas/, f);
+  }
+  // la que recorre la carpeta no corre por un cambio que no es de un YAML
+  assert.deepStrictEqual(directPlan(dir, ['scripts/lib/util.js']).run, ['a.test.js'], 'un cambio que no toca pipelines/');
+  // los que eligen o corren las pruebas de un pedido, o lo dejan pasar, siguen corriendo todo; también un YAML que no
+  // está en la lista de los que no (ante la duda, corre)
+  for (const f of ['pipelines/azure-pipelines-maintainers-pr.yml', 'pipelines/azure-pipelines-precommit-pr.yml', 'pipelines/templates/run-suites.yml',
+    'pipelines/templates/fetch-repos.yml', 'pipelines/templates/nueva.yml', 'pipelines/azure-pipelines-nuevo.yml', '.github/workflows/ci.yml']) {
+    const p = directPlan(dir, [f]);
+    assert.deepStrictEqual(p.run.sort(), ALL4, `${f}: corre todo\n${p.err}`);
+    assert.match(p.err, /cómo se eligen o corren las pruebas/, f);
+  }
+});
+
 test('Direct_WithoutTheFlag_DepsAsBefore — --deps no cambia', { skip: NO_RULE }, () => {
   const dir = depsRepo();
   assert.deepStrictEqual(depsPlan(dir, ['scripts/hooks/guard-lib.js']).run.sort(), ['a.test.js', 'c.test.js'], 'por dependencias, la de segunda mano sigue corriendo');

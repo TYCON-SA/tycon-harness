@@ -8,6 +8,9 @@ const os = require('os');
 const path = require('path');
 
 const rm = require(path.join(__dirname, '..', 'runtime-matrix.js'));
+// Las escotillas de la matriz se retiran en la fecha de corte de la lista única de interruptores: los casos que las usan
+// fijan un día anterior, así no cambian solos ese día.
+const ANTES_DEL_CORTE = '2026-11-01';
 
 let failures = 0;
 function check(name, cond, detail) {
@@ -295,7 +298,7 @@ for (const cmd of ['vstest.console.exe App.Tests.dll --logger:trx', '"C:/VS/Comm
   const rmPath = require.resolve('../runtime-matrix.js');
   delete require.cache[rmPath];
   const rmLegacy = require(rmPath);
-  const r = rmLegacy.compute({ storyPath: f.storyPath, gatesLogPath: fakeGatesLog, stateDir: path.join(f.ws, 'estado') });
+  const r = rmLegacy.compute({ storyPath: f.storyPath, gatesLogPath: fakeGatesLog, stateDir: path.join(f.ws, 'estado'), today: ANTES_DEL_CORTE });
   if (prev === undefined) delete process.env.TYCON_RUNTIME_MATRIX_LEGACY;
   else process.env.TYCON_RUNTIME_MATRIX_LEGACY = prev;
   delete require.cache[rmPath];
@@ -762,7 +765,7 @@ withWaiverLog(() => {
   process.env.TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK = '1';
   delete require.cache[require.resolve(path.join(__dirname, '..', 'runtime-matrix.js'))];
   const rmLegacy = require(path.join(__dirname, '..', 'runtime-matrix.js'));
-  const rLegacy = rmLegacy.compute({ storyPath: f2.storyPath, gatesLogPath: f2.gatesLog, stateDir: path.join(f2.ws, 'estado') });
+  const rLegacy = rmLegacy.compute({ storyPath: f2.storyPath, gatesLogPath: f2.gatesLog, stateDir: path.join(f2.ws, 'estado'), today: ANTES_DEL_CORTE });
   check('la escotilla documentada desactiva la regla', (rLegacy.accionNoEjercida || []).length === 0,
     JSON.stringify(rLegacy.accionNoEjercida));
   delete process.env.TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK;
@@ -2498,7 +2501,7 @@ withWaiverLog(() => {
   const estado = path.join(casa, 'estado');
   const lineas = () => { try { return fs.readFileSync(path.join(estado, 'bypass.log'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_e) { return []; } };
   for (const v of ['TYCON_RUNTIME_MATRIX_LEGACY', 'TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK']) {
-    for (let i = 0; i < 3; i++) rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, env: { [v]: '1' }, stateDir: estado, sessionId: 's-rmx' });
+    for (let i = 0; i < 3; i++) rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, env: { [v]: '1' }, today: ANTES_DEL_CORTE, stateDir: estado, sessionId: 's-rmx' });
   }
   rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, env: {}, stateDir: estado, sessionId: 's-rmx' });
   const l = lineas();
@@ -2506,6 +2509,53 @@ withWaiverLog(() => {
     l.length === 2 && l.map((x) => x.kind).sort().join(',') === 'RUNTIME_MATRIX_LEGACY,RUNTIME_MATRIX_NO_MUTATION_CHECK'
       && l.every((x) => x.story === '9.9' && x.sessionId === 's-rmx'),
     JSON.stringify(l));
+}
+
+// T14 RuntimeMatrix_Hatches_RetiredAfterCut @story-8.256 @ac-13
+// 🔴 Falla con: una escotilla que sigue valiendo desde la fecha de corte, o que antes del corte deja de funcionar, de
+//    avisar o de anotar; el aviso del corte sin la salida normal de cada una.
+{
+  const ES = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+  const corte = ES.corteDe('TYCON_RUNTIME_MATRIX_LEGACY');
+  const despues = new Date(Date.parse(`${corte}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+  const lineas = (d) => { try { return fs.readFileSync(path.join(d, 'bypass.log'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
+  // LEGACY: un humo que no corre la app cuenta como corrida real sólo antes del corte
+  const humo = () => {
+    const f = makeWorkspace();
+    const ts = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+    fs.writeFileSync(path.join(f.dodDir, '9.9-smoke-ledger.jsonl'),
+      JSON.stringify({ ts, story: '9.9', acs: [2], cmd: 'node --test tests/unit/foo.test.js', exit: 0, via: 'smoke-run.sh' }) + '\n');
+    fs.writeFileSync(path.join(f.ws, 'gates.log'), JSON.stringify({ type: 'smoke-run', ts, story: '9.9', acs: [2], exit: 0 }) + '\n');
+    return f;
+  };
+  let f = humo();
+  let est = path.join(f.ws, 'estado');
+  let r = rm.compute({ storyPath: f.storyPath, gatesLogPath: path.join(f.ws, 'gates.log'), stateDir: est, env: { TYCON_RUNTIME_MATRIX_LEGACY: '1' }, today: ANTES_DEL_CORTE });
+  check('T14 RuntimeMatrix_Hatches_RetiredAfterCut @story-8.256 @ac-13 — LEGACY antes del corte: funciona, avisa y anota',
+    r.perAc[2].verdict === 'RUNTIME' && r.warnings.some((w) => w.includes(`se retira el ${corte}`))
+      && lineas(est).some((l) => l.kind === 'RUNTIME_MATRIX_LEGACY'), JSON.stringify([r.perAc[2], r.warnings, lineas(est)]));
+  f = humo();
+  est = path.join(f.ws, 'estado');
+  r = rm.compute({ storyPath: f.storyPath, gatesLogPath: path.join(f.ws, 'gates.log'), stateDir: est, env: { TYCON_RUNTIME_MATRIX_LEGACY: '1' }, today: despues });
+  check('T14 RuntimeMatrix_Hatches_RetiredAfterCut @story-8.256 @ac-13 — LEGACY desde el corte: se ignora y nombra su salida normal',
+    r.perAc[2].verdict !== 'RUNTIME' && r.warnings.some((w) => /runtime_not_verifiable/.test(w) && /runtime-waiver/.test(w))
+      && !lineas(est).length, JSON.stringify([r.perAc[2], r.warnings, lineas(est)]));
+  // NO_MUTATION_CHECK: la regla de las acciones vuelve a mirar desde el corte
+  const accion = () => {
+    const g = makeWorkspace();
+    fs.writeFileSync(g.storyPath, fs.readFileSync(g.storyPath, 'utf8')
+      .replace('3. **Given** otra cosa, **Then** otro resultado.', '3. El usuario puede confirmar la operación.'));
+    writeGate(g.dodDir, '9.9', recentCompact(30), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, ['flujo sólo observa @ac-1 @ac-3']);
+    return g;
+  };
+  let g = accion();
+  r = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado'), env: { TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK: '1' }, today: ANTES_DEL_CORTE });
+  check('T14 RuntimeMatrix_Hatches_RetiredAfterCut @story-8.256 @ac-13 — NO_MUTATION_CHECK antes del corte: desactiva la regla',
+    (r.accionNoEjercida || []).length === 0 && r.warnings.some((w) => w.includes(`se retira el ${corte}`)), JSON.stringify([r.accionNoEjercida, r.warnings]));
+  g = accion();
+  r = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado'), env: { TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK: '1' }, today: despues });
+  check('T14 RuntimeMatrix_Hatches_RetiredAfterCut @story-8.256 @ac-13 — NO_MUTATION_CHECK desde el corte: la regla mira y el aviso nombra la salida',
+    (r.accionNoEjercida || []).length > 0 && r.warnings.some((w) => /@runtime-exempt\(DODRT-C8\)/.test(w)), JSON.stringify([r.accionNoEjercida, r.warnings]));
 }
 
 // ---------------------------------------------------------------- criterio con cota (@measure)

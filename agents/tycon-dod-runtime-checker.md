@@ -209,7 +209,8 @@ invocados por «Probar en vivo»); este advisor NO las re-ejecuta, pero cuando l
 - **[DODRT-C8] "Verificado corriendo" sobre un AC de ACCIÓN cuya acción nunca se ejecutó** (2026-08-05):
   verbo de mutación en el AC + sin test E2E `@mutates ... @ac-N` ni smoke con método
   de escritura → veredicto RUNTIME-PARCIAL, bloquea igual que NOT-RUN. Observar la pantalla no es ejecutar
-  la acción. Escotilla con rastro: `TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK=1`.
+  la acción. Escotilla con rastro: `TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK=1`, que se retira el 2026-12-01 (la salida
+  normal: ejecutar la acción, o `@runtime-exempt(DODRT-C8)` si el verbo no es una acción).
   Desde 2026-08-25 el verbo se juzga por CONTEXTO, no por la lista sola: no neutraliza una negación
   lejana, sí una inmediata ("no se descarta"), sí un lookup ("resuelve en Parameters"), sí el condicional
   ("cada deploy borraría la columna") y sí un rechazo con código 4xx en la misma oración ("se rechaza sin
