@@ -7042,6 +7042,30 @@ function cmdSignAdversarialSkip(argv) {
 // repo; la firma va por la ventana de permiso, la terminal del dueño o la delegación del perfil: la coordinadora, desde
 // su pestaña, con --for-session <la sesión que lo abrió> y sólo sobre un repo de esa sesión (delegated-signing.js).
 // Recién con la firma se escribe la línea del registro.
+// `declare-pending --id <CÓDIGO> [--repo <carpeta>]`: la sesión que abrió un pendiente en una copia que armó ella (modo
+// ágil, sin ejecución ni arreglo rápido) lo declara suyo, para que la coordinadora lo apruebe por delegación con
+// --for-session (delegated-signing.js motivoDelRepo). No aprueba nada: anota la sesión, el código y la carpeta real.
+// La sesión es la del proceso: el freno niega este comando con una variable de sesión escrita en él.
+function cmdDeclarePending(argv) {
+  const PA = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'pending-approvals.js'));
+  const DS = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js'));
+  const { val, tiene } = opcionesDe(argv);
+  const id = (val('--id') || '').trim();
+  if (!id) { console.error('uso: marker.js declare-pending --id <código del pendiente> [--repo <carpeta>]'); process.exit(2); }
+  if (tiene('--for-session')) { console.error('🚫 marker.js declare-pending: un pendiente lo declara la sesión que lo abrió, no otra por ella.'); process.exit(1); }
+  if (PROPIA === '_nosession') { console.error('🚫 marker.js declare-pending: no sé de qué sesión es el pedido: se declara desde la sesión que abrió el pendiente.'); process.exit(1); }
+  const r = DS.raizDelRepo(path.resolve(val('--repo') || process.cwd()));
+  if (!r) { console.error(`marker.js declare-pending: ${val('--repo') || process.cwd()} no es un repo de git.`); process.exit(2); }
+  let todo;
+  try { todo = fs.readFileSync(path.join(r.ruta, PA.TODO), 'utf8'); } catch (e) { console.error(`marker.js declare-pending: no pude leer ${PA.TODO} de ${r.ruta} (${e.code || e.message}).`); process.exit(2); }
+  if (!PA.pendientesAbiertos(todo).some((p) => p.codigo === id)) { console.error(`marker.js declare-pending: ${id} no es un pendiente abierto (\`- [ ] [${id}] …\`) en ${path.join(r.ruta, PA.TODO)}.`); process.exit(1); }
+  try { appendLog('gates.log', { name: DS.DECLARADO, status: 'ok', sesion: PROPIA, id, repo: r.clave, ruta: r.ruta }, { estricto: true }); } catch (e) {
+    console.error(`marker.js declare-pending: no pude anotarlo en el registro de firmas (${e.code || e.message}).`); process.exit(2);
+  }
+  console.error(`✅ ${id} declarado por esta sesión en ${r.ruta}. La coordinadora lo aprueba con \`marker.js approve-pending --id ${id} --repo ${r.ruta} --for-session ${PROPIA}\`.`);
+  process.exit(0);
+}
+
 function cmdApprovePending(argv) {
   const PA = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'pending-approvals.js'));
   const { val, tiene } = opcionesDe(argv);
@@ -7075,7 +7099,7 @@ function cmdApprovePending(argv) {
   // sin persona, los mismos controles que la delegación, comprobados acá y no sólo en el freno: la sesión que pide no es
   // la que abrió el pendiente, es la coordinadora confirmada, y el repo es de la sesión destino
   const DS = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js'));
-  const antes = (via, reg) => DS.antesDelPendiente({ via, registro: reg, propia: PROPIA === '_nosession' ? null : PROPIA, pedida: PEDIDA, estado: STATE_DIR, cwd: process.cwd(), repo });
+  const antes = (via, reg) => DS.antesDelPendiente({ via, registro: reg, propia: PROPIA === '_nosession' ? null : PROPIA, pedida: PEDIDA, estado: STATE_DIR, cwd: process.cwd(), repo, pendiente: id });
   const r = ow.exigir({ firma: PA.FIRMA, argv: process.argv.slice(1), resumen: `huella ${linea.huella} · ${id} · ${pendiente.linea.slice(0, 140)}`, casa: casaDeLaCuenta(), propia: undefined, antes });
   if (r.codigo !== 0) { console.error(`🔒 marker.js approve-pending: no se aprobó ${id} — ${r.motivo}`); process.exit(r.codigo); }
   const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
@@ -8575,6 +8599,9 @@ switch (cmd) {
     break;
   case 'sign-adversarial-skip':
     cmdSignAdversarialSkip(process.argv.slice(3));
+    break;
+  case 'declare-pending':
+    cmdDeclarePending(process.argv.slice(3));
     break;
   case 'approve-pending':
     cmdApprovePending(process.argv.slice(3));
