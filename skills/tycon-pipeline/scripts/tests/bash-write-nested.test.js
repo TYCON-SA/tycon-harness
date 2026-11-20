@@ -374,7 +374,9 @@ test('T15 Bench_FrenoComandosAnidados', () => {
   // `--only` compara contra `<guion del freno>::<id del caso>`: los casos de este archivo comparten el comienzo del id
   const ids = JSON.parse(fs.readFileSync(CASOS, 'utf8')).hooks.flatMap((h) => h.cases.map((x) => x.id));
   assert.ok(ids.length >= 8 && ids.every((id) => id.startsWith('anidado-')), 'un caso por forma, todos con su prefijo');
-  const r = spawnSync(process.execPath, [BENCH, '--tool', 'claude', '--only', 'on-bash-write-gate.js::anidado-'], { encoding: 'utf8', timeout: 300000 });
+  // el reporte va a una carpeta propia: en el árbol lo vería cambiar otra suite que corre a la vez
+  const reporte = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'anidados-banco-')), 'reporte.json');
+  const r = spawnSync(process.execPath, [BENCH, '--tool', 'claude', '--only', 'on-bash-write-gate.js::anidado-', '--json', reporte], { encoding: 'utf8', timeout: 300000 });
   assert.strictEqual(r.status, 0, `${r.stdout.slice(-2000)}\n${r.stderr.slice(-2000)}`);
   assert.match(r.stdout, new RegExp(`✅ ${ids.length} corridos · 0 rojos · .*0 NO MEDIDOS`), r.stdout.slice(-1500));
 });
