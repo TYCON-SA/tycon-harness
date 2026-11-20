@@ -958,8 +958,12 @@ test('T16 Respaldo_PegadoTalCual_SeAcepta — @story-8.316 @ac-11', { skip: proc
   assert.ok(renglon, r.stderr);
   assert.match(renglon, /"allowedFiles":\["B\/src\/A\.cs","F\/src\/x\.tsx"\]/);
   assert.doesNotMatch(renglon, /\.\.\//);
-  // pegado tal cual en la terminal de la persona: se acepta y queda declarado
-  const t = enTerminal(h, renglon.trim());
+  // pegado tal cual en la terminal de la persona: se acepta y queda declarado. El renglón nombra el guion por su ruta
+  // estable de la instalación (8.319), que esta casa de prueba no tiene: se pega apuntando al guion de este repo, con el
+  // resto del renglón igual
+  const pegado = renglon.trim().replace(/^node\s+("[^"]*marker\.js"|\S*marker\.js)/, `node "${MARKER}"`);
+  assert.notStrictEqual(pegado, renglon.trim(), `el renglón no empieza por el guion: ${renglon}`);
+  const t = enTerminal(h, pegado);
   if (!t) return;
   assert.equal(t.status, 0, t.stdout);
   // el resumen que lee la persona pone los repos antes del motivo
