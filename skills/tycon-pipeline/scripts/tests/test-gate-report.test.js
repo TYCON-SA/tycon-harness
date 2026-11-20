@@ -826,7 +826,7 @@ test('T1 8.55-ClaveHeredada_NoCambiaElResultado @story-8.55 @ac-1 — la clave d
   }
 });
 
-test('T6 8.55-Informe_Salida7_SinAcotar @story-8.55 @ac-6 — la salida 7 es «sin acotar»: no es verde y el merge exige la CI completa', () => {
+test('T6 8.55-Informe_Salida7_SinAcotar @story-8.55 @ac-6 — la salida 7 es «sin acotar»: no es verde y la cubre la CI del pedido', () => {
   // 🔴 rojo: el informe leía la salida 7 como una suite roja más, sin decir que no se corrió nada ni por qué.
   const tmp = tmpReal('tgr-sinacotar-');
   const repo = path.join(tmp, 'repo');

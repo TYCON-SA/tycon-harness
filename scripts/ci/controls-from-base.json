@@ -94,6 +94,7 @@
     "scripts/metrics/retro-sweep.json",
     "scripts/metrics/lane-hypothesis.json",
     ".dashboard/weekly-review/latest.json",
+    ".dashboard/night-results/carried.json",
     "scripts/publishing/split.json",
     "scripts/publishing/team-layer.json",
     "scripts/nightly/dashboard/sources.json",
