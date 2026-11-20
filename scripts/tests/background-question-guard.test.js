@@ -121,6 +121,51 @@ test('T4 NoLanzada_Pasa @story-8.211 @ac-4', (t) => {
   assert.strictEqual(decidir(toy, evento('ses-a-mano')), null, 'una de fondo abierta a mano pregunta');
 });
 
+// Producto A: una sesión que abrió la coordinadora quedó quieta con su pregunta negada y la coordinadora sin enterarse
+const MIN = 60000;
+test('T20 Lanzada_CoordinadoraQueNoResuelveLaPregunta_ALosNMinutosLeLlegaALaPersona', (t) => {
+  const toy = maquina(t);
+  const en = (ahora, texto) => G.decidir(evento(LANZADA, 'AskUserQuestion', pregunta(texto)), { home: toy.casa, env: {}, arnes: toy.arnes, ahora });
+  assert.strictEqual(en(AT).decision, 'deny', 'la primera vez va a la coordinadora');
+  const relevos = () => C.questionRelays(toy.casa);
+  assert.strictEqual(relevos().length, 1, 'el freno anota la pregunta que le mandó');
+  assert.match(en(AT).reason, /10 min/, 'y le dice a la sesión cuánto espera');
+  assert.strictEqual(en(AT + 9 * MIN).decision, 'deny', 'dentro de los 10 minutos, la espera');
+  assert.strictEqual(relevos().length, 1, 'la misma espera no se anota dos veces');
+  assert.strictEqual(en(AT + 11 * MIN), null, 'la misma pregunta, sin resolver: le llega a la persona');
+  assert.strictEqual(en(AT + 12 * MIN), null, 'y si la repite, también');
+  // una pregunta nueva tiene su propio plazo: que la coordinadora no resolviera una no le quita las demás
+  assert.strictEqual(en(AT + 30 * MIN, '¿Seguimos con la tanda D?').decision, 'deny', 'la nueva va a la coordinadora');
+  assert.strictEqual(en(AT + 35 * MIN, '¿Seguimos con la tanda D?').decision, 'deny', 'con su plazo');
+  assert.strictEqual(en(AT + 41 * MIN, '¿Seguimos con la tanda D?'), null, 'vencido su plazo, a la persona');
+});
+
+test('T20b Lanzada_CoordinadoraQueContesto_LaPreguntaSiguienteVuelveAEsperarla', (t) => {
+  // la coordinadora contestó la primera y la sesión hace otra una hora después: no se saltea a la coordinadora
+  const toy = maquina(t);
+  const en = (ahora, texto) => G.decidir(evento(LANZADA, 'AskUserQuestion', pregunta(texto)), { home: toy.casa, env: {}, arnes: toy.arnes, ahora });
+  assert.strictEqual(en(AT, '¿Aprobás el plan?').decision, 'deny');
+  assert.strictEqual(en(AT + 60 * MIN, '¿Abro el pedido?').decision, 'deny');
+});
+
+test('T21 PreguntaNegada_LaCoordinadoraSeEnteraEnSuAviso', (t) => {
+  const toy = maquina(t);
+  G.decidir(evento(LANZADA), { home: toy.casa, env: {}, arnes: toy.arnes, ahora: AT });
+  const lineas = C.questionRelayLines({ home: toy.casa }, COORD, AT + 3 * MIN);
+  assert.strictEqual(lineas.length, 1, JSON.stringify(lineas));
+  assert.match(lineas[0], /Acme1/);
+  assert.match(lineas[0], /SendMessage|mensajes/);
+  assert.match(lineas[0], /en 7 min/, 'cuánto le queda antes de que la pregunta vaya a la persona');
+  assert.deepStrictEqual(C.questionRelayLines({ home: toy.casa }, 'ses-otra', AT + 3 * MIN), [], 'a otra sesión no se le avisa');
+  assert.deepStrictEqual(C.questionRelayLines({ home: toy.casa }, COORD, AT + 11 * MIN), [], 'vencida y sin repetir, no la llena de avisos');
+  // la que se le pasó a la persona la ve en su aviso: no pierde lo que tenía sin enterarse
+  G.decidir(evento(LANZADA), { home: toy.casa, env: {}, arnes: toy.arnes, ahora: AT + 11 * MIN });
+  const pasada = C.questionRelayLines({ home: toy.casa }, COORD, AT + 20 * MIN);
+  assert.strictEqual(pasada.length, 1, JSON.stringify(pasada));
+  assert.match(pasada[0], /directo a la persona/);
+  assert.deepStrictEqual(C.questionRelayLines({ home: toy.casa }, COORD, AT + 80 * MIN), [], 'después de una hora ya no sale');
+});
+
 test('T5 SinCoordinadoraViva_Pasa @story-8.211 @ac-5', (t) => {
   const sin = maquina(t);
   fs.rmSync(path.join(stateDir(sin.casa), 'gates.log'));

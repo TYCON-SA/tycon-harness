@@ -1753,6 +1753,8 @@ function capNotice(opts = {}) {
   try { lines.push(...reviewAskLines(opts, sid, opts.now == null ? Date.now() : Number(opts.now), problems)); } catch (e) { problems.push(`las preguntas de revisar (${e.code || e.message})`); }
   try { lines.push(...stalePlanReviewLines(opts, sid, problems)); } catch (e) { problems.push(`las revisiones del plan preparadas (${e.code || e.message})`); }
   try { lines.push(...askingLines(opts, sid, s, problems)); } catch (e) { problems.push(`las preguntas directas (${e.code || e.message})`); }
+  try { lines.push(...questionRelayLines(opts, sid, opts.now == null ? Date.now() : Number(opts.now))); } catch (e) { problems.push(`las preguntas que te mandó el freno (${e.code || e.message})`); }
+  try { lines.push(...planRequestLines(opts, sid, opts.now == null ? Date.now() : Number(opts.now))); } catch (e) { problems.push(`los planes que esperan tu revisión (${e.code || e.message})`); }
   try { lines.push(...ownerReplyLines(opts, sid, problems)); } catch (e) { problems.push(`las respuestas de la persona en otras pestañas (${e.code || e.message})`); }
   // los motivos traen textos de afuera (nombres de archivo, mensajes de error): sin `<` ni `>`, no cierran el bloque
   if (problems.length) lines.push(`Coordinación: No pude leer ${label(problems.join(' · '), 300)}.`);
@@ -2292,6 +2294,108 @@ function pruneLaunched({ home, now, drop = null, sessions = null }) {
   const keep = list.filter((r) => r && !dropped(r) && (now - r.at < LAUNCHED_KEEP_MS || live.some((s) => launchedMatches(r, s))));
   if (keep.length !== list.length) writeJson(launchedFile(home), keep);
   return keep;
+}
+
+// ── Las preguntas que el freno del cuadro le mandó a la coordinadora ──
+// Una sesión que abrió la coordinadora no le pregunta a la persona (hooks/background-question-guard.js): la pregunta va a la
+// coordinadora. Cada pregunta tiene su plazo, `plan_review.coordinator_wait_minutes`: si la sesión vuelve a hacer LA
+// MISMA pregunta pasado el plazo, la coordinadora no la resolvió y le llega a la persona. Una pregunta nueva empieza su
+// propio plazo: que ella no haya contestado una no le quita las demás. Lo que se le pasó a la persona sale en su aviso.
+// El registro lo escribe el freno, nunca la sesión, y sólo agrega renglones al final (dos sesiones a la vez no se pisan).
+const questionRelaysFile = (home) => path.join(coordinationDir(home), 'question-relays.jsonl');
+// cuánto sigue en el aviso de la coordinadora una pregunta que se le pasó a la persona
+const RELAY_SEEN_MS = 60 * 60000;
+
+/** Los renglones del registro: `{ ts, sesion, a, q, paso? }`. Sin archivo, ninguno; un renglón roto no cuenta. */
+function questionRelays(home) {
+  let text = '';
+  try { text = fs.readFileSync(questionRelaysFile(home), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
+  const out = [];
+  for (const l of text.split('\n')) { if (!l.trim()) continue; try { const r = JSON.parse(l); if (r && typeof r === 'object') out.push(r); } catch (_) { /* roto: no cuenta */ } }
+  return out;
+}
+
+/** Los minutos que la coordinadora tiene para contestar: los de la revisión del plan (plan_review.coordinator_wait_minutes). */
+function relayMinutes() {
+  return require(path.join(SKILL_LIB, 'plan-review.js')).configDeLaOrganizacion().values.plan_review.coordinator_wait_minutes;
+}
+
+/** La huella de una pregunta: la misma pregunta repetida es la misma huella. */
+const questionKey = (texto) => require('crypto').createHash('sha256').update(String(texto || '').replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 16);
+
+/**
+ * Qué pasa con la pregunta `pregunta` de `sesion` que el freno manda a la coordinadora `a`: `{ pasa: true }` si ya la
+ * había mandado y ella no la resolvió en `minutos`, o `{ pasa: false, quedan }` con los minutos que le quedan. La primera
+ * vez la anota. Tira si no puede leer o escribir el registro.
+ */
+function questionRelay({ home, sesion, a, pregunta, ahora = Date.now(), minutos = relayMinutes() }) {
+  const q = questionKey(pregunta);
+  const suyos = questionRelays(home).filter((r) => r.sesion === sesion && r.a === a && r.q === q);
+  const primera = suyos.find((r) => !r.paso && Number.isFinite(Date.parse(r.ts)));
+  const anotar = (r) => {
+    fs.mkdirSync(coordinationDir(home), { recursive: true });
+    fs.appendFileSync(questionRelaysFile(home), `${JSON.stringify(r)}\n`);
+  };
+  if (!primera) {
+    anotar({ ts: new Date(ahora).toISOString(), sesion, a, q });
+    return { pasa: false, quedan: minutos };
+  }
+  const desde = Date.parse(primera.ts);
+  if (ahora - desde < minutos * 60000) return { pasa: false, quedan: Math.max(1, Math.ceil(minutos - (ahora - desde) / 60000)) };
+  if (!suyos.some((r) => r.paso)) anotar({ ts: new Date(ahora).toISOString(), sesion, a, q, paso: true });
+  return { pasa: true };
+}
+
+/**
+ * Las líneas del aviso de cada turno de la coordinadora `sid`: las preguntas que le mandó el freno y siguen esperándola,
+ * y las que se le pasaron a la persona porque no las resolvió a tiempo (durante una hora).
+ */
+function questionRelayLines(opts, sid, now = Date.now()) {
+  const home = opts.home || require('os').homedir();
+  const minutos = opts.relayMinutes || relayMinutes();
+  const porPregunta = new Map();
+  for (const r of questionRelays(home)) {
+    if (r.a !== sid) continue;
+    const k = `${r.sesion}|${r.q}`;
+    const x = porPregunta.get(k) || { sesion: r.sesion, desde: null, paso: null };
+    if (r.paso) x.paso = x.paso || Date.parse(r.ts);
+    else if (x.desde === null) x.desde = Date.parse(r.ts);
+    porPregunta.set(k, x);
+  }
+  const nombres = signatureList.sesiones(home).mapa;
+  const quienEs = (s) => (nombres.get(s) && nombres.get(s).name ? `${nombres.get(s).name} (${s})` : s);
+  const out = [];
+  for (const x of porPregunta.values()) {
+    if (!Number.isFinite(x.desde)) continue;
+    if (Number.isFinite(x.paso)) {
+      if (now - x.paso < RELAY_SEEN_MS) out.push(`Coordinación: ${quienEs(x.sesion)} te mandó una pregunta a las ${hhmm(x.desde)}, no la resolviste en ${minutos} min, y a las ${hhmm(x.paso)} se la hizo directo a la persona.`);
+      continue;
+    }
+    if (now - x.desde >= minutos * 60000) continue;
+    const quedan = Math.max(1, Math.ceil(minutos - (now - x.desde) / 60000));
+    out.push(`Coordinación: ${quienEs(x.sesion)} quiso preguntarle algo a la persona a las ${hhmm(x.desde)} y el freno se lo mandó a vos: buscalo en tus mensajes (SendMessage) y contestale o mostráselo a la persona. Si no, en ${quedan} min la pregunta le llega a la persona sin vos.`);
+  }
+  return out;
+}
+
+/**
+ * Las líneas del aviso de la coordinadora `sid` sobre los planes que le pidió el arnés: los que esperan que lance su
+ * revisión, con los minutos que le quedan, y los que siguieron sin ella porque no la tomó a tiempo (durante una hora).
+ */
+function planRequestLines(opts, sid, now = Date.now()) {
+  const home = opts.home || require('os').homedir();
+  const PR = require(path.join(SKILL_LIB, 'plan-review.js'));
+  const minutos = PR.configDeLaOrganizacion().values.plan_review.coordinator_wait_minutes;
+  const estado = stateDir(home);
+  const nombres = signatureList.sesiones(home).mapa;
+  const quienEs = (s) => (nombres.get(s) && nombres.get(s).name ? `${nombres.get(s).name} (${s})` : s);
+  const out = [];
+  for (const p of PR.pedidosA({ estado, a: sid })) {
+    const e = PR.estadoDelPedido({ estado, pedido: p, minutos, ahora: now });
+    if (e.estado === 'esperando') out.push(`Coordinación: ${quienEs(p.destino)} cerró su plan a las ${hhmm(p.ts)} y espera que lances su revisión: marker.js plan-review --for-session ${p.destino}. Si no, en ${e.quedan} min la lanza ella sola.`);
+    else if (e.estado === 'vencido' && now - e.vencio < RELAY_SEEN_MS) out.push(`Coordinación: ${quienEs(p.destino)} esperó ${minutos} min que lanzaras la revisión de su plan y desde las ${hhmm(e.vencio)} la lanza ella sola: un plan de rutina lo aprueba su propia revisión, uno delicado la persona. Si tenías algo que decir de ese plan, decíselo ahora.`);
+  }
+  return out;
 }
 
 /** Anota la sesión que `open` acaba de abrir. Tira si no puede. */
@@ -3042,4 +3146,4 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, flags, reviewAskLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };
+module.exports = { LAUNCH_TIMEOUT_MS, flags, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN };

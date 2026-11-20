@@ -1961,3 +1961,98 @@ test('PlanReview_RegistroIlegible_LlegaAlDuenoSinRelanzar (T12) @story-8.281 @ac
   volver();
   assert.strictEqual(SGIO.listaDelPlanDelegado(lab.estado, DESTINO, marker), null, 'legible y sin parte: como hoy');
 });
+
+// Producto A: la sesión de una historia quedó quieta esperando que la coordinadora lanzara la revisión de su plan, y la
+// coordinadora designada ya no estaba viva. Sin ella, la revisión la lanza la propia sesión.
+/** El archivo de sesión de Claude Code de la coordinadora: viva con este pid, muerta con uno que no existe, o sin archivo. */
+function sesionDeLaCoordinadora(lab, { viva }) {
+  const dir = path.join(lab.home, '.claude', 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  if (viva === null) return;
+  fs.writeFileSync(path.join(dir, `${COORD}.json`), JSON.stringify({ pid: viva ? process.pid : 999999, sessionId: COORD, name: 'Coordinadora', kind: 'interactive', cwd: lab.base }));
+}
+const RUN = () => cfgCon({ plan_review: { routine: 'always' } });
+const accionEn = (lab, ahora, config = RUN()) => PR().accionDelPlan({ estado: lab.estado, sesion: DESTINO, marker: markerDe(lab), config, home: lab.home, ahora });
+const MIN = 60000;
+
+test('PlanReview_CoordinadoraMuerta_LaLanzaLaSesion — la designada que no está viva no deja la sesión esperando', (t) => {
+  const muerta = laboratorio(t);
+  sesionDeLaCoordinadora(muerta, { viva: false });
+  const a = accionEn(muerta, AHORA);
+  assert.strictEqual(a.lanza, 'session', JSON.stringify(a));
+  assert.strictEqual(a.comando, 'marker.js plan-review');
+  assert.match(a.reason, /no está viva/);
+  // Claude Code borra el archivo al cerrarla: con la carpeta leída y sin su archivo, tampoco vive
+  const cerrada = laboratorio(t);
+  sesionDeLaCoordinadora(cerrada, { viva: null });
+  assert.strictEqual(accionEn(cerrada, AHORA).lanza, 'session');
+  // viva: la lanza ella, como hoy
+  const viva = laboratorio(t);
+  sesionDeLaCoordinadora(viva, { viva: true });
+  const c = accionEn(viva, AHORA);
+  assert.strictEqual(c.lanza, 'coordinator', JSON.stringify(c));
+  assert.match(c.comando, /plan-review --for-session ses-a/);
+});
+
+test('PlanReview_CoordinadoraQueNoTomaElPedido_DespuesDeNMinutosLaLanzaLaSesion', (t) => {
+  const lab = laboratorio(t);
+  sesionDeLaCoordinadora(lab, { viva: true });
+  assert.strictEqual(accionEn(lab, AHORA).lanza, 'coordinator', 'al cerrar el plan, le toca a ella');
+  assert.strictEqual(lab.gates().filter((g) => g.name === PR().PEDIDO).length, 1, 'el arnés anota el pedido');
+  // la coordinadora se entera sola: su aviso de cada turno nombra el plan y cuánto le queda
+  const C = require(path.join(RAIZ, 'scripts', 'tools', 'coordination.js'));
+  const aviso = C.planRequestLines({ home: lab.home }, COORD, AHORA + 3 * MIN);
+  assert.strictEqual(aviso.length, 1, JSON.stringify(aviso));
+  assert.match(aviso[0], /plan-review --for-session ses-a/);
+  assert.match(aviso[0], /en 7 min/);
+  assert.deepStrictEqual(C.planRequestLines({ home: lab.home }, 'ses-otra', AHORA + 3 * MIN), []);
+  assert.strictEqual(accionEn(lab, AHORA + 9 * MIN).lanza, 'coordinator', 'dentro de los 10 minutos, la espera');
+  assert.strictEqual(lab.gates().filter((g) => g.name === PR().PEDIDO).length, 1, 'el pedido no se anota dos veces');
+  const tarde = accionEn(lab, AHORA + 11 * MIN);
+  assert.strictEqual(tarde.lanza, 'session', JSON.stringify(tarde));
+  assert.match(tarde.reason, /no tomó el pedido en 10 min/);
+  // la coordinadora ve que la sesión siguió sin ella: no pierde la aprobación delegada sin enterarse
+  const vencido = C.planRequestLines({ home: lab.home }, COORD, AHORA + 20 * MIN);
+  assert.strictEqual(vencido.length, 1, JSON.stringify(vencido));
+  assert.match(vencido[0], /la lanza ella sola/);
+  assert.deepStrictEqual(C.planRequestLines({ home: lab.home }, COORD, AHORA + 80 * MIN), [], 'después de una hora ya no sale');
+  // con otro tope configurado, cuenta ése
+  assert.strictEqual(accionEn(lab, AHORA + 11 * MIN, cfgCon({ plan_review: { routine: 'always', coordinator_wait_minutes: 30 } })).lanza, 'coordinator');
+});
+
+test('PlanReview_CoordinadoraConLaRevisionEnCurso_LaSesionLaSigueEsperando', (t) => {
+  // ella preparó la revisión ANTES de que se anotara el pedido: cuenta igual, por el plan que revisa
+  const lab = laboratorio(t);
+  sesionDeLaCoordinadora(lab, { viva: true });
+  const p = PR().preparar({ lanza: COORD, destino: DESTINO, estado: lab.estado, home: lab.home });
+  assert.strictEqual(p.codigo, 0, p.motivo);
+  assert.strictEqual(accionEn(lab, AHORA).lanza, 'coordinator');
+  assert.strictEqual(accionEn(lab, AHORA + 30 * MIN).lanza, 'coordinator', 'con su revisión corriendo, la sesión no lanza otra');
+  assert.deepStrictEqual(PR().pedidosA({ estado: lab.estado, a: COORD }), [], 'ni se le anota un pedido');
+});
+
+test('PlanReview_PedidoResueltoPorUnaRevisionTerminada_UnRelanzamientoTieneSuPropioPlazo', (t) => {
+  const lab = laboratorio(t);
+  sesionDeLaCoordinadora(lab, { viva: true });
+  accionEn(lab, AHORA);
+  const [pedido] = PR().pedidosA({ estado: lab.estado, a: COORD });
+  assert.ok(pedido, 'el pedido quedó anotado');
+  lab.revisar(SIN_MEDIR);
+  // terminó una revisión suya después del pedido: el pedido viejo ya no cuenta minutos
+  assert.strictEqual(PR().estadoDelPedido({ estado: lab.estado, pedido, minutos: 10, ahora: AHORA + 30 * MIN }).estado, 'resuelto');
+  // un pedido nuevo del mismo plan se ata a esa revisión terminada y empieza de cero
+  const corrida = pedido.corrida;
+  const atiende = PR().coordinadoraQueAtiende({ estado: lab.estado, home: lab.home, sesion: DESTINO, huellaPlan: pedido.huellaPlan, corrida, minutos: 10, ahora: AHORA + 30 * MIN });
+  assert.strictEqual(atiende.coordinadora, COORD);
+  assert.strictEqual(atiende.pedido, false, 'el pedido viejo no vale para el relanzamiento');
+  assert.ok(atiende.tras, 'se ata a la revisión terminada');
+});
+
+test('PlanReview_SinSaberSiVive_LaEsperaHastaElTope', (t) => {
+  // sin la carpeta de sesiones no se sabe si vive: la sesión no se declara sola, la espera los minutos del tope
+  const lab = laboratorio(t);
+  const a = accionEn(lab, AHORA);
+  assert.strictEqual(a.lanza, 'coordinator', JSON.stringify(a));
+  assert.match(a.reason, /no pude saber si la coordinadora/);
+  assert.strictEqual(accionEn(lab, AHORA + 11 * MIN).lanza, 'session');
+});
