@@ -40,7 +40,9 @@ const OPAQUE_PROGRAMS = new Set(['eval', 'cmd', 'cmd.exe', 'powershell', 'powers
 const unreadable = (w) => /[$`]/.test(String(w));
 
 function git(dir, args) {
-  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
+  // con el idioma fijo: `notARepo` lee la frase de git, que en otro idioma cambia
+  const env = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo();
+  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15000, env });
   return { status: r.status, out: String(r.stdout || ''), err: String(r.stderr || '') };
 }
 const notARepo = (r) => r.status === 128 && /not a git repository/i.test(r.err);
