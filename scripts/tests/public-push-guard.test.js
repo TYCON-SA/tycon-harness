@@ -2233,3 +2233,88 @@ test('T12 EmpujeAOtraRamaOMarca_Pasa @story-8.241 @ac-7', (t) => {
   assert.strictEqual(r.status, 0, r.all);
   assert.strictEqual(r.json && r.json.remote, 'private', r.all);
 });
+
+// ── el perfil de OTRA organización: la lista privada es del equipo que mantiene el arnés ────────────────────────────
+// Un colaborador de afuera tiene instalado el perfil de SU organización (otra-org) y empuja a su copia del arnés. La lista
+// privada nunca se le da: exigírsela lo deja sin poder empujar nunca. Al equipo dueño lo reconoce el `team-repos.json` del
+// perfil INSTALADO (al lado de team-profile.json, en el arnés que corre el freno) cuando declara `maintainers`: el repo de
+// mantenimiento, donde vive la lista. Nunca el del árbol que se empuja. Ante la duda —sin ese archivo, ilegible, de forma
+// desconocida, o el arnés instalado dentro de lo que se empuja— es el equipo dueño: la lista sigue siendo obligatoria.
+const orgRepo = (org, repo) => ({ platform: 'github', org, repo });
+const OTHER_ORG_REPOS = { version: 1, public: orgRepo('otra-org', 'arnes'), profile: orgRepo('otra-org', 'perfil'), operations: orgRepo('otra-org', 'operaciones') };
+const OWNER_REPOS = { ...OTHER_ORG_REPOS, public: orgRepo('equipo-dueno', 'arnes'), profile: orgRepo('equipo-dueno', 'perfil'), operations: orgRepo('equipo-dueno', 'operaciones'), maintainers: orgRepo('equipo-dueno', 'mantenimiento') };
+const json = (o) => `${JSON.stringify(o, null, 2)}\n`;
+/** Un laboratorio cuya máquina tiene instalado el perfil de una organización: `repos` es su team-repos.json (o su texto). */
+function orgLab(t, repos) {
+  const fx = lab(t, { team: false });
+  fs.writeFileSync(path.join(fx.harness, 'team-profile.json'), '{}\n');
+  if (repos !== undefined) fs.writeFileSync(path.join(fx.harness, 'team-repos.json'), typeof repos === 'string' ? repos : json(repos));
+  return fx;
+}
+
+test('T80 PerfilDeOtraOrg_SinLista_EmpujaConLosControlesGenerales_YLoDice', (t) => {
+  const fx = orgLab(t, OTHER_ORG_REPOS);
+  commitOn(fx, 'limpia', { 'guides/a.md': `acá ${TERM} no es de ninguna lista\n` });
+  const clean = guard(fx, branchLine(fx, 'limpia'), { list: null });
+  assertPassed(clean);
+  assert.strictEqual(clean.json.generic_only, true);
+  assert.match(guard(fx, branchLine(fx, 'limpia'), { list: null, args: [] }).stderr, /otra organización/);
+  // lo que no necesita lista se sigue mirando entero: un token, un correo que no es noreply, una ruta vedada
+  commitOn(fx, 'token', { 'scripts/x.js': `const t = '${TOKEN}';\n` });
+  assertBlocked(fx, guard(fx, branchLine(fx, 'token'), { list: null }), { category: 'secreto', secret: [TOKEN] });
+  commitOn(fx, 'correo', { 'guides/b.md': 'limpio\n' }, 'un cambio', { who: { name: 'Alguien', email: BAD_EMAIL } });
+  assert.strictEqual(guard(fx, branchLine(fx, 'correo'), { list: null }).status, 1);
+  commitOn(fx, 'vedada', { 'specs/x.md': 'limpio\n' });
+  assert.strictEqual(guard(fx, branchLine(fx, 'vedada'), { list: null }).status, 1);
+  // y con su propia lista declarada, la usa como siempre
+  assertBlocked(fx, guard(fx, branchLine(fx, 'limpia')), { category: 'cliente' });
+});
+
+test('T81 PerfilDelEquipoDueno_SinLista_SigueFrenando', (t) => {
+  const fx = orgLab(t, OWNER_REPOS);
+  commitOn(fx, 'limpia', { 'guides/a.md': 'limpio\n' });
+  const r = guard(fx, branchLine(fx, 'limpia'), { list: null });
+  assert.strictEqual(r.status, 2, `el equipo dueño sin lista: «no pude mirar»\n${r.all}`);
+  assert.strictEqual(r.json.verdict, 'blind');
+  // `maintainers` declarado, con el valor que sea: es el equipo dueño
+  const odd = orgLab(t, { ...OTHER_ORG_REPOS, maintainers: null });
+  commitOn(odd, 'limpia', { 'guides/a.md': 'limpio\n' });
+  assert.strictEqual(guard(odd, branchLine(odd, 'limpia'), { list: null }).status, 2);
+});
+
+test('T82 PerfilQueNoSeDejaLeer_EsElEquipoDueno', (t) => {
+  // sin team-repos.json (un perfil local, o una instalación a medias), roto, vacío, de otra versión o sin `profile`
+  for (const repos of [undefined, '{ roto', '{}\n', '[]\n', json({ ...OTHER_ORG_REPOS, version: 2 }), json({ ...OTHER_ORG_REPOS, profile: 'perfil' })]) {
+    const fx = orgLab(t, repos);
+    commitOn(fx, 'limpia', { 'guides/a.md': 'limpio\n' });
+    const r = guard(fx, branchLine(fx, 'limpia'), { list: null });
+    assert.strictEqual(r.status, 2, `team-repos.json ${repos === undefined ? 'ausente' : repos.trim()}: ante la duda, lista obligatoria\n${r.all}`);
+  }
+});
+
+test('T83 ElArbolEmpujado_NoDiceDeQueOrganizacionEsLaMaquina', (t) => {
+  // un árbol con el perfil (falso) del equipo dueño, en la máquina de otra-org: el veredicto es el mismo que sin él
+  const other = orgLab(t, OTHER_ORG_REPOS);
+  commitOn(other, 'trae-perfil', { 'guides/a.md': 'limpio\n', 'team-profile.json': '{}\n', 'team-repos.json': json(OWNER_REPOS) });
+  const r = guard(other, branchLine(other, 'trae-perfil'), { list: null });
+  assertPassed(r);
+  assert.strictEqual(r.json.generic_only, true);
+  // un árbol con el perfil de otra-org, en la máquina del equipo dueño: no lo vuelve «otra organización»
+  const owner = orgLab(t, OWNER_REPOS);
+  commitOn(owner, 'trae-perfil', { 'guides/a.md': 'limpio\n', 'team-profile.json': '{}\n', 'team-repos.json': json(OTHER_ORG_REPOS) });
+  assert.strictEqual(guard(owner, branchLine(owner, 'trae-perfil'), { list: null }).status, 2);
+  // el freno corriendo DESDE el árbol que se empuja (un clon usado como arnés): su team-repos.json lo eligió la rama
+  const inTree = lab(t, { team: false });
+  for (const p of [...PIECES, HISTORY]) write(inTree.work, p, fs.readFileSync(path.join(REPO, p)));
+  commitOn(inTree, 'propia', { 'guides/a.md': 'limpio\n', 'team-profile.json': '{}\n', 'team-repos.json': json(OTHER_ORG_REPOS) });
+  const own = guard({ ...inTree, harness: inTree.work }, branchLine(inTree, 'propia'), { list: null });
+  assert.strictEqual(own.status, 2, `el perfil del propio árbol no decide la organización\n${own.all}`);
+});
+
+test('T84 Status_DiceDeQueOrganizacionEsElPerfil', (t) => {
+  const other = orgLab(t, OTHER_ORG_REPOS);
+  const env = { ...cleanEnv(), HOME: other.home, TYCON_HOME: path.join(other.home, '.tycon'), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull };
+  const run = (fx) => spawnSync(process.execPath, [path.join(fx.harness, 'scripts/hooks/public-push-guard.js'), 'status'], { cwd: fx.root, encoding: 'utf8', env: { ...env, HOME: fx.home, TYCON_HOME: path.join(fx.home, '.tycon') } });
+  assert.match(run(other).stdout, /otra organización/);
+  assert.match(run(orgLab(t, OWNER_REPOS)).stdout, /máquina del equipo: sí/);
+});
