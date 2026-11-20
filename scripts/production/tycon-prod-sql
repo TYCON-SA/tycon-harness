@@ -32,6 +32,12 @@
 #   tycon-prod-sql --locks                    dice qué servidores de producción tienen el candado de Azure (sólo lee)
 #   tycon-prod-sql --delete-group <grupo>     borra un grupo de recursos que puede probar que no es de producción
 #   tycon-prod-sql --help                     las formas y el camino de emergencia; no toca nada
+#   tycon-prod-sql --azure <az sin «az»>      un cambio de administración de Azure (alertas, tamaño o plan), con cuadro;
+#                                             sus lecturas (list, show) sin cuadro
+#
+# `--azure` RECIBE CADA ARGUMENTO DE `az` TAL CUAL, en su lugar (nunca un texto que se parte o se evalúa), y sólo corre
+# las operaciones de la lista de abajo: lo que no está, no tiene camino aprobado y se le deja a la persona. El cuadro
+# muestra el comando entero, y un argumento con «@» (az leería un archivo que el cuadro no muestra) no pasa.
 #
 # EL FIREWALL Y SU LÍMITE, ESCRITO: abrir y cerrar llaman a `az`, que NO es un binario de root con huella (es del
 # usuario: Homebrew o el instalador de Microsoft). Rompe la regla de «sólo binarios de root» y se acepta con tres
@@ -295,6 +301,11 @@ persona en un cuadro de esta Mac; la contraseña no pasa por la conversación. S
   /opt/tycon/bin/tycon-prod-sql --reclassify <host>         baja un host a no producción, con cuadro
   /opt/tycon/bin/tycon-prod-sql --locks                     qué servidores de producción tienen el candado de Azure
   /opt/tycon/bin/tycon-prod-sql --delete-group <grupo>      borra un grupo que se prueba que no es de producción
+  /opt/tycon/bin/tycon-prod-sql --azure <comando de az sin «az»>
+        un cambio de administración de un recurso de producción en Azure, con cuadro: alertas
+        (monitor metrics alert create|update|delete) y tamaño o plan (sql db update, sql elastic-pool update).
+        Sus lecturas (list y show, y monitor metrics list) corren sin cuadro. Lo demás no tiene camino aprobado:
+        se le deja el comando a la persona para que lo corra en su terminal.
 
 Emergencia, con producción caída (por ejemplo, la base llegó a su tope y no escribe):
   1. Probá la conexión: /opt/tycon/bin/tycon-prod-sql <host> 'select 1'
@@ -337,8 +348,11 @@ case "${1:-}" in
   # 🔴 Cargar la clave SIN tener que fallar una consulta primero (2026-09-15, pedido del dev: el
   # disparador era «corré algo que falle», que es un rodeo). La clave la sigue tipeando la persona en
   # el archivo que deja la puerta: nunca pasa por la conversación ni la escribe el asistente.
+  --azure)        MODO=azure; shift
+                  [ $# -ge 1 ] || muere "uso: tycon-prod-sql --azure <el comando de az, sin «az»>  (cada argumento en su lugar)"
+                  AZ_ARGS=("$@") ;;
   --load-key)     MODO=cargar-clave; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --load-key <host>" ;;
-  -*)             muere "primer argumento inválido: sólo <host>, --load-key, --reclassify, --verify, --open-firewall, --close-firewall, --locks o --delete-group (todas, con su explicación: tycon-prod-sql --help)" ;;
+  -*)             muere "primer argumento inválido: sólo <host>, --load-key, --reclassify, --verify, --open-firewall, --close-firewall, --locks, --delete-group o --azure (todas, con su explicación: tycon-prod-sql --help)" ;;
   *)              HOST="$1"; SENTENCIA="${2:-}"
                   [ $# -ge 2 ] || muere "falta la sentencia: tycon-prod-sql <host> 'select …'"
                   if [ $# -gt 2 ]; then
@@ -373,6 +387,36 @@ validar_sentencia(){
 }
 [ "$MODO" = consulta ] && validar_sentencia
 
+# ── Azure: qué operación es, si tiene camino y cómo se ve en el cuadro ────────────────────────────────────────────
+# La operación son las palabras antes de la primera opción. Los cambios piden el cuadro; las lecturas no cambian nada y
+# corren sin él (quedan anotadas igual). El firewall tiene su forma propia, y lo demás no tiene camino aprobado.
+validar_azure(){
+  local a op="" en_op=1 texto="az"
+  for a in "${AZ_ARGS[@]}"; do
+    case "$a" in
+      @*) muere "un argumento empieza con «@» (${a}): az leería el contenido de un archivo, y el cuadro no lo muestra. Escribí el valor en línea." ;;
+      *"'"*) muere "un argumento tiene una comilla simple: el cuadro no lo podría mostrar tal cual. Escribilo sin ella." ;;
+      # el detalle de az imprime los pedidos HTTP con sus encabezados: la credencial de la sesión llegaría a la conversación
+      --debug|--verbose) muere "${a} no pasa por la puerta: az imprimiría los pedidos con sus encabezados, y la credencial de Azure llegaría a la conversación." ;;
+    esac
+    if [ "$en_op" = 1 ]; then case "$a" in (-*) en_op=0 ;; (*) op="${op:+$op }$a" ;; esac; fi
+    if [[ "$a" =~ ^[A-Za-z0-9._:/=,+%-]+$ ]]; then texto="$texto $a"; else texto="$texto '$a'"; fi
+  done
+  op="$(printf '%s' "$op" | tr '[:upper:]' '[:lower:]')"
+  case "$op" in
+    "monitor metrics alert create"|"monitor metrics alert update"|"monitor metrics alert delete"|"sql db update"|"sql elastic-pool update")
+      AZ_LECTURA=0 ;;
+    "monitor metrics alert show"|"monitor metrics alert list"|"monitor metrics list"|"monitor metrics list-definitions"|"sql db show"|"sql db list"|"sql db list-usages"|"sql db list-editions"|"sql server show"|"sql server list"|"sql elastic-pool show"|"sql elastic-pool list")
+      AZ_LECTURA=1 ;;
+    "sql server firewall-rule"*)
+      muere "la regla de firewall no va por --azure: la IP de esta máquina se habilita con /opt/tycon/bin/tycon-prod-sql --open-firewall <host> (con cuadro, y se cierra sola). Otra regla no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal." ;;
+    *)
+      muere "«${op:-esa operación}» no tiene camino aprobado por la puerta: dejale el comando a la persona para que lo corra en su terminal, y decile qué hace." ;;
+  esac
+  AZ_OP="$op"; SENTENCIA="$texto"
+}
+[ "$MODO" = azure ] && validar_azure
+
 # ── el intérprete (instalada: el de root, verificado) y el índice ─────────────────────────────
 [ -n "$NODE" ] && [ -x "$NODE" ] || muere "no encuentro el intérprete para leer el índice de servidores"
 [ "$INSTALADO" = 1 ] && verificar_binario "$NODE" "/opt/tycon/bin/node" "el intérprete"
@@ -381,7 +425,7 @@ validar_sentencia(){
 # ── la sentencia: lo que engañaría en el cuadro ──────────────────────────────────────────────────
 # La misma lista que el freno, mirada por el intérprete ya verificado y no por grep: grep depende de la configuración
 # regional, y con LC_ALL=C no reconoce un carácter de varios bytes. Si la revisión no se puede hacer, no se conecta.
-if [ "$MODO" = consulta ]; then
+if [ "$MODO" = consulta ] || [ "$MODO" = azure ]; then
   motivo="$(printf '%s' "$SENTENCIA" | "$NODE" -e '
     const fuera = (m) => { process.stdout.write(m); process.exit(2); };
     let t; try { t = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(require("fs").readFileSync(0)); } catch (_) { fuera("no es texto UTF-8 válido"); }
@@ -539,6 +583,27 @@ ubicar_servidor(){
   [ "$encontrados" = 1 ] || { "$FALLA_AZ" "el servidor «${CORTO}» aparece en $encontrados lugar(es) entre tus suscripciones: necesito exactamente uno, no elijo a ciegas."; return 1; }
   printf '%s' "$RG" | grep -qE '^[A-Za-z0-9._()-]+$' || { "$FALLA_AZ" "el grupo de recursos que devolvió az («${RG}») no tiene forma de nombre."; return 1; }
 }
+
+# ── Azure: el cambio de administración, con cuadro; la lectura, sin él ───────────────────────────────────────────
+# az corre con el entorno limpio de `correr_az`: nunca ve la clave de la base ni nada del Llavero. Cada argumento llega en
+# su lugar, sin pasar por un shell.
+if [ "$MODO" = azure ]; then
+  [ -n "$AZ" ] || muere "no encuentro az en sus rutas fijas (/opt/homebrew/bin, /usr/local/bin, /usr/bin): la puerta no usa el del PATH."
+  if [ "$AZ_LECTURA" = 1 ]; then
+    APROBACION=',"aprobacion":"lectura-sin-cuadro"'; ACCION=azure-lectura
+  else
+    aprobar "Cambio de administración en Azure (producción):
+
+$SENTENCIA" azure
+    ACCION=azure
+  fi
+  SALIDA="$(correr_az "${AZ_ARGS[@]}" 2>&1)"; RC=$?
+  printf '%s\n' "$SALIDA"
+  [ "$RC" = 142 ] && printf 'az no contestó en %s s (tope): no sé si el cambio quedó. Miralo con la lectura (list o show) antes de repetirlo.\n' "$AZ_TOPE"
+  printf 'rc=%s\n' "$RC"
+  anotar "\"accion\":\"$ACCION\",\"operacion\":\"$AZ_OP\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\"$APROBACION,\"exit\":$RC"
+  exit "$RC"
+fi
 
 # ── los candados: qué servidores de producción declarados tienen el candado de Azure ───────────────────────────
 # Sólo lee: `account list`, `sql server list` y `lock list`. Cuenta un candado CanNotDelete o ReadOnly sobre el servidor

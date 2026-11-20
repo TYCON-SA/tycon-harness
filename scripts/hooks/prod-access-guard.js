@@ -207,6 +207,8 @@ const CAMINO_DE_LA_PUERTA = [
   "     /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]   (un select, o un cambio como alter database …)",
   '   Si la conexión la rechaza el firewall (40615, «is not allowed to access the server»), se abre por la puerta, con su',
   '   cuadro, y la regla se cierra sola al terminar la sesión: /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
+  '   Un cambio de administración de Azure (alertas, tamaño o plan) va por la puerta, con el mismo cuadro:',
+  '     /opt/tycon/bin/tycon-prod-sql --azure <el comando de az, sin «az»>   (las lecturas, list y show, sin cuadro)',
   '   Todas las formas, sin tocar producción: /opt/tycon/bin/tycon-prod-sql --help',
   '   Producción caída: guides/produccion-con-permiso.md § «Emergencia: producción caída» (firewall, diagnóstico, cambio).',
 ];
@@ -308,6 +310,23 @@ const CANONICA_CARGA = new RegExp(`^${RUTA_PUERTA} --load-key (${HOST_CANONICO})
 const CANONICA_FIREWALL = new RegExp(`^${RUTA_PUERTA} --(?:open|close)-firewall (${HOST_CANONICO})$`);
 // `--locks`, sola: dice qué servidores de producción tienen el candado de Azure (sólo lee)
 const CANONICA_CANDADOS = new RegExp(`^${RUTA_PUERTA} --locks$`);
+// `--azure <az sin «az»>`: un cambio de administración de un recurso de producción en Azure (alertas, tamaño o plan), con
+// el cuadro; las lecturas, sin cuadro. Cada argumento, una palabra sin nada que el shell expanda o un texto entre
+// comillas simples (sin una comilla adentro). La lista de lo que tiene camino es la misma que aplica la puerta, que es la
+// que manda: el freno la repite para que el mensaje diga qué hacer con lo que no lo tiene.
+const PALABRA_AZ = "(?:[A-Za-z0-9._:/=,+%-]+|'[^']*')";
+const CANONICA_AZURE = new RegExp(`^${RUTA_PUERTA} --azure((?: ${PALABRA_AZ})+)$`);
+const AZURE_CAMBIOS = new Set(['monitor metrics alert create', 'monitor metrics alert update', 'monitor metrics alert delete',
+  'sql db update', 'sql elastic-pool update']);
+const AZURE_LECTURAS = new Set(['monitor metrics alert show', 'monitor metrics alert list', 'monitor metrics list',
+  'monitor metrics list-definitions', 'sql db show', 'sql db list', 'sql db list-usages', 'sql db list-editions',
+  'sql server show', 'sql server list', 'sql elastic-pool show', 'sql elastic-pool list']);
+/** La operación de `az` (las palabras antes de la primera opción), o null si no se puede leer. */
+function operacionAz(palabras) {
+  const op = [];
+  for (const w of palabras) { if (w.startsWith('-') || w.startsWith("'")) break; op.push(w.toLowerCase()); }
+  return op.length ? op.join(' ') : null;
+}
 // `--help` (o `-h`), sola: imprime las formas y el camino de emergencia; no lee la clave, no consulta y no llama a `az`
 const CANONICA_AYUDA = new RegExp(`^${RUTA_PUERTA} (?:--help|-h)$`);
 // `--delete-group <grupo>`, sólo el nombre: la puerta comprueba que el grupo no es de producción antes de pedir el borrado.
@@ -583,7 +602,7 @@ function decidir(entrada) {
     // lo que engañaría en el cuadro, en cualquier parte del comando: también en las puntas, que trim() recortaría
     const engano = caracterQueEngana(cmd);
     if (engano) frenar(`el comando ${engano}.`, ['Escribí la consulta sin esos caracteres y volvé a intentar.'], { cmd }, 'puerta-no-canonica');
-    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_CANDADOS.test(limpio) || CANONICA_BORRAR_GRUPO.test(limpio) || CANONICA_AYUDA.test(limpio));
+    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_CANDADOS.test(limpio) || CANONICA_BORRAR_GRUPO.test(limpio) || CANONICA_AYUDA.test(limpio) || CANONICA_AZURE.test(limpio));
     // el cuadro corta sin aviso el principio de un comando largo: la consulta en línea tiene un tope de renglones
     if (canonica && CANONICA.test(limpio)) {
       const n = renglonesDePantalla(cmd);   // el cuadro recibe también lo que el shell ignora al final
@@ -606,6 +625,35 @@ function decidir(entrada) {
         '  /opt/tycon/bin/tycon-prod-sql --help                    estas formas y el camino de emergencia',
         '  --verify · --locks · --load-key <host> · --reclassify <host> · --delete-group <grupo>',
       ], { cmd });
+    }
+    const az = CANONICA_AZURE.exec(limpio);
+    if (canonica && az) {
+      const palabras = az[1].trim().match(new RegExp(PALABRA_AZ, 'g')) || [];
+      const op = operacionAz(palabras);
+      if (palabras.some((w) => /^'?@/.test(w))) {
+        frenar('un argumento de --azure empieza con «@»: az leería el contenido de un archivo, y el cuadro no lo muestra.', [
+          'Escribí el valor en línea, entre comillas simples.',
+        ], { cmd }, 'puerta-no-canonica');
+      }
+      if (palabras.some((w) => w === '--debug' || w === '--verbose')) {
+        frenar('--debug y --verbose no pasan por --azure: az imprimiría los pedidos con sus encabezados, y la credencial de Azure llegaría a la conversación.', [
+          'Corré el mismo comando sin esa opción.',
+        ], { cmd }, 'puerta-no-canonica');
+      }
+      if (op && /^sql server firewall-rule\b/.test(op)) {
+        frenar('la regla de firewall no va por --azure.', [
+          'La IP de esta máquina se habilita por la puerta, con su cuadro, y la regla se cierra sola al terminar la sesión:',
+          '  /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
+          'Otra regla (otra IP, un rango) no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal.',
+        ], { cmd }, 'puerta-no-canonica');
+      }
+      if (!op || (!AZURE_CAMBIOS.has(op) && !AZURE_LECTURAS.has(op))) {
+        frenar(`«${op || 'esa operación'}» no tiene camino aprobado por la puerta.`, [
+          'Por --azure pasan los cambios de alertas (monitor metrics alert create|update|delete) y de tamaño o plan',
+          '(sql db update, sql elastic-pool update), y sus lecturas (list y show).',
+          'Para esta operación, dejale el comando a la persona para que lo corra en su terminal, y decile qué hace.',
+        ], { cmd }, 'puerta-no-canonica');
+      }
     }
     if (esCodex) {
       frenar('en Codex la puerta no puede abrir el cuadro de aprobación de Claude Code.', [
@@ -710,6 +758,27 @@ function decidir(entrada) {
   // `-n list` o un `&& az sql db delete` no la vuelven lectura.
   const opsAzSql = [...cmd.matchAll(/\baz\s+sql((?:\s+[a-z][a-z-]*)+)/g)].map((m) => m[1].trim().split(/\s+/).pop());
   const esLecturaAz = !esFirewall && opsAzSql.length > 0 && opsAzSql.every((v) => ['list', 'show', 'list-usages'].includes(v));
+  // Un comando de `az` que no es del firewall: si su operación tiene camino, el MISMO comando por la puerta (`--azure`,
+  // sin disfrazarlo); si no, que lo corra la persona en su terminal. El comando se arma sólo si es un único `az …` que la
+  // forma canónica acepta: si no, se describe.
+  const soloAz = partes.length === 1 && /^az\s/.test(cmd.trim());
+  const restoAz = soloAz ? cmd.trim().replace(/^az\s+/, '') : null;
+  const opAz = restoAz ? operacionAz(restoAz.match(new RegExp(PALABRA_AZ, 'g')) || []) : null;
+  const tieneCamino = opAz && (AZURE_CAMBIOS.has(opAz) || AZURE_LECTURAS.has(opAz));
+  const listoAz = tieneCamino && CANONICA_AZURE.test(`${PUERTA} --azure ${restoAz}`) ? `${PUERTA} --azure ${restoAz}` : null;
+  const caminoAzure = () => {
+    if (esFirewall || !/(?:^|[\s;&|(])az\s/.test(cmd)) return [];
+    if (listoAz) {
+      return [AZURE_LECTURAS.has(opAz)
+        ? 'Esa lectura de Azure va por la puerta, sin cuadro (no cambia nada), y queda anotada:'
+        : 'Ese cambio de Azure va por la puerta: la persona lo aprueba en el cuadro, que muestra el comando entero, y queda anotado:',
+      `  ${listoAz}`];
+    }
+    if (tieneCamino) return ['Esa operación de Azure va por la puerta: /opt/tycon/bin/tycon-prod-sql --azure <el comando de az, sin «az»>,',
+      'con cada argumento como una palabra simple o entre comillas simples.'];
+    return ['Esa operación de Azure no tiene camino aprobado por la puerta: dejale el comando a la persona para que lo corra en su terminal,',
+      'y decile qué hace. No la disfraces ni la partas para que pase.'];
+  };
   const hostAzure = (h) => (h && h.includes('.') ? h : `${h || '<host>'}.database.windows.net`);
   // `declarado`: la puerta sólo atiende hosts declarados como producción; a uno sin declarar no se le sugieren consultas
   const caminoFirewall = (h, declarado) => (esFirewall
@@ -739,6 +808,7 @@ function decidir(entrada) {
         c.desde === 'memoria'
           ? 'Ese host ya se vio como producción antes; el catálogo de ahora dice otra cosa y no alcanza.'
           : 'Toda consulta a producción pasa por la puerta y la aprobás vos, sentencia por sentencia.',
+        ...caminoAzure(),
         `Si de verdad ya no es producción: /opt/tycon/bin/tycon-prod-sql --reclassify ${n.host}`,
         ...caminoFirewall(n.host, true),
       ], { cmd, host: n.host, repos: c.repos, causa: 'base-de-produccion' }, 'produccion');
@@ -746,6 +816,7 @@ function decidir(entrada) {
     // desconocido
     frenar(`«${n.host}» no está declarado en ningún proyecto de esta máquina.`, [
       'Lo que no está declarado se trata como producción.',
+      ...caminoAzure(),
       ...caminoFirewall(n.host, false),
       `Si es de un ambiente de prueba, declaralo en <repo>/.tycon/production.json:`,
       `  {"servers":[{"host":"${n.host}","environment":"non-production"}]}`,

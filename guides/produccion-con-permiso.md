@@ -54,6 +54,32 @@ lo aprueba **la persona frente a la Mac**, que tiene que poder autorizar ese cam
 5. **Contale a la persona qué cambió** y anotalo en el incidente. La regla del firewall se cierra sola; si querés
    cerrarla ya: `--close-firewall <host>`.
 
+## Cambios de administración en Azure: alertas, tamaño o plan
+
+Lo que cambia un recurso de producción en Azure sin conectarse a la base —una alerta de espacio, el tamaño o el plan
+de la base— también va por la puerta, con el mismo cuadro y anotado en `production.log`. Es **el mismo comando de
+`az`, sin la palabra `az`**, con cada argumento como una palabra simple o entre comillas simples:
+
+```bash
+# una alerta de espacio al 80 % (el cuadro muestra el comando entero; la persona lo aprueba)
+/opt/tycon/bin/tycon-prod-sql --azure monitor metrics alert create -n espacio-80 -g <grupo> --scopes <id del recurso de la base> --condition 'avg storage_percent > 80'
+
+# las lecturas no cambian nada: corren sin cuadro, y quedan anotadas igual
+/opt/tycon/bin/tycon-prod-sql --azure monitor metrics alert list -g <grupo>
+```
+
+- **Con cuadro**: `monitor metrics alert create|update|delete`, `sql db update` y `sql elastic-pool update`.
+- **Sin cuadro, sólo lectura**: `monitor metrics alert list|show`, `monitor metrics list|list-definitions`,
+  `sql db list|show|list-usages|list-editions`, `sql server list|show` y `sql elastic-pool list|show`.
+- **La regla de firewall** no va por acá: la de esta máquina es `--open-firewall <host>`.
+- **Lo demás no tiene camino aprobado** (borrar una base o un servidor, cambiar un candado, otra regla de firewall):
+  el freno lo dice, y el asistente le deja el comando a la persona para que lo corra en su terminal, diciéndole qué
+  hace. No se disfraza ni se parte para que pase.
+- **Un argumento con `@`** no pasa: `az` leería el contenido de un archivo, y el cuadro no lo muestra. Tampoco
+  `--debug` ni `--verbose`: `az` imprimiría los pedidos con sus encabezados, y la credencial llegaría a la conversación.
+
+Cuando el freno corta un comando de `az` con camino, el mensaje trae el mismo comando por la puerta, listo para correr.
+
 Lo que se frena igual, aun en una emergencia: `sqlcmd` directo, `az sql …` contra un servidor de producción (también
 las lecturas, como `az sql db list`; el freno dice qué consulta usar en su lugar) y la regla de firewall creada con
 `az`. Todas las formas de la puerta, sin tocar producción: `/opt/tycon/bin/tycon-prod-sql --help`.
