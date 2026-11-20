@@ -1118,7 +1118,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     TG_FULL_SUITE_BY="$(node "$SCRIPT_DIR/lib/test-gate-scope.js" "$REPO_RUN")" || _tg_scope_rc=$?
     if [[ "$_tg_scope_rc" == "0" && -n "$TG_FULL_SUITE_BY" ]]; then
       LIGHT_ARGS=(--scoped-by-repo "$TG_FULL_SUITE_BY")
-      echo "[test-gate] el repo acota el portón (test_gate en .test-gate.yaml): si se sabe qué se tocó, corren sólo las suites que lo leen; la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY)"
+      echo "[test-gate] el repo acota el portón (test_gate en .test-gate.yaml): si se sabe qué se tocó, corren sólo las suites que lo leen; la suite completa la corre $TG_FULL_SUITE_BY"
     elif [[ "$_tg_scope_rc" != "10" ]]; then
       echo "[test-gate] ⚠️  no pude leer test_gate de .test-gate.yaml (salió $_tg_scope_rc): corre la suite entera" >&2
     fi
@@ -1631,8 +1631,8 @@ fi
 # TYCON_GATE_ALL_SUITES=1, o sin saber qué se tocó, corrió todo y su resumen no trae `scoped`).
 if [[ -n "${TG_FULL_SUITE_BY:-}" && "$RUNNER" == "suites-json" ]] \
   && node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scoped ? 0 : 1)' "$RESULTS_DIR/suites.json" 2>/dev/null; then
-  _tg_tope="$(node -e 'try{const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scoped.capped;if(c)process.stdout.write(`, hasta el tope de ${c.max} (las ${c.deferred} menos cercanas quedan para esa CI)`)}catch(e){}' "$RESULTS_DIR/suites.json" 2>/dev/null || true)"
-  echo "[test-gate] la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY): en esta máquina corrieron sólo las suites que leen lo tocado${_tg_tope}" >&2
+  _tg_tope="$(node -e 'try{const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scoped.capped;if(c)process.stdout.write(`, hasta el tope de ${c.max} (las ${c.deferred} menos cercanas quedan para quien corre la completa)`)}catch(e){}' "$RESULTS_DIR/suites.json" 2>/dev/null || true)"
+  echo "[test-gate] la suite completa la corre $TG_FULL_SUITE_BY: en esta máquina corrieron sólo las suites que leen lo tocado${_tg_tope}" >&2
 fi
 
 exit "$SUITE_EXIT"

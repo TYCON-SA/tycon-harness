@@ -92,7 +92,7 @@ test('T1 PortonAcotado_ConClave_CorreSoloLoTocado — con la clave commiteada co
   const r = puerta(l);
   assert.equal(r.status, 0, r.out);
   assert.deepEqual(corridas(l), ['a'], r.out);
-  assert.match(r.out, /la suite completa la corre la CI del pedido \(la CI de GitHub del pedido\)/);
+  assert.match(r.out, /la suite completa la corre la CI de GitHub del pedido/);
   const art = artefacto(l);
   assert.equal(art.suite_green, true, JSON.stringify(art));
   assert.deepEqual(art.scoped_by_repo, { full_suite_by: CI, none_touched: false });
@@ -105,7 +105,7 @@ test('T2 PortonAcotado_SinClave_CorreTodo — sin la clave, todo como siempre', 
   const r = puerta(l);
   assert.equal(r.status, 0, r.out);
   assert.deepEqual(corridas(l), ['a', 'b'], r.out);
-  assert.doesNotMatch(r.out, /la suite completa la corre la CI del pedido \(/);
+  assert.doesNotMatch(r.out, /la suite completa la corre la CI de GitHub del pedido/);
   assert.equal(artefacto(l).scoped_by_repo, undefined);
 });
 
@@ -116,7 +116,7 @@ test('T3 PortonAcotado_NadieLee_Verde — con la clave y un cambio que ninguna s
   const r = puerta(l);
   assert.equal(r.status, 0, r.out);
   assert.deepEqual(corridas(l), [], r.out);
-  assert.match(r.out, /ninguna suite lee lo tocado; la suite completa la corre la CI del pedido/);
+  assert.match(r.out, /ninguna suite lee lo tocado; la suite completa la corre la CI de GitHub del pedido/);
   assert.equal(artefacto(l).suite_green, true);
 });
 

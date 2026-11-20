@@ -2181,7 +2181,7 @@ function cmdCompleteStep(nRaw, flags) {
     // ── Acotada por el repo: el verde es el de las suites que leen lo tocado, y se dice quién corre la completa ──
     if (testsCheck === 'green') {
       const acotada = portonAcotadoPorElRepo(marker.repoPath);
-      if (acotada) console.error(`ℹ️  la suite completa la corre la CI del pedido (${acotada}): el portón de esta máquina corrió sólo las suites que leen lo tocado.`);
+      if (acotada) console.error(`ℹ️  la suite completa la corre ${acotada}: el portón de esta máquina corrió sólo las suites que leen lo tocado.`);
     }
 
     // ── «Sin medir»: se acepta diciéndolo, nunca callado ─────────────────────────────────

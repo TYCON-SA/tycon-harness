@@ -62,7 +62,7 @@ Se agrava cuando, **al mismo tiempo**, el agente tiene **8–11 subagentes (advi
    como mucho 60 (el tope de la máquina; el repo lo cambia con `test_gate.max_local_suites`). Si son más (se tocó un
    archivo de control o una pieza central que nombran cientos), corren las más cercanas al cambio: la suite tocada, la
    que se llama como el archivo, la que lo nombra por su ruta. Las demás quedan diferidas, con su motivo, para la CI del
-   pedido, y el cierre lo dice: «la suite completa la corre la CI del pedido (…), hasta el tope de 60». Las suites
+   pedido, y el cierre lo dice: «la suite completa la corre …, hasta el tope de 60». Las suites
    tocadas y las repetidas que quedaron viejas corren siempre.
 
    *Sin base no corre nada*: si no se sabe qué se tocó, el portón sale 7 («sin acotar: la cubre la CI del pedido») en
