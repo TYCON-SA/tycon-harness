@@ -1355,7 +1355,9 @@ function compute(opts) {
   // `opts.repoRoot` existe para el caller que computa sobre una COPIA tmp del spec (on-pre-commit.js, contenido
   // staged): ahí la discovery desde el path no ve el repo real y degradaría a fail-closed con la evidencia en disco.
   const repoRoot = opts.repoRoot ? path.resolve(opts.repoRoot) : discoverRepoRoot(storyPath);
-  const wsRoot = opts.workspaceRoot || discoverWorkspaceRoot(storyPath);
+  // la carpeta de los repos, desde la ruta REAL: desde la copia tmp no se ve, y sin ella `<Hermano>/archivo` no se lee
+  // y ninguna evidencia cuenta (el commit daba 0 donde el pipeline daba todo en verde)
+  const wsRoot = opts.workspaceRoot || discoverWorkspaceRoot(opts.keyStoryPath ? path.resolve(opts.keyStoryPath) : storyPath);
   const evCfg = parseEvidenceConfig(repoRoot);
   // Cada hermano declarado cuenta también en su worktree de la rama de la story: es el mismo repo, y es donde el portón
   // lo corre (lib/companion-repos.js). Sin esto, su evidencia saldría «de un repo NO declarado» y no contaría.

@@ -566,22 +566,73 @@ function rutasAModificar(storyText) {
   }).filter((r) => r && !r.endsWith('/')))];
 }
 
+// El sufijo de una copia aparte (`<Repo>--wt-<nombre>`, la que arma scripts/tools/tycon-worktree.sh), o null.
+const SUFIJO_DE_COPIA = /--wt-([A-Za-z0-9._-]+)$/;
+const sufijoDe = (raiz) => { const m = raiz ? SUFIJO_DE_COPIA.exec(path.basename(raiz)) : null; return m ? m[1] : null; };
+// La carpeta `.git` común de un repo (la misma para el repo y todas sus copias), o null.
+function gitComun(dir) {
+  const r = git(['-C', dir, 'rev-parse', '--git-common-dir']);
+  return r.ok && r.out ? real(path.resolve(dir, r.out)) : null;
+}
+
+/**
+ * Los repos de la corrida que son el hermano `nombre`: el que se llama así y, si la historia trabaja en una copia
+ * `--wt-<s>`, la copia `<nombre>--wt-<s>` que es de verdad una copia del repo `<nombre>` de al lado (el mismo `.git`). Una
+ * carpeta con el sufijo que es otro repo, o la copia del hermano con otro sufijo, no es el hermano: lo que la historia
+ * cambió no está ahí, y contarla podría dejar sin comparar un comando que sí cambió.
+ */
+function hermanoDeLaCorrida(nombre, raices, raizHistoria) {
+  if (!nombre || nombre === '.' || nombre === '..') return [];
+  const out = raices.filter((r) => path.basename(r) === nombre);
+  const s = sufijoDe(raizHistoria);
+  if (!s) return out;
+  for (const r of raices) {
+    if (path.basename(r) !== `${nombre}--wt-${s}` || out.includes(r)) continue;
+    // las dos, raíces de repo: dos carpetas sueltas dentro de un mismo repo comparten su `.git` sin ser copias
+    const comun = raizDe(r) === real(r) ? gitComun(r) : null;
+    const base = path.join(path.dirname(r), nombre);
+    if (comun && fs.existsSync(base) && raizDe(base) === real(base) && gitComun(base) === comun) out.push(r);
+  }
+  return out;
+}
+
 /**
  * Dónde cae una ruta declarada entre los repos de la corrida: `[{ repo, rel }]`. Una relativa se prueba en cada repo; una
  * absoluta, una con `~/` o una que sube (`../`, desde la raíz del repo de la historia) cae en el repo que la contiene.
+ * Una escrita desde la carpeta de los repos (`<Hermano>/archivo`, o `../<Hermano>/archivo`) cae también en el hermano
+ * de la corrida con ese nombre, o en su copia con el sufijo de la copia de la historia (`hermanoDeLaCorrida`).
  */
 function ubicar(ruta, raices, raizHistoria) {
+  const out = [];
+  const sumar = (repo, rel) => { if (rel && !out.some((x) => x.repo === repo && x.rel === rel)) out.push({ repo, rel }); };
+  // la ruta normalizada (`H//x`, `H/a/../x` → `H/x`): con la cruda, el archivo existe en el disco pero no en `main`
+  // con ese nombre, y un comando que cambió no sería candidato ni quedaría «sin repo»
+  const delHermano = (ruta) => {
+    const partes = path.posix.normalize(ruta).split('/');
+    if (partes.length < 2) return;
+    const rel = partes.slice(1).join('/');
+    for (const repo of hermanoDeLaCorrida(partes[0], raices, raizHistoria)) {
+      if (dentroDe(repo, path.join(repo, rel))) sumar(repo, rel);
+    }
+  };
   let abs = null;
   if (ruta.startsWith('~/')) abs = path.join(os.homedir(), ruta.slice(2));
   else if (path.isAbsolute(ruta)) abs = ruta;
   else if (ruta.startsWith('../')) abs = raizHistoria ? path.resolve(raizHistoria, ruta) : null;
-  else return raices.filter((repo) => dentroDe(repo, path.join(repo, ruta))).map((repo) => ({ repo, rel: ruta }));
+  else {
+    for (const repo of raices) if (dentroDe(repo, path.join(repo, ruta))) sumar(repo, ruta);
+    delHermano(ruta);
+    return out;
+  }
   if (!abs) return [];
-  const out = [];
   for (const repo of raices) {
     const dentro = [abs, real(abs)].find((x) => dentroDe(repo, x));
-    if (dentro) out.push({ repo, rel: path.relative(repo, dentro).split(path.sep).join('/') });
+    if (dentro) sumar(repo, path.relative(repo, dentro).split(path.sep).join('/'));
   }
+  // una que cae en la carpeta de los repos: el primer tramo es el hermano
+  const padre = raizHistoria ? path.dirname(raizHistoria) : null;
+  const enPadre = padre && [abs, real(abs)].find((x) => dentroDe(padre, x));
+  if (enPadre) delHermano(path.relative(padre, enPadre).split(path.sep).join('/'));
   return out;
 }
 
