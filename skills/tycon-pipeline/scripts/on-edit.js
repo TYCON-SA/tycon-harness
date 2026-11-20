@@ -215,8 +215,9 @@ function handle(event) {
     marker.lastTouch = new Date().toISOString();
     try {
       writeMarker(sessionId, marker);
-    } catch {
-      // No bloquear — el marker es advisory, no critical.
+    } catch (e) {
+      // No bloquear, pero tampoco perder el evento sin rastro: el freno de código sin revisar no lo va a ver
+      try { fs.appendFileSync(path.join(STATE_DIR, 'hook-errors.log'), `[${new Date().toISOString()}] on-edit FAILED OPEN: no pude anotar la edición de ${filePath} en el marcador de ${sessionId}: ${(e && e.stack) || e}\n\n`, 'utf8'); } catch { /* noop */ }
     }
     return null;
   }

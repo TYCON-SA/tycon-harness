@@ -1840,6 +1840,12 @@
       "requiere": []
     },
     {
+      "__nota": "errores que se tragaban en silencio: pasos hechos por set, ediciones y firmas que no se anotan, lo preparado ilegible, marcadores ajenos ilegibles, listas sin cerrar y lanzamientos de revisores ilegibles. HOME de laboratorio, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/swallowed-errors.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/preflight-missing.test.js",
       "requiere": []

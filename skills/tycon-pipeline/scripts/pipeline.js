@@ -7107,6 +7107,7 @@ function writeFindings(args) {
     }
     if (cruce.sinRegistro) reportedNote = rcLib.NO_REGISTRY_NOTE;
     if (cruce.unreadable) normWarnings.push(`el registro de críticos reportados tiene ${cruce.unreadable} renglón(es) ilegible(s): no cuentan`);
+    if (cruce.unreadableSpawns) normWarnings.push(`el registro de lanzamientos de revisores tiene ${cruce.unreadableSpawns} renglón(es) ilegible(s): esas salidas no se cruzaron`);
   }
   const outPath = path.join(runDir, 'findings.json');
   fs.writeFileSync(outPath, JSON.stringify(records, null, 2) + '\n', 'utf8');
