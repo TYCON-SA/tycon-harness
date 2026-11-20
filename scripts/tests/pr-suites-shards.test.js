@@ -67,7 +67,11 @@ const text = NO_PIPELINE ? '' : fs.readFileSync(YAML, 'utf8');
 const lines = text.split('\n');
 const template = NO_PIPELINE ? '' : fs.readFileSync(TEMPLATE, 'utf8');
 const snapshotTemplate = fs.existsSync(SNAPSHOT_TEMPLATE) ? fs.readFileSync(SNAPSHOT_TEMPLATE, 'utf8') : '';
-const stepLines = [...lines, ...template.split('\n'), ...snapshotTemplate.split('\n')];
+// Los pasos del veredicto, en su plantilla si la validación ya la trae (la usan el último trabajo que publica y el
+// respaldo); si no, viven en el job Verdict, como antes. Los dos casos se miden: este archivo entra antes que el pipeline.
+const VERDICT_TEMPLATE = path.join(ROOT, 'pipelines/templates/verdict.yml');
+const verdictTemplate = fs.existsSync(VERDICT_TEMPLATE) ? fs.readFileSync(VERDICT_TEMPLATE, 'utf8') : '';
+const stepLines = [...lines, ...template.split('\n'), ...snapshotTemplate.split('\n'), ...verdictTemplate.split('\n')];
 const code = stepLines.filter((l) => !l.trim().startsWith('#'));
 const BASH = findGitBash();
 const NO_BASH = !BASH.path && `NO MEDIDO — no encontré bash (${BASH.reason})`;
@@ -550,15 +554,33 @@ test('PrShards_Jobs_ValidateThenBenchAndSuitesThenAVerdictThatAlwaysRuns', () =>
   assert.ok(suites.includes(`\n    condition: and(succeeded(), ${HAS_CODE}, ne(${LONG_OUTPUT}, 'si'))\n`), 'Suites corre si el plan entra en 40 min');
   assert.ok(longSuites.includes(`\n    condition: and(succeeded(), ${HAS_CODE}, eq(${LONG_OUTPUT}, 'si'))\n`), 'SuitesLargo, sólo si no entra');
   assert.match(verdict, /\n {4}dependsOn: \[Validar, Bench, Suites, SuitesLargo\]\n/, 'el veredicto espera a todos');
-  assert.ok(verdict.includes(`\n    condition: and(always(), ${HAS_CODE})\n`),
-    'y corre aunque el banco o un trabajo de suites hayan fallado o los haya cortado el tope — salvo un cambio sin código');
+  if (verdictTemplate) {
+    // De respaldo: corre aunque el banco o un trabajo de suites hayan fallado o los haya cortado el tope, salvo que el
+    // cambio no traiga código o que algún trabajo ya lo haya dado. Con más trabajos de los que nombra, corre siempre.
+    const dado = (job, leg) => `ne(dependencies.${job}.outputs['${leg ? `${leg}.` : ''}veredicto.dado'], 'si')`;
+    const patas = [dado('Bench'), ...[1, 2, 3, 4].map((i) => dado('Suites', `shard_${i}`)), ...[1, 2, 3, 4].map((i) => dado('SuitesLargo', `shard_${i}`))];
+    assert.ok(verdict.includes(`\n    \${{ if le(parameters.suiteShards, 4) }}:\n      condition: and(always(), ${HAS_CODE}, ${patas.join(', ')})\n`),
+      'el respaldo corre si ningún trabajo dio el veredicto: el banco y cada pata de las dos matrices');
+    assert.ok(verdict.includes(`\n    \${{ else }}:\n      condition: and(always(), ${HAS_CODE})\n`), 'con más de 4 trabajos de suites, siempre');
+    assert.ok(4 >= maxShards(), 'el máximo por defecto entra en lo que nombra la condición');
+    // los tres trabajos que publican, con el veredicto prendido en su plantilla
+    for (const [name, body] of [['Bench', bench], ['Suites', suites], ['SuitesLargo', longSuites]]) {
+      assert.match(body, /- template: \/pipelines\/templates\/run-suites\.yml\n(?: {8}.*\n)*? {10}veredicto: true\n/, `${name} da el veredicto si publica último`);
+      for (const v of ['SUITES_MATRIX', 'BANCO']) assert.ok(body.includes(`\n      ${v}: $[ dependencies.Validar.outputs[`), `${name} trae ${v}, que leen los pasos del veredicto`);
+    }
+    assert.ok(verdict.includes('\n      - template: /pipelines/templates/verdict.yml\n'), 'el respaldo corre los pasos de la plantilla');
+  } else {
+    assert.ok(verdict.includes(`\n    condition: and(always(), ${HAS_CODE})\n`),
+      'y corre aunque el banco o un trabajo de suites hayan fallado o los haya cortado el tope — salvo un cambio sin código');
+  }
 
   // Los topes: 40 por trabajo de suites (de dónde sale el número, en T33), 10 el veredicto.
   assert.match(suites, /\n {4}timeoutInMinutes: 40\n/, 'cada trabajo de suites tiene 40 minutos de tope');
   assert.match(longSuites, /\n {4}timeoutInMinutes: 100\n/, 'el largo, 100: el tope que decidió el dueño (2026-10-30)');
   const stepsOf = (job) => job.slice(job.indexOf('\n    strategy:\n')).split('\n').filter((l) => l.trim() && !/^\s*#/.test(l) && !/^ {4}timeoutInMinutes:/.test(l)).join('\n');
   assert.strictEqual(stepsOf(longSuites), stepsOf(suites), 'el largo corre los mismos pasos, con la misma matriz');
-  assert.ok(suites.endsWith(`${TEMPLATE_USE}`) || suites.includes(`${TEMPLATE_USE}\n`), 'los pasos del trabajo de suites son los de la plantilla');
+  assert.ok(suites.endsWith(`${TEMPLATE_USE}`) || suites.includes(`${TEMPLATE_USE}\n`)
+    || suites.includes(`${TEMPLATE_USE}        parameters:\n          veredicto: true\n`), 'los pasos del trabajo de suites son los de la plantilla');
   assert.match(verdict, /\n {4}timeoutInMinutes: 10\n/, 'el veredicto, 10');
 
   // Lo que viaja de un job a otro: la lista (con el intento), lo de cada trabajo (siempre, con el intento) y el banco.
@@ -567,17 +589,81 @@ test('PrShards_Jobs_ValidateThenBenchAndSuitesThenAVerdictThatAlwaysRuns', () =>
     'cada trabajo publica lo que midió aunque haya rojas o lo corten, con el intento en el nombre');
   assert.match(bench, /- publish: '\$\(Build\.ArtifactStagingDirectory\)\/bench'\n {8}artifact: 'bench-a\$\(System\.JobAttempt\)'\n {8}displayName: '[^']+'\n {8}condition: always\(\)\n/);
   assert.match(template, /itemPattern: 'suites-plan-a\*\/\*\*'\n {6}targetPath: '\$\(Pipeline\.Workspace\)\/suites-plan'\n/, 'cada trabajo baja sólo la lista');
-  assert.match(verdict, /continueOnError: true\n(?: {8}.*\n)*? {10}targetPath: '\$\(Pipeline\.Workspace\)\/artifacts'\n/, 'el veredicto baja todo');
+  if (verdictTemplate) assert.match(verdictTemplate, /continueOnError: true\n(?: {4}.*\n)*? {6}targetPath: '\$\(Pipeline\.Workspace\)\/artifacts'\n/, 'el veredicto baja todo');
+  else assert.match(verdict, /continueOnError: true\n(?: {8}.*\n)*? {10}targetPath: '\$\(Pipeline\.Workspace\)\/artifacts'\n/, 'el veredicto baja todo');
 
   // El veredicto, en modo Azure, con el modo aviso decidido por el interruptor, y el reintento
   // de una vez por roja.
   assert.match(stepBody(VERDICT_STEP), /node scripts\/ci\/pr-verdict\.js [^\n]*--ado[^\n]*; RC=\$\?/);
   assert.ok(stepBody(VERDICT_STEP).includes('node scripts/ci/suites-block.js'), 'el modo aviso lo decide el interruptor');
   assert.doesNotMatch(stepBody(VERDICT_STEP), /pr-verdict\.js [^\n]*--suites-warn/, 'nunca fijo en el llamado');
-  assert.match(verdict, new RegExp(`displayName: '${VERDICT_STEP.replace(/[?¿]/g, '.')}'\\n {8}condition: succeededOrFailed\\(\\)\\n`));
+  if (verdictTemplate) {
+    // en el respaldo, como siempre; en el último trabajo, sólo si ese trabajo se eligió
+    assert.ok(verdictTemplate.includes(`displayName: '${VERDICT_STEP}'\n    \${{ if parameters.enTrabajo }}:\n      condition: and(succeededOrFailed(), eq(variables['VEREDICTO_ACA'], 'si'))\n    \${{ else }}:\n      condition: succeededOrFailed()\n`));
+  } else assert.match(verdict, new RegExp(`displayName: '${VERDICT_STEP.replace(/[?¿]/g, '.')}'\\n {8}condition: succeededOrFailed\\(\\)\\n`));
   assert.ok(stepBody(RUN_STEP).includes('se reintenta una vez'), 'cada roja se reintenta una vez');
   assert.ok(stepBody(JOIN_STEP).includes('--retries "$MERGED/retries.json"'), 'y las dos pasadas llegan al reporte');
   assert.doesNotMatch(code.join('\n'), /^[^#]*git (commit|push|add)\b/m, 'el pipeline de los pedidos de merge nunca escribe en el repo');
+});
+
+// El veredicto, en el último trabajo que publica: el paso que lo decide, el de verdad, con un `curl` de juguete que
+// contesta la lista de artefactos de la corrida. 🔴 rojo: dar el veredicto con un trabajo sin publicar (se juntaría lo
+// de un trabajo que no terminó y saldría verde lo no medido), o con este trabajo con problemas, sin tiempo, o sin poder
+// leer la lista: en todos esos casos lo tiene que dar el respaldo, y la salida `dado` tiene que decir que no.
+const ELECTION_STEP = '¿Este trabajo da el veredicto?';
+test('PrShards_Verdict_TheLastJobThatPublishesGivesIt_OtherwiseTheFallback', { skip: (!verdictTemplate && 'NO MEDIDO — la validación todavía no trae pipelines/templates/verdict.yml') || NO_BASH }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-verdict-election-'));
+  toys.push(dir);
+  fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'home'), { recursive: true });
+  const curl = path.join(dir, 'bin', 'curl');
+  const answer = (names) => fs.writeFileSync(curl, names === null ? '#!/bin/sh\nexit 22\n'
+    : `#!/bin/sh\nprintf '%s' '${JSON.stringify({ count: names.length, value: names.map((name) => ({ name })) })}'\n`, { mode: 0o755 });
+  const body = expand(stepBody(ELECTION_STEP), {});
+  const now = Math.floor(Date.now() / 1000);
+  const base = { SUITES_OF: '2', SUITES_JOB_MINUTES: '40', SUITES_JOB_STARTED: String(now - 600), AGENT_JOBSTATUS: 'Succeeded',
+    SYSTEM_COLLECTIONURI: 'https://example.invalid/org/', SYSTEM_TEAMPROJECT: 'p', BUILD_BUILDID: '4242', SYSTEM_ACCESSTOKEN: 'x' };
+  const run = (env) => {
+    const r = bash(dir, body, 'eleccion', { ...base, ...env });
+    assert.strictEqual(r.code, 0, `el paso no frena nunca: sólo decide\n${r.out}`);
+    const aca = (r.out.match(/##vso\[task\.setvariable variable=VEREDICTO_ACA\](\w+)/) || [])[1];
+    const dado = (r.out.match(/##vso\[task\.setvariable variable=dado;isOutput=true\](\w+)/) || [])[1];
+    assert.strictEqual(aca, dado, `la variable del trabajo y la salida dicen lo mismo\n${r.out}`);
+    return { aca, out: r.out };
+  };
+  const ALL = ['verdict-kit-a1', 'suites-plan-a1', 'snapshot-a1', 'bench-a1', 'suites-shard-bench-a1', 'suites-shard-1-a1', 'suites-shard-2-a2'];
+  answer(ALL);
+  assert.strictEqual(run({}).aca, 'si', 'todos publicaron (cualquier intento): este trabajo es el último y lo da');
+  for (const missing of ['bench-a1', 'suites-shard-bench-a1', 'suites-shard-2-a2']) {
+    answer(ALL.filter((n) => n !== missing));
+    const r = run({});
+    assert.strictEqual(r.aca, 'no', `falta ${missing}: no lo da`);
+    assert.match(r.out, /todavía no publicaron:/);
+  }
+  answer([...ALL.filter((n) => n !== 'suites-shard-2-a2'), 'suites-shard-2-a1x', 'suites-shard-20-a1']);
+  assert.strictEqual(run({}).aca, 'no', 'un nombre parecido no cuenta como el trabajo 2');
+  answer(ALL);
+  for (const [env, why] of [
+    [{ AGENT_JOBSTATUS: 'SucceededWithIssues' }, 'este trabajo no terminó limpio'],
+    [{ AGENT_JOBSTATUS: 'Failed' }, 'este trabajo no terminó limpio'],
+    [{ SUITES_JOB_STARTED: String(now - 36 * 60) }, 'menos de 5 min'],
+    [{ SUITES_JOB_STARTED: '' }, 'no sé cuánto le queda'],
+    [{ SUITES_OF: '' }, 'no sé cuántos trabajos'],
+    [{ SUITES_OF: 'x' }, 'no sé cuántos trabajos'],
+  ]) {
+    const r = run(env);
+    assert.strictEqual(r.aca, 'no', `${JSON.stringify(env)}: no lo da`);
+    assert.ok(r.out.includes(why), `${JSON.stringify(env)}: dice por qué\n${r.out}`);
+  }
+  answer(null);
+  assert.match(run({}).out, /no pude leer qué publicaron los demás/, 'sin la lista, no lo da');
+  fs.writeFileSync(curl, "#!/bin/sh\nprintf 'no es json'\n", { mode: 0o755 });
+  assert.strictEqual(run({}).aca, 'no', 'una lista ilegible tampoco');
+  // y sus pasos del veredicto corren sólo si este trabajo se eligió; la foto no se baja otra vez
+  for (const step of ['Bajar lo que publicó cada trabajo', 'El árbol que armó Validar', JOIN_STEP]) {
+    assert.ok(verdictTemplate.includes(`displayName: '${step}'\n`) && new RegExp(`displayName: '${step}'\\n(?: {4}continueOnError: true\\n)? {4}\\$\\{\\{ if parameters\\.enTrabajo \\}\\}:\\n {6}condition: and\\(succeeded\\(\\), eq\\(variables\\['VEREDICTO_ACA'\\], 'si'\\)\\)\\n`).test(verdictTemplate), step);
+  }
+  assert.ok(verdictTemplate.includes('- ${{ if not(parameters.enTrabajo) }}:\n    - template: /pipelines/templates/fetch-snapshot.yml\n'), 'la foto la baja sólo el respaldo');
 });
 
 test('PrShards_DocsOnlyChange_SkipsEveryJobButValidateWithoutFailing', () => {
@@ -1921,9 +2007,11 @@ test('T43 Validation_OneSnapshotFourReaders_EveryJobUsesWhatValidarBrought', () 
   const all = jobs();
   // la trae Validar, una vez, y la publica; los otros tres la bajan
   assert.match(all.Validar, /- template: \/pipelines\/templates\/fetch-snapshot\.yml\n\s+parameters:\n\s+step: fetch\n/, 'Validar trae la foto');
-  for (const name of ['Bench', 'Suites', 'Verdict']) {
+  for (const name of ['Bench', 'Suites', ...(verdictTemplate ? [] : ['Verdict'])]) {
     assert.match(all[name], /- template: \/pipelines\/templates\/fetch-snapshot\.yml\n\s+parameters:\n\s+step: download\n/, `${name} baja la que trajo Validar`);
   }
+  // con los pasos del veredicto en su plantilla, la baja la plantilla en el respaldo; el último trabajo ya la bajó
+  if (verdictTemplate) assert.match(verdictTemplate, /- template: \/pipelines\/templates\/fetch-snapshot\.yml\n\s+parameters:\n\s+step: download\n/, 'Verdict baja la que trajo Validar');
   assert.match(snapshotTemplate, /artifact: 'snapshot-a\$\(System\.JobAttempt\)'/, 'se publica con el intento en el nombre');
   const live = (s) => s.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
   // los cuatro lectores: ninguno lee la del checkout ni le pregunta a git
