@@ -43,6 +43,10 @@
  *   6. El nombre del campo del pedido de trabajo: una story que NACE con `ado_work_item:` (el nombre viejo) y sin
  *      `work_item:` recibe un aviso; no frena, y a las que ya existían no se les dice nada (el viejo se sigue leyendo,
  *      scripts/lib/platform/work-item-field.js).
+ *  10. Una tanda `done` con criterios, tareas o pruebas en `acs_pending` / `tasks_pending` / `tests_pending`
+ *      (story-format.md §1.1: esas listas valen en `blocked` o `pending`). La historia dice que terminó y que le falta
+ *      trabajo, y el cierre y los conteos leen cosas distintas. Se dice y no frena (el porqué, en la regla); si el commit
+ *      la introduce, el aviso lo dice aparte. Sin el lector de tandas, no corre y se dice.
  *   9. Las INTENCIONES (`*.intent.md`, y el `intent.md` de una carpeta de corrida si se lo pasan: git ignora esas
  *      carpetas): las lee `lib/intent.js` del pipeline. Cada problema frena, nueva o vieja, con la fila y la columna, y
  *      una intención en `approved` con algo que bloquea también. Sin el lector la regla no corre y se avisa; con el
@@ -165,6 +169,25 @@ try { siblingsOf = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'l
 // los valores de `riesgo_alto_por:` viven con la regla de riesgo (lib/risk-paths.js); sin ella, la regla no corre y se dice
 let riskPaths;
 try { riskPaths = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'risk-paths.js')); } catch { riskPaths = null; }
+// las tandas de `pipelines:` las lee el lector del pipeline (lib/story-checks.js); sin él, la regla 10 no corre y se dice
+let storyChecks;
+try { storyChecks = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'story-checks.js')); } catch { storyChecks = null; }
+
+/** Las tandas `done` que todavía declaran criterios, tareas o pruebas pendientes: `[{ name, cuantos }]`. */
+function tandasDoneConPendientes(content) {
+  if (!storyChecks) return [];
+  return storyChecks.parsePipelinesBlock(content)
+    .filter((p) => p.status === 'done')
+    .map((p) => ({ name: p.name, cuantos: p.acsPending.length + p.tasksPending.length + p.testsPending.length }))
+    .filter((t) => t.cuantos > 0);
+}
+/** El contenido de la historia en el último commit, o null si no estaba (nace ahora) o no se puede saber. */
+function enElUltimoCommit(abs) {
+  try {
+    return execFileSync('git', ['-C', path.dirname(abs), 'show', `HEAD:./${path.basename(abs)}`],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch { return null; }
+}
 // las intenciones las lee lib/intent.js y nadie más. Sin el archivo (un arnés viejo), la regla no corre y se dice a los
 // gritos; con el archivo y sin poder cargarlo, frena: un lector roto no se toma por «sin lector».
 const INTENT_PATH = path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'intent.js');
@@ -662,6 +685,10 @@ function main() {
   const rutasSinJuzgar = [];
   // las historias que NACEN con el nombre viejo del pedido de trabajo: se avisa, no se frena (el viejo se sigue leyendo)
   const campoViejo = [];
+  // las historias que ya traían una tanda done con pendientes: se avisa, no se frena
+  const tandasViejasConPendientes = [];
+  const tandasNuevasConPendientes = [];
+  let sinLectorDeTandas = false;
 
   for (const abs of files) {
     if (!fs.existsSync(abs)) continue; // borrado en el commit
@@ -732,6 +759,23 @@ function main() {
         arreglo: '`files:` con un renglón `- ruta` por archivo, o `files: [a, b]`',
       });
       continue;
+    }
+
+    // 10. Una tanda `done` con pendientes (story-format.md §1.1: `acs_pending` vale en `blocked` o `pending`). Se DICE y
+    //     no frena: el cierre de una tanda (`update-pipeline-status <tanda> done`) no vacía esas listas, y al
+    //     medirlo había 61 historias así en un solo repo; frenar rompería el commit de cierre de cualquier historia. Si este
+    //     commit la introduce (historia nueva, o tanda que no estaba así en el último commit), el aviso lo dice aparte.
+    const contradichas = tandasDoneConPendientes(content);
+    if (contradichas.length) {
+      const antes = enElUltimoCommit(abs);
+      const yaEstaban = new Set(antes === null ? [] : tandasDoneConPendientes(antes).map((t) => t.name));
+      const nuevas = contradichas.filter((t) => !yaEstaban.has(t.name));
+      const texto = (ts) => ts.map((t) => `${t.name} (${t.cuantos})`).join(', ');
+      if (nuevas.length) tandasNuevasConPendientes.push(`${rel}: ${texto(nuevas)}`);
+      const viejas = contradichas.filter((t) => yaEstaban.has(t.name));
+      if (viejas.length) tandasViejasConPendientes.push(`${rel}: ${texto(viejas)}`);
+    } else if (!storyChecks && /^\s+status\s*:\s*["']?done/m.test(content) && /_pending\s*:/.test(content)) {
+      sinLectorDeTandas = true;
     }
 
     // 4. La causa del reproceso. El por qué de cada rama, en la cabecera del archivo.
@@ -819,6 +863,21 @@ function main() {
       `${(vocab.causas || []).join(' · ')} (scripts/metrics/rework-causes.json).`);
   }
 
+  if (tandasNuevasConPendientes.length) {
+    console.log(`⚠️  ESTE COMMIT cierra ${tandasNuevasConPendientes.length === 1 ? 'una tanda' : 'tandas'} en \`done\` con criterios, tareas o pruebas ` +
+      'todavía pendientes: la historia dice que terminó y que le falta trabajo. Si se hizo, pasá los números a `acs` / ' +
+      '`tasks` / `tests` y vaciá los pendientes; si no, la tanda va en `blocked` o `pending` (story-format.md §1.1):');
+    for (const r of tandasNuevasConPendientes) console.log(`   ${r}`);
+  }
+  if (tandasViejasConPendientes.length) {
+    console.log(`⚠️  ${tandasViejasConPendientes.length} story(s) que ya lo traían tienen una tanda \`done\` con pendientes ` +
+      '(no frenan; si se hizo, pasá los números a `acs` / `tasks` / `tests`, y si no, la tanda va en `blocked` o `pending`):');
+    for (const r of tandasViejasConPendientes) console.log(`   ${r}`);
+  }
+  if (sinLectorDeTandas) {
+    console.error('⚠️  no encontré el lector de tandas (lib/story-checks.js del skill tycon-pipeline): las tandas `done` con ' +
+      'pendientes no se revisaron. Es un hueco declarado, no un OK.');
+  }
   if (rutasViejas.length) {
     console.log(`⚠️  ${rutasViejas.length} story(s) que ya existían nombran en \`files_to_modify:\` archivos que no están ` +
       '(no frenan: pudieron moverse después):');
