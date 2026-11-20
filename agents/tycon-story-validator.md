@@ -2,7 +2,7 @@
 name: tycon-story-validator
 tools: Read, Grep, Glob, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_callers, mcp__codegraph__codegraph_node
 model: sonnet
-description: Valida stories antes de implementar y re-valida post-build (deferrals abiertos). Usar antes de bmad-dev-story, al validar con tycon-create-story, o si piden validar esta story
+description: Valida stories antes de implementar y re-valida post-build (deferrals abiertos). Usar antes de «Implementar» del pipeline, al validar con tycon-create-story, o si piden validar esta story
 omitClaudeMd: true
 ---
 
@@ -10,7 +10,7 @@ omitClaudeMd: true
 
 **Phase**: pre
 **Severity**: WARNING (default) / CRITICAL (si archivo referenciado no existe)
-**Status**: ACTIVO — gate del pipeline («Validar la historia» pre-BMAD + Revisores post-impl). CRITICAL bloquea, WARNING pausa para decisión del dev (ver tycon-pipeline regla C.i).
+**Status**: ACTIVO — gate del pipeline («Validar la historia» antes de implementar + Revisores post-impl). CRITICAL bloquea, WARNING pausa para decisión del dev (ver tycon-pipeline regla C.i).
 **Tier**: Core (no excluible del pipeline YAML)
 
 ## Qué valida
@@ -215,7 +215,7 @@ sobre una story limpia para decir que el archivo existe).
 Core advisor. Corre en **tres momentos** del `tycon-pipeline`: «Validar la historia» (antes de implementar), la vuelta 1 de Revisores (después de implementar) y los re-loops de Revisores **hasta que devuelve dos veredictos limpios seguidos después de implementar** — desde ahí `pipeline.js` no lo relanza en esa corrida (deja la línea `validador-reloop` en `gates.log`), salvo que los chequeos sin modelo de VAL-C5/VAL-C6 encuentren algo o no se puedan leer los veredictos (medición del 2026-09-17: después de dos veredictos limpios, 2 hallazgos nuevos en 24 lanzamientos, ninguno bloqueante). Por eso **el renglón `Veredicto:` del final del informe no es opcional**: es lo que el pipeline lee.
 
 ### Validar la historia — pre-implementación (validación de spec)
-Se ejecuta antes de `bmad-dev-story`/`bmad-create-architecture`/cualquier skill que vaya a implementar. Chequea VAL-C1, VAL-C2, VAL-C3, **VAL-C8**, **VAL-C9** + VAL-W1..W6, **VAL-W17** (lo que el código ya hace) y **VAL-W19** (tandas que comparten archivos). **NO chequea VAL-C5** (no hay código aún). VAL-C8 bloquea las stories de backend que no nacen con el patrón de referencia hermano verificado — gate cross-proyecto en la validación de la story, no opcional.
+Se ejecuta antes de «Implementar» del pipeline, o de cualquier otro camino que vaya a implementar la historia. Chequea VAL-C1, VAL-C2, VAL-C3, **VAL-C8**, **VAL-C9** + VAL-W1..W6, **VAL-W17** (lo que el código ya hace) y **VAL-W19** (tandas que comparten archivos). **NO chequea VAL-C5** (no hay código aún). VAL-C8 bloquea las stories de backend que no nacen con el patrón de referencia hermano verificado — gate cross-proyecto en la validación de la story, no opcional.
 
 ### Revisores — post-implementación (Gate 1 del DoD)
 Re-ejecuta el validator después del build gate («Implementar») y junto con los advisors paralelos. Chequea **VAL-C5** explícitamente: escanea archivos modificados/creados por la implementación buscando `TODO(Story-{N}-deferral)` y patterns equivalentes.

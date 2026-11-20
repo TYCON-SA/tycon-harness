@@ -613,11 +613,26 @@ function deLaSalidaPerdida(palabras, cwd, estado, destino) {
   return { queHace: [linea], fuente: linea };
 }
 
+/**
+ * El pedido de alguien de afuera: el autor, el número, el título y cuántos archivos toca, preguntados a GitHub
+ * (external-pr.js). Lo que se preguntó entra en la fuente: un click dado a otro pedido, u otro título, no se toma.
+ */
+function delPedidoDeAfuera(palabras, cwd, casa) {
+  if (!palabras) return { error: 'el pedido de afuera no se lee entero: no hay cuadro' };
+  const E = require('./external-pr.js');
+  // las palabras vuelven a un comando con comillas simples donde hacen falta (una consulta de GraphQL lleva espacios)
+  const comando = palabras.map((w) => (/^[\w@%+=:,./-]+$/.test(String(w)) ? String(w) : `'${String(w).replace(/'/g, "'\\''")}'`)).join(' ');
+  const r = E.decidir(comando, { cwd, home: casa });
+  if (!r || !r.firmas) return { error: (r && r.frena) || 'el comando no encola ni mergea un pedido de afuera' };
+  return { que: 'encolar o mergear un pedido de alguien de afuera del equipo', queHace: r.firmas, fuente: r.firmas.join('\n') };
+}
+
 function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes, casa } = {}) {
   if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd, palabras);
   if (firma === 'escape:rojo-esperado-de-la-matriz') return delRojoEsperado(palabras, marcador);
   // volver al modo autónomo: el cuadro sale de la detención que el control de cierre anotó en el marcador de la sesión
   if (firma === 'autonomy-resume') return require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'autonomy-decision.js')).partes(marcador, { casa, sesion: destino });
+  if (firma === 'escape:external-pr') return delPedidoDeAfuera(palabras, cwd, casa);
   if (!palabras) return null;
   if (firma === 'plan-approval') return delPlan(palabras, marcador, { estado, destino });
   if (firma === 'control-change' || firma === 'refresh-after-main') return deControles(palabras, cwd, estado);

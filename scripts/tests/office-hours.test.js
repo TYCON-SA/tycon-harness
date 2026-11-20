@@ -692,3 +692,33 @@ test('T322 Office_MismaSesionOtraHora_AtrasoContraLoPrometido @story-8.234 @ac-8
   assert.strictEqual(a.fin.cls, 'late');
   assert.match(a.fin.dif, /tarde$/);
 });
+
+test('T323 Stopped_WaitingForBackgroundTask: la sesión de una persona que espera una tarea de fondo no espera a su persona', () => {
+  const idle = { status: 'idle', statusAt: NOW - 600000 };
+  const late = { kind: 'loose', text: 'la tanda', endAt: NOW - 1800000, hourAt: NOW - 7200000, promiseAt: NOW - 7200000 };
+  const said = new Map([['p', { encargo: 'la tanda', haciendoAhora: null, fondoPendiente: 2 }], ['q', { encargo: 'otra', haciendoAhora: null, fondoPendiente: 0 }]]);
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Fondo', sid: 'p', ...idle, extra: late }, { session: 'Persona', sid: 'q', ...idle, extra: late }]),
+    personSessions: new Set(['p', 'q']),
+    transcripts: said,
+    nowMs: NOW,
+  });
+  const f = byName(data, 'Fondo');
+  assert.strictEqual(f.fin.hora, 'espera 2 tareas de fondo');
+  assert.doesNotMatch(JSON.stringify(f), /espera a su persona/);
+  assert.strictEqual(byName(data, 'Persona').fin.hora, 'espera a su persona');
+});
+
+// Con una corrida abierta, la conversación no es la tarjeta, pero las tareas de fondo que espera sí se leen (backgroundTasks).
+test('T323b Stopped_WithOpenRun_WaitingForBackgroundTask: también con una corrida o un camino corto abiertos', () => {
+  const idle = { status: 'idle', statusAt: NOW - 600000 };
+  const run = { kind: 'adhoc', text: 'el arreglo', endAt: NOW - 1800000, hourAt: NOW - 7200000, promiseAt: NOW - 7200000 };
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Carril', sid: 'c', ...idle, extra: run }]),
+    personSessions: new Set(['c']),
+    transcripts: new Map(),
+    backgroundTasks: new Map([['c', 1]]),
+    nowMs: NOW,
+  });
+  assert.strictEqual(byName(data, 'Carril').fin.hora, 'espera una tarea de fondo');
+});

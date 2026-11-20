@@ -462,6 +462,28 @@ test('T229 OpenPrs_FromThePhoto: «Esperan entrar» cuenta los pedidos reales, d
   assert.match(col(await read(), 'entrando').nota, /no se midieron/, 'sin foto, tampoco');
 });
 
+// La tarjeta va en una línea con puntos al final: lo que va al final de un título largo no se ve. Cuántas firmas esperan
+// va al principio, donde se ve siempre; el renglón de la pared, que no se corta, sigue diciendo «y N más».
+test('Office_FirmasDeUnaSesion_CuantasVaDelante @DEF-8.248-tarjeta-y-mas', () => {
+  const largo = 'marcar como probado a mano el criterio de la pantalla de la estación con su detalle completo';
+  const fila = (title, extra = {}) => ({ tipo: 'firma', id: `f-${title}`, firma: 'manual-test', destino: 'b', title, at: NOW - 60000, ...extra });
+  let { data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
+    signatures: [fila(largo), fila('otro criterio', { at: NOW }), fila('un tercero', { at: NOW })], nowMs: NOW });
+  assert.deepStrictEqual(titles(data, 'firma'), [`Firmas (3): ${largo}`], 'cuántas esperan, antes del título');
+  assert.match(data.meta.teToca[0], / y 2 más \(Bruno\)$/, 'la pared sigue diciendo cuántas más');
+  // una sola: como siempre
+  ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
+    signatures: [fila(largo)], nowMs: NOW }));
+  assert.deepStrictEqual(titles(data, 'firma'), [`Firma: ${largo}`]);
+  // varios permisos de una sesión: el número delante, sin «Firma»
+  ({ data } = buildOffice({ wip: wip([]), signatures: [{ tipo: 'permiso', id: 'p1', destino: 'c', nombre: 'Ciro', title: 'Permiso: Bash', at: NOW }, { tipo: 'permiso', id: 'p2', destino: 'c', nombre: 'Ciro', title: 'Permiso: Edit', at: NOW }], nowMs: NOW }));
+  assert.deepStrictEqual(titles(data, 'firma'), ['(2) Permiso: Bash']);
+  // las aprobadas que esperan que la sesión las repita, igual
+  ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
+    signatures: [fila(largo, { aprobada: true }), fila('otro criterio', { aprobada: true, at: NOW })], nowMs: NOW }));
+  assert.deepStrictEqual(col(data, 'curso').tarjetas.filter((c) => /^Firmas? /.test(c.titulo)).map((c) => c.titulo), [`Firmas (2): ${largo}`]);
+});
+
 test('Office_UnaTarjetaPorSesion (T8) — @story-8.153 @ac-8: un renglón de la lista de firmas no duplica la tarjeta de su sesión', () => {
   const fila = (destino, title, extra = {}) => ({ tipo: 'firma', id: `f-${destino}-${title}`, destino, title, at: NOW - 60000, ...extra });
   // la sesión ya esperando la firma: una sola tarjeta, la suya
@@ -477,7 +499,7 @@ test('Office_UnaTarjetaPorSesion (T8) — @story-8.153 @ac-8: un renglón de la 
   ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
     signatures: [fila('b', 'marcar un criterio'), fila('b', 'otro criterio')], nowMs: NOW }));
   assert.deepStrictEqual(titles(data, 'curso'), ['Lo de Bruno']);
-  assert.deepStrictEqual(titles(data, 'firma'), ['Firma: marcar un criterio y 1 más'], 'una por sesión');
+  assert.deepStrictEqual(titles(data, 'firma'), ['Firmas (2): marcar un criterio'], 'una por sesión, con cuántas esperan delante');
   assert.strictEqual(col(data, 'firma').tarjetas[0].quien, 'Bruno');
   assert.strictEqual(data.meta.teToca.length, col(data, 'firma').tarjetas.length, 'coincide con la columna');
 
@@ -871,7 +893,7 @@ test('T14 Office_FirmaAprobadaSinRepetir_EsperaALaSesion @story-8.234 @ac-14: la
   // dos aprobadas de la misma sesión: una tarjeta, con la más vieja y cuántas más
   ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
     signatures: [firmaDe('b', 'marcar un criterio', { aprobada: true }), firmaDe('b', 'otro criterio', { aprobada: true, at: NOW })], nowMs: NOW }));
-  assert.deepStrictEqual(col(data, 'curso').tarjetas.filter((c) => /^Firma: /.test(c.titulo)).map((c) => c.titulo), ['Firma: marcar un criterio y 1 más']);
+  assert.deepStrictEqual(col(data, 'curso').tarjetas.filter((c) => /^Firmas? /.test(c.titulo)).map((c) => c.titulo), ['Firmas (2): marcar un criterio']);
 
   // caso 5b: el guardado aprobado (firma `save`) deja de pedir el ok de guardar, igual que el plan
   ({ data } = buildOffice({ wip: wip([{ session: 'Eva', sid: 'e', status: 'idle', extra: { kind: 'finished', title: 'Lo de Eva' } }]),

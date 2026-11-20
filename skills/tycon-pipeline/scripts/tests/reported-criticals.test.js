@@ -942,3 +942,47 @@ test('Renglones_SinReporte_DiceSiYaSeLePidio @story-8.296 @ac-8', () => {
   assert.ok(eximir > pedir, `la exención va después de cómo pedírselo: ${t2}`);
   assert.match(t2, /sólo el renglón de veredicto/);
 });
+
+// ── T-advisor-runs ─────────────────────────────────────────────────────────────────────────────────────────────────
+// El registro de corridas de los revisores (`<estado>/advisor-runs/<sesión>.jsonl`, lo escribe el gancho del lanzamiento)
+// es la otra mitad de la evidencia: el cierre lo usa para ver salidas de revisores que no quedaron en el registro de
+// críticos. Borrarlo apagaba ese control y dejaba saltear revisores.
+test('AdvisorRuns_RegistryProtected — el freno de escritura no deja tocar el registro de corridas de revisores', () => {
+  const l = lab();
+  const runs = path.join(l.state, 'advisor-runs', `${SID}.jsonl`);
+  fs.mkdirSync(path.dirname(runs), { recursive: true });
+  fs.writeFileSync(runs, '{"agent":"tycon-plugin-security-basics"}\n');
+  const comandos = [`rm ${runs}`, `rm -rf ${path.dirname(runs)}`, `echo '{}' > ${runs}`, `sed -i '' 's/security/x/' ${runs}`, `mv ${runs} ${path.join(l.base, 'x.jsonl')}`];
+  for (const cmd of comandos) {
+    const r = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: cmd } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+    const dijo = out(r);
+    assert.ok(r.status === 2 || /"permissionDecision"\s*:\s*"deny"|"decision"\s*:\s*"block"/.test(dijo), `no frenó: ${cmd}\n${dijo}`);
+    // la escritura en el lugar la frena antes el freno general del estado, con su propio mensaje
+    assert.match(dijo, /registro de corridas de los revisores|estado del pipeline/i, `el mensaje dice qué se protege: ${cmd}`);
+  }
+  assert.ok(fs.existsSync(runs), 'el registro ya no está');
+  const sg = require(path.join(SCRIPTS, 'lib', 'story-gate.js'));
+  assert.equal(sg.signedRecordKind(runs), 'advisor-runs');
+  // leerlo sigue permitido
+  const r = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: `cat ${runs}` } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+  assert.ok(r.status === 0 && !/"deny"|"block"/.test(out(r)), `leer se frenó: ${out(r)}`);
+  // el subcomando `pipeline.js advisor-runs` no es una ruta: con un cd y un borrado de otra cosa, pasa
+  const sub = `cd ${l.repo} && node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js advisor-runs --session x && rm -rf ${path.join(l.base, 'otra')}`;
+  const r2 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: sub } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+  assert.doesNotMatch(out(r2), /registro de corridas de los revisores/, `el subcomando se frenó: ${out(r2)}`);
+  // con opciones de node antes del guion, o con la ruta entre comillas por un espacio, sigue siendo el subcomando
+  for (const leer of ['node --no-warnings ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js', `node "${path.join(l.base, 'Nombre Apellido', 'pipeline.js')}"`]) {
+    const c2 = `cd ${l.repo} && ${leer} advisor-runs --session x && rm -rf ${path.join(l.base, 'otra')}`;
+    const r5 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: c2 } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+    assert.doesNotMatch(out(r5), /registro de corridas de los revisores/, `el subcomando se frenó: ${c2}`);
+  }
+  // pero la carpeta por su nombre, después de entrar al estado, sí
+  const rel = `cd ${l.state} && rm -rf advisor-runs`;
+  const r3 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: rel } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+  assert.ok(r3.status === 2 || /"deny"|"block"/.test(out(r3)), `no frenó: ${rel}`);
+  // un `pipeline.js` que no corre node no es el subcomando: `rm pipeline.js advisor-runs` borra la carpeta
+  for (const cmd of [`cd ${l.state} && rm -rf pipeline.js advisor-runs`, `cd ${l.state} && mv ./pipeline.js advisor-runs /tmp/x`]) {
+    const r4 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: cmd } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+    assert.ok(r4.status === 2 || /"deny"|"block"/.test(out(r4)), `no frenó: ${cmd}`);
+  }
+});

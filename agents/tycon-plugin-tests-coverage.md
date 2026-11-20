@@ -119,7 +119,7 @@ omitClaudeMd: true
 - NO ejecuta tests ni coverage (Bash removido del frontmatter 2026-06-09) — LEE el artefacto de test-gate.sh. Correr la suite acá duplicaba la corrida de «Correr las pruebas» dentro del fan-out paralelo.
 - NO promueve a CRITICAL aunque coverage sea 0% en **archivo existente** (solo cuando es método nuevo sin cobertura — TEST-C2 es específico).
 - NO reescribe tests faltantes.
-- NO sugiere qué test escribir — eso es trabajo del `bmad-dev-story`.
+- NO sugiere qué test escribir — eso es trabajo de «Implementar», en el pipeline.
 - NO corre tests de performance.
 - NO emite findings sin rule ID.
 

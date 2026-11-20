@@ -8253,7 +8253,7 @@ function cmdAdhoc(sub, payloadJson) {
       process.exit(3);
     }
     // suman los de implementación: la lista cruda trae también pruebas y sondas de la consola
-    const tocados = actual ? io.archivosQueSuman(actual.files || []).length : 0;
+    const tocados = actual ? io.archivosQueSuman(actual.files || [], actual).length : 0;
     if (actual && payload.maxFiles !== undefined && payload.maxFiles < tocados) {
       console.error(`marker.js adhoc set: el arreglo rápido de la sesión ${destino} ya tocó ${tocados} archivos: un tope de ${payload.maxFiles} lo dejaría trabado. Pedí ${tocados} o más, o cerralo con \`adhoc clear\` y abrí uno nuevo.`);
       process.exit(2);

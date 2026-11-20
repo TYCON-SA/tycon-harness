@@ -254,6 +254,31 @@ function desenvolver(linea, casa) {
   return partes.join("'");
 }
 
+/**
+ * ¿La línea es una consola de la herramienta con una forma que `desenvolver` no reconoce? zsh o bash con `-c` y una de las
+ * marcas que deja toda envoltura medida: la foto del ambiente o el `pwd -P` al temporal de la herramienta. Es lo que se ve
+ * cuando la herramienta cambia la forma de su consola: sin decirlo, el click del dueño se gasta y el freno deja de ver las
+ * consolas de fondo sin que nadie lo sepa.
+ */
+function consolaDesconocida(linea, casa) {
+  const l = String(linea || '');
+  if (!/^(?:\/[\w.+-]+)*\/(?:zsh|bash) -c /.test(l)) return false;
+  if (!/\/\.claude\/shell-snapshots\/snapshot-|pwd -P >\| (?:\/private)?\/tmp\/claude-[0-9a-f]+-cwd/.test(l)) return false;
+  return desenvolver(l, casa) === null;
+}
+
+/**
+ * Deja dicho en hook-errors.log que la herramienta cambió la forma de su consola, con la marca que cuenta el aviso de
+ * arranque (hook-failures-notice.js): FAILED CLOSED si un click no valió, FAILED OPEN si el freno no ve una consola. Sin
+ * la línea de comando: puede llevar lo que la persona escribió.
+ */
+function avisarConsolaDesconocida(casa, marca, efecto, ahora = Date.now()) {
+  try {
+    const dir = stateDir(casa === undefined ? casaDeLaCuenta() : casa);
+    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date(ahora).toISOString()}] owner-window ${marca}: la herramienta cambió la forma de su consola y el arnés no la reconoce: ${efecto}. Hay que medir la forma nueva en desenvolver (scripts/lib/owner-window.js)\n`);
+  } catch (_) { /* sin registro tampoco */ }
+}
+
 // El owner-wait de esta misma copia del arnés: el que corre el freno, no otra copia con el mismo nombre
 const COORDINACION = path.join(__dirname, '..', 'tools', 'coordination.js');
 const real = (ruta) => { try { return fs.realpathSync(ruta); } catch (_) { return null; } };
@@ -690,6 +715,12 @@ function mergeALaVista(comando) {
   try { hs = require('./ci-bypass.js').leer(comando); } catch (_) { return false; }
   return hs.length > 0 && hs.every((h) => h.legible);
 }
+// encolar o mergear un pedido de alguien de afuera del equipo (regla GIT-C7): la pide el freno, no un guion
+const PEDIDO_DE_AFUERA = 'escape:external-pr';
+/** ¿El comando trae sus pedidos enteros a la vista? Lo decide el mismo lector que el freno. */
+function pedidoDeAfueraALaVista(comando) {
+  try { return require('./external-pr.js').aLaVista(comando); } catch (_) { return false; }
+}
 /**
  * El renglón del registro común de firmas cuando la persona aprobó con un click o un «aprobado». Con la ventana no hay
  * renglón: el freno no ve el Sí. Si no se puede escribir, la firma ya se dio: avisa por el registro de fallos del freno.
@@ -939,7 +970,7 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   const fuentes = require('./signature-sources.js');
   // un escape no trae las palabras de un guion de firma; el rojo esperado de la matriz las necesita para mostrar sus
   // criterios, y las lee del comando sin envolturas (envuelto, la fuente no tiene qué mostrar y no hay cuadro)
-  const palabrasDeLaFuente = palabras || (firma === 'escape:rojo-esperado-de-la-matriz' ? canonica(comando) : null);
+  const palabrasDeLaFuente = palabras || (firma === 'escape:rojo-esperado-de-la-matriz' || firma === PEDIDO_DE_AFUERA ? canonica(comando) : null);
   // el cuadro dice el tope con la misma lectura que usa el freno para decidir
   let partes = fuentes.partesDe({ firma, palabras: palabrasDeLaFuente, cwd, marcador: m, estado: casa === undefined ? null : stateDir(casa), destino, topes: topesDelCaminoCorto(casa), casa });
   // una fuente que dice que no hay nada que firmar: sin cuadro, el pedido se niega
@@ -1465,6 +1496,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     const s = firmaDe(id);
     const porVariable = /^[A-Za-z_]\w*=\S+ <comando>$/.test(s.command);
     const aLaVista = id === MERGE_BYPASS ? mergeALaVista(comando)
+      : id === PEDIDO_DE_AFUERA ? pedidoDeAfueraALaVista(comando)
       : porVariable ? variableALaVista(nombre, s.command.split('=')[1].split(' ')[0], comando) : nombreALaVista(comando);
     if (!aLaVista) return negar(`el escape ${nombre} viene escondido (un nombre armado, env, export o una envoltura)`, pedidas);
   }
@@ -1491,6 +1523,10 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   const i = arriba.findIndex(esHerramienta);
   if (i < 0) return negar('no encontré el proceso de la herramienta', pendientes);
   const tool = arriba[i];
+  // una consola de la herramienta que no se reconoce no cuenta como consola: el freno no la ve, y eso se anota
+  if (!enWindows && [...arriba.slice(i + 1), ...arbol.filter((p) => p.ppid === tool.pid)].some((p) => consolaDesconocida(p.comando, casa))) {
+    avisarConsolaDesconocida(casa, 'FAILED OPEN', 'el freno de firmas no ve esa consola (ni las de fondo ni las de un agente)', ahora);
+  }
   // una sesión de fondo (`claude --bg`) corre debajo de sus anfitriones (el daemon y la terminal virtual): no son otra
   // herramienta, pero la ventana de permiso no le llega a nadie seguro. Ahí sólo vale la aprobación explícita
   const esConsola = (p) => (enWindows ? esConsolaDeWindows(p) : desenvolver(p.comando, casa) !== null);
@@ -1862,6 +1898,10 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
   } else {
     const consola = yo && m.get(yo.ppid);
     comando = consola ? desenvolver(consola.comando, casa) : null;
+    if (comando === null && consola && consolaDesconocida(consola.comando, casa)) {
+      avisarConsolaDesconocida(casa, 'FAILED CLOSED', 'el click del dueño no valió', ahora);
+      return no('la herramienta cambió la forma de su consola y el arnés no la reconoce (quedó anotado para quien lo mantiene), así que este click no vale');
+    }
     if (comando === null) return no('el guion no lo lanzó la consola de la herramienta');
     tool = m.get(consola.ppid);
     if (!tool || !esHerramienta(tool)) return no('la consola no es de la herramienta');

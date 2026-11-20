@@ -943,3 +943,17 @@ test('SaveBrake_Chdir_Sigue_YFallaDeGitVaAFallas — la carpeta de la sesión @s
     raiz: () => { throw new Error('git roto'); }, ubicarRuta: () => ({ falla: 'git roto' }) });
   assert.strictEqual(tira.fallas.length, 1, JSON.stringify(tira));
 });
+
+// Un laboratorio (un `git init` de prueba en una carpeta temporal, sin `origin`) tocado durante un camino corto no suma al
+// tope tampoco en el freno de guardar: el mismo juez que la cuenta al editar (juezDeLaboratorios).
+test('CuentaDelCarril_LaboratorioEnTemporal_NoSuma', (t) => {
+  const d = repoConOrigin(t);
+  const lab = repoSolo(t, 'lab');
+  escribir(lab, 'src/sonda.js');
+  const h = home(t);
+  carril(h, { cwd: d, bases: { [d]: baseDe(d) }, files: [path.join(lab, 'src', 'sonda.js')] });
+  const cuenta = (temporales) => base().cuentaDelCarril(leerCarril(h), { temporales }).archivos.map((f) => path.basename(f));
+  assert.deepStrictEqual(cuenta([]), ['sonda.js'], 'fuera de los temporales: es un repo del carril y suma');
+  assert.deepStrictEqual(cuenta([fs.realpathSync(lab)]), [],
+    'en un temporal, sin origin, con el carril fuera: no suma');
+});

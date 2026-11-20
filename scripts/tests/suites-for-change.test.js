@@ -1065,11 +1065,12 @@ function groupRepo() {
   }));
   return dir;
 }
-function groupPlan(dir, changed, { alone = true } = {}) {
+function groupPlan(dir, changed, { alone = true, direct = false } = {}) {
   const args = [path.join(dir, 'scripts', 'ci', 'suites-for-change.js'), '--suites', path.join(dir, 'scripts', 'tests', 'suites.json'),
     '--scripts', path.join(dir, 'scripts'), '--skills', SKILLS, '--heavy', path.join(dir, 'scripts', 'ci', 'heavy-suites.json')];
   if (changed) { fs.writeFileSync(path.join(dir, 'changed.txt'), `${changed.join('\n')}\n`); args.push('--changed', path.join(dir, 'changed.txt')); }
   if (alone) args.push('--groups-alone');
+  if (direct) args.push('--direct', '--changed-with-docs', path.join(dir, 'changed.txt'));
   const r = spawnSync(process.execPath, args, { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stderr);
   const lines = r.stdout.split('\n');
@@ -1284,4 +1285,22 @@ test('T11 GroupCriterion_Incluye @story-8.299 @ac-2 — incluye dice si una suit
   assert.equal(crit.skips('other.test.sh', ['lib/x.js']), false, 'fuera del grupo nunca se difiere por el grupo');
   assert.equal(crit.skips('i.test.sh', ['lib/x.js']), true, 'del grupo y sin tocar el instalador: se difiere');
   assert.equal(crit.skips('i.test.sh', ['installer/x.sh']), false, 'del grupo y con el instalador tocado: corre');
+});
+
+// 🔴 Falla con: un cambio en el pipeline o en cómo corren las pruebas (el «corre todo» de --direct) que arrastra a las
+//    suites del laboratorio del instalador aunque no toque el instalador: ~115 de los 325 minutos de la validación 170.
+//    El grupo se elige por sus patrones; sólo tocar su propio criterio (heavy-suites.json o este selector) lo corre.
+test('SuitesForChange_Direct_CorreTodo_ElGrupoDelInstaladorSoloSiLoToca', { skip: NO_RULE }, () => {
+  const dir = groupRepo();
+  const plan = (changed) => groupPlan(dir, changed, { alone: false, direct: true });
+  for (const f of ['pipelines/templates/run-suites.yml', 'pipelines/azure-pipelines-maintainers-pr.yml', '.githooks/pre-commit']) {
+    const p = plan([f]);
+    assert.match(p.err, /corre todo/, `${f} sigue corriendo todo lo demás`);
+    assert.ok(p.run.includes('fast.test.js') && p.run.includes('pub.test.sh'), `${f}: lo demás corre\n${p.skip.join('\n')}`);
+    assert.match(p.skip.join('\n'), /^SKIP\tinst\.test\.sh\t/m, `${f}: el grupo del instalador va a la noche\n${p.err}`);
+  }
+  for (const f of ['scripts/setup/a.sh', 'scripts/tests/inst.test.sh', 'scripts/ci/heavy-suites.json', 'scripts/ci/suites-for-change.js']) {
+    assert.ok(plan(['pipelines/templates/run-suites.yml', f]).run.includes('inst.test.sh'), `tocar ${f} corre el grupo`);
+  }
+  assert.ok(groupPlan(dir, null, { alone: false, direct: true }).run.includes('inst.test.sh'), 'sin lista de cambios, corre');
 });

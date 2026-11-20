@@ -485,3 +485,32 @@ test('T246 CoverSecrets: tapa las claves y deja las rutas, los pedidos y las hor
   write(file, [person(`Te paso ${key}.`, 3), said('Listo.', 2), turnEnd(2), peer('Bruno', `El token: ${key}`, 1)]);
   assert.ok(!JSON.stringify(readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true })).includes(key));
 });
+
+// Una sesión parada puede estar esperando una tarea que lanzó de fondo, no a su persona: la oficina lo confundía y le
+// avisaba al dueño que alguien lo esperaba. La conversación lo dice: los datos del resultado de la herramienta traen el id
+// de la tarea lanzada (una orden de consola, un flujo o un agente de fondo), y su aviso de fin llega como un mensaje o,
+// si la sesión estaba trabajando, encolado. Un texto que sólo cita un lanzamiento (un grep, un Read) no lanza nada.
+test('T323 Transcript_BackgroundTasksStillRunning: cuenta las tareas de fondo lanzadas que no avisaron que terminaron', () => {
+  const file = path.join(dir(), 's.jsonl');
+  const result = (text, data, min) => ({ type: 'user', isSidechain: false, timestamp: at(min), message: { role: 'user', content: [{ type: 'tool_result', content: text }] }, toolUseResult: data });
+  const aviso = (id, status) => `<task-notification>\n<task-id>${id}</task-id>\n<status>${status}</status>\n</task-notification>`;
+  write(file, [
+    human('el encargo', 40),
+    result('Command running in background with ID: aaa111.', { backgroundTaskId: 'aaa111' }, 30),
+    result('Workflow launched in background. Task ID: bbb222', { status: 'async_launched', taskId: 'bbb222' }, 29),
+    result('Command was moved to the background (ID: ccc333).', { backgroundTaskId: 'ccc333' }, 28),
+    result('Command running in background with ID: ddd444.', { backgroundTaskId: 'ddd444' }, 27),
+    result('Async agent launched successfully.\nagentId: fff666', { status: 'async_launched', agentId: 'fff666' }, 26),
+    result('Async agent launched successfully.\nagentId: ggg777', { status: 'async_launched', agentId: 'ggg777' }, 25),
+    human(aviso('aaa111', 'completed'), 20),
+    result('Successfully stopped task: ddd444 (until …)', {}, 19),
+    // terminó mientras la sesión trabajaba: el aviso queda encolado, no como mensaje
+    { type: 'queue-operation', operation: 'enqueue', timestamp: at(18), content: aviso('ggg777', 'completed') },
+    // un grep o un Read que cita un lanzamiento no lanza nada, ni un texto del asistente
+    result('log.txt:3: Command running in background with ID: hhh888', { stdout: '' }, 12),
+    said('Lancé de fondo: Command running in background with ID: eee555', 10),
+  ]);
+  assert.strictEqual(readTranscript(file).fondoPendiente, 3, 'quedan bbb222, ccc333 y el agente fff666');
+  write(file, [human('el encargo', 40), said('listo', 5)]);
+  assert.strictEqual(readTranscript(file).fondoPendiente, 0);
+});
