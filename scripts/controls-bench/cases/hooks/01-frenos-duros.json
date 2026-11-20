@@ -5294,6 +5294,344 @@
           "expect": {
             "exit": 0
           }
+        },
+        {
+          "id": "git-c6-block-reset-hard-con-cambios",
+          "type": "must-block",
+          "_por_que": "🔴 EL CASO (riesgo 39): git reset --hard borraba sin aviso los cambios sin commitear de la copia, que pueden ser de otra sesión o de la persona.",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git reset --hard"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-reset-hard-a-un-commit",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git reset --hard HEAD~0"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-reset-hard-tras-cd",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd ${FIXTURE}/r && git reset --hard"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-reset-hard-con-dash-c",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -C r reset --hard"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-stash-con-cambios",
+          "type": "must-block",
+          "_por_que": "git stash esconde los cambios en la pila que comparten todas las copias del repo, donde otra sesión los puede sacar o tirar.",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-stash-push-con-mensaje",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash push -m mio"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-stash-u-con-un-archivo-nuevo",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo nuevo > r/b.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash -u"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-stash-clear-con-la-pila-llena",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt && git -c user.name=t -c user.email=t@t -C r stash -q"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash clear"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-stash-drop-sin-decir-cual",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt && git -c user.name=t -c user.email=t@t -C r stash -q"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash drop"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-pass-reset-hard-en-copia-limpia",
+          "type": "must-not-block",
+          "_por_que": "Sin nada que perder no frena: la copia limpia.",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git reset --hard"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "git-c6-pass-stash-en-copia-limpia",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "git-c6-pass-stash-u-sin-archivos-nuevos",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash -u"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "git-c6-pass-stash-que-nombra-sus-archivos",
+          "type": "must-not-block",
+          "_por_que": "Esconde sólo lo que nombra: la forma segura para lo propio.",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash push -m mio -- a.txt"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "git-c6-pass-stash-drop-que-dice-cual",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt && git -c user.name=t -c user.email=t@t -C r stash -q"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash drop stash@{0}"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "git-c6-pass-stash-clear-con-la-pila-vacia",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash clear"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "git-c6-pass-reset-mixto",
+          "type": "must-not-block",
+          "_por_que": "Un reset sin --hard no borra el trabajo.",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git reset HEAD a.txt"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "git-c6-pass-stash-list",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash list"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "git-c6-pass-reset-hard-fuera-de-un-repo",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p r"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git reset --hard"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
         }
       ]
     },
