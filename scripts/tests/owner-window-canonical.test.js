@@ -222,3 +222,84 @@ test('T24 Click_SelloDeAntes_NoSeToma_YLaGuiaLoDice @story-8.296 @ac-21', (t) =>
   assert.match(guia, /forma canónica/);
   assert.match(guia, /al actualizar[^.]*(una vez más|otra vez)/);
 });
+
+// ── el arreglo rápido de varios repos (8.316) ───────────────────────────────────────────────────────────────────────
+
+/** R, B y F al lado, con remoto local y `origin/HEAD`, declarados entre los tres en la rama principal del remoto. */
+function tresRepos(t, nombre) {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `${nombre}-`)));
+  t.after(() => fs.rmSync(raiz, { recursive: true, force: true }));
+  const g = (dir, ...a) => {
+    const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'x', GIT_AUTHOR_EMAIL: 'x@example.com', GIT_COMMITTER_NAME: 'x', GIT_COMMITTER_EMAIL: 'x@example.com' } });
+    if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`);
+  };
+  const grupo = { R: ['B', 'F'], B: ['R', 'F'], F: ['R', 'B'] };
+  const repos = {};
+  for (const n of ['R', 'B', 'F']) {
+    const origen = path.join(raiz, `${n}.git`);
+    const dir = path.join(raiz, n);
+    spawnSync('git', ['init', '-q', '--bare', '-b', 'main', origen]);
+    spawnSync('git', ['init', '-q', '-b', 'main', dir]);
+    g(dir, 'remote', 'add', 'origin', origen);
+    fs.mkdirSync(path.join(dir, '.tycon'));
+    fs.writeFileSync(path.join(dir, '.tycon', 'advisors.yaml'), `repo_group: [${grupo[n].join(', ')}]\n`);
+    g(dir, 'add', '.');
+    g(dir, 'commit', '-qm', 'grupo');
+    g(dir, 'push', '-q', 'origin', 'main');
+    g(dir, 'remote', 'set-head', 'origin', 'main');
+    repos[n] = dir;
+  }
+  return { raiz, ...repos };
+}
+const fuentes = () => require('../lib/signature-sources.js');
+const pedidoDe = (allowedFiles, reason = 'el pedido no guarda la sucursal') => JSON.stringify({ reason, datos: 'sin-cambio', allowedFiles });
+
+test('T14 Cuadro_NombraLosReposYEntraEnElTelefono @story-8.316 @ac-9', (t) => {
+  const c = tresRepos(t, 't14-316');
+  const casa = casaNueva(t);
+  const lista = [...Array.from({ length: 5 }, (_, i) => `B/src/A${i}.cs`), ...Array.from({ length: 3 }, (_, i) => `F/src/x${i}.tsx`)];
+  const palabras = [MARKER, 'adhoc', 'set', pedidoDe(lista, 'x'.repeat(200))];
+  const p = fuentes().partesDe({ firma: 'adhoc-lane', palabras, cwd: c.R, topes: { delegado: 5, maximo: 8 }, casa });
+  assert.match(p.queHace[0], /^Abre un arreglo rápido en 2 repos, B \(5\) y F \(3\),/);
+  assert.strictEqual(p.archivos.length, 8);
+  // el cuadro entero: «Qué hace» empieza por los repos, trae las zonas y la pregunta con su sello entra en el teléfono
+  const q = ow.cuadroPara({ firma: 'adhoc-lane', palabras, destino: 'ses-a', casa, sesion: 'ses-a', cwd: c.R });
+  assert.match(q.pregunta, /Qué hace: Abre un arreglo rápido en 2 repos, B \(5\) y F \(3\)/);
+  assert.match(q.pregunta, /8 archivos/);
+  assert.ok(q.pregunta.length <= oaReal.LARGO_EN_TELEFONO, `${q.pregunta.length}: ${q.pregunta}`);
+  // un solo repo: el cuadro de siempre, sin los repos
+  const uno = fuentes().partesDe({ firma: 'adhoc-lane', palabras: [MARKER, 'adhoc', 'set', pedidoDe(['src/a.js'])], cwd: c.R, topes: { delegado: 5, maximo: 8 }, casa });
+  assert.match(uno.queHace[0], /^Abre un arreglo rápido sin historia/);
+  assert.strictEqual(uno.archivos, undefined);
+});
+
+test('T15 Huella_CambiaSiCambianLosRepos @story-8.316 @ac-10', (t) => {
+  const casa = casaNueva(t);
+  const palabras = [MARKER, 'adhoc', 'set', pedidoDe(['B/src/A.cs', 'F/src/x.tsx'])];
+  const c1 = tresRepos(t, 't15a-316');
+  const c2 = tresRepos(t, 't15b-316');
+  const q1 = ow.cuadroPara({ firma: 'adhoc-lane', palabras, destino: 'ses-a', casa, sesion: 'ses-a', cwd: c1.R });
+  const q1b = ow.cuadroPara({ firma: 'adhoc-lane', palabras, destino: 'ses-a', casa, sesion: 'ses-a', cwd: c1.R });
+  assert.strictEqual(q1.sello, q1b.sello, 'el mismo pedido da el mismo cuadro');
+  // el mismo comando con otra raíz real de B (otro producto): otra huella, y el click dado antes no vale
+  const q2 = ow.cuadroPara({ firma: 'adhoc-lane', palabras, destino: 'ses-a', casa, sesion: 'ses-a', cwd: c2.R });
+  assert.notStrictEqual(q2.sello, q1.sello);
+});
+
+test('T21 NoRegresion_FormaExactaYUnRepo @story-8.316 @ac-16', (t) => {
+  const c = tresRepos(t, 't21-316');
+  const casa = casaNueva(t);
+  const donde = { cwd: c.R, casa, sesion: 'ses-a' };
+  const L = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'adhoc-list.js'));
+  // la lista de un repo se acepta; la ruta absoluta y el «..» se siguen negando
+  assert.deepStrictEqual(L.normalizar(['src/a.js'], { cwd: c.R }).lista, [path.join(c.R, 'src/a.js')]);
+  assert.match(L.normalizar([path.join(c.B, 'src/A.cs')], { cwd: c.R }).problema, /absoluta/);
+  assert.match(L.normalizar(['../B/src/A.cs'], { cwd: c.R }).problema, /«\.\.»/);
+  // la firma en su forma exacta: una sola, la del arreglo
+  const comando = `node ${MARKER} adhoc set '${pedidoDe(['B/src/A.cs', 'F/src/x.tsx'])}'`;
+  assert.deepStrictEqual(ow.firmasDelComando(comando, { delegado: 5, maximo: 8 }, donde), ['adhoc-lane']);
+  // con `cd … &&` adelante se sigue negando
+  const d = ow.decidir({ evento: evento(`cd ${c.B} && ${comando}`, { cwd: c.R }), casa, arbol: arbolDelFreno(), pid: 201, ahora: AHORA, delegacion: SIN_DELEGACION, aprobaciones, topes: { delegado: 5, maximo: 8 } });
+  assert.strictEqual(d.decision, 'deny', JSON.stringify(d));
+  assert.match(d.texto, /forma exacta/);
+});

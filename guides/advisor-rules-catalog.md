@@ -1015,6 +1015,7 @@ Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude
 | **GIT-C1** | `git push --force` / `-f` / `--force-with-lease` a `main`/`master`/`dev`/`release/*` | Para feature branch propia: `--force-with-lease` a esa branch específica. Para main: hablarlo en el equipo |
 | **GIT-C2** | `--no-verify` en `git commit`/`push`/`merge`/`rebase` (también con opciones de git antes del subcomando), `git commit -n`, y `core.hooksPath` apuntado a otra carpeta para ese comando | Arreglar lo que el hook reporta. Si el hook está roto, fixearlo, no bypassearlo. Ver `git-commit-conventions.md` |
 | **GIT-C3** | `git clean -fdx` (incluye gitignored) | Sin `-x`: `git clean -fd`. Para preview: `git clean -ndx` |
+| **GIT-C6** | `git reset --hard` o `git stash` (también `clear` y `drop` sin decir cuál) con cambios sin commitear o la pila con algo: pueden ser de otra sesión | Un commit de trabajo en curso (`git add <tus archivos> && git commit -m wip`), o `git stash push -m <etiqueta> -- <tus archivos>` |
 
 ### CRITICAL — Supply chain
 

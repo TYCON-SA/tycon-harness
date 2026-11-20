@@ -16,7 +16,9 @@
  *     ejercen el código nuevo. Con una receta que no es `node --test`, hasta
  *     MUTATION_NOTICE_UNTIL avisa y deja pasar (las recetas nuevas entran avisando).
  *   - exit 0 con sobrevivientes → AVISA (archivo:línea [operador]) y deja pasar.
- *   - exit 0 limpio / SIN_MUTANTES → sigue en silencio.
+ *   - exit 0 limpio → sigue en silencio.
+ *   - exit 0 con SIN_MUTANTES (no se generó ningún mutante) → AVISA «NO MEDIDO» con el motivo y deja pasar: cero
+ *     mutantes no es un verde, y en silencio se leía como uno.
  *   - exit 0 con DEADLINE_SIN_CORRER o SIN_MEDIR (no se midió ningún mutante) → AVISA y deja pasar.
  *   - exit 2 (estructural: story sin tests declarados, etc.) → AVISA y deja
  *     pasar — una story de docs o de config no tiene por qué trabarse.
@@ -315,6 +317,10 @@ function medirEn(repo, { marker, storyPath, appendLog, log, maxMutants, scriptPa
       const motivo = Array.isArray(res.skipped) && res.skipped[0] ? res.skipped[0].reason : 'sin motivo';
       appendLog('gates.log', { ...entryBase, status: 'warn-unmeasured', reason: motivo });
       log(`⚠️  Chequeo de mutantes: no se pudo medir ningún mutante (${res.runner || 'receta desconocida'}: ${motivo}) — no se verificó nada; sigue sin frenar.`);
+    } else if (res.verdict === 'SIN_MUTANTES') {
+      const motivo = res.motivo || 'no se generó ningún mutante';
+      appendLog('gates.log', { ...entryBase, status: 'warn-no-mutants', reason: motivo });
+      log(`⚠️  Chequeo de mutantes NO MEDIDO en ${repo} (${motivo}) — sigue sin frenar.`);
     } else if (survived.length) {
       appendLog('gates.log', { ...entryBase, status: 'warn-survivors' });
       log(`⚠️  Chequeo de mutantes: ${survived.length} de ${entryBase.total} mutantes SOBREVIVIERON (nadie los probó). Avisa, no frena:`);

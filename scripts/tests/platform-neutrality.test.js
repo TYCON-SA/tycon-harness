@@ -120,6 +120,60 @@ test('Move_GrantOptions_OldNamesWithoutMap_UnknownRejected @story-8.85 @ac-24', 
   assert.match(vieja.out, /no_soportado: grant-new-product-permissions\.js/, vieja.out);
 });
 
+// Grant_HarnessNotInAzure_ReadAndReadersNotApplicable
+// Los pipelines de un producto clonan el arnés de su repo público, sin credencial. En una organización sin el proyecto o
+// sin el repo del arnés en Azure DevOps, la lectura del arnés y Readers no aplican: `--verify` no sale 2 por ese 404, y
+// la escritura propia se mide y se da igual, con la colección de la organización.
+// 🔴 Falla con: el 404 del arnés de por defecto tomado como «no se pudo medir», o el arnés pedido a mano que no está
+// dejado pasar.
+test('Grant_HarnessNotInAzure_ReadAndReadersNotApplicable', () => {
+  // fetch de mentira: el proyecto del producto con un repo, el arnés que no está, y los permisos en memoria
+  const dir = tmp('fetch-');
+  const log = path.join(dir, 'pedidos.log');
+  const preload = path.join(dir, 'fetch.js');
+  fs.writeFileSync(preload, `
+const fs = require('fs');
+let bits = Number(process.env.FAKE_BITS || 0);
+globalThis.fetch = async (url, o = {}) => {
+  const metodo = o.method || 'GET';
+  fs.appendFileSync(${JSON.stringify(log)}, metodo + ' ' + url + (o.body ? ' ' + o.body : '') + '\\n');
+  const r = (estado, datos) => ({ ok: estado < 300, status: estado, text: async () => JSON.stringify(datos) });
+  if (/\\/_apis\\/projects\\/Producto\\?/.test(url)) return r(200, { id: 'p1', name: 'Producto' });
+  if (/\\/_apis\\/projects\\//.test(url)) return r(404, { message: 'no existe' });
+  if (/\\/Producto\\/_apis\\/git\\/repositories\\?/.test(url)) return r(200, { value: [{ name: 'Backend', id: 'r1' }, { name: 'Historias', id: 'r2' }] });
+  if (/_apis\\/accesscontrollists\\//.test(url)) return r(200, { value: [{ acesDictionary: { 'Microsoft.TeamFoundation.ServiceIdentity;col-1:Build:p1': { allow: bits } } }] });
+  if (/_apis\\/accesscontrolentries\\//.test(url) && metodo === 'POST') { bits |= 132; return r(200, {}); }
+  if (/_apis\\/connectionData/.test(url)) return r(200, { instanceId: 'col-1' });
+  return r(500, { message: 'pedido no previsto: ' + url });
+};
+`);
+  const correr = (args, env = {}) => {
+    fs.rmSync(log, { force: true });
+    const m = mundo();
+    const r = spawnSync(process.execPath, ['-r', preload, path.join(CONECTOR, 'grant-new-product-permissions.js'), '--project', 'Producto', '--org', 'https://dev.azure.com/acme', ...args], {
+      cwd: tmp('cwd-'), env: { ...m.env, TYCON_PLATFORM: 'azure-devops', AZURE_DEVOPS_EXT_PAT: 'de-mentira', ...env }, encoding: 'utf8', timeout: 60000 });
+    return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}`, pedidos: fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '' };
+  };
+  // sólo mirar, con la escritura propia en su lugar: 0, y la lectura del arnés y Readers no aplican
+  const ver = correr(['--verify', '--write-access', 'Backend'], { FAKE_BITS: '132' });
+  assert.strictEqual(ver.code, 0, ver.out);
+  assert.match(ver.out, /lectura del arnés: no aplica · miembra de Readers: no aplica/, ver.out);
+  assert.match(ver.out, /escribe en Backend: sí/, ver.out);
+  assert.doesNotMatch(ver.pedidos, /^(?:POST|PUT) /m, 'sólo mirar no escribe');
+  // sólo mirar, sin la escritura propia: 1 (falta algo), no 2
+  const falta = correr(['--verify', '--write-access', 'Backend']);
+  assert.strictEqual(falta.code, 1, falta.out);
+  // otorgar lo que falta: la escritura propia con la colección de la organización, sin tocar Readers ni el arnés
+  const otorgar = correr(['--write-access', 'Backend']);
+  assert.strictEqual(otorgar.code, 0, otorgar.out);
+  assert.match(otorgar.pedidos, /^POST \S+accesscontrolentries\S+ .*"token":"repoV2\/p1\/r1".*ServiceIdentity;col-1:Build:p1/m, otorgar.pedidos);
+  assert.doesNotMatch(otorgar.pedidos, /^PUT /m, 'no toca Readers');
+  // el arnés pedido a mano que no está: frena, como antes
+  const pedido = correr(['--verify', '--harness', 'OtroArnes']);
+  assert.strictEqual(pedido.code, 2, pedido.out);
+  assert.match(pedido.out, /No pude leer el proyecto del arnés "OtroArnes" \(HTTP 404\)/, pedido.out);
+});
+
 // ── el candado ───────────────────────────────────────────────────────────────────────────────────
 
 const git = (repo, args) => {

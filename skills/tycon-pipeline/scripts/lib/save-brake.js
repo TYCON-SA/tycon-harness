@@ -1537,26 +1537,48 @@ function frenoDeLasPruebas(a, sid, home, { registrar = true, medida } = {}) {
   if (m.fallas && m.fallas.length) return null;
   const { archivos } = base.cuentaDelCarril(a, { medida: m });
   if (!archivos.length) return null;
+  const frenar = (porque, enRepo, comando, nombre) => {
+    if (registrar) {
+      const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+      require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto: faltan las pruebas${nombre ? ` de ${nombre}` : ''} (${porque})` });
+    }
+    return { texto: textoFaltanLasPruebas({ porque, archivos: enRepo, comando, repo: nombre }) };
+  };
+  const porqueDe = (p) => (!p ? 'no hay una corrida de pruebas' : p.codigo !== 0 ? `la última corrida salió con ${p.codigo}` : 'el código cambió después de la última corrida');
+  // un carril de varios repos (la misma cuenta que `adhoc test --repo`: todos los repos del carril) pide una corrida en
+  // verde por cada repo con código, con `--repo`: la general no cuenta, porque corre en la carpeta de la sesión
+  const delCarril = base.reposDelCarril(a);
+  const conCodigo = delCarril.filter((r) => archivos.some((f) => f.startsWith(r + path.sep)));
+  if (delCarril.length > 1) {
+    const corridas = a.pruebasPorRepo || {};
+    for (const repo of conCodigo.sort()) {
+      const huella = base.huellaDelCarril(a, m, { repo });
+      const clave = Object.keys(corridas).find((k) => base.mismoRepo(k, repo));
+      const p = clave ? corridas[clave] : null;
+      if (p && p.codigo === 0 && p.huella === huella && base.huellaCompleta(huella)) continue;
+      const nombre = path.basename(require('./repo-group.js').checkoutPrincipal(repo) || repo);
+      return frenar(porqueDe(p), archivos.filter((f) => f.startsWith(repo + path.sep)), p && p.comando, nombre);
+    }
+    return null;
+  }
   const huella = base.huellaDelCarril(a, m);
   const p = a.pruebas;
   if (p && p.codigo === 0 && p.huella === huella && base.huellaCompleta(huella)) return null;
-  const porque = !p ? 'no hay una corrida de pruebas' : p.codigo !== 0 ? `la última corrida salió con ${p.codigo}` : 'el código cambió después de la última corrida';
-  if (registrar) {
-    const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
-    require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto: faltan las pruebas (${porque})` });
-  }
-  return { texto: textoFaltanLasPruebas({ porque, archivos, comando: p && p.comando }) };
+  return frenar(porqueDe(p), archivos, p && p.comando, null);
 }
 
-/** «Faltan las pruebas»: lo mismo en los dos perfiles (habla de vos y no nombra las piezas de mantenimiento). */
-function textoFaltanLasPruebas({ porque = 'no hay una corrida de pruebas', archivos = [], comando = null } = {}) {
+/**
+ * «Faltan las pruebas»: lo mismo en los dos perfiles (habla de vos y no nombra las piezas de mantenimiento). Con `repo`,
+ * las de ese repo de un carril de varios.
+ */
+function textoFaltanLasPruebas({ porque = 'no hay una corrida de pruebas', archivos = [], comando = null, repo = null } = {}) {
   const marker = require('./story-gate.js').MARKER_JS;
   const tope = require('./story-gate.js').TOPE_DE_NOMBRES;
   return [
-    `🔒 GUARDAR: faltan las pruebas. Este camino corto cambió código y ${porque} en verde sobre lo que se guarda:`,
+    `🔒 GUARDAR: faltan las pruebas${repo ? ` de ${repo}` : ''}. Este camino corto cambió código${repo ? ` en ${repo}` : ''} y ${porque} en verde sobre lo que se guarda:`,
     ...archivos.slice(0, tope).map((f) => `   · ${f}`),
     '  Corré vos las pruebas con el arnés, que anota el resultado, y guardá de nuevo:',
-    `   node ${marker} adhoc test -- ${comando || '<el comando de las pruebas>'}`,
+    `   node ${marker} adhoc test${repo ? ` --repo ${repo}` : ''} -- ${comando || '<el comando de las pruebas>'}`,
     '  Si cambiás código después, la corrida se vence y hay que repetirla.',
   ].join('\n');
 }

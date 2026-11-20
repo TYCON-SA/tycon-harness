@@ -42,7 +42,9 @@ const path = require('path');
  */
 const ESQUEMA = {
   repo_group: null,       // ~/.claude/tycon-harness/scripts/hooks/unpushed-work-notice.js (grupo de
-                          // repos del aviso de trabajo sin subir) + el arranque de tycon-merge-to-main.
+                          // repos del aviso de trabajo sin subir) + el arranque de tycon-merge-to-main +
+                          // lib/repo-group.js (los hermanos de la lista del arreglo rápido, leídos de
+                          // la rama principal del remoto y en los dos sentidos).
                           // Sin esta entrada, el lint reporta la llave como desconocida en todos
                           // los repos que la usan — el propio test 'los 13 configs reales del
                           // equipo no disparan NADA' queda en rojo.

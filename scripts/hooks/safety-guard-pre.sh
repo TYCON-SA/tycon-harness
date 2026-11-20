@@ -1312,6 +1312,37 @@ if [[ "$CMD" =~ git[[:space:]]+${_GIT_OPTS}clean[[:space:]] ]] && \
     "Sin -x: git clean -fd. Para inspeccionar primero: git clean -ndx."
 fi
 
+# GIT-C6: `git reset --hard` o `git stash` que borran o esconden trabajo sin commitear. En una copia compartida esos
+# cambios pueden ser de otra sesión o de la persona, y desde acá no se sabe de quién son: se frena cuando hay algo que
+# perder (la copia limpia y la pila vacía pasan). Lo decide skills/tycon-pipeline/scripts/lib/discard-check.js, con el
+# lector del freno de guardar (sabe en qué carpeta corre cada `git`, y resuelve los alias). Corre si el comando nombra
+# `reset`, `stash` o un alias (`-c alias.…`), o si la configuración de git tiene un alias que los nombra: así un alias
+# del repo (`git nuke`) no se escapa, y un `git status` común no arranca node (cuesta en cada comando). Sin la pieza
+# pasa con su constancia; si la pieza no pudo mirar (git no contestó), frena: no pude mirar no es limpio.
+if [[ "$CMD" == *git* ]] && { [[ "$CMD" == *reset* || "$CMD" == *stash* || "$CMD" == *alias.* ]] \
+    || git -C "${CWD:-.}" config --get-regexp '^alias\.' 2>/dev/null | grep -qE 'reset|stash'; }; then
+  _c6_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/discard-check.js" || _c6_lib=""
+  if [[ -n "$_c6_lib" && -f "$_c6_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
+    if _c6_out="$(printf '%s' "$CMD" | "$HNODE" "$_c6_lib" --command-stdin --cwd "${CWD:-$PWD}" 2>&1)"; then
+      _c6_motivos=""
+      while IFS= read -r _c6_l; do
+        [[ "$_c6_l" == frena=* ]] && _c6_motivos+="${_c6_motivos:+; }${_c6_l#frena=}"
+      done <<< "$_c6_out"
+      if [[ -n "$_c6_motivos" ]]; then
+        block "GIT-C6" \
+          "${_c6_motivos}. Esos cambios pueden ser de otra sesión o de la persona." \
+          "Si son tuyos, guardalos antes con un commit de trabajo en curso (git add <tus archivos> && git commit -m wip) y deshacelo después; para esconder sólo lo tuyo, git stash push -m <etiqueta> -- <tus archivos>. Si no son tuyos, no los toques: avisale a la persona."
+      fi
+    else
+      block "GIT-C6" \
+        "No pude mirar si este comando borra o esconde trabajo sin commitear (${_c6_out%%$'\n'*}). Lo que no se pudo mirar no pasa callado." \
+        "Mirá con git status en esa carpeta y, si hay cambios, guardalos antes con un commit de trabajo en curso."
+    fi
+  else
+    constancia GIT-C6 sin-lector
+  fi
+fi
+
 # GIT-C4: staging masivo en el repo AgentSkills.
 # ~/.claude/agent-skills mezcla lo propio del equipo (tycon-*) con ~100 archivos
 # bmad-* en drift permanente (M esperado, NUNCA se commitea). `git add -A`/`.`

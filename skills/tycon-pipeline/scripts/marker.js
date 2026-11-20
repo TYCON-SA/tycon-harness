@@ -941,6 +941,13 @@ function comprobarLoRevisado(marker, quien) {
   const deMain = [];
   const sinSepararMain = [];
   const huellas = [];
+  const movidos = [];
+  // sólo comentarios movidos (historia 8.217): contra una vuelta ya cerrada y de esta historia; nunca una lanzada sin cerrar
+  let conComentarios = false;
+  try {
+    const cerrada = ft.vueltaCerradaDeLosRevisores(marker, STEPS_LIB.reviewersClose(marker), { stateDir: STATE_DIR });
+    conComentarios = !!cerrada && cerrada.etiqueta === v.etiqueta && cerrada.ts === v.ts;
+  } catch (_e) { conComentarios = false; }
   const frenar = (motivo) => {
     appendLog('gates.log', { name: 'reviewed-tree-mismatch', status: 'blocked', story: marker.storyId || null, quien, motivo });
     console.error(`marker.js ${quien} BLOQUEADO — ${motivo}`);
@@ -954,8 +961,11 @@ function comprobarLoRevisado(marker, quien) {
     // del sello y el de ahora, del mismo repo
     const pm = r.mainBase ? ft.puntoComunConMain(r.repo) : { error: `${path.basename(r.repo)}: la vuelta se selló sin el punto en común con main` };
     if (pm.error) sinSepararMain.push(pm.error);
-    const c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null,
-      mainAntes: r.mainBase || null, mainAhora: pm.sha || null });
+    let c;
+    try {
+      c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null,
+        mainAntes: r.mainBase || null, mainAhora: pm.sha || null, comentarios: conComentarios });
+    } catch (e) { c = { error: String((e && e.message) || e).split('\n')[0] }; }
     if (c.error) frenar(`no pude comparar lo que se guarda con lo revisado (${c.error}).`);
     // una constancia de cambio de control la firma el dueño: no es código que los revisores tengan que ver
     for (const f of c.files) {
@@ -964,6 +974,7 @@ function comprobarLoRevisado(marker, quien) {
     }
     for (const f of c.papeleo) papeleo.push(f);
     for (const f of c.deMain || []) deMain.push(f);
+    for (const f of c.comentarios || []) movidos.push(f);
     huellas.push(`${path.basename(r.repo)} ${r.tree.slice(0, 12)}`);
   }
   if (distintos.length) {
@@ -976,8 +987,9 @@ function comprobarLoRevisado(marker, quien) {
     console.error('  La vuelta re-revisa lo que cambió desde su foto; con el sello nuevo, este paso sigue.');
     process.exit(2);
   }
-  appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length, deMain: deMain.length });
-  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}.`);
+  appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length, deMain: deMain.length,
+    ...(movidos.length ? { comentarios_movidos: movidos.length } : {}) });
+  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}.`);
 }
 
 /** `{ sellos, copias }` por repo de una vuelta congelada. */
@@ -2182,7 +2194,7 @@ function cmdCompleteStep(nRaw, flags) {
     // ── Acotada por el repo: el verde es el de las suites que leen lo tocado, y se dice quién corre la completa ──
     if (testsCheck === 'green') {
       const acotada = portonAcotadoPorElRepo(marker.repoPath);
-      if (acotada) console.error(`ℹ️  la suite completa la corre la CI del pedido (${acotada}): el portón de esta máquina corrió sólo las suites que leen lo tocado.`);
+      if (acotada) console.error(`ℹ️  la suite completa la corre ${acotada}: el portón de esta máquina corrió sólo las suites que leen lo tocado.`);
     }
 
     // ── «Sin medir»: se acepta diciéndolo, nunca callado ─────────────────────────────────
@@ -7880,20 +7892,35 @@ function cmdAdhoc(sub, payloadJson) {
       process.exit(2);
     }
     const adhocBase = require('./lib/adhoc-base.js');
+    // `--repo <Nombre>`: las pruebas de un repo del carril, en su carpeta. El nombre vale con las reglas de la lista (el
+    // del repo de la sesión, o un hermano declarado en los dos sentidos) y tiene que ser un repo del carril
+    const k = process.argv.indexOf('--repo');
+    let repo = null;
+    if (k >= 0 && (i < 0 || k < i)) {
+      const r = require('./lib/adhoc-list.js').repoDelCarril(a, process.argv[k + 1], { cwd: process.cwd() });
+      if (r.problema) { console.error(`marker.js adhoc test --repo: ${r.problema}; no corrí nada.`); process.exit(2); }
+      repo = r.raiz;
+    }
     // la huella antes de correr: es lo que se probó, aunque las pruebas escriban algo
     const huella = adhocBase.huellaDelCarril(a);
+    const huellaDelRepo = repo ? adhocBase.huellaDelCarril(a, undefined, { repo }) : null;
     // en Windows `npm`, `npx` o `yarn` son `.cmd` y sólo corren por la consola: ahí va con su shell, cada palabra citada
     const enWindows = process.platform === 'win32';
     const citarWin = (w) => (/[\s"&|<>^]/.test(w) ? `"${String(w).replace(/"/g, '""')}"` : w);
     const r = require('child_process').spawnSync(enWindows ? citarWin(comando[0]) : comando[0], enWindows ? comando.slice(1).map(citarWin) : comando.slice(1),
-      { windowsHide: true, encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024, shell: enWindows });
+      { windowsHide: true, encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024, shell: enWindows, ...(repo ? { cwd: repo } : {}) });
     if (r.stdout) process.stdout.write(r.stdout);
     if (r.stderr) process.stderr.write(r.stderr);
     const codigo = r.error ? 127 : (r.status === null ? 1 : r.status);
     const salida = `${r.stdout || ''}${r.stderr || ''}${r.error ? `\n${r.error.message}` : ''}`.slice(-4000);
     const pruebas = { comando: comando.join(' '), codigo, at: nowIso(), huella, salida };
-    io.writeAdhoc(STATE_DIR, SID, { ...(io.readAdhoc(STATE_DIR, SID) || a), pruebas });
-    appendLog('adhoc.log', { kind: 'ADHOC_TEST', comando: pruebas.comando, codigo, huella });
+    const ahora = io.readAdhoc(STATE_DIR, SID) || a;
+    // con `--repo`, la corrida de ese repo, con su huella; en un carril de un solo repo también vale como la general
+    const conRepo = repo ? { pruebasPorRepo: { ...(ahora.pruebasPorRepo || {}), [repo]: { ...pruebas, huella: huellaDelRepo } } } : {};
+    const unSoloRepo = !repo || adhocBase.reposDelCarril(ahora).length <= 1;
+    if (!repo && adhocBase.reposDelCarril(ahora).length > 1) console.error('⚠ marker.js adhoc test: este camino corto es de varios repos: para guardar cuenta la corrida de cada repo con código, con --repo <Nombre>.');
+    io.writeAdhoc(STATE_DIR, SID, { ...ahora, ...(unSoloRepo ? { pruebas } : {}), ...conRepo });
+    appendLog('adhoc.log', { kind: 'ADHOC_TEST', comando: pruebas.comando, codigo, huella, ...(repo ? { repo } : {}) });
     console.error(codigo === 0 ? 'marker.js adhoc test: en verde; anotado en el camino corto.' : `marker.js adhoc test: salió con ${codigo}; anotado: así no guarda.`);
     process.exit(codigo);
   }
@@ -8096,7 +8123,25 @@ function cmdAdhoc(sub, payloadJson) {
       console.error(`marker.js adhoc set: ${LISTA.rechazoDeLaLista(malosTopes, { harness: enElArnes() })}`);
       process.exit(2);
     }
-    const relLista = allowedFiles.map((f) => path.relative(carpetaDeLaLista, f) || f);
+    // cada entrada como se pide: la de un repo hermano con su nombre adelante (`B/src/a.cs`), nunca con «..»
+    const relLista = allowedFiles.map((f) => LISTA.relDeLaLista(f, carpetaDeLaLista, pedidaLista.hermanos));
+    // los repos de la lista y cuántos archivos de cada uno, para el resumen que lee quien firma. Varios repos se aprueban
+    // como uno: los hermanos salen del grupo declarado (repo_group, en los dos sentidos) y la sesión no pregunta
+    const RG = require('./lib/repo-group.js');
+    const reposDeLaLista = LISTA.reposDeLaLista(allowedFiles);
+    const variosRepos = reposDeLaLista.length > 1;
+    const nombreDelRepo = (raiz) => pedidaLista.hermanos.get(raiz) || path.basename(RG.checkoutPrincipal(raiz) || raiz);
+    const enRepos = variosRepos ? ` en ${reposDeLaLista.length} repos: ${reposDeLaLista.map((r) => `${nombreDelRepo(r)} (${allowedFiles.filter((f) => f.startsWith(r + path.sep)).length})`).join(', ')}` : '';
+    // otra sesión viva en el checkout de un hermano: dos sesiones no editan el mismo archivo sin saberlo
+    for (const raiz of pedidaLista.hermanos.keys()) {
+      let vivas = [];
+      try { vivas = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'live-sessions.js')).others({ root: raiz, selfSessionId: destino, home: os.homedir() }).sessions; } catch (_) { vivas = []; }
+      if (vivas.length) {
+        const v = vivas[0];
+        console.error(`marker.js adhoc set: la sesión ${v.id} está viva en ${nombreDelRepo(raiz)} (${raiz})${v.min != null ? `, anduvo hace ${v.min} min` : ''}${v.why ? ` (${v.why})` : ''}: cerrala o esperá a que termine, y pedí el arreglo de nuevo.`);
+        process.exit(2);
+      }
+    }
     // una ruta de riesgo alto en la lista: la firma de una persona lo dice, y sin una persona no se abre
     const riesgoDeLaLista = LISTA.riesgoDeLaLista(allowedFiles);
     // adelante en el resumen: se corta a los 200 caracteres, y el riesgo alto es lo primero que tiene que leer quien firma
@@ -8118,7 +8163,7 @@ function cmdAdhoc(sub, payloadJson) {
       if (sinPersona) return { codigo: 1, motivo: sinPersona };
       // ampliar por delegación: la lista nueva contiene entera la firmada (una firmada con `d:` la contiene `D:`)
       const faltan = actual && Array.isArray(actual.allowedFiles) ? LISTA.faltanEnLaNueva(actual.allowedFiles, allowedFiles) : [];
-      if (faltan.length) return { codigo: 1, motivo: LISTA.textoDeAmpliar(faltan.map((f) => path.relative(carpetaDeLaLista, f) || f), { harness: enElArnes() }) };
+      if (faltan.length) return { codigo: 1, motivo: LISTA.textoDeAmpliar(faltan.map((f) => LISTA.relDeLaLista(f, carpetaDeLaLista, pedidaLista.hermanos)), { harness: enElArnes() }) };
       // un solo carril delegado por repo: dos a la vez se pisan las cuentas
       const mios = new Set(allowedFiles.map(LISTA.raizDe).filter(Boolean));
       let otros = [];
@@ -8135,7 +8180,7 @@ function cmdAdhoc(sub, payloadJson) {
       }
       const so = require('./lib/save-ok.js');
       const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
-      const cupo = cupoAlDeclarar({ pedido: payload.maxFiles, existing: actual, via: viaPedida, topes, sobreCupo: firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo) === firmas.SOBRE_CUPO && viaPedida === 'delegacion' });
+      const cupo = cupoAlDeclarar({ pedido: payload.maxFiles, existing: actual, via: viaPedida, topes, sobreCupo: firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo, { cwd: carpetaDeLaLista }) === firmas.SOBRE_CUPO && viaPedida === 'delegacion' });
       // el de una pestaña sin permisos lo abrió la propia sesión, sin firma: «hecho y avisado»
       const quien = registro && registro.via === 'avisado' ? `la sesión ${registro.sesion} abrió sin firma (pestaña sin permisos)` : 'la coordinadora abrió';
       const a = so.avisar({ texto: `Arreglo rápido: ${quien} el de la sesión ${destino}: «${reason}» · hasta ${cupo} archivos, sin tocar lo sensible.`,
@@ -8151,9 +8196,9 @@ function cmdAdhoc(sub, payloadJson) {
     if (maqueta) console.error(`marker.js adhoc set: anota la maqueta ${enUnRenglon(maqueta.file)}, aprobada por «${enUnRenglon(maqueta.approval)}», con el motivo «${enUnRenglon(reason)}».`);
     const firmas = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js'));
     // la misma regla que mira el freno: pasar el tope es otra firma
-    const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo);
+    const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo, { cwd: carpetaDeLaLista });
     const enLaLista = `${allowedFiles.length} archivo${allowedFiles.length === 1 ? '' : 's'} (${relLista.slice(0, 2).join(', ')}${relLista.length > 2 ? ', …' : ''})`;
-    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`${conRiesgo}arreglo rápido de la sesión ${destino}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
+    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`${conRiesgo}arreglo rápido de la sesión ${destino}${enRepos}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
       propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), antes });
     if (r.codigo !== 0) {
       // la forma con JSON sólo si hace falta: la maqueta no entra en la otra, y hay motivos que no se pueden citar en ella
@@ -8177,9 +8222,9 @@ function cmdAdhoc(sub, payloadJson) {
       console.error(`🔒 marker.js adhoc set: la firma volvió por una vía que no conozco (${r.via}); no declaré nada.`);
       process.exit(1);
     }
-    // pasar el tope lo elige una persona, con su click o su terminal, o la coordinadora si el perfil se lo delega
-    if (firmaDelPedido === firmas.SOBRE_CUPO && !['click', 'terminal', 'delegacion'].includes(r.via)) {
-      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click de la persona o su terminal (o la coordinadora, si el perfil se lo delega), y volvió por ${r.via}; no declaré nada.`);
+    // pasar el tope lo elige el dueño, con su click o su terminal: nunca la delegación
+    if (firmaDelPedido === firmas.SOBRE_CUPO && !['click', 'terminal'].includes(r.via)) {
+      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click de la persona o su terminal, nunca la delegación, y volvió por ${r.via}; no declaré nada.`);
       process.exit(1);
     }
     const via = r.via;
@@ -8217,7 +8262,7 @@ function cmdAdhoc(sub, payloadJson) {
       ...(existing && existing.untilAt ? { untilAt: existing.untilAt } : {}),
       // las rutas anotadas, la marca de riesgo y las constancias, con el motivo que sea: valen por su huella, y declarar
       // el carril de nuevo no las vence
-      ...(existing ? Object.fromEntries(['rutas', 'riesgoAlto', 'revisoresEsperados', 'revisores', 'pase', 'pruebas']
+      ...(existing ? Object.fromEntries(['rutas', 'riesgoAlto', 'revisoresEsperados', 'revisores', 'pase', 'pruebas', 'pruebasPorRepo']
         .filter((k) => existing[k] !== undefined).map((k) => [k, existing[k]])) : {}),
     };
     // abrir trae la base de cada repo de la lista, como el primer toque: sin red abre igual, con la base «sin traer» y el
