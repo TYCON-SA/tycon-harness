@@ -1513,16 +1513,22 @@ function gate(event) {
   return cortar(mineCorta, foreignCorta, avisos, { sid, safe, stateFile });
 }
 
-// ¿El latido puede pagar la entrada? Su carpeta sigue siendo un repo y conoce el commit. Si no, ninguna sesión lo paga
-// desde su copia: lo corrige una persona (`--correct`) o lo cubre el barrido de la noche.
+// ¿El latido puede pagar la entrada? No, sólo cuando se sabe: su carpeta ya no existe, o es un repo que no conoce el
+// commit. Ésas no las paga ninguna sesión desde su copia: las corrige una persona (`--correct`) o las cubre el barrido de
+// la noche. Una carpeta que existe y no contesta como repo es «no sé»: se reclama como siempre.
 function pagable(e) {
   const dir = carpetaVigente(e);
-  return esRaiz(dir) && gitOrNull(dir, ['cat-file', '-e', `${e.sha}^{commit}`]) !== null;
+  if (!fs.existsSync(dir)) return false;
+  if (!esRaiz(dir)) return true;
+  return gitOrNull(dir, ['cat-file', '-e', `${e.sha}^{commit}`]) !== null;
 }
 // ¿La sesión trabaja en el repo de la entrada? Su carpeta es una copia del mismo repo; un workspace que lo contiene no.
+// Si git no contesta en alguna de las dos, cuenta la ruta: la sesión está dentro de la carpeta de la entrada.
 function trabajaEnElRepo(e, cwd) {
+  const dir = carpetaVigente(e);
   const raiz = raizGit(cwd);
-  return Boolean(raiz) && repoComun(raiz) === repoComun(carpetaVigente(e));
+  if (raiz && esRaiz(dir)) return repoComun(raiz) === repoComun(dir);
+  return underOrEqual(real(cwd), real(dir));
 }
 const deQuien = (e, sid) => (e.sessionId === sid ? 'de esta sesión' : `de la sesión ${String(e.sessionId || '?').slice(0, 8)}`);
 // Lo que no corta se le muestra a la persona, una vez por lista: el mismo aviso en cada cierre de turno se deja de leer.
