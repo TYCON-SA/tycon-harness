@@ -1327,26 +1327,17 @@ function noPasaEnWindows({ escapes = [], palabras = null } = {}) {
 }
 
 /**
- * Lo que decide el freno ante un evento: `{ decision: 'ask' | 'deny' | 'allow' | 'none', texto, firmas, via? }`. Con
- * `via: 'desviada'` (y el `id` del renglón), la firma la da la coordinadora por delegación (delegation-routing.js).
- * `escapes`: las firmas `freno` que el freno de seguridad vio en el comando (los escapes por variable y con nombre).
- * `aprobaciones`: el módulo de la aprobación explícita (owner-approvals.js), para las pruebas.
- * `delegacion(opciones)`: si la firma corre sin ventana (delegated-signing.js, las dos listas del perfil);
- * `clasificar(palabras, cwd)`: la clase de un `approve` con `--base`; `comprobar(opciones)`: el chequeo antes de la
- * ventana (`comprobarConElGuion`); `arbol` y `casa` se leen si faltan. `plataforma`: la de la máquina; se pasa en las
- * pruebas de la forma de Windows, y no se saca del ambiente. `lista`: `{ arnes, env }` para leer la llave de la lista de
- * firmas; se pasa en las pruebas. `topes`: los del camino corto (`{ delegado, maximo }`), para las pruebas; sin ellos,
- * se leen una vez del perfil del equipo y valen para todo lo que decide. Una firma cuya variable tiene fecha de corte
- * (`enforce_from` en env-switches.json) no se pide antes de esa fecha: pasa con `via: 'aviso'`, el texto del aviso en
- * `aviso` y un renglón ESCAPE_NOTICE_PERIOD por sesión, variable y día; `antesDelCorte(variable, ahora)` se pasa en las
- * pruebas. Con otras firmas en el mismo comando, ésas se deciden como siempre y la respuesta trae `avisos`.
+ * El período de aviso de `decidir`: una firma cuya variable tiene fecha de corte (`enforce_from` en env-switches.json)
+ * no se pide antes de esa fecha. Pasa con `via: 'aviso'`, el texto en `aviso` y un renglón ESCAPE_NOTICE_PERIOD por
+ * sesión, variable y día. Con otras firmas en el mismo comando, ésas se deciden como siempre y la respuesta trae
+ * `avisos`. null si ninguna firma del comando está en aviso.
  */
-function decidir(opciones = {}) {
+function periodoDeAviso(opciones) {
   const { evento = {}, escapes = [], casa, ahora = Date.now(), antesDelCorte = (v, t) => envSwitches().antesDelCorte(v, t) } = opciones;
   const comando = String((evento.tool_input && evento.tool_input.command) || '');
   const pedidas = [...new Set([...firmasDelComando(comando, opciones.topes || null), ...escapes])];
   const enAviso = pedidas.filter((id) => { const v = variableDelCorte(id); return v !== null && antesDelCorte(v, ahora); });
-  if (!enAviso.length) return decidirLaFirma(opciones);
+  if (!enAviso.length) return null;
   const sesion = evento.session_id == null ? null : String(evento.session_id);
   const ES = envSwitches();
   for (const id of enAviso) {
@@ -1356,7 +1347,7 @@ function decidir(opciones = {}) {
   const aviso = enAviso.map((id) => `«${firmaDe(id).approves}»: desde ${ES.corteDe(variableDelCorte(id))} esto pide la firma del dueño; hasta entonces pasa, avisado y anotado`).join(' · ');
   const resto = pedidas.filter((id) => !enAviso.includes(id));
   if (!resto.length) return { decision: 'allow', via: 'aviso', firmas: enAviso, avisos: enAviso, aviso, texto: aviso };
-  const r = decidirLaFirma({ ...opciones, escapes: escapes.filter((id) => !enAviso.includes(id)), sinAviso: enAviso });
+  const r = decidir({ ...opciones, escapes: escapes.filter((id) => !enAviso.includes(id)), sinAviso: enAviso });
   return { ...r, avisos: enAviso, aviso };
 }
 
@@ -1372,7 +1363,23 @@ function variableDelCorte(id) {
 }
 const envSwitches = () => require('./env-switches.js');
 
-function decidirLaFirma({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, huellaDeLaMaquina, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes, sinAviso = [] } = {}) {
+/**
+ * Lo que decide el freno ante un evento: `{ decision: 'ask' | 'deny' | 'allow' | 'none', texto, firmas, via? }`. Con
+ * `via: 'desviada'` (y el `id` del renglón), la firma la da la coordinadora por delegación (delegation-routing.js).
+ * `escapes`: las firmas `freno` que el freno de seguridad vio en el comando (los escapes por variable y con nombre).
+ * `aprobaciones`: el módulo de la aprobación explícita (owner-approvals.js), para las pruebas.
+ * `delegacion(opciones)`: si la firma corre sin ventana (delegated-signing.js, las dos listas del perfil);
+ * `clasificar(palabras, cwd)`: la clase de un `approve` con `--base`; `comprobar(opciones)`: el chequeo antes de la
+ * ventana (`comprobarConElGuion`); `arbol` y `casa` se leen si faltan. `plataforma`: la de la máquina; se pasa en las
+ * pruebas de la forma de Windows, y no se saca del ambiente. `lista`: `{ arnes, env }` para leer la llave de la lista de
+ * firmas; se pasa en las pruebas. `topes`: los del camino corto (`{ delegado, maximo }`), para las pruebas; sin ellos,
+ * se leen una vez del perfil del equipo y valen para todo lo que decide. Una firma cuya variable tiene fecha de corte
+ * (`enforce_from` en env-switches.json) no se pide antes de esa fecha: pasa con `via: 'aviso'`, el texto del aviso en
+ * `aviso` y un renglón ESCAPE_NOTICE_PERIOD por sesión, variable y día; `antesDelCorte(variable, ahora)` se pasa en las
+ * pruebas. Primero mira el período de aviso (`periodoDeAviso`), salvo que ya lo haya pasado y lo diga `sinAviso`.
+ */
+function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, huellaDeLaMaquina, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes, sinAviso = [] } = {}) {
+  if (!sinAviso.length) { const p = periodoDeAviso(arguments[0] || {}); if (p) return p; }
   if (!topes) topes = topesDelCaminoCorto(casa);
   const enWindows = plataforma === 'win32';
   // los criterios de un runtime-waiver, calculados una vez para el cuadro y para el detalle

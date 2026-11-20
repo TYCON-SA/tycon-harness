@@ -3351,6 +3351,12 @@
       "requiere": []
     },
     {
+      "__nota": "La copia propia del freno de producción (scripts/production/guard-libs/) es regla firmada del inventario de la revisión: cambiarla pide la constancia del dueño, porque ningún banco la corre.",
+      "raiz": "arnes",
+      "ruta": "tests/guard-libs-signed.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "El evento neutro de trabajo (scripts/lib/work-signal.js) y la integración de horas que lo escucha, con una integración de mentira en una carpeta temporal; más el techo de archivos del núcleo que nombran una herramienta de horas, que sólo baja.",
       "raiz": "arnes",
       "ruta": "tests/work-signal.test.js",
@@ -3414,6 +3420,12 @@
       "__nota": "Los pedidos de cambio por la capa de plataforma: abrir uno en Azure DevOps y en GitHub contra el az y el gh de mentira (reusar el abierto, releerlo por rama si la respuesta no trae el número, lo que no abre), listar los de GitHub, el freno de un pedido por repo y los nocturnos que leen las dos plataformas.",
       "raiz": "arnes",
       "ruta": "tests/platform-change-request.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "La regla de aprobación de main: la lectura de la capa (branch-rules.read), el conector de Azure DevOps contra el az de mentira, el comando que la juzga (scripts/tools/branch-approval.js: sirve, falta, no sirve con cada falta, no medido) y el aviso de harness.js doctor con y sin --fetch, nunca en rojo.",
+      "raiz": "arnes",
+      "ruta": "tests/branch-approval.test.js",
       "requiere": []
     },
     {

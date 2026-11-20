@@ -116,11 +116,10 @@ const API_REGLAS = [
   'gh api -X PUT repos/o/r/rulesets/1',
   'gh api -X PATCH repos/o/r/rulesets/1',
   'gh api -X DELETE repos/o/r/rulesets/1',
-  'gh api -X POST orgs/o/rulesets',
   'gh api -X PUT repos/o/r/branches/main/protection',
   'gh api -X DELETE repos/o/r/branches/main/protection/enforce_admins',
-  'gh api repos/o/r/rulesets --input regla.json',
-  'gh api repos/o/r/rulesets --field name=x',
+  'gh api repos/o/r/rulesets/1 --input regla.json',
+  'gh api -X POST repos/o/r/branches/main/protection -f x=y',
   'gh api repos/o/r/branches/main/protection --raw-field enforce_admins=false',
   "gh api graphql -f query='mutation{createRepositoryRuleset(input:{}){clientMutationId}}'",
   "gh api graphql -f query='mutation{updateRepositoryRuleset(input:{}){clientMutationId}}'",
@@ -181,7 +180,11 @@ const AZ = [
   'az devops security permission update --id n --subject s --token t --allow-bit $BITS',
   'az repos policy build update --id 1 --enabled false',
   'az repos policy delete --id 1',
-  'az repos policy approver-count create --repository-id x --branch main --minimum-approver-count 1 --blocking true --enabled true',
+  'az repos policy approver-count update --id 1 --minimum-approver-count 0',
+  // crear las que pueden permitir lo que otra no, o cuyo contenido no se lee
+  'az repos policy merge-strategy create --repository-id x --branch main --allow-squash true --blocking true --enabled true',
+  'az repos policy file-size create --repository-id x --branch main --maximum-git-blob-size 100 --blocking true --enabled true',
+  'az repos policy create --config politica.json',
   "az rest --method patch --uri https://dev.azure.com/o/p/_apis/git/repositories/r/pullrequests/1?api-version=7.1 --body '{\"status\":\"completed\"}'",
   'az devops invoke --area security --resource accessControlEntries --route-parameters securityNamespaceId=x --http-method POST',
   // la ruta completa de Windows (con espacios), el mismo programa por Python y una duración con decimales
@@ -444,4 +447,30 @@ test('T14 Guias_FirmaYRegla @story-8.241 @ac-8', () => {
   assert.match(fila, /merge-bypass/);
   const firmas = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
   assert.match(firmas, /merge-bypass/);
+});
+
+// Crear una regla que sólo suma un requisito endurece la rama: no es aflojarla y no pide la firma. El alta de un producto
+// crea la de aprobación mínima en main de cada repo; sin esto, cada una pedía la firma de aflojar las políticas.
+const ENDURECEN = [
+  'az repos policy approver-count create --repository-id x --branch main --minimum-approver-count 1 --creator-vote-counts true --reset-on-source-push true --blocking true --enabled true',
+  'az repos policy build create --repository-id x --branch main --build-definition-id 7 --blocking true --enabled true --queue-on-source-update-only false --manual-queue-only false --valid-duration 0',
+  'az repos policy required-reviewer create --repository-id x --branch main --required-reviewer-ids a@acme.test --message m --blocking true --enabled true',
+  'az repos policy comment-required create --repository-id x --branch main --blocking true --enabled true',
+  'az repos policy work-item-linking create --repository-id x --branch main --blocking true --enabled true',
+  'gh api -X POST repos/o/r/rulesets --input regla.json',
+  'gh api repos/o/r/rulesets --field name=x',
+  'gh api -X POST orgs/o/rulesets -f name=x',
+];
+
+test('T15 CrearUnaReglaQueEndurece_NoPideLaFirma', (t) => {
+  for (const cmd of ENDURECEN) assert.deepStrictEqual(formas(cmd), [], cmd);
+  const home = casaNueva(t);
+  const r = freno(ENDURECEN[0], { home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(!pideVentana(r), 'pidió la ventana para endurecer la rama');
+  // escondida sigue frenando: lo que no se lee no se juzga
+  unaForma('bash -c "az repos policy approver-count create --repository-id x --branch main --blocking true"', null, { legible: false });
+  // y cambiar la misma regla, o crear la de otro conjunto, sigue pidiendo la firma
+  unaForma('az repos policy approver-count update --id 1 --minimum-approver-count 0', 'az-bypass');
+  unaForma('gh api -X PUT repos/o/r/rulesets/1 --input regla.json', 'api-rules');
 });

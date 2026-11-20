@@ -1,0 +1,1 @@
+{"hash":"7d1ef5bf773560bf9746d491ca658f040987ad3ae48c8895a38264abdaee93c9","rules":[{"path":"scripts/ci/controls-from-base.json","blob":"3c4b2b2364e1c8105f6e55ea8df2dad39708b995"},{"path":"skills/tycon-pipeline/scripts/on-bash-write-gate.js","blob":"a366f5729b3aa173625d51e2b406a95f71bc0982"}],"at":"2026-11-20","by":"dueño"}
