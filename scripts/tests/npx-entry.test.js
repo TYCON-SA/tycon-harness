@@ -179,10 +179,20 @@ test('T7 NpxEntry_ParaQuienYEquipo @story-8.80 @ac-5 @ac-6', async () => {
     r = await drive(box, { argv: ['--audience', 'team', '--tool', 'codex'] });
     assert.strictEqual(r.code, 2, r.out); assert.match(r.out, /--audience team pide --team/);
     // el repo del perfil que no vale (y uno de esta máquina, que `parseTeam` acepta pero acá no): 2 sin instalar
-    for (const bad of ['acme/..', 'acme', 'https://gitlab.com/acme/perfil', '/tmp/un-perfil-local']) {
+    for (const bad of ['acme/..', 'acme', 'https://gitlab.com/acme/perfil']) {
       r = await drive(box, { argv: ['--team', bad, '--yes'] });
       assert.strictEqual(r.code, 2, `${bad}: ${r.out}`); assert.match(r.out, /el repo del perfil tiene que ser/); assert.deepStrictEqual(r.launches, [], bad);
     }
+    // el perfil de esta máquina (team-init --local): tampoco instala, y dice cómo sumarlo después desde el arnés
+    r = await drive(box, { argv: ['--team', '/tmp/un-perfil-local', '--yes'] });
+    assert.strictEqual(r.code, 2, r.out); assert.deepStrictEqual(r.launches, []);
+    assert.match(r.out, /es una carpeta de esta máquina/);
+    // el arnés donde lo va a dejar la instalación (la casa propia de esta HOME), y las mismas herramientas
+    assert.ok(r.out.includes(`${path.join('.tycon', 'harness', 'scripts', 'setup', 'harness.js')} install --team /tmp/un-perfil-local`), r.out);
+    r = await drive(box, { argv: ['--team', '/tmp/un-perfil-local', '--tool', 'codex', '--yes'] });
+    assert.strictEqual(r.code, 2, r.out); assert.deepStrictEqual(r.launches, []);
+    assert.ok(r.out.includes('npx @tyconsa/harness@latest --tool codex)'), r.out);
+    assert.ok(r.out.includes('install --team /tmp/un-perfil-local --tool codex.'), r.out);
     // el agente: sin Claude Code ni Codex sale 1 con las órdenes de tools.js
     r = await drive(box, { argv: ['--yes'] }, { agent: false, env: { TYCON_TOOLS_DETECT_PATH: '' } });
     assert.strictEqual(r.code, 1, r.out); assert.deepStrictEqual(r.launches, []);

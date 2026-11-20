@@ -4646,6 +4646,12 @@
       "requiere": []
     },
     {
+      "__nota": "el comando con que harness.js team-init suma el perfil a esta máquina: con la versión bajada, install --version; instalada desde un clon (como trabaja quien contribuye), migrate --to-home --team, porque install --version ahí sale 2 sin escribir. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/team-init-add-profile.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "gitleaks no toma por claves las huellas de la evidencia del arnés (scripts/ci/secret-scan/evidence-hashes.toml): una huella con ruta que dice api bajo .advisors/ pasa; la misma fuera de .advisors/, una clave real y un 40 hex con clave que no es un archivo frenan; las plantillas del portón de historias llevan la excepción tal cual. Ejercita la regla con la expresión de generic-api-key de gitleaks v8.30.1, sin red ni docker.",
       "raiz": "arnes",
       "ruta": "tests/secret-scan-evidence-hashes.test.js",
