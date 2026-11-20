@@ -1701,6 +1701,10 @@ The site also has to see who is asking. Behind an intermediary, every connection
 per address would apply to the whole internet: two unsigned connections would hold back any machine. New installs already
 have this. On one already installed, set `SITE_TRUST_PROXY=1` in the site's variables (your environment's recipe has the
 command, under its sign-in section). Only with an intermediary in front: without one, anyone could make up their address.
+Better than `1` is the list of the intermediary's addresses (for example `SITE_TRUST_PROXY=10.0.0.0/8`, or `127.0.0.1`
+with an nginx on the same machine): the site then believes the address it brings only when the request comes from it,
+and someone reaching the port directly cannot make up another one. With `1` it believes it wherever it comes from, and
+the site says so when it starts. The demo takes the same variable.
 
 ## The recipes
 

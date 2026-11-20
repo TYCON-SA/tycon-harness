@@ -56,7 +56,44 @@ function direccionDe(req, confiar) {
   if (!confiar) return socket;
   const cab = req.headers && req.headers['x-forwarded-for'];
   const partes = String(Array.isArray(cab) ? cab.join(',') : (cab || '')).split(',').map((x) => x.trim()).filter(Boolean);
-  return partes.length ? partes[partes.length - 1] : socket;
+  if (confiar === true) return partes.length ? partes[partes.length - 1] : socket;
+  // con la lista del intermediario: el encabezado vale sólo si el pedido llega DE él (quien entra directo no puede
+  // inventarse la dirección), y se toma la última entrada que no es de la lista (con dos intermediarios en fila, la
+  // del de adelante no es la de quien pide)
+  if (!confiar.incluye(socket)) return socket;
+  for (let i = partes.length - 1; i >= 0; i--) if (!confiar.incluye(partes[i])) return partes[i];
+  return socket;
+}
+
+/**
+ * Lo que dice `SITE_TRUST_PROXY`: `false` (vacía o ausente: la dirección es la del socket), `true` (`1`: se cree la
+ * última entrada de X-Forwarded-For venga de donde venga; sirve sólo si el puerto no se alcanza sin pasar por el
+ * intermediario) o la lista de direcciones y redes del intermediario (`10.0.0.0/8,127.0.0.1`): `{ incluye(dir) }`.
+ * Una entrada que no es una dirección ni una red tira, con el motivo: un sitio mal configurado no arranca.
+ */
+function confianzaDe(valor) {
+  const v = String(valor === undefined || valor === null ? '' : valor).trim();
+  if (v === '' || v === '0') return false;
+  if (v === '1') return true;
+  const net = require('net');
+  const lista = new net.BlockList();
+  for (const e of v.split(',').map((x) => x.trim()).filter(Boolean)) {
+    const [dir, bits] = e.split('/');
+    const tipo = net.isIPv4(dir) ? 'ipv4' : net.isIPv6(dir) ? 'ipv6' : null;
+    const max = tipo === 'ipv4' ? 32 : 128;
+    if (!tipo || (bits !== undefined && !(/^\d+$/.test(bits) && Number(bits) <= max))) {
+      throw new Error(`«${e}» no es una dirección ni una red (por ejemplo 10.0.0.0/8 o 127.0.0.1)`);
+    }
+    if (bits === undefined) lista.addAddress(dir, tipo);
+    else lista.addSubnet(dir, Number(bits), tipo);
+  }
+  // una dirección IPv4 que llega como IPv6 (`::ffff:10.1.2.3`) se mira como IPv4
+  const incluye = (d) => {
+    const a = String(d || '').replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, '');
+    const tipo = net.isIPv4(a) ? 'ipv4' : net.isIPv6(a) ? 'ipv6' : null;
+    return tipo !== null && lista.check(a, tipo);
+  };
+  return { incluye };
 }
 
 const MALA = Symbol('forma mala');
@@ -575,4 +612,4 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
   };
 }
 
-module.exports = { crearCentro, limpiarFoto, limpiarCharla, direccionDe, TOPES, PLAZOS };
+module.exports = { crearCentro, limpiarFoto, limpiarCharla, direccionDe, confianzaDe, TOPES, PLAZOS };

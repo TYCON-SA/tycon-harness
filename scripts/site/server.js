@@ -217,7 +217,8 @@ function validarConfiguracion(env) {
   }
   if (!cfg.port) cfg.port = 8080;
   cfg.dataDir = env.SITE_DATA_DIR || null;
-  cfg.trustProxy = env.SITE_TRUST_PROXY === '1';
+  // la lista de direcciones del intermediario (o `1`, que cree a cualquiera): ver confianzaDe en live-hub.js
+  try { cfg.trustProxy = require('./live-hub.js').confianzaDe(env.SITE_TRUST_PROXY); } catch (e) { falta('SITE_TRUST_PROXY', e.message); }
   cfg.redirectUri = cfg.publicUrl ? `${cfg.publicUrl}/auth/callback` : null;
   return { ok: problemas.length === 0, problemas, cfg };
 }
@@ -790,6 +791,9 @@ async function main() {
   const env = process.env;
   const log = (l) => process.stdout.write(`[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] ${l}\n`);
   for (const l of lineasDeArranque(env)) log(l);
+  if (String(env.SITE_TRUST_PROXY || '').trim() === '1') {
+    log('aviso: SITE_TRUST_PROXY=1 cree la dirección que trae X-Forwarded-For venga de donde venga: si el puerto se alcanza sin pasar por el intermediario, quien entra directo se inventa la dirección y saltea los topes por dirección. Poné la lista de direcciones del intermediario (por ejemplo 10.0.0.0/8).');
+  }
   // SITE_DEMO puesta con cualquier valor pide el modo demo: sólo con «1» arranca, y nunca cae callado al sitio real
   if (env.SITE_DEMO !== undefined) return arrancarDemo(env, log);
   const v = validarConfiguracion(env);
