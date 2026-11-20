@@ -1139,6 +1139,30 @@ test('T56 CoordinationNotice_LasPreguntasDeRevisionSinRespuesta @story-8.221 @ac
   assert.match(n, /marca de ausente puesta.*dueño ausente.*routine_owner_away: review/);
 });
 
+test('T56b CoordinationNotice_PreguntasYMarcaIlegibles_LoDice @def-8.281 — un registro o una marca que no se leen no son «ninguna pregunta» ni «sin marca»', () => {
+  const t = toy();
+  session(t, 's-a', 'Uno');
+  const PR = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'plan-review.js'));
+  PR.anotarPregunta({ estado: t.state, sesion: 's-a', kind: 'plan', huella: 'h1', ahora: mins(5) });
+  // la marca de ausente que no se puede leer: una carpeta en su lugar (en todo sistema). El dueño cuenta como presente
+  fs.mkdirSync(path.join(t.state, 'owner-away.json'));
+  const n = C.capNotice(t.opts) || '';
+  assert.match(n, /pregunta de revisar el plan de .*s-a.* sin respuesta hace 5 min \(el dueño cuenta como ausente/, n);
+  assert.match(n, /No pude leer .*la marca de ausente \(no pude leer owner-away\.json \(EISDIR\)\): cuento al dueño como presente/, n);
+  // el registro de las preguntas que no se puede leer: no es «ninguna pregunta», lo dice
+  const otra = toy();
+  fs.rmSync(path.join(otra.state, 'gates.log'));
+  fs.mkdirSync(path.join(otra.state, 'gates.log'));
+  const problems = [];
+  assert.deepStrictEqual(C.reviewAskLines(otra.opts, COORD, NOW, problems), []);
+  assert.match(problems.join(' · '), /las preguntas de revisar \(no pude leer gates\.log: EISDIR\): puede haber alguna sin respuesta que no veo/);
+  // sin el registro (no existe): nada que decir
+  fs.rmdirSync(path.join(otra.state, 'gates.log'));
+  const sinNada = [];
+  assert.deepStrictEqual(C.reviewAskLines(otra.opts, COORD, NOW, sinNada), []);
+  assert.deepStrictEqual(sinNada, []);
+});
+
 // ── La revisión del plan que quedó vieja ────────────────────────────────────────────────────────────────────────
 
 const sha256 = (s) => require('crypto').createHash('sha256').update(s).digest('hex');

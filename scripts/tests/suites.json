@@ -1816,6 +1816,12 @@
       "requiere": []
     },
     {
+      "__nota": "lectores que leían mal o callaban: el grupo de rutas «(app)/» no es el prefijo del repo, el normalizador del despachador que no carga deja su línea, owner-away get muestra la marca sin confirmar. HOME de laboratorio, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/quiet-readers.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/preflight-missing.test.js",
       "requiere": []

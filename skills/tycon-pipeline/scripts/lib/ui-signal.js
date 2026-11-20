@@ -106,7 +106,8 @@ function noComment(t) {
   return s;
 }
 const unquote = (t) => String(t).trim().replace(/^["'`]|["'`]$/g, '').trim();
-const sinPrefijo = (t) => unquote(noComment(t)).replace(/^\([^)]*\)\s*/, '');
+// el prefijo «(Repo/Carpeta) » lleva su espacio: `(app)/page.tsx` (un grupo de rutas de Next) es parte de la ruta
+const sinPrefijo = (t) => unquote(noComment(t)).replace(/^\([^)]*\)\s+/, '');
 /** Una palabra limpia de lo que se le pega a una ruta: ancla (`#x`), número de línea (`:12`, `:L3-9`) y puntuación. */
 const cleanToken = (w) => w.replace(/#.*$/, '').replace(/:(L?\d+(-\d+)?)?$/i, '').replace(/[.:;!?]+$/, '');
 /** ¿Tiene forma de ruta? Con una `/`, o con una extensión que lleva alguna letra (`7.2` y `v2.0` no son archivos). */
@@ -122,7 +123,8 @@ function flowItems(value) {
 
 /** Las rutas de una entrada (sin el prefijo «(Repo/Carpeta) »): las palabras con forma de ruta, ya limpias. */
 function pathsOf(text) {
-  return (sinPrefijo(text).match(/[^\s"'`,()[\]{}]+/g) || []).map(cleanToken).filter(isPathToken);
+  // un grupo de rutas pegado a su barra (`(app)/`, `src/app/(auth)/x`) es parte de la palabra; otro paréntesis la corta
+  return (sinPrefijo(text).match(/(?:[^\s"'`,()[\]{}]|\([^\s()/]+\)(?=\/))+/g) || []).map(cleanToken).filter(isPathToken);
 }
 const isDocPath = (p) => DOC_FILE_RE.test(p) && !PAGE_DIR_RE.test(p);
 /**
@@ -152,7 +154,7 @@ const looksLikePath = (text) => pathsOf(text).length > 0;
 function entryLocation(text) {
   const t = unquote(noComment(text)).trim();
   if (!/\s/.test(t)) return t;
-  const prefix = (t.match(/^\([^)]*\)/) || [''])[0];
+  const prefix = (t.match(/^\([^)]*\)(?=\s)/) || [''])[0];
   return [prefix, ...pathsOf(text)].join(' ');   // `text`, no `t`: ya sin comillas, un `#` de adentro cortaría
 }
 /** Las llaves de un mapa entre llaves (`{frontend: [a.ts], backend: [b.cs]}`). */

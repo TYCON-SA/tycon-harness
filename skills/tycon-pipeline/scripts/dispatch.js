@@ -43,12 +43,18 @@ const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta 
 let editEventsFrom = null;
 let ARNES_DIR = null;
 let AVISO_SIN_ARNES = null;
+// Los normalizadores que no cargaron: `[{ pieza, error }]`. Se sigue sin ellos, como antes, pero dispatch() deja su
+// línea FAILED OPEN: sin eso, un evento de Codex sin archivo o una ruta de Git Bash sin repo no dejan rastro.
+const NORMALIZADORES_CAIDOS = [];
 try {
   // Dónde está el arnés lo dice UN lector (lib/harness-path.js): TYCON_GUIDES_DIR (o TCG, que
   // exporta el runner del banco, cuyo HOME va sandboxeado) › el lugar `~/.claude/tycon-harness`.
   // Nunca una carpeta escrita a mano. Un hook no frena por esto: lo dice y sigue (fail-open).
   const r = require('./lib/harness-path.js').rutaArnesHook();
-  if (r.dir) { ARNES_DIR = r.dir; ({ editEventsFrom } = require(path.join(r.dir, 'scripts', 'lib', 'hook-io.js'))); }
+  if (r.dir) {
+    ARNES_DIR = r.dir;
+    try { ({ editEventsFrom } = require(path.join(r.dir, 'scripts', 'lib', 'hook-io.js'))); } catch (e) { NORMALIZADORES_CAIDOS.push({ pieza: 'hook-io.js', error: e }); }
+  }
   // el aviso lo da dispatch(), cuando corre un gancho; quien sólo carga el archivo para leer sus cadenas (el sitio,
   // al armar «Cómo trabaja») no corre ninguno, y en su registro sería ruido en cada carga
   else AVISO_SIN_ARNES = r.aviso;
@@ -131,7 +137,7 @@ const workItemsForStory = (event) => !ARNES_DIR || repoDeclaresWorkItems(event?.
 // Las tres formas de una ruta de Windows: el evento llega a los portones con su ruta ya
 // nativa. Sin la lib (un skill a medias): el evento tal cual.
 let nativeEvent = (event) => event;
-try { ({ nativeEvent } = require('./lib/path-shape.js')); } catch { /* sin normalización de rutas: conducta previa */ }
+try { ({ nativeEvent } = require('./lib/path-shape.js')); } catch (e) { NORMALIZADORES_CAIDOS.push({ pieza: 'path-shape.js', error: e }); }
 
 const PIPELINE_SCRIPTS = __dirname;
 const SKILLS_DIR = path.join(__dirname, '..', '..');
@@ -373,6 +379,7 @@ function cerrarConsumos({ paso }) {
  */
 function dispatch(mode, { hoy = new Date().toISOString().slice(0, 10) } = {}) {
   if (AVISO_SIN_ARNES) process.stderr.write(AVISO_SIN_ARNES + '\n');
+  for (const { pieza, error } of NORMALIZADORES_CAIDOS) logDispatchFailure(`normalizador ${pieza}`, 'open', error);
   const chain = CHAINS[mode];
   if (!chain) {
     // modo desconocido → no-op (nunca romper el tool call por esto)
