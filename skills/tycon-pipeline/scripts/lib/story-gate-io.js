@@ -424,16 +424,35 @@ function topesDelCaminoCorto({ home, arnes, stateDir, sessionId } = {}) {
 function carrilQueCuenta(adhoc) {
   const files = adhoc && Array.isArray(adhoc.files) ? adhoc.files : [];
   if (files.length < gate.cupoDelCarril(adhoc)) return adhoc;
-  return { ...adhoc, files: archivosQueSuman(files) };
+  return { ...adhoc, files: archivosQueSuman(files, { cwd: adhoc && adhoc.cwd }) };
 }
 
-function archivosQueSuman(files) {
+// Las carpetas temporales del sistema, por su ruta real (en macOS /tmp es /private/tmp, y la de cada usuario vive en
+// /private/var/folders). Ahí corren los laboratorios y las pruebas.
+function temporalesDelSistema() {
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return null; } };
+  return [...new Set([real(require('os').tmpdir()), real('/tmp'), real('/private/tmp'), real('/private/var/folders')].filter(Boolean))];
+}
+const dentroDe = (dir, p) => p === dir || p.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep);
+
+/**
+ * Los archivos que suman para el tope: de implementación, que existen y dentro de un repo. `cwd`: la carpeta del camino
+ * corto. Un archivo de un repo en una carpeta temporal (un laboratorio con `git init`) no suma si el camino corto vive
+ * fuera de los temporales: no es un repo del carril, y gastaba el cupo con pruebas. Si el
+ * camino corto mismo vive en un temporal, o no se sabe dónde vive, suma. `temporales`: otra lista, para las pruebas.
+ */
+function archivosQueSuman(files, { cwd = null, temporales = null } = {}) {
   const { isImplPath } = require('./atdd-order.js');
   const { ubicar } = require('./adhoc-base.js');
+  const tmps = temporales || temporalesDelSistema();
+  let carrilReal = null;
+  try { carrilReal = cwd ? fs.realpathSync(cwd) : null; } catch { carrilReal = null; }
+  const carrilEnTemporal = !carrilReal || tmps.some((t) => dentroDe(t, carrilReal));
   return files.filter((f) => {
     if (!path.isAbsolute(String(f)) || !gate.isCodeFile(f) || !fs.existsSync(f)) return false;
     const u = ubicar(f);
     if (u.fuera) return false;
+    if (!carrilEnTemporal && u.raiz && tmps.some((t) => dentroDe(t, u.raiz))) return false;
     // relativa al repo: un repo que vive debajo de una carpeta `tests` no hace pruebas de todos sus archivos
     return isImplPath(u.raiz ? path.relative(u.raiz, fs.realpathSync(f)).replace(/\\/g, '/') : f);
   });

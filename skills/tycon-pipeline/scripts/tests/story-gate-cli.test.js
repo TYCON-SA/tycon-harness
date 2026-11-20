@@ -1935,3 +1935,25 @@ test('T8 Descartar_LsTreeColgado_DiceNoPudeSaber @story-8.222 @ac-6', () => {
   assert.match(r.stdout, /no pude saber si .*src\/a\.ts/);
   assert.doesNotMatch(r.stdout, /checkout|para borrar/);
 });
+
+// Un laboratorio con `git init` en una carpeta temporal, tocado por la consola durante un
+// camino corto, sumaba al cupo como si fuera un repo del carril, y el cupo se agotaba con pruebas. Un archivo de un repo
+// temporal no suma si el camino corto vive fuera de los temporales; si el camino corto mismo vive en un temporal (como en
+// las pruebas del tope), sí suma.
+test('ArchivosQueSuman_LaboratorioEnTemporal_NoSuma @story-8.181 @ac-10', () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cupo-')));
+  const repoDe = (nombre) => {
+    const r = path.join(base, nombre);
+    fs.mkdirSync(path.join(r, 'src'), { recursive: true });
+    execFileSync('git', ['-C', r, 'init', '-q']);
+    const f = path.join(r, 'src', 'a.js');
+    fs.writeFileSync(f, 'x\n');
+    return { r, f };
+  };
+  const lab = repoDe('tmp-lab');
+  const carril = repoDe('el-repo');
+  const temporales = [path.join(base, 'tmp-lab')];   // el laboratorio está en «el temporal»; el repo del carril, no
+  assert.deepStrictEqual(io.archivosQueSuman([lab.f, carril.f], { cwd: carril.r, temporales }), [carril.f], 'el laboratorio no suma');
+  assert.deepStrictEqual(io.archivosQueSuman([lab.f], { cwd: lab.r, temporales }), [lab.f], 'con el carril en el temporal, suma');
+  assert.deepStrictEqual(io.archivosQueSuman([lab.f], { temporales }), [lab.f], 'sin saber dónde vive el carril, suma');
+});
