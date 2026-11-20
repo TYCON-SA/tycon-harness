@@ -3995,6 +3995,8 @@ function cmdDoctor(ctx) {
     doctorPublishGuardItems(ctx, tree, prof, add, extra);
     // los repos que declara la organización, contra este disco: dato o aviso, nunca rojo
     doctorDeclaredReposItems(ctx, tree, add, extra);
+    // la regla de aprobación de main en esos repos (con --fetch: le pregunta a la plataforma): dato o aviso, nunca rojo
+    doctorBranchApprovalItems(ctx, tree, add, extra);
     // el Node propio del arnés: dato o aviso, nunca rojo
     doctorHarnessNodeItems(ctx, tree, add, extra);
     doctorClaudeVersionItems(ctx, add);
@@ -4132,6 +4134,8 @@ function cmdDoctor(ctx) {
   doctorPublishGuardItems(ctx, tree, prof, add, extra);
   // los repos que declara la organización, contra este disco: dato o aviso, nunca rojo
   doctorDeclaredReposItems(ctx, tree, add, extra);
+  // la regla de aprobación de main en esos repos (con --fetch: le pregunta a la plataforma): dato o aviso, nunca rojo
+  doctorBranchApprovalItems(ctx, tree, add, extra);
   // el Node propio del arnés: dato o aviso, nunca rojo
   doctorHarnessNodeItems(ctx, tree, add, extra);
   doctorClaudeVersionItems(ctx, add);
@@ -4404,6 +4408,41 @@ function doctorDeclaredReposItems(ctx, tree, add, extra) {
     const t = `no pude compararlos (${(e && (e.code || e.message)) || 'error'})`;
     sinMedir(t); add('warn', `repos declarados: ${t}`);
   }
+}
+
+/**
+ * La regla de aprobación de main en los repos que declara la organización (`merge_suites.repos` de team-repos.json).
+ * Los pedidos a main se abren para entrar solos con el control en verde: sin una regla de aprobación mínima, entran sin
+ * que nadie los apruebe. Preguntarle a la plataforma es salir a la red, así que sólo con `--fetch`; sin él, una línea
+ * que dice que no se miró y cómo mirarlo. Lo pregunta `scripts/tools/branch-approval.js check-declared` del árbol, con
+ * un tope por repo y uno total (120 s): un repo que no se pudo medir es un aviso con su motivo, nunca «la tiene».
+ * 🔴 NUNCA en rojo (la comprobación de salud corre `doctor --json`), y bajo la salud no corre: `branch_approval` en null.
+ * Un árbol que no trae el comando —una versión anterior— no dice nada. Nunca tira.
+ */
+function doctorBranchApprovalItems(ctx, tree, add, extra) {
+  if (ctx.env.TYCON_HARNESS_HEALTH === '1') { extra.branch_approval = null; return; }
+  const tool = path.join(tree, 'scripts', 'tools', 'branch-approval.js');
+  if (!fs.existsSync(tool)) return;
+  if (!ctx.opts.fetch) {
+    extra.branch_approval = { measured: false, reason: 'sin --fetch: preguntarle a la plataforma es salir a la red' };
+    add('ok', 'regla de aprobación de main: no se miró (le pregunta a la plataforma) — harness.js doctor --fetch la mira en los repos que declara la organización');
+    return;
+  }
+  const sinMedir = (t) => { extra.branch_approval = { measured: false, reason: t }; add('warn', `regla de aprobación de main: no medido — ${t}`); };
+  try {
+    const r = spawnSync(process.execPath, [tool, 'check-declared', '--json', '--budget-ms', '120000'], { windowsHide: true, encoding: 'utf8', env: ctx.env, timeout: 130000, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024 });
+    if (r.error) return sinMedir(r.error.code === 'ETIMEDOUT' ? 'tope: la pregunta tardó más de 130 s' : `el comando no corrió (${r.error.code || r.error.message})`);
+    let j;
+    try { j = JSON.parse(String(r.stdout || '').trim().split('\n').pop()); } catch (_) { return sinMedir(`el comando no contestó JSON (salió ${r.status})`); }
+    if (!j || !Array.isArray(j.repos)) return sinMedir(String((j && j.reason) || `salió ${r.status} sin la lista`));
+    extra.branch_approval = { measured: true, repos: j.repos.map((x) => ({ repo: x.repo, branch: x.branch, result: x.result, faults: x.faults, detail: x.detail })) };
+    const conRegla = j.repos.filter((x) => x.result === 'sirve').length;
+    for (const x of j.repos) {
+      if (x.result === 'no_medido') add('warn', `regla de aprobación de main: ${x.repo}: no medido — ${x.detail}`);
+      else if (x.result !== 'sirve') add('warn', `regla de aprobación de main: ${x.repo}${x.branch ? ` · ${x.branch}` : ''}: ${(x.faults || []).join('; ')} — un pedido a main puede entrar sin que nadie lo apruebe`);
+    }
+    add(conRegla === j.repos.length ? 'ok' : 'warn', `regla de aprobación de main: ${conRegla} de ${j.repos.length} repo(s) declarado(s) la tienen`);
+  } catch (e) { sinMedir(`no pude preguntar (${(e && (e.code || e.message)) || 'error'})`); }
 }
 
 /**
@@ -5288,4 +5327,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff, ensureImport, restoreFixedCopy, rollbackOutcome };
+module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, doctorBranchApprovalItems, dropForProfile, behaviorDiff, ensureImport, restoreFixedCopy, rollbackOutcome };
