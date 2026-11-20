@@ -69,6 +69,12 @@ function normalizar(entradas, { cwd = process.cwd() } = {}) {
     const abs = sinEnlaces(pedida);
     // con los enlaces resueltos, la ruta de un hermano queda dentro de su raíz real
     if (h && !abs.startsWith(h.raiz + path.sep)) return { problema: `«${s}» sale de la raíz de ${h.nombre}` };
+    // por un enlace de la carpeta propia (de una carpeta o del archivo), la ruta real puede caer en otro repo: vale el
+    // propio o un hermano declarado, como con `<Nombre>/`
+    if (!h && abs !== path.join(sinEnlaces(cwd), s)) {
+      const ajeno = repoAjenoPorEnlace(abs, cwd, hermanos);
+      if (ajeno) return { problema: `«${s}» lleva, por un enlace, al ${ajeno}` };
+    }
     let carpeta = false;
     try { carpeta = fs.statSync(abs).isDirectory(); } catch (_) { carpeta = false; }
     if (carpeta) return { problema: `«${s}» es una carpeta: la lista nombra archivos, uno por uno` };
@@ -79,6 +85,24 @@ function normalizar(entradas, { cwd = process.cwd() } = {}) {
     out.add(escritoDe(pedida));
   }
   return { lista: [...out].sort(), sinRepo, hermanos };
+}
+
+/**
+ * Si la ruta real `abs` cae en un repo que no es el de `cwd` (otro checkout del mismo cuenta como el mismo) ni un hermano
+ * declarado: el texto de cuál y por qué, o null. Un hermano que se alcanza así se suma a `hermanos`. Fuera de todo repo,
+ * o pedida desde una carpeta que no es de un repo, null: eso lo avisa `sinRepo`.
+ */
+function repoAjenoPorEnlace(abs, cwd, hermanos) {
+  const raiz = raizDe(abs);
+  const propia = raizDe(sinEnlaces(cwd));
+  if (!raiz || !propia || raiz === propia) return null;
+  const RG = require('./repo-group.js');
+  const principal = RG.checkoutPrincipal(raiz);
+  if (principal && principal === RG.checkoutPrincipal(cwd)) return null;
+  const nombre = path.basename(principal || raiz);
+  const h = RG.hermanoDeEdicion(cwd, nombre);
+  if (!h.problema && h.raiz === (principal || raiz)) { hermanos.set(h.raiz, h.nombre); return null; }
+  return `repo ${nombre}, que no vale como hermano${h.problema ? `: ${h.problema}` : ''}`;
 }
 
 /**

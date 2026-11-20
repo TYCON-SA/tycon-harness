@@ -857,6 +857,32 @@ test('T9 Lista_Ambigua_YRepoFueraDelGrupo_SeNiegan — @story-8.316 @ac-5', () =
   assert.deepStrictEqual(norma(['Z/a.md'], c.R).lista, [path.join(c.R, 'Z/a.md')]);
 });
 
+// 🔴 Falla con: un enlace de la carpeta propia que lleva a un repo de al lado fuera del grupo y lo mete en la lista, sin
+//    que nadie lo frene ahora que varios repos se firman como uno.
+test('T9b Lista_EnlaceAUnRepoFueraDelGrupo_SeNiega — @story-8.316 @ac-5', { skip: process.platform === 'win32' }, () => {
+  const c = tresRepos('t9b-316');
+  const Z = repo(c.raiz, 'Z');
+  fs.mkdirSync(path.join(Z, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(Z, 'src', 'a.cs'), 'x');
+  fs.symlinkSync(Z, path.join(c.R, 'lnk'));
+  fs.mkdirSync(path.join(c.R, 'src'), { recursive: true });
+  fs.symlinkSync(path.join(Z, 'src', 'a.cs'), path.join(c.R, 'src', 'flink.cs'));
+  for (const entradas of [['lnk/src/a.cs'], ['B/src/A.cs', 'lnk/src/a.cs'], ['src/flink.cs']]) {
+    assert.match(norma(entradas, c.R).problema || '', /lleva, por un enlace, al repo Z, que no vale como hermano/, entradas.join(', '));
+  }
+  // por delegación tampoco se abre
+  const h = tmp('home-');
+  const r = marker(h, 's9b', ['adhoc', 'set', pedido({ allowedFiles: ['B/src/A.cs', 'lnk/src/a.cs'] })], { cwd: c.R, delegadaPor: 'coord' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /no vale como hermano/);
+  assert.ok(!fs.existsSync(path.join(estado(h), 'adhoc', 's9b.json')));
+  // un enlace que lleva a un hermano declarado, o dentro del propio repo, pasa
+  fs.symlinkSync(c.B, path.join(c.R, 'alB'));
+  assert.deepStrictEqual(norma(['alB/src/A.cs'], c.R).lista, [path.join(c.B, 'src', 'A.cs')]);
+  fs.symlinkSync(path.join(c.R, 'src'), path.join(c.R, 'propio'));
+  assert.ok(!norma(['propio/x.js'], c.R).problema);
+});
+
 test('T10 ParaOtraSesion_UsaElGrupoDeLaDestino — @story-8.316 @ac-6', () => {
   const c = tresRepos('t10-316');
   // quien pide está en otro producto, sin grupo; la sesión destino trabaja en R
