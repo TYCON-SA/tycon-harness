@@ -4335,8 +4335,9 @@ test('T6 SoloTerminal_ClickConControlRemoto_NoFirma @story-8.304 @ac-9', (t) => 
 
 test('T14 FirmasDelFreno_ClickConControlRemoto_AvisanSinRenglon @story-8.304 @ac-13', (t) => {
   const { SIGNATURES, ONLY_IN_TERMINAL } = require('../lib/signatures.js');
-  // `escape:rojo-esperado-de-la-matriz` pide además la historia de una corrida para armar su cuadro; pasa por la misma rama
-  const afuera = new Set(['escape:merge-bypass', 'escape:rojo-esperado-de-la-matriz', ...ONLY_IN_TERMINAL]);
+  // `escape:rojo-esperado-de-la-matriz` pide además la historia de una corrida para armar su cuadro; pasa por la misma rama.
+  // `escape:external-pr` pide un pedido de verdad para su cuadro: lo prueba external-pr.test.js
+  const afuera = new Set(['escape:merge-bypass', 'escape:external-pr', 'escape:rojo-esperado-de-la-matriz', ...ONLY_IN_TERMINAL]);
   const firmas = SIGNATURES.filter((s) => s.kind === 'freno' && !afuera.has(s.id)).map((s) => s.id);
   assert.ok(firmas.includes('escape:DOD_BYPASS') && firmas.includes('escape:TYCON_NEW_NAMES'), firmas.join(' '));
   // cada una con su forma a la vista: la variable delante del comando, o el guion que la pide

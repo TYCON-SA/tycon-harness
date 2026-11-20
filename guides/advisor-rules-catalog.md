@@ -1013,6 +1013,7 @@ Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude
 | **GIT-C2** | `--no-verify` en `git commit`/`push`/`merge`/`rebase` (también con opciones de git antes del subcomando), `git commit -n`, y `core.hooksPath` apuntado a otra carpeta para ese comando | Arreglar lo que el hook reporta. Si el hook está roto, fixearlo, no bypassearlo. Ver `git-commit-conventions.md` |
 | **GIT-C3** | `git clean -fdx` (incluye gitignored) | Sin `-x`: `git clean -fd`. Para preview: `git clean -ndx` |
 | **GIT-C6** | `git reset --hard` o `git stash` (también `clear` y `drop` sin decir cuál) con cambios sin commitear o la pila con algo: pueden ser de otra sesión | Un commit de trabajo en curso (`git add <tus archivos> && git commit -m wip`), o `git stash push -m <etiqueta> -- <tus archivos>` |
+| **GIT-C7** | Encolar o mergear un pedido de GitHub cuyo autor no es del equipo (`pull_requests.team_authors` del perfil): el merge del pedido por su comando, con o sin `--auto`; `enqueuePullRequest`, `enablePullRequestAutoMerge` o `mergePullRequest` por la API; un merge sobre `pulls/<n>/merge`. Sin saber de quién es el pedido, frena | La firma del dueño (`escape:external-pr`) en la ventana, con un click o un «aprobado»; nunca por delegación |
 
 ### CRITICAL — Supply chain
 

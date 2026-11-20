@@ -279,6 +279,11 @@ const VOCABULARIO = Object.freeze({
   // equipo (PROFILE_ONLY): es una para toda la organización, y si la máquina pudiera decirla, el agente podría mandar a
   // la persona a otra página. Sin valor, el comando dice cómo cargarla (desde el sitio o con un pedido al perfil).
   site: Object.freeze({ url: 'url' }),
+  // `pull_requests.team_authors`: las cuentas de GitHub del equipo. Un pedido de otra cuenta (o de un bot que no está en
+  // la lista) no se encola ni se mergea sin la firma del dueño (external-pr.js, regla GIT-C7). Sin valor, ningún pedido
+  // es del equipo: todos piden la firma. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): si la máquina pudiera
+  // decirlo, el agente se sumaría a cualquiera a la lista.
+  pull_requests: Object.freeze({ team_authors: 'cuentas' }),
   // Los interruptores de la organización (la sección «Frenos y medidores» del sitio). Hoy cada uno se cambia también por
   // máquina con su variable (SWITCHES dice cuál), y la variable puesta sigue ganando. Los frenos (`freno`) sólo se
   // ENCIENDEN desde acá: «on» (en cualquier mayúscula) o `true`; un valor que dice apagado se ignora y se nombra
@@ -337,7 +342,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors']);
 // Hasta dónde puede subir cada tope del camino corto. El delegado, hasta 6: sube lo
 // mínimo, porque con riesgo normal ese carril no lleva revisores ni pase adversarial, y una historia de 6 archivos ya deja
 // de saltearse el pase. El de la firma común, hasta 12: evita el click aparte en un arreglo de 9 archivos y lo mantiene en
@@ -640,6 +645,7 @@ function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'llave-o-detectar' && esDetect(valor)) return DETECT;   // el valor viejo se lee como el nuevo
   if (tipo === 'paquetes' && typeof valor === 'string') return valor.trim();
   if (tipo === 'plataforma') return Object.fromEntries(Object.keys(valor).filter((k) => !esComentario(k)).map((k) => [k, String(valor[k]).trim().toLowerCase()]));
+  if (tipo === 'cuentas') return valor.map((v) => v.trim());
   if (tipo === 'maquinas') return valor.map((m) => ({ id: m.id.trim(), label: m.label.trim() }));
   if (tipo === 'niveles') return { ...valor };
   if (tipo === 'nombres-de-sesion') return Array.isArray(valor) ? valor.map((v) => String(v).trim()) : String(valor).trim().toLowerCase();
@@ -1093,6 +1099,12 @@ function validarTipo(tipo, valor) {
     }
     case 'puerto':
       return (Number.isInteger(valor) && valor >= 1 && valor <= 65535) ? null : `tiene que ser un puerto (un entero de 1 a 65535), no ${JSON.stringify(valor)}`;
+    case 'cuentas': {
+      // las cuentas de GitHub: una lista no vacía de nombres de cuenta (los bots, con su sufijo, como `app/<nombre>`)
+      if (!Array.isArray(valor) || !valor.length) return `tiene que ser una lista no vacía de cuentas de GitHub, no ${JSON.stringify(valor)}`;
+      const mala = valor.find((v) => typeof v !== 'string' || !/^(app\/)?[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(\[bot\])?$/.test(v.trim()));
+      return mala === undefined ? null : `${JSON.stringify(mala)} no es una cuenta de GitHub`;
+    }
     case 'maquinas': {
       // las máquinas donde vale la firma por delegación: la huella de machine-id.js y un nombre para la persona
       const forma = 'una lista no vacía de {"id": "<16 hex de machine-id.js>", "label": "<nombre>"}';

@@ -884,6 +884,44 @@ if [[ "$_c5_mira" == "1" ]]; then
   if [[ -n "$_c5_forma" ]]; then OW_ESCAPES+=("escape:merge-bypass"); fi
 fi
 
+# --- GIT-C7: encolar o mergear un pedido de alguien de afuera del equipo ------
+# Un comando que nombra un merge o un encolado de GitHub (el merge del pedido, `enqueuePullRequest`,
+# `enablePullRequestAutoMerge`, `mergePullRequest`, `pulls/<n>/merge`) pasa por el lector (lib/external-pr.js), que le
+# pregunta a GitHub de quién es cada pedido. Uno de afuera (su autor no está en `pull_requests.team_authors` del perfil) suma la
+# firma `escape:external-pr` a las que pide la ventana; lo que no se puede saber (el pedido no se lee, sin red, la
+# configuración rota) frena sin ventana; un lector que no está o que se cae frena. Casos: scripts/tests/external-pr.test.js.
+# Un comando que ya pide la firma de GIT-C5 (mergear salteando la cola) no pide otra: esa también es sólo del dueño, una
+# vez por comando, y la ventana le muestra el comando entero.
+_c7_mira=0
+shopt -s nocasematch
+if [[ "$_c5_mira" == "1" && -z "${_c5_forma:-}" && "$_esc_cmd" =~ merge|enqueuePullRequest ]]; then _c7_mira=1; fi
+shopt -u nocasematch
+if [[ "$_c7_mira" == "1" ]]; then
+  _c7_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/external-pr.js" || _c7_lib=""
+  _c7_out=""; _c7_ok=0
+  if [[ -n "$_c7_lib" && -f "$_c7_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
+    if _c7_out="$(printf '%s' "$INPUT" | "$HNODE" "$_c7_lib" --event-stdin 2>/dev/null)"; then _c7_ok=1; fi
+  fi
+  if [[ "$_c7_ok" != "1" ]]; then
+    block "GIT-C7" \
+      "No pude saber de quién es el pedido que este comando encola o mergea: el lector (lib/external-pr.js) no está o se cayó." \
+      "Revisá el intérprete del arnés (el comando del arnés que muestra su versión dice si está bien instalado). Lo que no se leyó no pasa."
+  fi
+  _c7_frena=""; _c7_firma=""
+  while IFS= read -r _c7_l; do
+    case "$_c7_l" in
+      frena=*) [[ -n "$_c7_frena" ]] || _c7_frena="${_c7_l#frena=}" ;;
+      firma=*) [[ -n "$_c7_firma" ]] || _c7_firma="${_c7_l#firma=}" ;;
+    esac
+  done <<< "$_c7_out"
+  if [[ -n "$_c7_frena" ]]; then
+    block "GIT-C7" \
+      "Encolar o mergear un pedido sin saber de quién es no pasa: ${_c7_frena%.}." \
+      "Corré el comando en su forma exacta, solo, con el número del pedido y su repo (-R <dueño>/<repo>). Si GitHub no contesta, esperá y volvé a probar: un pedido de afuera lo firma el dueño."
+  fi
+  if [[ -n "$_c7_firma" ]]; then OW_ESCAPES+=("escape:external-pr"); fi
+fi
+
 # --- La ventana de permiso: las firmas del dueño -----------------------------
 # Una sola consulta a lib/owner-window.js con las firmas `freno` que juntaron ESC-C1, ESC-C3 y ESC-C4; las de los
 # guiones (aprobar el plan, ESC-C6; aprobar un control, ESC-C7; eximir un crítico, la vuelta extra, …) las lee el propio
@@ -903,6 +941,7 @@ ow_regla() { # $1 = la firma → la regla con que frena o deja constancia
     plan-approval) echo "ESC-C6" ;;
     control-change|refresh-after-main) echo "ESC-C7" ;;
     escape:merge-bypass) echo "GIT-C5" ;;
+    escape:external-pr) echo "GIT-C7" ;;
     *) echo "ESC-C3" ;;
   esac
 }
@@ -954,6 +993,9 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
     escape:merge-bypass) block "GIT-C5" \
         "Mergear salteando la cola y la CI de main, o aflojar las políticas de la rama, lo aprueba una persona, una vez por comando, y nunca por delegación." \
         "El camino normal es encolar el pedido: gh pr merge <n> --merge. Si de verdad hace falta saltear, decíselo a la persona. ${alt:-Lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito.}" ;;
+    escape:external-pr) block "GIT-C7" \
+        "Encolar o mergear un pedido de alguien de afuera del equipo lo aprueba el dueño, una vez por comando, y nunca por delegación: ${_c7_firma:-un pedido de afuera}." \
+        "Decíselo a la persona con el autor, el número y el título. ${alt:-Lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito.}" ;;
     *) [ "$regla" = "ESC-C3" ] && BLOCK_MOTIVO="firma-fuera-de-la-ventana"; block "$regla" \
         "Esto lo firma la persona, y este comando no la puede pedir en la ventana de permiso." \
         "${alt:-Corré el comando de la firma en su forma exacta, solo: la persona lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito (lo irreversible, en su terminal).}" ;;
