@@ -736,7 +736,10 @@ function cmdSet(payloadJson) {
   }
   // Ni marcar hechos los que no lo estaban: un paso se cierra con `complete-step`, que corre sus frenos. Un `set` de la
   // misma historia con «Preparar el commit» en `stepsCompleted` se saltearía el de código sin revisar.
-  if (existing && payload.storyId === existing.storyId && Array.isArray(payload.stepsCompleted)) {
+  // Listas sin esquema legible (números y nombres mezclados) no se tocan: las rechaza entera la validación de más abajo.
+  const esquemaDelPedido = () => STEPS_LIB.schemeOf({ stepScheme: payload.stepScheme !== undefined ? payload.stepScheme : existing.stepScheme,
+    stepsCompleted: payload.stepsCompleted, stepsPending: Array.isArray(payload.stepsPending) ? payload.stepsPending : (existing.stepsPending || []) });
+  if (existing && payload.storyId === existing.storyId && Array.isArray(payload.stepsCompleted) && esquemaDelPedido() !== null) {
     const nuevos = payload.stepsCompleted.filter((x) => !(existing.stepsCompleted || []).map(String).includes(String(x)) && !STEPS_LIB.isDone(existing, String(x)));
     if (nuevos.length) {
       payload.stepsCompleted = payload.stepsCompleted.filter((x) => !nuevos.includes(x));
