@@ -534,7 +534,6 @@ test('MB1 Broken_OneRecord_JoinsAndExtends @story-8.294 @ac-9 — tres corridas,
 
 // ── T12-T15: el tablero, la espera de fondo, el arreglo y el aviso ───────────────────────────────────────────────────
 
-const BOARD = path.resolve(SCRIPTS, '..', '..', '..', 'scripts', 'tools', 'office', 'board.js');
 const NOTICE = path.resolve(SCRIPTS, '..', '..', '..', 'scripts', 'hooks', 'bench-notice.js');
 const filas = (l) => {
   const f = path.join(l.home, '.claude', '.tycon-pipeline', 'coordination', 'tablero.json');

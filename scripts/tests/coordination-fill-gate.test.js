@@ -22,7 +22,6 @@ const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipelin
 // stable-data: the in-process cases run with a fixed clock; the hook as a child process reads the real one, so its
 // toys are dated relative to the moment they are built (the brake compares against its own clock).
 const NOW = Date.parse('2026-11-18T14:00:00.000Z');
-const mins = (n) => NOW - n * 60000;
 const iso = (ms) => new Date(ms).toISOString();
 const COORD = 'coord-sid-1';
 const REMOTE = 'https://github.com/acme/repo.git';
