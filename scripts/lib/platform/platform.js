@@ -92,8 +92,12 @@ function identidades(tr) {
   if (!tr || typeof tr !== 'object') return [];
   const ms = tr.merge_suites && Array.isArray(tr.merge_suites.repos) ? tr.merge_suites.repos.map((e) => e && e.repo) : [];
   return [tr.public, tr.profile, tr.operations, tr.maintainers, ...(Array.isArray(tr.harness_copies) ? tr.harness_copies : []), ...ms]
-    .filter((r) => r && typeof r === 'object' && r.org && r.repo);
+    .filter((r) => r && typeof r === 'object' && (r.org || r.namespace) && r.repo);
 }
+
+/** El nombre con que se dice y se busca un repo: `org/repo`, o `namespace/repo` donde el repo vive en grupos. */
+const nameOf = (r) => `${r.org === undefined ? r.namespace : r.org}/${r.repo}`;
+const sameName = (a, b) => nameOf(a).toLowerCase() === nameOf(b).toLowerCase();
 
 /**
  * Los repos que team-repos.json declara además de los de `identidades`: los de los índices de historias
@@ -108,32 +112,82 @@ function otrosRepos(tr) {
   return [...historias, ...pruebas].filter((r) => r && typeof r === 'object' && r.platform);
 }
 
-/** La identidad de un repo por su nombre (`repo` u `org/repo`), de las que declara team-repos.json; null si no está. */
+/** La identidad de un repo por su nombre (`repo`, `org/repo` o `namespace/repo`), de las que declara team-repos.json; null si no está. */
 function identityByName(name, opts = {}) {
   const tr = teamRepos(opts);
   const wanted = String(name || '').toLowerCase();
-  return identidades(tr.data).find((r) => String(r.repo).toLowerCase() === wanted || `${r.org}/${r.repo}`.toLowerCase() === wanted) || null;
+  return identidades(tr.data).find((r) => String(r.repo).toLowerCase() === wanted || nameOf(r).toLowerCase() === wanted) || null;
 }
 
-/** Una identidad de repo a partir de lo que llega: un objeto, un JSON o `org/repo`. */
+/** Una identidad de repo a partir de lo que llega: un objeto, un JSON, `org/repo` o `grupo/subgrupo/repo`. */
 function repoOf(repo) {
   if (!repo) return null;
   if (typeof repo === 'object') return repo;
   const s = String(repo).trim();
   if (s.startsWith('{')) { try { return JSON.parse(s); } catch (_) { return null; } }
-  const [org, name] = s.split('/');
+  const parts = s.split('/');
+  // con más de dos tramos, los primeros son los grupos de un repo que vive en un namespace
+  if (parts.length > 2 && parts.every(Boolean)) return { namespace: parts.slice(0, -1).join('/'), repo: parts[parts.length - 1] };
+  const [org, name] = parts;
   return org && name ? { org, repo: name } : null;
 }
 
 /**
+ * La identidad que declara team-repos.json para un repo que llegó sin plataforma (por su nombre): `{ value }`, con
+ * `value: null` si no está, o `{ problem }` si el archivo no se puede leer.
+ */
+function declaredFor(repo, opts) {
+  const leido = teamRepos(opts);
+  if (leido.problem) return { problem: leido.problem };
+  return { value: identidades(leido.data).find((r) => sameName(r, repo)) || null };
+}
+
+/**
  * La identidad de team-repos.json de un repo, a partir de dónde vive según su remoto (`{host: 'azure', org, project,
- * name}` o `{host: 'github', ghRepo}`, como lo lee merge-pr.js): `{platform, org, project?, repo}`, o null si el remoto
- * no es de una plataforma conocida. No adivina: un remoto de otro lado no tiene plataforma.
+ * name}`, `{host: 'github', ghRepo}` o `{host: 'platform', identity}`, como lo lee merge-pr.js): `{platform, org,
+ * project?, repo}` o la que dedujo un conector, o null si el remoto no es de una plataforma conocida. No adivina: un
+ * remoto de otro lado no tiene plataforma.
  */
 function identityFromRemote(where) {
   if (!where || typeof where !== 'object') return null;
+  if (where.host === 'platform') return where.identity && typeof where.identity === 'object' ? where.identity : null;
   if (where.host === 'azure' && where.org && where.name) return { platform: 'azure', org: where.org, project: where.project, repo: where.name };
   if (where.host === 'github' && where.ghRepo) { const [org, repo] = String(where.ghRepo).split('/'); return org && repo ? { platform: 'github', org, repo } : null; }
+  return null;
+}
+
+/**
+ * La identidad de un repo a partir de la dirección de su remoto, para una plataforma cuyo servidor no se conoce de
+ * antemano (una instalación propia): se le pregunta al conector de cada plataforma declarada en team-repos.json que
+ * exporte `identityFromRemote(url, declarados)`, con los repos de su plataforma que declara el archivo. Null si ninguno
+ * la reconoce o si no hay team-repos.json: un remoto de un servidor que nadie declaró no tiene plataforma. Lanza si el
+ * archivo está y no se puede leer, o si el conector de una plataforma declarada no carga o falla: «no pude mirar» no es
+ * «no es de ninguna». `opts.teamReposData`: el archivo ya leído por quien llama.
+ */
+function identityOfRemoteUrl(url, opts = {}) {
+  const env = opts.env || process.env;
+  let data = opts.teamReposData;
+  if (data === undefined) {
+    const leido = teamRepos(opts);
+    if (leido.problem) throw new Error(leido.problem);
+    data = leido.data;
+  }
+  if (!data || typeof url !== 'string' || !url.trim()) return null;
+  const declarados = [...identidades(data), ...otrosRepos(data).filter((r) => (r.org || r.namespace) && r.repo)];
+  for (const name of [...new Set(declarados.map((r) => TEAM_REPOS.connectorOf(r.platform)).filter(Boolean))].sort()) {
+    const manifest = INT.find(name, { kind: 'platform', env });
+    if (!manifest) continue;
+    let id = null;
+    try {
+      const mod = require(path.join(manifest.dir, manifest.connector));
+      if (typeof mod.identityFromRemote !== 'function') continue;
+      id = mod.identityFromRemote(url, declarados.filter((r) => TEAM_REPOS.connectorOf(r.platform) === name));
+    } catch (e) {
+      throw new Error(`el conector ${name} no pudo decir de qué repo es el remoto (${(e && e.code) || limpiar(String((e && e.message) || e).split('\n')[0])})`);
+    }
+    // lo que devuelve un conector se valida como un repo del archivo, y tiene que ser de su plataforma
+    if (id && TEAM_REPOS.connectorOf(id.platform) === name && TEAM_REPOS.repoProblems(id, 'repo', { platforms: TEAM_REPOS.PLATFORMS }).length === 0) return id;
+  }
   return null;
 }
 
@@ -166,17 +220,16 @@ function choose(operation, opts = {}) {
     let plat = repo.platform;
     if (!plat) {
       // el repo sin plataforma: la que declara team-repos.json para ese mismo repo, si está
-      const leido = teamRepos(opts);
-      if (leido.problem) return no('sin_plataforma', `${leido.problem}: no sé la plataforma del repo ${repo.org}/${repo.repo}`);
-      const igual = identidades(leido.data).find((r) => String(r.org).toLowerCase() === String(repo.org).toLowerCase() && String(r.repo).toLowerCase() === String(repo.repo).toLowerCase());
-      plat = igual && igual.platform;
+      const igual = declaredFor(repo, opts);
+      if (igual.problem) return no('sin_plataforma', `${igual.problem}: no sé la plataforma del repo ${nameOf(repo)}`);
+      plat = igual.value && igual.value.platform;
     }
     if (plat) {
       name = TEAM_REPOS.connectorOf(plat);
-      if (!name) return no('sin_plataforma', `plataforma desconocida: «${plat}» (el repo ${repo.org}/${repo.repo} en team-repos.json)`);
+      if (!name) return no('sin_plataforma', `plataforma desconocida: «${plat}» (el repo ${nameOf(repo)} en team-repos.json)`);
       origin = 'repo';
     } else if (elegida.default) { name = elegida.default; origin = 'perfil:default'; }
-    else return no('sin_plataforma', `el repo ${repo.org}/${repo.repo} no declara su plataforma en team-repos.json y el perfil no tiene un valor por defecto: declarala en el repo, o ${CHOOSE}`);
+    else return no('sin_plataforma', `el repo ${nameOf(repo)} no declara su plataforma en team-repos.json y el perfil no tiene un valor por defecto: declarala en el repo, o ${CHOOSE}`);
   } else {
     const area = areaOf(operation);
     if (elegida[area]) { name = elegida[area]; origin = `perfil:${area}`; }
@@ -325,7 +378,15 @@ async function run(operation, args = {}, opts = {}) {
   const c = choose(operation, opts);
   const env = opts.env || process.env;
   const manifest = c.ok ? INT.find(c.value.connector, { kind: 'platform', env }) : null;
-  const r = c.ok ? await call(manifest, operation, args, opts) : c;
+  // un repo que llegó por su nombre y vive en un namespace: el conector recibe la identidad declarada, que trae lo que
+  // el nombre no dice (su servidor)
+  let para = opts;
+  const pedido = c.ok && REPO_OPERATIONS.includes(operation) ? repoOf(opts.repo) : null;
+  if (pedido && !pedido.platform) {
+    const igual = declaredFor(pedido, opts).value;
+    if (igual && igual.namespace) para = { ...opts, repo: igual };
+  }
+  const r = c.ok ? await call(manifest, operation, args, para) : c;
   if (!operation.startsWith('work-item.')) return r;
   // los avisos del conector pueden traer el texto de un error de la plataforma: pasan por la misma limpieza que un «no»
   let v = r.ok && r.value && Array.isArray(r.value.warnings) ? { ...r, value: { ...r.value, warnings: r.value.warnings.map(limpiar) } } : r;
@@ -463,4 +524,4 @@ function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 
-module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityByName, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };
+module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityOfRemoteUrl, identityByName, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };

@@ -87,7 +87,7 @@ test('Platform_Resolve_ByRepoIdentity @story-8.85 @ac-2', () => {
   assert.deepStrictEqual(de(GH).value, { connector: 'github', origin: 'repo' });
   // la traducción de team-repos.json al nombre del conector vive en un solo lugar
   const TR = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
-  assert.deepStrictEqual([TR.connectorOf('azure'), TR.connectorOf('github'), TR.connectorOf('gitlab')], ['azure-devops', 'github', null]);
+  assert.deepStrictEqual([TR.connectorOf('azure'), TR.connectorOf('github'), TR.connectorOf('bitbucket')], ['azure-devops', 'github', null]);
   // una operación de repo sin repo es un uso incorrecto, no una elección
   const sinRepo = P().choose('ci.read', { env: m.env });
   assert.strictEqual(sinRepo.ok, false);
@@ -288,10 +288,10 @@ test('Credentials_Missing_SaysCommandNeverPrints @story-8.85 @ac-28', async () =
 });
 
 test('Platform_UnknownValue_TreatedAsNone @story-8.85 @ac-29', () => {
-  const m = mundo({ platform: { default: 'gitlab' } });
+  const m = mundo({ platform: { default: 'bitbucket' } });
   const r = P().choose('work-item.create', { env: m.env });
   assert.deepStrictEqual([r.ok, r.reason], [false, 'sin_plataforma']);
-  assert.match(r.detail, /plataforma desconocida: «gitlab»/);
+  assert.match(r.detail, /plataforma desconocida: «bitbucket»/);
 });
 
 test('Connector_FolderMissing_SaysWhich @story-8.85 @ac-29', () => {
@@ -351,9 +351,9 @@ test('Manifest_HardSignals_ValidatedByReader @story-8.85 @ac-25', () => {
     assert.ok(!INT.find(n, { dir: d }), `${n} no se carga`);
     assert.match(de(n), rx, n);
   }
-  // los dos conectores de verdad declaran las señales del AC 25
-  const juntas = ['azure-devops', 'github'].flatMap((n) => INT.find(n, { kind: 'platform', dir: path.join(ROOT, 'integrations') }).hardSignals);
-  for (const t of ['az repos pr create', 'https://dev.azure.com/acme', '_apis/build', 'System.Title', 'Microsoft.VSTS.Scheduling', '.tycon/ado-config.yaml', 'AZURE_DEVOPS_EXT_PAT', 'SYSTEM_ACCESSTOKEN', 'gh pr view', 'gh api repos', 'https://api.github.com/x']) {
+  // los conectores de verdad declaran sus señales
+  const juntas = ['azure-devops', 'github', 'gitlab'].flatMap((n) => INT.find(n, { kind: 'platform', dir: path.join(ROOT, 'integrations') }).hardSignals);
+  for (const t of ['az repos pr create', 'https://dev.azure.com/acme', '_apis/build', 'System.Title', 'Microsoft.VSTS.Scheduling', '.tycon/ado-config.yaml', 'AZURE_DEVOPS_EXT_PAT', 'SYSTEM_ACCESSTOKEN', 'gh pr view', 'gh api repos', 'https://api.github.com/x', 'glab mr create', 'glab api projects/1', 'https://gitlab.com/grupo/repo']) {
     assert.ok(juntas.some((p) => new RegExp(p).test(t)), `ninguna señal declarada reconoce «${t}»`);
   }
 });

@@ -274,7 +274,8 @@ function modeOf(repo, teamReposFile) {
   if (!read.ok || !read.data) return { unreadable: `no pude leer ${file}: ${((read.problems || [])[0] || {}).message || 'sin motivo'}` };
   let identity = null;
   try {
-    const where = require(path.join(TREE, 'scripts', 'tools', 'merge-pr.js')).hostOf(repo);
+    // el remoto se lee contra el mismo archivo: un servidor que sólo él declara se reconoce por ahí
+    const where = require(path.join(TREE, 'scripts', 'tools', 'merge-pr.js')).hostOf(repo, { teamRepos: () => read });
     if (where && where.problem) return { unreadable: where.problem };
     identity = require(path.join(TREE, 'scripts', 'lib', 'platform', 'platform.js')).identityFromRemote(where);
   } catch (e) { return { unreadable: `no pude leer el remoto de ${repo} (${String((e && e.message) || e).split('\n')[0]})` }; }
