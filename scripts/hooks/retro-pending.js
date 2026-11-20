@@ -595,7 +595,7 @@ function repoComun(dir) {
     if (!m) return real(dir);
     const propia = path.resolve(dir, m[1]);
     // un submódulo no tiene `commondir`: su carpeta de git es la común
-    let comun = propia;
+    let comun;
     try { comun = path.resolve(propia, fs.readFileSync(path.join(propia, 'commondir'), 'utf8').trim()); } catch { comun = propia; }
     return real(comun);
   } catch { return real(dir); }
