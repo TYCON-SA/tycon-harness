@@ -56,11 +56,11 @@ const nombreDe = (t) => String(t || '').toLowerCase().replace(/^.*[\\/]/, '').re
  * repo de la carpeta después de que el freno preguntó).
  */
 function repoDe(c, cmd) {
-  if (c.repoDesconocido) return { ilegible: 'el repo lo arma la terminal: escribí -R <dueño>/<repo> tal cual' };
+  if (c.repoDesconocido) return { ilegible: 'el repo lo arma la terminal: escribí -R <organización>/<repo> tal cual' };
   if (/\bGH_HOST\b|--hostname\b|\bGH_ENTERPRISE_TOKEN\b/.test(cmd)) return { ilegible: 'el comando cambia el servidor de GitHub: este freno sólo pregunta al de siempre' };
   if (c.repo) return { repo: c.repo };
-  if (/\brepo\s+set-default\b/.test(cmd)) return { ilegible: 'cambia el repo de la carpeta en la misma línea: agregale -R <dueño>/<repo> al merge' };
-  if (c.cdIncierto || c.cwdDesconocido) return { ilegible: 'cambia a una carpeta que arma la terminal y no dice el repo: agregale -R <dueño>/<repo>' };
+  if (/\brepo\s+set-default\b/.test(cmd)) return { ilegible: 'cambia el repo de la carpeta en la misma línea: agregale -R <organización>/<repo> al merge' };
+  if (c.cdIncierto || c.cwdDesconocido) return { ilegible: 'cambia a una carpeta que arma la terminal y no dice el repo: agregale -R <organización>/<repo>' };
   const cds = c.cds || [];
   return { repo: null, carpeta: cds.length ? cds[cds.length - 1] : null };
 }
@@ -201,7 +201,7 @@ function datosDelPedido(p, { cwd, env = process.env, run = spawnSync } = {}) {
   } else {
     args = ['pr', 'view', String(p.numero), '--json', 'number,title,changedFiles,author', ...(p.repo ? ['-R', p.repo] : [])];
   }
-  const r = run('gh', args, opciones);
+  const r = run('gh', args, { ...opciones, windowsHide: true });
   if (r.error || r.status !== 0) {
     const porque = r.error ? (r.error.code === 'ETIMEDOUT' ? 'no contestó a tiempo' : r.error.code || r.error.message) : String(r.stderr || '').trim().split('\n')[0] || `salió ${r.status}`;
     return { error: `no pude preguntarle a GitHub de quién es el pedido (${String(porque).slice(0, 160)})` };

@@ -917,7 +917,7 @@ if [[ "$_c7_mira" == "1" ]]; then
   if [[ -n "$_c7_frena" ]]; then
     block "GIT-C7" \
       "Encolar o mergear un pedido sin saber de quién es no pasa: ${_c7_frena%.}." \
-      "Corré el comando en su forma exacta, solo, con el número del pedido y su repo (-R <dueño>/<repo>). Si GitHub no contesta, esperá y volvé a probar: un pedido de afuera lo firma el dueño."
+      "Corré el comando en su forma exacta, solo, con el número del pedido y su repo (-R <organización>/<repo>). Si GitHub no contesta, esperá y volvé a probar: un pedido de afuera lo aprueba la persona."
   fi
   if [[ -n "$_c7_firma" ]]; then OW_ESCAPES+=("escape:external-pr"); fi
 fi
@@ -994,7 +994,7 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
         "Mergear salteando la cola y la CI de main, o aflojar las políticas de la rama, lo aprueba una persona, una vez por comando, y nunca por delegación." \
         "El camino normal es encolar el pedido: gh pr merge <n> --merge. Si de verdad hace falta saltear, decíselo a la persona. ${alt:-Lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito.}" ;;
     escape:external-pr) block "GIT-C7" \
-        "Encolar o mergear un pedido de alguien de afuera del equipo lo aprueba el dueño, una vez por comando, y nunca por delegación: ${_c7_firma:-un pedido de afuera}." \
+        "Encolar o mergear un pedido de alguien de afuera del equipo lo aprueba la persona, una vez por comando, y nunca por delegación: ${_c7_firma:-un pedido de afuera}." \
         "Decíselo a la persona con el autor, el número y el título. ${alt:-Lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito.}" ;;
     *) [ "$regla" = "ESC-C3" ] && BLOCK_MOTIVO="firma-fuera-de-la-ventana"; block "$regla" \
         "Esto lo firma la persona, y este comando no la puede pedir en la ventana de permiso." \

@@ -138,7 +138,7 @@ const LEVELS = Object.freeze([
   ['escape:TYCON_NEW_NAMES', 3, MANT, 'apagar el control de nombres en lo que se publica'],
   ['emergency', 3, AMBOS, 'la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo'],
   ['escape:merge-bypass', 3, AMBOS, 'mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: un comando, nunca por delegación'],
-  ['escape:external-pr', 3, AMBOS, 'encolar o mergear un pedido de alguien de afuera del equipo: un comando, nunca por delegación'],
+  ['escape:external-pr', 3, AMBOS, 'encolar o mergear un pull request de alguien de afuera del equipo: un comando, nunca por delegación'],
 ].map(([id, level, profiles, approves]) => Object.freeze({ id, level, profiles, approves, approvesEn: LEVELS_EN[id] || null })));
 
 // lo que cubre cada firma de hoy que no es su propio id de la tabla: las dos que juntan dos cosas de distinto peso y
@@ -202,7 +202,7 @@ const CON_NOMBRE = [
   ['no-deep-review', 'saltear el pase adversarial de una ejecución', 'pipeline.js start --no-deep-review'],
   ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'file'],
   ['merge-bypass', 'mergear salteando la cola y la CI de main, o aflojar las políticas de la rama', 'gh pr merge <n> --admin (o un merge, una regla o una política por la API)'],
-  ['external-pr', 'encolar o mergear un pedido de alguien de afuera del equipo', 'el comando que encola o mergea el pedido (o la API)'],
+  ['external-pr', 'encolar o mergear un pull request de alguien de afuera del equipo', 'el comando que encola o mergea el pull request (o la API)'],
 ];
 
 // qué pasa si sale mal: lo dice el cuadro de opciones que arma el guion de la firma (owner-window.js `cuadroPara`). Cada

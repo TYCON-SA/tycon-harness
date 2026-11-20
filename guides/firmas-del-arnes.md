@@ -107,7 +107,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `escape:TYCON_NEW_NAMES` | 3 · irreversible | sólo mantenimiento | apagar el control de nombres en lo que se publica | `escape:TYCON_NEW_NAMES` |
 | `emergency` | 3 · irreversible | dev y mantenimiento | la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo | todavía no se pide |
 | `escape:merge-bypass` | 3 · irreversible | dev y mantenimiento | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: un comando, nunca por delegación | `escape:merge-bypass` |
-| `escape:external-pr` | 3 · irreversible | dev y mantenimiento | encolar o mergear un pedido de alguien de afuera del equipo: un comando, nunca por delegación | `escape:external-pr` |
+| `escape:external-pr` | 3 · irreversible | dev y mantenimiento | encolar o mergear un pull request de alguien de afuera del equipo: un comando, nunca por delegación | `escape:external-pr` |
 <!-- fin: niveles -->
 
 `emergency` todavía no tiene una firma de hoy que la pida: se da con `harness.js sign emergency --reason "<por qué>"
@@ -478,7 +478,7 @@ vuelve a pedir la firma del dueño.
 | `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | sí | `marker.js sign-file cambiar-el-estado <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:merge-bypass` | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama | `gh pr merge <n> --admin (o un merge, una regla o una política por la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
-| `escape:external-pr` | encolar o mergear un pedido de alguien de afuera del equipo | `el comando que encola o mergea el pedido (o la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
+| `escape:external-pr` | encolar o mergear un pull request de alguien de afuera del equipo | `el comando que encola o mergea el pull request (o la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
 <!-- fin: firmas -->
 
 ## Los grupos de la 8.116
