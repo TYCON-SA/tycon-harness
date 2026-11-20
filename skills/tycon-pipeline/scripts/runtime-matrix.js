@@ -777,6 +777,14 @@ function parseExencionC8(text) {
 const CMD_MUTATES_RE = /-X\s*['"]?(POST|PUT|PATCH|DELETE)|--data(-raw|-binary|-urlencode)?\b|\s-d\s/i;
 function cmdMutates(cmd) { return CMD_MUTATES_RE.test(typeof cmd === 'string' ? cmd : ''); }
 
+// ¿Un título nombra el criterio N de la historia `sid` con su marca exacta? `@ac-1` no es `@ac-10` ni `@ac-1.5`, y un
+// título que nombra otra historia (`@story-…`) y no ésta no cuenta para ella.
+function tituloNombraAc(titulo, n, sid) {
+  if (!new RegExp(`@ac-${n}(?![\\w.])`).test(titulo)) return false;
+  const historias = String(titulo).match(/@story-[\w.-]*\w/g) || [];
+  return !historias.length || historias.includes(`@story-${sid}`);
+}
+
 // Un título de test del gate que ejerce la mutación de ESTE AC: `@mutates` + `@ac-N`.
 function tituloEjerceAc(titulo, n) {
   if (!/@mutates\b/i.test(titulo)) return false;
@@ -2030,13 +2038,33 @@ function compute(opts) {
     });
     const gatesDelAc = freshPassGates.filter((g) => valePara(g, n));
     const usadas = [];
+    // Las pruebas en vivo que la tabla declara para el criterio y que no dieron evidencia: con el criterio en vivo por
+    // otra vía (un humo), lo probado es parte de lo pedido. La guía de quien prueba lo dice; no entra al hash.
+    const enVivoSinCorrer = [];
     for (const re of rowEvidence) {
       if (!re.row.acRefs.includes(n)) continue;
+      const antes = runtime.length;
       if (re.tier === 'runtime') {
-        const gate = re.gates.find((g) => valePara(g, n));
-        if (gate) { runtime.push(`${re.row.tid} (${path.basename(gate.path)})`); fuentes.e2e.push(path.basename(gate.path)); usadas.push(gate); }
-        else vencido.push(`${re.row.tid} (${re.ref}): ${vencioPor(re.gates[0], n)}`);
+        // La fila nombra el spec del portón, no la prueba que corrió: el portón vale para este criterio sólo si alguna
+        // prueba que pasó lo nombra con su @ac exacto. Un portón sin la lista de lo que pasó (un guion propio viejo) no
+        // se puede atar: cuenta para la fila, como antes, y se avisa.
+        const vigentes = re.gates.filter((g) => valePara(g, n));
+        const conTitulos = (g) => Array.isArray(g.titulos) && g.titulos.length > 0;
+        // sin títulos cuenta sólo si ningún portón vigente los anotó: uno viejo no le gana a uno que dice qué corrió
+        const gate = vigentes.find((g) => conTitulos(g) && g.titulos.some((t) => tituloNombraAc(t, n, sid)))
+          || (vigentes.some(conTitulos) ? undefined : vigentes.find((g) => !conTitulos(g)));
+        if (gate) {
+          runtime.push(`${re.row.tid} (${path.basename(gate.path)})`); fuentes.e2e.push(path.basename(gate.path)); usadas.push(gate);
+          if (!conTitulos(gate)) {
+            warnings.push(`AC ${n}: ${re.row.tid} cuenta por el portón ${path.basename(gate.path)}, que no anotó la sección «## Tests corridos»: ` +
+              `no se puede saber si corrió una prueba con @ac-${n}. Con el guion del arnés (scripts/e2e-gate.sh) queda atado al criterio.`);
+          }
+        } else if (vigentes.length) {
+          warnings.push(`AC ${n}: ${re.row.tid} no cuenta por el portón ${path.basename(vigentes[0].path)}: ninguna prueba que pasó ahí ` +
+            `nombra @ac-${n} en su título. Poné @ac-${n} en el título de la prueba que lo cubre y corré el portón de nuevo.`);
+        } else vencido.push(`${re.row.tid} (${re.ref}): ${vencioPor(re.gates[0], n)}`);
       } else if (re.tier === 'code') code.push(`${re.row.tid} (${re.ref})`);
+      if (RUNTIME_NIVEL_RE.test(re.row.nivel || '') && runtime.length === antes) enVivoSinCorrer.push(re.row.tid || re.row.name);
       for (const h of re.simulado || []) simulados.push({ ac: n, ...h, fuente: `${re.row.tid}, portón E2E` });
     }
     for (const e of humosDelAc) {
@@ -2108,6 +2136,7 @@ function compute(opts) {
     const expectativas = humosDelAc.filter((e) => e.v2)
       .map((e) => ({ ts: e.ts, pasaSi: e.pass_if, fallaSi: e.fail_if, output: e.output }));
     if (expectativas.length) perAc[n].expectativas = expectativas;
+    if (enVivoSinCorrer.length) perAc[n].enVivoSinCorrer = enVivoSinCorrer;
   }
 
   // --- hash anti-drift: pinnea (ACs + veredictos + refs de evidencia). El waiver guarda

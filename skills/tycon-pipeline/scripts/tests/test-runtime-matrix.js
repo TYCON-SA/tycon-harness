@@ -1420,8 +1420,9 @@ withWaiverLog(() => {
     fs.mkdirSync(fe, { recursive: true });
     fs.writeFileSync(path.join(fe, 'story-9-9.spec.ts'), "test('flujo: abre la vista @ac-1', async ({ page }) => { await page.goto('/'); });\n");
     fs.writeFileSync(path.join(f.repo, '.advisors', 'smoke-e2e.mjs'), "await fetch('http://app/x', { method: 'POST' });\n");
+    // la prueba que pasó nombra los dos criterios de E1: el portón vale para la fila sólo con el @ac de cada uno
     writeGate(f.dodDir, '9.9', recentCompact(20), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true,
-      ['flujo: abre la vista @ac-1'], 0, fe);
+      ['flujo: abre la vista @ac-1 @ac-3'], 0, fe);
     L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2], cmd: 'curl -s http://app/x' });
     L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [3], cmd: 'node .advisors/smoke-e2e.mjs', mutates: true });
     const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
@@ -3108,6 +3109,53 @@ withWaiverLog(() => {
     check('Matriz_BorraONombraDesdeArribaOFalta_EsSensible @story-8.310 @ac-13',
       borra !== 'RUNTIME' && desdeArriba !== 'RUNTIME' && falta !== 'RUNTIME' && comun === 'RUNTIME', JSON.stringify({ borra, desdeArriba, falta, comun }));
   }
+}
+
+// ---------------------------------------------------------------- el portón cuenta para un criterio sólo por su @ac
+// Una fila de navegador de la tabla nombra el spec del portón: si el portón corrió, la fila valía para todos sus
+// criterios aunque la prueba que corrió fuera otra. Con los títulos de lo que pasó, cuenta sólo para el criterio que
+// alguno nombra con su @ac exacto: `@ac-1` no es `@ac-10`, y el nombre parecido de otra prueba no cubre nada.
+{
+  const r = (titulos) => {
+    const g = makeWorkspace();
+    writeGate(g.dodDir, '9.9', recentCompact(5), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, titulos);
+    return rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado') });
+  };
+  const soloUno = r(['flujo @story-9.9 @ac-1']);
+  check('Matriz_PortonSinElAcDelCriterio_NoLoCubre — el portón corrió sólo la prueba del criterio 1: el 3 no queda en vivo',
+    soloUno.perAc[1].verdict === 'RUNTIME' && soloUno.perAc[3].verdict !== 'RUNTIME'
+      && soloUno.warnings.some((w) => /AC 3/.test(w) && /@ac-3/.test(w)), JSON.stringify([soloUno.perAc[3], soloUno.warnings]));
+  const parecido = r(['flujo @story-9.9 @ac-1', 'otro resultado parecido @story-9.9 @ac-30']);
+  check('Matriz_AcParecido_NoCuenta — @ac-30 no cubre el criterio 3',
+    parecido.perAc[3].verdict !== 'RUNTIME', JSON.stringify(parecido.perAc[3]));
+  const losDos = r(['flujo @story-9.9 @ac-1 @ac-3']);
+  check('Matriz_PortonConElAc_LoCubre — con @ac-3 en lo que pasó, el criterio 3 queda en vivo',
+    losDos.perAc[1].verdict === 'RUNTIME' && losDos.perAc[3].verdict === 'RUNTIME', JSON.stringify(losDos.perAc[3]));
+  // el criterio 3 en vivo por un humo, con E1 (la prueba en vivo que le declara la tabla) sin correr para él: lo anota
+  {
+    const g = makeWorkspace();
+    writeGate(g.dodDir, '9.9', recentCompact(5), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, ['flujo @story-9.9 @ac-1']);
+    writeMirroredSmoke(g.dodDir, g.gatesLog, '9.9', [3]);
+    const h = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado') });
+    check('Matriz_EnVivoPorHumo_AnotaLaPruebaDeclaradaSinCorrer — el 3 queda en vivo y dice que E1 no corrió para él',
+      h.perAc[3].verdict === 'RUNTIME' && JSON.stringify(h.perAc[3].enVivoSinCorrer) === '["E1"]' && !h.perAc[1].enVivoSinCorrer,
+      JSON.stringify([h.perAc[1], h.perAc[3]]));
+  }
+  const otraHistoria = r(['flujo @story-9.9 @ac-1', 'de otra historia @story-9.8 @ac-3']);
+  check('Matriz_AcDeOtraHistoria_NoCuenta — @story-9.8 @ac-3 no cubre el criterio 3 de la 9.9',
+    otraHistoria.perAc[3].verdict !== 'RUNTIME', JSON.stringify(otraHistoria.perAc[3]));
+  {
+    const g = makeWorkspace();
+    writeGate(g.dodDir, '9.9', recentCompact(10), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, null);
+    writeGate(g.dodDir, '9.9', recentCompact(5), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, ['flujo @story-9.9 @ac-1']);
+    const h = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado') });
+    check('Matriz_PortonViejoSinTitulos_NoLeGanaAlNuevo — con un portón que anotó títulos, el que no anotó no da crédito',
+      h.perAc[1].verdict === 'RUNTIME' && h.perAc[3].verdict !== 'RUNTIME', JSON.stringify(h.perAc[3]));
+  }
+  const sinTitulos = r(null);
+  check('Matriz_PortonSinTitulos_SigueComoAntes — un portón sin la lista de lo que pasó cuenta para la fila, y lo avisa',
+    sinTitulos.perAc[3].verdict === 'RUNTIME' && sinTitulos.warnings.some((w) => /Tests corridos/.test(w) && /AC 3/.test(w)),
+    JSON.stringify(sinTitulos.warnings));
 }
 
 console.log('');
