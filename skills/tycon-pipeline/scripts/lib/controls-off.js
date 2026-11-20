@@ -593,7 +593,11 @@ function juzgarComando({ cmd, cwd, home = os.homedir(), shell = 'bash' }) {
   return [...new Set(motivos)];
 }
 
-module.exports = { apaga, esConfig, esDelArnes, apagados, juzgarTexto, juzgarEdicion, juzgarComando, partir };
+// El lector de la lista para los guiones de las skills que anotan un escape: el mismo que usa esta biblioteca, que la
+// encuentra también con las skills en un clon aparte.
+const listaDeInterruptores = () => ES;
+
+module.exports = { apaga, esConfig, esDelArnes, apagados, juzgarTexto, juzgarEdicion, juzgarComando, partir, listaDeInterruptores };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

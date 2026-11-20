@@ -41,6 +41,10 @@
 // más de 10 minutos (en la coordinadora, o en el arranque cuando la lectura en vivo llega a su tope) no se afirma que
 // sigue fuera de la cola: pudo entrar después, y con cola GitHub no trae el auto-merge. Se dice de cuándo es la lectura.
 //
+// SIN CHOQUE Y SIN AUTO-COMPLETAR, en Azure: un pedido no borrador, sin choque y sin auto-completar, igual más de 10
+// minutos, sale con el comando para ponerle auto-completar, también en el turno de la coordinadora. La lista de Azure no
+// trae sus controles: no se dice «listo», sólo que nadie lo va a completar.
+//
 // LOS PEDIDOS DE LA PERSONA, para /office: la lectura de fondo deja en `own-prs.json` los pedidos abiertos cuyo autor es la
 // persona, de todos sus repos, con una consulta por lugar: una búsqueda en GitHub y una por cada organización de Azure de los
 // repos declarados. Quién es sale de las herramientas de la máquina; lo que no se puede saber o leer se dice en `fallos`.
@@ -247,6 +251,36 @@ const comandoParaEncolar = (repo, n, id) => `gh pr merge ${Number(n)} -R ${repo.
   + (ID_PEDIDO.test(String(id || '')) ? ` (con cola de merge: ${comandoDeLaCola(id)})` : '');
 
 /**
+ * Por qué el análisis de seguridad de un pedido no deja darlo por listo, o null. Lo trae el conector de la plataforma
+ * (`codeScanning`: `{ estado, motivo }`); una plataforma que no lo trae, o un repo sin análisis (`no-aplica`), no cambia
+ * nada. Cualquier otro estado que no sea `verde` —en rojo, corriendo, sin correr o sin poder leerse— no es listo.
+ */
+function analisisNoVerde(p) {
+  const a = p && p.codeScanning;
+  if (!a || a.estado === 'verde' || a.estado === 'no-aplica') return null;
+  return limpio(a.motivo || `el análisis de seguridad está ${a.estado}`, 120);
+}
+
+/**
+ * Los repos cuyo análisis de seguridad la regla de la rama no exige: la cola deja entrar un pedido con él en rojo o sin
+ * correr. Una línea por repo, sólo si la plataforma lo dijo (`codeScanningRequired: false`) y hay un pedido con el
+ * análisis que no está en verde: sin uno afectado, la línea saldría en cada turno sin decir nada nuevo.
+ */
+function reglaSinAnalisis(repos, leidas) {
+  const lineas = [];
+  for (const repo of repos) {
+    if (repo.platform !== 'github') continue;
+    const r = leidas[claveDe(repo)];
+    if (!r || !r.ok || !Array.isArray(r.value)) continue;
+    const afectados = r.value.filter((p) => p && p.codeScanningRequired === false && !p.draft && analisisNoVerde(p) && p.codeScanning.estado !== 'sin-mirar');
+    const ramas = [...new Set(afectados.map((p) => limpio(p.baseBranch || 'la principal', 60)))];
+    const numeros = afectados.map((p) => Number(p.number)).filter(Number.isFinite).sort((a, b) => a - b).join(', ');
+    if (ramas.length) lineas.push(`⚠️ ${limpio(repo.repo, 60)}: la regla de ${ramas.join(', ')} no exige el análisis de seguridad, así que la cola deja entrar un pedido con él en rojo o sin correr (hoy: ${numeros}). Exigirlo cambia las reglas del repo: lo decide el dueño.`);
+  }
+  return lineas;
+}
+
+/**
  * Los pedidos listos que nadie encoló, de las lecturas de cada repo: `{ trabados, estado }`. `estado` trae el reloj de
  * cada uno (`<repo>#<n>`), leído de `previo`: con otra punta o recién visto, vuelve a cero. Una lectura fallida conserva
  * los relojes de ese repo, y «todavía no calculado» el de ese pedido: no son un cambio de estado.
@@ -257,7 +291,8 @@ function verdesSinEntrar(repos, leidas, previo, ahora, minutos = verdeMin(), { l
   const trabados = [];
   const estado = {};
   for (const repo of repos) {
-    if (repo.platform !== 'github') continue;
+    if (repo.platform !== 'github' && repo.platform !== 'azure') continue;
+    const azure = repo.platform === 'azure';
     const base = claveDe(repo);
     const r = leidas[base];
     if (!r || !r.ok || !Array.isArray(r.value)) {
@@ -277,6 +312,21 @@ function verdesSinEntrar(repos, leidas, previo, ahora, minutos = verdeMin(), { l
       if (ms < minutos * 60000) continue;
       const creado = Date.parse(p.createdAt);
       const vieja = lecturaDeHace[base];
+      // en Azure la lista no trae sus controles: «limpio» sólo dice que no choca, así que no se afirma que está listo.
+      // Sin auto-completar nadie lo completa; con él puesto, entra solo cuando sus controles pasen
+      // el comando para ponérselo lo da el conector (`autoCompleteCommand`)
+      if (azure) {
+        trabados.push({ ms, creado: Number.isFinite(creado) ? creado : Infinity, number: p.number,
+          linea: `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) sin choque y sin auto-completar hace ${haceDe(ms)}${Number.isFinite(vieja) && vieja >= FOTO_MS ? ` según la lectura de hace ${haceDe(vieja)}` : ''}: nadie lo va a completar — ponele auto-completar${p.autoCompleteCommand ? ` con ${limpio(p.autoCompleteCommand, 200)}` : ''} · ${limpio(p.sourceBranch, 120)}` });
+        continue;
+      }
+      // con sus controles requeridos en verde pero el análisis de seguridad no: no está listo, y no se pide encolarlo
+      const sinAnalisis = analisisNoVerde(p);
+      if (sinAnalisis) {
+        trabados.push({ ms, creado: Number.isFinite(creado) ? creado : Infinity, number: p.number,
+          linea: `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) con los controles requeridos en verde hace ${haceDe(ms)}, pero no está listo: ${sinAnalisis}. No lo encoles hasta que su análisis de seguridad esté en verde y sin alertas · ${limpio(p.sourceBranch, 120)}` });
+        continue;
+      }
       trabados.push({ ms, creado: Number.isFinite(creado) ? creado : Infinity, number: p.number,
         linea: Number.isFinite(vieja) && vieja >= FOTO_MS
           ? `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) listo hace ${haceDe(ms)} según la lectura de hace ${haceDe(vieja)}: no sé si ya entró a la cola; la lectura nueva corre de fondo. Si sigue afuera, se encola con ${comandoParaEncolar(repo, p.number, p.nodeId)} · ${limpio(p.sourceBranch, 120)}`
@@ -325,6 +375,8 @@ function motivoParaNo(p) {
   if (p.reviewDecision != null && p.reviewDecision !== 'APPROVED') return `la revisión dice ${limpio(p.reviewDecision, 30)}`;
   if (p.mergeStatus !== 'CLEAN') return `no está limpio (${limpio(p.mergeStatus || 'sin estado', 20)})`;
   if (p.ciState !== 'SUCCESS') return `sus comprobaciones no están en verde (${limpio(p.ciState || 'sin leer', 20)})`;
+  const sinAnalisis = analisisNoVerde(p);
+  if (sinAnalisis) return `su análisis de seguridad no está en verde (${sinAnalisis})`;
   if (!ID_PEDIDO.test(String(p.nodeId || ''))) return 'GitHub no dio su identificador: sin identificador no se puede encolar';
   return null;
 }
@@ -456,7 +508,9 @@ function coordinatorLines({ home = os.homedir(), tree = path.resolve(process.env
     return { lines: [], problem: `los pedidos listos sin encolar: sin lectura de la última hora${lanzada ? ', sigue midiendo de fondo' : ' y no pude lanzar la lectura de fondo'}` };
   }
   // lo mismo con un repo que la última lectura no pudo leer
-  const sinLeer = declarados.repos.filter((r) => r.platform === 'github' && !(foto.lecturas[claveDe(r)] && foto.lecturas[claveDe(r)].ok)).map((r) => limpio(r.repo, 60));
+  // (una plataforma sin la operación no es una lectura fallida: se calla, como en el arranque)
+  const leida = (r) => { const x = foto.lecturas[claveDe(r)]; return Boolean(x && (x.ok || x.reason === 'no_soportado')); };
+  const sinLeer = declarados.repos.filter((r) => (r.platform === 'github' || r.platform === 'azure') && !leida(r)).map((r) => limpio(r.repo, 60));
   const relojArchivo = path.join(dir, 'green-prs.json');
   const previo = leerJson(relojArchivo) || {};
   // con la foto de más de FOTO_MS, ninguno se da por fuera de la cola (la lectura nueva ya se lanzó)
@@ -468,7 +522,8 @@ function coordinatorLines({ home = os.homedir(), tree = path.resolve(process.env
   // las caídas de la cola y lo que pasó con los que quedaron afuera después de un empuje, también en cada turno
   const { intentos, problema: sinIntentos } = leerIntentos(dir);
   if (sinIntentos) problem = problem ? `${problem} · ${sinIntentos}` : sinIntentos;
-  const todas = [...caidasDeLaCola(declarados.repos, foto.lecturas, now),
+  const todas = [...reglaSinAnalisis(declarados.repos, foto.lecturas),
+    ...caidasDeLaCola(declarados.repos, foto.lecturas, now),
     ...lineasDeReencolado(declarados.repos, foto.lecturas, intentos, now),
     ...paraReencolar(declarados.repos, foto.lecturas, intentos).esperan.map((e) => e.linea),
     ...trabados.map((t) => t.linea)];
@@ -562,7 +617,7 @@ async function main() {
   // los que quedaron fuera de la cola después de un empuje: lo que hizo la lectura de fondo, o por qué no los re-encola
   const { intentos, problema: sinIntentos } = leerIntentos(dir);
   if (sinIntentos) console.log(`pedidos re-encolados: ${limpio(sinIntentos, 200)}`);
-  for (const linea of [...lineasDeReencolado(declarados.repos, leidas, intentos, ahora), ...paraReencolar(declarados.repos, leidas, intentos).esperan.map((e) => e.linea)]) {
+  for (const linea of [...reglaSinAnalisis(declarados.repos, leidas), ...lineasDeReencolado(declarados.repos, leidas, intentos, ahora), ...paraReencolar(declarados.repos, leidas, intentos).esperan.map((e) => e.linea)]) {
     trabados.push({ ms: Number.MAX_SAFE_INTEGER, creado: Infinity, number: 0, linea });
   }
   let sinGuardar = false;
@@ -581,7 +636,7 @@ async function main() {
 
 // Si algo falla después de saber que el repo aplica, se dice; antes, se calla. El arranque nunca se rompe.
 let aplica = false;
-module.exports = { verdesSinEntrar, coordinatorLines, comandoParaEncolar, leerPropios, llamadaDe, salidaDe, paraReencolar, reencolar, reencolarLosListos };
+module.exports = { verdesSinEntrar, analisisNoVerde, reglaSinAnalisis, coordinatorLines, comandoParaEncolar, leerPropios, llamadaDe, salidaDe, paraReencolar, reencolar, reencolarLosListos };
 if (require.main !== module) { /* lo usa la coordinadora: no corre el arranque */ } else if (process.argv[2] === '--refresh') {
   refrescar(path.resolve(process.argv[3] || ROOT)).catch(() => { /* la próxima lo intenta otra vez */ }).finally(() => process.exit(0));
 } else main().catch((e) => {

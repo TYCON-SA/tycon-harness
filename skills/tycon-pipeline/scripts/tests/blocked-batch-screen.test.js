@@ -119,7 +119,7 @@ function marcador(r, tag, extra = {}) {
   }));
   const correr = (...args) => spawnSync(process.execPath, [MARKER, ...args],
     { env: { ...process.env, ...fakeHomeEnv(home), CLAUDE_CODE_SESSION_ID: sid }, encoding: 'utf8', cwd: r.repo });
-  return { correr };
+  return { correr, home, sid };
 }
 
 /** La guía del tester lista, en la carpeta qa/ que busca el chequeo. */
@@ -439,4 +439,22 @@ test('T14 ScreenScope_Batch_OtherPendingScreen_Dropped @story-8.240 @ac-9 — la
   const compartido = TANDAS_POR_TANDA.replace("    acs: [3]", '    acs: [2, 3]');
   const r3 = repoCon({ tandas: compartido, acs }, 't14d');
   assert.equal(ui.screenScope(r3.content, r3.repo, { changed: backend, batches: ['Y-backend'] }).active, true, 'el criterio 2 es de las dos tandas');
+});
+
+test('T18 QaCheck_BatchRun_OtherBatchScreen_NotReviewed — la guía de QA mide la tanda de la corrida, como el marcador', () => {
+  const r = repoCon({ tandas: TANDAS_POR_TANDA }, 't18');
+  const qa = guiaLista(r);
+  fs.appendFileSync(path.join(qa, '9.26-pasos.md'), '## AC 3\nVer el panel del interruptor.\n');
+  const baseSha = conCommit(r, { pantalla: false });
+  // sin tanda en la corrida: la pantalla se revisa, y falta su revisión
+  const sinTanda = qaCheck(r);
+  assert.equal(sinTanda.status, 2, `sin tanda, revisa la pantalla:\n${sinTanda.stdout}\n${sinTanda.stderr}`);
+  assert.match(sinTanda.stderr, /\(7\)/);
+  // la corrida es de la tanda de backend (el marcador de la sesión): la pantalla de la otra tanda no se revisa
+  const m = marcador(r, 't18', { batch: 'Y-backend', baseSha });
+  const out = spawnSync(process.execPath, [QA, '--story', r.storyPath, '--check'],
+    { encoding: 'utf8', cwd: r.repo, env: { ...process.env, ...fakeHomeEnv(m.home), CLAUDE_CODE_SESSION_ID: m.sid } });
+  assert.equal(out.status, 0, `la corrida de backend no revisa la pantalla de otra tanda:\n${out.stdout}\n${out.stderr}`);
+  assert.doesNotMatch(out.stderr, /\(7\)/);
+  assert.match(out.stdout, /pantalla sin revisar[^\n]*tanda X-frontend/);
 });

@@ -81,10 +81,14 @@ function handle(event, opts = {}) {
 
   // Apagado: el portón lo anota él mismo, una vez por sesión y día (sin esto, una línea por cada edición).
   if (String(process.env.TYCON_ATDD_PREEDIT_GATE || '').toLowerCase() === 'off') {
-    require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js')).anotarEscape({
-      stateDir, sessionId, kind: 'ATDD_PREEDIT_GATE_OFF', variable: 'TYCON_ATDD_PREEDIT_GATE', unaVez: 'gate',
-      repoPath: marker.repoPath || null, story: marker.storyId,
-    });
+    // la lista se busca también con las skills en un clon aparte; sin ella no se puede anotar, y se dice
+    const ES = require('./lib/controls-off.js').listaDeInterruptores();
+    if (typeof ES.anotarEscape === 'function') {
+      ES.anotarEscape({
+        stateDir, sessionId, kind: 'ATDD_PREEDIT_GATE_OFF', variable: 'TYCON_ATDD_PREEDIT_GATE', unaVez: 'gate',
+        repoPath: marker.repoPath || null, story: marker.storyId,
+      });
+    } else process.stderr.write('on-atdd-preedit: TYCON_ATDD_PREEDIT_GATE=off, pero no encontré la lista de variables del arnés (scripts/lib/env-switches.js): el escape no quedó anotado\n');
     return null;
   }
 

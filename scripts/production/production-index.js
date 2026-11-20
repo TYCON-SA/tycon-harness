@@ -299,9 +299,12 @@ function leerMemoria(home) {
   return { memoria: [...new Set([...enMemorias, ...deIndices])].sort(), alterada };
 }
 
-/** Escribe `texto` por un temporal y rename (nunca se ve un archivo a medias). */
+/**
+ * Escribe `texto` por un temporal y rename (nunca se ve un archivo a medias). El temporal es de este proceso: dos
+ * puertas que arman el índice a la vez compartían uno, y la que renombraba segunda no lo encontraba y frenaba.
+ */
 function escribir(ruta, texto) {
-  const tmp = ruta + '.tmp';
+  const tmp = `${ruta}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, texto); fs.renameSync(tmp, ruta);
 }
 

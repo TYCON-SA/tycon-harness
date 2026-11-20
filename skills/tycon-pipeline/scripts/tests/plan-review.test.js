@@ -760,7 +760,8 @@ test('Coordinadora_ConstanciaQueNoCorresponde_NoFirma (T10) @story-1.29 @ac-8', 
 test('Delicado_ConRevisionAprobada_EsperaAlDev (T11) @story-1.29 @ac-9', (t) => {
   const lab = laboratorio(t, { sensible: 'seguridad' });
   lab.revisar(APROBADO);
-  const a = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(lab.leer(DESTINO)) });
+  const noTramite = () => false;
+  const a = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(lab.leer(DESTINO)), deTramite: noTramite });
   assert.strictEqual(a.codigo, 2);
   assert.match(a.motivo, /plan delicado \(nivel 2\): lo aprueba el dev/);
   // por el guion de verdad, tampoco
@@ -774,8 +775,14 @@ test('Delicado_ConRevisionAprobada_EsperaAlDev (T11) @story-1.29 @ac-9', (t) => 
   const conLaForma = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: m, delegaDelicada });
   assert.strictEqual(conLaForma.codigo, 0, JSON.stringify(conLaForma));
   assert.strictEqual(conLaForma.constancia.delicate.value, true);
-  const propia = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: m, delegaDelicada });
+  const propia = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: m, delegaDelicada, deTramite: noTramite });
   assert.match(propia.motivo, /plan delicado \(nivel 2\): lo aprueba el dev/);
+  // con `plan-approval:delicada` de trámite (automatic-signing.js), el plan delicado sale con su revisión aprobada sin
+  // coordinadora delegada; sigue pidiendo la revisión de quien firma, aprobada, sobre este plan
+  const deTramite = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: m, delegaDelicada: () => false, deTramite: () => true });
+  assert.strictEqual(deTramite.codigo, 0, JSON.stringify(deTramite));
+  const deTramiteAjena = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: m, delegaDelicada: () => false, deTramite: () => true });
+  assert.strictEqual(deTramiteAjena.codigo, 2, 'la revisión la lanzó otra sesión: no firma la propia');
   const sinRevision = laboratorio(t, { sensible: 'seguridad' });
   const s2 = PR().antesDeAprobar({ estado: sinRevision.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(sinRevision.leer(DESTINO)), delegaDelicada });
   assert.strictEqual(s2.codigo, 2);

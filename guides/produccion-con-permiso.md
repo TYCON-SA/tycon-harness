@@ -22,7 +22,7 @@ Dos causas, y las dos se arreglan con lo mismo:
 - **Una sola puerta**: `/opt/tycon/bin/tycon-prod-sql <host> 'select …'`. Es lo único que consulta
   producción, y **la propia puerta abre un cuadro del sistema** con el servidor y la sentencia: vos la
   leés y la aprobás antes de que se lea la clave. Ese cuadro sale aunque a la puerta la llame un guion,
-  porque lo pide ella y no el asistente. El cuadro de Claude Code sigue además, como segunda capa.
+  porque lo pide ella y no el asistente. Es la única ventana: Claude Code no pregunta además por la puerta.
 - **Un freno** prohíbe todo otro camino a esa base: `sqlcmd` directo, `az sql`, una cadena de
   conexión, leer la clave del Llavero, escribir el catálogo, o invocar la puerta de cualquier forma
   que no sea la canónica. También mira adentro de los guiones que el comando corre, aunque ya
@@ -167,18 +167,33 @@ Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda
 /opt/tycon/bin/tycon-prod-sql --reclassify <host>
 ```
 
-🔴 **En el cuadro: «Permitir», nunca «Permitir siempre».** El punto entero de esto es que cada
-sentencia se mire. Y si te aparece un cuadro del Llavero **sin que vos hayas aprobado una sentencia
-antes**, denegá: algo está leyendo la clave por otro camino.
+🔴 **El punto entero de esto es que cada sentencia se mire.** Y si te aparece un cuadro del Llavero **sin que vos
+hayas aprobado una sentencia antes**, denegá: algo está leyendo la clave por otro camino.
 
-**Dos cuadros por sentencia.** Primero el de Claude Code (el comando entero); después, el de la puerta: un cuadro
-del sistema titulado «Producción: ¿lo aprobás?», con el servidor y la sentencia, y «Rechazar» marcado por defecto.
-Recién con «Aprobar» la puerta lee la clave y consulta. Si no contestás en 2 minutos, se da por rechazada. Lo
-mismo pasa al bajar un servidor a no producción (`--reclassify`) y al abrir el firewall (`--open-firewall`); cerrar
-el firewall, `--verify`, `--locks` y `--load-key` no piden cuadro. **El cuadro necesita la sesión de la Mac**: por
+**Una sola ventana por sentencia: la de la puerta.** Es un cuadro del sistema titulado «Producción: ¿lo aprobás?», con
+quién pide, el servidor y la sentencia, y «Rechazar» marcado por defecto. Recién con «Aprobar» la puerta lee la clave y
+consulta. Si no contestás en 2 minutos, se da por rechazada. Claude Code ya no abre además su permiso: no agregaba
+control, porque sin el cuadro de la puerta no se consulta nada (lo prueba la suite de la puerta), y duplicaba las
+ventanas. Lo mismo pasa al bajar un servidor a no producción (`--reclassify`), al abrir el firewall (`--open-firewall`)
+y al borrar un grupo de recursos (`--delete-group`); cerrar el firewall, `--verify`, `--locks` y `--load-key` no piden
+cuadro: no consultan ni cambian nada que no se deshaga. **Producción se aprueba sólo frente a la Mac**: ninguna
+aprobación a distancia, ni un click ni un «aprobado» escrito, reemplaza a este cuadro. **El cuadro necesita la sesión de la Mac**: por
 SSH, o desde una sesión sin pantalla, la puerta no consulta (falla cerrada, a propósito). Y la sentencia tiene que
 entrar entera en el cuadro: hasta 1.200 caracteres en 20 renglones de 60; una más larga se rechaza antes de abrirlo,
 para que nunca apruebes una sentencia cortada.
+
+**El cuadro dice quién pide.** Su primera línea es la carpeta del proyecto y la sesión: «Pide: Cliente/Codigo · sesión
+0123abcd (principal)». Desde una terminal, fuera de Claude Code, dice eso. Si no reconocés la sesión, rechazá.
+
+**Un cuadro por vez.** Si llega un pedido mientras hay un cuadro abierto, espera a que contestes ése; no se apilan. Si
+en 90 segundos no se contesta, el pedido que esperaba sale sin abrir su cuadro ni leer la clave, y dice qué sesión tiene
+el cuadro abierto. Quien pide lo vuelve a intentar después, de a una consulta por vez.
+
+**Un subagente no usa la puerta.** El freno lo frena con cualquier forma de la puerta: el cuadro lo contesta una
+persona que mira la sesión principal, y un subagente, sobre todo uno en segundo plano, le apila cuadros de algo que no
+está siguiendo (pasó: diecinueve consultas en 26 segundos). El subagente devuelve las sentencias y la sesión principal
+las corre de a una. Claude Code avisa al freno cuando llama un subagente, pero no si es de fondo: por eso se frenan
+todos.
 
 **La consulta va siempre en línea.** El cuadro muestra el comando y nada más: lo que trae un archivo no se ve
 antes de aprobar, así que la puerta no acepta archivos. Una consulta puede ocupar varios renglones dentro de
@@ -305,14 +320,15 @@ Un grupo que **no** es de producción (uno de prueba) lo puede borrar el asisten
 aprobación:
 
 ```bash
-/opt/tycon/bin/tycon-prod-sql --delete-group <grupo>     # sólo el nombre; abre el cuadro
+/opt/tycon/bin/tycon-prod-sql --delete-group <grupo>     # sólo el nombre; antes de borrar, abre el cuadro
 ```
 
 La puerta le pregunta a Azure qué hay en el grupo y lo borra sólo si puede probar que es seguro: el grupo está en una
 sola suscripción, todos sus servidores SQL están declarados no-producción, no tiene una base de un tipo que el catálogo
 no cubre (Postgres, MySQL, MariaDB, una instancia administrada, Cosmos, Synapse) y los listados coinciden. Si no, sale 2
 sin borrar y dice por qué: un servidor de producción, uno sin declarar, un listado cortado o `az` que no contestó. El
-borrado sale con `--no-wait`: la puerta dice que Azure **aceptó el pedido**, no que el grupo ya no está, y da el comando
+borrado lo aprobás en el cuadro de la puerta, que dice el grupo, la suscripción, cuántos recursos y qué servidores
+tiene. Sale con `--no-wait`: la puerta dice que Azure **aceptó el pedido**, no que el grupo ya no está, y da el comando
 para confirmarlo (`az group exists`). Un grupo con candado lo rechaza Azure, y la puerta lo dice.
 
 Un grupo con algo de producción, o que la puerta no puede probar seguro, lo borra

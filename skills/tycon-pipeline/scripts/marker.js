@@ -563,7 +563,9 @@ function frenarSiPerdida(sesion, comando, cwd) {
   }
   if (!p) return;
   console.error(`marker.js ${comando}: la ejecución de la sesión ${sesion} está perdida (${p.caso}: ${p.falta}).`);
-  console.error(`  Sale sólo con marker.js clear-session ${sesion} --lost o marker.js restore ${sesion}: lo firma una persona en la ventana de permiso o en su terminal (--terminal).`);
+  // las dos formas, con la ruta estable: las mismas que el cartel de los frenos (lib/open-runs.js formasDeSalida)
+  console.error('  Sale sólo con una de estas salidas, que firma una persona:');
+  for (const l of require('./lib/open-runs.js').formasDeSalida({ ...p, sesion: String(sesion) }).renglones) console.error(`  ${l}`);
   process.exit(3);
 }
 
@@ -1986,6 +1988,8 @@ function cmdCompleteStep(nRaw, flags) {
     const delDueno = ['click', 'mensaje'].includes(firmaPlan.via) ? { tipo: 'manual', quien: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona' } : null;
     // la revisión que lanzó la propia sesión no es una delegación de nadie: se anota como lo que es
     const quienPlan = autoRevision ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})` }
+      // la firma de trámite la dio el arnés (automatic-signing.js): no hay coordinadora que nombrar
+      : porRevision && firmaPlan.automatica ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: 'arnés (firma de trámite)' }
       : porRevision ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: `coordinadora (sesión ${PROPIA})` }
         : delDueno || quienDeLasOpciones(optVal);
     const viaPlan = autoRevision ? '· revisión automática de la propia sesión' : porRevision ? '· revisión automática' : '--approved';
@@ -7577,22 +7581,92 @@ function cmdAdhocAllowDataChange(io) {
         if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) lineas.push(`  ⚠ no pude saber si ${path.join(repo, rel)} está en la base: miralo a mano antes de restaurarlo o borrarlo.`);
       }
     }
-    for (const repo of Object.keys(porRepo)) {
-      const rels = porRepo[repo];
-      if (!rels.length) continue;
-      const { sha } = medida.porRepo[repo].base;
-      const enLaBase = [];
-      const nuevos = [];
-      const sinSaber = [];
-      for (const rel of rels) {
-        if (!sha) { sinSaber.push(rel); continue; }
-        const r = require('child_process').spawnSync('git', ['-C', repo, 'ls-tree', '-z', '--name-only', sha, '--', rel], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
-        if (r.error || r.status !== 0) sinSaber.push(rel);
-        else (r.stdout.split('\0').includes(rel) ? enLaBase : nuevos).push(rel);
+    const spawn = require('child_process').spawnSync;
+    const gitEn = (args) => spawn('git', args, { windowsHide: true, encoding: 'utf8', timeout: 10000 });
+    const gitDe = (repo, args) => gitEn(['-C', repo, ...args]);
+    const okDe = (r) => !r.error && r.status === 0;
+    // las reglas de ignorar de la base, no las de hoy: el carril pudo cambiar un .gitignore. Sus .gitignore se copian a
+    // una carpeta aparte, que hace de árbol del repo; las exclusiones del repo y de la máquina valen igual. Lo que git
+    // sigue (está en el índice) no cuenta como ignorado. Devuelve true, false o null (no se pudo saber)
+    const carpetas = [];
+    const reglasDeLaBase = new Map();
+    const ignoradoEnLaBase = (repo, sha, rel) => {
+      if (!reglasDeLaBase.has(repo)) {
+        let reglas = null;
+        const gd = gitDe(repo, ['rev-parse', '--absolute-git-dir']);
+        const ls = gitDe(repo, ['ls-tree', '-r', '-z', '--name-only', sha]);
+        if (okDe(gd) && okDe(ls)) {
+          const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'descartar-'));
+          carpetas.push(dir);
+          reglas = { gitDir: gd.stdout.trim(), dir };
+          for (const f of ls.stdout.split('\0').filter((x) => x === '.gitignore' || x.endsWith('/.gitignore'))) {
+            const b = gitDe(repo, ['cat-file', 'blob', `${sha}:${f}`]);
+            if (!okDe(b)) { reglas = null; break; }
+            fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+            fs.writeFileSync(path.join(dir, f), b.stdout);
+          }
+        }
+        reglasDeLaBase.set(repo, reglas);
       }
-      if (enLaBase.length) lineas.push(`  git -C ${citar(repo)} checkout ${citar(sha)} -- ${enLaBase.map(citar).join(' ')}`);
-      if (nuevos.length) lineas.push(`  archivos nuevos del carril, para borrar: ${nuevos.map((r) => citar(path.join(repo, r))).join(' ')}`);
-      for (const rel of sinSaber) lineas.push(`  ⚠ no pude saber si ${path.join(repo, rel)} está en la base: miralo a mano antes de restaurarlo o borrarlo.`);
+      const reglas = reglasDeLaBase.get(repo);
+      if (!reglas) return null;
+      // «./» delante: un nombre que empieza con «:» no se lee como instrucción de git
+      const ig = gitEn(['--git-dir', reglas.gitDir, '--work-tree', reglas.dir, '-C', reglas.dir, 'check-ignore', '-q', '--', `./${rel}`]);
+      return ig.error || (ig.status !== 0 && ig.status !== 1) ? null : ig.status === 0;
+    };
+    // la ruta es un nombre, no un patrón: «src/[id].ts» no nombra src/i.ts
+    const enElIndice = (repo, rel) => { const r = gitDe(repo, ['--literal-pathspecs', 'ls-files', '-z', '--', rel]); return okDe(r) ? r.stdout.split('\0').includes(rel) : null; };
+    try {
+      for (const repo of Object.keys(porRepo)) {
+        const { sha } = medida.porRepo[repo].base;
+        // un archivo movido entra con sus dos rutas: la de la base vuelve y la nueva, si la base no la tiene, se borra. La
+        // ruta de la base sale del diff contra la base (movido dos veces, la medida trae la del medio)
+        const delCarril = new Set(porRepo[repo]);
+        const rels = new Set(delCarril);
+        const movidos = [];
+        for (const c of medida.porRepo[repo].cambios || []) if (c.vieja && (delCarril.has(c.ruta) || delCarril.has(c.vieja))) movidos.push([c.vieja, c.ruta]);
+        if (sha) {
+          const d = gitDe(repo, ['-c', 'core.quotepath=false', 'diff', '-z', '-M', '--name-status', sha, '--']);
+          if (okDe(d)) {
+            const t = d.stdout.split('\0');
+            for (let i = 0; i < t.length - 2; i++) if (/^R\d*$/.test(t[i]) && (delCarril.has(t[i + 2]) || delCarril.has(t[i + 1]))) { movidos.push([t[i + 1], t[i + 2]]); i += 2; }
+          }
+        }
+        for (const [vieja, nueva] of movidos) { rels.add(vieja); rels.add(nueva); }
+        if (!rels.size) continue;
+        // un movimiento que sólo cambia mayúsculas, en un disco que no las distingue: las dos rutas son el mismo archivo.
+        // Se devuelve el nombre con git mv y después el contenido con el checkout; la ruta nueva no se borra
+        const ignoraMayusculas = gitDe(repo, ['config', '--bool', 'core.ignorecase']).stdout.trim() === 'true';
+        const deMayusculas = ignoraMayusculas ? movidos.filter(([v, n]) => v !== n && v.toLowerCase() === n.toLowerCase()) : [];
+        for (const [, n] of deMayusculas) rels.delete(n);
+        const enLaBase = [];
+        const nuevos = [];
+        const nuevosEnGit = [];
+        const ignorados = [];
+        const sinSaber = [];
+        for (const rel of [...rels].sort()) {
+          if (!sha) { sinSaber.push(rel); continue; }
+          const r = gitDe(repo, ['--literal-pathspecs', 'ls-tree', '-z', '--name-only', sha, '--', rel]);
+          if (!okDe(r)) { sinSaber.push(rel); continue; }
+          if (r.stdout.split('\0').includes(rel)) { enLaBase.push(rel); continue; }
+          // lo que git sigue se borra con git, para que no quede preparado y un commit lo vuelva a agregar
+          const indice = enElIndice(repo, rel);
+          if (indice === null) { sinSaber.push(rel); continue; }
+          if (indice) { nuevosEnGit.push(rel); continue; }
+          // lo que la base ignora no está en ella aunque existiera antes del carril (un .env): git no lo puede devolver
+          const ig = ignoradoEnLaBase(repo, sha, rel);
+          if (ig === null) sinSaber.push(rel);
+          else (ig ? ignorados : nuevos).push(rel);
+        }
+        for (const [v, n] of deMayusculas) if (enLaBase.includes(v)) lineas.push(`  git -C ${citar(repo)} mv -f -- ${citar(n)} ${citar(v)}`);
+        if (enLaBase.length) lineas.push(`  git -C ${citar(repo)} checkout ${citar(sha)} -- ${enLaBase.map((r) => citar(`:(literal)${r}`)).join(' ')}`);
+        if (nuevos.length) lineas.push(`  archivos nuevos del carril, para borrar: ${nuevos.map((r) => citar(path.join(repo, r))).join(' ')}`);
+        if (nuevosEnGit.length) lineas.push(`  git -C ${citar(repo)} rm -q -f -- ${nuevosEnGit.map((r) => citar(`:(literal)${r}`)).join(' ')}   # archivos nuevos del carril que git sigue, para borrar`);
+        for (const rel of ignorados) lineas.push(`  ⚠ ${path.join(repo, rel)}: git lo ignora y no lo puede devolver (pudo existir antes del carril): no lo borres; deshacé a mano lo que le cambiaste.`);
+        for (const rel of sinSaber) lineas.push(`  ⚠ no pude saber si ${path.join(repo, rel)} está en la base: miralo a mano antes de restaurarlo o borrarlo.`);
+      }
+    } finally {
+      for (const dir of carpetas) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_e) { /* una carpeta temporal que quedó */ } }
     }
     lineas.push(`  Después: node ${citar(__filename)} adhoc clear`);
     process.stdout.write([...new Set(lineas)].join('\n') + '\n');
@@ -7902,7 +7976,18 @@ function cmdAdhoc(sub, payloadJson) {
     // pedida por otra sesión (la coordinadora, desde su carpeta), la lista va relativa a la carpeta de trabajo de la
     // sesión destino; la terminal de una persona y la propia sesión, a la del proceso
     const deOtraSesion = pedida && PROPIA !== '_nosession' && pedida !== PROPIA;
-    const base = deOtraSesion ? LISTA.carpetaDeLaSesion({ casa: os.homedir(), sesion: pedida }) : process.cwd();
+    // `--repo <carpeta>`: la carpeta de la lista dicha, para que la terminal de la persona pueda estar en cualquier otra
+    // (@story-8.319, AC 8)
+    const repoPedido = (() => { const i = process.argv.indexOf('--repo'); return i >= 0 ? process.argv[i + 1] : null; })();
+    if (repoPedido !== null) {
+      let esCarpeta = false;
+      try { esCarpeta = !!repoPedido && fs.statSync(path.resolve(repoPedido)).isDirectory(); } catch (_) { esCarpeta = false; }
+      if (!esCarpeta) {
+        console.error(`marker.js adhoc set: --repo «${String(repoPedido).slice(0, 200)}» no es una carpeta: no declaré nada.`);
+        process.exit(2);
+      }
+    }
+    const base = repoPedido ? path.resolve(repoPedido) : deOtraSesion ? LISTA.carpetaDeLaSesion({ casa: os.homedir(), sesion: pedida }) : process.cwd();
     const conRelativas = Array.isArray(payload.allowedFiles) && payload.allowedFiles.some((f) => typeof f === 'string' && f.trim() && !path.isAbsolute(f.trim()) && !/^[A-Za-z]:[\\/]/.test(f.trim()));
     if (!base && conRelativas) {
       console.error(`marker.js adhoc set: no sé la carpeta de la sesión ${pedida}: que lo pida esa sesión, o una persona desde su terminal en esa carpeta.`);
@@ -8024,9 +8109,10 @@ function cmdAdhoc(sub, payloadJson) {
       console.error(`🔒 marker.js adhoc set: la persona no lo aprobó — ${r.motivo}`);
       console.error('   El arreglo rápido lo aprueba una persona, no el agente: en la ventana de permiso, corriendo este comando solo y en su forma');
       console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
-      // con la carpeta: la lista va relativa a ella, y la terminal de la persona puede estar en otra
-      const irALaCarpeta = process.platform === 'win32' ? `cd /d "${carpetaDeLaLista}"` : `cd ${citar(carpetaDeLaLista)}`;
-      console.error(`     ${irALaCarpeta} && node ${__filename} adhoc set ${pedidoEnTerminal} --terminal --for-session ${destino}`);
+      // con la carpeta en --repo: la lista va relativa a ella, y la terminal de la persona puede estar en otra (o en otro
+      // repo). Sin `cd … &&`, que Windows PowerShell 5.1 no tiene, y con la ruta estable de marker.js (@story-8.319, AC 8)
+      const repoEnTerminal = /["$`%\r\n]/.test(carpetaDeLaLista) ? citar(carpetaDeLaLista) : `"${carpetaDeLaLista}"`;
+      console.error(`     ${require('./lib/open-runs.js').markerEstable(os.homedir())} adhoc set ${pedidoEnTerminal} --terminal --for-session ${destino} --repo ${repoEnTerminal}`);
       console.error('   Si la persona no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
       process.exit(r.codigo === 2 ? 2 : 1);
     }
@@ -8109,6 +8195,8 @@ function cmdAdhoc(sub, payloadJson) {
       console.error(`⚠ marker.js adhoc set: por la delegación el cupo queda en hasta ${maxFiles} archivos (${antes}); uno mayor lo aprueba una persona en su ventana.`);
     }
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
+    // el aviso de las pruebas, al abrir y no recién al guardar; por la salida de errores: el JSON queda igual (@story-8.319)
+    console.error(`Si este camino corto cambia código, guardar pide una corrida en verde: ${require('./lib/open-runs.js').markerEstable(os.homedir())} adhoc test -- <el comando de las pruebas>. Si cambiás código después, se vence.`);
     process.exit(0);
   }
   console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N,"mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}\' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc allow-data-change --changed "…" --recommends pasar|historia|descartar --why "…" | adhoc allow-foreign-save | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
@@ -8154,7 +8242,7 @@ function cmdSignFile(firma, archivo) {
   // en la terminal del dueño no hay sesión: sin --for-session la constancia no la usaría ninguna escritura
   if (SID === '_nosession' && process.argv.includes('--terminal')) {
     console.error('🔒 marker.js sign-file: sin --for-session no sé qué sesión va a escribir el archivo, y la firma no le serviría a ninguna.');
-    console.error(`   Corré: ${ow.comoSeFirmaEnLaTerminal(firma, archivo, '<id de la sesión del agente>')}`);
+    console.error(`   Corré: ${ow.comoSeFirmaEnLaTerminal(firma, archivo, '<id de la sesión del agente>') || ow.sinFormaDeTerminal(archivo)}`);
     process.exit(2);
   }
   const r = firmaDelDueno(`escape:${firma}`, `${firma} sobre ${archivo}`);

@@ -1,12 +1,38 @@
 # Las firmas del dueño
 
-Algunos pasos del arnés no los puede aprobar el agente que trabaja: los firma una persona. Esta guía lista todas esas
-firmas, con el nombre que lleva cada una en el perfil del equipo. Sirve para decidir dos cosas del perfil:
+Algunos pasos del arnés no los puede aprobar el agente que trabaja. Esta guía (en inglés, [firmas-del-arnes.en.md](firmas-del-arnes.en.md)) lista todas esas firmas, con el nombre que
+lleva cada una en el perfil del equipo. Sirve para decidir dos cosas del perfil:
 
-- `approvals.delegated_signing`: qué firmas puede dar sola la sesión designada (la coordinadora), sin preguntarle al
-  dueño.
+- `approvals.delegated_signing`: las firmas **de trámite**. Las da **el arnés solo**, en cualquier sesión y en cualquier
+  máquina, con o sin coordinadora (ver «Las firmas de trámite las da el arnés»).
 - `approvals.owner_only`: qué firmas son sólo del dueño. Una firma no puede estar en las dos listas: si lo está, la
-  lista de delegadas se lee rota y no delega nada.
+  lista de trámite se lee rota y ninguna sale sola.
+
+## Las firmas de trámite las da el arnés
+
+Una firma que el perfil pone en `approvals.delegated_signing` no le llega a nadie: no abre ventana ni cuadro y no espera a
+la coordinadora. El arnés la da solo, en la sesión que la pide (también para sí misma), en sesiones del arnés y de
+productos, y en cualquier máquina, sin lista de máquinas.
+
+- **Pasa por el mismo control de contenido que antes.** Cada guion comprueba lo suyo antes de firmar sin persona: el plan,
+  con la revisión automática aprobada sobre ese mismo plan; la comparación con main, que la historia no sea delicada; el
+  guardado, con la historia limpia; el camino corto, dentro del cupo y sin rutas de riesgo alto; el pendiente, sobre un
+  repo donde trabaja la sesión. Si ese control dice que no, la firma va a una persona, como siempre, y la ventana dice por
+  qué no salió sola.
+- **La constancia la escribe el arnés, no el agente.** Queda en el registro común de firmas con vía `automatic`,
+  firmante «arnés (firma de trámite)», quién la pidió, para qué sesión y qué se firmó. En la consola de la sesión queda un
+  aviso de una línea. La carpeta del estado y el registro siguen protegidos: el agente no los escribe.
+- **Las listas se cambian sólo en el perfil del equipo**, con un pedido a ese repo. Una organización que quiere devolverle
+  una firma a la persona la saca de `approvals.delegated_signing` o la pone en `approvals.owner_only`.
+- **A una persona le quedan**: el cambio de controles (`control-change`), lo irreversible y producción (todo el nivel 3,
+  con la emergencia), apagar un freno o saltear las pruebas o el pase (todo `approvals.owner_only`: `TYCON_SAFETY_OFF`,
+  `TYCON_TEST_GATE`, `DOD_BYPASS`, `adversarial-skip`, `no-deep-review` y los demás), y nombrar o retirar a la coordinadora.
+  Ninguna de esas sale sola aunque un perfil la liste.
+- **Los escapes de trámite** (los `escape:…` de la lista, que pasan por el freno de seguridad) también salen solos, cada
+  uno en su forma de siempre y sin otra firma en el mismo comando. Su constancia la escribe el freno de seguridad con vía
+  `automatica`, y vale para lo que la pide después (cerrar como deuda, el rojo esperado de la matriz).
+
+Lo que sigue sobre la delegación a la coordinadora vale para lo que el perfil no pone en la lista de trámite.
 
 Las dos listas se escriben sólo en el perfil del equipo: ni el archivo de la máquina ni una variable las cambian. Las
 tablas de esta guía salen de `scripts/lib/signatures.js` con `node scripts/tools/signatures-guide.js --write`, y una
@@ -340,6 +366,19 @@ Esto no firma en Windows:
 
 Una consola de fondo viva frena, y también una PowerShell viva, porque no se puede leer qué corre. Se cierra, o se firma en
 la terminal.
+
+**El freno ofrece sólo lo que anda en tu consola.** En Windows la firma por cuadro o por «aprobado» anda sólo desde la
+consola Bash de Git. Si el agente pidió la firma desde la consola PowerShell, el freno no le ofrece la ventana, el cuadro
+ni el «aprobado»: le dice que la corra por la consola Bash de Git (si está) o te da la forma de la terminal. Un escape o un
+guion `.sh` van sólo por la terminal, también desde Bash de Git. La lista de firmas guarda con qué consola se pidió cada
+una, y `owner-next` le da a la coordinadora la terminal en lugar del cuadro cuando el cuadro no firmaría; lo mismo con una
+firma que no se da desde la pestaña de otra sesión.
+
+**Un solo comando para las tres consolas.** La forma de la terminal es `node "<carpeta personal>/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js" …`,
+con comillas dobles, sin `~`, sin `cd` ni `&&`, y con `--terminal --for-session <sesión>` al final: se pega igual en
+Windows PowerShell 5.1, PowerShell 7 y cmd (y en bash). El arreglo rápido lleva además `--repo "<carpeta>"`, así tu terminal
+puede estar en cualquier carpeta. Una ruta o una carpeta personal con `$`, `"`, una comilla invertida, `%` o un salto de
+línea no se cita igual en las cuatro: ahí el freno no da la forma de la terminal y dice por qué.
 
 Los límites de esto:
 

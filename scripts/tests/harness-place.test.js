@@ -400,8 +400,10 @@ function sweepOffenders(root, files) {
 }
 
 // ── T35 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// la guía de piezas es su índice y sus grupos: cada archivo se revisa, y el lugar lo nombra alguno
+const PIECES = require('./lib/pieces-guide.js');
 const TEAM_PAPERS = ['INSTALL.md', 'onboarding/new-dev-harness-setup.md', 'onboarding/step-0-mac.md', 'onboarding/step-0-windows.md',
-  'guides/piezas-del-arnes.md', 'claude-md-blocks/names/tool-names.codex.md', 'commands/tycon-instincts.md'];
+  ...PIECES.piecesFiles(ROOT), 'claude-md-blocks/names/tool-names.codex.md', 'commands/tycon-instincts.md'];
 const NAMES_THE_PLACE = ['INSTALL.md', 'onboarding/new-dev-harness-setup.md', 'guides/piezas-del-arnes.md', 'claude-md-blocks/names/tool-names.codex.md', 'commands/tycon-instincts.md'];
 test('T35 TeamPapers_PlacePath_OldStartupDeclared_TwoNamesParagraphInternal', () => {
   // la verificación del import en los papeles del equipo: una máquina nueva escribe
@@ -416,7 +418,7 @@ test('T35 TeamPapers_PlacePath_OldStartupDeclared_TwoNamesParagraphInternal', ()
   for (const f of shipped(TEAM_PAPERS, 'T35')) {
     const text = read(f);
     assert.deepStrictEqual(legacyPathLines(text), [], `${f}: nombra la ruta del lugar por el nombre viejo`);
-    if (NAMES_THE_PLACE.includes(f)) assert.ok(PLACE_PATH_RX.test(text), `${f}: no nombra el lugar`);
+    if (NAMES_THE_PLACE.includes(f)) assert.ok(PLACE_PATH_RX.test(f === PIECES.INDEX ? PIECES.piecesText(ROOT) : text), `${f}: no nombra el lugar`);
   }
   assert.ok(!LIST.legacy_only.some((e) => e.path === 'INSTALL.md'), 'INSTALL.md no nombra la ruta vieja: no va en legacy_only');
 });

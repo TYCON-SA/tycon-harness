@@ -142,15 +142,21 @@ function nightlyMeasured(file, now = Date.now()) {
 const DIRECT_RUNS_ALL = /^(pipelines\/|scripts\/setup\/|\.githooks\/)|(^|\/)install-tycon-hooks\.[^/]+$|(^|\/)tycon-ci-gate\.js$|^scripts\/production\/install-guard\.[^/]+$|^skills\/tycon-pipeline\/scripts\/lib\/touched-files\.js$/;
 
 /**
- * ¿El código de la suite (`text`) nombra el archivo `f`? Su ruta, su nombre con extensión, o su nombre sin extensión
- * como palabra entera, si tiene 4 letras o más (`w` suelta no nombra `w.js`).
+ * ¿El código de la suite (`text`) nombra el archivo `f`? Su ruta, su nombre con extensión, o su nombre sin extensión si
+ * tiene 4 letras o más (`w` suelta no nombra `w.js`); cada uno como palabra entera, no pegado a una letra, un dígito, `_`
+ * ni `-`: `DATABASE` no nombra un archivo `BASE`, ni `estate.js` a `state.js`. El nombre sin extensión seguido de un
+ * punto sí cuenta (`state.json` nombra a `state.js` por `state`): ante la duda, corre.
  */
 function names(text, f) {
   const base = path.posix.basename(f);
-  if (text.includes(f) || text.includes(base)) return true;
+  if (nombraEntero(text, f) || nombraEntero(text, base)) return true;
   const stem = base.replace(/\.[^.]+$/, '');
-  if (stem.length < 4) return false;
-  const esc = stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return stem.length >= 4 && nombraEntero(text, stem);
+}
+
+function nombraEntero(text, s) {
+  if (!s || !text.includes(s)) return false;
+  const esc = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(^|[^A-Za-z0-9_-])${esc}([^A-Za-z0-9_-]|$)`).test(text);
 }
 

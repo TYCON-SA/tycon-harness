@@ -254,9 +254,9 @@ fi
 # (ask, deny, allow o none), OW_TEXTO, OW_FIRMA, OW_VIA, OW_RELEVO y OW_JSON (lo que se emite para pedir la ventana).
 # Sin con qué consultar, o si la consulta se cae, niega: lo que no se pudo decidir lo firma la persona en su terminal.
 OW_ESCAPES=()
-OW_DECISION=""; OW_TEXTO=""; OW_FIRMA=""; OW_VIA=""; OW_RELEVO=""; OW_JSON=""
+OW_DECISION=""; OW_TEXTO=""; OW_FIRMA=""; OW_VIA=""; OW_RELEVO=""; OW_JSON=""; OW_OFRECE=""
 ow_gate() {
-  OW_DECISION=""; OW_FIRMA="${1:-}"; OW_VIA=""; OW_RELEVO=""; OW_JSON=""
+  OW_DECISION=""; OW_FIRMA="${1:-}"; OW_VIA=""; OW_RELEVO=""; OW_JSON=""; OW_OFRECE=""
   OW_TEXTO="no pude consultar la ventana de permiso. Esta firma se da en tu terminal"
   local lib out k args=()
   lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/owner-window.js" || lib=""
@@ -271,6 +271,7 @@ ow_gate() {
         via=*) OW_VIA="${k#via=}" ;;
         relevo=*) OW_RELEVO="${k#relevo=}" ;;
         json=*) OW_JSON="${k#json=}" ;;
+        ofrece=*) OW_OFRECE="${k#ofrece=}" ;;
       esac
     done <<< "$out"
   fi
@@ -834,8 +835,8 @@ fi
 # módulo del comando. Contesta una de cuatro:
 #   · deny: frena con la regla de la firma y el motivo de la ventana, que trae cómo firmarla en la terminal;
 #   · ask: se guarda y se emite al salir 0 (salida_ok), así una regla posterior que frena sigue frenando;
-#   · allow: una firma que el dueño delegó nombrándola en `approvals.delegated_signing` la dio quien coordina, con su
-#     constancia;
+#   · allow: una firma de trámite (`approvals.delegated_signing`) la dio el arnés solo, o una delegada la dio quien
+#     coordina; queda su constancia con la vía;
 #   · none: no hay firma que pedir (o la vuelta extra delegada, que la consume pipeline.js).
 # Aprobar un control con `--relayed-by` ya no vale: la ventana lo niega (ESC-C7). Con el freno apagado por el ambiente
 # no se consulta: los escapes ya dejaron su constancia, y los guiones sin registro de la ventana sólo firman en la
@@ -851,13 +852,17 @@ ow_regla() { # $1 = la firma → la regla con que frena o deja constancia
   esac
 }
 ow_negar() { # la ventana negó: frena con el motivo de la firma
-  local regla f clave esc sub a1
+  local regla f clave esc sub a1 alt
+  # en Windows, lo que anda en esta consola (owner-window.js ofrecerEnWindows): reemplaza la ventana, el cuadro y el
+  # «aprobado» del texto fijo; fuera de Windows, o con Bash de Git y una firma que pasa por la pestaña, va vacío (8.319)
+  alt="$OW_OFRECE"
   regla="$(ow_regla "$OW_FIRMA")" || regla="ESC-C3"
   if [[ "$regla" == "ESC-C1" ]]; then esc_c1_negar "${OW_FIRMA#escape:}"; fi
   for f in ${_c3_negables[@]+"${_c3_negables[@]}"}; do
     IFS=$'\t' read -r clave esc sub a1 <<< "$f" || true
     [[ "escape:$clave" == "$OW_FIRMA" ]] || continue
-    ESC_CARTEL="$OW_TEXTO
+    ESC_CARTEL="$OW_TEXTO${alt:+
+$alt}
 Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, explicale qué falta y por qué: lo que sigue lo decide ella, entre dejar la historia como deuda (marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>) o hacerlo igual."
     case "$clave" in
       cerrar-como-deuda) block "ESC-C4" \
@@ -887,16 +892,16 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
   case "$OW_FIRMA" in
     plan-approval) block "ESC-C6" \
         "Aprobar el plan es una firma de la persona, y este comando no la puede pedir en la ventana de permiso." \
-        "Mostrale el plan a la persona y corré la aprobación en su forma exacta, sola: la aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito. La terminal queda como opción." ;;
+        "Mostrale el plan a la persona. ${alt:-Corré la aprobación en su forma exacta, sola: la aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito. La terminal queda como opción.}" ;;
     control-change|refresh-after-main) block "ESC-C7" \
         "Aprobar un cambio de los controles del repo es una firma de una persona, y este comando no la puede pedir en la ventana de permiso." \
-        "Corré run-base-controls.sh approve en su forma exacta, sola: la persona lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito. La terminal queda como opción." ;;
+        "${alt:-Corré run-base-controls.sh approve en su forma exacta, sola: la persona lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito. La terminal queda como opción.}" ;;
     escape:merge-bypass) block "GIT-C5" \
         "Mergear salteando la cola y la CI de main, o aflojar las políticas de la rama, lo aprueba una persona, una vez por comando, y nunca por delegación." \
-        "El camino normal es encolar el pedido: gh pr merge <n> --merge. Si de verdad hace falta saltear, decíselo a la persona: lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito." ;;
+        "El camino normal es encolar el pedido: gh pr merge <n> --merge. Si de verdad hace falta saltear, decíselo a la persona. ${alt:-Lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito.}" ;;
     *) [ "$regla" = "ESC-C3" ] && BLOCK_MOTIVO="firma-fuera-de-la-ventana"; block "$regla" \
         "Esto lo firma la persona, y este comando no la puede pedir en la ventana de permiso." \
-        "Corré el comando de la firma en su forma exacta, solo: la persona lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito (lo irreversible, en su terminal)." ;;
+        "${alt:-Corré el comando de la firma en su forma exacta, solo: la persona lo aprueba en la ventana o, sin ventana, con un click en el cuadro de opciones o un «aprobado» escrito (lo irreversible, en su terminal).}" ;;
   esac
 }
 _ow_mira=0
@@ -916,8 +921,10 @@ if [[ "$_ow_mira" == "1" ]]; then
         _ow_det=""; [[ "$_ow_e" == "escape:rojo-esperado-de-la-matriz" ]] && _ow_det="${_c3_detalle:-}"
         constancia "$(ow_regla "$_ow_e")" escape ventana "" "$_c3_sid" "${_ow_e#escape:}" "" "$_ow_det"
       done ;;
-    # la aprobación explícita de la persona (un click o un «aprobado») queda con su vía: la dio ella, no la delegación
-    allow) _ow_camino=delegacion; case "$OW_VIA" in click|mensaje) _ow_camino="$OW_VIA" ;; esac
+    # la aprobación explícita de la persona (un click o un «aprobado») queda con su vía: la dio ella, no la delegación; la
+    # firma de trámite, con la suya: la dio el arnés (automatic-signing.js)
+    allow) _ow_camino=delegacion; case "$OW_VIA" in click|mensaje|automatica) _ow_camino="$OW_VIA" ;; esac
+      [[ "$OW_VIA" == "automatica" ]] && printf '✅ firma de trámite, la dio el arnés: %s\n' "${OW_FIRMA#escape:}" >&2
       _ow_det=""; [[ "$OW_FIRMA" == "escape:rojo-esperado-de-la-matriz" ]] && _ow_det="${_c3_detalle:-}"
       constancia "$(ow_regla "$OW_FIRMA")" escape "$_ow_camino" "$OW_RELEVO" "$_c3_sid" "${OW_FIRMA#escape:}" "" "$_ow_det" ;;
     none)

@@ -310,7 +310,7 @@ function reviewersRound(marker, { aunConHallazgos = false } = {}) {
   const previo = marker.otraVuelta && typeof marker.otraVuelta === 'object' && Date.parse(marker.otraVuelta.desde || '') > cierre ? marker.otraVuelta : null;
   let desde = previo ? Date.parse(previo.desde) : null;
   // si la regla falla, el archivo pide otra vuelta: ante la duda, se revisa (lo mismo que anota on-edit)
-  const pide = (p) => { try { return pideOtraVuelta(p, { storyPath: marker.storyPath }); } catch (_) { return true; } };
+  const pide = (p) => { try { return pideOtraVuelta(p, { storyPath: marker.storyPath, repoPath: marker.repoPath }); } catch (_) { return true; } };
   // sin repetir por la ruta entera: por el nombre, dos archivos de repos distintos se juntarían
   const absolutos = [];
   for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) {

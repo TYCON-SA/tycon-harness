@@ -492,7 +492,9 @@ test('P2v15 Lista_FueraDeTodoRepo_Avisa — @story-8.174 @ac-25', () => {
   const sin = marker(h, 's15', ['adhoc', 'set', pedido({ allowedFiles: ['src/a.js'] })], { cwd: dir });
   assert.notEqual(sin.status, 0);
   assert.doesNotMatch(sin.stderr, /no caen dentro de ningún repo/);
-  assert.match(sin.stderr, /cd '.*producto' && node /);
+  // la carpeta va en --repo, sin `cd … &&` (8.319, AC 8)
+  assert.match(sin.stderr, /adhoc set .* --terminal --for-session \S+ --repo ".*producto"/);
+  assert.doesNotMatch(sin.stderr, /&& node /);
 });
 
 test('T49 Sensible_ElPortonDeCarril — @story-8.174 @ac-46', () => {

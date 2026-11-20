@@ -213,7 +213,7 @@ test('T5 EdicionAMano_ConFrase_YaNoPasa @story-8.109 @ac-4 @story-8.139 @ac-43 ‚
     const h = nuevaHome({ herramienta: 'Edit', conversacion: [deLaPersona(frase)] });
     const r = correr(ENCABEZADO, h, editar(h, 'status: in-progress\nqa', 'status: done\nqa'));
     assert.strictEqual(r.status, 2, `${frase}: ${r.stderr}`);
-    assert.match(r.stderr, /marker\.js sign-file cambiar-el-estado/, frase);
+    assert.match(r.stderr, /marker\.js"? sign-file cambiar-el-estado/, frase);
   }
   for (const [que, conversacion] of [['de hace 31 minutos', [deLaPersona('autorizo cambiar el estado', 31)]], ['sin conversaci√≥n', null]]) {
     const h = nuevaHome({ herramienta: 'Edit', conversacion });

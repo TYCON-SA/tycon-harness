@@ -150,6 +150,51 @@ test('T7 AtddPreedit_OffWritesOncePerSessionAndDay @story-8.256 @ac-6', () => {
   assert.strictEqual(fs.readFileSync(path.join(par, 'bypass.log'), 'utf8').trim().split('\n').length, 1);
 });
 
+/**
+ * Las skills en un clon aparte, como las instala el arnés en una máquina: sin `scripts/` al lado, y una HOME de juguete
+ * con el enlace al arnés que deja el instalador (`~/.claude/tycon-harness`).
+ */
+function skillsAparte() {
+  const d = tmp('es-aparte-');
+  const salta = (src) => !/[\\/](tests|__tests__|node_modules)([\\/]|$)/.test(src);
+  const scripts = path.join(d, 'agent-skills', 'skills', 'tycon-pipeline', 'scripts');
+  fs.cpSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts'), scripts, { recursive: true, filter: salta });
+  const home = path.join(d, 'home');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.symlinkSync(ROOT, path.join(home, '.claude', 'tycon-harness'));
+  return { scripts, home, env: { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: '' } };
+}
+
+// 🔴 Falla con: el freno de ATDD apagado, con las skills en un clon aparte, buscando la lista de variables en la ruta del
+//    árbol unido: el require tira y el gancho se cae en vez de anotar el escape.
+test('EnvSwitches_SkillsAparte_AtddAnotaElEscape', () => {
+  const { scripts, env } = skillsAparte();
+  const st = tmp('es-aparte-st-');
+  fs.mkdirSync(path.join(st, 'active'));
+  fs.writeFileSync(path.join(st, 'active', 's-ap.json'), JSON.stringify({ storyId: '9.9', repoPath: st }));
+  const prog = `const { handle } = require(${JSON.stringify(path.join(scripts, 'on-atdd-preedit.js'))});
+    process.stdout.write(JSON.stringify(handle({ session_id: 's-ap', tool_input: { file_path: ${JSON.stringify(path.join(st, 'a.js'))} } }, { stateDir: ${JSON.stringify(st)} })));`;
+  const r = spawnSync(process.execPath, ['-e', prog], { encoding: 'utf8', env: { ...env, TYCON_ATDD_PREEDIT_GATE: 'off' } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(r.stdout, 'null');
+  assert.match(fs.readFileSync(path.join(st, 'bypass.log'), 'utf8'), /ATDD_PREEDIT_GATE_OFF/);
+});
+
+// 🔴 Falla con: la matriz por criterio con una escotilla puesta, en un clon aparte: el require de la ruta del árbol unido
+//    tira y la matriz no se calcula.
+test('EnvSwitches_SkillsAparte_MatrizAnotaLaEscotilla', () => {
+  const { scripts, home, env } = skillsAparte();
+  const repo = tmp('es-aparte-repo-');
+  spawnSync('git', ['init', '-q', repo]);
+  const story = path.join(repo, 'story-9.9-x.md');
+  fs.writeFileSync(story, '---\nstory: 9.9\nstatus: in-progress\n---\n# x\n\n## Acceptance Criteria\n\n1. algo\n\n### Tests\n\n| # | Test | AC |\n|---|---|---|\n| T1 | `T1` | 1 |\n');
+  const r = spawnSync(process.execPath, [path.join(scripts, 'runtime-matrix.js'), '--story', story, '--no-write'], { encoding: 'utf8', cwd: repo, env: { ...env, TYCON_RUNTIME_MATRIX_LEGACY: '1', CLAUDE_CODE_SESSION_ID: 's-mx' } });
+  assert.doesNotMatch(`${r.stdout}${r.stderr}`, /Cannot find module/, r.stderr);
+  const log = [path.join(home, '.tycon', 'state'), path.join(home, '.claude', '.tycon-pipeline')].map((x) => path.join(x, 'bypass.log')).find((f) => fs.existsSync(f));
+  assert.ok(log, `no quedó bypass.log\n${r.stderr.slice(0, 600)}`);
+  assert.match(fs.readFileSync(log, 'utf8'), /RUNTIME_MATRIX_LEGACY/);
+});
+
 /** Una copia del árbol del arnés (sin pruebas) para romperle la lista sin tocar el clon. */
 function copiaSinLista() {
   const d = tmp('es-copia-');

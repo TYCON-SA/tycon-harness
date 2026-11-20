@@ -49,6 +49,8 @@ function pedidoPorBanderas(args) {
     const a = args[i];
     if (a === '--terminal') terminal = true;
     else if (a === '--for-session') i++;
+    // la carpeta de la lista: la lee marker.js (@story-8.319)
+    else if (a === '--repo') i++;
     else if (a === '--file') {
       // la lista de archivos, una bandera por archivo
       const v = args[++i];

@@ -88,10 +88,12 @@ function arbolDelGuion(casa, cmd, { consola, padre = 100, tool = herramienta(), 
 const evento = (command, extra = {}) => ({ session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, permission_mode: 'default', ...extra });
 // sin `delegacion`, ninguna firma se delega: la delegación de verdad lee el perfil y la huella de esta máquina
 const SIN_DELEGACION = () => ({ ok: false, motivo: 'sin delegación en la prueba' });
+// sin `tramite`, ninguna firma es de trámite: la de verdad lee las listas del perfil del equipo
+const SIN_TRAMITE = () => ({ ok: false, motivo: null });
 // sin `aprobador`, el texto de un repo del arnés: el de verdad mira el remoto de la carpeta del evento
 const { APPROVERS } = require(path.join(__dirname, '..', 'lib', 'approver.js'));
 const DEL_ARNES = () => APPROVERS.maintainers;
-const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES, aprobaciones: o.aprobaciones, topes: o.topes });
+const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, tramite: o.tramite || SIN_TRAMITE, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES, aprobaciones: o.aprobaciones, topes: o.topes });
 // el control previo con que el guion de verdad pide una firma que puede salir sin persona (sin él, la delegación y
 // «hecho y avisado» no firman); acá deja pasar: lo que comprueba lo prueba cada guion
 const CONTROL_DEL_GUION = () => null;
@@ -1308,7 +1310,7 @@ test('SignFile_SinConstancia_NiegaYNombraElComando (T45) @story-8.139 @ac-43', (
   for (const [firma, , escribir] of frenosDeArchivo(t)) {
     const r = escribir(casaNueva(t), 'ses-a');
     assert.notStrictEqual(r, true, `${firma}: sin constancia frena`);
-    assert.match(String(r), new RegExp(`marker\\.js sign-file ${escRe(firma)}`), `${firma}: nombra el comando`);
+    assert.match(String(r), new RegExp(`marker\\.js"? sign-file ${escRe(firma)}`), `${firma}: nombra el comando`);
     assert.doesNotMatch(String(r), /«autorizo/, `${firma}: no dicta una frase`);
   }
 });
@@ -1350,7 +1352,7 @@ test('SignFile_OtroArchivoOVencida_Niega (T45) @story-8.139 @ac-43', (t) => {
     ow.firmarArchivo({ firma, via: 'ventana', sesion: 'ses-a', archivo, casa, ahora: Date.now() - 31 * 60000 });
     const r = escribir(casa, 'ses-a');
     assert.notStrictEqual(r, true, `${firma}: vencida no vale`);
-    assert.match(String(r), /marker\.js sign-file/, `${firma}: vencida, nombra el comando`);
+    assert.match(String(r), /marker\.js"? sign-file/, `${firma}: vencida, nombra el comando`);
   }
   // una firma que no es de archivo no se pide con sign-file
   const casa = casaNueva(t);
@@ -1565,11 +1567,14 @@ test('Ventana_ArchivoConTilde_MuestraLaRutaDeLaCasa (pase adversarial) @story-8.
 });
 
 test('ComoSeFirma_RutaConCaracteresDeLaConsola_VaEntreComillas (pase adversarial) @story-8.139 @ac-43', () => {
-  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md'), 'marker.js sign-file dod_runtime_exempt /r/specs/story-9.99.md');
-  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt'), 'marker.js sign-file dod_runtime_exempt <archivo>');
+  // con node y la ruta estable de marker.js, y el archivo entre comillas dobles (8.319, AC 6 y 7)
+  const N = `${ow.markerEstable()} sign-file dod_runtime_exempt `;
+  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md'), `${N}"/r/specs/story-9.99.md"`);
+  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt'), `${N}<archivo>`);
   for (const ruta of ["/r/it's $HOME (1).md", '/r/a b;c&d.md', '/r/`x`.md']) {
     const linea = ow.comoSeFirma('dod_runtime_exempt', ruta);
-    const arg = linea.slice('marker.js sign-file dod_runtime_exempt '.length);
+    assert.ok(linea.startsWith(N), linea);
+    const arg = linea.slice(N.length);
     const eco = spawnSync('bash', ['-c', `printf %s ${arg}`], { encoding: 'utf8' });
     assert.strictEqual(eco.stdout, ruta, `${ruta}: copiado tal cual, la consola lee la misma ruta (${linea})`);
   }
@@ -3598,7 +3603,7 @@ function casaDeLista(t, { llave = 'on', coord = 'viva', confirmada = true } = {}
 }
 const SIN_PERFIL = (casa) => { const a = path.join(casa, 'arnes-vacio'); fs.mkdirSync(a, { recursive: true }); return { arnes: a, env: {} }; };
 const pedirConLista = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || ARBOL_DE_FONDO, pid: 201, casa, ahora: o.ahora || AHORA,
-  delegacion: o.delegacion || SIN_DELEGACION, clasificar: () => null, comprobar: o.comprobar || (() => null), aprobador: DEL_ARNES, aprobaciones: o.aprobaciones, lista: SIN_PERFIL(casa) });
+  delegacion: o.delegacion || SIN_DELEGACION, tramite: o.tramite || SIN_TRAMITE, clasificar: () => null, comprobar: o.comprobar || (() => null), aprobador: DEL_ARNES, aprobaciones: o.aprobaciones, lista: SIN_PERFIL(casa) });
 const renglones = (casa) => { try { return JSON.parse(fs.readFileSync(sl.archivo(casa), 'utf8')); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } };
 
 test('Freno_NiegaConCuadro_DejaUnRenglon (T1) — @story-8.153 @ac-1', (t) => {
