@@ -9,15 +9,16 @@
  *   · sustitucion: el destino es la salida de un `$(...)` o de comillas invertidas, o una variable armada con una
  *   · variable-con-comodin: el destino tiene una variable y un comodín (`$S/*.log`)
  *   · bash-c-armado: un `bash -c` (o `sh -c`, `zsh -c`) con un guion que no es literal, en un comando que borra
- *   · comodin-fuera-de-temporal: un comodín en una ruta literal que no es una carpeta temporal del sistema
+ *   · comodin-fuera-de-temporal: un comodín en una ruta literal y absoluta que no es una carpeta temporal del sistema
  * Pasan sin pedir y no se tocan: una variable armada con un valor literal (`H=/x; rm -rf $H`), una ruta literal, una
  * relativa, un `for` sobre rutas literales, un comodín dentro del TMPDIR del sistema y un `bash -c` con un guion literal.
+ *
+ * Se lee el texto crudo de cada `rm` (hasta el próximo `;`, `&`, `|` o fin de línea fuera de comillas y de `$(...)`):
+ * partido en palabras se pierden las comillas y un `$(...)` sin comillas queda en otro pedazo.
  */
 const os = require('os');
 const path = require('path');
-const SP = require('./shell-parse.js');
 
-const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash']);
 const COMODIN = /[*?[]/;
 
 const FORMAS = {
@@ -27,11 +28,54 @@ const FORMAS = {
   'comodin-fuera-de-temporal': 'un `rm` con comodín fuera de una carpeta temporal del sistema',
 };
 
-/** El programa y sus palabras de un segmento, sin lo que puede ir delante (variables, `do`, `then`, `env`, `sudo`…). */
-function programaDe(texto) {
-  const t = SP.tokens(String(texto).replace(SP.PREFIJOS, ''));
-  return { prog: t.length ? path.basename(t[0]) : '', args: t.slice(1) };
+// donde empieza un comando: el principio, un separador, o una palabra que va delante del programa
+const INICIO = /(?:^|[;&|\n({]|\b(?:do|then|else|sudo|nice|nohup|command|exec|time|builtin|xargs)\s)\s*/;
+const RM = new RegExp(`${INICIO.source}(?:\\\\|/bin/|/usr/bin/)?rm(?=\\s)`, 'g');
+const SHELL_C = new RegExp(`${INICIO.source}(?:/bin/|/usr/bin/)?(?:bash|sh|zsh|dash)\\s+(?:-[a-zA-Z]+\\s+)*-c\\s+`, 'g');
+
+/** Desde `i`, hasta el próximo separador de comandos fuera de comillas y de `$(...)`/comillas invertidas. */
+function hastaElSeparador(s, i) {
+  let q = null;
+  let prof = 0;
+  let j = i;
+  for (; j < s.length; j++) {
+    const c = s[j];
+    if (q) {
+      if (c === '\\' && q === '"') { j++; continue; }
+      if (c === q) q = null;
+      continue;
+    }
+    if (c === '\\') { j++; continue; }
+    if (c === '\'' || c === '"' || c === '`') { q = c; continue; }
+    if (c === '$' && s[j + 1] === '(') { prof++; j++; continue; }
+    if (c === ')' && prof > 0) { prof--; continue; }
+    if (prof === 0 && (c === ';' || c === '&' || c === '|' || c === '\n')) break;
+  }
+  return s.slice(i, j);
 }
+
+/** Las palabras crudas de un texto, con sus comillas: `a "b c" $(d e)` → `a`, `"b c"`, `$(d e)`. */
+function palabrasCrudas(t) {
+  const out = [];
+  let cur = '';
+  let q = null;
+  let prof = 0;
+  for (let j = 0; j < t.length; j++) {
+    const c = t[j];
+    if (q) { cur += c; if (c === '\\' && q === '"' && j + 1 < t.length) cur += t[++j]; else if (c === q) q = null; continue; }
+    if (c === '\\' && j + 1 < t.length) { cur += c + t[++j]; continue; }
+    if (c === '\'' || c === '"' || c === '`') { q = c; cur += c; continue; }
+    if (c === '$' && t[j + 1] === '(') { prof++; cur += '$('; j++; continue; }
+    if (c === ')' && prof > 0) { prof--; cur += c; continue; }
+    if (/\s/.test(c) && prof === 0) { if (cur) out.push(cur); cur = ''; continue; }
+    cur += c;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+/** Una palabra cruda sin comillas, para leer su ruta: `'a b'` → `a b`, `"$X"/y` → `$X/y`. */
+const sinComillas = (w) => w.replace(/'([^']*)'/g, '$1').replace(/"((?:[^"\\]|\\.)*)"/g, '$1');
 
 /** Las carpetas temporales del sistema, con y sin `/private` delante (en Mac son la misma). */
 function temporales(tmpdir) {
@@ -47,42 +91,39 @@ const dentroDe = (p, dirs) => dirs.some((d) => p === d || p.startsWith(`${d.repl
  */
 function formaQuePidePermiso(cmd, { tmpdir = os.tmpdir() } = {}) {
   try {
-    const texto = String(cmd || '');
+    // el cuerpo de un heredoc es texto que se le pasa a un programa, no un comando: se saca antes de mirar
+    const texto = String(cmd || '').replace(/<<-?[ \t]*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/g, (m) => m.slice(0, m.indexOf('\n')));
     if (!/\brm\b/.test(texto)) return null;
-    const segs = SP.segmentos(texto).map((s) => s.texto);
     // las variables armadas con una sustitución: su valor no se conoce antes de correr
     const deSustitucion = new Set();
-    const re = /(?:^|[;&|\n(]\s*|\s)(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=["']?(\$\(|`)/g;
-    let m;
-    while ((m = re.exec(texto))) deSustitucion.add(m[1]);
+    for (const m of texto.matchAll(/(?:^|[\s;&|\n(])(?:export\s+|local\s+|readonly\s+)?([A-Za-z_][A-Za-z0-9_]*)=["']?[^\s;&|]*?(?:\$\(|`)/g)) deSustitucion.add(m[1]);
     const usaDeSustitucion = (a) => [...a.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)].some((x) => deSustitucion.has(x[1]));
     let hayRm = false;
-    let bashArmado = false;
-    const vars = SP.variablesDelComando(texto);
-    for (const seg of segs) {
-      const { prog, args } = programaDe(seg);
-      if (SHELLS.has(prog)) {
-        const i = args.indexOf('-c');
-        const guion = i >= 0 ? args[i + 1] : undefined;
-        if (guion !== undefined && /[$`]/.test(guion)) bashArmado = true;
-        if (guion !== undefined && /\brm\b/.test(guion)) hayRm = true;
-        continue;
-      }
-      if (prog !== 'rm') continue;
+    for (const m of texto.matchAll(RM)) {
       hayRm = true;
+      const args = palabrasCrudas(hastaElSeparador(texto, m.index + m[0].length));
       let opciones = true;
-      for (const a of args) {
-        if (opciones && a === '--') { opciones = false; continue; }
-        if (opciones && a.startsWith('-')) continue;
-        if (a.includes('$(') || a.includes('`') || usaDeSustitucion(a)) return { forma: 'sustitucion', que: FORMAS.sustitucion };
-        if (a.includes('$') && COMODIN.test(a)) return { forma: 'variable-con-comodin', que: FORMAS['variable-con-comodin'] };
-        if (!a.includes('$') && COMODIN.test(a)) {
-          const ruta = path.resolve(SP.expandir(a, vars) || a);
-          if (!dentroDe(ruta, temporales(tmpdir))) return { forma: 'comodin-fuera-de-temporal', que: FORMAS['comodin-fuera-de-temporal'] };
+      for (const crudo of args) {
+        if (opciones && crudo === '--') { opciones = false; continue; }
+        if (opciones && crudo.startsWith('-')) continue;
+        // lo que va entre comillas simples es literal: ni variables ni sustituciones
+        const vivo = crudo.replace(/'[^']*'/g, '');
+        if (vivo.includes('$(') || vivo.includes('`') || usaDeSustitucion(vivo)) return { forma: 'sustitucion', que: FORMAS.sustitucion };
+        const ruta = sinComillas(crudo);
+        // un comodín sólo vale fuera de comillas
+        const comodin = COMODIN.test(crudo.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, ''));
+        if (vivo.includes('$') && comodin) return { forma: 'variable-con-comodin', que: FORMAS['variable-con-comodin'] };
+        if (!vivo.includes('$') && comodin && path.isAbsolute(ruta.replace(/^~(?=\/|$)/, os.homedir()))) {
+          if (!dentroDe(path.resolve(ruta.replace(/^~(?=\/|$)/, os.homedir())), temporales(tmpdir))) return { forma: 'comodin-fuera-de-temporal', que: FORMAS['comodin-fuera-de-temporal'] };
         }
       }
     }
-    if (hayRm && bashArmado) return { forma: 'bash-c-armado', que: FORMAS['bash-c-armado'] };
+    if (!hayRm) return null;
+    for (const m of texto.matchAll(SHELL_C)) {
+      const guion = palabrasCrudas(hastaElSeparador(texto, m.index + m[0].length))[0] || '';
+      // un guion entre comillas simples es literal; uno entre dobles o sin comillas, con `$` o comillas invertidas, no
+      if (!guion.startsWith('\'') && /[$`]/.test(guion)) return { forma: 'bash-c-armado', que: FORMAS['bash-c-armado'] };
+    }
     return null;
   } catch (_) {
     return null;

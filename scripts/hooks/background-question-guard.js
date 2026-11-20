@@ -113,14 +113,16 @@ function esDeFondo({ home, sid, env }) {
 /** Un comando de fondo que pediría permiso: `{ decision: 'deny', reason, forma }` o null. */
 function decidirBash(d, { home, env }) {
   const cmd = d.tool_input && typeof d.tool_input.command === 'string' ? d.tool_input.command : '';
+  // primero lo barato: sin un `rm` no hay nada que mirar, y en una sesión que no es de fondo tampoco
+  if (!/\brm\b/.test(cmd)) return null;
+  const sid = d.session_id;
+  if (!sid || !/^[\w-]+$/.test(String(sid)) || !esDeFondo({ home, sid, env })) return null;
   let forma = null;
   try { forma = require('../lib/bg-permission-shapes.js').formaQuePidePermiso(cmd); } catch (e) {
     logError(home, `no cargué lib/bg-permission-shapes.js (${(e && e.message) || e}): el comando pasó sin mirarlo`);
     return null;
   }
   if (!forma) return null;
-  const sid = d.session_id;
-  if (!sid || !/^[\w-]+$/.test(String(sid)) || !esDeFondo({ home, sid, env })) return null;
   return { decision: 'deny', forma: forma.forma, reason: require('../lib/bg-permission-shapes.js').textoDeLaNegativa(forma) };
 }
 

@@ -290,3 +290,23 @@ test('T15 Fondo_SinArchivoDeSesion_LaVariableDeClaude — CLAUDE_JOB_DIR', (t) =
   const r = decidir(toy, evento('ses-sin-archivo', 'Bash', { command: CASO_A }), { CLAUDE_JOB_DIR: '/x/jobs/abc' });
   assert.ok(r && r.decision === 'deny', JSON.stringify(r));
 });
+
+test('T16 Formas_LoQueEncontroElPase — sin comillas, guiones literales, heredocs y textos largos', (t) => {
+  const tmpdir = TMP;
+  for (const c of ['rm -rf $(pwd)/x', 'rm -rf $(mktemp -d)', 'rm -rf `pwd`/x', 'rm -rf $(git rev-parse --show-toplevel)/dist', '\\rm -rf "$(pwd)"', 'nice rm -rf $(pwd)/x']) {
+    assert.strictEqual((B.formaQuePidePermiso(c, { tmpdir }) || {}).forma, 'sustitucion', c);
+  }
+  for (const c of ["bash -c 'cd $HOME && ls'; rm /tmp/a.txt", 'git rm $(git ls-files -d)', 'echo "rm -rf $(pwd)"', 'rmdir "$(pwd)/x"',
+    "cat <<EOF > /tmp/a.sh\nrm -rf $(pwd)/*\nEOF", 'rm -f *.log', 'docker rm $(docker ps -aq)', 'rm "file[1].txt"']) {
+    assert.strictEqual(B.formaQuePidePermiso(c, { tmpdir }), null, c);
+  }
+  // un texto largo pegado: en una sesión que no es de fondo ni se mira, y de fondo se lee rápido
+  const largo = `cat <<'EOF' > /tmp/x\n${'linea con $(algo) y rm adentro\n'.repeat(1300)}EOF\nrm -rf /tmp/x`;
+  const toy = maquina(t);
+  let t0 = process.hrtime.bigint();
+  assert.strictEqual(decidir(toy, evento(COORD, 'Bash', { command: largo })), null);
+  assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 100, 'sesión normal');
+  t0 = process.hrtime.bigint();
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'Bash', { command: largo })), null);
+  assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 100, 'sesión de fondo');
+});
