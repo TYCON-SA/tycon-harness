@@ -233,6 +233,8 @@ function bash(dir, script, name, env = {}) {
       // el repo propio y el interruptor del freno los fija cada caso (esta suite corre también en
       // una corrida de Azure, que trae los suyos)
       BUILD_REPOSITORY_PROVIDER: '', HARNESS_SUITES_BLOCK: '', HARNESS_PRIVATE_REPO: '', SYSTEM_PULLREQUEST_ISFORK: '',
+      // la decisión del banco la fija cada caso: un BANCO=no heredado haría pasar un caso que exige rojo
+      BANCO: '',
       // el plazo del trabajo de verdad, si esta suite corre dentro de uno, no es el del caso
       SUITES_JOB_STARTED: '', SUITES_JOB_MINUTES: '', SUITES_JOB_MARGIN: '', SUITES_MIN_START: '',
       // el git de juguete del clon va primero: contesta la foto nocturna y delega el resto (ver toyGit)
@@ -2170,6 +2172,16 @@ test('PrShards_BenchSkipped_TheVerdictAcceptsItOnlyWithBothSignals — sin repor
   const none = runVerdict(dir, plan.matrix, { BANCO: 'no' });
   assert.notStrictEqual(none.join.code, 0, none.join.out);
   assert.match(none.join.out, MISSING);
+
+  // La marca vale sólo en el ÚLTIMO intento del trabajo del banco: con la marca en el 1 y un intento 2 sin marca ni
+  // reporte, el banco no se midió. Rojo.
+  fs.rmSync(benchDir, { recursive: true, force: true });
+  publishBenchSkipped(dir);
+  fs.mkdirSync(path.join(artifacts(dir), 'bench-a2'), { recursive: true });
+  const retried = runVerdict(dir, plan.matrix, { BANCO: 'no' });
+  assert.notStrictEqual(retried.join.code, 0, `la marca de un intento viejo no cuenta\n${retried.join.out}`);
+  assert.match(retried.join.out, MISSING);
+  fs.rmSync(path.join(artifacts(dir), 'bench-a2'), { recursive: true, force: true });
 
   // Con reporte, el reporte manda: se compara aunque Validar haya dicho «no» y esté la marca.
   publishBenchSkipped(dir);
