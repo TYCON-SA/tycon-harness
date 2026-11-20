@@ -591,7 +591,17 @@ async function runMutationCheck({
   let storyText = null;
   try { storyText = fs.readFileSync(storyPath, 'utf8'); } catch { /* cae abajo */ }
   if (storyText == null) return fail2(`no pude leer la story: ${storyPath}`);
-  const declared = parseDeclaredFiles(storyText);
+  // 🔴 Sólo lo que la story declara en ESTE repo: una story que toca dos repos (el backend y su frontend) declara
+  // archivos de los dos. Con la lista entera, cada repo buscaba las pruebas del otro, salía «NO existen» y no medía
+  // nada. El repo de la story sale de su ruta; sin hermanos, la lista es la misma de siempre
+  let declared;
+  try {
+    const cr = require(path.join(__dirname, 'lib', 'companion-repos.js'));
+    const repoDeLaStory = cr.gitRootOf(storyPath);
+    declared = repoDeLaStory ? cr.declaredFor(repoDeLaStory, storyPath, repoOriginal) : parseDeclaredFiles(storyText);
+  } catch (e) {
+    return fail2(`no pude ver qué archivos de la story son de ${repoOriginal}: ${(e && e.message) || e}`);
+  }
   // Separar «declara tests» de «los sé correr» — por ESTRUCTURA (el nombre del
   // archivo), jamás leyendo contenido en busca de nombres de herramientas.
   // Una story .NET declara `FooTests.cs`: decirle "no declarás tests" es FALSO.
@@ -600,6 +610,12 @@ async function runMutationCheck({
     (f) => looksLikeTestPath(f) || /Tests?\.[a-z]+$/.test(String(f)) || /\.(test|spec)\.[a-z]+$/i.test(String(f)),
   );
   if (!declaredTests.length) {
+    // las pruebas existen, pero en otro repo de la story: se dice así, no «no declara ninguna»
+    const todas = parseDeclaredFiles(storyText).filter((f) => looksLikeTestPath(f) || /Tests?\.[a-z]+$/.test(String(f)) || /\.(test|spec)\.[a-z]+$/i.test(String(f)));
+    if (todas.length) {
+      return fail2(`las pruebas que la story declara son de otro repo (${todas.slice(0, 3).join(', ')}${todas.length > 3 ? ', …' : ''}), ` +
+        `no de ${repoOriginal}: acá no hay con qué matar los mutantes`);
+    }
     return fail2(
       'la story no declara ningún archivo de test en files_to_create/files_to_modify — ' +
       'sin tests declarados no se puede chequear que los mutantes mueran'
