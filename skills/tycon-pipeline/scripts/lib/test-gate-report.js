@@ -650,7 +650,8 @@ function informe(argv) {
       if (existe(sj)) {
         const r = leerJson(sj);
         // «Sin acotar» (salida 7): la corrida del repo hermano no pudo acotarse a lo tocado y no corrió nada. No es verde
-        // (suite_green ya es false) ni un rojo de pruebas: la cubre la CI del pedido, y el merge la exige en verde.
+        // (suite_green ya es false) ni un rojo de pruebas: la cubre la CI del pedido. `merge_requires_ci` lo deja dicho
+        // en el informe; ningún guion de la máquina lo hace cumplir.
         const sinAcotar = get(r, 'unscoped', null);
         if (suiteExit === 7 && sinAcotar) {
           result.unscoped = true;
@@ -658,7 +659,7 @@ function informe(argv) {
           result.merge_requires_ci = true;
         }
         // Acotada por el repo (`test_gate` de .test-gate.yaml): en la máquina corrió sólo lo que lee lo tocado; la
-        // suite completa la corre la CI que el repo declaró, y el merge la exige en verde.
+        // suite completa la corre la CI que el repo declaró (dicho, no comprobado, en `merge_requires_ci`).
         const acotada = get(r, 'scoped', null);
         if (acotada && get(acotada, 'by', null) === 'repo') {
           result.scoped_by_repo = { full_suite_by: get(acotada, 'full_suite_by', null), none_touched: get(acotada, 'none_touched', false) === true };
@@ -759,7 +760,7 @@ function informe(argv) {
   // el hijo hereda NODE_TEST_CONTEXT, la suite escribe en el formato
   // interno de Node, no se cuenta nada… y quedaría `suite_green: true`. La salida real de la suite se conserva.
   // La excepción: acotada por el repo y ninguna suite lee lo tocado. No corrió nada a propósito y lo respalda la CI
-  // del pedido, que el repo declaró y que el merge exige en verde.
+  // del pedido, que el repo declaró (que salga verde antes del merge lo mira quien mergea, no esta máquina).
   const nadaQueLea = Boolean(result.scoped_by_repo && result.scoped_by_repo.none_touched && runner === 'suites-json');
   if (result.suite_green && !nadaQueLea) {
     const corridas = pruebasCorridas(runner, result.totals, todo);
