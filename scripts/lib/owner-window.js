@@ -1497,7 +1497,12 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   const arbolNiega = () => {
     if (arriba.slice(i + 1).some(otra)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
     if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);
-    if (arbol.some((p) => p.ppid === tool.pid && viva(p))) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva que no es un vigilante de sólo lectura', pendientes);
+    // dice cuál cerrar por su número de proceso (la herramienta no expone el id de la tarea), nunca su línea de comando
+    const vivas = arbol.filter((p) => p.ppid === tool.pid && viva(p)).map((p) => Number(p.pid)).filter(Number.isInteger);
+    if (vivas.length) {
+      const cual = vivas.length === 1 ? `la consola de fondo es el proceso ${vivas[0]}` : `las consolas de fondo son los procesos ${vivas.join(', ')}`;
+      return negar(`cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva que no es un vigilante de sólo lectura (${cual}: pará esa tarea de fondo (o kill ${vivas.join(' ')}) y repetí el comando, o firmá desde tu terminal)`, pendientes);
+    }
     return null;
   };
   const saltoElArbol = automatica.ok;
@@ -2202,7 +2207,13 @@ function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa,
   let ok;
   // en Windows también: la ventana dice qué se firma antes de pedir las tres palabras
   if (t.windows) { console.error(`\n${que}`); ok = t.confirmarFrase({}); }
-  else ok = String(t.preguntar(`\n${que}\nPara firmar, escribí «firmo»: `) || '').trim().toLowerCase() === 'firmo';
+  else {
+    // un renglón vacío (un Enter de más) vuelve a preguntar, hasta tres veces; otra respuesta no firma y lo dice
+    let dijo = '';
+    for (let vez = 0; vez < 3 && !dijo; vez++) dijo = String(t.preguntar(vez ? 'Escribí «firmo» para firmar: ' : `\n${que}\nPara firmar, escribí «firmo»: `) || '').trim();
+    ok = dijo.toLowerCase() === 'firmo';
+    if (!ok) return { codigo: 1, motivo: `no se firmó: ${dijo ? `escribiste «${una(dijo, 40)}», no «firmo»` : 'no escribiste nada'}. Para firmar, repetí el comando y escribí «firmo»` };
+  }
   if (!ok) return { codigo: 1, motivo: 'no se firmó' };
   firmar({ firma, via: 'terminal', sesion, destino, resumen, casa, ahora, anotar, extra });
   return { codigo: 0, via: 'terminal' };

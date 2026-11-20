@@ -358,6 +358,19 @@ test('OwnerWindow_Terminal_FirmaYSinTtySaleDos (T15)', (t) => {
   casa = casaNueva(t);
   r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, preguntar: () => 'si' } });
   assert.strictEqual(r.codigo, 1);
+  assert.match(r.motivo, /no se firmó: escribiste «si», no «firmo»\. Para firmar, repetí el comando y escribí «firmo»/);
+  assert.strictEqual(gates(casa).length, 0);
+  // un renglón vacío (un Enter de más) vuelve a preguntar; tres vacíos no firman y dicen cómo repetir
+  casa = casaNueva(t);
+  let veces = 0;
+  r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, preguntar: () => (++veces === 1 ? '  ' : 'firmo') } });
+  assert.deepStrictEqual([r.codigo, veces], [0, 2]);
+  assert.strictEqual(gates(casa).find((g) => g.name === 'plan-approval-signed').via, 'terminal');
+  casa = casaNueva(t);
+  veces = 0;
+  r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, preguntar: () => { veces++; return ''; } } });
+  assert.deepStrictEqual([r.codigo, veces], [1, 3]);
+  assert.match(r.motivo, /no se firmó: no escribiste nada\. Para firmar, repetí el comando y escribí «firmo»/);
   assert.strictEqual(gates(casa).length, 0);
   // sin terminal: sale 2 sin escribir
   r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, hay: () => false } });
@@ -4225,6 +4238,14 @@ test('OwnerWindow_WatcherOtherShapes_StillBlocks @story-8.270 @ac-14 @ac-15 @ac-
     assert.ok(r.texto.includes(VIGILANTE_MOTIVO), `${linea}: ${r.texto}`);
     assert.doesNotMatch(r.texto, /PALABRA-CONOCIDA|tee |glab|while /, `${linea}: el freno mostró la línea de comando`);
     assert.strictEqual(registros(casa).length, 0);
+  }
+  // dice qué consola cerrar (su número de proceso) y cómo seguir, sin su línea de comando
+  {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, 'sleep 100 # PALABRA-CONOCIDA') });
+    assert.match(r.texto, /la consola de fondo es el proceso 400/);
+    assert.match(r.texto, /pará esa tarea de fondo \(o kill 400\) y repetí el comando, o firmá desde tu terminal/);
+    assert.doesNotMatch(r.texto, /PALABRA-CONOCIDA|sleep/);
   }
   // el owner-wait de la coordinadora sigue pasando
   const casa = casaNueva(t);

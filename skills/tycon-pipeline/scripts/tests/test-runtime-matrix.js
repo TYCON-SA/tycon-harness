@@ -2975,9 +2975,13 @@ withWaiverLog(() => {
     L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
     const antes = fs.readFileSync(L.storyPath, 'utf8');
     const r = L.calc();
-    // el aviso de la suite roja con lo que entró desde su última noche verde: se corre la prueba que lo mide
+    // el aviso de la suite roja con lo que entró desde su última noche verde: se corre la prueba que lo mide. Sin
+    // NODE_TEST_CONTEXT: corrida esta suite bajo `node --test` (la T18 de evidence-vs-commit), el hijo lo heredaría y no
+    // correría ningún archivo («run() is being called recursively»)
+    const envNoche = { ...process.env, HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-noche-')) };
+    delete envNoche.NODE_TEST_CONTEXT;
     const noche = spawnSync(process.execPath, ['--test', '--test-name-pattern=SuitesRed_NamesThePullRequestsSinceItsLastGreenNight',
-      path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'night-notices.test.js')], { encoding: 'utf8', env: { ...process.env, HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-noche-')) } });
+      path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'night-notices.test.js')], { encoding: 'utf8', env: envNoche });
     const avisoMedido = noche.status === 0 && /# pass 1|ℹ pass 1/.test(noche.stdout) && !/# fail [1-9]|ℹ fail [1-9]/.test(noche.stdout);
     check('Entrada_CambioAjenoConSuiteEnRojo_NoTocaLaHistoria @story-8.310 @ac-12',
       fs.readFileSync(L.storyPath, 'utf8') === antes && veredicto(r, 1) === 'RUNTIME' && avisoMedido, noche.stdout.slice(-400) + noche.stderr.slice(-400));
