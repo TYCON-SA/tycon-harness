@@ -579,11 +579,16 @@ function status(opts = {}) {
   const heavyTurn = suiteRow ? { kind: 'suite', ...suiteRow } : firstPass ? { kind: 'pass', ...firstPass } : null;
   // las corridas detenidas con plan firmado se buscan sólo con la fila del portón larga: es lo único que las nombra
   const stopped = suiteWaiting.filter((w) => !w.worked).length >= 2 ? stoppedRuns(home, now, markers, aliveSids, nameOf, problems) : null;
+  // una designación anotada después de la confirmada no cuenta hasta que el dueño la confirme (historia 8.314): se dice
+  let pendingDesignation = null;
+  const vigente = designacionVigente({ home });
+  if (vigente && vigente.error) problems.push(vigente.error);
+  else if (vigente && vigente.pendiente) pendingDesignation = { sesion: vigente.pendiente.sesion, ts: vigente.pendiente.ts };
   return {
     now, working, waiting, quiet, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
     retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why,
     suite: suiteRow, suites: suiteRows, secondTurn, heavyTurn, gates,
-    signatures,
+    signatures, pendingDesignation,
     unnamed, problems,
   };
 }
@@ -619,6 +624,7 @@ function statusText(s) {
   if (s.suiteWaiting && s.suiteWaiting.length) lines.push(`Esperando turno de suite o portón: ${[...s.suiteWaiting].sort((a, b) => a.since - b.since).map((w) => `${w.session} desde las ${hhmm(w.since)}${w.worked ? ' (trabajó después: ¿sigue esperando?)' : ''}`).join(' · ')}`);
   lines.push(`De fondo y quietas: ${s.quiet.length ? s.quiet.map((q) => `${q.session} hace ${q.minutes} min`).join(' · ') : 'ninguna'}`);
   lines.push(`Firmas pendientes: ${[`${s.signatures.terminal} por la terminal`, ...(s.signatures.firma ? [`${s.signatures.firma} con su cuadro`] : []), ...(s.signatures.permiso ? [`${s.signatures.permiso} permiso(s)`] : []), `${s.signatures.delegated} por delegación`].join(' · ')}`);
+  if (s.pendingDesignation) lines.push(`Designación sin confirmar: la sesión ${label(s.pendingDesignation.sesion)} la anotó a las ${hhmm(s.pendingDesignation.ts)} y no cuenta hasta que el dueño la confirme`);
   lines.push(`Sin nombre puesto por una persona: ${s.unnamed.length ? s.unnamed.join(', ') : 'ninguna'}`);
   if (s.problems.length) lines.push(`No se pudo leer: ${oneLine(s.problems.join(' · ')).slice(0, 300)}`);
   return lines.join('\n');

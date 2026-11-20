@@ -29,6 +29,13 @@ command says why and gives the fallbacks: the owner's terminal (`designate-relay
 (`--quote`, then `confirm-designation`). Without a profile, for now she is named with the sentence
 (`designate-relay --approved-by '<the dev>' --quote '<their sentence>'`).
 
+A sentence designation of ANOTHER session, written when there is already a confirmed coordinator, does not replace her:
+it stays **unconfirmed** until the owner confirms it (`confirm-designation`, from either session's tab), and
+`/coordinate` says so («Designación sin confirmar: …»). Without `approvals.relay_session` in the profile that designation
+could never be confirmed, so it is not written: the confirmed one is withdrawn first. If the coordinator is no longer
+alive (her tab was closed), another session withdraws her with `marker.js withdraw-relay --session <her id>`, with the
+owner's click; the command refuses if the session list cannot be read cleanly or if that session is still alive.
+
 On being designated, the session is told to read this guide, and it is told again after compacting or clearing its
 conversation, because that is when it gets lost. **Clearing the conversation takes away the designation**: for the harness
 it is another conversation. The session is told how to get it back, but does not get it back by itself: the owner has to
@@ -704,7 +711,14 @@ node <harness>/scripts/tools/office/board.js check                              
 node <harness>/scripts/tools/office/board.js due                                           # the «Te toca» lines
 node <harness>/scripts/tools/office/board.js due confirm <id>                              # still valid: count again
 node <harness>/scripts/tools/office/board.js due drop <id>                                 # remove it
+node <harness>/scripts/tools/office/board.js backups                                       # the board's copies
+node <harness>/scripts/tools/office/board.js restore <copy>                                # go back to a copy
 ```
+
+`save` and `restore` first copy the board they replace (the 30 newest stay in `coordination/board-backups/`): an
+overwritten board comes back with `board.js backups` and `board.js restore <copy>`, with its numbers and the «Te toca»
+dates. `save` does not shrink a board of 10 rows or more to less than half: if that is on purpose, add
+`--allow-shrink`. A test (`TYCON_TEST_RUN=1`, the mark `smoke-run.sh` sets) does not write the real board.
 
 Writing it by hand (Edit, Write or the console) is stopped with the command that does the same. Reading it stays free, and
 the separate file for `save --from` lives outside the state folder. If something changed it without the command, the office

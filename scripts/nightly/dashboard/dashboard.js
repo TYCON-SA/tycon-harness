@@ -206,7 +206,10 @@ function desde(f, fn) {
 function encuentra(por) {
   const m = {};
   m.banco_rojos = desde(por.banco, (d) => medida(d.failed, d.ran, d.ran, { unidad: 'conteo', den_etiqueta: 'casos', detalle: `${d.skipped} salteados · ${d.nomedido} no medidos` }));
-  m.banco_regresiones = desde(por.banco, (d) => medida(d.baselineRegressions, d.ran, d.ran, { unidad: 'conteo', den_etiqueta: 'casos' }));
+  // sin línea de base el banco no comparó: la cuenta no existe, no es cero
+  m.banco_regresiones = desde(por.banco, (d) => (d.baselineRegressions == null
+    ? noMedida(`el banco no comparó contra la línea de base${d.sinLineaDeBase ? `: ${d.sinLineaDeBase}` : ''}`)
+    : medida(d.baselineRegressions, d.ran, d.ran, { unidad: 'conteo', den_etiqueta: 'casos' })));
   m.banco_paridad = desde(por.banco, (d) => medida(d.parityBreaks, d.ran, d.ran, { unidad: 'conteo', den_etiqueta: 'casos' }));
   m.suites = desde(por.suites, (d) => {
     // Las rojas se cuentan aunque falte alguna, y la ficha dice cuáles faltan. Una
@@ -1824,5 +1827,5 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { colectar, render, equipo, local, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues, fichaVueltasAtras,
+module.exports = { colectar, encuentra, render, equipo, local, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues, fichaVueltasAtras,
   DENOMINADORES: require('./common').DENOMINADORES };

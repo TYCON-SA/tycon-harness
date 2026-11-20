@@ -20,8 +20,15 @@
  * la oficina deja de mostrarla. Volver a guardarla no la renueva, porque `save` trae el archivo aparte entero: la renueva
  * `due confirm`.
  *
+ * `save` y `restore` copian antes el tablero que reemplazan (`coordination/board-backups/`, las 30 más nuevas); si no
+ * pueden copiarlo, no escriben. `save` no achica un tablero de 10 filas o más a menos de la mitad sin `--allow-shrink`.
+ * Con `TYCON_TEST_RUN=1` (una prueba, la marca que pone smoke-run.sh) ningún comando escribe el tablero real de la
+ * máquina: sólo uno de juguete, con `--state-dir` o `TYCON_HOME` (historia 8.314).
+ *
  * Uso:
- *   board.js save --from <archivo>                 el tablero entero, desde el archivo aparte de la coordinadora
+ *   board.js save --from <archivo> [--allow-shrink] el tablero entero, desde el archivo aparte de la coordinadora
+ *   board.js backups                               las copias, con sus filas y cuántas siguen abiertas
+ *   board.js restore <copia>                       vuelve el tablero a esa copia, con sus números y sus fechas
  *   board.js add titulo=… [campo=valor…]           una fila nueva
  *   board.js set <T-n> campo=valor…                cambia una fila
  *   board.js close <T-n> [--real AAAA-MM-DDTHH:MM] la cierra: hecho, con la hora de ahora o la dada
@@ -285,7 +292,35 @@ function stampToca(raw, before, renew, now) {
  * y devuelve `{ raw, lines, renew }` o `{ code, lines }` para no escribir; `renew` son las líneas de «Te toca» que vuelven
  * a contar desde ahora. Valida, numera, escribe aparte y renombra.
  */
-function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(), beforeRename = null, afterRename = null } = {}) {
+// ── Las copias del tablero (historia 8.314) ──
+// Antes de reemplazar el tablero, `save` y `restore` lo copian a `coordination/board-backups/`: así un tablero pisado
+// (el 18/11 una prueba lo reemplazó con una fila) se recupera con `restore`. Se guardan las 30 más nuevas.
+const BACKUPS_KEPT = 30;
+const BACKUP_NAME = /^tablero-[\w.-]+\.json$/;
+// el tope de `save`: de un tablero de 10 filas o más, uno con menos de la mitad no se guarda sin --allow-shrink
+const SHRINK_MIN_ROWS = 10;
+const backupsDir = (sdir) => path.join(paths(sdir).dir, 'board-backups');
+
+/** Copia el texto del tablero actual. Devuelve el nombre de la copia; tira si no pudo. */
+function backUp(sdir, text, now) {
+  const dir = backupsDir(sdir);
+  fs.mkdirSync(dir, { recursive: true });
+  const base = `tablero-${new Date(now).toISOString().replace(/[:.]/g, '-')}`;
+  let name = null;
+  for (let i = 1; i < 1000 && !name; i++) {
+    const candidate = `${base}${i === 1 ? '' : `-${i}`}.json`;
+    try { fs.writeFileSync(path.join(dir, candidate), text, { flag: 'wx' }); name = candidate; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  }
+  if (!name) throw new Error('no encontré un nombre libre para la copia');
+  const all = fs.readdirSync(dir).filter((f) => BACKUP_NAME.test(f)).sort((a, b) => fs.statSync(path.join(dir, a)).mtimeMs - fs.statSync(path.join(dir, b)).mtimeMs || a.localeCompare(b));
+  for (const old of all.slice(0, Math.max(0, all.length - BACKUPS_KEPT))) { try { fs.unlinkSync(path.join(dir, old)); } catch { /* la saca la próxima */ } }
+  return name;
+}
+
+function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(), beforeRename = null, afterRename = null, tope = false, allowShrink = false, respaldo = false } = {}) {
+  // una prueba (TYCON_TEST_RUN=1) no escribe el tablero real de la máquina: lo pisó una el 18/11
+  const prueba = require(path.join(__dirname, '..', '..', 'lib', 'lab-home.js')).pruebaSobreLoReal(sdir);
+  if (prueba) return { code: 2, lines: [`⛔ ${prueba}: no escribí nada`] };
   return withLock(sdir, () => {
     let current;
     let numbers;
@@ -293,14 +328,23 @@ function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(
     try { current = readBoardRaw(sdir); numbers = readNumbers(sdir); numbersText = readJson(paths(sdir).numbers, null).text; } catch (e) { return { code: 2, lines: [`⛔ ${e.message}: no escribí nada`] }; }
     // antes de `change`, que puede cambiar el tablero leído
     const before = { keys: new Set(tocaKeys(current.raw)), dates: tocaDates(current.raw, now), writtenAt: boardWrittenAt(sdir) };
+    const antes = current.raw.pendientes.length;
     const res = change(current.raw, numbers);
     if (res.code != null) return res;
     const raw = res.raw;
     const rows = raw.pendientes;
+    if (tope && !allowShrink && antes >= SHRINK_MIN_ROWS && rows.length * 2 < antes) {
+      return { code: 2, lines: [`⛔ no escribí nada: el tablero tiene ${antes} filas y el nuevo ${rows.length}, menos de la mitad. Si es a propósito, volvé a correrlo con --allow-shrink`] };
+    }
     const problems = rowProblems(rows, numbers);
     if (problems.length) return { code: 2, lines: ['⛔ no escribí nada: estas filas rompen una regla', ...problemLines(problems)] };
+    let copia = null;
+    if (respaldo && current.text != null) {
+      try { copia = backUp(sdir, current.text, now); } catch (e) { return { code: 2, lines: [`⛔ no pude copiar el tablero antes de reemplazarlo (${e.code || e.message}): no escribí nada`] }; }
+    }
     const n = numberRows(rows, numbers);
-    stampToca(raw, before, res.renew || [], now);
+    // `restore` trae las fechas de «Te toca» de la copia: no se recalculan
+    if (!res.keepDates) stampToca(raw, before, res.renew || [], now);
     const saved = { ...raw, pendientes: rows };
     const text = `${JSON.stringify(saved, null, 2)}\n`;
     const p = paths(sdir);
@@ -319,6 +363,7 @@ function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(
     } catch (e) { try { fs.unlinkSync(tmp); } catch { /* ya no está */ } undoNumbers(); throw e; }
     writeAtomic(p.print, `${JSON.stringify({ sha: sha(text), at: new Date(now).toISOString() })}\n`);
     const lines = [...(res.lines || [])];
+    if (copia) lines.push(`copié el tablero anterior: ${copia} (board.js restore ${copia} lo vuelve)`);
     if (afterRename) lines.push(...afterRename(rows));
     if (n.numeradas.length) lines.push(`numeré ${n.numeradas.length}: ${n.numeradas.join(', ')}`);
     if (n.recuperadas.length) lines.push(`recuperé por su título: ${n.recuperadas.join(', ')}`);
@@ -331,7 +376,35 @@ function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(
 /** El tablero entero, desde lo que armó la coordinadora. */
 function save(sdir, raw, opts = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || (raw.pendientes != null && !Array.isArray(raw.pendientes))) return { code: 2, lines: ['⛔ el archivo no es un tablero: un objeto con «pendientes», una lista'] };
-  return write(sdir, () => ({ raw: { ...raw, pendientes: (raw.pendientes || []).map((r) => (r && typeof r === 'object' ? { ...r } : r)) } }), opts);
+  return write(sdir, () => ({ raw: { ...raw, pendientes: (raw.pendientes || []).map((r) => (r && typeof r === 'object' ? { ...r } : r)) } }), { ...opts, tope: true, respaldo: true });
+}
+
+/** Las copias del tablero, de la más nueva a la más vieja, con sus filas y cuántas siguen abiertas. */
+function backups(sdir) {
+  let names;
+  try { names = fs.readdirSync(backupsDir(sdir)).filter((f) => BACKUP_NAME.test(f)); } catch (e) {
+    if (e.code === 'ENOENT') return { code: 0, lines: ['no hay copias del tablero'] };
+    return { code: 2, lines: [`⛔ no pude leer las copias (${e.code || e.message})`] };
+  }
+  if (!names.length) return { code: 0, lines: ['no hay copias del tablero'] };
+  const rows = names.map((name) => {
+    const file = path.join(backupsDir(sdir), name);
+    let st = null;
+    let v = null;
+    try { st = fs.statSync(file); v = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* se lista como ilegible */ }
+    return { name, at: st ? st.mtimeMs : 0, pend: v && Array.isArray(v.pendientes) ? v.pendientes : null };
+  }).sort((a, b) => b.at - a.at || b.name.localeCompare(a.name));
+  return { code: 0, lines: rows.map((r) => (r.pend ? `${r.name} — ${r.pend.length} filas, ${r.pend.filter((p) => p && p.estado !== 'hecho').length} abiertas, de las ${localIso(r.at).replace('T', ' ')}` : `${r.name} — no se puede leer`)) };
+}
+
+/** Vuelve el tablero a una copia, con sus números y las fechas de «Te toca». Antes copia el actual. */
+function restore(sdir, name, opts = {}) {
+  const n = String(name || '');
+  if (!BACKUP_NAME.test(n) || path.basename(n) !== n) return { code: 2, lines: [`⛔ «${n}» no es el nombre de una copia (board.js backups las lista): no escribí nada`] };
+  let raw;
+  try { raw = JSON.parse(fs.readFileSync(path.join(backupsDir(sdir), n), 'utf8')); } catch (e) { return { code: 2, lines: [`⛔ la copia ${n} no se pudo leer (${e.code || e.message}): no escribí nada`] }; }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Array.isArray(raw.pendientes)) return { code: 2, lines: [`⛔ la copia ${n} no es un tablero: no escribí nada`] };
+  return write(sdir, () => ({ raw, keepDates: true, lines: [`volví el tablero a la copia ${n}`] }), { ...opts, respaldo: true });
 }
 
 // `campo=valor` a una fila. `pedido=repo#12` es `{ repo, numero }`; `orden` es un número; `campo=` lo saca.
@@ -617,6 +690,7 @@ function main(argv, { home = os.homedir(), out = (t) => process.stdout.write(`${
   const real = take('--real');
   const factsFile = take('--facts');
   const complete = take('--complete', false) === true;
+  const allowShrink = take('--allow-shrink', false) === true;
   const [cmd, ...rest] = args;
   let res;
   if (cmd === 'save') {
@@ -624,9 +698,11 @@ function main(argv, { home = os.homedir(), out = (t) => process.stdout.write(`${
     else {
       let raw;
       try { raw = JSON.parse(fs.readFileSync(from, 'utf8')); } catch (e) { res = { code: 2, lines: [`⛔ ${from} no se pudo leer (${e.code || e.message})`] }; }
-      if (!res) res = save(sdir, raw, { home });
+      if (!res) res = save(sdir, raw, { home, allowShrink });
     }
-  } else if (cmd === 'add') res = add(sdir, rest, { home });
+  } else if (cmd === 'backups') res = backups(sdir);
+  else if (cmd === 'restore') res = rest.length !== 1 ? { code: 2, lines: ['⛔ uso: restore <copia> (board.js backups las lista)'] } : restore(sdir, rest[0], { home });
+  else if (cmd === 'add') res = add(sdir, rest, { home });
   else if (cmd === 'set') res = rest.length < 2 ? { code: 2, lines: ['⛔ uso: set <T-n> campo=valor…'] } : set(sdir, rest[0], rest.slice(1), { home });
   else if (cmd === 'close') res = rest.length !== 1 ? { code: 2, lines: ['⛔ uso: close <T-n> [--real AAAA-MM-DDTHH:MM]'] } : close(sdir, rest[0], { real, home });
   else if (cmd === 'check') res = check(sdir);
@@ -639,11 +715,11 @@ function main(argv, { home = os.homedir(), out = (t) => process.stdout.write(`${
     if (problem) res = { code: 2, lines: [`⛔ ${problem}`, TOCA_USAGE] };
     else if (!rest.length) res = toca(sdir);
     else res = (rest[0] === 'confirm' ? tocaConfirm : tocaDrop)(sdir, rest[1], { home });
-  } else res = { code: 2, lines: ['uso: board.js save --from <archivo> | add titulo=… [campo=valor…] | set <T-n> campo=valor… | close <T-n> [--real AAAA-MM-DDTHH:MM] | check | sync --facts <archivo> [--complete] | due [confirm <id> | drop <id>]'] };
+  } else res = { code: 2, lines: ['uso: board.js save --from <archivo> [--allow-shrink] | backups | restore <copia> | add titulo=… [campo=valor…] | set <T-n> campo=valor… | close <T-n> [--real AAAA-MM-DDTHH:MM] | check | sync --facts <archivo> [--complete] | due [confirm <id> | drop <id>]'] };
   for (const l of res.lines) (res.code === 0 ? out : err)(l);
   return res.code;
 }
 
-module.exports = { paths, taskId, orderRows, readNumbers, readBoardRaw, rowProblems, numberRows, quienWarnings, save, add, set, close, check, sync, tocaState, toca, tocaConfirm, tocaDrop, mergeFacts, readFacts, lastFactLine, printCheck, ESTADOS, ID, main };
+module.exports = { paths, taskId, orderRows, readNumbers, readBoardRaw, rowProblems, numberRows, quienWarnings, save, backups, restore, add, set, close, check, sync, tocaState, toca, tocaConfirm, tocaDrop, mergeFacts, readFacts, lastFactLine, printCheck, ESTADOS, ID, main };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

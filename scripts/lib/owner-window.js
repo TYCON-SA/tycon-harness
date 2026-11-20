@@ -733,7 +733,9 @@ function detalleDe(id, comando, palabras, cwd, casa) {
   const { recortar } = require('./owner-approvals.js');
   if (id === DESIGNACION) {
     try {
-      const d = require(path.join(LIB, 'critical-waivers.js')).designacionVigente({ dir: stateDir(casa === undefined ? casaDeLaCuenta() : casa) });
+      const v = require(path.join(LIB, 'critical-waivers.js')).designacionVigente({ dir: stateDir(casa === undefined ? casaDeLaCuenta() : casa) });
+      // con una pendiente, confirm-designation confirma ésa: el cuadro la nombra (historia 8.314)
+      const d = v && !v.error && v.pendiente ? v.pendiente : v;
       if (d && !d.error) {
         return { linea: `la sesión designada: «${recortar(d.rol, 60)}» (${String(d.sesion).slice(0, 8)}), desde ${d.ts}, ${d.cita ? `con la frase «${recortar(d.cita, 200)}»` : 'por click'}`,
           detalle: [`Designada: ${d.sesion}`, ...(d.cita ? [`La frase: ${String(d.cita).replace(/\s+/g, ' ').trim()}`] : [])] };
@@ -1065,11 +1067,27 @@ function negarCon(motivo, ids, sesion) {
  * un escape, lo irreversible ni, de fondo, lo que sólo aprueba un click en la propia pestaña: nadie la mira y la
  * coordinadora no lo puede pasar. Nada de esto cambia lo que se decide: si falla, la negativa de siempre.
  */
+/**
+ * La sesión que retira `withdraw-relay --session <id>` cuando no es la propia (historia 8.314), o null. `palabras`: el
+ * comando en su forma canónica, o el argv del guion (las dos empiezan por el guion y su subcomando).
+ */
+function retiraA(palabras, propia) {
+  if (!Array.isArray(palabras) || palabras[1] !== 'withdraw-relay') return null;
+  const i = palabras.indexOf('--session');
+  const otra = i >= 0 ? palabras[i + 1] : null;
+  return otra && !String(otra).startsWith('-') && otra !== propia ? String(otra) : null;
+}
+/** El título de una firma en la lista: el del catálogo, salvo retirar a otra sesión, que dice eso. */
+function tituloDeLaFirma(firma, palabras, propia) {
+  if (firma === 'designation-withdraw' && retiraA(palabras, propia)) return require('./signature-sources.js').RETIRAR_OTRA;
+  return (firmaDe(firma) || {}).approves || firma;
+}
+
 function anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras, cuadro, cwd, ahora, deFondo, lista = {} }) {
   if (!guion || !palabras || destino !== sesion || pendientes.length !== 1 || pendientes[0] === DESIGNACION || vaATerminal(pendientes) || !cuadro || cuadro.error) return false;
   if (deFondo && (firmaDe(pendientes[0]) || {}).soloClick) return false;
   try {
-    return require('./signature-list.js').alNegar({ casa, firma: pendientes[0], titulo: firmaDe(pendientes[0]).approves, sesion, destino, comando, palabras, cwd, ahora, deFondo, ...lista });
+    return require('./signature-list.js').alNegar({ casa, firma: pendientes[0], titulo: tituloDeLaFirma(pendientes[0], palabras, sesion), sesion, destino, comando, palabras, cwd, ahora, deFondo, ...lista });
   } catch (_) { return false; }
 }
 
@@ -1872,7 +1890,7 @@ const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delega
  * tenía, o no se pudo saber, se le avisa por los canales de la sesión (`notificar(texto)`, o notify.js).
  * `persona`, `huella`, `appendSignature`, `avisar`, `notificar` y `casaDeCuenta` se pasan en las pruebas.
  */
-function firmar({ firma, via, sesion = null, destino = null, resumen = '', key = null, routed = false, remotoConocido, herramienta = null, casa, ahora = Date.now(), anotar, extra, persona, huella, appendSignature, avisar, notificar, casaDeCuenta } = {}) {
+function firmar({ firma, via, sesion = null, destino = null, resumen = '', key = null, routed = false, remotoConocido, herramienta = null, casa, ahora = Date.now(), anotar, extra, persona, huella, appendSignature, avisar, notificar, casaDeCuenta, aviso = null } = {}) {
   // lo que el guion suma al renglón (el ok de guardar, sus huellas) va primero: no pisa quién ni cómo se firmó
   const renglon = { ...(typeof extra === 'function' ? extra({ via, sesion, destino }) : extra || {}), name: `${firma}-signed`, status: 'ok', via, sesion, destino, resumen: una(resumen, 200) };
   if (anotar) anotar(renglon);
@@ -1898,7 +1916,7 @@ function firmar({ firma, via, sesion = null, destino = null, resumen = '', key =
       source: path.basename(process.argv[1] || '') || null, ...(key ? { key } : {}), ...(routed ? { routed: true } : {}), remoteControl: remoto, home, now: ahora, huella });
   } catch (e) { r = { ok: false, error: e.message }; }
   if (!r || !r.ok) enPantalla(`⚠️ la firma se dio, pero no quedó en el registro común de firmas: ${(r && r.error) || 'sin respuesta'}`);
-  if (hayQueAvisar(remoto, via)) avisarFirmaADistancia({ firma, via, sesion, destino, ahora, remoto, notificar, avisar: enPantalla });
+  if (hayQueAvisar(remoto, via)) avisarFirmaADistancia({ firma, via, sesion, destino, ahora, remoto, notificar, avisar: enPantalla, que: aviso });
   avisarOficina(destino || sesion, home);
 }
 
@@ -1961,11 +1979,12 @@ function anotarAvisoPerdido(motivo, casa) {
  * tenga la cuenta o el teléfono del dueño puede contestar el cuadro, y así el dueño se entera en el momento. Si no sale,
  * se dice en pantalla (`avisar`) y la firma sigue: el registro de firmas es la constancia.
  */
-function avisarFirmaADistancia({ firma, via, sesion, destino, ahora, remoto = true, notificar, avisar }) {
+// `que`: lo que se firmó, cuando la frase del catálogo y la sesión destino no lo dicen (retirar a otra sesión, 8.314)
+function avisarFirmaADistancia({ firma, via, sesion, destino, ahora, remoto = true, notificar, avisar, que = null }) {
   const s = firmaDe(firma);
   const hora = `${new Date(ahora).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
   const como = remoto === true ? 'Firma con el control remoto encendido' : 'Firma de la que no se pudo saber si el control remoto estaba encendido';
-  const texto = `${como}: ${s ? s.approves : firma}, sesión ${destino || sesion}, por ${VIA_COMUN[via] || via}, a las ${hora}. Si no la diste vos, mirá el registro de firmas.`;
+  const texto = `${como}: ${que || `${s ? s.approves : firma}, sesión ${destino || sesion}`}, por ${VIA_COMUN[via] || via}, a las ${hora}. Si no la diste vos, mirá el registro de firmas.`;
   try {
     if (notificar) { notificar(texto); return; }
     const notify = require('./notify.js');
@@ -2266,8 +2285,10 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   const que = (v.previo && v.previo.resumen) || resumen || v.registro.comando;
   // la clave del pedido, la misma con que la lista de firmas anotó su fila: la firma cierra ese pedido y no sus hermanos
   const key = claveDelPedido({ firma, destino: v.registro.destino, comando: v.registro.comando, argv, casa });
+  // retirar a otra sesión: el aviso de la firma a distancia dice cuál se retira, no la frase de siempre
+  const aviso = firma === 'designation-withdraw' && retiraA(argv, propia) ? resumen : null;
   firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: (porRevision || avisado || automatica) ? que : (resumen || v.registro.comando), key, routed: v.registro.routed === true,
-    remotoConocido: v.registro.via === 'terminal' ? false : v.registro.aprobada_remoto, herramienta: v.registro.herramienta, casa, ahora, anotar, extra, notificar });
+    remotoConocido: v.registro.via === 'terminal' ? false : v.registro.aprobada_remoto, herramienta: v.registro.herramienta, casa, ahora, anotar, extra, notificar, aviso });
   // el ok de guardar y el arreglo rápido ya avisaron desde los controles de la delegación de su guion
   if (avisado && !AVISA_SU_GUION.has(firma)) avisarHecho({ firma, sesion: v.registro.sesion, destino: v.registro.destino, que, notificar });
   // la firma de trámite avisa en una línea, y el guion la trata como la delegación: lo que sale sin persona pasa por sus
@@ -2323,7 +2344,7 @@ function quienFirmo({ via, sesion, automatica } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, ofreceTrasDecidir, markerEstable,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 

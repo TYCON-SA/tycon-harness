@@ -67,6 +67,60 @@ function juzgador({ estado, repo, instalado, casa }) {
   });
 }
 
+const H = 'specs/story-9.1.md';
+
+// T7 BashWrite_HarnessReadOnlyWithStory_Passes
+// 🔴 Falla con: contar como escritas todas las palabras por un `for` que no toca la historia.
+test('T7 BashWrite_HarnessReadOnlyWithStory_Passes @story-8.278 @story-8.308 @ac-10 @ac-16', () => {
+  const c = corral();
+  const freno = juzgador(c);
+  const P = path.join(c.instalado, 'pipeline.js');
+  for (const cmd of [
+    `node ${P} advisors --story ${H} --files a.js > /tmp/x.json`,
+    `node ${P} advisors --story ${H} --files a.js | tee /tmp/x.json`,
+    `for f in a b; do echo $f; done > /tmp/o.txt; cat ${H}`,
+    `for i in 1 2; do echo $i; done > /tmp/o.txt; node ${P} advisors --story ${H}`,
+    `python3 -c "print([k for k in [1]])" > /tmp/o.txt; cat ${H}`,
+  ]) assert.strictEqual(freno(cmd), '', cmd);
+});
+
+// T8 BashWrite_StoryAsTargetOrWritingSubcommand_Blocks
+// 🔴 Falla con: tomar por lector lo que escribe, o un guion que no es el instalado.
+test('T8 BashWrite_StoryAsTargetOrWritingSubcommand_Blocks @story-8.278 @story-8.308 @ac-11 @ac-12 @ac-16', () => {
+  const c = corral();
+  const freno = juzgador(c);
+  const P = path.join(c.instalado, 'pipeline.js');
+  const M = path.join(c.instalado, 'marker.js');
+  assert.match(freno(`node ${P} advisors --story ${H} > ${H}`), new RegExp(HISTORIA));
+  assert.match(freno(`node ${P} advisors --story ${H} > "$OUT"`), new RegExp(INVISIBLE));
+  assert.match(freno(`node scripts/escribe.js ${H}`), new RegExp(HISTORIA));
+  assert.strictEqual(freno(`node ${M} update-story-status ${H} done`), '');
+  assert.match(freno('for f in specs/*.md; do sed -i s/a/b/ "$f"; done'), new RegExp(HISTORIA));
+  // un `pipeline.js` que no es el instalado no cuenta como lector
+  assert.match(freno(`for f in a; do echo $f; done > /tmp/o.txt; node scripts/pipeline.js advisors --story ${H}`), new RegExp(HISTORIA));
+});
+
+// T16 BashWrite_ReaderShortcut_Table
+// 🔴 Falla con: un atajo que deja afuera lo que corre por una tubería partida, o que frena lo que sólo lee.
+test('T16 BashWrite_ReaderShortcut_Table @story-8.308 @ac-16', () => {
+  const c = corral();
+  const freno = juzgador(c);
+  const P = path.join(c.instalado, 'pipeline.js');
+  for (const cmd of [
+    `for f in a b; do echo $f; done > /tmp/o.txt; cat ${H}`,
+    `python3 -c "print([k for k in [1]])" > /tmp/o.txt; cat ${H}`,
+    `for f in a b; do echo $f; done > /tmp/o.txt; node ${P} advisors --story ${H}`,
+  ]) assert.strictEqual(freno(cmd), '', cmd);
+  const FOR = 'for f in a; do echo $f; done > /tmp/o.txt;';
+  for (const resto of [
+    `cat ${H} > src/x.js`, `cat ${H} | sh`, `bash -c 'rm ${H}'`, `find specs -name story-9.1.md -execdir truncate -s 0 {} \\;`,
+    `echo ${H} | xargs truncate -s 0`, `ls ${H} |\nrsync --remove-source-files --files-from=- . /tmp/x`,
+    `ls ${H} | (rsync --remove-source-files --files-from=- . /tmp/x)`, `ls ${H} || rsync --remove-source-files --files-from=- . /tmp/x`,
+    `ls ${H} |& rsync --remove-source-files --files-from=- . /tmp/x`, `ls ${H} | while read f; do rm "$f"; done`,
+  ]) assert.notStrictEqual(freno(`${FOR} ${resto}`), '', resto);
+  assert.notStrictEqual(freno('for f in specs/*.md; do sed -i s/a/b/ "$f"; done'), '');
+});
+
 // T5 BashWrite_RunningATest_NotInvisible — @story-8.278 @ac-7
 // 🔴 Falla con: contar como escritura invisible lo que una prueba arma por dentro al correrla con su corredor.
 test('T5 BashWrite_RunningATest_NotInvisible — @story-8.278 @ac-7', () => {
