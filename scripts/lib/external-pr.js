@@ -13,7 +13,9 @@
  * `repos/<d>/<r>/pulls/<n>/merge`. `gh pr merge --disable-auto` no encola nada: no es una forma.
  *
  * QUIÉN ES DEL EQUIPO: la lista `pull_requests.team_authors` del perfil del equipo (tycon-config.js), y sólo ella. Un bot es de
- * afuera salvo que esté en la lista (`app/<nombre>`). Sin lista, ningún pedido es del equipo.
+ * afuera salvo que esté en la lista (`app/<nombre>`). Sin lista, es del equipo
+ * sólo la cuenta con la que el CLI está autenticado en la máquina (la que abre los pedidos del equipo); si no se puede
+ * leer, frena.
  *
  * LO QUE FRENA SIN VENTANA («no sé de quién es» nunca deja pasar): una forma que no se lee entera (el número o el repo
  * los arma la terminal, corre adentro de otro programa), un `gh pr merge` sin número, un pedido sin repo después de un
@@ -40,6 +42,8 @@ const ESCRIBE = /^(put|post|patch|delete)$/i;
 const MERGE_CON_VALOR = new Set(['--subject', '-t', '--body', '-b', '--body-file', '-F', '--match-head-commit', '--author-email', '-A', '--repo', '-R']);
 const API_CAMPO = new Set(['-f', '--raw-field', '-F', '--field']);
 const TIEMPO_GH_MS = 6000;
+// lo que cambia la cuenta con que corre el CLI: su grupo `auth` o una variable de su llave o de su configuración
+const CAMBIA_CUENTA = /\bauth\s+(switch|login|logout|refresh|setup-git|token)\b|\b(GH_TOKEN|GITHUB_TOKEN|GH_CONFIG_DIR|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)\s*=/;
 // los programas que sólo NOMBRAN el comando que los sigue (lo imprimen o lo buscan): no lo corren (como ci-bypass.js)
 const SOLO_NOMBRA = new Set(['echo', 'printf', 'print', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'git', 'man', 'which', 'type', 'cat',
   'less', 'head', 'tail', 'sed', 'awk', 'jq', 'wc', 'sort', 'cut', 'tr', 'ls', 'test', 'write-host', 'write-output', 'select-string']);
@@ -171,13 +175,21 @@ const aLaVista = (comando) => { const l = leer(comando); return l.length > 0 && 
 /** Una cuenta para comparar: en minúsculas, y un bot como `app/<nombre>` aunque se escriba `<nombre>[bot]`. */
 const cuentaComparable = (x) => { const t = String(x).trim().toLowerCase(); const b = /^(.+)\[bot\]$/.exec(t); return b ? `app/${b[1]}` : t; };
 
-/** Las cuentas del equipo, del perfil: `{ cuentas }` o `{ error }`. */
-function cuentasDelEquipo({ home, env, arnes } = {}) {
+/**
+ * Las cuentas del equipo: `{ cuentas }` o `{ error }`. Las de `pull_requests.team_authors` del perfil; si el perfil no
+ * las declara, la cuenta con la que el CLI está autenticado en esta máquina (la que abre los pedidos del equipo: un autor
+ * de afuera nunca es ella). Si esa cuenta no se puede leer, no se sabe quién es del equipo.
+ */
+function cuentasDelEquipo({ home, env = process.env, arnes, cwd, run = spawnSync } = {}) {
   let c;
   try { c = require('./tycon-config.js').leerParaHook({ home, env, arnes }); } catch (e) { return { error: `no pude leer la configuración (${e.message})` }; }
   if (!c.ok) return { error: 'la configuración del arnés está rota' };
   const v = require('./tycon-config.js').valor(c.config, 'pull_requests.team_authors');
-  return { cuentas: Array.isArray(v) ? v.map(cuentaComparable) : [] };
+  if (Array.isArray(v)) return { cuentas: v.map(cuentaComparable) };
+  const r = run('gh', ['api', 'user', '--jq', '.login'], { cwd, encoding: 'utf8', timeout: TIEMPO_GH_MS, windowsHide: true, env: { ...env, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' } });
+  const yo = r && !r.error && r.status === 0 ? String(r.stdout || '').trim() : '';
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(yo) || yo === 'null') return { error: 'el perfil no dice quiénes son del equipo y no pude leer con qué cuenta está autenticado el CLI de GitHub' };
+  return { cuentas: [cuentaComparable(yo)] };
 }
 
 /** Lo que dice GitHub del pedido: `{ autor, numero, titulo, archivos, repo }` o `{ error }`. */
@@ -217,7 +229,10 @@ function decidir(comando, { cwd, home, env = process.env, arnes, run } = {}) {
   if (!pedidos.length) return null;
   const ilegible = pedidos.find((x) => x.ilegible);
   if (ilegible) return { frena: ilegible.ilegible };
-  const eq = cuentasDelEquipo({ home, env, arnes });
+  // cambiar de cuenta en la misma línea: el freno miró con la cuenta de antes, y el merge corre con otra (la cuenta
+  // activa también decide quién es del equipo cuando el perfil no trae la lista)
+  if (CAMBIA_CUENTA.test(String(comando))) return { frena: 'el comando cambia la cuenta de GitHub en la misma línea que el merge: cambiala en otra llamada, antes' };
+  const eq = cuentasDelEquipo({ home, env, arnes, cwd, run });
   if (eq.error) return { frena: `${eq.error}: no sé quién es del equipo` };
   const firmas = [];
   for (const p of pedidos) {

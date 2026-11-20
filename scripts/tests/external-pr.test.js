@@ -37,6 +37,11 @@ dato() {
   esac
 }
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then dato "$3"; exit $?; fi
+# la cuenta con que está autenticado: GH_FALSO_YO (sin valor, equipo-uno); con GH_FALSO_SIN_YO=1 no se puede leer
+if [ "$1" = "api" ] && [ "$2" = "user" ]; then
+  if [ "\${GH_FALSO_SIN_YO:-}" = "1" ]; then echo "HTTP 401: Bad credentials" >&2; exit 1; fi
+  echo "\${GH_FALSO_YO:-equipo-uno}"; exit 0
+fi
 if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
   for a in "$@"; do case "$a" in id=*) printf '{"data":{"node":'; dato "\${a#id=}" || exit 1; printf '}}'; exit 0 ;; esac; done
 fi
@@ -137,8 +142,8 @@ test('T3 Decidir_NoSeSabeDeQuienEs_Frena — sin red, sin perfil que se lea, sin
   // el perfil roto: no se sabe quién es del equipo
   const roto = decidir(t, 'gh pr merge 77 -R acme/arnes --merge', { gh, tree: arbol(t, { pull_requests: { team_authors: 'equipo-uno' } }) });
   assert.match(roto.frena, /no sé quién es del equipo/);
-  // sin lista en el perfil, ningún pedido es del equipo: pide la firma, no deja pasar
-  assert.ok(decidir(t, 'gh pr merge 77 -R acme/arnes --merge', { gh, tree: arbol(t, null) }).firmas);
+  // sin lista en el perfil y sin poder leer la cuenta del CLI: no se sabe quién es del equipo
+  assert.match(decidir(t, 'gh pr merge 77 -R acme/arnes --merge', { gh, tree: arbol(t, null), env: { GH_FALSO_SIN_YO: '1' } }).frena, /no pude leer con qué cuenta/);
   // un `gh` que contesta algo que no se lee
   const raro = carpeta(t, 'gh-raro-');
   fs.writeFileSync(path.join(raro, 'gh'), '#!/bin/bash\necho no-es-json\n', { mode: 0o755 });
@@ -258,4 +263,38 @@ test('T10 Pase_LoQueMolestaba — el cd a la carpeta del repo, leer si ya entró
   assert.strictEqual(decidir(t, 'gh api repos/acme/arnes/pulls/1304/merge', { gh, tree }), null, 'leer si ya entró no mergea');
   assert.strictEqual(decidir(t, 'gh pr merge 56 -R acme/arnes --merge', { gh, tree }), null, 'el bot del equipo escrito con [bot]');
   assert.ok(decidir(t, 'gh api --method PUT repos/acme/arnes/pulls/1304/merge', { gh, tree }).firmas);
+});
+
+test('T11 SinListaEnElPerfil_LaCuentaDelCLIEsDelEquipo — y sin poder leerla, frena', (t) => {
+  const home = carpeta(t, 'external-pr-casa-');
+  const gh = ghFalso(t);
+  const tree = arbol(t, null);
+  // la cuenta autenticada abre los pedidos del equipo: pasan sin pregunta
+  assert.strictEqual(decidir(t, 'gh pr merge 77 -R acme/arnes --merge', { gh, tree }), null);
+  // un autor de afuera nunca es esa cuenta: pide la firma
+  assert.ok(decidir(t, 'gh pr merge 1304 -R acme/arnes --merge', { gh, tree }).firmas);
+  // otra cuenta autenticada: el pedido de equipo-uno ya no es «suyo»
+  assert.ok(decidir(t, 'gh pr merge 77 -R acme/arnes --merge', { gh, tree, env: { GH_FALSO_YO: 'otra-cuenta' } }).firmas);
+  // una respuesta que no es una cuenta tampoco vale
+  assert.ok(decidir(t, 'gh pr merge 77 -R acme/arnes --merge', { gh, tree, env: { GH_FALSO_YO: 'no es una cuenta' } }).frena);
+  // con lista en el perfil, la cuenta del CLI no cuenta: sólo la lista
+  assert.ok(decidir(t, 'gh pr merge 77 -R acme/arnes --merge', { gh, tree: arbol(t, { pull_requests: { team_authors: ['otra-cuenta'] } }) }).firmas);
+  // el freno de verdad: sin la cuenta, frena con GIT-C7; con ella, el pedido del equipo pasa
+  const sinYo = freno(t, 'gh pr merge 77 -R acme/arnes --merge', { home, tree, gh, env: { GH_FALSO_SIN_YO: '1' } });
+  assert.strictEqual(sinYo.status, 2, sinYo.stderr);
+  assert.match(sinYo.stderr, /GIT-C7/);
+  assert.strictEqual(freno(t, 'gh pr merge 77 -R acme/arnes --merge', { home, tree, gh }).status, 0);
+});
+
+test('T12 Pase_CambiarDeCuentaEnLaMismaLinea_Frena — el freno miró con la cuenta de antes', (t) => {
+  const gh = ghFalso(t);
+  const tree = arbol(t, null);
+  for (const cmd of ['gh auth switch -u equipo-uno && gh pr merge 1304 -R acme/arnes --merge',
+    'gh auth login --with-token < llave.txt; gh pr merge 77 -R acme/arnes --merge',
+    'GH_TOKEN=x gh pr merge 77 -R acme/arnes --merge', 'GH_CONFIG_DIR=/otra gh pr merge 77 -R acme/arnes --merge']) {
+    const r = decidir(t, cmd, { gh, tree, env: { GH_FALSO_YO: 'colaborador-externo' } });
+    assert.ok(r && r.frena, `${cmd}: ${JSON.stringify(r)}`);
+  }
+  // una cuenta que dice `null` no es una cuenta
+  assert.ok(decidir(t, 'gh pr merge 77 -R acme/arnes --merge', { gh, tree, env: { GH_FALSO_YO: 'null' } }).frena);
 });

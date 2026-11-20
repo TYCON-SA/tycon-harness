@@ -280,8 +280,8 @@ const VOCABULARIO = Object.freeze({
   // la persona a otra página. Sin valor, el comando dice cómo cargarla (desde el sitio o con un pedido al perfil).
   site: Object.freeze({ url: 'url' }),
   // `pull_requests.team_authors`: las cuentas de GitHub del equipo. Un pedido de otra cuenta (o de un bot que no está en
-  // la lista) no se encola ni se mergea sin la firma del dueño (external-pr.js, regla GIT-C7). Sin valor, ningún pedido
-  // es del equipo: todos piden la firma. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): si la máquina pudiera
+  // la lista) no se encola ni se mergea sin la firma del dueño (external-pr.js, regla GIT-C7). Sin valor, es del equipo
+  // sólo la cuenta con la que el CLI de GitHub está autenticado en la máquina. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): si la máquina pudiera
   // decirlo, el agente se sumaría a cualquiera a la lista.
   pull_requests: Object.freeze({ team_authors: 'cuentas' }),
   // Los interruptores de la organización (la sección «Frenos y medidores» del sitio). Hoy cada uno se cambia también por

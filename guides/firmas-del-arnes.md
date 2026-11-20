@@ -558,7 +558,8 @@ es aflojar todos los controles juntos. El camino normal sigue siendo encolar el 
 **Encolar o mergear un pedido de afuera (`external-pr`) tampoco se delega.** La pide el freno de la sesión (regla GIT-C7)
 cuando un comando encola o mergea un pedido de GitHub cuyo autor no está en `pull_requests.team_authors` del perfil del equipo:
 el merge del pedido por su comando (con o sin `--auto`), `enqueuePullRequest`, `enablePullRequestAutoMerge` o `mergePullRequest` por la
-API, o un merge sobre `pulls/<n>/merge`. Un bot es de afuera salvo que el perfil lo nombre. El cuadro dice el autor, el
+API, o un merge sobre `pulls/<n>/merge`. Un bot es de afuera salvo que el perfil lo nombre. Sin lista en el perfil, es del equipo la cuenta con la que
+el CLI de GitHub está autenticado en la máquina; si no se puede leer, frena. El cuadro dice el autor, el
 número, el título y cuántos archivos toca el pedido. Es nivel 3, se aprueba como `merge-bypass` y vale para ese comando,
 una vez. Si el freno no puede saber de quién es el pedido (sin red, el número armado por la terminal, el perfil roto),
 frena sin pedir firma. Los pedidos del equipo pasan sin pregunta.
