@@ -70,7 +70,7 @@ function motivoDe(e) {
   if ((e.sinTurno || []).length) partes.push(`pruebas sin turno: no se midieron (${e.sinTurno.join(', ')})`);
   if (e.sinCorrer.length) partes.push(`sin correr: ${e.sinCorrer.join(', ')}`);
   if (e.paseSinCerrar) partes.push('el pase adversarial sin cerrar');
-  if (e.detenida) partes.push('se detuvo y espera la decisión del dueño');
+  if (e.detenida) partes.push('se detuvo y espera la decisión de una persona');
   if (e.sinMedir.length) partes.push(`aceptado sin medir: ${e.sinMedir.join(', ')}`);
   return partes.join('; ');
 }

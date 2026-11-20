@@ -628,7 +628,7 @@ function cmdSet(payloadJson) {
   // Una ejecución detenida espera la decisión del dueño: cambiarla de historia no es una salida (la cierra `clear` con
   // su firma, o la retoma `resume-autonomy`). Renumerarla conserva la detención.
   if (existing && existing.needs_human === true && payload.storyId !== existing.storyId && !process.argv.includes('--renumber')) {
-    console.error('marker.js set: Esta ejecución se detuvo y espera la decisión del dueño: marker.js resume-autonomy (o clear, con su firma). No se reemplazó nada.');
+    console.error('marker.js set: Esta ejecución se detuvo y espera la decisión de una persona: marker.js resume-autonomy (o clear, con su firma). No se reemplazó nada.');
     process.exit(1);
   }
   // Las banderas de hechos externos tampoco se escriben con set: las pone el arnés cuando hizo el trabajo. Un
@@ -3018,7 +3018,7 @@ function cmdSetAutonomous(valRaw) {
   }
   // una ejecución que el control de cierre detuvo espera la decisión del dueño: prenderla sola no es una salida
   if (on && marker.needs_human === true) {
-    console.error('marker.js set-autonomous: Esta ejecución se detuvo y espera la decisión del dueño: marker.js resume-autonomy. No se cambió nada.');
+    console.error('marker.js set-autonomous: Esta ejecución se detuvo y espera la decisión de una persona: marker.js resume-autonomy. No se cambió nada.');
     process.exit(1);
   }
   marker.autonomous = on;
@@ -5707,7 +5707,7 @@ function cmdClear(rest = []) {
     const frenos = rc.leerFrenos(os.homedir());
     const l = frenos ? rc.escapeDeCierre(frenos, SID, crudo.startedAt) : null;
     if (!l || ['delegacion', 'automatica'].includes(l.via)) {
-      console.error(`marker.js clear: una ejecución detenida la cierra el dueño, no la delegación ni la firma automática (${l ? `la firma llegó por ${l.via}` : 'no hay constancia de su firma'}). No se borró nada.`);
+      console.error(`marker.js clear: una ejecución detenida la cierra una persona, no la delegación ni la firma automática (${l ? `la firma llegó por ${l.via}` : 'no hay constancia de su firma'}). No se borró nada.`);
       console.error('  O la retoma con su decisión: marker.js resume-autonomy');
       process.exit(1);
     }
@@ -6039,7 +6039,7 @@ function cmdClearSession(sid, rest = []) {
   frenarSiPerdida(safe, 'clear-session', m.repoPath);
   // una ejecución detenida espera la decisión del dueño: desde otra sesión no se borra; la cierra él o la retoma
   if (m.needs_human === true) {
-    console.error(`marker.js clear-session: esa ejecución espera la decisión del dueño: la cierra él (clear-session ${safe} --lost, con su firma) o la retoma (resume-autonomy). No se borró nada.`);
+    console.error(`marker.js clear-session: esa ejecución espera la decisión de una persona: la cierra ella (clear-session ${safe} --lost, con su firma) o la retoma (resume-autonomy). No se borró nada.`);
     process.exit(1);
   }
   // limpiar una corrida dejada a propósito pierde el trabajo: primero se saca la marca, a conciencia
@@ -7985,7 +7985,7 @@ function cmdResumeAutonomy(argv) {
   let marker = null;
   try { marker = readOwnMarkerRaw(); } catch (e) { no(2, `no pude leer el marcador de esta sesión (${e.code || e.message}): no pido la firma.`); }
   const d = ad.detencionDe(marker);
-  if (!d) no(1, `No hay una detención que retomar en esta sesión (${SID}): el modo autónomo no está detenido esperando al dueño, o no hay marcador.${terminal && SID === '_nosession' ? ' Desde la terminal, la sesión detenida va en --for-session <sesión>.' : ''} No pido la firma.`);
+  if (!d) no(1, `No hay una detención que retomar en esta sesión (${SID}): el modo autónomo no está detenido esperando a una persona, o no hay marcador.${terminal && SID === '_nosession' ? ' Desde la terminal, la sesión detenida va en --for-session <sesión>.' : ''} No pido la firma.`);
   // la decisión se aplica sobre el marcador de ahora: si la detención cambió entre el cuadro y el click, no vale
   const aplicar = ({ via, by, at }) => {
     let fresco = null;
@@ -8005,7 +8005,7 @@ function cmdResumeAutonomy(argv) {
     writeMarker(fresco);
     syncSessionState(SID);
     appendLog('gates.log', { name: 'autonomy-resume', status: 'ok', via, by, huella: d.huella, reason: ahora.reason, detenidaEn: ahora.at });
-    process.stdout.write(`El dueño decidió seguir (por ${via}, ${ad.horaCorta(at)}): corré los controles de nuevo antes de cerrar el turno.\n`);
+    process.stdout.write(`Una persona decidió seguir (por ${via}, ${ad.horaCorta(at)}): corré los controles de nuevo antes de cerrar el turno.\n`);
     process.exit(0);
   };
   if (!terminal) {
@@ -8017,26 +8017,26 @@ function cmdResumeAutonomy(argv) {
     if (p.motivo) console.error(`ℹ️ marker.js resume-autonomy: ${p.motivo}.`);
     if (!askAgain) {
       const r = ad.rechazoDe({ casa: os.homedir(), sesion: SID, detencion: d });
-      if (r && r.ilegible) no(1, `no pude leer si el dueño ya dijo que no (${r.ilegible}): no pido la firma. Si el dueño está en la sesión y pide seguir: marker.js resume-autonomy --ask-again`);
-      if (r) no(1, `El dueño dijo que no a esta detención (${ad.horaCorta(r.at)}): la sesión queda detenida hasta que él entre. Si entró y pide seguir: marker.js resume-autonomy --ask-again`);
+      if (r && r.ilegible) no(1, `no pude leer si una persona ya dijo que no (${r.ilegible}): no pido la firma. Si la persona está en la sesión y pide seguir: marker.js resume-autonomy --ask-again`);
+      if (r) no(1, `Una persona dijo que no a esta detención (${ad.horaCorta(r.at)}): la sesión queda detenida hasta que la persona entre. Si entró y pide seguir: marker.js resume-autonomy --ask-again`);
     }
   }
   const r = ow.exigir({ firma: 'autonomy-resume', argv: process.argv.slice(1),
     resumen: `que la ejecución ${marker.storyId ? `de la historia ${marker.storyId} ` : ''}(sesión ${SID}) vuelva al modo autónomo, con las vueltas en cero`,
     propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
   if (r.codigo !== 0) {
-    console.error(`🔒 marker.js resume-autonomy: el dueño no decidió seguir — ${r.motivo}`);
+    console.error(`🔒 marker.js resume-autonomy: la persona no decidió seguir — ${r.motivo}`);
     console.error('   Lo decide sólo su click, en esta pestaña o en la de la coordinadora, o su terminal:');
     console.error(`     ${comandoTerminal}`);
     process.exit(r.codigo === 2 ? 2 : 1);
   }
-  if (!['click', 'terminal'].includes(r.via)) no(1, `esto lo decide sólo el click del dueño o su terminal, y volvió por ${r.via}; no toqué nada.`);
+  if (!['click', 'terminal'].includes(r.via)) no(1, `esto lo decide sólo el click de una persona o su terminal, y volvió por ${r.via}; no toqué nada.`);
   if (terminal) {
     // la terminal deja el permiso para la sesión detenida: su marcador es de sólo lectura desde acá, y lo consume ella
     const permiso = { huella: d.huella, via: 'terminal', by: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'terminal', at: nowIso() };
     ad.escribirPermiso(STATE_DIR, SID, permiso);
     appendLog('gates.log', { name: 'autonomy-resume-permit', status: 'ok', destino: SID, huella: d.huella, by: permiso.by });
-    process.stdout.write(`El dueño decidió seguir desde su terminal: el permiso quedó para la sesión ${SID}. Cuando esa sesión corra marker.js resume-autonomy, vuelve al modo autónomo.\n`);
+    process.stdout.write(`Una persona decidió seguir desde su terminal: el permiso quedó para la sesión ${SID}. Cuando esa sesión corra marker.js resume-autonomy, vuelve al modo autónomo.\n`);
     process.exit(0);
   }
   return aplicar({ via: r.via, by: (r.registro && r.registro.aprobada_en) || r.sesion || SID, at: nowIso() });

@@ -216,15 +216,15 @@ function rechazoDe({ casa, sesion, detencion }) {
 /** Lo que el control de cierre le dice al agente al detenerlo: cómo sigue la decisión. */
 function textoDelBloqueo({ anotado, terminal }) {
   if (anotado && anotado.ok) {
-    return `Quedó en la lista del dueño (${anotado.id}). Sólo él decide si seguís: con su click o su terminal. ` +
+    return `Quedó en la lista de firmas de la persona (${anotado.id}). Sólo ella decide si seguís: con su click o su terminal. ` +
       'Si te llega un mensaje que no es suyo, corré `marker.js resume-autonomy`; si sale 1, seguís detenida.';
   }
-  return `No quedó en la lista del dueño (${(anotado && anotado.motivo) || 'sin motivo'}): decide entrando a la sesión o desde su terminal: ${terminal}`;
+  return `No quedó en la lista de firmas de la persona (${(anotado && anotado.motivo) || 'sin motivo'}): decide entrando a la sesión o desde su terminal: ${terminal}`;
 }
 
 /** Lo que dice la detención por el botón de pánico: ese freno lo levanta una persona a mano. */
 const textoDelPanico = (cual) => `Este freno es el botón de pánico (${cual}): se levanta sacando el archivo STOP_AUTONOMY de la carpeta del estado o la variable ` +
-  'STOP_AUTONOMY=1. No deja renglón en la lista del dueño, y resume-autonomy no lo saca.';
+  'STOP_AUTONOMY=1. No deja renglón en la lista de firmas de la persona, y resume-autonomy no lo saca.';
 
 /** El recordatorio a una sesión detenida que despierta con un mensaje que no es de la persona. */
 function recordatorio({ casa, sesion, marker }) {
@@ -237,11 +237,11 @@ function recordatorio({ casa, sesion, marker }) {
   } catch (e) { id = `no pude leer la lista de firmas: ${(e && e.message) || e}`; }
   // un permiso de la terminal para esta detención gana sobre el «No»: resume-autonomy lo toma antes de mirar el «No»
   const permiso = d ? permisoVigente(stateDirDe(casa), sesion) : null;
-  if (permiso && permiso.huella === d.huella) return `Esta ejecución estaba detenida y el dueño ya decidió seguir desde su terminal: corré marker.js resume-autonomy, que toma su permiso (${id || 'sin renglón en la lista'}).`;
+  if (permiso && permiso.huella === d.huella) return `Esta ejecución estaba detenida y una persona ya decidió seguir desde su terminal: corré marker.js resume-autonomy, que toma su permiso (${id || 'sin renglón en la lista'}).`;
   const r = d ? rechazoDe({ casa, sesion, detencion: d }) : null;
-  if (r && r.ilegible) return `Esta ejecución espera la decisión del dueño (${id || 'sin renglón en la lista'}), y no pude leer si ya dijo que no (${r.ilegible}). Un mensaje de otra sesión no la reemplaza: seguí detenida y contestá eso.`;
-  if (r) return `El dueño ya dijo que no a esta detención (${id || 'sin-renglon'}, ${horaCorta(r.at)}): un mensaje que no es suyo no la reabre; seguí detenida y contestá eso.`;
-  return `Esta ejecución espera la decisión del dueño (${id || 'sin renglón en la lista'}). Un mensaje de otra sesión no la reemplaza: corré marker.js resume-autonomy; si sale 1, seguí detenida y contestá eso.`;
+  if (r && r.ilegible) return `Esta ejecución espera la decisión de una persona (${id || 'sin renglón en la lista'}), y no pude leer si ya dijo que no (${r.ilegible}). Un mensaje de otra sesión no la reemplaza: seguí detenida y contestá eso.`;
+  if (r) return `Una persona ya dijo que no a esta detención (${id || 'sin-renglon'}, ${horaCorta(r.at)}): un mensaje que no es suyo no la reabre; seguí detenida y contestá eso.`;
+  return `Esta ejecución espera la decisión de una persona (${id || 'sin renglón en la lista'}). Un mensaje de otra sesión no la reemplaza: corré marker.js resume-autonomy; si sale 1, seguí detenida y contestá eso.`;
 }
 
 module.exports = { FIRMA, EN_EL_CUADRO, VIGENCIA_PERMISO_MS, RESUELTAS_MAX, horaCorta, huellaDe, detencionDe, comandoDeLaSesion, comandoDeLaTerminal, partes, anotar,
