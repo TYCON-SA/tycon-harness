@@ -77,6 +77,13 @@ const BASH = findGitBash();
 const NO_BASH = !BASH.path && `NO MEDIDO — no encontré bash (${BASH.reason})`;
 const slash = (p) => p.replace(/\\/g, '/');
 
+// El banco y las que corren solas tienen dos formas: Bench corre las dos cosas (10 min de banco), o el banco corre solo
+// en Bench (20 min de tope) y las que corren solas en su propio trabajo, Solas, que es el «bench» del reparto. Así el
+// banco puede tardar más sin pasar los 40 min de ningún trabajo. Se miden las dos: este archivo entra antes que el pipeline.
+const SOLAS = /^ {2}- job: Solas\s*$/m.test(text);
+// el trabajo que corre la lista «bench» del reparto (las que corren solas y lo común que le toque)
+const SUITES_BENCH_JOB = SOLAS ? 'Solas' : 'Bench';
+
 /** El texto de cada job del YAML, por nombre, en orden. */
 function jobs() {
   const found = {};
@@ -306,7 +313,8 @@ function runPlan(dir, max, changed = ['scripts/lab.js'], env = {}, steps = {}) {
 }
 
 const FULL_BENCH_LOAD = 100000;
-const REAL_BENCH_LOAD = 'BENCH_LOAD=600;';
+// con Solas, el trabajo «bench» del reparto no corre el banco: no arranca cargado con sus segundos
+const REAL_BENCH_LOAD = SOLAS ? 'BENCH_LOAD=0;' : 'BENCH_LOAD=600;';
 /** La carga de arranque del banco en el cuerpo de «Qué suites corren»: la del paso con 'real'; si no, FULL_BENCH_LOAD. */
 function withBenchLoad(body, load) {
   if (load === 'real') return body;
@@ -466,7 +474,8 @@ test('PrShards_PlanStep_AsksForAsManyJobsAsThePlanWeighs', { skip: NO_BASH }, ()
   set.pr.job_deadline = set.pr.bench_rate * 600;
   const weights = path.join(full, 'weights-banco-lleno.json');
   fs.writeFileSync(weights, JSON.stringify(set));
-  const max = runPlan(full, maxShards(), ['scripts/lab.js'], {}, { weights, benchLoad: 'real' });
+  // con Solas el banco no carga el trabajo «bench» del reparto (su carga real es 0): se lo llena a mano con 600
+  const max = runPlan(full, maxShards(), ['scripts/lab.js'], {}, { weights, benchLoad: SOLAS ? 600 : 'real' });
   assert.strictEqual(max.code, 0, max.out);
   assert.strictEqual(max.of, 2, `con el trabajo del banco lleno, el máximo\n${max.out}`);
   assert.match(max.out, /el trabajo del banco arranca con ~\d+ y lleva ~0 más del reparto/);
@@ -539,33 +548,37 @@ test('T48 PrShards_JobCountUnknownWithExclusiveSuites_CountsOnlyTheOnesTheSuites
 
 test('PrShards_Jobs_ValidateThenBenchAndSuitesThenAVerdictThatAlwaysRuns', () => {
   const all = jobs();
-  assert.deepStrictEqual(Object.keys(all), ['Validar', 'Bench', 'Suites', 'SuitesLargo', 'Verdict'], 'los cinco jobs, en orden');
+  const NAMES = SOLAS ? ['Validar', 'Bench', 'Solas', 'Suites', 'SuitesLargo', 'Verdict'] : ['Validar', 'Bench', 'Suites', 'SuitesLargo', 'Verdict'];
+  assert.deepStrictEqual(Object.keys(all), NAMES, 'los jobs, en orden');
   const { Validar: validate, Bench: bench, Suites: suites, SuitesLargo: longSuites, Verdict: verdict } = all;
+  const suitesBench = all[SUITES_BENCH_JOB];
+  const OTHERS = SOLAS ? ['Bench', 'Solas', 'Suites', 'SuitesLargo'] : ['Bench', 'Suites', 'SuitesLargo'];
 
   // La decisión «¿trae código?» sale del paso del cambio hacia los otros jobs.
   assert.match(validate, /\n {8}displayName: 'Qué trae este cambio'\n {8}name: change\n/, 'el paso del cambio tiene nombre: los otros jobs lo leen por él');
   assert.ok(stepBody('Qué trae este cambio').includes('echo "##vso[task.setvariable variable=hayCodigo;isOutput=true]$HAY_CODIGO"'),
     'y publica hayCodigo como salida del job');
-  for (const [name, body] of [['Bench', bench], ['Suites', suites], ['SuitesLargo', longSuites]]) {
-    assert.match(body, /\n {4}dependsOn: Validar\n/, `${name} espera a Validar`);
+  for (const name of OTHERS) {
+    assert.match(all[name], /\n {4}dependsOn: Validar\n/, `${name} espera a Validar`);
   }
   assert.ok(bench.includes(`\n    condition: and(succeeded(), ${HAS_CODE})\n`), 'Bench corre sólo si el cambio trae código');
+  if (SOLAS) assert.ok(suitesBench.includes(`\n    condition: and(succeeded(), ${HAS_CODE})\n`), 'Solas corre sólo si el cambio trae código');
   // Suites o SuitesLargo, nunca los dos: lo decide `suites.largo`; sin esa salida, Suites
   assert.ok(suites.includes(`\n    condition: and(succeeded(), ${HAS_CODE}, ne(${LONG_OUTPUT}, 'si'))\n`), 'Suites corre si el plan entra en 40 min');
   assert.ok(longSuites.includes(`\n    condition: and(succeeded(), ${HAS_CODE}, eq(${LONG_OUTPUT}, 'si'))\n`), 'SuitesLargo, sólo si no entra');
-  assert.match(verdict, /\n {4}dependsOn: \[Validar, Bench, Suites, SuitesLargo\]\n/, 'el veredicto espera a todos');
+  assert.ok(verdict.includes(`\n    dependsOn: [Validar, ${OTHERS.join(', ')}]\n`), 'el veredicto espera a todos');
   if (verdictTemplate) {
     // De respaldo: corre aunque el banco o un trabajo de suites hayan fallado o los haya cortado el tope, salvo que el
     // cambio no traiga código o que algún trabajo ya lo haya dado. Con más trabajos de los que nombra, corre siempre.
     const dado = (job, leg) => `ne(dependencies.${job}.outputs['${leg ? `${leg}.` : ''}veredicto.dado'], 'si')`;
-    const patas = [dado('Bench'), ...[1, 2, 3, 4].map((i) => dado('Suites', `shard_${i}`)), ...[1, 2, 3, 4].map((i) => dado('SuitesLargo', `shard_${i}`))];
+    const patas = [dado(SUITES_BENCH_JOB), ...[1, 2, 3, 4].map((i) => dado('Suites', `shard_${i}`)), ...[1, 2, 3, 4].map((i) => dado('SuitesLargo', `shard_${i}`))];
     const ok = (job) => `in(dependencies.${job}.result, 'Succeeded', 'Skipped')`;
-    assert.ok(verdict.includes(`\n    \${{ if le(parameters.suiteShards, 4) }}:\n      condition: and(always(), ${HAS_CODE}, or(not(and(${['Bench', 'Suites', 'SuitesLargo'].map(ok).join(', ')})), and(${patas.join(', ')})))\n`),
+    assert.ok(verdict.includes(`\n    \${{ if le(parameters.suiteShards, 4) }}:\n      condition: and(always(), ${HAS_CODE}, or(not(and(${OTHERS.map(ok).join(', ')})), and(${patas.join(', ')})))\n`),
       'el respaldo corre si algún trabajo no terminó bien, o si ninguno dio el veredicto: el banco y cada pata de las dos matrices');
     assert.ok(verdict.includes(`\n    \${{ else }}:\n      condition: and(always(), ${HAS_CODE})\n`), 'con más de 4 trabajos de suites, siempre');
     assert.ok(4 >= maxShards(), 'el máximo por defecto entra en lo que nombra la condición');
     // los tres trabajos que publican, con el veredicto prendido en su plantilla
-    for (const [name, body] of [['Bench', bench], ['Suites', suites], ['SuitesLargo', longSuites]]) {
+    for (const [name, body] of [[SUITES_BENCH_JOB, suitesBench], ['Suites', suites], ['SuitesLargo', longSuites]]) {
       assert.match(body, /- template: \/pipelines\/templates\/run-suites\.yml\n(?: {8}.*\n)*? {10}veredicto: true\n/, `${name} da el veredicto si publica último`);
       for (const v of ['SUITES_MATRIX', 'BANCO']) assert.ok(body.includes(`\n      ${v}: $[ dependencies.Validar.outputs[`), `${name} trae ${v}, que leen los pasos del veredicto`);
     }
@@ -971,7 +984,9 @@ test('T17 PrShards_ValidarFetchesTimesAndPublishesCaps — Validar baja los tiem
   const fetchName = MEASURED_SPLIT ? TIMES_STEP : CAPS_STEP;
   assert.ok(validar.indexOf(`displayName: '${CAPS_STEP}'`) < validar.indexOf("artifact: 'suites-plan-a$(System.JobAttempt)'"), 'antes de publicar suites-plan');
   assert.match(validar, new RegExp(`displayName: '${fetchName}'\\n(?: {8}.*\\n)*? {8}env:\\n {10}SYSTEM_ACCESSTOKEN: \\$\\(System\\.AccessToken\\)\\n`), 'con el token de la corrida');
-  for (const [name, minutes] of [['Bench', 40], ['Suites', 40], ['SuitesLargo', 100]]) {
+  // con Solas, el banco solo tiene 30 min (20 de su tope más la preparación) y no corre suites
+  if (SOLAS) assert.match(all.Bench, /\n {4}timeoutInMinutes: 30\n/, 'Bench: 20 min del banco más la preparación');
+  for (const [name, minutes] of [[SUITES_BENCH_JOB, 40], ['Suites', 40], ['SuitesLargo', 100]]) {
     const job = all[name];
     assert.match(job, new RegExp(`\\n {4}timeoutInMinutes: ${minutes}\\n`), `${name}: su tope no cambia`);
     assert.match(job, new RegExp(`\\n {6}SUITES_JOB_MINUTES: ${minutes}\\n`), `${name}: el plazo que ve la plantilla es su tope`);
@@ -1370,7 +1385,7 @@ const everyJob = (of) => [...Array(of).keys()].map((n) => n + 1);
 test('T48 PrShards_BenchJobRunsTheExclusiveSuitesAndTheVerdictJoinsThem — el trabajo del banco corre las que corren solas y el veredicto las junta', { skip: NO_BASH }, () => {
   // La forma: el trabajo del banco corre el banco, publica su reporte y DESPUÉS corre los pasos de la plantilla, con su
   // nombre de trabajo y la cuenta que publicó Validar. Un rojo del banco no las saltea.
-  const { Bench: bench, Suites: suites } = jobs();
+  const { [SUITES_BENCH_JOB]: bench, Suites: suites } = jobs();
   assert.match(bench, /\n {4}variables:\n {6}SUITES_SHARD: bench\n {6}SUITES_OF: \$\[ dependencies\.Validar\.outputs\['suites\.of'\] \]\n/, 'el trabajo del banco es el «bench» del reparto, con la cuenta de Validar');
   assert.ok(stepBody(PLAN_STEP).includes('echo "##vso[task.setvariable variable=of;isOutput=true]$OF"'), 'Validar publica la cuenta sola: el trabajo del banco no es una pata de la matriz');
   const use = `${TEMPLATE_USE}        parameters:\n          condicion: succeededOrFailed()\n`;
@@ -1385,7 +1400,8 @@ test('T48 PrShards_BenchJobRunsTheExclusiveSuitesAndTheVerdictJoinsThem — el t
   // Una suite no puede dar otro resultado según en qué trabajo le tocó: los dos arrancan con los mismos pasos (el clon
   // entero con su credencial, node, los repos), sin contar los comentarios.
   const before = (job, mark) => { const own = job.slice(job.indexOf('\n    steps:\n'), job.indexOf(mark)); return own.split('\n').map((l) => l.replace(/\s+#.*$/, '')).filter((l) => l.trim() && !l.trim().startsWith('#')).join('\n'); };
-  assert.strictEqual(before(bench, '\n      - script: |'), before(suites, `\n${TEMPLATE_USE}`), 'el trabajo del banco prepara lo mismo que un trabajo de suites');
+  // con Solas, el trabajo de las que corren solas no tiene el paso del banco: prepara hasta la plantilla, como los demás
+  assert.strictEqual(before(bench, SOLAS ? `\n${TEMPLATE_USE}` : '\n      - script: |'), before(suites, `\n${TEMPLATE_USE}`), 'el trabajo del banco prepara lo mismo que un trabajo de suites');
   // Los cuatro llamados al repartidor separan las que corren solas: si uno no lo hiciera, una suite correría dos veces
   // o ninguna.
   for (const sub of ['jobs', 'plan', 'list', 'merge']) assert.ok(shardCall(sub).includes(' --exclusive-apart '), `suites-shard.js ${sub} separa las que corren solas: ${shardCall(sub)}`);
@@ -1504,8 +1520,10 @@ function runBench(runner, env = {}) {
 const TOY_RUNNER = (exit) => `const fs = require('fs'); const at = process.argv.indexOf('--json');\nfs.writeFileSync(process.argv[at + 1], '{"kind":"toy"}');\nconsole.log('banco de juguete'); process.exit(${exit});\n`;
 
 test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco colgado se corta por su tope y no se lleva puestas las suites', { skip: NO_BASH }, () => {
-  const { Bench: bench } = jobs();
-  assert.match(bench, /\n {4}timeoutInMinutes: 40\n/, 'el trabajo: 10 min del banco más la suma de los topes de las suites que corren solas');
+  const { Bench: bench, [SUITES_BENCH_JOB]: alones } = jobs();
+  // con Solas, el banco va solo (30 min: 20 de su tope y la preparación) y las que corren solas en el suyo (40)
+  if (SOLAS) assert.match(bench, /\n {4}timeoutInMinutes: 30\n/, 'el banco solo: 20 min de su tope más la preparación');
+  assert.match(alones, /\n {4}timeoutInMinutes: 40\n/, SOLAS ? 'las que corren solas: la suma de sus topes' : 'el trabajo: 10 min del banco más la suma de los topes de las suites que corren solas');
   // 🔴 La cuenta, con los archivos de verdad: el tope del trabajo es su PEOR caso —el banco colgado hasta
   // su tope y cada suite que corre sola colgada hasta el suyo—. Si una suite más pasa a correr sola, la cuenta puede dejar de
   // entrar (por ejemplo 43,6 min contra 40) y esto se pone rojo: se le da
@@ -1521,8 +1539,10 @@ test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco c
   assert.strictEqual(asked.status, 0, asked.stderr);
   const capOf = new Map(asked.stdout.trim().split('\n').map((l) => l.split('\t')).map(([name, seconds]) => [name, Number(seconds)]));
   for (const name of alone) assert.ok(capOf.get(name) > 0, `${name} corre sola y el repartidor le da un tope`);
-  const BENCH_CAP = 600;
-  const worst = BENCH_CAP + alone.reduce((sum, name) => sum + capOf.get(name), 0);
+  const BENCH_CAP = SOLAS ? 1200 : 600;
+  // con Solas, el banco no comparte trabajo con las que corren solas: entra en 25 de sus 30 min (5 de preparación)
+  if (SOLAS) assert.ok(BENCH_CAP <= 25 * 60, `el banco no entra en su trabajo: ${BENCH_CAP} s`);
+  const worst = (SOLAS ? 0 : BENCH_CAP) + alone.reduce((sum, name) => sum + capOf.get(name), 0);
   assert.ok(worst <= 40 * 60, `el peor caso del trabajo del banco no entra en sus 40 min: ${(worst / 60).toFixed(1)} min (${BENCH_CAP} s del banco + ${alone.map((n) => `${n} ${capOf.get(n)}`).join(' + ')})`);
   // las dos de tope propio: tardan 1 y 3 s en la validación, y 60 s les dejan margen de sobra (las dos viajan a la copia;
   // si un día alguna no viajara, acá no hay nada que fijar para ella)
@@ -1531,7 +1551,7 @@ test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco c
   }
   const step = stepBody(BENCH_STEP);
   assert.match(step, /node scripts\/ci\/run-capped\.js --seconds "\$CAP" --mark "\$MARK" -- node scripts\/controls-bench\/runner\.js /, 'el runner corre con tope');
-  assert.match(step, /CAP="\$\{BENCH_CAP_SECONDS:-600\}"/, 'de 10 minutos, si nadie dice otra cosa');
+  assert.ok(step.includes(`CAP="\${BENCH_CAP_SECONDS:-${BENCH_CAP}}"`), `de ${BENCH_CAP / 60} minutos, si nadie dice otra cosa`);
 
   // colgado: se corta a los 2 s de la prueba, sale rojo y lo dice; no deja un reporte a medias
   const hung = runBench('setInterval(() => {}, 1000);\n', { BENCH_CAP_SECONDS: '2' });
@@ -1555,7 +1575,7 @@ test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco c
   // un tope que no es un número de segundos: se avisa y vale el de siempre (nunca «sin tope»)
   const odd = runBench(TOY_RUNNER(0), { BENCH_CAP_SECONDS: 'mucho' });
   assert.strictEqual(odd.code, 0, odd.out);
-  assert.match(odd.out, /##vso\[task\.logissue type=warning\].*BENCH_CAP_SECONDS no es un número de segundos.*uso 600/);
+  assert.match(odd.out, new RegExp(`##vso\\[task\\.logissue type=warning\\].*BENCH_CAP_SECONDS no es un número de segundos.*uso ${BENCH_CAP}`));
 });
 
 // Los pasos de bash de los pipelines corren también en ESTA prueba, con el bash de la máquina: en la Mac, el 3.2. Ahí `$VAR`
@@ -2215,8 +2235,9 @@ test('PrShards_BenchLoad_TheNumberTravelsWithThePlan_ListAndMergeUseIt — con b
     assert.doesNotMatch(l, /BENCH_ARG|--bench-load/, `caps, of y matrix no la necesitan: ${l.trim()}`);
   }
 
-  // El banco corre: 600 viaja en el archivo. Sin banco: 0.
-  for (const [banco, load] of [['si', '600'], ['no', '0']]) {
+  // El banco corre: 600 viaja en el archivo. Sin banco: 0. Con Solas, el trabajo «bench» del reparto no corre el banco: 0
+  // en los dos casos.
+  for (const [banco, load] of [['si', SOLAS ? '0' : '600'], ['no', '0']]) {
     const dir = BENCH_LOAD_TOY();
     const plan = runPlan(dir, maxShards(), ['scripts/lab.js'], { SUITES_JOB_BUDGET: '' }, { banco, benchLoad: 'real' });
     assert.strictEqual(plan.code, 0, plan.out);
