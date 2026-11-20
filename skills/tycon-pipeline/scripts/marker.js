@@ -8112,7 +8112,8 @@ function cmdAdhoc(sub, payloadJson) {
     }
     // cada entrada como se pide: la de un repo hermano con su nombre adelante (`B/src/a.cs`), nunca con «..»
     const relLista = allowedFiles.map((f) => LISTA.relDeLaLista(f, carpetaDeLaLista, pedidaLista.hermanos));
-    // los repos de la lista y cuántos archivos de cada uno: con más de uno, lo aprueba el dueño con su click o su terminal
+    // los repos de la lista y cuántos archivos de cada uno, para el resumen que lee quien firma. Varios repos se aprueban
+    // como uno: los hermanos salen del grupo declarado (repo_group, en los dos sentidos) y la sesión no pregunta
     const RG = require('./lib/repo-group.js');
     const reposDeLaLista = LISTA.reposDeLaLista(allowedFiles);
     const variosRepos = reposDeLaLista.length > 1;
@@ -8140,8 +8141,6 @@ function cmdAdhoc(sub, payloadJson) {
     const antes = (viaPedida, registro) => {
       // «hecho y avisado» (pestaña sin permisos) cuenta como delegado: tampoco lo leyó una persona
       if (viaPedida !== 'delegacion' && viaPedida !== 'avisado' && !(registro && registro.via === 'avisado')) return null;
-      // una lista de varios repos, o una ampliación que suma un repo, la aprueba la persona con su click o su terminal
-      if (variosRepos) return { codigo: 1, motivo: `la lista nombra archivos de ${reposDeLaLista.length} repos (${reposDeLaLista.map(nombreDelRepo).join(', ')}): un camino corto de varios repos lo aprueba la persona con su click o su terminal, no por delegación` };
       // lo que no abre nadie más que una persona, antes del aviso: una ruta de riesgo alto, varios temas o un motivo vago
       if (riesgoDeLaLista) {
         const quien = enElArnes() ? 'no lo abre la coordinadora por delegación: lo abre una persona' : 'lo abrís vos, en tu ventana';
@@ -8208,11 +8207,6 @@ function cmdAdhoc(sub, payloadJson) {
     // una vía que este guion no conoce no se cuenta como ventana: no se declara
     if (!['delegacion', 'avisado', 'terminal', 'ventana', 'click', 'mensaje'].includes(r.via)) {
       console.error(`🔒 marker.js adhoc set: la firma volvió por una vía que no conozco (${r.via}); no declaré nada.`);
-      process.exit(1);
-    }
-    // varios repos: sólo el click de la persona o su terminal; otra vía no declara nada
-    if (variosRepos && !['click', 'terminal'].includes(r.via)) {
-      console.error(`🔒 marker.js adhoc set: un camino corto de varios repos lo aprueba sólo el click de la persona o su terminal, y volvió por ${r.via}; no declaré nada.`);
       process.exit(1);
     }
     // pasar el tope lo elige una persona, con su click o su terminal, o la coordinadora si el perfil se lo delega
