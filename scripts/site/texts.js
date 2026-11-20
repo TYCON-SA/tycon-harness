@@ -2760,6 +2760,7 @@ const CAUSA_EN = {
   'RR-ESCAPE:RUNTIME_MATRIX_LEGACY': 'live check counting every smoke as a real run', 'RR-ESCAPE:TYCON_RUNTIME_MATRIX_LEGACY': 'live check counting every smoke as a real run',
   'RR-ESCAPE:RUNTIME_MATRIX_NO_MUTATION_CHECK': 'mutation testing skipped',
   'RR-ESCAPE:STORY_REVIEW_OFF': 'story review skipped', 'RR-ESCAPE:TYCON_STORY_REVIEW': 'story review skipped',
+  'RR-ESCAPE:ESCAPE_NOTICE_PERIOD': 'escape warned before its cut date', 'RR-ESCAPE:COVERAGE_BELOW_FLOOR': 'coverage threshold lowered on the machine',
   'RR-ESCAPE:ATDD_PREEDIT_GATE_OFF': 'tests-first gate turned off',
   'RR-ESCAPE:TYCON_SAFETY_OFF': 'safety brake turned off', 'RR-ESCAPE:TYCON_SESSION_GUARD_OK': 'session brake skipped', 'RR-ESCAPE:TYCON_STASH_GUARD_OK': 'foreign-stash brake skipped',
   'RR-ESCAPE:TYCON_ENGRAM_MANIFEST_OK': 'memory brake skipped', 'RR-ESCAPE:STOP_AUTONOMY': 'closed without waiting for the person',

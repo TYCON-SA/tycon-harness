@@ -219,15 +219,16 @@ function anotarFallo(home, motivo) {
 // se escribe igual). `delegacion`: la sesión designada lo aprobó en nombre del dueño (lib/owner-window.js). `persona`,
 // `reenvio` y `sin-conversacion` son de antes de la ventana de permiso, cuando la autorización salía de la
 // conversación: ya no se escriben, y siguen en la lista para leer los renglones viejos. `click` y `mensaje`: la persona lo
-// aprobó en el cuadro de opciones o con un «aprobado» escrito (lib/owner-approvals.js).
-const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion', 'ventana', 'click', 'mensaje', 'automatica'];
+// aprobó en el cuadro de opciones o con un «aprobado» escrito (lib/owner-approvals.js). `aviso`: pasó sin firma, avisado,
+// antes de la fecha de corte de su escape (`enforce_from` en lib/env-switches.json).
+const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion', 'ventana', 'click', 'mensaje', 'automatica', 'aviso'];
 const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,
 // y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
 const ESCAPES_CON_NOMBRE = ['TYCON_SAFETY_OFF', 'TYCON_PROD_LINT', 'TYCON_NEW_NAMES', 'set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda',
   'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt',
   'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado', 'merge-bypass', 'red-control-test-edit',
-  'rojo-esperado-de-la-matriz'];
+  'rojo-esperado-de-la-matriz', 'TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW', 'no-mutation'];
 const SESION = /^[\w-]{1,80}$/;
 
 function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape, motivo, detalle } = {}) {

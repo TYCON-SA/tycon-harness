@@ -93,7 +93,7 @@ const SIN_TRAMITE = () => ({ ok: false, motivo: null });
 // sin `aprobador`, el texto de un repo del arnés: el de verdad mira el remoto de la carpeta del evento
 const { APPROVERS } = require(path.join(__dirname, '..', 'lib', 'approver.js'));
 const DEL_ARNES = () => APPROVERS.maintainers;
-const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, tramite: o.tramite || SIN_TRAMITE, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES, aprobaciones: o.aprobaciones, topes: o.topes });
+const pedir = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, o.evento), escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION, tramite: o.tramite || SIN_TRAMITE, clasificar: o.clasificar || (() => null), comprobar: o.comprobar || (() => null), aprobador: o.aprobador || DEL_ARNES, aprobaciones: o.aprobaciones, topes: o.topes, antesDelCorte: o.antesDelCorte });
 // el control previo con que el guion de verdad pide una firma que puede salir sin persona (sin él, la delegación y
 // «hecho y avisado» no firman); acá deja pasar: lo que comprueba lo prueba cada guion
 const CONTROL_DEL_GUION = () => null;
@@ -2530,7 +2530,7 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
 const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
-  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'lost-run:particion'];
+  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'lost-run:particion', 'escape:no-mutation'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
 test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {
@@ -2550,12 +2550,15 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     ['adhoc-lane:guardado-ajeno', `node ${MARKER} adhoc allow-foreign-save`],
     // cerrar una ejecución reemplazada por una partición: la bandera mal puesta se niega antes del cuadro
     ['lost-run:particion', `node ${MARKER} clear-session ses-a --lost --partition`],
+    // cerrar las pruebas sin los mutantes: sin motivo o en un paso que no las corre, el guion se niega antes de la firma
+    ['escape:no-mutation', `node ${MARKER} complete-step run-tests --no-mutation --reason "refactor sin código nuevo"`],
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {
     const casa = casaNueva(t);
     let visto = null;
-    const r = pedir(casa, cmd, { comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; } });
+    // el reloj de la prueba es de octubre: la firma con fecha de corte se mira como ya vigente
+    const r = pedir(casa, cmd, { comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; }, antesDelCorte: () => false });
     assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
     assert.match(r.texto, /No abrí la ventana.*falta un requisito/);
     assert.strictEqual(vigentes(casa).length, 0, `${cmd}: sin registro`);
@@ -4343,6 +4346,8 @@ test('T14 FirmasDelFreno_ClickConControlRemoto_AvisanSinRenglon @story-8.304 @ac
   };
   const pedirCon = (casa, firma, via, control_remoto, lanzados) => ow.decidir({ evento: evento(comandoDe(firma), { ...DE_LA_COORD, permission_mode: 'bypassPermissions' }), escapes: [firma], arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA,
     delegacion: SIN_DELEGACION, clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, lanzarAviso: (d) => lanzados.push(d),
+    // el reloj de la prueba es de octubre: las firmas con fecha de corte (env-switches.json) se miran como ya vigentes
+    antesDelCorte: () => false,
     aprobaciones: { buscar: () => ({ ok: true, via, aprobacion: { id: 'a-1', sesion: 'ses-coord', texto: 'Aprobado', control_remoto } }), consumir: () => ({ ok: true }), devolver: () => {}, coordinadoraConfirmada: () => null } });
   for (const firma of firmas) {
     for (const via of ['click', 'mensaje']) {

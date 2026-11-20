@@ -508,8 +508,16 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
   if (guion === 'marker.js') {
     const pide = llamada ? markerCommand().lectorDeBanderas(llamada) : con;
     if (sub === 'set-check' && pide('--force-manual')) return 'escape:force-manual';
-    // la firma la piden la cita del plan o la de la maqueta, como en marker.js; el plan que se aprueba solo, no
+    // la firma la piden la cita del plan o la de la maqueta, como en marker.js; el plan que se aprueba solo, no. Va antes
+    // que los mutantes: aprobar el plan no corre las pruebas, y con `--no-mutation` el guion sale 2 antes de firmar
     if (sub === 'complete-step' && ['approve-plan', '3'].includes(String(a[0] || '').trim()) && (con('--approved') || con('--mockup-approved'))) return 'plan-approval';
+    // cerrar un paso sin los mutantes, en cualquier paso: el guion niega el que no corre las pruebas. La bandera se lee
+    // desde el segundo argumento, así un paso en una variable (`complete-step "$PASO"`) no la pide
+    if (sub === 'complete-step') {
+      const pideDespues = llamada ? markerCommand().lectorDeBanderas({ ...llamada, args: (llamada.args || []).slice(1) })
+        : (b) => pal.slice(1).some((w) => !w.literal || w.texto === b || w.texto.startsWith(`${b}=`));
+      if (pideDespues('--no-mutation')) return 'escape:no-mutation';
+    }
     if (sub === 'approve-mockup') return 'plan-approval';
     if (sub === 'waive-critical') return 'critical-waiver';
     if (sub === 'mark-tested') return 'manual-test';
@@ -1133,6 +1141,15 @@ function ofrecerEnWindows({ evento = {}, escapes = [], firmas = [], plataforma =
   return `${nada} Corré el mismo comando, solo y en su forma exacta, por la consola Bash de Git de la herramienta (ahí sí firma en la pestaña), o va ${terminal}.`;
 }
 
+/**
+ * El `ofrece` de una decisión negada: los escapes que pasaron en el período de aviso (`r.avisos`) no se piden, así que no
+ * cuentan para decir que la firma no pasa por la pestaña en Windows.
+ */
+function ofreceTrasDecidir(r, { escapes = [], ...opciones } = {}) {
+  const avisos = (r && r.avisos) || [];
+  return ofrecerEnWindows({ ...opciones, escapes: escapes.filter((id) => !avisos.includes(id)), firmas: (r && r.firmas) || [] });
+}
+
 // --- el freno -----------------------------------------------------------------------------------------------------
 
 /**
@@ -1194,6 +1211,8 @@ const PRECHEQUEO_VIA = 'TYCON_SIGN_PRECHECK_VIA';
 // (`adhoc-lane`: el largo del motivo y un tope menor que lo ya tocado se niegan antes de la ventana)
 const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane', SOBRE_CUPO,
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
+  // saltear los mutantes sin motivo, o en un paso que no corre las pruebas
+  'escape:no-mutation',
   // nombrar sin id de sesión, o retirar desde una sesión que no es la coordinadora, se niega sin gastar el click
   'designation-set', 'designation-withdraw',
   // dejar pasar el freno de los datos sin un freno anotado, o con un texto que el guion no acepta
@@ -1208,7 +1227,7 @@ const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control
 // «datos», con una lista inválida o un cupo menor que lo tocado, `adhoc set` lo niega después del click. Cerrar una
 // ejecución reemplazada por una partición: con la bandera mal puesta, el guion la niega igual
 const CHEQUEO_ANTES_DEL_CUADRO = new Set(['designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', SOBRE_CUPO, 'extra-round',
-  'adhoc-lane', LOST_RUN_PARTICION]);
+  'adhoc-lane', LOST_RUN_PARTICION, 'escape:no-mutation']);
 // lo que espera el chequeo: el ok de guardar corre además los controles del commit de cada repo, con su propio plazo de
 // 210 s (lib/save-ok.js)
 const PLAZO_DEL_CHEQUEO = { save: 240000 };
@@ -1307,18 +1326,6 @@ function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado, cw
 }
 
 /**
- * Lo que decide el freno ante un evento: `{ decision: 'ask' | 'deny' | 'allow' | 'none', texto, firmas, via? }`. Con
- * `via: 'desviada'` (y el `id` del renglón), la firma la da la coordinadora por delegación (delegation-routing.js).
- * `escapes`: las firmas `freno` que el freno de seguridad vio en el comando (los escapes por variable y con nombre).
- * `aprobaciones`: el módulo de la aprobación explícita (owner-approvals.js), para las pruebas.
- * `delegacion(opciones)`: si la firma corre sin ventana (delegated-signing.js, las dos listas del perfil);
- * `clasificar(palabras, cwd)`: la clase de un `approve` con `--base`; `comprobar(opciones)`: el chequeo antes de la
- * ventana (`comprobarConElGuion`); `arbol` y `casa` se leen si faltan. `plataforma`: la de la máquina; se pasa en las
- * pruebas de la forma de Windows, y no se saca del ambiente. `lista`: `{ arnes, env }` para leer la llave de la lista de
- * firmas; se pasa en las pruebas. `topes`: los del camino corto (`{ delegado, maximo }`), para las pruebas; sin ellos,
- * se leen una vez del perfil del equipo y valen para todo lo que decide.
- */
-/**
  * ¿La firma pasa por la pestaña en Windows (la ventana, el cuadro o el «aprobado», desde la consola Bash de Git)? null si
  * pasa, o el motivo. No pasan los escapes (entre ellos todo `sign-file`) ni los guiones de consola `.sh`. La usan
  * `decidir` y el texto del freno (`ofrecerEnWindows`): una sola lista (@story-8.319).
@@ -1330,7 +1337,60 @@ function noPasaEnWindows({ escapes = [], palabras = null } = {}) {
   return null;
 }
 
-function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, huellaDeLaMaquina, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes } = {}) {
+/**
+ * El período de aviso de `decidir`: una firma cuya variable tiene fecha de corte (`enforce_from` en env-switches.json)
+ * no se pide antes de esa fecha. Pasa con `via: 'aviso'`, el texto en `aviso` y un renglón ESCAPE_NOTICE_PERIOD por
+ * sesión, variable y día. Con otras firmas en el mismo comando, ésas se deciden como siempre y la respuesta trae
+ * `avisos`. null si ninguna firma del comando está en aviso.
+ */
+function periodoDeAviso(opciones) {
+  const { evento = {}, escapes = [], casa, ahora = Date.now(), antesDelCorte = (v, t) => envSwitches().antesDelCorte(v, t) } = opciones;
+  const comando = String((evento.tool_input && evento.tool_input.command) || '');
+  const pedidas = [...new Set([...firmasDelComando(comando, opciones.topes || null), ...escapes])];
+  const enAviso = pedidas.filter((id) => { const v = variableDelCorte(id); return v !== null && antesDelCorte(v, ahora); });
+  if (!enAviso.length) return null;
+  const sesion = evento.session_id == null ? null : String(evento.session_id);
+  const ES = envSwitches();
+  for (const id of enAviso) {
+    const v = variableDelCorte(id);
+    ES.anotarEscape({ home: casa, sessionId: sesion, kind: 'ESCAPE_NOTICE_PERIOD', variable: v, unaVez: v, ahora: new Date(ahora), firma: id });
+  }
+  const aviso = enAviso.map((id) => `«${firmaDe(id).approves}»: desde ${ES.corteDe(variableDelCorte(id))} esto pide la firma del dueño; hasta entonces pasa, avisado y anotado`).join(' · ');
+  const resto = pedidas.filter((id) => !enAviso.includes(id));
+  if (!resto.length) return { decision: 'allow', via: 'aviso', firmas: enAviso, avisos: enAviso, aviso, texto: aviso };
+  const r = decidir({ ...opciones, escapes: escapes.filter((id) => !enAviso.includes(id)), sinAviso: enAviso });
+  return { ...r, avisos: enAviso, aviso };
+}
+
+/**
+ * La variable de la lista única cuya fecha de corte rige a la firma `id` (la suya o la que cubre), o null: hasta esa
+ * fecha la firma no se pide, se avisa (`decidir`).
+ */
+function variableDelCorte(id) {
+  const s = firmaDe(id);
+  if (!s || !s.id.startsWith('escape:')) return null;
+  const v = s.covers.map((c) => (c.startsWith('escape:') ? c.slice('escape:'.length) : null)).find((x) => x && envSwitches().corteDe(x));
+  return v || null;
+}
+const envSwitches = () => require('./env-switches.js');
+
+/**
+ * Lo que decide el freno ante un evento: `{ decision: 'ask' | 'deny' | 'allow' | 'none', texto, firmas, via? }`. Con
+ * `via: 'desviada'` (y el `id` del renglón), la firma la da la coordinadora por delegación (delegation-routing.js).
+ * `escapes`: las firmas `freno` que el freno de seguridad vio en el comando (los escapes por variable y con nombre).
+ * `aprobaciones`: el módulo de la aprobación explícita (owner-approvals.js), para las pruebas.
+ * `delegacion(opciones)`: si la firma corre sin ventana (delegated-signing.js, las dos listas del perfil);
+ * `clasificar(palabras, cwd)`: la clase de un `approve` con `--base`; `comprobar(opciones)`: el chequeo antes de la
+ * ventana (`comprobarConElGuion`); `arbol` y `casa` se leen si faltan. `plataforma`: la de la máquina; se pasa en las
+ * pruebas de la forma de Windows, y no se saca del ambiente. `lista`: `{ arnes, env }` para leer la llave de la lista de
+ * firmas; se pasa en las pruebas. `topes`: los del camino corto (`{ delegado, maximo }`), para las pruebas; sin ellos,
+ * se leen una vez del perfil del equipo y valen para todo lo que decide. Una firma cuya variable tiene fecha de corte
+ * (`enforce_from` en env-switches.json) no se pide antes de esa fecha: pasa con `via: 'aviso'`, el texto del aviso en
+ * `aviso` y un renglón ESCAPE_NOTICE_PERIOD por sesión, variable y día; `antesDelCorte(variable, ahora)` se pasa en las
+ * pruebas. Primero mira el período de aviso (`periodoDeAviso`), salvo que ya lo haya pasado y lo diga `sinAviso`.
+ */
+function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, huellaDeLaMaquina, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes, sinAviso = [] } = {}) {
+  if (!sinAviso.length) { const p = periodoDeAviso(arguments[0] || {}); if (p) return p; }
   if (!topes) topes = topesDelCaminoCorto(casa);
   const enWindows = plataforma === 'win32';
   // los criterios de un runtime-waiver, calculados una vez para el cuadro y para el detalle
@@ -1343,7 +1403,8 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // la carpeta y la sesión del evento: la lista de un arreglo rápido se clasifica contra ellas, como en el guion. Sin la
   // carpeta en el evento, la del freno, que corre en la de la sesión
   const donde = { cwd: evento.cwd || process.cwd(), casa, sesion };
-  const guiones = firmasDelComando(comando, topes, donde);
+  const leidas = firmasDelComando(comando, topes, donde);
+  const guiones = Object.assign(leidas.filter((id) => !sinAviso.includes(id)), { ilegible: leidas.ilegible });
   const pedidas = [...new Set([...guiones, ...escapes])];
   if (guiones.ilegible) return negar('no se pudo leer el comando, y nombra un guion de firma', pedidas);
   if (!pedidas.length) return { decision: 'none', firmas: [] };
@@ -2305,7 +2366,7 @@ function quienFirmo({ via, sesion, automatica } = {}, persona) {
 }
 
 module.exports = { detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
-  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, markerEstable,
+  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, ofreceTrasDecidir, markerEstable,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 
 if (require.main === module) {
@@ -2323,10 +2384,13 @@ if (require.main === module) {
       vencerPedidos(casaDeLaCuenta(), evento.session_id);
       r = decidir({ evento, escapes });
       // en Windows, lo que anda en esta consola reemplaza la ventana, el cuadro y el «aprobado» del cartel (@story-8.319)
-      if (r.decision === 'deny') { try { r.ofrece = ofrecerEnWindows({ evento, escapes, firmas: r.firmas || [] }); } catch (_) { r.ofrece = ''; } }
+      if (r.decision === 'deny') { try { r.ofrece = ofreceTrasDecidir(r, { evento, escapes }); } catch (_) { r.ofrece = ''; } }
     } catch (e) { r = negarCon(`no pude decidir la firma (${e.message})`, escapes.filter((id) => firmaDe(id))); }
-    const ask = r.decision === 'ask' ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: r.texto } }) : undefined;
-    lineas({ decision: r.decision, firma: (r.firmas || [])[0], via: r.via, relevo: r.relevo, texto: r.texto, ofrece: r.ofrece || undefined, json: ask });
+    // el aviso del período antes del corte le llega a la persona en el mensaje del gancho; al agente se lo dice el lector
+    const aviso = r.aviso ? { systemMessage: `⚠️ ${r.aviso}` } : {};
+    const json = r.decision === 'ask' ? JSON.stringify({ ...aviso, hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: r.texto } })
+      : r.decision === 'allow' && r.aviso ? JSON.stringify(aviso) : undefined;
+    lineas({ decision: r.decision, firma: (r.firmas || [])[0], via: r.via, relevo: r.relevo, avisos: (r.avisos || []).join(' ') || undefined, texto: r.texto, ofrece: r.ofrece || undefined, json });
     salirTrasElAviso();
     return;
   }
