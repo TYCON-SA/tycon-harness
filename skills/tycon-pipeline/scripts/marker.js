@@ -7338,7 +7338,12 @@ function cmdMarkTested(argv) {
     process.exit(2);
   }
   const p = mc.prendida();
-  if (!p.prendida) { console.error('marker.js mark-tested: tu organización no pide la marca a mano; no anoté nada.'); process.exit(0); }
+  if (!p.prendida) {
+    // en el chequeo previo de la ventana se niega: si saliera 0 sin su ok, la ventana se abriría para una firma sin efecto
+    const previo = process.env[require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).PRECHEQUEO] === '1';
+    console.error(`marker.js mark-tested: tu organización no pide la marca a mano; no anoté nada${previo ? ' y no hace falta firmar' : ''}.`);
+    process.exit(previo ? 1 : 0);
+  }
   const m = readMarker();
   if (!m) { console.error('marker.js mark-tested: no hay marker activo para esta sesión'); process.exit(1); }
   const storyAbs = resolveStoryPath(m.storyPath, m);
