@@ -340,6 +340,33 @@ function claveDeLaHistoria(txt) {
 const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
   .filter((l) => { const t = l.trimStart(); return !(t.startsWith(clave) && !/^\d+-/.test(t.slice(clave.length))); }).join('\n');
 
+// Lo que no se ejecuta (defectos del 20/11, punto 1): una imagen, un texto que no le da instrucciones a un agente y lo
+// que no es código en la carpeta qa de la historia (su guía de prueba y sus capturas). Un archivo con permiso de
+// ejecución, un enlace o un submódulo nunca: el modo tiene que ser el de un archivo común. Un `.svg` o un `.html` fuera
+// de la carpeta qa pueden correr en un navegador: cuentan. Lo sensible del catálogo cuenta siempre.
+const IMAGENES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+const TEXTOS = new Set(['.md', '.markdown', '.txt']);
+// un texto en una de estas carpetas, o con uno de estos nombres, le dice a un agente qué hacer: es comportamiento
+const CARPETAS_DE_INSTRUCCIONES = new Set(['skills', 'agents', 'commands', 'steps', 'prompts', 'rules', 'hooks', 'integrations', 'packs', 'guides',
+  '.claude', '.codex', '.cursor', '.github']);
+const NOMBRES_DE_INSTRUCCIONES = new Set(['skill.md', 'claude.md', 'agents.md', 'gemini.md', 'index.md']);
+
+/**
+ * ¿`rel` (relativa al repo, con `/`) es algo que no se ejecuta? `modo` es el de git (`100644`, …) y `qaRel` la carpeta
+ * qa de la historia relativa al mismo repo, o null si la historia no está en él.
+ */
+function noSeEjecuta(rel, modo, qaRel) {
+  if (modo !== '100644') return false;
+  const bajo = String(rel).toLowerCase();
+  if (require('./save-ok.js').esSensible(bajo)) return false;
+  const ext = path.posix.extname(bajo);
+  if (IMAGENES.has(ext)) return true;
+  if (qaRel && bajo.startsWith(`${qaRel.toLowerCase()}/`)) return !require('./suite-freshness.js').isCodeFile(rel);
+  if (!TEXTOS.has(ext)) return false;
+  if (NOMBRES_DE_INSTRUCCIONES.has(path.posix.basename(bajo))) return false;
+  return !bajo.split('/').slice(0, -1).some((seg) => CARPETAS_DE_INSTRUCCIONES.has(seg));
+}
+
 /**
  * Los archivos que difieren entre dos sellos de un repo: `{ files, papeleo }` o `{ error }`. Papeleo es lo que no cuenta
  * para el ok de guardar (`esPapeleoDeLaHuella`), `tasks/todo.md`, la historia de la corrida (`storyRel`, relativa al
@@ -353,9 +380,11 @@ const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
  * Con `comentarios` (historia 8.217), un archivo con el mismo modo en los dos árboles que sólo movió comentarios
  * (lib/comment-only.js) va a `comentarios` y no a `files`; cualquier error al mirarlo lo deja en `files`. Sin la opción,
  * la salida no trae ese campo.
+ * Con `sinEjecutar` (defectos del 20/11, punto 1), un archivo que no se ejecuta (`noSeEjecuta`) va a `noSeEjecutan` y no a
+ * `files`. Sin la opción, la salida no trae ese campo.
  */
-function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null, comentarios = false } = {}) {
-  if (treeA === treeB) return { files: [], papeleo: [], deMain: [], ...(comentarios ? { comentarios: [] } : {}) };
+function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null, comentarios = false, sinEjecutar = false } = {}) {
+  if (treeA === treeB) return { files: [], papeleo: [], deMain: [], ...(comentarios ? { comentarios: [] } : {}), ...(sinEjecutar ? { noSeEjecutan: [] } : {}) };
   const d = git(['-C', repo, 'diff-tree', '-r', '-z', '--no-renames', treeA, treeB]);
   if (!d.ok) return { error: `no pude comparar ${repo} entre ${treeA} y ${treeB}: ${unaLinea(d.err)}` };
   const { esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo } = require('./save-ok.js');
@@ -364,6 +393,9 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
   const papeleo = [];
   const deMain = [];
   const movidos = [];
+  const sinEjecutarse = [];
+  // la carpeta qa de la historia, relativa a este repo (la elige qa-dir.js); null si la historia no está en él
+  const qaRel = sinEjecutar && storyRel ? path.relative(repo, require('./qa-dir.js').qaDirFor(path.join(repo, storyRel))).split(path.sep).join('/') : null;
   const soloComentarios = (rel, modoA, modoB) => {
     if (!comentarios || modoA !== modoB) return false;
     try {
@@ -420,9 +452,11 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
     if (esPapeleo) papeleo.push(rel);
     else if (trajoMain(rel, rel === estadoDelSprint && storyRel ? (t) => sinRenglonDeLaHistoria(t, claveDeLaHistoria(leer(treeB, storyRel)) || '\0') : undefined)) deMain.push(rel);
     else if (soloComentarios(rel, meta[0], meta[1])) movidos.push(rel);
+    // la historia de la corrida tiene su regla: lo que no es papeleo de ella (un criterio) cuenta, aunque sea un .md
+    else if (sinEjecutar && rel !== storyRel && noSeEjecuta(rel, modo, qaRel && !qaRel.startsWith('..') ? qaRel : null)) sinEjecutarse.push(rel);
     else files.push(rel);
   }
-  return { files, papeleo, deMain, ...(comentarios ? { comentarios: movidos } : {}) };
+  return { files, papeleo, deMain, ...(comentarios ? { comentarios: movidos } : {}), ...(sinEjecutar ? { noSeEjecutan: sinEjecutarse } : {}) };
 }
 
 /**
@@ -553,7 +587,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 
 module.exports = {
   seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
-  contenidoDelSello, difiereSoloEnComentarios, vueltaCerradaDeLosRevisores, comentariosMovidosDesdeLaVuelta,
+  contenidoDelSello, difiereSoloEnComentarios, vueltaCerradaDeLosRevisores, comentariosMovidosDesdeLaVuelta, noSeEjecuta,
 };
 
 // `node frozen-tree.js procedencia <repo>`: la procedencia como fragmento JSON (`"run":…,"tree":…`), para sumar a un

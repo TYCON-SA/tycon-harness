@@ -957,6 +957,8 @@ function comprobarLoRevisado(marker, quien) {
   const sinSepararMain = [];
   const huellas = [];
   const movidos = [];
+  // lo que no se ejecuta (imágenes, textos, la guía de prueba): se dice, no frena (defectos del 20/11, punto 1)
+  const sinEjecutarse = [];
   // sólo comentarios movidos (historia 8.217): contra una vuelta ya cerrada y de esta historia; nunca una lanzada sin cerrar
   let conComentarios = false;
   try {
@@ -979,7 +981,7 @@ function comprobarLoRevisado(marker, quien) {
     let c;
     try {
       c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null,
-        mainAntes: r.mainBase || null, mainAhora: pm.sha || null, comentarios: conComentarios });
+        mainAntes: r.mainBase || null, mainAhora: pm.sha || null, comentarios: conComentarios, sinEjecutar: true });
     } catch (e) { c = { error: String((e && e.message) || e).split('\n')[0] }; }
     if (c.error) frenar(`no pude comparar lo que se guarda con lo revisado (${c.error}).`);
     // una constancia de cambio de control la firma el dueño: no es código que los revisores tengan que ver
@@ -990,6 +992,7 @@ function comprobarLoRevisado(marker, quien) {
     for (const f of c.papeleo) papeleo.push(f);
     for (const f of c.deMain || []) deMain.push(f);
     for (const f of c.comentarios || []) movidos.push(f);
+    for (const f of c.noSeEjecutan || []) sinEjecutarse.push(f);
     huellas.push(`${path.basename(r.repo)} ${r.tree.slice(0, 12)}`);
   }
   if (distintos.length) {
@@ -1003,8 +1006,8 @@ function comprobarLoRevisado(marker, quien) {
     process.exit(2);
   }
   appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length, deMain: deMain.length,
-    ...(movidos.length ? { comentarios_movidos: movidos.length } : {}) });
-  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}.`);
+    ...(movidos.length ? { comentarios_movidos: movidos.length } : {}), ...(sinEjecutarse.length ? { no_se_ejecutan: sinEjecutarse.length } : {}) });
+  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}${sinEjecutarse.length ? `; lo que no se ejecuta, que no cuenta: ${sinEjecutarse.slice(0, 5).join(', ')}${sinEjecutarse.length > 5 ? '…' : ''}` : ''}.`);
 }
 
 /** `{ sellos, copias }` por repo de una vuelta congelada. */

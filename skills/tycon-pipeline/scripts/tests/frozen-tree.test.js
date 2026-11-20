@@ -1131,3 +1131,55 @@ test('T31 ReviewedTree_MezclaConCambioReal_FrenaPorElReal @story-8.217 @ac-21 �
   assert.match(salida(r), /· src\/b\.js/, salida(r));
   assert.doesNotMatch(salida(r), /· src\/a\.js/, salida(r));
 });
+
+// ── Lo que no se ejecuta no reabre la vuelta (defectos del 20/11, punto 1) ──────────────────────────────────────────
+// Caso: dos historias de Producto A hicieron 7 y 10 vueltas de revisores; la guía de prueba en HTML, las capturas
+// regeneradas y los textos que no son código frenaban «Preparar el commit» y pedían otra vuelta.
+
+test('T32 Changed_NotExecuted_GoesApart_OnlyWithTheOption — imágenes, .md que no instruyen a un agente y la carpeta qa de la historia van aparte; lo demás sigue contando', () => {
+  const inicio = {
+    'specs/story-9.9-x.md': '# h\n', 'docs/guia.md': 'a\n', 'public/logo.png': 'p1', 'specs/qa/story-9.9-x-guia.html': '<p>1</p>\n',
+    'specs/qa/story-9.9-x-captura.png': 'c1', 'specs/qa/story-9.9-x-ayuda.js': 'x=1\n', 'src/index.html': '<p>1</p>\n', 'src/icono.svg': '<svg/>\n',
+    'skills/s/SKILL.md': 'a\n', 'agents/r.md': 'a\n', 'steps/step-1.md': 'a\n', 'CLAUDE.md': 'a\n', 'guides/coordination.md': 'a\n',
+    'notas/leeme.txt': 'a\n', 'bin/correr.md': 'a\n',
+  };
+  const { repo, git } = repoDeJuguete('ne', inicio);
+  fs.chmodSync(path.join(repo, 'bin', 'correr.md'), 0o755);
+  git('add', '.');
+  git('commit', '-qm', 'ejecutable');
+  const antes = ft().seal(repo).tree;
+  for (const rel of Object.keys(inicio)) fs.appendFileSync(path.join(repo, rel), 'cambio\n');
+  const despues = ft().seal(repo).tree;
+  const opts = { storyRel: 'specs/story-9.9-x.md', storyAbs: path.join(repo, 'specs', 'story-9.9-x.md') };
+  const sin = ft().changed(repo, antes, despues, opts);
+  assert.strictEqual(sin.noSeEjecutan, undefined, 'sin la opción, la salida no trae el campo');
+  assert.ok(sin.files.includes('docs/guia.md') && sin.files.includes('public/logo.png'), JSON.stringify(sin));
+  const con = ft().changed(repo, antes, despues, { ...opts, sinEjecutar: true });
+  assert.deepStrictEqual(con.noSeEjecutan.sort(), ['docs/guia.md', 'notas/leeme.txt', 'public/logo.png', 'specs/qa/story-9.9-x-captura.png', 'specs/qa/story-9.9-x-guia.html'], JSON.stringify(con));
+  for (const f of ['specs/qa/story-9.9-x-ayuda.js', 'src/index.html', 'src/icono.svg', 'skills/s/SKILL.md', 'agents/r.md', 'steps/step-1.md', 'CLAUDE.md', 'guides/coordination.md', 'bin/correr.md']) {
+    assert.ok(con.files.includes(f), `${f} sigue contando: ${JSON.stringify(con)}`);
+  }
+  // un enlace con nombre de imagen no es una imagen
+  fs.symlinkSync('../src/index.html', path.join(repo, 'public', 'falso.png'));
+  const enlace = ft().changed(repo, antes, ft().seal(repo).tree, { ...opts, sinEjecutar: true });
+  assert.ok(enlace.files.includes('public/falso.png'), JSON.stringify(enlace));
+});
+
+test('T33 PrepareCommit_NotExecutedOnly_DoesNotBlock — la guía de prueba, una captura y un .md de docs no frenan; el código sí', () => {
+  const C = corrida('s-ft33');
+  C.vuelta();
+  const qa = path.join(C.historias.repo, 'specs', 'qa');
+  fs.mkdirSync(qa, { recursive: true });
+  fs.writeFileSync(path.join(qa, 'story-9.9-sello-guia.html'), '<p>guía</p>\n');
+  fs.writeFileSync(path.join(qa, 'story-9.9-sello-captura.png'), 'png');
+  fs.mkdirSync(path.join(C.codigo.repo, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, 'docs', 'uso.md'), '# uso\n');
+  let r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  assert.match(salida(r), /no se ejecuta[^\n]*story-9\.9-sello-guia\.html/, salida(r));
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), 'module.exports = 3;\n');
+  r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /· src\/b\.js/, salida(r));
+  assert.doesNotMatch(salida(r), /· docs\/uso\.md/, salida(r));
+});
