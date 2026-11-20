@@ -560,7 +560,7 @@ function rutasAModificar(storyText) {
     if (item) out.push(item[1]);
   }
   return [...new Set(out.map((c) => {
-    const s = c.trim().replace(/^\([^)]*\)\s*/, '');
+    const s = c.trim().replace(/^\([^)]*\)\s+/, '');   // el prefijo «(repo) » lleva su espacio: `(app)/page.tsx` es un grupo de rutas
     const q = /^(['"])(.*?)\1/.exec(s);
     return (q ? q[2] : s.replace(/\s+#.*$/, '')).trim().replace(/^\.\//, '');
   }).filter((r) => r && !r.endsWith('/')))];

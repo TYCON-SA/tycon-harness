@@ -577,9 +577,9 @@ from `main`: on the previous task's branch, its commits count toward the quota.
 
 **Going past the limit does not go through you.** Asking for more than 8 files (by default; each organization sets it) is
 the `adhoc-lane:sobre-cupo` signature,
-and the developer chooses it: with a click in the question box of the tab doing the work, or in their terminal. A click in
-your tab does not count, nor a forwarded «aprobado», nor the delegation; so a background session nobody is watching can only
-do it through the terminal. Only the implementation files the fix changed count: what came in from `main`, tests, guides
+and the owner chooses it: with a click in the question box, in the tab doing the work or in yours while you are the current
+coordinator, or in their terminal. Your tab only shows the box: the click is the owner's. A forwarded «aprobado» and the
+delegation do not count. Only the implementation files the fix changed count: what came in from `main`, tests, guides
 and probes do not add up. Past the quota, the fix stops on edit and does not save, and the message recommends a story. Limit:
 it measures the branch being worked on and what is already on disk. Work built on another branch and pushed by its name, or
 created in the same command that pushes, does not add up. That does not let it into `main`, because the pull request still has

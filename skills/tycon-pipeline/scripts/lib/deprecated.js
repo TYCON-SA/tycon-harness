@@ -316,7 +316,8 @@ function entradasDelFrontmatter(texto, clave) {
   const out = [];
   const agregar = (crudo) => {
     let t = limpiar(crudo);
-    const pre = t.match(/^\(([^)]*)\)\s*(.*)$/);
+    // el prefijo lleva su espacio: `(app)/page.tsx` es un grupo de rutas, no el repo «app»
+    const pre = t.match(/^\(([^)]*)\)\s+(.*)$/);
     const repo = pre ? pre[1].trim() : null;
     if (pre) t = pre[2].trim();
     t = t.replace(/^(['"])(.*)\1$/, '$2').replace(/\\/g, '/').replace(/^\.\//, '');

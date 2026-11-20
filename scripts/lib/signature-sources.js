@@ -247,6 +247,31 @@ function rutasDelComando(palabras) {
   return { rutas: entradas.map((e) => e.path), entradas };
 }
 
+// los renglones con que la sesión que hizo el cambio explica, en sus commits, qué cambia el control, por qué y su riesgo
+const EXPLICA = [['cambia', /^cambia-control$/i], ['porque', /^por-qu[eé]$/i], ['riesgo', /^riesgo$/i]];
+/**
+ * Lo que los commits de `rango` (o el commit `uno`) declaran sobre el cambio: `{ cambia, porque, riesgo, texto }`, con
+ * cada valor sin repetir; null si ninguno declara nada; undefined si git no pudo leer los commits (no se sabe: el cuadro
+ * queda como siempre). `texto` entra en la huella: otro texto pide otro click.
+ */
+function explicacionDe(raiz, { rango = null, uno = null }) {
+  const r = rango ? git(raiz, ['log', '--format=%B%x00', `${rango[0]}..${rango[1]}`]) : git(raiz, ['log', '-1', '--format=%B%x00', uno]);
+  if (r.status !== 0) return undefined;
+  const valores = { cambia: [], porque: [], riesgo: [] };
+  for (const linea of String(r.stdout).split(/\r?\n/)) {
+    const m = /^([\p{L}-]+):\s*(\S.*?)\s*$/u.exec(linea.replace(/\0/g, ''));
+    if (!m) continue;
+    const clave = EXPLICA.find(([, re]) => re.test(m[1]));
+    // sin una letra o un número no dice nada; con letras que no se ven (de control, de dirección, invisibles) el cuadro
+    // mostraría otra cosa que lo escrito: no se muestra, y lo dice
+    const valor = !/[\p{L}\p{N}]/u.test(m[2]) ? null : NO_SE_VE.test(m[2]) ? '(lo escrito trae letras que no se ven: no se muestra)' : m[2];
+    if (clave && valor && !valores[clave[0]].includes(valor)) valores[clave[0]].push(valor);
+  }
+  if (!valores.cambia.length && !valores.porque.length && !valores.riesgo.length) return null;
+  const out = Object.fromEntries(Object.entries(valores).map(([k, v]) => [k, v.length ? v.join(' · ') : null]));
+  return { ...out, texto: JSON.stringify(out) };
+}
+
 /** El cambio de los controles: cuántas líneas, qué rutas y el diff completo en un archivo de la carpeta de estado. */
 function deControles(palabras, cwd, estado) {
   const raiz = path.resolve(cwd || process.cwd(), valor(palabras, '--root') || '.');
@@ -281,8 +306,9 @@ function deControles(palabras, cwd, estado) {
     const sinBlob = (blobs || []).find((b) => b.gitFallo);
     if (sinBlob) return noPude(sinBlob.motivo);
     // lo completo son los archivos mismos, en el repo: sus rutas ya van en «Archivos», y juntas no entrarían enteras
+    const explica = explicacionDe(raiz, { uno: firmada || 'HEAD' });
     return { queHace: [`Firma ${rutas.length} archivo(s) de control en su versión ${conArchivo ? `de ${firmada.slice(0, 12)}` : 'de la punta'} (sin base para comparar)`], archivos: rutas,
-      completo: raiz, completoEnPalabras: `el repo ${path.basename(raiz)}`, fuente: JSON.stringify({ entradas: entradas || rutas, blobs }) };
+      completo: raiz, completoEnPalabras: `el repo ${path.basename(raiz)}`, explica, fuente: JSON.stringify({ entradas: entradas || rutas, blobs, explica: explica && explica.texto }) };
   }
   // diff-tree, entre dos commits ya resueltos: el comando de bajo nivel no corre los conversores ni el diff externo
   // que pueda configurar el repo
@@ -316,7 +342,10 @@ function deControles(palabras, cwd, estado) {
     try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(completo, diff.stdout); } catch (_) { completo = null; }
   }
   const cuantas = cambiadas.length < rutas.length ? `${cambiadas.length} de ${rutas.length} archivo(s) de control pedidos` : `${rutas.length} archivo(s) de control`;
-  return { queHace: [`Cambia ${cuantas}: +${mas} −${menos} líneas`], archivos: rutas, completo, completoEnPalabras: completo ? 'el cambio, en un archivo de la ejecución' : null, fuente: diff.stdout };
+  // lo que la sesión que hizo el cambio declara en sus commits: va primero en el cuadro, y entra en la huella
+  const explica = explicacionDe(raiz, { rango });
+  return { queHace: [`Cambia ${cuantas}: +${mas} −${menos} líneas`], archivos: rutas, completo, completoEnPalabras: completo ? 'el cambio, en un archivo de la ejecución' : null, explica,
+    fuente: explica ? `${diff.stdout}\0${explica.texto}` : diff.stdout };
 }
 
 const acsDe = (palabras) => [...new Set(String(valor(palabras, '--acs') || '').split(/[,\s]+/).filter(Boolean).map(Number))].filter((n) => Number.isInteger(n) && n > 0);

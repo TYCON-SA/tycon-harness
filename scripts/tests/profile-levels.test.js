@@ -42,7 +42,7 @@ test('niveles T5 Perfil_DelegaNivel2o3_Rechaza', () => {
 test('niveles Perfil_ExcepcionesDeTramite_PasanSoloPorSuNombre', () => {
   const cat = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
   const deTramite = [...cat.DELEGABLE_EXCEPTIONS, ...cat.formNames()];
-  assert.deepStrictEqual(deTramite.slice().sort(), ['adhoc-lane:guardado-ajeno', 'adhoc-lane:sobre-cupo', 'critical-waiver', 'escape:ALLOW_DOD_EVIDENCE_WRITE',
+  assert.deepStrictEqual(deTramite.slice().sort(), ['adhoc-lane:guardado-ajeno', 'critical-waiver', 'escape:ALLOW_DOD_EVIDENCE_WRITE',
     'escape:TYCON_STATUS_GATE', 'escape:cambiar-el-estado', 'escape:cerrar-como-deuda', 'escape:cerrar-la-ejecucion', 'escape:force-manual',
     'escape:red-control-test-edit', 'escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous', 'escape:trust-ran', 'lost-run', 'manual-test',
     'plan-approval:delicada', 'runtime-waiver', 'save:sensible']);

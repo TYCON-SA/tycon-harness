@@ -907,7 +907,9 @@ test('2.76-Instalador_FaseDemo_DryRunYApply', () => {
   assert.ok(crea && crea.args.includes('--yaml'), 'crea la aplicación con su archivo');
   const y = JSON.parse(Object.values(crea.archivos)[0]);
   const cont = y.properties.template.containers[0];
-  assert.deepStrictEqual(cont.env.map((e) => [e.name, e.value !== undefined]), [['SITE_DEMO', true], ['SITE_PUBLIC_URL', true]], 'sólo SITE_DEMO y la dirección pública');
+  assert.deepStrictEqual(cont.env.map((e) => [e.name, e.value !== undefined]), [['SITE_DEMO', true], ['SITE_PUBLIC_URL', true], ['SITE_TRUST_PROXY', true]],
+    'sólo SITE_DEMO, la dirección pública y la confianza en la entrada de Azure');
+  assert.strictEqual(cont.env.find((e) => e.name === 'SITE_TRUST_PROXY').value, '1', 'detrás de la entrada de Azure: si no, todos comparten un tope');
   assert.strictEqual(cont.env.find((e) => e.name === 'SITE_DEMO').value, '1');
   assert.strictEqual(cont.env.find((e) => e.name === 'SITE_PUBLIC_URL').value, 'https://demo-acme.cielo-verde-1a2b3c4d.eastus2.azurecontainerapps.io');
   assert.strictEqual(cont.image, CONFIG_DEMO().image);

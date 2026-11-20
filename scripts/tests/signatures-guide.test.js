@@ -105,7 +105,9 @@ test('T31 Firmas_SobreCupo_ApareceComoPedidaEnLaGuia @story-8.181 @ac-15', () =>
   assert.ok(nivel && !nivel.includes('todavía no se pide'), nivel);
   assert.match(nivel, /`adhoc-lane:sobre-cupo` \|$/);
   const s = cat.SIGNATURES.find((x) => x.id === 'adhoc-lane:sobre-cupo');
-  assert.strictEqual(s.soloClick, true);
+  // la aprueba sólo el click del dueño (también en la pestaña de la coordinadora) o su terminal: nunca la delegación
+  assert.strictEqual(s.clickDelDueno, true);
+  assert.ok(!cat.DELEGABLE_EXCEPTIONS.includes(s.id));
   assert.match(s.terminal, /--terminal/);
   assert.match(texto, /cuentan sólo los archivos de implementación, sin pruebas ni guías/);
 });

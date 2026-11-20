@@ -16,9 +16,12 @@
  *     Lee la API por HTTPS directo, sin clon ni sesión de `gh` (`gh api` pide sesión aun para un repo público); usa
  *     GH_TOKEN o GITHUB_TOKEN si están. El primer padre se arma con los `parents` que devuelve la API; si la cadena no
  *     llega a esa frontera en lo que se leyó, esa parte es `?`.
- *   · azure: los pedidos completados a la rama principal en esas N horas con `completionOptions.bypassPolicy` cierto, y si
- *     cada compilación pedida tiene su política prendida y bloqueante en esa rama («reglas al día») o no («cambiaron»).
- *     Sólo pedidos: los empujes de la cuenta de compilación (la versión, los nocturnos) son legítimos y no cuentan.
+ *   · azure: los pedidos completados a la rama principal en esas N horas con `completionOptions.bypassPolicy` cierto, MÁS
+ *     los empujes directos a esa rama (sin pedido): cada empuje de la ventana cuya punta nueva no es el commit con que se
+ *     completó un pedido, salvo los de la cuenta de compilación (la versión, los nocturnos), que son legítimos. Y si cada
+ *     compilación pedida tiene su política prendida y bloqueante en esa rama («reglas al día») o no («cambiaron»).
+ *     🔴 Sin los empujes, un `git push` directo a la rama principal (con la política apagada, o por quien puede
+ *     saltearla) no lo veía ninguna noche.
  *
  * 🔴 No medido no es cero. Una lectura que falla (la API contesta un error, `az` sale distinto de 0 o contesta algo que
  * no es JSON) deja esa parte en `?`, y el guion sale 1. Nunca escribe 0 por lo que no leyó.
@@ -155,7 +158,9 @@ function pedidosSalteados({ org, project, repo, branch, hours, now }) {
     if (pagina >= MAX_PAGINAS_AZ) throw new NoSePudo(`más de ${MAX_PAGINAS_AZ * POR_PAGINA} pedidos completados en la ventana: no los leí todos`);
     const j = az(['devops', 'invoke', '--area', 'git', '--resource', 'pullRequests', '--route-parameters', `project=${project}`, `repositoryId=${repo}`,
       '--query-parameters', 'searchCriteria.status=completed', `searchCriteria.targetRefName=refs/heads/${branch}`, 'searchCriteria.queryTimeRangeType=closed',
-      `searchCriteria.minTime=${new Date(desde).toISOString()}`, `$top=${POR_PAGINA}`, `$skip=${skip}`, '--api-version', '7.1', '--org', org, '-o', 'json']);
+      // una hora antes de la ventana: el empuje de un pedido completado justo antes cae adentro, y sin su pedido se
+      // contaría como directo. La cuenta de los salteados sigue mirando sólo la ventana
+      `searchCriteria.minTime=${new Date(desde - 3600000).toISOString()}`, `$top=${POR_PAGINA}`, `$skip=${skip}`, '--api-version', '7.1', '--org', org, '-o', 'json']);
     if (!j || !Array.isArray(j.value)) throw new NoSePudo('la respuesta no trae la lista de pedidos (value)');
     todos.push(...j.value);
     if (j.value.length < POR_PAGINA) break;
@@ -163,7 +168,39 @@ function pedidosSalteados({ org, project, repo, branch, hours, now }) {
   const salteados = todos.filter((p) => Date.parse(p.closedDate) >= desde && p.completionOptions && p.completionOptions.bypassPolicy === true);
   const detalle = [`Azure ${repo}: ${salteados.length} pedido(s) completado(s) a ${branch} en ${hours} h salteando las políticas`,
     ...salteados.map((p) => `  #${p.pullRequestId} ${limpio(p.title, 80)} (cerrado ${p.closedDate})`)];
-  return { n: salteados.length, detalle };
+  // los commits con que se completó cada pedido: un empuje que deja uno de ésos en la punta es el del pedido
+  const mergeCommits = new Set(todos.map((p) => p.lastMergeCommit && p.lastMergeCommit.commitId).filter(Boolean));
+  return { n: salteados.length, detalle, mergeCommits };
+}
+
+// la cuenta de compilación de Azure (la versión, los nocturnos): sus empujes son legítimos
+const deCompilacion = (quien) => !!quien && (/^Build\\/i.test(String(quien.uniqueName || '')) || / Build Service \(/i.test(String(quien.displayName || '')));
+
+/**
+ * Los empujes directos a la rama principal en la ventana: los que no dejan en la punta el commit con que se completó un
+ * pedido y no son de la cuenta de compilación. Un empuje que no dice su punta nueva cuenta (no se puede saber de qué es).
+ */
+function directPushes({ org, project, repo, branch, hours, now }, mergeCommits) {
+  const desde = now - hours * 3600000;
+  const ref = `refs/heads/${branch}`;
+  const todos = [];
+  for (let skip = 0, pagina = 0; ; skip += POR_PAGINA, pagina += 1) {
+    if (pagina >= MAX_PAGINAS_AZ) throw new NoSePudo(`más de ${MAX_PAGINAS_AZ * POR_PAGINA} empujes a ${branch} en la ventana: no los leí todos`);
+    const j = az(['devops', 'invoke', '--area', 'git', '--resource', 'pushes', '--route-parameters', `project=${project}`, `repositoryId=${repo}`,
+      '--query-parameters', `searchCriteria.refName=${ref}`, `searchCriteria.fromDate=${new Date(desde).toISOString()}`, 'searchCriteria.includeRefUpdates=true',
+      `$top=${POR_PAGINA}`, `$skip=${skip}`, '--api-version', '7.1', '--org', org, '-o', 'json']);
+    if (!j || !Array.isArray(j.value)) throw new NoSePudo('la respuesta no trae la lista de empujes (value)');
+    todos.push(...j.value);
+    if (j.value.length < POR_PAGINA) break;
+  }
+  const directos = todos.filter((e) => {
+    if (!(Date.parse(e.date) >= desde) || deCompilacion(e.pushedBy)) return false;
+    const punta = (e.refUpdates || []).find((u) => u && u.name === ref);
+    return !(punta && punta.newObjectId && mergeCommits.has(punta.newObjectId));
+  });
+  const detalle = [`Azure ${repo}: ${directos.length} empuje(s) directo(s) a ${branch} en ${hours} h, sin pedido`,
+    ...directos.map((e) => `  empuje ${e.pushId} de ${limpio(e.pushedBy && e.pushedBy.displayName, 60)} (${e.date})`)];
+  return { n: directos.length, detalle };
 }
 
 function reglas({ org, project, repo, branch, builds }) {
@@ -221,7 +258,15 @@ async function main(argv) {
   }
   if (a.azure) {
     const z = { ...a.azure, branch: a.azure.branch || 'main', builds: a.azure.builds.split(',').map(Number) };
-    try { const r = pedidosSalteados({ ...z, hours: a.hours, now }); az1 = r.n; r.detalle.forEach(decir); } catch (e) { fallo = true; decir(`Azure: ? (no se pudo consultar: ${e instanceof NoSePudo ? e.message : `falla interna, ${e.name}`})`); }
+    // la cuenta de Azure suma los pedidos que saltearon las políticas y los empujes directos: si una de las dos no se
+    // pudo leer, la cuenta es `?`
+    try {
+      const r = pedidosSalteados({ ...z, hours: a.hours, now });
+      r.detalle.forEach(decir);
+      const e = directPushes({ ...z, hours: a.hours, now }, r.mergeCommits);
+      e.detalle.forEach(decir);
+      az1 = r.n + e.n;
+    } catch (e) { fallo = true; decir(`Azure: ? (no se pudo consultar: ${e instanceof NoSePudo ? e.message : `falla interna, ${e.name}`})`); }
     try { const r = reglas(z); rg = r.valor; r.detalle.forEach(decir); } catch (e) { fallo = true; decir(`reglas: ? (no se pudo consultar: ${e instanceof NoSePudo ? e.message : `falla interna, ${e.name}`})`); }
   }
   const l = linea(a.hours, g, az1, rg);

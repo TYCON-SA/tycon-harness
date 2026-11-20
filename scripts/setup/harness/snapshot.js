@@ -469,6 +469,19 @@ function openCopyNotice(copies, { cmd = 'harness.js' } = {}) {
   return `${CUT_NOTICE_PREFIX}un cambio del arnés se cortó (copia ${c.name}, ${m.reason || 'sin motivo'}, ${m.at || '—'}): ${cmd} rollback --to ${c.name} vuelve a como estaba${pieces}${more}`;
 }
 
+/**
+ * El aviso del arranque sobre las copias: el de la copia abierta (`openCopyNotice`) o, si no ve ninguna pero hubo algo
+ * que no pudo leer (la carpeta de copias, o el manifiesto de una copia que puede ser la cortada), el aviso de que no
+ * pudo mirar. Lleva el mismo encabezado: el doctor lo vuelve a mirar y lo saca cuando ya se puede leer y no hay
+ * ninguna abierta. null si no hay copias abiertas y se leyó todo.
+ */
+function cutNoticeOf(home, { cmd = 'harness.js' } = {}) {
+  const problems = [];
+  const open = openCopyNotice(list(home, { problems }), { cmd });
+  if (open || !problems.length) return open;
+  return `${CUT_NOTICE_PREFIX}no pude mirar si un cambio del arnés se cortó (${problems.join('; ')}): si una copia quedó abierta, no la veo; ${cmd} rollback --list muestra las que se leen`;
+}
+
 /** `notice` sin el tramo del aviso de copia abierta (los tramos van separados por « · »); null si no queda nada. */
 function stripCutNotice(notice) {
   if (typeof notice !== 'string' || !notice) return notice || null;
@@ -490,6 +503,6 @@ function countBak({ home = os.homedir(), env = process.env, tree } = {}) {
 }
 
 module.exports = {
-  SCHEMA, KEEP, CUT_NOTICE_PREFIX, backupsRoot, files, take, finish, close, isOpen, openCopyNotice, stripCutNotice, list, prune,
+  SCHEMA, KEEP, CUT_NOTICE_PREFIX, backupsRoot, files, take, finish, close, isOpen, openCopyNotice, cutNoticeOf, stripCutNotice, list, prune,
   countBak, safeFiles,
 };

@@ -685,6 +685,25 @@ test('Huella_TrozosDeMemoria_SonPapeleo (T11) @story-8.151 @ac-11', (t) => {
   assert.strictEqual(typeof SO.tieneCambios, 'function', 'tieneCambios se exporta');
 });
 
+// Huella_ExencionDeRuntime_EsPapeleo
+// 🔴 Falla con: una exención de runtime anotada después de la última vuelta (`.tycon/runtime-waivers.jsonl`) vence el ok
+// y pide otra vuelta; o la excepción abre otras carpetas ocultas, otro archivo de `.tycon/` o un enlace.
+test('Huella_ExencionDeRuntime_EsPapeleo — la exención anotada tras la última vuelta no pide otra', (t) => {
+  const a = repo(t, { 'LEEME.md': 'hola\n', '.tycon/runtime-waivers.jsonl': '' });
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
+  escribir(a, '.tycon/runtime-waivers.jsonl', '{"story":"9.99","ac":"AC-3"}\n');
+  let r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, true, `la exención no vence el ok: ${r.motivo}`);
+  escribir(a, '.tycon/production.json', '{}\n');
+  r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, false, 'otro archivo de .tycon/ sí vence el ok');
+  assert.ok(SO.esPapeleoDeLaHuella('.tycon/runtime-waivers.jsonl', '100644'));
+  assert.ok(!SO.esPapeleoDeLaHuella('.tycon/runtime-waivers.jsonl', '120000'), 'un enlace no es papeleo');
+  for (const rel of ['.tycon/runtime-waivers.json', '.tycon/otras.jsonl', 'sub/.tycon/runtime-waivers.jsonl', '.github/runtime-waivers.jsonl', '.tycon/x/runtime-waivers.jsonl']) {
+    assert.ok(!SO.esPapeleoDeLaHuella(rel, '100644'), rel);
+  }
+});
+
 /** El gancho pre-commit del repo, en una carpeta fuera de él (`core.hooksPath` local): `cuerpo` es bash. */
 function gancho(t, d, cuerpo) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-gancho-')));

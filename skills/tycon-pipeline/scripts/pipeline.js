@@ -1432,7 +1432,7 @@ function computeValidadores({ story, repo, todos = false, deprecados = true }) {
   try { repoEsDir = fs.statSync(repo).isDirectory(); } catch (_e) { repoEsDir = false; }
   if (!repoEsDir) throw new Error(`validators: --repo no es una carpeta: ${repo}`);
   const declarados = [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')]
-    .map((f) => f.replace(/^\([^)]*\)\s*/, ''));   // "(agent-skills) ruta" → ruta
+    .map((f) => f.replace(/^\([^)]*\)\s+/, ''));   // "(agent-skills) ruta" → ruta; `(app)/page.tsx` (un grupo de rutas, sin espacio) queda entera
   const files = unique([...declarados, ...archivosDotnetDelRepo(repo)]);
   const det = detectStack(repo, files);
   const activos = paquetesActivos(repo);

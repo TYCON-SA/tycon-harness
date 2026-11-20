@@ -286,8 +286,17 @@ function argumentosDificiles({ dir, W, rec }) {
   else if (!pos.nueva) rec.finding('waiver:hard-args-console-not-new', 'waiver', `con los argumentos por el ambiente, la ventana no pasa por «nueva» (${pos.conectados} conectados)`);
 }
 
+// Los pedidos del arreglo rápido de las sondas, completos como los pide `marker.js adhoc set` (motivo, «datos» y la lista
+// de archivos): sin algo que exige, el comando sale 2 antes de la ventana y la sonda da un hallazgo que no midió nada.
+// La prueba de que llegan a la firma está en scripts/tests/windows-probe-adhoc.test.js.
+const ADHOC_SONDAS = {
+  agente: ['adhoc', 'set', '--reason', 'sonda de la ventana', '--data', 'sin-cambio', '--file', 'regla.txt', '--terminal', '--for-session', 'waiver-agente'],
+  json: ['adhoc', 'set', '{"reason":"sonda de la ventana","datos":"sin-cambio","allowedFiles":["regla.txt"],"maxFiles":3}', '--terminal', '--for-session', 'waiver-adhoc'],
+  banderas: ['adhoc', 'set', '--reason', 'sonda de la ventana', '--data', 'sin-cambio', '--file', 'regla.txt', '--max-files', '3', '--terminal', '--for-session', 'waiver-adhoc'],
+};
+
 function arregloComoElAgente({ x, env, rec }) {
-  const a = L.run(process.execPath, [MARKER, 'adhoc', 'set', '--reason', 'sonda de la ventana', '--terminal', '--for-session', 'waiver-agente'], {
+  const a = L.run(process.execPath, [MARKER, ...ADHOC_SONDAS.agente], {
     env: Object.assign({}, env, { TYCON_WAIVER_IN_WINDOW: '1' }), input: 'gato luna reloj\n', timeoutMs: 120000,
   });
   const declarado = fs.existsSync(path.join(x.home, '.claude', '.tycon-pipeline', 'adhoc', 'waiver-agente.json'));
@@ -427,8 +436,8 @@ function firmasPorTerminal({ dir, x, env, rec }) {
   const casos = [
     ['approve-plan', process.execPath, [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'waiver-owner'], () => /plan-approval-signed/.test(leer(path.join(x.home, '.claude', '.tycon-pipeline', 'gates.log')))],
     ['control-change', bash, [CONTROLES, 'approve', '--root', repo, '--file', 'regla.txt', '--out', '.tycon/control-changes.jsonl', '--terminal'], () => fs.existsSync(path.join(repo, '.tycon', 'control-changes.jsonl'))],
-    ['adhoc-json', process.execPath, [MARKER, 'adhoc', 'set', '{"reason":"sonda de la ventana","maxFiles":3}', '--terminal', '--for-session', 'waiver-adhoc'], () => fs.existsSync(path.join(activos, '..', 'adhoc', 'waiver-adhoc.json'))],
-    ['adhoc-banderas', process.execPath, [MARKER, 'adhoc', 'set', '--reason', 'sonda de la ventana', '--max-files', '3', '--terminal', '--for-session', 'waiver-adhoc'], () => fs.existsSync(path.join(activos, '..', 'adhoc', 'waiver-adhoc.json'))],
+    ['adhoc-json', process.execPath, [MARKER, ...ADHOC_SONDAS.json], () => fs.existsSync(path.join(activos, '..', 'adhoc', 'waiver-adhoc.json'))],
+    ['adhoc-banderas', process.execPath, [MARKER, ...ADHOC_SONDAS.banderas], () => fs.existsSync(path.join(activos, '..', 'adhoc', 'waiver-adhoc.json'))],
   ];
   for (const [nombre, prog, args, firmo] of casos) {
     if (!prog) { rec.finding(`waiver:owner-terminal-${nombre}-not-measured`, 'waiver', 'no encuentro bash en este agente: la firma del portón por terminal no se midió'); continue; }
@@ -462,4 +471,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { NAME, measure, emergencia, comandoDeControles };
+module.exports = { NAME, measure, emergencia, comandoDeControles, ADHOC_SONDAS };

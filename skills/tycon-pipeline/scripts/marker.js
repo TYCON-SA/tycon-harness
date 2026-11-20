@@ -6793,7 +6793,9 @@ function cmdOwnerAway(argv) {
   if (accion === 'get') {
     const g = oa.get({ estado: STATE_DIR });
     if (g.problem) console.error(`marker.js owner-away get: ${g.problem}; la persona cuenta como presente.`);
-    process.stdout.write(`${JSON.stringify(g.problem ? { mark: g.mark, problem: g.problem } : { mark: g.mark })}\n`);
+    // la marca que no se pudo confirmar sigue puesta: se muestra aparte, para que no parezca que no hay ninguna
+    if (g.unconfirmed) console.error(`marker.js owner-away get: marca de ausente sin confirmar (puesta ${g.unconfirmed.setAt}): no se borró; se va con el próximo mensaje de la persona o con clear.`);
+    process.stdout.write(`${JSON.stringify({ mark: g.mark, ...(g.problem ? { problem: g.problem } : {}), ...(g.unconfirmed ? { unconfirmed: g.unconfirmed } : {}) })}\n`);
     process.exit(0);
   }
   console.error('uso: marker.js owner-away set --phrase "<lo que dijo la persona>" | clear [--reason "<por qué>"] | get');
@@ -8246,9 +8248,9 @@ function cmdAdhoc(sub, payloadJson) {
       console.error(`🔒 marker.js adhoc set: la firma volvió por una vía que no conozco (${r.via}); no declaré nada.`);
       process.exit(1);
     }
-    // pasar el tope lo elige una persona, con su click o su terminal, o la coordinadora si el perfil se lo delega
-    if (firmaDelPedido === firmas.SOBRE_CUPO && !['click', 'terminal', 'delegacion'].includes(r.via)) {
-      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click de la persona o su terminal (o la coordinadora, si el perfil se lo delega), y volvió por ${r.via}; no declaré nada.`);
+    // pasar el tope lo elige el dueño, con su click o su terminal: nunca la delegación
+    if (firmaDelPedido === firmas.SOBRE_CUPO && !['click', 'terminal'].includes(r.via)) {
+      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click de la persona o su terminal, nunca la delegación, y volvió por ${r.via}; no declaré nada.`);
       process.exit(1);
     }
     const via = r.via;

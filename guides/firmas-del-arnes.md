@@ -128,12 +128,12 @@ vuelve al dueño.
 | `save:sensible`: guardar cuando un commit toca algo de lo sensible | con `save` (`approve-save --for-session`), con la historia limpia y el aviso entregado al dueño |
 | `runtime-waiver`, `manual-test`, `critical-waiver`, `lost-run`, `escape:force-manual`, `escape:trust-ran` (y `extra-round`, que ya era rutina) | con el comando de la firma y `--for-session <sesión>`; si la sesión la pide para sí, el freno la desvía a la coordinadora |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE`, `escape:cambiar-el-estado`, `escape:red-control-test-edit` | `marker.js sign-file <firma> <archivo> --for-session <sesión>`: deja la constancia que usa el Edit o Write de esa sesión |
-| `adhoc-lane:sobre-cupo`, `adhoc-lane:guardado-ajeno` | `marker.js adhoc set '<json>' --for-session <sesión>` y `marker.js adhoc allow-foreign-save --for-session <sesión>` |
+| `adhoc-lane:guardado-ajeno` | `marker.js adhoc allow-foreign-save --for-session <sesión>` |
 | `escape:TYCON_STATUS_GATE`, `escape:set-autonomous`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz` | el perfil las acepta, pero su comando corre sólo en la sesión que trabaja y la coordinadora no tiene cómo firmarlas desde su pestaña: hasta que tengan esa vía, las sigue aprobando una persona. Una ejecución perdida la cierra la coordinadora con `lost-run` |
 
 Quedan sólo del dueño, aunque un perfil las liste: `control-change` y todo el nivel 3 (`escape:TYCON_SAFETY_OFF`,
 `escape:TYCON_PROD_LINT`, `escape:TYCON_NEW_NAMES`, `emergency`, `escape:merge-bypass`); `designation-set`,
-`designation-confirm` y `designation-withdraw`; `adhoc-lane:datos`; `escape:DOD_BYPASS`; `adversarial-skip` (con
+`designation-confirm` y `designation-withdraw`; `adhoc-lane:datos` y `adhoc-lane:sobre-cupo`; `escape:DOD_BYPASS`; `adversarial-skip` (con
 `escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
 `escape:dod_runtime_exempt`; y decir que no a la prueba con navegador (`browser-test`).
 
@@ -274,6 +274,14 @@ Lo que tiene que cumplir esa aprobación:
   al **detalle**, que owner-next imprime debajo de la pregunta y nunca va dentro del cuadro: mostralo si lo pedís. Un
   cuadro que igual no entra (el guardado ajeno, que se muestra entero) llega con el aviso «Este cuadro pasa el tope del
   teléfono»: leelo en la máquina.
+- **El cambio de controles se explica primero.** El cuadro de `control-change` dice, después de lo que se aprueba, qué
+  cambia en el comportamiento del control (qué deja de frenar, qué empieza a frenar), por qué y el riesgo concreto de ese
+  cambio. Lo escribe la sesión que hizo el cambio, en sus commits, con tres renglones: `Cambia-control: …`,
+  `Por-que: …` y `Riesgo: …`. El freno los lee de los mismos commits que firma, y su texto entra en el código del sello:
+  si la explicación cambia, tu click ya no vale. Si el cambio no explica nada, el cuadro lo dice («el cambio no explica
+  qué hace, por qué ni su riesgo») en vez de rellenar; si falta uno de los tres, dice «el cambio no lo dice». La sesión,
+  cuántos archivos y líneas toca, dónde está el diff y el «si sale mal» de siempre van al detalle. Las demás firmas
+  mantienen el cuadro de arriba.
 - **Un click dado sobre el formato viejo no vale después de actualizar.** Si la pregunta cambió con el mismo código (el
   formato nuevo del arnés, o un texto alterado), la firma no se da, el renglón queda en la lista y la aprobación no se
   gasta: el motivo lo dice y hace falta un click nuevo.
@@ -598,11 +606,10 @@ avisado»; y lo que el guion iba a negar (un pendiente ya aprobado) se niega con
   camino corto (`adhoc-lane`), porque abierto por la coordinadora el carril quedaría a su nombre y en su carpeta. Si una
   firma delegable no se desvió, la ventana o el cuadro dicen el motivo («No se desvió a la coordinadora: …»).
 
-Pasar el tope de 8 archivos del camino corto (por defecto) es otra firma, `adhoc-lane:sobre-cupo`: la elige el dev con su
-click en el
-cuadro de la pestaña que hace el trabajo, o en su terminal, y queda anotado. Un «aprobado» escrito no la da, ni un click en
-otra pestaña. Por delegación la da sólo la coordinadora, para otra sesión, si el perfil nombra `adhoc-lane:sobre-cupo`: el
-carril queda con el cupo pedido y con los demás límites de un carril delegado (nada sensible, sin rutas de riesgo alto). Cuentan sólo los archivos de implementación, sin pruebas ni guías. Su renglón en el registro
+Pasar el tope de 8 archivos del camino corto (por defecto) es otra firma, `adhoc-lane:sobre-cupo`: la elige el dueño con
+su click en el cuadro, en la pestaña que hace el trabajo o en la de la coordinadora vigente, o en su terminal, y queda
+anotado. Es como el freno de los datos: un «aprobado» escrito no la da, ni la ventana de permiso, ni la delegación, aunque
+el perfil la nombre. Cuentan sólo los archivos de implementación, sin pruebas ni guías. Su renglón en el registro
 es `adhoc-lane:sobre-cupo-signed`, y abre el portón igual que `adhoc-lane-signed`.
 
 Un camino corto que cambia de dónde sale un dato o quién lo puede ver no guarda: el freno de guardar busca en las líneas

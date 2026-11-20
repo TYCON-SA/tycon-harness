@@ -210,9 +210,41 @@ function addedLinesOf(repo, relFile, base = 'HEAD') {
     return parseAddedLines(diff);
   }
   let src = '';
-  try { src = fs.readFileSync(path.join(repo, relFile), 'utf8'); } catch { return []; }
+  // un archivo nuevo que no se puede leer no es «nada agregado»: el que llama lo anota como no medido, con el motivo
+  try { src = fs.readFileSync(path.join(repo, relFile), 'utf8'); } catch (e) { return { error: `no pude leer el archivo nuevo (${e.code || e.message})` }; }
   return src.split('\n').map((_l, i) => i + 1);
 }
+
+// ── La salida de error de una corrida ───────────────────────────────────────
+// Va a un archivo temporal, no a un tubo: un proceso que la receta deja vivo (un servidor de compilación) heredaría el
+// tubo y la corrida no terminaría hasta que muera. Con la base en rojo, sus últimas líneas van al motivo: sin ellas no
+// se sabe si faltó el SDK, la configuración o una prueba.
+function salidaDeError() {
+  let dir = null;
+  let fd = 'ignore';
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mutation-stderr-'));
+    fd = fs.openSync(path.join(dir, 'stderr.txt'), 'w');
+  } catch { /* sin archivo: la corrida sigue sin su salida de error */ }
+  return {
+    fd,
+    cola() {
+      if (!dir) return '';
+      let texto = '';
+      try { if (typeof fd === 'number') fs.closeSync(fd); } catch { /* ya cerrado */ }
+      try { texto = fs.readFileSync(path.join(dir, 'stderr.txt'), 'utf8'); } catch { /* sin salida */ }
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* lo borra el sistema */ }
+      return colaDeError(texto);
+    },
+  };
+}
+
+/** Las últimas líneas no vacías de una salida de error, en una sola línea («a | b | c»), o '' si no hay. */
+function colaDeError(texto, n = 5) {
+  const lineas = String(texto || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(-n);
+  return lineas.length ? lineas.join(' | ').slice(-500) : '';
+}
+const conError = (corrida) => (corrida && corrida.errorTail ? `; últimas líneas de error: «${corrida.errorTail}»` : '');
 
 // ── Runner de tests por default (inyectable en los tests de esta herramienta) ─
 // Recibe { repo, testFiles, mutant } — mutant es null en la corrida BASE.
@@ -235,13 +267,14 @@ function defaultRunTests({ repo, testFiles, capMs = RUN_CAP_MS, nameFilter = nul
   // Por eso se limpia del entorno del hijo.
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
+  const err = salidaDeError();
   return new Promise((resolve, reject) => {
     // El reportero TAP a la salida dice cuántas pruebas corrieron (`# pass` y `# fail`): con el filtro de la historia,
     // una corrida sin ninguna no prueba nada.
     const args = ['--test', '--test-reporter=tap', ...(nameFilter ? [`--test-name-pattern=${nameFilter}`] : []), ...testFiles];
     const child = spawn(process.execPath, args, {
       windowsHide: true,
-      cwd: repo, env, stdio: ['ignore', 'pipe', 'ignore'],
+      cwd: repo, env, stdio: ['ignore', 'pipe', err.fd],
     });
     // el resumen va al final; los renglones de nivel 0 (uno por archivo sin pruebas corridas) se cuentan al pasar
     let salida = '';
@@ -263,10 +296,10 @@ function defaultRunTests({ repo, testFiles, capMs = RUN_CAP_MS, nameFilter = nul
       timedOut = true;
       try { child.kill('SIGKILL'); } catch { /* ya murió */ }
     }, capMs);
-    child.on('error', (e) => { clearTimeout(t); reject(e); });
+    child.on('error', (e) => { clearTimeout(t); err.cola(); reject(e); });
     child.on('close', (code) => {
       clearTimeout(t);
-      resolve({ code: code === null || code === undefined ? 1 : code, timedOut, tests: pruebasDelTap(`${salida}${resto}`, deArchivo) });
+      resolve({ code: code === null || code === undefined ? 1 : code, timedOut, tests: pruebasDelTap(`${salida}${resto}`, deArchivo), errorTail: err.cola() });
     });
   });
 }
@@ -383,8 +416,9 @@ function runRecipe({ recipe, capMs = RUN_CAP_MS }) {
   delete env.NODE_TEST_CONTEXT;
   const grupo = process.platform !== 'win32';
   const limpiar = () => { try { fs.rmSync(resultsDir, { recursive: true, force: true }); } catch { /* nada */ } };
+  const err = salidaDeError();
   return new Promise((resolve, reject) => {
-    const child = spawn('bash', ['-c', command], { windowsHide: true, cwd: recipe.cwd, env, stdio: ['ignore', 'ignore', 'ignore'], detached: grupo });
+    const child = spawn('bash', ['-c', command], { windowsHide: true, cwd: recipe.cwd, env, stdio: ['ignore', 'ignore', err.fd], detached: grupo });
     let timedOut = false;
     const t = setTimeout(() => {
       timedOut = true;
@@ -392,12 +426,12 @@ function runRecipe({ recipe, capMs = RUN_CAP_MS }) {
         try { child.kill('SIGKILL'); } catch { /* ya murió */ }
       }
     }, capMs);
-    child.on('error', (e) => { clearTimeout(t); limpiar(); reject(e); });
+    child.on('error', (e) => { clearTimeout(t); limpiar(); err.cola(); reject(e); });
     child.on('close', (code) => {
       clearTimeout(t);
       const tests = recipe.results ? leerResultado(recipe.results, resultsDir, recipe.cwd) : undefined;
       limpiar();
-      resolve({ code: code === null || code === undefined ? 1 : code, timedOut, tests });
+      resolve({ code: code === null || code === undefined ? 1 : code, timedOut, tests, errorTail: err.cola() });
     });
   });
 }
@@ -423,8 +457,9 @@ function defaultRun({ repo, testFiles, recipe, capMs, nameFilter = null }) {
 
 // ── El chequeo ───────────────────────────────────────────────────────────────
 /**
- * Arma la copia descartable sobre la que se mutan y se corren los tests. Devuelve { dir } o
- * { dir: null, motivo }. Nunca escribe en `repo`.
+ * Arma la copia descartable sobre la que se mutan y se corren los tests. Devuelve { dir, noCopiados } o
+ * { dir: null, motivo }. `noCopiados`: los archivos nuevos que no se pudieron copiar, con el motivo (un Map de la ruta
+ * relativa): en la copia faltan, y eso no es «no existe». Nunca escribe en `repo`.
  */
 function crearCopiaDeTrabajo(repo, log) {
   const { execFileSync } = require('child_process');
@@ -442,6 +477,7 @@ function crearCopiaDeTrabajo(repo, log) {
     if (patch.trim()) g(dir, ['apply', '--whitespace=nowarn', '-'], { input: patch });
     // y lo untracked (archivos nuevos que la story creó), respetando .gitignore
     const nuevos = g(repo, ['ls-files', '--others', '--exclude-standard']).split('\n').filter(Boolean);
+    const noCopiados = new Map();
     for (const rel of nuevos) {
       const src = path.join(repo, rel); const dst = path.join(dir, rel);
       try {
@@ -452,7 +488,7 @@ function crearCopiaDeTrabajo(repo, log) {
         const st = fs.lstatSync(src);
         if (st.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(src), dst);
         else fs.copyFileSync(src, dst);
-      } catch { /* un untracked ilegible no frena la copia */ }
+      } catch (e) { noCopiados.set(rel, e.code || e.message); }   // un untracked ilegible no frena la copia, pero se anota
     }
     // 🔴 Y lo que git IGNORA también tiene que estar. Enlazar sólo `<repo>/node_modules` no alcanza: con las
     // dependencias en una subcarpeta, un `.env`, un `local.json` o un `dist/` que la suite lee, la BASE
@@ -501,7 +537,7 @@ function crearCopiaDeTrabajo(repo, log) {
       } catch { /* un submódulo ilegible no frena la copia */ }
     }
     if (log) log(`mutation-check: corriendo sobre una copia descartable (${dir}), no sobre ${repo}`);
-    return { dir };
+    return { dir, noCopiados };
   } catch (e) {
     if (dir) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* nada */ } }
     return { dir: null, motivo: String((e && e.message) || e).slice(0, 200) };
@@ -710,6 +746,11 @@ async function runMutationCheck({
   for (const rel of targets) {
     const abs = path.resolve(repo, rel);
     if (!fs.existsSync(abs)) {
+      const noCopiado = copia.noCopiados && copia.noCopiados.get(rel.split(path.sep).join('/'));
+      if (noCopiado) {
+        skipped.push({ file: rel, reason: `no pude leer el archivo nuevo para la copia de trabajo (${noCopiado}): sus líneas no se midieron`, unread: true });
+        continue;
+      }
       if (overrideExplicito) return fail2(`--files incluye un archivo inexistente: ${rel}`);
       skipped.push({ file: rel, reason: 'declarado por la story pero no existe en disco — nada que mutar' });
       continue;
@@ -725,8 +766,9 @@ async function runMutationCheck({
       );
     }
     const addedLines = addedLinesOf(repo, rel, base);
-    if (addedLines === null) {
-      skipped.push({ file: rel, reason: `git diff contra la base ${base} falló: sus líneas no se midieron` });
+    if (addedLines === null || !Array.isArray(addedLines)) {
+      const porque = addedLines && addedLines.error ? addedLines.error : `git diff contra la base ${base} falló`;
+      skipped.push({ file: rel, reason: `${porque}: sus líneas no se midieron`, unread: true });
       continue;
     }
     if (!addedLines.length) continue;
@@ -737,9 +779,12 @@ async function runMutationCheck({
     const result = {
       total: 0, killed: 0, survived: [], skipped, ...ctx, mutants: 0,
       verdict: 'SIN_MUTANTES',
-      motivo: targets.length
-        ? 'ningún operador aplica sobre las líneas agregadas de los archivos que la story declara'
-        : 'la story no declara archivos de código NO-test en files_to_create/files_to_modify',
+      motivo: skipped.some((x) => x.unread)
+        // lo que no se pudo leer no es «ningún operador aplica»: se nombra
+        ? `no pude leer las líneas agregadas de ${skipped.filter((x) => x.unread).map((x) => `${x.file} (${x.reason})`).join('; ')}`
+        : targets.length
+          ? 'ningún operador aplica sobre las líneas agregadas de los archivos que la story declara'
+          : 'la story no declara archivos de código NO-test en files_to_create/files_to_modify',
     };
     log(`⚠️ mutation-check: ${result.motivo} — no se verificó nada.`);
     return { exitCode: 0, result };
@@ -839,19 +884,19 @@ async function runMutationCheck({
             `la corrida BASE con \`node --test\` salió en rojo en la COPIA descartable (exit ${base ? base.code : '?'}) ` +
             'pero en VERDE en el repo original: la copia no tiene algo que la suite necesita (un archivo ' +
             'ignorado por git fuera de los que se copian, un submódulo, algo generado por el build). ' +
-            'La suite no está rota; el chequeo no pudo correr sobre la copia.'
+            `La suite no está rota; el chequeo no pudo correr sobre la copia${conError(base)}.`
           );
         }
       }
       // una suite en bash no tiene otro corredor con que verificarla: sale distinto de 0 sin mutar nada
       if (recipe.name === 'bash') {
-        return fail2(`no medido: la base ya falla — la suite en bash salió ${base ? base.code : '?'} sin mutar nada; no juzgo mutantes`);
+        return fail2(`no medido: la base ya falla — la suite en bash salió ${base ? base.code : '?'} sin mutar nada; no juzgo mutantes${conError(base)}`);
       }
       return fail2(
         `la corrida BASE con ${nombreDelCorredor} no salió en verde (exit ${base ? base.code : '?'}) — ` +
         `o la suite está realmente rota, o estos tests no corren con ${nombreDelCorredor} en la copia (la receta ` +
         'elegida, las dependencias o la compilación). Un veredicto de mutantes sin base verde no significa nada; ' +
-        'verificá la suite con su runner real.'
+        `verificá la suite con su runner real${conError(base)}.`
       );
     }
     // Una base «verde» que no corrió ninguna prueba no prueba nada: todo mutante sobreviviría. Las recetas que dejan
