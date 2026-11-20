@@ -11,6 +11,8 @@
  * stable-data: los «git commit» de abajo son textos que se le pasan al freno, no commits; la única hora real es la de la
  * corrida de pruebas en verde que la matriz pide reciente, y no se compara con ninguna fecha fija.
  */
+// sin el perfil del equipo: la prueba fija su ambiente (lib/without-team-profile.js)
+require('./lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');

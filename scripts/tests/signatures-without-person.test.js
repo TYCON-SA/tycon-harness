@@ -9,6 +9,8 @@
  *
  * stable-data: las horas son las de AHORA, fija; ninguna se compara con el reloj.
  */
+// sin el perfil del equipo: la prueba fija su ambiente (lib/without-team-profile.js)
+require('./lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
