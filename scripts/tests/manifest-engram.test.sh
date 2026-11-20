@@ -997,6 +997,86 @@ grep -q "funcion_js" "$AQUI/scripts/tests/trimmed-close.test.sh" 2>/dev/null \
   && ok "T41b el congelador del portón compara por función, no el archivo entero" \
   || no "T41b cierre-recortado volvió a congelar el archivo entero de tycon-ci-gate.js"
 
+# ════════════════════════════════════════════════════════ PASAR UN REPO AL ÍNDICE LOCAL (adopt)
+# Con el índice en git, dos pedidos que suman memoria desde el mismo `main` agregan cada uno su entrada al final de la
+# misma lista y el segundo queda en choque. El servidor (Azure DevOps, GitHub) no corre controladores de merge propios:
+# la salida es que el índice no viaje. `adopt` hace el cambio de dos líneas y deja el índice local al día.
+
+# ---------------------------------------------------------------- Adopt_TwoBranchesFromSameBase_MergeWithoutConflict
+nuevo_repo; chunk base0001; chunk huer0002; indice 'base0001'   # huer0002: un chunk que el índice versionado no declara
+commitear "base con el índice en git"
+# lo que pasa hoy: las dos ramas chocan por el índice
+git -C "$R" checkout -q -b ver1 main; chunk ver1aaaa; indice 'base0001' 'ver1aaaa'; commitear "memoria de la rama 1"
+git -C "$R" checkout -q -b ver2 main; chunk ver2bbbb; indice 'base0001' 'ver2bbbb'; commitear "memoria de la rama 2"
+git -C "$R" merge-tree --write-tree ver1 ver2 >"$TMP/mt-ver" 2>&1; RC_VER=$?
+git -C "$R" checkout -q main
+(cd "$R" && node "$LIB" adopt --repo "$R" --json --apply) >"$TMP/adopt-a.json" 2>"$TMP/err"; RC=$?; OUT="$TMP/adopt-a.json"; ERR="$(cat "$TMP/err")"
+ADOPT_OK=0
+[ "$RC" -eq 0 ] && [ "$(j estado)" = "adoptado" ] && git -C "$R" check-ignore -q .engram/manifest.json \
+  && ! git -C "$R" ls-files --error-unmatch .engram/manifest.json >/dev/null 2>&1 && [ -f "$R/.engram/manifest.json" ] \
+  && [ "$(git -C "$R" diff --cached --name-only | sort | tr '\n' ' ')" = ".engram/manifest.json .gitignore " ] \
+  && [ "$(ids_indice)" = "base0001,huer0002" ] && ADOPT_OK=1
+git -C "$R" commit -qm "el índice de memoria no viaja por git"
+# lo que pasa después: cada rama suma su chunk, rehace su índice local y commitea todo lo que hay
+git -C "$R" checkout -q -b loc1 main; chunk loc1aaaa; node "$LIB" rebuild --repo "$R" >/dev/null 2>&1; commitear "memoria de la rama 1"
+git -C "$R" checkout -q -b loc2 main; chunk loc2bbbb; node "$LIB" rebuild --repo "$R" >/dev/null 2>&1; commitear "memoria de la rama 2"
+EN_COMMITS="$(git -C "$R" log --name-only --format= main..loc1 main..loc2 | grep -c 'manifest.json')"
+git -C "$R" merge-tree --write-tree loc1 loc2 >"$TMP/mt-loc" 2>&1; RC_LOC=$?
+git -C "$R" checkout -q loc1 && git -C "$R" merge -q --no-edit loc2 >/dev/null 2>&1; RC_MERGE=$?
+node "$LIB" rebuild --repo "$R" >/dev/null 2>&1
+VALIDO="$(node -e 'try{const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(m.version===1&&Array.isArray(m.chunks)?"si":"no")}catch(e){process.stdout.write("no")}' "$R/.engram/manifest.json")"
+[ "$RC_VER" -ne 0 ] && grep -q 'manifest.json' "$TMP/mt-ver" \
+  && ok "Adopt_TwoBranches (antes): con el índice en git, dos ramas desde la misma base chocan en .engram/manifest.json" \
+  || no "Adopt_TwoBranches (antes): se esperaba choque en el índice versionado (rc=$RC_VER) · $(head -c 300 "$TMP/mt-ver")"
+[ "$ADOPT_OK" -eq 1 ] \
+  && ok "Adopt_TwoBranches: adopt --apply ignora el índice, lo saca de git sin borrarlo, deja los dos cambios preparados y declara el chunk que faltaba" \
+  || no "Adopt_TwoBranches: adopt rc=$RC estado=$(j estado) · preparado=[$(git -C "$R" show --name-only --format= HEAD | tr '\n' ' ')] · $ERR"
+[ "$RC_LOC" -eq 0 ] && [ "$RC_MERGE" -eq 0 ] && [ "$EN_COMMITS" -eq 0 ] && [ "$VALIDO" = "si" ] \
+  && [ "$(ids_indice | tr ',' '\n' | sort | tr '\n' ' ')" = "base0001 huer0002 loc1aaaa loc2bbbb " ] \
+  && ok "Adopt_TwoBranches (después): las dos ramas se juntan sin choque, el índice no viaja en sus commits y queda JSON válido con los 4 chunks" \
+  || no "Adopt_TwoBranches (después): merge-tree rc=$RC_LOC · merge rc=$RC_MERGE · índice en commits=$EN_COMMITS · válido=$VALIDO · ids=[$(ids_indice 2>/dev/null)] · $(head -c 300 "$TMP/mt-loc")"
+
+# ---------------------------------------------------------------- Adopt_DryRun_TouchesNothing
+nuevo_repo; chunk aaaa1111; indice 'aaaa1111'; printf 'node_modules/' > "$R/.gitignore"; commitear "base"
+cp "$R/.gitignore" "$TMP/ign-antes"
+(cd "$R" && node "$LIB" adopt --repo "$R" --json) >"$TMP/adopt-b.json" 2>"$TMP/err"; RC=$?; OUT="$TMP/adopt-b.json"
+[ "$RC" -eq 1 ] && [ "$(j estado)" = "por-hacer" ] && cmp -s "$R/.gitignore" "$TMP/ign-antes" \
+  && git -C "$R" ls-files --error-unmatch .engram/manifest.json >/dev/null 2>&1 && [ -z "$(git -C "$R" diff --cached --name-only)" ] \
+  && ok "Adopt_DryRun_TouchesNothing: sin --apply dice los dos pasos, sale 1 y no toca .gitignore ni git" \
+  || no "Adopt_DryRun_TouchesNothing: rc=$RC estado=$(j estado) · preparado=[$(git -C "$R" diff --cached --name-only)]"
+# con --apply, un .gitignore sin salto final no se pega con la línea nueva
+(cd "$R" && node "$LIB" adopt --repo "$R" --apply) >/dev/null 2>&1
+grep -qx 'node_modules/' "$R/.gitignore" && grep -qx '.engram/manifest.json' "$R/.gitignore" \
+  && ok "Adopt_GitignoreWithoutTrailingNewline: la línea nueva va en su propio renglón" \
+  || no "Adopt_GitignoreWithoutTrailingNewline: quedó [$(tr '\n' '|' < "$R/.gitignore")]"
+
+# ---------------------------------------------------------------- Adopt_LineAlreadyThere_OnlyUntracks
+# La mitad de la transición: el `.gitignore` ya nombra el índice, pero sigue en git (se agregó con `-f` o antes de la
+# regla). Sólo falta sacarlo de git; la línea no se repite.
+nuevo_repo; chunk aaaa1111; indice 'aaaa1111'; commitear "base"; printf '.engram/manifest.json\n' > "$R/.gitignore"; commitear "regla"
+(cd "$R" && node "$LIB" adopt --repo "$R" --json --apply) >"$TMP/adopt-e.json" 2>"$TMP/err"; RC=$?; OUT="$TMP/adopt-e.json"
+[ "$RC" -eq 0 ] && [ "$(grep -c 'manifest.json' "$R/.gitignore")" -eq 1 ] \
+  && [ "$(git -C "$R" diff --cached --name-only | tr '\n' ' ')" = ".engram/manifest.json " ] \
+  && ok "Adopt_LineAlreadyThere_OnlyUntracks: con la regla ya puesta sólo lo saca de git, sin repetir la línea" \
+  || no "Adopt_LineAlreadyThere_OnlyUntracks: rc=$RC estado=$(j estado) · líneas=$(grep -c 'manifest.json' "$R/.gitignore") · preparado=[$(git -C "$R" diff --cached --name-only)]"
+
+# ---------------------------------------------------------------- Adopt_AlreadyLocal_IsNoop
+repo_local c1aa
+(cd "$R" && node "$LIB" adopt --repo "$R" --json --apply) >"$TMP/adopt-c.json" 2>"$TMP/err"; RC=$?; OUT="$TMP/adopt-c.json"
+[ "$RC" -eq 0 ] && [ "$(j estado)" = "ya-local" ] && [ -z "$(git -C "$R" diff --cached --name-only)" ] \
+  && [ "$(grep -c 'manifest.json' "$R/.gitignore")" -eq 1 ] \
+  && ok "Adopt_AlreadyLocal_IsNoop: un repo ya en índice local sale 0 y no cambia nada" \
+  || no "Adopt_AlreadyLocal_IsNoop: rc=$RC estado=$(j estado) · preparado=[$(git -C "$R" diff --cached --name-only)]"
+
+# ---------------------------------------------------------------- Adopt_NegatedRule_DoesNotUntrack
+# Un `.gitignore` más adentro gana al de la raíz: si vuelve a incluir el índice, sacarlo de git lo dejaría fuera de git
+# y sin ignorar, y el próximo `git add -A` lo devolvería.
+nuevo_repo; chunk aaaa1111; indice 'aaaa1111'; printf '!manifest.json\n' > "$R/.engram/.gitignore"; commitear "base"
+(cd "$R" && node "$LIB" adopt --repo "$R" --json --apply) >"$TMP/adopt-d.json" 2>"$TMP/err"; RC=$?; OUT="$TMP/adopt-d.json"
+[ "$RC" -eq 3 ] && [ "$(j estado)" = "no-medido" ] && git -C "$R" ls-files --error-unmatch .engram/manifest.json >/dev/null 2>&1 \
+  && ok "Adopt_NegatedRule_DoesNotUntrack: si git sigue sin ignorar el índice, no lo saca de git y lo dice (sale 3)" \
+  || no "Adopt_NegatedRule_DoesNotUntrack: rc=$RC estado=$(j estado) motivo=$(j motivo)"
+
 # ---------------------------------------------------------------- Cli_SalidaGrandePorUnCano_LlegaEntera
 # Si el CLI cierra con `process.exit(main(…))` justo después de un `console.log` grande, con la salida por un caño y un
 # lector que tarda, en macOS lo que el caño todavía no tomó se pierde al salir (por ejemplo, 8192 bytes de 12 495).
