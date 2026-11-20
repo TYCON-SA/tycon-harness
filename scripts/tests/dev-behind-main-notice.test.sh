@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dev-behind-main-notice.test.sh — el aviso de arranque de `dev` atrasada (T1-T23, T27-T32).
+# dev-behind-main-notice.test.sh — el aviso de arranque de `dev` atrasada (T1-T23, T27-T33).
 #
 # Lo que no se puede perder:
 #   · Que hable sólo cuando hay algo que hacer: atraso real (sin merges, sin copias por contenido y sin los commits de
@@ -249,6 +249,13 @@ nm=""; T="$TCG/packs/bizuit/templates/pipelines"
 if [ -d "$T" ]; then grep -lqE "fell behind|ATRASO=" "$T/backend-ci.yml" "$T/forms-ci.yml" && p="$p plantillas"; else nm="$nm plantillas"; fi
 if [ -f "$TCG/artifacts/mapa-arnes.html" ]; then grep -q "dev-behind-main-notice" "$TCG/artifacts/mapa-arnes.html" || p="$p mapa"; else nm="$nm mapa"; fi
 [ -z "$p" ] && ok "T23 Registro_EnLosDosLadosYElMapa${nm:+ (no medido en este árbol:$nm)}" || bad "T23 Registro_EnLosDosLadosYElMapa (falta:$p)"
+
+# ═══ T33 · git lento en cada llamada, bajo su tope → la corrida entera corta a los 5 s y dice «no medido» ══════════
+C="$(repo t33)"
+mkdir -p "$BASE/bin33"; printf '#!/bin/sh\ncase "$*" in *cherry-pick*|*"rev-parse refs/remotes"*|*--git-path*|*--git-common-dir*) sleep 2;; esac\nexec "%s" "$@"\n' "$REAL_GIT" > "$BASE/bin33/git"; chmod +x "$BASE/bin33/git"
+t0="$(node -e 'console.log(Date.now())')"; run "$C" PATH="$BASE/bin33:$PATH"; t1="$(node -e 'console.log(Date.now())')"
+[ "$RC" = 0 ] && [ $((t1 - t0)) -lt 8000 ] && grep -q "dev: no pude mirar si está al día (mirar tardó más de 5 s, el tope del aviso) — no medido" <<<"$OUT" \
+  && ok "T33 GitLentoEnCadaLlamada_TopeTotalYNoMedido" || bad "T33 GitLentoEnCadaLlamada_TopeTotalYNoMedido (rc=$RC, $((t1 - t0)) ms, $OUT)"
 
 echo
 [ "$FALLAS" = 0 ] && { echo "dev-behind-main-notice: todo verde"; exit 0; }

@@ -244,7 +244,10 @@ const FORM = { 'content-type': 'application/x-www-form-urlencoded' };
 
 test('2.76-Demo_ConCredencial_NoArranca', async () => {
   const { validarDemo, VARIABLES_DEL_MODO } = DEMO();
-  assert.deepStrictEqual([...VARIABLES_DEL_MODO].sort(), ['PORT', 'SITE_DEMO', 'SITE_PUBLIC_URL']);
+  assert.deepStrictEqual([...VARIABLES_DEL_MODO].sort(), ['PORT', 'SITE_DEMO', 'SITE_PUBLIC_URL', 'SITE_TRUST_PROXY']);
+  // detrás de un intermediario: su lista o 1; un valor que no es una dirección ni una red no arranca
+  assert.strictEqual(validarDemo({ SITE_DEMO: '1', SITE_TRUST_PROXY: '10.0.0.0/8,127.0.0.1' }).ok, true);
+  assert.deepStrictEqual(validarDemo({ SITE_DEMO: '1', SITE_TRUST_PROXY: 'todos' }).problemas.map((p) => p.variable), ['SITE_TRUST_PROXY']);
   assert.strictEqual(validarDemo({ SITE_DEMO: '1' }).ok, true);
   assert.strictEqual(validarDemo({ SITE_DEMO: '1', PORT: '8080', SITE_PUBLIC_URL: 'https://demo.acme.example' }).ok, true);
   // cada variable de credencial o de identidad, una por vez: no arranca y dice cuál (sin repetir su valor)
@@ -704,7 +707,8 @@ test('2.76-Demo_RecorridoDeRutas_NiEscribeNiSale', async () => {
   const base = `http://127.0.0.1:${puerto}`;
   // la carpeta temporal del proceso queda adentro de la de la prueba: al salir, el proceso la borra
   const raiz = tmp('demo-barrido-');
-  const p = await correrServidor({ SITE_DEMO: '1', PORT: String(puerto), SITE_PUBLIC_URL: base, TMPDIR: raiz }, { espera: 1 });
+  // detrás de su intermediario (la propia máquina): cada pedido trae su dirección en X-Forwarded-For
+  const p = await correrServidor({ SITE_DEMO: '1', PORT: String(puerto), SITE_PUBLIC_URL: base, SITE_TRUST_PROXY: '127.0.0.1', TMPDIR: raiz }, { espera: 1 });
   const fallas = [];
   try {
     assert.ok(await esperarA(() => /escuchando en el puerto/.test(p.salida())), `no escuchó: ${p.salida()} ${p.error()}`);
@@ -938,8 +942,8 @@ test('2.76-Demo_Proponer_MuestraYNoEscribe', async () => {
   // pase adversarial, clase 1: «Proponer» contesta en cada sección que se puede revisar (el piso de versión de la capa del
   // equipo de los datos de ejemplo cubre lo que sus claves piden: `stack`, aprobaciones…). En el mismo proceso: el tope de
   // pedidos por minuto del sitio cuenta por dirección: cada sección pide desde la suya, así el recorrido no depende de
-  // cuántas secciones haya
-  const h = await arrancarDemo();
+  // cuántas secciones haya (detrás de su intermediario, la propia máquina: la dirección es la de X-Forwarded-For)
+  const h = await arrancarDemo({ SITE_TRUST_PROXY: '127.0.0.1' });
   try {
     const token = /<meta name="site-token" content="([^"]+)"/.exec((await h.pedir('/configuracion')).texto)[1];
     let direccion = '';
@@ -963,7 +967,8 @@ test('2.76-Demo_Proponer_MuestraYNoEscribe', async () => {
 });
 
 test('2.76-Demo_SitioPublico_NoindexYTope', async () => {
-  const h = await arrancarDemo();
+  // detrás de su intermediario (acá, la propia máquina): la dirección es la que él agrega al final
+  const h = await arrancarDemo({ SITE_TRUST_PROXY: '127.0.0.1' });
   try {
     for (const ruta of ['/', '/livez', '/api/inicio', '/no-existe', '/static/site.css', '/licencia', '/auth/login']) {
       const r = await h.pedir(ruta);
@@ -1007,6 +1012,22 @@ test('2.76-Demo_SitioPublico_NoindexYTope', async () => {
   assert.deepStrictEqual([tope(req).ok, tope(req).ok, tope(req).ok, tope(req).ok], [true, true, true, false]);
   t += 60001;
   assert.strictEqual(tope(req).ok, true);
+});
+
+// 🔴 El caso (riesgo 42): el demo creía siempre la dirección de X-Forwarded-For. Levantado sin intermediario (en una
+// máquina, con el puerto abierto), quien inventaba una dirección distinta en cada pedido salteaba el tope de 60 por
+// minuto. Ahora la cree sólo con SITE_TRUST_PROXY, como el sitio real.
+test('Demo_SinIntermediario_LaDireccionInventadaNoSacaElTope', async () => {
+  const h = await arrancarDemo();
+  try {
+    const estados = [];
+    for (let i = 0; i < 61; i++) estados.push((await h.pedir('/api/inicio', { headers: { 'x-forwarded-for': `198.51.100.${i}` } })).status);
+    assert.deepStrictEqual([estados.filter((s) => s === 200).length, estados[60]], [60, 429], 'cuenta la dirección del socket, no la inventada');
+  } finally { await h.cerrar(); }
+  const { crearTope } = DEMO();
+  const tope = crearTope({ ahora: () => 1000, porMinuto: 2 });
+  const de = (xff) => ({ headers: { 'x-forwarded-for': xff }, socket: { remoteAddress: '203.0.113.5' } });
+  assert.deepStrictEqual([tope(de('1.1.1.1')).ok, tope(de('2.2.2.2')).ok, tope(de('3.3.3.3')).ok], [true, true, false]);
 });
 
 test('2.76-Demo_HiloColgado_SaleRojoYSeTermina', async () => {

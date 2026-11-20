@@ -32,12 +32,31 @@ function estadosDe(content) {
   // el primer `status:` es el que leen marker.js y el freno del commit; uno repetido queda anotado (`estados`)
   const out = { story: null, status: '', estados: [], tandas: new Map() };
   let enPipelines = false;
+  // la forma de mapa (`A-backend:` y debajo `status:`): la tanda es la clave
   let tanda = null;
   let sangriaTanda = null;
+  // 🔴 la forma de lista (`- name: A1` y debajo `status:`, la que manda la guía): cada `-` abre una tanda, y su nombre
+  // es el VALOR de `name:` (o `id:`), en cualquier orden respecto de `status:`; sin nombre, su lugar en la lista. Tomar
+  // la clave `name` como nombre ponía todas las tandas bajo el mismo y cada una pisaba a la anterior: el cambio a mano
+  // de cualquiera que no fuera la última no lo veía nadie
+  let item = null;
+  let items = 0;
+  // dos tandas con el mismo nombre: si alguna dice done, esa clave queda en done
+  const anotar = (nombre, estado) => { if (out.tandas.get(nombre) !== 'done') out.tandas.set(nombre, estado); };
+  const cerrarItem = () => {
+    if (item && item.estado !== null) anotar(item.nombre !== null ? item.nombre : `#${item.n}`, item.estado);
+    item = null;
+  };
+  const enItem = (clave, v) => {
+    if ((clave === 'name' || clave === 'id') && item.nombre === null) item.nombre = crudo(v) || null;
+    // un `status:` repetido en la misma tanda: si alguno dice done, cuenta done
+    else if (clave === 'status') item.estado = item.estado === 'done' ? 'done' : valor(v);
+  };
   for (const renglon of m[1].split('\n')) {
     // la clave con o sin comillas y con espacios antes de los dos puntos (`status : done`, `"status": done`)
     const tope = /^(["']?)([A-Za-z_][\w-]*)\1\s*:\s*(.*)$/.exec(renglon);
     if (tope) {
+      cerrarItem();
       enPipelines = tope[2] === 'pipelines';
       tanda = null; sangriaTanda = null;
       // el id con sus mayúsculas: el patrón de ids del repo las distingue
@@ -46,11 +65,30 @@ function estadosDe(content) {
       continue;
     }
     if (!enPipelines) continue;
-    const anidado = /^(\s+)-?\s*(["']?)([\w.-]+)\2\s*:\s*(.*)$/.exec(renglon);
+    const guion = /^(\s*)-(?:\s+(["']?)([\w.-]+)\2\s*:\s*(.*))?\s*$/.exec(renglon);
+    if (guion) {
+      cerrarItem();
+      item = { sangria: guion[1].length, nombre: null, estado: null, n: items++ };
+      if (guion[3]) enItem(guion[3], guion[4]);
+      continue;
+    }
+    const anidado = /^(\s+)(["']?)([\w.-]+)\2\s*:\s*(.*)$/.exec(renglon);
     if (!anidado) continue;
     const sangria = anidado[1].length;
+    if (item && sangria > item.sangria) { enItem(anidado[3], anidado[4]); continue; }
+    cerrarItem();
     if (anidado[3] === 'status' && tanda !== null && sangria > sangriaTanda) { out.tandas.set(tanda, valor(anidado[4])); continue; }
     if (sangriaTanda === null || sangria <= sangriaTanda) { tanda = anidado[3]; sangriaTanda = sangria; }
+  }
+  cerrarItem();
+  // 🔴 Lo que ve el lector del commit (story-checks.js `parsePipelinesBlock`) también cuenta: una tanda que él lee en
+  // done (una sangría distinta, tabs, `-name:` sin espacio) tiene que verla también este freno. Si los dos difieren,
+  // gana done: nunca dejan pasar por no leer lo mismo
+  let delCommit = [];
+  try { delCommit = require('./story-checks.js').parsePipelinesBlock(texto) || []; } catch (_) { delCommit = []; }
+  for (const t of delCommit) {
+    const estado = valor(t && t.status);
+    if (t && t.name && estado) anotar(String(t.name), estado);
   }
   return out;
 }

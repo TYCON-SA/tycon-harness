@@ -771,13 +771,14 @@ function cuentaDelCarril(adhoc, { repos = [], sinSeguir = false, medida } = {}) 
 /**
  * La huella del carril: el sha256 del contenido de sus archivos de código y de sus archivos de riesgo alto (una
  * migración, `.tycon/production.json`, un pipeline), en cada repo del carril. Con git caído empieza con `incompleta:` y
- * no vale como constancia: se midió con menos archivos. `medida`: la de esta vuelta (sin ella, mide).
+ * no vale como constancia: se midió con menos archivos. `medida`: la de esta vuelta (sin ella, mide). `repo`: sólo la
+ * de ese repo del carril (las pruebas de un repo, `adhoc test --repo`).
  */
-function huellaDelCarril(adhoc, medida) {
+function huellaDelCarril(adhoc, medida, { repo = null } = {}) {
   const { isCodeFile } = require('./story-gate.js');
   const riskPaths = require('./risk-paths.js');
   const m = medida || module.exports.medirLoPropio(adhoc);
-  const delCarril = reposDelCarril(adhoc);
+  const delCarril = reposDelCarril(adhoc).filter((r) => !repo || mismoRepo(r, repo));
   const porRepo = rutasDe(m, adhoc, { como: 'todo', repos: delCarril });
   const h = crypto.createHash('sha256');
   for (const repo of Object.keys(porRepo).sort()) {
@@ -793,8 +794,14 @@ function huellaDelCarril(adhoc, medida) {
   return `${m.fallas.length ? 'incompleta:' : ''}${h.digest('hex')}`;
 }
 
+/** ¿Dos raíces son el mismo repo? Por su ruta real. */
+function mismoRepo(a, b) {
+  const r = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+  return r(a) === r(b);
+}
+
 /** ¿La huella sirve para una constancia? Una incompleta, no. */
 const huellaCompleta = (h) => typeof h === 'string' && !h.startsWith('incompleta:');
 
 module.exports = { traerBase, conBase, conBasesAlDia, mismoOrigen, formaDeLaRemota, repoConoce, medirLoPropio, rutasDe, reposQueSeMiden, marcaSinSustento,
-  anotarGuardadoDelCarril, puntaConConstancia, reposDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, raizDe, ubicar, sumaAlTope, RAMA };
+  anotarGuardadoDelCarril, puntaConConstancia, reposDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, mismoRepo, raizDe, ubicar, sumaAlTope, RAMA };

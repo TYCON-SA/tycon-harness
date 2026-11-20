@@ -90,6 +90,26 @@ test('adhoc-sensitive: sin la lista de lo sensible, el carril delegado se niega 
   assert.equal(gate.computeStoryGate({ ...BASE, adhoc: { ...delegado, via: 'terminal' }, sensitiveCheck: sinLista }).action, 'pass');
 });
 
+// El mensaje del bloqueo sensible dice el motivo, no «código sin carril»: el carril está abierto, lo que falta es la firma.
+// 🔴 mutación: sin la rama `adhoc-sensitive` en blockMessage → cae en «CÓDIGO SIN CARRIL» y manda a abrir un carril
+// que ya está abierto.
+test('adhoc-sensitive: el mensaje del bloqueo dice el motivo sensible, no «código sin carril»', () => {
+  const delegado = { reason: 'x fix', maxFiles: 5, files: [], via: 'delegacion' };
+  const filePath = `${REPO}/scripts/lib/signatures.js`;
+  const r = gate.computeStoryGate({ ...BASE, filePath, adhoc: delegado });
+  assert.equal(r.kind, 'adhoc-sensitive');
+  const msg = gate.blockMessage(r, { filePath, repoRoot: REPO, via: 'Edit' });
+  assert.doesNotMatch(msg, /CÓDIGO SIN CARRIL/, msg);
+  assert.ok(msg.includes(r.reason), `el mensaje lleva el motivo: ${msg}`);
+  assert.match(msg, /lo firma una persona/, msg);
+  assert.match(msg, /detectado en Edit/, msg);
+  // sin la lista de lo sensible no dice que el archivo es sensible: dice que falta la lista
+  const sinLista = gate.computeStoryGate({ ...BASE, adhoc: delegado, sensitiveCheck: () => { throw new Error('sin lista'); } });
+  const m2 = gate.blockMessage(sinLista, { filePath: `${REPO}/src/Foo.cs`, repoRoot: REPO });
+  assert.doesNotMatch(m2, /ARCHIVO SENSIBLE|CÓDIGO SIN CARRIL/, m2);
+  assert.match(m2, /FALTA LA LISTA DE LO SENSIBLE/, m2);
+});
+
 // El cupo de un arreglo rápido delegado: hasta 5 archivos, pida lo que pida.
 // 🔴 mutación: el tope de antes (8) → un pedido de 8 queda en 8.
 test('cupoDelegado: el arreglo rápido delegado queda en 5 archivos como mucho', () => {
