@@ -146,6 +146,8 @@ const DIRECT_RUNS_ALL = /^(pipelines\/|scripts\/setup\/|\.githooks\/)|^\.github\
 // la validación del pedido, el pre-commit que exige la política de rama, las plantillas, uno nuevo) corre todo.
 const DIRECT_PIPELINE_OWN_SUITES = /^pipelines\/(operations\/|azure-pipelines(-(banco|dependencias|indices|public-leak-check|tablero|vigilante|windows))?\.yml$)/;
 const runsAllDirect = (f) => DIRECT_RUNS_ALL.test(f) && !DIRECT_PIPELINE_OWN_SUITES.test(f);
+// el código de una suite que nombra la carpeta `pipelines` (`pipelines/…` o `'pipelines'` armado con path.join)
+const WALKS_PIPELINES = /(^|[^A-Za-z0-9_-])pipelines(\/|['"`])/;
 
 /**
  * ¿El código de la suite (`text`) nombra el archivo `f`? Su ruta, su nombre con extensión, o su nombre sin extensión si
@@ -666,9 +668,14 @@ function main(argv) {
       }
       const t = depsSel.texts.get(rel);
       if (t === null || files.some((f) => names(t, f))) return false;
+      // un YAML de la lista de los que siguen la regla común: corre también la suite que recorre la carpeta `pipelines`
+      // sin nombrar cada archivo (la que arma los nombres por partes o lee la carpeta entera, como la que fija que
+      // ningún pipeline sube a main desde otra rama)
+      if (pipelineYaml && WALKS_PIPELINES.test(t)) return false;
     }
     return true;
   }
+  const pipelineYaml = depsSel && depsSel.direct && depsSel.files.some((f) => DIRECT_PIPELINE_OWN_SUITES.test(f));
   // Las pesadas que miran .md (`reads_md`) se eligen con la lista ENTERA (`--changed-with-docs`); las demás, y todo lo
   // que no es pesada, con `--changed`, que en la 170 es la lista de código (los .md no eligen suites).
   // Pedida y no legible: las que miran .md no saben qué .md cambiaron, y corren (sin lista, como en «no pude mirar»).
