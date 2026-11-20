@@ -206,10 +206,11 @@ test('T5 CopiaDentroDeUnBloque_SeVe — for, if, while, until, paréntesis y lla
 test('T6 LoQueEncontroElPase_Frena — operadores, condición del while, done falso, asignación en la condición', () => {
   const { scratch, freno } = corral();
   const casos = [
-    `cat > ${scratch}/\${RANDOM:+..}/producto/src/b.js`,
-    `cat > ${scratch}/\${LINENO:+..}/producto/src/b.js`,
-    `cat > ${scratch}/\${RANDOM/#*/..}/producto/src/b.js`,
-    `X=../producto/src; D=X; cat > ${scratch}/\${!D}/b.js`,
+    // el `${…}` del shell va en un texto entre comillas simples, para que JavaScript no lo interpole
+    `cat > ${scratch}/` + '${RANDOM:+..}/producto/src/b.js',
+    `cat > ${scratch}/` + '${LINENO:+..}/producto/src/b.js',
+    `cat > ${scratch}/` + '${RANDOM/#*/..}/producto/src/b.js',
+    `X=../producto/src; D=X; cat > ${scratch}/` + '${!D}/b.js',
     `D=${scratch}; while cp src/a.js $D/b.js; do D=src; done`,
     `D=${scratch}; until ! cp src/a.js $D/b.js; do D=src; done`,
     `D=${scratch}; while cp src/a.js $D/b.js && D=src; do :; done`,
