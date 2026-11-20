@@ -6566,29 +6566,36 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
   if (newStatus === 'done') {
     let fin = start + 1;
     while (fin < lines.length && !/^\S/.test(lines[fin])) fin++;
-    const items = (v, k) => v.replace(/^\[|\].*$/g, '').split(',').map((x) => x.replace(/["'\s]/g, '')).filter(Boolean)
-      .map((x) => (k === 'tests' ? x : Number(x))).filter((x) => k === 'tests' || Number.isInteger(x));
-    const render = (xs, k) => `[${xs.map((x) => (k === 'tests' ? `"${x}"` : String(x))).join(', ')}]`;
+    // los ids van tal cual: un número entero sin comillas, cualquier otro (`"2b"`, `"S"`, una prueba) entre comillas
+    const sinComentario = (v) => v.replace(/(^|\s+)#.*$/, '').trim();
+    const items = (v) => v.replace(/^\[/, '').replace(/\].*$/, '').split(',').map((x) => x.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+    const render = (xs, k) => `[${xs.map((x) => (k !== 'tests' && /^\d+$/.test(x) ? x : `"${x}"`)).join(', ')}]`;
+    const enRenglon = (v) => /^\[[^\]]*\]$/.test(v);   // una lista entera en el renglón; otra forma se pasa a mano
+    const vacio = (v) => /^(null|~|""|''|\[\s*\])$/.test(v);
     for (const t of [...chosen].sort((a, b) => b.at - a.at)) {
       const idx = batches.indexOf(t);
-      const hasta = idx + 1 < batches.length ? batches[idx + 1].at : fin;
+      // el final de la tanda baja con cada renglón que se saca: si no, la búsqueda de la clave siguiente entra en la tanda de abajo
+      let hasta = idx + 1 < batches.length ? batches[idx + 1].at : fin;
       const dichos = [];
+      const aMano = (k, por) => console.error(`marker.js update-pipeline-status: la tanda ${t.name} tiene \`${k}_pending\` ${por}: no la toco. Pasá esos a \`${k}\` a mano.`);
       for (const k of ['acs', 'tasks', 'tests']) {
         const enBloque = (re) => { for (let i = t.at + 1; i < hasta; i++) if (re.test(lines[i])) return i; return -1; };
         const iPend = enBloque(new RegExp(`^\\s+${k}_pending\\s*:`));
         if (iPend < 0) continue;
         const pm = lines[iPend].match(new RegExp(`^(\\s+)${k}_pending\\s*:\\s*(.*?)\\s*$`));
-        if (!pm[2].startsWith('[')) {
-          if (pm[2].replace(/#.*$/, '').trim() === '') console.error(`marker.js update-pipeline-status: la tanda ${t.name} tiene \`${k}_pending\` como lista de renglones: no la toco. Pasá esos a \`${k}\` a mano.`);
-          continue;
-        }
-        const pend = items(pm[2], k);
-        const iBase = enBloque(new RegExp(`^\\s+${k}\\s*:\\s*\\[`));
+        const v = sinComentario(pm[2]);
+        if (vacio(v)) { lines.splice(iPend, 1); hasta--; continue; }
+        if (!v) { aMano(k, 'como lista de renglones'); continue; }
+        if (!enRenglon(v)) { aMano(k, 'en una forma que no leo de un renglón'); continue; }
+        const pend = items(v);
+        const iBase = enBloque(new RegExp(`^\\s+${k}\\s*:`));
         if (iBase >= 0) {
           const bm = lines[iBase].match(new RegExp(`^(\\s+${k}\\s*:\\s*)(\\[[^\\]]*\\])(.*)$`));
-          const base = items(bm[2], k);
+          if (!bm) { aMano(k, `y su \`${k}\` no es una lista en el renglón`); continue; }
+          const base = items(bm[2]);
           lines[iBase] = `${bm[1]}${render([...base, ...pend.filter((x) => !base.includes(x))], k)}${bm[3]}`;
           lines.splice(iPend, 1);
+          hasta--;
         } else {
           lines[iPend] = `${pm[1]}${k}: ${render(pend, k)}`;
         }

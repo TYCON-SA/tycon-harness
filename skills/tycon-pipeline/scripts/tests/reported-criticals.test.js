@@ -974,4 +974,9 @@ test('AdvisorRuns_RegistryProtected — el freno de escritura no deja tocar el r
   const rel = `cd ${l.state} && rm -rf advisor-runs`;
   const r3 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: rel } }), env: l.env, encoding: 'utf8', cwd: l.repo });
   assert.ok(r3.status === 2 || /"deny"|"block"/.test(out(r3)), `no frenó: ${rel}`);
+  // un `pipeline.js` que no corre node no es el subcomando: `rm pipeline.js advisor-runs` borra la carpeta
+  for (const cmd of [`cd ${l.state} && rm -rf pipeline.js advisor-runs`, `cd ${l.state} && mv ./pipeline.js advisor-runs /tmp/x`]) {
+    const r4 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: cmd } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+    assert.ok(r4.status === 2 || /"deny"|"block"/.test(out(r4)), `no frenó: ${cmd}`);
+  }
 });

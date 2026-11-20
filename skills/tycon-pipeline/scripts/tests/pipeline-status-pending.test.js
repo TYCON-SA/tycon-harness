@@ -56,3 +56,36 @@ test('T4 PipelineStatusDone_BlockListPending_SaysIt: una lista de renglones no s
   assert.match(fm(story), /status: done\n {4}tasks_pending:\n {6}- 3/);
   assert.match(`${r.stdout}${r.stderr}`, /tasks_pending.*a mano/);
 });
+
+test('T5 PipelineStatusDone_KeepsNonIntegerIds: un id como "2b" o "S" pasa tal cual, y los que ya estaban no se pierden', () => {
+  const { story, home } = lab(['  - name: A', '    status: blocked', '    acs: [1, "1b"]', '    acs_pending: [2, "2b"]', '    tasks_pending: ["S", 0]']);
+  execFileSync(process.execPath, [MARKER, 'update-pipeline-status', story, 'A', 'done'], env(home));
+  const f = fm(story);
+  assert.match(f, /acs: \[1, "1b", 2, "2b"\]/, f);
+  assert.match(f, /tasks: \["S", 0\]/, f);
+});
+
+test('T6 PipelineStatusDone_StaysInItsBatch: sacar renglones no hace entrar la búsqueda en la tanda de abajo', () => {
+  const { story, home } = lab(['  - name: A', '    status: in-progress', '    acs: [1]', '    acs_pending: [2]', '    tasks: [1]', '    tasks_pending: [2]',
+    '    tests: ["T1"]', '  - name: B', '    tests_pending: ["T9"]', '    status: blocked']);
+  execFileSync(process.execPath, [MARKER, 'update-pipeline-status', story, 'A', 'done'], env(home));
+  const f = fm(story);
+  assert.match(f, /- name: B\n {4}tests_pending: \["T9"\]/, f);
+  assert.match(f, /tests: \["T1"\]\n {2}- name: B/, f);
+});
+
+test('T7 PipelineStatusDone_OddShapes_LeftForAHuman: una base que no es lista, o una lista partida, se dicen y no se tocan', () => {
+  const a = lab(['  - name: A', '    status: in-progress', '    acs: 2', '    acs_pending: [3]']);
+  const r = spawnSync(process.execPath, [MARKER, 'update-pipeline-status', a.story, 'A', 'done'], env(a.home));
+  assert.match(fm(a.story), /acs: 2\n {4}acs_pending: \[3\]/);
+  assert.match(`${r.stdout}${r.stderr}`, /acs_pending.*a mano/);
+  const b = lab(['  - name: A', '    status: in-progress', '    acs_pending: [', '      2, 3]']);
+  spawnSync(process.execPath, [MARKER, 'update-pipeline-status', b.story, 'A', 'done'], env(b.home));
+  assert.match(fm(b.story), /acs_pending: \[\n {6}2, 3\]/);
+});
+
+test('T8 PipelineStatusDone_EmptyPending_Removed: un pendiente vacío (null, ~, []) se saca', () => {
+  const { story, home } = lab(['  - name: A', '    status: in-progress', '    acs: [1]', '    acs_pending: null', '    tests_pending: []']);
+  execFileSync(process.execPath, [MARKER, 'update-pipeline-status', story, 'A', 'done'], env(home));
+  assert.doesNotMatch(fm(story), /_pending/);
+});

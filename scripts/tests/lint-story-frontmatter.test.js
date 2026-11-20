@@ -696,3 +696,47 @@ test('LintFrontmatter_DoneBatchWithPending_BlockListsDottedNamesAndMoves', () =>
   assert.equal(r3.code, 0, r3.out);
   assert.match(r3.out, /que ya lo traían[\s\S]*7\.1-core \(1\)/);
 });
+
+// Las otras formas del bloque: lista sin sangría, una entrada cuya primera clave no es `name`, una lista partida en dos
+// renglones y un pendiente vacío (`null`); y una historia con acentos en el nombre, movida en el commit.
+test('LintFrontmatter_DoneBatchWithPending_OtherShapesAndAccentedMove', () => {
+  const root = mkRepo('lint-done-pending3-');
+  const git = (...a) => execFileSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', ...a], { cwd: root, stdio: 'ignore' });
+  const cabeza = ['story: "9.5"', 'epic: 9', 'status: in-progress', 'pipelines:'];
+  const caso = (rel, cuerpo) => run([story(root, rel, [...cabeza, ...cuerpo])], root);
+  const sinSangria = caso('specs/story-9.5-a.md', ['- name: A', '  files:', '    - src/a.js', '  status: done', '  acs_pending:', '    - 2']);
+  assert.equal(sinSangria.code, 1, sinSangria.out);
+  assert.match(sinSangria.out, /A \(1\)/);
+  assert.doesNotMatch(sinSangria.out, /files \(/);
+  const statusPrimero = caso('specs/story-9.5-b.md', ['  - status: done', '    name: B', '    acs_pending: [2]']);
+  assert.match(statusPrimero.out, /B \(1\)/);
+  const partida = caso('specs/story-9.5-c.md', ['  - name: C', '    status: done', '    acs_pending: [', '      2, 3]']);
+  assert.match(partida.out, /C \(2\)/);
+  const nulo = caso('specs/story-9.5-d.md', ['  - name: D', '    status: done', '    acs_pending: null', '    tests_pending: ~']);
+  assert.equal(nulo.code, 0, nulo.out);
+  for (const f of ['a', 'b', 'c', 'd']) fs.rmSync(path.join(root, `specs/story-9.5-${f}.md`));
+  // movida con un nombre con acentos, sin cambios: no introduce nada
+  story(root, 'specs/story-9.6-año.md', ['story: "9.6"', 'epic: 9', 'status: in-progress', 'pipelines:', '  - name: A', '    status: done', '    acs_pending: [2]']);
+  git('add', '-A'); git('commit', '-qm', 'a');
+  git('mv', 'specs/story-9.6-año.md', 'specs/story-9.6-añadido.md');
+  const movida = run([path.join(root, 'specs/story-9.6-añadido.md')], root);
+  assert.equal(movida.code, 0, movida.out);
+});
+
+// Dentro de un commit hecho desde una copia de trabajo (worktree), git deja GIT_DIR y GIT_INDEX_FILE en el entorno, y le
+// ganan a `-C`: sin sacarlas, la versión anterior no se encontraba y una tanda vieja se frenaba como nueva.
+test('LintFrontmatter_DoneBatchWithPending_InsideAWorktreeCommit_OldStaysOld', () => {
+  const root = fs.realpathSync(mkRepo('lint-done-pending-wt-'));
+  const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', ...a], { cwd, stdio: 'ignore' });
+  story(root, 'specs/story-9.7-a.md', ['story: "9.7"', 'epic: 9', 'status: in-progress', 'pipelines:', '  - name: A', '    status: done', '    acs_pending: [2]']);
+  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'a'); git(root, 'branch', '-M', 'main');
+  const wt = path.join(path.dirname(root), `${path.basename(root)}-wt`);
+  git(root, 'worktree', 'add', '-q', '-b', 'w2', wt, 'main');
+  const f = path.join(wt, 'specs/story-9.7-a.md');
+  fs.appendFileSync(f, '\notro renglón del cuerpo\n');
+  git(wt, 'add', '-A');
+  const gitDir = execFileSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: wt, encoding: 'utf8' }).trim();
+  const r = runEnv([f], wt, { GIT_DIR: gitDir, GIT_INDEX_FILE: path.join(gitDir, 'index') });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /que ya lo traían[\s\S]*A \(1\)/);
+});

@@ -757,25 +757,25 @@ const dentroDe = (dir, p) => p === dir || p.startsWith(dir.endsWith(path.sep) ? 
 
 /**
  * El juez de los laboratorios del camino corto: `(raiz) → bool`, si un repo es un laboratorio que no suma al tope. Lo es
- * un repo en una carpeta temporal del sistema, sin `origin` (un `git init` de prueba; un clon o un worktree de un repo de
- * verdad lo tienen, y suman), que no es un repo anotado del carril, cuando el camino corto vive fuera de los temporales
- * (su carpeta y sus repos anotados). Si vive en un temporal, o no se sabe dónde vive, nada es laboratorio. Un git que no
- * contesta sobre el `origin`: suma. `temporales`: otra lista, para las pruebas.
+ * un `git init` de prueba en una carpeta temporal del sistema: sin ningún remoto y con su propia carpeta `.git` (un clon,
+ * con el remoto que sea, y un worktree, que tiene un archivo `.git`, suman), cuando la carpeta del camino corto (`cwd`)
+ * vive fuera de los temporales. Los repos anotados del carril no cuentan para decidirlo: el freno de edición anota ahí el
+ * repo de cada archivo tocado, laboratorios incluidos. Si el camino corto vive en un temporal, o no se sabe dónde vive,
+ * nada es laboratorio. Un git que no contesta: suma. `temporales`: otra lista, para las pruebas.
  */
 function juezDeLaboratorios(adhoc, { temporales = null } = {}) {
   const tmps = temporales || temporalesDelSistema();
   const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
-  const propios = [adhoc && adhoc.cwd, ...Object.keys((adhoc && adhoc.bases) || {})].filter(Boolean).map(real);
-  if (!propios.length || propios.some((p) => !p || tmps.some((t) => dentroDe(t, p)))) return () => false;
-  const anotados = new Set(propios);
+  const carril = adhoc && adhoc.cwd ? real(adhoc.cwd) : null;
+  if (!carril || tmps.some((t) => dentroDe(t, carril))) return () => false;
   const juzgados = new Map();
   return (raiz) => {
     const r = real(raiz);
-    if (!r || anotados.has(r) || !tmps.some((t) => dentroDe(t, r))) return false;
+    if (!r || r === carril || !tmps.some((t) => dentroDe(t, r))) return false;
     if (!juzgados.has(r)) {
-      let sinOrigen = false;
-      try { sinOrigen = origenDe(r) === null; } catch (_) { sinOrigen = false; }
-      juzgados.set(r, sinOrigen);
+      let lab = false;
+      try { lab = fs.statSync(path.join(r, '.git')).isDirectory() && git(r, ['remote']).trim() === ''; } catch (_) { lab = false; }
+      juzgados.set(r, lab);
     }
     return juzgados.get(r);
   };

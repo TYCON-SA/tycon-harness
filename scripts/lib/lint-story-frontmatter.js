@@ -172,8 +172,10 @@ let riskPaths;
 try { riskPaths = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'risk-paths.js')); } catch { riskPaths = null; }
 /**
  * Las tandas `done` que todavía declaran criterios, tareas o pruebas pendientes: `[{ name, cuantos }]`. Lector propio y
- * chico: el nombre entero (`7.1-core` no es `7`), los pendientes en el renglón (`[2, 3]`, sin el comentario) o como lista
- * de renglones debajo de la clave.
+ * chico, para las dos formas del bloque: lista (cada `- clave:` a la sangría de la primera abre una tanda, aunque su
+ * primera clave no sea `name`) o mapa (`  nombre:` sin valor, sólo si no hay lista). El nombre va entero (`7.1-core` no es
+ * `7`). Los pendientes se cuentan en el renglón (`[2, "2b"]`, sin el comentario; `null`, `~`, `""` y `[]` no son nada), en
+ * una lista partida en varios renglones, o como lista de renglones debajo de la clave.
  */
 function tandasDoneConPendientes(content) {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content || '');
@@ -182,36 +184,46 @@ function tandasDoneConPendientes(content) {
   const start = lines.findIndex((l) => /^pipelines\s*:\s*(#.*)?$/.test(l));
   if (start < 0) return [];
   const sinComentario = (v) => v.replace(/(^|\s+)#.*$/, '').trim();
+  const contar = (v) => v.replace(/^\[/, '').replace(/\].*$/, '').split(',').map((x) => x.trim()).filter(Boolean).length;
   const tandas = [];
   let cur = null;
-  let lista = null; // la clave `*_pending:` sin valor cuyos renglones `- x` se están contando
+  let entrada = null; // la sangría de las entradas de la forma lista
+  let lista = null;   // la sangría mínima de los `- x` de una clave `*_pending:` sin valor
+  let partida = false; // una lista `[` que sigue en los renglones de abajo
   for (let i = start + 1; i < lines.length; i++) {
     const l = lines[i];
     if (/^\s*(#.*)?$/.test(l)) continue;
     if (/^\S/.test(l) && !/^-\s/.test(l)) break;
     const indent = l.length - l.trimStart().length;
-    const nm = /^\s*-\s*name\s*:\s*(.*)$/.exec(l) || (indent === 2 && /^\s{2}([^\s:#][^:#]*?)\s*:\s*(#.*)?$/.exec(l));
-    if (nm) {
-      cur = { name: sinComentario(nm[1]).replace(/^["']|["']$/g, ''), status: null, cuantos: 0 };
-      tandas.push(cur); lista = null; continue;
-    }
-    if (!cur) continue;
-    if (lista) {
-      const it = /^(\s*)-\s*\S/.exec(l);
-      if (it && it[1].length >= lista) { cur.cuantos++; continue; }
+    if (partida) { cur.cuantos += contar(`[${sinComentario(l)}`); if (/\]/.test(l)) partida = false; continue; }
+    if (lista !== null) {
+      if (/^\s*-\s*\S/.test(l) && indent >= lista && !(entrada !== null && indent === entrada)) { cur.cuantos++; continue; }
       lista = null;
     }
-    const st = /^\s+status\s*:\s*["']?([\w-]+)/.exec(l);
+    const item = /^(\s*)-\s+(.*)$/.exec(l);
+    if (item && (entrada === null || indent === entrada) && /^[\w-]+\s*:/.test(item[2])) {
+      if (entrada === null) entrada = indent;
+      cur = { name: null, status: null, cuantos: 0 };
+      tandas.push(cur);
+    }
+    const resto = item && cur && indent === entrada ? `${' '.repeat(indent + 2)}${item[2]}` : l;
+    const mapa = entrada === null && indent === 2 && /^\s{2}([^\s:#-][^:#]*?)\s*:\s*(#.*)?$/.exec(l);
+    if (mapa) { cur = { name: mapa[1], status: null, cuantos: 0 }; tandas.push(cur); continue; }
+    if (!cur) continue;
+    const nm = /^\s+name\s*:\s*(.*)$/.exec(resto);
+    if (nm) { cur.name = sinComentario(nm[1]).replace(/^["']|["']$/g, ''); continue; }
+    const st = /^\s+status\s*:\s*["']?([\w-]+)/.exec(resto);
     if (st) { cur.status = st[1]; continue; }
-    const pend = /^(\s+)(?:acs|tasks|tests)_pending\s*:\s*(.*)$/.exec(l);
+    const pend = /^(\s+)(?:acs|tasks|tests)_pending\s*:\s*(.*)$/.exec(resto);
     if (pend) {
       const v = sinComentario(pend[2]);
       if (!v) { lista = pend[1].length; continue; }
-      const dentro = v.replace(/^\[/, '').replace(/\].*$/, '');
-      cur.cuantos += dentro.split(',').map((x) => x.trim()).filter(Boolean).length;
+      if (/^(null|~|""|'')$/.test(v)) continue;
+      if (v.startsWith('[') && !v.includes(']')) partida = true;
+      cur.cuantos += v.startsWith('[') ? contar(v) : 1;
     }
   }
-  return tandas.filter((t) => t.status === 'done' && t.cuantos > 0).map(({ name, cuantos }) => ({ name, cuantos }));
+  return tandas.filter((t) => t.status === 'done' && t.cuantos > 0).map(({ name, cuantos }) => ({ name: name || '(sin nombre)', cuantos }));
 }
 /** Cuántas tandas `done` con pendientes hay de cada nombre. */
 function porNombre(tandas) {
@@ -225,17 +237,19 @@ function porNombre(tandas) {
  * `null` si no se puede saber: entonces nada cuenta como nuevo (un freno que no puede decidir no frena).
  */
 function versionesAnteriores(abs) {
-  const dir = path.dirname(abs);
-  const git = (args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+  // dentro de un commit git deja GIT_DIR y compañía en el entorno, y le ganan a -C: se sacan, como en inRemoteMain
+  const opts = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, env: sinGitDelPadre(), windowsHide: true };
   let raiz;
-  try { raiz = fs.realpathSync(git(['rev-parse', '--show-toplevel']).trim()); } catch { return null; }
-  const enRaiz = (args) => execFileSync('git', ['-C', raiz, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+  try { raiz = fs.realpathSync(execFileSync('git', ['-C', path.dirname(abs), 'rev-parse', '--show-toplevel'], opts).trim()); } catch { return null; }
+  const git = (args) => execFileSync('git', ['-C', raiz, '-c', 'core.quotepath=false', ...args], opts);
   let rel = path.relative(raiz, fs.realpathSync(abs)).split(path.sep).join('/');
   try {
-    // movida en este commit: la versión anterior vive en la ruta de origen
-    const ren = enRaiz(['diff', '--cached', '-M', '--name-status', 'HEAD']).split('\n')
-      .map((x) => x.split('\t')).find((c) => /^R/.test(c[0] || '') && c[2] === rel);
-    if (ren) rel = ren[1];
+    // movida en este commit: la versión anterior vive en la ruta de origen (con -z, sin comillas en un nombre con acentos)
+    const campos = git(['diff', '--cached', '-z', '-M', '--name-status', 'HEAD']).split('\0');
+    for (let i = 0; i < campos.length;) {
+      const estado = campos[i++];
+      if (/^R/.test(estado)) { if (campos[i + 1] === rel) rel = campos[i]; i += 2; } else i++;
+    }
   } catch { /* sin HEAD (repo recién creado): la busca por su ruta y no la encuentra */ }
   const out = [];
   for (const rev of ['HEAD', 'MERGE_HEAD']) {
@@ -244,8 +258,8 @@ function versionesAnteriores(abs) {
     if (!existe) continue;
     // ls-tree vacío: la ruta no está en esa revisión (una respuesta); una falla de git es «no sé»
     try {
-      if (enRaiz(['ls-tree', rev, '--', rel]).trim() === '') continue;
-      out.push(enRaiz(['show', `${rev}:${rel}`]));
+      if (git(['ls-tree', rev, '--', rel]).trim() === '') continue;
+      out.push(git(['show', `${rev}:${rel}`]));
     } catch { return null; }
   }
   return out;
