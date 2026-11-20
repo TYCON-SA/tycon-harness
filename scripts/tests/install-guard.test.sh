@@ -197,7 +197,14 @@ RELOJ_K="$(grep -o 'TYCON_PROD_SHIM_TIMEOUT:-[0-9]*' "$SHIM" 2>/dev/null | head 
 if tope_alcanza "$TOPE_K" "$RELOJ_K" && ! tope_alcanza 10 7; then ok "T33k · el tope del hook (${TOPE_K} s) es al menos el doble del reloj del lanzador (${RELOJ_K} s)"
 else no "T33k · el tope del hook («${TOPE_K}» s) no llega al doble del reloj del lanzador («${RELOJ_K}» s)"; fi
 
-# T33q · la guía dice qué pasa cuando el freno no contesta a tiempo, y el límite que el arnés no puede cerrar.
+# T6 @story-8.308 @ac-6 @ac-8 · si el gancho de consola vence, muere o no arranca, el comando no corre. Los de arranque y
+# cierre de sesión no llevan la opción: una falla ahí no tiene que dejar a nadie sin sesión.
+SALIDA_F="$(node -e 'const t=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const v=(e)=>(t.hooks[e]||[]).flatMap((g)=>g.hooks||[]).map((h)=>h.onFailure||"-").join(","); console.log([v("PreToolUse"),v("SessionStart"),v("SessionEnd")].join(" "))' \
+  "$AQUI/scripts/production/managed-settings.tycon-production.json.template" 2>/dev/null)"
+if [ "$SALIDA_F" = "block - -" ]; then ok "T6 ManagedTemplate_ConsoleHookBlocksOnFailure · sólo el gancho de consola lleva onFailure"
+else no "T6 ManagedTemplate_ConsoleHookBlocksOnFailure · onFailure quedó así (consola, arranque, cierre): «${SALIDA_F}»"; fi
+
+# T33q · la guía dice qué pasa cuando el freno no contesta a tiempo, y hasta dónde llega el corte de Claude Code.
 GUIA_Q="$AQUI/guides/produccion-con-permiso.md"
 if grep -q "no contesta a tiempo" "$GUIA_Q" && grep -qi "frena" "$GUIA_Q" && grep -qi "reinstal" "$GUIA_Q" \
    && grep -q "30 s" "$GUIA_Q" && grep -q "Claude Code" "$GUIA_Q"; then ok "T33q · la guía dice qué pasa cuando el freno no contesta a tiempo y el límite de los 30 s"
