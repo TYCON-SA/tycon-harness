@@ -618,3 +618,21 @@ test('T8 ArchivoViejo_SeTapaAlLeer @story-8.210 @ac-8', () => {
     assert.doesNotMatch(visto, VALORES);
   }
 });
+
+// Una sesión trabada por el chequeo de borrados de Claude Code: el pedido anota la forma con el comando entero (el que se
+// muestra va cortado), y el aviso a la coordinadora dice qué lo causó.
+test('T35 OwnerWait_BorradoQueNoSePuedeRevisar_DiceLaForma', () => {
+  const t = toy();
+  const cmd = `cd /var/folders/zz/acme/T/tree && for s in a.test.sh; do ${'echo relleno; '.repeat(20)}H=$(mktemp -d "\${TMPDIR:-/tmp}/c.XXXXXX"); bash -c "$r $s"; rm -rf $H; done`;
+  SS.handle(ev(OTRA, { tool_name: 'Bash', tool_input: { command: cmd } }), {}, t.home);
+  assert.strictEqual(readState(t, OTRA).permission.forma, 'sustitucion');
+  claudeFile(t, OTRA, 'hora-mensajes', { status: 'waiting', waitingFor: 'permission prompt' });
+  const r = vuelta(t);
+  assert.strictEqual(r.lines.length, 1, JSON.stringify(r));
+  assert.match(r.lines[0], /Lo pidió el chequeo de borrados de Claude Code: el destino de un `rm` sale de un `\$\(\.\.\.\)`/);
+  // un permiso de otra cosa no dice ninguna forma
+  const u = toy();
+  claudeFile(u, OTRA, 'hora-mensajes', { status: 'waiting', waitingFor: 'permission prompt' });
+  frenada(u, OTRA, 'Write', '/r/specs/x.md', 0);
+  assert.doesNotMatch(vuelta(u).lines[0], /chequeo de borrados/);
+});

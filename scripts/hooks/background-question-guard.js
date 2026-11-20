@@ -8,6 +8,12 @@
  *           fondo, la abrió `coordination.js open` (su renglón en `<estado>/coordination/launched.json`) y hay una
  *           coordinadora confirmada por el dueño y viva que no es ella. El texto dice qué mandarle y a quién.
  *
+ * Claude: PreToolUse de Bash. En una sesión de fondo (su archivo de Claude Code dice `kind: bg`), niega el comando que
+ *           haría que Claude Code le pida permiso a una persona aun sin permisos (lib/bg-permission-shapes.js: un `rm`
+ *           cuyo destino no puede revisar) y dice cómo reescribirlo. Nadie contesta ese pedido de fondo, y mientras
+ *           espera la sesión no lee mensajes: la negación llega como respuesta y la sesión reintenta sola. Lo que hoy
+ *           pasa sin pedir, pasa; en una sesión que no es de fondo, nada cambia.
+ *
  * Toda pregunta, no sólo la de firma: una pregunta libre de la sesión también le llegaba a la persona por una pestaña que
  * no mira. ExitPlanMode no: es la salida del modo plan, y negarla dejaría a la sesión encerrada ahí.
  *
@@ -89,12 +95,43 @@ function coordinadoraDeLaLanzada({ home = os.homedir(), sid, env, arnes }) {
 }
 
 /**
+ * ¿La sesión `sid` es de fondo? Lo dice su archivo de Claude Code (`<casa>/.claude/sessions/<pid>.json`, `kind`). Sin
+ * archivo legible que la nombre, la variable que Claude Code deja en sus sesiones de fondo (`CLAUDE_JOB_DIR`).
+ */
+function esDeFondo({ home, sid, env }) {
+  const dir = path.join(home, '.claude', 'sessions');
+  let nombres = [];
+  try { nombres = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch (_) { nombres = []; }
+  for (const f of nombres) {
+    let s;
+    try { s = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (_) { continue; }
+    if (s && s.sessionId === sid) return /^(bg|background)$/.test(String(s.kind || ''));
+  }
+  return !!(env && env.CLAUDE_JOB_DIR);
+}
+
+/** Un comando de fondo que pediría permiso: `{ decision: 'deny', reason, forma }` o null. */
+function decidirBash(d, { home, env }) {
+  const cmd = d.tool_input && typeof d.tool_input.command === 'string' ? d.tool_input.command : '';
+  let forma = null;
+  try { forma = require('../lib/bg-permission-shapes.js').formaQuePidePermiso(cmd); } catch (e) {
+    logError(home, `no cargué lib/bg-permission-shapes.js (${(e && e.message) || e}): el comando pasó sin mirarlo`);
+    return null;
+  }
+  if (!forma) return null;
+  const sid = d.session_id;
+  if (!sid || !/^[\w-]+$/.test(String(sid)) || !esDeFondo({ home, sid, env })) return null;
+  return { decision: 'deny', forma: forma.forma, reason: require('../lib/bg-permission-shapes.js').textoDeLaNegativa(forma) };
+}
+
+/**
  * Lo que decide el freno: null (pasa) o `{ decision: 'deny', reason }`. `home`, `env` y `arnes` (el árbol con el perfil del equipo) se pasan en las pruebas.
  */
 function decidir(evento, { home = os.homedir(), env = process.env, arnes } = {}) {
   const d = evento && typeof evento === 'object' ? evento : {};
   if (env.TYCON_BG_QUESTION_GUARD === '0') return null;
   if (d.hook_event_name && d.hook_event_name !== 'PreToolUse') return null;
+  if (d.tool_name === 'Bash') return decidirBash(d, { home, env });
   if (!QUESTION_TOOLS.has(d.tool_name)) return null;
   const sid = d.session_id;
   if (!sid || !/^[\w-]+$/.test(String(sid))) return null;
@@ -105,7 +142,7 @@ function decidir(evento, { home = os.homedir(), env = process.env, arnes } = {})
   return { decision: 'deny', reason: textoDeLaNegativa({ nombre: c.name, sid: c.sid, firma, soloClick: firma ? esSoloClick(home, firma) : false, duda: c.duda }) };
 }
 
-module.exports = { QUESTION_TOOLS, decidir, textoDeLaNegativa, coordinadoraDeLaLanzada };
+module.exports = { QUESTION_TOOLS, decidir, textoDeLaNegativa, coordinadoraDeLaLanzada, esDeFondo };
 
 if (require.main === module) {
   if (process.env.TYCON_BG_QUESTION_GUARD === '0') process.exit(0);
