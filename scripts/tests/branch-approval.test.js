@@ -114,6 +114,47 @@ test('Regla_VariasYDeTodoElProyecto_ValeLaMejor', () => {
   assert.strictEqual(check(m).code, 0);
 });
 
+// Azure DevOps exige todas las que frenan: el voto de quien abre tiene que contar en todas, y el mínimo es el mayor
+test('Pase_VariasQueFrenan_SeExigenJuntas', () => {
+  const m = mundo();
+  for (const orden of [[politica(), politica({}, { creatorVoteCounts: false })], [politica({}, { creatorVoteCounts: false }), politica()]]) {
+    sembrar(m, orden);
+    const r = check(m, ['--json']);
+    assert.strictEqual(r.code, 1, r.out);
+    assert.strictEqual(JSON.parse(r.stdout).result, 'no_sirve');
+  }
+  for (const orden of [[politica(), politica({}, { minimumApproverCount: 2 })], [politica({}, { minimumApproverCount: 2 }), politica()]]) {
+    sembrar(m, orden);
+    assert.strictEqual(JSON.parse(check(m, ['--json']).stdout).approval.minimum, 2);
+  }
+});
+
+// la de revisores obligatorios también trae un mínimo, y puede valer sólo para algunas rutas: no es la regla de la rama
+test('Pase_RevisoresObligatorios_NoSonLaRegla', () => {
+  const m = mundo();
+  sembrar(m, [politica({ type: { id: 'otro', displayName: 'Required reviewers' } }, { requiredReviewerIds: ['x'], filenamePatterns: ['/docs/*'] })]);
+  assert.strictEqual(JSON.parse(check(m, ['--json']).stdout).result, 'falta');
+  sembrar(m, [politica({ type: {} }, { requiredReviewerIds: ['x'] })]);
+  assert.strictEqual(JSON.parse(check(m, ['--json']).stdout).result, 'falta');
+});
+
+test('Pase_RamaComoRefCompletaOConOtrasLetras_SeMide', () => {
+  const m = mundo();
+  sembrar(m, [politica()]);
+  assert.strictEqual(check(m, ['--branch', 'refs/heads/main']).code, 0);
+  sembrar(m, [politica({}, { scope: [{ repositoryId: 'id-Backend', refName: 'refs/heads/développement+v2', matchKind: 'Exact' }] })]);
+  const j = JSON.parse(check(m, ['--json', '--branch', 'développement+v2']).stdout);
+  assert.deepStrictEqual([j.result, j.branch], ['sirve', 'développement+v2']);
+});
+
+test('Pase_RepoEnDosProyectos_NoSeEligeACiegas', () => {
+  const m = mundo([AZ, { ...AZ, project: 'Otro' }]);
+  sembrar(m, [politica()]);
+  const r = correr(m, ['check', '--repo', 'acme/Backend']);
+  assert.strictEqual(r.code, 2, r.out);
+  assert.match(r.out, /varios proyectos.*org\/proyecto\/repo/);
+});
+
 test('Regla_RamaPrincipalDelRepo_SinBranchNoEsMainACiegas', () => {
   const m = mundo();
   fs.writeFileSync(path.join(m.fix, 'repo-Backend.json'), JSON.stringify({ id: 'id-Backend', name: 'Backend', defaultBranch: 'refs/heads/master' }));

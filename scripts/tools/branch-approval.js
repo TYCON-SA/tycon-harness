@@ -63,7 +63,11 @@ function completar(r, env) {
     ...((data && data.merge_suites && Array.isArray(data.merge_suites.repos)) ? data.merge_suites.repos.map((e) => e && e.repo) : [])];
   const igual = (x) => x && String(x.org).toLowerCase() === String(r.org).toLowerCase() && String(x.repo).toLowerCase() === String(r.repo).toLowerCase()
     && (!r.project || String(x.project || '').toLowerCase() === String(r.project).toLowerCase());
-  const hallado = todos.find(igual);
+  const hallados = todos.filter(igual);
+  // `org/repo` con el mismo repo en dos proyectos: no se elige uno a ciegas
+  const proyectos = [...new Set(hallados.map((x) => String(x.project || '')))];
+  if (!r.project && proyectos.length > 1) return { ...r, ambiguo: proyectos };
+  const hallado = hallados[0];
   return hallado ? { ...hallado, ...r, platform: r.platform || hallado.platform, project: r.project || hallado.project } : r;
 }
 
@@ -145,7 +149,11 @@ async function main(argv, { env = process.env, out = (t) => process.stdout.write
   if (cmd === 'check') {
     const r0 = identidadDe(o.repo, o.platform);
     if (!r0) { err(`--repo no se lee (${JSON.stringify(o.repo || '')})\n${USO}`); return 2; }
-    const j = await check(completar(r0, env), { branch: o.branch, env });
+    const r1 = completar(r0, env);
+    const j = r1.ambiguo
+      ? { repo: nombre(r1), branch: null, approval: null, faults: [], result: 'no_medido', reason: 'rechazado',
+        detail: `hay un repo ${r1.repo} en varios proyectos de ${r1.org} (${r1.ambiguo.join(', ')}): nombralo como org/proyecto/repo` }
+      : await check(r1, { branch: o.branch, env });
     out(o.json ? `${JSON.stringify(j)}\n` : `${renglon(j)}\n`);
     return codigoDe([j]);
   }
