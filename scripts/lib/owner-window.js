@@ -1316,9 +1316,6 @@ function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado, cw
   // una ruta de riesgo alto en la lista: sin una persona no se abre (con la carpeta del pedido; sin ella, lo dice el guion)
   if (cwd) {
     const n = L.normalizar(pedido.allowedFiles, { cwd });
-    // una lista de varios repos la aprueba la persona con su click o su terminal
-    const repos = n.lista ? L.reposDeLaLista(n.lista) : [];
-    if (repos.length > 1) return `la lista nombra archivos de ${repos.length} repos: un camino corto de varios repos lo aprueba la persona con su click o su terminal, no por delegación`;
     const riesgo = n.lista ? L.riesgoDeLaLista(n.lista) : null;
     if (riesgo) return `la lista nombra una ruta de ${L.textoDelRiesgo(riesgo, { cwd })}: un camino corto de riesgo alto lo abre una persona`;
   }

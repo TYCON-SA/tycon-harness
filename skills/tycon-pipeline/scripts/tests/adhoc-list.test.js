@@ -857,6 +857,62 @@ test('T9 Lista_Ambigua_YRepoFueraDelGrupo_SeNiegan — @story-8.316 @ac-5', () =
   assert.deepStrictEqual(norma(['Z/a.md'], c.R).lista, [path.join(c.R, 'Z/a.md')]);
 });
 
+// 🔴 Falla con: un enlace de la carpeta propia que lleva a un repo de al lado fuera del grupo y lo mete en la lista, sin
+//    que nadie lo frene ahora que varios repos se firman como uno.
+test('T9b Lista_EnlaceAUnRepoFueraDelGrupo_SeNiega — @story-8.316 @ac-5', { skip: process.platform === 'win32' }, () => {
+  const c = tresRepos('t9b-316');
+  const Z = repo(c.raiz, 'Z');
+  fs.mkdirSync(path.join(Z, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(Z, 'src', 'a.cs'), 'x');
+  fs.symlinkSync(Z, path.join(c.R, 'lnk'));
+  fs.mkdirSync(path.join(c.R, 'src'), { recursive: true });
+  fs.symlinkSync(path.join(Z, 'src', 'a.cs'), path.join(c.R, 'src', 'flink.cs'));
+  for (const entradas of [['lnk/src/a.cs'], ['B/src/A.cs', 'lnk/src/a.cs'], ['src/flink.cs']]) {
+    assert.match(norma(entradas, c.R).problema || '', /lleva, por un enlace, al repo Z, que no vale como hermano/, entradas.join(', '));
+  }
+  // por delegación tampoco se abre
+  const h = tmp('home-');
+  const r = marker(h, 's9b', ['adhoc', 'set', pedido({ allowedFiles: ['B/src/A.cs', 'lnk/src/a.cs'] })], { cwd: c.R, delegadaPor: 'coord' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /no vale como hermano/);
+  assert.ok(!fs.existsSync(path.join(estado(h), 'adhoc', 's9b.json')));
+  // un enlace colgante (su destino todavía no existe) hacia Z también se niega
+  fs.symlinkSync(path.join(Z, 'src', 'nuevo.cs'), path.join(c.R, 'src', 'colgante.cs'));
+  assert.match(norma(['src/colgante.cs'], c.R).problema || '', /lleva, por un enlace, al repo Z/);
+  // un enlace que lleva a un hermano declarado, o dentro del propio repo, pasa
+  fs.symlinkSync(c.B, path.join(c.R, 'alB'));
+  assert.deepStrictEqual(norma(['alB/src/A.cs'], c.R).lista, [path.join(c.B, 'src', 'A.cs')]);
+  fs.symlinkSync(path.join(c.R, 'src'), path.join(c.R, 'propio'));
+  assert.ok(!norma(['propio/x.js'], c.R).problema);
+});
+
+// 🔴 Falla con: un enlace creado o reapuntado DESPUÉS de abrir el carril, que el portón de edición resuelve en ese
+//    momento y deja editar un repo que la lista no nombraba.
+test('T9c Porton_EnlacePosteriorAOtroRepo_Frena — @story-8.316 @ac-15', { skip: process.platform === 'win32' }, () => {
+  const c = tresRepos('t9c-316');
+  const Z = repo(c.raiz, 'Z');
+  fs.mkdirSync(path.join(Z, 'src', 'dd'), { recursive: true });
+  fs.writeFileSync(path.join(Z, 'src', 'f.js'), 'x');
+  fs.writeFileSync(path.join(Z, 'src', 'dd', 'y.js'), 'x');
+  fs.mkdirSync(path.join(c.R, 'd'), { recursive: true });
+  fs.writeFileSync(path.join(c.R, 'real.js'), 'x');
+  fs.symlinkSync(path.join(c.R, 'real.js'), path.join(c.R, 'adentro.js'));
+  const n = norma(['link.js', 'd/y.js', 'adentro.js', 'B/src/A.cs'], c.R);
+  assert.ok(n.lista, n.problema);
+  const fuera = (filePath) => lista().fueraDeLaLista({ lista: n.lista, filePath, real: fs.existsSync(filePath) ? fs.realpathSync(filePath) : filePath, repoRoot: null, delegado: true });
+  // un enlace dentro del propio repo, ya en la lista al abrir: se edita por los dos nombres
+  assert.equal(fuera(path.join(c.R, 'adentro.js')), null);
+  // después de abrir: link.js pasa a ser un enlace a Z, y la carpeta d, un enlace a una carpeta de Z
+  fs.symlinkSync(path.join(Z, 'src', 'f.js'), path.join(c.R, 'link.js'));
+  fs.rmSync(path.join(c.R, 'd'), { recursive: true });
+  fs.symlinkSync(path.join(Z, 'src', 'dd'), path.join(c.R, 'd'));
+  for (const f of [path.join(c.R, 'link.js'), path.join(Z, 'src', 'f.js'), path.join(c.R, 'd', 'y.js'), path.join(Z, 'src', 'dd', 'y.js')]) {
+    assert.ok(fuera(f), `${f}: el portón dejó editar un repo que la lista no nombraba`);
+  }
+  // el hermano de la lista se sigue editando
+  assert.equal(fuera(path.join(c.B, 'src', 'A.cs')), null);
+});
+
 test('T10 ParaOtraSesion_UsaElGrupoDeLaDestino — @story-8.316 @ac-6', () => {
   const c = tresRepos('t10-316');
   // quien pide está en otro producto, sin grupo; la sesión destino trabaja en R
@@ -876,45 +932,51 @@ test('T10 ParaOtraSesion_UsaElGrupoDeLaDestino — @story-8.316 @ac-6', () => {
   assert.ok(norma(['B/src/A.cs'], otro.R).problema);
 });
 
-test('T12 Delegacion_VariosRepos_SeNiega — @story-8.316 @ac-8', () => {
+test('T12 Delegacion_VariosRepos_HermanosDeclarados_SeDelega — @story-8.316 @ac-8', () => {
   const c = tresRepos('t12-316');
   const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
   const palabras = (allowedFiles) => ['marker.js', 'adhoc', 'set', pedido({ allowedFiles })];
-  // dos repos por delegación: se niega en `antes`, sin declarar nada
+  // dos hermanos declarados por delegación: no se niegan por ser de varios repos, sin el click de la persona. Llegan al
+  // aviso a la persona, que en la prueba no tiene canal: ahí frena, y es lo último que mira
   const h = tmp('home-');
   const r = marker(h, 's12', ['adhoc', 'set', pedido({ allowedFiles: ['B/src/A.cs', 'F/src/x.tsx'] })], { cwd: c.R, delegadaPor: 'coord' });
-  assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /2 repos \(B, F\).*no por delegación/);
-  assert.ok(!fs.existsSync(path.join(estado(h), 'adhoc', 's12.json')));
-  // y en `pasaDelCupoDelegado`, que mira lo mismo antes del cuadro
-  assert.match(ow.pasaDelCupoDelegado(palabras(['B/src/A.cs', 'F/src/x.tsx']), 3, c.R) || '', /2 repos/);
-  // una ampliación delegada que suma un repo: el carril tenía uno, la lista nueva suma B
+  assert.match(r.stderr, /sin aviso a la persona/);
+  assert.doesNotMatch(r.stderr, /varios repos|no por delegación/);
+  // y `pasaDelCupoDelegado`, que mira lo mismo antes del cuadro, tampoco la frena por ser de varios repos
+  assert.equal(ow.pasaDelCupoDelegado(palabras(['B/src/A.cs', 'F/src/x.tsx']), 3, c.R), null);
+  // una ampliación delegada que suma un hermano: contiene entera la firmada, tampoco se niega por los repos
   const h2 = tmp('home-');
   conCarril(h2, 's12b', { allowedFiles: [path.join(c.R, 'docs/a.md')], via: 'delegacion' });
   const amp = marker(h2, 's12b', ['adhoc', 'set', pedido({ allowedFiles: ['docs/a.md', 'B/src/A.cs'] })], { cwd: c.R, delegadaPor: 'coord' });
-  assert.notEqual(amp.status, 0);
-  assert.match(amp.stderr, /2 repos/);
-  assert.deepStrictEqual(leerCarril(h2, 's12b').allowedFiles, [path.join(c.R, 'docs/a.md')]);
+  assert.match(amp.stderr, /sin aviso a la persona/);
+  assert.doesNotMatch(amp.stderr, /varios repos|no por delegación/);
+  // un repo al lado que no es hermano declarado no entra por delegación, ni sumado a un hermano
+  repo(c.raiz, 'Z');
+  const h4 = tmp('home-');
+  const z = marker(h4, 's12z', ['adhoc', 'set', pedido({ allowedFiles: ['B/src/A.cs', 'Z/src/a.cs'] })], { cwd: c.R, delegadaPor: 'coord' });
+  assert.notEqual(z.status, 0);
+  assert.match(z.stderr, /Z no está en repo_group de R/);
+  assert.ok(!fs.existsSync(path.join(estado(h4), 'adhoc', 's12z.json')));
   // sin la carpeta de la sesión destino, una entrada `<Nombre>/…` no se puede resolver: el guion no abre nada
   const h3 = tmp('home-');
   const sinCarpeta = marker(h3, 'coord12', ['adhoc', 'set', pedido({ allowedFiles: ['B/src/A.cs'] }), '--for-session', 'desconocida12'], { cwd: c.R, delegadaPor: 'coord12' });
   assert.equal(sinCarpeta.status, 2, sinCarpeta.stderr);
   assert.match(sinCarpeta.stderr, /no sé la carpeta de la sesión desconocida12/);
   assert.ok(!fs.existsSync(path.join(estado(h3), 'adhoc', 'desconocida12.json')));
-  // una lista de un solo repo se delega como hoy (sin otro motivo para negarla)
+  // una lista de un solo repo se delega como siempre
   assert.equal(ow.pasaDelCupoDelegado(palabras(['docs/a.md']), 3, c.R), null);
   assert.equal(ow.pasaDelCupoDelegado(palabras(['B/src/A.cs']), 3, c.R), null);
 });
 
-test('T13 Firma_VariosRepos_SoloClickOTerminal — @story-8.316 @ac-8', () => {
+test('T13 Firma_VariosRepos_CualquierViaDeLaPersona — @story-8.316 @ac-8', () => {
   const c = tresRepos('t13-316');
   const lista2 = pedido({ allowedFiles: ['B/src/A.cs', 'F/src/x.tsx'] });
-  for (const [via, declara] of [['click', true], ['terminal', true], ['ventana', false], ['mensaje', false]]) {
+  for (const via of ['click', 'terminal', 'ventana', 'mensaje']) {
     const h = tmp('home-');
     const r = marker(h, `s13${via}`, ['adhoc', 'set', lista2], { cwd: c.R, via });
-    assert.equal(r.status === 0, declara, `${via}: ${r.stderr}`);
-    assert.equal(fs.existsSync(path.join(estado(h), 'adhoc', `s13${via}.json`)), declara, via);
-    if (!declara) assert.match(r.stderr, /sólo el click de la persona o su terminal, y volvió por/);
+    assert.equal(r.status, 0, `${via}: ${r.stderr}`);
+    assert.ok(fs.existsSync(path.join(estado(h), 'adhoc', `s13${via}.json`)), via);
+    assert.doesNotMatch(r.stderr, /sólo el click de la persona o su terminal/, via);
   }
 });
 
@@ -1015,13 +1077,15 @@ test('T20 Porton_DosRepos_ListaYCupo — @story-8.316 @ac-15', () => {
 test('T24 Guias_DicenLaForma — @story-8.316 @ac-18', () => {
   const leer = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
   for (const [rel, frases] of [
-    ['guides/coordination.md', [/<Nombre>\/<ruta>/, /rama principal del remoto/, /en los dos sentidos/, /no se delega/, /adhoc test --repo/]],
-    ['guides/coordination.en.md', [/<Name>\/<path>/, /remote's main branch/, /both\s+ways/, /not delegated/, /adhoc test --repo/]],
-    ['guides/firmas-del-arnes.md', [/<Nombre>\/<ruta>/, /rama principal del remoto/, /en los dos\s+sentidos/, /no se delega/, /adhoc test --repo/]],
+    ['guides/coordination.md', [/<Nombre>\/<ruta>/, /rama principal del remoto/, /en los dos sentidos/, /se firma y se delega como una de un solo repo/, /no entra por ninguna vía/, /adhoc test --repo/]],
+    ['guides/coordination.en.md', [/<Name>\/<path>/, /remote's main branch/, /both\s+ways/, /signed and delegated like a single-repo one/, /gets in by no route/, /adhoc test --repo/]],
+    ['guides/firmas-del-arnes.md', [/<Nombre>\/<ruta>/, /rama principal del remoto/, /en los dos\s+sentidos/, /se\s+delega\s+igual/, /no entra en la\s+lista por ninguna vía/, /adhoc test --repo/]],
   ]) {
     const t = leer(rel);
     for (const re of frases) assert.match(t, re, `${rel}: ${re}`);
   }
+  // la decisión vieja (sólo el click o la terminal para varios repos) no queda escrita
+  for (const rel of ['guides/coordination.md', 'guides/firmas-del-arnes.md']) assert.doesNotMatch(leer(rel), /de más de un repo no se delega|pero no se delega: lo firmás sólo con tu click/, rel);
 });
 
 // ── lo que encontró el pase adversarial (8.316) ─────────────────────────────────────────────────────────────────────
