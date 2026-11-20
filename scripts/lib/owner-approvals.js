@@ -214,7 +214,50 @@ const primeraOracion = (s) => { const t = enUnRenglon(s); const m = /^(.+?[.!?])
  * `clickDelDueno`, lo aprueba sólo un click, también en la pestaña de la coordinadora, y lo que hace cada opción va en la
  * pregunta.
  */
-function cuadroDe({ firma, destino, que, historia = null, criterios = [], queHace = [], todoQueHace = false, nota = null, archivos = [], completo = null, completoEnPalabras = null, revision = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null, comando = null }) {
+function cuadroDe(datos) {
+  // con `explica` (lo que la sesión que hizo el cambio declara: qué cambia, por qué y su riesgo, o null si no declaró nada)
+  // el cuadro dice eso primero, y la sesión, los conteos, «Completo en» y el «si sale mal» de siempre van al detalle
+  if (datos.explica !== undefined) return cuadroQueExplica(datos);
+  return cuadroDeSiempre(datos);
+}
+
+/**
+ * El cuadro de un cambio que su sesión explica (hoy, el cambio de control): «¿Lo que se aprueba?», «Qué cambia», «Por
+ * qué» y «Riesgo», en castellano llano y tal como los escribió la sesión; sin explicación, lo dice en vez de rellenar. Al
+ * final el sello, igual que en todos los cuadros: ata el click a la firma, la sesión y lo que se mostró (`huella`, que
+ * lleva también el texto de la explicación). El resto (la sesión, lo que la fuente cuenta, dónde está lo completo, el
+ * «si sale mal» genérico) va al detalle.
+ */
+function cuadroQueExplica({ firma, destino, que, explica, queHace = [], archivos = [], completo = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null, comando = null }) {
+  const sello = `firma ${firma} · sesión ${destino} · código ${huella}`;
+  const vista = (s) => sinRutas(enUnRenglon(s));
+  const partes = [`¿${recortar(vista(que), LARGO_DE_FRASE).replace(/^./, (c) => c.toUpperCase())}?`];
+  const dichos = [];
+  if (explica) {
+    for (const [rotulo, valor] of [['Qué cambia', explica.cambia], ['Por qué', explica.porque], ['Riesgo', explica.riesgo]]) {
+      dichos.push([rotulo, valor]);
+      partes.push(`${rotulo}: ${valor ? sinPunto(vista(valor)) : 'el cambio no lo dice'}.`);
+    }
+  } else partes.push('El cambio no explica qué hace, por qué ni su riesgo: pedile a la sesión que lo escriba en sus commits (Cambia-control:, Por-que:, Riesgo:) antes de firmar.');
+  if (clickDelDueno && !soloClick && Array.isArray(descripciones)) partes.push(`«${APRUEBA}»: ${sinPunto(vista(descripciones[0]))}. «${NIEGA}»: ${sinPunto(vista(descripciones[1]))}. Sólo vale tu click.`);
+  const pregunta = `${partes.join(' ')} (${sello})`;
+  const texto = pregunta.slice(0, pregunta.length - sello.length - 3);
+  const detalle = [];
+  // lo declarado se ve entero: si una ruta se cambió por su nombre, va también tal cual
+  for (const [rotulo, valor] of dichos) if (valor && vista(valor) !== enUnRenglon(valor)) detalle.push(`${rotulo}: ${enUnRenglon(valor)}`);
+  if (destino) detalle.push(`Sesión: ${destino}`);
+  (queHace || []).map((l) => enUnRenglon(l)).filter(Boolean).forEach((l) => detalle.push(`Qué hace: ${l}`));
+  const zonas = require('./file-zones.js').zonasDe(archivos);
+  if (zonas) detalle.push(`Archivos: ${zonas}`);
+  if (completo) detalle.push(`Completo en: ${enUnRenglon(completo)}`);
+  if (siSaleMal) detalle.push(`Si sale mal: ${enUnRenglon(siSaleMal)}`);
+  if (cita) detalle.push(`Cita: ${enUnRenglon(cita)}`);
+  if (comando) detalle.push(`El comando: ${enUnRenglon(comando)}`);
+  return { sello, texto, pregunta, opciones: [APRUEBA, NIEGA], detalle, largo: pregunta.length, tope: LARGO_EN_TELEFONO, pasaElTope: pregunta.length > LARGO_EN_TELEFONO,
+    ...(soloClick ? { soloClick: true, descripciones } : {}), ...(clickDelDueno && !soloClick ? { clickDelDueno: true } : {}) };
+}
+
+function cuadroDeSiempre({ firma, destino, que, historia = null, criterios = [], queHace = [], todoQueHace = false, nota = null, archivos = [], completo = null, completoEnPalabras = null, revision = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null, comando = null }) {
   const sello = `firma ${firma} · sesión ${destino} · código ${huella}`;
   // lo que se ve: en un renglón y sin rutas absolutas (el guardado ajeno, tal cual)
   const vista = (s) => (todoQueHace ? String(s == null ? '' : s) : sinRutas(enUnRenglon(s)));

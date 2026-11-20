@@ -455,9 +455,10 @@ test('T12 Cuadro_SobreCupo_TextoFijoDeLasOpciones @story-8.181 @ac-5', () => {
   assert.match(c.pregunta, /se recomienda una historia/);
   assert.match(c.pregunta, /hasta 12 archivos de implementación, sin pruebas ni guías/, 'el número va en el detalle');
   assert.deepStrictEqual(c.opciones, ['Sí, aprobar', 'No']);
-  assert.deepStrictEqual(c.descripciones, DESCRIPCIONES);
-  assert.strictEqual(c.soloClick, true);
-  for (const d of c.descripciones) assert.doesNotMatch(d, /\d/, 'sin números en las opciones');
+  // lo aprueba el click del dueño: las descripciones de las opciones van dentro de la pregunta, que ata el sello
+  assert.strictEqual(c.clickDelDueno, true);
+  for (const d of DESCRIPCIONES) assert.ok(c.pregunta.includes(d.replace(/[.\s]+$/, '')), d);
+  for (const d of DESCRIPCIONES) assert.doesNotMatch(d, /\d/, 'sin números en las opciones');
 });
 
 // 🔴 Falla con: un cuadro de sólo click con un gancho ajeno que manda a escribir «aprobado», que ahí nunca aprueba.
@@ -531,20 +532,16 @@ test('T27 Buscar_ClickDelDueno_ValeEnLaCoordinadoraVigente_NoElMensaje @story-8.
 });
 
 test('T13 Cuadro_SobreCupo_OtraDescripcion_NoVale @story-8.181 @ac-5', (t) => {
+  // las descripciones van dentro de la pregunta: otra descripción es otra pregunta, y el click sobre ella no vale
   const casa = casaNueva(t);
   const c = cuadroDelTope();
-  const conDescripciones = (descripciones) => {
-    const r = respuesta('toolu_1', { pregunta: c.pregunta });
-    r.toolUseResult.questions[0].options = r.toolUseResult.questions[0].options.map((o, i) => ({ ...o, ...(descripciones ? { description: descripciones[i] } : {}) }));
-    return r;
-  };
+  const otra = c.pregunta.replace('lo elegís vos', 'lo elige el agente');
+  assert.notStrictEqual(otra, c.pregunta);
   const elClick = { ...click(), pregunta: c.pregunta };
-  const ver = () => oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), elClick, { pregunta: c.pregunta, opciones: c.opciones, descripciones: c.descripciones });
-  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones([DESCRIPCIONES[0].replace('lo elegís vos', 'lo elige el agente'), DESCRIPCIONES[1]])]);
-  assert.match(ver().motivo, /no son las que armó el guion/);
-  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones(null)]);
-  assert.match(ver().motivo, /no son las que armó el guion/, 'sin descripciones tampoco');
-  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones(DESCRIPCIONES)]);
+  const ver = () => oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), elClick, { pregunta: c.pregunta, opciones: c.opciones });
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', otra), respuesta('toolu_1', { pregunta: otra })]);
+  assert.notDeepStrictEqual(ver(), { ok: true });
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), respuesta('toolu_1', { pregunta: c.pregunta })]);
   assert.deepStrictEqual(ver(), { ok: true });
 });
 
