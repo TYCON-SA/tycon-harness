@@ -8933,8 +8933,6 @@ module.exports = {
   // el marcador de la sesión, con las rutas de la corrida absolutas (lib/run-dir.js)
   readSessionMarker,
   readSessionMarkerStrict,
-  // Lo que le falta al pase adversarial: `next` lo pide y el freno de lanzamiento de revisores niega con lo mismo.
-  accionDelPase,
   // la clave de la carpeta sin crearla: el chequeo antes de la ventana de firma (marker.js)
   runDirKey,
   // El portón con la constancia del salteo de la corrida: tests/adversarial-skip-signed.test.js.
