@@ -1043,6 +1043,12 @@
       "requiere": []
     },
     {
+      "__nota": "Con un camino corto con lista, el freno de la consola juzga la ruta real de una variable del comando (también con bucles) y, si no la puede resolver o la carpeta cambió con un cd que no sigue, frena diciendo que no pudo; ve cp, mv y sed -i dentro de bloques.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-unresolved-path.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Un guion en archivo con una historia entre sus argumentos que escribe sin nombrar su destino (modo en una variable, en el lugar, un programa que lanza) cuenta como escritura de la historia; el que sólo la lee pasa.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-interpreter-args.test.js",
