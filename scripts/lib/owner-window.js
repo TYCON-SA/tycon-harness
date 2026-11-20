@@ -1385,6 +1385,15 @@ const envSwitches = () => require('./env-switches.js');
  * pruebas. Primero mira el período de aviso (`periodoDeAviso`), salvo que ya lo haya pasado y lo diga `sinAviso`.
  */
 function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, huellaDeLaMaquina, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes, sinAviso = [] } = {}) {
+  // la declaración de un pendiente no es una firma, pero vale como de la sesión que la corre: con una variable de sesión
+  // en el comando, una sesión declararía por otra y después aprobaría lo suyo por delegación. Va antes que todo, también
+  // del período de aviso, y mira la palabra del subcomando, se escriba como se escriba el guion
+  {
+    const cmd = String((evento.tool_input && evento.tool_input.command) || '');
+    if (/declare-pending/.test(cmd) && VARIABLES_DE_SESION.test(cmd)) {
+      return { decision: 'deny', firmas: [], texto: '🔒 un pendiente lo declara la sesión que lo abrió: el comando va sin variables de sesión' };
+    }
+  }
   if (!sinAviso.length) { const p = periodoDeAviso(arguments[0] || {}); if (p) return p; }
   if (!topes) topes = topesDelCaminoCorto(casa);
   const enWindows = plataforma === 'win32';
@@ -1399,11 +1408,6 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   const guiones = Object.assign(leidas.filter((id) => !sinAviso.includes(id)), { ilegible: leidas.ilegible });
   const pedidas = [...new Set([...guiones, ...escapes])];
   if (guiones.ilegible) return negar('no se pudo leer el comando, y nombra un guion de firma', pedidas);
-  // la declaración de un pendiente no es una firma, pero vale como de la sesión que la corre: con una variable de sesión
-  // en el comando, una sesión declararía por otra y después aprobaría lo suyo por delegación
-  if (/\bmarker\.js\b/.test(comando) && /(^|[\s"'])declare-pending([\s"']|$)/.test(comando) && VARIABLES_DE_SESION.test(comando)) {
-    return { decision: 'deny', firmas: [], texto: '🔒 un pendiente lo declara la sesión que lo abrió: el comando va sin variables de sesión' };
-  }
   if (!pedidas.length) return { decision: 'none', firmas: [] };
   const desconocida = pedidas.find((id) => { const s = firmaDe(id); return !s || !['guion', 'freno'].includes(s.kind); });
   if (desconocida) return negar(`«${desconocida}» no es una firma que se pida por consola`, pedidas.filter((id) => firmaDe(id)));

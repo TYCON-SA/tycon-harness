@@ -349,5 +349,10 @@ test('DeclarePending_AnotaLaSesionDelProceso_YElFrenoNiegaLaVariable', (t) => {
     assert.strictEqual(d.decision, 'deny', c);
     assert.match(d.texto, /lo declara la sesión que lo abrió/);
   }
+  // también con un escape en su período de aviso en el mismo comando, y con el guion escrito sin «.js»
+  const conEscape = `TYCON_MUTATION_CHECK=off CLAUDE_CODE_SESSION_ID=ses-fondo node ${marker} declare-pending --id DEF-uno`;
+  assert.strictEqual(ow.decidir({ evento: evento(conEscape), escapes: ['escape:TYCON_MUTATION_CHECK'], casa, ahora: Date.parse('2026-11-20T12:00:00Z') }).decision, 'deny', 'el período de aviso no la deja pasar');
+  const sinJs = `CLAUDE_CODE_SESSION_ID=ses-fondo node ${marker.replace(/\.js$/, '')} declare-pending --id DEF-uno`;
+  assert.strictEqual(ow.decidir({ evento: evento(sinJs), casa, sinAviso: ['x'] }).decision, 'deny', 'el guion sin «.js»');
   assert.strictEqual(ow.decidir({ evento: evento(`node ${marker} declare-pending --id DEF-uno`), casa, sinAviso: ['x'] }).decision, 'none');
 });
