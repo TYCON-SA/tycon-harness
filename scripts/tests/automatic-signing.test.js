@@ -281,17 +281,73 @@ test('AutomaticSigning_CopiaSueltaDeUnaSesionDeFondo_Sale', (t) => {
 });
 
 // 🔴 Falla con: un pendiente que abrió una sesión de fondo sin ejecución ni arreglo rápido (modo ágil), en su copia, que la
-//    coordinadora no puede aprobar por delegación y cae al dueño. Nadie se aprueba a sí mismo: eso no cambia.
-test('Delegacion_PendienteEnLaCopiaDeUnaSesionAgil_LoApruebaLaCoordinadora', (t) => {
+//    coordinadora no puede aprobar por delegación y cae al dueño; o, al revés, una copia de la coordinadora que nadie
+//    nombra y que pasa como de la sesión ágil. Vale sólo lo que la sesión ágil declaró. Nadie se aprueba a sí mismo.
+test('Delegacion_PendienteEnLaCopiaDeUnaSesionAgil_SoloConLaDeclaracion', (t) => {
+  const { execFileSync } = require('child_process');
   const ds = require('../lib/delegated-signing.js');
   const { casa, estado, clon, copia, ajena, carpeta } = labDeCopiaSuelta(t);
+  // una copia que armó la coordinadora y donde trabaja sin marcador: ninguna sesión la nombra
+  const deLaCoord = path.join(casa, 'privado--wt-coord');
+  execFileSync('git', ['-C', clon, 'worktree', 'add', '-q', '-b', 'coord', deLaCoord], { stdio: 'ignore' });
   const designada = (s) => s === 'ses-coord';
-  const pedir = (repo, { sesion = 'ses-coord', destino = 'ses-fondo' } = {}) => ds.antesDelPendiente({ via: 'delegacion', registro: { via: 'delegacion', sesion, destino },
-    estado, cwd: carpeta, repo, casa, designada });
-  assert.strictEqual(pedir(copia), null, 'la copia de la sesión ágil que abrió la coordinadora');
-  assert.match(pedir(ajena).motivo || '', /ses-otra/, 'la copia de otra sesión no');
+  const pedir = (repo, { sesion = 'ses-coord', destino = 'ses-fondo', pendiente = 'DEF-uno' } = {}) => ds.antesDelPendiente({ via: 'delegacion', registro: { via: 'delegacion', sesion, destino },
+    estado, cwd: carpeta, repo, casa, designada, pendiente });
+  const declarar = (sesion, id, repo) => fs.appendFileSync(path.join(estado, 'gates.log'),
+    `${JSON.stringify({ ts: '2026-11-20T02:00:00.000Z', name: ds.DECLARADO, status: 'ok', sesion, id, repo: ds.raizDelRepo(repo).clave, ruta: repo })}\n`);
+  // sin declarar, ni la copia de la sesión ágil ni la de la coordinadora
+  assert.match(pedir(copia).motivo || '', /no declaró DEF-uno en esa copia: la sesión ses-fondo lo declara con `marker.js declare-pending/);
+  assert.match(pedir(deLaCoord).motivo || '', /no declaró/, 'la copia de la coordinadora que nadie nombra no pasa');
+  assert.match(pedir(copia, { pendiente: null }).motivo || '', /no dice qué pendiente es/);
+  // declarado por la sesión ágil, en su copia: sale
+  declarar('ses-fondo', 'DEF-uno', copia);
+  assert.strictEqual(pedir(copia), null, 'la copia de la sesión ágil, con su declaración');
+  assert.match(pedir(copia, { pendiente: 'DEF-otro' }).motivo || '', /no declaró DEF-otro/, 'la declaración es de ese pendiente');
+  assert.match(pedir(deLaCoord).motivo || '', /no declaró/, 'la declaración es de esa copia');
+  // la coordinadora declarando por su cuenta no le sirve: la declaración tiene que ser de la sesión destino
+  declarar('ses-coord', 'DEF-dos', deLaCoord);
+  assert.match(pedir(deLaCoord, { pendiente: 'DEF-dos' }).motivo || '', /no declaró DEF-dos/);
+  // lo de siempre: la copia de otra sesión, el clon principal, nadie se aprueba a sí mismo, otra sesión no es la coordinadora
+  declarar('ses-fondo', 'DEF-uno', ajena);
+  assert.match(pedir(ajena).motivo || '', /ses-otra/, 'la copia de otra sesión no, aunque la declare');
   assert.match(pedir(clon).motivo || '', /clon principal|repo de la coordinadora/, 'el clon principal no');
   assert.match(pedir(copia, { destino: 'ses-coord' }).motivo || '', /no ella misma/, 'la coordinadora no se aprueba a sí misma');
   assert.match(pedir(copia, { sesion: 'ses-fondo' }).motivo || '', /no ella misma/, 'la sesión ágil no se aprueba a sí misma');
   assert.match(pedir(copia, { sesion: 'ses-otra' }).motivo || '', /no es la coordinadora designada/, 'otra sesión no aprueba por delegación');
+});
+
+// 🔴 Falla con: una declaración que se anota sin un pendiente abierto, con la sesión de otra, o que el freno deja correr
+//    con una variable de sesión escrita en el comando (una sesión declararía por otra y se aprobaría lo suyo).
+test('DeclarePending_AnotaLaSesionDelProceso_YElFrenoNiegaLaVariable', (t) => {
+  const { spawnSync, execFileSync } = require('child_process');
+  const ds = require('../lib/delegated-signing.js');
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'declarar-'));
+  t.after(() => fs.rmSync(casa, { recursive: true, force: true }));
+  const repo = path.join(casa, 'repo');
+  fs.mkdirSync(path.join(repo, 'tasks'), { recursive: true });
+  execFileSync('git', ['-C', repo, 'init', '-q']);
+  fs.writeFileSync(path.join(repo, 'tasks', 'todo.md'), '- [ ] [DEF-uno] (2026-11-20) algo que falta\n');
+  const marker = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  const correr = (args, sid = 'ses-fondo') => spawnSync(process.execPath, [marker, 'declare-pending', ...args], { cwd: repo, encoding: 'utf8',
+    env: { ...process.env, HOME: casa, USERPROFILE: casa, CLAUDE_CODE_SESSION_ID: sid, TYCON_SIGN_PRECHECK: '' } });
+  const { stateDir } = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+  const renglones = () => { try { return fs.readFileSync(path.join(stateDir(casa), 'gates.log'), 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse).filter((j) => j.name === ds.DECLARADO); } catch (_) { return []; } };
+  assert.strictEqual(correr(['--id', 'DEF-nada']).status, 1, 'un código que no está abierto no se declara');
+  assert.notStrictEqual(correr(['--id', 'DEF-uno', '--for-session', 'ses-otra']).status, 0, 'no se declara por otra sesión');
+  assert.deepStrictEqual(renglones(), []);
+  const r = correr(['--id', 'DEF-uno']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const [j] = renglones();
+  assert.strictEqual(j.sesion, 'ses-fondo');
+  assert.strictEqual(j.id, 'DEF-uno');
+  assert.strictEqual(j.repo, ds.raizDelRepo(repo).clave);
+  // el freno: con una variable de sesión en el comando, no corre; sin ella, no la mira
+  const ow = require('../lib/owner-window.js');
+  const evento = (command) => ({ session_id: 'ses-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command } });
+  for (const c of [`CLAUDE_CODE_SESSION_ID=ses-fondo node ${marker} declare-pending --id DEF-uno`, `export TYCON_SESSION_ID=ses-fondo; node ${marker} declare-pending --id DEF-uno`]) {
+    const d = ow.decidir({ evento: evento(c), casa, sinAviso: ['x'] });
+    assert.strictEqual(d.decision, 'deny', c);
+    assert.match(d.texto, /lo declara la sesión que lo abrió/);
+  }
+  assert.strictEqual(ow.decidir({ evento: evento(`node ${marker} declare-pending --id DEF-uno`), casa, sinAviso: ['x'] }).decision, 'none');
 });

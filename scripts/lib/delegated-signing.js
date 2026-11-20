@@ -123,7 +123,7 @@ function profileLists({ env = process.env, home, arnes } = {}) {
  * `cwd`, la carpeta del pedido) es de `destino` y no de `sesion`. `estado`: la carpeta del estado de la casa. Inyectables:
  * `perfil()` → las listas (`{ delegated_signing, owner_only, delegated_machines }`), `huella()` → `{ huella }` o `{ error }`.
  */
-function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, perfil, huella, repo, cwd, raiz = raizDelRepo } = {}) {
+function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, perfil, huella, repo, cwd, raiz = raizDelRepo, pendiente = null } = {}) {
   const no = (motivo) => ({ ok: false, motivo });
   if (!sesion || !destino) return no('sin la sesión del pedido y la destino no se delega');
   // su constancia nombra al dueño en la huella: aunque el perfil la liste, no tiene vía delegada
@@ -168,7 +168,7 @@ function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, pe
   if (suya === undefined) return no('no pude leer el marcador de la sesión destino');
   if (propia && suya === propia) return no('la sesión destino trabaja la misma story que la ejecución abierta de la sesión del pedido');
   if (SOBRE_UN_REPO.has(firma)) {
-    const m = motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz, casa: home || undefined });
+    const m = motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz, casa: home || undefined, pendiente });
     if (m) return no(m);
   }
   return { ok: true, maquina: fp.huella };
@@ -289,7 +289,7 @@ function noEsCopiaSuelta({ estado, casa, destino, delPendiente, raiz }) {
 }
 
 /** Por qué el repo del pendiente no admite la delegación, o null: tiene que ser de `destino` y no de `sesion`. */
-function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz = raizDelRepo, casa = require('os').homedir() }) {
+function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz = raizDelRepo, casa = require('os').homedir(), pendiente = null }) {
   // sin la carpeta del pedido no se sabe cuál es el checkout de la coordinadora
   if (!cwd) return 'el pedido no dice desde qué carpeta se corre';
   const delPendiente = raiz(path.resolve(cwd, repo || '.'));
@@ -306,10 +306,37 @@ function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz = raizDelRepo,
   if (delDestino === undefined) return `no pude leer el marcador o el arreglo rápido de la sesión ${destino}`;
   if (delDestino.includes(delPendiente.clave)) return null;
   // la sesión que abrió la coordinadora trabaja en el modo ágil, sin ejecución ni arreglo rápido, en una copia que arma
-  // ella: esa copia también es suya, si no es de otra (como en la firma de trámite)
+  // ella. El arnés no sabe quién armó una copia: vale sólo si la sesión destino declaró este pendiente en esta copia
+  // (`marker.js declare-pending`), y si ninguna otra sesión nombra la copia (como en la firma de trámite)
+  const ajeno = `${delPendiente.ruta} no es un repo donde trabaja la sesión ${destino} (ni su ejecución abierta ni su arreglo rápido)`;
   const suelta = noEsCopiaSuelta({ estado, casa, destino, delPendiente, raiz });
-  if (!suelta) return null;
-  return `${delPendiente.ruta} no es un repo donde trabaja la sesión ${destino} (ni su ejecución abierta ni su arreglo rápido), ni una copia suelta suya: ${suelta}`;
+  if (suelta) return `${ajeno}, ni una copia suelta suya: ${suelta}`;
+  const declarado = declaracionDe({ estado, destino, pendiente, clave: delPendiente.clave });
+  return declarado ? `${ajeno}: ${declarado}` : null;
+}
+
+/** El renglón del registro con que una sesión declara un pendiente suyo en una copia (`marker.js declare-pending`). */
+const DECLARADO = 'pending-declared';
+
+/**
+ * Por qué la sesión `destino` NO declaró el pendiente `pendiente` en el repo de clave `clave`, o null si lo declaró. La
+ * declaración es el renglón `pending-declared` del registro con esa sesión, ese código y esa carpeta real. Sin el
+ * registro legible, no está declarado.
+ */
+function declaracionDe({ estado, destino, pendiente, clave }) {
+  const como = `la sesión ${destino} lo declara con \`marker.js declare-pending --id <código> --repo <su copia>\` y después se aprueba`;
+  if (!pendiente) return `el pedido no dice qué pendiente es: ${como}`;
+  let texto;
+  try { texto = fs.readFileSync(path.join(estado, 'gates.log'), 'utf8'); } catch (e) {
+    return e.code === 'ENOENT' ? `no declaró ${pendiente} en esa copia: ${como}` : `no pude leer el registro de firmas (${e.code || e.message})`;
+  }
+  for (const l of texto.split('\n')) {
+    if (!l.includes(DECLARADO)) continue;
+    let j;
+    try { j = JSON.parse(l); } catch (_) { continue; }
+    if (j && j.name === DECLARADO && j.sesion === destino && j.id === pendiente && j.repo === clave) return null;
+  }
+  return `no declaró ${pendiente} en esa copia: ${como}`;
 }
 
 /**
@@ -320,7 +347,7 @@ function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz = raizDelRepo,
  * mismo que la delegación: la que pide no es la destino, es la coordinadora designada y confirmada (`designada`, de
  * fábrica con la clave del perfil, `confirmedDesignation`), y el repo del pendiente es de la destino (`motivoDelRepo`).
  */
-function antesDelPendiente({ via, registro, propia = null, pedida = null, estado, cwd, repo, raiz = raizDelRepo, designada, casa = require('os').homedir() } = {}) {
+function antesDelPendiente({ via, registro, propia = null, pedida = null, estado, cwd, repo, raiz = raizDelRepo, designada, casa = require('os').homedir(), pendiente = null } = {}) {
   const sinPersona = via === 'delegacion' || (registro && ['avisado', 'delegacion', 'automatica'].includes(registro.via));
   if (!sinPersona) return null;
   const no = (motivo) => ({ codigo: 1, motivo });
@@ -344,13 +371,13 @@ function antesDelPendiente({ via, registro, propia = null, pedida = null, estado
   const sesion = soloLaVia ? propia : registro.sesion;
   const destino = soloLaVia ? (pedida || propia) : registro.destino;
   if (!sesion || !destino) return no('el registro de la firma no dice para qué sesión es: un pendiente no se aprueba sin persona sin saberlo');
-  if (sesion === destino) return no('un pendiente que abrió esta sesión lo aprueba una persona o la coordinadora, no ella misma');
+  if (sesion === destino) return no('un pendiente que abrió esta sesión lo aprueba una persona o la coordinadora, no ella misma. En una copia tuya sin ejecución ni arreglo rápido, declaralo con `marker.js declare-pending --id <código> --repo <tu copia>` y pedíselo a la coordinadora');
   const esLaCoordinadora = designada || ((s) => {
     const d = confirmedDesignation({ state: estado, gates: path.join(estado, 'gates.log') });
     return d.ok && d.designacion.sesion === s;
   });
   if (!esLaCoordinadora(sesion)) return no(`la sesión que pide no es la coordinadora designada (y confirmada por el dueño): ${sesion}`);
-  const m = motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz, casa });
+  const m = motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz, casa, pendiente });
   return m ? no(m) : null;
 }
 
@@ -417,6 +444,6 @@ function cli(argv) {
   return 2;
 }
 
-module.exports = { accountPaths, confirmationRecord, confirmaLaDesignacion, confirmedDesignation, delegaSinVentana, firmaPorElDueno, signerOf, NUNCA_DELEGABLES, motivoDelRepo, antesDelPendiente, profileLists };
+module.exports = { accountPaths, confirmationRecord, confirmaLaDesignacion, confirmedDesignation, delegaSinVentana, firmaPorElDueno, signerOf, NUNCA_DELEGABLES, motivoDelRepo, antesDelPendiente, profileLists, DECLARADO, raizDelRepo };
 
 if (require.main === module) process.exit(cli(process.argv.slice(2)));

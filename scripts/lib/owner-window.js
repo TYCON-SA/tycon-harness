@@ -632,6 +632,12 @@ function repoDe(palabras) {
   return i >= 0 ? palabras[i + 1] || null : null;
 }
 
+/** El código del pendiente que nombra el comando canónico (`--id <código>`), o null. */
+function pendienteDe(palabras) {
+  const i = palabras ? palabras.indexOf('--id') : -1;
+  return i >= 0 ? palabras[i + 1] || null : null;
+}
+
 /**
  * La sesión destino: la que nombra el comando si la firma actúa sobre ella; si no, `--for-session <id>` en el comando
  * canónico, o la del pedido. `--for-session=<id>` no la elige (el guion no lo lee así), sólo tiene que coincidir.
@@ -1393,6 +1399,11 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   const guiones = Object.assign(leidas.filter((id) => !sinAviso.includes(id)), { ilegible: leidas.ilegible });
   const pedidas = [...new Set([...guiones, ...escapes])];
   if (guiones.ilegible) return negar('no se pudo leer el comando, y nombra un guion de firma', pedidas);
+  // la declaración de un pendiente no es una firma, pero vale como de la sesión que la corre: con una variable de sesión
+  // en el comando, una sesión declararía por otra y después aprobaría lo suyo por delegación
+  if (/\bmarker\.js\b/.test(comando) && /(^|[\s"'])declare-pending([\s"']|$)/.test(comando) && VARIABLES_DE_SESION.test(comando)) {
+    return { decision: 'deny', firmas: [], texto: '🔒 un pendiente lo declara la sesión que lo abrió: el comando va sin variables de sesión' };
+  }
   if (!pedidas.length) return { decision: 'none', firmas: [] };
   const desconocida = pedidas.find((id) => { const s = firmaDe(id); return !s || !['guion', 'freno'].includes(s.kind); });
   if (desconocida) return negar(`«${desconocida}» no es una firma que se pida por consola`, pedidas.filter((id) => firmaDe(id)));
@@ -1548,7 +1559,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   const clickDelegable = !(soloClick || clickDelDueno) || DELEGABLE_EXCEPTIONS.includes(pendientes[0]);
   if (!enWindows && clickDelegable) try {
     const estado = stateDir(casa);
-    const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras) }));
+    const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras), pendiente: pendienteDe(can && can.palabras) }));
     if (rs.every((r) => r && r.ok)) delegada = rs[0];
     // una firma que el perfil delega y no se delegó lleva su motivo a la ventana; la que no se delega, no (es lo normal)
     else sinDelegar = rs.map((r) => r && !r.ok && r.motivo).find((m) => m && !/no delega|sólo del dueño|la sesión que implementa/.test(m)) || null;
