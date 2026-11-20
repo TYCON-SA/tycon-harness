@@ -54,6 +54,7 @@ const SNAPSHOT_TEMPLATE = path.join(ROOT, 'pipelines/templates/fetch-snapshot.ym
 const SNAPSHOT_STEP = 'La foto nocturna y lo privado de la validación';
 const SNAPSHOT_PICK_STEP = 'La foto nocturna que trajo Validar';
 const BENCH = 'bench';
+const BENCH_DECISION_STEP = '¿El banco corre en este pedido?';
 // La validación y sus plantillas son del privado: la copia pública no las trae. Ahí cada caso se
 // saltea con este motivo, en vez de abortar al cargar.
 const NO_PIPELINE = !(fs.existsSync(YAML) && fs.existsSync(TEMPLATE))
@@ -126,7 +127,7 @@ function expand(body, values) {
   let out = values.max === undefined ? body : body.split(MAX_EXPR).join(String(values.max));
   const macros = {
     'Build.SourcesDirectory': values.sources, 'Build.ArtifactStagingDirectory': values.staging,
-    'Agent.TempDirectory': values.temp, 'Pipeline.Workspace': values.workspace, 'Build.BuildId': '4242',
+    'Agent.TempDirectory': values.temp, 'Pipeline.Workspace': values.workspace, 'Build.BuildId': '4242', 'Build.SourceBranch': values.branch,
     SUITES_SHARD: values.shard, SUITES_OF: values.of, todoElRepo: values.everything, baseDelCambio: values.base,
     // lo que decidió «¿El banco corre en este pedido?» de Validar: «no» o «si»
     banco: values.banco,
@@ -2060,6 +2061,51 @@ function namesWithLoad(dir, shard, of, load) {
 const ran = (r) => (r.out.match(/^(?:✅|❌|🟠) (\S+)/gm) || []).map((l) => l.split(' ')[1]).sort();
 // cuatro comunes y ninguna que corra sola: sin banco (carga 0) el trabajo del banco se lleva la mitad del reparto
 const BENCH_LOAD_TOY = () => toy(FOUR.map((n) => [n, GREEN_SH]));
+
+// El paso que decide si el banco corre (Validar): la palabra del guion se toma sólo si es exactamente «no» con salida 0;
+// ante la duda (sin lista, sin acotar, en main, un guion que falla o que dice otra cosa) el banco corre.
+test('PrShards_BenchDecisionStep_OnlyAnExactNoSkipsTheBench — el banco se saltea sólo si el guion dice exactamente «no»; ante la duda corre', { skip: NO_BASH }, () => {
+  const { Validar: validate } = jobs();
+  // el nombre del paso, literal dentro de una expresión: todo lo especial escapado, la barra invertida incluida
+  const literal = (s) => s.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+  assert.match(validate, new RegExp(`\\n {8}displayName: '${literal(BENCH_DECISION_STEP)}'\\n {8}condition: and\\(succeeded\\(\\), eq\\(variables\\['hayCodigo'\\], 'si'\\)\\)\\n {8}name: bench\\n`),
+    'tiene nombre (los otros trabajos leen bench.banco) y corre sólo con código');
+  assert.ok(validate.indexOf(`displayName: '${BENCH_DECISION_STEP}'`) < validate.indexOf(`displayName: '${PLAN_STEP}'`), 'antes del reparto, que usa su decisión');
+  const step = stepBody(BENCH_DECISION_STEP);
+  assert.ok(step.includes('echo "##vso[task.setvariable variable=banco]$BANCO"'), 'la deja para los pasos de Validar');
+  assert.ok(step.includes('echo "##vso[task.setvariable variable=banco;isOutput=true]$BANCO"'), 'y la publica para Bench y el veredicto');
+
+  // Corrido: el paso real con el guion de verdad; `says` cambia sólo la respuesta del guion por un node de juguete.
+  const realNode = String(spawnSync(BASH.path, ['-c', 'command -v node'], { encoding: 'utf8' }).stdout || '').trim();
+  const decide = (changed, { everything = 'no', branch = 'refs/heads/wt/lab', says = null } = {}) => {
+    const dir = toy([['lab-a.test.sh', GREEN_SH]]);
+    const temp = path.join(dir, 'temp-decision');
+    fs.mkdirSync(temp, { recursive: true });
+    if (changed) fs.writeFileSync(path.join(temp, 'cambiados.txt'), changed.map((l) => `${l}\n`).join(''));
+    if (says) {
+      fs.writeFileSync(path.join(dir, 'bin', 'node'), ['#!/usr/bin/env bash',
+        `case "\${1:-}" in *bench-for-change.js) printf '%s\\n' "${says.text}"; exit ${says.rc || 0} ;; esac`,
+        `exec "${realNode}" "$@"`, ''].join('\n'), { mode: 0o755 });
+    }
+    const r = bash(dir, expand(step, { temp, branch, everything }), 'decision');
+    assert.strictEqual(r.code, 0, `el paso nunca frena Validar\n${r.out}`);
+    const own = r.out.match(/^##vso\[task\.setvariable variable=banco\](.*)$/m);
+    const out = r.out.match(/^##vso\[task\.setvariable variable=banco;isOutput=true\](.*)$/m);
+    assert.ok(own && out && own[1] === out[1], `la misma decisión para Validar y para los demás\n${r.out}`);
+    return own[1];
+  };
+  assert.strictEqual(decide(['scripts/tests/lab-x.test.js', 'scripts/tests/fixtures/lab/dato.txt']), 'no', 'sólo una suite y un dato de prueba: el banco no corre');
+  assert.strictEqual(decide(['scripts/tests/lab-x.test.js', 'scripts/ci/lab.js']), 'si', 'con código que el banco lee, corre');
+  assert.strictEqual(decide(['scripts/tests/lab-x.test.js'], { everything: 'si' }), 'si', 'sin poder acotar el cambio, corre');
+  assert.strictEqual(decide(['scripts/tests/lab-x.test.js'], { everything: null }), 'si', 'sin saber si se pudo acotar (la macro literal), corre');
+  assert.strictEqual(decide(['scripts/tests/lab-x.test.js'], { branch: 'refs/heads/main' }), 'si', 'en main corre siempre');
+  assert.strictEqual(decide(null), 'si', 'sin la lista del cambio, corre');
+  // lo que el paso hace con la palabra del guion: sólo «no», exacta y con salida 0, saltea
+  assert.strictEqual(decide(['scripts/ci/lab.js'], { says: { text: 'no' } }), 'no', 'el control: el node de juguete contesta');
+  for (const [what, says] of [['un guion que falla', { text: 'no', rc: 1 }], ['«NO»', { text: 'NO' }], ['«no » con un espacio', { text: 'no ' }], ['una palabra rara', { text: 'tal vez' }], ['nada', { text: '' }]]) {
+    assert.strictEqual(decide(['scripts/tests/lab-x.test.js'], { says }), 'si', `${what}: corre`);
+  }
+});
 
 test('PrShards_BenchLoad_TheNumberTravelsWithThePlan_ListAndMergeUseIt — con bench-load.txt, list --shard bench y merge usan el número del plan', { skip: NO_BASH }, () => {
   for (const sub of ['jobs', 'plan', 'long', 'list', 'merge']) {
