@@ -743,7 +743,7 @@ test('Adversarial_Barrido_UnAnuladoGuardadoEnMainNoCubre', () => {
 // ── guía ─────────────────────────────────────────────────────────────────────────────────────────
 
 test('T20 Guia_DiceQueSeReclamaYComoSeAnula', () => {
-  const guia = fs.readFileSync(path.join(ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const guia = require('./lib/pieces-guide.js').piecesText(ROOT);
   assert.match(guia, /pedido[^\n]*se reclama cuando entra[^\n]*commit[^\n]*main/i);
   assert.match(guia, /latido[^\n]*sólo acepta commits de la línea de main/i);
   assert.match(guia, /retro-heartbeat\.js --annul --sha/);

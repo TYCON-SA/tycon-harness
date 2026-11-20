@@ -1548,6 +1548,7 @@ function computeMechDiscount(allList, args) {
     kept: allList.filter((a) => !discounted.some((d) => d.name === a)),
     mech_findings: mech.findings || [],
     mech_ambiguous_count: (mech.ambiguous || []).length,
+    mech_ambiguous_rules: [...new Set((mech.ambiguous || []).map((a) => String(a.rule || '')))],
   };
 }
 
@@ -1562,6 +1563,49 @@ function computeMechDiscount(allList, args) {
 // nada que confirmar. Un registro o un findings.json que no se leen dan `error`: quien llama no descuenta esa vuelta.
 // lo que dicen los textos del descuento mecánico: el revisor de un crítico abierto vuelve igual
 const MECH_NUNCA_SACA = 'El descuento nunca saca a un revisor con críticos abiertos por confirmar: ése vuelve (confirm_reviewers).';
+
+/**
+ * Los críticos que findings.json da por arreglados (o abiertos) y que no reportó ningún revisor de la corrida: salieron
+ * de mech-check, van directo al reporte y el cruce de «Hallazgos» no los mira, porque sólo mira el registro. Los vuelve a
+ * comprobar mech-check en la vuelta. `{ reglas, error }`; sin marcador de esta historia, ninguno. Un registro o un
+ * findings.json que no se leen dan `error`: no se puede saber cuáles son.
+ */
+function criticosMecanicos(args) {
+  const vacio = { reglas: [], error: null };
+  if (!args.story) return vacio;
+  const leido = readSessionMarkerStrict();
+  if (leido.estado === 'ilegible') return { ...vacio, error: `el marcador de la sesión (${leido.motivo})` };
+  const marker = leido.marcador;
+  if (!marker || !marker.storyPath) return vacio;
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const suya = path.isAbsolute(marker.storyPath) ? marker.storyPath : path.resolve(marker.repoPath || process.cwd(), marker.storyPath);
+  if (real(suya) !== real(args.story)) return vacio;
+  const rc = require('./lib/reported-criticals.js');
+  const runDir = marker.runDir ? path.resolve(marker.repoPath || args.repo || process.cwd(), marker.runDir)
+    : resolveRunDir(marker.repoPath || args.repo || process.cwd(), String(marker.storyId), false, suya, { marker });
+  const h = require('./lib/review-rounds.js').hallazgosDe(runDir);
+  if (h.error && h.existe) return { ...vacio, error: `los hallazgos de la corrida (${h.error})` };
+  const vivos = (h.lista || []).filter((f) => String(f.severity || '').toUpperCase() === 'CRITICAL'
+    && ['fixed', 'open'].includes(String(f.disposition || '').toLowerCase()) && (f.rule_id || f.rule));
+  if (!vivos.length) return vacio;
+  const all = rc.readAll(stateDirOf(os.homedir()));
+  if (all.error) return { ...vacio, error: `el registro de críticos (${all.error})` };
+  const lines = rc.linesOfRun(all.lines, { story: marker.storyId, since: marker.startedAt || null, ...rc.corridaDelMarcador(marker, runDir) });
+  const reportadas = new Set(lines.filter((l) => l.kind === 'report').flatMap((l) => (l.criticals || []).map((c) => c.rule)));
+  const reglas = [...new Set(vivos.map((f) => String(f.rule_id || f.rule)).filter((r) => !reportadas.has(r)))];
+  // por regla, cuántos tienen ya su destino (diferido, refutado, eximido): mech-check los puede seguir reportando
+  const conDestino = {};
+  for (const r of reglas) {
+    conDestino[r] = (h.lista || []).filter((f) => String(f.rule_id || f.rule) === r && String(f.severity || '').toUpperCase() === 'CRITICAL'
+      && ['deferred', 'refuted', 'waived'].includes(String(f.disposition || '').toLowerCase())).length;
+  }
+  return { ...vacio, reglas, conDestino };
+}
+
+// Las reglas que mech-check mira siempre sobre la historia, haga lo que haga el cambio: su ausencia en una vuelta quiere
+// decir que se arregló. Las demás (DEFTR mira los archivos que se le pasan, WIRING depende del paquete, las de los
+// revisores no las corre) no se pueden comprobar así.
+const REGLAS_QUE_MECH_COMPRUEBA = new Set(['ACCOV-C1', 'ACCOV-C5']);
 
 function revisoresPorConfirmar(args) {
   const vacio = { agregar: [], fuera: [], error: null };
@@ -2362,7 +2406,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // `runtime_not_verifiable:`) y su carpeta qa no repiten revisores. Un delta vacío del todo sigue abajo: ése es
   // una foto mal fechada. No se cierra si a algún revisor le queda código de su alcance sin ver: lo editado antes del
   // primer lanzamiento queda afuera del corte, y el revisor que la vuelta salteó no lo vio nunca.
-  const pideVuelta = (f) => require('./lib/reloop-code.js').pideOtraVuelta(f, { storyPath: story });
+  const pideVuelta = (f) => require('./lib/reloop-code.js').pideOtraVuelta(f, { storyPath: story, repoPath: repo });
   const tieneCodigoSinVer = (adv) => {
     const lanzado = vista.lanzamientos.get(adv);
     return noVistosDesde(lanzado !== undefined ? lanzado : vista.inicioMs).some((f) => pideVuelta(f) && advisorAffectedByDelta(adv, [f]).affected);
@@ -4477,13 +4521,18 @@ function computeDelicate(args) {
     // un compañero declarado que no está en disco: sus controles no se pueden mirar
     if (faltan.length) return noPude(`el repo declara ${faltan.join(', ')} y no está en disco`);
   }
-  const deLaHistoria = [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')];
+  // sin parte ni --files, un plan con su «## Archivos» se mide por lo que el plan cambia, no por lo que la historia
+  // declara: un cierre en papel de una historia cuyo código ya entró no es delicado. Lo que la corrida cambie de verdad
+  // lo vuelve a medir el freno del cierre (lib/batch-scope.js frenoDelCierre) sobre el diff entero
+  const delPlan = args.planText ? rutasQueCuentanDelPlan(args.planText, { repo, raices }) : [];
+  const conLista = !!(args.planText && (require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-sources.js')).seccion(args.planText, 'Archivos') || []).some((l) => rutasDelPlan(l).length));
+  const deLaHistoria = conLista ? [] : [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')];
   // con una parte válida (argumento explícito), su lista MÁS lo que el cambio toca; sin ella, como siempre
   const parte = parteDelArg(args);
   const comparables = (lista) => [...new Map(lista.map((f) => rutaComparable(f, raices)).filter((x) => x.rel).map((x) => [x.rel, x])).values()];
   const files = comparables([
     ...(parte ? [...parte.files, ...(args.files || [])] : args.files && args.files.length ? args.files : deLaHistoria),
-    ...rutasQueCuentanDelPlan(args.planText, { repo, raices }),
+    ...delPlan,
   ]);
   const fmTexto = ((content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
   // la decisión escrita en la historia gana sobre las reglas por archivo: lo que la máquina no lee (plata, clientes…)
@@ -4540,8 +4589,10 @@ function computeStoryReviewGate({ story, env = process.env, home = os.homedir() 
   const rc = computeRiskClass({ story });
   if (env.TYCON_STORY_REVIEW === '0') {
     // el salteo lo anota el portón, no el modelo
-    const ES = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
-    ES.anotarEscape({ home, sessionId: ES.sesionDe(env), kind: 'STORY_REVIEW_OFF', variable: 'TYCON_STORY_REVIEW', story: path.resolve(story), riesgo: rc.risk });
+    // la lista se busca también con las skills en un clon aparte; sin ella no se puede anotar, y se dice
+    const ES = require('./lib/controls-off.js').listaDeInterruptores();
+    if (typeof ES.anotarEscape === 'function') ES.anotarEscape({ home, sessionId: ES.sesionDe(env), kind: 'STORY_REVIEW_OFF', variable: 'TYCON_STORY_REVIEW', story: path.resolve(story), riesgo: rc.risk });
+    else process.stderr.write('story-review-gate: TYCON_STORY_REVIEW=0, pero no encontré la lista de variables del arnés (scripts/lib/env-switches.js): el salteo no quedó anotado\n');
     return { run: false, record: estado, riesgo: rc.risk, motivo: 'apagado', nota: 'TYCON_STORY_REVIEW=0' };
   }
   if (rc.risk === 'LOW') return { run: false, record: estado, riesgo: 'LOW', motivo: 'riesgo-bajo', criterios: rc.criteria };
@@ -7672,6 +7723,34 @@ function main() {
     } else if (disc && disc.mech_findings.length) {
       result.mech_findings = disc.mech_findings;
       result.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — al reporte del paso de hallazgos.`;
+    }
+    // Una vuelta sin código no se cierra sola con un crítico de mech-check dado por arreglado sin volver a comprobarlo:
+    // mech-check ya corrió arriba (el descuento); si el crítico sigue, o no se pudo mirar, la vuelta no se cierra
+    if (result.no_code_delta) {
+      const cm = criticosMecanicos(args);
+      const noSe = cm.error ? `no pude saber cuáles son (${cm.error})` : cm.reglas.length && !disc ? 'no pude volver a correr mech-check' : null;
+      if (noSe) {
+        result.no_code_delta = false;
+        result.mech_still_open = [{ rule: null, reason: noSe }];
+      } else if (cm.reglas.length) {
+        // por instancia: los que mech-check sigue reportando, menos los que ya tienen su destino en findings.json
+        const vivos = (regla) => disc.mech_findings.filter((f) => f.rule === regla && String(f.severity || '').toUpperCase() === 'CRITICAL').length;
+        const ambiguas = new Set(disc.mech_ambiguous_rules || []);
+        const abiertos = [];
+        for (const rule of cm.reglas) {
+          if (!REGLAS_QUE_MECH_COMPRUEBA.has(rule)) abiertos.push({ rule, reason: 'mech-check no la evalúa: no la puedo comprobar sin un revisor' });
+          else if (ambiguas.has(rule)) abiertos.push({ rule, reason: 'mech-check la deja ambigua: no la puedo comprobar sin un revisor' });
+          else if (vivos(rule) > (cm.conDestino[rule] || 0)) abiertos.push({ rule, reason: 'findings.json lo da por arreglado y mech-check lo sigue reportando' });
+        }
+        if (abiertos.length) {
+          result.no_code_delta = false;
+          result.mech_still_open = abiertos;
+        } else result.mech_confirmed = cm.reglas;
+      }
+      if (result.mech_still_open) {
+        result.mech_note = `${result.mech_note ? `${result.mech_note} ` : ''}🛑 La vuelta sin código no se cierra: ${result.mech_still_open.map((m) => (m.rule ? `${m.rule} (${m.reason})` : m.reason)).join('; ')}. Arreglalo y volvé a pedir la vuelta.`;
+        logGate({ repoPath: args.repo, name: 'smart-reloop', check: 'smart-reloop-sin-codigo', status: 'reopened', iter: args.iter, mech: result.mech_still_open });
+      }
     }
     // el revisor de un crítico arreglado vuelve aunque el descuento o el cálculo por diferencias lo dejen afuera; lleva el
     // modelo que le da la corrida. `no_code_delta` y el aviso del registro ciego se conservan: vuelve sólo a confirmar

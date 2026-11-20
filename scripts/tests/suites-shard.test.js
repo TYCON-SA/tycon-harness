@@ -1362,3 +1362,154 @@ test('SuitesShardCaps_TestGatePrivateTree_UsesMeasuredWeight @story-8.268 @ac-5'
   }
   assert.strictEqual(seen.length, 1, `la suite va en exactamente un trabajo del reparto de la noche: ${JSON.stringify(seen)}`);
 });
+
+// ── el trabajo del banco también lleva suites (`--bench-load`) ─────────────────────────────────────────────────────
+// Con dos carriles en la organización, el banco y dos trabajos de suites son tres pedidos y la segunda pata espera
+// carril. Con `--bench-load <segundos>` el trabajo del banco entra al reparto
+// cargado de entrada (`bench_rate` × (los segundos del banco + los topes de las exclusivas)) y nunca pasa `job_deadline`.
+// Laboratorio: exclusivas a-slow (tope propio 10) y e-fast (5): 15 s de topes; comunes d-medium 40, g-weekly 30,
+// c-skill 20, b-fast 3 y f-new 3 (96 s); bench_rate 1, job_budget 60, job_deadline 120.
+const BENCH_SET = { default: 3, job_budget: 60, job_deadline: 120, bench_rate: 1,
+  suite_cap: { factor: 1, floor: 1, per_suite: { 'a-slow.test.sh': 10, 'e-fast.test.js': 5 } } };
+const benchLab = (set = BENCH_SET, suites = EXCL_SUITES) => lab({ suites, weights: { ...LAB_WEIGHTS, pr: set } });
+const benchArgs = (dir, seconds, extra = []) => ['--weight-set', 'pr', ...APART, ...(seconds === null ? [] : ['--bench-load', String(seconds)]),
+  '--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json'), ...extra];
+const benchList = (dir, shard, of, seconds, extra = []) => run(['list', '--shard', String(shard), '--of', String(of), '--skills', '/S/skills', '--scripts', '/R/scripts', ...benchArgs(dir, seconds, extra)]);
+
+test('T49 SuitesShard_BenchLoad_BenchJobTakesSuitesExclusivesFirst — el del banco lleva comunes, la unión es la lista y ninguna corre dos veces', () => {
+  const dir = benchLab();
+  for (const seconds of [0, 30, 100]) {
+    for (const of of [1, 2]) {
+      const seen = [];
+      for (let i = 1; i <= of; i += 1) {
+        const r = benchList(dir, i, of, seconds);
+        assert.strictEqual(r.code, 0, `banco ${seconds} s, trabajo ${i} de ${of}: ${r.err}`);
+        assert.ok(r.lines.length > 0, `banco ${seconds} s, trabajo ${i} de ${of}: ningún trabajo de suites queda vacío`);
+        seen.push(...names(r));
+      }
+      const bench = benchList(dir, 'bench', of, seconds);
+      assert.strictEqual(bench.code, 0, bench.err);
+      assert.deepStrictEqual(names(bench).slice(0, 2), EXCL, 'primero las que corren solas, en el orden de suites.json');
+      assert.deepStrictEqual([...seen, ...names(bench)].sort(), [...ALL].sort(), `banco ${seconds} s, ${of} trabajo(s): la lista entera, ninguna dos veces`);
+    }
+  }
+  // banco en 0 (el cambio no lo corre): arranca con los 15 s de topes y se lleva g-weekly, b-fast y f-new (51 contra 60)
+  assert.deepStrictEqual(names(benchList(dir, 'bench', 1, 0)), [...EXCL, 'b-fast.test.js', 'f-new-without-weight.test.js', 'g-weekly.test.sh']);
+  assert.deepStrictEqual(names(benchList(dir, 1, 1, 0)), ['c-skill.test.js', 'd-medium.test.sh']);
+  // banco en 30: arranca con 45 y se lleva c-skill y las dos livianas (71 contra 70)
+  assert.deepStrictEqual(names(benchList(dir, 1, 1, 30)), ['d-medium.test.sh', 'g-weekly.test.sh']);
+  // banco en 100: arranca con 115, más que cualquier trabajo de suites: no se lleva ninguna común
+  assert.deepStrictEqual(names(benchList(dir, 'bench', 1, 100)), EXCL);
+});
+
+test('T49 SuitesShard_BenchLoad_NeverPassesItsDeadline — el trabajo del banco no pasa lo que entra en 40 min, aunque sea el más liviano', () => {
+  // d-medium pesa 200: el trabajo de suites queda muy cargado, pero el del banco (115 de entrada, plazo 120) sólo
+  // puede llevar las que entran en 5 s: b-fast y una más de 3 no (3 + 3 = 6 > 5).
+  const dir = benchLab({ ...BENCH_SET, weights: { 'd-medium.test.sh': 200 } });
+  const bench = benchList(dir, 'bench', 1, 100);
+  assert.deepStrictEqual(names(bench), [...EXCL, 'b-fast.test.js'], 'una liviana entra; c-skill (20), g-weekly (30) ni la segunda de 3 no');
+  const plan = run(['plan', '--of', '1', ...benchArgs(dir, 100)]);
+  assert.strictEqual(plan.code, 0, plan.err);
+  assert.match(plan.out, /trabajo del banco: 2 suite\(s\) que corren solas y 1 del reparto \(~3 s\) · arranca cargado con ~115 \(el banco, 100 s, y los topes de las que corren solas, 15 s\) · lleva hasta ~120/, plan.out);
+  assert.match(plan.out, /trabajo 1 de 1: 4 suite\(s\) · ~253 s/, '200 + 30 + 20 + 3');
+  // `long` mira el trabajo de suites más cargado contra el plazo: 253 > 120, van los largos
+  const long = run(['long', '--of', '1', ...benchArgs(dir, 100)]);
+  assert.strictEqual(long.out, 'si\n', long.err);
+  assert.match(long.err, /~253 s de peso en el trabajo de suites más cargado \(el del banco se lleva ~3\)/);
+});
+
+test('T49 SuitesShard_BenchLoad_JobsCountsWhatTheBenchJobCarries — pide 1 trabajo de suites donde antes pedía 2', () => {
+  const dir = benchLab();
+  const jobs = (seconds) => run(['jobs', '--max', '3', ...benchArgs(dir, seconds)]);
+  // sin la opción: 96 s de comunes / 60 → 2
+  assert.strictEqual(jobs(null).out, '2\n');
+  // banco en 0: arranca con 15 y entran 105 más en su plazo: los 96 caben, 1 trabajo de suites
+  const light = jobs(0);
+  assert.strictEqual(light.out, '1\n', light.err);
+  assert.match(light.err, /el trabajo del banco arranca con ~15 y lleva ~105 más del reparto/);
+  // banco en 100: arranca con 115, le quedan 5: los trabajos de suites llevan 91 → 2, como antes
+  assert.strictEqual(jobs(100).out, '2\n');
+  // banco más pesado que su plazo: no lleva nada, y nunca se piden MENOS trabajos que sin la opción
+  assert.strictEqual(jobs(500).out, '2\n');
+  const over = run(['long', '--of', '2', ...benchArgs(dir, 500)]);
+  assert.match(over.err, /el trabajo del banco ya arranca con ~515, más de lo que entra en él/, 'lo dice');
+});
+
+test('T49 SuitesShard_BenchLoad_MergeExpectsWhatTheBenchJobRan — el veredicto junta las comunes del banco, y sin lo suyo son no medidas', () => {
+  const dir = benchLab();
+  const opts = ['--weight-set', 'pr', ...APART, '--bench-load', '0'];
+  artifact(dir, 1, 1, { only: opts });
+  artifact(dir, 'bench', 1, { only: opts });
+  let m = merge(dir, 1, opts);
+  assert.strictEqual(m.code, 0, m.err);
+  assert.deepStrictEqual([...m.ran].sort(), [...ALL].sort(), 'corrieron todas');
+  assert.deepStrictEqual(m.failures, []);
+  assert.match(m.out, /trabajo del banco: terminó · 5 ejecución\(es\)/);
+  // el del banco no publicó: sus exclusivas Y sus comunes son no medidas, nunca verdes
+  fs.rmSync(path.join(dir, 'artifacts', 'suites-shard-bench-a1'), { recursive: true, force: true });
+  m = merge(dir, 1, opts);
+  assert.deepStrictEqual([...m.failures].sort(), [...EXCL, 'b-fast.test.js', 'f-new-without-weight.test.js', 'g-weekly.test.sh'].map((n) => `${n}(no-medida)`).sort());
+  // merge sin la opción espera otro reparto: las comunes del banco no estaban en el trabajo 1, así que no le cree
+  artifact(dir, 'bench', 1, { only: opts });
+  m = merge(dir, 1, ['--weight-set', 'pr', ...APART]);
+  assert.ok(m.failures.some((f) => f.endsWith('(no-medida)')), `con otro reparto lo publicado no cuadra: ${m.failures}`);
+});
+
+test('T49 SuitesShard_BenchLoad_NothingForTheBenchJob_Exits3 — sin exclusivas y sin comunes que le toquen, el del banco sale 3', () => {
+  const dir = benchLab(BENCH_SET, LAB_SUITES);
+  const r = benchList(dir, 'bench', 1, 500);
+  assert.strictEqual(r.code, 3, `sale 3 (salió ${r.code}) ${r.err}`);
+  assert.strictEqual(r.out, '');
+  assert.match(r.err, /ninguna común le tocó/);
+  for (const i of [1]) artifact(dir, i, 1, { only: ['--weight-set', 'pr', ...APART, '--bench-load', '500'] });
+  const m = merge(dir, 1, ['--weight-set', 'pr', ...APART, '--bench-load', '500']);
+  assert.deepStrictEqual(m.failures, [], 'el veredicto no espera nada del banco');
+  assert.doesNotMatch(m.out, /trabajo del banco/);
+});
+
+test('T49 SuitesShard_BenchLoad_Measured_UsesTheMeasuredRate — con --measured, la carga sale de bench_rate_measured y el plazo medido', () => {
+  const dir = benchLab({ ...BENCH_SET, bench_rate_measured: 2, job_budget_measured: 60, job_deadline_measured: 300,
+    suite_cap: { ...BENCH_SET.suite_cap, measured: MEASURED_RULE } });
+  const times = timesDir(dir, [passes(3, { 'd-medium.test.sh': 50, 'g-weekly.test.sh': 30 })]);
+  const plan = run(['plan', '--of', '1', ...benchArgs(dir, 10, ['--measured', times])]);
+  assert.strictEqual(plan.code, 0, plan.err);
+  assert.match(plan.out, /arranca cargado con ~50 \(el banco, 10 s, y los topes de las que corren solas, 15 s\) · lleva hasta ~300/, '2 × (10 + 15)');
+  const noRate = benchLab({ ...BENCH_SET, job_deadline_measured: 300, suite_cap: { ...BENCH_SET.suite_cap, measured: MEASURED_RULE } });
+  const t2 = timesDir(noRate, [passes(3, { 'd-medium.test.sh': 50 })]);
+  refuses(run(['plan', '--of', '1', ...benchArgs(noRate, 10, ['--measured', t2])]), /bench_rate_measured/, 'sin el número medido no se adivina');
+});
+
+test('T49 SuitesShard_BenchLoad_BadRequests_Exit2 — sin exclusive-apart, un número malo o sin los números del juego: sale 2, sin lista', () => {
+  const dir = benchLab();
+  const files = ['--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json'), '--weight-set', 'pr'];
+  refuses(run(['plan', '--of', '1', ...files, '--bench-load', '600']), /--bench-load va sólo con --exclusive-apart/, 'sin --exclusive-apart');
+  for (const bad of ['x', '-1', '1e3', '']) refuses(run(['plan', '--of', '1', ...files, ...APART, '--bench-load', bad]), /--bench-load tiene que ser/, `«${bad}»`);
+  refuses(run(['plan', '--of', '1', ...files, ...APART, '--bench-load']), /--bench-load tiene que ser/, 'sin número');
+  const { bench_rate: _r, ...noRate } = BENCH_SET;
+  refuses(run(['list', '--shard', 'bench', '--of', '1', '--skills', '/S', '--scripts', '/R', ...benchArgs(benchLab(noRate), 0)]), /bench_rate/, 'sin bench_rate');
+  const { job_deadline: _d, ...noDeadline } = BENCH_SET;
+  refuses(run(['jobs', '--max', '2', ...benchArgs(benchLab(noDeadline), 0)]), /job_deadline/, 'sin el plazo');
+  const { suite_cap: _c, ...noCap } = BENCH_SET;
+  refuses(run(['merge', '--of', '1', '--artifacts', dir, '--out', path.join(dir, 'm'), ...benchArgs(benchLab(noCap), 0)]), /suite_cap/, 'sin topes');
+  refuses(run(['plan', '--of', '1', ...benchArgs(benchLab({ ...BENCH_SET, bench_rate: 0 }), 0)]), /bench_rate/, 'bench_rate en 0');
+});
+
+test('T49 SuitesShard_BenchLoad_WithoutTheOption_SameBytes — sin la opción, el juego con bench_rate dice lo de siempre', () => {
+  const { bench_rate: _r, ...plain } = BENCH_SET;
+  const a = benchLab(); const b = benchLab(plain);
+  for (const args of [['plan', '--of', '2'], ['jobs', '--max', '3'], ['long', '--of', '2'], ['list', '--shard', 'bench', '--of', '2', '--skills', '/S', '--scripts', '/R'],
+    ['list', '--shard', '1', '--of', '2', '--skills', '/S', '--scripts', '/R']]) {
+    const x = run([...args, ...benchArgs(a, null)]); const y = run([...args, ...benchArgs(b, null)]);
+    assert.strictEqual(x.out, y.out, args.join(' '));
+    assert.strictEqual(x.err.replace(a, b), y.err, args.join(' '));
+  }
+});
+
+test('T49 SuitesWeights_PrSetHasBenchRates — el juego pr trae cuánto reparto hace un segundo de reloj, y de dónde sale; la lista real reparte con el banco', () => {
+  const pr = JSON.parse(fs.readFileSync(REAL_WEIGHTS, 'utf8')).pr;
+  assert.ok(pr.bench_rate > 0 && pr.bench_rate_measured > 0, 'los dos números');
+  assert.match(pr.__bench_rate, /1,9/, 'con su origen');
+  const r = run(['plan', '--of', '1', '--weight-set', 'pr', ...APART, '--bench-load', '600', '--suites', REAL_SUITES, '--weights', REAL_WEIGHTS]);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.match(r.out, /trabajo del banco: \d+ suite\(s\) que corren solas y \d+ del reparto/);
+});

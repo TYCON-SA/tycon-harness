@@ -837,7 +837,7 @@ while read -r que _; do
   [ "$que" = abre ] && abiertos=$((abiertos+1)); [ "$que" = cierra ] && abiertos=$((abiertos-1))
   [ "$abiertos" -gt "$max" ] && max=$abiertos
 done < "$TMP/cuadros.log"
-if [ "$(grep -c '^abre' "$TMP/cuadros.log")" = 3 ] && [ "$max" = 1 ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production-dialog.lock" ]; then
+if [ "$(grep -c '^abre' "$TMP/cuadros.log")" = 3 ] && [ "$max" = 1 ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production-dialog.turn" ]; then
   ok "T-puerta-36 PuertaCuadro_UnoPorVez · tres pedidos a la vez abren tres cuadros, nunca dos juntos, y el turno queda libre"
 else no "T-puerta-36 PuertaCuadro_UnoPorVez · máximo abiertos a la vez: $max · log: $(tr '\n' '|' < "$TMP/cuadros.log")"; fi
 
@@ -858,9 +858,9 @@ else no "T-puerta-37 PuertaCuadro_TopeDeEspera · rc=$rc · cuadros: $(grep -c '
 
 # T-puerta-38 · un turno de una puerta que ya no corre (la mataron) no traba a la siguiente
 mundo ok
-mkdir -p "$CASA/.claude/.tycon-pipeline/production-dialog.lock"; printf '999999' > "$CASA/.claude/.tycon-pipeline/production-dialog.lock/pid"
+printf '999999\nuna puerta muerta' > "$CASA/.claude/.tycon-pipeline/production-dialog.turn"
 rc="$(TYCON_PROD_TEST_DIALOG_WAIT=3 puerta "$PROD" 'select 1')"
-if [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production-dialog.lock" ]; then
+if [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production-dialog.turn" ]; then
   ok "T-puerta-38 PuertaCuadro_TurnoAbandonado · el turno de un proceso muerto se toma y el cuadro se abre"
 else no "T-puerta-38 PuertaCuadro_TurnoAbandonado · rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
 
@@ -869,7 +869,7 @@ else no "T-puerta-38 PuertaCuadro_TurnoAbandonado · rc=$rc · orden $(tr '\n' '
 peor=0
 for ronda in 1 2 3; do
   mundo ok; cuadro_lento 1
-  mkdir -p "$CASA/.claude/.tycon-pipeline/production-dialog.lock"; printf '999999' > "$CASA/.claude/.tycon-pipeline/production-dialog.lock/pid"
+  printf '999999\nuna puerta muerta' > "$CASA/.claude/.tycon-pipeline/production-dialog.turn"
   for i in 1 2 3 4 5 6; do ( TYCON_PROD_TEST_DIALOG_WAIT=30 puerta "$PROD" "select $i" >/dev/null; ) & done; wait
   abiertos=0; max=0
   while read -r que _; do
@@ -881,11 +881,11 @@ done
 if [ "$peor" = 1 ]; then ok "T-puerta-40 PuertaCuadro_TurnoAbandonado_EnRafaga · tres rondas de seis puertas sobre un turno muerto: nunca dos cuadros abiertos"
 else no "T-puerta-40 PuertaCuadro_TurnoAbandonado_EnRafaga · hubo $peor cuadros abiertos a la vez"; fi
 
-# T-puerta-41 · si el turno no se puede crear, sale enseguida y dice eso, no que hay otro cuadro abierto. Un archivo
-# donde va la carpeta del turno hace fallar su `mkdir` sin quitarle la escritura al resto del estado (sin escritura, la
+# T-puerta-41 · si el turno no se puede crear, sale enseguida y dice eso, no que hay otro cuadro abierto. Una carpeta
+# donde va el archivo del turno hace fallar su creación sin quitarle la escritura al resto del estado (sin escritura, la
 # puerta ya frena antes, al leer el índice)
 mundo ok
-printf 'no es una carpeta' > "$CASA/.claude/.tycon-pipeline/production-dialog.lock"
+mkdir -p "$CASA/.claude/.tycon-pipeline/production-dialog.turn"
 # stable-data: mide cuánto tarda la puerta, no afirma ninguna fecha
 desde=$(date +%s)
 rc="$(puerta "$PROD" 'select 1')"
@@ -912,6 +912,37 @@ else no "T-puerta-39 Freno_SubagenteNoUsaLaPuerta · la principal recibió el me
 if grep -q '"regla":"puerta-subagente"' "$CASA/.claude/.tycon-pipeline/guard-decisions.jsonl" 2>/dev/null || grep -rqs '"puerta-subagente"' "$CASA/.claude/.tycon-pipeline"; then
   ok "T-puerta-39 Freno_SubagenteNoUsaLaPuerta · el bloqueo queda anotado con su regla"
 else no "T-puerta-39 Freno_SubagenteNoUsaLaPuerta · no encontré la regla puerta-subagente en el registro de decisiones: $(ls "$CASA/.claude/.tycon-pipeline")"; fi
+
+# T-puerta-42 · sin el cuadro propio no se hace nada: la medición que deja sacar la ventana de Claude Code. Cada forma que
+# consulta o cambia algo, con el cuadro ausente, rechazado, vencido o roto, sale 2 sin leer la clave, sin conectarse y sin
+# anotar el cambio; y las que no piden cuadro no consultan ni cambian nada que no se deshaga
+for forma in consulta reclasificar firewall; do
+  for m in sin-programa rechazar vencer error; do
+    mundo ok
+    if [ "$m" = sin-programa ]; then rm -f "$RAIZ/usr/bin/osascript"; else modo_cuadro "$m"; fi
+    case "$forma" in
+      consulta) rc="$(puerta "$PROD" 'select 1')" ;;
+      reclasificar) rc="$(puerta --reclassify "$PROD")" ;;
+      firewall) rc="$(puerta --open-firewall "$PROD")" ;;
+    esac
+    if [ "$rc" = 2 ] && sin_security && ! grep -q '^sqlcmd' "$TMP/orden.log" 2>/dev/null && [ ! -s "$TMP/sqlcmd-argv.log" ] \
+       && ! grep -qE '"accion":"(consulta|reclasificar|open-firewall)"' "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null; then
+      ok "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · $forma con el cuadro $m: sale 2 sin clave, sin conectarse y sin cambiar nada"
+    else no "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · $forma con el cuadro $m: rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
+  done
+done
+for forma in "--verify" "--locks" "--load-key $PROD" "--close-firewall $PROD"; do
+  mundo ok; rm -f "$RAIZ/usr/bin/osascript"
+  # shellcheck disable=SC2086
+  puerta $forma >/dev/null
+  if [ ! -s "$TMP/sqlcmd-argv.log" ] && ! grep -q -- '-w' "$TMP/security-argv.log" 2>/dev/null; then
+    ok "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · ${forma%% *} no pide cuadro y no lee la clave ni se conecta"
+  else no "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · ${forma%% *} leyó la clave o se conectó sin cuadro"; fi
+done
+# y la configuración administrada ya no pregunta por la puerta: su cuadro es la única ventana
+if ! grep -qF 'Bash(/opt/tycon/bin/tycon-prod-sql' "$AQUI/scripts/production/managed-settings.tycon-production.json.template"; then
+  ok "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · la plantilla administrada no tiene regla de preguntar por la puerta"
+else no "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · la plantilla administrada todavía pregunta por la puerta: dos ventanas por consulta"; fi
 
 echo "— prod-sql: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

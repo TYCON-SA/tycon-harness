@@ -524,5 +524,5 @@ test('T20 4.14-Guide_LearningsSectionsUpdated @story-4.14 @ac-19 — las guías 
   assert.ok(!mineria.includes('salen sólo con los números'), 'ya no dice que sin redacción la propuesta sale igual');
   const operaciones = leer(path.join(ROOT, 'pipelines', 'operations', 'README.md'));
   assert.ok(!operaciones.includes('sólo con los números'), 'la guía de los pipelines tampoco');
-  assert.ok(leer(path.join(ROOT, 'guides', 'piezas-del-arnes.md')).includes('recomendaciones.json'), 'la ficha nombra el archivo de la noche');
+  assert.ok(require('./lib/pieces-guide.js').piecesText(ROOT).includes('recomendaciones.json'), 'la ficha nombra el archivo de la noche');
 });

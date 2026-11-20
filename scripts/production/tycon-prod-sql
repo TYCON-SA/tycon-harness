@@ -6,8 +6,10 @@
 # sentencia la aprueba una persona en un cuadro del sistema que abre LA PROPIA PUERTA (`aprobar`, más abajo),
 # antes de leer la clave: así la aprobación no depende de cómo se la llamó. Un guion guardado que llama a la
 # puerta no pasa por la regla `ask` de Claude Code, que mira el texto del comando; el cuadro propio sí lo ve.
-# La regla `ask` (`Bash(/opt/tycon/bin/tycon-prod-sql *)` en la configuración administrada) queda como segunda
-# capa, y el freno `prod-access-guard.js` prohíbe cualquier otro camino a esa base.
+# Es la ÚNICA ventana: la configuración administrada no pregunta por la puerta, porque su permiso no agregaba control
+# (lo que corre sin el cuadro propio lo prueba tycon-prod-sql.test.sh, «sin el cuadro no se hace nada») y duplicaba
+# las ventanas. El freno `prod-access-guard.js` prohíbe cualquier otro camino a esa base. El cuadro se abre sólo en la
+# pantalla de la Mac: nunca por SSH, y ninguna aprobación a distancia lo reemplaza.
 #
 # LA CONTRASEÑA NUNCA PASA POR LA CONVERSACIÓN: vive en un llavero propio
 # (~/Library/Keychains/tycon-prod.keychain-db), la saca esta puerta y viaja al cliente de base por
@@ -139,7 +141,8 @@ anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaro
 }
 
 # ── el cuadro propio: la aprobación de una persona, pedida por la puerta ──────────────────────
-# La consulta, `--reclassify` y `--open-firewall` lo piden antes de leer la clave, de tocar el índice o de llamar a `az`.
+# La consulta, `--reclassify` y `--open-firewall` lo piden antes de leer la clave, de tocar el índice o de llamar a `az`;
+# `--delete-group`, cuando ya probó que el grupo no tiene nada de producción y antes de pedir el borrado.
 # Sin respuesta, sin sesión gráfica o sin el programa del cuadro, la puerta sale 2: falla cerrada. El programa se busca
 # bajo la raíz, como `security`, y corre con un entorno limpio y un tope de tiempo propio.
 OSASCRIPT="$RAIZ/usr/bin/osascript"
@@ -181,30 +184,39 @@ quien_pide(){
 }
 
 # ── un cuadro por vez ─────────────────────────────────────────────────────────────────────────
-# Una ráfaga de consultas no apila cuadros: la persona contesta de a uno. El turno es una carpeta
-# (`mkdir` es atómico): el que la crea abre su cuadro, los demás esperan a que se conteste, hasta un tope, y si se vence
-# salen 2 diciendo quién tiene el cuadro abierto. Un turno cuyo dueño ya no corre, o más viejo que lo que puede durar
-# un cuadro, se da por abandonado y se toma.
-TURNO="$_ESTADO/production-dialog.lock"
+# Una ráfaga de consultas no apila cuadros: la persona contesta de a uno. El turno es un archivo con el número de la
+# puerta que lo tiene y quién pide: el que lo crea abre su cuadro, los demás esperan a que se conteste, hasta un tope, y
+# si se vence salen 2 diciendo quién tiene el cuadro abierto. Un turno cuyo dueño ya no corre, o más viejo que lo que
+# puede durar un cuadro, se da por abandonado y se toma.
+# 🔴 Se crea con `noclobber` (bash abre el archivo con O_EXCL: lo decide el sistema operativo), no con `mkdir`: el
+# `mkdir` de las herramientas en Rust de algunas distribuciones (uutils) no falla si la carpeta aparece entre que mira y
+# la crea, y tres puertas a la vez abrían tres cuadros (medido en la CI de Linux, Ubuntu 26.04).
+TURNO="$_ESTADO/production-dialog.turn"
 # la espera se acorta sólo en las pruebas (sin el freno instalado), como TYCON_PROD_ROOT
 TURNO_ESPERA=90
 if [ "$INSTALADO" = 0 ] && [[ "${TYCON_PROD_TEST_DIALOG_WAIT:-}" =~ ^[0-9]+$ ]]; then TURNO_ESPERA="$TYCON_PROD_TEST_DIALOG_WAIT"; fi
 TENGO_TURNO=0
-soltar_turno(){ [ "$TENGO_TURNO" = 1 ] && [ "$(cat "$TURNO/pid" 2>/dev/null)" = "$$" ] && rm -rf "$TURNO" 2>/dev/null; TENGO_TURNO=0; return 0; }
+# crea el archivo $1 con $2 adentro sólo si no existía: sale 0 si lo creó esta puerta
+crear_solo_si_no_existe(){ ( set -o noclobber; printf '%s' "$2" > "$1" ) 2>/dev/null; }
+pid_del_turno(){ head -n 1 "$TURNO" 2>/dev/null; }
+soltar_turno(){ [ "$TENGO_TURNO" = 1 ] && [ "$(pid_del_turno)" = "$$" ] && rm -f "$TURNO" 2>/dev/null; TENGO_TURNO=0; return 0; }
 trap soltar_turno EXIT
 # una puerta terminada por señal también suelta su turno: sin esto bash sale sin correr el trap de EXIT
 trap 'exit 143' TERM; trap 'exit 130' INT; trap 'exit 129' HUP
-# cuándo se tocó una carpeta, en segundos; si no se puede leer, ahora. `stat -f %m` es el de macOS; en Linux (la CI)
-# `stat -f` habla del sistema de archivos y sale 0 con otro texto, así que se acepta sólo un número
+# cuándo se tocó una carpeta, en segundos; si no se puede leer, ahora. Primero `stat -c %Y` (Linux: GNU y uutils), que en
+# macOS sale con error y sin nada en la salida; después `stat -f %m` (macOS). Al revés no: en Linux `stat -f` habla del
+# sistema de archivos, y lo que imprime puede ser un número que no es la fecha. Y una fecha sin sentido (antes de 2001 o
+# en el futuro) cuenta como ahora: con una fecha vieja de mentira, un turno vivo se daba por abandonado y se lo robaban
 segundos_de(){
-  local s
-  s="$(stat -f %m "$1" 2>/dev/null)"; [[ "$s" =~ ^[0-9]+$ ]] || s="$(stat -c %Y "$1" 2>/dev/null)"
-  [[ "$s" =~ ^[0-9]+$ ]] || s="$(date +%s)"
+  local s ahora
+  ahora="$(date +%s)"
+  s="$(stat -c %Y "$1" 2>/dev/null)"; [[ "$s" =~ ^[0-9]+$ ]] || s="$(stat -f %m "$1" 2>/dev/null)"
+  if ! [[ "$s" =~ ^[0-9]+$ ]] || [ "$s" -lt 1000000000 ] || [ "$s" -gt $(( ahora + 60 )) ]; then s="$ahora"; fi
   printf '%s' "$s"
 }
 turno_abandonado(){
   local pid edad
-  pid="$(cat "$TURNO/pid" 2>/dev/null)"
+  pid="$(pid_del_turno)"
   if [[ "$pid" =~ ^[0-9]+$ ]] && ! kill -0 "$pid" 2>/dev/null; then return 0; fi
   edad=$(( $(date +%s) - $(segundos_de "$TURNO") ))
   # sin pid escrito todavía: recién creado; se da por abandonado sólo si pasó lo que dura un cuadro
@@ -214,26 +226,26 @@ tomar_turno(){ # $1 = lo que dice quién pide (para el que espera)
   mkdir -p "$(dirname "$TURNO")" 2>/dev/null
   local desde; desde=$(date +%s)
   while :; do
-    if mkdir "$TURNO" 2>/dev/null; then
-      printf '%s' "$$" > "$TURNO/pid"; printf '%s' "$1" > "$TURNO/quien"; TENGO_TURNO=1; return 0
-    fi
-    # el turno no se puede crear: la carpeta del estado no se escribe, o en su lugar hay algo que no es una carpeta. No se
-    # mira si el turno existe: la puerta que lo tenía puede soltarlo entre el `mkdir` y esta línea
-    if [ ! -w "$(dirname "$TURNO")" ] || { [ -e "$TURNO" ] && [ ! -d "$TURNO" ]; }; then muere "no pude crear el turno del cuadro en $(dirname "$TURNO"): sin turno no abro el cuadro ni leo la clave. Revisá que esa carpeta se pueda escribir."; fi
+    # el número y quién pide van en la misma escritura que crea el archivo
+    if crear_solo_si_no_existe "$TURNO" "$$
+$1"; then TENGO_TURNO=1; return 0; fi
+    # el turno no se puede crear: la carpeta del estado no se escribe, o en su lugar hay algo que no es un archivo. No se
+    # mira si el turno existe: la puerta que lo tenía puede soltarlo entre la creación y esta línea
+    if [ ! -w "$(dirname "$TURNO")" ] || { [ -e "$TURNO" ] && [ ! -f "$TURNO" ]; }; then muere "no pude crear el turno del cuadro en $(dirname "$TURNO"): sin turno no abro el cuadro ni leo la clave. Revisá que esa carpeta se pueda escribir."; fi
     # 🔴 Tomar un turno abandonado va de a una puerta, y se vuelve a mirar adentro: dos que vieron el mismo turno muerto,
     # sin esto, se llevaban también el turno vivo que la primera acababa de crear, y quedaban dos cuadros abiertos.
-    if turno_abandonado && mkdir "$TURNO.rescate" 2>/dev/null; then
-      turno_abandonado && rm -rf "$TURNO"
-      rmdir "$TURNO.rescate" 2>/dev/null
+    if turno_abandonado && crear_solo_si_no_existe "$TURNO.rescate" "$$"; then
+      turno_abandonado && rm -f "$TURNO"
+      rm -f "$TURNO.rescate" 2>/dev/null
       continue
     fi
     # el candado del rescate se tiene unos milisegundos: uno más viejo que 10 s es de una puerta que murió adentro
-    if [ -d "$TURNO.rescate" ] && [ $(( $(date +%s) - $(segundos_de "$TURNO.rescate") )) -gt 10 ]; then
-      rmdir "$TURNO.rescate" 2>/dev/null
+    if [ -f "$TURNO.rescate" ] && [ $(( $(date +%s) - $(segundos_de "$TURNO.rescate") )) -gt 10 ]; then
+      rm -f "$TURNO.rescate" 2>/dev/null
     fi
     if [ $(( $(date +%s) - desde )) -ge "$TURNO_ESPERA" ]; then
       # lo escribió otra puerta con quien_pide(), ya saneado: acá sólo se le sacan los caracteres de control
-      local otro; otro="$(tr -d '\000-\037\177' < "$TURNO/quien" 2>/dev/null | head -c 200)"
+      local otro; otro="$(tail -n +2 "$TURNO" 2>/dev/null | tr -d '\000-\037\177' | head -c 200)"
       anotar "\"host\":\"$HOST\",\"accion\":\"sin-turno\",\"exit\":2"
       muere "ya hay un cuadro de producción abierto esperando respuesta${otro:+ ($otro)} y la puerta abre uno por vez. Esperé ${TURNO_ESPERA} s y no se contestó: no abrí otro ni leí la clave. Que la persona conteste ese cuadro, y después volvé a intentar, de a una consulta por vez."
     fi
@@ -241,7 +253,7 @@ tomar_turno(){ # $1 = lo que dice quién pide (para el que espera)
   done
 }
 
-aprobar(){ # $1 = lo que muestra el cuadro, $2 = la forma (consulta | reclasificar | open-firewall)
+aprobar(){ # $1 = lo que muestra el cuadro, $2 = la forma (consulta | reclasificar | open-firewall | borrar-grupo)
   # SSH: el cuadro se abriría en la pantalla de la Mac, donde quizá no hay nadie, o no se abriría
   if [ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ] || [ "$("$LAUNCHCTL" managername 2>/dev/null)" != Aqua ]; then
     muere "el cuadro de producción necesita la sesión de la Mac: abrí la terminal en la Mac, no por SSH"
@@ -649,6 +661,15 @@ EOF
       *) fallo_grupo "el grupo tiene «${h}», que no está declarado en ningún proyecto de esta máquina: no sé si es producción, así que no lo borro. Declaralo, o que lo borre una persona en su terminal." ;;
     esac
   done
+
+  # 🔴 Probado que no tiene nada de producción, el borrado lo aprueba una persona en el cuadro de la puerta: no tiene vuelta
+  # atrás, y es la única aprobación que tiene (la configuración administrada no pregunta por la puerta)
+  # lo que no tiene vuelta atrás va primero, y la lista con tope: el cuadro no puede cortar justo la advertencia
+  # shellcheck disable=SC2206 # los nombres ya pasaron su charset (HOST_VALIDO): sin espacios ni comodines
+  _servs=($LISTA_S)
+  LISTA_C=" ${_servs[*]:0:5}"; [ "${#_servs[@]}" -gt 5 ] && LISTA_C="$LISTA_C y $(( ${#_servs[@]} - 5 )) más"
+  [ "${#_servs[@]}" -gt 0 ] || LISTA_C=""
+  aprobar "No tiene vuelta atrás: borrar el grupo de recursos ${GRUPO_B} (suscripción ${SUB}), con ${RECURSOS_N} recurso(s) y ${SERVIDORES_N} servidor(es) SQL, ninguno declarado como producción${LISTA_C:+:${LISTA_C}}." borrar-grupo
 
   # el pedido de borrado
   salida="$(correr_az group delete -n "$GRUPO_B" --subscription "$SUB" --yes --no-wait 2>&1)"; rc=$?

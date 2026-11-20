@@ -278,8 +278,9 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   const parte = parteDe(marker, storyTexto);
   const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto, batch: batchDe(parte) });
   const cfg = configUsada(config);
-  // la revisión de la propia sesión firma una rutina con `review`; si no puede firmar, informa
-  const informativa = propia && (delicate.value || cfg.plan_review.routine_approval !== 'review');
+  // la revisión de la propia sesión firma una rutina con `review`, y un plan delicado si el perfil lo lista como trámite
+  // (automatic-signing.js); si no puede firmar, informa
+  const informativa = propia && ((delicate.value && !delicadaDeTramite()) || cfg.plan_review.routine_approval !== 'review');
   // el número al azar que ata el resultado del pase a esta revisión: un resultado sin él, o con el de otra, no se anota
   const numero = crypto.randomBytes(16).toString('hex');
   const corte = cfg.review.blocking_severity;
@@ -604,7 +605,7 @@ function lineaDelCuadro({ estado, destino, marker, config }) {
  * coordinadora apruebe; después la constancia. Todo se vuelve a calcular ahora: el plan, la story y si es delicada.
  * `delegacion(o)` (opcional) mira la delegación del perfil; sin ella, la miró antes el freno de la firma.
  */
-function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion, home, delegaDelicada = delicadaDelegada }) {
+function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion, home, delegaDelicada = delicadaDelegada, deTramite = delicadaDeTramite }) {
   const plan = planDe(marker);
   const storyFile = storyDe(marker);
   let storyTexto = null;
@@ -613,7 +614,9 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parte) });
   // un plan delicado: sólo la coordinadora para otra sesión, con `plan-approval:delicada` delegada en el perfil; la
   // revisión que lanzó la propia sesión no lo aprueba nunca. Lo demás (su revisión, aprobada, sobre este plan) sigue igual
-  if (delicate.value && (firmante === destino || !delegaDelicada({ sesion: firmante, destino, estado, home }))) return no(`plan delicado (nivel 2): lo aprueba el dev, no la revisión (${delicate.reason})`);
+  // un plan delicado: con la revisión aprobada, lo firma el arnés si el perfil lo lista como trámite; si no, sólo la
+  // coordinadora para otra sesión, con `plan-approval:delicada` delegada
+  if (delicate.value && !deTramite({ home }) && (firmante === destino || !delegaDelicada({ sesion: firmante, destino, estado, home }))) return no(`plan delicado (nivel 2): lo aprueba el dev, no la revisión (${delicate.reason})`);
   const cfg = configUsada(config);
   if (cfg.plan_review.routine_approval !== 'review') return no(`${PIDE_EL_CLICK(cfg)}: ${ESPERA}`);
   const malEscrita = problemaDelAprobador(config);
@@ -641,6 +644,15 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
   if (eligioSeguir({ estado, destino, huellaPlan: c.huellas.plan })) return no(`para este plan se eligió seguir sin revisión: lo firma una persona`);
   if (!APROBADOS.includes(c.veredicto)) return no(`${ESPERA} (la revisión dijo ${c.veredicto})`);
   return { codigo: 0, via: 'revision', constancia: c };
+}
+
+/** ¿El perfil lista el plan de una historia delicada como trámite, que firma el arnés solo? (automatic-signing.js) */
+function delicadaDeTramite({ home } = {}) {
+  try {
+    const raiz = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib');
+    const forma = require(path.join(raiz, 'signatures.js')).PLAN_DELICADO;
+    return !!require(path.join(raiz, 'automatic-signing.js')).esDeTramite({ firma: forma, ...(home ? { home } : {}) }).ok;
+  } catch (_) { return false; }
 }
 
 /** ¿El perfil le delega a la coordinadora `sesion` el plan de una historia delicada de `destino`? Con todas las llaves. */

@@ -62,7 +62,9 @@ repetir el contexto de cada una.
 
 ## Cómo decide la coordinadora
 
-- Aprueba los planes de las sesiones, por delegación del dueño, y lo dice así en la aprobación.
+- No firma lo de trámite: los planes y las demás firmas que el perfil pone en `approvals.delegated_signing` las da el
+  arnés solo, en la sesión que las pide (`guides/firmas-del-arnes.md`, «Las firmas de trámite las da el arnés»). Lo que
+  la organización le delega fuera de esa lista lo firma por delegación del dueño, y lo dice así en la aprobación.
 - Ante una duda de detalle elige la opción más segura y anota qué eligió y por qué.
 - Pregunta al dueño sólo lo de la sección anterior, con el contexto entero y una recomendación: el dueño no tiene que
   ir a buscar nada para decidir.
@@ -384,6 +386,8 @@ Después la pide por la vía que corresponde:
   (en Windows, `.cmd`). El dueño lo abre con doble clic: dice qué es en una línea, entra a la carpeta, corre el comando
   y espera una tecla. Si ya hay un archivo con el mismo comando, no escribe otro y lo dice. Sin carpeta, no escribe
   nada: imprime el comando para el aviso del chat.
+- **Lo de trámite no pasa por acá.** Una firma de `approvals.delegated_signing` la da el arnés solo, en la sesión que la
+  pide: no llega a la coordinadora ni al dueño.
 - **Por delegación.** Una firma que la organización deja firmar por delegación no pasa por `signature`: se da desde la
   pestaña de la coordinadora, en la ventana de permiso, con las reglas de la firma delegada. Se firma en el momento y
   no deja pendiente. Si la delegación no aplica y la pestaña de la coordinadora no pide permisos, la ventana no se abre,
@@ -459,7 +463,8 @@ probarla.
   que falta repetir.
 - **Con un «No»:** `coordination.js owner-reject <id>` saca el renglón y nombra la sesión a la que hay que avisarle. Un cuadro
   cerrado o resuelto solo deja el renglón, y la pasada se corta.
-- **Lo que firma la coordinadora por delegación.** Una firma delegable que la sesión que trabaja pidió para sí no llega a
+- **Lo que firma la coordinadora por delegación.** Con las firmas de trámite que da el arnés, a la coordinadora le llega
+  sólo lo delegable que no es de trámite. Una firma delegable que la sesión que trabaja pidió para sí no llega a
   la persona: el freno la desvía a la coordinadora (`guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). El
   aviso la cuenta aparte («N firmas las firmás vos por delegación»), y `owner-wait` se la anuncia una vez. `owner-next`
   no da un cuadro: da el comando para correr en su pestaña («Firmala vos por delegación, en tu pestaña, desde <carpeta>:

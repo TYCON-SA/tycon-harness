@@ -30,8 +30,10 @@ const FILE = 'signatures.jsonl';
 // `notified`: lo de rutina que se hizo sin firma en una pestaña sin permisos, con aviso a la persona (owner-window.js)
 // `click` y `message`: la aprobación explícita de la persona sin terminal, un click en el cuadro de opciones o su
 // «aprobado» escrito, anotada por un gancho (owner-approvals.js)
-const VIAS = Object.freeze(['window', 'terminal', 'delegation', 'command', 'review', 'notified', 'click', 'message']);
-const DELEGADAS = Object.freeze(['delegation', 'review']);
+// `automatic`: la firma de trámite, que da el arnés solo, sin persona ni coordinadora (automatic-signing.js): rige el nivel
+// de lo que sale sin persona, como la delegación
+const VIAS = Object.freeze(['window', 'terminal', 'delegation', 'command', 'review', 'notified', 'click', 'message', 'automatic']);
+const DELEGADAS = Object.freeze(['delegation', 'review', 'automatic']);
 const MOTIVO_MAX = 500;
 
 const una = (s, n) => { const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n)}…` : t; };

@@ -1026,7 +1026,9 @@ function otherProjectStalled(home, stalled, sessions, now) {
 function ownerWaitOnce(opts = {}) {
   const home = opts.home || require('os').homedir();
   const me = sessionOf(opts);
-  if (!me || confirmedCoordinator(home) !== me) return { lines: [], stop: true };
+  if (!me) return { lines: [], stop: true, why: 'no sé de qué sesión es este comando: dejo de esperar' };
+  const coord = confirmedCoordinator(home);
+  if (coord !== me) return { lines: [], stop: true, why: `esta sesión ya no es la coordinadora confirmada (${coord ? `ahora es ${coord}` : 'no hay ninguna confirmada viva'}): dejo de esperar` };
   const s = status({ ...opts, noTranscripts: true });
   const unread = [...s.problems];
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unread, null);
@@ -1075,7 +1077,8 @@ function ownerWaitOnce(opts = {}) {
 
 /**
  * El comando: sale enseguida sin coordinadora confirmada o desde otra sesión, y si ya hay uno vivo; si no, mira cada
- * tanto y termina con las novedades. `{ code, text }`.
+ * tanto y termina con las novedades, o con el motivo si esta sesión deja de ser la coordinadora mientras espera.
+ * `{ code, text }`.
  */
 function ownerWait(opts = {}) {
   const home = opts.home || require('os').homedir();
@@ -1090,7 +1093,8 @@ function ownerWait(opts = {}) {
   try {
     for (;;) {
       const r = ownerWaitOnce({ ...opts, home });
-      if (r.stop) return { code: 0, text: '' };
+      // termina sin novedades pero nunca mudo: sale el motivo, así quien lo lanzó no lo lee como «nada que avisar»
+      if (r.stop) return { code: 0, text: r.why || 'dejo de esperar' };
       if (r.lines.length) return { code: 0, text: r.lines.join('\n') };
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, poll);
     }

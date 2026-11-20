@@ -364,3 +364,23 @@ test('T26 RiskByBatch_SharedCodeStillWhole_AndGuidesSayIt — @story-8.267 @ac-2
   assert.match(leer('guides/coordination.md'), /sin `files:`, con los archivos que la historia le ata/);
   assert.match(leer('guides/coordination.en.md'), /without `files:`, with the files the story ties to it/);
 });
+
+// 🔴 Falla con: un plan de cierre sin código (su «## Archivos» sólo trae papeles) medido por los files_to_modify de la
+//    historia, que ya entraron: sale delicado y el plan lo tiene que firmar una persona.
+test('Delicado_PlanDeCierreSinCodigo_SeMidePorSusArchivos', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'risk-cierre-'));
+  execFileSync('git', ['init', '-q', dir]);
+  fs.mkdirSync(path.join(dir, 'specs'));
+  const story = path.join(dir, 'specs', 'cierre.md');
+  fs.writeFileSync(story, ['---', 'story: "9.1"', 'files_to_modify:', '  - src/auth/login.js', '---', '', '# x', ''].join('\n'));
+  assert.strictEqual(pipeline.computeDelicate({ story, repo: dir }).value, true, 'la historia sola: delicada');
+  const cierre = '## Archivos\n\n- `specs/cierre.md`\n- `docs/a.md`\n\n## Pasos\n\n1. Cerrar la historia en papel.\n';
+  const d = pipeline.computeDelicate({ story, repo: dir, planText: cierre });
+  assert.deepStrictEqual([d.value, d.reason], [false, 'ninguna'], JSON.stringify(d));
+  // el plan que declara el archivo sensible en su lista sigue delicado, y el que no declara lista se mide por la historia
+  assert.strictEqual(pipeline.computeDelicate({ story, repo: dir, planText: '## Archivos\n\n- `src/auth/login.js`\n' }).value, true);
+  assert.strictEqual(pipeline.computeDelicate({ story, repo: dir, planText: '1. Cerrar la historia en papel.\n' }).value, true);
+  // un paso del plan que lo nombra fuera de la lista también cuenta
+  assert.strictEqual(pipeline.computeDelicate({ story, repo: dir, planText: `${cierre}2. Ajusto src/auth/login.js.\n` }).value, true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

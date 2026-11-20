@@ -395,6 +395,9 @@ Then she asks for it through the path that applies:
   line, goes into the folder, runs the command and waits for a key. If there is already a file with the same command,
   it does not write another one and says so. Without a folder, it writes nothing: it prints the command for the chat
   notice.
+- **Routine signatures do not come here.** A signature in `approvals.delegated_signing` is given by the harness on its
+  own, in the session that asks for it: it reaches neither the coordinator nor the owner (`guides/firmas-del-arnes.md`,
+  «Las firmas de trámite las da el arnés»).
 - **By delegation.** A signature the organization lets be signed by delegation does not go through `signature`: it is
   given from the coordinator's tab, in the permission window, under the delegated signing rules. It is signed on the
   spot and leaves no pending entry. If delegation does not apply and the coordinator's tab does not ask for permissions,
@@ -473,7 +476,8 @@ turned on in the profile, or on the machine to try it out.
   the repetition is missing.
 - **On a «No»:** `coordination.js owner-reject <id>` removes the row and names the session to tell. A box that closes or
   resolves by itself leaves the row, and the pass stops there.
-- **What the coordinator signs by delegation.** A delegable signature that the working session asked for itself does not
+- **What the coordinator signs by delegation.** Since the harness gives the routine signatures, only what is delegable
+  and not routine reaches the coordinator. A delegable signature that the working session asked for itself does not
   reach the person: the gate routes it to the coordinator (`guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»).
   The notice counts it apart («N firmas las firmás vos por delegación»), and `owner-wait` announces it to her once.
   `owner-next` gives no box: it gives the command to run in her tab («Firmala vos por delegación, en tu pestaña, desde

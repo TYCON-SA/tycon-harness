@@ -77,7 +77,7 @@ test('Readme_IndiceCompleto (T6): cada ruta del «Qué contiene» de la base sig
   assert.ok(Array.isArray(rutas) && rutas.length >= 100, `la lista de la base tiene ${rutas && rutas.length} rutas; se esperaban las ~110 del índice`);
   // el índice se partió en dos: lo de uso diario queda en el README (se carga en cada sesión) y lo de quien mantiene el
   // arnés pasó a guides/maintaining/mantener-el-arnes.md (a demanda), que el README nombra en su última fila
-  const donde = leer('guides/piezas-del-arnes.md') + '\n' + leer('guides/maintaining/piezas-en-detalle.md') + '\n' + leer('INDEX.md') + '\n' + leer('guides/maintaining/mantener-el-arnes.md');
+  const donde = require('./lib/pieces-guide.js').piecesText(REPO) + '\n' + leer('guides/maintaining/piezas-en-detalle.md') + '\n' + leer('INDEX.md') + '\n' + leer('guides/maintaining/mantener-el-arnes.md');
   const faltan = rutas.filter((r) => !nombrada(r, donde));
   assert.deepEqual(faltan, [], `rutas del índice de la base que ya no nombra ni la guía de piezas, ni el README, ni la guía de mantener: ${faltan.join(', ')}`);
   assert.ok(nombrada('guides/maintaining/mantener-el-arnes.md', leer('INDEX.md')), 'el índice (INDEX.md) nombra la guía de mantener el arnés');
@@ -119,7 +119,7 @@ test('Guides_NpmPackageMaintainerGuide (T52): cómo sale, se aprueba, falla y se
   for (const s of ['npm stage approve', 'npm deprecate', '72 horas', '2 días', 'NPM_PUBLISH_ENABLED', 'Run workflow', 'Trusted publishing']) assert.ok(g.includes(s), `guides/maintaining/paquete-npm.md no nombra «${s}»`);
   const row = leer('guides/maintaining/mantener-el-arnes.md').split('\n').find((l) => l.startsWith('|') && l.includes('guides/maintaining/paquete-npm.md'));
   assert.ok(row, 'guides/maintaining/mantener-el-arnes.md no tiene la fila de la guía del paquete de npm');
-  assert.ok(leer('guides/piezas-del-arnes.md').includes('guides/maintaining/paquete-npm.md'), 'la ficha de npm-publish.yml no nombra la guía');
+  assert.ok(require('./lib/pieces-guide.js').piecesText(REPO).includes('guides/maintaining/paquete-npm.md'), 'la ficha de npm-publish.yml no nombra la guía');
 });
 
 test('Readme_Tamano_Secciones (T5): ≤ 25 KB y las tres secciones de uso diario', () => {
