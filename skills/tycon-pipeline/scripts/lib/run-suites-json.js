@@ -50,8 +50,10 @@
  * propio repo, porque el repo lo declara (`test_gate` de `.test-gate.yaml`, leído por lib/test-gate-scope.js) y una
  * CI corre la suite entera antes del merge. Lo que cambia respecto de la cruzada: si ninguna suite lee lo tocado sale 0
  * («ninguna suite lee lo tocado; la suite completa la corre la CI del pedido»), porque esa CI es el control obligatorio;
- * si no se sabe qué se tocó no acota y corre todo, como sin la clave. El resumen lleva `scoped` con quién corre la
- * completa sólo cuando acotó.
+ * si no se sabe qué se tocó no corre nada y sale 7 («sin acotar»), como la cruzada: la completa no corre en la máquina.
+ * Con más suites que el tope de la máquina (`TOPE_DE_LA_MAQUINA`, o `test_gate.max_local_suites` del repo) corren las más
+ * cercanas al cambio y las demás quedan para esa CI (`scoped.capped`). El resumen lleva `scoped` con quién corre la
+ * completa sólo cuando acotó. `TYCON_GATE_ALL_SUITES=1` sigue corriendo todo, a pedido de una persona.
  *
  * UNA SOLA SUITE (`--suite <ruta>`, la `ruta` de su entrada en suites.json): el plan queda con esa entrada sola y corre
  * aunque la difiera lo tocado o la corrida liviana, con el mismo envoltorio de cobertura. Una ruta que no está sale 2.
@@ -98,6 +100,10 @@ const WRAPPER = path.join(__dirname, 'coverage-wrapper.js');
 // Desde cuántas suites por correr se pide el turno de la máquina: dos portones grandes a la vez la saturan, y uno mediano
 // corre cerca de cien. Es el único lugar donde se fija.
 const TURN_FROM_SUITES = 100;
+// El tope de la máquina con el portón acotado por el repo: cuántas suites corren como mucho en la máquina del dev. La
+// suite completa nunca corre ahí: la corre la CI del pedido. Pasado el tope quedan las más cercanas al cambio
+// (`cercania`) y las demás se difieren a esa CI. El repo lo cambia con `test_gate.max_local_suites` (.test-gate.yaml).
+const TOPE_DE_LA_MAQUINA = 60;
 // Una pieza central: un archivo de código tocado que nombran tantas suites o más (5 % de las ~800 del arnés). Con el
 // portón acotado por el repo, para ésas nombrar el archivo no alcanza: ver `piezasCentrales` y `lejana`.
 const PIEZA_CENTRAL_MIN = 40;
@@ -114,7 +120,7 @@ const PIEZA_CENTRAL_MIN = 40;
 // este corredor (correr todo): heredada, una suite que corre su propio portón de juguete dejaría de acotar y daría rojo.
 const DEL_PORTON = ['TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_STORY_REPO',
   'TYCON_TEST_GATE_CROSS_REPO', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED', 'TYCON_SUITE_HOMES_ROOT', 'TYCON_GATE_PROCESS',
-  'TYCON_GATE_ALL_SUITES'];
+  'TYCON_GATE_ALL_SUITES', 'TYCON_TEST_GATE_RUN'];
 
 function launch(p, covDir, env0) {
   const ej = p.ruta.endsWith('.js') ? process.execPath : 'bash';
@@ -392,7 +398,7 @@ function nombres(f) {
  * suites de la lista o más (con la regla de `namesTouched`), cada uno con lo que cambió adentro según change-names.js
  * contra la base de touched.json. `names: null` es «no sé qué cambió» (con `reason`): esa pieza no difiere nada.
  */
-function piezasCentrales({ repo, plan, files, base }) {
+function piezasCentrales({ repo, plan, files, bases }) {
   const { classifyFile } = require('./run-size.js');
   const candidatas = files.filter((f) => !esSuite(f) && classifyFile(f).kind === 'code');
   if (!candidatas.length) return [];
@@ -403,11 +409,35 @@ function piezasCentrales({ repo, plan, files, base }) {
     const rutas = new Set(plan.filter((p, i) => textos[i] !== null && formas.some((n) => textos[i].includes(n))).map((p) => p.ruta));
     if (rutas.size < PIEZA_CENTRAL_MIN) continue;
     let c = { known: false, reason: 'touched.json no trae la base' };
+    const b = baseDelArchivo(repo, bases, f);
+    if (b.reason) c = { known: false, reason: b.reason };
     // una falla al leer el cambio es «no sé», nunca un portón caído
-    if (base && base.ref) { try { c = changeNames({ repo, file: f, base: base.ref }); } catch (e) { c = { known: false, reason: `no pude leer el cambio (${e.message})` }; } }
+    else if (b.ref) { try { c = changeNames({ repo: b.repo, file: f, base: b.ref }); } catch (e) { c = { known: false, reason: `no pude leer el cambio (${e.message})` }; } }
     out.push({ file: f, stem: path.posix.basename(f).replace(/\.[^.]+$/, ''), rutas, names: c.known ? c.names : null, reason: c.known ? null : c.reason });
   }
   return out;
+}
+
+/**
+ * Las bases de touched.json: la de un repo (`base`, de touched-files.js) o, en el árbol armado, la de cada repo
+ * (`bases`, de private-tree.js: cada una con su `repo`). Sin `repo`, la base es del repo que se mide.
+ */
+function basesDeLoTocado(touched) {
+  if (touched.base && typeof touched.base.ref === 'string' && touched.base.ref) return [{ ...touched.base, repo: touched.base.repo || null }];
+  if (!Array.isArray(touched.bases)) return [];
+  return touched.bases.filter((b) => b && typeof b.ref === 'string' && b.ref && typeof b.repo === 'string' && b.repo);
+}
+
+/**
+ * Contra qué repo y qué base se lee el cambio de `file`: con una base sola, ésa; en el árbol armado, la del único repo
+ * que tiene el archivo. En los dos, o en ninguno, es «no sé» (`reason`): no se adivina contra qué base comparar.
+ */
+function baseDelArchivo(repo, bases, file) {
+  if (!bases.length) return { ref: null };
+  if (bases.length === 1 && !bases[0].repo) return { repo, ref: bases[0].ref };
+  const con = bases.filter((b) => fs.existsSync(path.join(b.repo, file)));
+  if (con.length === 1) return { repo: con[0].repo, ref: con[0].ref };
+  return { reason: con.length ? `${file} está en ${con.length} de los repos del árbol: no sé contra qué base comparar` : `${file} no está en ningún repo de las bases de touched.json` };
 }
 
 // ¿El texto nombra `n` como palabra entera? (`adhoc` sí en «adhoc set», no en «noadhocs»; también con letras fuera del
@@ -435,6 +465,37 @@ function lejana(repo, p, files, centrales) {
     if (!c.names || p.name.startsWith(c.stem) || c.names.some((n) => nombra(text, n))) return null;
   }
   return leidas;
+}
+
+/**
+ * Qué tan cerca del cambio está una suite que ya se eligió para correr, para ordenarlas cuando pasan el tope de la
+ * máquina: la suite tocada (o la ilegible) primero; después la que se llama como un archivo tocado, la que lo nombra por
+ * su ruta entera, la que lo nombra por su nombre, y la que nombra lo que cambió dentro de una pieza central. La elegida
+ * por la regla de carpetas (`gate_only_when_touching`) va delante de las que sólo nombran.
+ */
+function cercania(repo, p, files, centrales) {
+  const own = ownPaths(repo, p.ruta);
+  if (files.some((f) => own.includes(f))) return 1000;
+  let text = null;
+  try { text = fs.readFileSync(p.ruta, 'utf8'); } catch (_) { return 1000; }
+  let n = p.gate ? 50 : 0;
+  for (const f of files) {
+    if (esSuite(f)) continue;
+    const stem = path.posix.basename(f).replace(/\.[^.]+$/, '');
+    if (stem.length >= 3 && p.name.startsWith(stem)) n += 100;
+    if (text.includes(f)) n += 10;
+    else if (nombres(f).some((x) => text.includes(x))) n += 3;
+  }
+  for (const c of centrales) if (c.names && c.rutas.has(p.ruta)) n += c.names.filter((x) => nombra(text, x)).length;
+  return n;
+}
+
+/** El tope de suites de la máquina para este repo: el de su `.test-gate.yaml` commiteado, o el de fábrica. */
+function topeDeLaMaquina(repo) {
+  try {
+    const n = require('./test-gate-scope.js').scopeOf(repo).maxLocalSuites;
+    return Number.isInteger(n) && n > 0 ? n : TOPE_DE_LA_MAQUINA;
+  } catch (_) { return TOPE_DE_LA_MAQUINA; }
 }
 
 // «Otra suite»: un archivo con `.test.` o uno dentro de una carpeta `tests/`. Un archivo de código que empieza con
@@ -519,10 +580,20 @@ function main(argv, env = process.env) {
   const touched = readTouched(touchedFile);
   const rerun = new Set(touched.known && Array.isArray(touched.rerun_suites) ? touched.rerun_suites.filter((r) => typeof r === 'string') : []);
   const rerunHallada = new Set();
+  // el motivo de una repetida, si quien armó lo tocado lo da (`rerun_reasons`: las que esperan a main, test-gate.sh)
+  const motivoDeRepetida = (k) => (touched.rerun_reasons && typeof touched.rerun_reasons[k] === 'string' ? touched.rerun_reasons[k] : 'se repitió sola y la carpeta cambió después: vuelve a correr');
+  // Las suites que vuelven por sus carpetas (failed-first.js `decide`, `reactivadas`): claves `<raiz>:<ruta>` de la lista,
+  // con su motivo aparte. Corren sin pasar por los filtros, como las repetidas viejas. Con `--suite` no se miran: quien
+  // pidió una sola ya sabe lo que corre, y una reactivada de otra lista no es una ausente de esa corrida.
+  const reactivadas = new Set(touched.known && !suiteOnly && Array.isArray(touched.reactivated_suites) ? touched.reactivated_suites.filter((r) => typeof r === 'string') : []);
+  const motivoDeVuelta = (k) => (touched.reactivated_reasons && typeof touched.reactivated_reasons[k] === 'string' ? touched.reactivated_reasons[k] : 'lo cambiado la vuelve a hacer correr');
+  const reactivadaHallada = new Set();
   let light = argv.includes('--light');
   // acotar sin saber qué se tocó sería no correr nada: el acotado por el repo sólo vale con lo tocado conocido
   const byRepo = Boolean(fullSuiteBy) && !allSuites && touched.known;
-  const onlyTouched = (argv.includes('--only-touched') || byRepo) && !allSuites;
+  const byRepoDeclarado = Boolean(fullSuiteBy) && !argv.includes('--only-touched');
+  // con el repo acotado, sin saber qué se tocó tampoco corre todo: la completa no corre en la máquina (sale 7, «sin acotar»)
+  const onlyTouched = (argv.includes('--only-touched') || Boolean(fullSuiteBy)) && !allSuites;
   // el tamaño se fija al arrancar: si el cambio real toca código, la corrida deja de ser liviana y corre lo de siempre
   if (light && touched.known) {
     const code = touched.files.find((f) => require('./run-size.js').classifyFile(f).kind === 'code');
@@ -556,6 +627,8 @@ function main(argv, env = process.env) {
   const results = new Array(plan.length).fill(null);
   const parallel = [];
   const exclusives = [];
+  // las que corren pase lo que pase con el tope de la máquina: las repetidas que quedaron viejas
+  const fijas = new Set();
   let unknownSaid = false;
   // El grupo `installer` de <repo>/scripts/ci/heavy-suites.json: sus suites corren sólo si la story toca el instalador o
   // la suite misma, con el criterio del selector del repo que se mide. Sin el archivo no hay grupo; si está y no se deja
@@ -577,7 +650,7 @@ function main(argv, env = process.env) {
     return installerCrit;
   };
   // Con el portón acotado por el repo, las piezas centrales tocadas: sus suites lejanas al cambio quedan para la CI.
-  const centrales = byRepo && !light ? piezasCentrales({ repo, plan, files: touched.files, base: touched.base }) : [];
+  const centrales = byRepo && !light ? piezasCentrales({ repo, plan, files: touched.files, bases: basesDeLoTocado(touched) }) : [];
   const rootMissing = !isDir(skills);
   if (plan.some((p) => p.fromSkills)) console.log(`[suites.json] raíz agent-skills: ${skills} (salió de: ${skillsRoot.source})`);
   for (const p of plan) {
@@ -595,7 +668,19 @@ function main(argv, env = process.env) {
     // se la reconoce por su entrada de la lista, la misma clave con que se guardó la repetición.
     if (rerun.has(p.entrada.ruta)) {
       rerunHallada.add(p.entrada.ruta);
-      console.log(`REPETIDA ${p.name} — se repitió sola y la carpeta cambió después: vuelve a correr`);
+      fijas.add(p);
+      // si además vuelve por sus carpetas, también quedó hallada: corre una sola vez, y no es una ausente
+      if (reactivadas.has(`${p.entrada.raiz}:${p.entrada.ruta}`)) reactivadaHallada.add(`${p.entrada.raiz}:${p.entrada.ruta}`);
+      console.log(`REPETIDA ${p.name} — ${motivoDeRepetida(p.entrada.ruta)}`);
+      (p.exclusive ? exclusives : parallel).push(p);
+      continue;
+    }
+    // Una suite que vuelve por sus carpetas corre sin pasar por los filtros: la carpeta (la volvería a diferir si la story
+    // no la toca) y «no lee lo tocado» (lee sus carpetas sin nombrarlas). Se la reconoce por la raíz y la ruta de su entrada.
+    const claveDeEntrada = `${p.entrada.raiz}:${p.entrada.ruta}`;
+    if (reactivadas.has(claveDeEntrada)) {
+      reactivadaHallada.add(claveDeEntrada);
+      console.log(`VUELVE   ${p.name} — ${motivoDeVuelta(claveDeEntrada)}`);
       (p.exclusive ? exclusives : parallel).push(p);
       continue;
     }
@@ -604,7 +689,7 @@ function main(argv, env = process.env) {
       const propia = ownPaths(repo, p.ruta);
       if (touched.known && !touches(touched.files, p.gate) && !propia.some((o) => touched.files.includes(o))) {
         const reason = `corre de noche y en el control del PR; esta story no toca ${p.gate.join(', ')}`;
-        resumen.deferred_suites.push({ suite: p.ruta, reason });
+        resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
         console.log(`DIFERIDA ${p.name} — ${reason}`);
         continue;
       }
@@ -615,13 +700,13 @@ function main(argv, env = process.env) {
     }
     if (!p.fromSkills && !allSuites && touched.known && installer().skips(p.name, touched.files)) {
       const reason = 'corre de noche y en el control del PR; esta story no toca el instalador (el grupo installer de scripts/ci/heavy-suites.json)';
-      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
     }
     if (onlyTouched && touched.known && !namesTouched(repo, p.ruta, touched.files)) {
       const reason = byRepo ? `no lee lo tocado; la suite completa la corre la CI del pedido (${fullSuiteBy})` : 'la corrida cruzada (la del repo hermano, o con la story en otro repo) corre sólo las suites que leen lo tocado; la completa la corre la CI del pedido';
-      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
     }
@@ -629,13 +714,13 @@ function main(argv, env = process.env) {
     const lejos = centrales.length && !p.gate ? lejana(repo, p, touched.files, centrales) : null;
     if (lejos) {
       const reason = `${lejos.map((c) => `lee ${c.file}, que nombran ${c.rutas.size} suites, pero no nombra lo que cambió (${c.names.join(', ')})`).join('; ')}; la suite completa la corre la CI del pedido (${fullSuiteBy})`;
-      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
     }
     if (light && touched.known && !allSuites && !readsTouched(repo, p.ruta, touched.files)) {
       const reason = 'diferida por corrida liviana: no lee ningún archivo tocado';
-      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
     }
@@ -648,6 +733,36 @@ function main(argv, env = process.env) {
     resumen.ausentes.push(r);
     console.log(`AUSENTE  ${r} — se repitió sola y la carpeta cambió después, pero ya no está en la lista de suites: no se pudo volver a correr`);
   }
+  // Lo mismo para una que vuelve por sus carpetas y ya no está en la lista: ausente (es rojo), nunca salteada callada.
+  for (const k of reactivadas) {
+    if (reactivadaHallada.has(k)) continue;
+    resumen.ausentes.push(k);
+    console.log(`AUSENTE  ${k} — lo cambiado la vuelve a hacer correr, pero ya no está en la lista de suites`);
+  }
+
+  // El tope de la máquina: acotado por el repo, corren como mucho `tope` suites, las más cercanas al cambio. Las demás
+  // quedan para la CI del pedido, que corre la completa. Las tocadas y las repetidas viejas corren siempre.
+  let topado = null;
+  if (byRepo) {
+    // `--max-suites <n>` lo fija quien lanza el corredor (una prueba, un guion); sin él, el del repo o el de fábrica
+    const iMax = argv.indexOf('--max-suites');
+    const pedido = iMax >= 0 && /^[1-9]\d{0,3}$/.test(String(argv[iMax + 1] || '')) ? Number(argv[iMax + 1]) : null;
+    const tope = pedido || topeDeLaMaquina(repo);
+    const elegidas = [...parallel, ...exclusives];
+    if (elegidas.length > tope) {
+      const puntos = new Map(elegidas.map((p) => [p, fijas.has(p) ? 1000 : cercania(repo, p, touched.files, centrales)]));
+      const orden = elegidas.map((p, i) => [p, i]).sort((a, b) => (puntos.get(b[0]) - puntos.get(a[0])) || (a[1] - b[1])).map(([p]) => p);
+      const quedan = new Set(orden.filter((p, i) => i < tope || puntos.get(p) >= 1000));
+      const fuera = elegidas.filter((p) => !quedan.has(p));
+      if (fuera.length) {
+        const reason = `lee lo tocado, pero pasa el tope de ${tope} suites de la máquina y hay otras más cercanas al cambio; la suite completa la corre la CI del pedido (${fullSuiteBy})`;
+        for (const p of fuera) { resumen.deferred_suites.push({ suite: p.ruta, reason }); console.log(`DIFERIDA ${p.name} — ${reason}`); }
+        for (const lista of [parallel, exclusives]) { const q = lista.filter((p) => quedan.has(p)); lista.length = 0; lista.push(...q); }
+        topado = { max: tope, chosen: elegidas.length, deferred: fuera.length };
+        console.log(`[suites.json] tope de la máquina: ${elegidas.length} suites leen lo tocado; corren las ${quedan.size} más cercanas y ${fuera.length} quedan para la CI del pedido (${fullSuiteBy})`);
+      }
+    }
+  }
 
   for (const c of centrales) {
     const corren = [...parallel, ...exclusives].filter((p) => c.rutas.has(p.ruta)).length;
@@ -659,7 +774,7 @@ function main(argv, env = process.env) {
   // Lo tocado que hay que medir (`must_measure`, lib/touched-files.js) y ninguna suite que lo lea: no se acotó nada, y la
   // corrida sale 7 más abajo. Sin esto cerraría en verde sin haber medido.
   const sinMedir = touched.must_measure === true && !parallel.length && !exclusives.length && !resumen.ausentes.length;
-  if (byRepo && !sinMedir) resumen.scoped = { by: 'repo', full_suite_by: fullSuiteBy, none_touched: false };
+  if (byRepo && !sinMedir) resumen.scoped = { by: 'repo', full_suite_by: fullSuiteBy, none_touched: false, ...(topado ? { capped: topado } : {}) };
   // Acotada por el repo y ninguna suite lee lo tocado: verde, dicho. La CI del pedido corre la completa antes del merge.
   if (byRepo && !sinMedir && touched.known && !parallel.length && !exclusives.length && !resumen.ausentes.length) {
     resumen.scoped.none_touched = true;
@@ -670,7 +785,7 @@ function main(argv, env = process.env) {
   // Sin acotar (salida 7): no se sabe qué se tocó, o ninguna suite lo lee. No se corre nada y no es verde ni rojo.
   if (onlyTouched && (!touched.known || (!parallel.length && !exclusives.length && !resumen.ausentes.length))) {
     const reason = !touched.known
-      ? `no sé qué archivos tocó la story en este repo (${touched.reason || 'sin motivo'}): la cubre la CI del pedido`
+      ? `no sé qué archivos tocó la story en este repo (${touched.reason || 'sin motivo'}): la cubre la CI del pedido${byRepoDeclarado ? '. Para correr lo cercano en la máquina, relanzá con TYCON_COVERAGE_BASE="$(git merge-base origin/main HEAD)"' : ''}`
       : 'ninguna suite lee lo que la story tocó en este repo: la cubre la CI del pedido';
     console.error(`[suites.json] sin acotar — ${reason}`);
     escribir(out, { ...resumen, deferred_suites: [], unscoped: { reason } });
@@ -782,14 +897,16 @@ function main(argv, env = process.env) {
   // El repo acota el portón y no se sabe qué se tocó: corre todo. Se dice acá, lo último antes de la primera suite, con la
   // cantidad y cómo acotarla: quien la lanzó puede cortarla. La base tiene que ser ancestro de HEAD: `origin/main` solo
   // no sirve en una rama atrasada.
-  const base = touched.base && touched.base.ref ? touched.base : null;
-  resumen.seleccion = { base: base ? base.ref : null, fuente: base ? base.source : null, tocados: touched.known ? touched.files.length : null, corren: count, total: plan.length };
+  const basesSel = basesDeLoTocado(touched);
+  const base = basesSel.length === 1 ? basesSel[0] : null;
+  resumen.seleccion = { base: base ? base.ref : null, fuente: base ? base.source : null,
+    ...(basesSel.length > 1 ? { bases: basesSel.map((b) => ({ repo: b.repo, ref: b.ref, fuente: b.source || null })) } : {}),
+    tocados: touched.known ? touched.files.length : null, corren: count, total: plan.length };
+  const desde = base ? ` desde ${base.ref.slice(0, 7)} (${base.source})`
+    : basesSel.length > 1 ? ` desde ${basesSel.map((b) => `${b.ref.slice(0, 7)} en ${path.basename(b.repo)}`).join(' y ')}` : '';
   console.log(touched.known
-    ? `[suites.json] acotado a lo tocado: ${touched.files.length} archivos${base ? ` desde ${base.ref.slice(0, 7)} (${base.source})` : ''}: corren ${count} de ${plan.length}`
+    ? `[suites.json] acotado a lo tocado: ${touched.files.length} archivos${desde}: corren ${count} de ${plan.length}`
     : `[suites.json] sin acotar: ${touched.reason || 'no sé qué se tocó'}: corren ${count} de ${plan.length}`);
-  if (fullSuiteBy && !allSuites && !touched.known) {
-    console.log(`🟠 [suites.json] sin base: el repo acota el portón, pero no sé qué se tocó (${touched.reason || 'sin motivo'}): corren todas las suites (${count}). Para acotar, cortala y relanzá con TYCON_COVERAGE_BASE="$(git merge-base origin/main HEAD)"`);
-  }
 
   const live = new Set();
   let interrupted = null;

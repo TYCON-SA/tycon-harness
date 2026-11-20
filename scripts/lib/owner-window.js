@@ -43,7 +43,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc } = require('./signatures.js');
+const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, LOST_RUN_PARTICION, DELEGABLE_EXCEPTIONS, firmaDelPedidoAdhoc } = require('./signatures.js');
 const { approverOf } = require('./approver.js');
 const { casaDeLaCuenta } = require('./real-home.js');
 
@@ -1064,6 +1064,48 @@ function anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, pal
   } catch (_) { return false; }
 }
 
+/**
+ * El renglón de la lista de una firma que en Windows sólo se da en la terminal, con su marca (`consola: 'powershell'` o
+ * `windows: 'solo-terminal'`): lo que pide la propia sesión, en su forma canónica, como `anotarNegativa`. Nada de esto
+ * cambia lo que se decide: si falla, la negativa de siempre (@story-8.319).
+ */
+function anotarEnWindows({ casa, sesion, comando, can, guion, pendientes, cwd, ahora, lista = {}, marca }) {
+  try {
+    if (!guion || !can || can.id !== guion || pendientes.length !== 1 || pendientes[0] === DESIGNACION || vaATerminal(pendientes) || !SESION.test(sesion)) return false;
+    if (destinoDe(can.palabras, sesion, guion) !== sesion) return false;
+    let home = casa;
+    if (home === undefined) home = casaDeLaCuenta();
+    require('./signature-list.js').alNegar({ casa: home, firma: guion, titulo: firmaDe(guion).approves, sesion, destino: sesion, comando, palabras: can.palabras, cwd, ahora, ...lista, ...marca });
+    return true;
+  } catch (_) { return false; }
+}
+
+/**
+ * Lo que el freno le ofrece a la persona cuando niega en Windows, según la consola del evento y la firma: el texto que
+ * reemplaza «la ventana, el cuadro o un «aprobado»» de `ow_negar` (safety-guard-pre.sh), o '' fuera de Windows o cuando
+ * eso anda (consola Bash de Git y una firma que pasa por la pestaña). Lee la consola del evento, nunca del ambiente (D1).
+ */
+function ofrecerEnWindows({ evento = {}, escapes = [], firmas = [], plataforma = process.platform, gitBash = buscarGitBash, topes } = {}) {
+  if (plataforma !== 'win32') return '';
+  const comando = String((evento.tool_input && evento.tool_input.command) || '');
+  const sesion = evento.session_id == null ? '' : String(evento.session_id);
+  const herramienta = evento.tool_name == null ? 'Bash' : String(evento.tool_name);
+  let can = null;
+  try { can = canonicaDe(comando, topes); } catch (_) { can = null; }
+  const noPasa = noPasaEnWindows({ escapes, palabras: can && can.palabras });
+  if (herramienta === 'Bash' && !noPasa) return '';
+  const destino = can ? destinoDe(can.palabras, sesion, can.id) : sesion;
+  const t = terminalDe(firmas, SESION.test(destino) ? destino : sesion);
+  const terminal = t ? `en la terminal de la persona: ${t}` : 'en la terminal de la persona, con el mismo comando y --terminal';
+  // sin nombrar la ventana, el cuadro ni el «aprobado»: el agente los leería como una vía más
+  const nada = 'Desde esta consola, nada de lo que se aprueba en la pestaña firma.';
+  if (noPasa) return `${nada} ${noPasa[0].toUpperCase()}${noPasa.slice(1)}: va sólo ${terminal}.`;
+  let hayGitBash = false;
+  try { hayGitBash = !!gitBash().path; } catch (_) { hayGitBash = false; }
+  if (!hayGitBash) return `${nada} Va sólo ${terminal}. ${SIN_GIT_BASH}.`;
+  return `${nada} Corré el mismo comando, solo y en su forma exacta, por la consola Bash de Git de la herramienta (ahí sí firma en la pestaña), o va ${terminal}.`;
+}
+
 // --- el freno -----------------------------------------------------------------------------------------------------
 
 /**
@@ -1199,6 +1241,9 @@ function rutinaSinPermisos({ guion, pendientes = [], palabras, destino, casa, to
  * trabajo de esa sesión (su transcripción), o null si no se sabe (el guion lo niega igual); si no, `cwd`, la del evento.
  */
 function carpetaDelPedido({ palabras, cwd, casa, sesion }) {
+  // `--repo <carpeta>` manda, como en marker.js: la lista va relativa a ella (@story-8.319)
+  const r = (palabras || []).indexOf('--repo');
+  if (r >= 0 && palabras[r + 1]) return path.resolve(cwd || process.cwd(), palabras[r + 1]);
   const i = (palabras || []).indexOf('--for-session');
   const pedida = i >= 0 ? palabras[i + 1] : null;
   if (!pedida || pedida === sesion) return cwd;
@@ -1243,6 +1288,18 @@ function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado, cw
  * firmas; se pasa en las pruebas. `topes`: los del camino corto (`{ delegado, maximo }`), para las pruebas; sin ellos,
  * se leen una vez del perfil del equipo y valen para todo lo que decide.
  */
+/**
+ * ¿La firma pasa por la pestaña en Windows (la ventana, el cuadro o el «aprobado», desde la consola Bash de Git)? null si
+ * pasa, o el motivo. No pasan los escapes (entre ellos todo `sign-file`) ni los guiones de consola `.sh`. La usan
+ * `decidir` y el texto del freno (`ofrecerEnWindows`): una sola lista (@story-8.319).
+ */
+function noPasaEnWindows({ escapes = [], palabras = null } = {}) {
+  if (escapes.length) return 'en Windows un escape no se aprueba en la pestaña';
+  // el guion de consola se identifica con el número de proceso de Git Bash, que no es el de Windows: nunca se comprobaría
+  if (palabras && palabras[0] && base(palabras[0]).endsWith('.sh')) return 'en Windows un guion de consola no se puede comprobar en la pestaña';
+  return null;
+}
+
 function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes } = {}) {
   if (!topes) topes = topesDelCaminoCorto(casa);
   const enWindows = plataforma === 'win32';
@@ -1269,6 +1326,9 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // se niega acá, antes de mirar las aprobaciones: el click no se gasta en un comando que el guion no puede comprobar
   if (enWindows && herramientaDelEvento !== 'Bash') {
     const seguir = gitBash().path ? 'corré la firma por la consola Bash de la herramienta, o con --terminal' : SIN_GIT_BASH;
+    // el renglón de la lista guarda la consola: owner-next no arma un cuadro que no firmaría (@story-8.319, D2)
+    const c = canonicaDe(comando, topes);
+    anotarEnWindows({ casa, sesion, comando, can: c, guion: guiones.length === 1 ? guiones[0] : null, pendientes: pedidas, cwd: evento.cwd, ahora, lista, marca: { consola: 'powershell' } });
     return negar(`la línea de la consola PowerShell no dice qué comando corre, así que no se puede comparar con lo aprobado: ${seguir}`, pedidas);
   }
   // el motivo del arreglo rápido es texto libre y puede nombrar un flag o una variable: en la forma canónica, los dos
@@ -1296,9 +1356,12 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
       : porVariable ? variableALaVista(nombre, s.command.split('=')[1].split(' ')[0], comando) : nombreALaVista(comando);
     if (!aLaVista) return negar(`el escape ${nombre} viene escondido (un nombre armado, env, export o una envoltura)`, pedidas);
   }
-  if (enWindows && escapes.length) return negar('en Windows un escape no se aprueba en la pestaña', pedidas);
-  // el guion de consola se identifica con el número de proceso de Git Bash, que no es el de Windows: nunca se comprobaría
-  if (enWindows && can && base(can.palabras[0]).endsWith('.sh')) return negar('en Windows un guion de consola no se puede comprobar en la pestaña', pedidas);
+  const noPasa = enWindows ? noPasaEnWindows({ escapes, palabras: can && can.palabras }) : null;
+  if (noPasa) {
+    // el renglón de la lista dice que en Windows esta firma va sólo por la terminal (owner-next no arma el cuadro)
+    anotarEnWindows({ casa, sesion, comando, can, guion, pendientes: pedidas, cwd: evento.cwd, ahora, lista, marca: { windows: 'solo-terminal' } });
+    return negar(noPasa, pedidas);
+  }
   if (casa === undefined) {
     try { casa = casaDeLaCuenta(userInfo ? { userInfo } : undefined); } catch (e) { return negar(`no se pudo resolver la casa de la cuenta (${e.message})`, pedidas); }
   }
@@ -1349,11 +1412,15 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   let sinDelegar = null;
   if (delegacion === undefined) delegacion = (o) => require('./delegated-signing.js').delegaSinVentana(o);
   // en Windows no se delega: sólo firman el click y el «aprobado»
-  // lo que sólo aprueba un click en la pestaña que trabaja no se delega, aunque el perfil lo nombre, y tampoco va a la ventana
+  // lo que sólo aprueba un click en la pestaña que trabaja no va a la ventana; se delega sólo si es una excepción de
+  // trámite que el perfil nombra (pasar el tope del camino corto), pedida por la coordinadora para otra sesión
   const soloClick = pendientes.length === 1 && !!(firmaDe(pendientes[0]) || {}).soloClick;
-  // lo que aprueba sólo el click del dueño tampoco se delega ni va a la ventana; su click vale también en la coordinadora
+  // lo que aprueba sólo el click del dueño tampoco va a la ventana; su click vale también en la coordinadora, y se
+  // delega con la misma condición (el guardado ajeno; el freno de los datos, nunca: delegated-signing.js)
   const clickDelDueno = pendientes.length === 1 && !!(firmaDe(pendientes[0]) || {}).clickDelDueno;
-  if (!enWindows && !soloClick && !clickDelDueno) try {
+  // una firma de click que no es de esas no llega a preguntarle a la delegación, diga lo que diga el perfil
+  const clickDelegable = !(soloClick || clickDelDueno) || DELEGABLE_EXCEPTIONS.includes(pendientes[0]);
+  if (!enWindows && clickDelegable) try {
     const estado = stateDir(casa);
     const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras) }));
     if (rs.every((r) => r && r.ok)) delegada = rs[0];
@@ -1363,6 +1430,10 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // la lista pedida para otra sesión se mira con la carpeta de esa sesión, no con la de quien pide
   const fueraDelCupo = delegada && firmaGuion === 'adhoc-lane' ? pasaDelCupoDelegado(can && can.palabras, topes.delegado, carpetaDelPedido({ palabras: can && can.palabras, cwd: evento.cwd || null, casa, sesion })) : null;
   if (fueraDelCupo) { delegada = null; sinDelegar = fueraDelCupo; }
+  // un cuadro de sólo click no se contesta desde la pestaña de otra sesión: para otra, sólo la delegación del perfil
+  if (destino !== sesion && soloClick && !delegada) {
+    return negar(`«${firmaDe(pendientes[0]).approves}» se pide para otra sesión sólo por la delegación del perfil${sinDelegar ? ` (${una(sinDelegar, 200)})` : ''}: la aprueba la persona con un click en la pestaña de esa sesión`, pendientes);
+  }
   // una pestaña que no pide permisos aprueba sola lo que se manda a la ventana: el renglón quedaría a nombre del dueño
   // sin su Sí. Lo que afloja un control se niega ahí, con el comando de la terminal; lo de rutina se hace y queda en el
   // registro como «hecho y avisado» (`rutinaSinPermisos`). Sólo los modos que preguntan llevan a la ventana; uno
@@ -1571,7 +1642,19 @@ function comoAprobar(firma, reg, casa) {
  * ¿El guion de `firma` (proceso `pid`, argumentos `argv` desde el guion) viene del «Sí» de una ventana? `{ ok, registro }`
  * consume el registro; `{ ok: false, motivo }` no escribe nada.
  */
+/**
+ * El control previo de una excepción de trámite cuyo guion no trae uno propio (signatures.js DELEGABLE_EXCEPTIONS): por
+ * la delegación del perfil no hay más que comprobar, porque las llaves las miró el freno al dejar el pedido; «hecho y
+ * avisado» no la firma nunca. null para las demás firmas: sin control previo, no salen sin una persona.
+ */
+function antesDeTramite(firma) {
+  if (!DELEGABLE_EXCEPTIONS.includes(firma)) return null;
+  return (via, registro) => ((via === 'avisado' || (registro && registro.via === 'avisado'))
+    ? { codigo: 1, motivo: 'esta firma la da una persona, o la coordinadora por la delegación del perfil: «hecho y avisado» no la firma' } : null);
+}
+
 function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, sesion, destino, antes, plataforma = process.platform, gitBash = buscarGitBash, terminal = null } = {}) {
+  antes = antes || antesDeTramite(firma);
   const enWindows = plataforma === 'win32';
   const s = firmaDe(firma);
   // `terminal`: el comando entero de la terminal, cuando el guion lo sabe armar (con su ruta y sus argumentos)
@@ -1883,40 +1966,53 @@ function confirmarConsumos(lista, { paso = true } = {}) {
 const rutaParaLaConsola = (archivo) => (archivo
   ? (/^[A-Za-z0-9_./:@%+=,-]+$/.test(archivo) ? archivo : `'${String(archivo).replace(/'/g, "'\\''")}'`) : '<archivo>');
 
+// marker.js por la ruta estable bajo la carpeta personal: no cambia al actualizar y no lleva `~` (lib/open-runs.js)
+const markerEstable = (casa) => require(path.join(LIB, 'open-runs.js')).markerEstable(casa);
+// lo que ninguna cita lee igual en PowerShell 5.1, PowerShell 7, cmd y bash, entre comillas dobles (@story-8.319)
+// (dos barras invertidas seguidas, como en una ruta de red `\\servidor\…`, bash las lee como una)
+const NO_SE_CITA = /["$`%\r\n]|\\\\/;
+
 /**
  * La forma de la ventana de una firma sobre un archivo: la corre el agente y la persona dice que sí en la ventana de
- * permiso. Lo usan los carteles de los frenos de escritura.
+ * permiso. Lo usan los carteles de los frenos de escritura. Con `node` y la ruta estable de marker.js, y el archivo
+ * entre comillas dobles (@story-8.319); un archivo que no se cita así va como lo lee bash.
  */
-function comoSeFirma(firma, archivo) {
-  return `marker.js sign-file ${firma} ${rutaParaLaConsola(archivo)}`;
+function comoSeFirma(firma, archivo, { casa } = {}) {
+  const a = archivo ? (NO_SE_CITA.test(String(archivo)) ? rutaParaLaConsola(archivo) : `"${archivo}"`) : '<archivo>';
+  return `${markerEstable(casa || os.homedir())} sign-file ${firma} ${a}`;
 }
 
-/** Por qué un cartel no da la forma de la terminal. */
-const SIN_SESION_TERMINAL = 'la forma de tu terminal necesita la sesión del agente, que este freno no conoce';
-const sesionConocida = (sesion) => typeof sesion === 'string' && sesion !== '' && sesion !== '_nosession';
+/** Por qué una firma sobre `archivo` no tiene forma de la terminal, o null si la tiene. */
+function sinFormaDeTerminal(archivo, { casa } = {}) {
+  const home = casa || os.homedir();
+  if (archivo && NO_SE_CITA.test(String(archivo))) return 'la ruta del archivo trae algo ($, ", `, %, dos barras invertidas o un salto de línea) que PowerShell, cmd y bash no leen igual entre comillas: la forma de la terminal no se puede dar; renombrá el archivo, o firmá en la ventana desde la consola Bash';
+  if (NO_SE_CITA.test(String(home))) return 'tu carpeta personal trae algo ($, ", `, %, dos barras invertidas o un salto de línea) que PowerShell, cmd y bash no leen igual entre comillas: la forma de la terminal no se puede dar';
+  return null;
+}
 
-/**
- * La forma de la terminal de la persona: la sesión va siempre, porque la terminal no la tiene en el ambiente. Sin una
- * sesión conocida, `null` (el cartel dice SIN_SESION_TERMINAL).
- */
-function comoSeFirmaEnLaTerminal(firma, archivo, sesion) {
-  if (!sesionConocida(sesion)) return null;
-  return `${comoSeFirma(firma, archivo)} --terminal --for-session ${sesion}`;
+// la forma de la terminal para cualquier comando: la misma función que usan los carteles de la ejecución perdida
+const { enLaTerminal, SIN_SESION_TERMINAL } = require(path.join(LIB, 'home-command.js'));
+
+/** La forma de la terminal de una firma sobre un archivo (`enLaTerminal` con `sign-file`), o null sin sesión o sin cita. */
+function comoSeFirmaEnLaTerminal(firma, archivo, sesion, { casa } = {}) {
+  if (sinFormaDeTerminal(archivo, { casa })) return null;
+  return enLaTerminal(comoSeFirma(firma, archivo, { casa }), sesion);
 }
 
 /**
  * Las dos formas, cada una dicha para quién es: `{ ventana, terminal, renglones }`. Los carteles imprimen `renglones`
  * (con la sangría que quieran), así ninguno escribe el comando a mano.
  */
-function formasDeFirmar(firma, archivo, sesion) {
-  const ventana = comoSeFirma(firma, archivo);
-  const terminal = comoSeFirmaEnLaTerminal(firma, archivo, sesion);
+function formasDeFirmar(firma, archivo, sesion, { casa } = {}) {
+  const ventana = comoSeFirma(firma, archivo, { casa });
+  const terminal = comoSeFirmaEnLaTerminal(firma, archivo, sesion, { casa });
+  const sinCita = sinFormaDeTerminal(archivo, { casa });
   return {
     ventana,
     terminal,
     renglones: [
       `en la ventana de permiso (la corre el agente y vos decís que sí): ${ventana}`,
-      terminal ? `o en tu terminal: ${terminal}` : `o en tu terminal: ${SIN_SESION_TERMINAL}`,
+      terminal ? `o en tu terminal: ${terminal}` : `o en tu terminal: ${sinCita || SIN_SESION_TERMINAL}`,
     ],
   };
 }
@@ -2003,6 +2099,7 @@ function claveDelPedido({ firma, destino, comando, argv, cwd = process.cwd(), ca
 }
 
 function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir, antes, extra, aprobador, env, escribir, notificar, avisarSinAprobacion, terminal = null } = {}) {
+  antes = antes || antesDeTramite(firma);
   // sin variable de sesión (la terminal del dueño) el guion no tiene sesión propia: la dice --for-session
   if (propia === '_nosession') propia = null;
   const i = argv.indexOf('--for-session');
@@ -2117,7 +2214,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
 }
 
 module.exports = { renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
-  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, formasDeFirmar,
+  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, markerEstable,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 
 if (require.main === module) {
@@ -2134,9 +2231,11 @@ if (require.main === module) {
       // antes de decidir, los pedidos anteriores de la sesión vencen: un pedido vive sólo hasta el próximo comando
       vencerPedidos(casaDeLaCuenta(), evento.session_id);
       r = decidir({ evento, escapes });
+      // en Windows, lo que anda en esta consola reemplaza la ventana, el cuadro y el «aprobado» del cartel (@story-8.319)
+      if (r.decision === 'deny') { try { r.ofrece = ofrecerEnWindows({ evento, escapes, firmas: r.firmas || [] }); } catch (_) { r.ofrece = ''; } }
     } catch (e) { r = negarCon(`no pude decidir la firma (${e.message})`, escapes.filter((id) => firmaDe(id))); }
     const ask = r.decision === 'ask' ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: r.texto } }) : undefined;
-    lineas({ decision: r.decision, firma: (r.firmas || [])[0], via: r.via, relevo: r.relevo, texto: r.texto, json: ask });
+    lineas({ decision: r.decision, firma: (r.firmas || [])[0], via: r.via, relevo: r.relevo, texto: r.texto, ofrece: r.ofrece || undefined, json: ask });
     salirTrasElAviso();
     return;
   }

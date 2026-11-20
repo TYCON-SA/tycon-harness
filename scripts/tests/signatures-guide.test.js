@@ -98,7 +98,7 @@ test('T31 Firmas_SobreCupo_ApareceComoPedidaEnLaGuia @story-8.181 @ac-15', () =>
   const texto = fs.readFileSync(GUIA, 'utf8');
   const fila = tabla(texto, '## Las firmas').find((f) => f[0] === '`adhoc-lane:sobre-cupo`');
   assert.ok(fila, 'está entre las firmas que se piden');
-  assert.strictEqual(fila[3], OTRA_SESION.no, 'no se corre desde la pestaña de otra sesión');
+  assert.strictEqual(fila[3], OTRA_SESION.yes, 'para otra sesión la pide la coordinadora, por delegación');
   const nivel = texto.split('\n').find((l) => l.startsWith('| `adhoc-lane:sobre-cupo` | 2'));
   assert.ok(nivel && !nivel.includes('todavía no se pide'), nivel);
   assert.match(nivel, /`adhoc-lane:sobre-cupo` \|$/);

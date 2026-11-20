@@ -63,7 +63,10 @@ const ENVUELTO = /<(?:cross-session-message|channel|task-notification|teammate-m
 const PERMITIDOS = ['wait-notice.js', 'owner-approval-record.js', 'session-state.js', 'background-question-guard.js'];
 // Cómo anota la herramienta un mensaje tipeado, medido en transcripciones reales: en la consola `cli · typed`, en la extensión
 // del editor `claude-vscode · sdk`. Otra sesión llega con `system`, y un programa (`claude -p`) con `sdk-cli`.
-const TIPEADO = { cli: ['typed'], 'claude-vscode': ['sdk'] };
+// `queued`: lo que la persona escribe mientras el agente trabaja, también por el control remoto desde el celular; llega
+// encolado y con origen humano (coordination.js `typedBy` ya lo cuenta así). Un mensaje de otra sesión llega con origen
+// `peer` y no pasa el chequeo del origen (@story-8.319)
+const TIPEADO = { cli: ['typed', 'queued'], 'claude-vscode': ['sdk'] };
 const CLAUDE_P = 'sdk-cli';
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const una = (s, n = 200) => { const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n)}…` : t; };

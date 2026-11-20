@@ -883,7 +883,7 @@ test('T4 EscC5_CrearElPermisoDeEvidencia_Frena @story-8.96 — crear, tocar o co
   // la frase de la persona ya no lo da: por la consola frena siempre y nombra la firma de la ventana (AC 43)
   const con = freno(B2_PERMISO_FRENA[0][1], { conversacion: [deLaPersona('autorizo ALLOW_DOD_EVIDENCE_WRITE')] });
   assert.strictEqual(con.status, 2, con.stderr);
-  assert.match(con.stderr, /marker\.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>/);
+  assert.match(con.stderr, /marker\.js"? sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>/);
   assert.ok(!constancias(con.home).some((l) => l.regla === 'ESC-C5' && l.veredicto === 'escape'), 'la frase dejó una constancia de escape');
   // mirarlo o borrarlo no lo crea
   for (const c of [`ls -la ${PERMISO}`, `rm -f ${PERMISO}`, `grep -rn ALLOW_DOD_EVIDENCE_WRITE skills`, `test -f ${PERMISO} && echo hay`]) {
@@ -943,7 +943,7 @@ test('T10 EscC5_ExencionPorLaTerminal_Frena @story-8.96 — agregar la exención
   const con = freno(`sed -i '' 's/^qa_guide: off/qa_guide: off\\ndod_runtime_exempt: true/' specs/story-9.9.md`,
     { conversacion: [deLaPersona('Es puro texto. Autorizo dod_runtime_exempt')] });
   assert.strictEqual(con.status, 2, con.stderr);
-  assert.match(con.stderr, /marker\.js sign-file dod_runtime_exempt <archivo>/);
+  assert.match(con.stderr, /marker\.js"? sign-file dod_runtime_exempt <archivo>/);
   assert.match(con.stderr, /nunca por la consola/);
   // leerla, buscarla o sacarla no frena
   for (const c of ['grep -n dod_runtime_exempt specs/*.md', `grep -c 'dod_runtime_exempt: true' specs/story-9.9.md > /tmp/n.txt`,
@@ -1949,6 +1949,12 @@ exec ${JSON.stringify(process.execPath)} "$@"
     // la ventana pide la firma que se nombró, no la del permiso de la evidencia para todas
     assert.deepStrictEqual([...ow.firmasDelComando(`node ${marker} sign-file ${firma} ${evidencia}`)], [`escape:${firma}`], firma);
   }
+  // la coordinadora la pide para otra sesión (`--for-session`, por la delegación del perfil): tampoco es crear el permiso
+  const paraOtra = freno(`node ${marker} sign-file ALLOW_DOD_EVIDENCE_WRITE ${evidencia} --for-session ses-b_1`, { path: dir });
+  assert.strictEqual(veredicto(paraOtra), 'ask', paraOtra.stderr);
+  assert.doesNotMatch(paraOtra.stderr, /ESC-C5/);
+  // y lo que venga pegado después de la sesión sigue frenando
+  assert.match(freno(`node ${marker} sign-file ALLOW_DOD_EVIDENCE_WRITE ${evidencia} --for-session ses-b; touch .advisors/ALLOW_DOD_EVIDENCE_WRITE`, { path: dir }).stderr, /ESC-C5/);
   // el permiso escrito por la consola, solo o detrás de la firma, sigue frenando
   for (const c of [
     `node -e "require('fs').writeFileSync('.advisors/ALLOW_DOD_EVIDENCE_WRITE', '')"`,

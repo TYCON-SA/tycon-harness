@@ -57,9 +57,10 @@ exit "$(cat "$GS_STATE/${n}" 2>/dev/null || echo 0)"
 
 /**
  * El laboratorio: repo que acota con tres suites (a, b, c) y, con `listas`, los criterios de clase de un repo del arnés
- * (un control, el grupo del instalador, lo compartido). `extra`: más entradas de suites.json.
+ * (un control, el grupo del instalador, lo compartido). `extra`: más entradas de suites.json. `grupo` (con `listas`): una
+ * suite `i` del grupo `installer`, que la completa difiere mientras la story no toque el instalador.
  */
-function lab({ listas = false, extra = [] } = {}) {
+function lab({ listas = false, extra = [], grupo = false } = {}) {
   const home = tmp('gs-home-');
   const state = tmp('gs-state-');
   const skills = tmp('gs-skills-');
@@ -67,13 +68,16 @@ function lab({ listas = false, extra = [] } = {}) {
   git(repo, 'init', '-q'); git(repo, 'config', 'user.email', 'prueba@ejemplo.invalid'); git(repo, 'config', 'user.name', 'prueba');
   const escribir = (rel, txt) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), txt); };
   const entradas = ['a', 'b', 'c'].map((n) => ({ raiz: 'arnes', ruta: RUTA(n) }));
+  if (grupo) entradas.push({ raiz: 'arnes', ruta: RUTA('i') });
   escribir('scripts/tests/suites.json', `${JSON.stringify({ diarias: [...entradas, ...extra.map((e) => e.entrada)], semanales: [] }, null, 2)}\n`);
   for (const n of ['a', 'b', 'c']) { escribir(`scripts/tests/${n}.test.sh`, suite(n)); escribir(`docs/${n}.md`, `${n}\n`); }
+  if (grupo) escribir('scripts/tests/i.test.sh', suite('i', 'installer/setup.sh'));
   for (const e of extra) escribir(`scripts/${e.entrada.ruta}`, e.texto);
   if (listas) {
     escribir('scripts/ci/control-x.js', '// un control\n');
     escribir('scripts/ci/controls-from-base.json', `${JSON.stringify({ controls: [{ name: 'x', script: 'scripts/ci/control-x.js', rules: [] }], content: [], workflows: [], approvals: [] }, null, 2)}\n`);
-    escribir('scripts/ci/heavy-suites.json', `${JSON.stringify({ shared: { patterns: ['lib/shared/**'] }, groups: { installer: { patterns: ['installer/**'] } }, suites: {} }, null, 2)}\n`);
+    const delGrupo = grupo ? { 'i.test.sh': { group: 'installer', patterns: ['scripts/tests/i.test.sh'] } } : {};
+    escribir('scripts/ci/heavy-suites.json', `${JSON.stringify({ shared: { patterns: ['lib/shared/**'] }, groups: { installer: { patterns: ['installer/**'] } }, suites: delGrupo }, null, 2)}\n`);
     fs.copyFileSync(path.join(RAIZ, 'scripts', 'ci', 'suites-for-change.js'), path.join(repo, 'scripts', 'ci', 'suites-for-change.js'));
     escribir('installer/setup.sh', '# instala\n');
     escribir('lib/shared/x.js', '// compartido\n');
@@ -215,7 +219,7 @@ test('T6 GreenSaved_ControlInstallerShared_RunsFull @story-8.263 @ac-6 — un co
   }
 });
 
-test('T7 GreenSaved_BaseTrimOrDeferred_RunsFull @story-8.263 @ac-6 @story-8.279 @ac-7 — otro recorte o una diferida que vuelve corren la completa; main traído sin cambios, nada', () => {
+test('T7 GreenSaved_ClassesStillFull @story-8.263 @ac-6 @story-8.279 @ac-7 @story-8.299 @ac-10 — otro recorte y el instalador siguen pidiendo la completa; una diferida que vuelve, ya no; main traído sin cambios, nada', () => {
   const l = conCompletaVerde();
   git(l.repo, 'commit', '-q', '--allow-empty', '-m', 'main avanzó');
   escribirMarcador(l, { baseSha: git(l.repo, 'rev-parse', 'HEAD').stdout.trim(), testsGreenFull: marcador(l).testsGreenFull });
@@ -227,11 +231,22 @@ test('T7 GreenSaved_BaseTrimOrDeferred_RunsFull @story-8.263 @ac-6 @story-8.279 
   tocar(l, 'docs/a.md');
   r = puerta(l);
   assert.match(r.out, /corre la completa como siempre: [^\n]*recorte/, r.out);
-  // una suite diferida por sus carpetas que lo cambiado vuelve a hacer correr
+  // una suite diferida por sus carpetas que lo cambiado vuelve a hacer correr: acotada, no la completa
   const d = conCompletaVerde({ extra: [{ entrada: { raiz: 'arnes', ruta: 'tests/g.test.sh', gate_only_when_touching: ['G/**'] }, texto: suite('g', 'G/x.md') }] });
   tocar(d, 'G/x.md');
   r = puerta(d);
-  assert.match(r.out, /corre la completa como siempre: lo cambiado vuelve a hacer correr g\.test\.sh/, r.out);
+  assert.equal(r.status, 0, r.out);
+  assert.match(lineasDeModo(r.out)[0], /^\[test-gate\] modo acotada · /, r.out);
+  assert.doesNotMatch(r.out, /corre la completa como siempre/);
+  assert.match(r.out, /^VUELVE\s+g\.test\.sh/m, r.out);
+  // con lo guardado verde, el instalador tocado pide la completa aunque una suite del grupo esté diferida
+  const i = conCompletaVerde({ listas: true, grupo: true });
+  const guardado = JSON.parse(fs.readFileSync(path.join(verde(i).dir, 'resumen.json'), 'utf8'));
+  assert.ok((guardado.deferred_suites || []).some((x) => x.suite.endsWith('/i.test.sh')), `la completa difirió la del grupo: ${JSON.stringify(guardado.deferred_suites)}`);
+  tocar(i, 'installer/setup.sh', '# otro\n');
+  r = puerta(i);
+  assert.match(r.out, /corre la completa como siempre: cambió el instalador \(installer\/setup\.sh\)/, r.out);
+  assert.deepEqual(r.corridas, [...TODAS, 'i'], r.out);
 });
 
 test('T8 GreenSaved_RealFullReplaces_ClosedSavesJoined @story-8.263 @ac-7 @story-8.297 @ac-1 — la completa reemplaza lo guardado; la que cerró en verde guarda lo juntado', () => {
@@ -651,6 +666,9 @@ test('T10 GatesLog_RunLine_PerModeAndNotWhenCutOrNoTurn @story-8.297 @ac-9 — u
   // sin turno (77): con cien suites, el turno de la máquina lo tiene otra sesión
   const muchas = Array.from({ length: 100 }, (_, i) => ({ entrada: { raiz: 'arnes', ruta: `tests/m${i}.test.sh` }, texto: suite(`m${i}`, 'docs/a.md') }));
   const t = lab({ extra: muchas });
+  // con el tope de la máquina de fábrica (60) una acotada no llega a pedir turno: este repo lo sube
+  fs.writeFileSync(path.join(t.repo, '.test-gate.yaml'), 'test_gate:\n  scope: touched\n  full_suite_by: "la CI de prueba"\n  max_local_suites: 200\n');
+  git(t.repo, 'add', '-A'); git(t.repo, 'commit', '-q', '-m', 'tope');
   fs.mkdirSync(path.join(t.repo, 'scripts', 'tools'), { recursive: true });
   fs.writeFileSync(path.join(t.repo, 'scripts', 'tools', 'heavy-turn.js'),
     "module.exports = { BUSY_EXIT: 77, take: () => ({ ok: false, message: 'el turno lo tiene otra sesión (de prueba)' }) };\n");
@@ -690,4 +708,55 @@ test('T15 NoScopeRepo_AsToday_WithRunLine @story-8.297 @ac-13 @ac-14 — un repo
   assert.ok(verde(a), 'guarda el verde, como hoy');
   x = registro(a).pop();
   assert.deepEqual([x.modo, x.motivo, x.guardo], ['primera', 'TYCON_GATE_ALL_SUITES=1 pide correr todo', 'verde']);
+});
+
+// ── Las suites que vuelven por sus carpetas corren solas, no la completa ────────────────────────────────────────────
+const G = { entrada: { raiz: 'arnes', ruta: RUTA('g'), gate_only_when_touching: ['G/**'] }, texto: suite('g', 'G/x.md') };
+const MOTIVO_G = 'la carpeta cambió desde la completa verde (G/x.md): corren las suites que leen lo cambiado y las que vuelven por sus carpetas (g.test.sh)';
+const resumenGuardado = (l) => JSON.parse(fs.readFileSync(path.join(verde(l).dir, 'resumen.json'), 'utf8'));
+
+test('T1 DeferredReturns_RunsOnlyThoseAndChanged @story-8.299 @ac-1 @ac-3 @ac-5 — la diferida que lo cambiado vuelve a hacer correr corre sola, con su renglón, sin la completa', () => {
+  // 🔴 mutación: pedir la completa (lo de antes), o pasar la reactivada por los filtros del corredor (la volverían a diferir)
+  const l = conCompletaVerde({ extra: [G] });
+  tocar(l, 'G/x.md');
+  const r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.deepEqual(r.corridas, ['g'], r.out);
+  assert.match(r.out, /^VUELVE\s+g\.test\.sh — la completa la difirió y lo cambiado toca G\/\*\*$/m, r.out);
+  assert.doesNotMatch(r.out, /corre la completa como siempre/);
+  assert.equal(lineasDeModo(r.out)[0], `[test-gate] modo acotada · ${MOTIVO_G}`, r.out);
+  const x = registro(l).pop();
+  assert.deepEqual([x.modo, x.motivo], ['acotada', MOTIVO_G]);
+});
+
+test('T5 Reactivated_Red_GateRed @story-8.299 @ac-4 — una reactivada roja deja el portón en rojo, con ella en las fallas', () => {
+  // 🔴 mutación: juntar la reactivada sin su resultado nuevo dejaría verde lo que salió rojo
+  const l = conCompletaVerde({ extra: [G] });
+  const antes = verde(l);
+  tocar(l, 'G/x.md');
+  estado(l, 'g', 1);
+  const r = puerta(l);
+  assert.notEqual(r.status, 0, r.out);
+  assert.deepEqual(r.corridas, ['g'], r.out);
+  assert.deepEqual((marcador(l).testsFailed || []).map((x) => x.ruta), [RUTA('g')], 'g queda en las fallas de la constancia');
+  assert.deepEqual(verde(l), antes, 'lo guardado verde sigue');
+});
+
+test('T8 LastGreen_ReactivatedSaved_NextRunsThemAgain @story-8.299 @ac-6 — el cierre verde guarda la reactivada medida y fuera de las diferidas; la vuelta siguiente la corre otra vez por su carpeta', () => {
+  // 🔴 mutación: conservar deferred_suites en lo guardado haría que la vuelta siguiente la trate como diferida que vuelve
+  const l = conCompletaVerde({ extra: [G] });
+  assert.ok(resumenGuardado(l).deferred_suites.some((d) => d.suite.endsWith('/g.test.sh')), 'la completa la difirió');
+  tocar(l, 'G/x.md');
+  let r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.deepEqual(r.corridas, ['g'], r.out);
+  const guardado = resumenGuardado(l);
+  const g = guardado.suites.find((s) => s.entrada && s.entrada.ruta === RUTA('g'));
+  assert.equal(g && g.exit, 0, `lo guardado trae el resultado nuevo de g: ${JSON.stringify(guardado.suites)}`);
+  assert.ok(!(guardado.deferred_suites || []).some((d) => d.suite.endsWith('/g.test.sh')), JSON.stringify(guardado.deferred_suites));
+  tocar(l, 'G/y.md');
+  r = puerta(l);
+  assert.equal(r.status, 0, r.out);
+  assert.deepEqual(r.corridas, ['g'], r.out);
+  assert.match(r.out, /^VUELVE\s+g\.test\.sh — lo cambiado toca G\/\*\*, que lee sin nombrar$/m, r.out);
 });

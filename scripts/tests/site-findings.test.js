@@ -1250,6 +1250,31 @@ test('T90 Mantenimiento_Cuenta_PlataformaCaidaNoSeReconsulta — si la plataform
   assert.ok(llamadas > primeras, 'pasado el minuto, vuelve a preguntar');
 });
 
+// Mantenimiento_Cuenta_DecisionIlegible_NoMedido
+// 🔴 Falla con: una ficha que espera y cuya decisión en main no se puede leer se pierde del número: el menú e Inicio
+//    dicen un número más chico que parece medido.
+test('T90b Mantenimiento_Cuenta_DecisionIlegible_NoMedido — una decisión que no se lee da «no medido», no un número de menos', { timeout: 60000 }, async () => {
+  const contar = (extra) => {
+    const opsDoc = { version: 1, owners: { default: LEAD }, site: { access: [{ role: 'maintainer', emails: [LEAD] }] } };
+    const ops = armarOperaciones({ opsDoc, extra });
+    const fuentes = H.fuentesFijas({ config: opsDoc });
+    fuentes.clones = () => ({ operaciones: { dir: ops.clon }, perfil: null });
+    const env = H.envBase({ SITE_OIDC_ISSUER: 'https://emisor.acme.example', SITE_OPERATIONS_REPO: 'https://github.com/acme/ops', SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA });
+    const cfg = validarConfiguracion(env).cfg;
+    const fetch = async () => new Response('', { status: 503 });
+    const rutas = FINDINGS().crearRutas({ cfg, fuentes, ahora: () => AHORA, fetch, urlBase: { github: 'http://127.0.0.1:9' } });
+    const p = rutas.find((r) => r.pestana && r.pestana.id === 'mantenimiento').pestana;
+    return { total: p.cuenta(), vigilante: p.esperanDe('vigilante'), ejecuciones: p.esperanDe('ejecuciones') };
+  };
+  const sana = contar({});
+  assert.ok(Number.isInteger(sana.vigilante) && sana.vigilante > 0, JSON.stringify(sana));
+  // la carpeta de decisiones del vigilante es un archivo: ninguna decisión suya se puede leer
+  const rota = contar({ 'inbox/watcher/decisions': 'no es una carpeta\n' });
+  assert.strictEqual(rota.vigilante, null, `el vigilante no se mide: ${JSON.stringify(rota)}`);
+  assert.strictEqual(rota.total, null, 'el total tampoco');
+  assert.strictEqual(rota.ejecuciones, sana.ejecuciones, 'lo de ejecuciones se sigue contando');
+});
+
 // ── la carta de una dependencia dice qué es la vulnerabilidad y qué sugiere el modelo ─────────────────────────────────
 
 const DEP_AVISO = 'id: dep-aviso\ndetectado: 2026-10-20\nveredicto: pendiente\npaquete: pkg-aviso\nseveridad: high\nnoches: 2\npr: 7\npr_repo: acme/ops\nrepos:\n  - Producto X/FrontEnd\n'

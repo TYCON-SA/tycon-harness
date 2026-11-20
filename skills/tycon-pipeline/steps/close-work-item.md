@@ -307,13 +307,17 @@ no se pregunta de nuevo. Sin ese ok, el pipeline no commitea ni empuja nada (reg
    # la story de main contra la del checkout: sólo puede cambiar el status
    git -C <carpeta-temporal> diff --no-index -U0 <ruta de la story> <story en el checkout> | grep '^[-+][^-+]'
    cp <story en el checkout> <carpeta-temporal>/<ruta de la story>
-   git -C <carpeta-temporal> add <ruta de la story>
+   # el pedido del repo de la historia queda en su registro: los de otros repos ya llegaron con la rama
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js pr <n> --merged --story <id> --repo <repo> --story-path <carpeta-temporal>/<ruta de la story>
+   git -C <carpeta-temporal> add <ruta de la story> .advisors/dod-runtime/<clave>-pedidos.jsonl
    git -C <carpeta-temporal> commit -m "docs(specs): <id> — status done"
    git -C <carpeta-temporal> push -u origin chore/<id>-done
    ```
 
-   Se copia sólo el archivo de la story. Si la comparación muestra algún renglón distinto de `status:` (o del `Status:`
-   del cuerpo), se para y se le muestra la diferencia al dev: copiar el archivo entero pisaría lo que haya en main.
+   Se copian sólo el archivo de la story y el renglón de su pedido en `<clave>-pedidos.jsonl`. Si la comparación muestra algún
+   renglón distinto de `status:` (o del `Status:` del cuerpo), se para y se le muestra la diferencia al dev: copiar el archivo
+   entero pisaría lo que haya en main. Si `marker.js pr` dice que la copia no tiene carpeta de evidencia, la historia no tiene
+   evidencia commiteada que proteger: se dice en el mensaje final, se saca ese archivo del `add` y se sigue.
 3. **El camino a main es el del repo**: el que da `merge-pr.js plan` (el mismo de `/tycon-merge-to-main`). En modo `pr`
    sobre Azure DevOps, un pedido con `--auto-complete true --squash false --delete-source-branch true` (la rama temporal
    se borra al entrar); en GitHub, un pedido a la fila; en modo

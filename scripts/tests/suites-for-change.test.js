@@ -1150,6 +1150,36 @@ test('Direct_ShortName_OnlyWithItsExtensionOrPath — un nombre de menos de 4 le
   assert.deepStrictEqual(directPlan(dir, ['scripts/lib/w.js', 'scripts/lib/util.js']).run.sort(), ['a.test.js', 'd.test.js'], 'con su extensión sí');
 });
 
+test('Direct_NameInsideAnotherWord_DoesNotName — el nombre pegado a otra palabra no nombra el archivo; suelto, en su ruta o con comillas sí', { skip: NO_RULE }, () => {
+  // 🔴 mutación: volver a buscar el nombre como pedazo de texto (lo de antes) → DATABASE, BASE_URL y estate.js hacen
+  //    correr b, c y d; pedir la palabra entera también en el resto del renglón → $BASE o 'BASE' dejan
+  //    de nombrar el archivo y la suite que lo lee de verdad se saltea.
+  const dir = depsRepo();
+  fs.mkdirSync(path.join(dir, 'scripts', 'tests', 'fixtures', 'lab'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'scripts', 'tests', 'fixtures', 'lab', 'BASE'), 'x\n');
+  fs.writeFileSync(path.join(dir, 'scripts', 'lib', 'state.js'), 'module.exports = 1;\n');
+  const put = (n, t) => fs.writeFileSync(path.join(dir, 'scripts', 'tests', n), t);
+  put('a.test.js', "require('../lib/util.js');\n");
+  put('b.test.sh', 'DATABASE=1; echo "$BASE_URL"\n');
+  put('c.test.js', "const e = 'lib/estate.js'; const f = 'statement.js';\n");
+  put('d.test.js', "const db = 'MY_DATABASE';\n");
+  nightlyRan(dir, { ran: ALL4, complete: true });
+  // con util.js tocado, a.test.js corre (un plan vacío correría todo): las otras tres no nombran nada de lo tocado
+  const lejos = directPlan(dir, ['scripts/tests/fixtures/lab/BASE', 'scripts/lib/state.js', 'scripts/lib/util.js']);
+  assert.deepStrictEqual(lejos.run, ['a.test.js'], `sólo a.test.js nombra lo tocado\n${lejos.err}`);
+  // la palabra entera, como la escribe una suite de verdad
+  put('a.test.js', "const p = path.join(dir, 'BASE');\n");
+  put('b.test.sh', 'cat "$LAB/fixtures/lab/BASE"\n');
+  put('c.test.js', "require('../lib/state.js');\n");
+  put('d.test.js', "const { x } = require('../lib/state');\n");
+  const cerca = directPlan(dir, ['scripts/tests/fixtures/lab/BASE', 'scripts/lib/state.js']);
+  assert.deepStrictEqual(cerca.run.sort(), ALL4, `las cuatro nombran lo tocado\n${cerca.err}`);
+  // un archivo que de verdad se llama DATABASE lo nombra quien dice DATABASE
+  fs.writeFileSync(path.join(dir, 'scripts', 'tests', 'fixtures', 'lab', 'DATABASE'), 'x\n');
+  put('b.test.sh', 'DATABASE=1\n');
+  assert.ok(directPlan(dir, ['scripts/tests/fixtures/lab/DATABASE']).run.includes('b.test.sh'), 'DATABASE nombra a DATABASE');
+});
+
 test('Direct_NothingNamesTheChange_RunsEverything — un plan vacío la validación lo cuenta como «no se midió»: corre todo', { skip: NO_RULE }, () => {
   const dir = depsRepo();
   nightlyRan(dir, { ran: ALL4, complete: true });
@@ -1210,4 +1240,22 @@ test('Direct_AddedOrRemoved_RunsTheSuitesThatListTheRepo — un archivo nuevo o 
   const unknown = directPlan(dir, ['scripts/lib/util.js'], { addedRemoved: null });
   assert.deepStrictEqual(unknown.run.sort(), ['a.test.js', 'c.test.js'], 'sin la lista de altas y bajas: ante la duda, corre');
   assert.match(unknown.err, /no sé si el cambio agrega o borra archivos/);
+});
+
+test('T11 GroupCriterion_Incluye @story-8.299 @ac-2 — incluye dice si una suite es del grupo; skips no cambia', () => {
+  // 🔴 mutación: un incluye que devuelva siempre false deja a las suites del grupo sin volver por sus carpetas; skips
+  // devuelve false para una suite de afuera, y eso no dice si es del grupo.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-for-change-group-'));
+  const heavy = path.join(dir, 'heavy-suites.json');
+  fs.writeFileSync(heavy, JSON.stringify({ groups: { installer: { patterns: ['installer/**'] } },
+    suites: { 'i.test.sh': { group: 'installer', patterns: ['scripts/tests/i.test.sh'] }, 'other.test.sh': { patterns: ['lib/**'] } } }));
+  const crit = require(SCRIPT).groupCriterion(heavy, 'installer');
+  assert.equal(crit.problem, undefined, String(crit.problem));
+  assert.equal(typeof crit.incluye, 'function', 'groupCriterion trae incluye');
+  assert.equal(crit.incluye('i.test.sh'), true);
+  assert.equal(crit.incluye('other.test.sh'), false);
+  assert.equal(crit.incluye('no-esta.test.sh'), false);
+  assert.equal(crit.skips('other.test.sh', ['lib/x.js']), false, 'fuera del grupo nunca se difiere por el grupo');
+  assert.equal(crit.skips('i.test.sh', ['lib/x.js']), true, 'del grupo y sin tocar el instalador: se difiere');
+  assert.equal(crit.skips('i.test.sh', ['installer/x.sh']), false, 'del grupo y con el instalador tocado: corre');
 });

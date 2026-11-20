@@ -293,6 +293,8 @@ function richFoto() {
   const board = buildBoard({ meta: { actualizado: '2026-06-01T10:00', resumen: 'Resumen', teToca: ['Algo', 'Vencida'], teTocaDesde: { Vencida: '2026-05-20T10:00' } }, pendientes: [{ titulo: 'Pendiente', estado: 'espera', grupo: 'Hoy', quien: 'Omega', nota: 'Nota', termina: 'hoy', orden: 1, id: 'T-1' }, { titulo: 'Hecho', estado: 'hecho', quien: 'Beta', realIso: '2026-06-01T09:00', id: 'T-2' }, { titulo: 'La recalculada', estado: 'curso', historia: '7.6', id: 'T-3' }] }, { now: nowMs });
   // una firma pedida por una sesión: su persona levanta la mano y la tarjeta dice a quién espera (8.198)
   const { data } = buildOffice({
+    // la ficha de lo que espera al dueño: la llevan su tarjeta y su persona, y arma los grupos de esperas
+    ownerCard: () => ({ riesgo: 'de rutina', pedido: '#12', accion: 'contestar', linea: 'de rutina · contestar' }),
     wip, signatures: [{ title: 'Firma del plan', at: nowMs }, { id: 'f9', tipo: 'firma', destino: 's1', title: 'el carril de Alfa', at: nowMs }], nowMs, board, openPrsNote: 'Los pedidos no se pudieron leer.',
     sessionFiles: [{ session: 's3', tool: 'claude', pid: null, updatedAt: new Date(nowMs - 1800000).toISOString() }],
     transcripts: new Map(['s3', 's8'].map((sid) => [sid, { encargo: 'Lo que le pidieron', haciendoAhora: 'Lo que hace ahora', ultimaAccion: 'Lo último que hizo', lastWriteMs: nowMs - 60000 }])),
@@ -1179,9 +1181,12 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
   await sleep(700);
   const waits = 'tu respuesta en su pantalla';
   assert.ok(!says(site, waits), 'el estado todavía no está escrito');
-  fs.writeFileSync(path.join(m.sessions, 's1.json'), JSON.stringify({ pid: process.pid, sessionId: 's1', name: 'Alfa', nameSource: 'user', status: 'waiting_for_permission', statusUpdatedAt: 2000 }));
+  const stateFile = path.join(m.sessions, 's1.json');
+  fs.writeFileSync(stateFile, JSON.stringify({ pid: process.pid, sessionId: 's1', name: 'Alfa', nameSource: 'user', status: 'waiting_for_permission', statusUpdatedAt: 2000 }));
+  // como los otros dos cambios: se cuenta desde que hay algo que mostrar, no desde antes de la espera de 700 ms
+  const stateAt = fs.statSync(stateFile).mtimeMs;
   assert.ok(await until(() => says(page, waits) && says(site, waits), 3000), 'la espera llegó');
-  assert.ok(says(site, waits).at - askedAt < 2000, 'en menos de 2 s');
+  assert.ok(says(site, waits).at - stateAt < 2000, `en menos de 2 s desde que se escribió el estado (tardó ${says(site, waits).at - stateAt} ms)`);
   // quien espera sigue diciendo por qué paso va; lo que espera va aparte, y la tarjeta del sitio lo dice igual que la local
   const asking = (holder) => says(holder, waits).data.agents.find((a) => a.nombre === 'Alfa');
   assert.strictEqual(asking(site).estado, 'firma');

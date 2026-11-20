@@ -1998,6 +1998,17 @@ withWaiverLog(() => {
     check('T10 SimulatedServer_Vias_UnaPorCaso @story-8.220 @ac-1', !fallas.length && delAyudante, JSON.stringify({ fallas, ay }));
   }
 
+  // T10b — un archivo grande, con comentarios largos y una división por renglón, se lee en segundos: mirar si una `/`
+  // abre una regex no recorre todo lo leído (así tardaba 30 s en 300 KB, y el freno corta el cuadro del dueño a los 20).
+  {
+    const bloque = `/* ${'x'.repeat(400)} */\nconst a = b / c; // ${'y'.repeat(200)}\n`;
+    const grande = bloque.repeat(Math.ceil(300000 / bloque.length));
+    const t0 = Date.now();
+    const hallados = sim.simulaServidor(grande);
+    const ms = Date.now() - t0;
+    check('T10b SimulatedServer_ArchivoGrande_SeLeeEnSegundos', ms < 3000 && hallados.length === 0, JSON.stringify({ ms, hallados: hallados.length }));
+  }
+
   // T11 — el paso «Probar en vivo» escribe las dos reglas.
   {
     const paso = fs.readFileSync(path.join(__dirname, '..', '..', 'steps', 'step-10-live-check.md'), 'utf8');
@@ -2733,6 +2744,315 @@ withWaiverLog(() => {
       r.perAc[1].verdict === 'RUNTIME' && r.perAc[2].verdict === 'RUNTIME' && !('medida' in r.perAc[1]) && !('medida' in r.perAc[2])
         && !/FUERA-DE-COTA|SIN-MEDICION|cota/.test(rm.renderMd(r)),
       JSON.stringify(r.perAc));
+  }
+}
+
+// ---------------------------------------------------------------- la regla de la entrada a main (historia 8.310)
+// Estas necesitan git de verdad: un repo con su origin/main, ramas y fusiones de pedido.
+{
+  const { execFileSync, spawnSync } = require('child_process');
+  const ledgerLine = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
+  const BASE = Math.floor(Date.now() / 1000) - 12 * 3600;
+
+  function labEntrada({ iniciales = {}, declarados, acs = [1, 2], pipelines = [], filas, frente = [] } = {}) {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-entrada-'));
+    const repo = path.join(fs.realpathSync(ws), 'Proj');
+    fs.mkdirSync(repo);
+    const gatesLog = path.join(ws, 'gates.log');
+    const dod = path.join(repo, '.advisors', 'dod-runtime');
+    const git = (args, t) => execFileSync('git', ['-c', 'user.name=Lab', '-c', 'user.email=l@example.invalid', '-c', 'commit.gpgsign=false', ...args],
+      { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...(t ? { GIT_COMMITTER_DATE: `${t} +0000`, GIT_AUTHOR_DATE: `${t} +0000` } : {}) } }).trim();
+    const escribir = (rel, texto) => { const a = path.join(repo, rel); fs.mkdirSync(path.dirname(a), { recursive: true }); fs.writeFileSync(a, texto); return a; };
+    const tabla = filas || [`| T1 | \`FeatureTests.Caso\` | ${acs.join(',')} | integration | x | y |`];
+    const historia = ['---', 'story: 9.9', 'status: in-progress', ...(pipelines.length ? ['pipelines:', ...pipelines] : []), 'files_to_modify:',
+      ...declarados.map((d) => `  - ${d}`), ...frente, '---', '', '## Acceptance Criteria', '',
+      ...acs.map((n) => `${n}. **Given** algo ${n}, **When** pasa, **Then** resultado ${n}.`), '',
+      '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', ...tabla, ''].join('\n');
+    const storyPath = escribir('specs/stories/9-9-lab.md', historia);
+    for (const [rel, texto] of Object.entries(iniciales)) escribir(rel, texto);
+    git(['init', '-q', '-b', 'main']);
+    const guardar = (mensaje, t) => { git(['add', '-A']); git(['commit', '-q', '-m', mensaje], t); return git(['rev-parse', '--short', 'HEAD']); };
+    guardar('inicio', BASE);
+    git(['update-ref', 'refs/remotes/origin/main', 'refs/heads/main']);
+    const L = {
+      ws, repo, dod, gatesLog, storyPath, git, escribir, guardar,
+      rama(nombre, cambios, t, mensaje = 'cambio', desde = 'main') {
+        git(['switch', '-q', '-C', nombre, desde]);
+        for (const [rel, texto] of Object.entries(cambios)) escribir(rel, texto);
+        return guardar(mensaje, t);
+      },
+      humo(ids, t, extra = {}) {
+        const ts = new Date(t * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+        const r = ledgerLine.append({ dodDir: dod, gatesLog, story: '9.9', acs: ids, ts });
+        if (Object.keys(extra).length) {
+          const f = path.join(dod, '9.9-smoke-ledger.jsonl');
+          const lineas = fs.readFileSync(f, 'utf8').trim().split('\n');
+          lineas[lineas.length - 1] = JSON.stringify({ ...JSON.parse(lineas[lineas.length - 1]), ...extra });
+          fs.writeFileSync(f, `${lineas.join('\n')}\n`);
+        }
+        return r;
+      },
+      fusion(rama, numero, t) {
+        git(['switch', '-q', 'main']);
+        git(['merge', '-q', '--no-ff', '-m', `Merge pull request #${numero} from org/${rama}`, rama], t);
+        git(['update-ref', 'refs/remotes/origin/main', 'refs/heads/main']);
+        return git(['rev-parse', '--short', 'HEAD']);
+      },
+      // la rama de la historia: cambia su código, corre el humo, guarda la evidencia y entra por el pedido 1
+      entra(cambios, ids) {
+        L.rama('wt/Uno', cambios, BASE + 100);
+        L.humo(ids, BASE + 150);
+        L.guardar('evidencia', BASE + 200);
+        return L.fusion('wt/Uno', 1, BASE + 300);
+      },
+      otra(cambios, numero, t, mensaje) { L.rama(`wt/Otra${numero}`, cambios, t - 50, mensaje); return L.fusion(`wt/Otra${numero}`, numero, t); },
+      calc: () => rm.compute({ storyPath, gatesLogPath: gatesLog, testsResults: [] }),
+    };
+    return L;
+  }
+  const veredicto = (r, n) => r.perAc[n] && r.perAc[n].verdict;
+  const avisos = (r) => r.warnings.join('\n');
+  const SIMPLE = { iniciales: { 'src/a.js': '// a0\n' }, declarados: ['src/a.js'] };
+
+  // T5: el aviso nombra la entrada y separa las fusiones de otra historia de las que no se sabe de quién son
+  {
+    const L = labEntrada(SIMPLE);
+    const entrada = L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    const ajena = L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    const nadie = L.otra({ 'src/a.js': '// a3\n' }, 3, BASE + 500);
+    L.escribir('.advisors/dod-runtime/9.8-pedidos.jsonl', `${JSON.stringify({ historia: '9.8', clave: '9.8', repo: 'Proj', pedido: 2, ts: 'x' })}\n{ roto\n`);
+    const r = L.calc();
+    const a = avisos(r);
+    check('Matriz_Entrada_AvisoNombraEntradaYFusiones @story-8.310 @ac-5',
+      veredicto(r, 1) === 'RUNTIME' && a.includes(entrada) && new RegExp(`otra historia[^\\n]*${ajena}[^\\n]*9\\.8`).test(a)
+        && new RegExp(`sin historia conocida[^\\n]*${nadie}`).test(a) && /9\.8-pedidos\.jsonl/.test(a), a);
+  }
+
+  // T1d: un .json declarado no se juzga ni habilita; una prueba que entró tampoco habilita
+  {
+    const base = { iniciales: { 'src/a.js': '// a0\n', 'config/x.json': '{"v":0}\n', 'tests/a.test.js': '// a\n' }, declarados: ['src/a.js', 'config/x.json', 'tests/a.test.js'], acs: [1] };
+    const L1 = labEntrada(base);
+    L1.rama('wt/Uno', { 'src/a.js': '// a1\n', 'config/x.json': '{"v":1}\n' }, BASE + 100);
+    L1.humo([1], BASE + 150);
+    L1.guardar('evidencia', BASE + 200);
+    L1.otra({ 'config/x.json': '{"v":9}\n' }, 5, BASE + 250);
+    L1.git(['merge', '-q', '-X', 'theirs', '--no-ff', '-m', 'Merge pull request #1 from org/wt/Uno', 'wt/Uno'], BASE + 300);
+    L1.git(['update-ref', 'refs/remotes/origin/main', 'refs/heads/main']);
+    L1.otra({ 'src/a.js': '// a2\n' }, 6, BASE + 400);
+    const L2 = labEntrada(base);
+    L2.entra({ 'config/x.json': '{"v":1}\n' }, [1]);
+    L2.otra({ 'src/a.js': '// a2\n' }, 6, BASE + 400);
+    const L3 = labEntrada(base);
+    L3.entra({ 'tests/a.test.js': '// a1\n' }, [1]);
+    L3.otra({ 'src/a.js': '// a2\n' }, 6, BASE + 400);
+    const v = [L1, L2, L3].map((L) => veredicto(L.calc(), 1));
+    check('Matriz_JsonDeclarado_NoSeJuzgaNiHabilita @story-8.310 @ac-1', v[0] === 'RUNTIME' && v[1] !== 'RUNTIME' && v[2] !== 'RUNTIME', JSON.stringify(v));
+  }
+
+  // T4: lo que es sólo de otra tanda no vence el humo, aunque lo cambie la propia historia
+  {
+    const L = labEntrada({
+      iniciales: { 'src/a.js': '// a0\n', 'src/b.js': '// b0\n', 'tests/b.test.js': "// @story-9.9 @ac-2\nrequire('../src/ayuda.js');\n", 'src/ayuda.js': '// h\n' },
+      declarados: ['src/a.js', 'src/b.js', 'tests/b.test.js'],
+      pipelines: ['  - name: A-uno', '    status: done', '    acs: [1]', '    files:', '      - src/a.js', '  - name: B-dos', '    status: done', '    acs_pending: [2]', '    files:', '      - src/b.js', '      - tests/b.test.js'],
+    });
+    L.entra({ 'src/a.js': '// a1\n' }, [1]);
+    L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    L.otra({ 'src/b.js': '// b1\n', 'tests/b.test.js': "// @story-9.9 @ac-2 cambiada\nrequire('../src/ayuda.js');\n", 'src/ayuda.js': '// h2\n' }, 3, BASE + 500, 'fix(9.9 B): lo de la tanda B');
+    const r = L.calc();
+    check('Matriz_Tandas_ArchivoDeOtraTanda_NoVence @story-8.310 @ac-4', veredicto(r, 1) === 'RUNTIME', `${JSON.stringify(r.perAc[1])} ${avisos(r)}`);
+  }
+
+  // T10b: lo que carga una prueba: un cambio ajeno no vence, uno propio vence sus criterios, y sin código que entró no hay regla
+  {
+    const base = { iniciales: { 'src/a.js': '// a0\n', 'src/ayuda.js': '// h0\n', 'tests/a.test.js': "// x @story-9.9 @ac-1\nrequire('../src/ayuda.js');\n" }, declarados: ['src/a.js', 'tests/a.test.js'] };
+    const ajeno = labEntrada(base);
+    ajeno.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    ajeno.otra({ 'src/ayuda.js': '// h1\n' }, 2, BASE + 400);
+    ajeno.otra({ 'src/a.js': '// a2\n' }, 3, BASE + 500);
+    const rA = ajeno.calc();
+    const propio = labEntrada(base);
+    propio.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    propio.otra({ 'src/ayuda.js': '// h1\n' }, 2, BASE + 400, 'fix(9.9): la ayuda');
+    propio.otra({ 'src/a.js': '// a2\n' }, 3, BASE + 500);
+    const rP = propio.calc();
+    const sinCodigo = labEntrada(base);
+    sinCodigo.entra({ 'tests/a.test.js': "// y @story-9.9 @ac-1\nrequire('../src/ayuda.js');\n" }, [1, 2]);
+    sinCodigo.otra({ 'src/ayuda.js': '// h1\n' }, 2, BASE + 400);
+    const rS = sinCodigo.calc();
+    check('Matriz_CargadoCambiado_HumoPorEntrada_SigueContando @story-8.310 @ac-10',
+      veredicto(rA, 1) === 'RUNTIME' && veredicto(rA, 2) === 'RUNTIME' && veredicto(rP, 1) !== 'RUNTIME' && veredicto(rP, 2) === 'RUNTIME' && veredicto(rS, 1) !== 'RUNTIME',
+      JSON.stringify([veredicto(rA, 1), veredicto(rA, 2), veredicto(rP, 1), veredicto(rP, 2), veredicto(rS, 1)]));
+  }
+
+  // T11: dos humos verdes del mismo criterio con guion distinto avisan, sin cambiar el veredicto
+  {
+    const caso = (primero, segundo) => {
+      const L = labEntrada(SIMPLE);
+      L.humo([1, 2], BASE + 100, primero);
+      L.humo([1, 2], BASE + 200, segundo);
+      L.guardar('evidencia', BASE + 300);
+      L.git(['update-ref', 'refs/remotes/origin/main', 'refs/heads/main']);
+      return L.calc();
+    };
+    const a = { script: '.advisors/dod-runtime/9.9-x.js', script_sha: 'a'.repeat(64) };
+    const b = { script: '.advisors/dod-runtime/9.9-x.js', script_sha: 'b'.repeat(64) };
+    const dis = caso(a, b);
+    const sinUno = caso({}, b);
+    const sinDos = caso({}, {});
+    const avisa = (r) => /guion/.test(avisos(r)) && /una persona/.test(avisos(r)) && /AC#1/.test(avisos(r));
+    check('Matriz_GuionDistinto_AvisaSinCambiarVeredicto @story-8.310 @ac-11',
+      avisa(dis) && avisa(sinUno) && !/guion distinto/.test(avisos(sinDos)) && [dis, sinUno, sinDos].every((r) => veredicto(r, 1) === 'RUNTIME'), `${avisos(dis)} | ${avisos(sinUno)}`);
+  }
+
+  // T11b: un humo corrido después de la entrada no usa la regla
+  {
+    const L = labEntrada(SIMPLE);
+    L.rama('wt/Uno', { 'src/a.js': '// a1\n' }, BASE + 100);
+    L.fusion('wt/Uno', 1, BASE + 200);
+    L.humo([1, 2], BASE + 300);
+    L.guardar('evidencia', BASE + 350);
+    L.git(['update-ref', 'refs/remotes/origin/main', 'refs/heads/main']);
+    L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    const r = L.calc();
+    check('Matriz_HumoPosteriorALaEntrada_NoLaUsa @story-8.310 @ac-11', veredicto(r, 1) !== 'RUNTIME', JSON.stringify(r.perAc[1]));
+  }
+
+  // T12: la matriz no toca la historia, y lo roto lo sigue contando el aviso de la noche
+  {
+    const L = labEntrada(SIMPLE);
+    L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    const antes = fs.readFileSync(L.storyPath, 'utf8');
+    const r = L.calc();
+    // el aviso de la suite roja con lo que entró desde su última noche verde: se corre la prueba que lo mide
+    const noche = spawnSync(process.execPath, ['--test', '--test-name-pattern=SuitesRed_NamesThePullRequestsSinceItsLastGreenNight',
+      path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'night-notices.test.js')], { encoding: 'utf8', env: { ...process.env, HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-noche-')) } });
+    const avisoMedido = noche.status === 0 && /# pass 1|ℹ pass 1/.test(noche.stdout) && !/# fail [1-9]|ℹ fail [1-9]/.test(noche.stdout);
+    check('Entrada_CambioAjenoConSuiteEnRojo_NoTocaLaHistoria @story-8.310 @ac-12',
+      fs.readFileSync(L.storyPath, 'utf8') === antes && veredicto(r, 1) === 'RUNTIME' && avisoMedido, noche.stdout.slice(-400) + noche.stderr.slice(-400));
+  }
+
+  // T13: lo sensible sin prueba de noche no cuenta por la entrada, ni con un humo ni con un portón E2E
+  {
+    const sensible = 'skills/tycon-pipeline/scripts/marker.js';
+    const nocturnas = JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/n.test.js' }], semanales: [] });
+    const iniciales = { [sensible]: '// m0\n', 'scripts/tests/suites.json': nocturnas, 'scripts/tests/n.test.js': "test('N @story-9.9 @ac-1', f);\n" };
+    const L = labEntrada({ iniciales, declarados: [sensible, 'scripts/tests/n.test.js'] });
+    L.entra({ [sensible]: '// m1\n' }, [1, 2]);
+    L.otra({ [sensible]: '// m2\n' }, 2, BASE + 400);
+    const r = L.calc();
+    const G = labEntrada({ iniciales, declarados: [sensible], filas: ['| E1 | `story-9-9.spec.ts::flujo` | 1 | e2e | x | y |', '| E2 | `story-9-9.spec.ts::otro` | 2 | e2e | x | y |'] });
+    G.rama('wt/Uno', { [sensible]: '// m1\n' }, BASE + 100);
+    const ms = (BASE + 150) * 1000;
+    const compacto = new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    G.escribir(`.advisors/dod-runtime/9.9-e2e-gate-${compacto}.md`, ['# Gate', '**Spec filter**: story-9-9.spec.ts', '```', 'verdict=PASS', '```', '- skipped: 0', ''].join('\n'));
+    fs.appendFileSync(G.gatesLog, `${JSON.stringify({ ts: new Date(ms).toISOString(), check: 'dod', status: 'green', provenance: 'run-check', cmd: 'bash e2e-gate.sh /fe 9.9 /dir story-9-9.spec.ts', exit: 0 })}\n`);
+    G.guardar('evidencia', BASE + 200);
+    G.fusion('wt/Uno', 1, BASE + 300);
+    G.otra({ [sensible]: '// m2\n' }, 2, BASE + 400);
+    const rG = G.calc();
+    check('Matriz_Sensible_SinPruebaDeNoche_NoCuenta @story-8.310 @ac-13',
+      veredicto(r, 1) === 'RUNTIME' && veredicto(r, 2) !== 'RUNTIME' && /AC#2[^\n]*prueba que corra de noche/.test(avisos(r))
+        && veredicto(rG, 1) !== 'RUNTIME' && veredicto(rG, 2) !== 'RUNTIME' && /prueba que corra de noche/.test(avisos(rG)),
+      `${JSON.stringify([veredicto(r, 1), veredicto(r, 2), veredicto(rG, 1), veredicto(rG, 2)])} ${avisos(r)} ${avisos(rG)}`);
+  }
+
+  // T13b: también es sensible lo que carga un archivo de firmas, un .json de la lista, y lo que no se puede leer
+  {
+    const noche = require(path.join(__dirname, '..', 'lib', 'nightly-coverage.js'));
+    const carga = labEntrada({ iniciales: { 'src/x.js': "require('./owner-window.js');\n// x0\n" }, declarados: ['src/x.js'] });
+    carga.entra({ 'src/x.js': "require('./owner-window.js');\n// x1\n" }, [1, 2]);
+    carga.otra({ 'src/x.js': "require('./owner-window.js');\n// x2\n" }, 2, BASE + 400);
+    const lista = labEntrada({ iniciales: { 'src/x.js': '// x0\n', 'scripts/setup/hooks-list.json': '{}\n' }, declarados: ['src/x.js', 'scripts/setup/hooks-list.json'] });
+    lista.entra({ 'src/x.js': '// x1\n' }, [1, 2]);
+    lista.otra({ 'src/x.js': '// x2\n' }, 2, BASE + 400);
+    // el control: la misma forma sin lo sensible cuenta, así que el rojo de arriba es por la prueba de noche
+    const control = labEntrada({ iniciales: { 'src/x.js': '// x0\n' }, declarados: ['src/x.js'] });
+    control.entra({ 'src/x.js': '// x1\n' }, [1, 2]);
+    control.otra({ 'src/x.js': '// x2\n' }, 2, BASE + 400);
+    const porNoche = (r) => veredicto(r, 1) !== 'RUNTIME' && /AC#1[^\n]*prueba que corra de noche/.test(avisos(r));
+    check('Matriz_CargaUnArchivoDeFirmas_EsSensible @story-8.310 @ac-13',
+      porNoche(carga.calc()) && porNoche(lista.calc()) && veredicto(control.calc(), 1) === 'RUNTIME'
+        && noche.historiaSensible({ declarados: ['src/x.js'], codigo: ['/no/existe/x.js'] }) === true
+        && noche.historiaSensible({ declarados: ['src/x.js'], codigo: [] }) === false);
+  }
+
+  // T16: lo que sólo se probó en vivo se acepta, y el riesgo queda escrito
+  {
+    const L = labEntrada(SIMPLE);
+    L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    const nadie = L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    const r = L.calc();
+    const md = rm.renderMd(r);
+    const limpio = labEntrada(SIMPLE);
+    limpio.humo([1, 2], BASE + 100);
+    limpio.guardar('evidencia', BASE + 200);
+    check('Matriz_SoloEnVivo_RiesgoEscrito @story-8.310 @ac-16',
+      veredicto(r, 1) === 'RUNTIME' && md.includes('Aceptado sin cobertura posterior') && md.includes('si otra historia lo rompe, ninguna prueba de noche lo va a avisar')
+        && md.includes(nadie) && /pudieron ser de esta misma historia/.test(md) && !rm.renderMd(limpio.calc()).includes('Aceptado sin cobertura posterior'), md.slice(0, 600));
+  }
+
+  // El aviso nombra todas las fusiones del código declarado; sólo lo que cargan las pruebas se resume
+  {
+    const L = labEntrada(SIMPLE);
+    L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    const cortos = [];
+    for (let i = 0; i < 7; i++) cortos.push(L.otra({ 'src/a.js': `// a${i + 2}\n` }, 2 + i, BASE + 400 + i * 100));
+    const a = avisos(L.calc());
+    const C = labEntrada({ iniciales: { 'src/a.js': '// a0\n', 'src/ayuda.js': '// h0\n', 'tests/a.test.js': "// x @story-9.9 @ac-1\nrequire('../src/ayuda.js');\n" }, declarados: ['src/a.js', 'tests/a.test.js'] });
+    C.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+    for (let i = 0; i < 7; i++) C.otra({ 'src/ayuda.js': `// h${i + 1}\n` }, 2 + i, BASE + 400 + i * 100);
+    C.otra({ 'src/a.js': '// a2\n' }, 20, BASE + 1200);
+    const ac = avisos(C.calc());
+    check('Matriz_Entrada_CodigoDeclarado_NombraTodasLasFusiones @story-8.310 @ac-5',
+      cortos.every((c) => a.includes(c)) && !/y \d+ más/.test(a) && /src\/ayuda\.js[^\n]*y 2 más/.test(ac), `${a}\n${ac}`);
+  }
+
+  // Un portón E2E que cuenta por su entrada pone en el riesgo sólo los criterios que cubre
+  {
+    const G = labEntrada({ iniciales: { 'src/a.js': '// a0\n' }, declarados: ['src/a.js'], filas: ['| E1 | `story-9-9.spec.ts::flujo` | 1 | e2e | x | y |'] });
+    G.rama('wt/Uno', { 'src/a.js': '// a1\n' }, BASE + 100);
+    const ms = (BASE + 150) * 1000;
+    const compacto = new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    G.escribir(`.advisors/dod-runtime/9.9-e2e-gate-${compacto}.md`, ['# Gate', '**Spec filter**: story-9-9.spec.ts', '```', 'verdict=PASS', '```', '- skipped: 0', ''].join('\n'));
+    fs.appendFileSync(G.gatesLog, `${JSON.stringify({ ts: new Date(ms).toISOString(), check: 'dod', status: 'green', provenance: 'run-check', cmd: 'bash e2e-gate.sh /fe 9.9 /dir story-9-9.spec.ts', exit: 0 })}\n`);
+    G.guardar('evidencia', BASE + 200);
+    G.fusion('wt/Uno', 1, BASE + 300);
+    G.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+    const r = G.calc();
+    const riesgo = (r.aceptadoSinCobertura || []).map((x) => x.ac);
+    check('Matriz_PortonPorEntrada_RiesgoSoloDeLoQueCubre @story-8.310 @ac-16',
+      veredicto(r, 1) === 'RUNTIME' && veredicto(r, 2) !== 'RUNTIME' && riesgo.includes(1) && !riesgo.includes(2), JSON.stringify([veredicto(r, 1), veredicto(r, 2), riesgo]));
+  }
+
+  // Un humo que hoy cuenta y tiene un criterio vencido no pierde los demás en una historia sensible
+  {
+    const sensible = 'skills/tycon-pipeline/scripts/marker.js';
+    const L = labEntrada({ iniciales: { [sensible]: '// m0\n', 'tests/a.test.js': '// @story-9.9 @ac-1\n' }, declarados: [sensible, 'tests/a.test.js'] });
+    L.entra({ [sensible]: '// m1\n' }, [1, 2]);
+    L.rama('story/9.9-prueba', { 'tests/a.test.js': '// @story-9.9 @ac-1 corregida\n' }, BASE + 350);
+    L.fusion('story/9.9-prueba', 2, BASE + 400);
+    const r = L.calc();
+    check('Matriz_HumoQueHoyCuenta_ConUnCriterioVencido_NoPierdeLosDemas @story-8.310 @ac-13',
+      veredicto(r, 1) !== 'RUNTIME' && veredicto(r, 2) === 'RUNTIME', `${JSON.stringify([veredicto(r, 1), veredicto(r, 2)])} ${avisos(r)}`);
+  }
+
+  // También es sensible una historia que borra un archivo de la lista, que lo nombra desde la carpeta de arriba o que
+  // declara un archivo que no se puede leer
+  {
+    const caso = (opciones) => {
+      const L = labEntrada(opciones);
+      L.entra({ 'src/a.js': '// a1\n' }, [1, 2]);
+      L.otra({ 'src/a.js': '// a2\n' }, 2, BASE + 400);
+      return veredicto(L.calc(), 1);
+    };
+    const borra = caso({ ...SIMPLE, frente: ['files_to_delete:', '  - scripts/lib/notify.js'] });
+    const desdeArriba = caso({ iniciales: { 'src/a.js': '// a0\n', 'skills/tycon-pipeline/scripts/marker.js': '// m\n' }, declarados: ['src/a.js', 'Proj/skills/tycon-pipeline/scripts/marker.js'] });
+    const falta = caso({ ...SIMPLE, declarados: ['src/a.js', 'src/falta.js'] });
+    const comun = caso(SIMPLE);
+    check('Matriz_BorraONombraDesdeArribaOFalta_EsSensible @story-8.310 @ac-13',
+      borra !== 'RUNTIME' && desdeArriba !== 'RUNTIME' && falta !== 'RUNTIME' && comun === 'RUNTIME', JSON.stringify({ borra, desdeArriba, falta, comun }));
   }
 }
 

@@ -632,10 +632,10 @@ function avisar({ texto, canales, mandar }) {
 
 /**
  * Lo que corre con el pedido a la vista y sin gastarlo: `{ codigo: 0, huellas, canales? }`, o `{ codigo, motivo }` sin
- * avisar ni escribir. Por delegación: limpia (2), nada sensible (2) y el aviso entregado (1). Por la ventana o la
+ * avisar ni escribir. Por delegación: limpia (2), nada sensible salvo con `save:sensible` delegado (2) y el aviso entregado (1). Por la ventana o la
  * terminal, sólo las huellas: el dueño decide.
  */
-function antesDeFirmar({ via, marker, repos, findings = [], firmasDeLaCorrida = [], canales, mandar, controles = controlesDelCommit }) {
+function antesDeFirmar({ via, marker, repos, findings = [], firmasDeLaCorrida = [], canales, mandar, controles = controlesDelCommit, sensibleDelegado = false }) {
   const hs = huellas(repos);
   // en toda vía: un ok con un repo que no se puede medir no valida nunca después (`vigente` no lo puede comparar)
   const sinMedir = hs.find((h) => h.error);
@@ -646,7 +646,8 @@ function antesDeFirmar({ via, marker, repos, findings = [], firmasDeLaCorrida = 
   if (c.codigo) return c;
   if (via !== 'delegacion') return { codigo: 0, huellas: hs };
   // lo sensible primero: el motivo nombra el archivo aunque además falte algo para estar limpia
-  const s = sensibles({ repos });
+  // con `save:sensible` delegado en el perfil (`sensibleDelegado`), la coordinadora firma también lo sensible
+  const s = sensibleDelegado ? [] : sensibles({ repos });
   if (s.length) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: el cambio toca ${s.map((x) => `${x.archivo} (${path.basename(x.repo)}: ${x.motivo})`).join(', ')}. Lo firma una persona: ni el agente ni la coordinadora` };
   const l = limpia({ marker, repos, ahora: hs, findings, firmasDeLaCorrida });
   if (l.falta) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: ${l.falta}. Lo firma una persona: ni el agente ni la coordinadora` };

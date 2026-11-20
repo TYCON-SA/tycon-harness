@@ -1228,7 +1228,9 @@ if [ -f "$GUIA" ]; then
     grep -qF -- "$limite" "$GUIA" || t12_falta="${t12_falta} el límite «${limite}»;"
   done
   grep -qF "la propia puerta abre un cuadro del sistema" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «Cómo funciona»;"
-  grep -qF "Dos cuadros por sentencia" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «El día a día»;"
+  # una sola ventana por sentencia: la del cuadro de la puerta (Claude Code ya no pregunta además)
+  grep -qF "Una sola ventana por sentencia: la de la puerta" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «El día a día»;"
+  ! grep -qF "Dos cuadros por sentencia" "$GUIA" || t12_falta="$t12_falta la guía dice todavía «Dos cuadros por sentencia»;"
 else
   t12_falta=" la guía no existe ($GUIA);"
 fi

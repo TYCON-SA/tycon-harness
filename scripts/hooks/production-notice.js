@@ -404,10 +404,11 @@ function juzgar({ soloLeer = false, reporte = REPORTE, reindex = false } = {}) {
       // de la memoria deja editar en silencio los archivos con los que el freno decide qué es
       // producción, y el aviso daba «bien» igual.
       const reglas = ((m.permissions || {}).ask || []).join(' ');
+      // la puerta no tiene regla: su cuadro propio es la única ventana por consulta (una administrada que la siga teniendo
+      // la trae de antes, y pide reinstalar por la huella, no por esto).
       // el catálogo con sus dos nombres; el índice y la memoria, sólo con el nuevo. Una administrada de antes del
       // renombre no los tiene, y eso ya lo dijo «quedó viejo»: no se suma otro aviso que parezca un toqueteo.
       const exigidas = administradaVieja ? [] : [
-        ['tycon-prod-sql', 'la que abre el cuadro de aprobación de la puerta'],
         ['firewall-rule', 'la que hace aprobar una regla de firewall de producción'],
         ['.tycon/production.json', 'la que hace aprobar un cambio del catálogo de servidores'],
         ['production-index.json', 'la que hace aprobar una edición del índice de producción'],

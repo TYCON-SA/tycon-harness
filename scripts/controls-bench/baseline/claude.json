@@ -1607,6 +1607,12 @@
     "office-link-start.js::OficinaBench_CanalDeVuelta_UnaOrdenDelSitioSeDescartaYCierra": true,
     "office-link-start.js::OficinaBench_AlPedir_SinSitioNiPuestaAlDia_NoDiceNada": true,
     "coordination-fill-gate.js::el-caso-real-lugar-memoria-e-historia-lista-frena": true,
-    "coordination-fill-gate.js::una-sesion-de-trabajo-cierra-sin-ruido": true
+    "coordination-fill-gate.js::una-sesion-de-trabajo-cierra-sin-ruido": true,
+    "on-stop-dod-gate.js::ejecucion-perdida-primer-cierre-del-turno-frena": true,
+    "on-stop-dod-gate.js::ejecucion-perdida-segundo-cierre-seguido-deja-cerrar": true,
+    "on-bash-write-gate.js::ejecucion-abierta-worktree-remove-frena": true,
+    "on-bash-write-gate.js::sin-ejecucion-abierta-rm-rf-de-una-carpeta-pasa": true,
+    "on-bash-write-gate.js::sin-ejecucion-abierta-worktree-remove-pasa": true,
+    "on-bash-write-gate.js::copia-vieja-sin-apertura-vigente-rm-rf-pasa": true
   }
 }

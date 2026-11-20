@@ -441,6 +441,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   /**
    * Las fichas que esperan decisión, para el número del menú y, con `fuente`, para el de Inicio: sin preguntar a la
    * plataforma, con lo último que contestó. Sin fichas legibles, null: el menú muestra sólo el nombre e Inicio, «no medido».
+   * Una ficha que espera y cuya decisión en main no se pudo leer también da null: no se sabe si espera, y contarla de
+   * menos daría un número que parece medido.
    */
   function cuantasEsperan(fuente = null) {
     const l = leerFichas();
@@ -453,7 +455,14 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       membresiaEnCamino = membresia().catch(() => null).finally(() => { membresiaEnCamino = null; });
     }
     const enPedido = ultimaMembresia ? ultimaMembresia.porFicha : new Map();
-    return l.fichas.filter((f) => (fuente === null || f.fuente === fuente) && porDecidir(f) && decisionEnMain(dir, f) === null && !decididas.accionDe(clave(f), fallidaDe(f)) && !enPedido.has(clave(f))).length;
+    let n = 0;
+    for (const f of l.fichas) {
+      if (!((fuente === null || f.fuente === fuente) && porDecidir(f))) continue;
+      const enMain = decisionEnMain(dir, f);
+      if (enMain === 'ilegible') return null;
+      if (enMain === null && !decididas.accionDe(clave(f), fallidaDe(f)) && !enPedido.has(clave(f))) n += 1;
+    }
+    return n;
   }
 
   // ── la tarea de cada arreglo y de cada vulnerabilidad ──

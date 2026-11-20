@@ -273,21 +273,22 @@ test('T27 Porton_RepetidasSolas_LoQueLaCorridaNuevaDiceCuenta — una ausente, u
   const junto = fs.readFileSync(path.join(cov, 'lcov.info'), 'utf8');
   assert.doesNotMatch(junto, /SF:lib\/cambiado\.js/);
   assert.match(junto, /SF:lib\/quieto\.js/);
-  // lo cambiado vuelve a hacer correr una suite que la completa difirió por sus carpetas: la completa como siempre
+  // lo cambiado vuelve a hacer correr una suite que la completa difirió por sus carpetas: vuelve por su carpeta
   const repo = tmp('ff-repo-gate-');
   fs.mkdirSync(path.join(repo, 'scripts', 'tests'), { recursive: true });
-  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'suites.json'), JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/g.test.sh', gate_only_when_touching: ['G/**'] }] }));
+  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'suites.json'), JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/g.test.sh', gate_only_when_touching: ['G/**'] }, { raiz: 'arnes', ruta: 'tests/i.test.sh' }] }));
   const res = JSON.parse(fs.readFileSync(path.join(dir, 'resumen.json'), 'utf8'));
-  assert.deepEqual(ff.reEligible(repo, res, ['G/x.js']), ['g.test.sh']);
-  assert.deepEqual(ff.reEligible(repo, res, ['lib/otro.js']), []);
-  // ídem con una suite del grupo del instalador: el criterio es el del repo medido
+  assert.deepEqual(ff.suitesPorSusCarpetas(repo, ['G/x.js'], res).map((x) => x.nombre), ['g.test.sh']);
+  assert.deepEqual(ff.suitesPorSusCarpetas(repo, ['lib/otro.js'], res), []);
+  // ídem con una suite del grupo del instalador: el criterio es el del repo medido, y sólo con lo guardado rojo fuera del árbol
   fs.mkdirSync(path.join(repo, 'scripts', 'ci'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'scripts', 'ci', 'heavy-suites.json'), '{}\n');
   fs.writeFileSync(path.join(repo, 'scripts', 'ci', 'suites-for-change.js'),
-    "module.exports = { groupCriterion: () => ({ skips: (name, files) => !files.some((f) => f.startsWith('installer/')) }) };\n");
+    "module.exports = { groupCriterion: () => ({ incluye: (name) => name === 'i.test.sh', skips: (name, files) => !files.some((f) => f.startsWith('installer/')) }) };\n");
   const inst = { deferred_suites: [{ suite: '/r/scripts/tests/i.test.sh', reason: 'corre de noche y en el control del PR; esta story no toca el instalador (el grupo installer de scripts/ci/heavy-suites.json)' }] };
-  assert.deepEqual(ff.reEligible(repo, inst, ['installer/x.sh']), ['i.test.sh']);
-  assert.deepEqual(ff.reEligible(repo, inst, ['lib/otro.js']), []);
+  assert.deepEqual(ff.suitesPorSusCarpetas(repo, ['installer/x.sh'], inst, { instalador: true }).map((x) => x.nombre), ['i.test.sh']);
+  assert.deepEqual(ff.suitesPorSusCarpetas(repo, ['lib/otro.js'], inst, { instalador: true }), []);
+  assert.deepEqual(ff.suitesPorSusCarpetas(repo, ['installer/x.sh'], inst, { instalador: false }), [], 'con lo guardado verde, el instalador lo frena antes claseQuePideLaCompleta');
   // decide: otro recorte, o una roja sin su repetición verde, corren la completa
   const hash = ff.redHash(dir);
   assert.match(ff.decide({ dir, hash, repo, tree: 'b'.repeat(40), base: null, recorte: '--light' }).reason, /no tiene el mismo recorte/);
@@ -1252,4 +1253,115 @@ test('UltimaRojaRepetida_AcotadaDejaTestsVerde (e) — por la puerta: el repo qu
   estado(n, { a: 0, b: 0 });
   for (const s of [A, B]) assert.equal(puerta(n, ['--suite', s]).status, 0);
   assert.match(String(marcador(n).checks.tests), /^red/, 'un repo sin acotar cerró con suites solas');
+});
+
+// ── Las suites que vuelven por sus carpetas corren solas, no la completa ────────────────────────────────────────────
+const ff299 = require(path.join(SCRIPTS, 'lib', 'failed-first.js'));
+const RAIZ_PUBLICA = path.resolve(SCRIPTS, '..', '..', '..');
+const SELECTOR_VIEJO = "module.exports = { groupCriterion: () => ({ skips: () => false }) };\n";
+/**
+ * Un repo de juguete para `decide`: la lista de suites, el grupo `installer` (con el selector del público, uno viejo sin
+ * `incluye`, o un heavy-suites.json roto) y dos árboles: el de la base y el de después de tocar.
+ */
+function repoParaDecidir({ suites = [], heavy = 'ok', selector = 'publico' } = {}) {
+  const repo = tmp('ff-decide-');
+  git(repo, 'init', '-q'); git(repo, 'config', 'user.email', 'prueba@ejemplo.invalid'); git(repo, 'config', 'user.name', 'prueba');
+  const escribir = (rel, txt) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), txt); };
+  escribir('scripts/tests/suites.json', JSON.stringify({ diarias: suites, semanales: [] }));
+  for (const s of suites) escribir(`scripts/${s.ruta}`, 'exit 0\n');
+  if (heavy) {
+    escribir('scripts/ci/heavy-suites.json', heavy === 'roto' ? '{' : JSON.stringify({ groups: { installer: { patterns: ['installer/**'] } },
+      suites: { 'i.test.sh': { group: 'installer', patterns: ['scripts/tests/i.test.sh'] }, 'j.test.sh': { group: 'installer', patterns: ['scripts/tests/j.test.sh'] } } }));
+    if (selector === 'publico') fs.copyFileSync(path.join(RAIZ_PUBLICA, 'scripts', 'ci', 'suites-for-change.js'), path.join(repo, 'scripts', 'ci', 'suites-for-change.js'));
+    else escribir('scripts/ci/suites-for-change.js', selector);
+  }
+  for (const f of ['docs/z.md', 'G/x.md', 'H/x.md', 'installer/x.sh', 'lib/otro.js']) escribir(f, 'base\n');
+  git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'base');
+  const arbol = () => git(repo, 'rev-parse', 'HEAD^{tree}').stdout.trim();
+  const tocar = (...rels) => { for (const rel of rels) fs.appendFileSync(path.join(repo, rel), 'cambio\n'); git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'cambio'); return arbol(); };
+  return { repo, antes: arbol(), tocar };
+}
+/** Lo guardado de una completa roja (fuera del árbol armado) que midió el árbol `tree`, con su constancia. */
+function guardadoRojo(resumen, tree) {
+  const d = tmp('ff-guardado-carpetas-');
+  const r = path.join(d, 'r.json'); const m = path.join(d, 'm.json'); const dir = path.join(d, 'g');
+  fs.writeFileSync(r, JSON.stringify(resumen)); fs.writeFileSync(m, JSON.stringify({ tree }));
+  ff299.saveRed({ dir, summaryFile: r, lcovFile: null, measuredFile: m, base: null, recorte: '' });
+  return { dir, hash: ff299.redHash(dir) };
+}
+const ENTRADA = (n, extra = {}) => ({ raiz: 'arnes', ruta: `tests/${n}.test.sh`, ...extra });
+const MEDIDA = (n) => ({ ruta: `/r/scripts/tests/${n}.test.sh`, exit: 0, ms: 1, entrada: ENTRADA(n) });
+const DIFERIDA = (n, reason, conEntrada = true) => ({ suite: `/r/scripts/tests/${n}.test.sh`, reason, ...(conEntrada ? { entrada: ENTRADA(n) } : {}) });
+const POR_CARPETA = (c) => `corre de noche y en el control del PR; esta story no toca ${c}`;
+const POR_INSTALADOR = 'corre de noche y en el control del PR; esta story no toca el instalador (el grupo installer de scripts/ci/heavy-suites.json)';
+const decidir = (j, g, tree) => ff299.decide({ dir: g.dir, hash: g.hash, repo: j.repo, tree, base: null, recorte: '' });
+
+test('T2 Decide_DeferredByFolderOrInstaller_Changed @story-8.299 @ac-1 @ac-2 — con lo guardado rojo fuera del árbol, las diferidas y las medidas que vuelven por sus carpetas van en reactivadas, una sola vez', () => {
+  // 🔴 mutación: pedir la completa en vez de `changed`; olvidar las ya medidas (quedarían con el resultado viejo); repetir
+  // una suite que figura medida y como diferida vieja sin entrada.
+  const j = repoParaDecidir({ suites: [ENTRADA('g', { gate_only_when_touching: ['G/**'] }), ENTRADA('h', { gate_only_when_touching: ['H/**'] }), ENTRADA('i'), ENTRADA('j'), ENTRADA('k')] });
+  const g = guardadoRojo({ suites: [MEDIDA('h'), MEDIDA('j'), MEDIDA('k')], fallas: [], ausentes: [],
+    deferred_suites: [DIFERIDA('g', POR_CARPETA('G/**')), DIFERIDA('i', POR_INSTALADOR), DIFERIDA('h', POR_CARPETA('H/**'), false)] }, j.antes);
+  const d = decidir(j, g, j.tocar('G/x.md', 'H/x.md', 'installer/x.sh'));
+  assert.equal(d.mode, 'changed', JSON.stringify(d));
+  assert.deepEqual([...d.files].sort(), ['G/x.md', 'H/x.md', 'installer/x.sh']);
+  const por = Object.fromEntries(d.reactivadas.map((x) => [x.nombre, x]));
+  assert.deepEqual(Object.keys(por).sort(), ['g.test.sh', 'h.test.sh', 'i.test.sh', 'j.test.sh']);
+  assert.equal(d.reactivadas.length, 4, `cada una una sola vez: ${JSON.stringify(d.reactivadas)}`);
+  for (const n of ['g', 'h', 'i', 'j']) assert.deepEqual([por[`${n}.test.sh`].raiz, por[`${n}.test.sh`].ruta], ['arnes', `tests/${n}.test.sh`]);
+  assert.equal(por['g.test.sh'].motivo, 'la completa la difirió y lo cambiado toca G/**');
+  assert.equal(por['i.test.sh'].motivo, 'la completa la difirió y lo cambiado toca el instalador');
+  assert.equal(por['h.test.sh'].motivo, 'lo cambiado toca H/**, que lee sin nombrar');
+  assert.equal(por['j.test.sh'].motivo, 'lo cambiado toca el instalador, que lee sin nombrar');
+});
+
+test('T3 Decide_DeferredWithoutEntry_Full @story-8.299 @ac-8 — una diferida sin entrada en la lista pide la completa con cualquier cambio', () => {
+  // 🔴 mutación: saltearla callada (como hacía el criterio viejo) la dejaría sin medir
+  const j = repoParaDecidir({ suites: [ENTRADA('g', { gate_only_when_touching: ['G/**'] })] });
+  const g = guardadoRojo({ suites: [], fallas: [], ausentes: [], deferred_suites: [DIFERIDA('x', POR_CARPETA('X/**'), false)] }, j.antes);
+  const d = decidir(j, g, j.tocar('docs/z.md'));
+  assert.equal(d.mode, 'full', JSON.stringify(d));
+  assert.equal(d.reason, 'no encuentro en la lista de suites la diferida x.test.sh: corre la completa');
+});
+
+test('T6 Merge_Reactivated_LeavesDeferredList @story-8.299 @ac-4 — una reactivada que corrió sale de deferred_suites por su entrada; una vieja sin entrada se queda', () => {
+  // 🔴 mutación: conservar deferred_suites tal cual deja a lo guardado diciendo «diferida» de una suite que ya midió
+  const otra = tmp('ff-otra-carpeta-');
+  const g = guardadoRojo({ suites: [MEDIDA('a')], fallas: [], ausentes: [],
+    deferred_suites: [{ suite: path.join(otra, 'scripts', 'tests', 'g.test.sh'), reason: POR_CARPETA('G/**'), entrada: ENTRADA('g') }, DIFERIDA('v', POR_CARPETA('V/**'), false)] }, 'a'.repeat(40));
+  const out = ff299.merge({ dir: g.dir, newSummary: { suites: [{ ruta: '/r2/scripts/tests/g.test.sh', exit: 0, ms: 2, entrada: ENTRADA('g') }], fallas: [], ausentes: [] } });
+  const gg = out.suites.find((s) => s.entrada && s.entrada.ruta === 'tests/g.test.sh');
+  assert.deepEqual([gg && gg.exit, gg && gg.ruta], [0, '/r2/scripts/tests/g.test.sh']);
+  assert.deepEqual(out.deferred_suites.map((x) => path.basename(x.suite)), ['v.test.sh']);
+  assert.equal(ff299.mergedRed(out), false);
+});
+
+test('T9 Decide_CriteriaUnreadable_Full @story-8.299 @ac-7 — un heavy-suites.json roto o un selector sin incluye piden la completa y lo dicen', () => {
+  // 🔴 mutación: tratar el criterio ilegible como «no es del grupo» dejaría a la diferida del instalador sin medir
+  const roto = repoParaDecidir({ suites: [ENTRADA('i')], heavy: 'roto' });
+  let g = guardadoRojo({ suites: [], fallas: [], ausentes: [], deferred_suites: [DIFERIDA('i', POR_INSTALADOR)] }, roto.antes);
+  let d = decidir(roto, g, roto.tocar('installer/x.sh'));
+  assert.equal(d.mode, 'full', JSON.stringify(d));
+  assert.match(d.reason, /^no pude ver qué suites vuelven a correr por sus carpetas \(/);
+  const viejo = repoParaDecidir({ suites: [ENTRADA('i')], selector: SELECTOR_VIEJO });
+  g = guardadoRojo({ suites: [], fallas: [], ausentes: [], deferred_suites: [DIFERIDA('i', POR_INSTALADOR)] }, viejo.antes);
+  d = decidir(viejo, g, viejo.tocar('installer/x.sh'));
+  assert.equal(d.mode, 'full', JSON.stringify(d));
+  assert.match(d.reason, /^no pude ver qué suites vuelven a correr por sus carpetas \(.*incluye/);
+});
+
+test('T10 Decide_NoReturning_AsToday @story-8.299 @ac-11 — sin suites que vuelvan por sus carpetas, decide da lo de hoy: same, changed con files y rerun, sin reactivadas', () => {
+  // 🔴 mutación: un `reactivadas` que no esté vacío, o un `full`, donde hoy se acota
+  const j = repoParaDecidir({ suites: [ENTRADA('a'), ENTRADA('g', { gate_only_when_touching: ['G/**'] })] });
+  const resumen = { suites: [MEDIDA('a')], fallas: [], ausentes: [], deferred_suites: [DIFERIDA('g', POR_CARPETA('G/**'))] };
+  let g = guardadoRojo(resumen, j.antes);
+  assert.equal(decidir(j, g, j.antes).mode, 'same');
+  let d = decidir(j, g, j.tocar('lib/otro.js'));
+  assert.deepEqual([d.mode, d.files, d.rerun, d.reactivadas], ['changed', ['lib/otro.js'], [], []]);
+  // una repetida vieja vuelve por su clave, como hoy
+  const conFalla = { ...resumen, suites: [{ ...MEDIDA('a'), exit: 1 }], fallas: [{ ruta: '/r/scripts/tests/a.test.sh', entrada: ENTRADA('a') }] };
+  g = guardadoRojo(conFalla, j.antes);
+  ff299.addRepeat(g.dir, 'tests/a.test.sh', { tree: 'x'.repeat(40), entry: { ruta: '/r/scripts/tests/a.test.sh', exit: 0, entrada: ENTRADA('a') } });
+  d = decidir(j, { dir: g.dir, hash: ff299.redHash(g.dir) }, j.tocar('docs/z.md'));
+  assert.deepEqual([d.mode, d.rerun, d.reactivadas], ['changed', ['tests/a.test.sh'], []]);
 });

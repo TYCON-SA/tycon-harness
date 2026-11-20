@@ -618,10 +618,14 @@ fi
 # ── T19e-i · los demás casos del instalador ─────────────────────────────────────────────────
 if [ -f "$INSTALADOR" ]; then
   MANAGED_D="$TMP/sys2/Library/Application Support/ClaudeCode/managed-settings.d"
-  for regla in 'Bash(/opt/tycon/bin/tycon-prod-sql *)' 'Bash(az sql server firewall-rule *)' 'Edit(//**/.tycon/production.json)'; do
+  for regla in 'Bash(az sql server firewall-rule *)' 'Edit(//**/.tycon/production.json)'; do
     if grep -qF "$regla" "$MANAGED_D/tycon-production.json" 2>/dev/null; then ok "T19e · la regla de preguntar «${regla}» está en la configuración administrada"
     else no "T19e · falta la regla «${regla}» en la configuración administrada"; fi
   done
+  # una sola ventana por consulta: la puerta no lleva regla de preguntar, su cuadro propio es la única
+  if [ -f "$MANAGED_D/tycon-production.json" ] && ! grep -qF 'Bash(/opt/tycon/bin/tycon-prod-sql' "$MANAGED_D/tycon-production.json"; then
+    ok "T19e · la puerta no tiene regla de preguntar: una sola ventana por consulta, la de su cuadro"
+  else no "T19e · la configuración administrada todavía pregunta por la puerta (o no se instaló): serían dos ventanas por consulta"; fi
 
   # respaldo: un archivo administrado distinto del nuestro se respalda antes de pisarse
   printf '{"viejo":true}' > "$MANAGED_D/tycon-production.json"
