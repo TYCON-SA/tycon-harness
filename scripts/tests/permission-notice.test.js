@@ -261,17 +261,17 @@ function runOwnerWait(t, sid, max, envExtra = {}) {
   });
 }
 
-test('T14 OwnerWait_CoordinadoraMuertaOOtra_SaleCallado @story-8.202 @ac-9', async () => {
-  // su sesión muere: termina sin imprimir
+test('T14 OwnerWait_CoordinadoraMuertaOOtra_SaleConElMotivo @story-8.202 @ac-9', async () => {
+  // su sesión muere: termina sin novedades, pero con el motivo (owner-wait lo imprime: nunca termina mudo)
   const t = toy();
   claudeFile(t, COORD, 'Coordinadora', { dead: true });
-  assert.deepStrictEqual(vuelta(t), { lines: [], stop: true });
-  // se designa otra: sin imprimir
+  assert.deepStrictEqual(vuelta(t), { lines: [], stop: true, why: 'esta sesión ya no es la coordinadora confirmada (no hay ninguna confirmada viva): dejo de esperar' });
+  // se designa otra: lo mismo, nombrando a la nueva
   const t2 = toy({ designated: 'otra-coord' });
   claudeFile(t2, 'otra-coord', 'Nueva', { status: 'busy' });
   claudeFile(t2, OTRA, 'hora-mensajes', { status: 'waiting' });
   frenada(t2, OTRA);
-  assert.deepStrictEqual(vuelta(t2), { lines: [], stop: true });
+  assert.deepStrictEqual(vuelta(t2), { lines: [], stop: true, why: 'esta sesión ya no es la coordinadora confirmada (ahora es otra-coord): dejo de esperar' });
   // sin coordinadora confirmada, o desde otra sesión: sale 0 enseguida con la línea
   const t3 = toy({ confirmed: false });
   const r3 = await runOwnerWait(t3, COORD, 8000);

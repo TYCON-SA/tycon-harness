@@ -68,6 +68,7 @@
     { "kind": "hook", "id": "PermissionRequest:@tcg:session-state.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PreToolUse:@tcg:session-state.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:@tcg:session-state.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
+    { "kind": "hook", "id": "PostToolUseFailure:@tcg:session-state.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "UserPromptSubmit:@tcg:session-state.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "Stop:@tcg:session-state.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionEnd:@tcg:session-state.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },

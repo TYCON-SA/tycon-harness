@@ -8,7 +8,7 @@
  *           PermissionRequest → espera «un permiso» y anota `permission`: la herramienta, qué pide y desde cuándo
  *           Notification permission_prompt → espera «un permiso»; sin `permission`, lo anota con la herramienta del texto
  *           PreToolUse de las preguntas → «una respuesta»
- *           PostToolUse, UserPromptSubmit, Stop → ya no espera · SessionEnd → borra el archivo
+ *           PostToolUse, PostToolUseFailure (la herramienta falló), UserPromptSubmit, Stop → ya no espera · SessionEnd → borra el archivo
  *           Con un permiso abierto, el PostToolUse de otra herramienta (una en paralelo, un agente de la sesión) no lo
  *           cierra: sólo el de la misma herramienta. Dos usos a la vez de la misma lo pueden cerrar antes de tiempo.
  *   Codex:  SessionStart → crea el archivo (sin nombre ni pid: Codex no da uno estable). Su arranque no trae `turn_id`:
@@ -137,8 +137,10 @@ function decide(d, codex, cur = null, now = Date.now()) {
   if (ev === 'PreToolUse') return WAIT_TOOLS.has(d.tool_name) ? { patch: { waitingForOwner: true, waitingFor: ANSWER } } : null;
   // sólo el pedido trae el nombre exacto de la herramienta: el de la notificación (el nombre visible, o ninguno) no se
   // compara, y lo cierra el final de cualquier herramienta, como antes
-  if (ev === 'PostToolUse' && open && open.via === 'request' && open.tool !== d.tool_name) return null;
-  if (ev === 'PostToolUse' || ev === 'UserPromptSubmit' || ev === 'Stop') return { patch: { waitingForOwner: false, waitingFor: null, permission: null } };
+  // el comando que falló (salió distinto de 0) llega como PostToolUseFailure, no como PostToolUse: cierra igual
+  const after = ev === 'PostToolUse' || ev === 'PostToolUseFailure';
+  if (after && open && open.via === 'request' && open.tool !== d.tool_name) return null;
+  if (after || ev === 'UserPromptSubmit' || ev === 'Stop') return { patch: { waitingForOwner: false, waitingFor: null, permission: null } };
   if (ev === 'SessionStart') return { patch: {} };
   return null;
 }
