@@ -171,6 +171,13 @@ controles que no terminan a tiempo son `no_medido`, nunca «entró».
 | `ci.read` | `branch` o `commit` | `state` (`succeeded`, `failed`, `running` o `none`) y `stages`: cada control con su conclusión |
 | `queue.read` | opcional `repos` (si no, los del equipo en `team-repos.json`) | la lista de ejecuciones esperando o en curso, con quién disparó cada una y desde cuándo |
 | `deployments.read` | `entrada` (el pipeline o repo, sus etapas, el entorno) y `entorno` | los despliegues de ese entorno |
+| `branch-rules.read` | opcional `branch` (si no, la rama principal del repo) | `branch` y `approval`: la regla de aprobación mínima de esa rama (`enabled`, `blocking`, `minimum`, `creatorVoteCounts`, `resetOnSourcePush`), o `null` si no tiene; con varias, la que menos le falta |
+
+Lo que le falta a una regla de aprobación lo decide el contrato (`approvalFaults`): sirve la que está prendida, frena,
+pide al menos una aprobación, cuenta el voto de quien abrió el pedido y borra las aprobaciones con cada empuje nuevo. Lo
+usa `scripts/tools/branch-approval.js`, que relee la regla al terminar el alta de un producto y que `harness.js doctor
+--fetch` corre sobre los repos que declara la organización. Una lectura que no se pudo hacer es `no_medido`, nunca «sin
+regla».
 
 Lo que un control concluye de `ci.read` y de `queue.read` lo decide el contrato (`verdictOf`): verde **sólo** con una
 ejecución que terminó bien. Un «no» de cualquier motivo, también `no_soportado`, es `no_medido`. Un control verde no es un
