@@ -155,7 +155,7 @@ function delegable({ firma, destino, casa, palabras, cwd, delegacion, plataforma
   if (repo && !w && typeof cwd === 'string' && path.isAbsolute(cwd)) repo = path.resolve(cwd, repo);
   let r;
   try {
-    r = (delegacion || ((o) => require('./delegated-signing.js').delegaSinVentana(o)))({ firma, sesion: coord, destino, home: casa, estado: stateDir(casa), cwd: cwdCoord, repo });
+    r = (delegacion || ((o) => require('./delegated-signing.js').delegaSinVentana(o)))({ firma, sesion: coord, destino, home: casa, estado: stateDir(casa), cwd: cwdCoord, repo, pendiente: conRutas.indexOf('--id') >= 0 ? conRutas[conRutas.indexOf('--id') + 1] || null : null });
   } catch (e) { r = { ok: false, motivo: `no pude consultar la delegación del perfil (${e.message})` }; }
   const motivo = (r && r.motivo) || 'la delegación no contestó';
   if (r && !r.ok && /no delega|sólo del dueño/.test(motivo)) return no(motivo, true);

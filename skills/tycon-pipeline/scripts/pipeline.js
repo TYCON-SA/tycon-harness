@@ -1432,7 +1432,7 @@ function computeValidadores({ story, repo, todos = false, deprecados = true }) {
   try { repoEsDir = fs.statSync(repo).isDirectory(); } catch (_e) { repoEsDir = false; }
   if (!repoEsDir) throw new Error(`validators: --repo no es una carpeta: ${repo}`);
   const declarados = [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')]
-    .map((f) => f.replace(/^\([^)]*\)\s*/, ''));   // "(agent-skills) ruta" → ruta
+    .map((f) => f.replace(/^\([^)]*\)\s+/, ''));   // "(agent-skills) ruta" → ruta; `(app)/page.tsx` (un grupo de rutas, sin espacio) queda entera
   const files = unique([...declarados, ...archivosDotnetDelRepo(repo)]);
   const det = detectStack(repo, files);
   const activos = paquetesActivos(repo);
@@ -7107,6 +7107,7 @@ function writeFindings(args) {
     }
     if (cruce.sinRegistro) reportedNote = rcLib.NO_REGISTRY_NOTE;
     if (cruce.unreadable) normWarnings.push(`el registro de críticos reportados tiene ${cruce.unreadable} renglón(es) ilegible(s): no cuentan`);
+    if (cruce.unreadableSpawns) normWarnings.push(`el registro de lanzamientos de revisores tiene ${cruce.unreadableSpawns} renglón(es) ilegible(s): esas salidas no se cruzaron`);
   }
   const outPath = path.join(runDir, 'findings.json');
   fs.writeFileSync(outPath, JSON.stringify(records, null, 2) + '\n', 'utf8');
@@ -8933,8 +8934,6 @@ module.exports = {
   // el marcador de la sesión, con las rutas de la corrida absolutas (lib/run-dir.js)
   readSessionMarker,
   readSessionMarkerStrict,
-  // Lo que le falta al pase adversarial: `next` lo pide y el freno de lanzamiento de revisores niega con lo mismo.
-  accionDelPase,
   // la clave de la carpeta sin crearla: el chequeo antes de la ventana de firma (marker.js)
   runDirKey,
   // El portón con la constancia del salteo de la corrida: tests/adversarial-skip-signed.test.js.

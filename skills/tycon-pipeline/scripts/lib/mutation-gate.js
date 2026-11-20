@@ -80,8 +80,10 @@ function defaultInvokeCheck({ scriptPath, repo, storyPath, maxMutants, deadlineM
   if (r.error) throw r.error;
   if (r.signal) return { code: null, result: null, stderr, timedOut: true };
   let result = null;
-  try { result = JSON.parse(r.stdout); } catch { result = null; }
-  return { code: r.status === null || r.status === undefined ? null : r.status, result, stderr, timedOut: false };
+  let parseError = null;
+  // una salida que no es JSON no es «sin veredicto»: el motivo viaja, y el portón la dice no medida
+  try { result = JSON.parse(r.stdout); } catch (e) { result = null; parseError = `la salida del chequeo no es JSON (${e.message}): ${JSON.stringify(String(r.stdout || '').slice(0, 120))}`; }
+  return { code: r.status === null || r.status === undefined ? null : r.status, result, stderr, timedOut: false, parseError };
 }
 
 /** El `.git` común de un repo: dos worktrees del mismo repo lo comparten. null si git no contesta. */
@@ -304,6 +306,15 @@ function medirEn(repo, { marker, storyPath, appendLog, log, maxMutants, scriptPa
     log('  Saltearlo lo decide la persona, con su firma `escape:no-mutation`: no le dictes cómo. Si pregunta cómo seguir,');
     log('  señalale la guía del pipeline (skills/tycon-pipeline/SKILL.md, el chequeo de mutantes).');
     return { invoked: true, block: true, reason: 'cero-muertos' };
+  }
+
+  // exit 0 o 2 sin el JSON del chequeo: no hay veredicto que leer, y no se toma por un pase limpio
+  if ((code === 0 || code === 2) && out.result == null) {
+    const motivo = out.parseError || 'el chequeo no dejó su resultado';
+    appendLog('gates.log', { ...entryBase, status: 'warn-unparsed', reason: motivo });
+    log(`⚠️  Chequeo de mutantes NO MEDIDO en ${repo} (${motivo}) — sigue sin frenar.`);
+    volcarStderr();
+    return { invoked: true, block: false, reason: 'sin-resultado' };
   }
 
   // exit 0 — pasó; con sobrevivientes AVISA, limpio sigue en silencio.

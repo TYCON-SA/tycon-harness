@@ -295,6 +295,9 @@ function readHeavy(file) {
 }
 
 // Lo que, si el cambio lo toca, hace correr todo: cómo se eligen las suites.
+// Lo que define el criterio de un grupo: tocarlo corre las suites del grupo aunque el cambio no toque sus patrones.
+const GROUP_CRITERION = ['scripts/ci/suites-for-change.js', 'scripts/ci/heavy-suites.json'];
+
 const SELECTION_ITSELF = ['scripts/ci/suites-for-change.js', 'scripts/ci/suite-deps.js', 'scripts/ci/heavy-suites.json',
   'scripts/ci/suites-over-limit.json', 'pipelines/azure-pipelines-maintainers-pr.yml', 'pipelines/templates/run-suites.yml'];
 
@@ -579,11 +582,16 @@ function main(argv) {
   const itself = listed.known ? listed.files.map((f) => f.replace(/\\/g, '/')).filter((f) => SELECTION_ITSELF.includes(f)) : [];
   // --groups-alone: las suites de un grupo se eligen por los patrones del grupo y los suyos aunque no haya --deps
   // utilizable, porque ése es todo su criterio. Es para la CI de GitHub, que no tiene foto nocturna; la red es el banco
-  // nocturno, que las corre siempre. Si el cambio toca cómo se elige, corren.
-  const groupsAlone = argv.includes('--groups-alone') && !itself.length;
-  if (argv.includes('--groups-alone') && itself.length) process.stderr.write(`ℹ️  el cambio toca cómo se eligen las suites (${itself.join(', ')}): las de los grupos corren\n`);
-  let depsSel = null;
+  // nocturno, que las corre siempre. Con --direct pasa lo mismo: cuando el cambio toca el pipeline o cómo corren las
+  // pruebas, corre todo menos el grupo, que corre sólo si el cambio toca sus patrones (las del laboratorio del
+  // instalador eran ~115 de los 325 minutos de ese «corre todo»). Si el cambio toca el criterio del grupo
+  // (`GROUP_CRITERION`), o no se sabe qué cambió, corren.
   const direct = argv.includes('--direct');
+  const criterion = listed.known ? listed.files.map((f) => f.replace(/\\/g, '/')).filter((f) => GROUP_CRITERION.includes(f)) : [];
+  const wantsGroups = argv.includes('--groups-alone') || direct;
+  const groupsAlone = wantsGroups && listed.known && !criterion.length;
+  if (wantsGroups && criterion.length) process.stderr.write(`ℹ️  el cambio toca cómo se eligen las suites de los grupos (${criterion.join(', ')}): las de los grupos corren\n`);
+  let depsSel = null;
   if (direct && listed.known && changed.known) {
     const files = listed.files.map((f) => f.replace(/\\/g, '/'));
     const all = [...new Set([...itself, ...files.filter(runsAllDirect)])];

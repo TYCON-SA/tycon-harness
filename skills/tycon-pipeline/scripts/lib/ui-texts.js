@@ -45,7 +45,7 @@ function fileListEntries(body) {
 /** Las pantallas que declara la story. `roots`: dónde buscarlas, en orden (repo de la story, workspace, acompañantes). */
 function screenFiles(fm, body, roots, resolve) {
   const declared = [...listEntries(fm, 'files_to_create'), ...listEntries(fm, 'files_to_modify'), ...fileListEntries(body)]
-    .map((raw) => ({ raw: raw.trim(), rel: raw.replace(/^\(([^)]*)\)\s*/, '').trim() }))
+    .map((raw) => ({ raw: raw.trim(), rel: raw.replace(/^\(([^)]*)\)\s+/, '').trim() }))   // «(repo) » con su espacio; `(app)/` es un grupo de rutas
     .filter((d) => SCREEN_RE.test(d.rel));
   const found = []; const missing = []; const seen = new Set();
   const isFile = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };

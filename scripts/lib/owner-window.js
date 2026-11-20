@@ -254,6 +254,31 @@ function desenvolver(linea, casa) {
   return partes.join("'");
 }
 
+/**
+ * ¿La línea es una consola de la herramienta con una forma que `desenvolver` no reconoce? zsh o bash con `-c` y una de las
+ * marcas que deja toda envoltura medida: la foto del ambiente o el `pwd -P` al temporal de la herramienta. Es lo que se ve
+ * cuando la herramienta cambia la forma de su consola: sin decirlo, el click del dueño se gasta y el freno deja de ver las
+ * consolas de fondo sin que nadie lo sepa.
+ */
+function consolaDesconocida(linea, casa) {
+  const l = String(linea || '');
+  if (!/^(?:\/[\w.+-]+)*\/(?:zsh|bash) -c /.test(l)) return false;
+  if (!/\/\.claude\/shell-snapshots\/snapshot-|pwd -P >\| (?:\/private)?\/tmp\/claude-[0-9a-f]+-cwd/.test(l)) return false;
+  return desenvolver(l, casa) === null;
+}
+
+/**
+ * Deja dicho en hook-errors.log que la herramienta cambió la forma de su consola, con la marca que cuenta el aviso de
+ * arranque (hook-failures-notice.js): FAILED CLOSED si un click no valió, FAILED OPEN si el freno no ve una consola. Sin
+ * la línea de comando: puede llevar lo que la persona escribió.
+ */
+function avisarConsolaDesconocida(casa, marca, efecto, ahora = Date.now()) {
+  try {
+    const dir = stateDir(casa === undefined ? casaDeLaCuenta() : casa);
+    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date(ahora).toISOString()}] owner-window ${marca}: la herramienta cambió la forma de su consola y el arnés no la reconoce: ${efecto}. Hay que medir la forma nueva en desenvolver (scripts/lib/owner-window.js)\n`);
+  } catch (_) { /* sin registro tampoco */ }
+}
+
 // El owner-wait de esta misma copia del arnés: el que corre el freno, no otra copia con el mismo nombre
 const COORDINACION = path.join(__dirname, '..', 'tools', 'coordination.js');
 const real = (ruta) => { try { return fs.realpathSync(ruta); } catch (_) { return null; } };
@@ -637,6 +662,12 @@ function forSessionDe(palabras) {
 /** El valor de `--repo` del comando canónico (la carpeta del pendiente que se aprueba); null si no está. */
 function repoDe(palabras) {
   const i = palabras ? palabras.indexOf('--repo') : -1;
+  return i >= 0 ? palabras[i + 1] || null : null;
+}
+
+/** El código del pendiente que nombra el comando canónico (`--id <código>`), o null. */
+function pendienteDe(palabras) {
+  const i = palabras ? palabras.indexOf('--id') : -1;
   return i >= 0 ? palabras[i + 1] || null : null;
 }
 
@@ -1389,6 +1420,15 @@ const envSwitches = () => require('./env-switches.js');
  * pruebas. Primero mira el período de aviso (`periodoDeAviso`), salvo que ya lo haya pasado y lo diga `sinAviso`.
  */
 function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, huellaDeLaMaquina, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes, sinAviso = [] } = {}) {
+  // la declaración de un pendiente no es una firma, pero vale como de la sesión que la corre: con una variable de sesión
+  // en el comando, una sesión declararía por otra y después aprobaría lo suyo por delegación. Va antes que todo, también
+  // del período de aviso, y mira la palabra del subcomando, se escriba como se escriba el guion
+  {
+    const cmd = String((evento.tool_input && evento.tool_input.command) || '');
+    if (/declare-pending/.test(cmd) && VARIABLES_DE_SESION.test(cmd)) {
+      return { decision: 'deny', firmas: [], texto: '🔒 un pendiente lo declara la sesión que lo abrió: el comando va sin variables de sesión' };
+    }
+  }
   if (!sinAviso.length) { const p = periodoDeAviso(arguments[0] || {}); if (p) return p; }
   if (!topes) topes = topesDelCaminoCorto(casa);
   const enWindows = plataforma === 'win32';
@@ -1472,6 +1512,10 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   const i = arriba.findIndex(esHerramienta);
   if (i < 0) return negar('no encontré el proceso de la herramienta', pendientes);
   const tool = arriba[i];
+  // una consola de la herramienta que no se reconoce no cuenta como consola: el freno no la ve, y eso se anota
+  if (!enWindows && [...arriba.slice(i + 1), ...arbol.filter((p) => p.ppid === tool.pid)].some((p) => consolaDesconocida(p.comando, casa))) {
+    avisarConsolaDesconocida(casa, 'FAILED OPEN', 'el freno de firmas no ve esa consola (ni las de fondo ni las de un agente)', ahora);
+  }
   // una sesión de fondo (`claude --bg`) corre debajo de sus anfitriones (el daemon y la terminal virtual): no son otra
   // herramienta, pero la ventana de permiso no le llega a nadie seguro. Ahí sólo vale la aprobación explícita
   const esConsola = (p) => (enWindows ? esConsolaDeWindows(p) : desenvolver(p.comando, casa) !== null);
@@ -1490,7 +1534,12 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   const arbolNiega = () => {
     if (arriba.slice(i + 1).some(otra)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
     if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);
-    if (arbol.some((p) => p.ppid === tool.pid && viva(p))) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva que no es un vigilante de sólo lectura', pendientes);
+    // dice cuál cerrar por su número de proceso (la herramienta no expone el id de la tarea), nunca su línea de comando
+    const vivas = arbol.filter((p) => p.ppid === tool.pid && viva(p)).map((p) => Number(p.pid)).filter(Number.isInteger);
+    if (vivas.length) {
+      const cual = vivas.length === 1 ? `la consola de fondo es el proceso ${vivas[0]}` : `las consolas de fondo son los procesos ${vivas.join(', ')}`;
+      return negar(`cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva que no es un vigilante de sólo lectura (${cual}: pará esa tarea de fondo (o kill ${vivas.join(' ')}) y repetí el comando, o firmá desde tu terminal)`, pendientes);
+    }
     return null;
   };
   const saltoElArbol = automatica.ok;
@@ -1561,7 +1610,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   const clickDelegable = !(soloClick || clickDelDueno) || DELEGABLE_EXCEPTIONS.includes(pendientes[0]);
   if (!enWindows && clickDelegable) try {
     const estado = stateDir(casa);
-    const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras) }));
+    const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras), pendiente: pendienteDe(can && can.palabras) }));
     if (rs.every((r) => r && r.ok)) delegada = rs[0];
     // una firma que el perfil delega y no se delegó lleva su motivo a la ventana; la que no se delega, no (es lo normal)
     else sinDelegar = rs.map((r) => r && !r.ok && r.motivo).find((m) => m && !/no delega|sólo del dueño|la sesión que implementa/.test(m)) || null;
@@ -1829,6 +1878,10 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
   } else {
     const consola = yo && m.get(yo.ppid);
     comando = consola ? desenvolver(consola.comando, casa) : null;
+    if (comando === null && consola && consolaDesconocida(consola.comando, casa)) {
+      avisarConsolaDesconocida(casa, 'FAILED CLOSED', 'el click del dueño no valió', ahora);
+      return no('la herramienta cambió la forma de su consola y el arnés no la reconoce (quedó anotado para quien lo mantiene), así que este click no vale');
+    }
     if (comando === null) return no('el guion no lo lanzó la consola de la herramienta');
     tool = m.get(consola.ppid);
     if (!tool || !esHerramienta(tool)) return no('la consola no es de la herramienta');
@@ -2195,7 +2248,13 @@ function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa,
   let ok;
   // en Windows también: la ventana dice qué se firma antes de pedir las tres palabras
   if (t.windows) { console.error(`\n${que}`); ok = t.confirmarFrase({}); }
-  else ok = String(t.preguntar(`\n${que}\nPara firmar, escribí «firmo»: `) || '').trim().toLowerCase() === 'firmo';
+  else {
+    // un renglón vacío (un Enter de más) vuelve a preguntar, hasta tres veces; otra respuesta no firma y lo dice
+    let dijo = '';
+    for (let vez = 0; vez < 3 && !dijo; vez++) dijo = String(t.preguntar(vez ? 'Escribí «firmo» para firmar: ' : `\n${que}\nPara firmar, escribí «firmo»: `) || '').trim();
+    ok = dijo.toLowerCase() === 'firmo';
+    if (!ok) return { codigo: 1, motivo: `no se firmó: ${dijo ? `escribiste «${una(dijo, 40)}», no «firmo»` : 'no escribiste nada'}. Para firmar, repetí el comando y escribí «firmo»` };
+  }
   if (!ok) return { codigo: 1, motivo: 'no se firmó' };
   firmar({ firma, via: 'terminal', sesion, destino, resumen, casa, ahora, anotar, extra });
   return { codigo: 0, via: 'terminal' };

@@ -105,7 +105,12 @@ function permissionOf(d, now = Date.now()) {
       detail = one.length > DETAIL_MAX ? `${one.slice(0, DETAIL_MAX - 1)}…` : one;
     }
   }
-  return { tool, detail, since: new Date(now).toISOString() };
+  // la forma que lo hizo pedir (lib/bg-permission-shapes.js), con el comando entero: `detail` va cortado
+  let forma = null;
+  if (tool === 'Bash' && typeof input.command === 'string') {
+    try { const f = require('../lib/bg-permission-shapes.js').formaQuePidePermiso(input.command); forma = f ? f.forma : null; } catch (_) { forma = null; }
+  }
+  return { tool, detail, since: new Date(now).toISOString(), ...(forma ? { forma } : {}) };
 }
 
 /** La herramienta que nombra la notificación del cuadro («permission to use Bash»), o null. */

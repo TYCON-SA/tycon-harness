@@ -30,7 +30,9 @@ installer, production, a migration, or declares `sensible:`. In doubt, delicate.
 | No | The owner is asked (`plan_review.routine: ask`). Owner away: it reviews (`plan_review.routine_owner_away: review`) | The review, with or without a coordinator (`plan_review.routine_approval: review`): with a coordinator, she signs on the owner's behalf; without one, it is approved without a click. With `person`, the owner |
 
 It is launched with «Armar el plan» closed and no open question to the person about this review (unless they count
-as away): before that, `plan-review` refuses without launching anything and says why. The coordinator launches it (`marker.js plan-review --for-session <session>`); without a coordinator, the session
+as away): before that, `plan-review` refuses without launching anything and says why. The fourth round on the same
+story, for any reason, is decided by a person: their «review» to the question, or the signed extra round; being away is
+not enough. The coordinator launches it (`marker.js plan-review --for-session <session>`); without a coordinator, the session
 itself (`marker.js plan-review`). The session's own review approves a routine plan just like the coordinator's; it only
 informs on a delicate story or with `plan_review.routine_approval: person`. Built-in, it runs one lens,
 «suposicion-falsa»: what the plan believes about the code and is not true. The results:
@@ -40,7 +42,7 @@ informs on a delicate story or with `plan_review.routine_approval: person`. Buil
 | «approved» | Routine: it is approved, with or without a coordinator (with one, she signs; without one, `complete-step approve-plan` closes without a click). Delicate, or with `plan_review.routine_approval: person`: it reaches the owner with «reviewed, no findings» (a delicate one is approved by the harness on its own if the profile lists `plan-approval:delicada` as routine, with the session's own review) |
 | «approved with notes» | Confirmed findings below the severity cut: it counts as approved, the session fixes them while coding and the box shows them |
 | «rejected» | Only for a confirmed finding at the cut (built-in, a bug). The session fixes the plan and the review runs again. It reaches the owner at the cap of rejections in a row (`review.max_rounds`, built-in 3), or right away with `plan_review.rejected_reaches_owner: true` |
-| «no verdict» | It reaches the owner with «could not review: <reason>». If the plan or the story changed while it ran, it is retried only once, with all the changes together |
+| «no verdict» | It reaches the owner with «could not review: <reason>». If the plan or the story changed while it ran, it is retried only once, with all the changes together. From the story, what defines the build counts: its later record, «Ajustes después de la firma» and the `status` do not change it; when in doubt, the whole story counts |
 | Chose not to review | The owner approves, and the box says «no review» |
 
 ### What the review the session launches itself guarantees

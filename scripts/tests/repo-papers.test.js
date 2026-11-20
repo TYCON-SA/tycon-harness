@@ -362,7 +362,12 @@ test('Papeles_Comunidad_SusSecciones', () => {
   assert.match(contributing, /TYCON lo revisa y decide/, 'CONTRIBUTING: tiene que decir quién revisa y decide');
   assert.match(contributing, /se mergea acá/, 'CONTRIBUTING: tiene que decir que uno aceptado se mergea en este repo');
   assert.match(contributing, /se cierra con su motivo/, 'CONTRIBUTING: tiene que decir que uno no aceptado se cierra con su motivo');
-  assert.match(contributing, /\(un fork\)/, 'CONTRIBUTING: tiene que decir qué pasa por ahora con un pull request desde una copia');
+  assert.match(contributing, /\(un fork\)/, 'CONTRIBUTING: tiene que decir qué pasa con un pull request desde una copia');
+  // la CI corre en un pedido de un fork después de que un mantenedor aprueba la corrida (política del repo para
+  // contribuyentes externos): decir que no corre era falso
+  assert.match(contributing, /Approve and run workflows/, 'CONTRIBUTING: tiene que decir que un mantenedor aprueba la corrida de un fork');
+  assert.doesNotMatch(contributing, /does not run on pull requests from a fork|no corre sobre un pull request/i, 'CONTRIBUTING: la CI sí corre en un pedido de un fork, una vez aprobada');
+  assert.match(contributing, /abrí un issue/, 'CONTRIBUTING: falta el consejo de abrir un issue antes de un cambio grande');
   assert.ok(contributing.includes('bash scripts/ci/public-ci.sh'), 'CONTRIBUTING: falta cómo correr lo mismo que la CI');
   assert.ok(contributing.includes('guides/maintaining/nombres-en-ingles.md'), 'CONTRIBUTING: falta la regla de nombres en inglés');
   assert.match(contributing, /nombres inventados/, 'CONTRIBUTING: falta la regla de ejemplos con nombres inventados');

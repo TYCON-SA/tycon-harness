@@ -117,36 +117,51 @@ const ignoredChange = (name) => name != null && BOARD_OWN.test(String(name));
 
 /**
  * Vigila cada carpeta; la que todavía no existe se espera desde la de arriba, y la que no se puede vigilar se anota en
- * `notes`. Devuelve una función que deja de vigilar.
+ * `notes`. Una ruta que se borra o se reemplaza por renombre (la escritura atómica de `gates.log`) deja al vigilante
+ * sobre lo que ya no está, sin error: ante un `rename` que cambió lo que hay en la ruta, se la vuelve a vigilar, o se la
+ * espera desde la de arriba. Devuelve una función que deja de vigilar.
  */
 function watchAll(dirs, onChange, notes) {
-  const watchers = [];
+  const watchers = new Set();
+  let stopped = false;
   const failOn = process.env.TYCON_OFFICE_TEST === '1' ? process.env.TYCON_OFFICE_WATCH_FAIL : null;
   const note = (dir, e) => notes.push(`no se vigila ${dir}: ${e.message || e}; los cambios ahí llegan al reabrir`);
+  const inodeOf = (p) => { try { return fs.statSync(p).ino; } catch { return null; } };
+  const drop = (w) => { watchers.delete(w); try { w.close(); } catch { /* ya cerrado */ } };
   const watchDir = (dir) => {
     try {
       if (failOn && path.basename(dir) === failOn) throw new Error('falla de prueba');
-      const w = fs.watch(dir, (ev, name) => { if (!ignoredChange(name)) onChange(); });
-      w.on('error', (e) => { note(dir, e); try { w.close(); } catch { /* ya cerrado */ } onChange(); });
-      watchers.push(w);
+      const ino = inodeOf(dir);
+      const w = fs.watch(dir, (ev, name) => {
+        if (ev === 'rename' && inodeOf(dir) !== ino) {
+          drop(w);
+          if (!stopped) arm(dir);
+          onChange();
+          return;
+        }
+        if (!ignoredChange(name)) onChange();
+      });
+      w.on('error', (e) => { note(dir, e); drop(w); onChange(); });
+      watchers.add(w);
     } catch (e) { note(dir, e); }
   };
-  for (const dir of dirs) {
-    if (fs.existsSync(dir)) { watchDir(dir); continue; }
+  function arm(dir) {
+    if (fs.existsSync(dir)) { watchDir(dir); return; }
     const parent = path.dirname(dir);
     try {
       const w = fs.watch(parent, (ev, name) => {
         if (name && name !== path.basename(dir)) return;
         if (!fs.existsSync(dir)) return;
-        try { w.close(); } catch { /* ya cerrado */ }
+        drop(w);
         watchDir(dir);
         onChange();
       });
       w.on('error', (e) => { note(dir, e); onChange(); });
-      watchers.push(w);
+      watchers.add(w);
     } catch (e) { note(dir, e); }
   }
-  return () => { for (const w of watchers) { try { w.close(); } catch { /* ya cerrado */ } } };
+  for (const dir of dirs) arm(dir);
+  return () => { stopped = true; for (const w of watchers) { try { w.close(); } catch { /* ya cerrado */ } } watchers.clear(); };
 }
 
 const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };

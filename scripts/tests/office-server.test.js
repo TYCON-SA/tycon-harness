@@ -635,6 +635,58 @@ test('T14 Watch_MissingFolder_AndWatchError: una carpeta que aparece después se
   p.close();
 });
 
+// Un archivo vigilado que se reemplaza por renombre (la escritura atómica de gates.log) deja al vigilante sobre el archivo
+// viejo, sin error: la oficina lo vuelve a vigilar, y los cambios siguientes llegan.
+test('Watch_ReplacedByRename_KeepsWatching @DEF-2.81-B-vigilancia-muda', async () => {
+  const { watchAll } = require(SERVER);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-rewatch-'));
+  const file = path.join(dir, 'gates.log');
+  const sub = path.join(dir, 'doing');
+  fs.writeFileSync(file, 'a\n');
+  fs.mkdirSync(sub);
+  let n = 0;
+  const notes = [];
+  const stop = watchAll([file, sub], () => { n += 1; }, notes);
+  const llega = async () => { for (let i = 0; i < 40 && n === 0; i += 1) await sleep(50); return n; };
+  try {
+    await sleep(150);
+    fs.writeFileSync(`${file}.tmp`, 'b\n');
+    fs.renameSync(`${file}.tmp`, file);
+    assert.ok(await llega() > 0, 'el reemplazo mismo se ve');
+    await sleep(300);
+    n = 0;
+    fs.appendFileSync(file, 'c\n');
+    assert.ok(await llega() > 0, 'un cambio después del reemplazo sigue llegando');
+    // la carpeta borrada y vuelta a crear: lo de adentro sigue llegando
+    fs.rmSync(sub, { recursive: true });
+    await sleep(300);
+    fs.mkdirSync(sub);
+    await sleep(300);
+    n = 0;
+    fs.writeFileSync(path.join(sub, 's1.json'), '{}');
+    assert.ok(await llega() > 0, 'la carpeta vuelta a crear se vigila');
+    assert.deepStrictEqual(notes, []);
+  } finally {
+    stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// server.log junta los arranques: si el proceso nuevo muere sin escribir, la apertura cita su código de salida, no la
+// última línea de un arranque anterior.
+test('Open_DiesWithoutWriting_DoesNotCiteAnOldStart @DEF-2.81-B-vigilancia-muda', { skip: WIN }, () => {
+  const m = toy();
+  const dir = path.join(m.sdir, 'office');
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(dir, 'server.log'), 'no arrancó: el motivo de un arranque anterior\n');
+  const muere = path.join(m.home, 'muere.js');
+  fs.writeFileSync(muere, "if (/server\\.js$/.test(process.argv[1] || '')) process.exit(7);\n");
+  const r = openSync(m, { NODE_OPTIONS: `--require ${muere}` });
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.doesNotMatch(r.stderr, /arranque anterior/, 'no cita una línea vieja');
+  assert.match(r.stderr, /código 7/, r.stderr);
+});
+
 test('T15 Open_PortOrLockFails_Exits1: sin poder escribir el candado sale 1 y no deja proceso', { skip: WIN || process.getuid() === 0 }, () => {
   const m = toy();
   const dir = path.join(m.sdir, 'office');
