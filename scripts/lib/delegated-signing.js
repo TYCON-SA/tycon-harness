@@ -252,23 +252,39 @@ function noEsCopiaSuelta({ estado, casa, destino, delPendiente, raiz }) {
   if (!lanzada.launched) return 'la sesión no es una de fondo que abrió la coordinadora';
   const s = require('./signature-list.js').sesiones(casa);
   if (s.sinDato) return 'no pude leer las sesiones de la máquina';
-  const otras = new Set([...s.mapa.keys()].filter((sid) => sid !== destino));
-  for (const dir of ['active', 'adhoc']) {
+  const vistas = new Map();
+  const mismaCopia = (dir) => {
+    if (typeof dir !== 'string' || !dir || !path.isAbsolute(dir)) return false;
+    if (!vistas.has(dir)) { const r = raiz(dir); vistas.set(dir, Boolean(r) && r.clave === delPendiente.clave); }
+    return vistas.get(dir);
+  };
+  // Las ejecuciones (también las detenidas, que se pueden retomar) y los arreglos rápidos de las otras sesiones, vivas o
+  // no, y los declarados para ellas por otra: cualquier carpeta que nombran. Acá se cuenta de más a propósito, porque el
+  // resultado niega: el repo de la ejecución y su historia, la carpeta de evidencia y de la corrida, los archivos que
+  // tocó (el código suele vivir en otra copia que la historia), y la carpeta y los archivos del arreglo rápido.
+  for (const dir of ['active', 'pruned', 'adhoc']) {
     let nombres = [];
     try { nombres = fs.readdirSync(path.join(estado, dir)); } catch (e) { if (e.code !== 'ENOENT') return `no pude leer las ejecuciones de la máquina (${e.code || e.message})`; }
-    for (const n of nombres) if (n.endsWith('.json') && n.slice(0, -5) !== safeSid(destino)) otras.add(n.slice(0, -5));
+    for (const n of nombres) {
+      if (!n.endsWith('.json') || n.slice(0, -5) === safeSid(destino)) continue;
+      let m;
+      try { m = JSON.parse(fs.readFileSync(path.join(estado, dir, n), 'utf8')); } catch (e) { return `no pude leer ${dir}/${n} (${e.code || e.message})`; }
+      if (!m || typeof m !== 'object') return `no pude leer ${dir}/${n}`;
+      if (m.sessionId === destino) continue;
+      const lista = (v) => (Array.isArray(v) ? v : []);
+      const carpetas = [m.repoPath, m.cwd, m.evidenceDir, m.runDir, ...Object.keys((m.bases && typeof m.bases === 'object') ? m.bases : {})];
+      const archivos = [m.storyPath, ...lista(m.allowedFiles), ...lista(m.files), ...lista(m.filesTouched), ...lista(m.fileEvents).map((e) => e && e.path)]
+        .filter((f) => typeof f === 'string' && f);
+      if ([...carpetas, ...archivos.map((f) => path.dirname(f))].some(mismaCopia)) return `es una copia de la sesión ${m.sessionId || n.slice(0, -5)}`;
+    }
   }
-  for (const sid of otras) {
-    const r = reposDe(estado, sid, raiz);
-    if (r === undefined) return `no pude leer los repos de la sesión ${sid}`;
-    if (r.includes(delPendiente.clave)) return `es una copia de la sesión ${sid}`;
-  }
-  const mismaCopia = (dir) => { const r = dir ? raiz(dir) : null; return Boolean(r) && r.clave === delPendiente.clave; };
-  for (const [sid, x] of s.mapa) if (sid !== destino && x && mismaCopia(x.cwd)) return `es la carpeta de la sesión ${sid}`;
+  // la carpeta de otra sesión viva, y la carpeta con que la coordinadora abrió a otra que sigue viva (una fila de una que
+  // ya terminó no es de nadie: el registro se poda recién en la próxima apertura)
+  for (const [sid, x] of s.mapa) if (sid !== destino && x && x.alive && mismaCopia(x.cwd)) return `es la carpeta de la sesión ${sid}`;
   let filas;
   try { filas = coord.readLaunched(casa); } catch (e) { return `no pude leer las sesiones que abrió la coordinadora (${e.message})`; }
-  const propia = s.mapa.get(destino);
-  for (const f of filas) if (f && !coord.launchedMatches(f, propia) && mismaCopia(f.cwd)) return `es la carpeta con que la coordinadora abrió a ${f.name || 'otra sesión'}`;
+  const otrasVivas = [...s.mapa].filter(([sid, x]) => sid !== destino && x && x.alive).map(([, x]) => x);
+  for (const f of filas) if (f && otrasVivas.some((x) => coord.launchedMatches(f, x)) && mismaCopia(f.cwd)) return `es la carpeta con que la coordinadora abrió a ${f.name || 'otra sesión'}`;
   return null;
 }
 

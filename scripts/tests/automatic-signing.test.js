@@ -248,6 +248,24 @@ test('AutomaticSigning_CopiaSueltaDeUnaSesionDeFondo_Sale', (t) => {
   fs.writeFileSync(path.join(estado, 'adhoc', 'ses-z.json'), JSON.stringify({ sessionId: 'ses-z', cwd: copia }));
   assert.match(pedir(copia).motivo, /ses-z/, 'la copia del arreglo rápido de otra sesión no');
   fs.rmSync(path.join(estado, 'adhoc', 'ses-z.json'));
+  // también el que otra declaró para ella (`by`), con la carpeta sólo en sus archivos y su base
+  fs.writeFileSync(path.join(estado, 'adhoc', 'ses-z.json'), JSON.stringify({ cwd: clon, by: 'ses-coord', via: 'delegacion', allowedFiles: [path.join(copia, 'a')], bases: { [copia]: {} } }));
+  assert.match(pedir(copia).motivo, /ses-z/, 'el arreglo rápido declarado para otra, con la copia en sus archivos, no');
+  fs.rmSync(path.join(estado, 'adhoc', 'ses-z.json'));
+  // la ejecución de otra: también la detenida, y también la copia donde está su código (no sólo la de su historia)
+  for (const [dir, marcador] of [['pruned', { sessionId: 'ses-y', repoPath: copia, stepsPending: ['5'] }],
+    ['active', { sessionId: 'ses-y', repoPath: clon, storyPath: path.join(clon, 'specs', 'story-1.md'), filesTouched: [path.join(copia, 'a')] }]]) {
+    fs.mkdirSync(path.join(estado, dir), { recursive: true });
+    fs.writeFileSync(path.join(estado, dir, 'ses-y.json'), JSON.stringify(marcador));
+    assert.match(pedir(copia).motivo, /ses-y/, `la ejecución de otra en ${dir} no`);
+    fs.rmSync(path.join(estado, dir, 'ses-y.json'));
+  }
+  // lo de una sesión que ya terminó no la hace de nadie: su archivo de sesión muerto y su fila de la apertura
+  fs.writeFileSync(path.join(sesiones, '3.json'), JSON.stringify({ pid: 999999, sessionId: 'ses-muerta', cwd: copia, startedAt: abierta - 9e7, kind: 'bg', name: 'Vieja' }));
+  fs.writeFileSync(path.join(estado, 'coordination', 'launched.json'), JSON.stringify([{ name: 'R-1', cwd: carpeta, at: abierta, por: 'ses-coord' },
+    { name: 'Vieja', cwd: copia, at: abierta - 9e7, por: 'ses-coord' }]));
+  assert.strictEqual(pedir(copia), null, 'una sesión que ya terminó no es dueña de la copia');
+  fs.rmSync(path.join(sesiones, '3.json'));
   // sin poder leer las sesiones que abrió la coordinadora, no
   fs.writeFileSync(path.join(estado, 'coordination', 'launched.json'), '{roto');
   assert.match(pedir(copia).motivo, /no pude/);
