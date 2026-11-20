@@ -262,7 +262,10 @@ function explicacionDe(raiz, { rango = null, uno = null }) {
     const m = /^([\p{L}-]+):\s*(\S.*?)\s*$/u.exec(linea.replace(/\0/g, ''));
     if (!m) continue;
     const clave = EXPLICA.find(([, re]) => re.test(m[1]));
-    if (clave && !valores[clave[0]].includes(m[2])) valores[clave[0]].push(m[2]);
+    // sin una letra o un número no dice nada; con letras que no se ven (de control, de dirección, invisibles) el cuadro
+    // mostraría otra cosa que lo escrito: no se muestra, y lo dice
+    const valor = !/[\p{L}\p{N}]/u.test(m[2]) ? null : NO_SE_VE.test(m[2]) ? '(lo escrito trae letras que no se ven: no se muestra)' : m[2];
+    if (clave && valor && !valores[clave[0]].includes(valor)) valores[clave[0]].push(valor);
   }
   if (!valores.cambia.length && !valores.porque.length && !valores.riesgo.length) return null;
   const out = Object.fromEntries(Object.entries(valores).map(([k, v]) => [k, v.length ? v.join(' · ') : null]));

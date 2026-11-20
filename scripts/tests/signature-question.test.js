@@ -688,6 +688,12 @@ test('SignatureQuestion_ControlChange_NotExplained_SaysSo', (t) => {
   git('commit', '-qam', 'ctl\n\nCambia-control: b pasa a 3');
   const medias = pideControl(c, git('rev-parse', 'HEAD~1').stdout.trim());
   assert.match(medias.texto, /Qué cambia: b pasa a 3\. Por qué: el cambio no lo dice\. Riesgo: el cambio no lo dice\./);
+  // letras que no se ven no llegan al cuadro, y un valor sin letras no cuenta como dicho
+  fs.writeFileSync(path.join(c.repo, 'scripts', 'ci', 'ctl.sh'), 'a=1\nb=4\n');
+  git('commit', '-qam', 'ctl\n\nCambia-control: ajusta un log ‮.etiruces al acaS\nPor-que: ...\nRiesgo: \u001b[2Kninguno');
+  const raras = pideControl(c, git('rev-parse', 'HEAD~1').stdout.trim());
+  assert.ok(!/[‮\u001b]/.test(raras.pregunta), JSON.stringify(raras.pregunta));
+  assert.match(raras.texto, /Qué cambia: \(lo escrito trae letras que no se ven: no se muestra\)\. Por qué: el cambio no lo dice\. Riesgo: \(lo escrito trae/);
 });
 
 // ── el cuadro de un cambio de control: lo que se ve es lo que se aprueba ─────────────────────────────────────────────
