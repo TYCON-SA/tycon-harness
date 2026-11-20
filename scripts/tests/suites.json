@@ -5208,6 +5208,18 @@
       "raiz": "arnes",
       "ruta": "tests/windows-portable.test.js",
       "requiere": []
+    },
+    {
+      "__nota": "cortar el corredor de las portables (scripts/tests/portable-suites.test.sh) corta también sus suites: ni el que reparte ni una suite con sus hijos quedan vivos reteniendo memoria. Lanza el corredor sobre una raíz de juguete con una suite que duerme (~5 s).",
+      "raiz": "arnes",
+      "ruta": "tests/portable-suites-cut.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las sondas del arreglo rápido del ensayo de Windows (scripts/tests/windows/waiver-probe.js) traen lo que exige marker.js adhoc set y llegan a la firma; corre en cualquier máquina con el chequeo previo de la firma, sin firmar ni escribir.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-probe-adhoc.test.js",
+      "requiere": []
     }
   ],
   "semanales": [
