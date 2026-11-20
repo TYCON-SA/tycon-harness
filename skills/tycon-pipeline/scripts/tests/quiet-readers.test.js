@@ -210,3 +210,13 @@ test('T9 Mutation_BaseRed_ReasonCarriesStderr — con la base en rojo, el motivo
   assert.equal(r.exitCode, 2);
   assert.match(r.result.motivo, /no medido: la base ya falla .*salió 3.*últimas líneas de error: «preparando \| falta el SDK de prueba»/, r.result.motivo);
 });
+
+test('T10 RouteGroup_DeprecatedAndUiTexts_KeepTheGroup — los lectores de deprecados y de textos de pantalla tampoco lo toman por repo', () => {
+  const dep = require(path.join(SCRIPTS, 'lib', 'deprecated.js'));
+  const historia = ['---', 'story: "9.4"', 'files_to_modify:', '  - (app)/page.tsx', '  - (web) src/x.ts', '---', ''].join('\n');
+  assert.deepStrictEqual(dep.entradasDelFrontmatter(historia, 'files_to_modify'), [{ ruta: '(app)/page.tsx', repo: null }, { ruta: 'src/x.ts', repo: 'web' }]);
+  const { screenFiles } = require(path.join(SCRIPTS, 'lib', 'ui-texts.js'));
+  const fm = ['story: "9.4"', 'files_to_modify:', '  - (app)/page.tsx'].join('\n');
+  const r = screenFiles(fm, '', [tmp('pantallas')]);
+  assert.deepStrictEqual(r.missing, ['(app)/page.tsx'], JSON.stringify(r));
+});
