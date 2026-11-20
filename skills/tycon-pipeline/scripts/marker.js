@@ -8178,7 +8178,7 @@ function cmdAdhoc(sub, payloadJson) {
     }
     // pasar el tope lo elige el dueño, con su click o su terminal: nunca la delegación
     if (firmaDelPedido === firmas.SOBRE_CUPO && !['click', 'terminal'].includes(r.via)) {
-      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click del dueño o su terminal, y volvió por ${r.via}; no declaré nada.`);
+      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click de la persona en el cuadro o su terminal, nunca la delegación, y volvió por ${r.via}; no declaré nada.`);
       process.exit(1);
     }
     const via = r.via;
