@@ -143,6 +143,25 @@ test('BaseControls_ConstanciaAMano_FormasRaras', () => {
     `ex -sc 'wq' ${F}`,
     `vim -c wq ${F}`,
     `touch ${F}`,
+    // lo que encontró el pase adversarial
+    `uniq -f 1 /tmp/x ${F}`,
+    `uniq -w 3 /tmp/x ${F}`,
+    `uniq - ${F} < /tmp/x`,
+    `awk -iinplace '{print}' ${F}`,
+    `gawk -i /usr/share/awk/inplace.awk 1 ${F}`,
+    `echo x > .tycon/'control-changes.jsonl'`,
+    `echo x >'.tycon'/control-changes.jsonl`,
+    `echo x > .github/"control-changes"/x.json`,
+    `echo x > .tycon/control\\-changes.jsonl`,
+    `echo x > $(echo .tycon)/control-changes.jsonl`,
+    `vim -es -c 'w ${F}' /tmp/x`,
+    `ex -s +'w ${F}' /tmp/x`,
+    `sed -n 'w ${F}' /tmp/x`,
+    `sed -e 's/a/b/w ${F}' /tmp/x`,
+    `shuf -o ${F} /tmp/x`,
+    `rvim ${F}`,
+    `nano ${F}`,
+    `ruby -pi -e 1 ${F}`,
   ];
   for (const c of frenan) {
     const r = correr(c);
@@ -152,6 +171,8 @@ test('BaseControls_ConstanciaAMano_FormasRaras', () => {
   const pasan = [
     `cat ${F}`, `sort ${F}`, `sort -o /tmp/o.txt ${F}`, `uniq ${F}`, `uniq ${F} /tmp/o.txt`, `awk '{print}' ${F}`,
     `dd if=${F} of=/tmp/copia`, `echo x > /tmp/o.txt`, `cp ${D} /tmp/ > $(date +%F).log`, `touch /tmp/o.txt`,
+    `uniq -f 1 ${F}`, `uniq -w 3 ${F} /tmp/o.txt`, `touch -r ${F} /tmp/o.txt`, `vim -u ${F} /tmp/x`,
+    `gawk -i inplace -f ${F} /tmp/x`, `sed -n 'w /tmp/o.txt' ${F}`, `shuf ${F}`,
   ];
   for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
 });

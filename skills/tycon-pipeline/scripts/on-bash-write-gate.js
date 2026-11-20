@@ -2230,7 +2230,12 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     const limpio = sinPalabrasDelShell(tramo);
     // las redirecciones y el tee a una constancia, también adentro de `bash -c` (los tramos anidados están en `todos`);
     // `<>` abre el archivo para leer y escribir
-    for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*(['"]?)([^\s<>;&|'"]+)\1/g)) if (es(m[2])) out.push(m[2]);
+    // el destino es la palabra entera del shell, con sus comillas resueltas (`.tycon/'control-changes.jsonl'`); uno armado
+    // con una sustitución que nombra una constancia no se puede resolver y no pasa
+    for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*((?:\$\([^()]*\)|'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s<>;&|'"\\])+)/g)) {
+      const destino = palabraDelShell(m[1]);
+      if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log/i.test(destino))) out.push(destino);
+    }
     const words = palabras(sinRedireccionesDeSalida(limpio).replace(/(?<![<\d])<(?!<)\s*[^\s<>;&|]+/g, ' ').trim().replace(PREFIJO, '')).filter((w) => w !== '' && w !== '\\');
     let c = nombreDeComando(words[0]);
     let args = words.slice(1);
@@ -2256,12 +2261,32 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     };
     if (c === 'tee') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
     if (c === 'sponge') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
-    // los que escriben un archivo que nombran: `sort -o`, la salida de `uniq` (su segundo archivo), `awk -i inplace`,
-    // un editor de línea (`ex`, `vi -c`, `ed`) y `touch`, que la crea vacía
-    if (c === 'sort') { out.push(...lleva(['-o', '--output']).filter(es)); continue; }
-    if (c === 'uniq') { const s = args.filter((w) => !w.startsWith('-')); if (s[1] && es(s[1])) out.push(s[1]); continue; }
-    if ((c === 'awk' || c === 'gawk') && lleva(['-i', '--include']).includes('inplace')) { out.push(...args.filter((w) => !w.startsWith('-') && w !== 'inplace').filter(es)); continue; }
-    if (['ex', 'vi', 'vim', 'nvim', 'ed', 'touch'].includes(c)) { out.push(...args.filter((w) => !w.startsWith('-') && !w.startsWith('+')).filter(es)); continue; }
+    // los que escriben un archivo que nombran: `sort -o` y `shuf -o`, la salida de `uniq` (su segundo archivo), `awk -i
+    // inplace`, `ruby -i`, los editores (y su `w <archivo>` en `-c` o `+`), el `w` de un guion de `sed`, y `touch`, que la
+    // crea vacía. El valor de una opción que sólo se lee (`touch -r`, `vim -u`, `uniq -f`) no es lo que se escribe
+    if (['sort', 'gsort', 'shuf'].includes(c)) { out.push(...lleva(['-o', '--output']).filter(es)); continue; }
+    if (c === 'uniq') { const s = posicionales(args, /^-[fsw]$|^--(?:skip-fields|skip-chars|check-chars)$/); if (s[1] && es(s[1])) out.push(s[1]); continue; }
+    if (c === 'awk' || c === 'gawk') {
+      const incluye = lleva(['-i', '--include']).concat(args.filter((w) => /^-i./.test(w)).map((w) => w.slice(2)));
+      if (incluye.some((v) => /(?:^|[\\/])inplace(?:\.awk)?$/.test(v))) out.push(...posicionales(args, /^-[ifvE]$|^--(?:include|file|assign|exec)$/).slice(1).filter(es));
+      continue;
+    }
+    if (c === 'ruby' && args.some((w) => /^-[A-Za-z]*i/.test(w))) { out.push(...posicionales(args, /^-[eIrC]$/).filter(es)); continue; }
+    if (['ex', 'vi', 'vim', 'nvim', 'gvim', 'rvim', 'view', 'vimdiff', 'nano', 'pico', 'emacs', 'micro', 'ed', 'touch'].includes(c)) {
+      const conValor = c === 'touch' ? /^-[rdt]$|^--(?:reference|date)$/ : /^-[uUiTcSsWwq]$|^--cmd$/;
+      out.push(...posicionales(args, conValor).filter((w) => !w.startsWith('+')).filter(es));
+      if (c !== 'touch') {
+        // `+'w x'` llega como dos palabras: el `+` solo y la orden
+        const ordenes = [...lleva(['-c', '--cmd']), ...args.filter((w) => w.startsWith('+')).map((w) => w.slice(1)), ...args.filter((w, k) => args[k - 1] === '+')];
+        out.push(...ordenes.flatMap((o) => [...o.matchAll(/(?:^|[|\s])(?:w(?:rite)?|sav(?:eas)?|x(?:it)?|wq)!?\s+(\S+)/g)].map((x) => x[1])).filter(es));
+      }
+      continue;
+    }
+    if (c === 'sed' || c === 'gsed') {
+      // `w <archivo>` (o el modificador `w` de `s///w <archivo>`) escribe hasta el final del renglón del guion
+      const guiones = [...lleva(['-e', '--expression']), ...(args.some((w) => /^-[A-Za-z]*[ef]$|^--(?:expression|file)/.test(w)) ? [] : posicionales(args, /^-[lf]$/).slice(0, 1))];
+      out.push(...guiones.flatMap((g) => [...g.matchAll(/(?:^|[;\n}\s]|\/[gpIi0-9]*)w\s+([^\n;]+)/g)].map((x) => x[1].trim())).filter(es));
+    }
     if (c === 'curl' || c === 'wget') { out.push(...lleva(['-o', '--output', '-O', '--output-document']).filter(es)); continue; }
     if (c === 'tar' || c === 'bsdtar' || c === 'unzip' || c === 'cpio') {
       // lo que trae un archivo comprimido no se ve antes de abrirlo: a la carpeta de una constancia, no pasa
@@ -2423,6 +2448,27 @@ function destinoDeLaCopia(args, conT) {
   if (t) return { destino: t, origenes: sueltos, carpeta: true };
   if (sueltos.length < 2) return null;
   return { destino: sueltos[sueltos.length - 1], origenes: sueltos.slice(0, -1), carpeta: false };
+}
+
+/**
+ * Los argumentos que no son opciones, sin el valor de las opciones que lo llevan aparte (`conValor`). `-` (la entrada
+ * estándar) cuenta como uno, y después de `--` cuentan todos.
+ */
+function posicionales(args, conValor) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '--') { out.push(...args.slice(i + 1)); break; }
+    if (w === '-' || !w.startsWith('-')) { out.push(w); continue; }
+    if (conValor.test(w)) i++;
+  }
+  return out;
+}
+
+/** Una palabra del shell con sus comillas y sus escapes resueltos: `.tycon/'control-changes.jsonl'` es una sola ruta. */
+function palabraDelShell(w) {
+  return String(w).replace(/'([^']*)'|"((?:\\.|[^"\\])*)"|\\(.)/g, (m, simple, doble, escapado) => (simple !== undefined ? simple
+    : doble !== undefined ? doble.replace(/\\(["\\$`])/g, '$1') : escapado));
 }
 
 /** Los archivos de parche de un `patch`: el de `-i`/`--input`, o el segundo argumento suelto (el primero es el que se parcha). */
