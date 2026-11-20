@@ -70,18 +70,21 @@ function leer(texto) {
   const pila = []; // 'llave' o 'plantilla'
   const parentesis = []; // por cada `(`, si abre la condición de un if/while/for/with
   let i = 0;
-  let finUltimo = 0;
+  // los fines de línea leídos fuera de los tokens, y cuántos había al emitir el último: los saltos alrededor de un
+  // comentario salen de restar, sin volver a recorrer el texto (muchos comentarios seguidos no lo hacen cuadrático)
+  let saltos = 0;
+  let saltosAlUltimo = 0;
   let separacion = '';
   const pendientes = []; // comentarios esperando el token que sigue
 
   const juntar = (clase) => { if (clase === '\n' || (clase === ' ' && separacion === '')) separacion = clase; };
   const emitir = (texto, tipo, desde, extra = {}) => {
-    for (const c of pendientes.splice(0)) c.saltosDespues = contarSaltos(s.slice(c.fin, desde));
+    for (const c of pendientes.splice(0)) c.saltosDespues = saltos - c.saltosAlFin;
     tokens.push(texto);
     tipos.push({ tipo, ...extra });
     separaciones.push(separacion);
     separacion = '';
-    finUltimo = desde + texto.length;
+    saltosAlUltimo = saltos;
   };
   const anterior = (k = 1) => (tokens.length >= k ? { t: tokens[tokens.length - k], ...tipos[tipos.length - k], sep: separaciones[tokens.length - k] } : null);
 
@@ -89,6 +92,8 @@ function leer(texto) {
   function lecturaDeBarra() {
     const a = anterior();
     if (!a) return 'regex';
+    // después de `${` (o del `}…${` de un tramo del medio) y de la línea `#!` empieza una expresión
+    if (a.tipo === 'plantilla-abre' || a.tipo === 'shebang') return 'regex';
     if (a.tipo === 'signo') {
       if (a.t === ')') return a.cierraControl ? 'regex' : 'division';
       if (a.t === ']') return 'division';
@@ -134,7 +139,7 @@ function leer(texto) {
   }
   while (i < s.length) {
     const c = s[i];
-    if (FIN_DE_LINEA.test(c)) { juntar('\n'); i++; continue; }
+    if (FIN_DE_LINEA.test(c)) { if (!(c === '\r' && s[i + 1] === '\n')) saltos++; juntar('\n'); i++; continue; }
     if (esEspacio(c)) { juntar(' '); i++; continue; }
     if (s.startsWith('<!--', i) || s.startsWith('-->', i)) return { duda: '`<!--` o `-->` fuera de una cadena' };
     if (c === '/' && (s[i + 1] === '/' || s[i + 1] === '*')) {
@@ -142,7 +147,9 @@ function leer(texto) {
       if (s[i + 1] === '/') { j = i + 2; while (j < s.length && !FIN_DE_LINEA.test(s[j])) j++; }
       else { const k = s.indexOf('*/', i + 2); if (k < 0) return { duda: 'un comentario sin cerrar' }; j = k + 2; }
       const texto = s.slice(i, j);
-      const com = { texto, ancla: tokens.length, saltosAntes: contarSaltos(s.slice(finUltimo, i)), saltosDespues: 0, desde: i, fin: j };
+      const com = { texto, ancla: tokens.length, saltosAntes: saltos - saltosAlUltimo, saltosDespues: 0, desde: i, fin: j };
+      saltos += contarSaltos(texto);
+      com.saltosAlFin = saltos;
       comentarios.push(com);
       pendientes.push(com);
       juntar(FIN_DE_LINEA.test(texto) ? '\n' : ' ');
@@ -233,9 +240,9 @@ function leer(texto) {
   }
   if (pila.length) return { duda: pila[pila.length - 1] === 'plantilla' ? 'un `${` sin cerrar' : 'un `{` sin cerrar' };
   if (parentesis.length) return { duda: 'un `(` sin cerrar' };
-  for (const com of pendientes.splice(0)) com.saltosDespues = contarSaltos(s.slice(com.fin));
+  for (const com of pendientes.splice(0)) com.saltosDespues = saltos - com.saltosAlFin;
   separaciones.push(separacion);
-  return { tokens, separaciones, comentarios: comentarios.map(({ fin, ...resto }) => resto) };
+  return { tokens, separaciones, comentarios: comentarios.map(({ fin, saltosAlFin, ...resto }) => resto) };
 }
 
 const iguales = (a, b) => a.length === b.length && a.every((x, k) => x === b[k]);

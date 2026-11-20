@@ -206,3 +206,22 @@ test('T34 Signatures_LectorDeComentarios_EsSensible @story-8.217 @ac-23 — el l
   assert.ok(sig.SENSITIVE.includes(rel), 'en SENSITIVE');
   assert.strictEqual(so.esSensible(rel), true);
 });
+
+test('T35 CommentOnly_RegexTrasPlantillaOShebang_NoEsComentario @story-8.217 @ac-9 — (pase) después de `${` o de `#!` la `/` abre una expresión', () => {
+  const vmRun = (src) => { const out = []; vm.runInNewContext(src, { console: { log: (x) => out.push(String(x)) }, evil: () => out.push('EVIL') }); return out.join('|'); };
+  const antes = 'const s = `${/[ ]/.source}`;\nconsole.log(s); /*]/, evil(), /[*/\n';
+  const ahora = 'const s = `${/[/*]/, evil(), /[*/]/.source}`;\nconsole.log(s);\n';
+  assert.match(vmRun(ahora), /EVIL/, 'Node corre evil() en la versión nueva');
+  assert.strictEqual(comparar(antes, ahora).ok, false);
+  const shebang = (resto) => `#!/usr/bin/env node\n/[/*]/.test('x');\n${resto}`;
+  assert.strictEqual(comparar(shebang('good();\n/* c */ z();\n'), shebang('evil();\n/* c */ z();\n')).ok, false);
+});
+
+test('T36 CommentOnly_MuchosComentariosSeguidos_LeeEnTiempoLineal @story-8.217 @ac-18 — (pase) 200 000 comentarios no cuelgan al lector', () => {
+  const relleno = '/**/'.repeat(200000);
+  const t0 = process.hrtime.bigint();
+  const r = comparar(`const a = 1; /* nota */ ${relleno}\nconsole.log(a);\n`, `const a = 1; ${relleno}\n/* nota */ console.log(a);\n`);
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.ok(r && typeof r.ok === 'boolean', JSON.stringify(r));
+  assert.ok(ms < 5000, `tardó ${Math.round(ms)} ms`);
+});
