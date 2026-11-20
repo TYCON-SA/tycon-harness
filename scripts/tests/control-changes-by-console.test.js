@@ -162,6 +162,9 @@ test('BaseControls_ConstanciaAMano_FormasRaras', () => {
     `rvim ${F}`,
     `nano ${F}`,
     `ruby -pi -e 1 ${F}`,
+    // un parche por heredoc después de otro heredoc con la misma marca
+    `cat <<'EOF' > /tmp/a\nx\nEOF\ngit apply <<'EOF'\ndiff --git a/${F} b/${F}\nEOF`,
+    `cat <<'EOF' > /tmp/a\nx\nEOF\npatch -p1 <<'EOF'\n--- a/x\n+++ b/${F}\nEOF`,
   ];
   for (const c of frenan) {
     const r = correr(c);

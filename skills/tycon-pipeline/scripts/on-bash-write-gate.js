@@ -2408,8 +2408,9 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
       const textos = [];
       const heredoc = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/.exec(tramo);
       if (heredoc) {
-        const cuerpo = new RegExp(`<<-?[ \\t]*(['"]?)${heredoc[2]}\\1[^\\n]*\\n([\\s\\S]*?)\\n[ \\t]*${heredoc[2]}[ \\t]*(?=\\n|$)`).exec(cmd);
-        textos.push(cuerpo ? cuerpo[2] : null);
+        // otro heredoc antes con la misma marca no es el del parche: se miran todos los cuerpos con esa marca
+        const cuerpos = [...String(cmd).matchAll(new RegExp(`<<-?[ \\t]*(['"]?)${heredoc[2]}\\1[^\\n]*\\n([\\s\\S]*?)\\n[ \\t]*${heredoc[2]}[ \\t]*(?=\\n|$)`, 'g'))];
+        if (cuerpos.length) textos.push(...cuerpos.map((x) => x[2])); else textos.push(null);
       }
       const entrada = /(?<!<)<(?!<)\s*([^\s<>;&|]+)/.exec(tramo);
       // la marca del texto en línea (`<<'EOF'`) no es un archivo
