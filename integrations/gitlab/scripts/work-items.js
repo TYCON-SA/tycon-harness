@@ -6,42 +6,15 @@
 //
 // Dónde: `repo: grupo/subgrupo/proyecto` en la configuración del repo de historias
 // (scripts/lib/platform/work-items-config.js). El servidor es el del repo de GitLab con esa ruta que declara
-// team-repos.json; si no está declarado, el público.
+// team-repos.json; sin declarar, el público sólo si la organización no declara ningún servidor propio (glab-api.js).
 // Habla por `glab api` (TYCON_GLAB_CMD lo reemplaza: un ejecutable, o un `.js` que corre con node).
 
-const fs = require('fs');
 const path = require('path');
-const { glab, todas, no, hostOf, projectPath } = require('./glab-api.js');
+const { glab, todas, no, servidorDe, projectPath } = require('./glab-api.js');
 
 const idValido = (id) => /^\d+$/.test(String(id == null ? '' : id).trim());
 const noSoportado = (field, detail) => ({ field, reason: 'no_soportado', detail });
 const igual = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
-
-/**
- * Los repos de GitLab que declara team-repos.json, estén en la clave que estén: `{ value }`, con `[]` si el archivo no
- * está, o `{ problem }` si está y no se puede leer o no valida. Con el archivo roto no se sabe en qué servidor vive un
- * proyecto: tomarlo por «no declara ninguno» mandaría sus issues al servidor público.
- */
-function declarados(ctx) {
-  const out = [];
-  const ver = (v) => {
-    if (!v || typeof v !== 'object') return;
-    if (v.platform === 'gitlab' && typeof v.namespace === 'string' && typeof v.repo === 'string') out.push(v);
-    for (const x of Object.values(v)) ver(x);
-  };
-  const archivo = path.join(ctx.env.TYCON_TREE || ctx.root, 'team-repos.json');
-  if (!fs.existsSync(archivo)) return { value: out };
-  let t;
-  try { t = require(path.join(ctx.root, 'scripts', 'lib', 'team-repos.js')).load(archivo); } catch (e) {
-    return { problem: no('no_medido', `no pude leer team-repos.json (${(e && e.code) || 'error'}): no sé en qué servidor de GitLab vive el proyecto de los issues`) };
-  }
-  if (!t.ok || !t.data) {
-    const p = (t.problems || [])[0] || {};
-    return { problem: no('no_medido', `team-repos.json no se puede leer o no valida (${p.path ? `${p.path}: ` : ''}${p.message || 'sin motivo'}): no sé en qué servidor de GitLab vive el proyecto de los issues`) };
-  }
-  ver(t.data);
-  return { value: out };
-}
 
 /** El proyecto de los issues y la configuración: `{c, host, p, warnings}` o `{problem}`. */
 function destino(args, ctx) {
@@ -55,11 +28,9 @@ function destino(args, ctx) {
   const id = { namespace: segmentos.slice(0, -1).join('/'), repo: segmentos[segmentos.length - 1] };
   const p = projectPath(id);
   if (!p) return { problem: no('sin_plataforma', 'el repo no dice en qué proyecto de GitLab van sus issues: repo: grupo/proyecto en .tycon/work-items.yaml') };
-  const lista = declarados(ctx);
-  if (lista.problem) return { problem: lista.problem };
-  const declarado = lista.value.find((r) => igual(r.namespace, id.namespace) && igual(r.repo, id.repo));
-  const host = hostOf(declarado || id);
-  if (!host) return { problem: no('rechazado', 'el servidor de GitLab que declara team-repos.json para ese proyecto no tiene forma de nombre de servidor') };
+  const s = servidorDe(ctx, id);
+  if (s.problem) return { problem: s.problem };
+  const { host } = s;
   const warnings = (leido.unknown || []).length ? [`${path.basename(leido.file)} trae claves que no conozco: ${leido.unknown.join(', ')}`] : [];
   return { c, host, p, warnings };
 }

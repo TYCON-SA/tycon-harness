@@ -39,6 +39,10 @@ su namespace y su nombre:
 - `host` es el servidor de una instalación propia, sin `https://` ni ruta. Un repo del GitLab público no lo lleva: el
   servidor lo pone el conector.
 - Un repo declarado sin `host` y el mismo con `host` son dos entradas distintas: declaralo siempre de la misma forma.
+- Un repo que no está declarado (pedido por su nombre, o como el proyecto de los pedidos de trabajo) va al GitLab
+  público sólo si `team-repos.json` no declara ningún repo de GitLab con `host`. Si declara alguno, ese repo puede vivir
+  en la instalación propia, y la operación contesta «sin plataforma» y pide declararlo con su `host`, en vez de mandar
+  issues o pedidos al servidor público. Un repo que trae su `host` en la identidad va a ese servidor.
 - Los repos del propio arnés (`public`, `profile`, `operations`, `maintainers`, `harness_copies`) y los de las
   herramientas de prueba (`stack.test_runners`) todavía no admiten GitLab: el archivo lo rechaza y dice dónde sí va.
 
@@ -68,9 +72,8 @@ state_active: "en curso"              # la etiqueta estado:<estado> al arrancar
 default_tags: "tycon"
 ```
 
-El servidor es el del repo de GitLab con esa ruta que declara `team-repos.json`. Un proyecto que no está declarado ahí
-se busca en el GitLab público. Si el archivo está y no se puede leer, la operación contesta «no medido»: no manda nada
-al servidor público por las dudas.
+El servidor es el del repo de GitLab con esa ruta que declara `team-repos.json`. Si el archivo está y no se puede leer,
+la operación contesta «no medido»: no manda nada al servidor público por las dudas.
 
 ## El remoto de un clon
 

@@ -4,7 +4,8 @@
 // glab: un ejecutable, o un `.js` que corre con node.
 //
 // El servidor va siempre en la línea (`--hostname`): sin él, glab usa el del repo de la carpeta en que corre, que puede
-// ser otro. Un repo que no declara su servidor es del público, y ese nombre vive sólo acá.
+// ser otro. El servidor de un repo lo decide `servidorDe`: el que trae, el que declara team-repos.json, o el público
+// cuando la organización no declara ningún servidor propio. El nombre del público vive sólo acá.
 
 const fs = require('fs');
 const os = require('os');
@@ -94,4 +95,58 @@ function todas(ctx, host, ruta) {
   return { problem: no('no_medido', `tope de ${MAX_PAGINAS} páginas: la lista no se leyó entera`) };
 }
 
-module.exports = { glab, todas, no, hostOf, projectPath, tramos, PUBLIC_HOST };
+/**
+ * Los repos de GitLab que declara team-repos.json, estén en la clave que estén: `{ value }`, con `[]` si el archivo no
+ * está, o `{ problem }` si está y no se puede leer o no valida. Con el archivo roto no se sabe en qué servidor vive un
+ * proyecto: tomarlo por «no declara ninguno» lo mandaría al servidor público.
+ */
+function declarados(ctx) {
+  const out = [];
+  const ver = (v) => {
+    if (!v || typeof v !== 'object') return;
+    if (v.platform === 'gitlab' && typeof v.namespace === 'string' && typeof v.repo === 'string') out.push(v);
+    for (const x of Object.values(v)) ver(x);
+  };
+  const archivo = path.join(ctx.env.TYCON_TREE || ctx.root, 'team-repos.json');
+  if (!fs.existsSync(archivo)) return { value: out };
+  let t;
+  try { t = require(path.join(ctx.root, 'scripts', 'lib', 'team-repos.js')).load(archivo); } catch (e) {
+    return { problem: no('no_medido', `no pude leer team-repos.json (${(e && e.code) || 'error'}): no sé en qué servidor de GitLab vive el proyecto`) };
+  }
+  if (!t.ok || !t.data) {
+    const p = (t.problems || [])[0] || {};
+    return { problem: no('no_medido', `team-repos.json no se puede leer o no valida (${p.path ? `${p.path}: ` : ''}${p.message || 'sin motivo'}): no sé en qué servidor de GitLab vive el proyecto`) };
+  }
+  ver(t.data);
+  return { value: out };
+}
+
+const igual = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+
+/**
+ * El servidor de un proyecto: `{ host }` o `{ problem }`. El que trae el repo; si no trae, el que declara
+ * team-repos.json para ese proyecto, o el público si lo declara sin servidor. Un proyecto sin declarar va al público
+ * sólo si la organización no declara ningún repo de GitLab con su servidor: si declara alguno, el proyecto puede vivir
+ * en ése, y mandarlo al público en silencio llevaría issues y pedidos a otro lado.
+ */
+function servidorDe(ctx, repo) {
+  const host = (r) => (hostOf(r) ? { host: hostOf(r) } : { problem: no('rechazado', 'el servidor de GitLab del repo no tiene forma de nombre de servidor (team-repos.json)') });
+  if (repo && repo.host !== undefined && repo.host !== null) return host(repo);
+  const partes = tramos(repo);
+  if (!partes) return { problem: no('rechazado', 'el repo no trae namespace y repo de GitLab (team-repos.json)') };
+  const namespace = partes.slice(0, -1).join('/');
+  const nombre = partes[partes.length - 1];
+  const lista = declarados(ctx);
+  if (lista.problem) return { problem: lista.problem };
+  const mismos = lista.value.filter((r) => igual(r.namespace, namespace) && igual(r.repo, nombre));
+  const servidores = [...new Set(mismos.map((r) => hostOf(r)))];
+  if (servidores.length > 1) return { problem: no('rechazado', `team-repos.json declara ${namespace}/${nombre} en más de un servidor de GitLab (${servidores.join(', ')}): no elijo uno; nombrá el repo con su host`) };
+  if (mismos.length) return host(mismos[0]);
+  const propios = [...new Set(lista.value.filter((r) => r.host !== undefined && r.host !== null).map((r) => String(r.host).toLowerCase()))];
+  if (propios.length) {
+    return { problem: no('sin_plataforma', `el repo ${namespace}/${nombre} no está declarado en team-repos.json y la organización declara repos de GitLab en ${propios.join(', ')}: no lo mando al servidor público. Declaralo en team-repos.json con su host`) };
+  }
+  return { host: PUBLIC_HOST };
+}
+
+module.exports = { glab, todas, no, hostOf, projectPath, tramos, declarados, servidorDe, PUBLIC_HOST };

@@ -125,7 +125,8 @@ function repoOf(repo) {
   if (typeof repo === 'object') return repo;
   const s = String(repo).trim();
   if (s.startsWith('{')) { try { return JSON.parse(s); } catch (_) { return null; } }
-  const parts = s.split('/');
+  // una barra al final no es un tramo: `grupo/sub/repo/` es el mismo repo, no `grupo/sub`
+  const parts = s.replace(/\/+$/, '').split('/');
   // con más de dos tramos, los primeros son los grupos de un repo que vive en un namespace
   if (parts.length > 2 && parts.every(Boolean)) return { namespace: parts.slice(0, -1).join('/'), repo: parts[parts.length - 1] };
   const [org, name] = parts;
@@ -133,13 +134,34 @@ function repoOf(repo) {
 }
 
 /**
- * La identidad que declara team-repos.json para un repo que llegó sin plataforma (por su nombre): `{ value }`, con
- * `value: null` si no está, o `{ problem }` si el archivo no se puede leer.
+ * Las identidades que declara team-repos.json para un repo que llegó sin plataforma (por su nombre): `{ value, all }`,
+ * con `value` la primera (null si no está) y `all` todas las que llevan ese nombre, o `{ problem }` si el archivo no se
+ * puede leer. Un repo que vive en grupos (con `namespace`) se busca también en los índices de historias y en las
+ * herramientas de prueba: es donde puede declararse además de merge_suites. Puede estar declarado en más de un
+ * servidor: quien llama no elige uno por el orden del archivo.
  */
 function declaredFor(repo, opts) {
   const leido = teamRepos(opts);
   if (leido.problem) return { problem: leido.problem };
-  return { value: identidades(leido.data).find((r) => sameName(r, repo)) || null };
+  const lista = [...identidades(leido.data), ...otrosRepos(leido.data).filter((r) => r.namespace && r.repo)];
+  const all = lista.filter((r) => sameName(r, repo));
+  return { value: all[0] || null, all };
+}
+
+const hostKey = (r) => (r && r.host !== undefined && r.host !== null ? String(r.host).toLowerCase() : '');
+
+/**
+ * El repo que recibe el conector para uno que llegó sin plataforma y vive en grupos: el declarado, que trae lo que el
+ * nombre no dice (su servidor). Si el pedido trae su servidor, se respeta; si el nombre está declarado en más de un
+ * servidor, va sin servidor y el conector decide (no se elige por el orden del archivo). Null si no hay qué cambiar.
+ */
+function repoParaConector(pedido, declarados) {
+  const conGrupos = declarados.filter((r) => r.namespace);
+  if (!conGrupos.length) return null;
+  const platform = conGrupos[0].platform;
+  if (pedido.host !== undefined && pedido.host !== null) return { platform, ...pedido };
+  if (new Set(conGrupos.map(hostKey)).size > 1) return { platform, ...pedido };
+  return conGrupos[0];
 }
 
 /**
@@ -222,6 +244,9 @@ function choose(operation, opts = {}) {
       // el repo sin plataforma: la que declara team-repos.json para ese mismo repo, si está
       const igual = declaredFor(repo, opts);
       if (igual.problem) return no('sin_plataforma', `${igual.problem}: no sé la plataforma del repo ${nameOf(repo)}`);
+      // un repo en grupos declarado en dos plataformas no se resuelve por el orden del archivo
+      const plataformas = [...new Set(igual.all.map((r) => r.platform))];
+      if (plataformas.length > 1 && igual.all.some((r) => r.namespace)) return no('sin_plataforma', `team-repos.json declara el repo ${nameOf(repo)} en más de una plataforma (${plataformas.join(', ')}): pedilo con su identidad completa`);
       plat = igual.value && igual.value.platform;
     }
     if (plat) {
@@ -383,8 +408,8 @@ async function run(operation, args = {}, opts = {}) {
   let para = opts;
   const pedido = c.ok && REPO_OPERATIONS.includes(operation) ? repoOf(opts.repo) : null;
   if (pedido && !pedido.platform) {
-    const igual = declaredFor(pedido, opts).value;
-    if (igual && igual.namespace) para = { ...opts, repo: igual };
+    const otro = repoParaConector(pedido, declaredFor(pedido, opts).all || []);
+    if (otro) para = { ...opts, repo: otro };
   }
   const r = c.ok ? await call(manifest, operation, args, para) : c;
   if (!operation.startsWith('work-item.')) return r;
@@ -524,4 +549,4 @@ function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 
-module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityOfRemoteUrl, identityByName, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };
+module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityOfRemoteUrl, identityByName, repoOf, nameOf, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };

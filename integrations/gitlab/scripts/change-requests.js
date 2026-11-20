@@ -20,7 +20,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { glab, todas, no, hostOf, projectPath } = require('./glab-api.js');
+const { glab, todas, no, servidorDe, projectPath } = require('./glab-api.js');
 
 // Los estados de commit que todavía no terminaron, y los que terminaron mal. Un trabajo manual queda en `manual` hasta
 // que alguien lo dispare, con el pipeline ya en verde: no es uno en curso. Y uno que GitLab deja fallar
@@ -44,9 +44,9 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 function repoDe(ctx) {
   const p = projectPath(ctx.repo);
   if (!p) return { problem: no('rechazado', 'el repo no trae namespace y repo de GitLab (team-repos.json)') };
-  const host = hostOf(ctx.repo);
-  if (!host) return { problem: no('rechazado', 'el host del repo no tiene forma de nombre de servidor (team-repos.json)') };
-  return { host, p };
+  const s = servidorDe(ctx, ctx.repo);
+  if (s.problem) return { problem: s.problem };
+  return { host: s.host, p };
 }
 
 /**
@@ -78,7 +78,9 @@ function frenoDePublicacion(ctx, args, titulo, texto) {
     const cuerpo = path.join(dir, 'cuerpo.md');
     fs.writeFileSync(cuerpo, texto);
     const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
-    // el freno lee pedidos con la forma del comando que conoce; sin un repo que reconozca, revisa el texto igual
+    // el freno lee pedidos con la forma del comando que conoce. Esta línea no nombra un repo que él reconozca, así que
+    // decide por la carpeta (`repoDir`): mira el texto si es un clon del arnés con un remoto público, o si no puede
+    // saber de quién es; en la carpeta de un repo de producto lo deja pasar sin mirarlo
     const cmd = `gh pr create --base ${q(args.targetBranch)} --head ${q(args.sourceBranch)} --title ${q(titulo)} --body-file ${q(cuerpo)}`;
     const r = guard.reviewGhCommand(cmd, { cwd: args.repoDir || process.cwd(), env: ctx.env });
     return r && r.code === 2 ? no('rechazado', 'el freno de publicación no deja salir este pedido: corregí el título o el texto (correr el freno a mano dice dónde está el problema)') : null;

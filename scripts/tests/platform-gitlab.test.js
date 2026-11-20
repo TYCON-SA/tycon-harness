@@ -68,7 +68,7 @@ const deTrabajo = (m, op, args = {}) => P().run(op, { repoDir: m.historias, ...a
 
 // ── la identidad en team-repos.json ──────────────────────────────────────────────────────────────────────────────────
 
-test('T1 TeamRepos_GitlabIdentity_Valid @story-1.1 @ac-1', () => {
+test('T1 TeamRepos_GitlabIdentity_Valid @ac-1', () => {
   const r = TEAM.parse(JSON.stringify({ ...teamDoc([GL]), story_index: { repos: [{ repo: GL, mode: 'manual' }] } }));
   assert.deepStrictEqual(r.problems, []);
   assert.strictEqual(r.ok, true);
@@ -103,7 +103,7 @@ test('T1 TeamRepos_GitlabIdentity_Valid @story-1.1 @ac-1', () => {
   assert.match(desconocido.detail, /otro\/grupo\/repo/);
 });
 
-test('T2 TeamRepos_GitlabNoHost_Valid @story-1.1 @ac-2', () => {
+test('T2 TeamRepos_GitlabNoHost_Valid @ac-2', () => {
   const r = TEAM.parse(JSON.stringify(teamDoc([GL_PUBLIC])));
   assert.deepStrictEqual(r.problems, []);
   assert.strictEqual(Object.prototype.hasOwnProperty.call(r.data.merge_suites.repos[0].repo, 'host'), false, 'el lector no inventa el host');
@@ -112,7 +112,7 @@ test('T2 TeamRepos_GitlabNoHost_Valid @story-1.1 @ac-2', () => {
   assert.strictEqual(TEAM.identityKey(GL), TEAM.identityKey({ ...GL, namespace: 'Producto/Plataforma' }));
 });
 
-test('T3 Gitlab_DefaultHost_FromConnector @story-1.1 @ac-2', async () => {
+test('T3 Gitlab_DefaultHost_FromConnector @ac-2', async () => {
   const m = mundo();
   const r = await pedir(m, 'ci.read', { branch: 'main' }, GL_PUBLIC);
   assert.strictEqual(r.ok, true, JSON.stringify(r));
@@ -120,7 +120,7 @@ test('T3 Gitlab_DefaultHost_FromConnector @story-1.1 @ac-2', async () => {
   assert.deepStrictEqual(hosts, ['gitlab.com']);
 });
 
-test('T4 TeamRepos_GitlabBadNamespace_Rejected @story-1.1 @ac-3', () => {
+test('T4 TeamRepos_GitlabBadNamespace_Rejected @ac-3', () => {
   for (const namespace of ['', '/grupo', 'grupo/', 'grupo//sub', 'grupo/../sub', undefined]) {
     const repo = { ...GL };
     if (namespace === undefined) delete repo.namespace; else repo.namespace = namespace;
@@ -135,7 +135,7 @@ test('T4 TeamRepos_GitlabBadNamespace_Rejected @story-1.1 @ac-3', () => {
   assert.deepStrictEqual(malHost.problems.map((x) => x.path), ['merge_suites.repos.0.repo.host']);
 });
 
-test('T5 TeamRepos_GitlabUnknownKey_Rejected @story-1.1 @ac-3', () => {
+test('T5 TeamRepos_GitlabUnknownKey_Rejected @ac-3', () => {
   for (const clave of ['org', 'project']) {
     const r = TEAM.parse(JSON.stringify(teamDoc([{ ...GL, [clave]: 'acme' }])));
     assert.strictEqual(r.data, null);
@@ -149,7 +149,7 @@ test('T5 TeamRepos_GitlabUnknownKey_Rejected @story-1.1 @ac-3', () => {
 
 const SIN_SESION = { status: 401, message: '401 Unauthorized' };
 
-test('T6 Gitlab_Conformance_DeclaredOps @story-1.1 @ac-4', async () => {
+test('T6 Gitlab_Conformance_DeclaredOps @ac-4', async () => {
   const m = mundo({ estado: { fail: { 'GET projects': SIN_SESION, 'POST projects': SIN_SESION, 'PUT projects': SIN_SESION, 'GET users': SIN_SESION } } });
   for (const repo of [undefined, GL]) {
     const r = await P().conformance('gitlab', { env: m.env, repo });
@@ -157,7 +157,7 @@ test('T6 Gitlab_Conformance_DeclaredOps @story-1.1 @ac-4', async () => {
   }
 });
 
-test('T7 Gitlab_NoSession_SinCredencial @story-1.1 @ac-4', async () => {
+test('T7 Gitlab_NoSession_SinCredencial @ac-4', async () => {
   const m = mundo({ estado: { fail: { 'GET projects': SIN_SESION } } });
   for (const [op, args] of [['ci.read', { branch: 'main' }], ['change-request.read', { number: 1 }], ['change-request.list', {}]]) {
     const r = await pedir(m, op, args);
@@ -168,7 +168,7 @@ test('T7 Gitlab_NoSession_SinCredencial @story-1.1 @ac-4', async () => {
   assert.strictEqual(w.reason, 'sin_credencial', JSON.stringify(w));
 });
 
-test('T8 Gitlab_UndeclaredOps_NoSoportado @story-1.1 @ac-5', async () => {
+test('T8 Gitlab_UndeclaredOps_NoSoportado @ac-5', async () => {
   const m = mundo();
   for (const op of ['queue.read', 'deployments.read']) {
     const r = await P().run(op, {}, { env: m.env });
@@ -179,7 +179,7 @@ test('T8 Gitlab_UndeclaredOps_NoSoportado @story-1.1 @ac-5', async () => {
 
 // ── el pedido de trabajo ─────────────────────────────────────────────────────────────────────────────────────────────
 
-test('T9 Gitlab_WorkItemCycle_Issues @story-1.1 @ac-6', async () => {
+test('T9 Gitlab_WorkItemCycle_Issues @ac-6', async () => {
   const m = mundo();
   const creado = await deTrabajo(m, 'work-item.create', { title: 'Una historia', description: 'El texto', tags: ['story-1.1'], epic: 12, priority: 2, estimate: { value: 16, unit: 'hours' } });
   assert.strictEqual(creado.ok, true, JSON.stringify(creado));
@@ -228,7 +228,7 @@ test('T9 Gitlab_WorkItemCycle_Issues @story-1.1 @ac-6', async () => {
 
 const muchos = (n, hacer) => Array.from({ length: n }, (_, i) => hacer(i + 1));
 
-test('T10 Gitlab_WorkItemFind_AllPages @story-1.1 @ac-6', async () => {
+test('T10 Gitlab_WorkItemFind_AllPages @ac-6', async () => {
   const issues = muchos(150, (iid) => ({ iid, state: iid % 2 ? 'opened' : 'closed', title: `i${iid}`, labels: iid === 150 ? ['otra'] : ['story-9'] }));
   const m = mundo({ estado: { issues: { [PROYECTO]: issues } } });
   const r = await deTrabajo(m, 'work-item.find', { tag: 'story-9' });
@@ -241,7 +241,7 @@ test('T10 Gitlab_WorkItemFind_AllPages @story-1.1 @ac-6', async () => {
 
 const ABRIR = { sourceBranch: 'story/x', targetBranch: 'main', text: 'Un cambio\n\nCon su detalle', deleteSourceBranch: true, waitMinutes: 0, pollSeconds: 0 };
 
-test('T11 Gitlab_ChangeRequestOpen_AutoMerge @story-1.1 @ac-7', async () => {
+test('T11 Gitlab_ChangeRequestOpen_AutoMerge @ac-7', async () => {
   const m = mundo({ estado: { pipelines: { 'story/x': 'running' } } });
   const r = await pedir(m, 'change-request.open', ABRIR);
   assert.strictEqual(r.ok, true, JSON.stringify(r));
@@ -277,7 +277,7 @@ test('T11 Gitlab_ChangeRequestOpen_AutoMerge @story-1.1 @ac-7', async () => {
   assert.deepStrictEqual([nada.ok, nada.reason], [false, 'no_medido'], JSON.stringify(nada));
 });
 
-test('T12 Gitlab_ChangeRequestOpen_Conflict @story-1.1 @ac-7', async () => {
+test('T12 Gitlab_ChangeRequestOpen_Conflict @ac-7', async () => {
   const m = mundo({ estado: { pipelines: { 'story/x': 'running' }, conflicts: ['story/x'] } });
   const r = await pedir(m, 'change-request.open', ABRIR);
   assert.strictEqual(r.ok, true, JSON.stringify(r));
@@ -287,7 +287,7 @@ test('T12 Gitlab_ChangeRequestOpen_Conflict @story-1.1 @ac-7', async () => {
 
 const MR = (iid, extra = {}) => ({ iid, state: 'opened', title: `pedido ${iid}`, source_branch: `rama-${iid}`, target_branch: 'main', sha: String(iid).repeat(40).slice(0, 40), author: 'ana', ...extra });
 
-test('T13 Gitlab_ChangeRequestListReadVote @story-1.1 @ac-7', async () => {
+test('T13 Gitlab_ChangeRequestListReadVote @ac-7', async () => {
   const MERGED = '2030-01-10T10:00:00Z';
   const m = mundo({ estado: { mrs: { [PROYECTO]: [
     MR(1), MR(2, { draft: true, has_conflicts: true }), MR(3, { state: 'merged', merged_at: MERGED, merge_commit_sha: 'd'.repeat(40) }), MR(4, { state: 'closed' }),
@@ -317,7 +317,7 @@ test('T13 Gitlab_ChangeRequestListReadVote @story-1.1 @ac-7', async () => {
 
 // ── la CI ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-test('T14 Gitlab_CiRead_FromCommitStatuses @story-1.1 @ac-8', async () => {
+test('T14 Gitlab_CiRead_FromCommitStatuses @ac-8', async () => {
   const s = (id, name, status, hora) => ({ id, name, status, created_at: `2030-01-15T${hora}:00:00Z` });
   const m = mundo({ estado: { statuses: {
     [`${PROYECTO}@bien`]: [s(1, 'build', 'success', '10'), s(2, 'pruebas', 'success', '10')],
@@ -362,7 +362,7 @@ test('T14 Gitlab_CiRead_FromCommitStatuses @story-1.1 @ac-8', async () => {
   assert.deepStrictEqual([verdictOf(await pedir(m, 'ci.read', { commit: 'bien' })), verdictOf(await pedir(m, 'ci.read', { commit: 'corre' }))], ['verde', 'corriendo']);
 });
 
-test('T15 Gitlab_ReadCut_NoMedido @story-1.1 @ac-9', async () => {
+test('T15 Gitlab_ReadCut_NoMedido @ac-9', async () => {
   const CAIDA = { status: 500, message: '500 Internal Server Error', page: 2 };
   const estado = {
     issues: { [PROYECTO]: muchos(120, (iid) => ({ iid, state: 'opened', title: `i${iid}`, labels: ['story-9'], assignees: ['ana'] })) },
@@ -397,7 +397,7 @@ test('T15 Gitlab_ReadCut_NoMedido @story-1.1 @ac-9', async () => {
 
 // ── el remoto ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-test('T16 Gitlab_RemoteIdentity_DeclaredHostOnly @story-1.1 @ac-10 @ac-2', () => {
+test('T16 Gitlab_RemoteIdentity_DeclaredHostOnly @ac-10 @ac-2', () => {
   const C = require(path.join(GITLAB, 'scripts', 'connector.js'));
   const declarados = [GL, GL_PUBLIC];
   for (const url of [
@@ -409,8 +409,9 @@ test('T16 Gitlab_RemoteIdentity_DeclaredHostOnly @story-1.1 @ac-10 @ac-2', () =>
   assert.deepStrictEqual(C.identityFromRemote('git@gitlab.example.com:otro/grupo/mas/repo.git', declarados), { platform: 'gitlab', host: 'gitlab.example.com', namespace: 'otro/grupo/mas', repo: 'repo' });
   // el declarado sin host vuelve sin host
   assert.deepStrictEqual(C.identityFromRemote('git@gitlab.com:grupo/web.git', declarados), GL_PUBLIC);
-  // otro repo del servidor público, que se declara sin host: tampoco lo lleva
-  assert.deepStrictEqual(C.identityFromRemote('https://gitlab.com/grupo/otro.git', declarados), { platform: 'gitlab', namespace: 'grupo', repo: 'otro' });
+  // otro repo del servidor público, sin declarar: trae el servidor de su dirección, para que no se lo tome por un repo
+  // de servidor desconocido (con un servidor propio declarado, uno sin host se rechaza)
+  assert.deepStrictEqual(C.identityFromRemote('https://gitlab.com/grupo/otro.git', declarados), { platform: 'gitlab', host: 'gitlab.com', namespace: 'grupo', repo: 'otro' });
   // un host que nadie declaró, o una dirección sin grupo, no es de esta plataforma
   for (const url of ['https://gitlab.otro.example/producto/plataforma/servicio.git', 'git@gitlab.example.com:servicio.git', 'https://gitlab.com/grupo/web.git', '', '/una/carpeta']) {
     assert.strictEqual(C.identityFromRemote(url, [GL]), null, url);
@@ -444,7 +445,7 @@ function clon(url, config) {
   return dir;
 }
 
-test('T17 MergePr_GitlabRemote_UsesConnector @story-1.1 @ac-10', () => {
+test('T17 MergePr_GitlabRemote_UsesConnector @ac-10', () => {
   const M = require(path.join(ROOT, 'scripts', 'tools', 'merge-pr.js'));
   const espia = () => { const f = (args) => { f.calls.push(args); return { status: 1, stdout: '', stderr: 'no se le pregunta' }; }; f.calls = []; return f; };
   const con = (team) => ({ env: gitEnv(), az: espia(), gh: espia(), teamRepos: () => TEAM.parse(JSON.stringify(team)) });
@@ -481,7 +482,7 @@ test('T17 MergePr_GitlabRemote_UsesConnector @story-1.1 @ac-10', () => {
   assert.deepStrictEqual([empuja.code, empuja.host, empuja.mode, empuja.step], [0, 'other', 'push', '9'], JSON.stringify(empuja));
 });
 
-test('T21 StoryIndex_GitlabRemote_ReadsMode @story-1.1 @ac-10', () => {
+test('T21 StoryIndex_GitlabRemote_ReadsMode @ac-10', () => {
   const archivo = path.join(tmp('equipo-'), 'team-repos.json');
   fs.writeFileSync(archivo, JSON.stringify({ ...teamDoc([GL]), story_index: { repos: [{ repo: GL, mode: 'generated' }] } }));
   const modo = (url) => {
@@ -497,7 +498,7 @@ test('T21 StoryIndex_GitlabRemote_ReadsMode @story-1.1 @ac-10', () => {
 
 // ── la neutralidad del núcleo ────────────────────────────────────────────────────────────────────────────────────────
 
-test('T18 Core_Neutrality_StillGreen @story-1.1 @ac-11', () => {
+test('T18 Core_Neutrality_StillGreen @ac-11', () => {
   const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'check-core-neutrality.js'), '--repo', ROOT], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
   const manifiesto = JSON.parse(fs.readFileSync(path.join(GITLAB, 'integration.json'), 'utf8'));
@@ -514,7 +515,7 @@ test('T18 Core_Neutrality_StillGreen @story-1.1 @ac-11', () => {
   assert.ok(!JSON.stringify(lista.entries).toLowerCase().includes('gitlab'));
 });
 
-test('T20 Gitlab_NestedNamespace_EncodedPath @story-1.1 @ac-13', async () => {
+test('T20 Gitlab_NestedNamespace_EncodedPath @ac-13', async () => {
   const A = require(path.join(GITLAB, 'scripts', 'glab-api.js'));
   assert.strictEqual(A.projectPath(GL), RUTA);
   assert.strictEqual(A.projectPath({ namespace: 'grupo', repo: 'web.site' }), 'projects/grupo%2Fweb.site');
@@ -539,7 +540,7 @@ test('T20 Gitlab_NestedNamespace_EncodedPath @story-1.1 @ac-13', async () => {
 
 // ── lo asignado, y lo que no es una respuesta vacía ──────────────────────────────────────────────────────────────────
 
-test('T22 Gitlab_AssignedList_IssuesAndMergeRequests @story-1.1 @ac-14', async () => {
+test('T22 Gitlab_AssignedList_IssuesAndMergeRequests @ac-14', async () => {
   const m = mundo({ estado: { users: { ana: 7, beto: 8 },
     issues: { [PROYECTO]: [
       { iid: 1, state: 'opened', title: 'con dos', assignees: ['ana', 'beto'] }, { iid: 2, state: 'opened', title: 'sin nadie' },
@@ -554,7 +555,7 @@ test('T22 Gitlab_AssignedList_IssuesAndMergeRequests @story-1.1 @ac-14', async (
   assert.match(r.value[2].enlace, /merge_requests\/10$/);
 });
 
-test('T23 Gitlab_NoBinaryOrNoNetwork_NotEmpty @story-1.1 @ac-15', async () => {
+test('T23 Gitlab_NoBinaryOrNoNetwork_NotEmpty @ac-15', async () => {
   const m = mundo();
   m.env.TYCON_GLAB_CMD = path.join(m.tree, 'no-esta', 'glab');
   for (const r of [await pedir(m, 'change-request.list', {}), await pedir(m, 'ci.read', { branch: 'main' }), await deTrabajo(m, 'work-item.find', { tag: 'x' })]) {
@@ -577,5 +578,89 @@ test('T23 Gitlab_NoBinaryOrNoNetwork_NotEmpty @story-1.1 @ac-15', async () => {
     const caida = mundo({ estado: { fail: { 'GET projects': { red: texto } } } });
     const r = await pedir(caida, 'change-request.read', { number: 1 });
     assert.deepStrictEqual([r.ok, r.reason], [false, 'red'], `${texto}: ${JSON.stringify(r)}`);
+  }
+});
+
+// ── un repo sin declarar, el skill de merge y el freno de un pedido por repo ─────────────────────────────────────────
+
+test('T24 Gitlab_UndeclaredRepo_DeclaredHosts_Refused @ac-2', async () => {
+  // team-repos.json declara un repo con su propio servidor: uno sin declarar no se manda al público
+  const m = mundo();
+  const otro = { platform: 'gitlab', namespace: 'otro', repo: 'x' };
+  const rechazado = (r, quien) => {
+    assert.deepStrictEqual([r.ok, r.reason], [false, 'sin_plataforma'], `${quien}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, /otro\/x/, quien);
+    assert.match(r.detail, /team-repos\.json/, quien);
+    assert.match(r.detail, /host/, quien);
+  };
+  rechazado(await pedir(m, 'ci.read', { branch: 'main' }, otro), 'por su identidad');
+  rechazado(await pedir(m, 'change-request.list', {}, 'otro/x'), 'por su nombre');
+  fs.writeFileSync(path.join(m.historias, '.tycon', 'work-items.yaml'), 'repo: otro/x\ntype: "Historia"\n');
+  rechazado(await deTrabajo(m, 'work-item.create', { title: 'Una historia' }), 'como proyecto de los issues');
+  assert.deepStrictEqual(m.llamadas(), [], 'glab no se llama');
+  // con su servidor explícito va a ese servidor
+  const r = await pedir(m, 'ci.read', { branch: 'main' }, { ...otro, host: 'gitlab.otro.example' });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.deepStrictEqual([...new Set(m.llamadas().map((l) => l.host))], ['gitlab.otro.example']);
+  // pedido por su nombre con el servidor en la mano: va a ese servidor, aunque el nombre esté declarado en otro
+  const conHost = await pedir(m, 'change-request.list', { checks: false }, JSON.stringify({ namespace: 'producto/plataforma', repo: 'servicio', host: 'gitlab.otro.example' }));
+  assert.strictEqual(conHost.ok, true, JSON.stringify(conHost));
+  assert.strictEqual(m.llamadas().at(-1).host, 'gitlab.otro.example');
+  // el mismo proyecto declarado en dos servidores: pedido por su nombre es un «no», en cualquier orden del archivo
+  const B = { ...GL, host: 'gitlab.b.example' };
+  for (const orden of [[GL, B], [B, GL], [GL_PUBLIC, { ...GL_PUBLIC, host: 'gitlab.b.example' }]]) {
+    const dos = mundo({ team: teamDoc(orden) });
+    const r2 = await pedir(dos, 'change-request.list', { checks: false }, `${orden[0].namespace}/${orden[0].repo}`);
+    assert.deepStrictEqual([r2.ok, r2.reason], [false, 'rechazado'], JSON.stringify(r2));
+    assert.match(r2.detail, /más de un servidor/);
+    assert.deepStrictEqual(dos.llamadas(), []);
+  }
+  // un repo de GitLab declarado sólo en story_index también se encuentra por su nombre
+  const indice = mundo({ platform: { default: 'github' }, team: teamDoc([], { story_index: { repos: [{ repo: GL, mode: 'manual' }] } }) });
+  const ri = await pedir(indice, 'change-request.list', { checks: false }, PROYECTO);
+  assert.strictEqual(ri.ok, true, JSON.stringify(ri));
+  assert.ok(indice.llamadas().some((l) => l.host === 'gitlab.example.com' && l.ruta.startsWith(`${RUTA}/`)));
+  // un remoto del público sin declarar trae su servidor, y con un servidor propio declarado no se rechaza
+  const remoto = P().identityOfRemoteUrl('git@gitlab.com:grupo/otro.git', { env: m.env });
+  const rr = await pedir(m, 'ci.read', { branch: 'main' }, remoto);
+  assert.strictEqual(rr.ok, true, JSON.stringify(rr));
+  assert.strictEqual(m.llamadas().at(-1).host, 'gitlab.com');
+  // sin ningún servidor declarado, el público sigue valiendo
+  const publico = mundo({ team: teamDoc([GL_PUBLIC]) });
+  const p = await pedir(publico, 'ci.read', { branch: 'main' }, otro);
+  assert.strictEqual(p.ok, true, JSON.stringify(p));
+  assert.deepStrictEqual([...new Set(publico.llamadas().map((l) => l.host))], ['gitlab.com']);
+});
+
+test('T25 MergeSkill_PlatformHost_StepUsesPlanRepo @ac-16', () => {
+  const STEPS = path.join(ROOT, 'skills', 'tycon-merge-to-main', 'steps');
+  const cero = fs.readFileSync(path.join(STEPS, 'step-00-preflight.md'), 'utf8');
+  const nueveB = fs.readFileSync(path.join(STEPS, 'step-09b-create-change-request.md'), 'utf8');
+  assert.match(cero, /`platform`[^\n]*`9b`|`9b`[^\n]*`platform`/, 'el paso 0 dice que 9b también es el de host platform');
+  // el renglón de host platform de la lista del --repo usa el campo repo del plan, no un placeholder armado a mano
+  const renglon = nueveB.split('\n').find((l) => /^- .*host `platform`/.test(l) || /^- Una plataforma por la capa/.test(l));
+  assert.ok(renglon, 'el 9b trae el renglón del --repo de host platform');
+  assert.match(renglon, /`repo` del plan/);
+  for (const [nombre, texto] of [['paso 0', cero], ['paso 9b', nueveB]]) {
+    assert.doesNotMatch(texto, /\bglab\b|gitlab/i, `${nombre}: no nombra comandos ni la plataforma`);
+  }
+});
+
+test('T26 PrOnePerRepo_NestedRepo_UsesLayerReader @ac-17', () => {
+  assert.deepStrictEqual(P().repoOf('acme/portal'), { org: 'acme', repo: 'portal' }, 'el lector de la capa se exporta');
+  // una barra al final no cambia de repo
+  assert.deepStrictEqual(P().repoOf(`${PROYECTO}/`), { namespace: 'producto/plataforma', repo: 'servicio' });
+  assert.deepStrictEqual(P().repoOf('acme/portal/'), { org: 'acme', repo: 'portal' });
+  const HOOK = path.join(ROOT, 'scripts', 'hooks', 'pr-one-per-repo-guard.js');
+  const otro = MR(1);
+  const estado = { mrs: { [PROYECTO]: [otro] }, statuses: { [`${PROYECTO}@${otro.sha}`]: [{ id: 1, name: 'build', status: 'running', created_at: '2030-01-15T12:00:00Z' }] } };
+  const args = JSON.stringify({ sourceBranch: 'nueva', targetBranch: 'main', text: 't', deleteSourceBranch: true });
+  for (const repo of [PROYECTO, JSON.stringify(GL)]) {
+    const m = mundo({ estado });
+    const command = `node platform.js change-request open --repo '${repo}' --auto-complete --args '${args}'`;
+    const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ tool_input: { command } }), env: { ...m.env, TYCON_PR_ONE_PER_REPO: '1' }, encoding: 'utf8' });
+    assert.strictEqual(r.status, 2, `${repo}: ${r.stderr}`);
+    assert.match(r.stderr, /producto\/plataforma\/servicio/, repo);
+    assert.ok(m.llamadas().some((l) => l.host === 'gitlab.example.com' && l.ruta.startsWith(`${RUTA}/`)), `${repo}: ${JSON.stringify(m.llamadas())}`);
   }
 });

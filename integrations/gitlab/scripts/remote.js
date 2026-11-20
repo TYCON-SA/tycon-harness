@@ -36,9 +36,9 @@ function identityFromRemote(url, declarados) {
   if (segmentos.length < 2 || !tramos(id)) return null;
   const declarado = lista.find((r) => hostDe(r) === p.host && igual(r.namespace, id.namespace) && igual(r.repo, id.repo));
   if (declarado) return { platform: 'gitlab', ...(declarado.host === undefined ? {} : { host: declarado.host }), namespace: declarado.namespace, repo: declarado.repo };
-  // un repo sin declarar de un servidor declarado: sin `host` sólo si es el público y así se lo declara
-  const sinHost = p.host === PUBLIC_HOST && lista.some((r) => r.host === undefined || r.host === null);
-  return { platform: 'gitlab', ...(sinHost ? {} : { host: p.host }), ...id };
+  // un repo sin declarar de un servidor declarado: lleva el servidor de su dirección, también el público. Sin él, el
+  // conector no sabría dónde vive (con un servidor propio declarado, un repo sin declarar y sin host se rechaza)
+  return { platform: 'gitlab', host: p.host, ...id };
 }
 
 module.exports = { identityFromRemote };
