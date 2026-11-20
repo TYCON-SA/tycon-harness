@@ -876,11 +876,41 @@ test('T9b Lista_EnlaceAUnRepoFueraDelGrupo_SeNiega — @story-8.316 @ac-5', { sk
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /no vale como hermano/);
   assert.ok(!fs.existsSync(path.join(estado(h), 'adhoc', 's9b.json')));
+  // un enlace colgante (su destino todavía no existe) hacia Z también se niega
+  fs.symlinkSync(path.join(Z, 'src', 'nuevo.cs'), path.join(c.R, 'src', 'colgante.cs'));
+  assert.match(norma(['src/colgante.cs'], c.R).problema || '', /lleva, por un enlace, al repo Z/);
   // un enlace que lleva a un hermano declarado, o dentro del propio repo, pasa
   fs.symlinkSync(c.B, path.join(c.R, 'alB'));
   assert.deepStrictEqual(norma(['alB/src/A.cs'], c.R).lista, [path.join(c.B, 'src', 'A.cs')]);
   fs.symlinkSync(path.join(c.R, 'src'), path.join(c.R, 'propio'));
   assert.ok(!norma(['propio/x.js'], c.R).problema);
+});
+
+// 🔴 Falla con: un enlace creado o reapuntado DESPUÉS de abrir el carril, que el portón de edición resuelve en ese
+//    momento y deja editar un repo que la lista no nombraba.
+test('T9c Porton_EnlacePosteriorAOtroRepo_Frena — @story-8.316 @ac-15', { skip: process.platform === 'win32' }, () => {
+  const c = tresRepos('t9c-316');
+  const Z = repo(c.raiz, 'Z');
+  fs.mkdirSync(path.join(Z, 'src', 'dd'), { recursive: true });
+  fs.writeFileSync(path.join(Z, 'src', 'f.js'), 'x');
+  fs.writeFileSync(path.join(Z, 'src', 'dd', 'y.js'), 'x');
+  fs.mkdirSync(path.join(c.R, 'd'), { recursive: true });
+  fs.writeFileSync(path.join(c.R, 'real.js'), 'x');
+  fs.symlinkSync(path.join(c.R, 'real.js'), path.join(c.R, 'adentro.js'));
+  const n = norma(['link.js', 'd/y.js', 'adentro.js', 'B/src/A.cs'], c.R);
+  assert.ok(n.lista, n.problema);
+  const fuera = (filePath) => lista().fueraDeLaLista({ lista: n.lista, filePath, real: fs.existsSync(filePath) ? fs.realpathSync(filePath) : filePath, repoRoot: null, delegado: true });
+  // un enlace dentro del propio repo, ya en la lista al abrir: se edita por los dos nombres
+  assert.equal(fuera(path.join(c.R, 'adentro.js')), null);
+  // después de abrir: link.js pasa a ser un enlace a Z, y la carpeta d, un enlace a una carpeta de Z
+  fs.symlinkSync(path.join(Z, 'src', 'f.js'), path.join(c.R, 'link.js'));
+  fs.rmSync(path.join(c.R, 'd'), { recursive: true });
+  fs.symlinkSync(path.join(Z, 'src', 'dd'), path.join(c.R, 'd'));
+  for (const f of [path.join(c.R, 'link.js'), path.join(Z, 'src', 'f.js'), path.join(c.R, 'd', 'y.js'), path.join(Z, 'src', 'dd', 'y.js')]) {
+    assert.ok(fuera(f), `${f}: el portón dejó editar un repo que la lista no nombraba`);
+  }
+  // el hermano de la lista se sigue editando
+  assert.equal(fuera(path.join(c.B, 'src', 'A.cs')), null);
 });
 
 test('T10 ParaOtraSesion_UsaElGrupoDeLaDestino — @story-8.316 @ac-6', () => {

@@ -71,8 +71,11 @@ function normalizar(entradas, { cwd = process.cwd() } = {}) {
     if (h && !abs.startsWith(h.raiz + path.sep)) return { problema: `«${s}» sale de la raíz de ${h.nombre}` };
     // por un enlace de la carpeta propia (de una carpeta o del archivo), la ruta real puede caer en otro repo: vale el
     // propio o un hermano declarado, como con `<Nombre>/`
-    if (!h && abs !== path.join(sinEnlaces(cwd), s)) {
-      const ajeno = repoAjenoPorEnlace(abs, cwd, hermanos);
+    // un enlace colgante del final no se resuelve: su destino se lee del enlace
+    let destino = abs;
+    try { if (fs.lstatSync(pedida).isSymbolicLink() && abs === unidadEnMayuscula(path.resolve(pedida))) destino = sinEnlaces(path.resolve(path.dirname(pedida), fs.readlinkSync(pedida))); } catch (_) { destino = abs; }
+    if (!h && (destino !== path.join(sinEnlaces(cwd), s))) {
+      const ajeno = repoAjenoPorEnlace(destino, cwd, hermanos);
       if (ajeno) return { problema: `«${s}» lleva, por un enlace, al ${ajeno}` };
     }
     let carpeta = false;
@@ -456,6 +459,28 @@ function esTemporal(abs) {
 }
 
 /**
+ * Las raíces reales de los repos que nombra la lista tal como se guardó: de cada entrada se sube por sus carpetas sin
+ * seguir un enlace, hasta la primera con `.git`. Un enlace creado después de abrir no cambia el repo de la entrada.
+ */
+function reposEscritos(lista) {
+  const raices = new Set();
+  for (const x of lista) {
+    let d = path.dirname(String(x));
+    for (;;) {
+      let enlace = false;
+      try { enlace = fs.lstatSync(d).isSymbolicLink(); } catch (_) { enlace = false; }
+      let conGit = false;
+      try { fs.statSync(path.join(d, '.git')); conGit = true; } catch (_) { conGit = false; }
+      if (!enlace && conGit) { raices.add(sinEnlaces(d)); break; }
+      const arriba = path.dirname(d);
+      if (arriba === d) break;
+      d = arriba;
+    }
+  }
+  return [...raices];
+}
+
+/**
  * ¿La ruta cae fuera de la lista? null (está, o está exenta) o `{ archivo, motivo }`. `filePath` y `real` (la ruta real,
  * por los enlaces) los da el borde, con la raíz real de su repo (`repoRoot`, null fuera de un repo). Fuera de un repo
  * frena salvo la carpeta temporal; la carpeta personal frena al carril delegado y no al de una persona.
@@ -467,7 +492,10 @@ function fueraDeLaLista({ lista, filePath, real, repoRoot, home = os.homedir(), 
   const escrito = escritoDe(filePath);
   // cada entrada vale por su nombre y por su destino: un enlace de la lista se edita por cualquiera de los dos
   const set = new Set(lista.flatMap((x) => [sinEnlaces(x), escritoDe(x)]));
-  if (set.has(abs) && set.has(escrito)) return null;
+  // un destino que la lista no nombraba al abrir, alcanzado por un enlace de ahora, vale sólo en un repo de la lista: un
+  // enlace creado o reapuntado después no la agranda a otro repo
+  const deLaLista = lista.some((x) => unidadEnMayuscula(String(x)) === abs) || reposEscritos(lista).some((r) => abs === r || abs.startsWith(r + path.sep));
+  if (set.has(abs) && set.has(escrito) && deLaLista) return null;
   const raiz = repoRoot ? sinEnlaces(repoRoot) : raizDe(abs);
   if (!raiz) {
     // la carpeta personal antes que la temporal: al delegado lo frena aunque la carpeta personal caiga en la temporal
