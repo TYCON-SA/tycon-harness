@@ -103,6 +103,11 @@ test('adhoc-sensitive: el mensaje del bloqueo dice el motivo sensible, no «cód
   assert.ok(msg.includes(r.reason), `el mensaje lleva el motivo: ${msg}`);
   assert.match(msg, /lo firma una persona/, msg);
   assert.match(msg, /detectado en Edit/, msg);
+  // sin la lista de lo sensible no dice que el archivo es sensible: dice que falta la lista
+  const sinLista = gate.computeStoryGate({ ...BASE, adhoc: delegado, sensitiveCheck: () => { throw new Error('sin lista'); } });
+  const m2 = gate.blockMessage(sinLista, { filePath: `${REPO}/src/Foo.cs`, repoRoot: REPO });
+  assert.doesNotMatch(m2, /ARCHIVO SENSIBLE|CÓDIGO SIN CARRIL/, m2);
+  assert.match(m2, /FALTA LA LISTA DE LO SENSIBLE/, m2);
 });
 
 // El cupo de un arreglo rápido delegado: hasta 5 archivos, pida lo que pida.

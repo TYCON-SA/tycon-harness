@@ -521,6 +521,13 @@ test('Medida_PedidoEnOtroRepo_NoCobraLaSesion — abrir el pedido en otro clon n
   }
   // el pedido en el repo del carril sigue cobrando el tope
   frena(decidir(h, d, 'gh pr create --fill'), EL_TOPE);
+  // un pedido que nombra a qué repo o desde qué rama va lleva esa rama, no la carpeta: desde otro repo es del carril
+  const url = origenDe(d);
+  for (const command of ['gh pr create -R acme/carril --head story/la-medida --fill', 'gh -R acme/carril pr create --fill',
+    'gh pr create -Racme/carril --fill', `gh pr create --repo=${url} --fill`, 'gh pr create -H story/la-medida --fill',
+    'az repos pr create --repository carril --source-branch story/la-medida --target-branch main', 'GH_REPO=acme/carril gh pr create --fill']) {
+    frena(decidir(h, otro, command), EL_TOPE, command);
+  }
 });
 
 test('T30 Lector_PushdPopd_VuelveALaCarpeta @story-8.190 @ac-16', (t) => {

@@ -891,7 +891,7 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
     if (plataforma && plataforma.programas.has(cmd)) {
       const p = pedidoDe(ps, cmd, plataforma.pedidos);
       if (p && p.opaco) opaco(ctx.dirs[0]);
-      else if (p) guardar({ tipo: 'pr', forma: p.forma, dir: ctx.dirs[0] });
+      else if (p) guardar({ tipo: 'pr', forma: p.forma, dir: ctx.dirs[0], palabras: ps.slice(1) });
       return;
     }
     // un programa que corre git por su cuenta. Si además cambia de carpeta por su cuenta (`process.chdir`, `os.chdir`,
@@ -1147,7 +1147,10 @@ function findingsDe(m) {
   } catch (_) { return null; }
 }
 
-const COMO_SALE_EL_PEDIDO = 'Antes de que salga, el arnés le pregunta a la persona en la ventana de permiso; con el sí, sale.';
+// una palabra de un pedido que nombra a qué repo o desde qué rama va (gh: -R, --repo, -H, --head; az: --repository,
+// --source-branch, --org, --project), pegada a su valor o no
+const PEDIDO_CON_DESTINO = /^(-R|-H|--repo|--head|--repository|--source-branch|--org|--organization|--project|-p)(=|$)|^-[RH]./;
+const COMO_SALE_EL_PEDIDO ='Antes de que salga, el arnés le pregunta a la persona en la ventana de permiso; con el sí, sale.';
 /** La ventana del pedido: qué sale, de qué historia y con qué evidencia; nunca el comando. Hasta 1000 caracteres. */
 function preguntaDelPedido({ forma, m, repos, noLeo = false }) {
   const nombres = (repos || []).map((r) => path.basename(r)).join(', ');
@@ -1292,9 +1295,13 @@ function decidirCarril({ command, cwd, sid, home }) {
     return { texto: `🔒 GUARDAR: no pude medir este camino corto (${sinUbicar[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
   }
   const conRaiz = cs.filter((c) => { try { return !!raiz(c.dir); } catch (_) { return false; } }).length;
-  // el trabajo de otro repo no es de este carril: no le pide su tope, su maqueta ni sus datos. El pull request también:
-  // se juzga por el repo donde corre, como el commit y el empuje (abrirlo en otro clon no cuenta los archivos del carril)
-  const esDelCarril = !repos.length || dudas.length || conRaiz < cs.length || cs.some((c) => c.opaco) || delComando.some((r) => repos.includes(r));
+  // el trabajo de otro repo no es de este carril: no le pide su tope, su maqueta ni sus datos. El pull request también,
+  // pero sólo si no nombra a dónde va: un pedido lleva la rama que dice `--head`/`--source-branch`, en el repo que dice
+  // `-R`/`--repo`/`--repository`, no los archivos de la carpeta donde corre. Si nombra alguno, es del carril (ante la duda)
+  // `GH_REPO` en el comando cambia el repo sin que lo diga el pedido; sin palabras leídas, tampoco se sabe
+  const nombraDestino = (c) => c.tipo === 'pr' && (!Array.isArray(c.palabras) || /(^|[^A-Za-z0-9_])GH_(REPO|HOST)=/.test(command)
+    || c.palabras.some((w) => PEDIDO_CON_DESTINO.test(w)));
+  const esDelCarril = !repos.length || dudas.length || conRaiz < cs.length || cs.some((c) => c.opaco || nombraDestino(c)) || delComando.some((r) => repos.includes(r));
   // lo que git todavía no sigue puede subir en un solo comando que empuja después de hacer otra cosa, y este freno corre antes:
   // no hay un guardado siguiente que lo cuente. Sin empujar, el siguiente sí lo cuenta. No se busca el `git add` en el texto:
   // tiene sinónimos y atajos, y la palabra puede estar en un mensaje

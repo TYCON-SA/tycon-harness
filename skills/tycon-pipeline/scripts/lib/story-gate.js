@@ -519,7 +519,17 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
     ]).filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'adhoc-sensitive') {
-    // el carril está abierto (por delegación o «hecho y avisado»): lo que falta es la firma de una persona, no un carril
+    // el carril está abierto (por delegación o «hecho y avisado»): lo que falta es la firma de una persona, no un carril.
+    // Sin la lista de lo sensible no se sabe si el archivo lo es: se dice eso, no que es sensible
+    if (/no encuentra la lista de lo sensible/.test(String(r.reason))) {
+      return [
+        '⛔ camino rápido delegado — FALTA LA LISTA DE LO SENSIBLE',
+        viaLine.replace(/\n$/, ''),
+        `  Ibas a editar ${f}: ${r.reason}.`,
+        '  Sin esa lista no se sabe qué archivos son sensibles, y el camino rápido delegado no toca ninguno. Suele ser una',
+        '  instalación del arnés incompleta: reinstalarlo la trae. Mientras tanto, pedíselo a una persona.',
+      ].filter((l) => l !== '').join('\n');
+    }
     return [
       '⛔ camino rápido delegado — ARCHIVO SENSIBLE',
       viaLine.replace(/\n$/, ''),
