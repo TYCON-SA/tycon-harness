@@ -42,7 +42,8 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
    <sesión>`). Con el dueño ausente (la marca de ausente, o la pregunta sin respuesta pasados los minutos de
    `plan_review.owner_away_minutes`), según `plan_review.routine_owner_away`: revisar sin preguntar, esperar o seguir sin
    revisión. Con «seguir sin revisión», el plan lo firma el dueño.
-3. **Quién lanza la revisión.**
+3. **Quién lanza la revisión.** Se lanza con «Armar el plan» cerrado y sin una pregunta abierta a la persona sobre esta
+   revisión (salvo que cuente como ausente): si no, `plan-review` se niega sin lanzar nada y dice por qué.
    - **Con coordinadora**, la lanza la coordinadora: `marker.js plan-review --for-session <sesión>` prepara la revisión y devuelve los args
      del pase (`modo: 'plan'`, con su `pedido`, un número al azar de esta revisión) y en `comando` la línea que lo corre
      con el revisor de la organización. Si la sesión tiene la herramienta Workflow, puede usarla con los mismos args.
@@ -69,8 +70,9 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
      `plan_review.rejected_reaches_owner` en sí o al llegar al tope de rechazos seguidos (`review.max_rounds`, de
      fábrica 3): entonces llega con los hallazgos y «rechazado N veces seguidas», y el dueño decide partir la historia o
      firmar una vuelta extra.
-   - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan cambió
-     mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño.
+   - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan o la historia
+     cambiaron mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño. No se
+     relanza por cada cambio: se juntan todos, y se relanza cuando el plan y la historia quedaron como van a quedar.
    - **4d. Sin revisión.** Con `skip`, con `never` o eligiendo seguir sin revisión: el plan lo firma el dueño, y su
      cuadro lo dice («sin revisión (se eligió seguir)» o «sin revisión (el perfil no revisa)»).
 
