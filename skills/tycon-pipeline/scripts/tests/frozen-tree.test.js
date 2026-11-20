@@ -1145,6 +1145,9 @@ test('T32 Changed_NotExecuted_GoesApart_OnlyWithTheOption — imágenes y la gu�
     'src/index.html': '<p>1</p>\n', 'src/icono.svg': '<svg/>\n', 'docs/guia.md': 'a\n', 'notas/leeme.txt': 'a\n', 'requirements.txt': 'a\n', 'CMakeLists.txt': 'a\n',
     'skills/s/SKILL.md': 'a\n', 'CLAUDE.md': 'a\n', 'CLAUDE.local.md': 'a\n', 'AGENTS.override.md': 'a\n', 'guides/coordination.md': 'a\n',
     'e2e/a.spec.ts-snapshots/x.png': 'p', 'tests/__snapshots__/y.png': 'p', 'tests/baseline/z.png': 'p', 'bin/correr.png': 'p', 'public/borrada.png': 'p',
+    // la vuelta 2 del pase: las carpetas de referencia de otras herramientas, la de Flutter y las de instrucciones
+    'backstop_data/bitmaps_reference/a.png': 'p', 'baseline_images/b.png': 'p', '.loki/reference/c.png': 'p', '.reg/expected/d.png': 'p',
+    'test/goldens_widget.png': 'p', 'skills/s/icono.png': 'p', '.github/logo.png': 'p',
   };
   const { repo, git } = repoDeJuguete('ne', inicio);
   fs.chmodSync(path.join(repo, 'bin', 'correr.png'), 0o755);
@@ -1170,6 +1173,12 @@ test('T32 Changed_NotExecuted_GoesApart_OnlyWithTheOption — imágenes y la gu�
   fs.writeFileSync(path.join(repo, 'public', 'falso.png'), 'ahora es un archivo\n');
   const deEnlaceAArchivo = ft().changed(repo, conEnlace, ft().seal(repo).tree, { ...opts, sinEjecutar: true });
   assert.ok(deEnlaceAArchivo.files.includes('public/falso.png'), JSON.stringify(deEnlaceAArchivo));
+  // una carpeta qa que cuelga de una que la app sirve (la historia en public/stories): su guía cuenta
+  const pub = repoDeJuguete('ne-pub', { 'public/stories/story-9.9-x.md': '# h\n', 'public/qa/story-9.9-x-guia.html': '<p>1</p>\n' });
+  const a = ft().seal(pub.repo).tree;
+  fs.appendFileSync(path.join(pub.repo, 'public', 'qa', 'story-9.9-x-guia.html'), '<script>x()</script>\n');
+  const enPublic = ft().changed(pub.repo, a, ft().seal(pub.repo).tree, { storyRel: 'public/stories/story-9.9-x.md', sinEjecutar: true });
+  assert.deepStrictEqual([enPublic.files, enPublic.noSeEjecutan], [['public/qa/story-9.9-x-guia.html'], []], JSON.stringify(enPublic));
 });
 
 test('T33 PrepareCommit_NotExecutedOnly_DoesNotBlock — la guía de prueba y una captura de la historia no frenan; el código o un .md suelto sí', () => {

@@ -341,18 +341,25 @@ const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
   .filter((l) => { const t = l.trimStart(); return !(t.startsWith(clave) && !/^\d+-/.test(t.slice(clave.length))); }).join('\n');
 
 // Lo que no se ejecuta (defectos del 20/11, punto 1), por lista y no por descarte: lo que no está en la lista cuenta.
-//   · una imagen (.png, .jpg, .jpeg, .gif, .webp), salvo la de referencia de una prueba visual (carpetas de capturas o
-//     de referencia de las pruebas, o `*-snapshots`), que una prueba compara;
+//   · una imagen (.png, .jpg, .jpeg, .gif, .webp) fuera de una ruta de pruebas o de referencias, que una prueba visual
+//     puede comparar;
 //   · en la carpeta qa de la historia, un archivo de ESTA historia (su nombre empieza con el de la historia) que sea su
-//     guía o su informe (.html, .htm, .md, .pdf) o una imagen.
+//     guía o su informe (.html, .htm, .md, .pdf) o una imagen, si la carpeta no cuelga de una que la app sirve o compila.
+// Nada de eso vale dentro de una carpeta de instrucciones para un agente (skills, agents, .claude, .github y demás).
 // Nunca un archivo nuevo o cambiado que no sea común en los dos sellos (`100644`), ni un borrado: un enlace que pasa a
 // archivo, un ejecutable o un submódulo cuentan. Un .md o .txt suelto tampoco: puede ser la instrucción de un agente
 // (un CLAUDE.local.md, lo que importa un CLAUDE.md) o algo que corre (requirements.txt, un doctest). Lo sensible del
 // catálogo cuenta siempre.
 const IMAGENES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 const DE_LA_GUIA = new Set(['.html', '.htm', '.md', '.pdf']);
-// las imágenes que una prueba visual compara: cambiarlas cambia lo que la prueba acepta
-const DE_PRUEBA_VISUAL = /(^|\/)([^/]*-snapshots|__snapshots__|__screenshots__|__image_snapshots__|snapshots|screenshots|baselines?|golden|goldens|reference-images)\//;
+// una imagen en una ruta de pruebas o de referencias la puede comparar una prueba visual (cada herramienta usa su carpeta:
+// `*-snapshots`, `backstop_data/bitmaps_reference`, `baseline_images`, `.loki/reference`, `.reg/expected`, la de Flutter
+// al lado de su prueba): cambiarla cambia lo que la prueba acepta, y cuenta
+const DE_PRUEBA_VISUAL = /(^|\/)[^/]*(test|spec|e2e|cypress|playwright|snapshot|screenshot|baseline|reference|golden|expected|backstop|visual|\.loki|\.reg)[^/]*\//;
+// una imagen o un texto en una carpeta de instrucciones para un agente es parte de esa instrucción: cuenta
+const DE_INSTRUCCIONES = /(^|\/)(skills|agents|commands|steps|prompts|rules|hooks|integrations|packs|guides|\.claude|\.codex|\.cursor|\.github)\//;
+// una carpeta qa que cuelga de una carpeta que la app sirve o compila no es papeleo: lo que hay ahí puede publicarse
+const DE_LA_APP = /(^|\/)(public|static|www|wwwroot|dist|build|out|assets|src|app|pages|lib)(\/|$)/;
 
 /**
  * ¿`rel` (relativa al repo, con `/`) es algo que no se ejecuta? `modos` son los dos de git (`[antes, después]`, con
@@ -365,7 +372,9 @@ function noSeEjecuta(rel, modos, qaRel, historia) {
   const bajo = String(rel).toLowerCase();
   if (require('./save-ok.js').esSensible(bajo)) return false;
   const ext = path.posix.extname(bajo);
+  if (DE_INSTRUCCIONES.test(bajo)) return false;
   if (qaRel && historia && bajo.startsWith(`${qaRel.toLowerCase()}/`)) {
+    if (DE_LA_APP.test(qaRel.toLowerCase())) return false;
     const nombre = bajo.slice(qaRel.length + 1);
     return !nombre.includes('/') && nombre.startsWith(`${historia.toLowerCase()}-`) && (DE_LA_GUIA.has(ext) || IMAGENES.has(ext));
   }
