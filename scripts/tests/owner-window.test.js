@@ -170,6 +170,44 @@ test('OwnerWindow_GuionAprobado_FirmaConVentana (T8)', (t) => {
   }
 });
 
+// «Avisar si cambia la consola»: cuando la herramienta cambia la forma con que corre sus comandos, `desenvolver` no la
+// reconoce y daba null callado: el click del dueño se gastaba sin decir por qué y el freno dejaba de ver las consolas de
+// fondo sin que nadie lo supiera. Ahora el guion lo dice, y las dos cosas quedan en hook-errors.log, que el aviso de
+// arranque cuenta (hook-failures-notice.js), sin la línea de comando.
+test('OwnerWindow_ConsolaConOtraForma_LoDiceYQuedaAnotado @aviso-consola', (t) => {
+  const [firma, cmd, argv] = GUIONES[0];
+  const casa = casaNueva(t);
+  pedir(casa, cmd);
+  const nueva = (c, o) => envolver(casa, c, o).replace(" && { \\builtin unalias", " && \\builtin typeset -g CLAUDE_NUEVO=1 2>/dev/null || true && { \\builtin unalias");
+  assert.notStrictEqual(nueva(cmd), envolver(casa, cmd), 'la prueba arma otra forma');
+  assert.strictEqual(ow.desenvolver(nueva(cmd), casa), null, 'la forma nueva no se reconoce');
+  const log = path.join(require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(casa), 'hook-errors.log');
+  const leer = () => { try { return fs.readFileSync(log, 'utf8'); } catch (_) { return ''; } };
+  const CAMBIO = /cambió la forma de su consola/;
+  // un padre que no es una consola de la herramienta: el motivo de siempre, sin anotar nada
+  let v = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: 'bash /tmp/mio.sh' }), casa, ahora: AHORA });
+  assert.strictEqual(v.ok, false);
+  assert.doesNotMatch(v.motivo, CAMBIO);
+  assert.doesNotMatch(leer(), CAMBIO);
+  // la consola de la herramienta con otra forma: el click no vale, se dice por qué y queda anotado sin la línea de comando
+  v = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: nueva(cmd) }), casa, ahora: AHORA });
+  assert.strictEqual(v.ok, false);
+  assert.match(v.motivo, /la herramienta cambió la forma de su consola/);
+  assert.match(v.motivo, /--terminal/, 'dice la salida por la terminal');
+  assert.match(leer(), /\] owner-window FAILED CLOSED: la herramienta cambió la forma de su consola/);
+  assert.doesNotMatch(leer(), /approve-plan|CLAUDE_NUEVO|dale, seguí/, 'sin la línea de comando');
+  assert.strictEqual(vigentes(casa).length, 1, 'nada lo consumió');
+  // del lado del freno: una consola de fondo con la forma nueva no se ve; queda anotado que el freno no la ve
+  fs.rmSync(log, { force: true });
+  pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [{ pid: 400, ppid: 100, inicio: INICIO, comando: nueva('sleep 99', { deFondo: true }) }] }) });
+  assert.match(leer(), /\] owner-window FAILED OPEN: la herramienta cambió la forma de su consola/);
+  assert.doesNotMatch(leer(), /sleep 99|CLAUDE_NUEVO/, 'sin la línea de comando');
+  // con la forma de siempre no se anota nada
+  fs.rmSync(log, { force: true });
+  pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [{ pid: 400, ppid: 100, inicio: INICIO, comando: envolver(casa, 'sleep 99', { deFondo: true }) }] }) });
+  assert.doesNotMatch(leer(), CAMBIO);
+});
+
 test('OwnerWindow_FirmaEscondida_NoFirma (T9)', (t) => {
   const [firma, cmd, argv] = GUIONES[0];
   const casa = casaNueva(t);
