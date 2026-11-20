@@ -115,3 +115,4 @@ Los issues y los pull requests pueden ir en castellano o en inglés.
 
 Participar en este repo es aceptar el [código de conducta](CODE_OF_CONDUCT.md). Una vulnerabilidad no se reporta en un
 issue público: [SECURITY.md](SECURITY.md) dice cómo reportarla en privado.
+
