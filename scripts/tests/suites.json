@@ -4443,6 +4443,12 @@
       "requiere": []
     },
     {
+      "__nota": "2026-11-19 (decisión del dueño, propuesta 4 de la validación del privado): el banco de controles corre en la validación de un pedido sólo si el cambio toca lo que el banco lee. scripts/ci/bench-for-change.js dice `si` o `no`: se saltea sólo si TODO lo tocado es una suite o un dato de una subcarpeta de fixtures que el banco no lee; un freno, una biblioteca, una skill, una ruta rara, una lista vacía o ilegible, `--all` o `main` corren. Recorre el código que corre el banco y se pone roja si aparece un lector nuevo de scripts/tests/. Sin bash ni red.",
+      "raiz": "arnes",
+      "ruta": "tests/bench-for-change.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "2026-10-06 (story 8.22, tramo D): el tope de cada suite en la validación de cada rama. scripts/ci/run-capped.js corta una suite que pasa su tope, con todo lo que lanzó: un pedido mal hecho (también un tope que desborda el temporizador) no corre nada, un comando que no arranca sale 127, el código de la suite pasa tal cual, y al cortar lo que ignora el TERM tiene 5 s de gracia antes del KILL. Sólo POSIX en lo de grupos de procesos.",
       "raiz": "arnes",
       "ruta": "tests/run-capped.test.js",
