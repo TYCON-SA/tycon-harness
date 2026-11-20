@@ -36,7 +36,7 @@
 #       pruebas, `npx`, `dotnet` o `npm` (no se corrió NADA)
 #       · 6 la suite salió 0 sin ninguna prueba corrida, o sin informe que lo cuente (no es verde).
 #       · 7 «sin acotar»: la corrida del repo hermano no pudo acotarse a lo tocado (no se sabe qué se tocó, o ninguna
-#       suite lo lee) y no corrió nada: no es verde ni rojo; la cubre la CI del pedido, y el merge la exige en verde.
+#       suite lo lee) y no corrió nada: no es verde ni rojo; la cubre la CI del pedido (esta máquina no comprueba que salga verde).
 #
 # Sin `python3`, `timeout` ni `realpath`: en Windows no son
 # requisito. El informe es lib/test-gate-report.js.
@@ -363,7 +363,7 @@ correr_hermanos_al_salir() {
   if [[ "$final" == "7" ]]; then
     marcar_tests_en_rojo 7 "sin acotar: la cubre la CI del pedido (un repo hermano no se pudo acotar a lo tocado); no es verde"
     ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-scoped "un repo hermano no se pudo acotar a lo tocado" ) >&2 || true
-    echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — el merge exige la CI completa en verde." >&2
+    echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — antes del merge, mirá que salga verde (esta máquina no lo comprueba)." >&2
   elif [[ "$final" == "3" && -n "${TG_NOT_MEASURED:-}" ]]; then
     # la corrida del hermano dejó su verde en el marcador: el total vuelve a «sin medir»
     ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-measured "$TG_NOT_MEASURED" ) >&2 \
@@ -1118,7 +1118,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     TG_FULL_SUITE_BY="$(node "$SCRIPT_DIR/lib/test-gate-scope.js" "$REPO_RUN")" || _tg_scope_rc=$?
     if [[ "$_tg_scope_rc" == "0" && -n "$TG_FULL_SUITE_BY" ]]; then
       LIGHT_ARGS=(--scoped-by-repo "$TG_FULL_SUITE_BY")
-      echo "[test-gate] el repo acota el portón (test_gate en .test-gate.yaml): si se sabe qué se tocó, corren sólo las suites que lo leen; la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY)"
+      echo "[test-gate] el repo acota el portón (test_gate en .test-gate.yaml): si se sabe qué se tocó, corren sólo las suites que lo leen; la suite completa la corre $TG_FULL_SUITE_BY"
     elif [[ "$_tg_scope_rc" != "10" ]]; then
       echo "[test-gate] ⚠️  no pude leer test_gate de .test-gate.yaml (salió $_tg_scope_rc): corre la suite entera" >&2
     fi
@@ -1611,7 +1611,7 @@ if [[ "$SUITE_EXIT" == "7" ]] && ! { [[ "$RUNNER" == "suites-json" ]] && es_sin_
 fi
 if [[ "$SUITE_EXIT" == "7" ]]; then
   ( cd "$REPO_RUN" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-scoped "$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).unscoped_reason||""))}catch(e){}' "$OUT_FILE")" ) >&2 || true
-  echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — no se corrió ninguna suite (el motivo está en $OUT_FILE). No es verde: el merge exige la CI completa en verde." >&2
+  echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — no se corrió ninguna suite (el motivo está en $OUT_FILE). No es verde: antes del merge, mirá que la CI del pedido salga verde (esta máquina no lo comprueba)." >&2
 fi
 if [[ "$SUITE_EXIT" == "0" ]]; then
   _VERDE="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(j.suite_green===true?"si":(j.totals&&j.totals.failed>0)?"falla":"no")}catch(e){process.stdout.write("no")}' "$OUT_FILE")"
@@ -1631,8 +1631,8 @@ fi
 # TYCON_GATE_ALL_SUITES=1, o sin saber qué se tocó, corrió todo y su resumen no trae `scoped`).
 if [[ -n "${TG_FULL_SUITE_BY:-}" && "$RUNNER" == "suites-json" ]] \
   && node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scoped ? 0 : 1)' "$RESULTS_DIR/suites.json" 2>/dev/null; then
-  _tg_tope="$(node -e 'try{const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scoped.capped;if(c)process.stdout.write(`, hasta el tope de ${c.max} (las ${c.deferred} menos cercanas quedan para esa CI)`)}catch(e){}' "$RESULTS_DIR/suites.json" 2>/dev/null || true)"
-  echo "[test-gate] la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY): en esta máquina corrieron sólo las suites que leen lo tocado${_tg_tope}" >&2
+  _tg_tope="$(node -e 'try{const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scoped.capped;if(c)process.stdout.write(`, hasta el tope de ${c.max} (las ${c.deferred} menos cercanas quedan para quien corre la completa)`)}catch(e){}' "$RESULTS_DIR/suites.json" 2>/dev/null || true)"
+  echo "[test-gate] la suite completa la corre $TG_FULL_SUITE_BY: en esta máquina corrieron sólo las suites que leen lo tocado${_tg_tope}" >&2
 fi
 
 exit "$SUITE_EXIT"

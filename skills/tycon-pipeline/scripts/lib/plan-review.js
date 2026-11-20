@@ -34,6 +34,9 @@ const APROBADOS = Object.freeze(['aprobado', 'aprobado-con-notas']);
 const LA_COORDINADORA = 'la revisión automática para otra sesión la lanza la coordinadora';
 const ESPERA = 'la revisión no dio aprobado: el plan espera a una persona';
 const CAMBIO = 'el plan cambió mientras corría la revisión';
+const CAMBIO_HISTORIA = 'la historia cambió mientras corría la revisión';
+// el plan o la historia cambiaron mientras corría: los dos cuentan para el reintento, que es uno solo por corrida
+const esCambio = (motivo) => motivo === CAMBIO || motivo === CAMBIO_HISTORIA;
 const KINDS = Object.freeze(['plan', 'code']);
 const CHOICES = Object.freeze(['review', 'skip', 'wait']);
 
@@ -267,6 +270,21 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   let marker;
   try { marker = marcadorDe(estado, dest); } catch (e) { return no(e.message); }
   if (!marker) return no(`la sesión ${dest} no tiene una ejecución abierta`);
+  // la revisión es del plan cerrado: con «Armar el plan» abierto, el plan todavía cambia y la revisión se pierde
+  if (!require('./steps.js').isDone(marker, 'plan')) return no(`el plan de la sesión ${dest} no está cerrado: se lanza la revisión después de cerrar «Armar el plan» (complete-step plan)`);
+  // una pregunta a la persona sin contestar sobre la revisión de este plan: primero su respuesta, salvo que cuente como ausente
+  {
+    const sinRegistro = [];
+    const pregunta = preguntasAbiertas({ estado, problemas: sinRegistro }).find((p) => p.sesion === dest && p.kind === 'plan');
+    if (sinRegistro.length) return no(`no pude leer las preguntas a la persona (${sinRegistro[0]}): sin saber si hay una abierta no se lanza`);
+    if (pregunta) {
+      const cfgPregunta = configUsada(config);
+      let marca = null;
+      try { marca = require(path.join(RAIZ, 'scripts', 'lib', 'owner-away.js')).get({ estado }).mark; } catch (_) { marca = null; }
+      const away = policy().ownerAway({ mark: marca, askedAt: Date.parse(pregunta.ts), now: Date.now(), minutes: cfgPregunta.plan_review.owner_away_minutes });
+      if (!away.away) return no(`hay una pregunta abierta a la persona sobre la revisión de este plan (desde ${pregunta.ts}): se lanza con su respuesta (review-answer) o cuando cuente como ausente`);
+    }
+  }
   let plan;
   try { plan = planDe(marker); } catch (e) { return no(`no pude encontrar el plan de la corrida (${e.message})`); }
   if (plan.error) return no(`no pude leer el plan de la corrida (${plan.file}: ${plan.error})`);
@@ -344,13 +362,17 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
   let ahoraPlan = null;
   try { ahoraPlan = fs.readFileSync(pedido.planFile, 'utf8'); } catch (_) { ahoraPlan = null; }
   let reintentar = false;
-  if (ahoraPlan === null || sha(ahoraPlan) !== pedido.huellas.plan) {
+  let ahoraHistoria = null;
+  try { ahoraHistoria = pedido.storyFile ? fs.readFileSync(pedido.storyFile, 'utf8') : null; } catch (_) { ahoraHistoria = null; }
+  const cambioElPlan = ahoraPlan === null || sha(ahoraPlan) !== pedido.huellas.plan;
+  const cambioLaHistoria = !!(pedido.huellas && pedido.huellas.story) && (ahoraHistoria === null || sha(ahoraHistoria) !== pedido.huellas.story);
+  if (cambioElPlan || cambioLaHistoria) {
     veredicto = 'sin-veredicto';
-    motivo = CAMBIO;
+    motivo = cambioElPlan ? CAMBIO : CAMBIO_HISTORIA;
     // se reintenta una sola vez por corrida sobre el plan cerrado; la segunda llega al dueño con este motivo. Sin el
     // registro no se sabe si ya se reintentó: no se reintenta
     const sinRegistro = [];
-    const yaReintento = revisionesDe(estado, dest, pedido.corrida, sinRegistro).some((j) => j.motivo === CAMBIO);
+    const yaReintento = revisionesDe(estado, dest, pedido.corrida, sinRegistro).some((j) => esCambio(j.motivo));
     reintentar = !yaReintento && !sinRegistro.length;
   }
   const confirmados = (!sinHerramienta && !noVale && resultado && Array.isArray(resultado.confirmed)) ? resultado.confirmed : [];
@@ -755,14 +777,17 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
     return { ...out, revisado: c.veredicto, rechazos: n, alDueno: { llega, motivo } };
   }
   if (revisado && c.veredicto !== 'sin-veredicto') return { ...out, revisado: c.veredicto };
+  // sin veredicto sobre este mismo plan porque cambió la historia mientras corría: se relanza como un plan cambiado
+  const deUnCambio = revisado && esCambio(c.motivo);
   // sin veredicto sobre este mismo plan: llega al dueño con el motivo
-  if (revisado) return { ...out, revisado: c.veredicto, alDueno: { llega: true, motivo: `no se pudo revisar: ${c.motivo || 'el pase no midió todo'}` } };
+  if (revisado && !deUnCambio) return { ...out, revisado: c.veredicto, alDueno: { llega: true, motivo: `no se pudo revisar: ${c.motivo || 'el pase no midió todo'}` } };
   // ya se revisó otra versión del plan en esta corrida: se vuelve a lanzar sobre el plan cerrado, sin volver a preguntar
   const deOtraVersion = !!(c && c.huellas && c.huellas.plan !== huellaPlan && mismaCorrida(c.corrida, corridaDe(marker)) && c.veredicto);
-  if (r.decision === 'run' || (deOtraVersion && r.decision === 'ask')) {
+  if (r.decision === 'run' || ((deOtraVersion || deUnCambio) && r.decision === 'ask')) {
     // el plan cambió mientras corría: se reintenta una sola vez sobre el plan cerrado; la segunda llega al dueño
-    const cambios = revisionesDe(estado, sesion, corridaDe(marker)).filter((j) => j.motivo === CAMBIO).length;
-    if (cambios >= 2) return { ...out, alDueno: { llega: true, motivo: `no se pudo revisar: ${CAMBIO}, dos veces` } };
+    const deCambio = revisionesDe(estado, sesion, corridaDe(marker)).filter((j) => esCambio(j.motivo));
+    const cambios = deCambio.length;
+    if (cambios >= 2) return { ...out, alDueno: { llega: true, motivo: `no se pudo revisar: ${deCambio[deCambio.length - 1].motivo}, dos veces` } };
     out.comando = hayCoordinadora ? `marker.js plan-review --for-session ${sesion}` : 'marker.js plan-review';
     out.lanza = hayCoordinadora ? 'coordinator' : 'session';
     if (cambios === 1) out.reintento = true;

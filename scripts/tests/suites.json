@@ -662,6 +662,12 @@
       "requiere": []
     },
     {
+      "__nota": "la revisión del plan se lanza sobre el plan cerrado: con «Armar el plan» abierto o con una pregunta sin contestar a la persona no se prepara, y un plan o una historia que cambian mientras corre se relanzan una sola vez entre los dos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-review-closed.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "lo que se firma sin persona pasa el control previo de su guion: la maqueta (nunca la de la propia sesión), el pendiente (la coordinadora confirmada, sobre un repo de la sesión destino) y lo de rutina que el perfil delega (sólo con una historia de rutina). Los guiones de verdad en una casa de juguete; unos veinte segundos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/approve-without-person.test.js",
@@ -701,6 +707,12 @@
       "__nota": "el freno del ok de guardar: el gancho del comando frena el commit, el push y los pedidos de una corrida sin la constancia vigente, y los de una corrida que cerró sin ella; clear sin el ok sale 2.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/save-brake.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el cambio a mano del estado de una historia lo ve el freno en cada tanda del bloque pipelines (la forma de lista y la de mapa), no sólo en la última.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-transition.test.js",
       "requiere": []
     },
     {
@@ -1789,6 +1801,12 @@
       "__nota": "story 8.161: la copia congelada de lo que revisa cada vuelta (sello, copia de sólo lectura, comparación con lo que se guarda) y la procedencia de cada prueba. Repos de juguete en una carpeta temporal, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/frozen-tree.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.217: un .js que sólo movió comentarios no pide otra vuelta de revisores; el lector de tokens ante la duda no decide. Textos de juguete y los .js de lib/ leídos, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/comment-only.test.js",
       "requiere": []
     },
     {

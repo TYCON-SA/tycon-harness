@@ -894,3 +894,25 @@ test('Cierre_NombreViejoSinRastro_Frena', () => {
   assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'origin/main'), false);
   assert.deepEqual(cerrar('origin/main').faltas.map((f) => f.regla), ['sin-registro-de-aprobaciones']);
 });
+
+// ── La firma del plan que dio la persona misma ─────────────────────────────────────────────────────
+
+// 🔴 Falla con: el plan firmado con «firmo» en la terminal del dueño anotado como automático «sin nombrar», o una vía
+// sin persona (la ventana sin nombre, la delegación, la revisión, el arnés, una pestaña sin permisos) anotada a su nombre.
+test('FirmaDelPlan_PorTerminal_EsDelDueno — la terminal, el click y el «aprobado» son de la persona; lo demás no', () => {
+  for (const via of ['terminal', 'click', 'mensaje']) {
+    assert.deepEqual(approvals.deLaPersona(via, 'ana'), { tipo: 'manual', quien: 'ana' }, via);
+    const linea = approvals.normalizar({ que: 'plan', ...approvals.deLaPersona(via, 'ana'), via });
+    assert.equal(linea.tipo, 'manual', `${via}: queda manual en el registro`);
+  }
+  for (const via of ['ventana', 'ventana-nueva', 'delegacion', 'revision', 'avisado', 'automatica', '', undefined, null, 'TERMINAL']) {
+    assert.equal(approvals.deLaPersona(via, 'ana'), null, String(via));
+  }
+  // sin usuario de la máquina, el nombre genérico; un usuario con nombre de agente no vuelve manual la línea
+  assert.deepEqual(approvals.deLaPersona('terminal', ''), { tipo: 'manual', quien: 'persona' });
+  assert.equal(approvals.normalizar({ que: 'plan', ...approvals.deLaPersona('terminal', 'claude') }).tipo, 'automatica');
+  // el marcador la usa en la firma del plan y de la maqueta: la vía es la de la firma, no una opción del comando
+  const fuente = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+  assert.match(fuente, /const delDueno = require\('\.\/lib\/approvals\.js'\)\.deLaPersona\(firmaPlan\.via,/);
+  assert.doesNotMatch(fuente, /\['click', 'mensaje'\]\.includes\(firmaPlan\.via\)/);
+});

@@ -191,3 +191,29 @@ test('T4 2.78-DeCorrida_AusenteYNoMedido @story-2.78 @ac-5', (t) => {
   const rutas = [...registro.diarias, ...registro.semanales].map((s) => `${s.raiz}:${s.ruta}`);
   for (const r of ['arnes:tests/run-signatures.test.js', 'agent-skills:tycon-pipeline/scripts/tests/marker-archive-signatures.test.js']) assert.ok(rutas.includes(r), `${r} en suites.json`);
 });
+
+// 8.316: un hermano llamado como una carpeta de pruebas o de historias cuenta su código sin el prefijo
+test('T11 Clasificar_HermanoPuntoTests_CuentaCodigo @story-8.316 @ac-7', (t) => {
+  const { spawnSync } = require('child_process');
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't11-316-')));
+  t.after(() => fs.rmSync(raiz, { recursive: true, force: true }));
+  for (const n of ['R', 'X.Tests', 'specs']) {
+    const d = path.join(raiz, n);
+    spawnSync('git', ['init', '-q', '-b', 'main', d]);
+  }
+  const R = path.join(raiz, 'R');
+  const L = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'adhoc-list.js'));
+  const firmas = require('../lib/signatures.js');
+  // sin la carpeta, la ruta tal cual: la de `X.Tests/…` parece una prueba y la de `specs/…` una guía
+  assert.strictEqual(L.esCodigoRel('X.Tests/src/A.cs'), false);
+  // con la carpeta del pedido, sin el prefijo del hermano: las dos son código
+  assert.strictEqual(L.esCodigoRel('X.Tests/src/A.cs', { cwd: R }), true);
+  assert.strictEqual(L.esCodigoRel('specs/src/B.cs', { cwd: R }), true);
+  // una carpeta propia con ese nombre no es un hermano: se mira como hoy
+  fs.mkdirSync(path.join(R, 'tests'), { recursive: true });
+  assert.strictEqual(L.esCodigoRel('tests/A.cs', { cwd: R }), false);
+  // la firma cuenta lo mismo que el guion: nueve archivos de código en X.Tests pasan un tope de 8
+  const nueve = JSON.stringify({ reason: 'el pedido no guarda la sucursal', allowedFiles: Array.from({ length: 9 }, (_, i) => `X.Tests/src/A${i}.cs`) });
+  assert.strictEqual(firmas.firmaDelPedidoAdhoc([nueve], 8, { cwd: R }), firmas.SOBRE_CUPO);
+  assert.strictEqual(firmas.firmaDelPedidoAdhoc([nueve], 9, { cwd: R }), 'adhoc-lane');
+});
