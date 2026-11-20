@@ -1903,3 +1903,15 @@ test('Direccion_ConLaListaDelIntermediario_QuienEntraDirectoNoSeLaInventa', () =
     assert.ok(r.problemas.some((p) => p.variable === 'SITE_TRUST_PROXY'), 'el sitio mal configurado no arranca');
   }
 });
+
+// Lo encontró el pase adversarial: una red que cubre a todos dejaba que quien pide eligiera su dirección (peor que
+// `1`), y una dirección con el puerto pegado (como la escriben algunos intermediarios) contaba aparte en cada conexión.
+test('Direccion_RedQueCubreTodo_NoArranca_YElPuertoNoCuenta', () => {
+  for (const v of ['0.0.0.0/0', '::/0', '1.0.0.0/4']) assert.throws(() => confianzaDe(v), /cubre demasiadas direcciones/, v);
+  const de = (socket, xff) => ({ headers: { 'x-forwarded-for': xff }, socket: { remoteAddress: socket } });
+  const lista = confianzaDe('10.0.0.0/8');
+  assert.strictEqual(direccionDe(de('10.1.1.1', '198.51.100.4:5678'), lista), '198.51.100.4');
+  assert.strictEqual(direccionDe(de('10.1.1.1', '198.51.100.4:5679'), lista), '198.51.100.4', 'otra conexión, la misma dirección');
+  assert.strictEqual(direccionDe(de('10.1.1.1', '[2001:db8::1]:443'), lista), '2001:db8::1');
+  assert.strictEqual(direccionDe(de('10.1.1.1', '198.51.100.4:5678'), true), '198.51.100.4', 'también con 1');
+});

@@ -5632,6 +5632,221 @@
           "expect": {
             "exit": 0
           }
+        },
+        {
+          "id": "git-c6-block-hard-abreviado",
+          "type": "must-block",
+          "_por_que": "Lo encontró el pase adversarial: git acepta la opción abreviada.",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git reset --ha"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-alias-del-comando",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c alias.r='reset --hard' r"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-alias-del-repo",
+          "type": "must-block",
+          "_por_que": "El alias vive en la configuración del repo: el comando no dice reset.",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt && git -C r config alias.nuke 'reset --hard'"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git nuke"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-programa-en-una-variable",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "G=git; $G reset --hard"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-opcion-en-una-variable",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git reset $X"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-submodule-foreach",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git submodule foreach git reset --hard"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-stash-de-todo-el-arbol",
+          "type": "must-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash push -- ."
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-block-stash-drop-q",
+          "type": "must-block",
+          "_por_que": "-q no dice cuál: tira la última.",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt && git -c user.name=t -c user.email=t@t -C r stash -q"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash drop -q"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C6"
+            ]
+          }
+        },
+        {
+          "id": "git-c6-pass-cd-a-un-clon-nuevo",
+          "type": "must-not-block",
+          "_por_que": "La carpeta todavía no existe: no hay nada que perder ahí.",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git clone x n && cd n && git reset --hard"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "git-c6-pass-log-que-nombra-reset",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git log --grep reset"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "git-c6-pass-echo-que-nombra-stash",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q r && echo uno > r/a.txt && git -c user.name=t -c user.email=t@t -C r add a.txt && git -c user.name=t -c user.email=t@t -C r commit -q -m a && echo dos > r/a.txt"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo 'git stash'"
+            },
+            "cwd": "${FIXTURE}/r"
+          },
+          "expect": {
+            "exit": 0
+          }
         }
       ]
     },

@@ -1315,10 +1315,10 @@ fi
 # GIT-C6: `git reset --hard` o `git stash` que borran o esconden trabajo sin commitear. En una copia compartida esos
 # cambios pueden ser de otra sesión o de la persona, y desde acá no se sabe de quién son: se frena cuando hay algo que
 # perder (la copia limpia y la pila vacía pasan). Lo decide skills/tycon-pipeline/scripts/lib/discard-check.js, con el
-# lector del freno de guardar (sabe en qué carpeta corre cada `git`). Sólo corre si el comando nombra `reset` o
-# `stash`. Sin la pieza pasa con su constancia; si la pieza no pudo mirar (git no contestó), frena: no pude mirar no
-# es limpio.
-if [[ "$CMD" == *git* ]] && [[ "$CMD" == *reset* || "$CMD" == *stash* ]]; then
+# lector del freno de guardar (sabe en qué carpeta corre cada `git`, y resuelve los alias). Corre con todo comando que
+# nombra git: un alias del repo (`git nuke`) puede ser un `reset --hard` sin decirlo. Sin la pieza pasa con su
+# constancia; si la pieza no pudo mirar (git no contestó), frena: no pude mirar no es limpio.
+if [[ "$CMD" == *git* ]]; then
   _c6_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/discard-check.js" || _c6_lib=""
   if [[ -n "$_c6_lib" && -f "$_c6_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
     if _c6_out="$(printf '%s' "$CMD" | "$HNODE" "$_c6_lib" --command-stdin --cwd "${CWD:-$PWD}" 2>&1)"; then

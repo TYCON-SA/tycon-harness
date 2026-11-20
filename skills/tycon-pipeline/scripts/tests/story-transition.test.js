@@ -54,3 +54,25 @@ test('SinCambioDeEstado_NoFrena', () => {
   const a = story('  - name: A1\n    status: done\n  - name: A2\n    status: pending\n');
   assert.strictEqual(T.transicionAMano(FILE, a, a.replace('# Historia', '# Historia, con otro título')), null);
 });
+
+// Lo encontró el pase adversarial: escrituras que el lector del commit (parsePipelinesBlock) lee en done y este freno
+// no. Ahora el freno suma lo que lee el del commit: los dos nunca difieren a favor de dejar pasar.
+test('ATuMano_FormasQueLeeElCommit_TambienLasVeElFreno', () => {
+  const casos = [
+    ['status con la misma sangría que el guion', '  - name: A1\n  status: done\n  - name: A2\n  status: pending\n'],
+    ['guion pegado al nombre', '  -name: A1\n    status: done\n  -name: A2\n    status: pending\n'],
+    ['un tab en el status', '    - name: A1\n\tstatus: done\n    - name: A2\n\tstatus: pending\n'],
+  ];
+  for (const [que, despues] of casos) {
+    const antes = despues.replace('status: done', 'status: pending');
+    const r = T.transicionAMano(FILE, story(antes), story(despues));
+    const leeElCommit = require(path.join(__dirname, '..', 'lib', 'story-checks.js')).parsePipelinesBlock(story(despues)).some((t) => t.status === 'done');
+    if (leeElCommit) assert.ok(r && /^pipelines\./.test(r.estado), `${que}: el commit la lee en done, el freno tiene que verla (${JSON.stringify(r)})`);
+  }
+});
+
+test('ATuMano_DosTandasConElMismoNombre_LaHechaCuenta', () => {
+  const antes = story('  - name: A1\n    status: pending\n  - name: A1\n    status: pending\n');
+  const despues = story('  - name: A1\n    status: done\n  - name: A1\n    status: pending\n');
+  assert.deepStrictEqual(T.transicionAMano(FILE, antes, despues), { storyId: '9.9', estado: 'pipelines.A1' });
+});

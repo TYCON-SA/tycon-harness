@@ -41,8 +41,10 @@ function estadosDe(content) {
   // de cualquiera que no fuera la última no lo veía nadie
   let item = null;
   let items = 0;
+  // dos tandas con el mismo nombre: si alguna dice done, esa clave queda en done
+  const anotar = (nombre, estado) => { if (out.tandas.get(nombre) !== 'done') out.tandas.set(nombre, estado); };
   const cerrarItem = () => {
-    if (item && item.estado !== null) out.tandas.set(item.nombre !== null ? item.nombre : `#${item.n}`, item.estado);
+    if (item && item.estado !== null) anotar(item.nombre !== null ? item.nombre : `#${item.n}`, item.estado);
     item = null;
   };
   const enItem = (clave, v) => {
@@ -79,6 +81,15 @@ function estadosDe(content) {
     if (sangriaTanda === null || sangria <= sangriaTanda) { tanda = anidado[3]; sangriaTanda = sangria; }
   }
   cerrarItem();
+  // 🔴 Lo que ve el lector del commit (story-checks.js `parsePipelinesBlock`) también cuenta: una tanda que él lee en
+  // done (una sangría distinta, tabs, `-name:` sin espacio) tiene que verla también este freno. Si los dos difieren,
+  // gana done: nunca dejan pasar por no leer lo mismo
+  let delCommit = [];
+  try { delCommit = require('./story-checks.js').parsePipelinesBlock(texto) || []; } catch (_) { delCommit = []; }
+  for (const t of delCommit) {
+    const estado = valor(t && t.status);
+    if (t && t.name && estado) anotar(String(t.name), estado);
+  }
   return out;
 }
 

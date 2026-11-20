@@ -84,7 +84,9 @@ if (!args.includes('--org') || !args.includes('-o')) { process.stderr.write('ERR
 const v = (k) => { const i = args.indexOf(k); return i < 0 ? null : args[i + 1]; };
 if (args[0] === 'devops' && args[1] === 'invoke' && v('--resource') === 'pullRequests') {
   const skip = Number((args.find((a) => a.startsWith('$skip=')) || '$skip=0').slice(6));
-  const todos = JSON.parse(fs.readFileSync(path.join(D, 'pedidos.json'), 'utf8'));
+  // como Azure: sólo los cerrados desde minTime
+  const desde = Date.parse((args.find((a) => a.startsWith('searchCriteria.minTime=')) || '=').split('=')[1]);
+  const todos = JSON.parse(fs.readFileSync(path.join(D, 'pedidos.json'), 'utf8')).filter((p) => !(desde > Date.parse(p.closedDate)));
   process.stdout.write(JSON.stringify({ count: 0, value: todos.slice(skip, skip + 100) })); process.exit(0);
 }
 if (args[0] === 'devops' && args[1] === 'invoke' && v('--resource') === 'pushes') {
@@ -215,7 +217,7 @@ test('T20 NoMedido_NoEsCero @story-8.241 @ac-10 @ac-12 @ac-13', async (t) => {
 // saltearla), no lo veía ninguna noche: sólo se contaban los pedidos que saltearon las políticas.
 test('Azure_EmpujeDirectoAMain_SeCuenta', async (t) => {
   const az = azFalso(t, {
-    pedidos: [pedido(1, 5, false), pedido(2, 20, true)],
+    pedidos: [pedido(1, 5, false), pedido(2, 20, true), pedido(5, 72.05, false)],
     politicas: [politica(194), politica(170)],
     empujes: [
       empuje(10, 5, pedido(1, 5, false).lastMergeCommit.commitId),   // el del pedido 1: no cuenta
@@ -224,6 +226,7 @@ test('Azure_EmpujeDirectoAMain_SeCuenta', async (t) => {
       empuje(13, 2, 'd'.padEnd(40, '4'), COMPILACION),                // la cuenta de compilación (la versión): no cuenta
       empuje(14, 100, 'e'.padEnd(40, '5')),                           // fuera de la ventana: no cuenta
       { pushId: 15, date: hace(1), pushedBy: { displayName: 'Otra Persona' } },  // sin la punta: no se sabe de qué es, cuenta
+      empuje(16, 71.95, pedido(5, 72.05, false).lastMergeCommit.commitId),  // el de un pedido cerrado justo antes de la ventana: no cuenta
     ],
   });
   const out = salida(t);
@@ -233,7 +236,7 @@ test('Azure_EmpujeDirectoAMain_SeCuenta', async (t) => {
   assert.match(linea, /Azure 3 · reglas al día$/, `un pedido salteado y dos empujes directos\n${r.out}`);
   assert.match(r.out, /2 empuje\(s\) directo\(s\) a main en 72 h, sin pedido/);
   assert.match(r.out, /empuje 12 /);
-  assert.doesNotMatch(r.out, /empuje 1[0134] /, 'los de pedidos, la compilación y lo de afuera de la ventana no cuentan');
+  assert.doesNotMatch(r.out, /empuje 1[01346] /, 'los de pedidos (también el cerrado justo antes de la ventana), la compilación y lo de afuera no cuentan');
   // sin poder leer los empujes, la cuenta de Azure no es un número: no medido no es cero
   const sinEmpujes = azFalso(t, { pedidos: [pedido(1, 5, false)], politicas: [politica(194), politica(170)], fallaEmpujes: true });
   const out2 = salida(t);

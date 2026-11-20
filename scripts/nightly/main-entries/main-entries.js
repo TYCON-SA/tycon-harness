@@ -158,7 +158,9 @@ function pedidosSalteados({ org, project, repo, branch, hours, now }) {
     if (pagina >= MAX_PAGINAS_AZ) throw new NoSePudo(`más de ${MAX_PAGINAS_AZ * POR_PAGINA} pedidos completados en la ventana: no los leí todos`);
     const j = az(['devops', 'invoke', '--area', 'git', '--resource', 'pullRequests', '--route-parameters', `project=${project}`, `repositoryId=${repo}`,
       '--query-parameters', 'searchCriteria.status=completed', `searchCriteria.targetRefName=refs/heads/${branch}`, 'searchCriteria.queryTimeRangeType=closed',
-      `searchCriteria.minTime=${new Date(desde).toISOString()}`, `$top=${POR_PAGINA}`, `$skip=${skip}`, '--api-version', '7.1', '--org', org, '-o', 'json']);
+      // una hora antes de la ventana: el empuje de un pedido completado justo antes cae adentro, y sin su pedido se
+      // contaría como directo. La cuenta de los salteados sigue mirando sólo la ventana
+      `searchCriteria.minTime=${new Date(desde - 3600000).toISOString()}`, `$top=${POR_PAGINA}`, `$skip=${skip}`, '--api-version', '7.1', '--org', org, '-o', 'json']);
     if (!j || !Array.isArray(j.value)) throw new NoSePudo('la respuesta no trae la lista de pedidos (value)');
     todos.push(...j.value);
     if (j.value.length < POR_PAGINA) break;

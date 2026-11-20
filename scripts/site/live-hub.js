@@ -55,7 +55,7 @@ function direccionDe(req, confiar) {
   const socket = (req.socket && req.socket.remoteAddress) || 'desconocida';
   if (!confiar) return socket;
   const cab = req.headers && req.headers['x-forwarded-for'];
-  const partes = String(Array.isArray(cab) ? cab.join(',') : (cab || '')).split(',').map((x) => x.trim()).filter(Boolean);
+  const partes = String(Array.isArray(cab) ? cab.join(',') : (cab || '')).split(',').map((x) => sinPuerto(x.trim())).filter(Boolean);
   if (confiar === true) return partes.length ? partes[partes.length - 1] : socket;
   // con la lista del intermediario: el encabezado vale sólo si el pedido llega DE él (quien entra directo no puede
   // inventarse la dirección), y se toma la última entrada que no es de la lista (con dos intermediarios en fila, la
@@ -63,6 +63,15 @@ function direccionDe(req, confiar) {
   if (!confiar.incluye(socket)) return socket;
   for (let i = partes.length - 1; i >= 0; i--) if (!confiar.incluye(partes[i])) return partes[i];
   return socket;
+}
+
+// Una dirección sin su puerto: algunos intermediarios lo agregan (`1.2.3.4:5678`, `[2001:db8::1]:443`), y con él cada
+// conexión nueva contaría aparte y el tope por dirección no frenaría a nadie
+function sinPuerto(d) {
+  const v6 = /^\[([^\]]+)\](?::\d+)?$/.exec(d);
+  if (v6) return v6[1];
+  const v4 = /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/.exec(d);
+  return v4 ? v4[1] : d;
 }
 
 /**
@@ -83,6 +92,10 @@ function confianzaDe(valor) {
     const max = tipo === 'ipv4' ? 32 : 128;
     if (!tipo || (bits !== undefined && !(/^\d+$/.test(bits) && Number(bits) <= max))) {
       throw new Error(`«${e}» no es una dirección ni una red (por ejemplo 10.0.0.0/8 o 127.0.0.1)`);
+    }
+    // una red que cubre a todos (o casi: menos de /8) dejaría que quien pide elija su dirección, peor que `1`
+    if (bits !== undefined && Number(bits) < 8) {
+      throw new Error(`«${e}» cubre demasiadas direcciones: poné las del intermediario (por ejemplo 10.0.0.0/8)`);
     }
     if (bits === undefined) lista.addAddress(dir, tipo);
     else lista.addSubnet(dir, Number(bits), tipo);
