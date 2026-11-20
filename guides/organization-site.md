@@ -1640,7 +1640,10 @@ pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso
   dirección, y los topes por dirección valdrían para toda internet: dos conexiones sin firmar frenarían a cualquier
   máquina. Las instalaciones nuevas ya lo traen. En una ya instalada, poné `SITE_TRUST_PROXY=1` en las variables del sitio
   (la receta de tu entorno, en su «Inicio de sesión», trae la orden). Sólo si delante hay un intermediario: sin él,
-  cualquiera inventaría su dirección.
+  cualquiera inventaría su dirección. Mejor que `1` es la lista de direcciones del intermediario (por ejemplo
+  `SITE_TRUST_PROXY=10.0.0.0/8`, o `127.0.0.1` con un nginx en la misma máquina): así el sitio cree la dirección que
+  trae sólo si el pedido llega de él, y quien entra directo al puerto no puede inventarse otra. Con `1` lo cree venga
+  de donde venga, y el sitio lo avisa al arrancar. El demo acepta la misma variable.
 
 ### Las dos formas de arrancarlo
 

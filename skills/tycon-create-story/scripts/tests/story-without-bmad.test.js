@@ -773,3 +773,20 @@ test('StoryWithoutBmad_WritesIntent (T14) @story-8.258 @ac-9: la intención al l
   assert.strictEqual(r6.status, 0, r6.stderr);
   assert.deepStrictEqual(fs.readdirSync(path.join(d5, 'stories')).sort(), [path.basename(r6.json.intent), path.basename(r6.json.path)].sort());
 });
+
+// T45 Write_QueExisteHoy_ArchivoDeUnHermano
+// En el repo de historias, un archivo nombrado `<Repo>/…` vive en un repo hermano declarado (`companion_repos`). Se
+// buscaba adentro del repo de historias y la historia decía «No existe» de un archivo que estaba.
+// 🔴 Falla con: buscar el archivo sólo en el repo de historias, sin resolverlo contra los hermanos declarados.
+test('T45 Write_QueExisteHoy_ArchivoDeUnHermano: `<Repo>/…` se busca en el hermano declarado', () => {
+  const prod = producto();
+  const historias = repoDe(prod, 'Historias', { yaml: 'evidence:\n  companion_repos:\n    - Front\n' });
+  const front = repoDe(prod, 'Front');
+  fs.mkdirSync(path.join(front, 'src'));
+  fs.writeFileSync(path.join(front, 'src', 'cart.js'), 'module.exports = {};\n');
+  const txt = escribir(historias, { filesToModify: ['Front/src/cart.js'], filesToCreate: ['Front/src/envio.js'] });
+  const hoy = txt.slice(txt.indexOf('\n### Que existe hoy\n'), txt.indexOf('\n### Que hay que hacer (la delta)\n'));
+  assert.match(hoy, /\*\*Archivo:\*\* `Front\/src\/cart\.js` — lo modifica la historia/);
+  assert.match(hoy, /\*\*No existe:\*\* `Front\/src\/envio\.js`/);
+  assert.doesNotMatch(hoy, /No existe:[^\n]*cart\.js/);
+});

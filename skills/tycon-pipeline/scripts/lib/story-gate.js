@@ -339,8 +339,10 @@ function computeStoryGate({
         lista: adhoc.allowedFiles, filePath, real, repoRoot: adhocRepoRoot, home: homeDir, delegado,
       });
       if (fuera) {
+        // el archivo de un repo al lado que no vale como hermano: el texto dice por qué no se puede sumar a la lista
+        const vecino = require('./adhoc-list.js').repoVecinoFueraDelGrupo({ repoRoot: adhocRepoRoot, cwd: adhoc.cwd });
         return {
-          action: 'block', kind: 'adhoc-out-of-list', archivo: fuera.archivo, lista: adhoc.allowedFiles,
+          action: 'block', kind: 'adhoc-out-of-list', archivo: fuera.archivo, lista: adhoc.allowedFiles, ...(vecino ? { vecino } : {}),
           reason: `${fuera.archivo}: ${fuera.motivo} del camino corto «${adhoc.reason}»`,
         };
       }
@@ -516,6 +518,26 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  los revisores y el pase adversarial sobre su diff.',
     ]).filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'adhoc-sensitive') {
+    // el carril está abierto (por delegación o «hecho y avisado»): lo que falta es la firma de una persona, no un carril.
+    // Sin la lista de lo sensible no se sabe si el archivo lo es: se dice eso, no que es sensible
+    if (/no encuentra la lista de lo sensible/.test(String(r.reason))) {
+      return [
+        '⛔ camino rápido delegado — FALTA LA LISTA DE LO SENSIBLE',
+        viaLine.replace(/\n$/, ''),
+        `  Ibas a editar ${f}: ${r.reason}.`,
+        '  Sin esa lista no se sabe qué archivos son sensibles, y el camino rápido delegado no toca ninguno. Suele ser una',
+        '  instalación del arnés incompleta: reinstalarlo la trae. Mientras tanto, pedíselo a una persona.',
+      ].filter((l) => l !== '').join('\n');
+    }
+    return [
+      '⛔ camino rápido delegado — ARCHIVO SENSIBLE',
+      viaLine.replace(/\n$/, ''),
+      `  Ibas a editar ${f}: ${r.reason}.`,
+      '  Un camino rápido abierto por delegación no toca firmas, frenos, avisos, permisos ni el perfil.',
+      '  Salidas: pedíselo a una persona (que abra ella el camino rápido, con su firma), o escribí la historia que lo lleva.',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'batch-out-of-list') {
     const lista = (Array.isArray(r.lista) ? r.lista : []).slice(0, TOPE_DE_NOMBRES);
     return [
@@ -540,6 +562,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       `  ${r.archivo || f} no está en la lista de archivos de este camino corto. La lista:`,
       ...lista.map((a) => `   · ${a}`),
       ...(Array.isArray(r.lista) && r.lista.length > TOPE_DE_NOMBRES ? [`   · y ${r.lista.length - TOPE_DE_NOMBRES} más`] : []),
+      ...(r.vecino ? [`  Ese archivo es de ${r.vecino}: ampliar la lista no alcanza.`] : []),
       harness
         ? '  Para tocarlo, ampliá la lista: es otra autorización del mismo tipo que abrir, que da una persona (por delegación, la lista nueva contiene entera la firmada):'
         : '  Para tocarlo, ampliá la lista: lo aprobás vos con tu sí, como al abrir:',

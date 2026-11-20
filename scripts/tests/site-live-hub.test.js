@@ -35,7 +35,7 @@ const F = require(path.join(ROOT, 'scripts', 'tools', 'office', 'fields.js'));
 const SL = require(path.join(ROOT, 'scripts', 'tools', 'office', 'site-link.js'));
 const { crearSitio, RUTAS_SIN_SESION, VARIABLES } = require(path.join(H.SITE, 'server.js'));
 const { crearLlaves, TOPES_ALTA } = require(path.join(H.SITE, 'machine-keys.js'));
-const { TOPES, PLAZOS, limpiarFoto, direccionDe } = require(path.join(H.SITE, 'live-hub.js'));
+const { TOPES, PLAZOS, limpiarFoto, direccionDe, confianzaDe } = require(path.join(H.SITE, 'live-hub.js'));
 const { leerHuellas } = require(path.join(H.SITE, 'sources.js'));
 const access = require(path.join(H.SITE, 'access.js'));
 const { bajar } = require(path.join(ROOT, 'scripts', 'metrics', 'download-runs.js'));
@@ -1878,4 +1878,40 @@ test('Regresion_ClaveRetirada_DejaDeReconectar @story-8.234 @ac-25 — una clave
     await hasta(() => !oficinas(lead).has('maquina-a'), 3000, 'que deje de verse al retirar su clave');
     lead.ws.close();
   } finally { await h.cerrar(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// 🔴 El caso (riesgo 42): con SITE_TRUST_PROXY=1 y el puerto alcanzable sin pasar por el intermediario, quien entraba
+// directo se inventaba la dirección y salteaba los topes por dirección (las altas de máquinas). Con la lista del
+// intermediario, X-Forwarded-For vale sólo si el pedido llega DE él.
+test('Direccion_ConLaListaDelIntermediario_QuienEntraDirectoNoSeLaInventa', () => {
+  const de = (socket, xff) => ({ headers: xff === undefined ? {} : { 'x-forwarded-for': xff }, socket: { remoteAddress: socket } });
+  const lista = confianzaDe('10.0.0.0/8, 127.0.0.1');
+  assert.strictEqual(direccionDe(de('203.0.113.9', '1.1.1.1'), lista), '203.0.113.9', 'directo: cuenta el socket, no lo inventado');
+  assert.strictEqual(direccionDe(de('10.1.2.3', 'inventada, 198.51.100.4'), lista), '198.51.100.4', 'desde el intermediario: la que él agrega');
+  assert.strictEqual(direccionDe(de('::ffff:10.1.2.3', '198.51.100.4'), lista), '198.51.100.4', 'una IPv4 que llega como IPv6');
+  assert.strictEqual(direccionDe(de('10.1.2.3', '198.51.100.4, 10.200.0.1'), lista), '198.51.100.4', 'dos intermediarios en fila: la del de adelante no es la de quien pide');
+  assert.strictEqual(direccionDe(de('10.1.2.3'), lista), '10.1.2.3', 'sin encabezado, el socket');
+  assert.strictEqual(direccionDe(de('10.1.2.3', '10.9.9.9'), lista), '10.1.2.3', 'sólo intermediarios: el socket');
+  // lo de antes: 1 cree a cualquiera; vacía o 0, a nadie
+  assert.strictEqual(confianzaDe('1'), true);
+  for (const v of [undefined, '', '0']) assert.strictEqual(confianzaDe(v), false, JSON.stringify(v));
+  // un valor que no es una dirección ni una red no se adivina
+  for (const v of ['todos', '10.0.0.0/33', '10.0.0.0/x', 'localhost']) assert.throws(() => confianzaDe(v), /no es una dirección ni una red/, v);
+  const { validarConfiguracion } = require(path.join(H.SITE, 'server.js'));
+  if (typeof validarConfiguracion === 'function') {
+    const r = validarConfiguracion({ SITE_TRUST_PROXY: 'todos' });
+    assert.ok(r.problemas.some((p) => p.variable === 'SITE_TRUST_PROXY'), 'el sitio mal configurado no arranca');
+  }
+});
+
+// Lo encontró el pase adversarial: una red que cubre a todos dejaba que quien pide eligiera su dirección (peor que
+// `1`), y una dirección con el puerto pegado (como la escriben algunos intermediarios) contaba aparte en cada conexión.
+test('Direccion_RedQueCubreTodo_NoArranca_YElPuertoNoCuenta', () => {
+  for (const v of ['0.0.0.0/0', '::/0', '1.0.0.0/4']) assert.throws(() => confianzaDe(v), /cubre demasiadas direcciones/, v);
+  const de = (socket, xff) => ({ headers: { 'x-forwarded-for': xff }, socket: { remoteAddress: socket } });
+  const lista = confianzaDe('10.0.0.0/8');
+  assert.strictEqual(direccionDe(de('10.1.1.1', '198.51.100.4:5678'), lista), '198.51.100.4');
+  assert.strictEqual(direccionDe(de('10.1.1.1', '198.51.100.4:5679'), lista), '198.51.100.4', 'otra conexión, la misma dirección');
+  assert.strictEqual(direccionDe(de('10.1.1.1', '[2001:db8::1]:443'), lista), '2001:db8::1');
+  assert.strictEqual(direccionDe(de('10.1.1.1', '198.51.100.4:5678'), true), '198.51.100.4', 'también con 1');
 });

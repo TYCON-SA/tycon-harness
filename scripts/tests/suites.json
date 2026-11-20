@@ -662,6 +662,12 @@
       "requiere": []
     },
     {
+      "__nota": "la revisión del plan se lanza sobre el plan cerrado: con «Armar el plan» abierto o con una pregunta sin contestar a la persona no se prepara, y un plan o una historia que cambian mientras corre se relanzan una sola vez entre los dos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-review-closed.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "lo que se firma sin persona pasa el control previo de su guion: la maqueta (nunca la de la propia sesión), el pendiente (la coordinadora confirmada, sobre un repo de la sesión destino) y lo de rutina que el perfil delega (sólo con una historia de rutina). Los guiones de verdad en una casa de juguete; unos veinte segundos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/approve-without-person.test.js",
@@ -701,6 +707,12 @@
       "__nota": "el freno del ok de guardar: el gancho del comando frena el commit, el push y los pedidos de una corrida sin la constancia vigente, y los de una corrida que cerró sin ella; clear sin el ok sale 2.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/save-brake.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el cambio a mano del estado de una historia lo ve el freno en cada tanda del bloque pipelines (la forma de lista y la de mapa), no sólo en la última.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-transition.test.js",
       "requiere": []
     },
     {
@@ -1028,6 +1040,12 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-variables.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Con un camino corto con lista, el freno de la consola juzga la ruta real de una variable del comando (también con bucles) y, si no la puede resolver o la carpeta cambió con un cd que no sigue, frena diciendo que no pudo; ve cp, mv y sed -i dentro de bloques.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-unresolved-path.test.js",
       "requiere": []
     },
     {
@@ -1792,6 +1810,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.217: un .js que sólo movió comentarios no pide otra vuelta de revisores; el lector de tokens ante la duda no decide. Textos de juguete y los .js de lib/ leídos, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/comment-only.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.272 (T1-T4): el revisor de un crítico arreglado vuelve a la vuelta siguiente aunque el descuento mecánico o el cálculo por diferencias lo saquen. HOME y repo de juguete, el registro de críticos y findings.json escritos como los deja el arnés, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/criticals-to-confirm.test.js",
@@ -1807,6 +1831,12 @@
       "__nota": "story 8.167 (T12-T16, T24-T28, T31, T34): los candidatos, el freno de «Preparar el commit», la exención firmada y la cobertura por declaración. Repos de juguete, la firma por la ventana de prueba, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/compare-previous-gate.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "lectores que leían mal o callaban: el grupo de rutas «(app)/» no es el prefijo del repo, el normalizador del despachador que no carga deja su línea, owner-away get muestra la marca sin confirmar. HOME de laboratorio, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/quiet-readers.test.js",
       "requiere": []
     },
     {
@@ -2078,6 +2108,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/prod-firewall-deleted-server.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/prod-emergency.test.sh",
       "requiere": []
     },
     {

@@ -31,6 +31,7 @@
 #   tycon-prod-sql --close-firewall <host>    la cierra (el hook de fin de sesión agrega --session <id>)
 #   tycon-prod-sql --locks                    dice qué servidores de producción tienen el candado de Azure (sólo lee)
 #   tycon-prod-sql --delete-group <grupo>     borra un grupo de recursos que puede probar que no es de producción
+#   tycon-prod-sql --help                     las formas y el camino de emergencia; no toca nada
 #
 # EL FIREWALL Y SU LÍMITE, ESCRITO: abrir y cerrar llaman a `az`, que NO es un binario de root con huella (es del
 # usuario: Homebrew o el instalador de Microsoft). Rompe la regla de «sólo binarios de root» y se acepta con tres
@@ -275,8 +276,41 @@ $1" 2>/dev/null)" || respuesta=""
   APROBACION=',"aprobacion":"cuadro-propio"'
 }
 
+# ── la ayuda ───────────────────────────────────────────────────────────────────────────────────
+# Sin ella no había forma de descubrir las opciones: en un incidente con producción caída, el asistente no encontró
+# `--open-firewall` y mandó a la persona al portal. No lee la clave, no consulta y no llama a `az`.
+ayuda(){
+  cat <<'AYUDA'
+tycon-prod-sql — la única forma de consultar o cambiar una base de producción. Cada sentencia la aprueba una
+persona en un cuadro de esta Mac; la contraseña no pasa por la conversación. Siempre con la ruta absoluta.
+
+  /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]
+        una sentencia, con cuadro: un select, o un cambio (alter database …, update …). Una por vez, sin GO.
+  /opt/tycon/bin/tycon-prod-sql --open-firewall <host>
+        habilita la IP de esta máquina en el firewall de un Azure SQL de producción, con cuadro. La regla se
+        cierra sola al terminar la sesión.
+  /opt/tycon/bin/tycon-prod-sql --close-firewall <host>     la cierra ya
+  /opt/tycon/bin/tycon-prod-sql --verify                    revisa la instalación y la clave, sin leerla
+  /opt/tycon/bin/tycon-prod-sql --load-key <host>           deja en el Escritorio el archivo para cargar la clave
+  /opt/tycon/bin/tycon-prod-sql --reclassify <host>         baja un host a no producción, con cuadro
+  /opt/tycon/bin/tycon-prod-sql --locks                     qué servidores de producción tienen el candado de Azure
+  /opt/tycon/bin/tycon-prod-sql --delete-group <grupo>      borra un grupo que se prueba que no es de producción
+
+Emergencia, con producción caída (por ejemplo, la base llegó a su tope y no escribe):
+  1. Probá la conexión: /opt/tycon/bin/tycon-prod-sql <host> 'select 1'
+  2. Si la rechaza el firewall (40615): /opt/tycon/bin/tycon-prod-sql --open-firewall <host>
+  3. Mirá el estado: /opt/tycon/bin/tycon-prod-sql <host> 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'
+     (mide la base a la que entra la puerta: la «base» del servidor en su catálogo; si no la declara, master)
+  4. Mitigá con una sentencia, que la persona aprueba en el cuadro, por ejemplo:
+     /opt/tycon/bin/tycon-prod-sql <host> 'alter database [<base>] modify (maxsize = 250 GB)'
+  5. Contale a la persona qué cambió. La regla del firewall se cierra sola.
+  Detalle: guides/produccion-con-permiso.md § «Emergencia: producción caída».
+AYUDA
+}
+
 # ── argumentos ────────────────────────────────────────────────────────────────────────────────
-[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-rows N]  ·  --load-key <host>  ·  --reclassify <host>  ·  --verify  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks  ·  --delete-group <grupo>"
+[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-rows N]  ·  --load-key <host>  ·  --reclassify <host>  ·  --verify  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks  ·  --delete-group <grupo>  ·  --help"
+case "$1" in (--help|-h) [ $# -eq 1 ] || muere "uso: tycon-prod-sql --help  (sola)"; ayuda; exit 0 ;; esac
 
 MODO=consulta; HOST=""; SENTENCIA=""; SESION_CIERRE=""
 # La consulta desde un archivo no se acepta: el cuadro de aprobación muestra el comando, no lo que trae el archivo.
@@ -304,7 +338,7 @@ case "${1:-}" in
   # disparador era «corré algo que falle», que es un rodeo). La clave la sigue tipeando la persona en
   # el archivo que deja la puerta: nunca pasa por la conversación ni la escribe el asistente.
   --load-key)     MODO=cargar-clave; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --load-key <host>" ;;
-  -*)             muere "primer argumento inválido: sólo <host>, --load-key, --reclassify, --verify, --open-firewall, --close-firewall, --locks o --delete-group" ;;
+  -*)             muere "primer argumento inválido: sólo <host>, --load-key, --reclassify, --verify, --open-firewall, --close-firewall, --locks o --delete-group (todas, con su explicación: tycon-prod-sql --help)" ;;
   *)              HOST="$1"; SENTENCIA="${2:-}"
                   [ $# -ge 2 ] || muere "falta la sentencia: tycon-prod-sql <host> 'select …'"
                   if [ $# -gt 2 ]; then
@@ -1068,5 +1102,16 @@ FILAS="$(printf '%s\n' "$SALIDA" | wc -l | tr -d ' ')"
 printf '%s\n' "$SALIDA" | head -n "$MAX_FILAS"
 [ "$FILAS" -gt "$MAX_FILAS" ] && printf '… (cortado en %s de %s líneas; pedí más con --max-rows N)\n' "$MAX_FILAS" "$FILAS"
 printf 'rc=%s\n' "$RC"
+# El rechazo del firewall nombra el paso siguiente: sin esto, el asistente veía el error de Azure («use the Azure
+# Management Portal») y mandaba a la persona al portal, con producción caída.
+# Se reconoce por el texto del rechazo, no por el número suelto: un «40615» en los datos o en otro error no es el
+# firewall. Y sólo en un Azure SQL, que es lo único que `--open-firewall` atiende.
+if [ "$RC" != 0 ] && [[ "$HOST" == *.database.windows.net ]] \
+   && printf '%s' "$SALIDA" | grep -iE "Client with IP address '[^']*' is not allowed to access the server" >/dev/null; then
+  printf '\n🔥 La conexión la rechazó el firewall de Azure: la IP de esta máquina no está habilitada en «%s».\n' "$HOST"
+  printf '   Paso siguiente (con cuadro; la regla se cierra sola al terminar la sesión):\n'
+  printf '     /opt/tycon/bin/tycon-prod-sql --open-firewall %s\n' "$HOST"
+  printf '   y después volvé a correr esta misma sentencia. No hace falta el portal.\n'
+fi
 anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\"$APROBACION,\"exit\":$RC,\"filas\":$FILAS"
 exit "$RC"

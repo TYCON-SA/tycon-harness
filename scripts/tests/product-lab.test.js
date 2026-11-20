@@ -45,7 +45,7 @@ function huellaDe(raices) {
   return out;
 }
 
-/** Una versión del arnés de juguete: los cuatro guiones, cada uno con el código que se le pase, o ninguno con `null`. */
+/** Una versión del arnés de juguete: los guiones del laboratorio, cada uno con el código que se le pase, o ninguno con `null`. */
 function juguete(guiones = {}) {
   const dir = carpeta();
   const RUTAS = lab.rutasDeComandos(dir);
@@ -54,6 +54,8 @@ function juguete(guiones = {}) {
     freno: 'console.error("freno de juguete");',
     guia: 'console.log("qa-guide --check de juguete");',
     retro: 'console.error("retro-pending de juguete");',
+    arreglo: 'console.error("marker de juguete"); process.exitCode = 2;',
+    edicion: 'console.error("portón de edición de juguete"); process.exitCode = 2;',
   };
   for (const [nombre, ruta] of Object.entries(RUTAS)) {
     const codigo = nombre in guiones ? guiones[nombre] : porDefecto[nombre];
@@ -223,6 +225,10 @@ casoEsperado('L1 Caso_EntradaIgualCambiaOtra', 'entrada-igual-cambia-otra', 24, 
 casoEsperado('L2 Caso_PropiaAntesDeEntrar', 'propia-antes-de-entrar', 24, '8.310');
 casoEsperado('L3 Caso_PropiaDespuesDeEntrar', 'propia-despues-de-entrar', 24, '8.310');
 casoEsperado('L4 Caso_GuionAdaptadoTrasEntrar', 'guion-adaptado-tras-entrar', 24, '8.310');
+// T23: el arreglo rápido en los dos hermanos anda; un repo fuera del grupo y un hermano que no declara de vuelta, no
+casoEsperado('T23 Lab_ArregloRapidoEnDosHermanos', 'arreglo-en-dos-hermanos', 17, '8.316');
+casoEsperado('T23b Lab_ArregloRapido_RepoFueraDelGrupo', 'arreglo-repo-fuera-del-grupo', 17, '8.316');
+casoEsperado('T23c Lab_ArregloRapido_HermanoSinVuelta', 'arreglo-hermano-sin-vuelta', 17, '8.316');
 
 // ---------------------------------------------------------------- los huecos conocidos
 

@@ -549,6 +549,8 @@ Pasar a «Hallazgos» (`step-09-findings.md`) para consolidar. Si después de «
 
 Es la vuelta N de este mismo paso. `pipeline.js next` la pide («Revisores, vuelta N») sólo cuando hay ediciones de código posteriores al último cierre de los revisores con «Hallazgos» ya cerrado, y nombra esos archivos («Falta revisar lo cambiado después de los revisores: …»). Cada vuelta cierra igual: `marker.js run-check advisors -- pipeline.js check-count …` y `marker.js complete-step reviewers` (el marcador cuenta las vueltas).
 
+Un `.js`, `.cjs` o `.mjs` que quedó igual a lo revisado, salvo el lugar de sus comentarios, no pide otra vuelta (lo decide `lib/comment-only.js` contra el sello de la última vuelta cerrada); un texto de comentario cambiado, una directiva movida o cualquier duda la piden.
+
 Una prueba o un texto no piden otra vuelta: lo decide `lib/reloop-code.js`. Una prueba es lo que `isTestPath` (`lib/atdd-order.js`) reconoce en la ruta desde la raíz de su repo (la carpeta con `.git` más cercana): `*.test.ts`, `*.spec.ts`, `test_*.py`, `*Tests.cs`, el código dentro de una carpeta de pruebas. Un texto es lo que no es código (un `.md`, un `.json`). Un archivo sin raíz de repo cuenta como código: ante la duda, se revisa. Con un arreglo de código y uno de prueba, la vuelta mira el de código. El re-loop reducido (`smart-reloop`) usa la misma regla: un delta de sólo pruebas no repite revisores.
 
 La decisión queda escrita en el marcador (`otraVuelta`: la vuelta, los archivos y desde cuándo) en cada cambio y cada cierre de paso, y el cartel la lee: dice «falta revisar lo cambiado después de los revisores (vuelta N, M archivos)» y cuenta los minutos desde el primer cambio sin revisar.

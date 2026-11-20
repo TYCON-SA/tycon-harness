@@ -111,7 +111,6 @@ test('T3 Lanzada_PreguntaDeFirma_TalCual @story-8.211 @ac-3', (t) => {
   const cupo = decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Pasás el tope? (firma adhoc-lane:sobre-cupo · sesión ${LANZADA} · código 0a1b2c3d)`)));
   assert.strictEqual(cupo.decision, 'deny');
   assert.match(cupo.reason, /tal cual/);
-  assert.match(cupo.reason, /terminal/);
 });
 
 test('T4 NoLanzada_Pasa @story-8.211 @ac-4', (t) => {

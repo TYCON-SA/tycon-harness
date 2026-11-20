@@ -1506,3 +1506,130 @@ test('un git diff que falla contra la base no se lee como «nada agregado»: dev
   assert.ok(checker.addedLinesOf(repo, 'calc.js', base).length > 0);
   assert.deepEqual(checker.addedLinesOf(repo, 'calc.js', 'HEAD'), []);
 });
+
+// 🔴 El caso (un producto .NET con su frontend, 13 y 16/11): la historia vive en el backend y declara código y pruebas
+// de los dos repos. El chequeo le pasaba a cada repo la lista entera: en el backend buscaba las pruebas del frontend,
+// no las encontraba y salía «la story declara tests que NO existen» sin mutar nada; en el frontend, al revés. El
+// control no medía en ninguno, y el motivo acusaba a la historia. Ahora cada repo toma sólo lo suyo.
+function historiaEnDosRepos() {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-mut-dos-repos-')));
+  const repo = (dir, base, nuevos) => {
+    const escribir = (archivos) => {
+      for (const [rel, texto] of Object.entries(archivos)) {
+        fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+        fs.writeFileSync(path.join(dir, rel), texto);
+      }
+    };
+    escribir(base);
+    const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+    g('init', '-q', '-b', 'main'); g('add', '-A'); g('-c', 'user.email=l@l', '-c', 'user.name=l', 'commit', '-q', '-m', 'base');
+    escribir(nuevos);
+    return dir;
+  };
+  const prueba = (modulo, fn) => [
+    "'use strict';", "const { test } = require('node:test');", "const assert = require('node:assert');",
+    `const { ${fn} } = require('${modulo}');`,
+    `test('${fn}', () => { assert.equal(${fn}(100), true); assert.equal(${fn}(101), false); });`, '',
+  ].join('\n');
+  const declarados = ['src/limite.js', 'tests/limite.test.js', 'web/tope.js', 'web/__tests__/tope.test.js'];
+  const historia = ['---', 'story: "9.2"', 'files_to_create:', ...declarados.map((f) => `  - "${f}"`), '---', '', '# Story 9.2', ''].join('\n');
+  const back = repo(path.join(raiz, 'Back'), { '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../Front\n', 'specs/s.md': historia }, {
+    'src/limite.js': 'exports.permitido = (m) => m <= 100;\n', 'tests/limite.test.js': prueba('../src/limite.js', 'permitido'),
+  });
+  const front = repo(path.join(raiz, 'Front'), { 'web/.keep': '' }, {
+    'web/tope.js': 'exports.dentro = (m) => m <= 100;\n', 'web/__tests__/tope.test.js': prueba('../tope.js', 'dentro'),
+  });
+  return { back, front, story: path.join(back, 'specs', 's.md') };
+}
+
+test('dos repos: cada uno se mide con lo suyo, y en los dos mueren los mutantes', () => {
+  const lab = historiaEnDosRepos();
+  for (const [quien, repo] of [['el de la historia', lab.back], ['el hermano', lab.front]]) {
+    const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'mutation-check.js'), '--repo', repo, '--story', lab.story, '--json'], { encoding: 'utf8' });
+    let j = null;
+    try { j = JSON.parse(r.stdout); } catch { j = null; }
+    assert.equal(r.status, 0, `${quien}: ${(j && j.motivo) || r.stderr}`);
+    assert.ok(j.total > 0 && j.killed === j.total, `${quien}: midió y mató sus mutantes (${JSON.stringify(j && { total: j.total, killed: j.killed })})`);
+  }
+});
+
+test('dos repos: una prueba del hermano que todavía no existe no se le pide al repo de la historia', () => {
+  const lab = historiaEnDosRepos();
+  fs.rmSync(path.join(lab.front, 'web', '__tests__', 'tope.test.js'));
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'mutation-check.js'), '--repo', lab.back, '--story', lab.story, '--json'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const { declaredFor } = require(path.join(SCRIPTS, 'lib', 'companion-repos.js'));
+  // la del hermano que falta se ubica por su carpeta, que sí existe allá
+  assert.deepEqual(declaredFor(lab.back, lab.story, lab.front), ['web/tope.js', 'web/__tests__/tope.test.js']);
+  assert.deepEqual(declaredFor(lab.back, lab.story, lab.back), ['src/limite.js', 'tests/limite.test.js']);
+});
+
+// Cero mutantes no es un verde: el portón lo anotaba como «pass» y no decía nada.
+test('gate: SIN_MUTANTES avisa «NO MEDIDO» con el motivo y deja pasar', () => {
+  const h = gateHarness();
+  const r = runMutationGate({
+    marker: MARKER_FAKE, opts: [], env: {},
+    appendLog: h.appendLog, log: h.log,
+    invokeCheck: () => ({ code: 0, result: { total: 0, killed: 0, survived: [], skipped: [], verdict: 'SIN_MUTANTES', runner: 'dotnet',
+      motivo: 'ningún operador aplica sobre las líneas agregadas de los archivos que la story declara' } }),
+  });
+  assert.equal(r.block, false);
+  assert.match(h.lines.join('\n'), /NO MEDIDO .*ningún operador aplica/);
+  assert.deepEqual(h.entries['gates.log'].map((e) => e.status), ['warn-no-mutants']);
+});
+
+// Lo encontró el pase adversarial: formas de dos y tres repos en que todavía no medía, y un motivo engañoso.
+const correrChequeo = (repo, story) => {
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'mutation-check.js'), '--repo', repo, '--story', story, '--json'], { encoding: 'utf8' });
+  let j = null;
+  try { j = JSON.parse(r.stdout); } catch { j = null; }
+  return { status: r.status, j, salida: `${(j && j.motivo) || ''} ${r.stderr}` };
+};
+
+test('dos repos: el hermano medido desde otra copia suya (un worktree) se mide con lo suyo', () => {
+  const lab = historiaEnDosRepos();
+  const otra = path.join(path.dirname(lab.front), 'Front--puesto');
+  spawnSync('git', ['-C', lab.front, 'worktree', 'add', '-q', '-b', 'wt/otra', otra], { encoding: 'utf8' });
+  for (const rel of ['web/tope.js', 'web/__tests__/tope.test.js']) {
+    fs.mkdirSync(path.dirname(path.join(otra, rel)), { recursive: true });
+    fs.copyFileSync(path.join(lab.front, rel), path.join(otra, rel));
+  }
+  const r = correrChequeo(otra, lab.story);
+  assert.equal(r.status, 0, r.salida);
+  assert.ok(r.j.total > 0 && r.j.killed === r.j.total);
+});
+
+test('tres repos: la story en un repo de historias sin hermanos, y el backend declara el frontend', () => {
+  const lab = historiaEnDosRepos();
+  // la story se muda a un tercer repo que no declara hermanos; los archivos llevan el nombre del repo adelante
+  const specs = path.join(path.dirname(lab.back), 'Specs');
+  fs.mkdirSync(path.join(specs, 'specs'), { recursive: true });
+  const texto = fs.readFileSync(lab.story, 'utf8').replace(/"src\//g, '"Back/src/').replace(/"tests\//g, '"Back/tests/').replace(/"web\//g, '"Front/web/');
+  fs.writeFileSync(path.join(specs, 'specs', 's.md'), texto);
+  spawnSync('git', ['-C', specs, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+  spawnSync('git', ['-C', specs, 'add', '-A'], { encoding: 'utf8' });
+  spawnSync('git', ['-C', specs, '-c', 'user.email=l@l', '-c', 'user.name=l', 'commit', '-q', '-m', 'b'], { encoding: 'utf8' });
+  for (const repo of [lab.back, lab.front]) {
+    const r = correrChequeo(repo, path.join(specs, 'specs', 's.md'));
+    assert.equal(r.status, 0, `${path.basename(repo)}: ${r.salida}`);
+    assert.ok(r.j.total > 0 && r.j.killed === r.j.total);
+  }
+});
+
+test('dos repos: la forma «(<repo>) <ruta>» se lee como del repo que nombra', () => {
+  const lab = historiaEnDosRepos();
+  fs.writeFileSync(lab.story, fs.readFileSync(lab.story, 'utf8').replace(/"web\//g, '"(Front) web/'));
+  const { declaredFor } = require(path.join(SCRIPTS, 'lib', 'companion-repos.js'));
+  assert.deepEqual(declaredFor(lab.back, lab.story, lab.front), ['web/tope.js', 'web/__tests__/tope.test.js']);
+  assert.deepEqual(declaredFor(lab.back, lab.story, lab.back), ['src/limite.js', 'tests/limite.test.js']);
+});
+
+test('dos repos: un repo sin pruebas propias dice que son de otro repo, no que no hay', () => {
+  const lab = historiaEnDosRepos();
+  // el frontend queda sólo con código: sus pruebas se declaran en el backend
+  fs.writeFileSync(lab.story, fs.readFileSync(lab.story, 'utf8').replace('  - "web/__tests__/tope.test.js"\n', ''));
+  const r = correrChequeo(lab.front, lab.story);
+  assert.equal(r.status, 2);
+  assert.match(r.salida, /las pruebas que la story declara son de otro repo/);
+  assert.doesNotMatch(r.salida, /no declara ningún archivo de test/);
+});

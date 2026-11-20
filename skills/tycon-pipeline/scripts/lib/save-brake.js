@@ -891,7 +891,7 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
     if (plataforma && plataforma.programas.has(cmd)) {
       const p = pedidoDe(ps, cmd, plataforma.pedidos);
       if (p && p.opaco) opaco(ctx.dirs[0]);
-      else if (p) guardar({ tipo: 'pr', forma: p.forma, dir: ctx.dirs[0] });
+      else if (p) guardar({ tipo: 'pr', forma: p.forma, dir: ctx.dirs[0], palabras: ps.slice(1) });
       return;
     }
     // un programa que corre git por su cuenta. Si además cambia de carpeta por su cuenta (`process.chdir`, `os.chdir`,
@@ -1147,7 +1147,10 @@ function findingsDe(m) {
   } catch (_) { return null; }
 }
 
-const COMO_SALE_EL_PEDIDO = 'Antes de que salga, el arnés le pregunta a la persona en la ventana de permiso; con el sí, sale.';
+// una palabra de un pedido que nombra a qué repo o desde qué rama va (gh: -R, --repo, -H, --head; az: --repository,
+// --source-branch, --org, --project), pegada a su valor o no
+const PEDIDO_CON_DESTINO = /^(-R|-H|--repo|--head|--repository|--source-branch|--org|--organization|--project|-p)(=|$)|^-[RH]./;
+const COMO_SALE_EL_PEDIDO ='Antes de que salga, el arnés le pregunta a la persona en la ventana de permiso; con el sí, sale.';
 /** La ventana del pedido: qué sale, de qué historia y con qué evidencia; nunca el comando. Hasta 1000 caracteres. */
 function preguntaDelPedido({ forma, m, repos, noLeo = false }) {
   const nombres = (repos || []).map((r) => path.basename(r)).join(', ');
@@ -1292,8 +1295,13 @@ function decidirCarril({ command, cwd, sid, home }) {
     return { texto: `🔒 GUARDAR: no pude medir este camino corto (${sinUbicar[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
   }
   const conRaiz = cs.filter((c) => { try { return !!raiz(c.dir); } catch (_) { return false; } }).length;
-  // el trabajo de otro repo no es de este carril: no le pide su tope, su maqueta ni sus datos
-  const esDelCarril = !repos.length || dudas.length || conRaiz < cs.length || cs.some((c) => c.opaco || c.tipo === 'pr') || delComando.some((r) => repos.includes(r));
+  // el trabajo de otro repo no es de este carril: no le pide su tope, su maqueta ni sus datos. El pull request también,
+  // pero sólo si no nombra a dónde va: un pedido lleva la rama que dice `--head`/`--source-branch`, en el repo que dice
+  // `-R`/`--repo`/`--repository`, no los archivos de la carpeta donde corre. Si nombra alguno, es del carril (ante la duda)
+  // `GH_REPO` en el comando cambia el repo sin que lo diga el pedido; sin palabras leídas, tampoco se sabe
+  const nombraDestino = (c) => c.tipo === 'pr' && (!Array.isArray(c.palabras) || /(^|[^A-Za-z0-9_])GH_(REPO|HOST)=/.test(command)
+    || c.palabras.some((w) => PEDIDO_CON_DESTINO.test(w)));
+  const esDelCarril = !repos.length || dudas.length || conRaiz < cs.length || cs.some((c) => c.opaco || nombraDestino(c)) || delComando.some((r) => repos.includes(r));
   // lo que git todavía no sigue puede subir en un solo comando que empuja después de hacer otra cosa, y este freno corre antes:
   // no hay un guardado siguiente que lo cuente. Sin empujar, el siguiente sí lo cuenta. No se busca el `git add` en el texto:
   // tiene sinónimos y atajos, y la palabra puede estar en un mensaje
@@ -1537,26 +1545,48 @@ function frenoDeLasPruebas(a, sid, home, { registrar = true, medida } = {}) {
   if (m.fallas && m.fallas.length) return null;
   const { archivos } = base.cuentaDelCarril(a, { medida: m });
   if (!archivos.length) return null;
+  const frenar = (porque, enRepo, comando, nombre) => {
+    if (registrar) {
+      const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
+      require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto: faltan las pruebas${nombre ? ` de ${nombre}` : ''} (${porque})` });
+    }
+    return { texto: textoFaltanLasPruebas({ porque, archivos: enRepo, comando, repo: nombre }) };
+  };
+  const porqueDe = (p) => (!p ? 'no hay una corrida de pruebas' : p.codigo !== 0 ? `la última corrida salió con ${p.codigo}` : 'el código cambió después de la última corrida');
+  // un carril de varios repos (la misma cuenta que `adhoc test --repo`: todos los repos del carril) pide una corrida en
+  // verde por cada repo con código, con `--repo`: la general no cuenta, porque corre en la carpeta de la sesión
+  const delCarril = base.reposDelCarril(a);
+  const conCodigo = delCarril.filter((r) => archivos.some((f) => f.startsWith(r + path.sep)));
+  if (delCarril.length > 1) {
+    const corridas = a.pruebasPorRepo || {};
+    for (const repo of conCodigo.sort()) {
+      const huella = base.huellaDelCarril(a, m, { repo });
+      const clave = Object.keys(corridas).find((k) => base.mismoRepo(k, repo));
+      const p = clave ? corridas[clave] : null;
+      if (p && p.codigo === 0 && p.huella === huella && base.huellaCompleta(huella)) continue;
+      const nombre = path.basename(require('./repo-group.js').checkoutPrincipal(repo) || repo);
+      return frenar(porqueDe(p), archivos.filter((f) => f.startsWith(repo + path.sep)), p && p.comando, nombre);
+    }
+    return null;
+  }
   const huella = base.huellaDelCarril(a, m);
   const p = a.pruebas;
   if (p && p.codigo === 0 && p.huella === huella && base.huellaCompleta(huella)) return null;
-  const porque = !p ? 'no hay una corrida de pruebas' : p.codigo !== 0 ? `la última corrida salió con ${p.codigo}` : 'el código cambió después de la última corrida';
-  if (registrar) {
-    const dir = path.dirname(path.dirname(require('./open-runs.js').markerPath(sid, home)));
-    require('./story-gate-io.js').appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `camino corto: faltan las pruebas (${porque})` });
-  }
-  return { texto: textoFaltanLasPruebas({ porque, archivos, comando: p && p.comando }) };
+  return frenar(porqueDe(p), archivos, p && p.comando, null);
 }
 
-/** «Faltan las pruebas»: lo mismo en los dos perfiles (habla de vos y no nombra las piezas de mantenimiento). */
-function textoFaltanLasPruebas({ porque = 'no hay una corrida de pruebas', archivos = [], comando = null } = {}) {
+/**
+ * «Faltan las pruebas»: lo mismo en los dos perfiles (habla de vos y no nombra las piezas de mantenimiento). Con `repo`,
+ * las de ese repo de un carril de varios.
+ */
+function textoFaltanLasPruebas({ porque = 'no hay una corrida de pruebas', archivos = [], comando = null, repo = null } = {}) {
   const marker = require('./story-gate.js').MARKER_JS;
   const tope = require('./story-gate.js').TOPE_DE_NOMBRES;
   return [
-    `🔒 GUARDAR: faltan las pruebas. Este camino corto cambió código y ${porque} en verde sobre lo que se guarda:`,
+    `🔒 GUARDAR: faltan las pruebas${repo ? ` de ${repo}` : ''}. Este camino corto cambió código${repo ? ` en ${repo}` : ''} y ${porque} en verde sobre lo que se guarda:`,
     ...archivos.slice(0, tope).map((f) => `   · ${f}`),
     '  Corré vos las pruebas con el arnés, que anota el resultado, y guardá de nuevo:',
-    `   node ${marker} adhoc test -- ${comando || '<el comando de las pruebas>'}`,
+    `   node ${marker} adhoc test${repo ? ` --repo ${repo}` : ''} -- ${comando || '<el comando de las pruebas>'}`,
     '  Si cambiás código después, la corrida se vence y hay que repetirla.',
   ].join('\n');
 }

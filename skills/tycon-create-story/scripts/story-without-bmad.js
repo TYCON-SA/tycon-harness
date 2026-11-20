@@ -42,6 +42,7 @@ const PIPELINE_LIB = path.join(__dirname, '..', '..', 'tycon-pipeline', 'scripts
 const { probeStoryFile, declaredStoryId } = require(path.join(PIPELINE_LIB, 'story-discovery.js'));
 const { productSiblings } = require(path.join(PIPELINE_LIB, 'product-siblings.js'));
 const { writeRecord, RECORD_DIR } = require(path.join(PIPELINE_LIB, 'first-time-record.js'));
+const { companionRoots, resolveDeclared } = require(path.join(PIPELINE_LIB, 'companion-repos.js'));
 
 const BMAD_CONFIG = path.join('_bmad', 'bmm', 'config.yaml');
 const EPIC = 1;
@@ -590,7 +591,10 @@ function write(repo, answersPath, home, { thisRepo = false } = {}) {
   const intentTarget = path.join(dir, `${name}.intent.md`);
   for (const t of [target, intentTarget]) if (fs.existsSync(t)) throw new Refusal(`no escribí la historia: ya existe ${t} y no lo piso`);
   fs.mkdirSync(dir, { recursive: true });
-  try { writeNew(target, render(answers, number, verify, (f) => fs.existsSync(path.join(repo, f)))); } catch (e) {
+  // un archivo nombrado `<Repo>/…` vive en un repo hermano declarado: se busca donde lo buscará el recorrido
+  const companions = companionRoots(repo, target);
+  const exists = (f) => fs.existsSync(path.join(repo, f)) || resolveDeclared(f, repo, companions).where !== null;
+  try { writeNew(target, render(answers, number, verify, exists)); } catch (e) {
     if (e.code === 'EEXIST') throw new Refusal(`no escribí la historia: ya existe ${target} y no lo piso`);
     throw e;
   }

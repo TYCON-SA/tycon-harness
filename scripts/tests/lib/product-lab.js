@@ -44,13 +44,15 @@ const VARIABLES_QUE_PASAN = ['LANG', 'LC_ALL', 'LC_CTYPE', 'TZ'];
 
 class NoMedido extends Error {}
 
-/** Los cuatro guiones que corre el laboratorio, en una versión del arnés. */
+/** Los guiones que corre el laboratorio, en una versión del arnés. */
 function rutasDeComandos(harness) {
   return {
     matriz: path.join(harness, 'skills', 'tycon-pipeline', 'scripts', 'runtime-matrix.js'),
     freno: path.join(harness, 'skills', 'tycon-pipeline', 'scripts', 'on-pre-commit.js'),
     guia: path.join(harness, 'skills', 'tycon-pipeline', 'scripts', 'qa-guide.js'),
     retro: path.join(harness, 'scripts', 'hooks', 'retro-pending.js'),
+    arreglo: path.join(harness, 'skills', 'tycon-pipeline', 'scripts', 'marker.js'),
+    edicion: path.join(harness, 'skills', 'tycon-pipeline', 'scripts', 'hook-pre-edit.js'),
   };
 }
 
@@ -887,6 +889,93 @@ const CASOS = [
     },
   },
 ];
+
+// ---------------------------------------------------------------- el arreglo rápido en los hermanos
+
+const SESION_DEL_ARREGLO = 'lab-arreglo';
+const ARREGLO_EN_DOS = ['Lab-Backend/src/Pedidos/Base.cs', 'Lab-Formularios/forms/pedido/index.tsx'];
+
+/**
+ * El grupo de los tres repos en la rama principal de su remoto, con `origin/HEAD` fijado. `sinVuelta`: un repo que no
+ * declara al de historias.
+ */
+function declararGrupo(c, { sinVuelta = null } = {}) {
+  const nombres = Object.keys(c.repos);
+  for (const nombre of nombres) {
+    const repo = c.repos[nombre];
+    const otros = nombres.filter((n) => n !== nombre && !(nombre === sinVuelta && n === 'Lab-Historias'));
+    correrGit(c, repo, ['checkout', '-q', 'main']);
+    const yaml = path.join(repo, '.tycon', 'advisors.yaml');
+    const antes = fs.existsSync(yaml) ? fs.readFileSync(yaml, 'utf8') : '';
+    escribir(repo, '.tycon/advisors.yaml', `${antes}repo_group: [${otros.join(', ')}]\n`);
+    commit(c, repo, 'chore: repo_group', T0 + 8000);
+    correrGit(c, repo, ['push', '-q', 'origin', 'main'], T0 + 8000);
+    correrGit(c, repo, ['remote', 'set-head', 'origin', 'main']);
+  }
+}
+
+/** `adhoc set` desde el repo de historias, aprobado con el click del dueño (la ventana de las pruebas). */
+function pedirArreglo(c, allowedFiles) {
+  const ventana = require(path.join(__dirname, 'window-passed.js')).conVentana({}, { via: 'click' });
+  const r = lanzar(c, 'arreglo', ['adhoc', 'set', JSON.stringify({ reason: 'el pedido no guarda la sucursal', datos: 'sin-cambio', allowedFiles })], {
+    extra: { ...ventana, NODE_OPTIONS: `--require ${JSON.stringify(c.herramientas.guarda)} ${ventana.NODE_OPTIONS}`, CLAUDE_CODE_SESSION_ID: SESION_DEL_ARREGLO },
+  });
+  return { codigo: r.status, salida: sinCarpeta(c, `${r.stdout}${r.stderr}`) };
+}
+
+/** El portón de edición sobre un archivo de un repo: `{ codigo, salida }` (2 frena). */
+function editar(c, abs) {
+  const r = lanzar(c, 'edicion', [], {
+    cwd: c.repos['Lab-Historias'],
+    input: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: SESION_DEL_ARREGLO, cwd: c.repos['Lab-Historias'], tool_name: 'Edit', tool_input: { file_path: abs, old_string: '// v1', new_string: '// v2' } }),
+    extra: { CLAUDE_CODE_SESSION_ID: SESION_DEL_ARREGLO },
+  });
+  return { codigo: r.status, salida: sinCarpeta(c, `${r.stdout}${r.stderr}`) };
+}
+
+const CASOS_DEL_ARREGLO = [
+  {
+    id: 'arreglo-en-dos-hermanos', ac: 17,
+    prepara: (c) => declararGrupo(c),
+    corre: (c) => {
+      const pedido = pedirArreglo(c, ARREGLO_EN_DOS);
+      const ediciones = pedido.codigo === 0 ? ARREGLO_EN_DOS.map((rel) => {
+        const [repo, ...resto] = rel.split('/');
+        return editar(c, path.join(c.repos[repo], ...resto));
+      }) : [];
+      // una fuera de la lista, en el mismo hermano: tiene que frenar (el portón miró de verdad)
+      const fuera = pedido.codigo === 0 ? editar(c, path.join(c.repos['Lab-Backend'], 'src', 'Pedidos', 'Choque.cs')) : null;
+      return { pedido, ediciones, fuera };
+    },
+    juzga: (x) => {
+      if (x.pedido.codigo !== 0) return falla(`el arreglo en los dos hermanos no abrió: ${x.pedido.salida.split('\n').slice(-2).join(' ')}`);
+      if (!/la lista \(2 archivos\): Lab-Backend\/src\/Pedidos\/Base\.cs, Lab-Formularios\/forms\/pedido\/index\.tsx/.test(x.pedido.salida)) return falla('la lista no nombra los archivos con su repo');
+      const frenada = x.ediciones.find((e) => e.codigo !== 0);
+      if (frenada) return falla(`una edición de la lista frenó: ${frenada.salida.split('\n')[0]}`);
+      return x.fuera && x.fuera.codigo === 2 && /FUERA DE LA LISTA/.test(x.fuera.salida) ? OK : falla('una edición fuera de la lista no frenó: el portón no miró');
+    },
+  },
+  {
+    id: 'arreglo-repo-fuera-del-grupo', ac: 17,
+    prepara: (c) => {
+      declararGrupo(c);
+      const otro = repoNuevo(c, 'Lab-Otro');
+      escribir(otro, 'src/a.cs', '// v1\n');
+      commit(c, otro, 'base', T0);
+      correrGit(c, otro, ['push', '-q', '-u', 'origin', 'main']);
+      correrGit(c, otro, ['remote', 'set-head', 'origin', 'main']);
+    },
+    corre: (c) => pedirArreglo(c, ['Lab-Otro/src/a.cs']),
+    juzga: (x) => (x.codigo !== 0 && /Lab-Otro no está en repo_group de Lab-Historias/.test(x.salida) ? OK : falla(`esperaba «no está en repo_group», dio ${x.codigo}: ${x.salida.split('\n').slice(-1)[0]}`)),
+  },
+  {
+    id: 'arreglo-hermano-sin-vuelta', ac: 17,
+    prepara: (c) => declararGrupo(c, { sinVuelta: 'Lab-Formularios' }),
+    corre: (c) => pedirArreglo(c, ARREGLO_EN_DOS),
+    juzga: (x) => (x.codigo !== 0 && /Lab-Formularios no declara a Lab-Historias/.test(x.salida) ? OK : falla(`esperaba «no declara a Lab-Historias», dio ${x.codigo}: ${x.salida.split('\n').slice(-1)[0]}`)),
+  },
+];
+CASOS.push(...CASOS_DEL_ARREGLO);
 
 // ---------------------------------------------------------------- correr
 

@@ -533,6 +533,17 @@ marker.js adhoc set '{"reason":"el combo de clientes no filtra por sucursal","da
 La prueba de cada archivo de la lista no hace falta nombrarla. Fuera de la lista no se edita ni se guarda; ampliarla es
 otra firma. El detalle (qué motivo no se delega, uno delegado por repo) está en `guides/firmas-del-arnes.md`.
 
+**Archivos de un repo hermano: `<Nombre>/<ruta>`.** Desde el repo de historias, por ejemplo, la lista nombra
+`Backend/src/A.cs` o `Forms/src/x.tsx`, sin «..» ni rutas absolutas. Vale sólo para un repo que esté al lado del checkout
+principal, sea su propio checkout principal (no un worktree) y se declare con este en `repo_group` de
+`.tycon/advisors.yaml`, en los dos sentidos. El grupo se lee de la rama principal del remoto (`origin/HEAD`), no de la
+carpeta ni de la rama local: un grupo commiteado sin subir no vale. Con otra sesión viva en el hermano, no se abre. Una
+lista de más de un repo se firma y se delega como una de un solo repo: los hermanos salen del grupo declarado, sin
+preguntarle al dueño, y un repo que no está en el grupo no entra por ninguna vía. El cuadro empieza por los repos y
+cuántos archivos de cada uno. Las pruebas van por repo, cada una en su
+carpeta: `marker.js adhoc test --repo <Nombre> -- <comando>`. Al guardar, cada repo que cambió código pide sus pruebas en
+verde.
+
 **Declararlo de nuevo conserva todo.** Con otro cupo o con otro motivo, el carril sigue con su lista, su marca de riesgo
 y sus constancias, que valen mientras no cambie lo que miden. Una tarea nueva en la misma sesión va en una rama nueva desde
 `main`: en la rama de la anterior, sus commits cuentan para el cupo.
@@ -552,9 +563,9 @@ y sus constancias, que valen mientras no cambie lo que miden. Una tarea nueva en
   pestaña destino.
 
 **Pasar el tope no pasa por vos.** Pedir más de 8 archivos (por defecto; lo configura cada organización) es la firma
-`adhoc-lane:sobre-cupo`, y la elige el dev: con su
-click en el cuadro de la pestaña que hace el trabajo, o en su terminal. Un click en tu pestaña no vale, ni un «aprobado»
-reenviado, ni la delegación; por eso una sesión de fondo sin nadie mirando sólo puede hacerlo por la terminal. Cuentan sólo
+`adhoc-lane:sobre-cupo`, y la elige el dueño: con su
+click en el cuadro, en la pestaña que hace el trabajo o en la tuya mientras seas la coordinadora vigente, o en su
+terminal. Tu pestaña sólo muestra el cuadro: el click es del dueño. No valen un «aprobado» reenviado ni la delegación. Cuentan sólo
 los archivos de implementación que el arreglo cambió: lo traído de `main`, las pruebas, las guías y las sondas no suman. Al
 pasar el cupo, el arreglo frena al editar y no guarda, y el mensaje recomienda la historia. Límite: mide la rama en la que se
 trabaja y lo que ya está en el disco. Trabajo armado en otra rama y empujado por su nombre, o creado en el mismo comando que

@@ -23,7 +23,8 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
   person` (o la variable `TYCON_PLAN_ROUTINE_APPROVAL=person` en la máquina), lo aprueba siempre una persona. Una story
   con pantalla tampoco se aprueba sin click: la maqueta la ve una persona. La revisión es el pase adversarial en **modo
   plan**, sobre la story, el plan y el repo, nunca sobre el hilo de la sesión que planeó. De fábrica corre una sola
-  lente, «suposición falsa» (lo que el plan cree del código y no es cierto); la organización puede sumar las otras
+  lente, «suposición falsa» (lo que el plan cree del código y no es cierto). Antes de cerrarlo, el plan ya pasó por la
+  pasada de suposiciones de quien lo escribió (`step-03-plan.md`). La organización puede sumar las otras
   (`plan_review.lenses`). Corre con el revisor que elige la organización (`review_runner`; de fábrica, Claude) y sólo
   un hallazgo confirmado de gravedad «defecto» la rechaza (`review.blocking_severity`); lo demás confirmado son notas
   para implementar. La guía entera: `guides/automatic-reviews.md`.
@@ -41,7 +42,8 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
    <sesión>`). Con el dueño ausente (la marca de ausente, o la pregunta sin respuesta pasados los minutos de
    `plan_review.owner_away_minutes`), según `plan_review.routine_owner_away`: revisar sin preguntar, esperar o seguir sin
    revisión. Con «seguir sin revisión», el plan lo firma el dueño.
-3. **Quién lanza la revisión.**
+3. **Quién lanza la revisión.** Se lanza con «Armar el plan» cerrado y sin una pregunta abierta a la persona sobre esta
+   revisión (salvo que cuente como ausente): si no, `plan-review` se niega sin lanzar nada y dice por qué.
    - **Con coordinadora**, la lanza la coordinadora: `marker.js plan-review --for-session <sesión>` prepara la revisión y devuelve los args
      del pase (`modo: 'plan'`, con su `pedido`, un número al azar de esta revisión) y en `comando` la línea que lo corre
      con el revisor de la organización. Si la sesión tiene la herramienta Workflow, puede usarla con los mismos args.
@@ -68,8 +70,9 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
      `plan_review.rejected_reaches_owner` en sí o al llegar al tope de rechazos seguidos (`review.max_rounds`, de
      fábrica 3): entonces llega con los hallazgos y «rechazado N veces seguidas», y el dueño decide partir la historia o
      firmar una vuelta extra.
-   - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan cambió
-     mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño.
+   - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan o la historia
+     cambiaron mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño. No se
+     relanza por cada cambio: se juntan todos, y se relanza cuando el plan y la historia quedaron como van a quedar.
    - **4d. Sin revisión.** Con `skip`, con `never` o eligiendo seguir sin revisión: el plan lo firma el dueño, y su
      cuadro lo dice («sin revisión (se eligió seguir)» o «sin revisión (el perfil no revisa)»).
 
@@ -303,7 +306,10 @@ de rol de agente, como «coordinadora» o «claude», queda automático; un corr
 
 El límite, dicho para que nadie le pida más: el registro distingue tipos, **no prueba identidad**. Un agente que escribe
 el correo de una persona en `--approved-by` queda anotado como manual. Lo único firmado de verdad por una persona es lo
-que pasa por la terminal (la firma de los AC imposibles de verificar, `runtime-waiver`). Sin `--approved-by` ni `--delegated-by`, la línea queda automática «sin nombrar». La maqueta la
+que pasa por la terminal (la firma de los AC imposibles de verificar, `runtime-waiver`). El plan y la maqueta que la
+persona firma por su cuenta (con «firmo» en su terminal, `--terminal`, con su click en el cuadro o con su «aprobado»
+escrito) quedan manuales, a nombre del usuario de la máquina; un nombre escrito en el comando no cuenta. Por las demás
+vías (la ventana de permiso), sin `--approved-by` ni `--delegated-by`, la línea queda automática «sin nombrar». La maqueta la
 aprueba quien aprobó el plan, en el mismo comando; `approve-mockup` acepta las mismas opciones. No se pide nada nuevo:
 si la línea no se puede escribir, el marcador avisa y el paso sigue. El portón de CI la exige en el merge (ver
 `guides/ci-gate.md`, «Registro de aprobaciones»). La misma forma vale para la exención de un CRITICAL al cerrar el

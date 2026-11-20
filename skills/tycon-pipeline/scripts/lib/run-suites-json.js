@@ -705,7 +705,7 @@ function main(argv, env = process.env) {
       continue;
     }
     if (onlyTouched && touched.known && !namesTouched(repo, p.ruta, touched.files)) {
-      const reason = byRepo ? `no lee lo tocado; la suite completa la corre la CI del pedido (${fullSuiteBy})` : 'la corrida cruzada (la del repo hermano, o con la story en otro repo) corre sólo las suites que leen lo tocado; la completa la corre la CI del pedido';
+      const reason = byRepo ? `no lee lo tocado; la suite completa la corre ${fullSuiteBy}` : 'la corrida cruzada (la del repo hermano, o con la story en otro repo) corre sólo las suites que leen lo tocado; la completa la corre la CI del pedido';
       resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
@@ -713,7 +713,7 @@ function main(argv, env = process.env) {
     // La de la regla de carpetas ya se eligió por lo que toca: la cercanía no la difiere.
     const lejos = centrales.length && !p.gate ? lejana(repo, p, touched.files, centrales) : null;
     if (lejos) {
-      const reason = `${lejos.map((c) => `lee ${c.file}, que nombran ${c.rutas.size} suites, pero no nombra lo que cambió (${c.names.join(', ')})`).join('; ')}; la suite completa la corre la CI del pedido (${fullSuiteBy})`;
+      const reason = `${lejos.map((c) => `lee ${c.file}, que nombran ${c.rutas.size} suites, pero no nombra lo que cambió (${c.names.join(', ')})`).join('; ')}; la suite completa la corre ${fullSuiteBy}`;
       resumen.deferred_suites.push({ suite: p.ruta, reason, entrada: p.entrada });
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
@@ -755,11 +755,11 @@ function main(argv, env = process.env) {
       const quedan = new Set(orden.filter((p, i) => i < tope || puntos.get(p) >= 1000));
       const fuera = elegidas.filter((p) => !quedan.has(p));
       if (fuera.length) {
-        const reason = `lee lo tocado, pero pasa el tope de ${tope} suites de la máquina y hay otras más cercanas al cambio; la suite completa la corre la CI del pedido (${fullSuiteBy})`;
+        const reason = `lee lo tocado, pero pasa el tope de ${tope} suites de la máquina y hay otras más cercanas al cambio; la suite completa la corre ${fullSuiteBy}`;
         for (const p of fuera) { resumen.deferred_suites.push({ suite: p.ruta, reason }); console.log(`DIFERIDA ${p.name} — ${reason}`); }
         for (const lista of [parallel, exclusives]) { const q = lista.filter((p) => quedan.has(p)); lista.length = 0; lista.push(...q); }
         topado = { max: tope, chosen: elegidas.length, deferred: fuera.length };
-        console.log(`[suites.json] tope de la máquina: ${elegidas.length} suites leen lo tocado; corren las ${quedan.size} más cercanas y ${fuera.length} quedan para la CI del pedido (${fullSuiteBy})`);
+        console.log(`[suites.json] tope de la máquina: ${elegidas.length} suites leen lo tocado; corren las ${quedan.size} más cercanas y ${fuera.length} quedan fuera (la suite completa la corre ${fullSuiteBy})`);
       }
     }
   }
@@ -778,7 +778,7 @@ function main(argv, env = process.env) {
   // Acotada por el repo y ninguna suite lee lo tocado: verde, dicho. La CI del pedido corre la completa antes del merge.
   if (byRepo && !sinMedir && touched.known && !parallel.length && !exclusives.length && !resumen.ausentes.length) {
     resumen.scoped.none_touched = true;
-    console.log(`[suites.json] ninguna suite lee lo tocado; la suite completa la corre la CI del pedido (${fullSuiteBy})`);
+    console.log(`[suites.json] ninguna suite lee lo tocado; la suite completa la corre ${fullSuiteBy}`);
     escribir(out, resumen);
     return Promise.resolve(0);
   }

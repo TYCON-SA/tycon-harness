@@ -1432,7 +1432,7 @@ function computeValidadores({ story, repo, todos = false, deprecados = true }) {
   try { repoEsDir = fs.statSync(repo).isDirectory(); } catch (_e) { repoEsDir = false; }
   if (!repoEsDir) throw new Error(`validators: --repo no es una carpeta: ${repo}`);
   const declarados = [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')]
-    .map((f) => f.replace(/^\([^)]*\)\s*/, ''));   // "(agent-skills) ruta" → ruta
+    .map((f) => f.replace(/^\([^)]*\)\s+/, ''));   // "(agent-skills) ruta" → ruta; `(app)/page.tsx` (un grupo de rutas, sin espacio) queda entera
   const files = unique([...declarados, ...archivosDotnetDelRepo(repo)]);
   const det = detectStack(repo, files);
   const activos = paquetesActivos(repo);
@@ -3396,7 +3396,7 @@ function computeNext() {
       const sinTurno = c === 'tests' && checks[c] === 'sin-turno';
       // «rojo-esperado» (expect-red): lo aceptan el cierre del turno y prepare-commit sólo con la deuda escrita; acá, igual
       const esperado = /^rojo-esperado/.test(String(checks[c])) && !!marker.cierre && marker.cierre.estado === 'deuda';
-      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir || esperado, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}${esperado ? ` — rojo esperado por la deuda ${marker.cierre.deuda}` : ''}${sinTurno ? ' — sin turno: el portón no corrió porque otra sesión tenía el turno de las ejecuciones grandes; no hay pruebas que arreglar, se corre el portón cuando la coordinadora dé el turno' : ''}` });
+      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir || esperado, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido; antes del merge hay que mirar que salga verde (esta máquina no lo comprueba)' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}${esperado ? ` — rojo esperado por la deuda ${marker.cierre.deuda}` : ''}${sinTurno ? ' — sin turno: el portón no corrió porque otra sesión tenía el turno de las ejecuciones grandes; no hay pruebas que arreglar, se corre el portón cuando la coordinadora dé el turno' : ''}` });
     }
   }
 

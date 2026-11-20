@@ -269,3 +269,19 @@ test('UnpushedStop_CarpetaVivaConGitRoto_SigueAvisando @story-8.271 @ac-13 @ac-1
   registro('git-roto', [{ repo: roto, kind: 'commit', sha: 'a'.repeat(40) }]);
   for (let i = 0; i < 2; i++) assert.match(JSON.parse(cierre('git-roto').out).reason, /no escaneado/, `cierre ${i + 1}`);
 });
+
+// 8.316: el arreglo rápido lee repo_group de la rama principal del remoto y sólo con nombres sueltos; este aviso sigue
+// leyendo la carpeta, con rutas que suben y absolutas
+test('T22 · AvisoSinSubir_SigueLaxo @story-8.316 @ac-16', () => {
+  const r = toyRepo('laxo-r', 0, { remote: false });
+  const b = toyRepo('laxo-b', 0, { remote: false });
+  const c = toyRepo('laxo-c', 0, { remote: false });
+  // sólo en la carpeta, sin commitear: una entrada que sube con «..» y otra absoluta
+  fs.writeFileSync(path.join(r, '.tycon', 'advisors.yaml'), `repo_group: [../laxo-b/repo, ${c}]\n`);
+  const out = runHook(['--scan', r, '--json']);
+  assert.equal(out.code, 0, out.err);
+  const scan = JSON.parse(out.out);
+  assert.equal(scan.groupSource, 'repo_group declarado');
+  const rutas = scan.repos.map((x) => fs.realpathSync(x.path));
+  assert.ok(rutas.includes(b) && rutas.includes(c), JSON.stringify(rutas));
+});
