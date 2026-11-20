@@ -408,8 +408,10 @@ function appendLog(fileName, obj, { estricto = false } = {}) {
     if (PREVIO) { LOGS_DEL_CHEQUEO.push([path.join(STATE_DIR, fileName), linea]); return; }
     fs.appendFileSync(path.join(STATE_DIR, fileName), linea, 'utf8');
   } catch (e) {
-    // logging nunca rompe el comando, salvo la constancia de lo que se acepta
+    // logging nunca rompe el comando, salvo la constancia de lo que se acepta; pero se dice: un renglón perdido sin
+    // aviso es un control que no ve lo que pasó
     if (estricto) throw e;
+    try { process.stderr.write(`⚠ marker.js: no pude escribir el renglón en ${fileName} (${(e && (e.code || e.message)) || e}): queda sin registrar.\n`); } catch (_e) { /* sin salida */ }
   }
 }
 
@@ -731,6 +733,16 @@ function cmdSet(payloadJson) {
     // ni cerrar los que seguían pendientes: un paso se cierra con `complete-step`, no borrándolo de la lista
     const nuevos = new Set(payload.stepsPending.map(String));
     for (const p of existing.stepsPending || []) if (!nuevos.has(String(p))) payload.stepsPending.push(p);
+  }
+  // Ni marcar hechos los que no lo estaban: un paso se cierra con `complete-step`, que corre sus frenos. Un `set` de la
+  // misma historia con «Preparar el commit» en `stepsCompleted` se saltearía el de código sin revisar.
+  if (existing && payload.storyId === existing.storyId && Array.isArray(payload.stepsCompleted)) {
+    const nuevos = payload.stepsCompleted.filter((x) => !(existing.stepsCompleted || []).map(String).includes(String(x)) && !STEPS_LIB.isDone(existing, String(x)));
+    if (nuevos.length) {
+      payload.stepsCompleted = payload.stepsCompleted.filter((x) => !nuevos.includes(x));
+      console.error(`marker.js set: ${nuevos.join(', ')} no se marca(n) hecho(s) con set (se cierra con marker.js complete-step <paso>): se descartó.`);
+      appendLog('bypass.log', { kind: 'MARKER_SET_STEPS_DISCARDED', steps: nuevos.map(String), storyId: payload.storyId });
+    }
   }
   // Los controles, el pase y el modo autónomo de la misma historia tienen sus comandos (`run-check`,
   // `mark-adversarial-*`, `set-autonomous`, que el freno de seguridad mira): un `set` no los pisa.
@@ -1411,7 +1423,7 @@ const ORDER_REQUIRES_OLD = { 3: ['1', '2'], 4: ['3'], 5: ['4'], 8: ['5'] };
 // `opciones`: lo que el guion comprueba con el pedido sin gastar (`antes`) y los campos más del renglón (`extra`).
 function firmaDelDueno(firma, resumen, opciones = {}) {
   const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-  const r = ow.exigir({ firma, argv: process.argv.slice(1), resumen, propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), ...opciones });
+  const r = ow.exigir({ firma, argv: process.argv.slice(1), resumen, propia: PROPIA, anotar: anotarFirma, ...opciones });
   if (r.codigo !== 0) {
     console.error(`🔒 marker.js: ${r.motivo}`);
     process.exit(r.codigo);
@@ -1454,11 +1466,19 @@ function quienFirmo(firma, persona) {
   return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).quienFirmo(firma, persona);
 }
 
+// El renglón `<firma>-signed` en gates.log: estricto. Sin él, el ok de guardar por delegación no ve la exención firmada
+// y la historia saldría limpia; si no se puede escribir, el comando falla a la vista y la firma no cuenta.
+function anotarFirma(renglon) {
+  try { appendLog('gates.log', renglon, { estricto: true }); } catch (e) {
+    throw new Error(`no pude escribir el renglón de la firma ${renglon && renglon.name} en gates.log (${(e && (e.code || e.message)) || e}): la firma no quedó registrada; repetí el comando`);
+  }
+}
+
 // El renglón `<firma>-signed` de una firma que el guion ya confirmó en la terminal con su propia pregunta.
 function firmadoEnLaTerminal(firma, resumen) {
   const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
   const sesion = PROPIA !== '_nosession' ? PROPIA : SID || null;
-  ow.firmar({ firma, via: 'terminal', sesion, destino: SID || null, resumen, anotar: (renglon) => appendLog('gates.log', renglon) });
+  ow.firmar({ firma, via: 'terminal', sesion, destino: SID || null, resumen, anotar: anotarFirma });
   return trabajarSobreElDestino(ow, { via: 'terminal', sesion, destino: SID || null });
 }
 
@@ -1986,7 +2006,7 @@ function cmdCompleteStep(nRaw, flags) {
     // sin click, la firma es de la revisión de la propia sesión: su renglón -signed y el del registro común (via: review)
     const porLaPropia = () => {
       const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-      ow.firmar({ firma: 'plan-approval', via: 'revision', sesion: SID, destino: SID, anotar: (renglon) => appendLog('gates.log', renglon),
+      ow.firmar({ firma: 'plan-approval', via: 'revision', sesion: SID, destino: SID, anotar: anotarFirma,
         resumen: `plan de ${marker.storyId}: revisión ${autoRevision.id} ${autoRevision.veredicto} (${autoRevision.modelo}), lanzada por la propia sesión` });
       return { via: 'revision', constancia: { via: 'revision' } };
     };
@@ -2323,6 +2343,7 @@ function cmdCompleteStep(nRaw, flags) {
       }
       if (cruce.sinRegistro) console.error(`ℹ️  complete-step ${n}: ${rcLib.NO_REGISTRY_NOTE}.`);
       if (cruce.unreadable) console.error(`⚠️  complete-step ${n}: el registro de críticos reportados tiene ${cruce.unreadable} renglón(es) ilegible(s): no cuentan.`);
+      if (cruce.unreadableSpawns) console.error(`⚠️  complete-step ${n}: el registro de lanzamientos de revisores tiene ${cruce.unreadableSpawns} renglón(es) ilegible(s): esas salidas no se cruzaron.`);
       appendLog('gates.log', { name: 'reported-criticals', status: cruce.sinRegistro ? 'no-registry' : 'ok', story: marker.storyId, step: n });
     } else {
       // sin carpeta de la corrida o sin findings.json no hay con qué cruzar: se dice, no se calla
@@ -7780,7 +7801,7 @@ function cmdAdhocAllowDataChange(io) {
   const { enUnRenglon } = require('./lib/adhoc-screen.js');
   const r = ow.exigir({ firma: 'adhoc-lane:datos', argv: process.argv.slice(1),
     resumen: enUnRenglon(`dejar pasar el freno de los datos de la sesión ${SID}${h ? `: ${ss.descripcion(h)}` : ''} · qué cambió: «${v.changed}» · la sesión recomienda pasar, porque «${v.why}»`),
-    propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
+    propia: PROPIA, anotar: anotarFirma });
   if (r.codigo !== 0) {
     console.error(`🔒 marker.js adhoc allow-data-change: una persona no lo dejó pasar — ${r.motivo}`);
     console.error('   Lo deja pasar sólo el click de una persona, en esta pestaña o en la de la coordinadora: pedíselo a ella con la pregunta que te da el freno, o en su terminal:');
@@ -7826,7 +7847,7 @@ function cmdAdhocAllowForeignSave(io) {
   const { enUnRenglon } = require('./lib/adhoc-screen.js');
   const r = ow.exigir({ firma: 'adhoc-lane:guardado-ajeno', argv: process.argv.slice(1),
     resumen: enUnRenglon(`dejar pasar una vez el guardado ajeno de la sesión ${SID}: ${p.comando} en ${p.repo} (rama ${p.rama})`),
-    propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
+    propia: PROPIA, anotar: anotarFirma });
   if (r.codigo !== 0) {
     console.error(`🔒 marker.js adhoc allow-foreign-save: una persona no lo dejó pasar — ${r.motivo}`);
     console.error('   Lo deja pasar sólo el click de una persona, en esta pestaña o en la de la coordinadora, o en su terminal:');
@@ -8199,7 +8220,7 @@ function cmdAdhoc(sub, payloadJson) {
     const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo, { cwd: carpetaDeLaLista });
     const enLaLista = `${allowedFiles.length} archivo${allowedFiles.length === 1 ? '' : 's'} (${relLista.slice(0, 2).join(', ')}${relLista.length > 2 ? ', …' : ''})`;
     const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`${conRiesgo}arreglo rápido de la sesión ${destino}${enRepos}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
-      propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), antes });
+      propia: PROPIA, anotar: anotarFirma, antes });
     if (r.codigo !== 0) {
       // la forma con JSON sólo si hace falta: la maqueta no entra en la otra, y hay motivos que no se pueden citar en ella
       const screen = require('./lib/adhoc-screen.js');
