@@ -168,7 +168,7 @@ function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, pe
   if (suya === undefined) return no('no pude leer el marcador de la sesión destino');
   if (propia && suya === propia) return no('la sesión destino trabaja la misma story que la ejecución abierta de la sesión del pedido');
   if (SOBRE_UN_REPO.has(firma)) {
-    const m = motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz });
+    const m = motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz, casa: home || undefined });
     if (m) return no(m);
   }
   return { ok: true, maquina: fp.huella };
@@ -289,7 +289,7 @@ function noEsCopiaSuelta({ estado, casa, destino, delPendiente, raiz }) {
 }
 
 /** Por qué el repo del pendiente no admite la delegación, o null: tiene que ser de `destino` y no de `sesion`. */
-function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz = raizDelRepo }) {
+function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz = raizDelRepo, casa = require('os').homedir() }) {
   // sin la carpeta del pedido no se sabe cuál es el checkout de la coordinadora
   if (!cwd) return 'el pedido no dice desde qué carpeta se corre';
   const delPendiente = raiz(path.resolve(cwd, repo || '.'));
@@ -304,8 +304,12 @@ function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz = raizDelRepo 
   }
   const delDestino = reposDe(estado, destino, raiz);
   if (delDestino === undefined) return `no pude leer el marcador o el arreglo rápido de la sesión ${destino}`;
-  if (!delDestino.includes(delPendiente.clave)) return `${delPendiente.ruta} no es un repo donde trabaja la sesión ${destino} (ni su ejecución abierta ni su arreglo rápido)`;
-  return null;
+  if (delDestino.includes(delPendiente.clave)) return null;
+  // la sesión que abrió la coordinadora trabaja en el modo ágil, sin ejecución ni arreglo rápido, en una copia que arma
+  // ella: esa copia también es suya, si no es de otra (como en la firma de trámite)
+  const suelta = noEsCopiaSuelta({ estado, casa, destino, delPendiente, raiz });
+  if (!suelta) return null;
+  return `${delPendiente.ruta} no es un repo donde trabaja la sesión ${destino} (ni su ejecución abierta ni su arreglo rápido), ni una copia suelta suya: ${suelta}`;
 }
 
 /**
@@ -346,7 +350,7 @@ function antesDelPendiente({ via, registro, propia = null, pedida = null, estado
     return d.ok && d.designacion.sesion === s;
   });
   if (!esLaCoordinadora(sesion)) return no(`la sesión que pide no es la coordinadora designada (y confirmada por el dueño): ${sesion}`);
-  const m = motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz });
+  const m = motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz, casa });
   return m ? no(m) : null;
 }
 

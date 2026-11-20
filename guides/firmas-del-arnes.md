@@ -665,8 +665,9 @@ quien lo propone. Ni la máquina ni una variable los cambian. Subir el máximo (
 Un pendiente nuevo de otra sesión (`pending-approval`) se aprueba así desde la sesión designada, con
 `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --for-session <sesión>`. La delegación vale sólo si la
 carpeta es de esa sesión: el repo de su ejecución abierta, el worktree donde vive la historia de esa ejecución (suele
-ser el privado; el clon principal no cuenta, porque lo comparten varias historias), o el de un arreglo rápido que declaró
-ella misma. Tampoco puede ser un repo de la coordinadora: ni su checkout, ni los de su ejecución abierta y su historia, ni
+ser el privado; el clon principal no cuenta, porque lo comparten varias historias), el de un arreglo rápido que declaró
+ella misma, o, si es una sesión de fondo que abrió la coordinadora y trabaja sin ejecución (modo ágil), la copia que
+armó ella (un worktree agregado que ninguna otra sesión nombra, igual que en la firma de trámite). Tampoco puede ser un repo de la coordinadora: ni su checkout, ni los de su ejecución abierta y su historia, ni
 el de su arreglo rápido. Si uno de los repos de ella no se encuentra, la delegación se niega. Los repos se
 comparan por la carpeta real, así que otra forma de escribir la ruta no cambia el resultado.
 

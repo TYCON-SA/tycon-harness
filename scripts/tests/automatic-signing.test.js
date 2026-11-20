@@ -207,9 +207,12 @@ test('AutomaticSigning_RegistroComun_AceptaLaViaYCuentaSinPersona', (t) => {
 // Una sesión de fondo que abrió la coordinadora trabaja en copias que arma ella misma (`git worktree add`), a veces de
 // otro repo que el de la carpeta con que se abrió. La firma de trámite sobre una copia suya sale; sobre la copia de otra
 // sesión, sobre el clon principal, o pedida por una sesión que no abrió la coordinadora, no.
-test('AutomaticSigning_CopiaSueltaDeUnaSesionDeFondo_Sale', (t) => {
+/**
+ * Una casa con un clon, dos copias (`suya`, de la sesión de fondo `ses-fondo` que abrió la coordinadora, y `ajena`, de
+ * `ses-otra`) y la carpeta con que se abrió la de fondo.
+ */
+function labDeCopiaSuelta(t) {
   const { execFileSync } = require('child_process');
-  const ds = require('../lib/delegated-signing.js');
   const { stateDir, claudeDir } = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
   const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'copia-suelta-'));
   t.after(() => fs.rmSync(casa, { recursive: true, force: true }));
@@ -237,6 +240,12 @@ test('AutomaticSigning_CopiaSueltaDeUnaSesionDeFondo_Sale', (t) => {
   fs.writeFileSync(path.join(sesiones, '1.json'), JSON.stringify({ pid: process.pid, sessionId: 'ses-fondo', cwd: carpeta, startedAt: abierta + 1000, kind: 'bg', name: 'R-1' }));
   fs.writeFileSync(path.join(sesiones, '2.json'), JSON.stringify({ pid: process.pid, sessionId: 'ses-otra', cwd: ajena, startedAt: abierta, kind: 'interactive', name: 'Otra' }));
   fs.writeFileSync(path.join(estado, 'coordination', 'launched.json'), JSON.stringify([{ name: 'R-1', cwd: carpeta, at: abierta, por: 'ses-coord' }]));
+  return { casa, estado, clon, copia, ajena, carpeta, sesiones, abierta };
+}
+
+test('AutomaticSigning_CopiaSueltaDeUnaSesionDeFondo_Sale', (t) => {
+  const ds = require('../lib/delegated-signing.js');
+  const { casa, estado, clon, copia, ajena, carpeta, sesiones, abierta } = labDeCopiaSuelta(t);
   const pedir = (repo, propia = 'ses-fondo') => ds.antesDelPendiente({ via: 'delegacion', registro: { via: 'automatica' }, propia, estado, cwd: carpeta, repo, casa });
 
   assert.strictEqual(pedir(copia), null, 'la copia que armó la sesión de fondo es suya');
@@ -269,4 +278,20 @@ test('AutomaticSigning_CopiaSueltaDeUnaSesionDeFondo_Sale', (t) => {
   // sin poder leer las sesiones que abrió la coordinadora, no
   fs.writeFileSync(path.join(estado, 'coordination', 'launched.json'), '{roto');
   assert.match(pedir(copia).motivo, /no pude/);
+});
+
+// 🔴 Falla con: un pendiente que abrió una sesión de fondo sin ejecución ni arreglo rápido (modo ágil), en su copia, que la
+//    coordinadora no puede aprobar por delegación y cae al dueño. Nadie se aprueba a sí mismo: eso no cambia.
+test('Delegacion_PendienteEnLaCopiaDeUnaSesionAgil_LoApruebaLaCoordinadora', (t) => {
+  const ds = require('../lib/delegated-signing.js');
+  const { casa, estado, clon, copia, ajena, carpeta } = labDeCopiaSuelta(t);
+  const designada = (s) => s === 'ses-coord';
+  const pedir = (repo, { sesion = 'ses-coord', destino = 'ses-fondo' } = {}) => ds.antesDelPendiente({ via: 'delegacion', registro: { via: 'delegacion', sesion, destino },
+    estado, cwd: carpeta, repo, casa, designada });
+  assert.strictEqual(pedir(copia), null, 'la copia de la sesión ágil que abrió la coordinadora');
+  assert.match(pedir(ajena).motivo || '', /ses-otra/, 'la copia de otra sesión no');
+  assert.match(pedir(clon).motivo || '', /clon principal|repo de la coordinadora/, 'el clon principal no');
+  assert.match(pedir(copia, { destino: 'ses-coord' }).motivo || '', /no ella misma/, 'la coordinadora no se aprueba a sí misma');
+  assert.match(pedir(copia, { sesion: 'ses-fondo' }).motivo || '', /no ella misma/, 'la sesión ágil no se aprueba a sí misma');
+  assert.match(pedir(copia, { sesion: 'ses-otra' }).motivo || '', /no es la coordinadora designada/, 'otra sesión no aprueba por delegación');
 });
