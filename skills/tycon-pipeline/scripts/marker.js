@@ -6536,14 +6536,13 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
     console.error('marker.js update-pipeline-status: el frontmatter no tiene bloque `pipelines:`');
     process.exit(1);
   }
-  // Las batches: cada `- name:` del bloque, hasta la próxima clave de nivel raíz.
-  const batches = [];
-  for (let i = start + 1; i < lines.length && !/^\S/.test(lines[i]); i++) {
-    const nm = lines[i].match(/^(\s*)-\s+name\s*:\s*["']?([^"'#\s]+)["']?/);
-    if (nm) { batches.push({ name: nm[2], at: i, indent: nm[1].length, statusAt: -1 }); continue; }
-    const cur = batches[batches.length - 1];
-    if (cur && cur.statusAt < 0 && /^\s+status\s*:/.test(lines[i])) cur.statusAt = i;
-  }
+  // Las tandas, sus límites y sus claves: las lee el lector del bloque (scripts/lib/pipelines-block.js), el mismo del
+  // control de historias, para que los dos vean las mismas tandas.
+  const pb = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'pipelines-block.js'));
+  const batches = pb.leerTandas(lines, start).map((t) => {
+    const st = t.claves.find((c) => c.clave === 'status');
+    return { ...t, statusAt: st ? st.linea : -1 };
+  });
   const chosen = which === '--all' ? batches : batches.filter((t) => t.name === which);
   if (!chosen.length) {
     console.error(`marker.js update-pipeline-status: no hay una tanda '${which}' — las tandas son: ${batches.map((t) => t.name).join(', ') || '(ninguna)'}`);
@@ -6554,55 +6553,46 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
     console.error(`marker.js update-pipeline-status: la tanda ${missingStatus.map((t) => t.name).join(', ')} no tiene línea \`status:\``);
     process.exit(1);
   }
-  const statusRegex = /^(\s*status\s*:\s*)["']?[\w-]+["']?([ \t]*(?:#.*)?)$/;
+  const statusRegex = /^(\s*(?:-\s+)?status\s*:\s*)["']?[\w-]+["']?([ \t]*(?:#.*)?)$/;
   for (const t of chosen) {
     lines[t.statusAt] = lines[t.statusAt].replace(statusRegex, (_, head, tail) => `${head}${newStatus}${tail}`);
   }
   // Una tanda en `done` no declara pendientes (story-format.md §1.1), y el control de historias frena el commit que la deja
   // así: al cerrarla, sus `acs_pending` / `tasks_pending` / `tests_pending` pasan a `acs` / `tasks` / `tests` (sumados a los
-  // que ya estaban) y se vacían. Uno escrito como lista de renglones no se toca y se dice. De abajo hacia arriba, para que
-  // sacar un renglón no corra los índices de las tandas de arriba.
+  // que ya estaban) y se sacan. Los vacíos se sacan. Lo que no es una lista en un renglón (una lista de renglones o partida,
+  // o una base que no es lista) no se toca y se dice. Los cambios se calculan sobre los renglones de antes y se aplican al
+  // final, de abajo hacia arriba.
   const movidos = new Map();
   if (newStatus === 'done') {
-    let fin = start + 1;
-    while (fin < lines.length && !/^\S/.test(lines[fin])) fin++;
     // los ids van tal cual: un número entero sin comillas, cualquier otro (`"2b"`, `"S"`, una prueba) entre comillas
-    const sinComentario = (v) => v.replace(/(^|\s+)#.*$/, '').trim();
-    const items = (v) => v.replace(/^\[/, '').replace(/\].*$/, '').split(',').map((x) => x.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-    const render = (xs, k) => `[${xs.map((x) => (k !== 'tests' && /^\d+$/.test(x) ? x : `"${x}"`)).join(', ')}]`;
-    const enRenglon = (v) => /^\[[^\]]*\]$/.test(v);   // una lista entera en el renglón; otra forma se pasa a mano
-    const vacio = (v) => /^(null|~|""|''|\[\s*\])$/.test(v);
-    for (const t of [...chosen].sort((a, b) => b.at - a.at)) {
-      const idx = batches.indexOf(t);
-      // el final de la tanda baja con cada renglón que se saca: si no, la búsqueda de la clave siguiente entra en la tanda de abajo
-      let hasta = idx + 1 < batches.length ? batches[idx + 1].at : fin;
+    const render = (xs, k) => `[${xs.map((x) => (k !== 'tests' && /^\d+$/.test(x) ? x : `"${String(x).replace(/["\\]/g, '\\$&')}"`)).join(', ')}]`;
+    const reemplazos = new Map();
+    const borrar = new Set();
+    for (const t of chosen) {
       const dichos = [];
       const aMano = (k, por) => console.error(`marker.js update-pipeline-status: la tanda ${t.name} tiene \`${k}_pending\` ${por}: no la toco. Pasá esos a \`${k}\` a mano.`);
       for (const k of ['acs', 'tasks', 'tests']) {
-        const enBloque = (re) => { for (let i = t.at + 1; i < hasta; i++) if (re.test(lines[i])) return i; return -1; };
-        const iPend = enBloque(new RegExp(`^\\s+${k}_pending\\s*:`));
-        if (iPend < 0) continue;
-        const pm = lines[iPend].match(new RegExp(`^(\\s+)${k}_pending\\s*:\\s*(.*?)\\s*$`));
-        const v = sinComentario(pm[2]);
-        if (vacio(v)) { lines.splice(iPend, 1); hasta--; continue; }
-        if (!v) { aMano(k, 'como lista de renglones'); continue; }
-        if (!enRenglon(v)) { aMano(k, 'en una forma que no leo de un renglón'); continue; }
-        const pend = items(v);
-        const iBase = enBloque(new RegExp(`^\\s+${k}\\s*:`));
-        if (iBase >= 0) {
-          const bm = lines[iBase].match(new RegExp(`^(\\s+${k}\\s*:\\s*)(\\[[^\\]]*\\])(.*)$`));
-          if (!bm) { aMano(k, `y su \`${k}\` no es una lista en el renglón`); continue; }
-          const base = items(bm[2]);
-          lines[iBase] = `${bm[1]}${render([...base, ...pend.filter((x) => !base.includes(x))], k)}${bm[3]}`;
-          lines.splice(iPend, 1);
-          hasta--;
+        const p = t.claves.find((c) => c.clave === `${k}_pending`);
+        if (!p) continue;
+        const pend = pb.elementos(lines, p);
+        if (pend.forma === 'vacia') { borrar.add(p.linea); p.hijos.forEach((i) => borrar.add(i)); continue; }
+        if (pend.forma !== 'renglon') { aMano(k, pend.forma === 'renglones' ? 'como lista de renglones' : 'en una forma que no leo de un renglón'); continue; }
+        const base = t.claves.find((c) => c.clave === k);
+        const conValor = (c, valor) => lines[c.linea].replace(new RegExp(`^(\\s*(?:-\\s+)?)${c.clave}(\\s*:\\s*).*$`), `$1${k}$2${valor}`);
+        if (base) {
+          const b = pb.elementos(lines, base);
+          if (b.forma !== 'renglon' && !(b.forma === 'vacia' && !base.hijos.length)) { aMano(k, `y su \`${k}\` no es una lista en el renglón`); continue; }
+          reemplazos.set(base.linea, conValor(base, render([...b.items, ...pend.items.filter((x) => !b.items.includes(x))], k)));
+          borrar.add(p.linea);
         } else {
-          lines[iPend] = `${pm[1]}${k}: ${render(pend, k)}`;
+          reemplazos.set(p.linea, conValor(p, render(pend.items, k)));
         }
-        if (pend.length) dichos.unshift(`${k} ${pend.join(', ')}`);
+        dichos.push(`${k} ${pend.items.join(', ')}`);
       }
-      if (dichos.length) movidos.set(t.name, dichos.sort((a, b) => ['acs', 'tasks', 'tests'].indexOf(a.split(' ')[0]) - ['acs', 'tasks', 'tests'].indexOf(b.split(' ')[0])));
+      if (dichos.length) movidos.set(t.name, dichos);
     }
+    for (const [i, texto] of reemplazos) if (!borrar.has(i)) lines[i] = texto;
+    for (const i of [...borrar].sort((x, y) => y - x)) lines.splice(i, 1);
   }
   const newFmBody = lines.join('\n');
   const newContent = content.replace(fmRegex, (_, open, _body, close) => `${open}${newFmBody}${close}`);

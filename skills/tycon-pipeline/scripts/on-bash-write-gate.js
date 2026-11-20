@@ -1875,7 +1875,8 @@ function corridasDeRevisoresTocadas(cmd, cwd, stateDir) {
   const { isAdvisorRunsRecord } = require('./lib/story-gate.js');
   // `pipeline.js advisor-runs` es un subcomando que lee el registro, no una ruta: se saca antes de buscar la palabra
   // (sólo si `pipeline.js` es lo que corre node: `rm pipeline.js advisor-runs` borra la carpeta)
-  cmd = String(cmd || '').replace(/(\bnode(?:\.exe)?["']?\s+["']?[^\s;&|'"]*pipeline\.js["']?\s+)advisor-runs(?![\w.\/-])/gi, '$1(subcomando)');
+  // (con opciones de node antes del guion, y con la ruta entre comillas si tiene espacios)
+  cmd = String(cmd || '').replace(/(\bnode(?:\.exe)?["']?(?:\s+-{1,2}[\w-]+(?:=[^\s;&|]*)?)*\s+(?:"[^"]*pipeline\.js"|'[^']*pipeline\.js'|[^\s;&|'"]*pipeline\.js)\s+)advisor-runs(?![\w.\/-])/gi, '$1(subcomando)');
   const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(cmd);
   const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
   return zonaTocada(cmd, cwd, stateDir, { carpeta: 'advisor-runs', nombres: ['advisor-runs'], pieza: isAdvisorRunsRecord,

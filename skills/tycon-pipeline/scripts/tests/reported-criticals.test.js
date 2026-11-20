@@ -970,6 +970,12 @@ test('AdvisorRuns_RegistryProtected — el freno de escritura no deja tocar el r
   const sub = `cd ${l.repo} && node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js advisor-runs --session x && rm -rf ${path.join(l.base, 'otra')}`;
   const r2 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: sub } }), env: l.env, encoding: 'utf8', cwd: l.repo });
   assert.doesNotMatch(out(r2), /registro de corridas de los revisores/, `el subcomando se frenó: ${out(r2)}`);
+  // con opciones de node antes del guion, o con la ruta entre comillas por un espacio, sigue siendo el subcomando
+  for (const leer of ['node --no-warnings ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js', `node "${path.join(l.base, 'Nombre Apellido', 'pipeline.js')}"`]) {
+    const c2 = `cd ${l.repo} && ${leer} advisor-runs --session x && rm -rf ${path.join(l.base, 'otra')}`;
+    const r5 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: c2 } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+    assert.doesNotMatch(out(r5), /registro de corridas de los revisores/, `el subcomando se frenó: ${c2}`);
+  }
   // pero la carpeta por su nombre, después de entrar al estado, sí
   const rel = `cd ${l.state} && rm -rf advisor-runs`;
   const r3 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: rel } }), env: l.env, encoding: 'utf8', cwd: l.repo });

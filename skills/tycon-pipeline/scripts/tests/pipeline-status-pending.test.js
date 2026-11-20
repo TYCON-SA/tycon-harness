@@ -89,3 +89,32 @@ test('T8 PipelineStatusDone_EmptyPending_Removed: un pendiente vacío (null, ~, 
   execFileSync(process.execPath, [MARKER, 'update-pipeline-status', story, 'A', 'done'], env(home));
   assert.doesNotMatch(fm(story), /_pending/);
 });
+
+// Las tandas, sus límites y sus claves salen del lector común del bloque (scripts/lib/pipelines-block.js), el mismo del
+// control de historias: una tanda que no empieza por `name`, una lista anidada con `- name:` o un `#` o una coma entre
+// comillas no corren los límites ni mezclan una tanda con otra.
+test('T9 PipelineStatusDone_SharedReader_BoundsAndQuotes', () => {
+  const a = lab(['  - name: A', '    status: in-progress', '    acs: [1]', '  - status: in-progress', '    name: B', '    acs_pending: [2]']);
+  execFileSync(process.execPath, [MARKER, 'update-pipeline-status', a.story, 'A', 'done'], env(a.home));
+  assert.match(fm(a.story), /- name: A\n {4}status: done\n {4}acs: \[1\]\n {2}- status: in-progress\n {4}name: B\n {4}acs_pending: \[2\]/, 'B empieza por status y es otra tanda');
+  const b = lab(['  - name: A', '    status: in-progress', '    advisors:', '      - name: sec', '        ok: true', '    acs_pending: [2]']);
+  execFileSync(process.execPath, [MARKER, 'update-pipeline-status', b.story, 'A', 'done'], env(b.home));
+  assert.match(fm(b.story), /- name: sec\n {8}ok: true\n {4}acs: \[2\]/, 'una lista anidada no corta la tanda');
+  const c = lab(['  - name: A', '    status: in-progress', '    tests: ["T1"]', '    tests_pending: ["login, logout", "caso #2"]']);
+  execFileSync(process.execPath, [MARKER, 'update-pipeline-status', c.story, 'A', 'done'], env(c.home));
+  assert.match(fm(c.story), /tests: \["T1", "login, logout", "caso #2"\]/);
+});
+
+// Los casos de siempre del cierre (también en unit.test.js): cambia sólo la tanda nombrada y conserva el comentario y el
+// cuerpo; con --all pasan todas y el status de la historia no se toca.
+test('T10 PipelineStatus_OnlyTheNamedBatch_KeepsCommentsAndBody', () => {
+  const cuerpo = ['  - name: A-medir', '    status: pending', '    acs: [1, 2]', '  - name: B-conectar', '    status: in-progress  # nota que se conserva', '    # comentario entre claves', '    acs: [3]'];
+  const { story, home } = lab(cuerpo);
+  const antes = fs.readFileSync(story, 'utf8');
+  execFileSync(process.execPath, [MARKER, 'update-pipeline-status', story, 'B-conectar', 'done'], env(home));
+  assert.strictEqual(fs.readFileSync(story, 'utf8'), antes.replace('status: in-progress  #', 'status: done  #'));
+  execFileSync(process.execPath, [MARKER, 'update-pipeline-status', story, '--all', 'done'], env(home));
+  const f = fm(story);
+  assert.strictEqual((f.match(/^ {4}status: done/gm) || []).length, 2);
+  assert.match(f, /^status: review$/m);
+});

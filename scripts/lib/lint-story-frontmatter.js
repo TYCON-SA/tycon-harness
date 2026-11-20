@@ -110,6 +110,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { sinGitDelPadre } = require('./clean-git-env.js');
+const pipelinesBlock = require('./pipelines-block.js');
 
 const REQUIRED = ['story', 'epic', 'status'];
 
@@ -171,59 +172,24 @@ try { siblingsOf = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'l
 let riskPaths;
 try { riskPaths = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'risk-paths.js')); } catch { riskPaths = null; }
 /**
- * Las tandas `done` que todavía declaran criterios, tareas o pruebas pendientes: `[{ name, cuantos }]`. Lector propio y
- * chico, para las dos formas del bloque: lista (cada `- clave:` a la sangría de la primera abre una tanda, aunque su
- * primera clave no sea `name`) o mapa (`  nombre:` sin valor, sólo si no hay lista). El nombre va entero (`7.1-core` no es
- * `7`). Los pendientes se cuentan en el renglón (`[2, "2b"]`, sin el comentario; `null`, `~`, `""` y `[]` no son nada), en
- * una lista partida en varios renglones, o como lista de renglones debajo de la clave.
+ * Las tandas `done` que todavía declaran criterios, tareas o pruebas pendientes: `[{ name, cuantos }]`. Las tandas, sus
+ * límites y sus claves salen del lector del bloque (lib/pipelines-block.js), el mismo del cierre de tanda: una lista o un
+ * mapa anidados son valores, no tandas. Cuentan sólo `acs_pending` / `tasks_pending` / `tests_pending` de la tanda, en
+ * cualquier forma; los vacíos (`null`, `~`, `""`, `[]`) no son nada.
  */
 function tandasDoneConPendientes(content) {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content || '');
   if (!fm) return [];
   const lines = fm[1].split(/\r?\n/);
-  const start = lines.findIndex((l) => /^pipelines\s*:\s*(#.*)?$/.test(l));
-  if (start < 0) return [];
-  const sinComentario = (v) => v.replace(/(^|\s+)#.*$/, '').trim();
-  const contar = (v) => v.replace(/^\[/, '').replace(/\].*$/, '').split(',').map((x) => x.trim()).filter(Boolean).length;
-  const tandas = [];
-  let cur = null;
-  let entrada = null; // la sangría de las entradas de la forma lista
-  let lista = null;   // la sangría mínima de los `- x` de una clave `*_pending:` sin valor
-  let partida = false; // una lista `[` que sigue en los renglones de abajo
-  for (let i = start + 1; i < lines.length; i++) {
-    const l = lines[i];
-    if (/^\s*(#.*)?$/.test(l)) continue;
-    if (/^\S/.test(l) && !/^-\s/.test(l)) break;
-    const indent = l.length - l.trimStart().length;
-    if (partida) { cur.cuantos += contar(`[${sinComentario(l)}`); if (/\]/.test(l)) partida = false; continue; }
-    if (lista !== null) {
-      if (/^\s*-\s*\S/.test(l) && indent >= lista && !(entrada !== null && indent === entrada)) { cur.cuantos++; continue; }
-      lista = null;
-    }
-    const item = /^(\s*)-\s+(.*)$/.exec(l);
-    if (item && (entrada === null || indent === entrada) && /^[\w-]+\s*:/.test(item[2])) {
-      if (entrada === null) entrada = indent;
-      cur = { name: null, status: null, cuantos: 0 };
-      tandas.push(cur);
-    }
-    const resto = item && cur && indent === entrada ? `${' '.repeat(indent + 2)}${item[2]}` : l;
-    const mapa = entrada === null && indent === 2 && /^\s{2}([^\s:#-][^:#]*?)\s*:\s*(#.*)?$/.exec(l);
-    if (mapa) { cur = { name: mapa[1], status: null, cuantos: 0 }; tandas.push(cur); continue; }
-    if (!cur) continue;
-    const nm = /^\s+name\s*:\s*(.*)$/.exec(resto);
-    if (nm) { cur.name = sinComentario(nm[1]).replace(/^["']|["']$/g, ''); continue; }
-    const st = /^\s+status\s*:\s*["']?([\w-]+)/.exec(resto);
-    if (st) { cur.status = st[1]; continue; }
-    const pend = /^(\s+)(?:acs|tasks|tests)_pending\s*:\s*(.*)$/.exec(resto);
-    if (pend) {
-      const v = sinComentario(pend[2]);
-      if (!v) { lista = pend[1].length; continue; }
-      if (/^(null|~|""|'')$/.test(v)) continue;
-      if (v.startsWith('[') && !v.includes(']')) partida = true;
-      cur.cuantos += v.startsWith('[') ? contar(v) : 1;
-    }
+  const out = [];
+  for (const t of pipelinesBlock.leerTandas(lines, pipelinesBlock.inicioDelBloque(lines))) {
+    const st = t.claves.find((c) => c.clave === 'status');
+    if (!st || pipelinesBlock.sinComillas(st.valor) !== 'done') continue;
+    let cuantos = 0;
+    for (const c of t.claves) if (/^(acs|tasks|tests)_pending$/.test(c.clave)) cuantos += pipelinesBlock.elementos(lines, c).items.length || 0;
+    if (cuantos > 0) out.push({ name: t.name || '(sin nombre)', cuantos });
   }
-  return tandas.filter((t) => t.status === 'done' && t.cuantos > 0).map(({ name, cuantos }) => ({ name: name || '(sin nombre)', cuantos }));
+  return out;
 }
 /** Cuántas tandas `done` con pendientes hay de cada nombre. */
 function porNombre(tandas) {

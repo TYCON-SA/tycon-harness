@@ -740,3 +740,22 @@ test('LintFrontmatter_DoneBatchWithPending_InsideAWorktreeCommit_OldStaysOld', (
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /que ya lo traían[\s\S]*A \(1\)/);
 });
+
+// Lo anidado es valor, no tanda: una lista anidada en la forma mapa, un `name:` o un `status:` de una sublista no abren
+// ni renombran ni cierran la tanda; un `#` o una coma entre comillas no cortan el valor; `[""]` está vacío.
+test('LintFrontmatter_DoneBatchWithPending_NestedIsValue', () => {
+  const root = mkRepo('lint-done-pending4-');
+  const cabeza = ['story: "9.8"', 'epic: 9', 'status: in-progress', 'pipelines:'];
+  const caso = (n, cuerpo) => run([story(root, `specs/story-9.8-${n}.md`, [...cabeza, ...cuerpo])], root);
+  const mapa = caso('a', ['  a:', '    status: in-progress', '    files:', '      - path: src/a.js', '  b:', '    status: done', '    acs_pending: [2, 3]']);
+  assert.equal(mapa.code, 1, mapa.out);
+  assert.match(mapa.out, /b \(2\)/);
+  const nombreMapa = caso('b', ['  B:', '    name: "la descripción"', '    status: done', '    acs_pending: [1]']);
+  assert.match(nombreMapa.out, /B \(1\)/, 'en la forma mapa el nombre es la clave');
+  const subStatus = caso('c', ['  - name: a', '    status: in-progress', '    acs_pending: [1]', '    parts:', '      - name: p', '        status: done']);
+  assert.equal(subStatus.code, 0, subStatus.out);
+  const numeral = caso('d', ['  - name: a', '    status: pending', '    tests_pending: ["caso #2"]', '  - name: b', '    status: done', '    acs_pending: [3]']);
+  assert.match(numeral.out, /b \(1\)/);
+  const vacia = caso('e', ['  - name: a', '    status: done', '    acs_pending: [""]']);
+  assert.equal(vacia.code, 0, vacia.out);
+});
