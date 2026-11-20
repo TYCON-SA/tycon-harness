@@ -946,6 +946,8 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   const huella = sha256(`${delPedido}\0${partes.fuente || ''}`).slice(0, 8);
   const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
     completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
+    // sólo la fuente que lee la explicación del cambio la trae (null si la leyó y no hay): las demás, el cuadro de siempre
+    ...(partes.explica !== undefined ? { explica: partes.explica } : {}),
     comando: comandoDelDetalle(sinDestino && [base(sinDestino[0]), ...sinDestino.slice(1)], texto) });
   // lo que la fuente dice entero y la vista resume (la designación, la exención) va al detalle
   if (partes.queHaceALaVista) {
