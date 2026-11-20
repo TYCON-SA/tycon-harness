@@ -3275,6 +3275,12 @@
       "requiere": []
     },
     {
+      "__nota": "las firmas de trámite (scripts/lib/automatic-signing.js): lo que el perfil pone en approvals.delegated_signing lo da el arnés solo, sin ventana ni coordinadora, después del control previo del guion; la constancia dice vía automatic y firmante el arnés; owner_only, el nivel 3 y la designación nunca salen solos.",
+      "raiz": "arnes",
+      "ruta": "tests/automatic-signing.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "etapa D de las firmas: harness.js sign firma un id del catálogo en la terminal y lo anota en el registro común; la emergencia, por número de pedido o --commit, deja pasar una vez lo que frenó un freno; el agente no la corre ni se la firma solo.",
       "raiz": "arnes",
       "ruta": "tests/harness-sign.test.js",

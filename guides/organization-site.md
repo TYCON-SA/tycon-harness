@@ -191,9 +191,10 @@ sólo si la organización decidió bajar las conversaciones (sección «Conversa
 
 El detalle trae también la tarjeta **«Las firmas»**: qué se firmó en esa ejecución, cuándo (en UTC), quién y cómo. Las
 firmas salen del **registro común de firmas** de la máquina: las de la sesión de la ejecución, desde su arranque hasta su
-cierre. Arriba, la cuenta; después, una fila por firma, con una de tres marcas: **«Tuya»** (la firmaste vos, en la
+cierre. Arriba, la cuenta; después, una fila por firma, con una de cuatro marcas: **«Tuya»** (la firmaste vos, en la
 ventana, la terminal, un click o un «aprobado» escrito), **«Por delegación»** (la dio la coordinadora en tu nombre; va con
-su propio color y el glifo ⇄) o **«Hecha y avisada»** (una sesión sin permisos lo hizo y te avisó: no es una firma tuya).
+su propio color y el glifo ⇄), **«Del arnés (trámite)»** (una firma de trámite, que el arnés da solo) o
+**«Hecha y avisada»** (una sesión sin permisos lo hizo y te avisó: no es una firma tuya).
 Una firma pedida por otra sesión lo dice, con los primeros 8 caracteres de esa sesión. Una firma anotada en el registro
 de otra carpeta (la de HOME, cuando no es la de la cuenta) lo dice también. Los textos suben saneados (sin rutas, correos
 ni credenciales), con tope de largo, sin ningún id de sesión entero y con un tope de 200 firmas por ejecución; las que
@@ -801,7 +802,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   Debajo está **quién firma cada cosa**: una fila por cada firma del catálogo (`guides/firmas-del-arnes.md`), con tres
   opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso; donde la ventana no
   llega, aprueba con un click en el cuadro de opciones o un «aprobado» escrito; o firma en su terminal.
-  «Delegada a la coordinadora» (`approvals.delegated_signing`) deja que esa sesión la firme en nombre del dueño, y su
+  «Delegada a la coordinadora» (`approvals.delegated_signing`) la vuelve de trámite: la da el arnés solo, en cualquier
+  sesión, con o sin coordinadora (`guides/firmas-del-arnes.md`, «Las firmas de trámite las da el arnés»), y su
   frase queda registrada; lo delegado no está protegido contra un agente: si la coordinadora decide aprobarlo por su
   cuenta, el arnés no lo distingue de un ok del dueño, así que se delega sólo lo de bajo riesgo. «Sólo del dueño»
   (`approvals.owner_only`) la traba: el sitio no ofrece delegarla, y lo que no se firma desde la pestaña de otra sesión

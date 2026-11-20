@@ -36,7 +36,7 @@ falsa»: lo que el plan cree del código y no es cierto. Los resultados:
 
 | Resultado | Qué pasa |
 |---|---|
-| «aprobado» | Rutina: se aprueba, con o sin coordinadora (con coordinadora, ella firma; sin ella, `complete-step approve-plan` cierra sin click). Delicada, o con `plan_review.routine_approval: person`: le llega al dueño con «revisado, sin hallazgos» (una delicada la aprueba la coordinadora si el perfil delega `plan-approval:delicada`) |
+| «aprobado» | Rutina: se aprueba, con o sin coordinadora (con coordinadora, ella firma; sin ella, `complete-step approve-plan` cierra sin click). Delicada, o con `plan_review.routine_approval: person`: le llega al dueño con «revisado, sin hallazgos» (una delicada la aprueba el arnés solo si el perfil pone `plan-approval:delicada` como trámite, con la revisión de la propia sesión) |
 | «aprobado con notas» | Confirmados por debajo del corte de gravedad: cuenta como aprobado, la sesión los corrige al implementar y el cuadro los muestra |
 | «rechazado» | Sólo por un confirmado en el corte (de fábrica, un defecto). La sesión corrige el plan y la revisión vuelve a correr. Llega al dueño al tope de rechazos seguidos (`review.max_rounds`, de fábrica 3), o enseguida con `plan_review.rejected_reaches_owner: true` |
 | «sin veredicto» | Le llega al dueño con «no se pudo revisar: <motivo>». Si el plan cambió mientras corría, se reintenta una vez |
