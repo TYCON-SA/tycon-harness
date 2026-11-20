@@ -267,7 +267,8 @@ test('T16 RevisionDelPlan_LlevaLaParte — @story-8.168 @ac-8', () => {
   const run = path.join(dir, '.advisors', 'pipeline-runs', '9.8-20261109000000');
   fs.mkdirSync(run, { recursive: true });
   fs.writeFileSync(path.join(run, 'step-02-bmad-plan.md'), '# Plan\n\nCambiar docs/guia.md.\n');
-  const marker = { storyId: '9.8', storyPath: story, repoPath: dir, startedAt: '2026-11-09T00:00:00.000Z', batch: A, batchValid: true };
+  // con «Armar el plan» cerrado: la revisión es del plan cerrado
+  const marker = { storyId: '9.8', storyPath: story, repoPath: dir, startedAt: '2026-11-09T00:00:00.000Z', batch: A, batchValid: true, stepsCompleted: ['start', 'validate-story', 'plan'], stepScheme: 2 };
   fs.writeFileSync(path.join(estado, 'active', 'dest.json'), JSON.stringify(marker));
   const p = pr.preparar({ lanza: 'coord', destino: 'dest', estado, designada: () => 'coord' });
   assert.strictEqual(p.codigo, 0, p.motivo);

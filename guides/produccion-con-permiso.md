@@ -200,9 +200,10 @@ antes de aprobar, así que la puerta no acepta archivos. Una consulta puede ocup
 las comillas simples. Si le pedís a la puerta un archivo, el freno no deja pasar el comando y, cuando el archivo
 se puede pasar a una consulta en línea, te da ese comando listo para correr.
 
-**Tope: unos 20 renglones de pantalla.** El cuadro muestra eso y corta el principio sin aviso, así que un comando
-más largo no pasa: el freno dice cuántos ocupa y hay que partir la consulta en consultas más cortas. Un renglón
-de más de 76 columnas cuenta como varios, y un tabulador o un carácter ancho ocupan más de una columna.
+**Tope: unos 20 renglones de pantalla de 60 columnas y hasta 1200 caracteres**, el mismo que pone la puerta. El
+cuadro muestra eso y corta el principio sin aviso, así que un comando más largo no pasa: el freno dice cuánto
+ocupa y hay que partir la consulta en consultas más cortas. Un renglón de más de 60 columnas cuenta como varios,
+y un tabulador o un carácter ancho ocupan más de una columna.
 
 **Sin caracteres que engañen.** Ni caracteres de control (un retorno de carro, una secuencia de la terminal) ni
 invisibles o de dirección: harían ver en el cuadro otra cosa que lo que corre. Los frena el freno y, otra vez,
