@@ -559,8 +559,9 @@ test('PrShards_Jobs_ValidateThenBenchAndSuitesThenAVerdictThatAlwaysRuns', () =>
     // cambio no traiga código o que algún trabajo ya lo haya dado. Con más trabajos de los que nombra, corre siempre.
     const dado = (job, leg) => `ne(dependencies.${job}.outputs['${leg ? `${leg}.` : ''}veredicto.dado'], 'si')`;
     const patas = [dado('Bench'), ...[1, 2, 3, 4].map((i) => dado('Suites', `shard_${i}`)), ...[1, 2, 3, 4].map((i) => dado('SuitesLargo', `shard_${i}`))];
-    assert.ok(verdict.includes(`\n    \${{ if le(parameters.suiteShards, 4) }}:\n      condition: and(always(), ${HAS_CODE}, ${patas.join(', ')})\n`),
-      'el respaldo corre si ningún trabajo dio el veredicto: el banco y cada pata de las dos matrices');
+    const ok = (job) => `in(dependencies.${job}.result, 'Succeeded', 'Skipped')`;
+    assert.ok(verdict.includes(`\n    \${{ if le(parameters.suiteShards, 4) }}:\n      condition: and(always(), ${HAS_CODE}, or(not(and(${['Bench', 'Suites', 'SuitesLargo'].map(ok).join(', ')})), and(${patas.join(', ')})))\n`),
+      'el respaldo corre si algún trabajo no terminó bien, o si ninguno dio el veredicto: el banco y cada pata de las dos matrices');
     assert.ok(verdict.includes(`\n    \${{ else }}:\n      condition: and(always(), ${HAS_CODE})\n`), 'con más de 4 trabajos de suites, siempre');
     assert.ok(4 >= maxShards(), 'el máximo por defecto entra en lo que nombra la condición');
     // los tres trabajos que publican, con el veredicto prendido en su plantilla
@@ -621,7 +622,7 @@ test('PrShards_Verdict_TheLastJobThatPublishesGivesIt_OtherwiseTheFallback', { s
     : `#!/bin/sh\nprintf '%s' '${JSON.stringify({ count: names.length, value: names.map((name) => ({ name })) })}'\n`, { mode: 0o755 });
   const body = expand(stepBody(ELECTION_STEP), {});
   const now = Math.floor(Date.now() / 1000);
-  const base = { SUITES_OF: '2', SUITES_JOB_MINUTES: '40', SUITES_JOB_STARTED: String(now - 600), AGENT_JOBSTATUS: 'Succeeded',
+  const base = { SUITES_OF: '2', SUITES_JOB_MINUTES: '40', SUITES_JOB_STARTED: String(now - 600), AGENT_JOBSTATUS: 'Succeeded', SYSTEM_JOBATTEMPT: '1',
     SYSTEM_COLLECTIONURI: 'https://example.invalid/org/', SYSTEM_TEAMPROJECT: 'p', BUILD_BUILDID: '4242', SYSTEM_ACCESSTOKEN: 'x' };
   const run = (env) => {
     const r = bash(dir, body, 'eleccion', { ...base, ...env });
@@ -631,16 +632,27 @@ test('PrShards_Verdict_TheLastJobThatPublishesGivesIt_OtherwiseTheFallback', { s
     assert.strictEqual(aca, dado, `la variable del trabajo y la salida dicen lo mismo\n${r.out}`);
     return { aca, out: r.out };
   };
-  const ALL = ['verdict-kit-a1', 'suites-plan-a1', 'snapshot-a1', 'bench-a1', 'suites-shard-bench-a1', 'suites-shard-1-a1', 'suites-shard-2-a2'];
+  const ALL = ['verdict-kit-a1', 'suites-plan-a2', 'snapshot-a1', 'bench-a1', 'suites-shard-bench-a1', 'suites-shard-1-a1', 'suites-shard-2-a1'];
   answer(ALL);
-  assert.strictEqual(run({}).aca, 'si', 'todos publicaron (cualquier intento): este trabajo es el último y lo da');
-  for (const missing of ['bench-a1', 'suites-shard-bench-a1', 'suites-shard-2-a2']) {
+  assert.strictEqual(run({}).aca, 'si', 'todos publicaron: este trabajo es el último y lo da (un reintento de Validar no importa)');
+  // 🔴 un reintento: lo publicado por el intento anterior de un trabajo que todavía corre parecería «ya publicó» y el
+  // veredicto saldría con lo viejo. Lo da el respaldo, que espera a todos
+  assert.match(run({ SYSTEM_JOBATTEMPT: '2' }).out, /es un reintento/, 'este trabajo reintentado no lo da');
+  assert.strictEqual(run({ SYSTEM_JOBATTEMPT: '' }).aca, 'no', 'sin saber el intento, no lo da');
+  for (const again of [['suites-shard-2-a2'], ['bench-a2'], ['suites-shard-bench-a10']]) {
+    answer([...ALL, ...again]);
+    const r = run({});
+    assert.strictEqual(r.aca, 'no', `${again}: otro trabajo fue reintentado, no lo da`);
+    assert.match(r.out, /hay trabajos reintentados/);
+  }
+  answer(ALL);
+  for (const missing of ['bench-a1', 'suites-shard-bench-a1', 'suites-shard-2-a1']) {
     answer(ALL.filter((n) => n !== missing));
     const r = run({});
     assert.strictEqual(r.aca, 'no', `falta ${missing}: no lo da`);
     assert.match(r.out, /todavía no publicaron:/);
   }
-  answer([...ALL.filter((n) => n !== 'suites-shard-2-a2'), 'suites-shard-2-a1x', 'suites-shard-20-a1']);
+  answer([...ALL.filter((n) => n !== 'suites-shard-2-a1'), 'suites-shard-2-a1x', 'suites-shard-20-a1']);
   assert.strictEqual(run({}).aca, 'no', 'un nombre parecido no cuenta como el trabajo 2');
   answer(ALL);
   for (const [env, why] of [
