@@ -655,4 +655,17 @@ test('AjustesDespuesDeLaFirma_SinPasar_FrenanElDone', (t) => {
   assert.strictEqual(r.code, 0, r.out);
   const { ajustesSinPasar } = require(LINT);
   assert.deepStrictEqual(ajustesSinPasar('# S\n\n### Ajustes después de la firma\n\n- [ ] a\n\n## Otra\n\n- [ ] b\n'), ['- [ ] a'], 'termina en el título de su nivel o mayor');
+  // lo que el pase encontró: un ajuste sin pasar debajo de uno pasado, después de un renglón vacío o como subtítulo
+  const S = '## Ajustes después de la firma\n\n';
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n  - [ ] sub\n`), ['- [ ] sub'], 'anidado');
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n\n    cambiar el AC 2\n`), ['cambiar el AC 2'], 'después de un renglón vacío');
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n### AC 9. nuevo\n`), ['### AC 9. nuevo'], 'un subtítulo');
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n  sigue\n  - [x] sub pasado\n* [X] b\n`), [], 'todo pasado, también anidado');
+  // el título como ejemplo en un bloque de código del cuerpo no abre la sección
+  assert.deepStrictEqual(ajustesSinPasar('## Notas\n\n```md\n## Ajustes después de la firma\n```\n\nTexto.\n\n## Dev Agent Record\n'), [], 'un ejemplo en un bloque');
+  // el estado como lo leen los guiones: con comillas simples o con un comentario, también es done
+  for (const estado of ["'done'", 'done # cerrada', '"Done"']) {
+    con(estado, '- [ ] todavía no\n');
+    assert.notStrictEqual(lint().code, 0, `status: ${estado}`);
+  }
 });

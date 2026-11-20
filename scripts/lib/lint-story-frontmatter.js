@@ -566,39 +566,57 @@ function filesDeParteMalos(fm) {
 /** `{ missing, unsure }` de una story: las rutas que no existen y las que no se pueden juzgar. */
 /**
  * Los renglones de «Ajustes después de la firma» que no están marcados como pasados al cuerpo. Un ajuste pasado es un
- * renglón `- [x] …` (o `* [x]`), con sus renglones de continuación con sangría; cualquier otro renglón con texto cuenta
- * como pendiente. La sección, de nivel 2 o 3, termina en el próximo título de su nivel o uno mayor.
+ * renglón `- [x] …` (o `* [x]`, con o sin sangría), con los renglones de texto que le siguen sin cortar y con sangría;
+ * cualquier otro renglón con texto cuenta como pendiente: una casilla sin marcar (también anidada), un renglón suelto,
+ * un subtítulo o lo que hay en un bloque de código. La sección, de nivel 2 o 3 y fuera de un bloque de código, termina en
+ * el próximo título de su nivel o uno mayor.
  */
 function ajustesSinPasar(content) {
-  const lineas = String(content).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+  const lineas = String(content).replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n');
   const pendientes = [];
   let nivel = 0;
   let enPasado = false;
-  // un bloque de código dentro de la sección: sus renglones cuentan y un título adentro no la cierra
   let cerco = null;
   for (const l of lineas) {
-    if (nivel && cerco) {
+    if (cerco) {
       const cierre = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(l);
       if (cierre && cierre[1][0] === cerco[0] && cierre[1].length >= cerco.length) cerco = null;
-      if (l.trim()) pendientes.push(l.trim());
+      if (nivel && l.trim()) pendientes.push(l.trim());
       continue;
     }
-    const apertura = nivel && /^ {0,3}(`{3,}|~{3,})/.exec(l);
-    if (apertura) { cerco = apertura[1]; enPasado = false; pendientes.push(l.trim()); continue; }
+    const apertura = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(l);
+    if (apertura && !(apertura[1][0] === '`' && apertura[2].includes('`'))) {
+      cerco = apertura[1];
+      enPasado = false;
+      if (nivel) pendientes.push(l.trim());
+      continue;
+    }
     const t = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(l);
     if (t) {
       const nombre = t[2].replace(/[*_`]/g, '').trim().toLowerCase();
+      enPasado = false;
       if (nivel && t[1].length <= nivel) nivel = 0;
-      if (!nivel && nombre === 'ajustes después de la firma') { nivel = t[1].length; enPasado = false; }
+      if (!nivel && nombre === 'ajustes después de la firma') { nivel = t[1].length; continue; }
+      // un subtítulo dentro de la sección también es texto sin pasar
+      if (nivel) pendientes.push(l.trim());
       continue;
     }
-    if (!nivel || !l.trim()) continue;
-    if (/^\s{0,3}[-*]\s+\[[xX]\]\s/.test(l)) { enPasado = true; continue; }
-    if (enPasado && /^\s{2,}\S/.test(l)) continue;
+    if (!nivel) continue;
+    // un renglón vacío corta la continuación de un ajuste pasado
+    if (!l.trim()) { enPasado = false; continue; }
+    if (/^\s*[-*+]\s+\[[xX]\]\s/.test(l)) { enPasado = true; continue; }
+    const item = /^\s*([-*+]|\d+[.)])\s/.test(l);
+    if (enPasado && !item && /^\s{2,}\S/.test(l)) continue;
     enPasado = false;
     pendientes.push(l.trim());
   }
   return pendientes;
+}
+
+/** El estado de una historia como lo leen los guiones del arnés: sin comillas, sin comentario y en minúsculas. */
+function estadoDe(fm) {
+  const m = /^status\s*:\s*(.*)$/m.exec(fm);
+  return m ? m[1].replace(/\s+#.*$/, '').trim().replace(/^(["'])(.*)\1$/, '$2').trim().toLowerCase() : '';
 }
 
 function checkStory(storyFile, content) {
@@ -761,7 +779,7 @@ function main() {
 
     // 10. Una historia terminada no guarda ajustes sin pasar al cuerpo: «Ajustes después de la firma» es el lugar de los
     //     ajustes de redacción mientras se revisa el plan (la revisión no se ata a esa sección), y se vacía antes de `done`
-    if (String(scalar(parsed.fm, 'status') || '').toLowerCase() === 'done') {
+    if (estadoDe(parsed.fm) === 'done') {
       const pendientes = ajustesSinPasar(content);
       if (pendientes.length) {
         errors.push({
