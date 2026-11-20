@@ -1104,12 +1104,12 @@ for caso in "carpeta:archivo común" "enlace.sql:enlace" "grande.sql:mide" "bina
   else no "6.6 T4 Guard_File_BadFile_NoCommandWithReason · $f (rc=$rc, esperaba «${motivo}») — err: $(head -c 200 "$TMP/err")"; fi
 done
 
-# T5 · justo 20 renglones de pantalla, contando el prefijo, pasa al cuadro (también con tabuladores)
-veinte="$(for i in $(seq 19); do echo "select $i"; done)"
+# T5 · justo 20 renglones de pantalla, contando el prefijo, pasa al cuadro (también con tabuladores). El primer renglón
+# lleva el prefijo de la puerta y «select 1»: 69 columnas, dos renglones de 60
+veinte="$(for i in $(seq 18); do echo "select $i"; done)"
 pasa "6.6 T5 Guard_Inline_UnderCap_Asks · 20 renglones" "$PUERTA $PROD '$veinte
 fin'"
-# el primer renglón lleva el prefijo de la puerta (62 columnas): ahí 8 tabuladores ocuparían dos
-tabs="$(for i in $(seq 19); do printf 'a\t\t\t\t\t\t\t\tb\n'; done)"   # 8 tabuladores: 65 columnas, un renglón cada uno
+tabs="$(for i in $(seq 17); do printf 'a\t\t\t\t\t\t\tb\n'; done)"   # 7 tabuladores: 57 columnas, un renglón cada uno
 pasa "6.6 T5 Guard_Inline_UnderCap_Asks · 20 renglones con tabuladores" "$PUERTA $PROD 'select 1
 ${tabs}fin'"
 
@@ -1127,8 +1127,8 @@ sobre "20 renglones de 40 anchos" "$PUERTA $PROD '$(for i in $(seq 20); do for j
 sobre "20 renglones de 40 Tangut" "$PUERTA $PROD '$(for i in $(seq 20); do for j in $(seq 40); do printf '\360\227\200\200'; done; echo; done)'"
 sobre "20 renglones de 40 kana suplementaria" "$PUERTA $PROD '$(for i in $(seq 20); do for j in $(seq 40); do printf '\360\233\200\200'; done; echo; done)'"
 # un ancho que no entra en la última columna baja entero al renglón siguiente: ese hueco también cuenta
-diecisiete="$(for i in $(seq 16); do echo "select $i"; done)"
-corte="$(head -c 75 /dev/zero | tr '\0' 'a')漢$(head -c 75 /dev/zero | tr '\0' 'a')"
+diecisiete="$(for i in $(seq 15); do echo "select $i"; done)"
+corte="$(head -c 59 /dev/zero | tr '\0' 'a')漢$(head -c 59 /dev/zero | tr '\0' 'a')"
 sobre "un ancho en la última columna" "$PUERTA $PROD 'select 1
 $diecisiete
 $corte
@@ -1138,6 +1138,16 @@ cola="$(for i in $(seq 40); do echo; done; echo x)"; cola="${cola%x}"
 sobre "20 renglones y 40 saltos al final" "$PUERTA $PROD '$veinte
 fin'$cola"
 sobre "20 renglones de 40 letras con acento combinante" "$PUERTA $PROD '$(for i in $(seq 20); do for j in $(seq 40); do printf 'e\314\201'; done; echo; done)'"
+# el tope es el de la puerta: renglones de 60 columnas y hasta 1200 caracteres. 15 renglones de 70 columnas ocupan 30
+a70="$(head -c 70 /dev/zero | tr '\0' 'a')"
+sobre "15 renglones de 70 columnas" "$PUERTA $PROD 'select 1
+$(for i in $(seq 15); do echo "$a70"; done)
+fin'"
+# 20 renglones de 60 columnas entran en pantalla, pero el comando pasa de 1200 caracteres contando los saltos
+pre="$PUERTA $PROD 'select "; a60="$(head -c 60 /dev/zero | tr '\0' 'a')"
+sobre "20 renglones y 1218 caracteres" "$pre$(head -c $((120 - ${#pre})) /dev/zero | tr '\0' 'a')
+$(for i in $(seq 17); do echo "$a60"; done)
+$(head -c 59 /dev/zero | tr '\0' 'a')'"
 
 # T7 · caracteres que engañan en la consulta en línea: sale 2 con el motivo, sin el carácter en el mensaje
 for raro in '\033[2J' '\r' '\302\233' '\302\255' '\330\234' '\342\200\256' '\342\200\213' '\357\270\217' '\363\240\201\201'; do
