@@ -563,9 +563,9 @@ y sus constancias, que valen mientras no cambie lo que miden. Una tarea nueva en
   pestaña destino.
 
 **Pasar el tope no pasa por vos.** Pedir más de 8 archivos (por defecto; lo configura cada organización) es la firma
-`adhoc-lane:sobre-cupo`, y la elige el dev: con su
-click en el cuadro de la pestaña que hace el trabajo, o en su terminal. Un click en tu pestaña no vale, ni un «aprobado»
-reenviado, ni la delegación; por eso una sesión de fondo sin nadie mirando sólo puede hacerlo por la terminal. Cuentan sólo
+`adhoc-lane:sobre-cupo`, y la elige el dueño: con su
+click en el cuadro, en la pestaña que hace el trabajo o en la tuya mientras seas la coordinadora vigente, o en su
+terminal. Tu pestaña sólo muestra el cuadro: el click es del dueño. No valen un «aprobado» reenviado ni la delegación. Cuentan sólo
 los archivos de implementación que el arreglo cambió: lo traído de `main`, las pruebas, las guías y las sondas no suman. Al
 pasar el cupo, el arreglo frena al editar y no guarda, y el mensaje recomienda la historia. Límite: mide la rama en la que se
 trabaja y lo que ya está en el disco. Trabajo armado en otra rama y empujado por su nombre, o creado en el mismo comando que

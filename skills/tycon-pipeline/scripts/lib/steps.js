@@ -298,6 +298,9 @@ function nombresDeArchivos(absolutos, marker) {
  *
  * `aunConHallazgos`: decide también con Hallazgos abierto. Lo usa el freno de «Preparar el commit»: un arreglo hecho
  * después de los revisores pide la vuelta aunque Hallazgos no se haya cerrado; `next` espera a que cierre.
+ *
+ * Un archivo que quedó igual a lo revisado, salvo el lugar de sus comentarios, no cuenta (historia 8.217): lo decide
+ * lib/frozen-tree.js contra el sello de la última vuelta cerrada. Si eso falla, no se saca ninguno.
  */
 function reviewersRound(marker, { aunConHallazgos = false } = {}) {
   if (!marker || schemeOf(marker) !== 2) return null;
@@ -313,6 +316,7 @@ function reviewersRound(marker, { aunConHallazgos = false } = {}) {
   const pide = (p) => { try { return pideOtraVuelta(p, { storyPath: marker.storyPath, repoPath: marker.repoPath }); } catch (_) { return true; } };
   // sin repetir por la ruta entera: por el nombre, dos archivos de repos distintos se juntarían
   const absolutos = [];
+  const primero = new Map();
   for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) {
     const ts = Date.parse((e && e.ts) || '');
     // la marca `code` en falso (la pone on-edit) gana: el cartel decide con ella y tiene que decidir igual; en verdadero
@@ -320,12 +324,28 @@ function reviewersRound(marker, { aunConHallazgos = false } = {}) {
     if (!(ts > cierre) || e.code === false || !pide(e.path)) continue;
     const abs = path.resolve(String(e.path));
     if (!absolutos.includes(abs)) absolutos.push(abs);
-    if (desde === null || ts < desde) desde = ts;
+    if (!primero.has(abs) || ts < primero.get(abs)) primero.set(abs, ts);
   }
+  let movidos = new Set();
+  if (absolutos.length) {
+    try { movidos = require('./frozen-tree.js').comentariosMovidosDesdeLaVuelta({ marker, cierre, archivos: absolutos }); } catch (e) { anotarFalla(e); }
+  }
+  const cuentan = absolutos.filter((abs) => !movidos.has(abs));
+  for (const abs of cuentan) if (desde === null || primero.get(abs) < desde) desde = primero.get(abs);
   const archivos = previo && Array.isArray(previo.archivos) ? previo.archivos.filter((a) => typeof a === 'string') : [];
-  for (const nombre of nombresDeArchivos(absolutos, marker)) if (!archivos.includes(nombre)) archivos.push(nombre);
+  for (const nombre of nombresDeArchivos(cuentan, marker)) if (!archivos.includes(nombre)) archivos.push(nombre);
   if (!archivos.length) return null;
   return { round: (Number(t.rounds) || 1) + 1, archivos, desde: new Date(desde).toISOString() };
+}
+
+/** Una falla al mirar lo revisado: queda en hook-errors.log y la decisión sigue como si no se hubiera mirado. */
+function anotarFalla(e) {
+  try {
+    const fs = require('fs');
+    const dir = require('./state-dir.js').stateDir(require('os').homedir());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] reviewersRound: no pude ver si sólo se movieron comentarios (${String((e && e.message) || e).split('\n')[0]}) — cuentan todos\n`, 'utf8');
+  } catch (_) { /* ayuda, no evidencia */ }
 }
 
 /**
@@ -450,7 +470,7 @@ function retireCheck({ mirror, since, today, stateFile }) {
 module.exports = {
   SCHEME, STEPS, CLOSE_STEP, TOTAL, OLD_IDS, ORDER_REQUIRES, START_PARTS, OLD_NUMBERS_UNTIL, SCHEME_TWO_SINCE,
   STEP_CLOSE_CHECKS, closeControlsByStep, byId, byNumber, fromOld, newFromOld, schemeOf, stepName, stepNames, isDone, isPending, pendingSteps,
-  resolveStepArg, closesStep, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersRound, otraVueltaDe, prepareCommitStale, findingsOpen, noteFindingsWait, noteFindingsAnswer, retireCheck,
+  resolveStepArg, closesStep, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersClose, reviewersRound, otraVueltaDe, prepareCommitStale, findingsOpen, noteFindingsWait, noteFindingsAnswer, retireCheck,
 };
 
 if (require.main === module) {

@@ -911,3 +911,223 @@ test('T11 FrozenTree_ReemplazoLiteral_SinHallazgoCodeQL @story-8.283 @ac-21 — 
   assert.strictEqual(reemplazarTexto('a [x] b [x]', '[x]', '[ok]'), 'a [ok] b [x]');
   assert.strictEqual(reemplazarTexto('sin nada', '[x]', '[ok]'), 'sin nada');
 });
+
+// ── Mover un comentario no reabre a los revisores (historia 8.217) ──────────────────────────────────────────────
+// Una corrida de juguete con una vuelta sellada y cerrada: `src/a.js` trae un comentario antes de la vuelta, y después
+// se edita. El primer freno (`reviewersRound`) se mira en este proceso, con la HOME de la corrida; el segundo, con
+// `complete-step prepare-commit`.
+const PRE_8217 = "'use strict';\n";
+const A_REVISADO = `${PRE_8217}// la suma de los dos\nconst a = 1;\nconst b = 2;\nmodule.exports = a + b;\n`;
+const A_MOVIDO = `${PRE_8217}const a = 1;\nconst b = 2;\n// la suma de los dos\nmodule.exports = a + b;\n`;
+const A_CODIGO = `${PRE_8217}// la suma de los dos\nconst a = 1;\nconst b = 3;\nmodule.exports = a + b;\n`;
+const B_REVISADO = `${PRE_8217}module.exports = 2;\n`;
+const B_CODIGO = `${PRE_8217}module.exports = 20;\n`;
+const HECHOS_8217 = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings'];
+
+/** Una corrida con `src/a.js` y `src/b.js` revisados en una vuelta (sellada, y cerrada si `cerrar`). */
+function corridaRevisada(sid, { cerrar = true, extra = {} } = {}) {
+  const C = corrida(sid);
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), A_REVISADO);
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), B_REVISADO);
+  for (const [rel, txt] of Object.entries(extra)) { fs.mkdirSync(path.dirname(path.join(C.codigo.repo, rel)), { recursive: true }); fs.writeFileSync(path.join(C.codigo.repo, rel), txt); }
+  const v = C.vuelta();
+  assert.strictEqual(v.r.status, 0, salida(v.r));
+  const cierre = Date.now() + 1000;
+  const archivo = path.join(C.estado(), 'active', `${sid}.json`);
+  const escribir = (cambios) => { const m = JSON.parse(fs.readFileSync(archivo, 'utf8')); fs.writeFileSync(archivo, JSON.stringify({ ...m, ...cambios(m) }, null, 2)); };
+  if (cerrar) {
+    escribir((m) => ({ stepScheme: 2, stepsCompleted: [...new Set([...(m.stepsCompleted || []), ...HECHOS_8217])],
+      stepsPending: ['live-check', 'prepare-commit'], stepTimings: { ...(m.stepTimings || {}), reviewers: { completedAt: new Date(cierre).toISOString(), rounds: 1 } } }));
+  }
+  let n = 0;
+  /** Una edición posterior al cierre, con su evento como lo anota on-edit (si `evento`). */
+  const editar = (rel, txt, { evento = true } = {}) => {
+    const abs = path.join(C.codigo.repo, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, txt);
+    if (evento) escribir((m) => ({ fileEvents: [...(m.fileEvents || []), { path: abs, ts: new Date(cierre + 1000 * ++n).toISOString(), code: true }] }));
+  };
+  /** El primer freno, en este proceso, con la HOME de la corrida. */
+  const ronda = (opts) => {
+    const antes = process.env.HOME;
+    process.env.HOME = C.home;
+    try { return require(path.join(SCRIPTS, 'lib', 'steps.js')).reviewersRound(C.marcador(), opts); } finally { process.env.HOME = antes; }
+  };
+  return { ...C, cierre, editar, escribir, ronda };
+}
+const gatesDe = (C) => fs.readFileSync(path.join(C.estado(), 'gates.log'), 'utf8').trim().split('\n').map((l) => { try { return JSON.parse(l); } catch { return {}; } });
+
+test('T2 ReviewersRound_BloqueSubidoSobreComentario_NoPideVuelta @story-8.217 @ac-1 — un comentario movido no pide otra vuelta', () => {
+  const C = corridaRevisada('s-ft-8217-t2');
+  C.editar('src/a.js', A_MOVIDO);
+  assert.strictEqual(C.ronda(), null);
+  const antes = process.env.HOME;
+  process.env.HOME = C.home;
+  try { assert.strictEqual(require(path.join(SCRIPTS, 'lib', 'steps.js')).otraVueltaDe(C.marcador()), null); } finally { process.env.HOME = antes; }
+});
+
+test('T3 ReviewedTree_ComentarioMovido_NoFrenaYLoDice @story-8.217 @ac-2 — «Preparar el commit» sigue y lo anota', () => {
+  const C = corridaRevisada('s-ft-8217-t3');
+  C.editar('src/a.js', A_MOVIDO);
+  const r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  assert.match(salida(r), /sólo se movieron comentarios: src\/a\.js/, salida(r));
+  const ok = gatesDe(C).filter((g) => g.name === 'reviewed-tree' && g.status === 'ok').pop();
+  assert.strictEqual(ok && ok.comentarios_movidos, 1, JSON.stringify(ok));
+});
+
+test('T4 ReviewersRound_ContenidoIgualAlSello_NoPideVuelta @story-8.217 @ac-3 — vuelto a lo revisado: un .js no cuenta; un .ts sí', () => {
+  const C = corridaRevisada('s-ft-8217-t4', { extra: { 'src/c.ts': 'export const c = 1;\n' } });
+  C.editar('src/a.js', A_CODIGO);
+  C.editar('src/a.js', A_REVISADO);
+  C.editar('src/c.ts', 'export const c = 2;\n');
+  C.editar('src/c.ts', 'export const c = 1;\n');
+  const r = C.ronda();
+  assert.ok(r, 'la vuelta se pide por el .ts');
+  assert.deepStrictEqual(r.archivos, ['src/c.ts']);
+});
+
+test('T7 ReviewedTree_CodigoCambiado_SigueFrenando @story-8.217 @ac-5 — una línea de código cambiada frena como hoy', () => {
+  const C = corridaRevisada('s-ft-8217-t7');
+  C.editar('src/a.js', A_CODIGO, { evento: false });
+  const r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), MISMATCH, salida(r));
+  assert.match(salida(r), /src\/a\.js/);
+  assert.ok(gatesDe(C).some((g) => g.name === 'reviewed-tree-mismatch'));
+});
+
+test('T19 ReviewersRound_ConsolaYLuegoComentario_PideVuelta @story-8.217 @ac-13 — se compara el disco con lo revisado, no con la edición anterior', () => {
+  const C = corridaRevisada('s-ft-8217-t19');
+  // código por consola, sin evento; después una edición que sólo mueve el comentario de ese código
+  C.editar('src/a.js', A_CODIGO, { evento: false });
+  C.editar('src/a.js', A_CODIGO.replace('// la suma de los dos\nconst a = 1;\nconst b = 3;\n', 'const a = 1;\nconst b = 3;\n// la suma de los dos\n'));
+  const r = C.ronda();
+  assert.ok(r && r.archivos.includes('src/a.js'), JSON.stringify(r));
+});
+
+test('T20 ReviewedTree_ConsolaSinEvento_Frena @story-8.217 @ac-14 — un cambio de código por consola, sin evento, frena', () => {
+  const C = corridaRevisada('s-ft-8217-t20');
+  C.editar('src/b.js', B_CODIGO, { evento: false });
+  const r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /src\/b\.js/);
+});
+
+test('T22 ReviewersRound_NoComparable_PideVuelta @story-8.217 @ac-15 — lo que no se puede comparar cuenta', () => {
+  // archivo nuevo (no está en el sello)
+  let C = corridaRevisada('s-ft-8217-t22a');
+  C.editar('src/nuevo.js', `${PRE_8217}// x\nmodule.exports = 1;\n`);
+  assert.deepStrictEqual((C.ronda() || {}).archivos, ['src/nuevo.js'], 'nuevo');
+  // permisos cambiados
+  C = corridaRevisada('s-ft-8217-t22b');
+  C.editar('src/a.js', A_MOVIDO);
+  fs.chmodSync(path.join(C.codigo.repo, 'src', 'a.js'), 0o755);
+  assert.deepStrictEqual((C.ronda() || {}).archivos, ['src/a.js'], 'permisos');
+  // vuelta de otra historia
+  C = corridaRevisada('s-ft-8217-t22c');
+  C.editar('src/a.js', A_MOVIDO);
+  C.escribir(() => ({ storyId: '9.8' }));
+  assert.deepStrictEqual((C.ronda() || {}).archivos, ['src/a.js'], 'otra historia');
+  // vuelta sin historia
+  C = corridaRevisada('s-ft-8217-t22d');
+  C.editar('src/a.js', A_MOVIDO);
+  const reg = path.join(C.estado(), 'frozen', 's-ft-8217-t22d', 'vueltas.jsonl');
+  fs.writeFileSync(reg, fs.readFileSync(reg, 'utf8').split('\n').filter(Boolean).map((l) => JSON.stringify({ ...JSON.parse(l), story: null })).join('\n') + '\n');
+  assert.deepStrictEqual((C.ronda() || {}).archivos, ['src/a.js'], 'story: null');
+  // más de 20 archivos en la misma decisión
+  C = corridaRevisada('s-ft-8217-t22e');
+  C.editar('src/a.js', A_MOVIDO);
+  for (let k = 0; k < 20; k++) C.editar(`src/otro-${k}.js`, `${PRE_8217}module.exports = ${k};\n`);
+  assert.ok(((C.ronda() || {}).archivos || []).includes('src/a.js'), 'con 21 archivos no se mira ninguno');
+});
+
+test('T23 ReviewersRound_SelloSinCerrar_PideVuelta @story-8.217 @ac-16 — una vuelta lanzada y sin cerrar no perdona nada', () => {
+  const C = corridaRevisada('s-ft-8217-t23');
+  C.editar('src/a.js', A_CODIGO);
+  // la vuelta 2 sella el arreglo y no cierra: después, sólo se mueve un comentario
+  assert.strictEqual(C.vuelta(2).r.status, 0);
+  // lanzada después del cierre de la vuelta 1 (la corrida de juguete fecha ese cierre un segundo adelante)
+  const reg = path.join(C.estado(), 'frozen', 's-ft-8217-t23', 'vueltas.jsonl');
+  const vs = fs.readFileSync(reg, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  vs[vs.length - 1].ts = new Date(C.cierre + 5000).toISOString();
+  fs.writeFileSync(reg, vs.map((v) => JSON.stringify(v)).join('\n') + '\n');
+  C.editar('src/a.js', A_CODIGO.replace('// la suma de los dos\nconst a = 1;\nconst b = 3;\n', 'const a = 1;\nconst b = 3;\n// la suma de los dos\n'));
+  const r = C.ronda();
+  assert.ok(r && r.archivos.includes('src/a.js'), JSON.stringify(r));
+});
+
+test('T24 ReviewedTree_SelloSinCerrar_NoPerdonaComentarios @story-8.217 @ac-16 — con la última vuelta sin cerrar, el segundo freno frena', () => {
+  const C = corridaRevisada('s-ft-8217-t24', { cerrar: false });
+  C.editar('src/a.js', A_MOVIDO, { evento: false });
+  const r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /src\/a\.js/);
+});
+
+test('T26 ReviewersRound_LectorFalla_PideVuelta @story-8.217 @ac-18 — si el lector lanza, el archivo cuenta y queda en hook-errors.log', () => {
+  const C = corridaRevisada('s-ft-8217-t26');
+  C.editar('src/a.js', A_MOVIDO);
+  const ruta = require.resolve(path.join(SCRIPTS, 'lib', 'comment-only.js'));
+  const original = require.cache[ruta];
+  require(ruta);
+  const guardado = require.cache[ruta].exports;
+  require.cache[ruta].exports = { ...guardado, soloSeMovieronComentarios: () => { throw new Error('lector roto de prueba'); } };
+  try {
+    const r = C.ronda();
+    assert.ok(r && r.archivos.includes('src/a.js'), JSON.stringify(r));
+  } finally { if (original) require.cache[ruta] = original; require.cache[ruta].exports = guardado; }
+  // la falla dentro de difiereSoloEnComentarios la absorbe: cuenta. Una que sale de frozen-tree.js queda en el registro
+  const ft = path.join(SCRIPTS, 'lib', 'frozen-tree.js');
+  const ftMod = require(ft);
+  const guardadoFt = ftMod.comentariosMovidosDesdeLaVuelta;
+  ftMod.comentariosMovidosDesdeLaVuelta = () => { throw new Error('frozen-tree roto de prueba'); };
+  try {
+    const r = C.ronda();
+    assert.ok(r && r.archivos.includes('src/a.js'), JSON.stringify(r));
+  } finally { ftMod.comentariosMovidosDesdeLaVuelta = guardadoFt; }
+  assert.match(fs.readFileSync(path.join(C.estado(), 'hook-errors.log'), 'utf8'), /frozen-tree roto de prueba/);
+});
+
+test('T27 FrozenTree_ChangedSinOpcion_ComoHoy @story-8.217 @ac-19 — changed sin la opción devuelve lo de hoy', () => {
+  const C = corridaRevisada('s-ft-8217-t27');
+  const v = ft().ultimaVuelta(C.estado(), 's-ft-8217-t27', 'revisores');
+  const r = v.repos.find((x) => x.repo === C.codigo.repo);
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), A_MOVIDO);
+  const ahora = ft().seal(C.codigo.repo).tree;
+  const sin = ft().changed(C.codigo.repo, r.tree, ahora);
+  assert.deepStrictEqual(sin.files, ['src/a.js']);
+  assert.ok(!('comentarios' in sin), JSON.stringify(sin));
+  const con = ft().changed(C.codigo.repo, r.tree, ahora, { comentarios: true });
+  assert.deepStrictEqual([con.files, con.comentarios], [[], ['src/a.js']]);
+});
+
+test('T29 ReviewersRound_ArchivoYaAnotado_SeConserva @story-8.217 @ac-20 — lo ya pedido no se retira', () => {
+  for (const [sid, final] of [['s-ft-8217-t29a', A_MOVIDO], ['s-ft-8217-t29b', A_REVISADO]]) {
+    const C = corridaRevisada(sid);
+    C.editar('src/a.js', A_CODIGO);
+    const pedida = C.ronda();
+    assert.ok(pedida && pedida.archivos.includes('src/a.js'));
+    C.escribir(() => ({ otraVuelta: pedida }));
+    C.editar('src/a.js', final);
+    const r = C.ronda();
+    assert.ok(r && r.archivos.includes('src/a.js'), `${sid}: ${JSON.stringify(r)}`);
+  }
+});
+
+test('T30 ReviewersRound_MezclaConCambioReal_NombraElReal @story-8.217 @ac-21 — un comentario movido y un cambio de código', () => {
+  const C = corridaRevisada('s-ft-8217-t30');
+  C.editar('src/a.js', A_MOVIDO);
+  C.editar('src/b.js', B_CODIGO);
+  assert.deepStrictEqual((C.ronda() || {}).archivos, ['src/b.js']);
+});
+
+test('T31 ReviewedTree_MezclaConCambioReal_FrenaPorElReal @story-8.217 @ac-21 — frena y nombra sólo el de código', () => {
+  const C = corridaRevisada('s-ft-8217-t31');
+  C.editar('src/a.js', A_MOVIDO, { evento: false });
+  C.editar('src/b.js', B_CODIGO, { evento: false });
+  const r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /· src\/b\.js/, salida(r));
+  assert.doesNotMatch(salida(r), /· src\/a\.js/, salida(r));
+});

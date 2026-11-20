@@ -941,6 +941,13 @@ function comprobarLoRevisado(marker, quien) {
   const deMain = [];
   const sinSepararMain = [];
   const huellas = [];
+  const movidos = [];
+  // sólo comentarios movidos (historia 8.217): contra una vuelta ya cerrada y de esta historia; nunca una lanzada sin cerrar
+  let conComentarios = false;
+  try {
+    const cerrada = ft.vueltaCerradaDeLosRevisores(marker, STEPS_LIB.reviewersClose(marker), { stateDir: STATE_DIR });
+    conComentarios = !!cerrada && cerrada.etiqueta === v.etiqueta && cerrada.ts === v.ts;
+  } catch (_e) { conComentarios = false; }
   const frenar = (motivo) => {
     appendLog('gates.log', { name: 'reviewed-tree-mismatch', status: 'blocked', story: marker.storyId || null, quien, motivo });
     console.error(`marker.js ${quien} BLOQUEADO — ${motivo}`);
@@ -954,8 +961,11 @@ function comprobarLoRevisado(marker, quien) {
     // del sello y el de ahora, del mismo repo
     const pm = r.mainBase ? ft.puntoComunConMain(r.repo) : { error: `${path.basename(r.repo)}: la vuelta se selló sin el punto en común con main` };
     if (pm.error) sinSepararMain.push(pm.error);
-    const c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null,
-      mainAntes: r.mainBase || null, mainAhora: pm.sha || null });
+    let c;
+    try {
+      c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null,
+        mainAntes: r.mainBase || null, mainAhora: pm.sha || null, comentarios: conComentarios });
+    } catch (e) { c = { error: String((e && e.message) || e).split('\n')[0] }; }
     if (c.error) frenar(`no pude comparar lo que se guarda con lo revisado (${c.error}).`);
     // una constancia de cambio de control la firma el dueño: no es código que los revisores tengan que ver
     for (const f of c.files) {
@@ -964,6 +974,7 @@ function comprobarLoRevisado(marker, quien) {
     }
     for (const f of c.papeleo) papeleo.push(f);
     for (const f of c.deMain || []) deMain.push(f);
+    for (const f of c.comentarios || []) movidos.push(f);
     huellas.push(`${path.basename(r.repo)} ${r.tree.slice(0, 12)}`);
   }
   if (distintos.length) {
@@ -976,8 +987,9 @@ function comprobarLoRevisado(marker, quien) {
     console.error('  La vuelta re-revisa lo que cambió desde su foto; con el sello nuevo, este paso sigue.');
     process.exit(2);
   }
-  appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length, deMain: deMain.length });
-  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}.`);
+  appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length, deMain: deMain.length,
+    ...(movidos.length ? { comentarios_movidos: movidos.length } : {}) });
+  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}.`);
 }
 
 /** `{ sellos, copias }` por repo de una vuelta congelada. */
@@ -2182,7 +2194,7 @@ function cmdCompleteStep(nRaw, flags) {
     // ── Acotada por el repo: el verde es el de las suites que leen lo tocado, y se dice quién corre la completa ──
     if (testsCheck === 'green') {
       const acotada = portonAcotadoPorElRepo(marker.repoPath);
-      if (acotada) console.error(`ℹ️  la suite completa la corre la CI del pedido (${acotada}): el portón de esta máquina corrió sólo las suites que leen lo tocado.`);
+      if (acotada) console.error(`ℹ️  la suite completa la corre ${acotada}: el portón de esta máquina corrió sólo las suites que leen lo tocado.`);
     }
 
     // ── «Sin medir»: se acepta diciéndolo, nunca callado ─────────────────────────────────
@@ -8215,9 +8227,9 @@ function cmdAdhoc(sub, payloadJson) {
       console.error(`🔒 marker.js adhoc set: la firma volvió por una vía que no conozco (${r.via}); no declaré nada.`);
       process.exit(1);
     }
-    // pasar el tope lo elige una persona, con su click o su terminal, o la coordinadora si el perfil se lo delega
-    if (firmaDelPedido === firmas.SOBRE_CUPO && !['click', 'terminal', 'delegacion'].includes(r.via)) {
-      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click de la persona o su terminal (o la coordinadora, si el perfil se lo delega), y volvió por ${r.via}; no declaré nada.`);
+    // pasar el tope lo elige el dueño, con su click o su terminal: nunca la delegación
+    if (firmaDelPedido === firmas.SOBRE_CUPO && !['click', 'terminal'].includes(r.via)) {
+      console.error(`🔒 marker.js adhoc set: pasar el tope lo aprueba sólo el click de la persona o su terminal, nunca la delegación, y volvió por ${r.via}; no declaré nada.`);
       process.exit(1);
     }
     const via = r.via;

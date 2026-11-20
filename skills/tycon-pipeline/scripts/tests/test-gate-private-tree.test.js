@@ -970,7 +970,7 @@ test('T7a PrivateGate_DocsOnly_NoSuites @story-8.279 @ac-9 @ac-11 — sólo pape
   const r = portón(lab);
   assert.strictEqual(r.code, 0, r.salida);
   assert.ok(!nombra(r, 'pub-lib.test.js') && !nombra(r, 'otra.test.js') && !nombra(r, 'demo.test.js'), r.salida);
-  assert.match(r.salida, /ninguna suite lee lo tocado; la suite completa la corre la CI del pedido \(la validación de prueba del privado\)/, r.salida);
+  assert.match(r.salida, /ninguna suite lee lo tocado; la suite completa la corre la validación de prueba del privado/, r.salida);
   assert.doesNotMatch(r.salida, /sin acotar/, r.salida);
 });
 
