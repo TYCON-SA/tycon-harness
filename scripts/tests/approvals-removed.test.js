@@ -208,6 +208,56 @@ test('Nightly_FirstMeasurementFailed_NextOneStartsWhereItStarted @story-8.248 @a
   assert.deepStrictEqual(r.foto.sin_firma.map((x) => x.path), [ruta(B)], r.out);
 });
 
+// Un borrado sin firma se sigue diciendo una semana desde la noche en que se vio: la medición siguiente no lo borra de
+// la foto aunque no entre nada nuevo, ni aunque esa noche no mida.
+test('Nightly_UnsignedRemoval_SaidForAWeek @DEF-8.248-avisos', (t) => {
+  const dir = lab(t);
+  const repo = repoConDosConstancias(dir);
+  fs.rmSync(path.join(repo, ruta(B)));
+  git(dir, repo, ['add', '-A']); git(dir, repo, ['commit', '-qm', 'borra B'], AHORA - HOUR);
+  const primera = contar(dir, repo);
+  assert.deepStrictEqual(primera.foto.sin_firma.map((x) => x.path), [ruta(B)], primera.out);
+  // la noche siguiente no entró nada nuevo: B se sigue diciendo
+  const otra = contar(dir, repo, ['--now', new Date(AHORA + 24 * HOUR).toISOString()]);
+  assert.strictEqual(otra.status, 0, otra.out);
+  assert.deepStrictEqual(otra.foto.sin_firma.map((x) => x.path), [ruta(B)], `la segunda noche lo olvidó: ${otra.out}`);
+  assert.strictEqual(otra.foto.sin_firma[0].avisada_desde, new Date(AHORA).toISOString(), 'dice desde qué noche se avisa');
+  assert.match(otra.out, /1 sin firma/);
+  // un borrado nuevo se suma al arrastrado, sin repetirlo
+  fs.rmSync(path.join(repo, ruta(A)));
+  git(dir, repo, ['add', '-A']); git(dir, repo, ['commit', '-qm', 'borra A'], AHORA + 30 * HOUR);
+  const tercera = contar(dir, repo, ['--now', new Date(AHORA + 48 * HOUR).toISOString()]);
+  assert.deepStrictEqual(tercera.foto.sin_firma.map((x) => x.path).sort(), [ruta(A), ruta(B)].sort(), tercera.out);
+  // una noche que no midió no lo pierde: la siguiente que mide lo sigue diciendo
+  const out = path.join(dir, 'ultimo-constancias.json');
+  const medida = JSON.parse(fs.readFileSync(out, 'utf8'));
+  fs.writeFileSync(out, JSON.stringify({ ...medida, medido: false, motivo: 'falló', con_firma: [] }));
+  const trasFalla = contar(dir, repo, ['--now', new Date(AHORA + 72 * HOUR).toISOString()]);
+  assert.deepStrictEqual(trasFalla.foto.sin_firma.map((x) => x.path).sort(), [ruta(A), ruta(B)].sort(), trasFalla.out);
+  // pasada la semana desde la noche en que se vio, B deja de decirse; A todavía no
+  const semana = contar(dir, repo, ['--now', new Date(AHORA + 8 * 24 * HOUR).toISOString()]);
+  assert.deepStrictEqual(semana.foto.sin_firma.map((x) => x.path), [ruta(A)], semana.out);
+});
+
+// Una foto anterior que existe y no se lee no es «no hay foto»: la medición dice «no medido» y la deja como está, en
+// lugar de mirar sólo el último día y pisarla. `--fresh` empieza de nuevo a conciencia.
+test('Nightly_UnreadablePreviousPhoto_NotMeasuredAndKept @DEF-8.248-avisos', (t) => {
+  const dir = lab(t);
+  const repo = repoConDosConstancias(dir);
+  const out = path.join(dir, 'ultimo-constancias.json');
+  for (const rota of ['{ "kind": "constancias-borradas", ', '[1, 2]']) {
+    fs.writeFileSync(out, rota);
+    const r = contar(dir, repo);
+    assert.strictEqual(r.status, 3, r.out);
+    assert.match(r.out, /no medido/);
+    assert.match(r.out, /foto anterior/);
+    assert.strictEqual(fs.readFileSync(out, 'utf8'), rota, 'la foto rota queda como estaba');
+  }
+  const fresca = contar(dir, repo, ['--fresh']);
+  assert.strictEqual(fresca.status, 0, fresca.out);
+  assert.strictEqual(fresca.foto.medido, true);
+});
+
 test('Nightly_UnreadableHistory_NotMeasured @story-8.248 @ac-9', (t) => {
   const dir = lab(t);
   const noRepo = path.join(dir, 'no-es-un-repo');

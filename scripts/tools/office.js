@@ -297,6 +297,16 @@ const overdueFin = (at) => ({ hora: OVERDUE, dif: Number.isFinite(at) ? `sin nov
 const latest = (...times) => { const v = times.filter(Number.isFinite); return v.length ? Math.max(...v) : NaN; };
 
 /**
+ * El título de la tarjeta de las firmas de una sesión. La tarjeta va en una línea y corta con puntos lo que no entra, así
+ * que cuántas esperan va delante del título, donde no se corta: «Firmas (3): …», o «(3) …» si la primera es un permiso.
+ */
+function signatureCardTitle(rows, isPermission = false) {
+  const title = plain(rows[0].title);
+  if (rows.length < 2) return `${isPermission ? '' : 'Firma: '}${title}`;
+  return `${isPermission ? `(${rows.length}) ` : `Firmas (${rows.length}): `}${title}`;
+}
+
+/**
  * Lo que la lista de firmas pone en «Tu firma»: lo de la terminal, un renglón por fila; lo de una sesión, una sola tarjeta
  * por sesión. Con la sesión ya esperando la firma (`conTarjeta`), su tarjeta alcanza. `yaAvisada`: la sesión ya está en «te
  * toca» por lo que espera, el plan o el guardado. De un permiso sólo sale su título: el pedido no se muestra.
@@ -320,7 +330,7 @@ function cardsOfSignatures(signatures, agents, sidOf) {
     const agent = agents.find((a) => String(sidOf.get(a)) === sid);
     const quien = agent ? agent.nombre : plain(first.nombre) || plain(sid.slice(0, 8));
     const waits = Boolean(agent) && agent.estado === 'firma';
-    cards.push({ titulo: `${isPermission ? '' : 'Firma: '}${plain(first.title)}${more}`, quien, at: first.at, conTarjeta: waits, sid,
+    cards.push({ titulo: signatureCardTitle(rows, isPermission), quien, at: first.at, conTarjeta: waits, sid,
       yaAvisada: waits && (agent.espera === 'que apruebes el plan' || agent.espera === SAVE_WAIT),
       linea: `${isPermission ? '' : 'Firmar: '}${plain(first.title)}${more} (${quien})` });
   }
@@ -718,7 +728,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     rows.sort((p, q) => (p.at || 0) - (q.at || 0));
     const agent = agents.find((a) => String(sidOf.get(a)) === sid);
     const quien = agent ? agent.nombre : plain(rows[0].nombre) || '';
-    repeatCards.push({ titulo: `Firma: ${plain(rows[0].title)}${rows.length > 1 ? ` y ${rows.length - 1} más` : ''}`, quien: quien || `— (${sid.slice(0, 8)})`, espera: repeatSaid(quien, sid), sid, agent });
+    repeatCards.push({ titulo: signatureCardTitle(rows), quien: quien || `— (${sid.slice(0, 8)})`, espera: repeatSaid(quien, sid), sid, agent });
   }
   // las desviadas a la coordinadora van a «En curso», una tarjeta por sesión: las firma ella, no el dueño
   const byCoordinator = new Map();
@@ -730,7 +740,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     rows.sort((p, q) => (p.at || 0) - (q.at || 0));
     const agent = agents.find((a) => String(sidOf.get(a)) === sid);
     const quien = agent ? agent.nombre : plain(rows[0].nombre) || '';
-    repeatCards.push({ titulo: `Firma: ${plain(rows[0].title)}${rows.length > 1 ? ` y ${rows.length - 1} más` : ''}`, quien: quien || `— (${sid.slice(0, 8)})`, espera: 'la firma la coordinadora', sid, agent });
+    repeatCards.push({ titulo: signatureCardTitle(rows), quien: quien || `— (${sid.slice(0, 8)})`, espera: 'la firma la coordinadora', sid, agent });
   }
   // la sesión dice cuántos agentes corren ahora; con agentes corriendo no está libre
   const notFree = new Set();
@@ -2523,6 +2533,9 @@ async function openLive(home = os.homedir()) {
     const current = readLock();
     if (await answers(current)) return { url: urlOf(current), reused: true };
     const log = path.join(dir, 'server.log');
+    // el registro junta los arranques: lo de este empieza donde termina hoy, y sólo eso se cita si no arranca
+    let start = 0;
+    try { start = fs.statSync(log).size; } catch { /* sin registro todavía */ }
     const out = fs.openSync(log, 'a', 0o600);
     const child = spawn(process.execPath, [path.join(__dirname, 'office', 'server.js')], { detached: true, stdio: ['ignore', 'ignore', out], windowsHide: true });
     fs.closeSync(out);
@@ -2538,8 +2551,8 @@ async function openLive(home = os.homedir()) {
       if (exited != null && exited !== 0) break;
       await sleep(50);
     }
-    let why = 'no contestó en 15 s';
-    try { why = fs.readFileSync(log, 'utf8').trim().split('\n').pop() || why; } catch { /* sin registro */ }
+    let why = exited != null && exited !== 0 ? `terminó con el código ${exited} sin decir por qué` : 'no contestó en 15 s';
+    try { why = fs.readFileSync(log).subarray(start).toString('utf8').trim().split('\n').pop() || why; } catch { /* sin registro */ }
     try { process.kill(child.pid, 'SIGTERM'); } catch { /* ya salió */ }
     throw new Error(`la oficina viva ${why}`);
   } finally {
