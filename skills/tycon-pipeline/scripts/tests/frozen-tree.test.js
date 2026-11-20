@@ -1133,53 +1133,61 @@ test('T31 ReviewedTree_MezclaConCambioReal_FrenaPorElReal @story-8.217 @ac-21 �
 });
 
 // ── Lo que no se ejecuta no reabre la vuelta (defectos del 20/11, punto 1) ──────────────────────────────────────────
-// Caso: dos historias de Producto A hicieron 7 y 10 vueltas de revisores; la guía de prueba en HTML, las capturas
-// regeneradas y los textos que no son código frenaban «Preparar el commit» y pedían otra vuelta.
+// Caso: dos historias de Producto A hicieron 7 y 10 vueltas de revisores; la guía de prueba en HTML y las capturas
+// regeneradas frenaban «Preparar el commit» y pedían otra vuelta. La regla es por lista: lo que no está en ella cuenta
+// (el pase adversarial mostró que por descarte se colaban código en qa, instrucciones de agentes y .txt que corren).
 
-test('T32 Changed_NotExecuted_GoesApart_OnlyWithTheOption — imágenes, .md que no instruyen a un agente y la carpeta qa de la historia van aparte; lo demás sigue contando', () => {
+test('T32 Changed_NotExecuted_GoesApart_OnlyWithTheOption — imágenes y la guía y capturas de la historia en su carpeta qa van aparte; lo demás sigue contando', () => {
   const inicio = {
-    'specs/story-9.9-x.md': '# h\n', 'docs/guia.md': 'a\n', 'public/logo.png': 'p1', 'specs/qa/story-9.9-x-guia.html': '<p>1</p>\n',
-    'specs/qa/story-9.9-x-captura.png': 'c1', 'specs/qa/story-9.9-x-ayuda.js': 'x=1\n', 'src/index.html': '<p>1</p>\n', 'src/icono.svg': '<svg/>\n',
-    'skills/s/SKILL.md': 'a\n', 'agents/r.md': 'a\n', 'steps/step-1.md': 'a\n', 'CLAUDE.md': 'a\n', 'guides/coordination.md': 'a\n',
-    'notas/leeme.txt': 'a\n', 'bin/correr.md': 'a\n',
+    'specs/story-9.9-x.md': '# h\n', 'public/logo.png': 'p1', 'specs/qa/story-9.9-x-guia.html': '<p>1</p>\n', 'specs/qa/story-9.9-x-captura.png': 'c1',
+    'specs/qa/story-9.9-x-ayuda.js': 'x=1\n', 'specs/qa/story-9.9-x-correr.ps1': 'x\n', 'specs/qa/story-9.9-x-pasos.yml': 'a: 1\n', 'specs/qa/story-9.9-x-Makefile': 'a:\n',
+    'specs/qa/story-1.1-otra-guia.html': '<p>1</p>\n', 'specs/qa/story-9.9-x/anidada.html': '<p>1</p>\n',
+    'src/index.html': '<p>1</p>\n', 'src/icono.svg': '<svg/>\n', 'docs/guia.md': 'a\n', 'notas/leeme.txt': 'a\n', 'requirements.txt': 'a\n', 'CMakeLists.txt': 'a\n',
+    'skills/s/SKILL.md': 'a\n', 'CLAUDE.md': 'a\n', 'CLAUDE.local.md': 'a\n', 'AGENTS.override.md': 'a\n', 'guides/coordination.md': 'a\n',
+    'e2e/a.spec.ts-snapshots/x.png': 'p', 'tests/__snapshots__/y.png': 'p', 'tests/baseline/z.png': 'p', 'bin/correr.png': 'p', 'public/borrada.png': 'p',
   };
   const { repo, git } = repoDeJuguete('ne', inicio);
-  fs.chmodSync(path.join(repo, 'bin', 'correr.md'), 0o755);
+  fs.chmodSync(path.join(repo, 'bin', 'correr.png'), 0o755);
   git('add', '.');
   git('commit', '-qm', 'ejecutable');
   const antes = ft().seal(repo).tree;
-  for (const rel of Object.keys(inicio)) fs.appendFileSync(path.join(repo, rel), 'cambio\n');
+  for (const rel of Object.keys(inicio)) if (rel !== 'public/borrada.png') fs.appendFileSync(path.join(repo, rel), 'cambio\n');
+  fs.unlinkSync(path.join(repo, 'public', 'borrada.png'));
   const despues = ft().seal(repo).tree;
-  const opts = { storyRel: 'specs/story-9.9-x.md', storyAbs: path.join(repo, 'specs', 'story-9.9-x.md') };
+  const opts = { storyRel: 'specs/story-9.9-x.md' };
   const sin = ft().changed(repo, antes, despues, opts);
   assert.strictEqual(sin.noSeEjecutan, undefined, 'sin la opción, la salida no trae el campo');
-  assert.ok(sin.files.includes('docs/guia.md') && sin.files.includes('public/logo.png'), JSON.stringify(sin));
+  assert.ok(sin.files.includes('public/logo.png') && sin.files.includes('specs/qa/story-9.9-x-guia.html'), JSON.stringify(sin));
   const con = ft().changed(repo, antes, despues, { ...opts, sinEjecutar: true });
-  assert.deepStrictEqual(con.noSeEjecutan.sort(), ['docs/guia.md', 'notas/leeme.txt', 'public/logo.png', 'specs/qa/story-9.9-x-captura.png', 'specs/qa/story-9.9-x-guia.html'], JSON.stringify(con));
-  for (const f of ['specs/qa/story-9.9-x-ayuda.js', 'src/index.html', 'src/icono.svg', 'skills/s/SKILL.md', 'agents/r.md', 'steps/step-1.md', 'CLAUDE.md', 'guides/coordination.md', 'bin/correr.md']) {
-    assert.ok(con.files.includes(f), `${f} sigue contando: ${JSON.stringify(con)}`);
-  }
-  // un enlace con nombre de imagen no es una imagen
+  assert.deepStrictEqual(con.noSeEjecutan.sort(), ['public/logo.png', 'specs/qa/story-9.9-x-captura.png', 'specs/qa/story-9.9-x-guia.html'], JSON.stringify(con));
+  for (const f of Object.keys(inicio).filter((f) => !con.noSeEjecutan.includes(f))) assert.ok(con.files.includes(f), `${f} sigue contando: ${JSON.stringify(con)}`);
+  // un enlace con nombre de imagen no es una imagen, y un enlace que pasa a archivo común tampoco
   fs.symlinkSync('../src/index.html', path.join(repo, 'public', 'falso.png'));
   const enlace = ft().changed(repo, antes, ft().seal(repo).tree, { ...opts, sinEjecutar: true });
   assert.ok(enlace.files.includes('public/falso.png'), JSON.stringify(enlace));
+  const conEnlace = ft().seal(repo).tree;
+  fs.unlinkSync(path.join(repo, 'public', 'falso.png'));
+  fs.writeFileSync(path.join(repo, 'public', 'falso.png'), 'ahora es un archivo\n');
+  const deEnlaceAArchivo = ft().changed(repo, conEnlace, ft().seal(repo).tree, { ...opts, sinEjecutar: true });
+  assert.ok(deEnlaceAArchivo.files.includes('public/falso.png'), JSON.stringify(deEnlaceAArchivo));
 });
 
-test('T33 PrepareCommit_NotExecutedOnly_DoesNotBlock — la guía de prueba, una captura y un .md de docs no frenan; el código sí', () => {
+test('T33 PrepareCommit_NotExecutedOnly_DoesNotBlock — la guía de prueba y una captura de la historia no frenan; el código o un .md suelto sí', () => {
   const C = corrida('s-ft33');
   C.vuelta();
   const qa = path.join(C.historias.repo, 'specs', 'qa');
   fs.mkdirSync(qa, { recursive: true });
   fs.writeFileSync(path.join(qa, 'story-9.9-sello-guia.html'), '<p>guía</p>\n');
   fs.writeFileSync(path.join(qa, 'story-9.9-sello-captura.png'), 'png');
-  fs.mkdirSync(path.join(C.codigo.repo, 'docs'), { recursive: true });
-  fs.writeFileSync(path.join(C.codigo.repo, 'docs', 'uso.md'), '# uso\n');
   let r = prepararCommit(C);
   assert.doesNotMatch(salida(r), MISMATCH, salida(r));
   assert.match(salida(r), /no se ejecuta[^\n]*story-9\.9-sello-guia\.html/, salida(r));
+  fs.mkdirSync(path.join(C.codigo.repo, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, 'docs', 'uso.md'), '# uso\n');
   fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), 'module.exports = 3;\n');
   r = prepararCommit(C);
   assert.strictEqual(r.status, 2, salida(r));
   assert.match(salida(r), /· src\/b\.js/, salida(r));
-  assert.doesNotMatch(salida(r), /· docs\/uso\.md/, salida(r));
+  assert.match(salida(r), /· docs\/uso\.md/, salida(r));
+  assert.doesNotMatch(salida(r), /· specs\/qa\/story-9\.9-sello-guia\.html/, salida(r));
 });
