@@ -431,13 +431,13 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
  */
 function contenidoDelSello(repo, tree, rel, { timeout } = {}) {
   const e = entornoDeGit();
-  const opts = { windowsHide: true, env: e.idiomaFijo(e.sinGitDelPadre(process.env), {}), maxBuffer: 8 * 1024 * 1024, ...(timeout ? { timeout } : {}) };
-  const ls = spawnSync('git', ['-C', repo, 'ls-tree', '-z', tree, '--', rel], { ...opts, encoding: 'utf8' });
+  const opts = { env: e.idiomaFijo(e.sinGitDelPadre(process.env), {}), maxBuffer: 8 * 1024 * 1024, ...(timeout ? { timeout } : {}) };
+  const ls = spawnSync('git', ['-C', repo, 'ls-tree', '-z', tree, '--', rel], { ...opts, windowsHide: true, encoding: 'utf8' });
   if (ls.error || ls.status !== 0) return { error: `no pude leer ${rel} en el sello: ${unaLinea((ls.error && ls.error.message) || ls.stderr)}` };
   const m = /^(\d{6}) blob ([0-9a-f]{40,64})\t/.exec(String(ls.stdout || ''));
   if (!m) return { error: `${rel} no está en el sello como archivo` };
   if (m[1] !== '100644' && m[1] !== '100755') return { error: `${rel} no es un archivo común en el sello (${m[1]})` };
-  const cat = spawnSync('git', ['-C', repo, 'cat-file', 'blob', m[2]], opts);
+  const cat = spawnSync('git', ['-C', repo, 'cat-file', 'blob', m[2]], { ...opts, windowsHide: true });
   if (cat.error || cat.status !== 0 || !Buffer.isBuffer(cat.stdout)) return { error: `no pude leer ${rel} en el sello: ${unaLinea((cat.error && cat.error.message) || String(cat.stderr || ''))}` };
   return { modo: m[1], buf: cat.stdout };
 }

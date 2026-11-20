@@ -62,7 +62,7 @@ function entornoDeGit() {
 /** Cada `git` tiene su tope y descuenta lo ya gastado: con la corrida vencida no se lanza, y tira como un tope vencido. */
 function git(cwd, args) {
   const queda = restante();
-  if (queda <= 0) throw Object.assign(new Error('tope de la corrida'), { code: 'ETIMEDOUT' });
+  if (queda <= 0) throw Object.assign(new Error('tope del aviso'), { code: 'ETIMEDOUT' });
   return execFileSync('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: Math.min(GIT_TIMEOUT_MS, queda), env: entornoDeGit() }).trim();
 }
 function gitOr(cwd, args, fallback = '') { try { return git(cwd, args); } catch { return fallback; } }
