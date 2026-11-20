@@ -1693,9 +1693,16 @@ ya está publicado. Borrar una ref remota no publica nada y pasa.
 máquina (`harness.js config set paths.maintainers <carpeta>`) · el clon que la máquina mantiene (`paths.maintained`) ·
 el arnés desde el que corre el freno. **Nunca el árbol que se empuja** (tampoco si la máquina declara ese árbol como su
 clon): la rama elegiría con qué lista se la mira. Los dos primeros son una declaración: declarados y sin
-lista es «no pude mirar», aunque más abajo haya otra. En una máquina **con el perfil del equipo** la lista es
-obligatoria: sin lista, no sale. Sin perfil y sin lista —alguien de afuera con su copia— corre lo que no necesita
-lista, y lo dice en una línea.
+lista es «no pude mirar», aunque más abajo haya otra. En una máquina **con el perfil del equipo que mantiene el
+arnés** la lista es obligatoria: sin lista, no sale. Sin perfil y sin lista —alguien de afuera con su copia— corre lo
+que no necesita lista, y lo dice en una línea. Lo mismo con el perfil de **otra organización**: la lista privada no se
+le da a nadie de afuera, y exigírsela lo dejaría sin poder empujar nunca.
+
+Al equipo dueño lo reconoce el `team-repos.json` del perfil **instalado** (al lado de `team-profile.json`, en el arnés
+que corre el freno) cuando declara `maintainers`, el repo de mantenimiento donde vive la lista. Nunca el del árbol
+que se empuja: un árbol que trae un perfil no cambia de qué organización es la máquina. Ante la duda es el equipo
+dueño y la lista es obligatoria: sin `team-repos.json` (un perfil local, una instalación a medias), ilegible, de una
+forma que el freno no conoce, o con el arnés que corre el freno adentro del árbol que se empuja.
 
 **Casi nunca hace falta declarar nada.** En la máquina de quien mantiene, el clon interno ya está declarado como el
 que la máquina mantiene (`paths.maintained`) y el freno encuentra la lista ahí. `paths.maintainers` es para cuando
