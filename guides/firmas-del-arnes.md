@@ -351,6 +351,12 @@ repite el mismo comando. La otra salida es `--terminal`, que abre una ventana nu
 Para un arreglo rápido, ese comando es `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio
 --file <ruta> [--file <ruta> …] --terminal --for-session <id>`, sin JSON.
 
+Un arreglo rápido con archivos de varios repos (`<Nombre>/<ruta>` de un hermano declarado en `repo_group` en los dos
+sentidos, en la rama principal del remoto) es `adhoc-lane` como uno de un solo repo: se firma por las mismas vías y se
+delega igual. Los hermanos salen del grupo declarado, sin preguntarte; un repo que no está en el grupo no entra en la
+lista por ninguna vía. Si otra sesión está viva en el checkout de un hermano, no se abre. Las pruebas van por repo
+(`adhoc test --repo <Nombre>`).
+
 Esto no firma en Windows:
 
 - **La ventana de permiso.** Su pedido queda escrito antes de que contestes, y en Windows un programa puede declarar

@@ -24,6 +24,11 @@
  * Los permisos 3 y 4 son un solo número (4 + 128 = 132), que es exactamente lo que tienen los
  * productos que ya funcionan.
  *
+ * 🔴 LOS PERMISOS 1 Y 2 APLICAN SÓLO SI EL ARNÉS ESTÁ EN AZURE DEVOPS. Los pipelines de las plantillas
+ * clonan el arnés de su repo público, sin credencial: una organización sin el proyecto o sin el repo
+ * del arnés (404) no los necesita, y el guion los da por «no aplica». Con `--harness` o `--repo`
+ * dados a mano, lo que no se encuentra frena: se pidió mirar ese repo.
+ *
  * 🔴 NO CABLEA NINGÚN IDENTIFICADOR. El de la colección sale de un miembro que ya está en el
  * grupo; los de proyectos y repos salen de sus nombres. Un guion con identificadores pegados
  * sirve en una organización y miente en la siguiente.
@@ -47,7 +52,8 @@
  *                      guion lo dice: el repo de historias no los necesita —su pipeline sólo
  *                      revisa, no pushea— y repartirlos a todos es dar permiso de saltear las
  *                      políticas de rama donde no hace falta.
- *   --harness <nombre> proyecto del arnés (default: tycon-claude-guides)
+ *   --harness <nombre> proyecto del arnés en Azure DevOps (default: tycon-claude-guides; si no existe, los
+ *                      permisos 1 y 2 no aplican)
  *   (--project, --verify, --write-access y --harness tienen un nombre viejo en castellano que sigue
  *   andando hasta el retiro)
  *   --repo <nombre>    repo del arnés (default: igual que el proyecto)
@@ -132,6 +138,8 @@ const ORG = (() => {
 })();
 const ARNES_PROYECTO = String(flag('--harness', 'tycon-claude-guides'));
 const ARNES_REPO = String(flag('--repo', ARNES_PROYECTO));
+// el arnés nombrado a mano: si no está, frena; el de por defecto que no está deja los permisos 1 y 2 sin aplicar
+const ARNES_PEDIDO = typeof flag('--harness') === 'string' || typeof flag('--repo') === 'string';
 const PROYECTO = flag('--project');
 const ESCRITURA_EN = flag('--write-access');
 const SOLO_VERIFICAR = args.includes('--verify');
@@ -203,25 +211,40 @@ async function bitsConReintento(token, proyectoId, esperados) {
   if (!proy.ok) morir(2, `No pude leer el proyecto "${PROYECTO}" (HTTP ${proy.estado}). El nombre va tal cual, con espacios.`);
   const proyectoId = proy.datos.id;
 
+  // El arnés en Azure DevOps: sin su proyecto o su repo (404), los permisos 1 y 2 no aplican
+  let arnes = null;
   const arnesProy = await api(`${ORG}/_apis/projects/${encodeURIComponent(ARNES_PROYECTO)}?api-version=7.1`);
-  if (!arnesProy.ok) morir(2, `No pude leer el proyecto del arnés "${ARNES_PROYECTO}" (HTTP ${arnesProy.estado}).`);
-  const repo = await api(`${ORG}/${encodeURIComponent(ARNES_PROYECTO)}/_apis/git/repositories/${encodeURIComponent(ARNES_REPO)}?api-version=7.1`);
-  if (!repo.ok) morir(2, `No pude leer el repo del arnés "${ARNES_REPO}" (HTTP ${repo.estado}).`);
-  const tokenArnes = `repoV2/${arnesProy.datos.id}/${repo.datos.id}`;
+  const noEsta = (r) => r.estado === 404 && !ARNES_PEDIDO;
+  if (!arnesProy.ok && !noEsta(arnesProy)) morir(2, `No pude leer el proyecto del arnés "${ARNES_PROYECTO}" (HTTP ${arnesProy.estado}).`);
+  const repo = arnesProy.ok
+    ? await api(`${ORG}/${encodeURIComponent(ARNES_PROYECTO)}/_apis/git/repositories/${encodeURIComponent(ARNES_REPO)}?api-version=7.1`)
+    : null;
+  if (repo && !repo.ok && !noEsta(repo)) morir(2, `No pude leer el repo del arnés "${ARNES_REPO}" (HTTP ${repo.estado}).`);
+  if (repo && repo.ok) {
+    const grupos = await api(`${VSSPS}/_apis/graph/groups?api-version=7.1-preview.1`);
+    if (!grupos.ok) morir(2, `No pude listar los grupos (HTTP ${grupos.estado}). Si es 401 o 403, el PAT no alcanza para administrar identidades.`);
+    const readers = (grupos.datos.value || []).find(
+      (g) => String(g.principalName || '').toLowerCase() === `[${ARNES_PROYECTO}]\\readers`.toLowerCase());
+    if (!readers) morir(2, `No encontré el grupo [${ARNES_PROYECTO}]\\Readers.`);
 
-  const grupos = await api(`${VSSPS}/_apis/graph/groups?api-version=7.1-preview.1`);
-  if (!grupos.ok) morir(2, `No pude listar los grupos (HTTP ${grupos.estado}). Si es 401 o 403, el PAT no alcanza para administrar identidades.`);
-  const readers = (grupos.datos.value || []).find(
-    (g) => String(g.principalName || '').toLowerCase() === `[${ARNES_PROYECTO}]\\readers`.toLowerCase());
-  if (!readers) morir(2, `No encontré el grupo [${ARNES_PROYECTO}]\\Readers.`);
-
-  const miembros = await api(`${VSSPS}/_apis/graph/memberships/${readers.descriptor}?direction=down&api-version=7.1-preview.1`);
-  if (!miembros.ok) morir(2, `No pude listar los miembros de Readers (HTTP ${miembros.estado}).`);
-  const svcs = (miembros.datos.value || []).map((m) => m.memberDescriptor).filter((d) => String(d).startsWith('svc.'));
-  if (!svcs.length) morir(2, `Ninguna identidad de compilación es miembra de [${ARNES_PROYECTO}]\\Readers: no puedo deducir el identificador de la colección. La primera vez, hacelo por interfaz.`);
-  const coleccion = decodificar(svcs[0]).split(':')[0];
-  const dGrafo = descriptorDeGrafo(coleccion, proyectoId);
-  const dPermisos = descriptorDePermisos(coleccion, proyectoId);
+    const miembros = await api(`${VSSPS}/_apis/graph/memberships/${readers.descriptor}?direction=down&api-version=7.1-preview.1`);
+    if (!miembros.ok) morir(2, `No pude listar los miembros de Readers (HTTP ${miembros.estado}).`);
+    const svcs = (miembros.datos.value || []).map((m) => m.memberDescriptor).filter((d) => String(d).startsWith('svc.'));
+    if (!svcs.length) morir(2, `Ninguna identidad de compilación es miembra de [${ARNES_PROYECTO}]\\Readers: no puedo deducir el identificador de la colección. La primera vez, hacelo por interfaz.`);
+    arnes = { token: `repoV2/${arnesProy.datos.id}/${repo.datos.id}`, readers, svcs, coleccion: decodificar(svcs[0]).split(':')[0] };
+  } else {
+    salida.notas.push(`El arnés no está en Azure DevOps ("${ARNES_PROYECTO}/${ARNES_REPO}": HTTP 404): los pipelines lo clonan de su repo público y la lectura del arnés y Readers no aplican.`);
+  }
+  // El identificador de la colección: el de un miembro de Readers del arnés o, sin el arnés, el de la organización
+  // (`connectionData`). Sólo hace falta para escribir permisos.
+  let coleccionLeida = arnes ? arnes.coleccion : null;
+  const coleccion = async () => {
+    if (coleccionLeida) return coleccionLeida;
+    const cd = await api(`${ORG}/_apis/connectionData`);
+    if (!cd.ok || !cd.datos || !cd.datos.instanceId) morir(2, `No pude leer el identificador de la colección (HTTP ${cd.estado}).`);
+    coleccionLeida = cd.datos.instanceId;
+    return coleccionLeida;
+  };
 
   // Los repos propios que reciben escritura.
   const reposProy = await api(`${ORG}/${encodeURIComponent(PROYECTO)}/_apis/git/repositories?api-version=7.1`);
@@ -239,23 +262,26 @@ async function bitsConReintento(token, proyectoId, esperados) {
   }
 
   // ── Qué falta ───────────────────────────────────────────────────────────────────────────────
-  const bitsArnes = await bitsDe(tokenArnes, proyectoId);
-  salida.lectura_arnes = bitsArnes !== null && (bitsArnes & LECTURA) === LECTURA;
-  salida.miembro_readers = svcs.some((d) => decodificar(d) === `${coleccion}:Build:${proyectoId}`);
+  // `null`: no aplica (el arnés no está en Azure DevOps)
+  if (arnes) {
+    const bitsArnes = await bitsDe(arnes.token, proyectoId);
+    salida.lectura_arnes = bitsArnes !== null && (bitsArnes & LECTURA) === LECTURA;
+    salida.miembro_readers = arnes.svcs.some((d) => decodificar(d) === `${arnes.coleccion}:Build:${proyectoId}`);
+  }
   for (const r of propios) {
     const bits = await bitsDe(`repoV2/${proyectoId}/${r.id}`, proyectoId);
     salida.escritura_propia[r.name] = bits !== null && (bits & ESCRITURA) === ESCRITURA;
   }
 
   const falta = [];
-  if (!salida.lectura_arnes) falta.push('lectura sobre el repo del arnés');
-  if (!salida.miembro_readers) falta.push('pertenencia a Readers');
+  if (salida.lectura_arnes === false) falta.push('lectura sobre el repo del arnés');
+  if (salida.miembro_readers === false) falta.push('pertenencia a Readers');
   const sinEscritura = Object.entries(salida.escritura_propia).filter(([, v]) => !v).map(([k]) => k);
   if (sinEscritura.length) falta.push(`escritura propia en ${sinEscritura.join(', ')}`);
 
   const reportar = () => {
     if (JSON_OUT) { console.log(JSON.stringify(salida, null, 1)); return; }
-    const ok = (b) => (b ? 'sí' : 'NO');
+    const ok = (b) => (b === null ? 'no aplica' : b ? 'sí' : 'NO');
     console.log(`${falta.length ? '⚠️ ' : '✅'} ${proy.datos.name}`);
     console.log(`   lectura del arnés: ${ok(salida.lectura_arnes)} · miembra de Readers: ${ok(salida.miembro_readers)}`);
     for (const [n, v] of Object.entries(salida.escritura_propia)) console.log(`   escribe en ${n}: ${ok(v)}`);
@@ -271,16 +297,18 @@ async function bitsConReintento(token, proyectoId, esperados) {
   // ── Poner lo que falta ──────────────────────────────────────────────────────────────────────
   // 🔴 EL ORDEN IMPORTA: primero el grupo. La identidad de compilación de un proyecto recién
   // creado puede no existir todavía para el sistema de permisos; entrar al grupo la materializa.
-  if (!salida.miembro_readers) {
-    const r = await api(`${VSSPS}/_apis/graph/memberships/${dGrafo}/${readers.descriptor}?api-version=7.1-preview.1`, { metodo: 'PUT', cuerpo: {} });
+  const dPermisos = descriptorDePermisos(await coleccion(), proyectoId);
+  if (salida.miembro_readers === false) {
+    const dGrafo = descriptorDeGrafo(arnes.coleccion, proyectoId);
+    const r = await api(`${VSSPS}/_apis/graph/memberships/${dGrafo}/${arnes.readers.descriptor}?api-version=7.1-preview.1`, { metodo: 'PUT', cuerpo: {} });
     salida.acciones.push({ que: 'pertenencia a Readers', estado: r.estado, ok: r.ok });
     if (!r.ok) salida.notas.push(`No pude agregarla al grupo (HTTP ${r.estado}) — ${motivo(r)}. Por interfaz: ${ARNES_PROYECTO} → Project Settings → Permissions → Readers → Members → Add → "${proy.datos.name} Build Service (${ORG_NOMBRE})".`);
   }
 
-  if (!salida.lectura_arnes) {
+  if (salida.lectura_arnes === false) {
     const r = await api(`${ORG}/_apis/accesscontrolentries/${NS_REPOS_GIT}?api-version=7.1`, {
       metodo: 'POST',
-      cuerpo: { token: tokenArnes, merge: true, accessControlEntries: [{ descriptor: dPermisos, allow: LECTURA, deny: 0 }] },
+      cuerpo: { token: arnes.token, merge: true, accessControlEntries: [{ descriptor: dPermisos, allow: LECTURA, deny: 0 }] },
     });
     salida.acciones.push({ que: 'lectura sobre el repo del arnés', estado: r.estado, ok: r.ok });
     if (!r.ok) salida.notas.push(`No pude dar la lectura (HTTP ${r.estado}) — ${motivo(r)}. Por interfaz: ${ARNES_PROYECTO} → Project Settings → Repositories → ${ARNES_REPO} → Security → "${proy.datos.name} Build Service (${ORG_NOMBRE})" → Read: Allow.`);
@@ -297,18 +325,20 @@ async function bitsConReintento(token, proyectoId, esperados) {
   }
 
   // ── Releer: lo que no se verificó, no está hecho (con paciencia: Azure tarda) ────────────────
-  const bits2 = await bitsConReintento(tokenArnes, proyectoId, LECTURA);
-  salida.lectura_arnes = bits2 !== null && (bits2 & LECTURA) === LECTURA;
-  const m2 = await api(`${VSSPS}/_apis/graph/memberships/${readers.descriptor}?direction=down&api-version=7.1-preview.1`);
-  salida.miembro_readers = m2.ok && (m2.datos.value || []).map((m) => m.memberDescriptor)
-    .filter((d) => String(d).startsWith('svc.'))
-    .some((d) => decodificar(d) === `${coleccion}:Build:${proyectoId}`);
+  if (arnes) {
+    const bits2 = await bitsConReintento(arnes.token, proyectoId, LECTURA);
+    salida.lectura_arnes = bits2 !== null && (bits2 & LECTURA) === LECTURA;
+    const m2 = await api(`${VSSPS}/_apis/graph/memberships/${arnes.readers.descriptor}?direction=down&api-version=7.1-preview.1`);
+    salida.miembro_readers = m2.ok && (m2.datos.value || []).map((m) => m.memberDescriptor)
+      .filter((d) => String(d).startsWith('svc.'))
+      .some((d) => decodificar(d) === `${arnes.coleccion}:Build:${proyectoId}`);
+  }
   for (const r0 of propios) {
     const bits = await bitsConReintento(`repoV2/${proyectoId}/${r0.id}`, proyectoId, ESCRITURA);
     salida.escritura_propia[r0.name] = bits !== null && (bits & ESCRITURA) === ESCRITURA;
   }
 
-  const listo = salida.lectura_arnes && salida.miembro_readers && Object.values(salida.escritura_propia).every(Boolean);
+  const listo = salida.lectura_arnes !== false && salida.miembro_readers !== false && Object.values(salida.escritura_propia).every(Boolean);
   reportar();
   if (listo && !JSON_OUT) console.log('   Probalo: corré el pipeline de integración del producto y mirá la etapa que baja el arnés.');
   process.exit(listo ? 0 : 1);

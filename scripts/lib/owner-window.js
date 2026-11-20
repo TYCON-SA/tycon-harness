@@ -493,7 +493,12 @@ function topesDelCaminoCorto(casa) {
   return t;
 }
 
-function firmaDeLlamado(guion, sub, args, llamada = null, topes = null) {
+/**
+ * La firma que pide un llamado a un guion. `donde` (`{ cwd, casa, sesion }`, la carpeta y la sesión del evento): con él,
+ * la lista de un `adhoc set` se clasifica contra la carpeta del pedido, donde `<Nombre>/<ruta>` nombra un repo hermano,
+ * como la clasifica el guion; sin él, cada ruta tal como viene.
+ */
+function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = null) {
   const pal = args.map((w) => (w && typeof w === 'object' ? { texto: String(w.texto), literal: !!w.literal }
     : { texto: String(w), literal: !/[$`]/.test(String(w)) }));
   const a = pal.map((w) => w.texto);
@@ -526,7 +531,10 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null) {
     if (sub === 'designate-relay') return pide('--quote') ? null : 'designation-set';
     if (sub === 'withdraw-relay') return 'designation-withdraw';
     // declarar o cambiar el arreglo rápido; mirarlo o terminarlo, no. El subcomando en una variable cuenta como `set`
-    if (sub === 'adhoc' && a[0] === 'set') return firmaDelPedidoAdhoc(args.slice(1), (topes || topesDelCaminoCorto()).maximo);
+    if (sub === 'adhoc' && a[0] === 'set') {
+      const carpeta = donde ? carpetaDelPedido({ palabras: [guion, sub, ...a], cwd: donde.cwd || null, casa: donde.casa, sesion: donde.sesion }) : null;
+      return firmaDelPedidoAdhoc(args.slice(1), (topes || topesDelCaminoCorto()).maximo, { cwd: carpeta });
+    }
     // dejar pasar el freno de los datos; recomendar la historia o descartar no firma nada
     if (sub === 'adhoc' && a[0] === 'allow-data-change') return opaca || (a.includes('--recommends') && a[a.indexOf('--recommends') + 1] === 'pasar') ? 'adhoc-lane:datos' : null;
     // dejar pasar una vez un guardado ajeno al carril que espera sus revisores
@@ -583,15 +591,15 @@ function llamadosSueltos(comando, hondo = 0) {
  * del comando se cae y el comando nombra un guion de firma, la lista vuelve vacía con `ilegible: true`: no se sabe qué
  * pide, y eso se niega. `topes`: los del camino corto que rigen (`{ delegado, maximo }`); sin ellos, se leen.
  */
-function firmasDelComando(comando, topes = null) {
+function firmasDelComando(comando, topes = null, donde = null) {
   const ids = [];
   try {
     for (const l of markerCommand().llamadas(String(comando))) {
-      const id = firmaDeLlamado(`${l.guion}.js`, l.sub, l.args || [], l, topes);
+      const id = firmaDeLlamado(`${l.guion}.js`, l.sub, l.args || [], l, topes, donde);
       if (id) ids.push(id);
     }
     for (const l of llamadosSueltos(comando)) {
-      const id = firmaDeLlamado(l.guion, l.sub, l.args, null, topes);
+      const id = firmaDeLlamado(l.guion, l.sub, l.args, null, topes, donde);
       if (id) ids.push(id);
     }
   } catch (_) {
@@ -601,10 +609,10 @@ function firmasDelComando(comando, topes = null) {
 }
 
 /** La firma que pide el comando en forma canónica, con sus palabras; null si no la tiene. */
-function canonicaDe(comando, topes = null) {
+function canonicaDe(comando, topes = null, donde = null) {
   const palabras = canonica(comando);
   if (!palabras) return null;
-  const id = firmaDeLlamado(base(palabras[0]), palabras[1], palabras.slice(2), null, topes);
+  const id = firmaDeLlamado(base(palabras[0]), palabras[1], palabras.slice(2), null, topes, donde);
   return id ? { id, palabras } : null;
 }
 
@@ -925,7 +933,7 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   // criterios, y las lee del comando sin envolturas (envuelto, la fuente no tiene qué mostrar y no hay cuadro)
   const palabrasDeLaFuente = palabras || (firma === 'escape:rojo-esperado-de-la-matriz' ? canonica(comando) : null);
   // el cuadro dice el tope con la misma lectura que usa el freno para decidir
-  let partes = fuentes.partesDe({ firma, palabras: palabrasDeLaFuente, cwd, marcador: m, estado: casa === undefined ? null : stateDir(casa), destino, topes: topesDelCaminoCorto(casa) });
+  let partes = fuentes.partesDe({ firma, palabras: palabrasDeLaFuente, cwd, marcador: m, estado: casa === undefined ? null : stateDir(casa), destino, topes: topesDelCaminoCorto(casa), casa });
   // una fuente que dice que no hay nada que firmar: sin cuadro, el pedido se niega
   if (partes && partes.error) return { error: partes.error };
   if (firma === 'runtime-waiver') {
@@ -1303,7 +1311,7 @@ function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado, cw
   // sin lista no se abre: `adhoc set` la niega igual, y sin una persona no se delega un pedido que se va a negar
   if (!Array.isArray(pedido.allowedFiles) || !pedido.allowedFiles.length) return 'falta la lista de archivos ("allowedFiles"): sin ella el camino corto no se abre';
   // la lista: su código cuenta como el cupo pedido, y el motivo con varios temas o vago no se abre sin una persona
-  const codigo = Array.isArray(pedido.allowedFiles) ? pedido.allowedFiles.filter((f) => typeof f === 'string' && L.esCodigoRel(f)).length : 0;
+  const codigo = Array.isArray(pedido.allowedFiles) ? pedido.allowedFiles.filter((f) => typeof f === 'string' && L.esCodigoRel(f, { cwd })).length : 0;
   if (codigo > tope) return `la lista nombra ${codigo} archivos de código y sin una persona se abren hasta ${tope}`;
   // una ruta de riesgo alto en la lista: sin una persona no se abre (con la carpeta del pedido; sin ella, lo dice el guion)
   if (cwd) {
@@ -1389,7 +1397,10 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // la terminal firma para la sesión destino en cuanto se conoce: antes, para la del evento
   let paraTerminal = sesion;
   const negar = (motivo, ids) => negarCon(motivo, ids, paraTerminal);
-  const leidas = firmasDelComando(comando, topes);
+  // la carpeta y la sesión del evento: la lista de un arreglo rápido se clasifica contra ellas, como en el guion. Sin la
+  // carpeta en el evento, la del freno, que corre en la de la sesión
+  const donde = { cwd: evento.cwd || process.cwd(), casa, sesion };
+  const leidas = firmasDelComando(comando, topes, donde);
   const guiones = Object.assign(leidas.filter((id) => !sinAviso.includes(id)), { ilegible: leidas.ilegible });
   const pedidas = [...new Set([...guiones, ...escapes])];
   if (guiones.ilegible) return negar('no se pudo leer el comando, y nombra un guion de firma', pedidas);
@@ -1413,7 +1424,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   }
   // el motivo del arreglo rápido es texto libre y puede nombrar un flag o una variable: en la forma canónica, los dos
   // controles de abajo miran el comando sin ese argumento (un flag o una variable de verdad siguen a la vista)
-  const canAdhoc = canonicaDe(comando, topes);
+  const canAdhoc = canonicaDe(comando, topes, donde);
   const mirado = canAdhoc && (canAdhoc.id === 'adhoc-lane' || canAdhoc.id === SOBRE_CUPO) && canAdhoc.palabras[1] === 'adhoc' && canAdhoc.palabras[2] === 'set'
     ? canAdhoc.palabras.filter((_, i) => i !== 3).join(' ') : comando;
   if (VARIABLES_DE_SESION.test(mirado)) return negar('la sesión destino va con --for-session, no con una variable de sesión en el comando', pedidas);
@@ -1421,7 +1432,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // el guion niega estas formas sin mirar la ventana: pedirla le haría aprobar al dueño algo que no firma
   if (guiones.length && /(^|\s)--(quote|relayed-by|ok)(\s|=|$)/.test(mirado)) return negar('la cita, el reenvío o el --ok ya no firman: el mismo comando sin --quote, --relayed-by ni --ok', pedidas);
   // la forma: una firma `guion` sólo en su forma canónica; un escape, en su forma de siempre
-  const can = canonicaDe(comando, topes);
+  const can = canonicaDe(comando, topes, donde);
   const guion = guiones.length ? guiones[0] : null;
   if (guiones.length > 1 || (guion && (!can || can.id !== guion))) {
     const s = firmaDe(guion);
@@ -1554,7 +1565,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     else sinDelegar = rs.map((r) => r && !r.ok && r.motivo).find((m) => m && !/no delega|sólo del dueño|la sesión que implementa/.test(m)) || null;
   } catch (e) { return negar(`no se pudo consultar la delegación del perfil (${e.message})`, pendientes); }
   // la lista pedida para otra sesión se mira con la carpeta de esa sesión, no con la de quien pide
-  const fueraDelCupo = delegada && firmaGuion === 'adhoc-lane' ? pasaDelCupoDelegado(can && can.palabras, topes.delegado, carpetaDelPedido({ palabras: can && can.palabras, cwd: evento.cwd || null, casa, sesion })) : null;
+  const fueraDelCupo = delegada && firmaGuion === 'adhoc-lane' ? pasaDelCupoDelegado(can && can.palabras, topes.delegado, carpetaDelPedido({ palabras: can && can.palabras, cwd: donde.cwd, casa, sesion })) : null;
   if (fueraDelCupo) { delegada = null; sinDelegar = fueraDelCupo; }
   // un cuadro de sólo click no se contesta desde la pestaña de otra sesión: para otra, sólo la delegación del perfil
   if (destino !== sesion && soloClick && !delegada) {
@@ -1584,7 +1595,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     else {
       const cuadro = cuadroPara({ firma: firmaGuion, comando, palabras: can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios });
       const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
-      const rutina = sinVentana && !deFondo ? rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can.palabras, destino, casa, topes, cwd: evento.cwd || null, sesion }) : { ok: false };
+      const rutina = sinVentana && !deFondo ? rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can.palabras, destino, casa, topes, cwd: donde.cwd, sesion }) : { ok: false };
       if (!a.ok && !rutina.ok) {
         // un chequeo que no se pudo correr no desvía: el renglón podría ser algo que el guion niega
         let chequeo = null;
@@ -1623,7 +1634,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
       sinAprobacion = a.motivo;
       // sin aprobación: lo de rutina en una pestaña sin permisos sigue «hecho y avisado»; lo demás se niega y dice cómo
       // aprobarlo. En una sesión de fondo no hay «hecho y avisado»: nadie ve el aviso en la pestaña
-      const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa, topes, cwd: evento.cwd || null, sesion });
+      const rutina = rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa, topes, cwd: donde.cwd, sesion });
       // nombrar o retirar a la coordinadora: lo que el guion negaría se dice antes del cuadro, sin gastar el click
       if (CHEQUEO_ANTES_DEL_CUADRO.has(firmaGuion)) {
         let c = null;

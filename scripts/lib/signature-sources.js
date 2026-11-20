@@ -415,7 +415,7 @@ function topesLeidos() {
  * El arreglo rápido: el cupo es lo que se firma; el motivo lo escribió la sesión y va como cita. Sin número, el cupo es
  * el tope de la organización (`topes`, o la misma lectura que usan el guion y el freno): el cuadro dice lo que se abre.
  */
-function delArreglo(palabras, topes = null) {
+function delArreglo(palabras, topes = null, { cwd = null, casa } = {}) {
   if (!palabras || palabras[1] !== 'adhoc' || palabras[2] !== 'set') return null;
   let p = null;
   try { p = JSON.parse(palabras[3] || ''); } catch (_) { p = null; }
@@ -424,7 +424,41 @@ function delArreglo(palabras, topes = null) {
   const maximo = conNumero ? null : (topes || topesLeidos()).maximo;
   const cupo = conNumero ? `hasta ${Number(p.maxFiles)} archivos de implementación, sin pruebas ni guías` : `el cupo de la organización (${maximo} archivos de implementación, o el que ya tenía)`;
   const datos = { 'sin-cambio': 'La sesión declara que no cambia de dónde salen los datos ni quién los ve', cambian: 'La sesión declara que cambia de dónde salen los datos o quién los ve' }[p.datos];
-  return { queHace: [`Abre un arreglo rápido sin historia, con ${cupo}`, ...(datos ? [datos] : [])], fuente: palabras[3], cita: String(p.reason || '') || null };
+  const r = reposDelPedido(palabras, p, { cwd, casa });
+  // con más de un repo, lo primero que lee el dueño son los repos y cuántos archivos de cada uno. Sin «:», que es donde
+  // el cuadro corta el renglón al achicarse: los repos quedan a la vista
+  const nombres = r ? r.repos.map((x) => `${x.nombre} (${x.archivos})`) : [];
+  const enRepos = nombres.length > 1 ? ` en ${nombres.length} repos, ${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]},` : '';
+  return {
+    queHace: [`Abre un arreglo rápido${enRepos} sin historia, con ${cupo}`, ...(datos ? [datos] : [])],
+    // los repos resueltos y su raíz real van en la huella: con otros repos, el click dado antes no vale
+    fuente: r && r.hermanos ? `${palabras[3]}\n${r.repos.map((x) => `${x.nombre}\t${x.raiz}`).join('\n')}` : palabras[3],
+    cita: String(p.reason || '') || null,
+    ...(r && r.repos.length > 1 ? { archivos: r.archivos } : {}),
+  };
+}
+
+/**
+ * Los repos de la lista de un `adhoc set`, resuelta contra la carpeta del pedido (la de la sesión destino con
+ * `--for-session`): `{ repos: [{ nombre, raiz, archivos }], archivos, hermanos }`, o null si no se puede resolver.
+ */
+function reposDelPedido(palabras, p, { cwd, casa }) {
+  if (!Array.isArray(p.allowedFiles) || !p.allowedFiles.length) return null;
+  const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
+  try {
+    const L = require(path.join(lib, 'adhoc-list.js'));
+    const i = palabras.indexOf('--for-session');
+    const carpeta = i >= 0 && palabras[i + 1] ? L.carpetaDeLaSesion({ casa: casa || require('os').homedir(), sesion: palabras[i + 1] }) : cwd;
+    if (!carpeta) return null;
+    const n = L.normalizar(p.allowedFiles, { cwd: carpeta });
+    if (!n.lista) return null;
+    const RG = require(path.join(lib, 'repo-group.js'));
+    const repos = L.reposDeLaLista(n.lista).map((raiz) => ({
+      raiz, nombre: n.hermanos.get(raiz) || path.basename(RG.checkoutPrincipal(raiz) || raiz),
+      archivos: n.lista.filter((f) => f.startsWith(raiz + path.sep)).length,
+    }));
+    return { repos, archivos: n.lista.map((f) => L.relDeLaLista(f, carpeta, n.hermanos)), hermanos: n.hermanos.size > 0 };
+  } catch (_) { return null; }
 }
 
 /** El valor de una bandera de las palabras del comando (`--changed <texto>`), o null. */
@@ -550,7 +584,7 @@ function deLaSalidaPerdida(palabras, cwd, estado, destino) {
   return { queHace: [linea], fuente: linea };
 }
 
-function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {}) {
+function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes, casa } = {}) {
   if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd, palabras);
   if (firma === 'escape:rojo-esperado-de-la-matriz') return delRojoEsperado(palabras, marcador);
   if (!palabras) return null;
@@ -559,7 +593,7 @@ function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes } = {
   if (firma === 'manual-test') return deLaPruebaAMano(palabras, marcador);
   if (firma === 'critical-waiver') return delCritico(palabras, marcador);
   if (firma === 'extra-round') return deLaVuelta(palabras, marcador);
-  if (firma === 'adhoc-lane' || firma === 'adhoc-lane:sobre-cupo') return delArreglo(palabras, topes);
+  if (firma === 'adhoc-lane' || firma === 'adhoc-lane:sobre-cupo') return delArreglo(palabras, topes, { cwd, casa });
   if (firma === 'adhoc-lane:datos' && estado && destino) return delFrenoDeDatos(palabras, estado, destino);
   if (firma === 'adhoc-lane:guardado-ajeno') return estado && destino ? delGuardadoAjeno(estado, destino) : { error: 'no sé de qué sesión es el guardado ajeno' };
   if (firma === 'lost-run') return deLaSalidaPerdida(palabras, cwd, estado, destino);

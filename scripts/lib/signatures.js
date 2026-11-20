@@ -426,9 +426,10 @@ const REQUIERE_SENSIBLE = Object.freeze(['signatures.js', 'owner-window.js', 'de
  * La firma que pide un `adhoc set`, para que el freno y el guion nunca discrepen. `args`: lo que sigue a `set`, cada palabra
  * como texto (ya leída) o como `{ texto, literal }`. Una palabra que no se lee hasta correr, o un cupo que no se entiende,
  * cuenta como sobre cupo. Sin número sigue la firma común: conserva el cupo que tenía el carril. `tope`: el de la
- * organización (lo lee el borde, una vez, para el freno y el guion); sin él, el de fábrica.
+ * organización (lo lee el borde, una vez, para el freno y el guion); sin él, el de fábrica. `cwd`: la carpeta del pedido;
+ * con ella, `<Nombre>/<ruta>` de un repo hermano se cuenta sin el prefijo, como en su repo.
  */
-function firmaDelPedidoAdhoc(args = [], tope = TOPE) {
+function firmaDelPedidoAdhoc(args = [], tope = TOPE, { cwd = null } = {}) {
   if (args.some((w) => w && typeof w === 'object' && !w.literal)) return SOBRE_CUPO;
   const a = args.map((w) => String(w && typeof w === 'object' ? w.texto : w));
   const limite = Number.isInteger(tope) && tope > 0 ? tope : TOPE;
@@ -438,7 +439,7 @@ function firmaDelPedidoAdhoc(args = [], tope = TOPE) {
   const codigoDe = (rutas) => {
     try {
       const L = require(require('path').join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'adhoc-list.js'));
-      return rutas.filter((f) => typeof f === 'string' && L.esCodigoRel(f)).length;
+      return rutas.filter((f) => typeof f === 'string' && L.esCodigoRel(f, { cwd })).length;
     } catch (_) { return Infinity; }
   };
   if (String(a[0] || '').startsWith('--')) {

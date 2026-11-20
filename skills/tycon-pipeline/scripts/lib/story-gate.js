@@ -339,8 +339,10 @@ function computeStoryGate({
         lista: adhoc.allowedFiles, filePath, real, repoRoot: adhocRepoRoot, home: homeDir, delegado,
       });
       if (fuera) {
+        // el archivo de un repo al lado que no vale como hermano: el texto dice por qué no se puede sumar a la lista
+        const vecino = require('./adhoc-list.js').repoVecinoFueraDelGrupo({ repoRoot: adhocRepoRoot, cwd: adhoc.cwd });
         return {
-          action: 'block', kind: 'adhoc-out-of-list', archivo: fuera.archivo, lista: adhoc.allowedFiles,
+          action: 'block', kind: 'adhoc-out-of-list', archivo: fuera.archivo, lista: adhoc.allowedFiles, ...(vecino ? { vecino } : {}),
           reason: `${fuera.archivo}: ${fuera.motivo} del camino corto «${adhoc.reason}»`,
         };
       }
@@ -540,6 +542,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       `  ${r.archivo || f} no está en la lista de archivos de este camino corto. La lista:`,
       ...lista.map((a) => `   · ${a}`),
       ...(Array.isArray(r.lista) && r.lista.length > TOPE_DE_NOMBRES ? [`   · y ${r.lista.length - TOPE_DE_NOMBRES} más`] : []),
+      ...(r.vecino ? [`  Ese archivo es de ${r.vecino}: ampliar la lista no alcanza.`] : []),
       harness
         ? '  Para tocarlo, ampliá la lista: es otra autorización del mismo tipo que abrir, que da una persona (por delegación, la lista nueva contiene entera la firmada):'
         : '  Para tocarlo, ampliá la lista: lo aprobás vos con tu sí, como al abrir:',
