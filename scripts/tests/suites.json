@@ -2117,6 +2117,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/prod-azure-admin.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/lint-production-json.test.sh",
       "requiere": []
     },
