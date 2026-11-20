@@ -160,10 +160,10 @@ test('SignatureQuestion_ControlChange_DiffStatAndDiffFile (T36)', (t) => {
   git('commit', '-qam', 'cambio');
   const blob = (p) => git('rev-parse', `HEAD:${p}`).stdout.trim();
   const entries = JSON.stringify(['scripts/ci/a.sh', 'scripts/ci/b.sh'].map((p) => ({ path: p, blob: blob(p) })));
-  const q = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${entries}'`).pregunta;
+  // el cuadro de un cambio de control dice qué cambia, por qué y su riesgo; el tamaño, las zonas y el diff van al detalle
+  const q = conDetalle(conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${entries}'`));
   assert.match(q, /Qué hace: Cambia 2 archivo\(s\) de control: \+1 −1 líneas\./);
   assert.match(q, /Archivos: 2 archivos: 2 de código \(a y b\)\./);
-  assert.ok(q.includes('Completo en: el cambio, en un archivo de la ejecución.'), q);
   // 8.275: la ruta del diff, en el detalle
   const ruta = (conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${entries}'`).detalle.find((l) => l.startsWith('Completo en: ')) || '').slice('Completo en: '.length);
   assert.ok(ruta && fs.existsSync(ruta), q);
@@ -171,7 +171,7 @@ test('SignatureQuestion_ControlChange_DiffStatAndDiffFile (T36)', (t) => {
   assert.match(diff, /\+nuevo/);
   assert.match(diff, /-tres/);
   // sin --base no hay contra qué comparar, y lo dice
-  const sinBase = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --entries '${entries}'`).pregunta;
+  const sinBase = conDetalle(conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --entries '${entries}'`));
   assert.match(sinBase, /Firma 2 archivo\(s\) de control en su versión de la punta \(sin base para comparar\)/);
 });
 
@@ -221,7 +221,7 @@ test('SignatureQuestion_ControlChange_FileShowsTheSignedVersion', (t) => {
   // en un repo de un solo commit no hay padre: la huella lleva el contenido, y cambia si el archivo cambia
   const solo = repoDeControles(t, ['a=1\n']);
   const una = conFirma('control-change')(solo.c, `bash ${CONTROLES} approve --root ${solo.c.repo} --file scripts/ci/ctl.sh`);
-  assert.match(una.pregunta, /en su versión de [0-9a-f]{12} \(sin base para comparar\)/);
+  assert.match(conDetalle(una), /en su versión de [0-9a-f]{12} \(sin base para comparar\)/);
   fs.writeFileSync(path.join(solo.c.repo, 'scripts', 'ci', 'ctl.sh'), 'a=2\n');
   solo.git('commit', '-qam', 'a=2', '--amend');
   assert.notStrictEqual(conFirma('control-change')(solo.c, `bash ${CONTROLES} approve --root ${solo.c.repo} --file scripts/ci/ctl.sh`).sello, una.sello);
@@ -601,6 +601,9 @@ test('SignatureQuestion_LongFields_CutWithMark (T44)', () => {
   assert.ok(q.includes('Archivos: 14 archivos: 14 de código (raíz).'), q);
 });
 
+/** La pregunta y su detalle juntos: el cuadro de un cambio de control manda al detalle lo que antes contaba en la pregunta. */
+function conDetalle(r) { return [r.pregunta, ...(r.detalle || []).map((l) => `${l}.`)].join(' '); }
+
 const pideControl = (c, base, ruta = 'scripts/ci/ctl.sh') => conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${JSON.stringify([{ path: ruta, blob: 'x' }])}'`);
 
 // 🔴 Falla con: armar el cuadro de un cambio de control con el diff vacío (la sesión soltó su puesto y la punta volvió a
@@ -639,7 +642,7 @@ test('SignatureQuestion_ControlChange_ZeroLinesButDiff_StillAsks (T46) @fix-T-22
     const q = pideControl(c, base, ruta);
     assert.ok(!q.error, `${nombre}: ${q.error}`);
     // el renombre se ve como el archivo nuevo (git sin detectar renombres): +1; los otros dos suman 0 líneas
-    assert.match(q.pregunta, nombre === 'renombre' ? /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./ : /Qué hace: Cambia 1 archivo\(s\) de control: \+0 −0 líneas\./, nombre);
+    assert.match(conDetalle(q), nombre === 'renombre' ? /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./ : /Qué hace: Cambia 1 archivo\(s\) de control: \+0 −0 líneas\./, nombre);
   }
 });
 
@@ -648,7 +651,49 @@ test('SignatureQuestion_ControlChange_WithLines_AsToday (T47) @fix-T-227 @story-
   const { c, git } = repoDeControles(t, ['a=1\n', 'a=1\nb=2\n']);
   const q = pideControl(c, git('rev-parse', 'HEAD~1').stdout.trim());
   assert.ok(!q.error, q.error);
-  assert.match(q.pregunta, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
+  assert.match(conDetalle(q), /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
+});
+
+// 🔴 Falla con: un cuadro de cambio de control que no empieza por qué cambia, por qué y su riesgo, que deja en la pregunta
+//    la sesión, los conteos o el «si sale mal» genérico, o cuya huella no cambia cuando cambia la explicación.
+test('SignatureQuestion_ControlChange_ExplainedFirst_RestInTheDetail', (t) => {
+  const { c, git } = repoDeControles(t, ['a=1\n']);
+  const base = git('rev-parse', 'HEAD').stdout.trim();
+  fs.writeFileSync(path.join(c.repo, 'scripts', 'ci', 'ctl.sh'), 'a=1\nb=2\n');
+  git('add', 'scripts');
+  const mensaje = (riesgo) => ['ctl: deja pasar b', '', 'Cambia-control: el control deja de frenar b=2 y sigue frenando a=0', 'Por-que: b=2 frenaba una prueba legítima', `Riesgo: ${riesgo}`].join('\n');
+  git('commit', '-qm', mensaje('un b=2 de verdad roto pasa sin aviso'));
+  const q = pideControl(c, base);
+  assert.ok(!q.error, q.error);
+  assert.ok(q.pregunta.startsWith('¿Aprobar un cambio de los controles del repo? Qué cambia: el control deja de frenar b=2 y sigue frenando a=0. Por qué: b=2 frenaba una prueba legítima. Riesgo: un b=2 de verdad roto pasa sin aviso.'), q.pregunta);
+  for (const sobra of ['Sesión ', 'Archivos:', 'Completo en', 'Si sale mal', 'Qué hace:']) assert.ok(!q.texto.includes(sobra), `${sobra}: ${q.pregunta}`);
+  assert.ok(q.pregunta.endsWith(`(${q.sello})`), q.pregunta);
+  const detalle = q.detalle.join('\n');
+  for (const va of ['Sesión: ses-a', 'Qué hace: Cambia 1 archivo(s) de control: +1 −0 líneas', 'Archivos: 1 archivo: de código (ctl)', 'Completo en: ', 'Si sale mal: ']) assert.ok(detalle.includes(va), `${va}: ${detalle}`);
+  // otra explicación es otra pregunta: el click dado sobre la primera no vale para la segunda
+  git('commit', '-q', '--amend', '-m', mensaje('ninguno'));
+  const otra = pideControl(c, base);
+  assert.notStrictEqual(otra.sello, q.sello);
+  assert.match(otra.pregunta, /Riesgo: ninguno\./);
+});
+
+// 🔴 Falla con: un cuadro que rellena con texto genérico cuando el cambio no explica qué hace.
+test('SignatureQuestion_ControlChange_NotExplained_SaysSo', (t) => {
+  const { c, git } = repoDeControles(t, ['a=1\n', 'a=1\nb=2\n']);
+  const q = pideControl(c, git('rev-parse', 'HEAD~1').stdout.trim());
+  assert.match(q.texto, /^¿Aprobar un cambio de los controles del repo\? El cambio no explica qué hace, por qué ni su riesgo/);
+  assert.ok(!q.texto.includes('Si sale mal'), q.texto);
+  // una explicación a medias dice lo que falta
+  fs.writeFileSync(path.join(c.repo, 'scripts', 'ci', 'ctl.sh'), 'a=1\nb=3\n');
+  git('commit', '-qam', 'ctl\n\nCambia-control: b pasa a 3');
+  const medias = pideControl(c, git('rev-parse', 'HEAD~1').stdout.trim());
+  assert.match(medias.texto, /Qué cambia: b pasa a 3\. Por qué: el cambio no lo dice\. Riesgo: el cambio no lo dice\./);
+  // letras que no se ven no llegan al cuadro, y un valor sin letras no cuenta como dicho
+  fs.writeFileSync(path.join(c.repo, 'scripts', 'ci', 'ctl.sh'), 'a=1\nb=4\n');
+  git('commit', '-qam', 'ctl\n\nCambia-control: ajusta un log ‮.etiruces al acaS\nPor-que: ...\nRiesgo: \u001b[2Kninguno');
+  const raras = pideControl(c, git('rev-parse', 'HEAD~1').stdout.trim());
+  assert.ok(!/[‮\u001b]/.test(raras.pregunta), JSON.stringify(raras.pregunta));
+  assert.match(raras.texto, /Qué cambia: \(lo escrito trae letras que no se ven: no se muestra\)\. Por qué: el cambio no lo dice\. Riesgo: \(lo escrito trae/);
 });
 
 // ── el cuadro de un cambio de control: lo que se ve es lo que se aprueba ─────────────────────────────────────────────
@@ -678,12 +723,12 @@ test('8.176-Cuadro_NombraTodasLasRutas (T1) @story-8.176 @ac-1', (t) => {
   const rutas = ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/lib/c.js'];
   const { c, entradas, comando } = repoConArchivos(t, rutas);
   const r = conFirma('control-change')(c, comando(entradas()));
-  assert.match(r.pregunta, /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\./);
-  assert.strictEqual(archivosDe(r.pregunta), '3 archivos: 3 de código (a, b y c)', r.pregunta);
+  assert.match(conDetalle(r), /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\./);
+  assert.strictEqual(archivosDe(conDetalle(r)), '3 archivos: 3 de código (a, b y c)', r.pregunta);
   for (const x of rutas) assert.ok(!r.pregunta.includes(x) && !r.detalle.some((l) => l.includes(x)), x);
   const uno = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --file scripts/ci/b.sh --rev HEAD`);
-  assert.match(uno.pregunta, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
-  assert.strictEqual(archivosDe(uno.pregunta), '1 archivo: de código (b)', uno.pregunta);
+  assert.match(conDetalle(uno), /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
+  assert.strictEqual(archivosDe(conDetalle(uno)), '1 archivo: de código (b)', uno.pregunta);
   assert.ok(!uno.detalle.some((l) => l.includes('scripts/ci/b.sh')), JSON.stringify(uno.detalle));
 });
 
@@ -693,14 +738,13 @@ test('8.176-Cuadro_MuchasRutas_NingunaCortada (T2) @story-8.176 @ac-2', (t) => {
   const largas = [`scripts/ci/${'x'.repeat(120)}/${'y'.repeat(100)}.sh`, `scripts/lib/${'z'.repeat(110)}/${'w'.repeat(110)}.js`];
   const rutas = [...cortas.slice(0, 5), largas[0], ...cortas.slice(5), largas[1]];
   const { c, entradas, comando } = repoConArchivos(t, rutas);
-  const q = conFirma('control-change')(c, comando(entradas())).pregunta;
+  const q = conDetalle(conFirma('control-change')(c, comando(entradas())));
   const vistos = archivosDe(q);
   assert.ok(vistos && !q.includes('…'), q);
   assert.ok(vistos.startsWith('14 archivos: 14 de código ('), q);
   // sin --base, «Completo en» dice el repo por su nombre
   const sinBase = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --entries '${entradas()}'`);
   assert.ok(!sinBase.pregunta.includes('…'), sinBase.pregunta);
-  assert.ok(sinBase.pregunta.includes(`Completo en: el repo ${path.basename(c.repo)}.`), sinBase.pregunta);
   assert.ok(sinBase.detalle.includes(`Completo en: ${c.repo}`), JSON.stringify(sinBase.detalle));
   // el plan usa el mismo cuadro: cuenta todos, también los de rutas largas
   const plan = oa.cuadroDe({ firma: 'plan-approval', destino: 'ses-a', que: 'aprobar el plan', queHace: ['uno'], archivos: ['scripts/a.js', largas[0], 'scripts/b.js'], siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
@@ -975,11 +1019,11 @@ test('Cuadro_UsoPrivadoYMarcaSuelta_NoSeVen_TildesSi (T15) @story-8.282 @ac-20 @
   // Linux y Windows)
   const tilde = 'scripts/ci/cámara.sh';
   const conTilde = repoConArchivos(t, [tilde], { config: [['core.precomposeunicode', 'false']] });
-  const q = conFirma('control-change')(conTilde.c, conTilde.comando(conTilde.entradas())).pregunta;
+  const q = conDetalle(conFirma('control-change')(conTilde.c, conTilde.comando(conTilde.entradas())));
   assert.ok(q, 'la tilde compuesta no dio cuadro');
   assert.match(q, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\./);
   // sin invisibles, el cuadro de siempre
-  const comun = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${entradas()}'`).pregunta;
+  const comun = conDetalle(conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${base} --entries '${entradas()}'`));
   // 8.275: el archivo en su zona, no su ruta
   assert.match(comun, /Qué hace: Cambia 1 archivo\(s\) de control: \+1 −0 líneas\. Archivos: 1 archivo: de código \(a\)\./);
 });
@@ -989,17 +1033,17 @@ test('Cuadro_CambiaN_CuentaLasQueCambiaron (T16) @story-8.282 @ac-22 @ac-29', (t
   const cambian = ['scripts/ci/a.sh', 'scripts/ci/b.sh'];
   const fijas = ['scripts/ci/c.sh', 'scripts/ci/d.sh', 'scripts/ci/e.sh'];
   const { c, entradas, comando } = repoConArchivos(t, cambian, { fijas });
-  const q = conFirma('control-change')(c, comando(entradas([...cambian, ...fijas]))).pregunta;
+  const q = conDetalle(conFirma('control-change')(c, comando(entradas([...cambian, ...fijas]))));
   assert.match(q, /Qué hace: Cambia 2 de 5 archivo\(s\) de control pedidos: \+2 −0 líneas\./);
   // sin base, o si git no puede leer la base, no hay «Cambia»: el texto de siempre
   const cinco = entradas([...cambian, ...fijas]);
-  const sinBase = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --entries '${cinco}'`).pregunta;
+  const sinBase = conDetalle(conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --entries '${cinco}'`));
   assert.match(sinBase, /Qué hace: Firma 5 archivo\(s\) de control en su versión de la punta \(sin base para comparar\)\./);
   const baseRota = conFirma('control-change')(c, `bash ${CONTROLES} approve --root ${c.repo} --base ${'0'.repeat(40)} --entries '${cinco}'`).pregunta;
   assert.match(baseRota, /Qué hace: no pude leer el cambio de 5 archivo\(s\) de control: /);
   // con todo lo pedido cambiado, el texto de hoy
   const todas = repoConArchivos(t, ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/lib/c.js']);
-  const igual = conFirma('control-change')(todas.c, todas.comando(todas.entradas())).pregunta;
+  const igual = conDetalle(conFirma('control-change')(todas.c, todas.comando(todas.entradas())));
   assert.match(igual, /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\./);
 });
 
@@ -1093,7 +1137,7 @@ test('SignatureQuestion_PlanAndControls_FilesAsZones (T7) @story-8.275 @ac-4 @ac
   const rutas = ['scripts/ci/a.sh', 'scripts/ci/b.sh', 'scripts/lib/c.js'];
   const r = repoConArchivos(t, rutas);
   const q = conFirma('control-change')(r.c, r.comando(r.entradas()));
-  assert.match(q.pregunta, /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\. Archivos: 3 archivos: 3 de código \(a, b y c\)\./);
+  assert.match(conDetalle(q), /Qué hace: Cambia 3 archivo\(s\) de control: \+3 −0 líneas\. Archivos: 3 archivos: 3 de código \(a, b y c\)\./);
   for (const a of rutas) assert.ok(!q.pregunta.includes(a) && !q.detalle.some((l) => l.includes(a)), `se ve ${a}`);
   // una ruta que trae «, » todavía no tiene cuadro (8.176 AC 9)
   const coma = `bash ${CONTROLES} approve --root ${r.c.repo} --base ${r.base} --entries '${JSON.stringify([{ path: 'scripts/ci/a, b.sh', blob: 'x' }])}'`;
@@ -1133,7 +1177,7 @@ function cadaFirma(t) {
 // 🔴 Falla con: una ruta absoluta o un «…» en la pregunta de cualquier firma.
 test('SignatureQuestion_EveryFirma_NoAbsolutePathNorEllipsis (T8) @story-8.275 @ac-7 @ac-9', (t) => {
   const palabras = {
-    'plan-approval': 'el plan, en la carpeta de la ejecución', 'control-change': 'el cambio, en un archivo de la ejecución', 'critical-waiver': 'el informe de hallazgos de la ejecución',
+    'plan-approval': 'el plan, en la carpeta de la ejecución', 'critical-waiver': 'el informe de hallazgos de la ejecución',
     'runtime-waiver': 'la historia 9.99', 'manual-test': 'la historia 9.99', 'extra-round': 'la nota de la vuelta, en la carpeta de la ejecución', 'escape:rojo-esperado-de-la-matriz': 'la historia 9.99',
   };
   for (const [firma, q] of cadaFirma(t)) {

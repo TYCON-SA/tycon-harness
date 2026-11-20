@@ -533,6 +533,23 @@ cambiados="$(git diff --cached --name-only -- 'agents/*.md' 'packs/*/agents/*.md
 }
 [ -z "$cambiados" ] && exit 0
 
+# ── El examen del revisor tocado ──
+# El portón del pedido frena un revisor que cambia sin su examen al día. Acá se ve antes de pedir la firma: en «Preparar
+# el pull request» y antes del ok de guardar (los dos corren estos controles en sólo lectura), y en el commit. Mira los
+# revisores de la raíz (`agents/*.md`) del repo que trae el control, porque el examen vive en ese repo. No consulta al
+# modelo: compara el resultado guardado con la línea de base. Casos: scripts/tests/reviewer-change-check.test.js.
+EXAMEN="$(pwd)/scripts/controls-bench/reviewer-change-check.js"
+if [ -f "$EXAMEN" ] && grep -q '^agents/' <<<"$cambiados"; then
+  if ! command -v node >/dev/null 2>&1; then
+    echo "⛔ COMMIT RECHAZADO — el examen del revisor tocado: sin node no pude mirarlo, y no poder mirar no es verde." >&2
+    exit 1
+  fi
+  if ! node "$EXAMEN" check --repo "$(pwd)" --staged >&2; then
+    echo "⛔ COMMIT RECHAZADO — un revisor cambia sin su examen al día, o no pude compararlo (arriba dice cuál y el comando que lo corre)." >&2
+    exit 1
+  fi
+fi
+
 CHECK="$TCG/build/check.js"
 if [ ! -f "$CHECK" ] || ! command -v node >/dev/null 2>&1; then
   # sin el arnés no se puede verificar: se avisa fuerte, no se bloquea

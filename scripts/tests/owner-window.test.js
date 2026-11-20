@@ -358,6 +358,19 @@ test('OwnerWindow_Terminal_FirmaYSinTtySaleDos (T15)', (t) => {
   casa = casaNueva(t);
   r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, preguntar: () => 'si' } });
   assert.strictEqual(r.codigo, 1);
+  assert.match(r.motivo, /no se firmó: escribiste «si», no «firmo»\. Para firmar, repetí el comando y escribí «firmo»/);
+  assert.strictEqual(gates(casa).length, 0);
+  // un renglón vacío (un Enter de más) vuelve a preguntar; tres vacíos no firman y dicen cómo repetir
+  casa = casaNueva(t);
+  let veces = 0;
+  r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, preguntar: () => (++veces === 1 ? '  ' : 'firmo') } });
+  assert.deepStrictEqual([r.codigo, veces], [0, 2]);
+  assert.strictEqual(gates(casa).find((g) => g.name === 'plan-approval-signed').via, 'terminal');
+  casa = casaNueva(t);
+  veces = 0;
+  r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, preguntar: () => { veces++; return ''; } } });
+  assert.deepStrictEqual([r.codigo, veces], [1, 3]);
+  assert.match(r.motivo, /no se firmó: no escribiste nada\. Para firmar, repetí el comando y escribí «firmo»/);
   assert.strictEqual(gates(casa).length, 0);
   // sin terminal: sale 2 sin escribir
   r = ow.porTerminal({ firma: 'plan-approval', destino: 'ses-a', casa, ahora: AHORA, tty: { ...mac, hay: () => false } });
@@ -2902,23 +2915,25 @@ test('T5 OwnerWindow_CupoQueNoSePuedeLeer_CuentaComoSobreCupo @story-8.181 @ac-2
   assert.strictEqual(ow.canonicaDe(conPesos).id, 'adhoc-lane');
 });
 
-test('T6 AdhocSet_SobreCupo_DelegadaSoloParaOtraSesion @story-8.181 @ac-3', (t) => {
-  // la delegación de verdad nunca firma para la sesión que pide: la propia sesión sigue con el cuadro de sólo click
-  const delegacion = (o) => (o.destino !== o.sesion ? { ok: true, maquina: 'm' } : { ok: false, motivo: 'la sesión que implementa no se firma sola sin ventana' });
+// Pasar el tope lo elige el dueño con su click (en la pestaña que trabaja o en la de la coordinadora) o su terminal, como el
+// freno de los datos: nunca la delegación, aunque el perfil la nombre.
+test('T6 AdhocSet_SobreCupo_NuncaDelegada_ElCuadroDelClickDelDueno @story-8.181 @ac-3', (t) => {
+  const delegacion = () => ({ ok: true, maquina: 'm' });
   const casa = casaNueva(t);
   const r = pedir(casa, pedidoDe(9), { delegacion });
   assert.strictEqual(r.decision, 'deny', r.texto);
-  assert.ok(r.cuadro && r.cuadro.soloClick, 'trae el cuadro para la persona');
+  assert.ok(r.cuadro && r.cuadro.clickDelDueno, 'trae el cuadro del click del dueño');
+  assert.match(r.texto, /sólo el click del dueño/);
   assert.strictEqual(registros(casa).length, 0);
-  // la coordinadora la pide por otra pestaña sólo si el perfil se la delega: sin delegación, se niega sin ventana
-  const ajena = pedir(casaNueva(t), pedidoDe(9, ' --for-session ses-b'));
-  assert.strictEqual(ajena.decision, 'deny', ajena.texto);
-  assert.match(ajena.texto, /se pide para otra sesión sólo por la delegación del perfil/);
-  // con la delegación, firma sin ventana y el registro dice la vía
+  // pedida para otra sesión, con la delegación del perfil: tampoco se delega
   const otra = casaNueva(t);
   const delegada = pedir(otra, pedidoDe(9, ' --for-session ses-b'), { delegacion });
-  assert.deepStrictEqual([delegada.decision, delegada.via], ['allow', 'delegacion'], delegada.texto);
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(ow.carpeta(otra), registros(otra)[0]), 'utf8')).via, 'delegacion');
+  assert.strictEqual(delegada.decision, 'deny', delegada.texto);
+  assert.notStrictEqual(delegada.via, 'delegacion');
+  assert.strictEqual(registros(otra).length, 0);
+  // con el click del dueño, firma por click
+  const conElClick = pedir(casaNueva(t), pedidoDe(9), { aprobaciones: conClick() });
+  assert.deepStrictEqual([conElClick.decision, conElClick.via], ['allow', 'click'], conElClick.texto);
 });
 
 // 🔴 Falla con: una excepción de trámite que el perfil delega y el freno igual manda a la ventana; o una que no es de
@@ -2981,9 +2996,8 @@ test('T7 AdhocSet_SobreCupo_NoSaleConHechoYAvisado @story-8.181 @ac-3', (t) => {
   const casa = casaNueva(t);
   const r = pedirSinVentana(casa, pedidoDe(9), { evento: DE_LA_PROPIA });
   assert.strictEqual(r.decision, 'deny', r.texto);
-  assert.ok(r.cuadro && r.texto.includes(r.cuadro.pregunta), 'trae el cuadro entero');
-  assert.doesNotMatch(r.texto, /«aprobado»/, 'no ofrece el mensaje escrito');
-  assert.doesNotMatch(r.texto, /coordinadora/, 'no ofrece la coordinadora');
+  assert.ok(r.cuadro && r.cuadro.clickDelDueno && r.texto.includes(r.cuadro.pregunta), 'trae el cuadro entero del click del dueño');
+  assert.match(r.texto, /sólo el click del dueño/, 'no ofrece el mensaje escrito ni la delegación');
   assert.match(r.texto, /--terminal/, 'ofrece la terminal');
   assert.strictEqual(registros(casa).length, 0);
 });
@@ -3013,7 +3027,7 @@ test('T10 AdhocSet_SobreCupo_ConPermisos_VaPorElCuadro @story-8.181 @ac-4', (t) 
     const casa = casaNueva(t);
     const r = pedir(casa, pedidoDe(9), { evento, aprobaciones: aprobacionesDePrueba() });
     assert.strictEqual(r.decision, 'deny', r.texto);
-    assert.ok(r.cuadro && r.cuadro.descripciones, 'el cuadro con sus descripciones');
+    assert.ok(r.cuadro && r.cuadro.clickDelDueno, 'el cuadro del click del dueño');
     assert.strictEqual(registros(casa).length, 0);
   }
   // con el click, sale sin ventana: el renglón queda con su vía
@@ -3352,8 +3366,7 @@ test('Windows_SobreCupo_ConElClick_Firma_SinElClick_NiegaConSuCuadro @story-8.18
   const sin = pedirWin(casaNueva(t), cmd, { evento: DE_LA_PROPIA });
   assert.strictEqual(sin.decision, 'deny', sin.texto);
   assert.deepStrictEqual(sin.firmas, [SOBRE_CUPO]);
-  assert.ok(sin.cuadro && sin.cuadro.soloClick && sin.texto.includes(sin.cuadro.pregunta), 'trae el cuadro entero');
-  assert.match(sin.texto, /Un mensaje escrito no vale/);
+  assert.ok(sin.cuadro && sin.cuadro.clickDelDueno && sin.texto.includes(sin.cuadro.pregunta), 'trae el cuadro entero');
   assert.match(sin.texto, /--terminal/, 'ofrece la terminal');
   const casa = casaNueva(t);
   const r = pedirWin(casa, cmd, { evento: DE_LA_PROPIA, aprobaciones: conClick() });
@@ -4157,15 +4170,15 @@ test('T27 OwnerWindow_DatosQueSeNegaria_NoDaElCuadro @story-8.196 @ac-13', (t) =
   assert.ok(sigue.cuadro && sigue.cuadro.clickDelDueno, sigue.texto);
 });
 
-test('Freno_SoloClickDeFondo_NoDejaRenglon — @fix-T-207', (t) => {
-  // de fondo nadie mira la pestaña donde vale ese click, y la coordinadora no lo puede dar: el renglón contaría sin cierre
+test('Freno_ClickDelDuenoDeFondo_DejaRenglon — @fix-T-207', (t) => {
+  // pasar el tope se aprueba también con el click del dueño en la pestaña de la coordinadora: de fondo, el renglón queda
+  // para que ella le muestre el cuadro al dueño
   let casa = casaDeLista(t);
   const r = pedirConLista(casa, pedidoDe(9));
   assert.strictEqual(r.decision, 'deny');
   assert.deepStrictEqual(r.firmas, [SOBRE_CUPO]);
-  assert.strictEqual(renglones(casa).length, 0, r.texto);
-  assert.doesNotMatch(r.texto, AVISAN);
-  assert.match(r.texto, /terminal/, 'queda la forma por terminal');
+  assert.strictEqual(renglones(casa).length, 1, r.texto);
+  assert.strictEqual(renglones(casa)[0].firma, SOBRE_CUPO);
   // en una pestaña que trabaja a la vista, el renglón sigue: la sesión lo ve en su propia pestaña
   casa = casaDeLista(t);
   pedirConLista(casa, pedidoDe(9), { arbol: arbolDelFreno(), evento: { permission_mode: 'bypassPermissions' } });
@@ -4225,6 +4238,14 @@ test('OwnerWindow_WatcherOtherShapes_StillBlocks @story-8.270 @ac-14 @ac-15 @ac-
     assert.ok(r.texto.includes(VIGILANTE_MOTIVO), `${linea}: ${r.texto}`);
     assert.doesNotMatch(r.texto, /PALABRA-CONOCIDA|tee |glab|while /, `${linea}: el freno mostró la línea de comando`);
     assert.strictEqual(registros(casa).length, 0);
+  }
+  // dice qué consola cerrar (su número de proceso) y cómo seguir, sin su línea de comando
+  {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, 'sleep 100 # PALABRA-CONOCIDA') });
+    assert.match(r.texto, /la consola de fondo es el proceso 400/);
+    assert.match(r.texto, /pará esa tarea de fondo \(o kill 400\) y repetí el comando, o firmá desde tu terminal/);
+    assert.doesNotMatch(r.texto, /PALABRA-CONOCIDA|sleep/);
   }
   // el owner-wait de la coordinadora sigue pasando
   const casa = casaNueva(t);

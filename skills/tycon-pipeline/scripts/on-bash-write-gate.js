@@ -177,7 +177,34 @@ function tok(m, i) { return m[i] ?? m[i + 1] ?? m[i + 2] ?? null; }
 function splitSegments(cmd) {
   // Separadores de comandos (no dentro de comillas — aproximación: split simple alcanza para lo
   // que buscamos; las comillas raras caen del lado conservador = no se extrae nada).
-  return String(cmd).split(/\s*(?:&&|\|\||;|\||\n)\s*/).filter(Boolean);
+  // también un `&` solo (segundo plano): `echo hi & cp a b` corre el cp. No `&&`, ni los de una redirección (`2>&1`, `&>`)
+  return String(cmd).split(/\s*(?:&&|\|\||\|&|;|\||\n|(?<![<>&|\\])&(?![&>]))\s*/).filter(Boolean);
+}
+
+/**
+ * El tramo sin lo que el shell pone delante de un comando dentro de un bloque: `do`, `then`, `else`, `elif`, `if`,
+ * `while`, `until`, `time`, `!`, y un `(` o `{` pegado. `for f in a; do cp a src/b.js; done` copia a `src/b.js` igual
+ * que `cp a src/b.js`. Sacar de más sólo hace mirar de más.
+ */
+function sinPalabrasDeBloque(seg) {
+  let t = String(seg).trim();
+  for (let antes = null; antes !== t;) {
+    antes = t;
+    t = t.replace(/^(?:(?:do|then|else|elif|if|while|until|time|!)(?=[\s({])|[({])\s*/, '');
+  }
+  // el `)` del paréntesis que se sacó adelante, pegado al último archivo (`(sed -i … docs/a.js)`): sólo los que sobran,
+  // para no tocar un `$(…)` del final
+  // (de atrás para adelante, una sola vez: con miles de `)` el recuento por vuelta colgaría el freno)
+  let sobran = (t.match(/\)/g) || []).length - (t.match(/\(/g) || []).length;
+  let fin = t.length;
+  while (sobran > 0) {
+    let k = fin;
+    while (k > 0 && /\s/.test(t[k - 1])) k--;
+    if (k === 0 || t[k - 1] !== ')') break;
+    fin = k - 1;
+    sobran--;
+  }
+  return t.slice(0, fin).trimEnd();
 }
 
 /**
@@ -451,7 +478,9 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
 
   // 3) sed -i / --in-place / perl -i / -pi / -ni : todo token con extensión de código del segmento, o que quien llama
   //    quiere mirar igual (`keep`: el estado y el árbol instalado, sea cual sea la extensión)
-  for (const seg of splitSegments(s)) {
+  for (const crudo of splitSegments(s)) {
+    // la palabra de un bloque o el paréntesis delante no es el comando: `do cp a b`, `then sed -i …`, `if cp a b`, `(cp a b)`
+    const seg = sinPalabrasDeBloque(crudo);
     // Anclados al INICIO del segmento: `grep -i "sed" src/a.ts` no es un sed -i.
     const head = seg.trim().replace(/^(?:\w+=\S+\s+)*(?:sudo\s+)?/, '');
     const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
@@ -476,7 +505,10 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
         if (t === '') { if (!(isSedI && previo === '-i' && sufijoVacio)) args++; continue; }
         args++;
         const esExpresion = !conExpresionAparte && args === 1;
-        if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t))) out.add(t);
+        // una ruta con variable (`$f`, `${D}/x.js`) también es un destino, que se resuelve o se dice que no. Una expresión
+        // de sed que quedó en otro lugar (`-i''` pegado corre la cuenta) no: lleva espacios o arranca con `s/`, `y/`
+        const rutaConVariable = /\$\{?[A-Za-z_]/.test(t) && !/\s/.test(t) && !/^[sy][^\w\s]/.test(t);
+        if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t)) || (!esExpresion && rutaConVariable)) out.add(t);
       }
     }
     // 4) cp / mv / ln → destino = último token del segmento (un enlace también deja un archivo en su destino). También
@@ -2077,11 +2109,23 @@ function guionDeSedSinEfectos(guion) {
 }
 
 /**
- * Los `sed` en el lugar de un comando cuando todos nombran sus archivos tal cual: `[{ sed, opciones, guiones, archivo }]`,
- * con el archivo como palabra (una variable del comando ya resuelta). null si algún editor en el lugar no es así: un
- * `perl`/`ruby`/`awk`/`ed`, un `sed` detrás de `xargs`, `find -exec`, un `for` o adentro de `bash -c`, un archivo con
- * comodín, llaves, `~+`, `$(…)` o una variable que no se resuelve, un guion que lee, escribe o corre algo aparte, o
- * una opción que no se conoce. Con esa forma, lo que el editor escribe es sólo lo que nombra.
+ * ¿La palabra es un nombre tal cual o un comodín que se expande igual en bash y en zsh (`*`, `?` y corchetes, tramo por
+ * tramo)? No lo es con `**` (zsh baja por todas las carpetas) ni con `^`, `~` (fuera del principio), `#`, `<` o `>`,
+ * que zsh puede leer como parte del comodín.
+ */
+function comodinSimple(w) {
+  const s = String(w);
+  if (!/[*?[\]]/.test(s)) return true;
+  return !/\*\*|[\^#<>]/.test(s) && !/.~/.test(s);
+}
+
+/**
+ * Los `sed` en el lugar de un comando cuando todos nombran sus archivos: `[{ sed, opciones, guiones, archivo }]`, con el
+ * archivo como palabra (una variable del comando ya resuelta) o como un comodín simple (`comodinSimple`), que se expande
+ * desde cada carpeta donde puede correr. null si algún editor en el lugar no es así: un `perl`/`ruby`/`awk`/`ed`, un
+ * `sed` detrás de `xargs`, `find -exec`, un `for` o adentro de `bash -c`, un archivo con otro comodín, llaves, `~+`,
+ * `$(…)` o una variable que no se resuelve, un guion que lee, escribe o corre algo aparte, o una opción que no se
+ * conoce. Con esa forma, lo que el editor escribe es sólo lo que nombra.
  */
 function sedsLiterales(cmd) {
   if (FOR_IN.test(String(cmd || ''))) return null;
@@ -2133,9 +2177,9 @@ function sedsLiterales(cmd) {
     if (!guiones.length) { if (!archivos.length) return null; guiones.push(archivos.shift()); }
     if (!archivos.length || !guiones.every(guionDeSedSinEfectos)) return null;
     for (const a of archivos) {
-      if (!a || /[*?[\]{}]/.test(a) || /^~[+-]/.test(a) || a.includes('@')) return null;
+      if (!a || /[{}]/.test(a) || /^~[+-]/.test(a) || a.includes('@') || !comodinSimple(a)) return null;
       const ex = expandirRuta(cmd, a);
-      if (ex.sinResolver.length || /[*?[\]{}]/.test(ex.valor)) return null;
+      if (ex.sinResolver.length || /[{}]/.test(ex.valor) || !comodinSimple(ex.valor)) return null;
       out.push({ sed: words[0], opciones, guiones, archivo: ex.valor });
     }
   }
@@ -2337,7 +2381,13 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     }
     const sueltos = args.filter((w) => !w.startsWith('-') && !w.startsWith('<'));
     if (['cp', 'mv', 'git mv', 'install', 'rsync', 'ditto', 'scp', 'ln'].includes(c)) {
-      const copia = destinoDeLaCopia(args, ['cp', 'mv', 'install', 'ln'].includes(c));
+      // el valor de una opción de `rsync`, `scp`, `install` o `ditto` (`--exclude x`) no es el destino
+      let deLaCopia = args;
+      if (OPCIONES_CON_VALOR[c]) {
+        const { sueltos, carpeta } = argumentosDeCopia(c, args);
+        deLaCopia = carpeta ? ['--target-directory', carpeta, ...sueltos] : sueltos;
+      }
+      const copia = destinoDeLaCopia(deLaCopia, ['cp', 'mv', 'install', 'ln'].includes(c));
       if (!copia) continue;
       if (es(copia.destino)) { out.push(copia.destino); continue; }
       // cp, install, scp y rsync sólo bajan a una carpeta con su opción
@@ -2963,6 +3013,58 @@ function dentroDeUnRepo(p) {
   }
 }
 
+// Las opciones de cada copiador que llevan su valor en la palabra que sigue: ese valor (un patrón de `--exclude`, el
+// programa de `-e`, el puerto de `scp -P`) no es un origen ni el destino. Sólo las que significan lo mismo en las
+// versiones de GNU y de BSD: tomar de más una opción que no lleva valor haría perder el destino. Las largas van sin sus
+// dos guiones: son las opciones de esos programas, no nombres del arnés
+const conGuiones = (nombres) => nombres.map((n) => `--${n}`);
+const OPCIONES_CON_VALOR = {
+  rsync: {
+    cortas: 'efBTM@',
+    largas: conGuiones(['exclude', 'include', 'exclude-from', 'include-from', 'filter', 'files-from', 'rsh',
+      'rsync-path', 'info', 'debug', 'stderr', 'backup-dir', 'suffix', 'chmod', 'chown', 'copy-as',
+      'block-size', 'max-delete', 'max-size', 'min-size', 'max-alloc', 'partial-dir', 'usermap', 'groupmap',
+      'timeout', 'contimeout', 'modify-window', 'temp-dir', 'compare-dest', 'copy-dest', 'link-dest',
+      'compress-choice', 'zc', 'compress-level', 'zl', 'skip-compress', 'address', 'port', 'sockopts',
+      'out-format', 'log-file', 'log-file-format', 'password-file', 'bwlimit', 'stop-after', 'stop-at',
+      'write-batch', 'only-write-batch', 'read-batch', 'protocol', 'iconv', 'checksum-choice', 'cc',
+      'checksum-seed', 'remote-option', 'outbuf', 'early-input']),
+  },
+  scp: { cortas: 'cDFiJloPSX', largas: [] },
+  install: { cortas: 'mog', largas: conGuiones(['mode', 'owner', 'group', 'suffix', 'strip-program']) },
+  ditto: { cortas: '', largas: conGuiones(['arch', 'bom']) },
+};
+
+/**
+ * Las palabras sueltas de un copiador (orígenes y destino) y la carpeta de `install -t`: sin sus opciones ni el valor de
+ * las que lo llevan aparte (`rsync a/ b/ --exclude x`, `rsync -e ssh a h:b`). Después de `--` todo es suelto.
+ */
+function argumentosDeCopia(c, args) {
+  const tabla = OPCIONES_CON_VALOR[c] || { cortas: '', largas: [] };
+  const sueltos = [];
+  let carpeta = null;
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '--') { sueltos.push(...args.slice(i + 1)); break; }
+    if (!w.startsWith('-') || w === '-') { sueltos.push(w); continue; }
+    if (c === 'install') {
+      if (w === '-t' || w === '--target-directory') { carpeta = args[++i] ?? null; continue; }
+      const pegado = /^(?:--target-directory=|-t)(.+)$/.exec(w);
+      if (pegado) { carpeta = pegado[1]; continue; }
+      // `-t` dentro de un grupo de cortas (`-Dt dir`, `-vtdir`): la carpeta es lo que sigue a la `t`, o la palabra que sigue
+      const enGrupo = /^-([A-Za-z]*?)t(.*)$/.exec(w);
+      if (enGrupo && !w.startsWith('--') && /^[A-Za-z]*$/.test(enGrupo[1])) { carpeta = enGrupo[2] || (args[++i] ?? null); continue; }
+    }
+    if (w.startsWith('--')) { if (!w.includes('=') && tabla.largas.includes(w)) i++; continue; }
+    // un grupo de cortas (`-avz`, `-ae ssh`): la primera que lleva valor se queda con el resto del grupo o, si es la
+    // última, con la palabra que sigue
+    const letras = w.slice(1);
+    const k = [...letras].findIndex((l) => tabla.cortas.includes(l));
+    if (k >= 0 && k === letras.length - 1) i++;
+  }
+  return { sueltos, carpeta };
+}
+
 /** Los destinos de los que copian sin que `extractWriteTargets` los vea: `install`, `rsync`, `ditto`, `scp`, `curl -o`, `wget -O`. */
 function destinosDeCopia(cmd) {
   const out = [];
@@ -2970,8 +3072,10 @@ function destinosDeCopia(cmd) {
     const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
     const c = nombreDeComando(words[0]);
     if (['install', 'rsync', 'ditto', 'scp'].includes(c)) {
-      const sueltos = words.slice(1).filter((w) => !w.startsWith('-'));
-      if (sueltos.length >= 2) out.push(sueltos[sueltos.length - 1]);
+      const { sueltos, carpeta } = argumentosDeCopia(c, words.slice(1));
+      // `install -t <carpeta>`: cada origen llega a la carpeta con su nombre
+      if (carpeta) out.push(carpeta, ...sueltos.map((s) => `${carpeta.replace(/[\\/]+$/, '')}/${s.split(/[\\/]/).pop()}`));
+      else if (sueltos.length >= 2) out.push(sueltos[sueltos.length - 1]);
     }
     if (c === 'curl' || c === 'wget') {
       for (let i = 1; i < words.length; i++) {
@@ -3513,8 +3617,12 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
       else sedsDe.set(abs, [...(sedsDe.get(abs) || []), ...seds.filter((x) => x.archivo === raw)]);
     };
     for (const base of bases) {
-      const rutas = /[*?[]/.test(valor) ? expandirComodin(valor.replace(/^~(?=\/|$)/, os.homedir()), base)
+      // el comodín de un `sed` que nombra sus archivos cuenta sólo por lo que expande: recortado, puede dejar una
+      // historia afuera
+      const aviso = {};
+      const rutas = /[*?[]/.test(valor) ? expandirComodin(valor.replace(/^~(?=\/|$)/, os.homedir()), base, aviso)
         : [resolveTarget(valor, base, process.platform, { homeVariable: true })];
+      if (aviso.recortado && deSed.has(raw)) cdSinResolver.push(`${raw} (más de 200 coincidencias desde ${base})`);
       for (const abs of rutas) {
         let esCarpeta = false;
         try { esCarpeta = porCarpeta.has(raw) && !NEVER_CODE_SEGMENTS.has(path.basename(abs)) && fs.statSync(abs).isDirectory(); } catch { /* no existe */ }
@@ -3797,6 +3905,40 @@ const { expandirRuta } = require('./lib/command-vars.js');
  * Cada destino de escritura del comando, con su ruta absoluta: `[{ raw, abs, sinResolver: [nombres] }]`.
  * `sinResolver` lista lo que no se pudo resolver (vacía si se resolvió todo).
  */
+// Lo que el shell pone y nunca trae una barra ni `..`: un número (`$$`, `$!`, `$?`, `$#`). `$RANDOM`, `$SECONDS` y los
+// demás no: con `unset RANDOM` vuelven a ser variables comunes (`RANDOM=../src`)
+const SIN_BARRAS = new Set(['$$', '$!', '$?', '$#']);
+/** ¿Todo lo que quedó sin resolver en una ruta es de lo que nunca trae una barra? */
+function sinBarras(nombres) {
+  return nombres.length > 0 && nombres.every((n) => SIN_BARRAS.has(String(n)));
+}
+
+/** El mensaje del camino corto cuando un destino de escritura tiene una variable que no se pudo resolver. */
+function mensajeRutaSinResolver(d, via) {
+  const nombres = [...new Set(d.sinResolver)].map((n) => (String(n).startsWith('$') ? n : `$${n}`)).join(', ');
+  return [
+    '⛔ camino corto — NO PUDE RESOLVER LA RUTA',
+    `  (detectado en ${via})`,
+    `  El comando escribe en «${String(d.raw).slice(0, 120)}» y no pude saber qué vale ${nombres}: viene de afuera del`,
+    '  comando, de un `$(…)`, de un bucle, o de una forma que el freno no lee. Sin la ruta real no sé si el archivo',
+    '  está en la lista de este camino corto, así que frena.',
+    '  Para seguir: escribí la ruta entera, o poné la variable en el mismo comando con un valor fijo',
+    '  (`D=/ruta/de/la/carpeta; cat > "$D/x"`), sin `$(…)`.',
+  ].join('\n') + '\n';
+}
+
+/** El mensaje del camino corto cuando un destino relativo cae en una carpeta que el freno no sigue (un `cd` adentro). */
+function mensajeCarpetaSinSeguir(d, via) {
+  return [
+    '⛔ camino corto — NO PUDE RESOLVER LA RUTA',
+    `  (detectado en ${via})`,
+    `  El comando escribe en «${String(d.raw).slice(0, 120)}» después de cambiar de carpeta con un \`cd\` que el freno no`,
+    '  sigue (adentro de un paréntesis, de un bucle o después de otro comando). Sin la carpeta no sé si el archivo está',
+    '  en la lista de este camino corto, así que frena.',
+    '  Para seguir: escribí la ruta entera, o empezá el comando con el `cd` (`cd /ruta && cp a b`).',
+  ].join('\n') + '\n';
+}
+
 function destinosResueltos(cmd, cwd, platform = process.platform, { keep = null } = {}) {
   return extractWriteTargets(cmd, { keep }).map((raw) => {
     const { valor, sinResolver } = expandirRuta(cmd, raw);
@@ -4749,6 +4891,22 @@ function handleCarrilEHistoria(event, opts = {}) {
   const resueltos = destinosResueltos(cmdDestinos, cwd, process.platform, { keep });
   const absTargets = [...new Set([...resueltos.map((d) => d.abs), ...armadosAbs])];
   const sinResolverDe = new Map(resueltos.filter((d) => d.sinResolver.length).map((d) => [d.abs, d]));
+  // los destinos relativos, si el comando cambia de carpeta con un `cd` (o `pushd`/`popd`) que no es el que se sigue: el
+  // del principio, o el de la forma mínima de `resolverCd`. Ahí la carpeta de esos destinos no se sabe
+  const relativosConCdSinSeguir = new Map();
+  try {
+    const sinCuerpos = String(cmdDestinos).replace(/'[^']*'|"[^"]*"/g, '""');
+    if (/(^|[^\w./-])(?:cd|pushd|popd)(?=[\s;&|)]|$)/.test(sinCuerpos)) {
+      const forma = resolverCd(cmdDestinos, nativePath(event?.cwd || process.cwd()));
+      const seguido = forma.forma === 'minima' || (forma.forma === 'hoy' && leadingCd(cmdDestinos) && !/(^|[^\w./-])(?:pushd|popd)(?=[\s;&|)]|$)/.test(sinCuerpos));
+      if (!seguido) {
+        for (const d of resueltos) {
+          const v = String(expandirRuta(cmdDestinos, d.raw).valor);
+          if (!path.isAbsolute(v) && !/^~/.test(v) && !/^[A-Za-z]:[\\/]/.test(v)) relativosConCdSinSeguir.set(d.abs, d);
+        }
+      }
+    }
+  } catch (e) { logHookError(e); }
   // Antes de decidir y aunque los frenos estén apagados: dónde escribió la consola es un dato de la
   // corrida, no una decisión del freno.
   anotarEscriturasConsola(stateDir, sessionId, absTargets);
@@ -4762,7 +4920,12 @@ function handleCarrilEHistoria(event, opts = {}) {
     // destinos ya leídos van todos al portón, que decide
     // (y un carril con lista no deja escribir lo que no nombra, sea código o no: también van todos)
     let delegado = false;
-    try { const a = io.readAdhoc(stateDir, sessionId); delegado = !!(a && (a.via === 'delegacion' || Array.isArray(a.allowedFiles))); } catch (e) { logHookError(e); }
+    let conLista = false;
+    try {
+      const a = io.readAdhoc(stateDir, sessionId);
+      delegado = !!(a && (a.via === 'delegacion' || Array.isArray(a.allowedFiles)));
+      conLista = !!(a && Array.isArray(a.allowedFiles));
+    } catch (e) { logHookError(e); }
     // un destino armado que no se lee puede ser cualquier archivo: se le pregunta al portón como si fuera código de la
     // carpeta donde corre, y frena lo que no tiene carril y la ejecución a la que le falta una pieza (no dependen del
     // archivo). Con un carril o una ejecución sana pasa: no se sabe qué archivo es, y no se gasta el cupo con uno inventado
@@ -4785,6 +4948,26 @@ function handleCarrilEHistoria(event, opts = {}) {
         // un destino con una variable sin resolver no es un archivo del repo que se sepa (`$P/probe.js`, con
         // P=$(mktemp -d)): no gasta el cupo del carril. El tope lo vuelve a medir el freno de guardar, con git
         const sinCupo = r.verdict.kind === 'adhoc-cap' && sinResolverDe.has(abs);
+        // con lista, una ruta que no se resolvió no se juzga por su texto: `<repo>/$D/x` no es ningún archivo, y una
+        // variable con `..` o con una ruta entera lleva a cualquiera (`/tmp/$F` con F=../<repo>/src/x.js), aunque el
+        // portón dejaría pasar el texto (la lista nombra `$D/x`, parece papeleo, cae en la carpeta temporal). Frena
+        // diciendo eso, en vez de «fuera de la lista». Pasa sólo lo que no lleva barras (`$$`, `$!`): con eso la
+        // carpeta se sabe, y el portón ya juzgó el archivo
+        // con lista, un destino relativo de un comando que cambia de carpeta con un `cd` que el freno no sigue (adentro de
+        // un paréntesis, de un bucle, después de otro comando): no se sabe en qué carpeta cae, y frena diciendo eso
+        if (conLista && relativosConCdSinSeguir.has(abs)) {
+          try { io.appendLog(stateDir, 'gates.log', sessionId, { name: 'story-gate', status: 'blocked', kind: 'adhoc-path-unresolved', file: abs, via }); } catch (e) { logHookError(e); }
+          return { block: mensajeCarpetaSinSeguir(relativosConCdSinSeguir.get(abs), via) };
+        }
+        const rutaSinResolver = conLista && sinResolverDe.get(abs);
+        // (con `$$` y además una variable con nombre, `$D/x$$`, el portón juzgó el texto `$D/…`, no la ruta: tampoco pasa)
+        const soloSinBarras = sinBarras(rutaSinResolver ? rutaSinResolver.sinResolver : []) && !/\$\{?[A-Za-z_]/.test(rutaSinResolver.raw);
+        if (rutaSinResolver && !soloSinBarras && (r.verdict.action !== 'block' || r.verdict.kind === 'adhoc-out-of-list')) {
+          if (r.verdict.action !== 'block') {
+            try { io.appendLog(stateDir, 'gates.log', sessionId, { name: 'story-gate', status: 'blocked', kind: 'adhoc-path-unresolved', file: abs, via }); } catch (e) { logHookError(e); }
+          }
+          return { block: mensajeRutaSinResolver(rutaSinResolver, via) };
+        }
         if (r.verdict.action === 'block' && !sinCupo) return { block: r.message + '\n' };
       }
       if (quizasCodigo) passedCode.push(abs);

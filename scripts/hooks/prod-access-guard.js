@@ -194,12 +194,22 @@ function mensaje(motivo, detalle = []) {
     `Motivo: ${motivo}`,
     ...(detalle.length ? [''].concat(detalle.map((d) => `   ${d}`)) : []),
     '',
-    '   Para consultar una base de producción hay UNA sola forma, y abre un cuadro de aprobación:',
-    "     /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]",
-    '   Detalle y cómo declarar un servidor: guides/produccion-con-permiso.md',
+    ...CAMINO_DE_LA_PUERTA,
     '',
   ].join('\n');
 }
+
+// Lo que dice todo mensaje que frena algo de producción: la puerta consulta Y cambia (con el cuadro), el firewall se
+// abre por la puerta, y el camino de emergencia está escrito. Sin esto, un incidente con producción caída se demoró:
+// el asistente vio sólo «select …», no encontró cómo abrir el firewall y mandó a la persona al portal.
+const CAMINO_DE_LA_PUERTA = [
+  '   Para consultar O CAMBIAR una base de producción hay UNA sola forma, y cada sentencia abre un cuadro de aprobación:',
+  "     /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]   (un select, o un cambio como alter database …)",
+  '   Si la conexión la rechaza el firewall (40615, «is not allowed to access the server»), se abre por la puerta, con su',
+  '   cuadro, y la regla se cierra sola al terminar la sesión: /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
+  '   Todas las formas, sin tocar producción: /opt/tycon/bin/tycon-prod-sql --help',
+  '   Producción caída: guides/produccion-con-permiso.md § «Emergencia: producción caída» (firewall, diagnóstico, cambio).',
+];
 
 // El mensaje de un borrado en Azure: la puerta no borra nada, así que no se la nombra ni se sugiere un rodeo.
 function mensajeSinPuerta(motivo, detalle = []) {
@@ -298,6 +308,8 @@ const CANONICA_CARGA = new RegExp(`^${RUTA_PUERTA} --load-key (${HOST_CANONICO})
 const CANONICA_FIREWALL = new RegExp(`^${RUTA_PUERTA} --(?:open|close)-firewall (${HOST_CANONICO})$`);
 // `--locks`, sola: dice qué servidores de producción tienen el candado de Azure (sólo lee)
 const CANONICA_CANDADOS = new RegExp(`^${RUTA_PUERTA} --locks$`);
+// `--help` (o `-h`), sola: imprime las formas y el camino de emergencia; no lee la clave, no consulta y no llama a `az`
+const CANONICA_AYUDA = new RegExp(`^${RUTA_PUERTA} (?:--help|-h)$`);
 // `--delete-group <grupo>`, sólo el nombre: la puerta comprueba que el grupo no es de producción antes de pedir el borrado.
 // El corte de `az group delete` directo (paso 3b) no cambia.
 // Un nombre con paréntesis (Azure los permite) va entre comillas simples: sin ellas el shell los lee como sintaxis.
@@ -571,7 +583,7 @@ function decidir(entrada) {
     // lo que engañaría en el cuadro, en cualquier parte del comando: también en las puntas, que trim() recortaría
     const engano = caracterQueEngana(cmd);
     if (engano) frenar(`el comando ${engano}.`, ['Escribí la consulta sin esos caracteres y volvé a intentar.'], { cmd }, 'puerta-no-canonica');
-    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_CANDADOS.test(limpio) || CANONICA_BORRAR_GRUPO.test(limpio));
+    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_CANDADOS.test(limpio) || CANONICA_BORRAR_GRUPO.test(limpio) || CANONICA_AYUDA.test(limpio));
     // el cuadro corta sin aviso el principio de un comando largo: la consulta en línea tiene un tope de renglones
     if (canonica && CANONICA.test(limpio)) {
       const n = renglonesDePantalla(cmd);   // el cuadro recibe también lo que el shell ignora al final
@@ -587,6 +599,12 @@ function decidir(entrada) {
         'Sin tuberías, sin redirecciones, sin $( ), sin encadenados, sin bash -c: la puerta ya corta',
         'filas y junta la salida, así que no necesita nada de eso.',
         "Si la sentencia lleva una comilla simple, escapala como en el shell: 'lo de '\\''adentro'\\'' así'.",
+        'Las formas que acepta, cada una sola y con la ruta absoluta:',
+        "  /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]   consulta o cambio, con cuadro",
+        '  /opt/tycon/bin/tycon-prod-sql --open-firewall <host>    la IP de esta máquina en el firewall, con cuadro',
+        '  /opt/tycon/bin/tycon-prod-sql --close-firewall <host>   la cierra (también se cierra sola)',
+        '  /opt/tycon/bin/tycon-prod-sql --help                    estas formas y el camino de emergencia',
+        '  --verify · --locks · --load-key <host> · --reclassify <host> · --delete-group <grupo>',
       ], { cmd });
     }
     if (esCodex) {
@@ -685,9 +703,24 @@ function decidir(entrada) {
 
   // El comando directo de Azure para el firewall sigue frenado; el mensaje dice el único camino: la puerta.
   const esFirewall = /\baz\s+sql\s+server\s+firewall-rule\b/.test(cmd);
-  const caminoFirewall = (h) => (esFirewall
-    ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta (con su cuadro, y la regla se cierra sola): /opt/tycon/bin/tycon-prod-sql --open-firewall ${h && h.includes('.') ? h : `${h || '<host>'}.database.windows.net`}`]
-    : []);
+  // Una lectura de Azure (`az sql db list`, `show`, `list-usages`…) sobre un servidor de producción también se frena: el
+  // catálogo declara servidores y el freno no distingue qué subcomando de `az` sólo lee. El mensaje dice qué usar en su
+  // lugar, por la puerta, para que «no puedo mirar» no termine en «andá al portal». Cuenta como lectura sólo si TODA
+  // operación `az sql …` del comando (las palabras antes de la primera opción) termina en list, show o list-usages: un
+  // `-n list` o un `&& az sql db delete` no la vuelven lectura.
+  const opsAzSql = [...cmd.matchAll(/\baz\s+sql((?:\s+[a-z][a-z-]*)+)/g)].map((m) => m[1].trim().split(/\s+/).pop());
+  const esLecturaAz = !esFirewall && opsAzSql.length > 0 && opsAzSql.every((v) => ['list', 'show', 'list-usages'].includes(v));
+  const hostAzure = (h) => (h && h.includes('.') ? h : `${h || '<host>'}.database.windows.net`);
+  // `declarado`: la puerta sólo atiende hosts declarados como producción; a uno sin declarar no se le sugieren consultas
+  const caminoFirewall = (h, declarado) => (esFirewall
+    ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta (con su cuadro, y la regla se cierra sola): /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`]
+    : esLecturaAz && declarado
+      ? ['Las lecturas de Azure sobre un servidor de producción también se frenan. En su lugar, la puerta (con su cuadro):',
+        `  el tamaño y el tope: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`,
+        `  la edición y el nivel: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select edition, service_objective from sys.database_service_objectives'`,
+        '  (miden la base a la que entra la puerta: la «base» del servidor en su catálogo; si el catálogo no la declara, master)',
+        `  si la conexión la rechaza el firewall: /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`]
+      : []);
   for (const n of nombrados) {
     if (n.host === null) {
       frenar(`ese comando nombra un servidor de base que no es un literal (${n.crudo}).`, [
@@ -707,13 +740,13 @@ function decidir(entrada) {
           ? 'Ese host ya se vio como producción antes; el catálogo de ahora dice otra cosa y no alcanza.'
           : 'Toda consulta a producción pasa por la puerta y la aprobás vos, sentencia por sentencia.',
         `Si de verdad ya no es producción: /opt/tycon/bin/tycon-prod-sql --reclassify ${n.host}`,
-        ...caminoFirewall(n.host),
+        ...caminoFirewall(n.host, true),
       ], { cmd, host: n.host, repos: c.repos, causa: 'base-de-produccion' }, 'produccion');
     }
     // desconocido
     frenar(`«${n.host}» no está declarado en ningún proyecto de esta máquina.`, [
       'Lo que no está declarado se trata como producción.',
-      ...caminoFirewall(n.host),
+      ...caminoFirewall(n.host, false),
       `Si es de un ambiente de prueba, declaralo en <repo>/.tycon/production.json:`,
       `  {"servers":[{"host":"${n.host}","environment":"non-production"}]}`,
       indice.catalogos.length

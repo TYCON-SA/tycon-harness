@@ -885,7 +885,7 @@ test('T29 PortonAcotadoPorElRepo_CorreSoloLoTocado — con --scoped-by-repo corr
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(r.resumen.corridas, 1, JSON.stringify(r.resumen));
   assert.match(r.resumen.deferred_suites[0].suite, /otra\.test\.js$/);
-  assert.match(r.resumen.deferred_suites[0].reason, /la suite completa la corre la CI del pedido \(la CI de GitHub del pedido\)/);
+  assert.match(r.resumen.deferred_suites[0].reason, /; la suite completa la corre la CI de GitHub del pedido$/);
   assert.deepEqual(r.resumen.scoped, { by: 'repo', full_suite_by: 'la CI de GitHub del pedido', none_touched: false });
   assert.equal(r.resumen.unscoped, undefined);
 });
@@ -912,7 +912,7 @@ test('T30 PortonAcotadoPorElRepo_NadieLee_Verde_SinSaber_NoCorreNada — si ning
   assert.equal(nadieLee.status, 0, `${nadieLee.stdout}\n${nadieLee.stderr}`);
   assert.equal(nadieLee.resumen.corridas, 0);
   assert.equal(nadieLee.resumen.scoped.none_touched, true);
-  assert.match(nadieLee.stdout, /ninguna suite lee lo tocado; la suite completa la corre la CI del pedido/);
+  assert.match(nadieLee.stdout, /ninguna suite lee lo tocado; la suite completa la corre la CI de GitHub del pedido/);
   const sinSaber = runScopedByRepo(f, { touched: { known: false, files: [], reason: 'la base cayó a HEAD' } });
   assert.equal(sinSaber.status, 7, sinSaber.stdout);
   assert.equal(sinSaber.resumen.corridas, 0, JSON.stringify(sinSaber.resumen));
@@ -1426,7 +1426,7 @@ test('TopeDeLaMaquina_MasSuitesQueElTope_CorrenLasMasCercanas — las demás que
   assert.deepEqual(resumen.scoped.capped, { max: 3, chosen: 6, deferred: 3 });
   const diferidas = resumen.deferred_suites.filter((d) => /pasa el tope de 3 suites de la máquina/.test(d.reason)).map((d) => path.basename(d.suite)).sort();
   assert.deepEqual(diferidas, ['n1.test.sh', 'n2.test.sh', 'n3.test.sh'], 'quedan afuera las menos cercanas');
-  assert.match(r.stdout, /tope de la máquina: 6 suites leen lo tocado; corren las 3 más cercanas y 3 quedan para la CI del pedido \(la CI\)/);
+  assert.match(r.stdout, /tope de la máquina: 6 suites leen lo tocado; corren las 3 más cercanas y 3 quedan fuera \(la suite completa la corre la CI\)/);
   assert.equal(resumen.corridas, 3);
   // la suite tocada corre siempre, aunque el tope sea menor
   const uno = correr3(['--max-suites', '1']);
@@ -1609,7 +1609,7 @@ test('T1 ScopedByRepo_CentralPiece_RunsOnlyNear @story-8.302 @ac-1 @ac-3 @ac-4 @
   assert.equal(r.resumen.deferred_suites.length, 37);
   for (const n of ['pieza-x.test.sh', 's1.test.sh', 's2.test.sh']) assert.ok(!diferidas(r).includes(n), `${n} corre`);
   for (const d of r.resumen.deferred_suites) {
-    assert.match(d.reason, /^lee scripts\/lib\/pieza\.js, que nombran 40 suites, pero no nombra lo que cambió \(cambiada\); la suite completa la corre la CI del pedido \(la CI de GitHub del pedido\)$/);
+    assert.match(d.reason, /^lee scripts\/lib\/pieza\.js, que nombran 40 suites, pero no nombra lo que cambió \(cambiada\); la suite completa la corre la CI de GitHub del pedido$/);
   }
   assert.match(r.stdout, /DIFERIDA s3\.test\.sh — lee scripts\/lib\/pieza\.js, que nombran 40 suites/);
   assert.match(r.stdout, /scripts\/lib\/pieza\.js: corrieron 3 de las 40 suites que la nombran \(para correrlas todas: TYCON_GATE_ALL_SUITES=1\)/);

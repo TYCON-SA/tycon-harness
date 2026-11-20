@@ -74,6 +74,22 @@ El plan escrito trae dos secciones, que son las que muestra la pregunta de la fi
 Sin alguna de las dos, o con más de 3 líneas en «Qué hace», el comando no se frena, pero la pregunta de la firma dice
 qué falta y cómo agregarlo en lugar del resumen: el dueño ve que el plan no dice qué hace.
 
+## Pasada de suposiciones, antes de cerrar el plan
+
+La revisión del plan busca «suposición falsa»: lo que el plan cree del código y no es cierto. Esa lente corre recién en
+«Aprobar el plan», y un plan rechazado ahí cuesta una vuelta entera. Por eso, antes de cerrar el plan, el orquestador
+hace su propia pasada:
+
+1. **Lista lo que el plan da por cierto del código**: que una función, un archivo, una opción o un campo existe; qué
+   devuelve o qué hace; quién lo llama; en qué orden corre algo; qué lee una prueba.
+2. **Comprueba cada una en el repo**, no en la memoria ni en la historia: abre el archivo o busca la definición (con
+   CodeGraph si el repo lo tiene). Una suposición se da por buena con su `archivo:línea`.
+3. **Lo que no se pudo comprobar**, o resultó falso, se arregla en el plan antes de cerrarlo: se cambia la tarea, o va
+   en «Riesgos o ambigüedades» con lo que falta saber. Nunca queda como un hecho.
+
+La pasada no se escribe entera en el plan. Alcanza con que el plan no apoye nada en una suposición sin comprobar. La
+revisión del plan sigue corriendo igual: esta pasada la abarata, no la reemplaza.
+
 ## Guardrail — patrón de referencia verificado (stories de backend)
 
 🔴 **Para stories de backend**, antes de pasar el plan a «Aprobar el plan», el orquestador DEBE chequear:

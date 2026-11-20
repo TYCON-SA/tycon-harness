@@ -23,7 +23,8 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
   person` (o la variable `TYCON_PLAN_ROUTINE_APPROVAL=person` en la máquina), lo aprueba siempre una persona. Una story
   con pantalla tampoco se aprueba sin click: la maqueta la ve una persona. La revisión es el pase adversarial en **modo
   plan**, sobre la story, el plan y el repo, nunca sobre el hilo de la sesión que planeó. De fábrica corre una sola
-  lente, «suposición falsa» (lo que el plan cree del código y no es cierto); la organización puede sumar las otras
+  lente, «suposición falsa» (lo que el plan cree del código y no es cierto). Antes de cerrarlo, el plan ya pasó por la
+  pasada de suposiciones de quien lo escribió (`step-03-plan.md`). La organización puede sumar las otras
   (`plan_review.lenses`). Corre con el revisor que elige la organización (`review_runner`; de fábrica, Claude) y sólo
   un hallazgo confirmado de gravedad «defecto» la rechaza (`review.blocking_severity`); lo demás confirmado son notas
   para implementar. La guía entera: `guides/automatic-reviews.md`.
@@ -305,7 +306,10 @@ de rol de agente, como «coordinadora» o «claude», queda automático; un corr
 
 El límite, dicho para que nadie le pida más: el registro distingue tipos, **no prueba identidad**. Un agente que escribe
 el correo de una persona en `--approved-by` queda anotado como manual. Lo único firmado de verdad por una persona es lo
-que pasa por la terminal (la firma de los AC imposibles de verificar, `runtime-waiver`). Sin `--approved-by` ni `--delegated-by`, la línea queda automática «sin nombrar». La maqueta la
+que pasa por la terminal (la firma de los AC imposibles de verificar, `runtime-waiver`). El plan y la maqueta que la
+persona firma por su cuenta (con «firmo» en su terminal, `--terminal`, con su click en el cuadro o con su «aprobado»
+escrito) quedan manuales, a nombre del usuario de la máquina; un nombre escrito en el comando no cuenta. Por las demás
+vías (la ventana de permiso), sin `--approved-by` ni `--delegated-by`, la línea queda automática «sin nombrar». La maqueta la
 aprueba quien aprobó el plan, en el mismo comando; `approve-mockup` acepta las mismas opciones. No se pide nada nuevo:
 si la línea no se puede escribir, el marcador avisa y el paso sigue. El portón de CI la exige en el merge (ver
 `guides/ci-gate.md`, «Registro de aprobaciones»). La misma forma vale para la exención de un CRITICAL al cerrar el

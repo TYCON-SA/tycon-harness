@@ -161,7 +161,7 @@ const NOT_DELEGATED = Object.freeze(['save:sensible']);
 // `approvals.delegated_signing`. Las demás de nivel 2 y todo el nivel 3 los firma una persona, aunque el perfil los nombre
 const DELEGABLE_EXCEPTIONS = Object.freeze(['runtime-waiver', 'manual-test', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:trust-ran',
   'lost-run', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz',
-  'escape:TYCON_STATUS_GATE', 'escape:cambiar-el-estado', 'escape:set-autonomous', 'adhoc-lane:sobre-cupo',
+  'escape:TYCON_STATUS_GATE', 'escape:cambiar-el-estado', 'escape:set-autonomous',
   'adhoc-lane:guardado-ajeno', 'critical-waiver', 'escape:force-manual', 'escape:red-control-test-edit']);
 // las dos formas de nivel 2 de una firma de rutina, que el perfil delega con su propio nombre (no son firmas de
 // SIGNATURES: se piden con la firma de la derecha, y su guion mira si el perfil nombra la forma): el plan de una historia
@@ -328,7 +328,9 @@ const SIGNATURES = Object.freeze([
   { id: 'pending-approval', approves: 'abrir un pendiente nuevo en la lista de pendientes', command: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta>', otherSession: 'yes', terminal: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal' },
   { id: 'adhoc-lane', approves: 'abrir el arreglo rápido de una sesión, sin historia', command: "marker.js adhoc set '<json>'", otherSession: 'yes', terminal: 'marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --file <ruta> --terminal --for-session <id>' },
   { id: 'adhoc-lane:sobre-cupo', approves: 'abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia', command: "marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'", otherSession: 'yes', terminal: 'marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --file <ruta> --terminal --for-session <id>',
-    soloClick: true, descripciones: Object.freeze(['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.', 'No se abre el arreglo, y el trabajo va por una historia.']) },
+    // como el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente, o su
+    // terminal; nunca la delegación, un «aprobado» escrito ni la ventana de permiso
+    clickDelDueno: true, descripciones: Object.freeze(['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.', 'No se abre el arreglo, y el trabajo va por una historia.']) },
   // dejar pasar el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente;
   // nunca un «aprobado» escrito, la delegación ni la ventana de permiso
   { id: 'adhoc-lane:datos', approves: 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia', command: 'marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>', otherSession: 'no',
@@ -402,7 +404,7 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/lib/test-gate-*.js', 'skills/tycon-pipeline/scripts/lib/test-scope.js',
   'scripts/lib/test-scope.js', 'scripts/lib/test-scope-options.json', '.test-gate.yaml',
   // lo que decide si se frena al guardar lo no revisado y qué evidencia en vivo cuenta
-  'skills/tycon-pipeline/scripts/lib/frozen-tree.js', 'skills/tycon-pipeline/scripts/runtime-matrix.js',
+  'skills/tycon-pipeline/scripts/lib/frozen-tree.js', 'skills/tycon-pipeline/scripts/lib/comment-only.js', 'skills/tycon-pipeline/scripts/runtime-matrix.js',
   'skills/tycon-pipeline/scripts/smoke-run.sh', 'skills/tycon-pipeline/scripts/lib/evidence-vs-commit.js',
   'skills/tycon-pipeline/scripts/lib/commit-story.js', 'skills/tycon-pipeline/scripts/lib/story-requests.js',
   'skills/tycon-pipeline/scripts/lib/nightly-coverage.js',
@@ -426,9 +428,10 @@ const REQUIERE_SENSIBLE = Object.freeze(['signatures.js', 'owner-window.js', 'de
  * La firma que pide un `adhoc set`, para que el freno y el guion nunca discrepen. `args`: lo que sigue a `set`, cada palabra
  * como texto (ya leída) o como `{ texto, literal }`. Una palabra que no se lee hasta correr, o un cupo que no se entiende,
  * cuenta como sobre cupo. Sin número sigue la firma común: conserva el cupo que tenía el carril. `tope`: el de la
- * organización (lo lee el borde, una vez, para el freno y el guion); sin él, el de fábrica.
+ * organización (lo lee el borde, una vez, para el freno y el guion); sin él, el de fábrica. `cwd`: la carpeta del pedido;
+ * con ella, `<Nombre>/<ruta>` de un repo hermano se cuenta sin el prefijo, como en su repo.
  */
-function firmaDelPedidoAdhoc(args = [], tope = TOPE) {
+function firmaDelPedidoAdhoc(args = [], tope = TOPE, { cwd = null } = {}) {
   if (args.some((w) => w && typeof w === 'object' && !w.literal)) return SOBRE_CUPO;
   const a = args.map((w) => String(w && typeof w === 'object' ? w.texto : w));
   const limite = Number.isInteger(tope) && tope > 0 ? tope : TOPE;
@@ -438,7 +441,7 @@ function firmaDelPedidoAdhoc(args = [], tope = TOPE) {
   const codigoDe = (rutas) => {
     try {
       const L = require(require('path').join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'adhoc-list.js'));
-      return rutas.filter((f) => typeof f === 'string' && L.esCodigoRel(f)).length;
+      return rutas.filter((f) => typeof f === 'string' && L.esCodigoRel(f, { cwd })).length;
     } catch (_) { return Infinity; }
   };
   if (String(a[0] || '').startsWith('--')) {

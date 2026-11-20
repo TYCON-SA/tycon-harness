@@ -246,6 +246,20 @@ test('ManualChecks_Apagada_NoAnota @story-7.46 @ac-11', () => {
   assert.equal(marcas(lab).length, 0);
 });
 
+// 🔴 Falla con: el chequeo previo de la ventana que sale 0 sin su ok, y la ventana que se abre para una firma sin efecto.
+test('ManualChecks_Apagada_ElChequeoPrevioNiega_SinVentana', () => {
+  const lab = laboratorio({ opcion: null });
+  const { PRECHEQUEO, PRECHEQUEO_OK, comprobarConElGuion } = require(path.join(ARNES, 'scripts', 'lib', 'owner-window.js'));
+  const r = lab.marker(['mark-tested', '--acs', '2'], { [PRECHEQUEO]: '1' }, { ventana: false });
+  assert.notEqual(r.status, 0, 'el chequeo previo tiene que negar: si sale 0, la ventana se abre igual');
+  assert.doesNotMatch(r.stdout, new RegExp(PRECHEQUEO_OK));
+  assert.match(r.stderr, /no hace falta firmar/);
+  const c = comprobarConElGuion({ firma: 'manual-test', palabras: [MARKER, 'mark-tested', '--acs', '2'], cwd: lab.repo, sesion: lab.sid, casa: lab.home, env: lab.env });
+  assert.ok(c && c.niega, `la ventana tiene que saber que se niega: ${JSON.stringify(c)}`);
+  assert.match(c.niega, /tu organización no pide la marca a mano/);
+  assert.equal(marcas(lab).length, 0);
+});
+
 test('ManualChecks_Cierre_FrenaConLoQueFalta @story-7.46 @ac-13', () => {
   const lab = laboratorio();
   mostrar(lab, '1,3');

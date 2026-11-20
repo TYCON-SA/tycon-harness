@@ -546,6 +546,16 @@ The test of each file on the list does not need to be named. Outside the list no
 another signature. The details (which reasons are not delegated, one delegated fix per repo) are in
 `guides/firmas-del-arnes.md`.
 
+**Files of a sibling repo: `<Name>/<path>`.** From the stories repo, for example, the list names `Backend/src/A.cs` or
+`Forms/src/x.tsx`, with no «..» and no absolute paths. It only works for a repo that sits next to the main checkout, is
+its own main checkout (not a worktree) and is declared with this one in `repo_group` of `.tycon/advisors.yaml`, both
+ways. The group is read from the remote's main branch (`origin/HEAD`), not from the folder or the local branch: a group
+committed but not pushed does not count. With another live session in the sibling, it does not open. A list of more than
+one repo is signed and delegated like a single-repo one: the siblings come from the declared group, without asking the
+owner, and a repo that is not in the group gets in by no route. The box starts with the repos and how many files each
+one has. Tests go per repo, each in its folder:
+`marker.js adhoc test --repo <Name> -- <command>`. When saving, every repo that changed code needs its green run.
+
 **Declaring it again keeps everything.** With another quota or another reason, the lane keeps its list, its high-risk mark
 and its records, which hold while what they measured does not change. A new task in the same session goes on a new branch
 from `main`: on the previous task's branch, its commits count toward the quota.
@@ -567,9 +577,9 @@ from `main`: on the previous task's branch, its commits count toward the quota.
 
 **Going past the limit does not go through you.** Asking for more than 8 files (by default; each organization sets it) is
 the `adhoc-lane:sobre-cupo` signature,
-and the developer chooses it: with a click in the question box of the tab doing the work, or in their terminal. A click in
-your tab does not count, nor a forwarded «aprobado», nor the delegation; so a background session nobody is watching can only
-do it through the terminal. Only the implementation files the fix changed count: what came in from `main`, tests, guides
+and the owner chooses it: with a click in the question box, in the tab doing the work or in yours while you are the current
+coordinator, or in their terminal. Your tab only shows the box: the click is the owner's. A forwarded «aprobado» and the
+delegation do not count. Only the implementation files the fix changed count: what came in from `main`, tests, guides
 and probes do not add up. Past the quota, the fix stops on edit and does not save, and the message recommends a story. Limit:
 it measures the branch being worked on and what is already on disk. Work built on another branch and pushed by its name, or
 created in the same command that pushes, does not add up. That does not let it into `main`, because the pull request still has

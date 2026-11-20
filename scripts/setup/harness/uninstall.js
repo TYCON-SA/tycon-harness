@@ -58,18 +58,26 @@ const expandHome = (p, home) => (typeof p === 'string' ? p.replace(/^~(?=$|[\\/]
  */
 function baseline(home, env = process.env) {
   let copies = [];
-  try { copies = SN.list(home); } catch (_) { copies = []; }
+  // lo que no se pudo leer (la carpeta de copias, un manifiesto) no es «no hay copia»: va en `problems`, y el plan lo dice
+  const problems = [];
+  try { copies = SN.list(home, { problems }); } catch (e) { problems.push(`no pude leer las copias (${e.message})`); copies = []; }
   const installs = copies.filter((c) => c.manifest && c.manifest.reason === 'install');
   const oldest = installs[installs.length - 1];   // list: la más nueva primero
   const map = {}; const after = {};
-  if (!oldest || !Array.isArray(oldest.manifest.files)) return { map, after, dir: null, skipped: [] };
+  if (!oldest || !Array.isArray(oldest.manifest.files)) return { map, after, dir: null, skipped: [], problems };
   // sólo lo que la copia puede nombrar: dentro de la HOME (o la lista fija de hoy) y con su copia en su carpeta
   const { files: usables, skipped } = SN.safeFiles(oldest, { home, env });
   for (const f of usables) {
     map[f.path] = f.existed && f.copy ? path.join(oldest.dir, f.copy) : null;
     if (typeof f.sha256_after === 'string') after[f.path] = f.sha256_after;
   }
-  return { map, after, dir: oldest.dir, skipped };
+  return { map, after, dir: oldest.dir, skipped, problems };
+}
+
+/** La línea de revisión de las copias que no se pudieron leer, o null: sin ellas no se sabe cómo estaba cada archivo. */
+function baselineProblemLine(problems) {
+  if (!Array.isArray(problems) || !problems.length) return null;
+  return `no pude leer todas las copias del arnés (${problems.join('; ')}): sin la de la instalación no sé cómo estaba cada archivo antes: lo que dependa de eso queda o va a revisar, y ningún archivo vuelve a su forma de antes`;
 }
 
 /** La raíz de repos: `TYCON_REPOS_ROOT` o `rutas.repos` de ~/.claude/tycon.json (como la lee el aplicador). */
@@ -182,6 +190,8 @@ function plan(ctx, state) {
   }
 
   const review = dry.review.map((r) => r.why);
+  const noLeidas = baselineProblemLine(base.problems);
+  if (noLeidas) review.push(noLeidas);
   for (const p of base.skipped) review.push(`${p}: la copia de la instalación lo nombra fuera de la HOME o con su copia fuera de la carpeta — no lo tomo como base`);
   const hooksDir = (env.TYCON_GIT_HOOKS_DIR) || path.join(home, '.git-hooks');
   let names = [];
@@ -299,4 +309,4 @@ function run(ctx, state, { log = null } = {}) {
   return { ok: errors.length === 0, lines: L };
 }
 
-module.exports = { plan, run, describePlan, planLines: describePlan, baseline, findPointers, reposRoot, productionGuard, HOOK_STORES };
+module.exports = { plan, run, describePlan, planLines: describePlan, baseline, baselineProblemLine, findPointers, reposRoot, productionGuard, HOOK_STORES };

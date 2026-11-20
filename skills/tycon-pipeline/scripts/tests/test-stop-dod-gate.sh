@@ -256,13 +256,15 @@ else
 fi
 
 # T8) tests «sin-acotar» (el repo hermano no se pudo acotar: la cubre la CI del pedido) → no frena el cierre del
-# turno, y complete-step 4 lo deja pasar avisando que el merge exige la CI completa en verde, con constancia en gates.log.
+# turno, y complete-step 4 lo deja pasar avisando que la CI del pedido tiene que salir verde antes del merge, y que
+# esta máquina no lo comprueba (no promete un freno que no existe), con constancia en gates.log.
 # 🔴 rojo: si el hook frenara todo lo que no es 'green', el agente quedaría en un lazo sin salida (la única sería la suite completa).
 echo '{"storyId":"X","autonomous":true,"iter":0,"checks":{"build":"green","tests":"sin-acotar"}}' > "$MK"
 [ -z "$(run)" ] && echo "✓ T8 sin-acotar → deja cerrar el turno" || { echo "✗ T8 — sin-acotar frenó el cierre del turno"; fail=1; }
 echo '{"storyId":"X","storyPath":"","autonomous":false,"stepsCompleted":[0,1,2,3],"stepsPending":[4,5,6,7,8],"checks":{"tests":"sin-acotar"},"checksProvenance":{"tests":"test-gate"}}' > "$MK"
 OUT8=$(CLAUDE_CODE_SESSION_ID=$SID TYCON_MUTATION_CHECK=off node marker.js complete-step 4 --no-atdd 2>&1); RC8=$?
-if [ "$RC8" -eq 0 ] && echo "$OUT8" | grep -q 'el merge exige la CI completa en verde' \
+if [ "$RC8" -eq 0 ] && echo "$OUT8" | grep -q 'antes del merge, mirá que salga verde (esta máquina no lo comprueba)' \
+  && ! echo "$OUT8" | grep -q 'el merge exige' \
   && grep -q '"name":"tests-unscoped"' ~/.claude/.tycon-pipeline/gates.log; then
   echo "✓ T8 complete-step 4 con sin-acotar → pasa, avisa y lo anota"
 else

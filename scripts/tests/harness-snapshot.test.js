@@ -984,3 +984,53 @@ test('Doctor_CopiaAMedias_AvisaComoHoy_EIlegibleLoDice (T11) @story-8.281 @ac-19
     assert.deepStrictEqual(pendingLines(L), ['aviso pendiente: algo'], label);
   }
 });
+
+test('CutNotice_CopiaIlegible_AvisaQueNoPudoMirar @def-8.281 — el arranque no calla una copia con el manifiesto ilegible ni la carpeta de copias ilegible', () => {
+  const S = snapshot();
+  const home = makeHome('cut-unreadable'); const tree = makeTree('cut-unreadable', []);
+  // sin copias: nada
+  assert.strictEqual(S.cutNoticeOf(home), null);
+  write(path.join(home, '.claude', 'settings.json'), '{"v":0}\n');
+  const copy = S.take({ home, env: {}, tree, reason: 'update', now: new Date('2026-11-20T10:00:00Z') });
+  // abierta y legible: el aviso de siempre
+  assert.strictEqual(S.cutNoticeOf(home), S.openCopyNotice(S.list(home)));
+  assert.ok(S.cutNoticeOf(home).startsWith(S.CUT_NOTICE_PREFIX));
+  // abierta con el manifiesto roto: no ve la copia, pero dice que no pudo mirar (con el encabezado que el doctor revisa)
+  fs.writeFileSync(path.join(copy.dir, 'manifest.json'), '{ roto');
+  const n = S.cutNoticeOf(home, { cmd: 'harness.js' });
+  assert.ok(n && n.startsWith(S.CUT_NOTICE_PREFIX), n);
+  assert.match(n, /no pude mirar si un cambio del arnés se cortó \(copia .*: no pude leer su manifiesto .*\): si una copia quedó abierta, no la veo; harness\.js rollback --list/);
+  // la carpeta de copias ilegible: un archivo en su lugar (en todo sistema)
+  const root = backupsDir(home);
+  fs.renameSync(root, `${root}.aparte`);
+  fs.writeFileSync(root, 'no es una carpeta');
+  assert.match(S.cutNoticeOf(home), /no pude mirar si un cambio del arnés se cortó \(no pude leer la carpeta de copias \(ENOTDIR\)\)/);
+  fs.rmSync(root); fs.renameSync(`${root}.aparte`, root);
+  // cerrada y legible: nada
+  fs.writeFileSync(path.join(copy.dir, 'manifest.json'), JSON.stringify({ reason: 'update', files: [] }));
+  S.close(copy.dir, { closedBy: 'prueba' });
+  assert.strictEqual(S.cutNoticeOf(home), null);
+});
+
+test('Uninstall_CopiasIlegibles_NoSonSinCopia @def-8.281 — la desinstalación y el cambio de herramienta dicen que no pudieron leer las copias', () => {
+  const U = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'uninstall.js'));
+  const TC = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tool-change.js'));
+  const home = makeHome('uninstall-unreadable');
+  // sin la carpeta de copias: «no hay», sin problema
+  assert.deepStrictEqual(U.baseline(home, {}).problems, []);
+  assert.strictEqual(U.baselineProblemLine(U.baseline(home, {}).problems), null);
+  // la carpeta de copias ilegible: un archivo en su lugar
+  fs.mkdirSync(path.dirname(backupsDir(home)), { recursive: true });
+  fs.writeFileSync(backupsDir(home), 'no es una carpeta');
+  const base = U.baseline(home, {});
+  assert.strictEqual(base.dir, null);
+  assert.match(base.problems.join(' · '), /no pude leer la carpeta de copias \(ENOTDIR\)/);
+  const linea = U.baselineProblemLine(base.problems);
+  assert.match(linea, /^no pude leer todas las copias del arnés \(no pude leer la carpeta de copias \(ENOTDIR\)\): sin la de la instalación no sé cómo estaba cada archivo antes/);
+  // el plan de la desinstalación la pone en «revisalo»
+  const plan = U.plan({ home, env: {}, platform: process.platform }, { managed: [] });
+  assert.ok(plan.review.includes(linea), JSON.stringify(plan.review));
+  // el cambio de herramienta: la misma lectura, sin repetir el motivo
+  const tc = TC.baselineFor(home, [], U, null);
+  assert.deepStrictEqual(tc.problems, base.problems);
+});

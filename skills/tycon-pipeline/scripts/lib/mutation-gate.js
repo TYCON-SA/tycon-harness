@@ -16,7 +16,9 @@
  *     ejercen el código nuevo. Con una receta que no es `node --test`, hasta
  *     MUTATION_NOTICE_UNTIL avisa y deja pasar (las recetas nuevas entran avisando).
  *   - exit 0 con sobrevivientes → AVISA (archivo:línea [operador]) y deja pasar.
- *   - exit 0 limpio / SIN_MUTANTES → sigue en silencio.
+ *   - exit 0 limpio → sigue en silencio.
+ *   - exit 0 con SIN_MUTANTES (no se generó ningún mutante) → AVISA «NO MEDIDO» con el motivo y deja pasar: cero
+ *     mutantes no es un verde, y en silencio se leía como uno.
  *   - exit 0 con DEADLINE_SIN_CORRER o SIN_MEDIR (no se midió ningún mutante) → AVISA y deja pasar.
  *   - exit 2 (estructural: story sin tests declarados, etc.) → AVISA y deja
  *     pasar — una story de docs o de config no tiene por qué trabarse.
@@ -78,8 +80,10 @@ function defaultInvokeCheck({ scriptPath, repo, storyPath, maxMutants, deadlineM
   if (r.error) throw r.error;
   if (r.signal) return { code: null, result: null, stderr, timedOut: true };
   let result = null;
-  try { result = JSON.parse(r.stdout); } catch { result = null; }
-  return { code: r.status === null || r.status === undefined ? null : r.status, result, stderr, timedOut: false };
+  let parseError = null;
+  // una salida que no es JSON no es «sin veredicto»: el motivo viaja, y el portón la dice no medida
+  try { result = JSON.parse(r.stdout); } catch (e) { result = null; parseError = `la salida del chequeo no es JSON (${e.message}): ${JSON.stringify(String(r.stdout || '').slice(0, 120))}`; }
+  return { code: r.status === null || r.status === undefined ? null : r.status, result, stderr, timedOut: false, parseError };
 }
 
 /** El `.git` común de un repo: dos worktrees del mismo repo lo comparten. null si git no contesta. */
@@ -304,6 +308,15 @@ function medirEn(repo, { marker, storyPath, appendLog, log, maxMutants, scriptPa
     return { invoked: true, block: true, reason: 'cero-muertos' };
   }
 
+  // exit 0 o 2 sin el JSON del chequeo: no hay veredicto que leer, y no se toma por un pase limpio
+  if ((code === 0 || code === 2) && out.result == null) {
+    const motivo = out.parseError || 'el chequeo no dejó su resultado';
+    appendLog('gates.log', { ...entryBase, status: 'warn-unparsed', reason: motivo });
+    log(`⚠️  Chequeo de mutantes NO MEDIDO en ${repo} (${motivo}) — sigue sin frenar.`);
+    volcarStderr();
+    return { invoked: true, block: false, reason: 'sin-resultado' };
+  }
+
   // exit 0 — pasó; con sobrevivientes AVISA, limpio sigue en silencio.
   if (code === 0) {
     if (res.verdict === 'DEADLINE_SIN_CORRER') {
@@ -315,6 +328,10 @@ function medirEn(repo, { marker, storyPath, appendLog, log, maxMutants, scriptPa
       const motivo = Array.isArray(res.skipped) && res.skipped[0] ? res.skipped[0].reason : 'sin motivo';
       appendLog('gates.log', { ...entryBase, status: 'warn-unmeasured', reason: motivo });
       log(`⚠️  Chequeo de mutantes: no se pudo medir ningún mutante (${res.runner || 'receta desconocida'}: ${motivo}) — no se verificó nada; sigue sin frenar.`);
+    } else if (res.verdict === 'SIN_MUTANTES') {
+      const motivo = res.motivo || 'no se generó ningún mutante';
+      appendLog('gates.log', { ...entryBase, status: 'warn-no-mutants', reason: motivo });
+      log(`⚠️  Chequeo de mutantes NO MEDIDO en ${repo} (${motivo}) — sigue sin frenar.`);
     } else if (survived.length) {
       appendLog('gates.log', { ...entryBase, status: 'warn-survivors' });
       log(`⚠️  Chequeo de mutantes: ${survived.length} de ${entryBase.total} mutantes SOBREVIVIERON (nadie los probó). Avisa, no frena:`);

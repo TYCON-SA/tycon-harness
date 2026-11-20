@@ -75,6 +75,20 @@ function lineasDeFirmaPorTerminal(acs, firmante) {
   return (acs || []).map((n) => ({ que: `AC ${n} imposible de verificar en vivo`, via: 'runtime-waiver (terminal)', tipo: 'manual', quien: firmante }));
 }
 
+// Las vías de una firma que dio la persona misma: su click en el cuadro, su «aprobado» escrito, o «firmo» en su terminal.
+const VIAS_DE_LA_PERSONA = new Set(['click', 'mensaje', 'terminal']);
+
+/**
+ * La aprobación que dio la persona misma, por la vía de su firma (scripts/lib/owner-window.js `exigir`): manual, a nombre
+ * del usuario de la máquina. Un nombre escrito en el comando no cuenta, porque el comando no lo vio. Cualquier otra vía
+ * (la ventana de permiso, la delegación, la revisión, el arnés, una pestaña sin permisos) devuelve null: el quién sale de
+ * las opciones del comando.
+ */
+function deLaPersona(via, persona) {
+  if (!VIAS_DE_LA_PERSONA.has(via)) return null;
+  return { tipo: 'manual', quien: texto(persona) || 'persona' };
+}
+
 /** El tipo, el quién y la delegación a partir de las opciones del marcador (`--approved-by`, `--delegated-by`, `--agent`). */
 function quienDesdeOpciones({ approvedBy, delegatedBy, agent, regla } = {}) {
   const deleg = texto(delegatedBy);
@@ -309,6 +323,6 @@ function unir(origenDir, destinoDir) {
 }
 
 module.exports = {
-  FILE, SIN_NOMBRAR, esAgente, lineasDeFirmaPorTerminal, quienDesdeOpciones, normalizar, validar, anotar, leer, resumir,
+  FILE, SIN_NOMBRAR, esAgente, lineasDeFirmaPorTerminal, deLaPersona, quienDesdeOpciones, normalizar, validar, anotar, leer, resumir,
   problemasDelRegistro, faltaElPlan, faltaLaMaqueta, unir, carpetasDeCorrida, POR_FALTA, DESDE_EN_LA_STORY, selloDeCorrida, anteriorAlControl,
 };

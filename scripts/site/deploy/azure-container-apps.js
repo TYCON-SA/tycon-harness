@@ -517,7 +517,9 @@ function faseDemo(c, run, salida, ensayo) {
     const esDemo = run.leer(['containerapp', 'show', ...g, '-n', c.app, '--query', "properties.template.containers[0].env[?name=='SITE_DEMO'].value | [0]", '-o', 'tsv', ...SUB(c)], '1');
     if (esDemo !== '1') throw new Falla(`la aplicación ${c.app} ya existe y no es una instancia demo (no trae SITE_DEMO=1): no la toco; elegí otro nombre para app`);
   }
-  const variables = [['SITE_DEMO', '1'], ['SITE_PUBLIC_URL', publica]];
+  // detrás de la entrada de Azure, que agrega la dirección real al final de X-Forwarded-For: sin esto, todos los que
+  // visitan el demo compartirían el tope de la dirección de la entrada
+  const variables = [['SITE_DEMO', '1'], ['SITE_PUBLIC_URL', publica], ['SITE_TRUST_PROXY', '1']];
   const yaml = {
     location: c.location,
     properties: {
