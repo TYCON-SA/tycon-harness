@@ -5,7 +5,9 @@
  * Cada entrada dice qué valores la apagan de verdad (los que toma su lector, no una regla general), quién la lee y cómo
  * (`entorno`: la variable del proceso; `comando`: un freno que la busca en el texto del comando del agente), su clase,
  * si ESC-C1 pide la firma (`firma`), si la revisión de la noche la cuenta como escape (`noche`) y si en la configuración
- * de la herramienta apaga con cualquier valor que no sea 0 ni vacío (`en_configuracion: 'cualquiera'`).
+ * de la herramienta apaga con cualquier valor que no sea 0 ni vacío (`en_configuracion: 'cualquiera'`). Una entrada
+ * puede traer su fecha de corte (`enforce_from`): hasta ese día su escape avisa y anota; desde ese día pide la firma, o su
+ * escotilla deja de valer (`corteDe`, `antesDelCorte`).
  *
  * La leen `apaga()` (controls-off.js, HARNESS-C2) y la revisión de la noche (runs-review/rules.js). Los dos frenos de
  * bash (ESC-C1 y HARNESS-C1) corren en cada comando y no la leen: una prueba los ata a ella
@@ -61,6 +63,27 @@ function apagaSegunLista(nombre, valor) {
 
 const cualquiera = () => leer().entradas.filter((e) => e.en_configuracion === 'cualquiera').map((e) => e.nombre);
 const conFirma = () => leer().entradas.filter((e) => e.firma).map((e) => e.nombre);
+/**
+ * La fecha de corte de una variable (`enforce_from`, `AAAA-MM-DD`): desde ese día su escape pide la firma del dueño, o su
+ * escotilla deja de valer. `null` si no la trae o no se puede leer.
+ */
+function corteDe(nombre) {
+  const e = entrada(nombre);
+  const f = e && typeof e.enforce_from === 'string' ? e.enforce_from : null;
+  return f && /^\d{4}-\d{2}-\d{2}$/.test(f) && !Number.isNaN(Date.parse(`${f}T00:00:00Z`)) ? f : null;
+}
+
+/**
+ * ¿`ahora` (fecha, milisegundos o texto) cae antes de la fecha de corte de `nombre`, a medianoche UTC? Sin fecha legible,
+ * `false`: falla cerrado, y el escape pide la firma igual que desde el corte.
+ */
+function antesDelCorte(nombre, ahora = new Date()) {
+  const f = corteDe(nombre);
+  if (!f) return false;
+  const t = ahora instanceof Date ? ahora.getTime() : (typeof ahora === 'number' ? ahora : Date.parse(String(ahora)));
+  return Number.isFinite(t) && t < Date.parse(`${f}T00:00:00Z`);
+}
+
 /** Los escapes que cuenta la revisión de la noche, con los valores que de verdad los activan. */
 const escapesDeLaNoche = () => leer().entradas.filter((e) => e.noche).map((e) => ({ nombre: e.nombre, apagan: e.apagan.slice() }));
 
@@ -171,5 +194,5 @@ function anotarEscape({ stateDir, home = os.homedir(), sessionId, kind, variable
 /** ¿Corre dentro de una CI? Azure DevOps (`TF_BUILD`, que Azure pone como `True`) o GitHub (`GITHUB_ACTIONS`). */
 const esCI = (env = process.env) => /^true$/i.test(String(env.TF_BUILD || '').trim()) || /^true$/i.test(String(env.GITHUB_ACTIONS || '').trim());
 
-module.exports = { RUTA, APAGAN_UN_CONTROL, leer, entrada, apagaUnControl, apagaSegunLista, cualquiera, conFirma, escapesDeLaNoche,
+module.exports = { RUTA, APAGAN_UN_CONTROL, leer, entrada, apagaUnControl, apagaSegunLista, cualquiera, conFirma, escapesDeLaNoche, corteDe, antesDelCorte,
   lecturas, faltantes, sinLector, anotarEscape, sesionDe, esCI };

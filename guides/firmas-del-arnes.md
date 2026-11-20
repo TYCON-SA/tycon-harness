@@ -93,6 +93,8 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `escape:trust-ran` | 2 · excepción | dev y mantenimiento | contar revisores sin constancia de que corrieron | `escape:trust-ran` |
 | `escape:TYCON_TEST_GATE` | 2 · excepción | dev y mantenimiento | saltear sólo el portón de pruebas del commit | `escape:TYCON_TEST_GATE` |
 | `escape:TYCON_STATUS_GATE` | 2 · excepción | dev y mantenimiento | cambiar a mano el estado de una historia | `escape:TYCON_STATUS_GATE`, `escape:cambiar-el-estado` |
+| `escape:TYCON_MUTATION_CHECK` | 2 · excepción | dev y mantenimiento | saltear el chequeo de mutantes de las pruebas | `escape:TYCON_MUTATION_CHECK`, `escape:no-mutation` |
+| `escape:TYCON_STORY_REVIEW` | 2 · excepción | dev y mantenimiento | saltear la revisión de la historia antes del plan | `escape:TYCON_STORY_REVIEW` |
 | `escape:story-skill-bypass` | 2 · excepción | dev y mantenimiento | escribir una historia sin la skill de historias | `escape:story-skill-bypass` |
 | `escape:red-control-test-edit` | 2 · excepción | dev y mantenimiento | editar una prueba vieja de un control que estaba en rojo | `escape:red-control-test-edit` |
 | `escape:set-autonomous` | 2 · excepción | dev y mantenimiento | cambiar el modo autónomo de una ejecución | `escape:set-autonomous` |
@@ -445,6 +447,8 @@ vuelve a pedir la firma del dueño.
 | `escape:DOD_BYPASS` | saltear los controles del commit (queda anotado) | `DOD_BYPASS=1 <comando>` | no, en la pestaña de esa sesión | `DOD_BYPASS=1 <comando>` |
 | `escape:TYCON_NO_DEEP_REVIEW` | apagar el pase adversarial de una ejecución | `TYCON_NO_DEEP_REVIEW=1 <comando>` | no, en la pestaña de esa sesión | `TYCON_NO_DEEP_REVIEW=1 <comando>` |
 | `escape:TYCON_STATUS_GATE` | cambiar a mano el estado de una story | `TYCON_STATUS_GATE=off <comando>` | no, en la pestaña de esa sesión | `TYCON_STATUS_GATE=off <comando>` |
+| `escape:TYCON_MUTATION_CHECK` | saltear el chequeo de mutantes de las pruebas | `TYCON_MUTATION_CHECK=off <comando>` | no, en la pestaña de esa sesión | `TYCON_MUTATION_CHECK=off <comando>` |
+| `escape:TYCON_STORY_REVIEW` | saltear la revisión de la historia antes del plan | `TYCON_STORY_REVIEW=0 <comando>` | no, en la pestaña de esa sesión | `TYCON_STORY_REVIEW=0 <comando>` |
 | `escape:story-skill-bypass` | escribir una story sin la skill de stories | `marker.js sign-file story-skill-bypass <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file story-skill-bypass <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:red-control-test-edit` | editar una prueba vieja de un control que estaba en rojo | `marker.js sign-file red-control-test-edit <archivo>` | sí | `marker.js sign-file red-control-test-edit <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:set-autonomous` | cambiar el modo autónomo de una ejecución | `marker.js set-autonomous` | no, en la pestaña de esa sesión | `el mismo comando` |
@@ -453,6 +457,7 @@ vuelve a pedir la firma del dueño.
 | `escape:rojo-esperado-de-la-matriz` | llevar al commit criterios sin evidencia en vivo, hasta una fecha | `marker.js expect-red acmatrix --tests <T1,T2> --until <AAAA-MM-DD>` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:force-manual` | marcar a mano el estado de un control | `marker.js set-check <control> <estado> --force-manual [--for-session <D>]` | sí | `marker.js set-check <control> <estado> --force-manual --terminal` |
 | `escape:trust-ran` | contar los revisores sin la constancia de que corrieron | `pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]` | sí | `pipeline.js check-count --repo <r> --story <s> --trust-ran --terminal` |
+| `escape:no-mutation` | cerrar «Correr las pruebas» sin el chequeo de mutantes, con motivo | `marker.js complete-step run-tests --no-mutation --reason <motivo>` | no, en la pestaña de esa sesión | `marker.js complete-step run-tests --no-mutation --reason <motivo> --terminal --for-session <sesión>` |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE` | escribir a mano la evidencia de la prueba en vivo | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>` | sí | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | no, en la pestaña de esa sesión | `marker.js sign-file dod_runtime_exempt <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, en la pestaña de esa sesión | `el mismo comando` |
@@ -480,7 +485,7 @@ sin objeto: un perfil que ya delega `lost-run` no la delega sin pedirla por su i
 | `refresh-after-main` | `refresh-after-main` |
 | `adversarial-skip` | `adversarial-skip` |
 | `critical-waiver` | `critical-waiver` |
-| `escape-phrases` | `escape:TYCON_SAFETY_OFF`, `escape:TYCON_PROD_LINT`, `escape:TYCON_NEW_NAMES`, `escape:TYCON_TEST_GATE`, `escape:DOD_BYPASS`, `escape:TYCON_NO_DEEP_REVIEW`, `escape:TYCON_STATUS_GATE`, `escape:story-skill-bypass`, `escape:set-autonomous`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz`, `escape:ALLOW_DOD_EVIDENCE_WRITE`, `escape:dod_runtime_exempt`, `escape:no-deep-review`, `escape:cambiar-el-estado` |
+| `escape-phrases` | `escape:TYCON_SAFETY_OFF`, `escape:TYCON_PROD_LINT`, `escape:TYCON_NEW_NAMES`, `escape:TYCON_TEST_GATE`, `escape:DOD_BYPASS`, `escape:TYCON_NO_DEEP_REVIEW`, `escape:TYCON_STATUS_GATE`, `escape:TYCON_MUTATION_CHECK`, `escape:TYCON_STORY_REVIEW`, `escape:story-skill-bypass`, `escape:set-autonomous`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz`, `escape:ALLOW_DOD_EVIDENCE_WRITE`, `escape:dod_runtime_exempt`, `escape:no-deep-review`, `escape:cambiar-el-estado` |
 | `plan-approval` | `plan-approval` |
 | `browser-test` | `browser-test` |
 | `runtime-waiver` | `runtime-waiver` |

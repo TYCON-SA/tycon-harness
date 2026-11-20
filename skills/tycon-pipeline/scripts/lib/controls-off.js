@@ -52,7 +52,8 @@ function cargarLista() {
     } catch (_) { /* sin lugar: sin lista */ }
   }
   try { if (ruta) return require(ruta); } catch (_) { /* un lector roto cuenta como sin lista */ }
-  return { leer: () => ({ ok: false, error: 'no encontré scripts/lib/env-switches.js', entradas: [] }), entrada: () => null, apagaSegunLista: () => null };
+  // sin la lista no hay período de aviso: lo que tiene fecha de corte se pide como si ya hubiera pasado
+  return { leer: () => ({ ok: false, error: 'no encontré scripts/lib/env-switches.js', entradas: [] }), entrada: () => null, apagaSegunLista: () => null, antesDelCorte: () => false, corteDe: () => null };
 }
 
 /**
