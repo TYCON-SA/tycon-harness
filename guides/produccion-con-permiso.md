@@ -45,7 +45,9 @@ lo aprueba **la persona frente a la Mac**, que tiene que poder autorizar ese cam
    regla se cierra sola al terminar la sesión.
 3. **Mirá el estado** por la puerta, no por `az`: el tamaño y el tope con
    `'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`, y la edición y el nivel con
-   `'select edition, service_objective from sys.database_service_objectives'`.
+   `'select edition, service_objective from sys.database_service_objectives'`. Miden la base a la que entra la
+   puerta: la `base` del servidor en su catálogo; si el catálogo no la declara, la puerta entra a `master` y lo que
+   ves es `master`.
 4. **Mitigá con una sentencia**, que la persona aprueba en el cuadro. Por ejemplo, subir el tope:
    `/opt/tycon/bin/tycon-prod-sql <host> 'alter database [<base>] modify (maxsize = 250 GB)'`. El nivel de servicio
    también se cambia así (`modify (service_objective = '…')`, con la comilla escapada como en el shell).

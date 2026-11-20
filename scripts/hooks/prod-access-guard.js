@@ -705,15 +705,20 @@ function decidir(entrada) {
   const esFirewall = /\baz\s+sql\s+server\s+firewall-rule\b/.test(cmd);
   // Una lectura de Azure (`az sql db list`, `show`, `list-usages`…) sobre un servidor de producción también se frena: el
   // catálogo declara servidores y el freno no distingue qué subcomando de `az` sólo lee. El mensaje dice qué usar en su
-  // lugar, por la puerta, para que «no puedo mirar» no termine en «andá al portal».
-  const esLecturaAz = !esFirewall && /\baz\s+sql\s+(?:\S+\s+)*?(?:list|show|list-usages)\b/.test(cmd);
+  // lugar, por la puerta, para que «no puedo mirar» no termine en «andá al portal». Cuenta como lectura sólo si TODA
+  // operación `az sql …` del comando (las palabras antes de la primera opción) termina en list, show o list-usages: un
+  // `-n list` o un `&& az sql db delete` no la vuelven lectura.
+  const opsAzSql = [...cmd.matchAll(/\baz\s+sql((?:\s+[a-z][a-z-]*)+)/g)].map((m) => m[1].trim().split(/\s+/).pop());
+  const esLecturaAz = !esFirewall && opsAzSql.length > 0 && opsAzSql.every((v) => ['list', 'show', 'list-usages'].includes(v));
   const hostAzure = (h) => (h && h.includes('.') ? h : `${h || '<host>'}.database.windows.net`);
-  const caminoFirewall = (h) => (esFirewall
+  // `declarado`: la puerta sólo atiende hosts declarados como producción; a uno sin declarar no se le sugieren consultas
+  const caminoFirewall = (h, declarado) => (esFirewall
     ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta (con su cuadro, y la regla se cierra sola): /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`]
-    : esLecturaAz
+    : esLecturaAz && declarado
       ? ['Las lecturas de Azure sobre un servidor de producción también se frenan. En su lugar, la puerta (con su cuadro):',
-        `  el tamaño y el tope de la base: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`,
+        `  el tamaño y el tope: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`,
         `  la edición y el nivel: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select edition, service_objective from sys.database_service_objectives'`,
+        '  (miden la base a la que entra la puerta: la «base» del servidor en su catálogo; si el catálogo no la declara, master)',
         `  si la conexión la rechaza el firewall: /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`]
       : []);
   for (const n of nombrados) {
@@ -735,13 +740,13 @@ function decidir(entrada) {
           ? 'Ese host ya se vio como producción antes; el catálogo de ahora dice otra cosa y no alcanza.'
           : 'Toda consulta a producción pasa por la puerta y la aprobás vos, sentencia por sentencia.',
         `Si de verdad ya no es producción: /opt/tycon/bin/tycon-prod-sql --reclassify ${n.host}`,
-        ...caminoFirewall(n.host),
+        ...caminoFirewall(n.host, true),
       ], { cmd, host: n.host, repos: c.repos, causa: 'base-de-produccion' }, 'produccion');
     }
     // desconocido
     frenar(`«${n.host}» no está declarado en ningún proyecto de esta máquina.`, [
       'Lo que no está declarado se trata como producción.',
-      ...caminoFirewall(n.host),
+      ...caminoFirewall(n.host, false),
       `Si es de un ambiente de prueba, declaralo en <repo>/.tycon/production.json:`,
       `  {"servers":[{"host":"${n.host}","environment":"non-production"}]}`,
       indice.catalogos.length

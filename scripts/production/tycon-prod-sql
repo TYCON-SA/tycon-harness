@@ -300,6 +300,7 @@ Emergencia, con producción caída (por ejemplo, la base llegó a su tope y no e
   1. Probá la conexión: /opt/tycon/bin/tycon-prod-sql <host> 'select 1'
   2. Si la rechaza el firewall (40615): /opt/tycon/bin/tycon-prod-sql --open-firewall <host>
   3. Mirá el estado: /opt/tycon/bin/tycon-prod-sql <host> 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'
+     (mide la base a la que entra la puerta: la «base» del servidor en su catálogo; si no la declara, master)
   4. Mitigá con una sentencia, que la persona aprueba en el cuadro, por ejemplo:
      /opt/tycon/bin/tycon-prod-sql <host> 'alter database [<base>] modify (maxsize = 250 GB)'
   5. Contale a la persona qué cambió. La regla del firewall se cierra sola.
@@ -1103,7 +1104,10 @@ printf '%s\n' "$SALIDA" | head -n "$MAX_FILAS"
 printf 'rc=%s\n' "$RC"
 # El rechazo del firewall nombra el paso siguiente: sin esto, el asistente veía el error de Azure («use the Azure
 # Management Portal») y mandaba a la persona al portal, con producción caída.
-if [ "$RC" != 0 ] && printf '%s' "$SALIDA" | grep -qiE '40615|is not allowed to access the server'; then
+# Se reconoce por el texto del rechazo, no por el número suelto: un «40615» en los datos o en otro error no es el
+# firewall. Y sólo en un Azure SQL, que es lo único que `--open-firewall` atiende.
+if [ "$RC" != 0 ] && [[ "$HOST" == *.database.windows.net ]] \
+   && printf '%s' "$SALIDA" | grep -qiE "Client with IP address '[^']*' is not allowed to access the server"; then
   printf '\n🔥 La conexión la rechazó el firewall de Azure: la IP de esta máquina no está habilitada en «%s».\n' "$HOST"
   printf '   Paso siguiente (con cuadro; la regla se cierra sola al terminar la sesión):\n'
   printf '     /opt/tycon/bin/tycon-prod-sql --open-firewall %s\n' "$HOST"

@@ -53,6 +53,8 @@ mundo
 cat > "$RAIZ/opt/tycon/bin/sqlcmd" <<SH
 #!/usr/bin/env bash
 [ -n "\${SQLCMDPASSWORD:-}" ] || { echo "liner: function not supported in this terminal"; exit 1; }
+# el servidor propio (no Azure) contesta con el mismo texto de rechazo: la puerta no tiene que mandarlo al firewall
+case "\$*" in *"$PROPIO"*) echo "Client with IP address '$IP_PUB' is not allowed to access the server."; exit 1 ;; esac
 if [ ! -s "$TMP/az-reglas" ]; then
   echo "Sqlcmd: Error: Microsoft ODBC Driver 18 for SQL Server : Cannot open server '$CORTO' requested by the login. Client with IP address '$IP_PUB' is not allowed to access the server.  To enable access, use the Azure Management Portal or run sp_set_firewall_rule on the master database to create a firewall rule for this IP address or address range.  It may take up to five minutes for this change to take effect."
   exit 1
@@ -61,6 +63,8 @@ q=""; while [ \$# -gt 0 ]; do [ "\$1" = -Q ] && q="\$2"; shift; done
 printf '%s\n' "\$q" >> "$TMP/sentencias.log"
 case "\$q" in
   *sys.database_files*) printf 'name|mb|max_mb\nacme|2048|2048\n' ;;
+  # un 40615 en los datos, y después otro error: no es el firewall
+  *no_existe*) printf 'x\n40615\nMsg 208, Level 16, State 1: Invalid object name no_existe.\n'; exit 1 ;;
   *) : ;;
 esac
 exit 0
@@ -181,6 +185,33 @@ rm -f "$TMP/cuadro-modo"
 if grep -q "^## Emergencia: producción caída" "$GUIA" && grep -q -- "--open-firewall <host>" "$GUIA"; then
   ok "T9 Emergencia_Guia_TieneLaSeccionQueNombranLosMensajes"
 else no "T9 · la guía no tiene «## Emergencia: producción caída»"; fi
+
+# ── T10 · un 40615 en los datos de una consulta que falla por otra cosa no manda al firewall ─────────────────────
+r="$(correr "$RUTA $PROD 'select 40615 as x; select * from no_existe'")"
+if [ "$r" = "puerta:1" ] && ! grep -q -- "--open-firewall" "$TMP/out"; then
+  ok "T10 Emergencia_40615EnLosDatos_NoEsElFirewall"
+else no "T10 · $r · $(tail -c 300 "$TMP/out")"; fi
+
+# ── T11 · un servidor propio (no Azure) rechazado: no se le sugiere --open-firewall, que la puerta no le acepta ───
+r="$(correr "$RUTA $PROPIO 'select 1'")"
+if [ "$r" = "puerta:1" ] && grep -q "is not allowed to access the server" "$TMP/out" && ! grep -q -- "--open-firewall" "$TMP/out"; then
+  ok "T11 Emergencia_ServidorNoAzure_NoSugiereElFirewall"
+else no "T11 · $r · $(tail -c 300 "$TMP/out")"; fi
+
+# ── T12 · un cambio de az que nombra «list» como valor, o que encadena un borrado, no se presenta como lectura ────
+rc1="$(freno "az sql db create -n list -s $CORTO -g rg-acme")"; e1="$(cat "$TMP/freno.err")"
+rc2="$(freno "az sql db list -s $CORTO -g rg-acme && az sql db delete -n acme -s $CORTO -g rg-acme --yes")"; e2="$(cat "$TMP/freno.err")"
+if [ "$rc1" = 2 ] && [ "$rc2" = 2 ] && ! printf '%s\n%s' "$e1" "$e2" | grep "Las lecturas de Azure" >/dev/null; then
+  ok "T12 Emergencia_CambioConPalabraList_NoEsLectura"
+else no "T12 · rc1=$rc1 rc2=$rc2"; fi
+
+# ── T13 · un host sin declarar: no se le sugieren consultas que la puerta rechazaría; y la sugerencia dice qué mide ─
+rc="$(freno "az sql db list -s otro-sin-declarar -g rg-x")"
+if [ "$rc" = 2 ] && ! grep -q "sys.database_files" "$TMP/freno.err"; then
+  rc="$(freno "az sql db list -s $CORTO -g rg-acme")"
+  if [ "$rc" = 2 ] && grep -q "master" "$TMP/freno.err"; then ok "T13 Emergencia_HostSinDeclarar_SinConsultasYLaSugerenciaDiceQueMide"
+  else no "T13 · la sugerencia no dice que sin «base» mide master"; fi
+else no "T13 · rc=$rc · $(head -c 400 "$TMP/freno.err")"; fi
 
 echo "— prod-emergency: $pasaron ok, $fallos fallos —"
 [ "$fallos" = 0 ]
