@@ -438,7 +438,16 @@ function stalledOf(s, f, now) {
   const since = Number.isFinite(pSince) ? pSince : (Number.isFinite(s.statusAt) ? s.statusAt : now);
   // el gancho ya lo anota tapado; se tapa otra vez por los archivos escritos antes de que una forma existiera
   const detail = p && p.detail ? oneLine(require(path.join(__dirname, '..', 'hooks', 'wait-notice.js')).redact(p.detail)).slice(0, 200) : null;
-  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude' };
+  // qué forma del comando lo hizo pedir (lib/bg-permission-shapes.js), si se puede leer del comando anotado
+  let forma = null;
+  if (p && /^Bash$/.test(String(p.tool))) {
+    try {
+      const B = require(path.join(__dirname, '..', 'lib', 'bg-permission-shapes.js'));
+      const f = typeof p.forma === 'string' && B.FORMAS[p.forma] ? { que: B.FORMAS[p.forma] } : (detail ? B.formaQuePidePermiso(detail) : null);
+      forma = f ? f.que : null;
+    } catch (_) { forma = null; }
+  }
+  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', ...(forma ? { forma } : {}) };
 }
 
 // La espera que el archivo de estado anota cuando una sesión abre un cuadro o pide aprobar su plan (hooks/session-state.js).
@@ -471,7 +480,7 @@ function retiredOf(home, now, sessions) {
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
 const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
-const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}. Para entrar: claude attach ${x.session}`;
+const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''} Para entrar: claude attach ${x.session}`;
 const retiredLine = (x) => `${x.session}: la cerró Claude Code a las ${hhmm(x.at)} por ${x.reason}, quieta ${x.idleMin} min. Para levantarla: claude respawn ${x.short}`;
 
 /** El estado de la máquina, como datos. `noTranscripts`: sin abrir las conversaciones (el aviso de cada turno). */

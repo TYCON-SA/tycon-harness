@@ -550,6 +550,8 @@ function parsePipelinesBlock(specContent) {
       const campo = parteM[2];
       if (!v) { current[campo] = []; lista = { campo, indent: parteM[1].length }; } else {
         current[campo] = v.startsWith('[') ? enLinea(v) : (campo === 'files' ? [limpio(v)] : limpio(v));
+        // una lista que abre `[` y no cierra en el renglón se leería a medias: queda dicho, y la parte no vale
+        if (v.startsWith('[') && !v.endsWith(']')) (current.problemas = current.problemas || []).push(`${campo}: la lista abre «[» y no cierra en el mismo renglón`);
         lista = null;
       }
       continue;

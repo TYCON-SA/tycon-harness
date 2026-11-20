@@ -345,7 +345,6 @@ test('MK3 Clear_Notice_OncePerRun_NoChannelNoFail @story-8.293 @ac-8', async (t)
 
 const aislado = (j) => ({ home: j.base, env: {} });
 const hasta = (id) => TODOS.slice(0, TODOS.indexOf(id) + 1);
-const motivoDe = (l) => l.text.split(' — ').slice(1).join(' — ');
 const escribirGates = (j, filas) => fs.writeFileSync(path.join(j.stateDir, 'gates.log'), filas.map((g) => `${typeof g === 'string' ? g : JSON.stringify(g)}\n`).join(''));
 
 test('RG1 AdversarialSkip_RealMarker_SaysSkipped @story-8.293 @ac-1', () => {

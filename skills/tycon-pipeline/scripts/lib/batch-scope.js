@@ -115,6 +115,7 @@ function validarParte(texto, nombre) {
   if (!t) return { existe: false, valid: false, reason: `la parte «${nombre}» no está en la historia`, nombre };
   const done = String(t.status || '').toLowerCase() === 'done';
   const base = { existe: true, done, nombre, sensible: t.sensible || null };
+  if (Array.isArray(t.problemas) && t.problemas.length) return { ...base, valid: false, files: [], reason: `la parte ${nombre} no se puede leer entera (${t.problemas.join('; ')})` };
   const declarada = Array.isArray(t.files) ? t.files.map(normRuta).filter(Boolean) : [];
   // sin `files:`, la lista sale de lo que la historia le ata a la tanda (más lo que no ata a ninguna)
   let derivada = null;

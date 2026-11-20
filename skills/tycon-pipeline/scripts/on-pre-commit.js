@@ -235,9 +235,17 @@ function leerStagedDiff(cwd) {
       windowsHide: true,
       cwd,
       encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'ignore'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
-  } catch {
+  } catch (e) {
+    // fuera de un repo no hay nada que juzgar; un git que falla dentro de uno (un índice roto, un permiso) no es «nada
+    // preparado»: los frenos de este gancho no ven el commit, y se dice
+    const motivo = String((e && (e.stderr || e.message)) || e).trim();
+    let enUnRepo = false;
+    try { execFileSync('git', ['rev-parse', '--git-dir'], { windowsHide: true, cwd, stdio: 'ignore' }); enUnRepo = true; } catch (_) { enUnRepo = false; }
+    if (enUnRepo) {
+      process.stderr.write(`⚠ freno de cierre: no pude leer lo preparado para el commit (git diff --cached: ${motivo.split('\n')[0].slice(0, 200)}); los controles de este commit NO lo miraron\n`);
+    }
     return { valor: '', recordar: false };
   }
   const archivos = diff.split('\n').filter(Boolean);

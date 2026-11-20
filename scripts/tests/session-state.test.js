@@ -682,11 +682,14 @@ test('T77 AdoptAndSet_UpdateSessionFiles @story-2.81 @ac-20 — adoptar una corr
   assert.strictEqual(stateOf(w, 's-vieja').step, null, 'la vieja ya no tiene la corrida');
   assert.strictEqual(stateOf(w, 's-vieja').sentence, lib().NO_PIPELINE);
   assert.strictEqual(stateOf(w, 's-nueva').step, STEPS.byId('implement').name, 'la nueva toma el paso');
-  // set con otros pasos pendientes: el archivo dice el paso nuevo
-  const m = JSON.parse(fs.readFileSync(path.join(w.sdir, 'active', 's-nueva.json'), 'utf8'));
+  // la corrida avanzó (los pasos los cierra complete-step; set no marca hechos los que no lo estaban) y set rehace el
+  // marcador: el archivo dice el paso nuevo
+  const activo = path.join(w.sdir, 'active', 's-nueva.json');
   const ids = STEPS.STEPS.filter((s) => !s.flag).map((s) => s.id);
   const done = ids.slice(0, ids.indexOf('reviewers'));
-  const s = marker(w, 's-nueva', ['set', JSON.stringify({ ...m, stepsCompleted: done, stepsPending: ids.filter((x) => !done.includes(x)) })]);
+  const m = { ...JSON.parse(fs.readFileSync(activo, 'utf8')), stepsCompleted: done, stepsPending: ids.filter((x) => !done.includes(x)) };
+  fs.writeFileSync(activo, JSON.stringify(m, null, 2));
+  const s = marker(w, 's-nueva', ['set', JSON.stringify(m)]);
   assert.strictEqual(s.status, 0, s.stderr);
   assert.strictEqual(stateOf(w, 's-nueva').step, STEPS.byId('reviewers').name);
 });

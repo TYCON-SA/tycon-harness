@@ -240,14 +240,24 @@ function anotarRutaDelCarril(stateDir, sessionId, filePath) {
 }
 
 /** Markers activos (no stale) de OTRAS sesiones cuyo repoPath contiene el archivo. */
-function listOtherMarkers(stateDir, sessionId, filePath) {
+function listOtherMarkers(stateDir, sessionId, filePath, problems) {
   const dir = path.join(stateDir, 'active');
+  // `problems` (opcional): lo que no se pudo leer, que no es «no hay otra ejecución»
+  const report = (t) => { if (Array.isArray(problems)) problems.push(t); };
   let files = [];
-  try { files = fs.readdirSync(dir); } catch { return []; }
+  try { files = fs.readdirSync(dir); } catch (e) {
+    if (e.code !== 'ENOENT') report(`la carpeta de los marcadores (${e.code || e.message})`);
+    return [];
+  }
   const out = [];
   for (const f of files) {
     if (!f.endsWith('.json') || f === `${safeSid(sessionId)}.json`) continue;
-    const m = readJson(path.join(dir, f));
+    let m;
+    try { m = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (e) {
+      // se borró entre la lista y la lectura: no estaba
+      if (e.code !== 'ENOENT') report(`el marcador ${f} (${e.code || 'no es JSON'})`);
+      continue;
+    }
     if (!m || !m.storyId || (isStale(m) && !waitingTurn(stateDir, m.sessionId || f.replace(/\.json$/, '')))) continue;
     if (Array.isArray(m.stepsPending) && m.stepsPending.length === 0) continue; // pipeline terminado
     if (m.repoPath && filePath && !isInside(m.repoPath, filePath)) continue;
@@ -572,7 +582,8 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     return { verdict, message: null, ctx };
   }
 
-  const otherMarkers = verdict.kind === 'no-lane' ? listOtherMarkers(stateDir, sessionId, abs) : [];
+  const noLeidos = [];
+  const otherMarkers = verdict.kind === 'no-lane' ? listOtherMarkers(stateDir, sessionId, abs, noLeidos) : [];
   // repoPath: namespace por repo — misma key que marker.js.
   appendLog(stateDir, 'gates.log', sessionId, {
     repoPath: repo.repoRoot || null,
@@ -584,6 +595,9 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     harness: ['adhoc-high-risk', 'adhoc-cap', 'adhoc-out-of-list'].includes(verdict.kind) ? isHarnessRepo(abs) : true,
     // el mensaje sin carril nombra el tope de la organización: se lee sólo cuando frena por eso
     ...(verdict.kind === 'no-lane' ? { topes: topesDelCaminoCorto({ stateDir, sessionId }) } : {}) });
+  if (noLeidos.length) {
+    message += `\n\n  ⚠️ No pude leer ${noLeidos.join(' · ')}: puede haber otra ejecución en este repo que no veo para retomar.`;
+  }
   if (adhocSinFirma && verdict.kind === 'no-lane') {
     message += `\n\n  ⚠️ Hay una declaración del arreglo rápido para esta sesión, pero sin su firma: ${adhocSinFirma}. No abre el\n`
       + '     portón. Si la persona quiere el arreglo rápido, se vuelve a declarar con `marker.js adhoc set`, que ella aprueba en la ventana.';

@@ -821,6 +821,21 @@ Ejemplo:
 4. **File List exhaustiva**: si olvidás un archivo, el reviewer no puede verificar que la implementacion esta completa
 5. **Completion Notes accionables**: no "se implemento la story" sino QUE se implemento y COMO
 
+### 10b. Ajustes después de la firma (opcional)
+
+Los ajustes de redacción que aparecen mientras se revisa el plan (un ejemplo, una palabra, los hallazgos de la vuelta
+anterior) no se escriben en el cuerpo hasta firmar el plan: la revisión del plan se ata a lo que define la construcción,
+y esta sección no cuenta. Cada ajuste, un renglón; se marca `- [x]` cuando ya está en el cuerpo. Los revisores del
+código y el pase adversarial la leen como parte de lo pedido, y una historia en `done` con un ajuste sin marcar no se
+commitea.
+
+```markdown
+## Ajustes después de la firma
+
+- [ ] AC 2: el ejemplo dice «tres días», va «cinco días hábiles».
+- [x] Dev Notes: «borrar» por «archivar» (ya en el cuerpo).
+```
+
 ### 11. Follow-ups y cambios post-firma (opcional, derivado de `followed_up_by:`)
 
 Para stories `done` o `review` que tuvieron follow-ups posteriores (recalibraciones, fixes, scope changes — declarados en `followed_up_by:` del frontmatter), agregar al final del cuerpo un bloque humano-amigable que resuma qué entrega *hoy* la story respecto a lo originalmente firmado.

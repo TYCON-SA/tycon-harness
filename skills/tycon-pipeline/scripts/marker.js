@@ -408,8 +408,10 @@ function appendLog(fileName, obj, { estricto = false } = {}) {
     if (PREVIO) { LOGS_DEL_CHEQUEO.push([path.join(STATE_DIR, fileName), linea]); return; }
     fs.appendFileSync(path.join(STATE_DIR, fileName), linea, 'utf8');
   } catch (e) {
-    // logging nunca rompe el comando, salvo la constancia de lo que se acepta
+    // logging nunca rompe el comando, salvo la constancia de lo que se acepta; pero se dice: un renglón perdido sin
+    // aviso es un control que no ve lo que pasó
     if (estricto) throw e;
+    try { process.stderr.write(`⚠ marker.js: no pude escribir el renglón en ${fileName} (${(e && (e.code || e.message)) || e}): queda sin registrar.\n`); } catch (_e) { /* sin salida */ }
   }
 }
 
@@ -731,6 +733,19 @@ function cmdSet(payloadJson) {
     // ni cerrar los que seguían pendientes: un paso se cierra con `complete-step`, no borrándolo de la lista
     const nuevos = new Set(payload.stepsPending.map(String));
     for (const p of existing.stepsPending || []) if (!nuevos.has(String(p))) payload.stepsPending.push(p);
+  }
+  // Ni marcar hechos los que no lo estaban: un paso se cierra con `complete-step`, que corre sus frenos. Un `set` de la
+  // misma historia con «Preparar el commit» en `stepsCompleted` se saltearía el de código sin revisar.
+  // Listas sin esquema legible (números y nombres mezclados) no se tocan: las rechaza entera la validación de más abajo.
+  const esquemaDelPedido = () => STEPS_LIB.schemeOf({ stepScheme: payload.stepScheme !== undefined ? payload.stepScheme : existing.stepScheme,
+    stepsCompleted: payload.stepsCompleted, stepsPending: Array.isArray(payload.stepsPending) ? payload.stepsPending : (existing.stepsPending || []) });
+  if (existing && payload.storyId === existing.storyId && Array.isArray(payload.stepsCompleted) && esquemaDelPedido() !== null) {
+    const nuevos = payload.stepsCompleted.filter((x) => !(existing.stepsCompleted || []).map(String).includes(String(x)) && !STEPS_LIB.isDone(existing, String(x)));
+    if (nuevos.length) {
+      payload.stepsCompleted = payload.stepsCompleted.filter((x) => !nuevos.includes(x));
+      console.error(`marker.js set: ${nuevos.join(', ')} no se marca(n) hecho(s) con set (se cierra con marker.js complete-step <paso>): se descartó.`);
+      appendLog('bypass.log', { kind: 'MARKER_SET_STEPS_DISCARDED', steps: nuevos.map(String), storyId: payload.storyId });
+    }
   }
   // Los controles, el pase y el modo autónomo de la misma historia tienen sus comandos (`run-check`,
   // `mark-adversarial-*`, `set-autonomous`, que el freno de seguridad mira): un `set` no los pisa.
@@ -1411,7 +1426,7 @@ const ORDER_REQUIRES_OLD = { 3: ['1', '2'], 4: ['3'], 5: ['4'], 8: ['5'] };
 // `opciones`: lo que el guion comprueba con el pedido sin gastar (`antes`) y los campos más del renglón (`extra`).
 function firmaDelDueno(firma, resumen, opciones = {}) {
   const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-  const r = ow.exigir({ firma, argv: process.argv.slice(1), resumen, propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), ...opciones });
+  const r = ow.exigir({ firma, argv: process.argv.slice(1), resumen, propia: PROPIA, anotar: anotarFirma, ...opciones });
   if (r.codigo !== 0) {
     console.error(`🔒 marker.js: ${r.motivo}`);
     process.exit(r.codigo);
@@ -1454,11 +1469,19 @@ function quienFirmo(firma, persona) {
   return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).quienFirmo(firma, persona);
 }
 
+// El renglón `<firma>-signed` en gates.log: estricto. Sin él, el ok de guardar por delegación no ve la exención firmada
+// y la historia saldría limpia; si no se puede escribir, el comando falla a la vista y la firma no cuenta.
+function anotarFirma(renglon) {
+  try { appendLog('gates.log', renglon, { estricto: true }); } catch (e) {
+    throw new Error(`no pude escribir el renglón de la firma ${renglon && renglon.name} en gates.log (${(e && (e.code || e.message)) || e}): la firma no quedó registrada; repetí el comando`);
+  }
+}
+
 // El renglón `<firma>-signed` de una firma que el guion ya confirmó en la terminal con su propia pregunta.
 function firmadoEnLaTerminal(firma, resumen) {
   const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
   const sesion = PROPIA !== '_nosession' ? PROPIA : SID || null;
-  ow.firmar({ firma, via: 'terminal', sesion, destino: SID || null, resumen, anotar: (renglon) => appendLog('gates.log', renglon) });
+  ow.firmar({ firma, via: 'terminal', sesion, destino: SID || null, resumen, anotar: anotarFirma });
   return trabajarSobreElDestino(ow, { via: 'terminal', sesion, destino: SID || null });
 }
 
@@ -1986,7 +2009,7 @@ function cmdCompleteStep(nRaw, flags) {
     // sin click, la firma es de la revisión de la propia sesión: su renglón -signed y el del registro común (via: review)
     const porLaPropia = () => {
       const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-      ow.firmar({ firma: 'plan-approval', via: 'revision', sesion: SID, destino: SID, anotar: (renglon) => appendLog('gates.log', renglon),
+      ow.firmar({ firma: 'plan-approval', via: 'revision', sesion: SID, destino: SID, anotar: anotarFirma,
         resumen: `plan de ${marker.storyId}: revisión ${autoRevision.id} ${autoRevision.veredicto} (${autoRevision.modelo}), lanzada por la propia sesión` });
       return { via: 'revision', constancia: { via: 'revision' } };
     };
@@ -2323,6 +2346,7 @@ function cmdCompleteStep(nRaw, flags) {
       }
       if (cruce.sinRegistro) console.error(`ℹ️  complete-step ${n}: ${rcLib.NO_REGISTRY_NOTE}.`);
       if (cruce.unreadable) console.error(`⚠️  complete-step ${n}: el registro de críticos reportados tiene ${cruce.unreadable} renglón(es) ilegible(s): no cuentan.`);
+      if (cruce.unreadableSpawns) console.error(`⚠️  complete-step ${n}: el registro de lanzamientos de revisores tiene ${cruce.unreadableSpawns} renglón(es) ilegible(s): esas salidas no se cruzaron.`);
       appendLog('gates.log', { name: 'reported-criticals', status: cruce.sinRegistro ? 'no-registry' : 'ok', story: marker.storyId, step: n });
     } else {
       // sin carpeta de la corrida o sin findings.json no hay con qué cruzar: se dice, no se calla
@@ -7018,6 +7042,30 @@ function cmdSignAdversarialSkip(argv) {
 // repo; la firma va por la ventana de permiso, la terminal del dueño o la delegación del perfil: la coordinadora, desde
 // su pestaña, con --for-session <la sesión que lo abrió> y sólo sobre un repo de esa sesión (delegated-signing.js).
 // Recién con la firma se escribe la línea del registro.
+// `declare-pending --id <CÓDIGO> [--repo <carpeta>]`: la sesión que abrió un pendiente en una copia que armó ella (modo
+// ágil, sin ejecución ni arreglo rápido) lo declara suyo, para que la coordinadora lo apruebe por delegación con
+// --for-session (delegated-signing.js motivoDelRepo). No aprueba nada: anota la sesión, el código y la carpeta real.
+// La sesión es la del proceso: el freno niega este comando con una variable de sesión escrita en él.
+function cmdDeclarePending(argv) {
+  const PA = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'pending-approvals.js'));
+  const DS = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js'));
+  const { val, tiene } = opcionesDe(argv);
+  const id = (val('--id') || '').trim();
+  if (!id) { console.error('uso: marker.js declare-pending --id <código del pendiente> [--repo <carpeta>]'); process.exit(2); }
+  if (tiene('--for-session')) { console.error('🚫 marker.js declare-pending: un pendiente lo declara la sesión que lo abrió, no otra por ella.'); process.exit(1); }
+  if (PROPIA === '_nosession') { console.error('🚫 marker.js declare-pending: no sé de qué sesión es el pedido: se declara desde la sesión que abrió el pendiente.'); process.exit(1); }
+  const r = DS.raizDelRepo(path.resolve(val('--repo') || process.cwd()));
+  if (!r) { console.error(`marker.js declare-pending: ${val('--repo') || process.cwd()} no es un repo de git.`); process.exit(2); }
+  let todo;
+  try { todo = fs.readFileSync(path.join(r.ruta, PA.TODO), 'utf8'); } catch (e) { console.error(`marker.js declare-pending: no pude leer ${PA.TODO} de ${r.ruta} (${e.code || e.message}).`); process.exit(2); }
+  if (!PA.pendientesAbiertos(todo).some((p) => p.codigo === id)) { console.error(`marker.js declare-pending: ${id} no es un pendiente abierto (\`- [ ] [${id}] …\`) en ${path.join(r.ruta, PA.TODO)}.`); process.exit(1); }
+  try { appendLog('gates.log', { name: DS.DECLARADO, status: 'ok', sesion: PROPIA, id, repo: r.clave, ruta: r.ruta }, { estricto: true }); } catch (e) {
+    console.error(`marker.js declare-pending: no pude anotarlo en el registro de firmas (${e.code || e.message}).`); process.exit(2);
+  }
+  console.error(`✅ ${id} declarado por esta sesión en ${r.ruta}. La coordinadora lo aprueba con \`marker.js approve-pending --id ${id} --repo ${r.ruta} --for-session ${PROPIA}\`.`);
+  process.exit(0);
+}
+
 function cmdApprovePending(argv) {
   const PA = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'pending-approvals.js'));
   const { val, tiene } = opcionesDe(argv);
@@ -7051,7 +7099,7 @@ function cmdApprovePending(argv) {
   // sin persona, los mismos controles que la delegación, comprobados acá y no sólo en el freno: la sesión que pide no es
   // la que abrió el pendiente, es la coordinadora confirmada, y el repo es de la sesión destino
   const DS = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'delegated-signing.js'));
-  const antes = (via, reg) => DS.antesDelPendiente({ via, registro: reg, propia: PROPIA === '_nosession' ? null : PROPIA, pedida: PEDIDA, estado: STATE_DIR, cwd: process.cwd(), repo });
+  const antes = (via, reg) => DS.antesDelPendiente({ via, registro: reg, propia: PROPIA === '_nosession' ? null : PROPIA, pedida: PEDIDA, estado: STATE_DIR, cwd: process.cwd(), repo, pendiente: id });
   const r = ow.exigir({ firma: PA.FIRMA, argv: process.argv.slice(1), resumen: `huella ${linea.huella} · ${id} · ${pendiente.linea.slice(0, 140)}`, casa: casaDeLaCuenta(), propia: undefined, antes });
   if (r.codigo !== 0) { console.error(`🔒 marker.js approve-pending: no se aprobó ${id} — ${r.motivo}`); process.exit(r.codigo); }
   const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
@@ -7787,7 +7835,7 @@ function cmdAdhocAllowDataChange(io) {
   const { enUnRenglon } = require('./lib/adhoc-screen.js');
   const r = ow.exigir({ firma: 'adhoc-lane:datos', argv: process.argv.slice(1),
     resumen: enUnRenglon(`dejar pasar el freno de los datos de la sesión ${SID}${h ? `: ${ss.descripcion(h)}` : ''} · qué cambió: «${v.changed}» · la sesión recomienda pasar, porque «${v.why}»`),
-    propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
+    propia: PROPIA, anotar: anotarFirma });
   if (r.codigo !== 0) {
     console.error(`🔒 marker.js adhoc allow-data-change: una persona no lo dejó pasar — ${r.motivo}`);
     console.error('   Lo deja pasar sólo el click de una persona, en esta pestaña o en la de la coordinadora: pedíselo a ella con la pregunta que te da el freno, o en su terminal:');
@@ -7833,7 +7881,7 @@ function cmdAdhocAllowForeignSave(io) {
   const { enUnRenglon } = require('./lib/adhoc-screen.js');
   const r = ow.exigir({ firma: 'adhoc-lane:guardado-ajeno', argv: process.argv.slice(1),
     resumen: enUnRenglon(`dejar pasar una vez el guardado ajeno de la sesión ${SID}: ${p.comando} en ${p.repo} (rama ${p.rama})`),
-    propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
+    propia: PROPIA, anotar: anotarFirma });
   if (r.codigo !== 0) {
     console.error(`🔒 marker.js adhoc allow-foreign-save: una persona no lo dejó pasar — ${r.motivo}`);
     console.error('   Lo deja pasar sólo el click de una persona, en esta pestaña o en la de la coordinadora, o en su terminal:');
@@ -8206,7 +8254,7 @@ function cmdAdhoc(sub, payloadJson) {
     const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo, { cwd: carpetaDeLaLista });
     const enLaLista = `${allowedFiles.length} archivo${allowedFiles.length === 1 ? '' : 's'} (${relLista.slice(0, 2).join(', ')}${relLista.length > 2 ? ', …' : ''})`;
     const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`${conRiesgo}arreglo rápido de la sesión ${destino}${enRepos}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
-      propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), antes });
+      propia: PROPIA, anotar: anotarFirma, antes });
     if (r.codigo !== 0) {
       // la forma con JSON sólo si hace falta: la maqueta no entra en la otra, y hay motivos que no se pueden citar en ella
       const screen = require('./lib/adhoc-screen.js');
@@ -8551,6 +8599,9 @@ switch (cmd) {
     break;
   case 'sign-adversarial-skip':
     cmdSignAdversarialSkip(process.argv.slice(3));
+    break;
+  case 'declare-pending':
+    cmdDeclarePending(process.argv.slice(3));
     break;
   case 'approve-pending':
     cmdApprovePending(process.argv.slice(3));
