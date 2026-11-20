@@ -4,7 +4,9 @@ Pull requests are welcome. This repository is where the harness is written, not 
 
 ## In English, in short
 
-- **Where**: a pull request to `main` of this repository.
+- **Where**: a pull request to `main` of this repository. The harness used to live in one private repository, with the
+  core and each team's own material together. When it was opened, it was split: the core lives here, and each team
+  keeps its own material in its own private repository.
 - **Green CI**: the `public-ci` check and CodeQL code scanning must both pass. Run the CI locally with
   `bash scripts/ci/public-ci.sh` (it is long: the portable suites alone take about an hour), or only the suites near
   your change (see «Antes de abrir un pull request» below).
@@ -19,8 +21,9 @@ Pull requests are welcome. This repository is where the harness is written, not 
 
 ## Los pull requests son bienvenidos
 
-Este repo es donde se escribe el arnés: no es una copia exportada de otro lado. Un cambio va como pull request a `main`
-de este repo. Cualquiera puede mandar uno con código. Corre la validación del repo, y TYCON lo revisa y decide:
+Este repo es donde se escribe el arnés: no es una copia exportada de otro lado. Antes era un solo repo privado, con el
+núcleo y lo de cada equipo juntos. Al abrirlo se dividió: el núcleo quedó acá, y lo de cada equipo, en su propio repo
+privado. Por eso un cambio al núcleo va como pull request a `main` de este repo. Cualquiera puede mandar uno con código. Corre la validación del repo, y TYCON lo revisa y decide:
 
 - **Si se acepta**, se mergea acá, con tus commits: el crédito queda en la historia del repo.
 - **Si no se acepta**, se cierra con su motivo.
