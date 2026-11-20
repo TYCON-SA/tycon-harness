@@ -71,6 +71,10 @@ if [ "\$(cat "$TMP/cuadro-modo" 2>/dev/null)" = rechaza ]; then echo "button ret
 SH
 chmod +x "$RAIZ/usr/bin/osascript"
 SES=$SES_A; viva $SES_A
+# la foto del shell de la sesión, limpia: sin ella el freno le pregunta al shell de login, que en la CI no sabe contestar
+mkdir -p "$CASA/.claude/shell-snapshots"
+printf '# Snapshot file\n\n# Functions\n# Shell Options\n# Aliases\n# Check for rg availability\nrg () { : }\nexport PATH=/usr/bin\n' \
+  > "$CASA/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh"   # con SESSION_SINCE=0 vale cualquier hora
 
 freno(){
   local payload; payload="$(CMD="$1" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:"/tmp",tool_input:{command:process.env.CMD}}))')"
