@@ -3152,6 +3152,44 @@ withWaiverLog(() => {
     check('Matriz_PortonViejoSinTitulos_NoLeGanaAlNuevo — con un portón que anotó títulos, el que no anotó no da crédito',
       h.perAc[1].verdict === 'RUNTIME' && h.perAc[3].verdict !== 'RUNTIME', JSON.stringify(h.perAc[3]));
   }
+  // Gradual: la regla del @ac exacto frena en las historias que nacen desde su corte. Una que ya estaba en su repo antes
+  // (su primer commit) sigue como antes, con un aviso que lista las pruebas que pasaron sin el @ac del criterio.
+  {
+    const g = makeWorkspace({ noGit: true });
+    const { execFileSync } = require('child_process');
+    const env = { ...require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre(),
+      GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.invalid', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.invalid',
+      GIT_AUTHOR_DATE: '2026-01-05T10:00:00Z', GIT_COMMITTER_DATE: '2026-01-05T10:00:00Z' };
+    for (const args of [['init', '-q'], ['add', '-A'], ['commit', '-qm', 'historia']]) execFileSync('git', args, { cwd: g.repo, env });
+    writeGate(g.dodDir, '9.9', recentCompact(5), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, ['flujo @story-9.9 @ac-1', 'el detalle abre']);
+    const h = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado') });
+    check('Matriz_HistoriaVieja_SigueComoAntesYAvisa — antes del corte, E1 cubre el 3 y el aviso nombra las pruebas sin @ac-3',
+      h.perAc[3].verdict === 'RUNTIME' && h.warnings.some((w) => /AC 3/.test(w) && /@ac-3/.test(w) && /el detalle abre/.test(w)),
+      JSON.stringify([h.perAc[3].verdict, h.warnings]));
+  }
+  // una historia nueva copiada de una vieja, o con el nombre de una borrada, no hereda la fecha de aquella
+  {
+    const g = makeWorkspace({ noGit: true });
+    const { execFileSync } = require('child_process');
+    const base = { ...require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre(),
+      GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.invalid', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.invalid' };
+    const en = (fecha) => ({ ...base, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha });
+    const git = (args, fecha) => execFileSync('git', args, { cwd: g.repo, env: en(fecha) });
+    const vieja = fs.readFileSync(g.storyPath, 'utf8');
+    git(['init', '-q'], '2026-01-05T10:00:00Z'); git(['add', '-A'], '2026-01-05T10:00:00Z'); git(['commit', '-qm', 'vieja'], '2026-01-05T10:00:00Z');
+    const copia = path.join(path.dirname(g.storyPath), '9-9-copia.md');
+    fs.renameSync(g.storyPath, copia);
+    git(['add', '-A'], '2026-12-01T10:00:00Z'); git(['commit', '-qm', 'nueva copiada'], '2026-12-01T10:00:00Z');
+    writeGate(g.dodDir, '9.9', recentCompact(5), 'PASS', 'story-9-9.spec.ts', g.gatesLog, true, ['flujo @story-9.9 @ac-1', 'el detalle abre']);
+    const h = rm.compute({ storyPath: copia, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado') });
+    check('Matriz_HistoriaCopiadaDeUnaVieja_EsNueva — la copia commiteada después del corte aplica el @ac exacto',
+      h.perAc[3].verdict !== 'RUNTIME', JSON.stringify(h.perAc[3].verdict));
+    // el nombre de la vieja, reusado sin commitear: es nueva
+    fs.writeFileSync(g.storyPath, vieja);
+    const k = rm.compute({ storyPath: g.storyPath, gatesLogPath: g.gatesLog, stateDir: path.join(g.ws, 'estado2') });
+    check('Matriz_NombreDeUnaBorrada_SinCommit_EsNueva — reusar la ruta de una historia borrada no trae su fecha',
+      k.perAc[3].verdict !== 'RUNTIME', JSON.stringify(k.perAc[3].verdict));
+  }
   const sinTitulos = r(null);
   check('Matriz_PortonSinTitulos_SigueComoAntes — un portón sin la lista de lo que pasó cuenta para la fila, y lo avisa',
     sinTitulos.perAc[3].verdict === 'RUNTIME' && sinTitulos.warnings.some((w) => /Tests corridos/.test(w) && /AC 3/.test(w)),
