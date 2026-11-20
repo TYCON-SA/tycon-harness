@@ -1,4 +1,6 @@
 'use strict';
+// sin el perfil del equipo: la prueba fija su ambiente (lib/without-team-profile.js)
+require('./lib/without-team-profile.js');
 // office-site-link.test.js — what each machine sends to the organization site: its key, its enrollment request and the
 // same snapshot its local office shows. The toy site is a real server inside the test, with the copied WebSocket library;
 // every test runs with a toy HOME and kills the processes it starts.
