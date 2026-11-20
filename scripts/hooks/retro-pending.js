@@ -22,6 +22,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
 //           sus merges y los ajenos del mismo repo donde trabaja, si el latido los puede pagar desde ahí
 //           (la carpeta sigue siendo un repo y conoce el commit). Un ajeno de un repo del workspace, o uno
 //           que ningún latido paga, se le muestra a la persona una vez, con su comando, y no corta.
+//           Límite: el alcance sigue siendo el repo o workspace del cwd por ruta, así que un ajeno anotado en
+//           una copia hermana del mismo repo (otro worktree) ni corta ni se avisa, como antes.
 //   notice (SessionStart): lista los merges anotados que NINGUNA retrospectiva cubrió todavía,
 //           con el comando para lanzarla — pero SOLO los del repo/workspace de la sesión (el cwd).
 //           Los pendientes de OTROS proyectos se resumen en una línea informativa SIN instrucción
@@ -1525,9 +1527,10 @@ function trabajaEnElRepo(e, cwd) {
 const deQuien = (e, sid) => (e.sessionId === sid ? 'de esta sesión' : `de la sesión ${String(e.sessionId || '?').slice(0, 8)}`);
 // Lo que no corta se le muestra a la persona, una vez por lista: el mismo aviso en cada cierre de turno se deja de leer.
 function avisarSinCortar(avisos, sid, safe) {
-  if (!avisos.length) return;
-  const clave = avisos.map((e) => `${identidadDeRepo(e)}@${e.sha}`).sort().join('\n');
   const marca = path.join(STATE_DIR, `retro-aviso-${safe}.txt`);
+  // sin nada que avisar se olvida el último aviso: si la misma lista vuelve, se avisa otra vez
+  if (!avisos.length) { try { fs.unlinkSync(marca); } catch { /* no había */ } return; }
+  const clave = avisos.map((e) => `${identidadDeRepo(e)}@${e.sha}`).sort().join('\n');
   try { if (fs.readFileSync(marca, 'utf8') === clave) return; } catch { /* sin aviso anterior */ }
   const lineas = avisos.map((e) => `  - ${carpetaVigente(e)} @ ${e.sha} (${deQuien(e, sid)}) → ${pagable(e) ? launchHint(e) : `ningún latido lo paga desde una copia: ${comandoDeCorregir(e)}`}`);
   process.stdout.write(JSON.stringify({

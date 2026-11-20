@@ -305,6 +305,11 @@ test('sin copia y sin carpeta principal, el cierre avisa sin cortar', () => {
   assert.ok(salida.systemMessage.includes(borrada) && /ningún latido lo paga/.test(salida.systemMessage), salida.systemMessage);
   // el mismo aviso no se repite en el cierre siguiente
   assert.strictEqual(lab.cierre(tmp()).stdout, '');
+  // con la lista vacía se olvida: si la misma entrada vuelve, se avisa otra vez
+  fs.writeFileSync(lab.ledger, '');
+  assert.strictEqual(lab.cierre(tmp()).stdout, '');
+  lab.sembrar({ repoPath: borrada });
+  assert.match(JSON.parse(lab.cierre(tmp()).stdout).systemMessage, /ningún latido lo paga/);
 });
 
 test('con la copia y la carpeta principal borradas, el cierre avisa sin cortar', () => {
