@@ -203,3 +203,52 @@ test('AutomaticSigning_RegistroComun_AceptaLaViaYCuentaSinPersona', (t) => {
   assert.strictEqual(l.via, 'automatic');
   assert.strictEqual(l.delegated, true);
 });
+
+// Una sesión de fondo que abrió la coordinadora trabaja en copias que arma ella misma (`git worktree add`), a veces de
+// otro repo que el de la carpeta con que se abrió. La firma de trámite sobre una copia suya sale; sobre la copia de otra
+// sesión, sobre el clon principal, o pedida por una sesión que no abrió la coordinadora, no.
+test('AutomaticSigning_CopiaSueltaDeUnaSesionDeFondo_Sale', (t) => {
+  const { execFileSync } = require('child_process');
+  const ds = require('../lib/delegated-signing.js');
+  const { stateDir, claudeDir } = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'copia-suelta-'));
+  t.after(() => fs.rmSync(casa, { recursive: true, force: true }));
+  // stable-data: la fecha de los commits de esta copia de prueba es fija
+  const fecha = { GIT_AUTHOR_DATE: '2026-11-20T00:00:00Z', GIT_COMMITTER_DATE: '2026-11-20T00:00:00Z' };
+  const git = (...a) => execFileSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'maintenance.auto=false', ...a],
+    { stdio: 'ignore', env: { ...process.env, ...fecha } });
+  const clon = path.join(casa, 'privado');
+  fs.mkdirSync(clon);
+  git('-C', clon, 'init', '-q');
+  fs.writeFileSync(path.join(clon, 'a'), 'a');
+  git('-C', clon, 'add', 'a');
+  git('-C', clon, 'commit', '-q', '-m', 'a');
+  const copia = path.join(casa, 'privado--wt-suya');
+  const ajena = path.join(casa, 'privado--wt-ajena');
+  git('-C', clon, 'worktree', 'add', '-q', '-b', 'suya', copia);
+  git('-C', clon, 'worktree', 'add', '-q', '-b', 'ajena', ajena);
+  const carpeta = path.join(casa, 'publico--wt-suya');
+  fs.mkdirSync(carpeta);
+  const estado = stateDir(casa);
+  const sesiones = path.join(claudeDir(casa), 'sessions');
+  fs.mkdirSync(sesiones, { recursive: true });
+  fs.mkdirSync(path.join(estado, 'coordination'), { recursive: true });
+  const abierta = Date.parse('2026-11-20T01:00:00Z');
+  fs.writeFileSync(path.join(sesiones, '1.json'), JSON.stringify({ pid: process.pid, sessionId: 'ses-fondo', cwd: carpeta, startedAt: abierta + 1000, kind: 'bg', name: 'R-1' }));
+  fs.writeFileSync(path.join(sesiones, '2.json'), JSON.stringify({ pid: process.pid, sessionId: 'ses-otra', cwd: ajena, startedAt: abierta, kind: 'interactive', name: 'Otra' }));
+  fs.writeFileSync(path.join(estado, 'coordination', 'launched.json'), JSON.stringify([{ name: 'R-1', cwd: carpeta, at: abierta, por: 'ses-coord' }]));
+  const pedir = (repo, propia = 'ses-fondo') => ds.antesDelPendiente({ via: 'delegacion', registro: { via: 'automatica' }, propia, estado, cwd: carpeta, repo, casa });
+
+  assert.strictEqual(pedir(copia), null, 'la copia que armó la sesión de fondo es suya');
+  assert.match(pedir(ajena).motivo, /ses-otra/, 'la carpeta de otra sesión no');
+  assert.match(pedir(clon).motivo, /clon principal/, 'el clon principal no');
+  assert.match(pedir(copia, 'ses-otra').motivo, /no es una de fondo que abrió la coordinadora/, 'una sesión que no abrió la coordinadora no');
+  // el arreglo rápido de otra sesión sobre la copia la hace de ésa
+  fs.mkdirSync(path.join(estado, 'adhoc'), { recursive: true });
+  fs.writeFileSync(path.join(estado, 'adhoc', 'ses-z.json'), JSON.stringify({ sessionId: 'ses-z', cwd: copia }));
+  assert.match(pedir(copia).motivo, /ses-z/, 'la copia del arreglo rápido de otra sesión no');
+  fs.rmSync(path.join(estado, 'adhoc', 'ses-z.json'));
+  // sin poder leer las sesiones que abrió la coordinadora, no
+  fs.writeFileSync(path.join(estado, 'coordination', 'launched.json'), '{roto');
+  assert.match(pedir(copia).motivo, /no pude/);
+});
