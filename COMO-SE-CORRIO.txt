@@ -1,3 +1,0 @@
-cd /tmp; node /tmp/probe_fn1.js
-(copia de probe.js.txt)
-Observado: comando con "\\srv\share\f.txt"; bash -c echo de eso imprime \srv\share\f.txt (una barra menos). sinFormaDeTerminal=null.
