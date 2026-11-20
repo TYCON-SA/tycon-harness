@@ -2949,7 +2949,7 @@ test('Docs_IncidentAndHeader — el caso, la cabecera y la ficha dicen lo mismo 
   // La cabecera no cita el caso: la guía de estilo de código saca de los comentarios las referencias internas. El
   // camino de vuelta al caso es la tabla del registro, que se mira abajo.
   assert.ok(!/case-firmas-ramas-paralelas-2026-10-07/.test(cabecera), 'sin citar el caso en el código');
-  const piezas = fs.readFileSync(path.join(raiz, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const piezas = require('../../../../scripts/tests/lib/pieces-guide.js').piecesText(raiz);
   assert.match(piezas, /runtime-waiver\.js — el registro de firmas/, 'la ficha de la pieza existe');
   // La ficha se publica: dice la regla y su porqué, sin enlazar el caso. El camino de vuelta es
   // la tabla del registro, que anota qué guía y qué sección lo citaba.
