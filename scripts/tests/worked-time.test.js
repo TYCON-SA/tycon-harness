@@ -28,7 +28,6 @@ const LIB = path.join(ROOT, 'scripts', 'lib', 'session-state.js');
 const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 
 const MIN = 60000;
-const HOUR = 60 * MIN;
 const TZ = 'America/Argentina/Buenos_Aires';
 // una hora local de la zona fija (UTC-3), escrita «AAAA-MM-DD hh:mm» → ms
 const at = (local) => Date.parse(`${local.replace(' ', 'T')}:00-03:00`);

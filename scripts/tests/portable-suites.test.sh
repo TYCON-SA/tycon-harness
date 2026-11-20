@@ -226,6 +226,24 @@ let verdes = 0, vivos = 0;
 const inicio = Date.now();
 const tiempos = [];
 function seg(ms) { return `${Math.round(ms / 1000)}s`; }
+// Cortar la corrida corta también sus suites. Cada suite es líder de su propio grupo (`detached`, abajo), así que una
+// señal al grupo de la terminal no les llega, y matar al bash de arriba dejaba a este proceso huérfano: seguía
+// lanzando suites y reteniendo memoria. Al recibir la señal, o al quedar sin el bash que lo lanzó, mata el grupo de
+// cada suite en curso y sale sin lanzar otra.
+const enCurso = new Set();
+function cortar(motivo, codigo) {
+  for (const p of enCurso) { try { process.kill(-p.pid, 'SIGKILL'); } catch (_) { try { p.kill('SIGKILL'); } catch (__) { /* ya murió */ } } }
+  console.log(`\n❌ suites-portables: ${motivo}: corté ${enCurso.size} suite(s) en curso y no lanzo más`);
+  process.exit(codigo);
+}
+for (const [senal, codigo] of [['SIGTERM', 143], ['SIGINT', 130], ['SIGHUP', 129]]) process.on(senal, () => cortar(`me cortaron (${senal})`, codigo));
+// En Git Bash el padre que ve node no es el bash de la corrida: ahí sólo valen las señales.
+if (process.platform !== 'win32') {
+  const PADRE = process.ppid;
+  setInterval(() => {
+    try { process.kill(PADRE, 0); } catch (e) { if (e.code === 'ESRCH') cortar(`el bash que me lanzó (pid ${PADRE}) ya no está`, 143); }
+  }, 2000).unref();
+}
 // La espera por la carga (sólo cuando decide la máquina): con la carga sobre el doble de los núcleos y el piso de la regla
 // corriendo, no lanza la siguiente; vuelve a mirar cada 5 s, y la lanza cuando baja o cuando corren menos que el piso.
 const esperas = { veces: 0, ms: 0 };
@@ -253,12 +271,14 @@ function siguiente() {
     // sólo al bash de la suite deja vivos a sus hijos, que retienen la salida y el `close` no llega nunca (medido: una
     // suite colgada en la máquina vacía dejó la corrida entera esperando, con el tope «vencido» y sin veredicto).
     const p = spawn(ej, [abs], { cwd: RAIZ, env: casa.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    enCurso.add(p);
     const matar = () => { try { process.kill(-p.pid, 'SIGKILL'); } catch (_) { try { p.kill('SIGKILL'); } catch (__) { /* ya murió */ } } };
     const timer = setTimeout(() => { agotado = true; matar(); }, TOPE_MS);
     p.stdout.on('data', (d) => { salida += d; });
     p.stderr.on('data', (d) => { salida += d; });
     p.on('close', (code) => {
       clearTimeout(timer);
+      enCurso.delete(p);
       vivos--;
       try { fs.rmSync(casa.home, { recursive: true, force: true }); } catch (_) { /* se borra entera al final igual */ }
       const b = path.basename(e.ruta);

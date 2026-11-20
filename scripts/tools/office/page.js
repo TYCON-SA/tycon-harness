@@ -169,7 +169,7 @@ function ficha(a,abiertos){const r=[],add=(k,v,x)=>{if(v!=null&&v!=="")r.push({k
   add("Última acción",a.ultimaAccion);add("Espera",a.espera);add("Parada",a.parada);add("Novedades",a.callada);
   if(a.mano)add("Mano levantada",[a.manoEtiqueta,a.manoPor].filter(Boolean).join(" · "));
   // por qué espera al dueño: propone, nunca firma
-  if(a.ficha){add("Riesgo",a.ficha.riesgo);add("Pedido",a.ficha.pedido);add("Propuesta",a.ficha.accion)}
+  if(a.ficha){add("Riesgo",a.ficha.riesgo);add("Pedido",a.ficha.pedido);add("Propuesta",a.ficha.accion);}
   if(abiertos||a.modelo||a.esfuerzo)add("Modelo",(a.modelo||"sin dato")+" · "+(a.esfuerzo||"sin dato"));
   const ms=AST[a.mientrasEstado];add("Mientras tanto",a.mientras?a.mientras+(ms?" ("+ms[0].toLowerCase()+")":""):"");
   add("En pausa",a.enPausa);

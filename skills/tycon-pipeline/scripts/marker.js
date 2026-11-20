@@ -6536,13 +6536,14 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
     console.error('marker.js update-pipeline-status: el frontmatter no tiene bloque `pipelines:`');
     process.exit(1);
   }
-  // Las tandas, sus límites y sus claves: las lee el lector del bloque (scripts/lib/pipelines-block.js), el mismo del
-  // control de historias, para que los dos vean las mismas tandas.
-  const pb = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'pipelines-block.js'));
-  const batches = pb.leerTandas(lines, start).map((t) => {
-    const st = t.claves.find((c) => c.clave === 'status');
-    return { ...t, statusAt: st ? st.linea : -1 };
-  });
+  // Las batches: cada `- name:` del bloque, hasta la próxima clave de nivel raíz.
+  const batches = [];
+  for (let i = start + 1; i < lines.length && !/^\S/.test(lines[i]); i++) {
+    const nm = lines[i].match(/^(\s*)-\s+name\s*:\s*["']?([^"'#\s]+)["']?/);
+    if (nm) { batches.push({ name: nm[2], at: i, indent: nm[1].length, statusAt: -1 }); continue; }
+    const cur = batches[batches.length - 1];
+    if (cur && cur.statusAt < 0 && /^\s+status\s*:/.test(lines[i])) cur.statusAt = i;
+  }
   const chosen = which === '--all' ? batches : batches.filter((t) => t.name === which);
   if (!chosen.length) {
     console.error(`marker.js update-pipeline-status: no hay una tanda '${which}' — las tandas son: ${batches.map((t) => t.name).join(', ') || '(ninguna)'}`);
@@ -6553,56 +6554,16 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
     console.error(`marker.js update-pipeline-status: la tanda ${missingStatus.map((t) => t.name).join(', ')} no tiene línea \`status:\``);
     process.exit(1);
   }
-  const statusRegex = /^(\s*(?:-\s+)?status\s*:\s*)["']?[\w-]+["']?([ \t]*(?:#.*)?)$/;
+  const statusRegex = /^(\s*status\s*:\s*)["']?[\w-]+["']?([ \t]*(?:#.*)?)$/;
   for (const t of chosen) {
     lines[t.statusAt] = lines[t.statusAt].replace(statusRegex, (_, head, tail) => `${head}${newStatus}${tail}`);
-  }
-  // Una tanda en `done` no declara pendientes (story-format.md §1.1), y el control de historias frena el commit que la deja
-  // así: al cerrarla, sus `acs_pending` / `tasks_pending` / `tests_pending` pasan a `acs` / `tasks` / `tests` (sumados a los
-  // que ya estaban) y se sacan. Los vacíos se sacan. Lo que no es una lista en un renglón (una lista de renglones o partida,
-  // o una base que no es lista) no se toca y se dice. Los cambios se calculan sobre los renglones de antes y se aplican al
-  // final, de abajo hacia arriba.
-  const movidos = new Map();
-  if (newStatus === 'done') {
-    // los ids van tal cual: un número entero sin comillas, cualquier otro (`"2b"`, `"S"`, una prueba) entre comillas
-    const render = (xs, k) => `[${xs.map((x) => (k !== 'tests' && /^\d+$/.test(x) ? x : `"${String(x).replace(/["\\]/g, '\\$&')}"`)).join(', ')}]`;
-    const reemplazos = new Map();
-    const borrar = new Set();
-    for (const t of chosen) {
-      const dichos = [];
-      const aMano = (k, por) => console.error(`marker.js update-pipeline-status: la tanda ${t.name} tiene \`${k}_pending\` ${por}: no la toco. Pasá esos a \`${k}\` a mano.`);
-      for (const k of ['acs', 'tasks', 'tests']) {
-        const p = t.claves.find((c) => c.clave === `${k}_pending`);
-        if (!p) continue;
-        const pend = pb.elementos(lines, p);
-        if (pend.forma === 'vacia') { borrar.add(p.linea); p.hijos.forEach((i) => borrar.add(i)); continue; }
-        if (pend.forma !== 'renglon') { aMano(k, pend.forma === 'renglones' ? 'como lista de renglones' : 'en una forma que no leo de un renglón'); continue; }
-        const base = t.claves.find((c) => c.clave === k);
-        const conValor = (c, valor) => lines[c.linea].replace(new RegExp(`^(\\s*(?:-\\s+)?)${c.clave}(\\s*:\\s*).*$`), `$1${k}$2${valor}`);
-        if (base) {
-          const b = pb.elementos(lines, base);
-          if (b.forma !== 'renglon' && !(b.forma === 'vacia' && !base.hijos.length)) { aMano(k, `y su \`${k}\` no es una lista en el renglón`); continue; }
-          reemplazos.set(base.linea, conValor(base, render([...b.items, ...pend.items.filter((x) => !b.items.includes(x))], k)));
-          borrar.add(p.linea);
-        } else {
-          reemplazos.set(p.linea, conValor(p, render(pend.items, k)));
-        }
-        dichos.push(`${k} ${pend.items.join(', ')}`);
-      }
-      if (dichos.length) movidos.set(t.name, dichos);
-    }
-    for (const [i, texto] of reemplazos) if (!borrar.has(i)) lines[i] = texto;
-    for (const i of [...borrar].sort((x, y) => y - x)) lines.splice(i, 1);
   }
   const newFmBody = lines.join('\n');
   const newContent = content.replace(fmRegex, (_, open, _body, close) => `${open}${newFmBody}${close}`);
   const tmp = `${storyPath}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, newContent, 'utf8');
   fs.renameSync(tmp, storyPath);
-  for (const t of chosen) {
-    const m2 = movidos.get(t.name);
-    process.stdout.write(`${t.name}: ${newStatus}${m2 ? ` (pasan a hechos: ${m2.join(' · ')})` : ''}\n`);
-  }
+  for (const t of chosen) process.stdout.write(`${t.name}: ${newStatus}\n`);
 }
 
 /**
@@ -7392,7 +7353,12 @@ function cmdMarkTested(argv) {
     process.exit(2);
   }
   const p = mc.prendida();
-  if (!p.prendida) { console.error('marker.js mark-tested: tu organización no pide la marca a mano; no anoté nada.'); process.exit(0); }
+  if (!p.prendida) {
+    // en el chequeo previo de la ventana se niega: si saliera 0 sin su ok, la ventana se abriría para una firma sin efecto
+    const previo = process.env[require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).PRECHEQUEO] === '1';
+    console.error(`marker.js mark-tested: tu organización no pide la marca a mano; no anoté nada${previo ? ' y no hace falta firmar' : ''}.`);
+    process.exit(previo ? 1 : 0);
+  }
   const m = readMarker();
   if (!m) { console.error('marker.js mark-tested: no hay marker activo para esta sesión'); process.exit(1); }
   const storyAbs = resolveStoryPath(m.storyPath, m);

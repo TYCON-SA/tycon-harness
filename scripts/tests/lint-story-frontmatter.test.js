@@ -628,134 +628,44 @@ test('T37 LintFrontmatter_IntentReaderMissing_LoudWarning @story-8.258 @ac-29', 
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-// Una tanda `done` con criterios, tareas o pruebas en sus listas de pendientes es una contradicción (story-format.md
-// §1.1: `acs_pending` vale sólo en una tanda `blocked` o `pending`). Una tanda real quedó así: cerrada con veinte
-// criterios pendientes, y los conteos de cierre leían cosas distintas. Lo nuevo frena (la historia que nace así, o la
-// tanda que pasa a `done` con pendientes en este commit) y lo viejo se avisa. Un merge no introduce nada propio.
-test('LintFrontmatter_DoneBatchWithPending_NewBlocksOldWarns', () => {
-  const root = mkRepo('lint-done-pending-');
-  const git = (...a) => execFileSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', ...a], { cwd: root, stdio: 'ignore' });
-  const tanda = (status, pend) => ['story: "9.1"', 'epic: 9', 'status: in-progress', 'pipelines:', '  - name: A-uno',
-    `    status: ${status}`, '    acs: [1]', ...(pend ? ['    acs_pending: [2, 3]', '    tests_pending: ["T4"]'] : [])];
-  const f = story(root, 'specs/story-9.1-algo.md', tanda('done', true));
-  const nueva = run([f], root);
-  assert.equal(nueva.code, 1, 'nace así: frena');
-  assert.match(nueva.out, /cierra en `done` una tanda[\s\S]*A-uno \(3\)/);
-  // commiteada bloqueada; pasa a done sin vaciar las listas en este commit → frena
-  story(root, 'specs/story-9.1-algo.md', tanda('blocked', true));
-  git('add', '.'); git('commit', '-qm', 'a');
-  story(root, 'specs/story-9.1-algo.md', tanda('done', true));
-  assert.equal(run([f], root).code, 1, 'la tanda pasa a done con pendientes en este commit: frena');
-  // ya estaba así en el último commit → avisa, no frena
-  git('commit', '-qam', 'b');
-  const vieja = run([f], root);
-  assert.equal(vieja.code, 0, vieja.out);
-  assert.match(vieja.out, /que ya lo traían[\s\S]*A-uno \(3\)/);
-  // done sin pendientes: nada que decir
-  story(root, 'specs/story-9.1-algo.md', tanda('done', false));
-  assert.equal(run([f], root).code, 0);
-  assert.doesNotMatch(run([f], root).out, /pendientes/);
-  // en medio de un merge que trae la tanda cerrada así desde otra rama → avisa, no frena
-  story(root, 'specs/story-9.1-algo.md', tanda('blocked', true));
-  git('commit', '-qam', 'c');
-  git('checkout', '-qb', 'otra'); story(root, 'specs/story-9.1-algo.md', tanda('done', true)); git('commit', '-qam', 'd');
-  git('checkout', '-q', '-'); story(root, 'specs/x.txt', []); git('add', '.'); git('commit', '-qm', 'e');
-  git('merge', '--no-commit', '--no-ff', 'otra');
-  assert.equal(run([f], root).code, 0, 'el merge trae lo de la otra rama: no frena');
-});
-
-// Los pendientes como lista de renglones también cuentan; dos tandas con nombres que empiezan igual (`7.1-core`,
-// `7.1-smoke`) son dos; una historia movida en el commit se compara con su ruta de origen.
-test('LintFrontmatter_DoneBatchWithPending_BlockListsDottedNamesAndMoves', () => {
-  const root = mkRepo('lint-done-pending2-');
-  const git = (...a) => execFileSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', ...a], { cwd: root, stdio: 'ignore' });
-  const enRenglones = story(root, 'specs/story-9.2-a.md', ['story: "9.2"', 'epic: 9', 'status: in-progress', 'pipelines:',
-    '  - name: A-uno', '    status: done', '    acs: [1]', '    tests_pending:', '      - "T10 — en vivo"', '    tasks_pending:  # quedan', '      - 4']);
-  const r1 = run([enRenglones], root);
-  assert.equal(r1.code, 1, r1.out);
-  assert.match(r1.out, /A-uno \(2\)/);
-  // un comentario con corchetes en una lista vacía no es un pendiente
-  const vacia = story(root, 'specs/story-9.3-b.md', ['story: "9.3"', 'epic: 9', 'status: in-progress', 'pipelines:',
-    '  - name: A', '    status: done', '    acs: [1]', '    acs_pending: []  # antes [2]']);
-  assert.equal(run([vacia], root).code, 0);
-  // nombres con punto: la segunda que pasa a done con pendientes es nueva aunque la primera ya lo estuviera
-  const tandas = (st) => ['story: "9.4"', 'epic: 9', 'status: in-progress', 'pipelines:',
-    '  - name: "7.1-core"', '    status: done', '    acs_pending: [2]', '  - name: "7.1-smoke"', `    status: ${st}`, '    acs_pending: [9]'];
-  const f = story(root, 'specs/story-9.4-c.md', tandas('blocked'));
-  fs.rmSync(enRenglones); fs.rmSync(vacia);
-  git('add', '-A'); git('commit', '-qm', 'a');
-  story(root, 'specs/story-9.4-c.md', tandas('done'));
-  const r2 = run([f], root);
-  assert.equal(r2.code, 1, r2.out);
-  assert.match(r2.out, /7\.1-smoke \(1\)/);
-  assert.doesNotMatch(r2.out, /pendientes: 7\.1-core/);
-  // movida sin cambios (git mv): no introduce nada
-  story(root, 'specs/story-9.4-c.md', tandas('blocked'));
-  git('mv', 'specs/story-9.4-c.md', 'specs/story-9.4-d.md');
-  const r3 = run([path.join(root, 'specs/story-9.4-d.md')], root);
-  assert.equal(r3.code, 0, r3.out);
-  assert.match(r3.out, /que ya lo traían[\s\S]*7\.1-core \(1\)/);
-});
-
-// Las otras formas del bloque: lista sin sangría, una entrada cuya primera clave no es `name`, una lista partida en dos
-// renglones y un pendiente vacío (`null`); y una historia con acentos en el nombre, movida en el commit.
-test('LintFrontmatter_DoneBatchWithPending_OtherShapesAndAccentedMove', () => {
-  const root = mkRepo('lint-done-pending3-');
-  const git = (...a) => execFileSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', ...a], { cwd: root, stdio: 'ignore' });
-  const cabeza = ['story: "9.5"', 'epic: 9', 'status: in-progress', 'pipelines:'];
-  const caso = (rel, cuerpo) => run([story(root, rel, [...cabeza, ...cuerpo])], root);
-  const sinSangria = caso('specs/story-9.5-a.md', ['- name: A', '  files:', '    - src/a.js', '  status: done', '  acs_pending:', '    - 2']);
-  assert.equal(sinSangria.code, 1, sinSangria.out);
-  assert.match(sinSangria.out, /A \(1\)/);
-  assert.doesNotMatch(sinSangria.out, /files \(/);
-  const statusPrimero = caso('specs/story-9.5-b.md', ['  - status: done', '    name: B', '    acs_pending: [2]']);
-  assert.match(statusPrimero.out, /B \(1\)/);
-  const partida = caso('specs/story-9.5-c.md', ['  - name: C', '    status: done', '    acs_pending: [', '      2, 3]']);
-  assert.match(partida.out, /C \(2\)/);
-  const nulo = caso('specs/story-9.5-d.md', ['  - name: D', '    status: done', '    acs_pending: null', '    tests_pending: ~']);
-  assert.equal(nulo.code, 0, nulo.out);
-  for (const f of ['a', 'b', 'c', 'd']) fs.rmSync(path.join(root, `specs/story-9.5-${f}.md`));
-  // movida con un nombre con acentos, sin cambios: no introduce nada
-  story(root, 'specs/story-9.6-año.md', ['story: "9.6"', 'epic: 9', 'status: in-progress', 'pipelines:', '  - name: A', '    status: done', '    acs_pending: [2]']);
-  git('add', '-A'); git('commit', '-qm', 'a');
-  git('mv', 'specs/story-9.6-año.md', 'specs/story-9.6-añadido.md');
-  const movida = run([path.join(root, 'specs/story-9.6-añadido.md')], root);
-  assert.equal(movida.code, 0, movida.out);
-});
-
-// Dentro de un commit hecho desde una copia de trabajo (worktree), git deja GIT_DIR y GIT_INDEX_FILE en el entorno, y le
-// ganan a `-C`: sin sacarlas, la versión anterior no se encontraba y una tanda vieja se frenaba como nueva.
-test('LintFrontmatter_DoneBatchWithPending_InsideAWorktreeCommit_OldStaysOld', () => {
-  const root = fs.realpathSync(mkRepo('lint-done-pending-wt-'));
-  const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', ...a], { cwd, stdio: 'ignore' });
-  story(root, 'specs/story-9.7-a.md', ['story: "9.7"', 'epic: 9', 'status: in-progress', 'pipelines:', '  - name: A', '    status: done', '    acs_pending: [2]']);
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'a'); git(root, 'branch', '-M', 'main');
-  const wt = path.join(path.dirname(root), `${path.basename(root)}-wt`);
-  git(root, 'worktree', 'add', '-q', '-b', 'w2', wt, 'main');
-  const f = path.join(wt, 'specs/story-9.7-a.md');
-  fs.appendFileSync(f, '\notro renglón del cuerpo\n');
-  git(wt, 'add', '-A');
-  const gitDir = execFileSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: wt, encoding: 'utf8' }).trim();
-  const r = runEnv([f], wt, { GIT_DIR: gitDir, GIT_INDEX_FILE: path.join(gitDir, 'index') });
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /que ya lo traían[\s\S]*A \(1\)/);
-});
-
-// Lo anidado es valor, no tanda: una lista anidada en la forma mapa, un `name:` o un `status:` de una sublista no abren
-// ni renombran ni cierran la tanda; un `#` o una coma entre comillas no cortan el valor; `[""]` está vacío.
-test('LintFrontmatter_DoneBatchWithPending_NestedIsValue', () => {
-  const root = mkRepo('lint-done-pending4-');
-  const cabeza = ['story: "9.8"', 'epic: 9', 'status: in-progress', 'pipelines:'];
-  const caso = (n, cuerpo) => run([story(root, `specs/story-9.8-${n}.md`, [...cabeza, ...cuerpo])], root);
-  const mapa = caso('a', ['  a:', '    status: in-progress', '    files:', '      - path: src/a.js', '  b:', '    status: done', '    acs_pending: [2, 3]']);
-  assert.equal(mapa.code, 1, mapa.out);
-  assert.match(mapa.out, /b \(2\)/);
-  const nombreMapa = caso('b', ['  B:', '    name: "la descripción"', '    status: done', '    acs_pending: [1]']);
-  assert.match(nombreMapa.out, /B \(1\)/, 'en la forma mapa el nombre es la clave');
-  const subStatus = caso('c', ['  - name: a', '    status: in-progress', '    acs_pending: [1]', '    parts:', '      - name: p', '        status: done']);
-  assert.equal(subStatus.code, 0, subStatus.out);
-  const numeral = caso('d', ['  - name: a', '    status: pending', '    tests_pending: ["caso #2"]', '  - name: b', '    status: done', '    acs_pending: [3]']);
-  assert.match(numeral.out, /b \(1\)/);
-  const vacia = caso('e', ['  - name: a', '    status: done', '    acs_pending: [""]']);
-  assert.equal(vacia.code, 0, vacia.out);
+// 🔴 Falla con: una historia en `done` con un ajuste de «Ajustes después de la firma» sin pasar al cuerpo que se
+//    commitea igual, o una con todos pasados (`- [x]`) que se frena.
+test('AjustesDespuesDeLaFirma_SinPasar_FrenanElDone', (t) => {
+  const root = mkRepo('lint-ajustes-');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const fm = (estado) => `---\nstory: "1.1"\nepic: 1\nstatus: ${estado}\n---\n\n# Story 1.1\n\n## Acceptance Criteria\n\nAC 1. x\n\n`;
+  const con = (estado, ajustes) => write(root, 'specs/story-1.1-juguete.md', `${fm(estado)}## Ajustes después de la firma\n\n${ajustes}\n## Dev Agent Record\n\n- nota\n`);
+  const lint = () => run(['specs/story-1.1-juguete.md'], root);
+  con('done', '- [ ] cambiar el ejemplo del AC 1\n');
+  let r = lint();
+  assert.notStrictEqual(r.code, 0, r.out);
+  assert.match(r.out, /1 ajuste\(s\) de «Ajustes después de la firma» sin pasar al cuerpo/);
+  // un renglón suelto, sin casilla, también es un ajuste sin pasar; y un título dentro de un bloque no cierra la sección
+  con('done', '- [x] pasado\n  con su continuación\n\notra cosa suelta\n');
+  assert.notStrictEqual(lint().code, 0, 'un renglón suelto');
+  con('done', '- [x] pasado\n```\n## Dev Agent Record\n```\n- [ ] escondido\n');
+  r = lint();
+  assert.notStrictEqual(r.code, 0, 'un título dentro de un bloque de código');
+  // todos pasados, o una historia que todavía no está en done: no frena
+  con('done', '- [x] pasado al cuerpo\n  con su continuación\n* [X] otro\n');
+  r = lint();
+  assert.strictEqual(r.code, 0, r.out);
+  con('in-progress', '- [ ] todavía no\n');
+  r = lint();
+  assert.strictEqual(r.code, 0, r.out);
+  const { ajustesSinPasar } = require(LINT);
+  assert.deepStrictEqual(ajustesSinPasar('# S\n\n### Ajustes después de la firma\n\n- [ ] a\n\n## Otra\n\n- [ ] b\n'), ['- [ ] a'], 'termina en el título de su nivel o mayor');
+  // lo que el pase encontró: un ajuste sin pasar debajo de uno pasado, después de un renglón vacío o como subtítulo
+  const S = '## Ajustes después de la firma\n\n';
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n  - [ ] sub\n`), ['- [ ] sub'], 'anidado');
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n\n    cambiar el AC 2\n`), ['cambiar el AC 2'], 'después de un renglón vacío');
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n### AC 9. nuevo\n`), ['### AC 9. nuevo'], 'un subtítulo');
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n  sigue\n  - [x] sub pasado\n* [X] b\n`), [], 'todo pasado, también anidado');
+  // el título como ejemplo en un bloque de código del cuerpo no abre la sección
+  assert.deepStrictEqual(ajustesSinPasar('## Notas\n\n```md\n## Ajustes después de la firma\n```\n\nTexto.\n\n## Dev Agent Record\n'), [], 'un ejemplo en un bloque');
+  // el estado como lo leen los guiones: con comillas simples o con un comentario, también es done
+  for (const estado of ["'done'", 'done # cerrada', '"Done"']) {
+    con(estado, '- [ ] todavía no\n');
+    assert.notStrictEqual(lint().code, 0, `status: ${estado}`);
+  }
 });

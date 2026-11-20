@@ -932,11 +932,6 @@
     },
     {
       "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/pipeline-status-pending.test.js",
-      "requiere": []
-    },
-    {
-      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-orphan.test.js",
       "requiere": []
     },
@@ -2118,6 +2113,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/prod-emergency.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/prod-azure-admin.test.sh",
       "requiere": []
     },
     {
@@ -5212,6 +5212,18 @@
       "__nota": "story 8.17 (P1-P7): los guiones que MIDEN la base portable —lo que trae la tanda W1— en un agente Windows, y su parte del contrato de pipelines/azure-pipelines-windows.yml (el escenario portable). No mide Windows: mide a los que miden. El escenario corre en los dos trabajos de los ensayos, cada parte por rehearse.js y las suites antes que el banco, sin copiar archivos, sin secretos y sin abrir sesiones del asistente (P1); los guiones de bash con finales de línea de Windows se cuentan archivo por archivo, hooks de git incluidos (P2); los totales de una suite, en las dos formas en que Node los escribe (P3); de un reporte del banco, un veredicto por caso, los rojos por su nombre y los casos que faltan, y los portones por ruta forma por forma (P4); el «En corto», esperado contra medido, y la corrida roja sólo si no se pudo medir (P5); nadie mide fuera de un laboratorio (P6); los bundles traen el «antes», el antepasado común con la rama principal (P7). Y un recorrido entero en modo de laboratorio sobre dos repos de juguete con core.autocrlf=true forzado: el clon nuevo, el que ya existía antes y después del paso que normaliza, y un banco de juguete (~10 s). Nunca toca la carpeta de usuario de quien la corre.",
       "raiz": "arnes",
       "ruta": "tests/windows-portable.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "cortar el corredor de las portables (scripts/tests/portable-suites.test.sh) corta también sus suites: ni el que reparte ni una suite con sus hijos quedan vivos reteniendo memoria. Lanza el corredor sobre una raíz de juguete con una suite que duerme (~5 s).",
+      "raiz": "arnes",
+      "ruta": "tests/portable-suites-cut.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las sondas del arreglo rápido del ensayo de Windows (scripts/tests/windows/waiver-probe.js) traen lo que exige marker.js adhoc set y llegan a la firma; corre en cualquier máquina con el chequeo previo de la firma, sin firmar ni escribir.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-probe-adhoc.test.js",
       "requiere": []
     }
   ],

@@ -2,8 +2,8 @@
 # prod-firewall-world.sh — el mundo de prueba de la puerta de producción y su firewall: raíz de sistema falsa, casa
 # falsa, repos con su catálogo y dobles de `az`, `sqlcmd`, `security`, `ioreg` y el cuadro, que anotan lo que reciben.
 #
-# Vive en `lib/` porque lo usan varias suites (prod-firewall.test.sh, prod-firewall-deleted-server.test.sh y
-# prod-emergency.test.sh): dos copias del mismo doble se separan solas. Antes de cargarlo, la suite define `TMP` (su carpeta temporal), `PUERTA` y `HOOK`, y ya
+# Vive en `lib/` porque lo usan varias suites (prod-firewall.test.sh, prod-firewall-deleted-server.test.sh,
+# prod-emergency.test.sh y prod-azure-admin.test.sh): dos copias del mismo doble se separan solas. Antes de cargarlo, la suite define `TMP` (su carpeta temporal), `PUERTA` y `HOOK`, y ya
 # comprobó que el freno no está instalado: con /opt/tycon a la vista, la puerta ignora la raíz falsa.
 #
 # 🔴 Nada de esto toca Azure, una base, el Llavero ni /opt. La puerta llama a `az` con el entorno limpio, así que el doble
