@@ -110,7 +110,7 @@ function laboratorio(t, { sensible = null, designada = COORD, plan = PLAN } = {}
   };
   /** Desde la cuarta vuelta de la misma historia la decide una persona: estas pruebas miran otra cosa, y la responden. */
   lab.siLaPersonaLoPide = () => {
-    if (PR().cuartaVuelta({ estado, destino: DESTINO, storyId: '9.91' }).falta) PR().anotarRespuesta({ estado, sesion: DESTINO, kind: 'plan', choice: 'review', quien: 'la persona de la prueba', ahora: Date.now() + 1 });
+    if (PR().cuartaVuelta({ estado, destino: DESTINO, marker: JSON.parse(lab.leer(DESTINO)) }).falta) PR().anotarRespuesta({ estado, sesion: DESTINO, kind: 'plan', choice: 'review', quien: 'la persona de la prueba', ahora: Date.now() + 1 });
   };
   lab.constancia = (lanza = COORD) => path.join(estado, 'plan-review', lanza, `${DESTINO}.json`);
   /** El pedido de la ventana, como lo arma el freno ante el comando de ses-coord (con la delegación concedida o no). */

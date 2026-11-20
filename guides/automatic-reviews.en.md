@@ -42,7 +42,7 @@ informs on a delicate story or with `plan_review.routine_approval: person`. Buil
 | «approved» | Routine: it is approved, with or without a coordinator (with one, she signs; without one, `complete-step approve-plan` closes without a click). Delicate, or with `plan_review.routine_approval: person`: it reaches the owner with «reviewed, no findings» (a delicate one is approved by the harness on its own if the profile lists `plan-approval:delicada` as routine, with the session's own review) |
 | «approved with notes» | Confirmed findings below the severity cut: it counts as approved, the session fixes them while coding and the box shows them |
 | «rejected» | Only for a confirmed finding at the cut (built-in, a bug). The session fixes the plan and the review runs again. It reaches the owner at the cap of rejections in a row (`review.max_rounds`, built-in 3), or right away with `plan_review.rejected_reaches_owner: true` |
-| «no verdict» | It reaches the owner with «could not review: <reason>». If the plan or the story changed while it ran, it is retried only once, with all the changes together. From the story, what defines the build counts: its later record, the `status` and whitespace do not change it |
+| «no verdict» | It reaches the owner with «could not review: <reason>». If the plan or the story changed while it ran, it is retried only once, with all the changes together. From the story, what defines the build counts: its later record and the `status` do not change it; when in doubt, the whole story counts |
 | Chose not to review | The owner approves, and the box says «no review» |
 
 ### What the review the session launches itself guarantees

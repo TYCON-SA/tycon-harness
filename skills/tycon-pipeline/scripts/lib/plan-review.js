@@ -51,11 +51,13 @@ const CLAVES_DE_REGISTRO = new Set(['status', 'followed_up_by']);
 
 /**
  * La historia como la ata la revisión del plan: todo lo que define lo que se construye, sin el registro de después
- * (`SECCIONES_DE_REGISTRO`, `CLAVES_DE_REGISTRO`) ni los espacios de más al final de un renglón o entre párrafos. Ante la
- * duda, cuenta: una sección con otro nombre, o una palabra cambiada en cualquier otra parte, cambia la huella.
+ * (`SECCIONES_DE_REGISTRO`, de nivel 2 o 3, y `CLAVES_DE_REGISTRO` del frontmatter). Ante la duda, cuenta: con una forma
+ * que el corte no lee con certeza (un título con sangría o subrayado, un comentario HTML, un bloque de código sin cerrar,
+ * una sección de registro de nivel 1) se usa la historia entera. Sólo se igualan el BOM y los fines de renglón.
  */
 function textoDeConstruccion(texto) {
-  const lineas = String(texto).replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/[ \t]+$/, ''));
+  const entero = String(texto).replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const lineas = entero.split('\n');
   const salida = [];
   let i = 0;
   if (lineas[0] === '---') {
@@ -75,20 +77,44 @@ function textoDeConstruccion(texto) {
       i = fin + 1;
     }
   }
-  let cerco = false;
+  // un bloque de código abre con 3 o más ` o ~ (hasta 3 espacios de sangría) y cierra con el mismo signo, al menos igual de
+  // largo y sin nada después; el de ` no lleva ` en su etiqueta
+  let cerco = null;
   let salteando = 0;
+  let anterior = '';
   for (; i < lineas.length; i++) {
     const l = lineas[i];
-    if (/^\s*(```|~~~)/.test(l)) cerco = !cerco;
-    const titulo = !cerco && /^(#{1,6})\s+(.*?)\s*#*$/.exec(l);
+    if (cerco) {
+      const cierre = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(l);
+      if (cierre && cierre[1][0] === cerco[0] && cierre[1].length >= cerco.length) cerco = null;
+      if (!salteando) salida.push(l);
+      anterior = l;
+      continue;
+    }
+    const apertura = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(l);
+    if (apertura && !(apertura[1][0] === '`' && apertura[2].includes('`'))) {
+      cerco = apertura[1];
+      if (!salteando) salida.push(l);
+      anterior = l;
+      continue;
+    }
+    // lo que el corte no lee con certeza: la historia entera
+    if (/^ {1,3}#{1,6}(\s|$)/.test(l) || /<!--/.test(l) || (/^ {0,3}(=+|-+)\s*$/.test(l) && anterior.trim() !== '')) return entero;
+    const titulo = /^(#{1,6})(?:\s+(.*?))?\s*#*\s*$/.exec(l);
     if (titulo) {
       const nivel = titulo[1].length;
+      const nombre = (titulo[2] || '').replace(/[*_`]/g, '').trim().toLowerCase();
       if (salteando && nivel <= salteando) salteando = 0;
-      if (!salteando && SECCIONES_DE_REGISTRO.has(titulo[2].replace(/[*_`]/g, '').trim().toLowerCase())) salteando = nivel;
+      if (SECCIONES_DE_REGISTRO.has(nombre)) {
+        if (nivel === 1) return entero;
+        if (!salteando) salteando = nivel;
+      }
     }
     if (!salteando) salida.push(l);
+    anterior = l;
   }
-  return salida.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (cerco) return entero;
+  return salida.join('\n');
 }
 
 const huellaDeConstruccion = (texto) => sha(textoDeConstruccion(texto));
@@ -347,7 +373,7 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   }
   // la cuarta vuelta de la misma historia no se lanza sola: la decide una persona, aunque esté ausente
   {
-    const v = cuartaVuelta({ estado, destino: dest, storyId: marker.storyId });
+    const v = cuartaVuelta({ estado, destino: dest, marker });
     if (v.falta) return no(v.vueltas === null ? `no pude leer el registro de vueltas (${v.motivo}): sin saber cuántas van no se lanza`
       : `ya van ${v.vueltas} vueltas de la revisión del plan de esta historia: la próxima la decide una persona. La sesión ${dest} le pregunta (marker.js review-ask --kind plan, antes del cuadro), se anota su respuesta (marker.js review-answer --kind plan --choice review${dest === lanza ? '' : ` --for-session ${dest}`}) y recién ahí se lanza`);
   }
@@ -375,7 +401,7 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
     huellas: { plan: sha(plan.texto), story: sha(storyTexto), construccion: huellaDeConstruccion(storyTexto) }, delicate, hora: new Date().toISOString(), ...(parte ? { parte } : {}),
   };
   escribirDeUnaVez(rutaPedido(estado, lanza, dest), `${JSON.stringify(pedido, null, 2)}\n`);
-  anotarRenglon(estado, { name: LANZADA, status: 'ok', sesion: lanza, destino: dest, story: String(marker.storyId), corrida: pedido.corrida, pedido: numero });
+  anotarRenglon(estado, { name: LANZADA, status: 'ok', sesion: lanza, destino: dest, story: String(marker.storyId), historia: historiaDe(marker), corrida: pedido.corrida, pedido: numero });
   const argsFile = path.join(carpetaDe(estado, lanza), `${dest}.args.json`);
   escribirDeUnaVez(argsFile, `${JSON.stringify(args, null, 2)}\n`);
   return { codigo: 0, args, argsFile, pedido: rutaPedido(estado, lanza, dest), delicate, informativa, destino: dest };
@@ -413,24 +439,33 @@ const VUELTAS_SIN_PREGUNTAR = 3;
 const LANZADA = 'plan-review-launch';
 
 /**
- * ¿La próxima vuelta de la revisión del plan de la historia `storyId` de `destino` necesita la respuesta de una persona?
- * `{ vueltas, falta }`: las vueltas lanzadas (por cualquier motivo, también las que se cortaron o se rechazaron), y
- * `falta` si ya van `VUELTAS_SIN_PREGUNTAR` y no hay un «review» de la persona después de la última. Sin el registro
- * legible, falta.
+ * ¿La próxima vuelta de la revisión del plan de la historia de `marker` necesita la respuesta de una persona? `{ vueltas,
+ * falta }`: las vueltas lanzadas de esa historia (por cualquier motivo y desde cualquier sesión, también las cortadas o
+ * rechazadas), y `falta` si ya van `VUELTAS_SIN_PREGUNTAR` y, después de la última en el registro, no hay un «review» de
+ * la persona para `destino` ni una vuelta extra de esa historia firmada por una persona. Sin el registro legible, falta.
  */
-function cuartaVuelta({ estado, destino, storyId }) {
+function cuartaVuelta({ estado, destino, marker }) {
   const problemas = [];
   const todos = renglones(estado, problemas);
   if (problemas.length) return { vueltas: null, falta: true, motivo: problemas[0] };
-  const lanzadas = todos.filter((j) => j.name === LANZADA && j.destino === destino && j.story === String(storyId));
-  if (lanzadas.length < VUELTAS_SIN_PREGUNTAR) return { vueltas: lanzadas.length, falta: false };
-  const ultima = Date.parse(lanzadas[lanzadas.length - 1].ts);
-  // la respuesta de la persona: un «review» a la pregunta de esta revisión, o la vuelta extra firmada para esta historia
-  // (la que pide el tope de rechazos), después de la última vuelta
-  const respondio = todos.some((j) => Date.parse(j.ts) > ultima && ((j.name === 'review-answer' && j.kind === 'plan' && j.sesion === destino && j.choice === 'review')
-    || (j.name === 'extra-round-signed' && j.status === 'ok' && j.destino === destino && String(j.story) === String(storyId))));
-  return { vueltas: lanzadas.length, falta: !respondio };
+  const storyId = String(marker.storyId);
+  const historia = historiaDe(marker);
+  const deEsta = (j) => j.name === LANZADA && j.story === storyId && (j.historia || null) === historia;
+  let ultima = -1;
+  let vueltas = 0;
+  todos.forEach((j, k) => { if (deEsta(j)) { vueltas++; ultima = k; } });
+  if (vueltas < VUELTAS_SIN_PREGUNTAR) return { vueltas, falta: false };
+  // después de la última vuelta en el orden del registro, no por la hora
+  const respondio = todos.slice(ultima + 1).some((j) => (j.name === 'review-answer' && j.kind === 'plan' && j.sesion === destino && j.choice === 'review')
+    || (j.name === 'extra-round-signed' && j.status === 'ok' && String(j.story) === storyId && VIAS_DE_PERSONA.includes(j.via)));
+  return { vueltas, falta: !respondio };
 }
+
+// las vías de una firma que dio una persona: la delegación, el aviso y la de trámite no son su respuesta
+const VIAS_DE_PERSONA = ['ventana', 'terminal', 'click', 'mensaje'];
+
+/** El archivo de la historia de la corrida, sin su carpeta: la misma historia en otra copia es la misma. */
+const historiaDe = (marker) => { try { return path.basename(storyDe(marker)); } catch (_) { return null; } };
 
 /**
  * Anota el resultado de la revisión preparada: devuelve la constancia escrita, o `{ codigo: 2, motivo }` si no hay pedido.
@@ -882,7 +917,7 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
     out.comando = hayCoordinadora ? `marker.js plan-review --for-session ${sesion}` : 'marker.js plan-review';
     out.lanza = hayCoordinadora ? 'coordinator' : 'session';
     if (cambios === 1) out.reintento = true;
-    const v = cuartaVuelta({ estado, destino: sesion, storyId: marker.storyId });
+    const v = cuartaVuelta({ estado, destino: sesion, marker });
     if (v.falta) {
       out.cuartaVuelta = { vueltas: v.vueltas };
       out.comando = 'marker.js review-ask --kind plan';

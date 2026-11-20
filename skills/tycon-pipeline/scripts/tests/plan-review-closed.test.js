@@ -129,7 +129,7 @@ test('PlanReview_LaHistoriaCambiaMientrasCorre_UnSoloReintentoEntreLosDos', (t) 
   assert.match(a.alDueno.motivo, /cambió mientras corría la revisión, dos veces/);
 });
 
-// 🔴 Falla con: un ajuste del registro de la historia (su «Change Log», el estado, espacios) que tira la revisión del
+// 🔴 Falla con: un ajuste del registro de la historia (su «Change Log», el estado) que tira la revisión del
 //    plan, o un cambio en lo que se construye (un criterio, una sección con otro nombre) que no la tira.
 test('PlanReview_RedaccionDelRegistro_NoTiraLaRevision_LoQueSeConstruyeSi', (t) => {
   const lab = laboratorio(t);
@@ -140,11 +140,10 @@ test('PlanReview_RedaccionDelRegistro_NoTiraLaRevision_LoQueSeConstruyeSi', (t) 
   const conRegistro = (s) => `${s.replace('status: in-progress', 'status: review')}\n## Acceptance Criteria\n\nAC 1. el README dice x.   \n\n\n## Dev Agent Record\n\n### Change Log\n\n- 2026-11-20: hallazgos de la vuelta anterior.\n`;
   const base = conRegistro(original);
   fs.writeFileSync(historia, base);
-  // el registro de después, el estado y los espacios: la revisión vale
+  // el registro de después y el estado: la revisión vale
   for (const [nombre, cambiar] of [
     ['el Change Log', () => base.replace('hallazgos de la vuelta anterior.', 'hallazgos de la vuelta anterior, corregidos.')],
     ['el estado', () => base.replace('status: review', 'status: in-progress')],
-    ['los espacios', () => base.replace('AC 1. el README dice x.   \n\n\n', 'AC 1. el README dice x.\n\n')],
   ]) {
     responder();
     const c = lab.revisar(() => fs.writeFileSync(historia, cambiar()));
@@ -198,9 +197,39 @@ test('PlanReview_CuartaVuelta_LaDecideUnaPersona', (t) => {
   assert.strictEqual(lab.preparar().codigo, 2, 'la quinta vuelve a preguntar');
   // la vuelta extra firmada para esta historia también es la respuesta de la persona; la de otra historia, no
   const gates = path.join(lab.estado, 'gates.log');
-  const firma = (story) => fs.appendFileSync(gates, `${JSON.stringify({ ts: new Date(Date.now() + 5).toISOString(), story, name: 'extra-round-signed', status: 'ok', via: 'ventana', sesion: DESTINO, destino: DESTINO })}\n`);
+  // la hora del renglón no cuenta: vale el orden del registro
+  const firma = (story, via = 'ventana') => fs.appendFileSync(gates, `${JSON.stringify({ ts: '2020-01-01T00:00:00.000Z', story, name: 'extra-round-signed', status: 'ok', via, sesion: COORD, destino: DESTINO })}\n`);
+  firma('9.91', 'delegacion');
+  assert.strictEqual(lab.preparar().codigo, 2, 'la vuelta extra firmada por delegación no es la respuesta de una persona');
   firma('9.92');
   assert.strictEqual(lab.preparar().codigo, 2, 'la vuelta extra de otra historia no cuenta');
   firma('9.91');
   assert.strictEqual(lab.preparar().codigo, 0, 'la vuelta extra de esta historia sí');
+});
+
+// 🔴 Falla con: una forma de Markdown que el corte lee distinto que quien la lee (un bloque de código suelto o mezclado,
+//    un título subrayado o con sangría, un comentario, una sección de registro de nivel 1) y que esconde de la huella un
+//    cambio en lo que se construye; o un BOM, el estado o el registro que la cambian.
+test('HuellaDeConstruccion_LoDudosoCuenta_ElRegistroNo', () => {
+  const h = PR().huellaDeConstruccion;
+  const base = '---\nstory: "1"\nstatus: draft\n---\n# Story 1\n\n## Acceptance Criteria\n\nAC 1. x\n\n## Dev Agent Record\n\n### Change Log\n\n- algo\n';
+  const cuenta = {
+    'un bloque de código suelto en el registro': `${base}\`\`\`\n\n## Cambios de comportamiento\n\nhace A\n`,
+    'un título subrayado': `${base}\nCambios de comportamiento\n-------------------------\n\nhace A\n`,
+    'un título con sangría': `${base}\n   ## Cambios de comportamiento\n\nhace A\n`,
+    'código en línea que parece un bloque': `${base}\n\`\`\`x\`\`\` nota\n\n## Criterios nuevos\n\nhace A\n`,
+    'bloques mezclados': '# T\n\n## Tasks\n\`\`\`\n~~~\n## Change Log\n\`\`\`\n\n## AC\n1. hace A\n',
+    'un comentario': '# T\n<!--\n## Change Log\n-->\n1. hace A\n',
+    'el registro de nivel 1': '# Change Log\n\n## AC\nhace A\n',
+    'un bloque de cuatro que trae uno de tres': '# T\n\n## AC\n\`\`\`\`md\n\`\`\`\n## Change Log\n\`\`\`\`\nhace A\n',
+  };
+  for (const [nombre, texto] of Object.entries(cuenta)) assert.notStrictEqual(h(texto.replace('hace A', 'hace B')), h(texto), nombre);
+  // el registro de después, el estado y el BOM: no cambian
+  assert.strictEqual(h(base.replace('- algo', '- otra cosa')), h(base), 'el Change Log');
+  assert.strictEqual(h(base.replace('status: draft', 'status: done')), h(base), 'el estado');
+  assert.strictEqual(h(`\uFEFF${base}`), h(base), 'el BOM');
+  assert.strictEqual(h(base.replace(/\n/g, '\r\n')), h(base), 'los fines de renglón');
+  // lo demás, sí
+  assert.notStrictEqual(h(base.replace('AC 1. x', 'AC 1. y')), h(base), 'un criterio');
+  assert.notStrictEqual(h(base.replace('AC 1. x', 'AC 1. x ')), h(base), 'un espacio en lo que se construye');
 });

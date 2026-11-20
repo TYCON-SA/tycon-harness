@@ -73,7 +73,8 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
      cambiaron mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño. No se
      relanza por cada cambio: se juntan todos, y se relanza cuando el plan y la historia quedaron como van a quedar.
      De la historia cuenta lo que define la construcción: el registro de después («Dev Agent Record», su «Change Log»,
-     los «Follow-ups»), el `status` y los espacios no la cambian; cualquier otra palabra, sí.
+     los «Follow-ups») y el `status` no la cambian; cualquier otra palabra, sí, y ante una forma que no se lee con
+     certeza (un título con sangría o subrayado, un comentario, un bloque de código sin cerrar) cuenta la historia entera.
    - **La cuarta vuelta.** Tres vueltas de la revisión del plan de la misma historia (por cualquier motivo: cortadas,
      sin veredicto, rechazadas o aprobadas) se lanzan sin preguntar; la cuarta no. `plan-review` se niega hasta que la
      persona responde «review» a su pregunta (`review-ask --kind plan` y `review-answer`), o firma la vuelta extra de esa
