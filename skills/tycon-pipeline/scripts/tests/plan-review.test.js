@@ -1274,13 +1274,13 @@ test('PlanReview_LaConfiguracionDiceSusClavesMalas (T8) @story-8.221 @ac-8 — e
   t.after(() => fs.rmSync(tcg, { recursive: true, force: true }));
   const acme = (repo, platform = 'azure') => ({ platform, org: 'acme', ...(platform === 'azure' ? { project: 'Main Project' } : {}), repo });
   fs.writeFileSync(path.join(tcg, 'team-repos.json'), JSON.stringify({ version: 1, public: acme('harness', 'github'), profile: acme('team-profile'), operations: acme('team-operations'),
-    plan_review: { routine: 'sometimes', owner_away_minutes: 30 }, review: { blocking_severity: 'critical', max_rounds: 4 }, review_runner: { verifiers: 'one_each' } }));
+    plan_review: { routine: 'sometimes', owner_away_minutes: 30 }, review: { blocking_severity: 'critical', max_rounds: 2 }, review_runner: { verifiers: 'one_each' } }));
   fs.symlinkSync(path.join(RAIZ, 'scripts'), path.join(tcg, 'scripts'));
   const antes = process.env.TYCON_GUIDES_DIR;
   process.env.TYCON_GUIDES_DIR = tcg;
   let c;
   try { c = PR().configDeLaOrganizacion(); } finally { if (antes === undefined) delete process.env.TYCON_GUIDES_DIR; else process.env.TYCON_GUIDES_DIR = antes; }
-  assert.deepStrictEqual([c.values.plan_review.owner_away_minutes, c.values.review.max_rounds], [30, 4], 'las claves buenas siguen');
+  assert.deepStrictEqual([c.values.plan_review.owner_away_minutes, c.values.review.max_rounds], [30, 2], 'las claves buenas siguen');
   assert.deepStrictEqual([c.values.plan_review.routine, c.values.review.blocking_severity, c.values.review_runner.verifiers], ['ask', 'bug', 'per_lens']);
   assert.deepStrictEqual(c.problems.map((p) => p.path).sort(), ['plan_review.routine', 'review.blocking_severity', 'review_runner.verifiers']);
 });

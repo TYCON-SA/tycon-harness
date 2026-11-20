@@ -225,51 +225,16 @@ test('Cap_OrgAndRepo_RepoWins_BadValueSaid @story-7.37 @ac-4', () => {
   const rr = (lab) => JSON.parse(lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo, '--json']).stdout);
   const org = laboratorio({ org: { max_rounds: 3 }, advisorsYaml: null });
   assert.deepEqual([rr(org).tope, rr(org).tope_de], [3, 'organizacion']);
-  const repo = laboratorio({ org: { max_rounds: 3 }, advisorsYaml: 'review:\n  max_rounds: 4\n' });
-  assert.deepEqual([rr(repo).tope, rr(repo).tope_de], [4, 'repo']);
-  const mal = laboratorio({ org: { max_rounds: 3 }, advisorsYaml: 'review:\n  max_rounds: 9\n' });
-  const m = rr(mal);
-  assert.deepEqual([m.tope, m.tope_de], [3, 'organizacion']);
-  assert.match(m.problemas.join(' '), /max_rounds.*de 1 a 6.*no se usa/);
-});
-
-test('Cap_SecurityCritical_AsksThePerson @story-7.37 @ac-5', () => {
-  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open'), hallazgo('TEST-W2', 'WARNING', 'open')] });
-  const r = lab.reloop(3);
-  assert.equal(r.status, 3);
-  assert.match(r.stderr, /SEC-C1/);
-  assert.match(r.stderr, /seguridad o (de )?datos/);
-  assert.match(r.stderr, /--extra-round/);
-  assert.match(r.stderr, /waive-critical/);
-  // lo escrito en el chat no la autoriza: ni con la cita (aun la que la nombra), ni sin la ventana
-  lab.conversar([delDev('dale, una vuelta más para arreglar el SEC-C1')]);
-  const cita = lab.reloop(3, ['--extra-round', '--approved-by', 'Dev de Prueba', '--quote', 'dale, una vuelta más para arreglar el SEC-C1'], {}, { ventana: true });
-  assert.equal(cita.status, 3, 'la cita no autoriza otra vuelta');
-  assert.match(cita.stderr, /No se autorizó la vuelta extra 3: la cita ya no la autoriza/);
-  const sin = lab.reloop(3, ['--extra-round', '--approved-by', 'Dev de Prueba']);
-  assert.equal(sin.status, 3, 'sin la ventana no se sirve');
-  assert.match(sin.stderr, /no pasó por la ventana/);
-  assert.ok(!gates(lab).some((g) => g.name === 'extra-round'), 'no se anota una vuelta que no se sirvió');
-  // aprobada en la ventana, la vuelta extra se sirve (la tercera, además, pide su nota de repensar)
-  const nota = lab.cmd(MARKER, ['rethink', '--iter', '3', '--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
-    '--change', 'Cambia el enfoque: la validación pasa a la entrada del endpoint, antes de tocar la base', '--repo', lab.repo, '--story', lab.story]);
-  assert.equal(nota.status, 0, nota.stderr);
-  const ok = lab.reloop(3, ['--extra-round', '--approved-by', 'Dev de Prueba'], {}, { ventana: true });
-  assert.equal(ok.status, 0, ok.stderr);
-  assert.ok(gates(lab).some((g) => g.name === 'extra-round' && g.iter === 3), 'la vuelta extra queda anotada');
-});
-
-// 🔴 Falla con: --delegated que todavía sirve la vuelta extra por la frase del dueño, o un aviso del tope que lo ofrece.
-test('Cap_ExtraRoundDelegated_YaNoAutoriza', () => {
-  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
-  const aviso = lab.reloop(3);
-  assert.doesNotMatch(aviso.stderr, /--delegated/);
-  assert.match(aviso.stderr, /--for-session/);
-  lab.conversar([delDev('aprobá una vuelta más')]);
-  const sin = lab.reloop(3, ['--extra-round', '--delegated']);
-  assert.equal(sin.status, 3);
-  assert.match(sin.stderr, /--delegated ya no la autoriza/);
-  assert.ok(!gates(lab).some((g) => g.name === 'extra-round'), 'no se anota una vuelta que no se sirvió');
+  const repo = laboratorio({ org: { max_rounds: 3 }, advisorsYaml: 'review:\n  max_rounds: 2\n' });
+  assert.deepEqual([rr(repo).tope, rr(repo).tope_de], [2, 'repo']);
+  // el tope se baja, no se sube: 4 y 9 no se usan y se dice
+  for (const v of ['4', '9']) {
+    const m = rr(laboratorio({ org: { max_rounds: 3 }, advisorsYaml: `review:\n  max_rounds: ${v}\n` }));
+    assert.deepEqual([m.tope, m.tope_de], [3, 'organizacion'], v);
+    assert.match(m.problemas.join(' '), /max_rounds.*de 1 a 3.*no se usa/, v);
+  }
+  const org4 = rr(laboratorio({ org: { max_rounds: 4 }, advisorsYaml: null }));
+  assert.deepEqual([org4.tope, org4.tope_de], [3, 'fabrica']);
 });
 
 test('Cap_OtherOpen_BecomesDebt @story-7.37 @ac-6', () => {
@@ -358,30 +323,6 @@ function vueltaParaOtra(lab, iter, extra, { pedir = true, sesion = COORD } = {})
 }
 const vigentes = (lab) => { try { return fs.readdirSync(ow.carpeta(lab.home)).filter((f) => f.endsWith('.json')); } catch (_) { return []; } };
 
-test('VueltaExtra_ForSession_SeAnotaEnLaCorridaDestino @story-8.142 @ac-2 @ac-3', () => {
-  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
-  // la sesión de la corrida llega al tope y deja su nota de la tercera vuelta
-  assert.equal(lab.reloop(3).status, 3);
-  const nota = lab.cmd(MARKER, ['rethink', '--iter', '3', '--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
-    '--change', 'Cambia el enfoque: la validación pasa a la entrada del endpoint, antes de tocar la base', '--repo', lab.repo, '--story', lab.story]);
-  assert.equal(nota.status, 0, nota.stderr);
-  const marcador = fs.readFileSync(lab.markerFile, 'utf8');
-  // sin --extra-round, otra sesión no puede pedir el set: sale 2 sin escribir
-  const sinExtra = vueltaParaOtra(lab, 3, ['--for-session', SID], { pedir: false });
-  assert.equal(sinExtra.status, 2, sinExtra.stdout + sinExtra.stderr);
-  assert.ok(!gates(lab).some((g) => g.name === 'extra-round'));
-  // la vuelta extra aprobada en la ventana de la coordinadora queda anotada para la corrida de la sesión destino
-  const r = vueltaParaOtra(lab, 3, ['--extra-round', '--for-session', SID]);
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  const linea = gates(lab).find((g) => g.name === 'extra-round');
-  assert.ok(linea, 'la vuelta extra quedó anotada');
-  assert.deepEqual([linea.story, linea.iter, linea.via, linea.por], ['9.8', 3, 'ventana', COORD]);
-  assert.ok(gates(lab).some((g) => g.name === 'extra-round-signed' && g.sesion === COORD && g.destino === SID));
-  assert.equal(fs.readFileSync(lab.markerFile, 'utf8'), marcador, 'el marcador destino no se tocó');
-  assert.ok(!fs.existsSync(path.join(lab.state, 'active', `${COORD}.json`)), 'no le nació marcador a la coordinadora');
-  assert.equal(vigentes(lab).length, 0, 'el pedido se gastó');
-});
-
 test('VueltaExtra_ForSession_SinFirmaPendiente_NoSirve @story-8.142 @ac-2', () => {
   // dentro del tope no hay firma que dar: otra sesión no saca el set de la corrida ajena por este camino
   const lab = laboratorio({ fotos: [1], servidas: [1] });
@@ -445,44 +386,6 @@ test('Precheck_VueltaExtraDentroDelTope_NoAbreLaVentana', () => {
   assert.ok(!gates(lab).some((g) => /^extra-round/.test(g.name)), 'sin firma ni vuelta anotada');
 });
 
-// 🔴 Falla con: la ventana de la tercera vuelta abierta sin su nota de repensar (el guion la rechazaba después del «Sí»).
-test('Precheck_TerceraVueltaSinNota_NoAbreLaVentana', () => {
-  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
-  assert.equal(lab.reloop(3).status, 3, 'el aviso del tope');
-  const p = pedirConChequeo(lab, 3);
-  assert.equal(p.decision, 'deny', p.texto);
-  assert.match(p.texto, /No abrí la ventana/);
-  assert.match(p.texto, /rethink/);
-  assert.equal(vigentes(lab).length, 0, 'sin pedido');
-  // con la ventana aprobada igual, la nota se pide antes de gastar la firma
-  const r = lab.reloop(3, ['--extra-round'], {}, { ventana: true });
-  assert.equal(r.status, 3, r.stdout + r.stderr);
-  assert.match(r.stderr, /rethink/);
-  assert.ok(!gates(lab).some((g) => /^extra-round/.test(g.name)), 'la firma no se usó');
-  // con la nota, el chequeo pasa: la ventana se abre, y el chequeo no firmó ni sirvió nada
-  assert.equal(lab.cmd(MARKER, ['rethink', '--iter', '3', ...NOTA, '--repo', lab.repo, '--story', lab.story]).status, 0);
-  const ok = pedirConChequeo(lab, 3);
-  assert.equal(ok.decision, 'ask', ok.texto);
-  assert.equal(vigentes(lab).length, 1);
-  assert.ok(!gates(lab).some((g) => /^extra-round/.test(g.name)), 'el chequeo no firmó');
-  assert.deepEqual(lab.servidas(), [1, 2], 'el chequeo no sirvió la vuelta');
-});
-
-// 🔴 Falla con: otra firma pedida para una vuelta extra que ya está autorizada.
-test('Precheck_VueltaExtraYaAutorizada_NoAbreLaVentana', () => {
-  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
-  assert.equal(lab.reloop(3).status, 3);
-  assert.equal(lab.cmd(MARKER, ['rethink', '--iter', '3', ...NOTA, '--repo', lab.repo, '--story', lab.story]).status, 0);
-  const primera = lab.reloop(3, ['--extra-round'], {}, { ventana: true });
-  assert.equal(primera.status, 0, primera.stderr);
-  const p = pedirConChequeo(lab, 3);
-  assert.equal(p.decision, 'deny', p.texto);
-  assert.match(p.texto, /ya está autorizada/);
-  // sin --extra-round, la vuelta autorizada se sirve sin otra firma
-  const sin = lab.reloop(3);
-  assert.equal(sin.status, 0, sin.stderr);
-});
-
 // ── La vuelta dentro del tope pedida para otra sesión dice el tope (8.271) ────────────────────────────────────────────
 //
 // «No se pide para otra sesión» se leía como «--for-session está prohibido». Lo que pasa es que la vuelta no necesita
@@ -497,16 +400,6 @@ test('VueltaExtra_ForSession_DentroDelTope_DiceElTope @story-8.271 @ac-4', () =>
   assert.doesNotMatch(r.stderr, /no se pide para otra sesión/);
   assert.deepEqual(lab.servidas(), [1, 2], 'no sirvió el set');
   assert.equal(vigentes(lab).length, 1, 'el pedido sigue sin gastar');
-});
-
-test('VueltaExtra_ForSession_YaAutorizada_LoDice @story-8.271 @ac-5', () => {
-  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
-  fs.appendFileSync(path.join(lab.state, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'extra-round', story: '9.8', iter: 3 })}\n`);
-  const r = vueltaParaOtra(lab, 3, ['--extra-round', '--for-session', SID]);
-  assert.notEqual(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stderr, /La vuelta extra 3 ya está autorizada/);
-  assert.match(r.stderr, /sin --extra-round ni --for-session, sin otra firma/);
-  assert.deepEqual(lab.servidas(), [1, 2], 'no sirvió el set');
 });
 
 // ── La vuelta extra para otra sesión sale de la corrida de esa sesión (8.272) ────────────────────────────────────────
@@ -540,29 +433,6 @@ function alTopeConNota({ marcador = {} } = {}) {
   fs.writeFileSync(lab.markerFile, JSON.stringify(m));
   return lab;
 }
-
-test('T15 ExtraRound_ForSession_FilesFromTheirMarker @story-8.272 @ac-17', () => {
-  // desde la carpeta de la coordinadora, sin --repo, --story ni --files: todo sale de la corrida de la sesión destino
-  const lab = alTopeConNota();
-  const coord = tmp('rr-coord-');
-  const r = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--extra-round', '--for-session', SID]);
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.equal(JSON.parse(r.stdout).iter, 3);
-  assert.ok(gates(lab).some((g) => g.name === 'extra-round' && g.story === '9.8' && g.iter === 3), 'la vuelta extra es de la corrida destino');
-  assert.deepEqual(lab.servidas(), [1, 2, 3], 'se sirvió la vuelta en la corrida destino');
-  assert.equal(vigentes(lab).length, 0, 'el pedido se gastó');
-  // un --repo y unos --files relativos se leen contra el repo de la corrida destino, no contra la carpeta de la coordinadora
-  const lab2 = alTopeConNota();
-  const r2 = vueltaDesdeOtraCarpeta(lab2, coord, 3, ['--repo', '.', '--files', 'src/a.js', '--extra-round', '--for-session', SID]);
-  assert.equal(r2.status, 0, r2.stdout + r2.stderr);
-  assert.deepEqual(lab2.servidas(), [1, 2, 3]);
-  // la firma por delegación del perfil, desde la carpeta de la coordinadora y sin `cd … &&`
-  const lab3 = alTopeConNota();
-  const r3 = vueltaDesdeOtraCarpeta(lab3, coord, 3, ['--extra-round', '--for-session', SID], { delegada: true });
-  assert.equal(r3.status, 0, r3.stdout + r3.stderr);
-  assert.ok(gates(lab3).some((g) => g.name === 'extra-round' && g.iter === 3 && g.via === 'delegacion'), JSON.stringify(gates(lab3).filter((g) => g.name === 'extra-round')));
-  assert.deepEqual(lab3.servidas(), [1, 2, 3]);
-});
 
 test('T16 ExtraRound_ForSessionWithoutMarker_Exit2 @story-8.272 @ac-17 @ac-18', () => {
   const coord = tmp('rr-coord-');
@@ -599,27 +469,51 @@ test('T16 ExtraRound_ForSessionWithoutMarker_Exit2 @story-8.272 @ac-17 @ac-18', 
 // Regresión del pase adversarial de la 8.272 B: el código de la corrida vive en el repo hermano de la historia, una
 // --story relativa se lee contra el repo de la corrida, y lo que la corrida tocó y ya no está (un probe del pase, un
 // archivo borrado) no tumba la vuelta
-test('Regresion_ExtraRound_ForSession_SiblingCodeRelativeStoryGoneFiles @story-8.272 @ac-17', () => {
-  const sib = tmp('rr-sib-');
-  fs.mkdirSync(path.join(sib, 'src'));
-  fs.writeFileSync(path.join(sib, 'src', 'codigo.js'), '// el código de la corrida\n');
-  execFileSync('git', ['-C', sib, 'init', '-q']);
-  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')],
-    advisorsYaml: `${TOPE_DOS}evidence:\n  companion_repos:\n    - ${path.basename(sib)}\n` });
-  assert.equal(lab.reloop(3).status, 3);
-  assert.equal(lab.cmd(MARKER, ['rethink', '--iter', '3', '--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
-    '--change', 'Cambia el enfoque: la validación pasa a la entrada del endpoint, antes de tocar la base', '--repo', lab.repo, '--story', lab.story]).status, 0);
-  const m = JSON.parse(fs.readFileSync(lab.markerFile, 'utf8'));
-  m.filesTouched = [lab.story, path.join(sib, 'src', 'codigo.js'), path.join(lab.repo, 'src', '__probe_x.js'), path.join(lab.repo, 'src', 'borrado.js')];
-  fs.writeFileSync(lab.markerFile, JSON.stringify(m));
-  // la carpeta de la coordinadora tiene su propia story.md: la relativa es la de la corrida
-  const coord = tmp('rr-coord-');
-  fs.writeFileSync(path.join(coord, 'story.md'), '---\nstory: 7.1\n---\n\n## Acceptance Criteria\n- AC1: OTRA\n');
-  const r = vueltaDesdeOtraCarpeta(lab, coord, 3, ['--story', 'story.md', '--extra-round', '--for-session', SID]);
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  const ctx = fs.readFileSync(JSON.parse(r.stdout).context_file, 'utf8');
-  assert.match(ctx, /codigo\.js/, 'el código del repo hermano entra a la vuelta');
-  assert.match(ctx, /AC1: x/);
-  assert.doesNotMatch(ctx, /OTRA/, 'no la historia de la carpeta de la coordinadora');
-  assert.deepEqual(lab.servidas(), [1, 2, 3]);
+
+// ── Después del tope no hay vuelta extra ─────────────────────────────────────────────────
+//
+// Caso: dos historias de un producto hicieron 7 y 10 vueltas de revisores, cada una pedida con una vuelta extra firmada
+// (muchas por delegación). Ahora el tope es fijo y no se sube: con algo de seguridad o de datos abierto en la última, la
+// persona lo exime o abre una historia de arreglo; lo demás queda como deuda.
+
+test('Cap_SecurityCritical_WaiveOrFixStory_NoExtraRound', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open'), hallazgo('TEST-W2', 'WARNING', 'open')] });
+  const r = lab.reloop(3);
+  assert.equal(r.status, 3);
+  assert.match(r.stderr, /SEC-C1/);
+  assert.match(r.stderr, /seguridad o (de )?datos/);
+  assert.match(r.stderr, /historia de arreglo/);
+  assert.match(r.stderr, /waive-critical/);
+  assert.doesNotMatch(r.stderr, /--extra-round|--for-session/, 'no ofrece la vuelta extra');
+  // pedida igual, con la ventana, delegada o con nota de repensar: se niega y no se anota nada
+  assert.equal(lab.cmd(MARKER, ['rethink', '--iter', '3', ...NOTA, '--repo', lab.repo, '--story', lab.story]).status, 0);
+  for (const extra of [['--extra-round'], ['--extra-round', '--delegated'], ['--extra-round', '--approved-by', 'Dev de Prueba']]) {
+    const x = lab.reloop(3, extra, {}, { ventana: true });
+    assert.equal(x.status, 3, `${extra.join(' ')}: ${x.stdout}${x.stderr}`);
+    assert.match(x.stderr, /la vuelta extra de revisores ya no existe/);
+  }
+  assert.deepEqual(lab.servidas(), [1, 2], 'no sirvió la vuelta');
+  assert.ok(!gates(lab).some((g) => /^extra-round/.test(g.name)), 'ni firma ni vuelta anotada');
+  // una vuelta extra autorizada antes del cambio tampoco se sirve
+  fs.appendFileSync(path.join(lab.state, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'extra-round', status: 'ok', story: '9.8', iter: 3 })}\n`);
+  const vieja = lab.reloop(3);
+  assert.equal(vieja.status, 3, vieja.stdout + vieja.stderr);
+  assert.deepEqual(lab.servidas(), [1, 2]);
+});
+
+// 🔴 Falla con: la ventana abierta para una vuelta que el guion va a negar (el «Sí» se perdería).
+test('Precheck_ExtraRoundPastTheCap_WindowDoesNotOpen', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
+  assert.equal(lab.cmd(MARKER, ['rethink', '--iter', '3', ...NOTA, '--repo', lab.repo, '--story', lab.story]).status, 0);
+  const p = pedirConChequeo(lab, 3);
+  assert.equal(p.decision, 'deny', p.texto);
+  assert.match(p.texto, /No abrí la ventana/);
+  assert.match(p.texto, /ya no existe/);
+  assert.equal(vigentes(lab).length, 0, 'sin pedido');
+  // pedida para otra sesión, tampoco: sale sin escribir
+  const r = vueltaParaOtra(lab, 3, ['--extra-round', '--for-session', SID], { pedir: false });
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /ya no existe/);
+  assert.deepEqual(lab.servidas(), [1, 2], 'no sirvió el set');
+  assert.ok(!gates(lab).some((g) => /^extra-round/.test(g.name)));
 });

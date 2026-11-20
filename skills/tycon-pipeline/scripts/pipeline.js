@@ -6464,8 +6464,8 @@ function paraOtraSesion(cmd, args, argv) {
 }
 
 // El tope de vueltas de revisores (lib/review-rounds.js): null si la vuelta `iter` puede servirse, o el mensaje llano de
-// por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona (una vuelta extra con su
-// ok, que se anota en gates.log, o eximirlo); lo demás queda como deuda visible y el recorrido sigue sin otra vuelta.
+// por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona (eximirlo, o una
+// historia de arreglo y eximirlo nombrándola); lo demás queda como deuda visible. Después del tope no hay vuelta extra.
 function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   const tope = rr.tope({ repo: repoAbs });
   const stateDir = stateDirOf(os.homedir());
@@ -6483,9 +6483,11 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
     for (const p of tope.problems || []) process.stderr.write(`⚠️  ${p}\n`);
     return null;
   }
-  if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) {
-    if (paraOtra) return `🛑 La vuelta extra ${iter} ya está autorizada. ${laPideLaCorrida}, sin otra firma.\n`;
-    return args.extraRound ? `🛑 La vuelta extra ${iter} ya está autorizada: pedí el set sin --extra-round, sin otra firma.\n` : null;
+  // Después del tope no hay vuelta extra: un crítico de seguridad o de datos que quedó abierto
+  // se exime o va a una historia de arreglo. Se niega antes de cualquier firma: la ventana corre esta misma comprobación
+  // y no se abre, así que ningún «Sí» se pierde.
+  if (args.extraRound || paraOtra) {
+    return `🛑 La vuelta ${iter} pasa el tope de ${tope.value} y la vuelta extra de revisores ya no existe: con algo de seguridad o de datos abierto, eximilo (marker.js waive-critical) o abrí una historia de arreglo. Lo demás queda como deuda. No escribí nada.\n`;
   }
   const h = rr.hallazgosDe(runDir);
   const pre = rr.prefijos();
@@ -6496,42 +6498,14 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   // «no pude mirar» no es «no quedó nada abierto»
   const noMirado = h.error || (!runDir ? 'no encontré la carpeta de la corrida' : null);
   const avisos = [...tope.problems, ...pre.problems].map((p) => `   ⚠️  ${p}`);
-  if (args.extraRound && args.delegated) {
-    return `🛑 No se autorizó la vuelta extra ${iter}: --delegated ya no la autoriza. Va el mismo comando sin --delegated: la persona lo aprueba en la ventana de permiso, o lo deja correr sin ventana la delegación del perfil del equipo.\n`;
-  }
-  if (args.extraRound) {
-    // la aprueba la persona en la ventana de permiso (o con --terminal), después del aviso del tope de ESTA vuelta
-    const aviso = rr.avisoDelTope({ stateDir, story: storyId, iter });
-    if (!aviso || !aviso.ts) return `🛑 No se autorizó la vuelta extra ${iter}: todavía no se avisó el tope de esta vuelta. Pedí el set sin --extra-round, el arnés dice qué quedó abierto, y recién ahí vale la aprobación.\n`;
-    if (args.quote) return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. La aprueba la persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal).\n`;
-    // desde la tercera vuelta, la nota de repensar se pide antes de gastar la firma: sin ella el set no se sirve igual
-    const rt = require('./lib/rethink.js');
-    const antes = () => {
-      if (iter < rt.FIRST_ITER) return null;
-      const leida = rt.readNote(runDir, iter);
-      if (leida.ok) return null;
-      const why = leida.reason === 'no existe' || leida.reason === 'no hay carpeta de corrida' ? null : leida.reason;
-      return { codigo: 3, motivo: rt.blockMessage({ iter, runDir, repeated: rt.repeatedFindings(runDir), why }).trim() };
-    };
-    const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-    const r = ow.exigir({ firma: 'extra-round', argv: process.argv.slice(1), resumen: `vuelta extra ${iter} de revisores de la story ${storyId}`,
-      propia: PROPIA, anotar: (g) => anotar(g), antes });
-    if (r.codigo !== 0) return `🛑 No se autorizó la vuelta extra ${iter}: ${r.motivo}.\n`;
-    const f = ow.fijarDestino({ r, propia: PROPIA, necesitaMarcador: !!paraOtra, leerMarcador: (sid) => ow.marcadorEn(path.join(stateDir, 'active', `${sid}.json`)) });
-    if (f.codigo !== 0) { process.stderr.write(`🛑 No se sirvió la vuelta extra ${iter}: ${f.motivo}. No escribí nada.\n`); process.exit(f.codigo); }
-    anotar({ name: 'extra-round', status: 'ok', quien: args.approvedBy || process.env.USER || 'persona', via: r.via, ...(f.constancia.por ? { por: f.constancia.por } : {}) });
-    return null;
-  }
   const renglones = [`🛑 Llegaste al tope de ${tope.value} vueltas de revisores (${de}): no devuelvo el set de la vuelta ${iter}.`, ...avisos];
   if (noMirado) renglones.push(`   No pude mirar lo abierto (${noMirado}): escribí los hallazgos con pipeline.js write-findings y volvé a pedirlo.`);
   else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el commit».');
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);
-    renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y la persona lo aprueba en la ventana de permiso');
-    renglones.push('       (o lo corre en su terminal con --terminal); si el perfil del equipo la delega, la sesión designada lo corre con');
-    renglones.push('       --for-session desde su pestaña, sin ventana.');
-    renglones.push('   (b) Eximirlo: marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" (la persona lo aprueba en la ventana de permiso).');
+    renglones.push('   (a) Abrir una historia de arreglo (followup_of: esta historia) y eximirlo nombrándola: marker.js waive-critical --rule <regla> --file <archivo> --reason "arreglo en la historia <N>".');
+    renglones.push('   (b) Eximirlo sin historia: marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" (la persona lo aprueba en la ventana de permiso).');
   }
   if (deuda.length) {
     renglones.push(`   ${bloquean.length ? 'El resto' : 'Lo abierto'} queda como deuda visible (${deuda.length}) y el recorrido sigue sin otra vuelta:`);
