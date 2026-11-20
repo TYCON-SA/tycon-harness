@@ -839,7 +839,7 @@ function parse(text) {
   const sectionWait = isObject(doc) && doc.wait_notice !== undefined ? waitNoticeProblems(doc.wait_notice) : [];
   // y con `coverage`: un umbral mal escrito cae al valor por defecto, no deja sin el archivo
   const sectionCoverage = isObject(doc) && doc.coverage !== undefined ? coverageProblems(doc.coverage) : [];
-  // y con `review`: un tope mal escrito cae al de fábrica (2), no deja sin el archivo
+  // y con `review`: un tope mal escrito cae al de fábrica (3), no deja sin el archivo
   const sectionReview = isObject(doc) && doc.review !== undefined ? reviewProblems(doc.review) : [];
   // y con `stack`: se descarta sólo la subclave con el problema, el resto de la sección sigue
   const sectionStack = isObject(doc) && doc.stack !== undefined ? stackProblems(doc.stack) : [];

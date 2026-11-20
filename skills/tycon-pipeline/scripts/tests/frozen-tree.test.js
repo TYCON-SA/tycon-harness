@@ -1131,3 +1131,36 @@ test('T31 ReviewedTree_MezclaConCambioReal_FrenaPorElReal @story-8.217 @ac-21 �
   assert.match(salida(r), /· src\/b\.js/, salida(r));
   assert.doesNotMatch(salida(r), /· src\/a\.js/, salida(r));
 });
+
+// ── Pasado el tope, lo que cambió después de la última vuelta vuelve a lo revisado ─────────────────────────────────────
+// Caso: con el tope fijo de 3 y sin vuelta extra, un arreglo hecho después de la tercera vuelta dejaba la historia sin
+// salida: «Preparar el commit» pedía una cuarta vuelta que no existe. Ahora dice cómo volver a lo revisado y manda el
+// cambio a una historia de arreglo.
+
+test('T34 PrepareCommit_PastTheCap_RestoreToReviewed — sin cuarta vuelta: los comandos para volver a lo revisado, y con eso sigue', () => {
+  const C = corrida('s-ft34');
+  assert.strictEqual(C.vuelta(1).r.status, 0);
+  assert.strictEqual(C.vuelta(2).r.status, 0);
+  const nota = C.correr('marker.js', ['rethink', '--iter', '3', '--repeated', 'La vuelta 2 volvió a marcar el mismo archivo sin cambiar el enfoque',
+    '--change', 'Cambia el enfoque: el arreglo va a la entrada, antes de tocar el resto', '--repo', C.codigo.repo, '--story', C.story]);
+  assert.strictEqual(nota.status, 0, salida(nota));
+  assert.strictEqual(C.vuelta(3).r.status, 0, salida(C.vuelta(3).r));
+  // un arreglo después de la tercera: un archivo cambiado y uno nuevo sin agregar
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), 'module.exports = 3;\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'c.js'), 'module.exports = 4;\n');
+  const r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /Pasaste el tope de 3 vueltas/, salida(r));
+  assert.match(salida(r), /historia de arreglo/);
+  assert.doesNotMatch(salida(r), /smart-reloop/, 'no manda a una vuelta que no existe');
+  const restore = salida(r).split('\n').find((l) => /git -C .* restore --source=[0-9a-f]{40} --staged --worktree -- "src\/b\.js"/.test(l));
+  const clean = salida(r).split('\n').find((l) => /git -C .* clean -f -- "src\/c\.js"/.test(l));
+  assert.ok(restore && clean, salida(r));
+  // los comandos que da, tal cual, vuelven a lo revisado: el paso sigue
+  for (const l of [restore, clean]) {
+    const args = JSON.parse(`[${l.trim().replace(/^git /, '').split(/ (?=(?:[^"]*"[^"]*")*[^"]*$)/).map((x) => (x.startsWith('"') ? x : JSON.stringify(x))).join(',')}]`);
+    execFileSync('git', args, { stdio: 'ignore' });
+  }
+  const despues = prepararCommit(C);
+  assert.doesNotMatch(salida(despues), MISMATCH, salida(despues));
+});

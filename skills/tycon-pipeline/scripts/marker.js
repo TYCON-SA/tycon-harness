@@ -998,6 +998,29 @@ function comprobarLoRevisado(marker, quien) {
     console.error(`marker.js ${quien} BLOQUEADO — lo que se guarda no es lo revisado: cambió después de la última vuelta de revisores (${v.etiqueta}):`);
     for (const d of distintos) console.error(`   · ${d.f} (${path.basename(d.repo)})`);
     for (const s of sinSepararMain) console.error(`  No pude separar lo que trajo main (${s}): cuenta como cambio.`);
+    // pasado el tope no hay otra vuelta: lo que cambió después sale de esta historia y va a una historia de arreglo
+    let tope = null;
+    try { tope = require('./lib/review-rounds.js').tope({ repo: marker.repoPath || undefined }).value; } catch (_e) { tope = null; }
+    if (tope !== null && iter > tope) {
+      console.error(`  Pasaste el tope de ${tope} vueltas de revisores: no hay otra vuelta. Lo que cambió después de la última sale de esta`);
+      console.error('  historia y va a una historia de arreglo (followup_of: esta historia). Guardá antes el cambio para esa historia');
+      console.error('  (git diff y los archivos nuevos) y volvé a lo revisado:');
+      const porRepo = new Map();
+      for (const d of distintos) { if (!porRepo.has(d.repo)) porRepo.set(d.repo, []); porRepo.get(d.repo).push(d.f); }
+      for (const [repo, archivos] of porRepo) {
+        const sello = ((v.repos || []).find((r) => r.repo === repo) || {}).tree;
+        // lo que git no sigue (un archivo nuevo sin agregar) no lo vuelve `restore`: lo saca `clean`
+        const conocido = (f) => require('child_process').spawnSync('git', ['-C', repo, 'ls-files', '--error-unmatch', '--', f], { windowsHide: true }).status === 0
+          || (!!sello && require('child_process').spawnSync('git', ['-C', repo, 'cat-file', '-e', `${sello}:${f}`], { windowsHide: true }).status === 0);
+        const seguidos = archivos.filter(conocido);
+        const sueltos = archivos.filter((f) => !conocido(f));
+        const q = (f) => JSON.stringify(f);
+        if (seguidos.length) console.error(`     git -C ${q(repo)} restore --source=${sello || '<sello>'} --staged --worktree -- ${seguidos.map(q).join(' ')}`);
+        if (sueltos.length) console.error(`     git -C ${q(repo)} clean -f -- ${sueltos.map(q).join(' ')}`);
+      }
+      console.error('  Con eso lo que se guarda vuelve a ser lo revisado y este paso sigue.');
+      process.exit(2);
+    }
     console.error(`  Corré otra vuelta: pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'} --repo ${marker.repoPath || '<repo>'} --iter ${iter} --files "<el diff completo, como hoy>".`);
     console.error('  La vuelta re-revisa lo que cambió desde su foto; con el sello nuevo, este paso sigue.');
     process.exit(2);
@@ -2446,8 +2469,9 @@ function cmdCompleteStep(nRaw, flags) {
         appendLog('gates.log', { name: 'review-cap-blocking', status: 'blocked', story: marker.storyId, step: 8, abiertos: bloquean.map((a) => a.regla) });
         console.error(`marker.js complete-step ${n} BLOQUEADO — ${bloquean.length} crítico(s) de seguridad o de datos abierto(s) o diferido(s):`);
         for (const l of rr.resumen(bloquean)) console.error(`   · ${l}`);
-        console.error('   Lo decide una persona: arreglarlo (si se llegó al tope, una vuelta más con pipeline.js smart-reloop --extra-round,');
-        console.error('   que le pide el permiso en la ventana de permiso), o eximirlo (marker.js waive-critical, con su permiso a ese crítico).');
+        console.error('   Lo decide una persona: arreglarlo dentro del tope de vueltas, abrir una historia de arreglo (followup_of: esta');
+        console.error('   historia) y eximirlo nombrándola, o eximirlo (marker.js waive-critical, con su permiso a ese crítico). Pasado el');
+        console.error('   tope no hay vuelta extra.');
         process.exit(1);
       }
     }

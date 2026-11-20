@@ -900,7 +900,7 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
     const tope = topeDeRechazos(cfg, marker.repoPath);
     const llega = cfg.plan_review.rejected_reaches_owner || n >= tope;
     const motivo = cfg.plan_review.rejected_reaches_owner ? 'el perfil manda los rechazos a una persona (plan_review.rejected_reaches_owner: true)'
-      : n >= tope ? `rechazado ${n} ${n === 1 ? 'vez' : 'veces seguidas'}, el tope es ${tope} (review.max_rounds): decide una persona, partir la historia o firmar una vuelta extra`
+      : n >= tope ? `rechazado ${n} ${n === 1 ? 'vez' : 'veces seguidas'}, el tope es ${tope} (review.max_rounds): decide una persona, partir la historia o responder «review» para una vuelta más`
         : `rechazado ${n} de ${tope} (review.max_rounds): corregí el plan y volvé a cerrarlo`;
     return { ...out, revisado: c.veredicto, rechazos: n, alDueno: { llega, motivo } };
   }

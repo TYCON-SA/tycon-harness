@@ -6619,7 +6619,7 @@ function rethinkGate(args) {
   const rr = require('./lib/review-rounds.js');
   const ultimaLanzada = servidas.last > 0 && (!marcadorConStory || rr.lanzada(marcador, servidas.last));
   const iter = servidas.last > 0 ? Math.max(pedida, ultimaLanzada ? servidas.last + 1 : servidas.last) : pedida;
-  // El tope de vueltas: más allá, sólo una vuelta extra que autorizó una persona.
+  // El tope de vueltas: más allá no hay otra vuelta (topeDeVueltas dice qué hacer con lo que quedó abierto).
   const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId });
   if (bloqueoDelTope) return bloqueoDelTope;
   if (iter >= rt.FIRST_ITER) {
@@ -7360,9 +7360,9 @@ function parseArgs(argv) {
     else if (t === '--session-model') a.sessionModel = nn(argv[++i], '');   // start / model-hint: el modelo de la sesión
     else if (t === '--codex-session') a.codexSession = parseCodexSession(argv[++i]); // start: la sesión de Codex (proveedor y modelo)
     else if (t === '--run-dir') a.runDir = argv[++i];              // write-findings/findings-status: dir de la corrida (default: auto-resolve)
-    else if (t === '--extra-round') a.extraRound = true;          // smart-reloop / advisors: la vuelta más allá del tope que autoriza una persona
-    else if (t === '--approved-by') a.approvedBy = argv[++i];     // con --extra-round: quién la autorizó
-    else if (t === '--quote') a.quote = argv[++i];                // con --extra-round: sus palabras, textuales
+    else if (t === '--extra-round') a.extraRound = true;          // smart-reloop / advisors: la vuelta extra ya no existe; se reconoce para negarla
+    else if (t === '--approved-by') a.approvedBy = argv[++i];     // con --extra-round: se reconoce para negarla
+    else if (t === '--quote') a.quote = argv[++i];                // con --extra-round: se reconoce para negarla
     else if (t === '--delegated') a.delegated = true;             // con --extra-round: ya no la autoriza; se reconoce para negarlo
     else if (t === '--base') a.base = argv[++i];                  // dod-checker-needed: base explícita del diff
     else if (t === '--scope') a.scope = nn(argv[++i], '');          // qa-readability: `ui` = la revisión de la pantalla; sin valor no es «sin --scope»
