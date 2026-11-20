@@ -1114,6 +1114,15 @@ function ofrecerEnWindows({ evento = {}, escapes = [], firmas = [], plataforma =
   return `${nada} Corré el mismo comando, solo y en su forma exacta, por la consola Bash de Git de la herramienta (ahí sí firma en la pestaña), o va ${terminal}.`;
 }
 
+/**
+ * El `ofrece` de una decisión negada: los escapes que pasaron en el período de aviso (`r.avisos`) no se piden, así que no
+ * cuentan para decir que la firma no pasa por la pestaña en Windows.
+ */
+function ofreceTrasDecidir(r, { escapes = [], ...opciones } = {}) {
+  const avisos = (r && r.avisos) || [];
+  return ofrecerEnWindows({ ...opciones, escapes: escapes.filter((id) => !avisos.includes(id)), firmas: (r && r.firmas) || [] });
+}
+
 // --- el freno -----------------------------------------------------------------------------------------------------
 
 /**
@@ -2259,7 +2268,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
 }
 
 module.exports = { renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
-  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, markerEstable,
+  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, ofreceTrasDecidir, markerEstable,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 
 if (require.main === module) {
@@ -2277,7 +2286,7 @@ if (require.main === module) {
       vencerPedidos(casaDeLaCuenta(), evento.session_id);
       r = decidir({ evento, escapes });
       // en Windows, lo que anda en esta consola reemplaza la ventana, el cuadro y el «aprobado» del cartel (@story-8.319)
-      if (r.decision === 'deny') { try { r.ofrece = ofrecerEnWindows({ evento, escapes, firmas: r.firmas || [] }); } catch (_) { r.ofrece = ''; } }
+      if (r.decision === 'deny') { try { r.ofrece = ofreceTrasDecidir(r, { evento, escapes }); } catch (_) { r.ofrece = ''; } }
     } catch (e) { r = negarCon(`no pude decidir la firma (${e.message})`, escapes.filter((id) => firmaDe(id))); }
     // el aviso del período antes del corte le llega a la persona en el mensaje del gancho; al agente se lo dice el lector
     const aviso = r.aviso ? { systemMessage: `⚠️ ${r.aviso}` } : {};

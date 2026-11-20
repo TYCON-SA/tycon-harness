@@ -118,6 +118,16 @@ test('T16 EscC1_NoticePeriod_BothSides @story-8.256 @ac-11 @ac-15', () => {
     assert.notStrictEqual(d.via, 'aviso', `${cmd}: el día del corte sigue en aviso`);
     assert.ok(['ask', 'deny'].includes(d.decision), `${cmd}: ${d.decision} ${d.texto}`);
   }
+  // en Windows, con un escape en aviso y otra firma negada, el texto para el agente no culpa al escape que ya pasó
+  const mixto = 'TYCON_MUTATION_CHECK=off node marker.js complete-step approve-plan --approved ok';
+  const escMixto = ['escape:TYCON_MUTATION_CHECK'];
+  const rm = decidir(mixto, escMixto, antes, tmp('ee-win-'));
+  assert.strictEqual(rm.decision, 'deny', rm.texto);
+  assert.deepStrictEqual(rm.avisos, escMixto);
+  const conAviso = ow.ofreceTrasDecidir(rm, { evento: evento(mixto, '/c'), escapes: escMixto, plataforma: 'win32', gitBash: () => null });
+  const sinEscape = ow.ofreceTrasDecidir(rm, { evento: evento(mixto, '/c'), escapes: [], plataforma: 'win32', gitBash: () => null });
+  assert.doesNotMatch(conAviso, /un escape no se aprueba en la pestaña/);
+  assert.strictEqual(conAviso, sinEscape);
   // la revisión de la noche no cuenta el renglón del aviso: el comando y el del lector ya cuentan ese escape
   const reglas = require(path.join(RAIZ, 'scripts', 'nightly', 'runs-review', 'rules.js'));
   assert.strictEqual(reglas.categoriaDeLinea({ kind: 'ESCAPE_NOTICE_PERIOD', variable: 'TYCON_MUTATION_CHECK' }, '/r'), null);
