@@ -4600,6 +4600,12 @@
       "requiere": []
     },
     {
+      "__nota": "gitleaks no toma por claves las huellas de la evidencia del arnés (scripts/ci/secret-scan/evidence-hashes.toml): una huella con ruta que dice api bajo .advisors/ pasa; la misma fuera de .advisors/, una clave real y un 40 hex con clave que no es un archivo frenan; las plantillas del portón de historias llevan la excepción tal cual. Ejercita la regla con la expresión de generic-api-key de gitleaks v8.30.1, sin red ni docker.",
+      "raiz": "arnes",
+      "ruta": "tests/secret-scan-evidence-hashes.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.40, tanda B (T25 a T31): el alta guiada de la organización (harness.js team-init, scripts/setup/harness/team-init.js) por EJECUCIÓN, en una HOME de juguete instalada desde el GitHub de juguete con tres repos (el arnés, el ejemplo de juguete de fixtures/team-init-example/ y el perfil acme). Escribe sólo los tres archivos obligatorios con lo contestado, GitHub y Azure DevOps, valida con los lectores instalados (una clave desconocida, un nombre con espacios, una dirección o carpeta que no sirve: nada escrito), --dry-run, sin arnés sale 2, git sí/no/push que falla, push a un bare de juguete e install --team; con red compara el ejemplo de juguete con el publicado. ~20 s.",
       "raiz": "arnes",
       "ruta": "tests/harness-team-init.test.sh",
