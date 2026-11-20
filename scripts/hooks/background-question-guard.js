@@ -95,11 +95,11 @@ function coordinadoraDeLaLanzada({ home = os.homedir(), sid, env, arnes }) {
 }
 
 /**
- * ¿La sesión `sid` es de fondo? Lo dice su archivo de Claude Code (`<casa>/.claude/sessions/<pid>.json`, `kind`). Sin
+ * ¿La sesión `sid` es de fondo? Lo dice su archivo de Claude Code (`sessions/<pid>.json` en su carpeta, `kind`). Sin
  * archivo legible que la nombre, la variable que Claude Code deja en sus sesiones de fondo (`CLAUDE_JOB_DIR`).
  */
 function esDeFondo({ home, sid, env }) {
-  const dir = path.join(home, '.claude', 'sessions');
+  const dir = path.join(require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).claudeDir(home), 'sessions');
   let nombres = [];
   try { nombres = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch (_) { nombres = []; }
   for (const f of nombres) {

@@ -105,8 +105,8 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 
 ## Cuando un freno no alcanza a decidir
 
-La regla: un freno que no alcanzó a decidir no deja pasar. Hoy la cumplen dos de los diez frenos de consola; los otros
-ocho no tienen reloj propio y, si se cuelgan, Claude Code los corta al vencer el tope de la herramienta y el comando
+La regla: un freno que no alcanzó a decidir no deja pasar. Hoy la cumplen dos de los once frenos de consola; los otros
+nueve no tienen reloj propio y, si se cuelgan, Claude Code los corta al vencer el tope de la herramienta y el comando
 corre. El freno de producción va aparte, en la configuración administrada: tiene su reloj, y si su gancho falla el
 comando no corre ([producción con permiso](produccion-con-permiso.md)).
 
@@ -122,6 +122,7 @@ comando no corre ([producción con permiso](produccion-con-permiso.md)).
 | `test-scope-guard-pre.sh` | No | Pasa a los 600 s |
 | `engram-pre-commit.sh` | No | Pasa a los 600 s |
 | `session-collision-guard.js` | No | Pasa a los 600 s |
+| `background-question-guard.js` | No | Pasa a los 600 s |
 
 Lo que el reloj no cubre: si a un freno lo matan desde afuera, o no arranca, el comando pasa. No se les pone
 `onFailure` a estos ganchos a propósito: viven en la carpeta del usuario, y una actualización a medias dejaría a todas
