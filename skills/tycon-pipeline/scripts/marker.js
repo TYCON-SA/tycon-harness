@@ -6769,7 +6769,9 @@ function cmdOwnerAway(argv) {
   if (accion === 'get') {
     const g = oa.get({ estado: STATE_DIR });
     if (g.problem) console.error(`marker.js owner-away get: ${g.problem}; la persona cuenta como presente.`);
-    process.stdout.write(`${JSON.stringify(g.problem ? { mark: g.mark, problem: g.problem } : { mark: g.mark })}\n`);
+    // la marca que no se pudo confirmar sigue puesta: se muestra aparte, para que no parezca que no hay ninguna
+    if (g.unconfirmed) console.error(`marker.js owner-away get: marca de ausente sin confirmar (puesta ${g.unconfirmed.setAt}): no se borró; se va con el próximo mensaje de la persona o con clear.`);
+    process.stdout.write(`${JSON.stringify({ mark: g.mark, ...(g.problem ? { problem: g.problem } : {}), ...(g.unconfirmed ? { unconfirmed: g.unconfirmed } : {}) })}\n`);
     process.exit(0);
   }
   console.error('uso: marker.js owner-away set --phrase "<lo que dijo la persona>" | clear [--reason "<por qué>"] | get');
