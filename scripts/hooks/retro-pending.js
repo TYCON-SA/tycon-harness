@@ -18,7 +18,10 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
 //           repo/workspace del cwd y ya tengan cierta antigüedad (TYCON_RETRO_GATE_FOREIGN_MIN_AGE_MIN,
 //           30 min) — sin eso, un merge que la sesión dueña no cerró sólo lo reclamaría el aviso de
 //           arranque, que se puede ignorar. Los ajenos se agrupan por repo. Tope 3
-//           bloqueos seguidos (después deja pasar avisando).
+//           bloqueos seguidos (después deja pasar avisando). Corta sólo lo que la sesión puede saldar:
+//           sus merges y los ajenos del mismo repo donde trabaja, si el latido los puede pagar desde ahí
+//           (la carpeta sigue siendo un repo y conoce el commit). Un ajeno de un repo del workspace, o uno
+//           que ningún latido paga, se le muestra a la persona una vez, con su comando, y no corta.
 //   notice (SessionStart): lista los merges anotados que NINGUNA retrospectiva cubrió todavía,
 //           con el comando para lanzarla — pero SOLO los del repo/workspace de la sesión (el cwd).
 //           Los pendientes de OTROS proyectos se resumen en una línea informativa SIN instrucción
@@ -1498,11 +1501,46 @@ function gate(event) {
     const edad = Date.now() - t;
     return edad >= minAge && edad <= maxAge;
   });
-  if (!mine.length && !foreign.length) return limpio();
+  // Corta sólo lo que esta sesión puede saldar: sus merges, y los de otra sesión en el mismo repo donde trabaja, siempre que
+  // el latido los pueda pagar desde ahí. Lo demás se avisa con su comando, para quien sí puede, y lo que ningún latido puede
+  // pagar (la carpeta ya no está o no conoce el commit) nunca corta
+  const avisos = [...mine.filter((e) => !pagable(e)), ...foreign.filter((e) => !pagable(e) || !trabajaEnElRepo(e, cwd))];
+  const mineCorta = mine.filter(pagable);
+  const foreignCorta = foreign.filter((e) => pagable(e) && trabajaEnElRepo(e, cwd));
+  if (!mineCorta.length && !foreignCorta.length) { limpio(); avisarSinCortar(avisos, sid, safe); return; }
+  return cortar(mineCorta, foreignCorta, avisos, { sid, safe, stateFile });
+}
+
+// ¿El latido puede pagar la entrada? Su carpeta sigue siendo un repo y conoce el commit. Si no, ninguna sesión lo paga
+// desde su copia: lo corrige una persona (`--correct`) o lo cubre el barrido de la noche.
+function pagable(e) {
+  const dir = carpetaVigente(e);
+  return esRaiz(dir) && gitOrNull(dir, ['cat-file', '-e', `${e.sha}^{commit}`]) !== null;
+}
+// ¿La sesión trabaja en el repo de la entrada? Su carpeta es una copia del mismo repo; un workspace que lo contiene no.
+function trabajaEnElRepo(e, cwd) {
+  const raiz = raizGit(cwd);
+  return Boolean(raiz) && repoComun(raiz) === repoComun(carpetaVigente(e));
+}
+const deQuien = (e, sid) => (e.sessionId === sid ? 'de esta sesión' : `de la sesión ${String(e.sessionId || '?').slice(0, 8)}`);
+// Lo que no corta se le muestra a la persona, una vez por lista: el mismo aviso en cada cierre de turno se deja de leer.
+function avisarSinCortar(avisos, sid, safe) {
+  if (!avisos.length) return;
+  const clave = avisos.map((e) => `${identidadDeRepo(e)}@${e.sha}`).sort().join('\n');
+  const marca = path.join(STATE_DIR, `retro-aviso-${safe}.txt`);
+  try { if (fs.readFileSync(marca, 'utf8') === clave) return; } catch { /* sin aviso anterior */ }
+  const lineas = avisos.map((e) => `  - ${carpetaVigente(e)} @ ${e.sha} (${deQuien(e, sid)}) → ${pagable(e) ? launchHint(e) : `ningún latido lo paga desde una copia: ${comandoDeCorregir(e)}`}`);
+  process.stdout.write(JSON.stringify({
+    systemMessage: `ℹ️ retro-pending: ${avisos.length} merge(s) a main sin su archivo de retrospectiva que esta sesión no puede saldar (otro repo, otra sesión, o una carpeta que ya no conoce el commit). No cortan el turno; los paga quien trabaja en ese repo:\n${lineas.join('\n')}`,
+  }) + '\n');
+  try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.writeFileSync(marca, clave); } catch { /* sin marca, se vuelve a avisar */ }
+}
+function cortar(mine, foreign, avisos, { sid, safe, stateFile }) {
   let blocks = 0;
   try { blocks = Number(fs.readFileSync(stateFile, 'utf8')) || 0; } catch { blocks = 0; }
   if (blocks >= MAX_BLOCKS) {
     process.stderr.write(`⚠ retro-pending: ${mine.length + foreign.length} merge(s) a main siguen sin su archivo de retrospectiva tras ${MAX_BLOCKS} bloqueos seguidos — se deja cerrar; el aviso de arranque lo va a seguir reclamando.\n`);
+    avisarSinCortar(avisos, sid, safe);
     return;
   }
   const cuando = (e) => String(e.ts || '').slice(0, 16);
@@ -1522,6 +1560,10 @@ function gate(event) {
   // El contador sube DESPUÉS de armar el mensaje: si algo revienta al renderizar, el catch global
   // se lo traga y el turno cierra — pero al menos no queda gastado un bloqueo por un Stop que no
   // avisó nada.
+  if (avisos.length) {
+    lines.push(`  Además, ${avisos.length} que esta sesión no puede saldar (no cortan; los paga quien trabaja en ese repo):`);
+    for (const e of avisos) lines.push(`    · ${carpetaVigente(e)} @ ${e.sha} (${deQuien(e, sid)})`);
+  }
   try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.writeFileSync(stateFile, String(blocks + 1)); } catch { /* fail-open */ }
   process.stdout.write(JSON.stringify({
     decision: 'block',
@@ -1588,7 +1630,9 @@ function notice(event) {
     if (cuerpo) emitir(cuerpo);
     return;
   }
-  const lines = local.map((e) => `  - ${carpetaVigente(e)} @ ${e.sha} (${String(e.ts || '').slice(0, 16)})${avisoYaEnMain(e)}`);
+  // de quién es cada uno, una vez: cada sesión que arranca en el repo ve la misma lista, y así sabe cuál le toca
+  const sid = sessionIdOf(event);
+  const lines = local.map((e) => `  - ${carpetaVigente(e)} @ ${e.sha} (${String(e.ts || '').slice(0, 16)}, ${deQuien(e, sid)}${pagable(e) ? '' : ', ningún latido lo paga desde una copia'})${avisoYaEnMain(e)}`);
   const scopeLabel = scopeAll ? '' : ' de ESTE proyecto';
   process.stdout.write(`<system-reminder>\n🔴 retro-pending: ${local.length} merge(s) a main${scopeLabel} SIN retrospectiva (ningún metrics-*.json cubre ese repo+commit):\n${lines.join('\n')}\nLanzá el latido por cada uno, un segundo y sin modelo (${launchHint(local[0])}).${extra ? '\n' + extra : ''}${foreignLine ? '\n' + foreignLine : ''}${cuentaLine ? '\n' + cuentaLine : ''} Off: TYCON_RETRO_PENDING=0.\n</system-reminder>\n`);
 }

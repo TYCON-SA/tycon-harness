@@ -83,7 +83,7 @@ function laboratorio() {
     pedido: (command, cwd) => correr({ session_id: 's1', tool_name: 'Bash', tool_input: { command }, cwd }),
     cierre: (cwd) => correr({ session_id: 's1', hook_event_name: 'Stop', stop_hook_active: false, cwd }),
     entradas: () => (fs.existsSync(ledger) ? fs.readFileSync(ledger, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []),
-    sembrar: (entrada) => fs.appendFileSync(ledger, `${JSON.stringify({ ts: '2026-10-01T10:00:00.000Z', sessionId: 's1', branch: 'main', cmd: 'x', sha: 'abc123def456', ...entrada })}\n`),
+    sembrar: (entrada) => fs.appendFileSync(ledger, `${JSON.stringify({ ts: '2026-10-01T10:00:00.000Z', sessionId: 's1', branch: 'main', cmd: 'x', sha: SHA, ...entrada })}\n`),
   };
 }
 
@@ -160,8 +160,13 @@ test('gh: la rama escrita como referencia completa es la misma rama', () => {
 function repoVivo() {
   const dir = tmp();
   git(dir, ['init', '--quiet', '-b', 'main']);
+  // un commit vacío con autor y fecha fijos: todos los repos de juguete conocen el mismo commit, el que siembra el registro
+  git(dir, ['commit', '--quiet', '--allow-empty', '-m', 'base']);
   return dir;
 }
+// el commit que siembra el registro: el latido sólo paga un commit que la carpeta conoce
+const SHA_ENTERO = git(repoVivo(), ['rev-parse', 'HEAD']);
+const SHA = SHA_ENTERO.slice(0, 12);
 
 test('con la copia borrada, el merge de otra sesión se reclama desde la carpeta principal', () => {
   const principal = repoVivo();
@@ -169,7 +174,7 @@ test('con la copia borrada, el merge de otra sesión se reclama desde la carpeta
   lab.sembrar({ repoPath: path.join(tmp(), 'ya-no-esta'), principal, sessionId: 'otra' });
   const salida = JSON.parse(lab.cierre(principal).stdout);
   assert.strictEqual(salida.decision, 'block');
-  assert.ok(salida.reason.includes(`--repo "${principal}" --merge abc123def456`), salida.reason);
+  assert.ok(salida.reason.includes(`--repo "${principal}" --merge ${SHA}`), salida.reason);
 });
 
 test('con la copia viva, el merge de otra sesión no se reclama desde la carpeta principal', () => {
@@ -182,7 +187,7 @@ test('con la copia viva, el merge de otra sesión no se reclama desde la carpeta
 test('el archivo guardado en el .dashboard de la carpeta principal salda la entrada de la copia borrada', () => {
   const principal = repoVivo();
   fs.mkdirSync(path.join(principal, '.dashboard'));
-  fs.writeFileSync(path.join(principal, '.dashboard', 'metrics-x.json'), JSON.stringify({ repo: principal, merge_commit: 'abc123def456aaaa', project: 'x' }));
+  fs.writeFileSync(path.join(principal, '.dashboard', 'metrics-x.json'), JSON.stringify({ repo: principal, merge_commit: SHA_ENTERO, project: 'x' }));
   const lab = laboratorio();
   lab.sembrar({ repoPath: path.join(tmp(), 'ya-no-esta'), principal });
   assert.strictEqual(lab.cierre(tmp()).stdout, '');
@@ -194,7 +199,7 @@ test('una copia que quedó como carpeta sin repo manda el comando a la carpeta p
   const lab = laboratorio();
   lab.sembrar({ repoPath: restos, principal });
   const salida = JSON.parse(lab.cierre(tmp()).stdout);
-  assert.ok(salida.reason.includes(`--repo "${principal}" --merge abc123def456`), salida.reason);
+  assert.ok(salida.reason.includes(`--repo "${principal}" --merge ${SHA}`), salida.reason);
 });
 
 test('los restos de una copia adentro de otro repo mandan el comando a la carpeta principal', () => {
@@ -204,7 +209,7 @@ test('los restos de una copia adentro de otro repo mandan el comando a la carpet
   const lab = laboratorio();
   lab.sembrar({ repoPath: restos, principal, sessionId: 'otra' });
   const salida = JSON.parse(lab.cierre(principal).stdout);
-  assert.ok(salida.reason.includes(`--repo "${principal}" --merge abc123def456`), salida.reason);
+  assert.ok(salida.reason.includes(`--repo "${principal}" --merge ${SHA}`), salida.reason);
 });
 
 test('gh: con --head en una variable no toma la punta de la rama actual', () => {
@@ -243,10 +248,14 @@ test('el comando de la skill devuelve la sha de la copia borrada al preguntar po
 
 test('una carpeta principal que ya no es un repo no recibe el comando', () => {
   const borrada = path.join(tmp(), 'ya-no-esta');
+  const principal = tmp();
   const lab = laboratorio();
-  lab.sembrar({ repoPath: borrada, principal: tmp() });
+  lab.sembrar({ repoPath: borrada, principal });
+  // ningún latido lo paga: no corta, y el aviso da el comando de corregir, no el del latido en una carpeta sin repo
   const salida = JSON.parse(lab.cierre(tmp()).stdout);
-  assert.ok(salida.reason.includes(`--repo "${borrada}" --merge abc123def456`), salida.reason);
+  assert.strictEqual(salida.decision, undefined, salida.systemMessage);
+  assert.match(salida.systemMessage, /ningún latido lo paga/);
+  assert.ok(!salida.systemMessage.includes(`--repo "${principal}"`), salida.systemMessage);
 });
 
 test('con la copia borrada, el comando del cierre apunta a la carpeta principal', () => {
@@ -257,7 +266,7 @@ test('con la copia borrada, el comando del cierre apunta a la carpeta principal'
   const { stdout } = lab.cierre(tmp());
   const salida = JSON.parse(stdout);
   assert.strictEqual(salida.decision, 'block');
-  assert.ok(salida.reason.includes(`--repo "${principal}" --merge abc123def456`), salida.reason);
+  assert.ok(salida.reason.includes(`--repo "${principal}" --merge ${SHA}`), salida.reason);
   assert.ok(!salida.reason.includes(`--repo "${borrada}"`), salida.reason);
 });
 
@@ -267,40 +276,57 @@ test('con la copia viva, el comando del cierre sigue apuntando a la copia', () =
   const lab = laboratorio();
   lab.sembrar({ repoPath: copia, principal });
   const salida = JSON.parse(lab.cierre(tmp()).stdout);
-  assert.ok(salida.reason.includes(`--repo "${copia}" --merge abc123def456`), salida.reason);
+  assert.ok(salida.reason.includes(`--repo "${copia}" --merge ${SHA}`), salida.reason);
 });
 
 test('el archivo del latido corrido en la carpeta principal salda la entrada de la copia borrada', () => {
   const principal = tmp();
   const lab = laboratorio();
   lab.sembrar({ repoPath: path.join(tmp(), 'ya-no-esta'), principal });
-  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: principal, merge_commit: 'abc123def456aaaa', project: 'x' }));
+  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: principal, merge_commit: SHA_ENTERO, project: 'x' }));
   assert.strictEqual(lab.cierre(tmp()).stdout, '');
 });
 
 test('el archivo de otro repo no salda la entrada', () => {
   const lab = laboratorio();
-  lab.sembrar({ repoPath: path.join(tmp(), 'ya-no-esta'), principal: tmp() });
-  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: tmp(), merge_commit: 'abc123def456aaaa', project: 'x' }));
+  lab.sembrar({ repoPath: path.join(tmp(), 'ya-no-esta'), principal: repoVivo() });
+  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: tmp(), merge_commit: SHA_ENTERO, project: 'x' }));
   assert.strictEqual(JSON.parse(lab.cierre(tmp()).stdout).decision, 'block');
 });
 
-// Una entrada vieja, sin copia y sin carpeta principal, no se puede pagar con el comando que da: se reclama igual. Qué
-// hacer con ella es una decisión pendiente, porque dejar de reclamarla afloja el freno. Esta prueba fija lo de hoy.
-test('sin copia y sin carpeta principal, el cierre sigue frenando con la ruta anotada', () => {
+// Una entrada sin copia y sin carpeta principal no la paga ningún latido (pide el repo y el commit): no corta el turno,
+// se avisa una vez con el comando de corregir. Cortar por ella era pedir algo que nadie puede hacer.
+test('sin copia y sin carpeta principal, el cierre avisa sin cortar', () => {
   const borrada = path.join(tmp(), 'ya-no-esta');
   const lab = laboratorio();
   lab.sembrar({ repoPath: borrada });
   const salida = JSON.parse(lab.cierre(tmp()).stdout);
-  assert.strictEqual(salida.decision, 'block');
-  assert.ok(salida.reason.includes(`--repo "${borrada}"`), salida.reason);
+  assert.strictEqual(salida.decision, undefined, salida.systemMessage);
+  assert.ok(salida.systemMessage.includes(borrada) && /ningún latido lo paga/.test(salida.systemMessage), salida.systemMessage);
+  // el mismo aviso no se repite en el cierre siguiente
+  assert.strictEqual(lab.cierre(tmp()).stdout, '');
 });
 
-test('con la copia y la carpeta principal borradas, el cierre sigue frenando con la ruta de la copia', () => {
+test('con la copia y la carpeta principal borradas, el cierre avisa sin cortar', () => {
   const borrada = path.join(tmp(), 'ya-no-esta');
   const lab = laboratorio();
   lab.sembrar({ repoPath: borrada, principal: path.join(tmp(), 'tampoco') });
   const salida = JSON.parse(lab.cierre(tmp()).stdout);
-  assert.strictEqual(salida.decision, 'block');
-  assert.ok(salida.reason.includes(`--repo "${borrada}"`), salida.reason);
+  assert.strictEqual(salida.decision, undefined, salida.systemMessage);
+  assert.match(salida.systemMessage, /ningún latido lo paga/);
+});
+
+// Un merge de otra sesión en un repo donde esta sesión no trabaja no lo salda ella: se avisa con el comando para quien sí.
+test('el merge de otra sesión en otro repo cercano avisa sin cortar, con su comando', () => {
+  const workspace = tmp();
+  const repo = path.join(workspace, 'repo');
+  fs.mkdirSync(repo);
+  git(repo, ['init', '--quiet', '-b', 'main']);
+  git(repo, ['commit', '--quiet', '--allow-empty', '-m', 'base']);
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: repo, sessionId: 'otra' });
+  const salida = JSON.parse(lab.cierre(workspace).stdout);
+  assert.strictEqual(salida.decision, undefined, salida.systemMessage);
+  assert.ok(salida.systemMessage.includes(`--repo "${repo}" --merge ${SHA}`), salida.systemMessage);
+  assert.match(salida.systemMessage, /de la sesión otra/);
 });
