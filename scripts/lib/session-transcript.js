@@ -144,23 +144,39 @@ function wholeLines(text, cutStart, cutEnd) {
   return lines;
 }
 
-// Las tareas de fondo de Claude Code: el resultado de la herramienta trae el id al lanzarla, y su fin llega como un aviso
-// (`<task-notification>` con `<task-id>` y `<status>`) o como el resultado de detenerla. Sólo en renglones de resultado o
-// de aviso: un texto del asistente que cita un id no lanza ni termina nada.
-const LAUNCHED = /(?:running in background with ID: |Workflow launched in background\. Task ID: |moved to the background \(ID: )([A-Za-z0-9_-]+)/g;
+// Las tareas de fondo de Claude Code. El lanzamiento se lee de los datos del resultado de la herramienta, no de su texto
+// (un `grep` o un `Read` que cita «running in background with ID» no lanza nada): `backgroundTaskId` (una orden de consola
+// de fondo o pasada al fondo) o `status: 'async_launched'` con su `taskId` (un flujo) o su `agentId` (un agente de fondo).
+// El fin llega como un aviso (`<task-notification>` con `<task-id>` y `<status>`): como mensaje, o mientras la sesión
+// trabaja, encolado (`queue-operation`, o un `attachment` de tipo `queued_command`); o como el resultado de detenerla.
 const NOTICE = /<task-id>([A-Za-z0-9_-]+)<\/task-id>[\s\S]*?<status>(completed|failed|killed|stopped|cancelled)<\/status>/g;
 const STOPPED = /Successfully stopped task: ([A-Za-z0-9_-]+)/g;
+function launchedId(r) {
+  if (!r || typeof r !== 'object') return null;
+  if (typeof r.backgroundTaskId === 'string' && r.backgroundTaskId) return r.backgroundTaskId;
+  if (r.status === 'async_launched') return r.taskId || r.agentId || null;
+  return null;
+}
 /** Cuántas tareas de fondo lanzadas en estos renglones no avisaron que terminaron. */
 function backgroundPending(lines) {
   const running = new Set();
+  const textOf = (v) => JSON.stringify(v || '').replace(/\\n/g, '\n');
   for (const line of lines) {
     let d;
     try { d = JSON.parse(line); } catch { continue; }
-    if (!d || d.type !== 'user' || d.isSidechain || !d.message) continue;
-    const text = JSON.stringify(d.message.content || '').replace(/\\n/g, '\n');
-    if (d.toolUseResult) for (const m of text.matchAll(LAUNCHED)) running.add(m[1]);
-    for (const m of text.matchAll(NOTICE)) running.delete(m[1]);
-    for (const m of text.matchAll(STOPPED)) running.delete(m[1]);
+    if (!d || d.isSidechain) continue;
+    let notices = null;
+    if (d.type === 'user' && d.message) {
+      if (d.toolUseResult) {
+        const id = launchedId(d.toolUseResult);
+        if (id) running.add(id);
+        for (const m of textOf(d.message.content).matchAll(STOPPED)) running.delete(m[1]);
+        continue;
+      }
+      notices = textOf(d.message.content);
+    } else if (d.type === 'queue-operation') notices = textOf(d.content);
+    else if (d.type === 'attachment' && d.attachment && d.attachment.type === 'queued_command') notices = textOf(d.attachment);
+    if (notices) for (const m of notices.matchAll(NOTICE)) running.delete(m[1]);
   }
   return running.size;
 }

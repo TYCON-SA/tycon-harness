@@ -1868,12 +1868,14 @@ function criticosTocados(cmd, cwd, stateDir) {
 
 /**
  * Lo que el comando borra o mueve del registro de corridas de los revisores (`advisor-runs/`, de cualquier estado): el
- * cierre lo lee para ver lo que dijo un revisor fuera del registro de críticos, y borrarlo es saltear esa revisión. Sin
- * interruptor.
+ * cierre lo lee para ver lo que dijo un revisor fuera del registro de críticos, y borrarlo es saltear esa revisión. El
+ * subcomando `pipeline.js advisor-runs` no es una ruta y no cuenta. Sin interruptor.
  */
 function corridasDeRevisoresTocadas(cmd, cwd, stateDir) {
   const { isAdvisorRunsRecord } = require('./lib/story-gate.js');
-  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  // `pipeline.js advisor-runs` es un subcomando que lee el registro, no una ruta: se saca antes de buscar la palabra
+  cmd = String(cmd || '').replace(/(pipeline\.js["']?\s+)advisor-runs(?![\w.\/-])/gi, '$1(subcomando)');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(cmd);
   const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
   return zonaTocada(cmd, cwd, stateDir, { carpeta: 'advisor-runs', nombres: ['advisor-runs'], pieza: isAdvisorRunsRecord,
     enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])advisor-runs(?![\w.-])/i.test(t) });

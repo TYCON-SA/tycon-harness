@@ -966,4 +966,12 @@ test('AdvisorRuns_RegistryProtected — el freno de escritura no deja tocar el r
   // leerlo sigue permitido
   const r = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: `cat ${runs}` } }), env: l.env, encoding: 'utf8', cwd: l.repo });
   assert.ok(r.status === 0 && !/"deny"|"block"/.test(out(r)), `leer se frenó: ${out(r)}`);
+  // el subcomando `pipeline.js advisor-runs` no es una ruta: con un cd y un borrado de otra cosa, pasa
+  const sub = `cd ${l.repo} && node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js advisor-runs --session x && rm -rf ${path.join(l.base, 'otra')}`;
+  const r2 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: sub } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+  assert.doesNotMatch(out(r2), /registro de corridas de los revisores/, `el subcomando se frenó: ${out(r2)}`);
+  // pero la carpeta por su nombre, después de entrar al estado, sí
+  const rel = `cd ${l.state} && rm -rf advisor-runs`;
+  const r3 = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: rel } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+  assert.ok(r3.status === 2 || /"deny"|"block"/.test(out(r3)), `no frenó: ${rel}`);
 });

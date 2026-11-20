@@ -663,3 +663,36 @@ test('LintFrontmatter_DoneBatchWithPending_NewBlocksOldWarns', () => {
   git('merge', '--no-commit', '--no-ff', 'otra');
   assert.equal(run([f], root).code, 0, 'el merge trae lo de la otra rama: no frena');
 });
+
+// Los pendientes como lista de renglones también cuentan; dos tandas con nombres que empiezan igual (`7.1-core`,
+// `7.1-smoke`) son dos; una historia movida en el commit se compara con su ruta de origen.
+test('LintFrontmatter_DoneBatchWithPending_BlockListsDottedNamesAndMoves', () => {
+  const root = mkRepo('lint-done-pending2-');
+  const git = (...a) => execFileSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', ...a], { cwd: root, stdio: 'ignore' });
+  const enRenglones = story(root, 'specs/story-9.2-a.md', ['story: "9.2"', 'epic: 9', 'status: in-progress', 'pipelines:',
+    '  - name: A-uno', '    status: done', '    acs: [1]', '    tests_pending:', '      - "T10 — en vivo"', '    tasks_pending:  # quedan', '      - 4']);
+  const r1 = run([enRenglones], root);
+  assert.equal(r1.code, 1, r1.out);
+  assert.match(r1.out, /A-uno \(2\)/);
+  // un comentario con corchetes en una lista vacía no es un pendiente
+  const vacia = story(root, 'specs/story-9.3-b.md', ['story: "9.3"', 'epic: 9', 'status: in-progress', 'pipelines:',
+    '  - name: A', '    status: done', '    acs: [1]', '    acs_pending: []  # antes [2]']);
+  assert.equal(run([vacia], root).code, 0);
+  // nombres con punto: la segunda que pasa a done con pendientes es nueva aunque la primera ya lo estuviera
+  const tandas = (st) => ['story: "9.4"', 'epic: 9', 'status: in-progress', 'pipelines:',
+    '  - name: "7.1-core"', '    status: done', '    acs_pending: [2]', '  - name: "7.1-smoke"', `    status: ${st}`, '    acs_pending: [9]'];
+  const f = story(root, 'specs/story-9.4-c.md', tandas('blocked'));
+  fs.rmSync(enRenglones); fs.rmSync(vacia);
+  git('add', '-A'); git('commit', '-qm', 'a');
+  story(root, 'specs/story-9.4-c.md', tandas('done'));
+  const r2 = run([f], root);
+  assert.equal(r2.code, 1, r2.out);
+  assert.match(r2.out, /7\.1-smoke \(1\)/);
+  assert.doesNotMatch(r2.out, /pendientes: 7\.1-core/);
+  // movida sin cambios (git mv): no introduce nada
+  story(root, 'specs/story-9.4-c.md', tandas('blocked'));
+  git('mv', 'specs/story-9.4-c.md', 'specs/story-9.4-d.md');
+  const r3 = run([path.join(root, 'specs/story-9.4-d.md')], root);
+  assert.equal(r3.code, 0, r3.out);
+  assert.match(r3.out, /que ya lo traían[\s\S]*7\.1-core \(1\)/);
+});

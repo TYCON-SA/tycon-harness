@@ -747,7 +747,41 @@ function marcaSinSustento(marca, medida, alDia, bases, adhoc, avisar = () => {})
  * de otro repo del carril lo muestra en los dos, y Mac guarda un nombre con acento en una forma de Unicode y git lo lista en otra.
  * `repos`: los del guardado, además de los del carril; `medida`: la de esta vuelta (sin ella, mide).
  */
-function cuentaDelCarril(adhoc, { repos = [], sinSeguir = false, medida } = {}) {
+// Las carpetas temporales del sistema, por su ruta real (en macOS /tmp es /private/tmp, y la de cada usuario vive en
+// /private/var/folders). Ahí corren los laboratorios y las pruebas.
+function temporalesDelSistema() {
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
+  return [...new Set([real(require('os').tmpdir()), real('/tmp'), real('/private/tmp'), real('/private/var/folders')].filter(Boolean))];
+}
+const dentroDe = (dir, p) => p === dir || p.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep);
+
+/**
+ * El juez de los laboratorios del camino corto: `(raiz) → bool`, si un repo es un laboratorio que no suma al tope. Lo es
+ * un repo en una carpeta temporal del sistema, sin `origin` (un `git init` de prueba; un clon o un worktree de un repo de
+ * verdad lo tienen, y suman), que no es un repo anotado del carril, cuando el camino corto vive fuera de los temporales
+ * (su carpeta y sus repos anotados). Si vive en un temporal, o no se sabe dónde vive, nada es laboratorio. Un git que no
+ * contesta sobre el `origin`: suma. `temporales`: otra lista, para las pruebas.
+ */
+function juezDeLaboratorios(adhoc, { temporales = null } = {}) {
+  const tmps = temporales || temporalesDelSistema();
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
+  const propios = [adhoc && adhoc.cwd, ...Object.keys((adhoc && adhoc.bases) || {})].filter(Boolean).map(real);
+  if (!propios.length || propios.some((p) => !p || tmps.some((t) => dentroDe(t, p)))) return () => false;
+  const anotados = new Set(propios);
+  const juzgados = new Map();
+  return (raiz) => {
+    const r = real(raiz);
+    if (!r || anotados.has(r) || !tmps.some((t) => dentroDe(t, r))) return false;
+    if (!juzgados.has(r)) {
+      let sinOrigen = false;
+      try { sinOrigen = origenDe(r) === null; } catch (_) { sinOrigen = false; }
+      juzgados.set(r, sinOrigen);
+    }
+    return juzgados.get(r);
+  };
+}
+
+function cuentaDelCarril(adhoc, { repos = [], sinSeguir = false, medida, temporales = null } = {}) {
   const { isImplPath } = require('./atdd-order.js');
   const { isCodeFile } = require('./story-gate.js');
   const m = medida || module.exports.medirLoPropio(adhoc, { repos });
@@ -755,7 +789,9 @@ function cuentaDelCarril(adhoc, { repos = [], sinSeguir = false, medida } = {}) 
   const porRepo = rutasDe(m, adhoc, { como: 'propio', repos: leer, sinSeguir, suma: sumaAlTope });
   const anotadas = new Set([adhoc && adhoc.mockup, adhoc && adhoc.capture].filter((x) => x && typeof x.file === 'string').map((x) => rutaReal(x.file)));
   const archivos = new Map();
+  const esLaboratorio = juezDeLaboratorios(adhoc, { temporales });
   for (const repo of Object.keys(porRepo)) {
+    if (esLaboratorio(repo)) continue;
     for (const rel of porRepo[repo]) {
       const abs = path.join(repo, rel);
       if (isImplPath(rel) && isCodeFile(rel) && !anotadas.has(rutaReal(abs))) {
@@ -804,4 +840,4 @@ function mismoRepo(a, b) {
 const huellaCompleta = (h) => typeof h === 'string' && !h.startsWith('incompleta:');
 
 module.exports = { traerBase, conBase, conBasesAlDia, mismoOrigen, formaDeLaRemota, repoConoce, medirLoPropio, rutasDe, reposQueSeMiden, marcaSinSustento,
-  anotarGuardadoDelCarril, puntaConConstancia, reposDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, mismoRepo, raizDe, ubicar, sumaAlTope, RAMA };
+  anotarGuardadoDelCarril, puntaConConstancia, reposDelCarril, cuentaDelCarril, juezDeLaboratorios, sigueElRepo, huellaDelCarril, huellaCompleta, mismoRepo, raizDe, ubicar, sumaAlTope, RAMA };
