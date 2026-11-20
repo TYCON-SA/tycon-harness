@@ -1562,3 +1562,32 @@ test('T14g (2.7) · la ejecución de una story con id más largo NO le da consta
   assert.deepStrictEqual(x.sin_constancia, { num: 0, den: 1 });
 });
 
+
+test('Memoria_HistorialGrande_NoGuardaElTexto · un historial con muchas versiones entra en un tope de memoria chico', () => {
+  // 🔴 rojo: guardar el texto de cada versión hasta el final (en vez de sólo su `story:` y `status:`) → 2000 versiones de
+  //    100 KB son 200 MB de texto y el proceso, con 64 MB, se queda sin memoria (lo que tumbó al nocturno tres noches).
+  //    Versiones chicas a propósito: un texto de más de 1 MB Node lo guarda fuera de la memoria que limita el tope.
+  const { root, repo } = nuevoRepo('memoria');
+  const relleno = 'x'.repeat(100 * 1024);
+  const estados = ['draft', 'ready-for-dev', 'in-progress', 'review', 'done'];
+  for (let v = 0; v < 5; v++) {
+    escribir(repo, 'specs/grande.md', story('G-1', estados[v], `versión ${v}\n`));
+    for (let n = 0; n < 400; n++) escribir(repo, `docs/nota-${n}.md`, `# nota ${n} v${v}\n${relleno}\n`);
+    // stable-data: fechas fijas del fixture, una por versión
+    commit(repo, `v${v}`, `2026-01-0${v + 1}T00:00:00Z`);
+  }
+  const guion = path.join(root, 'medir.js');
+  fs.writeFileSync(guion, [
+    `process.env.TYCON_SKILLS_DIR = ${JSON.stringify(SIN_DESCUBRIDOR.TYCON_SKILLS_DIR)};`,
+    `const M = require(${JSON.stringify(path.resolve(__dirname, '..', 'metrics', 'sdlc-stage-metrics.js'))});`,
+    `const repo = ${JSON.stringify(repo)};`,
+    "const r = M.derivarTransiciones(repo, [{ file: require('path').join(repo, 'specs', 'grande.md'), id: 'G-1' }], { loteBlobs: 50 });",
+    "process.stdout.write(String((r.transiciones['G-1'] || []).length));",
+  ].join('\n'));
+  const { spawnSync } = require('child_process');
+  const out = spawnSync(process.execPath, ['--max-old-space-size=64', guion], {
+    encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' }, maxBuffer: 1024 * 1024,
+  });
+  assert.strictEqual(out.status, 0, `se quedó sin memoria o falló (salida ${out.status}): ${String(out.stderr).slice(-400)}`);
+  assert.strictEqual(out.stdout, '4', 'cada versión cambia el estado: 4 transiciones');
+});
