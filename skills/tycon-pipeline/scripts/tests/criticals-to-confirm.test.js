@@ -325,3 +325,58 @@ test('Set_TextosDeMech_NombranElRevisorQueVuelve @story-8.296 @ac-13', () => {
   const ayuda = L.correr([]);
   assert.match(ayuda.stderr, /DESCUENTA advisors cubiertos \(MECH-2\)[\s\S]{0,200}nunca saca a un revisor con críticos abiertos/, 'la ayuda de advisors no lo dice');
 });
+
+// 🔴 Falla con: una vuelta sin código que se cierra sola con un crítico de mech-check dado por arreglado en findings.json
+//    (no lo reportó ningún revisor, así que el cruce no lo mira) sin volver a correr mech-check: el crítico sigue y nadie
+//    lo comprueba.
+test('Set_SinCodigo_CriticoMecanicoArreglado_SeVuelveAComprobar', () => {
+  const sinTest = (L) => {
+    const t = fs.readFileSync(L.story, 'utf8').replace('1. **Given** algo **When** pasa **Then** resultado.\n', '1. **Given** algo **When** pasa **Then** resultado.\n2. **Given** otra cosa **When** pasa **Then** otro resultado.\n');
+    fs.writeFileSync(L.story, t);
+  };
+  const L = lab({ hallazgos: ARREGLADO('ACCOV-C5'), cambio: { 'notas.md': 'otras\n' }, foto: true });
+  sinTest(L);
+  const r = L.reloop();
+  assert.ok(r.j, salida(r));
+  assert.notStrictEqual(r.j.no_code_delta, true, `la vuelta se cerró sola con el crítico mecánico vivo: ${salida(r)}`);
+  assert.deepStrictEqual((r.j.mech_still_open || []).map((m) => m.rule), ['ACCOV-C5'], salida(r));
+  // arreglado de verdad (la historia sin el criterio sin prueba): se comprueba y la vuelta se cierra
+  const ok = lab({ hallazgos: ARREGLADO('ACCOV-C5'), cambio: { 'notas.md': 'otras\n' }, foto: true });
+  const r2 = ok.reloop();
+  assert.ok(r2.j, salida(r2));
+  assert.strictEqual(r2.j.no_code_delta, true, salida(r2));
+  assert.deepStrictEqual(r2.j.mech_confirmed, ['ACCOV-C5'], salida(r2));
+});
+
+// 🔴 Falla con (pase adversarial): un crítico de una regla que mech-check no evalúa, o que hoy deja ambigua, tomado por
+//    comprobado porque mech-check no lo reporta: la vuelta sin código se cierra sola sin saber.
+test('Set_SinCodigo_ReglaQueMechNoEvaluaOAmbigua_NoSeCierra', () => {
+  const noEvalua = lab({ hallazgos: ARREGLADO('SEC-C7'), cambio: { 'notas.md': 'otras\n' }, foto: true });
+  const r = noEvalua.reloop();
+  assert.ok(r.j, salida(r));
+  assert.notStrictEqual(r.j.no_code_delta, true, salida(r));
+  assert.deepStrictEqual((r.j.mech_still_open || []).map((m) => m.rule), ['SEC-C7'], salida(r));
+  assert.match(r.j.mech_still_open[0].reason, /no la evalúa/);
+  // la tabla de pruebas sin la columna AC: mech-check deja ACCOV-C5 ambiguo
+  const ambigua = lab({ hallazgos: ARREGLADO('ACCOV-C5'), cambio: { 'notas.md': 'otras\n' }, foto: true });
+  const t = fs.readFileSync(ambigua.story, 'utf8')
+    .replace('| # | Test | AC | Nivel | Escenario | Resultado esperado |', '| # | Test | Nivel | Escenario | Resultado esperado |')
+    .replace('|---|---|---|---|---|---|', '|---|---|---|---|---|').replace('| T1 | `a.caso` | 1 | unit | x | y |', '| T1 | `a.caso` | unit | x | y |');
+  fs.writeFileSync(ambigua.story, t);
+  const ra = ambigua.reloop();
+  assert.ok(ra.j, salida(ra));
+  assert.notStrictEqual(ra.j.no_code_delta, true, salida(ra));
+  assert.deepStrictEqual((ra.j.mech_still_open || []).map((m) => m.rule), ['ACCOV-C5'], salida(ra));
+});
+
+// 🔴 Falla con (pase adversarial): dos críticos de la misma regla, uno arreglado y otro con su destino (diferido): el que
+//    mech-check sigue reportando es el diferido, y la vuelta queda trabada por el arreglado.
+test('Set_SinCodigo_MismaReglaConDestino_SeCuentaPorInstancia', () => {
+  const L = lab({ hallazgos: [...ARREGLADO('ACCOV-C5'), { rule_id: 'ACCOV-C5', severity: 'CRITICAL', disposition: 'deferred', file: 'specs/x.md', title: 'AC 2' }], cambio: { 'notas.md': 'otras\n' }, foto: true });
+  const t = fs.readFileSync(L.story, 'utf8').replace('1. **Given** algo **When** pasa **Then** resultado.\n', '1. **Given** algo **When** pasa **Then** resultado.\n2. **Given** otra cosa **When** pasa **Then** otro resultado.\n');
+  fs.writeFileSync(L.story, t);
+  const r = L.reloop();
+  assert.ok(r.j, salida(r));
+  assert.strictEqual(r.j.no_code_delta, true, salida(r));
+  assert.deepStrictEqual(r.j.mech_confirmed, ['ACCOV-C5'], salida(r));
+});

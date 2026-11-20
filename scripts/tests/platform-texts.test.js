@@ -29,7 +29,7 @@ const TEXTOS = [
   'skills/tycon-story-work-item/SKILL.md', 'skills/tycon-pipeline/steps/step-01-start.md', 'skills/tycon-pipeline/steps/close-work-item.md',
   'skills/tycon-merge-to-main/steps/step-09b-create-change-request.md', 'guides/ci-gate.md', 'guides/git-commit-conventions.md',
   'guides/advisor-rules-catalog.md', 'guides/workflow-orchestration.md', 'guides/safety-guard.md', 'guides/produccion-con-permiso.md',
-  'guides/piezas-del-arnes.md', 'guides/organization-site.md', 'guides/organization-site.en.md',
+  ...require('./lib/pieces-guide.js').piecesFiles(ROOT), 'guides/organization-site.md', 'guides/organization-site.en.md',
   'guides/maintaining/mecanismo-de-instalacion.md', 'guides/maintaining/piezas-en-detalle.md', 'guides/maintaining/publicacion-espejo.md',
 ];
 // Los renglones que se quedan, cada uno con su motivo: no son la plataforma del equipo (Azure en la nube), son lo que un
@@ -50,7 +50,10 @@ const SE_QUEDAN = [
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 test('Texts_NeutralInCore @story-8.85 @ac-22', () => {
-  assert.strictEqual(TEXTOS.length, 25, 'la lista cerrada tiene 25 textos');
+  // 24 textos más la guía de piezas, que es su índice y un archivo por grupo
+  const pieces = require('./lib/pieces-guide.js').piecesFiles(ROOT).length;
+  assert.ok(pieces >= 3, 'la guía de piezas es su índice y sus grupos');
+  assert.strictEqual(TEXTOS.length, 24 + pieces, 'la lista cerrada tiene 24 textos y la guía de piezas');
   const sucios = [];
   const usadas = new Set();
   for (const rel of TEXTOS) {

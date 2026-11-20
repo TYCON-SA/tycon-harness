@@ -2001,6 +2001,8 @@ function cmdCompleteStep(nRaw, flags) {
     const delDueno = ['click', 'mensaje'].includes(firmaPlan.via) ? { tipo: 'manual', quien: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona' } : null;
     // la revisión que lanzó la propia sesión no es una delegación de nadie: se anota como lo que es
     const quienPlan = autoRevision ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})` }
+      // la firma de trámite la dio el arnés (automatic-signing.js): no hay coordinadora que nombrar
+      : porRevision && firmaPlan.automatica ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: 'arnés (firma de trámite)' }
       : porRevision ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: `coordinadora (sesión ${PROPIA})` }
         : delDueno || quienDeLasOpciones(optVal);
     const viaPlan = autoRevision ? '· revisión automática de la propia sesión' : porRevision ? '· revisión automática' : '--approved';
@@ -2209,7 +2211,7 @@ function cmdCompleteStep(nRaw, flags) {
       const { runMutationGate } = require('./lib/mutation-gate.js');
       let sinMutantes = null;
       if (opts.includes('--no-mutation')) {
-        const ES = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+        const ES = require('./lib/controls-off.js').listaDeInterruptores();
         if (ES.antesDelCorte('TYCON_MUTATION_CHECK')) {
           console.error(`⚠️  --no-mutation: desde ${ES.corteDe('TYCON_MUTATION_CHECK')} esto pide la firma del dueño (escape:no-mutation); hasta entonces pasa, avisado y anotado.`);
           sinMutantes = { via: 'agente', motivo: motivoSinMutantes };

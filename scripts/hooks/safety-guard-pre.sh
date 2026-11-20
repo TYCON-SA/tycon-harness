@@ -872,8 +872,8 @@ fi
 # módulo del comando. Contesta una de cuatro:
 #   · deny: frena con la regla de la firma y el motivo de la ventana, que trae cómo firmarla en la terminal;
 #   · ask: se guarda y se emite al salir 0 (salida_ok), así una regla posterior que frena sigue frenando;
-#   · allow: una firma que el dueño delegó nombrándola en `approvals.delegated_signing` la dio quien coordina, con su
-#     constancia;
+#   · allow: una firma de trámite (`approvals.delegated_signing`) la dio el arnés solo, o una delegada la dio quien
+#     coordina; queda su constancia con la vía;
 #   · none: no hay firma que pedir (o la vuelta extra delegada, que la consume pipeline.js).
 # Aprobar un control con `--relayed-by` ya no vale: la ventana lo niega (ESC-C7). Con el freno apagado por el ambiente
 # no se consulta: los escapes ya dejaron su constancia, y los guiones sin registro de la ventana sólo firman en la
@@ -963,10 +963,12 @@ if [[ "$_ow_mira" == "1" ]]; then
         _ow_det=""; [[ "$_ow_e" == "escape:rojo-esperado-de-la-matriz" ]] && _ow_det="${_c3_detalle:-}"
         constancia "$(ow_regla "$_ow_e")" escape ventana "" "$_c3_sid" "${_ow_e#escape:}" "" "$_ow_det"
       done ;;
-    # la aprobación explícita de la persona (un click o un «aprobado») queda con su vía: la dio ella, no la delegación.
-    # Lo que pasó por el período de aviso antes de su fecha de corte, con la suya
-    allow) _ow_camino=delegacion; case "$OW_VIA" in click|mensaje) _ow_camino="$OW_VIA" ;; esac
+    # la aprobación explícita de la persona (un click o un «aprobado») queda con su vía: la dio ella, no la delegación; la
+    # firma de trámite, con la suya: la dio el arnés (automatic-signing.js). Lo que pasó por el período de aviso antes de su
+    # fecha de corte, con la suya
+    allow) _ow_camino=delegacion; case "$OW_VIA" in click|mensaje|automatica) _ow_camino="$OW_VIA" ;; esac
       OW_AVISO_JSON="$OW_JSON"
+      [[ "$OW_VIA" == "automatica" ]] && printf '✅ firma de trámite, la dio el arnés: %s\n' "${OW_FIRMA#escape:}" >&2
       if [[ "$OW_VIA" != "aviso" ]]; then
         _ow_det=""; [[ "$OW_FIRMA" == "escape:rojo-esperado-de-la-matriz" ]] && _ow_det="${_c3_detalle:-}"
         constancia "$(ow_regla "$OW_FIRMA")" escape "$_ow_camino" "$OW_RELEVO" "$_c3_sid" "${OW_FIRMA#escape:}" "" "$_ow_det"

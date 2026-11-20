@@ -512,7 +512,7 @@ test('T85 EachNotice_CopiedAlone_WorksAsToday', () => {
 
 // ── 13 · queda escrito quién trae el clon y cuándo ────────────────────────────────────────────────────────────────────
 test('T85 TheGuide_SaysWhoBringsTheMaintainersClone_AndWhen', () => {
-  const guide = fs.readFileSync(path.join(ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const guide = require('./lib/pieces-guide.js').piecesText(ROOT);
   const i = guide.indexOf('## scripts/lib/night-data.js');
   assert.ok(i >= 0, 'guides/piezas-del-arnes.md no tiene la ficha de scripts/lib/night-data.js');
   // la ficha corta y su detalle (guides/maintaining/piezas-en-detalle.md, mismo título) se leen juntos

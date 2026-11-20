@@ -174,7 +174,8 @@
     "//   az repos pr create --org <org> --project <proyecto> --repository <repo> --source-branch <rama> --target-branch <destino>",
     "//   az repos pr list --org <org> --project <proyecto> --repository <repo> --source-branch <rama> --target-branch <destino>",
     "//   az repos pr show --id <n> --query \"{ac:autoCompleteSetBy.id, msg:completionOptions.mergeCommitMessage}\" -o json",
-    "//   az repos pr update --id <n> [--title <título> --description <texto>] --merge-commit-message \"Merged PR <n>: <asunto>\""
+    "//   az repos pr update --id <n> [--title <título> --description <texto>] --merge-commit-message \"Merged PR <n>: <asunto>\"",
+    "autoCompleteCommand: `az repos pr update --id ${Number(p.pullRequestId)} --auto-complete true --org ${org}`,"
   ],
   "integrations/azure-devops/scripts/ci-queue.js": [
     "//   az devops invoke --area build --resource timeline --route-parameters project=<proyecto> buildId=<n>",

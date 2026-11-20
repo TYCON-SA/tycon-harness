@@ -242,6 +242,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `session-state.js` | PermissionRequest (Bash\|PowerShell\|Edit\|Write\|MultiEdit\|NotebookEdit\|Read\|Glob\|Grep\|WebFetch\|WebSearch\|mcp__.*) | Un pedido de permiso, en el momento: anota la herramienta y qué pide, para que la coordinadora se entere con `owner-wait` | No | full | `TYCON_SESSION_STATE=0` |
 | `session-state.js` | PreToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | Una pregunta a la persona: la sesión espera «una respuesta» | No | full | `TYCON_SESSION_STATE=0` |
 | `session-state.js` | PostToolUse | Terminó el uso de una herramienta: la espera de un permiso se cierra | No | full | `TYCON_SESSION_STATE=0` |
+| `session-state.js` | PostToolUseFailure | Una herramienta falló (un comando aprobado que salió distinto de 0): la espera de un permiso también se cierra | No | full | `TYCON_SESSION_STATE=0` |
 | `session-state.js` | UserPromptSubmit | La persona escribió: la espera se cierra | No | full | `TYCON_SESSION_STATE=0` |
 | `session-state.js` | Stop | El turno se cerró: la espera se cierra | No | full | `TYCON_SESSION_STATE=0` |
 | `session-state.js` | SessionEnd | La sesión se cerró: su archivo de estado se borra | No | full | `TYCON_SESSION_STATE=0` |

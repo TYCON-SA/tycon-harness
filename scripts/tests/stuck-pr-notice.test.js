@@ -472,10 +472,25 @@ test('GreenIdle_TenMinutes_SaysHowToQueue — un pedido listo sin auto-merge fue
   // con otra punta, el reloj vuelve a cero
   const otra = SPN().verdesSinEntrar([ghRepo], { 'acme/harness': { ok: true, value: [verde(882, { sourceCommit: 'nueva' })] } }, primera.estado, ahora + 11 * 60000, 10);
   assert.deepStrictEqual(otra.trabados, []);
-  // en Azure no: sin leer sus controles, «limpio» sólo dice que no choca
+});
+
+test('GreenIdle_Azure_SinAutoCompletar_DiceComoPonerlo — un pedido privado sin choque y sin auto-completar avisa, sin decir «listo»', () => {
+  const ahora = Date.parse('2026-11-01T22:00:00Z');
   const az = azRepo('harness-maintainers');
-  const k2 = 'acme/Harness/harness-maintainers#6010';
-  assert.deepStrictEqual(SPN().verdesSinEntrar([az], { 'acme/Harness/harness-maintainers': { ok: true, value: [verde(6010)] } }, { [k2]: { estado: 'verde-sin-auto', punta: 'c6010', vistoDesde: '2026-11-01T20:00:00Z' } }, ahora, 10).trabados, []);
+  const k = 'acme/Harness/harness-maintainers#6010';
+  const previo = { [k]: { estado: 'verde-sin-auto', punta: 'c6010', vistoDesde: '2026-11-01T20:00:00Z' } };
+  const leido = (o) => ({ 'acme/Harness/harness-maintainers': { ok: true, value: [verde(6010, { inQueue: undefined, lastQueueDrop: undefined, autoCompleteCommand: 'az repos pr update --id 6010 --auto-complete true --org https://dev.azure.com/acme', ...o })] } });
+  const r = SPN().verdesSinEntrar([az], leido(), previo, ahora, 10);
+  assert.strictEqual(r.trabados.length, 1, 'nadie lo va a completar: avisa');
+  // sin leer sus controles, «limpio» sólo dice que no choca: no se afirma que está listo
+  assert.match(r.trabados[0].linea, /pedido 6010 \(harness-maintainers\) sin choque y sin auto-completar hace 2 h/);
+  assert.doesNotMatch(r.trabados[0].linea, /listo/);
+  assert.match(r.trabados[0].linea, /az repos pr update --id 6010 --auto-complete true --org https:\/\/dev\.azure\.com\/acme/);
+  assert.strictEqual(r.estado[k].vistoDesde, '2026-11-01T20:00:00Z', 'conserva el reloj');
+  // con auto-completar, borrador, en choque o de un bot: no
+  for (const o of [{ autoComplete: true }, { draft: true }, { mergeState: 'conflict' }, { author: 'build[bot]' }]) {
+    assert.deepStrictEqual(SPN().verdesSinEntrar([az], leido(o), previo, ahora, 10).trabados, [], JSON.stringify(o));
+  }
 });
 
 test('GreenIdle_NotForOthers — borrador, con auto-merge, en la cola, caído de la cola, no limpio o de un bot: no avisa', () => {
@@ -518,7 +533,8 @@ test('GreenIdle_CoordinatorReadsThePhoto — la coordinadora lo ve de la foto, s
   fs.mkdirSync(dir, { recursive: true });
   const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
   const ahora = Date.now();
-  const lecturas = { 'acme/harness': { ok: true, value: [verde(882)] } };
+  // los privados también se leen: uno sin leer se diría como problema
+  const lecturas = { 'acme/harness': { ok: true, value: [verde(882)] }, ...Object.fromEntries(repos.slice(1).map((k) => [k, { ok: true, value: [] }])) };
   fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - 60000).toISOString(), repos, lecturas }));
   fs.writeFileSync(path.join(dir, 'green-prs.json'), JSON.stringify({ 'acme/harness#882': { estado: 'verde-sin-auto', punta: 'c882', vistoDesde: new Date(ahora - 15 * 60000).toISOString() } }));
   const r = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
@@ -547,7 +563,9 @@ function fotoDeLaCoordinadora(w, lecturas, minutos, ahora) {
   const dir = stateDir(w.home);
   fs.mkdirSync(dir, { recursive: true });
   const repos = ['acme/harness', 'acme/Harness/harness-team-profile', 'acme/Harness/harness-team-operations', 'acme/Harness/harness-maintainers'];
-  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - minutos * 60000).toISOString(), repos, lecturas }));
+  // los privados que la prueba no nombra, leídos y sin pedidos: uno sin leer se diría como problema
+  const todas = { ...Object.fromEntries(repos.map((k) => [k, { ok: true, value: [] }])), ...lecturas };
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - minutos * 60000).toISOString(), repos, lecturas: todas }));
   fs.writeFileSync(path.join(dir, 'stuck-prs-refresh.lock'), JSON.stringify({ at: new Date().toISOString() }));
   return dir;
 }

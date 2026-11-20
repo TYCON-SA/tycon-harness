@@ -2241,18 +2241,20 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var pie = (f.ilegibles ? '<p>' + T('firmasIlegibles', { n: f.ilegibles }) + '</p>' : '')
       + (f.recortadas ? '<p>' + T('firmasRecortadas', { n: f.recortadas }) + '</p>' : '');
     if (!ls.length) return '<div class="mini blind ancha"><h4>' + T('firmasTitulo') + '</h4><p>' + T('firmasNinguna') + '</p>' + pie + '</div>';
-    var clase = function (l) { return l.delegada ? 'delegada' : l.via === 'notified' ? 'avisada' : ['window', 'terminal', 'click', 'message', 'command'].indexOf(l.via) >= 0 ? 'tuya' : 'otra'; };
-    var n = { tuya: 0, delegada: 0, avisada: 0, otra: 0 };
+    var clase = function (l) { return l.via === 'automatic' ? 'automatica' : l.delegada ? 'delegada' : l.via === 'notified' ? 'avisada' : ['window', 'terminal', 'click', 'message', 'command'].indexOf(l.via) >= 0 ? 'tuya' : 'otra'; };
+    var n = { tuya: 0, delegada: 0, automatica: 0, avisada: 0, otra: 0 };
     ls.forEach(function (l) { n[clase(l)] += 1; });
     var partes = [];
     if (n.tuya) partes.push(T('firmasTuyas', { n: n.tuya }));
     if (n.delegada) partes.push(T('firmasDelegadas', { n: n.delegada }));
+    if (n.automatica) partes.push(T('firmasAutomaticas', { n: n.automatica }));
     if (n.avisada) partes.push(T('firmasAvisadas', { n: n.avisada }));
     if (n.otra) partes.push(T('firmasOtraVia', { n: n.otra }));
     var marca = function (l) {
       var k = clase(l);
       if (k === 'delegada') return '<b class="firma-marca firma-delegada">⇄ ' + T('marcaDelegada') + '</b>' + (l.via === 'review' ? ' <i>' + T('firmaConRevision') + '</i>' : '');
       if (k === 'avisada') return '<b class="firma-marca firma-avisada">' + T('marcaAvisada') + '</b>';
+      if (k === 'automatica') return '<b class="firma-marca firma-avisada">' + T('marcaAutomatica') + '</b>';
       if (k === 'tuya') return '<b class="firma-marca firma-tuya">' + T('marcaTuya') + '</b>';
       return '<b class="firma-marca">' + T('marcaOtraVia', { v: esc(l.via) }) + '</b>';
     };

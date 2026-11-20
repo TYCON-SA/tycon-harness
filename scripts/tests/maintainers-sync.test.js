@@ -430,7 +430,7 @@ test('T22 Catalogs_DeclareThePiece — la lista de efectos, la de hooks, INSTALL
   assert.ok(read(task.source.file).includes(task.source.pattern), 'la tarea nombra el texto que la lanza');
   assert.ok(read('scripts/setup/hooks-list.json').includes('TYCON_MAINTAINERS_SYNC=0'));
   assert.ok(/branch-guard-notice\.js` \| SessionStart \|[^\n]*TYCON_MAINTAINERS_SYNC=0/.test(read('INSTALL.md')), 'la fila del hook en INSTALL.md');
-  assert.ok(read('guides/piezas-del-arnes.md').includes('## scripts/lib/maintainers-sync.js'), 'la ficha en la guía de piezas');
+  assert.ok(require('./lib/pieces-guide.js').piecesText(ROOT).includes('## scripts/lib/maintainers-sync.js'), 'la ficha en la guía de piezas');
 });
 
 // ── los caminos de error, de punta a punta ─────────────────────────────────────────────

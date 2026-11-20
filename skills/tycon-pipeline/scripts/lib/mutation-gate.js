@@ -155,7 +155,7 @@ function runMutationGate({
   // de corte de la lista única de interruptores, el agente lee el aviso: desde ese día la variable pide la firma
   if (String(env.TYCON_MUTATION_CHECK || '').toLowerCase() === 'off') {
     appendLog('bypass.log', { kind: 'MUTATION_CHECK_OFF', story: marker.storyId });
-    const ES = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+    const ES = require('./controls-off.js').listaDeInterruptores();
     if (ES.antesDelCorte('TYCON_MUTATION_CHECK', today)) {
       log(`⚠️  TYCON_MUTATION_CHECK=off: desde ${ES.corteDe('TYCON_MUTATION_CHECK')} esto pide la firma del dueño (escape:TYCON_MUTATION_CHECK); hasta entonces pasa, avisado y anotado.`);
     }

@@ -52,7 +52,8 @@ function cargarLista() {
     } catch (_) { /* sin lugar: sin lista */ }
   }
   try { if (ruta) return require(ruta); } catch (_) { /* un lector roto cuenta como sin lista */ }
-  return { leer: () => ({ ok: false, error: 'no encontré scripts/lib/env-switches.js', entradas: [] }), entrada: () => null, apagaSegunLista: () => null };
+  // sin la lista no hay período de aviso: lo que tiene fecha de corte se pide como si ya hubiera pasado
+  return { leer: () => ({ ok: false, error: 'no encontré scripts/lib/env-switches.js', entradas: [] }), entrada: () => null, apagaSegunLista: () => null, antesDelCorte: () => false, corteDe: () => null };
 }
 
 /**
@@ -593,7 +594,11 @@ function juzgarComando({ cmd, cwd, home = os.homedir(), shell = 'bash' }) {
   return [...new Set(motivos)];
 }
 
-module.exports = { apaga, esConfig, esDelArnes, apagados, juzgarTexto, juzgarEdicion, juzgarComando, partir };
+// El lector de la lista para los guiones de las skills que anotan un escape: el mismo que usa esta biblioteca, que la
+// encuentra también con las skills en un clon aparte.
+const listaDeInterruptores = () => ES;
+
+module.exports = { apaga, esConfig, esDelArnes, apagados, juzgarTexto, juzgarEdicion, juzgarComando, partir, listaDeInterruptores };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

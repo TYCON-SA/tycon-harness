@@ -805,7 +805,7 @@ const SALIDA_NORMAL = {
  * una puesta: antes del corte, la fecha en que se retira; desde el corte, que se ignora y cuál es su salida normal.
  */
 function escotillasVigentes(env, today) {
-  const ES = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+  const ES = require('./lib/controls-off.js').listaDeInterruptores();
   const vigentes = new Set();
   const avisos = [];
   // cada una por su nombre a la vista: el inventario de la lista única busca así a sus lectores
@@ -829,10 +829,16 @@ function escotillasVigentes(env, today) {
  * sale de `opts.sessionId` o del ambiente; sin sesión, se anota en cada cálculo, con `sessionId: null`.
  */
 function anotarEscotillas(env, sid, opts, vigentes) {
-  const ES = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'env-switches.js'));
+  // la lista se busca también con las skills en un clon aparte; sin ella no se puede anotar, y se dice
+  const ES = require('./lib/controls-off.js').listaDeInterruptores();
+  const puestas = ESCOTILLAS.filter(([variable]) => vigentes.has(variable));
+  if (!puestas.length) return;
+  if (typeof ES.anotarEscape !== 'function') {
+    process.stderr.write(`runtime-matrix: ${puestas.map(([v]) => v).join(', ')} puesta(s), pero no encontré la lista de variables del arnés (scripts/lib/env-switches.js): no quedó anotado\n`);
+    return;
+  }
   const sessionId = opts.sessionId || ES.sesionDe(env);
-  for (const [variable, kind] of ESCOTILLAS) {
-    if (!vigentes.has(variable)) continue;
+  for (const [variable, kind] of puestas) {
     ES.anotarEscape({ stateDir: opts.stateDir, sessionId, kind, variable, story: sid, unaVez: `${sid}`, storyPath: opts.storyPath || null });
   }
 }
