@@ -327,6 +327,39 @@ function operacionAz(palabras) {
   for (const w of palabras) { if (w.startsWith('-') || w.startsWith("'")) break; op.push(w.toLowerCase()); }
   return op.length ? op.join(' ') : null;
 }
+/**
+ * Por qué `--azure` no acepta estas palabras, o null: `{ motivo, detalle }`. Lo usan el corte (paso 3) y el mensaje que
+ * arma el comando por la puerta (paso 4), para que el freno nunca sugiera algo que después frena.
+ * 🔴 `az` lee un archivo cuando un argumento empieza con «@» Y cuando lo que sigue a su primer «=» empieza con «@»
+ * (`--name=@ruta`, `--set clave=@ruta`; con «@-», la entrada estándar). Mirar sólo el principio dejaba que una lectura
+ * sin cuadro trajera a la conversación cualquier archivo, también la credencial de Azure (pase adversarial del pedido).
+ */
+function rechazoAzure(palabras, op) {
+  const crudas = palabras.map((w) => w.replace(/^'|'$/g, ''));
+  if (crudas.some((w) => /(?:^|=)@/.test(w))) {
+    return { motivo: 'un argumento de --azure trae «@» al principio o después de un «=»: az leería el contenido de un archivo, y ni el cuadro ni la persona lo ven.',
+      detalle: ['Escribí el valor en línea, entre comillas simples.'] };
+  }
+  if (crudas.some((w) => w === '--debug' || w === '--verbose')) {
+    return { motivo: '--debug y --verbose no pasan por --azure: az imprimiría los pedidos con sus encabezados, y la credencial de Azure llegaría a la conversación.',
+      detalle: ['Corré el mismo comando sin esa opción.'] };
+  }
+  if (op && /^sql server firewall-rule\b/.test(op)) {
+    return { motivo: 'la regla de firewall no va por --azure.', detalle: [
+      'La IP de esta máquina se habilita por la puerta, con su cuadro, y la regla se cierra sola al terminar la sesión:',
+      '  /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
+      'Otra regla (otra IP, un rango) no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal.',
+    ] };
+  }
+  if (!op || (!AZURE_CAMBIOS.has(op) && !AZURE_LECTURAS.has(op))) {
+    return { motivo: `«${op || 'esa operación'}» no tiene camino aprobado por la puerta.`, detalle: [
+      'Por --azure pasan los cambios de alertas (monitor metrics alert create|update|delete) y de tamaño o plan',
+      '(sql db update, sql elastic-pool update), y sus lecturas (list y show).',
+      'Para esta operación, dejale el comando a la persona para que lo corra en su terminal, y decile qué hace.',
+    ] };
+  }
+  return null;
+}
 // `--help` (o `-h`), sola: imprime las formas y el camino de emergencia; no lee la clave, no consulta y no llama a `az`
 const CANONICA_AYUDA = new RegExp(`^${RUTA_PUERTA} (?:--help|-h)$`);
 // `--delete-group <grupo>`, sólo el nombre: la puerta comprueba que el grupo no es de producción antes de pedir el borrado.
@@ -629,31 +662,8 @@ function decidir(entrada) {
     const az = CANONICA_AZURE.exec(limpio);
     if (canonica && az) {
       const palabras = az[1].trim().match(new RegExp(PALABRA_AZ, 'g')) || [];
-      const op = operacionAz(palabras);
-      if (palabras.some((w) => /^'?@/.test(w))) {
-        frenar('un argumento de --azure empieza con «@»: az leería el contenido de un archivo, y el cuadro no lo muestra.', [
-          'Escribí el valor en línea, entre comillas simples.',
-        ], { cmd }, 'puerta-no-canonica');
-      }
-      if (palabras.some((w) => w === '--debug' || w === '--verbose')) {
-        frenar('--debug y --verbose no pasan por --azure: az imprimiría los pedidos con sus encabezados, y la credencial de Azure llegaría a la conversación.', [
-          'Corré el mismo comando sin esa opción.',
-        ], { cmd }, 'puerta-no-canonica');
-      }
-      if (op && /^sql server firewall-rule\b/.test(op)) {
-        frenar('la regla de firewall no va por --azure.', [
-          'La IP de esta máquina se habilita por la puerta, con su cuadro, y la regla se cierra sola al terminar la sesión:',
-          '  /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
-          'Otra regla (otra IP, un rango) no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal.',
-        ], { cmd }, 'puerta-no-canonica');
-      }
-      if (!op || (!AZURE_CAMBIOS.has(op) && !AZURE_LECTURAS.has(op))) {
-        frenar(`«${op || 'esa operación'}» no tiene camino aprobado por la puerta.`, [
-          'Por --azure pasan los cambios de alertas (monitor metrics alert create|update|delete) y de tamaño o plan',
-          '(sql db update, sql elastic-pool update), y sus lecturas (list y show).',
-          'Para esta operación, dejale el comando a la persona para que lo corra en su terminal, y decile qué hace.',
-        ], { cmd }, 'puerta-no-canonica');
-      }
+      const rechazo = rechazoAzure(palabras, operacionAz(palabras));
+      if (rechazo) frenar(rechazo.motivo, rechazo.detalle, { cmd }, 'puerta-no-canonica');
     }
     if (esCodex) {
       frenar('en Codex la puerta no puede abrir el cuadro de aprobación de Claude Code.', [
@@ -763,9 +773,12 @@ function decidir(entrada) {
   // forma canónica acepta: si no, se describe.
   const soloAz = partes.length === 1 && /^az\s/.test(cmd.trim());
   const restoAz = soloAz ? cmd.trim().replace(/^az\s+/, '') : null;
-  const opAz = restoAz ? operacionAz(restoAz.match(new RegExp(PALABRA_AZ, 'g')) || []) : null;
+  const palabrasAz = restoAz ? restoAz.match(new RegExp(PALABRA_AZ, 'g')) || [] : [];
+  const opAz = restoAz ? operacionAz(palabrasAz) : null;
   const tieneCamino = opAz && (AZURE_CAMBIOS.has(opAz) || AZURE_LECTURAS.has(opAz));
-  const listoAz = tieneCamino && CANONICA_AZURE.test(`${PUERTA} --azure ${restoAz}`) ? `${PUERTA} --azure ${restoAz}` : null;
+  // el comando listo sólo si el propio freno lo dejaría pasar: con «=@», --debug o --verbose, se describe
+  const listoAz = tieneCamino && CANONICA_AZURE.test(`${PUERTA} --azure ${restoAz}`) && !rechazoAzure(palabrasAz, opAz)
+    ? `${PUERTA} --azure ${restoAz}` : null;
   const caminoAzure = () => {
     if (esFirewall || !/(?:^|[\s;&|(])az\s/.test(cmd)) return [];
     if (listoAz) {
@@ -775,7 +788,8 @@ function decidir(entrada) {
       `  ${listoAz}`];
     }
     if (tieneCamino) return ['Esa operación de Azure va por la puerta: /opt/tycon/bin/tycon-prod-sql --azure <el comando de az, sin «az»>,',
-      'con cada argumento como una palabra simple o entre comillas simples.'];
+      'con cada argumento como una palabra simple o entre comillas simples, sin --debug ni --verbose, y sin «@» (ni al',
+      'principio ni después de un «=»): los valores van en línea.'];
     return ['Esa operación de Azure no tiene camino aprobado por la puerta: dejale el comando a la persona para que lo corra en su terminal,',
       'y decile qué hace. No la disfraces ni la partas para que pase.'];
   };

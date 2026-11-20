@@ -21,6 +21,9 @@
 #   T7 — un argumento con `@` (az lee el contenido de un archivo que el cuadro no muestra) no pasa
 #   T8 — la ayuda de la puerta y la guía nombran el camino de Azure
 #   T9 — `--debug` y `--verbose` no pasan: az imprimiría los encabezados con la credencial de Azure
+#   T10 — «@» después de un «=» (`--name=@ruta`, `--set clave=@ruta`): az lee el archivo igual, así que no pasa
+#   T11 — una lectura larga corre: no abre cuadro, así que no tiene el tope del cuadro
+#   T12 — el freno no arma, listo para correr, un comando que él mismo frenaría
 #
 # 🔴 Ningún caso toca Azure, una base, el Llavero ni /opt: raíz de sistema falsa, casa falsa y los dobles de
 # lib/prod-firewall-world.sh, con un `az` de mentira que anota lo que recibe.
@@ -154,6 +157,31 @@ rp="$(puerta --azure monitor metrics alert list -g rg-acme --verbose; cat "$TMP/
 if [ "$rc" = 2 ] && [ "$rp" != 0 ] && [ "$(llamadas)" = 0 ]; then
   ok "T9 AzureAdmin_DebugYVerbose_NoPasan"
 else no "T9 · freno=$rc puerta=$rp llamadas=$(llamadas)"; fi
+
+# ── T10 · «@» después de un «=» (az lee el archivo igual): no pasa, tampoco en una lectura sin cuadro ───────────
+printf 'SECRETO-DE-PRUEBA' > "$TMP/secreto.txt"
+rc1="$(freno "$RUTA --azure sql db show -g rg-acme -s $CORTO '--name=@$TMP/secreto.txt'")"
+rc2="$(freno "$RUTA --azure sql db update -g rg-acme -s $CORTO -n acme --set 'tags.a=@$TMP/secreto.txt'")"
+: > "$TMP/az-admin.log"; : > "$TMP/cuadro.log"
+rp1="$(puerta --azure sql db show -g rg-acme -s "$CORTO" "--name=@$TMP/secreto.txt"; cat "$TMP/rc")"
+rp2="$(puerta --azure sql db update -g rg-acme -s "$CORTO" -n acme --set "tags.a=@$TMP/secreto.txt"; cat "$TMP/rc")"
+if [ "$rc1" = 2 ] && [ "$rc2" = 2 ] && [ "$rp1" != 0 ] && [ "$rp2" != 0 ] && [ "$(llamadas)" = 0 ] && [ ! -s "$TMP/cuadro.log" ]; then
+  ok "T10 AzureAdmin_ArrobaTrasIgual_NoPasaNiEnLectura"
+else no "T10 · freno=$rc1/$rc2 puerta=$rp1/$rp2 llamadas=$(llamadas)"; fi
+
+# ── T11 · una lectura larga corre: no abre cuadro, así que no tiene su tope ──────────────────────────────────────
+LARGA="$RUTA --azure monitor metrics list --resource $ID --metric $(printf 'storage_percent,%.0s' $(seq 1 80))cpu_percent"
+: > "$TMP/az-admin.log"
+r="$(correr "$LARGA")"
+if [ "${#LARGA}" -gt 1200 ] && [ "$r" = "puerta:0" ] && [ "$(llamadas)" = 1 ]; then
+  ok "T11 AzureAdmin_LecturaLarga_CorreSinElTopeDelCuadro"
+else no "T11 · largo=${#LARGA} · $r · $(head -c 300 "$TMP/err")"; fi
+
+# ── T12 · el freno no sugiere un comando que él mismo frena (--debug, «=@») ──────────────────────────────────────
+rc="$(freno "az monitor metrics alert list -g rg-acme --scopes $ID --debug")"
+if [ "$rc" = 2 ] && ! grep -E -- "$RUTA --azure monitor" "$TMP/freno.err" >/dev/null && grep -- "sin --debug" "$TMP/freno.err" >/dev/null; then
+  ok "T12 AzureAdmin_SugerenciaConDebug_NoSeArmaListaParaCorrer"
+else no "T12 · rc=$rc · $(head -c 500 "$TMP/freno.err")"; fi
 
 # ── T8 · la ayuda y la guía nombran el camino ────────────────────────────────────────────────────────────────────
 puerta --help

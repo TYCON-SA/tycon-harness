@@ -394,7 +394,10 @@ validar_azure(){
   local a op="" en_op=1 texto="az"
   for a in "${AZ_ARGS[@]}"; do
     case "$a" in
-      @*) muere "un argumento empieza con «@» (${a}): az leería el contenido de un archivo, y el cuadro no lo muestra. Escribí el valor en línea." ;;
+      # 🔴 az lee un archivo con «@» al principio Y con «@» después del primer «=» (`--name=@ruta`, `--set clave=@ruta`;
+      # «@-» lee la entrada estándar). Mirar sólo el principio dejaba que una lectura sin cuadro trajera a la conversación
+      # cualquier archivo, también la credencial de Azure (pase adversarial del pedido).
+      @*|*=@*) muere "un argumento trae «@» al principio o después de un «=» (${a}): az leería el contenido de un archivo, y ni el cuadro ni la persona lo ven. Escribí el valor en línea." ;;
       *"'"*) muere "un argumento tiene una comilla simple: el cuadro no lo podría mostrar tal cual. Escribilo sin ella." ;;
       # el detalle de az imprime los pedidos HTTP con sus encabezados: la credencial de la sesión llegaría a la conversación
       --debug|--verbose) muere "${a} no pasa por la puerta: az imprimiría los pedidos con sus encabezados, y la credencial de Azure llegaría a la conversación." ;;
@@ -434,8 +437,9 @@ if [ "$MODO" = consulta ] || [ "$MODO" = azure ]; then
     if (/[\u{ad}\u{34f}\u{61c}\u{115f}\u{1160}\u{17b4}\u{17b5}\u{180b}-\u{180e}\u{200b}-\u{200f}\u{202a}-\u{202e}\u{2028}\u{2029}\u{2060}-\u{206f}\u{2800}\u{3164}\u{fe00}-\u{fe0f}\u{feff}\u{ffa0}\u{fff9}-\u{fffc}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u.test(t)) fuera("tiene caracteres invisibles o de dirección: en el cuadro se habría leído otra cosa que lo que corre");
   ')" || muere "la sentencia ${motivo:-no se pudo revisar}: mandala sin esos caracteres"
   # lo que el cuadro no muestra entero no se manda a aprobar: cada renglón cuenta como los que ocupa al cortarse, con el
-  # ancho que ocupa en pantalla (un tabulador llega al múltiplo de 8 y un carácter ancho vale 2), como cuenta el freno
-  printf '%s' "$SENTENCIA" | "$NODE" -e '
+  # ancho que ocupa en pantalla (un tabulador llega al múltiplo de 8 y un carácter ancho vale 2), como cuenta el freno.
+  # Una lectura de --azure no abre cuadro: no tiene tope.
+  { [ "$MODO" = azure ] && [ "$AZ_LECTURA" = 1 ]; } || printf '%s' "$SENTENCIA" | "$NODE" -e '
     const t = require("fs").readFileSync(0, "utf8"); const [max, maxR, cols] = process.argv.slice(1).map(Number);
     const doble = /[\u{1100}-\u{10ffff}]|\p{Extended_Pictographic}/u;
     let renglones = 0;

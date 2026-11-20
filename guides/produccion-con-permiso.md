@@ -75,7 +75,8 @@ de la base— también va por la puerta, con el mismo cuadro y anotado en `produ
 - **Lo demás no tiene camino aprobado** (borrar una base o un servidor, cambiar un candado, otra regla de firewall):
   el freno lo dice, y el asistente le deja el comando a la persona para que lo corra en su terminal, diciéndole qué
   hace. No se disfraza ni se parte para que pase.
-- **Un argumento con `@`** no pasa: `az` leería el contenido de un archivo, y el cuadro no lo muestra. Tampoco
+- **Un argumento con `@` al principio o después de un `=`** (`@ruta`, `--name=@ruta`, `--set clave=@ruta`) no pasa:
+  `az` leería el contenido de un archivo, y ni el cuadro ni la persona lo ven. Tampoco
   `--debug` ni `--verbose`: `az` imprimiría los pedidos con sus encabezados, y la credencial llegaría a la conversación.
 
 Cuando el freno corta un comando de `az` con camino, el mensaje trae el mismo comando por la puerta, listo para correr.
