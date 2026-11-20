@@ -1292,8 +1292,9 @@ function decidirCarril({ command, cwd, sid, home }) {
     return { texto: `🔒 GUARDAR: no pude medir este camino corto (${sinUbicar[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
   }
   const conRaiz = cs.filter((c) => { try { return !!raiz(c.dir); } catch (_) { return false; } }).length;
-  // el trabajo de otro repo no es de este carril: no le pide su tope, su maqueta ni sus datos
-  const esDelCarril = !repos.length || dudas.length || conRaiz < cs.length || cs.some((c) => c.opaco || c.tipo === 'pr') || delComando.some((r) => repos.includes(r));
+  // el trabajo de otro repo no es de este carril: no le pide su tope, su maqueta ni sus datos. El pull request también:
+  // se juzga por el repo donde corre, como el commit y el empuje (abrirlo en otro clon no cuenta los archivos del carril)
+  const esDelCarril = !repos.length || dudas.length || conRaiz < cs.length || cs.some((c) => c.opaco) || delComando.some((r) => repos.includes(r));
   // lo que git todavía no sigue puede subir en un solo comando que empuja después de hacer otra cosa, y este freno corre antes:
   // no hay un guardado siguiente que lo cuente. Sin empujar, el siguiente sí lo cuenta. No se busca el `git add` en el texto:
   // tiene sinónimos y atajos, y la palabra puede estar en un mensaje

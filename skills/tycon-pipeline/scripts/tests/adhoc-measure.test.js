@@ -508,6 +508,21 @@ test('T29 Medida_C6_CdSeguroAOtroRepo_SoloMideEse @story-8.190 @ac-18', (t) => {
   guarda(decidir(h, d, `cd ${otro} && git commit -m x`));
 });
 
+// 🔴 Falla con: el pedido abierto en otro repo (el clon compartido) se cuenta como del carril y le cobra el tope de la
+// sesión; el commit y el empuje allá ya no se lo cobraban
+test('Medida_PedidoEnOtroRepo_NoCobraLaSesion — abrir el pedido en otro clon no cuenta los archivos del carril', (t) => {
+  const { d, h } = nueveEnLaSesion(t);
+  const otro = repoConOrigin(t, 'otro');
+  // el carril tiene anotado su repo (como el clon compartido donde arrancó la sesión)
+  carril(h, { bases: { [d]: baseDe(d, sh(d, 'rev-parse', 'origin/main')) } });
+  for (const command of [`cd ${otro} && gh pr create --fill`, `gh pr create --fill`, `cd ${otro} && git commit -m x`]) {
+    const cwd = command.startsWith('cd ') ? d : otro;
+    guarda(decidir(h, cwd, command), command);
+  }
+  // el pedido en el repo del carril sigue cobrando el tope
+  frena(decidir(h, d, 'gh pr create --fill'), EL_TOPE);
+});
+
 test('T30 Lector_PushdPopd_VuelveALaCarpeta @story-8.190 @ac-16', (t) => {
   const d = repoConOrigin(t);
   const fuera = tmp(t, 'medida-fuera-');

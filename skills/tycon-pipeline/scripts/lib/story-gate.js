@@ -518,6 +518,16 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  los revisores y el pase adversarial sobre su diff.',
     ]).filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'adhoc-sensitive') {
+    // el carril está abierto (por delegación o «hecho y avisado»): lo que falta es la firma de una persona, no un carril
+    return [
+      '⛔ camino rápido delegado — ARCHIVO SENSIBLE',
+      viaLine.replace(/\n$/, ''),
+      `  Ibas a editar ${f}: ${r.reason}.`,
+      '  Un camino rápido abierto por delegación no toca firmas, frenos, avisos, permisos ni el perfil.',
+      '  Salidas: pedíselo a una persona (que abra ella el camino rápido, con su firma), o escribí la historia que lo lleva.',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'batch-out-of-list') {
     const lista = (Array.isArray(r.lista) ? r.lista : []).slice(0, TOPE_DE_NOMBRES);
     return [
