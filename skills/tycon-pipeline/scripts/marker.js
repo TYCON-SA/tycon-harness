@@ -8075,9 +8075,9 @@ function cmdAdhoc(sub, payloadJson) {
     // los topes del camino corto de la organización, leídos una vez: la firma, el cupo y los textos dicen el mismo número
     const topes = io.topesDelCaminoCorto({ stateDir: STATE_DIR, sessionId: destino });
     // la lista de archivos: todo camino corto la lleva, cerrada, y se valida antes de pedir la firma
-    // pedida por otra sesión (la coordinadora, desde su carpeta), la lista va relativa a la carpeta de trabajo de la
-    // sesión destino; la terminal de una persona y la propia sesión, a la del proceso
-    const deOtraSesion = pedida && PROPIA !== '_nosession' && pedida !== PROPIA;
+    // pedida para otra sesión (la coordinadora desde su carpeta, o la terminal de una persona con --for-session), la
+    // lista va relativa a la carpeta de trabajo de la sesión destino, nunca a la del proceso; la propia sesión, a la suya
+    const deOtraSesion = !!pedida && pedida !== PROPIA;
     // `--repo <carpeta>`: la carpeta de la lista dicha, para que la terminal de la persona pueda estar en cualquier otra
     // (@story-8.319, AC 8)
     const repoPedido = (() => { const i = process.argv.indexOf('--repo'); return i >= 0 ? process.argv[i + 1] : null; })();
@@ -8089,10 +8089,22 @@ function cmdAdhoc(sub, payloadJson) {
         process.exit(2);
       }
     }
-    const base = repoPedido ? path.resolve(repoPedido) : deOtraSesion ? LISTA.carpetaDeLaSesion({ casa: os.homedir(), sesion: pedida }) : process.cwd();
+    // la carpeta de la sesión destino, si todavía es una carpeta: una borrada no se reemplaza por la del proceso
+    // (la que ya no se puede abrir se nombra en el mensaje, para que se sepa por qué frena)
+    let carpetaQueNoEs = null;
+    const deLaSesion = () => {
+      const c = LISTA.carpetaDeLaSesion({ casa: os.homedir(), sesion: pedida });
+      if (!c) return null;
+      let es = false;
+      try { es = fs.statSync(c).isDirectory(); } catch (_) { es = false; }
+      if (!es) carpetaQueNoEs = c;
+      return es ? c : null;
+    };
+    const base = repoPedido ? path.resolve(repoPedido) : deOtraSesion ? deLaSesion() : process.cwd();
     const conRelativas = Array.isArray(payload.allowedFiles) && payload.allowedFiles.some((f) => typeof f === 'string' && f.trim() && !path.isAbsolute(f.trim()) && !/^[A-Za-z]:[\\/]/.test(f.trim()));
     if (!base && conRelativas) {
-      console.error(`marker.js adhoc set: no sé la carpeta de la sesión ${pedida}: que lo pida esa sesión, o una persona desde su terminal en esa carpeta.`);
+      const porque = carpetaQueNoEs ? ` (la última que usó, ${String(carpetaQueNoEs).slice(0, 200)}, ya no es una carpeta que se pueda abrir)` : '';
+      console.error(`marker.js adhoc set: no sé la carpeta de la sesión ${pedida}${porque}: que lo pida esa sesión, o pedilo con --repo <carpeta> (la carpeta de trabajo de esa sesión).`);
       process.exit(2);
     }
     const carpetaDeLaLista = base || process.cwd();

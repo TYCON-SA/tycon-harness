@@ -264,6 +264,13 @@ const CON_TERMINAL = [
 ].join('\n');
 function markerEnTerminal(home, args, respuesta) {
   if (process.platform === 'win32') return null;
+  // la terminal ancla la lista en la carpeta de la sesión destino: acá, la carpeta de prueba, que sale de su transcripción
+  const s = args.indexOf('--for-session');
+  if (s >= 0 && /^[\w-]+$/.test(String(args[s + 1] || ''))) {
+    const dir = path.join(home, '.claude', 'projects', '-prueba');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${args[s + 1]}.jsonl`), `${JSON.stringify({ type: 'user', cwd: home })}\n`);
+  }
   const env = { ...process.env, HOME: home, USERPROFILE: home, RESPUESTA_TTY: respuesta };
   // la firma por la terminal se niega dentro de la CI: la terminal simulada no hereda sus variables
   for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'NODE_OPTIONS', 'CI', 'TF_BUILD', 'GITHUB_ACTIONS']) delete env[k];
