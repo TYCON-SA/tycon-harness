@@ -1055,6 +1055,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.189: el freno de escrituras lee lo que corre adentro de otro comando ($(…), comillas invertidas, sh -c, llaves y palabras de control, heredoc vacío, guion de shell escrito en el mismo comando); lo que sólo lee o cita sigue pasando.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-nested.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.278: correr una prueba con su corredor no es una escritura invisible; lo que escribe código o una historia en el mismo comando frena como siempre.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-read-only.test.js",
@@ -1081,6 +1087,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-gate-failures-logged.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-gate-clock.test.js",
       "requiere": []
     },
     {
@@ -2282,6 +2293,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/office-task-numbers.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/test-run-isolation.test.js",
       "requiere": []
     },
     {
@@ -4653,6 +4669,26 @@
       "__nota": "el aviso de arranque de las fallas de los controles: cuenta por control las de las últimas 24 horas de hook-errors.log (todas las formas de línea), deja afuera lo viejo, lo del freno de producción y lo que no es una falla, calla sin fallas y dice cuando no puede leer el registro.",
       "raiz": "arnes",
       "ruta": "tests/hook-failures-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/undecided-guards.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/safety-guard-sign.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/bench-os-split.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/hostile-command-text.test.js",
       "requiere": []
     },
     {

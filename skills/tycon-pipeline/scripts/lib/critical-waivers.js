@@ -293,31 +293,111 @@ function designar({ approvedBy, quote, env = process.env, home, arnes } = {}) {
   return { ok: true, firma: declarada.firma, aviso: declarada.aviso, entrada: { sesion, rol: declarada.rol, quien: String(approvedBy).trim(), cita, cita_cuando: null } };
 }
 
+// el renglón con que el dueño confirma una designación (scripts/lib/delegated-signing.js `confirm-designation`, o el click
+// de marker.js designate-relay)
+const CONFIRMADA = `${DESIGNACION}-confirmed`;
+const shaDe = (s) => require('crypto').createHash('sha256').update(String(s)).digest('hex');
+
 /**
- * La última designación anotada en el gates.log de esta máquina: `{ sesion, rol, quien, cita, via, ts }`, null o
- * `{ error }`. Una designación por frase trae `cita`; una por click (marker.js designate-relay sin frase), `via` y
- * `cita: null`. Si el último renglón de la designación es una retirada (`status: 'retirada'`), no hay coordinadora.
+ * El renglón que confirma una designación y la ata a ESA designación: por sesión y por la hora de su renglón, que es
+ * única por designación, y por la frase si la tiene (una designación por click no tiene: `cita_sha: null`).
+ */
+function confirmationRecord(designacion, ts, extra = {}) {
+  return { name: CONFIRMADA, status: 'ok', ts, sesion: designacion.sesion, designacion_ts: designacion.ts, cita_sha: designacion.cita ? shaDe(designacion.cita) : null, ...extra };
+}
+/** ¿Este renglón confirma esta designación? La única comparación: la usan la regla de abajo, la delegación y las firmas. */
+function confirmaLaDesignacion(linea, designacion) {
+  const want = confirmationRecord(designacion, null);
+  return !!linea && linea.name === CONFIRMADA && linea.status === 'ok' && linea.sesion === want.sesion
+    && !!want.designacion_ts && linea.designacion_ts === want.designacion_ts && (linea.cita_sha === undefined ? null : linea.cita_sha) === want.cita_sha;
+}
+
+// ── Quién es la coordinadora (historia 8.314) ──
+// Una sola regla, que recorre el registro EN ORDEN y la usan todos los lectores (también la lectura por partes de
+// scripts/lib/coordination-writes.js): una designación válida pasa a ser la última; una confirmación que coincide con una
+// designación en pie la vuelve la confirmada; una retirada saca a su sesión. Vigente es la confirmada o, si no hay
+// ninguna en pie, la última. Así una línea suelta de otra sesión (la que dejó una prueba el 18/11) queda pendiente y no le
+// saca el puesto a la confirmada; una designación nueva de la MISMA sesión sí la reemplaza, sin confirmar, como antes.
+const valida = (g) => !!g && g.name === DESIGNACION && g.status === 'ok' && /^[\w-]+$/.test(String(g.sesion || '')) && !!(g.cita || g.via);
+const resumen = (g) => ({ sesion: g.sesion, rol: g.rol || null, quien: g.quien || null, cita: g.cita || null, via: g.via || null, ts: g.ts || null });
+const mismaDesignacion = (a, b) => !!a && !!b && a.sesion === b.sesion && a.ts === b.ts;
+
+/** El estado de la regla antes de leer nada. Lleva versión: una memoria guardada con otra forma no se usa. */
+function estadoInicial() { return { v: 2, ultima: null, confirmada: null, enPie: [] }; }
+/** ¿`e` tiene la forma del estado de la regla? */
+const esEstado = (e) => !!e && e.v === 2 && Array.isArray(e.enPie) && 'ultima' in e && 'confirmada' in e;
+
+/** Un renglón (ya leído) más sobre el estado. Devuelve el mismo estado, cambiado. */
+function avanzar(e, g) {
+  if (!g || typeof g !== 'object') return e;
+  if (g.name === DESIGNACION && g.status === RETIRADA) {
+    // una retirada anula sólo a su propia sesión: la de otra sesión nombrada antes sigue en pie
+    const s = String(g.sesion || '');
+    e.enPie = e.enPie.filter((d) => d.sesion !== s);
+    if (e.ultima && e.ultima.sesion === s) e.ultima = null;
+    if (e.confirmada && e.confirmada.sesion === s) e.confirmada = null;
+    return e;
+  }
+  if (valida(g)) {
+    const d = resumen(g);
+    if (e.confirmada && e.confirmada.sesion === d.sesion) e.confirmada = null;
+    e.ultima = d;
+    e.enPie = [...e.enPie.filter((x) => !mismaDesignacion(x, d)), d];
+    return e;
+  }
+  if (g.name === CONFIRMADA && g.status === 'ok') {
+    const d = e.enPie.find((x) => confirmaLaDesignacion(g, x));
+    if (d) e.confirmada = d;
+  }
+  return e;
+}
+/** Los renglones de `texto` sobre el estado `e`, en orden (sólo los de la designación se leen). */
+function plegarRenglones(e, texto) {
+  for (const l of String(texto).split('\n')) {
+    if (!l.includes(DESIGNACION)) continue;
+    let g;
+    try { g = JSON.parse(l); } catch (_e) { continue; }
+    avanzar(e, g);
+  }
+  return e;
+}
+/**
+ * La vigente del estado: `{ sesion, rol, quien, cita, via, ts }` con `pendiente` (otra designación, sin confirmar,
+ * posterior a la confirmada) si la hay, o null.
+ */
+function vigenteDe(e) {
+  const v = e.confirmada || e.ultima;
+  if (!v) return null;
+  const pendiente = e.confirmada && e.ultima && !mismaDesignacion(e.ultima, e.confirmada) ? e.ultima : null;
+  return pendiente ? { ...v, pendiente: { ...pendiente } } : { ...v };
+}
+/** El estado de la regla sobre el gates.log de esta máquina, o `{ error }`. `dir`: la carpeta del estado ya resuelta. */
+function estadoDelRegistro({ home, dir } = {}) {
+  let raw;
+  try { raw = fs.readFileSync(path.join(dir || require('./state-dir.js').stateDir(home), 'gates.log'), 'utf8'); } catch (e) {
+    return e.code === 'ENOENT' ? estadoInicial() : { error: `no pude leer el registro del arnés (${e.code || e.message})` };
+  }
+  return plegarRenglones(estadoInicial(), raw);
+}
+
+/**
+ * La designación vigente de esta máquina: `{ sesion, rol, quien, cita, via, ts, pendiente? }`, null o `{ error }`. Una
+ * designación por frase trae `cita`; una por click (marker.js designate-relay sin frase), `via` y `cita: null`.
  */
 function designacionVigente({ home, dir } = {}) {
-  let raw;
   // `dir`: la carpeta del estado ya resuelta, para quien no la lee del ambiente (scripts/lib/delegated-signing.js)
-  try { raw = fs.readFileSync(path.join(dir || require('./state-dir.js').stateDir(home), 'gates.log'), 'utf8'); } catch (e) {
-    return e.code === 'ENOENT' ? null : { error: `no pude leer el registro del arnés (${e.code || e.message})` };
-  }
-  const lineas = raw.split('\n');
-  // una retirada anula sólo la designación de su propia sesión: la de otra sesión nombrada antes sigue vigente
-  const retiradas = new Set();
-  for (let i = lineas.length - 1; i >= 0; i--) {
-    if (!lineas[i].includes(DESIGNACION)) continue;
-    let g;
-    try { g = JSON.parse(lineas[i]); } catch (_e) { continue; }
-    if (g && g.name === DESIGNACION && g.status === RETIRADA) { retiradas.add(String(g.sesion || '')); continue; }
-    if (g && g.name === DESIGNACION && g.status === 'ok' && /^[\w-]+$/.test(String(g.sesion || '')) && (g.cita || g.via)) {
-      if (retiradas.has(g.sesion)) return null;
-      return { sesion: g.sesion, rol: g.rol || null, quien: g.quien || null, cita: g.cita || null, via: g.via || null, ts: g.ts || null };
-    }
-  }
-  return null;
+  const e = estadoDelRegistro({ home, dir });
+  return e.error ? { error: e.error } : vigenteDe(e);
+}
+/** La última designación anotada, confirmada o no (la que acaba de escribir designate-relay), null o `{ error }`. */
+function ultimaDesignacion({ home, dir } = {}) {
+  const e = estadoDelRegistro({ home, dir });
+  return e.error ? { error: e.error } : e.ultima ? { ...e.ultima } : null;
+}
+/** ¿Hay una designación confirmada en pie? La confirmada, o null (`{ error }` si el registro no se lee). */
+function designacionConfirmada({ home, dir } = {}) {
+  const e = estadoDelRegistro({ home, dir });
+  return e.error ? { error: e.error } : e.confirmada ? { ...e.confirmada } : null;
 }
 
 // Quién NO puede aprobar: nadie, «sin nombrar», el orquestador, una regla, o un agente (lib/approvals.js).
@@ -331,4 +411,5 @@ function noEsPersona(quien) {
   return null;
 }
 
-module.exports = { DESIGNACION, RETIRADA, RE_NIEGA, juezDesignacion, designar, designacionVigente, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, rolDeCoordinar, ROL_DE_FABRICA, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
+module.exports = { DESIGNACION, RETIRADA, CONFIRMADA, RE_NIEGA, juezDesignacion, designar, designacionVigente, ultimaDesignacion, designacionConfirmada,
+  estadoInicial, esEstado, plegarRenglones, vigenteDe, confirmationRecord, confirmaLaDesignacion, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, rolDeCoordinar, ROL_DE_FABRICA, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };

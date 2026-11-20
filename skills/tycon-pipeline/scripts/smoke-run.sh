@@ -158,6 +158,47 @@ if [ -n "$ACS" ] && [ "$PASA_SI_SET" != 1 ]; then
   exit 2
 fi
 
+# ── La corrida aislada (historia 8.314) ──
+# Un humo comparado, y uno cuyo programa es un guion de laboratorio (en .advisors/dod-runtime/, o suelto en una carpeta
+# temporal), corren con una casa aparte y sin poder escribir en la de la cuenta (lib/isolated-run.js). Se decide antes de
+# escribir nada: lo que se niega no deja renglón. Un humo común no pasa por ahí y sigue como siempre, también sin
+# isolated-run.js al lado; sin él, lo que podría ser de laboratorio no corre.
+ISOLATED_JS="$(cd "$(dirname "$0")" && pwd)/lib/isolated-run.js"
+AISLAR=()
+DECIDE_RC=99
+if [ -f "$ISOLATED_JS" ]; then
+  DECIDE_ARGS=(decide)
+  [ "$COMPARE" = 1 ] && DECIDE_ARGS+=(--compare)
+  [ -n "$COVERS" ] && DECIDE_ARGS+=(--covers "$COVERS")
+  [ -n "${RAIZ_REAL:-}" ] && DECIDE_ARGS+=(--root "$RAIZ_REAL")
+  DECISION="$(node "$ISOLATED_JS" "${DECIDE_ARGS[@]}" -- "$@")"
+  DECIDE_RC=$?
+fi
+case "$DECIDE_RC" in
+  0)
+    if [ "$(printf '%s\n' "$DECISION" | sed -n 1p)" = aislada ]; then
+      AISLAR=(node "$ISOLATED_JS" exec)
+      while IFS= read -r RAIZ_AISLADA; do
+        [ -n "$RAIZ_AISLADA" ] && AISLAR+=(--root "$RAIZ_AISLADA")
+      done <<< "$(printf '%s\n' "$DECISION" | sed 1d)"
+      AISLAR+=(--)
+    fi ;;
+  2) exit 2 ;;
+  *)
+    if [ "$COMPARE" = 1 ]; then
+      echo "smoke-run.sh: no pude armar la corrida aislada ($ISOLATED_JS no está o no contestó): un humo comparado no corre con la casa real — no se corre." >&2
+      exit 2
+    fi
+    LAB_NOMBRADO=0
+    case " $* " in *.advisors/dod-runtime/*|*" /tmp/"*|*" /private/tmp/"*|*/var/folders/*) LAB_NOMBRADO=1 ;; esac
+    if [ -n "${TMPDIR:-}" ]; then case " $* " in *"${TMPDIR%/}"*) LAB_NOMBRADO=1 ;; esac; fi
+    if [ "$LAB_NOMBRADO" = 1 ]; then
+      echo "smoke-run.sh: no pude armar la corrida aislada ($ISOLATED_JS no está o no contestó) y el comando nombra una carpeta de laboratorio: no corre con la casa real — no se corre." >&2
+      exit 2
+    fi
+    echo "[smoke-run] ⚠️ no pude decidir si el humo es de laboratorio ($ISOLATED_JS no está o no contestó): corre con la casa de siempre." >&2 ;;
+esac
+
 # ── La imagen, validada ANTES de correr ──
 # Un archivo que no sirve de prueba no se descubre después de correr un comando que puede haber escrito: el humo falla acá
 # y no corre nada. lib/capture-file.js mira la extensión (png o webm), que exista, que no sea un enlace simbólico, que no
@@ -219,6 +260,10 @@ GUARDAR_SALIDA=0
 MEASURES_JS="$(cd "$(dirname "$0")" && pwd)/lib/smoke-measures.js"
 reloj(){ [ -f "$MEASURES_JS" ] && node "$MEASURES_JS" clock 2>/dev/null; }
 trap '[ -n "$SALIDA_TMP" ] && rm -f "$SALIDA_TMP" "$SALIDA_TMP.rc"' EXIT
+# Todo comando que lanza un humo lleva la marca de prueba: con ella el tablero y la designación de la coordinadora se
+# niegan a escribir el estado real (historia 8.314). La heredan también las corridas de la comparación.
+export TYCON_TEST_RUN=1
+RUN_CMD=(${AISLAR[@]+"${AISLAR[@]}"} "${RUN_CMD[@]}")
 trap 'exit 143' TERM
 trap 'exit 130' INT
 trap 'exit 129' HUP

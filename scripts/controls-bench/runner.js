@@ -85,6 +85,9 @@ function argVal(flag, dflt) {
 }
 const TOOL = argVal('--tool', 'claude');
 const ONLY = argVal('--only', null);
+// `--only-not-on linux`: sólo los casos declarados para el sistema donde corre y no para ése. Es lo que el trabajo de
+// macOS y el de Windows le suman de noche al de Linux, sin repetir lo que Linux ya corre.
+const ONLY_NOT_ON = argVal('--only-not-on', null);
 const BASELINE_MODE = argVal('--baseline', null);
 const JSON_OUT = argVal('--json', null);
 const LIST = argv.includes('--list');
@@ -656,7 +659,15 @@ function main(ctx) {
   }
   const tools = TOOL === 'both' ? ['claude', 'codex'] : [TOOL];
   const results = {}; // caseKey -> { tool -> {pass, failures} }
-  let ran = 0, failed = 0, skipped = 0, nomedido = 0, known = 0;
+  let ran = 0, failed = 0, skipped = 0, skippedOs = 0, nomedido = 0, known = 0;
+  const frenoInstalado = ctx && 'frenoInstalado' in ctx ? ctx.frenoInstalado : FRENO_INSTALADO;
+  const enElRecorte = (h, c) => {
+    if (!ONLY_NOT_ON) return true;
+    const so = c.so || h.so;
+    return !!so && !so.includes(ONLY_NOT_ON) && so.includes(platform);
+  };
+  const delRecorte = new Set(hookDefs.flatMap((h) => h.cases.filter((c) => enElRecorte(h, c)).map((c) => claveDeCaso(h, c))));
+  const fueraDelFiltro = (key) => (ONLY && !key.includes(ONLY)) || !delRecorte.has(key);
   // cómo frenan los carteles de los casos que frenan (una vez por caso, aunque corra en las dos herramientas)
   const carteles = { comando: 0, llano: 0, callejon: 0 };
   const cartelesContados = new Set();
@@ -667,17 +678,17 @@ function main(ctx) {
   for (const h of hookDefs) {
     for (const c of h.cases) {
       const key = claveDeCaso(h, c);
-      if (ONLY && !key.includes(ONLY)) continue;
+      if (fueraDelFiltro(key)) continue;
       const caseTools = c.tools || h.tools || ['claude', 'codex'];
-      results[key] = results[key] || { type: c.type, asymmetry: c.asymmetry || null, tools: {} };
+      results[key] = results[key] || { type: c.type, asymmetry: c.asymmetry || null, ...(c.so || h.so ? { so: c.so || h.so } : {}), tools: {} };
       // 🔴 Un caso puede declarar en qué sistema operativo tiene sentido (`"so": ["darwin"]`, en el caso o en el hook),
       // porque el banco corre de noche en Azure DevOps sobre Linux. Un hook que sólo existe en macOS (launchctl) no
       // tiene nada que probar en ubuntu — pero saltearlo tiene que quedar DICHO y contado, como las asimetrías entre
       // herramientas: un caso que desaparece en silencio es exactamente lo que este banco persigue.
       const so = c.so || h.so || null;
       if (so && !so.includes(platform)) {
-        for (const t of tools) results[key].tools[t] = { skipped: true, so: platform };
-        skipped++;
+        for (const t of tools) results[key].tools[t] = { skipped: true, so: platform, motivo: `declarado sólo para ${so.join('/')}` };
+        skippedOs++;
         console.log(`⏭ [${platform}] ${key} — declarado sólo para ${so.join('/')}: salteado con constancia`);
         continue;
       }
@@ -686,9 +697,9 @@ function main(ctx) {
       // — es una decisión de seguridad, no un olvido: una sesión hija con esas variables apagaría el freno entero.
       // Con el freno instalado esos casos quedarían en rojo en esa máquina y verdes donde no está (Azure). No se
       // puede medir acá, y eso se DICE: un caso que desaparece en silencio es lo que este banco persigue.
-      if ((c.sin_freno_instalado || h.sin_freno_instalado) && FRENO_INSTALADO) {
+      if ((c.sin_freno_instalado || h.sin_freno_instalado) && frenoInstalado) {
         for (const t of tools) results[key].tools[t] = { skipped: true, motivo: 'el freno de producción está instalado en esta máquina: sus costuras de prueba no existen acá' };
-        skipped++;
+        skippedOs++;
         console.log(`⏭ ${key} — no se puede medir con el freno instalado (sus costuras se apagan): salteado con constancia`);
         continue;
       }
@@ -729,7 +740,7 @@ function main(ctx) {
   let staleGaps = 0;
   const listedCases = new Set(hookDefs.flatMap((h) => h.cases.map((c) => claveDeCaso(h, c))));
   for (const [key, gap] of declared.gaps) {
-    if (ONLY && !key.includes(ONLY)) continue;
+    if ((ONLY && !key.includes(ONLY)) || (ONLY_NOT_ON && !delRecorte.has(key))) continue;
     const all = Object.values((results[key] && results[key].tools) || {});
     const ranHere = all.filter((r) => r && !r.skipped && !r.nomedido);
     if (ranHere.length && ranHere.every((r) => r.pass)) {
@@ -767,8 +778,8 @@ function main(ctx) {
     for (const [key, wasPass] of Object.entries(base)) {
       // 🔴 Con `--only`, la comparación mira SÓLO los casos que se corrieron. Sin esto, una corrida acotada de 6
       // casos declararía cientos de "desaparecidos": todos los que el filtro dejó afuera. Un rojo por construcción
-      // es la clase de rojo que enseña a no mirar.
-      if (ONLY && !key.includes(ONLY)) continue;
+      // es la clase de rojo que enseña a no mirar. `--only-not-on` es otro recorte: vale lo mismo.
+      if ((ONLY && !key.includes(ONLY)) || (ONLY_NOT_ON && !delRecorte.has(key))) continue;
       const now = results[key] && results[key].tools.claude;
       // un rojo conocido ya está dicho como tal: no es además una regresión
       if (wasPass && now && !now.skipped && !now.nomedido && !now.pass && !now.known_gap) {
@@ -782,7 +793,7 @@ function main(ctx) {
   // reporte
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const report = {
-    ts: new Date().toISOString(), tool: TOOL, ran, failed, skipped, nomedido, parityBreaks, baselineRegressions,
+    ts: new Date().toISOString(), tool: TOOL, so: platform, ran, failed, skipped, skippedOs, nomedido, parityBreaks, baselineRegressions,
     carteles,
     results,
   };
@@ -792,10 +803,17 @@ function main(ctx) {
   // general del banco, con todos los demás casos desaparecidos y sin que nada lo dijera. Es el mismo criterio que
   // usa el examen de revisores (`report-name.js`). `--json` sigue mandando por encima: pisar la foto completa se
   // puede, pero hay que pedirlo.
-  const { nombre } = nombreDeReporte({ tool: TOOL, only: ONLY ? [ONLY] : [], prefijo: 'last-run' });
+  const filtros = [...(ONLY ? [ONLY] : []), ...(ONLY_NOT_ON ? [`not-on-${ONLY_NOT_ON}`] : [])];
+  const { nombre } = nombreDeReporte({ tool: TOOL, only: filtros, prefijo: 'last-run' });
   const outPath = JSON_OUT || path.join(OUT_DIR, nombre);
   fs.writeFileSync(outPath, JSON.stringify(report, null, 2) + '\n');
-  console.log(`\n${failed + staleGaps === 0 ? '✅' : '❌'} ${ran} corridos · ${failed} rojos ·${platform === 'win32' ? ` ${known} rojos conocidos (known-gaps.json) ·` : ''} ${nomedido} NO MEDIDOS · ${skipped} skip-con-asimetría · paridad rota: ${parityBreaks} · regresiones vs baseline: ${baselineRegressions}`);
+  // Con un filtro y ningún caso corrido no se midió nada: no es verde, y quien lo llamó tiene que poder verlo
+  if (filtros.length && ran === 0) {
+    console.log(skippedOs ? `\n🟡 ${skippedOs} caso(s) salteados acá: nada medido` : '\n🟡 el filtro no deja ningún caso: nada medido');
+    console.log(`reporte: ${outPath}`);
+    return 3;
+  }
+  console.log(`\n${failed + staleGaps === 0 ? '✅' : '❌'} ${ran} corridos · ${failed} rojos ·${platform === 'win32' ? ` ${known} rojos conocidos (known-gaps.json) ·` : ''} ${nomedido} NO MEDIDOS · ${skipped} skip-con-asimetría · ${skippedOs} salteados acá (no medidos) · paridad rota: ${parityBreaks} · regresiones vs baseline: ${baselineRegressions}`);
   if (nomedido > 0) console.log(`🟡 ${nomedido} caso(s) NO MEDIDO(s): se les agotó el tiempo dos veces (o les faltó con qué correr: lo dice cada uno). No son rojos, pero la ejecución NO está completa — volver a correrla con la máquina libre.`);
   console.log(`reporte: ${outPath}`);
   return failed + parityBreaks + baselineRegressions + staleGaps > 0 ? 1 : 0;

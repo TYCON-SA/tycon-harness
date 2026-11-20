@@ -460,9 +460,16 @@ Y cinco más, propios de leer los nombres como el shell:
   eso el lanzador no lo ve. El lanzador tiene un reloj de 7 s para todo su trabajo, y el hook tiene un
   tope de 30 s en la configuración administrada: más del doble, para que el lanzador siempre conteste
   antes.
-- 🔴 **El límite que el arnés no puede cerrar: si la máquina está tan cargada que el lanzador ni llega a
-  su reloj en 30 s, Claude Code lo corta y el comando corre igual.** El corte lo decide Claude Code, no
-  el freno. Queda contado: la revisión nocturna de las ejecuciones cuenta cada hook que se pasó de tiempo.
+- 🔴 **Si el lanzador no contesta en 30 s, lo matan o no arranca, el comando no corre.** Vale desde
+  Claude Code 2.1.295: el gancho de consola lleva `"onFailure": "block"` en la configuración administrada.
+  Con una versión anterior la opción no hace nada: Claude Code corta al lanzador y el comando corre igual.
+  Codex no la tiene. Cada corte queda contado: la revisión nocturna de las ejecuciones cuenta cada hook
+  que se pasó de tiempo.
+- **Si falta el lanzador, ningún comando de consola del agente corre, y el agente no lo puede arreglar.**
+  Sale una persona, desde su terminal y con `sudo`: reinstala el freno
+  (`sudo bash ~/.tycon/harness/scripts/production/install-guard.sh`) o saca el archivo administrado
+  (`sudo rm "/Library/Application Support/ClaudeCode/managed-settings.d/tycon-production.json"`), que deja
+  la máquina sin este freno hasta reinstalarlo.
 
 ## Antes de instalar en una máquina: medir cuánto frenaría
 

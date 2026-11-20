@@ -315,3 +315,145 @@ test('ConfirmDesignation_QuoteDesignationFromBefore_StillConfirms (T31)', (t) =>
   assert.strictEqual(ds.confirmedDesignation(paths(casa)).ok, true);
   assert.strictEqual(oa.coordinadoraConfirmada(casa), COORDINADORA);
 });
+
+// --- historia 8.314: una línea suelta no desplaza a la designación confirmada ------------------------------------------
+
+const vigenteDe = (casa) => cwLib.designacionVigente({ dir: paths(casa).state });
+/** Una designación por frase, sin confirmar: lo que dejó la prueba del 18/11 en el registro real. */
+function suelta(casa, { sesion = 'ses-falsa', ts = '2026-11-04T11:00:00.000Z', cita = 'Esta sesion es la coordinadora' } = {}) {
+  const d = { name: 'relay-designation', status: 'ok', ts, sesion, rol: 'coordinadora', quien: 'el dueño', cita };
+  fs.appendFileSync(registro(casa), `${JSON.stringify(d)}\n`);
+  return d;
+}
+const confirmarAMano = (casa, d, ts = '2026-11-04T12:00:00.000Z') => fs.appendFileSync(registro(casa), `${JSON.stringify(ds.confirmationRecord(d, ts))}\n`);
+const retirar = (casa, sesion, ts = '2026-11-04T11:30:00.000Z') => fs.appendFileSync(registro(casa),
+  `${JSON.stringify({ name: 'relay-designation', status: 'retirada', ts, sesion, rol: 'coordinadora', quien: 'la persona', via: 'click' })}\n`);
+
+test('T10 Designacion_SinConfirmar_NoDesplaza @story-8.314 @ac-7', (t) => {
+  const casa = casaNueva(t);
+  porClick(casa, { sesion: 'ses-real' });
+  const f = suelta(casa);
+  const v = vigenteDe(casa);
+  assert.strictEqual(v.sesion, 'ses-real');
+  assert.deepStrictEqual({ sesion: v.pendiente.sesion, ts: v.pendiente.ts }, { sesion: f.sesion, ts: f.ts });
+  assert.strictEqual(oa.coordinadoraConfirmada(casa), 'ses-real', 'la real sigue confirmada');
+});
+
+test('T11 Designacion_Confirmada_Reemplaza @story-8.314 @ac-8', (t) => {
+  const casa = casaNueva(t);
+  porClick(casa, { sesion: 'ses-real' });
+  const f = suelta(casa);
+  confirmarAMano(casa, f);
+  const v = vigenteDe(casa);
+  assert.strictEqual(v.sesion, 'ses-falsa');
+  assert.strictEqual(v.pendiente, undefined);
+  // una confirmación de otra hora o de otra frase no confirma la línea suelta
+  for (const otra of [{ ts: '2026-11-04T11:59:00.000Z' }, { cita: 'otra frase' }]) {
+    const c = casaNueva(t);
+    porClick(c, { sesion: 'ses-real' });
+    const g = suelta(c);
+    confirmarAMano(c, { ...g, ...otra });
+    assert.strictEqual(vigenteDe(c).sesion, 'ses-real', JSON.stringify(otra));
+    assert.strictEqual(vigenteDe(c).pendiente.sesion, 'ses-falsa');
+  }
+});
+
+test('T12 Designacion_SinConfirmadasORetirada @story-8.314 @ac-8 @ac-7', (t) => {
+  // sin ninguna confirmada: vale la última, como hoy
+  const sin = casaNueva(t);
+  suelta(sin, { sesion: 'ses-a', ts: '2026-11-04T10:00:00.000Z' });
+  suelta(sin, { sesion: 'ses-b', ts: '2026-11-04T10:05:00.000Z' });
+  assert.strictEqual(vigenteDe(sin).sesion, 'ses-b');
+  assert.strictEqual(vigenteDe(sin).pendiente, undefined);
+  // la confirmada retirada, y después una suelta: la suelta
+  const retirada = casaNueva(t);
+  porClick(retirada, { sesion: 'ses-real' });
+  retirar(retirada, 'ses-real');
+  suelta(retirada, { ts: '2026-11-04T11:45:00.000Z' });
+  assert.strictEqual(vigenteDe(retirada).sesion, 'ses-falsa');
+  // la retirada de otra sesión no toca a la confirmada
+  const otra = casaNueva(t);
+  porClick(otra, { sesion: 'ses-real' });
+  retirar(otra, 'ses-x');
+  assert.strictEqual(vigenteDe(otra).sesion, 'ses-real');
+  // la misma sesión confirmada, designada otra vez: manda la nueva, sin confirmar y sin pendiente
+  const misma = casaNueva(t);
+  porClick(misma, { sesion: 'ses-real' });
+  suelta(misma, { sesion: 'ses-real', ts: '2026-11-04T12:30:00.000Z' });
+  assert.strictEqual(vigenteDe(misma).ts, '2026-11-04T12:30:00.000Z');
+  assert.strictEqual(vigenteDe(misma).pendiente, undefined);
+  assert.strictEqual(oa.coordinadoraConfirmada(misma), null);
+});
+
+test('T13 Confirmar_ConfirmaLaPendiente @story-8.314 @ac-9', (t) => {
+  const ow = require(path.join(LIB, 'owner-window.js'));
+  for (const desde of ['ses-pend', COORDINADORA]) {
+    const casa = casaNueva(t);
+    designar(casa);
+    assert.strictEqual(confirmar(casa).status, 0);
+    const p = suelta(casa, { sesion: 'ses-pend', ts: '2026-11-02T05:00:00.000Z' });
+    // el cuadro de la firma nombra a la pendiente, no a la vigente
+    const d = ow.detalleDe('designation-confirm', 'node delegated-signing.js confirm-designation', null, casa, casa);
+    assert.ok(d.linea.includes('ses-pend') && !d.linea.includes(COORDINADORA), d.linea);
+    const r = confirmar(casa, { sesion: desde });
+    assert.strictEqual(r.status, 0, `${desde}: ${r.stderr}`);
+    assert.strictEqual(r.llamada.propia, desde);
+    const ultimo = confirmados(casa).pop();
+    assert.deepStrictEqual({ sesion: ultimo.sesion, ts: ultimo.designacion_ts }, { sesion: 'ses-pend', ts: p.ts }, desde);
+    assert.strictEqual(vigenteDe(casa).sesion, 'ses-pend');
+  }
+  const casa = casaNueva(t);
+  designar(casa);
+  assert.strictEqual(confirmar(casa).status, 0);
+  suelta(casa, { sesion: 'ses-pend', ts: '2026-11-02T05:00:00.000Z' });
+  const antes = confirmados(casa).length;
+  fs.rmSync(path.join(casa, 'llamada.json'), { force: true });   // la de la confirmación anterior
+  const tercera = confirmar(casa, { sesion: 'ses-tercera' });
+  assert.strictEqual(tercera.status, 1, tercera.stderr);
+  assert.strictEqual(tercera.llamada, null, 'a la tercera no se le pide la firma');
+  assert.strictEqual(confirmados(casa).length, antes);
+});
+
+test('T14 Plegar_MismaReglaQueLaLecturaEntera @story-8.314 @ac-10', (t) => {
+  const cwr = require(path.join(LIB, 'coordination-writes.js'));
+  const casa = casaNueva(t);
+  const estado = paths(casa).state;
+  porClick(casa, { sesion: 'ses-real' });
+  assert.strictEqual(cwr.currentCoordinator({ stateDir: estado }).session, 'ses-real');
+  // lo agregado se lee por partes, con la memoria
+  suelta(casa);
+  assert.strictEqual(cwr.currentCoordinator({ stateDir: estado }).session, 'ses-real', 'por partes');
+  assert.strictEqual(vigenteDe(casa).sesion, 'ses-real', 'entera');
+  const f = suelta(casa, { sesion: 'ses-otra', ts: '2026-11-04T11:10:00.000Z' });
+  confirmarAMano(casa, f);
+  assert.strictEqual(cwr.currentCoordinator({ stateDir: estado }).session, 'ses-otra');
+  assert.strictEqual(vigenteDe(casa).sesion, 'ses-otra');
+  // una memoria con la forma vieja (sólo la sesión) no se usa
+  const log = registro(casa);
+  const st = fs.statSync(log);
+  const buf = fs.readFileSync(log);
+  const vieja = { size: st.size, mtimeMs: st.mtimeMs, ino: st.ino, tail: buf.subarray(Math.max(0, st.size - 64)).toString('base64'), session: 'ses-falsa' };
+  fs.mkdirSync(path.join(estado, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(estado, 'coordination', cwr.MEMO), JSON.stringify(vieja));
+  assert.strictEqual(cwr.currentCoordinator({ stateDir: estado }).session, 'ses-otra');
+});
+
+test('T15 Delegacion_LineaSuelta_NoCambiaQuienFirma @story-8.314 @ac-11', (t) => {
+  const perfil = () => ({ relay_session: 'coordinadora', delegated_signing: ['plan-approval'], owner_only: [], delegated_machines: [{ id: 'maquina' }] });
+  const huella = () => ({ huella: 'maquina' });
+  const pide = (casa, sesion) => ds.delegaSinVentana({ firma: 'plan-approval', sesion, destino: 'ses-destino', estado: paths(casa).state, perfil, huella }).ok;
+  // la primera fila: sólo la real, confirmada
+  const sola = casaNueva(t);
+  porClick(sola, { sesion: 'ses-real' });
+  assert.deepStrictEqual([pide(sola, 'ses-real'), pide(sola, 'ses-falsa')], [true, false]);
+  // la segunda: la línea suelta después (lo del 18/11): firma la real y no la falsa
+  const conLinea = casaNueva(t);
+  porClick(conLinea, { sesion: 'ses-real' });
+  suelta(conLinea);
+  assert.deepStrictEqual([pide(conLinea, 'ses-real'), pide(conLinea, 'ses-falsa')], [true, false]);
+  // la tercera: además un renglón de confirmación falso, igual que hoy
+  const conConfirmacion = casaNueva(t);
+  porClick(conConfirmacion, { sesion: 'ses-real' });
+  confirmarAMano(conConfirmacion, suelta(conConfirmacion));
+  assert.deepStrictEqual([pide(conConfirmacion, 'ses-real'), pide(conConfirmacion, 'ses-falsa')], [false, true]);
+});

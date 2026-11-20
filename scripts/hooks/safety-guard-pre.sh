@@ -544,9 +544,27 @@ fi
 # emergencia (lib/harness-sign.js), que la consumiría. Mira el comando sin comillas (`si''gn` es `sign`), con `sign`
 # como palabra suelta seguida de cualquier signo (`sign;true`, `sign|…`, `sign>x`). Lo que no ve: el nombre armado en
 # una variable, una copia con otro nombre o un comodín; para eso `sign` mira además quién lo lanzó y no firma si viene
-# de la herramienta.
+# de la herramienta. Un comando que sólo lee la biblioteca (`grep`, `cat`, `git log`…) no la corre: eso lo decide el
+# lector de marker-command.js, y si no está, se cae o no contesta en 5 s, frena. La salida va a un archivo: un programa
+# colgado que dejó un hijo no la deja abierta.
+_firma_solo_lee() {
+  tool_is_ps && return 1
+  local _lib _salida _pid _vigia _respuesta
+  _lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/marker-command.js" || return 1
+  [[ -f "$_lib" ]] && command -v "$HNODE" >/dev/null 2>&1 || return 1
+  _salida="$(mktemp 2>/dev/null)" || return 1
+  printf '%s' "$CMD" | "$HNODE" "$_lib" --sign-gate >"$_salida" 2>/dev/null &
+  _pid=$!
+  ( sleep 5; kill -9 "$_pid" 2>/dev/null ) >/dev/null 2>&1 &
+  _vigia=$!
+  wait "$_pid" 2>/dev/null
+  kill "$_vigia" 2>/dev/null
+  _respuesta="$(cat "$_salida" 2>/dev/null)"
+  rm -f "$_salida"
+  [[ "$_respuesta" == "firma=0" ]]
+}
 _sign_re='harness(\.js)?[^;&|]*[^[:alnum:]_-]sign([^[:alnum:]_-]|$)'
-if [[ "$_esc_cmd" == *harness-sign* || "$_esc_cmd" =~ $_sign_re ]]; then
+if [[ "$_esc_cmd" =~ $_sign_re ]] || { [[ "$_esc_cmd" == *harness-sign* ]] && ! _firma_solo_lee; }; then
   ESC_CARTEL="Esto lo corre la persona en su terminal, no el agente: explicale qué hay que firmar y por qué, y el comando exacto."
   block "ESC-C3" \
     "Firmar con harness.js sign, o usar la biblioteca de la emergencia, lo hace la persona en su terminal: un agente no, ni abriéndose una terminal propia." \

@@ -26,6 +26,13 @@ sesión: no se delegan. Donde el click no se puede comprobar, el comando dice po
 dueño (`designate-relay --terminal`) o la frase (`--quote` y después `confirm-designation`). Sin perfil, por ahora se
 nombra con la frase (`designate-relay --approved-by '<el dev>' --quote '<su frase>'`).
 
+Una designación por frase de OTRA sesión, anotada cuando ya hay una coordinadora confirmada, no la desplaza: queda **sin
+confirmar** hasta que el dueño la confirme (`confirm-designation`, desde la pestaña de cualquiera de las dos), y
+`/coordinate` lo dice («Designación sin confirmar: …»). Sin `approvals.relay_session` en el perfil esa designación no se
+podría confirmar, así que no se anota: primero se retira a la confirmada. Si la coordinadora ya no vive (su pestaña se
+cerró), otra sesión la retira con `marker.js withdraw-relay --session <su id>`, con el click del dueño; el comando se
+niega si la lista de sesiones no se puede leer bien o si esa sesión sigue viva.
+
 Al designarse, la sesión recibe la orden de leer esta guía, y la recibe otra vez después de compactar o de limpiar su
 conversación, porque ahí se pierde. **Limpiar la conversación le quita la designación**: para el arnés es otra
 conversación. La sesión recibe cómo recuperarla, pero no la recupera sola: el dueño tiene que volver a pedírselo y dar
@@ -696,7 +703,14 @@ node <arnés>/scripts/tools/office/board.js check                               
 node <arnés>/scripts/tools/office/board.js due                                            # las líneas de «Te toca»
 node <arnés>/scripts/tools/office/board.js due confirm <id>                               # sigue en pie: cuenta de nuevo
 node <arnés>/scripts/tools/office/board.js due drop <id>                                  # sacarla
+node <arnés>/scripts/tools/office/board.js backups                                        # las copias del tablero
+node <arnés>/scripts/tools/office/board.js restore <copia>                                # volver a una copia
 ```
+
+`save` y `restore` copian antes el tablero que reemplazan (las 30 más nuevas quedan en `coordination/board-backups/`):
+un tablero pisado se recupera con `board.js backups` y `board.js restore <copia>`, con sus números y las fechas de
+«Te toca». `save` no achica un tablero de 10 filas o más a menos de la mitad: si es a propósito, va con
+`--allow-shrink`. Una prueba (`TYCON_TEST_RUN=1`, la marca que pone `smoke-run.sh`) no escribe el tablero real.
 
 Escribirlo a mano (Edit, Write o la consola) se frena con el comando que hace lo mismo. Leerlo sigue libre, y el archivo
 aparte para `save --from` va fuera de la carpeta de estado. Si algo lo cambió sin el comando, la oficina lo dice una vez en

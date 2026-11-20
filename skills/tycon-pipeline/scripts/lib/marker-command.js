@@ -78,12 +78,18 @@ function tramos(cmd, shell) {
   let tramo = { palabras: [], heredocs: [] };
   let palabra = null;
   let abierta = false;
+  let separador = null;
+  let conParentesis = false;
   const pendientes = []; // heredocs que empiezan al terminar el renglón: { fin, tabs, citado, tramo }
   const empezar = () => { if (!palabra) palabra = { texto: '', literal: true }; };
   const cerrarPalabra = () => { if (palabra) tramo.palabras.push(palabra); palabra = null; };
   const cerrarTramo = () => {
     cerrarPalabra();
-    if (tramo.palabras.length || tramo.heredocs.length) salida.push(tramo);
+    if (tramo.palabras.length || tramo.heredocs.length) {
+      tramo.tras = separador;
+      separador = null;
+      salida.push(tramo);
+    }
     tramo = { palabras: [], heredocs: [] };
   };
   // `$(…)` o `<(…)` que abre en `i`: su comando va a `subs`, la palabra deja de ser literal; devuelve dónde cierra
@@ -156,7 +162,10 @@ function tramos(cmd, shell) {
       const actual = tramo;
       cerrarTramo();
       // un heredoc pendiente sigue perteneciendo a su tramo aunque el renglón siga (`cat <<EOF | bash`)
-      if (c === '|') tramo.desde = actual;
+      // un `||` queda como una tubería a propósito: el atajo de los lectores lo mira como una sola cadena y frena de más
+      // (`ls <historia> || rsync …` frena; casos: skills/tycon-pipeline/scripts/tests/bash-write-read-only.test.js)
+      if (c === '|') { tramo.desde = actual; separador = '|'; }
+      if (c === '(' || c === ')') conParentesis = true;
       continue;
     }
     if (c === '\\' && !ps) {
@@ -208,7 +217,62 @@ function tramos(cmd, shell) {
     palabra.texto += c;
   }
   cerrarTramo();
-  return { tramos: salida, subs, abierta };
+  return { tramos: salida, subs, abierta, conParentesis };
+}
+
+// Los subcomandos de `pipeline.js` que sólo leen, y los que además reciben una lista de archivos sin correrlos
+const PIPELINE_LEE = new Set(['risk-class', 'followups-status']);
+const PIPELINE_LISTA = new Set(['advisors', 'check-count', 'smart-reloop', 'deep-review-gate', 'mech-check', 'risk-class', 'model-hint']);
+const BIBLIOTECA_DE_FIRMA = ['harness', 'sign'].join('-');
+const LEEN_LO_QUE_NOMBRAN = new Set(['grep', 'echo', 'cat', 'head', 'tail', 'wc', 'ls']);
+const GIT_QUE_SOLO_LEE = new Set(['log', 'show', 'diff', 'status']);
+
+function esElPipelineInstalado(ruta) {
+  const fs = require('fs');
+  const path = require('path');
+  try {
+    const dada = path.resolve(ruta.replace(/^~(?=\/)/, require('os').homedir()));
+    return fs.realpathSync(dada) === fs.realpathSync(path.join(__dirname, '..', 'pipeline.js'));
+  } catch { return false; }
+}
+
+function tramoQueLeeLaFirma(w) {
+  if (!w.length) return false;
+  if (w.some((p) => p.startsWith('-') && (p.includes(BIBLIOTECA_DE_FIRMA) || p === '--output' || p.startsWith('--output=')))) return false;
+  if (LEEN_LO_QUE_NOMBRAN.has(w[0])) return true;
+  if (w[0] === 'git') return GIT_QUE_SOLO_LEE.has(w[1]);
+  if (w[0] !== 'node' || !w[1] || !PIPELINE_LISTA.has(w[2]) || !esElPipelineInstalado(w[1])) return false;
+  return w.every((p, k) => !p.includes(BIBLIOTECA_DE_FIRMA) || w[k - 1] === '--files');
+}
+
+/**
+ * Qué hace con la biblioteca de firma un comando que la nombra: `'lee'`, `'corre'` (cualquier forma que no sea leer) o
+ * `'ilegible'`. Va carácter por carácter y sin expresiones: lo que no está en la lista de lo que sólo lee no se analiza.
+ */
+function leerFirma(cmd) {
+  const lista = [[]];
+  let palabra = null;
+  let comilla = null;
+  let fueraDeLaForma = false;
+  const cerrar = () => { if (palabra !== null) lista[lista.length - 1].push(palabra); palabra = null; };
+  for (const c of String(cmd)) {
+    if (c === '\r') return 'ilegible';
+    const permitido = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || '_./:,@%+-'.includes(c);
+    if (comilla) {
+      if (c === comilla) comilla = null;
+      else if (permitido || c === ' ' || c === '|' || c === "'" || c === '"') palabra += c;
+      else fueraDeLaForma = true;
+    } else if (c === "'" || c === '"') {
+      comilla = c;
+      if (palabra === null) palabra = '';
+    } else if (c === ' ') cerrar();
+    else if (c === '|') { cerrar(); lista.push([]); }
+    else if (permitido) palabra = (palabra || '') + c;
+    else fueraDeLaForma = true;
+  }
+  if (comilla) return 'ilegible';
+  cerrar();
+  return !fueraDeLaForma && lista.every(tramoQueLeeLaFirma) ? 'lee' : 'corre';
 }
 
 const base = (t) => t.replace(/\{[^}]*\}/g, '').split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, '');
@@ -569,4 +633,11 @@ function detalleDeLaLlamada(llamada) {
   return detalleDelRojoEsperado(control, pruebas.split(','), fecha);
 }
 
-module.exports = { llamadas, escapeDe, lectorDeBanderas, salidaPerdida, tramos, detalleDelRojoEsperado, detalleDeLaLlamada };
+module.exports = { llamadas, escapeDe, lectorDeBanderas, salidaPerdida, tramos, detalleDelRojoEsperado, detalleDeLaLlamada, leerFirma, PIPELINE_LEE, PIPELINE_LISTA };
+
+// El freno de seguridad pregunta por acá, con el comando en la entrada. Sin respuesta clara, ese freno frena.
+if (require.main === module && process.argv[2] === '--sign-gate') {
+  let respuesta = '?';
+  try { respuesta = { lee: '0', corre: '1', ilegible: '?' }[leerFirma(require('fs').readFileSync(0, 'utf8'))]; } catch { /* queda «no se sabe» */ }
+  process.stdout.write(`firma=${respuesta}\n`);
+}
