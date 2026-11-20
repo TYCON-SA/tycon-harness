@@ -350,9 +350,12 @@ const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
  * Con `mainAntes` y `mainAhora` (el punto en común con main del sello y el de ahora), un archivo que en la foto revisada
  * es igual al de `mainAntes` y ahora es igual al de `mainAhora` va a `deMain`: lo cambió main y la corrida no lo tocó
  * (en el estado del sprint, sin el renglón de la historia). Un archivo que la corrida tocó cuenta aunque main también.
+ * Con `comentarios` (historia 8.217), un archivo con el mismo modo en los dos árboles que sólo movió comentarios
+ * (lib/comment-only.js) va a `comentarios` y no a `files`; cualquier error al mirarlo lo deja en `files`. Sin la opción,
+ * la salida no trae ese campo.
  */
-function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null } = {}) {
-  if (treeA === treeB) return { files: [], papeleo: [], deMain: [] };
+function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null, comentarios = false } = {}) {
+  if (treeA === treeB) return { files: [], papeleo: [], deMain: [], ...(comentarios ? { comentarios: [] } : {}) };
   const d = git(['-C', repo, 'diff-tree', '-r', '-z', '--no-renames', treeA, treeB]);
   if (!d.ok) return { error: `no pude comparar ${repo} entre ${treeA} y ${treeB}: ${unaLinea(d.err)}` };
   const { esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo } = require('./save-ok.js');
@@ -360,6 +363,16 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
   const files = [];
   const papeleo = [];
   const deMain = [];
+  const movidos = [];
+  const soloComentarios = (rel, modoA, modoB) => {
+    if (!comentarios || modoA !== modoB) return false;
+    try {
+      const a = contenidoDelSello(repo, treeA, rel);
+      const b = contenidoDelSello(repo, treeB, rel);
+      if (a.error || b.error || a.modo !== b.modo) return false;
+      return require('./comment-only.js').soloSeMovieronComentarios(a.buf, b.buf, { archivo: rel }).ok === true;
+    } catch (_) { return false; }
+  };
   const leer = (t, rel) => { const r = git(['-C', repo, 'show', `${t}:${rel}`]); return r.ok ? r.crudo : null; };
   const estadoDelSprint = storyRel ? path.posix.join(path.posix.dirname(storyRel), 'sprint-status.yaml') : null;
   // la entrada de una ruta en un árbol: modo, tipo y objeto («» si no existe, null si no se pudo leer). Así cuentan también
@@ -406,9 +419,92 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
     }
     if (esPapeleo) papeleo.push(rel);
     else if (trajoMain(rel, rel === estadoDelSprint && storyRel ? (t) => sinRenglonDeLaHistoria(t, claveDeLaHistoria(leer(treeB, storyRel)) || '\0') : undefined)) deMain.push(rel);
+    else if (soloComentarios(rel, meta[0], meta[1])) movidos.push(rel);
     else files.push(rel);
   }
-  return { files, papeleo, deMain };
+  return { files, papeleo, deMain, ...(comentarios ? { comentarios: movidos } : {}) };
+}
+
+/**
+ * Un archivo tal como quedó en un sello: `{ modo, buf }` (los bytes crudos) o `{ error }`. Sólo un archivo común
+ * (`100644` o `100755`): un enlace o un submódulo no se leen como texto. `timeout`, en ms, para cada `git`.
+ */
+function contenidoDelSello(repo, tree, rel, { timeout } = {}) {
+  const e = entornoDeGit();
+  const opts = { windowsHide: true, env: e.idiomaFijo(e.sinGitDelPadre(process.env), {}), maxBuffer: 8 * 1024 * 1024, ...(timeout ? { timeout } : {}) };
+  const ls = spawnSync('git', ['-C', repo, 'ls-tree', '-z', tree, '--', rel], { ...opts, encoding: 'utf8' });
+  if (ls.error || ls.status !== 0) return { error: `no pude leer ${rel} en el sello: ${unaLinea((ls.error && ls.error.message) || ls.stderr)}` };
+  const m = /^(\d{6}) blob ([0-9a-f]{40,64})\t/.exec(String(ls.stdout || ''));
+  if (!m) return { error: `${rel} no está en el sello como archivo` };
+  if (m[1] !== '100644' && m[1] !== '100755') return { error: `${rel} no es un archivo común en el sello (${m[1]})` };
+  const cat = spawnSync('git', ['-C', repo, 'cat-file', 'blob', m[2]], opts);
+  if (cat.error || cat.status !== 0 || !Buffer.isBuffer(cat.stdout)) return { error: `no pude leer ${rel} en el sello: ${unaLinea((cat.error && cat.error.message) || String(cat.stderr || ''))}` };
+  return { modo: m[1], buf: cat.stdout };
+}
+
+/**
+ * ¿El archivo del disco difiere de lo sellado sólo en el lugar de sus comentarios? Un archivo común (no un enlace), con
+ * el mismo bit de ejecución que en el sello. Lo que no se puede leer da `false`: cuenta como cambio.
+ */
+function difiereSoloEnComentarios(repo, tree, abs, { timeout } = {}) {
+  try {
+    const st = fs.lstatSync(abs);
+    if (!st.isFile()) return false;
+    const rel = path.relative(real(repo), real(abs));
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+    const sello = contenidoDelSello(repo, tree, rel.split(path.sep).join('/'), { timeout });
+    if (sello.error) return false;
+    if (process.platform !== 'win32' && ((st.mode & 0o111) !== 0) !== (sello.modo === '100755')) return false;
+    return require('./comment-only.js').soloSeMovieronComentarios(sello.buf, fs.readFileSync(abs), { archivo: abs }).ok === true;
+  } catch (_) { return false; }
+}
+
+/**
+ * La última vuelta de revisores de la sesión del marcador, si ya cerró (su sello es de antes del cierre) y es de esta
+ * historia; si no, null. Una vuelta lanzada y sin cerrar ya incluye un arreglo que nadie terminó de revisar, y una sin
+ * historia (`story: null`, no se pudo leer al sellarla) no se sabe de quién es: ninguna de las dos perdona nada.
+ */
+function vueltaCerradaDeLosRevisores(marker, cierre, { stateDir } = {}) {
+  if (!marker || !marker.sessionId || !marker.storyId || typeof cierre !== 'number' || !Number.isFinite(cierre)) return null;
+  const dir = stateDir || require('./state-dir.js').stateDir(os.homedir());
+  const v = ultimaVuelta(dir, String(marker.sessionId).replace(/[/\\]/g, '_'), 'revisores');
+  if (!v || !(Date.parse(v.ts) <= cierre)) return null;
+  if (v.story === null || v.story === undefined || String(v.story) !== String(marker.storyId)) return null;
+  return v;
+}
+
+/**
+ * Los archivos (rutas absolutas) editados después de la última vuelta de revisores que quedaron iguales a lo revisado,
+ * salvo el lugar de sus comentarios: los que no piden otra vuelta. Con más de 20 archivos no mira ninguno, y cuando se
+ * acaba el presupuesto deja de mirar: lo que falta cuenta. Cada error queda en hook-errors.log y ese archivo cuenta.
+ */
+function comentariosMovidosDesdeLaVuelta({ marker, cierre, archivos, presupuestoMs = 500, stateDir } = {}) {
+  const fuera = new Set();
+  const lista = Array.isArray(archivos) ? archivos : [];
+  if (!lista.length || lista.length > 20) return fuera;
+  const inicio = Date.now();
+  const dir = stateDir || require('./state-dir.js').stateDir(os.homedir());
+  let v;
+  try { v = vueltaCerradaDeLosRevisores(marker, cierre, { stateDir: dir }); } catch (e) { anotarError(dir, e); return fuera; }
+  if (!v || !Array.isArray(v.repos)) return fuera;
+  const { raizDelRepo } = require('./reloop-code.js');
+  for (const abs of lista) {
+    const queda = presupuestoMs - (Date.now() - inicio);
+    if (queda <= 0) break;
+    try {
+      const raiz = raizDelRepo(abs);
+      const r = raiz && v.repos.find((x) => x && x.repo && x.tree && real(x.repo) === real(raiz));
+      if (r && difiereSoloEnComentarios(r.repo, r.tree, abs, { timeout: queda })) fuera.add(abs);
+    } catch (e) { anotarError(dir, e); }
+  }
+  return fuera;
+}
+
+function anotarError(dir, e) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] comentarios movidos: no pude mirar lo revisado (${unaLinea((e && e.message) || e)}) — el archivo cuenta como cambio\n`, 'utf8');
+  } catch (_) { /* ayuda, no evidencia */ }
 }
 
 /**
@@ -455,7 +551,10 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
   };
 }
 
-module.exports = { seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia };
+module.exports = {
+  seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
+  contenidoDelSello, difiereSoloEnComentarios, vueltaCerradaDeLosRevisores, comentariosMovidosDesdeLaVuelta,
+};
 
 // `node frozen-tree.js procedencia <repo>`: la procedencia como fragmento JSON (`"run":…,"tree":…`), para sumar a un
 // renglón que arma un guion de bash. Nunca falla: sin node que conteste, el guion sigue sin ella.
