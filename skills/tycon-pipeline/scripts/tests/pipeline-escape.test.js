@@ -1,4 +1,6 @@
 'use strict';
+// sin el perfil del equipo: la prueba fija su ambiente (scripts/tests/lib/without-team-profile.js)
+require('../../../../scripts/tests/lib/without-team-profile.js');
 // Los escapes del pipeline que fabrican evidencia o una exención los autoriza una persona, con la firma de la ventana
 // sobre ese archivo (`marker.js sign-file`). Sin ella, el guardián de la evidencia no consume el permiso y el hook del
 // encabezado frena la exención de la prueba en vivo; la frase en la conversación ya no firma. Los avisos e

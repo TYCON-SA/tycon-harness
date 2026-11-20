@@ -9,6 +9,8 @@
  * como en owner-window.test.js. Nada firma de verdad: todo vive en carpetas temporales.
  * stable-data: el reloj de las pruebas es una hora fija (AHORA); ninguna prueba depende del día.
  */
+// sin el perfil del equipo: la prueba fija su ambiente (lib/without-team-profile.js)
+require('./lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
