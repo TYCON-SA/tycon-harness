@@ -297,6 +297,16 @@ const overdueFin = (at) => ({ hora: OVERDUE, dif: Number.isFinite(at) ? `sin nov
 const latest = (...times) => { const v = times.filter(Number.isFinite); return v.length ? Math.max(...v) : NaN; };
 
 /**
+ * El título de la tarjeta de las firmas de una sesión. La tarjeta va en una línea y corta con puntos lo que no entra, así
+ * que cuántas esperan va delante del título, donde no se corta: «Firmas (3): …», o «(3) …» si la primera es un permiso.
+ */
+function signatureCardTitle(rows, isPermission = false) {
+  const title = plain(rows[0].title);
+  if (rows.length < 2) return `${isPermission ? '' : 'Firma: '}${title}`;
+  return `${isPermission ? `(${rows.length}) ` : `Firmas (${rows.length}): `}${title}`;
+}
+
+/**
  * Lo que la lista de firmas pone en «Tu firma»: lo de la terminal, un renglón por fila; lo de una sesión, una sola tarjeta
  * por sesión. Con la sesión ya esperando la firma (`conTarjeta`), su tarjeta alcanza. `yaAvisada`: la sesión ya está en «te
  * toca» por lo que espera, el plan o el guardado. De un permiso sólo sale su título: el pedido no se muestra.
@@ -320,7 +330,7 @@ function cardsOfSignatures(signatures, agents, sidOf) {
     const agent = agents.find((a) => String(sidOf.get(a)) === sid);
     const quien = agent ? agent.nombre : plain(first.nombre) || plain(sid.slice(0, 8));
     const waits = Boolean(agent) && agent.estado === 'firma';
-    cards.push({ titulo: `${isPermission ? '' : 'Firma: '}${plain(first.title)}${more}`, quien, at: first.at, conTarjeta: waits, sid,
+    cards.push({ titulo: signatureCardTitle(rows, isPermission), quien, at: first.at, conTarjeta: waits, sid,
       yaAvisada: waits && (agent.espera === 'que apruebes el plan' || agent.espera === SAVE_WAIT),
       linea: `${isPermission ? '' : 'Firmar: '}${plain(first.title)}${more} (${quien})` });
   }
@@ -373,12 +383,12 @@ function stuckGroups(agents, coordinatorName) {
  * Los datos de la página, sin leer nada: `wip` es lo que devuelve wipNow, `signatures` las firmas pendientes,
  * `coordinatorSid` la sesión coordinadora (o null), `promises` la primera hora vista de cada sesión y story, `board` el
  * tablero de la coordinadora ya armado (`buildBoard`), `prAnswers` lo que contestó cada pedido que nombra (por
- * `<repo>#<número>`), `transcripts` lo que dice la conversación de cada sesión (por sesión), `lastWrites` cuándo se escribió
+ * `<repo>#<número>`), `transcripts` lo que dice la conversación de cada sesión (por sesión), `backgroundTasks` cuántas tareas de fondo esperan las sesiones con corrida abierta (por sesión), `lastWrites` cuándo se escribió
  * por última vez la conversación de cada sesión y `processes` los procesos de la máquina (null: no se pudieron leer).
  * Devuelve `{ data, promises }`, con las promesas ya al día para guardarlas.
  */
 function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorName = null, promises = {}, nowMs = Date.now(),
-  sessionFiles = [], codexNames: cxNames = new Map(), runningAgents = new Map(), quietMin = QUIET_DEFAULT_MIN, isAlive, board = null, prAnswers = new Map(), transcripts = null, lastWrites = new Map(), processes = null, openPrs = [], openPrsNote = null, waitingPrs = null, testSessions = new Set(), personSessions = new Set(), otherProjects = new Set(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro', projectStories = null, ownerCard = null } = {}) {
+  sessionFiles = [], codexNames: cxNames = new Map(), runningAgents = new Map(), quietMin = QUIET_DEFAULT_MIN, isAlive, board = null, prAnswers = new Map(), transcripts = null, backgroundTasks = new Map(), lastWrites = new Map(), processes = null, openPrs = [], openPrsNote = null, waitingPrs = null, testSessions = new Set(), personSessions = new Set(), otherProjects = new Set(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro', projectStories = null, ownerCard = null } = {}) {
   const kept = {};
   for (const [k, p] of Object.entries(promises || {})) {
     if (p && Number.isFinite(p.at) && Number.isFinite(p.seen) && nowMs - p.seen < PROMISE_KEEP_MS) kept[k] = p;
@@ -580,7 +590,16 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
         for (const k of ['atrasada', 'atrasoMin', 'horaPorque', 'pronosticoIso', ...(person ? ['estimadaIso'] : [])]) delete a[k];
         if (a.termina === OVERDUE) delete a.termina;
       }
-      if (person) {
+      // una sesión de persona parada con tareas de fondo lanzadas y sin aviso de fin espera esas tareas, no a su persona:
+      // decir que espera a la persona era una falsa alarma para el dueño. Lo dice su conversación (fondoPendiente).
+      const told = person && transcripts ? transcripts.get(String(d.sid)) : null;
+      const pend = told ? told.fondoPendiente : person ? backgroundTasks.get(String(d.sid)) : 0;
+      const bgTasks = Number(pend) > 0 ? Number(pend) : 0;
+      if (bgTasks) {
+        const since = latest(lastWrite, Number(d.statusAt) > 0 ? Number(d.statusAt) : NaN);
+        a.termina = bgTasks === 1 ? 'espera una tarea de fondo' : `espera ${bgTasks} tareas de fondo`;
+        a.fin = { hora: a.termina, dif: Number.isFinite(since) ? `desde las ${hhmm(since)}` : '', cls: '' };
+      } else if (person) {
         const since = latest(lastWrite, Number(d.statusAt) > 0 ? Number(d.statusAt) : NaN);
         a.termina = 'espera a su persona';
         a.fin = { hora: a.termina, dif: Number.isFinite(since) ? `desde las ${hhmm(since)}` : '', cls: '' };
@@ -718,7 +737,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     rows.sort((p, q) => (p.at || 0) - (q.at || 0));
     const agent = agents.find((a) => String(sidOf.get(a)) === sid);
     const quien = agent ? agent.nombre : plain(rows[0].nombre) || '';
-    repeatCards.push({ titulo: `Firma: ${plain(rows[0].title)}${rows.length > 1 ? ` y ${rows.length - 1} más` : ''}`, quien: quien || `— (${sid.slice(0, 8)})`, espera: repeatSaid(quien, sid), sid, agent });
+    repeatCards.push({ titulo: signatureCardTitle(rows), quien: quien || `— (${sid.slice(0, 8)})`, espera: repeatSaid(quien, sid), sid, agent });
   }
   // las desviadas a la coordinadora van a «En curso», una tarjeta por sesión: las firma ella, no el dueño
   const byCoordinator = new Map();
@@ -730,7 +749,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
     rows.sort((p, q) => (p.at || 0) - (q.at || 0));
     const agent = agents.find((a) => String(sidOf.get(a)) === sid);
     const quien = agent ? agent.nombre : plain(rows[0].nombre) || '';
-    repeatCards.push({ titulo: `Firma: ${plain(rows[0].title)}${rows.length > 1 ? ` y ${rows.length - 1} más` : ''}`, quien: quien || `— (${sid.slice(0, 8)})`, espera: 'la firma la coordinadora', sid, agent });
+    repeatCards.push({ titulo: signatureCardTitle(rows), quien: quien || `— (${sid.slice(0, 8)})`, espera: 'la firma la coordinadora', sid, agent });
   }
   // la sesión dice cuántos agentes corren ahora; con agentes corriendo no está libre
   const notFree = new Set();
@@ -2040,8 +2059,9 @@ function readLastWrites(wip, { home, projectsDir }) {
   return out;
 }
 
-// Lo que dice la conversación de las sesiones sin corrida abierta, por sesión. Nada de esto se guarda en disco.
-function readTranscripts(wip, states, { home, nowMs, projectsDir, codexHome }, problems) {
+// Lo que dice la conversación de las sesiones sin corrida abierta, por sesión; de las que tienen una, sólo cuántas tareas de
+// fondo esperan, en `backgroundTasks`. Nada de esto se guarda en disco.
+function readTranscripts(wip, states, { home, nowMs, projectsDir, codexHome, backgroundTasks = null }, problems) {
   const out = new Map();
   const dir = projectsDir || path.join(claudeDir(home), 'projects');
   const say = (sid, file, name) => {
@@ -2052,9 +2072,12 @@ function readTranscripts(wip, states, { home, nowMs, projectsDir, codexHome }, p
   (wip.rows || []).forEach((row, i) => {
     const x = (wip.extra && wip.extra[i]) || {};
     const d = (wip.details && wip.details[i]) || {};
+    if (d.sid == null) return;
     // una corrida terminada tapada por un carril ya no es la tarjeta: la sesión dice lo suyo como una sin corrida
-    if ((!NO_RUN_KINDS.has(x.kind) && !(replacesClosedRun(x) && !x.mark)) || d.sid == null) return;
-    say(d.sid, transcriptOf(dir, d.sid, x.cwd), row.session);
+    if (NO_RUN_KINDS.has(x.kind) || (replacesClosedRun(x) && !x.mark)) { say(d.sid, transcriptOf(dir, d.sid, x.cwd), row.session); return; }
+    // con una corrida abierta, de la conversación sólo se toman las tareas de fondo que esperan: lo demás lo dice la corrida
+    const file = backgroundTasks ? transcriptOf(dir, d.sid, x.cwd) : null;
+    if (file) backgroundTasks.set(String(d.sid), readTranscript(file, { now: nowMs }).fondoPendiente);
   });
   for (const f of states) {
     if (f.tool === 'codex' && !f.step && !out.has(String(f.session))) say(f.session, codexTranscript(codexHome || path.join(home, '.codex'), f.session, { now: nowMs }), f.name || String(f.session).slice(0, 8));
@@ -2397,7 +2420,8 @@ async function collect(opts = {}) {
     try { topics.saveRowPrs(sdir, rowPrsAfter.filas, nowMs, rowPrsAfter.sesiones); } catch (e) { problems.push(`row-prs.json no se pudo guardar (${e.code || e.message})`); }
   }
   await askHalfwayPrs(wip, opts);
-  const transcripts = opts.noTranscripts ? null : readTranscripts(wip, states, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome }, problems);
+  const backgroundTasks = new Map();
+  const transcripts = opts.noTranscripts ? null : readTranscripts(wip, states, { home, nowMs, projectsDir: opts.projectsDir, codexHome: opts.codexHome, backgroundTasks }, problems);
   const lastWrites = readLastWrites(wip, { home, projectsDir: opts.projectsDir });
   // los procesos se leen sólo si alguien está en un paso de pruebas o hay un agente de Codex sin terminar
   const needsTree = (wip.extra || []).some((x) => x && x.kind === 'pipeline') || ss.states.some((s) => isAgent(s) && s.busy !== false);
@@ -2411,7 +2435,7 @@ async function collect(opts = {}) {
   // la ficha de cada espera, con un solo tiempo para todas; quien llama con su propio límite lo pasa en `riskUntil`
   const budget = waitCard.newBudget({ until: opts.riskUntil });
   const ownerCard = ({ row, sid }) => waitCard.card({ row, marker: waitCard.markerOf(sdir, sid), budget });
-  const { data, promises, facts, factsComplete } = buildOffice({ ownerCard, wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf), projectOf, projectOfRepo, projectStories });
+  const { data, promises, facts, factsComplete } = buildOffice({ ownerCard, wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, backgroundTasks, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf), projectOf, projectOfRepo, projectStories });
   // el tablero se mueve solo con los hechos de esta foto: lo hace sólo quien tiene el candado de la oficina, con board.js
   if (opts.syncBoard && board.board && !opts.readOnly) syncBoardFromPhoto(sdir, facts, factsComplete && open.measured !== false, problems, { now: nowMs, home, sync: opts.boardSync });
   // por qué no sale una tarjeta, al registro del proceso de la oficina (su salida de errores va a server.log): sólo él
@@ -2523,6 +2547,9 @@ async function openLive(home = os.homedir()) {
     const current = readLock();
     if (await answers(current)) return { url: urlOf(current), reused: true };
     const log = path.join(dir, 'server.log');
+    // el registro junta los arranques: lo de este empieza donde termina hoy, y sólo eso se cita si no arranca
+    let start = 0;
+    try { start = fs.statSync(log).size; } catch { /* sin registro todavía */ }
     const out = fs.openSync(log, 'a', 0o600);
     const child = spawn(process.execPath, [path.join(__dirname, 'office', 'server.js')], { detached: true, stdio: ['ignore', 'ignore', out], windowsHide: true });
     fs.closeSync(out);
@@ -2538,8 +2565,8 @@ async function openLive(home = os.homedir()) {
       if (exited != null && exited !== 0) break;
       await sleep(50);
     }
-    let why = 'no contestó en 15 s';
-    try { why = fs.readFileSync(log, 'utf8').trim().split('\n').pop() || why; } catch { /* sin registro */ }
+    let why = exited != null && exited !== 0 ? `terminó con el código ${exited} sin decir por qué` : 'no contestó en 15 s';
+    try { why = fs.readFileSync(log).subarray(start).toString('utf8').trim().split('\n').pop() || why; } catch { /* sin registro */ }
     try { process.kill(child.pid, 'SIGTERM'); } catch { /* ya salió */ }
     throw new Error(`la oficina viva ${why}`);
   } finally {
