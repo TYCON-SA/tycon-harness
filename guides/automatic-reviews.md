@@ -30,7 +30,8 @@ instalador, producción, una migración, o declara `sensible:`. En duda, delicad
 | No | Se le pregunta al dueño (`plan_review.routine: ask`). Dueño ausente: se revisa (`plan_review.routine_owner_away: review`) | La revisión, con o sin coordinadora (`plan_review.routine_approval: review`): con coordinadora, ella firma en nombre del dueño; sin coordinadora, se aprueba sin click. Con `person`, el dueño |
 
 Se lanza con «Armar el plan» cerrado y sin una pregunta abierta a la persona sobre esta revisión (salvo que cuente como
-ausente): antes, `plan-review` se niega sin lanzar nada y dice por qué. La lanza la coordinadora (`marker.js plan-review --for-session <sesión>`); sin coordinadora, la propia sesión
+ausente): antes, `plan-review` se niega sin lanzar nada y dice por qué. La cuarta vuelta de la misma historia, por
+cualquier motivo, la decide una persona: su «review» a la pregunta, o la vuelta extra firmada; su ausencia no alcanza. La lanza la coordinadora (`marker.js plan-review --for-session <sesión>`); sin coordinadora, la propia sesión
 (`marker.js plan-review`). La de la propia sesión aprueba un plan de rutina igual que la de la coordinadora; sólo
 informa en una historia delicada o con `plan_review.routine_approval: person`. De fábrica corre una lente, «suposición
 falsa»: lo que el plan cree del código y no es cierto. Los resultados:
@@ -40,7 +41,7 @@ falsa»: lo que el plan cree del código y no es cierto. Los resultados:
 | «aprobado» | Rutina: se aprueba, con o sin coordinadora (con coordinadora, ella firma; sin ella, `complete-step approve-plan` cierra sin click). Delicada, o con `plan_review.routine_approval: person`: le llega al dueño con «revisado, sin hallazgos» (una delicada la aprueba el arnés solo si el perfil pone `plan-approval:delicada` como trámite, con la revisión de la propia sesión) |
 | «aprobado con notas» | Confirmados por debajo del corte de gravedad: cuenta como aprobado, la sesión los corrige al implementar y el cuadro los muestra |
 | «rechazado» | Sólo por un confirmado en el corte (de fábrica, un defecto). La sesión corrige el plan y la revisión vuelve a correr. Llega al dueño al tope de rechazos seguidos (`review.max_rounds`, de fábrica 3), o enseguida con `plan_review.rejected_reaches_owner: true` |
-| «sin veredicto» | Le llega al dueño con «no se pudo revisar: <motivo>». Si el plan o la historia cambiaron mientras corría, se reintenta una sola vez, con todos los cambios juntos |
+| «sin veredicto» | Le llega al dueño con «no se pudo revisar: <motivo>». Si el plan o la historia cambiaron mientras corría, se reintenta una sola vez, con todos los cambios juntos. De la historia cuenta lo que define la construcción: su registro de después, el `status` y los espacios no la cambian |
 | Se eligió no revisar | Aprueba el dueño, y el cuadro dice «sin revisión» |
 
 ### Qué garantiza la revisión que lanza la propia sesión

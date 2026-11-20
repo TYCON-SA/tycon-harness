@@ -128,3 +128,79 @@ test('PlanReview_LaHistoriaCambiaMientrasCorre_UnSoloReintentoEntreLosDos', (t) 
   assert.strictEqual(a.alDueno.llega, true);
   assert.match(a.alDueno.motivo, /cambió mientras corría la revisión, dos veces/);
 });
+
+// 🔴 Falla con: un ajuste del registro de la historia (su «Change Log», el estado, espacios) que tira la revisión del
+//    plan, o un cambio en lo que se construye (un criterio, una sección con otro nombre) que no la tira.
+test('PlanReview_RedaccionDelRegistro_NoTiraLaRevision_LoQueSeConstruyeSi', (t) => {
+  const lab = laboratorio(t);
+  const historia = lab.stories[DESTINO];
+  const original = fs.readFileSync(historia, 'utf8');
+  // esta prueba lanza más de tres vueltas: la persona las responde (la cuarta vuelta la mide la prueba de abajo)
+  const responder = () => PR().anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'plan', choice: 'review', quien: 'la persona de la prueba', ahora: Date.now() + 1 });
+  const conRegistro = (s) => `${s.replace('status: in-progress', 'status: review')}\n## Acceptance Criteria\n\nAC 1. el README dice x.   \n\n\n## Dev Agent Record\n\n### Change Log\n\n- 2026-11-20: hallazgos de la vuelta anterior.\n`;
+  const base = conRegistro(original);
+  fs.writeFileSync(historia, base);
+  // el registro de después, el estado y los espacios: la revisión vale
+  for (const [nombre, cambiar] of [
+    ['el Change Log', () => base.replace('hallazgos de la vuelta anterior.', 'hallazgos de la vuelta anterior, corregidos.')],
+    ['el estado', () => base.replace('status: review', 'status: in-progress')],
+    ['los espacios', () => base.replace('AC 1. el README dice x.   \n\n\n', 'AC 1. el README dice x.\n\n')],
+  ]) {
+    responder();
+    const c = lab.revisar(() => fs.writeFileSync(historia, cambiar()));
+    assert.strictEqual(c.veredicto, 'aprobado', nombre);
+    fs.writeFileSync(historia, base);
+  }
+  // lo que se construye: un criterio, una sección con otro nombre, o lo que va antes del registro
+  for (const [nombre, cambiar] of [
+    ['un criterio', () => base.replace('AC 1. el README dice x.', 'AC 1. el README dice y.')],
+    ['otra sección', () => `${base}\n## Notas sueltas\n\nalgo\n`],
+    ['un título dentro de un bloque de código', () => base.replace('## Dev Agent Record', '```\n## Dev Agent Record\n```\n\n## Dev Agent Record')],
+  ]) {
+    responder();
+    const c = lab.revisar(() => fs.writeFileSync(historia, cambiar()));
+    assert.strictEqual(c.veredicto, 'sin-veredicto', nombre);
+    assert.match(c.motivo, /la historia cambió mientras corría/, nombre);
+    fs.writeFileSync(historia, base);
+  }
+});
+
+// 🔴 Falla con: una cuarta vuelta de la revisión del plan de la misma historia que se lanza sola (por cualquier motivo,
+//    también con la persona ausente), o que sigue frenada después de su respuesta o de la vuelta extra firmada.
+test('PlanReview_CuartaVuelta_LaDecideUnaPersona', (t) => {
+  const lab = laboratorio(t);
+  const config = cfgCon({ plan_review: { routine: 'always' } });
+  const accion = () => PR().accionDelPlan({ estado: lab.estado, sesion: DESTINO, marker: lab.leer(DESTINO), config, home: lab.home });
+  for (let i = 1; i <= 3; i++) {
+    fs.writeFileSync(lab.planFile, `${PLAN}${i + 1}. vuelta ${i}\n`);
+    assert.strictEqual(lab.revisar().veredicto, 'aprobado', `vuelta ${i}`);
+  }
+  fs.writeFileSync(lab.planFile, `${PLAN}9. otra versión\n`);
+  // la cuarta: la preparación se niega sin dejar pedido, y la acción pide la pregunta
+  const lanzadas = () => fs.readFileSync(path.join(lab.estado, 'gates.log'), 'utf8').split('\n').filter((l) => l.includes('"plan-review-launch"')).length;
+  const p = lab.preparar();
+  assert.strictEqual(p.codigo, 2);
+  assert.match(p.motivo, /ya van 3 vueltas .*la próxima la decide una persona/);
+  assert.strictEqual(lanzadas(), 3, 'no lanza');
+  const a = accion();
+  assert.strictEqual(a.comando, 'marker.js review-ask --kind plan');
+  assert.deepStrictEqual(a.cuartaVuelta, { vueltas: 3 });
+  assert.strictEqual(a.alDueno.llega, true);
+  // la persona ausente no la destraba
+  const ausente = lab.marker(DESTINO, ['owner-away', 'set']);
+  assert.strictEqual(lab.preparar().codigo, 2, `con la marca de ausente (${ausente.status})`);
+  // con su «review», sale; la quinta vuelve a preguntar
+  const ask = lab.marker(DESTINO, ['review-ask', '--kind', 'plan']);
+  assert.strictEqual(ask.status, 0, ask.stderr);
+  const ans = lab.marker(COORD, ['review-answer', '--kind', 'plan', '--choice', 'review', '--for-session', DESTINO]);
+  assert.strictEqual(ans.status, 0, ans.stderr);
+  assert.strictEqual(lab.revisar().veredicto, 'aprobado');
+  assert.strictEqual(lab.preparar().codigo, 2, 'la quinta vuelve a preguntar');
+  // la vuelta extra firmada para esta historia también es la respuesta de la persona; la de otra historia, no
+  const gates = path.join(lab.estado, 'gates.log');
+  const firma = (story) => fs.appendFileSync(gates, `${JSON.stringify({ ts: new Date(Date.now() + 5).toISOString(), story, name: 'extra-round-signed', status: 'ok', via: 'ventana', sesion: DESTINO, destino: DESTINO })}\n`);
+  firma('9.92');
+  assert.strictEqual(lab.preparar().codigo, 2, 'la vuelta extra de otra historia no cuenta');
+  firma('9.91');
+  assert.strictEqual(lab.preparar().codigo, 0, 'la vuelta extra de esta historia sí');
+});

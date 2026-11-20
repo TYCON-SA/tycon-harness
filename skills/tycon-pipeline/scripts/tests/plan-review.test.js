@@ -101,11 +101,16 @@ function laboratorio(t, { sensible = null, designada = COORD, plan = PLAN } = {}
   lab.revisiones = () => { try { return fs.readdirSync(path.join(estado, 'plan-review'), { recursive: true }).map(String); } catch (_) { return []; } };
   /** La revisión que lanza `lanza` sobre ses-a, en proceso: preparar y anotar el resultado del pase. */
   lab.revisar = (resultado, { lanza = COORD, delegacion = delegacionReal(), antesDeAnotar } = {}) => {
+    lab.siLaPersonaLoPide();
     const p = PR().preparar({ lanza, destino: DESTINO, estado, home, delegacion });
     assert.strictEqual(p.codigo, 0, p.motivo);
     if (antesDeAnotar) antesDeAnotar(p);
     const conPedido = resultado && typeof resultado === 'object' ? { pedido: p.args.pedido, ...resultado } : resultado;
     return PR().anotar({ lanza, destino: DESTINO, estado, resultado: conPedido, modelo: 'opus', proveedor: 'anthropic' });
+  };
+  /** Desde la cuarta vuelta de la misma historia la decide una persona: estas pruebas miran otra cosa, y la responden. */
+  lab.siLaPersonaLoPide = () => {
+    if (PR().cuartaVuelta({ estado, destino: DESTINO, storyId: '9.91' }).falta) PR().anotarRespuesta({ estado, sesion: DESTINO, kind: 'plan', choice: 'review', quien: 'la persona de la prueba', ahora: Date.now() + 1 });
   };
   lab.constancia = (lanza = COORD) => path.join(estado, 'plan-review', lanza, `${DESTINO}.json`);
   /** El pedido de la ventana, como lo arma el freno ante el comando de ses-coord (con la delegación concedida o no). */
@@ -512,6 +517,7 @@ test('PlanReview_ResultadoDeOtroPedido_SinVeredicto (revisores) @story-1.29 @ac-
   // el del pedido vigente, sí
   assert.strictEqual(lab.revisar(APROBADO).veredicto, 'aprobado');
   // un resultado que no se puede leer: el comando no sale 0
+  lab.siLaPersonaLoPide();
   PR().preparar({ lanza: COORD, destino: DESTINO, estado: lab.estado, home: lab.home, delegacion: delegacionReal() });
   const cli = lab.marker(COORD, ['plan-review', '--for-session', DESTINO, '--result', path.join(lab.base, 'no-existe.json'), '--model', 'opus']);
   assert.strictEqual(cli.status, 3, `${cli.stdout}${cli.stderr}`);
@@ -574,6 +580,7 @@ test('PlanReview_SoloLaCoordinadoraParaOtra_ConSinForSessionLaInformativa (T5, T
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /no hay plan que revisar/);
   // la designada corre y no toca el marcador destino
+  lab.siLaPersonaLoPide();
   const p = PR().preparar({ lanza: COORD, destino: DESTINO, estado: lab.estado, home: lab.home });
   assert.strictEqual(p.codigo, 0, p.motivo);
   assert.strictEqual(p.informativa, false);
@@ -1095,6 +1102,7 @@ const renglonesDe = (lab, name) => lab.gates().filter((j) => j.name === name);
  */
 const PIDE_CLICK = () => cfgCon({ plan_review: { routine_approval: 'person' } });
 const informativa = (lab, resultado, config) => {
+  lab.siLaPersonaLoPide();
   const p = PR().preparar({ lanza: DESTINO, estado: lab.estado, ...(config ? { config } : {}) });
   assert.strictEqual(p.codigo, 0, p.motivo);
   return PR().anotar({ lanza: DESTINO, estado: lab.estado, resultado: { pedido: p.args.pedido, ...resultado } });

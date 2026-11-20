@@ -72,6 +72,12 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
    - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan o la historia
      cambiaron mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño. No se
      relanza por cada cambio: se juntan todos, y se relanza cuando el plan y la historia quedaron como van a quedar.
+     De la historia cuenta lo que define la construcción: el registro de después («Dev Agent Record», su «Change Log»,
+     los «Follow-ups»), el `status` y los espacios no la cambian; cualquier otra palabra, sí.
+   - **La cuarta vuelta.** Tres vueltas de la revisión del plan de la misma historia (por cualquier motivo: cortadas,
+     sin veredicto, rechazadas o aprobadas) se lanzan sin preguntar; la cuarta no. `plan-review` se niega hasta que la
+     persona responde «review» a su pregunta (`review-ask --kind plan` y `review-answer`), o firma la vuelta extra de esa
+     historia. Su ausencia no la destraba.
    - **4d. Sin revisión.** Con `skip`, con `never` o eligiendo seguir sin revisión: el plan lo firma el dueño, y su
      cuadro lo dice («sin revisión (se eligió seguir)» o «sin revisión (el perfil no revisa)»).
 
