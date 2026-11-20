@@ -41,7 +41,7 @@ falsa»: lo que el plan cree del código y no es cierto. Los resultados:
 | «aprobado» | Rutina: se aprueba, con o sin coordinadora (con coordinadora, ella firma; sin ella, `complete-step approve-plan` cierra sin click). Delicada, o con `plan_review.routine_approval: person`: le llega al dueño con «revisado, sin hallazgos» (una delicada la aprueba el arnés solo si el perfil pone `plan-approval:delicada` como trámite, con la revisión de la propia sesión) |
 | «aprobado con notas» | Confirmados por debajo del corte de gravedad: cuenta como aprobado, la sesión los corrige al implementar y el cuadro los muestra |
 | «rechazado» | Sólo por un confirmado en el corte (de fábrica, un defecto). La sesión corrige el plan y la revisión vuelve a correr. Llega al dueño al tope de rechazos seguidos (`review.max_rounds`, de fábrica 3), o enseguida con `plan_review.rejected_reaches_owner: true` |
-| «sin veredicto» | Le llega al dueño con «no se pudo revisar: <motivo>». Si el plan o la historia cambiaron mientras corría, se reintenta una sola vez, con todos los cambios juntos. De la historia cuenta lo que define la construcción: su registro de después y el `status` no la cambian; ante la duda, cuenta la historia entera |
+| «sin veredicto» | Le llega al dueño con «no se pudo revisar: <motivo>». Si el plan o la historia cambiaron mientras corría, se reintenta una sola vez, con todos los cambios juntos. De la historia cuenta lo que define la construcción: su registro de después, «Ajustes después de la firma» y el `status` no la cambian; ante la duda, cuenta la historia entera |
 | Se eligió no revisar | Aprueba el dueño, y el cuadro dice «sin revisión» |
 
 ### Qué garantiza la revisión que lanza la propia sesión

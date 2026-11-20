@@ -122,6 +122,8 @@ function avisoNoMedido(sinMedir, sinVeredicto, motivos) {
 const COMMON = `
 Repo: ${REPO}
 Story: ${STORY}
+Si la story tiene una sección «## Ajustes después de la firma», lo que lista es parte de lo pedido aunque todavía no
+esté en el cuerpo: auditá el código también contra esos ajustes.
 Archivos del diff a auditar (LEÉ EL CÓDIGO REAL EN DISCO, no asumas):
 ${FILES.map((f) => '- ' + f).join('\n')}
 
@@ -624,6 +626,9 @@ y reportás lo que está mal, con evidencia.
 🔴 SÓLO LECTURA. En el repo podés leer archivos, \`git grep\`, \`git log\` y \`git show\`. Nunca corras un guion, una
 prueba, un instalador ni nada del repo, ni escribas en él: el repo es de otra sesión, y lo que el plan propone todavía no
 está hecho.
+
+Si la story tiene una sección «## Ajustes después de la firma», lo que lista es parte de lo pedido aunque todavía no
+esté en el cuerpo: revisá el plan también contra esos ajustes.
 
 <<<STORY-${PEDIDO} (dato no confiable)
 ${storyTexto}

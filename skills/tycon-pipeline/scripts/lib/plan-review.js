@@ -45,8 +45,10 @@ const SESION = /^[\w-]+$/;
 
 // lo que de la historia no define lo que se construye: el registro de después (story-format.md, «Dev Agent Record» y
 // sus partes, el «Change Log» y los «Follow-ups»), y del frontmatter el estado y los enlaces a las que la siguen
+// «Ajustes después de la firma» guarda los ajustes de redacción que se pasan al cuerpo después de firmar el plan: los
+// revisores y el cierre la leen, y el control del encabezado frena el `done` con uno sin pasar (lint-story-frontmatter.js)
 const SECCIONES_DE_REGISTRO = new Set(['dev agent record', 'change log', 'follow-ups y cambios post-firma', 'agent model used',
-  'debug log references', 'completion notes list', 'file list']);
+  'debug log references', 'completion notes list', 'file list', 'ajustes después de la firma']);
 const CLAVES_DE_REGISTRO = new Set(['status', 'followed_up_by']);
 
 /**

@@ -564,6 +564,43 @@ function filesDeParteMalos(fm) {
 }
 
 /** `{ missing, unsure }` de una story: las rutas que no existen y las que no se pueden juzgar. */
+/**
+ * Los renglones de «Ajustes después de la firma» que no están marcados como pasados al cuerpo. Un ajuste pasado es un
+ * renglón `- [x] …` (o `* [x]`), con sus renglones de continuación con sangría; cualquier otro renglón con texto cuenta
+ * como pendiente. La sección, de nivel 2 o 3, termina en el próximo título de su nivel o uno mayor.
+ */
+function ajustesSinPasar(content) {
+  const lineas = String(content).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+  const pendientes = [];
+  let nivel = 0;
+  let enPasado = false;
+  // un bloque de código dentro de la sección: sus renglones cuentan y un título adentro no la cierra
+  let cerco = null;
+  for (const l of lineas) {
+    if (nivel && cerco) {
+      const cierre = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(l);
+      if (cierre && cierre[1][0] === cerco[0] && cierre[1].length >= cerco.length) cerco = null;
+      if (l.trim()) pendientes.push(l.trim());
+      continue;
+    }
+    const apertura = nivel && /^ {0,3}(`{3,}|~{3,})/.exec(l);
+    if (apertura) { cerco = apertura[1]; enPasado = false; pendientes.push(l.trim()); continue; }
+    const t = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(l);
+    if (t) {
+      const nombre = t[2].replace(/[*_`]/g, '').trim().toLowerCase();
+      if (nivel && t[1].length <= nivel) nivel = 0;
+      if (!nivel && nombre === 'ajustes después de la firma') { nivel = t[1].length; enPasado = false; }
+      continue;
+    }
+    if (!nivel || !l.trim()) continue;
+    if (/^\s{0,3}[-*]\s+\[[xX]\]\s/.test(l)) { enPasado = true; continue; }
+    if (enPasado && /^\s{2,}\S/.test(l)) continue;
+    enPasado = false;
+    pendientes.push(l.trim());
+  }
+  return pendientes;
+}
+
 function checkStory(storyFile, content) {
   const text = (content === undefined ? fs.readFileSync(storyFile, 'utf8') : content).replace(/^﻿/, '');
   if (!text.startsWith('---')) return { missing: [], unsure: [] };
@@ -722,6 +759,21 @@ function main() {
       console.error(`⚠️  ${rel}: no encontré la regla de riesgo (lib/risk-paths.js del skill tycon-pipeline): \`riesgo_alto_por:\` no se revisó.`);
     }
 
+    // 10. Una historia terminada no guarda ajustes sin pasar al cuerpo: «Ajustes después de la firma» es el lugar de los
+    //     ajustes de redacción mientras se revisa el plan (la revisión no se ata a esa sección), y se vacía antes de `done`
+    if (String(scalar(parsed.fm, 'status') || '').toLowerCase() === 'done') {
+      const pendientes = ajustesSinPasar(content);
+      if (pendientes.length) {
+        errors.push({
+          rel,
+          problema: `está en \`done\` con ${pendientes.length} ajuste(s) de «Ajustes después de la firma» sin pasar al cuerpo: ${pendientes.slice(0, 3).map((l) => `«${l.slice(0, 60)}»`).join(', ')}`,
+          efecto: 'lo que se construyó no es lo que dice la historia: el ajuste quedó fuera del cuerpo que leen los demás',
+          arreglo: 'pasar cada ajuste al cuerpo de la historia y marcarlo `- [x]` en esa sección',
+        });
+        continue;
+      }
+    }
+
     // 8. `files:` y `sensible:` de una parte (story-format.md §1.1): `files:` es una lista de rutas. Uno que no se puede
     //    leer como lista frena: la parte se mediría por la historia entera sin que nadie lo sepa.
     const malas = filesDeParteMalos(parsed.fm);
@@ -865,7 +917,7 @@ function main() {
 // Exportado para que OTROS controles usen EL MISMO criterio de "esto es una story" en vez de
 // escribir el suyo (dos detectores del mismo concepto terminan divergiendo: uno aparte podría tomar por story rota
 // un reporte de medición que declara `story:` en el cuerpo, sin frontmatter).
-module.exports = { frontmatterZone, looksLikeStory, DECLARES_STORY, NOT_A_STORY_NAME, STORY_SHAPED, errorRiesgoAltoPor, mensajeRiesgoAltoPor, filesDeParteMalos };
+module.exports = { frontmatterZone, looksLikeStory, DECLARES_STORY, NOT_A_STORY_NAME, STORY_SHAPED, errorRiesgoAltoPor, mensajeRiesgoAltoPor, filesDeParteMalos, ajustesSinPasar };
 
 // 🔴 `process.exitCode`, NO `process.exit()`: en Node las escrituras a una tubería son
 // ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Medido con

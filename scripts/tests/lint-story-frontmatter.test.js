@@ -627,3 +627,32 @@ test('T37 LintFrontmatter_IntentReaderMissing_LoudWarning @story-8.258 @ac-29', 
   assert.match(roto.out, /roto al cargar/);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+// 🔴 Falla con: una historia en `done` con un ajuste de «Ajustes después de la firma» sin pasar al cuerpo que se
+//    commitea igual, o una con todos pasados (`- [x]`) que se frena.
+test('AjustesDespuesDeLaFirma_SinPasar_FrenanElDone', (t) => {
+  const root = mkRepo('lint-ajustes-');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const fm = (estado) => `---\nstory: "1.1"\nepic: 1\nstatus: ${estado}\n---\n\n# Story 1.1\n\n## Acceptance Criteria\n\nAC 1. x\n\n`;
+  const con = (estado, ajustes) => write(root, 'specs/story-1.1-juguete.md', `${fm(estado)}## Ajustes después de la firma\n\n${ajustes}\n## Dev Agent Record\n\n- nota\n`);
+  const lint = () => run(['specs/story-1.1-juguete.md'], root);
+  con('done', '- [ ] cambiar el ejemplo del AC 1\n');
+  let r = lint();
+  assert.notStrictEqual(r.code, 0, r.out);
+  assert.match(r.out, /1 ajuste\(s\) de «Ajustes después de la firma» sin pasar al cuerpo/);
+  // un renglón suelto, sin casilla, también es un ajuste sin pasar; y un título dentro de un bloque no cierra la sección
+  con('done', '- [x] pasado\n  con su continuación\n\notra cosa suelta\n');
+  assert.notStrictEqual(lint().code, 0, 'un renglón suelto');
+  con('done', '- [x] pasado\n```\n## Dev Agent Record\n```\n- [ ] escondido\n');
+  r = lint();
+  assert.notStrictEqual(r.code, 0, 'un título dentro de un bloque de código');
+  // todos pasados, o una historia que todavía no está en done: no frena
+  con('done', '- [x] pasado al cuerpo\n  con su continuación\n* [X] otro\n');
+  r = lint();
+  assert.strictEqual(r.code, 0, r.out);
+  con('in-progress', '- [ ] todavía no\n');
+  r = lint();
+  assert.strictEqual(r.code, 0, r.out);
+  const { ajustesSinPasar } = require(LINT);
+  assert.deepStrictEqual(ajustesSinPasar('# S\n\n### Ajustes después de la firma\n\n- [ ] a\n\n## Otra\n\n- [ ] b\n'), ['- [ ] a'], 'termina en el título de su nivel o mayor');
+});

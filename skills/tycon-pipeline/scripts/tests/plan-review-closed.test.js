@@ -226,6 +226,8 @@ test('HuellaDeConstruccion_LoDudosoCuenta_ElRegistroNo', () => {
   for (const [nombre, texto] of Object.entries(cuenta)) assert.notStrictEqual(h(texto.replace('hace A', 'hace B')), h(texto), nombre);
   // el registro de después, el estado y el BOM: no cambian
   assert.strictEqual(h(base.replace('- algo', '- otra cosa')), h(base), 'el Change Log');
+  const conAjustes = base.replace('## Dev Agent Record', '## Ajustes después de la firma\n\n- [ ] cambiar el ejemplo\n\n## Dev Agent Record');
+  assert.strictEqual(h(conAjustes), h(base), 'un ajuste anotado para después de la firma');
   assert.strictEqual(h(base.replace('status: draft', 'status: done')), h(base), 'el estado');
   assert.strictEqual(h(`\uFEFF${base}`), h(base), 'el BOM');
   assert.strictEqual(h(base.replace(/\n/g, '\r\n')), h(base), 'los fines de renglón');
