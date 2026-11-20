@@ -1997,8 +1997,9 @@ function cmdCompleteStep(nRaw, flags) {
     appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...firmaPlan.constancia });
     // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; por la revisión, automática a
     // nombre de la revisión. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
-    // con su click o su «aprobado», aprobó la persona: nadie vio este comando, así que un nombre escrito en él no cuenta
-    const delDueno = ['click', 'mensaje'].includes(firmaPlan.via) ? { tipo: 'manual', quien: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona' } : null;
+    // con su click, su «aprobado» o «firmo» en su terminal, aprobó la persona: a nombre del usuario de la máquina, porque
+    // un nombre escrito en el comando no lo vio nadie. La vía la pone owner-window.js al firmar, no una opción del comando
+    const delDueno = require('./lib/approvals.js').deLaPersona(firmaPlan.via, process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona');
     // la revisión que lanzó la propia sesión no es una delegación de nadie: se anota como lo que es
     const quienPlan = autoRevision ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})` }
       // la firma de trámite la dio el arnés (automatic-signing.js): no hay coordinadora que nombrar
@@ -2172,10 +2173,10 @@ function cmdCompleteStep(nRaw, flags) {
     if (testsCheck === 'sin-acotar') {
       appendLog('gates.log', {
         name: 'tests-unscoped', status: 'accepted', story: marker.storyId || null,
-        reason: 'sin acotar: la cubre la CI del pedido; el merge exige la CI completa en verde',
+        reason: 'sin acotar: la cubre la CI del pedido; antes del merge hay que mirar que salga verde (esta máquina no lo comprueba)',
       });
       console.error('⚠️  la suite no se acotó (sin acotar: no se supo qué se tocó en el repo hermano, o ninguna suite lo lee):');
-      console.error('   la cubre la CI del pedido, y el merge exige la CI completa en verde. El motivo está en .advisors/tests-result.json.');
+      console.error('   la cubre la CI del pedido: antes del merge, mirá que salga verde (esta máquina no lo comprueba). El motivo está en .advisors/tests-result.json.');
     }
 
     // ── Acotada por el repo: el verde es el de las suites que leen lo tocado, y se dice quién corre la completa ──
