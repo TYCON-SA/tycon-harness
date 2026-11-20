@@ -2172,8 +2172,10 @@ test('PrShards_BenchDoesNotRun_ItsJobRunsSuitesAndTheVerdictAcceptsItWithBothSig
   for (const [name, job] of [['Bench', bench], ['Verdict', verdict]]) {
     assert.match(job, /\n {6}BANCO: \$\[ dependencies\.Validar\.outputs\['bench\.banco'\] \]\n/, `${name} lee la decisión de Validar`);
   }
-  assert.match(bench, new RegExp(`displayName: '${BENCH_STEP.replace(/[()]/g, '\\$&')}'\\n {8}condition: and\\(succeeded\\(\\), ne\\(variables\\['BANCO'\\], 'no'\\)\\)\\n`), 'el banco corre salvo un «no» (vacío corre)');
-  assert.match(bench, new RegExp(`displayName: '${BENCH_SKIP_STEP}'\\n {8}condition: and\\(succeeded\\(\\), eq\\(variables\\['BANCO'\\], 'no'\\)\\)\\n`), 'la marca, sólo con «no»');
+  // el nombre de un paso, literal dentro de una expresión: todo lo especial escapado, la barra invertida incluida
+  const literal = (s) => s.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+  assert.match(bench, new RegExp(`displayName: '${literal(BENCH_STEP)}'\\n {8}condition: and\\(succeeded\\(\\), ne\\(variables\\['BANCO'\\], 'no'\\)\\)\\n`), 'el banco corre salvo un «no» (vacío corre)');
+  assert.match(bench, new RegExp(`displayName: '${literal(BENCH_SKIP_STEP)}'\\n {8}condition: and\\(succeeded\\(\\), eq\\(variables\\['BANCO'\\], 'no'\\)\\)\\n`), 'la marca, sólo con «no»');
   assert.ok(bench.indexOf(`displayName: '${BENCH_SKIP_STEP}'`) < bench.indexOf("artifact: 'bench-a$(System.JobAttempt)'"), 'antes de publicar la carpeta del banco');
 
   // Corrido: seis suites chicas con el banco que no corre. El trabajo del banco arranca vacío y se lleva la mitad.
