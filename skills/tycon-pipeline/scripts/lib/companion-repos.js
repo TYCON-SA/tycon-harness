@@ -418,6 +418,68 @@ function declaredIn(storyRepo, storyPath, companionRoot) {
   return out;
 }
 
+/**
+ * Todos los archivos que la story declara (crear y modificar) que son de `targetRepo`, relativos a él. `targetRepo` es
+ * el repo de la story o uno de sus hermanos. Un archivo que todavía no existe se ubica por su carpeta: es del repo
+ * donde existe la carpeta que lo contiene (y, si no existe en ninguno, del repo de la story, como antes). Lo usa el
+ * chequeo de mutantes: sin esto, una story que toca dos repos le pedía a cada uno las pruebas del otro y no medía en
+ * ninguno.
+ */
+function declaredFor(storyRepo, storyPath, targetRepo) {
+  const ts = require('./test-scope.js');
+  const contenido = leerStory(storyPath);
+  const propio = real(storyRepo);
+  const objetivo = real(targetRepo);
+  const comunDe = (dir) => {
+    const r = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+    return r.status === 0 ? real(r.stdout.trim()) : null;
+  };
+  const comunObjetivo = objetivo === propio ? null : comunDe(objetivo);
+  // otra copia (un worktree) del repo de la story: se mide con lo del repo de la story
+  if (comunObjetivo && comunObjetivo === comunDe(propio)) return declaredFor(storyRepo, storyPath, storyRepo);
+  // los hermanos que declaran el repo de la story y el medido (como el portón); el medido, si es otra copia de un
+  // hermano, toma su lugar; y si no es ninguno de ellos, también cuenta: el portón lo eligió porque la story lo toca
+  let companions = [...companionRoots(storyRepo, storyPath), ...(objetivo === propio ? [] : companionRoots(objetivo, storyPath))]
+    .map((c) => real(c)).filter((c, i, a) => a.indexOf(c) === i && c !== propio);
+  if (objetivo !== propio) {
+    const i = companions.findIndex((c) => c === objetivo || (comunObjetivo && comunDe(c) === comunObjetivo));
+    if (i >= 0) companions[i] = objetivo; else companions = [objetivo, ...companions];
+  }
+  const out = [];
+  for (const d of ts.parseDeclaredFiles(contenido)) {
+    let r;
+    const prefijada = parseRepoPrefixed(d);
+    if (prefijada) {
+      // `(<repo>) <ruta>`: el repo lo dice la entrada
+      const raiz = resolveRepoRef(prefijada.ref, storyRepo, companions).root;
+      const rr = raiz ? real(raiz) : null;
+      const deObjetivo = rr && (rr === objetivo || (comunObjetivo && comunDe(rr) === comunObjetivo));
+      r = { where: rr === propio ? 'repo' : 'companion', root: deObjetivo ? objetivo : rr, rel: prefijada.rest.replace(/\\/g, '/').replace(/^\.\//, '') };
+    } else {
+      r = resolveDeclared(d, storyRepo, companions);
+      if (r.where === null) r = porCarpeta(r.rel, storyRepo, companions);
+    }
+    const raiz = r.where === 'companion' ? r.root : propio;
+    if (raiz === objetivo && r.rel && !out.includes(r.rel)) out.push(r.rel);
+  }
+  return out;
+}
+
+/** Un archivo declarado que todavía no existe: del repo donde está su carpeta, con las mismas formas que resolveDeclared. */
+function porCarpeta(d, repo, companions) {
+  const carpetaEn = (raiz, rel) => adentro(path.join(raiz, rel), raiz) && esDir(path.dirname(path.join(raiz, rel)));
+  if (carpetaEn(repo, d)) return { where: 'repo', root: real(repo), rel: d };
+  for (const c of companions || []) {
+    const nombre = label(c);
+    const candidatos = [d];
+    if (d.startsWith(`${nombre}/`)) candidatos.push(d.slice(nombre.length + 1));
+    const deRepo = path.resolve(repo, d);
+    if (adentro(deRepo, c)) candidatos.push(path.relative(real(c), deRepo).split(path.sep).join('/'));
+    for (const rel of candidatos) if (rel && carpetaEn(c, rel)) return { where: 'companion', root: real(c), rel };
+  }
+  return { where: null, root: null, rel: d };
+}
+
 const TOPE_DE_HUELLAS = 50;
 
 /**
@@ -478,7 +540,7 @@ function anclasDeLaEvidencia(repo, historia) {
 module.exports = {
   anclasDeLaEvidencia, nombreDelRepo,
   companionRoots, ramaDe, limpiarRamas, enLaMismaRama, mainAlDia, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
-  companionTargets, declaredHere, declaredIn, real,
+  companionTargets, declaredHere, declaredIn, declaredFor, real,
 };
 
 if (require.main === module) {
