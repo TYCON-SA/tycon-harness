@@ -434,16 +434,24 @@ function topesDelCaminoCorto({ home, arnes, stateDir, sessionId } = {}) {
 function carrilQueCuenta(adhoc) {
   const files = adhoc && Array.isArray(adhoc.files) ? adhoc.files : [];
   if (files.length < gate.cupoDelCarril(adhoc)) return adhoc;
-  return { ...adhoc, files: archivosQueSuman(files) };
+  return { ...adhoc, files: archivosQueSuman(files, adhoc) };
 }
 
-function archivosQueSuman(files) {
+/**
+ * Los archivos que suman para el tope: de implementación, que existen y dentro de un repo, salvo los de un laboratorio
+ * (un `git init` de prueba en una carpeta temporal: el juez es `juezDeLaboratorios` de adhoc-base.js, el mismo que usa el
+ * freno de guardar). `adhoc`: el camino corto (su carpeta y sus repos anotados); sin él, todo suma. `temporales`: otra
+ * lista, para las pruebas.
+ */
+function archivosQueSuman(files, adhoc = null, { temporales = null } = {}) {
   const { isImplPath } = require('./atdd-order.js');
-  const { ubicar } = require('./adhoc-base.js');
+  const { ubicar, juezDeLaboratorios } = require('./adhoc-base.js');
+  const esLaboratorio = adhoc ? juezDeLaboratorios(adhoc, { temporales }) : () => false;
   return files.filter((f) => {
     if (!path.isAbsolute(String(f)) || !gate.isCodeFile(f) || !fs.existsSync(f)) return false;
     const u = ubicar(f);
     if (u.fuera) return false;
+    if (u.raiz && esLaboratorio(u.raiz)) return false;
     // relativa al repo: un repo que vive debajo de una carpeta `tests` no hace pruebas de todos sus archivos
     return isImplPath(u.raiz ? path.relative(u.raiz, fs.realpathSync(f)).replace(/\\/g, '/') : f);
   });
