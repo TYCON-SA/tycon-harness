@@ -157,7 +157,7 @@ function runMutationGate({
     appendLog('bypass.log', { kind: 'MUTATION_CHECK_OFF', story: marker.storyId });
     const ES = require('./controls-off.js').listaDeInterruptores();
     if (ES.antesDelCorte('TYCON_MUTATION_CHECK', today)) {
-      log(`⚠️  TYCON_MUTATION_CHECK=off: desde ${ES.corteDe('TYCON_MUTATION_CHECK')} esto pide la firma del dueño (escape:TYCON_MUTATION_CHECK); hasta entonces pasa, avisado y anotado.`);
+      log(`⚠️  TYCON_MUTATION_CHECK=off: desde ${ES.corteDe('TYCON_MUTATION_CHECK')} esto pide la firma de una persona (escape:TYCON_MUTATION_CHECK); hasta entonces pasa, avisado y anotado.`);
     }
     return { invoked: false, block: false, reason: 'off' };
   }

@@ -163,7 +163,7 @@ test('T12 NoMutation_NeedsReasonAndSignature @story-8.256 @ac-11', () => {
   ({ casa } = casaEnPruebas(sid));
   r = marker(arbolConCorte('2099-01-01'), casa, sid, ['complete-step', 'run-tests', '--no-mutation', '--reason', 'refactor sin código nuevo']);
   assert.strictEqual(r.status, 0, r.stderr);
-  assert.match(r.stderr, /desde 2099-01-01 esto pide la firma del dueño/);
+  assert.match(r.stderr, /desde 2099-01-01 esto pide la firma de una persona/);
   const b = renglones(casa).filter((x) => x.kind === 'MUTATION_BYPASS');
   assert.deepStrictEqual(b.map((x) => [x.via, x.motivo]), [['agente', 'refactor sin código nuevo']]);
   // desde el corte: sin la firma de la ventana no saltea nada

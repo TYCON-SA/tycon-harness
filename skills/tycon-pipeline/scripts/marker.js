@@ -2213,7 +2213,7 @@ function cmdCompleteStep(nRaw, flags) {
       if (opts.includes('--no-mutation')) {
         const ES = require('./lib/controls-off.js').listaDeInterruptores();
         if (ES.antesDelCorte('TYCON_MUTATION_CHECK')) {
-          console.error(`⚠️  --no-mutation: desde ${ES.corteDe('TYCON_MUTATION_CHECK')} esto pide la firma del dueño (escape:no-mutation); hasta entonces pasa, avisado y anotado.`);
+          console.error(`⚠️  --no-mutation: desde ${ES.corteDe('TYCON_MUTATION_CHECK')} esto pide la firma de una persona (escape:no-mutation); hasta entonces pasa, avisado y anotado.`);
           sinMutantes = { via: 'agente', motivo: motivoSinMutantes };
         } else {
           const f = firmaDelDueno('escape:no-mutation', `cerrar ${n} de ${marker.storyId || 'la historia'} sin el chequeo de mutantes: ${motivoSinMutantes}`);

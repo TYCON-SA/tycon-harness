@@ -737,7 +737,7 @@ test('gate: TYCON_MUTATION_CHECK=off → ni se invoca, y el apagado queda en byp
   runMutationGate({ marker: MARKER_FAKE, opts: [], env: { TYCON_MUTATION_CHECK: 'off' }, appendLog: h2.appendLog, log: h2.log,
     today: new Date('2026-11-01T00:00:00Z'), invokeCheck: () => ({ code: 0, result: {} }) });
   assert.equal(h2.lines.length, 1);
-  assert.match(h2.lines[0], /esto pide la firma del dueño/);
+  assert.match(h2.lines[0], /esto pide la firma de una persona/);
 });
 
 test('gate: TYCON_MUTATION_CHECK=OFF (mayúsculas) apaga igual, como lo cuenta la noche', async () => {
