@@ -112,6 +112,50 @@ test('BaseControls_ConstanciaAMano_PorConsola', () => {
   for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
 });
 
+// 🔴 Falla con: no leer `<>` como una escritura, tomar el renglón continuado de un heredoc como su cuerpo, no mirar lo
+// que un heredoc le da a un shell, cortar el destino de una redirección en la comilla o en la sustitución, o no conocer
+// los comandos que escriben el archivo que nombran (`sort -o`, `uniq`, `awk -i inplace`, `ex`, `touch`).
+test('BaseControls_ConstanciaAMano_FormasRaras', () => {
+  const gate = require(GATE);
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-raras-'));
+  fs.mkdirSync(path.join(repo, '.git'));
+  fs.mkdirSync(path.join(repo, '.github', 'control-changes'), { recursive: true });
+  fs.mkdirSync(path.join(repo, '.tycon'));
+  const correr = (command) => gate.handle({ tool_name: 'Bash', tool_input: { command }, cwd: repo, session_id: 'prueba' }, { stateDir: path.join(repo, 'estado'), installedRoots: [] });
+  const F = '.tycon/control-changes.jsonl';
+  const D = '.github/control-changes/x.json';
+  const frenan = [
+    `echo x 1<> ${F}`,
+    `echo x <> ${F}`,
+    `echo x 2<> ${F}`,
+    `exec 3<>${F}`,
+    `cd .tycon; echo x 1<> control-changes.jsonl`,
+    `cat <<'EOF' \\\n> ${F}\nx\nEOF`,
+    `cat <<'EOF' \\\n| tee ${F}\nx\nEOF`,
+    `bash <<'EOF'\ncp /tmp/x ${D}\nEOF`,
+    `cat <<'EOF' | sh\ncp /tmp/x ${D}\nEOF`,
+    `cp /tmp/x .github/control-changes/ >'a'a`,
+    `cp /tmp/x ${D} > $(date +%F).log`,
+    `sort -o ${F} /tmp/x`,
+    `sort --output=${F} /tmp/x`,
+    `uniq /tmp/x ${F}`,
+    `awk -i inplace '{print}' ${F}`,
+    `ex -sc 'wq' ${F}`,
+    `vim -c wq ${F}`,
+    `touch ${F}`,
+  ];
+  for (const c of frenan) {
+    const r = correr(c);
+    assert.ok(r && r.block, `frena: ${c}`);
+    assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
+  }
+  const pasan = [
+    `cat ${F}`, `sort ${F}`, `sort -o /tmp/o.txt ${F}`, `uniq ${F}`, `uniq ${F} /tmp/o.txt`, `awk '{print}' ${F}`,
+    `dd if=${F} of=/tmp/copia`, `echo x > /tmp/o.txt`, `cp ${D} /tmp/ > $(date +%F).log`, `touch /tmp/o.txt`,
+  ];
+  for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
+});
+
 // Un repo de verdad: `origin/main` adelante de `main`, una rama sin constancias y otra que trae una.
 function repoConRamas() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-ramas-'));

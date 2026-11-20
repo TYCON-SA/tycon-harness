@@ -2217,13 +2217,20 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
   const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw));
   const esRuta = (p) => isControlApproval(p) || isControlApproval(`${p}/`);
   const out = [];
-  const todos = comandosAnidados(cmd).flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/));
+  // se lee también con la continuación de renglón juntada: `cat <<'EOF' \` y abajo `> constancia` es una redirección del
+  // `cat`. La lectura de siempre sigue, y toma lo de abajo como comando. Lo que otro programa corre (el heredoc a un
+  // shell, `xargs`, `find -exec`) se mira como un comando más
+  const plano = String(cmd).replace(/\\\r?\n/g, ' ');
+  const lecturas = plano === String(cmd) ? [cmd] : [cmd, plano];
+  const todos = [...new Set(lecturas.flatMap((t) => [...comandosAnidados(t), ...comandosPorOtroPrograma(t, cwd)]))]
+    .flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/));
   for (const tramo of todos) {
     base = cwd;
     // sin las redirecciones de lectura con su archivo (`< lista`): no son argumentos de la copia
     const limpio = sinPalabrasDelShell(tramo);
-    // las redirecciones y el tee a una constancia, también adentro de `bash -c` (los tramos anidados están en `todos`)
-    for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?)\|?\s*(['"]?)([^\s<>;&|'"]+)\1/g)) if (es(m[2])) out.push(m[2]);
+    // las redirecciones y el tee a una constancia, también adentro de `bash -c` (los tramos anidados están en `todos`);
+    // `<>` abre el archivo para leer y escribir
+    for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*(['"]?)([^\s<>;&|'"]+)\1/g)) if (es(m[2])) out.push(m[2]);
     const words = palabras(sinRedireccionesDeSalida(limpio).replace(/(?<![<\d])<(?!<)\s*[^\s<>;&|]+/g, ' ').trim().replace(PREFIJO, '')).filter((w) => w !== '' && w !== '\\');
     let c = nombreDeComando(words[0]);
     let args = words.slice(1);
@@ -2249,6 +2256,12 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     };
     if (c === 'tee') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
     if (c === 'sponge') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
+    // los que escriben un archivo que nombran: `sort -o`, la salida de `uniq` (su segundo archivo), `awk -i inplace`,
+    // un editor de línea (`ex`, `vi -c`, `ed`) y `touch`, que la crea vacía
+    if (c === 'sort') { out.push(...lleva(['-o', '--output']).filter(es)); continue; }
+    if (c === 'uniq') { const s = args.filter((w) => !w.startsWith('-')); if (s[1] && es(s[1])) out.push(s[1]); continue; }
+    if ((c === 'awk' || c === 'gawk') && lleva(['-i', '--include']).includes('inplace')) { out.push(...args.filter((w) => !w.startsWith('-') && w !== 'inplace').filter(es)); continue; }
+    if (['ex', 'vi', 'vim', 'nvim', 'ed', 'touch'].includes(c)) { out.push(...args.filter((w) => !w.startsWith('-') && !w.startsWith('+')).filter(es)); continue; }
     if (c === 'curl' || c === 'wget') { out.push(...lleva(['-o', '--output', '-O', '--output-document']).filter(es)); continue; }
     if (c === 'tar' || c === 'bsdtar' || c === 'unzip' || c === 'cpio') {
       // lo que trae un archivo comprimido no se ve antes de abrirlo: a la carpeta de una constancia, no pasa
@@ -2771,7 +2784,8 @@ function sinPalabrasDelShell(tramo) {
 function sinRedireccionesDeSalida(tramo) {
   const s = String(tramo);
   const es = posicionesDeComando(s);
-  return s.replace(/(?:(?<![^\s])\d+|&)?(?<!\\)>>?(?!\()[|&]?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, (m, en) => (es[en] ? ' ' : m));
+  // el destino es la palabra entera del shell: con comillas pegadas a texto (`>'a'a`) o con una sustitución (`> $(date).log`)
+  return s.replace(/(?:(?<![^\s])\d+|&)?(?<!\\)>>?(?!\()[|&]?[ \t]*(?:\$\([^()]*\)|'[^']*'|"[^"]*"|[^\s'"|;&<>]+)*/g, (m, en) => (es[en] ? ' ' : m));
 }
 
 // un heredoc entero: lo que tiene delante en su línea, la comilla y la marca, lo que tiene detrás, el cuerpo y el cierre

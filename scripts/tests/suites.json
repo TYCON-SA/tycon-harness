@@ -3340,6 +3340,12 @@
       "requiere": []
     },
     {
+      "__nota": "La copia propia del freno de producción (scripts/production/guard-libs/) es regla firmada del inventario de la revisión: cambiarla pide la constancia del dueño, porque ningún banco la corre.",
+      "raiz": "arnes",
+      "ruta": "tests/guard-libs-signed.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "El evento neutro de trabajo (scripts/lib/work-signal.js) y la integración de horas que lo escucha, con una integración de mentira en una carpeta temporal; más el techo de archivos del núcleo que nombran una herramienta de horas, que sólo baja.",
       "raiz": "arnes",
       "ruta": "tests/work-signal.test.js",
