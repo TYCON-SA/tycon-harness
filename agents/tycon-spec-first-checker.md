@@ -288,8 +288,8 @@ Se declaran explícitamente para que no vuelva el modo "no lo detecta y nadie sa
 
 ### Modo pre-coding («Implementar», pre-flight)
 
-1. BMAD genera el plan («Armar el plan» y «Aprobar el plan») y el usuario lo aprueba.
-2. **ANTES de invocar el ejecutor BMAD en «Implementar»**: si el plan menciona endpoints/componentes/hooks/contratos/filtros nuevos → invocar este advisor en modo `pre-coding` con el plan textual.
+1. El pipeline arma el plan («Armar el plan») y el usuario lo aprueba («Aprobar el plan»).
+2. **ANTES de que el pipeline empiece a escribir código en «Implementar»**: si el plan menciona endpoints/componentes/hooks/contratos/filtros nuevos → invocar este advisor en modo `pre-coding` con el plan textual.
 3. Si hay CRITICAL → pausar «Implementar», mostrar findings, preguntar: ¿actualizar el spec primero, o marcar la exención?
 4. Si el user actualiza el spec → re-run.
 5. Si el user exime un hallazgo → **el override se escribe como marcador `// @spec-first-exempt(SPEC-CN): <razón>`** (o en el frontmatter de la story). Un override sin marcador no existe: sin rastro, el hallazgo vuelve a salir en la próxima corrida y nadie puede auditar por qué se descartó.

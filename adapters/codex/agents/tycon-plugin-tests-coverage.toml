@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-plugin-tests-coverage.md
-# source_sha256: 182b3278e0d4dd9e4a1de7128e8e2c8eae3f24c53a41e0dbdd3f5cb81d009b17
+# source_sha256: 0a9b885961ec83096d1603dbd15b3093cf6b70f03ee302db7f373f11621c479d
 # Se despliega como $CODEX_HOME/tycon-plugin-tests-coverage.config.toml y se invoca: codex exec -p tycon-plugin-tests-coverage
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -129,7 +129,7 @@ REGLA DE CONDUCTA — LOS PASOS DECLARADOS SE EJECUTAN, SIN ATAJOS.
 - NO ejecuta tests ni coverage (Bash removido del frontmatter 2026-06-09) — LEE el artefacto de test-gate.sh. Correr la suite acá duplicaba la corrida de «Correr las pruebas» dentro del fan-out paralelo.
 - NO promueve a CRITICAL aunque coverage sea 0% en **archivo existente** (solo cuando es método nuevo sin cobertura — TEST-C2 es específico).
 - NO reescribe tests faltantes.
-- NO sugiere qué test escribir — eso es trabajo del `bmad-dev-story`.
+- NO sugiere qué test escribir — eso es trabajo de «Implementar», en el pipeline.
 - NO corre tests de performance.
 - NO emite findings sin rule ID.
 

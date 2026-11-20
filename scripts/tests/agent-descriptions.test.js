@@ -40,7 +40,7 @@ const TRIGGERS = {
   'i18n-hardcoded-text-reviewer': ['i18n.required'],
   'tycon-spec-first-checker': ['«Implementar»'],
   'llm-cost-reviewer': ['@anthropic-ai/sdk'],
-  'tycon-story-validator': ['bmad-dev-story'],
+  'tycon-story-validator': ['«Implementar»'],
   'tycon-deferral-tracker': ['pipelines', '.skip()'],
   'tycon-ac-coverage-checker': ['review', 'done'],
   'tycon-retrospective-capturer': ['post-merge'],
@@ -62,5 +62,16 @@ test('DescripcionCondicional_ConservaSuDisparador', () => {
     const d = descriptionOf(file);
     assert.ok(d, `${name}: tiene descripción`);
     for (const w of words) assert.ok(d.includes(w), `${name}: la descripción nombra su disparador «${w}» (${d})`);
+  }
+});
+
+// Desde que el pipeline arma el plan e implementa sin las skills de BMAD, tres revisores seguían diciendo
+// que BMAD planifica o implementa: una instrucción falsa sobre el camino que revisan.
+test('Revisores_NoDicenQueBmadPlanificaOImplementa @story-8.305', () => {
+  const FALSO = /bmad-dev-story|bmad-create-architecture|BMAD genera el plan|ejecutor BMAD|pre-BMAD/i;
+  for (const name of ['tycon-spec-first-checker', 'tycon-story-validator', 'tycon-plugin-tests-coverage']) {
+    const lineas = fs.readFileSync(path.join(ROOT, 'agents', `${name}.md`), 'utf8').split('\n')
+      .map((l, i) => [i + 1, l]).filter(([, l]) => FALSO.test(l)).map(([n, l]) => `${n}: ${l.trim().slice(0, 100)}`);
+    assert.deepStrictEqual(lineas, [], `${name}: todavía nombra a BMAD como quien planifica o implementa`);
   }
 });
