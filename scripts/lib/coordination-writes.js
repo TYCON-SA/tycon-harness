@@ -1,8 +1,7 @@
 'use strict';
 // coordination-writes.js — la coordinadora no cambia archivos de los repos ni de la copia instalada del arnés.
 //
-// La sesión designada coordinadora (la última designación `ok` del registro del arnés, sin una retirada posterior de
-// esa misma sesión) no escribe, edita ni borra archivos dentro de un repo: todo cambio va a una sesión, que lo hace con
+// La sesión designada coordinadora (la vigente según la regla de `designacionVigente`, critical-waivers.js) no escribe, edita ni borra archivos dentro de un repo: todo cambio va a una sesión, que lo hace con
 // su portón y sus pruebas. Lo usan el freno de Edit y Write (skills/tycon-pipeline/scripts/on-coordination-write.js) y la
 // puerta de la consola (on-bash-write-gate.js).
 //
@@ -42,10 +41,12 @@ function anotar(stateDir, texto) {
   } catch { /* sin dónde anotarlo, pasa igual */ }
 }
 
+// La memoria guarda el estado de la regla de critical-waivers.js (`estado`, con su versión), no sólo la sesión: con la
+// regla de la confirmación, lo agregado no se puede plegar sobre una sesión suelta. Una memoria de la forma vieja no se usa.
 function leerMemo(file) {
   try {
     const m = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (m && Number.isInteger(m.size) && typeof m.mtimeMs === 'number' && (m.session === null || ID.test(String(m.session)))) return m;
+    if (m && Number.isInteger(m.size) && typeof m.mtimeMs === 'number' && waivers().esEstado(m.estado)) return m;
   } catch { /* sin memoria */ }
   return null;
 }
@@ -90,23 +91,11 @@ function ultimoFinDeRenglon(log, size) {
   } finally { fs.closeSync(fd); }
 }
 
-/**
- * Recorre en orden renglones nuevos del registro con la regla de `designacionVigente`: una designación `ok` válida pone
- * su sesión; una retirada de la sesión vigente la deja en null; la de otra sesión no cambia nada.
- */
-function plegar(session, texto) {
-  const { DESIGNACION, RETIRADA } = waivers();
-  let s = session;
-  for (const l of texto.split('\n')) {
-    if (!l.includes(DESIGNACION)) continue;
-    let g;
-    try { g = JSON.parse(l); } catch { continue; }
-    if (!g || g.name !== DESIGNACION) continue;
-    if (g.status === RETIRADA) { if (s && String(g.sesion || '') === s) s = null; continue; }
-    if (g.status === 'ok' && ID.test(String(g.sesion || '')) && (g.cita || g.via)) s = g.sesion;
-  }
-  return s;
+/** Los renglones nuevos del registro sobre el estado guardado, con la misma regla de `designacionVigente`. */
+function plegar(estado, texto) {
+  return waivers().plegarRenglones(JSON.parse(JSON.stringify(estado)), texto);
 }
+const sesionDe = (estado) => { const v = waivers().vigenteDe(estado); return v ? v.sesion : null; };
 
 /** Lo agregado al registro desde `desde`, hasta el último fin de renglón: `{ texto, hasta }`. */
 function leerAgregado(log, desde, size) {
@@ -149,19 +138,24 @@ function currentCoordinator({ home, stateDir } = {}) {
   if (crecio) {
     try {
       const { texto, hasta } = leerAgregado(log, memo.size, st.size);
-      const session = plegar(memo.session, texto);
+      const estado = plegar(memo.estado, texto);
+      const session = sesionDe(estado);
       // el renglón a medio escribir queda para la próxima: la memoria guarda hasta el último fin de renglón
-      guardarMemo(memoFile, { size: hasta, mtimeMs: hasta === st.size ? st.mtimeMs : -1, ino: st.ino, tail: colaDe(log, hasta), session }, dir);
+      guardarMemo(memoFile, { size: hasta, mtimeMs: hasta === st.size ? st.mtimeMs : -1, ino: st.ino, tail: colaDe(log, hasta), session, estado }, dir);
       return { session };
     } catch (e) { return { error: `no pude leer lo agregado al registro del arnés (${e.code || e.message})` }; }
   }
-  const d = waivers().designacionVigente({ dir });
-  if (d && d.error) return { error: d.error };
-  const session = d ? d.sesion : null;
   // lo leído entero vale hasta el último renglón completo: uno a medio escribir no se leyó y se lee al completarse
+  let hasta;
+  let texto;
   try {
-    const hasta = ultimoFinDeRenglon(log, st.size);
-    guardarMemo(memoFile, { size: hasta, mtimeMs: hasta === st.size ? st.mtimeMs : -1, ino: st.ino, tail: colaDe(log, hasta), session }, dir);
+    hasta = ultimoFinDeRenglon(log, st.size);
+    texto = fs.readFileSync(log).subarray(0, hasta).toString('utf8');
+  } catch (e) { return { error: `no pude leer el registro del arnés (${e.code || e.message})` }; }
+  const estado = waivers().plegarRenglones(waivers().estadoInicial(), texto);
+  const session = sesionDe(estado);
+  try {
+    guardarMemo(memoFile, { size: hasta, mtimeMs: hasta === st.size ? st.mtimeMs : -1, ino: st.ino, tail: colaDe(log, hasta), session, estado }, dir);
   } catch { /* sin memoria: la próxima lee entero */ }
   return { session };
 }
