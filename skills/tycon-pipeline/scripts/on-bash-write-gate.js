@@ -1867,6 +1867,19 @@ function criticosTocados(cmd, cwd, stateDir) {
 }
 
 /**
+ * Lo que el comando borra o mueve del registro de corridas de los revisores (`advisor-runs/`, de cualquier estado): el
+ * cierre lo lee para ver lo que dijo un revisor fuera del registro de críticos, y borrarlo es saltear esa revisión. Sin
+ * interruptor.
+ */
+function corridasDeRevisoresTocadas(cmd, cwd, stateDir) {
+  const { isAdvisorRunsRecord } = require('./lib/story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'advisor-runs', nombres: ['advisor-runs'], pieza: isAdvisorRunsRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])advisor-runs(?![\w.-])/i.test(t) });
+}
+
+/**
  * Lo que el comando borra o mueve de la revisión automática del plan (`plan-review/`, de cualquier estado): el pedido, el
  * resultado del corredor y la constancia con el veredicto. Moverlo o borrarlo deja otra constancia en su lugar. Lo que
  * se escribe ahí lo frena el freno del estado; pasan sólo `marker.js plan-review` y el corredor del pase del arnés
@@ -4741,6 +4754,12 @@ function handleCarrilEHistoria(event, opts = {}) {
   if (criticos.length) {
     const sg = require('./lib/story-gate.js');
     return { block: sg.blockMessage({ kind: 'reported-criticals' }, { filePath: criticos[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+  }
+  // el registro de corridas de los revisores, también al borrarlo o moverlo
+  const corridas = constancias.length ? [] : corridasDeRevisoresTocadas(cmd, cwd, stateDir);
+  if (corridas.length) {
+    const sg = require('./lib/story-gate.js');
+    return { block: sg.blockMessage({ kind: 'advisor-runs' }, { filePath: corridas[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
   }
   // la revisión automática del plan, también al borrarla o moverla, o con un `--out` que no es el del corredor del pase
   const ajena = constancias.length ? null : salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots);

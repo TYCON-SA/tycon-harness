@@ -942,3 +942,28 @@ test('Renglones_SinReporte_DiceSiYaSeLePidio @story-8.296 @ac-8', () => {
   assert.ok(eximir > pedir, `la exención va después de cómo pedírselo: ${t2}`);
   assert.match(t2, /sólo el renglón de veredicto/);
 });
+
+// ── T-advisor-runs ─────────────────────────────────────────────────────────────────────────────────────────────────
+// El registro de corridas de los revisores (`<estado>/advisor-runs/<sesión>.jsonl`, lo escribe el gancho del lanzamiento)
+// es la otra mitad de la evidencia: el cierre lo usa para ver salidas de revisores que no quedaron en el registro de
+// críticos. Borrarlo apagaba ese control y dejaba saltear revisores.
+test('AdvisorRuns_RegistryProtected — el freno de escritura no deja tocar el registro de corridas de revisores', () => {
+  const l = lab();
+  const runs = path.join(l.state, 'advisor-runs', `${SID}.jsonl`);
+  fs.mkdirSync(path.dirname(runs), { recursive: true });
+  fs.writeFileSync(runs, '{"agent":"tycon-plugin-security-basics"}\n');
+  const comandos = [`rm ${runs}`, `rm -rf ${path.dirname(runs)}`, `echo '{}' > ${runs}`, `sed -i '' 's/security/x/' ${runs}`, `mv ${runs} ${path.join(l.base, 'x.jsonl')}`];
+  for (const cmd of comandos) {
+    const r = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: cmd } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+    const dijo = out(r);
+    assert.ok(r.status === 2 || /"permissionDecision"\s*:\s*"deny"|"decision"\s*:\s*"block"/.test(dijo), `no frenó: ${cmd}\n${dijo}`);
+    // la escritura en el lugar la frena antes el freno general del estado, con su propio mensaje
+    assert.match(dijo, /registro de corridas de los revisores|estado del pipeline/i, `el mensaje dice qué se protege: ${cmd}`);
+  }
+  assert.ok(fs.existsSync(runs), 'el registro ya no está');
+  const sg = require(path.join(SCRIPTS, 'lib', 'story-gate.js'));
+  assert.equal(sg.signedRecordKind(runs), 'advisor-runs');
+  // leerlo sigue permitido
+  const r = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', cwd: l.repo, tool_input: { command: `cat ${runs}` } }), env: l.env, encoding: 'utf8', cwd: l.repo });
+  assert.ok(r.status === 0 && !/"deny"|"block"/.test(out(r)), `leer se frenó: ${out(r)}`);
+});
