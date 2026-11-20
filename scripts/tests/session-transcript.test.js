@@ -485,3 +485,26 @@ test('T246 CoverSecrets: tapa las claves y deja las rutas, los pedidos y las hor
   write(file, [person(`Te paso ${key}.`, 3), said('Listo.', 2), turnEnd(2), peer('Bruno', `El token: ${key}`, 1)]);
   assert.ok(!JSON.stringify(readConversation(file, { coordinator: 'Coordinadora', isCoordinator: true })).includes(key));
 });
+
+// Una sesión parada puede estar esperando una tarea que lanzó de fondo, no a su persona: la oficina lo confundía y le
+// avisaba al dueño que alguien lo esperaba. La conversación lo dice: el resultado de la herramienta trae el id de la tarea
+// lanzada, y su aviso de fin llega como un mensaje con ese id y su estado.
+test('T323 Transcript_BackgroundTasksStillRunning: cuenta las tareas de fondo lanzadas que no avisaron que terminaron', () => {
+  const file = path.join(dir(), 's.jsonl');
+  const launched = (id, text, min) => ({ type: 'user', isSidechain: false, timestamp: at(min), message: { role: 'user', content: [{ type: 'tool_result', content: text }] }, toolUseResult: {} });
+  const notice = (id, status, min) => human(`<task-notification>\n<task-id>${id}</task-id>\n<status>${status}</status>\n</task-notification>`, min);
+  write(file, [
+    human('el encargo', 40),
+    launched('aaa111', 'Command running in background with ID: aaa111. Output is being written to: /tmp/x', 30),
+    launched('bbb222', 'Workflow launched in background. Task ID: bbb222', 29),
+    launched('ccc333', 'Command did not complete within its 600s timeout and was moved to the background (ID: ccc333).', 28),
+    launched('ddd444', 'Command running in background with ID: ddd444.', 27),
+    notice('aaa111', 'completed', 20),
+    launched('x', 'Successfully stopped task: ddd444 (until …)', 19),
+    // un texto del asistente que cita un id no es un lanzamiento
+    said('Lancé de fondo: Command running in background with ID: eee555', 10),
+  ]);
+  assert.strictEqual(readTranscript(file).fondoPendiente, 2, 'quedan bbb222 y ccc333');
+  write(file, [human('el encargo', 40), said('listo', 5)]);
+  assert.strictEqual(readTranscript(file).fondoPendiente, 0);
+});

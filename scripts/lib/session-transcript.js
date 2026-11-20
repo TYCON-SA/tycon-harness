@@ -144,13 +144,35 @@ function wholeLines(text, cutStart, cutEnd) {
   return lines;
 }
 
+// Las tareas de fondo de Claude Code: el resultado de la herramienta trae el id al lanzarla, y su fin llega como un aviso
+// (`<task-notification>` con `<task-id>` y `<status>`) o como el resultado de detenerla. Sólo en renglones de resultado o
+// de aviso: un texto del asistente que cita un id no lanza ni termina nada.
+const LAUNCHED = /(?:running in background with ID: |Workflow launched in background\. Task ID: |moved to the background \(ID: )([A-Za-z0-9_-]+)/g;
+const NOTICE = /<task-id>([A-Za-z0-9_-]+)<\/task-id>[\s\S]*?<status>(completed|failed|killed|stopped|cancelled)<\/status>/g;
+const STOPPED = /Successfully stopped task: ([A-Za-z0-9_-]+)/g;
+/** Cuántas tareas de fondo lanzadas en estos renglones no avisaron que terminaron. */
+function backgroundPending(lines) {
+  const running = new Set();
+  for (const line of lines) {
+    let d;
+    try { d = JSON.parse(line); } catch { continue; }
+    if (!d || d.type !== 'user' || d.isSidechain || !d.message) continue;
+    const text = JSON.stringify(d.message.content || '').replace(/\\n/g, '\n');
+    if (d.toolUseResult) for (const m of text.matchAll(LAUNCHED)) running.add(m[1]);
+    for (const m of text.matchAll(NOTICE)) running.delete(m[1]);
+    for (const m of text.matchAll(STOPPED)) running.delete(m[1]);
+  }
+  return running.size;
+}
+
 /**
- * Lee una conversación: `{ encargo, haciendoAhora, ultimaAccion, lastWriteMs, problem }`. Sin el archivo, vacía o con un
+ * Lee una conversación: `{ encargo, haciendoAhora, ultimaAccion, lastWriteMs, fondoPendiente, problem }`. `fondoPendiente`:
+ * las tareas de fondo lanzadas en el tramo final que no avisaron que terminaron. Sin el archivo, vacía o con un
  * formato desconocido, los tres datos en null; si no se puede leer, además `problem` con su motivo y nunca su texto.
  * `opts`: `io` (`{ readSync }`, para contar lo que se lee).
  */
 function readTranscript(file, { io = fs } = {}) {
-  const out = { encargo: null, haciendoAhora: null, ultimaAccion: null, lastWriteMs: null, problem: null };
+  const out = { encargo: null, haciendoAhora: null, ultimaAccion: null, lastWriteMs: null, fondoPendiente: 0, problem: null };
   let fd;
   try { fd = fs.openSync(file, 'r'); } catch (e) {
     if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') out.problem = `no se pudo leer (${e.code || 'error'})`;
@@ -180,6 +202,7 @@ function readTranscript(file, { io = fs } = {}) {
         if (said) { out.encargo = cut(said, ENCARGO_MAX); break; }
       }
     }
+    out.fondoPendiente = backgroundPending(tailLines);
     // sólo su último mensaje: uno anterior ya no dice qué hace ahora
     let lastMessageSeen = false;
     for (let i = tailLines.length - 1; i >= 0 && !(lastMessageSeen && out.ultimaAccion); i -= 1) {

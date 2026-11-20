@@ -580,7 +580,15 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
         for (const k of ['atrasada', 'atrasoMin', 'horaPorque', 'pronosticoIso', ...(person ? ['estimadaIso'] : [])]) delete a[k];
         if (a.termina === OVERDUE) delete a.termina;
       }
-      if (person) {
+      // una sesión de persona parada con tareas de fondo lanzadas y sin aviso de fin espera esas tareas, no a su persona:
+      // decir que espera a la persona era una falsa alarma para el dueño. Lo dice su conversación (fondoPendiente).
+      const told = person && transcripts ? transcripts.get(String(d.sid)) : null;
+      const bgTasks = told && Number(told.fondoPendiente) > 0 ? Number(told.fondoPendiente) : 0;
+      if (bgTasks) {
+        const since = latest(lastWrite, Number(d.statusAt) > 0 ? Number(d.statusAt) : NaN);
+        a.termina = bgTasks === 1 ? 'espera una tarea de fondo' : `espera ${bgTasks} tareas de fondo`;
+        a.fin = { hora: a.termina, dif: Number.isFinite(since) ? `desde las ${hhmm(since)}` : '', cls: '' };
+      } else if (person) {
         const since = latest(lastWrite, Number(d.statusAt) > 0 ? Number(d.statusAt) : NaN);
         a.termina = 'espera a su persona';
         a.fin = { hora: a.termina, dif: Number.isFinite(since) ? `desde las ${hhmm(since)}` : '', cls: '' };
