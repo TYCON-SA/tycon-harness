@@ -137,9 +137,9 @@ function nightlyMeasured(file, now = Date.now()) {
 }
 
 // Con `--direct`, además de cómo se eligen las suites, corre todo si el cambio toca lo que corre las pruebas o las
-// deja pasar: el pipeline, el instalador (también el del freno de producción), el portón de CI y la regla con que
-// elige las carpetas, o los ganchos de git.
-const DIRECT_RUNS_ALL = /^(pipelines\/|scripts\/setup\/|\.githooks\/)|(^|\/)install-tycon-hooks\.[^/]+$|(^|\/)tycon-ci-gate\.js$|^scripts\/production\/install-guard\.[^/]+$|^skills\/tycon-pipeline\/scripts\/lib\/touched-files\.js$/;
+// deja pasar: el pipeline (también el de la CI pública, que elige las pruebas del pedido público), el instalador
+// (también el del freno de producción), el portón de CI y la regla con que elige las carpetas, o los ganchos de git.
+const DIRECT_RUNS_ALL = /^(pipelines\/|scripts\/setup\/|\.githooks\/)|^\.github\/workflows\/ci\.yml$|(^|\/)install-tycon-hooks\.[^/]+$|(^|\/)tycon-ci-gate\.js$|^scripts\/production\/install-guard\.[^/]+$|^skills\/tycon-pipeline\/scripts\/lib\/touched-files\.js$/;
 // Los YAML de `pipelines/` que no eligen ni corren las pruebas de un pedido, ni lo dejan pasar: los nocturnos, el de
 // Windows (se lanza a mano sobre una rama), el de los índices (corre al empujar a main) y los de operaciones. Siguen la
 // regla común: corren las suites que los nombran. La lista es la de los que NO, cerrada: un YAML que no está acá (el de

@@ -1230,7 +1230,7 @@ test('Direct_NightlyPipeline_RunsItsOwnSuites — un YAML nocturno o a mano no c
   // los que eligen o corren las pruebas de un pedido, o lo dejan pasar, siguen corriendo todo; también un YAML que no
   // está en la lista de los que no (ante la duda, corre)
   for (const f of ['pipelines/azure-pipelines-maintainers-pr.yml', 'pipelines/azure-pipelines-precommit-pr.yml', 'pipelines/templates/run-suites.yml',
-    'pipelines/templates/fetch-repos.yml', 'pipelines/templates/nueva.yml', 'pipelines/azure-pipelines-nuevo.yml']) {
+    'pipelines/templates/fetch-repos.yml', 'pipelines/templates/nueva.yml', 'pipelines/azure-pipelines-nuevo.yml', '.github/workflows/ci.yml']) {
     const p = directPlan(dir, [f]);
     assert.deepStrictEqual(p.run.sort(), ALL4, `${f}: corre todo\n${p.err}`);
     assert.match(p.err, /cómo se eligen o corren las pruebas/, f);
