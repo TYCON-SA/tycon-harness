@@ -1107,7 +1107,7 @@ printf 'rc=%s\n' "$RC"
 # Se reconoce por el texto del rechazo, no por el número suelto: un «40615» en los datos o en otro error no es el
 # firewall. Y sólo en un Azure SQL, que es lo único que `--open-firewall` atiende.
 if [ "$RC" != 0 ] && [[ "$HOST" == *.database.windows.net ]] \
-   && printf '%s' "$SALIDA" | grep -qiE "Client with IP address '[^']*' is not allowed to access the server"; then
+   && printf '%s' "$SALIDA" | grep -iE "Client with IP address '[^']*' is not allowed to access the server" >/dev/null; then
   printf '\n🔥 La conexión la rechazó el firewall de Azure: la IP de esta máquina no está habilitada en «%s».\n' "$HOST"
   printf '   Paso siguiente (con cuadro; la regla se cierra sola al terminar la sesión):\n'
   printf '     /opt/tycon/bin/tycon-prod-sql --open-firewall %s\n' "$HOST"
