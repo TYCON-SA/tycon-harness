@@ -107,6 +107,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `escape:TYCON_NEW_NAMES` | 3 · irreversible | sólo mantenimiento | apagar el control de nombres en lo que se publica | `escape:TYCON_NEW_NAMES` |
 | `emergency` | 3 · irreversible | dev y mantenimiento | la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo | todavía no se pide |
 | `escape:merge-bypass` | 3 · irreversible | dev y mantenimiento | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: un comando, nunca por delegación | `escape:merge-bypass` |
+| `escape:external-pr` | 3 · irreversible | dev y mantenimiento | encolar o mergear un pull request de alguien de afuera del equipo: un comando, nunca por delegación | `escape:external-pr` |
 <!-- fin: niveles -->
 
 `emergency` todavía no tiene una firma de hoy que la pida: se da con `harness.js sign emergency --reason "<por qué>"
@@ -132,7 +133,7 @@ vuelve al dueño.
 | `escape:TYCON_STATUS_GATE`, `escape:set-autonomous`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz` | el perfil las acepta, pero su comando corre sólo en la sesión que trabaja y la coordinadora no tiene cómo firmarlas desde su pestaña: hasta que tengan esa vía, las sigue aprobando una persona. Una ejecución perdida la cierra la coordinadora con `lost-run` |
 
 Quedan sólo del dueño, aunque un perfil las liste: `control-change` y todo el nivel 3 (`escape:TYCON_SAFETY_OFF`,
-`escape:TYCON_PROD_LINT`, `escape:TYCON_NEW_NAMES`, `emergency`, `escape:merge-bypass`); `designation-set`,
+`escape:TYCON_PROD_LINT`, `escape:TYCON_NEW_NAMES`, `emergency`, `escape:merge-bypass`, `escape:external-pr`); `designation-set`,
 `designation-confirm` y `designation-withdraw`; `adhoc-lane:datos` y `adhoc-lane:sobre-cupo`; `escape:DOD_BYPASS`; `adversarial-skip` (con
 `escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
 `escape:dod_runtime_exempt`; y decir que no a la prueba con navegador (`browser-test`).
@@ -239,8 +240,8 @@ delicada. Es el mismo cuadro con la misma prueba: la pregunta la arma el freno, 
 sirve una vez para ese plan y vence a los 30 minutos. Lo probado es el click desde el teléfono; desde claude.ai en un
 navegador no se midió. Tu «aprobado» escrito sobre esa pregunta también sigue valiendo.
 Lo que hoy sólo se firma en la terminal (apagar el freno de seguridad o el control de producción, y la emergencia) sigue
-ahí, con o sin control remoto. Las demás firmas de nivel 3 (`control-change`, `escape:TYCON_NEW_NAMES` y
-`escape:merge-bypass`) se aprueban como en la máquina, así que también a distancia.
+ahí, con o sin control remoto. Las demás firmas de nivel 3 (`control-change`, `escape:TYCON_NEW_NAMES`,
+`escape:merge-bypass` y `escape:external-pr`) se aprueban como en la máquina, así que también a distancia.
 
 El riesgo que se acepta: quien tenga tu cuenta de claude.ai o tu teléfono con la sesión abierta puede contestar el
 cuadro o escribir «aprobado», y el arnés no distingue si fuiste vos. Por eso:
@@ -477,6 +478,7 @@ vuelve a pedir la firma del dueño.
 | `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | sí | `marker.js sign-file cambiar-el-estado <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:merge-bypass` | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama | `gh pr merge <n> --admin (o un merge, una regla o una política por la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
+| `escape:external-pr` | encolar o mergear un pull request de alguien de afuera del equipo | `el comando que encola o mergea el pull request (o la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
 <!-- fin: firmas -->
 
 ## Los grupos de la 8.116
@@ -552,6 +554,15 @@ reglas por la API, `--bypass-policy` en Azure DevOps. Es nivel 3: la aprueba la 
 con un click en el cuadro de opciones o un «aprobado», y vale para ese comando, una vez. En Codex se da en la terminal,
 como las demás. Aunque el perfil la nombre en `approvals.delegated_signing`, la coordinadora no la firma: saltear la CI
 es aflojar todos los controles juntos. El camino normal sigue siendo encolar el pedido: `gh pr merge <n> --merge`.
+
+**Encolar o mergear un pedido de afuera (`external-pr`) tampoco se delega.** La pide el freno de la sesión (regla GIT-C7)
+cuando un comando encola o mergea un pedido de GitHub cuyo autor no está en `pull_requests.team_authors` del perfil del equipo:
+el merge del pedido por su comando (con o sin `--auto`), `enqueuePullRequest`, `enablePullRequestAutoMerge` o `mergePullRequest` por la
+API, o un merge sobre `pulls/<n>/merge`. Un bot es de afuera salvo que el perfil lo nombre. Sin lista en el perfil, es del equipo la cuenta con la que
+el CLI de GitHub está autenticado en la máquina; si no se puede leer, frena. El cuadro dice el autor, el
+número, el título y cuántos archivos toca el pedido. Es nivel 3, se aprueba como `merge-bypass` y vale para ese comando,
+una vez. Si el freno no puede saber de quién es el pedido (sin red, el número armado por la terminal, el perfil roto),
+frena sin pedir firma. Los pedidos del equipo pasan sin pregunta.
 
 **Un mensaje de la oficina nunca vale como firma ni como permiso para firmar por delegación.** Lo que el dueño le escribe a
 una sesión desde `/office` le llega como el aviso de un gancho, que la herramienta anota como aviso del sistema y no como la

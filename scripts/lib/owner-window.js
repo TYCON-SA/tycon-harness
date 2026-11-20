@@ -713,6 +713,12 @@ function mergeALaVista(comando) {
   try { hs = require('./ci-bypass.js').leer(comando); } catch (_) { return false; }
   return hs.length > 0 && hs.every((h) => h.legible);
 }
+// encolar o mergear un pedido de alguien de afuera del equipo (regla GIT-C7): la pide el freno, no un guion
+const PEDIDO_DE_AFUERA = 'escape:external-pr';
+/** ¿El comando trae sus pedidos enteros a la vista? Lo decide el mismo lector que el freno. */
+function pedidoDeAfueraALaVista(comando) {
+  try { return require('./external-pr.js').aLaVista(comando); } catch (_) { return false; }
+}
 /**
  * El renglón del registro común de firmas cuando la persona aprobó con un click o un «aprobado». Con la ventana no hay
  * renglón: el freno no ve el Sí. Si no se puede escribir, la firma ya se dio: avisa por el registro de fallos del freno.
@@ -962,7 +968,7 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   const fuentes = require('./signature-sources.js');
   // un escape no trae las palabras de un guion de firma; el rojo esperado de la matriz las necesita para mostrar sus
   // criterios, y las lee del comando sin envolturas (envuelto, la fuente no tiene qué mostrar y no hay cuadro)
-  const palabrasDeLaFuente = palabras || (firma === 'escape:rojo-esperado-de-la-matriz' ? canonica(comando) : null);
+  const palabrasDeLaFuente = palabras || (firma === 'escape:rojo-esperado-de-la-matriz' || firma === PEDIDO_DE_AFUERA ? canonica(comando) : null);
   // el cuadro dice el tope con la misma lectura que usa el freno para decidir
   let partes = fuentes.partesDe({ firma, palabras: palabrasDeLaFuente, cwd, marcador: m, estado: casa === undefined ? null : stateDir(casa), destino, topes: topesDelCaminoCorto(casa), casa });
   // una fuente que dice que no hay nada que firmar: sin cuadro, el pedido se niega
@@ -1486,6 +1492,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     const s = firmaDe(id);
     const porVariable = /^[A-Za-z_]\w*=\S+ <comando>$/.test(s.command);
     const aLaVista = id === MERGE_BYPASS ? mergeALaVista(comando)
+      : id === PEDIDO_DE_AFUERA ? pedidoDeAfueraALaVista(comando)
       : porVariable ? variableALaVista(nombre, s.command.split('=')[1].split(' ')[0], comando) : nombreALaVista(comando);
     if (!aLaVista) return negar(`el escape ${nombre} viene escondido (un nombre armado, env, export o una envoltura)`, pedidas);
   }

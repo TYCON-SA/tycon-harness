@@ -3730,8 +3730,8 @@
         },
         {
           "id": "git-c5-merge-normal-pasa",
-          "type": "must-not-block",
-          "_por_que": "El camino normal (encolar con --merge) no saltea nada.",
+          "type": "must-block",
+          "_por_que": "El camino normal (encolar con --merge) no saltea nada: GIT-C5 no salta. El banco no tiene red, así que GIT-C7 no puede saber de quién es el pedido y frena: «no sé de quién es» nunca deja pasar.",
           "stdin": {
             "session_id": "bench-escape",
             "tool_name": "Bash",
@@ -3741,7 +3741,13 @@
             "tool_use_id": "bench-tu"
           },
           "expect": {
-            "exit": 0
+            "exit": 2,
+            "stderr_re": [
+              "GIT-C7"
+            ],
+            "stderr_not_re": [
+              "GIT-C5"
+            ]
           }
         },
         {
