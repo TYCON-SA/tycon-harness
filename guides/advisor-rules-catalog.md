@@ -357,6 +357,9 @@ Archivo del advisor: `~/.claude/agent-skills/agents/tycon-plugin-security-basics
 | **SEC-C7** | Path traversal en file operations | `Path.GetFullPath` + whitelist de directory root |
 | **SEC-C8** | Connection string hardcoded | `IConnectionFactory` + config |
 | **SEC-C9** | Config de seguridad crítica con fallback hardcodeado silencioso | `throw`/fail-fast en startup si falta la key/credencial — nunca un default operativo. Espejo .NET de AUTH-C6 |
+| **SEC-C10** | Ruta que escribe o lee datos sensibles abierta a «todos los usuarios registrados» (su lista de roles incluye el rol general: `RequireAuthorization`/`[Authorize(Roles)]` equivale a «cualquiera autenticado») | Sacar el rol general de la lista; un caso que pruebe 403 para un usuario con sólo ese rol |
+| **SEC-C11** | Entrada sin tope que se guarda, o que crece sin podar (`ReadToEndAsync` sin límite o con el tope apagado → `NVARCHAR(MAX)`; una fila por guardado). Por tamaño o crecimiento es SEC-C11, no SEC-C3 | Tope de tamaño en la entrada (`[RequestSizeLimit]`, `[MaxLength]`, 413) y podar o actualizar en vez de agregar |
+| **SEC-C12** | Credencial cruda del usuario en una respuesta (un DTO con `RawToken`/`Password`/`Secret`/`ApiKey` en un GET) | Devolver sólo si existe, los últimos 4 caracteres o el vencimiento; la credencial se usa del lado del servidor |
 
 ### WARNING
 
