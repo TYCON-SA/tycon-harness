@@ -833,7 +833,7 @@ try {
         // `nota` (cancelación, contexto), se muestra: es la explicación que evita el susto.
         const dias = r.ts ? Math.floor((Date.now() - new Date(r.ts).getTime()) / 86400000) : null;
         const edad = dias === null ? '' : dias >= 1 ? ` — FOTO DE HACE ${dias} DÍA(S), anterior a lo que se arregló después` : '';
-        problems.push(`${f}: ${desglose} · ${par} · regresiones ${r.baselineRegressions}`
+        problems.push(`${f}: ${desglose} · ${par} · regresiones ${r.baselineRegressions == null ? 'sin comparar (no se leyó la línea de base)' : r.baselineRegressions}`
           + (noMedidos ? ` · 🟡 ${noMedidos} NO MEDIDO(s) (se les agotó el tiempo — la ejecución no está completa)` : '')
           + ` (${r.ts})${edad}`
           + (r.nota ? `\n     ℹ️ ${r.nota}` : ''));

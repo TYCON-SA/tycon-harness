@@ -3237,7 +3237,9 @@ function comandosPorOtroPrograma(cmd, cwd) {
   for (const m of s.matchAll(/(?:^|[\s;&|(])cd\s+(['"]?)([^\s'";&|)]+)\1/g)) bases.push(resolver(m[2], cwd));
   const absoluta = (raw) => [...new Set(bases.map((b) => resolver(raw, b)))];
   const out = [];
-  for (const texto of [s, ...anidadosHasta(s).leidos]) {
+  for (const crudo of [s, ...anidadosHasta(s).leidos]) {
+    // la continuación de renglón (`\` y salto) junta los dos renglones en una orden, como en el shell
+    const texto = crudo.replace(/\\\r?\n/g, ' ');
     // el `\;` de un `-exec` no separa comandos: lo que sigue es del mismo `find`
     const lista = [];
     for (const t of tramos(texto)) {
@@ -3433,7 +3435,8 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   // haber quedado puesta (`cd wt && f=specs/h.md && python3 - "$f" <<EOF`) cuenta también por lo que valdría si corrió
   // (con las llaves expandidas, como el shell: `specs/{h,x}.md` nombra `specs/h.md` entera)
   const valoresDe = (raw) => {
-    const limpio = String(raw).replace(/\)+$/, '');
+    // la comilla invertida que cierra (`echo \`sed -i … h.md\``) tampoco
+    const limpio = String(raw).replace(/[)`]+$/, '');
     return [...new Set([expandirRuta(cmd, limpio).valor, expandirRuta(cmd, limpio, { posibles: true }).valor]
       .flatMap((v) => (v ? expandirLlaves(v) : [v])))];
   };

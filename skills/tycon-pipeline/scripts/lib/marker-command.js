@@ -162,6 +162,8 @@ function tramos(cmd, shell) {
       const actual = tramo;
       cerrarTramo();
       // un heredoc pendiente sigue perteneciendo a su tramo aunque el renglón siga (`cat <<EOF | bash`)
+      // un `||` queda como una tubería a propósito: el atajo de los lectores lo mira como una sola cadena y frena de más
+      // (`ls <historia> || rsync …` frena; casos: skills/tycon-pipeline/scripts/tests/bash-write-read-only.test.js)
       if (c === '|') { tramo.desde = actual; separador = '|'; }
       if (c === '(' || c === ')') conParentesis = true;
       continue;

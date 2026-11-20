@@ -337,6 +337,17 @@ test('T12b Adversarial_FormsThatWrite_Block @story-8.308 @ac-12', () => {
     `cat > x.txt <<'EOF'\nrm ${H}\nEOF\nsh -o nounset x.txt`,
     `echo x # <<EOF\nrm ${H}\nEOF`,
     `echo "a\\" <<EOF"\nrm ${H}\nEOF`,
+    // la continuación de renglón, de la segunda vuelta del pase
+    `echo ${H} |\\\nxargs rm`,
+    `echo ${H} | \\\nxargs rm`,
+    'ls specs/*.md | \\\nxargs rm',
+    'find specs -exec rm \\\n  {} \\;',
+    `echo ${H} | xargs \\\n  rm`,
+    `cat <<EOF | \\\nbash\nrm ${H}\nEOF`,
+    // la comilla invertida que cierra pegada a la historia
+    `echo \`sed -i s/a/b/ ${H}\``,
+    `echo \`tee ${H}\``,
+    `x=\`sed -i s/a/b/ ${H}\``,
   ]) frena(c, cmd);
 });
 
