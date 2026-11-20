@@ -94,6 +94,11 @@ exit 0
 SH
 chmod +x "$RAIZ/usr/bin/security"
 SES=$SES_A; viva $SES_A
+# la foto del shell de la sesión, limpia (sin alias ni funciones): sin ella el freno le pregunta al shell de login, que en
+# una máquina sin zsh ni bash como SHELL (la CI) no sabe contestar y frena la forma canónica
+mkdir -p "$CASA/.claude/shell-snapshots"
+printf '# Snapshot file\n\n# Functions\n# Shell Options\n# Aliases\n# Check for rg availability\nrg () { : }\nexport PATH=/usr/bin\n' \
+  > "$CASA/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh"   # con SESSION_SINCE=0 vale cualquier hora
 
 # el freno, con la casa y la raíz falsas; imprime el exit code y deja el mensaje en freno.err
 freno(){
