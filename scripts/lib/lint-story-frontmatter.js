@@ -45,8 +45,9 @@
  *      scripts/lib/platform/work-item-field.js).
  *  10. Una tanda `done` con criterios, tareas o pruebas en `acs_pending` / `tasks_pending` / `tests_pending`
  *      (story-format.md §1.1: esas listas valen en `blocked` o `pending`). La historia dice que terminó y que le falta
- *      trabajo, y el cierre y los conteos leen cosas distintas. Se dice y no frena (el porqué, en la regla); si el commit
- *      la introduce, el aviso lo dice aparte. Sin el lector de tandas, no corre y se dice.
+ *      trabajo, y el cierre y los conteos leen cosas distintas. Frena si el commit la introduce (historia nueva, o tanda
+ *      que no estaba así en el último commit, fuera de un merge); si ya estaba así, avisa. Sin el lector de tandas, no
+ *      corre y se dice.
  *   9. Las INTENCIONES (`*.intent.md`, y el `intent.md` de una carpeta de corrida si se lo pasan: git ignora esas
  *      carpetas): las lee `lib/intent.js` del pipeline. Cada problema frena, nueva o vieja, con la fila y la columna, y
  *      una intención en `approved` con algo que bloquea también. Sin el lector la regla no corre y se avisa; con el
@@ -187,6 +188,13 @@ function enElUltimoCommit(abs) {
     return execFileSync('git', ['-C', path.dirname(abs), 'show', `HEAD:./${path.basename(abs)}`],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   } catch { return null; }
+}
+/** ¿El repo de la historia está en medio de un merge? Lo que trae la otra rama no lo introduce este commit. */
+function enUnMerge(abs) {
+  try {
+    execFileSync('git', ['-C', path.dirname(abs), 'rev-parse', '-q', '--verify', 'MERGE_HEAD'], { stdio: 'ignore' });
+    return true;
+  } catch { return false; }
 }
 // las intenciones las lee lib/intent.js y nadie más. Sin el archivo (un arnés viejo), la regla no corre y se dice a los
 // gritos; con el archivo y sin poder cargarlo, frena: un lector roto no se toma por «sin lector».
@@ -687,7 +695,6 @@ function main() {
   const campoViejo = [];
   // las historias que ya traían una tanda done con pendientes: se avisa, no se frena
   const tandasViejasConPendientes = [];
-  const tandasNuevasConPendientes = [];
   let sinLectorDeTandas = false;
 
   for (const abs of files) {
@@ -761,18 +768,26 @@ function main() {
       continue;
     }
 
-    // 10. Una tanda `done` con pendientes (story-format.md §1.1: `acs_pending` vale en `blocked` o `pending`). Se DICE y
-    //     no frena: el cierre de una tanda (`update-pipeline-status <tanda> done`) no vacía esas listas, y al
-    //     medirlo había 61 historias así en un solo repo; frenar rompería el commit de cierre de cualquier historia. Si este
-    //     commit la introduce (historia nueva, o tanda que no estaba así en el último commit), el aviso lo dice aparte.
+    // 10. Una tanda `done` con pendientes (story-format.md §1.1: `acs_pending` vale en `blocked` o `pending`). Lo nuevo
+    //     frena y lo viejo se avisa, como el resto de este lint: frena si el commit la introduce (historia nueva, o
+    //     tanda que no estaba así en el último commit); si ya estaba así, avisa (al medirlo había 61 historias así en
+    //     un solo repo). Un commit de merge no introduce nada propio: trae lo de la otra rama, y se avisa.
     const contradichas = tandasDoneConPendientes(content);
     if (contradichas.length) {
       const antes = enElUltimoCommit(abs);
       const yaEstaban = new Set(antes === null ? [] : tandasDoneConPendientes(antes).map((t) => t.name));
-      const nuevas = contradichas.filter((t) => !yaEstaban.has(t.name));
+      const nuevas = enUnMerge(abs) ? [] : contradichas.filter((t) => !yaEstaban.has(t.name));
       const texto = (ts) => ts.map((t) => `${t.name} (${t.cuantos})`).join(', ');
-      if (nuevas.length) tandasNuevasConPendientes.push(`${rel}: ${texto(nuevas)}`);
-      const viejas = contradichas.filter((t) => yaEstaban.has(t.name));
+      if (nuevas.length) {
+        errors.push({
+          rel,
+          problema: `este commit cierra en \`done\` ${nuevas.length === 1 ? 'una tanda' : 'tandas'} con criterios, tareas o pruebas todavía pendientes: ${texto(nuevas)}`,
+          efecto: 'la historia dice que la tanda terminó y que le falta trabajo: el cierre y los conteos leen cosas distintas',
+          arreglo: 'si se hizo, pasar esos números a `acs` / `tasks` / `tests` y vaciar `acs_pending` / `tasks_pending` / `tests_pending`; si no, la tanda va en `blocked` o `pending` (story-format.md §1.1)',
+        });
+        continue;
+      }
+      const viejas = contradichas.filter((t) => !nuevas.includes(t));
       if (viejas.length) tandasViejasConPendientes.push(`${rel}: ${texto(viejas)}`);
     } else if (!storyChecks && /^\s+status\s*:\s*["']?done/m.test(content) && /_pending\s*:/.test(content)) {
       sinLectorDeTandas = true;
@@ -863,12 +878,6 @@ function main() {
       `${(vocab.causas || []).join(' · ')} (scripts/metrics/rework-causes.json).`);
   }
 
-  if (tandasNuevasConPendientes.length) {
-    console.log(`⚠️  ESTE COMMIT cierra ${tandasNuevasConPendientes.length === 1 ? 'una tanda' : 'tandas'} en \`done\` con criterios, tareas o pruebas ` +
-      'todavía pendientes: la historia dice que terminó y que le falta trabajo. Si se hizo, pasá los números a `acs` / ' +
-      '`tasks` / `tests` y vaciá los pendientes; si no, la tanda va en `blocked` o `pending` (story-format.md §1.1):');
-    for (const r of tandasNuevasConPendientes) console.log(`   ${r}`);
-  }
   if (tandasViejasConPendientes.length) {
     console.log(`⚠️  ${tandasViejasConPendientes.length} story(s) que ya lo traían tienen una tanda \`done\` con pendientes ` +
       '(no frenan; si se hizo, pasá los números a `acs` / `tasks` / `tests`, y si no, la tanda va en `blocked` o `pending`):');

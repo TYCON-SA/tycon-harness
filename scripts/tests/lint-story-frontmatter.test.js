@@ -629,30 +629,37 @@ test('T37 LintFrontmatter_IntentReaderMissing_LoudWarning @story-8.258 @ac-29', 
 });
 
 // Una tanda `done` con criterios, tareas o pruebas en sus listas de pendientes es una contradicción (story-format.md
-// §1.1: `acs_pending` vale sólo en una tanda `blocked` o `pending`). Una tanda real quedó así
-// cerrada con veinte criterios pendientes, y los conteos de cierre leían cosas distintas. El control lo dice sin frenar
-// (el cierre de una tanda no vacía esas listas: frenar rompería ese commit), y aparte cuando el commit la introduce.
-test('LintFrontmatter_DoneBatchWithPending_SaysIt', () => {
+// §1.1: `acs_pending` vale sólo en una tanda `blocked` o `pending`). Una tanda real quedó así: cerrada con veinte
+// criterios pendientes, y los conteos de cierre leían cosas distintas. Lo nuevo frena (la historia que nace así, o la
+// tanda que pasa a `done` con pendientes en este commit) y lo viejo se avisa. Un merge no introduce nada propio.
+test('LintFrontmatter_DoneBatchWithPending_NewBlocksOldWarns', () => {
   const root = mkRepo('lint-done-pending-');
+  const git = (...a) => execFileSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', ...a], { cwd: root, stdio: 'ignore' });
   const tanda = (status, pend) => ['story: "9.1"', 'epic: 9', 'status: in-progress', 'pipelines:', '  - name: A-uno',
     `    status: ${status}`, '    acs: [1]', ...(pend ? ['    acs_pending: [2, 3]', '    tests_pending: ["T4"]'] : [])];
   const f = story(root, 'specs/story-9.1-algo.md', tanda('done', true));
   const nueva = run([f], root);
-  assert.equal(nueva.code, 0, nueva.out);
-  assert.match(nueva.out, /ESTE COMMIT cierra una tanda[\s\S]*A-uno \(3\)/);
-  // commiteada bloqueada; pasa a done sin vaciar las listas en este commit → el aviso de «este commit»
+  assert.equal(nueva.code, 1, 'nace así: frena');
+  assert.match(nueva.out, /cierra en `done` una tanda[\s\S]*A-uno \(3\)/);
+  // commiteada bloqueada; pasa a done sin vaciar las listas en este commit → frena
   story(root, 'specs/story-9.1-algo.md', tanda('blocked', true));
-  execFileSync('git', ['add', '.'], { cwd: root });
-  execFileSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', 'commit', '-qm', 'a'], { cwd: root });
+  git('add', '.'); git('commit', '-qm', 'a');
   story(root, 'specs/story-9.1-algo.md', tanda('done', true));
-  assert.match(run([f], root).out, /ESTE COMMIT cierra una tanda/);
-  // ya estaba así en el último commit → el aviso de las que ya lo traían
-  execFileSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', 'commit', '-qam', 'b'], { cwd: root });
+  assert.equal(run([f], root).code, 1, 'la tanda pasa a done con pendientes en este commit: frena');
+  // ya estaba así en el último commit → avisa, no frena
+  git('commit', '-qam', 'b');
   const vieja = run([f], root);
   assert.equal(vieja.code, 0, vieja.out);
-  assert.doesNotMatch(vieja.out, /ESTE COMMIT/);
   assert.match(vieja.out, /que ya lo traían[\s\S]*A-uno \(3\)/);
   // done sin pendientes: nada que decir
   story(root, 'specs/story-9.1-algo.md', tanda('done', false));
+  assert.equal(run([f], root).code, 0);
   assert.doesNotMatch(run([f], root).out, /pendientes/);
+  // en medio de un merge que trae la tanda cerrada así desde otra rama → avisa, no frena
+  story(root, 'specs/story-9.1-algo.md', tanda('blocked', true));
+  git('commit', '-qam', 'c');
+  git('checkout', '-qb', 'otra'); story(root, 'specs/story-9.1-algo.md', tanda('done', true)); git('commit', '-qam', 'd');
+  git('checkout', '-q', '-'); story(root, 'specs/x.txt', []); git('add', '.'); git('commit', '-qm', 'e');
+  git('merge', '--no-commit', '--no-ff', 'otra');
+  assert.equal(run([f], root).code, 0, 'el merge trae lo de la otra rama: no frena');
 });

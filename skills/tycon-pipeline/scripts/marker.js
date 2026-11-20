@@ -6558,12 +6558,54 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
   for (const t of chosen) {
     lines[t.statusAt] = lines[t.statusAt].replace(statusRegex, (_, head, tail) => `${head}${newStatus}${tail}`);
   }
+  // Una tanda en `done` no declara pendientes (story-format.md §1.1), y el control de historias frena el commit que la deja
+  // así: al cerrarla, sus `acs_pending` / `tasks_pending` / `tests_pending` pasan a `acs` / `tasks` / `tests` (sumados a los
+  // que ya estaban) y se vacían. Uno escrito como lista de renglones no se toca y se dice. De abajo hacia arriba, para que
+  // sacar un renglón no corra los índices de las tandas de arriba.
+  const movidos = new Map();
+  if (newStatus === 'done') {
+    let fin = start + 1;
+    while (fin < lines.length && !/^\S/.test(lines[fin])) fin++;
+    const items = (v, k) => v.replace(/^\[|\].*$/g, '').split(',').map((x) => x.replace(/["'\s]/g, '')).filter(Boolean)
+      .map((x) => (k === 'tests' ? x : Number(x))).filter((x) => k === 'tests' || Number.isInteger(x));
+    const render = (xs, k) => `[${xs.map((x) => (k === 'tests' ? `"${x}"` : String(x))).join(', ')}]`;
+    for (const t of [...chosen].sort((a, b) => b.at - a.at)) {
+      const idx = batches.indexOf(t);
+      const hasta = idx + 1 < batches.length ? batches[idx + 1].at : fin;
+      const dichos = [];
+      for (const k of ['acs', 'tasks', 'tests']) {
+        const enBloque = (re) => { for (let i = t.at + 1; i < hasta; i++) if (re.test(lines[i])) return i; return -1; };
+        const iPend = enBloque(new RegExp(`^\\s+${k}_pending\\s*:`));
+        if (iPend < 0) continue;
+        const pm = lines[iPend].match(new RegExp(`^(\\s+)${k}_pending\\s*:\\s*(.*?)\\s*$`));
+        if (!pm[2].startsWith('[')) {
+          if (pm[2].replace(/#.*$/, '').trim() === '') console.error(`marker.js update-pipeline-status: la tanda ${t.name} tiene \`${k}_pending\` como lista de renglones: no la toco. Pasá esos a \`${k}\` a mano.`);
+          continue;
+        }
+        const pend = items(pm[2], k);
+        const iBase = enBloque(new RegExp(`^\\s+${k}\\s*:\\s*\\[`));
+        if (iBase >= 0) {
+          const bm = lines[iBase].match(new RegExp(`^(\\s+${k}\\s*:\\s*)(\\[[^\\]]*\\])(.*)$`));
+          const base = items(bm[2], k);
+          lines[iBase] = `${bm[1]}${render([...base, ...pend.filter((x) => !base.includes(x))], k)}${bm[3]}`;
+          lines.splice(iPend, 1);
+        } else {
+          lines[iPend] = `${pm[1]}${k}: ${render(pend, k)}`;
+        }
+        if (pend.length) dichos.unshift(`${k} ${pend.join(', ')}`);
+      }
+      if (dichos.length) movidos.set(t.name, dichos.sort((a, b) => ['acs', 'tasks', 'tests'].indexOf(a.split(' ')[0]) - ['acs', 'tasks', 'tests'].indexOf(b.split(' ')[0])));
+    }
+  }
   const newFmBody = lines.join('\n');
   const newContent = content.replace(fmRegex, (_, open, _body, close) => `${open}${newFmBody}${close}`);
   const tmp = `${storyPath}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, newContent, 'utf8');
   fs.renameSync(tmp, storyPath);
-  for (const t of chosen) process.stdout.write(`${t.name}: ${newStatus}\n`);
+  for (const t of chosen) {
+    const m2 = movidos.get(t.name);
+    process.stdout.write(`${t.name}: ${newStatus}${m2 ? ` (pasan a hechos: ${m2.join(' · ')})` : ''}\n`);
+  }
 }
 
 /**
