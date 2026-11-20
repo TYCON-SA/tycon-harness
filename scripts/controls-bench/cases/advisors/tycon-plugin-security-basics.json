@@ -42,6 +42,54 @@
         "motivo": "Variancia de juicio medida el 2026-08-25 sobre la corrida del 24: el pecado plantado es INEQUÍVOCO y el revisor lo acierta 2 de 3 veces en claude — y acierta 3/3 en la otra herramienta, así que no es el caso. Muestra chica (n=3): el piso se revisa con la medición semanal. Por debajo del piso es ROJO de criterio."
       },
       "canario": true
+    },
+    {
+      "id": "sec-c10-rol-de-todos-en-la-lista",
+      "type": "must-flag",
+      "rule": "SEC-C10",
+      "files": {
+        "src/NotesEndpoints.cs": "using Microsoft.AspNetCore.Builder;\nusing Microsoft.AspNetCore.Http;\nnamespace Demo.Notes\n{\n    public static class Roles\n    {\n        public const string AllUsers = \"AllUsers\";\n        public const string Editors = \"Editors\";\n        // quien puede escribir notas\n        public static readonly string[] Writers = { Editors, AllUsers };\n    }\n\n    public static class NotesEndpoints\n    {\n        public static void Map(WebApplication app)\n        {\n            app.MapGet(\"/notes\", (NotesStore store) => store.List())\n               .RequireAuthorization(p => p.RequireRole(Roles.Editors));\n            app.MapPut(\"/notes/{id:int}\", (int id, NoteDto dto, NotesStore store) => store.Save(id, dto))\n               .RequireAuthorization(p => p.RequireRole(Roles.Writers));\n        }\n    }\n}\n"
+      }
+    },
+    {
+      "id": "limpio-c10-lista-sin-rol-de-todos",
+      "type": "must-not-flag",
+      "rule": "SEC-C10",
+      "files": {
+        "src/NotesEndpoints.cs": "using Microsoft.AspNetCore.Builder;\nusing Microsoft.AspNetCore.Http;\nnamespace Demo.Notes\n{\n    public static class Roles\n    {\n        public const string AllUsers = \"AllUsers\";\n        public const string Editors = \"Editors\";\n        // quien puede escribir notas\n        public static readonly string[] Writers = { Editors };\n    }\n\n    public static class NotesEndpoints\n    {\n        public static void Map(WebApplication app)\n        {\n            app.MapGet(\"/notes\", (NotesStore store) => store.List())\n               .RequireAuthorization(p => p.RequireRole(Roles.Editors));\n            app.MapPut(\"/notes/{id:int}\", (int id, NoteDto dto, NotesStore store) => store.Save(id, dto))\n               .RequireAuthorization(p => p.RequireRole(Roles.Writers));\n        }\n    }\n}\n"
+      }
+    },
+    {
+      "id": "sec-c11-cuerpo-sin-tope-que-crece",
+      "type": "must-flag",
+      "rule": "SEC-C11",
+      "files": {
+        "src/DraftsEndpoints.cs": "using System.IO;\nusing System.Threading.Tasks;\nusing Microsoft.AspNetCore.Builder;\nusing Microsoft.AspNetCore.Http;\nnamespace Demo.Drafts\n{\n    // la tabla: CREATE TABLE Drafts (Id INT IDENTITY, UserId INT, Body NVARCHAR(MAX), SavedAt DATETIME2)\n    public static class DraftsEndpoints\n    {\n        public static void Map(WebApplication app)\n        {\n            app.MapPost(\"/drafts\", async (HttpRequest request, DraftsStore store, CurrentUser user) =>\n            {\n                using var reader = new StreamReader(request.Body);\n                var body = await reader.ReadToEndAsync();\n                // una fila nueva por cada guardado\n                await store.InsertAsync(\"INSERT INTO Drafts (UserId, Body, SavedAt) VALUES (@u, @b, SYSUTCDATETIME())\", new { u = user.Id, b = body });\n                return Results.NoContent();\n            }).RequireAuthorization();\n        }\n    }\n}\n"
+      }
+    },
+    {
+      "id": "limpio-c11-tope-y-una-fila",
+      "type": "must-not-flag",
+      "rule": "SEC-C11",
+      "files": {
+        "src/DraftsEndpoints.cs": "using System.Threading.Tasks;\nusing Microsoft.AspNetCore.Builder;\nusing Microsoft.AspNetCore.Http;\nusing Microsoft.AspNetCore.Mvc;\nnamespace Demo.Drafts\n{\n    // la tabla: CREATE TABLE Drafts (UserId INT PRIMARY KEY, Body NVARCHAR(4000), SavedAt DATETIME2)\n    public static class DraftsEndpoints\n    {\n        public const int MaxBytes = 8000;\n        public static void Map(WebApplication app)\n        {\n            app.MapPost(\"/drafts\", [RequestSizeLimit(MaxBytes)] async (HttpRequest request, DraftsStore store, CurrentUser user) =>\n            {\n                if (request.ContentLength is null or > MaxBytes) return Results.StatusCode(413);\n                var dto = await request.ReadFromJsonAsync<DraftDto>();\n                if (dto is null || dto.Body.Length > 4000) return Results.BadRequest();\n                // un borrador por usuario: se actualiza, no se agrega\n                await store.UpsertAsync(\"MERGE Drafts AS t USING (SELECT @u AS UserId) s ON t.UserId = s.UserId WHEN MATCHED THEN UPDATE SET Body = @b, SavedAt = SYSUTCDATETIME() WHEN NOT MATCHED THEN INSERT (UserId, Body, SavedAt) VALUES (@u, @b, SYSUTCDATETIME());\", new { u = user.Id, b = dto.Body });\n                return Results.NoContent();\n            }).RequireAuthorization();\n        }\n    }\n    public record DraftDto([property: System.ComponentModel.DataAnnotations.MaxLength(4000)] string Body);\n}\n"
+      }
+    },
+    {
+      "id": "sec-c12-token-crudo-en-el-get",
+      "type": "must-flag",
+      "rule": "SEC-C12",
+      "files": {
+        "src/IntegrationsEndpoints.cs": "using Microsoft.AspNetCore.Builder;\nusing Microsoft.AspNetCore.Http;\nnamespace Demo.Integrations\n{\n    public record IntegrationDto(int Id, string Provider, string RawToken, System.DateTime ExpiresAt);\n\n    public static class IntegrationsEndpoints\n    {\n        public static void Map(WebApplication app)\n        {\n            app.MapGet(\"/me/integration\", (IntegrationsStore store, CurrentUser user) =>\n            {\n                var i = store.ForUser(user.Id);\n                return Results.Ok(new IntegrationDto(i.Id, i.Provider, i.AccessToken, i.ExpiresAt));\n            }).RequireAuthorization();\n        }\n    }\n}\n"
+      }
+    },
+    {
+      "id": "limpio-c12-solo-si-existe-y-ultimos-4",
+      "type": "must-not-flag",
+      "rule": "SEC-C12",
+      "files": {
+        "src/IntegrationsEndpoints.cs": "using Microsoft.AspNetCore.Builder;\nusing Microsoft.AspNetCore.Http;\nnamespace Demo.Integrations\n{\n    public record IntegrationDto(int Id, string Provider, bool HasToken, string TokenLast4, System.DateTime ExpiresAt);\n\n    public static class IntegrationsEndpoints\n    {\n        public static void Map(WebApplication app)\n        {\n            app.MapGet(\"/me/integration\", (IntegrationsStore store, CurrentUser user) =>\n            {\n                var i = store.ForUser(user.Id);\n                var last4 = string.IsNullOrEmpty(i.AccessToken) ? \"\" : i.AccessToken[^4..];\n                return Results.Ok(new IntegrationDto(i.Id, i.Provider, !string.IsNullOrEmpty(i.AccessToken), last4, i.ExpiresAt));\n            }).RequireAuthorization();\n        }\n    }\n}\n"
+      }
     }
   ],
   "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."

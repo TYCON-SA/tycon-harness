@@ -236,3 +236,76 @@ test('T11 ClickEnLaCoordinadora_SigueValiendo @story-8.211 @ac-13', (t) => {
   assert.ok(oa.esPermitido('@tcg:background-question-guard.js'));
   assert.deepStrictEqual(oa.escuchasDelCuadro({ casa: toy.casa, cwd: toy.casa, plataforma: 'linux' }).ajenos, []);
 });
+
+// ── Una sesión de fondo no queda trabada en un pedido de permiso de Claude Code ────────────────────────────────────
+// Medido en sesiones de fondo reales (sin permisos, sin ganchos): el chequeo de borrados de Claude Code pide permiso a una
+// persona por un `rm` cuyo destino no puede revisar, y nadie lo contesta. El caso (a) es el comando que dejó trabada una
+// sesión el 20/11 (de una transcripción, con las rutas cambiadas); el (b), la forma que se sospechó del otro caso: un
+// `cd` a una copia en el TMPDIR con python, que medido no pide permiso y no se toca.
+const TMP = '/var/folders/zz/acme/T';
+const CASO_A = `T=${TMP}/armed-tree/tree; O=/srv/acme/.claude/jobs/abc/tmp/rojos; cd $T && for s in a.test.sh b.test.js; do `
+  + 'H=$(mktemp -d "${TMPDIR:-/tmp}/casa-rojo.XXXXXX"); case $s in *.sh) r=bash;; *) r="node --test";; esac; '
+  + 'env -u TYCON_HOME HOME=$H USERPROFILE=$H bash -c "$r scripts/tests/$s" > $O/$s.log 2>&1; echo "$s rc=$?"; rm -rf $H; done';
+const CASO_B = `cd ${TMP}/copia && python3 - <<'EOF'\nprint(1)\nEOF`;
+const B = require('../lib/bg-permission-shapes.js');
+
+test('T12 Fondo_BorradoQuePidePermiso_SeNiegaConComoReescribirlo — caso (a)', (t) => {
+  const toy = maquina(t);
+  const r = decidir(toy, evento(LANZADA, 'Bash', { command: CASO_A }));
+  assert.ok(r && r.decision === 'deny', JSON.stringify(r));
+  assert.strictEqual(r.forma, 'sustitucion');
+  assert.match(r.reason, /corre de fondo/);
+  assert.match(r.reason, /ruta literal y absoluta/);
+  // en una sesión que no es de fondo, nada cambia
+  assert.strictEqual(decidir(toy, evento(COORD, 'Bash', { command: CASO_A })), null);
+  // el gancho como proceso: niega con el texto
+  const p = spawnSync(process.execPath, [GANCHO], { input: JSON.stringify(evento(LANZADA, 'Bash', { command: CASO_A })), encoding: 'utf8', env: { ...process.env, HOME: toy.casa, USERPROFILE: toy.casa, TYCON_BG_QUESTION_GUARD: '' } });
+  assert.strictEqual(p.status, 0, p.stderr);
+  assert.match(p.stdout, /"permissionDecision":"deny"/);
+});
+
+test('T13 Fondo_LoQueHoyPasa_SiguePasando — caso (b) y las formas medidas', (t) => {
+  const toy = maquina(t);
+  for (const command of [CASO_B, `H=${TMP}/sub; rm -rf $H`, `rm -rf ${TMP}/sub`, `cd ${TMP} && rm -rf sub`, `for d in ${TMP}/sub; do rm -rf $d; done`,
+    `rm -rf ${TMP}/sub/*`, `bash -c 'echo hola'; rm -rf ${TMP}/sub`, 'grep -n "rm -rf" a.sh', 'ls']) {
+    assert.strictEqual(decidir(toy, evento(LANZADA, 'Bash', { command })), null, command);
+  }
+});
+
+test('T14 Formas_LasQueFrenoElChequeo — cada forma medida, y el interruptor', (t) => {
+  const tmpdir = TMP;
+  assert.strictEqual(B.formaQuePidePermiso('rm -rf "$(echo /x/sub)"', { tmpdir }).forma, 'sustitucion');
+  assert.strictEqual(B.formaQuePidePermiso('H=$(mktemp -d /private/tmp/m.XXXX) && rm -rf $H', { tmpdir }).forma, 'sustitucion');
+  assert.strictEqual(B.formaQuePidePermiso('S=/private/tmp/x; rm -f $S/*.png', { tmpdir }).forma, 'variable-con-comodin');
+  assert.strictEqual(B.formaQuePidePermiso('rm -rf /srv/acme/SourceCode/repo/tmpd/*', { tmpdir }).forma, 'comodin-fuera-de-temporal');
+  assert.strictEqual(B.formaQuePidePermiso(`r=echo; bash -c "$r hola"; rm -rf ${TMP}/sub`, { tmpdir }).forma, 'bash-c-armado');
+  const toy = maquina(t);
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'Bash', { command: CASO_A }), { TYCON_BG_QUESTION_GUARD: '0' }), null, 'apagado');
+});
+
+test('T15 Fondo_SinArchivoDeSesion_LaVariableDeClaude — CLAUDE_JOB_DIR', (t) => {
+  const toy = maquina(t);
+  assert.strictEqual(decidir(toy, evento('ses-sin-archivo', 'Bash', { command: CASO_A })), null, 'sin archivo ni variable');
+  const r = decidir(toy, evento('ses-sin-archivo', 'Bash', { command: CASO_A }), { CLAUDE_JOB_DIR: '/x/jobs/abc' });
+  assert.ok(r && r.decision === 'deny', JSON.stringify(r));
+});
+
+test('T16 Formas_LoQueEncontroElPase — sin comillas, guiones literales, heredocs y textos largos', (t) => {
+  const tmpdir = TMP;
+  for (const c of ['rm -rf $(pwd)/x', 'rm -rf $(mktemp -d)', 'rm -rf `pwd`/x', 'rm -rf $(git rev-parse --show-toplevel)/dist', '\\rm -rf "$(pwd)"', 'nice rm -rf $(pwd)/x']) {
+    assert.strictEqual((B.formaQuePidePermiso(c, { tmpdir }) || {}).forma, 'sustitucion', c);
+  }
+  for (const c of ["bash -c 'cd $HOME && ls'; rm /tmp/a.txt", 'git rm $(git ls-files -d)', 'echo "rm -rf $(pwd)"', 'rmdir "$(pwd)/x"',
+    "cat <<EOF > /tmp/a.sh\nrm -rf $(pwd)/*\nEOF", 'rm -f *.log', 'docker rm $(docker ps -aq)', 'rm "file[1].txt"']) {
+    assert.strictEqual(B.formaQuePidePermiso(c, { tmpdir }), null, c);
+  }
+  // un texto largo pegado: en una sesión que no es de fondo ni se mira, y de fondo se lee rápido
+  const largo = `cat <<'EOF' > /tmp/x\n${'linea con $(algo) y rm adentro\n'.repeat(1300)}EOF\nrm -rf /tmp/x`;
+  const toy = maquina(t);
+  let t0 = process.hrtime.bigint();
+  assert.strictEqual(decidir(toy, evento(COORD, 'Bash', { command: largo })), null);
+  assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 100, 'sesión normal');
+  t0 = process.hrtime.bigint();
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'Bash', { command: largo })), null);
+  assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 100, 'sesión de fondo');
+});
