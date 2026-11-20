@@ -84,6 +84,9 @@ test('T8b OtraVuelta_DosReposMismaRuta_NombraLosDos @story-8.195 @ac-2 — dos a
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   for (const r of ['back', 'front']) fs.mkdirSync(path.join(base, r, '.git'), { recursive: true });
   const back = path.join(base, 'back');
+  // front es el hermano declarado: sin declararlo, sus archivos no son de la corrida
+  fs.mkdirSync(path.join(back, '.tycon'));
+  fs.writeFileSync(path.join(back, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - ../front\n');
   const story = path.join(back, 'specs', 'story-9-9.md');
   const m = marcador(back, story, []);
   m.fileEvents = [path.join(back, 'src', 'index.ts'), path.join(base, 'front', 'src', 'index.ts'), path.join(back, 'src', 'index.ts')]
@@ -116,6 +119,78 @@ test('Reloop_FileOutsideAnyRepo_NoRound @story-8.270 @ac-24 — un guion escrito
   assert.equal(reviewersRound(m), null, 'sin otra vuelta, aunque el evento diga código');
   // un archivo borrado dentro del repo sigue encontrando la raíz: sigue contando
   assert.equal(pideOtraVuelta(path.join(dir, 'src', 'borrado', 'x.js'), { storyPath: story }), true);
+});
+
+// 🔴 Falla con: una prueba del pase escrita en un laboratorio con su propio git (una carpeta temporal con `git init`), fuera
+//    del repo de la corrida y de sus hermanos declarados, contada como código: reabre «Revisores».
+test('Reloop_ProbeInLabRepoOutsideTheRun_NoRound', (t) => {
+  const { dir, story } = repo(t, { git: true });
+  const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'reloop-code-lab-'));
+  t.after(() => fs.rmSync(lab, { recursive: true, force: true }));
+  execFileSync('git', ['init', '-q', lab]);
+  const prueba = path.join(lab, 'p1.js');
+  assert.equal(pideOtraVuelta(prueba, { storyPath: story, repoPath: dir }), false);
+  // sin el repo de la corrida no se sabe qué repos son suyos: sigue pidiendo, como antes
+  assert.equal(pideOtraVuelta(prueba, { storyPath: story }), true);
+  const m = marcador(dir, story, []);
+  m.fileEvents = [{ path: prueba, ts: '2026-11-03T10:05:00.000Z', code: true }];
+  assert.equal(reviewersRound(m), null, 'la prueba del laboratorio no pide otra vuelta');
+  // el código del repo de la corrida sigue pidiendo
+  assert.equal(pideOtraVuelta(path.join(dir, 'src', 'a.js'), { storyPath: story, repoPath: dir }), true);
+});
+
+// 🔴 Falla con: un archivo en otra copia (worktree) de un repo hermano declarado, en otra rama, tomado como «fuera de la
+//    corrida»: el código de la story en el hermano dejaría de reabrir «Revisores».
+test('Reloop_CodeInAnotherWorktreeOfADeclaredSibling_StillRounds', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'reloop-code-hermano-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const specs = path.join(base, 'specs-repo');
+  const codigo = path.join(base, 'codigo');
+  const g = (cwd, ...a) => execFileSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
+  for (const r of [specs, codigo]) { fs.mkdirSync(r); execFileSync('git', ['init', '-q', '-b', 'main', r]); }
+  fs.mkdirSync(path.join(specs, '.tycon'));
+  fs.writeFileSync(path.join(specs, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - ../codigo\n');
+  fs.writeFileSync(path.join(codigo, 'a.js'), 'a\n');
+  g(codigo, 'add', '.'); g(codigo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'b');
+  const copia = path.join(base, 'codigo--wt-otra');
+  g(codigo, 'worktree', 'add', '-q', '-b', 'otra-rama', copia);
+  const story = path.join(specs, 'specs', 'story-9-9.md');
+  assert.equal(pideOtraVuelta(path.join(copia, 'src', 'b.js'), { storyPath: story, repoPath: specs }), true);
+  assert.equal(pideOtraVuelta(path.join(codigo, 'src', 'b.js'), { storyPath: story, repoPath: specs }), true);
+  // la corrida en el repo del código, con la historia en el de specs: el código cuenta
+  assert.equal(pideOtraVuelta(path.join(copia, 'src', 'b.js'), { storyPath: story, repoPath: copia }), true);
+});
+
+// 🔴 Falla con (pase adversarial): un hermano declarado que no está en disco, escrito con un nombre suelto o con «~/»,
+//    resuelto como una carpeta DENTRO del repo de la corrida: no genera duda, y el código del hermano clonado en otro
+//    lado deja de pedir otra vuelta.
+test('Reloop_DeclaredSiblingMissing_StillRounds', (t) => {
+  for (const forma of ['zzfront', '~/zzfront', '../zzfront']) {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'reloop-code-falta-'));
+    t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+    const back = path.join(base, 'wts', 'back--wt-x');
+    fs.mkdirSync(path.join(back, '.tycon'), { recursive: true });
+    execFileSync('git', ['init', '-q', back]);
+    fs.writeFileSync(path.join(back, '.tycon', 'advisors.yaml'), `evidence:\n  companion_repos:\n    - ${forma}\n`);
+    const otro = path.join(base, 'otra', 'zzfront');
+    fs.mkdirSync(otro, { recursive: true });
+    execFileSync('git', ['init', '-q', otro]);
+    const story = path.join(back, 'specs', 'story-9-9.md');
+    assert.equal(pideOtraVuelta(path.join(otro, 'src', 'a.js'), { storyPath: story, repoPath: back }), true, forma);
+  }
+});
+
+// 🔴 Falla con (pase adversarial): el repo de la corrida escrito con otras mayúsculas, en un disco que no las distingue:
+//    su propio código sale «de otro repo» y no pide otra vuelta.
+test('Reloop_RunRepoWithOtherCase_StillRounds', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'reloop-code-may-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const real = path.join(base, 'MiRepo');
+  execFileSync('git', ['init', '-q', real]);
+  const otra = path.join(base, 'mirepo');
+  if (!fs.existsSync(otra)) return console.log('⏭ el disco distingue mayúsculas: NO MEDIDO');
+  assert.equal(pideOtraVuelta(path.join(real, 'src', 'a.js'), { storyPath: path.join(otra, 'specs', 's.md'), repoPath: otra }), true);
+  assert.equal(pideOtraVuelta(path.join(otra, 'src', 'a.js'), { storyPath: path.join(real, 'specs', 's.md'), repoPath: real }), true);
 });
 
 test('Reloop_CodeInRepoOrWorktree_StillRounds @story-8.270 @ac-25 — código en un repo o en un worktree (con .git archivo) sigue pidiendo otra vuelta', (t) => {

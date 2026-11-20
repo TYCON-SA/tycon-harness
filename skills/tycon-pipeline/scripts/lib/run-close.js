@@ -91,8 +91,9 @@ function escapeDeCierre(frenos, sid, desde, escape = 'cerrar-la-ejecucion') {
   return null;
 }
 
-// las vías del registro de escapes por las que una persona autorizó cerrar (la delegación firma en su nombre)
-const VIAS_DE_CIERRE = ['persona', 'reenvio', 'ventana', 'delegacion', 'click', 'mensaje'];
+// las vías del registro de escapes por las que se autorizó cerrar: una persona, la delegación en su nombre, o el arnés
+// cuando el perfil pone el escape como trámite (automatic-signing.js)
+const VIAS_DE_CIERRE = ['persona', 'reenvio', 'ventana', 'delegacion', 'click', 'mensaje', 'automatica'];
 
 /** El `cierre` que deja `clear`. Uno ya escrito (`deuda`) se devuelve tal cual. */
 function cierreDe(marker, { sid, home, ahora = new Date().toISOString() } = {}) {

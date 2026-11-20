@@ -1020,7 +1020,7 @@ test('T45 NombresInventados_Y_SinShell @story-2.73 @ac-36', () => {
   }
   assert.doesNotMatch(fs.readFileSync(MODELS_JS, 'utf8'), /gemma|gpt-oss|qwen/, 'models.js: sin modelos de Ollama ni de Cursor por defecto');
   const suites = fs.readFileSync(path.join(RAIZ, 'scripts', 'tests', 'suites.json'), 'utf8');
-  const piezas = fs.readFileSync(path.join(RAIZ, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const piezas = require('../../../../scripts/tests/lib/pieces-guide.js').piecesText(RAIZ);
   for (const n of ['models-env', 'nightly-model']) {
     assert.ok(suites.includes(`"tests/${n}.test.js"`), `${n}: en suites.json`);
     assert.ok(piezas.includes(`## scripts/lib/${n}.js`), `${n}: en piezas-del-arnes.md`);

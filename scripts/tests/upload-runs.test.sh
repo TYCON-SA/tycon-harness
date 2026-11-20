@@ -1229,8 +1229,8 @@ FUERA="$(grep -n 'blob\.core\.windows\.net' "${RAIZ}"/scripts/metrics/*.js "${RA
 
 # ── T24 · Piezas_SoloCrearYSinVencimiento ── 🔴 Atrapa: «revisar en 2027-03» y «permisos `cw`».
 PIEZAS="${RAIZ}/guides/piezas-del-arnes.md"
-# la ficha corta y su detalle (guides/maintaining/piezas-en-detalle.md, mismo título) se leen juntos
-SECCION="$(for f in "${PIEZAS}" "${RAIZ}/guides/maintaining/piezas-en-detalle.md"; do [ -f "$f" ] && awk '/upload-runs\.js/ && /^#/ {p=1; print; next} p && /^#/ {exit} p' "$f"; done)"
+# la ficha corta (en su grupo, guides/pieces/) y su detalle (guides/maintaining/piezas-en-detalle.md, mismo título) se leen juntos
+SECCION="$(for f in "${PIEZAS}" "${RAIZ}"/guides/pieces/*.md "${RAIZ}/guides/maintaining/piezas-en-detalle.md"; do [ -f "$f" ] && awk '/upload-runs\.js/ && /^#/ {p=1; print; next} p && /^#/ {exit} p' "$f"; done)"
 CABECERA="$(sed -n '1,60p' "${SUBIR}")"
 if echo "${SECCION}" | grep 'sólo crear' >/dev/null && echo "${SECCION}" | grep 'sin vencimiento' >/dev/null && echo "${SECCION}" | grep 'UnauthorizedBlobOverwrite' >/dev/null \
    && echo "${CABECERA}" | grep 'sólo crear' >/dev/null && ! printf '%s\n%s' "${SECCION}" "${CABECERA}" | grep 'revisar en 2027-03' >/dev/null \

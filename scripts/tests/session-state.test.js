@@ -356,7 +356,7 @@ test('T28 Installer_RegistersHooks_Idempotent @story-2.81 @ac-27 — el aplicado
     return out;
   };
   for (let i = 0; i < 2; i += 1) { const r = apply(); assert.strictEqual(r.status, 0, r.stderr + r.stdout); }
-  const want = ['SessionStart·', 'SessionEnd·', 'Notification·permission_prompt', 'PermissionRequest·Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit|Read|Glob|Grep|WebFetch|WebSearch|mcp__.*', 'PreToolUse·AskUserQuestion|ExitPlanMode|mcp__spokenly__ask_user_dictation', 'PostToolUse·', 'UserPromptSubmit·', 'Stop·'];
+  const want = ['SessionStart·', 'SessionEnd·', 'Notification·permission_prompt', 'PermissionRequest·Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit|Read|Glob|Grep|WebFetch|WebSearch|mcp__.*', 'PreToolUse·AskUserQuestion|ExitPlanMode|mcp__spokenly__ask_user_dictation', 'PostToolUse·', 'PostToolUseFailure·', 'UserPromptSubmit·', 'Stop·'];
   assert.deepStrictEqual(Object.keys(claudeCount()).sort(), [...want].sort());
   for (const [k, n] of Object.entries(claudeCount())) assert.strictEqual(n, 1, `${k} una sola vez`);
   // Codex
@@ -772,4 +772,18 @@ test('T22 Oficina_TerminadaSinCerrar_LaTarjetaLoDice @story-8.195 @ac-22 — fro
   const f = lib().fromDisk(w.sdir, 's-ter', { home: w.home, now: ahora });
   assert.strictEqual(f.sentence, 'Arreglo el aviso del pedido');
   assert.strictEqual(f.endAt, until);
+});
+
+test('Claude_ComandoAprobadoQueFalla_CierraLaEspera — el comando que la persona aprobó y salió distinto de 0 también cierra el permiso', () => {
+  const w = world();
+  const sid = 's-falla';
+  const off = { TYCON_WAIT_NOTICE: '0' };
+  const ev = (e) => assert.strictEqual(hook(w, { session_id: sid, ...e }, off).status, 0);
+  ev({ hook_event_name: 'SessionStart', source: 'startup' });
+  ev({ hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'false' } });
+  assert.strictEqual(stateOf(w, sid).waitingFor, 'un permiso');
+  // Claude Code avisa el comando que falló con este evento, no con el PostToolUse
+  ev({ hook_event_name: 'PostToolUseFailure', tool_name: 'Bash', tool_input: { command: 'false' }, error: 'exit 1' });
+  assert.strictEqual(stateOf(w, sid).waitingForOwner, false, 'la espera se cierra');
+  assert.ok(!stateOf(w, sid).permission, "sin el permiso anotado");
 });

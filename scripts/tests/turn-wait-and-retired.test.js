@@ -277,3 +277,18 @@ test('T12 Wip_MotivoVigente_SeVeYVencidoNo @story-8.307 @ac-13', () => {
   assert.ok(wip2.text.length > 0);
   assert.ok(wip2.unreadable.some((x) => /lugares libres/i.test(x)));
 });
+
+// ── owner-wait que termina porque esta sesión dejó de ser la coordinadora (R4) ──────────────────────────────────────
+
+test('OwnerWait_DejaDeSerCoordinadora_DicePorQueTermina', () => {
+  const t = toy();
+  // la primera lectura la ve confirmada (arranca a esperar) y la siguiente ya no: la confirmación se retiró mientras esperaba
+  let llamadas = 0;
+  const antes = OA.coordinadoraConfirmada;
+  OA.coordinadoraConfirmada = (casa, o) => (++llamadas === 1 ? antes(casa, o) : null);
+  try {
+    const r = C.ownerWait({ ...t.opts, env: { TYCON_OWNER_WAIT_POLL_MS: '1' } });
+    assert.strictEqual(r.code, 0);
+    assert.match(r.text, /ya no es la coordinadora confirmada/, 'no termina mudo');
+  } finally { OA.coordinadoraConfirmada = antes; }
+});

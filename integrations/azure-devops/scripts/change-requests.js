@@ -107,7 +107,7 @@ function delProyecto(ctx, org, project, maxPaginas, deadlineMs, rama) {
   return { problem: no('no_medido', `tope de ${maxPaginas} páginas (unos ${maxPaginas * (POR_PAGINA - 1)} pedidos activos): la lista no se leyó entera`) };
 }
 
-function normalizar(p) {
+function normalizar(p, org) {
   return {
     number: Number(p.pullRequestId),
     draft: p.isDraft === true,
@@ -120,6 +120,8 @@ function normalizar(p) {
     author: p.createdBy && p.createdBy.uniqueName ? String(p.createdBy.uniqueName).toLowerCase() : null,
     // el pedido no dice si su validación está corriendo: no se inventa
     ciRunning: null,
+    // cómo ponerle auto-completar, para el aviso del que nadie va a completar (scripts/hooks/stuck-pr-notice.js)
+    autoCompleteCommand: `az repos pr update --id ${Number(p.pullRequestId)} --auto-complete true --org ${org}`,
   };
 }
 
@@ -156,7 +158,7 @@ function listarPedidos(args, ctx) {
     // el pedido del pisado viene en dos páginas, y uno nuevo puede correr la lista hacia abajo
     if (vistos.has(p.pullRequestId)) continue;
     vistos.add(p.pullRequestId);
-    value.push(normalizar(p));
+    value.push(normalizar(p, org));
   }
   return { ok: true, value };
 }

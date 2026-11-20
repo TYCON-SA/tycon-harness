@@ -3286,6 +3286,12 @@
       "requiere": []
     },
     {
+      "__nota": "las firmas de trámite (scripts/lib/automatic-signing.js): lo que el perfil pone en approvals.delegated_signing lo da el arnés solo, sin ventana ni coordinadora, después del control previo del guion; la constancia dice vía automatic y firmante el arnés; owner_only, el nivel 3 y la designación nunca salen solos.",
+      "raiz": "arnes",
+      "ruta": "tests/automatic-signing.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "etapa D de las firmas: harness.js sign firma un id del catálogo en la terminal y lo anota en el registro común; la emergencia, por número de pedido o --commit, deja pasar una vez lo que frenó un freno; el agente no la corre ni se la firma solo.",
       "raiz": "arnes",
       "ruta": "tests/harness-sign.test.js",
@@ -4451,6 +4457,12 @@
       "__nota": "2026-10-04: las suites del nocturno corren repartidas en trabajos paralelos (corrida 11738: 213 suites en 62 min en un solo trabajo, con el tope en 75). scripts/ci/suites-shard.js las reparte por peso: la unión de los trabajos es exactamente la lista y ninguna suite corre dos veces, una suite nueva sin peso entra igual, un pedido mal hecho sale 2 sin imprimir lista, y al juntar, las suites de un trabajo que no terminó cuentan como «(no-medida)», nunca como verdes. Sin bash ni red.",
       "raiz": "arnes",
       "ruta": "tests/suites-shard.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "2026-11-19 (decisión del dueño, propuesta 4 de la validación del privado): el banco de controles corre en la validación de un pedido sólo si el cambio toca lo que el banco lee. scripts/ci/bench-for-change.js dice `si` o `no`: se saltea sólo si TODO lo tocado es una suite o un dato de una subcarpeta de fixtures que el banco no lee; un freno, una biblioteca, una skill, una ruta rara, una lista vacía o ilegible, `--all` o `main` corren. Recorre el código que corre el banco y se pone roja si aparece un lector nuevo de scripts/tests/. Sin bash ni red.",
+      "raiz": "arnes",
+      "ruta": "tests/bench-for-change.test.js",
       "requiere": []
     },
     {

@@ -276,10 +276,23 @@ function motivoDelRepo({ repo, cwd, estado, sesion, destino, raiz = raizDelRepo 
  * fábrica con la clave del perfil, `confirmedDesignation`), y el repo del pendiente es de la destino (`motivoDelRepo`).
  */
 function antesDelPendiente({ via, registro, propia = null, pedida = null, estado, cwd, repo, raiz = raizDelRepo, designada } = {}) {
-  const sinPersona = via === 'delegacion' || (registro && ['avisado', 'delegacion'].includes(registro.via));
+  const sinPersona = via === 'delegacion' || (registro && ['avisado', 'delegacion', 'automatica'].includes(registro.via));
   if (!sinPersona) return null;
   const no = (motivo) => ({ codigo: 1, motivo });
   const soloLaVia = !registro || Object.keys(registro).every((k) => k === 'via');
+  // la firma de trámite (automatic-signing.js) no tiene coordinadora: la pide cualquier sesión, también para sí. Vale sólo
+  // sobre un repo donde trabaja la sesión destino
+  if (registro && registro.via === 'automatica') {
+    const destinoAuto = soloLaVia ? (pedida || propia) : registro.destino;
+    if (!destinoAuto) return no('el registro de la firma no dice para qué sesión es: un pendiente no se aprueba sin persona sin saberlo');
+    if (!cwd) return no('el pedido no dice desde qué carpeta se corre');
+    const delPendiente = raiz(path.resolve(cwd, repo || '.'));
+    if (!delPendiente) return no(`${repo || cwd} no es un repo de git`);
+    const delDestino = reposDe(estado, destinoAuto, raiz);
+    if (delDestino === undefined) return no(`no pude leer el marcador o el arreglo rápido de la sesión ${destinoAuto}`);
+    if (!delDestino.includes(delPendiente.clave)) return no(`${delPendiente.ruta} no es un repo donde trabaja la sesión ${destinoAuto} (ni su ejecución abierta ni su arreglo rápido)`);
+    return null;
+  }
   const sesion = soloLaVia ? propia : registro.sesion;
   const destino = soloLaVia ? (pedida || propia) : registro.destino;
   if (!sesion || !destino) return no('el registro de la firma no dice para qué sesión es: un pendiente no se aprueba sin persona sin saberlo');
@@ -351,6 +364,6 @@ function cli(argv) {
   return 2;
 }
 
-module.exports = { accountPaths, confirmationRecord, confirmaLaDesignacion, confirmedDesignation, delegaSinVentana, firmaPorElDueno, signerOf, NUNCA_DELEGABLES, motivoDelRepo, antesDelPendiente };
+module.exports = { accountPaths, confirmationRecord, confirmaLaDesignacion, confirmedDesignation, delegaSinVentana, firmaPorElDueno, signerOf, NUNCA_DELEGABLES, motivoDelRepo, antesDelPendiente, profileLists };
 
 if (require.main === module) process.exit(cli(process.argv.slice(2)));

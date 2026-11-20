@@ -220,7 +220,7 @@ function anotarFallo(home, motivo) {
 // `reenvio` y `sin-conversacion` son de antes de la ventana de permiso, cuando la autorización salía de la
 // conversación: ya no se escriben, y siguen en la lista para leer los renglones viejos. `click` y `mensaje`: la persona lo
 // aprobó en el cuadro de opciones o con un «aprobado» escrito (lib/owner-approvals.js).
-const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion', 'ventana', 'click', 'mensaje'];
+const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion', 'ventana', 'click', 'mensaje', 'automatica'];
 const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,
 // y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
