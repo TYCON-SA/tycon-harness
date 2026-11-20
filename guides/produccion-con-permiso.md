@@ -19,8 +19,8 @@ Dos causas, y las dos se arreglan con lo mismo:
 
 ## Cómo funciona, en una línea cada cosa
 
-- **Una sola puerta**: `/opt/tycon/bin/tycon-prod-sql <host> 'select …'`. Es lo único que consulta
-  producción, y **la propia puerta abre un cuadro del sistema** con el servidor y la sentencia: vos la
+- **Una sola puerta**: `/opt/tycon/bin/tycon-prod-sql <host> '<sentencia>'`. Es lo único que consulta
+  o cambia producción —un `select`, o un cambio como `alter database …`—, y **la propia puerta abre un cuadro del sistema** con el servidor y la sentencia: vos la
   leés y la aprobás antes de que se lea la clave. Ese cuadro sale aunque a la puerta la llame un guion,
   porque lo pide ella y no el asistente. Es la única ventana: Claude Code no pregunta además por la puerta.
 - **Un freno** prohíbe todo otro camino a esa base: `sqlcmd` directo, `az sql`, una cadena de
@@ -32,6 +32,29 @@ Dos causas, y las dos se arreglan con lo mismo:
   hasta que alguien lo declare.
 - **El freno vive en la configuración administrada de root**, que es lo único que resiste a
   `disableAllHooks`, a otra sesión y a la herramienta Monitor. No tiene variable que lo apague.
+
+## Emergencia: producción caída
+
+Cuando producción está caída (por ejemplo, la base llegó a su tope y dejó de escribir), el camino es la misma puerta.
+No hace falta el portal de Azure ni que alguien te dicte los comandos. Cada paso que toca producción abre el cuadro, y
+lo aprueba **la persona frente a la Mac**, que tiene que poder autorizar ese cambio en esa base.
+
+1. **Probá la conexión**: `/opt/tycon/bin/tycon-prod-sql <host> 'select 1'`.
+2. **Si la rechaza el firewall** (error 40615, «is not allowed to access the server»), la puerta lo dice y da el
+   comando: `/opt/tycon/bin/tycon-prod-sql --open-firewall <host>`. Abre la regla de esta máquina, con cuadro, y la
+   regla se cierra sola al terminar la sesión.
+3. **Mirá el estado** por la puerta, no por `az`: el tamaño y el tope con
+   `'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`, y la edición y el nivel con
+   `'select edition, service_objective from sys.database_service_objectives'`.
+4. **Mitigá con una sentencia**, que la persona aprueba en el cuadro. Por ejemplo, subir el tope:
+   `/opt/tycon/bin/tycon-prod-sql <host> 'alter database [<base>] modify (maxsize = 250 GB)'`. El nivel de servicio
+   también se cambia así (`modify (service_objective = '…')`, con la comilla escapada como en el shell).
+5. **Contale a la persona qué cambió** y anotalo en el incidente. La regla del firewall se cierra sola; si querés
+   cerrarla ya: `--close-firewall <host>`.
+
+Lo que se frena igual, aun en una emergencia: `sqlcmd` directo, `az sql …` contra un servidor de producción (también
+las lecturas, como `az sql db list`; el freno dice qué consulta usar en su lugar) y la regla de firewall creada con
+`az`. Todas las formas de la puerta, sin tocar producción: `/opt/tycon/bin/tycon-prod-sql --help`.
 
 ## Instalarlo (una vez por máquina, sólo quien toca producción)
 
@@ -156,6 +179,12 @@ Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda
 ```bash
 # consultar producción (se abre el cuadro: leelo antes de aprobar)
 /opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select top 10 * from Articulos'
+
+# un cambio va por el mismo camino, con el mismo cuadro
+/opt/tycon/bin/tycon-prod-sql <host> 'alter database [acme] modify (maxsize = 250 GB)'
+
+# todas las formas (no toca producción)
+/opt/tycon/bin/tycon-prod-sql --help
 
 # más filas de las 50 por defecto
 /opt/tycon/bin/tycon-prod-sql <host> 'select …' --max-rows 200
