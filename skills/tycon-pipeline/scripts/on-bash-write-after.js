@@ -40,6 +40,7 @@ const os = require('os');
 const path = require('path');
 
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');
+const { homeCommand } = require('./lib/home-command.js');
 const photo = require('./lib/protected-photo.js');
 
 const RAIZ_DEL_ARNES = path.resolve(__dirname, '..', '..', '..');
@@ -306,9 +307,9 @@ function mensaje(hechas, fallas, mezclado) {
   lineas.push('', 'Una historia que no está en borrador, el estado de un borrador, una constancia y los marcadores de la ejecución no se',
     'escriben desde un comando: desde la consola no se ve qué queda escrito. La historia se edita con la herramienta de',
     'edición y su estado lo cambia marker.js:',
-    '  · node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story-status <ruta de la historia> <estado>');
-  if (mezclado) lineas.push('', 'El comando mezclaba marker.js con otros programas: después de correr no se sabe cuál escribió cada cosa.',
-    'Corré marker.js en un comando aparte.');
+    `  · ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} update-story-status <ruta de la historia> <estado>`);
+  if (mezclado) lineas.push('', 'El comando mezclaba el del orquestador (marker.js) con otros programas: después de correr no se sabe cuál',
+    'escribió cada cosa. Corré el del orquestador solo, sin otros programas en la misma línea.');
   return lineas.join('\n');
 }
 
