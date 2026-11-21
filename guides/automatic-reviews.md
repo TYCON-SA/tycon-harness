@@ -161,3 +161,18 @@ constancia del verificador, diferido, o eximido por el dueño.
 | O16 | Cuántos verificadores | `review_runner.verifiers` | `per_lens` · `per_finding` | `per_lens` | `per_finding` para medir uno por hallazgo |
 | O17 | Desde qué gravedad un hallazgo confirmado frena | `review.blocking_severity` | `bug` · `robustness` · `all` | `bug` | `robustness` o `all` para frenar también por lo demás |
 | O18 | Qué lentes corre la revisión del plan | `plan_review.lenses` | lista de `suposicion-falsa` · `ac-sin-cubrir` · `prueba-que-falta` · `riesgo-sin-defensa` | `["suposicion-falsa"]` | sumar lentes para una revisión más amplia, a cambio de más agentes |
+
+## Si la coordinadora no atiende
+
+Una sesión no queda quieta esperando a una coordinadora que no atiende. Lo decide el arnés, nunca la sesión:
+
+- **La revisión del plan.** Si la coordinadora designada no está viva (Claude Code borró su archivo de sesión, o su
+  proceso ya no está), la revisión la lanza la propia sesión. Si está viva, el arnés anota el pedido al cerrar el plan;
+  si ella no lanza la revisión en `plan_review.coordinator_wait_minutes` minutos (de fábrica 10, de 1 a 120), la lanza
+  la sesión. Sin saber si vive, la sesión la espera esos minutos.
+- **La pregunta a la persona.** El freno del cuadro le manda la pregunta a la coordinadora y lo anota. Si en esos mismos
+  minutos ella no contesta, la sesión vuelve a preguntar y la pregunta le llega a la persona.
+- **La coordinadora se entera sola:** su aviso de cada turno nombra cada plan que espera su revisión y cada pregunta que
+  le mandó el freno, con los minutos que le quedan.
+
+Esta clave todavía no está en la pantalla del sitio: se cambia con un pedido al perfil del equipo.

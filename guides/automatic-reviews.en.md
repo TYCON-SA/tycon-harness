@@ -163,3 +163,18 @@ refuted with the verifier's record, deferred, or waived by the owner.
 | O16 | How many verifiers | `review_runner.verifiers` | `per_lens` · `per_finding` | `per_lens` | `per_finding` to measure one per finding |
 | O17 | From what severity a confirmed finding blocks | `review.blocking_severity` | `bug` · `robustness` · `all` | `bug` | `robustness` or `all` to also block on the rest |
 | O18 | Which lenses the plan review runs | `plan_review.lenses` | list of `suposicion-falsa` · `ac-sin-cubrir` · `prueba-que-falta` · `riesgo-sin-defensa` | `["suposicion-falsa"]` | add lenses for a wider review, at the cost of more agents |
+
+## If the coordinator does not attend
+
+A session does not sit still waiting for a coordinator that does not attend. The harness decides, never the session:
+
+- **The plan review.** If the designated coordinator is not alive (Claude Code deleted its session file, or its process
+  is gone), the session launches the review itself. If it is alive, the harness records the request when the plan
+  closes; if the coordinator does not launch the review within `plan_review.coordinator_wait_minutes` minutes (built-in
+  10, from 1 to 120), the session launches it. Without knowing whether it is alive, the session waits those minutes.
+- **The question to the person.** The question-box guard sends the question to the coordinator and records it. If the
+  coordinator does not answer within those same minutes, the session asks again and the question reaches the person.
+- **The coordinator finds out on its own:** its every-turn notice names each plan waiting for its review and each
+  question the guard sent it, with the minutes it has left.
+
+This key is not on the site screen yet: it is changed with a pull request to the team profile.
