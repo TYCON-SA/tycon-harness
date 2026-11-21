@@ -41,7 +41,7 @@ const QUESTION_TOOLS = new Set(['AskUserQuestion', 'mcp__spokenly__ask_user_dict
 const MESSAGE_TOOL = 'SendMessage';
 // un destino que no es otra sesión: la conversación principal o un ayudante de la propia sesión (su id)
 const NOT_A_SESSION = /^(main|a[0-9a-f]{16})$/;
-const SELLO = /\bfirma ([\w:.-]+) · sesi[oó]n [\w-]+ · c[oó]digo [\w-]+/;
+const SELLO = /\bfirma ([\w:.-]+) · sesi[oó]n ([\w-]+) · c[oó]digo [\w-]+/;
 const NOMBRE = 'background-question-guard';
 
 const stateDirOf = (home) => require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(home);
@@ -76,7 +76,7 @@ function textoDeLaNegativa({ nombre, sid, firma = null, soloClick = false, duda 
       : `Esta sesión la abrió la coordinadora: no le preguntes a la persona. Mandale a «${nombre}» (${sid}) por SendMessage la pregunta tal cual,`,
     'lo que se decide en tres renglones (el plan, si es un plan) y la ruta del archivo. Esperá su aviso.',
   ];
-  if (firma && soloClick) partes.push('Es una firma que sólo aprueba un click en la pestaña que trabaja: no se aprueba desde la pestaña de la coordinadora. Queda la terminal del dueño, y eso es lo que le pasás.');
+  if (firma && soloClick) partes.push('Es una firma que sólo aprueba un click en la pestaña que trabaja, y su sello nombra otra sesión: se muestra en la pestaña de esa sesión, o queda la terminal del dueño.');
   else if (firma) partes.push('Es una pregunta de firma: va tal cual, sin cambiarle una letra; la coordinadora la muestra en su pestaña, y con el click repetís el comando acá.');
   return partes.join(' ');
 }
@@ -285,6 +285,16 @@ function decidir(evento, { home = os.homedir(), env = process.env, arnes, ahora 
   if (!sid || !/^[\w-]+$/.test(String(sid))) return null;
   const c = coordinadoraDeLaLanzada({ home, sid, env, arnes });
   if (!c) return null;
+  const m = SELLO.exec(textoDe(d.tool_input));
+  const firma = m ? m[1] : null;
+  const soloClick = firma ? esSoloClick(home, firma) : false;
+  // la firma de sólo click de esta misma sesión (nombrar o retirar la coordinadora) vale sólo en esta pestaña: el cuadro
+  // se muestra acá, y el dueño lo contesta en ella o por control remoto; mandarlo a la coordinadora dejaba sólo la terminal.
+  // Sólo con una pregunta y un sello: otra pregunta en el mismo cuadro seguiría yendo a la coordinadora. Va antes del
+  // registro de preguntas: ese cuadro no es una pregunta para la coordinadora
+  const preguntas = d.tool_input && Array.isArray(d.tool_input.questions) ? d.tool_input.questions.length : 1;
+  const sellos = textoDe(d.tool_input).match(new RegExp(SELLO.source, 'g')) || [];
+  if (soloClick && m[2] === String(sid) && preguntas === 1 && sellos.length === 1) return null;
   // la coordinadora tiene sus minutos para contestar; si no, la pregunta le llega a la persona y la sesión no queda quieta.
   // El registro lo lleva este freno: sin poder leerlo o escribirlo, se niega como siempre, y queda anotado
   let espera = null;
@@ -293,9 +303,7 @@ function decidir(evento, { home = os.homedir(), env = process.env, arnes, ahora 
     if (r.pasa) return null;
     espera = r.quedan;
   } catch (e) { logError(home, `no pude llevar el registro de las preguntas a la coordinadora (${(e && e.message) || e}): negué sin plazo`); }
-  const m = SELLO.exec(textoDe(d.tool_input));
-  const firma = m ? m[1] : null;
-  const base = textoDeLaNegativa({ nombre: c.name, sid: c.sid, firma, soloClick: firma ? esSoloClick(home, firma) : false, duda: c.duda });
+  const base = textoDeLaNegativa({ nombre: c.name, sid: c.sid, firma, soloClick, duda: c.duda });
   const plazo = espera ? ` La coordinadora lo ve en su aviso de cada turno. Si en ${espera} min no te la resuelve, volvé a hacer la misma pregunta con el cuadro: le llega a la persona.` : '';
   return { decision: 'deny', reason: `${base}${plazo}` };
 }
