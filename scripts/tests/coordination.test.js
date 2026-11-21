@@ -2949,3 +2949,162 @@ test('T49 Status_EsperaVieja_GanaElRegistroDeTurnos: con su portón o su lugar d
   const s2 = C.status(opts(62));
   assert.deepStrictEqual(s2.suiteWaiting.map((x) => x.session), ['Bea'], JSON.stringify(s2.suiteWaiting));
 });
+
+// ── 8.290: los nombres largos que no se pueden leer, la lista de recién abiertas y las respuestas tomadas ──
+
+const longPair = () => ({ pedida: `${'y'.repeat(40)}-pedida`, otra: `${'y'.repeat(40)}-otra` });
+const failRead = (code) => () => { const e = new Error(`falla ${code}`); e.code = code; throw e; };
+
+test('T1 CloseStop_LongNameUnreadableFile_SaysCouldNotRead @story-8.290 @ac-1 @ac-2: «no pude leer» con la ruta cuando no se pudo leer; «No encuentro» sólo si se leyó y no está', () => {
+  const posix = !POSIX_PERMS.skip;
+  const { pedida, otra } = longPair();
+  // (a) fullSessionName directo: la carpeta y el archivo que no se leen devuelven el problema con la ruta
+  const a = closeLab();
+  const dir = path.join(a.home, '.claude', 'sessions');
+  bg(a, pedida, a.repo);
+  assert.strictEqual(C.fullSessionName(a.home, `sid-${pedida}`), pedida);
+  assert.strictEqual(C.fullSessionName(a.home, 'sid-nadie'), null, 'legible y no está: null, como hoy');
+  const porLectura = C.fullSessionName(a.home, 'sid-nadie', { readSessionFile: failRead('EACCES') });
+  assert.ok(porLectura && /\.json \(EACCES\)/.test(porLectura.problem), JSON.stringify(porLectura));
+  if (posix) {
+    fs.chmodSync(dir, 0o000);
+    let r;
+    try { r = C.fullSessionName(a.home, `sid-${pedida}`); } finally { fs.chmodSync(dir, 0o755); }
+    assert.ok(r && r.problem.includes(dir) && /EACCES/.test(r.problem), JSON.stringify(r));
+    const f = path.join(dir, `sid-${pedida}.json`);
+    fs.chmodSync(f, 0o000);
+    try { r = C.fullSessionName(a.home, `sid-${pedida}`); } finally { fs.chmodSync(f, 0o644); }
+    assert.ok(r && r.problem.includes(f), JSON.stringify(r));
+  }
+  // (b) el archivo se vuelve ilegible entre las dos lecturas: «No pude leer <ruta> (<código>)», sin tocar nada
+  const b = closeLab();
+  bg(b, pedida, b.repo);
+  const rb = closeIt(b, pedida, { readSessionFile: failRead('EACCES') });
+  assert.strictEqual(rb.ok, false, rb.message);
+  assert.match(rb.message, /No pude leer .*sid-y+-pedida\.json \(EACCES\): no cerré nada/);
+  assert.doesNotMatch(rb.message, /No encuentro/);
+  const sb = stopIt(b, pedida, { readSessionFile: failRead('EIO') });
+  assert.match(sb.message, /No pude leer .*\(EIO\): no paré nada/);
+  assert.deepStrictEqual(closed(b), []);
+  // (c) ilegible desde antes: sale por la lectura de todas las sesiones, como hoy
+  if (posix) {
+    const c = closeLab();
+    bg(c, pedida, c.repo);
+    const f = path.join(c.home, '.claude', 'sessions', `sid-${pedida}.json`);
+    fs.chmodSync(f, 0o000);
+    let rc;
+    try { rc = closeIt(c, pedida); } finally { fs.chmodSync(f, 0o644); }
+    assert.match(rc.message, /No pude leer todas las sesiones/);
+    assert.deepStrictEqual(closed(c), []);
+  }
+  // (d) legible y sin el nombre completo pedido: «No encuentro la sesión», como hoy
+  const d = closeLab();
+  bg(d, otra, d.repo);
+  assert.match(closeIt(d, pedida).message, /No encuentro la sesión «y+-pedida»: no cerré nada/);
+  assert.deepStrictEqual(closed(d), []);
+});
+
+test('T2 PruneLaunched_LongNamesSamePrefix_DropsOnlyTheNamed @story-8.290 @ac-3: abrir una de nombre largo no saca a otra que empieza igual', () => {
+  const t = toy();
+  const { pedida, otra } = longPair();
+  fs.mkdirSync(path.dirname(C.launchedFile(t.home)), { recursive: true });
+  fs.writeFileSync(C.launchedFile(t.home), JSON.stringify([{ name: pedida, cwd: t.root, at: NOW - 1000, por: null }, { name: otra, cwd: t.root, at: NOW - 1000, por: null }]));
+  C.noteLaunched({ home: t.home, now: NOW, name: pedida, cwd: t.root });
+  const rows = JSON.parse(fs.readFileSync(C.launchedFile(t.home), 'utf8'));
+  assert.deepStrictEqual(rows.map((r) => [r.name, r.at]), [[otra, NOW - 1000], [pedida, NOW]]);
+  assert.deepStrictEqual(C.pruneLaunched({ home: t.home, now: NOW, drop: pedida, sessions: new Map() }).map((r) => r.name), [otra]);
+});
+
+test('T3 PruneLaunched_ShortName_DropsAsToday @story-8.290 @ac-4: un nombre corto sale como hoy', () => {
+  const t = toy();
+  fs.mkdirSync(path.dirname(C.launchedFile(t.home)), { recursive: true });
+  fs.writeFileSync(C.launchedFile(t.home), JSON.stringify([{ name: 'corta', cwd: t.root, at: NOW, por: null }, { name: 'otra', cwd: t.root, at: NOW, por: null }]));
+  assert.deepStrictEqual(C.pruneLaunched({ home: t.home, now: NOW, drop: 'corta', sessions: new Map() }).map((r) => r.name), ['otra']);
+});
+
+// Las respuestas de la persona, armadas a mano: el renglón que anota recordOwnerReply y la conversación que lo confirma.
+const DEAD_PID = 2147483646;
+function replyLab() {
+  const t = toy();
+  const file = path.join(C.coordinationDir(t.home), 'owner-replies.jsonl');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const said = [];
+  const transcript = path.join(t.home, '.claude', 'projects', '-repo', 'ses-a.jsonl');
+  fs.mkdirSync(path.dirname(transcript), { recursive: true });
+  const row = (text) => {
+    said.push(text);
+    fs.writeFileSync(transcript, said.map((m) => `${JSON.stringify({ type: 'user', message: { role: 'user', content: m }, origin: { kind: 'human' }, promptSource: 'typed', entrypoint: 'cli' })}\n`).join(''));
+    const sha = require('crypto').createHash('sha256').update(text).digest('hex');
+    return `${JSON.stringify({ sid: 'ses-a', at: new Date(NOW - 60000).toISOString(), text, sha, transcript, from: 0 })}\n`;
+  };
+  const read = (extra = {}) => { const problems = []; const lines = C.ownerReplyLines({ home: t.home, now: NOW, ...extra }, COORD_SID, problems); return { text: lines.join('\n'), problems }; };
+  const taken = () => fs.readdirSync(path.dirname(file)).filter((f) => f.endsWith('.leyendo')).sort();
+  const times = (text, s) => text.split(`«${s}»`).length - 1;
+  return { ...t, file, row, read, taken, times };
+}
+
+test('T4 OwnerReplies_OrphanTakenFile_DeliveredOnce @story-8.290 @ac-5: el tomado de un proceso que no vive se entrega una vez, con o sin archivo de respuestas', () => {
+  const t = replyLab();
+  fs.writeFileSync(`${t.file}.${DEAD_PID}.leyendo`, t.row('del huerfano'));
+  fs.writeFileSync(t.file, t.row('nueva'));
+  const r = t.read();
+  assert.strictEqual(t.times(r.text, 'del huerfano'), 1, r.text);
+  assert.strictEqual(t.times(r.text, 'nueva'), 1, r.text);
+  assert.deepStrictEqual(r.problems, []);
+  assert.deepStrictEqual(t.taken(), [], 'no queda ningún tomado');
+  assert.doesNotMatch(t.read().text, /te contestaron/, 'la lectura siguiente no repite');
+  // sin archivo de respuestas: el huérfano se recupera igual
+  fs.writeFileSync(`${t.file}.${DEAD_PID}.abc123.leyendo`, t.row('solo huerfano'));
+  assert.ok(!fs.existsSync(t.file));
+  const s = t.read();
+  assert.strictEqual(t.times(s.text, 'solo huerfano'), 1, s.text);
+  assert.deepStrictEqual(t.taken(), []);
+});
+
+test('T5 OwnerReplies_LiveOrUnknownTakenFile_LeftAndSaid @story-8.290 @ac-6: el de un proceso vivo no se toca; el ilegible y el de pid raro quedan y se dicen', () => {
+  const t = replyLab();
+  const vivo = `${t.file}.${process.pid}.k1.leyendo`;
+  const contenido = t.row('lo esta leyendo otro');
+  fs.writeFileSync(vivo, contenido);
+  const raro = `${t.file}.abc.leyendo`;
+  fs.writeFileSync(raro, t.row('pid raro'));
+  const ilegible = `${t.file}.${DEAD_PID}.k2.leyendo`;
+  fs.writeFileSync(ilegible, t.row('ilegible'));
+  const posix = !POSIX_PERMS.skip;
+  if (posix) fs.chmodSync(ilegible, 0o000);
+  let r;
+  try { r = t.read(); } finally { if (posix) fs.chmodSync(ilegible, 0o644); }
+  assert.strictEqual(fs.readFileSync(vivo, 'utf8'), contenido, 'el vivo queda intacto');
+  assert.ok(!r.problems.some((p) => p.includes(vivo)), 'el vivo no es un problema');
+  assert.ok(fs.existsSync(raro) && r.problems.some((p) => p.includes(raro)), JSON.stringify(r.problems));
+  if (posix) {
+    assert.doesNotMatch(r.text, /te contestaron/, r.text);
+    assert.ok(fs.existsSync(ilegible) && r.problems.some((p) => p.includes(ilegible)), JSON.stringify(r.problems));
+  }
+});
+
+test('T6 OwnerReplies_OrphanTakenByOther_NotReadTwice @story-8.290 @ac-5: si otro lector lo tomó antes, no se lee ni se entrega', () => {
+  const t = replyLab();
+  const huerfano = `${t.file}.${DEAD_PID}.leyendo`;
+  fs.writeFileSync(huerfano, t.row('ya lo tomo otro'));
+  const r = t.read({ renameOrphan: () => { const e = new Error('lo tomó otro'); e.code = 'ENOENT'; throw e; } });
+  assert.doesNotMatch(r.text, /te contestaron/, r.text);
+  assert.deepStrictEqual(r.problems, []);
+  assert.ok(fs.existsSync(huerfano), 'no se borró: no se leyó');
+});
+
+test('T7 OwnerReplies_OwnPidLeftover_NotOverwritten @story-8.290 @ac-5 @ac-7: el tomado nuevo lleva su marca y no pisa uno viejo del mismo pid', () => {
+  const t = replyLab();
+  const viejo = `${t.file}.${process.pid}.leyendo`;
+  const contenido = t.row('vieja');
+  fs.writeFileSync(viejo, contenido);
+  fs.writeFileSync(t.file, t.row('nueva'));
+  const tomados = [];
+  const r = t.read({ onTaken: (p) => tomados.push(p) });
+  assert.strictEqual(t.times(r.text, 'nueva'), 1, r.text);
+  assert.strictEqual(t.times(r.text, 'vieja'), 0, r.text);
+  assert.strictEqual(fs.readFileSync(viejo, 'utf8'), contenido, 'el viejo no se pisó');
+  assert.deepStrictEqual(t.taken(), [path.basename(viejo)]);
+  assert.strictEqual(tomados.length, 1);
+  assert.match(path.basename(tomados[0]), new RegExp(`^owner-replies\\.jsonl\\.${process.pid}\\.[0-9a-f]{8,}\\.leyendo$`));
+});
