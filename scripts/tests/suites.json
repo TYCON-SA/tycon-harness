@@ -1783,6 +1783,12 @@
       "requiere": []
     },
     {
+      "__nota": "8.267 tanda B: cuando main avanza durante una corrida, el sello de lo revisado y «cambios sin declarar» no se contradicen (rama al día, sin traer main, y main que vuelve a avanzar después de traerlo).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/main-advances-during-run.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.115 (T14, T16): las decisiones de forma de ruta del pipeline (lib/path-forms.js) con path.win32 y path.posix: la carpeta e2e con cualquier separador, un archivo de otra unidad fuera del repo, dest con /, y atdd-commit-gate con barras y cajas mezcladas.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/path-forms.test.js",
