@@ -84,6 +84,13 @@ function laQueAnda(renglones, prod) {
 
 // Una falla que una instalación posterior ya resolvió: la versión instalada es la que falló, o una más nueva.
 function fallaResuelta(falla, prod) {
+  // sin la versión que falló (falló antes de saberla), la resolvió una instalación escrita después de la falla
+  if (!falla.attempted_version) {
+    let instalada;
+    try { instalada = fs.statSync(path.join(prod, 'installed-release.json')).mtimeMs; } catch { return false; }
+    const at = Date.parse(falla.at || '');
+    return Number.isFinite(at) && instalada > at;
+  }
   const c = compararVersiones(versionInstalada(prod), falla.attempted_version);
   return c !== null && c >= 0;
 }

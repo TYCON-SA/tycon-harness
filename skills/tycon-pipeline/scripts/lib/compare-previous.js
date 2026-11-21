@@ -1167,7 +1167,7 @@ function freno({ storyPath, repos, runDir, stateDir, story, marker = null }) {
   } else if (runDir) {
     try { fs.rmSync(path.join(runDir, AVISOS), { force: true }); } catch (_) { /* no estaba */ }
   }
-  return { medido: true, candidatos: c.candidatos, sinRepo: c.sinRepo, bloquea: !!(j.faltan.length || j.noDeclaradas.length), lineas, avisos, juicio: j };
+  return { medido: true, candidatos: c.candidatos, sinRepo: c.sinRepo, noMedidos: c.noMedidos || [], bloquea: !!(j.faltan.length || j.noDeclaradas.length), lineas, avisos, juicio: j };
 }
 
 module.exports = { compararHumo, normalizar, comparar, tocaLoReal, encierro, perfilSandbox, barrer, limpiar, leerInforme, anotarEntrada, informeVerificado, raizDelHumo, reposDeLaSesion, archivoQueCorre, topes,

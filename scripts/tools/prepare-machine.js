@@ -103,7 +103,11 @@ function hasExternalImports(main, home = os.homedir()) {
       const target = ref.startsWith('~') ? path.join(home, ref.slice(1))
         : (path.isAbsolute(ref) || /^[A-Za-z]:[\\/]/.test(ref)) ? path.resolve(ref)
           : path.resolve(path.dirname(file), ref);
-      if (!fs.existsSync(target)) continue;
+      // un archivo que no existe no se carga; uno que no se puede mirar (sin permiso) no es «no existe»
+      try { fs.statSync(target); } catch (e) {
+        if (e.code === 'ENOENT' || e.code === 'ENOTDIR') continue;
+        return null;
+      }
       const back = path.relative(main, target);
       if (back.startsWith('..') || path.isAbsolute(back)) return true;
       if (nivel + 1 < PROFUNDIDAD_DE_IMPORTS) cola.push({ file: target, nivel: nivel + 1 });
@@ -113,9 +117,16 @@ function hasExternalImports(main, home = os.homedir()) {
 }
 
 // Lo que eligió la organización para actualizar el freno: «auto» o «password», con el aviso si no se pudo leer bien.
-function guardUpdate(cfg) {
+function guardUpdate(cfg, arnes) {
   const rota = (cfg.errores || []).find((e) => e.clave === 'guard.update');
   if (rota) return { value: 'password', note: `guard.update está roto en el perfil del equipo (${rota.motivo}): lo tomo como «con la contraseña»` };
+  // `guard.update` sale sólo del perfil del árbol del arnés: si ese archivo no se lee entero (un error sin clave), no
+  // se sabe qué eligió la organización, y se dice en vez de tomarlo callado como «con la contraseña». Un archivo de la
+  // máquina roto, o un TYCON_PROFILE roto, no cambian esta clave
+  let delArbol = null;
+  try { delArbol = require(path.join(__dirname, '..', 'lib', 'tycon-config.js')).perfilDelArbol(arnes).ruta; } catch (_) { delArbol = null; }
+  const ilegible = (cfg.errores || []).find((e) => !e.clave && (!delArbol || e.archivo === delArbol));
+  if (ilegible) return { value: 'password', note: `no pude leer el perfil del equipo${ilegible.archivo ? ` (${ilegible.archivo})` : ''}: ${ilegible.motivo}; no sé si la organización eligió que el freno se actualice solo, lo tomo como «con la contraseña»` };
   return { value: cfg.valores && cfg.valores.guard && cfg.valores.guard.update === 'auto' ? 'auto' : 'password' };
 }
 
@@ -130,7 +141,7 @@ function guardItems({ judge, cfg, prodRoot, arnes, platform, home }) {
   }
   const installer = path.join(arnes, 'scripts', 'production', 'install-guard.sh');
   const permission = fs.existsSync(path.join(prodRoot, 'opt', 'tycon', 'production', 'auto-update.json'));
-  const gu = guardUpdate(cfg);
+  const gu = guardUpdate(cfg, arnes);
   if (gu.note) items.push({ ok: null, text: gu.note });
   // los avisos del freno tal cual, salvo el de «quedó viejo», que va con el comando de este caso. Un renglón que empieza
   // con espacios sigue al aviso de arriba; uno 🟠 dice que el aviso no pudo mirar algo
