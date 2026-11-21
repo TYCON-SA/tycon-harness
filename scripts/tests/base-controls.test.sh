@@ -646,7 +646,7 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "${R}/scripts/ci/nuevo.sh"
 inv "${R}" 'j.controls.push({name:"nuevo",script:"scripts/ci/nuevo.sh",rules:[]})'; commit "${R}" "control nuevo sin llamar"
 pr "${R}"; printf 'x\n' > "${R}/docs/x.txt"; commit "${R}"
 run "${R}" "${T}/t10g.out"; is "T10 el pedido que no lo arregla sigue en rojo" "1" "${RC}"
-# sólo el control que nada corre se perdona: un dato sin clasificar en main deja una regla sin proteger, y frena aunque el
+# sólo se perdona el control que ningún paso ejecuta: un dato sin clasificar en main deja una regla sin proteger, y frena aunque el
 # pedido deje su inventario limpio
 R="${T}/t10h"; make_base "${R}"
 printf '{}\n' > "${R}/scripts/ci/toy-extra.json"; printf '%s\n' '# lee "scripts/ci/toy-extra.json"' >> "${R}/scripts/ci/toy-check.sh"; commit "${R}" "dato sin clasificar en main"
