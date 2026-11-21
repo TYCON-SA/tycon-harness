@@ -186,6 +186,7 @@ TG_SUITES_PID=""
 TG_TREE_PUB_ROOT=""
 TG_NO_COMPANIONS=""
 TG_TREE_TOUCHED_FILE=""
+_TG_HEREDADOS_ARGS=()
 TG_TOP_FULL=""
 TG_FULL_SUITE_BY=""
 TG_MEASURED=""
@@ -885,6 +886,8 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     _tg_tree_field() { node -e 'const j=JSON.parse(process.argv[1]);const v=process.argv[2].split(".").reduce((o,k)=>o==null?o:o[k],j);process.stdout.write(v==null?"":String(v))' "$_TG_TREE_JSON" "$1"; }
     _TG_PUB_ROOT="$(_tg_tree_field base.root)"
     TG_TREE_PUB_ROOT="$_TG_PUB_ROOT"
+    # el juez de heredados mide un caso que la foto no conoce sobre los dos origin/main: le pasa de qué repos
+    _TG_HEREDADOS_ARGS=(--assembled --private "$(_tg_tree_field private.root)" --public "$_TG_PUB_ROOT")
     _tg_rama="$(_tg_tree_field base.branch)"
     _tg_equipo="$(_tg_tree_field team)"
     # de dónde salió la capa del equipo (lib/private-tree.js → teamLayer): la variable, lo que declara la máquina, o
@@ -1006,7 +1009,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     _TG_ONE_INHERITED=""
     if [[ "$_tg_rc" == "1" && -f "$RESULTS_DIR/suites.json" ]]; then
       _tg_her=0
-      TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
+      TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${_TG_HEREDADOS_ARGS[@]+"${_TG_HEREDADOS_ARGS[@]}"} || _tg_her=$?
       if [[ "$_tg_her" == "0" ]]; then
         echo "🟡 [test-gate] $SUITE_ONLY ya estaba roja antes del cambio, en el nocturno de esta mañana o en la base: avisa y no frena, igual que en la validación del pedido" >&2
         ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests-suite -- node -e 'console.error(`test-gate: ${process.argv[1]} ya estaba roja antes del cambio: avisa, no frena`)' "$SUITE_ONLY" ) >&2 \
@@ -1394,7 +1397,7 @@ if [[ "$RUNNER" == "suites-json" && "$SUITE_EXIT" == "1" && -f "$RESULTS_DIR/sui
   cp "$RESULTS_DIR/suites.json" "$RESULTS_DIR/suites-antes-del-perdon.json" \
     || echo "[test-gate] ⚠️  no pude copiar el resumen de antes del perdón: si esta completa sale verde por lo heredado, no la guardo" >&2
   _tg_her=0
-  TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TG_PRIVATE_TREE_DIR:+--assembled} || _tg_her=$?
+  TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${_TG_HEREDADOS_ARGS[@]+"${_TG_HEREDADOS_ARGS[@]}"} || _tg_her=$?
   if [[ "$_tg_her" == "0" ]]; then
     echo "🟡 [test-gate] todo lo rojo ya estaba rojo antes del cambio, en el nocturno de esta mañana o en la base (arriba, cuáles): avisa y no frena, igual que en la validación del pedido" >&2
     ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: lo rojo ya estaba rojo antes del cambio: avisa, no frena")' ) >&2 \
