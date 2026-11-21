@@ -29,11 +29,36 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const FUERTES = ['opus', 'fable'];
 
+// un modelo de Claude de un perfil fuerte: el nombre solo (`opus`) o el id de Anthropic (`claude-opus-5-5`). Otro id que
+// sólo contiene la palabra (el de otro proveedor) no lo es
+const FUERTE = new RegExp(`^(claude-)?(${FUERTES.join('|')})(-[\\w.-]*)?$`, 'i');
 /** El perfil de un modelo leído: «fuertes», «resto», o null si no hay modelo. */
 function perfilDe(modelo) {
   if (!modelo || typeof modelo !== 'string') return null;
-  const m = modelo.toLowerCase();
-  return FUERTES.some((f) => m.includes(f)) ? 'fuertes' : 'resto';
+  return FUERTE.test(modelo.trim()) ? 'fuertes' : 'resto';
+}
+
+/** ¿Una fecha AAAA-MM-DD que existe? (`9999-99-99` no) */
+function fechaReal(t) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(t))) return false;
+  const d = new Date(`${t}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === t;
+}
+// una relajación no vale más de un año: la fecha de revisión es para revisarla
+const TOPE_DIAS = 366;
+
+/**
+ * El modelo de una sesión, sólo si su conversación es una sola: con el mismo nombre en dos carpetas de
+ * `~/.claude/projects`, una puede ser escrita para hacerse pasar por otro modelo, y no se sabe cuál es la de verdad.
+ */
+function modeloUnico(sid, home) {
+  const SM = require('./session-model.js');
+  const base = path.join(home, '.claude', 'projects');
+  let carpetas = [];
+  try { carpetas = fs.readdirSync(base); } catch (_) { return { model: null, noMedido: 'no hay conversaciones' }; }
+  const encontradas = carpetas.filter((c) => { try { return fs.statSync(path.join(base, c, `${sid}.jsonl`)).isFile(); } catch (_) { return false; } });
+  if (encontradas.length > 1) return { model: null, noMedido: `la sesión tiene ${encontradas.length} conversaciones con el mismo nombre` };
+  return SM.modelOf(sid, { home });
 }
 
 const hoyDe = (now) => new Date(now).toISOString().slice(0, 10);
@@ -78,9 +103,11 @@ function decide({ control, sessionId, tree = null, home = os.homedir(), now = Da
     if (entrada.tipo === 'exigencia') return { on: true, motivo: 'es una exigencia', aviso: avisoDiario(control, home, now) };
     if (entrada.tipo !== 'preferencia' || entrada.estado !== 'firmada') return { on: true, motivo: 'la clasificación de este control no está firmada como preferencia' };
     const hoy = hoyDe(now);
-    const vigentes = relajaciones.filter((e) => /^\d{4}-\d{2}-\d{2}$/.test(String(e.review_before)) && e.review_before >= hoy);
+    // stable-data: el tope de un año se cuenta desde hoy; no se compara con nada guardado
+    const tope = new Date(now + TOPE_DIAS * 864e5).toISOString().slice(0, 10);
+    const vigentes = relajaciones.filter((e) => fechaReal(e.review_before) && e.review_before >= hoy && e.review_before <= tope);
     if (!vigentes.length) return { on: true, motivo: 'la relajación venció: vuelve a frenar hasta que el dueño la renueve' };
-    const leer = modelOf || ((sid) => require('./session-model.js').modelOf(sid, { home }));
+    const leer = modelOf || ((sid) => modeloUnico(sid, home));
     const m = sessionId ? leer(sessionId) : { model: null, noMedido: 'sin sesión' };
     const modelo = m && m.model;
     if (!modelo) return { on: true, motivo: `no sé el modelo de la sesión (${(m && m.noMedido) || 'no medido'})` };
@@ -93,4 +120,4 @@ function decide({ control, sessionId, tree = null, home = os.homedir(), now = Da
   }
 }
 
-module.exports = { decide, perfilDe, FUERTES };
+module.exports = { decide, perfilDe, fechaReal, FUERTES };

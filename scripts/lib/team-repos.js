@@ -620,6 +620,12 @@ function contextNoticeProblems(value) {
 const CONTROL_PROFILES = ['fuertes', 'resto'];
 const RELAXED_KEYS = ['control', 'profile', 'review_before', 'approved_by', 'approved_on'];
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
+// una fecha AAAA-MM-DD que existe en el calendario (`9999-99-99` o un 30 de febrero, no)
+function fechaQueExiste(t) {
+  if (!FECHA.test(String(t || ''))) return false;
+  const d = new Date(`${t}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === t;
+}
 /** Los problemas de `control_profiles`; `[]` si está bien. */
 function controlProfilesProblems(value) {
   if (!isObject(value)) return [{ path: 'control_profiles', message: 'tiene que ser un objeto (el perfil por modelo)' }];
@@ -633,7 +639,7 @@ function controlProfilesProblems(value) {
     for (const k of Object.keys(e)) if (!fieldComment(k, e[k]) && !RELAXED_KEYS.includes(k)) out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
     if (typeof e.control !== 'string' || !e.control.trim()) out.push({ path: `${at}.control`, message: 'falta el control (su clave en la clasificación)' });
     if (!CONTROL_PROFILES.includes(e.profile)) out.push({ path: `${at}.profile`, message: `tiene que ser ${CONTROL_PROFILES.join(' o ')}` });
-    for (const k of ['review_before', 'approved_on']) if (!FECHA.test(String(e[k] || ''))) out.push({ path: `${at}.${k}`, message: 'tiene que ser una fecha AAAA-MM-DD' });
+    for (const k of ['review_before', 'approved_on']) if (!fechaQueExiste(e[k])) out.push({ path: `${at}.${k}`, message: 'tiene que ser una fecha AAAA-MM-DD que exista' });
     if (typeof e.approved_by !== 'string' || !e.approved_by.trim()) out.push({ path: `${at}.approved_by`, message: 'falta quién lo aprobó' });
   });
   return out;

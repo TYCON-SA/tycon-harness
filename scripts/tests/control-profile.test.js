@@ -59,6 +59,25 @@ test('T20 ControlProfile_UnknownModel_AllOn — sin modelo leído, o sin sesión
   assert.deepStrictEqual([CP.perfilDe('claude-fable-5-1'), CP.perfilDe('gpt-5'), CP.perfilDe(null)], ['fuertes', 'resto', null]);
 });
 
+// 🔴 Falla con: un perfil que se decide por una palabra adentro del id, o una relajación con una fecha imposible que no
+// vence nunca, o una sesión que se hace pasar por otro modelo con una segunda conversación.
+test('ControlProfile_Escapes_AllOn — un id ajeno con «opus» adentro, una fecha imposible o lejana y una conversación duplicada no relajan', () => {
+  assert.deepStrictEqual(['claude-opus-5-5', 'opus', 'Claude-Fable-5', 'qwen-claude-opus-distill', 'notopus-mini', 'gpt-opus'].map(CP.perfilDe),
+    ['fuertes', 'fuertes', 'fuertes', 'resto', 'resto', 'resto']);
+  for (const review_before of ['9999-99-99', '2026-02-30', '2031-01-01']) {
+    assert.strictEqual(decidir({ tree: arbol({ perfil: { relaxed: [relajacion({ review_before })] } }) }).on, true, review_before);
+  }
+  const t = arbol({ perfil: { relaxed: [relajacion()] } });
+  const casa = tmp('casa-');
+  for (const [carpeta, m] of [['real', 'claude-haiku-5-5'], ['zzz', 'claude-opus-5-5']]) {
+    fs.mkdirSync(path.join(casa, '.claude', 'projects', carpeta), { recursive: true });
+    fs.writeFileSync(path.join(casa, '.claude', 'projects', carpeta, 'sesion-doble.jsonl'), `${JSON.stringify({ message: { model: m } })}\n`);
+  }
+  const r = CP.decide({ control: 'pr-uno-por-repo', sessionId: 'sesion-doble', tree: t, home: casa, now: AHORA });
+  assert.strictEqual(r.on, true);
+  assert.match(r.motivo, /2 conversaciones/);
+});
+
 test('T21 ControlProfile_ExigenciaListed_Ignored — el perfil nombra una exigencia: se ignora, avisa una vez por día y sigue prendida', () => {
   const t = arbol({ perfil: { relaxed: [relajacion({ control: 'safety-guard' })] } });
   const casa = tmp('casa-');
@@ -83,6 +102,8 @@ test('ControlProfile_BadSection_AllOnAndSaid — una relajación mal escrita dej
   assert.strictEqual(r.data.control_profiles, undefined, 'sin la sección');
   assert.deepStrictEqual(r.sectionProblems.control_profiles.map((p) => p.path).sort(), ['control_profiles.relaxed.0.profile', 'control_profiles.relaxed.0.review_before']);
   assert.strictEqual(decidir({ tree: arbol({ perfil: { relaxed: [relajacion({ profile: 'todos' })] } }) }).on, true);
+  const imposible = TR.parse(JSON.stringify({ ...BASE, control_profiles: { relaxed: [relajacion({ review_before: '9999-99-99' })] } }));
+  assert.deepStrictEqual(imposible.sectionProblems.control_profiles.map((p) => p.path), ['control_profiles.relaxed.0.review_before'], 'una fecha que no existe es un problema, no una excepción');
 });
 
 // 🔴 Falla con: un freno que no pregunta al perfil, o que no anota el paso por el perfil (la tabla dejaría de contarlo).
