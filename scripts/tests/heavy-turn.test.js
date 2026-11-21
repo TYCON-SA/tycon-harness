@@ -431,6 +431,7 @@ test('HT12b HeavyTurn_FinishedPassWithoutResult_TurnFree @story-8.277 @ac-10 @ac
     workflowRecord(m, owner, 'running');
     assert.strictEqual(takeAs(m, 's-uma').ok, false, `${name}: corriendo, frena`);
     workflowRecord(m, owner, 'completed');
+    sinFila(m, 's-uma');
     assert.strictEqual(takeAs(m, 's-uma').taken, true, `${name}: terminado, libre`);
     HT.release({ home: m.home, pid: process.pid });
   }
@@ -791,6 +792,7 @@ test('HT34 FirstFree_SecondHeld_CountsAsSecond @story-8.291 @ac-6 — con sólo 
   assert.strictEqual(secondAs(m, process.pid, memory(41)).ok, false);
   assert.ok(!fs.existsSync(HT.slotFiles(m.home)[0]), 'no tomó el primer archivo con poca memoria');
   const c = otherProcess(t);
+  sinFila(m, 's-uma');
   assert.strictEqual(secondAs(m, c, memory(62)).taken, true);
   assert.deepStrictEqual(inForce(m).sort(), [b, c].sort());
 });
@@ -859,6 +861,7 @@ test('HT37 SecondTurn_FloorFromConfig @story-8.291 @ac-10 — el piso de la máq
   assert.match(r.message, /70 %/);
   assert.match(r.message, /máquina/);
   assert.deepStrictEqual(HT.secondTurnFloor({ home: m.home, env: {}, arnes: m.arnes }).value, 70);
+  sinFila(m, 's-uma');
   assert.strictEqual(secondAs(m, process.pid, memory(62), { TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT: '60' }).taken, true);
 });
 
@@ -974,4 +977,142 @@ test('HT44 RunningSids_SoloLosVivos_YLaEsperaDeTurno: los vivos cuentan, los mue
   assert.deepStrictEqual([...HT.runningSids({ state, now, problems })].sort(), ['s-turno', 's-viva']);
   assert.ok(problems.some((p) => p.includes(`${process.ppid}.json`)), `el portón ilegible se dice: ${JSON.stringify(problems)}`);
   assert.deepStrictEqual([...HT.runningSids({ state: path.join(state, 'no-existe'), now })], [], 'sin registro, nadie');
+});
+
+// ── El turno no se toma solo con coordinadora: el «arrancá» y la reserva ─────────────────────────────────────────────
+
+const coordFile = (m, name) => path.join(stateDir(m.home), 'coordination', name);
+const waitFile = (m, sid) => path.join(stateDir(m.home), 'coordination', 'suite-waits', `${sid}.json`);
+const deadPid = () => spawnSync(process.execPath, ['-e', '']).pid;
+const asSid = (m, sid, extra = {}) => HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: sid, ...ONE_TURN }, pid: process.pid, what: '120 suites de repo', ...extra });
+const grantAs = (m, by, to, extra = {}) => HT.grant({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: by }, to, ...extra });
+// La sesión sale de la fila, como si la coordinadora le hubiera dado el «arrancá»: lo usan las pruebas que reintentan
+// con la misma sesión después de un 77 y miden otra cosa (el pase, los lugares, el piso).
+function sinFila(m, sid) { fs.rmSync(path.join(stateDir(m.home), 'coordination', 'suite-waits', `${sid}.json`), { force: true }); }
+
+// 🔴 mutación: tomar el turno libre en el próximo intento (como hoy) se superpone con lo que la coordinadora ya lanzó.
+test('Turno_ConCoordinadora_EsperaElArranca (T10) @story-8.274 @ac-12 @ac-14', (t) => {
+  const m = toy();
+  addSession(m, 's-ana', 'Ana');
+  addSession(m, 's-bea', 'Bea');
+  const other = otherProcess(t);
+  assert.strictEqual(HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-uma' }, pid: other, what: 'portables' }).taken, true);
+  // Ana recibe 77 y queda anotada
+  assert.strictEqual(asSid(m, 's-ana').ok, false);
+  assert.strictEqual(JSON.parse(fs.readFileSync(waitFile(m, 's-ana'), 'utf8')).sid, 's-ana');
+  HT.release({ home: m.home, pid: other });
+  // con el turno libre, no lo toma sola: espera el «arrancá»
+  const sola = asSid(m, 's-ana');
+  assert.deepStrictEqual([sola.ok, sola.taken], [false, false]);
+  assert.match(sola.message, /esperá el «arrancá» de la coordinadora/i);
+  assert.match(sola.message, /heavy-turn\.js grant --to s-ana/);
+  assert.strictEqual(HT.holder({ home: m.home }), null);
+  // el «arrancá» lo da sólo la coordinadora
+  assert.strictEqual(grantAs(m, 's-bea', 's-ana').ok, false);
+  assert.ok(!fs.existsSync(coordFile(m, 'suite-grant.json')));
+  // un «arrancá» vigente a nombre de Ana frena a quien no estaba anotada
+  assert.strictEqual(grantAs(m, COORD, 'Ana').ok, true, 'se puede dar por nombre');
+  const bea = asSid(m, 's-bea');
+  assert.strictEqual(bea.ok, false);
+  assert.match(bea.message, /le dio el «arrancá» a Ana/);
+  assert.ok(fs.existsSync(waitFile(m, 's-bea')), 'su 77 la anota en la fila');
+  fs.rmSync(waitFile(m, 's-bea'));
+  // con su «arrancá», Ana lo toma, y se borran el «arrancá» y su anotación
+  assert.strictEqual(asSid(m, 's-ana').taken, true);
+  assert.ok(!fs.existsSync(coordFile(m, 'suite-grant.json')));
+  assert.ok(!fs.existsSync(waitFile(m, 's-ana')));
+  HT.release({ home: m.home, pid: process.pid });
+  // un «arrancá» a una sesión muerta, o a una viva que no lo tomó en 10 minutos, vence: no frena a nadie
+  fs.writeFileSync(coordFile(m, 'suite-grant.json'), JSON.stringify({ to: 's-muerta', by: COORD, at: Date.now() }));
+  assert.strictEqual(asSid(m, 's-bea').taken, true);
+  HT.release({ home: m.home, pid: process.pid });
+  fs.writeFileSync(coordFile(m, 'suite-grant.json'), JSON.stringify({ to: 's-ana', by: COORD, at: Date.now() - 11 * 60000 }));
+  assert.strictEqual(asSid(m, 's-bea').taken, true);
+  HT.release({ home: m.home, pid: process.pid });
+  assert.strictEqual(HT.grantInForce({ home: m.home }), null);
+  assert.strictEqual(JSON.parse(fs.readFileSync(coordFile(m, 'suite-grant.json'), 'utf8')).to, 's-ana', 'el vencido queda escrito para la fila');
+  // la segunda ejecución grande tampoco entra sin «arrancá» para una anotada, aunque haya memoria
+  fs.writeFileSync(waitFile(m, 's-ana'), JSON.stringify({ sid: 's-ana', what: 'x', at: Date.now() - 60000 }));
+  slotOf(m, 0, other);
+  const segunda = said(() => secondAs(m, process.pid, memory(90), { CLAUDE_CODE_SESSION_ID: 's-ana' })).r;
+  assert.strictEqual(segunda.ok, false);
+  assert.match(segunda.message, /esperá el «arrancá»/i);
+  assert.ok(!fs.existsSync(HT.slotFiles(m.home)[1]));
+  // una espera de más de tres horas no cuenta: se borra
+  fs.writeFileSync(waitFile(m, 's-bea'), JSON.stringify({ sid: 's-bea', what: 'x', at: Date.now() - 3 * 3600000 - 1000 }));
+  assert.strictEqual(said(() => secondAs(m, process.pid, memory(90), { CLAUDE_CODE_SESSION_ID: 's-bea' })).r.taken, true);
+  HT.release({ home: m.home, pid: process.pid });
+  fs.rmSync(HT.slotFiles(m.home)[0]);
+  // la suite rápida del arranque no es un portón: su 77 no la anota, su espera no la frena y no gasta el «arrancá»
+  slotOf(m, 0, other);
+  assert.strictEqual(asSid(m, 's-cami', { queue: false }).ok, false);
+  assert.ok(!fs.existsSync(waitFile(m, 's-cami')));
+  fs.rmSync(HT.slotFiles(m.home)[0]);
+  assert.strictEqual(grantAs(m, COORD, 's-ana').ok, true);
+  assert.strictEqual(asSid(m, 's-ana', { queue: false }).taken, true);
+  assert.ok(fs.existsSync(coordFile(m, 'suite-grant.json')), 'el «arrancá» sigue siendo del portón');
+  assert.ok(fs.existsSync(waitFile(m, 's-ana')));
+  HT.release({ home: m.home, pid: process.pid });
+  // ni la nota de espera de su sesión: es la del portón
+  const doing = path.join(stateDir(m.home), 'doing');
+  fs.mkdirSync(doing, { recursive: true });
+  fs.writeFileSync(path.join(doing, 's-ana.json'), JSON.stringify({ at: new Date().toISOString(), waitingFor: 'turno de portón', waitingSince: new Date().toISOString() }));
+  assert.strictEqual(asSid(m, 's-ana', { queue: false }).taken, true);
+  assert.ok(fs.existsSync(path.join(doing, 's-ana.json')));
+  HT.release({ home: m.home, pid: process.pid });
+  // con el turno prendido a mano y nadie designado, no hay fila: nadie podría dar el «arrancá»
+  const manual = toy({ designated: false });
+  const ocupa = otherProcess(t);
+  slotOf(manual, 0, ocupa);
+  assert.strictEqual(asSid(manual, 's-uma', { env: { CLAUDE_CODE_SESSION_ID: 's-uma', TYCON_SUITE_TURN: '1', ...ONE_TURN } }).ok, false);
+  assert.ok(!fs.existsSync(waitFile(manual, 's-uma')));
+  fs.rmSync(HT.slotFiles(manual.home)[0]);
+  assert.strictEqual(asSid(manual, 's-uma', { env: { CLAUDE_CODE_SESSION_ID: 's-uma', TYCON_SUITE_TURN: '1' } }).taken, true);
+  HT.release({ home: manual.home, pid: process.pid });
+  // con la coordinadora cerrada, todo vuelve a lo de hoy: el portón en espera corre
+  addSession(m, COORD, 'Coordinadora', deadPid());
+  assert.deepStrictEqual(asSid(m, 's-ana'), { ok: true, taken: false, message: null });
+});
+
+// 🔴 mutación: una reserva como un lugar con proceso vence al instante (el de `reserve` termina enseguida).
+test('Turno_ReservaDeLaCoordinadora_FrenaAlPorton (T11) @story-8.274 @ac-13 @ac-14', (t) => {
+  const m = toy();
+  const r = HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD }, what: 'revisores 9.9' });
+  assert.strictEqual(r.ok, true, r.message);
+  const gate = asSid(m, 's-uma');
+  assert.strictEqual(gate.ok, false);
+  assert.match(gate.message, /reservado .*revisores 9\.9/);
+  // también frena el segundo lugar
+  assert.strictEqual(said(() => secondAs(m, process.pid, memory(90))).r.ok, false);
+  // a los 90 minutos vence
+  assert.strictEqual(asSid(m, 's-bea', { now: Date.now() + 91 * 60000 }).taken, true);
+  HT.release({ home: m.home, pid: process.pid });
+  // con la sesión que reservó cerrada, a los 10 minutos
+  fs.writeFileSync(coordFile(m, 'suite-reserve.json'), JSON.stringify({ sid: 's-muerta', session: 'Vieja', what: 'pase 9.8', at: Date.now() - 5 * 60000 }));
+  assert.strictEqual(asSid(m, 's-dani').ok, false);
+  fs.writeFileSync(coordFile(m, 'suite-reserve.json'), JSON.stringify({ sid: 's-muerta', session: 'Vieja', what: 'pase 9.8', at: Date.now() - 11 * 60000 }));
+  // (Dani quedó anotada por su 77: la que prueba el vencimiento es otra, sin anotar)
+  assert.strictEqual(asSid(m, 's-eva').taken, true);
+  HT.release({ home: m.home, pid: process.pid });
+  // release --reserve la suelta; sólo la coordinadora reserva
+  assert.strictEqual(HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-uma' }, what: 'x' }).ok, false);
+  assert.strictEqual(HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD }, what: 'revisores 9.9' }).ok, true);
+  assert.strictEqual(HT.releaseReserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD } }), true);
+  assert.ok(!fs.existsSync(coordFile(m, 'suite-reserve.json')));
+  // con una suite corriendo, la reserva no la pisa: sale 77 y dice quién la tiene
+  const other = otherProcess(t);
+  sinFila(m, 's-uma');
+  assert.strictEqual(HT.take({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: 's-uma' }, pid: other, what: 'portables' }).taken, true);
+  const pisada = HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD }, what: 'revisores 9.9' });
+  assert.deepStrictEqual([pisada.ok, pisada.code], [false, HT.BUSY_EXIT]);
+  assert.match(pisada.message, /Uma \(portables/);
+  assert.ok(!fs.existsSync(coordFile(m, 'suite-reserve.json')));
+  // por la línea de comandos: reserva y «arrancá» de la coordinadora, y otra sesión no puede
+  HT.release({ home: m.home, pid: other });
+  const cli = (sid, ...a) => spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), ...a], { env: { ...machineEnv(m), CLAUDE_CODE_SESSION_ID: sid }, encoding: 'utf8' });
+  installed(m);
+  assert.strictEqual(cli(COORD, 'reserve', '--for', 'pase 9.9').status, 0);
+  assert.strictEqual(cli(COORD, 'release', '--reserve').status, 0);
+  assert.strictEqual(cli(COORD, 'grant', '--to', 's-uma').status, 0);
+  assert.strictEqual(cli('s-uma', 'grant', '--to', 's-uma').status, 2);
 });

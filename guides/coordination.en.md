@@ -341,12 +341,38 @@ The harness controls this, not anyone's memory:
   result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
   (`marker.js mark-adversarial-skipped`). Relaunched, it holds it again. A session that closed frees it, and after an hour
   it no longer stops anything, because it may be finished or stuck, and that is said.
+- **A free turn is not taken on its own: the «arrancá».** With a coordinator designated and alive, a gate that got a
+  «wait» (its 77) is noted in the queue (`coordination/suite-waits/<session>.json`) and, when the turn frees up, does not
+  take it on its next try: it waits for the «arrancá». Why: on 13/11 a waiting gate took the turn as soon as it freed
+  up, on top of reviewers the coordinator had already launched. The «arrancá» is a command, `heavy-turn.js grant --to
+  <session>` (the id, its start or the session's name), and only the coordinator gives it; the notice's queue line
+  carries it whole. It holds for both places of the turn. While it is in force no other session takes the free turn; it
+  expires after 10 minutes if its session does not take it, or when that session closes, and the queue moves to the next
+  one. A session that never got a «wait» takes a free turn as always. A noted wait lasts three hours. The startup quick
+  suite is not a gate: it is not noted and does not spend its session's «arrancá». If the coordinator closes or stops
+  being designated, everything goes back to as always: the waiting gate takes the free turn.
+- **The reservation, for what asks for no turn.** Reviewers and the pass are launched by the coordinator and have no
+  process that takes the turn. Before launching them, `heavy-turn.js reserve --for "<what>"` takes the turn in that
+  name: a gate that asks for it gets the «wait» with the reservation's name. With a large run going it does not reserve
+  (it exits 77 and says who holds it). `heavy-turn.js release --reserve` frees it; it expires after 90 minutes (a round of
+  reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10.
 
 `coordination.js status` shows a single line, «Turno de tarea pesada», with who holds it and what it is; with one large
 run, whether the second turn is free or closed, with the memory and the floor; with two, both. `heavy-turn.js holders`
 lists them. A scoped gate running beside a pass says so in its own line, with how many suites. With no coordinator designated, everything answers as
 always: in CI and in the cloud there is no turn. `TYCON_SUITE_TURN=0` turns off the suite's, and `TYCON_SUITE_TURN=1` asks for
 it even with no coordinator: it can only stop too much.
+
+### Swap memory
+
+Claude Code closes idle sessions when it runs out of swap memory, even when the system's free memory looks ample: on
+14/11 it closed two with the machine at 65 % free and 0.9 GB free of 8 GB of swap. `coordination.js status` reads it
+(`sysctl vm.swapusage`, on macOS): with less than 15 % free it says how much is left and names the live sessions that
+are not working, those waiting for something first, since those are the ones that get lost. What to do: before
+launching anything heavy, close the idle ones that wait for nothing. If it cannot be read (another platform, a command
+that fails) it says «no medida» and assumes nothing. Only the `status` command reads it: the per-turn notice and the
+closing brake do not measure it. A session Claude Code already closed shows in «Cerradas por Claude Code» with what it was
+waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `claude respawn`.
 
 ## The automatic reviews: what the coordinator does
 

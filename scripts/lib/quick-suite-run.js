@@ -154,7 +154,8 @@ function pedirTurno(stateDir) {
     logLine(stateDir, `no pude cargar el turno de las ejecuciones grandes (${String(e.message).split('\n')[0]}): la corro sin turno`);
     return { ok: true, taken: false };
   }
-  try { return { ...ht.take({ what: 'la suite rápida del arranque' }), ht }; } catch (e) {
+  // no es un portón: no se anota en la fila del «arrancá» ni gasta el de su sesión (heavy-turn.js, `queue`)
+  try { return { ...ht.take({ what: 'la suite rápida del arranque', queue: false }), ht }; } catch (e) {
     logLine(stateDir, `no pude pedir el turno de las ejecuciones grandes (${String(e.message).split('\n')[0]}): la corro sin turno`);
     return { ok: true, taken: false };
   }

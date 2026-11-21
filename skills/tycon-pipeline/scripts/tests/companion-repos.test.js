@@ -1100,7 +1100,7 @@ test('T6 8.229-Companion_AbsoluteOrHome_NoFallback @story-8.229 @ac-6 — una ab
 
 // El checkout compartido en `main`, su `origin` y un worktree de la historia 9.1: lo que elige `enLaMismaRama` cuando la
 // historia está en la rama `main`. Corre en otro proceso: los avisos se dicen una vez por proceso.
-function laboratorioMain() {
+function laboratorioMain({ propio = true } = {}) {
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-main-')));
   const semilla = repoGit(path.join(raiz, 'semilla'), { 'a.js': '1\n' });
   const origen = path.join(raiz, 'origen.git');
@@ -1109,10 +1109,12 @@ function laboratorioMain() {
   execFileSync('git', ['clone', '-q', origen, pub]);
   const wt = path.join(raiz, 'pub-wt');
   git(pub, 'worktree', 'add', '-q', '-b', 'story/9.1-x', wt);
-  // la rama de la story tiene trabajo propio: no es una copia vieja que ya entró a main
-  escribir(wt, 'story.js', 'lo de la story\n');
-  git(wt, 'add', '-A');
-  git(wt, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qm', 'lo de la story');
+  // la rama de la story tiene trabajo propio: no es una copia vieja que ya entró a main (salvo que la prueba pida esa copia)
+  if (propio) {
+    escribir(wt, 'story.js', 'lo de la story\n');
+    git(wt, 'add', '-A');
+    git(wt, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qm', 'lo de la story');
+  }
   return { pub: fs.realpathSync(pub), wt: fs.realpathSync(wt) };
 }
 function elegir(declarado, rama, numero) {
@@ -1173,4 +1175,63 @@ test('CompanionRepos_RamaDeHistoria_ComoHoy @story-8.282 @ac-19', () => {
   const r = elegir(l.pub, 'story/9.1-x', '9.1');
   assert.equal(r.eleccion, l.wt);
   assert.equal(r.avisos, '');
+});
+
+// El checkout compartido avanza `n` commits en main y los empuja: el worktree de la historia queda atrás.
+function avanzarMain(l, n) {
+  for (let i = 0; i < n; i += 1) {
+    escribir(l.pub, `main-${i}.js`, `${i}\n`);
+    git(l.pub, 'add', '-A');
+    git(l.pub, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qm', `main ${i}`);
+  }
+  git(l.pub, 'push', '-q', 'origin', 'main');
+}
+
+test('Hermanos_RamaDeLaHistoriaAtrasada_EligeElAlDiaYAvisa (T8) @story-8.274 @ac-10', () => {
+  // la rama de la historia ya entró entera a main y quedó 3 atrás: se usa el checkout en main, al día, y se dice
+  for (const rama of ['wt/otro-nombre', 'story/9.1-x']) {
+    const l = laboratorioMain({ propio: false });
+    avanzarMain(l, 3);
+    const r = elegir(l.pub, rama, '9.1');
+    assert.equal(r.eleccion, l.pub, `${rama}: elige el clon al día`);
+    assert.match(r.avisos, /la rama story\/9\.1-x ya entró a main y está atrás de origin\/main \(3 commits\)/, rama);
+    assert.ok(r.avisos.includes(l.pub), `${rama}: nombra el clon que usa`);
+  }
+  // el ancla de la evidencia sigue la misma elección: queda sobre el clon que midió el portón, no sobre la rama vieja
+  const a = laboratorioMain({ propio: false });
+  avanzarMain(a, 3);
+  const esp = repoGit(path.join(path.dirname(a.pub), 'esp'), { '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../pub\n' });
+  git(esp, 'checkout', '-q', '-b', 'wt/otro-nombre');
+  const ancla = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).anclasDeLaEvidencia(process.argv[1], '9.1')))`, esp], { encoding: 'utf8' });
+  assert.equal(ancla.status, 0, ancla.stderr);
+  assert.deepEqual(JSON.parse(ancla.stdout), [{ repo: 'pub', commit: git(a.pub, 'rev-parse', 'HEAD').trim() }]);
+  // con un commit propio sin mergear es el código de la historia: se usa igual, y se dice cuánto está atrás
+  const p = laboratorioMain();
+  escribir(p.wt, 'propio.js', 'de la historia\n');
+  git(p.wt, 'add', '-A');
+  git(p.wt, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qm', 'propio');
+  avanzarMain(p, 3);
+  const propio = elegir(p.pub, 'wt/otro-nombre', '9.1');
+  assert.equal(propio.eleccion, p.wt);
+  assert.match(propio.avisos, /pub está 3 commits atrás de main \(rama story\/9\.1-x, en [^)]+\): un rojo puede ser algo ya arreglado/);
+  // una rama recién creada con el trabajo sin commitear tampoco entró a main: se usa
+  const sucia = laboratorioMain();
+  escribir(sucia.wt, 'a.js', 'a medio hacer\n');
+  avanzarMain(sucia, 3);
+  const sinCommitear = elegir(sucia.pub, 'wt/otro-nombre', '9.1');
+  assert.equal(sinCommitear.eleccion, sucia.wt);
+  assert.match(sinCommitear.avisos, /pub está 3 commits atrás de main/);
+  // al día, nada cambia ni se dice de más
+  const alDia = laboratorioMain();
+  assert.equal(elegir(alDia.pub, 'story/9.1-x', '9.1').avisos, '');
+});
+
+test('Hermanos_SoloElAtrasado_LoUsaYLoDice (T9) @story-8.274 @ac-11', () => {
+  // el checkout en main tampoco está al día (atrás de su origin/main): no hay otro clon al día, se usa la rama vieja
+  const l = laboratorioMain();
+  avanzarMain(l, 2);
+  git(l.pub, 'reset', '-q', '--hard', 'HEAD~1');
+  const r = elegir(l.pub, 'wt/otro-nombre', '9.1');
+  assert.equal(r.eleccion, l.wt);
+  assert.match(r.avisos, /pub está 2 commits atrás de main \(rama story\/9\.1-x, en [^)]+\): un rojo puede ser algo ya arreglado/);
 });

@@ -72,6 +72,16 @@ function markerPath(sessionId) {
   const safe = String(sessionId || '_nosession').replace(/[/\\]/g, '_');
   return path.join(ACTIVE_DIR, `${safe}.json`);
 }
+// El pedido de la exención de la matriz para la historia de la corrida, como lo da «Preparar el commit»: lo corre el
+// agente, y el arnés le pone el renglón y el cuadro en la lista del dueño.
+function waiverCommand(marker) {
+  const raw = marker && marker.storyPath ? String(marker.storyPath) : '<historia>';
+  const story = path.isAbsolute(raw) || !marker.repoPath ? raw : path.join(marker.repoPath, raw);
+  // marker.js vive al lado de este guion: la ruta sale de acá, sin escribir la carpeta de la herramienta
+  const cmd = `node "${path.join(__dirname, 'marker.js')}"`;
+  return `${cmd} runtime-waiver ${/\s/.test(story) ? `"${story}"` : story}`;
+}
+
 function readMarker(sessionId) {
   try { return JSON.parse(fs.readFileSync(markerPath(sessionId), 'utf8')); } catch { return null; }
 }
@@ -424,16 +434,18 @@ function main() {
 
   // Hay margen → forzar otra vuelta del loop.
   writeMarker(sessionId, marker);
-  // El ÚNICO rojo que el agente no puede poner en verde es la matriz
-  // esperando el waiver TTY del dev (marker.js runtime-waiver). Sin esta pista el hook loopearía y
-  // el agente descubriría STOP_AUTONOMY por prueba y error. Se dice, con la salida al lado.
+  // El ÚNICO rojo que el agente no puede poner en verde es la matriz esperando la exención de la persona
+  // (marker.js runtime-waiver). Sin esta pista el hook loopearía y el agente descubriría STOP_AUTONOMY por prueba y error.
+  // El comando lo corre el agente: así deja el renglón en la lista del dueño, que lo firma con su cuadro (owner-window.js);
+  // mandarlo «a su terminal» no deja renglón y la firma se pierde.
   const soloMatriz = gate.failures.length > 0 && gate.failures.every((f) => /^acmatrix\b/.test(f));
   const pista = soloMatriz
-    ? '\n  ℹ Si la matriz está roja SÓLO porque hay criterios declarados no verificables esperando el waiver ' +
-      'del dev (lo aprueba él desde su terminal: marker.js runtime-waiver <story>), vos no podés ponerla ' +
-      'en verde: pedile el waiver y, para poder cerrar el turno y esperar su respuesta, corré ' +
-      '`marker.js set-flag waitingForHuman true` — deja pasar ESE cierre, no apaga la autonomía y se ' +
-      'consume solo. NO uses `touch STOP_AUTONOMY`: ese archivo frena TODAS las corridas de la máquina ' +
+    ? '\n  ℹ Si la matriz está roja SÓLO porque hay criterios declarados no verificables esperando la exención ' +
+      'de la persona, vos no podés ponerla en verde. Pedila corriendo vos ' +
+      `\`${waiverCommand(marker)}\`: deja el renglón en la lista de firmas de la persona, que la aprueba con su cuadro. ` +
+      'Para poder cerrar el turno y esperar, corré `marker.js set-flag waitingForHuman true` — deja pasar ESE ' +
+      'cierre, no apaga la autonomía, se consume solo y no saltea la matriz: «Preparar» la sigue pidiendo. ' +
+      'NO uses `touch STOP_AUTONOMY`: ese archivo frena TODAS las corridas de la máquina ' +
       'y les apaga el portón de DoD hasta que alguien las vuelva a prender a mano.'
     : '';
   blockStop(
