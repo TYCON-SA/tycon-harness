@@ -528,3 +528,25 @@ test('T27 el guion suelto, sin la librería que sabe dónde va el sello, no barr
   const j = spawnSync(process.execPath, [suelto, '--json'], { cwd: L.base, encoding: 'utf8', env: { ...process.env, HOME: L.home, USERPROFILE: L.home, TYCON_TEMP_SWEEP: '', TYCON_EVAL_SANDBOX: '' } });
   assert.ok(JSON.parse(j.stdout).error, 'con --json, el fallo también sale en JSON');
 });
+
+test('T28 Linux: el ejecutable y las librerías cargadas de un proceso vivo cuentan como en uso', { skip: WIN }, () => {
+  // un /proc de juguete: un proceso que corre desde una carpeta temporal sin tocarla, con una librería cargada de otra
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'proc-juguete-'));
+  try {
+    const p = path.join(raiz, '4242');
+    fs.mkdirSync(path.join(p, 'fd'), { recursive: true });
+    fs.symlinkSync('/home/x', path.join(p, 'cwd'));
+    fs.symlinkSync('/tmp/corre-AbC123/bin/programa', path.join(p, 'exe'));
+    fs.writeFileSync(path.join(p, 'maps'), [
+      '00400000-00452000 r-xp 00000000 08:02 173521      /tmp/corre-AbC123/bin/programa',
+      '7f0000000000-7f0000021000 r-xp 00000000 08:02 135522      /tmp/lib-XyZ789/libuno.so (deleted)',
+      '7f0000100000-7f0000121000 rw-p 00000000 00:00 0 ',
+      '7ffd0000-7ffd2000 rw-p 00000000 00:00 0                          [stack]',
+    ].join('\n'));
+    const vivas = require(HOOK).fromProc(raiz);
+    assert.ok(vivas, 'la lista se pudo armar');
+    assert.ok(vivas.has('/tmp/corre-AbC123/bin/programa'), 'el ejecutable');
+    assert.ok(vivas.has('/tmp/lib-XyZ789/libuno.so'), 'la librería cargada, aunque se haya borrado del disco');
+    assert.ok(![...vivas].some((v) => v.includes('[stack]')), 'lo que no es un archivo no es una ruta');
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});

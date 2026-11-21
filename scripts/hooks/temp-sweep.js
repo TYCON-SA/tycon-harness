@@ -47,7 +47,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * Una carpeta donde cualquiera puede escribir y que no protege lo de cada uno (sin «sticky») tampoco se mira.
  *
  * ── CÓMO SABE QUE ALGO ESTÁ EN USO ───────────────────────────────────────────────────────────────────────────────
- *   · Linux: las carpetas de trabajo y los archivos abiertos de los procesos del usuario, de `/proc`;
+ *   · Linux: las carpetas de trabajo, los archivos abiertos, el programa que corre y las librerías cargadas de los
+ *     procesos del usuario, de `/proc`;
  *   · macOS: lo mismo, de `lsof`;
  *   · Windows: le cambia el nombre y se lo devuelve antes de borrar. El sistema se niega si un proceso está parado
  *     en la carpeta, y entonces la deja. Un archivo de adentro abierto por otro proceso puede no frenarlo.
@@ -153,14 +154,25 @@ function usableRoot(p, uid) {
   return { path: r, dev: st.dev };
 }
 
-function fromProc() {
+/** La ruta de un renglón de `maps`, o null: lo que no es un archivo (`[stack]`, memoria sin nombre) no tiene ruta. */
+function mapPath(line) {
+  const m = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\/.*)$/.exec(line);
+  return m ? m[1].replace(/ \(deleted\)$/, '') : null;
+}
+
+function fromProc(procRoot = '/proc') {
   let pids;
-  try { pids = fs.readdirSync('/proc').filter((n) => /^\d+$/.test(n)); } catch (_) { return null; }
+  try { pids = fs.readdirSync(procRoot).filter((n) => /^\d+$/.test(n)); } catch (_) { return null; }
   const out = new Set();
   for (const pid of pids) {
-    const base = path.join('/proc', pid);
+    const base = path.join(procRoot, pid);
     // el de otro usuario no se deja leer, y uno que terminó ya no está: ninguno de los dos cuenta
     try { out.add(fs.readlinkSync(path.join(base, 'cwd'))); } catch (_) { continue; }
+    // el programa que corre y las librerías que cargó: uno que corre desde una carpeta temporal sin tocarla la usa igual
+    try { out.add(fs.readlinkSync(path.join(base, 'exe')).replace(/ \(deleted\)$/, '')); } catch (_) { /* un hilo del sistema no tiene */ }
+    try {
+      for (const line of fs.readFileSync(path.join(base, 'maps'), 'utf8').split('\n')) { const p = mapPath(line); if (p) out.add(p); }
+    } catch (_) { /* se fue mientras se miraba */ }
     let fds;
     try { fds = fs.readdirSync(path.join(base, 'fd')); } catch (e) {
       if (e.code === 'ENOENT' || e.code === 'ESRCH') continue;
@@ -436,4 +448,4 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine };
+module.exports = { sweep, looksRandom, defaultRoots, allowedRoots, livePaths, fromProc, trusted, inspect, remove, startupLine };
