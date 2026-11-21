@@ -67,6 +67,8 @@
  *   marker.js doing "<qué hago>" | doing clear  → anota (o borra) qué hace esta sesión sin story, para /wip; NO es un
  *                                                  permiso. `doing clear-orphan <sid>`: la de otra sesión que no vive.
  *                                                  Con una story abierta sólo anota `doing --waiting-for "<qué espera>"`.
+ *   marker.js conditions "<texto>"              → anota en la ejecución las condiciones que puso el dev al pedirla
+ *                                                  (o «ninguna»): `next` las pide antes de cada punto de control
  *   marker.js adopt-session <sessionId>         → ADOPTA el marker completo de otra
  *                                                  sesión (resume cross-session sin pérdida:
  *                                                  filesTouched/iterations/checks/dodRuntimeChecked
@@ -1227,6 +1229,24 @@ function cmdGet(opcion) {
     console.error(`marker.js get: el marcador de la sesión ${SID} no se puede leer o no dice de qué story es`);
     process.exitCode = 3;
   }
+}
+
+// Las condiciones que puso el dev al pedir la historia, en el marcador: así una sesión nueva retoma sin releer la
+// conversación (lib/resume-state.js). «ninguna» también se anota: dice que se miró.
+function cmdConditions(rest = []) {
+  const texto = rest.join(' ').trim();
+  if (!texto) {
+    console.error('conditions: falta el texto — marker.js conditions "<las condiciones del pedido, o ninguna>"');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('conditions: esta sesión no tiene una ejecución en curso');
+    process.exit(1);
+  }
+  marker.requestConditions = { texto: texto.slice(0, 4000), at: nowIso() };
+  writeMarker(marker);
+  console.log('condiciones del pedido anotadas en la ejecución');
 }
 
 function cmdTouch() {
@@ -5719,6 +5739,7 @@ function cmdClear(rest = []) {
   // acuerde de correr `pipeline.js timing-report` antes del clear. Best-effort:
   // un fallo acá JAMÁS bloquea el clear.
   let cerradaEnClear = false;
+  let cierreDicho = false;
   let marcadorAntes = null;
   frenarSiIlegible(markerFilePath(SID), SID, 'clear');
   try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
@@ -5879,6 +5900,8 @@ function cmdClear(rest = []) {
       }
       // Cómo terminó cada paso y con qué resultado cerró la corrida, después de la línea de costo; y un aviso
       if (STEPS_LIB.schemeOf(marker) === STEPS_LIB.SCHEME) decirRenglonesDelCierre(marker, dumpFinal, marker.runDir || carpetaDelVolcado);
+      // la historia terminó: la sesión se cierra. Va antes de la oferta, que tiene que quedar última (se lee con «| tail»)
+      if (marker.storyId) { process.stdout.write(`${require('./lib/resume-state.js').CIERRE_DE_SESION}\n`); cierreDicho = true; }
       // La oferta de la instalación completa al cerrar la primera historia: sale del cierre mecánico, después
       // de archivar el volcado (el volcado de ESTA corrida es la evidencia de que se cerró). Va a la salida estándar para
       // que el agente la muestre tal cual; un error se dice en un renglón y nunca frena el cierre.
@@ -5899,6 +5922,9 @@ function cmdClear(rest = []) {
   // y los clones de los humos comparados (historia 8.167)
   try { require('./lib/compare-previous.js').limpiar(STATE_DIR, SID); } catch (e) { process.stderr.write(`[marker] no pude borrar los clones de los humos comparados (${e.message}): los barre la próxima comparación\n`); }
   syncSessionState(SID);
+  // la historia terminó: la sesión se cierra, y la próxima arranca sin arrastrar esta conversación (si el archivo de la
+  // ejecución falló antes de decirlo)
+  if (!cierreDicho && marcadorAntes && marcadorAntes.storyId) process.stdout.write(`${require('./lib/resume-state.js').CIERRE_DE_SESION}\n`);
 }
 
 function cmdIsActive() {
@@ -8828,6 +8854,9 @@ switch (cmd) {
     break;
   case 'doing':
     cmdDoing(arg1, arg2);
+    break;
+  case 'conditions':
+    cmdConditions(process.argv.slice(3));
     break;
   case 'waiting-on-main':
     cmdWaitingOnMain(process.argv.slice(3));
