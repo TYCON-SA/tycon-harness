@@ -1002,6 +1002,71 @@ test('Regresion_ResultadosIlegibles_SeRegistran @story-8.234 @ac-27 — la carpe
   } finally { try { fs.chmodSync(dir, 0o755); } catch { /* ya no está */ } fs.rmSync(raiz, { recursive: true, force: true }); }
 });
 
+// ── El sitio de una máquina propia: el resultado de su actualización, en la carpeta del sitio ─────────────────────────
+
+/** La carpeta de datos del sitio (`SITE_DATA_DIR`) con los resultados dados en `site-update/` (`{ ruta: resultado }`). */
+function dataDirConActualizacion(raiz, resultados) {
+  const dataDir = path.join(raiz, 'datos');
+  for (const [rel, c] of Object.entries(resultados)) {
+    const ruta = path.join(dataDir, 'site-update', rel);
+    fs.mkdirSync(path.dirname(ruta), { recursive: true });
+    fs.writeFileSync(ruta, typeof c === 'string' ? c : JSON.stringify(c));
+  }
+  return dataDir;
+}
+
+test('T3 Sources_Instalacion_LeeLaCarpetaDelSitio @story-8.328 @ac-2 — el resultado de la máquina propia, en la carpeta del sitio, da la misma banda que el de Azure', async () => {
+  const { raiz, clon } = clonConActualizacion({});
+  try {
+    const dataDir = dataDirConActualizacion(raiz, { 'site-update-2026-10-15.json': resultado('local', '2026-10-15', 'no_pudo', ETIQUETA) });
+    const m = sources.construirDesdeClon(clon, { ahora: T0, dataDir, log: () => {} });
+    assert.deepStrictEqual(m.instalacion, { porEtiqueta: true, dia: '2026-10-15' });
+    assert.match(await inicioDe(m, 'lead@acme.example'), /instalado por etiqueta/i);
+    assert.strictEqual(sources.construirDesdeClon(clon, { ahora: T0, log: () => {} }).instalacion, null, 'sin la carpeta del sitio, lo de hoy');
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+test('T4 Sources_Instalacion_LasDosCarpetas_ElUltimoPorPlataforma @story-8.328 @ac-3 — entre las dos carpetas gana el resultado más nuevo de cada plataforma; demo/ no cuenta', () => {
+  const casos = [
+    // la misma plataforma en las dos: el más nuevo manda, esté donde esté
+    { ops: { 'site-update-2026-10-14.json': resultado('local', '2026-10-14', 'no_pudo', ETIQUETA) }, sitio: { 'site-update-2026-10-15.json': resultado('local', '2026-10-15', 'al_dia') }, espera: { porEtiqueta: false, dia: '2026-10-15' } },
+    { ops: { 'site-update-2026-10-15.json': resultado('local', '2026-10-15', 'no_pudo', ETIQUETA) }, sitio: { 'site-update-2026-10-14.json': resultado('local', '2026-10-14', 'al_dia') }, espera: { porEtiqueta: true, dia: '2026-10-15' } },
+    // plataformas distintas: el más nuevo de una no tapa el de la otra
+    { ops: { 'site-update-2026-10-15.json': resultado('azure', '2026-10-15', 'al_dia') }, sitio: { 'site-update-2026-10-14.json': resultado('local', '2026-10-14', 'no_pudo', ETIQUETA) }, espera: { porEtiqueta: true, dia: '2026-10-14' } },
+    // el del demo, en la carpeta del sitio, tampoco se lee
+    { ops: {}, sitio: { 'demo/site-update-2026-10-15.json': resultado('local', '2026-10-15', 'no_pudo', ETIQUETA), 'site-update-2026-10-14.json': resultado('local', '2026-10-14', 'al_dia') }, espera: { porEtiqueta: false, dia: '2026-10-14' } },
+  ];
+  for (const c of casos) {
+    const { raiz, clon } = clonConActualizacion(c.ops);
+    try {
+      const dataDir = dataDirConActualizacion(raiz, c.sitio);
+      assert.deepStrictEqual(sources.construirDesdeClon(clon, { ahora: T0, dataDir, log: () => {} }).instalacion, c.espera, JSON.stringify(c));
+    } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+  }
+});
+
+test('T5 Sources_Instalacion_CarpetaIlegible_SigueConOperaciones @story-8.328 @ac-4 — la carpeta del sitio que no se puede leer se dice y se sigue con la de operaciones; un enlace que sale de ella no se lee', (t) => {
+  if (process.getuid && process.getuid() === 0) { t.diagnostic('NO MEDIDO: corriendo como root, una carpeta sin permisos se lee igual'); return; }
+  if (process.platform === 'win32') { t.diagnostic('NO MEDIDO: en Windows chmod no saca la lectura'); return; }
+  const { raiz, clon } = clonConActualizacion({ 'site-update-2026-10-14.json': resultado('azure', '2026-10-14', 'no_pudo', ETIQUETA) });
+  const dataDir = dataDirConActualizacion(raiz, { 'site-update-2026-10-15.json': resultado('azure', '2026-10-15', 'al_dia') });
+  const dir = path.join(dataDir, 'site-update');
+  try {
+    fs.chmodSync(dir, 0o000);
+    const registro = [];
+    const m = sources.construirDesdeClon(clon, { ahora: T0, dataDir, log: (l) => registro.push(l) });
+    assert.deepStrictEqual(m.instalacion, { porEtiqueta: true, dia: '2026-10-14' }, 'lo de operaciones');
+    assert.ok(registro.some((l) => /carpeta del sitio/.test(l) && /no se pudo leer/.test(l)), registro.join(' | '));
+    fs.chmodSync(dir, 0o755);
+    // un resultado que es un enlace a un archivo de fuera de la carpeta del sitio no cuenta
+    const afuera = path.join(raiz, 'afuera.json');
+    fs.writeFileSync(afuera, JSON.stringify(resultado('azure', '2026-10-16', 'al_dia')));
+    fs.symlinkSync(afuera, path.join(dir, 'site-update-2026-10-16.json'));
+    fs.rmSync(path.join(dir, 'site-update-2026-10-15.json'));
+    assert.deepStrictEqual(sources.construirDesdeClon(clon, { ahora: T0, dataDir, log: () => {} }).instalacion, { porEtiqueta: true, dia: '2026-10-14' });
+  } finally { try { fs.chmodSync(dir, 0o755); } catch { /* ya no está */ } fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
 // «esperando la huella» dice a qué hora vuelve a mirar el buzón (T52 de site-config.test.js mira el texto); acá, el número
 // con las fuentes de verdad: antes de leer no hay hora, y al arrancar es el reloj del sitio más `site.refresh_minutes`
 test('ProximaLectura_ConLasFuentesReales_EsElRelojMasLosMinutos @story-8.171 @ac-29', { skip: SIN_BACKEND }, async () => {

@@ -365,20 +365,28 @@ const PATRON_SEGURO = /^(?!(?:[^*]*\*){3})[A-Za-z0-9._*-]{1,80}$/;
  * resultado de CADA plataforma que aparece ahí (el campo `plataforma`, sin nombrar ninguna): una plataforma que no sabe
  * qué imagen corre nunca dice «instalado por etiqueta», y su resultado más nuevo no tapa el de otra. El del demo va en
  * su propia carpeta (`demo/`), que no se lee. Del resultado sólo sale si el motivo es «instalado por etiqueta».
+ * Con `dataDir`, mira además `<dataDir>/site-update/`: ahí deja su resultado la actualización de una máquina propia, que
+ * corre desde el cron de esa máquina y no llega a la copia de operaciones. Los resultados de las dos carpetas se ordenan
+ * juntos por día, y cada archivo se valida contra la raíz de la suya.
  */
-function instalacionDelSitio(dash, clon, log) {
-  const dir = path.join(dash, 'site-update');
-  let nombres = [];
-  try { nombres = fs.readdirSync(dir).filter((n) => /^site-update-\d{4}-\d{2}-\d{2}\.json$/.test(n)).sort().reverse(); } catch (e) {
-    // sin la carpeta, no hay nada que decir; una que no se puede leer se dice (el aviso de la etiqueta faltaría callado)
-    if (!e || e.code !== 'ENOENT') log(`la carpeta de la actualización del sitio no se pudo leer (${(e && e.code) || 'error'})`);
-    return null;
+function instalacionDelSitio(dash, clon, log, dataDir = null) {
+  const carpetas = [{ dir: path.join(dash, 'site-update'), raiz: clon, cual: 'la carpeta de la actualización del sitio' }];
+  if (dataDir) carpetas.push({ dir: path.join(dataDir, 'site-update'), raiz: dataDir, cual: 'la carpeta del sitio con la actualización de esta máquina' });
+  const archivos = [];
+  for (const c of carpetas) {
+    let nombres;
+    try { nombres = fs.readdirSync(c.dir).filter((n) => /^site-update-\d{4}-\d{2}-\d{2}\.json$/.test(n)); } catch (e) {
+      // sin la carpeta, no hay nada que decir; una que no se puede leer se dice (el aviso de la etiqueta faltaría callado)
+      if (!e || e.code !== 'ENOENT') log(`${c.cual} no se pudo leer (${(e && e.code) || 'error'})`);
+      continue;
+    }
+    for (const n of nombres) archivos.push({ n, ruta: path.join(c.dir, n), raiz: c.raiz });
   }
+  archivos.sort((a, b) => (a.n < b.n ? 1 : a.n > b.n ? -1 : 0));
   const vistas = new Set();
   let out = null;
-  for (const n of nombres) {
-    const ruta = path.join(dir, n);
-    if (!dentroDe(clon, ruta)) continue;
+  for (const { n, ruta, raiz } of archivos) {
+    if (!dentroDe(raiz, ruta)) continue;
     const r = leerJsonDe(ruta);
     if (!r.doc) { log(`la actualización del sitio del ${n.slice(12, 22)} no se pudo leer`); continue; }
     if (!isObject(r.doc) || typeof r.doc.plataforma !== 'string' || vistas.has(r.doc.plataforma)) continue;
@@ -391,7 +399,7 @@ function instalacionDelSitio(dash, clon, log) {
 }
 
 // ── El modelo (lista blanca), desde un clon del repo de operaciones ───────────────────────────────────────────────
-function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin_buzon'), carpetas = null, fichas, log: logCrudo = () => {} } = {}) {
+function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin_buzon'), carpetas = null, fichas, dataDir = null, log: logCrudo = () => {} } = {}) {
   const log = (l) => logCrudo(limpiarLinea(l));   // los nombres de archivo del repo pueden traer saltos de línea
   const t = ahora;
   const hoy = diaUtc(t);
@@ -613,7 +621,7 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
   m.stateAgeDays = stateAgeDaysProjected(sourcesCfg.params);
   m.corridas = corridas;
   m.carpetas = carpetasProyectadas(carpetas);
-  m.instalacion = instalacionDelSitio(dash, clon, log);
+  m.instalacion = instalacionDelSitio(dash, clon, log, dataDir);
   // las fichas del tablero nocturno, ya calculadas aparte (refrescarUnaVez → calcularFichas). `null` = todavía no
   // se calcularon; sin la clave (las pruebas que no las piden) el modelo no las trae.
   if (fichas !== undefined) m.fichas = fichas;
@@ -1010,7 +1018,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     return r.doc && isObject(r.doc) ? r.doc : null;
   }
 
-  const construir = ({ corridas, carpetas, t }) => construirDesdeClon(clon, { ahora: t, corridas, carpetas, fichas: st.fichas || null, log });
+  const construir = ({ corridas, carpetas, t }) => construirDesdeClon(clon, { ahora: t, corridas, carpetas, fichas: st.fichas || null, dataDir, log });
 
   /**
    * Las fichas del tablero nocturno: el mismo cálculo que arma la página, en un hilo aparte porque recorre el espejo
