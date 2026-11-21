@@ -125,6 +125,11 @@ test('T27 BgGuard_SoloClickDeLaPropiaSesion_Pasa — el cuadro de nombrar la coo
   assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Nombrás coordinadora? (firma designation-set · sesión ses-otra · código 1a2b3c4d)`))).decision, 'deny');
   assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Aprobás el plan? (firma plan-approval · sesión ${LANZADA} · código fabb4d5f)`))).decision, 'deny');
   assert.strictEqual(decidir(toy, evento(LANZADA)).decision, 'deny');
+  // con otra pregunta en el mismo cuadro, o dos sellos en una, va a la coordinadora (lo encontró el pase adversarial)
+  const dos = { questions: [pregunta(`¿Nombrás coordinadora? (firma designation-set · sesión ${LANZADA} · código 1a2b3c4d)`).questions[0],
+    pregunta(`¿Aprobás el plan? (firma plan-approval · sesión ${LANZADA} · código fabb4d5f)`).questions[0]] };
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', dos)).decision, 'deny');
+  assert.strictEqual(decidir(toy, evento(LANZADA, 'AskUserQuestion', pregunta(`¿Nombrás? (firma designation-set · sesión ${LANZADA} · código 1a2b3c4d) ¿Y el plan? (firma plan-approval · sesión ${LANZADA} · código fabb4d5f)`))).decision, 'deny');
   // la negativa del freno de firmas lo dice: el cuadro va en esta pestaña, se avisa a la coordinadora y queda la terminal
   const cuadro = oa.cuadroDe({ firma: 'designation-set', destino: LANZADA, que: 'nombrar coordinadora', siSaleMal: 'x', huella: '1a2b3c4d',
     soloClick: true, descripciones: ['Esa sesión firma en tu nombre.', 'No cambia nada.'] });

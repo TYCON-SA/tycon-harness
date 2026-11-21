@@ -290,8 +290,11 @@ function decidir(evento, { home = os.homedir(), env = process.env, arnes, ahora 
   const soloClick = firma ? esSoloClick(home, firma) : false;
   // la firma de sólo click de esta misma sesión (nombrar o retirar la coordinadora) vale sólo en esta pestaña: el cuadro
   // se muestra acá, y el dueño lo contesta en ella o por control remoto; mandarlo a la coordinadora dejaba sólo la terminal.
-  // Va antes del registro de preguntas: ese cuadro no es una pregunta para la coordinadora
-  if (soloClick && m[2] === String(sid)) return null;
+  // Sólo con una pregunta y un sello: otra pregunta en el mismo cuadro seguiría yendo a la coordinadora. Va antes del
+  // registro de preguntas: ese cuadro no es una pregunta para la coordinadora
+  const preguntas = d.tool_input && Array.isArray(d.tool_input.questions) ? d.tool_input.questions.length : 1;
+  const sellos = textoDe(d.tool_input).match(new RegExp(SELLO.source, 'g')) || [];
+  if (soloClick && m[2] === String(sid) && preguntas === 1 && sellos.length === 1) return null;
   // la coordinadora tiene sus minutos para contestar; si no, la pregunta le llega a la persona y la sesión no queda quieta.
   // El registro lo lleva este freno: sin poder leerlo o escribirlo, se niega como siempre, y queda anotado
   let espera = null;
