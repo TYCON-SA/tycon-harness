@@ -781,13 +781,14 @@ const formaCorta = (comando) => require('./owner-approvals.js').sinRutas(String(
 const SALTEA = { que: 'mergear salteando la cola y la CI de main', siSaleMal: 'el cambio entra a main sin la cola ni la CI, y lo que la CI frenaba llega a main' };
 function textoDeSaltearLaCola(comando) {
   let hallazgos;
-  try { hallazgos = require('./ci-bypass.js').leer(String(comando || '')).filter((h) => h.legible); } catch (_) { return null; }
-  if (!hallazgos.length) return null;
+  try { hallazgos = require('./ci-bypass.js').leer(String(comando || '')); } catch (_) { return null; }
+  // una parte que el lector no lee entera puede ser un merge: el texto del catálogo, con la alarma
+  if (!hallazgos.length || hallazgos.some((h) => !h.legible)) return null;
   const cambia = (h) => h.forma === 'api-rules' || (h.forma === 'az-bypass' && /^cambiar o borrar una política/.test(h.motivo));
   if (!hallazgos.every(cambia)) {
+    if (hallazgos.some((h) => h.forma === 'admin-merge' || h.forma === 'api-merge')) return SALTEA;
     // darse el permiso de saltear, o escribir sobre un pedido o una política por la API, no es mergear: su motivo
-    const solo = hallazgos.every((h) => h.forma === 'admin-merge' || h.forma === 'api-merge') ? SALTEA.que : null;
-    return { que: solo || [...new Set(hallazgos.filter((h) => !cambia(h)).map((h) => h.motivo))].join('; '), siSaleMal: SALTEA.siSaleMal };
+    return { que: [...new Set(hallazgos.filter((h) => !cambia(h)).map((h) => h.motivo))].join('; '), siSaleMal: SALTEA.siSaleMal };
   }
   const que = hallazgos.some((h) => h.forma === 'api-rules')
     ? 'cambiar las reglas o la protección de la rama (por ejemplo, la configuración de la cola de merge)'

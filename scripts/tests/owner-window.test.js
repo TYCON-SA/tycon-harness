@@ -4616,5 +4616,9 @@ test('MergeBypass_CuadroDiceLoQueHaceElComando: cambiar las reglas no se present
   assert.match(saltea.pregunta, /lo que la CI frenaba llega a main/, saltea.pregunta);
   // una forma de cada clase en el mismo comando: manda la alarma
   const ambas = cuadro('gh api -X PUT repos/acme/arnes/rulesets/1 -f a=b && gh pr merge 3 --admin');
+  assert.match(ambas.pregunta, /salteando la cola y la CI de main/, ambas.pregunta);
   assert.match(ambas.pregunta, /lo que la CI frenaba llega a main/, ambas.pregunta);
+  // con una parte que el lector no lee entera (puede ser un merge), tampoco baja la alarma
+  const escondida = cuadro('gh api -X PUT repos/acme/arnes/rulesets/1 -f a=b && gh pr merge 5 $FLAG');
+  assert.match(escondida.pregunta, /lo que la CI frenaba llega a main/, escondida.pregunta);
 });
