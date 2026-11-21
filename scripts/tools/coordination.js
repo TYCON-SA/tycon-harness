@@ -1479,7 +1479,9 @@ function ownerReplyLines(opts, sid, problems) {
     if (e.code !== 'ENOENT') problems.push(`${what} (${e.code || e.message})`);
   }
   if (!held.length) return [];
-  const text = held.map((h) => (h.text.endsWith('\n') || !h.text ? h.text : `${h.text}\n`)).join('');
+  // un renglón igual en dos tomados es el mismo mensaje (una lectura que se cayó después de devolver los sin confirmar):
+  // sale una vez. Dos mensajes de verdad nunca son iguales: cada uno lleva su hora y dónde se lo busca
+  const text = [...new Set(held.flatMap((h) => h.text.split('\n')).filter((l) => l.trim()))].map((l) => `${l}\n`).join('');
   const out = [];
   const back = [];
   // los mensajes de la persona que se pierden, por sesión: la coordinadora le pregunta a esa sesión qué le pidieron
@@ -1547,6 +1549,7 @@ function ownerReplyLines(opts, sid, problems) {
  * vivo, como en `sessionsBySid`; un pid reciclado espera a la próxima lectura. El de un pid que no es un número, y el que
  * no se puede leer, quedan donde estaban y van a `problems` con su ruta.
  */
+const MAX_PID = 2147483647;
 function orphanReplies(file, what, takenName, rename, problems) {
   const dir = path.dirname(file);
   const base = `${path.basename(file)}.`;
@@ -1560,8 +1563,9 @@ function orphanReplies(file, what, takenName, rename, problems) {
     if (!n.startsWith(base) || !n.endsWith('.leyendo')) continue;
     const orphan = path.join(dir, n);
     const parts = n.slice(base.length, -'.leyendo'.length).split('.');
-    // un pid es un entero positivo: el 0 le preguntaría al grupo de procesos y uno enorme no es un proceso
-    if (parts.length > 2 || !/^[1-9]\d*$/.test(parts[0]) || !Number.isSafeInteger(Number(parts[0]))) {
+    // un pid es un entero positivo hasta el más alto que acepta process.kill: el 0 le preguntaría al grupo de procesos y
+    // uno más grande hace tirar a process.kill, que se leería como «no vive»
+    if (parts.length > 2 || !/^[1-9]\d*$/.test(parts[0]) || Number(parts[0]) > MAX_PID) {
       problems.push(`${what}: ${orphan} quedó tomado y su nombre no dice de qué proceso es: no lo toqué`);
       continue;
     }

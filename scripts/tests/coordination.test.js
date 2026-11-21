@@ -3062,6 +3062,14 @@ test('T4 OwnerReplies_OrphanTakenFile_DeliveredOnce @story-8.290 @ac-5: el tomad
   const s = t.read();
   assert.strictEqual(t.times(s.text, 'solo huerfano'), 1, s.text);
   assert.deepStrictEqual(t.taken(), []);
+  // el mismo renglón en el huérfano y en el archivo (se cayó después de devolver los sin confirmar): sale una vez
+  // (pase adversarial de la 8.290)
+  const repetido = t.row('repetido');
+  fs.writeFileSync(`${t.file}.${DEAD_PID}.def456.leyendo`, repetido);
+  fs.writeFileSync(t.file, repetido);
+  const d = t.read();
+  assert.strictEqual(t.times(d.text, 'repetido'), 1, d.text);
+  assert.deepStrictEqual(t.taken(), []);
 });
 
 test('T5 OwnerReplies_LiveOrUnknownTakenFile_LeftAndSaid @story-8.290 @ac-6: el de un proceso vivo no se toca; el ilegible y el de pid raro quedan y se dicen', () => {
@@ -3076,6 +3084,9 @@ test('T5 OwnerReplies_LiveOrUnknownTakenFile_LeftAndSaid @story-8.290 @ac-6: el 
   fs.writeFileSync(cero, t.row('pid cero'));
   const enorme = `${t.file}.${'9'.repeat(30)}.leyendo`;
   fs.writeFileSync(enorme, t.row('pid enorme'));
+  // pasado el pid más alto que acepta process.kill: tampoco es un proceso (pase adversarial de la 8.290)
+  const fueraDeRango = `${t.file}.2147483648.leyendo`;
+  fs.writeFileSync(fueraDeRango, t.row('pid fuera de rango'));
   const ilegible = `${t.file}.${DEAD_PID}.k2.leyendo`;
   fs.writeFileSync(ilegible, t.row('ilegible'));
   const posix = !POSIX_PERMS.skip;
@@ -3084,7 +3095,7 @@ test('T5 OwnerReplies_LiveOrUnknownTakenFile_LeftAndSaid @story-8.290 @ac-6: el 
   try { r = t.read(); } finally { if (posix) fs.chmodSync(ilegible, 0o644); }
   assert.strictEqual(fs.readFileSync(vivo, 'utf8'), contenido, 'el vivo queda intacto');
   assert.ok(!r.problems.some((p) => p.includes(vivo)), 'el vivo no es un problema');
-  for (const f of [raro, cero, enorme]) assert.ok(fs.existsSync(f) && r.problems.some((p) => p.includes(f)), `${f}: ${JSON.stringify(r.problems)}`);
+  for (const f of [raro, cero, enorme, fueraDeRango]) assert.ok(fs.existsSync(f) && r.problems.some((p) => p.includes(f)), `${f}: ${JSON.stringify(r.problems)}`);
   if (posix) {
     assert.doesNotMatch(r.text, /te contestaron/, r.text);
     assert.ok(fs.existsSync(ilegible) && r.problems.some((p) => p.includes(ilegible)), JSON.stringify(r.problems));
