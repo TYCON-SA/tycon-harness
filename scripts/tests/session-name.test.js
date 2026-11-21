@@ -126,3 +126,16 @@ test('T3 2.83-NombreDeSesion_NoTiraConFallas @story-2.83 @ac-6', (t) => {
   assert.doesNotThrow(() => leer(r3, { sid: '../x' }));
   assert.strictEqual(require(LIB).nombreDeSesion({}).nombre, null);
 });
+
+// 🔴 Falla con: una lectura posterior sin nombre (el archivo de la sesión ilegible por un momento) que borra el nombre
+//    que la misma sesión ya tenía anotado; la ficha la contaría como una ejecución sin nombre.
+test('T3b 2.83-ConSesion_LecturaSinNombre_NoBorraElConocido @story-2.83', () => {
+  const { conSesion } = require(LIB);
+  const una = conSesion([], { id: 'a', nombre: 'Tero', visto: '2026-11-21T10:00:00Z' });
+  const otra = conSesion(una, { id: 'a', nombre: null, visto: '2026-11-21T11:00:00Z' });
+  assert.deepStrictEqual(otra, [{ id: 'a', nombre: 'Tero', visto: '2026-11-21T11:00:00Z' }]);
+  // un nombre nuevo sí reemplaza al viejo
+  assert.strictEqual(conSesion(otra, { id: 'a', nombre: 'Tero-2', visto: '2026-11-21T12:00:00Z' })[0].nombre, 'Tero-2');
+  // una sesión sin nombre nunca conocido sigue sin nombre
+  assert.strictEqual(conSesion([], { id: 'b', nombre: null, visto: '2026-11-21T10:00:00Z' })[0].nombre, null);
+});

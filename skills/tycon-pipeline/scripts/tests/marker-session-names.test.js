@@ -190,7 +190,8 @@ function arnesSinLibreria(t) {
 }
 
 test('T6 2.83-Marcador_SinNombreNoFrena @story-2.83 @ac-6 @ac-7', (t) => {
-  // la carpeta de sesiones ilegible: el paso se completa, la entrada sin nombre y una sola línea con el código
+  // la carpeta de sesiones ilegible: el paso se completa, el nombre ya anotado al abrir no se pierde y sale una sola
+  // línea con el código
   const raiz = corral(t);
   nombrar(raiz, A, 'Carrizo-4', 4242);
   abrir(raiz, A);
@@ -203,7 +204,7 @@ test('T6 2.83-Marcador_SinNombreNoFrena @story-2.83 @ac-6 @ac-7', (t) => {
   assert.ok((m.stepsCompleted || []).includes('validate-story'), 'el marcador se escribió');
   if (process.getuid && process.getuid() !== 0) {
     assert.strictEqual(m.sesiones.length, 1);
-    assert.strictEqual(m.sesiones[0].nombre, null);
+    assert.strictEqual(m.sesiones[0].nombre, 'Carrizo-4');
     assert.deepStrictEqual([...c.stderr.matchAll(LINEA)].map((x) => x[1]), ['carpeta-ilegible']);
   }
 

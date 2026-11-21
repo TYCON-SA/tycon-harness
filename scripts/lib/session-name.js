@@ -72,8 +72,13 @@ function nombreDeSesion(opts = {}) {
 }
 
 function conSesion(lista, entrada) {
-  const previas = Array.isArray(lista) ? lista.filter((e) => e && typeof e === 'object' && typeof e.id === 'string' && e.id !== entrada.id) : [];
-  const nueva = { id: entrada.id, nombre: entrada.nombre || null, visto: entrada.visto, ...(entrada.cortado ? { cortado: true } : {}) };
+  const validas = Array.isArray(lista) ? lista.filter((e) => e && typeof e === 'object' && typeof e.id === 'string') : [];
+  const previas = validas.filter((e) => e.id !== entrada.id);
+  // una lectura que no consiguió el nombre (un archivo de sesión ilegible por un momento) no borra el que ya se conocía
+  const antes = validas.find((e) => e.id === entrada.id && e.nombre);
+  const nombre = entrada.nombre || (antes ? antes.nombre : null);
+  const cortado = entrada.nombre ? entrada.cortado : (antes && antes.cortado);
+  const nueva = { id: entrada.id, nombre, visto: entrada.visto, ...(cortado ? { cortado: true } : {}) };
   const todas = [...previas, nueva].sort((a, b) => String(a.visto || '').localeCompare(String(b.visto || '')));
   return todas.slice(-TOPE_SESIONES);
 }
