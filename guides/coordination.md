@@ -425,7 +425,8 @@ El dueño firma desde el celular, con un click en el cuadro de la coordinadora. 
   pueda tomar; si no hay, la pregunta va al dueño al instante.
 - **El `owner-wait` de fondo no le quita el click al dueño**: el freno lo deja pasar, si corre exactamente como lo pide su
   aviso. Tampoco el vigilante de sólo lectura de un pedido
-  (`coordination.js pr-wait --repo <org/repo> --number <n>`), que además deja firmar por delegación (`guides/firmas-del-arnes.md`, «Aprobar en
+  (`coordination.js pr-wait --repo <org/repo> --number <n>`), ni la espera de que una historia abra su pedido
+  (`pr-wait --repo <org/repo> --story <historia>`). Los dos además dejan firmar por delegación (`guides/firmas-del-arnes.md`, «Aprobar en
   nombre del dueño»). Cualquier otra consola de fondo viva sí lo frena: se cierra antes de pedir el cuadro.
 - **Un pedido sin código lo aprueba la coordinadora**: si trae sólo historias, registros, evidencia, memoria o
   documentación, la coordinadora da en nombre del dueño las dos aprobaciones del merge (el mensaje y la subida) y le

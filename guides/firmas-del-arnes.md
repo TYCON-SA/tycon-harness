@@ -590,6 +590,9 @@ igual, sólo esta forma exacta, para cualquier plataforma:
 - `node <coordination.js> pr-wait --repo <organización/repo> --number <número>`, con `--interval <segundos>` opcional y
   el `coordination.js` de este mismo arnés: repite sólo la lectura del pedido por la capa de plataforma, y termina
   cuando deja de estar abierto.
+- `node <coordination.js> pr-wait --repo <organización/repo> --story <historia>`, con el mismo `--interval` opcional:
+  espera a que la historia abra su pedido. Lee sólo la lista de pedidos abiertos, y termina con el número cuando
+  aparece uno de la rama `story/<historia>`, o con la historia en el título.
 
 Los números van escritos tal cual, y la línea no lleva nada más: ni tubos, ni `&&` o `;`, ni redirecciones, ni nada
 armado con `$`. Cualquier otra consola de fondo sigue frenando, también el vigilante propio de una plataforma o un bucle

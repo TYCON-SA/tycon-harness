@@ -2355,6 +2355,88 @@ test('PrWait_AdoRepoDeclared_ReadsWithItsProject @story-8.270 @ac-26 — a repo 
   assert.match(r4.error, /team-repos\.json/, `el motivo no dice que la identidad no se resolvió: ${r4.error}`);
 });
 
+// ── pr-wait --story: esperar a que una historia abra su pedido ───────────────────────────────────────────────────
+// La coordinadora espera a que la sesión de una historia abra su pedido, de fondo y sin escribir nada: la lista de
+// abiertos por la capa de plataforma (`change-request.list`), hasta que aparezca uno de la rama `story/<id>` o con la
+// historia en el título.
+const pedidoDe = (number, sourceBranch, title = 'x') => ({ number, sourceBranch, title, draft: false, author: null, ciRunning: null });
+
+test('PrWaitStory_EndsWhenTheStoryOpensItsPullRequest: termina con el número cuando aparece el pedido de la historia', async () => {
+  const respuestas = [
+    { ok: true, value: [] },
+    { ok: true, value: [pedidoDe(40, 'story/8.3'), pedidoDe(41, 'wt/otra', 'arreglo de la 8.325'), pedidoDe(42, 'story/8.32x')] },
+    { ok: true, value: [pedidoDe(40, 'story/8.3'), pedidoDe(43, 'story/8.32-el-tope')] },
+  ];
+  const vistos = [];
+  const listar = async (args, repo) => { vistos.push([args, repo]); return respuestas[vistos.length - 1]; };
+  const r = await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32', interval: '1' }, { listar, sleep: async () => {} });
+  assert.deepStrictEqual(r, { code: 0, text: 'open 43' });
+  assert.strictEqual(vistos.length, 3);
+  assert.deepStrictEqual(vistos[0][0], { checks: false });
+  // el título que nombra la historia también cuenta, con el número entero (8.32 no es 8.325 ni 8.32.1)
+  const porTitulo = async () => ({ ok: true, value: [pedidoDe(50, 'wt/x', 'feat: algo (8.325)'), pedidoDe(51, 'wt/y', 'fix: 8.32.1'), pedidoDe(52, 'wt/z', 'feat(freno): el tope (8.32 A)')] });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: porTitulo, sleep: async () => {} }), { code: 0, text: 'open 52' });
+  // dos de la misma historia: los dos números
+  const dos = async () => ({ ok: true, value: [pedidoDe(60, 'story/8.32'), pedidoDe(61, 'story/8.32/b')] });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: dos, sleep: async () => {} }), { code: 0, text: 'open 60 61' });
+  // una historia sin punto sólo se busca por la rama: «25» en un título no dice nada
+  const suelta = [{ ok: true, value: [pedidoDe(70, 'wt/x', 'arregla el #25')] }, { ok: true, value: [pedidoDe(71, 'story/25-demo')] }];
+  let n = 0;
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '25' }, { listar: async () => suelta[n++], sleep: async () => {} }), { code: 0, text: 'open 71' });
+});
+
+test('PrWaitStory_FailuresAndShapes: tres lecturas fallidas seguidas cortan con el motivo; otra forma no lee nada', async () => {
+  const falla = async () => ({ ok: false, reason: 'no_medido', detail: 'sin conexión con la plataforma' });
+  const r = await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32', interval: '1' }, { listar: falla, sleep: async () => {} });
+  assert.strictEqual(r.code, 2);
+  assert.match(r.error, /historia 8\.32/);
+  assert.match(r.error, /sin conexión con la plataforma/);
+  // una lista que no es una lista cuenta como falla
+  const rara = async () => ({ ok: true, value: { nada: 1 } });
+  assert.strictEqual((await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: rara, sleep: async () => {} })).code, 2);
+  // una falla entre lecturas buenas no suma
+  const mezcla = [falla, async () => ({ ok: true, value: [] }), falla, falla, async () => ({ ok: true, value: [pedidoDe(9, 'story/8.32')] })];
+  let i = 0;
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: (...a) => mezcla[i++](...a), sleep: async () => {} }), { code: 0, text: 'open 9' });
+  let leyo = false;
+  const nunca = async () => { leyo = true; return { ok: true, value: [] }; };
+  for (const f of [{ story: '8.32', number: '7' }, { story: 'x8' }, { story: '8.' }, { story: '8..3' }, { story: '' }, { story: '8.32', interval: '0' }]) {
+    const rr = await C.prWait({ rest: [], repo: 'acme/portal', ...f }, { listar: nunca, leer: nunca, sleep: async () => {} });
+    assert.strictEqual(rr.code, 2, JSON.stringify(f));
+  }
+  assert.strictEqual(leyo, false, 'leyó con una forma que no vale');
+});
+
+test('PrWaitStory_GoesThroughThePlatformLayer: por la consola, lee la lista de abiertos por la capa de plataforma y nada más', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-prs-'));
+  const ints = path.join(root, 'integrations');
+  fs.cpSync(PLATFORM_FAKE, path.join(ints, 'fake-platform'), { recursive: true });
+  const log = path.join(root, 'calls.jsonl');
+  fs.writeFileSync(path.join(ints, 'fake-platform', 'scripts', 'connector.js'), `'use strict';
+const fs = require('fs');
+module.exports = { run: (operacion, args) => {
+  fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ operacion, args }) + '\\n');
+  const n = fs.readFileSync(${JSON.stringify(log)}, 'utf8').trim().split('\\n').length;
+  return { ok: true, value: n < 2 ? [] : [{ number: 88, sourceBranch: 'story/8.32', title: 'x' }] };
+} };
+`);
+  const tree = path.join(root, 'tree');
+  fs.mkdirSync(tree);
+  fs.writeFileSync(path.join(tree, 'team-profile.json'), JSON.stringify({ integrations: { platform: { default: 'fake-platform' } } }));
+  fs.writeFileSync(path.join(tree, 'team-repos.json'), JSON.stringify({ version: 1, public: { platform: 'github', org: 'acme', repo: 'arnes' },
+    profile: { platform: 'github', org: 'acme', repo: 'perfil' }, operations: { platform: 'github', org: 'acme', repo: 'operaciones' } }));
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home);
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), TYCON_INTEGRATIONS_DIR: ints, TYCON_TREE: tree,
+    TYCON_FAKE_PLATFORM_TOKEN: ['tok', 'falso'].join('-') };
+  for (const k of Object.keys(env)) if (/^TYCON_(ADO_ORG|ADO_CMD|PLATFORM|PROFILE)$|^FAKE_PLATFORM_/.test(k)) delete env[k];
+  const r = spawnSync(process.execPath, [COORD, 'pr-wait', '--repo', 'acme/portal', '--story', '8.32', '--interval', '1'], { encoding: 'utf8', input: '', timeout: 60000, env });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.strictEqual(r.stdout.trim(), 'open 88');
+  const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepStrictEqual(calls.map((c) => c.operacion), ['change-request.list', 'change-request.list']);
+});
+
 // ── El pase al lado de un portón acotado (8.286) ─────────────────────────────────────────────────────────────────
 
 // El registro de un portón sin turno de un proceso vivo (este, salvo que se diga otro), como lo deja heavy-turn.js.

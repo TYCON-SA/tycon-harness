@@ -35,6 +35,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            cierra, o cuando Claude Code cierra una sesión de fondo. Terminar la despierta. Uno por
  *                            máquina; sin coordinadora confirmada, o desde otra sesión, sale enseguida
  *   pr-wait --repo <org/repo> --number <n> [--interval <s>]
+ *   pr-wait --repo <org/repo> --story <historia> [--interval <s>]
  *                            el vigilante de sólo lectura de un pedido: repite sólo su lectura por la capa de plataforma
  *                            (cada 120 s por defecto) y termina con 0 e imprime el estado cuando deja de estar abierto;
  *                            con 2 si la lectura falla tres veces seguidas. De fondo no le quita a la coordinadora la
@@ -2998,16 +2999,62 @@ const PR_WAIT_INTERVAL_S = 120;
 const PR_WAIT_MAX_FAILS = 3;
 const ENTERO = /^[1-9]\d*$/;
 const ORG_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+// el número de una historia: `8.326`, `2.3` o uno suelto (`25`)
+const HISTORIA = /^\d+(?:\.\d+)*$/;
 
 /**
- * `{ code, text?, error? }`: 0 con el estado nuevo (`merged` o `closed`), 2 con el motivo (argumentos con otra forma, o
- * la lectura que falla tres veces seguidas). `leer` y `sleep` se pasan en las pruebas.
+ * ¿El pedido abierto es de la historia? Por la rama (`story/<id>`, `story/<id>-…` o `story/<id>/…`) o, si el número
+ * lleva punto, por el título que lo nombra entero (`8.32` no es `8.325` ni `8.32.1`). Un número suelto sólo por la rama:
+ * «25» en un título no dice de qué historia es.
  */
-async function prWait(f, { leer, tree, sleep = (ms) => new Promise((ok) => setTimeout(ok, ms)) } = {}) {
+function esDeLaHistoria(pedido, historia) {
+  const rama = String((pedido && pedido.sourceBranch) || '').replace(/^refs\/heads\//, '');
+  if (rama === `story/${historia}` || rama.startsWith(`story/${historia}-`) || rama.startsWith(`story/${historia}/`)) return true;
+  if (!historia.includes('.')) return false;
+  const titulo = String((pedido && pedido.title) || '');
+  const exacto = historia.replace(/\./g, '\\.');
+  return new RegExp(`(^|[^\\d.])${exacto}(?!\\d|\\.\\d)`).test(titulo);
+}
+
+/**
+ * La espera de que una historia abra su pedido: lee sólo la lista de abiertos por la capa de plataforma
+ * (`change-request.list`, sin leer los controles de cada uno) y termina con `open <número…>` cuando aparece alguno de
+ * la historia (`esDeLaHistoria`). Tres lecturas fallidas seguidas cortan con el motivo.
+ */
+async function prWaitStory(f, { listar, opciones, repo, sinIdentidad, intervalo, sleep }) {
+  const platform = require('../lib/platform/platform.js');
+  const lectura = listar || ((args, r) => platform.run('change-request.list', args, { ...opciones, repo: r }));
+  let fallas = 0;
+  for (;;) {
+    let r;
+    try { r = await lectura({ checks: false }, repo); } catch (e) { r = { ok: false, detail: (e && e.message) || String(e) }; }
+    if (r && r.ok && Array.isArray(r.value)) {
+      fallas = 0;
+      const suyos = r.value.filter((x) => esDeLaHistoria(x, f.story)).map((x) => Number(x.number)).filter((n) => Number.isInteger(n) && n > 0);
+      if (suyos.length) return { code: 0, text: `open ${suyos.join(' ')}` };
+    } else {
+      fallas += 1;
+      if (fallas >= PR_WAIT_MAX_FAILS) {
+        const motivo = r && r.ok ? 'la plataforma contestó algo que no es una lista' : ((r && (r.detail || r.reason)) || 'la plataforma contestó sin lista');
+        return { code: 2, error: `pr-wait: la lista de pedidos abiertos de ${f.repo} (para la historia ${f.story}) falló ${fallas} veces seguidas: ${motivo}${sinIdentidad}` };
+      }
+    }
+    await sleep(Number(intervalo) * 1000);
+  }
+}
+
+/**
+ * `{ code, text?, error? }`. Con `--number`: 0 con el estado nuevo (`merged` o `closed`). Con `--story`: 0 con
+ * `open <número…>` cuando la historia abre su pedido (`prWaitStory`). 2 con el motivo (argumentos con otra forma, o la
+ * lectura que falla tres veces seguidas). `leer`, `listar` y `sleep` se pasan en las pruebas.
+ */
+async function prWait(f, { leer, listar, tree, sleep = (ms) => new Promise((ok) => setTimeout(ok, ms)) } = {}) {
   const intervalo = f.interval === undefined ? String(PR_WAIT_INTERVAL_S) : f.interval;
-  const sobra = Object.keys(f).filter((k) => !['rest', 'repo', 'number', 'interval'].includes(k));
+  const sobra = Object.keys(f).filter((k) => !['rest', 'repo', 'number', 'story', 'interval'].includes(k));
   if (typeof f.repo !== 'string' || !ORG_REPO.test(f.repo)) return { code: 2, error: 'pr-wait pide --repo <organización/repo>' };
-  if (typeof f.number !== 'string' || !ENTERO.test(f.number)) return { code: 2, error: 'pr-wait pide --number <número de pedido>, un entero positivo' };
+  if (f.number !== undefined && f.story !== undefined) return { code: 2, error: 'pr-wait lleva --number o --story, no los dos' };
+  if (f.story !== undefined && (typeof f.story !== 'string' || !HISTORIA.test(f.story))) return { code: 2, error: 'pr-wait: --story va con el número de la historia (8.326, 2.3 o 25)' };
+  if (f.story === undefined && (typeof f.number !== 'string' || !ENTERO.test(f.number))) return { code: 2, error: 'pr-wait pide --number <número de pedido>, un entero positivo, o --story <historia>' };
   if (typeof intervalo !== 'string' || !ENTERO.test(intervalo)) return { code: 2, error: 'pr-wait: --interval va en segundos, un entero positivo' };
   if (f.rest.length || sobra.length) return { code: 2, error: `pr-wait no lleva más palabras (${[...sobra.map((k) => `--${k}`), ...f.rest].join(' ')})` };
   const platform = require('../lib/platform/platform.js');
@@ -3019,6 +3066,7 @@ async function prWait(f, { leer, tree, sleep = (ms) => new Promise((ok) => setTi
   try { repo = platform.identityByName(f.repo, opciones); } catch (e) { sinIdentidad = ` (${(e && e.message) || e})`; }
   // sin identidad, el motivo de una falla lo dice: en Azure DevOps es casi siempre por eso
   if (!repo) { repo = f.repo; sinIdentidad = ` · ${f.repo} no tiene identidad en team-repos.json${sinIdentidad}: se leyó como org/repo`; }
+  if (f.story !== undefined) return prWaitStory(f, { listar, opciones, repo, sinIdentidad, intervalo, sleep });
   const lectura = leer || ((number, r) => platform.run('change-request.read', { number }, { ...opciones, repo: r }));
   const n = Number(f.number);
   let fallas = 0;
@@ -3140,7 +3188,7 @@ function main(argv) {
     (r.code === 0 ? process.stdout : process.stderr).write(`${r.code === 0 ? '' : 'coordination.js: '}${r.message}\n`);
     return r.code;
   }
-  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n> | stop --name <n> | owner-wait | pr-wait --repo <org/repo> --number <n> [--interval <s>] | keep-free --reason "<por qué>"\n');
+  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n> | stop --name <n> | owner-wait | pr-wait --repo <org/repo> (--number <n> | --story <historia>) [--interval <s>] | keep-free --reason "<por qué>"\n');
   return 2;
 }
 

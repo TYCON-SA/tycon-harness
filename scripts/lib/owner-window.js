@@ -305,12 +305,15 @@ function esOwnerWait(comando) {
  * plataforma), con el mismo lector y las mismas reglas que `esOwnerWait` (un solo tramo, todas las palabras literales,
  * sin redirecciones ni nada armado):
  *   node <coordination.js de este arnés> pr-wait --repo <org/repo> --number <n> [--interval <s>]
- * `<n>` y `<s>` son enteros positivos escritos tal cual, y `<org/repo>` una palabra `organización/repo`. Un bucle de
+ *   node <coordination.js de este arnés> pr-wait --repo <org/repo> --story <historia> [--interval <s>]
+ * `<n>` y `<s>` son enteros positivos escritos tal cual, `<historia>` un número de historia (`8.326`, `25`) y
+ * `<org/repo>` una palabra `organización/repo`. La segunda espera a que la historia abra su pedido: también sólo lee. Un bucle de
  * consola escrito a mano, o el vigilante propio de una plataforma, no es esta forma: desde su línea no se sabe si además
  * escribe.
  */
 const ENTERO = /^[1-9]\d*$/;
 const ORG_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+const HISTORIA = /^\d+(?:\.\d+)*$/;
 function esVigilanteDeLectura(comando) {
   let t;
   try { t = markerCommand().tramos(String(comando), 'bash'); } catch (_) { return false; }
@@ -319,8 +322,9 @@ function esVigilanteDeLectura(comando) {
   if (p.some((x) => !x.literal || /^\d*[<>&|]/.test(x.texto) || /[\r\n]/.test(x.texto))) return false;
   const w = p.map((x) => x.texto);
   const intervalo = (resto) => resto.length === 0 || (resto.length === 2 && resto[0] === '--interval' && ENTERO.test(resto[1]));
+  const cual = (w[5] === '--number' && ENTERO.test(w[6] || '')) || (w[5] === '--story' && HISTORIA.test(w[6] || ''));
   if (NODES.has(base(w[0])) && path.isAbsolute(w[1] || '') && w[2] === 'pr-wait' && w[3] === '--repo' && ORG_REPO.test(w[4] || '')
-    && w[5] === '--number' && ENTERO.test(w[6] || '') && intervalo(w.slice(7))) {
+    && cual && intervalo(w.slice(7))) {
     const propio = real(COORDINACION);
     return propio !== null && real(w[1]) === propio;
   }
