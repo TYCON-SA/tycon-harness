@@ -94,7 +94,7 @@
  *                                                  Queda provenance='manual' + entry en gates.log.
  *                                                  Para checks mecánicos usá run-check — set-check
  *                                                  --manual es la excepción auditable, no la regla.
- *   marker.js snapshot-iter <N> [--date-at-last-reviewer | --at-launch]
+ *   marker.js snapshot-iter <N> [--date-at-last-reviewer | --at-launch [--at <iso>]]
  *                                                → la FOTO del estado auditado de la iteración N.
  *                                                  La toma SOLA el hook al lanzar el último revisor;
  *                                                  si la llamás a mano con código editado después,
@@ -1018,6 +1018,9 @@ function sellosDe(v) {
 function cmdSnapshotIter(nRaw, flags) {
   const fecharAlUltimo = Array.isArray(flags) && flags.includes('--date-at-last-reviewer');
   const alLanzar = Array.isArray(flags) && flags.includes('--at-launch');
+  // la hora del sello de la vuelta, que pipeline.js toma justo antes de sellar (`--at <iso>`)
+  const iAt = Array.isArray(flags) ? flags.indexOf('--at') : -1;
+  const horaDelSello = iAt >= 0 && Number.isFinite(Date.parse(flags[iAt + 1])) ? new Date(Date.parse(flags[iAt + 1])).toISOString() : null;
   const n = parseInt(nRaw, 10);
   if (Number.isNaN(n) || n < 1) {
     console.error('marker.js snapshot-iter: N debe ser entero >= 1');
@@ -1102,15 +1105,17 @@ function cmdSnapshotIter(nRaw, flags) {
   // los revisores van a leer, así que es una foto honesta aunque después la ronda no se complete o se arregle algo antes
   // de que salga el último revisor. Va aparte (`fotosAlLanzar`), no en `iterations`: una foto ahí dice que la vuelta
   // lanzó sus revisores, y con eso cuentan las vueltas el tope y la nota de «repensar». El re-loop la usa sólo cuando
-  // falta la de `iterations`. Nunca pisa una que ya está.
+  // falta la de `iterations`. Nunca pisa una de la misma historia; la de otra historia (un cambio de historia o un
+  // `start` en la misma sesión) no es de esta corrida y se reemplaza. Su hora es la del sello: lo que vio cada revisor.
   if (alLanzar) {
     marker.fotosAlLanzar = marker.fotosAlLanzar || {};
     const previa = marker.fotosAlLanzar[String(n)];
-    if (previa && Array.isArray(previa.filesSnapshot)) {
+    if (previa && Array.isArray(previa.filesSnapshot) && String(previa.story) === String(marker.storyId || null)) {
       return salida({ iter: n, foto: 'ya-estaba', ts: previa.ts, snapshot_size: previa.filesSnapshot.length }, 0);
     }
     marker.fotosAlLanzar[String(n)] = {
-      ts: nowIso(),
+      ts: horaDelSello || nowIso(),
+      story: marker.storyId || null,
       filesSnapshot: foto,
       ...(probesFuera ? { probes_excluidos: probesFuera } : {}),
       ...(congelada ? { ...sellosDe(congelada), vuelta: congelada.etiqueta } : {}),

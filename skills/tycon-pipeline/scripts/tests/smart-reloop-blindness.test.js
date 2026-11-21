@@ -611,10 +611,10 @@ test('SmartReloop_RoundWithoutCompletion_SavesItsPhotoAtLaunch — la vuelta sig
 test('SnapshotIter_AtLaunch_NeverOverwritesAnExistingPhoto', () => {
   const repo = mkRepoGit();
   const ts = new Date(Date.now() - 60000).toISOString();
-  const home = mkHome({ storyId: '9.3.1', repoPath: repo, filesTouched: ['src/a.js', 'src/b.js'], fotosAlLanzar: { 2: { ts, filesSnapshot: ['src/a.js'] } } });
+  const home = mkHome({ storyId: '9.3.1', repoPath: repo, filesTouched: ['src/a.js', 'src/b.js'], fotosAlLanzar: { 2: { ts, story: '9.3.1', filesSnapshot: ['src/a.js'] } } });
   const r = spawnSync(process.execPath, [MARKER, 'snapshot-iter', '2', '--at-launch'], { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: SID } });
   assert.equal(r.status, 0, r.stderr);
-  assert.deepStrictEqual(leerMarcador(home).fotosAlLanzar['2'], { ts, filesSnapshot: ['src/a.js'] });
+  assert.deepStrictEqual(leerMarcador(home).fotosAlLanzar['2'], { ts, story: '9.3.1', filesSnapshot: ['src/a.js'] });
 });
 
 test('SmartReloop_NoPreviousPhoto_FullSetWithoutOfferingALatePhoto', () => {
@@ -624,4 +624,44 @@ test('SmartReloop_NoPreviousPhoto_FullSetWithoutOfferingALatePhoto', () => {
   assert.equal(out.mode, 'no-prev-snapshot-fallback');
   assert.doesNotMatch(out.warning, /Llamá 'marker\.js snapshot-iter/);
   assert.match(out.warning, /No la tomes ahora/);
+});
+
+const dormir = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+// Caso: la vuelta 1 no se completó, y un arreglo se hizo después del sello y antes de lanzar a un revisor. Ese revisor leyó
+// la copia sellada, sin el arreglo: su lanzamiento más tarde no dice que lo vio.
+test('SmartReloop_PhotoAtLaunch_ReviewerLaunchedAfterAFix_DidNotSeeIt — se re-corre', () => {
+  const repo = mkRepoGit();
+  const archivo = path.join(repo, 'src', 'PluginManager.cs');
+  fs.writeFileSync(archivo, 'try { Run(); } catch (Exception e) { }\n');
+  const home = mkHome({ storyId: '9.3.1', repoPath: repo, storyPath: path.join(repo, 'story.md'), filesTouched: [archivo],
+    fileEvents: [{ path: archivo, ts: new Date(Date.now() - 60000).toISOString() }] });
+  const A = 'tycon-plugin-security-basics';
+  const { out: o1 } = reloopIter(repo, home, 1);
+  assert.ok(o1.rerun.includes(A), `el set de la vuelta 1 no trae a ${A}: ${o1.rerun}`);
+  dormir(1100);
+  fs.writeFileSync(archivo, 'try { Run(); } catch (Exception e) { Log(e); }\n');
+  const mp = path.join(home, '.claude', '.tycon-pipeline', 'active', `${SID}.json`);
+  const m = leerMarcador(home);
+  m.fileEvents.push({ path: archivo, ts: new Date().toISOString() });
+  fs.writeFileSync(mp, JSON.stringify(m));
+  dormir(1100);
+  fs.appendFileSync(path.join(home, '.claude', '.tycon-pipeline', 'advisor-runs', `${SID}.jsonl`), `${JSON.stringify({ ts: new Date().toISOString(), advisor: A, story: '9.3.1', repo })}\n`);
+  const { out } = reloopIter(repo, home, 2);
+  assert.ok(out.rerun.includes(A), `${A} vuelve: ${JSON.stringify((out.skipped || []).find((s) => s.name === A))}`);
+});
+
+// Caso: otra historia en la misma sesión (un cambio de historia o un `start`) deja su foto al lanzar; la de esta
+// historia la reemplaza y el re-loop no usa la ajena.
+test('SnapshotIter_AtLaunch_OtherStoryPhoto_IsReplacedAndNotUsed', () => {
+  const repo = mkRepoGit();
+  const vieja = { ts: '2026-11-01T10:00:00.000Z', story: '1.1', filesSnapshot: [] };
+  const home = mkHome({ storyId: '9.3.1', repoPath: repo, filesTouched: ['src/a.js'], fotosAlLanzar: { 1: vieja } });
+  const { out } = reloopIter(repo, home, 2);
+  assert.equal(out.mode, 'no-prev-snapshot-fallback', 'la foto de otra historia no cuenta');
+  const r = spawnSync(process.execPath, [MARKER, 'snapshot-iter', '1', '--at-launch'], { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: SID } });
+  assert.equal(r.status, 0, r.stderr);
+  const nueva = leerMarcador(home).fotosAlLanzar['1'];
+  assert.equal(nueva.story, '9.3.1');
+  assert.notEqual(nueva.ts, vieja.ts);
 });

@@ -2184,9 +2184,12 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   }
 
   const marker = readSessionMarker();
-  // la foto de la vuelta anterior: la de siempre, o la que guardó al lanzarse si su ronda no se completó
-  const fotoPrevia = [at(at(marker, 'iterations'), String(iter - 1)), at(at(marker, 'fotosAlLanzar'), String(iter - 1))]
-    .find((f) => f && Array.isArray(f.filesSnapshot)) || null;
+  // la foto de la vuelta anterior: la de siempre, o la que guardó al lanzarse (de esta historia) si su ronda no se completó
+  const deLaRonda = at(at(marker, 'iterations'), String(iter - 1));
+  const alLanzarla = at(at(marker, 'fotosAlLanzar'), String(iter - 1));
+  const fotoPrevia = deLaRonda && Array.isArray(deLaRonda.filesSnapshot) ? deLaRonda
+    : alLanzarla && Array.isArray(alLanzarla.filesSnapshot) && String(alLanzarla.story) === String(at(marker, 'storyId') || null)
+      ? { ...alLanzarla, alLanzar: true } : null;
   const prevSnapshot = fotoPrevia && fotoPrevia.filesSnapshot;
   if (!prevSnapshot) {
     const out = {
@@ -2386,6 +2389,12 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     vista = require('./lib/late-snapshot.js').vistaPorRevisor(lineasRegistro || [], iter - 1);
   } catch (e) {
     vista = { medible: false, motivo: `no se pudo leer el registro de lanzamientos (${(e && e.message) || e})` };
+  }
+  // Con la foto al lanzar, la ronda no se completó: cada revisor leyó la copia sellada, así que un arreglo hecho después
+  // del sello no lo vio aunque se haya lanzado más tarde. Su lanzamiento no cuenta después de la hora del sello.
+  if (vista.medible && fotoPrevia.alLanzar && vista.lanzamientos instanceof Map) {
+    const selloMs = Date.parse(fotoPrevia.ts);
+    if (Number.isFinite(selloMs)) for (const [adv, t] of vista.lanzamientos) if (Number.isFinite(t) && t > selloMs) vista.lanzamientos.set(adv, selloMs);
   }
   const ultimaEdicion = new Map();     // path → ms de su edición más reciente, por cualquiera de las fuentes
   if (vista.medible) {
@@ -3549,11 +3558,11 @@ function congelarVuelta({ story, repo, iter }) {
  * ella aunque esta ronda no se complete. Nunca frena el lanzamiento; si no se pudo, lo dice. Una vuelta servida para otra
  * sesión (`--for-session`) no toca su marcador: la firma autoriza la vuelta, no escribir la corrida ajena.
  */
-function fotoAlLanzar(iter) {
+function fotoAlLanzar(iter, horaDelSello) {
   if (paraOtra) return;
   const n = parseInt(iter, 10) || 1;
   try {
-    require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'snapshot-iter', String(n), '--at-launch'], {
+    require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'snapshot-iter', String(n), '--at-launch', '--at', horaDelSello], {
       windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000,
     });
   } catch (e) {
@@ -7636,6 +7645,7 @@ function main() {
     // digest de story + file list + hunks. Los advisors lo reciben como input
     // primario en vez de re-leer story completa + re-correr git diff cada uno.
     // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
+    const horaDelSello = new Date().toISOString();
     const congelada = congelarVuelta({ story: args.story, repo: args.repo, iter: args.iter });
     if (congelada.error) {
       process.stderr.write(`🛑 pipeline.js advisors: la vuelta no se lanza — ${congelada.error}. Los revisores no leen la carpeta viva.\n`);
@@ -7643,7 +7653,7 @@ function main() {
       return;
     }
     set.frozen = congelada.repos;
-    fotoAlLanzar(args.iter);
+    fotoAlLanzar(args.iter, horaDelSello);
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     contextoConLaCopia(ctx, congelada.repos);
     // El estado de la sección «Reglas para revisores» del repo (el orquestador avisa al
@@ -7795,6 +7805,7 @@ function main() {
       for (const l of [...(pc.error ? [`no pude leer los críticos de la corrida (${pc.error}): no descuento`] : []), ...pc.fuera]) process.stderr.write(`⚠️  ${l}\n`);
     }
     // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
+    const horaDelSello = new Date().toISOString();
     const congelada = congelarVuelta({ story: args.story, repo: args.repo, iter: args.iter });
     if (congelada.error) {
       process.stderr.write(`🛑 pipeline.js smart-reloop: la vuelta no se lanza — ${congelada.error}. Los revisores no leen la carpeta viva.\n`);
@@ -7802,7 +7813,7 @@ function main() {
       return;
     }
     result.frozen = congelada.repos;
-    fotoAlLanzar(args.iter);
+    fotoAlLanzar(args.iter, horaDelSello);
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     contextoConLaCopia(ctx, congelada.repos);
     result.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));
