@@ -59,7 +59,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *
  * Apagar: TYCON_TEMP_SWEEP=0. Plazo en horas, de 1 para arriba: TYCON_TEMP_SWEEP_HOURS (24). Forzar la pasada de
  * hoy: --force. Probar sin borrar: --dry-run. Otro tope de tiempo, hasta 600 segundos, para una primera pasada con
- * mucho acumulado: --budget-seconds <n>. Para las pruebas, la fecha contra la que se mide el plazo:
+ * mucho acumulado: --budget-seconds <n>. Cuánto se espera a `lsof`, de 1 a 120 segundos: TYCON_TEMP_SWEEP_LIVE_WAIT_SECONDS
+ * (5). Para las pruebas, la fecha contra la que se mide el plazo:
  * TYCON_TEMP_SWEEP_NOW. Fail-open: un hook de arranque nunca frena ni tira; si no pudo barrer, lo dice.
  *
  * Uso:
@@ -80,7 +81,11 @@ const RETRY_MS = HOUR_MS;
 const BUDGET_MS = 20 * 1000;
 const MAX_BUDGET_MS = 600 * 1000;
 const DEFAULT_HOURS = 24;
-const LSOF_TIMEOUT_MS = 5 * 1000;
+// cuánto espera a `lsof`: en una máquina cargada tarda más; sin la lista entera, no se borra nada
+const LSOF_TIMEOUT_MS = (() => {
+  const s = Number(process.env.TYCON_TEMP_SWEEP_LIVE_WAIT_SECONDS);
+  return Number.isFinite(s) && s >= 1 && s <= 120 ? s * 1000 : 5 * 1000;
+})();
 // el borrado de una entrada no se puede cortar: no se empieza si no queda varias veces lo que tardó en mirarse
 const REMOVE_COST = 4;
 const MAX_NAMES = 5;
@@ -297,7 +302,6 @@ function sweep(opts) {
   const { roots, hours = DEFAULT_HOURS, now = Date.now(), budgetMs = BUDGET_MS, dryRun = false, win = WIN } = opts;
   const uid = 'uid' in opts ? opts.uid : (process.getuid ? process.getuid() : null);
   const res = { removed: [], failed: [], inUse: 0, unsafe: 0, unknown: 0, pending: 0, gone: 0, checked: 0, skippedRoots: [] };
-  const deadline = Date.now() + budgetMs;
   const cutoff = now - hours * HOUR_MS;
   const dirs = [];
   for (const p of roots) {
@@ -306,6 +310,8 @@ function sweep(opts) {
     else if (!dirs.some((d) => same(d.path, root.path))) dirs.push(root);
   }
   const live = 'live' in opts ? opts.live : livePaths({ win });
+  // el tope cuenta desde acá: leer los procesos vivos tiene el suyo, y en una máquina cargada se comería el de mirar y borrar
+  const deadline = Date.now() + budgetMs;
   const busy = live ? live.filter((p) => dirs.some((d) => under(p, d.path))) : null;
   for (const root of dirs) {
     let names;
