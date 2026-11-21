@@ -5616,6 +5616,10 @@ function cmdPr(numRaw, rest = []) {
       else if (storyPathArg || repoNombre !== delaHistoria) anotarEnElRegistro({ storyFile, id: vivo.storyId, repo: repoNombre, numero, estricto: Boolean(storyPathArg) });
     }
     vivo.pr = { number: numero, merged, ...(repoNombre ? { repo: repoNombre } : {}) };
+    // y por repo: el pedido de otro repo anotado después no pisa el de la historia (la espera de la compilación los
+    // necesita todos). Sin --repo, el número es del repo de la corrida
+    const delRepo = repoNombre || SR.nombreDelRepo(vivo.repoPath);
+    if (delRepo) vivo.prs = { ...(vivo.prs || {}), [delRepo]: numero };
     vivo.lastTouch = nowIso();
     writeMarker(vivo);
     process.stderr.write(`[marker] pedido #${numero}${merged ? ' (mergeado)' : ''} anotado en la corrida de la ${vivo.storyId}\n`);
@@ -5662,28 +5666,91 @@ function cmdPr(numRaw, rest = []) {
   } catch (e) { process.stderr.write(`[marker] no pude armar el renglón final (${e.message})\n`); }
 }
 
-// Avisa, sin frenar, los repos de la corrida con commits propios cuyo pedido no quedó anotado: sin él, la regla de la entrada
-// no va a reconocer esa fusión como de esta historia. Nunca rompe el cierre.
-function avisarPedidosSinAnotar(marker) {
+/**
+ * Los pedidos de la corrida, por repo: `{ pedidos: [{ repo, nombre, numero, rama }], faltan: [nombre], problemas: [texto] }`.
+ * `faltan`: los repos con commits propios (adelante de `origin/main`) cuyo pedido no quedó anotado; sin él, la regla de la
+ * entrada no reconoce esa fusión como de esta historia, y el cierre no puede esperar su compilación. Nunca tira.
+ */
+function pedidosDeLaCorrida(marker) {
+  const out = { pedidos: [], faltan: [], problemas: [] };
   try {
     const SR = require('./lib/story-requests.js');
     const storyFile = resolveStoryPath(marker.storyPath, marker);
     const { key } = require('./lib/evidence-key.js').keyInfoOr(storyFile, String(marker.storyId));
     const { dir } = require('./lib/evidence-config.js').evidenceDirForStory(storyFile, marker.repoPath);
     // sólo cuenta un renglón de esta corrida: uno de un pedido anterior no cubre los commits de ahora
-    const anotados = new Set();
+    const anotados = new Map();
     const deEstaCorrida = (f) => f.clave === key && (!marker.startedAt || (f.ts && f.ts >= marker.startedAt));
-    for (const [k, filas] of SR.leer({ dirs: dir ? [dir] : [] }).porPedido) if (filas.some(deEstaCorrida)) anotados.add(k.split('#')[0]);
+    for (const [k, filas] of SR.leer({ dirs: dir ? [dir] : [] }).porPedido) {
+      if (!filas.some(deEstaCorrida)) continue;
+      const i = k.lastIndexOf('#');
+      anotados.set(k.slice(0, i), Number(k.slice(i + 1)));
+    }
+    for (const [nombre, n] of Object.entries(marker.prs || {})) if (Number.isInteger(n) && n > 0) anotados.set(nombre, n);
     const pr = marker.pr;
-    if (pr) anotados.add(pr.repo || SR.nombreDelRepo(marker.repoPath));
+    if (pr && Number.isInteger(pr.number)) anotados.set(pr.repo || SR.nombreDelRepo(marker.repoPath), pr.number);
+    const git = (repo, args) => require('child_process').spawnSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true });
     for (const repo of reposParaComparar(marker)) {
       const nombre = SR.nombreDelRepo(repo);
-      if (!nombre || anotados.has(nombre)) continue;
-      const r = require('child_process').spawnSync('git', ['rev-list', '--count', 'origin/main..HEAD'], { cwd: repo, encoding: 'utf8', windowsHide: true });
-      if (r.status !== 0) process.stderr.write(`[marker] ${nombre}: no pude ver si tiene commits sin pedido anotado (git no contestó)\n`);
-      else if (Number(r.stdout.trim()) > 0) process.stderr.write(`[marker] ${nombre}: tiene commits de la corrida y sin pedido anotado (marker.js pr <número> --repo <carpeta>)\n`);
+      if (!nombre) continue;
+      if (anotados.has(nombre)) {
+        const rama = git(repo, ['symbolic-ref', '-q', '--short', 'HEAD']);
+        out.pedidos.push({ repo, nombre, numero: anotados.get(nombre), rama: rama.status === 0 ? rama.stdout.trim() : null });
+        continue;
+      }
+      const r = git(repo, ['rev-list', '--count', 'origin/main..HEAD']);
+      if (r.status !== 0) out.problemas.push(`${nombre}: no pude ver si tiene commits sin pedido anotado (git no contestó)`);
+      else if (Number(r.stdout.trim()) > 0) out.faltan.push(nombre);
     }
-  } catch (e) { process.stderr.write(`[marker] no pude revisar los pedidos anotados (${e.message})\n`); }
+  } catch (e) { out.problemas.push(`no pude revisar los pedidos anotados (${e.message})`); }
+  return out;
+}
+
+// Avisa, sin frenar, los repos de la corrida con commits propios cuyo pedido no quedó anotado. Nunca rompe el cierre.
+function avisarPedidosSinAnotar(marker) {
+  const p = pedidosDeLaCorrida(marker);
+  for (const x of p.problemas) process.stderr.write(`[marker] ${x}\n`);
+  for (const n of p.faltan) process.stderr.write(`[marker] ${n}: tiene commits de la corrida y sin pedido anotado (marker.js pr <número> --repo <carpeta>)\n`);
+}
+
+/**
+ * Con «Preparar el pull request» cerrado, el cierre no da la corrida por terminada si un repo con commits no tiene su
+ * pedido anotado: sin él no se espera su compilación, y el pedido se presentaría como listo con la CI sin ver (el
+ * pedido del backend que nadie anotó). Sale 2 nombrando cada repo. Antes de ese paso, como siempre: sólo avisa.
+ */
+function frenarSiFaltanPedidos(marker) {
+  if (!marker || !marker.storyId || !STEPS_LIB.isDone(marker, 'prepare-commit')) return;
+  const p = pedidosDeLaCorrida(marker);
+  if (!p.faltan.length) return;
+  console.error(`marker.js clear: ${p.faltan.join(', ')} ${p.faltan.length === 1 ? 'tiene' : 'tienen'} commits de la corrida y sin pedido anotado. `
+    + 'Sin el pedido de cada repo no se espera su compilación y la corrida no se puede dar por lista: abrí el pedido y anotalo con '
+    + '`marker.js pr <número> --repo <carpeta>`; después, volvé a correr `marker.js clear`.');
+  process.exit(2);
+}
+
+/**
+ * Lanza de fondo la espera de la compilación de cada pedido de la corrida (lib/pr-build-wait.js). La lista va en un
+ * archivo del estado: la espera lo lee y lo borra. Devuelve los pedidos que espera, o null si no lanzó nada.
+ */
+function lanzarEsperaDeCompilacion(marker) {
+  if (!marker || !marker.storyId || !STEPS_LIB.isDone(marker, 'prepare-commit')) return null;
+  const p = pedidosDeLaCorrida(marker);
+  for (const x of p.problemas) process.stderr.write(`[marker] ${x}\n`);
+  if (!p.pedidos.length) return null;
+  try {
+    const dir = path.join(STATE_DIR, 'pr-build-wait');
+    fs.mkdirSync(dir, { recursive: true });
+    const archivo = path.join(dir, `${SID}-${Date.now()}.json`);
+    fs.writeFileSync(archivo, JSON.stringify({ session: SID, storyId: String(marker.storyId), pedidos: p.pedidos }), 'utf8');
+    const hijo = require('child_process').spawn(process.execPath, [path.join(__dirname, 'lib', 'pr-build-wait.js'), '--file', archivo], {
+      detached: true, stdio: 'ignore', windowsHide: true, env: process.env,
+    });
+    hijo.unref();
+    return p.pedidos;
+  } catch (e) {
+    process.stderr.write(`[marker] no pude lanzar la espera de la compilación (${e.message}): los pedidos NO están listos hasta ver su compilación en verde\n`);
+    return null;
+  }
 }
 
 function cmdClear(rest = []) {
@@ -5698,6 +5765,7 @@ function cmdClear(rest = []) {
   frenarSiIlegible(markerFilePath(SID), SID, 'clear');
   try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
   frenarSiPerdida(SID, 'clear', marcadorAntes && marcadorAntes.repoPath);
+  frenarSiFaltanPedidos(marcadorAntes);
   // una ejecución detenida la cierra el dueño: el perfil puede delegar «cerrar la ejecución», pero esa firma por
   // delegación (o la automática) no alcanza para salir de una detención que espera su decisión
   let crudo = null;
@@ -5854,6 +5922,12 @@ function cmdClear(rest = []) {
       }
       // Cómo terminó cada paso y con qué resultado cerró la corrida, después de la línea de costo; y un aviso
       if (STEPS_LIB.schemeOf(marker) === STEPS_LIB.SCHEME) decirRenglonesDelCierre(marker, dumpFinal, marker.runDir || carpetaDelVolcado);
+      // la compilación de cada pedido se espera de fondo: el pedido no está listo para aprobar hasta verla en verde
+      const esperados = lanzarEsperaDeCompilacion(marker);
+      if (esperados) {
+        process.stderr.write(`[corrida] pedidos abiertos, compilación corriendo: no están listos todavía (${esperados.map((x) => `#${x.numero} de ${x.nombre}`).join(', ')}). `
+          + 'El aviso de «listos para aprobar» llega cuando todas den verde; no pidas la aprobación antes.\n');
+      }
       // La oferta de la instalación completa al cerrar la primera historia: sale del cierre mecánico, después
       // de archivar el volcado (el volcado de ESTA corrida es la evidencia de que se cerró). Va a la salida estándar para
       // que el agente la muestre tal cual; un error se dice en un renglón y nunca frena el cierre.

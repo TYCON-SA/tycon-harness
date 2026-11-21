@@ -31,6 +31,24 @@ declare `agents` en el `pack.json`. Uno que sólo está en `agents/` de la raíz
 dice en llano: «las instrucciones de X tienen que estar en packs/<paquete>/agents/X.md (hoy están en agents/X.md)».
 Para mudarlo, se mueve el archivo a la carpeta de su paquete; en los dos lugares a la vez también es un problema.
 
+**Los controles de la CI que corren en local.** Un control que la CI del stack corre después de la cola y de la
+compilación, y que en local tarda segundos, se declara en `ciLocalChecks` del `pack.json`. El cierre de «Preparar el
+pull request» lo corre en cada repo antes de la foto, y uno en rojo frena el paso: el rojo se ve antes de pedir la
+aprobación, no media hora después.
+
+```json
+"ciLocalChecks": [
+  { "name": "Manifest check", "run": ["bash", "-c", "node \"$TYCON_HARNESS_DIR/scripts/ci/check-plugin-manifests.js\" --repo ."],
+    "whenFile": "plugin.json", "timeoutSeconds": 60 }
+]
+```
+
+`run` es el comando, palabra por palabra (`node` corre con el node del arnés); corre en la raíz del repo, con
+`TYCON_HARNESS_DIR` y `TYCON_REPO_DIR` en el entorno. `whenFile` (opcional): corre sólo si el repo tiene en su raíz un
+archivo con ese nombre. `timeoutSeconds` (opcional, de 1 a 600; 120 por defecto). Un repo suma los suyos en
+`.tycon/ci-local-checks.json` (`{ "checks": [...] }`), y apaga los del paquete con `"fromPacks": false`; ese archivo se
+lee de lo commiteado. Un control mal escrito, o que no termina, frena con «no medido»: no es verde.
+
 ## Cuándo corre un revisor
 
 Lo decide `when` en `pack.json`. El vocabulario es cerrado (`detection`, `files`, `added`, `all`, `any`, `no`): una clave

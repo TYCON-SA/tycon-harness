@@ -1,7 +1,7 @@
 'use strict';
 // ci-queue.js — la CI de un repo de Azure DevOps (`ci.read`) y la cola de la organización (`queue.read`).
 //
-// La CI, de una rama o de un commit:
+// La CI, de una rama, de un commit o de un pedido (`pullRequest`: su fusión de prueba, `refs/pull/<n>/merge`):
 //   az pipelines runs list --project <proyecto> [--branch <rama>] --top 100 --org <org> -o json
 //   az devops invoke --area build --resource timeline --route-parameters project=<proyecto> buildId=<n>
 //     --api-version 7.1 --org <org> -o json
@@ -35,7 +35,9 @@ function leerCi(args, ctx) {
   const repo = ctx.repo || {};
   const o = orgDe(repo);
   if (o.problem) return o.problem;
-  const rama = args.branch ? String(args.branch) : null;
+  // la compilación de un pedido corre sobre su fusión de prueba, no sobre la rama: `pullRequest` la elige
+  if (args.pullRequest != null && !(Number.isInteger(Number(args.pullRequest)) && Number(args.pullRequest) > 0)) return no('rechazado', `el número del pedido no se puede leer: ${JSON.stringify(args.pullRequest)}`);
+  const rama = args.pullRequest != null ? `refs/pull/${Number(args.pullRequest)}/merge` : args.branch ? String(args.branch) : null;
   const commit = args.commit ? String(args.commit) : null;
   if ((rama && /^-/.test(rama)) || (commit && !/^[0-9a-f]{7,64}$/i.test(commit))) return no('rechazado', 'la rama o el commit no tienen forma de rama o de commit (un commit va en hexadecimal, de 7 a 64 caracteres)');
   const lista = correrAz(ctx, ['pipelines', 'runs', 'list', '--project', repo.project, ...(rama ? ['--branch', rama] : []), '--top', String(VENTANA), '--org', o.value, '-o', 'json']);
