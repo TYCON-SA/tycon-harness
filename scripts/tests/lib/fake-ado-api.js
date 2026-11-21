@@ -173,9 +173,17 @@ async function arrancarAdoFalso({ org = 'acme', project = 'Proy', repo = 'ops', 
     if ((m = new RegExp(`^git/repositories/${repo}/pullrequests/(\\d+)$`, 'i').exec(resto)) && req.method === 'PATCH') {
       const p = st.pedidos.find((x) => String(x.pullRequestId) === m[1]);
       const completar = cuerpo && cuerpo.status === 'completed';
-      if (!st.permitirCompletar || !completar || (cuerpo.completionOptions && cuerpo.completionOptions.bypassPolicy)) llamada.prohibida = true;
+      // el completar automático: sólo con la suite que lo deja, sin cambiar el estado y sin saltear políticas
+      const autoCompletar = cuerpo && cuerpo.autoCompleteSetBy && cuerpo.status === undefined;
+      const salteaPoliticas = cuerpo && cuerpo.completionOptions && cuerpo.completionOptions.bypassPolicy;
+      if (salteaPoliticas || !(autoCompletar ? st.permitirAutoCompletar : st.permitirCompletar && completar)) llamada.prohibida = true;
       if (!p) return json(404, { message: 'no existe el pedido' });
       if (llamada.prohibida) return json(200, p);
+      if (autoCompletar) {
+        if (st.fallarAutoCompletar) return json(st.fallarAutoCompletar, { message: 'no se pudo prender el completar automático' });
+        p.autoCompleteSetBy = cuerpo.autoCompleteSetBy;
+        return json(200, p);
+      }
       if (st.fallarCompletar) return json(st.fallarCompletar, { message: 'TF401181: el pedido no se puede completar' });
       if (!st.completarTarde) {
         if (st.alCompletar) st.alCompletar(p, cuerpo);

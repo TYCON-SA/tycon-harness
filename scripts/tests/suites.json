@@ -662,6 +662,12 @@
       "requiere": []
     },
     {
+      "__nota": "cada revisión automática del plan deja su resultado con fecha, sin pisar la anterior, y su constancia guarda el consumo por agente y por tipo de token.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-review-history.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "una sesión no queda quieta esperando a una coordinadora que no atiende: si la designada no vive, la revisión del plan la lanza la sesión; si vive y no toma el pedido que le anota el arnés en plan_review.coordinator_wait_minutes, también, y la coordinadora lo ve en su aviso. Una revisión suya en curso cuenta como tomada y cada relanzamiento tiene su propio plazo.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review-wait.test.js",
@@ -1783,6 +1789,12 @@
       "requiere": []
     },
     {
+      "__nota": "8.267 tanda B: cuando main avanza durante una corrida, el sello de lo revisado y «cambios sin declarar» no se contradicen (rama al día, sin traer main, y main que vuelve a avanzar después de traerlo).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/main-advances-during-run.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.115 (T14, T16): las decisiones de forma de ruta del pipeline (lib/path-forms.js) con path.win32 y path.posix: la carpeta e2e con cualquier separador, un archivo de otra unidad fuera del repo, dest con /, y atdd-commit-gate con barras y cajas mezcladas.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/path-forms.test.js",
@@ -1801,6 +1813,12 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/start-batch.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los errores del arranque de una corrida y sus carpetas que se tragaban sin decir nada: cada uno avisa o queda no medido.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-silences.test.js",
       "requiere": []
     },
     {
@@ -1859,6 +1877,12 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-discovery.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el despachador dice por qué no mira si el repo declara pedidos de trabajo cuando work-items-config.js carga sin su lista FILES; sin la pieza, calla.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/dispatch-work-items-list.test.js",
       "requiere": []
     },
     {
@@ -5022,6 +5046,12 @@
       "__nota": "las entradas del reclamo de la retrospectiva que anotaron el commit equivocado (scripts/hooks/retro-pending.js): la punta que contesta el remoto al abrir el pedido, la rama de origen, la corrección con quién y por qué (--correct), el aviso de «ya estaba en main» y la carpeta principal por nombre. Repos de juguete con git de verdad y un remoto en una carpeta. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-pending-correct.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los git dentro de un `bash -c '…'` se ven todos, cada uno con su carpeta (scripts/lib/git-target.js: lo usan el reclamo de la retrospectiva, el freno de sesiones y el de producción).",
+      "raiz": "arnes",
+      "ruta": "tests/git-target-shell-c.test.js",
       "requiere": []
     },
     {

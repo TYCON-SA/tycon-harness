@@ -321,6 +321,28 @@ test('T19 Guardar_DosRepos_PruebasPorRepo — @story-8.316 @ac-14', () => {
   assert.ok(!(g2 && g2.texto), JSON.stringify(g2));
 });
 
+// Defecto 14 (21/11, Producto A 2.10): el arreglo tocaba la copia `B--wt-x` de un hermano. El freno pedía
+// `adhoc test --repo B`, pero `--repo B` buscaba en la lista la carpeta sin sufijo y decía que no tenía archivos; sin
+// `--repo` la corrida no contaba. Ahora `--repo B` es la copia de B que está en la lista, y el freno la cuenta.
+test('T1 Pruebas_CopiaWtDeUnHermano_ElNombreDelRepoLaEncuentra — la corrida con --repo B en la copia B--wt-x cuenta', () => {
+  const h = tmp('home-');
+  const c = tresRepos('t1-d14');
+  const BW = path.join(c.raiz, 'B--wt-x');
+  git(c.B, 'worktree', 'add', '-q', '-b', 'story/x', BW);
+  const a = escribir(BW, 'src/a.js');
+  const g = escribir(c.R, 'docs/g.md');
+  for (const d of [BW, c.R]) git(d, 'add', '.');
+  const bases = Object.fromEntries([c.R, fs.realpathSync(BW)].map((d) => [d, { sha: git(d, 'rev-parse', 'HEAD'), traida: true }]));
+  conCarril(h, 'd14', { allowedFiles: [fs.realpathSync(a), g], files: [fs.realpathSync(a), g], bases, cwd: c.R });
+  let r = guardar(BW, 'd14', h);
+  assert.ok(r && /faltan las pruebas de B/.test(r.texto) && /adhoc test --repo B --/.test(r.texto), JSON.stringify(r));
+  const t = marker(h, 'd14', ['adhoc', 'test', '--repo', 'B', '--', process.execPath, '-e', 'console.log(process.cwd())'], { cwd: c.R });
+  assert.equal(t.status, 0, t.stderr);
+  assert.equal(fs.realpathSync(t.stdout.trim()), fs.realpathSync(BW), 'corre en la copia del arreglo, no en la carpeta sin sufijo');
+  r = guardar(BW, 'd14', h);
+  assert.ok(!(r && r.texto), JSON.stringify(r));
+});
+
 test('P4 Guardar_CodigoEnUnoDeDos_PideLaDeEseRepo — @story-8.316 @ac-14', () => {
   // un carril de dos repos con código sólo en B (R tiene una guía): cuenta la corrida de B con --repo, no la general
   const h = tmp('home-');

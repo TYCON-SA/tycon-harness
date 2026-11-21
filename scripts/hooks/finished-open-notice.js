@@ -30,7 +30,11 @@ async function main({ env = process.env, home = os.homedir(), write = (t) => pro
   const fijo = Date.parse(env.TYCON_FINISHED_OPEN_NOW || '');
   const now = Number.isFinite(fijo) ? fijo : Date.now();
   const stateDir = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(home);
-  const { lines } = require(LIB).machine({ home, stateDir, now, markerJs: MARKER_JS });
+  // si lo de las corridas falla, se dice y los avisos que siguen salen igual: la deuda vencida no espera a otro día
+  let lines = [];
+  try { ({ lines } = require(LIB).machine({ home, stateDir, now, markerJs: MARKER_JS })); } catch (e) {
+    write(`🔔 terminado sin cerrar: no pude mirar (${String((e && e.message) || e).split('\n')[0]})\n`);
+  }
   if (lines.length) write(`🔔 terminado sin cerrar en esta máquina (nada se cierra solo; cerralo después del último push y del último pedido):\n${lines.map((l) => `  · ${l}`).join('\n')}\n`);
   // la deuda de evidencia en vivo vencida: este gancho se instala siempre, el de las corridas sin cerrar sólo con el buzón
   require(path.join(__dirname, 'unclosed-runs-notice.js')).debtNotice({ env, home, write: (t) => write(`${t}\n`) });

@@ -732,8 +732,9 @@ function cmdSet(payloadJson) {
       // las suites que fallaron son de la corrida: heredadas, la primera corrida completa de la story nueva se negaría
       // (76) por suites que sólo rompió la anterior. Lo guardado de una completa verde, igual: la nueva compararía su
       // carpeta con una completa de otra historia. La nota de la última corrida, igual: la primera de la story nueva
-      // saldría «entera», con el motivo de la vieja
-      testsFailed, testsGreenFull, testsSavedNote,
+      // saldría «entera», con el motivo de la vieja. Lo guardado de una completa roja, igual: la nueva repetiría primero
+      // las rojas de otra historia
+      testsFailed, testsGreenFull, testsRedFull, testsSavedNote,
       // la tanda es de la historia: heredada, la matriz de la nueva mediría una tanda que no es suya
       batch, batchSetAt,
       // el pedido es de la corrida: heredado, el cierre de la nueva anunciaría un pedido que no es suyo
@@ -2014,11 +2015,24 @@ function cmdCompleteStep(nRaw, flags) {
       }
     }
     let revision = autoRevision;
+    // la revisión en rechazo que el dueño vence con su click, para el texto de la aprobación
+    let rechazoVencido = null;
     const porLaRevision = antesDeLaRevision({ marker });
     const antesDelPlan = (via, registro) => {
+      // un plan delicado con su revisión en rechazo lo aprueba sólo el dueño con su click en el cuadro, que lo ata a lo
+      // que vio: ni la terminal, ni su «aprobado» escrito, ni la delegación. Antes de dar el cuadro el click todavía puede llegar
+      const enContra = require('./lib/plan-review.js').revisionEnContra({ estado: STATE_DIR, destino: SID, marker });
+      if (enContra) {
+        const porElClick = registro ? registro.via === 'click' : !['terminal', 'delegacion', 'mensaje'].includes(via);
+        if (!porElClick || !enContra.revision) return { codigo: enContra.codigo, motivo: `${enContra.motivo}. Sólo una persona puede aprobarlo igual, con su click en el cuadro` };
+        rechazoVencido = enContra.revision;
+      }
       if (via === 'delegacion') {
         const r = porLaRevision(via);
         if (r.codigo) return r;
+        // por la revisión, el texto lo arma el arnés: un --approved propio podría atribuir una firma que nadie dio
+        const propio = require('./lib/plan-review.js').textoPropioPorLaRevision(approved);
+        if (propio) return { codigo: 2, motivo: propio };
         revision = r.constancia;
         return { via: r.via, resumen: r.resumen };
       }
@@ -2044,7 +2058,11 @@ function cmdCompleteStep(nRaw, flags) {
       } catch (e) { bloquear3(`no pude escribir la aprobación de la maqueta (${mockupPlan.p.approval}): ${e.code || e.message}`); }
     }
     const porRevision = !!revision;
-    const textoPlan = approved || (autoRevision ? 'aprobado por la revisión automática de la propia sesión' : 'firmado en la terminal');
+    // por la revisión, el texto lo arma el arnés con quién la lanzó y su veredicto; por una persona, su cita
+    const textoPlan = porRevision ? require('./lib/plan-review.js').textoDeLaAprobacion(revision)
+      : rechazoVencido ? `rechazo vencido por decisión de la persona, con su click en el cuadro: la revisión del ${rechazoVencido.ts || 'sin fecha'}`
+        + `${rechazoVencido.sesion ? ` (lanzada por la sesión ${rechazoVencido.sesion})` : ''} dijo ${rechazoVencido.veredicto}`
+      : (approved || 'firmado en la terminal');
     // la huella del plan aprobado: con ella, anotar la parte después no lo reabre si no cambió (set-batch)
     const planSha = huellaDelPlan(marker).sha;
     marker.planApproval = { mode: porRevision ? 'revision' : 'user', text: textoPlan, at: at3, ...(planSha ? { planSha } : {}),
@@ -4368,9 +4386,16 @@ function rojoEsperadoDeLaMatriz(marker, tests, args, actual) {
   marker.checks.acmatrix = `rojo-esperado:exit=${m[1]}`;
   marker.expectedRed = Object.assign({}, marker.expectedRed, { acmatrix: { tests, deuda: marker.cierre.deuda, at: nowIso(), until: hasta, via: l.via, constanciaTs: l.ts } });
   marker.lastTouch = nowIso();
+  // el renglón va antes que el marcador y sin él no se guarda nada: es lo que hace hablar al aviso de la deuda vencida,
+  // y un marcador con la fecha nueva sin su renglón dejaría el aviso con la vieja
+  try {
+    if (renovada) appendLog('gates.log', { name: 'acmatrix-debt-renewed', story: nn(marker.storyId, null), storyPath: story, deuda: marker.cierre.deuda, tests, until: hasta, antes: previo.until || null }, { estricto: true });
+    else appendLog('gates.log', { name: 'expect-red', story: nn(marker.storyId, null), check: 'acmatrix', tests, deuda: marker.cierre.deuda, until: hasta }, { estricto: true });
+  } catch (e) {
+    console.error(`marker.js expect-red: no pude anotar el rojo esperado de la matriz en gates.log (${e.code || e.message}): sin ese renglón nadie avisa cuando venza la deuda. No guardé nada; revisá la carpeta de estado y reintentá.`);
+    process.exit(2);
+  }
   writeMarker(marker);
-  if (renovada) appendLog('gates.log', { name: 'acmatrix-debt-renewed', story: nn(marker.storyId, null), storyPath: story, deuda: marker.cierre.deuda, tests, until: hasta, antes: previo.until || null });
-  else appendLog('gates.log', { name: 'expect-red', story: nn(marker.storyId, null), check: 'acmatrix', tests, deuda: marker.cierre.deuda, until: hasta });
   process.stdout.write(`acmatrix: rojo-esperado:exit=${m[1]} (${tests.join(', ')}) — deuda ${marker.cierre.deuda}, vence ${hasta}${renovada ? ` (antes ${previo.until || 'sin fecha'})` : ''}\n`);
 }
 
@@ -8262,9 +8287,9 @@ function cmdAdhoc(sub, payloadJson) {
     // los topes del camino corto de la organización, leídos una vez: la firma, el cupo y los textos dicen el mismo número
     const topes = io.topesDelCaminoCorto({ stateDir: STATE_DIR, sessionId: destino });
     // la lista de archivos: todo camino corto la lleva, cerrada, y se valida antes de pedir la firma
-    // pedida por otra sesión (la coordinadora, desde su carpeta), la lista va relativa a la carpeta de trabajo de la
-    // sesión destino; la terminal de una persona y la propia sesión, a la del proceso
-    const deOtraSesion = pedida && PROPIA !== '_nosession' && pedida !== PROPIA;
+    // pedida para otra sesión (la coordinadora desde su carpeta, o la terminal de una persona con --for-session), la
+    // lista va relativa a la carpeta de trabajo de la sesión destino, nunca a la del proceso; la propia sesión, a la suya
+    const deOtraSesion = !!pedida && pedida !== PROPIA;
     // `--repo <carpeta>`: la carpeta de la lista dicha, para que la terminal de la persona pueda estar en cualquier otra
     // (@story-8.319, AC 8)
     const repoPedido = (() => { const i = process.argv.indexOf('--repo'); return i >= 0 ? process.argv[i + 1] : null; })();
@@ -8276,10 +8301,22 @@ function cmdAdhoc(sub, payloadJson) {
         process.exit(2);
       }
     }
-    const base = repoPedido ? path.resolve(repoPedido) : deOtraSesion ? LISTA.carpetaDeLaSesion({ casa: os.homedir(), sesion: pedida }) : process.cwd();
+    // la carpeta de la sesión destino, si todavía es una carpeta: una borrada no se reemplaza por la del proceso
+    // (la que ya no se puede abrir se nombra en el mensaje, para que se sepa por qué frena)
+    let carpetaQueNoEs = null;
+    const deLaSesion = () => {
+      const c = LISTA.carpetaDeLaSesion({ casa: os.homedir(), sesion: pedida });
+      if (!c) return null;
+      let es = false;
+      try { es = fs.statSync(c).isDirectory(); } catch (_) { es = false; }
+      if (!es) carpetaQueNoEs = c;
+      return es ? c : null;
+    };
+    const base = repoPedido ? path.resolve(repoPedido) : deOtraSesion ? deLaSesion() : process.cwd();
     const conRelativas = Array.isArray(payload.allowedFiles) && payload.allowedFiles.some((f) => typeof f === 'string' && f.trim() && !path.isAbsolute(f.trim()) && !/^[A-Za-z]:[\\/]/.test(f.trim()));
     if (!base && conRelativas) {
-      console.error(`marker.js adhoc set: no sé la carpeta de la sesión ${pedida}: que lo pida esa sesión, o una persona desde su terminal en esa carpeta.`);
+      const porque = carpetaQueNoEs ? ` (la última que usó, ${String(carpetaQueNoEs).slice(0, 200)}, ya no es una carpeta que se pueda abrir)` : '';
+      console.error(`marker.js adhoc set: no sé la carpeta de la sesión ${pedida}${porque}: que lo pida esa sesión, o pedilo con --repo <carpeta> (la carpeta de trabajo de esa sesión).`);
       process.exit(2);
     }
     const carpetaDeLaLista = base || process.cwd();

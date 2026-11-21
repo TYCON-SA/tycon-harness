@@ -43,19 +43,21 @@ function carpetaDeLaRaiz(raiz, repo, { skillsDir } = {}) {
 
 /**
  * Las pruebas en rojo del reporte, como rutas absolutas. `desconocidas`: las fallas cuya raíz no se resuelve.
- * @returns {{ rutas: string[], desconocidas: {raiz: any, ruta: string}[] }}
+ * `sinRuta`: cuántas fallas no dicen su ruta (no se sabe qué prueba es: deja la decisión sin medir).
+ * @returns {{ rutas: string[], desconocidas: {raiz: any, ruta: string}[], sinRuta: number }}
  */
 function rutasEnRojo(reporte, repo, opts = {}) {
   const entradas = reporte && reporte.totals && Array.isArray(reporte.totals.failure_entries) ? reporte.totals.failure_entries : [];
   const rutas = [];
   const desconocidas = [];
+  let sinRuta = 0;
   for (const e of entradas) {
-    if (!e || typeof e.ruta !== 'string' || !e.ruta) continue;
+    if (!e || typeof e.ruta !== 'string' || !e.ruta) { sinRuta++; continue; }
     const base = carpetaDeLaRaiz(e.raiz, repo, opts);
     if (base) rutas.push(path.join(base, e.ruta));
     else desconocidas.push({ raiz: e.raiz == null ? null : e.raiz, ruta: e.ruta });
   }
-  return { rutas, desconocidas };
+  return { rutas, desconocidas, sinRuta };
 }
 
 /** Los archivos de los controles (el guion y cada regla, las opcionales incluidas), relativos a su repo. */
@@ -142,10 +144,12 @@ function decidir({ archivo, marker, sessionId, reporte, reporteError = null, her
     ...lista.filter((h) => h.reporte && h.reporte.totals && sesionDelReporte(h.reporte) === sessionId)];
   const rutas = [];
   const desconocidas = [];
+  let sinRuta = 0;
   for (const f of fuentes) {
     const r = rutasEnRojo(f.reporte, f.repo, { skillsDir: f.skillsDir || skillsDir });
     rutas.push(...r.rutas);
     desconocidas.push(...r.desconocidas);
+    sinRuta += r.sinRuta || 0;
   }
   // una roja heredada (roja también en la base o en el nocturno) sale de failure_entries y queda sólo con su nombre
   const heredada = fuentes.some((f) => f.reporte.totals && Array.isArray(f.reporte.totals.inherited_suites)
@@ -158,6 +162,8 @@ function decidir({ archivo, marker, sessionId, reporte, reporteError = null, her
     if (homonima) return pareceUnaPrueba ? sinMedir(`una falla del reporte es de una raíz que no conozco («${homonima.raiz}»)${porque}: no sé si es esta prueba`)
       : { decision: 'no-medido', prueba, motivo: `una falla del reporte es de una raíz que no conozco («${homonima.raiz}»)${porque}: no sé si es este archivo` };
     if (sinCarpeta) return sinMedir(sinCarpeta.error);
+    // una falla que no dice su ruta puede ser esta prueba: no se sabe, y eso no es «no está en rojo»
+    if (sinRuta) return sinMedir(`${sinRuta === 1 ? 'una falla' : `${sinRuta} fallas`} del reporte no dice su ruta: no sé si es esta prueba`);
     return { decision: 'silencio' };
   }
 

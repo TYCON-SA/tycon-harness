@@ -2824,6 +2824,22 @@ test('Adhoc_ClickConElCuadroDelFreno_DejaElCupoPedido', (t) => {
   assert.deepStrictEqual([r.decision, r.via], ['allow', 'click'], r.texto);
 });
 
+// La exención de comparación con main en una sesión de fondo de una historia delicada (Producto A, 20/11): el perfil la
+// delega, pero el guion niega la delegación en una historia delicada y pide el click del dueño. Con el click anotado, el
+// freno lo toma antes que la delegación, desde su sesión o con la sesión de fondo pidiéndola para sí.
+const EXIMIR = `node ${MARKER} compare-waiver --story /r/stories/story-9.99.md --command ProdForms/build-form.js --reason "usa la red"`;
+
+test('T1 CompareWaiver_ClickDelDuenoEnSesionDeFondo_GanaALaDelegacion — el click se toma; sin click, delegación', (t) => {
+  const casa = casaNueva(t);
+  const deFondo = { session_id: 'ses-a', permission_mode: 'bypassPermissions' };
+  const sin = pedirConDelegacion(casa, EXIMIR, { evento: deFondo });
+  assert.deepStrictEqual([sin.decision, sin.via], ['allow', 'delegacion'], sin.texto);
+  const conClick = casaNueva(t);
+  anotarAprobacion(conClick, 'ses-a', { tipo: 'click', tool_use_id: 'toolu_1' });
+  const r = pedirConDelegacion(conClick, EXIMIR, { evento: deFondo });
+  assert.deepStrictEqual([r.decision, r.via], ['allow', 'click'], r.texto);
+});
+
 test('Adhoc_PestanaSinPermisos_PideMasQueElCupo_NoSeHaceAvisado', (t) => {
   const casa = casaNueva(t);
   const r = pedirSinVentana(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp","allowedFiles":["src/sp.js"],"maxFiles":7}'`, { evento: { session_id: 'ses-a' } });

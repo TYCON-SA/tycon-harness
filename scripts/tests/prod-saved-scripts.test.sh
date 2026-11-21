@@ -384,5 +384,24 @@ pasa "T-puerta-30 Freno_NombresNoDeclaradosYPiezasDelFreno_Pasan · un llavero n
 pasa "T-puerta-30 Freno_NombresNoDeclaradosYPiezasDelFreno_Pasan · node scripts/hooks/prod-access-guard.js" "node $HOOK"
 pasa "T-puerta-30 Freno_NombresNoDeclaradosYPiezasDelFreno_Pasan · un programa compilado por ruta no es un guion" "/bin/ls -la"
 
+# ── T-puerta-indice · un guion que nombra sólo un host de producción, sin cliente de base ni otra señal, depende del
+#    índice guardado para ser candidato: con el índice ilegible se mira igual (todo guion es candidato), y sin índice
+#    pasa y queda anotado como «no-mirado», nunca en silencio ──
+printf '#!/usr/bin/env bash\ncurl -s https://%s/estado\n' "$OTRO_PROD" > "$JUG/scripts/solo-host.sh"
+corre "bash scripts/leer.sh" >/dev/null   # deja el índice armado
+INDICE="$(find "$CASA" -name production-index.json -print -quit)"
+if [ -z "$INDICE" ]; then no "T-puerta-indice no encontré el índice de servidores en la casa de prueba"
+else
+  frena "T-puerta-indice Freno_SoloHost_IndiceLegible · con el índice legible frena" "bash scripts/solo-host.sh" "$OTRO_PROD"
+  printf '{ esto no es json' > "$INDICE"
+  # al rearmarlo, la memoria de producción ya no cierra con su huella: frena por eso, y nunca deja pasar
+  frena "T-puerta-indice Freno_SoloHost_IndiceIlegible · con el índice ilegible se mira igual y frena" "bash scripts/solo-host.sh" "FRENO DE PRODUCCIÓN"
+  rm -f "$INDICE"; : > "$REGISTRO"
+  rc="$(corre "bash scripts/solo-host.sh")"
+  if grep -q '"tipo":"no-mirado"' "$REGISTRO" && grep -q 'índice' "$REGISTRO"; then
+    ok "T-puerta-indice Freno_SoloHost_SinIndice · sin índice queda anotado como «no-mirado» (rc=$rc)"
+  else no "T-puerta-indice Freno_SoloHost_SinIndice · sin índice no se anotó nada (rc=$rc): $(tr '\n' ' ' < "$REGISTRO" | head -c 300)"; fi
+fi
+
 echo "— prod-saved: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

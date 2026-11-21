@@ -21,6 +21,18 @@ De `skills/tycon-merge-to-main/steps/step-09b-create-change-request.md`, lo que 
 publicar miran esta línea igual que un `az repos pr create` o un `gh pr create`: uno por repo con el control de otro
 pedido corriendo, la retrospectiva pendiente al apuntar a `main`. En GitHub, el conector pasa además el título y el
 
+## ⚠️ Aprobar el pedido por la consola deja al revisor como opcional
+
+`az repos pr set-vote` reescribe al revisor que vota y le saca la marca de obligatorio, aunque la tuviera. En el
+historial del pedido se ve el voto y, justo después, «is changed to be an optional reviewer». Es conducta de Azure
+DevOps, no del arnés: pasa en cada pedido aprobado así.
+
+- **Para saber si un revisor era obligatorio, se lee el historial del pedido, no su estado final.** El estado final
+  dice `isRequired: false` aunque haya sido obligatorio hasta el voto; un control que lo lea al cierre da un rojo
+  falso. El control de cierre del arnés ya lee el historial.
+- **En un repo con política de revisor obligatorio**, votar por la consola puede aflojarla para ese pedido. Si la
+  marca importa, se aprueba desde la web, o se vuelve a marcar al revisor como obligatorio después del voto.
+
 ## Cerrar la historia: la corrida de la CI después del merge
 
 De «Recolección de CI run» en `skills/tycon-pipeline/steps/close-work-item.md`:

@@ -169,17 +169,44 @@ function entradosPorMain(repo, baseSha, candidatos) {
   if (d.error) return [];
   const enMain = new Set(lineas(d.out).map(toPosix));
   const repoReal = real(repo);
-  return candidatos.filter((f) => {
-    if (!enMain.has(f)) return false;
-    // borrado en la carpeta y también en main: el mismo estado que main (git tiene que contestar que no está)
-    if (!fs.existsSync(path.join(repoReal, f))) {
-      const t = git(repo, ['ls-tree', '--name-only', MAIN, '--', f]);
+  // Lo que la rama ya trajo de main después del arranque: lo que main cambió entre el punto en común del arranque y el
+  // de ahora. Un archivo de esa lista igual a lo traído sigue siendo de main aunque main lo vuelva a cambiar, lo revierta
+  // o lo borre después (el sello de lo revisado compara igual, con el punto en común). Sin traer nada, la lista es vacía.
+  const mb = git(repo, ['merge-base', 'HEAD', MAIN]);
+  const mb0 = git(repo, ['merge-base', baseSha, MAIN]);
+  // el punto de ahora tiene que venir después del del arranque: si la rama volvió a un main anterior, no trajo nada
+  const avanza = !mb.error && !mb0.error && mb.out.trim() && mb.out.trim() !== mb0.out.trim()
+    && !git(repo, ['merge-base', '--is-ancestor', mb0.out.trim(), mb.out.trim()]).error;
+  const punto = avanza ? mb.out.trim() : null;
+  let traido = new Set();
+  if (punto) {
+    const t = git(repo, ['diff', '--name-only', '--no-renames', '--relative', mb0.out.trim(), punto, '--']);
+    if (!t.error) traido = new Set(lineas(t.out).map(toPosix));
+  }
+  // el blob del archivo como lo guardaría git: un enlace simbólico es el texto de su destino, no el archivo al que apunta
+  const blobLocal = (f) => {
+    const abs = path.join(repoReal, f);
+    let st;
+    try { st = fs.lstatSync(abs); } catch (_) { return null; }
+    if (!st.isSymbolicLink()) { const h = git(repo, ['hash-object', '--', f]); return h.error ? null : h.out.trim() || null; }
+    let destino;
+    try { destino = fs.readlinkSync(abs); } catch (_) { return null; }
+    const r = spawnSync('git', ['-C', repo, 'hash-object', '--stdin'], { windowsHide: true, encoding: 'utf8', input: destino, timeout: 30000 });
+    return !r.error && r.status === 0 ? r.stdout.trim() || null : null;
+  };
+  // igual a la versión de `ref`: el mismo blob, o borrado en los dos (git tiene que contestar que no está)
+  const igualA = (f, ref) => {
+    let existe = true;
+    try { fs.lstatSync(path.join(repoReal, f)); } catch (_) { existe = false; }
+    if (!existe) {
+      const t = git(repo, ['ls-tree', '--name-only', ref, '--', f]);
       return !t.error && lineas(t.out).length === 0;
     }
-    const remoto = git(repo, ['rev-parse', '--verify', '--quiet', `${MAIN}:./${f}`]);
-    const local = git(repo, ['hash-object', '--', f]);
-    return !local.error && !remoto.error && local.out.trim() !== '' && local.out.trim() === remoto.out.trim();
-  }).sort();
+    const local = blobLocal(f);
+    const remoto = git(repo, ['rev-parse', '--verify', '--quiet', `${ref}:./${f}`]);
+    return !!local && !remoto.error && local === remoto.out.trim();
+  };
+  return candidatos.filter((f) => (enMain.has(f) && igualA(f, MAIN)) || (traido.has(f) && igualA(f, punto))).sort();
 }
 
 /**

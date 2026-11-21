@@ -153,6 +153,16 @@ function tandasBloqueadasDe(content, rel) {
   return atadas.map((t) => t.name);
 }
 
+/**
+ * Las tandas que atan `rel`, si son todas otras que las medidas (`pedidas`) y ninguna está hecha; si no, null. Un archivo
+ * que nombra la tanda medida, una hecha o ninguna sigue siendo código de lo que se mide.
+ */
+function tandasNoMedidasDe(content, rel, pedidas) {
+  const atadas = tandasQueNombran(content, rel);
+  if (!atadas.length || atadas.some((t) => pedidas.includes(t.name) || String(t.status || '').toLowerCase() === 'done')) return null;
+  return atadas.map((t) => t.name);
+}
+
 // La regla de atar un archivo a una tanda vive en lib/batch-scope.js: la parte que se programa y la matriz la usan igual
 const { sinPunto, renglonesDeLista, esRegistroDeCorrida, tandasQueNombran } = require(path.join(__dirname, 'lib', 'batch-scope.js'));
 
@@ -1586,6 +1596,8 @@ function compute(opts) {
   // Una ruta de código sin ninguna copia no se pudo leer: ninguna evidencia cuenta, porque no se sabe si cambió.
   const noLeidos = [];
   const deTandaBloqueada = [];
+  // midiendo una tanda, lo que todavía no existe y la historia ata sólo a otras tandas sin hacer no es código de lo medido
+  const deTandaNoMedida = [];
   for (const rel of declared) {
     const copias = new Map();
     for (const desde of lugares) {
@@ -1608,7 +1620,10 @@ function compute(opts) {
     }
     if (!copias.size) {
       const tandas = tandasBloqueadasDe(content, rel);
+      // las que la corrida devolvió a la matriz también se miden: su código sin crear anula como siempre
+      const deOtra = !tandas && midiendoTanda ? tandasNoMedidasDe(content, rel, [...pedidas, ...vuelven.keys()]) : null;
       if (tandas) deTandaBloqueada.push({ rel, tandas });
+      else if (deOtra) deTandaNoMedida.push({ rel, tandas: deOtra });
       else noLeidos.push({ rel, lugares });
       continue;
     }
@@ -1625,6 +1640,10 @@ function compute(opts) {
   if (deTandaBloqueada.length) {
     warnings.push(`Todavía sin crear, de una tanda bloqueada: ${deTandaBloqueada.map((d) => `${d.rel} (${d.tandas.join(', ')})`).join(' · ')}. ` +
       'No anulan la evidencia; vuelven a contar cuando su tanda deje de estar bloqueada.');
+  }
+  if (deTandaNoMedida.length) {
+    warnings.push(`Todavía sin crear, de otra tanda que no se mide: ${deTandaNoMedida.map((d) => `${d.rel} (${d.tandas.join(', ')})`).join(' · ')}. ` +
+      'No anulan la evidencia de esta tanda; cuentan cuando se mida la suya o la historia entera.');
   }
   const historiaEnDone = /^status:\s*["']?done\b/m.test(String(content).split(/^---\s*$/m)[1] || '');
   for (const { rel, lugares: donde } of noLeidos) {

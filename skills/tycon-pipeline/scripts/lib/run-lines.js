@@ -242,9 +242,13 @@ function otraVuelta(m) {
   try { return STEPS_LIB.reviewersRound(m); } catch (_) { return { noMedida: true }; }
 }
 
-/** El paso en el que está la corrida: el primero sin hacer, o los revisores si un arreglo pide otra vuelta. */
+/**
+ * El paso en el que está la corrida: el primero sin hacer, o los revisores si un arreglo pide otra vuelta. Si no se pudo
+ * saber si falta otra vuelta, es el primero sin hacer: el renglón de los revisores ya dice que no se midió.
+ */
 function pasoActual(m) {
-  if (otraVuelta(m)) return 'reviewers';
+  const vuelta = otraVuelta(m);
+  if (vuelta && !vuelta.noMedida) return 'reviewers';
   return (STEPS_LIB.STEPS.find((s) => !STEPS_LIB.isDone(m, s.id) && !(s.id === 'adversarial-pass' && m.adversarialSkip)) || {}).id || null;
 }
 
