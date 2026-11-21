@@ -466,3 +466,42 @@ test('8.10.3 Detector_MixedCaseTermGluedAfterAnotherWord_IsSeen — la grafía p
     assert.strictEqual(hits(line), 0, `tomó por el nombre lo que no lo es (o lo contó dos veces): ${line}`);
   }
 });
+
+test('Reglas_TiradaLargaSinEspacios_LinealYMismoResultado', () => {
+  // Caso: la regla de la clave entre comillas y la del correo podían arrancar en cada borde de palabra de una tirada sin
+  // espacios (`x.y-x.y-…`) y leían hasta su final: el tiempo crecía al cuadrado (40 000 caracteres: más de 1 s; 120 000,
+  // unos 10 s). La usan el freno de publicación y el saneador del buzón. Con un tope de 3 s por regla, lineal tarda
+  // milisegundos. Y encuentran lo mismo que la forma de antes, que va acá como referencia.
+  // 🔴 Falla con: una de las dos reglas que vuelve a probar arranques en el medio de una tirada.
+  const D = require(DETECTOR);
+  const regla = (nombre) => D.PATRONES_GENERICOS.find((p) => p.nombre === nombre).regex;
+  const antes = {
+    'clave-entre-comillas': /\b[A-Za-z0-9_.:-]*?(?:password|pwd)\s*=\s*(["'])(?![$%{<]|\*+\1|(?:true|false)\1)[^"'\s]{4,}\1/gi,
+    email: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g,
+  };
+  // las claves de ejemplo van armadas: escritas enteras, el mismo freno no deja commitear este archivo
+  const pw = ['pass', 'word'].join('');
+  const PW = ['Pass', 'word'].join('');
+  const pwd = ['p', 'wd'].join('');
+  const casos = [`db.${pw}="secreto1"`, `x.y:db${PW}='secreto1' y sigue`, `..:-${pwd} = "clave1234"`, `é.db${pwd}="abcdefg"`,
+    `require${PW}="true"`, `a-b.c:${PW}="$VAR"`, `conf:mail.${pw}="otraclave" y "${pwd}"="nope"`, `--a.${pw}="clave1234"`,
+    ['ana', 'example.com'].join('@'), `contacto: ${['.ana.perez+ops', 'example.com.ar'].join('@')}.`, `x.y-${['z', 'example.org'].join('@')}`,
+    `é${['jose', 'example.net'].join('@')}`, `%%${['abc', 'example.com'].join('@')}`, 'icono@2x.png', 'sin correo ni clave',
+    // un segundo correo pegado al primero (lo encontró el pase adversarial): arranca en el medio de la tirada
+    ['a', 'example.com+foo', 'example.org'].join('@'), ['git', 'github.com-bob', 'example.com'].join('@'), ['a', 'b.co.c', 'example.com'].join('@')];
+  // lo de antes de la arroba se lee hasta 64 caracteres, el máximo de una dirección: una de 64 se encuentra entera (una
+  // más larga no es una dirección que exista)
+  assert.deepStrictEqual(`ver ${'y'.repeat(64)}@example.com`.match(regla('email')), [`${'y'.repeat(64)}@example.com`]);
+  for (const [nombre, vieja] of Object.entries(antes)) {
+    for (const c of casos) {
+      assert.deepStrictEqual(c.match(regla(nombre)), c.match(vieja), `${nombre} encuentra otra cosa en: ${c}`);
+    }
+    for (const pieza of ['x.y-', 'a.b:c-', 'x%y.']) {
+      const s = pieza.repeat(Math.ceil(120000 / pieza.length));
+      const a = process.hrtime.bigint();
+      s.replace(regla(nombre), '');
+      const ms = Number(process.hrtime.bigint() - a) / 1e6;
+      assert.ok(ms <= 3000, `${nombre} tardó ${Math.round(ms)} ms con «${pieza}» repetido: crece al cuadrado`);
+    }
+  }
+});
