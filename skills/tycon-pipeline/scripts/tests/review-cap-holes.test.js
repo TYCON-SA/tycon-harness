@@ -145,6 +145,16 @@ test('CapHoles_OtherSessionWithOwnMarker_Blocked (T14)', () => {
   assert.match(r.stderr, /sesión de la corrida/);
 });
 
+test('CapHoles_OwnSessionCopiedStory_Blocked (T18)', () => {
+  // la misma sesión, con las fotos en una sola clave, pide el set con una copia de la historia con otro número
+  const lab = laboratorio({ fotos: [1] });
+  const copia = path.join(lab.repo, 'copia.md');
+  fs.writeFileSync(copia, fs.readFileSync(lab.story, 'utf8').replace('story: 9.8', 'story: 9.99'));
+  const r = lab.pipeline(['advisors', '--repo', lab.repo, '--story', copia, '--files', 'src/a.js']);
+  assert.equal(r.status, 3, `la propia sesión saca el set con una copia de la historia: ${r.stdout.slice(0, 200)}`);
+  assert.match(r.stderr, /otra historia/);
+});
+
 test('CapHoles_NestedWorktreeRunOfOther_DoesNotBlockMain (T15)', () => {
   // una corrida de otra sesión en una copia de trabajo anidada es de otro repo: no frena el principal
   const lab = laboratorio({ abierta: false, servidas: [] });

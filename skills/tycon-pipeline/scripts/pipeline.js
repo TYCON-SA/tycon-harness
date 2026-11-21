@@ -6561,19 +6561,19 @@ function emptyWorkGate(args) {
     '   Causa típica: algo apartó los cambios mientras tanto (un `git stash` de fondo, un checkout). Recuperalos y volvé a pedir la vuelta.\n';
 }
 
-// Las corridas abiertas de OTRAS sesiones en el repo (lib/open-runs.js: el último evento de cada sesión es su apertura):
-// `{ lista }` o `{ error }` si el registro existe y no se puede leer. El repo se compara por su raíz de git (una subcarpeta
-// es el mismo repo; una copia de trabajo anidada es otro); una apertura sin repo, por la raíz de git de su carpeta.
-function corridasAbiertasDeOtras(repoAbs) {
+// Las corridas abiertas en el repo (lib/open-runs.js: el último evento de cada sesión es su apertura), las de esta sesión
+// también: quien llama ya sabe que el pedido no es de la corrida de su marcador. `{ lista }` o `{ error }` si el registro
+// existe y no se puede leer. El repo se compara por su raíz de git (una subcarpeta es el mismo repo; una copia de trabajo
+// anidada es otro); una apertura sin repo, por la raíz de git de su carpeta.
+function corridasAbiertasDelRepo(repoAbs) {
   const or = require('./lib/open-runs.js');
   const r = or.leerEventos(os.homedir());
   if (!r.ok) return r.ausente ? { lista: [] } : { error: r.error };
   const ultimo = new Map();
   for (const e of r.eventos) ultimo.set(e.sesion, e);
-  const yo = resolveSessionId();
   const raiz = or.raizDeGit(repoAbs) || repoAbs;
   const mismo = (p) => or.dentroDe(p, raiz) && or.dentroDe(raiz, p);
-  const lista = [...ultimo.values()].filter((e) => e.name === 'run-open' && e.sesion !== yo
+  const lista = [...ultimo.values()].filter((e) => e.name === 'run-open'
     && (typeof e.repo === 'string' ? mismo(or.raizDeGit(e.repo) || e.repo)
       : typeof e.runDir === 'string' && mismo(or.raizDeGit(e.runDir) || e.runDir)));
   return { lista };
@@ -6643,12 +6643,18 @@ function rethinkGate(args) {
   // abierta de otra sesión, la vuelta se pide desde esa sesión. Si no, otra sesión (con o sin marcador propio), la
   // variable de sesión cambiada en el comando o una copia de la historia con otro número sacaban el set de una corrida al tope.
   if (!deEstaCorrida) {
-    const ajenas = corridasAbiertasDeOtras(repoAbs);
-    if (ajenas.error) {
-      return `🛑 No pude leer el registro de corridas abiertas (${ajenas.error}): sin él no sé si ${repoAbs} tiene una corrida de otra sesión, y ante la duda no devuelvo el set.\n`;
+    const abiertas = corridasAbiertasDelRepo(repoAbs);
+    if (abiertas.error) {
+      return `🛑 No pude leer el registro de corridas abiertas (${abiertas.error}): sin él no sé si ${repoAbs} tiene una corrida abierta, y ante la duda no devuelvo el set.\n`;
     }
-    if (ajenas.lista.length) {
-      const nombradas = ajenas.lista.map((e) => `sesión ${e.sesion}, story ${e.story}`).join('; ');
+    const yo = resolveSessionId();
+    const propias = abiertas.lista.filter((e) => e.sesion === yo);
+    if (propias.length) {
+      // la corrida de esta sesión en el repo es otra historia que la pedida (una copia con otro número, otra ruta)
+      return `🛑 Esta sesión tiene una corrida abierta en ${repoAbs} (story ${propias.map((e) => e.story).join(', ')}) y el pedido es de otra historia: las vueltas de revisores se piden con la historia de la corrida, que es la que las cuenta.\n`;
+    }
+    if (abiertas.lista.length) {
+      const nombradas = abiertas.lista.map((e) => `sesión ${e.sesion}, story ${e.story}`).join('; ');
       return `🛑 ${repoAbs} tiene una corrida abierta de otra sesión (${nombradas}) y esta sesión no tiene el marcador de esa corrida: sus vueltas de revisores las cuenta su marcador, y desde acá no se ven. Pedilo desde la sesión de la corrida.\n`;
     }
   }
