@@ -94,7 +94,7 @@
  *                                                  Queda provenance='manual' + entry en gates.log.
  *                                                  Para checks mecánicos usá run-check — set-check
  *                                                  --manual es la excepción auditable, no la regla.
- *   marker.js snapshot-iter <N> [--date-at-last-reviewer]
+ *   marker.js snapshot-iter <N> [--date-at-last-reviewer | --at-launch [--at <iso>]]
  *                                                → la FOTO del estado auditado de la iteración N.
  *                                                  La toma SOLA el hook al lanzar el último revisor;
  *                                                  si la llamás a mano con código editado después,
@@ -962,6 +962,25 @@ function vueltaCongeladaComprobada(tipo, quien) {
  * (nunca la del pase) y compara con su sello: los archivos distintos, sin el papeleo, frenan con el comando de la
  * vuelta (`reviewed-tree-mismatch`). Una vuelta sin sello (de antes) no se compara: se dice y queda en gates.log.
  */
+/**
+ * La ruta de `storyAbs` dentro de su repo, si `repo` es otra copia (worktree) de ese mismo repo; si no, null. Se reconoce
+ * por la carpeta git común de los dos.
+ */
+function rutaEnOtraCopia(repo, storyAbs) {
+  const comun = (dir) => {
+    const g = require('child_process').spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', windowsHide: true });
+    if (g.status !== 0) return null;
+    try { return fs.realpathSync(String(g.stdout).trim()); } catch (_e) { return null; }
+  };
+  try {
+    const raiz = require('./lib/reloop-code.js').raizDelRepo(storyAbs);
+    if (!raiz) return null;
+    const a = comun(repo);
+    if (!a || a !== comun(raiz)) return null;
+    return path.relative(raiz, storyAbs);
+  } catch (_e) { return null; }
+}
+
 function comprobarLoRevisado(marker, quien) {
   const ft = require('./lib/frozen-tree.js');
   const { isControlApproval } = require('./lib/story-gate.js');
@@ -979,6 +998,8 @@ function comprobarLoRevisado(marker, quien) {
   const sinSepararMain = [];
   const huellas = [];
   const movidos = [];
+  // lo que no se ejecuta (imágenes, textos, la guía de prueba): se dice, no frena (defectos del 20/11, punto 1)
+  const sinEjecutarse = [];
   // sólo comentarios movidos (historia 8.217): contra una vuelta ya cerrada y de esta historia; nunca una lanzada sin cerrar
   let conComentarios = false;
   try {
@@ -993,7 +1014,10 @@ function comprobarLoRevisado(marker, quien) {
   for (const r of v.repos) {
     const ahora = ft.seal(r.repo);
     if (ahora.error) frenar(`no pude sellar lo que se guarda para compararlo con lo revisado (${ahora.error}).`);
-    const rel = storyAbs ? path.relative(realDe(r.repo), realDe(storyAbs)) : null;
+    let rel = storyAbs ? path.relative(realDe(r.repo), realDe(storyAbs)) : null;
+    // la historia nombrada en otra copia del mismo repo (la principal, y la corrida en una copia de trabajo): en esta
+    // copia es el mismo archivo, por su ruta dentro del repo
+    if (rel && (rel.startsWith('..') || path.isAbsolute(rel))) rel = rutaEnOtraCopia(r.repo, storyAbs) || rel;
     // lo que trajo main en archivos que la corrida no tocó no es «no revisado»: se separa con el punto en común con main
     // del sello y el de ahora, del mismo repo
     const pm = r.mainBase ? ft.puntoComunConMain(r.repo) : { error: `${path.basename(r.repo)}: la vuelta se selló sin el punto en común con main` };
@@ -1001,7 +1025,7 @@ function comprobarLoRevisado(marker, quien) {
     let c;
     try {
       c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null,
-        mainAntes: r.mainBase || null, mainAhora: pm.sha || null, comentarios: conComentarios });
+        mainAntes: r.mainBase || null, mainAhora: pm.sha || null, comentarios: conComentarios, sinEjecutar: true });
     } catch (e) { c = { error: String((e && e.message) || e).split('\n')[0] }; }
     if (c.error) frenar(`no pude comparar lo que se guarda con lo revisado (${c.error}).`);
     // una constancia de cambio de control la firma el dueño: no es código que los revisores tengan que ver
@@ -1012,6 +1036,7 @@ function comprobarLoRevisado(marker, quien) {
     for (const f of c.papeleo) papeleo.push(f);
     for (const f of c.deMain || []) deMain.push(f);
     for (const f of c.comentarios || []) movidos.push(f);
+    for (const f of c.noSeEjecutan || []) sinEjecutarse.push(f);
     huellas.push(`${path.basename(r.repo)} ${r.tree.slice(0, 12)}`);
   }
   if (distintos.length) {
@@ -1020,13 +1045,39 @@ function comprobarLoRevisado(marker, quien) {
     console.error(`marker.js ${quien} BLOQUEADO — lo que se guarda no es lo revisado: cambió después de la última vuelta de revisores (${v.etiqueta}):`);
     for (const d of distintos) console.error(`   · ${d.f} (${path.basename(d.repo)})`);
     for (const s of sinSepararMain) console.error(`  No pude separar lo que trajo main (${s}): cuenta como cambio.`);
+    // pasado el tope no hay otra vuelta: lo que cambió después sale de esta historia y va a una historia de arreglo
+    let tope = null;
+    try { tope = require('./lib/review-rounds.js').tope({ repo: marker.repoPath || undefined }).value; } catch (_e) { tope = null; }
+    if (tope !== null && iter > tope) {
+      console.error(`  Pasaste el tope de ${tope} vueltas de revisores: no hay otra vuelta. Lo que cambió después de la última sale de esta`);
+      console.error('  historia y va a una historia de arreglo (followup_of: esta historia). Estos comandos lo guardan en un stash (de ahí');
+      console.error('  sale para la historia de arreglo) y vuelven el disco a lo revisado. Revisá la lista: un archivo de otra tarea');
+      console.error('  también se guarda en el stash, no se pierde.');
+      const porRepo = new Map();
+      for (const d of distintos) { if (!porRepo.has(d.repo)) porRepo.set(d.repo, []); porRepo.get(d.repo).push(d.f); }
+      for (const [repo, archivos] of porRepo) {
+        const sello = ((v.repos || []).find((r) => r.repo === repo) || {}).tree;
+        // lo que git no sigue (un archivo nuevo sin agregar) no lo vuelve `restore`: lo saca `clean`
+        const conocido = (f) => require('child_process').spawnSync('git', ['-C', repo, 'ls-files', '--error-unmatch', '--', f], { windowsHide: true }).status === 0
+          || (!!sello && require('child_process').spawnSync('git', ['-C', repo, 'cat-file', '-e', `${sello}:${f}`], { windowsHide: true }).status === 0);
+        const seguidos = archivos.filter(conocido);
+        // comillas simples: dentro de ellas el shell no expande nada (un `$` o una comilla invertida en un nombre)
+        const q = citar;
+        const mensaje = `${marker.storyId || 'historia'}: lo cambiado después de la vuelta ${iter - 1}`;
+        console.error(`     git -C ${q(repo)} stash push --include-untracked -m ${q(mensaje)} -- ${archivos.map(q).join(' ')}`);
+        // lo que se commiteó después de la vuelta no lo devuelve el stash: sale del sello
+        if (seguidos.length && sello) console.error(`     git -C ${q(repo)} restore --source=${sello} --staged --worktree -- ${seguidos.map(q).join(' ')}`);
+      }
+      console.error('  Con eso lo que se guarda vuelve a ser lo revisado y este paso sigue.');
+      process.exit(2);
+    }
     console.error(`  Corré otra vuelta: pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'} --repo ${marker.repoPath || '<repo>'} --iter ${iter} --files "<el diff completo, como hoy>".`);
     console.error('  La vuelta re-revisa lo que cambió desde su foto; con el sello nuevo, este paso sigue.');
     process.exit(2);
   }
   appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length, deMain: deMain.length,
-    ...(movidos.length ? { comentarios_movidos: movidos.length } : {}) });
-  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}.`);
+    ...(movidos.length ? { comentarios_movidos: movidos.length } : {}), ...(sinEjecutarse.length ? { no_se_ejecutan: sinEjecutarse.length } : {}) });
+  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}${sinEjecutarse.length ? `; lo que no se ejecuta, que no cuenta: ${sinEjecutarse.slice(0, 5).join(', ')}${sinEjecutarse.length > 5 ? '…' : ''}` : ''}.`);
 }
 
 /** `{ sellos, copias }` por repo de una vuelta congelada. */
@@ -1039,6 +1090,10 @@ function sellosDe(v) {
 
 function cmdSnapshotIter(nRaw, flags) {
   const fecharAlUltimo = Array.isArray(flags) && flags.includes('--date-at-last-reviewer');
+  const alLanzar = Array.isArray(flags) && flags.includes('--at-launch');
+  // la hora del sello de la vuelta, que pipeline.js toma justo antes de sellar (`--at <iso>`)
+  const iAt = Array.isArray(flags) ? flags.indexOf('--at') : -1;
+  const horaDelSello = iAt >= 0 && Number.isFinite(Date.parse(flags[iAt + 1])) ? new Date(Date.parse(flags[iAt + 1])).toISOString() : null;
   const n = parseInt(nRaw, 10);
   if (Number.isNaN(n) || n < 1) {
     console.error('marker.js snapshot-iter: N debe ser entero >= 1');
@@ -1117,6 +1172,31 @@ function cmdSnapshotIter(nRaw, flags) {
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     if (code) process.exit(code);
   };
+
+  // ── La foto al lanzar la vuelta ───────────────────────────────────────────────────────────────
+  // La pide `pipeline.js advisors` / `smart-reloop` apenas sella la vuelta: lo que hay en ese momento es justo lo que
+  // los revisores van a leer, así que es una foto honesta aunque después la ronda no se complete o se arregle algo antes
+  // de que salga el último revisor. Va aparte (`fotosAlLanzar`), no en `iterations`: una foto ahí dice que la vuelta
+  // lanzó sus revisores, y con eso cuentan las vueltas el tope y la nota de «repensar». El re-loop la usa sólo cuando
+  // falta la de `iterations`. Nunca pisa una de la misma historia; la de otra historia (un cambio de historia o un
+  // `start` en la misma sesión) no es de esta corrida y se reemplaza. Su hora es la del sello: lo que vio cada revisor.
+  if (alLanzar) {
+    marker.fotosAlLanzar = marker.fotosAlLanzar || {};
+    const previa = marker.fotosAlLanzar[String(n)];
+    if (previa && Array.isArray(previa.filesSnapshot) && String(previa.story) === String(marker.storyId || null)) {
+      return salida({ iter: n, foto: 'ya-estaba', ts: previa.ts, snapshot_size: previa.filesSnapshot.length }, 0);
+    }
+    marker.fotosAlLanzar[String(n)] = {
+      ts: horaDelSello || nowIso(),
+      story: marker.storyId || null,
+      filesSnapshot: foto,
+      ...(probesFuera ? { probes_excluidos: probesFuera } : {}),
+      ...(congelada ? { ...sellosDe(congelada), vuelta: congelada.etiqueta } : {}),
+    };
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    return salida({ iter: n, foto: 'al-lanzar', snapshot_size: foto.length, ts: marker.fotosAlLanzar[String(n)].ts }, 0);
+  }
 
   // ── Tabla de decisión ─────────────────────────────────────────────────────────────────────────
   // El escape explícito: fechar la foto en el último lanzamiento de revisores. NO es un bypass —
@@ -2468,8 +2548,9 @@ function cmdCompleteStep(nRaw, flags) {
         appendLog('gates.log', { name: 'review-cap-blocking', status: 'blocked', story: marker.storyId, step: 8, abiertos: bloquean.map((a) => a.regla) });
         console.error(`marker.js complete-step ${n} BLOQUEADO — ${bloquean.length} crítico(s) de seguridad o de datos abierto(s) o diferido(s):`);
         for (const l of rr.resumen(bloquean)) console.error(`   · ${l}`);
-        console.error('   Lo decide una persona: arreglarlo (si se llegó al tope, una vuelta más con pipeline.js smart-reloop --extra-round,');
-        console.error('   que le pide el permiso en la ventana de permiso), o eximirlo (marker.js waive-critical, con su permiso a ese crítico).');
+        console.error('   Lo decide una persona: arreglarlo dentro del tope de vueltas, abrir una historia de arreglo (followup_of: esta');
+        console.error('   historia) y eximirlo nombrándola, o eximirlo (marker.js waive-critical, con su permiso a ese crítico). Pasado el');
+        console.error('   tope no hay vuelta extra.');
         process.exit(1);
       }
     }

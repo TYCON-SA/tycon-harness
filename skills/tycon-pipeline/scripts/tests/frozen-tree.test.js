@@ -1131,3 +1131,181 @@ test('T31 ReviewedTree_MezclaConCambioReal_FrenaPorElReal @story-8.217 @ac-21 �
   assert.match(salida(r), /· src\/b\.js/, salida(r));
   assert.doesNotMatch(salida(r), /· src\/a\.js/, salida(r));
 });
+
+// ── Lo que no se ejecuta no reabre la vuelta (defectos del 20/11, punto 1) ──────────────────────────────────────────
+// Caso: dos historias de Producto A hicieron 7 y 10 vueltas de revisores; la guía de prueba en HTML y las capturas
+// regeneradas frenaban «Preparar el commit» y pedían otra vuelta. La regla es por lista: lo que no está en ella cuenta
+// (el pase adversarial mostró que por descarte se colaban código en qa, instrucciones de agentes y .txt que corren).
+
+test('T32 Changed_NotExecuted_GoesApart_OnlyWithTheOption — imágenes y la guía y capturas de la historia en su carpeta qa van aparte; lo demás sigue contando', () => {
+  const inicio = {
+    'specs/story-9.9-x.md': '# h\n', 'public/logo.png': 'p1', 'specs/qa/story-9.9-x-guia.html': '<p>1</p>\n', 'specs/qa/story-9.9-x-captura.png': 'c1',
+    'specs/qa/story-9.9-x-ayuda.js': 'x=1\n', 'specs/qa/story-9.9-x-correr.ps1': 'x\n', 'specs/qa/story-9.9-x-pasos.yml': 'a: 1\n', 'specs/qa/story-9.9-x-Makefile': 'a:\n',
+    'specs/qa/story-1.1-otra-guia.html': '<p>1</p>\n', 'specs/qa/story-9.9-x/anidada.html': '<p>1</p>\n',
+    'src/index.html': '<p>1</p>\n', 'src/icono.svg': '<svg/>\n', 'docs/guia.md': 'a\n', 'notas/leeme.txt': 'a\n', 'requirements.txt': 'a\n', 'CMakeLists.txt': 'a\n',
+    'skills/s/SKILL.md': 'a\n', 'CLAUDE.md': 'a\n', 'CLAUDE.local.md': 'a\n', 'AGENTS.override.md': 'a\n', 'guides/coordination.md': 'a\n',
+    'e2e/a.spec.ts-snapshots/x.png': 'p', 'tests/__snapshots__/y.png': 'p', 'tests/baseline/z.png': 'p', 'bin/correr.png': 'p', 'public/borrada.png': 'p',
+    // la vuelta 2 del pase: las carpetas de referencia de otras herramientas, la de Flutter y las de instrucciones
+    'backstop_data/bitmaps_reference/a.png': 'p', 'baseline_images/b.png': 'p', '.loki/reference/c.png': 'p', '.reg/expected/d.png': 'p',
+    'test/goldens_widget.png': 'p', 'skills/s/icono.png': 'p', '.github/logo.png': 'p',
+  };
+  const { repo, git } = repoDeJuguete('ne', inicio);
+  fs.chmodSync(path.join(repo, 'bin', 'correr.png'), 0o755);
+  git('add', '.');
+  git('commit', '-qm', 'ejecutable');
+  const antes = ft().seal(repo).tree;
+  for (const rel of Object.keys(inicio)) if (rel !== 'public/borrada.png') fs.appendFileSync(path.join(repo, rel), 'cambio\n');
+  fs.unlinkSync(path.join(repo, 'public', 'borrada.png'));
+  const despues = ft().seal(repo).tree;
+  const opts = { storyRel: 'specs/story-9.9-x.md' };
+  const sin = ft().changed(repo, antes, despues, opts);
+  assert.strictEqual(sin.noSeEjecutan, undefined, 'sin la opción, la salida no trae el campo');
+  assert.ok(sin.files.includes('public/logo.png') && sin.files.includes('specs/qa/story-9.9-x-guia.html'), JSON.stringify(sin));
+  const con = ft().changed(repo, antes, despues, { ...opts, sinEjecutar: true });
+  assert.deepStrictEqual(con.noSeEjecutan.sort(), ['public/logo.png', 'specs/qa/story-9.9-x-captura.png', 'specs/qa/story-9.9-x-guia.html'], JSON.stringify(con));
+  for (const f of Object.keys(inicio).filter((f) => !con.noSeEjecutan.includes(f))) assert.ok(con.files.includes(f), `${f} sigue contando: ${JSON.stringify(con)}`);
+  // un enlace con nombre de imagen no es una imagen, y un enlace que pasa a archivo común tampoco
+  fs.symlinkSync('../src/index.html', path.join(repo, 'public', 'falso.png'));
+  const enlace = ft().changed(repo, antes, ft().seal(repo).tree, { ...opts, sinEjecutar: true });
+  assert.ok(enlace.files.includes('public/falso.png'), JSON.stringify(enlace));
+  const conEnlace = ft().seal(repo).tree;
+  fs.unlinkSync(path.join(repo, 'public', 'falso.png'));
+  fs.writeFileSync(path.join(repo, 'public', 'falso.png'), 'ahora es un archivo\n');
+  const deEnlaceAArchivo = ft().changed(repo, conEnlace, ft().seal(repo).tree, { ...opts, sinEjecutar: true });
+  assert.ok(deEnlaceAArchivo.files.includes('public/falso.png'), JSON.stringify(deEnlaceAArchivo));
+  // una carpeta qa que cuelga de una que la app sirve (la historia en public/stories): su guía cuenta
+  const pub = repoDeJuguete('ne-pub', { 'public/stories/story-9.9-x.md': '# h\n', 'public/qa/story-9.9-x-guia.html': '<p>1</p>\n' });
+  const a = ft().seal(pub.repo).tree;
+  fs.appendFileSync(path.join(pub.repo, 'public', 'qa', 'story-9.9-x-guia.html'), '<script>x()</script>\n');
+  const enPublic = ft().changed(pub.repo, a, ft().seal(pub.repo).tree, { storyRel: 'public/stories/story-9.9-x.md', sinEjecutar: true });
+  assert.deepStrictEqual([enPublic.files, enPublic.noSeEjecutan], [['public/qa/story-9.9-x-guia.html'], []], JSON.stringify(enPublic));
+});
+
+test('T33 PrepareCommit_NotExecutedOnly_DoesNotBlock — la guía de prueba y una captura de la historia no frenan; el código o un .md suelto sí', () => {
+  const C = corrida('s-ft33');
+  C.vuelta();
+  const qa = path.join(C.historias.repo, 'specs', 'qa');
+  fs.mkdirSync(qa, { recursive: true });
+  fs.writeFileSync(path.join(qa, 'story-9.9-sello-guia.html'), '<p>guía</p>\n');
+  fs.writeFileSync(path.join(qa, 'story-9.9-sello-captura.png'), 'png');
+  let r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  assert.match(salida(r), /no se ejecuta[^\n]*story-9\.9-sello-guia\.html/, salida(r));
+  fs.mkdirSync(path.join(C.codigo.repo, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, 'docs', 'uso.md'), '# uso\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), 'module.exports = 3;\n');
+  r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /· src\/b\.js/, salida(r));
+  assert.match(salida(r), /· docs\/uso\.md/, salida(r));
+  assert.doesNotMatch(salida(r), /· specs\/qa\/story-9\.9-sello-guia\.html/, salida(r));
+});
+
+// ── Pasado el tope, lo que cambió después de la última vuelta vuelve a lo revisado ─────────────────────────────────────
+// Caso: con el tope fijo de 3 y sin vuelta extra, un arreglo hecho después de la tercera vuelta dejaba la historia sin
+// salida: «Preparar el commit» pedía una cuarta vuelta que no existe. Ahora dice cómo volver a lo revisado y manda el
+// cambio a una historia de arreglo.
+
+test('T34 PrepareCommit_PastTheCap_RestoreToReviewed — sin cuarta vuelta: los comandos para volver a lo revisado, y con eso sigue', () => {
+  const C = corrida('s-ft34');
+  assert.strictEqual(C.vuelta(1).r.status, 0);
+  assert.strictEqual(C.vuelta(2).r.status, 0);
+  const nota = C.correr('marker.js', ['rethink', '--iter', '3', '--repeated', 'La vuelta 2 volvió a marcar el mismo archivo sin cambiar el enfoque',
+    '--change', 'Cambia el enfoque: el arreglo va a la entrada, antes de tocar el resto', '--repo', C.codigo.repo, '--story', C.story]);
+  assert.strictEqual(nota.status, 0, salida(nota));
+  assert.strictEqual(C.vuelta(3).r.status, 0, salida(C.vuelta(3).r));
+  // un arreglo después de la tercera, hecho con la herramienta de edición (deja su evento): un .ts cambiado, uno nuevo
+  // sin agregar y uno con `$` en el nombre
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), 'module.exports = 3;\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'c.ts'), 'export const c = 4;\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', '$HOME`id`.js'), 'module.exports = 5;\n');
+  const m = C.marcador();
+  const ahora = new Date(Date.now() + 1000).toISOString();
+  m.fileEvents = [...(m.fileEvents || []), ...['b.js', 'c.ts', '$HOME`id`.js'].map((f) => ({ ts: ahora, path: path.join(C.codigo.repo, 'src', f), code: true }))];
+  fs.writeFileSync(path.join(C.estado(), 'active', `${C.sid}.json`), JSON.stringify(m));
+  // `next` no ofrece una cuarta vuelta
+  const sig = C.correr('pipeline.js', ['next']);
+  assert.doesNotMatch(sig.stdout, /Revisores, vuelta 4/, sig.stdout);
+  const r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /Pasaste el tope de 3 vueltas/, salida(r));
+  assert.match(salida(r), /historia de arreglo/);
+  assert.doesNotMatch(salida(r), /smart-reloop|pipeline\.js next/, 'no manda a una vuelta que no existe');
+  const comandos = salida(r).split('\n').map((l) => l.trim()).filter((l) => /^git -C /.test(l));
+  assert.ok(comandos.some((l) => / stash push --include-untracked /.test(l)), salida(r));
+  // los comandos que da, tal cual y con el shell, guardan el cambio y vuelven a lo revisado; el `$` no se expande
+  for (const l of comandos) execFileSync('bash', ['-c', l], { stdio: 'ignore', env: { ...process.env, HOME: C.home } });
+  assert.strictEqual(fs.existsSync(path.join(C.codigo.repo, 'src', 'c.ts')), false);
+  assert.match(execFileSync('git', ['-C', C.codigo.repo, 'stash', 'show', '--include-untracked', '--name-only'], { encoding: 'utf8' }), /src\/\$HOME`id`\.js/);
+  const despues = prepararCommit(C);
+  assert.doesNotMatch(salida(despues), /BLOQUEADO — (lo que se guarda no es lo revisado|cambió código después de los revisores)/, salida(despues));
+});
+
+// Caso: al abrir una historia de arreglo, el arnés le agrega a la que sigue su enlace `followed_up_by:` en el encabezado;
+// después de la tercera vuelta, ese renglón pedía una cuarta que no existe. Es papeleo, como para la revisión del plan.
+test('T35 StoryPaperwork_FollowedUpBy_IsPaperwork — el enlace a la historia que la sigue; otro campo del encabezado cuenta', () => {
+  const base = ['---', 'story: "9.9"', 'title: "x"', 'status: review', '---', '# h', '', '## Acceptance Criteria', '', '1. algo', ''].join('\n');
+  const conEnlace = base.replace('status: review\n', 'status: review\nfollowed_up_by:\n  - id: "9.10"\n    date: "2026-11-20"\n    summary: "el arreglo"\n');
+  const aLaMisma = base.replace('status: review\n', 'status: review\nfollowed_up_by:\n- id: "9.10"\n  type: "gap-fill"\n');
+  assert.strictEqual(ft().sinPapeleoDeLaHistoria(conEnlace), ft().sinPapeleoDeLaHistoria(base));
+  assert.strictEqual(ft().sinPapeleoDeLaHistoria(aLaMisma), ft().sinPapeleoDeLaHistoria(base));
+  // otro campo del encabezado, o uno que viene después del enlace, sigue contando
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('title: "x"', 'title: "y"')), ft().sinPapeleoDeLaHistoria(base));
+  const despues = conEnlace.replace('---\n# h', 'files_to_modify:\n  - src/a.js\n---\n# h');
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(despues), ft().sinPapeleoDeLaHistoria(base));
+  // una clave que no es del enlace, escondida con sangría dentro de él, cuenta
+  const escondida = conEnlace.replace('    summary: "el arreglo"\n', '    summary: "el arreglo"\n  files_to_create:\n    - src/b.js\n');
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(escondida), ft().sinPapeleoDeLaHistoria(base));
+});
+
+// Caso: en un producto con la historia y el código en el mismo repo, la corrida en una copia de trabajo
+// (worktree) y la historia nombrada en la copia principal. Después de la tercera vuelta sólo cambió el papeleo de la
+// historia en la copia (el registro de cambios y la sección de seguimientos, nueva), y el freno la contaba como código.
+test('T36 PrepareCommit_StoryInAnotherCopyOfTheRepo_PaperworkStillPaperwork — la misma historia en otra copia del repo', () => {
+  const base = tmp('ft-copia-');
+  const home = path.join(base, 'home');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.symlinkSync(RAIZ, path.join(home, '.claude', 'agent-skills'));
+  fs.symlinkSync(RAIZ, path.join(home, '.claude', 'tycon-harness'));
+  const historia = ['---', 'story: "9.9"', 'title: "sello"', 'status: ready-for-dev', 'files_to_modify:', '  - src/a.js', '---',
+    '# Story 9.9', '', '## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado.', '', '### Tests', '',
+    '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.caso1` | 1 | unit | x | y |', '',
+    '## Tasks / Subtasks', '', '- [ ] Task 1: hacerlo (AC: 1)', '', '## Change Log', '', '- hoy: escrita', ''].join('\n');
+  const uno = repoDeJuguete('uno', { 'stories/story-9.9-sello.md': historia, 'src/a.js': 'module.exports = 1;\n' });
+  const copia = path.join(base, 'uno--wt-9.9');
+  uno.git('worktree', 'add', '-q', '-b', 'wt/9.9', copia);
+  const enLaPrincipal = path.join(uno.repo, 'stories', 'story-9.9-sello.md');
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-ft36', TYCON_LANE_LLM: '0', TYCON_HOME: '', TYCON_TIME_TRACKING: 'none', TYCON_MUTATION_CHECK: 'off' };
+  for (const k of ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[k];
+  const correr = (script, args) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env, input: '', cwd: copia });
+  const r0 = correr('pipeline.js', ['start', '--story', enLaPrincipal, '--repo', copia, '--brief']);
+  assert.strictEqual(r0.status, 0, salida(r0));
+  const v = correr('pipeline.js', ['advisors', '--story', enLaPrincipal, '--repo', copia, '--files', 'src/a.js', '--iter', '1']);
+  assert.strictEqual(v.status, 0, salida(v));
+  // en la copia: entradas nuevas en el registro y la sección de seguimientos que escribe «Hallazgos», por primera vez
+  const enLaCopia = path.join(copia, 'stories', 'story-9.9-sello.md');
+  fs.writeFileSync(enLaCopia, `${fs.readFileSync(enLaCopia, 'utf8')}- después: revisores, vuelta 1\n${SEGUIMIENTOS}`);
+  let r = correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order']);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // un criterio cambiado en la copia sigue contando
+  fs.writeFileSync(enLaCopia, fs.readFileSync(enLaCopia, 'utf8').replace('**Then** resultado.', '**Then** otro resultado.'));
+  r = correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order']);
+  assert.match(salida(r), MISMATCH, salida(r));
+});
+
+// Caso: después de la tercera vuelta, «Probar en vivo» marcó un criterio con
+// `@sin-pantalla` y pedía una cuarta vuelta. La marca de pantalla de un criterio es papeleo; el texto del criterio, no.
+test('T37 StoryPaperwork_ScreenMarkOnCriterion_IsPaperwork — @sin-pantalla suelta; @pantalla, una marca pegada y el texto siguen contando', () => {
+  const base = ['---', 'story: "9.9"', 'status: review', '---', '# h', '', '## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado.', '', '## Tasks', ''].join('\n');
+  for (const marca of [' `@sin-pantalla`', ' @sin-pantalla']) {
+    assert.strictEqual(ft().sinPapeleoDeLaHistoria(base.replace('resultado.', `resultado.${marca}`)), ft().sinPapeleoDeLaHistoria(base), marca);
+  }
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('resultado.', 'otro resultado. @sin-pantalla')), ft().sinPapeleoDeLaHistoria(base));
+  // `@pantalla` (agregarla o cambiarla) y una marca pegada a otra palabra cuentan
+  const conPantalla = base.replace('resultado.', 'resultado. @pantalla');
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(conPantalla), ft().sinPapeleoDeLaHistoria(base));
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(conPantalla.replace('@pantalla', '@sin-pantalla')), ft().sinPapeleoDeLaHistoria(conPantalla));
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('resultado.', 'resultado@sin-pantallax.')), ft().sinPapeleoDeLaHistoria(base));
+  // fuera de los criterios, la palabra no se toca
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('## Tasks\n', '## Tasks\n\n- usar @sin-pantalla\n')), ft().sinPapeleoDeLaHistoria(base));
+});

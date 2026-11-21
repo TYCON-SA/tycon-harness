@@ -4,11 +4,11 @@
  *
  * Una vuelta es un número de iteración que llegó a lanzar revisores: la foto que el arnés toma al lanzar el último
  * (`marker.iterations[N]`). Al llegar al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona
- * (una vuelta extra con su ok, o eximirlo); lo demás queda como deuda visible y el recorrido sigue.
+ * (eximirlo, o una historia de arreglo); lo demás queda como deuda visible y el recorrido sigue. No hay vuelta extra.
  *
  *   · `tope({ repo, env, home, stateDir })`: `{ value, source, problems }`. `review.max_rounds` del repo
  *     (`.tycon/advisors.yaml`, lo commiteado: bajar el tope afloja y aflojar exige commit) › la organización
- *     (`review.max_rounds` de team-repos.json, que se edita en el sitio) › 3. Un valor fuera de 1 a 6 no se usa y lo dice.
+ *     (`review.max_rounds` de team-repos.json, que se edita en el sitio) › 3. Un valor fuera de 1 a 3 no se usa y lo dice: el tope se baja, no se sube.
  *     Vale para la revisión del plan y para la del código. No hay ajuste por máquina.
  *   · `clase(regla, { prefijos })`: 'seguridad' | 'datos' | null.
  *   · `abiertos(hallazgos, opts)`: los hallazgos abiertos o diferidos, con `bloquea` en los críticos de esas clases.
@@ -22,7 +22,8 @@ const path = require('path');
 
 const FABRICA = 3;
 const MINIMO = 1;
-const MAXIMO = 6;
+// el tope se puede bajar, no subir: sin vuelta extra, 3 es el máximo
+const MAXIMO = 3;
 // lo que frena al tope sin la decisión de una persona (aprobado por la coordinadora, por delegación del dueño)
 const PREFIJOS_FABRICA = Object.freeze({
   seguridad: Object.freeze(['SEC', 'TENANT', 'AUTH', 'NEXTSEC', 'SIGNALR-C']),

@@ -615,13 +615,15 @@ test('T11 7.31-Coverage_ValidaSuSeccion @story-7.31 @ac-10 — el umbral de cobe
 
 test('T14 Review_ValidaSuSeccion @story-7.37 @ac-4 — el tope de vueltas y los prefijos de seguridad o datos, con su sección aparte', () => {
   // 🔴 rojo: un tope o un prefijo mal escrito invalida todo el archivo, o pasa como válido.
-  const ok = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { review: { max_rounds: 6, blocking_prefixes: ['PAGOS', 'SIGNALR-C', 'A1-W'], _nota: 'x' } })));
+  const ok = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { review: { max_rounds: 3, blocking_prefixes: ['PAGOS', 'SIGNALR-C', 'A1-W'], _nota: 'x' } })));
   assert.equal(ok.ok, true, JSON.stringify(ok.problems));
-  assert.deepStrictEqual(ok.data.review.max_rounds, 6);
+  assert.deepStrictEqual(ok.data.review.max_rounds, 3);
   assert.equal(ok.sectionProblems, undefined);
   const casos = [
     [{ max_rounds: 0 }, 'review.max_rounds'],
     [{ max_rounds: 7 }, 'review.max_rounds'],
+    // el tope se baja, no se sube
+    [{ max_rounds: 4 }, 'review.max_rounds'],
     [{ max_rounds: '2' }, 'review.max_rounds'],
     [{ max_rounds: 2.5 }, 'review.max_rounds'],
     [{ blocking_prefixes: 'SEC' }, 'review.blocking_prefixes'],
@@ -958,7 +960,7 @@ test('TeamRepos_ReviewRunnerSeValida (T8) @story-8.221 @ac-8 @ac-26 @ac-45 @ac-4
   const bien = con({ review_runner: { order: ['codex', 'claude', 'custom'], custom_command: 'mi-revisor --json', verifiers: 'per_finding' },
     plan_review: { delicate: 'ask', routine: 'always', routine_owner_away: 'wait', coordinator_approves: false, rejected_reaches_owner: true, owner_away_minutes: 30, lenses: ['suposicion-falsa', 'ac-sin-cubrir'] },
     deep_review: { default: 'auto', delicate: 'ask', small_max_files: 8, small_routine_day: 'run', small_routine_owner_away: 'wait', large_routine: 'ask' },
-    review: { max_rounds: 4, blocking_severity: 'robustness' } });
+    review: { max_rounds: 3, blocking_severity: 'robustness' } });
   assert.equal(bien.ok, true, JSON.stringify(bien.problems));
   assert.equal(bien.sectionProblems, undefined, JSON.stringify(bien.sectionProblems));
   // review_runner: lista vacía, repetidos, desconocido, custom sin comando, verifiers desconocido

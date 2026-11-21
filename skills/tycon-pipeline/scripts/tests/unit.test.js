@@ -3337,47 +3337,42 @@ test('foto de iteración: la llamada manual no pisa la automática, y el re-loop
     lastTouch: T_FOTO_TARDIA, stepsCompleted: [0, 1, 2, 3, 4], stepsPending: [5],
     filesTouched: [reductor],
     fileEvents: [{ path: reductor, ts: T_EDICION }],
-    iterations: { 11: { ts: fotoTs, filesSnapshot: [reductor] } },
+    iterations: { 2: { ts: fotoTs, filesSnapshot: [reductor] } },
   }, null, 2));
   escribirMarker(T_FOTO_AUTO);
 
   fs.writeFileSync(path.join(stateDir, 'advisor-runs', `${SID}.jsonl`), [
-    JSON.stringify({ ts: '2026-09-15T16:52:30.000Z', event: 'step5-start', iter: 11, expected: ['tycon-plugin-tests-coverage', 'tycon-plugin-security-basics'], mode: 'smart-reloop' }),
+    JSON.stringify({ ts: '2026-09-15T16:52:30.000Z', event: 'step5-start', iter: 2, expected: ['tycon-plugin-tests-coverage', 'tycon-plugin-security-basics'], mode: 'smart-reloop' }),
     JSON.stringify({ ts: '2026-09-15T16:52:40.000Z', advisor: 'tycon-plugin-tests-coverage', story: '2.5', repo }),
     JSON.stringify({ ts: T_ULTIMO_REVISOR, advisor: 'tycon-plugin-security-basics', story: '2.5', repo }),
-    JSON.stringify({ ts: '2026-09-15T16:52:52.500Z', event: 'auto-snapshot', iter: 11 }),
+    JSON.stringify({ ts: '2026-09-15T16:52:52.500Z', event: 'auto-snapshot', iter: 2 }),
   ].join('\n') + '\n');
 
   const env = { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID };
-  // las vueltas extra ya firmadas: acá se mide la foto de la vuelta 12, no el tope
-  fs.mkdirSync(path.join(fakeHome, '.claude', '.tycon-pipeline'), { recursive: true });
-  fs.appendFileSync(path.join(fakeHome, '.claude', '.tycon-pipeline', 'gates.log'), Array.from({ length: 30 }, (_, i) => JSON.stringify({ name: 'extra-round', status: 'ok', story: '2.5', iter: i + 1 })).join('\n') + '\n');
   const correr = (script, args, extraEnv) => cp.spawnSync(
     process.execPath, [path.join(SCRIPTS, script), ...args],
     { env: { ...env, ...(extraEnv || {}) }, cwd: repo, encoding: 'utf8' },
   );
 
   // ── Capa 1 — la llamada manual del «cierre del step», con el arreglo ya adentro ──
-  const snap = correr('marker.js', ['snapshot-iter', '11']);
+  const snap = correr('marker.js', ['snapshot-iter', '2']);
   assert.equal(snap.status, 0, 'el estado queda CORRECTO (la foto buena sigue) → no frena al que encadena smart-reloop');
   const m1 = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
-  assert.equal(m1.iterations['11'].ts, T_FOTO_AUTO, 'la foto automática NO se pisa');
+  assert.equal(m1.iterations['2'].ts, T_FOTO_AUTO, 'la foto automática NO se pisa');
   const gates = () => fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   const conservada = gates().find((e) => e.name === 'advisors-iter' && e.foto === 'conservada');
   assert.ok(conservada, 'la decisión queda en gates.log — el orquestador llamó esto con >/dev/null 2>&1');
   assert.equal(conservada.ultimo_revisor, T_ULTIMO_REVISOR);
   assert.ok(conservada.posteriores.some((p) => p.path === reductor), 'y dice QUÉ archivo no vio ningún revisor');
 
-  // La vuelta 12 es de las que piden la nota de «repensar el enfoque» (de la 3 en adelante), y pedir otra vez la 12 cuenta como la 13.
-  for (const it of ['12', '13']) {
-    const nota = correr('marker.js', ['rethink', '--iter', it, '--repo', repo, '--story', storyPath,
-      '--repeated', 'Volvió el mismo hallazgo de seguridad en las vueltas anteriores, siempre sobre el mismo archivo',
-      '--keep', 'Sigue igual: el arreglo es chico y el diseño de fondo no cambia entre vueltas']);
-    assert.equal(nota.status, 0, nota.stderr);
-  }
+  // La vuelta 3 pide la nota de «repensar el enfoque», y es la última: el tope es 3.
+  const nota = correr('marker.js', ['rethink', '--iter', '3', '--repo', repo, '--story', storyPath,
+    '--repeated', 'Volvió el mismo hallazgo de seguridad en las vueltas anteriores, siempre sobre el mismo archivo',
+    '--keep', 'Sigue igual: el arreglo es chico y el diseño de fondo no cambia entre vueltas']);
+  assert.equal(nota.status, 0, nota.stderr);
 
-  // ── La consecuencia: el re-loop de la iteración 12 vuelve a mirar seguridad ──
-  const rl = correr('pipeline.js', ['smart-reloop', '--iter', '12', '--repo', repo, '--story', storyPath, '--files', reductor]);
+  // ── La consecuencia: el re-loop de la iteración 3 vuelve a mirar seguridad ──
+  const rl = correr('pipeline.js', ['smart-reloop', '--iter', '3', '--repo', repo, '--story', storyPath, '--files', reductor]);
   assert.equal(rl.status, 0, rl.stderr);
   const out = JSON.parse(rl.stdout);
   assert.ok(out.delta_files.includes(reductor), 'el arreglo entra al delta');
@@ -3387,7 +3382,7 @@ test('foto de iteración: la llamada manual no pisa la automática, y el re-loop
   // ── Capa 2 — sola, sobre una foto tardía que la guarda no pudo impedir ──
   // (TYCON_SNAPSHOT_GUARD=0, una foto escrita a mano, o una máquina con el arnés atrasado.)
   escribirMarker(T_FOTO_TARDIA);
-  const rl2 = correr('pipeline.js', ['smart-reloop', '--iter', '12', '--repo', repo, '--story', storyPath, '--files', reductor], { TYCON_SNAPSHOT_GUARD: '0' });
+  const rl2 = correr('pipeline.js', ['smart-reloop', '--iter', '3', '--repo', repo, '--story', storyPath, '--files', reductor], { TYCON_SNAPSHOT_GUARD: '0' });
   assert.equal(rl2.status, 0, rl2.stderr);
   const out2 = JSON.parse(rl2.stdout);
   assert.equal(out2.suspect_late_snapshot, true, 'se detecta que la foto se fechó después del último revisor');
@@ -3400,7 +3395,7 @@ test('foto de iteración: la llamada manual no pisa la automática, y el re-loop
   assert.ok(out2.rerun.includes('tycon-plugin-security-basics'), 'el corte por último revisor rescata al revisor de seguridad');
   // 🔴 El aviso sale por stderr, no sólo dentro del JSON: si el orquestador filtra el JSON con un `python3 -c`,
   // la advertencia de delta vacío existiría sin que nadie la lea.
-  assert.match(rl2.stderr, /foto de la iteración 11 se fechó DESPUÉS del último revisor/);
+  assert.match(rl2.stderr, /foto de la iteración 2 se fechó DESPUÉS del último revisor/);
 
   fs.rmSync(fakeHome, { recursive: true, force: true });
   fs.rmSync(repo, { recursive: true, force: true });

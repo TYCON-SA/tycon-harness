@@ -173,11 +173,12 @@ test('T4 · Reloop_ConNota_Sigue_YLaCuarta_PideOtra', () => {
   const forzada = reloop(otra.repo, 3, ['--force-full-reloop']);
   assert.equal(forzada.status, 0, forzada.stderr);
   assert.ok(Array.isArray(JSON.parse(forzada.stdout).rerun), 'forzada, con la nota, también devuelve el set');
-  const cuatro = reloop(repo, 4);
-  assert.notEqual(cuatro.status, 0, 'la cuarta pide su propia nota');
-  assert.match(cuatro.stderr, /marker\.js" rethink --iter 4/);
+  // la cuarta no existe (tope fijo de 3): ni con su nota ni con una vuelta extra anotada
   assert.equal(nota(repo, 4, ['--keep', IGUAL]).status, 0);
-  assert.equal(reloop(repo, 4).status, 0);
+  const cuatro = reloop(repo, 4);
+  assert.notEqual(cuatro.status, 0, 'la cuarta no se sirve');
+  assert.match(cuatro.stderr, /tope de 3 vueltas/);
+  assert.doesNotMatch(cuatro.stdout, /"rerun"/);
 });
 
 // ── T5 ───────────────────────────────────────────────────────────────────────────────────────────
@@ -503,8 +504,8 @@ test('T18 · SinMarcador_Iter1EnLaTerceraVuelta_FrenaPorServed', () => {
   assert.equal(nota(repo, 3).status, 0);
   assert.equal(corre('smart-reloop', ['--iter', '1']).status, 0, 'con la nota de la 3 sale la 3');
   const cuarta = corre('smart-reloop', ['--iter', '3']);
-  assert.notEqual(cuarta.status, 0, 'pedir la 3 ya servida es la 4: pide su nota');
-  assert.match(cuarta.stderr, /marker\.js" rethink --iter 4/);
+  assert.notEqual(cuarta.status, 0, 'pedir la 3 ya servida es la 4, y la 4 pasa el tope');
+  assert.match(cuarta.stderr, /tope de 3 vueltas/);
   // un registro de vueltas servidas ilegible frena: no se sabe cuántas van
   fs.writeFileSync(path.join(run, 'rethink', 'served.json'), '{roto');
   const r = corre('smart-reloop', ['--iter', '1']);

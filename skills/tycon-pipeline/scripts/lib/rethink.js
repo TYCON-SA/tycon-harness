@@ -57,6 +57,47 @@ function recordServed(runDir, iter) {
   return { ok: true };
 }
 
+// La copia de las vueltas servidas fuera del repo: un renglón `review-served` en el gates.log de la carpeta de estado. Borrar
+// o achicar served.json no baja la cuenta, porque vale la mayor de las dos.
+const realOr = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+
+/** Anota la vuelta servida en el gates.log de `stateDir`. { ok } o { ok:false, reason }. */
+function recordServedMirror({ stateDir, runDir, iter, story, sessionId }) {
+  try {
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), ...(sessionId ? { sessionId } : {}),
+      name: 'review-served', story: story || null, runDir: realOr(runDir), iter })}\n`, 'utf8');
+  } catch (e) { return { ok: false, reason: `no se pudo escribir (${String(e.message).slice(0, 80)})` }; }
+  return { ok: true };
+}
+
+/**
+ * Las vueltas servidas de la corrida según la copia de fuera del repo: `{ ok, last, ts }`, con `ts` la hora (ms) en que
+ * se sirvió por última vez la vuelta `last`. Sin registro, `last` 0; un registro que existe y no se lee, `ok: false`.
+ */
+function readServedMirror({ stateDir, runDir }) {
+  if (!runDir) return { ok: true, last: 0, ts: null };
+  let raw;
+  try { raw = fs.readFileSync(path.join(stateDir, 'gates.log')); } catch (e) {
+    return e && e.code === 'ENOENT' ? { ok: true, last: 0, ts: null } : { ok: false, reason: `ilegible (${(e && (e.code || e.message)) || 'error'})` };
+  }
+  // el registro tiene megas de otros controles: se buscan los renglones por su nombre, sin partirlo entero
+  const propia = realOr(runDir);
+  const k = '"review-served"';
+  let last = 0;
+  let ts = null;
+  for (let i = raw.indexOf(k); i !== -1; i = raw.indexOf(k, i + k.length)) {
+    const s = raw.lastIndexOf(10, i) + 1;
+    const fin = raw.indexOf(10, i);
+    let o;
+    try { o = JSON.parse(raw.toString('utf8', s, fin === -1 ? raw.length : fin)); } catch { continue; }
+    if (!o || o.name !== 'review-served' || !Number.isInteger(o.iter) || typeof o.runDir !== 'string' || realOr(o.runDir) !== propia) continue;
+    const t = Date.parse(o.ts);
+    if (o.iter > last) { last = o.iter; ts = Number.isNaN(t) ? null : t; } else if (o.iter === last && !Number.isNaN(t)) ts = Math.max(ts || 0, t);
+  }
+  return { ok: true, last, ts };
+}
+
 /** Texto del campo sin espacios de más; lo que no es texto cuenta como vacío. */
 function clean(v) { return typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : ''; }
 
@@ -213,4 +254,4 @@ function blockMessage({ iter, runDir, repeated, why }) {
   return lines.join('\n') + '\n';
 }
 
-module.exports = { FIRST_ITER, MIN_CHARS, notePath, notesDir, servedPath, readServed, recordServed, clean, validateNote, readNote, readAll, listNotes, brokenWarning, sanearNota, sanearTexto, repeatedFindings, blockMessage };
+module.exports = { FIRST_ITER, MIN_CHARS, notePath, notesDir, servedPath, readServed, recordServed, recordServedMirror, readServedMirror, clean, validateNote, readNote, readAll, listNotes, brokenWarning, sanearNota, sanearTexto, repeatedFindings, blockMessage };

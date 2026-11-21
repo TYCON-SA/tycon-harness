@@ -780,8 +780,9 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   caracteres (vacío, 600.000). Nunca aplica nada: las propuestas las decide una persona. Queda en `team-repos.json`, en
   el repo del perfil. Lo revisa quien mantiene.
 - **Vueltas de revisores**: cuántas vueltas de revisores tiene una historia antes de cortar, y cuántos rechazos seguidos de su plan
-  antes de que decida el dueño (de 1 a 6; vacío, 3). Al
-  tope, un crítico de seguridad o de datos lo decide una persona y lo demás queda como deuda visible. También se suman
+  antes de que decida el dueño (de 1 a 3; vacío, 3: se baja, no se sube). Al
+  tope, un crítico de seguridad o de datos lo decide una persona, que lo exime o abre una historia de arreglo, y lo demás
+  queda como deuda visible. Después del tope no hay vuelta extra. También se suman
   reglas a las que cuentan como seguridad o datos. Un repo puede ajustar el tope en su `.tycon/advisors.yaml`. Queda en
   `team-repos.json` → `review`, en el repo del perfil. Lo revisa quien mantiene.
 - **Tu tecnología**: lo que el arnés ya reconoce, las terminaciones de archivo que tu equipo suma como código, las
@@ -946,7 +947,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
 | O12 | El orden de respaldo de los revisores | `review_runner.order` | lista sin repetidos de esos valores | `["claude"]` | para tener un respaldo cuando uno llega a su tope de uso |
 | O13 | Minutos sin respuesta para contar al dueño como ausente | `plan_review.owner_away_minutes` | entero de 5 a 240 | `20` | más si el dueño suele contestar tarde |
 | O14 | El comando del revisor propio (sólo con `custom`) | `review_runner.custom_command` | texto | — | con un revisor que no es de los de fábrica |
-| O15 | El tope de vueltas, el mismo para el plan y el código | `review.max_rounds` | entero de 1 a 6 | `3` | menos para cortar antes; más si tus historias son largas |
+| O15 | El tope de vueltas, el mismo para el plan y el código | `review.max_rounds` | entero de 1 a 3 | `3` | menos para cortar antes; no se sube: después del tope no hay vuelta extra |
 | O16 | Cuántos verificadores | `review_runner.verifiers` | `per_lens` · `per_finding` | `per_lens` | `per_finding` para medir uno por hallazgo |
 | O17 | Desde qué gravedad un hallazgo confirmado frena | `review.blocking_severity` | `bug` · `robustness` · `all` | `bug` | `robustness` o `all` para frenar también por lo demás |
 | O18 | Qué lentes corre la revisión del plan | `plan_review.lenses` | lista de `suposicion-falsa` · `ac-sin-cubrir` · `prueba-que-falta` · `riesgo-sin-defensa` | `["suposicion-falsa"]` | sumar lentes para una revisión más amplia, a cambio de más agentes |

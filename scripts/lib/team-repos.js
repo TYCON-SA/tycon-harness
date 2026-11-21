@@ -121,7 +121,7 @@ const WAIT_NOTICE_PEER_MAX = 480;
 // El umbral de cobertura de las líneas tocadas: un entero de 1 a 100. Lo lee
 // skills/tycon-pipeline/scripts/lib/test-gate-report.js, después de TYCON_COVERAGE_MIN de la máquina y antes del 75.
 const COVERAGE_KEYS = ['min_touched_lines_pct'];
-// Las vueltas de revisores de una story: `max_rounds` = el tope, un entero de 1 a 6 (de fábrica 3), el mismo para la
+// Las vueltas de revisores de una story: `max_rounds` = el tope, un entero de 1 a 3 (de fábrica 3: se baja, no se sube), el mismo para la
 // revisión del plan y la del código; `blocking_severity` = desde qué gravedad un hallazgo confirmado frena (bug,
 // robustness o all; de fábrica bug);
 // `blocking_prefixes` = prefijos de reglas que la organización suma a los de fábrica como «seguridad o datos»
@@ -726,8 +726,8 @@ function reviewProblems(value) {
   const out = [];
   for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !REVIEW_KEYS.includes(k)) out.push({ path: `review.${k}`, message: 'clave desconocida' });
   const n = value.max_rounds;
-  if (n !== undefined && !(Number.isInteger(n) && n >= 1 && n <= 6)) {
-    out.push({ path: 'review.max_rounds', message: `tiene que ser un número entero de vueltas, de 1 a 6 (es ${JSON.stringify(n)})` });
+  if (n !== undefined && !(Number.isInteger(n) && n >= 1 && n <= 3)) {
+    out.push({ path: 'review.max_rounds', message: `tiene que ser un número entero de vueltas, de 1 a 3: el tope se baja, no se sube (es ${JSON.stringify(n)})` });
   }
   const b = value.blocking_prefixes;
   if (b !== undefined) {
@@ -839,7 +839,7 @@ function parse(text) {
   const sectionWait = isObject(doc) && doc.wait_notice !== undefined ? waitNoticeProblems(doc.wait_notice) : [];
   // y con `coverage`: un umbral mal escrito cae al valor por defecto, no deja sin el archivo
   const sectionCoverage = isObject(doc) && doc.coverage !== undefined ? coverageProblems(doc.coverage) : [];
-  // y con `review`: un tope mal escrito cae al de fábrica (2), no deja sin el archivo
+  // y con `review`: un tope mal escrito cae al de fábrica (3), no deja sin el archivo
   const sectionReview = isObject(doc) && doc.review !== undefined ? reviewProblems(doc.review) : [];
   // y con `stack`: se descarta sólo la subclave con el problema, el resto de la sección sigue
   const sectionStack = isObject(doc) && doc.stack !== undefined ? stackProblems(doc.stack) : [];

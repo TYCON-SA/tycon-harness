@@ -544,6 +544,8 @@ Es la vuelta N de este mismo paso. `pipeline.js next` la pide («Revisores, vuel
 
 Un `.js`, `.cjs` o `.mjs` que quedó igual a lo revisado, salvo el lugar de sus comentarios, no pide otra vuelta (lo decide `lib/comment-only.js` contra el sello de la última vuelta cerrada); un texto de comentario cambiado, una directiva movida o cualquier duda la piden.
 
+Al guardar, lo que no se ejecuta tampoco frena ni pide otra vuelta. Se decide por lista (`noSeEjecuta`, en `lib/frozen-tree.js`), y lo que no está en ella cuenta. Entra una imagen (`.png`, `.jpg`, `.gif`, `.webp`), salvo la de referencia de una prueba visual. Entran también, en la carpeta qa de la historia, sus propios archivos de guía o de informe (`.html`, `.md`, `.pdf`) y sus capturas. Siguen contando un `.md` o `.txt` suelto (puede ser la instrucción de un agente o algo que corre), la historia fuera de su papeleo, un borrado, un archivo con permiso de ejecución, un enlace, otro archivo de la carpeta qa y lo sensible del catálogo. El aviso de «Preparar el commit» nombra lo apartado como «lo que no se ejecuta, que no cuenta».
+
 Una prueba o un texto no piden otra vuelta: lo decide `lib/reloop-code.js`. Una prueba es lo que `isTestPath` (`lib/atdd-order.js`) reconoce en la ruta desde la raíz de su repo (la carpeta con `.git` más cercana): `*.test.ts`, `*.spec.ts`, `test_*.py`, `*Tests.cs`, el código dentro de una carpeta de pruebas. Un texto es lo que no es código (un `.md`, un `.json`). Un archivo sin raíz de repo cuenta como código: ante la duda, se revisa. Con un arreglo de código y uno de prueba, la vuelta mira el de código. El re-loop reducido (`smart-reloop`) usa la misma regla: un delta de sólo pruebas no repite revisores.
 
 La decisión queda escrita en el marcador (`otraVuelta`: la vuelta, los archivos y desde cuándo) en cada cambio y cada cierre de paso, y el cartel la lee: dice «falta revisar lo cambiado después de los revisores (vuelta N, M archivos)» y cuenta los minutos desde el primer cambio sin revisar.
@@ -577,13 +579,19 @@ waiveados explícitamente por el user (con razón registrada — `had_override: 
 **El tope de vueltas** (`review.max_rounds`: 3 de fábrica, el mismo para la revisión del plan y la del código; la
 organización lo cambia en el sitio, en Configuración; el repo, en `.tycon/advisors.yaml` commiteado; no hay ajuste por
 máquina: un `review-max-rounds.json` viejo se ignora y se dice una vez). Una vuelta es un número de
-iteración que llegó a lanzar revisores: pedir dos veces el set de la misma vuelta, sin lanzarla, no suma. Más allá del
-tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
+iteración que llegó a lanzar revisores: pedir dos veces el set de la misma vuelta, sin lanzarla, no suma; si en el medio
+se lanzó algún revisor o cambió algún archivo, sí suma. La vuelta se pide desde la sesión de la corrida: sin su marcador,
+con una corrida abierta de otra sesión en el repo, el set no sale. Más allá del tope, `smart-reloop` no devuelve el set,
+el gancho de lanzamientos niega un revisor del set lanzado a mano fuera de la vuelta abierta, y los dos dicen qué quedó
+abierto:
 - **un crítico de seguridad o de datos** (reglas SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE, y las que
   sume la organización; también si lo confirmó el pase adversarial): lo decide una persona. Mostrale el resumen y
-  preguntale: una vuelta más (`smart-reloop … --extra-round --approved-by "<la persona>"`, que la persona aprueba en
-  la ventana de permiso, o con `--terminal`; la cita ya no la autoriza), o eximirlo (`marker.js waive-critical`).
-  Sin eso, `complete-step prepare-commit` no cierra.
+  preguntale: abrir una historia de arreglo (`followup_of:` esta historia) y eximirlo nombrándola, o eximirlo sin
+  historia (`marker.js waive-critical`). No hay vuelta extra: el tope es fijo y se puede bajar, no subir. Sin una de las
+  dos, `complete-step prepare-commit` no cierra.
+- **un cambio de código después de la última vuelta**: `complete-step prepare-commit` lo frena y da los comandos para
+  volver esos archivos a lo revisado (`git restore` desde el sello de la vuelta, `git clean` para un archivo nuevo). El
+  cambio sale de esta historia y va a la historia de arreglo: guardalo antes de volver.
 - **lo demás** queda como deuda visible y el recorrido sigue sin otra vuelta: en `findings.json` con
   `"disposition": "deferred"` y `"deuda": "tope"` (`write-findings`), después `write-followups`.
 

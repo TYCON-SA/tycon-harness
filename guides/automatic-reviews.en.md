@@ -31,7 +31,7 @@ installer, production, a migration, or declares `sensible:`. In doubt, delicate.
 
 It is launched with «Armar el plan» closed and no open question to the person about this review (unless they count
 as away): before that, `plan-review` refuses without launching anything and says why. The fourth round on the same
-story, for any reason, is decided by a person: their «review» to the question, or the signed extra round; being away is
+story, for any reason, is decided by a person: their «review» to the question; being away is
 not enough. The coordinator launches it (`marker.js plan-review --for-session <session>`); without a coordinator, the session
 itself (`marker.js plan-review`). The session's own review approves a routine plan just like the coordinator's; it only
 informs on a delicate story or with `plan_review.routine_approval: person`. Built-in, it runs one lens,
@@ -159,7 +159,7 @@ refuted with the verifier's record, deferred, or waived by the owner.
 | O12 | The reviewers' fallback order | `review_runner.order` | list of those values, no repeats | `["claude"]` | to have a fallback when one hits its usage limit |
 | O13 | Minutes without an answer to count the owner as away | `plan_review.owner_away_minutes` | integer from 5 to 240 | `20` | more if the owner usually answers late |
 | O14 | Your own reviewer's command (only with `custom`) | `review_runner.custom_command` | text | — | with a reviewer that is not a built-in one |
-| O15 | The rounds cap, the same for plan and code | `review.max_rounds` | integer from 1 to 6 | `3` | lower to stop sooner; higher if your stories are long |
+| O15 | The rounds cap, the same for plan and code | `review.max_rounds` | integer from 1 to 3 | `3` | lower to stop sooner; it does not go higher: there is no extra round past the cap |
 | O16 | How many verifiers | `review_runner.verifiers` | `per_lens` · `per_finding` | `per_lens` | `per_finding` to measure one per finding |
 | O17 | From what severity a confirmed finding blocks | `review.blocking_severity` | `bug` · `robustness` · `all` | `bug` | `robustness` or `all` to also block on the rest |
 | O18 | Which lenses the plan review runs | `plan_review.lenses` | list of `suposicion-falsa` · `ac-sin-cubrir` · `prueba-que-falta` · `riesgo-sin-defensa` | `["suposicion-falsa"]` | add lenses for a wider review, at the cost of more agents |
