@@ -662,6 +662,12 @@
       "requiere": []
     },
     {
+      "__nota": "cada revisión automática del plan deja su resultado con fecha, sin pisar la anterior, y su constancia guarda el consumo por agente y por tipo de token.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-review-history.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "una sesión no queda quieta esperando a una coordinadora que no atiende: si la designada no vive, la revisión del plan la lanza la sesión; si vive y no toma el pedido que le anota el arnés en plan_review.coordinator_wait_minutes, también, y la coordinadora lo ve en su aviso. Una revisión suya en curso cuenta como tomada y cada relanzamiento tiene su propio plazo.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review-wait.test.js",

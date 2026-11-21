@@ -482,6 +482,8 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   anotarRenglon(estado, { name: LANZADA, status: 'ok', sesion: lanza, destino: dest, story: String(marker.storyId), historia: historiaDe(marker), corrida: pedido.corrida, pedido: numero });
   const argsFile = path.join(carpetaDe(estado, lanza), `${dest}.args.json`);
   escribirDeUnaVez(argsFile, `${JSON.stringify(args, null, 2)}\n`);
+  // el resultado de la revisión anterior, antes de que el corredor lo pise: si no se puede guardar, se dice y se sigue
+  try { guardarResultado(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el resultado de la revisión anterior (${e.code || e.message}): el corredor lo va a pisar\n`); }
   return { codigo: 0, args, argsFile, pedido: rutaPedido(estado, lanza, dest), delicate, informativa, destino: dest };
 }
 
@@ -582,13 +584,17 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
   const confirmados = (!sinHerramienta && !noVale && resultado && Array.isArray(resultado.confirmed)) ? resultado.confirmed : [];
   const { blocks } = policy();
   const aHallazgo = (h) => ({ lente: h.lens || null, severidad: h.adjusted_severity || h.severity || null, archivo: h.file || null, linea: h.line ?? null, resumen: h.summary || '' });
+  // el resultado de esta revisión, con fecha y sin pisar el de la anterior; y cuánto costó, por agente y por tipo
+  let guardado = null;
+  try { guardado = guardarResultado(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el resultado de la revisión (${e.code || e.message})\n`); }
+  const uso = resultado && resultado.corredor && resultado.corredor.tokens && typeof resultado.corredor.tokens === 'object' ? resultado.corredor.tokens : null;
   const constancia = {
     id: sha(`${lanza}|${dest}|${ahora}`).slice(0, 12),
     veredicto, motivo, informativa: !!pedido.informativa,
     hallazgos: confirmados.filter((h) => blocks(h.adjusted_severity || h.severity, corte)).map(aHallazgo),
     notas: confirmados.filter((h) => !blocks(h.adjusted_severity || h.severity, corte)).map(aHallazgo),
     corte, modelo, proveedor, hora: new Date(ahora).toISOString(), lanzo: lanza, destino: dest,
-    corrida: pedido.corrida, storyId: pedido.storyId, huellas: pedido.huellas, delicate: pedido.delicate,
+    corrida: pedido.corrida, storyId: pedido.storyId, huellas: pedido.huellas, delicate: pedido.delicate, uso, resultado_guardado: guardado,
     // la parte y su lista, congeladas: el portón lee de acá la lista que vale con el plan aprobado por delegación
     ...(pedido.parte ? { parte: pedido.parte } : {}),
   };
@@ -1067,8 +1073,38 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
 /** La ruta donde el corredor deja el resultado de la revisión que preparó `lanza` sobre `destino` (el `--out` del comando). */
 const rutaResultado = (estado, lanza, destino) => path.join(carpetaDe(estado, lanza), `${destino}.resultado.json`);
 
+// Cada revisión deja su resultado con fecha, en `resultados/`: el corredor escribe siempre en la ruta fija, y la siguiente
+// revisión de la misma sesión lo pisaba. La fecha es la del archivo y la huella de su texto evita guardar dos veces el mismo.
+const carpetaResultados = (estado, lanza) => path.join(carpetaDe(estado, lanza), 'resultados');
+
+/** Los resultados guardados de las revisiones de `lanza` sobre `destino`, del más viejo al más nuevo. */
+function resultadosGuardados(estado, lanza, destino) {
+  let archivos;
+  try { archivos = fs.readdirSync(carpetaResultados(estado, lanza)); } catch (_) { return []; }
+  return archivos.filter((f) => f.startsWith(`${destino}.`) && f.endsWith('.resultado.json')).sort().map((f) => path.join(carpetaResultados(estado, lanza), f));
+}
+
+/**
+ * Guarda con fecha el resultado de la ruta fija, si hay uno y no está guardado; devuelve su ruta guardada o null. Lo
+ * llaman la preparación (antes de que el corredor lo pise) y la anotación.
+ */
+function guardarResultado(estado, lanza, destino) {
+  const fijo = rutaResultado(estado, lanza, destino);
+  let texto;
+  let cuando;
+  try { texto = fs.readFileSync(fijo, 'utf8'); cuando = fs.statSync(fijo).mtime; } catch (_) { return null; }
+  const huella = sha(texto).slice(0, 8);
+  const ya = resultadosGuardados(estado, lanza, destino).find((f) => f.endsWith(`.${huella}.resultado.json`));
+  if (ya) return ya;
+  const fecha = cuando.toISOString().replace(/:/g, '-').replace(/\.\d+Z$/, 'Z');
+  const destinoArchivo = path.join(carpetaResultados(estado, lanza), `${destino}.${fecha}.${huella}.resultado.json`);
+  fs.mkdirSync(carpetaResultados(estado, lanza), { recursive: true });
+  escribirDeUnaVez(destinoArchivo, texto);
+  return destinoArchivo;
+}
+
 module.exports = {
-  rutaResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
+  rutaResultado, resultadosGuardados, guardarResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
   tieneRenglon, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
