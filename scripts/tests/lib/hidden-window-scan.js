@@ -269,7 +269,7 @@ function formasQueNoSigue(text) {
   // el nombre del módulo partido, en el código (no en un comentario ni adentro de otro texto)
   const partido = [...text.matchAll(/(['"`])child_?\1\s*\+|`child_\$\{|(['"`])child_['"`]\s*\+\s*['"`]process/g)].some((m) => enCodigo(m.index));
   for (const nombre of new Set(modulos)) {
-    for (const m of text.matchAll(new RegExp(`(?<![.\\w$])${nombre.replace(/\$/g, '\\$')}\\s*\\??\\.?\\s*\\[`, 'g'))) {
+    for (const m of text.matchAll(new RegExp(`(?<![.\\w$])${nombre.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}\\s*\\??\\.?\\s*\\[`, 'g'))) {
       if (!mask[m.index]) out.push({ line: linea(m.index), forma: `el módulo en ${nombre} usado con corchetes` });
     }
   }
