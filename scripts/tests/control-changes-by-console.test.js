@@ -416,3 +416,19 @@ test('Constancias_TextoQueSeCorre_SeSigueMirando', () => {
   assert.ok(desc && desc.block, 'la descripción citada en la línea de gh pasó');
   assert.match(desc.block, /--body-file/, desc.block);
 });
+
+// 🔴 Falla con: el lector de los prefijos (`A=…`, `env A=…`) que prueba todas las formas de partir un `$''` repetido y
+// tarda exponencialmente: el freno se pasa de su tiempo y un freno colgado deja pasar.
+test('Constancias_PrefijoConComillasRepetidas_TerminaRapido', () => {
+  const correr = correrEn(repoConRamas());
+  for (const cab of ['A=', 'env A=']) {
+    const largo = `${cab}${"$''".repeat(30)}`;
+    // stable-data: el reloj mide cuánto tarda el freno, no fecha ningún dato
+    const t0 = Date.now();
+    correr(largo);
+    assert.ok(Date.now() - t0 < 2000, `«${cab}» con 30 «$''» tardó ${Date.now() - t0} ms`);
+    // con una escritura de la constancia detrás, el prefijo largo no la esconde
+    const r = correr(`${largo} cp /tmp/x.json .github/control-changes/`);
+    assert.ok(r && r.block, `pasó con el prefijo «${cab}» largo`);
+  }
+});
