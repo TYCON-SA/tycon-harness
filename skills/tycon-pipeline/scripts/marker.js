@@ -2174,7 +2174,7 @@ function cmdCompleteStep(nRaw, flags) {
       // El bypass NO es silencioso: queda en bypass.log con el detalle, igual que DOD_BYPASS.
       appendLog('bypass.log', { kind: 'ATDD_BYPASS', story: marker.storyId, firstTest: r.firstTest, firstImpl: r.firstImpl,
         reason: marker.atddBypassReason || motivoDe(opts) || null });
-      console.error('⚠️  ATDD saltado con la firma del dueño (queda en bypass.log).');
+      console.error('⚠️  ATDD saltado con la firma de una persona (queda en bypass.log).');
       console.error(`   código primero: ${r.firstImpl} · test después: ${r.firstTest}`);
     }
     if (r.verdict === 'warn-no-tests' || r.verdict === 'warn-unknown') {

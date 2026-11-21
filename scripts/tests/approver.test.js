@@ -103,8 +103,9 @@ test('aprobador T7 Mensajes_AlAgente_SinElDueno', () => {
 });
 
 // aprobador T8 Mensajes_LaCoordinadoraTampoco
-// 🔴 Falla con: el ok de guardar que la coordinadora no puede dar, con un mensaje que ya no dice que ella tampoco firma.
+// 🔴 Falla con: una firma que la coordinadora no puede dar (saltear «pruebas primero», sólo de una persona), con un
+// mensaje que ya no dice que ella tampoco firma. Antes la miraba en el ok de guardar, que salió (8.283).
 test('aprobador T8 Mensajes_LaCoordinadoraTampoco', () => {
-  const t = fs.readFileSync(path.join(GUIONES, 'lib', 'save-ok.js'), 'utf8');
+  const t = fs.readFileSync(path.join(GUIONES, 'lib', 'atdd-skip.js'), 'utf8');
   assert.match(t, /Lo firma una persona: ni el agente ni la coordinadora/);
 });

@@ -101,7 +101,7 @@ function muestra({ story, carpeta: dada, ejecucion, camino, casa, userInfo, ahor
   const carpeta = dada == null ? dada : carpetaReal(dada);
   const renglon = { ts: new Date(ahora).toISOString(), name: MOSTRADA, status: 'ok', story: valor(story), carpeta: valor(carpeta), ejecucion: valor(ejecucion), camino: valor(camino) };
   renglon.huella = huellaCorta(renglon);
-  const cabeza = `🔒 ${camino} es un pedido de saltear «pruebas primero», no un salteo: sin la firma del dueño el freno sigue.\n`
+  const cabeza = `🔒 ${camino} es un pedido de saltear «pruebas primero», no un salteo: sin la firma de una persona el freno sigue.\n`
     + `   Muestra ${renglon.huella} · historia ${story} · ejecución ${ejecucion} · ${carpeta}\n`;
   let error = null;
   try {
@@ -113,8 +113,8 @@ function muestra({ story, carpeta: dada, ejecucion, camino, casa, userInfo, ahor
   } catch (e) { error = (e && e.message) || String(e); }
   const texto = error
     ? `${cabeza}   No pude anotar la muestra (${error}): sin ella no hay firma posible.\n`
-      + `   Con la muestra anotada, el dueño firma con: ${cmds[0]}  (o en su terminal: ${cmds[1]})\n`
-    : `${cabeza}   Para saltearlo, que lo firme el dueño, no el agente:\n     en la ventana de permiso o, sin ventana, con su click en el cuadro de opciones o su «aprobado»: ${cmds[0]}\n     en su terminal:           ${cmds[1]}\n`;
+      + `   Con la muestra anotada, una persona firma con: ${cmds[0]}  (o en su terminal: ${cmds[1]})\n`
+    : `${cabeza}   Lo firma una persona: ni el agente ni la coordinadora.\n     en la ventana de permiso o, sin ventana, con su click en el cuadro de opciones o su «aprobado»: ${cmds[0]}\n     en su terminal:           ${cmds[1]}\n`;
   return { renglon, texto, comandos: cmds, ...(error ? { error } : {}) };
 }
 
@@ -205,7 +205,7 @@ function decidir({ marker, pide, camino, casa, userInfo, ahora } = {}) {
  */
 function firmar({ story, motivo, argv = [], sesion = null, casa, userInfo, ahora = Date.now(), exigir, aprobar } = {}) {
   const prohibida = PROHIBIDAS.find((b) => argv.some((w) => w === b || String(w).startsWith(`${b}=`)));
-  if (prohibida) return { codigo: 1, motivo: `${prohibida} no firma: saltear «pruebas primero» lo firma el dueño en la ventana de permiso o, sin ventana, con su click en el cuadro de opciones o su «aprobado» (este comando sin ${prohibida}), o en su terminal (--terminal)` };
+  if (prohibida) return { codigo: 1, motivo: `${prohibida} no firma: saltear «pruebas primero» lo firma una persona en la ventana de permiso o, sin ventana, con su click en el cuadro de opciones o su «aprobado» (este comando sin ${prohibida}), o en su terminal (--terminal)` };
   if (!story || !String(motivo || '').trim()) return { codigo: 2, motivo: 'faltan --story <S> y --reason "<motivo>"' };
   let c;
   try { c = casaDe(casa, userInfo); } catch (e) { return { codigo: 2, motivo: e.message }; }
