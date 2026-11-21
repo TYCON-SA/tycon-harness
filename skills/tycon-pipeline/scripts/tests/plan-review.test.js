@@ -809,6 +809,27 @@ test('Delicado_ConRevisionAprobada_EsperaAlDev (T11) @story-1.29 @ac-9', (t) => 
   assert.strictEqual(deTramite.codigo, 0, JSON.stringify(deTramite));
   const deTramiteAjena = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: m, delegaDelicada: () => false, deTramite: () => true });
   assert.strictEqual(deTramiteAjena.codigo, 2, 'la revisión la lanzó otra sesión: no firma la propia');
+  // 🔴 el aviso de la preparación dice lo que va a hacer el freno: con el plan delicado de trámite en el perfil, la
+  // revisión aprobada lo firma; «lo aprueba el dev» sólo cuando el perfil no lo lista
+  const conTramite = PR().preparar({ lanza: DESTINO, estado: lab.estado, deTramite: () => true });
+  assert.strictEqual(conTramite.codigo, 0, conTramite.motivo);
+  assert.strictEqual(conTramite.informativa, false);
+  assert.doesNotMatch(PR().avisoDelicado(conTramite), /lo aprueba el dev/);
+  assert.match(PR().avisoDelicado(conTramite), /plan-approval:delicada/);
+  const sinTramite = PR().preparar({ lanza: DESTINO, estado: lab.estado, deTramite: () => false });
+  assert.strictEqual(sinTramite.informativa, true);
+  assert.match(PR().avisoDelicado(sinTramite), /lo aprueba el dev/);
+  assert.strictEqual(PR().avisoDelicado({ delicate: { value: false } }), null);
+  // con la organización pidiendo el click, la revisión no firma aunque el plan delicado sea de trámite: el aviso no lo promete
+  const otra = laboratorio(t, { sensible: 'seguridad' });
+  const conClick = PR().preparar({ lanza: DESTINO, estado: otra.estado, deTramite: () => true, config: { plan_review: { routine_approval: 'person' } } });
+  assert.strictEqual(conClick.codigo, 0, conClick.motivo);
+  assert.strictEqual(conClick.informativa, true);
+  assert.match(PR().avisoDelicado(conClick), /lo aprueba el dev/);
+  // el plan delicado es de trámite sólo si el perfil lista también la firma del plan: el guion que aprueba pide ésa
+  const soloLaForma = () => ({ delegated_signing: ['plan-approval:delicada'], owner_only: [] });
+  assert.strictEqual(PR().delicadaDeTramite({ perfil: soloLaForma }), false);
+  assert.strictEqual(PR().delicadaDeTramite({ perfil: () => ({ delegated_signing: ['plan-approval:delicada', 'plan-approval'], owner_only: [] }) }), true);
   // un plan delicado con la revisión de este plan en rechazo no se aprueba, tampoco con el «aprobado» de la persona
   const enContra = laboratorio(t, { sensible: 'seguridad' });
   enContra.revisar(RECHAZADO);

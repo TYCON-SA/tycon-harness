@@ -420,7 +420,7 @@ const anotarRenglon = (estado, r, ahora = Date.now()) => {
  * plan: informativa sólo si no puede firmar (una story delicada, o `routine_approval: person`). Para otra sesión, sólo la
  * designada. Lanzar no pide la delegación: se mira al firmar. `designada()` y `config` se inyectan en las pruebas.
  */
-function preparar({ lanza, destino, estado, designada, config } = {}) {
+function preparar({ lanza, destino, estado, designada, config, deTramite = delicadaDeTramite } = {}) {
   if (!lanza || !SESION.test(lanza)) return no('falta la sesión que lanza la revisión');
   // de la propia sesión: decide el destino y que no se pide ser la designada; si es informativa se decide después
   const propia = !destino || destino === lanza;
@@ -468,7 +468,8 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   const cfg = configUsada(config);
   // la revisión de la propia sesión firma una rutina con `review`, y un plan delicado si el perfil lo lista como trámite
   // (automatic-signing.js); si no puede firmar, informa
-  const informativa = propia && ((delicate.value && !delicadaDeTramite()) || cfg.plan_review.routine_approval !== 'review');
+  const tramite = !!delicate.value && !!deTramite();
+  const informativa = propia && ((delicate.value && !tramite) || cfg.plan_review.routine_approval !== 'review');
   // el número al azar que ata el resultado del pase a esta revisión: un resultado sin él, o con el de otra, no se anota
   const numero = crypto.randomBytes(16).toString('hex');
   const corte = cfg.review.blocking_severity;
@@ -484,7 +485,21 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   escribirDeUnaVez(argsFile, `${JSON.stringify(args, null, 2)}\n`);
   // el resultado de la revisión anterior, antes de que el corredor lo pise: si no se puede guardar, se dice y se sigue
   try { guardarResultado(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el resultado de la revisión anterior (${e.code || e.message}): el corredor lo va a pisar\n`); }
-  return { codigo: 0, args, argsFile, pedido: rutaPedido(estado, lanza, dest), delicate, informativa, destino: dest };
+  // la revisión firma el plan delicado sólo si es de trámite y la organización deja firmar a la revisión (`antesDeAprobar`)
+  return { codigo: 0, args, argsFile, pedido: rutaPedido(estado, lanza, dest), delicate, informativa, destino: dest,
+    deTramite: tramite && cfg.plan_review.routine_approval === 'review' };
+}
+
+/**
+ * El aviso de una story delicada al preparar su revisión, con la misma cuenta que usa el freno al aprobar
+ * (`antesDeAprobar`): si el perfil lista el plan delicado como trámite, la revisión aprobada lo firma; si no, lo aprueba
+ * el dev. null si la story no es delicada.
+ */
+function avisoDelicado(p) {
+  if (!p || !p.delicate || !p.delicate.value) return null;
+  return p.deTramite
+    ? `⚠️  la story es delicada (${p.delicate.reason}): la revisión ataca y avisa, y si sale aprobada firma el plan, porque el perfil del equipo lista plan-approval:delicada como firma de trámite.`
+    : `⚠️  la story es delicada (${p.delicate.reason}): la revisión ataca y avisa, pero el plan lo aprueba el dev.`;
 }
 
 /**
@@ -929,11 +944,13 @@ function revisionEnContra({ estado, destino, marker }) {
 }
 
 /** ¿El perfil lista el plan de una historia delicada como trámite, que firma el arnés solo? (automatic-signing.js) */
-function delicadaDeTramite({ home } = {}) {
+function delicadaDeTramite({ home, perfil } = {}) {
   try {
     const raiz = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib');
     const forma = require(path.join(raiz, 'signatures.js')).PLAN_DELICADO;
-    return !!require(path.join(raiz, 'automatic-signing.js')).esDeTramite({ firma: forma, ...(home ? { home } : {}) }).ok;
+    const as = require(path.join(raiz, 'automatic-signing.js'));
+    // el guion que aprueba pide la firma del plan; la forma delicada sola no la da: hacen falta las dos de trámite
+    return [forma, 'plan-approval'].every((firma) => !!as.esDeTramite({ firma, ...(home ? { home } : {}), ...(perfil ? { perfil } : {}) }).ok);
   } catch (_) { return false; }
 }
 
@@ -1104,7 +1121,7 @@ function guardarResultado(estado, lanza, destino) {
 }
 
 module.exports = {
-  rutaResultado, resultadosGuardados, guardarResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
+  rutaResultado, resultadosGuardados, avisoDelicado, delicadaDeTramite, guardarResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
   tieneRenglon, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,

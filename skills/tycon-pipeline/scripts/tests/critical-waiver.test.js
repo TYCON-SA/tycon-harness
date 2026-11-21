@@ -410,6 +410,40 @@ test('Caminos_ComandosQueSeCopianNoEjecutanNada @story-8.63 @ac-1', () => {
   assert.ok(renglon.includes(`--file 'a"; touch /tmp/pwned-8-63; echo "$(id)'`), renglon);
 });
 
+// 🔴 Falla con: la exención que el arnés firma como trámite (el perfil lista `critical-waiver` en
+//    approvals.delegated_signing) queda con `quien` = el arnés y sin `delegacion`, y su vía no es de las que no vienen de
+//    una cita: write-findings la rechaza («no nombra a la persona que dio el ok») aunque la firma valió.
+test('WaiveCritical_DeTramite_LaConstanciaVale — la exención firmada como trámite nombra al dueño, en su perfil, y write-findings la acepta', () => {
+  const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
+  const cw = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  // como la arma waive-critical con lo que devuelve la firma de trámite (owner-window.js exigir: `automatica: true`)
+  const q = ow.quienFirmo({ via: 'delegacion', automatica: true, sesion: 's-cw' }, 'persona');
+  const linea = { ts: T(0), rule_id: 'DODRT-C9', file: 'a.js', reason: 'prueba', ...cw.deTramite(q), via: `waive-critical (${q.via})` };
+  assert.equal(cw.constanciaInvalida(linea), null, JSON.stringify(linea));
+  assert.match(linea.delegacion, /perfil del equipo/);
+  // la forma de la firma de trámite no tapa un «quien» que no es el arnés: el agente que se nombra a sí mismo sigue afuera
+  assert.match(cw.constanciaInvalida({ ...linea, quien: 'orquestador', delegacion: '' }), /persona/);
+  // sin la marca de trámite, una automática sin delegación sigue sin valer
+  assert.match(cw.constanciaInvalida({ ...linea, delegacion: undefined, via: 'waive-critical (delegada · coordinadora)' }), /persona/);
+});
+
+// 🔴 Falla con: tres hallazgos de la misma regla en el mismo archivo salen como tres renglones con tres comandos, y
+//    parece que piden tres exenciones; una sola los cubre (la constancia se busca por regla y archivo).
+test('WriteFindings_MismaReglaYArchivo_UnaSolaExencion — tres hallazgos de una regla en un archivo piden una exención', () => {
+  const lab = laboratorio();
+  const tres = [1, 2, 3].map((n) => ({ ...CRITICO, reason: `caso ${n}` }));
+  const r = lab.writeFindings(tres);
+  assert.notEqual(r.status, 0);
+  const salida = JSON.parse(r.stdout).error;
+  assert.equal(salida.split('\n').filter((l) => /--terminal/.test(l)).length, 1, salida);
+  assert.match(salida, /DODRT-C9 en \S+ \(3 hallazgos\)/);
+  assert.match(salida, /^Un crítico lo decide una persona: 1 exención falta/m);
+  // con la exención de la persona, los tres se escriben
+  assert.equal(waive(lab, []).status, 0);
+  const ok = lab.writeFindings(tres);
+  assert.equal(ok.status, 0, `${ok.stdout}${ok.stderr}`);
+});
+
 // ── los criterios que no se pueden probar en vivo ───────────────────────────────────────────────
 
 function laboratorioDeCriterio(conversacion) {

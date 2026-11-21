@@ -7083,7 +7083,8 @@ function writeFindings(args) {
     const faltan = rev.faltan;
     if (faltan.length) {
       const marker = path.join(__dirname, 'marker.js');
-      const lineas = [`Un crítico lo decide una persona: ${faltan.length} CRITICAL marcado(s) como waived sin el ok de una persona:`];
+      const total = faltan.reduce((n, f) => n + (f.hallazgos || 1), 0);
+      const lineas = [`Un crítico lo decide una persona: ${faltan.length === 1 ? '1 exención falta' : `${faltan.length} exenciones faltan`} (${total} CRITICAL marcado(s) como waived sin el ok de una persona; una exención cubre su regla en su archivo):`];
       lineas.push(...cw.renglonesDeFaltantes(rev));
       lineas.push('Arreglalo, o que el dev lo exima antes de escribir los hallazgos. Los caminos:');
       for (const f of faltan) lineas.push(...cw.caminos({ marker, ruleId: f.rule_id, file: f.file || '<archivo>' }));

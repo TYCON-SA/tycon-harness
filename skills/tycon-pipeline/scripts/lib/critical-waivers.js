@@ -23,7 +23,15 @@ const esCriticoEximido = (f) => !!f && String(f.severity || '').trim().toUpperCa
 /** Una constancia completa: regla, quién, tipo y vía. null = válida; si no, el motivo. */
 // Se firma en la terminal, en la ventana de permiso, o con el click o el «aprobado» de la persona, y la ata su renglón del registro del arnés. Una anterior a la
 // ventana, que salió de una cita en la conversación, ya no vale: la conversación no se lee para firmar nada.
-const sinCita = (via) => /terminal|ventana|delegada|click en el cuadro|«aprobado» escrito/.test(String(via || ''));
+const sinCita = (via) => /terminal|ventana|delegada|firma de trámite|click en el cuadro|«aprobado» escrito/.test(String(via || ''));
+// la firma de trámite la da el arnés porque el dueño la listó en el perfil: ese ok es el de la persona
+const DE_TRAMITE = 'el dueño, en el perfil del equipo (approvals.delegated_signing)';
+
+/** Lo que `quienFirmo` devuelve para una firma de trámite, con la persona que dio el ok: el dueño, en su perfil. */
+function deTramite(q) {
+  const firmante = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'automatic-signing.js')).FIRMANTE;
+  return q && q.tipo === 'automatica' && q.quien === firmante && !q.delegacion ? { ...q, delegacion: DE_TRAMITE } : q;
+}
 const CITA_VIEJA = 'esta exención se firmó con una cita en la conversación, que ya no cuenta: firmala en la ventana';
 
 function constanciaInvalida(l) {
@@ -101,11 +109,15 @@ function revisar(hallazgos, runDir, { reverificar = false, home, story } = {}) {
     const mal = constanciaInvalida(l) || (reverificar ? fueraDelRegistro(l, { home, story }) : null);
     if (mal) { if (!validas.has(k)) malas.set(k, mal); } else { validas.set(k, l); malas.delete(k); }
   }
-  const faltan = (hallazgos || []).filter(esCriticoEximido).filter((f) => !validas.has(clave(reglaDe(f), f.file)))
-    .map((f) => {
-      const k = clave(reglaDe(f), f.file);
-      return { rule_id: reglaDe(f) || '(sin regla)', file: f.file || '', ...(malas.has(k) ? { motivo: `la constancia no vale: ${malas.get(k)}` } : {}) };
-    });
+  // una constancia cubre todos los hallazgos de su regla en su archivo: lo que falta va una vez por regla y archivo
+  const porClave = new Map();
+  for (const f of (hallazgos || []).filter(esCriticoEximido)) {
+    const k = clave(reglaDe(f), f.file);
+    if (validas.has(k)) continue;
+    if (porClave.has(k)) { porClave.get(k).hallazgos++; continue; }
+    porClave.set(k, { rule_id: reglaDe(f) || '(sin regla)', file: f.file || '', hallazgos: 1, ...(malas.has(k) ? { motivo: `la constancia no vale: ${malas.get(k)}` } : {}) });
+  }
+  const faltan = [...porClave.values()];
   return { faltan, ilegibles: leido.ilegibles, ...(leido.error ? { error: `${FILE} no se lee (${leido.error})` } : {}) };
 }
 
@@ -145,7 +157,7 @@ function caminos({ marker, ruleId, file }) {
 
 /** Los renglones de lo que falta, para los mensajes de write-findings y de los cierres. */
 function renglonesDeFaltantes(r) {
-  const out = r.faltan.map((f) => `   · ${f.rule_id}${f.file ? ` en ${f.file}` : ''}${f.motivo ? ` — ${f.motivo}` : ''}`);
+  const out = r.faltan.map((f) => `   · ${f.rule_id}${f.file ? ` en ${f.file}` : ''}${f.hallazgos > 1 ? ` (${f.hallazgos} hallazgos)` : ''}${f.motivo ? ` — ${f.motivo}` : ''}`);
   if (r.ilegibles) out.push(`   (${FILE} tiene ${r.ilegibles} renglón(es) ilegible(s): no cuentan como constancia)`);
   if (r.error) out.push(`   (${r.error})`);
   return out;
@@ -412,4 +424,4 @@ function noEsPersona(quien) {
 }
 
 module.exports = { DESIGNACION, RETIRADA, CONFIRMADA, RE_NIEGA, juezDesignacion, designar, designacionVigente, ultimaDesignacion, designacionConfirmada,
-  estadoInicial, esEstado, plegarRenglones, vigenteDe, confirmationRecord, confirmaLaDesignacion, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, rolDeCoordinar, ROL_DE_FABRICA, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
+  estadoInicial, esEstado, plegarRenglones, vigenteDe, confirmationRecord, confirmaLaDesignacion, huella, fueraDelRegistro, constanciaInvalida, deTramite, DE_TRAMITE, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, rolDeCoordinar, ROL_DE_FABRICA, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
