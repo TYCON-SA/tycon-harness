@@ -85,7 +85,7 @@ test('CierreAutonomo_MatrizRoja_PistaPorElCuadro (T12) @story-8.274 @ac-15 @ac-1
   assert.match(r.stdout, /"decision":"block"/, r.stdout + r.stderr);
   const reason = JSON.parse(r.stdout).reason;
   assert.doesNotMatch(reason, /desde su terminal/);
-  assert.match(reason, /lista del dueño/);
+  assert.match(reason, /lista de firmas de la persona/);
   const cmd = (/`([^`]*runtime-waiver[^`]*)`/.exec(reason) || [])[1];
   assert.ok(cmd, `la pista trae el comando: ${reason}`);
   assert.ok(cmd.includes(E.story), 'con la historia de la corrida');

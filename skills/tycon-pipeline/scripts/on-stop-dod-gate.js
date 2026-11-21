@@ -45,8 +45,8 @@ function markerPath(sessionId) {
 function waiverCommand(marker) {
   const raw = marker && marker.storyPath ? String(marker.storyPath) : '<historia>';
   const story = path.isAbsolute(raw) || !marker.repoPath ? raw : path.join(marker.repoPath, raw);
-  let cmd;
-  try { cmd = require('./lib/home-command.js').signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js'); } catch { cmd = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js'; }
+  // marker.js vive al lado de este guion: la ruta sale de acá, sin escribir la carpeta de la herramienta
+  const cmd = `node "${path.join(__dirname, 'marker.js')}"`;
   return `${cmd} runtime-waiver ${/\s/.test(story) ? `"${story}"` : story}`;
 }
 
@@ -380,7 +380,7 @@ function main() {
   const pista = soloMatriz
     ? '\n  ℹ Si la matriz está roja SÓLO porque hay criterios declarados no verificables esperando la exención ' +
       'de la persona, vos no podés ponerla en verde. Pedila corriendo vos ' +
-      `\`${waiverCommand(marker)}\`: deja el renglón en la lista del dueño, que la aprueba con su cuadro. ` +
+      `\`${waiverCommand(marker)}\`: deja el renglón en la lista de firmas de la persona, que la aprueba con su cuadro. ` +
       'Para poder cerrar el turno y esperar, corré `marker.js set-flag waitingForHuman true` — deja pasar ESE ' +
       'cierre, no apaga la autonomía, se consume solo y no saltea la matriz: «Preparar» la sigue pidiendo. ' +
       'NO uses `touch STOP_AUTONOMY`: ese archivo frena TODAS las corridas de la máquina ' +
