@@ -470,7 +470,11 @@ function numerosDeAz(salida) {
     if (ids.length) return ids;
   }
   const renglones = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  return renglones.length && renglones.every((l) => /^\d+$/.test(l)) ? renglones.map(Number) : [];
+  // `--query pullRequestId -o tsv` contesta el número solo; un `git rev-parse` antes en el mismo comando deja su commit
+  // en otro renglón (letras de la a a la f): ése no es otro texto, y el número sigue siendo el del pedido
+  const esCommit = (l) => /^[0-9a-f]{7,40}$/.test(l) && /[a-f]/.test(l);
+  const numeros = renglones.filter((l) => /^\d+$/.test(l));
+  return numeros.length && renglones.every((l) => /^\d+$/.test(l) || esCommit(l)) ? numeros.map(Number) : [];
 }
 
 /** El número de cada pedido de la salida de la herramienta: `pullRequestId` de az, la dirección `…/pull/N` de gh. */
