@@ -486,7 +486,12 @@ test('Reglas_TiradaLargaSinEspacios_LinealYMismoResultado', () => {
   const casos = [`db.${pw}="secreto1"`, `x.y:db${PW}='secreto1' y sigue`, `..:-${pwd} = "clave1234"`, `é.db${pwd}="abcdefg"`,
     `require${PW}="true"`, `a-b.c:${PW}="$VAR"`, `conf:mail.${pw}="otraclave" y "${pwd}"="nope"`, `--a.${pw}="clave1234"`,
     ['ana', 'example.com'].join('@'), `contacto: ${['.ana.perez+ops', 'example.com.ar'].join('@')}.`, `x.y-${['z', 'example.org'].join('@')}`,
-    `é${['jose', 'example.net'].join('@')}`, `%%${['abc', 'example.com'].join('@')}`, 'icono@2x.png', 'sin correo ni clave'];
+    `é${['jose', 'example.net'].join('@')}`, `%%${['abc', 'example.com'].join('@')}`, 'icono@2x.png', 'sin correo ni clave',
+    // un segundo correo pegado al primero (lo encontró el pase adversarial): arranca en el medio de la tirada
+    ['a', 'example.com+foo', 'example.org'].join('@'), ['git', 'github.com-bob', 'example.com'].join('@'), ['a', 'b.co.c', 'example.com'].join('@')];
+  // lo de antes de la arroba se lee hasta 64 caracteres, el máximo de una dirección: una de 64 se encuentra entera (una
+  // más larga no es una dirección que exista)
+  assert.deepStrictEqual(`ver ${'y'.repeat(64)}@example.com`.match(regla('email')), [`${'y'.repeat(64)}@example.com`]);
   for (const [nombre, vieja] of Object.entries(antes)) {
     for (const c of casos) {
       assert.deepStrictEqual(c.match(regla(nombre)), c.match(vieja), `${nombre} encuentra otra cosa en: ${c}`);
