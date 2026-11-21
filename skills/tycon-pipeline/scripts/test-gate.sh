@@ -1355,6 +1355,21 @@ else
   echo "[test-gate] vitest run --coverage (1 sola corrida)"
   ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
       bash -c "set -o pipefail; npx vitest run --coverage --reporter=json --outputFile $(printf %q "$RESULTS_DIR/vitest.json") 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
+  # Sin el paquete de la cobertura (un repo nuevo sin @vitest/coverage-v8), vitest sale en rojo aunque las pruebas pasen:
+  # no es un rojo de las pruebas. Se vuelven a correr sin cobertura, para que el check diga lo que pasó con ellas, y la
+  # cobertura queda «no medida» con el paquete que falta.
+  TG_COV_MISSING=""
+  if [[ "$SUITE_EXIT" != "0" && -f "$RESULTS_DIR/run.log" ]]; then
+    TG_COV_MISSING="$(grep -oE "Cannot find (dependency|package|module) '@vitest/coverage-[a-z0-9-]+'" "$RESULTS_DIR/run.log" | grep -oE "@vitest/coverage-[a-z0-9-]+" | head -1)"
+  fi
+  if [[ -n "$TG_COV_MISSING" ]]; then
+    echo "🟡 [test-gate] cobertura no medida: falta $TG_COV_MISSING (instalalo en el repo: npm i -D $TG_COV_MISSING). Corro las pruebas sin cobertura." >&2
+    SUITE_EXIT=0
+    # una cobertura de una corrida anterior no se lee como la de ésta; y la del archivo de configuración queda apagada
+    rm -rf "$REPO_RUN/coverage"
+    ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
+        bash -c "set -o pipefail; npx vitest run --coverage.enabled=false --reporter=json --outputFile $(printf %q "$RESULTS_DIR/vitest.json") 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
+  fi
 fi
 
 # De 3 a 7 son salidas del propio gate («sin suite», «no sé el alcance»…): una herramienta de pruebas que sale así
@@ -1580,7 +1595,7 @@ BASE_REF="$(node -e 'try{const j=JSON.parse(process.argv[1]);process.stdout.writ
 # `realpath`, que en un Git Bash pueden faltar: el informe trae su propio reemplazo de los dos.
 # El artefacto de una corrida anterior se borra antes: si el informe falla, no puede quedar un verde viejo a la vista.
 rm -f "$OUT_FILE"
-TYCON_TEST_GATE_AFTER_MAIN="${TG_AFTER_MAIN:-}" TYCON_TEST_GATE_TREE_TOUCHED="${TG_TREE_TOUCHED_FILE:-}" node "$SCRIPT_DIR/lib/test-gate-report.js" "$RUNNER" "$REPO" "$REPO_RUN" "$RESULTS_DIR" "$OUT_FILE" "$SUITE_EXIT" "$STORY_ID" "$COV_MIN" "$TS" "$TEST_PROJECT_COUNT" "$SCOPE" "$SCOPE_SOURCE" "$DECLARED_NEW" "$CODE_STATE_JSON" "$BASE_REF" "$BASE_JSON" \
+TYCON_TEST_GATE_COVERAGE_MISSING="${TG_COV_MISSING:-}" TYCON_TEST_GATE_AFTER_MAIN="${TG_AFTER_MAIN:-}" TYCON_TEST_GATE_TREE_TOUCHED="${TG_TREE_TOUCHED_FILE:-}" node "$SCRIPT_DIR/lib/test-gate-report.js" "$RUNNER" "$REPO" "$REPO_RUN" "$RESULTS_DIR" "$OUT_FILE" "$SUITE_EXIT" "$STORY_ID" "$COV_MIN" "$TS" "$TEST_PROJECT_COUNT" "$SCOPE" "$SCOPE_SOURCE" "$DECLARED_NEW" "$CODE_STATE_JSON" "$BASE_REF" "$BASE_JSON" \
   || echo "[test-gate] ⚠️  el informe falló (lib/test-gate-report.js): mirá el error de arriba; no quedó artefacto" >&2
 
 # 🔴 Una suite que sale 0 sin haber corrido ninguna prueba (o sin informe que lo cuente) NO es verde (story 8.17,
