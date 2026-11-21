@@ -89,6 +89,12 @@ const AFTER_QUEUE = "github.event_name != 'push' || github.actor != 'github-merg
  */
 const BASE_SCRIPT_GUARD = '            git cat-file -e "${BASE}:scripts/ci/run-base-controls.sh" || { echo "::error::no pude correr: la base no trae scripts/ci/run-base-controls.sh; los controles de un pedido salen de la base, nunca del pedido"; exit 1; }';
 
+/**
+ * La primera línea de cada paso del ensayo de Windows: en un pull request termina al instante, verde, y lo dice. Está en
+ * la forma y la regla `windows` la exige; sin la sangría.
+ */
+const WINDOWS_PR_EXIT = 'if ($env:GITHUB_EVENT_NAME -eq \'pull_request\') { Write-Output "en un pedido no corre el ensayo de Windows: corre en la cola de merge"; exit 0 }';
+
 /** Una línea `uses:` de la forma: la acción es fija; el sha completo y el tag del comentario son un patrón. */
 const pinned = (prefix, action) => ({
   re: new RegExp(`^${`${prefix}${action}`.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}@[0-9a-f]{40} # v\\d+\\.\\d+\\.\\d+$`),
@@ -137,6 +143,10 @@ const SHAPE = [
   '          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}',
   '          BASE_SHA: ${{ github.event.merge_group.base_sha }}',
   '        run: |',
+  '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench-base" ]; then',
+  '            echo "en un pedido no corre la parte controls-bench-base: corre en la cola de merge"',
+  '            exit 0',
+  '          fi',
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then',
   '            BASE="${BASE_SHA:-$(git rev-parse --verify "origin/${BASE_REF#refs/heads/}^{commit}")}" || exit 1',
   '            git cat-file -e "${BASE}^{commit}" || exit 1',
@@ -184,7 +194,7 @@ const SHAPE = [
   '          TYCON_PUBLIC_CI_PART: installer-floor',
   '        run: |',
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then',
-  '            echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: installer-floor corre en la cola de merge"',
+  '            echo "en un pedido no corre installer-floor: corre en la cola de merge"',
   '            exit 0',
   '          fi',
   '          bash scripts/ci/public-ci.sh --clean-machine',
@@ -215,6 +225,7 @@ const SHAPE = [
   '          persist-credentials: false',
   '      - name: Los comandos de la ejecución perdida en las tres consolas de Windows',
   '        run: |',
+  `          ${WINDOWS_PR_EXIT}`,
   '          node --test --test-name-pattern "T13 " skills/tycon-pipeline/scripts/tests/lost-run-loop.test.js',
   '          exit $LASTEXITCODE',
   '      - name: El ensayo de Windows de este escenario',
@@ -222,6 +233,7 @@ const SHAPE = [
   '          SCENARIO: ${{ matrix.scenario }}',
   '          WORK: ${{ runner.workspace }}\\tycon-rehearsal',
   '        run: |',
+  `          ${WINDOWS_PR_EXIT}`,
   '          node scripts/ci/windows-rehearsal.js --scenario "$env:SCENARIO" --work "$env:WORK"',
   '          exit $LASTEXITCODE',
   '  public-ci:',
@@ -719,6 +731,11 @@ const RULES = [
       // los comandos de la ejecución perdida en las tres consolas (8.318, AC 12), con el código de la prueba
       const consolas = job.findIndex((l) => l.body === 'node --test --test-name-pattern "T13 " skills/tycon-pipeline/scripts/tests/lost-run-loop.test.js');
       if (consolas < 0 || !job[consolas + 1] || job[consolas + 1].body !== 'exit $LASTEXITCODE') return 'el job `windows` corre la T13 de `lost-run-loop.test.js` (los comandos de la ejecución perdida en PowerShell 5.1, PowerShell 7 y cmd) y sale con su código';
+      // en un pedido cada paso termina al instante, y SÓLO en un pedido: en la cola y en el push a main corre entero
+      const ensayo = job.findIndex((l) => /^node scripts\/ci\/windows-rehearsal\.js /.test(l.body));
+      const evento = job.filter((l) => /GITHUB_EVENT_NAME|github\.event_name/.test(l.body) && !/^if\s*:/.test(l.body));
+      const sale = (k) => k > 0 && job[k - 1].body === WINDOWS_PR_EXIT;
+      if (!sale(consolas) || !sale(ensayo) || evento.length !== 2) return `cada paso del job \`windows\` empieza con \`${WINDOWS_PR_EXIT}\` y no mira el evento en otra línea: en un pedido termina al instante, y en la cola y en el push a main corre entero${evento.length ? ` (línea ${at(evento)})` : ''}`;
       return null;
     },
   },

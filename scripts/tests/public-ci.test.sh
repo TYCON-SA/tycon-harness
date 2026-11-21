@@ -856,14 +856,20 @@ else
   altered "sin la parte del banco de la base" "parts" 'return t.replace("controls-bench, controls-bench-base, ", "controls-bench, ");'
   altered "con el banco de la base antes del banco" "parts" 'return t.replace("controls-bench, controls-bench-base, ", "controls-bench-base, controls-bench, ");'
   altered "el banco de la base sale verde aunque la base lo conozca" "=shape" 'return t.replace(" && ! grep -q -- \x27controls-bench-base)\x27 \"${RUNNER_TEMP}/public-ci-base.sh\"", "");'
-  # en un pedido corren todas las partes y el ensayo de Windows, como en la cola: cada una de estas falla si un ci.yml
-  # vuelve a dejar para la cola las suites o el ensayo, y el error de un pedido se ve recién ahí
+  # en un pedido corren checks, el banco y las suites, como en la cola: falla si un ci.yml vuelve a dejar para la cola
+  # las suites, y el error de un pedido se ve recién ahí
   altered "en un pedido vuelven a saltearse las suites" "=shape" 'return t.replace(/^( *)# en un pedido BASE_REF/m, (m, s) => `${s}if [ "\${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "\${TYCON_PUBLIC_CI_PART}" != "checks" ]; then\n${s}  exit 0\n${s}fi\n${m}`);'
-  altered "en un pedido vuelve a saltearse el ensayo de Windows" "=shape" 'return t.replace(/^( *)node scripts\/ci\/windows-rehearsal\.js /m, (m, s) => `${s}if ($env:GITHUB_EVENT_NAME -eq \x27pull_request\x27) { exit 0 }\n${m}`);'
+  # 🔴 Falla con: correr en cada pedido el ensayo de Windows y el banco de la base, que no frenaron ningún pedido que no
+  # frenara otra parte y llenaban la cola de trabajos de GitHub; o saltearlos también en la cola, que es donde corren
+  altered "en un pedido corre entero el ensayo de Windows" "windows" 'return t.replace(/^ *if \(\$env:GITHUB_EVENT_NAME -eq \x27pull_request\x27\) \{ Write-Output .*; exit 0 \}\n/gm, "");'
+  altered "en un pedido corre un paso del ensayo de Windows" "windows" 'return t.replace(/^ *if \(\$env:GITHUB_EVENT_NAME -eq \x27pull_request\x27\) \{ Write-Output .*; exit 0 \}\n( *node scripts\/ci\/windows-rehearsal)/m, "$1");'
+  altered "el ensayo de Windows se saltea también en la cola" "windows" 'return t.replace(/-eq \x27pull_request\x27\) \{ Write-Output/g, "-ne \x27push\x27) { Write-Output");'
+  altered "en un pedido corre el banco de la base" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \] && \[ "\$\{TYCON_PUBLIC_CI_PART\}" = "controls-bench-base" \]; then\n.*\n *exit 0\n *fi\n/m, "");'
+  altered "el banco de la base se saltea también en la cola" "=shape" 'return t.replace(/\[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \] && (\[ "\$\{TYCON_PUBLIC_CI_PART\}" = "controls-bench-base" \])/, "$1");'
   # una base que no conoce la parte del banco lo corre dentro de checks: la salida verde de esa parte vale sólo para ella
   altered "el banco sale verde aunque la base lo conozca" "=shape" 'return t.replace(" && ! grep -q -- \x27|controls-bench)\x27 \"${RUNNER_TEMP}/public-ci-base.sh\"", "");'
   altered "en main un push corta la corrida del anterior" "=shape" 'return t.replace("cancel-in-progress: ${{ github.ref != \x27refs/heads/main\x27 }}", "cancel-in-progress: true");'
-  altered "en un pedido corre también el piso del instalador" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \]; then\n *echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: installer-floor.*\n *exit 0\n *fi\n/m, "");'
+  altered "en un pedido corre también el piso del instalador" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \]; then\n *echo "en un pedido no corre installer-floor.*\n *exit 0\n *fi\n/m, "");'
   # el push a main que hace la cola al entrar un pedido no corre nada (la cola ya probó ese commit), y sólo
   # ése: cualquier otro push a main —el merge directo de un administrador— corre entero, y un pedido o la cola, igual
   altered "sin la condición de la cola en el job de la matriz" "after-queue" 'return t.replace(/^    if: github\.event_name .*\n/m, "");'
