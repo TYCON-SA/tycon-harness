@@ -1992,11 +1992,18 @@ function cmdCompleteStep(nRaw, flags) {
       }
     }
     let revision = autoRevision;
+    // la revisión en rechazo que el dueño vence con su click, para el texto de la aprobación
+    let rechazoVencido = null;
     const porLaRevision = antesDeLaRevision({ marker });
     const antesDelPlan = (via, registro) => {
-      // un plan delicado con la revisión de este plan en rechazo no se aprueba por ninguna vía
+      // un plan delicado con su revisión en rechazo lo aprueba sólo el dueño con su click en el cuadro, que lo ata a lo
+      // que vio: ni la terminal, ni su «aprobado» escrito, ni la delegación. Antes de dar el cuadro el click todavía puede llegar
       const enContra = require('./lib/plan-review.js').revisionEnContra({ estado: STATE_DIR, destino: SID, marker });
-      if (enContra) return enContra;
+      if (enContra) {
+        const porElClick = registro ? registro.via === 'click' : !['terminal', 'delegacion', 'mensaje'].includes(via);
+        if (!porElClick || !enContra.revision) return { codigo: enContra.codigo, motivo: `${enContra.motivo}. Sólo el dueño puede aprobarlo igual, con su click en el cuadro` };
+        rechazoVencido = enContra.revision;
+      }
       if (via === 'delegacion') {
         // por la revisión, el texto lo arma el arnés: un --approved propio podría atribuir una firma que nadie dio
         const propio = require('./lib/plan-review.js').textoPropioPorLaRevision(approved);
@@ -2030,6 +2037,8 @@ function cmdCompleteStep(nRaw, flags) {
     const porRevision = !!revision;
     // por la revisión, el texto lo arma el arnés con quién la lanzó y su veredicto; por una persona, su cita
     const textoPlan = porRevision ? require('./lib/plan-review.js').textoDeLaAprobacion(revision)
+      : rechazoVencido ? `rechazo vencido por decisión del dueño: la revisión del ${rechazoVencido.ts || 'sin fecha'}`
+        + `${rechazoVencido.sesion ? ` (lanzada por la sesión ${rechazoVencido.sesion})` : ''} dijo ${rechazoVencido.veredicto}`
       : (approved || 'firmado en la terminal');
     // la huella del plan aprobado: con ella, anotar la parte después no lo reabre si no cambió (set-batch)
     const planSha = huellaDelPlan(marker).sha;

@@ -71,8 +71,10 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
      plan y lo vuelve a cerrar, y la revisión vuelve a correr. No llega al dueño mientras siga rechazado, salvo con
      `plan_review.rejected_reaches_owner` en sí o al llegar al tope de rechazos seguidos (`review.max_rounds`, de
      fábrica 3): entonces llega con los hallazgos y «rechazado N veces seguidas», y el dueño decide partir la historia o
-     firmar una vuelta extra. Un plan delicado con su revisión en rechazo no se aprueba por ninguna vía, tampoco con el
-     «aprobado» del dueño: se corrige el plan y la revisión vuelve a correr.
+     firmar una vuelta extra. Un plan delicado con su revisión en rechazo no se aprueba por la delegación, por la
+     terminal ni con un «aprobado» escrito: se corrige el plan y la revisión vuelve a correr. Sólo el dueño puede
+     aprobarlo igual, con su click en el cuadro; el texto lo arma el arnés («rechazo vencido por decisión del dueño», con
+     el veredicto que se pisa).
    - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan o la historia
      cambiaron mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño. No se
      relanza por cada cambio: se juntan todos, y se relanza cuando el plan y la historia quedaron como van a quedar.

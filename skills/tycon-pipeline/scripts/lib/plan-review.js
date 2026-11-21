@@ -837,8 +837,9 @@ function revisionEnContra({ estado, destino, marker }) {
   } catch (_) { delicada = true; }
   if (!delicada) return null;
   if (problemas.length) return no(`plan delicado y no pude leer sus revisiones (${problemas[0]}): no sé si alguna está en contra`);
-  return no(`plan delicado con su última revisión (${u.ts || 'sin fecha'}) en rechazo: un plan delicado no se aprueba con la revisión en contra. `
-    + 'Corregí el plan con lo que encontró la revisión y lanzala de nuevo: la aprueba una revisión aprobada posterior');
+  return { ...no(`plan delicado con su última revisión (${u.ts || 'sin fecha'}) en rechazo: un plan delicado no se aprueba con la revisión en contra. `
+    + 'Corregí el plan con lo que encontró la revisión y lanzala de nuevo: la aprueba una revisión aprobada posterior'),
+  revision: { ts: u.ts || null, veredicto: u.veredicto, sesion: u.sesion || null } };
 }
 
 /** ¿El perfil lista el plan de una historia delicada como trámite, que firma el arnés solo? (automatic-signing.js) */

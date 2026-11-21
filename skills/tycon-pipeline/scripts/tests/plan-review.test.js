@@ -830,6 +830,26 @@ test('Delicado_ConRevisionAprobada_EsperaAlDev (T11) @story-1.29 @ac-9', (t) => 
   const rcc = pc.decision === 'allow' ? enContra.correr(APROBAR) : { status: 9, stderr: pc.texto || '' };
   assert.notStrictEqual(rcc.status, 0, `${rcc.stdout}${rcc.stderr}`);
   assert.match(`${rcc.stderr}`, /en rechazo: un plan delicado no se aprueba con la revisión en contra/, `${pc.decision} ${rcc.stderr}`);
+  // decisión del dueño: sólo su click en el cuadro vence el rechazo; ni la terminal ni la delegación. El texto lo arma
+  // el arnés, con el veredicto que se pisa
+  {
+    const porVia = (via) => {
+      const l = laboratorio(t, { sensible: 'seguridad' });
+      l.revisar(RECHAZADO);
+      const r = l.marker(DESTINO, ['complete-step', 'approve-plan', '--approved', 'aprobado'], via === 'delegacion' ? { delegadaPor: COORD } : { via });
+      return { r, pa: JSON.parse(l.leer(DESTINO)).planApproval };
+    };
+    const click = porVia('click');
+    assert.strictEqual(click.r.status, 0, `${click.r.stdout}${click.r.stderr}`);
+    assert.match(click.pa.text, /rechazo vencido por decisión del dueño/, click.pa.text);
+    assert.match(click.pa.text, /rechazado/, click.pa.text);
+    for (const via of ['delegacion', 'mensaje', 'ventana']) {
+      const o = porVia(via);
+      assert.notStrictEqual(o.r.status, 0, `${via}: ${o.r.stdout}${o.r.stderr}`);
+      assert.ok(!o.pa, `${via}: el plan delicado en rechazo no quedó aprobado`);
+      assert.match(o.r.stderr, /click en el cuadro/, via);
+    }
+  }
   assert.ok(!JSON.parse(enContra.leer(DESTINO)).planApproval, 'el plan delicado en rechazo no quedó aprobado');
   const sinRevision = laboratorio(t, { sensible: 'seguridad' });
   const s2 = PR().antesDeAprobar({ estado: sinRevision.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(sinRevision.leer(DESTINO)), delegaDelicada });
