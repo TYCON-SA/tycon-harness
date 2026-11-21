@@ -1915,3 +1915,64 @@ test('Direccion_RedQueCubreTodo_NoArranca_YElPuertoNoCuenta', () => {
   assert.strictEqual(direccionDe(de('10.1.1.1', '[2001:db8::1]:443'), lista), '2001:db8::1');
   assert.strictEqual(direccionDe(de('10.1.1.1', '198.51.100.4:5678'), true), '198.51.100.4', 'también con 1');
 });
+
+// ── La huella de una oficina, a pedido: sólo las huellas, sin esperar la pasada entera del buzón ──────────────────────
+// 🔴 Falla con: la bajada no sabe traer sólo las huellas (baja los volcados también, o poda el espejo con un listado
+//    que no es el de una pasada entera), o no dice que cortó por tiempo.
+test('T12 DownloadRuns_OnlyOfficeKeys_BajaSoloHuellas @story-8.328 @ac-8', async () => {
+  const k = par();
+  const espejo = fs.mkdtempSync(path.join(os.tmpdir(), 'espejo-'));
+  // lo que ya estaba en el espejo y el buzón no lista: una bajada sólo de huellas no lo poda, aunque se lo pidan
+  fs.mkdirSync(path.join(espejo, 'maquina-x'), { recursive: true });
+  fs.writeFileSync(path.join(espejo, 'maquina-x', '9.9-2026-09-01T1000.json'), '{}');
+  const buzon = await H.arrancarBuzon({ blobs: {
+    'maquina-a/2.2-2026-09-02T1000.json': JSON.stringify(H.volcado ? H.volcado({ story: '2.2' }) : {}),
+    [`maquina-a/office-keys/${k.fingerprint}.json`]: JSON.stringify({ fingerprint: k.fingerprint, publicKey: k.publicKey }),
+  } });
+  try {
+    const r = await bajar({ cuenta: 'cuentax', contenedor: 'runs', credencial: { sas: H.sas() }, urlBase: buzon.base, dir: espejo, budgetMs: 60000, soloHuellas: true, podar: true });
+    assert.strictEqual(r.codigo, 0, JSON.stringify(r.res));
+    assert.strictEqual(r.res.completo, true);
+    assert.ok(fs.existsSync(path.join(espejo, 'maquina-a', 'office-keys', `${k.fingerprint}.json`)), 'la huella bajó');
+    assert.ok(!fs.existsSync(path.join(espejo, 'maquina-a', '2.2-2026-09-02T1000.json')), 'el volcado no bajó');
+    assert.ok(fs.existsSync(path.join(espejo, 'maquina-x', '9.9-2026-09-01T1000.json')), 'no podó el espejo');
+    assert.strictEqual(r.res.podados, 0);
+    assert.deepStrictEqual(leerHuellas(espejo, () => {}).carpetas['maquina-a'].huellas, [k.fingerprint]);
+  } finally { await buzon.cerrar(); fs.rmSync(espejo, { recursive: true, force: true }); }
+});
+
+test('T13 DownloadRuns_OnlyOfficeKeys_CortaPorTiempo_LoDice @story-8.328 @ac-10', async () => {
+  const k = par();
+  const espejo = fs.mkdtempSync(path.join(os.tmpdir(), 'espejo-'));
+  const buzon = await H.arrancarBuzon({ blobs: { [`maquina-a/office-keys/${k.fingerprint}.json`]: JSON.stringify({ fingerprint: k.fingerprint, publicKey: k.publicKey }) } });
+  try {
+    // un presupuesto ya vencido: no baja nada y lo dice
+    const r = await bajar({ cuenta: 'cuentax', contenedor: 'runs', credencial: { sas: H.sas() }, urlBase: buzon.base, dir: espejo, budgetMs: -1, soloHuellas: true });
+    assert.strictEqual(r.res.completo, false, JSON.stringify(r.res));
+    assert.ok(r.res.sin_tiempo > 0, 'cuenta lo que quedó sin bajar');
+  } finally { await buzon.cerrar(); fs.rmSync(espejo, { recursive: true, force: true }); }
+});
+
+// 🔴 Falla con: la revisión de cada minuto no pide la lectura a pedido con una máquina esperando su huella, la pide sin
+//    ninguna esperando, o la espera (la revisión corta las conexiones vencidas: no puede quedar colgada de la red).
+async function revisarContando(conPedido) {
+  const h = await montar({ huellas: huellasDe({}) });
+  try {
+    let llamadas = 0;
+    h.fuentes.leerHuellasAPedido = () => { llamadas += 1; return new Promise(() => {}); };
+    if (conPedido) assert.strictEqual(pedir(h.llaves, par()).status, 202);
+    const antes = Date.now();
+    h.centro.revisar();
+    return { llamadas, ms: Date.now() - antes };
+  } finally { await h.cerrar(); }
+}
+
+test('T15 LiveHub_Revisar_DisparaLaLecturaAPedidoSinEsperarla @story-8.328 @ac-8', async () => {
+  const r = await revisarContando(true);
+  assert.ok(r.ms < 1000, 'la revisión no espera la lectura');
+  assert.strictEqual(r.llamadas, 1, 'con una máquina esperando la pide');
+});
+
+test('T10 Sources_HuellaAPedido_SinEsperas_NoBaja @story-8.328 @ac-9', async () => {
+  assert.strictEqual((await revisarContando(false)).llamadas, 0, 'sin ninguna máquina esperando no la pide');
+});

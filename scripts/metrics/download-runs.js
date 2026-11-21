@@ -61,6 +61,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   --workdays: baja también los días de horas y tokens (`<maquina>/jornadas/v<versión>/<día>.json`, la versión más
  *   nueva de cada día) a `<maquina>/jornadas/<día>.json`. Sin la opción se cuentan en `omitidos`, como los instintos. Lo
  *   pide el sitio (`jornadas: true`, por scripts/site/cloud/azure.js) para la pestaña «Horas y tokens».
+ *   --only-office-keys: baja SÓLO las huellas de las oficinas (`<maquina>/office-keys/<huella>.json`); lo demás se cuenta
+ *   en `omitidos`. No poda el espejo ni rehace la unión de carpetas: lo pide el sitio (`soloHuellas: true`) cuando una
+ *   oficina espera su huella, sin esperar la pasada entera.
  *
  *   --merges-to <dir>: baja también los archivos de métricas de cada merge (`<maquina>/merges/<archivo>` y sus
  *   versiones, la más nueva de cada uno) al espejo, y deja en <dir> uno por merge de todas las máquinas: el que trae
@@ -815,10 +818,13 @@ async function bajar(opts = {}) {
   if (ls.estado) return fin(1, ls.estado, ls.motivo);
   const listado = ls.blobs;
   res.blobs = listado.length;
-  espejoParaUniones = dirBuzon;
+  // `soloHuellas` (el sitio, con una oficina esperando su huella): baja sólo los archivos `office-keys/`. No toca nada
+  // más del espejo: ni lo poda ni rehace la unión de carpetas, que son de la pasada entera
+  const soloHuellas = opts.soloHuellas === true;
+  if (!soloHuellas) espejoParaUniones = dirBuzon;
   // con el listado entero en la mano, el espejo borra las corridas que ya no están en el buzón (antes de bajar: el lugar
   // que libera es el que usa la pasada)
-  if (opts.podar === true) res.podados = podarEspejo(dirBuzon, listado, log);
+  if (opts.podar === true && !soloHuellas) res.podados = podarEspejo(dirBuzon, listado, log);
 
   let indice = { version: 1, destino: `${cfg.cuenta}/${cfg.contenedor}`, blobs: {} };
   try {
@@ -851,6 +857,7 @@ async function bajar(opts = {}) {
   for (const b of listado) {
     const forma = formaDelNombre(b.nombre);
     if (!forma || !Number.isFinite(b.largo)) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
+    if (soloHuellas && tipoDelBlob(forma) !== 'huella') { res.omitidos += 1; continue; }
     // Sin hilos ni se mira el disco — la conversación no se baja.
     // `--no-threads` es «bajá lo que la página necesita»: el hilo y el cambio de git traen código de todos los
     // repos y el nocturno del tablero no los usa. De TODAS sus versiones.
@@ -1159,6 +1166,7 @@ if (require.main === module) {
     hilosDesde: args.includes('--threads-since') ? (valor('--threads-since') || '') : undefined,
     instintos: args.includes('--instincts'),
     jornadas: args.includes('--workdays'),
+    soloHuellas: args.includes('--only-office-keys'),
     // como `--threads-since`: sin valor, o con otra opción detrás, llega vacío y `bajar()` lo rechaza (si no, los
     // merges irían a `ignorados` con la bajada completa, sin que nadie se entere)
     mergesA: args.includes('--merges-to') ? (valor('--merges-to') && !valor('--merges-to').startsWith('--') ? path.resolve(valor('--merges-to')) : '') : undefined,

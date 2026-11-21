@@ -340,6 +340,17 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
         llaves.vencer(reglasAhora());
         llaves.emparejar({ huellas: fuentes.huellas ? fuentes.huellas() : null, reglas: reglasAhora(), conBuzon: conBuzon() });
       });
+      // una máquina que espera su huella no espera la pasada entera del buzón: se piden sólo las huellas, sin esperar la
+      // respuesta (la revisión también corta las conexiones vencidas y no puede quedar colgada de la red)
+      paso('las huellas', () => {
+        if (typeof fuentes.leerHuellasAPedido !== 'function' || !conBuzon()) return;
+        const ctx = { huellas: fuentes.huellas ? fuentes.huellas() : null, reglas: reglasAhora(), conBuzon: true };
+        if (!llaves.vista(ctx).pedidos.some((p) => p.situacion === 'esperando_huella')) return;
+        Promise.resolve(fuentes.leerHuellasAPedido()).then((r) => {
+          // lo leído se empareja ya, sin esperar la próxima revisión
+          if (r && r.leido) paso('las claves', () => llaves.emparejar({ huellas: fuentes.huellas(), reglas: reglasAhora(), conBuzon: conBuzon() }));
+        }, (e) => log(`oficinas: la lectura de huellas a pedido falló (${e && e.message ? e.message : e})`));
+      });
     }
     paso('los navegadores', () => revisarNavegadores(disponible));
     paso('las máquinas', () => revisarMaquinas(disponible));
