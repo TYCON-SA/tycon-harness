@@ -1620,7 +1620,8 @@ function compute(opts) {
     }
     if (!copias.size) {
       const tandas = tandasBloqueadasDe(content, rel);
-      const deOtra = !tandas && midiendoTanda ? tandasNoMedidasDe(content, rel, pedidas) : null;
+      // las que la corrida devolvió a la matriz también se miden: su código sin crear anula como siempre
+      const deOtra = !tandas && midiendoTanda ? tandasNoMedidasDe(content, rel, [...pedidas, ...vuelven.keys()]) : null;
       if (tandas) deTandaBloqueada.push({ rel, tandas });
       else if (deOtra) deTandaNoMedida.push({ rel, tandas: deOtra });
       else noLeidos.push({ rel, lugares });

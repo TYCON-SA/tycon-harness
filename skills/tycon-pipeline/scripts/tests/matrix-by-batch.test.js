@@ -587,6 +587,12 @@ test('T1 TandaFutura_ArchivoSinCrear_NoAnulaLosHumos — midiendo A, un archivo 
   assert.ok(!(m.warnings || []).some((w) => /No pude leer src\/futuro\.js/.test(w)), JSON.stringify(m.warnings));
   assert.strictEqual(m.perAc[1].verdict, 'RUNTIME', JSON.stringify(m.perAc[1]));
   assert.ok((m.warnings || []).some((w) => /src\/futuro\.js/.test(w) && /tanda/.test(w)), 'se dice aparte');
+  // si la corrida tocó código de B, B vuelve a la matriz y se mide: su archivo sin crear anula como siempre (pase adversarial)
+  fs.writeFileSync(E.story, historia({ archivos: ['  - src/futuro.js  # tanda B', '  - src/b.js  # tanda B'] }));
+  fs.writeFileSync(path.join(E.repo, 'src', 'b.js'), 'module.exports = 2;\n');
+  const vuelve = JSON.parse(E.correr('runtime-matrix.js', ['--story', E.story, '--no-write', '--batch', A, '--code-repo', E.repo, '--json'], 's-t7f').stdout);
+  assert.ok((vuelve.measuredBatches || []).includes(B), JSON.stringify(vuelve.measuredBatches));
+  assert.ok(vuelve.warnings.some((w) => /No pude leer src\/futuro\.js/.test(w)), JSON.stringify(vuelve.warnings));
   // sin tanda pedida, el archivo de B se mide como siempre: no se pudo leer
   const todas = E.correr('runtime-matrix.js', ['--story', E.story, '--no-write', '--json'], 's-t7f');
   assert.ok(JSON.parse(todas.stdout).warnings.some((w) => /No pude leer src\/futuro\.js/.test(w)), todas.stdout);
