@@ -163,8 +163,9 @@
   "integrations/azure-devops/scripts/query-notice.js": [
     "*     `az repos|pipelines|boards|artifacts|devops …` (y SÓLO ahí: `az login -p` es una contraseña, `mkdir -p` no es az)",
     "*   · `clasificar({ pos, limpio })`: un `az … list/show` (y `az devops invoke` sin método de escritura) es una",
+    "// `az rest --method=put`, `az rest -m delete`, `az rest -mput`",
     "// `az rest` sin método es un GET",
-    "// un método que no es GET, con espacio o con «=»: `az devops invoke --http-method POST`, `az rest --method=put`, `az rest -m delete`"
+    "// un método que no es GET, con espacio, con «=» o pegado a la opción corta: `az devops invoke --http-method POST`,"
   ],
   "integrations/azure-devops/scripts/work-items.js": [
     "//            az boards work-item relation add --organization <org> --id <id> --relation-type parent --target-id <Epic> --output json",

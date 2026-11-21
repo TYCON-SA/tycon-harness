@@ -8,8 +8,9 @@ const programas = ['gh'];
 const LEE = new Set(['list', 'view', 'status', 'checks', 'diff', 'watch', 'search']);
 // las opciones que pueden ir antes del grupo y llevan valor (`gh -R o/r pr list`)
 const conValor = new Set(['-R', '--repo']);
-// un método que no es GET, con espacio, con «=» o pegado (`-X POST`, `--method=POST`, `-XPOST`), o campos que se mandan
-const ESCRIBE_API = /(?:^|\s)(?:-X\s*|--method[=\s]\s*)['"]?(?!GET\b)[A-Za-z]|(?:^|\s)(?:-f|-F|--field|--raw-field|--input)(?:[=\s]|$)/i;
+// un método que no es GET, con espacio, con «=» o pegado (`-X POST`, `-X=POST`, `-XPOST`, `--method=POST`), o campos que
+// se mandan, también con el valor pegado a la opción corta (`-f a=b`, `-fa=b`, `-Fa=b`)
+const ESCRIBE_API = /(?:^|\s)(?:-X[=\s]?\s*|--method[=\s]\s*)['"]?(?!GET\b)[A-Za-z]|(?:^|\s)-f(?!-)|(?:^|\s)(?:--field|--raw-field|--input)(?:[=\s]|$)/i;
 
 /** 'consulta' u 'otro', con el grupo y el verbo del comando (`pos`) y el segmento sin prefijos (`limpio`). */
 function clasificar({ pos, limpio }) {

@@ -23,10 +23,11 @@ const LEE = new Set(['list', 'show', 'ls', 'get', 'query', 'search', 'check', 's
 const ESCRIBE = new Set(['login', 'logout', 'configure', 'create', 'delete', 'update', 'set', 'add', 'remove', 'import', 'upload', 'push', 'publish', 'queue', 'cancel', 'approve', 'vote', 'complete', 'merge', 'install', 'run', 'rerun', 'reject', 'abandon', 'reactivate', 'download']);
 // las opciones globales que pueden ir antes del grupo y llevan valor (`az -o json repos pr list`)
 const conValor = new Set(['-o', '--output', '--query', '--subscription']);
-// un método que no es GET, con espacio o con «=»: `az devops invoke --http-method POST`, `az rest --method=put`, `az rest -m delete`
-const NO_GET = (opciones) => new RegExp(`(?:^|\\s)(?:${opciones})[=\\s]\\s*['"]?(?!GET\\b)[A-Za-z]`, 'i');
-const ESCRIBE_INVOKE = NO_GET('--http-method');
-const ESCRIBE_REST = NO_GET('--method|-m');
+// un método que no es GET, con espacio, con «=» o pegado a la opción corta: `az devops invoke --http-method POST`,
+// `az rest --method=put`, `az rest -m delete`, `az rest -mput`
+const NO_GET = (opciones) => new RegExp(`(?:^|\\s)(?:${opciones})\\s*['"]?(?!GET\\b)[A-Za-z]`, 'i');
+const ESCRIBE_INVOKE = NO_GET('--http-method[=\\s]');
+const ESCRIBE_REST = NO_GET('--method[=\\s]|-m[=\\s]?');
 
 /** 'consulta' u 'otro', con el grupo y el verbo del comando (`pos`) y el segmento sin prefijos (`limpio`). */
 function clasificar({ pos, limpio }) {

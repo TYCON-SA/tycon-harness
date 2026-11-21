@@ -65,9 +65,11 @@ test('FailedQuery_FormasQueNoSeVeian: opción antes del subcomando, search, rest
     'az rest -m GET --url https://x', 'AZ.CMD repos pr list']) assert.strictEqual(clase(c), 'consulta', c);
   for (const c of ['gh api repos/x --method=POST', 'gh api -XPOST x', 'gh api -X post x', 'gh -R o/r pr create --title t',
     'az devops invoke --area wit --http-method=POST', 'az rest --method post --url https://x', 'az rest --method=PUT --url https://x',
-    'az rest -m delete --url https://x']) assert.strictEqual(clase(c), 'otro', c);
+    'az rest -m delete --url https://x', 'gh api repos/x -X=POST', 'gh api x -fname=v', 'gh api x -Fa=b', 'az rest -mput --url u',
+    'az rest -m=patch --url u']) assert.strictEqual(clase(c), 'otro', c);
   // las de siempre no cambian
-  for (const c of ['gh pr list -R o/r', 'gh api repos/x --method GET', 'gh api -XGET x', 'az repos pr list --project X']) assert.strictEqual(clase(c), 'consulta', c);
+  for (const c of ['gh pr list -R o/r', 'gh api repos/x --method GET', 'gh api -XGET x', 'gh api x -X=GET', 'az rest -mget --url u',
+    'az repos pr list --project X']) assert.strictEqual(clase(c), 'consulta', c);
   const A = require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'query-notice.js'));
   const AY = H.AYUDA;
   for (const c of ['az repos pr list --project Inexistente', 'az.cmd repos pr list --project Inexistente', 'C:\\x\\az.exe repos pr list --project Inexistente',
