@@ -58,10 +58,16 @@ function anuladosIn(dir) {
   return anuladosMemo.get(dir);
 }
 
-/** ¿El archivo `m` es del repo `repoPath`? */
+// La carpeta del repo sin el sufijo de copia (`--wt-…`, `--slot-N`, `--merge`, la convención de guides/git-worktrees.md):
+// el latido corrido desde una copia anota la carpeta de la copia, que puede ya no estar. La carpeta de arriba va por su
+// ruta real, la de la copia no se puede resolver si se borró.
+const SUFIJO_DE_COPIA = /--(merge|wt-[^\\/]*|slot-\d+)$/;
+const sinCopia = (p) => path.join(real(path.dirname(p)), path.basename(p).replace(SUFIJO_DE_COPIA, ''));
+
+/** ¿El archivo `m` es del repo `repoPath`? Una copia del repo cuenta como el repo. */
 function sameRepo(m, repoPath) {
   const repoReal = real(repoPath);
-  if (path.isAbsolute(m.repoStr)) return real(m.repoStr) === repoReal;
+  if (path.isAbsolute(m.repoStr)) return real(m.repoStr) === repoReal || sinCopia(m.repoStr) === sinCopia(repoReal);
   // separadores a «/» en los dos lados: con `path.sep` un relativo escrito con «/» nunca matcheaba en Windows
   return repoReal.replace(/\\/g, '/').endsWith('/' + m.repoStr.replace(/[\\/]+$/, '').replace(/\\/g, '/'));
 }

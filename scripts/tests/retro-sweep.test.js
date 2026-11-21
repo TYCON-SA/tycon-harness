@@ -408,3 +408,20 @@ test('T17 Cobertura_LaRegla @story-1.26 @ac-1: ruta absoluta, sufijo relativo, s
   fs.writeFileSync(path.join(d, 'm.json'), 'null');
   assert.throws(() => RC.coveringRecords({ repoPath: sub, sha: 'abc' }, [d]), /metrics null/);
 });
+
+// 🔴 Falla con: tomar el latido escrito desde una copia de trabajo (`<repo>--wt-X`, ya borrada o no) por el de otro
+// repo, y seguir pidiendo la retrospectiva del merge que la carpeta principal anotó
+test('Cobertura_LatidoDesdeUnaCopia: el latido anotado con la carpeta de una copia del repo cubre el merge de su carpeta principal', () => {
+  const RC = require(path.join(ROOT, 'scripts', 'lib', 'retro-coverage.js'));
+  const d = tmp();
+  const principal = path.join(d, 'arnes');
+  fs.mkdirSync(principal);
+  const viva = path.join(d, 'arnes--wt-Uno');
+  fs.mkdirSync(viva);
+  assert.ok(RC.sameRepo({ repoStr: viva }, principal), 'la copia que sigue en pie');
+  assert.ok(RC.sameRepo({ repoStr: path.join(d, 'arnes--wt-Borrada') }, principal), 'la copia que ya se borró');
+  assert.ok(RC.sameRepo({ repoStr: principal }, viva), 'y al revés: la entrada anotada desde la copia');
+  assert.ok(RC.sameRepo({ repoStr: path.join(d, 'arnes--slot-2') }, principal));
+  assert.ok(!RC.sameRepo({ repoStr: path.join(d, 'arnes2--wt-Uno') }, principal), 'otro nombre no es el mismo repo');
+  assert.ok(!RC.sameRepo({ repoStr: path.join(d, 'otro', 'arnes--wt-Uno') }, principal), 'en otra carpeta tampoco');
+});

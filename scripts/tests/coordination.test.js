@@ -2521,6 +2521,20 @@ test('8.281 T1 OwnerWait_OtroProyecto_NoDespierta @story-8.281 @ac-1 @ac-3: la s
   } finally { restore(); }
 });
 
+// 🔴 Falla con: el aviso de una sesión que sólo Claude Code da esperando un permiso (un agente o un flujo de ella chocó
+// con un cuadro; el arnés no anotó ninguno) decía «un permiso» como si fuera un comando suyo
+test('OwnerWait_PermisoSinAnotar_DiceQueElArnesNoLoVio: sin permiso anotado por el arnés, el aviso no lo presenta como un comando de la sesión', () => {
+  const { t, vuelta, restore } = ownerWaitLab();
+  try {
+    session(t, 's-flujo', 'ConFlujo', perm);
+    const linea = vuelta().find((l) => /ConFlujo espera un permiso/.test(l));
+    assert.ok(linea, 'despierta igual');
+    assert.doesNotMatch(linea, /: un permiso\./, linea);
+    assert.match(linea, /el arnés no anotó ninguno/, linea);
+    assert.match(linea, /un agente o un flujo/, linea);
+  } finally { restore(); }
+});
+
 test('8.281 T2 OwnerWait_SesionDelArnes_DespiertaComoHoy @story-8.281 @ac-2 @ac-22: una sesión del arnés con un permiso abierto despierta, aunque la foto de pedidos sea vieja', () => {
   const { t, vuelta, restore } = ownerWaitLab();
   try {

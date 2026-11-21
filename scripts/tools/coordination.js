@@ -482,7 +482,10 @@ function retiredOf(home, now, sessions) {
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
 const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
-const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''} Para entrar: claude attach ${x.session}`;
+// Sin herramienta ni detalle, el permiso no lo anotó el arnés: sólo Claude Code da la sesión esperando, y suele ser el
+// cuadro de un agente o un flujo de ella, no un comando que la sesión pueda nombrar.
+const SIN_ANOTAR = 'Claude Code la da esperando y el arnés no anotó ninguno: suele ser un agente o un flujo de esa sesión, no un comando suyo';
+const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${x.tool || x.detail ? permissionText(x) : SIN_ANOTAR}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''} Para entrar: claude attach ${x.session}`;
 // qué esperaba, si lo anotó: sin eso nadie sabe qué hay que darle al levantarla (scripts/lib/claude-retired.js)
 const retiredWaited = (x) => (x.waited ? `, esperando ${oneLine(x.waited).slice(0, 160)}` : ', sin anotar qué esperaba');
 const retiredLine = (x) => `${x.session}: la cerró Claude Code a las ${hhmm(x.at)} por ${x.reason}, quieta ${x.idleMin} min${retiredWaited(x)}. Para levantarla: claude respawn ${x.short}`;
