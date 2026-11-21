@@ -220,7 +220,7 @@ function overrunStep(lib, sdir, sid, { workingSince, now, env, tool }) {
     if (r.overrun !== undefined) lib.update(sdir, sid, { overrun: r.overrun }, { env, tool });
     return r.notice;
   } catch (e) {
-    lib.logError(sdir, `sesión ${sid}: no pude ver si la corrida pasó su estimación (${e.code || e.message})`);
+    lib.logError(sdir, `sesión ${sid}: no pude ver si la ejecución pasó su estimación (${e.code || e.message})`);
     return null;
   }
 }

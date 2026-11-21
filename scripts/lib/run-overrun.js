@@ -147,7 +147,7 @@ function check(sdir, sid, { now = Date.now(), openSince = null, env = process.en
     notified.push(o.factor);
     // pasado el cuádruple sin haber avisado el doble, el doble ya no se avisa
     if (o.factor === 4 && !notified.includes(2)) notified.push(2);
-    notice = `Esta corrida${o.storyId ? ` (la ${o.storyId})` : ''} ${overrunText(o)}, sin contar las esperas. No frena nada. `
+    notice = `Esta ejecución${o.storyId ? ` (la ${o.storyId})` : ''} ${overrunText(o)}, sin contar las esperas. No frena nada. `
       + 'Mirá si está dando vueltas (revisores que rechazan otra vez, una prueba que no pasa) y, si hace falta cambiar el rumbo, '
       + 'decíselo a la coordinadora: ella lo ve en coordination.js status.';
   }
