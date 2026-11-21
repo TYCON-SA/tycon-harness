@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 // el `generated_by` del latido, armado por partes como lo arma retro-heartbeat.js
 const HEARTBEAT = ['retro', 'latido.js'].join('-');
@@ -58,10 +59,36 @@ function anuladosIn(dir) {
   return anuladosMemo.get(dir);
 }
 
+// Una copia del repo (`<repo>--wt-X`, `--slot-N`, `--merge`) es el mismo repo: el latido corrido desde ella deja su ruta.
+// Si la copia sigue en pie, el repo es el que dice git (su carpeta principal); un repo aparte con ese nombre no es el
+// mismo. Si ya no está, o quedó como carpeta sin repo, vale el nombre sin el sufijo.
+const SUFIJO_DE_COPIA = /--(merge|wt-[^\\/]*|slot-\d+)$/;
+const identidadMemo = new Map();
+function identidad(p) {
+  const r = real(p);
+  if (identidadMemo.has(r)) return identidadMemo.get(r);
+  let id = r;
+  const base = path.basename(r);
+  if (SUFIJO_DE_COPIA.test(base)) {
+    let comun = null;
+    try {
+      if (fs.existsSync(r)) {
+        const salida = execFileSync('git', ['-C', r, 'rev-parse', '--show-toplevel', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, timeout: 5000 }).trim().split('\n');
+        // sólo cuando la carpeta es la raíz de un repo: los restos de una copia adentro de otro repo le contestan con ese otro
+        if (real(salida[0]) === r) comun = real(path.resolve(r, salida[1]));
+      }
+    } catch { comun = null; }
+    if (comun) id = path.basename(comun) === '.git' ? path.dirname(comun) : r;
+    else id = path.join(path.dirname(r), base.replace(SUFIJO_DE_COPIA, ''));
+  }
+  identidadMemo.set(r, id);
+  return id;
+}
+
 /** ¿El archivo `m` es del repo `repoPath`? */
 function sameRepo(m, repoPath) {
   const repoReal = real(repoPath);
-  if (path.isAbsolute(m.repoStr)) return real(m.repoStr) === repoReal;
+  if (path.isAbsolute(m.repoStr)) return real(m.repoStr) === repoReal || identidad(m.repoStr) === identidad(repoPath);
   // separadores a «/» en los dos lados: con `path.sep` un relativo escrito con «/» nunca matcheaba en Windows
   return repoReal.replace(/\\/g, '/').endsWith('/' + m.repoStr.replace(/[\\/]+$/, '').replace(/\\/g, '/'));
 }
