@@ -421,12 +421,13 @@ function consultaDeOrigen(o) {
 const esOrgValida = (texto) => { try { return delConector().esOrgValida(texto); } catch (_) { return false; } };
 const topeDeLaConsulta = (env) => delConector().topeDeLaConsulta(env);
 
-/** ¿Algún segmento anterior al `i` cambia de carpeta (`cd`, `pushd`)? Entonces az corre en otra, con otra organización. */
+/**
+ * ¿Algún segmento anterior al `i` puede cambiar de carpeta? Entonces az corre en otra, con otra organización. Cuenta
+ * cualquier palabra `cd`, `pushd` o `popd` (también con `builtin`, `command`, `\\`, adentro de `{ }` o de un `if`): de más,
+ * sólo pide escribir `--org`.
+ */
 function cambiaCarpetaAntes(segs, i) {
-  return segs.slice(0, i).some((seg) => {
-    const primera = seg.find((f) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(f.texto));
-    return !!primera && /^(cd|pushd)$/.test(primera.texto);
-  });
+  return segs.slice(0, i).some((seg) => seg.some((f) => esPalabra(f) && /^\\?(cd|pushd|popd)$/.test(f.texto)));
 }
 
 
@@ -544,7 +545,7 @@ function faltasDe(seg, { cambiaCarpeta = false } = {}) {
     else if (!id.literal || !/^\d+$/.test(id.texto.trim())) res.faltas.push(`no puedo leer \`--id ${id.texto}\`: ${aviso}, y va un número escrito tal cual`);
     if (org && (!org.literal || !esOrgValida(org.texto))) res.faltas.push(`\`--org ${org.texto}\` no es la dirección de una organización de la plataforma: ${aviso}, y no le mando la credencial a otro servidor`);
     if (!org && cambiaCarpeta) res.faltas.push(`el comando cambia de carpeta antes del \`update\` y no trae \`--org\`: ${aviso}, y desde otra carpeta puede ser otra organización. Escribí \`--org\``);
-    if (!res.faltas.length) res.consultarOrigen = { id: Number(id.texto.trim()), org: org ? org.texto.trim() : null };
+    if (!res.faltas.length) res.consultarOrigen = { id: id.texto.trim(), org: org ? org.texto.trim() : null };
   }
   return res;
 }

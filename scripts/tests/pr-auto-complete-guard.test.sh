@@ -642,6 +642,15 @@ process.exit(ok ? 0 : 1);' && ok "$T3 en win32 va por consola con comillas, con 
 grep -Eq "(execFileSync|spawnSync|execSync)\(['\"]az" "$HOOK" && no "$T3 el freno llama a az por su cuenta" || ok "$T3 el freno no llama a az por su cuenta: usa consultaDeOrigen"
 grep -q 'consultaDeOrigen' "$HOOK" && ok "$T3 el freno usa consultaDeOrigen" || no "$T3 el freno no usa consultaDeOrigen"
 
+# lo que encontró el pase adversarial de la 8.225: otras formas de cambiar de carpeta antes del update, y un --id largo
+for antes in "builtin cd /tmp/otro &&" "command cd /tmp/otro;" "popd;" "{ cd /tmp/otro;" "if cd /tmp/otro; then"; do
+  cola=""; case "$antes" in "{"*) cola="; }" ;; if*) cola="; fi" ;; esac
+  rc=$(correAz "$antes az repos pr update --id 14 --auto-complete true$cola")
+  [ "$rc" -eq 2 ] && grep -q -- '--org' "$TMP/err.txt" && [ "$(consultas)" -eq 0 ] && ok "$T3 «${antes}» sin --org frena y pide --org" || no "$T3 «${antes}» sin --org ($rc, $(consultas) consultas)"
+done
+rc=$(correAz "az repos pr update $ORG8 --id 9007199254740993 --auto-complete true")
+grep -q -- '--id 9007199254740993' "$AZ_LOG" && ok "$T2 un --id largo se consulta tal cual, sin redondear" || no "$T2 el --id largo: $(cat "$AZ_LOG")"
+
 # T5 (la publicación y las descripciones nombran la consulta)
 T5=8.225-SuitesYBanco_Verdes
 rc=$(corre "$BASE --auto-complete false --squash false")
