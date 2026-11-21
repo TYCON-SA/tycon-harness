@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * github-issues.js — el aviso de dependencias como issue de GitHub.
+ * dependency-notices.js — el aviso de dependencias como issue de GitHub, la parte del conector de GitHub. La entrada
+ * neutra es scripts/nightly/dependencies/work-items.js, que la busca por el conector de la plataforma de la organización.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
  * En Azure DevOps cada ficha viva de la revisión nocturna se convierte en un Bug en el proyecto del equipo dueño del
@@ -36,9 +37,9 @@
  *   hasta que una persona decida. Una credencial que responde 401 es «no pude intentar nada» (sale 2).
  *
  * ── USO ─────────────────────────────────────────────────────────────────────────────────────────
- *   node github-issues.js run    [--config <f>] [--operations <f>] [--pending <dir>] [--out <dir>] [--today <fecha>]
- *                                [--simulate] [--json]
- *   node github-issues.js state  [--config <f>] [--pending <dir>] [--out <dir>] [--today <fecha>]
+ *   node dependency-notices.js run    [--config <f>] [--operations <f>] [--pending <dir>] [--out <dir>] [--today <fecha>]
+ *                                     [--simulate] [--json]
+ *   node dependency-notices.js state  [--config <f>] [--pending <dir>] [--out <dir>] [--today <fecha>]
  * Buscar los issues de una ficha y crearlos va por la capa de plataforma (`work-item.find` y `work-item.create` del
  * conector de GitHub), como en Azure; lo demás habla con GitHub por `gh api`. Los dos usan TYCON_GH_CMD (un ejecutable,
  * o un `.js` que corre con node) y necesitan GH_TOKEN (o GITHUB_TOKEN).
@@ -49,14 +50,16 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const noc = require('./nightly-dependencies');
-const wi = require('./work-items');
-const operaciones = require('../../lib/operations-config.js');
+// lo neutro del aviso de dependencias, del núcleo de este mismo árbol
+const NUCLEO = path.join(__dirname, '..', '..', '..', 'scripts');
+const noc = require(path.join(NUCLEO, 'nightly', 'dependencies', 'nightly-dependencies'));
+const wi = require(path.join(NUCLEO, 'nightly', 'dependencies', 'work-items'));
+const operaciones = require(path.join(NUCLEO, 'lib', 'operations-config.js'));
 
 /** La capa de plataforma con el conector de GitHub: `(operación, args) → Promise<resultado del contrato>`. */
 function plataformaGithub() {
-  const P = require('../../lib/platform/platform.js');
-  const INT = require('../../lib/integrations.js');
+  const P = require(path.join(NUCLEO, 'lib', 'platform', 'platform.js'));
+  const INT = require(path.join(NUCLEO, 'lib', 'integrations.js'));
   return (op, args) => {
     const manifiesto = INT.find('github', { kind: 'platform', env: process.env });
     if (!manifiesto) return Promise.resolve({ ok: false, reason: 'sin_plataforma', detail: 'no está el conector de GitHub' });
@@ -707,7 +710,7 @@ function imprimir(r, textos, hoy) {
   }
 }
 
-const AYUDA = `github-issues.js — el aviso de dependencias como issue de GitHub (un issue por ficha y repo).
+const AYUDA = `dependency-notices.js — el aviso de dependencias como issue de GitHub (un issue por ficha y repo).
 
   run     por cada ficha viva sin issue en alguno de sus repos: lo busca por su etiqueta, y si no está lo crea en el
           repo del producto, asignado al responsable de operations.json. Avisa «ya no aparece» (y cierra lo suyo),
