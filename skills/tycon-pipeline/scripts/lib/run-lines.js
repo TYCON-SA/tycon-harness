@@ -412,7 +412,7 @@ function final(opts) {
 
   // qué entró
   let entro;
-  if (m.pr && Number.isInteger(m.pr.number)) entro = m.pr.merged ? `entró el pedido #${m.pr.number}` : `pedido #${m.pr.number} abierto, espera la cola`;
+  if (m.pr && Number.isInteger(m.pr.number)) entro = m.pr.merged ? `entró el pedido #${m.pr.number}` : `pedido #${m.pr.number} abierto, compilación sin ver: no está listo todavía`;
   else if (m.cierre && m.cierre.estado && m.cierre.estado !== 'completa') entro = `no entró: ${recortar(m.cierre.motivo || m.cierre.estado)}`;
   else entro = 'pedido: no medido';
 
