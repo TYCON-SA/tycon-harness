@@ -248,7 +248,10 @@ function yaEntroYQuedoAtras(dir) {
   const [head, origen] = String(commits.stdout || '').trim().split('\n');
   if (!head || !origen || head === origen) return false;
   const r = correr(['merge-base', '--is-ancestor', 'HEAD', 'refs/remotes/origin/main']);
-  return !r.error && r.status === 0;
+  if (r.error || r.status !== 0) return false;
+  // trabajo sin commitear es trabajo propio: la copia no entró entera a main. Sin poder mirarlo, tampoco se descarta
+  const estado = correr(['status', '--porcelain']);
+  return !estado.error && estado.status === 0 && !String(estado.stdout || '').trim();
 }
 
 /**

@@ -845,11 +845,13 @@ test('T1 HermanoPorNumero_AtrasDeMain_NoLoElige — una copia vieja de otra tand
   const atras = hermanosConAvisos(lab.backWt, lab.story);
   assert.deepEqual(atras.roots, [lab.front], 'ya entró y quedó atrás de main: el declarado');
   assert.match(atras.avisos, /ya entró a main y está atrás de origin\/main/, atras.avisos);
-  // con trabajo propio, aunque esté atrás de main, es el código de la story: se elige como siempre
+  // con trabajo propio, aunque esté atrás de main, es el código de la story: se elige como siempre. Sin commitear también
+  // cuenta (lo encontró el pase adversarial)
   escribir(lab.frontWts[0], 'scripts/lib/tanda.js', 'module.exports = 2;\n');
+  assert.deepEqual(hermanosConAvisos(lab.backWt, lab.story).roots, [lab.frontWts[0]], 'trabajo sin commitear');
   git(lab.frontWts[0], 'add', '-A');
   git(lab.frontWts[0], 'commit', '-q', '-m', 'trabajo de la tanda');
-  assert.deepEqual(hermanosConAvisos(lab.backWt, lab.story).roots, [lab.frontWts[0]]);
+  assert.deepEqual(hermanosConAvisos(lab.backWt, lab.story).roots, [lab.frontWts[0]], 'trabajo commiteado');
 });
 
 test('T4 HermanoPorNumero_DosCandidatos_NoElige @story-7.34 @ac-4 — dos worktrees con el número: el declarado y se dice', () => {
