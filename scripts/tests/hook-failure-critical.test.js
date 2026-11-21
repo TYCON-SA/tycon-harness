@@ -148,3 +148,65 @@ test('T20 Critical_SaneUnrelatedInput_Passes @story-8.159 @ac-0 — una entrada 
     assert.strictEqual(r.err, '', `${cmd}: sin aviso`);
   }
 });
+
+// Pase adversarial (21/11): el terreno con un tabulador o un salto de línea entre `gh` y su orden (en el texto crudo
+// llegan escritos como `\t` y `\n`), y con el repo antes de la orden; el desinstalador y el doctor con la línea nueva.
+const ESCAPADOS = ['gh\tpr create --title t --body b', 'gh \\\n  pr create --title t --body b', 'gh -R dueño/repo pr create --title t', 'gh --repo=o/r issue comment 1 --body x', 'echo hola\ngh pr create',
+  'gh -Ro/r pr create -t x', 'gh -t "x y" -b z issue create', 'gh -L 1 repo create z', 'gh --repo o/r --repo=o/r label create x'];
+// fuera del terreno: la orden en otro comando, o una palabra que sólo empieza como una orden
+const NO_PUBLICAN = ['gh auth status; echo pr', 'gh workflow run x -f label=y', 'gh auth status && echo issue'];
+
+test('T21b Critical_Terrain_EscapesAndRepoFlag_BlockInEveryNewPath @story-8.159 @ac-0 — sin Node, con el reloj vencido y con la entrada rota', (t) => {
+  const L = lab(t);
+  const sinNode = L.pathSin('node');
+  const colgado = L.roto('hang');
+  for (const cmd of ESCAPADOS) {
+    assert.strictEqual(L.correr(L.evento(cmd), { argv: ['/bin/bash', LAUNCHER, 'node', GUARD], extra: { PATH: sinNode } }).code, 2, `sin Node: ${JSON.stringify(cmd)}`);
+    assert.strictEqual(L.correr(L.evento(cmd), { guion: colgado, extra: { TYCON_PUBLIC_GUARD_CLOCK_MS: '400' } }).code, 2, `reloj vencido: ${JSON.stringify(cmd)}`);
+    assert.strictEqual(L.correr(JSON.stringify({ tool_input: { otra: cmd } })).code, 2, `entrada rota: ${JSON.stringify(cmd)}`);
+    assert.ok(G.inTerrain(G.terrainText(L.evento(cmd))), `el terreno del freno: ${JSON.stringify(cmd)}`);
+  }
+  for (const cmd of NO_PUBLICAN) {
+    assert.strictEqual(L.correr(L.evento(cmd), { argv: ['/bin/bash', LAUNCHER, 'node', GUARD], extra: { PATH: sinNode } }).code, 0, `sin Node, no publica: ${cmd}`);
+    assert.ok(!G.inTerrain(G.terrainText(L.evento(cmd))), `fuera del terreno del freno: ${cmd}`);
+  }
+  // sin `sed`, el lanzador mira el texto tal cual y sigue frenando lo de siempre
+  const sinSed = L.pathSin('sed', ['bash', 'cat', 'grep', 'printf']);
+  assert.strictEqual(L.correr(L.evento(EN_TERRENO), { argv: ['/bin/bash', LAUNCHER, 'node', GUARD], extra: { PATH: sinSed } }).code, 2, 'sin sed: frena igual');
+});
+
+test('T14c Installer_UninstallAndDoctor_KnowTheLauncherLine @story-8.159 @ac-0 — desinstalar lo saca y el doctor no lo toma por otro Node', (t) => {
+  const L = lab(t);
+  const RM = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'remove.js'));
+  const HN = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'harness-node.js'));
+  const raiz = path.join(L.dir, 'arnes');
+  const guion = path.join(raiz, 'scripts', 'hooks', 'public-push-guard.js');
+  const lanz = path.join(raiz, 'scripts', 'hooks', 'node-missing-launcher.sh');
+  const propio = path.join(L.casa, '.tycon', 'node', 'current', 'bin', 'node');
+  for (const cmd of [`bash "${lanz}" node "${guion}"`, `bash "${lanz}" ${propio} "${guion}"`]) {
+    // las raíces llegan normalizadas, sin el `/private` con que macOS resuelve /var (como las arma hookRoots)
+    assert.ok(RM.isHarnessCommand(cmd, 'scripts/hooks/public-push-guard.js', [raiz.replace(/^\/private(?=\/(?:var|tmp)\/)/, '')]), `el desinstalador lo reconoce: ${cmd}`);
+  }
+  const settings = path.join(L.dir, 'settings.json');
+  fs.writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: `bash "${lanz}" ${propio} "${guion}"` }] }] } }));
+  const c = HN.countHooks(settings, { own: true, prefix: propio }, ['scripts/hooks/public-push-guard.js']);
+  assert.deepStrictEqual({ own: c.own, other: c.other }, { own: 1, other: 0 }, 'el doctor lo cuenta con el Node propio');
+});
+
+test('T14d Rollback_DropsLauncherTheOldVersionLacks @story-8.159 @ac-0 — volver a una versión sin lanzador lo saca de la línea; si está, no', (t) => {
+  const L = lab(t);
+  const RB = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'rollback.js'));
+  const guion = path.join(L.dir, 'h', 'public-push-guard.js');
+  const falta = path.join(L.dir, 'h', 'node-missing-launcher.sh');
+  const esta = path.join(L.dir, 'otro', 'node-missing-launcher.sh');
+  fs.mkdirSync(path.dirname(esta), { recursive: true });
+  fs.writeFileSync(esta, '');
+  fs.mkdirSync(path.join(L.casa, '.claude'), { recursive: true });
+  const file = path.join(L.casa, '.claude', 'settings.json');
+  const hooks = (a, b) => ({ permissions: { allow: ['Bash(ls)'] }, hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: a }, { type: 'command', command: b }] }] } });
+  fs.writeFileSync(file, JSON.stringify(hooks(`bash "${falta}" node "${guion}"`, `bash "${esta}" node "${guion}"`)));
+  const dicho = [];
+  RB.dropMissingLauncher(L.casa, (l) => dicho.push(l));
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), hooks(`node "${guion}"`, `bash "${esta}" node "${guion}"`));
+  assert.match(dicho.join('\n'), /saqué el lanzador/);
+});

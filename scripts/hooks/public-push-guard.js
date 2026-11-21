@@ -1724,10 +1724,23 @@ function reviewLocalFile(R, list, file, c, dir, top) {
 }
 
 // la forma de un `gh` que publica, buscada en el texto de un evento que no se pudo leer como siempre
-const GH_IN_RAW = /(^|[^A-Za-z0-9_.-])gh(\.exe)?["',\s\\]+(pr|issue|release|api|gist|repo|label)\b/i;
+// (con cualquier cosa entre `gh` y la orden dentro del mismo comando: banderas, valores pegados o entre comillas,
+// `gh -R dueño/repo pr create`, `gh -t "x y" issue create`; el comando termina en `;`, `&`, `|`, paréntesis o
+// redirección)
+const GH_IN_RAW = /(^|[^A-Za-z0-9_.-])gh(\.exe)?["',\s\\]+(?:[^"',\s\;&|()<>]+["',\s\\]+)*(pr|issue|release|api|gist|repo|label)(?=["',\s\;&|()<>]|$)/i;
 // el terreno del freno cuando no alcanza a revisar el comando: un `gh` que publica o un `push`, en el texto crudo. Lo
 // mismo mira node-missing-launcher.sh cuando falta Node
 const inTerrain = (text) => GH_IN_RAW.test(String(text || '')) || /push/.test(String(text || ''));
+// el texto donde se busca el terreno: el comando, si el evento se deja leer; si no, el texto crudo con los saltos y
+// tabuladores que JSON escribe como `\n` o `\t` leídos como espacios (un `gh` seguido de un tabulador sigue siendo un `gh`)
+function terrainText(raw) {
+  try {
+    const p = JSON.parse(raw);
+    const c = p && p.tool_input && p.tool_input.command;
+    if (typeof c === 'string') return c;
+  } catch (_) { /* no es JSON: el texto crudo */ }
+  return String(raw || '').replace(/\\[nrt]/g, ' ');
+}
 // el reloj propio del modo freno: en uso normal la revisión tarda menos de medio segundo y sus esperas internas están
 // acotadas (8, 10 y 20 s); el tope por defecto de un gancho es de 600 s en Claude Code y en Codex, y uno vencido deja
 // correr la herramienta. Al vencer el reloj, el freno decide por el terreno
@@ -1746,7 +1759,7 @@ function hookMode(payloadText, env = process.env) {
   const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload.tool_input : undefined;
   const command = input && typeof input === 'object' && typeof input.command === 'string' ? input.command : null;
   if (command === null) {
-    if (GH_IN_RAW.test(String(payloadText))) {
+    if (GH_IN_RAW.test(String(payloadText).replace(/\\[nrt]/g, ' '))) {
       return { code: 2, lines: ['⛔ FRENADO — no pude leer el comando de este evento y su texto trae un `gh` que puede publicar: lo que no pude mirar no sale.'] };
     }
     return { code: 0, lines: [said('el evento no trae un comando que yo sepa leer')] };
@@ -1802,7 +1815,7 @@ function hookWithClock(raw, env = process.env) {
     worker.on('exit', (c) => finish(fallen(new Error(`el hilo terminó sin contestar (${c})`))));
     timer = setTimeout(() => {
       const s = Math.round(limit / 1000);
-      finish(raw !== null && inTerrain(raw)
+      finish(raw !== null && inTerrain(terrainText(raw))
         ? { code: 2, lines: [`⛔ FRENADO — el freno de publicación no alcanzó a revisar este comando en ${s} s, y puede publicar: lo que no se pudo mirar no sale. Volvé a intentarlo; si sigue, avisale a quien mantiene el arnés.`] }
         : { code: 0, lines: [`[public-push-guard] no alcancé a revisar este comando en ${s} s: no publica, así que pasa.`] });
     }, limit);
@@ -1874,7 +1887,7 @@ function main(argv) {
 }
 
 module.exports = {
-  hookWithClock, inTerrain, HOOK_CLOCK_MS,
+  hookWithClock, inTerrain, terrainText, HOOK_CLOCK_MS,
   FORBIDDEN, ROUTES, Blind, judgeRemote, isHarnessTree, toplevel, listPlaces, resolveList, isTeamMachine, machineOrg, historyScanner,
   parseLines, reviewPush, newPairs, prePush, prePushMessage, status, makeReview, reviewIdentity, main,
   publicRemotesOf, reviewGhCommand, reviewLocalFile, hookMode, concernsHarness, lineFacts, whereItRuns, otherHeaders,

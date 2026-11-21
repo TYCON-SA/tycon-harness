@@ -46,7 +46,7 @@ function lab(t) {
     return { code: r.status, err: r.stderr || '', out: r.stdout || '' };
   };
   // un PATH con bash y lo básico pero sin node: una carpeta con enlaces a cada programa que se pide
-  const pathSin = (falta, programas = ['bash', 'cat', 'grep', 'printf', 'git', 'node', 'head', 'tr']) => {
+  const pathSin = (falta, programas = ['bash', 'cat', 'grep', 'printf', 'sed', 'git', 'node', 'head', 'tr']) => {
     const bin = path.join(dir, `bin-sin-${falta}`);
     fs.mkdirSync(bin, { recursive: true });
     for (const p of programas) {

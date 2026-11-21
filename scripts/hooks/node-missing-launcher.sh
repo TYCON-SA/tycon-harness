@@ -25,9 +25,14 @@ else
   command -v "$runner" > /dev/null 2>&1 && exec "$@"
 fi
 
+# los saltos y tabuladores que JSON escribe como \n o \t se leen como espacios: un `gh` seguido de un tabulador sigue
+# siendo un `gh`. Se mira el texto tal cual y el leído así: sin `sed`, queda el texto tal cual
 raw="$(cat 2>/dev/null)"
-gh_publica='(^|[^A-Za-z0-9_.-])gh(\.exe)?["'"'"', 	\\]+(pr|issue|release|api|gist|repo|label)([^A-Za-z0-9_]|$)'
-if printf '%s' "$raw" | grep -Eiq "$gh_publica" || printf '%s' "$raw" | grep -q 'push'; then
+leido="$(printf '%s' "$raw" | sed 's/\\[nrt]/ /g' 2>/dev/null)"
+sep='["'"'"', 	\\]+'
+tok='[^"'"'"', 	\;&|()<>]+'
+gh_publica="(^|[^A-Za-z0-9_.-])gh(\\.exe)?${sep}(${tok}${sep})*(pr|issue|release|api|gist|repo|label)([\"', 	\\\;&|()<>]|\$)"
+if printf '%s\n%s' "$raw" "$leido" | grep -Eiq "$gh_publica" || printf '%s' "$raw" | grep -q 'push'; then
   echo "⛔ FRENADO — el freno de publicación no pudo arrancar: no encuentro ${runner} (Node). Este comando puede publicar y lo que no se pudo mirar no sale. Instalá Node o reinstalá el arnés." >&2
   exit 2
 fi
