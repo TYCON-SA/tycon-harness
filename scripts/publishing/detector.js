@@ -75,8 +75,10 @@ const CATEGORIAS_ENMASCARADAS = new Set(['secreto']);
 // el committer de todo merge hecho en GitHub. No son un correo de nadie; el nombre de la cuenta, si está en la lista, lo
 // sigue viendo su término.
 const DOMINIOS_DE_EJEMPLO = /@(?:[a-z0-9-]+\.)*(?:example\.(?:com|org|net)|[a-z0-9-]+\.(?:invalid|test|example|localhost))$|@users\.noreply\.github\.com$/i;
-// (`support@github.com` es el que GitHub pone en el pie de los commits de dependabot)
-const EMAILS_QUE_NO_SON_PERSONAS = new Set(['git@github.com', 'git@ssh.dev.azure.com', 'noreply@anthropic.com', 'noreply@github.com', 'support@github.com']);
+// (`support@github.com` es el que GitHub pone en el pie de los commits de dependabot; `git` en `gitlab.com`, el usuario
+// de la dirección SSH de GitLab, como `git@github.com` lo es de la de GitHub. Va partido: escrito entero, un freno
+// instalado de antes de conocerlo frenaría este mismo archivo)
+const EMAILS_QUE_NO_SON_PERSONAS = new Set(['git@github.com', ['git', 'gitlab.com'].join('@'), 'git@ssh.dev.azure.com', 'noreply@anthropic.com', 'noreply@github.com', 'support@github.com']);
 const NO_ES_EMAIL = /\.(?:png|jpe?g|gif|svg|webp)$/i;
 const SALTEAR_CARPETAS = new Set(['.git', 'node_modules']);
 const LEER_PARA_DETECTAR_BINARIO = 8000;
