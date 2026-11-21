@@ -214,10 +214,12 @@ function enCola(ctx, prs) {
   return out;
 }
 
-// Los abiertos con su lugar en la cola y su última caída, de a 100 por consulta. La caída es el último evento que lo
-// sacó de la cola o le apagó el auto-merge.
+// Los abiertos con su lugar en la cola y su última caída, de a POR_PAGINA por consulta. La caída es el último evento que
+// lo sacó de la cola o le apagó el auto-merge. Cada pedido trae sus reglas y sus controles: con 100 por página y unos 60
+// pedidos abiertos de 25 controles, GitHub corta la consulta a los 10 s con un 502; de a 25 tarda unos 4 s.
+const POR_PAGINA = 25;
 const CONSULTA_ABIERTOS = 'query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){'
-  + 'pullRequests(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{number isDraft mergeable '
+  + `pullRequests(states:OPEN,first:${POR_PAGINA},after:$after){pageInfo{hasNextPage endCursor} nodes{number isDraft mergeable `
   + 'id reviewDecision baseRefName baseRef{branchProtectionRule{requiredStatusCheckContexts} rules(first:100){totalCount nodes{type parameters{__typename ... on RequiredStatusChecksParameters{requiredStatusChecks{context}}}}}} commits(last:1){nodes{commit{committedDate statusCheckRollup{state contexts(first:100){totalCount '
   + 'nodes{__typename ... on CheckRun{name status conclusion checkSuite{app{slug}}}}}}}}} '
   + 'mergeStateStatus headRefName headRefOid createdAt title author{login} autoMergeRequest{enabledAt} mergeQueueEntry{state} '
