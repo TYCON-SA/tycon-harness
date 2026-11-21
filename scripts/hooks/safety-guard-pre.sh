@@ -1902,13 +1902,13 @@ git_c4_try() {
 # Un texto como cadena JSON, sin jq ni node.
 json_text() {
   local s="$1" b='\' q='"'
-  s=${s//"$b"/"$b$b"}; s=${s//"$q"/"$b$q"}; s=${s//$'\n'/"${b}n"}; s=${s//$'\r'/"${b}r"}; s=${s//$'\t'/"${b}t"}
+  s=${s//"$b"/"$b$b"}; s=${s//"$q"/"$b$q"}; s=${s//$'\n'/"${b}n"}; s=${s//$'\r'/"${b}r"}; s=${s//$'\t'/"${b}t"}; s=${s//[[:cntrl:]]/ }
   printf '%s%s%s' "$q" "$s" "$q"
 }
 # git_c4_blind_notice <código con el que termina el guion> — el aviso del punto 2, en JSON: mensaje a la persona y
 # contexto del modelo, y la misma línea por stderr para el registro. Si el guion ya termina frenando (2), no toca nada.
 git_c4_blind_notice() {
-  if [[ "$1" != "0" ]]; then return 0; fi
+  if [[ "$1" != "0" || -n "$OW_ASK_JSON" || -n "$OW_AVISO_JSON" ]]; then return 0; fi
   local msg j
   msg="⚠️ TYCON safety-guard [GIT-C4] NO PUDO MIRAR el árbol de las skills instaladas y dejó pasar este git add masivo sin saber si cae ahí: ${GIT_C4_BLIND}. Si cae en ese árbol, va a stagear todo lo ajeno que vive ahí: mirá git status antes de commitear. Arreglo: que ~/.claude/skills vuelva a apuntar a una carpeta que exista y se pueda leer."
   j=$(json_text "$msg")
@@ -2109,9 +2109,9 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
     block "GIT-C4"     "Este comando trae un git add -A / git add . y nombra más de ${GIT_C4_MAX} carpetas distintas con cd, pushd o -C (o tantas, encadenadas, que dan más de ${GIT_C4_MAX_TRIES} combinaciones): el freno no las puede seguir a todas, y no pudo saber si el git add cae en el árbol del que salen las skills instaladas. Lo que no se pudo mirar no pasa callado."     "Partí el comando en dos, o stageá por nombre (git add <archivo>)."
   fi
   # No frenó, y no pudo mirar el árbol: se dice al terminar el guion (ver el punto 2 de arriba).
-  # Con una firma esperando la ventana de permiso no hay nada que avisar: la ventana ya escribe su JSON, que un segundo
-  # documento rompería, y la persona ya mira el comando en ella.
-  if [[ -n "$GIT_C4_BLIND" && -z "$OW_ASK_JSON" ]]; then
+  # Con una firma esperando la ventana de permiso, o aprobada con su aviso, no se avisa: esa salida ya escribe su JSON,
+  # que un segundo documento rompería, y la persona ya mira el comando en ella.
+  if [[ -n "$GIT_C4_BLIND" && -z "$OW_ASK_JSON" && -z "$OW_AVISO_JSON" ]]; then
     trap 'git_c4_blind_notice "$?"' EXIT
   fi
 fi

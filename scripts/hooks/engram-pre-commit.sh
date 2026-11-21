@@ -130,7 +130,7 @@ read_json_node() {
 # Un texto como cadena JSON, sin jq ni node: es justo lo que puede faltar cuando no se pudo leer.
 json_text() {
   local s="$1" b='\' q='"'
-  s=${s//"$b"/"$b$b"}; s=${s//"$q"/"$b$q"}; s=${s//$'\n'/"${b}n"}; s=${s//$'\r'/"${b}r"}; s=${s//$'\t'/"${b}t"}
+  s=${s//"$b"/"$b$b"}; s=${s//"$q"/"$b$q"}; s=${s//$'\n'/"${b}n"}; s=${s//$'\r'/"${b}r"}; s=${s//$'\t'/"${b}t"}; s=${s//[[:cntrl:]]/ }
   printf '%s%s%s' "$q" "$s" "$q"
 }
 # El aviso de un commit que sigue sin lo que este hook hace, por los canales que se ven, y la salida 0.

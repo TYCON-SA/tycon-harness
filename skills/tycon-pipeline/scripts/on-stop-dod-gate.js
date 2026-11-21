@@ -67,11 +67,15 @@ function borrarContador(sid) {
 }
 // El tope de cierres seguidos cuando el contador propio no se lee ni se anota (scripts/lib/stop-cap.js): sin él, el
 // cierre retendría siempre. Sin la biblioteca, retiene como siempre.
-function topeSinContador(sid, stopHookActive) {
-  try {
-    return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'stop-cap.js')).otraVuelta({ freno: 'on-stop-dod-gate', sesion: sid, stopHookActive });
-  } catch (_) { return { retener: true, vuelta: null }; }
+function libTope() {
+  try { return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'stop-cap.js')); } catch (_) { return null; }
 }
+function topeSinContador(sid, stopHookActive) {
+  const t = libTope();
+  return t ? t.otraVuelta({ freno: 'on-stop-dod-gate', sesion: sid, stopHookActive }) : { retener: true, vuelta: null };
+}
+// el contador volvió a andar: la cuenta del tope empieza de cero para la próxima vez que falle
+function soltarTope(sid) { const t = libTope(); if (t) t.soltar({ freno: 'on-stop-dod-gate', sesion: sid }); }
 /** Sin contador: `true` (deja cerrar) pasado el tope, `false` (frena) si no. Lo dice por la salida de errores. */
 function sinContador(sid, stopHookActive, que) {
   const v = topeSinContador(sid, stopHookActive);
@@ -93,6 +97,7 @@ function yaFreno(sid, p, stopHookActive = false) {
   }
   if (c && c.sesion === String(sid) && c.apertura === aperturaDe(p) && Number(c.frenos) >= 1) {
     borrarContador(sid);
+    soltarTope(sid);
     return true;
   }
   try {
@@ -103,6 +108,7 @@ function yaFreno(sid, p, stopHookActive = false) {
   } catch (e) {
     return sinContador(sid, stopHookActive, `no pude anotar el contador de la ejecución perdida (${e.code || e.message})`);
   }
+  soltarTope(sid);
   return false;
 }
 

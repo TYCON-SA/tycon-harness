@@ -118,13 +118,14 @@ done < "$T/casos/lista.tsv"
   || mal "T2 $MAL_T2 de $N_T2 que pasaban en la 7.51 ahora frenan"
 
 # Guard_ReaderBroken_FallsBackToSimpleCut @story-7.52 @ac-3 — con el lector de Node roto (un `node` que sale 1), el freno
-# no deja pasar en silencio: con `jq` lee la entrada y corta como antes (frena), sin `jq` dice que no pudo leer (sale 1)
+# no deja pasar en silencio: con `jq` lee la entrada y corta como antes (frena), sin `jq` dice que no pudo leer (sale 0
+# con el aviso en JSON)
 mkdir -p "$T/bin-node-roto"
 printf '#!/bin/sh\nexit 1\n' > "$T/bin-node-roto/node"; chmod +x "$T/bin-node-roto/node"
 entrada="$(node -e 'process.stdout.write(JSON.stringify({ tool_name: "Bash", tool_input: { command: "npm test" }, cwd: "/tmp" }))')"
 dio="$(printf '%s' "$entrada" | env -u TYCON_TEST_SCOPE_GUARD -u TYCON_FULL_SUITE HOME="$T" TYCON_HARNESS_NODE=0 \
   PATH="$T/bin-node-roto:$PATH" "$BASH" "$GUARD" >/dev/null 2>&1; echo $?)"
-if command -v jq >/dev/null 2>&1; then esperado=2; else esperado=1; fi
+if command -v jq >/dev/null 2>&1; then esperado=2; else esperado=0; fi
 [ "$dio" = "$esperado" ] && ok "con el lector roto, «npm test» sale $esperado (corte de antes o «no pude leer»)" \
   || mal "con el lector roto, «npm test» salió $dio y se esperaba $esperado"
 

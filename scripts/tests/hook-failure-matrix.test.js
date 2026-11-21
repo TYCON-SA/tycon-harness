@@ -382,3 +382,14 @@ test('T12 PassWithNotice_ExitsZeroAndTheNoticeReachesTheModel — los caminos qu
   }
   assert.strictEqual(n, 4, 'los cuatro caminos que salían 1');
 });
+
+// 🔴 Falla con: un carácter de control del comando que rompe el JSON del aviso (se perdería el aviso).
+test('T13 PassWithNotice_ControlCharsInTheCommand_TheJsonStaysValid — el aviso del destino sin ubicar con un carácter de control sigue siendo JSON', (t) => {
+  const L = HL.lab(t);
+  const r = L.repo();
+  fs.writeFileSync(path.join(r.dir, '.engram-project'), 'demo\n');
+  const res = L.correr(rutaHook('engram-pre-commit.sh'), JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git -C "\u0001\u001b$X" commit -m x' }, cwd: r.dir }), { cwd: r.dir });
+  assert.strictEqual(res.code, 0);
+  const doc = JSON.parse(res.out.trim().split('\n').pop());
+  assert.match(doc.hookSpecificOutput.additionalContext, /NO PUDO SABER/);
+});

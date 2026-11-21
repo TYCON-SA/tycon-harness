@@ -119,3 +119,18 @@ test('StopCap_Lib_CountsExpiresAndReleases — la cuenta sube, vence a la media 
   v(); tope.soltar({ freno: 'f', sesion: 's', env });
   assert.strictEqual(v().vuelta, 1, 'soltar la pone en cero');
 });
+
+// 🔴 Falla con: el portón que no suelta la cuenta del tope cuando su contador vuelve a andar (una falla nueva, minutos
+// después, se soltaría antes del tercer cierre).
+test('StopCap_GateCounterWorksAgain_CountStartsOver — con el contador sano de nuevo, la próxima falla vuelve a retener tres cierres', (t) => {
+  const L = HL.lab(t);
+  CASOS['on-stop-dod-gate.js']['contador-de-frenos-ilegible-retiene'](L);   // dos cierres retenidos sin contador
+  const contador = path.join(L.estado, 'lost-run-stop', `${SID}.json`);
+  fs.rmSync(contador, { recursive: true, force: true });
+  const cerrar = () => L.correr(STOP_DOD, JSON.stringify({ session_id: SID }));
+  cerrar();                                                                   // con el contador sano
+  fs.rmSync(contador, { recursive: true, force: true });
+  fs.mkdirSync(contador, { recursive: true });                                // vuelve a fallar
+  const r = [1, 2, 3, 4].map(() => HL.resultado(cerrar()));
+  assert.deepStrictEqual(r, ['frena', 'frena', 'frena', 'pasa'], 'la cuenta empezó de cero');
+});

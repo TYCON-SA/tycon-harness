@@ -112,7 +112,7 @@ to_json_text() {
 # Un texto como cadena JSON, sin jq ni node: es justo lo que puede faltar cuando el freno no pudo leer.
 json_text() {
   local s="$1" b='\' q='"'
-  s=${s//"$b"/"$b$b"}; s=${s//"$q"/"$b$q"}; s=${s//$'\n'/"${b}n"}; s=${s//$'\r'/"${b}r"}; s=${s//$'\t'/"${b}t"}
+  s=${s//"$b"/"$b$b"}; s=${s//"$q"/"$b$q"}; s=${s//$'\n'/"${b}n"}; s=${s//$'\r'/"${b}r"}; s=${s//$'\t'/"${b}t"}; s=${s//[[:cntrl:]]/ }
   printf '%s%s%s' "$q" "$s" "$q"
 }
 # El aviso de un comando que pasa sin revisar, por los dos canales que se ven (medido en Claude Code y en Codex): el
