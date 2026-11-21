@@ -421,13 +421,42 @@ function anotarUso(corredor, { clave, fase, nombre, modelo, usage }) {
   a.intentos += 1;
   for (const [k, v] of Object.entries(usage)) if (/_tokens$/.test(k) && Number.isFinite(v)) a[k] = (a[k] || 0) + v;
   corredor.usoPorAgente[clave] = a;
+  escribirUso(corredor, false);
 }
+
+/**
+ * Escribe el consumo hasta ahora en `corredor.usoFile`, si la corrida tiene uno: `{ pedido, completo, actualizado,
+ * tokens }`. Se escribe después de cada intento, así una corrida que se corta deja lo que ya gastó, con `completo: false`.
+ * Que no se pueda escribir no frena la corrida.
+ */
+function escribirUso(corredor, completo) {
+  if (!corredor.usoFile) return;
+  const porAgente = corredor.usoPorAgente || {};
+  const porFase = {};
+  let total = 0;
+  for (const a of Object.values(porAgente)) {
+    const suma = Object.entries(a).reduce((s, [k, v]) => (/_tokens$/.test(k) && Number.isFinite(v) ? s + v : s), 0);
+    porFase[a.fase] = (porFase[a.fase] || 0) + suma;
+    total += suma;
+  }
+  const texto = `${JSON.stringify({ pedido: corredor.pedido || null, completo: !!completo, actualizado: new Date().toISOString(),
+    tokens: { total, por_fase: porFase, por_agente: porAgente } }, null, 1)}\n`;
+  try {
+    const tmp = `${corredor.usoFile}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, texto);
+    fs.renameSync(tmp, corredor.usoFile);
+  } catch (e) { process.stderr.write(`wflite: no pude escribir el consumo en ${corredor.usoFile} (${e.code || e.message})\n`); }
+}
+
+/** El archivo donde una corrida con `--out <ruta>` deja su consumo al momento: la misma ruta, terminada en `.uso.json`. */
+const usoDe = (out) => `${String(out).replace(/\.json$/, '')}.uso.json`;
 
 async function runWorkflow(scriptPath, argsValue, opts) {
   let source = fs.readFileSync(scriptPath, 'utf8');
   // neutralizar el export (ilegal dentro de una función): mismo objeto, sin exportar
   source = source.replace(/^export const meta =/m, 'const meta =');
-  const corredor = { nombre: opts.agentsDir ? 'agentes-claude' : 'workflow-lite', muertos: [], tope: null, topes: {}, caidos: {}, fallosSeguidos: {}, usado: {}, vecesPorEtiqueta: {}, agentes: {}, tokensPorFase: {}, conTokens: false };
+  const corredor = { nombre: opts.agentsDir ? 'agentes-claude' : 'workflow-lite', muertos: [], tope: null, topes: {}, caidos: {}, fallosSeguidos: {}, usado: {}, vecesPorEtiqueta: {}, agentes: {}, tokensPorFase: {}, conTokens: false,
+    usoFile: opts.usoFile || null, pedido: argsValue && typeof argsValue === 'object' ? argsValue.pedido || null : null };
   // el modo del pase: el del plan revisa texto; el del código ejecuta pruebas y pide un corredor confinado
   const modo = argsValue && typeof argsValue === 'object' && argsValue.modo === 'plan' ? 'plan' : 'code';
   const agent = opts.agentsDir ? makeDirAgent(opts, corredor) : makeAgent({ ...opts, mode: opts.mode || modo }, corredor);
@@ -444,6 +473,7 @@ async function runWorkflow(scriptPath, argsValue, opts) {
   const fn = new AsyncFunction('args', 'log', 'agent', 'parallel', 'pipeline', source);
   const result = await fn(argsValue, log, agent, parallel, pipelineFn);
   if (typeof agent.cerrar === 'function') agent.cerrar();
+  if (corredor.usoPorAgente) escribirUso(corredor, true);
   if (result && typeof result === 'object' && !Array.isArray(result)) {
     const total = Object.values(corredor.tokensPorFase).reduce((a, b) => a + b, 0);
     result.corredor = { nombre: corredor.nombre, lista: corredor.lista || [], usado: corredor.usado, muertos: corredor.muertos, tope: corredor.tope,
@@ -523,7 +553,8 @@ async function main() {
   const runners = ri >= 0 ? String(argv[ri + 1] || '').split(',').map((x) => x.trim()).filter(Boolean) : null;
   if (ri >= 0 && !(runners && runners.length)) { console.error('workflow-lite: --runners sin lista'); return 1; }
   const cwd = (argsValue && argsValue.repo) || process.cwd();
-  const result = await runWorkflow(scriptPath, argsValue, { cwd, timeoutMs: 20 * 60 * 1000, agentsDir, runners });
+  const usoFile = oi >= 0 && argv[oi + 1] ? usoDe(argv[oi + 1]) : null;
+  const result = await runWorkflow(scriptPath, argsValue, { cwd, timeoutMs: 20 * 60 * 1000, agentsDir, runners, usoFile });
   const json = JSON.stringify(result, null, 1);
   if (oi >= 0) { fs.writeFileSync(argv[oi + 1], json + '\n'); console.log(`wflite: resultado → ${argv[oi + 1]}`); }
   else console.log(json);
@@ -539,7 +570,7 @@ async function main() {
   return 0;
 }
 
-module.exports = { slugFor, modelFor, anotarUso };
+module.exports = { slugFor, modelFor, anotarUso, escribirUso, usoDe };
 
 if (require.main === module) {
   main().then((c) => process.exit(c)).catch((e) => { console.error(`workflow-lite: ${e.message}`); process.exit(1); });
