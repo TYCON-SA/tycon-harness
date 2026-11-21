@@ -173,7 +173,10 @@ function repoDelCarril(adhoc, nombre, { cwd = process.cwd() } = {}) {
   } else {
     const h = RG.hermanoDeEdicion(cwd, nombre);
     if (h.problema) return { problema: h.problema };
-    raiz = repos.find((r) => r === h.raiz) || null;
+    // el hermano o una copia suya (`B--wt-x`, la rama de la historia): la que está en la lista, como con el propio
+    const suyas = repos.filter((r) => r === h.raiz || RG.checkoutPrincipal(r) === h.raiz);
+    if (suyas.length > 1) return { problema: `${nombre} tiene más de una copia en la lista de este camino corto (${suyas.join(', ')}): no sé en cuál correr` };
+    raiz = suyas[0] || null;
   }
   if (!raiz) return { problema: `${nombre} no tiene archivos en la lista de este camino corto` };
   return { raiz };

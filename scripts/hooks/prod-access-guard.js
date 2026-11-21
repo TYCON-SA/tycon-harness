@@ -533,12 +533,17 @@ function decidir(entrada) {
   const { substitutions, heredocs } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
   const malo = guardadoQueFrena(guardados, { segmentos, tokens, PREFIJOS, substitutions, heredocs }, {
     anotar: anotarNoMirado,
-    // los hosts de producción del índice ya guardado, viejo o no: sólo deciden si vale la pena consultar el índice
+    // los hosts de producción del índice ya guardado, viejo o no: sólo deciden si vale la pena consultar el índice.
+    // `{ hosts }`, o `{ hosts: [], falta: motivo }` sin índice, o `{ hosts: null, ilegible: motivo }` si no se lee
     recordados: () => {
+      let texto;
+      try { texto = require('fs').readFileSync(moduloIndice().rutaIndice(process.env.HOME), 'utf8'); } catch (e) {
+        return e && e.code === 'ENOENT' ? { hosts: [], falta: 'no hay índice de servidores guardado' } : { hosts: null, ilegible: `no pude leer el índice de servidores (${(e && e.code) || e})` };
+      }
       try {
-        const doc = JSON.parse(require('fs').readFileSync(moduloIndice().rutaIndice(process.env.HOME), 'utf8'));
-        return [...Object.entries(doc.hosts || {}).filter(([, h]) => h && h.ambiente === 'produccion').map(([h]) => h), ...(doc.memoria || [])];
-      } catch { return []; }
+        const doc = JSON.parse(texto);
+        return { hosts: [...Object.entries(doc.hosts || {}).filter(([, h]) => h && h.ambiente === 'produccion').map(([h]) => h), ...(doc.memoria || [])] };
+      } catch (e) { return { hosts: null, ilegible: `el índice de servidores no es JSON (${e.message})` }; }
     },
     leerIndice: () => {
       if (vencido()) frenar('el freno se quedó sin tiempo mirando lo que corre este comando, y eso nombra algo de bases.', [], { cmd });
@@ -1551,12 +1556,18 @@ function guardadoQueFrena(guardados, sp, { leerIndice, recordados, anotar }) {
   for (const g of conTexto) {
     if (g.shell && llamaALaPuerta(g.texto, sp, (motivo) => anotar(g.ruta, motivo))) return { ruta: g.ruta, que: 'llama a la puerta de producción', causa: 'base-de-produccion' };
   }
-  const conocidos = recordados().map((h) => h.toLowerCase());
-  const candidatos = conTexto.filter((g) => {
-    if (/tycon-prod-/i.test(g.texto) || CRUDO.test(g.texto) || /\.database\.windows\.net/i.test(g.texto)) return true;
+  const rec = recordados();
+  const conocidos = (rec.hosts || []).map((h) => String(h).toLowerCase());
+  const conSenal = (g) => /tycon-prod-/i.test(g.texto) || CRUDO.test(g.texto) || /\.database\.windows\.net/i.test(g.texto);
+  // con el índice ilegible no se sabe qué hosts recordar: todo guion es candidato (consultar el índice lo rearma)
+  const candidatos = rec.hosts === null ? conTexto : conTexto.filter((g) => {
+    if (conSenal(g)) return true;
     const bajo = g.texto.toLowerCase();
     return conocidos.some((h) => bajo.includes(h));
   });
+  // sin índice guardado, lo que no tiene otra señal no se mira: se dice, para que no parezca mirado
+  if (rec.falta) for (const g of conTexto) if (!candidatos.includes(g)) anotar(g.ruta, `${rec.falta}: un host de producción que nombre no se buscó`);
+  if (rec.ilegible) anotar(conTexto[0].ruta, `${rec.ilegible}: se miran todos los guiones contra el índice rearmado`);
   if (!candidatos.length) return null;
   const indice = leerIndice();
   if ((indice.errores || []).length) anotar(candidatos[0].ruta, 'hay catálogos de producción que no se pudieron leer: lo que declaran no se miró');

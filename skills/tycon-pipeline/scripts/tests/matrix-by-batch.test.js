@@ -570,6 +570,34 @@ test('T19 RuntimeWaiver_Terminal_ForSession_ReadsBatch @story-8.240 @ac-12 — l
   assert.match(salida(r), /runtime-waiver \S+ --for-session s-a19/, salida(r));
 });
 
+// ── una tanda futura no anula la evidencia de la medida ──────────────────────────────────────────────────────────────
+
+// Renglón 7 de la fila del 21/11 (casos del 11 y el 12/11): midiendo la primera tanda, un archivo de la segunda, todavía
+// pendiente y sin crear, contaba como «código declarado que no pude leer» y anulaba los humos de la medida. Un archivo
+// atado sólo a tandas que no se miden no se lee como del cambio: se dice aparte y no anula nada.
+test('T1 TandaFutura_ArchivoSinCrear_NoAnulaLosHumos — midiendo A, un archivo sin crear de B pendiente no descarta la evidencia', () => {
+  const E = entorno();
+  fs.writeFileSync(E.story, historia({ archivos: ['  - src/futuro.js  # tanda B'] }));
+  E.git('add', '.');
+  E.git('commit', '-qm', 'la historia nombra el archivo de la tanda B');
+  E.humo([1]);
+  const r = E.correr('runtime-matrix.js', ['--story', E.story, '--no-write', '--batch', A, '--code-repo', E.repo, '--json'], 's-t7f');
+  const m = JSON.parse(r.stdout);
+  assert.strictEqual(m.batch, A);
+  assert.ok(!(m.warnings || []).some((w) => /No pude leer src\/futuro\.js/.test(w)), JSON.stringify(m.warnings));
+  assert.strictEqual(m.perAc[1].verdict, 'RUNTIME', JSON.stringify(m.perAc[1]));
+  assert.ok((m.warnings || []).some((w) => /src\/futuro\.js/.test(w) && /tanda/.test(w)), 'se dice aparte');
+  // si la corrida tocó código de B, B vuelve a la matriz y se mide: su archivo sin crear anula como siempre (pase adversarial)
+  fs.writeFileSync(E.story, historia({ archivos: ['  - src/futuro.js  # tanda B', '  - src/b.js  # tanda B'] }));
+  fs.writeFileSync(path.join(E.repo, 'src', 'b.js'), 'module.exports = 2;\n');
+  const vuelve = JSON.parse(E.correr('runtime-matrix.js', ['--story', E.story, '--no-write', '--batch', A, '--code-repo', E.repo, '--json'], 's-t7f').stdout);
+  assert.ok((vuelve.measuredBatches || []).includes(B), JSON.stringify(vuelve.measuredBatches));
+  assert.ok(vuelve.warnings.some((w) => /No pude leer src\/futuro\.js/.test(w)), JSON.stringify(vuelve.warnings));
+  // sin tanda pedida, el archivo de B se mide como siempre: no se pudo leer
+  const todas = E.correr('runtime-matrix.js', ['--story', E.story, '--no-write', '--json'], 's-t7f');
+  assert.ok(JSON.parse(todas.stdout).warnings.some((w) => /No pude leer src\/futuro\.js/.test(w)), todas.stdout);
+});
+
 // ── 8.245: una tanda bloqueada no vuelve por un archivo que comparte ─────────────────────────────────────────────────
 
 test('T7 TandaBloqueada_ArchivoCompartido_NoVuelve_SuPantallaSi @story-8.245 @ac-7 — vuelve la hecha; la bloqueada, sólo por un archivo que nombra sólo ella', () => {

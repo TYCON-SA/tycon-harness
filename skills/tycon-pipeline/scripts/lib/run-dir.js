@@ -37,6 +37,12 @@ function bajoElRepo(dir, repo) {
 }
 
 const AVISADOS = new Set();
+// un aviso por proceso: va en la salida de quien llama y no puede tapar lo que ese comando tiene que decir
+function avisarUnaVez(texto) {
+  if (AVISADOS.has(texto)) return;
+  AVISADOS.add(texto);
+  process.stderr.write(`ℹ️  ${texto}.\n`);
+}
 
 // Las partes de una ruta, con cualquiera de los dos separadores: una carpeta guardada en Windows se lee en macOS y al revés.
 const partes = (p) => String(p).split(/[\\/]+/).filter(Boolean);
@@ -88,6 +94,9 @@ function marcadorConRutas(m, { avisar = false } = {}) {
 }
 
 const esDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
+// por qué no se puede saber si una carpeta está: null si se sabe (está, o no está), el código del error si no (un EACCES
+// no es «ya no está»: tomarlo así crearía otra carpeta encima de una que sí está)
+const noSeSabeSiEsta = (p) => { try { fs.statSync(p); return null; } catch (e) { return e.code === 'ENOENT' || e.code === 'ENOTDIR' ? null : (e.code || e.message); } };
 
 /**
  * El marcador que mira la regla: el que pasa quien llama (`marker`, null = ninguno); si no pasa ninguno, el de
@@ -150,6 +159,8 @@ function carpetaDelMarcador(m, storyId, repo, { create = false } = {}) {
     if (!path.isAbsolute(r.runDir)) return { motivo: `el marcador de la historia ${storyId}: ${r.motivo}` };
     if (!bajoElRepo(r.runDir, repo)) return {};
     if (esDir(r.runDir)) return { dir: r.runDir };
+    const sinSaber = noSeSabeSiEsta(r.runDir);
+    if (sinSaber) return { motivo: `la carpeta de la corrida del marcador (${r.runDir}) no se puede leer (${sinSaber})`, ilegible: true };
     if (create) { fs.mkdirSync(r.runDir, { recursive: true }); return { dir: r.runDir }; }
     return { motivo: `la carpeta de la corrida del marcador (${r.runDir}) ya no está` };
   }
@@ -172,9 +183,12 @@ function laMejorSinMarcador(runsBase, names) {
     try {
       for (const f of fs.readdirSync(p)) {
         has = 1;
-        try { newest = Math.max(newest, fs.statSync(path.join(p, f)).mtimeMs); } catch { /* ignore */ }
+        try { newest = Math.max(newest, fs.statSync(path.join(p, f)).mtimeMs); } catch { /* sin su fecha desempata la de las demás */ }
       }
-    } catch { /* una carpeta que no se lee cuenta como vacía: pierde contra las que se leen */ }
+    } catch (e) {
+      // una carpeta que no se lee cuenta como vacía: pierde contra las que se leen, y se dice (puede ser la buena)
+      avisarUnaVez(`la carpeta de corrida ${p} no se lee (${e.code || e.message}): cuenta como vacía al elegir`);
+    }
     if (!has) { try { newest = fs.statSync(p).mtimeMs; } catch { newest = 0; } }
     const s = selloDe(n);
     const gana = has > bestHas || (has === bestHas && (s > bestSello || (s === bestSello && newest > bestM)));
@@ -204,6 +218,11 @@ function resolveRunDir(repo, storyId, create, storyPath, opts = {}) {
   if (m && String(m.storyId) === String(storyId)) {
     const d = carpetaDelMarcador(m, storyId, repo, { create });
     if (d.dir) return d.dir;
+    // la carpeta del marcador está y no se lee: ni se elige otra ni se crea una encima
+    if (d.ilegible) {
+      process.stderr.write(`⚠️  ${d.motivo}: no elijo ni abro otra carpeta de corrida.\n`);
+      return null;
+    }
     motivo = d.motivo || null;
   }
 
@@ -233,6 +252,8 @@ function resolveRunDir(repo, storyId, create, storyPath, opts = {}) {
   }
   if (!create) return null;
   const dir = path.join(runsBase, `${key}-${sello()}`);
+  // una carpeta nueva cuando el marcador tenía una que no sirvió: se dice por qué no se usó la suya
+  if (motivo) avisarUnaVez(`${motivo}. Abro una carpeta de corrida nueva (${path.basename(dir)})`);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

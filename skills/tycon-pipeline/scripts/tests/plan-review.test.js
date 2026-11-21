@@ -131,7 +131,8 @@ function laboratorio(t, { sensible = null, designada = COORD, plan = PLAN } = {}
   return lab;
 }
 
-const APROBAR = ['complete-step', 'approve-plan', '--for-session', DESTINO, '--approved', 'con la revisión automática'];
+// por la revisión, `--approved` sólo dice «revisión»: el texto de la aprobación lo arma el arnés
+const APROBAR = ['complete-step', 'approve-plan', '--for-session', DESTINO, '--approved', 'revisión'];
 /** La aprobación del plan de ses-a pedida por la coordinadora y concedida por la delegación: el guion de verdad. */
 function aprobarPorDelegacion(lab) {
   const p = lab.pedir(lab.comando(APROBAR), { delegada: true });
@@ -730,6 +731,18 @@ test('Coordinadora_ConRevisionAprobada_Firma (T9) @story-1.29 @ac-8 @ac-11 @ac-1
   assert.strictEqual(ap.tipo, 'automatica');
   assert.match(ap.quien, /revisión automática \(opus\)/);
   assert.strictEqual(ap.por, COORD);
+  // el texto de la aprobación lo arma el arnés: quién lanzó la revisión y su veredicto, nunca lo que escribió el agente
+  assert.match(m.planApproval.text, new RegExp(`revisión \\S+ aprobado \\(opus\\), lanzada por la sesión ${COORD}`), m.planApproval.text);
+  // un texto propio en --approved, por la revisión, no se acepta: atribuiría una firma que nadie dio
+  const otra = laboratorio(t);
+  otra.revisar(APROBADO);
+  const FALSA = ['complete-step', 'approve-plan', '--for-session', DESTINO, '--approved', 'firma del dueño con el cuadro del arnés'];
+  const pf = otra.pedir(otra.comando(FALSA), { delegada: true });
+  assert.strictEqual(pf.decision, 'allow', pf.texto);
+  const rf = otra.correr(FALSA);
+  assert.notStrictEqual(rf.status, 0, `${rf.stdout}${rf.stderr}`);
+  assert.match(rf.stderr, /el texto lo arma el arnés/);
+  assert.ok(!JSON.parse(otra.leer(DESTINO)).planApproval, 'nada aprobado con el texto falso');
 });
 
 test('Coordinadora_ConstanciaQueNoCorresponde_NoFirma (T10) @story-1.29 @ac-8', (t) => {
@@ -796,6 +809,48 @@ test('Delicado_ConRevisionAprobada_EsperaAlDev (T11) @story-1.29 @ac-9', (t) => 
   assert.strictEqual(deTramite.codigo, 0, JSON.stringify(deTramite));
   const deTramiteAjena = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: m, delegaDelicada: () => false, deTramite: () => true });
   assert.strictEqual(deTramiteAjena.codigo, 2, 'la revisión la lanzó otra sesión: no firma la propia');
+  // un plan delicado con la revisión de este plan en rechazo no se aprueba, tampoco con el «aprobado» de la persona
+  const enContra = laboratorio(t, { sensible: 'seguridad' });
+  enContra.revisar(RECHAZADO);
+  const rc = PR().revisionEnContra({ estado: enContra.estado, destino: DESTINO, marker: JSON.parse(enContra.leer(DESTINO)) });
+  assert.ok(rc && rc.codigo === 2 && /rechaz/.test(rc.motivo), JSON.stringify(rc));
+  // ni un plan retocado después del rechazo ni una revisión sin veredicto encima la destapan; una aprobada posterior sí
+  {
+    const esquiva = laboratorio(t, { sensible: 'seguridad' });
+    esquiva.revisar(RECHAZADO);
+    fs.writeFileSync(esquiva.planFile, `${PLAN} `);
+    esquiva.revisar(SIN_MEDIR);
+    const m = () => JSON.parse(esquiva.leer(DESTINO));
+    assert.ok(PR().revisionEnContra({ estado: esquiva.estado, destino: DESTINO, marker: m() }), 'el rechazo sigue en pie');
+    esquiva.revisar(APROBADO);
+    assert.strictEqual(PR().revisionEnContra({ estado: esquiva.estado, destino: DESTINO, marker: m() }), null, 'una revisión aprobada posterior la destapa');
+  }
+  aprobadoDelDueno(enContra, `${preguntaDe(enContra, enContra.comando(APROBAR))}\n\n${PLAN}`);
+  const pc = enContra.pedir(enContra.comando(APROBAR), { delegada: true });
+  const rcc = pc.decision === 'allow' ? enContra.correr(APROBAR) : { status: 9, stderr: pc.texto || '' };
+  assert.notStrictEqual(rcc.status, 0, `${rcc.stdout}${rcc.stderr}`);
+  assert.match(`${rcc.stderr}`, /en rechazo: un plan delicado no se aprueba con la revisión en contra/, `${pc.decision} ${rcc.stderr}`);
+  // decisión del dueño: sólo su click en el cuadro vence el rechazo; ni la terminal ni la delegación. El texto lo arma
+  // el arnés, con el veredicto que se pisa
+  {
+    const porVia = (via) => {
+      const l = laboratorio(t, { sensible: 'seguridad' });
+      l.revisar(RECHAZADO);
+      const r = l.marker(DESTINO, ['complete-step', 'approve-plan', '--approved', 'aprobado'], via === 'delegacion' ? { delegadaPor: COORD } : { via });
+      return { r, pa: JSON.parse(l.leer(DESTINO)).planApproval };
+    };
+    const click = porVia('click');
+    assert.strictEqual(click.r.status, 0, `${click.r.stdout}${click.r.stderr}`);
+    assert.match(click.pa.text, /rechazo vencido por decisión de la persona, con su click en el cuadro/, click.pa.text);
+    assert.match(click.pa.text, /rechazado/, click.pa.text);
+    for (const via of ['delegacion', 'mensaje', 'ventana']) {
+      const o = porVia(via);
+      assert.notStrictEqual(o.r.status, 0, `${via}: ${o.r.stdout}${o.r.stderr}`);
+      assert.ok(!o.pa, `${via}: el plan delicado en rechazo no quedó aprobado`);
+      assert.match(o.r.stderr, /click en el cuadro/, via);
+    }
+  }
+  assert.ok(!JSON.parse(enContra.leer(DESTINO)).planApproval, 'el plan delicado en rechazo no quedó aprobado');
   const sinRevision = laboratorio(t, { sensible: 'seguridad' });
   const s2 = PR().antesDeAprobar({ estado: sinRevision.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(sinRevision.leer(DESTINO)), delegaDelicada });
   assert.strictEqual(s2.codigo, 2);

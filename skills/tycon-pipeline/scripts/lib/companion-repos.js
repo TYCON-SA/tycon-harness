@@ -213,6 +213,13 @@ function enLaMismaRama(declarado, rama, numero) {
   }
   if (mismoNombre) return elegir(mismoNombre.ruta);
   const candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
+  // por el número no vale una copia vieja: la de una tanda anterior que ya entró entera a main y quedó atrás mide código sin
+  // lo que main arregló después, y da rojos que no son. Una rama con trabajo propio sigue valiendo aunque esté atrás de main,
+  // y la de la misma rama no pasa por acá
+  if (candidatos.length === 1 && yaEntroYQuedoAtras(candidatos[0].ruta)) {
+    avisar(`${nombre}: el worktree ${real(candidatos[0].ruta)} (rama ${candidatos[0].rama}) nombra la story ${numero}, pero ya entró a main y está atrás de origin/main: no lo elijo, uso el declarado ${declarado}. Si es el código de la story, ponelo en la rama ${rama || 'de la story'}`);
+    return declarado;
+  }
   if (candidatos.length === 1) {
     const wt = elegir(candidatos[0].ruta);
     avisar(`${nombre} se lee del worktree ${wt} (rama ${candidatos[0].rama}): es el único cuya rama nombra la story ${numero}`);
@@ -227,6 +234,24 @@ function enLaMismaRama(declarado, rama, numero) {
     avisar(`${nombre} se lee del checkout principal ${declarado}, que está en la rama ${propio.rama} (la story está en ${rama}): si el código de la story está en otro worktree, que su rama nombre la story`);
   }
   return declarado;
+}
+
+/**
+ * ¿Todo lo de la rama de `dir` ya está en su `origin/main` local, y main siguió después? Sin `fetch`. Sin `origin/main`, o
+ * con git que no contesta, «no»: se elige como antes.
+ */
+function yaEntroYQuedoAtras(dir) {
+  const env = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre();
+  const correr = (args) => spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
+  const commits = correr(['rev-parse', 'HEAD', 'refs/remotes/origin/main']);
+  if (commits.error || commits.status !== 0) return false;
+  const [head, origen] = String(commits.stdout || '').trim().split('\n');
+  if (!head || !origen || head === origen) return false;
+  const r = correr(['merge-base', '--is-ancestor', 'HEAD', 'refs/remotes/origin/main']);
+  if (r.error || r.status !== 0) return false;
+  // trabajo sin commitear es trabajo propio: la copia no entró entera a main. Sin poder mirarlo, tampoco se descarta
+  const estado = correr(['status', '--porcelain']);
+  return !estado.error && estado.status === 0 && !String(estado.stdout || '').trim();
 }
 
 /**

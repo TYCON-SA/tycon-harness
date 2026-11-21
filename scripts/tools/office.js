@@ -830,7 +830,8 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   // la sesión de fondo que cerró Claude Code no está trabajando ni libre: se dice qué pasó y cómo se levanta
   for (const r of wip.retired || []) {
     const quien = plain(r.session) || r.short;
-    items.push({ titulo: `${quien}: la cerró Claude Code (${plain(r.reason)}), quieta ${r.idleMin} min`, quien, estado: 'riesgo', estimadaIso: null, pronosticoIso: null, fin: null, espera: `para levantarla: claude respawn ${r.short}` });
+    const esperaba = r.waited ? `esperaba ${plain(r.waited)}; ` : 'no anotó qué esperaba; ';
+    items.push({ titulo: `${quien}: la cerró Claude Code (${plain(r.reason)}), quieta ${r.idleMin} min`, quien, estado: 'riesgo', estimadaIso: null, pronosticoIso: null, fin: null, espera: `${esperaba}para levantarla: claude respawn ${r.short}` });
   }
   // la coordinadora dejó lugares libres a propósito, o cerró su turno sin abrir ni motivo: se ve como un riesgo, con el motivo
   for (const r of wip.freeSlots || []) {
